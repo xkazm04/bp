@@ -7,7 +7,9 @@
   "scripts": {
     "validate": "node scripts/validate-data.mjs",
     "shoot": "node scripts/shoot.mjs",
-    "bundle": "node scripts/bundle.mjs"
+    "bundle": "node scripts/bundle.mjs",
+    "generate:v2": "node scripts/data-v2/generate.mjs",
+    "validate:v2": "node scripts/data-v2/validate.mjs"
   },
   "devDependencies": {
     "d3": "^7.9.0",

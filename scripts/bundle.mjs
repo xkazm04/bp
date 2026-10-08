@@ -3,7 +3,8 @@
 //
 //   node scripts/bundle.mjs [round-dir] [variant]   (default: every prototypes/round-* directory, every variant)
 //
-// - inlines every local <script src="..."> (shared data + model) so the page needs no sibling files
+// - inlines every local <script src="..."> and <link rel="stylesheet" href="..."> (shared data, model, kit)
+//   so the page needs no sibling files
 // - strips the document skeleton (doctype, html/head/body tags, charset + viewport metas), which the
 //   Artifact host adds itself
 // - writes dist/<round>/<variant>.html and warns when the <title> is not in the first 8KB
@@ -46,6 +47,13 @@ for (const roundDir of rounds) {
       const file = path.resolve(path.dirname(src), ref);
       const code = fs.readFileSync(file, 'utf8').replace(/<\/script/gi, '<\\/script');
       return `<script>/* ${path.relative(ROOT, file)} */\n${code}\n</script>`;
+    });
+
+    html = html.replace(/<link\s+rel="stylesheet"\s+href="([^"]+)"\s*\/?>/g, (tag, ref) => {
+      if (/^https?:/.test(ref)) return tag;
+      const file = path.resolve(path.dirname(src), ref);
+      const css = fs.readFileSync(file, 'utf8').replace(/<\/style/gi, '<\\/style');
+      return `<style>/* ${path.relative(ROOT, file)} */\n${css}\n</style>`;
     });
 
     html = html

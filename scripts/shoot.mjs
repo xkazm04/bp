@@ -5,7 +5,7 @@
 //
 // Without --scenarios it runs the default set: desktop light/dark and phone light/dark.
 // A scenario file is a JSON array of scenarios:
-//   [{ "name": "desk-dev", "viewport": [1440, 900], "colorScheme": "dark", "mobile": false,
+//   [{ "name": "desk-dev", "viewport": [1440, 900], "colorScheme": "dark", "mobile": false, "storage": { "key": "value" },
 //      "steps": [ { "wait": 400 }, { "shot": "overview" }, { "click": "[data-lens=dev]" }, { "shot": "dev" } ] }]
 // Steps:
 //   { "wait": ms }                      { "shot": "name" }               { "shot": "name", "fullPage": true }
@@ -68,6 +68,12 @@ for (const sc of scenarios) {
     colorScheme: sc.colorScheme || 'light',
     reducedMotion: sc.reducedMotion ? 'reduce' : 'no-preference',
   });
+  // Seed localStorage before any page script runs, e.g. { "orbit-kit.theme": "dark" }.
+  if (sc.storage) {
+    await context.addInitScript((kv) => {
+      try { Object.keys(kv).forEach((k) => localStorage.setItem(k, kv[k])); } catch (e) { /* storage unavailable */ }
+    }, sc.storage);
+  }
   const page = await context.newPage();
   const rec = { name: sc.name, viewport: [w, h], colorScheme: sc.colorScheme || 'light', consoleErrors: [], pageErrors: [], blocked: [], shots: [], evals: [] };
 
