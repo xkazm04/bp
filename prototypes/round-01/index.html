@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blueprint Round 1</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<style>
+  /* Local index of the round's variants: one column of linked entries. */
+  :root {
+    --bg: #f4f6f8; --fg: #16202b; --muted: #5b6876; --line: #d5dde5; --accent: #1f4f8f;
+    --sans: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #0f1720; --fg: #e3e9ef; --muted: #93a1b0; --line: #26323f; --accent: #8db6ee; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --bg: #0f1720; --fg: #e3e9ef; --muted: #93a1b0; --line: #26323f; --accent: #8db6ee; color-scheme: dark; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.55 var(--sans); padding-inline: 16px; }
+  main { max-width: 760px; margin: 0 auto; padding-block: 48px; display: grid; gap: 28px; }
+  h1 { font-size: 28px; margin: 0; text-wrap: balance; }
+  .eyebrow { font: 500 12px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; border-top: 1px solid var(--line); }
+  li { border-bottom: 1px solid var(--line); padding-block: 18px; display: grid; grid-template-columns: 48px 1fr; gap: 12px; }
+  .key { font: 500 20px/1.2 var(--mono); color: var(--accent); }
+  a { color: var(--fg); font-weight: 600; text-decoration-color: var(--line); text-underline-offset: 4px; }
+  a:hover, a:focus-visible { text-decoration-color: var(--accent); }
+  p { margin: 4px 0 0; color: var(--muted); max-width: 65ch; }
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <div class="eyebrow">App Blueprint · Round 1 · Theme, canvas shape, content</div>
+    <h1>Four ways to draw Larkspur</h1>
+    <p>Each variant reads the same mock product (6 domains, 20 modules, 122 features) and must do the same job, so you can compare the shape and identity directly.</p>
+  </div>
+  <ol>
+    <li><span class="key">A</span><div><a href="a-cyanotype/index.html">Cyanotype</a><p>An architect's floor plan. Domains are zones, modules are rooms and features are fixtures. Drafting line styles show status, lenses switch between drawing sheets, and revision clouds mark AI work that needs review.</p></div></li>
+    <li><span class="key">B</span><div><a href="b-orbit/index.html">Orbit</a><p>A star chart with the product at its core and rings for domains and modules. Features are stars with coronas for their three dimensions. In the dimension lenses, finished work moves inward and unfinished work drifts out.</p></div></li>
+    <li><span class="key">C</span><div><a href="c-atlas/index.html">Atlas</a><p>A practical left-to-right tree of cards on an infinite canvas. Detail grows as you zoom, each card has a 12-cell facet barcode, and there is a minimap and a review queue.</p></div></li>
+    <li><span class="key">D</span><div><a href="d-periodic/index.html">Periodic</a><p>A periodic table of features. Modules are columns, domains are blocks, and each feature is an element tile. The same tiles rearrange by module, by status or by release.</p></div></li>
+  </ol>
+</main>
+</body>
+</html>
