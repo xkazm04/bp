@@ -1,0 +1,80 @@
+/* Kit demo only: the plain "list map" and timeline that exercise the Orbit kit. Variants replace these. */
+.kd-scroll { position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain; padding: 22px var(--ok-gut) 48px; }
+.ok-has-insp .kd-scroll { padding-right: calc(var(--ok-insp-w) + 28px); }
+.kd-plate { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 18px; font-size: 12.5px; color: var(--ok-ink-3); }
+.kd-plate b { font: 500 10.5px var(--ok-f-label); letter-spacing: 0.18em; text-transform: uppercase; color: var(--ok-ink-2); }
+
+.kd-area + .kd-area { margin-top: 30px; }
+.kd-area__head { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; }
+.kd-area__name { border: 0; background: none; padding: 0; cursor: pointer; color: var(--ok-ink); font: 500 12.5px var(--ok-f-label); letter-spacing: 0.26em; text-transform: uppercase; white-space: nowrap; }
+.kd-area__name:hover { text-decoration: underline; text-underline-offset: 4px; text-decoration-color: var(--ok-rule); }
+.kd-area__rule { flex: 1; height: 7px; min-width: 20px; border-bottom: 1px solid var(--ok-rule); background: repeating-linear-gradient(90deg, var(--ok-rule) 0 1px, transparent 1px 14px) bottom / 100% 5px no-repeat; }
+.kd-area__meta { display: flex; align-items: center; gap: 10px; font: 400 11.5px var(--ok-f-mono); color: var(--ok-ink-3); white-space: nowrap; }
+
+.kd-doms { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr)); gap: 12px; align-items: start; }
+.kd-dom { border: 1px solid var(--ok-rule); border-radius: 10px; background: var(--ok-paper-hi); min-width: 0; }
+.kd-dom.is-sel { border-color: var(--ok-ink); box-shadow: 0 0 0 1px var(--ok-ink); }
+.kd-dom__head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; padding: 12px 14px 10px; border: 0; border-bottom: 1px solid var(--ok-rule-2); border-radius: 10px 10px 0 0; background: transparent; cursor: pointer; text-align: left; color: var(--ok-ink); }
+.kd-dom__head:hover { background: var(--ok-band); }
+.kd-dom__code { font: 500 11px var(--ok-f-mono); color: var(--ok-ink-3); letter-spacing: 0.06em; }
+.kd-dom__name { font: 500 15.5px var(--ok-f-label); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kd-dom__end { display: inline-flex; align-items: center; gap: 10px; font: 400 11.5px var(--ok-f-mono); color: var(--ok-ink-3); }
+.kd-mod { padding: 10px 14px 12px; }
+.kd-mod + .kd-mod { border-top: 1px dashed var(--ok-rule-2); }
+.kd-mod.is-sel { background: var(--ok-band-hi); }
+.kd-mod__head { display: flex; align-items: center; gap: 8px; width: 100%; margin: 0 0 8px; padding: 2px 0; border: 0; background: none; cursor: pointer; text-align: left; color: var(--ok-ink-2); }
+.kd-mod__head:hover .kd-mod__name { color: var(--ok-ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--ok-rule); }
+.kd-mod__name { font: 500 10.5px var(--ok-f-label); letter-spacing: 0.15em; text-transform: uppercase; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kd-mod__end { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; font: 400 11px var(--ok-f-mono); color: var(--ok-ink-3); }
+.kd-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+
+/* No transition on the chips: a fade on hundreds of elements gives each one its own compositor layer for every
+   frame of the fade, which doubles the cost of a filter change. Fade a few elements, or none. */
+.kd-chip { --chip-fill: transparent; --chip-edge: var(--ok-rule); position: relative; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 27px; padding: 0 8px 0 6px; border: 1px solid var(--chip-edge); border-radius: 999px; background: var(--chip-fill); color: var(--ok-ink); cursor: pointer; font: 400 12.5px var(--ok-f-body); }
+.kd-chip__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kd-chip[data-band="good"] { --chip-fill: var(--ok-good-soft); --chip-edge: var(--ok-good); }
+.kd-chip[data-band="fair"] { --chip-fill: var(--ok-fair-soft); --chip-edge: var(--ok-fair); }
+.kd-chip[data-band="poor"] { --chip-fill: var(--ok-poor-soft); --chip-edge: var(--ok-poor); }
+.kd-chip[data-band="critical"] { --chip-fill: var(--ok-critical-soft); --chip-edge: var(--ok-critical); }
+.kd-chip[data-band="na"] { --chip-fill: transparent; --chip-edge: var(--ok-ink-4); border-style: dashed; color: var(--ok-ink-2); }
+.kd-chip:hover { box-shadow: 0 2px 10px -4px var(--ok-shadow); }
+.kd-chip.is-dim { opacity: 0.16; }
+.kd-chip.is-hit { box-shadow: 0 0 0 2px var(--ok-paper-hi), 0 0 0 3.5px var(--ok-ink); }
+.kd-chip.is-sel { outline: 2px solid var(--ok-ink); outline-offset: 2px; }
+.kd-chip.is-flash { animation: kd-flash 1.2s ease-out 1; }
+@keyframes kd-flash { 0%, 40% { box-shadow: 0 0 0 4px var(--ok-band-hi), 0 0 0 6px var(--ok-ink); } 100% { box-shadow: 0 0 0 0 transparent; } }
+.kd-chip__gate { margin-left: -2px; }
+
+/* timeline */
+.kd-tl { position: relative; max-width: 1180px; }
+.kd-rel { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 0 22px; }
+.kd-rel__rail { position: relative; padding: 16px 18px 0 0; text-align: right; border-right: 1px solid var(--ok-rule); }
+.kd-rel__rail::after { content: ""; position: absolute; right: -6px; top: 22px; width: 9px; height: 9px; border-radius: 50%; background: var(--ok-paper); border: 1.5px solid var(--ok-ink-2); }
+.kd-rel.is-shipped .kd-rel__rail::after { background: var(--ok-ink); border-color: var(--ok-ink); }
+.kd-rel.is-next .kd-rel__rail::after { background: var(--ok-paper); border: 2px solid var(--ok-ink); box-shadow: 0 0 0 4px var(--ok-band-hi); }
+.kd-rel.is-future .kd-rel__rail::after { border-style: dashed; }
+.kd-rel__date { display: block; font: 400 12px var(--ok-f-mono); color: var(--ok-ink-2); }
+.kd-rel__when { display: block; font-size: 12px; color: var(--ok-ink-3); margin-top: 2px; }
+.kd-rel__insp { margin-top: 8px; }
+.kd-rel__card { margin: 10px 0 10px; padding: 14px 16px 16px; border: 1px solid var(--ok-rule); border-radius: 10px; background: var(--ok-paper-hi); min-width: 0; }
+.kd-rel.is-sel .kd-rel__card { border-color: var(--ok-ink); box-shadow: 0 0 0 1px var(--ok-ink); }
+.kd-rel.is-future .kd-rel__card { background: transparent; border-style: dashed; }
+.kd-rel__card .ok-rel__dom { display: inline-block; vertical-align: top; width: min(100%, 320px); margin-right: 18px; }
+.kd-rel__card .ok-ritem.is-dim { opacity: 0.2; }
+.kd-today { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 0 22px; }
+.kd-today span { padding: 6px 18px 6px 0; text-align: right; border-right: 1px solid var(--ok-rule); font: 500 10px var(--ok-f-label); letter-spacing: 0.18em; text-transform: uppercase; color: var(--ok-ink); }
+.kd-today i { align-self: center; height: 1px; background: var(--ok-ink); opacity: 0.5; }
+
+@media (max-width: 760px) {
+  .ok-has-insp .kd-scroll { padding-right: var(--ok-gut); padding-bottom: 60vh; }
+  .kd-scroll { padding-top: 16px; }
+  .kd-doms { grid-template-columns: minmax(0, 1fr); }
+  .kd-rel, .kd-today { grid-template-columns: minmax(0, 1fr); }
+  .kd-rel__rail { text-align: left; border-right: 0; border-left: 1px solid var(--ok-rule); padding: 12px 0 0 16px; }
+  .kd-rel__rail::after { right: auto; left: -5px; top: 17px; }
+  .kd-rel__card { margin-left: 16px; }
+  .kd-rel__card .ok-rel__dom { display: block; width: auto; margin-right: 0; }
+  .kd-today span { text-align: left; border-right: 0; border-left: 1px solid var(--ok-rule); padding-left: 16px; }
+  .kd-area__meta .kd-hide-phone { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .kd-chip.is-flash { animation: none; } }

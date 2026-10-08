@@ -1,0 +1,1906 @@
+[
+ {
+  "name": "1920-light",
+  "viewport": [
+   1920,
+   1080
+  ],
+  "steps": [
+   {
+    "wait": 500
+   },
+   {
+    "shot": "map"
+   },
+   {
+    "click": ".kd-chip[data-f=\"express.express-pay-buttons\"]"
+   },
+   {
+    "wait": 250
+   },
+   {
+    "shot": "peek"
+   },
+   {
+    "click": ".ok-lens[data-ok-setlens=sec]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "peek-sec"
+   },
+   {
+    "eval": "document.querySelector('[data-node=\"domain:payments\"]').click(), 1"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "domain"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "click": ".ok-lens[data-ok-setlens=overall]"
+   },
+   {
+    "click": "[data-ok-ini-toggle]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "initiatives"
+   },
+   {
+    "click": "[data-ok-ini=\"perf-scan-2026-10\"]"
+   },
+   {
+    "click": ".ok-filters [data-ok-gates=triage]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "filtered"
+   },
+   {
+    "eval": "OK.shell.shownCount()"
+   },
+   {
+    "eval": "OK.shell.clearFilters(), 1"
+   },
+   {
+    "click": "[data-ok-legend]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "legend"
+   },
+   {
+    "click": "[data-ok-legend]"
+   },
+   {
+    "key": "/"
+   },
+   {
+    "eval": "(function(){const q=document.getElementById('ok-search'); q.value='checkout'; q.dispatchEvent(new Event('input')); return 1})()"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "search"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "eval": "OK.shell.openFeature('express.express-pay-buttons','overview'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-overview"
+   },
+   {
+    "eval": "OK.shell.openFeature('merchandising.collection-sorting-rules','work'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-work"
+   },
+   {
+    "eval": "OK.shell.openFeature('loyalty.rewards-catalog','work'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-work-approval"
+   },
+   {
+    "click": "[data-ok-changes]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "page-work-note"
+   },
+   {
+    "click": "[data-ok-changes-cancel]"
+   },
+   {
+    "click": "[data-ok-triage$=\":backlog\"]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "page-work-decided"
+   },
+   {
+    "eval": "OK.shell.openFeature('express.express-pay-buttons','ledger'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-ledger"
+   },
+   {
+    "click": "[data-ok-lf-actor=system]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "page-ledger-system"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "eval": "OK.shell.setView('timeline'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "timeline"
+   },
+   {
+    "click": "[data-rel-open=\"1.12\"]"
+   },
+   {
+    "wait": 250
+   },
+   {
+    "shot": "release"
+   }
+  ]
+ },
+ {
+  "name": "1920-dark",
+  "viewport": [
+   1920,
+   1080
+  ],
+  "storage": {
+   "orbit-kit.theme": "dark"
+  },
+  "steps": [
+   {
+    "wait": 500
+   },
+   {
+    "shot": "map"
+   },
+   {
+    "click": ".kd-chip[data-f=\"express.express-pay-buttons\"]"
+   },
+   {
+    "wait": 250
+   },
+   {
+    "shot": "peek"
+   },
+   {
+    "click": ".ok-lens[data-ok-setlens=sec]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "peek-sec"
+   },
+   {
+    "eval": "document.querySelector('[data-node=\"domain:payments\"]').click(), 1"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "domain"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "click": ".ok-lens[data-ok-setlens=overall]"
+   },
+   {
+    "click": "[data-ok-ini-toggle]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "initiatives"
+   },
+   {
+    "click": "[data-ok-ini=\"perf-scan-2026-10\"]"
+   },
+   {
+    "click": ".ok-filters [data-ok-gates=triage]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "filtered"
+   },
+   {
+    "eval": "OK.shell.shownCount()"
+   },
+   {
+    "eval": "OK.shell.clearFilters(), 1"
+   },
+   {
+    "click": "[data-ok-legend]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "legend"
+   },
+   {
+    "click": "[data-ok-legend]"
+   },
+   {
+    "key": "/"
+   },
+   {
+    "eval": "(function(){const q=document.getElementById('ok-search'); q.value='checkout'; q.dispatchEvent(new Event('input')); return 1})()"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "search"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "eval": "OK.shell.openFeature('express.express-pay-buttons','overview'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-overview"
+   },
+   {
+    "eval": "OK.shell.openFeature('merchandising.collection-sorting-rules','work'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-work"
+   },
+   {
+    "eval": "OK.shell.openFeature('loyalty.rewards-catalog','work'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-work-approval"
+   },
+   {
+    "click": "[data-ok-changes]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "page-work-note"
+   },
+   {
+    "click": "[data-ok-changes-cancel]"
+   },
+   {
+    "click": "[data-ok-triage$=\":backlog\"]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "page-work-decided"
+   },
+   {
+    "eval": "OK.shell.openFeature('express.express-pay-buttons','ledger'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-ledger"
+   },
+   {
+    "click": "[data-ok-lf-actor=system]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "page-ledger-system"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "eval": "OK.shell.setView('timeline'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "timeline"
+   },
+   {
+    "click": "[data-rel-open=\"1.12\"]"
+   },
+   {
+    "wait": 250
+   },
+   {
+    "shot": "release"
+   }
+  ]
+ },
+ {
+  "name": "1440-light",
+  "viewport": [
+   1440,
+   900
+  ],
+  "steps": [
+   {
+    "wait": 500
+   },
+   {
+    "shot": "map"
+   },
+   {
+    "click": ".kd-chip[data-f=\"express.express-pay-buttons\"]"
+   },
+   {
+    "wait": 250
+   },
+   {
+    "shot": "peek"
+   },
+   {
+    "click": ".ok-lens[data-ok-setlens=sec]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "peek-sec"
+   },
+   {
+    "eval": "document.querySelector('[data-node=\"domain:payments\"]').click(), 1"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "domain"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "click": ".ok-lens[data-ok-setlens=overall]"
+   },
+   {
+    "click": "[data-ok-ini-toggle]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "initiatives"
+   },
+   {
+    "click": "[data-ok-ini=\"perf-scan-2026-10\"]"
+   },
+   {
+    "click": ".ok-filters [data-ok-gates=triage]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "filtered"
+   },
+   {
+    "eval": "OK.shell.shownCount()"
+   },
+   {
+    "eval": "OK.shell.clearFilters(), 1"
+   },
+   {
+    "click": "[data-ok-legend]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "legend"
+   },
+   {
+    "click": "[data-ok-legend]"
+   },
+   {
+    "key": "/"
+   },
+   {
+    "eval": "(function(){const q=document.getElementById('ok-search'); q.value='checkout'; q.dispatchEvent(new Event('input')); return 1})()"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "search"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "eval": "OK.shell.openFeature('express.express-pay-buttons','overview'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-overview"
+   },
+   {
+    "eval": "OK.shell.openFeature('merchandising.collection-sorting-rules','work'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-work"
+   },
+   {
+    "eval": "OK.shell.openFeature('loyalty.rewards-catalog','work'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-work-approval"
+   },
+   {
+    "click": "[data-ok-changes]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "page-work-note"
+   },
+   {
+    "click": "[data-ok-changes-cancel]"
+   },
+   {
+    "click": "[data-ok-triage$=\":backlog\"]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "page-work-decided"
+   },
+   {
+    "eval": "OK.shell.openFeature('express.express-pay-buttons','ledger'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-ledger"
+   },
+   {
+    "click": "[data-ok-lf-actor=system]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "page-ledger-system"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "eval": "OK.shell.setView('timeline'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "timeline"
+   },
+   {
+    "click": "[data-rel-open=\"1.12\"]"
+   },
+   {
+    "wait": 250
+   },
+   {
+    "shot": "release"
+   }
+  ]
+ },
+ {
+  "name": "1440-dark",
+  "viewport": [
+   1440,
+   900
+  ],
+  "storage": {
+   "orbit-kit.theme": "dark"
+  },
+  "steps": [
+   {
+    "wait": 500
+   },
+   {
+    "shot": "map"
+   },
+   {
+    "click": ".kd-chip[data-f=\"express.express-pay-buttons\"]"
+   },
+   {
+    "wait": 250
+   },
+   {
+    "shot": "peek"
+   },
+   {
+    "click": ".ok-lens[data-ok-setlens=sec]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "peek-sec"
+   },
+   {
+    "eval": "document.querySelector('[data-node=\"domain:payments\"]').click(), 1"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "domain"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "click": ".ok-lens[data-ok-setlens=overall]"
+   },
+   {
+    "click": "[data-ok-ini-toggle]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "initiatives"
+   },
+   {
+    "click": "[data-ok-ini=\"perf-scan-2026-10\"]"
+   },
+   {
+    "click": ".ok-filters [data-ok-gates=triage]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "filtered"
+   },
+   {
+    "eval": "OK.shell.shownCount()"
+   },
+   {
+    "eval": "OK.shell.clearFilters(), 1"
+   },
+   {
+    "click": "[data-ok-legend]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "legend"
+   },
+   {
+    "click": "[data-ok-legend]"
+   },
+   {
+    "key": "/"
+   },
+   {
+    "eval": "(function(){const q=document.getElementById('ok-search'); q.value='checkout'; q.dispatchEvent(new Event('input')); return 1})()"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "search"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "eval": "OK.shell.openFeature('express.express-pay-buttons','overview'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-overview"
+   },
+   {
+    "eval": "OK.shell.openFeature('merchandising.collection-sorting-rules','work'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-work"
+   },
+   {
+    "eval": "OK.shell.openFeature('loyalty.rewards-catalog','work'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-work-approval"
+   },
+   {
+    "click": "[data-ok-changes]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "page-work-note"
+   },
+   {
+    "click": "[data-ok-changes-cancel]"
+   },
+   {
+    "click": "[data-ok-triage$=\":backlog\"]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "page-work-decided"
+   },
+   {
+    "eval": "OK.shell.openFeature('express.express-pay-buttons','ledger'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-ledger"
+   },
+   {
+    "click": "[data-ok-lf-actor=system]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "page-ledger-system"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "eval": "OK.shell.setView('timeline'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "timeline"
+   },
+   {
+    "click": "[data-rel-open=\"1.12\"]"
+   },
+   {
+    "wait": 250
+   },
+   {
+    "shot": "release"
+   }
+  ]
+ },
+ {
+  "name": "1280-light",
+  "viewport": [
+   1280,
+   720
+  ],
+  "steps": [
+   {
+    "wait": 500
+   },
+   {
+    "shot": "map"
+   },
+   {
+    "click": ".kd-chip[data-f=\"express.express-pay-buttons\"]"
+   },
+   {
+    "wait": 250
+   },
+   {
+    "shot": "peek"
+   },
+   {
+    "click": ".ok-lens[data-ok-setlens=sec]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "peek-sec"
+   },
+   {
+    "eval": "document.querySelector('[data-node=\"domain:payments\"]').click(), 1"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "domain"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "click": ".ok-lens[data-ok-setlens=overall]"
+   },
+   {
+    "click": "[data-ok-ini-toggle]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "initiatives"
+   },
+   {
+    "click": "[data-ok-ini=\"perf-scan-2026-10\"]"
+   },
+   {
+    "click": ".ok-filters [data-ok-gates=triage]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "filtered"
+   },
+   {
+    "eval": "OK.shell.shownCount()"
+   },
+   {
+    "eval": "OK.shell.clearFilters(), 1"
+   },
+   {
+    "click": "[data-ok-legend]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "legend"
+   },
+   {
+    "click": "[data-ok-legend]"
+   },
+   {
+    "key": "/"
+   },
+   {
+    "eval": "(function(){const q=document.getElementById('ok-search'); q.value='checkout'; q.dispatchEvent(new Event('input')); return 1})()"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "search"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "eval": "OK.shell.openFeature('express.express-pay-buttons','overview'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-overview"
+   },
+   {
+    "eval": "OK.shell.openFeature('merchandising.collection-sorting-rules','work'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-work"
+   },
+   {
+    "eval": "OK.shell.openFeature('loyalty.rewards-catalog','work'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-work-approval"
+   },
+   {
+    "click": "[data-ok-changes]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "page-work-note"
+   },
+   {
+    "click": "[data-ok-changes-cancel]"
+   },
+   {
+    "click": "[data-ok-triage$=\":backlog\"]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "page-work-decided"
+   },
+   {
+    "eval": "OK.shell.openFeature('express.express-pay-buttons','ledger'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-ledger"
+   },
+   {
+    "click": "[data-ok-lf-actor=system]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "page-ledger-system"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "eval": "OK.shell.setView('timeline'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "timeline"
+   },
+   {
+    "click": "[data-rel-open=\"1.12\"]"
+   },
+   {
+    "wait": 250
+   },
+   {
+    "shot": "release"
+   }
+  ]
+ },
+ {
+  "name": "1280-dark",
+  "viewport": [
+   1280,
+   720
+  ],
+  "storage": {
+   "orbit-kit.theme": "dark"
+  },
+  "steps": [
+   {
+    "wait": 500
+   },
+   {
+    "shot": "map"
+   },
+   {
+    "click": ".kd-chip[data-f=\"express.express-pay-buttons\"]"
+   },
+   {
+    "wait": 250
+   },
+   {
+    "shot": "peek"
+   },
+   {
+    "click": ".ok-lens[data-ok-setlens=sec]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "peek-sec"
+   },
+   {
+    "eval": "document.querySelector('[data-node=\"domain:payments\"]').click(), 1"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "domain"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "click": ".ok-lens[data-ok-setlens=overall]"
+   },
+   {
+    "click": "[data-ok-ini-toggle]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "initiatives"
+   },
+   {
+    "click": "[data-ok-ini=\"perf-scan-2026-10\"]"
+   },
+   {
+    "click": ".ok-filters [data-ok-gates=triage]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "filtered"
+   },
+   {
+    "eval": "OK.shell.shownCount()"
+   },
+   {
+    "eval": "OK.shell.clearFilters(), 1"
+   },
+   {
+    "click": "[data-ok-legend]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "legend"
+   },
+   {
+    "click": "[data-ok-legend]"
+   },
+   {
+    "key": "/"
+   },
+   {
+    "eval": "(function(){const q=document.getElementById('ok-search'); q.value='checkout'; q.dispatchEvent(new Event('input')); return 1})()"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "search"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "eval": "OK.shell.openFeature('express.express-pay-buttons','overview'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-overview"
+   },
+   {
+    "eval": "OK.shell.openFeature('merchandising.collection-sorting-rules','work'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-work"
+   },
+   {
+    "eval": "OK.shell.openFeature('loyalty.rewards-catalog','work'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-work-approval"
+   },
+   {
+    "click": "[data-ok-changes]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "page-work-note"
+   },
+   {
+    "click": "[data-ok-changes-cancel]"
+   },
+   {
+    "click": "[data-ok-triage$=\":backlog\"]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "page-work-decided"
+   },
+   {
+    "eval": "OK.shell.openFeature('express.express-pay-buttons','ledger'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-ledger"
+   },
+   {
+    "click": "[data-ok-lf-actor=system]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "page-ledger-system"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "eval": "OK.shell.setView('timeline'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "timeline"
+   },
+   {
+    "click": "[data-rel-open=\"1.12\"]"
+   },
+   {
+    "wait": 250
+   },
+   {
+    "shot": "release"
+   }
+  ]
+ },
+ {
+  "name": "820-light",
+  "viewport": [
+   820,
+   1000
+  ],
+  "steps": [
+   {
+    "wait": 500
+   },
+   {
+    "shot": "map"
+   },
+   {
+    "click": ".kd-chip[data-f=\"express.express-pay-buttons\"]"
+   },
+   {
+    "wait": 250
+   },
+   {
+    "shot": "peek"
+   },
+   {
+    "click": ".ok-lens[data-ok-setlens=sec]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "peek-sec"
+   },
+   {
+    "eval": "document.querySelector('[data-node=\"domain:payments\"]').click(), 1"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "domain"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "click": ".ok-lens[data-ok-setlens=overall]"
+   },
+   {
+    "click": "[data-ok-ini-toggle]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "initiatives"
+   },
+   {
+    "click": "[data-ok-ini=\"perf-scan-2026-10\"]"
+   },
+   {
+    "click": ".ok-filters [data-ok-gates=triage]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "filtered"
+   },
+   {
+    "eval": "OK.shell.shownCount()"
+   },
+   {
+    "eval": "OK.shell.clearFilters(), 1"
+   },
+   {
+    "click": "[data-ok-legend]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "legend"
+   },
+   {
+    "click": "[data-ok-legend]"
+   },
+   {
+    "key": "/"
+   },
+   {
+    "eval": "(function(){const q=document.getElementById('ok-search'); q.value='checkout'; q.dispatchEvent(new Event('input')); return 1})()"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "search"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "eval": "OK.shell.openFeature('express.express-pay-buttons','overview'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-overview"
+   },
+   {
+    "eval": "OK.shell.openFeature('merchandising.collection-sorting-rules','work'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-work"
+   },
+   {
+    "eval": "OK.shell.openFeature('loyalty.rewards-catalog','work'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-work-approval"
+   },
+   {
+    "click": "[data-ok-changes]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "page-work-note"
+   },
+   {
+    "click": "[data-ok-changes-cancel]"
+   },
+   {
+    "click": "[data-ok-triage$=\":backlog\"]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "page-work-decided"
+   },
+   {
+    "eval": "OK.shell.openFeature('express.express-pay-buttons','ledger'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-ledger"
+   },
+   {
+    "click": "[data-ok-lf-actor=system]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "page-ledger-system"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "eval": "OK.shell.setView('timeline'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "timeline"
+   },
+   {
+    "click": "[data-rel-open=\"1.12\"]"
+   },
+   {
+    "wait": 250
+   },
+   {
+    "shot": "release"
+   }
+  ]
+ },
+ {
+  "name": "820-dark",
+  "viewport": [
+   820,
+   1000
+  ],
+  "storage": {
+   "orbit-kit.theme": "dark"
+  },
+  "steps": [
+   {
+    "wait": 500
+   },
+   {
+    "shot": "map"
+   },
+   {
+    "click": ".kd-chip[data-f=\"express.express-pay-buttons\"]"
+   },
+   {
+    "wait": 250
+   },
+   {
+    "shot": "peek"
+   },
+   {
+    "click": ".ok-lens[data-ok-setlens=sec]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "peek-sec"
+   },
+   {
+    "eval": "document.querySelector('[data-node=\"domain:payments\"]').click(), 1"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "domain"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "click": ".ok-lens[data-ok-setlens=overall]"
+   },
+   {
+    "click": "[data-ok-ini-toggle]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "initiatives"
+   },
+   {
+    "click": "[data-ok-ini=\"perf-scan-2026-10\"]"
+   },
+   {
+    "click": ".ok-filters [data-ok-gates=triage]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "filtered"
+   },
+   {
+    "eval": "OK.shell.shownCount()"
+   },
+   {
+    "eval": "OK.shell.clearFilters(), 1"
+   },
+   {
+    "click": "[data-ok-legend]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "legend"
+   },
+   {
+    "click": "[data-ok-legend]"
+   },
+   {
+    "key": "/"
+   },
+   {
+    "eval": "(function(){const q=document.getElementById('ok-search'); q.value='checkout'; q.dispatchEvent(new Event('input')); return 1})()"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "search"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "eval": "OK.shell.openFeature('express.express-pay-buttons','overview'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-overview"
+   },
+   {
+    "eval": "OK.shell.openFeature('merchandising.collection-sorting-rules','work'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-work"
+   },
+   {
+    "eval": "OK.shell.openFeature('loyalty.rewards-catalog','work'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-work-approval"
+   },
+   {
+    "click": "[data-ok-changes]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "page-work-note"
+   },
+   {
+    "click": "[data-ok-changes-cancel]"
+   },
+   {
+    "click": "[data-ok-triage$=\":backlog\"]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "page-work-decided"
+   },
+   {
+    "eval": "OK.shell.openFeature('express.express-pay-buttons','ledger'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-ledger"
+   },
+   {
+    "click": "[data-ok-lf-actor=system]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "page-ledger-system"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "eval": "OK.shell.setView('timeline'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "timeline"
+   },
+   {
+    "click": "[data-rel-open=\"1.12\"]"
+   },
+   {
+    "wait": 250
+   },
+   {
+    "shot": "release"
+   }
+  ]
+ },
+ {
+  "name": "390-light",
+  "viewport": [
+   390,
+   844
+  ],
+  "mobile": true,
+  "steps": [
+   {
+    "wait": 500
+   },
+   {
+    "shot": "map"
+   },
+   {
+    "click": "[data-ok-filters-open]"
+   },
+   {
+    "wait": 250
+   },
+   {
+    "shot": "filters"
+   },
+   {
+    "click": ".ok-sheet [data-ok-ini=\"perf-scan-2026-10\"]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "filters-initiative"
+   },
+   {
+    "click": ".ok-sheet__foot [data-ok-close=sheet]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "map-filtered"
+   },
+   {
+    "eval": "OK.shell.clearFilters(), 1"
+   },
+   {
+    "click": "[data-ok-menu]"
+   },
+   {
+    "wait": 250
+   },
+   {
+    "shot": "menu"
+   },
+   {
+    "click": ".ok-sheet [data-ok-close=sheet]"
+   },
+   {
+    "eval": "document.querySelector('.kd-chip[data-f=\"express.express-pay-buttons\"]').click(), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "peek"
+   },
+   {
+    "click": ".ok-lens[data-ok-setlens=cost]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "peek-cost"
+   },
+   {
+    "eval": "OK.shell.openFeature('express.express-pay-buttons','overview'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-overview"
+   },
+   {
+    "eval": "OK.shell.openFeature('merchandising.collection-sorting-rules','work'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-work"
+   },
+   {
+    "eval": "OK.shell.openFeature('express.express-pay-buttons','ledger'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-ledger"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "click": "[data-ok-search-open]"
+   },
+   {
+    "eval": "(function(){const q=document.getElementById('ok-search'); q.value='pay'; q.dispatchEvent(new Event('input')); return 1})()"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "search"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "eval": "OK.shell.setView('timeline'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "timeline"
+   }
+  ]
+ },
+ {
+  "name": "390-dark",
+  "viewport": [
+   390,
+   844
+  ],
+  "mobile": true,
+  "storage": {
+   "orbit-kit.theme": "dark"
+  },
+  "steps": [
+   {
+    "wait": 500
+   },
+   {
+    "shot": "map"
+   },
+   {
+    "click": "[data-ok-filters-open]"
+   },
+   {
+    "wait": 250
+   },
+   {
+    "shot": "filters"
+   },
+   {
+    "click": ".ok-sheet [data-ok-ini=\"perf-scan-2026-10\"]"
+   },
+   {
+    "wait": 150
+   },
+   {
+    "shot": "filters-initiative"
+   },
+   {
+    "click": ".ok-sheet__foot [data-ok-close=sheet]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "map-filtered"
+   },
+   {
+    "eval": "OK.shell.clearFilters(), 1"
+   },
+   {
+    "click": "[data-ok-menu]"
+   },
+   {
+    "wait": 250
+   },
+   {
+    "shot": "menu"
+   },
+   {
+    "click": ".ok-sheet [data-ok-close=sheet]"
+   },
+   {
+    "eval": "document.querySelector('.kd-chip[data-f=\"express.express-pay-buttons\"]').click(), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "peek"
+   },
+   {
+    "click": ".ok-lens[data-ok-setlens=cost]"
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "peek-cost"
+   },
+   {
+    "eval": "OK.shell.openFeature('express.express-pay-buttons','overview'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-overview"
+   },
+   {
+    "eval": "OK.shell.openFeature('merchandising.collection-sorting-rules','work'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-work"
+   },
+   {
+    "eval": "OK.shell.openFeature('express.express-pay-buttons','ledger'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "page-ledger"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "click": "[data-ok-search-open]"
+   },
+   {
+    "eval": "(function(){const q=document.getElementById('ok-search'); q.value='pay'; q.dispatchEvent(new Event('input')); return 1})()"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "search"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "key": "Escape"
+   },
+   {
+    "eval": "OK.shell.setView('timeline'), 1"
+   },
+   {
+    "wait": 300
+   },
+   {
+    "shot": "timeline"
+   }
+  ]
+ },
+ {
+  "name": "styleguide-1440",
+  "viewport": [
+   1440,
+   900
+  ],
+  "steps": [
+   {
+    "eval": "location.hash='#styleguide', 1"
+   },
+   {
+    "wait": 500
+   },
+   {
+    "shot": "top"
+   },
+   {
+    "wheel": [
+     720,
+     500,
+     1600
+    ]
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "middle"
+   }
+  ]
+ },
+ {
+  "name": "styleguide-390",
+  "viewport": [
+   390,
+   844
+  ],
+  "mobile": true,
+  "steps": [
+   {
+    "eval": "location.hash='#styleguide', 1"
+   },
+   {
+    "wait": 500
+   },
+   {
+    "shot": "top"
+   },
+   {
+    "wheel": [
+     195,
+     500,
+     1600
+    ]
+   },
+   {
+    "wait": 200
+   },
+   {
+    "shot": "middle"
+   }
+  ]
+ }
+]
