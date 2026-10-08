@@ -114,11 +114,12 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .brand-kick { font: 500 10px/1 var(--f-mono); letter-spacing: .16em; color: var(--ink-3); }
 .brand-name { font: 700 19px/1.05 var(--f-letter); letter-spacing: .1em; text-transform: uppercase; margin-top: 3px; }
 .brand-name b { font: 500 11px var(--f-mono); letter-spacing: .04em; color: var(--ink-2); margin-left: 4px; }
-.sheets { display: flex; align-items: stretch; gap: 0; min-width: 0; border: 1px solid var(--ink); }
+.sheets { display: flex; align-items: stretch; gap: 0; flex: none; border: 1px solid var(--ink); }
 .sheet-tab { display: flex; align-items: center; gap: 7px; padding: 5px 11px 5px 9px; border-right: 1px solid var(--ink); color: var(--ink); white-space: nowrap; transition: background-color .15s, color .15s; }
 .sheet-tab:last-child { border-right: 0; }
 .sheet-tab .no { font: 600 11.5px var(--f-mono); letter-spacing: .02em; }
-.sheet-tab .nm { font: 600 13px var(--f-letter); letter-spacing: .12em; text-transform: uppercase; }
+.sheet-tab .nm, .sheet-tab .sh { font: 600 13px var(--f-letter); letter-spacing: .12em; text-transform: uppercase; }
+.sheet-tab .sh { display: none; }
 .sheet-tab kbd { font: 500 9.5px var(--f-mono); color: var(--ink-3); border: 1px solid var(--ink-4); padding: 0 3px; line-height: 13px; }
 .sheet-tab:hover { background: var(--tint-2); }
 .sheet-tab[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
@@ -126,7 +127,7 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .tools { margin-left: auto; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .search { position: relative; display: flex; align-items: center; height: 32px; border: 1px solid var(--ink); background: var(--paper); min-width: 0; }
 .search svg { width: 15px; height: 15px; margin: 0 6px 0 8px; flex: none; }
-.search input { border: 0; background: none; outline: none; width: 190px; min-width: 0; height: 30px; font: 500 13px var(--f-mono); color: var(--ink); }
+.search input { border: 0; background: none; outline: none; width: 190px; min-width: 0; flex: 1 1 auto; height: 30px; font: 500 13px var(--f-mono); color: var(--ink); }
 .search input::placeholder { color: var(--ink-3); }
 .search input::-webkit-search-cancel-button { display: none; }
 .search:focus-within { outline: 2px solid var(--sel); outline-offset: 1px; }
@@ -148,7 +149,7 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 #viewport { position: absolute; inset: 0; overflow: hidden; touch-action: none; cursor: grab; background-color: var(--paper); }
 #viewport.panning { cursor: grabbing; }
 #viewport:focus-visible { outline-offset: -3px; }
-#plan { position: absolute; inset: 0; width: 100%; height: 100%; display: block; user-select: none; -webkit-user-select: none; }
+#plan { --L: 1; --Lp: 1; position: absolute; inset: 0; width: 100%; height: 100%; display: block; user-select: none; -webkit-user-select: none; }
 .paper-minor { fill: url(#p-grid-minor); pointer-events: none; }
 /* lettering steps aside while the scale is changing and is re-lettered when the zoom stops */
 #plan.zooming #world text { display: none; }
@@ -158,7 +159,8 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 #world { transition: opacity .16s ease; }
 #plan.flip #world { opacity: .12; }
 
-.zoombox { position: absolute; left: 14px; bottom: 14px; display: flex; align-items: stretch; border: 1px solid var(--ink); background: var(--paper); z-index: 3; }
+.zoombox { position: absolute; right: 14px; bottom: 14px; display: flex; align-items: stretch; border: 1px solid var(--ink); background: var(--paper); z-index: 3; transition: right .22s ease; }
+#app.insp-open .zoombox.desk { right: calc(var(--insp-w) - var(--strip-w) + 14px); }
 .zoombox button { width: 34px; height: 32px; display: grid; place-items: center; border-right: 1px solid var(--ink); color: var(--ink); }
 .zoombox button:hover { background: var(--tint-2); }
 .zoombox button svg { width: 15px; height: 15px; }
@@ -183,12 +185,12 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .room-wall { fill: none; stroke: var(--ink); stroke-width: 1.5; }
 .room-wall-in { fill: none; stroke: var(--ink); stroke-width: .6; opacity: .8; }
 .hall-axis { stroke: var(--ink-3); stroke-width: .8; stroke-dasharray: 18 4 3 4; fill: none; }
-.t-hall { font-family: var(--f-letter); font-weight: 500; font-size: 20px; letter-spacing: .2em; fill: var(--ink-2); text-transform: uppercase; }
+.t-hall { font-family: var(--f-letter); font-weight: 500; font-size: calc(20px * var(--L)); letter-spacing: .2em; fill: var(--ink-2); text-transform: uppercase; }
 .dwg-c { fill: var(--paper); stroke: var(--ink); stroke-width: 1.6; }
 .dwg-rule { stroke: var(--ink); fill: none; }
-.t-dwg { font-family: var(--f-letter); font-weight: 700; font-size: 34px; letter-spacing: .1em; fill: var(--ink); }
-.t-dwg-n { font-family: var(--f-letter); font-weight: 700; font-size: 20px; fill: var(--ink); text-anchor: middle; }
-.t-dwg-s { font-family: var(--f-mono); font-weight: 500; font-size: 17px; fill: var(--ink-2); }
+.t-dwg { font-family: var(--f-letter); font-weight: 700; font-size: calc(34px * var(--Lp)); letter-spacing: .1em; fill: var(--ink); }
+.t-dwg-n { font-family: var(--f-letter); font-weight: 700; font-size: calc(20px * var(--Lp)); fill: var(--ink); text-anchor: middle; }
+.t-dwg-s { font-family: var(--f-mono); font-weight: 500; font-size: calc(18px * var(--L)); fill: var(--ink-2); }
 .t-hall-k { font-family: var(--f-mono); font-weight: 600; font-size: 12px; letter-spacing: .08em; fill: var(--ink-3); }
 .floor { fill: var(--clear); stroke: none; pointer-events: all; cursor: pointer; }
 .room:hover .floor { fill: var(--tint-2); }
@@ -198,15 +200,15 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .zone-hdr { cursor: pointer; }
 .hex { fill: var(--paper); stroke: var(--ink); stroke-width: 1.8; }
 .hex-in { fill: none; stroke: var(--ink); stroke-width: .6; }
-.t-hex { font-family: var(--f-letter); font-weight: 700; font-size: 26px; fill: var(--ink); text-anchor: middle; }
-.t-zone { font-family: var(--f-letter); font-weight: 700; font-size: 27px; letter-spacing: .08em; fill: var(--ink); }
-.t-zone-s { font-family: var(--f-mono); font-weight: 500; font-size: 17px; fill: var(--ink-2); }
-.t-zone-x { font-family: var(--f-mono); font-weight: 500; font-size: 12px; fill: var(--ink-3); }
+.t-hex { font-family: var(--f-letter); font-weight: 700; font-size: calc(26px * var(--Lp)); fill: var(--ink); text-anchor: middle; }
+.t-zone { font-family: var(--f-letter); font-weight: 700; font-size: calc(27px * var(--Lp)); letter-spacing: .08em; fill: var(--ink); }
+.t-zone-s { font-family: var(--f-mono); font-weight: 500; font-size: calc(18px * var(--L)); fill: var(--ink-2); }
+.t-zone-x { font-family: var(--f-mono); font-weight: 500; font-size: calc(12px * var(--L)); fill: var(--ink-3); }
 .zbar-o { fill: none; stroke: var(--ink); stroke-width: .9; }
 .rtag { fill: var(--paper); stroke: var(--ink); stroke-width: 1.4; }
-.t-rtag { font-family: var(--f-mono); font-weight: 600; font-size: 13.5px; fill: var(--ink); text-anchor: middle; }
-.t-room { font-family: var(--f-letter); font-weight: 600; font-size: 23px; letter-spacing: .05em; fill: var(--ink); }
-.t-room-s { font-family: var(--f-mono); font-weight: 500; font-size: 17.5px; fill: var(--ink-2); }
+.t-rtag { font-family: var(--f-mono); font-weight: 600; font-size: calc(14.5px * var(--L)); fill: var(--ink); text-anchor: middle; }
+.t-room { font-family: var(--f-letter); font-weight: 600; font-size: calc(23px * var(--Lp)); letter-spacing: .05em; fill: var(--ink); }
+.t-room-s { font-family: var(--f-mono); font-weight: 500; font-size: calc(18px * var(--L)); fill: var(--ink-2); }
 .t-room-s .rv-n { fill: var(--red); font-weight: 600; }
 .room.dimroom .t-room, .room.dimroom .t-room-s, .room.dimroom .rtag, .room.dimroom .t-rtag { opacity: .35; }
 
@@ -215,8 +217,8 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .dim-line { stroke: var(--ink); stroke-width: 1; fill: none; }
 .dim-rest { stroke: var(--ink-3); stroke-width: .7; stroke-dasharray: 3 3; fill: none; }
 .dim-tick { stroke: var(--ink); stroke-width: 1.6; fill: none; }
-.t-dim { font-family: var(--f-letter); font-weight: 600; font-size: 22px; letter-spacing: .07em; fill: var(--ink); }
-.t-dim-r { font-family: var(--f-mono); font-weight: 400; font-size: 13px; fill: var(--ink-3); }
+.t-dim { font-family: var(--f-letter); font-weight: 600; font-size: calc(22px * var(--L)); letter-spacing: .07em; fill: var(--ink); }
+.t-dim-r { font-family: var(--f-mono); font-weight: 400; font-size: calc(13px * var(--L)); fill: var(--ink-3); }
 .dim-row { transition: opacity .2s; }
 #plan.lens-dev .dim-row:not(.dim-dev), #plan.lens-ops .dim-row:not(.dim-ops), #plan.lens-biz .dim-row:not(.dim-biz) { opacity: .28; }
 #plan.lens-dev .dim-dev .dim-line, #plan.lens-ops .dim-ops .dim-line, #plan.lens-biz .dim-biz .dim-line { stroke-width: 2; }
@@ -276,7 +278,7 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .t-unb { font-family: var(--f-mono); font-weight: 700; font-size: 6.4px; fill: var(--amber); letter-spacing: .04em; }
 .grid-line { stroke: var(--ink-2); stroke-width: .8; stroke-dasharray: 22 5 3 5; fill: none; }
 .grid-bub { fill: var(--paper); stroke: var(--ink); stroke-width: 1.4; }
-.t-grid { font-family: var(--f-letter); font-weight: 700; font-size: 19px; fill: var(--ink); text-anchor: middle; }
+.t-grid { font-family: var(--f-letter); font-weight: 700; font-size: calc(19px * var(--L)); fill: var(--ink); text-anchor: middle; }
 
 /* M-301 services */
 .riser { fill: var(--paper); stroke: var(--ink); stroke-width: 1.3; }
@@ -315,11 +317,13 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .lnk-tag { fill: var(--paper); stroke: var(--sel); stroke-width: 1; }
 .t-lnk { font-family: var(--f-mono); font-weight: 600; fill: var(--sel); text-anchor: middle; }
 
-/* key plan plates */
-.plate { fill: var(--paper); stroke: var(--ink); stroke-width: 1.2; }
-.t-plate { font-family: var(--f-letter); font-weight: 700; font-size: 13px; letter-spacing: .1em; fill: var(--ink); text-anchor: middle; }
-.t-plate-s { font-family: var(--f-mono); font-weight: 500; font-size: 10.5px; fill: var(--ink-2); text-anchor: middle; }
-.t-plate-l { font-family: var(--f-letter); font-weight: 700; font-size: 15px; fill: var(--ink); text-anchor: middle; }
+/* key plan: compact zone tags in each zone's header band (lettered in screen px) */
+.ztag { cursor: pointer; }
+.ztag-bg { fill: var(--paper); stroke: none; }
+.ztag .hex { stroke-width: 1.4; }
+.t-ztag { font-family: var(--f-letter); font-weight: 700; font-size: 12.5px; letter-spacing: .08em; fill: var(--ink); }
+.t-ztag-s { font-family: var(--f-mono); font-weight: 600; font-size: 10.5px; fill: var(--ink-2); }
+.t-ztag-l { font-family: var(--f-letter); font-weight: 700; font-size: 12px; fill: var(--ink); text-anchor: middle; }
 
 /* zoom levels: lv0 key plan, lv1 sheet, lv2 room, lv3 detail */
 #plan .lv-s, #plan .lv-r, #plan .lv-d, #plan .lv-k { display: none; }
@@ -346,7 +350,8 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .sheet-grab { display: none; }
 .sn { border-bottom: 1px solid var(--ink); padding: 10px 14px 12px; }
 .sn-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 0 8px; font: 700 12px var(--f-letter); letter-spacing: .18em; text-transform: uppercase; color: var(--ink); }
-.sn-h .aside { font: 500 10px var(--f-mono); letter-spacing: .04em; color: var(--ink-3); text-transform: none; }
+.sn-h { white-space: nowrap; }
+.sn-h .aside { font: 500 10px var(--f-mono); letter-spacing: .04em; color: var(--ink-3); text-transform: none; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .sn-h button { display: flex; align-items: center; gap: 6px; font: inherit; letter-spacing: inherit; text-transform: inherit; }
 .sn-h button svg { width: 11px; height: 11px; transition: transform .15s; }
 .sn-h button[aria-expanded="false"] svg { transform: rotate(-90deg); }
@@ -355,7 +360,7 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .chip:last-child { border-bottom: 0; }
 .chip svg { width: 22px; height: 18px; display: block; }
 .chip .l1 { font: 600 13.5px/1.05 var(--f-letter); letter-spacing: .1em; text-transform: uppercase; display: block; }
-.chip .l2 { font: 400 10px/1.2 var(--f-mono); color: var(--ink-3); display: block; }
+.chip .l2 { font: 400 11px/1.2 var(--f-text); color: var(--ink-3); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chip .c { font: 600 15px var(--f-mono); }
 .chip:hover { background: var(--tint-2); }
 .chip[aria-pressed="true"] { background: var(--sel-wash); box-shadow: inset 3px 0 0 var(--sel); }
@@ -373,9 +378,12 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .redlines .k { font: 600 10px var(--f-mono); letter-spacing: .06em; color: var(--ink-3); display: block; }
 .redlines .v { font: 700 22px/1.1 var(--f-letter); color: var(--red); }
 .redlines .v small { font: 500 11px var(--f-mono); color: var(--ink-3); margin-left: 4px; }
-.legend { display: grid; gap: 4px; }
+.legend { display: grid; gap: 3px; }
 .lg-sec { font: 600 10px var(--f-mono); letter-spacing: .12em; color: var(--ink-3); text-transform: uppercase; margin: 8px 0 2px; }
-.lg-sec:first-child { margin-top: 0; }
+.lg-sec:first-child, .lg-status + .lg-sec { margin-top: 0; }
+.lg-status { display: grid; gap: 3px; }
+@media (min-width: 861px) { .lg-status { display: none; } }
+@media (max-width: 860px) { .lg-status + .lg-sec { margin-top: 8px; } }
 .lg { display: grid; grid-template-columns: 40px minmax(0, 1fr); align-items: center; gap: 9px; }
 .lg svg { width: 40px; height: 26px; display: block; overflow: visible; }
 .lg .t { font: 600 12px/1.15 var(--f-letter); letter-spacing: .08em; text-transform: uppercase; }
@@ -390,13 +398,22 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .kn-d { font: 400 11.5px/1.3 var(--f-text); color: var(--ink-3); display: block; margin-top: 1px; }
 .kn-d em { font-style: normal; color: var(--red); font-family: var(--f-mono); font-size: 10px; font-weight: 600; letter-spacing: .04em; }
 
+.more-wrap { position: relative; height: 0; flex: none; z-index: 2; }
+.more-fade { position: absolute; left: 0; right: 10px; bottom: 0; height: 34px; background: linear-gradient(var(--clear), var(--paper-2)); pointer-events: none; opacity: 0; transition: opacity .15s; }
+.more-wrap.on .more-fade { opacity: 1; }
+/* in-flow bar under the scrolling notes: says what is still below and scrolls to it */
+.more { flex: none; display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; height: 26px; border-top: 1px dashed var(--ink-3); background: var(--paper-2); font: 500 10px var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); white-space: nowrap; overflow: hidden; }
+.more b { font-weight: 600; color: var(--ink); }
+.more svg { width: 10px; height: 10px; color: var(--ink); }
+.more:hover { background: var(--tint-2); }
+
 /* title block */
 .titleblock { flex: none; border-top: 3px double var(--ink); background: var(--paper); font-family: var(--f-mono); }
 .tb-row { display: grid; border-bottom: 1px solid var(--ink); }
 .tb-row:last-child { border-bottom: 0; }
 .tb-cell { padding: 5px 9px 6px; min-width: 0; }
 .tb-cell + .tb-cell { border-left: 1px solid var(--ink); }
-.tb-k { display: block; font: 500 8.5px var(--f-mono); letter-spacing: .14em; color: var(--ink-3); text-transform: uppercase; }
+.tb-k { display: block; font: 500 9px var(--f-mono); letter-spacing: .14em; color: var(--ink-3); text-transform: uppercase; }
 .tb-v { display: block; font: 600 11px/1.25 var(--f-mono); color: var(--ink); letter-spacing: .02em; }
 .tb-proj .tb-v { font: 700 21px/1 var(--f-letter); letter-spacing: .16em; margin-top: 2px; }
 .tb-proj .sub { font: 400 10.5px/1.3 var(--f-text); color: var(--ink-2); display: block; margin-top: 2px; }
@@ -465,7 +482,8 @@ table.ruled td.st.blocked { color: var(--red); }
 .ref .rm { font: 500 10px var(--f-mono); color: var(--ink-3); white-space: nowrap; }
 .ref svg { width: 18px; height: 14px; }
 .ref-empty { font: 400 12px var(--f-mono); color: var(--ink-3); padding: 6px 4px; }
-.ref-h { font: 600 10px var(--f-mono); letter-spacing: .12em; color: var(--ink-3); margin: 10px 0 3px; text-transform: uppercase; }
+.ref-h { display: flex; justify-content: space-between; gap: 8px; font: 600 10px var(--f-mono); letter-spacing: .12em; color: var(--ink-3); margin: 10px 0 3px; text-transform: uppercase; }
+.ref-h .ref-k { font-weight: 500; letter-spacing: .04em; text-transform: none; }
 .mod-sum { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border: 1px solid var(--ink); margin-top: 12px; }
 .mod-sum > div { padding: 5px 4px 6px; text-align: center; }
 .mod-sum > div + div { border-left: 1px solid var(--ink-4); }
@@ -478,12 +496,27 @@ table.ruled td.st.blocked { color: var(--red); }
 #foot { display: none; }
 .scrim { display: none; }
 
+@media (min-width: 861px) and (max-height: 820px) {
+  .tb-proj .sub { display: none; }
+  .tb-proj .tb-v { font-size: 18px; }
+  .tb-cell { padding-top: 4px; padding-bottom: 5px; }
+  .tb-num { font-size: 26px; }
+  .tb-scale svg.north { width: 32px; height: 32px; }
+  .sn { padding-top: 9px; padding-bottom: 10px; }
+  .chip { padding-top: 3px; padding-bottom: 3px; }
+}
+@media (max-width: 1360px) {
+  .sheet-tab kbd { display: none; }
+  .sheet-tab { padding: 5px 10px 5px 9px; }
+  .search input { width: 160px; }
+}
 @media (max-width: 1180px) {
   :root { --strip-w: 260px; }
+  .sheet-tab .nm { display: none; }
+  .sheet-tab .sh { display: inline; }
   .tb-meta .tb-v { font-size: 10px; white-space: nowrap; }
   .tb-meta .tb-cell { padding-left: 7px; padding-right: 4px; }
   .redlines .k { font-size: 9px; letter-spacing: .02em; }
-  .sheet-tab .nm { display: none; }
   .search input { width: 150px; }
 }
 @media (max-width: 860px) {
@@ -499,14 +532,15 @@ table.ruled td.st.blocked { color: var(--red); }
   .search input { width: 100%; }
   #legend-btn { display: inline-grid; }
   #theme-toggle { padding: 0; width: 32px; justify-content: center; }
-  #chips-row { grid-area: chips; display: flex; gap: 6px; overflow-x: auto; padding: 7px 10px; border-bottom: 1px solid var(--ink); scrollbar-width: none; background: var(--paper); }
-  #chips-row::-webkit-scrollbar { display: none; }
-  #chips-row .chip { grid-template-columns: 16px auto auto; border: 1px solid var(--ink); padding: 2px 7px 2px 5px; gap: 5px; flex: none; }
+  /* all five status chips at a glance: an even five-column row */
+  #chips-row { grid-area: chips; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; padding: 6px 10px; border-bottom: 1px solid var(--ink); background: var(--paper); }
+  #chips-row .chip { grid-template-columns: 16px auto auto; justify-content: center; border: 1px solid var(--ink); padding: 3px 6px; gap: 5px; min-width: 0; }
   #chips-row .chip:last-child { border-bottom: 1px solid var(--ink); }
   #chips-row .chip svg { width: 16px; height: 14px; }
-  #chips-row .chip .l1 { font-size: 12px; letter-spacing: .06em; }
+  #chips-row .chip .l1 { font-size: 12px; letter-spacing: .06em; white-space: nowrap; }
   #chips-row .chip .l2 { display: none; }
   #chips-row .chip .c { font-size: 12px; }
+  .search .count { padding: 0 7px 0 4px; }
   #chips-row.filtering .chip[aria-pressed="false"] { opacity: .55; }
   .zoombox.desk { display: none; }
   #foot { grid-area: foot; display: block; border-top: 3px double var(--ink); background: var(--paper); padding-bottom: env(safe-area-inset-bottom, 0px); z-index: 5; }
@@ -535,6 +569,16 @@ table.ruled td.st.blocked { color: var(--red); }
   .insp-body { padding: 12px 14px 20px; }
   .ins-name { font-size: 21px; }
   .scrim.on { display: block; position: fixed; inset: 0; z-index: 8; background: var(--clear); }
+}
+@media (max-width: 600px) {
+  /* narrow phones: symbol and count over a compact label */
+  #chips-row { gap: 4px; padding: 5px 8px 6px; }
+  #chips-row .chip { grid-template-columns: auto auto; grid-template-rows: auto auto; column-gap: 4px; row-gap: 2px; padding: 4px 2px 3px; }
+  #chips-row .chip svg { grid-row: 1; grid-column: 1; justify-self: end; width: 14px; height: 13px; }
+  #chips-row .chip .c { grid-row: 1; grid-column: 2; justify-self: start; font-size: 12.5px; line-height: 13px; }
+  #chips-row .chip > span:first-of-type { grid-row: 2; grid-column: 1 / -1; text-align: center; }
+  #chips-row .chip .l1 { font-size: 10px; letter-spacing: .05em; }
+  .search .count .cw { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
@@ -603,11 +647,11 @@ table.ruled td.st.blocked { color: var(--red); }
   <aside id="strip" aria-label="Sheet notes">
     <div class="sheet-grab"><span class="h">Sheet notes</span><button class="ibtn" type="button" id="strip-close" aria-label="Close sheet notes"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
     <div class="strip-scroll">
-      <section class="sn sn-sched">
+      <section class="sn sn-sched" data-name="Schedule">
         <h2 class="sn-h">Fixture schedule <span class="aside">select to filter</span></h2>
         <div class="chip-rows chip-set" id="chips-strip" role="group" aria-label="Filter by status"></div>
       </section>
-      <section class="sn">
+      <section class="sn" data-name="Completion">
         <h2 class="sn-h">Completion <span class="aside" id="comp-aside"></span></h2>
         <div class="comp" id="comp"></div>
         <div class="redlines">
@@ -615,15 +659,17 @@ table.ruled td.st.blocked { color: var(--red); }
           <div><span class="k">AWAITING REVIEW</span><span class="v" id="rev-n"></span></div>
         </div>
       </section>
-      <section class="sn" id="legend-sec">
+      <section class="sn" id="legend-sec" data-name="Legend">
         <h2 class="sn-h"><button type="button" id="legend-toggle" aria-expanded="true" aria-controls="legend"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>Legend</button><span class="aside" id="legend-aside"></span></h2>
         <div class="legend" id="legend"></div>
       </section>
-      <section class="sn">
-        <h2 class="sn-h">Redline keynotes <span class="aside">blocked or changes requested</span></h2>
+      <section class="sn" data-name="Keynotes">
+        <h2 class="sn-h">Redline keynotes <span class="aside">attention</span></h2>
         <ol class="keynotes" id="keynotes"></ol>
       </section>
     </div>
+    <div class="more-wrap"><div class="more-fade" aria-hidden="true"></div></div>
+    <button type="button" class="more" id="strip-more" hidden><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span>More below</span><b id="strip-more-t"></b></button>
     <div class="titleblock" id="titleblock">
       <div class="tb-row"><div class="tb-cell tb-proj"><span class="tb-k">Project</span><span class="tb-v" id="tb-proj"></span><span class="sub" id="tb-sub"></span></div></div>
       <div class="tb-row tb-sheet"><div class="tb-cell"><span class="tb-k">Sheet title</span><span class="tb-v tb-title" id="tb-title"></span></div><div class="tb-cell"><span class="tb-k">Sheet no.</span><span class="tb-num" id="tb-num"></span></div></div>
@@ -681,6 +727,14 @@ table.ruled td.st.blocked { color: var(--red); }
     planned: 'Future work',
     blocked: 'Redline, cannot progress',
   };
+  // drafting convention per status, shown under each schedule row (the desktop status legend)
+  const STATUS_DRAW = {
+    live: 'Existing · solid poche, heavy outline',
+    ready: 'Built, awaiting release · light fill',
+    building: 'New construction · amber hatch',
+    planned: 'Future work · dashed, no fill',
+    blocked: 'Redline X · leader to its keynote',
+  };
   const DIMS = BP.DIMENSIONS;
   const STATUS_LABEL = {};
   BP.STATUSES.forEach((s) => { STATUS_LABEL[s.id] = s.label; });
@@ -688,6 +742,7 @@ table.ruled td.st.blocked { color: var(--red); }
   BP.FACET_STATES.forEach((s) => { FACET_LABEL[s.id] = s.label; });
 
   // Zoom thresholds (screen px per world unit) for the four levels of detail.
+  // SHEET follows the lettering scale: sheet lettering appears once room stats reach about 7.6 px.
   const LV = { SHEET: 0.36, ROOM: 0.9, DETAIL: 1.4 };
   const LV_NAMES = ['Key plan', 'Sheet', 'Room', 'Detail'];
   const K_MAX = 5;
@@ -700,6 +755,12 @@ table.ruled td.st.blocked { color: var(--red); }
     dimOff: 42, dimStep: 36, gridOff: 34,
     door: 20, entry: 40,
   };
+  // Lettering scale. Like lettering on a plotted sheet, plan lettering is sized for the scale the
+  // sheet opens at: secondary lettering (room stats, dimensions) aims for about 10 px at the fit.
+  let LS = 1;
+  const STAT_PX = 10.2;
+  const L_MIN = 1;
+  const L_MAX = 1.6;
   const STACK = {
     letter: '"Saira Condensed","Barlow Condensed","Roboto Condensed","Arial Narrow",sans-serif',
     mono: '"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace',
@@ -757,17 +818,46 @@ table.ruled td.st.blocked { color: var(--red); }
   }
   const FONT = {
     zone: { w: 700, s: 27, f: STACK.letter, ls: 0.08, up: true },
-    zoneS: { w: 500, s: 17, f: STACK.mono },
+    zoneS: { w: 500, s: 18, f: STACK.mono },
     room: { w: 600, s: 23, f: STACK.letter, ls: 0.05, up: true },
-    roomS: { w: 500, s: 17.5, f: STACK.mono },
+    roomS: { w: 500, s: 18, f: STACK.mono },
     name: { w: 500, s: 10.6, f: STACK.letter },
     dim: { w: 600, s: 22, f: STACK.letter, ls: 0.07, up: true },
-    plate: { w: 700, s: 13, f: STACK.letter, ls: 0.1, up: true },
-    plateS: { w: 500, s: 10.5, f: STACK.mono },
+    dimR: { w: 400, s: 13, f: STACK.mono },
+    dwg: { w: 700, s: 34, f: STACK.letter, ls: 0.1, up: true },
     hall: { w: 500, s: 20, f: STACK.letter, ls: 0.2, up: true },
     meta: { w: 400, s: 6.8, f: STACK.mono },
     val: { w: 500, s: 8.5, f: STACK.mono },
+    // key-plan zone tags, in screen px
+    ztag: { w: 700, s: 12.5, f: STACK.letter, ls: 0.08, up: true },
+    ztagS: { w: 500, s: 10.5, f: STACK.mono },
   };
+  const FONT_BASE = {};
+  Object.keys(FONT).forEach((k) => { FONT_BASE[k] = FONT[k].s; });
+  // Secondary lettering (stats, dimensions, notes) takes the full scale; names, already large, take
+  // part of it so long zone and room names do not widen the plan.
+  const SCALED = ['zoneS', 'roomS', 'dim', 'dimR', 'hall'];
+  const SCALED_P = ['zone', 'room', 'dwg'];
+  let LP = 1;
+  /** Applies a lettering scale to the sheet-level fonts and to the plan geometry that holds them. */
+  function setLetterScale(L) {
+    LS = L;
+    LP = 1 + (L - 1) * 0.45;
+    SCALED.forEach((k) => { FONT[k].s = FONT_BASE[k] * L; });
+    SCALED_P.forEach((k) => { FONT[k].s = FONT_BASE[k] * LP; });
+    // zone header: title, then the stat line; room header: tag, two name lines, then the stat line
+    G.zTitleY = 8 + 27 * LP;
+    G.zStatY = G.zTitleY + 8 + 16 * L;
+    G.wingHdr = Math.round(G.zStatY + 17);
+    G.rStatGap = 4 + 17.1 * L;
+    G.roomHdr = Math.round(G.roomPad + 43 * LP + G.rStatGap + 8);
+    G.dimOff = Math.round(27 + 15.4 * L);
+    G.dimStep = Math.round(19 + 15.4 * L);
+    G.gridOff = Math.round(14 + 18 * L);
+    LV.SHEET = Math.min(0.36, 7.6 / (FONT_BASE.roomS * L));
+    plan.style.setProperty('--L', String(r2(L)));
+    plan.style.setProperty('--Lp', String(r2(LP)));
+  }
   /** First candidate string that fits maxW (the last one is used regardless). */
   function firstFit(cands, spec, maxW) {
     for (let i = 0; i < cands.length; i++) if (measure(cands[i], spec) <= maxW) return cands[i];
@@ -796,8 +886,12 @@ table.ruled td.st.blocked { color: var(--red); }
   }
 
   /** All ways to cut n ordered items into k consecutive groups (returns cut index lists). */
+  const PART_CACHE = {};
   function partitions(n, k) {
+    const key = n + ',' + k;
+    if (PART_CACHE[key]) return PART_CACHE[key];
     const out = [];
+    PART_CACHE[key] = out;
     (function rec(start, left, acc) {
       if (left === 1) { out.push(acc.slice()); return; }
       for (let c = start + 1; c <= n - left + 1; c++) { acc.push(c); rec(c, left - 1, acc); acc.pop(); }
@@ -840,13 +934,24 @@ table.ruled td.st.blocked { color: var(--red); }
     return best;
   }
 
-  /** Building aspect to aim for: landscape sheets on wide screens, a tall plan on phones. */
-  function targetAspect() {
+  /** Area the opening fit has to fill, in stage pixels (no panels open). */
+  function layoutArea() {
+    const ph = isPhone();
+    const pad = ph ? 8 : 16;
     const vw = viewport.clientWidth || window.innerWidth;
     const vh = viewport.clientHeight || window.innerHeight;
-    return vw / vh < 0.85 ? Math.max(0.5, vw / vh * 1.08) : 1.55;
+    return { w: Math.max(240, vw - 2 * pad), h: Math.max(240, vh - 2 * pad), phone: ph };
   }
-  function computeLayout() {
+  /** World units the sheet adds around the building: dimension strings, grid bubbles, drawing title. */
+  function sheetMargins() {
+    const top = G.ext + G.dimOff + 2 * G.dimStep + 10 + G.gridOff + 18 * LS + 4;
+    const title = 56 * LP + 21 * LS + 8;
+    return { top, bottom: top + title, side: G.ext + 34 };
+  }
+  /** Room tag circle plus its gap, before the room name. */
+  const tagW = () => 39 * LS + 8;
+  /** Rooms and zones with their minimum sizes at the current lettering scale. */
+  function buildWings() {
     const letters = 'ABCDEFGHIJ';
     WINGS.length = 0;
     BP.domains.forEach((d, di) => {
@@ -856,41 +961,108 @@ table.ruled td.st.blocked { color: var(--red); }
         // a room must hold its name in at most two lines next to its tag
         const words = m.name.toUpperCase().split(' ');
         const longest = Math.max.apply(null, words.map((w) => measure(w, FONT.room)));
-        const minW = Math.max(longest, measure('7 FX · 100% · ▲9', FONT.roomS)) + 2 * G.roomPad + 50;
+        const minW = Math.max(longest, measure('7 FX · 100%', FONT.roomS)) + 2 * G.roomPad + tagW() + 3;
         return { m, n, code, minW };
       });
-      const title = 'ZONE ' + letters[di] + ' · ' + d.name;
-      const minW = 2 * G.ring + 64 + Math.max(measure(title, FONT.zone), measure('32 FX · 5 ROOMS · OVR 100%', FONT.zoneS)) + 12;
+      const title = d.name;
+      const minW = 2 * G.ring + 64 * LP + Math.max(measure(title, FONT.zone), measure('32 FX · 5 ROOMS · OVR 100%', FONT.zoneS)) + 12;
       WINGS.push({ d, di, letter: letters[di], mods, title, minW, roll: BP.domainRollup(d.id) });
     });
+  }
+  /** Every feasible band arrangement at the current lettering scale. */
+  function evalBands(step) {
+    buildWings();
     const split = Math.ceil(WINGS.length / 2);
     const bands = [WINGS.slice(0, split), WINGS.slice(split)];
     const minH = G.wingHdr + G.ring + G.roomHdr + G.roomPad + G.cellH;
     const cand = [];
-    for (let h = Math.ceil(minH); h <= 1500; h += 4) cand.push(h);
-    const bandEval = bands.map((band) => cand.map((H) => {
-      const fits = band.map((w) => wingFit(w, H));
-      if (fits.some((x) => !x)) return null;
-      const width = fits.reduce((s, x) => s + x.w, 0) + (band.length - 1) * G.wingWall;
-      const extra = fits.reduce((s, x) => s + x.extra, 0);
-      return { H, fits, width, extra };
-    }).filter(Boolean));
+    for (let h = Math.ceil(minH); h <= 2600; h += step || 5) cand.push(h);
+    const evals = bands.map((band) => {
+      const out = [];
+      for (let i = 0; i < cand.length; i++) {
+        const H = cand[i];
+        const fits = band.map((w) => wingFit(w, H));
+        if (fits.some((x) => !x)) continue;
+        const width = fits.reduce((s, x) => s + x.w, 0) + (band.length - 1) * G.wingWall;
+        const extra = fits.reduce((s, x) => s + x.extra, 0);
+        // a taller band that is no narrower than the last one only adds empty floor
+        if (out.length && width >= out[out.length - 1].width - 1) continue;
+        out.push({ H, fits, width, extra });
+      }
+      return out;
+    });
+    return { bands, evals };
+  }
+  /**
+   * Picks the arrangement that fills the stage best: the fitted scale is what makes fixtures and
+   * lettering legible, and wasted floor (stretched or empty rooms) counts against it.
+   */
+  function pickBands(ev, area, keyplan) {
+    const m = sheetMargins();
     const hallH = 2 * G.hallWall + G.hallOpen;
-    const target = targetAspect();
+    const oh = keyplan ? { w: 2 * (G.ext + 12), h: 2 * (G.ext + 12) } : { w: 2 * m.side, h: m.top + m.bottom };
     let best = null;
-    bandEval[0].forEach((a) => {
-      bandEval[1].forEach((b) => {
+    ev.evals[0].forEach((a) => {
+      ev.evals[1].forEach((b) => {
         const W = Math.max(a.width, b.width);
         const Ht = a.H + b.H + hallH;
-        const aspect = W / Ht;
+        const k = Math.min(area.w / (W + oh.w), area.h / (Ht + oh.h));
         const stretch = (W - a.width) * a.H + (W - b.width) * b.H;
-        const score = (W * Ht + stretch * 0.6 + a.extra + b.extra) * (1 + 1.4 * Math.abs(Math.log(aspect / target)));
-        if (!best || score < best.score) best = { score, a, b, W, Ht };
+        const waste = (stretch * 0.6 + a.extra + b.extra) / (W * Ht);
+        const score = (1 + 1.6 * waste) / (k * k);
+        if (!best || score < best.score) best = { score, a, b, W, Ht, k };
       });
     });
+    return best;
+  }
+  /**
+   * Lays the building out for the stage. The lettering scale and the fitted scale depend on each
+   * other, so they are iterated to a fixed point; phones open on the key plan with modest lettering.
+   */
+  function computeLayout() {
+    const t0 = performance.now();
+    const area = layoutArea();
+    let ev = null;
+    let best = null;
+    let keyplan = false;
+    if (area.phone && area.w / area.h < 0.8) {
+      keyplan = true;
+      setLetterScale(1.2);
+      // the zone band must seat a two-line zone tag (about 36 px) at the opening scale
+      for (let it = 0; it < 4; it++) {
+        ev = evalBands();
+        best = pickBands(ev, area, true);
+        const need = Math.round(39 / best.k);
+        if (need <= G.wingHdr || it === 3) break;
+        const grow = need + 4 - G.wingHdr;
+        G.zTitleY += grow / 2;
+        G.zStatY += grow / 2;
+        G.wingHdr += grow;
+      }
+    } else {
+      let L = Math.min(L_MAX, Math.max(L_MIN, LS === 1 ? 1.3 : LS));
+      // coarse passes find the lettering scale, a fine pass lays the plan out at it
+      for (let it = 0; it < 4; it++) {
+        setLetterScale(L);
+        best = pickBands(evalBands(15), area, false);
+        const next = Math.min(L_MAX, Math.max(L_MIN, STAT_PX / (best.k * FONT_BASE.roomS)));
+        if (Math.abs(next - L) < 0.03) break;
+        L = r2(next);
+      }
+      setLetterScale(L);
+      ev = evalBands(5);
+      best = pickBands(ev, area, false);
+      if (best.k < LV.SHEET) {
+        // too small for sheet lettering: frame the building as a key plan instead
+        keyplan = true;
+        best = pickBands(ev, area, true);
+      }
+    }
+    const bands = ev.bands;
+    const hallH = 2 * G.hallWall + G.hallOpen;
     const W = best.W;
     const Htot = best.Ht;
-    const geo = { W, H: Htot, hallY: best.a.H, hallH, bands: [], portrait: target < 1 };
+    const geo = { W, H: Htot, hallY: best.a.H, hallH, bands: [], area, keyplan, ms: 0, k0: best.k };
     [best.a, best.b].forEach((be, bi) => {
       const band = bands[bi];
       const y = bi === 0 ? 0 : best.a.H + hallH;
@@ -949,10 +1121,10 @@ table.ruled td.st.blocked { color: var(--red); }
         x += w + G.wingWall;
       });
     });
-    const top = -G.ext - G.dimOff - 2 * G.dimStep - 14 - G.gridOff - 20;
-    geo.titleY = Htot - top + 46;
-    const bottom = geo.titleY + 44;
-    geo.ext = { x: -G.ext - 40, y: top, w: W + 2 * G.ext + 80, h: bottom - top };
+    const m = sheetMargins();
+    geo.titleY = Htot + m.top + 44 * LP + 4;
+    geo.ext = { x: -m.side, y: -m.top, w: W + 2 * m.side, h: Htot + m.top + m.bottom };
+    geo.ms = Math.round(performance.now() - t0);
     PLAN = geo;
   }
 
@@ -1028,8 +1200,29 @@ table.ruled td.st.blocked { color: var(--red); }
   }
   const facetStates = (f, dimId) => DIMS.find((d) => d.id === dimId).facets.map((fc) => f.dims[dimId][fc.id]);
 
+  // Annotative lettering: sheet lettering is drawn at the overview's lettering scale and eases back to
+  // the base proportions by room zoom, so labels stay legible at the fit without crowding close-ups.
+  const ANNOT = [];
+  let annotS = -1;
+  /** Registers a lettering group that shrinks around (ax, ay) down to min scale when zoomed in. */
+  function annot(g, ax, ay, min) { ANNOT.push({ g, ax: r2(ax), ay: r2(ay), min }); return g; }
+  function applyAnnot(k) {
+    const k0 = PLAN.k0 * 1.12;
+    const k1 = Math.max(LV.ROOM, k0 * 1.6);
+    const t = k <= k0 ? 0 : k >= k1 ? 1 : Math.log(k / k0) / Math.log(k1 / k0);
+    const key = Math.round(t * 200);
+    if (key === annotS) return;
+    annotS = key;
+    ANNOT.forEach((a) => {
+      const sc = Math.exp(t * Math.log(a.min));
+      a.g.setAttribute('transform', sc > 0.999 ? '' : 'translate(' + a.ax + ',' + a.ay + ') scale(' + sc.toFixed(4) + ') translate(' + -a.ax + ',' + -a.ay + ')');
+    });
+  }
+
   function renderAll() {
     world.textContent = '';
+    ANNOT.length = 0;
+    annotS = -1;
     ['sheet', 'wash', 'base', 'grid', 'floor', 'rooms', 'serv', 'fx', 'links', 'plates'].forEach((id) => {
       layers[id] = el('g', { id: 'g-' + id }, world);
     });
@@ -1037,7 +1230,7 @@ table.ruled td.st.blocked { color: var(--red); }
     renderDims();
     renderGrid();
     renderDrawingTitle();
-    WINGS.forEach((w) => { renderZoneHeader(w); w.rooms.forEach(renderRoom); renderPlate(w); });
+    WINGS.forEach((w) => { renderZoneHeader(w); w.rooms.forEach(renderRoom); renderZoneTag(w); });
     FX.forEach(renderFixture);
     ROOMS.forEach(renderServices);
     refreshLensText();
@@ -1090,8 +1283,9 @@ table.ruled td.st.blocked { color: var(--red); }
     const lw = measure(label, FONT.hall);
     const lg = el('g', { class: 'lv-s' }, layers.rooms);
     const tx = Math.max(60, (W - lw) / 2);
-    el('rect', { x: r2(tx - 14), y: r2(hc - 15), width: r2(Math.min(lw, W - 120) + 28), height: 28, fill: 'var(--paper)' }, lg);
-    txt(lg, tx, hc + 7, label, 't-hall');
+    annot(lg, tx + Math.min(lw, W - 120) / 2, hc, 1 / LS);
+    el('rect', { x: r2(tx - 14), y: r2(hc - 15 * LS), width: r2(Math.min(lw, W - 120) + 28), height: r2(28 * LS), fill: 'var(--paper)' }, lg);
+    txt(lg, tx, hc + 7 * LS, label, 't-hall');
   }
 
   function renderDims() {
@@ -1116,11 +1310,12 @@ table.ruled td.st.blocked { color: var(--red); }
         const label = dim.short.toUpperCase() + ' ' + pct(v);
         const lw = measure(label, FONT.dim);
         const seg = x1 - x0;
-        if (seg > lw + 16) txt(row, x0 + seg / 2 - lw / 2, y - 7, label, 't-dim');
-        else txt(row, Math.min(x1 + 10, x2 - lw - 6), y - 7, label, 't-dim');
+        const ty = y - 7 * LS;
+        const lx = seg > lw + 16 ? x0 + seg / 2 - lw / 2 : Math.min(x1 + 10, x2 - lw - 6);
+        annot(txt(row, lx, ty, label, 't-dim'), lx + lw / 2, y - 3, 1 / LS);
         const rest = 'TO GO ' + pct(1 - v);
-        const restW = measure(rest, { w: 400, s: 13, f: STACK.mono });
-        if (x2 - x1 > restW + 24 && (seg > lw + 16 || x2 - x1 > lw + restW + 40)) txt(el('g', { class: 'lv-r' }, row), x2 - restW - 8, y - 7, rest, 't-dim-r');
+        const restW = measure(rest, FONT.dimR);
+        if (x2 - x1 > restW + 24 && (seg > lw + 16 || x2 - x1 > lw + restW + 40)) annot(txt(el('g', { class: 'lv-r' }, row), x2 - restW - 8, ty, rest, 't-dim-r'), x2 - 8, y - 3, 1 / LS);
       });
     });
   }
@@ -1129,16 +1324,20 @@ table.ruled td.st.blocked { color: var(--red); }
   function renderDrawingTitle() {
     const g = el('g', { class: 'dwg lv-s' }, layers.sheet);
     const y = PLAN.titleY;
-    const cx = 30;
-    el('circle', { cx, cy: y - 10, r: 30, class: 'dwg-c' }, g);
-    el('path', { d: 'M' + (cx - 30) + ',' + (y - 10) + 'h60', class: 'dwg-rule', style: 'stroke-width:1' }, g);
-    txt(g, cx, y - 16, '1', 't-dwg-n');
-    PLAN.dwgNo = txt(g, cx, y + 11, '', 't-dwg-n');
-    PLAN.dwgNo.setAttribute('style', 'font-size:14px');
-    PLAN.dwgTitle = txt(g, 76, y - 6, '', 't-dwg');
+    annot(g, 0, y - 40 * LP, 1 / LP);
+    const L = LP;
+    const R0 = 30 * L;
+    const cx = R0;
+    el('circle', { cx: r2(cx), cy: r2(y - 10 * L), r: r2(R0), class: 'dwg-c' }, g);
+    el('path', { d: 'M0,' + r2(y - 10 * L) + 'h' + r2(2 * R0), class: 'dwg-rule', style: 'stroke-width:1' }, g);
+    txt(g, cx, y - 16 * L, '1', 't-dwg-n');
+    PLAN.dwgNo = txt(g, cx, y + 11 * L, '', 't-dwg-n');
+    PLAN.dwgNo.setAttribute('style', 'font-size:' + r2(14 * L) + 'px');
+    PLAN.dwgX = 2 * R0 + 16 * L;
+    PLAN.dwgTitle = txt(g, PLAN.dwgX, y - 6 * L, '', 't-dwg');
     PLAN.dwgRule = el('path', { d: '', class: 'dwg-rule' }, g);
     const P = BP.product;
-    txt(g, 76, y + 32, P.name.toUpperCase() + ' ' + P.version + ' → ' + P.nextVersion + ' · ' + BP.features.length + ' FIXTURES IN ' + BP.modules.length + ' ROOMS · ' + BP.domains.length + ' ZONES · AS OF ' + BP.data.meta.asOf, 't-dwg-s');
+    txt(g, PLAN.dwgX, y + 12 * L + 4 + 16 * LS, P.name.toUpperCase() + ' ' + P.version + ' → ' + P.nextVersion + ' · ' + BP.features.length + ' FIXTURES IN ' + BP.modules.length + ' ROOMS · ' + BP.domains.length + ' ZONES · AS OF ' + BP.data.meta.asOf, 't-dwg-s');
   }
 
   function renderGrid() {
@@ -1150,13 +1349,15 @@ table.ruled td.st.blocked { color: var(--red); }
       const xs = [0];
       b.wings.forEach((w, wi) => { if (wi < b.wings.length - 1) xs.push(w.rect.x + w.rect.w + G.wingWall / 2); });
       xs.push(PLAN.W);
-      const far = bi === 0 ? -G.ext - G.dimOff - 2 * G.dimStep - 14 - G.gridOff : H + G.ext + G.dimOff + 2 * G.dimStep + 14 + G.gridOff;
+      const off = G.ext + G.dimOff + 2 * G.dimStep + 10 + G.gridOff;
+      const far = bi === 0 ? -off : H + off;
       const near = bi === 0 ? b.y + b.h : b.y;
+      const br = 18 * LS;
       xs.forEach((x) => {
         n += 1;
-        el('path', { d: 'M' + r2(x) + ',' + r2(near) + 'V' + r2(far + (bi === 0 ? 18 : -18)), class: 'grid-line' }, g);
-        el('circle', { cx: r2(x), cy: r2(far), r: 18, class: 'grid-bub' }, g);
-        txt(g, x, far + 6.8, String(n), 't-grid');
+        el('path', { d: 'M' + r2(x) + ',' + r2(near) + 'V' + r2(far + (bi === 0 ? br : -br)), class: 'grid-line' }, g);
+        el('circle', { cx: r2(x), cy: r2(far), r: r2(br), class: 'grid-bub' }, g);
+        txt(g, x, far + 6.8 * LS, String(n), 't-grid');
       });
     });
   }
@@ -1164,35 +1365,38 @@ table.ruled td.st.blocked { color: var(--red); }
   function renderZoneHeader(wing) {
     const { x, y, w } = wing.rect;
     const g = el('g', { class: 'zone-hdr lv-s', 'data-zone': wing.d.id }, layers.rooms);
+    const L = LS;
+    const P = LP;
     el('rect', { x: x + 4, y: y + 4, width: w - 8, height: G.wingHdr - 10, class: 'hdr-hit' }, g);
-    const cx = x + G.ring + 25;
+    const cx = x + G.ring + 25 * P;
     const cy = y + G.wingHdr / 2 + 1;
-    el('polygon', { points: hexPts(cx, cy, 26), class: 'hex' }, g);
-    el('polygon', { points: hexPts(cx, cy, 21), class: 'hex-in' }, g);
-    txt(g, cx, cy + 9, wing.letter, 't-hex');
-    const tx = x + G.ring + 62;
-    txt(g, tx, y + 35, wing.title.toUpperCase(), 't-zone');
-    wing.statEl = txt(g, tx, y + 59, '', 't-zone-s');
+    const a = annot(el('g', {}, g), x + G.ring, cy, 1 / P);
+    el('polygon', { points: hexPts(cx, cy, 26 * P), class: 'hex' }, a);
+    el('polygon', { points: hexPts(cx, cy, 21 * P), class: 'hex-in' }, a);
+    txt(a, cx, cy + 9 * P, wing.letter, 't-hex');
+    const tx = x + G.ring + 62 * P;
+    txt(a, tx, y + G.zTitleY, wing.title.toUpperCase(), 't-zone');
+    wing.statEl = txt(a, tx, y + G.zStatY, '', 't-zone-s');
     // status bar on the right when the wing is wide enough
     const tw = Math.max(measure(wing.title, FONT.zone), measure('32 FX · 5 ROOMS · OVR 100%', FONT.zoneS));
-    const bw = 170;
+    const bw = 150 + 20 * L;
     const bx = x + w - G.ring - bw;
     if (bx > tx + tw + 24) {
-      const by = y + 20;
-      const bh = 13;
+      const bh = 13 * L;
+      const by = y + G.zTitleY - bh - 2;
+      const zb = annot(el('g', {}, g), bx + bw, by, 1 / L);
       let cur = bx;
       BP.STATUS_ORDER.forEach((s) => {
         const c = wing.roll.byStatus[s];
         if (!c) return;
         const sw = bw * c / wing.roll.count;
-        el('rect', { x: r2(cur), y: by, width: r2(sw), height: bh, class: 'sym ' + symClass(s) }, g);
-        if (s === 'blocked') el('path', { d: 'M' + r2(cur) + ',' + by + 'l' + r2(sw) + ',' + bh + 'M' + r2(cur + sw) + ',' + by + 'l' + r2(-sw) + ',' + bh, class: 'redx', style: 'stroke-width:1.2' }, g);
+        el('rect', { x: r2(cur), y: by, width: r2(sw), height: bh, class: 'sym ' + symClass(s) }, zb);
+        if (s === 'blocked') el('path', { d: 'M' + r2(cur) + ',' + by + 'l' + r2(sw) + ',' + bh + 'M' + r2(cur + sw) + ',' + by + 'l' + r2(-sw) + ',' + bh, class: 'redx', style: 'stroke-width:1.2' }, zb);
         cur += sw;
       });
-      el('rect', { x: bx, y: by, width: bw, height: bh, class: 'zbar-o' }, g);
-      txt(el('g', { class: 'lv-r' }, g), bx + bw, by + 30, wing.roll.byStatus.live + ' LIVE · ' + (wing.roll.count - wing.roll.byStatus.live) + ' NOT YET LIVE', 't-zone-x', { 'text-anchor': 'end' });
+      el('rect', { x: bx, y: by, width: bw, height: bh, class: 'zbar-o' }, zb);
+      txt(el('g', { class: 'lv-r' }, zb), bx + bw, by + bh + 17 * L, wing.roll.byStatus.live + ' LIVE · ' + (wing.roll.count - wing.roll.byStatus.live) + ' NOT YET LIVE', 't-zone-x', { 'text-anchor': 'end' });
     }
-    g.addEventListener('click', () => { if (!dragMoved) flyToRect(wing.rect, 26); });
   }
 
   function symClass(s) {
@@ -1222,39 +1426,102 @@ table.ruled td.st.blocked { color: var(--red); }
     const lg = el('g', { class: 'room lbl lv-s', 'data-room': room.m.id }, layers.rooms);
     room.lblEl = lg;
     el('rect', { x: x + 4, y: y + 4, width: r2(w - 8), height: G.roomHdr - 8, class: 'hdr-hit' }, lg);
-    const tcx = x + G.roomPad + 19;
-    const tcy = y + G.roomPad + 22;
-    el('circle', { cx: r2(tcx), cy: r2(tcy), r: 19.5, class: 'rtag' }, lg);
-    txt(lg, tcx, tcy + 4.8, room.code, 't-rtag');
-    const nx = x + G.roomPad + 47;
-    const lines = wrap(room.m.name.toUpperCase(), FONT.room, w - G.roomPad * 2 - 49, 2);
-    lines.forEach((ln, i) => txt(lg, nx, y + G.roomPad + 21 + i * 22, ln, 't-room'));
-    room.statEl = txt(lg, nx, y + G.roomPad + 21 + lines.length * 22 - 1, '', 't-room-s');
+    const P = LP;
+    const tr = 19.5 * LS;
+    const tcx = x + G.roomPad + tr;
+    const tcy = y + Math.max(G.roomPad + 22 * P, tr + 5);
+    const la = annot(el('g', {}, lg), x + G.roomPad, y + G.roomPad, 1 / P);
+    el('circle', { cx: r2(tcx), cy: r2(tcy), r: r2(tr), class: 'rtag' }, la);
+    txt(la, tcx, tcy + 5.1 * LS, room.code, 't-rtag');
+    const nx = x + G.roomPad + tagW();
+    const lines = wrap(room.m.name.toUpperCase(), FONT.room, w - G.roomPad * 2 - tagW() - 2, 2);
+    lines.forEach((ln, i) => txt(la, nx, y + G.roomPad + (21 + i * 22) * P, ln, 't-room'));
+    room.statEl = txt(la, nx, y + G.roomPad + (21 + (lines.length - 1) * 22) * P + G.rStatGap, '', 't-room-s');
     lg.addEventListener('click', (e) => { if (!dragMoved) { e.stopPropagation(); selectModule(room.m.id, true); } });
   }
 
-  function renderPlate(wing) {
-    // key-plan plate: zone letter, name and score, kept at a legible screen size when zoomed far out
-    const { x, y, w, h } = wing.rect;
-    const g = el('g', { class: 'plate-g lv-k', 'data-zone': wing.d.id }, layers.plates);
-    const inner = el('g', {}, g);
-    const words = wing.d.name.toUpperCase().split(' ');
-    const lines = [];
-    words.forEach((wd) => {
-      const last = lines[lines.length - 1];
-      if (last && (last + ' ' + wd).length <= 12) lines[lines.length - 1] = last + ' ' + wd;
-      else lines.push(wd);
+  /**
+   * Key-plan zone tag: hex letter, zone name and lens score, lettered in screen pixels and seated in
+   * the zone's header band, so the rooms and fixtures below stay visible. Variants from a full line to a
+   * two-line name are prepared here; commit() shows the largest one that fits the band.
+   */
+  function renderZoneTag(wing) {
+    const { x, y } = wing.rect;
+    const g = el('g', { class: 'ztag lv-k', 'data-zone': wing.d.id }, layers.plates);
+    const name = wing.d.name.toUpperCase();
+    const hexR = 9.5;
+    const tx = 2 * hexR + 7;
+    const lh = 13.5;
+    const variants = [];
+    const pctW = measure('100%', FONT.ztagS);
+    // lines: name lines; stat: 'inline' after the last name line, 'below' on its own line, or none
+    const mk = (lines, stat) => {
+      const vg = el('g', { class: 'ztag-v' }, g);
+      const nl = lines.length + (stat === 'below' ? 1 : 0);
+      const h = Math.max(2 * hexR + 2, nl * lh + 5);
+      const top = -h / 2;
+      const widths = lines.map((l) => measure(l, FONT.ztag));
+      let w = tx + Math.max.apply(null, widths) + 4;
+      el('polygon', { points: hexPts(hexR, 0, hexR), class: 'hex' }, vg);
+      txt(vg, hexR, 4.3, wing.letter, 't-ztag-l');
+      const y0 = top + lh - 1;
+      lines.forEach((l, i) => txt(vg, tx, y0 + i * lh, l, 't-ztag'));
+      let st = null;
+      if (stat === 'inline') {
+        const lw = widths[widths.length - 1];
+        st = txt(vg, tx + lw + 8, y0 + (lines.length - 1) * lh, '', 't-ztag-s');
+        w = Math.max(w, tx + lw + 8 + pctW + 4);
+      } else if (stat === 'below') {
+        st = txt(vg, tx, y0 + lines.length * lh - 1, '', 't-ztag-s');
+        w = Math.max(w, tx + measure('OPS 100%', FONT.ztagS) + 4);
+      }
+      // paper backing so the band's linework never runs through the lettering
+      const bg = el('rect', { x: -3, y: r2(top - 2), width: r2(w + 4), height: r2(h + 4), class: 'ztag-bg' }, vg);
+      vg.insertBefore(bg, vg.firstChild);
+      variants.push({ g: vg, w: w + 4, h: h + 4, st, stat });
+    };
+    mk([name], 'inline');
+    mk([name], 'below');
+    const words = name.split(' ');
+    if (words.length > 1) {
+      // balanced two-line break, score after the second line
+      let cut = 1;
+      let bestW = Infinity;
+      for (let c = 1; c < words.length; c++) {
+        const ww = Math.max(measure(words.slice(0, c).join(' '), FONT.ztag), measure(words.slice(c).join(' '), FONT.ztag));
+        if (ww < bestW) { bestW = ww; cut = c; }
+      }
+      mk([words.slice(0, cut).join(' '), words.slice(cut).join(' ')], 'inline');
+    }
+    mk([name], null);
+    wing.tag = { g, variants, x: x + G.ring - 2, top: y + 3, cy: y + G.wingHdr / 2 + 1, availW: wing.rect.w - 2 * G.ring, availH: G.wingHdr - 6, availH2: G.wingHdr + G.roomHdr - 12, shown: -1 };
+  }
+  /** Shows the largest zone-tag variant that fits each header band at scale k (key plan only). */
+  function placeZoneTags(k) {
+    WINGS.forEach((wing) => {
+      const t = wing.tag;
+      const aw = t.availW * k;
+      const ah = t.availH * k;
+      const ah2 = t.availH2 * k;
+      let pick = 0;
+      let pf = -1;
+      t.variants.forEach((v, i) => {
+        // fit the zone's header band; zoomed far out, the tag may run down over the (empty) room headers
+        // rather than shrink below about 9 px lettering
+        let f = Math.min(1, aw / v.w, ah / v.h);
+        if (f < 0.72) f = Math.max(f, Math.min(0.72, aw / v.w, ah2 / v.h));
+        // keep the earlier (fuller) variant unless a later one is clearly larger on screen
+        if (i === 0 || f > pf + 0.06) { pf = f; pick = i; }
+      });
+      if (pick !== t.shown) {
+        t.variants.forEach((v, i) => { v.g.style.display = i === pick ? '' : 'none'; });
+        t.shown = pick;
+      }
+      const s = pf / k;
+      const v = t.variants[pick];
+      const cy = v.h * s > t.availH ? t.top + v.h * s / 2 : t.cy;
+      t.g.setAttribute('transform', 'translate(' + r2(t.x) + ',' + r2(cy) + ') scale(' + s.toFixed(4) + ')');
     });
-    const lw = Math.max.apply(null, lines.map((l) => measure(l, FONT.plate)).concat([measure('32 FX · 100%', FONT.plateS)]));
-    const pw = lw + 22;
-    const ph = 38 + lines.length * 15 + 16;
-    el('rect', { x: r2(-pw / 2), y: r2(-ph / 2), width: r2(pw), height: r2(ph), class: 'plate' }, inner);
-    el('polygon', { points: hexPts(0, -ph / 2 + 18, 12), class: 'hex' }, inner);
-    txt(inner, 0, -ph / 2 + 23.5, wing.letter, 't-plate-l');
-    lines.forEach((l, i) => txt(inner, 0, -ph / 2 + 48 + i * 15, l, 't-plate'));
-    wing.plateStat = txt(inner, 0, -ph / 2 + 48 + lines.length * 15 + 2, '', 't-plate-s');
-    wing.plate = { g, inner, pw, ph, cx: x + w / 2, cy: y + h / 2 + 10 };
-    g.addEventListener('click', () => { if (!dragMoved) flyToRect(wing.rect, 20); });
   }
 
   function renderFixture(rec) {
@@ -1391,20 +1658,24 @@ table.ruled td.st.blocked { color: var(--red); }
     const dt = L.title.toUpperCase();
     PLAN.dwgTitle.textContent = dt;
     PLAN.dwgNo.textContent = L.sheet;
-    const tw = measure(dt, { w: 700, s: 34, f: STACK.letter, ls: 0.1, up: true });
-    PLAN.dwgRule.setAttribute('d', 'M76,' + (PLAN.titleY + 4) + 'h' + r2(tw) + 'M76,' + (PLAN.titleY + 9) + 'h' + r2(tw));
+    const tw = measure(dt, FONT.dwg);
+    const dx = r2(PLAN.dwgX);
+    PLAN.dwgRule.setAttribute('d', 'M' + dx + ',' + r2(PLAN.titleY + 4 * LP) + 'h' + r2(tw) + 'M' + dx + ',' + r2(PLAN.titleY + 9 * LP) + 'h' + r2(tw));
     PLAN.dwgRule.setAttribute('style', 'stroke-width:2');
     const val = (roll) => (lens === 'overall' ? roll.overall : roll.dims[lens]);
     WINGS.forEach((w) => {
       w.statEl.textContent = w.roll.count + ' FX · ' + w.rooms.length + ' ROOMS · ' + L.short + ' ' + pct(val(w.roll));
-      w.plateStat.textContent = w.roll.count + ' FX · ' + pct(val(w.roll));
+      w.tag.variants.forEach((v) => {
+        if (v.stat === 'inline') v.st.textContent = pct(val(w.roll));
+        else if (v.stat === 'below') v.st.textContent = (lens === 'overall' ? '' : L.short + ' ') + pct(val(w.roll));
+      });
     });
     ROOMS.forEach((room) => {
       const st = room.statEl;
       const nTrust = state.trust ? room.cells.filter((c) => c.trust).length : 0;
       const tail = nTrust ? ' · ▲' + nTrust : '';
       const v = pct(val(room.roll));
-      const avail = room.w - 2 * G.roomPad - 49;
+      const avail = room.w - 2 * G.roomPad - tagW() - 2;
       const pre = lens === 'overall' ? '' : L.short + ' ';
       const main = firstFit([room.n + ' FX · ' + pre + v + tail, room.n + ' FX · ' + v + tail, v + tail], FONT.roomS, avail);
       st.textContent = tail ? main.slice(0, -tail.length) : main;
@@ -1495,14 +1766,8 @@ table.ruled td.st.blocked { color: var(--red); }
       state.level = lv;
       $('#lvl-name').textContent = LV_NAMES[lv].toUpperCase();
     }
-    if (lv === 0) WINGS.forEach((w) => {
-      const p = w.plate;
-      let s = 1 / k;
-      const maxW = w.rect.w * 0.9;
-      const maxH = w.rect.h * 0.8;
-      s = Math.min(s, maxW / p.pw, maxH / p.ph);
-      p.g.setAttribute('transform', 'translate(' + r2(p.cx) + ',' + r2(p.cy) + ') scale(' + s.toFixed(4) + ')');
-    });
+    if (lv === 0) placeZoneTags(k);
+    else applyAnnot(k);
     if (state.sel && state.sel.type === 'feature') drawLinks();
   }
 
@@ -1528,7 +1793,7 @@ table.ruled td.st.blocked { color: var(--red); }
     const L = m * pxPerM;
     let s = '';
     for (let i = 0; i < 4; i++) s += '<rect x="' + r2(2 + i * L / 4) + '" y="2" width="' + r2(L / 4) + '" height="5" fill="' + (i % 2 ? 'var(--paper)' : 'var(--ink)') + '" stroke="var(--ink)" stroke-width="1"/>';
-    s += '<text x="2" y="19" font-family="var(--f-mono)" font-size="9" fill="var(--ink-2)">0</text><text x="' + r2(2 + L) + '" y="19" text-anchor="end" font-family="var(--f-mono)" font-size="9" fill="var(--ink-2)">' + m + ' M</text>';
+    s += '<text x="2" y="19" font-family="var(--f-mono)" font-size="10" fill="var(--ink-2)">0</text><text x="' + r2(2 + L) + '" y="19" text-anchor="end" font-family="var(--f-mono)" font-size="10" fill="var(--ink-2)">' + m + ' M</text>';
     svg.innerHTML = s;
   }
 
@@ -1556,7 +1821,7 @@ table.ruled td.st.blocked { color: var(--red); }
   function fitView() {
     const ph = isPhone();
     const va = visibleArea();
-    const area = { x: va.x, y: va.y, w: va.w || 800, h: (va.h || 600) - (ph ? 0 : 44) };
+    const area = { x: va.x, y: va.y, w: va.w || 800, h: va.h || 600 };
     const pad = ph ? 8 : 16;
     const c1 = camForBox(PLAN.ext, area, pad);
     if (c1.k >= LV.SHEET) return c1;
@@ -1610,6 +1875,24 @@ table.ruled td.st.blocked { color: var(--red); }
     const cy = rec.y + G.ch / 2;
     state.touched = true;
     flyCam({ k: k2, x: area.x + area.w / 2 - cx * k2, y: area.y + area.h / 2 - cy * k2 });
+  }
+  /** Flies to a fixture and frames its references with it when they all fit at room scale or closer. */
+  function flyToRelations(rec) {
+    const rel = BP.dependencies(rec.f).concat(BP.dependents(rec.f)).map((d) => FX.get(d.id));
+    if (!rel.length) { flyToFeature(rec.f.id); return; }
+    const all = [rec].concat(rel);
+    const x0 = Math.min.apply(null, all.map((r) => r.x)) - 40;
+    const y0 = Math.min.apply(null, all.map((r) => r.y)) - 40;
+    const x1 = Math.max.apply(null, all.map((r) => r.x + G.cw)) + 40;
+    const y1 = Math.max.apply(null, all.map((r) => r.y + G.ch)) + 40;
+    const area = visibleArea();
+    const c = camForBox({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, area, 12);
+    if (c.k < LV.ROOM) { flyToFeature(rec.f.id); return; }
+    const k = Math.min(c.k, LV.DETAIL + 0.3);
+    const cx = (x0 + x1) / 2;
+    const cy = (y0 + y1) / 2;
+    state.touched = true;
+    flyCam({ k, x: area.x + area.w / 2 - cx * k, y: area.y + area.h / 2 - cy * k });
   }
   function zoomAt(px, py, factor) {
     const { x, y, k } = state.cam;
@@ -1700,8 +1983,16 @@ table.ruled td.st.blocked { color: var(--red); }
     if (!target || !target.closest) return;
     const fxEl = target.closest('[data-fid]');
     if (fxEl) { selectFeature(fxEl.getAttribute('data-fid'), { fly: false }); return; }
-    const zone = target.closest('.zone-hdr, .plate-g');
-    if (zone) return;
+    // zone headers (sheet) and zone tags (key plan) navigate to their zone; the viewport holds pointer
+    // capture, so the click itself is retargeted here rather than to the zone. Desktop keeps the
+    // selection; on phone the bottom sheet closes first so the zone is framed on the whole stage.
+    const zone = target.closest('.zone-hdr, .ztag');
+    if (zone) {
+      const wing = WINGS.find((w) => w.d.id === zone.getAttribute('data-zone'));
+      if (isPhone()) clearSelection();
+      if (wing) flyToRect(wing.rect, zone.classList.contains('ztag') ? 20 : 26);
+      return;
+    }
     const roomEl = target.closest('[data-room]');
     if (roomEl) { selectModule(roomEl.getAttribute('data-room'), true); return; }
     clearSelection();
@@ -1762,7 +2053,7 @@ table.ruled td.st.blocked { color: var(--red); }
       if (m) roomHits.set(rec.room.m.id, true);
     });
     ROOMS.forEach((room, id) => room.lblEl.classList.toggle('dimroom', active && !roomHits.has(id)));
-    $('#search-count').textContent = q ? n + ' FOUND' : '';
+    $('#search-count').innerHTML = q ? n + '<span class="cw"> FOUND</span>' : '';
     $$('.chip-set').forEach((set) => set.classList.toggle('filtering', state.statuses.size > 0));
     $$('.chip').forEach((c) => c.setAttribute('aria-pressed', String(state.statuses.has(c.getAttribute('data-status')))));
     return n;
@@ -1848,7 +2139,7 @@ table.ruled td.st.blocked { color: var(--red); }
     renderInspector();
     drawLinks();
     const o = opts || {};
-    if (o.fly) flyToFeature(id);
+    if (o.fly) flyToRelations(rec);
     else ensureVisible(rec);
   }
   function ensureVisible(rec) {
@@ -1937,12 +2228,12 @@ table.ruled td.st.blocked { color: var(--red); }
     $('#brand-ver').textContent = 'v' + P.version;
     // sheet tabs (toolbar + phone footer)
     [['#sheets-bar', true], ['#sheets-foot', false]].forEach(([sel, desk]) => {
-      $(sel).innerHTML = LENSES.map((l) => '<button type="button" class="sheet-tab" data-lens="' + l.id + '" aria-pressed="' + (l.id === state.lens) + '" title="' + l.discipline + ' sheet · ' + l.name + ' lens (' + l.key + ')"><span class="no">' + l.sheet + '</span><span class="nm">' + (desk ? l.name : l.short) + '</span>' + (desk ? '<kbd>' + l.key + '</kbd>' : '') + '</button>').join('');
+      $(sel).innerHTML = LENSES.map((l) => '<button type="button" class="sheet-tab" data-lens="' + l.id + '" aria-pressed="' + (l.id === state.lens) + '" title="' + l.discipline + ' sheet · ' + l.name + ' lens (' + l.key + ')"><span class="no">' + l.sheet + '</span><span class="nm">' + (desk ? l.name : l.short) + '</span>' + (desk ? '<span class="sh" aria-hidden="true">' + l.short + '</span>' : '') + (desk ? '<kbd>' + l.key + '</kbd>' : '') + '</button>').join('');
     });
     $$('[data-lens]').forEach((b) => b.addEventListener('click', () => setLens(b.getAttribute('data-lens'))));
     // status chips: schedule rows on desktop, a chip strip on phone
     const roll = productRoll;
-    const chipHtml = BP.STATUS_ORDER.map((s) => '<button type="button" class="chip" data-status="' + s + '" aria-pressed="false">' + symSvg(s) + '<span><span class="l1">' + esc(STATUS_LABEL[s]) + '</span><span class="l2">' + esc(STATUS_TERMS[s]) + '</span></span><span class="c">' + roll.byStatus[s] + '</span></button>').join('');
+    const chipHtml = BP.STATUS_ORDER.map((s) => '<button type="button" class="chip" data-status="' + s + '" aria-pressed="false">' + symSvg(s) + '<span><span class="l1">' + esc(STATUS_LABEL[s]) + '</span><span class="l2">' + esc(STATUS_DRAW[s]) + '</span></span><span class="c">' + roll.byStatus[s] + '</span></button>').join('');
     $('#chips-strip').innerHTML = chipHtml;
     $('#chips-row').innerHTML = chipHtml;
     $$('.chip').forEach((c) => c.addEventListener('click', () => {
@@ -1985,6 +2276,8 @@ table.ruled td.st.blocked { color: var(--red); }
     $('#trust-toggle').addEventListener('click', () => setTrust(!state.trust));
     $('#theme-toggle').addEventListener('click', cycleTheme);
     $('#legend-toggle').addEventListener('click', toggleLegend);
+    $('.strip-scroll').addEventListener('scroll', updateMore, { passive: true });
+    $('#strip-more').addEventListener('click', scrollMore);
     $('#legend-btn').addEventListener('click', () => setNotes($('#strip').classList.contains('closed')));
     $('#strip-close').addEventListener('click', () => setNotes(false));
     $('#scrim').addEventListener('click', () => setNotes(false));
@@ -2014,6 +2307,7 @@ table.ruled td.st.blocked { color: var(--red); }
       return '<div class="comp-row' + (on ? ' on' : '') + '"><span class="k">' + d.short.toUpperCase() + '</span>' + dimBarSvg(roll.dims[d.id], on) + '<span class="v">' + pct(roll.dims[d.id]) + '</span></div>';
     }).join('') + '<div class="comp-row' + (state.lens === 'overall' ? ' on' : '') + '"><span class="k">OVR</span>' + dimBarSvg(roll.overall, state.lens === 'overall') + '<span class="v">' + pct(roll.overall) + '</span></div>';
     renderLegend();
+    updateMore();
   }
 
   function lg(svg, t, d) {
@@ -2021,12 +2315,13 @@ table.ruled td.st.blocked { color: var(--red); }
   }
   function renderLegend() {
     const sq = (cls, extra) => '<rect x="10" y="4" width="18" height="18" class="sym ' + cls + '"/>' + (extra || '');
-    let h = '<div class="lg-sec">Construction status</div>';
+    let h = '<div class="lg-status"><div class="lg-sec">Construction status</div>';
     h += lg(sq('sym-live'), 'Live', 'Existing construction: heavy outline, solid poche');
     h += lg(sq('sym-ready'), 'Ready', 'Built, awaiting release: light fill');
     h += lg(sq('sym-build'), 'In build', 'New construction: amber hatch');
     h += lg(sq('sym-plan'), 'Planned', 'Future work: dashed, no fill');
     h += lg(sq('sym-block', '<path d="M7,1L31,25M31,1L7,25" class="redx" style="stroke-width:1.8"/>'), 'Blocked', 'Redline X with a leader to its keynote');
+    h += '</div>';
     const L = state.lens;
     h += '<div class="lg-sec">' + LENS[L].sheet + ' · ' + LENS[L].discipline + ' layer</div>';
     if (L === 'overall') {
@@ -2066,6 +2361,29 @@ table.ruled td.st.blocked { color: var(--red); }
     state.legendOpen = !state.legendOpen;
     $('#legend-toggle').setAttribute('aria-expanded', String(state.legendOpen));
     $('#legend').hidden = !state.legendOpen;
+    updateMore();
+  }
+  /** Scroll affordance for the sheet column: names the sections still below the fold. */
+  function updateMore() {
+    const sc = $('.strip-scroll');
+    const btn = $('#strip-more');
+    const rest = sc.scrollHeight - sc.scrollTop - sc.clientHeight;
+    const on = rest > 14 && sc.clientHeight > 0;
+    btn.hidden = !on;
+    $('.more-wrap').classList.toggle('on', on);
+    if (!on) return;
+    const bottom = sc.getBoundingClientRect().bottom;
+    const below = $$('.sn', sc).filter((sn) => sn.offsetParent !== null && sn.getBoundingClientRect().top > bottom - 30);
+    const names = below.map((sn) => (sn.getAttribute('data-name') === 'Keynotes' ? keynoteN + ' keynotes' : sn.getAttribute('data-name')));
+    $('#strip-more-t').textContent = names.join(' · ');
+    btn.setAttribute('aria-label', 'Scroll the sheet notes' + (names.length ? ' to ' + names[0] : ''));
+    btn.dataset.target = below.length ? String(below[0].offsetTop - 2) : '';
+  }
+  function scrollMore() {
+    const sc = $('.strip-scroll');
+    const t = $('#strip-more').dataset.target;
+    const top = t ? Number(t) : sc.scrollTop + sc.clientHeight * 0.7;
+    sc.scrollTo({ top, behavior: reduceMotion() ? 'auto' : 'smooth' });
   }
   function setNotes(open) {
     if (!isPhone()) return;
@@ -2073,7 +2391,7 @@ table.ruled td.st.blocked { color: var(--red); }
     $('#strip').setAttribute('aria-hidden', String(!open));
     $('#legend-btn').setAttribute('aria-expanded', String(open));
     $('#scrim').classList.toggle('on', open);
-    if (open) clearSelection();
+    if (open) { clearSelection(); requestAnimationFrame(updateMore); }
   }
 
   // theme: system > light > dark
@@ -2101,11 +2419,13 @@ table.ruled td.st.blocked { color: var(--red); }
     const insp = $('#inspector');
     insp.classList.remove('closed');
     insp.setAttribute('aria-hidden', 'false');
+    $('#app').classList.add('insp-open');
   }
   function closeInspector() {
     const insp = $('#inspector');
     insp.classList.add('closed');
     insp.setAttribute('aria-hidden', 'true');
+    $('#app').classList.remove('insp-open');
   }
   function refBtn(f, rel) {
     const rec = FX.get(f.id);
@@ -2152,9 +2472,9 @@ table.ruled td.st.blocked { color: var(--red); }
       h += '<h3 class="ins-h">Metrics</h3><div class="metrics"><div><span class="k">TEST COVERAGE</span>' + mv(m.coverage, '%') + '</div><div><span class="k">UPTIME 30D</span>' + mv(m.uptime, '%') + '</div><div><span class="k">ADOPTION</span>' + mv(m.adoption, '%') + '</div></div>';
       const deps = BP.dependencies(f);
       const dnts = BP.dependents(f);
-      h += '<h3 class="ins-h">References <span>' + deps.length + ' in · ' + dnts.length + ' out</span></h3>';
-      h += '<div class="ref-h">Depends on</div><div class="refs">' + (deps.length ? deps.map((d) => refBtn(d)).join('') : '<div class="ref-empty">No dependencies.</div>') + '</div>';
-      h += '<div class="ref-h">Required by</div><div class="refs">' + (dnts.length ? dnts.map((d) => refBtn(d)).join('') : '<div class="ref-empty">Nothing depends on this yet.</div>') + '</div>';
+      h += '<h3 class="ins-h">References <span>drawn on the plan</span></h3>';
+      h += '<div class="ref-h">Depends on · ' + deps.length + ' <span class="ref-k">solid line</span></div><div class="refs">' + (deps.length ? deps.map((d) => refBtn(d)).join('') : '<div class="ref-empty">No dependencies.</div>') + '</div>';
+      h += '<div class="ref-h">Required by · ' + dnts.length + ' <span class="ref-k">dashed line</span></div><div class="refs">' + (dnts.length ? dnts.map((d) => refBtn(d)).join('') : '<div class="ref-empty">Nothing depends on this yet.</div>') + '</div>';
       body.innerHTML = h;
     } else {
       const room = ROOMS.get(state.sel.id);
@@ -2201,6 +2521,7 @@ table.ruled td.st.blocked { color: var(--red); }
     if (isPhone()) { $('#strip').classList.add('closed'); $('#strip').setAttribute('aria-hidden', 'true'); }
     fit(false);
     let wasPhone = isPhone();
+    let relayoutTimer = 0;
     barW = $('#scalebar').clientWidth || 180;
     window.addEventListener('resize', () => {
       barW = $('#scalebar').clientWidth || barW;
@@ -2212,9 +2533,17 @@ table.ruled td.st.blocked { color: var(--red); }
         wasPhone = ph;
       }
       $('#search').placeholder = ph ? 'Find' : 'Find fixture';
-      // a tall screen gets a tall plan: rebuild when the orientation class flips
-      if ((targetAspect() < 1) !== PLAN.portrait) { build(); state.touched = false; }
+      // the plan is laid out for the stage it opens on: while the view is still at its fit, a resized
+      // stage gets a fresh layout (debounced); a moved camera keeps its plan
       if (!state.touched) fit(false); else setCamNow(state.cam);
+      updateMore();
+      clearTimeout(relayoutTimer);
+      relayoutTimer = setTimeout(() => {
+        const a = layoutArea();
+        const o = PLAN.area;
+        const changed = a.phone !== o.phone || Math.abs(Math.log((a.w / a.h) / (o.w / o.h))) > 0.06 || Math.abs(Math.log(a.w / o.w)) > 0.1;
+        if (changed && !state.touched) { build(); fit(false); }
+      }, 180);
     });
     $('#search').placeholder = isPhone() ? 'Find' : 'Find fixture';
     // Test and demo hooks.
@@ -2228,6 +2557,7 @@ table.ruled td.st.blocked { color: var(--red); }
       flyZone: (id) => flyToRect(WINGS.find((w) => w.d.id === id).rect, 16),
       flyFeature: (id, k) => flyToFeature(id, k),
       state: () => ({ lens: state.lens, k: state.cam.k, level: state.level, sel: state.sel }),
+      plan: () => ({ ms: PLAN.ms, L: LS, keyplan: PLAN.keyplan, W: PLAN.W, H: PLAN.H, sheetK: LV.SHEET }),
     };
   }
   let booted = false;
@@ -2235,10 +2565,15 @@ table.ruled td.st.blocked { color: var(--red); }
   function start() {
     if (booted) return;
     booted = true;
-    fontsSettled = !document.fonts || document.fonts.status === 'loaded';
+    fontsSettled = !document.fonts || FACES.every((f) => { try { return document.fonts.check(f); } catch (err) { return true; } });
     boot();
   }
-  const fontsReady = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
+  // Plan lettering is measured on a canvas, so every face it uses must be loaded first: a face that no
+  // element has used yet would otherwise be measured in a fallback font.
+  const FACES = ['500 20px "Saira Condensed"', '600 20px "Saira Condensed"', '700 20px "Saira Condensed"', '400 12px "IBM Plex Mono"', '500 12px "IBM Plex Mono"', '600 12px "IBM Plex Mono"', '400 12px "Barlow Semi Condensed"'];
+  const fontsReady = document.fonts && document.fonts.load
+    ? Promise.all(FACES.map((f) => document.fonts.load(f).catch(() => null))).then(() => document.fonts.ready)
+    : Promise.resolve();
   Promise.race([fontsReady, new Promise((res) => setTimeout(res, 1500))]).then(start);
   if (document.fonts && document.fonts.addEventListener) {
     // fonts that arrive after boot change text widths: re-letter the plan once

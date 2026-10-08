@@ -41,8 +41,8 @@
   --shadow-2: rgba(26, 34, 50, 0.16);
   --scrim: rgba(18, 24, 34, 0.26);
   --lift: rgba(255, 255, 255, 0);
-  --band: rgba(255, 255, 255, 0.5);
-  --band-line: rgba(27, 34, 48, 0.05);
+  --band: rgba(255, 255, 255, 0.66);
+  --band-line: rgba(27, 34, 48, 0.07);
   --lens-overall: var(--graphite);
   --hf3-overall: #ffffff;
   --on-heat: #ffffff;
@@ -84,7 +84,7 @@
     --rule: #2c323b; --rule-2: #3b424d; --wire: #535d6c;
     --root-bg: #272d37; --root-fg: #f1f3f7; --root-fg-2: #98a2b2;
     --shadow: rgba(0, 0, 0, 0.32); --shadow-2: rgba(0, 0, 0, 0.5); --scrim: rgba(0, 0, 0, 0.5); --lift: rgba(255, 255, 255, 0.045);
-    --band: rgba(255, 255, 255, 0.022); --band-line: rgba(255, 255, 255, 0.04);
+    --band: rgba(255, 255, 255, 0.03); --band-line: rgba(255, 255, 255, 0.055);
     --lens-overall: #b9c2d0; --hf3-overall: #e7eaef; --on-heat: #10131a;
     --hm0: 10%; --hm1: 22%; --hm2: 36%; --hm3: 50%; --hm4: 80%;
     --live: #45bf7b; --ready: #8bd4a9; --building: #f0ab35; --planned: #8f99ab; --blocked: #ff6356;
@@ -100,7 +100,7 @@
   --rule: #2c323b; --rule-2: #3b424d; --wire: #535d6c;
   --root-bg: #272d37; --root-fg: #f1f3f7; --root-fg-2: #98a2b2;
   --shadow: rgba(0, 0, 0, 0.32); --shadow-2: rgba(0, 0, 0, 0.5); --scrim: rgba(0, 0, 0, 0.5); --lift: rgba(255, 255, 255, 0.045);
-  --band: rgba(255, 255, 255, 0.022); --band-line: rgba(255, 255, 255, 0.04);
+  --band: rgba(255, 255, 255, 0.03); --band-line: rgba(255, 255, 255, 0.055);
   --lens-overall: #b9c2d0; --hf3-overall: #e7eaef; --on-heat: #10131a;
   --hm0: 10%; --hm1: 22%; --hm2: 36%; --hm3: 50%; --hm4: 80%;
   --live: #45bf7b; --ready: #8bd4a9; --building: #f0ab35; --planned: #8f99ab; --blocked: #ff6356;
@@ -188,6 +188,7 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
   font: 400 13px/1 var(--f-ui); outline: none;
 }
 #search::placeholder { color: var(--ink-3); }
+#search:placeholder-shown { padding-right: 32px; } /* no match count while empty: the placeholder may run up to the / key */
 #search:focus { border-color: var(--ink-3); box-shadow: 0 0 0 3px var(--paper-3); }
 #search::-webkit-search-cancel-button { display: none; }
 .search .kbd { position: absolute; right: 8px; }
@@ -201,6 +202,8 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
 .tb { font: 500 12.5px/1 var(--f-ui); padding: 0 11px 0 9px; }
 .tb[aria-pressed="true"] { background: color-mix(in oklab, var(--trust) 12%, var(--paper)); border-color: var(--trust); color: var(--ink); }
 .tb[aria-pressed="true"] .tb-glyph { color: var(--trust); }
+.tb-count { font: 600 11px/1 var(--f-data); color: var(--trust); background: color-mix(in oklab, var(--trust) 12%, var(--paper)); border-radius: 5px; padding: 3px 5px; margin-left: -1px; font-variant-numeric: tabular-nums; }
+.tb[aria-pressed="true"] .tb-count { background: var(--trust); color: var(--paper); }
 .ib[aria-pressed="true"] { background: var(--chrome-2); color: var(--ink); border-color: var(--rule-2); }
 .phone-only { display: none !important; }
 
@@ -211,7 +214,8 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
   background: var(--chrome); border-bottom: 1px solid var(--chrome-line);
   position: relative; z-index: 5;
 }
-.chips { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.chips { display: flex; align-items: center; gap: 4px; min-width: 0; flex: none; }
+#attn-btn, #clear-btn { flex: none; }
 .hud-label { font: 500 10.5px/1 var(--f-data); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); margin-right: 6px; white-space: nowrap; }
 .chip {
   --cut: var(--paper);
@@ -243,11 +247,13 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
 .qb { appearance: none; width: 24px; height: 24px; border-radius: 6px; border: 0; background: transparent; color: var(--ink-2); cursor: pointer; display: grid; place-items: center; }
 .qb:hover { background: var(--paper); color: var(--ink); }
 
-#crumbs { display: flex; align-items: center; gap: 2px; min-width: 0; overflow: hidden; font: 500 12px/1 var(--f-ui); color: var(--ink-3); }
+#crumbs { display: flex; align-items: center; gap: 2px; min-width: 0; flex: 0 1 auto; overflow: hidden; font: 500 12px/1 var(--f-ui); color: var(--ink-3); }
 #crumbs button { appearance: none; border: 0; background: none; padding: 5px 6px; border-radius: 6px; cursor: pointer; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
 #crumbs button:hover { background: var(--chrome-2); color: var(--ink); }
+#crumbs button:focus-visible { outline-offset: -2px; } /* #crumbs clips anything drawn outside its buttons */
 #crumbs button[aria-current] { color: var(--ink); font-weight: 600; }
 #crumbs .sep { color: var(--ink-4); }
+.crumb-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink-3); font-weight: 400; }
 .focus-tag { font: 600 10px/1 var(--f-data); letter-spacing: 0.08em; text-transform: uppercase; color: var(--paper); background: var(--ink); padding: 4px 6px; border-radius: 4px; margin-right: 4px; white-space: nowrap; }
 
 /* ───────────── stage ───────────── */
@@ -262,6 +268,7 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
 #stage[data-level="far"] .only-mid, #stage[data-level="far"] .only-near, #stage[data-level="far"] .no-far,
 #stage[data-level="mid"] .only-far, #stage[data-level="mid"] .only-near, #stage[data-level="mid"] .no-mid,
 #stage[data-level="near"] .only-far, #stage[data-level="near"] .only-mid, #stage[data-level="near"] .no-near { display: none; }
+#stage:not([data-names]) .only-named, #stage[data-names] .no-named { display: none; }
 
 .node { transition: opacity 0.22s ease; }
 .node.gone { opacity: 0 !important; pointer-events: none; }
@@ -373,14 +380,16 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
 .ring-sel, .ring-hit, .ring-rel, .trust-mark, .ring-focus { display: none; }
 .ring-sel { fill: none; stroke: var(--sel); stroke-width: 2.5; }
 #stage[data-level="far"] .ring-sel { stroke-width: 5; }
+#stage[data-level="far"] .fc > .ring-sel { stroke-width: 4.5; }
 .ring-hit { fill: none; stroke: var(--hit); stroke-width: 3.5; }
 #stage[data-level="far"] .ring-hit { stroke-width: 6; }
-.ring-rel { fill: none; stroke: var(--link); stroke-width: 1.5; stroke-dasharray: 4 3; }
-#stage[data-level="far"] .ring-rel { stroke-width: 3; }
+.ring-rel { fill: none; stroke: var(--link); stroke-width: 1.6; }
+#stage[data-level="far"] .ring-rel { stroke-width: 3.2; }
 .sel > .ring-sel, .hit > .ring-hit, .rel > .ring-rel { display: block; }
 .ring-mod { fill: none; stroke: var(--sel); stroke-width: 2.5; }
 .trust-ring { fill: color-mix(in oklab, var(--trust) 7%, transparent); stroke: var(--trust); stroke-width: 1.6; stroke-dasharray: 5 3; }
-#stage[data-level="far"] .trust-ring { stroke-width: 3; stroke-dasharray: 8 5; }
+#stage[data-level="far"] .trust-ring { stroke-width: 4; stroke-dasharray: 9 5; fill: color-mix(in oklab, var(--trust) 12%, transparent); }
+.mod-q-ring { stroke: var(--canvas); stroke-width: 3; }
 .trust-seal { fill: var(--trust); }
 .trust-glyph { fill: none; stroke: var(--paper); stroke-linecap: round; stroke-linejoin: round; }
 .trust-eye { fill: var(--paper); }
@@ -392,11 +401,11 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
 #stage.trust .mod-q { display: block; }
 
 /* dependency links */
-.dep-halo { fill: none; stroke: var(--canvas); stroke-linecap: round; opacity: 0.55; }
-.dep-up { fill: none; stroke: var(--link); stroke-linecap: round; }
-.dep-down { fill: none; stroke: var(--ink-3); stroke-linecap: round; }
+.dep-halo { fill: none; stroke: var(--canvas); stroke-linecap: round; stroke-linejoin: round; opacity: 0.9; }
+.dep-up { fill: none; stroke: var(--link); stroke-linecap: round; stroke-linejoin: round; }
+.dep-down { fill: none; stroke: var(--ink-2); stroke-linecap: round; stroke-linejoin: round; }
 .dep-arrow-up { fill: var(--link); }
-.dep-arrow-down { fill: var(--ink-3); }
+.dep-arrow-down { fill: var(--ink-2); }
 .dep-dot { fill: var(--link); }
 
 /* collapsed pips */
@@ -536,6 +545,7 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
   display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 8px 10px; color: var(--ink);
 }
 .frow:hover { background: var(--paper-2); }
+.frow:focus-visible { outline-offset: -2px; } /* the list clips anything drawn outside a row */
 .frow svg { width: 14px; height: 14px; }
 .frow-name { font: 500 13px/1.25 var(--f-ui); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .frow-name small { display: block; font: 400 11px/1.3 var(--f-ui); color: var(--ink-3); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; }
@@ -610,7 +620,7 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
 .sw-hit { border: 3px solid var(--hit); }
 .sw-sel { border: 2.5px solid var(--sel); }
 .sw-line { width: 22px; height: 0; border-top: 2px solid var(--link); display: block; }
-.sw-line.dash { border-top-style: dashed; border-color: var(--ink-3); }
+.sw-line.dash { border-top-style: dashed; border-color: var(--ink-2); }
 .sw-wire { width: 22px; display: grid; gap: 3px; }
 .sw-wire i { display: block; height: 0; border-top: solid var(--wire); }
 
@@ -619,6 +629,10 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
 }
 
 /* ───────────── narrow screens and phones ───────────── */
+@media (max-width: 1360px) {
+  #search { width: 184px; }
+  .next { display: none; }
+}
 @media (max-width: 1180px) {
   .lens-name .long { display: none; }
   .lens-name .short { display: inline; }
@@ -627,7 +641,12 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
   .brand-name { display: none; }
   .brand-sep { display: none; }
 }
+@media (max-width: 1100px) {
+  .crumb-meta { display: none; }
+  #app.insp-open #crumbs { display: none; }
+}
 @media (max-width: 960px) {
+  :root { --insp-w: 356px; }
   .chip-label { display: none; }
   .next { display: none; }
   #zoombar .zl, #zoombar .zsep { display: none; }
@@ -673,8 +692,8 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
   #legend { transform: translateY(104%); opacity: 1; }
   #legend.open { transform: none; }
   .sheet-grip { display: block; width: 40px; height: 4px; border-radius: 2px; background: var(--rule-2); margin: 8px auto 0; flex: none; border: 0; padding: 0; }
-  button.sheet-grip { width: 64px; height: 18px; margin: 2px auto -6px; background: transparent; cursor: pointer; position: relative; }
-  button.sheet-grip::after { content: ""; position: absolute; left: 12px; right: 12px; top: 7px; height: 4px; border-radius: 2px; background: var(--rule-2); }
+  button.sheet-grip { width: 96px; height: 22px; margin: 0 auto -8px; background: transparent; cursor: grab; position: relative; touch-action: none; }
+  button.sheet-grip::after { content: ""; position: absolute; left: 28px; right: 28px; top: 9px; height: 4px; border-radius: 2px; background: var(--rule-2); }
   #inspector.tall { max-height: 88%; }
   .insp-top { padding: 4px 8px 0 16px; }
   .insp-body { padding: 4px 16px 24px; }
@@ -713,7 +732,7 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
       </button>
       <button id="trust-btn" class="tb" type="button" aria-pressed="false" aria-label="Agent review overlay: mark agent-built work waiting for human review (T)">
         <svg class="ico tb-glyph" viewBox="0 0 16 16" aria-hidden="true"><rect class="ico-ln" x="2.5" y="4" width="11" height="9" rx="2.6"/><circle class="ico-fill" cx="6" cy="8.4" r="1.1"/><circle class="ico-fill" cx="10" cy="8.4" r="1.1"/><path class="ico-ln" d="M8 4V1.8"/></svg>
-        <span class="tb-label">Agent review</span>
+        <span class="tb-label">Agent review</span><span class="tb-count" id="trust-count" aria-hidden="true">0</span>
       </button>
       <button id="legend-btn" class="ib" type="button" aria-pressed="false" aria-label="Legend (L)">
         <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><rect class="ico-ln" x="2" y="2.5" width="4" height="4" rx="1"/><rect class="ico-ln" x="2" y="9.5" width="4" height="4" rx="1"/><path class="ico-ln" d="M8.5 4.5H14M8.5 11.5H14"/></svg>
@@ -754,8 +773,8 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
       <rect id="bg" x="0" y="0" width="100%" height="100%" fill="url(#dotgrid)"/>
       <g id="world">
         <g id="tree"></g>
-        <g id="nodes"></g>
         <g id="deps"></g>
+        <g id="nodes"></g>
       </g>
     </svg>
 
@@ -826,9 +845,14 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
   const G = {
     FW: 232, FH: 64, FG: 8,
     MW: 256,
-    wide: { RW: 196, RH: 304, DW: 188, DMIN: 178, GRD: 56, GDM: 48, GMF: 28, RG: 8, DG: 30 },
-    tall: { RW: 760, RH: 168, DW: 210, DMIN: 280, TRUNK: 30, DX: 64, GRD: 44, GDM: 44, GMF: 28, RG: 10, DG: 34, WRAP: 4 },
+    wide: { RW: 196, RH: 304, DW: 188, DMIN: 172, GRD: 56, GDM: 48, GMF: 28, RG: 8, DG: 24 },
+    tall: { RW: 760, RH: 168, DW: 210, DMIN: 232, TRUNK: 30, DX: 64, GRD: 44, GDM: 44, GMF: 28, RG: 10, DG: 34 },
   };
+  // Arrangements the page chooses between: the landscape tree, or the tree with the root on top and feature rows wrapped.
+  // The one that fits the stage at the largest scale wins (the landscape tree gets a small head start).
+  const ARRANGEMENTS = [{ mode: 'wide', wrap: 99 }, { mode: 'tall', wrap: 7 }, { mode: 'tall', wrap: 6 }, { mode: 'tall', wrap: 5 }, { mode: 'tall', wrap: 4 }];
+  const MM_W = 186; // minimap panel width (canvas + padding + border)
+  const NAMES_K = 0.47; // from this zoom the overview cards carry feature names
   const LEVEL_MID = 0.7;
   const LEVEL_NEAR = 1.55;
   const K_MAX = 4;
@@ -851,6 +875,8 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
     lens: 'overall',
     level: 'far',
     mode: 'wide',
+    wrap: 99,
+    named: false,
     cam: { x: 0, y: 0, k: 0.5 },
     sel: null, // node id: 'root' | 'd:x' | 'm:x' | 'f:x'
     inspector: false,
@@ -902,23 +928,37 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
   }
   /** Word-wraps text to at most maxLines lines of maxW world units, ellipsizing the last line. */
   function wrapText(text, weight, size, maxW, maxLines) {
-    const words = String(text).split(/\s+/).filter(Boolean);
+    // tokens break at spaces, and after hyphens only inside words too wide for a line ("Guest-to-" / "account upgrade")
+    const toks = [];
+    String(text).split(/\s+/).filter(Boolean).forEach((w) => {
+      const parts = textW(w, weight, size) > maxW ? w.split(/(?<=-)(?=[^-])/) : [w];
+      parts.forEach((pt, j) => toks.push({ t: pt, sp: j === 0 && toks.length > 0 }));
+    });
+    const join = (a, tk) => (a ? a + (tk.sp ? ' ' : '') + tk.t : tk.t);
     const lines = [];
     let cur = '';
-    for (let i = 0; i < words.length; i++) {
-      const t = cur ? cur + ' ' + words[i] : words[i];
+    for (let i = 0; i < toks.length; i++) {
+      const t = join(cur, toks[i]);
       if (!cur || textW(t, weight, size) <= maxW) { cur = t; continue; }
       lines.push(cur);
-      if (lines.length === maxLines - 1) { cur = words.slice(i).join(' '); break; }
-      cur = words[i];
+      if (lines.length === maxLines - 1) { cur = toks.slice(i).reduce((a, tk) => join(a, tk), ''); break; }
+      cur = toks[i].t;
     }
     lines.push(cur);
-    let last = lines[lines.length - 1];
-    if (textW(last, weight, size) > maxW) {
-      while (last.length > 1 && textW(last + '…', weight, size) > maxW) last = last.slice(0, -1);
-      lines[lines.length - 1] = last.replace(/\s+$/, '') + '…';
+    return lines.map((ln, i) => {
+      if (textW(ln, weight, size) <= maxW) return ln;
+      let t = ln;
+      while (t.length > 1 && textW(t + '…', weight, size) > maxW) t = t.slice(0, -1);
+      return t.replace(/[\s-]+$/, '') + '…';
+    });
+  }
+  /** Wraps a name into at most maxLines, stepping the size down (to sizes[last]) before it would have to ellipsize. */
+  function fitName(text, weight, sizes, maxW, maxLines) {
+    for (let i = 0; i < sizes.length; i++) {
+      const lines = wrapText(text, weight, sizes[i], maxW, maxLines);
+      if (i === sizes.length - 1 || !lines.some((ln) => ln.slice(-1) === '…')) return { size: sizes[i], lines };
     }
-    return lines;
+    return null;
   }
   const fit1 = (text, weight, size, maxW, mono) => {
     if (textW(text, weight, size, mono) <= maxW) return text;
@@ -1019,6 +1059,13 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
     DIM[dimId].facets.forEach((fc, c) => { s += cell(x + c * (cw + gap), y, cw, h, f.dims[dimId][fc.id], glyph); });
     return s + '</g>';
   }
+  /** One dimension as a 2 x 2 grid of facet cells with glyphs (overview cards that also carry a name). */
+  function grid2(f, dimId, x, y, w, h, gap) {
+    const cw = (w - gap) / 2, ch = (h - gap) / 2;
+    let s = '<g class="d-' + dimId + '">';
+    DIM[dimId].facets.forEach((fc, i) => { s += cell(x + (i % 2) * (cw + gap), y + Math.floor(i / 2) * (ch + gap), cw, ch, f.dims[dimId][fc.id], true); });
+    return s + '</g>';
+  }
   /** Stacked status bar from a byStatus count map. */
   function statusBar(byStatus, total, x, y, w, h) {
     let s = '';
@@ -1059,7 +1106,7 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
     const rows = new Map(); // mid -> [[fid...], ...]
     const order = []; // visible node ids in reading order
     const FW = G.FW, FH = G.FH, FG = G.FG, MW = G.MW;
-    const wrapN = tall ? P.WRAP : 99;
+    const wrapN = tall ? state.wrap : 99;
     let xDom, xMod, xFeat, y0;
     if (tall) {
       xDom = P.DX; xMod = xDom + P.DW + P.GDM; xFeat = xMod + MW + P.GMF; y0 = P.RH + P.GRD;
@@ -1068,6 +1115,7 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
     }
     let y = y0;
     let maxX = xMod + MW;
+    let minModH = Infinity;
     BP.domains.forEach((d, di) => {
       const did = 'd:' + d.id;
       const dCollapsed = state.collapsed.has(did);
@@ -1077,7 +1125,8 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
         const n = BP.featuresOf(m.id).length;
         const mCollapsed = state.collapsed.has('m:' + m.id);
         const nRows = mCollapsed ? 1 : Math.ceil(n / wrapN);
-        return { m, nRows, h: nRows * FH + (nRows - 1) * FG, collapsed: mCollapsed };
+        // balanced rows (7 in two rows is 4 + 3, never 6 + 1)
+        return { m, nRows, perRow: Math.ceil(n / nRows), h: nRows * FH + (nRows - 1) * FG, collapsed: mCollapsed };
       });
       const unitsH = units.reduce((a, u) => a + u.h, 0) + P.RG * (units.length - 1);
       const span = dCollapsed ? P.DMIN : Math.max(unitsH, P.DMIN);
@@ -1093,11 +1142,12 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
           return;
         }
         pos.set(mid, { x: xMod, y: my, w: MW, h: u.h });
+        minModH = Math.min(minModH, u.h);
         order.push(mid);
         const rws = [];
         feats.forEach((f, i) => {
-          const r = Math.floor(i / wrapN);
-          const c = i % wrapN;
+          const r = Math.floor(i / u.perRow);
+          const c = i % u.perRow;
           if (u.collapsed) {
             pos.set(fid(f), { x: xMod + MW - FW, y: my, w: FW, h: FH, gone: true });
             return;
@@ -1117,13 +1167,14 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
     });
     const totalH = y;
     if (tall) {
-      pos.set('root', { x: 0, y: 0, w: P.RW, h: P.RH });
       maxX = Math.max(maxX, P.RW);
+      pos.set('root', { x: 0, y: 0, w: maxX, h: P.RH });
     } else {
       pos.set('root', { x: 0, y: Math.max(0, (totalH - P.RH) / 2), w: P.RW, h: P.RH });
     }
     order.unshift('root');
-    return { pos, rows, order, bounds: { x: 0, y: 0, w: maxX, h: totalH }, tall, P };
+    // tall arrangements use big code-first module tiles only when every tile spans two or more feature rows
+    return { pos, rows, order, bounds: { x: 0, y: 0, w: maxX, h: totalH }, tall, P, bigTiles: tall && minModH >= 100 };
   }
 
   /* ═════════════════════════════ render ═════════════════════════════ */
@@ -1150,15 +1201,15 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
     const lensWord = state.lens === 'overall' ? 'overall complete' : LENS_LABEL[state.lens].toLowerCase() + ' complete';
     if (!layout || !layout.tall) {
       s += '<g transform="translate(18 18)"><path d="M3 12H7.5M7.5 5V19M7.5 5H12M7.5 12H12M7.5 19H12" fill="none" class="g-ln" style="--gc: var(--root-fg)" stroke-width="1.7"/><circle cx="3" cy="12" r="2.4" class="g-fill" style="--gc: var(--root-fg)"/></g>';
-      s += txt(48, 35, 'rt2 f-data w5 caps', 11, 'PRODUCT');
-      s += txt(17, 88, 'rt f-ui w7', 37, p.name, '', ' letter-spacing="-0.8"');
-      s += txt(18, 112, 'rt2 f-data w5', 13, 'v' + p.version + ' → ' + p.nextVersion);
+      s += txt(48, 35, 'rt2 f-data w5 caps', 12, 'PRODUCT');
+      s += txt(17, 88, 'rt f-ui w7', 38, p.name, '', ' letter-spacing="-0.8"');
+      s += txt(18, 113, 'rt2 f-data w5', 15, 'v' + p.version + ' → ' + p.nextVersion);
       s += txtLines(18, 140, 14, 'rt2 f-ui no-far', 10.5, wrapText(p.tagline + '.', 400, 10.5, W - 36, 3));
-      s += txt(18, 196, 'rt2 f-data w5 caps', 10.5, lensWord.toUpperCase());
-      s += txt(15, 256, 'rt f-data w5', 68, pct(v) + '%', '', ' letter-spacing="-3"');
-      s += '<rect class="rc-bar-trk" x="18" y="268" width="' + (W - 36) + '" height="8" rx="2"/>';
-      s += statusBar(r.byStatus, r.count, 18, 268, W - 36, 8);
-      s += txt(18, 292, 'rt2 f-ui w5', 12, r.count + ' features · ' + BP.modules.length + ' modules');
+      s += txt(18, 194, 'rt2 f-data w5 caps', 11, lensWord.toUpperCase());
+      s += txt(15, 254, 'rt f-data w5', 68, pct(v) + '%', '', ' letter-spacing="-3"');
+      s += '<rect class="rc-bar-trk" x="18" y="266" width="' + (W - 36) + '" height="8" rx="2"/>';
+      s += statusBar(r.byStatus, r.count, 18, 266, W - 36, 8);
+      s += txt(18, 292, 'rt2 f-ui w5', 14, r.count + ' features · ' + BP.modules.length + ' modules');
     } else {
       s += '<g transform="translate(28 30) scale(2)"><path d="M3 12H7.5M7.5 5V19M7.5 5H12M7.5 12H12M7.5 19H12" fill="none" class="g-ln" style="--gc: var(--root-fg)" stroke-width="1.6"/><circle cx="3" cy="12" r="2.4" class="g-fill" style="--gc: var(--root-fg)"/></g>';
       s += txt(84, 72, 'rt f-ui w7', 60, p.name, '', ' letter-spacing="-1"');
@@ -1184,10 +1235,10 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
     s += '<rect class="lift" x="1" y="1" width="' + (W - 2) + '" height="' + (H - 2) + '" rx="9"/>';
     const lensWord = state.lens === 'overall' ? 'OVERALL' : LENS_LABEL[state.lens].toUpperCase();
     if (!tall) {
-      s += txt(16, 29, 't3 f-data w6 caps', 12, d.code);
-      const lines = wrapText(d.name, 700, 23, W - 30, 2);
-      s += txtLines(16, 60, 26, 't f-ui w7', 23, lines, ' letter-spacing="-0.3"');
-      const nameBottom = 60 + (lines.length - 1) * 26;
+      s += txt(16, 30, 't3 f-data w6 caps', 13, d.code);
+      const lines = wrapText(d.name, 700, 24, W - 28, 2);
+      s += txtLines(16, 61, 27, 't f-ui w7', 24, lines, ' letter-spacing="-0.4"');
+      const nameBottom = 61 + (lines.length - 1) * 27;
       // compact dimension row, shown once the plate is large enough to read
       if (nameBottom + 36 < H - 82) s += '<g class="no-far">';
       else s += '<g class="no-far" display="none">';
@@ -1198,17 +1249,17 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
           txt(cx + 46, nameBottom + 25, 't f-data w6', 9.5, pct(r.dims[dim]), 'end') + dimBar(dim, r.dims[dim], cx, nameBottom + 30, 46, 3.5) + '</g>';
       });
       s += '</g>';
-      s += '<g class="no-far"><rect class="heat" x="16" y="' + (H - 79) + '" width="10" height="10" rx="2"/>' + txt(32, H - 70, 't3 f-data w5 caps', 10, lensWord) +
+      s += '<g class="no-far">' + (nameBottom + 24 < H - 79 ? '<rect class="heat" x="16" y="' + (H - 79) + '" width="10" height="10" rx="2"/>' + txt(32, H - 70, 't3 f-data w5 caps', 10, lensWord) : '') +
         txt(W - 16, H - 42, 't2 f-ui w5', 11.5, r.count + ' features', 'end') + txt(W - 16, H - 27, 't3 f-ui', 11.5, BP.modulesOf(d.id).length + ' modules', 'end') + '</g>';
       s += '<g class="only-far">' + txt(W - 16, H - 37, 't2 f-data w6', 22, String(r.count), 'end') + txt(W - 16, H - 25, 't3 f-ui w5', 10, 'features', 'end') + '</g>';
       s += txt(13, H - 25, 't f-data w5', 50, pct(v) + '%', '', ' letter-spacing="-2"');
       s += statusBar(r.byStatus, r.count, 16, H - 15, W - 32, 5);
     } else {
-      s += txt(18, 62, 't f-data w6', 50, d.code, '', ' letter-spacing="1"');
-      s += txtLines(18, 98, 26, 't2 f-ui w6', 22, wrapText(d.name, 600, 22, W - 36, 2));
-      s += '<g class="no-far"><rect class="heat" x="18" y="' + (H - 128) + '" width="14" height="14" rx="3"/>' + txt(40, H - 116, 't3 f-data w5 caps', 14, lensWord) + '</g>';
-      s += txt(W - 18, 62, 't3 f-data w5', 30, String(r.count), 'end');
-      s += txt(14, H - 40, 't f-data w5', 76, pct(v) + '%', '', ' letter-spacing="-3"');
+      s += txt(18, 58, 't f-data w6', 50, d.code, '', ' letter-spacing="1"');
+      s += txtLines(18, 90, 28, 't2 f-ui w6', 25, wrapText(d.name, 600, 25, W - 34, 2));
+      if (H >= 272) s += '<g class="no-far"><rect class="heat" x="18" y="' + (H - 128) + '" width="14" height="14" rx="3"/>' + txt(40, H - 116, 't3 f-data w5 caps', 14, lensWord) + '</g>';
+      s += txt(W - 18, 58, 't3 f-data w5', 30, String(r.count), 'end');
+      s += txt(14, H - 35, 't f-data w5', 76, pct(v) + '%', '', ' letter-spacing="-3"');
       s += statusBar(r.byStatus, r.count, 18, H - 24, W - 36, 10);
     }
     if (r.attention) s += '<path class="flag-attn" d="M' + (W - 22) + ' 0H' + (W - 10) + 'Q' + W + ' 0 ' + W + ' 10V22Z"/>';
@@ -1232,7 +1283,13 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
     let s = '';
     // FAR: solid heat tile
     s += '<g class="only-far"><rect class="heat" width="' + W + '" height="' + H + '" rx="8"/>';
-    if (!big) {
+    if (layout && layout.tall && !layout.bigTiles) {
+      // tall arrangement with one-row tiles: code and % lead (legible at panel scale), name below; taller tiles add a status bar
+      s += txt(14, 38, 'heat-fg f-data w6', 34, m.code, '', ' letter-spacing="0.5"');
+      s += txt(W - 12, 38, 'heat-fg f-data w5', 34, pct(v) + '%', 'end', ' letter-spacing="-1.2"');
+      s += txt(15, 56, 'heat-fg2 f-ui w6', 14, fit1(m.name, 600, 14, W - 30));
+      if (big) s += statusBar(r.byStatus, r.count, 15, H - 24, W - 30, 8);
+    } else if (!big) {
       const lines = wrapText(m.name, 600, 20, W - 104, 2);
       s += txtLines(14, lines.length > 1 ? 28 : 39.5, 22, 'heat-fg f-ui w6', 20, lines, ' letter-spacing="-0.2"');
       s += txt(W - 13, 44, 'heat-fg f-data w6', 31, pct(v) + '%', 'end', ' letter-spacing="-1.2"');
@@ -1282,7 +1339,11 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
       '<circle class="fbtn-g" cx="7.5" cy="7.5" r="3.4"/><path class="fbtn-g" d="M7.5 1.8V4M7.5 11V13.2M1.8 7.5H4M11 7.5H13.2"/></g>';
     s += '</g></g>';
     if (r.attention) s += '<path class="flag-attn" d="M' + (W - 18) + ' 0H' + (W - 8) + 'Q' + W + ' 0 ' + W + ' 8V18Z"/>';
-    if (qn) s += '<g class="mod-q"><circle class="trust-seal" cx="' + (W - 2) + '" cy="' + (H - 2) + '" r="9"/>' + txt(W - 2, H + 1.6, 'trust-tag-t f-data w6', 9.5, String(qn), 'middle') + '</g>';
+    if (qn) {
+      s += '<g class="mod-q"><g class="no-far"><circle class="trust-seal" cx="' + (W - 2) + '" cy="' + (H - 2) + '" r="9"/>' + txt(W - 2, H + 1.6, 'trust-tag-t f-data w6', 9.5, String(qn), 'middle') + '</g>';
+      // overview: a larger count on the stem into the feature row
+      s += '<g class="only-far"><circle class="trust-seal mod-q-ring" cx="' + (W + 14) + '" cy="' + r1(H / 2) + '" r="13"/>' + txt(W + 14, H / 2 + 5.4, 'trust-tag-t f-data w7', 15, String(qn), 'middle') + '</g></g>';
+    }
     // collapse knob + collapsed pips
     s += '<g class="knob no-far" data-act="toggle" data-target="' + n.id + '" transform="translate(' + (W + 13) + ' ' + r1(H / 2) + ')" role="button" aria-label="' + (collapsed ? 'Expand ' : 'Collapse ') + esc(m.name) + '">' +
       '<circle class="knob-c" r="7.5"/><path class="knob-g" d="' + (collapsed ? 'M-1.5 -3.2L1.8 0L-1.5 3.2' : 'M1.5 -3.2L-1.8 0L1.5 3.2') + '"/></g>';
@@ -1308,16 +1369,25 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
     if (trust) s += '<g class="trust-mark"><rect class="trust-ring" x="-3" y="-3" width="' + (W + 6) + '" height="' + (H + 6) + '" rx="10"/></g>';
 
     // FAR: status block + barcode (or the lens row as four big cells)
-    s += '<g class="only-far"><path class="fc-stblock st-' + st + '" d="M7 0H44V' + H + 'H7Q0 ' + H + ' 0 ' + (H - 7) + 'V7Q0 0 7 0Z"/>';
+    s += '<g class="only-far"><g class="no-named"><path class="fc-stblock st-' + st + '" d="M7 0H44V' + H + 'H7Q0 ' + H + ' 0 ' + (H - 7) + 'V7Q0 0 7 0Z"/>';
     s += statusIcon(st, 22, H / 2, 11);
     if (lens === 'overall') s += barcode(f, 54, 10, W - 70, H - 20, 3);
     else s += strip(f, lens, 54, 12, W - 70, H - 24, 4, true);
     s += '</g>';
+    // FAR with room for names: narrower status block, the name on two lines, a compact barcode (or the lens facets as a 2 x 2 grid)
+    s += '<g class="only-named"><path class="fc-stblock st-' + st + '" d="M7 0H34V' + H + 'H7Q0 ' + H + ' 0 ' + (H - 7) + 'V7Q0 0 7 0Z"/>';
+    s += statusIcon(st, 17, H / 2, 9.5);
+    const nf = fitName(f.name, 600, [18, 17, 16], 134, 2);
+    const nlh = nf.size + 2;
+    s += txtLines(43, nf.lines.length > 1 ? 32 - nlh / 2 + nf.size * 0.36 : 32 + nf.size * 0.36, nlh, 't f-ui w6', nf.size, nf.lines, ' letter-spacing="-0.2"');
+    if (lens === 'overall') s += barcode(f, 182, 12, 40, 40, 2);
+    else s += grid2(f, lens, 182, 12, 40, 40, 2);
+    s += '</g></g>';
 
     // MID: icon, name (2 lines), meta, barcode block
     s += '<g class="only-mid">' + statusIcon(st, 18, 18, 7);
-    const lines = wrapText(f.name, 600, 14, 124, 2);
-    s += txtLines(32, 23.5, 16.5, 't f-ui w6', 14, lines, ' letter-spacing="-0.1"');
+    const mf = fitName(f.name, 600, [14, 13.2, 12.5], 124, 2);
+    s += txtLines(32, 23.5, mf.size + 2.5, 't f-ui w6', mf.size, mf.lines, ' letter-spacing="-0.1"');
     s += '<g class="' + pcls + '"><rect class="ptag" x="32" y="46" width="21" height="12.5" rx="3"/>' + txt(42.5, 55.4, 'ptag-t f-data w6', 8.6, f.priority, 'middle') + '</g>';
     s += txt(59, 55.6, 't3 f-data w5', 9, f.release ? 'v' + f.release : '—');
     s += builtGlyph(f.builtBy, 88, 46.2, 11.5);
@@ -1375,10 +1445,13 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
       s += '<rect class="ring-attn" x="0.6" y="0.6" width="' + (W - 1.2) + '" height="' + (H - 1.2) + '" rx="6.6"/>';
       s += '<path class="flag-attn" d="M' + (W - 15) + ' 0H' + (W - 7) + 'Q' + W + ' 0 ' + W + ' 7V15Z"/>';
     }
-    if (trust) s += '<g class="trust-mark"><circle class="trust-seal" cx="2" cy="2" r="7"/><rect class="trust-glyph" x="-1.6" y="-0.6" width="7.2" height="5.4" rx="1.6" stroke-width="1"/><circle class="trust-eye" cx="0.9" cy="2.1" r="0.7"/><circle class="trust-eye" cx="3.1" cy="2.1" r="0.7"/></g>';
+    if (trust) {
+      const seal = '<circle class="trust-seal" cx="2" cy="2" r="7"/><rect class="trust-glyph" x="-1.6" y="-0.6" width="7.2" height="5.4" rx="1.6" stroke-width="1"/><circle class="trust-eye" cx="0.9" cy="2.1" r="0.7"/><circle class="trust-eye" cx="3.1" cy="2.1" r="0.7"/>';
+      s += '<g class="trust-mark"><g class="no-far">' + seal + '</g><g class="only-far" transform="matrix(1.7 0 0 1.7 -1.4 -1.4)">' + seal + '</g></g>';
+    }
     s += '<rect class="ring-hit" x="-4" y="-4" width="' + (W + 8) + '" height="' + (H + 8) + '" rx="10"/>';
-    s += '<rect class="ring-rel" x="-4" y="-4" width="' + (W + 8) + '" height="' + (H + 8) + '" rx="10"/>';
-    s += '<rect class="ring-sel" x="-5" y="-5" width="' + (W + 10) + '" height="' + (H + 10) + '" rx="11"/>';
+    s += '<rect class="ring-rel" x="0.8" y="0.8" width="' + (W - 1.6) + '" height="' + (H - 1.6) + '" rx="6.4"/>';
+    s += '<rect class="ring-sel" x="-3" y="-3" width="' + (W + 6) + '" height="' + (H + 6) + '" rx="9.5"/>';
     n.el.innerHTML = s;
     n.el.classList.toggle('queue', trust);
   }
@@ -1494,44 +1567,87 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
     }
     return n;
   }
-  function depPath(a, b) {
-    const ax2 = a.x + a.w, bx2 = b.x + b.w;
-    let x1, y1, x2, y2, c1x, c1y, c2x, c2y;
-    if (bx2 < a.x - 4) {
-      x1 = a.x; y1 = a.y + a.h / 2; x2 = bx2; y2 = b.y + b.h / 2;
-      const dx = Math.max((x1 - x2) * 0.45, Math.min(40, Math.abs(y2 - y1) * 0.3));
-      c1x = x1 - dx; c1y = y1; c2x = x2 + dx; c2y = y2;
-    } else if (b.x > ax2 + 4) {
-      x1 = ax2; y1 = a.y + a.h / 2; x2 = b.x; y2 = b.y + b.h / 2;
-      const dx = Math.max((x2 - x1) * 0.45, Math.min(40, Math.abs(y2 - y1) * 0.3));
-      c1x = x1 + dx; c1y = y1; c2x = x2 - dx; c2y = y2;
-    } else {
-      const down = b.y > a.y;
-      x1 = a.x + a.w / 2 + (b.x > a.x ? 18 : -18); y1 = down ? a.y + a.h : a.y;
-      x2 = b.x + b.w / 2 + (b.x > a.x ? -18 : 18); y2 = down ? b.y : b.y + b.h;
-      const dy = Math.abs(y2 - y1) * 0.5 * (down ? 1 : -1);
-      c1x = x1; c1y = y1 + dy; c2x = x2; c2y = y2 - dy;
+  /* Links run orthogonally through the gutters between cards so they never cross card text:
+     out of the selected card's top or bottom edge, along the gap between rows, down the gap between columns
+     next to the other card, and into that card's facing edge. */
+  function rowIntervals() {
+    const iv = [];
+    nodes.forEach((n) => { if (!n.gone && (n.type === 'feature' || n.type === 'module')) iv.push([n.y, n.y + n.h]); });
+    return iv;
+  }
+  /** The gap above (dir -1) or below (dir 1) a box: its own edge and the facing edge of the next row. */
+  function gapOf(b, iv, dir) {
+    if (dir < 0) {
+      let prev = -Infinity;
+      iv.forEach((v) => { if (v[1] <= b.y + 0.5 && v[1] > prev) prev = v[1]; });
+      return { own: b.y, far: prev === -Infinity ? b.y - 18 : prev };
     }
-    return 'M' + r1(x1) + ' ' + r1(y1) + 'C' + r1(c1x) + ' ' + r1(c1y) + ' ' + r1(c2x) + ' ' + r1(c2y) + ' ' + r1(x2) + ' ' + r1(y2);
+    let next = Infinity;
+    const bot = b.y + b.h;
+    iv.forEach((v) => { if (v[0] >= bot - 0.5 && v[0] < next) next = v[0]; });
+    return { own: bot, far: next === Infinity ? bot + 18 : next };
+  }
+  /** Side of the hub a link leaves from: 'top' when the other card sits above or in the same row, else 'bottom'. */
+  const depSide = (A, X) => (X.y >= A.y + A.h - 0.5 ? 'bottom' : 'top');
+  /** Orthogonal route from the hub A (leaving at x = slot) to card X. The run along the hub keeps clear of its selection ring. */
+  function depRoute(A, X, slot, iv) {
+    const dir = depSide(A, X) === 'top' ? -1 : 1;
+    const gA = gapOf(A, iv, dir);
+    const hubY = gA.own + dir * Math.min(5.6, Math.abs(gA.far - gA.own) * 0.7);
+    const sameRow = dir < 0 && X.y + X.h > A.y + 0.5;
+    const inset = Math.min(26, X.w / 4);
+    const leftOfX = X.x + X.w / 2 >= slot;
+    const xa = sameRow ? X.x + X.w / 2 : leftOfX ? X.x + inset : X.x + X.w - inset;
+    if (sameRow) return [[slot, A.y], [slot, hubY], [xa, hubY], [xa, X.y]];
+    const gX = gapOf(X, iv, -dir);
+    const xEdge = gX.own;
+    if (Math.abs(gX.far - gA.own) < 0.5) return [[slot, gA.own], [slot, hubY], [xa, hubY], [xa, xEdge]];
+    const xY = (gX.own + gX.far) / 2;
+    const vx = leftOfX ? X.x - G.FG / 2 : X.x + X.w + G.FG / 2;
+    return [[slot, gA.own], [slot, hubY], [vx, hubY], [vx, xY], [xa, xY], [xa, xEdge]];
+  }
+  /** Polyline with rounded corners. */
+  function roundedPath(raw, rad) {
+    const pts = raw.filter((p, i) => !i || Math.abs(p[0] - raw[i - 1][0]) + Math.abs(p[1] - raw[i - 1][1]) > 0.05);
+    let d = 'M' + r1(pts[0][0]) + ' ' + r1(pts[0][1]);
+    for (let i = 1; i < pts.length - 1; i++) {
+      const p0 = pts[i - 1], p1 = pts[i], p2 = pts[i + 1];
+      const l1 = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]), l2 = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+      const rr = Math.min(rad, l1 / 2, l2 / 2);
+      if (rr < 0.3) { d += 'L' + r1(p1[0]) + ' ' + r1(p1[1]); continue; }
+      d += 'L' + r1(p1[0] - (p1[0] - p0[0]) / l1 * rr) + ' ' + r1(p1[1] - (p1[1] - p0[1]) / l1 * rr) +
+        'Q' + r1(p1[0]) + ' ' + r1(p1[1]) + ' ' + r1(p1[0] + (p2[0] - p1[0]) / l2 * rr) + ' ' + r1(p1[1] + (p2[1] - p1[1]) / l2 * rr);
+    }
+    const last = pts[pts.length - 1];
+    return d + 'L' + r1(last[0]) + ' ' + r1(last[1]);
   }
   function drawDeps() {
     const n = state.sel && nodes.get(state.sel);
     if (!n || n.type !== 'feature') { gDeps.innerHTML = ''; return; }
     const k = state.cam.k;
-    const sw = clamp(2 / k, 1.4, 5);
-    const a = visibleAnchor(n.id);
+    const sw = clamp(1.9 / k, 1.3, 4.2);
+    const A = visibleAnchor(n.id);
+    const iv = rowIntervals();
+    const links = [];
+    const add = (other, kind) => { if (other && other !== A && !links.some((l) => l.X === other && l.kind === kind)) links.push({ X: other, kind }); };
+    BP.dependencies(n.data).forEach((f) => add(visibleAnchor(fid(f)), 'up'));
+    BP.dependents(n.data).forEach((f) => add(visibleAnchor(fid(f)), 'down'));
+    // spread the links along the hub's edges, ordered by where they head so they do not cross on the way out
+    ['top', 'bottom'].forEach((side) => {
+      const ls = links.filter((l) => depSide(A, l.X) === side).sort((a, b) => (a.X.x + a.X.w / 2) - (b.X.x + b.X.w / 2) || a.X.y - b.X.y);
+      const span = Math.max(0, A.w - 44);
+      ls.forEach((l, i) => { l.slot = A.x + 22 + (ls.length === 1 ? span / 2 : span * i / (ls.length - 1)); });
+    });
     let halo = '';
     let lines = '';
-    const draw = (from, to, kind) => {
-      if (!from || !to || from === to) return;
-      const d = depPath(from, to);
-      halo += '<path class="dep-halo" stroke-width="' + r1(sw + 3 / k) + '" d="' + d + '"/>';
-      lines += '<path class="dep-' + kind + '" stroke-width="' + r1(sw) + '"' + (kind === 'down' ? ' stroke-dasharray="' + r1(sw * 3) + ' ' + r1(sw * 2) + '"' : '') + ' marker-end="url(#arr-' + kind + ')" d="' + d + '"/>';
-    };
-    BP.dependencies(n.data).forEach((f) => draw(a, visibleAnchor(fid(f)), 'up'));
-    BP.dependents(n.data).forEach((f) => draw(visibleAnchor(fid(f)), a, 'down'));
+    links.forEach((l) => {
+      let pts = depRoute(A, l.X, l.slot, iv);
+      if (l.kind === 'down') pts = pts.slice().reverse();
+      const d = roundedPath(pts, 7);
+      lines += '<path class="dep-' + l.kind + '" stroke-width="' + r1(sw) + '"' + (l.kind === 'down' ? ' stroke-dasharray="' + r1(sw * 2.6) + ' ' + r1(sw * 1.8) + '"' : '') + ' marker-end="url(#arr-' + l.kind + ')" d="' + d + '"/>';
+    });
     gDeps.innerHTML = halo + lines;
-    const mk = r1(clamp(10 / k, 6, 22));
+    const mk = r1(clamp(9 / k, 5, 7.5));
     gDeps.ownerSVGElement.querySelectorAll('marker').forEach((m) => { m.setAttribute('markerWidth', mk); m.setAttribute('markerHeight', mk); });
   }
 
@@ -1680,6 +1796,8 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
     pat.setAttribute('patternTransform', 'translate(' + r1(((cam.x % s) + s) % s) + ' ' + r1(((cam.y % s) + s) % s) + ')');
     const lvl = cam.k >= LEVEL_NEAR ? 'near' : cam.k >= LEVEL_MID ? 'mid' : 'far';
     if (lvl !== state.level) { state.level = lvl; svg.setAttribute('data-level', lvl); updateZoomBar(); }
+    const named = lvl === 'far' && cam.k >= NAMES_K;
+    if (named !== state.named) { state.named = named; if (named) svg.setAttribute('data-names', ''); else svg.removeAttribute('data-names'); }
     $('zoom-pct').textContent = Math.round(cam.k * 100) + '%';
     if (state.sel && Math.abs(cam.k - lastDepK) / cam.k > 0.15) { lastDepK = cam.k; drawDeps(); }
     updateMinimapView();
@@ -1705,24 +1823,25 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
   function viewRect(ignorePanels) {
     const r = { x: 0, y: 0, w: stageW, h: stageH };
     if (!ignorePanels && state.inspector) {
-      if (isPhone()) r.h = Math.max(140, stageH - ($('inspector').offsetHeight || stageH * 0.6));
+      if (isPhone()) r.h = Math.max(64, stageH - ($('inspector').offsetHeight || stageH * 0.6));
       else r.w = Math.max(240, stageW - $('inspector').offsetWidth);
     }
     return r;
   }
   const isPhone = () => window.innerWidth <= 720;
-  const minimapOn = () => !isPhone() && stageW >= 1100 && !(layout && layout.tall);
+  const minimapOn = (L) => { L = L || layout; return !isPhone() && stageW >= 1100 && !(L && L.tall); };
   /** Camera that fits a world box into a screen rect. */
   function camFor(b, r, pad, maxK) {
     const k = clamp(Math.min((r.w - pad * 2) / b.w, (r.h - pad * 2) / b.h), 0.05, maxK || K_MAX);
     return { k, x: r.x + (r.w - b.w * k) / 2 - b.x * k, y: r.y + (r.h - b.h * k) / 2 - b.y * k };
   }
-  function fitCam(r) {
-    const b = layout.bounds;
-    const pad = isPhone() ? 12 : 24;
+  function fitCam(r, L) {
+    L = L || layout;
+    const b = L.bounds;
+    const pad = isPhone() ? 12 : 20;
     const c = camFor(b, r, pad);
     // keep a strip on the right free for the minimap (desktop) or the zoom buttons (phone)
-    const reserve = minimapOn() ? $('minimap').offsetWidth + 24 : layout.tall || isPhone() ? 50 : 0;
+    const reserve = minimapOn(L) ? MM_W + 24 : L.tall || isPhone() ? 50 : 0;
     if (!reserve) return c;
     const slack = r.w - b.w * c.k - pad * 2;
     if (slack < reserve) {
@@ -1771,7 +1890,12 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
     if (!b) return;
     if (minZoom && cam.k < minZoom) { flyToNode(id, minZoom); return; }
     const r = viewRect();
-    const m = 36;
+    const m = Math.min(36, r.h * 0.12, r.w * 0.08);
+    if (b.w * cam.k > r.w - 2 * m || b.h * cam.k > r.h - 2 * m) {
+      // larger than the visible area (for example above the phone sheet): zoom out until it fits, never in
+      flyCam(camFor(b, r, m, cam.k), 420);
+      return;
+    }
     const sx = cam.x + b.x * cam.k, sy = cam.y + b.y * cam.k, sw = b.w * cam.k, sh = b.h * cam.k;
     let dx = 0, dy = 0;
     if (sx < r.x + m) dx = r.x + m - sx; else if (sx + sw > r.x + r.w - m) dx = Math.max(r.x + m - sx, r.x + r.w - m - (sx + sw));
@@ -1925,6 +2049,8 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
   /** Selects a node. opts: open (inspector), reveal (pan into view), fly (center), zoom (min zoom when flying). */
   function select(id, opts) {
     opts = opts || {};
+    // on the phone, a new selection drops a tall sheet back to its regular height so the camera can show it above the sheet
+    if (id && id !== state.sel && isPhone()) setSheetTall(false);
     state.sel = id;
     lastDepK = cam.k;
     if (!id) { closeInspector(true); }
@@ -1960,6 +2086,7 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
     }
     applyClasses();
     renderCrumbs();
+    if (state.inspector) renderInspector(); // Focus / Leave focus button follows the state
   }
   function toggleCollapse(id) {
     if (!id || !(id.startsWith('m:') || id.startsWith('d:'))) return;
@@ -1968,6 +2095,7 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
     renderNode(n);
     relayout(true);
     applyClasses();
+    if (state.inspector) renderInspector(); // Collapse / Expand button follows the state
     announce((state.collapsed.has(id) ? 'Collapsed ' : 'Expanded ') + nodeLabel(id));
   }
   /** The feature the view is about: the selection, or the card nearest the view center when zoomed in. */
@@ -2056,7 +2184,7 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
     announce(on ? QUEUE.length + ' agent-built features wait for human review' : 'Agent review overlay off');
   }
   function updateQueue() {
-    $('queue-n').textContent = (state.qIdx < 0 ? '–' : state.qIdx + 1) + ' of ' + QUEUE.length;
+    $('queue-n').textContent = state.qIdx < 0 ? QUEUE.length + ' waiting' : (state.qIdx + 1) + ' of ' + QUEUE.length;
   }
   function stepQueue(dir) {
     if (!state.trust) setTrust(true);
@@ -2126,7 +2254,7 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
     if (k >= '1' && k <= '4') { setLens(BP.LENSES[Number(k) - 1]); e.preventDefault(); return; }
     if (k === '+' || k === '=') { zoomBy(1.4); e.preventDefault(); return; }
     if (k === '-' || k === '_') { zoomBy(1 / 1.4); e.preventDefault(); return; }
-    if (k === '0') { fitAll(true); e.preventDefault(); return; }
+    if (k === '0') { state.touched = false; fitAll(true); e.preventDefault(); return; }
     if (k === '/') { openSearch(); e.preventDefault(); return; }
     if (k === 't' || k === 'T') { setTrust(!state.trust); return; }
     if (k === 'l' || k === 'L' || k === '?') { setLegend(!state.legend); return; }
@@ -2183,6 +2311,8 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
       applyFilters();
     });
     $('attn-n').textContent = pr.attention;
+    $('trust-count').textContent = QUEUE.length;
+    $('trust-btn').setAttribute('aria-label', 'Agent review overlay: ' + QUEUE.length + ' agent-built features wait for human review (T)');
     $('attn-btn').addEventListener('click', () => { state.attnOnly = !state.attnOnly; $('attn-btn').setAttribute('aria-pressed', String(state.attnOnly)); applyFilters(); });
     $('clear-btn').addEventListener('click', clearFilters);
     $('trust-btn').addEventListener('click', () => setTrust(!state.trust));
@@ -2191,11 +2321,7 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
     $('legend-btn').addEventListener('click', () => setLegend(!state.legend));
     $('legend-close').addEventListener('click', () => setLegend(false));
     $('insp-close').addEventListener('click', () => select(null));
-    $('insp-grip').addEventListener('click', () => {
-      const el = $('inspector');
-      el.classList.toggle('tall');
-      $('insp-grip').setAttribute('aria-label', el.classList.contains('tall') ? 'Shrink panel' : 'Expand panel');
-    });
+    bindSheetGrip();
     $('zoom-in').addEventListener('click', () => zoomBy(1.4));
     $('zoom-out').addEventListener('click', () => zoomBy(1 / 1.4));
     $('zoom-fit').addEventListener('click', () => { state.touched = false; fitAll(true); });
@@ -2214,18 +2340,64 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
     $('focus-pill').addEventListener('click', (e) => { if (e.target.closest('button')) setFocus(null); });
     $('insp-body').addEventListener('click', inspectorClick);
   }
+  /* ── phone bottom sheet: tap the grip to switch heights, or drag it (up: taller, down: shorter, far down: close) ── */
+  function setSheetTall(on) {
+    const el = $('inspector');
+    if (el.classList.contains('tall') === on) return;
+    el.classList.toggle('tall', on);
+    $('insp-grip').setAttribute('aria-label', on ? 'Shrink panel' : 'Expand panel');
+  }
+  function bindSheetGrip() {
+    const grip = $('insp-grip');
+    const el = $('inspector');
+    let drag = null;
+    const settle = () => { if (state.sel) requestAnimationFrame(() => ensureVisible(state.sel)); };
+    grip.addEventListener('click', (e) => { if (e.detail === 0) { setSheetTall(!el.classList.contains('tall')); settle(); } });
+    grip.addEventListener('pointerdown', (e) => {
+      drag = { y0: e.clientY, h0: el.offsetHeight, moved: false };
+      try { grip.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+      e.preventDefault();
+    });
+    grip.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      const dy = e.clientY - drag.y0;
+      if (!drag.moved && Math.abs(dy) < 5) return;
+      drag.moved = true;
+      el.style.maxHeight = clamp(drag.h0 - dy, 96, wrap.clientHeight * 0.9) + 'px';
+    });
+    const end = (e) => {
+      if (!drag) return;
+      const d = drag;
+      drag = null;
+      el.style.maxHeight = '';
+      if (e.type === 'pointercancel') return;
+      if (!d.moved) { setSheetTall(!el.classList.contains('tall')); settle(); return; }
+      const h = d.h0 - (e.clientY - d.y0);
+      const H = wrap.clientHeight;
+      if (h < H * 0.3) { select(null); return; }
+      setSheetTall(h > H * 0.76);
+      settle();
+    };
+    grip.addEventListener('pointerup', end);
+    grip.addEventListener('pointercancel', end);
+  }
   function openSearch() {
     $('topbar').classList.add('searching');
     const s = $('search');
     s.focus(); s.select();
   }
   function zoomToLevel(lvl) {
+    if (lvl === 'far') { state.touched = false; fitAll(true); return; }
     state.touched = true;
-    if (lvl === 'far') { fitAll(true); return; }
     const k = lvl === 'mid' ? 1.0 : 2.0;
     const target = state.sel && nodes.get(state.sel);
-    if (target && !target.gone) { flyToNode(target.id, k); const c = camAnim && camAnim.to; if (c) c.k = k; return; }
     const r = viewRect();
+    if (target && !target.gone) {
+      // center the selection at exactly the level's zoom (in or out)
+      const b = boxOf(target.id);
+      flyCam({ k, x: r.x + r.w / 2 - (b.x + b.w / 2) * k, y: r.y + r.h / 2 - (b.y + b.h / 2) * k }, 520);
+      return;
+    }
     zoomAt(r.x + r.w / 2, r.y + r.h / 2, k, true);
   }
   function updateZoomBar() {
@@ -2245,7 +2417,8 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
       if (n.type === 'feature') parts.push([n.id, n.data.name]);
     }
     let h = state.focus ? '<span class="focus-tag">Focus</span>' : '';
-    h += parts.map((p, i) => (i ? '<span class="sep" aria-hidden="true">/</span>' : '') + '<button type="button" data-go="' + p[0] + '"' + (i === parts.length - 1 ? ' aria-current="location"' : '') + '>' + esc(p[1]) + '</button>').join('');
+    h += parts.map((p, i) => (i ? '<span class="sep" aria-hidden="true">/</span>' : '') + '<button type="button" data-go="' + p[0] + '"' + (i === parts.length - 1 && n ? ' aria-current="location"' : '') + '>' + esc(p[1]) + '</button>').join('');
+    if (!n) h += '<span class="crumb-meta">' + BP.domains.length + ' domains · ' + BP.modules.length + ' modules · ' + BP.features.length + ' features</span>';
     if (state.focus) h += '<button type="button" data-go="exit-focus" title="Leave focus (Esc)">Leave focus</button>';
     $('crumbs').innerHTML = h;
     const pill = $('focus-pill');
@@ -2311,10 +2484,10 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
       '<span class="swatch-ring sw-hit"></span><span><b>Search match</b></span>' +
       '<span class="swatch-ring sw-sel"></span><span><b>Selected</b></span>' +
       '<span class="sw-line"></span><span><b>Depends on</b> · arrow points at what the selection needs</span>' +
-      '<span class="sw-line dash"></span><span><b>Used by</b> · features that need the selection</span>' +
+      '<span class="sw-line dash"></span><span><b>Used by</b> · features that need the selection; links run in the gaps between cards</span>' +
       '<span class="sw-wire"><i style="border-top-width:3px"></i><i style="border-top-width:2px"></i><i style="border-top-width:1px"></i></span><span>Tree wires thin out per level: product, domain, module</span>' +
       '</div><div class="lg-row" style="margin-top:9px">' + ['agent', 'pair', 'human'].map((b) => '<span>' + builtSvg(b) + esc(BUILT_LABEL[b]) + '</span>').join('') + '</div></div>';
-    h += '<div class="lg-sec"><h3>Zoom levels</h3><div class="lg-grid" style="grid-template-columns:auto 1fr"><b>Overview</b><span>Heat tiles, status blocks and barcodes</span><b>Modules</b><span>Names, priority, release, builder (from 70%)</span><b>Detail</b><span>Facet labels, owner, review state (from 155%)</span></div></div>';
+    h += '<div class="lg-sec"><h3>Zoom levels</h3><div class="lg-grid" style="grid-template-columns:auto 1fr"><b>Overview</b><span>Heat tiles, status blocks and facet barcodes; feature names join them when the cards have room (from 47%)</span><b>Modules</b><span>Names, priority, release, builder (from 70%)</span><b>Detail</b><span>Facet labels, owner, review state (from 155%)</span></div></div>';
     h += '<div class="lg-sec"><h3>Keys</h3><div class="keys">' +
       '<kbd>1 2 3 4</kbd><span>Overall, Development, Operations, Business</span>' +
       '<kbd>+ − 0</kbd><span>Zoom in, out, fit the product</span>' +
@@ -2582,13 +2755,26 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
     const r = wrap.getBoundingClientRect();
     stageW = r.width; stageH = r.height;
   }
+  /** Picks the arrangement that shows the whole product at the largest scale on this stage. */
+  function pickArrangement() {
+    const keep = { mode: state.mode, wrap: state.wrap };
+    const r = viewRect(true);
+    let best = null;
+    ARRANGEMENTS.forEach((a) => {
+      state.mode = a.mode; state.wrap = a.wrap;
+      const k = fitCam(r, computeLayout()).k * (a.mode === 'wide' ? 1.06 : 1);
+      if (!best || k > best.k + 1e-6) best = { mode: a.mode, wrap: a.wrap, k };
+    });
+    state.mode = keep.mode; state.wrap = keep.wrap;
+    return best;
+  }
   function onResize() {
     const pw = stageW, ph = stageH;
     measureStage();
     if (!stageW || !stageH) return;
-    const mode = stageW / stageH < 0.9 ? 'tall' : 'wide';
-    if (mode !== state.mode) {
-      state.mode = mode;
+    const a = pickArrangement();
+    if (a.mode !== state.mode || a.wrap !== state.wrap) {
+      state.mode = a.mode; state.wrap = a.wrap;
       relayout(false);
       renderAll();
       applyClasses();
@@ -2609,7 +2795,8 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
     buildChrome();
     renderLegend();
     measureStage();
-    state.mode = stageW / Math.max(1, stageH) < 0.9 ? 'tall' : 'wide';
+    const a = pickArrangement();
+    state.mode = a.mode; state.wrap = a.wrap;
     createNodes();
     layout = computeLayout();
     app.classList.toggle('is-tall', layout.tall);
@@ -2638,7 +2825,15 @@ svg.ico { width: 16px; height: 16px; flex: none; display: block; }
     zoom: (k) => { const r = viewRect(); zoomAt(r.x + r.w / 2, r.y + r.h / 2, k, false); },
     flyTo: (id, k) => flyToNode(id.indexOf(':') > 0 ? id : 'f:' + id, k),
     lens: setLens,
-    state: () => ({ lens: state.lens, level: state.level, k: Math.round(cam.k * 1000) / 1000, sel: state.sel, mode: state.mode, focus: state.focus }),
+    tap: (id) => select(id, { open: true, reveal: true }),
+    selRect: () => {
+      const n = state.sel && nodes.get(state.sel);
+      if (!n) return null;
+      const sr = svg.getBoundingClientRect();
+      const ins = $('inspector').getBoundingClientRect();
+      return { top: Math.round(sr.top + cam.y + n.y * cam.k), bottom: Math.round(sr.top + cam.y + (n.y + n.h) * cam.k), left: Math.round(sr.left + cam.x + n.x * cam.k), right: Math.round(sr.left + cam.x + (n.x + n.w) * cam.k), sheetTop: Math.round(ins.top), stageTop: Math.round(sr.top), tall: $('inspector').classList.contains('tall') };
+    },
+    state: () => ({ lens: state.lens, level: state.level, k: Math.round(cam.k * 1000) / 1000, sel: state.sel, mode: state.mode, wrap: state.wrap, named: state.named, focus: state.focus }),
   };
 
   boot();

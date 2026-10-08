@@ -229,8 +229,8 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
 .tset.trust .tile[data-trust="1"] .glw, .ktile[data-trust="1"] .glw { transform: translateX(-12px); }
 .tx-num { font-family: var(--f-mono); font-stretch: 75%; font-weight: 500; font-size: 13px; }
 .tx-sym0 { font-weight: 800; font-stretch: 112.5%; font-size: 42px; letter-spacing: -0.01em; }
-.tx-sym1 { font-weight: 800; font-stretch: 112.5%; font-size: 29px; letter-spacing: -0.01em; }
-.tx-name { font-weight: 600; font-stretch: 75%; font-size: 13px; }
+.tx-sym1 { font-weight: 800; font-stretch: 112.5%; font-size: 26px; letter-spacing: -0.01em; }
+.tx-name { font-weight: 600; font-stretch: 75%; font-size: 16px; }
 .tile .trk { fill: var(--tf); opacity: .13; }
 .tile .bf { fill: var(--tf); }
 .pip-f { fill: var(--tf); }
@@ -272,6 +272,8 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
 .tset .ktile.ktile .tx-sym1, .tset .ktile.ktile .tx-name, .tset .ktile.ktile .pl, .tset .ktile.ktile .l01 { display: inline; }
 .tset .ktile.ktile .det { display: none; }
 .tset[data-z="0"] .z1, .tset[data-z="0"] .z2, .tset[data-z="0"] .z3, .tset[data-z="1"] .z2, .tset[data-z="1"] .z3, .tset[data-z="2"] .z3 { display: none; }
+.tset[data-z="2"] .z01, .tset[data-z="3"] .z01 { display: none; }
+.tset[data-z="1"] .tx-code { font-size: 23px; }
 
 /* tile states driven by filters, selection, overlays */
 #cv .tile { transition: transform .7s cubic-bezier(.3, .7, .1, 1), opacity .25s ease; }
@@ -280,6 +282,8 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
 #cv.trust .tile:not([data-trust="1"]) { opacity: .3; }
 #cv.trust .tile.dim:not([data-trust="1"]) { opacity: .1; }
 #cv.selecting .tile.far { opacity: .2; }
+#cv .key { transition: opacity .25s ease; }
+#cv.selecting .key { opacity: .18; }
 #cv .tile.hit .ring { display: inline; }
 #cv .tile.cur .selr { display: inline; }
 #cv .tile.cur .att { display: none; }
@@ -304,6 +308,7 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
 .tx-pct { font-weight: 750; font-stretch: 112.5%; font-size: 27px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
 .tx-pcts { font-size: 15px; font-weight: 600; }
 .tx-bcode { font-weight: 800; font-stretch: 112.5%; font-size: 17px; letter-spacing: .02em; }
+.tx-bcode-xl { font-weight: 800; font-stretch: 112.5%; font-size: 29px; letter-spacing: .02em; }
 .tx-bname { font-weight: 600; font-stretch: 75%; font-size: 15px; }
 .tx-bpct { font-family: var(--f-mono); font-stretch: 75%; font-weight: 600; font-size: 14px; }
 .tx-ft { font-family: var(--f-mono); font-stretch: 75%; font-weight: 600; font-size: 11.5px; text-anchor: middle; }
@@ -327,15 +332,15 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
 .tset text.on-signal { fill: var(--on-signal); }
 .gk { color: var(--ink); }
 .g-live { color: var(--st-live); } .g-ready { color: var(--st-ready); } .g-building { color: var(--st-build); } .g-planned { color: var(--st-plan); } .g-blocked { color: var(--st-block); }
-.on-band-g { color: var(--on-band); }
+.on-band-g { color: var(--on-band); --gk: var(--band); }
 
-/* key ("How to read a tile") */
-.key .tx-kt { font-weight: 700; font-stretch: 87.5%; font-size: 14.5px; letter-spacing: .13em; text-transform: uppercase; }
-.key .tx-kh { font-weight: 800; font-stretch: 112.5%; font-size: 29px; letter-spacing: -0.01em; }
-.key .tx-kl { font-weight: 700; font-stretch: 87.5%; font-size: 17px; }
-.key .tx-ks { font-weight: 500; font-stretch: 75%; font-size: 14.5px; }
-.key .tx-kn { font-family: var(--f-mono); font-stretch: 75%; font-weight: 600; font-size: 14px; }
-.key .lead { fill: none; stroke: var(--ink); stroke-width: 1.1; }
+/* key ("How to read a tile"): sizes chosen to read at 10-12px at the opening fit */
+.key .tx-kt { font-weight: 700; font-stretch: 87.5%; font-size: 17px; letter-spacing: .12em; text-transform: uppercase; }
+.key .tx-kh { font-weight: 800; font-stretch: 112.5%; font-size: 33px; letter-spacing: -0.01em; }
+.key .tx-kl { font-weight: 700; font-stretch: 87.5%; font-size: 21px; }
+.key .tx-ks { font-weight: 500; font-stretch: 75%; font-size: 18px; }
+.key .tx-kn { font-family: var(--f-mono); font-stretch: 75%; font-weight: 600; font-size: 18px; }
+.key .lead { fill: none; stroke: var(--ink); stroke-width: 1.3; }
 .key .lead-dot { fill: var(--ink); }
 .key .kv { display: none; }
 .tset[data-lens="overall"] .key .kv-overall, .tset[data-lens="dev"] .key .kv-dev, .tset[data-lens="ops"] .key .kv-ops, .tset[data-lens="biz"] .key .kv-biz, .tset:not([data-lens="overall"]) .key .kv-lens { display: inline; }
@@ -343,10 +348,10 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
 .ramp-f { fill: none; stroke: var(--ink); stroke-width: 1; }
 
 /* dependency links */
-#links path.halo { fill: none; stroke: var(--paper); stroke-width: 7; stroke-linecap: round; opacity: .9; }
-#links path.ln { fill: none; stroke: var(--ink); stroke-width: 2.6; stroke-linecap: round; }
-#links path.ln-up { stroke-dasharray: 7 5; stroke: var(--ink-2); }
-#links circle { fill: var(--ink); }
+#links { pointer-events: none; }
+#links path.halo { fill: none; stroke: var(--paper); stroke-width: calc(var(--lw, 3px) * 2.6); stroke-linejoin: round; opacity: .92; }
+#links path.ln { fill: none; stroke: var(--ink); stroke-width: var(--lw, 3px); stroke-linejoin: round; }
+#links path.ln-up { stroke-dasharray: var(--dash, 8 6); stroke: var(--ink-2); }
 .arrowhead { fill: var(--ink); }
 .arrowhead-2 { fill: var(--ink-2); }
 
@@ -354,6 +359,7 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
 #hud { position: relative; z-index: 5; display: flex; align-items: stretch; height: var(--hud-h); border-top: 2px solid var(--ink); background: var(--paper); min-width: 0; overflow: hidden; }
 .hud-scroll { display: flex; align-items: stretch; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .hud-scroll::-webkit-scrollbar { display: none; }
+.hud-scroll.more { -webkit-mask-image: linear-gradient(to right, var(--ink) calc(100% - 36px), var(--clear)); mask-image: linear-gradient(to right, var(--ink) calc(100% - 36px), var(--clear)); }
 .hc { display: flex; align-items: center; gap: 9px; padding: 0 14px; border-right: 1px solid var(--rule); flex: none; text-align: left; }
 .hc:last-child { border-right: 0; }
 .hc-num { font-weight: 800; font-stretch: 112.5%; font-size: 26px; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
@@ -401,6 +407,8 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
 .p-close svg { width: 14px; height: 14px; }
 .cap { font-weight: 700; font-stretch: 87.5%; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink); margin: 0; display: flex; align-items: baseline; gap: 8px; }
 .cap span { font-family: var(--f-mono); font-stretch: 75%; letter-spacing: 0; color: var(--ink-3); font-weight: 500; }
+.cap-2 { flex-direction: column; align-items: flex-start; gap: 3px; }
+.cap-2 span { text-transform: none; }
 .g { width: 13px; height: 13px; flex: none; display: inline-block; vertical-align: -2px; }
 
 #legend { position: absolute; left: 16px; top: 16px; z-index: 4; width: 336px; max-height: calc(100% - 32px); overflow: auto; border: 2px solid var(--ink); padding: 16px 16px 18px; display: flex; flex-direction: column; gap: 18px; box-shadow: 6px 6px 0 var(--shadow); }
@@ -514,6 +522,7 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
 #scrim { display: none; }
 
 /* ── Mid widths ───────────────────────────────────────────────────────── */
+.arr-i { width: 15px; height: 15px; flex: none; display: none; }
 @media (max-width: 1600px) {
   .chip .hc-lab span, .h-att .hc-lab span, .h-ai .hc-lab span { display: none; }
 }
@@ -531,6 +540,37 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
   #b-legend .lab { display: none; }
   #b-legend { width: 34px; padding: 0; }
   .chip .hc-lab span, .hbtn .hc-lab span { display: none; }
+  #bar { gap: 14px; }
+}
+@media (max-width: 1100px) {
+  :root { --insp-w: 360px; }
+  .chip .hc-lab, .h-att .hc-lab { display: none; }
+  .chip { padding: 0 9px; gap: 6px; }
+  .hdims { gap: 12px; padding: 0 12px; }
+  .hdim { column-gap: 6px; }
+  .hdim .hc-num { font-size: 20px; }
+  .hdim .mbar { width: 34px; }
+  .hbtn { padding: 0 12px; gap: 7px; }
+}
+@media (max-width: 1040px) {
+  /* the arrangement switch folds to pictograms; names stay in title and aria-label */
+  .seg.arr .arr-l, .seg.arr kbd { display: none; }
+  .seg.arr .arr-i { display: block; }
+  .seg.arr button { padding: 0 10px; }
+}
+@media (max-width: 900px) {
+  .chip { padding: 0 8px; }
+  .hdims { gap: 10px; padding: 0 10px; }
+}
+@media (max-width: 800px) and (min-width: 761px) {
+  .h-ai .hc-lab { display: none; }
+}
+@media (max-width: 900px) and (min-width: 761px) {
+  .seg.lens kbd { display: none; }
+  .seg.lens button { padding: 0 10px; }
+  #b-search { display: inline-flex; }
+  .srch { display: none; position: absolute; left: 12px; right: 12px; top: 10px; width: auto; z-index: 7; }
+  #app.searching .srch { display: flex; }
 }
 @media (min-width: 1181px) { .lens-short { display: none; } }
 
@@ -560,15 +600,19 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
   #zoom button { height: 40px; }
   .hc-prod { display: none; }
   .hc { padding: 0 12px; }
-  .chip { padding: 0 10px; gap: 6px; }
-  .chip .hc-num, .hbtn .hc-num { font-size: 20px; }
-  .chip .hc-lab, .hbtn .hc-lab span { display: none; }
-  .chip { padding: 0 9px; }
-  .h-att { order: 2; } .hdims { order: 3; } .h-ai { order: 4; }
-  .hdims { gap: 12px; padding: 0 12px; }
+  /* phone HUD: five status chips, attention and Verify AI fit the first screen; dimensions scroll in after */
+  .chip { padding: 0 5px; gap: 4px; }
+  .chip .g { width: 13px; height: 13px; }
+  .hst { padding: 0 3px; }
+  .chip .hc-num, .hbtn .hc-num { font-size: 19px; }
+  .chip .hc-lab, .hbtn .hc-lab { display: none; }
+  .h-att { order: 2; } .h-ai { order: 3; } .hdims { order: 4; }
+  .hdims { gap: 12px; padding: 0 12px; border-right: 0; }
   .hdim .hc-num { font-size: 18px; }
-  .hdim .mbar { width: 34px; }
-  .hbtn { padding: 0 12px; }
+  .hdim .mbar { width: 30px; }
+  .hbtn { padding: 0 9px; gap: 5px; }
+  .h-att .sq { width: 12px; height: 12px; border-width: 2.5px; }
+  .h-ai .fi { width: 14px; height: 16px; }
   #legend, #insp { position: fixed; left: 0; right: 0; top: auto; bottom: 0; width: auto; max-height: 64%; border: 0; border-top: 2px solid var(--ink); box-shadow: 0 -8px 0 var(--shadow); z-index: 8; }
   #legend { padding: 14px 16px calc(18px + env(safe-area-inset-bottom, 0px)); }
   #insp { height: 64%; transform: translateY(102%); }
@@ -610,9 +654,9 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
       </div>
       <span class="seg-cap">Arrange</span>
       <div class="seg arr" role="radiogroup" aria-label="Arrangement">
-        <button type="button" role="radio" data-arr="table" aria-checked="true"><kbd>T</kbd>Table</button>
-        <button type="button" role="radio" data-arr="status" aria-checked="false"><kbd>S</kbd>Status</button>
-        <button type="button" role="radio" data-arr="release" aria-checked="false"><kbd>R</kbd>Release</button>
+        <button type="button" role="radio" data-arr="table" aria-checked="true" title="Table (T)" aria-label="Table"><kbd>T</kbd><svg class="arr-i" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 2h3.4v12H1.5zM6.3 2h3.4v9H6.3zM11.1 2h3.4v6.5h-3.4z" style="fill:currentColor"/></svg><span class="arr-l">Table</span></button>
+        <button type="button" role="radio" data-arr="status" aria-checked="false" title="Status (S)" aria-label="Status"><kbd>S</kbd><svg class="arr-i" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 1.5h3.4v3.4H1.5zM6.3 1.5h3.4v3.4H6.3zM11.1 1.5h3.4v3.4h-3.4zM1.5 6.3h3.4v3.4H1.5zM6.3 6.3h3.4v3.4H6.3zM1.5 11.1h3.4v3.4H1.5z" style="fill:currentColor"/></svg><span class="arr-l">Status</span></button>
+        <button type="button" role="radio" data-arr="release" aria-checked="false" title="Release (R)" aria-label="Release"><kbd>R</kbd><svg class="arr-i" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 10.5h3.4V14H1.5zM6.3 6.5h3.4V14H6.3zM11.1 2h3.4v12h-3.4z" style="fill:currentColor"/></svg><span class="arr-l">Release</span></button>
       </div>
     </div>
     <div class="srch" role="search">
@@ -643,13 +687,14 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
   </header>
 
   <main id="stage">
-    <svg id="cv" class="tset" data-lens="overall" data-lod="0" data-z="2" role="application" aria-label="Periodic table of Larkspur features. Drag to pan, scroll or pinch to zoom.">
+    <svg id="cv" class="tset" data-lens="overall" data-lod="0" data-z="2" tabindex="-1" role="application" aria-label="Periodic table of Larkspur features. Drag to pan, scroll or pinch to zoom.">
       <defs>
         <pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
           <rect width="2.6" height="7" style="fill:var(--signal)" opacity="0.32"/>
         </pattern>
-        <marker id="ah" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" class="arrowhead"/></marker>
-        <marker id="ah2" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" class="arrowhead-2"/></marker>
+        <marker id="ah" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="4.2" markerHeight="4.2" markerUnits="strokeWidth" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" class="arrowhead"/></marker>
+        <marker id="ah2" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="4.2" markerHeight="4.2" markerUnits="strokeWidth" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" class="arrowhead-2"/></marker>
+        <marker id="dot2" viewBox="-5 -5 10 10" refX="0" refY="0" markerWidth="2.6" markerHeight="2.6" markerUnits="strokeWidth"><circle r="4.4" class="arrowhead-2"/></marker>
       </defs>
       <g id="cam">
         <g id="heads"></g>
@@ -743,32 +788,72 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
   const fmtDate = (iso) => { const [y, m, d] = iso.split('-').map(Number); return d + ' ' + MONTHS[m - 1] + ' ' + y; };
   const daysAgo = (iso) => Math.round((Date.parse(AS_OF) - Date.parse(iso)) / 864e5);
 
-  /** Two-letter, element-style symbols, unique across the table (capital + lower case). */
+  /**
+   * Two-character, element-style symbols that read as mnemonics of the name and stay unique.
+   * Candidates are ranked (acronym, initials, compound initials, first+last word, first letters,
+   * consonants, second-word led ...) and assigned level by level with augmenting paths, so an
+   * earlier feature can move to an equally good symbol when that frees a better one for a later one.
+   * Acronyms keep their characters: 3DS2 authentication is 3D, B2B price lists is B2.
+   */
   function makeSymbols(list) {
-    const STOP = new Set(['and', 'of', 'the', 'for', 'to', 'a', 'an', 'in', 'on', 'with', 'by']);
-    const cons = (c) => /[bcdfghjklmnpqrstvwxz]/.test(c);
-    const used = new Set();
-    const out = new Map();
+    const STOP = new Set(['and', 'of', 'the', 'for', 'to', 'a', 'an', 'in', 'on', 'with', 'by', 'or', 'at']);
+    const cons = (c) => /[bcdfghjklmnpqrstvwxz]/i.test(c);
+    const letters = (w) => w.replace(/-/g, '');
+    const isAcr = (w) => /^[A-Z0-9]{2,}$/.test(letters(w));
+    const cands = new Map();
     list.forEach((f) => {
-      const words = f.name.replace(/\(.*?\)/g, ' ').split(/[\s\-/,]+/).map((w) => w.replace(/[^A-Za-z]/g, '')).filter(Boolean);
+      const words = f.name.replace(/\(.*?\)/g, ' ').split(/[\s/,&+]+/).map((w) => w.replace(/[^A-Za-z0-9-]/g, '')).filter((w) => /[A-Za-z0-9]/.test(w));
       const sig = words.filter((w, i) => i === 0 || !STOP.has(w.toLowerCase()));
       const c = [];
-      const add = (a, b) => { const s = a.toUpperCase() + b.toLowerCase(); if (c.indexOf(s) < 0) c.push(s); };
-      const w1 = sig[0];
-      if (sig[1]) add(w1[0], sig[1][0]);
-      for (const ch of w1.slice(1).toLowerCase()) if (cons(ch) && ch !== w1[0].toLowerCase()) add(w1[0], ch);
-      for (let k = 2; k < sig.length; k++) add(w1[0], sig[k][0]);
-      for (let k = 1; k < sig.length; k++) for (const ch of sig[k].slice(1)) if (cons(ch)) add(w1[0], ch);
+      const add = (a, b, score) => {
+        if (!a || !b) return;
+        const s = /[0-9]/.test(a + b) ? (a + b).toUpperCase() : a.toUpperCase() + b.toLowerCase();
+        if (/^[A-Za-z0-9]{2}$/.test(s) && !c.some((x) => x.s === s)) c.push({ s, score });
+      };
+      const w1 = sig[0], L1 = letters(w1), parts = w1.split('-').filter(Boolean);
+      if (isAcr(w1)) add(L1[0], L1[1], 0);
+      if (sig[1]) add(L1[0], letters(sig[1])[0], 1);
+      if (parts.length > 1) add(parts[0][0], parts[parts.length - 1][0], 2);
+      if (sig.length > 2) add(L1[0], letters(sig[sig.length - 1])[0], 3);
+      for (let k = 2; k < sig.length - 1; k++) add(L1[0], letters(sig[k])[0], 4);
+      add(L1[0], L1[1], 5);
+      for (const ch of L1.slice(2)) if (cons(ch)) add(L1[0], ch, 6);
       for (let k = 1; k < sig.length; k++) {
-        for (let j = k + 1; j < sig.length; j++) add(sig[k][0], sig[j][0]);
-        for (const ch of sig[k].slice(1)) if (cons(ch)) add(sig[k][0], ch);
+        const W = letters(sig[k]);
+        for (let j = k + 1; j < sig.length; j++) add(W[0], letters(sig[j])[0], 7);
+        add(W[0], W[1], 7);
       }
-      for (const ch of w1.slice(1)) add(w1[0], ch);
-      'abcdefghijklmnopqrstuvwxyz'.split('').forEach((ch) => add(w1[0], ch));
-      const pick = c.find((s) => !used.has(s)) || w1.slice(0, 2);
-      used.add(pick);
-      out.set(f.id, pick);
+      for (let k = 1; k < sig.length; k++) for (const ch of letters(sig[k]).slice(1)) if (cons(ch)) add(L1[0], ch, 8);
+      for (let k = 1; k < sig.length; k++) { const W = letters(sig[k]); for (const ch of W.slice(2)) if (cons(ch)) add(W[0], ch, 9); }
+      for (const ch of L1.slice(1)) add(L1[0], ch, 9);
+      'abcdefghijklmnopqrstuvwxyz'.split('').forEach((ch) => add(L1[0], ch, 10));
+      cands.set(f.id, c);
     });
+    const out = new Map();
+    const owner = new Map();
+    const lvl = new Map();
+    let slack = 0;
+    function tryAssign(f, L, seen) {
+      for (const x of cands.get(f.id)) {
+        if (x.score > L || seen.has(x.s)) continue;
+        seen.add(x.s);
+        const g = owner.get(x.s);
+        if (!g || tryAssign(g, Math.max(lvl.get(g.id), slack), seen)) {
+          owner.set(x.s, f);
+          out.set(f.id, x.s);
+          if (g) lvl.set(g.id, Math.max(lvl.get(g.id), cands.get(g.id).find((y) => y.s === out.get(g.id)).score));
+          return true;
+        }
+      }
+      return false;
+    }
+    let pending = list.slice();
+    for (let level = 0; level <= 10 && pending.length; level++) {
+      // before falling back to arbitrary letters, earlier features may move to another good mnemonic
+      slack = level >= 9 ? 7 : 0;
+      pending = pending.filter((f) => { if (tryAssign(f, level, new Set())) { lvl.set(f.id, level); return false; } return true; });
+    }
+    pending.forEach((f) => out.set(f.id, f.name.slice(0, 2)));
     return out;
   }
 
@@ -780,28 +865,35 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
     if ('fontStretch' in mctx) mctx.fontStretch = stretch || 'normal';
     return mctx.measureText(text).width;
   }
-  /** Splits a label into at most two balanced lines that fit maxW (squeezed slightly if a word is too long). */
+  /** Splits a label into at most two balanced lines that fit maxW; breaks at spaces or after hyphens. */
   function wrap2(text, size, weight, stretch, maxW) {
     const m = (t) => meas(t, size, weight, stretch);
     if (m(text) <= maxW) return [text];
-    const words = text.split(' ');
+    const cuts = [];
+    for (let i = 1; i < text.length - 1; i++) {
+      if (text[i] === ' ') cuts.push([text.slice(0, i), text.slice(i + 1)]);
+      else if (text[i] === '-' && text[i + 1] !== ' ') cuts.push([text.slice(0, i + 1), text.slice(i + 1)]);
+    }
     let best = null;
-    for (let i = 1; i < words.length; i++) {
-      const a = words.slice(0, i).join(' ');
-      const b = words.slice(i).join(' ');
-      const w = Math.max(m(a), m(b));
-      if (!best || w < best.w - 0.5) best = { lines: [a, b], w };
+    cuts.forEach((c) => {
+      // prefer word breaks over hyphen breaks unless the hyphen break is clearly narrower
+      const w = Math.max(m(c[0]), m(c[1])) + (c[0].endsWith('-') ? 6 : 0);
+      if (!best || w < best.w - 0.5) best = { lines: c, w };
+    });
+    return best ? best.lines : [text];
+  }
+  /** Wraps a name into one or two lines, falling back from condensed to extra-condensed before squeezing glyphs. */
+  function wrapName(text, size, weight, maxW) {
+    for (const st of ['condensed', 'extra-condensed']) {
+      const lines = wrap2(text, size, weight, st, maxW);
+      if (lines.every((l) => meas(l, size, weight, st) <= maxW)) return { lines, st };
     }
-    if (!best) {
-      const hy = text.indexOf('-');
-      if (hy > 0) return [text.slice(0, hy + 1), text.slice(hy + 1)];
-      return [text];
-    }
-    return best.lines;
+    return { lines: wrap2(text, size, weight, 'extra-condensed', maxW), st: 'extra-condensed' };
   }
   /** SVG <text> with one tspan per line; lines wider than maxW get textLength so they never spill. */
   function textLines(lines, x, y, lead, cls, size, weight, stretch, maxW, extra) {
-    let s = '<text class="' + cls + '" x="' + x + '" y="' + y + '"' + (extra || '') + '>';
+    const xc = stretch === 'extra-condensed';
+    let s = '<text class="' + cls + '" x="' + x + '" y="' + y + '"' + (xc ? ' style="font-stretch:62.5%"' : '') + (extra || '') + '>';
     lines.forEach((ln, i) => {
       const w = meas(ln, size, weight, stretch);
       const fit = w > maxW ? ' textLength="' + maxW.toFixed(1) + '" lengthAdjust="spacingAndGlyphs"' : '';
@@ -864,7 +956,7 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
     else if (state === 'todo') s = '<rect class="pip-o" x="' + (x + 0.65) + '" y="' + (y + 0.65) + '" width="' + (w - 1.3) + '" height="' + (h - 1.3) + '"/>';
     else if (state === 'blocked') { s = '<rect class="pip-b" x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '"/>'; lc = ' pl-b'; }
     else { s = '<rect class="pip-n" x="' + (x + 0.5) + '" y="' + (y + 0.5) + '" width="' + (w - 1) + '" height="' + (h - 1) + '"/>'; lc = ' pl-n'; }
-    return s + '<text class="pl' + lc + '" x="' + (x + w / 2) + '" y="' + (y + h / 2 + 3.4) + '">' + letter + '</text>';
+    return s + '<text class="pl z3' + lc + '" x="' + (x + w / 2) + '" y="' + (y + h / 2 + 3.4) + '">' + letter + '</text>';
   }
   function dpip(state, x, y, sz) {
     if (state === 'done') return '<rect class="dpip-f" x="' + x + '" y="' + y + '" width="' + sz + '" height="' + sz + '"/>';
@@ -902,8 +994,9 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
     // tile and table levels
     s += '<g class="l01">';
     s += fitText(sym, 6, 75, 'tx-sym0', 42, 800, 'semi-expanded', TW - 12);
-    s += fitText(sym, 6, 50, 'tx-sym1', 29, 800, 'semi-expanded', TW - 12);
-    s += textLines(wrap2(f.name, 13, 600, 'condensed', TW - 13), 7, 66.5, 13.8, 'tx-name', 13, 600, 'condensed', TW - 13);
+    s += fitText(sym, 6, 44, 'tx-sym1', 26, 800, 'semi-expanded', TW - 12);
+    const nm = wrapName(f.name, 16, 600, TW - 13);
+    s += textLines(nm.lines, 7, 64, 15.5, 'tx-name', 16, 600, nm.st, TW - 13);
     s += '<g class="bars">';
     DIM_IDS.forEach((k, i) => {
       const y = 90 + i * 6.1;
@@ -930,8 +1023,10 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
     s += fitText(sym, 6.5, 40, 'tx-dsym', 19, 800, 'semi-expanded', 50);
     s += '<text class="tx-dmeta" x="' + (TW - 7) + '" y="31" text-anchor="end">' + f.priority + '</text>';
     s += '<text class="tx-dmeta" x="' + (TW - 7) + '" y="40" text-anchor="end">' + (rel ? rel.label : 'Unsched.') + '</text>';
-    s += textLines(wrap2(f.name, 9.6, 700, 'condensed', TW - 13), 7, 51.5, 9.8, 'tx-dname', 9.6, 700, 'condensed', TW - 13);
-    s += fitText(team.name + ' · ' + f.builtBy + ' · ' + REVIEW[f.review].toLowerCase(), 7, 71, 'tx-down', 6.4, 500, 'condensed', TW - 13);
+    const dn = wrapName(f.name, 9.6, 700, TW - 13);
+    const one = dn.lines.length === 1;
+    s += textLines(dn.lines, 7, one ? 55 : 51.5, 9.8, 'tx-dname', 9.6, 700, dn.st, TW - 13);
+    s += fitText(team.name + ' · ' + f.builtBy + ' · ' + REVIEW[f.review].toLowerCase(), 7, one ? 68 : 71, 'tx-down', 6.4, 500, 'condensed', TW - 13);
     DIMS.forEach((dim, r) => {
       const y = 76 + r * 11.3;
       s += '<g class="drow dr-' + dim.id + '">';
@@ -1013,40 +1108,82 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
     if (k === 'todo') return '<rect ' + a + ' style="fill:var(--paper);stroke:var(--ink);stroke-width:.8"/>';
     return '<rect ' + a + ' style="fill:var(--signal)"/>';
   }
-  /** Black domain band spanning its module columns. */
+  /** Sticky band label: the text slides right with the view so a band never shows as a bare bar when zoomed into its middle. */
+  function stk(bandX, x, maxShift) {
+    return ' data-sb="' + bandX + '" data-sx="' + x + '" data-sd="' + Math.max(0, maxShift).toFixed(1) + '"';
+  }
+  /** Black domain band spanning its module columns. Far out (z 0-1) it carries a large code and %, so it never reads as an empty bar. */
   function domBand(d, x, y, w, h) {
     const r = BP.domainRollup(d.id);
+    const pctXL = meas('100%', 29, 800, 'semi-expanded'), pctS = meas(r.count + ' · 100%', 14, 600, 'condensed') + 8;
     let s = '<g class="hd hd-dom" data-dom="' + d.id + '" role="button" aria-label="' + esc(d.name + ' domain') + '">';
     s += '<rect class="h-band" x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '"/>';
-    s += '<text class="tx-bcode on-band z1" x="' + (x + 9) + '" y="' + (y + 22) + '">' + d.code + '</text>';
-    s += '<text class="tx-bpct on-band z1" x="' + (x + w - 9) + '" y="' + (y + 21) + '" text-anchor="end"><tspan class="on-band-2">' + r.count + ' ·</tspan> ' + pv('dom:' + d.id) + '%</text>';
-    s += fitText(d.name, x + 9, y + 42, 'tx-bname on-band z2', 15, 600, 'condensed', w - 18);
+    s += '<text class="tx-bcode-xl on-band z01 stk" x="' + (x + 10) + '" y="' + (y + h / 2 + 10.5) + '"' + stk(x, x + 10, w - 36 - meas(d.code, 29, 800, 'semi-expanded') - pctXL) + '>' + d.code + '</text>';
+    s += '<text class="tx-bcode-xl on-band z01" x="' + (x + w - 10) + '" y="' + (y + h / 2 + 10.5) + '" text-anchor="end">' + pv('dom:' + d.id) + '%</text>';
+    s += '<text class="tx-bcode on-band z2 stk" x="' + (x + 9) + '" y="' + (y + 21) + '"' + stk(x, x + 9, w - 30 - meas(d.code, 17, 800, 'semi-expanded') - pctS) + '>' + d.code + '</text>';
+    s += '<text class="tx-bpct on-band z2" x="' + (x + w - 9) + '" y="' + (y + 20) + '" text-anchor="end"><tspan class="on-band-2">' + r.count + ' ·</tspan> ' + pv('dom:' + d.id) + '%</text>';
+    s += fitText(d.name, x + 9, y + 39, 'tx-bname on-band z2 stk', 15, 600, 'condensed', w - 18, stk(x, x + 9, w - 18 - meas(d.name, 15, 600, 'condensed')));
     return s + '</g>';
   }
 
-  function layTable(P) {
+  // Table geometry (world units). One tier puts all 20 columns side by side; two tiers wrap the
+  // domains onto a second row for near-square stages such as the 820px side panel.
+  const TBL = { bandH: 48, bandGap: 6, hdrH: 90, hdrGap: 8, footGap: 4, footH: 20, DG: 26, tierGap: 70, keyGap: 40 };
+  function splitTiers(n) {
+    if (n !== 2) return [BP.domains.slice()];
+    const cnt = BP.domains.map((d) => BP.modulesOf(d.id).length);
+    const sum = (a) => a.reduce((x, y) => x + y, 0);
+    let best = null;
+    for (let i = 1; i < cnt.length; i++) {
+      const a = sum(cnt.slice(0, i)), b = sum(cnt.slice(i));
+      // the shorter tier leaves room for the key, so ask for at least five free columns
+      const score = Math.max(a, b) + (Math.abs(a - b) >= 5 ? 0 : 100);
+      if (!best || score < best.score) best = { i, score };
+    }
+    return [BP.domains.slice(0, best.i), BP.domains.slice(best.i)];
+  }
+
+  function layTable(P, cfg) {
     const pos = new Map();
     let s = '';
     if (!P) {
-      const bandY = M, bandH = 52, hdrY = bandY + bandH + 8, hdrH = 94, tilesY = hdrY + hdrH + 10;
-      const footY = tilesY + MAXROWS * PY + 4;
-      const DG = 26;
-      let x = M;
-      BP.domains.forEach((d) => {
-        const x0 = x;
-        BP.modulesOf(d.id).forEach((m) => {
-          byMod.get(m.id).forEach((f, i) => pos.set(f.id, [x, tilesY + i * PY]));
-          s += colHead(m, x, hdrY, TW, hdrH) + colFoot(m, x, footY, TW);
-          x += PX;
+      const c = cfg || { tiers: 1, key: 'row', ks: 1 };
+      const boxes = [];
+      let y = M;
+      splitTiers(c.tiers).forEach((doms) => {
+        const rows = Math.max.apply(null, [].concat.apply([], doms.map((d) => BP.modulesOf(d.id).map((m) => byMod.get(m.id).length))));
+        const bandY = y, hdrY = bandY + TBL.bandH + TBL.bandGap, tilesY = hdrY + TBL.hdrH + TBL.hdrGap;
+        const footY = tilesY + rows * PY - GAP + TBL.footGap;
+        let x = M;
+        doms.forEach((d) => {
+          const x0 = x;
+          BP.modulesOf(d.id).forEach((m) => {
+            byMod.get(m.id).forEach((f, i) => pos.set(f.id, [x, tilesY + i * PY]));
+            s += colHead(m, x, hdrY, TW, TBL.hdrH) + colFoot(m, x, footY, TW);
+            x += PX;
+          });
+          s += domBand(d, x0, bandY, x - GAP - x0, TBL.bandH);
+          x += TBL.DG;
         });
-        s += domBand(d, x0, bandY, x - GAP - x0, bandH);
-        x += DG;
+        boxes.push({ x0: M, x1: x - TBL.DG - GAP, y0: bandY, y1: footY + TBL.footH });
+        y = footY + TBL.footH + TBL.tierGap;
       });
-      const right = x - DG - GAP;
-      const keyY = footY + 20 + 46;
-      const key = keyFlow('table', M, keyY, right - M);
-      s += key.svg;
-      return { pos, svg: s, w: right + M, h: keyY + key.h + M };
+      const right = Math.max.apply(null, boxes.map((b) => b.x1));
+      let bottom = boxes[boxes.length - 1].y1;
+      if (c.key === 'row') {
+        const key = keyRow('table', M, bottom + TBL.keyGap, right - M, c.ks || 1);
+        s += key.svg;
+        bottom += TBL.keyGap + key.h;
+      } else if (c.key === 'strip') {
+        const key = keyStrip(M, bottom + 34, right - M);
+        s += key.svg;
+        bottom += 34 + key.h;
+      } else if (c.key === 'side' && boxes.length > 1) {
+        const b = boxes[0].x1 <= boxes[1].x1 ? boxes[0] : boxes[1];
+        const x0 = b.x1 + 64;
+        s += keySide(x0, b.y0, right - x0, b.y1 - b.y0, c.ks || 1).svg;
+      }
+      return { pos, svg: s, w: right + M, h: bottom + M, cfg: c };
     }
     // portrait: modules become rows, tiles run left to right
     const HW = 236;
@@ -1055,8 +1192,9 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
     BP.domains.forEach((d) => {
       const r = BP.domainRollup(d.id);
       s += '<g class="hd hd-dom" data-dom="' + d.id + '"><rect class="h-band" x="' + M + '" y="' + y + '" width="' + W + '" height="58"/>';
-      s += '<text class="tx-bcode on-band" x="' + (M + 12) + '" y="' + (y + 40) + '" style="font-size:30px">' + d.code + '</text>';
-      s += fitText(d.name, M + 100, y + 38, 'tx-bname on-band z1', 24, 600, 'condensed', W - 280, ' style="font-size:24px"');
+      const room = W - 112 - Math.min(W - 280, meas(d.name, 24, 600, 'condensed')) - meas(r.count + ' · 100%', 24, 600, 'condensed') - 24;
+      s += '<text class="tx-bcode on-band stk" x="' + (M + 12) + '" y="' + (y + 40) + '" style="font-size:30px"' + stk(M, M + 12, room) + '>' + d.code + '</text>';
+      s += fitText(d.name, M + 100, y + 38, 'tx-bname on-band z1 stk', 24, 600, 'condensed', W - 280, ' style="font-size:24px"' + stk(M, M + 100, room));
       s += '<text class="tx-bpct on-band" x="' + (M + W - 12) + '" y="' + (y + 39) + '" text-anchor="end" style="font-size:24px"><tspan class="on-band-2">' + r.count + ' ·</tspan> ' + pv('dom:' + d.id) + '%</text></g>';
       y += 70;
       BP.modulesOf(d.id).forEach((m) => {
@@ -1089,15 +1227,17 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
     return s + '</g>';
   }
 
-  function layStatus(P) {
+  /** Status matrix. rowsPer sets how many tile rows the busiest domain gets per status (2 on wide stages, more on near-square ones). */
+  function layStatus(P, rowsPer) {
     const pos = new Map();
     let s = '';
     const total = ORDER.length;
     if (!P) {
+      const R = rowsPer || 2;
       const K = {};
       SORDER.forEach((st) => {
         const per = BP.domains.map((d) => ORDER.filter((f) => f.status === st && domOf(f).id === d.id).length);
-        K[st] = Math.max(2, Math.ceil(Math.max.apply(null, per) / 2));
+        K[st] = Math.max(2, Math.ceil(Math.max.apply(null, per) / R));
       });
       const RH = 228, SG = 30, DGv = 26, hdrY = M, hdrH = 96, top = hdrY + hdrH + 16;
       const colX = {};
@@ -1147,46 +1287,79 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
   }
   const REL_STATE = { shipped: 'Shipped', next: 'Next release', future: 'Future', none: 'No release yet' };
 
-  function layRelease(P) {
+  /**
+   * Release histogram. On wide stages all releases share one baseline with the key above the short
+   * shipped bars; on near-square stages (cfg.wrap) the shipped releases take the first row and the
+   * next release onward a second row, with the key in the free space beside them.
+   */
+  function layRelease(P, cfg) {
     const pos = new Map();
     let s = '';
     const groups = relGroups();
     if (!P) {
-      const K = 3, RG = 40, gw = K * PX - GAP, labelH = 70;
-      const L = Math.max.apply(null, groups.map((g) => Math.ceil(g.items.length / K)));
-      const shipped = groups.filter((g) => g.state === 'shipped');
-      const shipW = shipped.length * (gw + RG) - RG;
-      const key = keyFlow('release', M, M, shipW);
-      const shipMax = Math.max.apply(null, shipped.map((g) => Math.ceil(g.items.length / K)));
-      const baseY = Math.max(M + labelH + L * PY, M + key.h + 36 + labelH + shipMax * PY);
-      s += key.svg;
-      let x = M;
-      let todayX = null;
-      groups.forEach((g, gi) => {
-        const lv = Math.ceil(g.items.length / K);
-        if (g.state === 'next') {
-          s += '<rect class="next-wash" x="' + (x - 14) + '" y="' + (baseY - L * PY - labelH + 6) + '" width="' + (gw + 28) + '" height="' + (L * PY + labelH + 118) + '"/>';
-          if (todayX == null) todayX = x - RG / 2 - 14 / 2;
+      const c = cfg || { wrap: false };
+      const K = 3, RG = 40, gw = K * PX - GAP, labelH = 70, foot = 100;
+      const lvOf = (g) => Math.ceil(g.items.length / K);
+      const maxLv = (list) => Math.max.apply(null, list.map(lvOf));
+      const row = (list, x0, baseY, L) => {
+        let x = x0, todayX = null, out = '';
+        list.forEach((g) => {
+          const lv = lvOf(g);
+          if (g.state === 'next') {
+            out += '<rect class="next-wash" x="' + (x - 14) + '" y="' + (baseY - L * PY - labelH + 6) + '" width="' + (gw + 28) + '" height="' + (L * PY + labelH + 118) + '"/>';
+            if (todayX == null) todayX = x - RG / 2 - 14 / 2;
+          }
+          g.items.forEach((f, i) => pos.set(f.id, [x + (i % K) * PX, baseY - (Math.floor(i / K) + 1) * PY + GAP]));
+          const topY = baseY - lv * PY + GAP;
+          out += '<text class="tx-big" x="' + x + '" y="' + (topY - 22) + '">' + g.items.length + '</text>';
+          out += '<text class="tx-mono c3 z2" x="' + (x + gw) + '" y="' + (topY - 24) + '" text-anchor="end">' + pv('rel:' + g.id) + '% <tspan class="lens-word">' + LENS_NAME[S.lens].toLowerCase() + '</tspan></text>';
+          out += '<g class="hd-rel">';
+          out += '<text class="tx-lab" x="' + x + '" y="' + (baseY + 44) + '" style="font-size:30px">' + esc(g.label) + '</text>';
+          if (g.date) out += '<text class="tx-mono c2 z1" x="' + x + '" y="' + (baseY + 70) + '" style="font-size:16px">' + fmtDate(g.date) + '</text>';
+          out += '<text class="tx-caps z1' + (g.state === 'next' ? '' : ' c3') + '" x="' + x + '" y="' + (baseY + 94) + '" style="font-size:15px">' + REL_STATE[g.state] + '</text>';
+          out += '</g>';
+          x += gw + RG;
+        });
+        x -= RG;
+        out += '<rect class="h-rule" x="' + x0 + '" y="' + (baseY + 6) + '" width="' + (x - x0) + '" height="3"/>';
+        return { svg: out, x, todayX };
+      };
+      const todayTag = 'Today ' + fmtDate(AS_OF).replace(/ \d{4}$/, '');
+      if (!c.wrap) {
+        const L = maxLv(groups);
+        const shipped = groups.filter((g) => g.state === 'shipped');
+        const shipW = shipped.length * (gw + RG) - RG;
+        const key = keyRow('release', M, M, shipW, 1);
+        const baseY = Math.max(M + labelH + L * PY, M + key.h + 36 + labelH + maxLv(shipped) * PY);
+        s += key.svg;
+        const r = row(groups, M, baseY, L);
+        s += r.svg;
+        if (r.todayX != null) {
+          s += '<path class="today" d="M' + r.todayX + ' ' + M + 'V' + (baseY + foot) + '"/>';
+          s += '<rect class="h-band" x="' + (r.todayX - 190) + '" y="' + M + '" width="190" height="36"/>';
+          s += '<text class="tx-caps on-band" x="' + (r.todayX - 95) + '" y="' + (M + 24) + '" text-anchor="middle" style="font-size:17px">' + todayTag + '</text>';
         }
-        g.items.forEach((f, i) => pos.set(f.id, [x + (i % K) * PX, baseY - (Math.floor(i / K) + 1) * PY + GAP]));
-        const topY = baseY - lv * PY + GAP;
-        s += '<text class="tx-big" x="' + x + '" y="' + (topY - 22) + '">' + g.items.length + '</text>';
-        s += '<text class="tx-mono c3 z2" x="' + (x + gw) + '" y="' + (topY - 24) + '" text-anchor="end">' + pv('rel:' + g.id) + '% <tspan class="lens-word">' + LENS_NAME[S.lens].toLowerCase() + '</tspan></text>';
-        s += '<g class="hd-rel">';
-        s += '<text class="tx-lab" x="' + x + '" y="' + (baseY + 44) + '" style="font-size:30px">' + esc(g.label) + '</text>';
-        if (g.date) s += '<text class="tx-mono c2 z1" x="' + x + '" y="' + (baseY + 70) + '" style="font-size:16px">' + fmtDate(g.date) + '</text>';
-        s += '<text class="tx-caps z1' + (g.state === 'next' ? '' : ' c3') + '" x="' + x + '" y="' + (baseY + 94) + '" style="font-size:15px">' + REL_STATE[g.state] + '</text>';
-        s += '</g>';
-        x += gw + RG;
-        if (gi === groups.length - 1) x -= RG;
-      });
-      s += '<rect class="h-rule" x="' + M + '" y="' + (baseY + 6) + '" width="' + (x - M) + '" height="3"/>';
-      if (todayX != null) {
-        s += '<path class="today" d="M' + todayX + ' ' + M + 'V' + (baseY + 100) + '"/>';
-        s += '<rect class="h-band" x="' + (todayX - 190) + '" y="' + M + '" width="190" height="36"/>';
-        s += '<text class="tx-caps on-band" x="' + (todayX - 95) + '" y="' + (M + 24) + '" text-anchor="middle" style="font-size:17px">Today ' + fmtDate(AS_OF).replace(/ \d{4}$/, '') + '</text>';
+        return { pos, svg: s, w: r.x + M, h: baseY + foot + M, cfg: c };
       }
-      return { pos, svg: s, w: x + M, h: baseY + 100 + M };
+      const shipped = groups.filter((g) => g.state === 'shipped');
+      const ahead = groups.filter((g) => g.state !== 'shipped');
+      const L1 = maxLv(shipped), L2 = maxLv(ahead);
+      const base1 = M + labelH + L1 * PY;
+      const top2 = base1 + foot + 50;
+      const base2 = top2 + 50 + labelH + L2 * PY;
+      const r1 = row(shipped, M, base1, L1);
+      const r2 = row(ahead, M + 48, base2, L2);
+      s += r1.svg + r2.svg;
+      const tx = r2.todayX != null ? r2.todayX : M + 21;
+      s += '<path class="today" d="M' + tx + ' ' + top2 + 'V' + (base2 + foot) + '"/>';
+      s += '<rect class="h-band" x="' + tx + '" y="' + top2 + '" width="190" height="36"/>';
+      s += '<text class="tx-caps on-band" x="' + (tx + 95) + '" y="' + (top2 + 24) + '" text-anchor="middle" style="font-size:17px">' + todayTag + '</text>';
+      const right = Math.max(r1.x, r2.x);
+      if (c.ks) {
+        const kx = r2.x + 64;
+        if (right - kx >= 300 * c.ks) s += keySide(kx, top2, right - kx, base2 + foot - top2, c.ks, 'release').svg;
+      }
+      return { pos, svg: s, w: right + M, h: base2 + foot + M, cfg: c };
     }
     return laySections(groups.map((g) => ({
       key: 'rel:' + g.id, label: g.label, sub: (g.date ? fmtDate(g.date) + ' · ' : '') + REL_STATE[g.state], items: g.items,
@@ -1216,90 +1389,149 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
   }
 
   // ── Key: "How to read a tile" ─────────────────────────────────────────
+  // Blocks are drawn in world units at sizes chosen to stay legible (labels 21, notes 18) at the
+  // opening fit. keyRow lays them side by side under the table, keySide stacks them in the free
+  // corner of the two-tier table, keyStrip is a one-line key for short stages.
   const KEY_SAMPLE = BP.feature('subscriptions.subscribe-and-save') || ORDER[0];
-  const KEYB = { intro: [292, 200], sample: [650, 200], status: [330, 200], read: [318, 200], marks: [352, 200] };
-  function keyFlow(arr, x0, y0, maxW) {
-    const ids = ['intro', 'sample', 'status', 'read', 'marks'];
-    const gx = 46, gy = 44;
-    let x = 0, y = 0, rowH = 0, maxX = 0;
-    const at = {};
-    ids.forEach((id) => {
-      const [w, h] = KEYB[id];
+  const KB = { intro: [300, 192], sample: [650, 196], sampleN: [372, 196], status: [330, 192], read: [320, 192], marks: [336, 192] };
+  const KEY_DESC = { live: 'in production', ready: 'awaiting release', building: 'being built', planned: 'not started', blocked: 'cannot progress' };
+  let KZ1 = ' z1', KZ2 = ' z2';
+  function keyBlock(id, arr, x, y) {
+    if (id === 'intro') return keyIntro(arr, x, y);
+    if (id === 'sample') return keySample(x, y, false);
+    if (id === 'sampleN') return keySample(x, y, true);
+    if (id === 'status') return keyStatus(x, y);
+    if (id === 'read') return keyRead(x, y);
+    return keyMarks(x, y);
+  }
+  /** Flows blocks left to right, wrapping at maxW; stops before maxH. */
+  function keyFlowBlocks(ids, arr, maxW, maxH) {
+    const gx = 44, gy = 40;
+    let x = 0, y = 0, rowH = 0, maxX = 0, svg = '';
+    for (const id of ids) {
+      const [w, h] = KB[id];
       if (x > 0 && x + w > maxW) { x = 0; y += rowH + gy; rowH = 0; }
-      at[id] = [x, y];
+      if (maxH && y + h > maxH) continue;
+      svg += keyBlock(id, arr, x, y);
       maxX = Math.max(maxX, x + w);
-      x += w + gx;
       rowH = Math.max(rowH, h);
+      x += w + gx;
+    }
+    return { svg, w: maxX, h: y + rowH };
+  }
+  function keyRow(arr, x0, y0, maxW, ks) {
+    KZ1 = ' z1'; KZ2 = ' z2';
+    const k = ks || 1;
+    const f = keyFlowBlocks(['intro', 'sample', 'status', 'read', 'marks'], arr, maxW / k);
+    return { svg: '<g class="key" transform="translate(' + x0 + ',' + y0 + ') scale(' + k + ')">' + f.svg + '</g>', w: f.w * k, h: f.h * k };
+  }
+  function keySide(x0, y0, w, h, ks, arr) {
+    KZ1 = ''; KZ2 = '';
+    const f = keyFlowBlocks(['sampleN', 'status', 'marks', 'read', 'intro'], arr || 'table', w / ks, h / ks);
+    return { svg: '<g class="key" transform="translate(' + x0 + ',' + y0 + ') scale(' + ks + ')">' + f.svg + '</g>', w: f.w * ks, h: f.h * ks };
+  }
+  /** One-line key: status forms, the two marks and the bars, with a pointer to the full legend. */
+  function keyStrip(x0, y0, maxW) {
+    const r = BP.productRollup();
+    const items = [];
+    const lab = (t) => ({ w: meas(t, 21, 700, 'semi-condensed'), t });
+    items.push({ w: meas('HOW TO READ', 17, 700, 'semi-condensed') + 26, svg: (x) => '<text class="tx-kt" x="' + x + '" y="31">How to read</text>' });
+    SORDER.forEach((st) => {
+      const L = lab(ST_LABEL[st]);
+      const n = String(r.byStatus[st]);
+      items.push({ w: 30 + L.w + 8 + n.length * 11, svg: (x) => miniTile(st, x, 12, 22, 25) + '<text class="tx-kl" x="' + (x + 30) + '" y="31">' + L.t + '</text><text class="tx-kn c3" x="' + (x + 30 + L.w + 8) + '" y="31">' + n + '</text>' });
     });
-    let s = '<g class="key" transform="translate(' + x0 + ',' + y0 + ')">';
-    s += keyIntro(arr, at.intro[0], at.intro[1]) + keySample(at.sample[0], at.sample[1]) + keyStatus(at.status[0], at.status[1]) + keyRead(at.read[0], at.read[1]) + keyMarks(at.marks[0], at.marks[1]);
-    return { svg: s + '</g>', w: maxX, h: y + rowH };
+    const att = lab('Needs attention'), aw = lab('Awaiting review');
+    items.push({ gap: 22, w: 34 + att.w + 8 + String(r.attention).length * 11, svg: (x) => miniTile('live', x + 2, 12, 22, 25, '<rect x="-2.4" y="-2.4" width="26.8" height="29.8" style="fill:none;stroke:var(--signal);stroke-width:2.4"/>') + '<text class="tx-kl" x="' + (x + 34) + '" y="31">' + att.t + '</text><text class="tx-kn" style="fill:var(--signal-ink)" x="' + (x + 34 + att.w + 8) + '" y="31">' + r.attention + '</text>' });
+    items.push({ w: 32 + aw.w + 8 + String(TRUST_COUNT).length * 11, svg: (x) => miniTile('live', x, 12, 22, 25, '<path d="M14 -1H23V8Z" style="fill:var(--paper)"/><path d="M14 0V8H22Z" style="fill:var(--ink)"/>') + '<text class="tx-kl" x="' + (x + 32) + '" y="31">' + aw.t + '</text><text class="tx-kn c3" x="' + (x + 32 + aw.w + 8) + '" y="31">' + TRUST_COUNT + '</text>' });
+    const bl = lab('Dev · Ops · Biz bars');
+    items.push({ gap: 22, w: 62 + bl.w, svg: (x) => {
+      let g = '<g class="kv kv-overall">';
+      [0.86, 0.38, 0.62].forEach((v, i) => { g += '<rect x="' + x + '" y="' + (14 + i * 7.5) + '" width="50" height="4.5" style="fill:var(--rule-2)"/><rect x="' + x + '" y="' + (14 + i * 7.5) + '" width="' + 50 * v + '" height="4.5" style="fill:var(--ink)"/>'; });
+      g += '<text class="tx-kl" x="' + (x + 62) + '" y="31">' + bl.t + '</text></g>';
+      DIMS.forEach((dm) => {
+        g += '<g class="kv kv-' + dm.id + '">';
+        for (let i = 0; i < 5; i++) g += '<rect class="ramp-' + i + '" x="' + (x + i * 10) + '" y="13" width="10" height="24"/>';
+        g += '<rect class="ramp-f" x="' + x + '" y="13" width="50" height="24"/><text class="tx-kl" x="' + (x + 62) + '" y="31">' + esc(dm.short) + ' score, ink = done</text></g>';
+      });
+      return g;
+    } });
+    const hint = lab('Full legend');
+    items.push({ gap: 22, w: 30 + hint.w, svg: (x) => '<rect x="' + x + '" y="13" width="22" height="24" style="fill:none;stroke:var(--ink);stroke-width:1.2"/><text class="tx-kn" x="' + (x + 11) + '" y="30.5" text-anchor="middle">L</text><text class="tx-kl c2" x="' + (x + 30) + '" y="31">' + hint.t + '</text>' });
+    const need = items.reduce((t, it) => t + it.w, 0);
+    const gaps = items.reduce((t, it, i) => t + (i ? (it.gap || 16) : 0), 0);
+    const slack = Math.max(0, maxW - need - gaps);
+    const extra = items.length > 1 ? Math.min(30, slack / (items.length - 1)) : 0;
+    let x = 0;
+    let svg = '<rect class="h-rule" x="0" y="0" width="' + maxW + '" height="2.5"/>';
+    items.forEach((it, i) => { if (i) x += (it.gap || 16) + extra; svg += it.svg(x); x += it.w; });
+    return { svg: '<g class="key" transform="translate(' + x0 + ',' + y0 + ')">' + svg + '</g>', w: maxW, h: 44 };
   }
   function kTitle(x, y, w, t) {
-    return '<rect class="h-rule" x="' + x + '" y="' + y + '" width="' + w + '" height="2.5"/><text class="tx-kt z1" x="' + x + '" y="' + (y + 22) + '">' + t + '</text>';
+    return '<rect class="h-rule" x="' + x + '" y="' + y + '" width="' + w + '" height="2.5"/><text class="tx-kt' + KZ1 + '" x="' + x + '" y="' + (y + 26) + '">' + t + '</text>';
   }
-  function keyIntro(arr, x, y) {
-    const [w] = KEYB.intro;
-    const text = {
-      table: 'Every tile is one feature. Columns are modules under their domain band; each column runs from Live at the top to Blocked at the bottom.',
-      status: 'Every tile is one feature. Columns sort features by lifecycle status, rows by domain. The foot row counts each status.',
-      release: 'Every tile is one feature, stacked on the release it shipped in or is planned for. The tall bars on the right are work still ahead.',
-    }[arr];
-    let s = kTitle(x, y, w, 'How to read a tile');
-    s += '<text class="tx-kh" x="' + x + '" y="' + (y + 62) + '"><tspan x="' + x + '">The periodic table</tspan><tspan x="' + x + '" dy="32">of Larkspur</tspan></text>';
+  function paraLines(text, w) {
     const lines = [];
     let cur = '';
     text.split(' ').forEach((wd) => {
       const t = cur ? cur + ' ' + wd : wd;
-      if (meas(t, 14.5, 500, 'condensed') > w - 4 && cur) { lines.push(cur); cur = wd; } else cur = t;
+      if (meas(t, 18, 500, 'condensed') > w - 2 && cur) { lines.push(cur); cur = wd; } else cur = t;
     });
     if (cur) lines.push(cur);
-    s += textLines(lines, x, y + 126, 18, 'tx-ks c2 z2', 14.5, 500, 'condensed', w);
+    return lines;
+  }
+  function keyIntro(arr, x, y) {
+    const [w] = KB.intro;
+    const text = {
+      table: 'Every tile is one feature. Columns are modules under their domain band, stacked from Live at the top down to Blocked.',
+      status: 'Every tile is one feature. Columns sort features by lifecycle status, rows by domain.',
+      release: 'Every tile is one feature, stacked on the release it shipped in or is planned for. Tall bars on the right are work still ahead.',
+    }[arr];
+    let s = kTitle(x, y, w, 'How to read a tile');
+    s += '<text class="tx-kh' + KZ1 + '" x="' + x + '" y="' + (y + 66) + '"><tspan x="' + x + '">The periodic table</tspan><tspan x="' + x + '" dy="36">of Larkspur</tspan></text>';
+    s += textLines(paraLines(text, w).slice(0, 3), x, y + 136, 22, 'tx-ks c2' + KZ2, 18, 500, 'condensed', w);
     return s;
   }
-  function keySample(x, y) {
-    const [w] = KEYB.sample;
-    const sc = 1.5;
-    const tx = x + 222, ty = y + 26;
-    const tw = TW * sc, th = TH * sc;
+  function keySample(x, y, narrow) {
+    const w = narrow ? KB.sampleN[0] : KB.sample[0];
+    const sc = narrow ? 1.18 : 1.3;
+    const tw = TW * sc;
+    const tx = x + (narrow ? 124 : 214), ty = y + 40;
     let s = kTitle(x, y, w, 'Anatomy');
     s += tileSVG(KEY_SAMPLE, { key: true, x: tx, y: ty, s: sc });
     const P = (px, py) => [tx + px * sc, ty + py * sc];
-    const left = [
-      [P(12, 12), 'Atomic number', 'Position in the table'],
-      [P(18, 40), 'Symbol', 'Two letters, unique'],
-      [P(10, 72), 'Feature name', 'Appears as you zoom in'],
-    ];
-    const right = [
-      [P(TW - 26, 13), 'Status glyph', 'Fill grows Planned to Live'],
-      [P(TW - 5, 5), 'Folded corner', 'AI-built, awaiting review'],
-      [P(TW - 10, 97), null, null],
-    ];
-    const ly = [y + 52, y + 112, y + 172];
+    const ly = narrow ? [y + 70, y + 122, y + 174] : [y + 66, y + 122, y + 178];
+    const left = narrow
+      ? [[P(12, 12), 'Number'], [P(20, 33), 'Symbol'], [P(10, 68), 'Name']]
+      : [[P(12, 12), 'Atomic number', 'Its place in the table'], [P(20, 33), 'Symbol', 'Two letters, unique'], [P(10, 68), 'Feature name', 'Shows as you zoom in']];
+    const right = narrow
+      ? [[P(TW - 14, 13), 'Status'], [P(TW - 5, 5), 'AI review'], [P(TW - 10, 97), null]]
+      : [[P(TW - 14, 13), 'Status glyph', 'Fills up, Planned to Live'], [P(TW - 5, 5), 'Folded corner', 'AI-built, awaiting review'], [P(TW - 10, 97), null, null]];
     left.forEach((c, i) => {
       const [ax, ay] = c[0];
-      const ex = tx - 22, lx = tx - 34;
-      s += '<path class="lead" d="M' + ax + ' ' + ay + 'H' + ex + 'V' + (ly[i] - 5) + 'H' + lx + '"/><circle class="lead-dot" cx="' + ax + '" cy="' + ay + '" r="2.6"/>';
-      s += '<text class="tx-kl z1" x="' + (lx - 6) + '" y="' + (ly[i] - 6) + '" text-anchor="end">' + c[1] + '</text>';
-      s += '<text class="tx-ks c3 z2" x="' + (lx - 6) + '" y="' + (ly[i] + 12) + '" text-anchor="end">' + c[2] + '</text>';
+      const ex = tx - 18, lx = tx - 28;
+      s += '<path class="lead" d="M' + ax + ' ' + ay + 'H' + ex + 'V' + (ly[i] - 7) + 'H' + lx + '"/><circle class="lead-dot" cx="' + ax + '" cy="' + ay + '" r="2.8"/>';
+      s += '<text class="tx-kl' + KZ1 + '" x="' + (lx - 6) + '" y="' + (ly[i] - (c[2] ? 6 : 0)) + '" text-anchor="end">' + c[1] + '</text>';
+      if (c[2]) s += '<text class="tx-ks c3' + KZ2 + '" x="' + (lx - 6) + '" y="' + (ly[i] + 14) + '" text-anchor="end">' + c[2] + '</text>';
     });
     right.forEach((c, i) => {
       const [ax, ay] = c[0];
-      const ex = tx + tw + 22, lx = tx + tw + 34;
-      s += '<path class="lead" d="M' + ax + ' ' + ay + 'H' + ex + 'V' + (ly[i] - 5) + 'H' + lx + '"/><circle class="lead-dot" cx="' + ax + '" cy="' + ay + '" r="2.6"/>';
+      const ex = tx + tw + 18, lx = tx + tw + 28;
+      s += '<path class="lead" d="M' + ax + ' ' + ay + 'H' + ex + 'V' + (ly[i] - 7) + 'H' + lx + '"/><circle class="lead-dot" cx="' + ax + '" cy="' + ay + '" r="2.8"/>';
+      const dy = narrow ? 0 : 6;
       if (c[1]) {
-        s += '<text class="tx-kl z1" x="' + (lx + 6) + '" y="' + (ly[i] - 6) + '">' + c[1] + '</text>';
-        s += '<text class="tx-ks c3 z2" x="' + (lx + 6) + '" y="' + (ly[i] + 12) + '">' + c[2] + '</text>';
+        s += '<text class="tx-kl' + KZ1 + '" x="' + (lx + 6) + '" y="' + (ly[i] - dy) + '">' + c[1] + '</text>';
+        if (c[2]) s += '<text class="tx-ks c3' + KZ2 + '" x="' + (lx + 6) + '" y="' + (ly[i] + 14) + '">' + c[2] + '</text>';
       } else {
-        s += '<text class="tx-kl z1 kv kv-overall" x="' + (lx + 6) + '" y="' + (ly[i] - 6) + '">Three bars</text>';
-        s += '<text class="tx-ks c3 z2 kv kv-overall" x="' + (lx + 6) + '" y="' + (ly[i] + 12) + '">Dev, Ops, Biz completion</text>';
+        s += '<text class="tx-kl' + KZ1 + ' kv kv-overall" x="' + (lx + 6) + '" y="' + (ly[i] - dy) + '">' + (narrow ? 'Bars' : 'Three bars') + '</text>';
+        if (!narrow) s += '<text class="tx-ks c3' + KZ2 + ' kv kv-overall" x="' + (lx + 6) + '" y="' + (ly[i] + 14) + '">Dev, Ops, Biz completion</text>';
+        const sub = { dev: 'Spec, back, front, tests', ops: 'Deploy, observe, secure, runbook', biz: 'Value, docs, package, adoption' };
         DIMS.forEach((d) => {
-          s += '<text class="tx-kl z1 kv kv-' + d.id + '" x="' + (lx + 6) + '" y="' + (ly[i] - 6) + '">' + d.label + ' pips</text>';
-          s += '<text class="tx-ks c3 z2 kv kv-' + d.id + '" x="' + (lx + 6) + '" y="' + (ly[i] + 12) + '">' + d.facets.map((fc) => fc.label.replace(' review', '').replace(' & help', '')).join(' · ') + '</text>';
+          s += '<text class="tx-kl' + KZ1 + ' kv kv-' + d.id + '" x="' + (lx + 6) + '" y="' + (ly[i] - dy) + '">' + (narrow ? d.short + ' pips' : d.label + ' pips') + '</text>';
+          if (!narrow) s += '<text class="tx-ks c3' + KZ2 + ' kv kv-' + d.id + '" x="' + (lx + 6) + '" y="' + (ly[i] + 14) + '">' + sub[d.id] + '</text>';
         });
       }
     });
-    // status glyph row under the right callouts
     return s;
   }
   function miniTile(st, x, y, w, h, extra) {
@@ -1317,66 +1549,67 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
     return s + (extra || '') + '</g>';
   }
   function keyStatus(x, y) {
-    const [w] = KEYB.status;
+    const [w] = KB.status;
     const r = BP.productRollup();
     let s = kTitle(x, y, w, 'Status: fill, frame, glyph');
     SORDER.forEach((st, i) => {
-      const ry = y + 36 + i * 33;
-      s += miniTile(st, x, ry, 27, 30);
-      s += '<text class="tx-kl z1" x="' + (x + 40) + '" y="' + (ry + 13) + '">' + ST_LABEL[st] + '</text>';
-      s += '<text class="tx-ks c3 z2" x="' + (x + 40) + '" y="' + (ry + 29) + '">' + esc(ST_DESC[st]) + '</text>';
-      s += '<text class="tx-kn z1" x="' + (x + w) + '" y="' + (ry + 13) + '" text-anchor="end">' + r.byStatus[st] + '</text>';
+      const ry = y + 40 + i * 31;
+      s += miniTile(st, x, ry, 22, 25);
+      const lw = meas(ST_LABEL[st], 21, 700, 'semi-condensed');
+      s += '<text class="tx-kl' + KZ1 + '" x="' + (x + 34) + '" y="' + (ry + 19) + '">' + ST_LABEL[st] + '</text>';
+      s += '<text class="tx-ks c3' + KZ2 + '" x="' + (x + 34 + lw + 8) + '" y="' + (ry + 19) + '">' + KEY_DESC[st] + '</text>';
+      s += '<text class="tx-kn' + KZ1 + '" x="' + (x + w) + '" y="' + (ry + 19) + '" text-anchor="end">' + r.byStatus[st] + '</text>';
     });
     return s;
   }
   function keyRead(x, y) {
-    const [w] = KEYB.read;
+    const [w] = KB.read;
     let s = '<g class="kv kv-overall">' + kTitle(x, y, w, 'Overall: three bars');
     const sample = [0.86, 0.38, 0.62];
     ['Development', 'Operations', 'Business'].forEach((lab, i) => {
-      const by = y + 44 + i * 30;
-      s += '<rect class="ramp-f" x="' + x + '" y="' + by + '" width="150" height="9" style="fill:var(--rule-2);stroke:none"/><rect x="' + x + '" y="' + by + '" width="' + 150 * sample[i] + '" height="9" style="fill:var(--ink)"/>';
-      s += '<text class="tx-kl z1" x="' + (x + 164) + '" y="' + (by + 10) + '">' + lab + '</text>';
+      const by = y + 44 + i * 31;
+      s += '<rect x="' + x + '" y="' + by + '" width="140" height="10" style="fill:var(--rule-2)"/><rect x="' + x + '" y="' + by + '" width="' + 140 * sample[i] + '" height="10" style="fill:var(--ink)"/>';
+      s += '<text class="tx-kl' + KZ1 + '" x="' + (x + 154) + '" y="' + (by + 11) + '">' + lab + '</text>';
     });
-    s += textLines(['Bar length is the share of facets done;', 'partial counts half, n/a is left out.'], x, y + 152, 18, 'tx-ks c3 z2', 14.5, 500, 'condensed', w);
+    s += textLines(['Length is the share of facets done;', 'partial counts half, n/a is left out.'], x, y + 160, 22, 'tx-ks c3' + KZ2, 18, 500, 'condensed', w);
     s += '</g><g class="kv kv-lens">' + kTitle(x, y, w, 'Lens: fill and pips');
-    for (let i = 0; i < 5; i++) s += '<rect class="ramp-' + i + '" x="' + (x + i * 46) + '" y="' + (y + 38) + '" width="46" height="24"/>';
-    s += '<rect class="ramp-f" x="' + x + '" y="' + (y + 38) + '" width="230" height="24"/>';
-    ['0', '20', '40', '60', '80'].forEach((t, i) => { s += '<text class="tx-kn c3 z2" x="' + (x + i * 46) + '" y="' + (y + 80) + '" style="font-size:12px">' + t + '</text>'; });
-    s += '<text class="tx-kn c3 z2" x="' + (x + 230) + '" y="' + (y + 80) + '" text-anchor="end" style="font-size:12px">100%</text>';
-    DIMS.forEach((d) => { s += '<text class="tx-ks c2 z2 kv kv-' + d.id + '" x="' + (x + 242) + '" y="' + (y + 55) + '">' + d.short + ' score</text>'; });
-    const states = ['done', 'partial', 'todo', 'blocked', 'na'];
-    states.forEach((k, i) => {
-      const px = x + i * 66;
-      s += '<g class="tset-pip" style="--tf:var(--ink);--tb:var(--paper)">' + pip(k, px, y + 100, 22, 18, '') + '</g>';
-      s += '<text class="tx-ks z2" x="' + px + '" y="' + (y + 136) + '">' + STATE_LABEL[k] + '</text>';
+    for (let i = 0; i < 5; i++) s += '<rect class="ramp-' + i + '" x="' + (x + i * 44) + '" y="' + (y + 38) + '" width="44" height="24"/>';
+    s += '<rect class="ramp-f" x="' + x + '" y="' + (y + 38) + '" width="220" height="24"/>';
+    s += '<text class="tx-kn c3' + KZ2 + '" x="' + x + '" y="' + (y + 82) + '" style="font-size:15px">0%</text>';
+    s += '<text class="tx-ks c3' + KZ2 + '" x="' + (x + 110) + '" y="' + (y + 82) + '" text-anchor="middle">more ink = done</text>';
+    s += '<text class="tx-kn c3' + KZ2 + '" x="' + (x + 220) + '" y="' + (y + 82) + '" text-anchor="end" style="font-size:15px">100%</text>';
+    DIMS.forEach((d) => { s += '<text class="tx-ks c2' + KZ2 + ' kv kv-' + d.id + '" x="' + (x + 232) + '" y="' + (y + 57) + '">' + d.short + ' score</text>'; });
+    ['done', 'partial', 'todo', 'blocked', 'na'].forEach((k, i) => {
+      const px = x + i * 64;
+      s += '<g style="--tf:var(--ink);--tb:var(--paper)">' + pip(k, px, y + 98, 24, 19, '') + '</g>';
+      s += '<text class="tx-ks' + KZ2 + '" x="' + px + '" y="' + (y + 138) + '">' + STATE_LABEL[k] + '</text>';
     });
-    s += textLines(['Four facets of the chosen dimension;', 'blocked facets show in the signal colour.'], x, y + 164, 18, 'tx-ks c3 z2', 14.5, 500, 'condensed', w);
+    s += textLines(['Four facets of the chosen dimension;', 'blocked facets show in signal orange.'], x, y + 166, 22, 'tx-ks c3' + KZ2, 18, 500, 'condensed', w);
     return s + '</g>';
   }
   function keyMarks(x, y) {
-    const [w] = KEYB.marks;
+    const [w] = KB.marks;
     const r = BP.productRollup();
     let s = kTitle(x, y, w, 'Marks');
     const rows = [
       ['att', 'Needs attention', 'Blocked, or changes requested', r.attention],
-      ['fold', 'Awaiting human review', 'AI-built; shown with Verify AI', TRUST_COUNT],
+      ['fold', 'Awaiting human review', 'AI-built; press V to verify', TRUST_COUNT],
       ['ring', 'Search match', 'Everything else fades back', null],
       ['sel', 'Selected', 'Lines run to its dependencies', null],
     ];
     rows.forEach((row, i) => {
       const ry = y + 38 + i * 40;
-      const tw = 27, th = 30;
+      const tw = 22, th = 25;
       let ex = '';
-      if (row[0] === 'att') ex = '<rect x="-2.6" y="-2.6" width="' + (tw + 5.2) + '" height="' + (th + 5.2) + '" style="fill:none;stroke:var(--signal);stroke-width:2.6"/>';
-      if (row[0] === 'fold') ex = '<path d="M' + (tw - 9) + ' -1H' + (tw + 1) + 'V9Z" style="fill:var(--paper)"/><path d="M' + (tw - 9) + ' 0V9H' + tw + 'Z" style="fill:var(--ink)"/>';
-      if (row[0] === 'ring') ex = '<rect x="3" y="3" width="' + (tw - 6) + '" height="' + (th - 6) + '" style="fill:none;stroke:var(--ink);stroke-width:2.2"/>';
-      if (row[0] === 'sel') ex = '<rect x="-2.6" y="-2.6" width="' + (tw + 5.2) + '" height="' + (th + 5.2) + '" style="fill:none;stroke:var(--ink);stroke-width:2.6"/><path d="M' + (tw + 3) + ' ' + th / 2 + 'H' + (tw + 22) + '" style="stroke:var(--ink);stroke-width:1.6" marker-end="url(#ah)"/>';
+      if (row[0] === 'att') ex = '<rect x="-2.4" y="-2.4" width="' + (tw + 4.8) + '" height="' + (th + 4.8) + '" style="fill:none;stroke:var(--signal);stroke-width:2.4"/>';
+      if (row[0] === 'fold') ex = '<path d="M' + (tw - 8) + ' -1H' + (tw + 1) + 'V8Z" style="fill:var(--paper)"/><path d="M' + (tw - 8) + ' 0V8H' + tw + 'Z" style="fill:var(--ink)"/>';
+      if (row[0] === 'ring') ex = '<rect x="2.6" y="2.6" width="' + (tw - 5.2) + '" height="' + (th - 5.2) + '" style="fill:none;stroke:var(--ink);stroke-width:2"/>';
+      if (row[0] === 'sel') ex = '<rect x="-2.4" y="-2.4" width="' + (tw + 4.8) + '" height="' + (th + 4.8) + '" style="fill:none;stroke:var(--ink);stroke-width:2.4"/><path d="M' + tw / 2 + ' ' + (th + 3) + 'V' + (th + 9) + 'H' + (tw + 16) + '" style="fill:none;stroke:var(--ink);stroke-width:1.6"/>';
       s += miniTile('live', x + 3, ry, tw, th, ex);
-      const lx = x + (row[0] === 'sel' ? 64 : 44);
-      s += '<text class="tx-kl z1" x="' + lx + '" y="' + (ry + 13) + '">' + row[1] + '</text>';
-      s += '<text class="tx-ks c3 z2" x="' + lx + '" y="' + (ry + 30) + '">' + row[2] + '</text>';
-      if (row[3] != null) s += '<text class="tx-kn z1" x="' + (x + w) + '" y="' + (ry + 13) + '" text-anchor="end"' + (row[0] === 'att' ? ' style="fill:var(--signal-ink)"' : '') + '>' + row[3] + '</text>';
+      const lx = x + (row[0] === 'sel' ? 50 : 40);
+      s += '<text class="tx-kl' + KZ1 + '" x="' + lx + '" y="' + (ry + 11) + '">' + row[1] + '</text>';
+      s += '<text class="tx-ks c3' + KZ2 + '" x="' + lx + '" y="' + (ry + 29) + '">' + row[2] + '</text>';
+      if (row[3] != null) s += '<text class="tx-kn' + KZ1 + '" x="' + (x + w) + '" y="' + (ry + 11) + '" text-anchor="end"' + (row[0] === 'att' ? ' style="fill:var(--signal-ink)"' : '') + '>' + row[3] + '</text>';
     });
     return s;
   }
@@ -1399,11 +1632,51 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
     TILE = new Map();
     $$('.tile', tilesG).forEach((el) => TILE.set(el.getAttribute('data-id'), el));
   }
+  /**
+   * Picks the Table form for the stage: one tier with the full key below when that still shows
+   * names and a legible key (wide screens), one tier with the one-line key on short stages, or
+   * two tiers with the key in the free corner on near-square stages such as the 820px side panel.
+   */
+  function stageFitK(L, W, H) {
+    const pad = S.phone ? 8 : 16, rz = S.phone ? 50 : 64;
+    return Math.min((W - 2 * pad - rz) / L.w, (H - 2 * pad) / L.h);
+  }
+  function chooseTableCfg() {
+    const r = stage.getBoundingClientRect();
+    const W = Math.max(200, r.width), H = Math.max(200, r.height);
+    const A = layTable(false, { tiers: 1, key: 'row', ks: 1 });
+    const B = layTable(false, { tiers: 1, key: 'strip' });
+    const C = layTable(false, { tiers: 2, key: 'none' });
+    const kA = stageFitK(A, W, H), kB = stageFitK(B, W, H), kC = stageFitK(C, W, H);
+    const ks = Math.round(Math.max(1, Math.min(2.2, 12 / (21 * kC))) * 20) / 20;
+    const okA = 18 * kA >= 10, okB = 21 * kB >= 10;
+    const okC = 18 * ks * kC >= 9.5 && kC >= 0.85 * Math.max(kA, kB);
+    if (okA && (kA >= LOD_T[0] || kB < LOD_T[0])) return A.cfg;
+    const cands = [{ cfg: A.cfg, k: kA, ok: okA }, { cfg: B.cfg, k: kB, ok: okB }, { cfg: { tiers: 2, key: 'side', ks }, k: kC, ok: okC }];
+    const pool = cands.some((c) => c.ok) ? cands.filter((c) => c.ok) : [cands[1], cands[0]];
+    return pool.reduce((a, b) => (b.k > a.k + 0.005 ? b : a)).cfg;
+  }
+  /** Status rows per domain and Release wrapping, picked by which gives the larger opening fit. */
+  function chooseOtherCfg() {
+    const r = stage.getBoundingClientRect();
+    const W = Math.max(200, r.width), H = Math.max(200, r.height);
+    let R = 2, kR = stageFitK(layStatus(false, 2), W, H);
+    [3, 4].forEach((n) => { const k = stageFitK(layStatus(false, n), W, H); if (k > kR * 1.04) { R = n; kR = k; } });
+    const kA = stageFitK(layRelease(false, { wrap: false }), W, H);
+    const kB = stageFitK(layRelease(false, { wrap: true, ks: 0 }), W, H);
+    const rel = kB > kA * 1.08 ? { wrap: true, ks: Math.round(Math.max(1, Math.min(2.2, 12 / (21 * kB))) * 20) / 20 } : { wrap: false };
+    return { status: R, release: rel };
+  }
+  let TCFG = null, OCFG = null;
   function buildLayouts() {
     rollCache.clear();
     const P = S.portrait;
-    LAY = { table: layTable(P), status: layStatus(P), release: layRelease(P) };
+    TCFG = P ? null : chooseTableCfg();
+    OCFG = P ? null : chooseOtherCfg();
+    LAY = { table: layTable(P, TCFG), status: layStatus(P, OCFG && OCFG.status), release: layRelease(P, OCFG && OCFG.release) };
     headsG.innerHTML = ['table', 'status', 'release'].map((a) => '<g class="heads' + (a === S.arr ? '' : ' off') + '" data-arr="' + a + '">' + LAY[a].svg + '</g>').join('');
+    STK = $$('.stk', headsG).map((el) => ({ el, sb: +el.getAttribute('data-sb'), sx: +el.getAttribute('data-sx'), sd: +el.getAttribute('data-sd'), sh: 0 }));
+    stickBands();
   }
   function placeTiles(animate) {
     const L = LAY[S.arr];
@@ -1475,52 +1748,60 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
     store();
   }
 
-  // dependency links for the selection
-  function tileCenter(id) {
-    const p = LAY[S.arr].pos.get(id);
-    return p ? [p[0] + TW / 2, p[1] + TH / 2] : null;
+  // Dependency links for the selection, routed along the gutters so they never cross a tile face.
+  // "Depends on" leaves the top of the selection and enters the top of each dependency (solid ink,
+  // arrow); "Used by" leaves the bottom of the selection and ends on the bottom of each dependent
+  // (dashed), with its arrow pointing back into the selection. Shared runs merge into one trunk, and
+  // stroke width, dashes and arrowheads keep a constant size on screen (see applyCam).
+  function routePts(a, b, top) {
+    const g = GAP / 2;
+    const ax = a[0] + TW / 2, bx = b[0] + TW / 2;
+    const ga = top ? a[1] - g : a[1] + TH + g;
+    const gb = top ? b[1] - g : b[1] + TH + g;
+    const pts = [[ax, top ? a[1] : a[1] + TH], [ax, ga]];
+    if (Math.abs(ga - gb) > 0.5) {
+      const xv = b[0] > a[0] ? b[0] - g : b[0] + TW + g;
+      pts.push([xv, ga], [xv, gb]);
+    }
+    pts.push([bx, gb], [bx, top ? b[1] + 7 : b[1] + TH]);
+    return pts;
   }
-  function edgePoint(c, toward) {
-    const dx = toward[0] - c[0], dy = toward[1] - c[1];
-    const sx = dx === 0 ? Infinity : (TW / 2 + 3) / Math.abs(dx);
-    const sy = dy === 0 ? Infinity : (TH / 2 + 3) / Math.abs(dy);
-    const t = Math.min(sx, sy);
-    return [c[0] + dx * t, c[1] + dy * t];
+  function roundPath(pts, r) {
+    const P = pts.filter((p, i) => i === 0 || Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) > 0.01);
+    const f = (n) => n.toFixed(1);
+    let d = 'M' + f(P[0][0]) + ' ' + f(P[0][1]);
+    for (let i = 1; i < P.length - 1; i++) {
+      const [x0, y0] = P[i - 1], [x1, y1] = P[i], [x2, y2] = P[i + 1];
+      const l1 = Math.hypot(x1 - x0, y1 - y0), l2 = Math.hypot(x2 - x1, y2 - y1);
+      const rr = Math.min(r, l1 / 2, l2 / 2);
+      d += 'L' + f(x1 - ((x1 - x0) / l1) * rr) + ' ' + f(y1 - ((y1 - y0) / l1) * rr) + 'Q' + f(x1) + ' ' + f(y1) + ' ' + f(x1 + ((x2 - x1) / l2) * rr) + ' ' + f(y1 + ((y2 - y1) / l2) * rr);
+    }
+    const E = P[P.length - 1];
+    return d + 'L' + f(E[0]) + ' ' + f(E[1]);
   }
   function drawLinks() {
     linksG.innerHTML = '';
     if (!S.sel) return;
-    const c0 = tileCenter(S.sel);
-    if (!c0) return;
-    let halo = '', ln = '', dots = '';
-    const path = (a, b, bend) => {
-      const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
-      const dx = b[0] - a[0], dy = b[1] - a[1];
-      const len = Math.hypot(dx, dy) || 1;
-      const off = Math.min(140, len * 0.16) * bend;
-      const cx = mx - (dy / len) * off, cy = my + (dx / len) * off;
-      return 'M' + a[0].toFixed(1) + ' ' + a[1].toFixed(1) + 'Q' + cx.toFixed(1) + ' ' + cy.toFixed(1) + ' ' + b[0].toFixed(1) + ' ' + b[1].toFixed(1);
-    };
-    let li = 0;
-    const bendOf = () => { const i = li++; return (i % 2 ? -1 : 1) * (0.55 + 0.3 * Math.floor(i / 2)); };
+    const L = LAY[S.arr];
+    const a = L.pos.get(S.sel);
+    if (!a) return;
+    let halo = '', ln = '';
+    const r = 6;
+    BP.dependents(S.sel).forEach((d) => {
+      const b = L.pos.get(d.id);
+      if (!b) return;
+      const p = roundPath(routePts(a, b, false), r);
+      halo += '<path class="halo" d="' + p + '"/>';
+      ln += '<path class="ln ln-up" d="' + p + '" marker-start="url(#ah2)" marker-end="url(#dot2)"/>';
+    });
     BP.dependencies(S.sel).forEach((d) => {
-      const c1 = tileCenter(d.id);
-      if (!c1) return;
-      const a = edgePoint(c0, c1), b = edgePoint(c1, c0);
-      const p = path(a, b, bendOf());
+      const b = L.pos.get(d.id);
+      if (!b) return;
+      const p = roundPath(routePts(a, b, true), r);
       halo += '<path class="halo" d="' + p + '"/>';
       ln += '<path class="ln" d="' + p + '" marker-end="url(#ah)"/>';
-      dots += '<circle cx="' + a[0].toFixed(1) + '" cy="' + a[1].toFixed(1) + '" r="3.4"/>';
     });
-    BP.dependents(S.sel).forEach((d) => {
-      const c1 = tileCenter(d.id);
-      if (!c1) return;
-      const a = edgePoint(c1, c0), b = edgePoint(c0, c1);
-      const p = path(a, b, bendOf());
-      halo += '<path class="halo" d="' + p + '"/>';
-      ln += '<path class="ln ln-up" d="' + p + '" marker-end="url(#ah2)"/>';
-    });
-    linksG.innerHTML = halo + ln + dots;
+    linksG.innerHTML = halo + ln;
   }
 
   // HUD
@@ -1539,18 +1820,31 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
     $('#h-att').setAttribute('aria-label', r.attention + ' features need attention. Toggle attention-only filter (A).');
     $('#h-ai').innerHTML = foldIcon() + '<span class="hc-num">' + TRUST_COUNT + '</span><span class="hc-lab"><b>Verify AI</b><span>agent-built, unreviewed</span></span>';
     $('#h-ai').setAttribute('aria-label', TRUST_COUNT + ' agent-built features await human review. Toggle the AI review overlay (V).');
+    $('#h-ai').title = 'Verify AI: ' + TRUST_COUNT + ' agent-built features await human review (V)';
+    $('#h-att').title = 'Attention only: ' + r.attention + ' features blocked or with changes requested (A)';
   }
 
   // ════════════════════════════════════════════════════════════════════════
   // INTERACTION: camera, gestures, keys
   // ════════════════════════════════════════════════════════════════════════
-  const LOD_T = [0.66, 1.8];
+  const LOD_T = [0.54, 1.8];
   const Z_T = [0.34, 0.5, 0.64];
   let camRAF = 0;
   let lastLod = -1, lastZ = -1;
+  let STK = [];
+  function stickBands() {
+    const vl = (14 - cam.x) / cam.k;
+    STK.forEach((t) => {
+      const r = Math.round(Math.max(0, Math.min(t.sd, vl - t.sb)) * 10) / 10;
+      if (r !== t.sh) { t.sh = r; t.el.setAttribute('x', (t.sx + r).toFixed(1)); }
+    });
+  }
   function applyCam() {
     camRAF = 0;
     camG.setAttribute('transform', 'translate(' + cam.x.toFixed(2) + ',' + cam.y.toFixed(2) + ') scale(' + cam.k.toFixed(5) + ')');
+    stickBands();
+    linksG.style.setProperty('--lw', (1.8 / cam.k).toFixed(3) + 'px');
+    linksG.style.setProperty('--dash', (5 / cam.k).toFixed(2) + ' ' + (3.5 / cam.k).toFixed(2));
     const lod = cam.k < LOD_T[0] ? 0 : cam.k < LOD_T[1] ? 1 : 2;
     const z = cam.k < Z_T[0] ? 0 : cam.k < Z_T[1] ? 1 : cam.k < Z_T[2] ? 2 : 3;
     if (lod !== lastLod) { svg.setAttribute('data-lod', lod); lastLod = lod; updateLodTag(); }
@@ -1568,7 +1862,8 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
     let w = r.width, h = r.height;
     const insp = $('#insp');
     if (insp.classList.contains('open')) {
-      if (S.phone) h -= insp.getBoundingClientRect().height;
+      // the phone sheet is fixed to the viewport bottom and also covers the HUD, so the free stage ends at its top edge
+      if (S.phone) h = Math.min(h, window.innerHeight - insp.offsetHeight - r.top);
       else w -= insp.getBoundingClientRect().width;
     }
     return { w: Math.max(80, w), h: Math.max(80, h), W: r.width, H: r.height, left: r.left, top: r.top };
@@ -1618,12 +1913,20 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
     schedule();
   }
   function zoomBy(f) { const v = view(); zoomAt(v.w / 2, v.h / 2, f); }
+  /** Keeps a camera target from showing empty sheet beyond the content edges (the layout has its own margin). */
+  function clampTarget(t) {
+    const L = LAY[S.arr], v = view();
+    const cw = L.w * t.k, ch = L.h * t.k;
+    t.x = cw <= v.w ? Math.min(Math.max(t.x, 0), v.w - cw) : Math.min(0, Math.max(v.w - cw, t.x));
+    t.y = ch <= v.h ? Math.min(Math.max(t.y, 0), v.h - ch) : Math.min(0, Math.max(v.h - ch, t.y));
+    return t;
+  }
   /** Brings a world rect into view; zooms to at least minK. */
   function flyToRect(x, y, w, h, minK, dur) {
     const v = view();
     const k = Math.max(cam.k, minK || 0);
     const kk = Math.min(kMax, Math.max(kMin(), Math.min(k, (v.w - 60) / w, (v.h - 60) / h)));
-    flyTo({ k: kk, x: v.w / 2 - (x + w / 2) * kk, y: v.h / 2 - (y + h / 2) * kk }, dur == null ? 600 : dur);
+    flyTo(clampTarget({ k: kk, x: v.w / 2 - (x + w / 2) * kk, y: v.h / 2 - (y + h / 2) * kk }), dur == null ? 600 : dur);
   }
   function ensureVisible(id, minK) {
     const p = LAY[S.arr].pos.get(id);
@@ -1632,22 +1935,21 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
     const k = Math.max(cam.k, minK || 0);
     const sx = p[0] * k + (k === cam.k ? cam.x : 0), sy = p[1] * k + (k === cam.k ? cam.y : 0);
     const inside = k === cam.k && sx > 20 && sy > 20 && sx + TW * k < v.w - 20 && sy + TH * k < v.h - 20;
-    if (!inside) flyTo({ k, x: v.w / 2 - (p[0] + TW / 2) * k, y: v.h / 2 - (p[1] + TH / 2) * k }, 600);
+    if (!inside) flyTo(clampTarget({ k, x: v.w / 2 - (p[0] + TW / 2) * k, y: v.h / 2 - (p[1] + TH / 2) * k }), 600);
   }
-
-  /** Keeps the selection and its dependency neighbours in view, never zooming in unless asked to fly. */
-  function revealSelection(id, fly) {
-    const L = LAY[S.arr];
-    const ids = [id].concat(BP.dependencies(id).map((d) => d.id), BP.dependents(id).map((d) => d.id));
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    ids.forEach((k) => { const p = L.pos.get(k); if (!p) return; x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0] + TW); y1 = Math.max(y1, p[1] + TH); });
+  /**
+   * Brings a world box into the free part of the view (left of the inspector, or above the phone
+   * sheet). Pans first; zooms out as far as needed (down to the minimum zoom) and only zooms in when
+   * asked to (minK).
+   */
+  function revealBox(x0, y0, x1, y1, minK, focusId) {
     const v = view();
-    const pad = 36;
-    let k = fly ? Math.max(cam.k, 0.95) : cam.k;
+    const pad = 28;
+    let k = Math.max(cam.k, minK || 0);
     const kFit = Math.min((v.w - 2 * pad) / (x1 - x0), (v.h - 2 * pad) / (y1 - y0));
-    if (kFit < k) k = Math.max(kFit, fitK * 0.9);
+    if (kFit < k) k = Math.max(kFit, kMin());
     const bw = (x1 - x0) * k, bh = (y1 - y0) * k;
-    if (bw > v.w - 2 * pad || bh > v.h - 2 * pad) { ensureVisible(id, k); return; }
+    if (focusId && (bw > v.w - 2 * pad || bh > v.h - 2 * pad)) { ensureVisible(focusId, k); return; }
     const sx0 = x0 * k + cam.x, sy0 = y0 * k + cam.y;
     if (k === cam.k && sx0 >= pad && sy0 >= pad && sx0 + bw <= v.w - pad && sy0 + bh <= v.h - pad) return;
     let tx = k === cam.k ? cam.x : v.w / 2 - ((x0 + x1) / 2) * k;
@@ -1657,6 +1959,25 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
     if (y0 * k + ty < pad) ty = pad - y0 * k;
     if (y1 * k + ty > v.h - pad) ty = v.h - pad - y1 * k;
     flyTo({ k, x: tx, y: ty }, 600);
+  }
+  /** Keeps the selection and all its dependency neighbours (and the gutters the links use) in view. */
+  function revealSelection(id, fly) {
+    const L = LAY[S.arr];
+    const ids = [id].concat(BP.dependencies(id).map((d) => d.id), BP.dependents(id).map((d) => d.id));
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    ids.forEach((k) => { const p = L.pos.get(k); if (!p) return; x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0] + TW); y1 = Math.max(y1, p[1] + TH); });
+    if (x0 === Infinity) return;
+    revealBox(x0 - GAP, y0 - GAP, x1 + GAP, y1 + GAP, fly ? 0.95 : 0, id);
+  }
+  /** Brings a module's column (or row on a phone), with its head, into the free part of the view. */
+  function revealModule(id) {
+    const L = LAY[S.arr];
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    byMod.get(id).forEach((f) => { const p = L.pos.get(f.id); if (!p) return; x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0] + TW); y1 = Math.max(y1, p[1] + TH); });
+    if (x0 === Infinity) return;
+    const head = S.arr === 'table' ? (S.portrait ? 0 : TBL.hdrH + TBL.hdrGap + TBL.bandH + TBL.bandGap) : 0;
+    const side = S.arr === 'table' && S.portrait ? 250 : 0;
+    revealBox(x0 - side - GAP, y0 - head - GAP, x1 + GAP, y1 + GAP, 0);
   }
 
   // pointer: drag to pan, two fingers to pinch, tap to select
@@ -1979,7 +2300,7 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
     const ago = daysAgo(f.updatedAt);
     let h = '<header class="ih"><svg class="ih-tile tset" data-lens="' + S.lens + '" data-lod="1" viewBox="-5 -5 106 122" aria-hidden="true">' + tileSVG(f, { key: true }) + '</svg>';
     h += '<div class="ih-t"><nav class="crumb" aria-label="Location"><button type="button" data-goto-dom="' + d.id + '">' + esc(d.name) + '</button><span aria-hidden="true">›</span><button type="button" data-goto-mod="' + m.id + '">' + esc(m.name) + '</button></nav>';
-    h += '<h2 id="insp-title">' + esc(f.name) + '</h2><p class="ih-id mono">' + esc(f.id) + '</p></div>' + closeBtn + '</header>';
+    h += '<h2 id="insp-title">' + esc(f.name) + '</h2><p class="ih-id mono">' + esc(f.id).replace('.', '.<wbr>') + '</p></div>' + closeBtn + '</header>';
     h += '<p class="sum">' + esc(f.summary) + '</p>';
     if (f.blockedReason) h += '<div class="callout att"><b>Blocked</b>' + esc(f.blockedReason) + '</div>';
     if (f.note) h += '<div class="callout' + (f.review === 'changes' ? ' att' : '') + '"><b>' + (f.review === 'changes' ? 'Changes requested' : 'Note') + '</b>' + esc(f.note) + '</div>';
@@ -2015,6 +2336,7 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
     ibody.innerHTML = inspModule(m);
     ibody.scrollTop = 0;
     openPanel();
+    requestAnimationFrame(() => revealModule(id));
   }
   function inspModule(m) {
     const r = BP.moduleRollup(m.id), d = BP.domain(m.domainId), list = byMod.get(m.id), team = BP.team(m.owner);
@@ -2024,7 +2346,7 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
     h += '<div class="surf" aria-label="Surfaces">' + m.surfaces.map((s) => '<span>' + s + '</span>').join('') + '</div>';
     h += '<section class="mstat" aria-label="Features by status">' + SORDER.map((st) => '<div><em>' + r.byStatus[st] + '</em><span>' + glyphHTML(st) + esc(ST_LABEL[st]) + '</span></div>').join('') + '</section>';
     if (r.attention) h += '<div class="callout att"><b>' + r.attention + ' need attention</b>' + list.filter((f) => BP.needsAttention(f)).map((f) => esc(f.name)).join(' · ') + '</div>';
-    h += '<section class="isec"><h3 class="cap">Completion by dimension <span>facets done · partial · to do · blocked</span></h3><div class="mroll">';
+    h += '<section class="isec"><h3 class="cap cap-2">Completion by dimension <span>facets done · partial · to do · blocked</span></h3><div class="mroll">';
     DIMS.forEach((dd) => {
       const c = BP.facetCounts(list, dd.id);
       const tot = c.done + c.partial + c.todo + c.blocked || 1;
@@ -2051,9 +2373,9 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
     h += markRow('<rect x="-2.6" y="-2.6" width="32.2" height="35.2" style="fill:none;stroke:var(--signal);stroke-width:2.6"/>', 'Needs attention', 'Blocked, a blocked facet, or a reviewer asked for changes. The only use of the signal colour.', r.attention);
     h += markRow('<path d="M18 -1H28V9Z" style="fill:var(--paper)"/><path d="M18 0V9H27Z" style="fill:var(--ink)"/>', 'Awaiting human review', 'Built by an agent crew or an agent and human pair, review pending or changes requested. Press V.', TRUST_COUNT);
     h += markRow('<rect x="3" y="3" width="21" height="24" style="fill:none;stroke:var(--ink);stroke-width:2.2"/>', 'Search match', 'Inner frame. Non-matching tiles fade back.', null);
-    h += markRow('<rect x="-2.6" y="-2.6" width="32.2" height="35.2" style="fill:none;stroke:var(--ink);stroke-width:2.6"/>', 'Selected', 'Solid line with arrow: depends on. Dashed line: used by.', null);
+    h += markRow('<rect x="-2.6" y="-2.6" width="32.2" height="35.2" style="fill:none;stroke:var(--ink);stroke-width:2.6"/>', 'Selected', 'Lines run along the gutters. Solid, from the top: what it depends on. Dashed, from the bottom: what uses it.', null);
     h += '</div><div class="lg"><h3 class="cap">Margins</h3><p>Column head: module code, name and the lens score in %. Black band: domain with its score and feature count. Column foot: features per status, or facets per state in a dimension lens. Orange badge: features needing attention.</p></div>';
-    h += '<div class="lg"><h3 class="cap">Zoom levels</h3><p>Table: symbols and glyphs. Tile: names appear. Detail: all twelve facets, owner, release and priority.</p></div>';
+    h += '<div class="lg"><h3 class="cap">Zoom levels</h3><p>Table: symbols and glyphs. Tile: names appear (at the opening fit on laptop screens and up). Detail: all twelve facets, owner, release and priority.</p></div>';
     h += '<div class="lg"><h3 class="cap">Keys</h3><div class="lg-keys"><kbd>1–4</kbd><span>Lens: Overall, Development, Operations, Business</span><kbd>T S R</kbd><span>Arrange: Table, Status, Release</span><kbd>+ − 0</kbd><span>Zoom in, out, fit</span><kbd>/</kbd><span>Search; Enter jumps to the next match</span><kbd>V</kbd><span>Verify AI overlay</span><kbd>A</kbd><span>Attention only</span><kbd>L</kbd><span>Legend</span><kbd>M</kbd><span>Theme: system, light, dark</span><kbd>Esc</kbd><span>Close, deselect</span></div></div>';
     legend.innerHTML = h;
   }
@@ -2095,6 +2417,10 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
     buildTiles();
     rebuild(false);
     renderHUD();
+    const hs = $('.hud-scroll');
+    const hudMore = () => hs.classList.toggle('more', hs.scrollLeft + hs.clientWidth < hs.scrollWidth - 2);
+    hs.addEventListener('scroll', hudMore, { passive: true });
+    new ResizeObserver(hudMore).observe(hs);
     renderLegend();
     refreshFilters();
     fit(false);
@@ -2111,7 +2437,8 @@ kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weig
         S.phone = phoneMQ.matches;
         app.classList.toggle('phone', S.phone);
         const P = orientation();
-        if (P !== S.portrait) { S.portrait = P; rebuild(true); fit(true); if (S.sel) setTimeout(drawLinks, 900); return; }
+        const cfgChanged = !P && P === S.portrait && JSON.stringify([chooseTableCfg(), chooseOtherCfg()]) !== JSON.stringify([TCFG, OCFG]);
+        if (P !== S.portrait || cfgChanged) { S.portrait = P; rebuild(true); fit(true); if (S.sel) setTimeout(drawLinks, 900); return; }
         if (wasFit) fit(false); else { fitK = fitTarget().k; schedule(); }
       }, 90);
     }).observe(stage);

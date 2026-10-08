@@ -123,7 +123,7 @@ button { font: inherit; color: inherit; }
 .cap { font-family: var(--f-label); text-transform: uppercase; letter-spacing: 0.16em; font-weight: 500; }
 .vh { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-#app { position: relative; width: 100%; height: 100%; overflow: hidden; }
+#app { position: relative; width: 100%; height: 100%; overflow: hidden; --ins-w: 392px; }
 
 /* ── chart (SVG) ──────────────────────────────────────────────────────── */
 #sky { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
@@ -143,8 +143,11 @@ button { font: inherit; color: inherit; }
 .bz-tick.mj { stroke: var(--ink-2); stroke-width: calc(1.1px * var(--inv)); }
 .bz-name { font-family: var(--f-label); font-weight: 500; fill: var(--ink-2); font-size: calc(12px * var(--inv)); letter-spacing: 0.3em; }
 .bz-deg { font-family: var(--f-mono); fill: var(--ink-3); font-size: calc(9px * var(--inv)); letter-spacing: 0.06em; }
-.lv3 .bz-name, .lv3 .bz-deg { opacity: 0.35; }
+.lv3 .bz-name, .lv3 .bz-deg, .forcing .bz-name { opacity: 0.35; }
+.bz-name { transition: opacity 0.3s; }
 .lv0 .bz-deg { display: none; }
+/* a bezel name or bearing steps aside where a feature label runs across it */
+#sky .bz-name.clash, #sky .bz-deg.clash { opacity: 0; transition: none; }
 
 /* core instrument */
 .core-disc { fill: var(--paper-hi); stroke: var(--ink-3); stroke-width: calc(1px * var(--inv)); }
@@ -166,6 +169,15 @@ button { font: inherit; color: inherit; }
 #sky:not(.lens-overall) .core-row.off, #sky:not(.lens-overall) .g-val.off { opacity: 0.22; }
 .core-row.ovr { transition: opacity 0.4s; }
 #sky:not(.lens-overall) .core-row.ovr { opacity: 0.4; }
+.core-far { display: none; }
+.cf-k { font-family: var(--f-label); font-weight: 500; font-size: 50px; letter-spacing: 0.24em; fill: var(--ink-2); }
+.cf-v { font-family: var(--f-mono); font-size: 118px; letter-spacing: -0.03em; fill: var(--ink); }
+.cf-v.dev { fill: var(--dev); } .cf-v.ops { fill: var(--ops); } .cf-v.biz { fill: var(--biz); }
+.core-far-on .core-far { display: inline; }
+.core-far-on .core-near, .core-far-on .g-num { display: none; }
+/* mid distance: the name lives in the top bar, so the table takes the whole dial face */
+.core-lo .core-name, .core-lo .core-ver, .core-lo .g-num { display: none; }
+.core-lo .core-rows { transform: translate(0, -51px) scale(1.3); }
 
 /* domain ring */
 .dom-band { fill: var(--band); stroke: var(--rule); stroke-width: calc(1px * var(--inv)); cursor: pointer; transition: fill 0.2s, opacity 0.3s; }
@@ -220,6 +232,7 @@ button { font: inherit; color: inherit; }
 /* stars */
 .star { cursor: pointer; transition: opacity 0.25s; }
 .gly { transform: rotate(var(--cr, 0deg)) scale(var(--gs, 1)); }
+.star.jit .jw { transform: translate(calc(var(--ux) * var(--jd, 0) * 1px), calc(var(--uy) * var(--jd, 0) * 1px)); }
 .hit { fill: transparent; stroke: none; }
 .b-live { fill: var(--st-live); }
 .b-ring { fill: var(--paper-hi); stroke: var(--st-ready); stroke-width: 1.4; }
@@ -302,7 +315,7 @@ button { font: inherit; color: inherit; }
 
 .tools { display: flex; align-items: center; gap: 6px; flex: none; }
 .search { position: relative; display: flex; align-items: center; }
-.search svg { position: absolute; left: 10px; color: var(--ink-3); pointer-events: none; }
+.search > svg { position: absolute; left: 10px; color: var(--ink-3); pointer-events: none; }
 #q { width: 210px; height: 34px; padding: 0 30px 0 32px; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper-hi); color: var(--ink); font: 13px var(--f-body); }
 #q::placeholder { color: var(--ink-3); }
 #q::-webkit-search-cancel-button, #q::-webkit-search-decoration { -webkit-appearance: none; appearance: none; }
@@ -310,6 +323,7 @@ button { font: inherit; color: inherit; }
 #q:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
 #qclear { position: absolute; right: 4px; width: 26px; height: 26px; border: 0; border-radius: 50%; background: transparent; color: var(--ink-3); cursor: pointer; display: grid; place-items: center; }
 #qclear:hover { color: var(--ink); background: var(--band-hi); }
+#qclear[hidden] { display: none; }
 #qcount { position: absolute; top: 40px; right: 0; white-space: nowrap; font-family: var(--f-mono); font-size: 11px; color: var(--ink-2); background: var(--panel-solid); border: 1px solid var(--panel-edge); border-radius: 4px; padding: 3px 8px; }
 .ibtn { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid transparent; border-radius: 50%; background: transparent; color: var(--ink-2); cursor: pointer; flex: none; }
 .ibtn:hover { color: var(--ink); background: var(--band-hi); }
@@ -321,11 +335,19 @@ button { font: inherit; color: inherit; }
 .tbtn .n { font-family: var(--f-mono); letter-spacing: 0; font-weight: 400; }
 
 /* top-left readout */
-#readout { top: 68px; left: 12px; padding: 10px 12px; border-radius: 6px; background: var(--panel); border: 1px solid var(--rule-2); width: max-content; max-width: calc(50% - 260px); min-width: 250px; }
+#readout { top: calc(var(--bar-b, 56px) + 12px); left: 12px; padding: 10px 12px; border-radius: 6px; background: var(--panel); border: 1px solid var(--rule-2); width: max-content; max-width: calc(50% - 260px); min-width: 250px; }
 #readout .meta { display: grid; grid-template-columns: auto 1fr; column-gap: 16px; row-gap: 5px; align-items: baseline; }
 #readout .lensq { font-size: 12.5px; color: var(--ink-2); line-height: 1.35; }
 #readout .lensq b { font-weight: 500; color: var(--ink); }
-#app.zoomed #readout .meta .z, #app.sheet #readout .meta .z { display: none; }
+#readout.ro-mid .meta .z, #readout.ro-min .meta .z { display: none; }
+#readout.ro-min { min-width: 0; max-width: none; padding: 8px; }
+.rbtn { white-space: nowrap; }
+#readout.ro-min .meta { display: none; }
+#readout.ro-min .rk-btns { margin-top: 0; }
+.tsum { margin: 2px 0 0 2px; font-size: 12px; line-height: 1.35; color: var(--ink-2); }
+.tsum[hidden] { display: none; }
+.tsum b { font-family: var(--f-mono); font-weight: 500; color: var(--trust); }
+.tsum b.al { color: var(--alarm); }
 #readout .lbl { white-space: nowrap; }
 #readout .v { font-family: var(--f-mono); font-size: 12px; color: var(--ink); white-space: nowrap; }
 #readout .v small { color: var(--ink-3); font-size: 11px; }
@@ -341,10 +363,9 @@ button { font: inherit; color: inherit; }
 .rbtn.trust[aria-pressed="true"] { background: var(--trust); border-color: var(--trust); }
 .rbtn.attn[aria-pressed="true"] { background: var(--alarm); border-color: var(--alarm); }
 
-#topc { top: 68px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; }
+#topc { top: calc(var(--bar-b, 56px) + 12px); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; }
 #topc > * { pointer-events: auto; }
-#trustbar { display: none; align-items: center; gap: 10px; padding: 6px 14px 6px 10px; border: 1px solid var(--trust); border-radius: 999px; background: var(--panel); box-shadow: 0 4px 18px var(--shadow); white-space: nowrap; font-size: 12.5px; color: var(--ink-2); }
-#trustbar.on { display: flex; }
+#trustbar { display: none !important; align-items: center; gap: 10px; padding: 6px 14px 6px 10px; border: 1px solid var(--trust); border-radius: 999px; background: var(--panel); box-shadow: 0 4px 18px var(--shadow); white-space: nowrap; font-size: 12.5px; color: var(--ink-2); }
 #trustbar b { font-family: var(--f-mono); font-weight: 500; color: var(--trust); }
 #trustbar b.al { color: var(--alarm); }
 #trustbar .lbl { color: var(--trust); }
@@ -355,8 +376,8 @@ button { font: inherit; color: inherit; }
 #fullsky { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border: 0; border-radius: 999px; background: var(--ink); color: var(--paper); cursor: pointer; font-family: var(--f-label); font-size: 11px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; }
 
 /* bottom-left status chips */
-#chips { left: 20px; bottom: 20px; display: flex; flex-direction: column; gap: 4px; }
-#chips .lbl { margin-bottom: 3px; padding: 3px 6px; margin-left: -6px; border-radius: 3px; background: var(--panel); align-self: flex-start; }
+#chips { left: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 4px; padding: 9px 10px 10px; border-radius: 6px; background: var(--panel); border: 1px solid var(--rule-2); }
+#chips .lbl { margin: 0 0 3px; }
 .chip { display: grid; grid-template-columns: 16px 1fr auto; align-items: center; gap: 9px; width: 178px; padding: 4px 10px 4px 7px; border: 1px solid var(--rule); border-radius: 4px; background: var(--panel); cursor: pointer; color: var(--ink); text-align: left; position: relative; overflow: hidden; }
 .chip:hover { border-color: var(--ink-3); }
 .chip .t { font-family: var(--f-label); font-weight: 500; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; }
@@ -370,7 +391,7 @@ button { font: inherit; color: inherit; }
 .chip-reset[hidden] { display: none; }
 
 /* bottom-right zoom */
-#zoomctl { right: 20px; bottom: 20px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+#zoomctl { right: 12px; bottom: 12px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
 #zoomctl .rd { text-align: right; display: flex; flex-direction: column; gap: 2px; padding: 5px 9px; border-radius: 4px; background: var(--panel); }
 #zoomctl .rd .v { font-family: var(--f-mono); font-size: 11.5px; color: var(--ink-2); white-space: nowrap; }
 .zbtns { display: flex; border: 1px solid var(--rule); border-radius: 999px; background: var(--panel); padding: 2px; gap: 2px; }
@@ -379,8 +400,13 @@ button { font: inherit; color: inherit; }
 
 /* panels */
 .panel { position: absolute; z-index: 6; background: var(--panel); border: 1px solid var(--panel-edge); box-shadow: 0 10px 40px var(--shadow); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
-#legend { top: 72px; right: 20px; width: 272px; max-height: calc(100% - 180px); overflow-y: auto; border-radius: 6px; padding: 14px 16px 12px; }
+#legend { top: calc(var(--bar-b, 56px) + 12px); right: 20px; width: 272px; max-height: calc(100% - 180px); overflow-y: auto; border-radius: 6px; padding: 14px 16px 12px; }
 #legend[hidden] { display: none; }
+#legendTab { top: calc(var(--bar-b, 56px) + 12px); right: 20px; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px 0 10px; border: 1px solid var(--rule); border-radius: 999px; background: var(--panel); color: var(--ink-2); cursor: pointer; font: 500 10.5px var(--f-label); letter-spacing: 0.16em; text-transform: uppercase; white-space: nowrap; }
+#legendTab:hover { color: var(--ink); border-color: var(--ink-3); }
+#legendTab .ln { color: var(--ink-3); letter-spacing: 0.12em; }
+#legendTab .pl { font-family: var(--f-mono); font-size: 13px; letter-spacing: 0; color: var(--ink-3); margin-left: 2px; }
+#legendTab[hidden] { display: none; }
 .lg-h { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .lg-sec { padding: 8px 0 6px; border-top: 1px solid var(--rule-2); }
 .lg-sec:first-of-type { border-top: 0; }
@@ -395,7 +421,7 @@ button { font: inherit; color: inherit; }
 .closex { width: 30px; height: 30px; border: 0; border-radius: 50%; background: transparent; color: var(--ink-2); cursor: pointer; display: grid; place-items: center; flex: none; }
 .closex:hover { background: var(--band-hi); color: var(--ink); }
 
-#inspector { top: 64px; right: 12px; bottom: 12px; width: 392px; border-radius: 6px; display: flex; flex-direction: column; overflow: hidden; }
+#inspector { top: calc(var(--bar-b, 56px) + 8px); right: 12px; bottom: 12px; width: var(--ins-w); border-radius: 6px; display: flex; flex-direction: column; overflow: hidden; }
 #inspector[hidden] { display: none; }
 .ins-top { display: flex; align-items: center; gap: 8px; padding: 10px 10px 8px 18px; border-bottom: 1px solid var(--rule-2); }
 .crumb { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; flex: 1; font: 500 10.5px var(--f-label); letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3); }
@@ -443,6 +469,8 @@ button { font: inherit; color: inherit; }
 .flist li + li { border-top: 1px solid var(--rule-2); }
 .fitem { display: grid; grid-template-columns: 16px 1fr auto; align-items: center; gap: 9px; width: 100%; padding: 7px 4px; border: 0; background: none; cursor: pointer; text-align: left; color: var(--ink); font-size: 13px; border-radius: 3px; }
 .fitem:hover { background: var(--band-hi); }
+.fitem.fmod { grid-template-columns: 40px 1fr auto; }
+.fitem .cd { font-family: var(--f-mono); font-size: 10px; color: var(--ink-3); }
 .fitem .m { font-family: var(--f-mono); font-size: 10.5px; color: var(--ink-3); white-space: nowrap; }
 .fitem .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fitem .mini { display: inline-block; width: 46px; height: 3px; background: var(--rule-2); position: relative; vertical-align: middle; margin-left: 6px; border-radius: 2px; overflow: hidden; }
@@ -474,32 +502,39 @@ button { font: inherit; color: inherit; }
   .tbtn { padding: 0; width: 34px; justify-content: center; border-color: transparent; }
   .search { position: static; }
   #q { position: absolute; left: 8px; right: 8px; top: 6px; width: auto; z-index: 2; display: none; }
-  .search svg { display: none; }
+  .search > svg { display: none; }
   #qclear { display: none; }
   #bar.searching #q { display: block; padding-left: 14px; }
   #bar.searching #qclear { display: grid; position: absolute; right: 12px; top: 10px; z-index: 3; }
-  #qcount { top: 46px; right: 10px; z-index: 3; }
+  #bar.searching.hasq #q { padding-right: 120px; }
+  #qcount { top: 15px; right: 46px; z-index: 3; padding: 0; border: 0; background: transparent; color: var(--ink-3); pointer-events: none; }
+  #qcount .qh { display: none; }
   #searchBtn { display: grid !important; }
   #readout, #chips .lbl, .chip .bar { display: none; }
   #phoneStat { display: flex; position: absolute; z-index: 3; left: 10px; right: 10px; top: var(--bar-h, 92px); justify-content: space-between; align-items: center; gap: 8px; }
-  #phoneStat .rbtn { padding: 3px 8px 3px 5px; }
+  #phoneStat .rbtn { height: 32px; padding: 0 9px 0 7px; }
   #phoneStat .rbtn .t { font-size: 9px; letter-spacing: 0.12em; }
   #phoneStat .rbtn .n { font-size: 12px; }
-  #lenscap { display: block; left: 16px; right: 16px; bottom: 64px; margin: 0; text-align: center; font-size: 12.5px; line-height: 1.4; color: var(--ink-2); text-wrap: balance; }
+  #lenscap { display: block; left: 16px; right: 16px; bottom: calc(var(--chips-h, 56px) + 10px); margin: 0; text-align: center; font-size: 12.5px; line-height: 1.4; color: var(--ink-2); text-wrap: balance; }
   #lenscap b { font-family: var(--f-label); font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; font-size: 11px; color: var(--ink); }
-  #app.sheet #lenscap { display: none; }
-  #chips { left: 0; right: 0; bottom: 0; flex-direction: row; gap: 6px; padding: 8px 120px 10px 10px; overflow-x: auto; scrollbar-width: none; background: var(--panel); border-top: 1px solid var(--rule); }
-  #chips::-webkit-scrollbar { display: none; }
-  #chips { -webkit-mask-image: linear-gradient(to right, var(--ink) calc(100% - 196px), transparent calc(100% - 128px)); mask-image: linear-gradient(to right, var(--ink) calc(100% - 196px), transparent calc(100% - 128px)); }
-  .chip { width: auto; flex: none; grid-template-columns: 14px auto auto; gap: 6px; padding: 5px 9px 5px 6px; }
-  .chip .t { font-size: 10px; letter-spacing: 0.08em; }
-  .chip-reset { flex: none; }
-  #zoomctl { right: 0; bottom: 0; padding: 7px 8px 9px 14px; background: var(--panel-solid); border-top: 1px solid var(--rule); box-shadow: -10px 0 12px -6px var(--shadow); }
-  .zbtns { background: var(--panel-solid); }
+  #app.sheet #lenscap, #app.zoomed #lenscap, #app.filtering #lenscap { display: none; }
+  /* status chips: five equal cells across the bottom, nothing hidden behind other controls */
+  #chips { left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; padding: 6px 8px calc(8px + env(safe-area-inset-bottom, 0px)); background: var(--panel); border: 0; border-top: 1px solid var(--rule); border-radius: 0; }
+  .chip { width: auto; min-width: 0; grid-template-columns: auto auto; grid-template-areas: "g n" "t t"; justify-content: center; align-items: center; column-gap: 5px; row-gap: 1px; padding: 5px 2px 4px; }
+  .chip svg { grid-area: g; }
+  .chip .n { grid-area: n; font-size: 12px; }
+  .chip .t { grid-area: t; font-size: 8.5px; letter-spacing: 0.08em; text-align: center; white-space: nowrap; overflow: hidden; }
+  .chip-reset { position: absolute; right: 8px; bottom: calc(100% + 8px); padding: 6px 12px; border: 1px solid var(--rule); border-radius: 999px; background: var(--panel-solid); text-decoration: none; color: var(--ink); box-shadow: 0 4px 14px var(--shadow); }
+  /* zoom buttons sit between the attention and verify buttons under the bar */
+  #zoomctl { left: 50%; right: auto; top: var(--bar-h, 92px); bottom: auto; transform: translateX(-50%); padding: 0; background: none; border: 0; box-shadow: none; }
+  .zbtns { background: var(--panel-solid); padding: 1px; }
   #zoomctl .rd { display: none; }
-  .zbtn { height: 30px; min-width: 30px; padding: 0 8px; }
+  .zbtn { height: 28px; min-width: 30px; padding: 0 8px; }
+  #legendTab { display: none !important; }
   #topc { top: calc(var(--bar-h, 92px) + 40px); max-width: calc(100% - 20px); }
-  #trustbar { white-space: normal; font-size: 11.5px; text-align: center; border-radius: 12px; }
+  #trustbar.on { display: flex !important; }
+  #trustbar { font-size: 12px; padding: 6px 14px; }
+  #trustbar .lbl, #trustbar .lx { display: none; }
   #legend { left: 0; right: 0; top: auto; bottom: 0; width: auto; max-height: 64%; border-radius: 12px 12px 0 0; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
   #inspector { left: 0; right: 0; top: auto; bottom: 0; width: auto; height: 58%; border-radius: 12px 12px 0 0; }
   .ins-top::before { content: ""; position: absolute; left: 50%; top: 5px; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px; background: var(--ink-4); }
@@ -507,10 +542,46 @@ button { font: inherit; color: inherit; }
   .ins-body { padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px)); }
   .ins-body h2 { font-size: 20px; }
 }
-@media (min-width: 761px) { #searchBtn { display: none; } }
+@media (max-width: 350px) { #phoneStat .rbtn .t { display: none; } }
+@media (min-width: 761px) {
+  #searchBtn { display: none; }
+  #app.sheet #zoomctl { right: calc(var(--ins-w) + 24px); }
+  #app.sheet #topc { left: calc((100% - var(--ins-w) - 12px) / 2); }
+}
 @media (max-width: 1500px) and (min-width: 761px) { .brand-tag { display: none; } }
 @media (max-width: 1360px) and (min-width: 761px) { .lens .k, .brand-ver .nx { display: none; } #q { width: 180px; } }
 @media (max-width: 1200px) and (min-width: 761px) { .lens .lf { display: none; } .lens .ls { display: inline; } #q { width: 150px; } .tbtn .tl { display: none; } .tbtn { padding: 0; width: 34px; justify-content: center; } }
+/* tablet and the artifact side panel: lens tabs drop to a second row so the brand and full lens names keep their room */
+@media (min-width: 761px) and (max-width: 1000px) {
+  #app { --ins-w: 360px; }
+  #bar { height: auto; flex-wrap: wrap; column-gap: 12px; row-gap: 0; padding: 0 16px; }
+  .brand { flex: 1 1 auto; height: 54px; }
+  .brand-ver .nx { display: none; }
+  .tools { height: 54px; }
+  #lenses { order: 3; margin: 0 auto 9px; }
+  .lens { padding: 0 13px; }
+  .lens .lf { display: inline; }
+  .lens .ls, .lens .k { display: none; }
+  #q { width: 230px; }
+  #bar.hasq #q { padding-right: 100px; }
+  #qcount { top: 9px; right: 32px; padding: 0; border: 0; background: transparent; color: var(--ink-3); pointer-events: none; }
+  #qcount .qh { display: none; }
+  .tbtn { width: auto; padding: 0 12px 0 9px; border-color: var(--rule); justify-content: flex-start; }
+  .tbtn .tl { display: inline; }
+}
+/* portrait canvases: status chips run along the bottom edge instead of up the left side */
+@media (min-width: 761px) and (max-aspect-ratio: 1/1) {
+  #chips { flex-direction: row; flex-wrap: wrap; align-items: center; left: 12px; right: auto; max-width: calc(100% - 150px); bottom: 12px; gap: 4px; padding: 6px 8px; }
+  #chips .lbl { margin: 0 4px 0 0; }
+  .chip { width: auto; grid-template-columns: 14px auto auto; gap: 5px; padding: 4px 8px 4px 5px; }
+  .chip .t { font-size: 9.5px; letter-spacing: 0.1em; }
+  #zoomctl { right: 12px; bottom: 12px; }
+  #app.sheet #chips { max-width: calc(100% - var(--ins-w) - 24px - 132px); }
+  #app.sheet .chip .t, #app.sheet #chips .lbl, #app.sheet #zoomctl .rd { display: none; }
+  /* "Clear filters" wraps the chip card to two rows, which would reach under the bearing readout */
+  #app.filtering #zoomctl .rd { display: none; }
+  #app.sheet .chip { gap: 4px; padding: 4px 7px 4px 5px; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
@@ -589,6 +660,7 @@ button { font: inherit; color: inherit; }
     </div>
   </div>
   <aside id="legend" class="panel" aria-label="Legend" hidden></aside>
+  <button id="legendTab" class="hud" type="button" aria-label="Show legend" hidden><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="3" cy="4" r="1.6" fill="currentColor"/><circle cx="3" cy="8" r="1.6" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="3" cy="12" r="1.6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="0.9 1"/><path d="M7 4h7M7 8h7M7 12h7" stroke="currentColor" stroke-width="1.4"/></svg><span>Legend</span><span class="ln" id="legendTabLens"></span><span class="pl" aria-hidden="true">+</span></button>
   <aside id="inspector" class="panel" aria-label="Inspector" hidden>
     <div class="ins-top"><nav class="crumb" id="insCrumb" aria-label="Breadcrumb"></nav><button class="closex" id="insClose" type="button" aria-label="Close inspector"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 1.5l9 9M10.5 1.5l-9 9" stroke="currentColor" stroke-width="1.5"/></svg></button></div>
     <div class="ins-body" id="insBody"></div>
@@ -707,6 +779,8 @@ button { font: inherit; color: inherit; }
     const cs = getComputedStyle(root);
     fam.label = cs.getPropertyValue('--f-label').trim();
     fam.mono = cs.getPropertyValue('--f-mono').trim();
+    fam.body = cs.getPropertyValue('--f-body').trim();
+    fam.gen = (fam.gen || 0) + 1;
   }
   readFonts();
   const mctx = document.createElement('canvas').getContext('2d');
@@ -747,7 +821,7 @@ button { font: inherit; color: inherit; }
         w += textW(' ' + pcText, pcPx, fam.mono, 400, 0.02);
         html += '<tspan class="pc"> ' + pcText + '</tspan>';
       }
-      return { html, w };
+      return { html, w, pc: !!pcText };
     });
   }
   const shortDomain = (d) => {
@@ -804,7 +878,7 @@ button { font: inherit; color: inherit; }
     domGeo.forEach((dg) => {
       const d = dg.d;
       dm += '<path class="dom-band" data-did="' + d.id + '" d="' + ringD(G.dom[0], G.dom[1], dg.a0, dg.a1) + '"><title>' + esc(d.name) + '</title></path>';
-      dm += addArcLabel({ cls: 'dom-lbl', r: G.domLbl, a0: dg.a0, a1: dg.a1, px: 11, pad: 12, list: () => {
+      dm += addArcLabel({ cls: 'dom-lbl', group: 'dom', r: G.domLbl, a0: dg.a0, a1: dg.a1, px: 11, pad: 12, list: () => {
         const v = pct(lensRollup(BP.domainRollup(d.id)));
         return cands([d.name, shortDomain(d)], 11, 0.16, 500, v, 10).concat(cands([d.name, shortDomain(d)], 11, 0.16, 500), cands([d.code], 11, 0.16, 500, v, 10), cands([d.code], 11, 0.16, 500));
       } });
@@ -818,7 +892,7 @@ button { font: inherit; color: inherit; }
       md += '<path class="mod-band" data-mid="' + m.id + '" d="' + ringD(G.mod[0], G.mod[1], mg.a0, mg.a1) + '"><title>' + esc(m.name) + '</title></path>';
       md += '<path class="mod-track" stroke-width="7" d="' + arcD(G.modTrack, mg.a0, mg.a1) + '"/>';
       md += '<path class="mod-val" stroke-width="7" data-mv="' + m.id + '" d=""/>';
-      md += addArcLabel({ cls: 'mod-lbl', r: G.modLbl, a0: mg.a0, a1: mg.a1, px: 9.5, pad: 8, list: () => {
+      md += addArcLabel({ cls: 'mod-lbl', group: 'mod', r: G.modLbl, a0: mg.a0, a1: mg.a1, px: 9.5, pad: 8, list: () => {
         const v = pct(lensRollup(BP.moduleRollup(m.id)));
         return cands([m.name, shortModule(m)], 9.5, 0.14, 500, v, 9).concat(cands([m.name, shortModule(m)], 9.5, 0.14, 500), cands([m.code], 9.5, 0.14, 500, v, 9), cands([m.code], 9.5, 0.14, 500));
       } });
@@ -871,10 +945,12 @@ button { font: inherit; color: inherit; }
       c += '<path class="g-track" stroke-width="' + G.gaugeW + '" d="' + arcD(r, G.gA0, G.gA1) + '"/>';
       c += '<path class="g-val g-' + id + '" data-g="' + id + '" stroke-width="' + G.gaugeW + '" d="' + arcD(r, G.gA0, G.gA0 + span * v) + '"/>';
     });
-    // centre readout
+    // centre readout: the full table up close, one large lens number from far away
+    c += '<g class="core-near">';
     c += '<text class="core-name" text-anchor="middle" y="-74" dx="0.13em">' + esc(BP.product.name.toUpperCase()) + '</text>';
     c += '<text class="core-ver" text-anchor="middle" y="-47">v' + esc(BP.product.version) + ' · ' + BP.features.length + ' features</text>';
     const rows = [['overall', 'All', pr.overall]].concat(DIMS.map((id) => [id, DIM[id].short, pr.dims[id]]));
+    c += '<g class="core-rows">';
     rows.forEach((row, i) => {
       const y = -8 + i * 32;
       const cls = row[0] === 'overall' ? 'ovr' : row[0];
@@ -885,7 +961,16 @@ button { font: inherit; color: inherit; }
       c += '<text class="core-v ' + (row[0] === 'overall' ? '' : row[0]) + '" x="86" y="' + (y + 8) + '" text-anchor="end">' + pct(row[2]) + '</text>';
       c += '</g>';
     });
+    c += '</g></g><g class="core-far"><text class="cf-k" id="cfK" text-anchor="middle" y="-50" dx="0.12em"></text><text class="cf-v" id="cfV" text-anchor="middle" y="62"></text></g>';
     $('core').innerHTML = c;
+    updateCoreFar();
+  }
+  function updateCoreFar() {
+    const pr = BP.productRollup();
+    const v = S.lens === 'overall' ? pr.overall : pr.dims[S.lens];
+    $('cfK').textContent = LENS_SHORT[S.lens].toUpperCase();
+    $('cfV').textContent = pct(v);
+    $('cfV').setAttribute('class', 'cf-v ' + S.lens);
   }
 
   /** Four-point "cross star" for blocked features. */
@@ -979,7 +1064,7 @@ button { font: inherit; color: inherit; }
       if (BP.needsAttention(f)) cls.push('attn');
       if (isTrust(f)) cls.push(f.review === 'changes' ? 't-chg' : 't-pend');
       const a = deg(s.a) - 90;
-      h += '<g class="' + cls.join(' ') + '" data-fid="' + f.id + '" id="s' + s.i + '">' +
+      h += '<g class="' + cls.join(' ') + '" data-fid="' + f.id + '" id="s' + s.i + '" style="--ux:' + fx(-Math.sin(s.a)) + ';--uy:' + fx(Math.cos(s.a)) + '"><g class="jw">' +
         '<g class="gly">' +
           '<circle class="halo" r="' + (S.lens === 'overall' ? 14.5 : 12.5) + '"/>' +
           '<g class="deco"></g><g class="facets">' + facetMarkup(f) + '</g>' +
@@ -990,7 +1075,7 @@ button { font: inherit; color: inherit; }
           '<circle class="hit" r="' + Math.max(R + 5, 11) + '"/>' +
         '</g>' +
         '<text class="flabel" style="--a:' + fx(a) + 'deg"><tspan class="fn">' + esc(f.name) + '</tspan><tspan class="fs"></tspan></text>' +
-        '</g>';
+        '</g></g>';
       lk += '<path class="lk" id="l' + s.i + '"/>';
     });
     $('stars').innerHTML = h;
@@ -1014,6 +1099,8 @@ button { font: inherit; color: inherit; }
       s.halo.setAttribute('r', S.lens === 'overall' ? 14.5 : 12.5);
       const v = BP.lensValue(s.f, S.lens);
       s.fs.textContent = S.lens === 'overall' ? '' : ' ' + pct(v);
+      // finished stars crowd the 100% ring; every other one steps just inside it while zoomed out
+      s.el.classList.toggle('jit', S.lens !== 'overall' && v != null && v >= 0.999 && s.i % 2 === 1);
     });
   }
 
@@ -1057,9 +1144,20 @@ button { font: inherit; color: inherit; }
     const k = T.k;
     arcLabels.forEach((o) => {
       if (force || !o.c) o.c = o.list();
-      const avail = o.span * o.r * k - o.pad;
-      let pick = -1;
-      for (let i = 0; i < o.c.length; i++) if (o.c[i].w <= avail) { pick = i; break; }
+      o.avail = o.span * o.r * k - o.pad;
+      o.want = o.c.findIndex((c) => c.w <= o.avail);
+    });
+    // within a ring, percentages show on every label (falling back to the code where a name is too long) or on none
+    ['dom', 'mod'].forEach((g) => {
+      const ring = arcLabels.filter((o) => o.group === g && o.want >= 0);
+      const short = ring.filter((o) => !o.c[o.want].pc);
+      if (!short.length) return;
+      short.forEach((o) => { o.alt = o.c.findIndex((c) => c.pc && c.w <= o.avail); });
+      if (short.every((o) => o.alt >= 0)) short.forEach((o) => { o.want = o.alt; });
+      else ring.forEach((o) => { if (o.c[o.want].pc) o.want = o.c.findIndex((c) => !c.pc && c.w <= o.avail); });
+    });
+    arcLabels.forEach((o) => {
+      const pick = o.want;
       if (pick !== o.cur || force) {
         o.cur = pick;
         o.tp.innerHTML = pick < 0 ? '' : o.c[pick].html;
@@ -1089,6 +1187,7 @@ button { font: inherit; color: inherit; }
   }
 
   /* ── zoom-dependent detail ── */
+  const LBL = { lo: 12, ts: 1 }; // radial star label offset (px) and on-screen text scale, set by apply()
   let lastK = -1;
   let lastRot = null;
   let frameQueued = false;
@@ -1101,16 +1200,25 @@ button { font: inherit; color: inherit; }
     const lo = ov ? (lv >= 3 ? 21 : lv === 2 ? 15 : 12) : (lv >= 2 ? 12.5 : 9);
     svg.classList.toggle('names', k >= (ov ? 0.62 : 0.85));
     const ws = world.style;
+    LBL.ts = Math.max(1, Math.min(1.22, 0.94 + 0.1 * k));
+    LBL.lo = fx(lo * s);
     ws.setProperty('--inv', String(1 / k));
     ws.setProperty('--gs', String(s / k));
-    ws.setProperty('--ts', String(Math.max(1, Math.min(1.22, 0.94 + 0.1 * k)) / k));
-    ws.setProperty('--lo', fx(lo * s) + 'px');
+    ws.setProperty('--ts', String(LBL.ts / k));
+    ws.setProperty('--lo', LBL.lo + 'px');
     ws.setProperty('--cr', fx(-deg(S.rot)) + 'deg');
+    // crowded finished stars step a few screen pixels inward while zoomed out, then rejoin the ring
+    const fade = k <= 0.55 ? 1 : k >= 0.9 ? 0 : (0.9 - k) / 0.35;
+    ws.setProperty('--jd', ov ? '0' : String(fx(Math.min(28, 5.5 / k) * fade)));
+    svg.classList.toggle('core-far-on', k < 0.36);
+    svg.classList.toggle('core-lo', k < 0.45);
+    // the phone lens caption belongs to the fitted view; any zoom or pan clears it off the sky
+    $('app').classList.toggle('zoomed', lv >= 2 || !S.atFit);
     if (lv !== S.level) {
       svg.classList.remove('lv0', 'lv1', 'lv2', 'lv3');
       svg.classList.add('lv' + lv);
-      $('app').classList.toggle('zoomed', lv >= 2);
       S.level = lv;
+      syncReadoutMode();
     }
     if (k !== lastK) { updateArcLabels(false); lastK = k; updateForced(); updateScaleText(); }
     if (S.rot !== lastRot) { lastRot = S.rot; updateFlips(); updateScaleText(); $('core').setAttribute('transform', 'rotate(' + fx(-deg(S.rot)) + ')'); }
@@ -1142,7 +1250,7 @@ button { font: inherit; color: inherit; }
       const lg = $('legend');
       if (!lg.hidden) r.y1 = Math.min(r.y1, lg.getBoundingClientRect().top - 4);
     } else {
-      r.y0 += 8; r.y1 -= 8;
+      r.y0 += 8; r.y1 -= 8; r.x0 += 6; r.x1 -= 6;
       if (!$('inspector').hidden) r.x1 = $('inspector').getBoundingClientRect().left - 8;
     }
     r.w = Math.max(40, r.x1 - r.x0);
@@ -1163,9 +1271,116 @@ button { font: inherit; color: inherit; }
     tr.call(zoom.transform, t);
   }
   function fitTransform() {
+    if (isPhone()) {
+      // measure the resting layout (lens caption shown) so Fit always lands where the page opened
+      const app = $('app');
+      const z = app.classList.contains('zoomed');
+      if (z) app.classList.remove('zoomed');
+      const pv = viewRect();
+      if (z) app.classList.add('zoomed');
+      const k = Math.min(pv.w, pv.h) / (2 * 975);
+      return d3.zoomIdentity.translate(pv.cx, pv.cy).scale(k);
+    }
     const v = viewRect();
-    const k = Math.min(v.w, v.h) / (2 * (isPhone() ? 975 : G.fit));
-    return d3.zoomIdentity.translate(v.cx, v.cy).scale(k);
+    const c = fitCircle(v);
+    return d3.zoomIdentity.translate(c.x, c.y).scale(c.r / G.fit);
+  }
+
+  /* ── fit around the chrome: the sky takes the largest circle the floating panels leave clear ── */
+  let roFit = 0; // readout density chosen at fit: 0 full, 1 lens line + buttons, 2 buttons only
+  function setRoClass(m) {
+    $('readout').classList.toggle('ro-mid', m === 1);
+    $('readout').classList.toggle('ro-min', m === 2);
+  }
+  function syncReadoutMode() {
+    let m = roFit;
+    if (S.level >= 2 || !$('inspector').hidden) m = Math.max(m, 1);
+    setRoClass(m);
+    placeTopc();
+  }
+  function chromeRects() {
+    const out = [];
+    ['readout', 'chips', 'zoomctl', 'legend', 'legendTab'].forEach((id) => {
+      const el = $(id);
+      if (!el || el.hidden) return;
+      const r = el.getBoundingClientRect();
+      if (r.width >= 1 && r.height >= 1) out.push(r);
+    });
+    return out;
+  }
+  /** Largest circle inside rect v that keeps clear of every obstacle; ties go to the most central. */
+  function bestCircle(v, obs) {
+    const PAD = 6;
+    const os = obs.map((o) => ({ l: o.left - PAD, r: o.right + PAD, t: o.top - PAD, b: o.bottom + PAD }));
+    const radius = (x, y) => {
+      let r = Math.min(x - v.x0, v.x1 - x, y - v.y0, v.y1 - y);
+      for (const o of os) {
+        const dx = x < o.l ? o.l - x : x > o.r ? x - o.r : 0;
+        const dy = y < o.t ? o.t - y : y > o.b ? y - o.b : 0;
+        r = Math.min(r, Math.hypot(dx, dy));
+      }
+      return r;
+    };
+    const score = (x, y, r) => r - 0.04 * Math.hypot(x - v.cx, y - v.cy);
+    let bx = v.cx, by = v.cy, br = radius(bx, by), bs = score(bx, by, br);
+    const N = 20;
+    for (let i = 0; i <= N; i++) {
+      for (let j = 0; j <= N; j++) {
+        const x = v.x0 + v.w * i / N, y = v.y0 + v.h * j / N;
+        const r = radius(x, y), sc = score(x, y, r);
+        if (sc > bs) { bx = x; by = y; br = r; bs = sc; }
+      }
+    }
+    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+    for (let step = Math.max(v.w, v.h) / N / 2; step > 0.5; step /= 2) {
+      let moved = true;
+      while (moved) {
+        moved = false;
+        for (const d of dirs) {
+          const x = bx + d[0] * step, y = by + d[1] * step;
+          const r = radius(x, y), sc = score(x, y, r);
+          if (sc > bs + 1e-6) { bx = x; by = y; br = r; bs = sc; moved = true; }
+        }
+      }
+    }
+    return { x: bx, y: by, r: Math.max(20, br) };
+  }
+  /** Centre of the canvas area the floating chrome leaves clear; zoom, fly and the bearing readout aim here. */
+  let fcKey = '';
+  let fcVal = null;
+  function freeCenter() {
+    const v = viewRect();
+    if (isPhone()) return [v.cx, v.cy];
+    const rs = chromeRects();
+    const key = [v.x0, v.y0, v.x1, v.y1].concat(rs.map((r) => [r.left, r.top, r.right, r.bottom].map(Math.round).join(','))).join('|');
+    if (key !== fcKey) {
+      const c = bestCircle(v, rs);
+      fcKey = key;
+      fcVal = [c.x, c.y];
+    }
+    return fcVal;
+  }
+  /** Re-fits when the chrome changed shape while the whole product is on show. */
+  function refitIfNeeded(ms) {
+    if (!S.atFit || isPhone() || !$('inspector').hidden) return;
+    const t = fitTransform();
+    if (Math.abs(t.k - T.k) / T.k > 0.006 || Math.hypot(t.x - T.x, t.y - T.y) > 3) fit(ms);
+  }
+  /** Picks the richest readout that costs the sky no size, and returns the fitted circle. */
+  function fitCircle(v) {
+    const lo = $('inspector').hidden ? 0 : 1;
+    const res = [];
+    for (let m = 0; m < 3; m++) {
+      if (m < lo) { res.push(null); continue; }
+      setRoClass(m);
+      res.push(bestCircle(v, chromeRects()));
+    }
+    const top = Math.max.apply(null, res.filter(Boolean).map((c) => c.r));
+    let pick = 2;
+    for (let m = lo; m < 3; m++) if (res[m].r >= top * 0.985) { pick = m; break; }
+    roFit = pick;
+    syncReadoutMode();
+    return res[pick];
   }
   function fit(ms) {
     const t = fitTransform();
@@ -1183,16 +1398,16 @@ button { font: inherit; color: inherit; }
   }
   /** Flies so world point p (unrotated) lands at the centre of the visible area at scale k. */
   function flyToWorld(p, k, ms, rotTo) {
-    const v = viewRect();
+    const c = freeCenter();
     const rr = rotTo == null ? S.rot : rotTo;
     const q = rotate(p, rr);
-    const t = d3.zoomIdentity.translate(v.cx - q[0] * k, v.cy - q[1] * k).scale(k);
+    const t = d3.zoomIdentity.translate(c[0] - q[0] * k, c[1] - q[1] * k).scale(k);
     S.atFit = false;
     goTo(t, rotTo, ms);
   }
   function zoomBy(f) {
-    const v = viewRect();
-    svgSel.interrupt('view').transition('view').duration(dur(260)).call(zoom.scaleBy, f, [v.cx, v.cy]);
+    const c = freeCenter();
+    svgSel.interrupt('view').transition('view').duration(dur(260)).call(zoom.scaleBy, f, c);
     S.atFit = false;
   }
   function flyToStar(s, minK) {
@@ -1222,10 +1437,21 @@ button { font: inherit; color: inherit; }
     renderFocus();
     goTo(t, rotTo, 1000);
   }
+  /** Drops the centred pills below the readout card where the two would collide. */
+  function placeTopc() {
+    const tc = $('topc');
+    tc.style.top = '';
+    if (isPhone() || $('readout').hidden) return;
+    const a = tc.getBoundingClientRect();
+    if (!a.height) return;
+    const b = $('readout').getBoundingClientRect();
+    if (a.left < b.right + 8 && a.top < b.bottom) tc.style.top = Math.round(b.bottom + 8) + 'px';
+  }
   function renderFocus() {
     $('focusbar').classList.toggle('on', !!S.focus);
     $('focusName').textContent = S.focus ? BP.domain(S.focus).name : '';
     svg.querySelectorAll('.dom-band').forEach((el) => el.classList.toggle('focus', el.getAttribute('data-did') === S.focus));
+    placeTopc();
   }
 
   /* ── lens ── */
@@ -1241,6 +1467,7 @@ button { font: inherit; color: inherit; }
     document.querySelectorAll('.lens').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lens === l)));
     svg.querySelectorAll('.core-row').forEach((el) => el.classList.toggle('off', el.dataset.row !== l));
     svg.querySelectorAll('.g-val').forEach((el) => el.classList.toggle('off', el.dataset.g !== l));
+    updateCoreFar();
     refreshDeco();
     updateModuleArcs();
     updateArcLabels(true);
@@ -1321,9 +1548,10 @@ button { font: inherit; color: inherit; }
     S.hitIdx = -1;
     const has = S.query.trim() !== '';
     $('qclear').hidden = !has;
+    $('bar').classList.toggle('hasq', has);
     const n = has ? matchList().length : 0;
     $('qcount').hidden = !has;
-    $('qcount').textContent = has ? (n ? n + (n === 1 ? ' match' : ' matches') + ' · Enter to fly' : 'No matches') : '';
+    $('qcount').innerHTML = has ? (n ? '<span class="qn">' + n + (n === 1 ? ' match' : ' matches') + '</span><span class="qh"> · Enter to fly</span>' : 'No matches') : '';
     applyClasses();
   }
 
@@ -1353,6 +1581,39 @@ button { font: inherit; color: inherit; }
     });
     const on = new Set(shown);
     stars.forEach((s) => s.label.classList.toggle('force', on.has(s)));
+    svg.classList.toggle('forcing', shown.length > 0);
+    updateBezelClash();
+  }
+  /** Hides the bezel names and bearings that a visible radial star label runs across (all in world units). */
+  function updateBezelClash() {
+    const k = T.k;
+    const names = svg.classList.contains('names');
+    const key = S.lens + '|' + fam.gen;
+    const segs = [];
+    stars.forEach((s) => {
+      if (!s.label.classList.contains('force') && !(names && !s.el.classList.contains('dim'))) return;
+      if (s.lwKey !== key) {
+        s.lw = 1.05 * textW(s.f.name, 11.5, fam.body, 400, 0) + (S.lens === 'overall' ? 0 : textW(s.fs.textContent, 10, fam.mono, 400, 0));
+        s.lwKey = key;
+      }
+      segs.push({ a: s.a, r0: s.r + LBL.lo * LBL.ts / k, r1: s.r + (LBL.lo + s.lw) * LBL.ts / k });
+    });
+    const half = 0.6 * 11.5 * LBL.ts / k;
+    arcLabels.forEach((o) => {
+      if (o.cls !== 'bz-name' && o.cls !== 'bz-deg') return;
+      let hit = false;
+      if (o.cur >= 0 && segs.length) {
+        const hw = o.c[o.cur].w / k / 2 + half;
+        const hb = (0.6 * o.px + 2) / k;
+        hit = segs.some((g) => {
+          if (g.r1 < o.r - hb || g.r0 > o.r + hb) return false;
+          let d = Math.abs(g.a - o.mid);
+          d = Math.min(d, TAU - d);
+          return d * o.r <= hw;
+        });
+      }
+      o.el.classList.toggle('clash', hit);
+    });
   }
 
   /* ── selection ── */
@@ -1384,7 +1645,9 @@ button { font: inherit; color: inherit; }
     const route = (a, b) => {
       const pts = [P(a.r, a.a)];
       if (a.mid === b.mid) {
-        pts.push(P(Math.min(a.r, b.r) - 60, (a.a + b.a) / 2));
+        // neighbours in one module: a shallow arc that grows with the distance between them
+        const gap = Math.abs(a.a - b.a) * Math.min(a.r, b.r);
+        pts.push(P(Math.min(a.r, b.r) - Math.min(60, 14 + gap * 0.45), (a.a + b.a) / 2));
       } else {
         const ma = modGeo.get(a.mid), mb = modGeo.get(b.mid);
         const same = a.did === b.did;
@@ -1512,7 +1775,7 @@ button { font: inherit; color: inherit; }
       '<div class="rk-btns">' +
       '<button type="button" class="rbtn attn" id="attnBtn" aria-pressed="false" title="Show only features that need attention"><svg width="14" height="14" viewBox="-8 -8 16 16" aria-hidden="true"><path d="M0,-7L1.8,-1.8L7,0L1.8,1.8L0,7L-1.8,1.8L-7,0L-1.8,-1.8Z" style="fill:var(--alarm)"/></svg><span class="n">' + pr.attention + '</span><span class="t">Need attention</span></button>' +
       '<button type="button" class="rbtn trust" id="trustBtn2" aria-pressed="false" title="Mark agent-built work awaiting human review"><svg width="14" height="14" viewBox="-8 -8 16 16" aria-hidden="true"><circle r="6" fill="none" stroke-width="1.4" stroke-dasharray="2.2 1.6" style="stroke:var(--trust)"/><circle r="2.4" style="fill:var(--trust)"/></svg><span class="n">' + tc.all + '</span><span class="t">Agent work to verify</span></button>' +
-      '</div>';
+      '<div class="tsum" id="trustSum" role="status" hidden></div></div>';
     $('phoneStat').innerHTML =
       '<button type="button" class="rbtn attn" id="attnBtnP" aria-pressed="false"><svg width="12" height="12" viewBox="-8 -8 16 16" aria-hidden="true"><path d="M0,-7L1.8,-1.8L7,0L1.8,1.8L0,7L-1.8,1.8L-7,0L-1.8,-1.8Z" style="fill:var(--alarm)"/></svg><span class="n">' + pr.attention + '</span><span class="t">Attention</span></button>' +
       '<button type="button" class="rbtn trust" id="trustBtnP" aria-pressed="false"><svg width="12" height="12" viewBox="-8 -8 16 16" aria-hidden="true"><circle r="6" fill="none" stroke-width="1.4" stroke-dasharray="2.2 1.6" style="stroke:var(--trust)"/><circle r="2.4" style="fill:var(--trust)"/></svg><span class="n">' + tc.all + '</span><span class="t">To verify</span></button>';
@@ -1540,6 +1803,7 @@ button { font: inherit; color: inherit; }
   function syncChips() {
     $('chips').querySelectorAll('.chip').forEach((b) => b.setAttribute('aria-pressed', String(S.statuses.has(b.dataset.status))));
     $('chipReset').hidden = !(S.statuses.size || S.attention);
+    $('app').classList.toggle('filtering', !!(S.statuses.size || S.attention));
     ['attnBtn', 'attnBtnP'].forEach((id) => $(id).setAttribute('aria-pressed', String(S.attention)));
   }
   function toggleAttention() { S.attention = !S.attention; syncChips(); applyClasses(); }
@@ -1547,7 +1811,11 @@ button { font: inherit; color: inherit; }
     S.trust = typeof on === 'boolean' ? on : !S.trust;
     const tc = trustCounts();
     $('trustbar').classList.toggle('on', S.trust);
-    $('trustbar').innerHTML = '<span class="lbl">AI trust</span><span><b>' + (tc.all - tc.changes) + '</b> agent-built awaiting review · <b class="al">' + tc.changes + '</b> changes requested</span>';
+    $('trustbar').innerHTML = '<span class="lbl">AI trust</span><span><b>' + (tc.all - tc.changes) + '</b> <span class="lx">agent-built </span>awaiting review · <b class="al">' + tc.changes + '</b> changes requested</span>';
+    $('trustSum').innerHTML = '<b>' + (tc.all - tc.changes) + '</b> awaiting review · <b class="al">' + tc.changes + '</b> changes requested';
+    $('trustSum').hidden = !S.trust;
+    placeTopc();
+    refitIfNeeded(400);
     ['trustBtn', 'trustBtn2', 'trustBtnP'].forEach((id) => $(id).setAttribute('aria-pressed', String(S.trust)));
     applyClasses();
     renderLegend();
@@ -1570,7 +1838,7 @@ button { font: inherit; color: inherit; }
       const c = 'color:var(--' + S.lens + ')';
       const fr = [0, 90, 180, 270].map((cd, j) => { const a0 = rad(cd - 37), a1 = rad(cd + 37); return '<path class="fr track" d="' + arcLocal(8, a0, a1) + '"/>' + (j < 2 ? '<path class="fr done" d="' + arcLocal(8, a0, a1) + '"/>' : j === 2 ? '<path class="fr done" d="' + arcLocal(8, a0, (a0 + a1) / 2) + '"/>' : ''); }).join('');
       h += '<div class="lg-sec"><h3>Gravity = distance from done</h3>' +
-        lgRow(miniStar('<path d="M-12,9V-9" style="stroke:var(--' + S.lens + ')" stroke-width="2"/><path d="M-12,4H8" style="stroke:var(--' + S.lens + ')" stroke-width="1.4"/><circle class="b-live" cx="8" cy="4" r="3"/>'), 'Finished work is pulled in to the <b>100% ring</b>; unfinished work drifts out to the <b>0% rim</b>') +
+        lgRow(miniStar('<path d="M-12,9V-9" style="stroke:var(--' + S.lens + ')" stroke-width="2"/><path d="M-12,4H8" style="stroke:var(--' + S.lens + ')" stroke-width="1.4"/><circle class="b-live" cx="8" cy="4" r="3"/>'), 'Finished work is pulled in to the <b>100% ring</b> (two deep where it crowds); unfinished work drifts out to the <b>0% rim</b>') +
         lgRow(miniStar('<g style="' + c + '">' + fr + '</g><circle class="b-live" r="4"/>'), DIM[S.lens].facets.map((x) => x.label).join(', ') + ' (clockwise from top)') +
         lgRow(miniStar('<path class="hz" style="stroke:var(--' + S.lens + ');stroke-width:2" d="M-12,0A20,20 0 0 1 12,0"/>'), 'Module mean, drawn as a short arc') + '</div>';
     }
@@ -1582,15 +1850,32 @@ button { font: inherit; color: inherit; }
     h += '<div class="lg-sec lg-keys"><kbd>1</kbd>–<kbd>4</kbd> lens · <kbd>+</kbd> <kbd>−</kbd> zoom · <kbd>0</kbd> fit · <kbd>/</kbd> search · <kbd>T</kbd> AI trust · <kbd>L</kbd> legend · <kbd>Esc</kbd> close</div>';
     lg.innerHTML = h;
     $('legendClose').addEventListener('click', () => toggleLegend(false));
+    $('legendTabLens').textContent = '· ' + LENS_NAME[S.lens];
   }
   let legendWanted = false;
+  let legendTouched = false;
   function toggleLegend(on) {
     legendWanted = typeof on === 'boolean' ? on : $('legend').hidden;
+    legendTouched = true;
+    syncLegend();
+    refitIfNeeded(500);
+  }
+  /** Opens the legend at start only where it sits beside the fitted sky without shrinking it. */
+  function decideLegend() {
+    if (isPhone() || window.innerWidth < 1500) { legendWanted = false; syncLegend(); return; }
+    legendWanted = true;
+    syncLegend();
+    const rOpen = fitCircle(viewRect()).r;
+    legendWanted = false;
+    syncLegend();
+    const rShut = fitCircle(viewRect()).r;
+    legendWanted = rOpen >= rShut * 0.985;
     syncLegend();
   }
   function syncLegend() {
     const ins = !$('inspector').hidden;
     $('legend').hidden = !legendWanted || ins;
+    $('legendTab').hidden = isPhone() || legendWanted || ins;
     $('legendBtn').setAttribute('aria-pressed', String(legendWanted && !ins));
     $('legendBtn').setAttribute('aria-label', legendWanted ? 'Hide legend' : 'Show legend');
   }
@@ -1601,12 +1886,14 @@ button { font: inherit; color: inherit; }
     $('app').classList.add('sheet');
     if (isPhone()) legendWanted = false;
     syncLegend();
+    syncReadoutMode();
     renderInspector();
   }
   function closeInspector() {
     $('inspector').hidden = true;
     $('app').classList.remove('sheet');
     syncLegend();
+    if (!isPhone()) fitCircle(viewRect()); else syncReadoutMode();
   }
   function daysAgo(dstr) {
     const d = (Date.parse(ASOF) - Date.parse(dstr)) / 864e5;
@@ -1688,7 +1975,7 @@ button { font: inherit; color: inherit; }
         '<dt>Attention</dt><dd>' + (r.attention ? '<span style="color:var(--alarm)">' + r.attention + ' need attention</span>' : 'None') + '</dd></dl>';
       h += '<div class="ins-sec"><h3><span>Rollup</span><span class="mono">overall ' + pct(r.overall) + '</span></h3>' + dimBlocks(r.dims, null) + '</div>';
       h += '<div class="ins-sec"><h3><span>Status</span><span class="mono">' + r.count + ' features</span></h3><div class="stcounts">' + BP.STATUS_ORDER.filter((id) => r.byStatus[id]).map((id) => '<span class="pill">' + glyphSVG(id, 13) + STATUS[id].label + ' <span class="mono">' + r.byStatus[id] + '</span></span>').join('') + '</div></div>';
-      h += '<div class="ins-sec"><h3><span>Features</span><span class="mono">' + LENS_SHORT[S.lens] + ' score</span></h3><ul class="flist">' + BP.featuresOf(m.id).map((x) => featureItem(x, false)).join('') + '</ul></div>';
+      h += '<div class="ins-sec"><h3><span>Features</span><span class="mono">' + LENS_NAME[S.lens] + ' score</span></h3><ul class="flist">' + BP.featuresOf(m.id).map((x) => featureItem(x, false)).join('') + '</ul></div>';
     } else {
       const d = BP.domain(S.sel.id);
       const r = BP.domainRollup(d.id);
@@ -1696,10 +1983,10 @@ button { font: inherit; color: inherit; }
       h += '<h2>' + esc(d.name) + '</h2><div class="ins-id">' + r.count + ' features · ' + BP.modulesOf(d.id).length + ' modules</div>';
       h += '<p class="summary">' + esc(d.summary) + '</p>';
       h += '<div class="ins-sec"><h3><span>Rollup</span><span class="mono">overall ' + pct(r.overall) + '</span></h3>' + dimBlocks(r.dims, null) + '</div>';
-      h += '<div class="ins-sec"><h3><span>Modules</span><span class="mono">' + LENS_SHORT[S.lens] + ' score</span></h3><ul class="flist">' + BP.modulesOf(d.id).map((m) => {
+      h += '<div class="ins-sec"><h3><span>Modules</span><span class="mono">' + LENS_NAME[S.lens] + ' score</span></h3><ul class="flist">' + BP.modulesOf(d.id).map((m) => {
         const mr = BP.moduleRollup(m.id);
         const v = lensRollup(mr);
-        return '<li><button type="button" class="fitem" data-gotomod="' + m.id + '"><span class="mono" style="font-size:10px;color:var(--ink-3)">' + m.code + '</span><span class="nm">' + esc(m.name) + (mr.attention ? ' <span style="color:var(--alarm)" class="mono">✦' + mr.attention + '</span>' : '') + '</span><span class="m">' + pct(v) + '<span class="mini"><i style="width:' + fx(v * 100) + '%"></i></span></span></button></li>';
+        return '<li><button type="button" class="fitem fmod" data-gotomod="' + m.id + '"><span class="cd">' + m.code + '</span><span class="nm">' + esc(m.name) + (mr.attention ? ' <span style="color:var(--alarm)" class="mono">✦' + mr.attention + '</span>' : '') + '</span><span class="m">' + pct(v) + '<span class="mini"><i style="width:' + fx(v * 100) + '%"></i></span></span></button></li>';
       }).join('') + '</ul></div>';
     }
     body.innerHTML = h;
@@ -1727,8 +2014,8 @@ button { font: inherit; color: inherit; }
   }
   const LV_NAME = ['Far field', 'Sky', 'Constellation', 'Star'];
   function updateReadout() {
-    const v = viewRect();
-    const wx = (v.cx - T.x) / T.k, wy = (v.cy - T.y) / T.k;
+    const c = freeCenter();
+    const wx = (c[0] - T.x) / T.k, wy = (c[1] - T.y) / T.k;
     const p = rotate([wx, wy], -S.rot);
     const r = Math.hypot(p[0], p[1]);
     const a = norm(Math.atan2(p[0], -p[1]));
@@ -1776,6 +2063,7 @@ button { font: inherit; color: inherit; }
   $('qclear').addEventListener('click', () => { $('q').value = ''; onQuery(); $('bar').classList.remove('searching'); });
   $('q').addEventListener('blur', () => { if (!$('q').value) $('bar').classList.remove('searching'); });
   $('trustBtn').addEventListener('click', () => toggleTrust());
+  $('legendTab').addEventListener('click', () => toggleLegend(true));
   $('legendBtn').addEventListener('click', () => {
     if (!$('inspector').hidden && isPhone()) select(null);
     toggleLegend(!legendWanted || !$('legend').hidden ? !legendWanted : true);
@@ -1786,7 +2074,11 @@ button { font: inherit; color: inherit; }
   $('fullsky').addEventListener('click', () => { if (S.sel && S.sel.type === 'domain') select(null); fit(); });
   /** Keeps floating phone rows tucked under the (wrapping) top bar. */
   function layoutChrome() {
-    $('app').style.setProperty('--bar-h', Math.round($('bar').getBoundingClientRect().bottom + 6) + 'px');
+    const st = $('app').style;
+    const b = Math.round($('bar').getBoundingClientRect().bottom);
+    st.setProperty('--bar-b', b + 'px');
+    st.setProperty('--bar-h', (b + 6) + 'px');
+    st.setProperty('--chips-h', Math.round($('chips').getBoundingClientRect().height) + 'px');
   }
   let rz = null;
   window.addEventListener('resize', () => {
@@ -1794,6 +2086,7 @@ button { font: inherit; color: inherit; }
     rz = setTimeout(() => {
       renderLenses();
       layoutChrome();
+      if (!legendTouched) decideLegend();
       if (S.atFit) fit(0); else { fitK = fitTransform().k; apply(); }
     }, 60);
   });
@@ -1809,16 +2102,23 @@ button { font: inherit; color: inherit; }
   renderChips();
   updateModuleArcs();
   layoutChrome();
-  const t0 = fitTransform();
-  // open the legend at start only where it fits beside the chart without covering it
-  legendWanted = !isPhone() && (window.innerWidth - 2 * t0.k * G.fit) / 2 >= 300;
   renderLegend();
-  syncLegend();
+  decideLegend();
+  const t0 = fitTransform();
   fitK = t0.k;
   svgSel.call(zoom.transform, t0);
   apply();
   updateArcLabels(true);
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { readFonts(); updateArcLabels(true); });
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(() => {
+      readFonts();
+      updateArcLabels(true);
+      // web fonts change the chrome's size, so settle the opening fit again
+      layoutChrome();
+      if (!legendTouched) decideLegend();
+      if (S.atFit) fit(0);
+    });
+  }
 
   // Small hook for scripted walkthroughs and screenshots.
   window.ORBIT = {
