@@ -1,0 +1,2255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cyanotype Blueprint</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
+<style>
+/* Layout concept: one drawing sheet. The plan fills the stage, a ruled sheet column on the right carries the schedule, legend, keynotes and title block, and the four lenses flip between sheets of the set (A-101, S-201, M-301, B-401). */
+:root {
+  /* paper and ink: whiteprint (diazo) */
+  --paper: #f1f5f8;
+  --paper-2: #e6edf2;
+  --paper-3: #d6e1ea;
+  --ink: #12284a;
+  --ink-2: #33598a;
+  --ink-3: #6a83a1;
+  --ink-4: #a8b9cb;
+  --poche: #234470;
+  --tint: rgba(35, 68, 112, 0.17);
+  --tint-2: rgba(35, 68, 112, 0.06);
+  --grid-minor: rgba(18, 40, 74, 0.05);
+  --grid-major: rgba(18, 40, 74, 0.1);
+  --hatch: #4b6c95;
+  --plate: rgba(241, 245, 248, 0.94);
+  /* colored pencil on the print */
+  --red: #c3301c;
+  --red-wash: rgba(195, 48, 28, 0.1);
+  --amber: #b06d06;
+  --amber-wash: rgba(176, 109, 6, 0.13);
+  --sel: #0a62c8;
+  --sel-wash: rgba(10, 98, 200, 0.11);
+  --clear: rgba(0, 0, 0, 0);
+  --shadow: rgba(12, 28, 52, 0.2);
+  /* lettering */
+  --f-letter: 'Saira Condensed', 'Barlow Condensed', 'Roboto Condensed', 'Arial Narrow', sans-serif;
+  --f-text: 'Barlow Semi Condensed', 'Roboto Condensed', 'Helvetica Neue', Arial, sans-serif;
+  --f-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --strip-w: 292px;
+  --bar-h: 54px;
+  --insp-w: 404px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    /* cyanotype: Prussian-blue paper, chalk linework */
+    --paper: #0c2a4b;
+    --paper-2: #09223f;
+    --paper-3: #143a63;
+    --ink: #e7f0f7;
+    --ink-2: #9dcbe7;
+    --ink-3: #6f9bbf;
+    --ink-4: #3d6890;
+    --poche: #c9deee;
+    --tint: rgba(157, 203, 231, 0.25);
+    --tint-2: rgba(157, 203, 231, 0.08);
+    --grid-minor: rgba(190, 222, 245, 0.055);
+    --grid-major: rgba(190, 222, 245, 0.11);
+    --hatch: #9dcbe7;
+    --plate: rgba(12, 42, 75, 0.94);
+    --red: #ff7f6c;
+    --red-wash: rgba(255, 127, 108, 0.16);
+    --amber: #f2c25a;
+    --amber-wash: rgba(242, 194, 90, 0.16);
+    --sel: #79e4ff;
+    --sel-wash: rgba(121, 228, 255, 0.15);
+    --shadow: rgba(0, 8, 20, 0.5);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0c2a4b;
+  --paper-2: #09223f;
+  --paper-3: #143a63;
+  --ink: #e7f0f7;
+  --ink-2: #9dcbe7;
+  --ink-3: #6f9bbf;
+  --ink-4: #3d6890;
+  --poche: #c9deee;
+  --tint: rgba(157, 203, 231, 0.25);
+  --tint-2: rgba(157, 203, 231, 0.08);
+  --grid-minor: rgba(190, 222, 245, 0.055);
+  --grid-major: rgba(190, 222, 245, 0.11);
+  --hatch: #9dcbe7;
+  --plate: rgba(12, 42, 75, 0.94);
+  --red: #ff7f6c;
+  --red-wash: rgba(255, 127, 108, 0.16);
+  --amber: #f2c25a;
+  --amber-wash: rgba(242, 194, 90, 0.16);
+  --sel: #79e4ff;
+  --sel-wash: rgba(121, 228, 255, 0.15);
+  --shadow: rgba(0, 8, 20, 0.5);
+  color-scheme: dark;
+}
+
+/* ── Shell ─────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--paper); color: var(--ink); font-family: var(--f-text); font-size: 14px; line-height: 1.35; overflow: hidden; -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: var(--clear); }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; background: none; border: 0; padding: 0; }
+:focus-visible { outline: 2px solid var(--sel); outline-offset: 2px; }
+[hidden] { display: none !important; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+#app { position: relative; height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) var(--strip-w); grid-template-rows: var(--bar-h) minmax(0, 1fr); grid-template-areas: "bar bar" "stage strip"; overflow: hidden; }
+
+/* ── Toolbar: drawing-set header ───────────────────────────────────────── */
+#bar { grid-area: bar; display: flex; align-items: center; gap: 14px; padding: 0 14px; border-bottom: 3px double var(--ink); background: var(--paper); min-width: 0; z-index: 5; }
+.brand { display: flex; align-items: center; gap: 10px; flex: none; }
+.brand svg { width: 30px; height: 30px; flex: none; }
+.brand-txt { display: flex; flex-direction: column; line-height: 1; }
+.brand-kick { font: 500 10px/1 var(--f-mono); letter-spacing: .16em; color: var(--ink-3); }
+.brand-name { font: 700 19px/1.05 var(--f-letter); letter-spacing: .1em; text-transform: uppercase; margin-top: 3px; }
+.brand-name b { font: 500 11px var(--f-mono); letter-spacing: .04em; color: var(--ink-2); margin-left: 4px; }
+.sheets { display: flex; align-items: stretch; gap: 0; min-width: 0; border: 1px solid var(--ink); }
+.sheet-tab { display: flex; align-items: center; gap: 7px; padding: 5px 11px 5px 9px; border-right: 1px solid var(--ink); color: var(--ink); white-space: nowrap; transition: background-color .15s, color .15s; }
+.sheet-tab:last-child { border-right: 0; }
+.sheet-tab .no { font: 600 11.5px var(--f-mono); letter-spacing: .02em; }
+.sheet-tab .nm { font: 600 13px var(--f-letter); letter-spacing: .12em; text-transform: uppercase; }
+.sheet-tab kbd { font: 500 9.5px var(--f-mono); color: var(--ink-3); border: 1px solid var(--ink-4); padding: 0 3px; line-height: 13px; }
+.sheet-tab:hover { background: var(--tint-2); }
+.sheet-tab[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.sheet-tab[aria-pressed="true"] kbd { color: var(--paper); border-color: var(--paper); opacity: .7; }
+.tools { margin-left: auto; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.search { position: relative; display: flex; align-items: center; height: 32px; border: 1px solid var(--ink); background: var(--paper); min-width: 0; }
+.search svg { width: 15px; height: 15px; margin: 0 6px 0 8px; flex: none; }
+.search input { border: 0; background: none; outline: none; width: 190px; min-width: 0; height: 30px; font: 500 13px var(--f-mono); color: var(--ink); }
+.search input::placeholder { color: var(--ink-3); }
+.search input::-webkit-search-cancel-button { display: none; }
+.search:focus-within { outline: 2px solid var(--sel); outline-offset: 1px; }
+.search .count { font: 600 10.5px var(--f-mono); color: var(--sel); padding: 0 6px; white-space: nowrap; }
+.search kbd { font: 500 10px var(--f-mono); color: var(--ink-3); border: 1px solid var(--ink-4); padding: 0 4px; margin-right: 6px; line-height: 15px; }
+.tbtn { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 10px; border: 1px solid var(--ink); font: 600 12.5px var(--f-letter); letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; color: var(--ink); background: var(--paper); }
+.tbtn svg { width: 16px; height: 16px; flex: none; }
+.tbtn .n { font: 600 11px var(--f-mono); letter-spacing: 0; }
+.tbtn:hover { background: var(--tint-2); }
+.tbtn[aria-pressed="true"] { background: var(--red); border-color: var(--red); color: var(--paper); }
+.ibtn { display: inline-grid; place-items: center; width: 32px; height: 32px; border: 1px solid var(--ink); color: var(--ink); background: var(--paper); flex: none; }
+.ibtn svg { width: 17px; height: 17px; }
+.ibtn:hover { background: var(--tint-2); }
+#theme-toggle { width: auto; padding: 0 9px; gap: 6px; display: inline-flex; align-items: center; font: 600 11px var(--f-mono); letter-spacing: .06em; }
+#legend-btn { display: none; }
+
+/* ── Stage / canvas ────────────────────────────────────────────────────── */
+#stage { grid-area: stage; position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+#viewport { position: absolute; inset: 0; overflow: hidden; touch-action: none; cursor: grab; background-color: var(--paper); }
+#viewport.panning { cursor: grabbing; }
+#viewport:focus-visible { outline-offset: -3px; }
+#plan { position: absolute; inset: 0; width: 100%; height: 100%; display: block; user-select: none; -webkit-user-select: none; }
+.paper-minor { fill: url(#p-grid-minor); pointer-events: none; }
+/* lettering steps aside while the scale is changing and is re-lettered when the zoom stops */
+#plan.zooming #world text { display: none; }
+@keyframes letter-in { from { opacity: 0; } to { opacity: 1; } }
+#plan.relettered #world text { animation: letter-in .18s ease-out; }
+.paper-major { fill: url(#p-grid-major); pointer-events: none; }
+#world { transition: opacity .16s ease; }
+#plan.flip #world { opacity: .12; }
+
+.zoombox { position: absolute; left: 14px; bottom: 14px; display: flex; align-items: stretch; border: 1px solid var(--ink); background: var(--paper); z-index: 3; }
+.zoombox button { width: 34px; height: 32px; display: grid; place-items: center; border-right: 1px solid var(--ink); color: var(--ink); }
+.zoombox button:hover { background: var(--tint-2); }
+.zoombox button svg { width: 15px; height: 15px; }
+.zoombox .fit { width: auto; padding: 0 10px; font: 600 12px var(--f-letter); letter-spacing: .14em; }
+.zoombox .lvl { display: flex; flex-direction: column; justify-content: center; padding: 0 10px; font: 500 10px/1.25 var(--f-mono); color: var(--ink-2); white-space: nowrap; min-width: 112px; }
+.zoombox .lvl b { font-weight: 600; color: var(--ink); letter-spacing: .06em; }
+
+#tip { position: absolute; z-index: 6; pointer-events: none; background: var(--paper); border: 1px solid var(--ink); padding: 6px 9px 7px; max-width: 260px; box-shadow: 3px 3px 0 var(--shadow); }
+#tip .t1 { font: 600 10.5px var(--f-mono); color: var(--ink-2); letter-spacing: .04em; }
+#tip .t2 { font: 600 15px/1.15 var(--f-letter); color: var(--ink); margin-top: 2px; }
+#tip .t3 { font: 500 11px var(--f-mono); color: var(--ink-3); margin-top: 3px; }
+
+/* ── SVG plan: line weights wall > room > fixture ──────────────────────── */
+#world path, #world rect, #world circle, #world line, #world polyline, #world polygon { vector-effect: non-scaling-stroke; }
+.ext-poche { fill: url(#p-wall); stroke: none; }
+.ext-line { fill: none; stroke: var(--ink); stroke-width: 2.6; }
+.ext-line-in { fill: none; stroke: var(--ink); stroke-width: 1.2; }
+.wall-poche { fill: var(--poche); stroke: var(--ink); stroke-width: 1; }
+.jamb { stroke: var(--ink); stroke-width: 1.2; fill: none; }
+.door { fill: none; stroke: var(--ink-2); stroke-width: .8; }
+.door-leaf { fill: none; stroke: var(--ink); stroke-width: 1.2; }
+.room-wall { fill: none; stroke: var(--ink); stroke-width: 1.5; }
+.room-wall-in { fill: none; stroke: var(--ink); stroke-width: .6; opacity: .8; }
+.hall-axis { stroke: var(--ink-3); stroke-width: .8; stroke-dasharray: 18 4 3 4; fill: none; }
+.t-hall { font-family: var(--f-letter); font-weight: 500; font-size: 20px; letter-spacing: .2em; fill: var(--ink-2); text-transform: uppercase; }
+.dwg-c { fill: var(--paper); stroke: var(--ink); stroke-width: 1.6; }
+.dwg-rule { stroke: var(--ink); fill: none; }
+.t-dwg { font-family: var(--f-letter); font-weight: 700; font-size: 34px; letter-spacing: .1em; fill: var(--ink); }
+.t-dwg-n { font-family: var(--f-letter); font-weight: 700; font-size: 20px; fill: var(--ink); text-anchor: middle; }
+.t-dwg-s { font-family: var(--f-mono); font-weight: 500; font-size: 17px; fill: var(--ink-2); }
+.t-hall-k { font-family: var(--f-mono); font-weight: 600; font-size: 12px; letter-spacing: .08em; fill: var(--ink-3); }
+.floor { fill: var(--clear); stroke: none; pointer-events: all; cursor: pointer; }
+.room:hover .floor { fill: var(--tint-2); }
+.room.room-sel .floor { fill: var(--sel-wash); }
+.room-selframe { fill: none; stroke: var(--sel); stroke-width: 2.2; stroke-dasharray: 9 4; display: none; }
+.room.room-sel .room-selframe { display: inline; }
+.zone-hdr { cursor: pointer; }
+.hex { fill: var(--paper); stroke: var(--ink); stroke-width: 1.8; }
+.hex-in { fill: none; stroke: var(--ink); stroke-width: .6; }
+.t-hex { font-family: var(--f-letter); font-weight: 700; font-size: 26px; fill: var(--ink); text-anchor: middle; }
+.t-zone { font-family: var(--f-letter); font-weight: 700; font-size: 27px; letter-spacing: .08em; fill: var(--ink); }
+.t-zone-s { font-family: var(--f-mono); font-weight: 500; font-size: 17px; fill: var(--ink-2); }
+.t-zone-x { font-family: var(--f-mono); font-weight: 500; font-size: 12px; fill: var(--ink-3); }
+.zbar-o { fill: none; stroke: var(--ink); stroke-width: .9; }
+.rtag { fill: var(--paper); stroke: var(--ink); stroke-width: 1.4; }
+.t-rtag { font-family: var(--f-mono); font-weight: 600; font-size: 13.5px; fill: var(--ink); text-anchor: middle; }
+.t-room { font-family: var(--f-letter); font-weight: 600; font-size: 23px; letter-spacing: .05em; fill: var(--ink); }
+.t-room-s { font-family: var(--f-mono); font-weight: 500; font-size: 17.5px; fill: var(--ink-2); }
+.t-room-s .rv-n { fill: var(--red); font-weight: 600; }
+.room.dimroom .t-room, .room.dimroom .t-room-s, .room.dimroom .rtag, .room.dimroom .t-rtag { opacity: .35; }
+
+/* dimension strings */
+.dim-ext { stroke: var(--ink-2); stroke-width: .7; fill: none; }
+.dim-line { stroke: var(--ink); stroke-width: 1; fill: none; }
+.dim-rest { stroke: var(--ink-3); stroke-width: .7; stroke-dasharray: 3 3; fill: none; }
+.dim-tick { stroke: var(--ink); stroke-width: 1.6; fill: none; }
+.t-dim { font-family: var(--f-letter); font-weight: 600; font-size: 22px; letter-spacing: .07em; fill: var(--ink); }
+.t-dim-r { font-family: var(--f-mono); font-weight: 400; font-size: 13px; fill: var(--ink-3); }
+.dim-row { transition: opacity .2s; }
+#plan.lens-dev .dim-row:not(.dim-dev), #plan.lens-ops .dim-row:not(.dim-ops), #plan.lens-biz .dim-row:not(.dim-biz) { opacity: .28; }
+#plan.lens-dev .dim-dev .dim-line, #plan.lens-ops .dim-ops .dim-line, #plan.lens-biz .dim-biz .dim-line { stroke-width: 2; }
+
+/* fixtures: status by drafting convention */
+.fx { cursor: pointer; }
+.fx-hit, .hdr-hit { fill: var(--clear); stroke: none; pointer-events: all; }
+.t-fxtag, .t-fxval, .t-fxname, .t-fxmeta, .t-tkl, .t-room, .t-room-s, .t-zone, .t-zone-s, .t-zone-x, .t-dim, .t-dim-r, .t-unb { paint-order: stroke; stroke: var(--paper); stroke-width: 3px; stroke-linejoin: round; }
+.t-fxtag, .t-fxval, .t-fxname, .t-fxmeta, .t-tkl, .t-unb { stroke-width: 2.2px; }
+.fx > :not(.fx-hit) { pointer-events: none; }
+.fx:hover .fx-hover { display: inline; }
+.fx-hover { display: none; fill: var(--tint-2); stroke: var(--ink-3); stroke-width: .8; stroke-dasharray: 2 2; }
+.sym { stroke: var(--ink); }
+.sym-live { fill: var(--poche); stroke-width: 2.2; }
+.sym-ready { fill: var(--tint); stroke-width: 1.8; }
+.sym-build { fill: url(#p-build); stroke-width: 1.4; }
+.sym-plan { fill: none; stroke: var(--ink-2); stroke-width: 1.3; stroke-dasharray: 4 2.5; }
+.sym-block { fill: var(--paper); stroke-width: 1.4; }
+.redx { stroke: var(--red); stroke-width: 2.2; fill: none; stroke-linecap: round; }
+.att-mark { stroke: var(--red); stroke-width: 2.2; fill: none; stroke-linecap: square; }
+.leader { stroke: var(--red); stroke-width: 1; fill: none; }
+.kn-c { fill: var(--red); stroke: var(--paper); stroke-width: 1; }
+.t-kn { font-family: var(--f-mono); font-weight: 700; font-size: 9px; fill: var(--paper); text-anchor: middle; }
+.tk-f { fill: var(--ink); }
+.tk-o { fill: none; stroke: var(--ink-2); stroke-width: .8; }
+.tk-b { fill: var(--red); }
+.tk-n { fill: none; stroke: var(--ink-4); stroke-width: 1.1; }
+.t-tkl { font-family: var(--f-mono); font-weight: 600; font-size: 6px; fill: var(--ink-3); text-anchor: middle; }
+.t-fxtag { font-family: var(--f-mono); font-weight: 600; font-size: 10px; fill: var(--ink); letter-spacing: .02em; }
+.t-fxval { font-family: var(--f-mono); font-weight: 500; font-size: 8.5px; fill: var(--ink-2); }
+.t-fxname { font-family: var(--f-letter); font-weight: 500; font-size: 10.6px; fill: var(--ink); }
+.t-fxmeta { font-family: var(--f-mono); font-weight: 400; font-size: 6.8px; fill: var(--ink-3); }
+.st-blocked .t-fxmeta { fill: var(--red); }
+.cloud { fill: none; stroke: var(--red); stroke-width: 1.4; }
+.delta { fill: var(--paper); stroke: var(--red); stroke-width: 1.3; }
+.rv-changes .delta { fill: var(--red); }
+.t-delta { font-family: var(--f-mono); font-weight: 700; font-size: 6.8px; fill: var(--red); text-anchor: middle; }
+.rv-changes .t-delta { fill: var(--paper); }
+.fx-frame { display: none; fill: none; }
+.fx.match .fx-frame { display: inline; fill: var(--sel-wash); stroke: var(--sel); stroke-width: 1.6; }
+.fx.rel .fx-frame { display: inline; fill: none; stroke: var(--sel); stroke-width: 1.2; stroke-dasharray: 5 3; }
+.fx.sel .fx-frame { display: inline; fill: var(--sel-wash); stroke: var(--sel); stroke-width: 2.2; stroke-dasharray: none; }
+.fx-grip { display: none; fill: var(--paper); stroke: var(--sel); stroke-width: 1.4; }
+.fx.sel .fx-grip { display: inline; }
+.fx.dim { opacity: .13; }
+#plan.has-sel .fx:not(.sel):not(.rel) { opacity: .4; }
+#plan.has-sel .fx.dim:not(.sel):not(.rel) { opacity: .1; }
+.fx, .room { transition: opacity .18s; }
+
+/* S-201 structural */
+.frame { fill: none; stroke: var(--ink); stroke-width: 1.4; }
+.frame.unbraced { stroke: var(--amber); stroke-width: 1.6; }
+.frame.planned { stroke: var(--ink-2); stroke-dasharray: 4 2.5; }
+.frame-fill { fill: url(#p-struct); stroke: none; }
+.brace { stroke: var(--ink); stroke-width: 1.2; fill: none; }
+.col { fill: var(--ink); stroke: none; }
+.t-unb { font-family: var(--f-mono); font-weight: 700; font-size: 6.4px; fill: var(--amber); letter-spacing: .04em; }
+.grid-line { stroke: var(--ink-2); stroke-width: .8; stroke-dasharray: 22 5 3 5; fill: none; }
+.grid-bub { fill: var(--paper); stroke: var(--ink); stroke-width: 1.4; }
+.t-grid { font-family: var(--f-letter); font-weight: 700; font-size: 19px; fill: var(--ink); text-anchor: middle; }
+
+/* M-301 services */
+.riser { fill: var(--paper); stroke: var(--ink); stroke-width: 1.3; }
+.trunk { stroke: var(--ink-2); stroke-width: 1.6; fill: none; }
+.drop { stroke: var(--ink-2); stroke-width: 1.3; fill: none; }
+.drop.staging, .branch.staging { stroke-dasharray: 3 2; }
+.branch { stroke: var(--ink-2); stroke-width: 1.1; fill: none; }
+.outlet { stroke: var(--ink); stroke-width: 1.5; fill: var(--paper); }
+.outlet.on { fill: var(--poche); }
+.outlet.off { stroke: var(--ink-3); stroke-dasharray: 2.5 2; }
+.half { fill: var(--poche); stroke: none; }
+.ft { stroke: var(--ink); stroke-width: 1; fill: var(--paper); }
+.ft.done { fill: var(--ink); }
+.ft.partial { fill: url(#p-half); }
+.ft.blocked { fill: var(--red); stroke: var(--red); }
+.ft.na { stroke: var(--ink-4); stroke-dasharray: 1.5 1.5; }
+
+/* B-401 program */
+.wash-hi { fill: url(#p-dots-hi); }
+.wash-mid { fill: url(#p-dots-mid); }
+.wash-lo { fill: url(#p-dots-lo); }
+.datum { fill: none; stroke: var(--ink); stroke-width: 1.4; }
+.datum-x { stroke: var(--ink); stroke-width: .8; fill: none; }
+.q.done { fill: var(--poche); }
+.q.partial { fill: url(#p-half); }
+.q.todo, .q.na { fill: none; }
+.q.blocked { fill: var(--red); }
+.gauge-o { fill: none; stroke: var(--ink-2); stroke-width: .9; }
+.gauge-o.none { stroke-dasharray: 2 2; stroke: var(--ink-3); }
+.gauge-f { fill: var(--ink-2); }
+
+/* links */
+.lnk { fill: none; stroke: var(--sel); stroke-width: 1.8; }
+.lnk.dep-in { stroke-dasharray: 6 4; stroke-width: 1.4; }
+.lnk-head { fill: var(--sel); stroke: none; }
+.lnk-tag { fill: var(--paper); stroke: var(--sel); stroke-width: 1; }
+.t-lnk { font-family: var(--f-mono); font-weight: 600; fill: var(--sel); text-anchor: middle; }
+
+/* key plan plates */
+.plate { fill: var(--paper); stroke: var(--ink); stroke-width: 1.2; }
+.t-plate { font-family: var(--f-letter); font-weight: 700; font-size: 13px; letter-spacing: .1em; fill: var(--ink); text-anchor: middle; }
+.t-plate-s { font-family: var(--f-mono); font-weight: 500; font-size: 10.5px; fill: var(--ink-2); text-anchor: middle; }
+.t-plate-l { font-family: var(--f-letter); font-weight: 700; font-size: 15px; fill: var(--ink); text-anchor: middle; }
+
+/* zoom levels: lv0 key plan, lv1 sheet, lv2 room, lv3 detail */
+#plan .lv-s, #plan .lv-r, #plan .lv-d, #plan .lv-k { display: none; }
+#plan.lv1 .lv-s, #plan.lv2 .lv-s, #plan.lv3 .lv-s { display: inline; }
+#plan.lv2 .lv-r, #plan.lv3 .lv-r { display: inline; }
+#plan.lv3 .lv-d { display: inline; }
+#plan.lv0 .lv-k { display: inline; }
+#plan.lv0 .t-kn, #plan.lv1 .t-kn, #plan.lv0 .t-delta, #plan.lv1 .t-delta { display: none; }
+/* lenses: sheets of the set */
+.gl { display: none; }
+#plan.lens-overall .gl-a, #plan.lens-dev .gl-s, #plan.lens-ops .gl-m, #plan.lens-biz .gl-b { display: inline; }
+#g-serv, #g-wash, #g-grid { display: none; }
+#plan.lens-ops #g-serv, #plan.lens-biz #g-wash, #plan.lens-dev #g-grid { display: inline; }
+#g-base { transition: opacity .2s; }
+#plan:not(.lens-overall) #g-base { opacity: .42; }
+.rv { display: none; }
+#plan.trust .rv { display: inline; }
+#plan.trust .fx:not(.trustfx):not(.sel):not(.rel) { opacity: .45; }
+#plan.trust .fx.dim:not(.trustfx) { opacity: .13; }
+
+/* ── Sheet column (desktop) / notes sheet (phone) ──────────────────────── */
+#strip { grid-area: strip; display: flex; flex-direction: column; min-height: 0; background: var(--paper-2); border-left: 3px double var(--ink); z-index: 4; }
+.strip-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.sheet-grab { display: none; }
+.sn { border-bottom: 1px solid var(--ink); padding: 10px 14px 12px; }
+.sn-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 0 8px; font: 700 12px var(--f-letter); letter-spacing: .18em; text-transform: uppercase; color: var(--ink); }
+.sn-h .aside { font: 500 10px var(--f-mono); letter-spacing: .04em; color: var(--ink-3); text-transform: none; }
+.sn-h button { display: flex; align-items: center; gap: 6px; font: inherit; letter-spacing: inherit; text-transform: inherit; }
+.sn-h button svg { width: 11px; height: 11px; transition: transform .15s; }
+.sn-h button[aria-expanded="false"] svg { transform: rotate(-90deg); }
+.chip-rows { display: grid; gap: 0; border: 1px solid var(--ink); }
+.chip { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 4px 8px; border-bottom: 1px solid var(--ink-4); text-align: left; color: var(--ink); transition: background-color .12s, opacity .12s; }
+.chip:last-child { border-bottom: 0; }
+.chip svg { width: 22px; height: 18px; display: block; }
+.chip .l1 { font: 600 13.5px/1.05 var(--f-letter); letter-spacing: .1em; text-transform: uppercase; display: block; }
+.chip .l2 { font: 400 10px/1.2 var(--f-mono); color: var(--ink-3); display: block; }
+.chip .c { font: 600 15px var(--f-mono); }
+.chip:hover { background: var(--tint-2); }
+.chip[aria-pressed="true"] { background: var(--sel-wash); box-shadow: inset 3px 0 0 var(--sel); }
+.chip-rows.filtering .chip[aria-pressed="false"] { opacity: .5; }
+.hint { font: 400 10.5px var(--f-mono); color: var(--ink-3); margin: 6px 0 0; }
+.comp { display: grid; gap: 7px; }
+.comp-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) 40px; align-items: center; gap: 8px; }
+.comp-row .k { font: 700 12px var(--f-letter); letter-spacing: .12em; }
+.comp-row .v { font: 600 13px var(--f-mono); text-align: right; }
+.comp-row svg { width: 100%; height: 16px; display: block; }
+.comp-row.on .k, .comp-row.on .v { color: var(--sel); }
+.redlines { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--ink); margin-top: 10px; }
+.redlines > div { padding: 6px 8px; }
+.redlines > div + div { border-left: 1px solid var(--ink); }
+.redlines .k { font: 600 10px var(--f-mono); letter-spacing: .06em; color: var(--ink-3); display: block; }
+.redlines .v { font: 700 22px/1.1 var(--f-letter); color: var(--red); }
+.redlines .v small { font: 500 11px var(--f-mono); color: var(--ink-3); margin-left: 4px; }
+.legend { display: grid; gap: 4px; }
+.lg-sec { font: 600 10px var(--f-mono); letter-spacing: .12em; color: var(--ink-3); text-transform: uppercase; margin: 8px 0 2px; }
+.lg-sec:first-child { margin-top: 0; }
+.lg { display: grid; grid-template-columns: 40px minmax(0, 1fr); align-items: center; gap: 9px; }
+.lg svg { width: 40px; height: 26px; display: block; overflow: visible; }
+.lg .t { font: 600 12px/1.15 var(--f-letter); letter-spacing: .08em; text-transform: uppercase; }
+.lg .d { font: 400 11px/1.25 var(--f-text); color: var(--ink-3); display: block; letter-spacing: 0; text-transform: none; }
+.keynotes { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; border-top: 1px solid var(--ink-4); }
+.keynotes li { border-bottom: 1px solid var(--ink-4); }
+.keynotes button { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; padding: 6px 2px; text-align: left; width: 100%; }
+.keynotes button:hover { background: var(--tint-2); }
+.kn-n { width: 19px; height: 19px; border-radius: 50%; background: var(--red); color: var(--paper); font: 700 10px/19px var(--f-mono); text-align: center; margin-top: 1px; }
+.kn-t { font: 600 13px/1.15 var(--f-letter); letter-spacing: .03em; display: block; }
+.kn-t b { font: 600 10.5px var(--f-mono); color: var(--ink-2); margin-right: 5px; letter-spacing: 0; }
+.kn-d { font: 400 11.5px/1.3 var(--f-text); color: var(--ink-3); display: block; margin-top: 1px; }
+.kn-d em { font-style: normal; color: var(--red); font-family: var(--f-mono); font-size: 10px; font-weight: 600; letter-spacing: .04em; }
+
+/* title block */
+.titleblock { flex: none; border-top: 3px double var(--ink); background: var(--paper); font-family: var(--f-mono); }
+.tb-row { display: grid; border-bottom: 1px solid var(--ink); }
+.tb-row:last-child { border-bottom: 0; }
+.tb-cell { padding: 5px 9px 6px; min-width: 0; }
+.tb-cell + .tb-cell { border-left: 1px solid var(--ink); }
+.tb-k { display: block; font: 500 8.5px var(--f-mono); letter-spacing: .14em; color: var(--ink-3); text-transform: uppercase; }
+.tb-v { display: block; font: 600 11px/1.25 var(--f-mono); color: var(--ink); letter-spacing: .02em; }
+.tb-proj .tb-v { font: 700 21px/1 var(--f-letter); letter-spacing: .16em; margin-top: 2px; }
+.tb-proj .sub { font: 400 10.5px/1.3 var(--f-text); color: var(--ink-2); display: block; margin-top: 2px; }
+.tb-sheet { grid-template-columns: minmax(0, 1fr) 104px; }
+.tb-title { font: 700 14px/1.1 var(--f-letter) !important; letter-spacing: .1em !important; text-transform: uppercase; margin-top: 2px; }
+.tb-num { display: block; font: 700 31px/1 var(--f-letter); letter-spacing: .02em; margin-top: 2px; }
+.tb-meta { grid-template-columns: 1fr 1fr 1fr; }
+.tb-scale { grid-template-columns: minmax(0, 1fr) 54px; align-items: center; }
+.tb-scale svg.bar { width: 100%; height: 22px; display: block; margin-top: 3px; }
+.tb-scale svg.north { width: 40px; height: 40px; display: block; margin: 0 auto; }
+.tb-cell.na { display: flex; align-items: center; justify-content: center; }
+
+/* ── Inspector: detail sheet ───────────────────────────────────────────── */
+#inspector { position: absolute; top: var(--bar-h); right: 0; bottom: 0; width: min(var(--insp-w), 100%); z-index: 8; display: flex; flex-direction: column; background: var(--paper); border-left: 3px double var(--ink); box-shadow: -6px 0 0 var(--shadow); transform: translateX(0); transition: transform .22s ease; }
+#inspector.closed { transform: translateX(105%); box-shadow: none; visibility: hidden; transition: transform .22s ease, visibility 0s .22s; }
+.insp-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px 9px 16px; border-bottom: 1px solid var(--ink); flex: none; }
+.insp-kick { font: 600 10.5px var(--f-mono); letter-spacing: .14em; color: var(--ink-3); text-transform: uppercase; }
+.insp-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px 22px; overscroll-behavior: contain; }
+.ins-title { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: start; }
+.ins-callout { width: 58px; height: 58px; border: 1.5px solid var(--ink); border-radius: 50%; display: grid; place-items: center; position: relative; }
+.ins-callout::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 1px solid var(--ink); }
+.ins-callout span { font: 700 12px var(--f-mono); position: relative; top: -10px; }
+.ins-callout small { font: 600 9px var(--f-mono); color: var(--ink-3); position: absolute; bottom: 10px; left: 0; right: 0; text-align: center; letter-spacing: .06em; }
+.ins-name { font: 700 23px/1.08 var(--f-letter); letter-spacing: .02em; margin: 2px 0 4px; text-wrap: balance; }
+.crumb { font: 500 10.5px/1.4 var(--f-mono); color: var(--ink-2); letter-spacing: .04em; }
+.crumb button { display: inline; text-align: left; text-decoration: underline; text-decoration-color: var(--ink-4); text-underline-offset: 2px; letter-spacing: inherit; }
+.crumb button:hover { color: var(--sel); }
+.ins-sum { font: 400 14.5px/1.42 var(--f-text); margin: 12px 0 0; color: var(--ink); max-width: 62ch; }
+.rl-note { margin-top: 12px; border: 1.5px solid var(--red); padding: 8px 10px; background: var(--red-wash); }
+.rl-note .h { font: 700 11px var(--f-mono); letter-spacing: .12em; color: var(--red); display: flex; align-items: center; gap: 7px; }
+.rl-note p { margin: 3px 0 0; font: 500 14px/1.38 var(--f-text); color: var(--ink); }
+.pl-note { margin-top: 10px; border-left: 3px solid var(--ink-2); padding: 3px 0 3px 10px; }
+.pl-note .h { font: 600 10px var(--f-mono); letter-spacing: .12em; color: var(--ink-3); }
+.pl-note p { margin: 2px 0 0; font: 400 13.5px/1.38 var(--f-text); }
+.ins-h { font: 700 12px var(--f-letter); letter-spacing: .18em; text-transform: uppercase; margin: 20px 0 6px; display: flex; justify-content: space-between; align-items: baseline; }
+.ins-h span { font: 500 10px var(--f-mono); letter-spacing: .04em; color: var(--ink-3); text-transform: none; }
+.kv { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--ink); margin-top: 14px; }
+.kv > div { padding: 5px 8px 6px; border-bottom: 1px solid var(--ink-4); min-width: 0; }
+.kv > div:nth-child(odd) { border-right: 1px solid var(--ink-4); }
+.kv > div:nth-last-child(-n+2) { border-bottom: 0; }
+.kv .k { display: block; font: 500 9px var(--f-mono); letter-spacing: .12em; color: var(--ink-3); text-transform: uppercase; }
+.kv .v { display: flex; align-items: center; gap: 6px; font: 600 14px/1.2 var(--f-letter); letter-spacing: .03em; margin-top: 2px; }
+.kv .v svg { width: 18px; height: 16px; flex: none; }
+.kv .v small { font: 500 10.5px var(--f-mono); color: var(--ink-3); letter-spacing: 0; }
+.kv .v .warn { color: var(--red); }
+table.ruled { width: 100%; border-collapse: collapse; border: 1px solid var(--ink); font-family: var(--f-mono); font-size: 11.5px; }
+table.ruled th, table.ruled td { padding: 4px 7px; text-align: left; border-bottom: 1px solid var(--ink-4); vertical-align: middle; }
+table.ruled tr.dh th { background: var(--tint-2); border-bottom: 1px solid var(--ink); border-top: 1px solid var(--ink); font: 700 11.5px var(--f-letter); letter-spacing: .14em; text-transform: uppercase; }
+table.ruled tr.dh th .q { float: right; font: 600 11px var(--f-mono); letter-spacing: 0; color: var(--ink-2); }
+table.ruled td.fl { font: 500 13.5px var(--f-text); color: var(--ink); }
+table.ruled td.mk { width: 26px; padding-right: 0; }
+table.ruled td.mk svg { width: 20px; height: 13px; display: block; }
+table.ruled td.st { width: 92px; font-weight: 600; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); }
+table.ruled td.st.blocked { color: var(--red); }
+.metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--ink); }
+.metrics > div { padding: 6px 8px; }
+.metrics > div + div { border-left: 1px solid var(--ink-4); }
+.metrics .k { display: block; font: 500 9px var(--f-mono); letter-spacing: .12em; color: var(--ink-3); }
+.metrics .v { font: 700 20px/1.15 var(--f-letter); }
+.metrics .v.none { color: var(--ink-4); }
+.refs { display: grid; gap: 0; border-top: 1px solid var(--ink-4); }
+.ref { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 9px; align-items: center; text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--ink-4); width: 100%; }
+.ref:hover { background: var(--sel-wash); }
+.ref .see { font: 600 10.5px var(--f-mono); color: var(--sel); letter-spacing: .04em; white-space: nowrap; }
+.ref .nm { font: 600 14px/1.15 var(--f-letter); letter-spacing: .02em; min-width: 0; }
+.ref .rm { font: 500 10px var(--f-mono); color: var(--ink-3); white-space: nowrap; }
+.ref svg { width: 18px; height: 14px; }
+.ref-empty { font: 400 12px var(--f-mono); color: var(--ink-3); padding: 6px 4px; }
+.ref-h { font: 600 10px var(--f-mono); letter-spacing: .12em; color: var(--ink-3); margin: 10px 0 3px; text-transform: uppercase; }
+.mod-sum { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border: 1px solid var(--ink); margin-top: 12px; }
+.mod-sum > div { padding: 5px 4px 6px; text-align: center; }
+.mod-sum > div + div { border-left: 1px solid var(--ink-4); }
+.mod-sum svg { width: 18px; height: 16px; display: block; margin: 0 auto 2px; }
+.mod-sum .c { font: 700 18px/1 var(--f-letter); display: block; }
+.mod-sum .k { font: 500 8.5px var(--f-mono); letter-spacing: .08em; color: var(--ink-3); display: block; margin-top: 2px; text-transform: uppercase; }
+
+/* ── Phone furniture ───────────────────────────────────────────────────── */
+#chips-row { display: none; }
+#foot { display: none; }
+.scrim { display: none; }
+
+@media (max-width: 1180px) {
+  :root { --strip-w: 260px; }
+  .tb-meta .tb-v { font-size: 10px; white-space: nowrap; }
+  .tb-meta .tb-cell { padding-left: 7px; padding-right: 4px; }
+  .redlines .k { font-size: 9px; letter-spacing: .02em; }
+  .sheet-tab .nm { display: none; }
+  .search input { width: 150px; }
+}
+@media (max-width: 860px) {
+  :root { --bar-h: 50px; }
+  #app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto; grid-template-areas: "bar" "chips" "stage" "foot"; }
+  #bar { gap: 8px; padding: 0 10px; height: 50px; }
+  #bar .sheets, .brand-kick, .search kbd, #trust-toggle .lbl, #theme-toggle .lbl { display: none; }
+  .brand svg { width: 26px; height: 26px; }
+  .brand-name { font-size: 17px; margin-top: 0; }
+  .brand-name b { display: block; margin: 2px 0 0; font-size: 10px; }
+  .tools { gap: 6px; flex: 1; justify-content: flex-end; }
+  .search { flex: 1; min-width: 0; max-width: 230px; }
+  .search input { width: 100%; }
+  #legend-btn { display: inline-grid; }
+  #theme-toggle { padding: 0; width: 32px; justify-content: center; }
+  #chips-row { grid-area: chips; display: flex; gap: 6px; overflow-x: auto; padding: 7px 10px; border-bottom: 1px solid var(--ink); scrollbar-width: none; background: var(--paper); }
+  #chips-row::-webkit-scrollbar { display: none; }
+  #chips-row .chip { grid-template-columns: 16px auto auto; border: 1px solid var(--ink); padding: 2px 7px 2px 5px; gap: 5px; flex: none; }
+  #chips-row .chip:last-child { border-bottom: 1px solid var(--ink); }
+  #chips-row .chip svg { width: 16px; height: 14px; }
+  #chips-row .chip .l1 { font-size: 12px; letter-spacing: .06em; }
+  #chips-row .chip .l2 { display: none; }
+  #chips-row .chip .c { font-size: 12px; }
+  #chips-row.filtering .chip[aria-pressed="false"] { opacity: .55; }
+  .zoombox.desk { display: none; }
+  #foot { grid-area: foot; display: block; border-top: 3px double var(--ink); background: var(--paper); padding-bottom: env(safe-area-inset-bottom, 0px); z-index: 5; }
+  .foot-r1 { display: flex; align-items: stretch; border-bottom: 1px solid var(--ink); }
+  .foot-r1 .sheets { border: 0; flex: 1; min-width: 0; }
+  .foot-r1 .sheet-tab { flex: 1; justify-content: center; padding: 6px 2px; flex-direction: column; gap: 0; }
+  .foot-r1 .sheet-tab .nm { display: block; font-size: 10px; letter-spacing: .08em; }
+  .foot-r1 .sheet-tab .no { font-size: 11px; }
+  .foot-r1 .sheet-tab kbd { display: none; }
+  .foot-r1 .zoombox { position: static; border: 0; border-left: 1px solid var(--ink); }
+  .foot-r1 .zoombox button { width: 38px; height: auto; }
+  .foot-r1 .zoombox button:last-child { border-right: 0; }
+  .foot-r1 .zoombox .fit { padding: 0 8px; font-size: 11px; }
+  .foot-r2 { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 10px 5px; font: 500 10.5px var(--f-mono); color: var(--ink-2); white-space: nowrap; overflow: hidden; }
+  .foot-r2 b { color: var(--ink); font-weight: 700; }
+  .foot-r2 .att { color: var(--red); font-weight: 700; }
+  .foot-r2 .sum { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  #strip { position: fixed; left: 0; right: 0; bottom: 0; height: min(72%, 600px); border-left: 0; border-top: 3px double var(--ink); z-index: 9; transform: translateY(0); transition: transform .24s ease; box-shadow: 0 -6px 0 var(--shadow); }
+  #strip.closed { transform: translateY(104%); visibility: hidden; transition: transform .24s ease, visibility 0s .24s; }
+  #strip .titleblock, #strip .sn-sched { display: none; }
+  .sheet-grab { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px 8px 14px; border-bottom: 1px solid var(--ink); flex: none; }
+  .sheet-grab .h { font: 700 12px var(--f-letter); letter-spacing: .18em; text-transform: uppercase; }
+  #inspector { top: auto; left: 0; right: 0; width: auto; height: min(62%, 560px); border-left: 0; border-top: 3px double var(--ink); box-shadow: 0 -6px 0 var(--shadow); }
+  #inspector.closed { transform: translateY(104%); }
+  .insp-head { padding: 6px 10px 6px 14px; }
+  .insp-body { padding: 12px 14px 20px; }
+  .ins-name { font-size: 21px; }
+  .scrim.on { display: block; position: fixed; inset: 0; z-index: 8; background: var(--clear); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="bar">
+    <div class="brand">
+      <svg viewBox="0 0 30 30" aria-hidden="true"><rect x="2" y="2" width="26" height="26" fill="none" stroke="var(--ink)" stroke-width="2.4"/><rect x="5" y="5" width="20" height="20" fill="none" stroke="var(--ink)" stroke-width=".8"/><path d="M15 5v9h10" fill="none" stroke="var(--ink)" stroke-width="1.4"/><path d="M5 19h6" fill="none" stroke="var(--ink)" stroke-width="1.4"/><path d="M11 19a6 6 0 0 1 -6 6" fill="none" stroke="var(--ink-2)" stroke-width=".8"/><rect x="18" y="17" width="5" height="5" fill="var(--poche)"/></svg>
+      <div class="brand-txt"><span class="brand-kick">APP BLUEPRINT · SET</span><span class="brand-name" id="brand-name">Larkspur<b id="brand-ver"></b></span></div>
+    </div>
+    <nav class="sheets" id="sheets-bar" aria-label="Drawing sheets"></nav>
+    <div class="tools">
+      <label class="search" for="search">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.6" fill="none" stroke="var(--ink)" stroke-width="1.6"/><path d="M10 10l4.4 4.4" stroke="var(--ink)" stroke-width="1.8" fill="none"/></svg>
+        <span class="vh">Search fixtures</span>
+        <input id="search" type="search" placeholder="Find fixture" autocomplete="off" spellcheck="false">
+        <span class="count" id="search-count" aria-live="polite"></span>
+        <kbd>/</kbd>
+      </label>
+      <button class="tbtn" id="trust-toggle" type="button" aria-pressed="false" title="AI review overlay (R)" aria-label="AI review overlay: agent work awaiting a human check (R)">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2l6.2 11H1.8z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 6.6v3.2" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="11.4" r=".9" fill="currentColor"/></svg>
+        <span class="lbl">AI review</span><span class="n" id="trust-n"></span>
+      </button>
+      <button class="ibtn" id="legend-btn" type="button" aria-label="Legend and sheet notes (L)" aria-expanded="false">
+        <svg viewBox="0 0 18 18" aria-hidden="true"><rect x="2" y="2.5" width="4" height="4" fill="var(--poche)" stroke="currentColor" stroke-width="1.2"/><rect x="2" y="11" width="4" height="4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 1.4"/><path d="M8.5 4.5h7.5M8.5 13h7.5" stroke="currentColor" stroke-width="1.5"/></svg>
+      </button>
+      <button class="ibtn" id="theme-toggle" type="button" aria-label="Theme: follows system. Click to change (T)">
+        <svg viewBox="0 0 18 18" aria-hidden="true" id="theme-icon"></svg><span class="lbl" id="theme-lbl">AUTO</span>
+      </button>
+    </div>
+  </header>
+
+  <div id="chips-row" class="chip-set" role="group" aria-label="Filter by status"></div>
+
+  <main id="stage">
+    <div id="viewport" tabindex="0" aria-label="Blueprint canvas. Drag to pan, scroll or pinch to zoom, click a fixture to inspect.">
+      <svg id="plan" class="lens-overall lv1" role="img" aria-label="Floor plan of the Larkspur product">
+        <defs>
+          <pattern id="p-wall" patternUnits="userSpaceOnUse" width="7" height="7" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="7" stroke="var(--hatch)" stroke-width="1.6"/></pattern>
+          <pattern id="p-build" patternUnits="userSpaceOnUse" width="5" height="5" patternTransform="rotate(45)"><rect x="0" y="0" width="5" height="5" fill="var(--paper)"/><line x1="0" y1="0" x2="0" y2="5" stroke="var(--amber)" stroke-width="2.2"/></pattern>
+          <pattern id="p-half" patternUnits="userSpaceOnUse" width="3.4" height="3.4" patternTransform="rotate(-45)"><rect x="0" y="0" width="3.4" height="3.4" fill="var(--paper)"/><line x1="0" y1="0" x2="0" y2="3.4" stroke="var(--ink)" stroke-width="1.3"/></pattern>
+          <pattern id="p-struct" patternUnits="userSpaceOnUse" width="4" height="4" patternTransform="rotate(45)"><rect x="0" y="0" width="4" height="4" fill="var(--tint)"/><line x1="0" y1="0" x2="0" y2="4" stroke="var(--ink-2)" stroke-width="1.1"/></pattern>
+          <pattern id="p-dots-hi" patternUnits="userSpaceOnUse" width="8" height="8"><rect x="0" y="0" width="8" height="8" fill="var(--tint)"/><circle cx="2" cy="2" r="1.3" fill="var(--ink-4)"/><circle cx="6" cy="6" r="1.3" fill="var(--ink-4)"/></pattern>
+          <pattern id="p-dots-mid" patternUnits="userSpaceOnUse" width="10" height="10"><rect x="0" y="0" width="10" height="10" fill="var(--tint-2)"/><circle cx="2.5" cy="2.5" r="1.1" fill="var(--ink-4)"/><circle cx="7.5" cy="7.5" r="1.1" fill="var(--ink-4)"/></pattern>
+ <pattern id="p-grid-minor" patternUnits="userSpaceOnUse" width="25" height="25"><path id="pg-minor" d="M0 .5H25M.5 0V25" stroke="var(--grid-minor)" stroke-width="1" fill="none"/></pattern>
+          <pattern id="p-grid-major" patternUnits="userSpaceOnUse" width="125" height="125"><path id="pg-major" d="M0 .5H125M.5 0V125" stroke="var(--grid-major)" stroke-width="1" fill="none"/></pattern>
+          <pattern id="p-dots-lo" patternUnits="userSpaceOnUse" width="18" height="18"><path d="M0 18L18 0" stroke="var(--ink-4)" stroke-width="1"/></pattern>
+        </defs>
+        <rect class="paper-minor" x="0" y="0" width="100%" height="100%"/>
+        <rect class="paper-major" x="0" y="0" width="100%" height="100%"/>
+        <g id="world"></g>
+      </svg>
+    </div>
+    <div class="zoombox desk" role="group" aria-label="Zoom">
+      <button type="button" data-act="zoom-out" id="zoom-out" aria-label="Zoom out (-)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10" stroke="currentColor" stroke-width="1.8"/></svg></button>
+      <button type="button" data-act="zoom-in" id="zoom-in" aria-label="Zoom in (+)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M8 3v10" stroke="currentColor" stroke-width="1.8"/></svg></button>
+      <button type="button" data-act="fit" id="zoom-fit" class="fit" aria-label="Fit whole plan (0)">FIT</button>
+      <div class="lvl" aria-live="polite"><b id="lvl-name">SHEET</b><span id="lvl-scale">1:100</span></div>
+    </div>
+    <div id="tip" hidden></div>
+  </main>
+
+  <aside id="strip" aria-label="Sheet notes">
+    <div class="sheet-grab"><span class="h">Sheet notes</span><button class="ibtn" type="button" id="strip-close" aria-label="Close sheet notes"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
+    <div class="strip-scroll">
+      <section class="sn sn-sched">
+        <h2 class="sn-h">Fixture schedule <span class="aside">select to filter</span></h2>
+        <div class="chip-rows chip-set" id="chips-strip" role="group" aria-label="Filter by status"></div>
+      </section>
+      <section class="sn">
+        <h2 class="sn-h">Completion <span class="aside" id="comp-aside"></span></h2>
+        <div class="comp" id="comp"></div>
+        <div class="redlines">
+          <div><span class="k">ATTENTION</span><span class="v" id="att-n"></span></div>
+          <div><span class="k">AWAITING REVIEW</span><span class="v" id="rev-n"></span></div>
+        </div>
+      </section>
+      <section class="sn" id="legend-sec">
+        <h2 class="sn-h"><button type="button" id="legend-toggle" aria-expanded="true" aria-controls="legend"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>Legend</button><span class="aside" id="legend-aside"></span></h2>
+        <div class="legend" id="legend"></div>
+      </section>
+      <section class="sn">
+        <h2 class="sn-h">Redline keynotes <span class="aside">blocked or changes requested</span></h2>
+        <ol class="keynotes" id="keynotes"></ol>
+      </section>
+    </div>
+    <div class="titleblock" id="titleblock">
+      <div class="tb-row"><div class="tb-cell tb-proj"><span class="tb-k">Project</span><span class="tb-v" id="tb-proj"></span><span class="sub" id="tb-sub"></span></div></div>
+      <div class="tb-row tb-sheet"><div class="tb-cell"><span class="tb-k">Sheet title</span><span class="tb-v tb-title" id="tb-title"></span></div><div class="tb-cell"><span class="tb-k">Sheet no.</span><span class="tb-num" id="tb-num"></span></div></div>
+      <div class="tb-row tb-meta"><div class="tb-cell"><span class="tb-k">Date</span><span class="tb-v" id="tb-date"></span></div><div class="tb-cell"><span class="tb-k">Drawn</span><span class="tb-v">Agent crews</span></div><div class="tb-cell"><span class="tb-k">Checked</span><span class="tb-v">Humans</span></div></div>
+      <div class="tb-row tb-scale"><div class="tb-cell"><span class="tb-k">Scale <span id="tb-scale-v"></span></span><svg class="bar" id="scalebar" aria-hidden="true"></svg></div><div class="tb-cell na"><svg class="north" viewBox="0 0 40 40" aria-label="North arrow" role="img"><circle cx="20" cy="22" r="13" fill="none" stroke="var(--ink)" stroke-width="1.2"/><path d="M20 6l6 22-6-4-6 4z" fill="none" stroke="var(--ink)" stroke-width="1.2" stroke-linejoin="round"/><path d="M20 6l6 22-6-4z" fill="var(--ink)"/><text x="20" y="40" text-anchor="middle" font-family="var(--f-letter)" font-weight="700" font-size="9" fill="var(--ink)">N</text></svg></div></div>
+    </div>
+  </aside>
+
+  <section id="inspector" class="closed" aria-label="Inspector" aria-hidden="true">
+    <div class="insp-head"><span class="insp-kick" id="insp-kick">Fixture schedule</span><button class="ibtn" type="button" id="insp-close" aria-label="Close inspector (Esc)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
+    <div class="insp-body" id="insp-body"></div>
+  </section>
+
+  <footer id="foot">
+    <div class="foot-r1">
+      <nav class="sheets" id="sheets-foot" aria-label="Drawing sheets"></nav>
+      <div class="zoombox" role="group" aria-label="Zoom">
+        <button type="button" data-act="zoom-out" aria-label="Zoom out"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10" stroke="currentColor" stroke-width="1.8"/></svg></button>
+        <button type="button" data-act="zoom-in" aria-label="Zoom in"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M8 3v10" stroke="currentColor" stroke-width="1.8"/></svg></button>
+        <button type="button" data-act="fit" class="fit" aria-label="Fit whole plan">FIT</button>
+      </div>
+    </div>
+    <div class="foot-r2"><span class="sum" id="foot-sum"></span><span id="foot-scale"></span></div>
+  </footer>
+  <div class="scrim" id="scrim"></div>
+</div>
+
+<script src="../../shared/blueprint-data.js"></script>
+<script src="../../shared/blueprint-model.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // STATE
+  // ═══════════════════════════════════════════════════════════════════════
+  const BP = window.BP;
+  const NS = 'http://www.w3.org/2000/svg';
+  const ROOT = document.documentElement;
+  const $ = (s, r) => (r || document).querySelector(s);
+  const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+
+  const LENSES = [
+    { id: 'overall', key: '1', sheet: 'A-101', name: 'Overall', discipline: 'Architectural', title: 'Floor plan · Overall', short: 'OVR' },
+    { id: 'dev', key: '2', sheet: 'S-201', name: 'Development', discipline: 'Structural', title: 'Structural plan · Development', short: 'DEV' },
+    { id: 'ops', key: '3', sheet: 'M-301', name: 'Operations', discipline: 'Services', title: 'Services plan · Operations', short: 'OPS' },
+    { id: 'biz', key: '4', sheet: 'B-401', name: 'Business', discipline: 'Program', title: 'Program plan · Business', short: 'BIZ' },
+  ];
+  const LENS = {};
+  LENSES.forEach((l) => { LENS[l.id] = l; });
+  const STATUS_TERMS = {
+    live: 'Existing construction',
+    ready: 'Built, awaiting release',
+    building: 'New construction',
+    planned: 'Future work',
+    blocked: 'Redline, cannot progress',
+  };
+  const DIMS = BP.DIMENSIONS;
+  const STATUS_LABEL = {};
+  BP.STATUSES.forEach((s) => { STATUS_LABEL[s.id] = s.label; });
+  const FACET_LABEL = {};
+  BP.FACET_STATES.forEach((s) => { FACET_LABEL[s.id] = s.label; });
+
+  // Zoom thresholds (screen px per world unit) for the four levels of detail.
+  const LV = { SHEET: 0.36, ROOM: 0.9, DETAIL: 1.4 };
+  const LV_NAMES = ['Key plan', 'Sheet', 'Room', 'Detail'];
+  const K_MAX = 5;
+  // Plan geometry, world units (1 unit = 2 cm on the "building").
+  const G = {
+    cellW: 110, cellH: 94, cw: 104, ch: 88,
+    roomPad: 10, roomHdr: 82, roomGap: 14, roomMinW: 232,
+    corridor: 34, ring: 20, wingHdr: 76, wingWall: 16,
+    hallWall: 10, hallOpen: 74, ext: 18,
+    dimOff: 42, dimStep: 36, gridOff: 34,
+    door: 20, entry: 40,
+  };
+  const STACK = {
+    letter: '"Saira Condensed","Barlow Condensed","Roboto Condensed","Arial Narrow",sans-serif',
+    mono: '"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace',
+  };
+
+  const state = {
+    lens: 'overall',
+    statuses: new Set(),
+    query: '',
+    trust: false,
+    sel: null,               // { type: 'feature' | 'module', id }
+    cam: { x: 0, y: 0, k: 0.5 },
+    level: -1,
+    theme: 'system',
+    legendOpen: true,
+    touched: false,          // user moved the camera since the last fit
+  };
+
+  const FX = new Map();      // feature id -> record
+  const ROOMS = new Map();   // module id -> record
+  const WINGS = [];          // domain records in display order
+  let PLAN = null;           // overall geometry
+  const productRoll = BP.productRollup();
+
+  /** Short tag for a feature by display order, e.g. F-047. */
+  const fxTag = (i) => 'F-' + String(i + 1).padStart(3, '0');
+  const pct = (v) => (v == null ? '—' : Math.round(v * 100) + '%');
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const isTrustFlag = (f) => (f.builtBy === 'agent' || f.builtBy === 'pair') && (f.review === 'pending' || f.review === 'changes');
+  const isPhone = () => window.matchMedia('(max-width: 860px)').matches;
+  const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Feature records: tags, keynote numbers, trust flags.
+  let keynoteN = 0;
+  BP.features.forEach((f, i) => {
+    FX.set(f.id, {
+      f, i, tag: fxTag(i),
+      att: BP.needsAttention(f),
+      keynote: BP.needsAttention(f) ? ++keynoteN : 0,
+      trust: isTrustFlag(f),
+    });
+  });
+  const TRUST_COUNT = BP.features.filter(isTrustFlag).length;
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // LAYOUT: rooms sized by feature count, row-packed into wings and two bands
+  // ═══════════════════════════════════════════════════════════════════════
+  const mctx = document.createElement('canvas').getContext('2d');
+  /** Width of a string in world units for a font spec { w, s, f, ls(em), up }. */
+  function measure(text, spec) {
+    mctx.font = spec.w + ' ' + spec.s + 'px ' + spec.f;
+    const t = spec.up ? String(text).toUpperCase() : String(text);
+    return mctx.measureText(t).width + (spec.ls || 0) * spec.s * t.length;
+  }
+  const FONT = {
+    zone: { w: 700, s: 27, f: STACK.letter, ls: 0.08, up: true },
+    zoneS: { w: 500, s: 17, f: STACK.mono },
+    room: { w: 600, s: 23, f: STACK.letter, ls: 0.05, up: true },
+    roomS: { w: 500, s: 17.5, f: STACK.mono },
+    name: { w: 500, s: 10.6, f: STACK.letter },
+    dim: { w: 600, s: 22, f: STACK.letter, ls: 0.07, up: true },
+    plate: { w: 700, s: 13, f: STACK.letter, ls: 0.1, up: true },
+    plateS: { w: 500, s: 10.5, f: STACK.mono },
+    hall: { w: 500, s: 20, f: STACK.letter, ls: 0.2, up: true },
+    meta: { w: 400, s: 6.8, f: STACK.mono },
+    val: { w: 500, s: 8.5, f: STACK.mono },
+  };
+  /** First candidate string that fits maxW (the last one is used regardless). */
+  function firstFit(cands, spec, maxW) {
+    for (let i = 0; i < cands.length; i++) if (measure(cands[i], spec) <= maxW) return cands[i];
+    return cands[cands.length - 1];
+  }
+  const ST_SHORT = { done: 'DONE', partial: 'PART', todo: 'TODO', blocked: 'BLKD', na: 'N/A' };
+  /** Greedy word wrap into at most maxLines lines that fit maxW; the last line is ellipsized if needed. */
+  function wrap(text, spec, maxW, maxLines) {
+    const words = String(text).split(/\s+/);
+    const lines = [];
+    let cur = '';
+    words.forEach((w) => {
+      const next = cur ? cur + ' ' + w : w;
+      if (!cur || measure(next, spec) <= maxW) cur = next;
+      else { lines.push(cur); cur = w; }
+    });
+    if (cur) lines.push(cur);
+    if (lines.length > maxLines) {
+      const keep = lines.slice(0, maxLines);
+      let last = keep[maxLines - 1] + ' ' + lines.slice(maxLines).join(' ');
+      while (last.length > 1 && measure(last + '…', spec) > maxW) last = last.slice(0, -1);
+      keep[maxLines - 1] = last.trim() + '…';
+      return keep;
+    }
+    return lines;
+  }
+
+  /** All ways to cut n ordered items into k consecutive groups (returns cut index lists). */
+  function partitions(n, k) {
+    const out = [];
+    (function rec(start, left, acc) {
+      if (left === 1) { out.push(acc.slice()); return; }
+      for (let c = start + 1; c <= n - left + 1; c++) { acc.push(c); rec(c, left - 1, acc); acc.pop(); }
+    })(0, k, []);
+    return out;
+  }
+  function groupsOf(arr, cuts) {
+    const g = [];
+    let s = 0;
+    cuts.concat([arr.length]).forEach((c) => { g.push(arr.slice(s, c)); s = c; });
+    return g;
+  }
+
+  /** Best room arrangement for a wing at band height H: sub-rows of rooms, each room a c x r fixture grid. */
+  function wingFit(wing, H) {
+    const roomsH = H - G.wingHdr - G.ring;
+    const nm = wing.mods.length;
+    let best = null;
+    for (let k = 1; k <= Math.min(5, nm); k++) {
+      const subH = (roomsH - (k - 1) * G.corridor) / k;
+      const rMax = Math.floor((subH - G.roomHdr - G.roomPad) / G.cellH);
+      if (rMax < 1) break;
+      const rooms = wing.mods.map((x) => {
+        const c = Math.ceil(x.n / rMax);
+        const r = Math.ceil(x.n / c);
+        return { c, r, nat: Math.max(G.roomMinW, x.minW, c * G.cellW + 2 * G.roomPad) };
+      });
+      partitions(nm, k).forEach((cuts) => {
+        const rows = groupsOf(rooms.map((_, i) => i), cuts);
+        const widths = rows.map((rw) => rw.reduce((s, i) => s + rooms[i].nat, 0) + (rw.length - 1) * G.roomGap);
+        const inner = Math.max.apply(null, widths);
+        const w = Math.max(wing.minW, inner + 2 * G.ring);
+        const slack = widths.reduce((s, x) => s + (inner - x), 0) * subH;
+        const empty = rooms.reduce((s, r, i) => s + (r.c * r.r - wing.mods[i].n), 0);
+        const tall = rooms.reduce((s, r) => s + Math.max(0, (subH - G.roomHdr - G.roomPad) - r.r * G.cellH * 1.25), 0) * 60;
+        const score = w * H + slack * 0.35 + empty * G.cellW * G.cellH * 0.5 + tall;
+        if (!best || score < best.score) best = { score, extra: score - w * H, w, k, cuts, subH, rooms };
+      });
+    }
+    return best;
+  }
+
+  /** Building aspect to aim for: landscape sheets on wide screens, a tall plan on phones. */
+  function targetAspect() {
+    const vw = viewport.clientWidth || window.innerWidth;
+    const vh = viewport.clientHeight || window.innerHeight;
+    return vw / vh < 0.85 ? Math.max(0.5, vw / vh * 1.08) : 1.55;
+  }
+  function computeLayout() {
+    const letters = 'ABCDEFGHIJ';
+    WINGS.length = 0;
+    BP.domains.forEach((d, di) => {
+      const mods = BP.modulesOf(d.id).map((m, mi) => {
+        const n = BP.featuresOf(m.id).length;
+        const code = letters[di] + '-' + String(mi + 1).padStart(2, '0');
+        // a room must hold its name in at most two lines next to its tag
+        const words = m.name.toUpperCase().split(' ');
+        const longest = Math.max.apply(null, words.map((w) => measure(w, FONT.room)));
+        const minW = Math.max(longest, measure('7 FX · 100% · ▲9', FONT.roomS)) + 2 * G.roomPad + 50;
+        return { m, n, code, minW };
+      });
+      const title = 'ZONE ' + letters[di] + ' · ' + d.name;
+      const minW = 2 * G.ring + 64 + Math.max(measure(title, FONT.zone), measure('32 FX · 5 ROOMS · OVR 100%', FONT.zoneS)) + 12;
+      WINGS.push({ d, di, letter: letters[di], mods, title, minW, roll: BP.domainRollup(d.id) });
+    });
+    const split = Math.ceil(WINGS.length / 2);
+    const bands = [WINGS.slice(0, split), WINGS.slice(split)];
+    const minH = G.wingHdr + G.ring + G.roomHdr + G.roomPad + G.cellH;
+    const cand = [];
+    for (let h = Math.ceil(minH); h <= 1500; h += 4) cand.push(h);
+    const bandEval = bands.map((band) => cand.map((H) => {
+      const fits = band.map((w) => wingFit(w, H));
+      if (fits.some((x) => !x)) return null;
+      const width = fits.reduce((s, x) => s + x.w, 0) + (band.length - 1) * G.wingWall;
+      const extra = fits.reduce((s, x) => s + x.extra, 0);
+      return { H, fits, width, extra };
+    }).filter(Boolean));
+    const hallH = 2 * G.hallWall + G.hallOpen;
+    const target = targetAspect();
+    let best = null;
+    bandEval[0].forEach((a) => {
+      bandEval[1].forEach((b) => {
+        const W = Math.max(a.width, b.width);
+        const Ht = a.H + b.H + hallH;
+        const aspect = W / Ht;
+        const stretch = (W - a.width) * a.H + (W - b.width) * b.H;
+        const score = (W * Ht + stretch * 0.6 + a.extra + b.extra) * (1 + 1.4 * Math.abs(Math.log(aspect / target)));
+        if (!best || score < best.score) best = { score, a, b, W, Ht };
+      });
+    });
+    const W = best.W;
+    const Htot = best.Ht;
+    const geo = { W, H: Htot, hallY: best.a.H, hallH, bands: [], portrait: target < 1 };
+    [best.a, best.b].forEach((be, bi) => {
+      const band = bands[bi];
+      const y = bi === 0 ? 0 : best.a.H + hallH;
+      const avail = W - (band.length - 1) * G.wingWall;
+      const nat = be.fits.reduce((s, x) => s + x.w, 0);
+      let x = 0;
+      geo.bands.push({ y, h: be.H, wings: band });
+      band.forEach((wing, wi) => {
+        const fit = be.fits[wi];
+        const w = wi === band.length - 1 ? W - x : Math.round(fit.w * avail / nat);
+        wing.band = bi;
+        wing.rect = { x, y, w, h: be.H };
+        wing.rooms = [];
+        const blockX = x + G.ring;
+        const blockW = w - 2 * G.ring;
+        const blockY = y + G.wingHdr;
+        const rows = groupsOf(wing.mods.map((_, i) => i), fit.cuts);
+        rows.forEach((rw, si) => {
+          const ry = blockY + si * (fit.subH + G.corridor);
+          const natSum = rw.reduce((s, i) => s + fit.rooms[i].nat, 0);
+          const availW = blockW - (rw.length - 1) * G.roomGap;
+          let rx = blockX;
+          rw.forEach((i, j) => {
+            const rm = fit.rooms[i];
+            const rwid = j === rw.length - 1 ? blockX + blockW - rx : rm.nat * availW / natSum;
+            const mod = wing.mods[i];
+            const room = {
+              m: mod.m, code: mod.code, n: mod.n, wing, c: rm.c, r: rm.r,
+              x: rx, y: ry, w: rwid, h: fit.subH,
+              door: 'bottom',
+              roll: BP.moduleRollup(mod.m.id),
+            };
+            room.cellW = (room.w - 2 * G.roomPad) / room.c;
+            room.cellH = (room.h - G.roomHdr - G.roomPad) / room.r;
+            room.cells = [];
+            BP.featuresOf(mod.m.id).forEach((f, fi) => {
+              const col = fi % room.c;
+              const row = Math.floor(fi / room.c);
+              const cx = room.x + G.roomPad + col * room.cellW;
+              const cy = room.y + G.roomHdr + row * room.cellH;
+              const rec = FX.get(f.id);
+              rec.room = room;
+              rec.row = row;
+              rec.cellTop = cy;
+              rec.x = r2(cx + (room.cellW - G.cw) / 2);
+              rec.y = r2(cy + Math.min((room.cellH - G.ch) / 2, 14));
+              rec.cx = rec.x + 22;
+              rec.cy = rec.y + 22;
+              room.cells.push(rec);
+            });
+            ROOMS.set(mod.m.id, room);
+            wing.rooms.push(room);
+            rx += rwid + G.roomGap;
+          });
+        });
+        x += w + G.wingWall;
+      });
+    });
+    const top = -G.ext - G.dimOff - 2 * G.dimStep - 14 - G.gridOff - 20;
+    geo.titleY = Htot - top + 46;
+    const bottom = geo.titleY + 44;
+    geo.ext = { x: -G.ext - 40, y: top, w: W + 2 * G.ext + 80, h: bottom - top };
+    PLAN = geo;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // RENDER
+  // ═══════════════════════════════════════════════════════════════════════
+  const world = $('#world');
+  const plan = $('#plan');
+  const viewport = $('#viewport');
+  const layers = {};
+
+  function el(tag, attrs, parent) {
+    const e = document.createElementNS(NS, tag);
+    if (attrs) Object.keys(attrs).forEach((k) => { if (attrs[k] != null) e.setAttribute(k, attrs[k]); });
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function txt(parent, x, y, str, cls, extra) {
+    const t = el('text', Object.assign({ x: r2(x), y: r2(y), class: cls }, extra || {}), parent);
+    t.textContent = str;
+    return t;
+  }
+  const rectD = (x, y, w, h) => 'M' + r2(x) + ',' + r2(y) + 'h' + r2(w) + 'v' + r2(h) + 'h' + r2(-w) + 'z';
+  /** Rectangle outline with an opening on one side (top/bottom), used for room walls with a door. */
+  function rectGapD(x, y, w, h, side, gx, gw) {
+    const x2 = x + w;
+    const y2 = y + h;
+    if (side === 'bottom') return 'M' + r2(gx + gw) + ',' + r2(y2) + 'L' + r2(x2) + ',' + r2(y2) + 'L' + r2(x2) + ',' + r2(y) + 'L' + r2(x) + ',' + r2(y) + 'L' + r2(x) + ',' + r2(y2) + 'L' + r2(gx) + ',' + r2(y2);
+    return 'M' + r2(gx) + ',' + r2(y) + 'L' + r2(x) + ',' + r2(y) + 'L' + r2(x) + ',' + r2(y2) + 'L' + r2(x2) + ',' + r2(y2) + 'L' + r2(x2) + ',' + r2(y) + 'L' + r2(gx + gw) + ',' + r2(y);
+  }
+  function hexPts(cx, cy, r) {
+    const p = [];
+    for (let i = 0; i < 6; i++) { const a = Math.PI / 3 * i; p.push(r2(cx + r * Math.cos(a)) + ',' + r2(cy + r * Math.sin(a))); }
+    return p.join(' ');
+  }
+  /** Scalloped revision cloud around a rectangle (clockwise, arcs bulge outward). */
+  function cloudD(x, y, w, h, seg) {
+    const nx = Math.max(2, Math.round(w / seg));
+    const ny = Math.max(2, Math.round(h / seg));
+    const sx = w / nx;
+    const sy = h / ny;
+    const r = r2(Math.max(sx, sy) * 0.68);
+    let d = 'M' + r2(x) + ',' + r2(y);
+    const arc = (px, py) => { d += 'A' + r + ',' + r + ' 0 0 1 ' + r2(px) + ',' + r2(py); };
+    for (let i = 1; i <= nx; i++) arc(x + i * sx, y);
+    for (let i = 1; i <= ny; i++) arc(x + w, y + i * sy);
+    for (let i = 1; i <= nx; i++) arc(x + w - i * sx, y + h);
+    for (let i = 1; i <= ny; i++) arc(x, y + h - i * sy);
+    return d + 'Z';
+  }
+  /** Tick schedule paths for facet states: filled (done + half of partial), outlines, blocked, n/a. */
+  function tickPaths(states, x0, y0, w, h, gx, gy) {
+    const out = { f: '', o: '', b: '', n: '' };
+    states.forEach((row, ri) => {
+      row.forEach((st, ci) => {
+        const x = x0 + ci * (w + gx);
+        const y = y0 + ri * (h + gy);
+        if (st === 'done') out.f += rectD(x, y, w, h);
+        else if (st === 'partial') { out.o += rectD(x, y, w, h); out.f += rectD(x, y, w / 2, h); }
+        else if (st === 'todo') out.o += rectD(x, y, w, h);
+        else if (st === 'blocked') out.b += rectD(x - 0.5, y - 0.5, w + 1, h + 1);
+        else out.n += 'M' + r2(x + 1.5) + ',' + r2(y + h / 2) + 'h' + r2(w - 3);
+      });
+    });
+    return out;
+  }
+  function drawTicks(g, states, x0, y0, w, h, gx, gy) {
+    const p = tickPaths(states, x0, y0, w, h, gx, gy);
+    if (p.f) el('path', { d: p.f, class: 'tk-f' }, g);
+    if (p.o) el('path', { d: p.o, class: 'tk-o' }, g);
+    if (p.b) el('path', { d: p.b, class: 'tk-b' }, g);
+    if (p.n) el('path', { d: p.n, class: 'tk-n' }, g);
+  }
+  const facetStates = (f, dimId) => DIMS.find((d) => d.id === dimId).facets.map((fc) => f.dims[dimId][fc.id]);
+
+  function renderAll() {
+    world.textContent = '';
+    ['sheet', 'wash', 'base', 'grid', 'floor', 'rooms', 'serv', 'fx', 'links', 'plates'].forEach((id) => {
+      layers[id] = el('g', { id: 'g-' + id }, world);
+    });
+    renderBase();
+    renderDims();
+    renderGrid();
+    renderDrawingTitle();
+    WINGS.forEach((w) => { renderZoneHeader(w); w.rooms.forEach(renderRoom); renderPlate(w); });
+    FX.forEach(renderFixture);
+    ROOMS.forEach(renderServices);
+    refreshLensText();
+  }
+
+  function renderBase() {
+    const g = layers.base;
+    const { W, H, hallY, hallH } = PLAN;
+    const E = G.ext;
+    // exterior: heavy double line with hatched poche, entries at both ends of the hall
+    el('path', { d: rectD(-E, -E, W + 2 * E, H + 2 * E) + rectD(0, 0, W, H), class: 'ext-poche', 'fill-rule': 'evenodd' }, g);
+    el('rect', { x: -E, y: -E, width: W + 2 * E, height: H + 2 * E, class: 'ext-line' }, g);
+    el('rect', { x: 0, y: 0, width: W, height: H, class: 'ext-line-in' }, g);
+    const ey = hallY + G.hallWall + (G.hallOpen - G.entry) / 2;
+    [[-E - 2, 0], [W - 2, W + E]].forEach(([x0]) => {
+      el('rect', { x: x0, y: ey, width: E + 4, height: G.entry, fill: 'var(--paper)' }, g);
+      el('path', { d: 'M' + (x0 + 2) + ',' + ey + 'h' + E + 'M' + (x0 + 2) + ',' + (ey + G.entry) + 'h' + E, class: 'jamb' }, g);
+    });
+    // hall walls (heavy) with an opening into each wing, and the hall axis
+    const hy1 = hallY;
+    const hy2 = hallY + G.hallWall + G.hallOpen;
+    [[hy1, 0], [hy2, 1]].forEach(([y, bi]) => {
+      const ops = PLAN.bands[bi].wings.map((w) => w.rect.x + w.rect.w / 2);
+      let x = 0;
+      ops.forEach((cx) => {
+        const a = cx - G.entry / 2;
+        el('rect', { x: r2(x), y: y, width: r2(a - x), height: G.hallWall, class: 'wall-poche' }, g);
+        // double doors swinging into the hall
+        const dy = bi === 0 ? y + G.hallWall : y;
+        const s = bi === 0 ? 1 : -1;
+        const half = G.entry / 2;
+        el('path', { d: 'M' + r2(a) + ',' + r2(dy) + 'l0,' + r2(s * half) + 'M' + r2(a + G.entry) + ',' + r2(dy) + 'l0,' + r2(s * half), class: 'door-leaf' }, g);
+        el('path', { d: 'M' + r2(a) + ',' + r2(dy + s * half) + 'A' + half + ',' + half + ' 0 0 ' + (bi === 0 ? 0 : 1) + ' ' + r2(a + half) + ',' + r2(dy) + 'M' + r2(a + G.entry) + ',' + r2(dy + s * half) + 'A' + half + ',' + half + ' 0 0 ' + (bi === 0 ? 1 : 0) + ' ' + r2(a + half) + ',' + r2(dy), class: 'door' }, g);
+        x = a + G.entry;
+      });
+      el('rect', { x: r2(x), y: y, width: r2(W - x), height: G.hallWall, class: 'wall-poche' }, g);
+    });
+    // wing separation walls
+    PLAN.bands.forEach((b) => {
+      b.wings.forEach((w, wi) => {
+        if (wi === b.wings.length - 1) return;
+        el('rect', { x: w.rect.x + w.rect.w, y: b.y, width: G.wingWall, height: b.h, class: 'wall-poche' }, g);
+      });
+    });
+    const hc = hallY + hallH / 2;
+    el('path', { d: 'M' + (-E - 30) + ',' + hc + 'H' + (W + E + 30), class: 'hall-axis' }, g);
+    // hall lettering: the shared stack that every zone opens onto
+    const st = BP.product.stack;
+    const label = 'Main hall · ' + [st.web, st.api, st.workers, st.data, st.infra].join(' · ');
+    const lw = measure(label, FONT.hall);
+    const lg = el('g', { class: 'lv-s' }, layers.rooms);
+    const tx = Math.max(60, (W - lw) / 2);
+    el('rect', { x: r2(tx - 14), y: r2(hc - 15), width: r2(Math.min(lw, W - 120) + 28), height: 28, fill: 'var(--paper)' }, lg);
+    txt(lg, tx, hc + 7, label, 't-hall');
+  }
+
+  function renderDims() {
+    const g = layers.sheet;
+    const { H } = PLAN;
+    WINGS.forEach((wing) => {
+      const side = wing.band === 0 ? -1 : 1;
+      const face = side < 0 ? -G.ext : H + G.ext;
+      const x0 = wing.rect.x + 4;
+      const x2 = wing.rect.x + wing.rect.w - 4;
+      const dg = el('g', { class: 'dims lv-s', 'data-zone': wing.d.id }, g);
+      const outer = face + side * (G.dimOff + 2 * G.dimStep + 10);
+      el('path', { d: 'M' + r2(x0) + ',' + r2(face + side * 8) + 'V' + r2(outer) + 'M' + r2(x2) + ',' + r2(face + side * 8) + 'V' + r2(outer), class: 'dim-ext' }, dg);
+      DIMS.forEach((dim, i) => {
+        const v = wing.roll.dims[dim.id];
+        const y = face + side * (G.dimOff + i * G.dimStep);
+        const x1 = x0 + v * (x2 - x0);
+        const row = el('g', { class: 'dim-row dim-' + dim.id }, dg);
+        el('path', { d: 'M' + r2(x0) + ',' + r2(y) + 'H' + r2(x1), class: 'dim-line' }, row);
+        el('path', { d: 'M' + r2(x1) + ',' + r2(y) + 'H' + r2(x2), class: 'dim-rest' }, row);
+        el('path', { d: [x0, x1, x2].map((x) => 'M' + r2(x - 5.5) + ',' + r2(y + 5.5) + 'l11,-11').join(''), class: 'dim-tick' }, row);
+        const label = dim.short.toUpperCase() + ' ' + pct(v);
+        const lw = measure(label, FONT.dim);
+        const seg = x1 - x0;
+        if (seg > lw + 16) txt(row, x0 + seg / 2 - lw / 2, y - 7, label, 't-dim');
+        else txt(row, Math.min(x1 + 10, x2 - lw - 6), y - 7, label, 't-dim');
+        const rest = 'TO GO ' + pct(1 - v);
+        const restW = measure(rest, { w: 400, s: 13, f: STACK.mono });
+        if (x2 - x1 > restW + 24 && (seg > lw + 16 || x2 - x1 > lw + restW + 40)) txt(el('g', { class: 'lv-r' }, row), x2 - restW - 8, y - 7, rest, 't-dim-r');
+      });
+    });
+  }
+
+  /** Drawing title under the view: a view bubble (1 over the sheet number) and the underlined sheet name. */
+  function renderDrawingTitle() {
+    const g = el('g', { class: 'dwg lv-s' }, layers.sheet);
+    const y = PLAN.titleY;
+    const cx = 30;
+    el('circle', { cx, cy: y - 10, r: 30, class: 'dwg-c' }, g);
+    el('path', { d: 'M' + (cx - 30) + ',' + (y - 10) + 'h60', class: 'dwg-rule', style: 'stroke-width:1' }, g);
+    txt(g, cx, y - 16, '1', 't-dwg-n');
+    PLAN.dwgNo = txt(g, cx, y + 11, '', 't-dwg-n');
+    PLAN.dwgNo.setAttribute('style', 'font-size:14px');
+    PLAN.dwgTitle = txt(g, 76, y - 6, '', 't-dwg');
+    PLAN.dwgRule = el('path', { d: '', class: 'dwg-rule' }, g);
+    const P = BP.product;
+    txt(g, 76, y + 32, P.name.toUpperCase() + ' ' + P.version + ' → ' + P.nextVersion + ' · ' + BP.features.length + ' FIXTURES IN ' + BP.modules.length + ' ROOMS · ' + BP.domains.length + ' ZONES · AS OF ' + BP.data.meta.asOf, 't-dwg-s');
+  }
+
+  function renderGrid() {
+    // S-201: structural column lines on the wing walls with numbered grid bubbles
+    const g = layers.grid;
+    const { H } = PLAN;
+    let n = 0;
+    PLAN.bands.forEach((b, bi) => {
+      const xs = [0];
+      b.wings.forEach((w, wi) => { if (wi < b.wings.length - 1) xs.push(w.rect.x + w.rect.w + G.wingWall / 2); });
+      xs.push(PLAN.W);
+      const far = bi === 0 ? -G.ext - G.dimOff - 2 * G.dimStep - 14 - G.gridOff : H + G.ext + G.dimOff + 2 * G.dimStep + 14 + G.gridOff;
+      const near = bi === 0 ? b.y + b.h : b.y;
+      xs.forEach((x) => {
+        n += 1;
+        el('path', { d: 'M' + r2(x) + ',' + r2(near) + 'V' + r2(far + (bi === 0 ? 18 : -18)), class: 'grid-line' }, g);
+        el('circle', { cx: r2(x), cy: r2(far), r: 18, class: 'grid-bub' }, g);
+        txt(g, x, far + 6.8, String(n), 't-grid');
+      });
+    });
+  }
+
+  function renderZoneHeader(wing) {
+    const { x, y, w } = wing.rect;
+    const g = el('g', { class: 'zone-hdr lv-s', 'data-zone': wing.d.id }, layers.rooms);
+    el('rect', { x: x + 4, y: y + 4, width: w - 8, height: G.wingHdr - 10, class: 'hdr-hit' }, g);
+    const cx = x + G.ring + 25;
+    const cy = y + G.wingHdr / 2 + 1;
+    el('polygon', { points: hexPts(cx, cy, 26), class: 'hex' }, g);
+    el('polygon', { points: hexPts(cx, cy, 21), class: 'hex-in' }, g);
+    txt(g, cx, cy + 9, wing.letter, 't-hex');
+    const tx = x + G.ring + 62;
+    txt(g, tx, y + 35, wing.title.toUpperCase(), 't-zone');
+    wing.statEl = txt(g, tx, y + 59, '', 't-zone-s');
+    // status bar on the right when the wing is wide enough
+    const tw = Math.max(measure(wing.title, FONT.zone), measure('32 FX · 5 ROOMS · OVR 100%', FONT.zoneS));
+    const bw = 170;
+    const bx = x + w - G.ring - bw;
+    if (bx > tx + tw + 24) {
+      const by = y + 20;
+      const bh = 13;
+      let cur = bx;
+      BP.STATUS_ORDER.forEach((s) => {
+        const c = wing.roll.byStatus[s];
+        if (!c) return;
+        const sw = bw * c / wing.roll.count;
+        el('rect', { x: r2(cur), y: by, width: r2(sw), height: bh, class: 'sym ' + symClass(s) }, g);
+        if (s === 'blocked') el('path', { d: 'M' + r2(cur) + ',' + by + 'l' + r2(sw) + ',' + bh + 'M' + r2(cur + sw) + ',' + by + 'l' + r2(-sw) + ',' + bh, class: 'redx', style: 'stroke-width:1.2' }, g);
+        cur += sw;
+      });
+      el('rect', { x: bx, y: by, width: bw, height: bh, class: 'zbar-o' }, g);
+      txt(el('g', { class: 'lv-r' }, g), bx + bw, by + 30, wing.roll.byStatus.live + ' LIVE · ' + (wing.roll.count - wing.roll.byStatus.live) + ' NOT YET LIVE', 't-zone-x', { 'text-anchor': 'end' });
+    }
+    g.addEventListener('click', () => { if (!dragMoved) flyToRect(wing.rect, 26); });
+  }
+
+  function symClass(s) {
+    return { live: 'sym-live', ready: 'sym-ready', building: 'sym-build', planned: 'sym-plan', blocked: 'sym-block' }[s];
+  }
+
+  function renderRoom(room) {
+    const { x, y, w, h } = room;
+    // walls (base layer, screened in other sheets)
+    const doorX = x + 18;
+    el('path', { d: rectGapD(x, y, w, h, room.door, doorX, G.door), class: 'room-wall' }, layers.base);
+    el('path', { d: rectGapD(x + 4, y + 4, w - 8, h - 8, room.door, doorX - 4, G.door + 8), class: 'room-wall-in' }, layers.base);
+    const dy = room.door === 'bottom' ? y + h : y;
+    const s = room.door === 'bottom' ? 1 : -1;
+    el('path', { d: 'M' + r2(doorX) + ',' + r2(dy) + 'l0,' + r2(s * G.door), class: 'door-leaf' }, layers.base);
+    el('path', { d: 'M' + r2(doorX) + ',' + r2(dy + s * G.door) + 'A' + G.door + ',' + G.door + ' 0 0 ' + (s > 0 ? 0 : 1) + ' ' + r2(doorX + G.door) + ',' + r2(dy), class: 'door' }, layers.base);
+    // B-401 program wash by adoption
+    const ad = room.cells.map((r) => BP.facetValue(r.f.dims.biz.adoption)).filter((v) => v != null);
+    room.adoption = ad.length ? ad.reduce((a, b) => a + b, 0) / ad.length : 0;
+    room.program = room.adoption >= 0.5 ? 'hi' : room.adoption >= 0.3 ? 'mid' : 'lo';
+    el('rect', { x: x + 4, y: y + 4, width: r2(w - 8), height: r2(h - 8), class: 'wash-' + room.program }, layers.wash);
+    // floor (hit target), selection frame, labels
+    const g = el('g', { class: 'room', 'data-room': room.m.id }, layers.floor);
+    el('rect', { x, y, width: r2(w), height: r2(h), class: 'floor' }, g);
+    el('rect', { x: x - 5, y: y - 5, width: r2(w + 10), height: r2(h + 10), class: 'room-selframe' }, g);
+    room.el = g;
+    const lg = el('g', { class: 'room lbl lv-s', 'data-room': room.m.id }, layers.rooms);
+    room.lblEl = lg;
+    el('rect', { x: x + 4, y: y + 4, width: r2(w - 8), height: G.roomHdr - 8, class: 'hdr-hit' }, lg);
+    const tcx = x + G.roomPad + 19;
+    const tcy = y + G.roomPad + 22;
+    el('circle', { cx: r2(tcx), cy: r2(tcy), r: 19.5, class: 'rtag' }, lg);
+    txt(lg, tcx, tcy + 4.8, room.code, 't-rtag');
+    const nx = x + G.roomPad + 47;
+    const lines = wrap(room.m.name.toUpperCase(), FONT.room, w - G.roomPad * 2 - 49, 2);
+    lines.forEach((ln, i) => txt(lg, nx, y + G.roomPad + 21 + i * 22, ln, 't-room'));
+    room.statEl = txt(lg, nx, y + G.roomPad + 21 + lines.length * 22 - 1, '', 't-room-s');
+    lg.addEventListener('click', (e) => { if (!dragMoved) { e.stopPropagation(); selectModule(room.m.id, true); } });
+  }
+
+  function renderPlate(wing) {
+    // key-plan plate: zone letter, name and score, kept at a legible screen size when zoomed far out
+    const { x, y, w, h } = wing.rect;
+    const g = el('g', { class: 'plate-g lv-k', 'data-zone': wing.d.id }, layers.plates);
+    const inner = el('g', {}, g);
+    const words = wing.d.name.toUpperCase().split(' ');
+    const lines = [];
+    words.forEach((wd) => {
+      const last = lines[lines.length - 1];
+      if (last && (last + ' ' + wd).length <= 12) lines[lines.length - 1] = last + ' ' + wd;
+      else lines.push(wd);
+    });
+    const lw = Math.max.apply(null, lines.map((l) => measure(l, FONT.plate)).concat([measure('32 FX · 100%', FONT.plateS)]));
+    const pw = lw + 22;
+    const ph = 38 + lines.length * 15 + 16;
+    el('rect', { x: r2(-pw / 2), y: r2(-ph / 2), width: r2(pw), height: r2(ph), class: 'plate' }, inner);
+    el('polygon', { points: hexPts(0, -ph / 2 + 18, 12), class: 'hex' }, inner);
+    txt(inner, 0, -ph / 2 + 23.5, wing.letter, 't-plate-l');
+    lines.forEach((l, i) => txt(inner, 0, -ph / 2 + 48 + i * 15, l, 't-plate'));
+    wing.plateStat = txt(inner, 0, -ph / 2 + 48 + lines.length * 15 + 2, '', 't-plate-s');
+    wing.plate = { g, inner, pw, ph, cx: x + w / 2, cy: y + h / 2 + 10 };
+    g.addEventListener('click', () => { if (!dragMoved) flyToRect(wing.rect, 20); });
+  }
+
+  function renderFixture(rec) {
+    const f = rec.f;
+    const g = el('g', {
+      class: 'fx st-' + f.status + (rec.att ? ' att' : '') + (rec.trust ? ' trustfx' : ''),
+      'data-fid': f.id,
+      transform: 'translate(' + rec.x + ',' + rec.y + ')',
+    }, layers.fx);
+    rec.el = g;
+    el('rect', { x: -4, y: -4, width: G.cw + 8, height: G.ch + 8, class: 'fx-hit' }, g);
+    el('rect', { x: -2.5, y: -2.5, width: G.cw + 5, height: G.ch + 5, class: 'fx-hover' }, g);
+    el('rect', { x: -3, y: -3, width: G.cw + 6, height: G.ch + 6, class: 'fx-frame' }, g);
+    [[-3, -3], [G.cw + 3, -3], [-3, G.ch + 3], [G.cw + 3, G.ch + 3]].forEach(([gx, gy]) => el('rect', { x: gx - 2.6, y: gy - 2.6, width: 5.2, height: 5.2, class: 'fx-grip' }, g));
+
+    // A-101 architectural: status symbol + 3 x 4 tick schedule
+    const ga = el('g', { class: 'gl gl-a' }, g);
+    el('rect', { x: 4, y: 4, width: 36, height: 36, class: 'sym ' + symClass(f.status) }, ga);
+    drawTicks(ga, DIMS.map((d) => facetStates(f, d.id)), 48, 6, 9, 8, 2.5, 3);
+    const tl = el('g', { class: 'lv-d' }, ga);
+    DIMS.forEach((d, i) => txt(tl, 44.2, 12.2 + i * 11, d.short[0], 't-tkl'));
+
+    // S-201 structural: a bay frame filled to dev completion, braced by tests
+    const gs = el('g', { class: 'gl gl-s' }, g);
+    const dev = BP.dimScore(f, 'dev') || 0;
+    const tests = f.dims.dev.tests;
+    const skew = tests === 'todo' || tests === 'blocked' ? 8 : 0;
+    const X0 = 4; const Y0 = 4; const S = 36;
+    const xl = (yy) => X0 + skew * (1 - (yy - Y0) / S);
+    const yd = Y0 + S * (1 - dev);
+    const poly = (pts) => pts.map((p) => r2(p[0]) + ',' + r2(p[1])).join(' ');
+    if (dev > 0) el('polygon', { points: poly([[xl(yd), yd], [xl(yd) + S, yd], [X0 + S, Y0 + S], [X0, Y0 + S]]), class: 'frame-fill' }, gs);
+    el('polygon', { points: poly([[X0 + skew, Y0], [X0 + S + skew, Y0], [X0 + S, Y0 + S], [X0, Y0 + S]]), class: 'frame' + (skew && f.status !== 'planned' ? ' unbraced' : '') + (f.status === 'planned' ? ' planned' : '') }, gs);
+    if (tests === 'done') el('path', { d: 'M' + X0 + ',' + Y0 + 'L' + (X0 + S) + ',' + (Y0 + S) + 'M' + (X0 + S) + ',' + Y0 + 'L' + X0 + ',' + (Y0 + S), class: 'brace' }, gs);
+    else if (tests === 'partial') el('path', { d: 'M' + X0 + ',' + (Y0 + S) + 'L' + (X0 + S) + ',' + Y0, class: 'brace' }, gs);
+    [[X0 + skew, Y0], [X0 + S + skew, Y0], [X0, Y0 + S], [X0 + S, Y0 + S]].forEach(([cx, cy]) => el('rect', { x: r2(cx - 3), y: r2(cy - 3), width: 6, height: 6, class: 'col' }, gs));
+    drawTicks(gs, [facetStates(f, 'dev')], 48, 6, 9, 12, 2.5, 0);
+    const sl = el('g', { class: 'lv-d' }, gs);
+    ['S', 'B', 'F', 'T'].forEach((c, i) => txt(sl, 52.5 + i * 11.5, 27, c, 't-tkl'));
+    if (skew && f.status !== 'planned') txt(el('g', { class: 'lv-r' }, gs), 48, 38, 'UNBRACED', 't-unb');
+
+    // M-301 services: outlet powered by deploy state, fittings on the branch
+    const gm = el('g', { class: 'gl gl-m' }, g);
+    const dep = f.dims.ops.deploy;
+    const powered = dep === 'done' || dep === 'partial';
+    if (powered) el('path', { d: 'M22,' + r2(rec.cellTop + 1.5 - rec.y) + 'V8', class: 'drop' + (dep === 'partial' ? ' staging' : '') }, gm);
+    if (dep !== 'todo') el('path', { d: 'M36,22H90', class: 'branch' + (dep === 'partial' ? ' staging' : '') }, gm);
+    el('circle', { cx: 22, cy: 22, r: 14, class: 'outlet' + (dep === 'done' ? ' on' : '') + (dep === 'todo' ? ' off' : '') }, gm);
+    if (dep === 'partial') el('path', { d: 'M22,8A14,14 0 0 0 22,36Z', class: 'half' }, gm);
+    if (dep === 'blocked') el('path', { d: 'M13,13L31,31M31,13L13,31', class: 'redx', style: 'stroke-width:1.6' }, gm);
+    const fit = (st) => 'ft ' + st;
+    el('circle', { cx: 52, cy: 22, r: 5.2, class: fit(f.dims.ops.observe) }, gm);
+    el('path', { d: 'M69,15.5L75.5,22L69,28.5L62.5,22Z', class: fit(f.dims.ops.secure) }, gm);
+    el('rect', { x: 81.5, y: 17.5, width: 9, height: 9, class: fit(f.dims.ops.runbook) }, gm);
+    const ml = el('g', { class: 'lv-d' }, gm);
+    [['OBS', 52], ['SEC', 69], ['RUN', 86]].forEach(([t, xx]) => txt(ml, xx, 38.5, t, 't-tkl'));
+
+    // B-401 program: quartered datum (value, docs, packaging, adoption) + adoption gauge
+    const gb = el('g', { class: 'gl gl-b' }, g);
+    const C = [22, 22]; const R = 15;
+    const q = (a0, st) => {
+      const p0 = [C[0] + R * Math.cos(a0), C[1] + R * Math.sin(a0)];
+      const p1 = [C[0] + R * Math.cos(a0 + Math.PI / 2), C[1] + R * Math.sin(a0 + Math.PI / 2)];
+      el('path', { d: 'M' + C[0] + ',' + C[1] + 'L' + r2(p0[0]) + ',' + r2(p0[1]) + 'A' + R + ',' + R + ' 0 0 1 ' + r2(p1[0]) + ',' + r2(p1[1]) + 'Z', class: 'q ' + st }, gb);
+    };
+    const bz = f.dims.biz;
+    q(-Math.PI / 2, bz.value); q(0, bz.docs); q(Math.PI / 2, bz.package); q(Math.PI, bz.adoption);
+    el('circle', { cx: C[0], cy: C[1], r: R, class: 'datum' + (f.status === 'planned' ? ' sym-plan' : '') }, gb);
+    el('path', { d: 'M' + (C[0] - R - 3) + ',' + C[1] + 'h' + (2 * R + 6) + 'M' + C[0] + ',' + (C[1] - R - 3) + 'v' + (2 * R + 6), class: 'datum-x' }, gb);
+    const am = f.metrics.adoption;
+    el('rect', { x: 48, y: 11, width: 43, height: 9, class: 'gauge-o' + (am == null ? ' none' : '') }, gb);
+    if (am != null) el('rect', { x: 48, y: 11, width: r2(43 * am / 100), height: 9, class: 'gauge-f' }, gb);
+    const bl = el('g', { class: 'lv-r' }, gb);
+    txt(bl, 48, 32, am == null ? 'NO USE YET' : am + '% USE', 't-fxval', { style: 'font-size:7.6px' });
+
+    // redline: blocked X with a note leader to the keynote tag
+    if (f.status === 'blocked') {
+      el('path', { d: 'M1,1L43,43M43,1L1,43', class: 'redx' }, g);
+      el('path', { d: 'M43,1H93', class: 'leader' }, g);
+    }
+    if (rec.att && f.status !== 'blocked') {
+      // redline corner marks: a reviewer asked for changes
+      const c = 9; const a = -0.5; const b = 44.5;
+      el('path', { d: 'M' + a + ',' + (a + c) + 'V' + a + 'H' + (a + c) + 'M' + (b - c) + ',' + a + 'H' + b + 'V' + (a + c) + 'M' + b + ',' + (b - c) + 'V' + b + 'H' + (b - c) + 'M' + (a + c) + ',' + b + 'H' + a + 'V' + (b - c), class: 'att-mark' }, g);
+    }
+    if (rec.keynote) {
+      el('circle', { cx: 98, cy: 6.5, r: 7.2, class: 'kn-c' }, g);
+      txt(g, 98, 9.7, String(rec.keynote), 't-kn');
+    }
+    // revision cloud: agent or pair work awaiting a human check
+    if (rec.trust) {
+      const rv = el('g', { class: 'rv rv-' + f.review }, g);
+      el('path', { d: cloudD(1.5, 1.5, G.cw - 3, G.ch - 0.8, 16), class: 'cloud' }, rv);
+      el('path', { d: 'M98.5,21.5L105,33.5H92Z', class: 'delta' }, rv);
+      txt(rv, 98.5, 31.4, f.builtBy === 'agent' ? 'A' : 'P', 't-delta');
+    }
+    // lettering by zoom level
+    const lr = el('g', { class: 'lv-r' }, g);
+    txt(lr, 4, 54, rec.tag, 't-fxtag');
+    rec.valEl = txt(lr, 48, 54, '', 't-fxval');
+    const ld = el('g', { class: 'lv-d' }, g);
+    const nameLines = wrap(f.name, FONT.name, G.cw - 6, 2);
+    nameLines.forEach((ln, i) => txt(ld, 4, 66 + i * 11, ln, 't-fxname'));
+    rec.metaEl = txt(ld, 4, nameLines.length > 1 ? 84.6 : 76.8, '', 't-fxmeta');
+  }
+
+  function renderServices(room) {
+    // M-301: the room riser feeds a trunk along each row; drops (inside each fixture) reach powered outlets
+    const g = el('g', { class: 'svc' }, layers.serv);
+    const rows = {};
+    room.cells.forEach((rec) => {
+      const dep = rec.f.dims.ops.deploy;
+      if (dep !== 'done' && dep !== 'partial') return;
+      (rows[rec.row] = rows[rec.row] || []).push(rec.x + 22);
+    });
+    const rx = room.x + 9;
+    const firstY = room.y + G.roomHdr + 1.5;
+    const keys = Object.keys(rows).map(Number);
+    if (keys.length) {
+      const lastRow = Math.max.apply(null, keys);
+      const lastY = room.y + G.roomHdr + lastRow * room.cellH + 1.5;
+      let d = 'M' + r2(rx) + ',' + r2(firstY) + 'V' + r2(lastY);
+      keys.forEach((r) => { const y = room.y + G.roomHdr + r * room.cellH + 1.5; d += 'M' + r2(rx) + ',' + r2(y) + 'H' + r2(Math.max.apply(null, rows[r])); });
+      el('path', { d, class: 'trunk' }, g);
+    }
+    el('rect', { x: r2(rx - 5), y: r2(firstY - 5), width: 10, height: 10, class: 'riser' }, g);
+    el('path', { d: 'M' + r2(rx - 5) + ',' + r2(firstY - 5) + 'l10,10', class: 'trunk', style: 'stroke-width:1' }, g);
+  }
+
+  /** Updates every lens-dependent label: room and zone stats, fixture values and meta lines. */
+  function refreshLensText() {
+    const lens = state.lens;
+    const L = LENS[lens];
+    const dt = L.title.toUpperCase();
+    PLAN.dwgTitle.textContent = dt;
+    PLAN.dwgNo.textContent = L.sheet;
+    const tw = measure(dt, { w: 700, s: 34, f: STACK.letter, ls: 0.1, up: true });
+    PLAN.dwgRule.setAttribute('d', 'M76,' + (PLAN.titleY + 4) + 'h' + r2(tw) + 'M76,' + (PLAN.titleY + 9) + 'h' + r2(tw));
+    PLAN.dwgRule.setAttribute('style', 'stroke-width:2');
+    const val = (roll) => (lens === 'overall' ? roll.overall : roll.dims[lens]);
+    WINGS.forEach((w) => {
+      w.statEl.textContent = w.roll.count + ' FX · ' + w.rooms.length + ' ROOMS · ' + L.short + ' ' + pct(val(w.roll));
+      w.plateStat.textContent = w.roll.count + ' FX · ' + pct(val(w.roll));
+    });
+    ROOMS.forEach((room) => {
+      const st = room.statEl;
+      const nTrust = state.trust ? room.cells.filter((c) => c.trust).length : 0;
+      const tail = nTrust ? ' · ▲' + nTrust : '';
+      const v = pct(val(room.roll));
+      const avail = room.w - 2 * G.roomPad - 49;
+      const pre = lens === 'overall' ? '' : L.short + ' ';
+      const main = firstFit([room.n + ' FX · ' + pre + v + tail, room.n + ' FX · ' + v + tail, v + tail], FONT.roomS, avail);
+      st.textContent = tail ? main.slice(0, -tail.length) : main;
+      if (tail) {
+        const t = el('tspan', { class: 'rv-n' }, st);
+        t.textContent = tail;
+      }
+    });
+    FX.forEach((rec) => {
+      const f = rec.f;
+      const v = BP.lensValue(f, lens);
+      rec.valEl.textContent = L.short + ' ' + pct(v);
+      let cands;
+      const rel = f.release ? 'v' + f.release : 'UNSCHED.';
+      if (f.status === 'blocked') cands = ['BLOCKED · KEYNOTE ' + rec.keynote, 'BLOCKED · KN ' + rec.keynote];
+      else if (lens === 'dev') {
+        const cov = 'COV ' + (f.metrics.coverage == null ? '—' : f.metrics.coverage + '%');
+        cands = [cov + ' · TESTS ' + FACET_LABEL[f.dims.dev.tests].toUpperCase(), cov + ' · TESTS ' + ST_SHORT[f.dims.dev.tests]];
+      } else if (lens === 'ops') {
+        const dep = f.dims.ops.deploy === 'done' ? 'DEPLOYED' : f.dims.ops.deploy === 'partial' ? 'STAGING' : 'UNPOWERED';
+        cands = [(f.metrics.uptime == null ? 'NOT LIVE' : 'UP ' + f.metrics.uptime + '%') + ' · ' + dep, dep];
+      } else if (lens === 'biz') {
+        const b = f.dims.biz;
+        cands = ['VALUE ' + FACET_LABEL[b.value].toUpperCase() + ' · DOCS ' + FACET_LABEL[b.docs].toUpperCase(), 'VALUE ' + ST_SHORT[b.value] + ' · DOCS ' + ST_SHORT[b.docs]];
+      } else {
+        const who = f.builtBy.toUpperCase();
+        const rv = f.review === 'changes' ? 'CHANGES' : f.review === 'pending' ? 'IN REVIEW' : '';
+        cands = rv ? [f.priority + ' · ' + rel + ' · ' + who + ' · ' + rv, f.priority + ' · ' + who + ' · ' + rv, who + ' · ' + rv] : [f.priority + ' · ' + rel + ' · ' + who];
+      }
+      rec.metaEl.textContent = firstFit(cands, FONT.meta, G.cw - 6);
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // INTERACTION: camera, levels, pointer, keys, filters, selection
+  // ═══════════════════════════════════════════════════════════════════════
+  let raf = 0;
+  let anim = null;
+  let dragMoved = false;
+
+  function kMin() { return Math.min(fitView().k * 0.6, 0.12); }
+  /** Moves the camera; the one transformed group and the paper grid update on the next frame. */
+  function setCam(c, fromUser) {
+    state.cam = { x: c.x, y: c.y, k: Math.max(kMin(), Math.min(K_MAX, c.k)) };
+    if (fromUser) { state.touched = true; anim = null; }
+    if (!raf) raf = requestAnimationFrame(commit);
+  }
+  function setCamNow(c) { setCam(c); commit(); }
+  const gridEls = {};
+  let lastK = 0;
+  let zoomTimer = 0;
+  /** Applies the camera: world transform, ruled paper, scale readout and the level of detail. */
+  function commit() {
+    if (raf) { cancelAnimationFrame(raf); raf = 0; }
+    const { x, y, k } = state.cam;
+    world.setAttribute('transform', 'translate(' + r2(x) + ',' + r2(y) + ') scale(' + k.toFixed(5) + ')');
+    if (lastK && Math.abs(k - lastK) > 1e-6 && (anim || pointers.size || wheelActive)) {
+      plan.classList.add('zooming');
+      clearTimeout(zoomTimer);
+      plan.classList.remove('relettered');
+      zoomTimer = setTimeout(() => {
+        plan.classList.remove('zooming');
+        plan.classList.add('relettered');
+        setTimeout(() => plan.classList.remove('relettered'), 220);
+      }, anim ? 60 : 150);
+    }
+    lastK = k;
+    // ruled paper: minor 25 units, major 125 units, thinned out when dense
+    let step = 25 * k;
+    while (step < 7) step *= 5;
+    const major = step * 5;
+    if (!gridEls.minor) {
+      gridEls.minor = $('#p-grid-minor'); gridEls.major = $('#p-grid-major');
+      gridEls.pm = $('#pg-minor'); gridEls.pM = $('#pg-major');
+    }
+    [[gridEls.minor, gridEls.pm, step], [gridEls.major, gridEls.pM, major]].forEach(([pat, path, st]) => {
+      const w = r2(st);
+      pat.setAttribute('width', w);
+      pat.setAttribute('height', w);
+      pat.setAttribute('patternTransform', 'translate(' + r2(((x % st) + st) % st) + ',' + r2(((y % st) + st) % st) + ')');
+      path.setAttribute('d', 'M0 .5H' + w + 'M.5 0V' + w);
+    });
+    updateScale(k);
+    const lv = k < LV.SHEET ? 0 : k < LV.ROOM ? 1 : k < LV.DETAIL ? 2 : 3;
+    if (lv !== state.level) {
+      plan.classList.remove('lv0', 'lv1', 'lv2', 'lv3');
+      plan.classList.add('lv' + lv);
+      state.level = lv;
+      $('#lvl-name').textContent = LV_NAMES[lv].toUpperCase();
+    }
+    if (lv === 0) WINGS.forEach((w) => {
+      const p = w.plate;
+      let s = 1 / k;
+      const maxW = w.rect.w * 0.9;
+      const maxH = w.rect.h * 0.8;
+      s = Math.min(s, maxW / p.pw, maxH / p.ph);
+      p.g.setAttribute('transform', 'translate(' + r2(p.cx) + ',' + r2(p.cy) + ') scale(' + s.toFixed(4) + ')');
+    });
+    if (state.sel && state.sel.type === 'feature') drawLinks();
+  }
+
+  /** Drawing scale: 1 world unit = 20 mm; a CSS pixel is 0.2646 mm. */
+  let scaleKey = '';
+  let barW = 180;
+  function updateScale(k) {
+    const n = 75.6 / k;
+    const mag = Math.pow(10, Math.floor(Math.log10(n)) - 1);
+    const label = '1:' + Math.round(n / mag) * mag;
+    const key = label + '|' + Math.round(k * 400);
+    if (key === scaleKey) return;
+    scaleKey = key;
+    $('#lvl-scale').textContent = 'SCALE ' + label;
+    $('#tb-scale-v').textContent = label;
+    $('#foot-scale').textContent = label;
+    const pxPerM = 50 * k;
+    const nice = [0.5, 1, 2, 5, 10, 20, 50, 100];
+    const svg = $('#scalebar');
+    const avail = Math.max(120, barW - 20);
+    let m = nice[0];
+    nice.forEach((v) => { if (v * pxPerM <= avail) m = v; });
+    const L = m * pxPerM;
+    let s = '';
+    for (let i = 0; i < 4; i++) s += '<rect x="' + r2(2 + i * L / 4) + '" y="2" width="' + r2(L / 4) + '" height="5" fill="' + (i % 2 ? 'var(--paper)' : 'var(--ink)') + '" stroke="var(--ink)" stroke-width="1"/>';
+    s += '<text x="2" y="19" font-family="var(--f-mono)" font-size="9" fill="var(--ink-2)">0</text><text x="' + r2(2 + L) + '" y="19" text-anchor="end" font-family="var(--f-mono)" font-size="9" fill="var(--ink-2)">' + m + ' M</text>';
+    svg.innerHTML = s;
+  }
+
+  /** Unobstructed part of the stage, in stage pixels, accounting for open panels. */
+  function visibleArea() {
+    const vw = viewport.clientWidth;
+    const vh = viewport.clientHeight;
+    const a = { x: 0, y: 0, w: vw, h: vh };
+    const insp = $('#inspector');
+    if (!insp.classList.contains('closed')) {
+      if (isPhone()) {
+        const stageTop = viewport.getBoundingClientRect().top;
+        const top = $('#app').clientHeight - insp.offsetHeight - stageTop;
+        a.h = Math.max(120, Math.min(vh, top));
+      } else {
+        a.w = Math.max(200, vw - (insp.offsetWidth - $('#strip').offsetWidth));
+      }
+    }
+    return a;
+  }
+  function camForBox(box, area, pad) {
+    const k = Math.min((area.w - 2 * pad) / box.w, (area.h - 2 * pad) / box.h);
+    return { k, x: area.x + area.w / 2 - (box.x + box.w / 2) * k, y: area.y + area.h / 2 - (box.y + box.h / 2) * k };
+  }
+  function fitView() {
+    const ph = isPhone();
+    const va = visibleArea();
+    const area = { x: va.x, y: va.y, w: va.w || 800, h: (va.h || 600) - (ph ? 0 : 44) };
+    const pad = ph ? 8 : 16;
+    const c1 = camForBox(PLAN.ext, area, pad);
+    if (c1.k >= LV.SHEET) return c1;
+    // dimension strings are not lettered on a key plan, so frame the building itself
+    const b = { x: -G.ext - 12, y: -G.ext - 12, w: PLAN.W + 2 * G.ext + 24, h: PLAN.H + 2 * G.ext + 24 };
+    const c2 = camForBox(b, area, pad);
+    const k = Math.min(c2.k, LV.SHEET - 0.002);
+    return { k, x: area.x + area.w / 2 - (b.x + b.w / 2) * k, y: area.y + area.h / 2 - (b.y + b.h / 2) * k };
+  }
+  function fit(animate) {
+    state.touched = false;
+    const c = fitView();
+    if (animate) flyCam(c); else setCamNow(c);
+  }
+  function flyCam(target, ms) {
+    hideTip();
+    if (reduceMotion()) { anim = null; setCamNow(target); return; }
+    const from = Object.assign({}, state.cam);
+    const area = visibleArea();
+    const ax = area.x + area.w / 2;
+    const ay = area.y + area.h / 2;
+    const w0 = { x: (ax - from.x) / from.k, y: (ay - from.y) / from.k };
+    const w1 = { x: (ax - target.x) / target.k, y: (ay - target.y) / target.k };
+    const t0 = performance.now();
+    const dur = ms || 520;
+    const token = {};
+    anim = token;
+    (function step(now) {
+      if (anim !== token) return;
+      const t = Math.min(1, (now - t0) / dur);
+      const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      const k = Math.exp(Math.log(from.k) + (Math.log(target.k) - Math.log(from.k)) * e);
+      const wx = w0.x + (w1.x - w0.x) * e;
+      const wy = w0.y + (w1.y - w0.y) * e;
+      setCam({ k, x: ax - wx * k, y: ay - wy * k });
+      if (t < 1) requestAnimationFrame(step);
+      else { anim = null; commit(); }
+    })(t0);
+  }
+  function flyToRect(r, pad) {
+    state.touched = true;
+    flyCam(camForBox({ x: r.x - pad, y: r.y - pad, w: r.w + 2 * pad, h: r.h + 2 * pad }, visibleArea(), 12));
+  }
+  function flyToFeature(id, minK) {
+    const rec = FX.get(id);
+    if (!rec) return;
+    const area = visibleArea();
+    const k = Math.max(state.cam.k, minK || LV.DETAIL + 0.08);
+    const k2 = Math.min(k, K_MAX, area.w / 260, area.h / 220 + 0.6);
+    const cx = rec.x + G.cw / 2;
+    const cy = rec.y + G.ch / 2;
+    state.touched = true;
+    flyCam({ k: k2, x: area.x + area.w / 2 - cx * k2, y: area.y + area.h / 2 - cy * k2 });
+  }
+  function zoomAt(px, py, factor) {
+    const { x, y, k } = state.cam;
+    const nk = Math.max(kMin(), Math.min(K_MAX, k * factor));
+    const f = nk / k;
+    setCam({ k: nk, x: px - (px - x) * f, y: py - (py - y) * f }, true);
+  }
+  function zoomCenter(factor) {
+    const a = visibleArea();
+    const { x, y, k } = state.cam;
+    const nk = Math.max(kMin(), Math.min(K_MAX, k * factor));
+    const px = a.x + a.w / 2;
+    const py = a.y + a.h / 2;
+    state.touched = true;
+    flyCam({ k: nk, x: px - (px - x) * nk / k, y: py - (py - y) * nk / k }, 260);
+  }
+
+  // pointer: drag to pan, pinch to zoom, click to select
+  const pointers = new Map();
+  let pinch = null;
+  let downTarget = null;
+  let downAt = null;
+  viewport.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    anim = null;
+    try { viewport.setPointerCapture(e.pointerId); } catch (err) { /* pointer already released */ }
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 1) { downTarget = e.target; downAt = { x: e.clientX, y: e.clientY }; dragMoved = false; }
+    if (pointers.size === 2) {
+      const [a, b] = Array.from(pointers.values());
+      pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+      dragMoved = true;
+    }
+  });
+  viewport.addEventListener('pointermove', (e) => {
+    if (!pointers.has(e.pointerId)) { hoverTip(e); return; }
+    const prev = pointers.get(e.pointerId);
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const rect = viewport.getBoundingClientRect();
+    if (pointers.size >= 2 && pinch) {
+      const [a, b] = Array.from(pointers.values());
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      const mx = (a.x + b.x) / 2;
+      const my = (a.y + b.y) / 2;
+      const c = state.cam;
+      const nk = Math.max(kMin(), Math.min(K_MAX, c.k * d / pinch.d));
+      const f = nk / c.k;
+      const px = pinch.mx - rect.left;
+      const py = pinch.my - rect.top;
+      setCam({ k: nk, x: px - (px - c.x) * f + (mx - pinch.mx), y: py - (py - c.y) * f + (my - pinch.my) }, true);
+      pinch = { d, mx, my };
+      return;
+    }
+    if (!dragMoved && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) < 5) return;
+    if (!dragMoved) { dragMoved = true; viewport.classList.add('panning'); hideTip(); }
+    setCam({ k: state.cam.k, x: state.cam.x + (e.clientX - prev.x), y: state.cam.y + (e.clientY - prev.y) }, true);
+  });
+  function endPointer(e) {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinch = null;
+    if (pointers.size === 0) {
+      viewport.classList.remove('panning');
+      if (!dragMoved && e.type === 'pointerup') handleTap(downTarget);
+      setTimeout(() => { dragMoved = false; }, 0);
+    }
+  }
+  viewport.addEventListener('pointerup', endPointer);
+  viewport.addEventListener('pointercancel', endPointer);
+  viewport.addEventListener('pointerleave', hideTip);
+  let wheelActive = false;
+  let wheelTimer = 0;
+  viewport.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    hideTip();
+    wheelActive = true;
+    clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(() => { wheelActive = false; }, 160);
+    const rect = viewport.getBoundingClientRect();
+    let dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+    dy = Math.max(-120, Math.min(120, dy));
+    const factor = Math.exp(-dy * (e.ctrlKey ? 0.012 : 0.0022));
+    anim = null;
+    zoomAt(e.clientX - rect.left, e.clientY - rect.top, factor);
+  }, { passive: false });
+
+  function handleTap(target) {
+    if (!target || !target.closest) return;
+    const fxEl = target.closest('[data-fid]');
+    if (fxEl) { selectFeature(fxEl.getAttribute('data-fid'), { fly: false }); return; }
+    const zone = target.closest('.zone-hdr, .plate-g');
+    if (zone) return;
+    const roomEl = target.closest('[data-room]');
+    if (roomEl) { selectModule(roomEl.getAttribute('data-room'), true); return; }
+    clearSelection();
+  }
+
+  // hover tooltip (fine pointers, before names are lettered on the plan)
+  const tip = $('#tip');
+  function hoverTip(e) {
+    if (e.pointerType !== 'mouse' || state.level >= 3 || anim) { hideTip(); return; }
+    const fxEl = e.target.closest && e.target.closest('[data-fid]');
+    if (!fxEl || (state.sel && state.sel.id === fxEl.getAttribute('data-fid'))) { hideTip(); return; }
+    const rec = FX.get(fxEl.getAttribute('data-fid'));
+    const f = rec.f;
+    tip.innerHTML = '<div class="t1">' + rec.tag + ' · ' + esc(rec.room.code) + ' ' + esc(rec.room.m.name.toUpperCase()) + '</div><div class="t2">' + esc(f.name) + '</div><div class="t3">' + esc(STATUS_LABEL[f.status].toUpperCase()) + ' · ' + LENS[state.lens].short + ' ' + pct(BP.lensValue(f, state.lens)) + (rec.trust ? ' · ▲ ' + (f.review === 'changes' ? 'CHANGES REQUESTED' : 'AWAITING REVIEW') : '') + '</div>';
+    tip.hidden = false;
+    const r = viewport.getBoundingClientRect();
+    let x = e.clientX - r.left + 16;
+    let y = e.clientY - r.top + 16;
+    const tw = tip.offsetWidth;
+    const th = tip.offsetHeight;
+    if (x + tw > r.width - 8) x = e.clientX - r.left - tw - 12;
+    if (y + th > r.height - 8) y = e.clientY - r.top - th - 12;
+    tip.style.transform = 'translate(' + Math.round(x) + 'px,' + Math.round(y) + 'px)';
+    tip.style.left = '0';
+    tip.style.top = '0';
+  }
+  function hideTip() { tip.hidden = true; }
+
+  // lens switching: a quick sheet flip
+  function setLens(id) {
+    if (!LENS[id] || id === state.lens) return;
+    const apply = () => {
+      state.lens = id;
+      LENSES.forEach((l) => plan.classList.toggle('lens-' + l.id, l.id === id));
+      refreshLensText();
+      updateChrome();
+      if (state.sel) renderInspector();
+    };
+    if (reduceMotion()) { apply(); return; }
+    plan.classList.add('flip');
+    setTimeout(() => { apply(); requestAnimationFrame(() => plan.classList.remove('flip')); }, 150);
+  }
+
+  // filters and search: non-matching fixtures dim, matches get a highlight frame
+  function filterActive() { return state.statuses.size > 0 || state.query.trim() !== ''; }
+  function applyFilters() {
+    const active = filterActive();
+    const q = state.query.trim();
+    const filter = { statuses: state.statuses, query: q };
+    let n = 0;
+    const roomHits = new Map();
+    FX.forEach((rec) => {
+      const m = BP.matches(rec.f, filter);
+      if (m) n += 1;
+      rec.match = m;
+      rec.el.classList.toggle('dim', active && !m);
+      rec.el.classList.toggle('match', !!q && m);
+      if (m) roomHits.set(rec.room.m.id, true);
+    });
+    ROOMS.forEach((room, id) => room.lblEl.classList.toggle('dimroom', active && !roomHits.has(id)));
+    $('#search-count').textContent = q ? n + ' FOUND' : '';
+    $$('.chip-set').forEach((set) => set.classList.toggle('filtering', state.statuses.size > 0));
+    $$('.chip').forEach((c) => c.setAttribute('aria-pressed', String(state.statuses.has(c.getAttribute('data-status')))));
+    return n;
+  }
+  function firstMatch() {
+    for (const rec of FX.values()) if (rec.match) return rec;
+    return null;
+  }
+
+  function setTrust(on) {
+    state.trust = on;
+    plan.classList.toggle('trust', on);
+    $('#trust-toggle').setAttribute('aria-pressed', String(on));
+    refreshLensText();
+  }
+
+  // selection
+  function clearLinks() { layers.links.textContent = ''; }
+  function drawLinks() {
+    clearLinks();
+    if (!state.sel || state.sel.type !== 'feature') return;
+    const rec = FX.get(state.sel.id);
+    const k = state.cam.k;
+    const head = 7 / Math.max(k, 0.35);
+    const showTags = state.level === 1;
+    // a point on the square around a symbol (half-size h), on the ray toward (px, py)
+    const edge = (c, px, py, h) => {
+      const dx = px - c.cx; const dy = py - c.cy;
+      const t = h / (Math.max(Math.abs(dx), Math.abs(dy)) || 1);
+      return [c.cx + dx * t, c.cy + dy * t];
+    };
+    const one = (from, to, cls, tagRec) => {
+      const dx = to.cx - from.cx; const dy = to.cy - from.cy;
+      const len = Math.hypot(dx, dy) || 1;
+      const bend = Math.min(150, len * 0.2);
+      const mx = (from.cx + to.cx) / 2 - dy / len * bend;
+      const my = (from.cy + to.cy) / 2 + dx / len * bend;
+      const [x1, y1] = edge(from, mx, my, 22);
+      const [tx, ty] = edge(to, mx, my, 24);
+      el('path', { d: 'M' + r2(x1) + ',' + r2(y1) + 'Q' + r2(mx) + ',' + r2(my) + ' ' + r2(tx) + ',' + r2(ty), class: 'lnk ' + cls }, layers.links);
+      el('circle', { cx: r2(x1), cy: r2(y1), r: r2(2.6 / Math.max(k, 0.35)), class: 'lnk-head' }, layers.links);
+      const ang = Math.atan2(ty - my, tx - mx);
+      const hx = (a) => r2(tx - head * Math.cos(ang + a));
+      const hy = (a) => r2(ty - head * Math.sin(ang + a));
+      el('path', { d: 'M' + r2(tx) + ',' + r2(ty) + 'L' + hx(0.42) + ',' + hy(0.42) + 'L' + hx(-0.42) + ',' + hy(-0.42) + 'Z', class: 'lnk-head' }, layers.links);
+      if (showTags) {
+        const fs = 10.5 / k;
+        const w = fs * 3.9;
+        const h = fs * 1.55;
+        // seat the tag in the cell's lower half, which carries no lettering at sheet level
+        const lx = tagRec.x + G.cw / 2;
+        const ly = tagRec.y + 64;
+        el('rect', { x: r2(lx - w / 2), y: r2(ly - h / 2), width: r2(w), height: r2(h), class: 'lnk-tag' }, layers.links);
+        txt(layers.links, lx, ly + fs * 0.36, tagRec.tag, 't-lnk', { style: 'font-size:' + r2(fs) + 'px' });
+      }
+    };
+    BP.dependencies(rec.f).forEach((d) => { const t = FX.get(d.id); one(rec, t, 'dep-out', t); });
+    BP.dependents(rec.f).forEach((d) => { const s = FX.get(d.id); one(s, rec, 'dep-in', s); });
+  }
+  function markSelection() {
+    FX.forEach((rec) => rec.el.classList.remove('sel', 'rel'));
+    ROOMS.forEach((room) => room.el.classList.remove('room-sel'));
+    plan.classList.remove('has-sel');
+    if (!state.sel) return;
+    if (state.sel.type === 'feature') {
+      const rec = FX.get(state.sel.id);
+      rec.el.classList.add('sel');
+      BP.dependencies(rec.f).concat(BP.dependents(rec.f)).forEach((d) => FX.get(d.id).el.classList.add('rel'));
+      plan.classList.add('has-sel');
+      // keep the selected fixture on top of its neighbours
+      layers.fx.appendChild(rec.el);
+    } else {
+      ROOMS.get(state.sel.id).el.classList.add('room-sel');
+    }
+  }
+  function selectFeature(id, opts) {
+    const rec = FX.get(id);
+    if (!rec) return;
+    hideTip();
+    state.sel = { type: 'feature', id };
+    markSelection();
+    openInspector();
+    renderInspector();
+    drawLinks();
+    const o = opts || {};
+    if (o.fly) flyToFeature(id);
+    else ensureVisible(rec);
+  }
+  function ensureVisible(rec) {
+    const a = visibleArea();
+    const { x, y, k } = state.cam;
+    const sx = rec.x * k + x;
+    const sy = rec.y * k + y;
+    const sw = G.cw * k;
+    const sh = G.ch * k;
+    if (sx >= a.x + 8 && sy >= a.y + 8 && sx + sw <= a.x + a.w - 8 && sy + sh <= a.y + a.h - 8) return;
+    const nx = Math.min(Math.max(sx, a.x + 24), a.x + a.w - sw - 24);
+    const ny = Math.min(Math.max(sy, a.y + 24), a.y + a.h - sh - 24);
+    state.touched = true;
+    flyCam({ k, x: x + (nx - sx), y: y + (ny - sy) }, 320);
+  }
+  function selectModule(id, fly) {
+    const room = ROOMS.get(id);
+    if (!room) return;
+    state.sel = { type: 'module', id };
+    markSelection();
+    clearLinks();
+    openInspector();
+    renderInspector();
+    if (fly) setTimeout(() => flyToRect(room, 30), 30);
+  }
+  function clearSelection() {
+    if (!state.sel) { closeInspector(); return; }
+    state.sel = null;
+    markSelection();
+    clearLinks();
+    closeInspector();
+  }
+
+  // keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    const typing = e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA');
+    if (e.key === 'Escape') {
+      if (typing && e.target.value) { e.target.value = ''; state.query = ''; applyFilters(); return; }
+      if (typing) { e.target.blur(); return; }
+      if (!$('#strip').classList.contains('closed') && isPhone()) { setNotes(false); return; }
+      clearSelection();
+      return;
+    }
+    if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+    const lens = LENSES.find((l) => l.key === e.key);
+    if (lens) { setLens(lens.id); e.preventDefault(); return; }
+    switch (e.key) {
+      case '+': case '=': zoomCenter(1.4); break;
+      case '-': case '_': zoomCenter(1 / 1.4); break;
+      case '0': fit(true); break;
+      case '/': e.preventDefault(); $('#search').focus(); break;
+      case 'r': case 'R': setTrust(!state.trust); break;
+      case 't': case 'T': cycleTheme(); break;
+      case 'l': case 'L': if (isPhone()) setNotes($('#strip').classList.contains('closed')); else toggleLegend(); break;
+      case 'ArrowLeft': setCam({ k: state.cam.k, x: state.cam.x + 80, y: state.cam.y }, true); break;
+      case 'ArrowRight': setCam({ k: state.cam.k, x: state.cam.x - 80, y: state.cam.y }, true); break;
+      case 'ArrowUp': setCam({ k: state.cam.k, x: state.cam.x, y: state.cam.y + 80 }, true); break;
+      case 'ArrowDown': setCam({ k: state.cam.k, x: state.cam.x, y: state.cam.y - 80 }, true); break;
+      default: return;
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // PANELS: toolbar, sheet column, legend, keynotes, title block, inspector
+  // ═══════════════════════════════════════════════════════════════════════
+  /** Small inline SVG for a status symbol, using the canvas classes. */
+  function symSvg(status, w, h) {
+    const W = w || 22; const H = h || 18;
+    const s = Math.min(W, H) - 6;
+    const x = (W - s) / 2; const y = (H - s) / 2;
+    let out = '<svg viewBox="0 0 ' + W + ' ' + H + '" aria-hidden="true"><rect x="' + x + '" y="' + y + '" width="' + s + '" height="' + s + '" class="sym ' + symClass(status) + '"/>';
+    if (status === 'blocked') out += '<path d="M' + (x - 2) + ',' + (y - 2) + 'L' + (x + s + 2) + ',' + (y + s + 2) + 'M' + (x + s + 2) + ',' + (y - 2) + 'L' + (x - 2) + ',' + (y + s + 2) + '" class="redx" style="stroke-width:1.8"/>';
+    return out + '</svg>';
+  }
+  function tickSvg(st) {
+    const p = tickPaths([[st]], 3, 2, 14, 9, 0, 0);
+    return '<svg viewBox="0 0 20 13" aria-hidden="true">' + (p.f ? '<path d="' + p.f + '" class="tk-f"/>' : '') + (p.o ? '<path d="' + p.o + '" class="tk-o"/>' : '') + (p.b ? '<path d="' + p.b + '" class="tk-b"/>' : '') + (p.n ? '<path d="' + p.n + '" class="tk-n"/>' : '') + '</svg>';
+  }
+  function dimBarSvg(v, on) {
+    const x1 = 4 + v * 92;
+    return '<svg viewBox="0 0 100 16" preserveAspectRatio="none" aria-hidden="true"><path d="M4,3V14M96,3V14" stroke="var(--ink-3)" stroke-width="1" vector-effect="non-scaling-stroke"/><path d="M4,9H' + r2(x1) + '" stroke="' + (on ? 'var(--sel)' : 'var(--ink)') + '" stroke-width="' + (on ? 2.4 : 1.6) + '" vector-effect="non-scaling-stroke"/><path d="M' + r2(x1) + ',9H96" stroke="var(--ink-3)" stroke-width="1" stroke-dasharray="2 2" vector-effect="non-scaling-stroke"/><path d="M' + r2(x1) + ',4V14" stroke="' + (on ? 'var(--sel)' : 'var(--ink)') + '" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>';
+  }
+
+  function buildChrome() {
+    const P = BP.product;
+    $('#brand-ver').textContent = 'v' + P.version;
+    // sheet tabs (toolbar + phone footer)
+    [['#sheets-bar', true], ['#sheets-foot', false]].forEach(([sel, desk]) => {
+      $(sel).innerHTML = LENSES.map((l) => '<button type="button" class="sheet-tab" data-lens="' + l.id + '" aria-pressed="' + (l.id === state.lens) + '" title="' + l.discipline + ' sheet · ' + l.name + ' lens (' + l.key + ')"><span class="no">' + l.sheet + '</span><span class="nm">' + (desk ? l.name : l.short) + '</span>' + (desk ? '<kbd>' + l.key + '</kbd>' : '') + '</button>').join('');
+    });
+    $$('[data-lens]').forEach((b) => b.addEventListener('click', () => setLens(b.getAttribute('data-lens'))));
+    // status chips: schedule rows on desktop, a chip strip on phone
+    const roll = productRoll;
+    const chipHtml = BP.STATUS_ORDER.map((s) => '<button type="button" class="chip" data-status="' + s + '" aria-pressed="false">' + symSvg(s) + '<span><span class="l1">' + esc(STATUS_LABEL[s]) + '</span><span class="l2">' + esc(STATUS_TERMS[s]) + '</span></span><span class="c">' + roll.byStatus[s] + '</span></button>').join('');
+    $('#chips-strip').innerHTML = chipHtml;
+    $('#chips-row').innerHTML = chipHtml;
+    $$('.chip').forEach((c) => c.addEventListener('click', () => {
+      const s = c.getAttribute('data-status');
+      if (state.statuses.has(s)) state.statuses.delete(s); else state.statuses.add(s);
+      applyFilters();
+    }));
+    $('#att-n').innerHTML = roll.attention + '<small>of ' + roll.count + '</small>';
+    $('#rev-n').innerHTML = TRUST_COUNT + '<small>agent work</small>';
+    $('#trust-n').textContent = TRUST_COUNT;
+    // keynotes
+    const kn = [];
+    FX.forEach((rec) => {
+      if (!rec.keynote) return;
+      const f = rec.f;
+      const why = f.status === 'blocked' ? f.blockedReason : (f.note || 'Reviewer asked for changes.');
+      kn.push('<li><button type="button" data-goto="' + f.id + '"><span class="kn-n">' + rec.keynote + '</span><span><span class="kn-t"><b>' + rec.tag + '</b>' + esc(f.name) + '</span><span class="kn-d"><em>' + (f.status === 'blocked' ? 'BLOCKED' : 'CHANGES REQUESTED') + '</em> · ' + esc(why) + '</span></span></button></li>');
+    });
+    $('#keynotes').innerHTML = kn.join('');
+    // title block
+    $('#tb-proj').textContent = P.name.toUpperCase();
+    $('#tb-sub').textContent = P.tagline + ' · v' + P.version + ' → v' + P.nextVersion;
+    $('#tb-date').textContent = BP.data.meta.asOf;
+    // phone summary line
+    $('#foot-sum').innerHTML = '<b>' + esc(P.name.toUpperCase()) + ' ' + esc(P.version) + '</b> · ' + DIMS.map((d) => d.short.toUpperCase() + ' ' + Math.round(roll.dims[d.id] * 100)).join(' · ') + ' · <span class="att">▲' + roll.attention + '</span>';
+    // delegated clicks
+    document.addEventListener('click', (e) => {
+      const go = e.target.closest && e.target.closest('[data-goto]');
+      if (go) { if (isPhone()) setNotes(false); selectFeature(go.getAttribute('data-goto'), { fly: true }); return; }
+      const gm = e.target.closest && e.target.closest('[data-gomod]');
+      if (gm) { selectModule(gm.getAttribute('data-gomod'), true); return; }
+      const act = e.target.closest && e.target.closest('[data-act]');
+      if (act) {
+        const a = act.getAttribute('data-act');
+        if (a === 'zoom-in') zoomCenter(1.4);
+        else if (a === 'zoom-out') zoomCenter(1 / 1.4);
+        else if (a === 'fit') fit(true);
+      }
+    });
+    $('#trust-toggle').addEventListener('click', () => setTrust(!state.trust));
+    $('#theme-toggle').addEventListener('click', cycleTheme);
+    $('#legend-toggle').addEventListener('click', toggleLegend);
+    $('#legend-btn').addEventListener('click', () => setNotes($('#strip').classList.contains('closed')));
+    $('#strip-close').addEventListener('click', () => setNotes(false));
+    $('#scrim').addEventListener('click', () => setNotes(false));
+    $('#insp-close').addEventListener('click', clearSelection);
+    const search = $('#search');
+    search.addEventListener('input', () => { state.query = search.value; applyFilters(); });
+    search.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      state.query = search.value;
+      applyFilters();
+      const m = firstMatch();
+      if (m) { flyToFeature(m.f.id, LV.ROOM + 0.25); search.blur(); }
+    });
+  }
+
+  function updateChrome() {
+    const L = LENS[state.lens];
+    $$('[data-lens]').forEach((b) => b.setAttribute('aria-pressed', String(b.getAttribute('data-lens') === state.lens)));
+    $('#tb-title').innerHTML = esc(L.title.split(' · ')[0]) + '<br>' + esc(L.name);
+    $('#tb-num').textContent = L.sheet;
+    $('#comp-aside').textContent = 'sheet ' + L.sheet;
+    $('#legend-aside').textContent = L.sheet + ' · ' + L.discipline;
+    const roll = productRoll;
+    $('#comp').innerHTML = DIMS.map((d) => {
+      const on = state.lens === d.id;
+      return '<div class="comp-row' + (on ? ' on' : '') + '"><span class="k">' + d.short.toUpperCase() + '</span>' + dimBarSvg(roll.dims[d.id], on) + '<span class="v">' + pct(roll.dims[d.id]) + '</span></div>';
+    }).join('') + '<div class="comp-row' + (state.lens === 'overall' ? ' on' : '') + '"><span class="k">OVR</span>' + dimBarSvg(roll.overall, state.lens === 'overall') + '<span class="v">' + pct(roll.overall) + '</span></div>';
+    renderLegend();
+  }
+
+  function lg(svg, t, d) {
+    return '<div class="lg"><svg viewBox="0 0 40 26" aria-hidden="true">' + svg + '</svg><span class="t">' + t + (d ? '<span class="d">' + d + '</span>' : '') + '</span></div>';
+  }
+  function renderLegend() {
+    const sq = (cls, extra) => '<rect x="10" y="4" width="18" height="18" class="sym ' + cls + '"/>' + (extra || '');
+    let h = '<div class="lg-sec">Construction status</div>';
+    h += lg(sq('sym-live'), 'Live', 'Existing construction: heavy outline, solid poche');
+    h += lg(sq('sym-ready'), 'Ready', 'Built, awaiting release: light fill');
+    h += lg(sq('sym-build'), 'In build', 'New construction: amber hatch');
+    h += lg(sq('sym-plan'), 'Planned', 'Future work: dashed, no fill');
+    h += lg(sq('sym-block', '<path d="M7,1L31,25M31,1L7,25" class="redx" style="stroke-width:1.8"/>'), 'Blocked', 'Redline X with a leader to its keynote');
+    const L = state.lens;
+    h += '<div class="lg-sec">' + LENS[L].sheet + ' · ' + LENS[L].discipline + ' layer</div>';
+    if (L === 'overall') {
+      h += lg('<path d="' + tickPaths([['done', 'done', 'partial', 'todo'], ['done', 'partial', 'todo', 'na'], ['partial', 'todo', 'blocked', 'todo']], 4, 3, 6, 4.6, 2.4, 2.6).f + '" class="tk-f"/><path d="' + tickPaths([['done', 'done', 'partial', 'todo'], ['done', 'partial', 'todo', 'na'], ['partial', 'todo', 'blocked', 'todo']], 4, 3, 6, 4.6, 2.4, 2.6).o + '" class="tk-o"/><path d="' + tickPaths([['done', 'done', 'partial', 'todo'], ['done', 'partial', 'todo', 'na'], ['partial', 'todo', 'blocked', 'todo']], 4, 3, 6, 4.6, 2.4, 2.6).b + '" class="tk-b"/><path d="' + tickPaths([['done', 'done', 'partial', 'todo'], ['done', 'partial', 'todo', 'na'], ['partial', 'todo', 'blocked', 'todo']], 4, 3, 6, 4.6, 2.4, 2.6).n + '" class="tk-n"/>', 'Fixture schedule', 'Rows Dev, Ops, Biz; four facets each');
+      h += lg('<path d="' + tickPaths([['done']], 6, 8, 12, 9, 0, 0).f + '" class="tk-f"/><path d="' + tickPaths([['partial']], 22, 8, 12, 9, 0, 0).f + tickPaths([['partial']], 22, 8, 12, 9, 0, 0).o + '" class="tk-f" style="stroke:var(--ink-2);stroke-width:.8"/>', 'Done · Partial', 'Filled tick · half-filled tick');
+      h += lg('<path d="' + tickPaths([['todo']], 6, 8, 12, 9, 0, 0).o + '" class="tk-o"/><path d="' + tickPaths([['blocked']], 22, 8, 12, 9, 0, 0).b + '" class="tk-b"/>', 'To do · Blocked', 'Open tick · red tick; a dash marks n/a');
+    } else if (L === 'dev') {
+      h += lg('<path d="M10,22V4H28V22Z" class="frame-fill" style="clip-path:inset(40% 0 0 0)"/><path d="M10,4H28V22H10Z" class="frame"/><path d="M10,4L28,22M28,4L10,22" class="brace"/><rect x="8" y="2" width="4" height="4" class="col"/><rect x="26" y="2" width="4" height="4" class="col"/><rect x="8" y="20" width="4" height="4" class="col"/><rect x="26" y="20" width="4" height="4" class="col"/>', 'Braced bay', 'Tests done: X-bracing. Hatch rises with dev completion');
+      h += lg('<path d="M10,22L28,4" class="brace"/><path d="M10,4H28V22H10Z" class="frame"/>', 'Single brace', 'Tests partial');
+      h += lg('<path d="M16,4H34L28,22H10Z" class="frame unbraced"/>', 'Unbraced, racked', 'No tests yet: the frame leans');
+      h += lg('<path d="M20,2V24" class="grid-line" style="vector-effect:none"/><circle cx="20" cy="13" r="8" class="grid-bub"/><text x="20" y="16.5" class="t-grid" style="font-size:10px">1</text>', 'Column line', 'Structural grid on the zone walls');
+    } else if (L === 'ops') {
+      h += lg('<path d="M4,6H36M4,6V24" class="trunk"/><rect x="0" y="2" width="8" height="8" class="riser"/>', 'Riser and trunk', 'Each room feeds its fixtures');
+      h += lg('<circle cx="12" cy="13" r="8" class="outlet on"/><path d="M28,5A8,8 0 0 0 28,21Z" class="half"/><circle cx="28" cy="13" r="8" class="outlet" style="fill:none"/>', 'Deployed · Staging', 'Solid outlet · half outlet on a dashed drop');
+      h += lg('<circle cx="20" cy="13" r="8" class="outlet off"/>', 'Unpowered', 'Not deployed: open outlet, no run');
+      h += lg('<path d="M2,13H38" class="branch"/><circle cx="9" cy="13" r="4" class="ft done"/><path d="M20,8L25,13L20,18L15,13Z" class="ft partial"/><rect x="28" y="9" width="8" height="8" class="ft"/>', 'Fittings', 'Observability ○, security review ◇, runbook □');
+    } else {
+      h += lg('<rect x="2" y="3" width="36" height="20" class="wash-hi" style="stroke:var(--ink);stroke-width:1"/>', 'In use', 'Room wash: adoption at or above half');
+      h += lg('<rect x="2" y="3" width="36" height="20" class="wash-mid" style="stroke:var(--ink);stroke-width:1"/>', 'Partly adopted', 'Adoption between 30 and 50%');
+      h += lg('<rect x="2" y="3" width="36" height="20" class="wash-lo" style="stroke:var(--ink);stroke-width:1"/>', 'Low adoption', 'Below 30%: program unproven');
+      h += lg('<path d="M20,13L20,3A10,10 0 0 1 30,13Z" class="q done"/><path d="M20,13L30,13A10,10 0 0 1 20,23Z" class="q partial"/><circle cx="20" cy="13" r="10" class="datum"/><path d="M7,13h26M20,0v26" class="datum-x"/>', 'Program datum', 'Quarters: value ↗, docs ↘, packaging ↙, adoption ↖');
+      h += lg('<rect x="2" y="9" width="36" height="7" class="gauge-o"/><rect x="2" y="9" width="24" height="7" class="gauge-f"/>', 'Usage gauge', 'Share of merchants using it');
+    }
+    if (L !== 'overall') h += lg('<path d="M2,5H38M2,21H38" class="room-wall" style="opacity:.42"/><path d="M2,9H38M2,17H38" class="room-wall-in" style="opacity:.42"/>', 'Screened base', 'Walls drawn faint so this layer reads first');
+    h += '<div class="lg-sec">Annotations</div>';
+    h += lg('<circle cx="20" cy="13" r="8" class="kn-c"/><text x="20" y="16.4" class="t-kn" style="font-size:9.5px">3</text>', 'Redline keynote', 'Needs attention: blocked or changes requested');
+    h += lg('<rect x="12" y="5" width="16" height="16" class="sym sym-build"/><path d="M9,12V3H17M23,3H31V12M31,15V24H23M17,24H9V15" class="att-mark" style="stroke-width:1.8"/>', 'Redline corners', 'A reviewer asked for changes');
+    h += lg('<path d="' + cloudD(4, 3, 32, 20, 8) + '" class="cloud"/><path d="M20,7L26,18H14Z" class="delta"/><text x="20" y="16.6" class="t-delta" style="font-size:6.4px">A</text>', 'Revision cloud', 'AI review overlay: agent (A) or pair (P) work awaiting a human. Filled ▲ = changes requested');
+    h += lg('<path d="M3,20H37" class="dim-line"/><path d="M3,20H26" class="dim-line" style="stroke-width:2"/><path d="M0,23l6,-6M23,23l6,-6M34,23l6,-6" class="dim-tick"/>', 'Dimension string', 'Zone completion measured along its wall');
+    h += lg('<path d="M4,20Q20,0 34,14" class="lnk"/><path d="M4,24Q22,12 34,22" class="lnk dep-in"/>', 'References', 'Solid: depends on. Dashed: required by');
+    h += lg('<circle cx="20" cy="13" r="10" class="rtag"/><text x="20" y="16" class="t-rtag" style="font-size:7.5px">C-03</text>', 'Room tag', 'Zone letter and room number');
+    h += lg('<rect x="2" y="9" width="14" height="8" class="sym sym-live" style="stroke-width:.8"/><rect x="16" y="9" width="8" height="8" class="sym sym-build" style="stroke-width:.8"/><rect x="24" y="9" width="10" height="8" class="sym sym-plan" style="stroke-width:.8"/><rect x="2" y="9" width="36" height="8" class="zbar-o"/>', 'Zone status bar', 'Share of the zone\'s fixtures by status');
+    $('#legend').innerHTML = h;
+  }
+
+  function toggleLegend() {
+    state.legendOpen = !state.legendOpen;
+    $('#legend-toggle').setAttribute('aria-expanded', String(state.legendOpen));
+    $('#legend').hidden = !state.legendOpen;
+  }
+  function setNotes(open) {
+    if (!isPhone()) return;
+    $('#strip').classList.toggle('closed', !open);
+    $('#strip').setAttribute('aria-hidden', String(!open));
+    $('#legend-btn').setAttribute('aria-expanded', String(open));
+    $('#scrim').classList.toggle('on', open);
+    if (open) clearSelection();
+  }
+
+  // theme: system > light > dark
+  const THEME_ICONS = {
+    system: '<circle cx="9" cy="9" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9 2.5a6.5 6.5 0 0 1 0 13z" fill="currentColor"/>',
+    light: '<circle cx="9" cy="9" r="4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9 1.5v2.3M9 14.2v2.3M1.5 9h2.3M14.2 9h2.3M3.7 3.7l1.6 1.6M12.7 12.7l1.6 1.6M3.7 14.3l1.6-1.6M12.7 5.3l1.6-1.6" stroke="currentColor" stroke-width="1.4"/>',
+    dark: '<path d="M13.8 11.6A6.2 6.2 0 0 1 6.4 4.2a6.2 6.2 0 1 0 7.4 7.4z" fill="currentColor"/>',
+  };
+  function applyTheme() {
+    if (state.theme === 'system') ROOT.removeAttribute('data-theme');
+    else ROOT.setAttribute('data-theme', state.theme);
+    $('#theme-icon').innerHTML = THEME_ICONS[state.theme];
+    const lbl = { system: 'AUTO', light: 'LIGHT', dark: 'DARK' }[state.theme];
+    $('#theme-lbl').textContent = lbl;
+    $('#theme-toggle').setAttribute('aria-label', 'Theme: ' + (state.theme === 'system' ? 'follows system' : state.theme) + '. Click to change (T)');
+  }
+  function cycleTheme() {
+    state.theme = { system: 'light', light: 'dark', dark: 'system' }[state.theme];
+    try { localStorage.setItem('bp-cyanotype-theme', state.theme); } catch (err) { /* storage unavailable */ }
+    applyTheme();
+  }
+
+  // inspector
+  function openInspector() {
+    const insp = $('#inspector');
+    insp.classList.remove('closed');
+    insp.setAttribute('aria-hidden', 'false');
+  }
+  function closeInspector() {
+    const insp = $('#inspector');
+    insp.classList.add('closed');
+    insp.setAttribute('aria-hidden', 'true');
+  }
+  function refBtn(f, rel) {
+    const rec = FX.get(f.id);
+    return '<button type="button" class="ref" data-goto="' + f.id + '">' + symSvg(f.status, 18, 14) + '<span class="nm"><span class="see">SEE ' + rec.tag + '</span> ' + esc(f.name) + '</span><span class="rm">' + rec.room.code + (rel ? '' : '') + '</span></button>';
+  }
+  function renderInspector() {
+    const body = $('#insp-body');
+    if (!state.sel) return;
+    if (state.sel.type === 'feature') {
+      const rec = FX.get(state.sel.id);
+      const f = rec.f;
+      const room = rec.room;
+      const wing = room.wing;
+      const rel = f.release ? BP.release(f.release) : null;
+      const team = BP.team(f.owner);
+      $('#insp-kick').textContent = 'Fixture schedule · ' + LENS[state.lens].sheet;
+      let h = '<div class="ins-title"><div class="ins-callout" aria-hidden="true"><span>' + rec.tag.slice(2) + '</span><small>' + room.code + '</small></div><div><div class="crumb">ZONE ' + wing.letter + ' · <button type="button" data-gomod="' + room.m.id + '" aria-label="Open room ' + esc(room.m.name) + '">' + esc(wing.d.name.toUpperCase()) + ' › ' + room.code + ' ' + esc(room.m.name.toUpperCase()) + '</button></div><h2 class="ins-name">' + esc(f.name) + '</h2><div class="crumb">' + rec.tag + ' · ' + esc(f.id) + '</div></div></div>';
+      h += '<p class="ins-sum">' + esc(f.summary) + '</p>';
+      if (f.blockedReason) h += '<div class="rl-note"><div class="h"><span class="kn-n">' + rec.keynote + '</span>BLOCKED</div><p>' + esc(f.blockedReason) + '</p></div>';
+      else if (f.review === 'changes') h += '<div class="rl-note"><div class="h"><span class="kn-n">' + rec.keynote + '</span>CHANGES REQUESTED</div><p>' + esc(f.note || 'A reviewer asked for changes to the latest work.') + '</p></div>';
+      if (f.note && f.review !== 'changes') h += '<div class="pl-note"><div class="h">NOTE</div><p>' + esc(f.note) + '</p></div>';
+      const reviewTxt = { approved: 'Approved', pending: 'Pending', changes: 'Changes requested', none: 'Not reviewed' }[f.review];
+      h += '<div class="kv">';
+      h += '<div><span class="k">Status</span><span class="v">' + symSvg(f.status, 18, 16) + esc(STATUS_LABEL[f.status]) + '</span></div>';
+      h += '<div><span class="k">Priority</span><span class="v">' + esc(f.priority) + '</span></div>';
+      h += '<div><span class="k">Release</span><span class="v">' + (rel ? esc(rel.label) + ' <small>' + esc(rel.state) + ' · ' + esc(rel.date) + '</small>' : 'Unscheduled') + '</span></div>';
+      h += '<div><span class="k">Owner</span><span class="v">' + esc(team ? team.name : f.owner) + ' <small>' + (team && team.kind === 'agent' ? 'agent crew' : 'human squad') + '</small></span></div>';
+      h += '<div><span class="k">Built by</span><span class="v">' + esc(f.builtBy === 'pair' ? 'Pair (agent + human)' : f.builtBy === 'agent' ? 'Agent' : 'Human') + '</span></div>';
+      h += '<div><span class="k">Human review</span><span class="v' + '">' + (rec.trust ? '<span class="warn">▲ ' + esc(reviewTxt) + '</span>' : esc(reviewTxt)) + '</span></div>';
+      h += '<div><span class="k">Updated</span><span class="v">' + esc(f.updatedAt) + '</span></div>';
+      h += '<div><span class="k">' + LENS[state.lens].short + ' score</span><span class="v">' + pct(BP.lensValue(f, state.lens)) + '</span></div>';
+      h += '</div>';
+      h += '<h3 class="ins-h">Fixture schedule <span>overall ' + pct(BP.featureScore(f)) + '</span></h3><table class="ruled"><tbody>';
+      DIMS.forEach((d) => {
+        h += '<tr class="dh"><th colspan="3">' + esc(d.label) + '<span class="q">' + pct(BP.dimScore(f, d.id)) + '</span></th></tr>';
+        d.facets.forEach((fc) => {
+          const st = f.dims[d.id][fc.id];
+          h += '<tr><td class="fl">' + esc(fc.label) + '</td><td class="mk">' + tickSvg(st) + '</td><td class="st ' + st + '">' + esc(FACET_LABEL[st]) + '</td></tr>';
+        });
+      });
+      h += '</tbody></table>';
+      const m = f.metrics;
+      const mv = (v, suf) => (v == null ? '<span class="v none">—</span>' : '<span class="v">' + v + suf + '</span>');
+      h += '<h3 class="ins-h">Metrics</h3><div class="metrics"><div><span class="k">TEST COVERAGE</span>' + mv(m.coverage, '%') + '</div><div><span class="k">UPTIME 30D</span>' + mv(m.uptime, '%') + '</div><div><span class="k">ADOPTION</span>' + mv(m.adoption, '%') + '</div></div>';
+      const deps = BP.dependencies(f);
+      const dnts = BP.dependents(f);
+      h += '<h3 class="ins-h">References <span>' + deps.length + ' in · ' + dnts.length + ' out</span></h3>';
+      h += '<div class="ref-h">Depends on</div><div class="refs">' + (deps.length ? deps.map((d) => refBtn(d)).join('') : '<div class="ref-empty">No dependencies.</div>') + '</div>';
+      h += '<div class="ref-h">Required by</div><div class="refs">' + (dnts.length ? dnts.map((d) => refBtn(d)).join('') : '<div class="ref-empty">Nothing depends on this yet.</div>') + '</div>';
+      body.innerHTML = h;
+    } else {
+      const room = ROOMS.get(state.sel.id);
+      const m = room.m;
+      const roll = room.roll;
+      const team = BP.team(m.owner);
+      $('#insp-kick').textContent = 'Room schedule · ' + LENS[state.lens].sheet;
+      let h = '<div class="ins-title"><div class="ins-callout" aria-hidden="true"><span>' + room.code.split('-')[1] + '</span><small>ZONE ' + room.wing.letter + '</small></div><div><div class="crumb">ZONE ' + room.wing.letter + ' · ' + esc(room.wing.d.name.toUpperCase()) + '</div><h2 class="ins-name">' + esc(m.name) + '</h2><div class="crumb">' + room.code + ' · ' + esc(m.code) + ' · ' + esc(team ? team.name : m.owner) + ' · ' + esc(m.surfaces.join(', ')) + '</div></div></div>';
+      h += '<p class="ins-sum">' + esc(m.summary) + '</p>';
+      h += '<div class="mod-sum">' + BP.STATUS_ORDER.map((s) => '<div>' + symSvg(s, 18, 16) + '<span class="c">' + roll.byStatus[s] + '</span><span class="k">' + esc(STATUS_LABEL[s]) + '</span></div>').join('') + '</div>';
+      h += '<h3 class="ins-h">Completion <span>overall ' + pct(roll.overall) + '</span></h3><div class="comp">' + DIMS.map((d) => '<div class="comp-row' + (state.lens === d.id ? ' on' : '') + '"><span class="k">' + d.short.toUpperCase() + '</span>' + dimBarSvg(roll.dims[d.id], state.lens === d.id) + '<span class="v">' + pct(roll.dims[d.id]) + '</span></div>').join('') + '</div>';
+      const nTrust = room.cells.filter((c) => c.trust).length;
+      h += '<div class="redlines"><div><span class="k">ATTENTION</span><span class="v">' + roll.attention + '</span></div><div><span class="k">AWAITING REVIEW</span><span class="v">' + nTrust + '<small>agent work</small></span></div></div>';
+      h += '<h3 class="ins-h">Fixtures <span>' + room.n + ' · ' + LENS[state.lens].short + ' score</span></h3><div class="refs">';
+      room.cells.forEach((rec) => {
+        const f = rec.f;
+        h += '<button type="button" class="ref" data-goto="' + f.id + '">' + symSvg(f.status, 18, 14) + '<span class="nm"><span class="see">' + rec.tag + '</span> ' + esc(f.name) + (rec.keynote ? ' <span class="kn-n" style="display:inline-block;width:15px;height:15px;line-height:15px;font-size:8.5px;vertical-align:1px">' + rec.keynote + '</span>' : '') + '</span><span class="rm">' + pct(BP.lensValue(f, state.lens)) + '</span></button>';
+      });
+      h += '</div>';
+      body.innerHTML = h;
+    }
+    body.scrollTop = 0;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // BOOT
+  // ═══════════════════════════════════════════════════════════════════════
+  function build() {
+    FX.forEach((rec) => { rec.el = null; });
+    ROOMS.clear();
+    computeLayout();
+    renderAll();
+    markSelection();
+    applyFilters();
+    plan.classList.toggle('trust', state.trust);
+    commit();
+  }
+  function boot() {
+    try { const t = localStorage.getItem('bp-cyanotype-theme'); if (t === 'light' || t === 'dark' || t === 'system') state.theme = t; } catch (err) { /* storage unavailable */ }
+    applyTheme();
+    buildChrome();
+    build();
+    updateChrome();
+    if (isPhone()) { $('#strip').classList.add('closed'); $('#strip').setAttribute('aria-hidden', 'true'); }
+    fit(false);
+    let wasPhone = isPhone();
+    barW = $('#scalebar').clientWidth || 180;
+    window.addEventListener('resize', () => {
+      barW = $('#scalebar').clientWidth || barW;
+      scaleKey = '';
+      const ph = isPhone();
+      if (ph !== wasPhone) {
+        $('#strip').classList.toggle('closed', ph);
+        $('#scrim').classList.remove('on');
+        wasPhone = ph;
+      }
+      $('#search').placeholder = ph ? 'Find' : 'Find fixture';
+      // a tall screen gets a tall plan: rebuild when the orientation class flips
+      if ((targetAspect() < 1) !== PLAN.portrait) { build(); state.touched = false; }
+      if (!state.touched) fit(false); else setCamNow(state.cam);
+    });
+    $('#search').placeholder = isPhone() ? 'Find' : 'Find fixture';
+    // Test and demo hooks.
+    window.__bp = {
+      select: (id) => selectFeature(id, { fly: true }),
+      module: (id) => selectModule(id, true),
+      lens: setLens,
+      trust: setTrust,
+      zoomTo: (k) => { const a = visibleArea(); const c = state.cam; const px = a.w / 2; const py = a.h / 2; setCam({ k, x: px - (px - c.x) * k / c.k, y: py - (py - c.y) * k / c.k }, true); commit(); },
+      flyRoom: (id) => flyToRect(ROOMS.get(id), 24),
+      flyZone: (id) => flyToRect(WINGS.find((w) => w.d.id === id).rect, 16),
+      flyFeature: (id, k) => flyToFeature(id, k),
+      state: () => ({ lens: state.lens, k: state.cam.k, level: state.level, sel: state.sel }),
+    };
+  }
+  let booted = false;
+  let fontsSettled = false;
+  function start() {
+    if (booted) return;
+    booted = true;
+    fontsSettled = !document.fonts || document.fonts.status === 'loaded';
+    boot();
+  }
+  const fontsReady = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
+  Promise.race([fontsReady, new Promise((res) => setTimeout(res, 1500))]).then(start);
+  if (document.fonts && document.fonts.addEventListener) {
+    // fonts that arrive after boot change text widths: re-letter the plan once
+    document.fonts.addEventListener('loadingdone', () => {
+      if (!booted || fontsSettled) return;
+      fontsSettled = true;
+      build();
+      if (!state.touched) fit(false);
+    });
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,2135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Periodic Blueprint</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=Martian+Mono:wdth,wght@75..112.5,300..700&display=swap">
+<style>
+/* Layout concept: a periodic table of features. 20 module columns of element tiles stacked Live > Blocked under black domain bands, a "how to read a tile" key in the sheet's open space, a ruled toolbar above and a numeral HUD strip below; the inspector docks right (bottom sheet on phone). */
+:root {
+  /* palette: white sheet, black ink, one signal */
+  --paper: #fcfcfa;
+  --paper-2: #f1f1ee;
+  --paper-3: #e6e6e2;
+  --ink: #101113;
+  --ink-2: #3d3f44;
+  --ink-3: #686b71;
+  --ink-4: #a2a5aa;
+  --rule: #cbccce;
+  --rule-2: #e2e2df;
+  --signal: #f0520c;
+  --signal-ink: #b23b04;
+  --signal-wash: #fde6da;
+  --on-signal: #101113;
+  --band: #101113;
+  --on-band: #fcfcfa;
+  --on-band-2: #a9abb0;
+  --clear: rgba(0, 0, 0, 0);
+  --scrim: rgba(16, 17, 19, 0.24);
+  --shadow: rgba(16, 17, 19, 0.14);
+  /* status: subdued inks for glyphs, pale tints for tile fills */
+  --st-live: #2b6a4b;
+  --st-ready: #36608c;
+  --st-build: #8f650f;
+  --st-plan: #7f8288;
+  --st-block: #f0520c;
+  --tn-live: #dbeadf;
+  --tn-ready: #dce5f0;
+  --tn-build: #f2e6c8;
+  --tn-plan: #fcfcfa;
+  --tn-block: #fcebe2;
+  /* lens ramp: amount of ink, 0-19 % ... 80-100 % */
+  --r0: #f0f0ed;
+  --r1: #d2d3d3;
+  --r2: #a1a3a7;
+  --r3: #5b5e64;
+  --r4: #17181b;
+  /* type roles */
+  --f-grot: 'Archivo', 'Archivo Narrow', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --f-mono: 'Martian Mono', 'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
+  /* shell metrics */
+  --bar-h: 56px;
+  --hud-h: 64px;
+  --insp-w: 408px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0b0b0c;
+    --paper-2: #151517;
+    --paper-3: #1f2023;
+    --ink: #f3f3ef;
+    --ink-2: #c6c7ca;
+    --ink-3: #8f9197;
+    --ink-4: #5a5c61;
+    --rule: #393a3e;
+    --rule-2: #232427;
+    --signal: #ff6a1f;
+    --signal-ink: #ff8f55;
+    --signal-wash: #33170a;
+    --on-signal: #0b0b0c;
+    --band: #ecece7;
+    --on-band: #0b0b0c;
+    --on-band-2: #55575c;
+    --scrim: rgba(0, 0, 0, 0.5);
+    --shadow: rgba(0, 0, 0, 0.55);
+    --st-live: #74c294;
+    --st-ready: #87acdc;
+    --st-build: #d8a945;
+    --st-plan: #8f9197;
+    --st-block: #ff6a1f;
+    --tn-live: #13281b;
+    --tn-ready: #132136;
+    --tn-build: #2d230e;
+    --tn-plan: #0b0b0c;
+    --tn-block: #2b1308;
+    --r0: #1a1a1c;
+    --r1: #38393d;
+    --r2: #6b6d72;
+    --r3: #b3b5b9;
+    --r4: #f3f3ef;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0b0b0c;
+  --paper-2: #151517;
+  --paper-3: #1f2023;
+  --ink: #f3f3ef;
+  --ink-2: #c6c7ca;
+  --ink-3: #8f9197;
+  --ink-4: #5a5c61;
+  --rule: #393a3e;
+  --rule-2: #232427;
+  --signal: #ff6a1f;
+  --signal-ink: #ff8f55;
+  --signal-wash: #33170a;
+  --on-signal: #0b0b0c;
+  --band: #ecece7;
+  --on-band: #0b0b0c;
+  --on-band-2: #55575c;
+  --scrim: rgba(0, 0, 0, 0.5);
+  --shadow: rgba(0, 0, 0, 0.55);
+  --st-live: #74c294;
+  --st-ready: #87acdc;
+  --st-build: #d8a945;
+  --st-plan: #8f9197;
+  --st-block: #ff6a1f;
+  --tn-live: #13281b;
+  --tn-ready: #132136;
+  --tn-build: #2d230e;
+  --tn-plan: #0b0b0c;
+  --tn-block: #2b1308;
+  --r0: #1a1a1c;
+  --r1: #38393d;
+  --r2: #6b6d72;
+  --r3: #b3b5b9;
+  --r4: #f3f3ef;
+  color-scheme: dark;
+}
+
+/* ── Shell ─────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--paper); color: var(--ink); font-family: var(--f-grot); font-size: 13px; line-height: 1.35; overflow: hidden; -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: var(--clear); }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; background: none; border: 0; padding: 0; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+[hidden] { display: none !important; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.mono { font-family: var(--f-mono); font-stretch: 75%; }
+kbd { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weight: 500; color: var(--ink-3); border: 1px solid var(--rule); padding: 0 3px; line-height: 14px; min-width: 15px; text-align: center; display: inline-block; }
+
+#app { position: relative; height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; }
+
+/* ── Toolbar ───────────────────────────────────────────────────────────── */
+#bar { position: relative; z-index: 6; display: flex; align-items: center; gap: 18px; height: var(--bar-h); padding: 0 16px; border-bottom: 2px solid var(--ink); background: var(--paper); min-width: 0; }
+.brand { display: flex; align-items: center; gap: 10px; flex: none; min-width: 0; }
+.logo { width: 34px; height: 38px; flex: none; }
+.brand-t { display: flex; flex-direction: column; line-height: 1.05; min-width: 0; }
+.brand-t b { font-weight: 800; font-stretch: 112.5%; font-size: 14px; letter-spacing: -0.005em; white-space: nowrap; }
+.brand-t span { font-family: var(--f-mono); font-stretch: 75%; font-size: 10.5px; color: var(--ink-3); white-space: nowrap; margin-top: 3px; }
+.brand-t span em { font-style: normal; color: var(--ink); font-weight: 600; }
+.tb-mid { display: flex; align-items: center; gap: 14px; flex: 1 1 auto; min-width: 0; justify-content: center; }
+.seg { display: flex; align-items: stretch; border: 1.5px solid var(--ink); height: 34px; flex: none; }
+.seg button { display: flex; align-items: center; gap: 6px; padding: 0 11px; font-weight: 600; font-stretch: 87.5%; font-size: 13px; white-space: nowrap; border-right: 1px solid var(--rule); }
+.seg button:last-child { border-right: 0; }
+.seg button kbd { border: 0; padding: 0; min-width: 0; font-size: 10px; }
+.seg button[aria-checked="true"] { background: var(--ink); color: var(--paper); }
+.seg button[aria-checked="true"] kbd { color: var(--ink-4); }
+.seg button:not([aria-checked="true"]):hover { background: var(--paper-2); }
+.seg-cap { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); margin-right: -6px; }
+.srch { position: relative; display: flex; align-items: center; height: 34px; border: 1.5px solid var(--ink); width: 250px; flex: none; background: var(--paper); }
+.srch svg { width: 15px; height: 15px; margin: 0 6px 0 9px; flex: none; color: var(--ink-2); }
+.srch input { flex: 1; min-width: 0; height: 100%; border: 0; background: none; outline: none; font-size: 13px; font-weight: 500; padding: 0; }
+.srch input::placeholder { color: var(--ink-3); }
+.srch input::-webkit-search-cancel-button { -webkit-appearance: none; }
+.srch:focus-within { box-shadow: 0 0 0 2px var(--paper), 0 0 0 3.5px var(--ink); }
+#qn { font-family: var(--f-mono); font-stretch: 75%; font-size: 10.5px; color: var(--ink-3); padding: 0 6px; white-space: nowrap; }
+#qn.none { color: var(--signal-ink); }
+.srch kbd { margin-right: 8px; }
+.tb-right { display: flex; align-items: center; gap: 8px; flex: none; }
+.tbtn { height: 34px; min-width: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 10px; border: 1.5px solid var(--ink); font-weight: 600; font-stretch: 87.5%; font-size: 13px; white-space: nowrap; }
+.tbtn svg { width: 16px; height: 16px; flex: none; }
+.tbtn[aria-pressed="true"], .tbtn[aria-expanded="true"] { background: var(--ink); color: var(--paper); }
+.tbtn:hover:not([aria-pressed="true"]):not([aria-expanded="true"]) { background: var(--paper-2); }
+.icon-only { padding: 0; width: 34px; }
+#b-search { display: none; }
+#phone-row { display: none; }
+
+/* ── Stage ─────────────────────────────────────────────────────────────── */
+#stage { position: relative; overflow: hidden; background: var(--paper); min-height: 0; }
+#cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+#cv.grabbing { cursor: grabbing; }
+#cv:focus, #cv:focus-visible { outline: none; }
+#zoom { position: absolute; right: 14px; bottom: 14px; z-index: 3; display: flex; flex-direction: column; align-items: stretch; width: 46px; border: 1.5px solid var(--ink); background: var(--paper); transition: right .28s cubic-bezier(.3, .7, .1, 1); }
+#zoom button { height: 38px; display: flex; align-items: center; justify-content: center; border-bottom: 1px solid var(--rule); }
+#zoom button:last-child { border-bottom: 0; font-weight: 700; font-stretch: 87.5%; font-size: 12px; }
+#zoom button:hover { background: var(--paper-2); }
+#zoom svg { width: 14px; height: 14px; }
+#zl { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 6px 0; border-bottom: 1px solid var(--rule); font-family: var(--f-mono); font-stretch: 75%; line-height: 1; }
+#zl b { font-size: 11px; font-weight: 600; }
+#zl span { font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+#app.insp-open:not(.phone) #zoom { right: calc(var(--insp-w) + 16px); }
+
+/* ── Tile set (canvas, key, inspector, card) ───────────────────────────── */
+.tset text { fill: var(--tf, var(--ink)); }
+.tile { --tb: var(--paper); --tf: var(--ink); --gc: var(--ink); --gk: var(--tb); outline: none; cursor: pointer; }
+.tile[data-st="live"] { --tb: var(--tn-live); --gc: var(--st-live); }
+.tile[data-st="ready"] { --tb: var(--tn-ready); --gc: var(--st-ready); }
+.tile[data-st="building"] { --tb: var(--tn-build); --gc: var(--st-build); }
+.tile[data-st="planned"] { --tb: var(--tn-plan); --gc: var(--st-plan); --tf: var(--ink-2); }
+.tile[data-st="blocked"] { --tb: var(--tn-block); --gc: var(--st-block); }
+.tset[data-lens="dev"] .tile[data-qd="0"], .tset[data-lens="ops"] .tile[data-qo="0"], .tset[data-lens="biz"] .tile[data-qb="0"] { --tb: var(--r0); --tf: var(--ink); --gc: var(--ink); }
+.tset[data-lens="dev"] .tile[data-qd="1"], .tset[data-lens="ops"] .tile[data-qo="1"], .tset[data-lens="biz"] .tile[data-qb="1"] { --tb: var(--r1); --tf: var(--ink); --gc: var(--ink); }
+.tset[data-lens="dev"] .tile[data-qd="2"], .tset[data-lens="ops"] .tile[data-qo="2"], .tset[data-lens="biz"] .tile[data-qb="2"] { --tb: var(--r2); --tf: var(--ink); --gc: var(--ink); }
+.tset[data-lens="dev"] .tile[data-qd="3"], .tset[data-lens="ops"] .tile[data-qo="3"], .tset[data-lens="biz"] .tile[data-qb="3"] { --tb: var(--r3); --tf: var(--paper); --gc: var(--paper); }
+.tset[data-lens="dev"] .tile[data-qd="4"], .tset[data-lens="ops"] .tile[data-qo="4"], .tset[data-lens="biz"] .tile[data-qb="4"] { --tb: var(--r4); --tf: var(--paper); --gc: var(--paper); }
+.tile .bg { fill: var(--tb); transition: fill .45s ease; }
+.tile .hatch { pointer-events: none; }
+.tile .fr { fill: none; stroke: var(--ink); stroke-width: 1.4; }
+.tile .fr2 { fill: none; stroke: var(--ink); stroke-width: 0.7; }
+.tile .fr-h { fill: none; stroke: var(--ink-4); stroke-width: 0.7; }
+.tile .fr-brk { fill: none; stroke: var(--ink); stroke-width: 2.4; stroke-linecap: square; }
+.tile .fr-dash { stroke-width: 1.3; stroke-dasharray: 5 3.5; stroke: var(--ink-3); }
+.tile .fr-heavy { stroke: var(--signal); stroke-width: 3; }
+.tile .att { fill: none; stroke: var(--signal); stroke-width: 3.2; }
+.tile .nchip { fill: var(--signal); }
+.tile[data-att="1"] .tx-num { fill: var(--on-signal); font-weight: 700; }
+.tile .ring { fill: none; stroke: var(--ink); stroke-width: 2.4; display: none; }
+.tile .selr { fill: none; stroke: var(--ink); stroke-width: 3.4; display: none; }
+.tile .glw { color: var(--gc); transition: transform .3s ease; }
+.tile .fold { display: none; }
+.fold-cut { fill: var(--paper); }
+.fold-flap { fill: var(--ink); }
+.tile[data-chg="1"] .fold-flap { fill: var(--signal); }
+.tset.trust .tile[data-trust="1"] .fold, .ktile .fold { display: inline; }
+.tset.trust .tile[data-trust="1"] .glw, .ktile[data-trust="1"] .glw { transform: translateX(-12px); }
+.tx-num { font-family: var(--f-mono); font-stretch: 75%; font-weight: 500; font-size: 13px; }
+.tx-sym0 { font-weight: 800; font-stretch: 112.5%; font-size: 42px; letter-spacing: -0.01em; }
+.tx-sym1 { font-weight: 800; font-stretch: 112.5%; font-size: 29px; letter-spacing: -0.01em; }
+.tx-name { font-weight: 600; font-stretch: 75%; font-size: 13px; }
+.tile .trk { fill: var(--tf); opacity: .13; }
+.tile .bf { fill: var(--tf); }
+.pip-f { fill: var(--tf); }
+.pip-o { fill: none; stroke: var(--tf); stroke-width: 1.3; }
+.pip-n { fill: none; stroke: var(--tf); stroke-width: 1; stroke-dasharray: 2 2; opacity: .5; }
+.pip-b { fill: var(--signal); }
+.pip-x { stroke: var(--on-signal); stroke-width: 1.6; }
+.pl { font-weight: 800; font-stretch: 87.5%; font-size: 9.5px; text-anchor: middle; }
+.tset text.pl-on { fill: var(--tb); }
+.tset text.pl-b { fill: var(--on-signal); }
+.tset text.pl-h { paint-order: stroke; stroke: var(--tb); stroke-width: 2.4px; }
+.tset text.pl-n { opacity: .5; }
+.tx-dst { font-weight: 700; font-stretch: 87.5%; font-size: 7px; letter-spacing: .06em; text-transform: uppercase; }
+.tx-dsym { font-weight: 800; font-stretch: 112.5%; font-size: 19px; }
+.tx-dmeta { font-family: var(--f-mono); font-stretch: 75%; font-size: 6.6px; font-weight: 500; }
+.tx-dname { font-weight: 700; font-stretch: 75%; font-size: 9.6px; }
+.tx-down { font-weight: 500; font-stretch: 75%; font-size: 6.4px; }
+.tx-ddim { font-weight: 800; font-stretch: 100%; font-size: 6.6px; }
+.tx-dlab { font-weight: 500; font-stretch: 75%; font-size: 5.3px; }
+.det .dpip-f { fill: var(--tf); }
+.det .dpip-o { fill: none; stroke: var(--tf); stroke-width: .8; }
+.det .dpip-b { fill: var(--signal); }
+.det .dpip-n { fill: none; stroke: var(--tf); stroke-width: .6; stroke-dasharray: 1.2 1.2; opacity: .55; }
+.det .drow { transition: opacity .3s; }
+.tset[data-lens="dev"] .det .drow:not(.dr-dev), .tset[data-lens="ops"] .det .drow:not(.dr-ops), .tset[data-lens="biz"] .det .drow:not(.dr-biz) { opacity: .3; }
+
+/* lens switching inside tiles */
+.tset .pips { display: none; }
+.tset[data-lens="dev"] .pips.p-dev, .tset[data-lens="ops"] .pips.p-ops, .tset[data-lens="biz"] .pips.p-biz { display: inline; }
+.tset:not([data-lens="overall"]) .bars { display: none; }
+
+/* semantic zoom: lod 0 table, 1 tile, 2 detail */
+.tset .tx-sym1, .tset .tx-name, .tset .det, .tset .pl { display: none; }
+.tset[data-lod="1"] .tx-sym0 { display: none; }
+.tset[data-lod="1"] .tx-sym1, .tset[data-lod="1"] .tx-name, .tset[data-lod="1"] .pl { display: inline; }
+.tset[data-lod="2"] .l01 { display: none; }
+.tset[data-lod="2"] .det { display: inline; }
+.tset .ktile.ktile .tx-sym0 { display: none; }
+.tset .ktile.ktile .tx-sym1, .tset .ktile.ktile .tx-name, .tset .ktile.ktile .pl, .tset .ktile.ktile .l01 { display: inline; }
+.tset .ktile.ktile .det { display: none; }
+.tset[data-z="0"] .z1, .tset[data-z="0"] .z2, .tset[data-z="0"] .z3, .tset[data-z="1"] .z2, .tset[data-z="1"] .z3, .tset[data-z="2"] .z3 { display: none; }
+
+/* tile states driven by filters, selection, overlays */
+#cv .tile { transition: transform .7s cubic-bezier(.3, .7, .1, 1), opacity .25s ease; }
+#cv.notr .tile { transition: none; }
+#cv .tile.dim { opacity: .14; }
+#cv.trust .tile:not([data-trust="1"]) { opacity: .3; }
+#cv.trust .tile.dim:not([data-trust="1"]) { opacity: .1; }
+#cv.selecting .tile.far { opacity: .2; }
+#cv .tile.hit .ring { display: inline; }
+#cv .tile.cur .selr { display: inline; }
+#cv .tile.cur .att { display: none; }
+#cv .tile.sel .selr { display: inline; }
+#cv .tile.sel .att { display: none; }
+#cv .tile:focus-visible .selr { display: inline; stroke-dasharray: 6 4; }
+#cv .tile:hover .fr { stroke-width: 2.4; }
+
+/* ── Heads (world-space chrome) ───────────────────────────────────────── */
+.heads { transition: opacity .4s ease, visibility 0s linear 0s; }
+.heads.off { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .3s ease, visibility 0s linear .3s; }
+.h-rule { fill: var(--ink); }
+.h-hair { fill: var(--rule); }
+.h-band { fill: var(--band); }
+.h-hit { fill: var(--clear); cursor: pointer; }
+.hd:hover .h-hit { fill: var(--paper-2); }
+.hd-dom:hover .h-band { opacity: .88; }
+.tset text.on-band { fill: var(--on-band); }
+.tset text.on-band-2 { fill: var(--on-band-2); }
+.tx-code { font-weight: 800; font-stretch: 112.5%; font-size: 18px; letter-spacing: .01em; }
+.tx-hname { font-weight: 600; font-stretch: 75%; font-size: 15px; }
+.tx-pct { font-weight: 750; font-stretch: 112.5%; font-size: 27px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.tx-pcts { font-size: 15px; font-weight: 600; }
+.tx-bcode { font-weight: 800; font-stretch: 112.5%; font-size: 17px; letter-spacing: .02em; }
+.tx-bname { font-weight: 600; font-stretch: 75%; font-size: 15px; }
+.tx-bpct { font-family: var(--f-mono); font-stretch: 75%; font-weight: 600; font-size: 14px; }
+.tx-ft { font-family: var(--f-mono); font-stretch: 75%; font-weight: 600; font-size: 11.5px; text-anchor: middle; }
+.tset text.tx-ft0 { fill: var(--ink-4); }
+.ft-c { stroke: var(--ink); stroke-width: .8; }
+.ft-live { fill: var(--tn-live); } .ft-ready { fill: var(--tn-ready); } .ft-building { fill: var(--tn-build); }
+.ft-planned { fill: var(--tn-plan); stroke-dasharray: 2.5 2; } .ft-blocked { fill: var(--tn-block); stroke: var(--signal); stroke-width: 1.4; }
+.ft-zero { fill: none; stroke: var(--rule); }
+.tset .ftv { display: none; }
+.tset[data-lens="overall"] .ftv-overall, .tset[data-lens="dev"] .ftv-dev, .tset[data-lens="ops"] .ftv-ops, .tset[data-lens="biz"] .ftv-biz { display: inline; }
+.tx-big { font-weight: 800; font-stretch: 112.5%; font-size: 30px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.tx-lab { font-weight: 800; font-stretch: 112.5%; font-size: 21px; }
+.tx-sub { font-weight: 500; font-stretch: 75%; font-size: 14px; }
+.tset text.c3 { fill: var(--ink-3); }
+.tset text.c2 { fill: var(--ink-2); }
+.tx-mono { font-family: var(--f-mono); font-stretch: 75%; font-weight: 500; font-size: 12.5px; }
+.tx-caps { font-weight: 700; font-stretch: 87.5%; font-size: 12.5px; letter-spacing: .12em; text-transform: uppercase; }
+.today { stroke: var(--ink); stroke-width: 2.4; stroke-dasharray: 9 6; fill: none; }
+.next-wash { fill: var(--paper-2); }
+.badge { fill: var(--signal); }
+.tset text.on-signal { fill: var(--on-signal); }
+.gk { color: var(--ink); }
+.g-live { color: var(--st-live); } .g-ready { color: var(--st-ready); } .g-building { color: var(--st-build); } .g-planned { color: var(--st-plan); } .g-blocked { color: var(--st-block); }
+.on-band-g { color: var(--on-band); }
+
+/* key ("How to read a tile") */
+.key .tx-kt { font-weight: 700; font-stretch: 87.5%; font-size: 14.5px; letter-spacing: .13em; text-transform: uppercase; }
+.key .tx-kh { font-weight: 800; font-stretch: 112.5%; font-size: 29px; letter-spacing: -0.01em; }
+.key .tx-kl { font-weight: 700; font-stretch: 87.5%; font-size: 17px; }
+.key .tx-ks { font-weight: 500; font-stretch: 75%; font-size: 14.5px; }
+.key .tx-kn { font-family: var(--f-mono); font-stretch: 75%; font-weight: 600; font-size: 14px; }
+.key .lead { fill: none; stroke: var(--ink); stroke-width: 1.1; }
+.key .lead-dot { fill: var(--ink); }
+.key .kv { display: none; }
+.tset[data-lens="overall"] .key .kv-overall, .tset[data-lens="dev"] .key .kv-dev, .tset[data-lens="ops"] .key .kv-ops, .tset[data-lens="biz"] .key .kv-biz, .tset:not([data-lens="overall"]) .key .kv-lens { display: inline; }
+.ramp-0 { fill: var(--r0); } .ramp-1 { fill: var(--r1); } .ramp-2 { fill: var(--r2); } .ramp-3 { fill: var(--r3); } .ramp-4 { fill: var(--r4); }
+.ramp-f { fill: none; stroke: var(--ink); stroke-width: 1; }
+
+/* dependency links */
+#links path.halo { fill: none; stroke: var(--paper); stroke-width: 7; stroke-linecap: round; opacity: .9; }
+#links path.ln { fill: none; stroke: var(--ink); stroke-width: 2.6; stroke-linecap: round; }
+#links path.ln-up { stroke-dasharray: 7 5; stroke: var(--ink-2); }
+#links circle { fill: var(--ink); }
+.arrowhead { fill: var(--ink); }
+.arrowhead-2 { fill: var(--ink-2); }
+
+/* ── HUD ───────────────────────────────────────────────────────────────── */
+#hud { position: relative; z-index: 5; display: flex; align-items: stretch; height: var(--hud-h); border-top: 2px solid var(--ink); background: var(--paper); min-width: 0; overflow: hidden; }
+.hud-scroll { display: flex; align-items: stretch; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.hud-scroll::-webkit-scrollbar { display: none; }
+.hc { display: flex; align-items: center; gap: 9px; padding: 0 14px; border-right: 1px solid var(--rule); flex: none; text-align: left; }
+.hc:last-child { border-right: 0; }
+.hc-num { font-weight: 800; font-stretch: 112.5%; font-size: 26px; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.hc-lab { display: flex; flex-direction: column; line-height: 1.15; }
+.hc-lab b { font-weight: 700; font-stretch: 87.5%; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
+.hc-lab span { font-family: var(--f-mono); font-stretch: 75%; font-size: 10px; color: var(--ink-3); white-space: nowrap; }
+.hc-prod .hc-num { font-size: 22px; }
+.hst { display: flex; align-items: stretch; flex: none; border-right: 1px solid var(--rule); }
+.chip { display: flex; align-items: center; gap: 6px; padding: 0 10px; position: relative; flex: none; }
+.chip .g { width: 15px; height: 15px; flex: none; }
+.chip .hc-num { font-size: 23px; }
+.chip:hover { background: var(--paper-2); }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.chip[aria-pressed="true"] .hc-lab span { color: var(--ink-4); }
+.chip[aria-pressed="true"] .g { color: var(--paper); --gk: var(--ink); }
+.hdims { display: flex; align-items: center; gap: 14px; padding: 0 14px; border-right: 1px solid var(--rule); flex: none; }
+.hdim { display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; column-gap: 7px; align-items: end; padding: 5px 7px; margin: 0 -7px; }
+.hdim.on { background: var(--ink); color: var(--paper); }
+.hdim.on .mbar { background: var(--ink-3); }
+.hdim.on .mbar i { background: var(--paper); }
+.hdim .hc-num { font-size: 22px; grid-row: 1 / span 2; }
+.hdim b { font-weight: 700; font-stretch: 87.5%; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
+.hdim .mbar { width: 46px; height: 5px; background: var(--rule-2); position: relative; margin-bottom: 3px; }
+.hdim .mbar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--ink); }
+.hbtn { display: flex; align-items: center; gap: 9px; padding: 0 14px; flex: none; border-right: 1px solid var(--rule); }
+.hbtn:hover { background: var(--paper-2); }
+.hbtn .hc-num { font-size: 24px; }
+.h-att .hc-num { color: var(--signal-ink); }
+.h-att .sq { width: 14px; height: 14px; border: 3px solid var(--signal); flex: none; }
+.h-att[aria-pressed="true"] { background: var(--signal); color: var(--on-signal); }
+.h-att[aria-pressed="true"] .hc-num, .h-att[aria-pressed="true"] .hc-lab span { color: var(--on-signal); }
+.h-att[aria-pressed="true"] .sq { border-color: var(--on-signal); }
+.h-ai .fi { width: 16px; height: 18px; flex: none; }
+.h-ai[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.h-ai[aria-pressed="true"] .hc-lab span { color: var(--ink-4); }
+#q-clear { width: 26px; height: 26px; margin-right: 4px; display: flex; align-items: center; justify-content: center; flex: none; }
+#q-clear:hover { background: var(--paper-2); }
+#q-clear svg { width: 12px; height: 12px; margin: 0; color: var(--ink); }
+
+/* ── Panels: legend, inspector, card ──────────────────────────────────── */
+.panel { background: var(--paper); color: var(--ink); }
+.p-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.p-close { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border: 1.5px solid var(--ink); flex: none; }
+.p-close:hover { background: var(--paper-2); }
+.p-close svg { width: 14px; height: 14px; }
+.cap { font-weight: 700; font-stretch: 87.5%; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink); margin: 0; display: flex; align-items: baseline; gap: 8px; }
+.cap span { font-family: var(--f-mono); font-stretch: 75%; letter-spacing: 0; color: var(--ink-3); font-weight: 500; }
+.g { width: 13px; height: 13px; flex: none; display: inline-block; vertical-align: -2px; }
+
+#legend { position: absolute; left: 16px; top: 16px; z-index: 4; width: 336px; max-height: calc(100% - 32px); overflow: auto; border: 2px solid var(--ink); padding: 16px 16px 18px; display: flex; flex-direction: column; gap: 18px; box-shadow: 6px 6px 0 var(--shadow); }
+#legend h2 { margin: 0; font-weight: 800; font-stretch: 112.5%; font-size: 17px; }
+#legend p { margin: 0; color: var(--ink-2); font-stretch: 87.5%; }
+.lg { display: flex; flex-direction: column; gap: 8px; border-top: 2px solid var(--ink); padding-top: 8px; }
+.lg-row { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center; gap: 10px; }
+.lg-row svg.sw { width: 34px; height: 38px; }
+.lg-row b { font-weight: 700; font-stretch: 87.5%; font-size: 13.5px; display: block; }
+.lg-row small { color: var(--ink-3); font-stretch: 87.5%; font-size: 12px; display: block; line-height: 1.25; }
+.lg-row .n { font-family: var(--f-mono); font-stretch: 75%; font-size: 12px; font-weight: 600; }
+.lg-ramp { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; border: 1px solid var(--ink); }
+.lg-ramp span { height: 22px; }
+.lg-ramp-l { display: grid; grid-template-columns: repeat(5, 1fr); font-family: var(--f-mono); font-stretch: 75%; font-size: 10px; color: var(--ink-3); }
+.lg-keys { display: grid; grid-template-columns: auto 1fr; gap: 5px 10px; align-items: center; font-stretch: 87.5%; }
+.lg-keys kbd { justify-self: start; }
+
+#insp { position: absolute; right: 0; top: 0; bottom: 0; z-index: 4; width: var(--insp-w); border-left: 2px solid var(--ink); overflow: hidden; display: flex; flex-direction: column; transform: translateX(102%); visibility: hidden; transition: transform .32s cubic-bezier(.3, .7, .1, 1), visibility 0s linear .32s; }
+#insp.open { transform: none; visibility: visible; transition: transform .32s cubic-bezier(.3, .7, .1, 1), visibility 0s; }
+.i-grip { display: none; }
+.i-scroll { overflow-y: auto; overscroll-behavior: contain; padding: 16px 18px 28px; display: flex; flex-direction: column; gap: 18px; min-height: 0; flex: 1; }
+.ih { display: grid; grid-template-columns: 96px minmax(0, 1fr) 32px; gap: 14px; align-items: start; }
+.ih-tile { width: 96px; height: 112px; overflow: visible; }
+.ih-t { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.crumb { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-weight: 600; font-stretch: 87.5%; font-size: 12px; color: var(--ink-3); }
+.crumb button { text-decoration: underline; text-decoration-color: var(--rule); text-underline-offset: 3px; color: var(--ink-2); }
+.crumb button:hover { color: var(--ink); text-decoration-color: var(--ink); }
+.ih h2 { margin: 0; font-weight: 800; font-stretch: 100%; font-size: 23px; line-height: 1.08; letter-spacing: -0.01em; text-wrap: balance; }
+.ih-id { font-size: 10.5px; color: var(--ink-3); margin: 0; word-break: break-all; }
+.sum { margin: 0; font-size: 14.5px; line-height: 1.45; font-stretch: 93%; color: var(--ink-2); max-width: 62ch; }
+.callout { border-left: 4px solid var(--ink); background: var(--paper-2); padding: 9px 12px; font-size: 13.5px; line-height: 1.4; font-stretch: 93%; }
+.callout b { display: block; font-weight: 700; font-stretch: 87.5%; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 2px; }
+.callout.att { border-left-color: var(--signal); background: var(--signal-wash); }
+.callout.ai { display: grid; grid-template-columns: 18px 1fr; gap: 10px; align-items: start; }
+.callout.ai svg { width: 18px; height: 20px; margin-top: 2px; }
+.facts { margin: 0; display: grid; grid-template-columns: 1fr 1fr; border-top: 2px solid var(--ink); }
+.facts > div { padding: 8px 0 8px; border-bottom: 1px solid var(--rule); display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.facts > div:nth-child(odd) { padding-right: 12px; }
+.facts > div:nth-child(even) { padding-left: 12px; border-left: 1px solid var(--rule); }
+.facts dt { font-weight: 700; font-stretch: 87.5%; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+.facts dd { margin: 0; font-weight: 600; font-stretch: 93%; font-size: 14px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.facts dd small { font-weight: 500; color: var(--ink-3); font-size: 12px; }
+.rv-changes { color: var(--signal-ink); }
+.isec { display: flex; flex-direction: column; gap: 10px; }
+.dimx { border-top: 2px solid var(--ink); padding-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+.dimx.cur { background: linear-gradient(var(--paper-2), var(--paper-2)) no-repeat; }
+.dimx-h { display: flex; align-items: baseline; gap: 8px; }
+.dimx-h b { font-weight: 800; font-stretch: 100%; font-size: 15px; }
+.dimx-h span { color: var(--ink-3); font-stretch: 87.5%; font-size: 12.5px; flex: 1; min-width: 0; }
+.dimx-h em { font-style: normal; font-weight: 800; font-stretch: 112.5%; font-size: 20px; font-variant-numeric: tabular-nums; }
+.fgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.fcell { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.fcell svg { width: 100%; height: 10px; }
+.fcell b { font-weight: 600; font-stretch: 87.5%; font-size: 12px; line-height: 1.15; }
+.fcell span { font-family: var(--f-mono); font-stretch: 75%; font-size: 10px; color: var(--ink-3); }
+.fcell.st-blocked span { color: var(--signal-ink); font-weight: 600; }
+.mets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 2px solid var(--ink); }
+.met { padding: 8px 10px 4px 0; display: flex; flex-direction: column; gap: 2px; }
+.met + .met { padding-left: 10px; border-left: 1px solid var(--rule); }
+.met b { font-weight: 700; font-stretch: 87.5%; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+.met em { font-style: normal; font-weight: 800; font-stretch: 112.5%; font-size: 22px; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.met em.na { color: var(--ink-4); }
+.met small { color: var(--ink-3); font-stretch: 87.5%; font-size: 11.5px; }
+.dlist { list-style: none; margin: 0; padding: 0; border-top: 2px solid var(--ink); }
+.dlist li { border-bottom: 1px solid var(--rule); }
+.dep { width: 100%; display: grid; grid-template-columns: 30px 30px minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 7px 2px; text-align: left; }
+.dep:hover { background: var(--paper-2); }
+.dep .dn { font-family: var(--f-mono); font-stretch: 75%; font-size: 11px; color: var(--ink-3); }
+.dep .ds { font-weight: 800; font-stretch: 112.5%; font-size: 15px; }
+.dep .dnm { font-weight: 600; font-stretch: 87.5%; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dep small { font-family: var(--f-mono); font-stretch: 75%; font-size: 10px; color: var(--ink-3); }
+.dep.att .ds { color: var(--signal-ink); }
+.empty { color: var(--ink-3); font-stretch: 87.5%; margin: 0; padding: 8px 0; border-top: 2px solid var(--ink); }
+.mstat { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-top: 2px solid var(--ink); }
+.mstat div { padding: 8px 0 4px; display: flex; flex-direction: column; gap: 3px; }
+.mstat div + div { padding-left: 8px; border-left: 1px solid var(--rule); }
+.mstat em { font-style: normal; font-weight: 800; font-stretch: 112.5%; font-size: 22px; line-height: 1; }
+.mstat span { font-weight: 600; font-stretch: 87.5%; font-size: 11.5px; display: flex; align-items: center; gap: 4px; }
+.mroll { display: grid; grid-template-columns: 92px 42px minmax(0, 1fr); align-items: center; gap: 8px 10px; }
+.mroll b { font-weight: 700; font-stretch: 87.5%; font-size: 13px; }
+.mroll em { font-style: normal; font-weight: 800; font-stretch: 112.5%; font-size: 17px; text-align: right; font-variant-numeric: tabular-nums; }
+.stack { display: flex; height: 14px; border: 1px solid var(--ink); }
+.stack i { display: block; height: 100%; }
+.stack .s-done { background: var(--ink); } .stack .s-partial { background: var(--ink-4); } .stack .s-todo { background: var(--paper); } .stack .s-blocked { background: var(--signal); }
+.stack-l { grid-column: 3; font-family: var(--f-mono); font-stretch: 75%; font-size: 10px; color: var(--ink-3); margin-top: -6px; }
+.surf { display: flex; gap: 6px; flex-wrap: wrap; }
+.surf span { font-family: var(--f-mono); font-stretch: 75%; font-size: 10.5px; border: 1px solid var(--ink); padding: 1px 6px; }
+
+#card { position: absolute; z-index: 5; width: 292px; border: 2px solid var(--ink); padding: 12px 13px 12px; pointer-events: none; display: flex; flex-direction: column; gap: 8px; box-shadow: 6px 6px 0 var(--shadow); }
+.cd-top { display: grid; grid-template-columns: auto 1fr auto; align-items: start; gap: 10px; }
+.cd-n { font-family: var(--f-mono); font-stretch: 75%; font-size: 12px; font-weight: 600; }
+.cd-n.att { background: var(--signal); color: var(--on-signal); padding: 0 4px; }
+.cd-sym { font-weight: 800; font-stretch: 112.5%; font-size: 46px; line-height: .9; letter-spacing: -0.01em; }
+.cd-st { display: flex; align-items: center; gap: 6px; font-weight: 700; font-stretch: 87.5%; font-size: 12px; justify-self: end; }
+.cd-st .g { width: 14px; height: 14px; }
+.cd-name { font-weight: 800; font-stretch: 93%; font-size: 17px; line-height: 1.1; margin: 0; }
+.cd-meta { font-family: var(--f-mono); font-stretch: 75%; font-size: 10.5px; color: var(--ink-3); line-height: 1.4; }
+.cd-grid { display: grid; grid-template-columns: 30px repeat(4, minmax(0, 1fr)); gap: 6px 5px; align-items: start; border-top: 2px solid var(--ink); padding-top: 7px; }
+.cd-grid .dl { font-weight: 800; font-stretch: 100%; font-size: 12px; display: flex; flex-direction: column; line-height: 1; }
+.cd-grid .dl small { font-family: var(--f-mono); font-stretch: 75%; font-size: 9.5px; font-weight: 500; color: var(--ink-3); margin-top: 2px; }
+.cd-f { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cd-f svg { width: 100%; height: 8px; }
+.cd-f span { font-stretch: 75%; font-size: 10.5px; font-weight: 600; line-height: 1.1; }
+.cd-foot { font-stretch: 87.5%; font-size: 12px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-top: 6px; }
+.cd-foot.att { color: var(--signal-ink); font-weight: 600; }
+.cd-row.cur .dl { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 2px; }
+.cd-grid .dim-off { opacity: .35; }
+.fbar-f { fill: var(--ink); } .fbar-o { fill: none; stroke: var(--ink); stroke-width: 1.2; } .fbar-b { fill: var(--signal); } .fbar-n { fill: none; stroke: var(--ink-4); stroke-width: 1; stroke-dasharray: 2 2; }
+.fbar-h { fill: var(--ink); }
+
+#scrim { display: none; }
+
+/* ── Mid widths ───────────────────────────────────────────────────────── */
+@media (max-width: 1600px) {
+  .chip .hc-lab span, .h-att .hc-lab span, .h-ai .hc-lab span { display: none; }
+}
+@media (max-width: 1360px) {
+  .seg-cap { display: none; }
+  .srch { width: 200px; }
+  .hc-prod { display: none; }
+}
+@media (max-width: 1180px) {
+  .lens-long { display: none; }
+  .seg button { padding: 0 9px; }
+  .tb-mid { gap: 8px; }
+  .srch { width: 170px; }
+  .srch kbd { display: none; }
+  #b-legend .lab { display: none; }
+  #b-legend { width: 34px; padding: 0; }
+  .chip .hc-lab span, .hbtn .hc-lab span { display: none; }
+}
+@media (min-width: 1181px) { .lens-short { display: none; } }
+
+/* ── Phone ────────────────────────────────────────────────────────────── */
+@media (max-width: 760px) {
+  :root { --bar-h: 50px; --hud-h: 54px; }
+  #bar { gap: 8px; padding: 0 10px; flex-wrap: wrap; height: auto; padding-top: env(safe-area-inset-top, 0px); }
+  .brand { flex: 1 1 auto; height: 48px; }
+  .logo { width: 28px; height: 32px; }
+  .brand-t b { font-size: 12.5px; }
+  .tb-mid { display: none; }
+  #phone-row { display: flex; width: 100%; align-items: center; gap: 8px; height: 44px; border-top: 1px solid var(--rule); margin: 0 -10px; padding: 0 10px; width: calc(100% + 20px); }
+  #phone-row .seg { height: 32px; }
+  #phone-row .seg button { padding: 0 8px; font-size: 12px; }
+  #phone-row .seg button kbd { display: none; }
+  #phone-row .seg.lens { flex: 1 1 auto; }
+  #phone-row .seg.lens button { flex: 1 1 auto; justify-content: center; }
+  .srch { display: none; position: absolute; left: 10px; right: 10px; top: calc(env(safe-area-inset-top, 0px) + 7px); width: auto; z-index: 3; }
+  #app.searching .srch { display: flex; }
+  .srch kbd { display: none; }
+  #b-search { display: inline-flex; }
+  .tb-right { gap: 6px; }
+  .tbtn { height: 34px; }
+  #b-legend .lab { display: none; }
+  #b-legend { width: 34px; padding: 0; }
+  #zoom { right: 8px; bottom: 8px; width: 42px; }
+  #zoom button { height: 40px; }
+  .hc-prod { display: none; }
+  .hc { padding: 0 12px; }
+  .chip { padding: 0 10px; gap: 6px; }
+  .chip .hc-num, .hbtn .hc-num { font-size: 20px; }
+  .chip .hc-lab, .hbtn .hc-lab span { display: none; }
+  .chip { padding: 0 9px; }
+  .h-att { order: 2; } .hdims { order: 3; } .h-ai { order: 4; }
+  .hdims { gap: 12px; padding: 0 12px; }
+  .hdim .hc-num { font-size: 18px; }
+  .hdim .mbar { width: 34px; }
+  .hbtn { padding: 0 12px; }
+  #legend, #insp { position: fixed; left: 0; right: 0; top: auto; bottom: 0; width: auto; max-height: 64%; border: 0; border-top: 2px solid var(--ink); box-shadow: 0 -8px 0 var(--shadow); z-index: 8; }
+  #legend { padding: 14px 16px calc(18px + env(safe-area-inset-bottom, 0px)); }
+  #insp { height: 64%; transform: translateY(102%); }
+  #insp.open { transform: none; }
+  .i-grip { display: block; width: 44px; height: 4px; background: var(--ink-4); margin: 8px auto 0; flex: none; }
+  .i-scroll { padding: 10px 16px calc(24px + env(safe-area-inset-bottom, 0px)); gap: 16px; }
+  .ih { grid-template-columns: 72px minmax(0, 1fr) 32px; gap: 12px; }
+  .ih-tile { width: 72px; height: 84px; }
+  .ih h2 { font-size: 20px; }
+  #card { display: none !important; }
+}
+@media (max-width: 380px) {
+  .brand-t span { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0s !important; transition-delay: 0s !important; animation: none !important; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="bar">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 34 38" aria-hidden="true">
+        <rect x="0.75" y="0.75" width="32.5" height="36.5" style="fill:var(--paper);stroke:var(--ink);stroke-width:1.5"/>
+        <text x="4" y="10" style="font-family:var(--f-mono);font-stretch:75%;font-size:7.5px;font-weight:600;fill:var(--ink)">82</text>
+        <text x="4" y="30" style="font-family:var(--f-grot);font-stretch:112.5%;font-size:16px;font-weight:800;fill:var(--ink)">Pb</text>
+        <rect x="4" y="33" width="26" height="1.6" style="fill:var(--signal)"/>
+      </svg>
+      <div class="brand-t"><b>Periodic Blueprint</b><span>Larkspur <em id="ver">v1.4.2</em> · next <span id="nver" style="margin:0">1.5.0</span></span></div>
+    </div>
+    <div class="tb-mid">
+      <span class="seg-cap">Lens</span>
+      <div class="seg lens" role="radiogroup" aria-label="Lens">
+        <button type="button" role="radio" data-lens="overall" aria-checked="true"><kbd>1</kbd>Overall</button>
+        <button type="button" role="radio" data-lens="dev" aria-checked="false"><kbd>2</kbd><span class="lens-long">Development</span><span class="lens-short">Dev</span></button>
+        <button type="button" role="radio" data-lens="ops" aria-checked="false"><kbd>3</kbd><span class="lens-long">Operations</span><span class="lens-short">Ops</span></button>
+        <button type="button" role="radio" data-lens="biz" aria-checked="false"><kbd>4</kbd><span class="lens-long">Business</span><span class="lens-short">Biz</span></button>
+      </div>
+      <span class="seg-cap">Arrange</span>
+      <div class="seg arr" role="radiogroup" aria-label="Arrangement">
+        <button type="button" role="radio" data-arr="table" aria-checked="true"><kbd>T</kbd>Table</button>
+        <button type="button" role="radio" data-arr="status" aria-checked="false"><kbd>S</kbd>Status</button>
+        <button type="button" role="radio" data-arr="release" aria-checked="false"><kbd>R</kbd>Release</button>
+      </div>
+    </div>
+    <div class="srch" role="search">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.6" style="fill:none;stroke:currentColor;stroke-width:1.6"/><path d="M10 10l4.2 4.2" style="stroke:currentColor;stroke-width:1.8"/></svg>
+      <input id="q" type="search" placeholder="Search features" aria-label="Search features (Enter jumps to the next match)" autocomplete="off" spellcheck="false">
+      <span id="qn" aria-live="polite"></span>
+      <button type="button" id="q-clear" aria-label="Clear search and filters (Esc)" hidden><svg viewBox="0 0 14 14" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8" style="stroke:currentColor;stroke-width:1.8"/></svg></button>
+      <kbd id="q-kbd">/</kbd>
+    </div>
+    <div class="tb-right">
+      <button type="button" class="tbtn icon-only" id="b-search" aria-label="Search"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.6" style="fill:none;stroke:currentColor;stroke-width:1.6"/><path d="M10 10l4.2 4.2" style="stroke:currentColor;stroke-width:1.8"/></svg></button>
+      <button type="button" class="tbtn" id="b-legend" aria-expanded="false" aria-controls="legend" aria-label="Legend (L)"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="1.5" width="5" height="5" style="fill:currentColor"/><rect x="9.5" y="1.5" width="5" height="5" style="fill:none;stroke:currentColor;stroke-width:1.4"/><rect x="1.5" y="9.5" width="5" height="5" style="fill:none;stroke:currentColor;stroke-width:1.4;stroke-dasharray:2 1.5"/><rect x="9.5" y="9.5" width="5" height="5" style="fill:none;stroke:var(--signal);stroke-width:2"/></svg><span class="lab">Legend</span></button>
+      <button type="button" class="tbtn icon-only" id="b-theme" aria-label="Theme: system"><svg viewBox="0 0 16 16" aria-hidden="true" id="theme-ic"></svg></button>
+    </div>
+    <div id="phone-row">
+      <div class="seg lens" role="radiogroup" aria-label="Lens">
+        <button type="button" role="radio" data-lens="overall" aria-checked="true">Overall</button>
+        <button type="button" role="radio" data-lens="dev" aria-checked="false">Dev</button>
+        <button type="button" role="radio" data-lens="ops" aria-checked="false">Ops</button>
+        <button type="button" role="radio" data-lens="biz" aria-checked="false">Biz</button>
+      </div>
+      <div class="seg arr" role="radiogroup" aria-label="Arrangement">
+        <button type="button" role="radio" data-arr="table" aria-checked="true">Table</button>
+        <button type="button" role="radio" data-arr="status" aria-checked="false">Status</button>
+        <button type="button" role="radio" data-arr="release" aria-checked="false">Release</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="stage">
+    <svg id="cv" class="tset" data-lens="overall" data-lod="0" data-z="2" role="application" aria-label="Periodic table of Larkspur features. Drag to pan, scroll or pinch to zoom.">
+      <defs>
+        <pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <rect width="2.6" height="7" style="fill:var(--signal)" opacity="0.32"/>
+        </pattern>
+        <marker id="ah" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" class="arrowhead"/></marker>
+        <marker id="ah2" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" class="arrowhead-2"/></marker>
+      </defs>
+      <g id="cam">
+        <g id="heads"></g>
+        <g id="tiles"></g>
+        <g id="links"></g>
+      </g>
+    </svg>
+    <div id="zoom" role="group" aria-label="Zoom">
+      <button type="button" id="z-in" aria-label="Zoom in (+)"><svg viewBox="0 0 14 14" aria-hidden="true"><path d="M2 7h10M7 2v10" style="stroke:currentColor;stroke-width:1.8"/></svg></button>
+      <div id="zl" aria-live="off"><b>100%</b><span>Table</span></div>
+      <button type="button" id="z-out" aria-label="Zoom out (-)"><svg viewBox="0 0 14 14" aria-hidden="true"><path d="M2 7h10" style="stroke:currentColor;stroke-width:1.8"/></svg></button>
+      <button type="button" id="z-fit" aria-label="Fit the whole table (0)">Fit</button>
+    </div>
+    <div id="card" class="panel" hidden aria-hidden="true"></div>
+    <section id="legend" class="panel" hidden aria-label="Legend"></section>
+    <aside id="insp" class="panel" role="dialog" aria-modal="false" aria-labelledby="insp-title">
+      <div class="i-grip" aria-hidden="true"></div>
+      <div class="i-scroll" id="insp-body"></div>
+    </aside>
+  </main>
+
+  <footer id="hud" aria-label="Summary">
+    <div class="hud-scroll">
+      <div class="hc hc-prod"><span class="hc-num" id="h-total">122</span><span class="hc-lab"><b id="h-name">Larkspur</b><span id="h-sub">features · 20 modules</span></span></div>
+      <div class="hst" role="group" aria-label="Filter by status" id="h-status"></div>
+      <div class="hdims" id="h-dims" aria-label="Completion by dimension"></div>
+      <button type="button" class="hbtn h-att" id="h-att" aria-pressed="false"></button>
+      <button type="button" class="hbtn h-ai" id="h-ai" aria-pressed="false"></button>
+    </div>
+  </footer>
+</div>
+
+<script src="../../shared/blueprint-data.js"></script>
+<script src="../../shared/blueprint-model.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // ════════════════════════════════════════════════════════════════════════
+  // STATE
+  // ════════════════════════════════════════════════════════════════════════
+  const BP = window.BP;
+  const $ = (s, r) => (r || document).querySelector(s);
+  const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const phoneMQ = window.matchMedia('(max-width: 760px)');
+
+  const S = {
+    lens: 'overall', arr: 'table', statuses: new Set(), query: '', trust: false, attn: false,
+    sel: null, mod: null, legend: false, portrait: false, phone: phoneMQ.matches,
+    hits: [], hitIdx: -1, theme: 'system',
+  };
+  const cam = { k: 0.5, x: 0, y: 0 };
+
+  // tile grid (world units)
+  const TW = 96, TH = 112, GAP = 8, PX = TW + GAP, PY = TH + GAP, M = 36;
+  const DIMS = BP.DIMENSIONS;
+  const DIM_IDS = DIMS.map((d) => d.id);
+  const LENS_NAME = { overall: 'Overall', dev: 'Development', ops: 'Operations', biz: 'Business' };
+  const ST_LABEL = {};
+  const ST_DESC = {};
+  BP.STATUSES.forEach((s) => { ST_LABEL[s.id] = s.label; ST_DESC[s.id] = s.description; });
+  const SORDER = BP.STATUS_ORDER;
+  const FACET_SHORT = { spec: 'Spec', backend: 'Back', frontend: 'Front', tests: 'Tests', deploy: 'Deploy', observe: 'Observ', secure: 'Secur', runbook: 'Runbk', value: 'Value', docs: 'Docs', package: 'Pack', adoption: 'Adopt' };
+  const PIP_LETTER = { dev: ['S', 'B', 'F', 'T'], ops: ['D', 'O', 'S', 'R'], biz: ['V', 'D', 'P', 'A'] };
+  const STATE_LABEL = { done: 'Done', partial: 'Partial', todo: 'To do', blocked: 'Blocked', na: 'n/a' };
+  const BUILT = { agent: 'AI agent crew', pair: 'Agent + human pair', human: 'Human squad' };
+  const REVIEW = { approved: 'Approved', pending: 'Awaiting review', changes: 'Changes requested', none: 'Not reviewed' };
+  const AS_OF = BP.data.meta.asOf;
+
+  // display order: domain > module > status order (the "atomic number")
+  const byMod = new Map();
+  BP.modules.forEach((m) => {
+    const list = BP.featuresOf(m.id).map((f, i) => [f, i]);
+    list.sort((a, b) => SORDER.indexOf(a[0].status) - SORDER.indexOf(b[0].status) || a[1] - b[1]);
+    byMod.set(m.id, list.map((x) => x[0]));
+  });
+  const ORDER = [];
+  BP.domains.forEach((d) => BP.modulesOf(d.id).forEach((m) => byMod.get(m.id).forEach((f) => ORDER.push(f))));
+  const NUM = new Map(ORDER.map((f, i) => [f.id, i + 1]));
+  const SYM = makeSymbols(ORDER);
+  const modOf = (f) => BP.module(f.moduleId);
+  const domOf = (f) => BP.domain(modOf(f).domainId);
+  const isTrust = (f) => (f.builtBy === 'agent' || f.builtBy === 'pair') && (f.review === 'pending' || f.review === 'changes');
+  const TRUST_COUNT = ORDER.filter(isTrust).length;
+  const q5 = (v) => (v == null ? 0 : Math.min(4, Math.floor(v * 5 + 1e-9)));
+  const pct = (v) => Math.round((v || 0) * 100);
+  const lensOf = (r, lens) => (lens === 'overall' ? r.overall : r.dims[lens]);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const fmtDate = (iso) => { const [y, m, d] = iso.split('-').map(Number); return d + ' ' + MONTHS[m - 1] + ' ' + y; };
+  const daysAgo = (iso) => Math.round((Date.parse(AS_OF) - Date.parse(iso)) / 864e5);
+
+  /** Two-letter, element-style symbols, unique across the table (capital + lower case). */
+  function makeSymbols(list) {
+    const STOP = new Set(['and', 'of', 'the', 'for', 'to', 'a', 'an', 'in', 'on', 'with', 'by']);
+    const cons = (c) => /[bcdfghjklmnpqrstvwxz]/.test(c);
+    const used = new Set();
+    const out = new Map();
+    list.forEach((f) => {
+      const words = f.name.replace(/\(.*?\)/g, ' ').split(/[\s\-/,]+/).map((w) => w.replace(/[^A-Za-z]/g, '')).filter(Boolean);
+      const sig = words.filter((w, i) => i === 0 || !STOP.has(w.toLowerCase()));
+      const c = [];
+      const add = (a, b) => { const s = a.toUpperCase() + b.toLowerCase(); if (c.indexOf(s) < 0) c.push(s); };
+      const w1 = sig[0];
+      if (sig[1]) add(w1[0], sig[1][0]);
+      for (const ch of w1.slice(1).toLowerCase()) if (cons(ch) && ch !== w1[0].toLowerCase()) add(w1[0], ch);
+      for (let k = 2; k < sig.length; k++) add(w1[0], sig[k][0]);
+      for (let k = 1; k < sig.length; k++) for (const ch of sig[k].slice(1)) if (cons(ch)) add(w1[0], ch);
+      for (let k = 1; k < sig.length; k++) {
+        for (let j = k + 1; j < sig.length; j++) add(sig[k][0], sig[j][0]);
+        for (const ch of sig[k].slice(1)) if (cons(ch)) add(sig[k][0], ch);
+      }
+      for (const ch of w1.slice(1)) add(w1[0], ch);
+      'abcdefghijklmnopqrstuvwxyz'.split('').forEach((ch) => add(w1[0], ch));
+      const pick = c.find((s) => !used.has(s)) || w1.slice(0, 2);
+      used.add(pick);
+      out.set(f.id, pick);
+    });
+    return out;
+  }
+
+  // text measurement (canvas metrics match SVG text with the same font)
+  const mctx = document.createElement('canvas').getContext('2d');
+  const GROT = "'Archivo', 'Archivo Narrow', 'Helvetica Neue', Helvetica, Arial, sans-serif";
+  function meas(text, size, weight, stretch) {
+    mctx.font = weight + ' ' + size + 'px ' + GROT;
+    if ('fontStretch' in mctx) mctx.fontStretch = stretch || 'normal';
+    return mctx.measureText(text).width;
+  }
+  /** Splits a label into at most two balanced lines that fit maxW (squeezed slightly if a word is too long). */
+  function wrap2(text, size, weight, stretch, maxW) {
+    const m = (t) => meas(t, size, weight, stretch);
+    if (m(text) <= maxW) return [text];
+    const words = text.split(' ');
+    let best = null;
+    for (let i = 1; i < words.length; i++) {
+      const a = words.slice(0, i).join(' ');
+      const b = words.slice(i).join(' ');
+      const w = Math.max(m(a), m(b));
+      if (!best || w < best.w - 0.5) best = { lines: [a, b], w };
+    }
+    if (!best) {
+      const hy = text.indexOf('-');
+      if (hy > 0) return [text.slice(0, hy + 1), text.slice(hy + 1)];
+      return [text];
+    }
+    return best.lines;
+  }
+  /** SVG <text> with one tspan per line; lines wider than maxW get textLength so they never spill. */
+  function textLines(lines, x, y, lead, cls, size, weight, stretch, maxW, extra) {
+    let s = '<text class="' + cls + '" x="' + x + '" y="' + y + '"' + (extra || '') + '>';
+    lines.forEach((ln, i) => {
+      const w = meas(ln, size, weight, stretch);
+      const fit = w > maxW ? ' textLength="' + maxW.toFixed(1) + '" lengthAdjust="spacingAndGlyphs"' : '';
+      s += '<tspan x="' + x + '"' + (i ? ' dy="' + lead + '"' : '') + fit + '>' + esc(ln) + '</tspan>';
+    });
+    return s + '</text>';
+  }
+  function fitText(str, x, y, cls, size, weight, stretch, maxW, extra) {
+    const w = meas(str, size, weight, stretch);
+    const fit = w > maxW ? ' textLength="' + maxW.toFixed(1) + '" lengthAdjust="spacingAndGlyphs"' : '';
+    return '<text class="' + cls + '" x="' + x + '" y="' + y + '"' + fit + (extra || '') + '>' + esc(str) + '</text>';
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // RENDER: shared marks (glyphs, pips, tiles)
+  // ════════════════════════════════════════════════════════════════════════
+  function pie(r, p) {
+    const a = p * 2 * Math.PI;
+    return 'M0 0V' + (-r) + 'A' + r + ' ' + r + ' 0 ' + (p > 0.5 ? 1 : 0) + ' 1 ' + (r * Math.sin(a)).toFixed(2) + ' ' + (-r * Math.cos(a)).toFixed(2) + 'Z';
+  }
+  /** Status glyph centred on 0,0: filled disc, three-quarter, half, dashed ring, slashed square. */
+  function glyph(st, r) {
+    const sw = Math.max(1, r * 0.24).toFixed(2);
+    const ring = '<circle r="' + (r - sw / 2).toFixed(2) + '" style="fill:none;stroke:currentColor;stroke-width:' + sw + '"/>';
+    if (st === 'live') return '<circle r="' + r + '" style="fill:currentColor"/>';
+    if (st === 'ready') return ring + '<path d="' + pie(r, 0.75) + '" style="fill:currentColor"/>';
+    if (st === 'building') return ring + '<path d="' + pie(r, 0.5) + '" style="fill:currentColor"/>';
+    if (st === 'planned') return '<circle r="' + (r - sw / 2).toFixed(2) + '" style="fill:none;stroke:currentColor;stroke-width:' + sw + ';stroke-dasharray:' + (r * 0.62).toFixed(2) + ' ' + (r * 0.46).toFixed(2) + '"/>';
+    const b = (r * 0.92).toFixed(2);
+    return '<rect x="' + (-b) + '" y="' + (-b) + '" width="' + 2 * b + '" height="' + 2 * b + '" style="fill:currentColor"/><path d="M' + (-r * 0.5) + ' ' + r * 0.5 + 'L' + r * 0.5 + ' ' + (-r * 0.5) + '" style="stroke:var(--gk, var(--paper));stroke-width:' + (r * 0.34).toFixed(2) + '"/>';
+  }
+  function glyphHTML(st, cls) {
+    return '<svg class="g g-' + st + (cls ? ' ' + cls : '') + '" viewBox="-8 -8 16 16" aria-hidden="true">' + glyph(st, 7) + '</svg>';
+  }
+  function foldIcon() {
+    return '<svg class="fi" viewBox="0 0 16 18" aria-hidden="true"><path d="M1 1H10L15 6V17H1Z" style="fill:none;stroke:currentColor;stroke-width:1.5"/><path d="M10 1V6H15Z" style="fill:currentColor"/></svg>';
+  }
+
+  /** Frame shape encodes status: solid, double, corner brackets, dashed, heavy signal. */
+  function frame(st) {
+    const w = TW, h = TH;
+    if (st === 'live') return '<rect class="fr" x=".7" y=".7" width="' + (w - 1.4) + '" height="' + (h - 1.4) + '"/>';
+    if (st === 'ready') return '<rect class="fr" x=".7" y=".7" width="' + (w - 1.4) + '" height="' + (h - 1.4) + '"/><rect class="fr2" x="3.8" y="3.8" width="' + (w - 7.6) + '" height="' + (h - 7.6) + '"/>';
+    if (st === 'building') {
+      const L = 17, a = 1.2, r = w - 1.2, b = h - 1.2;
+      return '<rect class="fr-h" x=".5" y=".5" width="' + (w - 1) + '" height="' + (h - 1) + '"/>' +
+        '<path class="fr-brk" d="M' + a + ' ' + (a + L) + 'V' + a + 'H' + (a + L) + 'M' + (r - L) + ' ' + a + 'H' + r + 'V' + (a + L) +
+        'M' + r + ' ' + (b - L) + 'V' + b + 'H' + (r - L) + 'M' + (a + L) + ' ' + b + 'H' + a + 'V' + (b - L) + '"/>';
+    }
+    if (st === 'planned') return '<rect class="fr fr-dash" x=".7" y=".7" width="' + (w - 1.4) + '" height="' + (h - 1.4) + '"/>';
+    return '<rect class="fr fr-heavy" x="1.5" y="1.5" width="' + (w - 3) + '" height="' + (h - 3) + '"/>';
+  }
+
+  /** One facet pip for the lens views (letters appear from the tile zoom level). */
+  function pip(state, x, y, w, h, letter) {
+    let s = '';
+    let lc = '';
+    if (state === 'done') { s = '<rect class="pip-f" x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '"/>'; lc = ' pl-on'; }
+    else if (state === 'partial') { s = '<rect class="pip-o" x="' + (x + 0.65) + '" y="' + (y + 0.65) + '" width="' + (w - 1.3) + '" height="' + (h - 1.3) + '"/><rect class="pip-f" x="' + x + '" y="' + (y + h / 2) + '" width="' + w + '" height="' + h / 2 + '"/>'; lc = ' pl-h'; }
+    else if (state === 'todo') s = '<rect class="pip-o" x="' + (x + 0.65) + '" y="' + (y + 0.65) + '" width="' + (w - 1.3) + '" height="' + (h - 1.3) + '"/>';
+    else if (state === 'blocked') { s = '<rect class="pip-b" x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '"/>'; lc = ' pl-b'; }
+    else { s = '<rect class="pip-n" x="' + (x + 0.5) + '" y="' + (y + 0.5) + '" width="' + (w - 1) + '" height="' + (h - 1) + '"/>'; lc = ' pl-n'; }
+    return s + '<text class="pl' + lc + '" x="' + (x + w / 2) + '" y="' + (y + h / 2 + 3.4) + '">' + letter + '</text>';
+  }
+  function dpip(state, x, y, sz) {
+    if (state === 'done') return '<rect class="dpip-f" x="' + x + '" y="' + y + '" width="' + sz + '" height="' + sz + '"/>';
+    if (state === 'partial') return '<rect class="dpip-o" x="' + (x + 0.4) + '" y="' + (y + 0.4) + '" width="' + (sz - 0.8) + '" height="' + (sz - 0.8) + '"/><rect class="dpip-f" x="' + x + '" y="' + (y + sz / 2) + '" width="' + sz + '" height="' + sz / 2 + '"/>';
+    if (state === 'todo') return '<rect class="dpip-o" x="' + (x + 0.4) + '" y="' + (y + 0.4) + '" width="' + (sz - 0.8) + '" height="' + (sz - 0.8) + '"/>';
+    if (state === 'blocked') return '<rect class="dpip-b" x="' + x + '" y="' + y + '" width="' + sz + '" height="' + sz + '"/>';
+    return '<rect class="dpip-n" x="' + (x + 0.3) + '" y="' + (y + 0.3) + '" width="' + (sz - 0.6) + '" height="' + (sz - 0.6) + '"/>';
+  }
+
+  /** Full element tile. opt.key renders a static copy (key, inspector, card) without id or focus. */
+  function tileSVG(f, opt) {
+    const o = opt || {};
+    const n = NUM.get(f.id);
+    const sym = SYM.get(f.id);
+    const st = f.status;
+    const sc = { dev: BP.dimScore(f, 'dev'), ops: BP.dimScore(f, 'ops'), biz: BP.dimScore(f, 'biz') };
+    const att = BP.needsAttention(f);
+    const tr = isTrust(f);
+    let a = ' data-id="' + f.id + '" data-st="' + st + '" data-qd="' + q5(sc.dev) + '" data-qo="' + q5(sc.ops) + '" data-qb="' + q5(sc.biz) + '"';
+    if (att) a += ' data-att="1"';
+    if (tr) a += ' data-trust="1"';
+    if (f.review === 'changes') a += ' data-chg="1"';
+    let s;
+    if (o.key) s = '<g class="tile ktile"' + a + ' transform="translate(' + (o.x || 0) + ',' + (o.y || 0) + ') scale(' + (o.s || 1) + ')">';
+    else s = '<g class="tile" id="t' + n + '"' + a + ' tabindex="0" role="button" aria-label="' + esc(n + ' ' + sym + ', ' + f.name + ', ' + ST_LABEL[st] + (att ? ', needs attention' : '')) + '">';
+    s += '<rect class="bg" width="' + TW + '" height="' + TH + '"/>';
+    if (st === 'blocked') s += '<rect class="hatch" width="' + TW + '" height="' + TH + '" fill="url(#hatch)"/>';
+    s += frame(st);
+    if (att) s += '<rect class="att" x="-3.1" y="-3.1" width="' + (TW + 6.2) + '" height="' + (TH + 6.2) + '"/>';
+    s += '<rect class="ring" x="3.2" y="3.2" width="' + (TW - 6.4) + '" height="' + (TH - 6.4) + '"/>';
+    s += '<rect class="selr" x="-3.4" y="-3.4" width="' + (TW + 6.8) + '" height="' + (TH + 6.8) + '"/>';
+    if (att) s += '<rect class="nchip" x="3.5" y="4.5" width="' + (String(n).length * 7.9 + 6).toFixed(1) + '" height="17"/>';
+    s += '<text class="tx-num z2" x="6.5" y="17.6">' + n + '</text>';
+    s += '<g class="glw z1"><g transform="translate(' + (TW - 14) + ',13)">' + glyph(st, 6.2) + '</g></g>';
+    // tile and table levels
+    s += '<g class="l01">';
+    s += fitText(sym, 6, 75, 'tx-sym0', 42, 800, 'semi-expanded', TW - 12);
+    s += fitText(sym, 6, 50, 'tx-sym1', 29, 800, 'semi-expanded', TW - 12);
+    s += textLines(wrap2(f.name, 13, 600, 'condensed', TW - 13), 7, 66.5, 13.8, 'tx-name', 13, 600, 'condensed', TW - 13);
+    s += '<g class="bars">';
+    DIM_IDS.forEach((k, i) => {
+      const y = 90 + i * 6.1;
+      s += '<rect class="trk" x="7" y="' + y + '" width="' + (TW - 14) + '" height="4"/><rect class="bf" x="7" y="' + y + '" width="' + ((TW - 14) * (sc[k] || 0)).toFixed(1) + '" height="4"/>';
+    });
+    s += '</g>';
+    DIMS.forEach((dim) => {
+      s += '<g class="pips p-' + dim.id + '">';
+      dim.facets.forEach((fc, i) => { s += pip(f.dims[dim.id][fc.id], 7 + i * 21, 88.5, 19, 17, PIP_LETTER[dim.id][i]); });
+      s += '</g>';
+    });
+    s += '</g>';
+    // detail level
+    s += detail(f, sym, sc);
+    if (tr) s += '<g class="fold"><path class="fold-cut" d="M' + (TW - 17) + ' -2H' + (TW + 2) + 'V17Z"/><path class="fold-flap" d="M' + (TW - 17) + ' 0V17H' + TW + 'Z"/></g>';
+    return s + '</g>';
+  }
+
+  function detail(f, sym, sc) {
+    const rel = f.release ? BP.release(f.release) : null;
+    const team = BP.team(f.owner);
+    let s = '<g class="det">';
+    s += '<text class="tx-dst" x="' + (TW - 25) + '" y="15.6" text-anchor="end">' + esc(ST_LABEL[f.status]) + '</text>';
+    s += fitText(sym, 6.5, 40, 'tx-dsym', 19, 800, 'semi-expanded', 50);
+    s += '<text class="tx-dmeta" x="' + (TW - 7) + '" y="31" text-anchor="end">' + f.priority + '</text>';
+    s += '<text class="tx-dmeta" x="' + (TW - 7) + '" y="40" text-anchor="end">' + (rel ? rel.label : 'Unsched.') + '</text>';
+    s += textLines(wrap2(f.name, 9.6, 700, 'condensed', TW - 13), 7, 51.5, 9.8, 'tx-dname', 9.6, 700, 'condensed', TW - 13);
+    s += fitText(team.name + ' · ' + f.builtBy + ' · ' + REVIEW[f.review].toLowerCase(), 7, 71, 'tx-down', 6.4, 500, 'condensed', TW - 13);
+    DIMS.forEach((dim, r) => {
+      const y = 76 + r * 11.3;
+      s += '<g class="drow dr-' + dim.id + '">';
+      s += '<text class="tx-ddim" x="7" y="' + (y + 6.6) + '">' + dim.short[0] + '</text>';
+      dim.facets.forEach((fc, i) => {
+        const x = 14.5 + i * 19.3;
+        s += dpip(f.dims[dim.id][fc.id], x, y + 1.6, 5.4);
+        s += fitText(FACET_SHORT[fc.id], x + 6.8, y + 6.4, 'tx-dlab', 5.3, 500, 'condensed', 11.6);
+      });
+      s += '</g>';
+    });
+    return s + '</g>';
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // LAYOUT: Table, Status, Release (landscape and portrait)
+  // ════════════════════════════════════════════════════════════════════════
+  const MAXROWS = Math.max.apply(null, BP.modules.map((m) => byMod.get(m.id).length));
+  const rollCache = new Map();
+  function groupRoll(key, list) { if (!rollCache.has(key)) rollCache.set(key, BP.rollup(list)); return rollCache.get(key); }
+  function rollFor(key) {
+    const [kind, id] = key.split(':');
+    if (kind === 'mod') return BP.moduleRollup(id);
+    if (kind === 'dom') return BP.domainRollup(id);
+    if (kind === 'all') return BP.productRollup();
+    if (kind === 'st') return groupRoll(key, ORDER.filter((f) => f.status === id));
+    if (kind === 'rel') return groupRoll(key, ORDER.filter((f) => (f.release || 'none') === id));
+    return BP.productRollup();
+  }
+  const pv = (key, extra) => '<tspan data-pv="' + key + '"' + (extra || '') + '>' + pct(lensOf(rollFor(key), S.lens)) + '</tspan>';
+
+  function attBadge(x, y, n) {
+    const w = 10 + String(n).length * 7;
+    return '<g class="z1"><rect class="badge" x="' + (x - w) + '" y="' + y + '" width="' + w + '" height="17"/><text class="tx-mono on-signal" x="' + (x - w / 2) + '" y="' + (y + 12.6) + '" text-anchor="middle" style="font-weight:700">' + n + '</text></g>';
+  }
+
+  /** Column header for a module: rule, code, name, lens %. */
+  function colHead(m, x, y, w, h) {
+    const r = BP.moduleRollup(m.id);
+    let s = '<g class="hd hd-mod" data-mod="' + m.id + '" role="button" aria-label="' + esc(m.name + ' module') + '">';
+    s += '<rect class="h-hit" x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '"/>';
+    s += '<rect class="h-rule" x="' + x + '" y="' + y + '" width="' + w + '" height="2.5"/>';
+    s += fitText(m.code, x, y + 23, 'tx-code z1', 18, 800, 'semi-expanded', w - (r.attention ? 26 : 0));
+    if (r.attention) s += attBadge(x + w, y + 8, r.attention);
+    s += textLines(wrap2(m.name, 15, 600, 'condensed', w), x, y + 42, 15, 'tx-hname z2', 15, 600, 'condensed', w);
+    s += '<text class="tx-pct" x="' + x + '" y="' + (y + h - 4) + '">' + pv('mod:' + m.id) + '<tspan class="tx-pcts">%</tspan></text>';
+    return s + '</g>';
+  }
+  /** Footer cell: counts per status (Overall) or per facet state (lens views). */
+  function colFoot(m, x, y, w) {
+    const list = byMod.get(m.id);
+    let s = '<g class="ftv ftv-overall z1">';
+    const cw = w / 5;
+    SORDER.forEach((st, i) => {
+      const n = list.filter((f) => f.status === st).length;
+      const cx = x + i * cw;
+      s += '<rect class="ft-c ' + (n ? 'ft-' + st : 'ft-zero') + '" x="' + (cx + 0.8).toFixed(1) + '" y="' + y + '" width="' + (cw - 1.6).toFixed(1) + '" height="20"/>';
+      s += '<text class="tx-ft z2' + (n ? '' : ' tx-ft0') + '" x="' + (cx + cw / 2).toFixed(1) + '" y="' + (y + 14.2) + '">' + (n || '·') + '</text>';
+    });
+    s += '</g>';
+    DIM_IDS.forEach((d) => {
+      const c = BP.facetCounts(list, d);
+      const cw4 = w / 4;
+      s += '<g class="ftv ftv-' + d + ' z1">';
+      ['done', 'partial', 'todo', 'blocked'].forEach((k, i) => {
+        const cx = x + i * cw4;
+        s += dpipCell(k, cx + 0.8, y, cw4 - 1.6, 20);
+        const dark = k === 'done';
+        s += '<text class="tx-ft z2' + (c[k] ? '' : ' tx-ft0') + '" x="' + (cx + cw4 / 2).toFixed(1) + '" y="' + (y + 14.2) + '"' + (dark ? ' style="fill:var(--paper)"' : k === 'blocked' && c[k] ? ' style="fill:var(--on-signal)"' : '') + '>' + (c[k] || '·') + '</text>';
+      });
+      s += '</g>';
+    });
+    return s;
+  }
+  function dpipCell(k, x, y, w, h) {
+    const a = 'x="' + x.toFixed(1) + '" y="' + y + '" width="' + w.toFixed(1) + '" height="' + h + '"';
+    if (k === 'done') return '<rect ' + a + ' style="fill:var(--ink)"/>';
+    if (k === 'partial') return '<rect ' + a + ' style="fill:var(--paper);stroke:var(--ink);stroke-width:.8"/><rect x="' + x.toFixed(1) + '" y="' + (y + h / 2) + '" width="' + w.toFixed(1) + '" height="' + h / 2 + '" style="fill:var(--ink-4)"/>';
+    if (k === 'todo') return '<rect ' + a + ' style="fill:var(--paper);stroke:var(--ink);stroke-width:.8"/>';
+    return '<rect ' + a + ' style="fill:var(--signal)"/>';
+  }
+  /** Black domain band spanning its module columns. */
+  function domBand(d, x, y, w, h) {
+    const r = BP.domainRollup(d.id);
+    let s = '<g class="hd hd-dom" data-dom="' + d.id + '" role="button" aria-label="' + esc(d.name + ' domain') + '">';
+    s += '<rect class="h-band" x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '"/>';
+    s += '<text class="tx-bcode on-band z1" x="' + (x + 9) + '" y="' + (y + 22) + '">' + d.code + '</text>';
+    s += '<text class="tx-bpct on-band z1" x="' + (x + w - 9) + '" y="' + (y + 21) + '" text-anchor="end"><tspan class="on-band-2">' + r.count + ' ·</tspan> ' + pv('dom:' + d.id) + '%</text>';
+    s += fitText(d.name, x + 9, y + 42, 'tx-bname on-band z2', 15, 600, 'condensed', w - 18);
+    return s + '</g>';
+  }
+
+  function layTable(P) {
+    const pos = new Map();
+    let s = '';
+    if (!P) {
+      const bandY = M, bandH = 52, hdrY = bandY + bandH + 8, hdrH = 94, tilesY = hdrY + hdrH + 10;
+      const footY = tilesY + MAXROWS * PY + 4;
+      const DG = 26;
+      let x = M;
+      BP.domains.forEach((d) => {
+        const x0 = x;
+        BP.modulesOf(d.id).forEach((m) => {
+          byMod.get(m.id).forEach((f, i) => pos.set(f.id, [x, tilesY + i * PY]));
+          s += colHead(m, x, hdrY, TW, hdrH) + colFoot(m, x, footY, TW);
+          x += PX;
+        });
+        s += domBand(d, x0, bandY, x - GAP - x0, bandH);
+        x += DG;
+      });
+      const right = x - DG - GAP;
+      const keyY = footY + 20 + 46;
+      const key = keyFlow('table', M, keyY, right - M);
+      s += key.svg;
+      return { pos, svg: s, w: right + M, h: keyY + key.h + M };
+    }
+    // portrait: modules become rows, tiles run left to right
+    const HW = 236;
+    const W = HW + 14 + MAXROWS * PX - GAP;
+    let y = M;
+    BP.domains.forEach((d) => {
+      const r = BP.domainRollup(d.id);
+      s += '<g class="hd hd-dom" data-dom="' + d.id + '"><rect class="h-band" x="' + M + '" y="' + y + '" width="' + W + '" height="58"/>';
+      s += '<text class="tx-bcode on-band" x="' + (M + 12) + '" y="' + (y + 40) + '" style="font-size:30px">' + d.code + '</text>';
+      s += fitText(d.name, M + 100, y + 38, 'tx-bname on-band z1', 24, 600, 'condensed', W - 280, ' style="font-size:24px"');
+      s += '<text class="tx-bpct on-band" x="' + (M + W - 12) + '" y="' + (y + 39) + '" text-anchor="end" style="font-size:24px"><tspan class="on-band-2">' + r.count + ' ·</tspan> ' + pv('dom:' + d.id) + '%</text></g>';
+      y += 70;
+      BP.modulesOf(d.id).forEach((m) => {
+        const mr = BP.moduleRollup(m.id);
+        s += '<g class="hd hd-mod" data-mod="' + m.id + '" role="button" aria-label="' + esc(m.name + ' module') + '">';
+        s += '<rect class="h-hit" x="' + M + '" y="' + y + '" width="' + HW + '" height="' + TH + '"/><rect class="h-rule" x="' + M + '" y="' + y + '" width="' + HW + '" height="3"/>';
+        s += '<text class="tx-code" x="' + M + '" y="' + (y + 36) + '" style="font-size:30px">' + m.code + '</text>';
+        s += '<text class="tx-pct" x="' + (M + HW - 4) + '" y="' + (y + 36) + '" text-anchor="end" style="font-size:30px">' + pv('mod:' + m.id) + '<tspan class="tx-pcts">%</tspan></text>';
+        s += textLines(wrap2(m.name, 19, 600, 'condensed', HW - 10), M, y + 64, 20, 'tx-hname z2', 19, 600, 'condensed', HW - 10, ' style="font-size:19px"');
+        if (mr.attention) s += attBadge(M + HW - 4, y + 88, mr.attention);
+        s += '</g>';
+        byMod.get(m.id).forEach((f, i) => pos.set(f.id, [M + HW + 14 + i * PX, y]));
+        y += PY;
+      });
+      y += 22;
+    });
+    return { pos, svg: s, w: W + 2 * M, h: y - 22 - GAP + M };
+  }
+
+  function stHead(st, x, y, w, h) {
+    const n = ORDER.filter((f) => f.status === st).length;
+    let s = '<g class="hd hd-st" data-st="' + st + '" role="button" aria-label="' + esc('Filter ' + ST_LABEL[st]) + '">';
+    s += '<rect class="h-hit" x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '"/>';
+    s += '<rect class="h-rule" x="' + x + '" y="' + y + '" width="' + w + '" height="2.5"/>';
+    s += '<g class="g-' + st + '" transform="translate(' + (x + 11) + ',' + (y + 27) + ')">' + glyph(st, 10.5) + '</g>';
+    s += fitText(ST_LABEL[st], x + 30, y + 35, 'tx-lab', 22, 800, 'semi-expanded', w - 80);
+    s += '<text class="tx-big" x="' + (x + w) + '" y="' + (y + 38) + '" text-anchor="end">' + n + '</text>';
+    s += fitText(ST_DESC[st], x, y + 58, 'tx-sub c3 z2', 14, 500, 'condensed', w);
+    s += '<text class="tx-pct" x="' + x + '" y="' + (y + h - 4) + '">' + pv('st:' + st) + '<tspan class="tx-pcts">%</tspan><tspan class="tx-mono c3 lens-word" dx="8" style="font-size:13px">' + LENS_NAME[S.lens].toLowerCase() + '</tspan></text>';
+    return s + '</g>';
+  }
+
+  function layStatus(P) {
+    const pos = new Map();
+    let s = '';
+    const total = ORDER.length;
+    if (!P) {
+      const K = {};
+      SORDER.forEach((st) => {
+        const per = BP.domains.map((d) => ORDER.filter((f) => f.status === st && domOf(f).id === d.id).length);
+        K[st] = Math.max(2, Math.ceil(Math.max.apply(null, per) / 2));
+      });
+      const RH = 228, SG = 30, DGv = 26, hdrY = M, hdrH = 96, top = hdrY + hdrH + 16;
+      const colX = {};
+      let x = M + RH + 18;
+      SORDER.forEach((st) => { colX[st] = x; x += K[st] * PX - GAP + SG; });
+      const right = x - SG;
+      SORDER.forEach((st) => { s += stHead(st, colX[st], hdrY, K[st] * PX - GAP, hdrH); });
+      let y = top;
+      BP.domains.forEach((d, di) => {
+        const fs = ORDER.filter((f) => domOf(f).id === d.id);
+        let rows = 1;
+        SORDER.forEach((st) => { rows = Math.max(rows, Math.ceil(fs.filter((f) => f.status === st).length / K[st])); });
+        const h = rows * PY - GAP;
+        if (di) s += '<rect class="h-hair" x="' + M + '" y="' + (y - DGv / 2 - 0.5) + '" width="' + (right - M) + '" height="1"/>';
+        const r = BP.domainRollup(d.id);
+        s += '<g class="hd hd-dom" data-dom="' + d.id + '"><rect class="h-band" x="' + M + '" y="' + y + '" width="' + RH + '" height="' + h + '"/>';
+        s += '<text class="tx-bcode on-band" x="' + (M + 12) + '" y="' + (y + 38) + '" style="font-size:30px">' + d.code + '</text>';
+        s += textLines(h > 140 ? wrap2(d.name, 19, 600, 'condensed', RH - 24) : [d.name], M + 12, y + 64, 20, 'tx-bname on-band z1', 19, 600, 'condensed', RH - 24, ' style="font-size:19px"');
+        s += '<text class="tx-bpct on-band z2" x="' + (M + 12) + '" y="' + (y + h - 12) + '" style="font-size:15px">' + r.count + ' features</text>';
+        s += '<text class="tx-pct on-band" x="' + (M + RH - 12) + '" y="' + (y + h - 10) + '" text-anchor="end" style="font-size:28px">' + pv('dom:' + d.id) + '<tspan class="tx-pcts">%</tspan></text></g>';
+        SORDER.forEach((st) => {
+          fs.filter((f) => f.status === st).forEach((f, i) => pos.set(f.id, [colX[st] + (i % K[st]) * PX, y + Math.floor(i / K[st]) * PY]));
+        });
+        y += h + DGv;
+      });
+      const footY = y - DGv + 18;
+      s += '<rect class="h-rule" x="' + M + '" y="' + footY + '" width="' + (right - M) + '" height="2.5"/>';
+      s += '<text class="tx-caps z1" x="' + M + '" y="' + (footY + 30) + '">Share of ' + total + ' features</text>';
+      SORDER.forEach((st) => {
+        const n = ORDER.filter((f) => f.status === st).length;
+        const w = K[st] * PX - GAP;
+        s += '<rect class="h-hair" x="' + colX[st] + '" y="' + (footY + 16) + '" width="' + w + '" height="10"/><rect x="' + colX[st] + '" y="' + (footY + 16) + '" width="' + (w * n / total).toFixed(1) + '" height="10" style="fill:var(--ink)"/>';
+        s += '<text class="tx-pct" x="' + colX[st] + '" y="' + (footY + 60) + '">' + Math.round((n / total) * 100) + '<tspan class="tx-pcts">%</tspan></text>';
+      });
+      const bottom = footY + 70;
+      return { pos, svg: s, w: right + M, h: bottom + M };
+    }
+    return laySections(SORDER.map((st) => ({
+      key: 'st:' + st, glyph: st, label: ST_LABEL[st], sub: ST_DESC[st], items: ORDER.filter((f) => f.status === st), st,
+    })));
+  }
+
+  function relGroups() {
+    const g = BP.releases.map((r) => ({ id: r.id, label: r.label, date: r.date, state: r.state, items: ORDER.filter((f) => f.release === r.id) }));
+    g.push({ id: 'none', label: 'Unscheduled', date: null, state: 'none', items: ORDER.filter((f) => !f.release) });
+    return g;
+  }
+  const REL_STATE = { shipped: 'Shipped', next: 'Next release', future: 'Future', none: 'No release yet' };
+
+  function layRelease(P) {
+    const pos = new Map();
+    let s = '';
+    const groups = relGroups();
+    if (!P) {
+      const K = 3, RG = 40, gw = K * PX - GAP, labelH = 70;
+      const L = Math.max.apply(null, groups.map((g) => Math.ceil(g.items.length / K)));
+      const shipped = groups.filter((g) => g.state === 'shipped');
+      const shipW = shipped.length * (gw + RG) - RG;
+      const key = keyFlow('release', M, M, shipW);
+      const shipMax = Math.max.apply(null, shipped.map((g) => Math.ceil(g.items.length / K)));
+      const baseY = Math.max(M + labelH + L * PY, M + key.h + 36 + labelH + shipMax * PY);
+      s += key.svg;
+      let x = M;
+      let todayX = null;
+      groups.forEach((g, gi) => {
+        const lv = Math.ceil(g.items.length / K);
+        if (g.state === 'next') {
+          s += '<rect class="next-wash" x="' + (x - 14) + '" y="' + (baseY - L * PY - labelH + 6) + '" width="' + (gw + 28) + '" height="' + (L * PY + labelH + 118) + '"/>';
+          if (todayX == null) todayX = x - RG / 2 - 14 / 2;
+        }
+        g.items.forEach((f, i) => pos.set(f.id, [x + (i % K) * PX, baseY - (Math.floor(i / K) + 1) * PY + GAP]));
+        const topY = baseY - lv * PY + GAP;
+        s += '<text class="tx-big" x="' + x + '" y="' + (topY - 22) + '">' + g.items.length + '</text>';
+        s += '<text class="tx-mono c3 z2" x="' + (x + gw) + '" y="' + (topY - 24) + '" text-anchor="end">' + pv('rel:' + g.id) + '% <tspan class="lens-word">' + LENS_NAME[S.lens].toLowerCase() + '</tspan></text>';
+        s += '<g class="hd-rel">';
+        s += '<text class="tx-lab" x="' + x + '" y="' + (baseY + 44) + '" style="font-size:30px">' + esc(g.label) + '</text>';
+        if (g.date) s += '<text class="tx-mono c2 z1" x="' + x + '" y="' + (baseY + 70) + '" style="font-size:16px">' + fmtDate(g.date) + '</text>';
+        s += '<text class="tx-caps z1' + (g.state === 'next' ? '' : ' c3') + '" x="' + x + '" y="' + (baseY + 94) + '" style="font-size:15px">' + REL_STATE[g.state] + '</text>';
+        s += '</g>';
+        x += gw + RG;
+        if (gi === groups.length - 1) x -= RG;
+      });
+      s += '<rect class="h-rule" x="' + M + '" y="' + (baseY + 6) + '" width="' + (x - M) + '" height="3"/>';
+      if (todayX != null) {
+        s += '<path class="today" d="M' + todayX + ' ' + M + 'V' + (baseY + 100) + '"/>';
+        s += '<rect class="h-band" x="' + (todayX - 190) + '" y="' + M + '" width="190" height="36"/>';
+        s += '<text class="tx-caps on-band" x="' + (todayX - 95) + '" y="' + (M + 24) + '" text-anchor="middle" style="font-size:17px">Today ' + fmtDate(AS_OF).replace(/ \d{4}$/, '') + '</text>';
+      }
+      return { pos, svg: s, w: x + M, h: baseY + 100 + M };
+    }
+    return laySections(groups.map((g) => ({
+      key: 'rel:' + g.id, label: g.label, sub: (g.date ? fmtDate(g.date) + ' · ' : '') + REL_STATE[g.state], items: g.items,
+    })));
+  }
+
+  /** Portrait sections: a black header band per group, tiles flowing seven to a row. */
+  function laySections(sections) {
+    const pos = new Map();
+    let s = '';
+    const COLS = 7;
+    const W = COLS * PX - GAP;
+    let y = M;
+    sections.forEach((sec) => {
+      s += '<g class="hd' + (sec.st ? ' hd-st" data-st="' + sec.st : '') + '"><rect class="h-band" x="' + M + '" y="' + y + '" width="' + W + '" height="62"/>';
+      let lx = M + 14;
+      if (sec.glyph) { s += '<g class="on-band-g" transform="translate(' + (M + 30) + ',' + (y + 31) + ')">' + glyph(sec.glyph, 14) + '</g>'; lx = M + 56; }
+      s += '<text class="tx-bcode on-band" x="' + lx + '" y="' + (y + 42) + '" style="font-size:30px">' + esc(sec.label) + '</text>';
+      s += '<text class="tx-bpct on-band" x="' + (M + W - 14) + '" y="' + (y + 42) + '" text-anchor="end" style="font-size:30px">' + sec.items.length + '<tspan class="on-band-2" dx="12" style="font-size:20px">' + pv(sec.key) + '%</tspan></text>';
+      s += '</g>';
+      y += 74;
+      sec.items.forEach((f, i) => pos.set(f.id, [M + (i % COLS) * PX, y + Math.floor(i / COLS) * PY]));
+      y += Math.max(1, Math.ceil(sec.items.length / COLS)) * PY - GAP + 34;
+      if (!sec.items.length) y -= PY - 20;
+    });
+    return { pos, svg: s, w: W + 2 * M, h: y - 34 + M };
+  }
+
+  // ── Key: "How to read a tile" ─────────────────────────────────────────
+  const KEY_SAMPLE = BP.feature('subscriptions.subscribe-and-save') || ORDER[0];
+  const KEYB = { intro: [292, 200], sample: [650, 200], status: [330, 200], read: [318, 200], marks: [352, 200] };
+  function keyFlow(arr, x0, y0, maxW) {
+    const ids = ['intro', 'sample', 'status', 'read', 'marks'];
+    const gx = 46, gy = 44;
+    let x = 0, y = 0, rowH = 0, maxX = 0;
+    const at = {};
+    ids.forEach((id) => {
+      const [w, h] = KEYB[id];
+      if (x > 0 && x + w > maxW) { x = 0; y += rowH + gy; rowH = 0; }
+      at[id] = [x, y];
+      maxX = Math.max(maxX, x + w);
+      x += w + gx;
+      rowH = Math.max(rowH, h);
+    });
+    let s = '<g class="key" transform="translate(' + x0 + ',' + y0 + ')">';
+    s += keyIntro(arr, at.intro[0], at.intro[1]) + keySample(at.sample[0], at.sample[1]) + keyStatus(at.status[0], at.status[1]) + keyRead(at.read[0], at.read[1]) + keyMarks(at.marks[0], at.marks[1]);
+    return { svg: s + '</g>', w: maxX, h: y + rowH };
+  }
+  function kTitle(x, y, w, t) {
+    return '<rect class="h-rule" x="' + x + '" y="' + y + '" width="' + w + '" height="2.5"/><text class="tx-kt z1" x="' + x + '" y="' + (y + 22) + '">' + t + '</text>';
+  }
+  function keyIntro(arr, x, y) {
+    const [w] = KEYB.intro;
+    const text = {
+      table: 'Every tile is one feature. Columns are modules under their domain band; each column runs from Live at the top to Blocked at the bottom.',
+      status: 'Every tile is one feature. Columns sort features by lifecycle status, rows by domain. The foot row counts each status.',
+      release: 'Every tile is one feature, stacked on the release it shipped in or is planned for. The tall bars on the right are work still ahead.',
+    }[arr];
+    let s = kTitle(x, y, w, 'How to read a tile');
+    s += '<text class="tx-kh" x="' + x + '" y="' + (y + 62) + '"><tspan x="' + x + '">The periodic table</tspan><tspan x="' + x + '" dy="32">of Larkspur</tspan></text>';
+    const lines = [];
+    let cur = '';
+    text.split(' ').forEach((wd) => {
+      const t = cur ? cur + ' ' + wd : wd;
+      if (meas(t, 14.5, 500, 'condensed') > w - 4 && cur) { lines.push(cur); cur = wd; } else cur = t;
+    });
+    if (cur) lines.push(cur);
+    s += textLines(lines, x, y + 126, 18, 'tx-ks c2 z2', 14.5, 500, 'condensed', w);
+    return s;
+  }
+  function keySample(x, y) {
+    const [w] = KEYB.sample;
+    const sc = 1.5;
+    const tx = x + 222, ty = y + 26;
+    const tw = TW * sc, th = TH * sc;
+    let s = kTitle(x, y, w, 'Anatomy');
+    s += tileSVG(KEY_SAMPLE, { key: true, x: tx, y: ty, s: sc });
+    const P = (px, py) => [tx + px * sc, ty + py * sc];
+    const left = [
+      [P(12, 12), 'Atomic number', 'Position in the table'],
+      [P(18, 40), 'Symbol', 'Two letters, unique'],
+      [P(10, 72), 'Feature name', 'Appears as you zoom in'],
+    ];
+    const right = [
+      [P(TW - 26, 13), 'Status glyph', 'Fill grows Planned to Live'],
+      [P(TW - 5, 5), 'Folded corner', 'AI-built, awaiting review'],
+      [P(TW - 10, 97), null, null],
+    ];
+    const ly = [y + 52, y + 112, y + 172];
+    left.forEach((c, i) => {
+      const [ax, ay] = c[0];
+      const ex = tx - 22, lx = tx - 34;
+      s += '<path class="lead" d="M' + ax + ' ' + ay + 'H' + ex + 'V' + (ly[i] - 5) + 'H' + lx + '"/><circle class="lead-dot" cx="' + ax + '" cy="' + ay + '" r="2.6"/>';
+      s += '<text class="tx-kl z1" x="' + (lx - 6) + '" y="' + (ly[i] - 6) + '" text-anchor="end">' + c[1] + '</text>';
+      s += '<text class="tx-ks c3 z2" x="' + (lx - 6) + '" y="' + (ly[i] + 12) + '" text-anchor="end">' + c[2] + '</text>';
+    });
+    right.forEach((c, i) => {
+      const [ax, ay] = c[0];
+      const ex = tx + tw + 22, lx = tx + tw + 34;
+      s += '<path class="lead" d="M' + ax + ' ' + ay + 'H' + ex + 'V' + (ly[i] - 5) + 'H' + lx + '"/><circle class="lead-dot" cx="' + ax + '" cy="' + ay + '" r="2.6"/>';
+      if (c[1]) {
+        s += '<text class="tx-kl z1" x="' + (lx + 6) + '" y="' + (ly[i] - 6) + '">' + c[1] + '</text>';
+        s += '<text class="tx-ks c3 z2" x="' + (lx + 6) + '" y="' + (ly[i] + 12) + '">' + c[2] + '</text>';
+      } else {
+        s += '<text class="tx-kl z1 kv kv-overall" x="' + (lx + 6) + '" y="' + (ly[i] - 6) + '">Three bars</text>';
+        s += '<text class="tx-ks c3 z2 kv kv-overall" x="' + (lx + 6) + '" y="' + (ly[i] + 12) + '">Dev, Ops, Biz completion</text>';
+        DIMS.forEach((d) => {
+          s += '<text class="tx-kl z1 kv kv-' + d.id + '" x="' + (lx + 6) + '" y="' + (ly[i] - 6) + '">' + d.label + ' pips</text>';
+          s += '<text class="tx-ks c3 z2 kv kv-' + d.id + '" x="' + (lx + 6) + '" y="' + (ly[i] + 12) + '">' + d.facets.map((fc) => fc.label.replace(' review', '').replace(' & help', '')).join(' · ') + '</text>';
+        });
+      }
+    });
+    // status glyph row under the right callouts
+    return s;
+  }
+  function miniTile(st, x, y, w, h, extra) {
+    const fill = { live: 'var(--tn-live)', ready: 'var(--tn-ready)', building: 'var(--tn-build)', planned: 'var(--tn-plan)', blocked: 'var(--tn-block)' }[st];
+    let s = '<g transform="translate(' + x + ',' + y + ')">';
+    s += '<rect width="' + w + '" height="' + h + '" style="fill:' + fill + '"/>';
+    if (st === 'blocked') s += '<rect width="' + w + '" height="' + h + '" fill="url(#hatch)"/>';
+    const sk = 'fill:none;stroke:var(--ink);';
+    if (st === 'live') s += '<rect x=".6" y=".6" width="' + (w - 1.2) + '" height="' + (h - 1.2) + '" style="' + sk + 'stroke-width:1.2"/>';
+    if (st === 'ready') s += '<rect x=".6" y=".6" width="' + (w - 1.2) + '" height="' + (h - 1.2) + '" style="' + sk + 'stroke-width:1.2"/><rect x="3" y="3" width="' + (w - 6) + '" height="' + (h - 6) + '" style="' + sk + 'stroke-width:.6"/>';
+    if (st === 'building') { const L = 8; s += '<rect x=".4" y=".4" width="' + (w - .8) + '" height="' + (h - .8) + '" style="fill:none;stroke:var(--ink-4);stroke-width:.6"/><path d="M1 ' + (1 + L) + 'V1H' + (1 + L) + 'M' + (w - 1 - L) + ' 1H' + (w - 1) + 'V' + (1 + L) + 'M' + (w - 1) + ' ' + (h - 1 - L) + 'V' + (h - 1) + 'H' + (w - 1 - L) + 'M' + (1 + L) + ' ' + (h - 1) + 'H1V' + (h - 1 - L) + '" style="' + sk + 'stroke-width:2"/>'; }
+    if (st === 'planned') s += '<rect x=".6" y=".6" width="' + (w - 1.2) + '" height="' + (h - 1.2) + '" style="fill:none;stroke:var(--ink-3);stroke-width:1.1;stroke-dasharray:4 3"/>';
+    if (st === 'blocked') s += '<rect x="1.2" y="1.2" width="' + (w - 2.4) + '" height="' + (h - 2.4) + '" style="fill:none;stroke:var(--signal);stroke-width:2.4"/>';
+    s += '<g class="g-' + st + '" style="--gk:' + fill + '" transform="translate(' + w / 2 + ',' + h / 2 + ')">' + glyph(st, Math.min(w, h) * 0.22) + '</g>';
+    return s + (extra || '') + '</g>';
+  }
+  function keyStatus(x, y) {
+    const [w] = KEYB.status;
+    const r = BP.productRollup();
+    let s = kTitle(x, y, w, 'Status: fill, frame, glyph');
+    SORDER.forEach((st, i) => {
+      const ry = y + 36 + i * 33;
+      s += miniTile(st, x, ry, 27, 30);
+      s += '<text class="tx-kl z1" x="' + (x + 40) + '" y="' + (ry + 13) + '">' + ST_LABEL[st] + '</text>';
+      s += '<text class="tx-ks c3 z2" x="' + (x + 40) + '" y="' + (ry + 29) + '">' + esc(ST_DESC[st]) + '</text>';
+      s += '<text class="tx-kn z1" x="' + (x + w) + '" y="' + (ry + 13) + '" text-anchor="end">' + r.byStatus[st] + '</text>';
+    });
+    return s;
+  }
+  function keyRead(x, y) {
+    const [w] = KEYB.read;
+    let s = '<g class="kv kv-overall">' + kTitle(x, y, w, 'Overall: three bars');
+    const sample = [0.86, 0.38, 0.62];
+    ['Development', 'Operations', 'Business'].forEach((lab, i) => {
+      const by = y + 44 + i * 30;
+      s += '<rect class="ramp-f" x="' + x + '" y="' + by + '" width="150" height="9" style="fill:var(--rule-2);stroke:none"/><rect x="' + x + '" y="' + by + '" width="' + 150 * sample[i] + '" height="9" style="fill:var(--ink)"/>';
+      s += '<text class="tx-kl z1" x="' + (x + 164) + '" y="' + (by + 10) + '">' + lab + '</text>';
+    });
+    s += textLines(['Bar length is the share of facets done;', 'partial counts half, n/a is left out.'], x, y + 152, 18, 'tx-ks c3 z2', 14.5, 500, 'condensed', w);
+    s += '</g><g class="kv kv-lens">' + kTitle(x, y, w, 'Lens: fill and pips');
+    for (let i = 0; i < 5; i++) s += '<rect class="ramp-' + i + '" x="' + (x + i * 46) + '" y="' + (y + 38) + '" width="46" height="24"/>';
+    s += '<rect class="ramp-f" x="' + x + '" y="' + (y + 38) + '" width="230" height="24"/>';
+    ['0', '20', '40', '60', '80'].forEach((t, i) => { s += '<text class="tx-kn c3 z2" x="' + (x + i * 46) + '" y="' + (y + 80) + '" style="font-size:12px">' + t + '</text>'; });
+    s += '<text class="tx-kn c3 z2" x="' + (x + 230) + '" y="' + (y + 80) + '" text-anchor="end" style="font-size:12px">100%</text>';
+    DIMS.forEach((d) => { s += '<text class="tx-ks c2 z2 kv kv-' + d.id + '" x="' + (x + 242) + '" y="' + (y + 55) + '">' + d.short + ' score</text>'; });
+    const states = ['done', 'partial', 'todo', 'blocked', 'na'];
+    states.forEach((k, i) => {
+      const px = x + i * 66;
+      s += '<g class="tset-pip" style="--tf:var(--ink);--tb:var(--paper)">' + pip(k, px, y + 100, 22, 18, '') + '</g>';
+      s += '<text class="tx-ks z2" x="' + px + '" y="' + (y + 136) + '">' + STATE_LABEL[k] + '</text>';
+    });
+    s += textLines(['Four facets of the chosen dimension;', 'blocked facets show in the signal colour.'], x, y + 164, 18, 'tx-ks c3 z2', 14.5, 500, 'condensed', w);
+    return s + '</g>';
+  }
+  function keyMarks(x, y) {
+    const [w] = KEYB.marks;
+    const r = BP.productRollup();
+    let s = kTitle(x, y, w, 'Marks');
+    const rows = [
+      ['att', 'Needs attention', 'Blocked, or changes requested', r.attention],
+      ['fold', 'Awaiting human review', 'AI-built; shown with Verify AI', TRUST_COUNT],
+      ['ring', 'Search match', 'Everything else fades back', null],
+      ['sel', 'Selected', 'Lines run to its dependencies', null],
+    ];
+    rows.forEach((row, i) => {
+      const ry = y + 38 + i * 40;
+      const tw = 27, th = 30;
+      let ex = '';
+      if (row[0] === 'att') ex = '<rect x="-2.6" y="-2.6" width="' + (tw + 5.2) + '" height="' + (th + 5.2) + '" style="fill:none;stroke:var(--signal);stroke-width:2.6"/>';
+      if (row[0] === 'fold') ex = '<path d="M' + (tw - 9) + ' -1H' + (tw + 1) + 'V9Z" style="fill:var(--paper)"/><path d="M' + (tw - 9) + ' 0V9H' + tw + 'Z" style="fill:var(--ink)"/>';
+      if (row[0] === 'ring') ex = '<rect x="3" y="3" width="' + (tw - 6) + '" height="' + (th - 6) + '" style="fill:none;stroke:var(--ink);stroke-width:2.2"/>';
+      if (row[0] === 'sel') ex = '<rect x="-2.6" y="-2.6" width="' + (tw + 5.2) + '" height="' + (th + 5.2) + '" style="fill:none;stroke:var(--ink);stroke-width:2.6"/><path d="M' + (tw + 3) + ' ' + th / 2 + 'H' + (tw + 22) + '" style="stroke:var(--ink);stroke-width:1.6" marker-end="url(#ah)"/>';
+      s += miniTile('live', x + 3, ry, tw, th, ex);
+      const lx = x + (row[0] === 'sel' ? 64 : 44);
+      s += '<text class="tx-kl z1" x="' + lx + '" y="' + (ry + 13) + '">' + row[1] + '</text>';
+      s += '<text class="tx-ks c3 z2" x="' + lx + '" y="' + (ry + 30) + '">' + row[2] + '</text>';
+      if (row[3] != null) s += '<text class="tx-kn z1" x="' + (x + w) + '" y="' + (ry + 13) + '" text-anchor="end"' + (row[0] === 'att' ? ' style="fill:var(--signal-ink)"' : '') + '>' + row[3] + '</text>';
+    });
+    return s;
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // RENDER: scene
+  // ════════════════════════════════════════════════════════════════════════
+  const svg = $('#cv');
+  const camG = $('#cam');
+  const tilesG = $('#tiles');
+  const headsG = $('#heads');
+  const linksG = $('#links');
+  const stage = $('#stage');
+  const app = $('#app');
+  let TILE = new Map();
+  let LAY = {};
+
+  function buildTiles() {
+    tilesG.innerHTML = ORDER.map((f) => tileSVG(f)).join('');
+    TILE = new Map();
+    $$('.tile', tilesG).forEach((el) => TILE.set(el.getAttribute('data-id'), el));
+  }
+  function buildLayouts() {
+    rollCache.clear();
+    const P = S.portrait;
+    LAY = { table: layTable(P), status: layStatus(P), release: layRelease(P) };
+    headsG.innerHTML = ['table', 'status', 'release'].map((a) => '<g class="heads' + (a === S.arr ? '' : ' off') + '" data-arr="' + a + '">' + LAY[a].svg + '</g>').join('');
+  }
+  function placeTiles(animate) {
+    const L = LAY[S.arr];
+    if (!animate || reduced.matches) svg.classList.add('notr');
+    TILE.forEach((el, id) => {
+      const p = L.pos.get(id);
+      if (!p) return;
+      el.style.transitionDelay = animate ? Math.round((p[0] / L.w) * 260 + (p[1] / L.h) * 90) + 'ms, 0ms' : '0ms, 0ms';
+      el.style.transform = 'translate(' + p[0] + 'px,' + p[1] + 'px)';
+    });
+    if (!animate || reduced.matches) { void svg.getBoundingClientRect(); requestAnimationFrame(() => svg.classList.remove('notr')); }
+  }
+  function setArrangement(a, opts) {
+    if (!LAY[a]) return;
+    const changed = a !== S.arr;
+    S.arr = a;
+    $$('[data-arr]', document).forEach((b) => { if (b.tagName === 'BUTTON') b.setAttribute('aria-checked', String(b.getAttribute('data-arr') === a)); });
+    $$('.heads', headsG).forEach((g) => g.classList.toggle('off', g.getAttribute('data-arr') !== a));
+    placeTiles(changed && !(opts && opts.instant));
+    linksG.innerHTML = '';
+    if (changed) setTimeout(drawLinks, reduced.matches ? 0 : 900);
+    if (!(opts && opts.keepCam)) fit(!(opts && opts.instant));
+    store();
+  }
+  function setLens(l) {
+    if (!LENS_NAME[l]) return;
+    S.lens = l;
+    svg.setAttribute('data-lens', l);
+    $$('[data-lens]', document).forEach((b) => { if (b.tagName === 'BUTTON') b.setAttribute('aria-checked', String(b.getAttribute('data-lens') === l)); });
+    $$('[data-pv]', headsG).forEach((t) => { t.textContent = pct(lensOf(rollFor(t.getAttribute('data-pv')), l)); });
+    $$('.lens-word', headsG).forEach((t) => { t.textContent = LENS_NAME[l].toLowerCase(); });
+    $$('.hdim', document).forEach((d) => d.classList.toggle('on', d.getAttribute('data-d') === l));
+    $$('svg.tset', document).forEach((s) => { if (s !== svg) s.setAttribute('data-lens', l); });
+    if (S.sel) refreshInspectorDims();
+    updateLodTag();
+    store();
+  }
+
+  // filters, search, overlays
+  function filterObj() { return { statuses: S.statuses, query: S.query, attentionOnly: S.attn }; }
+  function filtersActive() { return S.statuses.size > 0 || S.query.trim() !== '' || S.attn; }
+  function refreshFilters() {
+    const active = filtersActive();
+    const fo = filterObj();
+    S.hits = [];
+    ORDER.forEach((f) => {
+      const el = TILE.get(f.id);
+      const ok = BP.matches(f, fo);
+      el.classList.toggle('dim', active && !ok);
+      el.classList.toggle('hit', ok && S.query.trim() !== '');
+      if (ok && active) S.hits.push(f.id);
+    });
+    if (S.hitIdx >= S.hits.length) S.hitIdx = -1;
+    $$('.tile.cur', tilesG).forEach((e) => e.classList.remove('cur'));
+    const qn = $('#qn');
+    if (S.query.trim()) {
+      qn.textContent = S.hits.length ? (S.hitIdx >= 0 ? S.hitIdx + 1 + '/' : '') + S.hits.length + (S.hits.length === 1 ? ' match' : ' matches') : 'no match';
+      qn.classList.toggle('none', !S.hits.length);
+    } else { qn.textContent = ''; qn.classList.remove('none'); }
+    $$('.chip', document).forEach((c) => c.setAttribute('aria-pressed', String(S.statuses.has(c.getAttribute('data-st')))));
+    $('#h-att').setAttribute('aria-pressed', String(S.attn));
+    $('#q-clear').hidden = !active;
+    $('#q-kbd').hidden = active;
+  }
+  function setTrust(on) {
+    S.trust = on;
+    svg.classList.toggle('trust', on);
+    $('#h-ai').setAttribute('aria-pressed', String(on));
+    store();
+  }
+
+  // dependency links for the selection
+  function tileCenter(id) {
+    const p = LAY[S.arr].pos.get(id);
+    return p ? [p[0] + TW / 2, p[1] + TH / 2] : null;
+  }
+  function edgePoint(c, toward) {
+    const dx = toward[0] - c[0], dy = toward[1] - c[1];
+    const sx = dx === 0 ? Infinity : (TW / 2 + 3) / Math.abs(dx);
+    const sy = dy === 0 ? Infinity : (TH / 2 + 3) / Math.abs(dy);
+    const t = Math.min(sx, sy);
+    return [c[0] + dx * t, c[1] + dy * t];
+  }
+  function drawLinks() {
+    linksG.innerHTML = '';
+    if (!S.sel) return;
+    const c0 = tileCenter(S.sel);
+    if (!c0) return;
+    let halo = '', ln = '', dots = '';
+    const path = (a, b, bend) => {
+      const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+      const dx = b[0] - a[0], dy = b[1] - a[1];
+      const len = Math.hypot(dx, dy) || 1;
+      const off = Math.min(140, len * 0.16) * bend;
+      const cx = mx - (dy / len) * off, cy = my + (dx / len) * off;
+      return 'M' + a[0].toFixed(1) + ' ' + a[1].toFixed(1) + 'Q' + cx.toFixed(1) + ' ' + cy.toFixed(1) + ' ' + b[0].toFixed(1) + ' ' + b[1].toFixed(1);
+    };
+    let li = 0;
+    const bendOf = () => { const i = li++; return (i % 2 ? -1 : 1) * (0.55 + 0.3 * Math.floor(i / 2)); };
+    BP.dependencies(S.sel).forEach((d) => {
+      const c1 = tileCenter(d.id);
+      if (!c1) return;
+      const a = edgePoint(c0, c1), b = edgePoint(c1, c0);
+      const p = path(a, b, bendOf());
+      halo += '<path class="halo" d="' + p + '"/>';
+      ln += '<path class="ln" d="' + p + '" marker-end="url(#ah)"/>';
+      dots += '<circle cx="' + a[0].toFixed(1) + '" cy="' + a[1].toFixed(1) + '" r="3.4"/>';
+    });
+    BP.dependents(S.sel).forEach((d) => {
+      const c1 = tileCenter(d.id);
+      if (!c1) return;
+      const a = edgePoint(c1, c0), b = edgePoint(c0, c1);
+      const p = path(a, b, bendOf());
+      halo += '<path class="halo" d="' + p + '"/>';
+      ln += '<path class="ln ln-up" d="' + p + '" marker-end="url(#ah2)"/>';
+    });
+    linksG.innerHTML = halo + ln + dots;
+  }
+
+  // HUD
+  function renderHUD() {
+    const r = BP.productRollup();
+    const p = BP.product;
+    $('#ver').textContent = 'v' + p.version;
+    $('#nver').textContent = p.nextVersion;
+    $('#h-total').textContent = r.count;
+    $('#h-name').textContent = 'Features';
+    $('#h-sub').textContent = p.name + ' ' + p.version;
+    $('#h-status').innerHTML = SORDER.map((st) => '<button type="button" class="chip" data-st="' + st + '" aria-pressed="false" aria-label="' + esc('Show only ' + ST_LABEL[st] + ': ' + r.byStatus[st]) + '">' + glyphHTML(st) +
+      '<span class="hc-num">' + r.byStatus[st] + '</span><span class="hc-lab"><b>' + esc(ST_LABEL[st]) + '</b><span>' + Math.round((r.byStatus[st] / r.count) * 100) + '% of all</span></span></button>').join('');
+    $('#h-dims').innerHTML = DIMS.map((d) => '<div class="hdim" data-d="' + d.id + '" title="' + esc(d.label + ': ' + d.question) + '"><span class="hc-num">' + pct(r.dims[d.id]) + '</span><b>' + d.short + ' %</b><span class="mbar"><i style="width:' + pct(r.dims[d.id]) + '%"></i></span></div>').join('');
+    $('#h-att').innerHTML = '<span class="sq"></span><span class="hc-num">' + r.attention + '</span><span class="hc-lab"><b>Attention</b><span>blocked or changes</span></span>';
+    $('#h-att').setAttribute('aria-label', r.attention + ' features need attention. Toggle attention-only filter (A).');
+    $('#h-ai').innerHTML = foldIcon() + '<span class="hc-num">' + TRUST_COUNT + '</span><span class="hc-lab"><b>Verify AI</b><span>agent-built, unreviewed</span></span>';
+    $('#h-ai').setAttribute('aria-label', TRUST_COUNT + ' agent-built features await human review. Toggle the AI review overlay (V).');
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // INTERACTION: camera, gestures, keys
+  // ════════════════════════════════════════════════════════════════════════
+  const LOD_T = [0.66, 1.8];
+  const Z_T = [0.34, 0.5, 0.64];
+  let camRAF = 0;
+  let lastLod = -1, lastZ = -1;
+  function applyCam() {
+    camRAF = 0;
+    camG.setAttribute('transform', 'translate(' + cam.x.toFixed(2) + ',' + cam.y.toFixed(2) + ') scale(' + cam.k.toFixed(5) + ')');
+    const lod = cam.k < LOD_T[0] ? 0 : cam.k < LOD_T[1] ? 1 : 2;
+    const z = cam.k < Z_T[0] ? 0 : cam.k < Z_T[1] ? 1 : cam.k < Z_T[2] ? 2 : 3;
+    if (lod !== lastLod) { svg.setAttribute('data-lod', lod); lastLod = lod; updateLodTag(); }
+    if (z !== lastZ) { svg.setAttribute('data-z', z); lastZ = z; }
+    $('#zl b').textContent = Math.round(cam.k * 100) + '%';
+  }
+  function updateLodTag() {
+    const names = ['Table', 'Tile', 'Detail'];
+    $('#zl span').textContent = names[Math.max(0, lastLod)];
+    $('#zl').title = names[Math.max(0, lastLod)] + ' level · ' + LENS_NAME[S.lens] + ' lens';
+  }
+  function schedule() { if (!camRAF) camRAF = requestAnimationFrame(applyCam); }
+  function view() {
+    const r = stage.getBoundingClientRect();
+    let w = r.width, h = r.height;
+    const insp = $('#insp');
+    if (insp.classList.contains('open')) {
+      if (S.phone) h -= insp.getBoundingClientRect().height;
+      else w -= insp.getBoundingClientRect().width;
+    }
+    return { w: Math.max(80, w), h: Math.max(80, h), W: r.width, H: r.height, left: r.left, top: r.top };
+  }
+  let fitK = 0.5;
+  function fitTarget() {
+    const L = LAY[S.arr];
+    const v = view();
+    const pad = S.phone ? 8 : 16;
+    const rz = S.phone ? 50 : 64;
+    const k = Math.min((v.w - 2 * pad - rz) / L.w, (v.h - 2 * pad) / L.h);
+    const spareX = v.w - L.w * k;
+    const x = spareX / 2 > rz ? spareX / 2 : (spareX - rz) / 2;
+    return { k, x, y: (v.h - L.h * k) / 2 };
+  }
+  const kMin = () => fitK * 0.55;
+  const kMax = 5;
+  let flyRAF = 0;
+  function flyTo(t, dur) {
+    cancelAnimationFrame(flyRAF);
+    if (reduced.matches || !dur) { cam.k = t.k; cam.x = t.x; cam.y = t.y; schedule(); return; }
+    const v = view();
+    const from = { k: cam.k, cx: (v.w / 2 - cam.x) / cam.k, cy: (v.h / 2 - cam.y) / cam.k };
+    const to = { k: t.k, cx: (v.w / 2 - t.x) / t.k, cy: (v.h / 2 - t.y) / t.k };
+    const t0 = performance.now();
+    const step = (now) => {
+      const p = Math.min(1, (now - t0) / dur);
+      const e = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+      const k = Math.exp(Math.log(from.k) + (Math.log(to.k) - Math.log(from.k)) * e);
+      const cx = from.cx + (to.cx - from.cx) * e, cy = from.cy + (to.cy - from.cy) * e;
+      cam.k = k; cam.x = v.w / 2 - cx * k; cam.y = v.h / 2 - cy * k;
+      applyCam();
+      if (p < 1) flyRAF = requestAnimationFrame(step);
+    };
+    flyRAF = requestAnimationFrame(step);
+  }
+  function fit(animate) {
+    const t = fitTarget();
+    fitK = t.k;
+    flyTo(t, animate ? 650 : 0);
+  }
+  function zoomAt(px, py, f) {
+    cancelAnimationFrame(flyRAF);
+    const k = Math.max(kMin(), Math.min(kMax, cam.k * f));
+    const wx = (px - cam.x) / cam.k, wy = (py - cam.y) / cam.k;
+    cam.k = k; cam.x = px - wx * k; cam.y = py - wy * k;
+    schedule();
+  }
+  function zoomBy(f) { const v = view(); zoomAt(v.w / 2, v.h / 2, f); }
+  /** Brings a world rect into view; zooms to at least minK. */
+  function flyToRect(x, y, w, h, minK, dur) {
+    const v = view();
+    const k = Math.max(cam.k, minK || 0);
+    const kk = Math.min(kMax, Math.max(kMin(), Math.min(k, (v.w - 60) / w, (v.h - 60) / h)));
+    flyTo({ k: kk, x: v.w / 2 - (x + w / 2) * kk, y: v.h / 2 - (y + h / 2) * kk }, dur == null ? 600 : dur);
+  }
+  function ensureVisible(id, minK) {
+    const p = LAY[S.arr].pos.get(id);
+    if (!p) return;
+    const v = view();
+    const k = Math.max(cam.k, minK || 0);
+    const sx = p[0] * k + (k === cam.k ? cam.x : 0), sy = p[1] * k + (k === cam.k ? cam.y : 0);
+    const inside = k === cam.k && sx > 20 && sy > 20 && sx + TW * k < v.w - 20 && sy + TH * k < v.h - 20;
+    if (!inside) flyTo({ k, x: v.w / 2 - (p[0] + TW / 2) * k, y: v.h / 2 - (p[1] + TH / 2) * k }, 600);
+  }
+
+  /** Keeps the selection and its dependency neighbours in view, never zooming in unless asked to fly. */
+  function revealSelection(id, fly) {
+    const L = LAY[S.arr];
+    const ids = [id].concat(BP.dependencies(id).map((d) => d.id), BP.dependents(id).map((d) => d.id));
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    ids.forEach((k) => { const p = L.pos.get(k); if (!p) return; x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0] + TW); y1 = Math.max(y1, p[1] + TH); });
+    const v = view();
+    const pad = 36;
+    let k = fly ? Math.max(cam.k, 0.95) : cam.k;
+    const kFit = Math.min((v.w - 2 * pad) / (x1 - x0), (v.h - 2 * pad) / (y1 - y0));
+    if (kFit < k) k = Math.max(kFit, fitK * 0.9);
+    const bw = (x1 - x0) * k, bh = (y1 - y0) * k;
+    if (bw > v.w - 2 * pad || bh > v.h - 2 * pad) { ensureVisible(id, k); return; }
+    const sx0 = x0 * k + cam.x, sy0 = y0 * k + cam.y;
+    if (k === cam.k && sx0 >= pad && sy0 >= pad && sx0 + bw <= v.w - pad && sy0 + bh <= v.h - pad) return;
+    let tx = k === cam.k ? cam.x : v.w / 2 - ((x0 + x1) / 2) * k;
+    let ty = k === cam.k ? cam.y : v.h / 2 - ((y0 + y1) / 2) * k;
+    if (x0 * k + tx < pad) tx = pad - x0 * k;
+    if (x1 * k + tx > v.w - pad) tx = v.w - pad - x1 * k;
+    if (y0 * k + ty < pad) ty = pad - y0 * k;
+    if (y1 * k + ty > v.h - pad) ty = v.h - pad - y1 * k;
+    flyTo({ k, x: tx, y: ty }, 600);
+  }
+
+  // pointer: drag to pan, two fingers to pinch, tap to select
+  const ptrs = new Map();
+  let drag = null, pinch = null;
+  function localPt(e) { const r = svg.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
+  svg.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    try { svg.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+    ptrs.set(e.pointerId, localPt(e));
+    hideCard();
+    cancelAnimationFrame(flyRAF);
+    if (ptrs.size === 1) {
+      const p = localPt(e);
+      drag = { x0: p[0], y0: p[1], cx: cam.x, cy: cam.y, moved: false, target: e.target };
+    } else if (ptrs.size === 2) {
+      const [a, b] = Array.from(ptrs.values());
+      pinch = { d0: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, k0: cam.k, mx: (a[0] + b[0]) / 2, my: (a[1] + b[1]) / 2, x0: cam.x, y0: cam.y };
+      if (drag) drag.moved = true;
+    }
+  });
+  svg.addEventListener('pointermove', (e) => {
+    if (!ptrs.has(e.pointerId)) { if (e.pointerType === 'mouse') hoverMove(e); return; }
+    ptrs.set(e.pointerId, localPt(e));
+    if (pinch && ptrs.size >= 2) {
+      const [a, b] = Array.from(ptrs.values());
+      const d = Math.hypot(a[0] - b[0], a[1] - b[1]) || 1;
+      const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+      const k = Math.max(kMin(), Math.min(kMax, pinch.k0 * (d / pinch.d0)));
+      const wx = (pinch.mx - pinch.x0) / pinch.k0, wy = (pinch.my - pinch.y0) / pinch.k0;
+      cam.k = k; cam.x = mx - wx * k; cam.y = my - wy * k;
+      schedule();
+      return;
+    }
+    if (drag) {
+      const p = localPt(e);
+      const dx = p[0] - drag.x0, dy = p[1] - drag.y0;
+      if (!drag.moved && Math.hypot(dx, dy) > 5) { drag.moved = true; svg.classList.add('grabbing'); }
+      if (drag.moved) { cam.x = drag.cx + dx; cam.y = drag.cy + dy; schedule(); }
+    }
+  });
+  function endPtr(e) {
+    if (!ptrs.has(e.pointerId)) return;
+    ptrs.delete(e.pointerId);
+    if (ptrs.size < 2) pinch = null;
+    if (ptrs.size === 0) {
+      svg.classList.remove('grabbing');
+      if (drag && !drag.moved && e.type === 'pointerup') handleTap(drag.target);
+      drag = null;
+    } else if (ptrs.size === 1 && drag) {
+      const p = Array.from(ptrs.values())[0];
+      drag = { x0: p[0], y0: p[1], cx: cam.x, cy: cam.y, moved: true, target: null };
+    }
+  }
+  svg.addEventListener('pointerup', endPtr);
+  svg.addEventListener('pointercancel', endPtr);
+  svg.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') hideCard(); });
+  svg.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    hideCard();
+    const [px, py] = localPt(e);
+    const lineMode = e.deltaMode !== 0;
+    const mouseWheel = lineMode || (Math.abs(e.deltaX) < 0.5 && Math.abs(e.deltaY) >= 40 && Number.isInteger(e.deltaY));
+    if (e.ctrlKey || e.metaKey || mouseWheel) {
+      const dy = lineMode ? e.deltaY * 33 : e.deltaY;
+      zoomAt(px, py, Math.exp(-dy * (e.ctrlKey ? 0.01 : 0.0016)));
+    } else {
+      cam.x -= e.deltaX; cam.y -= e.deltaY; schedule();
+    }
+  }, { passive: false });
+  svg.addEventListener('keydown', (e) => {
+    const t = e.target.closest && e.target.closest('.tile');
+    if (t && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); select(t.getAttribute('data-id'), { fly: true }); }
+  });
+  svg.addEventListener('focusin', (e) => {
+    const t = e.target.closest && e.target.closest('.tile');
+    if (t && t.matches(':focus-visible')) ensureVisible(t.getAttribute('data-id'), 0);
+  });
+
+  function handleTap(target) {
+    if (!target || !target.closest) return;
+    const tile = target.closest('.tile');
+    if (tile) {
+      const id = tile.getAttribute('data-id');
+      if (tile.classList.contains('ktile')) { select(id, { fly: true }); return; }
+      if (S.sel === id) { deselect(); return; }
+      select(id);
+      return;
+    }
+    const hm = target.closest('.hd-mod');
+    if (hm) { openModule(hm.getAttribute('data-mod')); return; }
+    const hd = target.closest('.hd-dom');
+    if (hd) { zoomToDomain(hd.getAttribute('data-dom')); return; }
+    const hs = target.closest('.hd-st');
+    if (hs) { toggleStatus(hs.getAttribute('data-st')); return; }
+    if (S.sel || S.mod) deselect();
+  }
+  function zoomToDomain(id) {
+    const L = LAY[S.arr];
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    BP.featuresOfDomain(id).forEach((f) => { const p = L.pos.get(f.id); if (!p) return; x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0] + TW); y1 = Math.max(y1, p[1] + TH); });
+    if (x0 === Infinity) return;
+    const v = view();
+    const k = Math.min(kMax, (v.w - 80) / (x1 - x0), (v.h - 80) / (y1 - y0 + 160));
+    flyTo({ k, x: v.w / 2 - ((x0 + x1) / 2) * k, y: v.h / 2 - ((y0 + y1) / 2 - 70) * k }, 650);
+  }
+  function toggleStatus(st) {
+    if (S.statuses.has(st)) S.statuses.delete(st); else S.statuses.add(st);
+    refreshFilters();
+  }
+
+  // hover: magnified element card (mouse only)
+  let hoverT = 0, hoverId = null;
+  const card = $('#card');
+  function hoverMove(e) {
+    if (S.phone || drag) return;
+    const t = e.target.closest && e.target.closest('.tile:not(.ktile)');
+    const id = t ? t.getAttribute('data-id') : null;
+    if (id === hoverId) return;
+    hoverId = id;
+    clearTimeout(hoverT);
+    if (!id) { card.hidden = true; return; }
+    hoverT = setTimeout(() => showCard(id), card.hidden ? 140 : 40);
+  }
+  function hideCard() { clearTimeout(hoverT); hoverId = null; card.hidden = true; }
+  function facetBar(state) {
+    if (state === 'done') return '<rect class="fbar-f" width="100%" height="8"/>';
+    if (state === 'partial') return '<rect class="fbar-o" x=".6" y=".6" width="98%" height="6.8"/><rect class="fbar-h" width="50%" height="8"/>';
+    if (state === 'todo') return '<rect class="fbar-o" x=".6" y=".6" width="98%" height="6.8"/>';
+    if (state === 'blocked') return '<rect class="fbar-b" width="100%" height="8"/>';
+    return '<rect class="fbar-n" x=".5" y=".5" width="98%" height="7"/>';
+  }
+  function showCard(id) {
+    const f = BP.feature(id);
+    const el = TILE.get(id);
+    if (!f || !el) return;
+    const n = NUM.get(id), m = modOf(f), att = BP.needsAttention(f);
+    const rel = f.release ? BP.release(f.release).label : 'unscheduled';
+    let h = '<div class="cd-top"><span class="cd-n' + (att ? ' att' : '') + '">' + n + '</span><span></span><span class="cd-st">' + glyphHTML(f.status) + esc(ST_LABEL[f.status]) + '</span></div>';
+    h += '<div class="cd-sym">' + SYM.get(id) + '</div><p class="cd-name">' + esc(f.name) + '</p>';
+    h += '<div class="cd-meta">' + esc(m.code + ' · ' + m.name) + '<br>' + f.priority + ' · ' + rel + ' · ' + esc(BP.team(f.owner).name) + '</div>';
+    h += '<div class="cd-grid">';
+    DIMS.forEach((d) => {
+      const cur = S.lens === d.id;
+      const off = S.lens !== 'overall' && !cur;
+      h += '<span class="dl' + (off ? ' dim-off' : '') + '">' + d.short + '<small>' + pct(BP.dimScore(f, d.id)) + '%</small></span>';
+      d.facets.forEach((fc) => {
+        const stt = f.dims[d.id][fc.id];
+        h += '<span class="cd-f' + (off ? ' dim-off' : '') + '" title="' + esc(fc.label + ': ' + STATE_LABEL[stt]) + '"><svg aria-hidden="true">' + facetBar(stt) + '</svg><span>' + esc(fc.label) + '</span></span>';
+      });
+    });
+    h += '</div>';
+    const foot = f.blockedReason || (f.review === 'changes' ? f.note : null);
+    h += '<div class="cd-foot' + (att ? ' att' : '') + '">' + (foot ? esc(foot) : esc(BUILT[f.builtBy] + ' · ' + REVIEW[f.review])) + '</div>';
+    card.innerHTML = h;
+    card.hidden = false;
+    const r = el.getBoundingClientRect();
+    const sr = stage.getBoundingClientRect();
+    const cw = card.offsetWidth, ch = card.offsetHeight;
+    let x = r.right - sr.left + 14;
+    if (x + cw > sr.width - 12) x = r.left - sr.left - cw - 14;
+    let y = r.top - sr.top - 10;
+    y = Math.max(10, Math.min(sr.height - ch - 10, y));
+    x = Math.max(10, x);
+    card.style.left = x + 'px';
+    card.style.top = y + 'px';
+  }
+
+  // keyboard
+  document.addEventListener('keydown', (e) => {
+    const typing = e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA');
+    if (e.key === 'Escape') {
+      if (typing) { const q = $('#q'); if (q.value) { q.value = ''; S.query = ''; refreshFilters(); } else q.blur(); app.classList.remove('searching'); return; }
+      if (!card.hidden) { hideCard(); return; }
+      if (S.legend) { toggleLegend(false); return; }
+      if (S.sel || S.mod) { deselect(); return; }
+      if (filtersActive()) { clearFilters(); return; }
+      return;
+    }
+    if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key;
+    if (k >= '1' && k <= '4') { setLens(['overall', 'dev', 'ops', 'biz'][Number(k) - 1]); e.preventDefault(); }
+    else if (k === '+' || k === '=') { zoomBy(1.3); e.preventDefault(); }
+    else if (k === '-' || k === '_') { zoomBy(1 / 1.3); e.preventDefault(); }
+    else if (k === '0') { fit(true); e.preventDefault(); }
+    else if (k === '/') { e.preventDefault(); openSearch(); }
+    else if (k === 't' || k === 'T') setArrangement('table');
+    else if (k === 's' || k === 'S') setArrangement('status');
+    else if (k === 'r' || k === 'R') setArrangement('release');
+    else if (k === 'v' || k === 'V') setTrust(!S.trust);
+    else if (k === 'a' || k === 'A') { S.attn = !S.attn; refreshFilters(); }
+    else if (k === 'l' || k === 'L') toggleLegend();
+    else if (k === 'm' || k === 'M') cycleTheme();
+    else if (k.indexOf('Arrow') === 0) {
+      const d = 60;
+      if (k === 'ArrowLeft') cam.x += d; if (k === 'ArrowRight') cam.x -= d; if (k === 'ArrowUp') cam.y += d; if (k === 'ArrowDown') cam.y -= d;
+      schedule(); e.preventDefault();
+    }
+  });
+
+  // search
+  const qIn = $('#q');
+  function openSearch() { app.classList.add('searching'); qIn.focus(); qIn.select(); }
+  qIn.addEventListener('input', () => { S.query = qIn.value; S.hitIdx = -1; refreshFilters(); });
+  qIn.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (!S.hits.length) return;
+    S.hitIdx = (S.hitIdx + (e.shiftKey ? -1 : 1) + S.hits.length) % S.hits.length;
+    const id = S.hits[S.hitIdx];
+    $$('.tile.cur', tilesG).forEach((t) => t.classList.remove('cur'));
+    TILE.get(id).classList.add('cur');
+    $('#qn').textContent = S.hitIdx + 1 + '/' + S.hits.length + (S.hits.length === 1 ? ' match' : ' matches');
+    const p = LAY[S.arr].pos.get(id);
+    flyToRect(p[0] - PX, p[1] - PY * 0.6, TW + 2 * PX, TH + PY * 1.2, 1.15);
+  });
+  qIn.addEventListener('blur', () => { if (!qIn.value) app.classList.remove('searching'); });
+  $('#b-search').addEventListener('click', () => { if (app.classList.contains('searching')) { app.classList.remove('searching'); } else openSearch(); });
+
+  function clearFilters() {
+    S.statuses.clear(); S.attn = false; S.query = ''; qIn.value = ''; S.hitIdx = -1;
+    refreshFilters();
+  }
+
+  // toolbar + HUD wiring
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest && e.target.closest('button');
+    if (!b) return;
+    if (b.hasAttribute('data-lens') && b.closest('.seg')) setLens(b.getAttribute('data-lens'));
+    else if (b.hasAttribute('data-arr') && b.closest('.seg')) setArrangement(b.getAttribute('data-arr'));
+    else if (b.classList.contains('chip')) toggleStatus(b.getAttribute('data-st'));
+    else if (b.id === 'h-att') { S.attn = !S.attn; refreshFilters(); }
+    else if (b.id === 'h-ai') setTrust(!S.trust);
+    else if (b.id === 'q-clear') { clearFilters(); qIn.focus(); }
+    else if (b.id === 'z-in') zoomBy(1.3);
+    else if (b.id === 'z-out') zoomBy(1 / 1.3);
+    else if (b.id === 'z-fit') fit(true);
+    else if (b.id === 'b-legend' || b.id === 'lg-close') toggleLegend();
+    else if (b.id === 'b-theme') cycleTheme();
+    else if (b.hasAttribute('data-goto')) { select(b.getAttribute('data-goto'), { fly: true }); }
+    else if (b.hasAttribute('data-goto-mod')) openModule(b.getAttribute('data-goto-mod'));
+    else if (b.hasAttribute('data-goto-dom')) { deselect(); zoomToDomain(b.getAttribute('data-goto-dom')); }
+    else if (b.id === 'i-close') deselect();
+  });
+
+  // theme: system > light > dark
+  const THEMES = ['system', 'light', 'dark'];
+  function applyTheme() {
+    const de = document.documentElement;
+    if (S.theme === 'system') de.removeAttribute('data-theme'); else de.setAttribute('data-theme', S.theme);
+    const ic = {
+      system: '<circle cx="8" cy="8" r="6" style="fill:none;stroke:currentColor;stroke-width:1.5"/><path d="M8 2a6 6 0 0 1 0 12Z" style="fill:currentColor"/>',
+      light: '<circle cx="8" cy="8" r="3.4" style="fill:none;stroke:currentColor;stroke-width:1.5"/><path d="M8 .8v2.4M8 12.8v2.4M.8 8h2.4M12.8 8h2.4M2.9 2.9l1.7 1.7M11.4 11.4l1.7 1.7M2.9 13.1l1.7-1.7M11.4 4.6l1.7-1.7" style="stroke:currentColor;stroke-width:1.4"/>',
+      dark: '<path d="M10.8 1.6A6.5 6.5 0 1 0 14.4 10 5.2 5.2 0 0 1 10.8 1.6Z" style="fill:currentColor"/>',
+    }[S.theme];
+    $('#theme-ic').innerHTML = ic;
+    $('#b-theme').setAttribute('aria-label', 'Theme: ' + S.theme + ' (M to change)');
+    $('#b-theme').title = 'Theme: ' + S.theme;
+  }
+  function cycleTheme() { S.theme = THEMES[(THEMES.indexOf(S.theme) + 1) % 3]; applyTheme(); store(); }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // PANELS: inspector, module inspector, legend
+  // ════════════════════════════════════════════════════════════════════════
+  const insp = $('#insp');
+  const ibody = $('#insp-body');
+  const closeBtn = '<button type="button" class="p-close" id="i-close" aria-label="Close inspector (Esc)"><svg viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12" style="stroke:currentColor;stroke-width:1.8"/></svg></button>';
+  function openPanel() {
+    const was = insp.classList.contains('open');
+    insp.classList.add('open');
+    app.classList.add('insp-open');
+    if (!was) ibody.scrollTop = 0;
+  }
+  function select(id, opts) {
+    const f = BP.feature(id);
+    if (!f) return;
+    S.sel = id; S.mod = null;
+    hideCard();
+    TILE.forEach((el, k) => el.classList.toggle('sel', k === id));
+    const rel = new Set([id].concat(BP.dependencies(id).map((d) => d.id), BP.dependents(id).map((d) => d.id)));
+    TILE.forEach((el, k) => el.classList.toggle('far', !rel.has(k)));
+    svg.classList.add('selecting');
+    ibody.innerHTML = inspFeature(f);
+    ibody.scrollTop = 0;
+    openPanel();
+    drawLinks();
+    requestAnimationFrame(() => revealSelection(id, opts && opts.fly));
+  }
+  function deselect() {
+    S.sel = null; S.mod = null;
+    TILE.forEach((el) => { el.classList.remove('sel'); el.classList.remove('far'); });
+    svg.classList.remove('selecting');
+    linksG.innerHTML = '';
+    insp.classList.remove('open');
+    app.classList.remove('insp-open');
+  }
+  function dimSection(f) {
+    return DIMS.map((d) => {
+      const sc = BP.dimScore(f, d.id);
+      let h = '<div class="dimx' + (S.lens === d.id ? ' cur' : '') + '" data-dim="' + d.id + '"><div class="dimx-h"><b>' + d.label + '</b><span>' + esc(d.question) + '</span><em>' + pct(sc) + '%</em></div><div class="fgrid">';
+      d.facets.forEach((fc) => {
+        const st = f.dims[d.id][fc.id];
+        h += '<div class="fcell st-' + st + '"><svg aria-hidden="true">' + facetBar(st) + '</svg><b>' + esc(fc.label) + '</b><span>' + STATE_LABEL[st] + '</span></div>';
+      });
+      return h + '</div></div>';
+    }).join('');
+  }
+  function refreshInspectorDims() {
+    $$('.dimx', ibody).forEach((d) => d.classList.toggle('cur', d.getAttribute('data-dim') === S.lens));
+    $$('svg.tset', ibody).forEach((s) => s.setAttribute('data-lens', S.lens));
+  }
+  function depItem(d) {
+    const att = BP.needsAttention(d);
+    return '<li><button type="button" class="dep' + (att ? ' att' : '') + '" data-goto="' + d.id + '"><span class="dn">' + NUM.get(d.id) + '</span><span class="ds">' + SYM.get(d.id) + '</span><span class="dnm">' + esc(d.name) + '</span>' + glyphHTML(d.status) + '<small>' + modOf(d).code + '</small></button></li>';
+  }
+  function inspFeature(f) {
+    const m = modOf(f), d = domOf(f), team = BP.team(f.owner);
+    const rel = f.release ? BP.release(f.release) : null;
+    const deps = BP.dependencies(f), dents = BP.dependents(f);
+    const ago = daysAgo(f.updatedAt);
+    let h = '<header class="ih"><svg class="ih-tile tset" data-lens="' + S.lens + '" data-lod="1" viewBox="-5 -5 106 122" aria-hidden="true">' + tileSVG(f, { key: true }) + '</svg>';
+    h += '<div class="ih-t"><nav class="crumb" aria-label="Location"><button type="button" data-goto-dom="' + d.id + '">' + esc(d.name) + '</button><span aria-hidden="true">›</span><button type="button" data-goto-mod="' + m.id + '">' + esc(m.name) + '</button></nav>';
+    h += '<h2 id="insp-title">' + esc(f.name) + '</h2><p class="ih-id mono">' + esc(f.id) + '</p></div>' + closeBtn + '</header>';
+    h += '<p class="sum">' + esc(f.summary) + '</p>';
+    if (f.blockedReason) h += '<div class="callout att"><b>Blocked</b>' + esc(f.blockedReason) + '</div>';
+    if (f.note) h += '<div class="callout' + (f.review === 'changes' ? ' att' : '') + '"><b>' + (f.review === 'changes' ? 'Changes requested' : 'Note') + '</b>' + esc(f.note) + '</div>';
+    if (isTrust(f)) h += '<div class="callout ai">' + foldIcon() + '<div><b>Verify AI work</b>' + (f.builtBy === 'agent' ? 'Built by the ' + esc(team.name) : 'Built by an agent and human pair') + ' and not yet approved by a human reviewer.</div></div>';
+    h += '<dl class="facts">';
+    h += '<div><dt>Status</dt><dd>' + glyphHTML(f.status) + esc(ST_LABEL[f.status]) + '</dd></div>';
+    h += '<div><dt>Priority</dt><dd>' + f.priority + '</dd></div>';
+    h += '<div><dt>Release</dt><dd>' + (rel ? rel.label + ' <small>' + (rel.state === 'shipped' ? 'shipped ' : rel.state === 'next' ? 'next · ' : 'planned · ') + fmtDate(rel.date) + '</small>' : 'Unscheduled') + '</dd></div>';
+    h += '<div><dt>Owner</dt><dd>' + esc(team.name) + ' <small>' + (team.kind === 'agent' ? 'agent crew' : 'human squad') + '</small></dd></div>';
+    h += '<div><dt>Built by</dt><dd>' + BUILT[f.builtBy] + '</dd></div>';
+    h += '<div><dt>Review</dt><dd class="rv-' + f.review + '">' + REVIEW[f.review] + '</dd></div>';
+    h += '<div><dt>Updated</dt><dd>' + fmtDate(f.updatedAt) + ' <small>' + (ago === 0 ? 'today' : ago === 1 ? 'yesterday' : ago + ' days ago') + '</small></dd></div>';
+    h += '<div><dt>Number</dt><dd><span class="mono">' + NUM.get(f.id) + '</span> ' + SYM.get(f.id) + '</dd></div>';
+    h += '</dl>';
+    h += '<section class="isec" aria-label="Dimensions">' + dimSection(f) + '</section>';
+    const mt = f.metrics || {};
+    const met = (lab, v, unit, why) => '<div class="met"><b>' + lab + '</b>' + (v == null ? '<em class="na">—</em><small>' + why + '</small>' : '<em>' + v + unit + '</em>') + '</div>';
+    h += '<section class="mets" aria-label="Metrics">' + met('Coverage', mt.coverage, '%', 'not built yet') + met('Uptime 30d', mt.uptime, '%', 'not live') + met('Adoption', mt.adoption, '%', 'not live') + '</section>';
+    h += '<section class="isec"><h3 class="cap">Depends on <span>' + deps.length + '</span></h3>' + (deps.length ? '<ul class="dlist">' + deps.map(depItem).join('') + '</ul>' : '<p class="empty">No dependencies.</p>') + '</section>';
+    h += '<section class="isec"><h3 class="cap">Used by <span>' + dents.length + '</span></h3>' + (dents.length ? '<ul class="dlist">' + dents.map(depItem).join('') + '</ul>' : '<p class="empty">Nothing depends on this yet.</p>') + '</section>';
+    return h;
+  }
+  function openModule(id) {
+    const m = BP.module(id);
+    if (!m) return;
+    S.mod = id; S.sel = null;
+    hideCard();
+    TILE.forEach((el) => el.classList.remove('sel'));
+    const ids = new Set(byMod.get(id).map((f) => f.id));
+    TILE.forEach((el, k) => el.classList.toggle('far', !ids.has(k)));
+    svg.classList.add('selecting');
+    linksG.innerHTML = '';
+    ibody.innerHTML = inspModule(m);
+    ibody.scrollTop = 0;
+    openPanel();
+  }
+  function inspModule(m) {
+    const r = BP.moduleRollup(m.id), d = BP.domain(m.domainId), list = byMod.get(m.id), team = BP.team(m.owner);
+    let h = '<header class="ih"><svg class="ih-tile" viewBox="-3 -3 102 118" aria-hidden="true"><rect width="96" height="112" style="fill:var(--band)"/><text x="7" y="18" style="font-family:var(--f-mono);font-stretch:75%;font-size:12px;fill:var(--on-band)">' + list.length + ' features</text><text x="7" y="74" style="font-weight:800;font-stretch:112.5%;font-size:' + (m.code.length > 3 ? 25 : 31) + 'px;fill:var(--on-band)">' + m.code + '</text><text x="7" y="100" style="font-weight:750;font-stretch:112.5%;font-size:17px;fill:var(--on-band)">' + pct(lensOf(r, S.lens)) + '%</text></svg>';
+    h += '<div class="ih-t"><nav class="crumb" aria-label="Location"><button type="button" data-goto-dom="' + d.id + '">' + esc(d.name) + '</button><span aria-hidden="true">›</span><span>Module</span></nav><h2 id="insp-title">' + esc(m.name) + '</h2><p class="ih-id mono">Owner: ' + esc(team.name) + '</p></div>' + closeBtn + '</header>';
+    h += '<p class="sum">' + esc(m.summary) + '</p>';
+    h += '<div class="surf" aria-label="Surfaces">' + m.surfaces.map((s) => '<span>' + s + '</span>').join('') + '</div>';
+    h += '<section class="mstat" aria-label="Features by status">' + SORDER.map((st) => '<div><em>' + r.byStatus[st] + '</em><span>' + glyphHTML(st) + esc(ST_LABEL[st]) + '</span></div>').join('') + '</section>';
+    if (r.attention) h += '<div class="callout att"><b>' + r.attention + ' need attention</b>' + list.filter((f) => BP.needsAttention(f)).map((f) => esc(f.name)).join(' · ') + '</div>';
+    h += '<section class="isec"><h3 class="cap">Completion by dimension <span>facets done · partial · to do · blocked</span></h3><div class="mroll">';
+    DIMS.forEach((dd) => {
+      const c = BP.facetCounts(list, dd.id);
+      const tot = c.done + c.partial + c.todo + c.blocked || 1;
+      h += '<b>' + dd.label + '</b><em>' + pct(r.dims[dd.id]) + '%</em><div class="stack">' + ['done', 'partial', 'todo', 'blocked'].map((k) => '<i class="s-' + k + '" style="width:' + ((c[k] / tot) * 100).toFixed(1) + '%"></i>').join('') + '</div>';
+      h += '<span class="stack-l">' + c.done + ' · ' + c.partial + ' · ' + c.todo + ' · ' + c.blocked + (c.na ? '  (' + c.na + ' n/a)' : '') + '</span>';
+    });
+    h += '</div></section>';
+    h += '<section class="isec"><h3 class="cap">Features <span>' + list.length + '</span></h3><ul class="dlist">' + list.map(depItem).join('') + '</ul></section>';
+    return h;
+  }
+
+  // legend
+  const legend = $('#legend');
+  function renderLegend() {
+    const r = BP.productRollup();
+    let h = '<div class="p-head"><div><h2>Legend</h2><p>How the periodic table encodes Larkspur.</p></div><button type="button" class="p-close" id="lg-close" aria-label="Close legend (L)"><svg viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12" style="stroke:currentColor;stroke-width:1.8"/></svg></button></div>';
+    h += '<div class="lg"><h3 class="cap">Status <span>tint, frame and glyph</span></h3>';
+    SORDER.forEach((st) => { h += '<div class="lg-row"><svg class="sw tset" viewBox="-2 -2 31 34" aria-hidden="true">' + miniTile(st, 0, 0, 27, 30) + '</svg><div><b>' + esc(ST_LABEL[st]) + '</b><small>' + esc(ST_DESC[st]) + '</small></div><span class="n">' + r.byStatus[st] + '</span></div>'; });
+    h += '</div><div class="lg"><h3 class="cap">Overall lens <span>three bars</span></h3><p>Top bar Development, middle Operations, bottom Business. Length is the share of the four facets that are done; partial counts half.</p></div>';
+    h += '<div class="lg"><h3 class="cap">Dimension lens <span>keys 2 to 4</span></h3><p>Tile fill turns into the score of that dimension, more ink means more complete. Status stays visible in the frame and glyph.</p><div class="lg-ramp">' + [0, 1, 2, 3, 4].map((i) => '<span style="background:var(--r' + i + ')"></span>').join('') + '</div><div class="lg-ramp-l"><span>0–19</span><span>20–39</span><span>40–59</span><span>60–79</span><span>80–100%</span></div>';
+    h += '<p>Four pips show the facets of that dimension: filled is done, half-filled partial, empty to do, signal colour blocked, dotted not applicable.</p></div>';
+    h += '<div class="lg"><h3 class="cap">Marks</h3>';
+    const markRow = (ex, title, sub, n) => '<div class="lg-row"><svg class="sw tset" viewBox="-5 -5 37 40" aria-hidden="true">' + miniTile('live', 0, 0, 27, 30, ex) + '</svg><div><b>' + title + '</b><small>' + sub + '</small></div><span class="n">' + (n == null ? '' : n) + '</span></div>';
+    h += markRow('<rect x="-2.6" y="-2.6" width="32.2" height="35.2" style="fill:none;stroke:var(--signal);stroke-width:2.6"/>', 'Needs attention', 'Blocked, a blocked facet, or a reviewer asked for changes. The only use of the signal colour.', r.attention);
+    h += markRow('<path d="M18 -1H28V9Z" style="fill:var(--paper)"/><path d="M18 0V9H27Z" style="fill:var(--ink)"/>', 'Awaiting human review', 'Built by an agent crew or an agent and human pair, review pending or changes requested. Press V.', TRUST_COUNT);
+    h += markRow('<rect x="3" y="3" width="21" height="24" style="fill:none;stroke:var(--ink);stroke-width:2.2"/>', 'Search match', 'Inner frame. Non-matching tiles fade back.', null);
+    h += markRow('<rect x="-2.6" y="-2.6" width="32.2" height="35.2" style="fill:none;stroke:var(--ink);stroke-width:2.6"/>', 'Selected', 'Solid line with arrow: depends on. Dashed line: used by.', null);
+    h += '</div><div class="lg"><h3 class="cap">Margins</h3><p>Column head: module code, name and the lens score in %. Black band: domain with its score and feature count. Column foot: features per status, or facets per state in a dimension lens. Orange badge: features needing attention.</p></div>';
+    h += '<div class="lg"><h3 class="cap">Zoom levels</h3><p>Table: symbols and glyphs. Tile: names appear. Detail: all twelve facets, owner, release and priority.</p></div>';
+    h += '<div class="lg"><h3 class="cap">Keys</h3><div class="lg-keys"><kbd>1–4</kbd><span>Lens: Overall, Development, Operations, Business</span><kbd>T S R</kbd><span>Arrange: Table, Status, Release</span><kbd>+ − 0</kbd><span>Zoom in, out, fit</span><kbd>/</kbd><span>Search; Enter jumps to the next match</span><kbd>V</kbd><span>Verify AI overlay</span><kbd>A</kbd><span>Attention only</span><kbd>L</kbd><span>Legend</span><kbd>M</kbd><span>Theme: system, light, dark</span><kbd>Esc</kbd><span>Close, deselect</span></div></div>';
+    legend.innerHTML = h;
+  }
+  function toggleLegend(force) {
+    S.legend = force == null ? !S.legend : force;
+    legend.hidden = !S.legend;
+    $('#b-legend').setAttribute('aria-expanded', String(S.legend));
+  }
+
+  // persistence (optional)
+  function store() {
+    try { localStorage.setItem('periodic-blueprint', JSON.stringify({ theme: S.theme })); } catch (e) { /* storage unavailable */ }
+  }
+  function restore() {
+    try {
+      const v = JSON.parse(localStorage.getItem('periodic-blueprint') || '{}');
+      if (THEMES.indexOf(v.theme) >= 0) S.theme = v.theme;
+    } catch (e) { /* storage unavailable */ }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // BOOT and resize
+  // ════════════════════════════════════════════════════════════════════════
+  function orientation() {
+    const r = stage.getBoundingClientRect();
+    return r.width / Math.max(1, r.height) < 0.9;
+  }
+  function rebuild(animate) {
+    buildLayouts();
+    placeTiles(animate);
+    setLens(S.lens);
+  }
+  function boot() {
+    restore();
+    applyTheme();
+    S.phone = phoneMQ.matches;
+    app.classList.toggle('phone', S.phone);
+    S.portrait = orientation();
+    buildTiles();
+    rebuild(false);
+    renderHUD();
+    renderLegend();
+    refreshFilters();
+    fit(false);
+    applyCam();
+    let rT = 0;
+    let lastW = stage.clientWidth, lastH = stage.clientHeight;
+    new ResizeObserver(() => {
+      clearTimeout(rT);
+      rT = setTimeout(() => {
+        const w = stage.clientWidth, h = stage.clientHeight;
+        if (Math.abs(w - lastW) < 2 && Math.abs(h - lastH) < 2) return;
+        const wasFit = Math.abs(cam.k - fitK) < 0.002;
+        lastW = w; lastH = h;
+        S.phone = phoneMQ.matches;
+        app.classList.toggle('phone', S.phone);
+        const P = orientation();
+        if (P !== S.portrait) { S.portrait = P; rebuild(true); fit(true); if (S.sel) setTimeout(drawLinks, 900); return; }
+        if (wasFit) fit(false); else { fitK = fitTarget().k; schedule(); }
+      }, 90);
+    }).observe(stage);
+    // re-measure names once web fonts are in
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => {
+        const sel = S.sel, mod = S.mod;
+        buildTiles();
+        rebuild(false);
+        refreshFilters();
+        setTrust(S.trust);
+        if (sel) { S.sel = null; select(sel); } else if (mod) openModule(mod);
+      });
+    }
+  }
+  boot();
+  window.__pb = { S, cam, select, openModule, setLens, setArrangement, fit, zoomAt, flyToRect, LAY: () => LAY, NUM, SYM };
+})();
+</script>
+</body>
+</html>

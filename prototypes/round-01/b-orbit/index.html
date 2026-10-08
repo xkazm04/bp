@@ -1,0 +1,1837 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Orbit Blueprint</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Jost:wght@300;400;500;600&display=swap">
+<style>
+/* Layout: one full-bleed star chart (product core > domain ring > module ring > feature orbit > bezel) under thin instrument readouts in the four corners; the inspector docks right on desktop and rises as a bottom sheet on phones. */
+:root {
+  /* palette: daylight celestial chart, pale cool paper and ink-blue linework */
+  --paper: #edf1f6;
+  --paper-hi: #f8fafc;
+  --sky-a: #f7f9fc;
+  --sky-b: #e4eaf2;
+  --ink: #12284a;
+  --ink-2: #3c5376;
+  --ink-3: #6f82a1;
+  --ink-4: #b3bfd1;
+  --rule: rgba(18, 40, 74, 0.16);
+  --rule-2: rgba(18, 40, 74, 0.075);
+  --band: rgba(18, 40, 74, 0.045);
+  --band-hi: rgba(18, 40, 74, 0.11);
+  --panel: rgba(248, 250, 252, 0.95);
+  --panel-solid: #f8fafc;
+  --panel-edge: rgba(18, 40, 74, 0.14);
+  --shadow: rgba(18, 40, 74, 0.12);
+  --glow: rgba(18, 40, 74, 0);
+  /* spectral classes: one hue per dimension */
+  --dev: #2360c4;
+  --ops: #7a3fbb;
+  --biz: #a46700;
+  --dev-soft: rgba(35, 96, 196, 0.16);
+  --ops-soft: rgba(122, 63, 187, 0.16);
+  --biz-soft: rgba(164, 103, 0, 0.18);
+  /* semantic signals, kept apart from the dimension hues */
+  --alarm: #c42f2a;
+  --alarm-soft: rgba(196, 47, 42, 0.12);
+  --trust: #067a6f;
+  --trust-soft: rgba(6, 122, 111, 0.13);
+  --st-live: var(--ink);
+  --st-ready: var(--ink);
+  --st-build: var(--ink);
+  --st-plan: var(--ink-2);
+  --st-block: var(--alarm);
+  /* type roles */
+  --f-label: "Jost", "Futura", "Century Gothic", "Avenir Next", "Trebuchet MS", sans-serif;
+  --f-body: "Jost", "Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --f-mono: "DM Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    /* palette: deep night sky, blue-black ink and luminous linework */
+    --paper: #08101e;
+    --paper-hi: #0f1c33;
+    --sky-a: #12223f;
+    --sky-b: #08101e;
+    --ink: #e4ebf7;
+    --ink-2: #a8b7d1;
+    --ink-3: #7184a6;
+    --ink-4: #34435f;
+    --rule: rgba(168, 192, 235, 0.17);
+    --rule-2: rgba(168, 192, 235, 0.08);
+    --band: rgba(168, 192, 235, 0.05);
+    --band-hi: rgba(168, 192, 235, 0.13);
+    --panel: rgba(11, 20, 37, 0.93);
+    --panel-solid: #0c1527;
+    --panel-edge: rgba(168, 192, 235, 0.17);
+    --shadow: rgba(0, 0, 0, 0.45);
+    --glow: rgba(206, 222, 255, 0.16);
+    --dev: #82b4ff;
+    --ops: #c9a2f7;
+    --biz: #efc56c;
+    --dev-soft: rgba(130, 180, 255, 0.18);
+    --ops-soft: rgba(201, 162, 247, 0.18);
+    --biz-soft: rgba(239, 197, 108, 0.18);
+    --alarm: #ff6e60;
+    --alarm-soft: rgba(255, 110, 96, 0.16);
+    --trust: #6fe3d1;
+    --trust-soft: rgba(111, 227, 209, 0.15);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #08101e;
+  --paper-hi: #0f1c33;
+  --sky-a: #12223f;
+  --sky-b: #08101e;
+  --ink: #e4ebf7;
+  --ink-2: #a8b7d1;
+  --ink-3: #7184a6;
+  --ink-4: #34435f;
+  --rule: rgba(168, 192, 235, 0.17);
+  --rule-2: rgba(168, 192, 235, 0.08);
+  --band: rgba(168, 192, 235, 0.05);
+  --band-hi: rgba(168, 192, 235, 0.13);
+  --panel: rgba(11, 20, 37, 0.93);
+  --panel-solid: #0c1527;
+  --panel-edge: rgba(168, 192, 235, 0.17);
+  --shadow: rgba(0, 0, 0, 0.45);
+  --glow: rgba(206, 222, 255, 0.16);
+  --dev: #82b4ff;
+  --ops: #c9a2f7;
+  --biz: #efc56c;
+  --dev-soft: rgba(130, 180, 255, 0.18);
+  --ops-soft: rgba(201, 162, 247, 0.18);
+  --biz-soft: rgba(239, 197, 108, 0.18);
+  --alarm: #ff6e60;
+  --alarm-soft: rgba(255, 110, 96, 0.16);
+  --trust: #6fe3d1;
+  --trust-soft: rgba(111, 227, 209, 0.15);
+  color-scheme: dark;
+}
+
+/* ── base ─────────────────────────────────────────────────────────────── */
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; overflow: hidden; }
+body { background: var(--paper); color: var(--ink); font-family: var(--f-body); font-size: 14px; line-height: 1.45; -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.cap { font-family: var(--f-label); text-transform: uppercase; letter-spacing: 0.16em; font-weight: 500; }
+.vh { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+#app { position: relative; width: 100%; height: 100%; overflow: hidden; }
+
+/* ── chart (SVG) ──────────────────────────────────────────────────────── */
+#sky { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+#sky.dragging { cursor: grabbing; }
+.s-a { stop-color: var(--sky-a); }
+.s-b { stop-color: var(--sky-b); }
+.disc { fill: url(#skyGrad); }
+.grat { fill: none; stroke: var(--rule-2); stroke-width: calc(1px * var(--inv)); }
+.grat.dash { stroke-dasharray: calc(2px * var(--inv)) calc(5px * var(--inv)); }
+.orbitline { fill: none; stroke: var(--rule); stroke-width: calc(1px * var(--inv)); stroke-dasharray: calc(1px * var(--inv)) calc(4px * var(--inv)); }
+.border { stroke: var(--rule); stroke-width: calc(1px * var(--inv)); stroke-dasharray: calc(5px * var(--inv)) calc(4px * var(--inv)); }
+
+/* bezel */
+.bz-ring { fill: none; stroke: var(--ink-3); stroke-width: calc(1px * var(--inv)); }
+.bz-band { fill: var(--band); }
+.bz-tick { stroke: var(--ink-3); stroke-width: calc(0.8px * var(--inv)); }
+.bz-tick.mj { stroke: var(--ink-2); stroke-width: calc(1.1px * var(--inv)); }
+.bz-name { font-family: var(--f-label); font-weight: 500; fill: var(--ink-2); font-size: calc(12px * var(--inv)); letter-spacing: 0.3em; }
+.bz-deg { font-family: var(--f-mono); fill: var(--ink-3); font-size: calc(9px * var(--inv)); letter-spacing: 0.06em; }
+.lv3 .bz-name, .lv3 .bz-deg { opacity: 0.35; }
+.lv0 .bz-deg { display: none; }
+
+/* core instrument */
+.core-disc { fill: var(--paper-hi); stroke: var(--ink-3); stroke-width: calc(1px * var(--inv)); }
+.core-inner { fill: none; stroke: var(--rule); stroke-width: calc(1px * var(--inv)); }
+.g-track { fill: none; stroke: var(--rule-2); stroke-linecap: round; }
+.g-val { fill: none; stroke-linecap: round; transition: opacity 0.4s, stroke-width 0.4s; }
+.g-dev { stroke: var(--dev); } .g-ops { stroke: var(--ops); } .g-biz { stroke: var(--biz); }
+.g-end { stroke: var(--paper-hi); stroke-width: 3; }
+.g-tick { stroke: var(--ink-3); stroke-width: 1.2; }
+.g-tick.mn { stroke: var(--ink-4); }
+.g-num { font-family: var(--f-mono); font-size: 16px; fill: var(--ink-3); }
+.core-name { font-family: var(--f-label); font-weight: 500; font-size: 27px; letter-spacing: 0.26em; fill: var(--ink); }
+.core-ver { font-family: var(--f-mono); font-size: 16px; fill: var(--ink-3); letter-spacing: 0; }
+.core-row { transition: opacity 0.4s; }
+.core-k { font-family: var(--f-label); font-weight: 500; font-size: 20px; letter-spacing: 0.2em; fill: var(--ink-2); }
+.core-v { font-family: var(--f-mono); font-size: 25px; fill: var(--ink); }
+.core-v.dev { fill: var(--dev); } .core-v.ops { fill: var(--ops); } .core-v.biz { fill: var(--biz); }
+.core-sw { stroke-width: 6; stroke-linecap: round; }
+#sky:not(.lens-overall) .core-row.off, #sky:not(.lens-overall) .g-val.off { opacity: 0.22; }
+.core-row.ovr { transition: opacity 0.4s; }
+#sky:not(.lens-overall) .core-row.ovr { opacity: 0.4; }
+
+/* domain ring */
+.dom-band { fill: var(--band); stroke: var(--rule); stroke-width: calc(1px * var(--inv)); cursor: pointer; transition: fill 0.2s, opacity 0.3s; }
+.dom-band:hover, .dom-band.on { fill: var(--band-hi); }
+.dom-band.focus { fill: var(--band-hi); stroke: var(--ink-2); }
+.dom-lbl { font-family: var(--f-label); font-weight: 500; fill: var(--ink); font-size: calc(11px * var(--inv)); letter-spacing: 0.16em; pointer-events: none; }
+.dom-lbl .pc, .mod-lbl .pc { font-family: var(--f-mono); fill: var(--ink-3); letter-spacing: 0.02em; font-weight: 400; }
+.dom-lbl .pc { font-size: calc(10px * var(--inv)); }
+
+/* module ring */
+.mod-band { fill: var(--band); stroke: var(--rule); stroke-width: calc(1px * var(--inv)); cursor: pointer; transition: fill 0.2s, opacity 0.3s; }
+.mod-band:hover { fill: var(--band-hi); }
+.mod-band.on { fill: var(--band-hi); stroke: var(--ink-2); }
+.mod-track { fill: none; stroke: var(--rule-2); }
+.mod-val { fill: none; stroke: var(--ink-2); transition: d 0s; }
+.lens-dev .mod-val { stroke: var(--dev); } .lens-ops .mod-val { stroke: var(--ops); } .lens-biz .mod-val { stroke: var(--biz); }
+.mod-lbl { font-family: var(--f-label); font-weight: 500; fill: var(--ink-2); font-size: calc(9.5px * var(--inv)); letter-spacing: 0.14em; pointer-events: none; }
+.mod-lbl .pc { font-size: calc(9px * var(--inv)); }
+.mod-tick { stroke: var(--ink-3); stroke-width: calc(1px * var(--inv)); }
+.faded-ring { opacity: 0.32; }
+
+/* links: orbit fan (overall) and gravity tethers (dimension lenses) */
+.lk { fill: none; stroke: var(--rule); stroke-width: calc(0.8px * var(--inv)); transition: opacity 0.3s; }
+#sky:not(.lens-overall) .lk { stroke-width: calc(1.4px * var(--inv)); opacity: 0.55; }
+.lens-dev .lk { stroke: var(--dev); } .lens-ops .lk { stroke: var(--ops); } .lens-biz .lk { stroke: var(--biz); }
+.lk.dim { opacity: 0.12 !important; }
+#links.swap { opacity: 0; }
+#links { transition: opacity 0.25s; }
+
+/* gravity scale */
+#scale, #scaleText { transition: opacity 0.5s; }
+.lens-overall #scale, .lens-overall #scaleText { opacity: 0; pointer-events: none; }
+.sc-ring { fill: none; stroke: var(--ink-4); stroke-width: calc(1px * var(--inv)); stroke-dasharray: calc(3px * var(--inv)) calc(4px * var(--inv)); }
+.sc-ring.end { stroke-dasharray: none; stroke: var(--ink-3); }
+.lens-dev .sc-ring.end { stroke: var(--dev); } .lens-ops .sc-ring.end { stroke: var(--ops); } .lens-biz .sc-ring.end { stroke: var(--biz); }
+.sc-lbl { font-family: var(--f-mono); font-size: 9.5px; fill: var(--ink-2); text-anchor: middle; dominant-baseline: central; paint-order: stroke; stroke: var(--paper); stroke-width: 3px; stroke-linejoin: round; }
+.sc-cap { font-family: var(--f-label); font-weight: 500; font-size: 9px; letter-spacing: 0.22em; fill: var(--ink-3); text-anchor: middle; dominant-baseline: central; paint-order: stroke; stroke: var(--paper); stroke-width: 3px; }
+.hz { fill: none; stroke-width: calc(2px * var(--inv)); stroke-linecap: round; opacity: 0.9; }
+.lens-dev .hz { stroke: var(--dev); } .lens-ops .hz { stroke: var(--ops); } .lens-biz .hz { stroke: var(--biz); }
+#horizons { transition: opacity 0.4s; }
+#horizons.swap, .lens-overall #horizons { opacity: 0; }
+.names #horizons { opacity: 0.4; }
+
+/* dependency constellations */
+.dep { fill: none; stroke: var(--ink); stroke-width: calc(1.6px * var(--inv)); stroke-linecap: round; }
+.dep.up { stroke: var(--ink); }
+.dep.down { stroke: var(--ink-2); stroke-dasharray: calc(5px * var(--inv)) calc(3.5px * var(--inv)); }
+.dep-halo { fill: none; stroke: var(--paper); stroke-width: calc(5px * var(--inv)); opacity: 0.85; stroke-linecap: round; }
+#deps.draw .dep.up { stroke-dasharray: var(--len); stroke-dashoffset: var(--len); animation: drawdep 0.9s ease-out forwards; }
+@keyframes drawdep { to { stroke-dashoffset: 0; } }
+
+/* stars */
+.star { cursor: pointer; transition: opacity 0.25s; }
+.gly { transform: rotate(var(--cr, 0deg)) scale(var(--gs, 1)); }
+.hit { fill: transparent; stroke: none; }
+.b-live { fill: var(--st-live); }
+.b-ring { fill: var(--paper-hi); stroke: var(--st-ready); stroke-width: 1.4; }
+.st-building .b-ring { stroke: var(--st-build); }
+.b-dot, .b-half { fill: var(--st-build); }
+.b-plan { fill: var(--paper-hi); stroke: var(--st-plan); stroke-width: 1.3; stroke-dasharray: 1.15 1.55; }
+.b-block { fill: var(--st-block); }
+.glow { fill: var(--glow); }
+.ct { fill: none; stroke: var(--rule); stroke-width: 1.1; }
+.cf { fill: none; stroke-width: 2.1; stroke-linecap: butt; }
+.cf.dev, .fk.dev.done { stroke: var(--dev); } .cf.ops, .fk.ops.done { stroke: var(--ops); } .cf.biz, .fk.biz.done { stroke: var(--biz); }
+.fk { stroke-width: 1.1; }
+.fk.done.dev { fill: var(--dev); } .fk.done.ops { fill: var(--ops); } .fk.done.biz { fill: var(--biz); }
+.fk.partial { fill: var(--paper-hi); }
+.fk.partial.dev { stroke: var(--dev); } .fk.partial.ops { stroke: var(--ops); } .fk.partial.biz { stroke: var(--biz); }
+.fk.todo { fill: var(--ink-4); stroke: none; }
+.fk.blocked { stroke: var(--alarm); stroke-width: 1.3; fill: none; }
+.fr { fill: none; stroke-width: 2.4; }
+.fr.track { stroke: var(--rule); stroke-width: 1.2; }
+.fr.done { stroke: currentColor; }
+.fr.half { stroke: currentColor; opacity: 0.55; }
+.fr.blocked { stroke: var(--alarm); }
+.lens-dev .deco { color: var(--dev); } .lens-ops .deco { color: var(--ops); } .lens-biz .deco { color: var(--biz); }
+.flare { stroke: var(--alarm); stroke-width: 1.5; stroke-linecap: round; fill: none; }
+.halo { fill: none; stroke-width: 1.5; display: none; }
+.trust-on .t-pend .halo { display: inline; stroke: var(--trust); stroke-dasharray: 2.4 1.8; }
+.trust-on .t-chg .halo { display: inline; stroke: var(--alarm); }
+.trust-on .t-pend .halo, .trust-on .t-chg .halo { animation: pulse 2.4s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(1.18); } }
+.hitring { fill: none; stroke: var(--ink); stroke-width: 1.5; display: none; }
+.star.hit-on .hitring { display: inline; }
+.ret { display: none; }
+.ret circle { fill: none; stroke: var(--ink); stroke-width: 1.3; }
+.ret path { stroke: var(--ink); stroke-width: 1.5; }
+.star.sel .ret { display: inline; }
+.star.dim { opacity: 0.13; }
+.trust-on .star.dim { opacity: 0.2; }
+
+/* per-level detail */
+.lv0 .deco, .lv0 .facets, .lv0 .glow { display: none; }
+.lv0 .flare { stroke-width: 2.2; }
+.lv1 .ct { display: none; }
+.lv1 .facets, .lv2 .facets, #sky:not(.lens-overall) .facets { display: none; }
+#sky:not(.lens-overall).lv1 .fr { display: none; }
+.lv1 .cf { stroke-width: 1.6; }
+.lens-overall.lv3 .ct { stroke: var(--rule); }
+.flabel { display: none; font-family: var(--f-body); font-size: 11.5px; font-weight: 400; fill: var(--ink); dominant-baseline: central; paint-order: stroke; stroke: var(--paper); stroke-width: 3.2px; stroke-linejoin: round; transform: rotate(var(--a)) scale(var(--ts, 1)) translateX(var(--lo, 16px)); }
+.flabel.flip { text-anchor: end; transform: rotate(calc(var(--a) + 180deg)) scale(var(--ts, 1)) translateX(calc(-1 * var(--lo, 16px))); }
+.names .flabel, .flabel.force { display: inline; }
+.st-planned .flabel { fill: var(--ink-2); }
+.st-blocked .flabel, .attn .flabel .fn { fill: var(--alarm); }
+.flabel .fs { font-family: var(--f-mono); font-size: 10px; fill: var(--ink-3); }
+.lens-overall .flabel .fs { display: none; }
+.star.sel .flabel { font-weight: 500; }
+.star.dim .flabel:not(.force) { display: none; }
+
+/* ── HUD ──────────────────────────────────────────────────────────────── */
+.hud { position: absolute; z-index: 3; }
+.lbl { font-family: var(--f-label); font-weight: 500; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-3); }
+
+#bar { position: absolute; top: 0; left: 0; right: 0; z-index: 7; display: flex; align-items: center; gap: 18px; height: 56px; padding: 0 16px; border-bottom: 1px solid var(--rule); background: var(--panel); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 0 1 auto; overflow: hidden; }
+.lens .ls { display: none; }
+.brand svg { flex: none; }
+.brand-name { font-family: var(--f-label); font-weight: 600; letter-spacing: 0.32em; font-size: 14px; text-transform: uppercase; }
+.brand-ver { font-family: var(--f-mono); font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+.brand-tag { font-size: 13px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.mark-ring { fill: none; stroke: currentColor; stroke-width: 1.2; }
+.mark-dot { fill: currentColor; }
+
+#lenses { display: flex; gap: 2px; margin: 0 auto; padding: 3px; border: 1px solid var(--rule); border-radius: 999px; flex: none; }
+.lens { display: flex; align-items: center; gap: 7px; height: 32px; padding: 0 14px; border: 0; border-radius: 999px; background: transparent; cursor: pointer; color: var(--ink-2); font-family: var(--f-label); font-size: 12px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap; }
+.lens:hover { color: var(--ink); background: var(--band); }
+.lens[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.lens .pc { font-family: var(--f-mono); font-size: 11px; letter-spacing: 0; opacity: 0.8; font-weight: 400; }
+.lens .k { font-family: var(--f-mono); font-size: 9.5px; letter-spacing: 0; opacity: 0.55; border: 1px solid currentColor; border-radius: 3px; padding: 0 3px; line-height: 13px; font-weight: 400; }
+.sw { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.sw.dev { background: var(--dev); } .sw.ops { background: var(--ops); } .sw.biz { background: var(--biz); }
+.lens .sw-all { width: 12px; height: 12px; flex: none; }
+
+.tools { display: flex; align-items: center; gap: 6px; flex: none; }
+.search { position: relative; display: flex; align-items: center; }
+.search svg { position: absolute; left: 10px; color: var(--ink-3); pointer-events: none; }
+#q { width: 210px; height: 34px; padding: 0 30px 0 32px; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper-hi); color: var(--ink); font: 13px var(--f-body); }
+#q::placeholder { color: var(--ink-3); }
+#q::-webkit-search-cancel-button, #q::-webkit-search-decoration { -webkit-appearance: none; appearance: none; }
+#q:focus { outline: none; border-color: var(--ink-2); }
+#q:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+#qclear { position: absolute; right: 4px; width: 26px; height: 26px; border: 0; border-radius: 50%; background: transparent; color: var(--ink-3); cursor: pointer; display: grid; place-items: center; }
+#qclear:hover { color: var(--ink); background: var(--band-hi); }
+#qcount { position: absolute; top: 40px; right: 0; white-space: nowrap; font-family: var(--f-mono); font-size: 11px; color: var(--ink-2); background: var(--panel-solid); border: 1px solid var(--panel-edge); border-radius: 4px; padding: 3px 8px; }
+.ibtn { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid transparent; border-radius: 50%; background: transparent; color: var(--ink-2); cursor: pointer; flex: none; }
+.ibtn:hover { color: var(--ink); background: var(--band-hi); }
+.ibtn[aria-pressed="true"] { color: var(--paper); background: var(--ink); }
+#trustBtn[aria-pressed="true"] { background: var(--trust); color: var(--paper); }
+.tbtn { display: flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px 0 9px; border: 1px solid var(--rule); border-radius: 999px; background: transparent; color: var(--ink-2); cursor: pointer; font-family: var(--f-label); font-size: 11.5px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap; }
+.tbtn:hover { color: var(--ink); border-color: var(--ink-3); }
+.tbtn[aria-pressed="true"] { background: var(--trust); border-color: var(--trust); color: var(--paper); }
+.tbtn .n { font-family: var(--f-mono); letter-spacing: 0; font-weight: 400; }
+
+/* top-left readout */
+#readout { top: 68px; left: 12px; padding: 10px 12px; border-radius: 6px; background: var(--panel); border: 1px solid var(--rule-2); width: max-content; max-width: calc(50% - 260px); min-width: 250px; }
+#readout .meta { display: grid; grid-template-columns: auto 1fr; column-gap: 16px; row-gap: 5px; align-items: baseline; }
+#readout .lensq { font-size: 12.5px; color: var(--ink-2); line-height: 1.35; }
+#readout .lensq b { font-weight: 500; color: var(--ink); }
+#app.zoomed #readout .meta .z, #app.sheet #readout .meta .z { display: none; }
+#readout .lbl { white-space: nowrap; }
+#readout .v { font-family: var(--f-mono); font-size: 12px; color: var(--ink); white-space: nowrap; }
+#readout .v small { color: var(--ink-3); font-size: 11px; }
+.rk-btns { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; align-items: flex-start; }
+.rbtn { display: flex; align-items: center; gap: 9px; padding: 4px 10px 4px 6px; border: 1px solid var(--rule); border-radius: 4px; background: var(--panel); cursor: pointer; color: var(--ink); text-align: left; }
+.rbtn:hover { border-color: var(--ink-3); }
+.rbtn .n { font-family: var(--f-mono); font-size: 13px; min-width: 2ch; }
+.rbtn .t { font-family: var(--f-label); font-weight: 500; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-2); }
+.rbtn.attn .n { color: var(--alarm); }
+.rbtn.trust .n { color: var(--trust); }
+.rbtn[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); }
+.rbtn[aria-pressed="true"] .t, .rbtn[aria-pressed="true"] .n { color: var(--paper); }
+.rbtn.trust[aria-pressed="true"] { background: var(--trust); border-color: var(--trust); }
+.rbtn.attn[aria-pressed="true"] { background: var(--alarm); border-color: var(--alarm); }
+
+#topc { top: 68px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; }
+#topc > * { pointer-events: auto; }
+#trustbar { display: none; align-items: center; gap: 10px; padding: 6px 14px 6px 10px; border: 1px solid var(--trust); border-radius: 999px; background: var(--panel); box-shadow: 0 4px 18px var(--shadow); white-space: nowrap; font-size: 12.5px; color: var(--ink-2); }
+#trustbar.on { display: flex; }
+#trustbar b { font-family: var(--f-mono); font-weight: 500; color: var(--trust); }
+#trustbar b.al { color: var(--alarm); }
+#trustbar .lbl { color: var(--trust); }
+#focusbar { display: none; align-items: center; gap: 10px; padding: 5px 6px 5px 14px; border: 1px solid var(--panel-edge); border-radius: 999px; background: var(--panel); box-shadow: 0 4px 18px var(--shadow); white-space: nowrap; }
+#focusbar.on { display: flex; }
+#focusbar .lbl { color: var(--ink-2); }
+#focusbar strong { font-family: var(--f-label); font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; font-size: 12px; }
+#fullsky { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border: 0; border-radius: 999px; background: var(--ink); color: var(--paper); cursor: pointer; font-family: var(--f-label); font-size: 11px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; }
+
+/* bottom-left status chips */
+#chips { left: 20px; bottom: 20px; display: flex; flex-direction: column; gap: 4px; }
+#chips .lbl { margin-bottom: 3px; padding: 3px 6px; margin-left: -6px; border-radius: 3px; background: var(--panel); align-self: flex-start; }
+.chip { display: grid; grid-template-columns: 16px 1fr auto; align-items: center; gap: 9px; width: 178px; padding: 4px 10px 4px 7px; border: 1px solid var(--rule); border-radius: 4px; background: var(--panel); cursor: pointer; color: var(--ink); text-align: left; position: relative; overflow: hidden; }
+.chip:hover { border-color: var(--ink-3); }
+.chip .t { font-family: var(--f-label); font-weight: 500; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; }
+.chip .n { font-family: var(--f-mono); font-size: 12px; color: var(--ink-2); }
+.chip .bar { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--ink-3); opacity: 0.5; }
+.chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.chip[aria-pressed="true"] .n { color: var(--paper); }
+.chip[aria-pressed="true"] .b-live, .chip[aria-pressed="true"] .b-dot, .chip[aria-pressed="true"] .b-half { fill: var(--paper); }
+.chip[aria-pressed="true"] .b-ring, .chip[aria-pressed="true"] .b-plan { stroke: var(--paper); fill: var(--ink); }
+.chip-reset { font-family: var(--f-label); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-2); background: none; border: 0; cursor: pointer; padding: 3px 2px; text-align: left; text-decoration: underline; text-underline-offset: 3px; }
+.chip-reset[hidden] { display: none; }
+
+/* bottom-right zoom */
+#zoomctl { right: 20px; bottom: 20px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+#zoomctl .rd { text-align: right; display: flex; flex-direction: column; gap: 2px; padding: 5px 9px; border-radius: 4px; background: var(--panel); }
+#zoomctl .rd .v { font-family: var(--f-mono); font-size: 11.5px; color: var(--ink-2); white-space: nowrap; }
+.zbtns { display: flex; border: 1px solid var(--rule); border-radius: 999px; background: var(--panel); padding: 2px; gap: 2px; }
+.zbtn { height: 32px; min-width: 32px; padding: 0 10px; border: 0; border-radius: 999px; background: transparent; color: var(--ink-2); cursor: pointer; display: grid; place-items: center; font-family: var(--f-label); font-size: 11px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; }
+.zbtn:hover { color: var(--ink); background: var(--band-hi); }
+
+/* panels */
+.panel { position: absolute; z-index: 6; background: var(--panel); border: 1px solid var(--panel-edge); box-shadow: 0 10px 40px var(--shadow); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+#legend { top: 72px; right: 20px; width: 272px; max-height: calc(100% - 180px); overflow-y: auto; border-radius: 6px; padding: 14px 16px 12px; }
+#legend[hidden] { display: none; }
+.lg-h { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.lg-sec { padding: 8px 0 6px; border-top: 1px solid var(--rule-2); }
+.lg-sec:first-of-type { border-top: 0; }
+.lg-sec h3 { margin: 0 0 7px; font: 500 10px var(--f-label); letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-3); }
+.lg-row { display: grid; grid-template-columns: 30px 1fr; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2); line-height: 1.3; padding: 1.5px 0; }
+.lg-row.lg-plain { display: block; }
+.lg-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 6px; }
+.lg-row svg { justify-self: center; }
+.lg-row b { color: var(--ink); font-weight: 500; }
+.lg-keys { font-family: var(--f-mono); font-size: 10.5px; color: var(--ink-3); line-height: 1.7; }
+.lg-keys kbd { font-family: var(--f-mono); border: 1px solid var(--rule); border-radius: 3px; padding: 0 4px; color: var(--ink-2); }
+.closex { width: 30px; height: 30px; border: 0; border-radius: 50%; background: transparent; color: var(--ink-2); cursor: pointer; display: grid; place-items: center; flex: none; }
+.closex:hover { background: var(--band-hi); color: var(--ink); }
+
+#inspector { top: 64px; right: 12px; bottom: 12px; width: 392px; border-radius: 6px; display: flex; flex-direction: column; overflow: hidden; }
+#inspector[hidden] { display: none; }
+.ins-top { display: flex; align-items: center; gap: 8px; padding: 10px 10px 8px 18px; border-bottom: 1px solid var(--rule-2); }
+.crumb { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; flex: 1; font: 500 10.5px var(--f-label); letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3); }
+.crumb button { border: 0; background: none; padding: 2px 0; cursor: pointer; color: var(--ink-2); font: inherit; letter-spacing: inherit; text-transform: inherit; text-decoration: underline; text-decoration-color: var(--rule); text-underline-offset: 3px; }
+.crumb button:hover { color: var(--ink); text-decoration-color: currentColor; }
+.ins-body { overflow-y: auto; padding: 14px 18px 22px; flex: 1; min-height: 0; overscroll-behavior: contain; }
+.ins-body h2 { margin: 0; font: 500 23px/1.15 var(--f-label); letter-spacing: 0.01em; text-wrap: balance; }
+.ins-id { font-family: var(--f-mono); font-size: 11px; color: var(--ink-3); margin-top: 4px; }
+.st-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin-top: 12px; }
+.pill { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px 0 6px; border: 1px solid var(--rule); border-radius: 999px; font: 500 10.5px var(--f-label); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink); white-space: nowrap; }
+.pill.mono { font-family: var(--f-mono); letter-spacing: 0.02em; text-transform: none; font-size: 11px; font-weight: 400; padding: 0 9px; }
+.pill.alarm { border-color: var(--alarm); color: var(--alarm); }
+.pill.trust { border-color: var(--trust); color: var(--trust); }
+.summary { margin: 14px 0 0; font-size: 14.5px; line-height: 1.5; color: var(--ink); max-width: 62ch; }
+.callout { margin-top: 12px; padding: 9px 12px; border-left: 2px solid var(--ink-3); background: var(--band); font-size: 13px; color: var(--ink-2); border-radius: 0 4px 4px 0; }
+.callout b { display: block; font: 500 10px var(--f-label); letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 2px; }
+.callout.alarm { border-color: var(--alarm); background: var(--alarm-soft); color: var(--ink); }
+.callout.alarm b { color: var(--alarm); }
+.facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 16px 0 0; font-size: 13px; }
+.facts dt { font: 500 10px/1.9 var(--f-label); letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3); }
+.facts dd { margin: 0; color: var(--ink); min-width: 0; }
+.facts dd small { color: var(--ink-3); font-size: 12px; }
+.ins-sec { margin-top: 20px; }
+.ins-sec > h3 { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 8px; font: 500 10px var(--f-label); letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-3); padding-bottom: 6px; border-bottom: 1px solid var(--rule-2); }
+.dimblk { padding: 9px 0 10px; border-bottom: 1px solid var(--rule-2); }
+.dimblk:last-child { border-bottom: 0; }
+.dim-h { display: flex; align-items: center; gap: 8px; }
+.dim-h .nm { font: 500 12px var(--f-label); letter-spacing: 0.14em; text-transform: uppercase; }
+.dim-h .q { color: var(--ink-3); font-size: 12px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dim-h .pc { font-family: var(--f-mono); font-size: 13px; }
+.meter { position: relative; height: 4px; background: var(--rule-2); border-radius: 2px; margin: 7px 0 8px; overflow: hidden; }
+.meter i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; }
+.meter i.dev { background: var(--dev); } .meter i.ops { background: var(--ops); } .meter i.biz { background: var(--biz); } .meter i.all { background: var(--ink-2); }
+.fgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 14px; }
+.frow { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-2); min-width: 0; }
+.frow .st { margin-left: auto; font-family: var(--f-mono); font-size: 11px; color: var(--ink-3); white-space: nowrap; }
+.frow.blocked .st { color: var(--alarm); }
+.frow.done .st { color: var(--ink); }
+.metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.metric { padding: 8px 10px; border: 1px solid var(--rule-2); border-radius: 4px; }
+.metric .v { font-family: var(--f-mono); font-size: 17px; color: var(--ink); }
+.metric .v.na { color: var(--ink-3); font-size: 13px; }
+.metric .k { font: 500 9.5px var(--f-label); letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3); }
+.flist { list-style: none; margin: 0; padding: 0; }
+.flist li + li { border-top: 1px solid var(--rule-2); }
+.fitem { display: grid; grid-template-columns: 16px 1fr auto; align-items: center; gap: 9px; width: 100%; padding: 7px 4px; border: 0; background: none; cursor: pointer; text-align: left; color: var(--ink); font-size: 13px; border-radius: 3px; }
+.fitem:hover { background: var(--band-hi); }
+.fitem .m { font-family: var(--f-mono); font-size: 10.5px; color: var(--ink-3); white-space: nowrap; }
+.fitem .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fitem .mini { display: inline-block; width: 46px; height: 3px; background: var(--rule-2); position: relative; vertical-align: middle; margin-left: 6px; border-radius: 2px; overflow: hidden; }
+.fitem .mini i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--ink-2); }
+.lens-dev-ui .fitem .mini i { background: var(--dev); } .lens-ops-ui .fitem .mini i { background: var(--ops); } .lens-biz-ui .fitem .mini i { background: var(--biz); }
+.empty { color: var(--ink-3); font-size: 13px; padding: 4px 0; }
+.stcounts { display: flex; flex-wrap: wrap; gap: 6px; }
+.surf { display: flex; gap: 5px; flex-wrap: wrap; }
+
+#tip { position: absolute; z-index: 8; pointer-events: none; padding: 6px 10px; border-radius: 4px; background: var(--panel-solid); border: 1px solid var(--panel-edge); box-shadow: 0 6px 20px var(--shadow); font-size: 12.5px; max-width: 260px; }
+#tip[hidden] { display: none; }
+#tip .m { display: block; font-family: var(--f-mono); font-size: 10.5px; color: var(--ink-3); margin-top: 1px; }
+
+/* phone */
+#phoneStat, #lenscap { display: none; }
+@media (max-width: 760px) {
+  #bar { height: auto; flex-wrap: wrap; gap: 6px 8px; padding: 6px 10px 8px; }
+  .brand { flex: 1 1 auto; }
+  .brand-tag, .brand-ver .nx { display: none; }
+  .brand-name { font-size: 13px; letter-spacing: 0.26em; }
+  .brand-ver { font-size: 11px; }
+  #lenses { order: 3; width: 100%; margin: 0; }
+  .lens .ls { display: inline; }
+  .lens { flex: 1; justify-content: center; padding: 0 4px; gap: 5px; height: 30px; font-size: 10.5px; letter-spacing: 0.08em; }
+  .lens .k, .lens .lf { display: none; }
+  .lens .pc { font-size: 10px; }
+  .tools { gap: 2px; }
+  .tbtn .tl { display: none; }
+  .tbtn { padding: 0; width: 34px; justify-content: center; border-color: transparent; }
+  .search { position: static; }
+  #q { position: absolute; left: 8px; right: 8px; top: 6px; width: auto; z-index: 2; display: none; }
+  .search svg { display: none; }
+  #qclear { display: none; }
+  #bar.searching #q { display: block; padding-left: 14px; }
+  #bar.searching #qclear { display: grid; position: absolute; right: 12px; top: 10px; z-index: 3; }
+  #qcount { top: 46px; right: 10px; z-index: 3; }
+  #searchBtn { display: grid !important; }
+  #readout, #chips .lbl, .chip .bar { display: none; }
+  #phoneStat { display: flex; position: absolute; z-index: 3; left: 10px; right: 10px; top: var(--bar-h, 92px); justify-content: space-between; align-items: center; gap: 8px; }
+  #phoneStat .rbtn { padding: 3px 8px 3px 5px; }
+  #phoneStat .rbtn .t { font-size: 9px; letter-spacing: 0.12em; }
+  #phoneStat .rbtn .n { font-size: 12px; }
+  #lenscap { display: block; left: 16px; right: 16px; bottom: 64px; margin: 0; text-align: center; font-size: 12.5px; line-height: 1.4; color: var(--ink-2); text-wrap: balance; }
+  #lenscap b { font-family: var(--f-label); font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; font-size: 11px; color: var(--ink); }
+  #app.sheet #lenscap { display: none; }
+  #chips { left: 0; right: 0; bottom: 0; flex-direction: row; gap: 6px; padding: 8px 120px 10px 10px; overflow-x: auto; scrollbar-width: none; background: var(--panel); border-top: 1px solid var(--rule); }
+  #chips::-webkit-scrollbar { display: none; }
+  #chips { -webkit-mask-image: linear-gradient(to right, var(--ink) calc(100% - 196px), transparent calc(100% - 128px)); mask-image: linear-gradient(to right, var(--ink) calc(100% - 196px), transparent calc(100% - 128px)); }
+  .chip { width: auto; flex: none; grid-template-columns: 14px auto auto; gap: 6px; padding: 5px 9px 5px 6px; }
+  .chip .t { font-size: 10px; letter-spacing: 0.08em; }
+  .chip-reset { flex: none; }
+  #zoomctl { right: 0; bottom: 0; padding: 7px 8px 9px 14px; background: var(--panel-solid); border-top: 1px solid var(--rule); box-shadow: -10px 0 12px -6px var(--shadow); }
+  .zbtns { background: var(--panel-solid); }
+  #zoomctl .rd { display: none; }
+  .zbtn { height: 30px; min-width: 30px; padding: 0 8px; }
+  #topc { top: calc(var(--bar-h, 92px) + 40px); max-width: calc(100% - 20px); }
+  #trustbar { white-space: normal; font-size: 11.5px; text-align: center; border-radius: 12px; }
+  #legend { left: 0; right: 0; top: auto; bottom: 0; width: auto; max-height: 64%; border-radius: 12px 12px 0 0; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+  #inspector { left: 0; right: 0; top: auto; bottom: 0; width: auto; height: 58%; border-radius: 12px 12px 0 0; }
+  .ins-top::before { content: ""; position: absolute; left: 50%; top: 5px; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px; background: var(--ink-4); }
+  .ins-top { position: relative; padding-top: 14px; }
+  .ins-body { padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px)); }
+  .ins-body h2 { font-size: 20px; }
+}
+@media (min-width: 761px) { #searchBtn { display: none; } }
+@media (max-width: 1500px) and (min-width: 761px) { .brand-tag { display: none; } }
+@media (max-width: 1360px) and (min-width: 761px) { .lens .k, .brand-ver .nx { display: none; } #q { width: 180px; } }
+@media (max-width: 1200px) and (min-width: 761px) { .lens .lf { display: none; } .lens .ls { display: inline; } #q { width: 150px; } .tbtn .tl { display: none; } .tbtn { padding: 0; width: 34px; justify-content: center; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <svg id="sky" class="lens-overall lv1" role="application" aria-label="Orbit chart of the product. Drag to pan, scroll or pinch to zoom, click a star to inspect a feature." aria-describedby="skyhelp">
+    <defs>
+      <radialGradient id="skyGrad" cx="0" cy="0" r="1000" gradientUnits="userSpaceOnUse">
+        <stop offset="0" class="s-a"/>
+        <stop offset="1" class="s-b"/>
+      </radialGradient>
+      <g id="arcdefs"></g>
+    </defs>
+    <g id="world">
+      <circle class="disc" r="1000"/>
+      <g id="grat"></g>
+      <g id="bezel"></g>
+      <g id="scale"></g>
+      <g id="horizons"></g>
+      <g id="links"></g>
+      <g id="domains"></g>
+      <g id="modules"></g>
+      <g id="core"></g>
+      <g id="deps"></g>
+      <g id="stars"></g>
+      <g id="forced"></g>
+      <g id="scaleText"></g>
+    </g>
+  </svg>
+  <p id="skyhelp" class="vh">Keys: 1 to 4 switch lens, plus and minus zoom, 0 fits the whole product, slash focuses search, T toggles the AI trust overlay, L toggles the legend, Escape closes.</p>
+
+  <header id="bar">
+    <div class="brand">
+      <svg width="26" height="26" viewBox="-13 -13 26 26" aria-hidden="true">
+        <circle class="mark-ring" r="11.5"/><circle class="mark-ring" r="6.5" stroke-dasharray="1.5 2"/><circle class="mark-dot" r="2.4"/><circle class="mark-dot" cx="8.1" cy="-8.1" r="1.6"/>
+      </svg>
+      <span class="brand-name" id="prodName">Larkspur</span>
+      <span class="brand-ver" id="prodVer"></span>
+      <span class="brand-tag" id="prodTag"></span>
+    </div>
+    <nav id="lenses" aria-label="Lens"></nav>
+    <div class="tools">
+      <div class="search">
+        <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M11 11l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        <input id="q" type="search" placeholder="Search features" aria-label="Search features" autocomplete="off" spellcheck="false">
+        <button id="qclear" type="button" aria-label="Clear search" hidden><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" stroke-width="1.5"/></svg></button>
+        <div id="qcount" hidden></div>
+      </div>
+      <button id="searchBtn" class="ibtn" type="button" aria-label="Search features"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M11 11l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
+      <button id="trustBtn" class="tbtn" type="button" aria-pressed="false" aria-label="AI trust overlay: mark agent-built work awaiting human review">
+        <svg width="16" height="16" viewBox="-8 -8 16 16" aria-hidden="true"><circle r="6.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.2 1.6"/><circle r="2.6" fill="currentColor"/></svg>
+        <span class="tl">AI trust</span>
+      </button>
+      <button id="legendBtn" class="ibtn" type="button" aria-pressed="false" aria-label="Show legend"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="3" cy="4" r="1.6" fill="currentColor"/><circle cx="3" cy="8" r="1.6" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="3" cy="12" r="1.6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="0.9 1"/><path d="M7 4h7M7 8h7M7 12h7" stroke="currentColor" stroke-width="1.4"/></svg></button>
+      <button id="themeBtn" class="ibtn" type="button" aria-label="Theme: system"></button>
+    </div>
+  </header>
+
+  <section id="readout" class="hud" aria-label="Survey readout"></section>
+  <div id="phoneStat"></div>
+  <p id="lenscap" class="hud"></p>
+  <div id="topc" class="hud">
+  <div id="trustbar" role="status"></div>
+  <div id="focusbar" role="status"><span class="lbl">Focus</span><strong id="focusName"></strong><button id="fullsky" type="button"><svg width="12" height="12" viewBox="-6 -6 12 12" aria-hidden="true"><circle r="5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle r="1.6" fill="currentColor"/></svg>Full sky</button></div>
+  </div>
+  <div id="chips" class="hud" role="group" aria-label="Filter by status"></div>
+  <div id="zoomctl" class="hud">
+    <div class="rd"><span class="v" id="magRd"></span><span class="v" id="brgRd"></span></div>
+    <div class="zbtns">
+      <button class="zbtn" id="zoomOut" type="button" aria-label="Zoom out"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6h8" stroke="currentColor" stroke-width="1.6"/></svg></button>
+      <button class="zbtn" id="zoomIn" type="button" aria-label="Zoom in"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6h8M6 2v8" stroke="currentColor" stroke-width="1.6"/></svg></button>
+      <button class="zbtn" id="zoomFit" type="button" aria-label="Fit the whole product">Fit</button>
+    </div>
+  </div>
+  <aside id="legend" class="panel" aria-label="Legend" hidden></aside>
+  <aside id="inspector" class="panel" aria-label="Inspector" hidden>
+    <div class="ins-top"><nav class="crumb" id="insCrumb" aria-label="Breadcrumb"></nav><button class="closex" id="insClose" type="button" aria-label="Close inspector"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 1.5l9 9M10.5 1.5l-9 9" stroke="currentColor" stroke-width="1.5"/></svg></button></div>
+    <div class="ins-body" id="insBody"></div>
+  </aside>
+  <div id="tip" hidden></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="../../shared/blueprint-data.js"></script>
+<script src="../../shared/blueprint-model.js"></script>
+<script>
+(function () {
+  'use strict';
+  const BP = window.BP;
+  const $ = (id) => document.getElementById(id);
+  const svg = $('sky');
+  const world = $('world');
+  const root = document.documentElement;
+
+  /* ══ STATE ════════════════════════════════════════════════════════════ */
+  const LENSES = ['overall', 'dev', 'ops', 'biz'];
+  const DIMS = BP.DIMENSIONS.map((d) => d.id);
+  const DIM = {};
+  BP.DIMENSIONS.forEach((d) => { DIM[d.id] = d; });
+  const LENS_NAME = { overall: 'Overall', dev: 'Development', ops: 'Operations', biz: 'Business' };
+  const LENS_SHORT = { overall: 'All', dev: 'Dev', ops: 'Ops', biz: 'Biz' };
+  const STATUS = {};
+  BP.STATUSES.forEach((s) => { STATUS[s.id] = s; });
+  const FSTATE = {};
+  BP.FACET_STATES.forEach((s) => { FSTATE[s.id] = s; });
+  const BUILT = { agent: 'Agent crew', pair: 'Agent + human pair', human: 'Human squad' };
+  const REVIEW = { approved: 'Approved', pending: 'Review pending', changes: 'Changes requested', none: 'Not reviewed yet' };
+  const ASOF = BP.data.meta.asOf;
+  const RMQ = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const reduced = () => RMQ.matches;
+  const isPhone = () => window.innerWidth <= 760;
+
+  const S = {
+    lens: 'overall',
+    statuses: new Set(),
+    query: '',
+    attention: false,
+    trust: false,
+    sel: null, // { type: 'feature' | 'module' | 'domain', id }
+    focus: null, // domain id the chart is rotated toward
+    rot: 0, // chart rotation, radians clockwise
+    level: -1,
+    theme: 'system',
+    atFit: true,
+    hitIdx: -1,
+  };
+  let T = d3.zoomIdentity;
+  let fitK = 0.4;
+
+  const isTrust = (f) => f.builtBy !== 'human' && (f.review === 'pending' || f.review === 'changes');
+
+  /* ══ LAYOUT ═══════════════════════════════════════════════════════════ */
+  // World units: the bezel's outer edge sits at r = 960, the degree scale at 982.
+  const G = {
+    core: 232, gauge: [158, 180, 202], gaugeW: 12, gA0: -0.75 * Math.PI, gA1: 0.75 * Math.PI,
+    coreTick: [208, 220],
+    dom: [246, 312], domLbl: 279,
+    modTrack: 336, mod: [344, 412], modLbl: 378,
+    r100: 500, r0: 860,
+    orbit: [688, 736],
+    bezel: [904, 960], bezelLbl: 932, deg: 984, fit: 1004,
+  };
+  const SLOTS = { north: 4, domain: 2, module: 1 };
+  const TAU = Math.PI * 2;
+  const P = (r, a) => [r * Math.sin(a), -r * Math.cos(a)];
+  const fx = (n) => Math.round(n * 100) / 100;
+  const pt = (r, a) => { const p = P(r, a); return fx(p[0]) + ',' + fx(p[1]); };
+  const norm = (a) => ((a % TAU) + TAU) % TAU;
+  const deg = (a) => a * 180 / Math.PI;
+  const pct = (v) => Math.round((v || 0) * 100) + '%';
+
+  const totalSlots = BP.features.length + (BP.modules.length - BP.domains.length) * SLOTS.module + (BP.domains.length - 1) * SLOTS.domain + SLOTS.north;
+  const SLOT = TAU / totalSlots;
+  const domGeo = new Map();
+  const modGeo = new Map();
+  const stars = [];
+  const starById = new Map();
+  (function buildLayout() {
+    let c = SLOTS.north / 2;
+    BP.domains.forEach((d, di) => {
+      if (di) c += SLOTS.domain;
+      const a0 = c * SLOT;
+      BP.modulesOf(d.id).forEach((m, mi) => {
+        if (mi) c += SLOTS.module;
+        const ma0 = c * SLOT;
+        BP.featuresOf(m.id).forEach((f, fi) => {
+          const s = { f, i: stars.length, a: (c + 0.5) * SLOT, mid: m.id, did: d.id, orbit: G.orbit[fi % 2], r: G.orbit[fi % 2] };
+          stars.push(s);
+          starById.set(f.id, s);
+          c += 1;
+        });
+        modGeo.set(m.id, { m, a0: ma0, a1: c * SLOT, am: (ma0 + c * SLOT) / 2, did: d.id });
+      });
+      domGeo.set(d.id, { d, a0, a1: c * SLOT, am: (a0 + c * SLOT) / 2 });
+    });
+  })();
+
+  /** Radius a star should sit at under the current lens: the even orbit, or its gravity distance. */
+  function targetR(s) {
+    if (S.lens === 'overall') return s.orbit;
+    const v = BP.lensValue(s.f, S.lens);
+    return G.r100 + (1 - (v == null ? 0 : v)) * (G.r0 - G.r100);
+  }
+  /** Glyph size multiplier on screen as zoom grows: small dots far out, generous glyphs up close. */
+  const gScale = (k) => Math.max(0.68, Math.min(1.35, 0.5 + 0.5 * Math.sqrt(k)));
+  const PR = { P0: 6.4, P1: 5.4, P2: 4.6, P3: 3.9 };
+
+  /* ══ RENDER ═══════════════════════════════════════════════════════════ */
+  const fam = {};
+  function readFonts() {
+    const cs = getComputedStyle(root);
+    fam.label = cs.getPropertyValue('--f-label').trim();
+    fam.mono = cs.getPropertyValue('--f-mono').trim();
+  }
+  readFonts();
+  const mctx = document.createElement('canvas').getContext('2d');
+  /** Width in px of a string at a size, with letter-spacing given in em. */
+  function textW(str, px, family, weight, trackEm) {
+    mctx.font = (weight || 400) + ' ' + px + 'px ' + family;
+    return mctx.measureText(str).width + str.length * (trackEm || 0) * px;
+  }
+  /** SVG arc path between two angles at radius r; ccw draws it the other way so text reads upright on the lower half. */
+  function arcD(r, a0, a1, ccw) {
+    const large = Math.abs(a1 - a0) > Math.PI ? 1 : 0;
+    return ccw ? 'M' + pt(r, a1) + 'A' + r + ',' + r + ' 0 ' + large + ' 0 ' + pt(r, a0) : 'M' + pt(r, a0) + 'A' + r + ',' + r + ' 0 ' + large + ' 1 ' + pt(r, a1);
+  }
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const ringD = (r0, r1, a0, a1) => d3.arc()({ innerRadius: r0, outerRadius: r1, startAngle: a0, endAngle: a1 });
+
+  // Arc labels choose the longest candidate that fits their arc at the current zoom, or hide.
+  const arcLabels = [];
+  let arcDefs = '';
+  function addArcLabel(o) {
+    const id = 'ap' + arcLabels.length;
+    arcDefs += '<path id="' + id + 'c" d="' + arcD(o.r, o.a0, o.a1, false) + '"/><path id="' + id + 'w" d="' + arcD(o.r, o.a0, o.a1, true) + '"/>';
+    o.id = id;
+    o.mid = (o.a0 + o.a1) / 2;
+    o.span = o.a1 - o.a0;
+    o.cur = -2;
+    o.flip = null;
+    arcLabels.push(o);
+    return '<text class="' + o.cls + '" dominant-baseline="central" id="' + id + 't"><textPath href="#' + id + 'c" startOffset="50%" text-anchor="middle"></textPath></text>';
+  }
+  /** Candidate list -> [{ html, w(px) }] measured with the label's font. */
+  function cands(list, px, track, weight, pcText, pcPx) {
+    return list.map((t) => {
+      const up = t.toUpperCase();
+      let w = textW(up, px, fam.label, weight || 500, track);
+      let html = '<tspan class="nm">' + esc(up) + '</tspan>';
+      if (pcText) {
+        w += textW(' ' + pcText, pcPx, fam.mono, 400, 0.02);
+        html += '<tspan class="pc"> ' + pcText + '</tspan>';
+      }
+      return { html, w };
+    });
+  }
+  const shortDomain = (d) => {
+    const w = d.name.split(/\s+/).find((x) => x.toLowerCase().startsWith(d.id.slice(0, 5)));
+    return w || d.name.split(/\s+/)[0];
+  };
+  const shortModule = (m) => m.name.split(' & ')[0];
+
+  function renderStatic() {
+    const p = BP.product;
+    $('prodName').textContent = p.name;
+    $('prodVer').innerHTML = 'v' + esc(p.version) + '<span class="nx"> → ' + esc(p.nextVersion) + '</span>';
+    $('prodTag').textContent = p.tagline;
+
+    // graticule: faint polar grid
+    let g = '';
+    for (let a = 0; a < 360; a += 15) {
+      const r = a * Math.PI / 180;
+      g += '<path class="grat dash" d="M' + pt(G.mod[1] + 20, r) + 'L' + pt(G.bezel[0], r) + '"/>';
+    }
+    [560, 780].forEach((r) => { g += '<circle class="grat" r="' + r + '"/>'; });
+    g += '<circle class="orbitline" r="' + G.orbit[0] + '"/><circle class="orbitline" r="' + G.orbit[1] + '"/>';
+    domGeo.forEach((dg) => {
+      const a = dg.a0 - SLOTS.domain * SLOT / 2;
+      g += '<path class="border" d="M' + pt(G.dom[0], a) + 'L' + pt(G.bezel[0], a) + '"/>';
+    });
+    $('grat').innerHTML = g;
+
+    // bezel: degree ticks, domain names engraved on the band, bearing numbers outside
+    let b = '<path class="bz-band" d="' + ringD(G.bezel[0], G.bezel[1], 0, TAU) + '"/>';
+    b += '<circle class="bz-ring" r="' + G.bezel[0] + '"/><circle class="bz-ring" r="' + G.bezel[1] + '"/>';
+    let ticks = '';
+    let ticksMj = '';
+    for (let dgr = 0; dgr < 360; dgr += 1) {
+      const a = dgr * Math.PI / 180;
+      const len = dgr % 10 === 0 ? 16 : dgr % 5 === 0 ? 10 : 6;
+      const seg = 'M' + pt(G.bezel[0], a) + 'L' + pt(G.bezel[0] + len, a);
+      if (dgr % 10 === 0) ticksMj += seg; else ticks += seg;
+    }
+    b += '<path class="bz-tick" d="' + ticks + '"/><path class="bz-tick mj" d="' + ticksMj + '"/>';
+    domGeo.forEach((dg) => {
+      const d = dg.d;
+      b += addArcLabel({ cls: 'bz-name', r: G.bezelLbl, a0: dg.a0, a1: dg.a1, px: 12, pad: 24, list: () => cands([d.name, shortDomain(d), d.code], 12, 0.3, 500) });
+    });
+    for (let dgr = 0; dgr < 360; dgr += 30) {
+      const a = dgr * Math.PI / 180;
+      const txt = String(dgr).padStart(3, '0') + '°';
+      b += addArcLabel({ cls: 'bz-deg', r: G.deg, a0: a - 0.12, a1: a + 0.12, px: 9, pad: 0, list: () => [{ html: txt, w: textW(txt, 9, fam.mono, 400, 0.06) }] });
+    }
+    $('bezel').innerHTML = b;
+
+    // domain ring
+    let dm = '';
+    domGeo.forEach((dg) => {
+      const d = dg.d;
+      dm += '<path class="dom-band" data-did="' + d.id + '" d="' + ringD(G.dom[0], G.dom[1], dg.a0, dg.a1) + '"><title>' + esc(d.name) + '</title></path>';
+      dm += addArcLabel({ cls: 'dom-lbl', r: G.domLbl, a0: dg.a0, a1: dg.a1, px: 11, pad: 12, list: () => {
+        const v = pct(lensRollup(BP.domainRollup(d.id)));
+        return cands([d.name, shortDomain(d)], 11, 0.16, 500, v, 10).concat(cands([d.name, shortDomain(d)], 11, 0.16, 500), cands([d.code], 11, 0.16, 500, v, 10), cands([d.code], 11, 0.16, 500));
+      } });
+    });
+    $('domains').innerHTML = dm;
+
+    // module ring: band, completion track and value arc, label
+    let md = '';
+    modGeo.forEach((mg) => {
+      const m = mg.m;
+      md += '<path class="mod-band" data-mid="' + m.id + '" d="' + ringD(G.mod[0], G.mod[1], mg.a0, mg.a1) + '"><title>' + esc(m.name) + '</title></path>';
+      md += '<path class="mod-track" stroke-width="7" d="' + arcD(G.modTrack, mg.a0, mg.a1) + '"/>';
+      md += '<path class="mod-val" stroke-width="7" data-mv="' + m.id + '" d=""/>';
+      md += addArcLabel({ cls: 'mod-lbl', r: G.modLbl, a0: mg.a0, a1: mg.a1, px: 9.5, pad: 8, list: () => {
+        const v = pct(lensRollup(BP.moduleRollup(m.id)));
+        return cands([m.name, shortModule(m)], 9.5, 0.14, 500, v, 9).concat(cands([m.name, shortModule(m)], 9.5, 0.14, 500), cands([m.code], 9.5, 0.14, 500, v, 9), cands([m.code], 9.5, 0.14, 500));
+      } });
+    });
+    $('modules').innerHTML = md;
+
+    // gravity scale (dimension lenses): 100% at the module ring, 0% at the rim
+    let sc = '';
+    [1, 0.75, 0.5, 0.25, 0].forEach((v) => {
+      const r = G.r100 + (1 - v) * (G.r0 - G.r100);
+      sc += '<circle class="sc-ring' + (v === 1 || v === 0 ? ' end' : '') + '" r="' + r + '"/>';
+    });
+    $('scale').innerHTML = sc;
+    let st = '';
+    [1, 0.75, 0.5, 0.25, 0].forEach((v) => {
+      st += '<text class="sc-lbl" data-r="' + (G.r100 + (1 - v) * (G.r0 - G.r100)) + '">' + Math.round(v * 100) + '%</text>';
+    });
+    $('scaleText').innerHTML = st;
+
+    $('arcdefs').innerHTML = arcDefs;
+    arcLabels.forEach((o) => { o.el = $(o.id + 't'); o.tp = o.el.firstChild; });
+
+    renderCore();
+    renderStars();
+  }
+
+  function lensRollup(r) { return S.lens === 'overall' ? r.overall : r.dims[S.lens]; }
+
+  function renderCore() {
+    const pr = BP.productRollup();
+    let c = '<circle class="core-disc" r="' + G.core + '"/><circle class="core-inner" r="' + (G.gauge[0] - 14) + '"/>';
+    // tick scale for the gauges: 0..100% over 270 degrees
+    const span = G.gA1 - G.gA0;
+    let tk = '';
+    let tkm = '';
+    for (let i = 0; i <= 20; i++) {
+      const a = G.gA0 + span * i / 20;
+      const mj = i % 5 === 0;
+      const seg = 'M' + pt(G.coreTick[0], a) + 'L' + pt(mj ? G.coreTick[1] + 4 : G.coreTick[1] - 3, a);
+      if (mj) tk += seg; else tkm += seg;
+    }
+    c += '<path class="g-tick" d="' + tk + '"/><path class="g-tick mn" d="' + tkm + '"/>';
+    [[0, G.gA0 - 0.13], [100, G.gA1 + 0.13]].forEach((n) => {
+      const p = P(G.coreTick[1] - 4, n[1]);
+      c += '<text class="g-num" x="' + fx(p[0]) + '" y="' + fx(p[1] + 5) + '" text-anchor="middle">' + n[0] + '</text>';
+    });
+    DIMS.forEach((id, i) => {
+      const r = G.gauge[i];
+      const v = pr.dims[id];
+      c += '<path class="g-track" stroke-width="' + G.gaugeW + '" d="' + arcD(r, G.gA0, G.gA1) + '"/>';
+      c += '<path class="g-val g-' + id + '" data-g="' + id + '" stroke-width="' + G.gaugeW + '" d="' + arcD(r, G.gA0, G.gA0 + span * v) + '"/>';
+    });
+    // centre readout
+    c += '<text class="core-name" text-anchor="middle" y="-74" dx="0.13em">' + esc(BP.product.name.toUpperCase()) + '</text>';
+    c += '<text class="core-ver" text-anchor="middle" y="-47">v' + esc(BP.product.version) + ' · ' + BP.features.length + ' features</text>';
+    const rows = [['overall', 'All', pr.overall]].concat(DIMS.map((id) => [id, DIM[id].short, pr.dims[id]]));
+    rows.forEach((row, i) => {
+      const y = -8 + i * 32;
+      const cls = row[0] === 'overall' ? 'ovr' : row[0];
+      c += '<g class="core-row ' + cls + '" data-row="' + row[0] + '">';
+      if (row[0] !== 'overall') c += '<path class="core-sw g-' + row[0] + '" d="M-86,' + (y - 1) + 'h14"/>';
+      else c += '<path class="core-sw" style="stroke:var(--ink-2)" d="M-86,' + (y - 1) + 'h14"/>';
+      c += '<text class="core-k" x="-62" y="' + (y + 7) + '">' + row[1].toUpperCase() + '</text>';
+      c += '<text class="core-v ' + (row[0] === 'overall' ? '' : row[0]) + '" x="86" y="' + (y + 8) + '" text-anchor="end">' + pct(row[2]) + '</text>';
+      c += '</g>';
+    });
+    $('core').innerHTML = c;
+  }
+
+  /** Four-point "cross star" for blocked features. */
+  function astroid(R, r) {
+    let d = '';
+    for (let i = 0; i < 8; i++) {
+      const a = i * Math.PI / 4;
+      const rr = i % 2 ? r : R;
+      d += (i ? 'L' : 'M') + fx(rr * Math.sin(a)) + ',' + fx(-rr * Math.cos(a));
+    }
+    return d + 'Z';
+  }
+  function bodyMarkup(status, R) {
+    switch (status) {
+      case 'live': return '<circle class="b b-live" r="' + R + '"/>';
+      case 'ready': return '<circle class="b b-ring" r="' + fx(R - 0.7) + '"/><circle class="b b-dot" r="' + fx(R * 0.34) + '"/>';
+      case 'building': return '<circle class="b b-ring" r="' + fx(R - 0.7) + '"/><path class="b b-half" d="M0,' + fx(-R + 0.7) + 'A' + fx(R - 0.7) + ',' + fx(R - 0.7) + ' 0 0 0 0,' + fx(R - 0.7) + 'Z"/>';
+      case 'planned': return '<circle class="b b-plan" r="' + fx(R - 0.6) + '"/>';
+      default: return '<path class="b b-block" d="' + astroid(R * 1.6, R * 0.42) + '"/>';
+    }
+  }
+  /** Small standalone status glyph for HUD, legend and lists. */
+  function glyphSVG(status, size, prio) {
+    const R = PR[prio || 'P1'];
+    const v = Math.ceil(R * 1.7);
+    return '<svg class="gl st-' + status + '" width="' + (size || 14) + '" height="' + (size || 14) + '" viewBox="' + -v + ' ' + -v + ' ' + 2 * v + ' ' + 2 * v + '" aria-hidden="true">' + bodyMarkup(status, R) + '</svg>';
+  }
+
+  // corona segments (Overall): dev at top, ops lower right, biz lower left, flares in the three gaps
+  const SEG = { dev: [-46, 46], ops: [74, 166], biz: [194, 286] };
+  const rad = (dg) => dg * Math.PI / 180;
+  const CR = 11;
+  const FK = 15.6;
+  function arcLocal(r, a0, a1) {
+    if (a1 - a0 < 0.001) return '';
+    const p0 = P(r, a0), p1 = P(r, a1);
+    return 'M' + fx(p0[0]) + ',' + fx(p0[1]) + 'A' + r + ',' + r + ' 0 ' + (a1 - a0 > Math.PI ? 1 : 0) + ' 1 ' + fx(p1[0]) + ',' + fx(p1[1]);
+  }
+  function decoMarkup(s) {
+    const f = s.f;
+    const attn = BP.needsAttention(f);
+    let h = '';
+    if (S.lens === 'overall') {
+      DIMS.forEach((id) => {
+        const [a0, a1] = SEG[id];
+        const v = BP.dimScore(f, id) || 0;
+        h += '<path class="ct" d="' + arcLocal(CR, rad(a0), rad(a1)) + '"/>';
+        if (v > 0) h += '<path class="cf ' + id + '" d="' + arcLocal(CR, rad(a0), rad(a0 + (a1 - a0) * v)) + '"/>';
+      });
+      if (attn) h += '<path class="flare" d="' + [60, 180, 300].map((dg) => 'M' + pt(13.5, rad(dg)) + 'L' + pt(19.5, rad(dg))).join('') + '"/>';
+    } else {
+      const facets = DIM[S.lens].facets;
+      const fr = fx(PR[f.priority] + 2.6);
+      facets.forEach((fc, j) => {
+        const c = j * 90;
+        const a0 = rad(c - 37), a1 = rad(c + 37);
+        const st = f.dims[S.lens][fc.id];
+        if (st === 'na') return;
+        h += '<path class="fr track" d="' + arcLocal(fr, a0, a1) + '"/>';
+        if (st === 'done') h += '<path class="fr done" d="' + arcLocal(fr, a0, a1) + '"/>';
+        else if (st === 'partial') h += '<path class="fr done" d="' + arcLocal(fr, a0, (a0 + a1) / 2) + '"/>';
+        else if (st === 'blocked') h += '<path class="fr blocked" d="' + arcLocal(fr, a0, a1) + '"/>';
+      });
+      if (attn) h += '<path class="flare" d="' + [45, 135, 225, 315].map((dg) => 'M' + pt(fr + 2.6, rad(dg)) + 'L' + pt(fr + 8, rad(dg))).join('') + '"/>';
+    }
+    return h;
+  }
+  function facetMarkup(f) {
+    let h = '';
+    DIMS.forEach((id) => {
+      const [a0, a1] = SEG[id];
+      BP.DIMENSIONS.find((d) => d.id === id).facets.forEach((fc, j) => {
+        const st = f.dims[id][fc.id];
+        const a = rad(a0 + (a1 - a0) * (j + 0.5) / 4);
+        const p = P(FK, a);
+        if (st === 'na') return;
+        if (st === 'blocked') h += '<path class="fk blocked" d="M' + fx(p[0] - 1.6) + ',' + fx(p[1] - 1.6) + 'l3.2,3.2m0,-3.2l-3.2,3.2"/>';
+        else h += '<circle class="fk ' + st + ' ' + id + '" cx="' + fx(p[0]) + '" cy="' + fx(p[1]) + '" r="' + (st === 'todo' ? 0.9 : 1.55) + '"/>';
+      });
+    });
+    return h;
+  }
+
+  function renderStars() {
+    let h = '';
+    let lk = '';
+    stars.forEach((s) => {
+      const f = s.f;
+      const R = PR[f.priority];
+      const cls = ['star', 'st-' + f.status, 'p-' + f.priority];
+      if (BP.needsAttention(f)) cls.push('attn');
+      if (isTrust(f)) cls.push(f.review === 'changes' ? 't-chg' : 't-pend');
+      const a = deg(s.a) - 90;
+      h += '<g class="' + cls.join(' ') + '" data-fid="' + f.id + '" id="s' + s.i + '">' +
+        '<g class="gly">' +
+          '<circle class="halo" r="' + (S.lens === 'overall' ? 14.5 : 12.5) + '"/>' +
+          '<g class="deco"></g><g class="facets">' + facetMarkup(f) + '</g>' +
+          (f.status === 'live' ? '<circle class="glow" r="' + fx(R * 1.75) + '"/>' : '') +
+          bodyMarkup(f.status, R) +
+          '<circle class="hitring" r="' + fx(R + 3.6) + '"/>' +
+          '<g class="ret"><circle r="' + fx(R + 5.5) + '"/><path d="M0,' + fx(-R - 8) + 'v-6M0,' + fx(R + 8) + 'v6M' + fx(-R - 8) + ',0h-6M' + fx(R + 8) + ',0h6"/></g>' +
+          '<circle class="hit" r="' + Math.max(R + 5, 11) + '"/>' +
+        '</g>' +
+        '<text class="flabel" style="--a:' + fx(a) + 'deg"><tspan class="fn">' + esc(f.name) + '</tspan><tspan class="fs"></tspan></text>' +
+        '</g>';
+      lk += '<path class="lk" id="l' + s.i + '"/>';
+    });
+    $('stars').innerHTML = h;
+    $('links').innerHTML = lk;
+    stars.forEach((s) => {
+      s.el = $('s' + s.i);
+      s.lk = $('l' + s.i);
+      s.deco = s.el.querySelector('.deco');
+      s.halo = s.el.querySelector('.halo');
+      s.label = s.el.querySelector('.flabel');
+      s.fs = s.el.querySelector('.fs');
+      s.flip = null;
+      place(s);
+    });
+    refreshDeco();
+  }
+
+  function refreshDeco() {
+    stars.forEach((s) => {
+      s.deco.innerHTML = decoMarkup(s);
+      s.halo.setAttribute('r', S.lens === 'overall' ? 14.5 : 12.5);
+      const v = BP.lensValue(s.f, S.lens);
+      s.fs.textContent = S.lens === 'overall' ? '' : ' ' + pct(v);
+    });
+  }
+
+  /** Moves one star and its link to the star's current radius. */
+  function place(s) {
+    const p = P(s.r, s.a);
+    s.el.setAttribute('transform', 'translate(' + fx(p[0]) + ',' + fx(p[1]) + ')');
+    s.lk.setAttribute('d', linkD(s));
+  }
+  function linkD(s) {
+    if (S.lens === 'overall') {
+      const mg = modGeo.get(s.mid);
+      const r0 = G.mod[1], r1 = s.r;
+      const rm = (r0 + r1) / 2;
+      return 'M' + pt(r0, mg.am) + 'C' + pt(rm, mg.am) + ' ' + pt(rm, s.a) + ' ' + pt(r1, s.a);
+    }
+    return 'M' + pt(G.r100, s.a) + 'L' + pt(Math.max(G.r100, s.r), s.a);
+  }
+
+  function updateModuleArcs() {
+    modGeo.forEach((mg) => {
+      const v = lensRollup(BP.moduleRollup(mg.m.id));
+      const el = svg.querySelector('[data-mv="' + mg.m.id + '"]');
+      el.setAttribute('d', v > 0 ? arcD(G.modTrack, mg.a0, mg.a0 + (mg.a1 - mg.a0) * v) : '');
+    });
+  }
+  /** Module "horizon": an arc at the module's mean score inside the gravity field. */
+  function renderHorizons() {
+    if (S.lens === 'overall') { $('horizons').innerHTML = ''; return; }
+    let h = '';
+    modGeo.forEach((mg) => {
+      const v = BP.moduleRollup(mg.m.id).dims[S.lens];
+      const r = G.r100 + (1 - v) * (G.r0 - G.r100);
+      h += '<path class="hz" d="' + arcD(r, mg.a0 + SLOT * 0.15, mg.a1 - SLOT * 0.15) + '"/>';
+    });
+    $('horizons').innerHTML = h;
+  }
+
+  /* ── arc label fitting and flipping ── */
+  function updateArcLabels(force) {
+    const k = T.k;
+    arcLabels.forEach((o) => {
+      if (force || !o.c) o.c = o.list();
+      const avail = o.span * o.r * k - o.pad;
+      let pick = -1;
+      for (let i = 0; i < o.c.length; i++) if (o.c[i].w <= avail) { pick = i; break; }
+      if (pick !== o.cur || force) {
+        o.cur = pick;
+        o.tp.innerHTML = pick < 0 ? '' : o.c[pick].html;
+        o.el.style.display = pick < 0 ? 'none' : '';
+      }
+    });
+  }
+  function updateFlips() {
+    arcLabels.forEach((o) => {
+      const a = norm(o.mid + S.rot);
+      const flip = a > Math.PI / 2 && a < Math.PI * 1.5;
+      if (flip !== o.flip) { o.flip = flip; o.tp.setAttribute('href', '#' + o.id + (flip ? 'w' : 'c')); }
+    });
+    stars.forEach((s) => {
+      const a = norm(s.a + S.rot);
+      const flip = a > Math.PI;
+      if (flip !== s.flip) { s.flip = flip; s.label.classList.toggle('flip', flip); }
+    });
+  }
+  function updateScaleText() {
+    const k = T.k;
+    const rd = -deg(S.rot);
+    $('scaleText').querySelectorAll('text').forEach((t) => {
+      const r = +t.getAttribute('data-r');
+      t.setAttribute('transform', 'translate(0,' + -r + ') rotate(' + fx(rd) + ') scale(' + (1 / k) + ')');
+    });
+  }
+
+  /* ── zoom-dependent detail ── */
+  let lastK = -1;
+  let lastRot = null;
+  let frameQueued = false;
+  function apply() {
+    const k = T.k;
+    world.setAttribute('transform', 'translate(' + fx(T.x) + ',' + fx(T.y) + ') scale(' + k + ') rotate(' + fx(deg(S.rot)) + ')');
+    const lv = k < 0.3 ? 0 : k < 0.62 ? 1 : k < 1.0 ? 2 : 3;
+    const ov = S.lens === 'overall';
+    const s = gScale(k) * (ov ? 1 : lv === 0 ? 0.66 : lv === 1 ? 0.8 : 1);
+    const lo = ov ? (lv >= 3 ? 21 : lv === 2 ? 15 : 12) : (lv >= 2 ? 12.5 : 9);
+    svg.classList.toggle('names', k >= (ov ? 0.62 : 0.85));
+    const ws = world.style;
+    ws.setProperty('--inv', String(1 / k));
+    ws.setProperty('--gs', String(s / k));
+    ws.setProperty('--ts', String(Math.max(1, Math.min(1.22, 0.94 + 0.1 * k)) / k));
+    ws.setProperty('--lo', fx(lo * s) + 'px');
+    ws.setProperty('--cr', fx(-deg(S.rot)) + 'deg');
+    if (lv !== S.level) {
+      svg.classList.remove('lv0', 'lv1', 'lv2', 'lv3');
+      svg.classList.add('lv' + lv);
+      $('app').classList.toggle('zoomed', lv >= 2);
+      S.level = lv;
+    }
+    if (k !== lastK) { updateArcLabels(false); lastK = k; updateForced(); updateScaleText(); }
+    if (S.rot !== lastRot) { lastRot = S.rot; updateFlips(); updateScaleText(); $('core').setAttribute('transform', 'rotate(' + fx(-deg(S.rot)) + ')'); }
+    queueReadout();
+  }
+
+  /* ══ INTERACTION ══════════════════════════════════════════════════════ */
+  const zoom = d3.zoom()
+    .scaleExtent([0.06, 7])
+    .clickDistance(5)
+    .on('start', (ev) => { if (ev.sourceEvent && ev.sourceEvent.type !== 'wheel') svg.classList.add('dragging'); hideTip(); })
+    .on('zoom', (ev) => { T = ev.transform; if (ev.sourceEvent) S.atFit = false; apply(); })
+    .on('end', () => svg.classList.remove('dragging'));
+  const svgSel = d3.select(svg).call(zoom);
+
+  /** Visible canvas area, excluding bars, panels and sheets. */
+  function viewRect() {
+    const W = window.innerWidth, H = window.innerHeight;
+    const r = { x0: 0, y0: 0, x1: W, y1: H };
+    const bar = $('bar').getBoundingClientRect();
+    r.y0 = bar.bottom;
+    if (isPhone()) {
+      r.y0 = $('phoneStat').getBoundingClientRect().bottom + 4;
+      r.y1 = $('chips').getBoundingClientRect().top - 4;
+      const cap = $('lenscap').getBoundingClientRect();
+      if (cap.height) r.y1 = Math.min(r.y1, cap.top - 6);
+      const ins = $('inspector');
+      if (!ins.hidden) r.y1 = Math.min(r.y1, ins.getBoundingClientRect().top - 4);
+      const lg = $('legend');
+      if (!lg.hidden) r.y1 = Math.min(r.y1, lg.getBoundingClientRect().top - 4);
+    } else {
+      r.y0 += 8; r.y1 -= 8;
+      if (!$('inspector').hidden) r.x1 = $('inspector').getBoundingClientRect().left - 8;
+    }
+    r.w = Math.max(40, r.x1 - r.x0);
+    r.h = Math.max(40, r.y1 - r.y0);
+    r.cx = r.x0 + r.w / 2;
+    r.cy = r.y0 + r.h / 2;
+    return r;
+  }
+  const dur = (ms) => (reduced() ? 0 : ms);
+  function rotate(p, a) { const c = Math.cos(a), s = Math.sin(a); return [p[0] * c - p[1] * s, p[0] * s + p[1] * c]; }
+
+  /** Animates camera (and optionally rotation) to transform t. */
+  function goTo(t, rotTo, ms) {
+    const r0 = S.rot;
+    const r1 = rotTo == null ? S.rot : rotTo;
+    const tr = svgSel.interrupt('view').transition('view').duration(dur(ms == null ? 750 : ms)).ease(d3.easeCubicInOut);
+    if (r1 !== r0) tr.tween('rot', () => (u) => { S.rot = r0 + (r1 - r0) * u; });
+    tr.call(zoom.transform, t);
+  }
+  function fitTransform() {
+    const v = viewRect();
+    const k = Math.min(v.w, v.h) / (2 * (isPhone() ? 975 : G.fit));
+    return d3.zoomIdentity.translate(v.cx, v.cy).scale(k);
+  }
+  function fit(ms) {
+    const t = fitTransform();
+    fitK = t.k;
+    S.atFit = true;
+    const wasFocus = S.focus;
+    S.focus = null;
+    renderFocus();
+    goTo(t, wasFocus || S.rot ? nearestRot(0) : null, ms);
+  }
+  function nearestRot(target) {
+    let d = target - S.rot;
+    d = ((d + Math.PI) % TAU + TAU) % TAU - Math.PI;
+    return S.rot + d;
+  }
+  /** Flies so world point p (unrotated) lands at the centre of the visible area at scale k. */
+  function flyToWorld(p, k, ms, rotTo) {
+    const v = viewRect();
+    const rr = rotTo == null ? S.rot : rotTo;
+    const q = rotate(p, rr);
+    const t = d3.zoomIdentity.translate(v.cx - q[0] * k, v.cy - q[1] * k).scale(k);
+    S.atFit = false;
+    goTo(t, rotTo, ms);
+  }
+  function zoomBy(f) {
+    const v = viewRect();
+    svgSel.interrupt('view').transition('view').duration(dur(260)).call(zoom.scaleBy, f, [v.cx, v.cy]);
+    S.atFit = false;
+  }
+  function flyToStar(s, minK) {
+    const k = Math.max(T.k, minK || 1.15);
+    flyToWorld(P(s.r, s.a), k);
+  }
+  function focusDomain(id) {
+    const dg = domGeo.get(id);
+    if (!dg) return;
+    S.focus = id;
+    const rotTo = nearestRot(Math.PI / 2 - dg.am);
+    // fit the rotated sector (rings to bezel) into the visible area
+    // fit the rotated sector (domain ring out to the orbit), leaving room on the right for radial names
+    const v = viewRect();
+    const pts = [];
+    for (let i = 0; i <= 12; i++) {
+      const a = dg.a0 + (dg.a1 - dg.a0) * i / 12;
+      [G.dom[0], G.orbit[1] + 24].forEach((r) => pts.push(rotate(P(r, a), rotTo)));
+    }
+    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+    const bx0 = Math.min.apply(null, xs), bx1 = Math.max.apply(null, xs), by0 = Math.min.apply(null, ys), by1 = Math.max.apply(null, ys);
+    const room = isPhone() ? 0 : 190;
+    const k = Math.min(2.2, v.h * 0.92 / (by1 - by0), (v.w - room - 24) / (bx1 - bx0));
+    const tx = v.x0 + (v.w - ((bx1 - bx0) * k + room)) / 2 - bx0 * k;
+    const t = d3.zoomIdentity.translate(tx, v.cy - (by0 + by1) / 2 * k).scale(k);
+    S.atFit = false;
+    renderFocus();
+    goTo(t, rotTo, 1000);
+  }
+  function renderFocus() {
+    $('focusbar').classList.toggle('on', !!S.focus);
+    $('focusName').textContent = S.focus ? BP.domain(S.focus).name : '';
+    svg.querySelectorAll('.dom-band').forEach((el) => el.classList.toggle('focus', el.getAttribute('data-did') === S.focus));
+  }
+
+  /* ── lens ── */
+  let anim = null;
+  function setLens(l) {
+    if (!LENSES.includes(l) || l === S.lens) return;
+    const prev = S.lens;
+    S.lens = l;
+    svg.classList.remove('lens-overall', 'lens-dev', 'lens-ops', 'lens-biz');
+    svg.classList.add('lens-' + l);
+    LENSES.forEach((x) => $('app').classList.toggle('lens-' + x + '-ui', x === l));
+    renderLensCaption();
+    document.querySelectorAll('.lens').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lens === l)));
+    svg.querySelectorAll('.core-row').forEach((el) => el.classList.toggle('off', el.dataset.row !== l));
+    svg.querySelectorAll('.g-val').forEach((el) => el.classList.toggle('off', el.dataset.g !== l));
+    refreshDeco();
+    updateModuleArcs();
+    updateArcLabels(true);
+    $('horizons').classList.add('swap');
+    $('deps').innerHTML = '';
+    const crossMode = (prev === 'overall') !== (l === 'overall');
+    if (crossMode) $('links').classList.add('swap');
+    animateStars(() => {
+      renderHorizons();
+      $('horizons').classList.remove('swap');
+      drawDeps();
+      updateForced();
+    });
+    if (crossMode) setTimeout(() => $('links').classList.remove('swap'), reduced() ? 0 : 160);
+    apply();
+    renderLegend();
+    if (S.sel) renderInspector();
+  }
+  function animateStars(done) {
+    if (anim) { anim.stop(); anim = null; }
+    stars.forEach((s) => { s.from = s.r; s.to = targetR(s); });
+    const D = dur(950), spread = reduced() ? 0 : 320;
+    if (!D) { stars.forEach((s) => { s.r = s.to; place(s); }); done(); return; }
+    anim = d3.timer((el) => {
+      let fin = true;
+      stars.forEach((s) => {
+        const u = Math.max(0, Math.min(1, (el - s.i / stars.length * spread) / D));
+        if (u < 1) fin = false;
+        s.r = s.from + (s.to - s.from) * d3.easeCubicInOut(u);
+        place(s);
+      });
+      if (fin) { anim.stop(); anim = null; done(); }
+    });
+  }
+
+  /* ── filters, search, overlays ── */
+  function filterActive() { return S.statuses.size > 0 || S.query.trim() !== '' || S.attention; }
+  function matchesFilter(f) { return BP.matches(f, { statuses: S.statuses, query: S.query, attentionOnly: S.attention }); }
+  let related = new Set();
+  function applyClasses() {
+    const fa = filterActive();
+    const q = S.query.trim() !== '';
+    const selF = S.sel && S.sel.type === 'feature' ? S.sel.id : null;
+    const selM = S.sel && S.sel.type === 'module' ? S.sel.id : null;
+    const modHit = new Set();
+    const domHit = new Set();
+    stars.forEach((s) => {
+      const f = s.f;
+      const m = !fa || matchesFilter(f);
+      if (m) { modHit.add(s.mid); domHit.add(s.did); }
+      let dim = fa && !m;
+      if (selF && !related.has(f.id) && !(q && m)) dim = true;
+      if (selM && s.mid !== selM && !(q && m)) dim = true;
+      if (S.trust && !isTrust(f)) dim = true;
+      s.el.classList.toggle('dim', dim);
+      s.el.classList.toggle('hit-on', fa && m && (S.statuses.size > 0 || q || S.attention) && !selF);
+      s.el.classList.toggle('sel', f.id === selF);
+      s.lk.classList.toggle('dim', dim || !!selF);
+    });
+    svg.querySelectorAll('.mod-band').forEach((el) => {
+      el.classList.toggle('faded-ring', fa && !modHit.has(el.dataset.mid));
+      el.classList.toggle('on', el.dataset.mid === selM);
+    });
+    svg.querySelectorAll('.dom-band').forEach((el) => el.classList.toggle('faded-ring', fa && !domHit.has(el.dataset.did)));
+    svg.classList.toggle('trust-on', S.trust);
+    updateForced();
+  }
+  /** Matches in fly order: name hits first, then module hits, then the rest, each in chart order. */
+  function matchList() {
+    const q = S.query.trim().toLowerCase();
+    const list = stars.filter((s) => matchesFilter(s.f));
+    if (!q) return list;
+    const rank = (s) => (s.f.name.toLowerCase().includes(q) ? 0 : BP.module(s.f.moduleId).name.toLowerCase().includes(q) ? 1 : 2);
+    return list.map((s, i) => [rank(s), i, s]).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map((x) => x[2]);
+  }
+  function onQuery() {
+    S.query = $('q').value;
+    S.hitIdx = -1;
+    const has = S.query.trim() !== '';
+    $('qclear').hidden = !has;
+    const n = has ? matchList().length : 0;
+    $('qcount').hidden = !has;
+    $('qcount').textContent = has ? (n ? n + (n === 1 ? ' match' : ' matches') + ' · Enter to fly' : 'No matches') : '';
+    applyClasses();
+  }
+
+  // Forced labels: selection, its constellation and search hits get names even when zoomed out,
+  // culled greedily so no two radial labels sit closer than a line of text.
+  function updateForced() {
+    const want = [];
+    const selF = S.sel && S.sel.type === 'feature' ? S.sel.id : null;
+    if (selF) {
+      want.push(starById.get(selF));
+      BP.dependencies(selF).concat(BP.dependents(selF)).forEach((f) => want.push(starById.get(f.id)));
+    }
+    if (S.query.trim() !== '' || S.attention) stars.forEach((s) => { if (matchesFilter(s.f)) want.push(s); });
+    if (svg.classList.contains('names')) want.length = 0;
+    const shown = [];
+    const k = T.k;
+    const seen = new Set();
+    want.forEach((s) => {
+      if (!s || seen.has(s)) return;
+      seen.add(s);
+      const ok = shown.every((o) => {
+        let d = Math.abs(o.a - s.a);
+        d = Math.min(d, TAU - d);
+        return d * Math.min(o.r, s.r) * k >= 15;
+      });
+      if (ok) shown.push(s);
+    });
+    const on = new Set(shown);
+    stars.forEach((s) => s.label.classList.toggle('force', on.has(s)));
+  }
+
+  /* ── selection ── */
+  function select(type, id, opts) {
+    opts = opts || {};
+    if (!type) { S.sel = null; related = new Set(); $('deps').innerHTML = ''; closeInspector(); applyClasses(); return; }
+    S.sel = { type, id };
+    related = new Set();
+    if (type === 'feature') {
+      related.add(id);
+      BP.dependencies(id).forEach((f) => related.add(f.id));
+      BP.dependents(id).forEach((f) => related.add(f.id));
+    }
+    openInspector();
+    applyClasses();
+    drawDeps(true);
+    if (type === 'feature' && opts.fly !== false) flyToStar(starById.get(id), opts.minK);
+    if (type === 'module' && opts.fly !== false) {
+      const mg = modGeo.get(id);
+      flyToWorld(P(560, mg.am), Math.max(T.k, isPhone() ? 0.7 : 0.75));
+    }
+  }
+  /** Bundled constellation lines from the selected star to what it needs and what needs it. */
+  function drawDeps(animate) {
+    const g = $('deps');
+    if (!S.sel || S.sel.type !== 'feature') { g.innerHTML = ''; return; }
+    const s = starById.get(S.sel.id);
+    const line = d3.line().curve(d3.curveBundle.beta(0.82));
+    const route = (a, b) => {
+      const pts = [P(a.r, a.a)];
+      if (a.mid === b.mid) {
+        pts.push(P(Math.min(a.r, b.r) - 60, (a.a + b.a) / 2));
+      } else {
+        const ma = modGeo.get(a.mid), mb = modGeo.get(b.mid);
+        const same = a.did === b.did;
+        const rm = same ? G.mod[1] + 14 : G.mod[0] - 6;
+        pts.push(P(rm, ma.am));
+        if (!same) {
+          const da = domGeo.get(a.did).am;
+          let db = domGeo.get(b.did).am;
+          let d = db - da;
+          if (d > Math.PI) d -= TAU;
+          if (d < -Math.PI) d += TAU;
+          const n = Math.max(2, Math.ceil(Math.abs(d) / 0.5));
+          for (let i = 0; i <= n; i++) pts.push(P(G.core + 4, da + d * i / n));
+        }
+        pts.push(P(rm, mb.am));
+      }
+      pts.push(P(b.r, b.a));
+      return line(pts);
+    };
+    let h = '';
+    let hh = '';
+    BP.dependencies(s.f).forEach((f) => { const d = route(s, starById.get(f.id)); hh += '<path class="dep-halo" d="' + d + '"/>'; h += '<path class="dep up" d="' + d + '"/>'; });
+    BP.dependents(s.f).forEach((f) => { const d = route(starById.get(f.id), s); hh += '<path class="dep-halo" d="' + d + '"/>'; h += '<path class="dep down" d="' + d + '"/>'; });
+    g.innerHTML = hh + h;
+    g.classList.toggle('draw', !!animate && !reduced());
+    if (animate && !reduced()) g.querySelectorAll('.dep.up').forEach((p) => p.style.setProperty('--len', String(Math.ceil(p.getTotalLength()))));
+  }
+
+  /* ── events on the chart ── */
+  svg.addEventListener('click', (e) => {
+    const st = e.target.closest('.star');
+    if (st) { select('feature', st.dataset.fid); return; }
+    const mb = e.target.closest('.mod-band');
+    if (mb) { select('module', mb.dataset.mid); return; }
+    const db = e.target.closest('.dom-band');
+    if (db) { S.sel = { type: 'domain', id: db.dataset.did }; related = new Set(); $('deps').innerHTML = ''; openInspector(); applyClasses(); focusDomain(db.dataset.did); return; }
+    if (S.sel) select(null);
+  });
+  const tip = $('tip');
+  svg.addEventListener('pointermove', (e) => {
+    if (e.pointerType !== 'mouse' || svg.classList.contains('dragging')) return;
+    const st = e.target.closest('.star');
+    if (!st || (S.level >= 3 && !st.classList.contains('dim'))) { hideTip(); return; }
+    const f = BP.feature(st.dataset.fid);
+    const m = BP.module(f.moduleId);
+    const v = BP.lensValue(f, S.lens);
+    tip.innerHTML = esc(f.name) + '<span class="m">' + m.code + ' · ' + STATUS[f.status].label + ' · ' + f.priority + ' · ' + LENS_SHORT[S.lens] + ' ' + pct(v) + '</span>';
+    tip.hidden = false;
+    const W = window.innerWidth;
+    const x = Math.min(e.clientX + 14, W - tip.offsetWidth - 8);
+    tip.style.left = x + 'px';
+    tip.style.top = (e.clientY + 16) + 'px';
+  });
+  svg.addEventListener('pointerleave', hideTip);
+  function hideTip() { tip.hidden = true; }
+
+  /* ── keyboard ── */
+  document.addEventListener('keydown', (e) => {
+    const tag = (e.target.tagName || '').toLowerCase();
+    const typing = tag === 'input' || tag === 'textarea';
+    if (e.key === 'Escape') {
+      if (typing && $('q').value) { $('q').value = ''; onQuery(); return; }
+      if (typing) { e.target.blur(); $('bar').classList.remove('searching'); return; }
+      if (isPhone() && !$('legend').hidden) { toggleLegend(false); return; }
+      if (S.sel) { select(null); return; }
+      if (S.focus) { fit(); return; }
+      return;
+    }
+    if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key;
+    if (k >= '1' && k <= '4') { setLens(LENSES[+k - 1]); e.preventDefault(); }
+    else if (k === '+' || k === '=') { zoomBy(1.6); e.preventDefault(); }
+    else if (k === '-' || k === '_') { zoomBy(1 / 1.6); e.preventDefault(); }
+    else if (k === '0') { fit(); e.preventDefault(); }
+    else if (k === '/') { openSearch(); e.preventDefault(); }
+    else if (k === 't' || k === 'T') toggleTrust();
+    else if (k === 'l' || k === 'L') toggleLegend();
+    else if (k.startsWith('Arrow')) {
+      const d = 90;
+      const dx = k === 'ArrowLeft' ? d : k === 'ArrowRight' ? -d : 0;
+      const dy = k === 'ArrowUp' ? d : k === 'ArrowDown' ? -d : 0;
+      svgSel.interrupt('view').transition('view').duration(dur(180)).call(zoom.translateBy, dx / T.k, dy / T.k);
+      e.preventDefault();
+    }
+  });
+
+  /* ══ PANELS ═══════════════════════════════════════════════════════════ */
+  const LENS_HOW = {
+    overall: 'Each star is one feature. Its corona fills with the Dev, Ops and Biz scores.',
+    dev: 'Finished work is pulled in to the 100% ring. Unfinished work drifts out to the rim.',
+    ops: 'Finished work is pulled in to the 100% ring. Unfinished work drifts out to the rim.',
+    biz: 'Finished work is pulled in to the 100% ring. Unfinished work drifts out to the rim.',
+  };
+  function renderLensCaption() {
+    const l = S.lens;
+    const q = l === 'overall' ? 'What exists and how complete is it?' : DIM[l].question;
+    $('lensRow').innerHTML = '<b>' + LENS_NAME[l] + '</b> · ' + esc(q);
+    $('lenscap').innerHTML = '<b>' + LENS_NAME[l] + '</b> · ' + esc(q) + ' ' + esc(LENS_HOW[l]);
+  }
+  function renderLenses() {
+    const pr = BP.productRollup();
+    const all = '<svg class="sw-all" viewBox="-6 -6 12 12" aria-hidden="true">' +
+      DIMS.map((id) => { const [a0, a1] = SEG[id]; return '<path d="' + arcLocal(4.6, rad(a0), rad(a1)) + '" fill="none" stroke-width="2.2" style="stroke:var(--' + id + ')"/>'; }).join('') + '</svg>';
+    $('lenses').innerHTML = LENSES.map((l, i) => {
+      const v = l === 'overall' ? pr.overall : pr.dims[l];
+      const sw = l === 'overall' ? all : '<span class="sw ' + l + '"></span>';
+      return '<button class="lens" type="button" data-lens="' + l + '" aria-pressed="' + (l === S.lens) + '" aria-label="' + LENS_NAME[l] + ' lens, ' + pct(v) + ' complete (key ' + (i + 1) + ')">' + sw +
+        '<span class="lf">' + LENS_NAME[l] + '</span><span class="ls">' + LENS_SHORT[l] + '</span><span class="pc">' + pct(v) + '</span><span class="k">' + (i + 1) + '</span></button>';
+    }).join('');
+    document.querySelectorAll('.lens').forEach((b) => b.addEventListener('click', () => setLens(b.dataset.lens)));
+  }
+  function trustCounts() {
+    const t = BP.features.filter(isTrust);
+    return { all: t.length, changes: t.filter((f) => f.review === 'changes').length };
+  }
+  function renderReadout() {
+    const pr = BP.productRollup();
+    const next = BP.releases.find((r) => r.state === 'next');
+    const tc = trustCounts();
+    $('readout').innerHTML = '<div class="meta">' +
+      '<span class="lbl z">Epoch</span><span class="v z">' + ASOF + '</span>' +
+      '<span class="lbl z">Next release</span><span class="v z">' + (next ? next.label + ' <small>· ' + next.date + '</small>' : '—') + '</span>' +
+      '<span class="lbl z">Objects</span><span class="v z">' + pr.count + ' <small>features ·</small> ' + BP.modules.length + ' <small>modules ·</small> ' + BP.domains.length + ' <small>domains</small></span>' +
+      '<span class="lbl">Lens</span><span class="lensq" id="lensRow"></span></div>' +
+      '<div class="rk-btns">' +
+      '<button type="button" class="rbtn attn" id="attnBtn" aria-pressed="false" title="Show only features that need attention"><svg width="14" height="14" viewBox="-8 -8 16 16" aria-hidden="true"><path d="M0,-7L1.8,-1.8L7,0L1.8,1.8L0,7L-1.8,1.8L-7,0L-1.8,-1.8Z" style="fill:var(--alarm)"/></svg><span class="n">' + pr.attention + '</span><span class="t">Need attention</span></button>' +
+      '<button type="button" class="rbtn trust" id="trustBtn2" aria-pressed="false" title="Mark agent-built work awaiting human review"><svg width="14" height="14" viewBox="-8 -8 16 16" aria-hidden="true"><circle r="6" fill="none" stroke-width="1.4" stroke-dasharray="2.2 1.6" style="stroke:var(--trust)"/><circle r="2.4" style="fill:var(--trust)"/></svg><span class="n">' + tc.all + '</span><span class="t">Agent work to verify</span></button>' +
+      '</div>';
+    $('phoneStat').innerHTML =
+      '<button type="button" class="rbtn attn" id="attnBtnP" aria-pressed="false"><svg width="12" height="12" viewBox="-8 -8 16 16" aria-hidden="true"><path d="M0,-7L1.8,-1.8L7,0L1.8,1.8L0,7L-1.8,1.8L-7,0L-1.8,-1.8Z" style="fill:var(--alarm)"/></svg><span class="n">' + pr.attention + '</span><span class="t">Attention</span></button>' +
+      '<button type="button" class="rbtn trust" id="trustBtnP" aria-pressed="false"><svg width="12" height="12" viewBox="-8 -8 16 16" aria-hidden="true"><circle r="6" fill="none" stroke-width="1.4" stroke-dasharray="2.2 1.6" style="stroke:var(--trust)"/><circle r="2.4" style="fill:var(--trust)"/></svg><span class="n">' + tc.all + '</span><span class="t">To verify</span></button>';
+    ['attnBtn', 'attnBtnP'].forEach((id) => $(id).addEventListener('click', toggleAttention));
+    ['trustBtn2', 'trustBtnP'].forEach((id) => $(id).addEventListener('click', toggleTrust));
+  }
+  function renderChips() {
+    const pr = BP.productRollup();
+    let h = '<span class="lbl">Status · filter</span>';
+    BP.STATUS_ORDER.forEach((id) => {
+      const n = pr.byStatus[id];
+      h += '<button type="button" class="chip" data-status="' + id + '" aria-pressed="false" aria-label="' + STATUS[id].label + ': ' + n + ' features. Toggle filter">' + glyphSVG(id, 14) +
+        '<span class="t">' + STATUS[id].label + '</span><span class="n">' + n + '</span><span class="bar" style="width:' + fx(n / pr.count * 100) + '%"></span></button>';
+    });
+    h += '<button type="button" class="chip-reset" id="chipReset" hidden>Clear filters</button>';
+    $('chips').innerHTML = h;
+    $('chips').querySelectorAll('.chip').forEach((b) => b.addEventListener('click', () => {
+      const id = b.dataset.status;
+      if (S.statuses.has(id)) S.statuses.delete(id); else S.statuses.add(id);
+      syncChips();
+      applyClasses();
+    }));
+    $('chipReset').addEventListener('click', () => { S.statuses.clear(); S.attention = false; syncChips(); applyClasses(); });
+  }
+  function syncChips() {
+    $('chips').querySelectorAll('.chip').forEach((b) => b.setAttribute('aria-pressed', String(S.statuses.has(b.dataset.status))));
+    $('chipReset').hidden = !(S.statuses.size || S.attention);
+    ['attnBtn', 'attnBtnP'].forEach((id) => $(id).setAttribute('aria-pressed', String(S.attention)));
+  }
+  function toggleAttention() { S.attention = !S.attention; syncChips(); applyClasses(); }
+  function toggleTrust(on) {
+    S.trust = typeof on === 'boolean' ? on : !S.trust;
+    const tc = trustCounts();
+    $('trustbar').classList.toggle('on', S.trust);
+    $('trustbar').innerHTML = '<span class="lbl">AI trust</span><span><b>' + (tc.all - tc.changes) + '</b> agent-built awaiting review · <b class="al">' + tc.changes + '</b> changes requested</span>';
+    ['trustBtn', 'trustBtn2', 'trustBtnP'].forEach((id) => $(id).setAttribute('aria-pressed', String(S.trust)));
+    applyClasses();
+    renderLegend();
+  }
+
+  /* ── legend ── */
+  function lgRow(svgStr, html) { return '<div class="lg-row">' + svgStr + '<span>' + html + '</span></div>'; }
+  function miniStar(inner, w) { return '<svg width="' + (w || 28) + '" height="24" viewBox="-14 -12 28 24" aria-hidden="true">' + inner + '</svg>'; }
+  function renderLegend() {
+    const lg = $('legend');
+    let h = '<div class="lg-h"><span class="lbl">Legend · ' + LENS_NAME[S.lens] + ' lens</span><button class="closex" type="button" id="legendClose" aria-label="Close legend"><svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 1.5l9 9M10.5 1.5l-9 9" stroke="currentColor" stroke-width="1.5"/></svg></button></div>';
+    h += '<div class="lg-sec"><h3>Star form = lifecycle</h3><div class="lg-grid">' + BP.STATUS_ORDER.map((id) => '<div class="lg-row" title="' + esc(STATUS[id].description) + '">' + glyphSVG(id, 16) + '<span><b>' + STATUS[id].label + '</b></span></div>').join('') + '</div></div>';
+    h += '<div class="lg-sec"><h3>Star size = priority</h3>' + lgRow(miniStar(['P0', 'P1', 'P2', 'P3'].map((p, i) => '<circle class="b-live" cx="' + (-10 + i * 7) + '" r="' + fx(PR[p] * 0.55) + '"/>').join('')), 'P0 largest, P3 smallest') + '</div>';
+    if (S.lens === 'overall') {
+      const ex = { dev: 1, ops: 0.5, biz: 0.75 };
+      const cor = DIMS.map((id) => { const [a0, a1] = SEG[id]; return '<path class="ct" d="' + arcLocal(CR * 0.9, rad(a0), rad(a1)) + '"/><path class="cf ' + id + '" d="' + arcLocal(CR * 0.9, rad(a0), rad(a0 + (a1 - a0) * ex[id])) + '"/>'; }).join('');
+      h += '<div class="lg-sec"><h3>Corona = three dimensions</h3>' + lgRow(miniStar(cor + '<circle class="b-live" r="4.6"/>'), 'Arcs fill with each score: <b style="color:var(--dev)">Dev</b> on top, <b style="color:var(--ops)">Ops</b> right, <b style="color:var(--biz)">Biz</b> left') +
+        lgRow(miniStar('<circle class="fk done dev" cx="-8" r="1.8"/><circle class="fk partial dev" cx="-2" r="1.8"/><circle class="fk todo" cx="4" r="1.1"/><path class="fk blocked" d="M8.4,-1.8l3.6,3.6m0,-3.6l-3.6,3.6"/>'), 'Close up: 12 facet marks, done, partial, to do, blocked. Stems tie stars to their module.') + '</div>';
+    } else {
+      const c = 'color:var(--' + S.lens + ')';
+      const fr = [0, 90, 180, 270].map((cd, j) => { const a0 = rad(cd - 37), a1 = rad(cd + 37); return '<path class="fr track" d="' + arcLocal(8, a0, a1) + '"/>' + (j < 2 ? '<path class="fr done" d="' + arcLocal(8, a0, a1) + '"/>' : j === 2 ? '<path class="fr done" d="' + arcLocal(8, a0, (a0 + a1) / 2) + '"/>' : ''); }).join('');
+      h += '<div class="lg-sec"><h3>Gravity = distance from done</h3>' +
+        lgRow(miniStar('<path d="M-12,9V-9" style="stroke:var(--' + S.lens + ')" stroke-width="2"/><path d="M-12,4H8" style="stroke:var(--' + S.lens + ')" stroke-width="1.4"/><circle class="b-live" cx="8" cy="4" r="3"/>'), 'Finished work is pulled in to the <b>100% ring</b>; unfinished work drifts out to the <b>0% rim</b>') +
+        lgRow(miniStar('<g style="' + c + '">' + fr + '</g><circle class="b-live" r="4"/>'), DIM[S.lens].facets.map((x) => x.label).join(', ') + ' (clockwise from top)') +
+        lgRow(miniStar('<path class="hz" style="stroke:var(--' + S.lens + ');stroke-width:2" d="M-12,0A20,20 0 0 1 12,0"/>'), 'Module mean, drawn as a short arc') + '</div>';
+    }
+    h += '<div class="lg-sec"><h3>Signals</h3>' +
+      lgRow(miniStar('<circle class="b-ring" r="4"/><path class="b-half" d="M0,-3.3A3.3,3.3 0 0 0 0,3.3Z"/><path class="flare" d="' + [60, 180, 300].map((dg) => 'M' + pt(7.5, rad(dg)) + 'L' + pt(12, rad(dg))).join('') + '"/>'), '<b>Red spikes</b>: needs attention (blocked or changes requested)') +
+      lgRow(miniStar('<circle cx="-6" r="5.5" fill="none" stroke-width="1.4" stroke-dasharray="2.2 1.6" style="stroke:var(--trust)"/><circle class="b-live" cx="-6" r="2.6"/><circle cx="7" r="5.5" fill="none" stroke-width="1.4" style="stroke:var(--alarm)"/><circle class="b-live" cx="7" r="2.6"/>'), '<b>AI trust</b> halo: agent work awaiting review, red when changes are requested' + (S.trust ? '' : ' (T)')) +
+      lgRow(miniStar('<path class="dep up" style="stroke-width:1.6" d="M-13,-1C-4,-11 4,-11 13,-1"/><path class="dep down" style="stroke-width:1.6;stroke-dasharray:4 3" d="M-13,9C-4,-1 4,-1 13,9"/>'), 'Selected star: solid lines to what it <b>depends on</b>, dashed to what <b>depends on it</b>') + '</div>';
+    h += '<div class="lg-sec"><h3>Rings, inside out</h3><div class="lg-row lg-plain">Core gauges · 6 domains · 20 modules with completion arcs · bezel in degrees. Click a domain to turn it toward you.</div></div>';
+    h += '<div class="lg-sec lg-keys"><kbd>1</kbd>–<kbd>4</kbd> lens · <kbd>+</kbd> <kbd>−</kbd> zoom · <kbd>0</kbd> fit · <kbd>/</kbd> search · <kbd>T</kbd> AI trust · <kbd>L</kbd> legend · <kbd>Esc</kbd> close</div>';
+    lg.innerHTML = h;
+    $('legendClose').addEventListener('click', () => toggleLegend(false));
+  }
+  let legendWanted = false;
+  function toggleLegend(on) {
+    legendWanted = typeof on === 'boolean' ? on : $('legend').hidden;
+    syncLegend();
+  }
+  function syncLegend() {
+    const ins = !$('inspector').hidden;
+    $('legend').hidden = !legendWanted || ins;
+    $('legendBtn').setAttribute('aria-pressed', String(legendWanted && !ins));
+    $('legendBtn').setAttribute('aria-label', legendWanted ? 'Hide legend' : 'Show legend');
+  }
+
+  /* ── inspector ── */
+  function openInspector() {
+    $('inspector').hidden = false;
+    $('app').classList.add('sheet');
+    if (isPhone()) legendWanted = false;
+    syncLegend();
+    renderInspector();
+  }
+  function closeInspector() {
+    $('inspector').hidden = true;
+    $('app').classList.remove('sheet');
+    syncLegend();
+  }
+  function daysAgo(dstr) {
+    const d = (Date.parse(ASOF) - Date.parse(dstr)) / 864e5;
+    return d <= 0 ? 'today' : d === 1 ? 'yesterday' : Math.round(d) + ' days ago';
+  }
+  function facetGlyph(st, dim) {
+    const c = 'var(--' + dim + ')';
+    switch (st) {
+      case 'done': return '<svg width="12" height="12" viewBox="-6 -6 12 12" aria-hidden="true"><circle r="4.2" style="fill:' + c + '"/></svg>';
+      case 'partial': return '<svg width="12" height="12" viewBox="-6 -6 12 12" aria-hidden="true"><circle r="4" fill="none" stroke-width="1.3" style="stroke:' + c + '"/><path d="M0,-4A4,4 0 0 0 0,4Z" style="fill:' + c + '"/></svg>';
+      case 'blocked': return '<svg width="12" height="12" viewBox="-6 -6 12 12" aria-hidden="true"><path d="M-3.5,-3.5L3.5,3.5M3.5,-3.5L-3.5,3.5" stroke-width="1.6" style="stroke:var(--alarm)"/></svg>';
+      case 'na': return '<svg width="12" height="12" viewBox="-6 -6 12 12" aria-hidden="true"><path d="M-3.5,0H3.5" stroke-width="1.2" style="stroke:var(--ink-4)"/></svg>';
+      default: return '<svg width="12" height="12" viewBox="-6 -6 12 12" aria-hidden="true"><circle r="3.8" fill="none" stroke-width="1.2" style="stroke:var(--ink-4)"/></svg>';
+    }
+  }
+  function dimBlocks(scores, facetsOf) {
+    return DIMS.map((id) => {
+      const d = DIM[id];
+      const v = scores[id];
+      let h = '<div class="dimblk"><div class="dim-h"><span class="sw ' + id + '"></span><span class="nm">' + d.label + '</span><span class="q">' + esc(d.question) + '</span><span class="pc">' + pct(v) + '</span></div>' +
+        '<div class="meter"><i class="' + id + '" style="width:' + fx((v || 0) * 100) + '%"></i></div>';
+      if (facetsOf) {
+        h += '<div class="fgrid">' + d.facets.map((fc) => {
+          const st = facetsOf[id][fc.id];
+          return '<div class="frow ' + st + '">' + facetGlyph(st, id) + '<span>' + esc(fc.label) + '</span><span class="st">' + FSTATE[st].label + '</span></div>';
+        }).join('') + '</div>';
+      }
+      return h + '</div>';
+    }).join('');
+  }
+  function featureItem(f, showMod) {
+    const v = BP.lensValue(f, S.lens);
+    return '<li><button type="button" class="fitem" data-goto="' + f.id + '">' + glyphSVG(f.status, 14, f.priority) + '<span class="nm">' + esc(f.name) + '</span><span class="m">' + (showMod ? BP.module(f.moduleId).code + ' · ' : '') + pct(v) + '<span class="mini"><i style="width:' + fx((v || 0) * 100) + '%"></i></span></span></button></li>';
+  }
+  function renderInspector() {
+    if (!S.sel) return;
+    const crumb = $('insCrumb');
+    const body = $('insBody');
+    let h = '';
+    if (S.sel.type === 'feature') {
+      const f = BP.feature(S.sel.id);
+      const m = BP.module(f.moduleId);
+      const d = BP.domain(m.domainId);
+      const rel = f.release ? BP.release(f.release) : null;
+      const team = BP.team(f.owner);
+      const deps = BP.dependencies(f), dents = BP.dependents(f);
+      const scores = { dev: BP.dimScore(f, 'dev'), ops: BP.dimScore(f, 'ops'), biz: BP.dimScore(f, 'biz') };
+      crumb.innerHTML = '<button type="button" data-dom="' + d.id + '">' + esc(d.name) + '</button><span aria-hidden="true">›</span><button type="button" data-mod="' + m.id + '">' + esc(m.name) + '</button>';
+      h += '<h2>' + esc(f.name) + '</h2><div class="ins-id">' + f.id + '</div>';
+      h += '<div class="st-line"><span class="pill' + (f.status === 'blocked' ? ' alarm' : '') + '">' + glyphSVG(f.status, 13, f.priority) + STATUS[f.status].label + '</span><span class="pill mono">' + f.priority + '</span>' +
+        '<span class="pill mono">' + (rel ? rel.label + ' · ' + (rel.state === 'shipped' ? 'shipped ' : rel.state === 'next' ? 'next, ' : 'planned ') + rel.date : 'Unscheduled') + '</span>' +
+        (BP.needsAttention(f) ? '<span class="pill alarm">Needs attention</span>' : '') + '</div>';
+      h += '<p class="summary">' + esc(f.summary) + '</p>';
+      if (f.blockedReason) h += '<div class="callout alarm"><b>Blocked</b>' + esc(f.blockedReason) + '</div>';
+      if (f.note) h += '<div class="callout' + (f.review === 'changes' ? ' alarm' : '') + '"><b>' + (f.review === 'changes' ? 'Reviewer note' : 'Note') + '</b>' + esc(f.note) + '</div>';
+      const trustNote = isTrust(f) ? ' <span class="pill ' + (f.review === 'changes' ? 'alarm' : 'trust') + '" style="margin-left:4px">Verify</span>' : '';
+      h += '<dl class="facts"><dt>Owner</dt><dd>' + esc(team ? team.name : f.owner) + ' <small>· ' + (team && team.kind === 'agent' ? 'agent crew' : 'human squad') + '</small></dd>' +
+        '<dt>Built by</dt><dd>' + BUILT[f.builtBy] + '</dd>' +
+        '<dt>Review</dt><dd>' + REVIEW[f.review] + trustNote + '</dd>' +
+        '<dt>Updated</dt><dd><span class="mono">' + f.updatedAt + '</span> <small>· ' + daysAgo(f.updatedAt) + '</small></dd></dl>';
+      h += '<div class="ins-sec"><h3><span>Dimensions</span><span class="mono">overall ' + pct(BP.featureScore(f)) + '</span></h3>' + dimBlocks(scores, f.dims) + '</div>';
+      const mt = f.metrics || {};
+      const met = (v, unit) => (v == null ? '<div class="v na">not measured</div>' : '<div class="v">' + v + unit + '</div>');
+      h += '<div class="ins-sec"><h3><span>Metrics</span></h3><div class="metrics">' +
+        '<div class="metric">' + met(mt.coverage, '%') + '<div class="k">Test coverage</div></div>' +
+        '<div class="metric">' + met(mt.uptime, '%') + '<div class="k">Uptime 30d</div></div>' +
+        '<div class="metric">' + met(mt.adoption, '%') + '<div class="k">Merchants using</div></div></div></div>';
+      h += '<div class="ins-sec"><h3><span>Depends on</span><span class="mono">' + deps.length + '</span></h3>' + (deps.length ? '<ul class="flist">' + deps.map((x) => featureItem(x, true)).join('') + '</ul>' : '<div class="empty">No dependencies.</div>') + '</div>';
+      h += '<div class="ins-sec"><h3><span>Needed by</span><span class="mono">' + dents.length + '</span></h3>' + (dents.length ? '<ul class="flist">' + dents.map((x) => featureItem(x, true)).join('') + '</ul>' : '<div class="empty">Nothing depends on this yet.</div>') + '</div>';
+    } else if (S.sel.type === 'module') {
+      const m = BP.module(S.sel.id);
+      const d = BP.domain(m.domainId);
+      const r = BP.moduleRollup(m.id);
+      const team = BP.team(m.owner);
+      crumb.innerHTML = '<button type="button" data-dom="' + d.id + '">' + esc(d.name) + '</button><span aria-hidden="true">›</span><span>Module</span>';
+      h += '<h2>' + esc(m.name) + '</h2><div class="ins-id">' + m.code + ' · ' + m.id + '</div>';
+      h += '<p class="summary">' + esc(m.summary) + '</p>';
+      h += '<dl class="facts"><dt>Owner</dt><dd>' + esc(team ? team.name : m.owner) + '</dd><dt>Surfaces</dt><dd><span class="surf">' + m.surfaces.map((x) => '<span class="pill mono">' + x + '</span>').join('') + '</span></dd>' +
+        '<dt>Attention</dt><dd>' + (r.attention ? '<span style="color:var(--alarm)">' + r.attention + ' need attention</span>' : 'None') + '</dd></dl>';
+      h += '<div class="ins-sec"><h3><span>Rollup</span><span class="mono">overall ' + pct(r.overall) + '</span></h3>' + dimBlocks(r.dims, null) + '</div>';
+      h += '<div class="ins-sec"><h3><span>Status</span><span class="mono">' + r.count + ' features</span></h3><div class="stcounts">' + BP.STATUS_ORDER.filter((id) => r.byStatus[id]).map((id) => '<span class="pill">' + glyphSVG(id, 13) + STATUS[id].label + ' <span class="mono">' + r.byStatus[id] + '</span></span>').join('') + '</div></div>';
+      h += '<div class="ins-sec"><h3><span>Features</span><span class="mono">' + LENS_SHORT[S.lens] + ' score</span></h3><ul class="flist">' + BP.featuresOf(m.id).map((x) => featureItem(x, false)).join('') + '</ul></div>';
+    } else {
+      const d = BP.domain(S.sel.id);
+      const r = BP.domainRollup(d.id);
+      crumb.innerHTML = '<span>Domain</span><span aria-hidden="true">·</span><span>' + d.code + '</span>';
+      h += '<h2>' + esc(d.name) + '</h2><div class="ins-id">' + r.count + ' features · ' + BP.modulesOf(d.id).length + ' modules</div>';
+      h += '<p class="summary">' + esc(d.summary) + '</p>';
+      h += '<div class="ins-sec"><h3><span>Rollup</span><span class="mono">overall ' + pct(r.overall) + '</span></h3>' + dimBlocks(r.dims, null) + '</div>';
+      h += '<div class="ins-sec"><h3><span>Modules</span><span class="mono">' + LENS_SHORT[S.lens] + ' score</span></h3><ul class="flist">' + BP.modulesOf(d.id).map((m) => {
+        const mr = BP.moduleRollup(m.id);
+        const v = lensRollup(mr);
+        return '<li><button type="button" class="fitem" data-gotomod="' + m.id + '"><span class="mono" style="font-size:10px;color:var(--ink-3)">' + m.code + '</span><span class="nm">' + esc(m.name) + (mr.attention ? ' <span style="color:var(--alarm)" class="mono">✦' + mr.attention + '</span>' : '') + '</span><span class="m">' + pct(v) + '<span class="mini"><i style="width:' + fx(v * 100) + '%"></i></span></span></button></li>';
+      }).join('') + '</ul></div>';
+    }
+    body.innerHTML = h;
+    body.scrollTop = 0;
+  }
+  $('insBody').addEventListener('click', (e) => {
+    const g = e.target.closest('[data-goto]');
+    if (g) { select('feature', g.dataset.goto); return; }
+    const gm = e.target.closest('[data-gotomod]');
+    if (gm) select('module', gm.dataset.gotomod);
+  });
+  $('insCrumb').addEventListener('click', (e) => {
+    const m = e.target.closest('[data-mod]');
+    if (m) { select('module', m.dataset.mod); return; }
+    const d = e.target.closest('[data-dom]');
+    if (d) { S.sel = { type: 'domain', id: d.dataset.dom }; related = new Set(); $('deps').innerHTML = ''; openInspector(); applyClasses(); focusDomain(d.dataset.dom); }
+  });
+  $('insClose').addEventListener('click', () => select(null));
+
+  /* ── readout (pointing) ── */
+  function queueReadout() {
+    if (frameQueued) return;
+    frameQueued = true;
+    requestAnimationFrame(() => { frameQueued = false; updateReadout(); });
+  }
+  const LV_NAME = ['Far field', 'Sky', 'Constellation', 'Star'];
+  function updateReadout() {
+    const v = viewRect();
+    const wx = (v.cx - T.x) / T.k, wy = (v.cy - T.y) / T.k;
+    const p = rotate([wx, wy], -S.rot);
+    const r = Math.hypot(p[0], p[1]);
+    const a = norm(Math.atan2(p[0], -p[1]));
+    let where = 'Core';
+    if (r > G.core && r < 1000) {
+      let hit = null;
+      modGeo.forEach((mg) => { if (a >= mg.a0 - SLOT / 2 && a <= mg.a1 + SLOT / 2) hit = mg; });
+      if (hit) where = BP.domain(hit.did).code + ' › ' + hit.m.code;
+      else where = 'Open sky';
+    } else if (r >= 1000) where = 'Beyond the rim';
+    $('magRd').textContent = 'MAG ×' + (T.k / fitK).toFixed(2) + ' · ' + LV_NAME[S.level < 0 ? 1 : S.level].toUpperCase();
+    $('brgRd').textContent = 'BRG ' + (r > G.core ? deg(a).toFixed(1).padStart(5, '0') : '---.-') + '° · ' + where.toUpperCase();
+  }
+
+  /* ── theme ── */
+  const THEMES = ['system', 'light', 'dark'];
+  const THEME_ICON = {
+    system: '<svg width="16" height="16" viewBox="-8 -8 16 16" aria-hidden="true"><circle r="6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M0,-6A6,6 0 0 1 0,6Z" fill="currentColor"/></svg>',
+    light: '<svg width="16" height="16" viewBox="-8 -8 16 16" aria-hidden="true"><circle r="3.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M0,-7v2M0,5v2M-7,0h2M5,0h2M-4.9,-4.9l1.4,1.4M3.5,3.5l1.4,1.4M-4.9,4.9l1.4,-1.4M3.5,-3.5l1.4,-1.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>',
+    dark: '<svg width="16" height="16" viewBox="-8 -8 16 16" aria-hidden="true"><path d="M2.5,-6.2A6.5,6.5 0 1 0 6.3,2.4A5,5 0 0 1 2.5,-6.2Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>',
+  };
+  function applyTheme(t) {
+    S.theme = t;
+    if (t === 'system') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', t);
+    $('themeBtn').innerHTML = THEME_ICON[t];
+    $('themeBtn').setAttribute('aria-label', 'Theme: ' + t + '. Switch theme');
+    $('themeBtn').title = 'Theme: ' + t;
+    try { localStorage.setItem('orbit.theme', t); } catch (e) { /* storage unavailable */ }
+  }
+  $('themeBtn').addEventListener('click', () => applyTheme(THEMES[(THEMES.indexOf(S.theme) + 1) % 3]));
+
+  /* ── wiring ── */
+  function openSearch() { $('bar').classList.add('searching'); $('q').focus(); $('q').select(); }
+  $('searchBtn').addEventListener('click', openSearch);
+  $('q').addEventListener('input', onQuery);
+  $('q').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const list = S.query.trim() ? matchList() : [];
+    if (!list.length) return;
+    S.hitIdx = (S.hitIdx + 1) % list.length;
+    select('feature', list[S.hitIdx].f.id, { minK: 1.15 });
+    if (isPhone()) $('q').blur();
+  });
+  $('qclear').addEventListener('click', () => { $('q').value = ''; onQuery(); $('bar').classList.remove('searching'); });
+  $('q').addEventListener('blur', () => { if (!$('q').value) $('bar').classList.remove('searching'); });
+  $('trustBtn').addEventListener('click', () => toggleTrust());
+  $('legendBtn').addEventListener('click', () => {
+    if (!$('inspector').hidden && isPhone()) select(null);
+    toggleLegend(!legendWanted || !$('legend').hidden ? !legendWanted : true);
+  });
+  $('zoomIn').addEventListener('click', () => zoomBy(1.6));
+  $('zoomOut').addEventListener('click', () => zoomBy(1 / 1.6));
+  $('zoomFit').addEventListener('click', () => fit());
+  $('fullsky').addEventListener('click', () => { if (S.sel && S.sel.type === 'domain') select(null); fit(); });
+  /** Keeps floating phone rows tucked under the (wrapping) top bar. */
+  function layoutChrome() {
+    $('app').style.setProperty('--bar-h', Math.round($('bar').getBoundingClientRect().bottom + 6) + 'px');
+  }
+  let rz = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(rz);
+    rz = setTimeout(() => {
+      renderLenses();
+      layoutChrome();
+      if (S.atFit) fit(0); else { fitK = fitTransform().k; apply(); }
+    }, 60);
+  });
+
+  /* ══ BOOT ═════════════════════════════════════════════════════════════ */
+  let savedTheme = 'system';
+  try { savedTheme = localStorage.getItem('orbit.theme') || 'system'; } catch (e) { /* storage unavailable */ }
+  applyTheme(THEMES.includes(savedTheme) ? savedTheme : 'system');
+  renderStatic();
+  renderLenses();
+  renderReadout();
+  renderLensCaption();
+  renderChips();
+  updateModuleArcs();
+  layoutChrome();
+  const t0 = fitTransform();
+  // open the legend at start only where it fits beside the chart without covering it
+  legendWanted = !isPhone() && (window.innerWidth - 2 * t0.k * G.fit) / 2 >= 300;
+  renderLegend();
+  syncLegend();
+  fitK = t0.k;
+  svgSel.call(zoom.transform, t0);
+  apply();
+  updateArcLabels(true);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { readFonts(); updateArcLabels(true); });
+
+  // Small hook for scripted walkthroughs and screenshots.
+  window.ORBIT = {
+    select: (id) => select('feature', id),
+    module: (id) => select('module', id),
+    domain: (id) => { S.sel = { type: 'domain', id }; openInspector(); applyClasses(); focusDomain(id); },
+    lens: setLens,
+    fit: () => fit(0),
+    zoomTo: (k, r, aDeg) => flyToWorld(P(r || 0, rad(aDeg || 0)), k, 0),
+    trust: (on) => toggleTrust(on !== false),
+    state: () => ({ lens: S.lens, k: T.k, level: S.level, sel: S.sel, rot: S.rot }),
+  };
+})();
+</script>
+</body>
+</html>
