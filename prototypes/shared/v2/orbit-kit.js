@@ -6,7 +6,7 @@
 
   const BP = window.BP;
   if (!BP) throw new Error('orbit-kit.js: window.BP is missing. Load blueprint-data.js and blueprint-model.js first.');
-  const OK = { version: '0.2.0' };
+  const OK = { version: '0.2.1' };
 
   // ══ helpers ═══════════════════════════════════════════════════════════════════════════════════
   const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -467,6 +467,13 @@
     let fitReady = false;
     let pageObserver = null;
     let inspTop = 0; // the inspector's scroll offset, tracked from scroll events so it is never read synchronously
+    let selSrc = null; // who causes the next select when the kit does: 'inspector' | 'page' | 'search' | 'kit' (else 'variant')
+    // Variant keys appended to the legend's key line: [['F', 'Focus branch'], ['[ ]', 'Previous / next gate']].
+    const variantKeys = asList(o.keys).filter((k) => Array.isArray(k) && k.length > 1 && k[0] != null && k[1] != null);
+    const productRef = () => ({ type: 'product', id: String(product.id || 'product') });
+    // Token values and the shell size, cached by the fit pass (mount, font load, the frame after a resize, the phone
+    // breakpoint), so the inspector hints and freeRectHint() never read layout.
+    const M = { w: 0, h: 0, phone: false, barH: 56, filterH: 46, inspW: 392, legendW: 300, sheet: 0.62 };
 
     document.documentElement.classList.add('ok-app');
     root.classList.add('ok-root');
@@ -688,17 +695,36 @@
       h += '<section class="ok-lg-sec"><h3>Signals</h3>' + row(html.attention(14), '<b>Needs attention</b>: blocked, critical in any lens, or changes requested') +
         row(svg.icon('goal', 15), '<b>Initiatives</b> fade everything outside them. Nothing moves, so the map stays learnable.') + '</section>';
       if (typeof o.legend === 'function') { try { h += o.legend(S) || ''; } catch (e) { console.error(e); } }
-      h += '<section class="ok-lg-sec ok-lg-keys"><span class="ok-kbd">1</span>–<span class="ok-kbd">8</span> lens · <span class="ok-kbd">V</span> map or timeline · <span class="ok-kbd">/</span> search · <span class="ok-kbd">G</span> gates · <span class="ok-kbd">A</span> attention · <span class="ok-kbd">L</span> legend · <span class="ok-kbd">Enter</span> feature page · <span class="ok-kbd">Esc</span> close</section>';
+      h += '<section class="ok-lg-sec ok-lg-keys"><span class="ok-kbd">1</span>–<span class="ok-kbd">8</span> lens · <span class="ok-kbd">V</span> map or timeline · <span class="ok-kbd">/</span> search · <span class="ok-kbd">G</span> gates · <span class="ok-kbd">A</span> attention · <span class="ok-kbd">L</span> legend · <span class="ok-kbd">Enter</span> feature page · <span class="ok-kbd">Esc</span> close' +
+        variantKeys.map((k) => ' · ' + keysHTML(k[0]) + ' ' + esc(keyWords(k[1]))).join('') + '</section>';
       return h;
     }
+    /** '[ ]' or ['[', ']'] → one key cap per key, side by side. */
+    function keysHTML(keys) {
+      return (Array.isArray(keys) ? keys : String(keys).trim().split(/\s+/)).filter((k) => k !== '').map((k) => '<span class="ok-kbd">' + esc(k) + '</span>').join(' ');
+    }
+    /** The kit's key line is lower case ("map or timeline"): 'Focus branch' reads 'focus branch', 'UX lens' stays. */
+    function keyWords(text) {
+      const s = String(text);
+      return /^[A-Z][a-z]/.test(s) ? s.charAt(0).toLowerCase() + s.slice(1) : s;
+    }
     function renderLegend() { if (legendOpen) el.legend.innerHTML = legendHTML(true); }
+    function setLegendOpen(on) {
+      if (on === legendOpen) return;
+      legendOpen = on;
+      el.legend.hidden = !on;
+      if (on) renderLegend();
+      el.legendBtn.setAttribute('aria-pressed', String(on));
+      el.legendBtn.setAttribute('aria-label', on ? 'Hide legend' : 'Show legend');
+      shellEl.classList.toggle('ok-has-legend', on);
+      emit('legend', { open: on, width: on ? M.legendW : 0 });
+    }
     function toggleLegend(on) {
+      // Phones have no legend panel: the legend lives in the modal "Theme and legend" sheet (no class, no event).
       if (isPhone()) { openSheet('menu'); return; }
-      legendOpen = typeof on === 'boolean' ? on : !legendOpen;
-      el.legend.hidden = !legendOpen;
-      if (legendOpen) renderLegend();
-      el.legendBtn.setAttribute('aria-pressed', String(legendOpen));
-      el.legendBtn.setAttribute('aria-label', legendOpen ? 'Hide legend' : 'Show legend');
+      const want = typeof on === 'boolean' ? on : !legendOpen;
+      if (want === legendOpen) { if (want) renderLegend(); return; } // toggle(true) on an open legend re-renders it
+      setLegendOpen(want);
     }
 
     // ── phone sheets ────────────────────────────────────────────────────────────────────────────
@@ -786,11 +812,24 @@
       filterChanged('clear');
     }
     function select(ref) {
+      const source = selSrc || 'variant';
+      selSrc = null; // consumed here, so a listener's own select() during the emit reads 'variant'
+      if (ref && ref.type === 'product' && !ref.id) ref = productRef();
       const next = ref && ref.type && ref.id ? { type: ref.type, id: ref.id } : null;
       const same = (S.selection && next && S.selection.type === next.type && S.selection.id === next.id) || (!S.selection && !next);
       S.selection = next;
       if (!next && inspCurrent && inspCurrent.kind !== 'custom') closeInspector(true);
-      if (!same) emit('select', next);
+      // The payload is a copy of the selection plus who caused it; state.selection stays { type, id }.
+      if (!same) emit('select', next ? { type: next.type, id: next.id, source } : null);
+    }
+    /** Runs fn (a peek or inspect) as a select caused by the kit, labelled `src` in the select payload. */
+    function selectBy(src, fn) {
+      selSrc = src;
+      try { fn(); } finally { selSrc = null; }
+    }
+    /** Where a clicked data-ok-* element lives decides the select source. Read it before the click closes anything. */
+    function srcOf(t) {
+      return el.insp.contains(t) ? 'inspector' : el.page.contains(t) ? 'page' : el.stage.contains(t) ? 'variant' : 'kit';
     }
 
     // ── inspector ───────────────────────────────────────────────────────────────────────────────
@@ -819,9 +858,13 @@
       if (!silent && cur && cur.kind !== 'custom' && S.selection) { S.selection = null; emit('select', null); }
       emit('inspector', inspPayload(false));
     }
-    /** The 'inspector' event payload. `rect` is measured only when a listener reads it (it forces a layout). */
+    /**
+     * The 'inspector' event payload. `rect` is measured only when a listener reads it (it forces a layout).
+     * `width` (side panel px on desktop) and `sheet` (fraction of the shell height the phone sheet covers) come from
+     * the cached tokens, never from layout, and are 0 when the panel is closed or in the other layout.
+     */
     function inspPayload(open) {
-      return { open, get rect() { return freeRect(); } };
+      return { open, width: open && !M.phone ? M.inspW : 0, sheet: open && M.phone ? M.sheet : 0, get rect() { return freeRect(); } };
     }
     function rerenderInspector() {
       // Same panel, new lens: the content is replaced in place and keeps its scroll offset.
@@ -892,6 +935,7 @@
     function renderNode(ref, keepScroll) {
       if (ref.type === 'release') return renderRelease(ref.id, keepScroll);
       if (ref.type === 'feature') return renderPeek(ref.id, keepScroll);
+      if (ref.type === 'product') return renderProduct(keepScroll);
       const info = nodeInfo(ref);
       if (!info || !info.node) return;
       const lens = S.lens;
@@ -925,9 +969,55 @@
         ref: { type: 'release', id: rel.id }, keepScroll,
       }, 'node');
     }
+    // Features that need attention, most urgent first (blocked, then changes requested, then critical in a lens),
+    // otherwise in blueprint order. The data never changes, so it is computed once.
+    let attnList = null;
+    function attentionFeatures() {
+      if (attnList) return attnList;
+      const rank = (f) => (f.status === 'blocked' ? 0 : asList(BP.gates(f)).some((g) => g.kind === 'changes') ? 1 : 2);
+      attnList = BP.features.filter((f) => BP.needsAttention(f)).map((f, i) => ({ f, i, r: rank(f) })).sort((a, b) => a.r - b.r || a.i - b.i).map((x) => x.f);
+      return attnList;
+    }
+    /** The standard product inspector: the root node, composed like the area, domain and module ones. */
+    function renderProduct(keepScroll) {
+      const ref = productRef();
+      const lens = S.lens;
+      const r = BP.productRating(lens);
+      const roll = BP.productRollup();
+      const feats = BP.features;
+      const g = roll.gates || {};
+      const gateN = (g.triage || 0) + (g.approval || 0) + (g.changes || 0);
+      const worst = asList(r.worst).map(featureOf).filter(Boolean);
+      const attn = attentionFeatures();
+      const tagline = product.tagline ? String(product.tagline) : '';
+      let body = tagline ? '<p class="ok-summary">' + esc(tagline + (/[.!?]$/.test(tagline) ? '' : '.')) + '</p>' : '';
+      body += '<section class="ok-sec" style="margin-top:16px"><h3 class="ok-sec__h"><span>' + esc(LENS[lens].label) + ' lens</span><span class="ok-mono">' + r.applicable + ' rated</span></h3>' + html.rating({ band: r.band, score: r.score, headline: LENS[lens].question }, { size: 'lg' }) + '</section>';
+      body += '<section class="ok-sec"><h3 class="ok-sec__h"><span>Status</span></h3>' + blocks.statusBar(roll) + '</section>';
+      if (gateN) body += '<section class="ok-sec"><h3 class="ok-sec__h"><span>Waiting for a human</span><span class="ok-mono">' + gateN + '</span></h3>' + blocks.gates(feats, { limit: 8 }) + '</section>';
+      body += '<section class="ok-sec"><h3 class="ok-sec__h"><span>Every lens</span></h3>' + blocks.ratingTable(ref, { lens }) + '</section>';
+      body += '<section class="ok-sec"><h3 class="ok-sec__h"><span>Areas</span><span class="ok-mono">' + BP.areas.length + '</span></h3><ul class="ok-flist">' + BP.areas.map((a) => {
+        const ar = BP.areaRating(a.id, lens);
+        const aroll = BP.areaRollup(a.id);
+        const doms = BP.domains.filter((d) => d.areaId === a.id).length;
+        return '<li><button type="button" class="ok-frow" data-ok-inspect="area:' + esc(a.id) + '" title="' + esc('Inspect ' + a.name) + '">' + html.jewel(lens, ar.band, 16) +
+          '<span class="ok-frow__name">' + esc(a.name) + '<span class="ok-frow__sub">' + plural(doms, 'domain') + ' · ' + plural(aroll.count || 0, 'feature') + (aroll.attention ? ' · ' + aroll.attention + ' need attention' : '') + '</span></span>' +
+          '<span class="ok-frow__end" title="' + esc(LENS[lens].label + ': ' + (ar.band === 'na' ? 'not applicable' : BAND[ar.band].label + ', ' + fmt.score(ar.score))) + '">' + (ar.band === 'na' ? 'n/a' : fmt.score(ar.score)) + '</span></button></li>';
+      }).join('') + '</ul></section>';
+      if (worst.length && r.band !== 'good') body += '<section class="ok-sec"><h3 class="ok-sec__h"><span>Weakest in ' + esc(LENS[lens].label) + '</span></h3>' + blocks.featureList(worst, { lens, path: true }) + '</section>';
+      body += '<section class="ok-sec"><h3 class="ok-sec__h"><span>Needs attention</span><span class="ok-mono">' + attn.length + '</span></h3>' + blocks.featureList(attn, { lens, path: true, limit: attn.length || 1, empty: 'Nothing needs attention.' }) + '</section>';
+      openInspector({
+        kicker: crumbHTML([{ label: 'Product' }]),
+        title: esc(product.name),
+        subtitle: html.rating(r, { size: 'sm', label: LENS[lens].label }) + '<span class="ok-chip ok-chip--plain">' + plural(feats.length, 'feature') + '</span>' +
+          (product.version ? '<span class="ok-chip ok-chip--mono" title="Live version, then the next release">v' + esc(product.version) + (product.nextVersion ? ' → ' + esc(product.nextVersion) : '') + '</span>' : '') +
+          (roll.attention ? '<span class="ok-chip ok-chip--alarm">' + html.attention(11) + roll.attention + ' need attention</span>' : ''),
+        body, ref, keepScroll,
+      }, 'node');
+    }
     function inspect(ref) {
       if (!ref) return;
       if (ref.type === 'feature') return peek(ref.id);
+      if (ref.type === 'product') ref = productRef();
       select(ref);
       renderNode(ref);
     }
@@ -1228,6 +1318,31 @@
       }
       return { x: 0, y: 0, w: Math.max(0, Math.round(w)), h: Math.max(0, Math.round(h)) };
     }
+    // The side inspector sits 12px from the shell's right edge (CSS), and freeRect() keeps 10px clear of it.
+    const INSP_EDGE = 12, INSP_GAP = 10;
+    /** freeRect() estimated from the cached shell size and tokens: no getBoundingClientRect, no layout read. */
+    function freeRectHint() {
+      const top = M.barH + M.filterH;
+      let w = M.w, h = M.h - top;
+      if (!el.insp.hidden) {
+        if (M.phone) h = Math.min(h, M.h * (1 - M.sheet) - top);
+        else w = Math.min(w, M.w - INSP_EDGE - M.inspW - INSP_GAP);
+      }
+      return { x: 0, y: 0, w: Math.max(0, Math.round(w)), h: Math.max(0, Math.round(h)) };
+    }
+    /** Caches the metric tokens and the shell size. Runs only inside the fit pass, which measures layout anyway. */
+    function readMetrics() {
+      const cs = getComputedStyle(shellEl);
+      const num = (name, def) => { const v = parseFloat(cs.getPropertyValue(name)); return isFinite(v) ? v : def; };
+      M.barH = num('--ok-bar-h', M.barH);
+      M.filterH = num('--ok-filter-h', M.filterH);
+      M.inspW = num('--ok-insp-w', M.inspW);
+      M.legendW = num('--ok-legend-w', M.legendW);
+      M.sheet = clamp(num('--ok-insp-sheet', M.sheet), 0, 1);
+      M.w = shellEl.clientWidth;
+      M.h = shellEl.clientHeight;
+      M.phone = isPhone();
+    }
 
     // ── fitting: choose the fewest compactions that make the top bar and the filter rail fit ─────
     const TOP_ALL = ['short', 'narrow', 'compact', 'viewicon', 'searchicon', 'tworow'];
@@ -1253,6 +1368,7 @@
       const before = shellEl.classList.contains('ok-fit-tworow');
       fitTop();
       fitFilters();
+      readMetrics();
       if (before !== shellEl.classList.contains('ok-fit-tworow')) emit('inspector', inspPayload(!el.insp.hidden));
       syncLensBar();
     }
@@ -1263,20 +1379,30 @@
 
     // ── theme ───────────────────────────────────────────────────────────────────────────────────
     const isDark = () => S.theme === 'dark' || (S.theme === 'auto' && DARK_MQ.matches);
-    function applyTheme(t, quiet) {
+    /** external: the page already shows `t` because someone else set <html data-theme>; do not write it back or save it. */
+    function applyTheme(t, quiet, external) {
       if (!THEMES.includes(t)) t = 'light';
-      S.theme = t;
-      document.documentElement.setAttribute('data-theme', t);
+      S.theme = t; // set before the attribute, so the theme observer below sees its own write as no change
+      if (!external) document.documentElement.setAttribute('data-theme', t);
       const next = THEMES[(THEMES.indexOf(t) + 1) % THEMES.length];
       el.themeBtn.innerHTML = svg.icon(t, 16);
       el.themeBtn.setAttribute('aria-label', 'Theme: ' + THEME_LABEL[t] + '. Switch to ' + THEME_LABEL[next]);
       el.themeBtn.title = 'Theme: ' + THEME_LABEL[t] + ' (next: ' + THEME_LABEL[next] + ')';
-      try { localStorage.setItem(THEME_KEY, t); } catch (e) { /* storage unavailable */ }
+      if (!external) { try { localStorage.setItem(THEME_KEY, t); } catch (e) { /* storage unavailable */ } }
       if (sheet === 'menu') renderSheet();
       if (!quiet) emit('theme', { theme: t, dark: isDark() });
     }
     const onSchemeChange = () => { if (S.theme === 'auto') emit('theme', { theme: 'auto', dark: isDark() }); };
     if (DARK_MQ.addEventListener) DARK_MQ.addEventListener('change', onSchemeChange);
+    // Someone outside the shell (a screenshot harness, the console) set or removed <html data-theme>: follow it.
+    // Removed or unknown values render the light palette, so they read as 'light'. The kit's own writes always
+    // match S.theme by the time this runs, so they never emit twice, and this never writes the attribute (no loop).
+    function onThemeAttr() {
+      const a = document.documentElement.getAttribute('data-theme');
+      const t = THEMES.includes(a) ? a : 'light';
+      if (t !== S.theme) applyTheme(t, false, true);
+    }
+    let themeObserver = null;
 
     // ── events ──────────────────────────────────────────────────────────────────────────────────
     function onClick(e) {
@@ -1300,21 +1426,22 @@
       else if (t.hasAttribute('data-ok-close')) {
         const w = a('data-ok-close');
         if (w === 'insp') closeInspector(); else if (w === 'legend') toggleLegend(false); else if (w === 'sheet') closeSheet(); else if (w === 'page') closeFeature();
-      } else if (t.hasAttribute('data-ok-sr')) { const id = a('data-ok-sr'); closeSearch(true); peek(id); emit('locate', { type: 'feature', id, featureId: id }); }
-      else if (t.hasAttribute('data-ok-peek')) { const id = a('data-ok-peek'); if (S.page) closeFeature(); peek(id); emit('locate', { type: 'feature', id, featureId: id }); }
+      } else if (t.hasAttribute('data-ok-sr')) { const id = a('data-ok-sr'); closeSearch(true); selectBy('search', () => peek(id)); emit('locate', { type: 'feature', id, featureId: id }); }
+      else if (t.hasAttribute('data-ok-peek')) { const id = a('data-ok-peek'); const src = srcOf(t); if (S.page) closeFeature(); selectBy(src, () => peek(id)); emit('locate', { type: 'feature', id, featureId: id }); }
       else if (t.hasAttribute('data-ok-open')) openFeature(a('data-ok-open'), a('data-ok-tab') || 'overview');
       else if (t.hasAttribute('data-ok-inspect')) {
         const [type, ...rest] = a('data-ok-inspect').split(':');
-        const id = rest.join(':');
+        const ref = type === 'product' ? productRef() : { type, id: rest.join(':') }; // "product" or "product:"
+        const src = srcOf(t);
         if (S.page) closeFeature();
         if (S.view !== 'map') setView('map');
-        inspect({ type, id });
-        emit('locate', { type, id });
+        selectBy(src, () => inspect(ref));
+        emit('locate', { type: ref.type, id: ref.id });
       } else if (t.hasAttribute('data-ok-locate')) {
         const id = a('data-ok-locate');
         closeFeature();
         setView('map');
-        peek(id);
+        selectBy('page', () => peek(id));
         emit('locate', { type: 'feature', id, featureId: id });
       } else if (t.hasAttribute('data-ok-tab-btn')) setTab(a('data-ok-tab-btn'));
       else if (t.hasAttribute('data-ok-approve')) { local.branch.set(a('data-ok-approve'), { state: 'approved' }); rerenderPagePanel('work'); announce('Approved. Not saved in this prototype.'); }
@@ -1380,7 +1507,7 @@
         if (S.query !== el.q.value) setQuery(el.q.value);
         const list = el.sr.querySelectorAll('[data-ok-sr]');
         const pick = list[srIndex >= 0 ? srIndex : 0];
-        if (pick) { const id = pick.getAttribute('data-ok-sr'); closeSearch(true); el.q.blur(); peek(id); emit('locate', { type: 'feature', id, featureId: id }); }
+        if (pick) { const id = pick.getAttribute('data-ok-sr'); closeSearch(true); el.q.blur(); selectBy('search', () => peek(id)); emit('locate', { type: 'feature', id, featureId: id }); }
       } else if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
@@ -1400,7 +1527,7 @@
       if (iniOpen) { toggleIni(false); const b = el.fFull.querySelector('[data-ok-ini-toggle]'); if (b) b.focus(); return true; }
       if (sheet) { closeSheet(); return true; }
       if (S.page) { closeFeature(); return true; }
-      if (legendOpen) { toggleLegend(false); return true; }
+      if (legendOpen) { setLegendOpen(false); return true; }
       if (!el.insp.hidden) { closeInspector(); return true; }
       if (S.selection) { select(null); return true; }
       return false;
@@ -1427,7 +1554,7 @@
     function onPhoneChange() {
       fitAll();
       if (!isPhone()) closeSheet();
-      if (isPhone() && legendOpen) { legendOpen = false; el.legend.hidden = true; }
+      if (isPhone() && legendOpen) setLegendOpen(false); // the panel closes on phones (class off, legend {open: false})
       syncLensBar();
       emit('inspector', inspPayload(!el.insp.hidden));
     }
@@ -1438,6 +1565,7 @@
       window.removeEventListener('resize', onResize);
       if (PHONE_MQ.removeEventListener) PHONE_MQ.removeEventListener('change', onPhoneChange);
       if (DARK_MQ.removeEventListener) DARK_MQ.removeEventListener('change', onSchemeChange);
+      if (themeObserver) { themeObserver.disconnect(); themeObserver = null; } // also drops any queued records
       if (pageObserver) pageObserver.disconnect();
       Object.keys(listeners).forEach((k) => { listeners[k] = []; });
       document.documentElement.classList.remove('ok-app');
@@ -1450,6 +1578,10 @@
     let saved = null;
     try { saved = localStorage.getItem(THEME_KEY); } catch (e) { /* storage unavailable */ }
     applyTheme(THEMES.includes(saved) ? saved : 'light', true);
+    if (typeof MutationObserver === 'function') {
+      themeObserver = new MutationObserver(onThemeAttr);
+      themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    }
     currentLens = S.lens;
     recompute();
     syncLensBar();
@@ -1468,8 +1600,8 @@
       setStatuses(list) { S.statuses = new Set(asList(list)); filterChanged('statuses'); },
       setQuery, setInitiative, setGates: (k) => { S.gates = k || null; filterChanged('gates'); }, setAttention: (on) => { S.attention = !!on; filterChanged('attention'); }, clearFilters,
       inspector: { open: (spec) => openInspector(spec || {}, 'custom'), close: () => closeInspector(), isOpen: () => !el.insp.hidden },
-      legend: { toggle: toggleLegend, refresh: renderLegend },
-      freeRect, isPhone, isDark, setTheme: (t) => applyTheme(t), announce, destroy,
+      legend: { toggle: toggleLegend, refresh: renderLegend, isOpen: () => legendOpen },
+      freeRect, freeRectHint, isPhone, isDark, setTheme: (t) => applyTheme(t), announce, destroy,
     };
     OK.shell = shell;
     return shell;

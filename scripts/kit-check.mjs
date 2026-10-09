@@ -6,7 +6,8 @@
 // Drives the mounted shell (OK.shell) through the real data: every primitive on every feature, every block on
 // every node, every lens, every filter, every inspector, and the feature page of every feature in all three
 // tabs, with the page's own event listeners attached, so a variant's repaint code runs too. It also checks
-// the declarative data-ok-* hooks and the gate decisions. Prints the timings and exits 1 when anything throws,
+// the declarative data-ok-* hooks, the gate decisions and the round 2 polish hooks (product inspector, select
+// source, legend state, layout-free inspector hints, external theme changes). Prints the timings and exits 1 when anything throws,
 // logs an error, or a lens change, a filter change or a feature page (95th percentile) takes longer than its budget.
 import { chromium } from 'playwright';
 import path from 'node:path';
@@ -44,7 +45,7 @@ const r = await page.evaluate(async () => {
   const time = (fn) => { const t0 = performance.now(); try { fn(); } catch (e) { fail('call', e); } return performance.now() - t0; };
   const sh = window.OK && window.OK.shell;
   if (!sh) { out.fails.push('OK.shell is not mounted'); return out; }
-  ['lens', 'view', 'filter', 'select', 'locate', 'theme', 'feature-open', 'feature-close', 'inspector'].forEach((ev) => sh.on(ev, () => { out.events[ev] = (out.events[ev] || 0) + 1; }));
+  ['lens', 'view', 'filter', 'select', 'locate', 'theme', 'feature-open', 'feature-close', 'inspector', 'legend'].forEach((ev) => sh.on(ev, () => { out.events[ev] = (out.events[ev] || 0) + 1; }));
   const BP = window.BP, OK = window.OK;
 
   // Primitives and blocks.
@@ -128,8 +129,107 @@ const r = await page.evaluate(async () => {
   host.remove();
   sh.setLens('overall'); sh.select(null);
   sh.setView('timeline'); sh.setView('map');
-  sh.setTheme('dark'); sh.setTheme('light');
-  sh.legend.toggle(true); sh.legend.toggle(false);
+
+  // Product inspector (API and markup) and the select payload's source.
+  const sels = [];
+  const offSel = sh.on('select', (p) => sels.push(p));
+  const lastSel = () => sels[sels.length - 1];
+  out.t.productInspect = time(() => sh.inspect({ type: 'product' }));
+  if (!sh.state.selection || sh.state.selection.type !== 'product' || !sh.state.selection.id) fail('inspect product', JSON.stringify(sh.state.selection));
+  if (!sh.inspector.isOpen() || !document.querySelector('.ok-insp .ok-rtable') || !document.querySelector('.ok-insp .ok-gsum')) fail('inspect product', 'standard product inspector not shown');
+  if (!lastSel() || lastSel().type !== 'product' || lastSel().source !== 'variant') fail('select source, API', JSON.stringify(lastSel()));
+  if ('source' in sh.state.selection) fail('state.selection', 'must stay { type, id }');
+  out.t.lensWithProductInspector = time(() => sh.setLens('dev'));
+  if (!document.querySelector('.ok-insp .ok-rtable tr.is-current [data-ok-setlens="dev"]')) fail('product inspector', 'not re-rendered for the lens');
+  sh.setLens('overall');
+  sh.select(null);
+  if (sh.inspector.isOpen()) fail('select(null)', 'product inspector still open');
+  const host2 = document.createElement('div');
+  host2.innerHTML = '<button data-ok-inspect="product"></button><button data-ok-inspect="product:"></button>';
+  sh.mapEl.appendChild(host2);
+  for (const b of Array.from(host2.children)) {
+    b.click();
+    if (!sh.state.selection || sh.state.selection.type !== 'product') fail(b.outerHTML, JSON.stringify(sh.state.selection));
+    else if (!lastSel() || lastSel().source !== 'variant') fail(b.outerHTML + ' source', JSON.stringify(lastSel()));
+    sh.select(null);
+  }
+  host2.remove();
+  sh.inspect({ type: 'area', id: BP.areas[0].id });
+  const inspRow = document.querySelector('.ok-insp [data-ok-peek]');
+  if (!inspRow) fail('area inspector', 'no feature row');
+  else { inspRow.click(); if (!lastSel() || lastSel().type !== 'feature' || lastSel().source !== 'inspector') fail('select source, inspector row', JSON.stringify(lastSel())); }
+  sh.select(null);
+  sh.openFeature(BP.features[4].id);
+  click('.ok-page .ok-crumb [data-ok-inspect^="module:"]');
+  if (!lastSel() || lastSel().type !== 'module' || lastSel().source !== 'page') fail('select source, feature page breadcrumb', JSON.stringify(lastSel()));
+  sh.select(null);
+  sh.setQuery('checkout');
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true }));
+  const sr = document.querySelector('.ok-search__results [data-ok-sr]');
+  if (!sr) fail('search', 'no result rows');
+  else { sr.click(); if (!lastSel() || lastSel().source !== 'search') fail('select source, search', JSON.stringify(lastSel())); }
+  sh.setQuery('');
+  sh.select(null);
+  offSel();
+
+  // Layout-free inspector hints: the event's width/sheet and freeRectHint() against the measured freeRect().
+  const phone = sh.isPhone();
+  const tok = (n) => parseFloat(getComputedStyle(sh.root).getPropertyValue(n));
+  const ins = [];
+  const offIns = sh.on('inspector', (p) => ins.push({ open: p.open, width: p.width, sheet: p.sheet }));
+  if (sh.inspector.isOpen()) sh.inspector.close();
+  await frame();
+  const near = (a, b) => Math.abs(a.w - b.w) <= 2 && Math.abs(a.h - b.h) <= 2;
+  let hint = sh.freeRectHint(), real = sh.freeRect();
+  if (!near(hint, real)) fail('freeRectHint, closed', JSON.stringify({ hint, real }));
+  sh.peek(BP.features[5].id);
+  await frame();
+  hint = sh.freeRectHint(); real = sh.freeRect();
+  if (!near(hint, real)) fail('freeRectHint, open', JSON.stringify({ hint, real }));
+  const pOpen = ins[ins.length - 1];
+  const wantOpen = phone ? { width: 0, sheet: tok('--ok-insp-sheet') } : { width: tok('--ok-insp-w'), sheet: 0 };
+  if (!pOpen || !pOpen.open || pOpen.width !== wantOpen.width || pOpen.sheet !== wantOpen.sheet) fail('inspector payload, open', JSON.stringify({ got: pOpen, want: wantOpen }));
+  sh.select(null);
+  const pClosed = ins[ins.length - 1];
+  if (!pClosed || pClosed.open || pClosed.width !== 0 || pClosed.sheet !== 0) fail('inspector payload, closed', JSON.stringify(pClosed));
+  out.freeRectHint = { open: hint, measured: real };
+  offIns();
+
+  // Legend state hook: class and event on desktop; phones use the modal menu sheet (no class, no event).
+  const lg = [];
+  const offLg = sh.on('legend', (p) => lg.push(p));
+  sh.legend.toggle(true);
+  if (phone) { if (sh.root.classList.contains('ok-has-legend') || lg.length) fail('legend on a phone', JSON.stringify(lg)); }
+  else {
+    if (!sh.root.classList.contains('ok-has-legend') || !sh.legend.isOpen()) fail('legend open', 'no ok-has-legend');
+    if (!lg[0] || lg[0].open !== true || lg[0].width !== tok('--ok-legend-w')) fail('legend event, open', JSON.stringify(lg[0]));
+  }
+  sh.legend.toggle(false);
+  if (!phone && (sh.root.classList.contains('ok-has-legend') || !lg[1] || lg[1].open !== false || lg.length !== 2)) fail('legend event, closed', JSON.stringify(lg));
+  offLg();
+
+  // External theme changes: <html data-theme> set or removed outside the shell; the kit's own setTheme emits once.
+  if (sh.state.theme !== 'light') { sh.setTheme('light'); await frame(); }
+  const th = [];
+  const offTh = sh.on('theme', (p) => th.push(p.theme + (p.dark ? '/dark' : '/light')));
+  let stored0 = null;
+  try { stored0 = localStorage.getItem('orbit-kit.theme'); } catch (e) { /* storage unavailable */ }
+  document.documentElement.setAttribute('data-theme', 'dark');
+  await frame();
+  if (sh.state.theme !== 'dark' || !sh.isDark() || th.join() !== 'dark/dark') fail('external theme, set dark', sh.state.theme + ' ' + th.join());
+  document.documentElement.removeAttribute('data-theme');
+  await frame();
+  if (sh.state.theme !== 'light' || sh.isDark() || th.join() !== 'dark/dark,light/light') fail('external theme, removed', sh.state.theme + ' ' + th.join());
+  let stored1 = null;
+  try { stored1 = localStorage.getItem('orbit-kit.theme'); } catch (e) { /* storage unavailable */ }
+  if (stored1 !== stored0) fail('external theme', 'was saved to localStorage');
+  sh.setTheme('dark');
+  await frame();
+  sh.setTheme('light');
+  await frame(); await frame();
+  if (th.join() !== 'dark/dark,light/light,dark/dark,light/light') fail('setTheme must emit once per call', th.join());
+  if (document.documentElement.getAttribute('data-theme') !== 'light') fail('setTheme', 'did not write data-theme');
+  offTh();
   out.domNodes = document.getElementsByTagName('*').length;
   return out;
 });
@@ -141,6 +241,8 @@ console.log(`  lens switch       max ${ms(r.t.lensMax)}  (budget ${BUDGET.lens} 
 console.log(`  filter change     max ${ms(r.t.filterMax)}  (${r.t.filterSlowest}; budget ${BUDGET.filter} ms)`);
 console.log(`  lens, inspector   ${ms(r.t.lensWithAreaInspector)} with an area inspector open`);
 console.log(`  peek / inspect    ${ms(r.t.peekAvg)} / ${ms(r.t.inspectAvg)} average`);
+console.log(`  product inspector ${ms(r.t.productInspect)}, lens switch with it open ${ms(r.t.lensWithProductInspector)}`);
+if (r.freeRectHint) console.log(`  free rect, open   hint ${r.freeRectHint.open.w}x${r.freeRectHint.open.h} · measured ${r.freeRectHint.measured.w}x${r.freeRectHint.measured.h}`);
 console.log(`  feature page      median ${ms(r.t.pageMedian)}, 95th percentile ${ms(r.t.pageP95)} (budget ${BUDGET.page} ms), max ${ms(r.t.pageMax)}`);
 console.log(`  events            ${Object.entries(r.events || {}).map(([k, v]) => k + ' ' + v).join(' · ')}`);
 console.log(`  DOM               ${r.domNodes} elements`);

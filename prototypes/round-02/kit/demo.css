@@ -1,8 +1,13 @@
 /* Kit demo only: the plain "list map" and timeline that exercise the Orbit kit. Variants replace these. */
 .kd-scroll { position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain; padding: 22px var(--ok-gut) 48px; }
 .ok-has-insp .kd-scroll { padding-right: calc(var(--ok-insp-w) + 28px); }
+/* the legend panel floats over the right edge too: its width is the --ok-legend-w token (no layout reads) */
+.ok-has-legend .kd-scroll { padding-right: calc(var(--ok-legend-w) + 28px); }
+.ok-has-insp.ok-has-legend .kd-scroll { padding-right: calc(var(--ok-insp-w) + var(--ok-legend-w) + 38px); }
 .kd-plate { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 18px; font-size: 12.5px; color: var(--ok-ink-3); }
 .kd-plate b { font: 500 10.5px var(--ok-f-label); letter-spacing: 0.18em; text-transform: uppercase; color: var(--ok-ink-2); }
+.kd-prod { align-self: center; }
+.kd-prod.is-sel { border-color: var(--ok-ink); box-shadow: 0 0 0 1px var(--ok-ink); }
 
 .kd-area + .kd-area { margin-top: 30px; }
 .kd-area__head { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; }
@@ -66,7 +71,7 @@
 .kd-today i { align-self: center; height: 1px; background: var(--ok-ink); opacity: 0.5; }
 
 @media (max-width: 760px) {
-  .ok-has-insp .kd-scroll { padding-right: var(--ok-gut); padding-bottom: 60vh; }
+  .ok-has-insp .kd-scroll { padding-right: var(--ok-gut); padding-bottom: calc(var(--ok-insp-sheet) * 100vh); }
   .kd-scroll { padding-top: 16px; }
   .kd-doms { grid-template-columns: minmax(0, 1fr); }
   .kd-rel, .kd-today { grid-template-columns: minmax(0, 1fr); }

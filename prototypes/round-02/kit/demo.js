@@ -8,6 +8,7 @@
   const app = document.getElementById('app');
   const baseTitle = document.title;
   let shell = null;
+  let teardown = null; // removes the demo's own document listeners when the route changes
 
   // ══ kit demo ══════════════════════════════════════════════════════════════════════════════════
   function bootDemo() {
@@ -18,6 +19,8 @@
       legend: () => '<section class="ok-lg-sec"><h3>This demo</h3><div class="ok-lg-row">' +
         '<svg width="26" height="16" viewBox="0 0 26 16" aria-hidden="true"><rect x="1" y="2" width="24" height="12" rx="6" fill="var(--ok-good-soft)" stroke="var(--ok-good)"/></svg>' +
         '<span>Each chip is a feature, tinted by its band in the current lens. Fixed order: filters only fade chips.</span></div></section>',
+      // The demo's own keys, appended to the kit's key line in the legend (handled in onDemoKey below).
+      keys: [['P', 'Product inspector'], ['[ ]', 'Previous / next area']],
     });
     const chipById = new Map();
 
@@ -33,7 +36,9 @@
     }
     function renderMap() {
       const pr = BP.productRollup();
-      let h = '<div class="kd-scroll" id="kd-map-scroll"><p class="kd-plate"><b>List map</b><span>Kit test surface: every feature in fixed blueprint order. Click a chip to peek, double-click or press Enter to open its page; headers open the inspector.</span></p>';
+      let h = '<div class="kd-scroll" id="kd-map-scroll"><p class="kd-plate"><b>List map</b><span>Kit test surface: every feature in fixed blueprint order. Click a chip to peek, double-click or press Enter to open its page; headers open the inspector.</span>' +
+        // the declarative product hook: the kit opens its standard product inspector on click
+        '<button type="button" class="ok-btn ok-btn--sm kd-prod" data-ok-inspect="product" title="Inspect the whole product (P)">' + OK.svg.mark(15) + 'Inspect product</button></p>';
       BP.areas.forEach((a) => {
         const ar = BP.areaRollup(a.id);
         h += '<section class="kd-area" aria-label="' + esc(a.name) + '"><div class="kd-area__head"><button type="button" class="kd-area__name" data-node="area:' + esc(a.id) + '">' + esc(a.name) + '</button><span class="kd-area__rule" aria-hidden="true"></span>' +
@@ -76,9 +81,9 @@
     }
     function paintSelection() {
       const sel = shell.state.selection;
-      shell.root.querySelectorAll('.is-sel').forEach((x) => { if (x.classList.contains('kd-chip') || x.classList.contains('kd-mod') || x.classList.contains('kd-dom') || x.classList.contains('kd-rel')) x.classList.remove('is-sel'); });
+      shell.root.querySelectorAll('.is-sel').forEach((x) => { if (x.classList.contains('kd-chip') || x.classList.contains('kd-mod') || x.classList.contains('kd-dom') || x.classList.contains('kd-rel') || x.classList.contains('kd-prod')) x.classList.remove('is-sel'); });
       if (!sel) return;
-      const node = sel.type === 'feature' ? chipById.get(sel.id) : sel.type === 'module' ? shell.mapEl.querySelector('[data-mod="' + sel.id + '"]') : sel.type === 'domain' ? shell.mapEl.querySelector('[data-dom="' + sel.id + '"]') : sel.type === 'release' ? shell.timelineEl.querySelector('[data-rel="' + sel.id + '"]') : null;
+      const node = sel.type === 'feature' ? chipById.get(sel.id) : sel.type === 'module' ? shell.mapEl.querySelector('[data-mod="' + sel.id + '"]') : sel.type === 'domain' ? shell.mapEl.querySelector('[data-dom="' + sel.id + '"]') : sel.type === 'release' ? shell.timelineEl.querySelector('[data-rel="' + sel.id + '"]') : sel.type === 'product' ? shell.mapEl.querySelector('.kd-prod') : null;
       if (node) node.classList.add('is-sel');
     }
     function locate(ref) {
@@ -149,16 +154,41 @@
       if (b) shell.inspect({ type: 'release', id: b.getAttribute('data-rel-open') });
     });
 
+    // ── demo keys (listed in the legend through the `keys` option) ───────────────────────────────
+    const AREA_IDS = BP.areas.map((a) => a.id);
+    function onDemoKey(e) {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target;
+      if (t && t.matches && t.matches('input, textarea, select, [contenteditable="true"]')) return;
+      if (shell.state.page) return;
+      if (e.key === 'p' || e.key === 'P') { shell.inspect({ type: 'product' }); e.preventDefault(); }
+      else if (e.key === '[' || e.key === ']') {
+        const sel = shell.state.selection;
+        const i = sel && sel.type === 'area' ? AREA_IDS.indexOf(sel.id) : -1;
+        const n = AREA_IDS.length;
+        const id = AREA_IDS[e.key === ']' ? (i + 1) % n : i <= 0 ? n - 1 : i - 1];
+        if (shell.state.view !== 'map') shell.setView('map');
+        shell.inspect({ type: 'area', id });
+        locate({ type: 'area', id });
+        e.preventDefault();
+      }
+    }
+    document.addEventListener('keydown', onDemoKey);
+    teardown = () => document.removeEventListener('keydown', onDemoKey);
+
     // ── shell events ────────────────────────────────────────────────────────────────────────────
+    // `source` says who caused a select: 'variant' (this page's clicks and API calls), or 'inspector', 'page',
+    // 'search' or 'kit' when the kit did it. The demo keeps the last one for its screenshot checks.
+    let lastSelect = null;
     shell.on('lens', paintLens);
     shell.on('filter', paintMarks);
-    shell.on('select', paintSelection);
+    shell.on('select', (p) => { lastSelect = p; paintSelection(); });
     shell.on('locate', (ref) => locate(ref));
     shell.on('view', (v) => { if (v.view === 'timeline' && !shell.timelineEl.firstChild) renderTimeline(); });
 
     renderMap();
     renderTimeline();
-    window.KD = { shell, inspectModule };
+    window.KD = { shell, inspectModule, get lastSelect() { return lastSelect; } };
   }
 
   // ══ #styleguide: tokens and primitives, light and dark side by side ══════════════════════════════
@@ -229,6 +259,7 @@
   function route() {
     const want = location.hash === '#styleguide' ? 'styleguide' : 'demo';
     if (want === mode) return;
+    if (teardown) { teardown(); teardown = null; }
     if (shell) { shell.destroy(); shell = null; }
     app.innerHTML = '';
     mode = want;

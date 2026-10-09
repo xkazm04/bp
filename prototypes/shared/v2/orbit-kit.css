@@ -58,6 +58,8 @@
   --ok-bar-h: 56px;
   --ok-filter-h: 46px;
   --ok-insp-w: 392px;
+  --ok-insp-sheet: 0.62; /* phones: the inspector sheet covers this fraction of the shell height */
+  --ok-legend-w: 300px;
   --ok-gut: 16px;
   color-scheme: light;
 }
@@ -511,7 +513,7 @@ html.ok-app, html.ok-app body { height: 100%; overflow: hidden; }
 .ok-statepill--future { border-style: dashed; }
 
 /* legend */
-.ok-legend { position: absolute; z-index: 36; top: calc(var(--ok-stage-top) + 10px); right: 12px; width: 300px; max-height: calc(100% - var(--ok-stage-top) - 24px); overflow-y: auto; border-radius: 8px; padding: 12px 16px 14px; }
+.ok-legend { position: absolute; z-index: 36; top: calc(var(--ok-stage-top) + 10px); right: 12px; width: var(--ok-legend-w); max-height: calc(100% - var(--ok-stage-top) - 24px); overflow-y: auto; border-radius: 8px; padding: 12px 16px 14px; }
 .ok-shell.ok-has-insp .ok-legend { right: calc(var(--ok-insp-w) + 22px); }
 .ok-lg-head { display: flex; justify-content: space-between; align-items: center; margin: -2px -6px 4px 0; }
 .ok-lg-head .ok-cap { color: var(--ok-ink-3); }
@@ -866,7 +868,7 @@ html.ok-app, html.ok-app body { height: 100%; overflow: hidden; }
   .ok-readout__q { display: none; }
   .ok-bandcounts { gap: 7px; }
   .ok-insp, .ok-legend { left: 0; right: 0; top: auto; bottom: 0; width: auto; border-radius: 14px 14px 0 0; }
-  .ok-insp { height: 62%; }
+  .ok-insp { height: calc(var(--ok-insp-sheet) * 100%); }
   .ok-shell.ok-has-insp .ok-legend { right: 0; }
   .ok-legend { max-height: 72%; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
   .ok-insp__top { position: relative; padding-top: 16px; }

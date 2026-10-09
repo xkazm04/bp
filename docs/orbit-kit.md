@@ -9,7 +9,7 @@ Every round 2 variant uses the same visual identity and the same app shell. Each
 | `prototypes/shared/v2/orbit-kit.js` | `window.OK`: the shell, state, primitives, inspector, legend, and full-page feature detail |
 | `prototypes/round-02/kit/index.html` | Kit demo and test page: the shell with a plain list "map" and a release list, plus the `#styleguide` route (tokens and primitives in both themes side by side) |
 | `prototypes/round-02/kit/demo.js`, `demo.css` | The demo's list map and timeline: the reference wiring a variant copies, then replaces with its own shapes |
-| `scripts/kit-check.mjs` | `npm run kit-check -- <page.html>`: drives a mounted shell through all 491 features (every primitive, block, lens, filter, inspector and feature page tab, with the page's own listeners) and fails on errors or slow changes |
+| `scripts/kit-check.mjs` | `npm run kit-check -- <page.html>`: drives a mounted shell through all 491 features (every primitive, block, lens, filter, inspector and feature page tab, with the page's own listeners), checks the hooks (declarative markup, product inspector, select sources, legend state, inspector hints against `freeRect()`, external theme changes) and fails on errors or slow changes |
 | `scripts/scenarios/round-02-kit.json` | Screenshot scenarios for `scripts/shoot.mjs`: 1920, 1440, 1280 and 820 px in light and dark, the 390 px phone in both themes, and the styleguide (164 shots). Copy it for a variant and swap the `.kd-*` selectors for the variant's own |
 
 Pages load, in this order: the Google Fonts stylesheet for **Jost** (300–600) and **DM Mono** (400, 500),
@@ -39,6 +39,12 @@ inside try/catch. Screenshot scenarios can start in dark with `"storage": { "orb
 always writes the choice to `<html data-theme>` (including `light`). The classes `.ok-theme-light` and `.ok-theme-dark`
 apply either palette to one subtree regardless of the page theme (the styleguide uses them for its side-by-side columns).
 
+When something outside the shell sets or removes `data-theme` on `<html>` (the screenshot harness's `theme` step, the
+console), one `MutationObserver` in the shell follows it: `state.theme` and `isDark()` update, the toggle shows the new
+theme, and the shell emits the same `theme` event `{ theme, dark }` as its own toggle. A removed or unknown value renders
+the light palette, so it reads as `light`. An outside change is not a user choice: the shell neither saves it to
+`localStorage` nor writes the attribute back (so nothing loops), and its own `setTheme` still emits exactly once.
+
 ```css
 :root { /* every token: light values */ color-scheme: light; }
 :root[data-theme="dark"] { /* dark values */ color-scheme: dark; }
@@ -62,8 +68,10 @@ body { background: var(--ok-paper); color: var(--ok-ink); }
 - Also: `--ok-on-ink` (text and glyphs on an ink-filled control) and `--ok-scrim` (behind phone sheets).
 - Fonts: `--ok-f-label` (Jost), `--ok-f-body` (Jost), `--ok-f-mono` (DM Mono).
 - Metrics: `--ok-bar-h` (56px, 102px when the lens dial wraps to its own row, 98px on phones), `--ok-filter-h` (46px),
-  `--ok-insp-w` (392px, 344px under 1200px), `--ok-gut` (16px side gutter, 12px on phones). They are set on `.ok-shell`,
-  so variants read them there.
+  `--ok-insp-w` (392px, 344px under 1200px), `--ok-insp-sheet` (0.62: the fraction of the shell height the phone
+  inspector sheet covers), `--ok-legend-w` (300px, the legend panel's fixed width), `--ok-gut` (16px side gutter, 12px
+  on phones). They are set on `.ok-shell`, so variants read them there. The shell caches them (with its own size) in
+  its fit pass, which is where the inspector hints and `freeRectHint()` come from.
 
 The `#styleguide` route of the kit demo shows every token with its resolved value in both themes.
 
@@ -95,12 +103,28 @@ The `#styleguide` route of the kit demo shows every token with its resolved valu
   - A short lens readout on the right: the lens name and question, and the band counts for the current lens.
 - **Stage**: two absolutely positioned containers, `mapEl` and `timelineEl`. The variant renders into them, and only
   the active view is visible.
-- **Inspector**: a floating side panel on desktop (`--ok-insp-w`) and a bottom sheet on phones. Three kinds:
-  the standard **feature peek** (`shell.peek`), the standard **node inspector** for an area, domain, module or release
-  (`shell.inspect`), and a **custom** panel (`shell.inspector.open`).
+- **Inspector**: a floating side panel on desktop (`--ok-insp-w`, 12px from the right edge) and a bottom sheet on
+  phones (`--ok-insp-sheet` of the height). Three kinds: the standard **feature peek** (`shell.peek`), the standard
+  **node inspector** for the product, an area, domain, module or release (`shell.inspect`), and a **custom** panel
+  (`shell.inspector.open`).
+  - The **product inspector** (`inspect({ type: 'product' })`) is composed like the area, domain and module ones: the
+    current lens rating, the product status bar, "Waiting for a human" (counts per gate kind and the longest waits),
+    the 8-lens rating table, the five areas (each opens its inspector), the weakest features in the current lens, and
+    every feature that needs attention (blocked first, then changes requested, then critical in a lens). It re-renders on
+    a lens switch like the others. Its selection is `{ type: 'product', id: BP.product.id }`. The kit never links to it
+    on its own (the area breadcrumb's product name stays plain text): a variant opts in with the call or the markup.
 - **Full-page feature detail**: an overlay over the whole shell (see below).
 - **Legend**: a panel with the kit's standard sections (status glyphs, rating bands, gates, attention, initiatives)
-  plus the variant's own sections.
+  plus the variant's own sections, and a key line that ends with the variant's own keys (the `keys` option).
+  - It floats at the top right of the stage, `--ok-legend-w` (300px) wide, 12px from the right edge, or just left of
+    the inspector while that is open (`right: calc(var(--ok-insp-w) + 22px)`). Its height follows its content (up to
+    the stage height), so move floating controls sideways out from under it, not down.
+  - While it is open `.ok-shell` has `ok-has-legend`, and every open or close emits `legend { open, width }`.
+  - **Phones** have no legend panel. `L`, the menu button and `legend.toggle()` open the "Theme and legend" sheet: a
+    modal bottom sheet up to 82% of the height, with a scrim over the whole shell (top bar, stage and inspector) that
+    closes it on tap. Nothing behind it can be used while it is open, so there is nothing to move: `ok-has-legend` is
+    never set and no `legend` event fires. If the window narrows to a phone with the panel open, the panel closes and
+    `legend { open: false }` fires.
 - **Phone (≤ 760px)**:
   - A compact top bar with product, view switch, search icon and menu (the menu sheet holds the theme switch and the legend).
   - The lens bar as a horizontally scrolling pill row with the active pill kept in view.
@@ -110,7 +134,8 @@ The `#styleguide` route of the kit demo shows every token with its resolved valu
 
 Keys: `1`–`8` lens · `V` toggles Map / Timeline · `/` search · `G` human gates · `A` attention · `L` legend ·
 `Enter` opens the feature page for the selection · `Esc` closes the topmost panel (search, initiatives, sheet, feature
-page, legend, inspector), then deselects. Keys are ignored while typing. On the feature page the tabs follow the ARIA
+page, legend, inspector), then deselects. A variant lists its own keys after these in the legend with the `keys` option
+(it still handles them itself). Keys are ignored while typing. On the feature page the tabs follow the ARIA
 tabs pattern (arrow keys, Home, End). Focus is visible everywhere (`--ok-focus`), opening the feature page moves focus to
 its title, and closing it returns focus to where it was. Status changes are announced through a polite live region.
 `prefers-reduced-motion` turns off kit transitions and animations.
@@ -122,6 +147,11 @@ const shell = OK.mount({
   root,                         // container element (the page's #app); the kit sizes it
   variant: 'Orbit Plan',        // shown under the product name
   legend: (state) => html,      // variant legend sections (optional): '<section class="ok-lg-sec"><h3>…</h3>…</section>'
+  keys: [['F', 'Focus branch'], ['[ ]', 'Previous / next gate']],
+                                // optional: appended to the legend's key line in the kit's style. A key string shows one
+                                // key cap per space-separated key ('[ ]' is two caps); for a key whose name has a space,
+                                // pass an array of names (['Page Up'] is one cap). A leading capital is lower-cased to
+                                // match the line ('focus branch'); acronyms stay ('UX lens'). Without it nothing changes.
 });
 shell.mapEl, shell.timelineEl   // containers the variant fills (position: absolute; inset: 0); only the active view is visible
 shell.stageEl, shell.root       // the stage that holds both, and the .ok-shell element
@@ -130,13 +160,25 @@ shell.state                     // live object, read only: { lens, view, statuse
                                 //   theme: 'light'|'dark'|'auto', page: { id, tab } | null }
 shell.on(event, fn)             // fn(payload, state); returns an unsubscribe function. Events and payloads:
                                 //   'lens' { lens } · 'view' { view } · 'filter' { what, active, shown } (what: statuses|query|initiative|gates|attention|clear)
-                                //   'select' ref|null · 'locate' { type, id, featureId? } (bring it into view) · 'theme' { theme, dark }
-                                //   'feature-open' { featureId, tab } · 'feature-close' { featureId } · 'inspector' { open, rect }
-                                //   (rect is a getter for freeRect(): reading it measures layout, so read it only when you need it)
+                                //   'select' { type, id, source } | null · 'locate' { type, id, featureId? } (bring it into view)
+                                //   'theme' { theme, dark } (also when <html data-theme> changes from outside)
+                                //   'feature-open' { featureId, tab } · 'feature-close' { featureId }
+                                //   'inspector' { open, width, sheet, rect } · 'legend' { open, width }
+                                //   select.source: who caused it. 'variant' for the page's own calls (select, peek, inspect)
+                                //     and for data-ok-* markup inside the stage; the kit's own: 'inspector' (rows, breadcrumbs
+                                //     and custom-panel markup in the inspector), 'page' (the feature page: breadcrumb,
+                                //     Show on map), 'search' (a search result), 'kit' (other kit chrome, such as legend markup).
+                                //     A deselect is still null. The payload is a copy: state.selection stays { type, id }.
+                                //   inspector.width: px of the side panel on desktop (the --ok-insp-w token), 0 on phones or
+                                //     when closed. inspector.sheet: the fraction of the shell height the phone sheet covers
+                                //     (--ok-insp-sheet, 0.62), 0 on desktop or when closed. Both are cached token values.
+                                //   inspector.rect is a getter for freeRect(): reading it measures layout, so read it only when you need it.
+                                //   legend.width: px of the legend panel (--ok-legend-w) while open, else 0. Desktop and tablet only.
 shell.setLens(id); shell.setView('map'|'timeline')
 shell.select(ref|null)          // marks the selection (no panel); select(null) also closes the standard inspector
 shell.peek(featureId)           // selects the feature and opens the standard feature peek, with an "Open feature page" button
-shell.inspect({ type, id })     // standard inspector for 'area'|'domain'|'module'|'release' (a 'feature' ref peeks)
+shell.inspect({ type, id })     // standard inspector for 'product'|'area'|'domain'|'module'|'release' (a 'feature' ref peeks);
+                                // { type: 'product' } needs no id (the selection gets BP.product.id)
 shell.isDimmed(featureOrId)     // true when filters, search, initiative or gates exclude it (fade it, never move it)
 shell.isHit(featureOrId)        // search match (for a highlight ring)
 shell.filterActive(); shell.shownCount(); shell.dimmedIds(); shell.hitIds()   // the last two are Sets of feature ids
@@ -145,8 +187,11 @@ shell.openFeature(featureId, tab?)   // tab: 'overview' (default) | 'work' | 'le
 shell.closeFeature()
 shell.inspector.open({ kicker, title, subtitle, body, footer, onClose })   // html strings; custom panel
 shell.inspector.close(); shell.inspector.isOpen()
-shell.legend.toggle(on?); shell.legend.refresh()
-shell.freeRect()                // { x, y, w, h } of the stage area not covered by the inspector or sheet, in stage px
+shell.legend.toggle(on?); shell.legend.refresh(); shell.legend.isOpen()   // isOpen: the desktop panel (false on phones)
+shell.freeRect()                // { x, y, w, h } of the stage area not covered by the inspector or sheet, in stage px (measures layout)
+shell.freeRectHint()            // the same rect estimated from the cached shell size and tokens: no layout read, safe in any
+                                // handler. It matches freeRect() (kit-check compares them) once the fit pass has run (mount,
+                                // font load, the frame after a resize). Neither one subtracts the legend (see ok-has-legend).
 shell.isPhone(); shell.isDark(); shell.setTheme('light'|'dark'|'auto'); shell.announce(text); shell.destroy()
 OK.shell                        // the mounted shell
 ```
@@ -159,8 +204,16 @@ layout (see **Performance** below).
 **Declarative hooks.** Inside the shell, any element with these attributes is handled by the kit on click, so blocks
 and variant markup need no wiring: `data-ok-peek="<featureId>"` (peek and emit `locate`), `data-ok-open="<featureId>"`
 (feature page; add `data-ok-tab="work"` to open a tab), `data-ok-inspect="<type>:<id>"` (standard inspector and
-`locate`), `data-ok-setlens="<lensId>"`. **CSS hooks** on `.ok-shell`: `[data-ok-lens]`, `[data-ok-view]`, and the
-classes `ok-filtering`, `ok-has-insp`, `ok-page-open`.
+`locate`; `data-ok-inspect="product"` or `"product:"` opens the product inspector and emits `locate { type: 'product', id }`,
+meaning "show the whole map"), `data-ok-setlens="<lensId>"`. **CSS hooks** on `.ok-shell`: `[data-ok-lens]`,
+`[data-ok-view]`, and the classes `ok-filtering`, `ok-has-insp`, `ok-has-legend`, `ok-page-open`. For example, a zoom
+control at the right edge:
+
+```css
+.ok-has-insp .my-zoom { right: calc(var(--ok-insp-w) + 26px); }
+.ok-has-legend .my-zoom { right: calc(var(--ok-legend-w) + 26px); }
+.ok-has-insp.ok-has-legend .my-zoom { right: calc(var(--ok-insp-w) + var(--ok-legend-w) + 36px); }
+```
 
 Primitives (pure functions that return markup strings):
 
@@ -250,8 +303,9 @@ the browser's style, layout and paint, which grows with the variant's DOM. To ke
 - **No transitions on hundreds of elements.** An opacity fade on every feature gives each one its own compositor layer
   for every frame of the fade, which doubled the cost of a filter change in the demo. Fade a few elements, or none.
 - **No layout reads in event handlers.** `getBoundingClientRect`, `offsetWidth` or `scrollTop` right after a change
-  forces a synchronous layout of the whole page. Read the inspector `rect` only when you need it, and measure in
-  `requestAnimationFrame` (the kit does this itself).
+  forces a synchronous layout of the whole page. Use the `inspector` event's `width` and `sheet`, or
+  `shell.freeRectHint()`, which come from cached tokens; read the inspector `rect` (or `freeRect()`) only when you need
+  the measured value, and then in `requestAnimationFrame` (the kit does this itself).
 - **No `backdrop-filter`** over the map.
 - **Check it:** `npm run kit-check -- prototypes/round-02/<variant>/index.html` (add `--width 390 --height 844` for the
   phone layout) fails when a lens switch passes 40 ms, a filter change 60 ms or a feature page 60 ms of script (95th
@@ -259,3 +313,13 @@ the browser's style, layout and paint, which grows with the variant's DOM. To ke
   `npm run shoot -- <page> --scenarios scripts/scenarios/round-02-kit.json` (adapted to the variant's selectors) for
   the five viewports in both themes.
 
+## Planned for round 3
+
+All four canvas variants re-implemented the glyph geometry and resolved the colour tokens themselves. Round 3 moves
+both into the kit; neither exists yet, so do not call them in round 2.
+
+- **`OK.canvas` painters**: canvas twins of the `OK.svg` glyphs (`status`, `band`, `corona`, `jewel`, `gate`,
+  `attention`, `releaseKind`, `actor`, `result`), each `(ctx, x, y, r, …)` with the same geometry as its SVG twin
+  (the same arcs, pies, dash patterns, stroke widths and astroid), so a canvas map and an SVG legend always match.
+- **`OK.tokens()`**: the resolved token colours for the current theme (`{ paper, ink, good, …, dark }`), read once per
+  theme change instead of each variant calling `getComputedStyle` itself, and refreshed with the `theme` event.
