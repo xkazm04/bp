@@ -8,7 +8,7 @@ export interface PatternSpec { kind: PatternKind; size: number; color: string; l
 export interface Theme {
   mode: 'dark' | 'light';
   paper: string; ink: string; inkHi: string; ink2: string; ink3: string; ink4: string; line: string; grid: string;
-  halo: string; accent: string; mint: string; amber: string; red: string; red2: string; delta: string;
+  halo: string; accent: string; mint: string; amber: string; amberText: string; mintText: string; red: string; red2: string; delta: string;
   glyphEdge: string; labelBg: string; tileBase: string; poche: string; chipBg: string; onInk: string; panel: string;
   inkRGB: RGB;
   /** Ink at alpha `a` (cached string). */
@@ -86,6 +86,17 @@ export function readTheme(res: number): ThemeHandle {
   const inkCache = new Map<number, string>();
   const anyCache = new Map<string, string>();
   const pats = new Patterns(res);
+  // Text-grade status colours: --amber-2/--mint-2 when the CSS defines them, else dark = the mark colour and
+  // light = the mark colour mixed 30% toward ink (marks keep 3:1, text needs 4.5:1).
+  const textGrade = (name: string, mark: string) => {
+    const t = v(name, '');
+    if (t) return t;
+    if (mode === 'dark') return mark;
+    const [mr, mg, mb] = parseColor(mark);
+    const m = (a: number, b: number) => Math.round(a * 0.7 + b * 0.3);
+    return `rgb(${m(mr, ir)},${m(mg, ig)},${m(mb, ib)})`;
+  };
+  const amberMark = v('--amber', '#ffc35a'), mintMark = v('--mint', '#6ff2c8');
   const fam = (n: string, fb: string) => {
     const s = v(n, '');
     return s ? s + ', ' + fb : fb;
@@ -95,7 +106,7 @@ export function readTheme(res: number): ThemeHandle {
     paper: v('--paper', '#071a33'), ink, inkHi: v('--ink-hi', '#ffffff'), ink2: v('--ink-2', 'rgba(223,240,255,.74)'),
     ink3: v('--ink-3', 'rgba(223,240,255,.38)'), ink4: v('--ink-4', 'rgba(223,240,255,.16)'), line: v('--line', 'rgba(223,240,255,.55)'),
     grid: v('--grid', 'rgba(127,224,255,.07)'), halo: v('--halo', 'rgba(7,26,51,.92)'), accent: v('--accent', '#7fe0ff'),
-    mint: v('--mint', '#6ff2c8'), amber: v('--amber', '#ffc35a'), red: v('--red', '#ff6a58'), red2: v('--red-2', '#ff9a8c'),
+    mint: mintMark, amber: amberMark, amberText: textGrade('--amber-2', amberMark), mintText: textGrade('--mint-2', mintMark), red: v('--red', '#ff6a58'), red2: v('--red-2', '#ff9a8c'),
     delta: v('--delta', '#9fe8ff'), glyphEdge: v('--glyph-edge', '#04223a'), labelBg: v('--label-bg', '#0b2c52'),
     tileBase: v('--tile-base', 'rgba(3,18,40,.30)'), poche: v('--poche', '#0c2f57'), chipBg: v('--chip-bg', 'rgba(5,26,50,.95)'),
     onInk: v('--on-ink', '#061b38'), panel: v('--panel-solid', '#0a2342'),

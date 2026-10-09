@@ -326,7 +326,7 @@ function fadePair(ctx: CanvasRenderingContext2D, a: number, D: number, g: () => 
 function drawSwarmLine(E: Engine, ctx: CanvasRenderingContext2D, x: number, y: number, st: ReturnType<Engine['M']['sim']['stats']>, maxW: number): number {
   if (!E.M.sim.has || !st.n) return 0;
   const th = E.th, u = E.U, f = E.tx.f(13, 500, true);
-  const items: [string, number, string][] = [['working', st.working, th.mint], ['waiting', st.waiting, th.amber], ['blocked', st.blocked + st.failed, th.red]];
+  const items: [string, number, string][] = [['working', st.working, th.mintText], ['waiting', st.waiting, th.amberText], ['blocked', st.blocked + st.failed, th.red]];
   if (st.paused) items.push(['paused', st.paused, th.ink]);
   let gx = x, used = 0;
   for (const it of items) {
@@ -376,7 +376,7 @@ function drawWingLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: Bl
       drawSwarmLine(E, ctx, x, sy, ss, wdt - askW);
       if (ss.asks) {
         glyphPin(ctx, th, x + wdt - askW + 8 * u, sy + 4 * u, ss.high && em > 0 ? 'high' : 'med', em > 0, 0.62, 0, 0, u, tx.f(12, 600, true));
-        drawText(ctx, String(shown), x + wdt - askW + 22 * u, sy, tx.f(13, 600, true), em > 0 ? (ss.high ? th.red2 : th.amber) : th.inkA(0.75), th.halo);
+        drawText(ctx, String(shown), x + wdt - askW + 22 * u, sy, tx.f(13, 600, true), em > 0 ? (ss.high ? th.red2 : th.amberText) : th.inkA(0.75), th.halo);
       }
     }
     const nm = W.def.name.toUpperCase();
@@ -411,7 +411,7 @@ function drawBuildingLabel(E: Engine, ctx: CanvasRenderingContext2D, v: View, B:
   const ss = E.M.sim.has && E.isNow ? E.statsOf(B.id, B.feats) : null, sy = base - 36 * u;
   if (ss && ss.n) {
     const used = drawSwarmLine(E, ctx, x, sy, ss, wdt);
-    if (ss.asks) { glyphPin(ctx, th, x + used + 14 * u, sy + 4 * u, ss.high ? 'high' : 'med', true, 0.65, 0, 0, u, tx.f(12, 600, true)); drawText(ctx, ss.asks + ' questions waiting', x + used + 30 * u, sy, tx.f(13, 500, true), th.amber, th.halo); }
+    if (ss.asks) { glyphPin(ctx, th, x + used + 14 * u, sy + 4 * u, ss.high ? 'high' : 'med', true, 0.65, 0, 0, u, tx.f(12, 600, true)); drawText(ctx, ss.asks + ' questions waiting', x + used + 30 * u, sy, tx.f(13, 500, true), th.amberText, th.halo); }
   }
   const nm = B.name.toUpperCase(), fs = clamp(r.w / 14 / u, 18, 30);
   drawText(ctx, nm, x, base - (ss && ss.n ? 58 : 38) * u, tx.f(fs, 600), th.inkHi, th.halo, fs * 0.06);

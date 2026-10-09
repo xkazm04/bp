@@ -123,7 +123,7 @@ export function drawOrderZones(E: Engine, ctx: CanvasRenderingContext2D, v: View
           const sx = r.x + r.w - 62 * u, sy = r.y + 17 * u;
           ctx.save(); ctx.translate(sx, sy); ctx.rotate(-0.14); ctx.strokeStyle = th.amber; ctx.fillStyle = th.alpha(th.panel, 0.92); ctx.lineWidth = 1.6;
           ctx.beginPath(); ctx.arc(0, 0, 13 * u, 0, 6.2832); ctx.fill(); ctx.stroke();
-          ctx.textAlign = 'center'; drawText(ctx, o.id, 0, 4.2 * u, E.tx.f(12, 600, true), th.amber); ctx.restore(); ctx.textAlign = 'left';
+          ctx.textAlign = 'center'; drawText(ctx, o.id, 0, 4.2 * u, E.tx.f(12, 600, true), th.amberText); ctx.restore(); ctx.textAlign = 'left';
         }
       }
     } else if (hi || (o.user && E.isNow)) {
@@ -135,7 +135,7 @@ export function drawOrderZones(E: Engine, ctx: CanvasRenderingContext2D, v: View
         if (o.user && lod > 0.5 && fr.w >= 60 * u) {
           ctx.fillStyle = th.alpha(th.panel, 0.92); ctx.strokeStyle = th.amber; ctx.lineWidth = 1.3;
           ctx.fillRect(fr.x + 4 * u, fr.y + fr.h - 22 * u, 36 * u, 17 * u); ctx.strokeRect(fr.x + 4.5 * u, fr.y + fr.h - 21.5 * u, 36 * u - 1, 17 * u - 1);
-          drawText(ctx, o.id, fr.x + 9 * u, fr.y + fr.h - 9 * u, E.tx.f(12, 600, true), th.amber);
+          drawText(ctx, o.id, fr.x + 9 * u, fr.y + fr.h - 9 * u, E.tx.f(12, 600, true), th.amberText);
         }
       }
     }
@@ -377,7 +377,7 @@ export function drawReleases(E: Engine, ctx: CanvasRenderingContext2D, v: View, 
       const q = agentPos(E, v, A, lod, now, ap); if (!q) continue;
       ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(q.x, q.y); ctx.stroke(); ctx.setLineDash([]); ctx.beginPath(); ctx.arc(q.x, q.y, (9 + age * 14) * u, 0, 6.2832); ctx.stroke(); ctx.setLineDash([5, 4]);
     }
-    ctx.setLineDash([]); ctx.textAlign = 'center'; drawText(ctx, '+' + d.freedIds.length + ' back to work', cx, cy - (18 + age * 22) * u, E.tx.f(13, 600, true), th.mint, th.halo); ctx.textAlign = 'left';
+    ctx.setLineDash([]); ctx.textAlign = 'center'; drawText(ctx, '+' + d.freedIds.length + ' back to work', cx, cy - (18 + age * 22) * u, E.tx.f(13, 600, true), th.mintText, th.halo); ctx.textAlign = 'left';
     ctx.restore();
   }
 }
