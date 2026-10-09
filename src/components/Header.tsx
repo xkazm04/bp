@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { latestRun, sheetOf, views, type BayNode, type BldNode, type RoomNode, type WingNode } from '@/lib/model';
 import { shallowEqual, useBp, useEngine, useLive, useVariant } from './hooks';
@@ -63,15 +63,27 @@ function LensTabs() {
   const E = useEngine(), V = useVariant(), P = E.M.P;
   const s = useBp((s) => ({ view: s.view, simV: s.simV }), shallowEqual);
   const open = E.M.sim.has ? E.M.sim.openDecs() : [];
+  const strip = useRef<HTMLDivElement>(null);
+  const vs = views(P);
+  // roving focus (the rail's pattern): arrows/Home/End move between tabs and select, and never reach the engine's walk
+  const onTabKey = (e: React.KeyboardEvent) => {
+    const i = Math.max(0, vs.indexOf(s.view)), n = vs.length;
+    const j = e.key === 'ArrowRight' ? (i + 1) % n : e.key === 'ArrowLeft' ? (i + n - 1) % n : e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : -1;
+    if (j < 0) return;
+    e.preventDefault(); e.stopPropagation();
+    e.nativeEvent.stopImmediatePropagation(); // React listens on `document` (App Router), where the engine's handler also sits
+    E.setView(vs[j]);
+    strip.current?.querySelectorAll<HTMLElement>('[role="tab"]')[j]?.focus();
+  };
   return (
-    <div id="tabs" role="tablist" aria-label="Sheets (lenses)">
-      {views(P).map((k, i) => {
+    <div id="tabs" role="tablist" aria-label="Sheets (lenses)" ref={strip} onKeyDown={onTabKey}>
+      {vs.map((k, i) => {
         const sh = sheetOf(P, k);
         const n = k === 'general' ? 0 : open.filter((d) => d.lens === k).length;
         const on = s.view === k;
         const sub = V.ui?.tabLabel?.(k) ?? sh.nm;
         return (
-          <button key={k} type="button" role="tab" aria-selected={on} title={sh.title + (sh.sub ? ': ' + sh.sub : '') + (i < 9 ? ' (' + (i + 1) + ')' : '') + (n ? ' · ' + n + ' questions waiting on this sheet' : '')} onClick={() => E.setView(k)}>
+          <button key={k} type="button" role="tab" aria-selected={on} tabIndex={on ? 0 : -1} title={sh.title + (sh.sub ? ': ' + sh.sub : '') + (i < 9 ? ' (' + (i + 1) + ')' : '') + (n ? ' · ' + n + ' questions waiting on this sheet' : '')} onClick={() => E.setView(k)}>
             <span className="no">{sh.no}{n ? <b className="ct">{n}</b> : null}</span>
             <span className="nm">{sub}</span>
             {i < 9 ? <span className="kb">{i + 1}</span> : null}
