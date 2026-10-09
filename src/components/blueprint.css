@@ -31,7 +31,9 @@
 #brand .proj { font: 500 12px/1 var(--mono); letter-spacing: 0.12em; color: var(--ink-2); text-transform: uppercase; margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #brand .proj b { color: var(--lens); font-weight: 500; }
 #crumbs { margin-top: 8px; display: flex; flex-wrap: nowrap; align-items: baseline; gap: 4px; white-space: nowrap; overflow: hidden; }
-#crumbs .sum { margin-left: 14px; font-size: 15px; color: var(--ink-2); letter-spacing: 0.01em; overflow: hidden; text-overflow: ellipsis; }
+#crumbs .sum { margin-left: 14px; font-size: 15px; color: var(--ink-2); letter-spacing: 0.01em; display: inline-flex; min-width: 0; }
+#crumbs .sum .st { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#crumbs .sum .att { flex: 0 0 auto; white-space: pre; }
 #crumbs .sum b { color: var(--ink-hi); font-weight: 500; } #crumbs .sum em { font-style: normal; color: var(--red-2); } #crumbs .sum i { font-style: normal; color: var(--amber-2); }
 #crumbs button { background: none; border: 0; padding: 2px 3px; font-size: 19px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-2); border-bottom: 1px solid transparent; flex: 0 0 auto; }
 #crumbs button:hover { border-bottom-color: var(--accent); color: var(--ink-hi); }

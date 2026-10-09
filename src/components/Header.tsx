@@ -34,9 +34,13 @@ function Crumbs() {
     const asks = M.sim.has && now ? M.sim.stats(fs, s.who, s.view).asks : 0;
     sum = (
       <span className="sum">
-        {fs.length} features · <b>{c.live + c.flagged} live</b> · {c.build} being built · {c.paper + c.dep} promised
-        {bad ? <> · <em>{bad} in trouble</em></> : null}
-        {asks ? <> · <i>{asks} {asks === 1 ? 'question' : 'questions'} waiting</i></> : null}
+        <span className="st">{fs.length} features · <b>{c.live + c.flagged} live</b> · {c.build} being built · {c.paper + c.dep} promised</span>
+        {bad || asks ? (
+          <span className="att">
+            {bad ? <> · <em>{bad} in trouble</em></> : null}
+            {asks ? <> · <i>{asks} {asks === 1 ? 'question' : 'questions'} waiting</i></> : null}
+          </span>
+        ) : null}
       </span>
     );
   }
