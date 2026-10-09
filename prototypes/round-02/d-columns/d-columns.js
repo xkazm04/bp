@@ -12,27 +12,33 @@
  *      columns, the domain heads, a thin channel for dependency links, then each column body: module cards stacked
  *      top-down, each a header strip plus one row per feature (ROW world units).
  *   Size class: the opening fit scale kFit = (stage width - margins) / W, unless the height binds. The header band,
- *   banners and heads reserve their on-screen height at the fit (px / kFit), and ROW (24 to 72) grows to fill the stage
+ *   banners and heads reserve their on-screen height at the fit (px / kFit), and ROW (24 to 64) grows to fill the stage
  *   height, so every class opens as a full composition. A resize that changes the stage by more than a few percent (or
  *   crosses the phone breakpoint) recomputes the layout and refits; anything smaller keeps the layout.
+ *   Domain heads by the room a column gets at the fit: 'wide' (two-line names, 1440 and up), 'compact' (smaller two-line
+ *   names, 1280) or 'tilt' (names angled above the columns, ending at their own column, for the 820 side panel and
+ *   phones), always titles, never codes. Area banners put their state on a second line when any span is short.
  *
  * Labels are drawn at a constant screen size, anchored to their world boxes, and only when their box has room on
  * screen, so they never overlap. Sticky labels (areas, domains, modules, release bands) keep context at the top edge,
  * and a readout names area > domain > module at the centre of the view.
  *
  * Progressive disclosure on a continuous zoom k (thresholds per class, from the room on screen):
- *   L0  k < kL1  Domain heads: name, big band glyph, score, attention and gate counters. Modules are bars coloured by
- *                band (a heat strip). Columns too narrow for a horizontal name write it up the column spine.
+ *   L0  k < kL1  Domain heads: name, band glyph, score, attention and gate counters. Modules are heat bars: a tint of
+ *                the module's band with a solid band edge and one segment per feature (n/a rows hatched).
  *   L1  < kL2    Module cards: name, band glyph and score, counters, and one pip per feature at its row.
  *   L2  < kL3    Feature rows: band tint, status glyph by form, gate and attention marks; module header strips.
  *   L3  < kL4    Feature names, current-lens score and band glyph, gate and attention marks.
  *   L4  >= kL4   Each row is a mini-detail inside its own reserved space: the 8-lens corona with the status inside,
  *                the lens headline, gates and release. Nothing moves.
- *   Every layer's alpha ramps over a zoom band, so the layers cross-fade instead of popping.
+ *   Every layer's alpha ramps over a zoom band, so the layers cross-fade instead of popping; the domain heads blend the
+ *   same way into a detail head (all 8 lenses) once zoomed in.
  *
  * Timeline "Release stack": the same 17 columns at the same x and zoom; time runs down. One band per release (oldest at
  * the top) with its package items as chips in their domain column, a today line, the next release with readiness
- * glyphs, and dashed future bands. Switching views keeps x and zoom and animates only the vertical change.
+ * glyphs, and dashed future bands. At rest each band names its biggest items in its header and counts each domain's
+ * items under its stack; the next release adds a line naming what is at risk. Switching views keeps x and zoom and
+ * animates only the vertical change.
  */
 (function () {
   'use strict';
@@ -82,7 +88,8 @@
   const ASOF = BP.asOf || (BP.data && BP.data.meta && BP.data.meta.asOf);
 
   // ══ shell ════════════════════════════════════════════════════════════════════════════════════════
-  const shell = OK.mount({ root: app, variant: 'Orbit Columns', legend: legendHTML });
+  const shell = OK.mount({ root: app, variant: 'Orbit Columns', legend: legendHTML,
+    keys: [['+ −', 'Zoom'], ['0', 'Fit'], [['←', '↑', '→', '↓'], 'Move between features']] });
   const S = shell.state;
 
   // ══ palette and type (read from the kit tokens; re-read on theme change) ═════════════════════════
@@ -297,17 +304,64 @@
   const colOver = COLS.map((c) => BPT + BPB + c.mods.length * (MH + MPB) + (c.mods.length - 1) * MG);
   const colRows = COLS.map((c) => c.feats.length);
   const KIND_ORDER = { new: 0, improved: 1, fixed: 2 };
+  const PRI = { P0: 3, P1: 2, P2: 1, P3: 0 };
+  const fWeight = (fi) => { const f = FEATS[fi]; return (PRI[f.priority] || 0) * 10 + BP.dependents(f.id).length * 2 + (f.workItems || []).length + (f.surfaces || []).length; };
 
   let L = null; // the current layout
-  function headMode(cw, phone) {
-    if (phone) return { wide: false, h: 58, fs: 9 };
-    for (const fs of [12, 11.5, 11, 10.5]) if (DOMS.every((d) => wrapLines(lab(500, fs), d.name, cw - 14, 2).ok)) return { wide: true, h: 108, fs };
-    return { wide: false, h: 82, fs: 11 };
+  const namesFit = (fs, maxW) => DOMS.every((d) => wrapLines(lab(500, fs), d.name, maxW, 2).ok);
+  /** Domain heads at the opening fit, by the room a column gets: 'wide' (two-line names at 10.5-12 px with the 8-lens
+   *  strip), 'compact' (two-line names at 9.5-10 px) or 'tilt' (names angled above the columns, for the side panel
+   *  and phones). Titles always; codes are only a fallback in the thin sticky strip. */
+  function headMode(cw, phone, kx, mx) {
+    if (!phone) {
+      // the 8-lens strip under the counters needs a column of 100 px; narrower wide heads leave it out
+      for (const fs of [12, 11.5, 11, 10.5]) if (namesFit(fs, cw - 14)) return { mode: 'wide', wide: true, h: cw >= 100 ? 108 : 88, fs };
+      for (const fs of [10, 9.5]) if (namesFit(fs, cw - 10)) return { mode: 'compact', wide: false, h: 80, fs };
+    }
+    const t = tiltFor(kx, mx, phone);
+    return { mode: 'tilt', wide: false, h: t.h + t.cap, fs: t.fs, tilt: t };
   }
-  function cwForWide() {
-    let lo = 40, hi = 260;
-    for (let i = 0; i < 18; i++) { const mid = (lo + hi) / 2; if (DOMS.every((d) => wrapLines(lab(500, 10.5), d.name, mid - 14, 2).ok)) hi = mid; else lo = mid; }
+  /** Angled names: each ends just above its column (at 3/4 of its width, or its right edge on phones) and runs up to
+   *  the left, like a book spine tipped over. The angle starts at 45 degrees and steepens only as far as needed to keep
+   *  every name on screen and the parallel names clear of each other. */
+  function tiltFor(kx, mx, phone) {
+    const fs = phone ? 9 : 11;
+    const font = lab(500, fs);
+    const at = phone ? 1 : 0.75;
+    let pick = null;
+    for (let deg = 45; deg <= 62.5; deg += 2.5) {
+      const ca = Math.cos(deg * DEG), sa = Math.sin(deg * DEG);
+      let ok = true, ext = 0;
+      for (let i = 0; i < NC; i++) {
+        const w = tw(font, DOMS[i].name);
+        if (mx + (colX[i] + COL_W * at) * kx - w * ca < 3) ok = false;
+        if (i && (colX[i] - colX[i - 1]) * kx * sa < fs * 1.3) ok = false;
+        ext = Math.max(ext, w * sa);
+      }
+      pick = { deg, ext };
+      if (ok) break;
+    }
+    const h = Math.ceil(pick.ext + fs * 0.75 * Math.cos(pick.deg * DEG) + (phone ? 8 : 10));
+    return { deg: pick.deg, fs, at, h, cap: phone ? 56 : 62 };
+  }
+  function cwFor(fs, pad) {
+    let lo = 30, hi = 260;
+    for (let i = 0; i < 18; i++) { const mid = (lo + hi) / 2; if (namesFit(fs, mid - pad)) hi = mid; else lo = mid; }
     return hi;
+  }
+  const cwForWide = () => cwFor(10.5, 14);
+  /** Area banners: name, band and score, attention and gates on one line when every area has room for it at the
+   *  fit; otherwise the state moves to a second line for all of them (one rule for every banner). */
+  function bannerRows(kx, phone) {
+    if (phone) return 3;
+    for (const A of AREAS) {
+      const span = (colX[A.c1] + COL_W - colX[A.c0]) * kx - 8;
+      const nm = tw(lab(500, 10), A.a.name.toUpperCase(), 1.2);
+      const ro = BP.areaRollup(A.a.id);
+      const need = nm + 10 + 40 + (ro.attention ? 30 : 0) + (gateTotal(ro.gates) ? 30 : 0);
+      if (need > span) return 2;
+    }
+    return 1;
   }
   // the product header band: a dial with the product name, then rollup blocks that flow beside and under it
   const DIAL_LABEL = (s) => s.toUpperCase();
@@ -391,14 +445,15 @@
     const mx = phone ? 8 : 14, my = phone ? 8 : 10;
     const mb = phone ? 56 : 52; // the readout and zoom instrument live in this bottom strip at the fit
     const G1 = phone ? 6 : 8, G2 = 4, G3 = 12;
-    const A = phone ? 28 : 24;
     const kw = (sw - 2 * mx) / W;
     // try the fullest header band first; a short stage trades header blocks for map scale
     let best = null;
     for (const variant of phone ? [0] : [0, 1, 2]) {
-      let k = kw, heads, dial, ROW = 24;
+      let k = kw, heads, dial, ROW = 24, rows = 1, A = 24;
       for (let it = 0; it < 6; it++) {
-        heads = headMode(k * COL_W, phone);
+        heads = headMode(k * COL_W, phone, k, mx + Math.max(0, (sw - 2 * mx - W * k) / 2));
+        rows = bannerRows(k, phone);
+        A = rows === 3 ? 44 : rows === 2 ? 38 : 24;
         dial = layoutDial(Math.max(W * k, Math.min(sw - 2 * mx, W * kw)), phone, !heads.wide, variant);
         dial.bandW = Math.max(W * k, Math.min(sw - 2 * mx, W * kw));
         const avail = sh - my - mb - dial.h - G1 - A - G2 - heads.h - G3;
@@ -410,10 +465,10 @@
         if (k2 >= k * 0.995) break;
         k = k2;
       }
-      if (!best || k > best.k * 1.01) best = { k, heads, dial, ROW };
+      if (!best || k > best.k * 1.01) best = { k, heads, dial, ROW, rows, A };
       if (k >= kw * 0.985) break;
     }
-    const kf = best.k, heads = best.heads, dial = best.dial, ROW = best.ROW;
+    const kf = best.k, heads = best.heads, dial = best.dial, ROW = best.ROW, A = best.A;
     // when the height binds, the header band may use the stage width: its origin moves left of the first column
     dial.dx = Math.max(0, (dial.bandW - W * kf) / 2 / kf);
     const y = {};
@@ -448,8 +503,10 @@
     th.l4 = Math.max(th.l3 * 1.45, 46 / ROW, 236 / COL_W);
     th.max = Math.max(th.l4 * 2.4, 3);
     th.min = kf * 0.7;
-    th.hd = Math.max(236 / y.headH, 214 / COL_W);
-    const layout = { phone, sw, sh, mx, my, mb, kf, heads, dial, ROW, y, rowY, fMod, mods, colMods, colBottom, H, th, cwWide: cwForWide(), spineFs: phone ? 9 : 11 };
+    // the detail head takes over once the head region is tall enough for it (narrow columns list the lenses in one column)
+    th.hd = Math.max(200 / y.headH, 66 / COL_W, kf * 1.25);
+    const layout = { phone, sw, sh, mx, my, mb, kf, heads, dial, ROW, y, rowY, fMod, mods, colMods, colBottom, H, th, rows: best.rows, stripPx: phone ? 46 : 52,
+      cwWide: cwForWide(), cwCompact: cwFor(9.5, 10), cwSmall: cwFor(8.5, 10) };
     layout.tl = computeTimeline(layout);
     return layout;
   }
@@ -458,9 +515,9 @@
   // constant screen size; only the chip stacks scale with the zoom, so zooming in grows the items, not the labels.
   function computeTimeline(Lx) {
     const kf = Lx.kf, phone = Lx.phone;
-    const stripPx = stripHeight(Lx), AS = phone ? 16 : 18;
-    const topPx = AS + stripPx;
-    const HDR = phone ? 24 : 27, PADT = 2, PADB = 8, GAP = 6, TODAY = 34;
+    const AS = phone ? 28 : 18;
+    // PADB keeps room under the tallest stack for its count (the item count at the end of each domain's bar)
+    const HDR = phone ? 24 : 27, PADT = 2, PADB = 19, GAP = 6, TODAY = 34;
     const bands = RELS.map((r) => {
       const per = COLS.map(() => []);
       BP.releaseItems(r.id).forEach((it) => { const fi = fIdx.get(it.feature); if (fi != null) per[fCol[fi]].push({ fi, kind: it.kind, note: it.note }); });
@@ -474,6 +531,9 @@
     bands.forEach((b, i) => {
       if (b.r.state !== 'shipped' && nextIdx < 0) { nextIdx = i; fx += TODAY; }
       b.i = i; b.u0 = u; b.fxTop = fx; b.stackW = b.max * cp;
+      // the next release gets a second header line naming what is at risk (its blocked items)
+      b.risk = b.r.state === 'next' ? BP.releaseItems(b.r.id).filter((it) => it.kind === 'new' && BP.feature(it.feature).status === 'blocked').map((it) => fIdx.get(it.feature)) : [];
+      b.hdr = HDR + (b.risk.length ? (phone ? 20 : 22) : 0);
       b.chips = [];
       b.cols = b.per.map((list, ci) => list.map((it, j) => {
         const chip = { fi: it.fi, kind: it.kind, note: it.note, ci, j, band: b, x: colX[ci] + PADX, w: COL_W - 2 * PADX };
@@ -489,14 +549,19 @@
       }
       b.kinds = { new: 0, improved: 0, fixed: 0 };
       b.chips.forEach((c2) => { b.kinds[c2.kind] += 1; });
+      // the release's highlights, named in its header at rest: what is at risk first (blocked items of an unshipped
+      // release), then new features before improvements, then the biggest (priority, dependents, work and surfaces)
+      const risk = (c2) => (b.r.state !== 'shipped' && FEATS[c2.fi].status === 'blocked' ? 0 : 1);
+      b.top = b.chips.filter((c2) => !(b.r.state === 'next' && risk(c2) === 0)).sort((p, q) => risk(p) - risk(q) || KIND_ORDER[p.kind] - KIND_ORDER[q.kind] || fWeight(q.fi) - fWeight(p.fi) || p.fi - q.fi).slice(0, 8);
+      if (b.risk) b.risk.sort((p, q) => fWeight(q) - fWeight(p) || p - q);
       u += b.stackW;
-      fx += HDR + PADT + PADB + GAP;
+      fx += b.hdr + PADT + PADB + GAP;
     });
-    return { bands, U: u, FX: fx - GAP, cp, ch, topPx, stripPx, AS, chipsOf, HDR, PADT, PADB, GAP, TODAY, nextIdx: nextIdx < 0 ? bands.length - 1 : nextIdx };
+    return { bands, U: u, FX: fx - GAP, cp, ch, AS, chipsOf, HDR, PADT, PADB, GAP, TODAY, nextIdx: nextIdx < 0 ? bands.length - 1 : nextIdx };
   }
   // screen positions in the release stack (oy is the screen y of the first band's top)
   const tlTop = (b, k, oy) => oy + b.u0 * k + b.fxTop;
-  const tlChipsY = (b, k, oy) => tlTop(b, k, oy) + L.tl.HDR + L.tl.PADT;
+  const tlChipsY = (b, k, oy) => tlTop(b, k, oy) + b.hdr + L.tl.PADT;
   const tlBottom = (b, k, oy) => tlChipsY(b, k, oy) + b.stackW * k + L.tl.PADB;
   const tlHeight = (k) => L.tl.U * k + L.tl.FX;
   const chipY = (ch, k, oy) => tlChipsY(ch.band, k, oy) + ch.j * L.tl.cp * k;
@@ -508,10 +573,13 @@
     for (const x of T.bands) if (tlTop(x, k, oy) <= sy) b = x;
     const c0 = tlChipsY(b, k, oy);
     const u = b.u0 + clamp((sy - c0) / k, 0, b.stackW);
-    const fx = b.fxTop + T.HDR + T.PADT;
+    const fx = b.fxTop + b.hdr + T.PADT;
     return { u, fx, off: sy - (oy + u * k + fx) };
   }
-  function stripHeight(Lx) { return Lx.phone ? 30 : Lx.heads.wide ? 52 : 42; }
+  /** The timeline header: the area row and the domain strip. In tilt classes the strip carries the angled names
+   *  while the columns are too narrow for horizontal ones, and shrinks to the plain strip as they widen. */
+  function tlTiltA(k) { return L.heads.tilt ? 1 - smooth(L.cwSmall * 0.96, L.cwSmall * 1.06, COL_W * k) : 0; }
+  function tlTopPx(k) { return L.tl.AS + lerp(L.stripPx, L.heads.tilt ? L.heads.tilt.h + 28 : L.stripPx, tlTiltA(k)); }
 
   // ══ views, camera ═══════════════════════════════════════════════════════════════════════════════
   function makeView(host, name) {
@@ -536,7 +604,7 @@
     host.appendChild(wrap);
     const cv = wrap.querySelector('canvas');
     return {
-      name, wrap, cv, ctx: cv.getContext('2d'), w: 0, h: 0, dpr: 1, dirty: true,
+      name, wrap, cv, ctx: cv.getContext('2d'), w: 0, h: 0, dpr: 1, dirty: true, rx: 0, ry: 0, tipSize: null, tipAt: null,
       lvl: wrap.querySelector('.dc-readout__lvl'), path: wrap.querySelector('.dc-readout__path'), tip: wrap.querySelector('.dc-tip'),
       ladder: wrap.querySelectorAll('[data-dc-level]'), roText: '', tipKey: '',
     };
@@ -560,12 +628,12 @@
     if (cw < vw) { x0 = 4 - (vw - cw) * 0.5 + Math.min(0, (vw - cw) * 0.5 - 4); x1 = vw - cw - 4; x0 = Math.min(x0, (vw - cw) / 2); x1 = Math.max(x1, (vw - cw) / 2); }
     cam.x = clamp(cam.x, Math.min(x0, x1), Math.max(x0, x1));
     if (v === VM) {
-      const vh = v.h, ch = L.H * k;
-      let y0 = vh * 0.5 - L.H * k, y1 = vh * 0.5;
+      const vh = v.h, ch = L.H * k - headShift(k);
+      let y0 = vh * 0.5 - ch, y1 = vh * 0.5;
       if (ch < vh) { y0 = Math.min(L.my, (vh - ch) / 2); y1 = Math.max(vh - ch - 4, (vh - ch) / 2); }
       cam.y.map = clamp(cam.y.map, Math.min(y0, y1), Math.max(y0, y1));
     } else {
-      const top = L.tl.topPx + 6, bottom = v.h - L.mb;
+      const top = tlTopPx(k) + 6, bottom = v.h - L.mb;
       const hs = tlHeight(k);
       cam.y.timeline = hs <= bottom - top ? top : clamp(cam.y.timeline, bottom - hs, top);
     }
@@ -576,7 +644,7 @@
     return tlCamFor(k, (v.w - W * k) / 2);
   }
   function tlCamFor(k, x) {
-    const top = L.tl.topPx + 6, bottom = VT.h - L.mb;
+    const top = tlTopPx(k) + 6, bottom = VT.h - L.mb;
     const hs = tlHeight(k);
     if (hs <= bottom - top) return { x, y: top, k };
     // taller than the view: the last shipped releases, today, the next release and the future
@@ -597,6 +665,7 @@
     const T = L.th, out = [];
     [T.l1, T.l2, T.l3, T.l4, T.hd].forEach((th) => out.push([th * Math.exp(-0.075), th * Math.exp(0.05)]));
     if (!L.heads.wide) out.push([(L.cwWide * 0.96) / COL_W, (L.cwWide * 1.06) / COL_W]);
+    if (L.heads.tilt) out.push([(L.cwCompact * 0.96) / COL_W, (L.cwCompact * 1.06) / COL_W]);
     return out;
   }
   function detentK(k) {
@@ -636,17 +705,25 @@
     (f.v === VM ? VT : VM).dirty = true;
     return !!flight;
   }
+  /** The camera y that puts map world y wy (a body point when below the heads) at screen y sy for zoom k. */
+  function mapCamY(wy, sy, k) { return sy - wy * k + (wy >= L.y.body ? headShift(k) : 0); }
+  /** The map world y under screen y (body mapping below the heads). */
+  function mapWorldY(sy, k, oy) {
+    const headBot = L.y.head * k + oy + headPx(k);
+    return sy >= headBot ? (sy - oyBody(oy, k)) / k : (sy - oy) / k;
+  }
   function zoomAt(v, sx, sy, k, animate, raw) {
     k = clamp(k, L.th.min, L.th.max);
     const wx = (sx - cam.x) / cam.k, wy = (sy - cam.y[v.name]) / cam.k;
     const to = { x: sx - wx * k, y: sy - wy * k, k };
+    if (v === VM) { const wyM = mapWorldY(sy, cam.k, cam.y.map); to.y = mapCamY(wyM, sy, k); }
     if (v === VT) { const a = tlAnchor(sy, cam.k, cam.y.timeline); to.y = sy - a.off - a.u * k - a.fx; }
     if (animate) flyTo(v, to, raw ? 200 : 280, raw); else setCam(v, to.x, to.y, to.k);
     touched = true;
   }
   function zoomBy(v, f) {
     const r = freeRectCached();
-    zoomAt(v, r.w / 2, (v === VT ? (L.tl.topPx + r.h) / 2 : r.h / 2), cam.k * f, true);
+    zoomAt(v, r.w / 2, (v === VT ? (tlTopPx(cam.k) + r.h) / 2 : r.h / 2), cam.k * f, true);
   }
   function fitView(v, animate) {
     const to = fitCam(v);
@@ -662,6 +739,14 @@
     raf = 0;
     if (pendingLocate) doLocate();
     if (pendingReveal) revealPending();
+    if (tipPending) measureTip();
+    if (needOrigin) {
+      // both canvases fill the stage at the same origin; measure the one on show (the hidden view's canvas reads 0 x 0)
+      needOrigin = false;
+      const rc = active().cv.getBoundingClientRect();
+      if (rc.width > 0 && rc.height > 0) [VM, VT].forEach((x) => { x.rx = rc.left; x.ry = rc.top; });
+    }
+    if (pendingBand) { const id = pendingBand; pendingBand = null; revealBand(id); }
     let more = stepFlight(t);
     const v = active();
     if (anim && t - anim.t0 < anim.dur) { v.dirty = true; more = true; } else if (anim) { anim = null; v.dirty = true; }
@@ -726,20 +811,21 @@
     // view-switch entry: bodies drop in from above while the columns stay put
     let dropY = 0, dropA = 1;
     if (anim && anim.view === 'map') { const u = easeOut((t - anim.t0) / anim.dur); dropY = -(1 - u) * 26; dropA = u; }
-    const oy = oy0;
+    const oy = oy0, oyB = oyBody(oy0, k);
     const sx = (wx) => wx * k + ox, sy = (wy) => wy * k + oy;
     const vx0 = -ox / k, vx1 = (v.w - ox) / k;
     const cw = COL_W * k;
-    const spineA = L.heads.wide ? 0 : 1 - smooth(L.cwWide * 0.96, L.cwWide * 1.06, cw);
-    const wideA = 1 - spineA;
+    const ha = headAlphas(k);
+    const headH = headPx(k);
     const visCols = [];
     for (let i = 0; i < NC; i++) if (colX[i] + COL_W >= vx0 - 4 && colX[i] <= vx1 + 4) visCols.push(i);
 
-    // column plates
-    const plateTop = sy(L.y.head) - 3;
+    // column plates (in tilt classes they start under the angled names, at the state caps)
+    const hd = ha.dA > 0.01 ? detailPlans(cw, headH, sy(L.y.head)) : null;
+    const plateTop = sy(L.y.head) + headH - headContentH(ha, headH, hd) - 3;
     c.globalAlpha = 1;
     visCols.forEach((i) => {
-      const x = sx(colX[i]), b = sy(L.colBottom[i]);
+      const x = sx(colX[i]), b = L.colBottom[i] * k + oyB;
       rrect(c, x, plateTop, cw, b - plateTop, Math.min(8, cw * 0.08));
       c.fillStyle = P.paperHi; c.globalAlpha = P.dark ? 0.32 : 0.6; c.fill();
       c.globalAlpha = 1; c.lineWidth = 1; c.strokeStyle = P.rule2; c.stroke();
@@ -752,25 +838,24 @@
     if (dropY) c.translate(0, dropY);
     c.globalAlpha = dropA;
     const baseA = dropA;
-    // domain heads
-    visCols.forEach((i) => drawHead(c, i, sx(colX[i]), sy(L.y.head), cw, L.y.headH * k, k, wideA, baseA));
+    // domain heads, then the angled names (they cross the neighbouring columns)
+    visCols.forEach((i) => drawHead(c, i, sx(colX[i]), sy(L.y.head), cw, headH, k, ha, baseA, hd, oyB));
+    if (ha.tiltA > 0.01) drawTiltNames(c, VM, k, ox, sy(L.y.head) + headH - CAP_H(), baseA * ha.tiltA);
 
     // column bodies
-    const vy0 = (0 - oy - dropY) / k, vy1 = (v.h - oy - dropY) / k;
+    const vy0 = (0 - oyB - dropY) / k, vy1 = (v.h - oyB - dropY) / k;
     visCols.forEach((i) => {
-      const colSx = sx(colX[i]);
-      if (spineA > 0.01 && lod.a1 < 0.99) drawSpine(c, i, colSx, k, oy, spineA * (1 - lod.a1) * baseA);
       L.colMods[i].forEach((g) => {
         if (g.y + g.h < vy0 || g.y > vy1) return;
-        drawModule(c, g, k, ox, oy, lod, spineA, filtering, vy0, vy1, baseA);
+        drawModule(c, g, k, ox, oyB, lod, filtering, vy0, vy1, baseA);
       });
     });
     c.restore();
     c.globalAlpha = 1;
 
-    drawSelection(c, k, ox, oy, lod);
-    drawLinks(c, k, ox, oy, lod);
-    drawStickyMap(c, k, ox, oy, lod, visCols);
+    drawSelection(c, k, ox, oyB, lod);
+    drawLinks(c, k, ox, oyB, lod);
+    drawStickyMap(c, k, ox, oy, lod, visCols, oyB);
   }
 
   // ── product header band: the instrument dial and the rollups ─────────────────────────────────────
@@ -781,6 +866,14 @@
     const bx = ox - D.dx * k, by = L.y.dial * k + oy;
     if (by + D.h * sp < -10 || by > VM.h) return;
     const T0 = D.title;
+    if (S.selection && S.selection.type === 'product') {
+      // the product is selected (its inspector is open): the whole header band is outlined
+      const x0 = bx + T0.x * sp - 8, y0 = by + T0.y * sp - 6;
+      const x1 = Math.max(bx + T0.x * sp + T0.w * ss, ...D.blocks.map((b) => bx + b.x * sp + b.w * ss)) + 10;
+      const y1 = Math.max(by + T0.y * sp + T0.h * ss, ...D.blocks.map((b) => by + b.y * sp + (b.h - 4) * ss)) + 6;
+      rrect(c, x0, y0, x1 - x0, y1 - y0, 10);
+      c.globalAlpha = 1; c.fillStyle = P.band; c.fill(); c.lineWidth = 1.5; c.strokeStyle = P.ink2; c.stroke();
+    }
     c.save();
     c.translate(bx + T0.x * sp, by + T0.y * sp);
     c.scale(ss, ss);
@@ -897,13 +990,36 @@
     const s = Math.min(k / L.kf, 1);
     const y0 = L.y.area * k + oy, h = L.y.areaH * k;
     if (y0 + h < -4 || y0 > VM.h) return;
-    AREAS.forEach((A) => {
+    const place = L.rows === 3 ? placeAreaNames(k, ox, lab(500, 8), 0.6, 2, VM.w) : null;
+    AREAS.forEach((A, ai) => {
       const x0 = colX[A.c0] * k + ox, x1 = (colX[A.c1] + COL_W) * k + ox;
-      if (x1 < 0 || x0 > VM.w) return;
-      drawAreaContent(c, A, x0, x1, y0, h, s, 1);
+      if (x1 < 0 && (!place || place[ai].x + place[ai].w < 0)) return;
+      if (x0 > VM.w) return;
+      if (place) place[ai].limit = ai < AREAS.length - 1 ? place[ai + 1].x - 6 : VM.w - 4;
+      drawAreaContent(c, A, x0, x1, y0, h, s, 1, place && place[ai]);
     });
   }
-  function drawAreaContent(c, A, x0, x1, y0, h, s, alpha) {
+  /** Band glyph and score, attention and gates of an area, from x on baseline y; returns the end x. */
+  function areaState(c, A, x, y, fs, maxX, noGates) {
+    const r = BP.areaRating(A.a.id, S.lens), ro = BP.areaRollup(A.a.id);
+    const gR = fs * 0.46, tight = fs < 9;
+    const sf = mono(400, fs + 1), cf = mono(400, fs + 0.5);
+    const ga = tight ? 3 : 4, gb = tight ? 7 : 10, ac = tight ? 9.5 : 11;
+    gBand(c, r.band, x + gR, y - fs * 0.36, gR);
+    txt(c, scoreOf(r), x + gR * 2 + ga, y, sf, P.ink2);
+    x += gR * 2 + ga + tw(sf, scoreOf(r)) + gb;
+    if (ro.attention && x + ac + tw(cf, String(ro.attention)) <= maxX) {
+      gAttn(c, x + 4, y - fs * 0.36, fs * 0.42); txt(c, String(ro.attention), x + ac, y, cf, P.alarm);
+      x += ac + tw(cf, String(ro.attention)) + 9;
+    }
+    const gsum = gateTotal(ro.gates);
+    if (gsum && !noGates && x + 11 + tw(cf, String(gsum)) <= maxX) {
+      gGate(c, gateKindOf(ro.gates), x + 4, y - fs * 0.36, fs * 0.42); txt(c, String(gsum), x + 11, y, cf, P.gate);
+      x += 11 + tw(cf, String(gsum)) + 9;
+    }
+    return x;
+  }
+  function drawAreaContent(c, A, x0, x1, y0, h, s, alpha, place) {
     const a = A.a;
     const sel = S.selection && S.selection.type === 'area' && S.selection.id === a.id;
     c.globalAlpha = alpha;
@@ -913,96 +1029,177 @@
     const step = 6;
     for (let x = x0; x <= x1; x += step) { const long = Math.round((x - x0) / step) % 5 === 0; c.moveTo(x + 0.5, y0); c.lineTo(x + 0.5, y0 + (long ? 4.5 : 2.5)); }
     c.lineWidth = 0.8; c.strokeStyle = P.rule; c.stroke();
-    if (L.phone && s <= 1.05) { drawAreaPhone(c, A, x0, x1, y0, h); c.globalAlpha = 1; return; }
-    const fs0 = 10 * Math.min(s, 1.4);
+    if (place) {
+      // phones: the name in up to two lines (never cut, nudged clear of its neighbours), the state under it
+      const font = lab(500, 8);
+      place.lines.forEach((ln, j) => txt(c, ln, place.x, y0 + 13 + j * 10.5, font, P.ink, 'left', 0.6));
+      areaState(c, A, place.x, y0 + 36.5, 8, Math.min(place.limit, Math.max(place.x + place.w, x1 - 2)), true);
+      c.globalAlpha = 1;
+      return;
+    }
+    const fs = 10 * Math.min(s, 1.4);
     const name = a.name.toUpperCase();
-    const r = BP.areaRating(a.id, S.lens);
-    const ro = BP.areaRollup(a.id);
     const pad = 4;
     const left = Math.max(x0 + pad, 8), right = x1 - pad;
-    const baseY = y0 + Math.min(h, 24 * Math.min(s, 1.4)) * 0.5 + 3.5 + 2;
     const avail = right - left;
-    const scoreTxt = r.band === 'na' ? '–' : OK.fmt.score(r.score);
-    const gR = 4.6 * Math.min(s, 1.3);
-    // the name has priority: full tracking, then tighter tracking, then a smaller size, then an ellipsis
-    let fs = fs0, ls = fs * 0.2;
-    if (tw(lab(500, fs), name, ls) > avail) ls = fs * 0.08;
-    if (tw(lab(500, fs), name, ls) > avail) { fs = Math.max(8.5, fs0 - 1.5); ls = fs * 0.06; }
-    const scoreW = gR * 2 + 4 + tw(mono(400, fs + 1), scoreTxt);
-    let nm = fitText(lab(500, fs), name, avail, ls);
-    if (nm !== name && nm.length < name.length * 0.7) nm = ''; // a stub of a name reads as broken: leave the glyph and score
-    let x = left;
-    if (nm) { txt(c, nm, x, baseY, lab(500, fs), P.ink, 'left', ls); x += tw(lab(500, fs), nm, ls) + 10; }
-    if (x + scoreW <= right + 1) {
-      gBand(c, r.band, x + gR, baseY - 3.6, gR);
-      txt(c, scoreTxt, x + gR * 2 + 4, baseY, mono(400, fs + 1), P.ink2);
-      x += scoreW + 10;
+    // the name has priority: full tracking, then tighter tracking, then a smaller size; an ellipsis only as a last resort
+    let f = fs, ls = f * 0.2;
+    if (tw(lab(500, f), name, ls) > avail) ls = f * 0.08;
+    if (tw(lab(500, f), name, ls) > avail) { f = Math.max(8.5, fs - 1.5); ls = f * 0.06; }
+    const nm = fitText(lab(500, f), name, avail, ls);
+    if (L.rows === 1) {
+      const baseY = y0 + Math.min(h, 24 * Math.min(s, 1.4)) * 0.5 + 5.5;
+      txt(c, nm, left, baseY, lab(500, f), P.ink, 'left', ls);
+      areaState(c, A, left + tw(lab(500, f), nm, ls) + 10, baseY, f, right);
+    } else {
+      const baseY = y0 + 15 * Math.min(s, 1.2);
+      txt(c, nm, left, baseY, lab(500, f), P.ink, 'left', ls);
+      areaState(c, A, left, baseY + 15 * Math.min(s, 1.2), f, right);
     }
-    const cfs = mono(400, fs + 0.5);
-    if (ro.attention && x + 30 <= right) {
-      gAttn(c, x + 4, baseY - 3.6, 4.2); txt(c, String(ro.attention), x + 11, baseY, cfs, P.alarm);
-      x += 11 + tw(cfs, String(ro.attention)) + 9;
-    }
-    const gsum = gateTotal(ro.gates);
-    if (gsum && x + 30 <= right) { gGate(c, gateKindOf(ro.gates), x + 4, baseY - 3.6, 4.2); txt(c, String(gsum), x + 11, baseY, cfs, P.gate); }
     c.globalAlpha = 1;
   }
 
-  function drawAreaPhone(c, A, x0, x1, y0, h) {
-    const a = A.a;
-    const r = BP.areaRating(a.id, S.lens);
-    const last = A.c1 === NC - 1;
-    const right = last ? VM.w - 3 : x1 - 2;
-    const fs = 8, ls = 0.5, font = lab(500, fs);
-    const avail = right - (x0 + 11);
-    let wr = wrapLines(font, a.name.toUpperCase(), avail, 2, ls);
-    let tx = x0 + 11, glyphAfter = false;
-    if (!wr.ok && !/\s/.test(a.name)) {
-      // a single long word: hyphenate it after a vowel, as close to the middle as fits; the glyph moves after it
-      const avail2 = right - (x0 + 3);
-      const w0 = a.name.toUpperCase();
-      for (let d = 0; d < w0.length / 2 && !wr.ok; d++) {
-        for (const i of [Math.ceil(w0.length / 2) + d, Math.ceil(w0.length / 2) - d]) {
-          if (i < 3 || i > w0.length - 3 || !/[AEIOU]/.test(w0[i - 1]) || /[AEIOU]/.test(w0[i])) continue;
-          const l1 = w0.slice(0, i) + '-', l2 = w0.slice(i);
-          if (tw(font, l1, ls) <= avail2 && tw(font, l2, ls) + 10 <= avail2) { wr = { lines: [l1, l2], ok: true }; tx = x0 + 3; glyphAfter = true; break; }
-        }
-      }
-    }
-    if (!glyphAfter) gBand(c, r.band, x0 + 5, y0 + 10, 3.6);
-    else gBand(c, r.band, tx + tw(font, wr.lines[1], ls) + 6, y0 + 20, 3.6);
-    if (wr.ok) wr.lines.forEach((ln, j) => txt(c, ln, tx, y0 + 13 + j * 10, font, P.ink, 'left', ls));
-    else txt(c, r.band === 'na' ? '–' : OK.fmt.score(r.score), x0 + 11, y0 + 13, mono(400, 9), P.ink2);
-  }
-
   // ── domain heads ─────────────────────────────────────────────────────────────────────────────────
-  function drawHead(c, i, x, y0, w, h, k, wideA, baseA) {
+  /** The head renditions blend by the room a column has on screen: angled names (tilt classes), two-line compact
+   *  names, wide heads, then the detail head. Each fades over a short zoom band, and the camera never rests inside one
+   *  (zoom detents). Alphas sum to 1. */
+  function headAlphas(k) {
+    const cw = COL_W * k, base = L.heads.mode;
+    const rc = base === 'tilt' ? smooth(L.cwCompact * 0.96, L.cwCompact * 1.06, cw) : 1;
+    const rw = base === 'wide' ? 1 : smooth(L.cwWide * 0.96, L.cwWide * 1.06, cw);
+    const dA = rampK(k, L.th.hd);
+    const tiltA = (1 - rc) * (1 - dA), wideA = rw * (1 - dA), compA = Math.max(0, rc - rw) * (1 - dA);
+    return { tiltA, compA, wideA, dA };
+  }
+  const CAP_H = () => (L.phone ? 56 : 58);
+  /** The height the head content takes at the bottom of its region (heads sit on their columns; any extra room the
+   *  zoom gives the region stays above them until the detail head fills it). */
+  function headContentH(ha, h, hd) {
+    return ha.tiltA * CAP_H() + ha.compA * 80 + ha.wideA * Math.min(h, 116) + ha.dA * (hd ? hd.H : h);
+  }
+  /** The head region never gets taller on screen than its tallest rendition needs: it grows with the zoom up to that
+   *  height, then the column bodies follow right under it (they shift up by headShift). Below the heads every world y
+   *  maps with oy - headShift(k); the dial, banners and heads map with oy. */
+  function headNeed() {
+    if (L.headNeed) return L.headNeed;
+    let need = L.heads.h;
+    for (const w of [64, 90, 120, 149, 150, 200, 260, 340, 440]) {
+      const hd = detailPlansFull(w);
+      need = Math.max(need, hd);
+    }
+    L.headNeed = need + 6;
+    return L.headNeed;
+  }
+  function detailPlansFull(w) {
+    const narrow = w < 150, pad = narrow ? 6 : 12, maxW = w - 2 * pad, maxLines = narrow ? 3 : 2;
+    let nfs = narrow ? 9.5 : 15;
+    for (const f of narrow ? [13.5, 12.5, 11.5, 10.5, 10, 9.5] : [19, 17, 15]) if (DOMS.every((d) => wrapLines(lab(500, f), d.name, maxW, maxLines).ok)) { nfs = f; break; }
+    const slots = Math.max(...DOMS.map((d) => wrapLines(lab(500, nfs), d.name, maxW, maxLines).lines.length));
+    const nm = { fs: nfs, lh: Math.round(nfs * 1.2 * 2) / 2, slots };
+    return Math.max(...DOMS.map((d, i) => headDetailPlan(i, w, 1e6, nm).H));
+  }
+  const headPx = (k) => Math.min(L.y.headH * k, Math.max(L.heads.h, headNeed()));
+  // the gap under the heads (it carries the link channel) grows a little with the zoom, never more
+  const gapPx = (k) => Math.min((L.y.body - L.y.head - L.y.headH) * k, 24);
+  const headShift = (k) => Math.max(0, (L.y.body - L.y.head) * k - headPx(k) - gapPx(k));
+  /** The link channel: the middle of the gap under the heads, in body world units at zoom k. */
+  const chanY = (k) => L.y.body - gapPx(k) / (2 * k);
+  const oyBody = (oy, k) => oy - headShift(k);
+  /** The detail heads of all 17 columns share one top, so their names, scores and lens lists line up across the map;
+   *  they sit on their columns and drop the name while the sticky strip (which names them) covers the region top. */
+  function detailPlans(w, h, y0) {
+    const stripA = smooth(-6, -46, y0);
+    const lim = Math.max(0, (L.tl.AS + L.stripPx + 4) * easeOut(stripA) - y0);
+    // one name size and one number of name lines for every column, so the rows below line up across the map
+    const narrow = w < 150, pad = narrow ? 6 : 12, maxW = w - 2 * pad;
+    const maxLines = narrow ? 3 : 2;
+    let nfs = narrow ? 9.5 : 15;
+    for (const f of narrow ? [13.5, 12.5, 11.5, 10.5, 10, 9.5] : [19, 17, 15]) if (DOMS.every((d) => wrapLines(lab(500, f), d.name, maxW, maxLines).ok)) { nfs = f; break; }
+    const slots = Math.max(...DOMS.map((d) => wrapLines(lab(500, nfs), d.name, maxW, maxLines).lines.length));
+    const nm = { fs: nfs, lh: Math.round(nfs * 1.2 * 2) / 2, slots };
+    let plans = DOMS.map((d, i) => headDetailPlan(i, w, h - lim, nm));
+    let H = Math.max(...plans.map((p) => p.H));
+    let noName = false;
+    if (h - H < lim + 2) {
+      noName = true;
+      plans = DOMS.map((d, i) => headDetailPlan(i, w, h - lim, null));
+      H = Math.max(...plans.map((p) => p.H));
+    }
+    return { plans, H: Math.min(H, h - lim), noName };
+  }
+  function headDetailPlan(i, w, avail, nm) {
+    const d = DOMS[i];
+    const narrow = w < 150;
+    const pad = narrow ? 6 : 12, maxW = w - 2 * pad;
+    const nameLines = nm ? wrapLines(lab(500, nm.fs), d.name, maxW, narrow ? 3 : 2).lines : [];
+    let H = 6;
+    if (nm) H += (narrow ? 0 : 18) + nm.slots * nm.lh + 8;
+    H += narrow ? 50 : 34;
+    H += 20;
+    const cols = maxW >= 330 ? 4 : maxW >= 148 ? 2 : 1;
+    const lensH = (8 / cols) * (cols === 1 ? 19 : 21) + 8;
+    const sumLines = narrow ? [] : wrapLines(lab(400, 12.5), d.summary || '', maxW, 3).lines;
+    let showLens = false, showDots = false, showGrid = false, showSum = false;
+    if (H + lensH <= avail) { showLens = true; H += lensH; }
+    else if (maxW >= 92 && H + 18 <= avail) { showDots = true; H += 18; }
+    else if (maxW >= 44 && H + 36 <= avail) { showGrid = true; H += 36; }
+    if (sumLines.length && H + sumLines.length * 17 + 8 <= avail) { showSum = true; H += sumLines.length * 17 + 8; }
+    return { H, narrow, pad, maxW, nameLines, nm, sumLines, cols, showLens, showDots, showGrid, showSum };
+  }
+  function drawHead(c, i, x, y0, w, h, k, ha, baseA, hd, oyB) {
     if (y0 + h < -4 || y0 > VM.h + 4) return;
     const sel = S.selection && S.selection.type === 'domain' && S.selection.id === DOMS[i].id;
-    const dA = rampK(k, L.th.hd);
-    // while the sticky strip covers the top of the head region, its content slides down inside the region
-    const stripA = smooth(-6, -46, y0);
-    const cover = (L.tl.AS + L.tl.stripPx + 4) * easeOut(stripA) - y0;
-    // under the strip (which names the domain) the detail head drops its own name line
-    const noName = cover > 8;
-    const contentH = dA > 0.5 ? (noName ? 214 : 286) : L.heads.wide ? 118 : 86;
-    const y = y0 + clamp(cover, 0, Math.max(0, h - contentH));
-    if (L.phone && w < 60) { c.globalAlpha = baseA; drawHeadPhone(c, i, x, y, w, h); }
-    else {
-      if (wideA < 0.99) { c.globalAlpha = baseA * (1 - wideA); drawHeadNarrow(c, i, x, y, w, h); }
-      if (wideA > 0.01 && dA < 0.99) { c.globalAlpha = baseA * wideA * (1 - dA); drawHeadWide(c, i, x, y, w, h); }
-      if (dA > 0.01) { c.globalAlpha = baseA * dA; drawHeadDetail(c, i, x, y, w, h - (y - y0), noName); }
-    }
+    const bottom = y0 + h;
+    if (ha.tiltA > 0.01) { c.globalAlpha = baseA * ha.tiltA; drawHeadCap(c, i, x, bottom - CAP_H(), w); }
+    if (ha.compA > 0.01) { c.globalAlpha = baseA * ha.compA; drawHeadCompact(c, i, x, bottom - 80, w); }
+    if (ha.wideA > 0.01) { c.globalAlpha = baseA * ha.wideA; const hh = Math.min(h, 116); drawHeadWide(c, i, x, bottom - hh, w, hh); }
+    if (ha.dA > 0.01 && hd) { c.globalAlpha = baseA * ha.dA; drawHeadDetail(c, i, x, bottom - hd.H, w, hd.plans[i]); }
     c.globalAlpha = baseA;
+    const top = bottom - headContentH(ha, h, hd);
     // initiative coverage across the column head: covered, in progress, pending, finding (share of the domain)
     if (domCov && domCov[i].n) {
       const dc = domCov[i], total = COLS[i].feats.length;
       const bx0 = x + 5, bw0 = w - 10;
       let bx2 = bx0;
-      c.fillStyle = P.rule2; c.fillRect(bx0, y + 3, bw0, 4);
-      ['covered', 'in-progress', 'pending', 'finding'].forEach((st) => { const ww = bw0 * dc[st] / total; if (ww > 0) { c.fillStyle = P[COV_COLOR[st]]; c.fillRect(bx2, y + 3, ww, 4); bx2 += ww; } });
+      c.fillStyle = P.rule2; c.fillRect(bx0, top + 2, bw0, 4);
+      ['covered', 'in-progress', 'pending', 'finding'].forEach((st) => { const ww = bw0 * dc[st] / total; if (ww > 0) { c.fillStyle = P[COV_COLOR[st]]; c.fillRect(bx2, top + 2, ww, 4); bx2 += ww; } });
     }
-    if (sel) { rrect(c, x + 1, y0 - 2, w - 2, (L.colBottom[i] - L.y.head) * k + 1, Math.min(8, w * 0.08)); c.lineWidth = 2; c.strokeStyle = P.ink; c.stroke(); }
+    if (sel) { rrect(c, x + 1, top - 2, w - 2, (L.colBottom[i] * k + oyB) - top + 1, Math.min(8, w * 0.08)); c.lineWidth = 2; c.strokeStyle = P.ink; c.stroke(); }
+  }
+  /** Angled domain names above their columns (tilt classes): each ends just above its own column and runs up to the
+   *  left, so the parallel names never touch. Drawn after the heads because they cross the neighbouring columns. */
+  function drawTiltNames(c, v, k, ox, capTop, alpha, colorFor) {
+    const T = L.heads.tilt;
+    if (!T || alpha <= 0.01) return;
+    const font = lab(500, T.fs);
+    const a = T.deg * DEG, ca = Math.cos(a);
+    for (let i = 0; i < NC; i++) {
+      const ax = (colX[i] + COL_W * T.at) * k + ox, ay = capTop - 5;
+      const w = tw(font, DOMS[i].name);
+      if (ax + 8 < 0 || ax - w * ca > v.w + 8) continue;
+      const sel = S.selection && S.selection.type === 'domain' && S.selection.id === DOMS[i].id;
+      c.save();
+      c.globalAlpha = alpha;
+      c.translate(ax, ay);
+      c.rotate(a);
+      if (sel) { c.fillStyle = P.bandHi; rrect(c, -w - 5, -T.fs - 1, w + 9, T.fs + 6, 4); c.fill(); }
+      txt(c, DOMS[i].name, 0, 0, sel ? lab(600, T.fs) : font, colorFor ? colorFor(i) : P.ink, 'right');
+      c.restore();
+    }
+  }
+  /** The angled name under a point (screen px), or -1. */
+  function tiltHit(sx, sy, k, ox, capTop) {
+    const T = L.heads.tilt;
+    if (!T) return -1;
+    const a = T.deg * DEG, ca = Math.cos(a), sa = Math.sin(a);
+    const font = lab(500, T.fs);
+    for (let i = 0; i < NC; i++) {
+      const ax = (colX[i] + COL_W * T.at) * k + ox, ay = capTop - 5;
+      const dx = sx - ax, dy = sy - ay;
+      const along = dx * ca + dy * sa, across = -dx * sa + dy * ca; // the name's own frame: baseline along +x, glyphs at -y
+      if (along <= 3 && along >= -tw(font, DOMS[i].name) - 3 && across <= 3 && across >= -T.fs - 2) return i;
+    }
+    return -1;
   }
   function domCounters(c, i, x, y, fs, maxX, center) {
     const d = DOMS[i];
@@ -1024,145 +1221,160 @@
       cx += r * 2 + 3 + tw(font, s) + 7;
     });
   }
+  const scoreOf = (r) => (r.band === 'na' ? '–' : OK.fmt.score(r.score));
+  /** Wide head: the name on two lines, band glyph and score, counters, and the domain in all 8 lenses. */
   function drawHeadWide(c, i, x, y, w, h) {
     const d = DOMS[i];
     const r = BP.domainRating(d.id, S.lens);
-    const ro = BP.domainRollup(d.id);
     const px = x + 7;
-    txt(c, d.code, px, y + 15, mono(500, 10), P.ink3);
-    const cnt = ro.count + (w >= 120 ? ' features' : '');
-    if (tw(mono(400, 10), cnt) + tw(mono(500, 10), d.code) + 22 <= w) txt(c, cnt, x + w - 7, y + 15, mono(400, 10), P.ink3, 'right');
     const fs = L.heads.wide ? L.heads.fs : 10.5;
     const font = lab(500, fs);
     const lines = wrapLines(font, d.name, w - 14, 2).lines;
-    lines.forEach((ln, j) => txt(c, ln, px, y + 33 + j * fs * 1.22, font, P.ink));
-    const gy = y + 33 + 2 * fs * 1.22 + 13;
+    lines.forEach((ln, j) => txt(c, ln, px, y + 17 + j * fs * 1.22, font, P.ink));
+    const gy = y + 17 + fs * 1.22 + 25;
     gBand(c, r.band, px + 9.5, gy, 9.5);
-    txt(c, r.band === 'na' ? '–' : OK.fmt.score(r.score), px + 25, gy + 6, mono(400, 18), r.band === 'na' ? P.ink3 : P.ink);
-    domCounters(c, i, px, gy + 26, 11, x + w - 6, false);
-    // the domain in all 8 lenses, in lens order, once the head has room (the current lens underlined)
-    const ly = gy + 46;
-    if (ly + 10 < y + h && w >= 96) {
-      const step = Math.min(22, (w - 14) / 8);
+    txt(c, scoreOf(r), px + 25, gy + 6, mono(400, 18), r.band === 'na' ? P.ink3 : P.ink);
+    domCounters(c, i, px, gy + 25, 11, x + w - 6, false);
+    // the domain in all 8 lenses, in lens order (the current lens underlined)
+    const ly = gy + 42;
+    if (ly + 9 < y + h && w >= 100) {
+      const step = Math.min(22, (w - 12) / 8), gr = Math.min(4.2, step * 0.4);
       LENS_IDS.forEach((id, j) => {
-        const lx = px + 5 + step * j;
-        gBand(c, BP.domainRating(d.id, id).band, lx, ly, 4.4);
-        if (id === S.lens) { c.fillStyle = P.ink; c.fillRect(lx - 4.5, ly + 7, 9, 1.6); }
+        const lx = px + gr + step * j;
+        gBand(c, BP.domainRating(d.id, id).band, lx, ly, gr);
+        if (id === S.lens) { c.fillStyle = P.ink; c.fillRect(lx - gr - 0.5, ly + gr + 2.3, gr * 2 + 1, 1.5); }
       });
     }
   }
-  function drawHeadNarrow(c, i, x, y, w, h) {
+  /** Compact head (mid-size stages): a smaller two-line name, band glyph and score, counters. */
+  function drawHeadCompact(c, i, x, y, w) {
+    const d = DOMS[i];
+    const r = BP.domainRating(d.id, S.lens);
+    const px = x + 5;
+    const fs = L.heads.mode === 'compact' ? L.heads.fs : 9.5;
+    const font = lab(500, fs);
+    wrapLines(font, d.name, w - 10, 2).lines.forEach((ln, j) => txt(c, ln, px, y + 15 + j * fs * 1.2, font, P.ink));
+    const gy = y + 15 + fs * 1.2 + 19;
+    gBand(c, r.band, px + 7, gy, 7);
+    txt(c, scoreOf(r), px + 19, gy + 5, mono(400, 14.5), r.band === 'na' ? P.ink3 : P.ink);
+    domCounters(c, i, px, gy + 21, 10, x + w - 4, false);
+  }
+  /** The state cap under angled names: band glyph and score, then attention and gate counts. */
+  function drawHeadCap(c, i, x, y, w) {
     const d = DOMS[i];
     const r = BP.domainRating(d.id, S.lens);
     const cx = x + w / 2;
-    txt(c, d.code, cx, y + 13, mono(500, w < 30 ? 8.5 : 10), P.ink3, 'center');
-    const gr = clamp(w * 0.25, 5, 11);
-    gBand(c, r.band, cx, y + 20 + gr, gr);
-    txt(c, r.band === 'na' ? '–' : OK.fmt.score(r.score), cx, y + 20 + 2 * gr + 14, mono(400, w < 34 ? 10 : 12), r.band === 'na' ? P.ink3 : P.ink, 'center');
-    if (h >= 60) stackCounters(c, i, cx, y + 20 + 2 * gr + 29, 9.5, w);
+    const sc = scoreOf(r);
+    if (L.phone || w < 40) {
+      const gr = clamp(w * 0.22, 4.4, 7);
+      gBand(c, r.band, cx, y + 7 + gr, gr);
+      txt(c, sc, cx, y + 7 + 2 * gr + 12, mono(400, w < 26 ? 10 : 11), r.band === 'na' ? P.ink3 : P.ink, 'center');
+      stackCounters(c, i, cx, y + 7 + 2 * gr + 26, 8.5, w);
+      return;
+    }
+    const sf = mono(400, 13);
+    const gr = 6.5, tot = gr * 2 + 4 + tw(sf, sc);
+    gBand(c, r.band, cx - tot / 2 + gr, y + 15, gr);
+    txt(c, sc, cx - tot / 2 + gr * 2 + 4, y + 19.5, sf, r.band === 'na' ? P.ink3 : P.ink);
+    stackCounters(c, i, cx, y + 36, 10, w);
   }
   /** Attention and gate counters centred under a narrow head: one line when they fit, else one under the other. */
   function stackCounters(c, i, cx, y, fs, w) {
     const ro = BP.domainRollup(DOMS[i].id);
     const gn = S.gates ? domGateN[i] : gateTotal(ro.gates);
     const font = mono(S.gates ? 500 : 400, fs);
-    const r = fs * 0.4;
+    const r = fs * (fs < 9 ? 0.34 : 0.4);
     const items = [];
     if (ro.attention) items.push(['attn', ro.attention]);
     if (gn) items.push(['gate', gn]);
-    const wOf = (it) => r * 2 + 2 + tw(font, String(it[1]));
+    const gp = fs < 9 ? 1.5 : 2;
+    const wOf = (it) => r * 2 + gp + tw(font, String(it[1]));
     const one = items.reduce((sum, it) => sum + wOf(it), 0) + (items.length - 1) * 5;
     const lines = one <= w - 4 ? [items] : items.map((it) => [it]);
     lines.forEach((ln, li) => {
       const tot = ln.reduce((sum, it) => sum + wOf(it), 0) + (ln.length - 1) * 5;
       let x = cx - tot / 2;
-      const yy = y + li * (fs + 3);
+      const yy = y + li * (fs + 3.5);
       ln.forEach((it) => {
         const sv = String(it[1]);
-        if (it[0] === 'attn') { gAttn(c, x + r, yy - fs * 0.34, r * 1.1); txt(c, sv, x + r * 2 + 2, yy, font, P.alarm); }
-        else { gGate(c, S.gates && S.gates !== 'any' ? S.gates : gateKindOf(ro.gates), x + r, yy - fs * 0.34, r * 1.05); txt(c, sv, x + r * 2 + 2, yy, font, P.gate); }
+        if (it[0] === 'attn') { gAttn(c, x + r, yy - fs * 0.34, r * 1.1); txt(c, sv, x + r * 2 + gp, yy, font, P.alarm); }
+        else { gGate(c, S.gates && S.gates !== 'any' ? S.gates : gateKindOf(ro.gates), x + r, yy - fs * 0.34, r * 1.05); txt(c, sv, x + r * 2 + gp, yy, font, P.gate); }
         x += wOf(it) + 5;
       });
     });
   }
-  function drawHeadPhone(c, i, x, y, w, h) {
-    const d = DOMS[i];
-    const r = BP.domainRating(d.id, S.lens);
-    const cx = x + w / 2;
-    txt(c, d.code, cx, y + 11, mono(500, w < 22 ? 7.5 : 8.5), P.ink3, 'center');
-    const gr = clamp(w * 0.3, 4, 8);
-    gBand(c, r.band, cx, y + 16 + gr, gr);
-    txt(c, r.band === 'na' ? '–' : OK.fmt.score(r.score), cx, y + 16 + 2 * gr + 11, mono(400, w < 24 ? 8.5 : 10), P.ink, 'center');
-    // attention stays visible even here: the count in alarm red under a small asterisk
-    const ro = BP.domainRollup(d.id);
-    if (h >= 50 && ro.attention) {
-      const ay = y + 16 + 2 * gr + 17;
-      gAttn(c, cx, ay + 2, 3);
-      txt(c, String(ro.attention), cx, ay + 14, mono(500, w < 24 ? 8 : 9), P.alarm, 'center');
-    }
-  }
-  function drawHeadDetail(c, i, x, y, w, h, noName) {
+  /** Detail head (zoomed in): counts, the name large, the lens score with its band, counters, the domain in all 8
+   *  lenses (4, 2 or 1 to a row, or a row of glyphs when short of room) and the summary when the column is wide. */
+  function drawHeadDetail(c, i, x, y, w, pl) {
     const d = DOMS[i];
     const lens = S.lens;
     const r = BP.domainRating(d.id, lens);
     const ro = BP.domainRollup(d.id);
-    const px = x + 12, maxW = w - 24;
-    let yy = y + 18;
-    if (!noName) {
-      txt(c, fitText(mono(400, 10.5), d.code + ' · ' + ro.count + ' features · ' + COLS[i].mods.length + ' modules', maxW), px, yy, mono(400, 10.5), P.ink3);
-      yy += 22;
-      const nf = lab(500, 19);
-      const nl = wrapLines(nf, d.name, maxW, 2).lines;
-      nl.forEach((ln) => { txt(c, ln, px, yy, nf, P.ink); yy += 22; });
-      yy += 6;
-    } else yy -= 4;
-    gBand(c, r.band, px + 11, yy + 3, 11);
-    const sc = r.band === 'na' ? '–' : OK.fmt.score(r.score);
-    txt(c, sc, px + 29, yy + 10, mono(400, 22), r.band === 'na' ? P.ink3 : P.ink);
-    const lx = px + 29 + tw(mono(400, 22), sc) + 10;
-    txt(c, fitText(lab(500, 9.5), OK.lens(lens).label.toUpperCase(), x + w - 12 - lx, 1.4), lx, yy + 1, lab(500, 9.5), P['lens_' + lens] || P.ink2, 'left', 1.4);
-    txt(c, fitText(lab(400, 11.5), OK.bandLabel(r.band) + (r.applicable != null ? ' · ' + r.applicable + ' of ' + ro.count + ' rated' : ''), x + w - 12 - lx), lx, yy + 15, lab(400, 11.5), P.ink2);
-    yy += 34;
-    domCounters(c, i, px, yy, 11.5, x + w - 12, false);
-    yy += 22;
-    const sf = lab(400, 12.5);
-    const sl = wrapLines(sf, d.summary || '', maxW, 3).lines;
-    if (yy + sl.length * 17 < y + h - 46) sl.forEach((ln) => { txt(c, ln, px, yy, sf, P.ink2); yy += 17; });
-    yy += 8;
-    // all 8 lenses: band glyph, short name and score, 4 or 2 to a row
-    const cols = maxW >= 330 ? 4 : 2;
-    const per = Math.floor(maxW / cols);
-    const rows = 8 / cols;
-    if (yy + rows * 21 < y + h - 4 && per >= 74) {
+    const narrow = pl.narrow;
+    const px = x + pl.pad, maxW = pl.maxW;
+    let bt = y + 6; // the top of the score block
+    if (pl.nm) {
+      const nm = pl.nm, nf = lab(500, nm.fs);
+      let ny = y + 6 + nm.fs;
+      if (!narrow) { txt(c, fitText(mono(400, 10.5), ro.count + ' features · ' + COLS[i].mods.length + ' modules', maxW), px, y + 18, mono(400, 10.5), P.ink3); ny += 18 + 4; }
+      pl.nameLines.forEach((ln, j) => txt(c, ln, px, ny + j * nm.lh, nf, P.ink));
+      bt = y + 6 + (narrow ? 0 : 18) + nm.slots * nm.lh + 8;
+    }
+    const gr = narrow ? 8.5 : 11, sf = mono(400, narrow ? 17 : 22);
+    const gy = bt + gr + 3;
+    gBand(c, r.band, px + gr, gy, gr);
+    const sc = scoreOf(r);
+    txt(c, sc, px + gr * 2 + 7, gy + (narrow ? 6 : 7.5), sf, r.band === 'na' ? P.ink3 : P.ink);
+    let yy;
+    if (narrow) {
+      txt(c, fitText(lab(400, 11), OK.bandLabel(r.band), maxW), px, gy + gr + 17, lab(400, 11), P.ink2);
+      yy = bt + 50;
+    } else {
+      const rated = OK.bandLabel(r.band) + (r.applicable != null ? ' · ' + r.applicable + ' of ' + ro.count + ' rated' : '');
+      const lx = px + gr * 2 + 7 + tw(sf, sc) + 10;
+      txt(c, fitText(lab(500, 9.5), OK.lens(lens).label.toUpperCase(), x + w - 12 - lx, 1.4), lx, gy - 2, lab(500, 9.5), P['lens_' + lens] || P.ink2, 'left', 1.4);
+      txt(c, fitText(lab(400, 11.5), rated, x + w - 12 - lx), lx, gy + 12, lab(400, 11.5), P.ink2);
+      yy = bt + 34;
+    }
+    domCounters(c, i, px, yy + 12, 11.5, x + w - 8, false);
+    yy += 20;
+    if (pl.showLens) {
+      // all 8 lenses: band glyph, short name and (with room) the score
+      const cols = pl.cols, per = Math.floor(maxW / cols), rh = cols === 1 ? 19 : 21;
       LENS_IDS.forEach((id, j) => {
         const rr3 = BP.domainRating(d.id, id);
-        const lx2 = px + (j % cols) * per, ly2 = yy + 4 + Math.floor(j / cols) * 21;
+        const lx2 = px + (j % cols) * per, ly2 = yy + 10 + Math.floor(j / cols) * rh;
         gBand(c, rr3.band, lx2 + 5, ly2 - 4, 5);
-        const l = OK.lens(id);
-        txt(c, l.short, lx2 + 15, ly2, lab(id === lens ? 500 : 400, 11.5), id === lens ? P.ink : P.ink2);
-        txt(c, rr3.band === 'na' ? '–' : OK.fmt.score(rr3.score), lx2 + per - 12, ly2, mono(400, 11), P.ink3, 'right');
+        const lf = lab(id === lens ? 500 : 400, per < 80 ? 11 : 11.5);
+        const withScore = per >= 74;
+        const sw2 = withScore ? tw(mono(400, 11), scoreOf(rr3)) + 6 : 0;
+        txt(c, fitText(lf, OK.lens(id).short, per - 15 - sw2 - (cols === 1 ? 0 : 10)), lx2 + 15, ly2, lf, id === lens ? P.ink : P.ink2);
+        if (withScore) txt(c, scoreOf(rr3), lx2 + per - (cols === 1 ? 2 : 12), ly2, mono(400, 11), P.ink3, 'right');
       });
+      yy += (8 / cols) * rh + 8;
+    } else if (pl.showDots) {
+      const step = Math.min(20, maxW / 8);
+      LENS_IDS.forEach((id, j) => {
+        const lx = px + step * (j + 0.5);
+        gBand(c, BP.domainRating(d.id, id).band, lx, yy + 4, Math.min(4.6, step * 0.38));
+        if (id === lens) { c.fillStyle = P.ink; c.fillRect(lx - 4, yy + 10.5, 8, 1.6); }
+      });
+      yy += 18;
+    } else if (pl.showGrid) {
+      // the 8 lenses as two rows of four glyphs, in lens order (the current lens underlined)
+      const step = Math.min(16, maxW / 4), gr = Math.min(4.6, step * 0.32);
+      LENS_IDS.forEach((id, j) => {
+        const lx = px + step * ((j % 4) + 0.5) - (step - gr * 2) / 2, ly = yy + 6 + Math.floor(j / 4) * 15;
+        gBand(c, BP.domainRating(d.id, id).band, lx, ly, gr);
+        if (id === lens) { c.fillStyle = P.ink; c.fillRect(lx - gr - 0.5, ly + gr + 2, gr * 2 + 1, 1.5); }
+      });
+      yy += 36;
     }
+    if (pl.showSum) pl.sumLines.forEach((ln) => { txt(c, ln, px, yy + 4, lab(400, 12.5), P.ink2); yy += 17; });
   }
-  // the domain name written down the column spine when the column is too narrow for it
-  function drawSpine(c, i, colSx, k, oy, a) {
-    const d = DOMS[i];
-    const top = (L.y.body + BPT) * k + oy, bottom = (L.colBottom[i] - BPB) * k + oy;
-    const fs = L.spineFs;
-    const font = lab(500, fs);
-    const s = fitText(font, d.name, bottom - top - 6, 0.3);
-    if (!s) return;
-    c.save();
-    c.globalAlpha = a;
-    c.translate(colSx + PADX * k * 0.5 + fs * 0.5 + 1.5, top + 3);
-    c.rotate(Math.PI / 2);
-    txt(c, s, 0, 0, font, P.ink2, 'left', 0.3);
-    c.restore();
-  }
-  const spineW = () => L.spineFs + 5;
 
   // ── modules and features ─────────────────────────────────────────────────────────────────────────
-  function drawModule(c, g, k, ox, oy, lod, spineA, filtering, vy0, vy1, baseA) {
+  function drawModule(c, g, k, ox, oy, lod, filtering, vy0, vy1, baseA) {
     const m = g.m;
     const mx0 = g.x * k + ox, my0 = g.y * k + oy, mw = g.w * k, mh = g.h * k;
     const mr = BP.moduleRating(m.id, S.lens);
@@ -1171,33 +1383,42 @@
     const gk = S.gates;
     const gN = gk ? (modGateN.get(m.id) || 0) : 0;
     const allDim = filtering && !(modMatchN.get(m.id) > 0);
-    // L0: a bar coloured by the module's band
+    // L0: a heat bar coloured by the module's band: a light tint with a solid band edge, one segment per feature
+    // (paper hairlines between them, like an equaliser), n/a features hatched at their own rows
     const barA = 1 - lod.a1;
+    const rowH = L.ROW * k;
+    const vi = clamp(MG * k * 0.22, 0.5, 2);
+    const bx = mx0, bw = mw, by = my0 + vi, bh = mh - 2 * vi;
     if (barA > 0.01) {
-      const inset = spineA * spineW() * (1 - lod.a1);
-      const bx = mx0 + inset, bw = mw - inset;
-      const r = Math.min(4, bw * 0.12);
-      c.globalAlpha = baseA * barA * (filtering ? 0.22 : 1);
-      rrect(c, bx, my0, bw, mh, r);
+      const r = Math.min(5, bw * 0.14);
+      const a0 = baseA * barA * (filtering ? 0.22 : 1);
+      c.globalAlpha = a0;
+      rrect(c, bx, by, bw, bh, r);
       if (mr.band === 'na') { c.fillStyle = P.naSoft; c.fill(); c.fillStyle = hatch || P.naSoft; c.fill(); c.setLineDash([3, 2.5]); c.lineWidth = 1; c.strokeStyle = P.na; c.stroke(); c.setLineDash([]); }
       else {
-        c.fillStyle = BC(mr.band); c.globalAlpha *= P.dark ? 0.78 : 0.86; c.fill();
+        c.fillStyle = P.paperHi; c.fill();
+        c.globalAlpha = a0 * (P.dark ? 0.52 : 0.5); c.fillStyle = BC(mr.band); c.fill();
+        c.save(); rrect(c, bx, by, bw, bh, r); c.clip();
         // features where the lens does not apply keep their own place on the bar, hatched
-        const rowH0 = L.ROW * k;
-        c.save(); rrect(c, bx, my0, bw, mh, r); c.clip();
         g.fi.forEach((fi) => {
           if (fBand[fi] !== 'na') return;
           const ry = L.rowY[fi] * k + oy;
-          c.globalAlpha = baseA * barA * (filtering ? 0.22 : 1);
-          c.fillStyle = P.paperHi; c.fillRect(bx, ry, bw, rowH0);
-          c.fillStyle = hatch || P.naSoft; c.fillRect(bx, ry, bw, rowH0);
+          c.globalAlpha = a0;
+          c.fillStyle = P.paperHi; c.fillRect(bx, ry, bw, rowH);
+          c.fillStyle = hatch || P.naSoft; c.fillRect(bx, ry, bw, rowH);
         });
+        // segment hairlines between features, then the solid band edge
+        if (rowH >= 5 && bw >= 12) {
+          c.globalAlpha = a0 * (P.dark ? 0.7 : 0.9); c.fillStyle = P.paperHi;
+          const lw = rowH >= 9 ? 1.5 : 1;
+          g.fi.forEach((fi) => { const ry = L.rowY[fi] * k + oy; c.fillRect(bx, ry - lw / 2, bw, lw); });
+        }
+        c.globalAlpha = a0; c.fillStyle = BC(mr.band); c.fillRect(bx, by, clamp(bw * 0.07, 2, 4), bh);
         c.restore();
       }
       c.globalAlpha = baseA * barA;
       // filter ticks: the matching features, at their own rows, over the faded bars
       if (filtering) {
-        const rowH = L.ROW * k;
         g.fi.forEach((fi) => {
           if (fDim[fi]) return;
           const ry = L.rowY[fi] * k + oy;
@@ -1208,7 +1429,6 @@
         });
       }
       // attention: a red asterisk at each feature's own row on the bar's edge; gated features get a gate ring
-      const rowH = L.ROW * k;
       if (bw >= 12 && rowH >= 3.5) {
         const ar = clamp(rowH * 0.36, 2.6, 4.2);
         g.fi.forEach((fi) => {
@@ -1229,7 +1449,7 @@
       } else if (ro.attention) {
         g.fi.forEach((fi) => { if (!fAttn[fi]) return; const ry = L.rowY[fi] * k + oy; c.fillStyle = P.alarm; c.fillRect(bx + bw - 2, ry, 2, Math.max(1.5, rowH)); });
       }
-      if (sel) { rrect(c, bx - 1.5, my0 - 1.5, bw + 3, mh + 3, r + 1); c.lineWidth = 2; c.strokeStyle = P.ink; c.stroke(); }
+      if (sel) { rrect(c, bx - 1.5, by - 1.5, bw + 3, bh + 3, r + 1); c.lineWidth = 2; c.strokeStyle = P.ink; c.stroke(); }
     }
     if (lod.a1 <= 0.01) { c.globalAlpha = baseA; return; }
     // L1+: the card
@@ -1243,7 +1463,6 @@
     c.save(); rrect(c, mx0, my0, mw, mh, Math.min(6, mw * 0.05)); c.clip();
     if (mr.band === 'na') { c.fillStyle = hatchStrong || P.na; c.fillRect(mx0, my0, 3.5, mh); } else { c.fillStyle = BC(mr.band); c.fillRect(mx0, my0, 3, mh); }
     c.restore();
-    const rowH = L.ROW * k;
     // L1: title, glyph, counters and pips
     const tA = lod.a1 * (1 - lod.a2);
     if (tA > 0.01) {
@@ -1502,7 +1721,8 @@
     const lo = Math.min(ca, cb), hi = Math.max(ca, cb);
     let below = 0;
     for (let i = lo + 1; i < hi; i++) below = Math.max(below, L.colBottom[i]);
-    const yTop = L.y.chan - lane * 2.2, yBot = below + 10 + lane * 2.2;
+    // lanes 2 px apart on screen inside the channel under the heads
+    const yTop = chanY(cam.k) + ((lane % 5) - 2) * 2 / cam.k, yBot = below + 10 + lane * 2.2;
     const yc = Math.abs(ya - yTop) + Math.abs(yb - yTop) <= Math.abs(ya - yBot) + Math.abs(yb - yBot) ? yTop : yBot;
     return [[ea, ya], [xa, ya], [xa, yc], [xb, yc], [xb, yb], [eb, yb]];
   }
@@ -1563,67 +1783,125 @@
   }
 
   // ── sticky context at the top edge: areas, domains and (at L2+) modules ──────────────────────────
+  /** Area names placed over their spans when a span is too short for its name (phones): wrapped at word breaks,
+   *  centred, then nudged apart so no two touch and none leaves the stage. Returns [{ lines, x, w }] per area. */
+  function placeAreaNames(k, ox, font, ls, maxLines, limitW) {
+    const out = AREAS.map((A) => {
+      const x0 = colX[A.c0] * k + ox, x1 = (colX[A.c1] + COL_W) * k + ox;
+      const name = A.a.name.toUpperCase();
+      const longest = Math.max(...name.split(/\s+/).map((wd) => tw(font, wd, ls)));
+      const lines = maxLines === 1 ? [name] : wrapLines(font, name, Math.max(x1 - x0 - 4, longest + 1), maxLines, ls).lines;
+      const w = Math.max(...lines.map((ln) => tw(font, ln, ls)));
+      return { lines, w, x: Math.max(x0 + 2, (x0 + x1) / 2 - w / 2), x0, x1 };
+    });
+    // a name that fits its span starts at the span; a longer one is centred over it
+    out.forEach((o) => { if (o.w <= o.x1 - o.x0 - 4) o.x = o.x0 + 2; });
+    for (let i = 1; i < out.length; i++) out[i].x = Math.max(out[i].x, out[i - 1].x + out[i - 1].w + 7);
+    let lim = limitW - 4;
+    for (let i = out.length - 1; i >= 0; i--) { out[i].x = Math.min(out[i].x, lim - out[i].w); lim = out[i].x - 7; }
+    out.fits = out[0].x >= 2;
+    return out;
+  }
   function drawStrip(c, v, k, ox, alpha, yOff, visCols) {
-    const AS = L.tl.AS, SH = L.tl.stripPx;
+    const AS = L.tl.AS, SH = v === VT ? tlTopPx(k) - AS : L.stripPx;
     const top = yOff;
     c.globalAlpha = alpha;
     c.fillStyle = P.paperHi; c.globalAlpha = 1; c.fillRect(0, top, v.w, AS + SH);
     c.globalAlpha = alpha;
     c.beginPath(); c.moveTo(0, top + AS + SH + 0.5); c.lineTo(v.w, top + AS + SH + 0.5); c.lineWidth = 1; c.strokeStyle = P.rule; c.stroke();
-    // areas
-    AREAS.forEach((A) => {
+    // areas: the name over its span (phones place them so none is cut)
+    const afs = L.phone ? 8 : 9.5, als = L.phone ? 0.6 : afs * 0.18, afont = lab(500, afs);
+    // names keep their full length when the strip can hold them all, nudged over the neighbouring spans if need be
+    // (phones wrap them to two lines)
+    const placed = placeAreaNames(k, ox, afont, als, L.phone ? 2 : 1, v.w);
+    const useP = placed.fits && AREAS.some((A, ai) => tw(afont, A.a.name.toUpperCase(), als) > (colX[A.c1] + COL_W - colX[A.c0]) * k - 8);
+    AREAS.forEach((A, ai) => {
       const x0 = colX[A.c0] * k + ox, x1 = (colX[A.c1] + COL_W) * k + ox;
       if (x1 < 0 || x0 > v.w) return;
-      const left = Math.max(x0, 6), right = x1;
       c.beginPath(); c.moveTo(x0, top + AS - 0.5); c.lineTo(x1, top + AS - 0.5); c.lineWidth = 1; c.strokeStyle = P.rule; c.stroke();
-      const fs = L.phone ? 8.5 : 9.5;
-      const nm = fitText(lab(500, fs), A.a.name.toUpperCase(), right - left - 6, fs * 0.18);
-      txt(c, nm, left + 2, top + AS / 2 + 3.5, lab(500, fs), P.ink2, 'left', fs * 0.18);
+      const name = A.a.name.toUpperCase();
+      if (useP) placed[ai].lines.forEach((ln, j) => txt(c, ln, placed[ai].x, top + (placed[ai].lines.length > 1 ? 11 + j * 10 : AS / 2 + 3.2), afont, P.ink2, 'left', als));
+      else { const left = Math.max(x0, 6); txt(c, fitText(afont, name, x1 - left - 6, als), left + 2, top + AS / 2 + 3.5, afont, P.ink2, 'left', als); }
     });
-    // domains
+    // domains: horizontal names when the columns have room; angled names in the timeline while they are narrow
     const cw = COL_W * k;
-    const wide = cw >= L.cwWide && !L.phone;
+    const tiltA = v === VT ? tlTiltA(k) : 0;
+    const wide = cw >= L.cwWide;
+    const small = !wide && cw >= L.cwSmall;
+    const y = top + AS;
+    const bodyA = alpha * (1 - tiltA);
     visCols.forEach((i) => {
       const x = colX[i] * k + ox;
       const d = DOMS[i];
       const r = BP.domainRating(d.id, S.lens);
       const sel = S.selection && S.selection.type === 'domain' && S.selection.id === d.id;
-      const y = top + AS;
-      if (sel) { c.fillStyle = P.bandHi; c.fillRect(x, y, cw, SH); }
-      if (wide) {
-        txt(c, d.code, x + 6, y + 14, mono(500, 9.5), P.ink3);
-        const sc = r.band === 'na' ? '–' : OK.fmt.score(r.score);
-        txt(c, sc, x + cw - 6, y + 14, mono(400, 10.5), P.ink2, 'right');
-        gBand(c, r.band, x + cw - 6 - tw(mono(400, 10.5), sc) - 9, y + 10.5, 4.5);
-        const fs = 10.5;
-        const lines = wrapLines(lab(500, fs), d.name, cw - 12, 2).lines;
-        lines.forEach((ln, j) => txt(c, ln, x + 6, y + 28 + j * 12.5, lab(500, fs), P.ink));
-      } else {
-        const cx = x + cw / 2;
-        txt(c, d.code, cx, y + 12, mono(500, cw < 26 ? 7.5 : 9), P.ink2, 'center');
-        const gr = clamp(cw * 0.2, 3.5, 6.5);
-        gBand(c, r.band, cx, y + 17 + gr, gr);
-        if (SH >= 40 && cw >= 22) txt(c, r.band === 'na' ? '–' : OK.fmt.score(r.score), cx, y + 17 + 2 * gr + 11, mono(400, cw < 34 ? 8.5 : 10), P.ink2, 'center');
+      const sc = scoreOf(r);
+      if (sel) { c.globalAlpha = alpha; c.fillStyle = P.bandHi; c.fillRect(x, y, cw, SH); }
+      if (bodyA > 0.01) {
+        c.globalAlpha = bodyA;
+        if (wide) {
+          const fs = 10.5;
+          const lines = wrapLines(lab(500, fs), d.name, cw - 12 - (cw < 150 ? 0 : 34), 2).lines;
+          if (cw >= 150) {
+            txt(c, sc, x + cw - 6, y + 17, mono(400, 10.5), P.ink2, 'right');
+            gBand(c, r.band, x + cw - 6 - tw(mono(400, 10.5), sc) - 9, y + 13.5, 4.5);
+            lines.forEach((ln, j) => txt(c, ln, x + 6, y + 17 + j * 12.5, lab(500, fs), P.ink));
+          } else {
+            gBand(c, r.band, x + 10.5, y + 11, 4.5);
+            txt(c, sc, x + 19, y + 14.5, mono(400, 10.5), P.ink2);
+            lines.forEach((ln, j) => txt(c, ln, x + 6, y + 30 + j * 12.5, lab(500, fs), P.ink));
+          }
+        } else if (small) {
+          const cx = x + cw / 2, sf = mono(400, 9.5);
+          const tot = 9 + 3 + tw(sf, sc);
+          gBand(c, r.band, cx - tot / 2 + 4.5, y + 10, 4.5);
+          txt(c, sc, cx - tot / 2 + 12, y + 13.5, sf, P.ink2);
+          const fs = cw - 10 >= tw(lab(500, 9.5), 'Subscriptions') ? 9.5 : 8.5;
+          wrapLines(lab(500, fs), d.name, cw - 8, 2).lines.forEach((ln, j) => txt(c, ln, cx, y + 27 + j * (fs + 2), lab(500, fs), P.ink, 'center'));
+        } else {
+          // the fallback for columns too narrow for a name (the sticky strip of a map zoomed to the overview)
+          const cx = x + cw / 2;
+          txt(c, d.code, cx, y + 12, mono(500, cw < 26 ? 7.5 : 9), P.ink2, 'center');
+          const gr = clamp(cw * 0.2, 3.5, 6.5);
+          gBand(c, r.band, cx, y + 17 + gr, gr);
+          if (SH >= 40 && cw >= 22) txt(c, sc, cx, y + 17 + 2 * gr + 11, mono(400, cw < 34 ? 8.5 : 10), P.ink2, 'center');
+        }
       }
-      if (i < NC - 1 && COLS[i + 1].d.areaId === d.areaId) { c.beginPath(); c.moveTo(x + cw + (GAP_D * k) / 2, y + 4); c.lineTo(x + cw + (GAP_D * k) / 2, y + SH - 4); c.lineWidth = 1; c.strokeStyle = P.rule2; c.stroke(); }
+      if (tiltA > 0.01) {
+        // under the angled names: band glyph and score for each column
+        c.globalAlpha = alpha * tiltA;
+        const cx = x + cw / 2, by = y + SH - 24;
+        if (cw >= 34) {
+          const sf = mono(400, 10.5), tot = 9 + 3 + tw(sf, sc);
+          gBand(c, r.band, cx - tot / 2 + 4.5, by + 11, 4.5);
+          txt(c, sc, cx - tot / 2 + 12, by + 14.5, sf, P.ink2);
+        } else {
+          gBand(c, r.band, cx, by + 7, 4);
+          txt(c, sc, cx, by + 20, mono(400, 8.5), P.ink2, 'center');
+        }
+      }
+      c.globalAlpha = alpha;
+      if (i < NC - 1 && COLS[i + 1].d.areaId === d.areaId) { c.beginPath(); c.moveTo(x + cw + (GAP_D * k) / 2, y + SH - (tiltA > 0.5 ? 24 : SH - 4)); c.lineTo(x + cw + (GAP_D * k) / 2, y + SH - 4); c.lineWidth = 1; c.strokeStyle = P.rule2; c.stroke(); }
     });
+    if (tiltA > 0.01) drawTiltNames(c, v, k, ox, y + SH - 24, alpha * tiltA);
     c.globalAlpha = 1;
   }
-  function drawStickyMap(c, k, ox, oy, lod, visCols) {
+  function drawStickyMap(c, k, ox, oy, lod, visCols, oyB) {
     const headTop = L.y.head * k + oy;
     // the strip slides down as soon as the domain names have scrolled above the top edge
     const a = smooth(-6, -46, headTop);
     if (a <= 0.01) return;
-    drawStrip(c, VM, k, ox, 1, -(1 - easeOut(a)) * (L.tl.AS + L.tl.stripPx + 2), visCols);
+    drawStrip(c, VM, k, ox, 1, -(1 - easeOut(a)) * (L.tl.AS + L.stripPx + 2), visCols);
     // modules whose header strip has scrolled under it keep their name in a pill
     if (lod.a2 < 0.3) return;
-    const top = L.tl.AS + L.tl.stripPx;
-    const wy = (top - oy) / k;
+    const top = L.tl.AS + L.stripPx;
+    const wy = (top - oyB) / k;
     visCols.forEach((i) => {
       const g = L.colMods[i].find((m) => m.y + MH < wy + 2 / k && m.y + m.h > wy + 26 / k);
       if (!g) return;
       const x = g.x * k + ox, w = g.w * k;
       c.globalAlpha = a * lod.a2;
+      void oy;
       c.fillStyle = P.paperHi; c.fillRect(x, top, w, 25);
       c.beginPath(); c.moveTo(x, top + 25.5); c.lineTo(x + w, top + 25.5); c.lineWidth = 1; c.strokeStyle = P.rule2; c.stroke();
       rrect(c, x + 5, top + 4, w - 10, 18, 9);
@@ -1647,24 +1925,39 @@
     const lod = lodOf(k);
     // sticky strip
     const headTop = L.y.head * k + oy;
-    if (headTop < -30 && sy <= L.tl.AS + L.tl.stripPx) {
+    if (headTop < -30 && sy <= L.tl.AS + L.stripPx) {
       const ci = colAt(wx);
       if (sy <= L.tl.AS) { const A = AREAS.find((x) => ci >= x.c0 && ci <= x.c1); return A ? { type: 'area', id: A.a.id } : null; }
       return ci >= 0 ? { type: 'domain', id: DOMS[ci].id } : null;
+    }
+    // the product header band
+    if (wy < L.y.area) {
+      const D = L.dial, sp = k / L.kf, bx = ox - D.dx * k;
+      const right = Math.max(D.title.x + D.title.w, ...D.blocks.map((b) => b.x + b.w));
+      return sx >= bx && sx <= bx + right * sp && sy >= oy && sy <= oy + D.h * sp ? { type: 'product', id: BP.product.id } : null;
     }
     if (wy >= L.y.area && wy < L.y.head) {
       const ci = colAt(wx);
       const A = AREAS.find((x) => ci >= x.c0 && ci <= x.c1);
       return A ? { type: 'area', id: A.a.id } : null;
     }
+    // angled names cross their neighbours' columns, so they are hit-tested in their own frame
+    const ha = headAlphas(k);
+    const headBot = L.y.head * k + oy + headPx(k);
+    const capTop = headBot - CAP_H();
+    if (ha.tiltA > 0.5 && sy < capTop) {
+      const ti = tiltHit(sx, sy, k, ox, capTop);
+      return ti >= 0 ? { type: 'domain', id: DOMS[ti].id } : null;
+    }
     const ci = colAt(wx);
     if (ci < 0) return null;
-    if (wy >= L.y.head && wy < L.y.body) return { type: 'domain', id: DOMS[ci].id };
-    if (wy < L.y.body || wy > L.colBottom[ci]) return null;
-    const cw = COL_W * k;
-    const spineA = L.heads.wide ? 0 : 1 - smooth(L.cwWide * 0.96, L.cwWide * 1.06, cw);
-    const colSx = colX[ci] * k + ox;
-    if (spineA > 0.5 && lod.a1 < 0.5 && sx < colSx + PADX * k + spineW()) return { type: 'domain', id: DOMS[ci].id };
+    if (sy < headBot) return { type: 'domain', id: DOMS[ci].id };
+    const wyB = (sy - oyBody(oy, k)) / k; // below the heads, the body mapping
+    if (wyB < L.y.body) return { type: 'domain', id: DOMS[ci].id };
+    return hitBody(sx, wyB, ci, k, ox, lod);
+  }
+  function hitBody(sx, wy, ci, k, ox, lod) {
+    if (wy > L.colBottom[ci]) return null;
     const g = L.colMods[ci].find((m) => wy >= m.y - MG / 2 && wy <= m.y + m.h + MG / 2);
     if (!g) return { type: 'domain', id: DOMS[ci].id };
     const rowIdx = clamp(Math.floor((wy - g.y - MH) / L.ROW), 0, g.fi.length - 1);
@@ -1685,13 +1978,16 @@
     if (!L) return null;
     const T = L.tl, k = cam.k, ox = cam.x, oy = cam.y.timeline;
     const wx = (sx - ox) / k;
-    if (sy <= T.topPx) {
+    if (sy <= tlTopPx(k)) {
       const ci = colAt(wx);
       if (sy <= T.AS) { const A = AREAS.find((x) => ci >= x.c0 && ci <= x.c1); return A ? { type: 'area', id: A.a.id } : null; }
       return ci >= 0 ? { type: 'domain', id: DOMS[ci].id } : null;
     }
     const b = T.bands.find((x) => sy >= tlTop(x, k, oy) && sy <= tlBottom(x, k, oy));
     if (!b) return null;
+    // a highlight named in the band header
+    const hl = (b.hl || []).concat(b.hl2 || []).find((q) => q.a > 0.5 && sx >= q.x0 && sx <= q.x1 && sy >= q.y0 && sy <= q.y1);
+    if (hl) return { type: 'feature', id: FEATS[hl.chip.fi].id, chip: hl.chip };
     const c0 = tlChipsY(b, k, oy);
     if (sy >= c0) {
       const ci = colAt(wx);
@@ -1718,7 +2014,7 @@
     // view switch: the bands unroll downward in sequence while the columns stay put
     let u = 1, stripFrom = 0;
     if (anim && anim.view === 'timeline') { u = clamp((t - anim.t0) / anim.dur, 0, 1); stripFrom = anim.fromY || 0; }
-    const top = T.topPx;
+    const top = tlTopPx(k);
     // column guides through the whole stack
     const gTop = Math.max(top, tlTop(T.bands[0], k, oy) - 4), gBot = Math.min(v.h, tlBottom(T.bands[T.bands.length - 1], k, oy) + 4);
     c.fillStyle = P.paperHi; c.globalAlpha = P.dark ? 0.22 : 0.42;
@@ -1827,24 +2123,96 @@
       }
       const tot = b.n + ' items';
       txt(c, tot, x, hy, cntF, P.ink2); x += tw(cntF, tot) + 12;
-      if (!ph || r.state === 'next') {
-        relHeaderParts(b).forEach((p) => {
-          if (x > v.w) return;
+      const right = Math.min(v.w, x1) - 12;
+      let full = true;
+      {
+        // counts by kind (shipped) or readiness (next, future); when short of room, what is at risk is kept first
+        const parts = relHeaderParts(b);
+        const pw = (p) => 14 + tw(cntF, String(p.n)) + 4 + (ph ? 8 : tw(lblF, p.label) + 12);
+        const pri = (p) => (p.status === 'blocked' ? 0 : p.status === 'ready' ? 1 : p.status === 'building' ? 2 : 3);
+        let room = right - x + 12;
+        const keep = new Set();
+        parts.slice().sort((p, q) => pri(p) - pri(q)).forEach((p) => { if (pw(p) <= room) { keep.add(p); room -= pw(p); } else full = false; });
+        parts.forEach((p) => {
+          if (!keep.has(p)) return;
           if (p.kind) gKind(c, p.kind, x + 5, hy - 4, 5); else gStatus(c, p.status, x + 5, hy - 4, 5);
           txt(c, String(p.n), x + 14, hy, cntF, p.status === 'blocked' ? P.alarm : P.ink); x += 14 + tw(cntF, String(p.n)) + 4;
           if (!ph) { txt(c, p.label, x, hy, lblF, P.ink2); x += tw(lblF, p.label) + 12; } else x += 8;
         });
       }
+      // highlights at rest: the release's biggest items (at-risk first) named after the counts, as many as fit whole
+      b.hl = [];
+      const hlA = 1 - smooth(8.5, 11, T.ch * k);
+      if (full && hlA > 0.01 && x + 60 < right) {
+        c.globalAlpha = baseA * hlA;
+        c.beginPath(); c.moveTo(x + 0.5, hy - 10); c.lineTo(x + 0.5, hy + 2); c.lineWidth = 1; c.strokeStyle = P.rule; c.stroke();
+        x += 12;
+        const hf = lab(400, 12);
+        for (const ch of b.top) {
+          const f = FEATS[ch.fi];
+          const w = 13 + tw(hf, f.name);
+          if (x + w > right) break;
+          const band = fBand[ch.fi], col = band === 'na' ? P.na : BC(band);
+          const risk = r.state !== 'shipped' && f.status === 'blocked';
+          rrect(c, x, hy - 7.5, 9, 6, 2);
+          if (ch.kind === 'new') { c.fillStyle = col; c.fill(); } else { c.fillStyle = P.paperHi; c.fill(); c.lineWidth = 1; c.strokeStyle = col; c.stroke(); }
+          if (risk) { c.fillStyle = P.alarm; c.fill(); }
+          c.globalAlpha = baseA * hlA * (fDim[ch.fi] ? 0.35 : 1);
+          txt(c, f.name, x + 13, hy, hf, risk ? P.alarm : P.ink2);
+          c.globalAlpha = baseA * hlA;
+          b.hl.push({ x0: x - 2, x1: x + w + 2, y0: hy - 12, y1: hy + 5, chip: ch, a: hlA });
+          x += w + 14;
+        }
+        c.globalAlpha = baseA;
+      }
     }
-    // chips
+    // the next release: what is at risk, by name (the blocked items, biggest first), as many as fit whole
+    if (b.risk.length && hh >= 10) {
+      const ry = by + T.HDR + (ph ? 11 : 12);
+      let rx = Math.max(x0 + 10, 10);
+      const right = Math.min(v.w, x1) - 12;
+      const lf = lab(500, ph ? 8.5 : 9), nf = lab(400, ph ? 11.5 : 12);
+      gStatus(c, 'blocked', rx + 5, ry - 4, 5);
+      txt(c, 'AT RISK', rx + 14, ry, lf, P.alarm, 'left', 1.2);
+      rx += 14 + tw(lf, 'AT RISK', 1.2) + 10;
+      b.hl2 = [];
+      let shown = 0;
+      for (const fi of b.risk) {
+        const f = FEATS[fi];
+        const more = b.risk.length - shown - 1;
+        const tail = more > 0 ? tw(mono(400, 11), '+' + more) + 12 : 0;
+        const w = tw(nf, f.name);
+        if (rx + w + tail > right) break;
+        c.globalAlpha = baseA * (fDim[fi] ? 0.35 : 1);
+        txt(c, f.name, rx, ry, nf, P.ink);
+        c.globalAlpha = baseA;
+        const chip = b.chips.find((c2) => c2.fi === fi);
+        b.hl2.push({ x0: rx - 2, x1: rx + w + 2, y0: ry - 12, y1: ry + 5, chip, a: 1 });
+        rx += w;
+        shown += 1;
+        if (shown < b.risk.length) { txt(c, '·', rx + 5, ry, nf, P.ink3); rx += 14; }
+      }
+      if (shown < b.risk.length) txt(c, (shown ? '+' : '') + (b.risk.length - shown) + (shown ? ' more' : ' blocked items'), rx, ry, mono(400, 11), P.ink3);
+    }
+    // chips, and at rest each domain's count at the end of its bar
     const chH = T.ch * k;
+    const cntA = 1 - smooth(8.5, 11, chH);
+    const cntFont = mono(400, ph ? 8.5 : 9.5);
     visCols.forEach((ci) => {
       const list = b.cols[ci];
       for (let j = 0; j < list.length; j++) {
         const ch = list[j];
         const sy = chipY(ch, k, oy);
-        if (sy > v.h || sy + chH < T.topPx - 30) continue;
+        if (sy > v.h || sy + chH < tlTopPx(k) - 30) continue;
         drawChip(c, ch, ch.x * k + ox, sy, ch.w * k, chH, r, baseA, selFi);
+      }
+      if (list.length && cntA > 0.01) {
+        const ly = chipY(list[list.length - 1], k, oy) + chH + 10;
+        if (ly < v.h + 10 && ly > tlTopPx(k)) {
+          c.globalAlpha = baseA * cntA;
+          txt(c, String(list.length), list[0].x * k + ox + list[0].w * k / 2, ly, cntFont, P.ink3, 'center');
+          c.globalAlpha = baseA;
+        }
       }
     });
     // the selected feature's thread through the releases it appears in
@@ -1907,7 +2275,7 @@
   function updateReadout(v) {
     if (!L) return;
     const r = freeRectCached();
-    const cx = r.w / 2, cy = (v === VT ? L.tl.topPx + r.h : r.h) / 2;
+    const cx = r.w / 2, cy = (v === VT ? tlTopPx(cam.k) + r.h : r.h) / 2;
     const wx = (cx - cam.x) / cam.k, wy = (cy - cam.y[v.name]) / cam.k;
     let lvl = '', path = '';
     if (v === VM) {
@@ -1917,7 +2285,8 @@
       if (ci < 0) { let best = Infinity; for (let i = 0; i < NC; i++) { const dd = Math.abs(colX[i] + COL_W / 2 - wx); if (dd < best) { best = dd; ci = i; } } }
       const d = DOMS[ci];
       const parts = [BP.area(d.areaId).name, d.name];
-      if (lod.level >= 1 && wy > L.y.body) { const g = L.colMods[ci].find((m) => wy >= m.y - MG && wy <= m.y + m.h + MG); if (g) parts.push(g.m.name); }
+      const wyB = (cy - oyBody(cam.y.map, cam.k)) / cam.k;
+      if (lod.level >= 1 && wyB > L.y.body) { const g = L.colMods[ci].find((m) => wyB >= m.y - MG && wyB <= m.y + m.h + MG); if (g) parts.push(g.m.name); }
       path = parts.join(' › ');
       if (cam.k <= L.kf * 1.08) path = L.phone ? 'Whole product' : 'Whole product · ' + BP.areas.length + ' areas · ' + NC + ' domains · ' + NF + ' features';
       v.ladder.forEach((b, i) => { const on = i === lod.level; if (b.getAttribute('aria-pressed') !== String(on)) b.setAttribute('aria-pressed', String(on)); });
@@ -1955,34 +2324,60 @@
       const r = BP.moduleRating(m.id, lens), ro = BP.moduleRollup(m.id);
       return { key: 'm' + m.id + lens, html: '<div class="dc-tip__h"><span>' + esc(m.name) + '</span></div><div class="dc-tip__r">' + OK.html.band(r.band, 12) + '<b class="ok-mono">' + (r.band === 'na' ? '–' : OK.fmt.score(r.score)) + '</b><span>' + ro.count + ' features' + (ro.attention ? ' · ' + ro.attention + ' need attention' : '') + '</span></div><div class="dc-tip__s">Double-click to zoom in</div>' };
     }
+    if (hit.type === 'product') {
+      const pr = BP.productRating(lens);
+      return { key: 'p' + lens, html: '<div class="dc-tip__h"><span>' + esc(BP.product.name) + '</span></div><div class="dc-tip__r">' + OK.html.band(pr.band, 12) + '<b class="ok-mono">' + (pr.band === 'na' ? '–' : OK.fmt.score(pr.score)) + '</b><span>' + esc(OK.lens(lens).label + ' · ' + OK.bandLabel(pr.band)) + '</span></div><div class="dc-tip__s">Click for the whole product</div>' };
+    }
     if (hit.type === 'release') {
       const r = BP.release(hit.id);
       return { key: 'r' + r.id, html: '<div class="dc-tip__h"><span>' + esc(r.label + ' · ' + r.name) + '</span></div><div class="dc-tip__s">' + esc(OK.fmt.date(r.date) + ' · ' + OK.fmt.rel(r.date)) + '</div><div class="dc-tip__s">Click to open the release package</div>' };
     }
     return null;
   }
+  /** The hover card: content is written in the handler, its size is measured in the next frame (never in the
+   *  handler), and later moves reuse that size. */
   function showTip(v, sx, sy, hit) {
     const t = tipFor(v, hit);
     if (!t) { hideTip(v); return; }
-    if (v.tipKey !== t.key) { v.tip.innerHTML = t.html; v.tipKey = t.key; }
-    v.tip.hidden = false;
-    const tw2 = v.tip.offsetWidth, th2 = v.tip.offsetHeight;
+    v.tipAt = { sx, sy };
+    if (v.tipKey !== t.key) {
+      v.tip.innerHTML = t.html; v.tipKey = t.key; v.tipSize = null;
+      v.tip.style.visibility = 'hidden';
+      v.tip.hidden = false;
+      tipPending = v;
+      schedule();
+      return;
+    }
+    placeTip(v);
+  }
+  function placeTip(v) {
+    if (!v.tipSize || !v.tipAt) return;
+    const { sx, sy } = v.tipAt, tw2 = v.tipSize[0], th2 = v.tipSize[1];
     let x = sx + 16, y = sy + 18;
     if (x + tw2 > v.w - 8) x = sx - tw2 - 12;
     if (y + th2 > v.h - 8) y = sy - th2 - 12;
     v.tip.style.transform = 'translate(' + Math.round(Math.max(4, x)) + 'px,' + Math.round(Math.max(4, y)) + 'px)';
+    v.tip.style.visibility = '';
   }
-  function hideTip(v) { if (!v.tip.hidden) { v.tip.hidden = true; v.tipKey = ''; } }
+  let tipPending = null;
+  function measureTip() {
+    const v = tipPending;
+    tipPending = null;
+    if (!v || v.tip.hidden) return;
+    v.tipSize = [v.tip.offsetWidth, v.tip.offsetHeight];
+    placeTip(v);
+  }
+  function hideTip(v) { if (!v.tip.hidden) { v.tip.hidden = true; v.tipKey = ''; v.tipSize = null; } }
 
   // ══ pointer, wheel, keys ════════════════════════════════════════════════════════════════════════
   function attach(v) {
     const cv = v.cv;
     const ptrs = new Map();
-    let drag = null, pinch = null, lastTap = null, rect = null;
-    const local = (e) => ({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    let drag = null, pinch = null, lastTap = null;
+    // the canvas origin is cached in a frame after each resize, so handlers never read layout
+    const local = (e) => ({ x: e.clientX - v.rx, y: e.clientY - v.ry });
     cv.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
-      rect = cv.getBoundingClientRect();
       hideTip(v);
       try { cv.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
       ptrs.set(e.pointerId, local(e));
@@ -1991,27 +2386,26 @@
       else if (ptrs.size === 2) {
         const [a, b] = Array.from(ptrs.values());
         const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-        pinch = { d0: Math.hypot(b.x - a.x, b.y - a.y) || 1, k0: cam.k, wx: (mx - cam.x) / cam.k, wy: (my - cam.y[v.name]) / cam.k, ta: v === VT ? tlAnchor(my, cam.k, cam.y.timeline) : null };
+        pinch = { d0: Math.hypot(b.x - a.x, b.y - a.y) || 1, k0: cam.k, wx: (mx - cam.x) / cam.k, wy: v === VM ? mapWorldY(my, cam.k, cam.y.map) : (my - cam.y[v.name]) / cam.k, ta: v === VT ? tlAnchor(my, cam.k, cam.y.timeline) : null };
         if (drag) drag.moved = true;
       }
     });
     cv.addEventListener('pointermove', (e) => {
       if (!ptrs.has(e.pointerId)) {
         if (e.pointerType === 'mouse' && L) {
-          const p = { x: e.offsetX, y: e.offsetY };
+          const p = local(e);
           const hit = v === VM ? hitMap(p.x, p.y) : hitTimeline(p.x, p.y);
           cv.classList.toggle('is-pointer', !!hit);
           showTip(v, p.x, p.y, hit);
         }
         return;
       }
-      if (!rect) rect = cv.getBoundingClientRect();
       ptrs.set(e.pointerId, local(e));
       if (pinch && ptrs.size >= 2) {
         const [a, b] = Array.from(ptrs.values());
         const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
         const k = clamp(pinch.k0 * Math.hypot(b.x - a.x, b.y - a.y) / pinch.d0, L.th.min, L.th.max);
-        setCam(v, mx - pinch.wx * k, pinch.ta ? my - pinch.ta.off - pinch.ta.u * k - pinch.ta.fx : my - pinch.wy * k, k);
+        setCam(v, mx - pinch.wx * k, pinch.ta ? my - pinch.ta.off - pinch.ta.u * k - pinch.ta.fx : mapCamY(pinch.wy, my, k), k);
         touched = true;
         return;
       }
@@ -2054,7 +2448,8 @@
       if (e.shiftKey && !e.ctrlKey) { setCam(v, cam.x - e.deltaY * unit, cam.y[v.name], cam.k); touched = true; return; }
       if (v === VT && !e.ctrlKey) { setCam(v, cam.x, cam.y.timeline - e.deltaY * unit, cam.k); touched = true; return; }
       const f = Math.exp(-e.deltaY * unit * (e.ctrlKey ? 0.01 : 0.0018));
-      zoomAt(v, e.offsetX, e.offsetY, cam.k * f, false);
+      const p = local(e);
+      zoomAt(v, p.x, p.y, cam.k * f, false);
       settleSoon(v);
     }, { passive: false });
     v.wrap.querySelector('.dc-zoom').addEventListener('click', (e) => {
@@ -2074,9 +2469,34 @@
     const r = freeRectCached();
     zoomAt(VM, r.w / 2, r.h / 2, ks[n], true);
   }
+  /** Where the inspector (desktop side panel) or the peek sheet (phones) will appear once it opens, in view px. */
+  const PANEL = { w: 392, sheet: 0.62, top: 102 };
+  function readPanel() {
+    const cs = getComputedStyle(shell.root);
+    const num = (n, d) => { const x = parseFloat(cs.getPropertyValue(n)); return isFinite(x) ? x : d; };
+    PANEL.w = num('--ok-insp-w', PANEL.w);
+    PANEL.sheet = num('--ok-insp-sheet', PANEL.sheet);
+    PANEL.top = num('--ok-bar-h', 56) + num('--ok-filter-h', 46);
+  }
+  function underPanel(v, sx, sy) {
+    if (shell.inspector.isOpen()) return false;
+    if (L.phone) return sy > (v.h + PANEL.top) * (1 - PANEL.sheet) - PANEL.top - 8;
+    return sx > v.w - 12 - PANEL.w - 10;
+  }
+  // A first tap on a spot the inspector is about to cover waits out the double-tap window before it peeks or inspects,
+  // so the second tap of a double-click still reaches the map instead of the panel that just opened over it.
+  let tapWait = null;
   function onTap(v, sx, sy, dbl) {
     if (!L) return;
+    if (tapWait) { clearTimeout(tapWait.timer); const w = tapWait; tapWait = null; tapAction(w.v, w.sx, w.sy, false, w.hit); }
     const hit = v === VM ? hitMap(sx, sy) : hitTimeline(sx, sy);
+    if (hit && !dbl && underPanel(v, sx, sy)) {
+      tapWait = { v, sx, sy, hit, timer: setTimeout(() => { const w = tapWait; tapWait = null; if (w && active() === w.v && !S.page) tapAction(w.v, w.sx, w.sy, false, w.hit); }, 340) };
+      return;
+    }
+    tapAction(v, sx, sy, dbl, hit);
+  }
+  function tapAction(v, sx, sy, dbl, hit) {
     if (!hit) {
       if (dbl) zoomAt(v, sx, sy, cam.k * 1.8, true);
       else if (S.selection) shell.select(null);
@@ -2094,25 +2514,34 @@
     shell.inspect({ type: hit.type, id: hit.id });
     if (hit.type === 'release') requestDraw(VT);
   }
-  let pendingReveal = null;
+  let pendingReveal = null, pendingBand = null;
+  /** Scroll the release stack so a band's header is in view (keeps the zoom). */
+  function revealBand(id) {
+    const b = L.tl.bands.find((x) => x.r.id === id);
+    if (!b) return;
+    const top = tlTopPx(cam.k) + 10, bottom = VT.h - L.mb;
+    const y0 = tlTop(b, cam.k, cam.y.timeline), y1 = tlBottom(b, cam.k, cam.y.timeline);
+    if (y0 >= top && Math.min(y1, y0 + 120) <= bottom) return;
+    flyTo(VT, { x: cam.x, y: cam.y.timeline + (top - y0), k: cam.k }, 420);
+  }
   // after a peek opens the inspector, pan just enough to keep the clicked row clear of it
   function revealPending() {
     if (!pendingReveal) return;
     const { v, fi, chip } = pendingReveal;
     pendingReveal = null;
     if (active() !== v) return;
-    const r = shell.freeRect();
+    const r = shell.freeRectHint();
     lastFree = r;
     const k = cam.k;
     let x, y, w, h;
-    if (v === VM) { const g = L.fMod[fi]; x = g.x * k + cam.x; w = g.w * k; y = L.rowY[fi] * k + cam.y.map; h = L.ROW * k; }
+    if (v === VM) { const g = L.fMod[fi]; x = g.x * k + cam.x; w = g.w * k; y = L.rowY[fi] * k + oyBody(cam.y.map, k); h = L.ROW * k; }
     else { if (!chip) return; x = chip.x * k + cam.x; w = chip.w * k; y = chipY(chip, k, cam.y.timeline); h = L.tl.ch * k; }
     const m = 20;
     let dx = 0, dy = 0;
     if (x + Math.min(w, 120) > r.w - m) dx = r.w - m - (x + Math.min(w, 120));
     if (x < m) dx = m - x;
     if (y + h > r.h - m) dy = r.h - m - (y + h);
-    const top = v === VT ? L.tl.topPx + 8 : 8;
+    const top = v === VT ? tlTopPx(k) + 8 : 8;
     if (y < top) dy = top - y;
     if (dx || dy) flyTo(v, { x: cam.x + dx, y: cam.y[v.name] + dy, k }, 320);
   }
@@ -2134,6 +2563,9 @@
       const g = L.mods.get(hit.id);
       box = { x: g.x, y: g.y, w: g.w, h: g.h };
       kMin = T.l2 * 1.05; kMax = T.l4 * 0.95;
+    } else if (hit.type === 'product') {
+      fitView(VM, animate);
+      return;
     } else if (hit.type === 'feature') {
       const fi = fIdx.get(hit.id);
       const g = L.fMod[fi];
@@ -2145,8 +2577,10 @@
     k = clamp(k, Math.min(kMin, kMax), Math.max(kMin, kMax));
     k = clamp(k, T.min, T.max);
     let x = r.w / 2 - (box.x + box.w / 2) * k;
-    let y = r.h / 2 - (box.y + box.h / 2) * k;
-    if (box.h * k > r.h - pad * 2) y = pad - box.y * k; // tall boxes: keep their top in view
+    // a box that starts above the bodies (an area or a domain) is shorter on screen by the head shift
+    const hS = box.h * k - (box.y < L.y.body ? headShift(k) : 0);
+    let y = r.h / 2 - hS / 2 - box.y * k + (box.y >= L.y.body ? headShift(k) : 0);
+    if (hS > r.h - pad * 2) y = mapCamY(box.y, pad, k); // tall boxes: keep their top in view
     flyTo(VM, { x, y, k }, animate ? 560 : 0);
     touched = true;
   }
@@ -2154,7 +2588,7 @@
     const b = L.tl.bands.find((x) => x.r.id === id);
     if (!b) return;
     const r = freeRectCached();
-    const top = L.tl.topPx + 10;
+    const top = tlTopPx(cam.k) + 10;
     // big enough to read the item names, and the band's top under the strip
     const k = clamp(Math.max(cam.k, Math.min(16 / L.tl.cp, 150 / COL_W), 120 / COL_W), L.th.min, L.th.max);
     const wx = (r.w / 2 - cam.x) / cam.k;
@@ -2213,7 +2647,7 @@
     const ref = pendingLocate;
     pendingLocate = null;
     if (!ref) return;
-    lastFree = shell.freeRect();
+    lastFree = shell.freeRectHint();
     if (S.view === 'timeline') {
       if (ref.type === 'feature') {
         const fi = fIdx.get(ref.id);
@@ -2222,8 +2656,8 @@
         const ch = list[list.length - 1];
         const r = lastFree;
         const k = clamp(Math.max(cam.k, 18 / L.tl.cp, 110 / COL_W), L.th.min, L.th.max);
-        const cy = (L.tl.topPx + r.h) / 2;
-        flyTo(VT, { x: r.w / 2 - (ch.x + ch.w / 2) * k, y: cy - L.tl.ch * k / 2 - (ch.band.u0 + ch.j * L.tl.cp) * k - ch.band.fxTop - L.tl.HDR - L.tl.PADT, k }, 520);
+        const cy = (tlTopPx(k) + r.h) / 2;
+        flyTo(VT, { x: r.w / 2 - (ch.x + ch.w / 2) * k, y: cy - L.tl.ch * k / 2 - (ch.band.u0 + ch.j * L.tl.cp) * k - ch.band.fxTop - ch.band.hdr - L.tl.PADT, k }, 520);
       }
       return;
     }
@@ -2234,7 +2668,7 @@
       const T = L.th;
       const k = cam.k >= T.l3 * 1.05 ? cam.k : clamp(T.l3 * 1.35, T.min, T.l4 * 0.98);
       const g = L.fMod[fi];
-      flyTo(VM, { x: r.w / 2 - (g.x + g.w / 2) * k, y: r.h / 2 - (L.rowY[fi] + L.ROW / 2) * k, k }, 620);
+      flyTo(VM, { x: r.w / 2 - (g.x + g.w / 2) * k, y: mapCamY(L.rowY[fi] + L.ROW / 2, r.h / 2, k), k }, 620);
     } else zoomInto(ref, true);
   }
 
@@ -2243,7 +2677,7 @@
     const sv = (inner, w, h) => '<svg width="' + (w || 26) + '" height="' + (h || 18) + '" viewBox="0 0 ' + (w || 26) + ' ' + (h || 18) + '" aria-hidden="true">' + inner + '</svg>';
     const row = (icon, text) => '<div class="ok-lg-row">' + icon + '<span>' + text + '</span></div>';
     return '<section class="ok-lg-sec"><h3>Columns map</h3>' +
-      row(sv('<rect x="5" y="1" width="16" height="7" rx="1.5" fill="var(--ok-good)"/><rect x="5" y="9.5" width="16" height="7.5" rx="1.5" fill="var(--ok-fair)"/>'), 'Opening zoom: each module is a bar coloured by its band in the current lens; a domain column is a stack of them.') +
+      row(sv('<rect x="5" y="1" width="16" height="16" rx="2.5" fill="var(--ok-fair)" opacity=".5"/><rect x="5" y="1" width="2.5" height="16" fill="var(--ok-fair)"/><path d="M5 5.5h16M5 9.5h16M5 13.5h16" stroke="var(--ok-paper-hi)" stroke-width="1.2"/>'), 'Opening zoom: each module is a heat bar in its band for the current lens, one segment per feature; a domain column is a stack of them, so its height is its size.') +
       row(sv('<rect x="3" y="1" width="20" height="16" rx="2.5" fill="var(--ok-paper-hi)" stroke="var(--ok-rule)"/><circle cx="8" cy="6" r="2" fill="var(--ok-good)"/><circle cx="8" cy="11" r="2" fill="var(--ok-poor)"/><path d="M12 6h8" stroke="var(--ok-ink-3)" stroke-width="1.4"/>'), 'Zoom in: module cards with one pip per feature, then feature rows with marks, names and scores.') +
       row(sv('<g transform="translate(9 9)">' + OK.svg.corona(BP.features.find((f) => f.status === 'live'), 6, { status: true }) + '</g><path d="M18 7h6M18 11h4" stroke="var(--ok-ink-3)" stroke-width="1.3"/>'), 'Closest zoom: every row shows the 8-lens corona, the lens headline, gates and release.') +
       row(sv('<rect x="3" y="3" width="20" height="12" rx="2" fill="none" stroke="var(--ok-na)" stroke-dasharray="3 2"/><path d="M6 15l9-12M11 15l9-12M16 15l6-8" stroke="var(--ok-na)" stroke-width=".9" opacity=".7"/>'), '<b>Hatched and dashed</b>: the lens does not apply (n/a), for example Operations on a feature that is not live yet.') +
@@ -2251,9 +2685,10 @@
       '</section><section class="ok-lg-sec"><h3>Release stack</h3>' +
       row(sv('<rect x="2" y="3" width="22" height="5" rx="1.5" fill="var(--ok-good)" opacity=".86"/><rect x="2" y="10" width="22" height="5" rx="1.5" fill="var(--ok-paper-hi)" stroke="var(--ok-good)"/>'), 'Each item is a chip in its domain column: filled when new, outlined when improved or fixed.') +
       row(sv('<path d="M1 9h24" stroke="var(--ok-ink)" stroke-width="1.4"/><rect x="5" y="5" width="16" height="8" rx="4" fill="var(--ok-ink)"/>'), 'Today. Time runs down: shipped releases above, the next release and the future below.') +
+      row(sv('<rect x="3" y="2" width="20" height="4" rx="1.2" fill="var(--ok-good)"/><rect x="3" y="7" width="20" height="4" rx="1.2" fill="var(--ok-fair)"/><text x="13" y="17.5" font-size="6.5" text-anchor="middle" fill="var(--ok-ink-3)" font-family="DM Mono, monospace">2</text>'), 'At rest each release names its biggest items and counts each domain\'s items; the next release also names what is at risk.') +
       row(sv('<g transform="translate(6 9)">' + OK.svg.status('ready', 4.5) + '</g><g transform="translate(19 9)">' + OK.svg.status('building', 4.5) + '</g>'), 'Next release items show readiness: ready, in build or blocked.') +
       row(sv('<rect x="2" y="3" width="22" height="12" rx="2.5" fill="none" stroke="var(--ok-ink-3)" stroke-dasharray="4 3"/>'), 'Dashed bands are future releases.') +
-      '</section><section class="ok-lg-sec"><h3>Navigate</h3><p class="ok-lg-note">Scroll or pinch to zoom, drag to pan. Double-click a domain, module or release to zoom into it. Keys: <span class="ok-kbd">+</span> <span class="ok-kbd">−</span> zoom, <span class="ok-kbd">0</span> fit, arrows move between features.</p></section>';
+      '</section><section class="ok-lg-sec"><h3>Navigate</h3><p class="ok-lg-note">Scroll or pinch to zoom, drag to pan. Double-click a domain, module or release to zoom into it. Click the product header for the whole product.</p></section>';
   }
 
   // ══ sizing, events, boot ════════════════════════════════════════════════════════════════════════
@@ -2269,11 +2704,14 @@
     if (v.cv.height !== ph) v.cv.height = ph;
     v.dirty = true;
   }
+  let needOrigin = true;
   function onStage(w, h, force) {
     if (w < 10 || h < 10) return;
     stageW = w; stageH = h;
+    needOrigin = true;
     const keepCenter = L && !force ? { wx: (w / 2 - cam.x) / cam.k, wyM: (h / 2 - cam.y.map) / cam.k, wyT: (h / 2 - cam.y.timeline) / cam.k, k: cam.k } : null;
     sizeCanvas(VM, w, h); sizeCanvas(VT, w, h);
+    readPanel();
     lastFree = { x: 0, y: 0, w, h };
     const phone = shell.isPhone();
     const key = (phone ? 'p' : 'd') + Math.round(Math.log(w) / Math.log(1.05)) + ':' + Math.round(Math.log(h) / Math.log(1.07));
@@ -2305,16 +2743,24 @@
 
   shell.on('lens', () => { refreshLens(); VM.dirty = VT.dirty = true; schedule(); });
   shell.on('filter', () => { refreshFilter(); VM.dirty = VT.dirty = true; schedule(); });
-  shell.on('select', () => { VM.dirty = VT.dirty = true; schedule(); });
+  shell.on('select', (p) => {
+    VM.dirty = VT.dirty = true;
+    // selections made by kit chrome (inspector rows, search results, the feature page) are brought into view;
+    // the page's own clicks already are
+    if (p && p.source && p.source !== 'variant' && L) {
+      if (p.type === 'feature' && S.view === 'map') pendingReveal = { v: VM, fi: fIdx.get(p.id), far: true };
+      else if (p.type === 'release' && S.view === 'timeline') pendingBand = p.id;
+    }
+    schedule();
+  });
   shell.on('locate', (ref) => locate(ref));
   shell.on('theme', () => { readPalette(); VM.dirty = VT.dirty = true; schedule(); });
-  shell.on('inspector', (p) => {
-    // measure the free area in the next frame (never synchronously in the handler)
-    requestAnimationFrame(() => { lastFree = shell.freeRect(); });
-  });
+  // the free area beside the inspector from the kit's layout-free hint (no layout read in the handler)
+  shell.on('inspector', () => { lastFree = shell.freeRectHint(); });
   shell.on('feature-close', () => { VM.dirty = VT.dirty = true; schedule(); });
   shell.on('view', (p) => {
     hideTip(VM); hideTip(VT);
+    needOrigin = true; // the view just shown is measured in the next frame (pointer handlers never read layout)
     if (!L) return;
     if (p.view === 'timeline') {
       const fromY = clamp(L.y.head * cam.k + cam.y.map, 0, VT.h * 0.6);
@@ -2345,5 +2791,5 @@
   fontsReady.then(go, go);
   setTimeout(go, 1500);
   if (document.fonts && document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', () => { if (booted) onStage(stageW, stageH, true); });
-  window.DC = { bench: (n) => { const t0 = performance.now(); for (let i = 0; i < (n || 20); i++) { if (S.view === 'map') drawMap(performance.now()); else drawTimeline(performance.now()); } return (performance.now() - t0) / (n || 20); }, shell, cam, get L() { return L; }, zoomInto, zoomToLevel, zoomToBand, fitView: () => fitView(active(), false), VM, VT, hitMap, lodOf: () => lodOf(cam.k), setK: (k, sx, sy) => zoomAt(active(), sx == null ? active().w / 2 : sx, sy == null ? active().h / 2 : sy, k, false), focusFeature: (id, k) => { const fi = fIdx.get(id); const g = L.fMod[fi]; const kk = k || L.th.l3 * 1.3; setCam(VM, VM.w / 2 - (g.x + g.w / 2) * kk, VM.h / 2 - (L.rowY[fi] + L.ROW / 2) * kk, kk); } };
+  window.DC = { geom: () => ({ k: cam.k, kf: L.kf, heads: L.heads.mode, headPx: headPx(cam.k), headShift: headShift(cam.k), level: lodOf(cam.k).level }), bench: (n) => { const t0 = performance.now(); for (let i = 0; i < (n || 20); i++) { if (S.view === 'map') drawMap(performance.now()); else drawTimeline(performance.now()); } return (performance.now() - t0) / (n || 20); }, shell, cam, get L() { return L; }, zoomInto, zoomToLevel, zoomToBand, fitView: () => fitView(active(), false), VM, VT, hitMap, lodOf: () => lodOf(cam.k), setK: (k, sx, sy) => zoomAt(active(), sx == null ? active().w / 2 : sx, sy == null ? active().h / 2 : sy, k, false), focusFeature: (id, k) => { const fi = fIdx.get(id); const g = L.fMod[fi]; const kk = k || L.th.l3 * 1.3; setCam(VM, VM.w / 2 - (g.x + g.w / 2) * kk, mapCamY(L.rowY[fi] + L.ROW / 2, VM.h / 2, kk), kk); } };
 })();

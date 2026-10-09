@@ -14,6 +14,13 @@
 .ca-hud--br { right: 14px; bottom: 12px; flex-direction: column; align-items: flex-end; }
 .ok-shell.ok-has-insp .ca-hud--br { right: calc(var(--ok-insp-w) + 26px); }
 .ok-shell.ok-has-insp .ca-hud--bl { max-width: calc(100% - var(--ok-insp-w) - 330px); }
+/* the legend panel floats at the top right (just left of the inspector when that is open): move the HUD sideways */
+.ok-shell.ok-has-legend .ca-hud--br { right: calc(var(--ok-legend-w) + 26px); }
+.ok-shell.ok-has-insp.ok-has-legend .ca-hud--br { right: calc(var(--ok-insp-w) + var(--ok-legend-w) + 36px); }
+.ok-shell.ok-has-legend .ca-hud--tl { right: calc(var(--ok-legend-w) + 26px); }
+.ok-shell.ok-has-insp.ok-has-legend .ca-hud--tl { right: calc(var(--ok-insp-w) + var(--ok-legend-w) + 36px); }
+.ok-shell.ok-has-legend .ca-hud--bl { max-width: calc(100% - var(--ok-legend-w) - 342px); }
+.ok-shell.ok-has-insp.ok-has-legend .ca-hud--bl { max-width: calc(100% - var(--ok-insp-w) - var(--ok-legend-w) - 352px); }
 
 /* node action bar */
 .ca-node { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 5px 0 12px; border-radius: 999px; background: var(--ok-panel-solid); border: 1px solid var(--ok-panel-edge); box-shadow: 0 4px 18px var(--ok-shadow); max-width: min(560px, calc(100vw - 40px)); }
@@ -30,7 +37,10 @@
 .ca-q__btn[disabled] { opacity: 0.4; cursor: default; }
 .ca-q__main { gap: 8px; padding: 0 10px; min-width: 0; color: var(--ok-ink); }
 .ca-q__t { font: 500 10.5px var(--ok-f-label); letter-spacing: 0.15em; text-transform: uppercase; white-space: nowrap; }
-.ca-q__n { font-size: 12px; color: var(--ok-gate); }
+.ca-q__t b { font: 500 12.5px var(--ok-f-mono); letter-spacing: 0; color: var(--ok-gate); margin-right: 7px; }
+.ca-q__t b i { font: 400 11.5px var(--ok-f-mono); font-style: normal; color: var(--ok-ink-3); }
+.ca-q__main[disabled] { cursor: default; color: var(--ok-ink-3); }
+.ca-q__main[disabled]:hover { background: transparent; color: var(--ok-ink-3); }
 .ca-q__pos { font-size: 11.5px; color: var(--ok-ink-2); white-space: nowrap; }
 .ca-q__pos i { font-style: normal; color: var(--ok-ink-4); margin: 0 1px; }
 .ca-q__cur { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; line-height: 1.15; text-align: left; }
@@ -90,7 +100,7 @@
 .ca-tl__scroll:focus-visible { box-shadow: inset 0 0 0 2px var(--ok-focus); }
 .ca-tl__inner { position: relative; }
 .ca-tl__head { position: sticky; top: 0; z-index: 4; background: var(--ok-paper); border-bottom: 1px solid var(--ok-rule); }
-.ca-tl__corner { position: sticky; left: 0; z-index: 2; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; gap: 4px; padding: 0 12px 10px var(--ok-gut); background: var(--ok-paper); border-right: 1px solid var(--ok-rule); box-sizing: border-box; }
+.ca-tl__corner { position: sticky; left: 0; z-index: 2; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; gap: 3px; padding: 0 12px 10px var(--ok-gut); background: var(--ok-paper); border-right: 1px solid var(--ok-rule); box-sizing: border-box; }
 .ca-tl__corner .ok-cap { color: var(--ok-ink-2); }
 .ca-tl__cornersub { font: 400 11px var(--ok-f-mono); color: var(--ok-ink-3); }
 .ca-tl__month { position: absolute; top: 6px; padding-left: 4px; height: 12px; border-left: 1px solid var(--ok-rule); font: 400 10px/12px var(--ok-f-mono); color: var(--ok-ink-3); white-space: nowrap; }
@@ -192,7 +202,13 @@
   .ca-ln--area { padding-left: 10px; }
   .ca-tl__corner { padding-left: 10px; }
 }
+/* The time-scale switch at the right end of the bar moves aside for the inspector and the legend panel, as the map HUD does. */
+.ok-shell.ok-has-insp .ca-tl__bar { padding-right: calc(var(--ok-insp-w) + 26px); }
+.ok-shell.ok-has-legend .ca-tl__bar { padding-right: calc(var(--ok-legend-w) + 26px); }
+.ok-shell.ok-has-insp.ok-has-legend .ca-tl__bar { padding-right: calc(var(--ok-insp-w) + var(--ok-legend-w) + 36px); }
+@media (max-width: 760px) { .ok-shell.ok-has-insp .ca-tl__bar { padding-right: var(--ok-gut); } }
 /* With the inspector open, the swimlanes get extra scroll room on the right, so any column can be brought
    out from under the panel without moving anything. */
 .ok-shell.ok-has-insp .ca-tl__inner { margin-right: calc(var(--ok-insp-w) + 24px); }
-@media (max-width: 760px) { .ok-shell.ok-has-insp .ca-tl__inner { margin-right: 0; } }
+/* On phones the sheet covers the lower part: room below the last lane lets any lane scroll up above it. */
+@media (max-width: 760px) { .ok-shell.ok-has-insp .ca-tl__inner { margin-right: 0; padding-bottom: calc(var(--ok-insp-sheet) * 100vh); } }

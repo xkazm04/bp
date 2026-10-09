@@ -18,12 +18,17 @@
 .dc-ladder button:hover i { background: var(--ok-ink-2); }
 .dc-ladder button[aria-pressed="true"] i { width: 4px; background: var(--ok-ink); }
 .ok-has-insp .dc-zoom { right: calc(var(--ok-insp-w) + 26px); }
+/* the legend panel floats at the top right; its height follows its content, so the zoom instrument moves aside */
+.ok-has-legend .dc-zoom { right: calc(var(--ok-legend-w) + 26px); }
+.ok-has-insp.ok-has-legend .dc-zoom { right: calc(var(--ok-insp-w) + var(--ok-legend-w) + 36px); }
 
 /* location readout: area > domain > module at the centre of the view */
 .dc-readout { position: absolute; z-index: 5; left: 14px; bottom: 12px; display: flex; align-items: baseline; gap: 10px; height: 38px; max-width: calc(100% - 260px); padding: 0 14px; align-items: center; border: 1px solid var(--ok-panel-edge); border-radius: 10px; background: var(--ok-panel-solid); box-shadow: 0 4px 16px var(--ok-shadow); pointer-events: none; }
 .dc-readout__lvl { font: 500 9.5px var(--ok-f-label); letter-spacing: 0.16em; text-transform: uppercase; color: var(--ok-ink-3); white-space: nowrap; }
 .dc-readout__path { font-size: 12.5px; color: var(--ok-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ok-has-insp .dc-readout { max-width: calc(100% - var(--ok-insp-w) - 290px); }
+.ok-has-legend .dc-readout { max-width: calc(100% - var(--ok-legend-w) - 290px); }
+.ok-has-insp.ok-has-legend .dc-readout { max-width: calc(100% - var(--ok-insp-w) - var(--ok-legend-w) - 300px); }
 .dc-view--timeline .dc-readout { max-width: calc(100% - 150px); }
 
 /* hover card for marks whose names are not drawn at the current zoom */

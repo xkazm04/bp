@@ -10,7 +10,11 @@
    - Modules stack inside their domain (14-unit gap), domains inside their area (34), and every area starts with a
      118-unit header gap that carries its engraved title and tick rule.
    - Columns: dial (diameter RD) › root trunk › area trunk › domain plates (DW) › domain trunk › module cards (MW) ›
-     module trunk › feature columns. The dial sits on the vertical middle of the tree.
+     module trunk › feature columns. The dial and its scale card (every lens with the product score, attention and
+     gates waiting; a click on a lens switches it) sit on the vertical middle of the tree.
+   - Narrow stages (the 820 side panel, phones): when the left column would shrink the dial below 150 px, the dial
+     moves on top of the tree as a horizontal product plaque (dial, name, the lens scale beside it) and the root trunk
+     drops from its lower left. The tree gets the full width, so the fit fills the panel's height.
    - Size class: the wrap (3…13 cards per row) that gives the largest fit scale for the stage wins. Spare width (a wide
      screen is height-limited) widens the dial, the domain plates and the module cards; on tablets and desktops the
      domain plate is widened until a domain plaque (ring, name, counters) fits inside it at the opening fit. The class
@@ -22,8 +26,8 @@
    - L0 (k < t1 = max(1.4·kFit, 0.33)): the dial with eight lens gauges, area titles, domain plaques (band ring with the
      score, name, attention and gate counters), modules as compact band pills, and features as a soft band texture
      with attention asterisks. This is the opening state and the thumbnail.
-   - L1 (k ≥ t1): module cards uncover (band glyph, name, score, counters). Domain plates grow a status bar and, when tall,
-     a per-lens table.
+   - L1 (k ≥ t1): module cards uncover (band glyph, name, score, counters). Domain plates grow a sheet: the status mix,
+     gates waiting by kind and the next release's readiness under the plaque, and every lens beside it.
    - L2 (k ≥ t2 = max(2.1·kFit, 0.46)): feature cards collapse to chips: a status mark (form = lifecycle, colour = band)
      and the name where the chip has room.
    - L3 (k ≥ t3 = max(1.85·t2, 0.95)): feature cards with name, status glyph, the current-lens band glyph, score and
@@ -62,7 +66,11 @@
   const BANDS = ['good', 'fair', 'poor', 'critical', 'na'];
 
   // ══ shell ══════════════════════════════════════════════════════════════════════════════════════
-  const shell = OK.mount({ root: app, variant: 'Orbit Atlas', legend: legendHTML });
+  // The variant's own keys join the kit's key line in the legend (and the phone's menu sheet); they are handled below.
+  const shell = OK.mount({
+    root: app, variant: 'Orbit Atlas', legend: legendHTML,
+    keys: [['← → ↑ ↓', 'Move through the tree'], ['Space', 'Fold or unfold'], ['F', 'Focus branch'], ['[ ]', 'Gates queue'], ['+ − 0', 'Zoom in, out, fit']],
+  });
   const S = shell.state;
 
   // ══ data ═══════════════════════════════════════════════════════════════════════════════════════
@@ -108,10 +116,14 @@
   const collapsed = new Set();
   const L = { P: null, c: null, key: '', kFit: 0.2, t1: 0.33, t2: 0.46, t3: 0.95, t4: 2, kMin: 0.1, kMax: 5.5, bounds: { x: 0, y: 0, w: 1, h: 1 }, pad: null };
 
+  // Narrow stages (the side panel, phones) put the product dial on top of the tree, as a horizontal plaque, so the
+  // dial keeps a readable size and the tree gets the width back. The root trunk then leaves the dial's lower left.
+  const stemX = (P) => P.RD * 0.5 * 0.34;
+  const topGap = (P) => P.RD * 1.12 + 10;
   function columns(P) {
     const g = P.g;
-    const xRT = P.RD + 64 * g;
-    const xA = P.RD + 140 * g;
+    const xRT = P.top ? stemX(P) : P.RD + 64 * g;
+    const xA = P.top ? stemX(P) + 76 * g : P.RD + 140 * g;
     const xD = xA + 60 * g;
     const xDT = xD + P.DW + 36 * g;
     const xM = xD + P.DW + 72 * g;
@@ -121,7 +133,7 @@
   }
   function measure(P) {
     const c = columns(P);
-    let y = 0, cols = 0;
+    let y = P.top ? topGap(P) : 0, cols = 0;
     BP.areas.forEach((a) => {
       y += P.AG;
       BP.domainsOf(a.id).forEach((d, di) => {
@@ -143,34 +155,51 @@
   // Column widths grow together from BASE to WIDE to fill a wide (height-limited) stage.
   const BASE = { RD: 560, DW: 600, MW: 300, CW: 200, g: 1 };
   const WIDE = { RD: 1500, DW: 1240, MW: 560, CW: 252, g: 1.9 };
-  // Phones get taller area gaps and a minimum plate height, so the domain plaques and area titles have room at the fit.
   let PHONE = false;
-  const mixP = (t, wrap) => { const P = { wrap, AG: PHONE ? 190 : 118, DMIN: PHONE ? 300 : 0 }; Object.keys(BASE).forEach((k) => { P[k] = lerp(BASE[k], WIDE[k], t); }); return P; };
+  // In the top arrangement the module cards get a minimum width, so module names read at L1 on narrow stages.
+  const mixP = (t, wrap, top) => {
+    // phones: taller area gaps and a minimum plate height give the plaques and area titles room at the fit (a little
+    // less in the top arrangement, where the dial's plaque takes its share of the height)
+    const P = { wrap, top: !!top, AG: PHONE ? (top ? 172 : 190) : 118, DMIN: PHONE ? (top ? 262 : 300) : 0 };
+    Object.keys(BASE).forEach((k) => { P[k] = lerp(BASE[k], WIDE[k], t); });
+    if (top) P.MW = Math.max(P.MW, PHONE ? 400 : 430);
+    return P;
+  };
   function stagePad(sw) {
     const phone = sw <= 760;
     return phone ? { l: 10, r: 10, t: 48, b: 54 } : { l: 26, r: 26, t: 58, b: 58 };
   }
-  function arrange(wrap, aw, ah, phone) {
-    const at = (t) => { const P = mixP(t, wrap); const m = measure(P); return { P, m }; };
+  /** The dial's diameter on screen in the top arrangement: large enough to read, small enough to leave the tree room. */
+  const topDialPx = (aw, phone) => (phone ? 92 : clamp(aw * 0.15, 104, 132));
+  function arrange(wrap, aw, ah, phone, top) {
+    // Settle the sizes that depend on the fit scale: the top dial's diameter, and (desktop and tablet) a domain plate
+    // wide enough for its plaque at the opening fit.
+    const dialPx = topDialPx(aw, phone);
+    const settle = (r) => {
+      for (let it = 0; it < 14; it++) {
+        const k = Math.min(aw / r.m.W, ah / r.m.H);
+        let changed = false;
+        if (top) { const rd = dialPx / k; if (Math.abs(rd - r.P.RD) > 2) { r.P.RD = rd; changed = true; } }
+        if (!phone && r.P.DW * k < PLAQUE_PX) { r.P.DW = (PLAQUE_PX / k) * 1.02; changed = true; }
+        if (!changed) break;
+        r.m = measure(r.P);
+      }
+      return r;
+    };
+    // the top arrangement settles inside the search, since its dial and plates change the tree's proportions
+    const at = (t) => { const P = mixP(t, wrap, top); const r = { P, m: measure(P) }; return top ? settle(r) : r; };
     const hLimited = (r) => aw / r.m.W >= ah / r.m.H;
     let best = at(0);
     if (hLimited(best)) {
-      const top = at(1);
-      if (hLimited(top)) best = top;
+      const wideR = at(1);
+      if (hLimited(wideR)) best = wideR;
       else {
         let lo = 0, hi = 1;
         for (let i = 0; i < 16; i++) { const mid = (lo + hi) / 2; if (hLimited(at(mid))) lo = mid; else hi = mid; }
         best = at(lo);
       }
     }
-    if (!phone) {
-      for (let it = 0; it < 10; it++) {
-        const k = Math.min(aw / best.m.W, ah / best.m.H);
-        if (best.P.DW * k >= PLAQUE_PX) break;
-        best.P.DW = (PLAQUE_PX / k) * 1.02;
-        best.m = measure(best.P);
-      }
-    }
+    settle(best);
     best.k = Math.min(aw / best.m.W, ah / best.m.H);
     return best;
   }
@@ -179,15 +208,22 @@
     const phone = sw <= 760;
     PHONE = phone;
     const aw = Math.max(200, sw - pad.l - pad.r), ah = Math.max(200, sh - pad.t - pad.b);
-    let best = null;
-    [13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3].forEach((wrap) => {
-      const r = arrange(wrap, aw, ah, phone);
-      if (!best || r.k > best.k * 1.03) best = r;
-    });
+    const pick = (top) => {
+      let best = null;
+      [13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3].forEach((wrap) => {
+        const r = arrange(wrap, aw, ah, phone, top);
+        if (!best || r.k > best.k * 1.03) best = r;
+      });
+      return best;
+    };
+    // The dial is the product's instrument: when the left column would shrink it below a readable size, the dial
+    // moves on top of the tree as a horizontal plaque.
+    let best = pick(false);
+    if (best.P.RD * best.k < 150) best = pick(true);
     const P = best.P;
     ['RD', 'DW', 'MW', 'CW'].forEach((key) => { P[key] = Math.round(P[key] / 4) * 4; });
     P.g = Math.round(P.g * 20) / 20;
-    return { P, k: best.k, pad, key: [P.wrap, P.RD, P.DW, P.MW, P.CW, P.g, P.AG, P.DMIN].join('|') };
+    return { P, k: best.k, pad, key: [P.top ? 'top' : 'left', P.wrap, P.RD, P.DW, P.MW, P.CW, P.g, P.AG, P.DMIN].join('|') };
   }
 
   /** Writes target boxes for every node, honouring the collapsed set. Never looks at lens or filters. */
@@ -196,7 +232,7 @@
     L.c = c;
     const setT = (n, x, y, w, h, vis) => { n.tx = x; n.ty = y; n.tw = w; n.th = h; n.tvis = vis; };
     const hideUnder = (n, x, y, w, h) => { n.kids.forEach((k) => { setT(k, x, y, w, h, 0); hideUnder(k, x, y, w, h); }); };
-    let y = 0, maxX = c.xF;
+    let y = P.top ? topGap(P) : 0, maxX = c.xF;
     AREAS.forEach((an) => {
       y += P.AG;
       const top = y;
@@ -244,10 +280,17 @@
       setT(an, c.xA - 10, top, 20, y - top, 1);
     });
     const H = y + G.PADB;
-    const cy = (P.AG + y) / 2;
+    if (P.top) {
+      setT(ROOT, 0, 0, P.RD, P.RD, 1);
+      const top = -P.RD * 0.07 - 12;
+      L.bounds = { x: -20, y: top, w: Math.max(maxX, c.xM + P.MW + 120) + 40, h: H - top };
+      return;
+    }
+    // the dial and its lens scale below it sit as one group on the middle of the tree
+    const cy = (P.AG + y) / 2 - P.RD * 0.2;
     setT(ROOT, 0, cy - P.RD / 2, P.RD, P.RD, 1);
     const top = Math.min(P.AG * 0.4, cy - P.RD / 2 - 20);
-    L.bounds = { x: -20, y: top, w: Math.max(maxX, c.xM + P.MW + 120) + 40, h: Math.max(H, cy + P.RD / 2 + 20) - top };
+    L.bounds = { x: -20, y: top, w: Math.max(maxX, c.xM + P.MW + 120) + 40, h: Math.max(H, cy + P.RD * 0.95 + 20) - top };
   }
   function applyLayout(animate) {
     layoutTree(L.P);
@@ -536,7 +579,7 @@
   const gateTotal = (g) => (g.triage || 0) + (g.approval || 0) + (g.changes || 0);
 
   // ══ selection, focus, cursor ═══════════════════════════════════════════════════════════════════
-  let selNode = null, hoverNode = null, cursorNode = null, kbdActive = false, focusNode = null, productOpen = false;
+  let selNode = null, hoverNode = null, cursorNode = null, kbdActive = false, focusNode = null;
   let deps = []; // [{ pts: [[x,y]...], kind: 'dep'|'dent', other }]
   function nodeAlpha(n) {
     let a = n.vis;
@@ -678,7 +721,8 @@
       // a module shows its whole block of feature rows, at chip level at least
       if (n.type === 'module') k = Math.max(Math.min(k, (r.w - 60) / Math.max(sb.w + 80, 1)), L.t2 * 1.12);
       k = snapK(clamp(k, L.kMin, L.kMax));
-      const x0 = n.type === 'area' ? L.c.xA - 50 / k : n.type === 'domain' ? Math.max(n.tx - 30 / k, L.c.xM - Math.min(SW <= 760 ? 150 : 300, r.w * 0.42) / k) : n.tx - (SW <= 760 ? 10 : 60) / k;
+      // a domain keeps enough of its plate in view for the plaque and its sheet (status, gates, next release)
+      const x0 = n.type === 'area' ? L.c.xA - 50 / k : n.type === 'domain' ? Math.max(n.tx - 30 / k, L.c.xM - Math.min(SW <= 760 ? 150 : 430, r.w * 0.42) / k) : n.tx - (SW <= 760 ? 10 : 60) / k;
       const spanW = (sb.x + sb.w - x0) * k;
       const tx = spanW < r.w - 40 ? r.x + (r.w - spanW) / 2 - x0 * k : r.x + 16 - x0 * k;
       atFit = false;
@@ -720,20 +764,38 @@
     draw(now);
     drawMini();
     syncHUD();
-    if (a || b || c) requestDraw();
+    if (a || b || c || fading) requestDraw();
+  }
+  // ── fade-in of size-gated details (a domain's sheet, a wide module card's lens grid): a detail that was not drawn in
+  //    the previous frame fades in over FADE_MS, as map labels do, instead of popping in at full strength when its box
+  //    grows big enough. Re-arranging a detail that is already shown does not fade it again. ──
+  const FADE_MS = 220;
+  const fadeSeen = new Map(); // key → { t0, f: the frame it was last drawn in }
+  let frameNo = 0, frameNow = 0, fading = false;
+  function fadeIn(key) {
+    let o = fadeSeen.get(key);
+    if (!o || o.f < frameNo - 1) { o = { t0: frameNow, f: frameNo }; fadeSeen.set(key, o); }
+    o.f = frameNo;
+    const t = reduced() ? 1 : clamp((frameNow - o.t0) / FADE_MS, 0, 1);
+    if (t < 1) fading = true;
+    return t;
   }
 
   // ══ drawing ════════════════════════════════════════════════════════════════════════════════════
   let toggles = []; // screen hit targets for fold toggles, rebuilt each frame
+  let lensHits = []; // lens cells (product scale, domain sheets, module cards), rebuilt each frame
+  let productHit = null; // the product scale card beside or under the dial
+  let hoverLens = null;
   let VX0 = 0, VY0 = 0, VX1 = 0, VY1 = 0; // view in world units
   function draw(now) {
+    frameNo++; frameNow = now; fading = false;
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     ctx.clearRect(0, 0, SW, SH);
     curFont = ''; curLS = '';
     setFont(font(400, 12), '0px');
     ctx.textBaseline = 'alphabetic';
     VX0 = toWX(0); VY0 = toWY(0); VX1 = toWX(SW); VY1 = toWY(SH);
-    toggles = [];
+    toggles = []; lensHits = []; productHit = null;
     const k = cam.k;
     const A = lodAlphas(k);
     drawAreaHeaders(A);
@@ -760,8 +822,12 @@
       const gapPx = L.P.AG * k;
       const yb = toSY(an.y) - clamp(gapPx * 0.36, 5, 22);
       if (yb < -20 || yb > SH + 20) return;
-      const x0 = toSX(L.c.xA) - 6;
-      ctx.globalAlpha = a;
+      // area titles stick to the left edge, so the area stays named when its trunk is off screen; a sticky title
+      // fades out under the HUD row at the top (the gates queue)
+      const x0 = Math.max(toSX(L.c.xA) - 6, 12);
+      const hudA = x0 > toSX(L.c.xA) - 6 ? ramp(yb, 52, 70) : 1;
+      if (hudA < 0.02) return;
+      ctx.globalAlpha = a * hudA;
       const fs = clamp(gapPx * 0.5, phone ? 9.5 : 10, 13);
       const f = font(500, fs);
       const ls = (fs * 0.2).toFixed(1) + 'px';
@@ -832,9 +898,13 @@
     // root › areas
     const rootA = nodeAlpha(ROOT);
     ctx.globalAlpha = rootA;
-    const rcx = ROOT.x + ROOT.w, rcy = ROOT.y + ROOT.h / 2;
     const areaPts = AREAS.map((an) => ({ y: areaMidY(an), a: nodeAlpha(an), an }));
-    level(rcx, rcy, c.xRT, areaPts, () => c.xA, 1.5, rgba(C.ink2, 0.5), 2.2);
+    if (L.P.top) {
+      // the trunk leaves the dial's lower left, where its bezel meets the stem line
+      const R = ROOT.w / 2, dx = c.xRT - (ROOT.x + R);
+      const sy = ROOT.y + R + Math.sqrt(Math.max(0, R * R - dx * dx)) * 1.06;
+      level(c.xRT, sy, c.xRT, areaPts, () => c.xA, 1.5, rgba(C.ink2, 0.5), 2.2);
+    } else level(ROOT.x + ROOT.w, ROOT.y + ROOT.h / 2, c.xRT, areaPts, () => c.xA, 1.5, rgba(C.ink2, 0.5), 2.2);
     // area trunks and junction rings
     AREAS.forEach((an) => {
       const a = nodeAlpha(an);
@@ -887,10 +957,12 @@
     const cx = toSX(ROOT.x + ROOT.w / 2), cy = toSY(ROOT.y + ROOT.h / 2);
     if (cx + R < -10 || cx - R > SW + 10 || cy + R < -10 || cy - R > SH + 10) return;
     ctx.globalAlpha = focusNode ? 0.5 : 1;
-    const big = R > 70;
+    // in the top arrangement the plaque beside the dial carries the product's name
+    const big = R > 70 && !L.P.top;
+    const productSel = selNode === ROOT;
     // plate, bezel and ticks
     circle(cx, cy, R * 1.11); ctx.setLineDash([1.2, 4]); ctx.lineWidth = 1; ctx.strokeStyle = C.rule; ctx.stroke(); ctx.setLineDash([]);
-    circle(cx, cy, R); ctx.fillStyle = C.paperHi; ctx.fill(); ctx.lineWidth = productOpen ? 2 : 1; ctx.strokeStyle = productOpen ? C.ink : C.rule; ctx.stroke();
+    circle(cx, cy, R); ctx.fillStyle = C.paperHi; ctx.fill(); ctx.lineWidth = productSel ? 2 : 1; ctx.strokeStyle = productSel ? C.ink : C.rule; ctx.stroke();
     if (C.dark) { ctx.save(); ctx.shadowColor = C.glow; ctx.shadowBlur = 18; circle(cx, cy, R); ctx.strokeStyle = rgba(C.ink, 0.08); ctx.stroke(); ctx.restore(); }
     circle(cx, cy, R * 0.9); ctx.lineWidth = 1; ctx.strokeStyle = C.rule2; ctx.stroke();
     ctx.beginPath();
@@ -932,8 +1004,8 @@
     text(scoreTxt(pr), cx, cy + sf * 0.36, font(400, sf, true), C.ink, 'center');
     const lf = clamp(R * 0.068, 7.5, 13);
     if (R > 44) {
-      const ln = OK.lens(S.lens).label.toUpperCase();
-      text(ln, cx + lf * 0.08, cy - sf * 0.52, font(500, lf), C.ink2, 'center', (lf * 0.16).toFixed(1) + 'px');
+      // a small dial leaves the lens's name to its scale card, where the current lens is marked
+      if (R >= 66) { const ln = OK.lens(S.lens).label.toUpperCase(); text(ln, cx + lf * 0.08, cy - sf * 0.52, font(500, lf), C.ink2, 'center', (lf * 0.16).toFixed(1) + 'px'); }
       gBand(pr.band, cx, cy + sf * 0.36 + lf * 1.4, clamp(R * 0.035, 3, 6));
     }
     if (big) {
@@ -942,25 +1014,123 @@
       text(name, cx + nf * 0.14, cy + R * 0.66, font(500, nf), C.ink, 'center', (nf * 0.28).toFixed(1) + 'px');
       if (R > 110) text('v' + BP.product.version + ' · ' + NF + ' features', cx, cy + R * 0.66 + nf * 1.45, font(400, nf * 0.78, true), C.ink3, 'center');
     }
+    drawProductScale(cx, cy, R);
     ctx.globalAlpha = 1;
+  }
+  /** The dial's scale card: every lens by name with the product's score (a click switches the lens), then what waits
+      for a human. Beside the dial in the top arrangement, under it in the left one. */
+  function drawProductScale(cx, cy, R) {
+    const top = L.P.top;
+    const phone = SW <= 760;
+    if (R < (top ? 30 : 64)) return;
+    const s = top ? clamp(R / 58, 1, 1.7) : clamp(R / 118, 1.05, 1.5);
+    const cols = top && !phone ? 4 : 2;
+    const cw = lensCellW(s);
+    // under the dial the table keeps clear of the root trunk: the column gap gives way first
+    const room = top ? Infinity : (L.c.xRT - ROOT.x) * cam.k - 24;
+    const cellW = top ? cw + 20 * s : clamp((room - cw - 8 * s) / (cols - 1), cw + 10 * s, cw + 20 * s);
+    const roll = BP.productRollup();
+    const gates = gateTotal(roll.gates);
+    const rowH = 17 * s;
+    const titleH = top && !phone ? 22 * s : 0;
+    const tableH = (8 / cols) * rowH;
+    const tableW = (cols - 1) * cellW + cw + 4 * s;
+    // what waits for a human: gates are counted as gates here, as on the rail and the domain plaques
+    const cf = font(400, 10.5 * s, true), lf = font(400, 11 * s);
+    const parts = [{ glyph: (gx, gy, gr) => gAttn(gx, gy, gr), n: String(roll.attention), label: 'need attention', col: C.alarm }];
+    if (gates) parts.push({ glyph: (gx, gy, gr) => gGate('approval', gx, gy, gr), n: String(gates), label: 'gates waiting', col: C.gate });
+    const partW = (p) => 13 * s + tw(p.n, cf) + 4 * s + tw(p.label, lf);
+    const lineW = parts.reduce((w, p) => w + partW(p), 0) + 14 * s * (parts.length - 1);
+    // under the dial the line wraps rather than run into the root trunk
+    const lines = lineW <= room ? [parts] : parts.map((p) => [p]);
+    const cntH = lines.length * 18 * s + 2 * s;
+    const blockH = titleH + tableH + 6 * s + cntH;
+    let x0, y0;
+    if (top) { x0 = cx + R * 1.11 + 16 * s; y0 = cy - blockH / 2; }
+    else { x0 = Math.min(cx - tableW / 2 + 3 * s, toSX(L.c.xRT) - 14 - tableW); y0 = cy + R * 1.11 + 14 * s; }
+    if (x0 > SW || x0 + tableW < 0 || y0 > SH || y0 + blockH < 0) return;
+    let y = y0;
+    if (titleH) {
+      const nf = font(500, 13 * s), nls = (3.4 * s).toFixed(1) + 'px';
+      const name = BP.product.name.toUpperCase();
+      text(name, x0, y + 13 * s, nf, C.ink, 'left', nls);
+      const vf = font(400, 10.5 * s, true);
+      text('v' + BP.product.version + ' → ' + BP.product.nextVersion + ' · ' + NF + ' features', x0 + tw(name, nf, nls) + 12 * s, y + 13 * s, vf, C.ink3, 'left');
+      y += titleH;
+    }
+    lensCells({ type: 'product' }, x0, y, cols, cellW, s);
+    y += tableH + 6 * s;
+    let maxX = x0 + tableW;
+    lines.forEach((ln, li) => {
+      const w = ln.reduce((a2, p) => a2 + partW(p), 0) + 14 * s * (ln.length - 1);
+      // under the dial the counts are centred on it; beside it they align with the table
+      let x = top ? x0 + 2 * s : (lines.length > 1 ? x0 + 2 * s : cx - w / 2);
+      const yb = y + 13 * s + li * 18 * s;
+      ln.forEach((p) => {
+        p.glyph(x + 5 * s, yb - 3.8 * s, 4.8 * s); x += 13 * s;
+        text(p.n, x, yb, cf, p.col, 'left'); x += tw(p.n, cf) + 4 * s;
+        text(p.label, x, yb, lf, C.ink3, 'left'); x += tw(p.label, lf) + 14 * s;
+      });
+      maxX = Math.max(maxX, x);
+    });
+    const hx = Math.min(x0, cx - lineW / 2) - 6 * s;
+    productHit = { x: hx, y: y0 - 4 * s, w: maxX - hx + 4 * s, h: blockH + 8 * s };
+  }
+  const ratingOf = (ref, l) => (ref.type === 'product' ? BP.productRating(l) : ref.type === 'domain' ? BP.domainRating(ref.id, l) : BP.moduleRating(ref.id, l));
+  /** The width of one lens cell's content (glyph, the widest lens name, a three-digit score) at type scale `s`. */
+  function lensCellW(s) {
+    const f = font(500, 8.5 * s), sf = font(400, 10.5 * s, true), ls = (0.8 * s).toFixed(2) + 'px';
+    return 14 * s + tw('OVERALL', f, ls) + 7 * s + tw('100', sf);
+  }
+  /** Every lens of a node as cells (band glyph, lens, score) in `cols` columns, `pitch` apart; the current lens is
+      marked, and a click on a cell switches the lens. `s` scales the type. */
+  function lensCells(ref, x, y, cols, pitch, s, rowPx) {
+    s = s || 1;
+    const f = font(500, 8.5 * s), sf = font(400, 10.5 * s, true), ls = (0.8 * s).toFixed(2) + 'px';
+    const rowH = rowPx || 17 * s;
+    const cw = lensCellW(s);
+    const live = ctx.globalAlpha > 0.5;
+    LENS_IDS.forEach((l, i) => {
+      const cx = x + (i % cols) * pitch, cy = y + Math.floor(i / cols) * rowH + 12 * s;
+      const r = ratingOf(ref, l);
+      const cur = l === S.lens;
+      const hov = hoverLens && hoverLens.lens === l && hoverLens.ref === ref.type + ':' + (ref.id || '');
+      if (cur || hov) { rrect(cx - 4 * s, cy - 12 * s, cw + 9 * s, 16 * s, 8 * s); ctx.fillStyle = cur ? C.bandHi : C.band; ctx.fill(); }
+      gBand(r.band, cx + 5 * s, cy - 3.8 * s, 4.6 * s);
+      text(OK.lens(l).short.toUpperCase(), cx + 14 * s, cy, f, cur ? C.ink : C.ink3, 'left', ls);
+      text(scoreTxt(r), cx + cw, cy, sf, cur ? C.ink : C.ink2, 'right');
+      if (live) lensHits.push({ x: cx - 4 * s, y: cy - 12 * s, w: cw + 9 * s, h: 16 * s, lens: l, ref: ref.type + ':' + (ref.id || '') });
+    });
   }
 
   // ── domain plates: band ring, name and counters, sticky inside the plate ──
-  function stickyY(by, bh, ch, pad) {
-    const top = Math.max(by + pad, 8);
+  function stickyY(by, bh, ch, pad, x) {
+    const top = Math.max(by + pad, hudTop(x));
     const bottom = Math.min(by + bh - pad, SH - 8);
     if (bh < ch + pad * 2) return by + (bh - ch) / 2;
     return clamp(top, by + pad, Math.max(by + pad, Math.min(bottom - ch, by + bh - ch - pad)));
   }
-  function counters(roll, x, y, maxX, withCount) {
+  /** Where a sticky label stops at the top: below the HUD row (gates queue, node bar) where that row covers the map, so
+      a plaque that sticks to the top edge never slides under it. A DOM property, no layout read. */
+  function hudTop(x) {
+    if (SW <= 760) return M.node.hidden ? 50 : 86;
+    return x != null && x < (M.node.hidden ? 340 : 920) ? 56 : 8;
+  }
+  function counters(roll, x, y, maxX, withCount, fadeKey) {
     const cf = font(400, 10.5, true);
     const gates = gateTotal(roll.gates);
     if (roll.attention) { gAttn(x + 4.5, y - 3.6, 4.6); x += 11; text(String(roll.attention), x, y, cf, C.alarm, 'left'); x += tw(String(roll.attention), cf) + 9; }
     if (gates) { gGate(roll.gates.changes ? 'changes' : 'approval', x + 4.5, y - 3.6, 4.6); x += 11; text(String(gates), x, y, cf, C.gate, 'left'); x += tw(String(gates), cf) + 9; }
     if (withCount) {
+      // the feature count comes with the second line of a growing plaque or card: it fades in rather than pop
       const cnt = roll.count + ' features';
-      if (x + tw(cnt, cf) < maxX) { text(cnt, x, y, cf, C.ink3, 'left'); x += tw(cnt, cf); }
-      else if (x + tw(String(roll.count), cf) < maxX) { text(String(roll.count), x, y, cf, C.ink3, 'left'); x += tw(String(roll.count), cf); }
+      const fit = x + tw(cnt, cf) < maxX ? cnt : x + tw(String(roll.count), cf) < maxX ? String(roll.count) : '';
+      if (fit) {
+        const base = ctx.globalAlpha;
+        if (fadeKey) ctx.globalAlpha = base * fadeIn(fadeKey);
+        text(fit, x, y, cf, C.ink3, 'left'); x += tw(fit, cf);
+        ctx.globalAlpha = base;
+      }
     }
     return x;
   }
@@ -971,6 +1141,7 @@
   }
   function drawDomain(dn, A) {
     const a = nodeAlpha(dn);
+    if (!overlayPass) dn.tagMode = false;
     if (a < 0.02 || !inView(dn.x, dn.y, dn.w, dn.h, 60)) return;
     const k = cam.k;
     const phone = SW <= 760;
@@ -1003,8 +1174,10 @@
       else if (bx + bw - 14 >= d) { ringOnly = true; px = 6; }
       else px = -1e4;
     }
+    // when the plaque cannot show its name, the domain's name moves onto a tag above its first module card
+    if (!overlayPass && (ringOnly || px < -1000)) dn.tagMode = true;
     if (px < -1000) { if (overlayPass) { ctx.globalAlpha = 1; return; } }
-    const py = stickyY(by, bh, ch, two ? 4 : 3);
+    const py = stickyY(by, bh, ch, two ? 4 : 3, px);
     const rx = px + d / 2, ry = py + ch / 2;
     const tx = px + d + 8;
     const contentR = px + cwid;
@@ -1030,20 +1203,99 @@
       plaque(dn, rt, roll, d, two, ch, px, py, rx, ry, tx, nameF, contentR, room);
     }
     if (overlayPass) { ctx.globalAlpha = 1; return; }
-    // grown plates: the status mix beside the plaque, then every lens, while there is room
-    if (bw > 420 && bh >= 34 && !ringOnly && px > -1000) {
-      let x = contentR + 28;
-      const right = bx + bw - 12;
-      if (right - x >= 170) {
-        statusBar(roll, x, py + Math.max(2, ch / 2 - 11), 160, 4);
-        x += 160 + 28;
-      }
-      if (!lensGrid({ type: 'domain', id: dn.id }, x, py - 2, right - x, Math.max(ch + 4, Math.min(bh - 10, 72))) && bh > 150) {
-        lensGrid({ type: 'domain', id: dn.id }, px, py + ch + 16, Math.min(right - px, 360), by + bh - (py + ch + 16) - 6);
-      }
-    }
+    // grown plates carry the domain's sheet (status, gates, next release, every lens), sticky with the plaque
+    if (bw > 300 && bh >= 34 && !ringOnly && px > -1000) domainSheet(dn, roll, px, py, ch, contentR, bx, by, bw, bh);
     if (A.a1 > 0.3 && bh > 18) addToggle(dn, bx + bw, by + bh / 2, a * A.a1);
     ctx.globalAlpha = 1;
+  }
+  /** The domain sheet: under the plaque, the status mix, the gates waiting by kind and the next release's readiness;
+      beside them every lens. Sections are dropped, never squeezed, when the visible plate has no room. */
+  function domainSheet(dn, roll, px, py, ch, contentR, bx, by, bw, bh) {
+    const right = Math.min(bx + bw - 12, SW - 6);
+    const bottom = by + bh - 7;
+    const ref = { type: 'domain', id: dn.id };
+    // the column goes under the plaque when the plate is tall enough, else beside it
+    const under = right - px >= 180 && py + ch + 28 <= bottom;
+    const cx0 = under ? px : contentR + 28;
+    const cw = Math.min(280, right - cx0);
+    let y = under ? py + ch + 10 : py;
+    let drawn = 0;
+    const base = ctx.globalAlpha;
+    if (cw >= 170) {
+      const items = [{ k: 'st', h: 18, draw: (yy) => statusBar(roll, cx0 + 2, yy, cw - 14, 4) }];
+      if (gateTotal(roll.gates)) items.push({ k: 'gt', h: 14, draw: (yy) => gatesLine(roll.gates, cx0 + 2, yy + 10, cw - 6) });
+      const nx = nextOf(dn.id);
+      if (nx) items.push({ k: 'nx', h: 14, draw: (yy) => nextLine(nx, cx0 + 2, yy + 10, cw - 6) });
+      for (const it of items) {
+        if (y + it.h > bottom) break;
+        ctx.globalAlpha = base * fadeIn('d:' + dn.id + ':' + it.k);
+        it.draw(y); y += it.h + (under ? 9 : 4); drawn++;
+      }
+      ctx.globalAlpha = base;
+    }
+    const x = drawn ? (under ? px + Math.max(cw, contentR - px) : cx0 + cw) + 24 : contentR + 28;
+    const zh = Math.max(ch + 4, bottom - py + 2);
+    const gk = 'd:' + dn.id + ':g';
+    if (lensGrid(ref, x, py - 2, right - x, zh, 0, 0, gk)) return;
+    // a dense two-column table still fits a plate of three module rows
+    if (lensGrid(ref, x, py - 3, right - x, zh, 2, 15, gk)) return;
+    if (under && drawn && bottom - y >= 56) lensGrid(ref, px, y - 4, Math.min(right - px, 380), bottom - y + 4, 2, Math.min(15, (bottom - y + 2) / 4), gk);
+  }
+  /** A line of glyph + count (+ word) parts that fits `maxW`: with words when they fit, else counts alone. */
+  function partsLine(parts, x, y, maxW) {
+    const cf = font(400, 10.5, true), lf = font(400, 11);
+    const width = (list, words) => list.reduce((w, p) => w + (p.glyph ? 12 : 0) + tw(p.n, cf) + (words && p.word ? 4 + tw(p.word, lf) : 0) + 10, 0) - 10;
+    // fall back step by step: every part with words; without the parts that need their word (a "+3" of updates);
+    // counts alone; then fewer counts
+    const core = parts.filter((p) => !p.needWord);
+    let list = parts, words = true;
+    if (width(parts, true) > maxW) {
+      list = core;
+      if (width(core, true) > maxW) { words = false; while (list.length > 1 && width(list, false) > maxW) list = list.slice(0, -1); }
+    }
+    list.forEach((p) => {
+      if (p.glyph) { p.glyph(x + 4.5, y - 3.6); x += 12; }
+      text(p.n, x, y, cf, p.col || C.ink2, 'left'); x += tw(p.n, cf);
+      if (words && p.word) { x += 4; text(p.word, x, y, lf, C.ink3, 'left'); x += tw(p.word, lf); }
+      x += 10;
+    });
+  }
+  function gatesLine(g, x, y, maxW) {
+    const parts = [];
+    ['triage', 'approval', 'changes'].forEach((kd) => {
+      if (g[kd]) parts.push({ glyph: (gx, gy) => gGate(kd, gx, gy, 4.6), n: String(g[kd]), word: kd, col: kd === 'changes' ? C.alarm : C.gate });
+    });
+    partsLine(parts, x, y, maxW);
+  }
+  /** The domain's share of the next release: new features by status (the timeline's glyphs), then updates to live ones. */
+  function nextLine(nx, x, y, maxW) {
+    const cf = font(400, 10.5, true);
+    const lab = nx.rel.label;
+    text(lab, x, y, cf, C.ink, 'left');
+    const w0 = tw(lab, cf) + 9;
+    const parts = [];
+    [['ready', 'ready'], ['building', 'in build'], ['blocked', 'blocked'], ['planned', 'planned']].forEach(([st, word]) => {
+      if (nx[st]) parts.push({ glyph: (gx, gy) => gStatus(st, gx, gy, 4.2, st === 'blocked' ? C.alarm : C.ink, C.paperHi), n: String(nx[st]), word });
+    });
+    if (nx.live) parts.push({ n: '+' + nx.live, word: nx.live === 1 ? 'update' : 'updates', needWord: true });
+    partsLine(parts, x + w0, y, maxW - w0);
+  }
+  let nextByDom = null;
+  /** The next release's items per domain: new features by status, plus improvements and fixes to live ones. */
+  function nextOf(did) {
+    if (!nextByDom) {
+      nextByDom = new Map();
+      const nx = BP.releasesInOrder().find((r) => r.state === 'next');
+      if (nx) BP.releaseItems(nx.id).forEach((it) => {
+        const f = BP.feature(it.feature);
+        const d = BP.pathOf(f).domain.id;
+        let o = nextByDom.get(d);
+        if (!o) { o = { rel: nx, n: 0, ready: 0, building: 0, blocked: 0, planned: 0, live: 0 }; nextByDom.set(d, o); }
+        o.n++;
+        if (it.kind === 'new' && f.status !== 'live') o[f.status] = (o[f.status] || 0) + 1; else o.live++;
+      });
+    }
+    return nextByDom.get(did) || null;
   }
   let overlayPass = false;
   const plaqueQueue = [];
@@ -1056,7 +1308,7 @@
     if (two) {
       const ph = SW <= 760 && ch < 28;
       text(nameStr, tx, ry - (ph ? 1.5 : 2.5), nameF, C.ink, 'left');
-      counters(roll, tx, ry + (ph ? 10 : 11), maxX, true);
+      counters(roll, tx, ry + (ph ? 10 : 11), maxX, true, 'c:' + dn.id);
     } else {
       text(nameStr, tx, ry + 4.5, nameF, C.ink, 'left');
       counters(roll, tx + tw(nameStr, nameF) + 10, ry + 4, maxX, false);
@@ -1086,27 +1338,21 @@
     });
   }
   /** Every lens for a node: 8 × 1, 4 × 2 or 2 × 4 cells, whichever fits; false when nothing fits. */
-  function lensGrid(ref, x, y, w, h) {
-    const f = font(500, 8.5), sf = font(400, 10.5, true);
-    const cellW = 14 + tw('OVERALL', f, '0.8px') + 8 + 18, rowH = 17;
+  function lensGrid(ref, x, y, w, h, only, rowPx, fadeKey) {
+    const cellW = lensCellW(1) + 16, rowH = rowPx || 17;
     let cols = 0;
-    if (w >= cellW * 8 && h >= rowH) cols = 8;
-    else if (w >= cellW * 4 && h >= rowH * 2) cols = 4;
-    else if (w >= cellW * 2 && h >= rowH * 4) cols = 2;
-    if (!cols) return false;
-    const cwid = Math.min(w / cols, cellW + 20);
+    if (w >= cellW * 8 && h >= rowH && (!only || only === 8)) cols = 8;
+    else if (w >= cellW * 4 && h >= rowH * 2 && (!only || only === 4)) cols = 4;
+    else if (w >= cellW * 2 && h >= rowH * 4 && (!only || only === 2)) cols = 2;
+    if (!cols) return 0;
+    const cwid = Math.min(w / cols, cellW + 12);
     const rows = 8 / cols;
     const y0 = y + Math.max(0, (Math.min(h, rows * rowH + 6) - rows * rowH) / 2);
-    LENS_IDS.forEach((l, i) => {
-      const cx = x + (i % cols) * cwid, cy = y0 + Math.floor(i / cols) * rowH + 12;
-      const r = ref.type === 'domain' ? BP.domainRating(ref.id, l) : BP.moduleRating(ref.id, l);
-      const cur = l === S.lens;
-      if (cur) { rrect(cx - 3, cy - 12, cwid - 4, 16, 8); ctx.fillStyle = C.bandHi; ctx.fill(); }
-      gBand(r.band, cx + 5, cy - 3.8, 4.6);
-      text(OK.lens(l).short.toUpperCase(), cx + 14, cy, f, cur ? C.ink : C.ink3, 'left', '0.8px');
-      text(scoreTxt(r), cx + cwid - 8, cy, sf, cur ? C.ink : C.ink2, 'right');
-    });
-    return true;
+    const base = ctx.globalAlpha;
+    if (fadeKey) ctx.globalAlpha = base * fadeIn(fadeKey);
+    lensCells(ref, x, y0, cols, cwid, 1, rowH);
+    ctx.globalAlpha = base;
+    return rows * rowH;
   }
   function addToggle(n, x, y, a) {
     if (x < -10 || x > SW + 10 || y < -10 || y > SH + 10) return;
@@ -1140,7 +1386,7 @@
       const pxx = bx + bw - pw;
       rrect(pxx, by + (bh - ph) / 2, pw, ph, ph / 2);
       if (rt.band === 'na') { ctx.setLineDash([3, 2.5]); ctx.lineWidth = 1; ctx.strokeStyle = C.na; ctx.stroke(); ctx.setLineDash([]); }
-      else { ctx.fillStyle = rgba(col, C.dark ? 0.62 : 0.5); ctx.fill(); }
+      else { ctx.fillStyle = rgba(col, C.dark ? 0.66 : 0.62); ctx.fill(); }
       if (sel || hov) { rrect(bx - 2, by - 2, bw + 4, bh + 4, Math.min(bh / 2 + 2, 8)); ctx.lineWidth = sel ? 2 : 1; ctx.strokeStyle = sel ? C.ink : C.ink3; ctx.stroke(); }
       // the connector reaches the bar
       ctx.beginPath(); ctx.moveTo(bx, by + bh / 2); ctx.lineTo(pxx, by + bh / 2); ctx.lineWidth = 0.9; ctx.strokeStyle = rgba(C.ink3, 0.5); ctx.stroke();
@@ -1155,52 +1401,73 @@
       if (rt.band === 'na') { ctx.fillStyle = rgba(C.na, 0.3); ctx.fillRect(bx, by, 3.5, bh); }
       else { ctx.fillStyle = col; ctx.fillRect(bx, by, 3.5, bh); ctx.fillStyle = rgba(col, C.dark ? 0.12 : 0.08); ctx.fillRect(bx, by, bw, bh); }
       ctx.restore();
-      if (bh >= 13 && bw > 60) {
+      // the card's text slides with its visible part when the card runs off the left edge (as the plaques do)
+      const qx = bx + clamp(6 - bx, 0, Math.max(0, bw - 210)), qw = bx + bw - qx;
+      if (bh >= 13 && qw > 60) {
         const roll = BP.moduleRollup(mn.id);
         const two = bh >= 38;
         const ch = two ? 30 : 14;
-        const cy = stickyY(by, bh, ch, 4);
+        const cy = stickyY(by, bh, ch, 4, qx);
         const line1 = cy + (two ? 11 : 10.5);
         const nf = font(500, bh > 60 ? 13 : 12);
-        gBand(rt.band, bx + 15, line1 - 4, 5);
+        gBand(rt.band, qx + 15, line1 - 4, 5);
         const sf = font(400, 11.5, true);
         const st = scoreTxt(rt);
         const nameW = tw(mn.data.name, nf);
         // the score sits after the name when the card is wide, else at its right end
-        const wide = bw > 330;
+        const wide = qw > 330;
         let rightEdge = bx + bw - 10;
         let nameMax;
-        if (wide) nameMax = Math.min(nameW, bw * 0.45);
+        if (wide) nameMax = Math.min(nameW, qw * 0.45);
         else {
           text(st, rightEdge, line1, sf, C.ink, 'right');
           rightEdge -= tw(st, sf) + 8;
           if (!two) {
             // the name comes first; counters only when the whole name still fits
             const cw = countersW(roll);
-            if (cw && nameW + cw + 8 <= rightEdge - (bx + 25)) { counters(roll, rightEdge - cw, line1, rightEdge, false); rightEdge -= cw + 4; }
+            if (cw && nameW + cw + 8 <= rightEdge - (qx + 25)) { counters(roll, rightEdge - cw, line1, rightEdge, false); rightEdge -= cw + 4; }
           }
-          nameMax = rightEdge - (bx + 25);
+          nameMax = rightEdge - (qx + 25);
         }
         const ns = fitText(mn.data.name, nf, nameMax);
-        text(ns, bx + 25, line1, nf, C.ink, 'left');
-        let after = bx + 25 + tw(ns, nf) + 10;
+        text(ns, qx + 25, line1, nf, C.ink, 'left');
+        let after = qx + 25 + tw(ns, nf) + 10;
         if (wide) {
           text(st, after, line1, sf, C.ink, 'left');
           after += tw(st, sf) + 12;
           if (!two) after = counters(roll, after, line1, bx + bw - 10, false) + 12;
         }
         if (two) {
-          const end = counters(roll, bx + 25, line1 + 15, bx + bw - 8, true);
+          const end = counters(roll, qx + 25, line1 + 15, bx + bw - 8, true, 'c:m:' + mn.id);
           after = Math.max(after, end + 12);
         }
         if (wide) {
-          const gx = Math.max(after, bx + bw * 0.5), gw = bx + bw - 10 - gx;
-          if (!lensGrid({ type: 'module', id: mn.id }, gx, cy - 3, gw, two ? bh - 8 : 16) && two && gw >= 170) statusBar(roll, gx, cy + 3, Math.min(gw, 220), 4);
+          const gx = Math.max(after, qx + qw * 0.5), gw = bx + bw - 10 - gx;
+          if (!lensGrid({ type: 'module', id: mn.id }, gx, cy - 3, gw, two ? bh - 8 : 16, 0, 0, 'm:' + mn.id + ':g') && two && gw >= 170) {
+            const base = ctx.globalAlpha;
+            ctx.globalAlpha = base * fadeIn('m:' + mn.id + ':s');
+            statusBar(roll, gx, cy + 3, Math.min(gw, 220), 4);
+            ctx.globalAlpha = base;
+          }
         }
       }
+      if (mn.parent.tagMode && mn.parent.kids[0] === mn && A.a1 > 0.3 && qw > 90) domainTag(mn.parent, qx, by);
     }
     if (A.a2 > 0.3 && bh > 16) addToggle(mn, bx + bw, by + bh / 2, a * A.a2);
     ctx.globalAlpha = 1;
+  }
+
+  /** The domain's name, band and score on a tag above its first module card, for when its plate is off screen. */
+  function domainTag(dn, x, y) {
+    const gap = (dn.parent.kids[0] === dn ? L.P.AG * 0.4 : G.DG) * cam.k;
+    if (gap < 13 || y < 4) return;
+    const f = font(500, 9.5), ls = '1.4px', sf = font(400, 10, true);
+    const rt = BP.domainRating(dn.id, S.lens);
+    const yb = y - Math.min(7, gap * 0.3);
+    gBand(rt.band, x + 6, yb - 3.4, 4.3);
+    const name = dn.data.name.toUpperCase();
+    text(name, x + 15, yb, f, C.ink2, 'left', ls);
+    text(scoreTxt(rt), x + 15 + tw(name, f, ls) + 6, yb + 0.3, sf, C.ink3, 'left');
   }
 
   // ── feature cards ──
@@ -1244,11 +1511,14 @@
       ctx.fillStyle = rgba(C.na, C.dark ? 0.08 : 0.06); ctx.fill();
       ctx.setLineDash([2, 2]); ctx.lineWidth = 1; ctx.strokeStyle = rgba(C.na, 0.75); ctx.stroke(); ctx.setLineDash([]);
     } else {
-      ctx.fillStyle = rgba(C[band], C.dark ? 0.44 : 0.31); ctx.fill();
+      // the L0 texture carries the lens on its own, so it is strong enough to read at the fit; the worse the band, the
+      // denser the tile, which keeps poor and critical apart from good and fair at a glance
+      ctx.fillStyle = rgba(C[band], TEX_A[C.dark ? 1 : 0][band]); ctx.fill();
     }
     if (fStatusOf(i) === 'blocked' && h > 5) { ctx.fillStyle = C.alarm; ctx.fillRect(x + w - Math.max(2, w * 0.05), y + 1, Math.max(2, w * 0.05) - 1, h - 2); }
   }
   const fStatusOf = (i) => FEATS[i].status;
+  const TEX_A = [{ good: 0.46, fair: 0.56, poor: 0.66, critical: 0.8 }, { good: 0.5, fair: 0.54, poor: 0.62, critical: 0.76 }];
   function drawChip(i, f, band, x, y, w, h) {
     const r = Math.min(h / 2, 12);
     rrect(x + 0.5, y + 0.5, w - 1, h - 1, r);
@@ -1511,7 +1781,7 @@
 
   // ── context: module tags stick to the left edge once the module column is off screen ──
   function drawEdgeTags(A) {
-    if (A.a2 < 0.2) return;
+    if (A.a1 < 0.5) return;
     const k = cam.k;
     const colRight = toSX(L.c.xM + L.P.MW);
     if (colRight > 30) return;
@@ -1519,7 +1789,7 @@
     let lastY = -100;
     const th = 15;
     const f = font(500, 9), ls = '1.1px', sf = font(400, 10, true);
-    ctx.globalAlpha = A.a2;
+    ctx.globalAlpha = ramp(A.a1, 0.5, 1);
     MODS.forEach((mn) => {
       if (mn.vis < 0.5 || nodeAlpha(mn) < 0.3) return;
       const by = toSY(mn.y), bh = mn.h * k;
@@ -1632,6 +1902,10 @@
     for (let j = toggles.length - 1; j >= 0; j--) { const t = toggles[j]; if (Math.hypot(px - t.x, py - t.y) <= t.r) return t.n; }
     return null;
   }
+  function hitLens(px, py) {
+    for (let j = lensHits.length - 1; j >= 0; j--) { const c = lensHits[j]; if (px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h) return c; }
+    return null;
+  }
   function hitNode(px, py, region) {
     const wx = toWX(px), wy = toWY(py);
     const m = 3 / cam.k;
@@ -1645,12 +1919,14 @@
     // area titles and junctions
     for (const an of AREAS) {
       const yb = toSY(an.y);
-      const x0 = toSX(L.c.xA) - 12;
+      const x0 = Math.max(toSX(L.c.xA) - 6, 12) - 6;
       if (px >= x0 && px <= x0 + 360 && py >= yb - clamp(L.P.AG * cam.k * 0.72, 12, 34) && py <= yb) return an;
       if (Math.hypot(px - toSX(L.c.xA), py - toSY(areaMidY(an))) < 10) return an;
     }
     const R = (ROOT.w / 2) * cam.k;
     if (Math.hypot(px - toSX(ROOT.x + ROOT.w / 2), py - toSY(ROOT.y + ROOT.h / 2)) <= R) return ROOT;
+    const ph = productHit;
+    if (ph && px >= ph.x && px <= ph.x + ph.w && py >= ph.y && py <= ph.y + ph.h) return ROOT;
     if (region) {
       // a tap between cards still lands in the module, domain or area whose band holds it
       for (const mn of MODS) if (mn.vis > 0.5 && wy >= mn.y - G.MG / 2 && wy <= mn.y + mn.h + G.MG / 2 && wx >= L.c.xM && wx <= L.bounds.x + L.bounds.w) return mn;
@@ -1668,25 +1944,9 @@
     shell.inspect(refOf(n));
     if (how === 'tap') flyToNode(n);
   }
-  function openProduct() {
-    const pr = BP.productRollup();
-    const g = pr.gates;
-    shell.select(null);
-    productOpen = true;
-    shell.inspector.open({
-      kicker: '<nav class="ok-crumb" aria-label="Breadcrumb"><span>Product</span></nav>',
-      title: esc(BP.product.name),
-      subtitle: OK.html.rating(BP.productRating(S.lens), { size: 'sm', label: OK.lens(S.lens).label }) + '<span class="ok-chip ok-chip--plain">' + NF + ' features</span><span class="ok-chip ok-chip--mono">v' + esc(BP.product.version) + ' → ' + esc(BP.product.nextVersion) + '</span>',
-      body: '<p class="ok-summary">' + esc(BP.product.tagline) + '.</p>' +
-        '<section class="ok-sec" style="margin-top:16px"><h3 class="ok-sec__h"><span>Status</span></h3>' + OK.blocks.statusBar(pr) + '</section>' +
-        '<section class="ok-sec"><h3 class="ok-sec__h"><span>Every lens</span></h3>' + OK.blocks.ratingTable({ type: 'product' }, { lens: S.lens }) + '</section>' +
-        (gateTotal(g) ? '<section class="ok-sec"><h3 class="ok-sec__h"><span>Waiting for a human</span><span class="ok-mono">' + gateTotal(g) + '</span></h3>' + OK.blocks.gates(FEATS, { limit: 8 }) + '</section>' : '') +
-        '<section class="ok-sec"><h3 class="ok-sec__h"><span>Areas</span></h3><ul class="ok-flist">' + BP.areas.map((a) => '<li><button type="button" class="ok-frow" data-ok-inspect="area:' + esc(a.id) + '">' + OK.html.band(BP.areaRating(a.id, S.lens).band, 13) + '<span class="ok-frow__name">' + esc(a.name) + '<span class="ok-frow__sub">' + BP.domainsOf(a.id).length + ' domains · ' + BP.areaRollup(a.id).count + ' features</span></span><span class="ok-frow__end">' + scoreTxt(BP.areaRating(a.id, S.lens)) + '</span></button></li>').join('') + '</ul></section>',
-      footer: '<span class="ok-muted" style="font-size:12px">' + esc(BP.product.stack.web) + '</span>',
-      onClose: () => { productOpen = false; requestDraw(); },
-    });
-    requestDraw();
-  }
+  /** The kit's product inspector (current-lens rating, status, gates by kind, every lens, the areas, the weakest and
+      what needs attention); its selection marks the dial. */
+  function openProduct() { shell.inspect({ type: 'product' }); }
   function toggleCollapse(n) {
     if (!n || n.type === 'feature' || n.type === 'product') return;
     if (collapsed.has(n)) collapsed.delete(n); else collapsed.add(n);
@@ -1759,26 +2019,30 @@
   }
   M.cv.addEventListener('pointerup', (e) => endPointer(e, false));
   M.cv.addEventListener('pointercancel', (e) => endPointer(e, true));
-  M.cv.addEventListener('pointerleave', () => { if (!drag) { setHover(null); hideTip(); } });
+  M.cv.addEventListener('pointerleave', () => { if (!drag) { setHover(null); hideTip(); if (hoverLens) { hoverLens = null; requestDraw(); } } });
   function click(x, y) {
     kbdActive = false;
     const t = hitToggle(x, y);
     if (t) { toggleCollapse(t); return; }
+    const lc = hitLens(x, y);
+    if (lc) { shell.setLens(lc.lens); return; }
     const n = hitNode(x, y, false);
     if (n) { cursorNode = n; activate(n, 'click'); }
-    else { shell.select(null); if (productOpen) shell.inspector.close(); }
+    else shell.select(null);
   }
   function tap(x, y) {
     kbdActive = false;
     const now = performance.now();
     if (now - lastTap.t < 320 && Math.hypot(x - lastTap.x, y - lastTap.y) < 30) {
       lastTap.t = 0;
-      zoomAt(x, y, 2, 360);
+      zoomInAt(x, y);
       return;
     }
     lastTap = { t: now, x, y };
     const t = hitToggle(x, y);
     if (t) { toggleCollapse(t); return; }
+    const lc = hitLens(x, y);
+    if (lc) { shell.setLens(lc.lens); return; }
     const marks = lodAlphas(cam.k).a2 > 0.5;
     let n = hitNode(x, y, !marks);
     if (n && n.type === 'feature' && !marks) n = n.parent; // too small to pick one: zoom into its module
@@ -1787,12 +2051,18 @@
   }
   M.cv.addEventListener('dblclick', (e) => {
     const [x, y] = localXY(e);
-    if (hitToggle(x, y)) return;
+    if (hitToggle(x, y) || hitLens(x, y)) return;
     const n = hitNode(x, y, false);
     if (n && n.type === 'feature') { shell.openFeature(n.id); return; }
     if (n && n.type !== 'product') { flyToNode(n); return; }
-    zoomAt(x, y, 2, 360);
+    zoomInAt(x, y);
   });
+  /** Double-click or double-tap on open ground: twice the zoom around the pointer, moved out of a cross-fade band so the
+      map never rests between two layers (as the zoom buttons and the wheel settle do). */
+  function zoomInAt(x, y) {
+    const k = snapK(clamp(cam.k * 2, L.kMin, L.kMax));
+    zoomAt(x, y, k / cam.k, 360);
+  }
   M.cv.addEventListener('wheel', (e) => {
     e.preventDefault();
     const [x, y] = localXY(e);
@@ -1822,10 +2092,18 @@
   function hover(x, y, e) {
     const t = hitToggle(x, y);
     if (t !== hoverToggle) { hoverToggle = t; requestDraw(); }
-    const n = t ? null : hitNode(x, y, false);
+    const lc = t ? null : hitLens(x, y);
+    const lk = lc ? lc.lens + '|' + lc.ref : '';
+    if (lk !== (hoverLens ? hoverLens.lens + '|' + hoverLens.ref : '')) { hoverLens = lc; requestDraw(); }
+    const n = t || lc ? null : hitNode(x, y, false);
     setHover(n);
-    M.cv.style.cursor = t || n ? 'pointer' : 'grab';
+    M.cv.style.cursor = t || n || lc ? 'pointer' : 'grab';
     if (t) { showTip((collapsed.has(t) ? 'Unfold ' : 'Fold ') + esc(t.data.name), x, y); return; }
+    if (lc) {
+      const lens = OK.lens(lc.lens);
+      showTip(lc.lens === S.lens ? '<div class="ca-tip__t">' + esc(lens.label) + ' lens</div><div class="ca-tip__h">The current lens</div>' : '<div class="ca-tip__t">' + esc(lens.label) + ' lens</div><div class="ca-tip__h">Click to switch the map to this lens</div>', x, y);
+      return;
+    }
     if (!n) { hideTip(); return; }
     const k = cam.k;
     // the card itself already says it all from card level on
@@ -1896,7 +2174,7 @@
     cursorNode = n;
     kbdActive = true;
     const follow = shell.inspector.isOpen();
-    if (n.type === 'product') { if (follow) openProduct(); else shell.select(null); }
+    if (n.type === 'product') { if (follow) openProduct(); else shell.select({ type: 'product' }); }
     else if (follow) activate(n, 'key');
     else shell.select(refOf(n));
     keepInView(n);
@@ -1956,7 +2234,8 @@
       if (n && n.type !== 'feature') { if (n.type === 'product') openProduct(); else shell.inspect(refOf(n)); e.preventDefault(); }
     }
   });
-  M.cv.addEventListener('focus', () => { if (!cursorNode) cursorNode = selNode || ROOT; kbdActive = true; requestDraw(); });
+  // the keyboard cursor shows only for keyboard focus (a tap focuses the canvas too, after its pointerup)
+  M.cv.addEventListener('focus', () => { if (!M.cv.matches(':focus-visible')) return; if (!cursorNode) cursorNode = selNode || ROOT; kbdActive = true; requestDraw(); });
   M.cv.addEventListener('blur', () => { kbdActive = false; requestDraw(); });
 
   // ══ HUD: node bar, gates queue, location readout, zoom levels ══════════════════════════════════
@@ -1986,16 +2265,17 @@
   });
 
   // gates queue: features waiting for a human, longest wait first; narrowed by the gates filter
-  let queue = [], qi = -1;
+  let queue = [], qi = -1, queueAll = 0;
   function buildQueue() {
     const kind = S.gates && S.gates !== 'any' ? S.gates : null;
     const filtering = shell.filterActive();
-    queue = [];
+    queue = []; queueAll = 0;
     for (let i = 0; i < NF; i++) {
       const gs = fGates[i];
       if (!gs.length) continue;
       const g = kind ? gs.find((x) => x.kind === kind) : gs[0];
       if (!g) continue;
+      queueAll++;
       if (filtering && fDim[i]) continue;
       queue.push({ i, g, wait: g.waitingDays });
     }
@@ -2004,17 +2284,30 @@
     qi = cur;
     renderQueue();
   }
+  // The queue counts FEATURES (one stop per feature, longest wait first); the rail and the plaques count GATES.
+  // The label always names its unit, so 97 features waiting never seems to contradict 42 + 52 + 19 = 113 gates.
+  const Q_WAIT = { triage: 'waiting for triage', approval: 'awaiting approval', changes: 'with changes requested' };
   function renderQueue() {
     const n = queue.length;
     const cur = qi >= 0 ? queue[qi] : null;
     const phone = SW && SW <= 760;
+    const kind = S.gates && S.gates !== 'any' ? S.gates : null;
+    const g = BP.productRollup().gates;
+    // filters narrow the queue: "12 of 97 features waiting" keeps the whole count in sight
+    const of = n < queueAll ? ' of ' + queueAll : '';
+    const unit = (n === 1 && !of ? ' feature ' : ' features ') + (kind && !phone ? Q_WAIT[kind] : 'waiting');
+    const what = n || queueAll ? '' : 'None waiting';
+    const tip = 'Gates queue: ' + (n ? n + (n === 1 ? ' feature' : ' features') + ' waiting for a human' : 'no feature in view is waiting for a human') +
+      (kind ? ' (' + OK.labels.gate[kind].long.toLowerCase() + ')' : '') + ', longest wait first. [ and ] step through them. The rail counts gates: ' +
+      g.triage + ' triage, ' + g.approval + ' approval, ' + g.changes + ' changes; a feature can wait on more than one.';
     let h = '<button type="button" class="ca-q__btn" data-q="-1" aria-label="Previous feature waiting for a human" title="Previous ([)"' + (n ? '' : ' disabled') + '>' + chev(-1) + '</button>' +
-      '<button type="button" class="ca-q__main" data-q="0" title="Gates queue: features waiting for a human, longest wait first">' + OK.html.gate(cur ? cur.g.kind : 'approval', 14) +
-      (cur ? '<span class="ca-q__pos ok-mono">' + (qi + 1) + '<i>/</i>' + n + '</span><span class="ca-q__cur"><b>' + esc(FEATS[cur.i].name) + '</b><span>' + esc(OK.labels.gate[cur.g.kind].long) + ' · ' + (cur.wait === 0 ? 'today' : cur.wait + ' d') + '</span></span>'
-        : '<span class="ca-q__t">' + (phone ? 'Queue' : 'Gates queue') + '</span><span class="ca-q__n ok-mono">' + n + '</span>') + '</button>' +
+      '<button type="button" class="ca-q__main" data-q="0" title="' + esc(tip) + '"' + (n ? '' : ' disabled') + '>' + OK.html.gate(cur ? cur.g.kind : kind || 'approval', 14) +
+      (cur ? '<span class="ca-q__pos ok-mono">' + (qi + 1) + '<i>/</i>' + n + '</span><span class="ca-q__cur"><b>' + esc(FEATS[cur.i].name) + '</b><span>' + esc(OK.labels.gate[cur.g.kind].long) + ' · ' + (cur.wait === 0 ? 'today' : cur.wait + (cur.wait === 1 ? ' day' : ' days')) + '</span></span>'
+        : '<span class="ca-q__t">' + (what ? esc(what) : '<b class="ok-mono">' + n + (of ? '<i> of ' + queueAll + '</i>' : '') + '</b>' + esc(unit.trim())) + '</span>') + '</button>' +
       '<button type="button" class="ca-q__btn" data-q="1" aria-label="Next feature waiting for a human" title="Next (])"' + (n ? '' : ' disabled') + '>' + chev(1) + '</button>';
     if (h !== M.q.__h) { M.q.innerHTML = h; M.q.__h = h; }
     M.q.classList.toggle('is-active', !!cur);
+    M.q.classList.toggle('is-empty', !n);
   }
   const chev = (d) => '<svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><path d="' + (d < 0 ? 'M10 3.5L5.5 8l4.5 4.5' : 'M6 3.5L10.5 8 6 12.5') + '" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   function stepQueue(d) {
@@ -2026,7 +2319,9 @@
     cursorNode = fn;
     shell.peek(fn.id);
     renderQueue();
-    requestAnimationFrame(() => { freeR = shell.freeRect(); flyToNode(fn, { k: L.t3 * 1.1 }); });
+    // the inspector hint is layout-free, so the flight starts in this frame with the peek already accounted for
+    freeR = shell.freeRectHint();
+    flyToNode(fn, { k: L.t3 * 1.1 });
     shell.announce('Waiting for a human, ' + (qi + 1) + ' of ' + queue.length + ': ' + FEATS[q.i].name + ', ' + OK.labels.gate[q.g.kind].long.toLowerCase() + ', ' + q.wait + ' days');
   }
   M.q.addEventListener('click', (e) => {
@@ -2074,6 +2369,8 @@
   });
 
   // ══ sizing and boot ════════════════════════════════════════════════════════════════════════════
+  /** The opening fit's scale, unclamped (the zoom limits derive from it). */
+  const fitScale = (w, h, p) => Math.min(Math.max(40, w - p.l - p.r) / L.bounds.w, Math.max(40, h - p.t - p.b) / L.bounds.h);
   function resize(w, h) {
     if (!w || !h) return;
     const changed = w !== SW || h !== SH;
@@ -2090,20 +2387,20 @@
       L.key = arr.key; L.P = arr.P;
       maxRowCache.clear();
       applyLayout(false);
-      setLOD(fitCam(L.bounds, { x: 0, y: 0, w, h }, arr.pad).k);
+      setLOD(fitScale(w, h, arr.pad));
       mini.shown = w > 760;
       sizeMini();
       ready = true;
       if (first || atFit || !center) fitAll(0);
       else { const k = clamp(center.rel * L.kFit, L.kMin, L.kMax); setCam(clampCam({ k, tx: SW / 2 - center.x * k, ty: SH / 2 - center.y * k })); }
     } else if (changed) {
-      setLOD(fitCam(L.bounds, { x: 0, y: 0, w, h }, arr.pad).k);
+      setLOD(fitScale(w, h, arr.pad));
       mini.shown = w > 760;
       sizeMini();
       if (atFit) fitAll(0); else { clampCam(cam); requestDraw(); }
     }
     freeR = { x: 0, y: 0, w: SW, h: SH };
-    if (shell.inspector.isOpen()) requestAnimationFrame(() => { freeR = shell.freeRect(); });
+    if (shell.inspector.isOpen()) requestAnimationFrame(() => { freeR = shell.freeRectHint(); });
     renderQueue();
     requestDraw();
   }
@@ -2123,7 +2420,6 @@
     const n = nodeOf(sel);
     selNode = n;
     if (n) cursorNode = n;
-    if (sel && productOpen) productOpen = false;
     computeDeps();
     if (sel && sel.type === 'feature') { const qq = queue.findIndex((q) => q.i === FIDX.get(sel.id)); if (qq !== qi) { qi = qq; renderQueue(); } }
     else if (qi >= 0) { qi = -1; renderQueue(); }
@@ -2136,12 +2432,14 @@
     if (!n) return;
     if (S.view !== 'map') { tlLocate(ref); return; }
     ensureVisible(n);
-    // measure the free area after the inspector has opened, then fly
-    requestAnimationFrame(() => { freeR = shell.freeRect(); flyToNode(n); });
+    // the free area comes from the kit's layout-free hint, so a panel that has just opened is already accounted for
+    freeR = shell.freeRectHint();
+    flyToNode(n);
   });
   shell.on('inspector', (p) => {
-    if (!p.open) { freeR = { x: 0, y: 0, w: SW, h: SH }; if (productOpen) { productOpen = false; requestDraw(); } return; }
-    requestAnimationFrame(() => { freeR = shell.freeRect(); revealSelection(); });
+    if (!p.open) { freeR = { x: 0, y: 0, w: SW, h: SH }; return; }
+    freeR = shell.freeRectHint();
+    revealSelection();
   });
   shell.on('theme', () => { readTokens(); mini.dirty = true; twCache.clear(); requestDraw(); });
   shell.on('view', (v) => {
@@ -2234,7 +2532,8 @@
     TL.W = W; TL.bodyH = bodyH;
     const headH = TL.headH = TL.mode === 'named' ? 128 : 100;
     // ── head: months, today, release headers ──
-    let head = '<div class="ca-tl__corner" style="width:' + TL.laneW + 'px"><span class="ok-cap">Domains</span><span class="ca-tl__cornersub">Releases ›</span></div>';
+    // the corner names what the narrow release headers show: the release, its date and its item count
+    let head = '<div class="ca-tl__corner" style="width:' + TL.laneW + 'px"><span class="ok-cap">Domains</span><span class="ca-tl__cornersub">Releases ›</span>' + (TL.colW >= 62 ? '' : '<span class="ca-tl__cornersub">date · items</span>') + '</div>';
     const m0 = new Date(D0 * 86400000);
     let mm = Date.UTC(m0.getUTCFullYear(), m0.getUTCMonth() + 1, 1) / 86400000;
     while (mm < D1) {
@@ -2258,7 +2557,7 @@
       if (wide) {
         inner = '<span class="ca-rh__v ok-mono">' + esc(r.label) + '</span><span class="ca-rh__n">' + esc(r.name) + '</span>' +
           '<span class="ca-rh__d ok-mono">' + esc(OK.fmt.dateShort(r.date)) + (r.date.slice(0, 4) !== '2026' ? ' ' + r.date.slice(2, 4) : '') + '</span><span class="ca-rh__d ok-mono">' + items.length + ' items</span>';
-      } else if (mid) inner = '<span class="ca-rh__v ok-mono">' + esc(r.label) + '</span><span class="ca-rh__d ok-mono">' + esc(OK.fmt.dateShort(r.date)) + '</span><span class="ca-rh__d ok-mono">' + items.length + '</span>';
+      } else if (mid) inner = '<span class="ca-rh__v ok-mono">' + esc(r.label) + '</span><span class="ca-rh__d ok-mono">' + esc(OK.fmt.dateShort(r.date)) + '</span><span class="ca-rh__d ok-mono">' + items.length + (w >= 62 ? ' items' : '') + '</span>';
       else inner = '<span class="ca-rh__v ok-mono">' + esc(r.id) + '</span><span class="ca-rh__d ok-mono">' + items.length + '</span>';
       if (r.state === 'next') inner += wide ? readinessHTML(r) : readinessBar(r);
       head += '<button type="button" class="ca-rh is-' + r.state + '" data-rel="' + esc(r.id) + '" style="left:' + (cx - w / 2).toFixed(1) + 'px;width:' + w + 'px" title="' + esc(r.label + ' ' + r.name + ' · ' + OK.fmt.date(r.date) + ' · ' + (r.state === 'shipped' ? 'shipped' : r.state === 'next' ? 'next release' : 'planned') + ' · ' + items.length + ' items. Click to inspect the package.') + '">' +
@@ -2355,6 +2654,8 @@
     if (sel && sel.type === 'feature') {
       const cs = TL.byF.get(sel.id) || [];
       TL.chipEls.forEach((el, j) => { if (TL.chips[j].f === sel.id) el.classList.add('is-sel'); });
+      // after the peek has opened, bring the chip out from under the panel or the phone sheet (next frame)
+      if (S.view === 'timeline') { const id = sel.id; requestAnimationFrame(() => tlReveal(id, false)); }
       if (cs.length > 1) {
         path = '<path d="M' + cs.map((c) => c.x.toFixed(1) + ' ' + c.y.toFixed(1)).join('L') + '" class="ca-life"/>' + cs.map((c) => '<circle cx="' + c.x.toFixed(1) + '" cy="' + c.y.toFixed(1) + '" r="2" class="ca-life-dot"/>').join('');
       }
@@ -2365,7 +2666,7 @@
       if (rel && S.view === 'timeline') {
         // after the inspector has opened, scroll the column out from under it (measured in the next frame)
         requestAnimationFrame(() => {
-          const fr = shell.freeRect();
+          const fr = shell.freeRectHint();
           const cx = tlX(dayNum(rel.date));
           const sl = TL.scroll.scrollLeft;
           const left = TL.laneW + 12, right = fr.w - 16;
@@ -2380,10 +2681,30 @@
   }
   function tlLocate(ref) {
     if (!TL.built || ref.type !== 'feature') return;
-    const cs = TL.byF.get(ref.id);
-    if (!cs || !cs.length) return;
-    const c = cs[cs.length - 1];
-    TL.scroll.scrollTo({ left: Math.max(0, c.x - TL.laneW - (TL.vw - TL.laneW) / 2), top: Math.max(0, c.y + TL.headH - TL.vh / 2), behavior: reduced() ? 'auto' : 'smooth' });
+    tlClicked = null;
+    tlReveal(ref.id, true);
+  }
+  // the chip a click or tap landed on, so a selection reveals that chip rather than another release of the feature
+  let tlClicked = null;
+  /** Scrolls a feature's chip into the part of the swimlanes that the inspector (desktop) or the sheet (phones) leaves
+      free, from the kit's layout-free hint and the timeline's own geometry. Without `force` a chip already in the free
+      part stays where it is. */
+  function tlReveal(id, force) {
+    const cs = TL.byF.get(id);
+    if (!TL.built || !cs || !cs.length || S.view !== 'timeline') return;
+    const fr = shell.freeRectHint();
+    const barH = TL.vw <= 760 ? 40 : 44;
+    const half = TL.s / 2;
+    const x0 = TL.laneW + 8, x1 = Math.max(x0 + TL.s, fr.w - 8);
+    const y0 = TL.headH + 6, y1 = Math.max(y0 + TL.s, fr.h - barH - 6);
+    const sl = TL.scroll.scrollLeft, st = TL.scroll.scrollTop;
+    const inX = (c) => c.x - sl - half >= x0 && c.x - sl + half <= x1;
+    const inY = (c) => TL.headH + c.y - st - half >= y0 && TL.headH + c.y - st + half <= y1;
+    const c = tlClicked && tlClicked.f === id ? tlClicked : cs[cs.length - 1];
+    if (!force && inX(c) && inY(c)) return;
+    const left = force || !inX(c) ? c.x - (x0 + x1) / 2 : sl;
+    const top = force || !inY(c) ? TL.headH + c.y - (y0 + y1) / 2 : st;
+    TL.scroll.scrollTo({ left: Math.max(0, left), top: Math.max(0, top), behavior: reduced() ? 'auto' : 'smooth' });
   }
   function tlKey(e) {
     const k = e.key;
@@ -2397,7 +2718,7 @@
     const rh = e.target.closest('[data-rel]');
     if (rh) { shell.inspect({ type: 'release', id: rh.getAttribute('data-rel') }); return; }
     const ch = e.target.closest('.ca-tc');
-    if (ch) shell.peek(ch.getAttribute('data-f'));
+    if (ch) { tlClicked = TL.chips[TL.chipEls.indexOf(ch)] || null; shell.peek(ch.getAttribute('data-f')); }
   });
   TL.el.addEventListener('dblclick', (e) => {
     const ch = e.target.closest('.ca-tc');
@@ -2413,9 +2734,10 @@
     const sv = (inner, w, h, vb) => '<svg width="' + w + '" height="' + h + '" viewBox="' + vb + '" aria-hidden="true">' + inner + '</svg>';
     const row = (svg, html) => '<div class="ok-lg-row">' + svg + '<span>' + html + '</span></div>';
     const map = '<section class="ok-lg-sec"><h3>Atlas map</h3>' +
-      row(sv('<circle r="10" fill="var(--ok-paper-hi)" stroke="var(--ok-rule)"/><path d="M-5.6 5.6A8 8 0 1 1 5.6 5.6" fill="none" stroke="var(--ok-rule-2)" stroke-width="2"/><path d="M-5.6 5.6A8 8 0 0 1 4 -6.9" fill="none" stroke="var(--ok-fair)" stroke-width="2.4" stroke-linecap="round"/><path d="M-3.8 3.8A5.4 5.4 0 1 1 3.8 3.8" fill="none" stroke="var(--ok-rule-2)" stroke-width="1.6"/><path d="M-3.8 3.8A5.4 5.4 0 0 1 5.3 -1" fill="none" stroke="var(--ok-good)" stroke-width="1.6" opacity=".6"/>', 24, 24, '-12 -12 24 24'), '<b>Product dial</b>: one gauge per lens; the current lens is bold and its score is in the centre.') +
+      row(sv('<circle r="10" fill="var(--ok-paper-hi)" stroke="var(--ok-rule)"/><path d="M-5.6 5.6A8 8 0 1 1 5.6 5.6" fill="none" stroke="var(--ok-rule-2)" stroke-width="2"/><path d="M-5.6 5.6A8 8 0 0 1 4 -6.9" fill="none" stroke="var(--ok-fair)" stroke-width="2.4" stroke-linecap="round"/><path d="M-3.8 3.8A5.4 5.4 0 1 1 3.8 3.8" fill="none" stroke="var(--ok-rule-2)" stroke-width="1.6"/><path d="M-3.8 3.8A5.4 5.4 0 0 1 5.3 -1" fill="none" stroke="var(--ok-good)" stroke-width="1.6" opacity=".6"/>', 24, 24, '-12 -12 24 24'), '<b>Product dial</b>: one gauge per lens, Overall outermost; the current lens is bold and its score is in the centre. Its scale names every lens: click one to switch.') +
       row(sv('<circle r="8" fill="none" stroke="var(--ok-rule)" stroke-width="2.4"/><path d="M0 -8A8 8 0 1 1 -7.6 2.5" fill="none" stroke="var(--ok-fair)" stroke-width="2.4" stroke-linecap="round"/>', 22, 22, '-11 -11 22 22'), '<b>Domain ring</b>: the domain\'s score in the current lens, filled and coloured by band, with attention and gate counts beside the name.') +
       row(sv('<rect x="-12" y="-4" width="24" height="8" rx="4" fill="var(--ok-good)" opacity=".45" stroke="var(--ok-good)"/>', 26, 14, '-13 -7 26 14'), '<b>Module</b>: a band pill at first, a card with its name as you zoom in.') +
+      row(OK.html.gate('approval', 16), '<b>Gates queue</b>: steps through the features waiting for a human, longest wait first. It counts features; the rail and the plaques count gates, and a feature can wait on more than one.') +
       row(sv('<rect x="-12" y="-6" width="24" height="12" rx="6" fill="var(--ok-paper-hi)" stroke="var(--ok-poor)"/><path d="M-6 -3.4A3.4 3.4 0 0 0 -6 3.4Z" fill="var(--ok-poor)"/><circle cx="-6" r="3" fill="none" stroke="var(--ok-poor)" stroke-width="1.1"/>', 26, 16, '-13 -8 26 16'), '<b>Feature mark</b>: the form gives the status (filled live, ring with a dot ready, half in build, dotted planned, red cross-star blocked); the colour gives the band.') +
       row(sv('<rect x="-12" y="-6" width="24" height="12" rx="3" fill="none" stroke="var(--ok-na)" stroke-dasharray="2 2"/>', 26, 16, '-13 -8 26 16'), '<b>Dashed, no fill</b>: the lens does not apply, for example Operations before a feature is live.') +
       row(sv('<path d="M-11 4H-4V-4H4M4 -4V4H11" fill="none" stroke="var(--ok-ink)" stroke-width="1.4"/><path d="M8.5 2L11 4 8.5 6" fill="var(--ok-ink)"/>', 26, 14, '-13 -7 26 14'), '<b>Links</b> of the selected feature: solid to what it depends on, dashed from what depends on it.') +
@@ -2425,14 +2747,13 @@
       '<div class="ok-lg-grid">' + ['new', 'improved', 'fixed'].map((k) => row(OK.svg.wrap(OK.svg.releaseKind(k, 5), 6, 16), OK.labels.releaseKind[k])).join('') + '</div>' +
       row(OK.html.status('building', 14), 'In the next release and later, new items show their status: ready, in build, blocked or planned.') +
       row(sv('<path d="M0 -8V8" stroke="var(--ok-ink)" stroke-width="1.5"/><circle cy="-8" r="2" fill="var(--ok-ink)"/>', 14, 18, '-7 -9 14 18'), '<b>Today</b>; the future is shaded. Chips take the band of the current lens.') + '</section>';
-    const keys = '<section class="ok-lg-sec ok-lg-keys"><span class="ok-kbd">←</span><span class="ok-kbd">→</span><span class="ok-kbd">↑</span><span class="ok-kbd">↓</span> move through the tree · <span class="ok-kbd">Space</span> fold · <span class="ok-kbd">F</span> focus branch · <span class="ok-kbd">[</span> <span class="ok-kbd">]</span> gates queue · <span class="ok-kbd">+</span> <span class="ok-kbd">−</span> zoom · <span class="ok-kbd">0</span> fit</section>';
-    return state && state.view === 'timeline' ? tl + map + keys : map + tl + keys;
+    return state && state.view === 'timeline' ? tl + map : map + tl;
   }
 
   window.CA = {
     shell, cam, L, zoomToLevel: (i) => { const l = LEVELS[i]; if (i === 0) fitAll(0); else zoomToK(l.k(), 0); },
     zoomTo: (k) => zoomToK(k, 0), fit: () => fitAll(0), level: () => levelOf(cam.k),
-    locate: (type, id, ms) => { const n = nodeOf({ type, id }); if (n) { ensureVisible(n); freeR = shell.freeRect(); flyToNode(n, { ms: ms == null ? 0 : ms }); } },
+    locate: (type, id, ms) => { const n = nodeOf({ type, id }); if (n) { ensureVisible(n); freeR = shell.freeRectHint(); flyToNode(n, { ms: ms == null ? 0 : ms }); } },
     focus: (type, id) => setFocus(nodeOf({ type, id })), fold: (type, id) => toggleCollapse(nodeOf({ type, id })), expandAll,
     stepQueue, product: openProduct, tlZoom, home: () => { cursorNode = null; kbdActive = false; requestDraw(); },
     bench: (n) => { const t0 = performance.now(); for (let i = 0; i < (n || 20); i++) { draw(performance.now()); drawMini(); } return (performance.now() - t0) / (n || 20); },
@@ -2440,13 +2761,14 @@
       const n = nodeOf({ type, id });
       if (!n) return;
       ensureVisible(n);
-      freeR = shell.freeRect();
+      freeR = shell.freeRectHint();
       const r = freeRect();
       const k = lvl === 0 ? L.kFit : LEVELS[lvl].k();
       const b = n.type === 'feature' ? { x: n.tx, y: n.ty, w: n.tw, h: n.th } : subtreeBox(n);
       atFit = false;
       flyTo({ k, tx: r.x + r.w / 2 - (b.x + b.w / 2) * k, ty: r.y + r.h / 2 - (b.y + b.h / 2) * k }, 0);
     },
+    lensAt: (lens, ref) => { const c = lensHits.find((h) => h.lens === lens && (!ref || h.ref === ref)); return c ? [Math.round(c.x + c.w / 2), Math.round(c.y + c.h / 2)] : null; },
     screenOf: (type, id) => { const n = nodeOf({ type, id }); return n ? [toSX(n.x + n.w / 2), toSY(n.y + n.h / 2)] : null; },
   };
 })();
