@@ -1,0 +1,11 @@
+.contest/
+.ai/*.local.*
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+.env*.local
+docs/shots/
+.next-*/
+.spark/
+.claude/worktrees/

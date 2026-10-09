@@ -1,0 +1,104 @@
+/* Theme tokens. Dark is the drawing-set blueprint (the contest winner's palette); light is the same
+   set roughly inverted: white paper, navy ink, the same blues. Canvas code reads these through
+   getComputedStyle so the map and the DOM never disagree. Status colours (mint, amber, red) keep
+   their meaning in both themes and are darkened in light for contrast on paper. */
+:root,
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --paper: #071a33;
+  --paper-hi: #12497a;
+  --paper-mid: #0e3a68;
+  --paper-lo: #061830;
+  --ink: #dff0ff;
+  --ink-2: rgba(223, 240, 255, 0.74);
+  --ink-3: rgba(223, 240, 255, 0.38);
+  --ink-4: rgba(223, 240, 255, 0.16);
+  --line: rgba(223, 240, 255, 0.55);
+  --grid: rgba(127, 224, 255, 0.07);
+  --panel: rgba(5, 20, 40, 0.78);
+  --panel-solid: #0a2342;
+  --halo: rgba(7, 26, 51, 0.92);
+  --accent: #7fe0ff;
+  --mint: #6ff2c8;
+  --amber: #ffc35a;
+  --red: #ff6a58;
+  --red-2: #ff9a8c;
+  --vignette: rgba(2, 10, 24, 0.62);
+  /* added by the foundation: high-contrast ink, glyph edges, label plates, tile base */
+  --ink-hi: #ffffff;
+  --on-ink: #061b38;
+  --on-mint: #04261b;
+  --delta: #9fe8ff;
+  --glyph-edge: #04223a;
+  --label-bg: #0b2c52;
+  --tile-base: rgba(3, 18, 40, 0.3);
+  --poche: #0c2f57;
+  --chip-bg: rgba(5, 26, 50, 0.95);
+  --card: rgba(6, 24, 48, 0.96);
+  --card-hi: rgba(11, 40, 74, 0.98);
+  --scrim: rgba(5, 22, 46, 0.97);
+  --menu: #082245;
+  --shadow: rgba(0, 0, 0, 0.45);
+  --sheet-a: #10396a;
+  --sheet-b: #082246;
+  --sheet-c: #061a34;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --paper: #f4f8fc;
+  --paper-hi: #ffffff;
+  --paper-mid: #eef4fa;
+  --paper-lo: #dde8f3;
+  --ink: #0b2a4a;
+  --ink-2: rgba(11, 42, 74, 0.76);
+  --ink-3: rgba(11, 42, 74, 0.42);
+  --ink-4: rgba(11, 42, 74, 0.14);
+  --line: rgba(14, 58, 104, 0.6);
+  --grid: rgba(18, 73, 122, 0.07);
+  --panel: rgba(255, 255, 255, 0.86);
+  --panel-solid: #ffffff;
+  --halo: rgba(244, 248, 252, 0.94);
+  --accent: #0a6fb8;
+  --mint: #0e9f78;
+  --amber: #b97800;
+  --red: #d2402e;
+  --red-2: #b8321f;
+  --vignette: rgba(14, 58, 104, 0.08);
+  --ink-hi: #061a33;
+  --on-ink: #ffffff;
+  --on-mint: #ffffff;
+  --delta: #0a7fc0;
+  --glyph-edge: #ffffff;
+  --label-bg: #ffffff;
+  --tile-base: rgba(255, 255, 255, 0.55);
+  --poche: #d3e1ef;
+  --chip-bg: rgba(255, 255, 255, 0.96);
+  --card: rgba(255, 255, 255, 0.97);
+  --card-hi: rgba(255, 255, 255, 0.99);
+  --scrim: rgba(244, 248, 252, 0.97);
+  --menu: #ffffff;
+  --shadow: rgba(14, 58, 104, 0.18);
+  --sheet-a: #ffffff;
+  --sheet-b: #f4f8fc;
+  --sheet-c: #eaf1f8;
+}
+
+* { box-sizing: border-box; }
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 14px/1.4 var(--font-sans), 'Arial Narrow', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+button { font: inherit; color: inherit; }
+
+/* theme toggle (index page and blueprint header) */
+.theme-toggle { height: 30px; min-width: 30px; padding: 0 9px; background: var(--panel); border: 1px solid var(--ink-3); color: var(--ink); font: 500 12px var(--font-mono), monospace; letter-spacing: 0.08em; text-transform: uppercase; display: inline-flex; align-items: center; gap: 6px; }
+.theme-toggle:hover { border-color: var(--ink); }
+.theme-toggle svg { width: 14px; height: 14px; }

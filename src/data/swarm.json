@@ -1,0 +1,4884 @@
+{
+ "asOf": "2026-10-08T09:00:00Z",
+ "note": "Simulated swarm for a design prototype. Agents, decisions and events are invented sample data layered on kettle.json.",
+ "squads": [
+  {
+   "id": "forge-1",
+   "name": "Forge-1 crew",
+   "role": "build",
+   "focus": "backend & workers",
+   "size": 9
+  },
+  {
+   "id": "forge-2",
+   "name": "Forge-2 crew",
+   "role": "build",
+   "focus": "web admin & member web",
+   "size": 7
+  },
+  {
+   "id": "forge-3",
+   "name": "Forge-3 crew",
+   "role": "build",
+   "focus": "mobile & kiosk",
+   "size": 5
+  },
+  {
+   "id": "forge-4",
+   "name": "Forge-4 crew",
+   "role": "build",
+   "focus": "integrations & API",
+   "size": 5
+  },
+  {
+   "id": "warden",
+   "name": "Warden crew",
+   "role": "review",
+   "focus": "code review, tests, accessibility checks",
+   "size": 6
+  },
+  {
+   "id": "tender",
+   "name": "Tender crew",
+   "role": "operate",
+   "focus": "deploys, flags, alerts, cost",
+   "size": 4
+  },
+  {
+   "id": "scout",
+   "name": "Scout crew",
+   "role": "research",
+   "focus": "specs, customer requests, competitor notes",
+   "size": 3
+  },
+  {
+   "id": "sentinel",
+   "name": "Sentinel crew",
+   "role": "security",
+   "focus": "threat models, dependency and secret scans",
+   "size": 3
+  }
+ ],
+ "agents": [
+  {
+   "id": "forge-1.1",
+   "squad": "forge-1",
+   "role": "build",
+   "status": "waiting",
+   "feature": "AIA-05",
+   "task": "waiting: Assistant reads member chat history to suggest classes. Allowed by the privacy notice?",
+   "progressPct": 49,
+   "since": "2026-10-08T08:06:00Z",
+   "tokensPerMin": 1437,
+   "costUsdToday": 85.6,
+   "doneToday": 3,
+   "waitingOn": "D-11"
+  },
+  {
+   "id": "forge-1.2",
+   "squad": "forge-1",
+   "role": "build",
+   "status": "waiting",
+   "feature": "PAY-09",
+   "task": "waiting: Raise dunning rollout from 25% to 100% before Payments GA?",
+   "progressPct": 21,
+   "since": "2026-10-08T07:30:00Z",
+   "tokensPerMin": 3412,
+   "costUsdToday": 38.5,
+   "doneToday": 7,
+   "waitingOn": "D-01"
+  },
+  {
+   "id": "forge-1.3",
+   "squad": "forge-1",
+   "role": "build",
+   "status": "working",
+   "feature": "INT-05",
+   "task": "migrate data for Sessions & device list",
+   "progressPct": 89,
+   "since": "2026-10-08T07:36:00Z",
+   "tokensPerMin": 8680,
+   "costUsdToday": 69.6,
+   "doneToday": 3
+  },
+  {
+   "id": "forge-1.4",
+   "squad": "forge-1",
+   "role": "build",
+   "status": "blocked",
+   "feature": "PLT-22",
+   "task": "blocked by End-to-end test suite",
+   "progressPct": 13,
+   "since": "2026-10-08T07:29:00Z",
+   "tokensPerMin": 7861,
+   "costUsdToday": 29.3,
+   "doneToday": 1,
+   "blockedBy": "PLT-20"
+  },
+  {
+   "id": "forge-1.5",
+   "squad": "forge-1",
+   "role": "build",
+   "status": "waiting",
+   "feature": "BKG-03",
+   "task": "waiting: Waitlist promotion caused the incident on Monday. Re-enable for all studios?",
+   "progressPct": 71,
+   "since": "2026-10-08T08:13:00Z",
+   "tokensPerMin": 4149,
+   "costUsdToday": 75.7,
+   "doneToday": 7,
+   "waitingOn": "D-04"
+  },
+  {
+   "id": "forge-1.6",
+   "squad": "forge-1",
+   "role": "build",
+   "status": "waiting",
+   "feature": "PLT-04",
+   "task": "waiting: Database at 78% storage. Upgrade the plan now?",
+   "progressPct": 63,
+   "since": "2026-10-08T07:45:00Z",
+   "tokensPerMin": 8472,
+   "costUsdToday": 46.2,
+   "doneToday": 5,
+   "waitingOn": "D-14"
+  },
+  {
+   "id": "forge-1.7",
+   "squad": "forge-1",
+   "role": "build",
+   "status": "blocked",
+   "feature": "INT-05",
+   "task": "blocked by Payout reconciliation",
+   "progressPct": 47,
+   "since": "2026-10-08T07:05:00Z",
+   "tokensPerMin": 2159,
+   "costUsdToday": 67.7,
+   "doneToday": 1,
+   "blockedBy": "PAY-14"
+  },
+  {
+   "id": "forge-1.8",
+   "squad": "forge-1",
+   "role": "build",
+   "status": "blocked",
+   "feature": "IAM-09",
+   "task": "blocked by Multi-location management",
+   "progressPct": 47,
+   "since": "2026-10-08T07:02:00Z",
+   "tokensPerMin": 2511,
+   "costUsdToday": 63.6,
+   "doneToday": 4,
+   "blockedBy": "STU-07"
+  },
+  {
+   "id": "forge-1.9",
+   "squad": "forge-1",
+   "role": "build",
+   "status": "waiting",
+   "feature": "PLT-14",
+   "task": "waiting: Rotate the payment provider keys before GA?",
+   "progressPct": 30,
+   "since": "2026-10-08T07:20:00Z",
+   "tokensPerMin": 4214,
+   "costUsdToday": 12.9,
+   "doneToday": 3,
+   "waitingOn": "D-24"
+  },
+  {
+   "id": "forge-2.1",
+   "squad": "forge-2",
+   "role": "build",
+   "status": "waiting",
+   "feature": "SCH-12",
+   "task": "waiting: 14 flaky e2e tests on class scheduling. Quarantine them so agents can merge?",
+   "progressPct": 16,
+   "since": "2026-10-08T08:51:00Z",
+   "tokensPerMin": 2107,
+   "costUsdToday": 45.7,
+   "doneToday": 0,
+   "waitingOn": "D-13"
+  },
+  {
+   "id": "forge-2.2",
+   "squad": "forge-2",
+   "role": "build",
+   "status": "working",
+   "feature": "STU-03",
+   "task": "fix failing e2e on Legacy system migration",
+   "progressPct": 10,
+   "since": "2026-10-08T08:17:00Z",
+   "tokensPerMin": 2705,
+   "costUsdToday": 67.2,
+   "doneToday": 6
+  },
+  {
+   "id": "forge-2.3",
+   "squad": "forge-2",
+   "role": "build",
+   "status": "working",
+   "feature": "ANA-04",
+   "task": "migrate data for Instructor reports",
+   "progressPct": 7,
+   "since": "2026-10-08T07:19:00Z",
+   "tokensPerMin": 4435,
+   "costUsdToday": 78.4,
+   "doneToday": 3
+  },
+  {
+   "id": "forge-2.4",
+   "squad": "forge-2",
+   "role": "build",
+   "status": "working",
+   "feature": "MEM-03",
+   "task": "refactor Wallet pass after review",
+   "progressPct": 42,
+   "since": "2026-10-08T08:21:00Z",
+   "tokensPerMin": 5210,
+   "costUsdToday": 52.3,
+   "doneToday": 2
+  },
+  {
+   "id": "forge-2.5",
+   "squad": "forge-2",
+   "role": "build",
+   "status": "working",
+   "feature": "ANA-07",
+   "task": "implement Scheduled report emails",
+   "progressPct": 87,
+   "since": "2026-10-08T08:57:00Z",
+   "tokensPerMin": 7435,
+   "costUsdToday": 11.7,
+   "doneToday": 6
+  },
+  {
+   "id": "forge-2.6",
+   "squad": "forge-2",
+   "role": "build",
+   "status": "working",
+   "feature": "MEM-07",
+   "task": "write tests for Favourites & follow instructors",
+   "progressPct": 72,
+   "since": "2026-10-08T08:18:00Z",
+   "tokensPerMin": 5752,
+   "costUsdToday": 76.2,
+   "doneToday": 4
+  },
+  {
+   "id": "forge-2.7",
+   "squad": "forge-2",
+   "role": "build",
+   "status": "working",
+   "feature": "STU-03",
+   "task": "migrate data for Legacy system migration",
+   "progressPct": 82,
+   "since": "2026-10-08T08:49:00Z",
+   "tokensPerMin": 6082,
+   "costUsdToday": 20.9,
+   "doneToday": 8
+  },
+  {
+   "id": "forge-3.1",
+   "squad": "forge-3",
+   "role": "build",
+   "status": "working",
+   "feature": "INS-05",
+   "task": "migrate data for Instructor performance stats",
+   "progressPct": 56,
+   "since": "2026-10-08T08:47:00Z",
+   "tokensPerMin": 8601,
+   "costUsdToday": 4.6,
+   "doneToday": 4
+  },
+  {
+   "id": "forge-3.2",
+   "squad": "forge-3",
+   "role": "build",
+   "status": "waiting",
+   "feature": "BKG-03",
+   "task": "waiting: Waitlist promotion caused the incident on Monday. Re-enable for all studios?",
+   "progressPct": 5,
+   "since": "2026-10-08T08:57:00Z",
+   "tokensPerMin": 3002,
+   "costUsdToday": 82.3,
+   "doneToday": 9,
+   "waitingOn": "D-04"
+  },
+  {
+   "id": "forge-3.3",
+   "squad": "forge-3",
+   "role": "build",
+   "status": "working",
+   "feature": "MEM-09",
+   "task": "fix failing e2e on SEO class pages",
+   "progressPct": 46,
+   "since": "2026-10-08T08:51:00Z",
+   "tokensPerMin": 2432,
+   "costUsdToday": 52.9,
+   "doneToday": 8
+  },
+  {
+   "id": "forge-3.4",
+   "squad": "forge-3",
+   "role": "build",
+   "status": "working",
+   "feature": "INS-04",
+   "task": "write tests for Pay rates & payroll export",
+   "progressPct": 81,
+   "since": "2026-10-08T06:47:00Z",
+   "tokensPerMin": 5415,
+   "costUsdToday": 9.6,
+   "doneToday": 1
+  },
+  {
+   "id": "forge-3.5",
+   "squad": "forge-3",
+   "role": "build",
+   "status": "waiting",
+   "feature": "BKG-06",
+   "task": "waiting: Recurring auto-booking (P0) is not started. Pull two Forge-1 agents off Analytics to start it?",
+   "progressPct": 51,
+   "since": "2026-10-08T08:30:00Z",
+   "tokensPerMin": 2476,
+   "costUsdToday": 46.2,
+   "doneToday": 9,
+   "waitingOn": "D-05"
+  },
+  {
+   "id": "forge-4.1",
+   "squad": "forge-4",
+   "role": "build",
+   "status": "waiting",
+   "feature": "INT-01",
+   "task": "waiting: Public API has no rate limiting. Block the partner launch until it ships?",
+   "progressPct": 16,
+   "since": "2026-10-08T06:56:00Z",
+   "tokensPerMin": 3934,
+   "costUsdToday": 39.9,
+   "doneToday": 5,
+   "waitingOn": "D-06"
+  },
+  {
+   "id": "forge-4.2",
+   "squad": "forge-4",
+   "role": "build",
+   "status": "waiting",
+   "feature": "INT-01",
+   "task": "waiting: Public API has no rate limiting. Block the partner launch until it ships?",
+   "progressPct": 71,
+   "since": "2026-10-08T08:39:00Z",
+   "tokensPerMin": 4801,
+   "costUsdToday": 72.9,
+   "doneToday": 0,
+   "waitingOn": "D-06"
+  },
+  {
+   "id": "forge-4.3",
+   "squad": "forge-4",
+   "role": "build",
+   "status": "waiting",
+   "feature": "PAY-09",
+   "task": "waiting: Raise dunning rollout from 25% to 100% before Payments GA?",
+   "progressPct": 7,
+   "since": "2026-10-08T08:10:00Z",
+   "tokensPerMin": 2611,
+   "costUsdToday": 19.4,
+   "doneToday": 6,
+   "waitingOn": "D-01"
+  },
+  {
+   "id": "forge-4.4",
+   "squad": "forge-4",
+   "role": "build",
+   "status": "waiting",
+   "feature": "PAY-09",
+   "task": "waiting: Dunning emails include the last 4 card digits. Allowed under the card data policy?",
+   "progressPct": 81,
+   "since": "2026-10-08T07:05:00Z",
+   "tokensPerMin": 8782,
+   "costUsdToday": 7.1,
+   "doneToday": 2,
+   "waitingOn": "D-02"
+  },
+  {
+   "id": "forge-4.5",
+   "squad": "forge-4",
+   "role": "build",
+   "status": "waiting",
+   "feature": "PAY-09",
+   "task": "waiting: Dunning emails include the last 4 card digits. Allowed under the card data policy?",
+   "progressPct": 71,
+   "since": "2026-10-08T08:13:00Z",
+   "tokensPerMin": 1503,
+   "costUsdToday": 51.1,
+   "doneToday": 0,
+   "waitingOn": "D-02"
+  },
+  {
+   "id": "warden.1",
+   "squad": "warden",
+   "role": "review",
+   "status": "working",
+   "feature": "AIA-06",
+   "task": "regression pass on Waitlist odds prediction",
+   "progressPct": 49,
+   "since": "2026-10-08T07:30:00Z",
+   "tokensPerMin": 6448,
+   "costUsdToday": 73.3,
+   "doneToday": 8
+  },
+  {
+   "id": "warden.2",
+   "squad": "warden",
+   "role": "review",
+   "status": "waiting",
+   "feature": "PAY-12",
+   "task": "waiting: Tax handling: use the provider's tax API or keep the in-house tables?",
+   "progressPct": 22,
+   "since": "2026-10-08T06:47:00Z",
+   "tokensPerMin": 6005,
+   "costUsdToday": 75.5,
+   "doneToday": 2,
+   "waitingOn": "D-03"
+  },
+  {
+   "id": "warden.3",
+   "squad": "warden",
+   "role": "review",
+   "status": "working",
+   "feature": "INS-04",
+   "task": "regression pass on Pay rates & payroll export",
+   "progressPct": 43,
+   "since": "2026-10-08T07:04:00Z",
+   "tokensPerMin": 5165,
+   "costUsdToday": 41.8,
+   "doneToday": 6
+  },
+  {
+   "id": "warden.4",
+   "squad": "warden",
+   "role": "review",
+   "status": "blocked",
+   "feature": "ANA-04",
+   "task": "blocked by Pay rates & payroll export",
+   "progressPct": 74,
+   "since": "2026-10-08T06:57:00Z",
+   "tokensPerMin": 8497,
+   "costUsdToday": 66.4,
+   "doneToday": 5,
+   "blockedBy": "INS-04"
+  },
+  {
+   "id": "warden.5",
+   "squad": "warden",
+   "role": "review",
+   "status": "working",
+   "feature": "IAM-04",
+   "task": "review PR for Apple sign-in",
+   "progressPct": 46,
+   "since": "2026-10-08T06:56:00Z",
+   "tokensPerMin": 8654,
+   "costUsdToday": 19.7,
+   "doneToday": 9
+  },
+  {
+   "id": "warden.6",
+   "squad": "warden",
+   "role": "review",
+   "status": "working",
+   "feature": "ANA-03",
+   "task": "review PR for Attendance & utilisation heatmap",
+   "progressPct": 56,
+   "since": "2026-10-08T08:18:00Z",
+   "tokensPerMin": 6833,
+   "costUsdToday": 36.2,
+   "doneToday": 2
+  },
+  {
+   "id": "tender.1",
+   "squad": "tender",
+   "role": "operate",
+   "status": "working",
+   "feature": "MEM-04",
+   "task": "tune alert thresholds for Member profile",
+   "progressPct": 52,
+   "since": "2026-10-08T07:21:00Z",
+   "tokensPerMin": 5923,
+   "costUsdToday": 21.9,
+   "doneToday": 5
+  },
+  {
+   "id": "tender.2",
+   "squad": "tender",
+   "role": "operate",
+   "status": "working",
+   "feature": "STU-06",
+   "task": "cost check on Locations & rooms",
+   "progressPct": 78,
+   "since": "2026-10-08T06:48:00Z",
+   "tokensPerMin": 8081,
+   "costUsdToday": 43.4,
+   "doneToday": 5
+  },
+  {
+   "id": "tender.3",
+   "squad": "tender",
+   "role": "operate",
+   "status": "working",
+   "feature": "IAM-07",
+   "task": "roll out Staff roles & permissions flag",
+   "progressPct": 79,
+   "since": "2026-10-08T07:24:00Z",
+   "tokensPerMin": 2701,
+   "costUsdToday": 25.1,
+   "doneToday": 9
+  },
+  {
+   "id": "tender.4",
+   "squad": "tender",
+   "role": "operate",
+   "status": "working",
+   "feature": "INS-02",
+   "task": "cost check on Class roster & notes",
+   "progressPct": 39,
+   "since": "2026-10-08T08:18:00Z",
+   "tokensPerMin": 4857,
+   "costUsdToday": 14.9,
+   "doneToday": 2
+  },
+  {
+   "id": "scout.1",
+   "squad": "scout",
+   "role": "research",
+   "status": "waiting",
+   "feature": "PLT-14",
+   "task": "waiting: Rotate the payment provider keys before GA?",
+   "progressPct": 22,
+   "since": "2026-10-08T08:37:00Z",
+   "tokensPerMin": 7990,
+   "costUsdToday": 74.7,
+   "doneToday": 4,
+   "waitingOn": "D-24"
+  },
+  {
+   "id": "scout.2",
+   "squad": "scout",
+   "role": "research",
+   "status": "failed",
+   "feature": "IAM-08",
+   "task": "stopped: 3 failed attempts on Custom role builder",
+   "progressPct": 73,
+   "since": "2026-10-08T06:59:00Z",
+   "tokensPerMin": 8515,
+   "costUsdToday": 65.8,
+   "doneToday": 8
+  },
+  {
+   "id": "scout.3",
+   "squad": "scout",
+   "role": "research",
+   "status": "waiting",
+   "feature": "BKG-06",
+   "task": "waiting: Recurring auto-booking (P0) is not started. Pull two Forge-1 agents off Analytics to start it?",
+   "progressPct": 84,
+   "since": "2026-10-08T07:36:00Z",
+   "tokensPerMin": 8981,
+   "costUsdToday": 85.7,
+   "doneToday": 2,
+   "waitingOn": "D-05"
+  },
+  {
+   "id": "sentinel.1",
+   "squad": "sentinel",
+   "role": "security",
+   "status": "waiting",
+   "feature": "BKG-08",
+   "task": "waiting: Kiosk check-in fails the contrast check on two screens. Accept the agent's proposed palette?",
+   "progressPct": 21,
+   "since": "2026-10-08T08:26:00Z",
+   "tokensPerMin": 6783,
+   "costUsdToday": 73.1,
+   "doneToday": 8,
+   "waitingOn": "D-07"
+  },
+  {
+   "id": "sentinel.2",
+   "squad": "sentinel",
+   "role": "security",
+   "status": "working",
+   "feature": "INT-01",
+   "task": "threat model Public REST API",
+   "progressPct": 73,
+   "since": "2026-10-08T07:33:00Z",
+   "tokensPerMin": 1197,
+   "costUsdToday": 36.6,
+   "doneToday": 5
+  },
+  {
+   "id": "sentinel.3",
+   "squad": "sentinel",
+   "role": "security",
+   "status": "waiting",
+   "feature": "GRO-07",
+   "task": "waiting: Legacy landing page builder is deprecated but 23 studios still use it. Agents want to delete 6,200 lines.",
+   "progressPct": 68,
+   "since": "2026-10-08T07:50:00Z",
+   "tokensPerMin": 6786,
+   "costUsdToday": 9.7,
+   "doneToday": 5,
+   "waitingOn": "D-09"
+  }
+ ],
+ "decisions": [
+  {
+   "id": "D-01",
+   "feature": "PAY-09",
+   "domain": "PAY",
+   "lens": "business",
+   "decider": "mara",
+   "askedBy": "forge-4.3",
+   "question": "Raise dunning rollout from 25% to 100% before Payments GA?",
+   "options": [
+    {
+     "label": "Go to 100% now",
+     "consequence": "Recovers about $3.1k MRR a month sooner; no human or security review yet."
+    },
+    {
+     "label": "Hold at 25% until review",
+     "consequence": "GA date holds only if the review lands this week."
+    },
+    {
+     "label": "Roll back to 0%",
+     "consequence": "Stops the risk; failed payments go back to manual follow-up."
+    }
+   ],
+   "recommended": 1,
+   "urgency": "high",
+   "waitingSince": "2026-10-08T04:11:00Z",
+   "blocksAgents": 2,
+   "affects": [
+    "PAY-09",
+    "PAY-13"
+   ]
+  },
+  {
+   "id": "D-02",
+   "feature": "PAY-09",
+   "domain": "PAY",
+   "lens": "security",
+   "decider": "jonas",
+   "askedBy": "forge-4.5",
+   "question": "Dunning emails include the last 4 card digits. Allowed under the card data policy?",
+   "options": [
+    {
+     "label": "Allow",
+     "consequence": "Matches what most processors show."
+    },
+    {
+     "label": "Mask fully",
+     "consequence": "Two templates and one test to change; about 40 minutes of agent work."
+    }
+   ],
+   "recommended": 1,
+   "urgency": "high",
+   "waitingSince": "2026-10-08T00:57:00Z",
+   "blocksAgents": 2,
+   "affects": [
+    "PAY-09",
+    "PAY-13"
+   ]
+  },
+  {
+   "id": "D-03",
+   "feature": "PAY-12",
+   "domain": "PAY",
+   "lens": "development",
+   "decider": "tomas",
+   "askedBy": "forge-4.3",
+   "question": "Tax handling: use the provider's tax API or keep the in-house tables?",
+   "options": [
+    {
+     "label": "Provider API",
+     "consequence": "Adds a dependency and $0.004 per call; removes 1,900 lines."
+    },
+    {
+     "label": "In-house tables",
+     "consequence": "Agents estimate 3 more days; we own the rate updates."
+    }
+   ],
+   "recommended": 0,
+   "urgency": "high",
+   "waitingSince": "2026-10-08T04:26:00Z",
+   "blocksAgents": 1,
+   "affects": [
+    "PAY-12",
+    "STU-07",
+    "PAY-14",
+    "INT-05"
+   ]
+  },
+  {
+   "id": "D-04",
+   "feature": "BKG-03",
+   "domain": "BKG",
+   "lens": "operations",
+   "decider": "priya",
+   "askedBy": "forge-4.4",
+   "question": "Waitlist promotion caused the incident on Monday. Re-enable for all studios?",
+   "options": [
+    {
+     "label": "Re-enable",
+     "consequence": "Fix is merged and passing; no load test yet."
+    },
+    {
+     "label": "Re-enable for 10 studios",
+     "consequence": "Canary for 48 h first."
+    },
+    {
+     "label": "Keep off",
+     "consequence": "Members join the waitlist but are never promoted."
+    }
+   ],
+   "recommended": 1,
+   "urgency": "high",
+   "waitingSince": "2026-10-08T07:14:00Z",
+   "blocksAgents": 2,
+   "affects": [
+    "BKG-03",
+    "AIA-06"
+   ]
+  },
+  {
+   "id": "D-05",
+   "feature": "BKG-06",
+   "domain": "BKG",
+   "lens": "business",
+   "decider": "dev",
+   "askedBy": "scout.3",
+   "question": "Recurring auto-booking (P0) is not started. Pull two Forge-1 agents off Analytics to start it?",
+   "options": [
+    {
+     "label": "Move two agents",
+     "consequence": "Analytics exports slip about a week."
+    },
+    {
+     "label": "Start next sprint",
+     "consequence": "P0 waits 9 more days."
+    }
+   ],
+   "recommended": 0,
+   "urgency": "high",
+   "waitingSince": "2026-10-08T07:39:00Z",
+   "blocksAgents": 2,
+   "affects": [
+    "BKG-06"
+   ]
+  },
+  {
+   "id": "D-06",
+   "feature": "INT-01",
+   "domain": "INT",
+   "lens": "security",
+   "decider": "jonas",
+   "askedBy": "forge-4.1",
+   "question": "Public API has no rate limiting. Block the partner launch until it ships?",
+   "options": [
+    {
+     "label": "Block launch",
+     "consequence": "Partner integration slips about 5 days."
+    },
+    {
+     "label": "Launch with a static limit",
+     "consequence": "100 req/min per key, refined later."
+    }
+   ],
+   "recommended": 1,
+   "urgency": "high",
+   "waitingSince": "2026-10-08T03:36:00Z",
+   "blocksAgents": 2,
+   "affects": [
+    "INT-01",
+    "GRO-05",
+    "INT-02",
+    "AIA-05"
+   ]
+  },
+  {
+   "id": "D-07",
+   "feature": "BKG-08",
+   "domain": "BKG",
+   "lens": "design",
+   "decider": "lea",
+   "askedBy": "forge-1.5",
+   "question": "Kiosk check-in fails the contrast check on two screens. Accept the agent's proposed palette?",
+   "options": [
+    {
+     "label": "Accept proposal",
+     "consequence": "Passes AA; buttons change from teal to deep blue."
+    },
+    {
+     "label": "Send back with notes",
+     "consequence": "Agent iterates; adds a day."
+    }
+   ],
+   "recommended": 0,
+   "urgency": "medium",
+   "waitingSince": "2026-10-08T06:46:00Z",
+   "blocksAgents": 1,
+   "affects": [
+    "BKG-08",
+    "PAY-16"
+   ]
+  },
+  {
+   "id": "D-08",
+   "feature": "COM-02",
+   "domain": "COM",
+   "lens": "business",
+   "decider": "mara",
+   "askedBy": "sentinel.2",
+   "question": "SMS reminders cost $1,240 a month and rising. Cap per studio?",
+   "options": [
+    {
+     "label": "Cap at 300 per studio",
+     "consequence": "Saves about $410 a month; 11 studios hit the cap."
+    },
+    {
+     "label": "Charge studios for SMS",
+     "consequence": "Needs a pricing change and billing work."
+    },
+    {
+     "label": "No cap",
+     "consequence": "Cost keeps growing with bookings."
+    }
+   ],
+   "recommended": 1,
+   "urgency": "medium",
+   "waitingSince": "2026-10-08T07:28:00Z",
+   "blocksAgents": 0,
+   "affects": [
+    "COM-02",
+    "IAM-05",
+    "BKG-03",
+    "PAY-09"
+   ]
+  },
+  {
+   "id": "D-09",
+   "feature": "GRO-07",
+   "domain": "GRO",
+   "lens": "development",
+   "decider": "tomas",
+   "askedBy": "sentinel.3",
+   "question": "Legacy landing page builder is deprecated but 23 studios still use it. Agents want to delete 6,200 lines.",
+   "options": [
+    {
+     "label": "Delete after migration",
+     "consequence": "Migration tool first, then delete."
+    },
+    {
+     "label": "Delete now",
+     "consequence": "The 38 studios lose their pages."
+    }
+   ],
+   "recommended": 0,
+   "urgency": "medium",
+   "waitingSince": "2026-10-07T16:59:00Z",
+   "blocksAgents": 1,
+   "affects": [
+    "GRO-07"
+   ]
+  },
+  {
+   "id": "D-10",
+   "feature": "GRO-02",
+   "domain": "GRO",
+   "lens": "business",
+   "decider": "sam",
+   "askedBy": "forge-1.1",
+   "question": "Referral rewards: credit or cash? Agents need an answer to finish the payout flow.",
+   "options": [
+    {
+     "label": "Class credit",
+     "consequence": "No payout compliance work."
+    },
+    {
+     "label": "Cash via payouts",
+     "consequence": "Needs a security review of the payout path."
+    }
+   ],
+   "recommended": 0,
+   "urgency": "medium",
+   "waitingSince": "2026-10-06T18:35:00Z",
+   "blocksAgents": 0,
+   "affects": [
+    "GRO-02"
+   ]
+  },
+  {
+   "id": "D-11",
+   "feature": "AIA-05",
+   "domain": "AIA",
+   "lens": "security",
+   "decider": "jonas",
+   "askedBy": "forge-1.8",
+   "question": "Assistant reads member chat history to suggest classes. Allowed by the privacy notice?",
+   "options": [
+    {
+     "label": "Allow with opt-out",
+     "consequence": "Privacy notice update needed."
+    },
+    {
+     "label": "Opt-in only",
+     "consequence": "Lower adoption; agents estimate 20% opt in."
+    }
+   ],
+   "recommended": 1,
+   "urgency": "medium",
+   "waitingSince": "2026-10-07T11:03:00Z",
+   "blocksAgents": 1,
+   "affects": [
+    "AIA-05"
+   ]
+  },
+  {
+   "id": "D-12",
+   "feature": "AIA-03",
+   "domain": "AIA",
+   "lens": "design",
+   "decider": "lea",
+   "askedBy": "warden.1",
+   "question": "Assistant tone: two drafts of the churn outreach message. Pick one.",
+   "options": [
+    {
+     "label": "Warm and short",
+     "consequence": "3 sentences, first name, one offer."
+    },
+    {
+     "label": "Detailed",
+     "consequence": "Lists the classes the member missed."
+    }
+   ],
+   "recommended": 0,
+   "urgency": "low",
+   "waitingSince": "2026-10-07T09:35:00Z",
+   "blocksAgents": 0,
+   "affects": [
+    "AIA-03"
+   ]
+  },
+  {
+   "id": "D-13",
+   "feature": "SCH-12",
+   "domain": "SCH",
+   "lens": "quality",
+   "decider": "ines",
+   "askedBy": "forge-2.1",
+   "question": "14 flaky e2e tests on class scheduling. Quarantine them so agents can merge?",
+   "options": [
+    {
+     "label": "Quarantine",
+     "consequence": "Merges unblock; coverage drops 6%."
+    },
+    {
+     "label": "Fix first",
+     "consequence": "Warden crew spends about 2 days."
+    }
+   ],
+   "recommended": 1,
+   "urgency": "medium",
+   "waitingSince": "2026-10-08T06:06:00Z",
+   "blocksAgents": 1,
+   "affects": [
+    "SCH-12"
+   ]
+  },
+  {
+   "id": "D-14",
+   "feature": "PLT-04",
+   "domain": "PLT",
+   "lens": "operations",
+   "decider": "priya",
+   "askedBy": "forge-1.6",
+   "question": "Database at 78% storage. Upgrade the plan now?",
+   "options": [
+    {
+     "label": "Upgrade now",
+     "consequence": "+$220 a month."
+    },
+    {
+     "label": "Archive old events",
+     "consequence": "Agent proposes a job; frees about 30%."
+    }
+   ],
+   "recommended": 1,
+   "urgency": "medium",
+   "waitingSince": "2026-10-07T03:54:00Z",
+   "blocksAgents": 1,
+   "affects": [
+    "PLT-04",
+    "PLT-05"
+   ]
+  },
+  {
+   "id": "D-15",
+   "feature": "ANA-02",
+   "domain": "ANA",
+   "lens": "business",
+   "decider": "mara",
+   "askedBy": "forge-2.5",
+   "question": "Revenue dashboard: show gross or net of refunds by default?",
+   "options": [
+    {
+     "label": "Net",
+     "consequence": "Matches the accounting export."
+    },
+    {
+     "label": "Gross",
+     "consequence": "Matches what studios see at the till."
+    }
+   ],
+   "recommended": 0,
+   "urgency": "low",
+   "waitingSince": "2026-10-07T00:37:00Z",
+   "blocksAgents": 0,
+   "affects": [
+    "ANA-02",
+    "ANA-01",
+    "ANA-06",
+    "AIA-04"
+   ]
+  },
+  {
+   "id": "D-16",
+   "feature": "IAM-05",
+   "domain": "IAM",
+   "lens": "security",
+   "decider": "jonas",
+   "askedBy": "warden.2",
+   "question": "Staff accounts without two-factor: force it on next login?",
+   "options": [
+    {
+     "label": "Force now",
+     "consequence": "About 60 staff accounts affected."
+    },
+    {
+     "label": "Nudge for 2 weeks",
+     "consequence": "Then force."
+    }
+   ],
+   "recommended": 1,
+   "urgency": "medium",
+   "waitingSince": "2026-10-07T15:36:00Z",
+   "blocksAgents": 0,
+   "affects": [
+    "IAM-05",
+    "PLT-15"
+   ]
+  },
+  {
+   "id": "D-17",
+   "feature": "INS-04",
+   "domain": "INS",
+   "lens": "quality",
+   "decider": "ines",
+   "askedBy": "warden.3",
+   "question": "Pay-rate export has 4 open P2 bugs. Ship to the M2 cohort anyway?",
+   "options": [
+    {
+     "label": "Ship with known issues",
+     "consequence": "Release notes name the 4 bugs."
+    },
+    {
+     "label": "Hold",
+     "consequence": "Agents estimate 1.5 days to close."
+    }
+   ],
+   "recommended": 1,
+   "urgency": "medium",
+   "waitingSince": "2026-10-06T21:40:00Z",
+   "blocksAgents": 0,
+   "affects": [
+    "INS-04",
+    "ANA-04"
+   ]
+  },
+  {
+   "id": "D-18",
+   "feature": "SCH-03",
+   "domain": "SCH",
+   "lens": "design",
+   "decider": "lea",
+   "askedBy": "forge-2.1",
+   "question": "Timetable on mobile: agents propose a week strip instead of a month grid.",
+   "options": [
+    {
+     "label": "Accept",
+     "consequence": "Prototype attached; 3 screens change."
+    },
+    {
+     "label": "Keep month grid",
+     "consequence": "No change."
+    }
+   ],
+   "recommended": 0,
+   "urgency": "low",
+   "waitingSince": "2026-10-07T21:58:00Z",
+   "blocksAgents": 0,
+   "affects": [
+    "SCH-03"
+   ]
+  },
+  {
+   "id": "D-19",
+   "feature": "COM-01",
+   "domain": "COM",
+   "lens": "operations",
+   "decider": "priya",
+   "askedBy": "forge-2.6",
+   "question": "Email provider bounced 4% yesterday. Switch the sending domain?",
+   "options": [
+    {
+     "label": "Switch domain",
+     "consequence": "DNS work; 24 h warm-up."
+    },
+    {
+     "label": "Investigate first",
+     "consequence": "Tender crew opens a ticket."
+    }
+   ],
+   "recommended": 1,
+   "urgency": "medium",
+   "waitingSince": "2026-10-06T20:20:00Z",
+   "blocksAgents": 0,
+   "affects": [
+    "COM-01",
+    "IAM-02",
+    "SCH-13",
+    "PAY-09",
+    "PAY-10"
+   ]
+  },
+  {
+   "id": "D-20",
+   "feature": "PAY-04",
+   "domain": "PAY",
+   "lens": "business",
+   "decider": "dev",
+   "askedBy": "forge-4.3",
+   "question": "Members ask for family plans (31 requests). Pull them into M3?",
+   "options": [
+    {
+     "label": "Add to M3",
+     "consequence": "Scout crew writes the spec."
+    },
+    {
+     "label": "Park",
+     "consequence": "Stays an idea."
+    }
+   ],
+   "recommended": 0,
+   "urgency": "low",
+   "waitingSince": "2026-10-07T05:19:00Z",
+   "blocksAgents": 0,
+   "affects": [
+    "PAY-04"
+   ]
+  },
+  {
+   "id": "D-21",
+   "feature": "PAY-14",
+   "domain": "PAY",
+   "lens": "quality",
+   "decider": "ines",
+   "askedBy": "forge-4.3",
+   "question": "Payout reconciliation passes on test data only. Require a run on last month's real payouts?",
+   "options": [
+    {
+     "label": "Require",
+     "consequence": "One day; needs read access to production payouts."
+    },
+    {
+     "label": "Accept test data",
+     "consequence": "Faster; risk at GA."
+    }
+   ],
+   "recommended": 0,
+   "urgency": "high",
+   "waitingSince": "2026-10-08T05:12:00Z",
+   "blocksAgents": 0,
+   "affects": [
+    "PAY-14",
+    "INT-05"
+   ]
+  },
+  {
+   "id": "D-22",
+   "feature": "INT-05",
+   "domain": "INT",
+   "lens": "development",
+   "decider": "tomas",
+   "askedBy": "forge-4.2",
+   "question": "Accounting sync: two agents wrote competing implementations. Keep which?",
+   "options": [
+    {
+     "label": "Forge-4.2 version",
+     "consequence": "Simpler, 71% coverage."
+    },
+    {
+     "label": "Forge-4.4 version",
+     "consequence": "Handles partial refunds, 58% coverage."
+    }
+   ],
+   "recommended": 0,
+   "urgency": "medium",
+   "waitingSince": "2026-10-07T18:46:00Z",
+   "blocksAgents": 0,
+   "affects": [
+    "INT-05"
+   ]
+  },
+  {
+   "id": "D-23",
+   "feature": "BKG-02",
+   "domain": "BKG",
+   "lens": "design",
+   "decider": "lea",
+   "askedBy": "forge-3.2",
+   "question": "Cancellation flow: add a \"why are you cancelling\" step?",
+   "options": [
+    {
+     "label": "Add",
+     "consequence": "Better data; one more tap."
+    },
+    {
+     "label": "Skip",
+     "consequence": "Faster cancellation."
+    }
+   ],
+   "recommended": 1,
+   "urgency": "low",
+   "waitingSince": "2026-10-07T20:16:00Z",
+   "blocksAgents": 0,
+   "affects": [
+    "BKG-02"
+   ]
+  },
+  {
+   "id": "D-24",
+   "feature": "PLT-14",
+   "domain": "PLT",
+   "lens": "security",
+   "decider": "jonas",
+   "askedBy": "sentinel.2",
+   "question": "Rotate the payment provider keys before GA?",
+   "options": [
+    {
+     "label": "Rotate now",
+     "consequence": "5 min downtime window at night."
+    },
+    {
+     "label": "After GA",
+     "consequence": "Keys are 14 months old."
+    }
+   ],
+   "recommended": 0,
+   "urgency": "high",
+   "waitingSince": "2026-10-08T05:17:00Z",
+   "blocksAgents": 2,
+   "affects": [
+    "PLT-14",
+    "PAY-07"
+   ]
+  },
+  {
+   "id": "D-25",
+   "feature": "GRO-04",
+   "domain": "GRO",
+   "lens": "design",
+   "decider": "lea",
+   "askedBy": "sentinel.3",
+   "question": "Landing page for studios: agents generated three hero images. Pick one or ask for more.",
+   "options": [
+    {
+     "label": "Pick image 2",
+     "consequence": "Studio at dawn."
+    },
+    {
+     "label": "Ask for more",
+     "consequence": "Scout crew generates five more."
+    }
+   ],
+   "recommended": 0,
+   "urgency": "low",
+   "waitingSince": "2026-10-07T13:31:00Z",
+   "blocksAgents": 0,
+   "affects": [
+    "GRO-04"
+   ]
+  },
+  {
+   "id": "D-26",
+   "feature": "PAY-14",
+   "domain": "PAY",
+   "lens": "operations",
+   "decider": "priya",
+   "askedBy": "forge-3.5",
+   "question": "Payout job runs at 02:00 and overlaps backups. Move it to 04:00?",
+   "options": [
+    {
+     "label": "Move to 04:00",
+     "consequence": "Payouts land two hours later."
+    },
+    {
+     "label": "Keep",
+     "consequence": "Backup slows by about 20 min."
+    }
+   ],
+   "recommended": 0,
+   "urgency": "medium",
+   "waitingSince": "2026-10-08T09:15:00Z",
+   "blocksAgents": 2,
+   "affects": [
+    "PAY-14",
+    "INT-05"
+   ],
+   "arrivesAt": 900
+  },
+  {
+   "id": "D-27",
+   "feature": "BKG-03",
+   "domain": "BKG",
+   "lens": "quality",
+   "decider": "ines",
+   "askedBy": "forge-4.3",
+   "question": "Waitlist fix passes, but the load test shows 2.1 s p95 at 500 bookings a minute. Accept?",
+   "options": [
+    {
+     "label": "Accept",
+     "consequence": "Peak today is 140 a minute."
+    },
+    {
+     "label": "Optimise first",
+     "consequence": "About half a day."
+    }
+   ],
+   "recommended": 0,
+   "urgency": "high",
+   "waitingSince": "2026-10-08T09:33:00Z",
+   "blocksAgents": 3,
+   "affects": [
+    "BKG-03",
+    "AIA-06"
+   ],
+   "arrivesAt": 1980
+  },
+  {
+   "id": "D-28",
+   "feature": "SCH-04",
+   "domain": "SCH",
+   "lens": "business",
+   "decider": "dev",
+   "askedBy": "forge-1.4",
+   "question": "Agents finished class packs early. Pull class templates forward from M3?",
+   "options": [
+    {
+     "label": "Pull forward",
+     "consequence": "Two agents free now."
+    },
+    {
+     "label": "Keep plan",
+     "consequence": "Agents go to the M2 backlog."
+    }
+   ],
+   "recommended": 0,
+   "urgency": "low",
+   "waitingSince": "2026-10-08T09:50:00Z",
+   "blocksAgents": 3,
+   "affects": [
+    "SCH-04"
+   ],
+   "arrivesAt": 3000
+  }
+ ],
+ "orders": [
+  {
+   "id": "O-1",
+   "by": "jonas",
+   "lens": "security",
+   "scope": {
+    "domain": "PAY"
+   },
+   "text": "Anything touching card or bank data needs a human security review before its flag passes 10%.",
+   "since": "2026-09-02",
+   "violations": 1
+  },
+  {
+   "id": "O-2",
+   "by": "tomas",
+   "lens": "development",
+   "scope": {
+    "all": true
+   },
+   "text": "No merge below 70% unit coverage on new code.",
+   "since": "2026-08-11",
+   "violations": 3
+  },
+  {
+   "id": "O-3",
+   "by": "priya",
+   "lens": "operations",
+   "scope": {
+    "all": true
+   },
+   "text": "Every live feature has an alert and a runbook before rollout passes 50%.",
+   "since": "2026-09-20",
+   "violations": 6
+  },
+  {
+   "id": "O-4",
+   "by": "mara",
+   "lens": "business",
+   "scope": {
+    "milestone": "M2"
+   },
+   "text": "Payments GA work goes first; agents may be pulled from M3 and M4.",
+   "since": "2026-09-28",
+   "violations": 0
+  },
+  {
+   "id": "O-5",
+   "by": "lea",
+   "lens": "design",
+   "scope": {
+    "surface": "kiosk"
+   },
+   "text": "Kiosk screens must pass AA contrast before review.",
+   "since": "2026-09-14",
+   "violations": 1
+  },
+  {
+   "id": "O-6",
+   "by": "ines",
+   "lens": "quality",
+   "scope": {
+    "all": true
+   },
+   "text": "A P1 bug stops the feature's rollout automatically.",
+   "since": "2026-07-30",
+   "violations": 0
+  },
+  {
+   "id": "O-7",
+   "by": "mara",
+   "lens": "business",
+   "scope": {
+    "all": true
+   },
+   "text": "Daily swarm spend cap: $2,400. Pause research crews first if exceeded.",
+   "since": "2026-09-01",
+   "violations": 0
+  },
+  {
+   "id": "O-8",
+   "by": "dev",
+   "lens": "business",
+   "scope": {
+    "domain": "AIA"
+   },
+   "text": "Assistant features stay behind an internal flag until M3 ships.",
+   "since": "2026-09-25",
+   "violations": 0
+  }
+ ],
+ "replay": [
+  {
+   "t": 4,
+   "at": "2026-10-08T09:00:04Z",
+   "agent": "tender.2",
+   "feature": "STU-06",
+   "type": "deploy",
+   "text": "deployed Locations & rooms"
+  },
+  {
+   "t": 10,
+   "at": "2026-10-08T09:00:10Z",
+   "agent": "warden.1",
+   "feature": "AIA-06",
+   "type": "review-pass",
+   "text": "review passed: Waitlist odds prediction"
+  },
+  {
+   "t": 22,
+   "at": "2026-10-08T09:00:22Z",
+   "agent": "forge-1.3",
+   "feature": "INT-05",
+   "type": "commit",
+   "text": "1 commits on Accounting sync"
+  },
+  {
+   "t": 33,
+   "at": "2026-10-08T09:00:33Z",
+   "agent": "forge-2.5",
+   "feature": "ANA-07",
+   "type": "tests-fail",
+   "text": "2 tests fail on Scheduled report emails"
+  },
+  {
+   "t": 36,
+   "at": "2026-10-08T09:00:36Z",
+   "agent": "forge-2.6",
+   "feature": "MEM-07",
+   "type": "commit",
+   "text": "5 commits on Favourites & follow instructors"
+  },
+  {
+   "t": 48,
+   "at": "2026-10-08T09:00:48Z",
+   "agent": "forge-2.6",
+   "feature": "MEM-07",
+   "type": "commit",
+   "text": "3 commits on Favourites & follow instructors"
+  },
+  {
+   "t": 51,
+   "at": "2026-10-08T09:00:51Z",
+   "agent": "forge-2.7",
+   "feature": "STU-03",
+   "type": "task-done",
+   "text": "finished a task on Legacy system migration"
+  },
+  {
+   "t": 60,
+   "at": "2026-10-08T09:01:00Z",
+   "agent": "forge-2.2",
+   "feature": "STU-03",
+   "type": "tests-pass",
+   "text": "tests pass on Legacy system migration"
+  },
+  {
+   "t": 71,
+   "at": "2026-10-08T09:01:11Z",
+   "agent": "tender.1",
+   "feature": "MEM-04",
+   "type": "alert",
+   "text": "p95 latency up on Member profile"
+  },
+  {
+   "t": 79,
+   "at": "2026-10-08T09:01:19Z",
+   "agent": "warden.5",
+   "feature": "IAM-04",
+   "type": "review-changes",
+   "text": "changes requested on Apple sign-in"
+  },
+  {
+   "t": 93,
+   "at": "2026-10-08T09:01:33Z",
+   "agent": "forge-3.3",
+   "feature": "MEM-09",
+   "type": "tests-pass",
+   "text": "tests pass on SEO class pages"
+  },
+  {
+   "t": 104,
+   "at": "2026-10-08T09:01:44Z",
+   "agent": "warden.1",
+   "feature": "AIA-06",
+   "type": "tests-fail",
+   "text": "e2e failure on Waitlist odds prediction"
+  },
+  {
+   "t": 112,
+   "at": "2026-10-08T09:01:52Z",
+   "agent": "sentinel.2",
+   "feature": "INT-01",
+   "type": "scan-clean",
+   "text": "scan clean: Public REST API"
+  },
+  {
+   "t": 120,
+   "at": "2026-10-08T09:02:00Z",
+   "agent": "warden.6",
+   "feature": "ANA-03",
+   "type": "review-pass",
+   "text": "review passed: Attendance & utilisation heatmap"
+  },
+  {
+   "t": 126,
+   "at": "2026-10-08T09:02:06Z",
+   "agent": "warden.1",
+   "feature": "AIA-06",
+   "type": "review-pass",
+   "text": "review passed: Waitlist odds prediction"
+  },
+  {
+   "t": 138,
+   "at": "2026-10-08T09:02:18Z",
+   "agent": "warden.6",
+   "feature": "ANA-03",
+   "type": "review-changes",
+   "text": "changes requested on Attendance & utilisation heatmap"
+  },
+  {
+   "t": 149,
+   "at": "2026-10-08T09:02:29Z",
+   "agent": "forge-2.2",
+   "feature": "STU-03",
+   "type": "commit",
+   "text": "1 commits on Legacy system migration"
+  },
+  {
+   "t": 160,
+   "at": "2026-10-08T09:02:40Z",
+   "agent": "tender.3",
+   "feature": "IAM-07",
+   "type": "alert",
+   "text": "p95 latency up on Staff roles & permissions"
+  },
+  {
+   "t": 167,
+   "at": "2026-10-08T09:02:47Z",
+   "agent": "forge-1.3",
+   "feature": "INT-05",
+   "type": "commit",
+   "text": "1 commits on Accounting sync"
+  },
+  {
+   "t": 171,
+   "at": "2026-10-08T09:02:51Z",
+   "agent": "warden.6",
+   "feature": "ANA-03",
+   "type": "review-pass",
+   "text": "review passed: Attendance & utilisation heatmap"
+  },
+  {
+   "t": 180,
+   "at": "2026-10-08T09:03:00Z",
+   "agent": "forge-2.2",
+   "feature": "STU-03",
+   "type": "task-done",
+   "text": "finished a task on Legacy system migration"
+  },
+  {
+   "t": 188,
+   "at": "2026-10-08T09:03:08Z",
+   "agent": "sentinel.2",
+   "feature": "INT-01",
+   "type": "finding",
+   "text": "finding on Public REST API: token in log line"
+  },
+  {
+   "t": 198,
+   "at": "2026-10-08T09:03:18Z",
+   "agent": "sentinel.2",
+   "feature": "INT-01",
+   "type": "scan-clean",
+   "text": "scan clean: Public REST API"
+  },
+  {
+   "t": 208,
+   "at": "2026-10-08T09:03:28Z",
+   "agent": "warden.1",
+   "feature": "AIA-06",
+   "type": "review-pass",
+   "text": "review passed: Waitlist odds prediction"
+  },
+  {
+   "t": 217,
+   "at": "2026-10-08T09:03:37Z",
+   "agent": "forge-2.4",
+   "feature": "MEM-03",
+   "type": "commit",
+   "text": "5 commits on Wallet pass"
+  },
+  {
+   "t": 222,
+   "at": "2026-10-08T09:03:42Z",
+   "agent": "forge-2.7",
+   "feature": "STU-03",
+   "type": "commit",
+   "text": "3 commits on Legacy system migration"
+  },
+  {
+   "t": 229,
+   "at": "2026-10-08T09:03:49Z",
+   "agent": "forge-2.4",
+   "feature": "MEM-03",
+   "type": "commit",
+   "text": "2 commits on Wallet pass"
+  },
+  {
+   "t": 232,
+   "at": "2026-10-08T09:03:52Z",
+   "agent": "forge-2.3",
+   "feature": "ANA-04",
+   "type": "commit",
+   "text": "6 commits on Instructor reports"
+  },
+  {
+   "t": 243,
+   "at": "2026-10-08T09:04:03Z",
+   "agent": "forge-3.1",
+   "feature": "INS-05",
+   "type": "commit",
+   "text": "4 commits on Instructor performance stats"
+  },
+  {
+   "t": 250,
+   "at": "2026-10-08T09:04:10Z",
+   "agent": "sentinel.2",
+   "feature": "INT-01",
+   "type": "scan-clean",
+   "text": "scan clean: Public REST API"
+  },
+  {
+   "t": 262,
+   "at": "2026-10-08T09:04:22Z",
+   "agent": "forge-2.6",
+   "feature": "MEM-07",
+   "type": "tests-pass",
+   "text": "tests pass on Favourites & follow instructors"
+  },
+  {
+   "t": 273,
+   "at": "2026-10-08T09:04:33Z",
+   "agent": "forge-3.3",
+   "feature": "MEM-09",
+   "type": "tests-pass",
+   "text": "tests pass on SEO class pages"
+  },
+  {
+   "t": 286,
+   "at": "2026-10-08T09:04:46Z",
+   "agent": "sentinel.2",
+   "feature": "INT-01",
+   "type": "scan-clean",
+   "text": "scan clean: Public REST API"
+  },
+  {
+   "t": 292,
+   "at": "2026-10-08T09:04:52Z",
+   "agent": "forge-3.3",
+   "feature": "MEM-09",
+   "type": "commit",
+   "text": "5 commits on SEO class pages"
+  },
+  {
+   "t": 298,
+   "at": "2026-10-08T09:04:58Z",
+   "agent": "forge-2.7",
+   "feature": "STU-03",
+   "type": "commit",
+   "text": "2 commits on Legacy system migration"
+  },
+  {
+   "t": 306,
+   "at": "2026-10-08T09:05:06Z",
+   "agent": "tender.4",
+   "feature": "INS-02",
+   "type": "alert",
+   "text": "p95 latency up on Class roster & notes"
+  },
+  {
+   "t": 317,
+   "at": "2026-10-08T09:05:17Z",
+   "agent": "warden.5",
+   "feature": "IAM-04",
+   "type": "review-changes",
+   "text": "changes requested on Apple sign-in"
+  },
+  {
+   "t": 324,
+   "at": "2026-10-08T09:05:24Z",
+   "agent": "forge-3.3",
+   "feature": "MEM-09",
+   "type": "commit",
+   "text": "6 commits on SEO class pages"
+  },
+  {
+   "t": 328,
+   "at": "2026-10-08T09:05:28Z",
+   "agent": "forge-2.5",
+   "feature": "ANA-07",
+   "type": "tests-pass",
+   "text": "tests pass on Scheduled report emails"
+  },
+  {
+   "t": 334,
+   "at": "2026-10-08T09:05:34Z",
+   "agent": "forge-2.4",
+   "feature": "MEM-03",
+   "type": "pr-open",
+   "text": "pull request opened for Wallet pass"
+  },
+  {
+   "t": 347,
+   "at": "2026-10-08T09:05:47Z",
+   "agent": "forge-3.4",
+   "feature": "INS-04",
+   "type": "commit",
+   "text": "2 commits on Pay rates & payroll export"
+  },
+  {
+   "t": 353,
+   "at": "2026-10-08T09:05:53Z",
+   "agent": "forge-3.4",
+   "feature": "INS-04",
+   "type": "tests-pass",
+   "text": "tests pass on Pay rates & payroll export"
+  },
+  {
+   "t": 358,
+   "at": "2026-10-08T09:05:58Z",
+   "agent": "warden.1",
+   "feature": "AIA-06",
+   "type": "review-pass",
+   "text": "review passed: Waitlist odds prediction"
+  },
+  {
+   "t": 368,
+   "at": "2026-10-08T09:06:08Z",
+   "agent": "warden.6",
+   "feature": "ANA-03",
+   "type": "review-pass",
+   "text": "review passed: Attendance & utilisation heatmap"
+  },
+  {
+   "t": 376,
+   "at": "2026-10-08T09:06:16Z",
+   "agent": "tender.2",
+   "feature": "STU-06",
+   "type": "deploy",
+   "text": "deployed Locations & rooms"
+  },
+  {
+   "t": 384,
+   "at": "2026-10-08T09:06:24Z",
+   "agent": "forge-1.3",
+   "feature": "INT-05",
+   "type": "commit",
+   "text": "2 commits on Accounting sync"
+  },
+  {
+   "t": 387,
+   "at": "2026-10-08T09:06:27Z",
+   "agent": "warden.1",
+   "feature": "AIA-06",
+   "type": "review-pass",
+   "text": "review passed: Waitlist odds prediction"
+  },
+  {
+   "t": 395,
+   "at": "2026-10-08T09:06:35Z",
+   "agent": "tender.4",
+   "feature": "INS-02",
+   "type": "flag-change",
+   "text": "flag for Class roster & notes moved to 5%"
+  },
+  {
+   "t": 402,
+   "at": "2026-10-08T09:06:42Z",
+   "agent": "forge-2.4",
+   "feature": "MEM-03",
+   "type": "task-done",
+   "text": "finished a task on Wallet pass"
+  },
+  {
+   "t": 414,
+   "at": "2026-10-08T09:06:54Z",
+   "agent": "forge-2.2",
+   "feature": "STU-03",
+   "type": "commit",
+   "text": "6 commits on Legacy system migration"
+  },
+  {
+   "t": 427,
+   "at": "2026-10-08T09:07:07Z",
+   "agent": "forge-2.2",
+   "feature": "STU-03",
+   "type": "pr-open",
+   "text": "pull request opened for Legacy system migration"
+  },
+  {
+   "t": 432,
+   "at": "2026-10-08T09:07:12Z",
+   "agent": "tender.4",
+   "feature": "INS-02",
+   "type": "alert",
+   "text": "p95 latency up on Class roster & notes"
+  },
+  {
+   "t": 437,
+   "at": "2026-10-08T09:07:17Z",
+   "agent": "sentinel.2",
+   "feature": "INT-01",
+   "type": "scan-clean",
+   "text": "scan clean: Public REST API"
+  },
+  {
+   "t": 449,
+   "at": "2026-10-08T09:07:29Z",
+   "agent": "forge-3.3",
+   "feature": "MEM-09",
+   "type": "tests-pass",
+   "text": "tests pass on SEO class pages"
+  },
+  {
+   "t": 457,
+   "at": "2026-10-08T09:07:37Z",
+   "agent": "forge-2.2",
+   "feature": "STU-03",
+   "type": "pr-open",
+   "text": "pull request opened for Legacy system migration"
+  },
+  {
+   "t": 468,
+   "at": "2026-10-08T09:07:48Z",
+   "agent": "forge-2.7",
+   "feature": "STU-03",
+   "type": "tests-fail",
+   "text": "1 tests fail on Legacy system migration"
+  },
+  {
+   "t": 479,
+   "at": "2026-10-08T09:07:59Z",
+   "agent": "tender.4",
+   "feature": "INS-02",
+   "type": "alert",
+   "text": "p95 latency up on Class roster & notes"
+  },
+  {
+   "t": 486,
+   "at": "2026-10-08T09:08:06Z",
+   "agent": "forge-3.3",
+   "feature": "MEM-09",
+   "type": "pr-open",
+   "text": "pull request opened for SEO class pages"
+  },
+  {
+   "t": 499,
+   "at": "2026-10-08T09:08:19Z",
+   "agent": "warden.1",
+   "feature": "AIA-06",
+   "type": "tests-fail",
+   "text": "e2e failure on Waitlist odds prediction"
+  },
+  {
+   "t": 513,
+   "at": "2026-10-08T09:08:33Z",
+   "agent": "forge-2.3",
+   "feature": "ANA-04",
+   "type": "commit",
+   "text": "4 commits on Instructor reports"
+  },
+  {
+   "t": 523,
+   "at": "2026-10-08T09:08:43Z",
+   "agent": "forge-2.6",
+   "feature": "MEM-07",
+   "type": "tests-pass",
+   "text": "tests pass on Favourites & follow instructors"
+  },
+  {
+   "t": 532,
+   "at": "2026-10-08T09:08:52Z",
+   "agent": "forge-2.6",
+   "feature": "MEM-07",
+   "type": "commit",
+   "text": "6 commits on Favourites & follow instructors"
+  },
+  {
+   "t": 543,
+   "at": "2026-10-08T09:09:03Z",
+   "agent": "tender.2",
+   "feature": "STU-06",
+   "type": "deploy",
+   "text": "deployed Locations & rooms"
+  },
+  {
+   "t": 557,
+   "at": "2026-10-08T09:09:17Z",
+   "agent": "tender.4",
+   "feature": "INS-02",
+   "type": "alert",
+   "text": "p95 latency up on Class roster & notes"
+  },
+  {
+   "t": 567,
+   "at": "2026-10-08T09:09:27Z",
+   "agent": "warden.6",
+   "feature": "ANA-03",
+   "type": "review-changes",
+   "text": "changes requested on Attendance & utilisation heatmap"
+  },
+  {
+   "t": 581,
+   "at": "2026-10-08T09:09:41Z",
+   "agent": "forge-2.4",
+   "feature": "MEM-03",
+   "type": "tests-pass",
+   "text": "tests pass on Wallet pass"
+  },
+  {
+   "t": 591,
+   "at": "2026-10-08T09:09:51Z",
+   "agent": "warden.3",
+   "feature": "INS-04",
+   "type": "review-changes",
+   "text": "changes requested on Pay rates & payroll export"
+  },
+  {
+   "t": 594,
+   "at": "2026-10-08T09:09:54Z",
+   "agent": "tender.2",
+   "feature": "STU-06",
+   "type": "flag-change",
+   "text": "flag for Locations & rooms moved to 25%"
+  },
+  {
+   "t": 608,
+   "at": "2026-10-08T09:10:08Z",
+   "agent": "tender.2",
+   "feature": "STU-06",
+   "type": "flag-change",
+   "text": "flag for Locations & rooms moved to 10%"
+  },
+  {
+   "t": 612,
+   "at": "2026-10-08T09:10:12Z",
+   "agent": "forge-2.6",
+   "feature": "MEM-07",
+   "type": "commit",
+   "text": "5 commits on Favourites & follow instructors"
+  },
+  {
+   "t": 618,
+   "at": "2026-10-08T09:10:18Z",
+   "agent": "tender.2",
+   "feature": "STU-06",
+   "type": "alert",
+   "text": "p95 latency up on Locations & rooms"
+  },
+  {
+   "t": 619,
+   "at": "2026-10-08T09:10:19Z",
+   "agent": "tender.2",
+   "feature": "PLT-02",
+   "type": "move",
+   "text": "tender.2 moves to Background job queue",
+   "from": "STU-06"
+  },
+  {
+   "t": 623,
+   "at": "2026-10-08T09:10:23Z",
+   "agent": "forge-3.4",
+   "feature": "INS-04",
+   "type": "commit",
+   "text": "1 commits on Pay rates & payroll export"
+  },
+  {
+   "t": 635,
+   "at": "2026-10-08T09:10:35Z",
+   "agent": "forge-3.3",
+   "feature": "MEM-09",
+   "type": "tests-fail",
+   "text": "1 tests fail on SEO class pages"
+  },
+  {
+   "t": 641,
+   "at": "2026-10-08T09:10:41Z",
+   "agent": "tender.4",
+   "feature": "INS-02",
+   "type": "alert",
+   "text": "p95 latency up on Class roster & notes"
+  },
+  {
+   "t": 649,
+   "at": "2026-10-08T09:10:49Z",
+   "agent": "forge-2.7",
+   "feature": "STU-03",
+   "type": "pr-open",
+   "text": "pull request opened for Legacy system migration"
+  },
+  {
+   "t": 662,
+   "at": "2026-10-08T09:11:02Z",
+   "agent": "forge-2.5",
+   "feature": "ANA-07",
+   "type": "commit",
+   "text": "6 commits on Scheduled report emails"
+  },
+  {
+   "t": 674,
+   "at": "2026-10-08T09:11:14Z",
+   "agent": "forge-3.3",
+   "feature": "MEM-09",
+   "type": "task-done",
+   "text": "finished a task on SEO class pages"
+  },
+  {
+   "t": 687,
+   "at": "2026-10-08T09:11:27Z",
+   "agent": "tender.2",
+   "feature": "PLT-02",
+   "type": "flag-change",
+   "text": "flag for Background job queue moved to 10%"
+  },
+  {
+   "t": 699,
+   "at": "2026-10-08T09:11:39Z",
+   "agent": "forge-1.3",
+   "feature": "INT-05",
+   "type": "tests-pass",
+   "text": "tests pass on Accounting sync"
+  },
+  {
+   "t": 706,
+   "at": "2026-10-08T09:11:46Z",
+   "agent": "forge-2.4",
+   "feature": "MEM-03",
+   "type": "commit",
+   "text": "2 commits on Wallet pass"
+  },
+  {
+   "t": 714,
+   "at": "2026-10-08T09:11:54Z",
+   "agent": "forge-3.4",
+   "feature": "INS-04",
+   "type": "commit",
+   "text": "4 commits on Pay rates & payroll export"
+  },
+  {
+   "t": 727,
+   "at": "2026-10-08T09:12:07Z",
+   "agent": "tender.1",
+   "feature": "MEM-04",
+   "type": "alert",
+   "text": "p95 latency up on Member profile"
+  },
+  {
+   "t": 741,
+   "at": "2026-10-08T09:12:21Z",
+   "agent": "forge-1.3",
+   "feature": "INT-05",
+   "type": "commit",
+   "text": "5 commits on Accounting sync"
+  },
+  {
+   "t": 753,
+   "at": "2026-10-08T09:12:33Z",
+   "agent": "tender.1",
+   "feature": "MEM-04",
+   "type": "flag-change",
+   "text": "flag for Member profile moved to 50%"
+  },
+  {
+   "t": 756,
+   "at": "2026-10-08T09:12:36Z",
+   "agent": "warden.6",
+   "feature": "ANA-03",
+   "type": "review-pass",
+   "text": "review passed: Attendance & utilisation heatmap"
+  },
+  {
+   "t": 757,
+   "at": "2026-10-08T09:12:37Z",
+   "agent": "warden.6",
+   "feature": "PLT-20",
+   "type": "move",
+   "text": "warden.6 moves to End-to-end test suite",
+   "from": "ANA-03"
+  },
+  {
+   "t": 767,
+   "at": "2026-10-08T09:12:47Z",
+   "agent": "tender.4",
+   "feature": "INS-02",
+   "type": "deploy",
+   "text": "deployed Class roster & notes"
+  },
+  {
+   "t": 781,
+   "at": "2026-10-08T09:13:01Z",
+   "agent": "forge-3.3",
+   "feature": "MEM-09",
+   "type": "commit",
+   "text": "5 commits on SEO class pages"
+  },
+  {
+   "t": 788,
+   "at": "2026-10-08T09:13:08Z",
+   "agent": "forge-2.3",
+   "feature": "ANA-04",
+   "type": "commit",
+   "text": "1 commits on Instructor reports"
+  },
+  {
+   "t": 798,
+   "at": "2026-10-08T09:13:18Z",
+   "agent": "tender.4",
+   "feature": "INS-02",
+   "type": "flag-change",
+   "text": "flag for Class roster & notes moved to 50%"
+  },
+  {
+   "t": 810,
+   "at": "2026-10-08T09:13:30Z",
+   "agent": "forge-3.4",
+   "feature": "INS-04",
+   "type": "pr-open",
+   "text": "pull request opened for Pay rates & payroll export"
+  },
+  {
+   "t": 820,
+   "at": "2026-10-08T09:13:40Z",
+   "agent": "tender.1",
+   "feature": "MEM-04",
+   "type": "deploy",
+   "text": "deployed Member profile"
+  },
+  {
+   "t": 827,
+   "at": "2026-10-08T09:13:47Z",
+   "agent": "forge-2.4",
+   "feature": "MEM-03",
+   "type": "tests-fail",
+   "text": "3 tests fail on Wallet pass"
+  },
+  {
+   "t": 841,
+   "at": "2026-10-08T09:14:01Z",
+   "agent": "forge-1.3",
+   "feature": "INT-05",
+   "type": "commit",
+   "text": "3 commits on Accounting sync"
+  },
+  {
+   "t": 850,
+   "at": "2026-10-08T09:14:10Z",
+   "agent": "forge-2.6",
+   "feature": "MEM-07",
+   "type": "pr-open",
+   "text": "pull request opened for Favourites & follow instructors"
+  },
+  {
+   "t": 860,
+   "at": "2026-10-08T09:14:20Z",
+   "agent": "forge-2.7",
+   "feature": "STU-03",
+   "type": "commit",
+   "text": "3 commits on Legacy system migration"
+  },
+  {
+   "t": 869,
+   "at": "2026-10-08T09:14:29Z",
+   "agent": "warden.1",
+   "feature": "AIA-06",
+   "type": "review-pass",
+   "text": "review passed: Waitlist odds prediction"
+  },
+  {
+   "t": 881,
+   "at": "2026-10-08T09:14:41Z",
+   "agent": "tender.2",
+   "feature": "PLT-02",
+   "type": "alert",
+   "text": "p95 latency up on Background job queue"
+  },
+  {
+   "t": 891,
+   "at": "2026-10-08T09:14:51Z",
+   "agent": "warden.6",
+   "feature": "PLT-20",
+   "type": "review-pass",
+   "text": "review passed: End-to-end test suite"
+  },
+  {
+   "t": 894,
+   "at": "2026-10-08T09:14:54Z",
+   "agent": "forge-3.3",
+   "feature": "MEM-09",
+   "type": "commit",
+   "text": "1 commits on SEO class pages"
+  },
+  {
+   "t": 900,
+   "at": "2026-10-08T09:15:00Z",
+   "agent": "forge-3.5",
+   "feature": "PAY-14",
+   "type": "decision-asked",
+   "text": "Payout job runs at 02:00 and overlaps backups. Move it to 04:00?",
+   "decision": "D-26"
+  },
+  {
+   "t": 902,
+   "at": "2026-10-08T09:15:02Z",
+   "agent": "forge-3.4",
+   "feature": "INS-04",
+   "type": "tests-pass",
+   "text": "tests pass on Pay rates & payroll export"
+  },
+  {
+   "t": 906,
+   "at": "2026-10-08T09:15:06Z",
+   "agent": "tender.3",
+   "feature": "IAM-07",
+   "type": "deploy",
+   "text": "deployed Staff roles & permissions"
+  },
+  {
+   "t": 920,
+   "at": "2026-10-08T09:15:20Z",
+   "agent": "forge-2.3",
+   "feature": "ANA-04",
+   "type": "tests-pass",
+   "text": "tests pass on Instructor reports"
+  },
+  {
+   "t": 926,
+   "at": "2026-10-08T09:15:26Z",
+   "agent": "tender.2",
+   "feature": "PLT-02",
+   "type": "deploy",
+   "text": "deployed Background job queue"
+  },
+  {
+   "t": 930,
+   "at": "2026-10-08T09:15:30Z",
+   "agent": "forge-2.7",
+   "feature": "STU-03",
+   "type": "task-done",
+   "text": "finished a task on Legacy system migration"
+  },
+  {
+   "t": 943,
+   "at": "2026-10-08T09:15:43Z",
+   "agent": "warden.5",
+   "feature": "IAM-04",
+   "type": "review-pass",
+   "text": "review passed: Apple sign-in"
+  },
+  {
+   "t": 953,
+   "at": "2026-10-08T09:15:53Z",
+   "agent": "forge-2.5",
+   "feature": "ANA-07",
+   "type": "commit",
+   "text": "6 commits on Scheduled report emails"
+  },
+  {
+   "t": 966,
+   "at": "2026-10-08T09:16:06Z",
+   "agent": "forge-3.3",
+   "feature": "MEM-09",
+   "type": "tests-fail",
+   "text": "1 tests fail on SEO class pages"
+  },
+  {
+   "t": 975,
+   "at": "2026-10-08T09:16:15Z",
+   "agent": "forge-2.5",
+   "feature": "ANA-07",
+   "type": "commit",
+   "text": "3 commits on Scheduled report emails"
+  },
+  {
+   "t": 983,
+   "at": "2026-10-08T09:16:23Z",
+   "agent": "forge-2.4",
+   "feature": "MEM-03",
+   "type": "tests-fail",
+   "text": "4 tests fail on Wallet pass"
+  },
+  {
+   "t": 997,
+   "at": "2026-10-08T09:16:37Z",
+   "agent": "forge-1.3",
+   "feature": "INT-05",
+   "type": "commit",
+   "text": "3 commits on Accounting sync"
+  },
+  {
+   "t": 1006,
+   "at": "2026-10-08T09:16:46Z",
+   "agent": "warden.3",
+   "feature": "INS-04",
+   "type": "review-changes",
+   "text": "changes requested on Pay rates & payroll export"
+  },
+  {
+   "t": 1007,
+   "at": "2026-10-08T09:16:47Z",
+   "agent": "warden.3",
+   "feature": "PLT-22",
+   "type": "move",
+   "text": "warden.3 moves to Release train automation",
+   "from": "INS-04"
+  },
+  {
+   "t": 1017,
+   "at": "2026-10-08T09:16:57Z",
+   "agent": "tender.4",
+   "feature": "INS-02",
+   "type": "flag-change",
+   "text": "flag for Class roster & notes moved to 25%"
+  },
+  {
+   "t": 1018,
+   "at": "2026-10-08T09:16:58Z",
+   "agent": "tender.4",
+   "feature": "BKG-02",
+   "type": "move",
+   "text": "tender.4 moves to Cancellation & late-cancel policy",
+   "from": "INS-02"
+  },
+  {
+   "t": 1025,
+   "at": "2026-10-08T09:17:05Z",
+   "agent": "tender.3",
+   "feature": "IAM-07",
+   "type": "flag-change",
+   "text": "flag for Staff roles & permissions moved to 5%"
+  },
+  {
+   "t": 1029,
+   "at": "2026-10-08T09:17:09Z",
+   "agent": "forge-2.3",
+   "feature": "ANA-04",
+   "type": "tests-fail",
+   "text": "1 tests fail on Instructor reports"
+  },
+  {
+   "t": 1039,
+   "at": "2026-10-08T09:17:19Z",
+   "agent": "sentinel.2",
+   "feature": "INT-01",
+   "type": "scan-clean",
+   "text": "scan clean: Public REST API"
+  },
+  {
+   "t": 1047,
+   "at": "2026-10-08T09:17:27Z",
+   "agent": "forge-2.7",
+   "feature": "STU-03",
+   "type": "commit",
+   "text": "2 commits on Legacy system migration"
+  },
+  {
+   "t": 1056,
+   "at": "2026-10-08T09:17:36Z",
+   "agent": "forge-2.2",
+   "feature": "STU-03",
+   "type": "tests-fail",
+   "text": "3 tests fail on Legacy system migration"
+  },
+  {
+   "t": 1066,
+   "at": "2026-10-08T09:17:46Z",
+   "agent": "forge-2.4",
+   "feature": "MEM-03",
+   "type": "commit",
+   "text": "6 commits on Wallet pass"
+  },
+  {
+   "t": 1076,
+   "at": "2026-10-08T09:17:56Z",
+   "agent": "forge-3.4",
+   "feature": "INS-04",
+   "type": "commit",
+   "text": "1 commits on Pay rates & payroll export"
+  },
+  {
+   "t": 1083,
+   "at": "2026-10-08T09:18:03Z",
+   "agent": "forge-2.2",
+   "feature": "STU-03",
+   "type": "commit",
+   "text": "3 commits on Legacy system migration"
+  },
+  {
+   "t": 1089,
+   "at": "2026-10-08T09:18:09Z",
+   "agent": "warden.1",
+   "feature": "AIA-06",
+   "type": "review-pass",
+   "text": "review passed: Waitlist odds prediction"
+  },
+  {
+   "t": 1094,
+   "at": "2026-10-08T09:18:14Z",
+   "agent": "forge-2.2",
+   "feature": "STU-03",
+   "type": "commit",
+   "text": "5 commits on Legacy system migration"
+  },
+  {
+   "t": 1102,
+   "at": "2026-10-08T09:18:22Z",
+   "agent": "warden.5",
+   "feature": "IAM-04",
+   "type": "review-changes",
+   "text": "changes requested on Apple sign-in"
+  },
+  {
+   "t": 1115,
+   "at": "2026-10-08T09:18:35Z",
+   "agent": "forge-2.2",
+   "feature": "STU-03",
+   "type": "commit",
+   "text": "3 commits on Legacy system migration"
+  },
+  {
+   "t": 1124,
+   "at": "2026-10-08T09:18:44Z",
+   "agent": "forge-3.4",
+   "feature": "INS-04",
+   "type": "tests-fail",
+   "text": "2 tests fail on Pay rates & payroll export"
+  },
+  {
+   "t": 1131,
+   "at": "2026-10-08T09:18:51Z",
+   "agent": "warden.5",
+   "feature": "IAM-04",
+   "type": "review-pass",
+   "text": "review passed: Apple sign-in"
+  },
+  {
+   "t": 1139,
+   "at": "2026-10-08T09:18:59Z",
+   "agent": "forge-2.5",
+   "feature": "ANA-07",
+   "type": "commit",
+   "text": "6 commits on Scheduled report emails"
+  },
+  {
+   "t": 1145,
+   "at": "2026-10-08T09:19:05Z",
+   "agent": "warden.5",
+   "feature": "IAM-04",
+   "type": "review-changes",
+   "text": "changes requested on Apple sign-in"
+  },
+  {
+   "t": 1155,
+   "at": "2026-10-08T09:19:15Z",
+   "agent": "tender.1",
+   "feature": "MEM-04",
+   "type": "deploy",
+   "text": "deployed Member profile"
+  },
+  {
+   "t": 1161,
+   "at": "2026-10-08T09:19:21Z",
+   "agent": "tender.4",
+   "feature": "BKG-02",
+   "type": "flag-change",
+   "text": "flag for Cancellation & late-cancel policy moved to 10%"
+  },
+  {
+   "t": 1167,
+   "at": "2026-10-08T09:19:27Z",
+   "agent": "forge-3.4",
+   "feature": "INS-04",
+   "type": "commit",
+   "text": "4 commits on Pay rates & payroll export"
+  },
+  {
+   "t": 1173,
+   "at": "2026-10-08T09:19:33Z",
+   "agent": "tender.3",
+   "feature": "IAM-07",
+   "type": "flag-change",
+   "text": "flag for Staff roles & permissions moved to 25%"
+  },
+  {
+   "t": 1181,
+   "at": "2026-10-08T09:19:41Z",
+   "agent": "forge-2.5",
+   "feature": "ANA-07",
+   "type": "tests-pass",
+   "text": "tests pass on Scheduled report emails"
+  },
+  {
+   "t": 1194,
+   "at": "2026-10-08T09:19:54Z",
+   "agent": "tender.1",
+   "feature": "MEM-04",
+   "type": "flag-change",
+   "text": "flag for Member profile moved to 25%"
+  },
+  {
+   "t": 1199,
+   "at": "2026-10-08T09:19:59Z",
+   "agent": "warden.1",
+   "feature": "AIA-06",
+   "type": "review-changes",
+   "text": "changes requested on Waitlist odds prediction"
+  },
+  {
+   "t": 1205,
+   "at": "2026-10-08T09:20:05Z",
+   "agent": "forge-2.4",
+   "feature": "MEM-03",
+   "type": "commit",
+   "text": "5 commits on Wallet pass"
+  },
+  {
+   "t": 1213,
+   "at": "2026-10-08T09:20:13Z",
+   "agent": "forge-3.3",
+   "feature": "MEM-09",
+   "type": "tests-fail",
+   "text": "4 tests fail on SEO class pages"
+  },
+  {
+   "t": 1223,
+   "at": "2026-10-08T09:20:23Z",
+   "agent": "warden.6",
+   "feature": "PLT-20",
+   "type": "review-pass",
+   "text": "review passed: End-to-end test suite"
+  },
+  {
+   "t": 1235,
+   "at": "2026-10-08T09:20:35Z",
+   "agent": "warden.1",
+   "feature": "AIA-06",
+   "type": "review-pass",
+   "text": "review passed: Waitlist odds prediction"
+  },
+  {
+   "t": 1242,
+   "at": "2026-10-08T09:20:42Z",
+   "agent": "warden.3",
+   "feature": "PLT-22",
+   "type": "tests-fail",
+   "text": "e2e failure on Release train automation"
+  },
+  {
+   "t": 1248,
+   "at": "2026-10-08T09:20:48Z",
+   "agent": "tender.4",
+   "feature": "BKG-02",
+   "type": "flag-change",
+   "text": "flag for Cancellation & late-cancel policy moved to 25%"
+  },
+  {
+   "t": 1262,
+   "at": "2026-10-08T09:21:02Z",
+   "agent": "warden.5",
+   "feature": "IAM-04",
+   "type": "review-pass",
+   "text": "review passed: Apple sign-in"
+  },
+  {
+   "t": 1273,
+   "at": "2026-10-08T09:21:13Z",
+   "agent": "tender.2",
+   "feature": "PLT-02",
+   "type": "alert",
+   "text": "p95 latency up on Background job queue"
+  },
+  {
+   "t": 1279,
+   "at": "2026-10-08T09:21:19Z",
+   "agent": "warden.1",
+   "feature": "AIA-06",
+   "type": "review-pass",
+   "text": "review passed: Waitlist odds prediction"
+  },
+  {
+   "t": 1293,
+   "at": "2026-10-08T09:21:33Z",
+   "agent": "tender.4",
+   "feature": "BKG-02",
+   "type": "flag-change",
+   "text": "flag for Cancellation & late-cancel policy moved to 5%"
+  },
+  {
+   "t": 1300,
+   "at": "2026-10-08T09:21:40Z",
+   "agent": "warden.3",
+   "feature": "PLT-22",
+   "type": "review-pass",
+   "text": "review passed: Release train automation"
+  },
+  {
+   "t": 1304,
+   "at": "2026-10-08T09:21:44Z",
+   "agent": "forge-2.2",
+   "feature": "STU-03",
+   "type": "tests-fail",
+   "text": "4 tests fail on Legacy system migration"
+  },
+  {
+   "t": 1305,
+   "at": "2026-10-08T09:21:45Z",
+   "agent": "forge-2.2",
+   "feature": "GRO-04",
+   "type": "move",
+   "text": "forge-2.2 moves to Trial-to-member funnel",
+   "from": "STU-03"
+  },
+  {
+   "t": 1309,
+   "at": "2026-10-08T09:21:49Z",
+   "agent": "forge-2.3",
+   "feature": "ANA-04",
+   "type": "commit",
+   "text": "2 commits on Instructor reports"
+  },
+  {
+   "t": 1313,
+   "at": "2026-10-08T09:21:53Z",
+   "agent": "forge-2.2",
+   "feature": "GRO-04",
+   "type": "commit",
+   "text": "6 commits on Trial-to-member funnel"
+  },
+  {
+   "t": 1327,
+   "at": "2026-10-08T09:22:07Z",
+   "agent": "forge-2.2",
+   "feature": "GRO-04",
+   "type": "pr-open",
+   "text": "pull request opened for Trial-to-member funnel"
+  },
+  {
+   "t": 1340,
+   "at": "2026-10-08T09:22:20Z",
+   "agent": "warden.6",
+   "feature": "PLT-20",
+   "type": "review-pass",
+   "text": "review passed: End-to-end test suite"
+  },
+  {
+   "t": 1353,
+   "at": "2026-10-08T09:22:33Z",
+   "agent": "tender.4",
+   "feature": "BKG-02",
+   "type": "alert",
+   "text": "p95 latency up on Cancellation & late-cancel policy"
+  },
+  {
+   "t": 1358,
+   "at": "2026-10-08T09:22:38Z",
+   "agent": "warden.6",
+   "feature": "PLT-20",
+   "type": "tests-fail",
+   "text": "e2e failure on End-to-end test suite"
+  },
+  {
+   "t": 1371,
+   "at": "2026-10-08T09:22:51Z",
+   "agent": "forge-2.2",
+   "feature": "GRO-04",
+   "type": "task-done",
+   "text": "finished a task on Trial-to-member funnel"
+  },
+  {
+   "t": 1383,
+   "at": "2026-10-08T09:23:03Z",
+   "agent": "forge-2.7",
+   "feature": "STU-03",
+   "type": "tests-pass",
+   "text": "tests pass on Legacy system migration"
+  },
+  {
+   "t": 1391,
+   "at": "2026-10-08T09:23:11Z",
+   "agent": "forge-2.6",
+   "feature": "MEM-07",
+   "type": "tests-pass",
+   "text": "tests pass on Favourites & follow instructors"
+  },
+  {
+   "t": 1392,
+   "at": "2026-10-08T09:23:12Z",
+   "agent": "forge-2.6",
+   "feature": "PLT-20",
+   "type": "move",
+   "text": "forge-2.6 moves to End-to-end test suite",
+   "from": "MEM-07"
+  },
+  {
+   "t": 1403,
+   "at": "2026-10-08T09:23:23Z",
+   "agent": "warden.5",
+   "feature": "IAM-04",
+   "type": "review-changes",
+   "text": "changes requested on Apple sign-in"
+  },
+  {
+   "t": 1417,
+   "at": "2026-10-08T09:23:37Z",
+   "agent": "forge-3.4",
+   "feature": "INS-04",
+   "type": "tests-pass",
+   "text": "tests pass on Pay rates & payroll export"
+  },
+  {
+   "t": 1426,
+   "at": "2026-10-08T09:23:46Z",
+   "agent": "forge-2.6",
+   "feature": "PLT-20",
+   "type": "tests-fail",
+   "text": "1 tests fail on End-to-end test suite"
+  },
+  {
+   "t": 1439,
+   "at": "2026-10-08T09:23:59Z",
+   "agent": "forge-3.4",
+   "feature": "INS-04",
+   "type": "commit",
+   "text": "2 commits on Pay rates & payroll export"
+  },
+  {
+   "t": 1451,
+   "at": "2026-10-08T09:24:11Z",
+   "agent": "tender.4",
+   "feature": "BKG-02",
+   "type": "flag-change",
+   "text": "flag for Cancellation & late-cancel policy moved to 50%"
+  },
+  {
+   "t": 1457,
+   "at": "2026-10-08T09:24:17Z",
+   "agent": "forge-2.4",
+   "feature": "MEM-03",
+   "type": "commit",
+   "text": "4 commits on Wallet pass"
+  },
+  {
+   "t": 1460,
+   "at": "2026-10-08T09:24:20Z",
+   "agent": "forge-3.3",
+   "feature": "MEM-09",
+   "type": "commit",
+   "text": "5 commits on SEO class pages"
+  },
+  {
+   "t": 1463,
+   "at": "2026-10-08T09:24:23Z",
+   "agent": "forge-2.2",
+   "feature": "GRO-04",
+   "type": "commit",
+   "text": "2 commits on Trial-to-member funnel"
+  },
+  {
+   "t": 1470,
+   "at": "2026-10-08T09:24:30Z",
+   "agent": "forge-2.6",
+   "feature": "PLT-20",
+   "type": "commit",
+   "text": "4 commits on End-to-end test suite"
+  },
+  {
+   "t": 1481,
+   "at": "2026-10-08T09:24:41Z",
+   "agent": "tender.1",
+   "feature": "MEM-04",
+   "type": "deploy",
+   "text": "deployed Member profile"
+  },
+  {
+   "t": 1487,
+   "at": "2026-10-08T09:24:47Z",
+   "agent": "tender.2",
+   "feature": "PLT-02",
+   "type": "alert",
+   "text": "p95 latency up on Background job queue"
+  },
+  {
+   "t": 1496,
+   "at": "2026-10-08T09:24:56Z",
+   "agent": "tender.3",
+   "feature": "IAM-07",
+   "type": "flag-change",
+   "text": "flag for Staff roles & permissions moved to 50%"
+  },
+  {
+   "t": 1504,
+   "at": "2026-10-08T09:25:04Z",
+   "agent": "forge-2.3",
+   "feature": "ANA-04",
+   "type": "commit",
+   "text": "1 commits on Instructor reports"
+  },
+  {
+   "t": 1511,
+   "at": "2026-10-08T09:25:11Z",
+   "agent": "tender.3",
+   "feature": "IAM-07",
+   "type": "deploy",
+   "text": "deployed Staff roles & permissions"
+  },
+  {
+   "t": 1525,
+   "at": "2026-10-08T09:25:25Z",
+   "agent": "forge-3.1",
+   "feature": "INS-05",
+   "type": "commit",
+   "text": "3 commits on Instructor performance stats"
+  },
+  {
+   "t": 1539,
+   "at": "2026-10-08T09:25:39Z",
+   "agent": "tender.4",
+   "feature": "BKG-02",
+   "type": "alert",
+   "text": "p95 latency up on Cancellation & late-cancel policy"
+  },
+  {
+   "t": 1552,
+   "at": "2026-10-08T09:25:52Z",
+   "agent": "warden.3",
+   "feature": "PLT-22",
+   "type": "review-pass",
+   "text": "review passed: Release train automation"
+  },
+  {
+   "t": 1553,
+   "at": "2026-10-08T09:25:53Z",
+   "agent": "warden.3",
+   "feature": "PLT-12",
+   "type": "move",
+   "text": "warden.3 moves to Cloud cost monitoring",
+   "from": "PLT-22"
+  },
+  {
+   "t": 1555,
+   "at": "2026-10-08T09:25:55Z",
+   "agent": "sentinel.2",
+   "feature": "INT-01",
+   "type": "scan-clean",
+   "text": "scan clean: Public REST API"
+  },
+  {
+   "t": 1561,
+   "at": "2026-10-08T09:26:01Z",
+   "agent": "tender.3",
+   "feature": "IAM-07",
+   "type": "deploy",
+   "text": "deployed Staff roles & permissions"
+  },
+  {
+   "t": 1572,
+   "at": "2026-10-08T09:26:12Z",
+   "agent": "forge-2.2",
+   "feature": "GRO-04",
+   "type": "tests-pass",
+   "text": "tests pass on Trial-to-member funnel"
+  },
+  {
+   "t": 1579,
+   "at": "2026-10-08T09:26:19Z",
+   "agent": "forge-2.6",
+   "feature": "PLT-20",
+   "type": "commit",
+   "text": "5 commits on End-to-end test suite"
+  },
+  {
+   "t": 1583,
+   "at": "2026-10-08T09:26:23Z",
+   "agent": "forge-2.2",
+   "feature": "GRO-04",
+   "type": "task-done",
+   "text": "finished a task on Trial-to-member funnel"
+  },
+  {
+   "t": 1586,
+   "at": "2026-10-08T09:26:26Z",
+   "agent": "forge-2.2",
+   "feature": "GRO-04",
+   "type": "commit",
+   "text": "6 commits on Trial-to-member funnel"
+  },
+  {
+   "t": 1595,
+   "at": "2026-10-08T09:26:35Z",
+   "agent": "forge-2.2",
+   "feature": "GRO-04",
+   "type": "commit",
+   "text": "5 commits on Trial-to-member funnel"
+  },
+  {
+   "t": 1606,
+   "at": "2026-10-08T09:26:46Z",
+   "agent": "forge-2.7",
+   "feature": "STU-03",
+   "type": "tests-pass",
+   "text": "tests pass on Legacy system migration"
+  },
+  {
+   "t": 1614,
+   "at": "2026-10-08T09:26:54Z",
+   "agent": "forge-2.6",
+   "feature": "PLT-20",
+   "type": "tests-pass",
+   "text": "tests pass on End-to-end test suite"
+  },
+  {
+   "t": 1620,
+   "at": "2026-10-08T09:27:00Z",
+   "agent": "warden.5",
+   "feature": "IAM-04",
+   "type": "review-pass",
+   "text": "review passed: Apple sign-in"
+  },
+  {
+   "t": 1621,
+   "at": "2026-10-08T09:27:01Z",
+   "agent": "warden.5",
+   "feature": "COM-04",
+   "type": "move",
+   "text": "warden.5 moves to Message template editor",
+   "from": "IAM-04"
+  },
+  {
+   "t": 1633,
+   "at": "2026-10-08T09:27:13Z",
+   "agent": "sentinel.2",
+   "feature": "INT-01",
+   "type": "finding",
+   "text": "finding on Public REST API: missing authorisation check"
+  },
+  {
+   "t": 1647,
+   "at": "2026-10-08T09:27:27Z",
+   "agent": "sentinel.2",
+   "feature": "INT-01",
+   "type": "scan-clean",
+   "text": "scan clean: Public REST API"
+  },
+  {
+   "t": 1661,
+   "at": "2026-10-08T09:27:41Z",
+   "agent": "warden.1",
+   "feature": "AIA-06",
+   "type": "review-pass",
+   "text": "review passed: Waitlist odds prediction"
+  },
+  {
+   "t": 1671,
+   "at": "2026-10-08T09:27:51Z",
+   "agent": "forge-2.5",
+   "feature": "ANA-07",
+   "type": "task-done",
+   "text": "finished a task on Scheduled report emails"
+  },
+  {
+   "t": 1674,
+   "at": "2026-10-08T09:27:54Z",
+   "agent": "warden.1",
+   "feature": "AIA-06",
+   "type": "review-pass",
+   "text": "review passed: Waitlist odds prediction"
+  },
+  {
+   "t": 1675,
+   "at": "2026-10-08T09:27:55Z",
+   "agent": "warden.1",
+   "feature": "AIA-06",
+   "type": "move",
+   "text": "warden.1 moves to Waitlist odds prediction",
+   "from": "AIA-06"
+  },
+  {
+   "t": 1686,
+   "at": "2026-10-08T09:28:06Z",
+   "agent": "forge-2.3",
+   "feature": "ANA-04",
+   "type": "tests-pass",
+   "text": "tests pass on Instructor reports"
+  },
+  {
+   "t": 1700,
+   "at": "2026-10-08T09:28:20Z",
+   "agent": "forge-3.4",
+   "feature": "INS-04",
+   "type": "tests-pass",
+   "text": "tests pass on Pay rates & payroll export"
+  },
+  {
+   "t": 1711,
+   "at": "2026-10-08T09:28:31Z",
+   "agent": "warden.5",
+   "feature": "COM-04",
+   "type": "review-changes",
+   "text": "changes requested on Message template editor"
+  },
+  {
+   "t": 1719,
+   "at": "2026-10-08T09:28:39Z",
+   "agent": "sentinel.2",
+   "feature": "INT-01",
+   "type": "scan-clean",
+   "text": "scan clean: Public REST API"
+  },
+  {
+   "t": 1724,
+   "at": "2026-10-08T09:28:44Z",
+   "agent": "tender.1",
+   "feature": "MEM-04",
+   "type": "alert",
+   "text": "p95 latency up on Member profile"
+  },
+  {
+   "t": 1735,
+   "at": "2026-10-08T09:28:55Z",
+   "agent": "forge-1.3",
+   "feature": "INT-05",
+   "type": "commit",
+   "text": "4 commits on Accounting sync"
+  },
+  {
+   "t": 1748,
+   "at": "2026-10-08T09:29:08Z",
+   "agent": "tender.3",
+   "feature": "IAM-07",
+   "type": "deploy",
+   "text": "deployed Staff roles & permissions"
+  },
+  {
+   "t": 1759,
+   "at": "2026-10-08T09:29:19Z",
+   "agent": "warden.6",
+   "feature": "PLT-20",
+   "type": "review-changes",
+   "text": "changes requested on End-to-end test suite"
+  },
+  {
+   "t": 1766,
+   "at": "2026-10-08T09:29:26Z",
+   "agent": "sentinel.2",
+   "feature": "INT-01",
+   "type": "scan-clean",
+   "text": "scan clean: Public REST API"
+  },
+  {
+   "t": 1775,
+   "at": "2026-10-08T09:29:35Z",
+   "agent": "forge-3.3",
+   "feature": "MEM-09",
+   "type": "commit",
+   "text": "4 commits on SEO class pages"
+  },
+  {
+   "t": 1778,
+   "at": "2026-10-08T09:29:38Z",
+   "agent": "warden.6",
+   "feature": "PLT-20",
+   "type": "tests-fail",
+   "text": "e2e failure on End-to-end test suite"
+  },
+  {
+   "t": 1781,
+   "at": "2026-10-08T09:29:41Z",
+   "agent": "forge-3.4",
+   "feature": "INS-04",
+   "type": "commit",
+   "text": "1 commits on Pay rates & payroll export"
+  },
+  {
+   "t": 1786,
+   "at": "2026-10-08T09:29:46Z",
+   "agent": "forge-2.3",
+   "feature": "ANA-04",
+   "type": "tests-pass",
+   "text": "tests pass on Instructor reports"
+  },
+  {
+   "t": 1792,
+   "at": "2026-10-08T09:29:52Z",
+   "agent": "warden.5",
+   "feature": "COM-04",
+   "type": "review-changes",
+   "text": "changes requested on Message template editor"
+  },
+  {
+   "t": 1802,
+   "at": "2026-10-08T09:30:02Z",
+   "agent": "forge-3.3",
+   "feature": "MEM-09",
+   "type": "tests-fail",
+   "text": "1 tests fail on SEO class pages"
+  },
+  {
+   "t": 1803,
+   "at": "2026-10-08T09:30:03Z",
+   "agent": "forge-3.3",
+   "feature": "COM-06",
+   "type": "move",
+   "text": "forge-3.3 moves to Automated journeys",
+   "from": "MEM-09"
+  },
+  {
+   "t": 1816,
+   "at": "2026-10-08T09:30:16Z",
+   "agent": "tender.1",
+   "feature": "MEM-04",
+   "type": "flag-change",
+   "text": "flag for Member profile moved to 5%"
+  },
+  {
+   "t": 1817,
+   "at": "2026-10-08T09:30:17Z",
+   "agent": "tender.1",
+   "feature": "PLT-11",
+   "type": "move",
+   "text": "tender.1 moves to On-call alerting",
+   "from": "MEM-04"
+  },
+  {
+   "t": 1824,
+   "at": "2026-10-08T09:30:24Z",
+   "agent": "forge-2.2",
+   "feature": "GRO-04",
+   "type": "task-done",
+   "text": "finished a task on Trial-to-member funnel"
+  },
+  {
+   "t": 1837,
+   "at": "2026-10-08T09:30:37Z",
+   "agent": "forge-2.4",
+   "feature": "MEM-03",
+   "type": "tests-fail",
+   "text": "2 tests fail on Wallet pass"
+  },
+  {
+   "t": 1848,
+   "at": "2026-10-08T09:30:48Z",
+   "agent": "forge-3.1",
+   "feature": "INS-05",
+   "type": "commit",
+   "text": "3 commits on Instructor performance stats"
+  },
+  {
+   "t": 1851,
+   "at": "2026-10-08T09:30:51Z",
+   "agent": "forge-2.2",
+   "feature": "GRO-04",
+   "type": "commit",
+   "text": "1 commits on Trial-to-member funnel"
+  },
+  {
+   "t": 1856,
+   "at": "2026-10-08T09:30:56Z",
+   "agent": "tender.3",
+   "feature": "IAM-07",
+   "type": "deploy",
+   "text": "deployed Staff roles & permissions"
+  },
+  {
+   "t": 1861,
+   "at": "2026-10-08T09:31:01Z",
+   "agent": "tender.1",
+   "feature": "PLT-11",
+   "type": "flag-change",
+   "text": "flag for On-call alerting moved to 25%"
+  },
+  {
+   "t": 1875,
+   "at": "2026-10-08T09:31:15Z",
+   "agent": "forge-2.7",
+   "feature": "STU-03",
+   "type": "commit",
+   "text": "3 commits on Legacy system migration"
+  },
+  {
+   "t": 1889,
+   "at": "2026-10-08T09:31:29Z",
+   "agent": "tender.4",
+   "feature": "BKG-02",
+   "type": "deploy",
+   "text": "deployed Cancellation & late-cancel policy"
+  },
+  {
+   "t": 1899,
+   "at": "2026-10-08T09:31:39Z",
+   "agent": "tender.4",
+   "feature": "BKG-02",
+   "type": "flag-change",
+   "text": "flag for Cancellation & late-cancel policy moved to 25%"
+  },
+  {
+   "t": 1900,
+   "at": "2026-10-08T09:31:40Z",
+   "agent": "tender.4",
+   "feature": "PLT-21",
+   "type": "move",
+   "text": "tender.4 moves to Agent sandbox & guardrails",
+   "from": "BKG-02"
+  },
+  {
+   "t": 1909,
+   "at": "2026-10-08T09:31:49Z",
+   "agent": "forge-2.5",
+   "feature": "ANA-07",
+   "type": "commit",
+   "text": "3 commits on Scheduled report emails"
+  },
+  {
+   "t": 1915,
+   "at": "2026-10-08T09:31:55Z",
+   "agent": "tender.4",
+   "feature": "PLT-21",
+   "type": "flag-change",
+   "text": "flag for Agent sandbox & guardrails moved to 5%"
+  },
+  {
+   "t": 1928,
+   "at": "2026-10-08T09:32:08Z",
+   "agent": "forge-1.3",
+   "feature": "INT-05",
+   "type": "tests-fail",
+   "text": "1 tests fail on Accounting sync"
+  },
+  {
+   "t": 1934,
+   "at": "2026-10-08T09:32:14Z",
+   "agent": "forge-3.4",
+   "feature": "INS-04",
+   "type": "commit",
+   "text": "4 commits on Pay rates & payroll export"
+  },
+  {
+   "t": 1937,
+   "at": "2026-10-08T09:32:17Z",
+   "agent": "forge-3.3",
+   "feature": "COM-06",
+   "type": "tests-fail",
+   "text": "3 tests fail on Automated journeys"
+  },
+  {
+   "t": 1951,
+   "at": "2026-10-08T09:32:31Z",
+   "agent": "warden.1",
+   "feature": "AIA-06",
+   "type": "review-pass",
+   "text": "review passed: Waitlist odds prediction"
+  },
+  {
+   "t": 1964,
+   "at": "2026-10-08T09:32:44Z",
+   "agent": "forge-2.5",
+   "feature": "ANA-07",
+   "type": "tests-fail",
+   "text": "1 tests fail on Scheduled report emails"
+  },
+  {
+   "t": 1975,
+   "at": "2026-10-08T09:32:55Z",
+   "agent": "forge-3.3",
+   "feature": "COM-06",
+   "type": "commit",
+   "text": "4 commits on Automated journeys"
+  },
+  {
+   "t": 1980,
+   "at": "2026-10-08T09:33:00Z",
+   "agent": "forge-4.3",
+   "feature": "BKG-03",
+   "type": "decision-asked",
+   "text": "Waitlist fix passes, but the load test shows 2.1 s p95 at 500 bookings a minute. Accept?",
+   "decision": "D-27"
+  },
+  {
+   "t": 1989,
+   "at": "2026-10-08T09:33:09Z",
+   "agent": "warden.6",
+   "feature": "PLT-20",
+   "type": "tests-fail",
+   "text": "e2e failure on End-to-end test suite"
+  },
+  {
+   "t": 2000,
+   "at": "2026-10-08T09:33:20Z",
+   "agent": "forge-3.3",
+   "feature": "COM-06",
+   "type": "commit",
+   "text": "3 commits on Automated journeys"
+  },
+  {
+   "t": 2003,
+   "at": "2026-10-08T09:33:23Z",
+   "agent": "tender.2",
+   "feature": "PLT-02",
+   "type": "alert",
+   "text": "p95 latency up on Background job queue"
+  },
+  {
+   "t": 2017,
+   "at": "2026-10-08T09:33:37Z",
+   "agent": "forge-2.6",
+   "feature": "PLT-20",
+   "type": "tests-fail",
+   "text": "1 tests fail on End-to-end test suite"
+  },
+  {
+   "t": 2030,
+   "at": "2026-10-08T09:33:50Z",
+   "agent": "forge-2.6",
+   "feature": "PLT-20",
+   "type": "tests-pass",
+   "text": "tests pass on End-to-end test suite"
+  },
+  {
+   "t": 2043,
+   "at": "2026-10-08T09:34:03Z",
+   "agent": "forge-2.4",
+   "feature": "MEM-03",
+   "type": "pr-open",
+   "text": "pull request opened for Wallet pass"
+  },
+  {
+   "t": 2056,
+   "at": "2026-10-08T09:34:16Z",
+   "agent": "forge-1.3",
+   "feature": "INT-05",
+   "type": "pr-open",
+   "text": "pull request opened for Accounting sync"
+  },
+  {
+   "t": 2059,
+   "at": "2026-10-08T09:34:19Z",
+   "agent": "tender.4",
+   "feature": "PLT-21",
+   "type": "alert",
+   "text": "p95 latency up on Agent sandbox & guardrails"
+  },
+  {
+   "t": 2068,
+   "at": "2026-10-08T09:34:28Z",
+   "agent": "forge-2.4",
+   "feature": "MEM-03",
+   "type": "tests-pass",
+   "text": "tests pass on Wallet pass"
+  },
+  {
+   "t": 2078,
+   "at": "2026-10-08T09:34:38Z",
+   "agent": "forge-1.3",
+   "feature": "INT-05",
+   "type": "commit",
+   "text": "2 commits on Accounting sync"
+  },
+  {
+   "t": 2084,
+   "at": "2026-10-08T09:34:44Z",
+   "agent": "forge-3.3",
+   "feature": "COM-06",
+   "type": "pr-open",
+   "text": "pull request opened for Automated journeys"
+  },
+  {
+   "t": 2089,
+   "at": "2026-10-08T09:34:49Z",
+   "agent": "forge-3.3",
+   "feature": "COM-06",
+   "type": "tests-pass",
+   "text": "tests pass on Automated journeys"
+  },
+  {
+   "t": 2092,
+   "at": "2026-10-08T09:34:52Z",
+   "agent": "forge-2.7",
+   "feature": "STU-03",
+   "type": "tests-fail",
+   "text": "2 tests fail on Legacy system migration"
+  },
+  {
+   "t": 2104,
+   "at": "2026-10-08T09:35:04Z",
+   "agent": "warden.5",
+   "feature": "COM-04",
+   "type": "review-pass",
+   "text": "review passed: Message template editor"
+  },
+  {
+   "t": 2110,
+   "at": "2026-10-08T09:35:10Z",
+   "agent": "forge-2.2",
+   "feature": "GRO-04",
+   "type": "commit",
+   "text": "5 commits on Trial-to-member funnel"
+  },
+  {
+   "t": 2111,
+   "at": "2026-10-08T09:35:11Z",
+   "agent": "forge-2.2",
+   "feature": "PLT-06",
+   "type": "move",
+   "text": "forge-2.2 moves to Rate limiting & abuse protection",
+   "from": "GRO-04"
+  },
+  {
+   "t": 2121,
+   "at": "2026-10-08T09:35:21Z",
+   "agent": "tender.3",
+   "feature": "IAM-07",
+   "type": "alert",
+   "text": "p95 latency up on Staff roles & permissions"
+  },
+  {
+   "t": 2130,
+   "at": "2026-10-08T09:35:30Z",
+   "agent": "forge-2.2",
+   "feature": "PLT-06",
+   "type": "task-done",
+   "text": "finished a task on Rate limiting & abuse protection"
+  },
+  {
+   "t": 2138,
+   "at": "2026-10-08T09:35:38Z",
+   "agent": "forge-2.3",
+   "feature": "ANA-04",
+   "type": "task-done",
+   "text": "finished a task on Instructor reports"
+  },
+  {
+   "t": 2150,
+   "at": "2026-10-08T09:35:50Z",
+   "agent": "forge-2.4",
+   "feature": "MEM-03",
+   "type": "commit",
+   "text": "5 commits on Wallet pass"
+  },
+  {
+   "t": 2154,
+   "at": "2026-10-08T09:35:54Z",
+   "agent": "warden.5",
+   "feature": "COM-04",
+   "type": "review-changes",
+   "text": "changes requested on Message template editor"
+  },
+  {
+   "t": 2161,
+   "at": "2026-10-08T09:36:01Z",
+   "agent": "forge-2.4",
+   "feature": "MEM-03",
+   "type": "tests-fail",
+   "text": "3 tests fail on Wallet pass"
+  },
+  {
+   "t": 2165,
+   "at": "2026-10-08T09:36:05Z",
+   "agent": "forge-3.1",
+   "feature": "INS-05",
+   "type": "commit",
+   "text": "4 commits on Instructor performance stats"
+  },
+  {
+   "t": 2175,
+   "at": "2026-10-08T09:36:15Z",
+   "agent": "sentinel.2",
+   "feature": "INT-01",
+   "type": "finding",
+   "text": "finding on Public REST API: missing authorisation check"
+  },
+  {
+   "t": 2185,
+   "at": "2026-10-08T09:36:25Z",
+   "agent": "forge-2.5",
+   "feature": "ANA-07",
+   "type": "tests-pass",
+   "text": "tests pass on Scheduled report emails"
+  },
+  {
+   "t": 2194,
+   "at": "2026-10-08T09:36:34Z",
+   "agent": "forge-2.2",
+   "feature": "PLT-06",
+   "type": "commit",
+   "text": "2 commits on Rate limiting & abuse protection"
+  },
+  {
+   "t": 2206,
+   "at": "2026-10-08T09:36:46Z",
+   "agent": "forge-2.7",
+   "feature": "STU-03",
+   "type": "commit",
+   "text": "3 commits on Legacy system migration"
+  },
+  {
+   "t": 2212,
+   "at": "2026-10-08T09:36:52Z",
+   "agent": "sentinel.2",
+   "feature": "INT-01",
+   "type": "scan-clean",
+   "text": "scan clean: Public REST API"
+  },
+  {
+   "t": 2221,
+   "at": "2026-10-08T09:37:01Z",
+   "agent": "forge-2.3",
+   "feature": "ANA-04",
+   "type": "commit",
+   "text": "4 commits on Instructor reports"
+  },
+  {
+   "t": 2228,
+   "at": "2026-10-08T09:37:08Z",
+   "agent": "forge-2.6",
+   "feature": "PLT-20",
+   "type": "commit",
+   "text": "2 commits on End-to-end test suite"
+  },
+  {
+   "t": 2238,
+   "at": "2026-10-08T09:37:18Z",
+   "agent": "forge-3.4",
+   "feature": "INS-04",
+   "type": "tests-fail",
+   "text": "2 tests fail on Pay rates & payroll export"
+  },
+  {
+   "t": 2244,
+   "at": "2026-10-08T09:37:24Z",
+   "agent": "forge-2.4",
+   "feature": "MEM-03",
+   "type": "tests-fail",
+   "text": "1 tests fail on Wallet pass"
+  },
+  {
+   "t": 2251,
+   "at": "2026-10-08T09:37:31Z",
+   "agent": "tender.4",
+   "feature": "PLT-21",
+   "type": "alert",
+   "text": "p95 latency up on Agent sandbox & guardrails"
+  },
+  {
+   "t": 2261,
+   "at": "2026-10-08T09:37:41Z",
+   "agent": "forge-1.3",
+   "feature": "INT-05",
+   "type": "commit",
+   "text": "5 commits on Accounting sync"
+  },
+  {
+   "t": 2268,
+   "at": "2026-10-08T09:37:48Z",
+   "agent": "tender.1",
+   "feature": "PLT-11",
+   "type": "deploy",
+   "text": "deployed On-call alerting"
+  },
+  {
+   "t": 2282,
+   "at": "2026-10-08T09:38:02Z",
+   "agent": "forge-3.3",
+   "feature": "COM-06",
+   "type": "commit",
+   "text": "4 commits on Automated journeys"
+  },
+  {
+   "t": 2292,
+   "at": "2026-10-08T09:38:12Z",
+   "agent": "warden.6",
+   "feature": "PLT-20",
+   "type": "review-pass",
+   "text": "review passed: End-to-end test suite"
+  },
+  {
+   "t": 2303,
+   "at": "2026-10-08T09:38:23Z",
+   "agent": "warden.3",
+   "feature": "PLT-12",
+   "type": "review-pass",
+   "text": "review passed: Cloud cost monitoring"
+  },
+  {
+   "t": 2309,
+   "at": "2026-10-08T09:38:29Z",
+   "agent": "forge-2.3",
+   "feature": "ANA-04",
+   "type": "tests-pass",
+   "text": "tests pass on Instructor reports"
+  },
+  {
+   "t": 2321,
+   "at": "2026-10-08T09:38:41Z",
+   "agent": "tender.2",
+   "feature": "PLT-02",
+   "type": "alert",
+   "text": "p95 latency up on Background job queue"
+  },
+  {
+   "t": 2328,
+   "at": "2026-10-08T09:38:48Z",
+   "agent": "forge-3.1",
+   "feature": "INS-05",
+   "type": "task-done",
+   "text": "finished a task on Instructor performance stats"
+  },
+  {
+   "t": 2334,
+   "at": "2026-10-08T09:38:54Z",
+   "agent": "tender.1",
+   "feature": "PLT-11",
+   "type": "deploy",
+   "text": "deployed On-call alerting"
+  },
+  {
+   "t": 2348,
+   "at": "2026-10-08T09:39:08Z",
+   "agent": "tender.2",
+   "feature": "PLT-02",
+   "type": "flag-change",
+   "text": "flag for Background job queue moved to 5%"
+  },
+  {
+   "t": 2359,
+   "at": "2026-10-08T09:39:19Z",
+   "agent": "tender.2",
+   "feature": "PLT-02",
+   "type": "flag-change",
+   "text": "flag for Background job queue moved to 50%"
+  },
+  {
+   "t": 2372,
+   "at": "2026-10-08T09:39:32Z",
+   "agent": "forge-2.2",
+   "feature": "PLT-06",
+   "type": "tests-pass",
+   "text": "tests pass on Rate limiting & abuse protection"
+  },
+  {
+   "t": 2382,
+   "at": "2026-10-08T09:39:42Z",
+   "agent": "sentinel.2",
+   "feature": "INT-01",
+   "type": "finding",
+   "text": "finding on Public REST API: token in log line"
+  },
+  {
+   "t": 2396,
+   "at": "2026-10-08T09:39:56Z",
+   "agent": "warden.3",
+   "feature": "PLT-12",
+   "type": "review-changes",
+   "text": "changes requested on Cloud cost monitoring"
+  },
+  {
+   "t": 2405,
+   "at": "2026-10-08T09:40:05Z",
+   "agent": "forge-3.3",
+   "feature": "COM-06",
+   "type": "commit",
+   "text": "1 commits on Automated journeys"
+  },
+  {
+   "t": 2419,
+   "at": "2026-10-08T09:40:19Z",
+   "agent": "forge-3.1",
+   "feature": "INS-05",
+   "type": "pr-open",
+   "text": "pull request opened for Instructor performance stats"
+  },
+  {
+   "t": 2425,
+   "at": "2026-10-08T09:40:25Z",
+   "agent": "forge-2.3",
+   "feature": "ANA-04",
+   "type": "commit",
+   "text": "3 commits on Instructor reports"
+  },
+  {
+   "t": 2434,
+   "at": "2026-10-08T09:40:34Z",
+   "agent": "tender.4",
+   "feature": "PLT-21",
+   "type": "deploy",
+   "text": "deployed Agent sandbox & guardrails"
+  },
+  {
+   "t": 2445,
+   "at": "2026-10-08T09:40:45Z",
+   "agent": "tender.1",
+   "feature": "PLT-11",
+   "type": "alert",
+   "text": "p95 latency up on On-call alerting"
+  },
+  {
+   "t": 2457,
+   "at": "2026-10-08T09:40:57Z",
+   "agent": "forge-2.7",
+   "feature": "STU-03",
+   "type": "tests-pass",
+   "text": "tests pass on Legacy system migration"
+  },
+  {
+   "t": 2471,
+   "at": "2026-10-08T09:41:11Z",
+   "agent": "forge-3.1",
+   "feature": "INS-05",
+   "type": "pr-open",
+   "text": "pull request opened for Instructor performance stats"
+  },
+  {
+   "t": 2476,
+   "at": "2026-10-08T09:41:16Z",
+   "agent": "forge-3.3",
+   "feature": "COM-06",
+   "type": "commit",
+   "text": "5 commits on Automated journeys"
+  },
+  {
+   "t": 2480,
+   "at": "2026-10-08T09:41:20Z",
+   "agent": "tender.1",
+   "feature": "PLT-11",
+   "type": "alert",
+   "text": "p95 latency up on On-call alerting"
+  },
+  {
+   "t": 2484,
+   "at": "2026-10-08T09:41:24Z",
+   "agent": "forge-2.4",
+   "feature": "MEM-03",
+   "type": "commit",
+   "text": "3 commits on Wallet pass"
+  },
+  {
+   "t": 2492,
+   "at": "2026-10-08T09:41:32Z",
+   "agent": "forge-2.3",
+   "feature": "ANA-04",
+   "type": "commit",
+   "text": "1 commits on Instructor reports"
+  },
+  {
+   "t": 2504,
+   "at": "2026-10-08T09:41:44Z",
+   "agent": "forge-2.5",
+   "feature": "ANA-07",
+   "type": "commit",
+   "text": "1 commits on Scheduled report emails"
+  },
+  {
+   "t": 2507,
+   "at": "2026-10-08T09:41:47Z",
+   "agent": "tender.4",
+   "feature": "PLT-21",
+   "type": "alert",
+   "text": "p95 latency up on Agent sandbox & guardrails"
+  },
+  {
+   "t": 2511,
+   "at": "2026-10-08T09:41:51Z",
+   "agent": "forge-2.3",
+   "feature": "ANA-04",
+   "type": "commit",
+   "text": "3 commits on Instructor reports"
+  },
+  {
+   "t": 2524,
+   "at": "2026-10-08T09:42:04Z",
+   "agent": "forge-1.3",
+   "feature": "INT-05",
+   "type": "commit",
+   "text": "3 commits on Accounting sync"
+  },
+  {
+   "t": 2529,
+   "at": "2026-10-08T09:42:09Z",
+   "agent": "tender.1",
+   "feature": "PLT-11",
+   "type": "flag-change",
+   "text": "flag for On-call alerting moved to 10%"
+  },
+  {
+   "t": 2537,
+   "at": "2026-10-08T09:42:17Z",
+   "agent": "tender.4",
+   "feature": "PLT-21",
+   "type": "deploy",
+   "text": "deployed Agent sandbox & guardrails"
+  },
+  {
+   "t": 2541,
+   "at": "2026-10-08T09:42:21Z",
+   "agent": "tender.2",
+   "feature": "PLT-02",
+   "type": "flag-change",
+   "text": "flag for Background job queue moved to 50%"
+  },
+  {
+   "t": 2550,
+   "at": "2026-10-08T09:42:30Z",
+   "agent": "warden.3",
+   "feature": "PLT-12",
+   "type": "review-pass",
+   "text": "review passed: Cloud cost monitoring"
+  },
+  {
+   "t": 2559,
+   "at": "2026-10-08T09:42:39Z",
+   "agent": "forge-2.3",
+   "feature": "ANA-04",
+   "type": "commit",
+   "text": "6 commits on Instructor reports"
+  },
+  {
+   "t": 2568,
+   "at": "2026-10-08T09:42:48Z",
+   "agent": "tender.2",
+   "feature": "PLT-02",
+   "type": "deploy",
+   "text": "deployed Background job queue"
+  },
+  {
+   "t": 2578,
+   "at": "2026-10-08T09:42:58Z",
+   "agent": "forge-2.4",
+   "feature": "MEM-03",
+   "type": "tests-pass",
+   "text": "tests pass on Wallet pass"
+  },
+  {
+   "t": 2581,
+   "at": "2026-10-08T09:43:01Z",
+   "agent": "warden.5",
+   "feature": "COM-04",
+   "type": "review-changes",
+   "text": "changes requested on Message template editor"
+  },
+  {
+   "t": 2590,
+   "at": "2026-10-08T09:43:10Z",
+   "agent": "tender.3",
+   "feature": "IAM-07",
+   "type": "alert",
+   "text": "p95 latency up on Staff roles & permissions"
+  },
+  {
+   "t": 2603,
+   "at": "2026-10-08T09:43:23Z",
+   "agent": "forge-3.3",
+   "feature": "COM-06",
+   "type": "tests-fail",
+   "text": "2 tests fail on Automated journeys"
+  },
+  {
+   "t": 2610,
+   "at": "2026-10-08T09:43:30Z",
+   "agent": "forge-3.3",
+   "feature": "COM-06",
+   "type": "commit",
+   "text": "2 commits on Automated journeys"
+  },
+  {
+   "t": 2611,
+   "at": "2026-10-08T09:43:31Z",
+   "agent": "forge-3.3",
+   "feature": "PLT-09",
+   "type": "move",
+   "text": "forge-3.3 moves to Distributed tracing",
+   "from": "COM-06"
+  },
+  {
+   "t": 2618,
+   "at": "2026-10-08T09:43:38Z",
+   "agent": "forge-3.1",
+   "feature": "INS-05",
+   "type": "tests-pass",
+   "text": "tests pass on Instructor performance stats"
+  },
+  {
+   "t": 2622,
+   "at": "2026-10-08T09:43:42Z",
+   "agent": "tender.3",
+   "feature": "IAM-07",
+   "type": "alert",
+   "text": "p95 latency up on Staff roles & permissions"
+  },
+  {
+   "t": 2626,
+   "at": "2026-10-08T09:43:46Z",
+   "agent": "tender.3",
+   "feature": "IAM-07",
+   "type": "deploy",
+   "text": "deployed Staff roles & permissions"
+  },
+  {
+   "t": 2627,
+   "at": "2026-10-08T09:43:47Z",
+   "agent": "tender.3",
+   "feature": "GRO-02",
+   "type": "move",
+   "text": "tender.3 moves to Referral program",
+   "from": "IAM-07"
+  },
+  {
+   "t": 2639,
+   "at": "2026-10-08T09:43:59Z",
+   "agent": "tender.2",
+   "feature": "PLT-02",
+   "type": "flag-change",
+   "text": "flag for Background job queue moved to 10%"
+  },
+  {
+   "t": 2648,
+   "at": "2026-10-08T09:44:08Z",
+   "agent": "forge-3.4",
+   "feature": "INS-04",
+   "type": "tests-pass",
+   "text": "tests pass on Pay rates & payroll export"
+  },
+  {
+   "t": 2653,
+   "at": "2026-10-08T09:44:13Z",
+   "agent": "forge-2.7",
+   "feature": "STU-03",
+   "type": "commit",
+   "text": "5 commits on Legacy system migration"
+  },
+  {
+   "t": 2662,
+   "at": "2026-10-08T09:44:22Z",
+   "agent": "sentinel.2",
+   "feature": "INT-01",
+   "type": "finding",
+   "text": "finding on Public REST API: outdated dependency"
+  },
+  {
+   "t": 2674,
+   "at": "2026-10-08T09:44:34Z",
+   "agent": "forge-2.6",
+   "feature": "PLT-20",
+   "type": "tests-pass",
+   "text": "tests pass on End-to-end test suite"
+  },
+  {
+   "t": 2680,
+   "at": "2026-10-08T09:44:40Z",
+   "agent": "warden.6",
+   "feature": "PLT-20",
+   "type": "review-pass",
+   "text": "review passed: End-to-end test suite"
+  },
+  {
+   "t": 2692,
+   "at": "2026-10-08T09:44:52Z",
+   "agent": "forge-3.1",
+   "feature": "INS-05",
+   "type": "commit",
+   "text": "2 commits on Instructor performance stats"
+  },
+  {
+   "t": 2701,
+   "at": "2026-10-08T09:45:01Z",
+   "agent": "forge-3.4",
+   "feature": "INS-04",
+   "type": "commit",
+   "text": "5 commits on Pay rates & payroll export"
+  },
+  {
+   "t": 2712,
+   "at": "2026-10-08T09:45:12Z",
+   "agent": "forge-2.7",
+   "feature": "STU-03",
+   "type": "commit",
+   "text": "5 commits on Legacy system migration"
+  },
+  {
+   "t": 2721,
+   "at": "2026-10-08T09:45:21Z",
+   "agent": "warden.5",
+   "feature": "COM-04",
+   "type": "review-pass",
+   "text": "review passed: Message template editor"
+  },
+  {
+   "t": 2733,
+   "at": "2026-10-08T09:45:33Z",
+   "agent": "forge-3.4",
+   "feature": "INS-04",
+   "type": "commit",
+   "text": "1 commits on Pay rates & payroll export"
+  },
+  {
+   "t": 2744,
+   "at": "2026-10-08T09:45:44Z",
+   "agent": "tender.2",
+   "feature": "PLT-02",
+   "type": "deploy",
+   "text": "deployed Background job queue"
+  },
+  {
+   "t": 2752,
+   "at": "2026-10-08T09:45:52Z",
+   "agent": "tender.2",
+   "feature": "PLT-02",
+   "type": "flag-change",
+   "text": "flag for Background job queue moved to 10%"
+  },
+  {
+   "t": 2764,
+   "at": "2026-10-08T09:46:04Z",
+   "agent": "forge-2.4",
+   "feature": "MEM-03",
+   "type": "commit",
+   "text": "5 commits on Wallet pass"
+  },
+  {
+   "t": 2765,
+   "at": "2026-10-08T09:46:05Z",
+   "agent": "forge-2.4",
+   "feature": "PAY-04",
+   "type": "move",
+   "text": "forge-2.4 moves to Family plans",
+   "from": "MEM-03"
+  },
+  {
+   "t": 2767,
+   "at": "2026-10-08T09:46:07Z",
+   "agent": "warden.5",
+   "feature": "COM-04",
+   "type": "review-pass",
+   "text": "review passed: Message template editor"
+  },
+  {
+   "t": 2781,
+   "at": "2026-10-08T09:46:21Z",
+   "agent": "forge-3.4",
+   "feature": "INS-04",
+   "type": "commit",
+   "text": "2 commits on Pay rates & payroll export"
+  },
+  {
+   "t": 2795,
+   "at": "2026-10-08T09:46:35Z",
+   "agent": "forge-2.7",
+   "feature": "STU-03",
+   "type": "tests-pass",
+   "text": "tests pass on Legacy system migration"
+  },
+  {
+   "t": 2799,
+   "at": "2026-10-08T09:46:39Z",
+   "agent": "warden.1",
+   "feature": "AIA-06",
+   "type": "tests-fail",
+   "text": "e2e failure on Waitlist odds prediction"
+  },
+  {
+   "t": 2811,
+   "at": "2026-10-08T09:46:51Z",
+   "agent": "forge-3.3",
+   "feature": "PLT-09",
+   "type": "tests-pass",
+   "text": "tests pass on Distributed tracing"
+  },
+  {
+   "t": 2825,
+   "at": "2026-10-08T09:47:05Z",
+   "agent": "forge-3.3",
+   "feature": "PLT-09",
+   "type": "commit",
+   "text": "5 commits on Distributed tracing"
+  },
+  {
+   "t": 2830,
+   "at": "2026-10-08T09:47:10Z",
+   "agent": "tender.4",
+   "feature": "PLT-21",
+   "type": "deploy",
+   "text": "deployed Agent sandbox & guardrails"
+  },
+  {
+   "t": 2842,
+   "at": "2026-10-08T09:47:22Z",
+   "agent": "warden.6",
+   "feature": "PLT-20",
+   "type": "review-pass",
+   "text": "review passed: End-to-end test suite"
+  },
+  {
+   "t": 2851,
+   "at": "2026-10-08T09:47:31Z",
+   "agent": "forge-3.3",
+   "feature": "PLT-09",
+   "type": "task-done",
+   "text": "finished a task on Distributed tracing"
+  },
+  {
+   "t": 2858,
+   "at": "2026-10-08T09:47:38Z",
+   "agent": "forge-3.1",
+   "feature": "INS-05",
+   "type": "commit",
+   "text": "3 commits on Instructor performance stats"
+  },
+  {
+   "t": 2871,
+   "at": "2026-10-08T09:47:51Z",
+   "agent": "tender.4",
+   "feature": "PLT-21",
+   "type": "alert",
+   "text": "p95 latency up on Agent sandbox & guardrails"
+  },
+  {
+   "t": 2885,
+   "at": "2026-10-08T09:48:05Z",
+   "agent": "sentinel.2",
+   "feature": "INT-01",
+   "type": "scan-clean",
+   "text": "scan clean: Public REST API"
+  },
+  {
+   "t": 2893,
+   "at": "2026-10-08T09:48:13Z",
+   "agent": "tender.3",
+   "feature": "GRO-02",
+   "type": "alert",
+   "text": "p95 latency up on Referral program"
+  },
+  {
+   "t": 2906,
+   "at": "2026-10-08T09:48:26Z",
+   "agent": "forge-2.2",
+   "feature": "PLT-06",
+   "type": "commit",
+   "text": "1 commits on Rate limiting & abuse protection"
+  },
+  {
+   "t": 2919,
+   "at": "2026-10-08T09:48:39Z",
+   "agent": "tender.3",
+   "feature": "GRO-02",
+   "type": "alert",
+   "text": "p95 latency up on Referral program"
+  },
+  {
+   "t": 2929,
+   "at": "2026-10-08T09:48:49Z",
+   "agent": "forge-2.5",
+   "feature": "ANA-07",
+   "type": "commit",
+   "text": "4 commits on Scheduled report emails"
+  },
+  {
+   "t": 2937,
+   "at": "2026-10-08T09:48:57Z",
+   "agent": "forge-3.4",
+   "feature": "INS-04",
+   "type": "commit",
+   "text": "1 commits on Pay rates & payroll export"
+  },
+  {
+   "t": 2951,
+   "at": "2026-10-08T09:49:11Z",
+   "agent": "forge-3.3",
+   "feature": "PLT-09",
+   "type": "tests-fail",
+   "text": "2 tests fail on Distributed tracing"
+  },
+  {
+   "t": 2959,
+   "at": "2026-10-08T09:49:19Z",
+   "agent": "warden.3",
+   "feature": "PLT-12",
+   "type": "tests-fail",
+   "text": "e2e failure on Cloud cost monitoring"
+  },
+  {
+   "t": 2972,
+   "at": "2026-10-08T09:49:32Z",
+   "agent": "forge-2.5",
+   "feature": "ANA-07",
+   "type": "commit",
+   "text": "6 commits on Scheduled report emails"
+  },
+  {
+   "t": 2978,
+   "at": "2026-10-08T09:49:38Z",
+   "agent": "forge-2.2",
+   "feature": "PLT-06",
+   "type": "tests-pass",
+   "text": "tests pass on Rate limiting & abuse protection"
+  },
+  {
+   "t": 2990,
+   "at": "2026-10-08T09:49:50Z",
+   "agent": "tender.3",
+   "feature": "GRO-02",
+   "type": "flag-change",
+   "text": "flag for Referral program moved to 50%"
+  },
+  {
+   "t": 3000,
+   "at": "2026-10-08T09:50:00Z",
+   "agent": "forge-1.4",
+   "feature": "SCH-04",
+   "type": "decision-asked",
+   "text": "Agents finished class packs early. Pull class templates forward from M3?",
+   "decision": "D-28"
+  },
+  {
+   "t": 3001,
+   "at": "2026-10-08T09:50:01Z",
+   "agent": "tender.3",
+   "feature": "GRO-02",
+   "type": "flag-change",
+   "text": "flag for Referral program moved to 25%"
+  },
+  {
+   "t": 3005,
+   "at": "2026-10-08T09:50:05Z",
+   "agent": "tender.1",
+   "feature": "PLT-11",
+   "type": "flag-change",
+   "text": "flag for On-call alerting moved to 25%"
+  },
+  {
+   "t": 3015,
+   "at": "2026-10-08T09:50:15Z",
+   "agent": "forge-2.7",
+   "feature": "STU-03",
+   "type": "tests-fail",
+   "text": "1 tests fail on Legacy system migration"
+  },
+  {
+   "t": 3016,
+   "at": "2026-10-08T09:50:16Z",
+   "agent": "forge-2.7",
+   "feature": "INS-03",
+   "type": "move",
+   "text": "forge-2.7 moves to Sub request board",
+   "from": "STU-03"
+  },
+  {
+   "t": 3029,
+   "at": "2026-10-08T09:50:29Z",
+   "agent": "warden.6",
+   "feature": "PLT-20",
+   "type": "tests-fail",
+   "text": "e2e failure on End-to-end test suite"
+  },
+  {
+   "t": 3042,
+   "at": "2026-10-08T09:50:42Z",
+   "agent": "forge-2.7",
+   "feature": "INS-03",
+   "type": "tests-fail",
+   "text": "4 tests fail on Sub request board"
+  },
+  {
+   "t": 3050,
+   "at": "2026-10-08T09:50:50Z",
+   "agent": "forge-3.4",
+   "feature": "INS-04",
+   "type": "tests-pass",
+   "text": "tests pass on Pay rates & payroll export"
+  },
+  {
+   "t": 3062,
+   "at": "2026-10-08T09:51:02Z",
+   "agent": "tender.3",
+   "feature": "GRO-02",
+   "type": "deploy",
+   "text": "deployed Referral program"
+  },
+  {
+   "t": 3074,
+   "at": "2026-10-08T09:51:14Z",
+   "agent": "tender.3",
+   "feature": "GRO-02",
+   "type": "flag-change",
+   "text": "flag for Referral program moved to 10%"
+  },
+  {
+   "t": 3084,
+   "at": "2026-10-08T09:51:24Z",
+   "agent": "tender.4",
+   "feature": "PLT-21",
+   "type": "deploy",
+   "text": "deployed Agent sandbox & guardrails"
+  },
+  {
+   "t": 3097,
+   "at": "2026-10-08T09:51:37Z",
+   "agent": "sentinel.2",
+   "feature": "INT-01",
+   "type": "finding",
+   "text": "finding on Public REST API: token in log line"
+  },
+  {
+   "t": 3104,
+   "at": "2026-10-08T09:51:44Z",
+   "agent": "forge-2.7",
+   "feature": "INS-03",
+   "type": "tests-pass",
+   "text": "tests pass on Sub request board"
+  },
+  {
+   "t": 3107,
+   "at": "2026-10-08T09:51:47Z",
+   "agent": "forge-2.4",
+   "feature": "PAY-04",
+   "type": "pr-open",
+   "text": "pull request opened for Family plans"
+  },
+  {
+   "t": 3108,
+   "at": "2026-10-08T09:51:48Z",
+   "agent": "forge-2.4",
+   "feature": "GRO-04",
+   "type": "move",
+   "text": "forge-2.4 moves to Trial-to-member funnel",
+   "from": "PAY-04"
+  },
+  {
+   "t": 3120,
+   "at": "2026-10-08T09:52:00Z",
+   "agent": "tender.3",
+   "feature": "GRO-02",
+   "type": "alert",
+   "text": "p95 latency up on Referral program"
+  },
+  {
+   "t": 3132,
+   "at": "2026-10-08T09:52:12Z",
+   "agent": "forge-2.6",
+   "feature": "PLT-20",
+   "type": "commit",
+   "text": "1 commits on End-to-end test suite"
+  },
+  {
+   "t": 3141,
+   "at": "2026-10-08T09:52:21Z",
+   "agent": "tender.4",
+   "feature": "PLT-21",
+   "type": "deploy",
+   "text": "deployed Agent sandbox & guardrails"
+  },
+  {
+   "t": 3148,
+   "at": "2026-10-08T09:52:28Z",
+   "agent": "forge-2.6",
+   "feature": "PLT-20",
+   "type": "pr-open",
+   "text": "pull request opened for End-to-end test suite"
+  },
+  {
+   "t": 3159,
+   "at": "2026-10-08T09:52:39Z",
+   "agent": "forge-2.7",
+   "feature": "INS-03",
+   "type": "commit",
+   "text": "1 commits on Sub request board"
+  },
+  {
+   "t": 3172,
+   "at": "2026-10-08T09:52:52Z",
+   "agent": "sentinel.2",
+   "feature": "INT-01",
+   "type": "scan-clean",
+   "text": "scan clean: Public REST API"
+  },
+  {
+   "t": 3178,
+   "at": "2026-10-08T09:52:58Z",
+   "agent": "warden.3",
+   "feature": "PLT-12",
+   "type": "review-pass",
+   "text": "review passed: Cloud cost monitoring"
+  },
+  {
+   "t": 3188,
+   "at": "2026-10-08T09:53:08Z",
+   "agent": "forge-2.6",
+   "feature": "PLT-20",
+   "type": "task-done",
+   "text": "finished a task on End-to-end test suite"
+  },
+  {
+   "t": 3202,
+   "at": "2026-10-08T09:53:22Z",
+   "agent": "warden.1",
+   "feature": "AIA-06",
+   "type": "review-pass",
+   "text": "review passed: Waitlist odds prediction"
+  },
+  {
+   "t": 3207,
+   "at": "2026-10-08T09:53:27Z",
+   "agent": "tender.2",
+   "feature": "PLT-02",
+   "type": "alert",
+   "text": "p95 latency up on Background job queue"
+  },
+  {
+   "t": 3220,
+   "at": "2026-10-08T09:53:40Z",
+   "agent": "sentinel.2",
+   "feature": "INT-01",
+   "type": "scan-clean",
+   "text": "scan clean: Public REST API"
+  },
+  {
+   "t": 3234,
+   "at": "2026-10-08T09:53:54Z",
+   "agent": "forge-3.3",
+   "feature": "PLT-09",
+   "type": "commit",
+   "text": "6 commits on Distributed tracing"
+  },
+  {
+   "t": 3241,
+   "at": "2026-10-08T09:54:01Z",
+   "agent": "forge-1.3",
+   "feature": "INT-05",
+   "type": "tests-fail",
+   "text": "3 tests fail on Accounting sync"
+  },
+  {
+   "t": 3242,
+   "at": "2026-10-08T09:54:02Z",
+   "agent": "forge-1.3",
+   "feature": "STU-03",
+   "type": "move",
+   "text": "forge-1.3 moves to Legacy system migration",
+   "from": "INT-05"
+  },
+  {
+   "t": 3253,
+   "at": "2026-10-08T09:54:13Z",
+   "agent": "warden.1",
+   "feature": "AIA-06",
+   "type": "review-pass",
+   "text": "review passed: Waitlist odds prediction"
+  },
+  {
+   "t": 3267,
+   "at": "2026-10-08T09:54:27Z",
+   "agent": "tender.2",
+   "feature": "PLT-02",
+   "type": "alert",
+   "text": "p95 latency up on Background job queue"
+  },
+  {
+   "t": 3275,
+   "at": "2026-10-08T09:54:35Z",
+   "agent": "forge-2.5",
+   "feature": "ANA-07",
+   "type": "pr-open",
+   "text": "pull request opened for Scheduled report emails"
+  },
+  {
+   "t": 3289,
+   "at": "2026-10-08T09:54:49Z",
+   "agent": "tender.4",
+   "feature": "PLT-21",
+   "type": "flag-change",
+   "text": "flag for Agent sandbox & guardrails moved to 10%"
+  },
+  {
+   "t": 3299,
+   "at": "2026-10-08T09:54:59Z",
+   "agent": "tender.2",
+   "feature": "PLT-02",
+   "type": "alert",
+   "text": "p95 latency up on Background job queue"
+  },
+  {
+   "t": 3300,
+   "at": "2026-10-08T09:55:00Z",
+   "agent": "tender.2",
+   "feature": "IAM-01",
+   "type": "move",
+   "text": "tender.2 moves to Email & password sign-in",
+   "from": "PLT-02"
+  },
+  {
+   "t": 3306,
+   "at": "2026-10-08T09:55:06Z",
+   "agent": "forge-2.3",
+   "feature": "ANA-04",
+   "type": "commit",
+   "text": "4 commits on Instructor reports"
+  },
+  {
+   "t": 3320,
+   "at": "2026-10-08T09:55:20Z",
+   "agent": "warden.6",
+   "feature": "PLT-20",
+   "type": "review-pass",
+   "text": "review passed: End-to-end test suite"
+  },
+  {
+   "t": 3321,
+   "at": "2026-10-08T09:55:21Z",
+   "agent": "warden.6",
+   "feature": "COM-04",
+   "type": "move",
+   "text": "warden.6 moves to Message template editor",
+   "from": "PLT-20"
+  },
+  {
+   "t": 3329,
+   "at": "2026-10-08T09:55:29Z",
+   "agent": "forge-2.2",
+   "feature": "PLT-06",
+   "type": "commit",
+   "text": "4 commits on Rate limiting & abuse protection"
+  },
+  {
+   "t": 3340,
+   "at": "2026-10-08T09:55:40Z",
+   "agent": "warden.1",
+   "feature": "AIA-06",
+   "type": "tests-fail",
+   "text": "e2e failure on Waitlist odds prediction"
+  },
+  {
+   "t": 3352,
+   "at": "2026-10-08T09:55:52Z",
+   "agent": "tender.2",
+   "feature": "IAM-01",
+   "type": "deploy",
+   "text": "deployed Email & password sign-in"
+  },
+  {
+   "t": 3355,
+   "at": "2026-10-08T09:55:55Z",
+   "agent": "forge-2.6",
+   "feature": "PLT-20",
+   "type": "commit",
+   "text": "6 commits on End-to-end test suite"
+  },
+  {
+   "t": 3360,
+   "at": "2026-10-08T09:56:00Z",
+   "agent": "forge-2.6",
+   "feature": "PLT-20",
+   "type": "commit",
+   "text": "3 commits on End-to-end test suite"
+  },
+  {
+   "t": 3369,
+   "at": "2026-10-08T09:56:09Z",
+   "agent": "warden.5",
+   "feature": "COM-04",
+   "type": "review-pass",
+   "text": "review passed: Message template editor"
+  },
+  {
+   "t": 3376,
+   "at": "2026-10-08T09:56:16Z",
+   "agent": "warden.5",
+   "feature": "COM-04",
+   "type": "review-changes",
+   "text": "changes requested on Message template editor"
+  },
+  {
+   "t": 3385,
+   "at": "2026-10-08T09:56:25Z",
+   "agent": "forge-1.3",
+   "feature": "STU-03",
+   "type": "tests-fail",
+   "text": "3 tests fail on Legacy system migration"
+  },
+  {
+   "t": 3399,
+   "at": "2026-10-08T09:56:39Z",
+   "agent": "forge-2.6",
+   "feature": "PLT-20",
+   "type": "tests-pass",
+   "text": "tests pass on End-to-end test suite"
+  },
+  {
+   "t": 3410,
+   "at": "2026-10-08T09:56:50Z",
+   "agent": "forge-2.4",
+   "feature": "GRO-04",
+   "type": "pr-open",
+   "text": "pull request opened for Trial-to-member funnel"
+  },
+  {
+   "t": 3417,
+   "at": "2026-10-08T09:56:57Z",
+   "agent": "forge-3.1",
+   "feature": "INS-05",
+   "type": "commit",
+   "text": "1 commits on Instructor performance stats"
+  },
+  {
+   "t": 3423,
+   "at": "2026-10-08T09:57:03Z",
+   "agent": "forge-1.3",
+   "feature": "STU-03",
+   "type": "commit",
+   "text": "4 commits on Legacy system migration"
+  },
+  {
+   "t": 3437,
+   "at": "2026-10-08T09:57:17Z",
+   "agent": "tender.1",
+   "feature": "PLT-11",
+   "type": "deploy",
+   "text": "deployed On-call alerting"
+  },
+  {
+   "t": 3445,
+   "at": "2026-10-08T09:57:25Z",
+   "agent": "forge-3.1",
+   "feature": "INS-05",
+   "type": "tests-pass",
+   "text": "tests pass on Instructor performance stats"
+  },
+  {
+   "t": 3458,
+   "at": "2026-10-08T09:57:38Z",
+   "agent": "sentinel.2",
+   "feature": "INT-01",
+   "type": "scan-clean",
+   "text": "scan clean: Public REST API"
+  },
+  {
+   "t": 3471,
+   "at": "2026-10-08T09:57:51Z",
+   "agent": "warden.5",
+   "feature": "COM-04",
+   "type": "review-pass",
+   "text": "review passed: Message template editor"
+  },
+  {
+   "t": 3481,
+   "at": "2026-10-08T09:58:01Z",
+   "agent": "forge-3.1",
+   "feature": "INS-05",
+   "type": "tests-pass",
+   "text": "tests pass on Instructor performance stats"
+  },
+  {
+   "t": 3484,
+   "at": "2026-10-08T09:58:04Z",
+   "agent": "forge-2.7",
+   "feature": "INS-03",
+   "type": "pr-open",
+   "text": "pull request opened for Sub request board"
+  },
+  {
+   "t": 3490,
+   "at": "2026-10-08T09:58:10Z",
+   "agent": "tender.4",
+   "feature": "PLT-21",
+   "type": "flag-change",
+   "text": "flag for Agent sandbox & guardrails moved to 10%"
+  },
+  {
+   "t": 3491,
+   "at": "2026-10-08T09:58:11Z",
+   "agent": "tender.4",
+   "feature": "MEM-08",
+   "type": "move",
+   "text": "tender.4 moves to Embeddable booking widget",
+   "from": "PLT-21"
+  },
+  {
+   "t": 3502,
+   "at": "2026-10-08T09:58:22Z",
+   "agent": "forge-2.4",
+   "feature": "GRO-04",
+   "type": "tests-pass",
+   "text": "tests pass on Trial-to-member funnel"
+  },
+  {
+   "t": 3515,
+   "at": "2026-10-08T09:58:35Z",
+   "agent": "tender.1",
+   "feature": "PLT-11",
+   "type": "deploy",
+   "text": "deployed On-call alerting"
+  },
+  {
+   "t": 3522,
+   "at": "2026-10-08T09:58:42Z",
+   "agent": "tender.4",
+   "feature": "MEM-08",
+   "type": "flag-change",
+   "text": "flag for Embeddable booking widget moved to 5%"
+  },
+  {
+   "t": 3532,
+   "at": "2026-10-08T09:58:52Z",
+   "agent": "tender.1",
+   "feature": "PLT-11",
+   "type": "deploy",
+   "text": "deployed On-call alerting"
+  },
+  {
+   "t": 3538,
+   "at": "2026-10-08T09:58:58Z",
+   "agent": "warden.1",
+   "feature": "AIA-06",
+   "type": "review-pass",
+   "text": "review passed: Waitlist odds prediction"
+  },
+  {
+   "t": 3548,
+   "at": "2026-10-08T09:59:08Z",
+   "agent": "forge-2.6",
+   "feature": "PLT-20",
+   "type": "task-done",
+   "text": "finished a task on End-to-end test suite"
+  },
+  {
+   "t": 3553,
+   "at": "2026-10-08T09:59:13Z",
+   "agent": "forge-3.3",
+   "feature": "PLT-09",
+   "type": "commit",
+   "text": "1 commits on Distributed tracing"
+  },
+  {
+   "t": 3561,
+   "at": "2026-10-08T09:59:21Z",
+   "agent": "warden.5",
+   "feature": "COM-04",
+   "type": "tests-fail",
+   "text": "e2e failure on Message template editor"
+  },
+  {
+   "t": 3575,
+   "at": "2026-10-08T09:59:35Z",
+   "agent": "forge-2.4",
+   "feature": "GRO-04",
+   "type": "tests-fail",
+   "text": "1 tests fail on Trial-to-member funnel"
+  },
+  {
+   "t": 3582,
+   "at": "2026-10-08T09:59:42Z",
+   "agent": "forge-2.3",
+   "feature": "ANA-04",
+   "type": "commit",
+   "text": "3 commits on Instructor reports"
+  },
+  {
+   "t": 3593,
+   "at": "2026-10-08T09:59:53Z",
+   "agent": "tender.3",
+   "feature": "GRO-02",
+   "type": "deploy",
+   "text": "deployed Referral program"
+  }
+ ],
+ "totals": {
+  "agents": 42,
+  "working": 19,
+  "waiting": 18,
+  "blocked": 4,
+  "idle": 0,
+  "failed": 1,
+  "openDecisions": 25,
+  "spendUsdToday": 1991,
+  "replayEvents": 419
+ }
+}

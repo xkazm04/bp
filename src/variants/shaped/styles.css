@@ -1,0 +1,98 @@
+/* Shaped variant: every rule is scoped to [data-variant='shaped']. The chosen lens panel in the sheet
+   takes that lens's outline; every panel and tab carries the lens icon (same paths as the canvas). */
+
+/* FeatureSheet sets `--lens: var(--lens)` on the current panel (a cycle, so --lens is invalid inside
+   .evp.cur). Resolve the accent once at the variant root and use this alias everywhere. */
+[data-variant='shaped'] { --shp-lens: var(--lens); }
+
+/* ---- tabs: the lens icon before each name, in the lens accent when chosen */
+[data-variant='shaped'] #tabs .nm::before { content: ''; display: inline-block; width: 13px; height: 13px; margin-right: 5px; vertical-align: -2px; background: currentColor; -webkit-mask: var(--shp-ic) center / contain no-repeat; mask: var(--shp-ic) center / contain no-repeat; }
+[data-variant='shaped'] #tabs button:first-child .nm::before { display: none; }
+[data-variant='shaped'] #tabs button[aria-selected='true'] .nm::before { background: var(--shp-lens); }
+[data-variant='shaped'] #tabs button:nth-child(2) { --shp-ic: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2016%2016%27%3E%3Cpath%20d%3D%27M2%204H14V6.6A1.4%201.4%200%200%200%2014%209.4V12H2V9.4A1.4%201.4%200%200%200%202%206.6Z%20M10.6%204.8V5.6M10.6%207.6V8.4M10.6%2010.4V11.2%27%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%271.7%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%2F%3E%3C%2Fsvg%3E"); } /* business */
+[data-variant='shaped'] #tabs button:nth-child(3) { --shp-ic: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2016%2016%27%3E%3Cpath%20d%3D%27M5%205H11V11H5Z%20M5%201.5V3.3M1.5%205H3.3M11%201.5V3.3M12.7%205H14.5M5%2012.7V14.5M1.5%2011H3.3M11%2012.7V14.5M12.7%2011H14.5%27%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%271.7%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%2F%3E%3C%2Fsvg%3E"); } /* design */
+[data-variant='shaped'] #tabs button:nth-child(4) { --shp-ic: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2016%2016%27%3E%3Cpath%20d%3D%27M5.4%203.8L1.8%208L5.4%2012.2%20M10.6%203.8L14.2%208L10.6%2012.2%20M9.2%203.6L6.8%2012.4%27%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%271.7%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%2F%3E%3C%2Fsvg%3E"); } /* development */
+[data-variant='shaped'] #tabs button:nth-child(5) { --shp-ic: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2016%2016%27%3E%3Cpath%20d%3D%27M2.2%2011.6A5.8%205.8%200%200%201%2013.8%2011.6%20M1.6%2013.8H14.4%20M8%2011.6L11.3%208.3%27%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%271.7%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%2F%3E%3C%2Fsvg%3E"); } /* operations */
+[data-variant='shaped'] #tabs button:nth-child(6) { --shp-ic: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2016%2016%27%3E%3Cpath%20d%3D%27M3.6%207.4H11.4L12.4%208.4V14H3.6Z%20M5.4%207.4V5.4A2.6%202.6%200%200%201%2010.6%205.4V7.4%27%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%271.7%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%2F%3E%3C%2Fsvg%3E"); } /* security */
+[data-variant='shaped'] #tabs button:nth-child(7) { --shp-ic: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2016%2016%27%3E%3Cpath%20d%3D%27M2.6%202.6H13.4V13.4H2.6Z%20M5%208.3L7.1%2010.4L11%205.8%27%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%271.7%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%2F%3E%3C%2Fsvg%3E"); } /* quality */
+
+/* ---- sheet panels: icon badge on every panel */
+[data-variant='shaped'] .evp:has(> .shp) { padding-left: 36px; }
+[data-variant='shaped'] .shp-badge { position: absolute; left: 9px; top: 7px; line-height: 0; color: var(--ink-2); }
+[data-variant='shaped'] .evp.bad .shp-badge { color: var(--red); }
+[data-variant='shaped'] .evp.watch .shp-badge { color: var(--amber); }
+[data-variant='shaped'] .evp.cur .shp-badge { color: var(--shp-lens); }
+[data-variant='shaped'] .evp.cur { box-shadow: none; border-color: var(--shp-lens); }
+[data-variant='shaped'] .evp.cur h5 > span:first-child { color: var(--shp-lens); }
+
+/* density follows the reader: development reads like a terminal, design like a caption */
+[data-variant='shaped'] .evp.cur .shp-dense .r span:first-child { font: 500 13px var(--mono); letter-spacing: 0.02em; text-transform: lowercase; }
+[data-variant='shaped'] .evp.cur .shp-dense .r span:first-child::before { content: '$ '; color: var(--shp-lens); }
+[data-variant='shaped'] .evp.cur .shp-dense .r { line-height: 1.38; }
+[data-variant='shaped'] .shp-fact { font-size: 20px; line-height: 1.2; color: var(--ink-hi); margin: 2px 0 4px; }
+[data-variant='shaped'] .shp-sub { font-size: 14px; color: var(--ink-2); line-height: 1.35; padding-bottom: 2px; }
+
+/* ---- business: a ticket; the side bites are as deep as the value */
+[data-variant='shaped'] .evp.cur:has(> .shp-business) {
+  -webkit-mask: radial-gradient(circle var(--shp-n, 8px) at 0 50%, #0000 calc(var(--shp-n, 8px) - 0.5px), #000 var(--shp-n, 8px)), radial-gradient(circle var(--shp-n, 8px) at 100% 50%, #0000 calc(var(--shp-n, 8px) - 0.5px), #000 var(--shp-n, 8px));
+  -webkit-mask-composite: source-in;
+  mask: radial-gradient(circle var(--shp-n, 8px) at 0 50%, #0000 calc(var(--shp-n, 8px) - 0.5px), #000 var(--shp-n, 8px)), radial-gradient(circle var(--shp-n, 8px) at 100% 50%, #0000 calc(var(--shp-n, 8px) - 0.5px), #000 var(--shp-n, 8px));
+  mask-composite: intersect;
+}
+[data-variant='shaped'] .evp:has(> .shp-v1) { --shp-n: 4px; }
+[data-variant='shaped'] .evp:has(> .shp-v2) { --shp-n: 6px; }
+[data-variant='shaped'] .evp:has(> .shp-v3) { --shp-n: 8px; }
+[data-variant='shaped'] .evp:has(> .shp-v4) { --shp-n: 10px; }
+[data-variant='shaped'] .evp:has(> .shp-v5) { --shp-n: 12px; }
+
+/* ---- security: corners cut where sensitive data lives, deepest for card data */
+[data-variant='shaped'] .evp.cur:has(> .shp-payment) { --a: 14px; --b: 14px; --c: 9px; }
+[data-variant='shaped'] .evp.cur:has(> .shp-personal) { --a: 10px; --b: 10px; --c: 0px; }
+[data-variant='shaped'] .evp.cur:has(> .shp-internal) { --a: 0px; --b: 7px; --c: 0px; }
+[data-variant='shaped'] .evp.cur:has(> .shp-security):not(:has(> .shp-public)) {
+  clip-path: polygon(0 0, calc(100% - var(--a)) 0, 100% var(--a), 100% calc(100% - var(--b)), calc(100% - var(--b)) 100%, var(--c) 100%, 0 calc(100% - var(--c)));
+  background:
+    linear-gradient(to top right, #0000 calc(50% - 1px), var(--shp-lens) 0 calc(50% + 1px), #0000 0) right top / var(--a) var(--a) no-repeat,
+    linear-gradient(to bottom right, #0000 calc(50% - 1px), var(--shp-lens) 0 calc(50% + 1px), #0000 0) right bottom / var(--b) var(--b) no-repeat,
+    linear-gradient(to top right, #0000 calc(50% - 1px), var(--shp-lens) 0 calc(50% + 1px), #0000 0) left bottom / var(--c) var(--c) no-repeat,
+    color-mix(in srgb, var(--paper) 30%, transparent);
+}
+
+/* ---- operations: a pill with the rollout gauge along its foot */
+[data-variant='shaped'] .evp.cur:has(> .shp-operations) { border-radius: 18px; padding-bottom: 18px; }
+[data-variant='shaped'] .shp-gauge { position: absolute; left: 20px; right: 20px; bottom: 7px; height: 4px; background: color-mix(in srgb, var(--shp-lens) 24%, transparent); }
+[data-variant='shaped'] .shp-gauge::after { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--p) * 100%); background: var(--shp-lens); }
+[data-variant='shaped'] .shp-gauge.dotted::after { background: repeating-linear-gradient(90deg, var(--shp-lens) 0 4px, #0000 4px 9px); }
+
+/* ---- development: brackets instead of a box, progress spine inside the left one */
+[data-variant='shaped'] .evp.cur:has(> .shp-development) { border-color: #0000; }
+[data-variant='shaped'] .evp.cur:has(> .shp-development)::before,
+[data-variant='shaped'] .evp.cur:has(> .shp-development)::after { content: ''; position: absolute; top: -1px; bottom: -1px; width: 10px; border: 2px solid var(--shp-lens); pointer-events: none; }
+[data-variant='shaped'] .evp.cur:has(> .shp-development)::before { left: -1px; border-right: 0; }
+[data-variant='shaped'] .evp.cur:has(> .shp-development)::after { right: -1px; border-left: 0; }
+[data-variant='shaped'] .shp-spine { position: absolute; top: 34px; bottom: 12px; width: 4px; background: linear-gradient(to top, var(--shp-lens) calc(var(--p) * 100%), color-mix(in srgb, var(--shp-lens) 20%, transparent) 0); }
+[data-variant='shaped'] .shp-spine.l { left: 7px; }
+[data-variant='shaped'] .shp-spine.r { right: 5px; opacity: 0.65; }
+
+/* ---- quality: a ruled checklist down the left edge, one box per end-to-end test */
+[data-variant='shaped'] .shp-comb { position: absolute; left: 13px; top: 34px; bottom: 10px; width: 8px; display: flex; flex-direction: column; gap: 3px; overflow: hidden; }
+[data-variant='shaped'] .shp-comb i { flex: 0 0 6px; border: 1px solid var(--shp-lens); }
+[data-variant='shaped'] .shp-comb i.on { background: var(--shp-lens); }
+[data-variant='shaped'] .shp-comb i.bad { border-color: var(--red); }
+
+/* ---- design: an artboard, crop marks outside its corners */
+[data-variant='shaped'] .shp-crops { position: absolute; inset: -11px; pointer-events: none;
+  background:
+    linear-gradient(var(--shp-lens), var(--shp-lens)) left 0 top 10px / 8px 1.5px no-repeat, linear-gradient(var(--shp-lens), var(--shp-lens)) left 10px top 0 / 1.5px 8px no-repeat,
+    linear-gradient(var(--shp-lens), var(--shp-lens)) right 0 top 10px / 8px 1.5px no-repeat, linear-gradient(var(--shp-lens), var(--shp-lens)) right 10px top 0 / 1.5px 8px no-repeat,
+    linear-gradient(var(--shp-lens), var(--shp-lens)) left 0 bottom 10px / 8px 1.5px no-repeat, linear-gradient(var(--shp-lens), var(--shp-lens)) left 10px bottom 0 / 1.5px 8px no-repeat,
+    linear-gradient(var(--shp-lens), var(--shp-lens)) right 0 bottom 10px / 8px 1.5px no-repeat, linear-gradient(var(--shp-lens), var(--shp-lens)) right 10px bottom 0 / 1.5px 8px no-repeat; }
+[data-variant='shaped'] .shp-crops.dashed { opacity: 0.5; }
+[data-variant='shaped'] .shp-crops i { display: none; }
+[data-variant='shaped'] .evp.cur:has(> .shp-design) { padding-top: 10px; padding-bottom: 12px; }
+
+/* ---- legend */
+[data-variant='shaped'] .shp-lg .shp-row { grid-column: 1 / 3; gap: 12px; color: var(--ink); padding-top: 4px; }
+[data-variant='shaped'] .shp-lg .shp-cap { grid-column: 1 / 3; color: var(--ink-2); font-size: 13px; line-height: 1.3; display: block; }
+[data-variant='shaped'] .shp-lens .shp-lic { width: 50px; display: inline-flex; justify-content: center; color: var(--shp-lens); }
+[data-variant='shaped'] .shp-lens { grid-template-columns: 1fr; }
