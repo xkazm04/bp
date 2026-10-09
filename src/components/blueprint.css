@@ -32,7 +32,7 @@
 #brand .proj b { color: var(--lens); font-weight: 500; }
 #crumbs { margin-top: 8px; display: flex; flex-wrap: nowrap; align-items: baseline; gap: 4px; white-space: nowrap; overflow: hidden; }
 #crumbs .sum { margin-left: 14px; font-size: 15px; color: var(--ink-2); letter-spacing: 0.01em; overflow: hidden; text-overflow: ellipsis; }
-#crumbs .sum b { color: var(--ink-hi); font-weight: 500; } #crumbs .sum em { font-style: normal; color: var(--red-2); } #crumbs .sum i { font-style: normal; color: var(--amber); }
+#crumbs .sum b { color: var(--ink-hi); font-weight: 500; } #crumbs .sum em { font-style: normal; color: var(--red-2); } #crumbs .sum i { font-style: normal; color: var(--amber-2); }
 #crumbs button { background: none; border: 0; padding: 2px 3px; font-size: 19px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-2); border-bottom: 1px solid transparent; flex: 0 0 auto; }
 #crumbs button:hover { border-bottom-color: var(--accent); color: var(--ink-hi); }
 #crumbs button.cur { color: var(--ink-hi); }
@@ -43,8 +43,8 @@
 #tabs button:last-child { border-right: 0; }
 #tabs .no { display: block; font: 500 12px/1 var(--mono); letter-spacing: 0.03em; color: var(--ink-2); }
 #tabs .nm { display: block; font-size: 13px; line-height: 1.05; margin-top: 8px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-2); white-space: nowrap; }
-#tabs .kb { position: absolute; right: 5px; top: 6px; font: 400 12px/1 var(--mono); color: var(--ink-3); }
-#tabs .ct { font: 600 12px/1 var(--mono); color: var(--amber); margin-left: 6px; }
+#tabs .kb { position: absolute; right: 5px; top: 6px; font: 400 12px/1 var(--mono); color: var(--ink-2); }
+#tabs .ct { font: 600 12px/1 var(--mono); color: var(--amber-2); margin-left: 6px; }
 #tabs button:hover { background: color-mix(in srgb, var(--accent) 9%, transparent); }
 #tabs button[aria-selected='true'] { background: color-mix(in srgb, var(--ink) 14%, transparent); }
 #tabs button[aria-selected='true'] .nm, #tabs button[aria-selected='true'] .no { color: var(--ink-hi); }
@@ -362,8 +362,8 @@
 .bp-empty a { color: var(--accent); }
 .livepill { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 1px solid var(--ink-3); background: var(--panel); font: 500 12px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); white-space: nowrap; }
 .livepill i { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); }
-.livepill.on { border-color: var(--mint); color: var(--mint); } .livepill.on i { background: var(--mint); animation: bp-blink 1.6s ease-in-out infinite; }
-.livepill.off { border-color: var(--amber); color: var(--amber); } .livepill.off i { background: var(--amber); }
+.livepill.on { border-color: var(--mint); color: var(--mint-2); } .livepill.on i { background: var(--mint); animation: bp-blink 1.6s ease-in-out infinite; }
+.livepill.off { border-color: var(--amber); color: var(--amber-2); } .livepill.off i { background: var(--amber); }
 .livepill.idle { color: var(--ink-2); }
 @keyframes bp-blink { 50% { opacity: 0.3; } }
 @media (prefers-reduced-motion: reduce) { .livepill.on i { animation: none; } }
