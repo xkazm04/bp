@@ -66,7 +66,7 @@ export function SubtleLegend({ view }: { view: ViewId }) {
   return (
     <>
       <div className="sl-key">
-        <div className="sl-one"><Swatch d={d} w={92} h={18} measure={0.62} /><span><b>{LINE_WORD[d.line]}</b> along the top edge: {railWords(d)}.</span></div>
+        <div className="sl-one"><Swatch d={d} w={92} h={18} measure={0.62} /><span><b>{LINE_WORD[d.line]}</b> along the top edge: {railWords(d)}. A broken line means not measured.</span></div>
       </div>
       <BaseLegend view={view} />
     </>

@@ -19,7 +19,7 @@ import type { LensField } from '@/lib/standard/types';
 import { lensLine } from '@/lib/standard/present';
 import { lensAggregate, lensContent } from '@/lib/model/lens';
 import type { FeatureLive, LensChannel, LensExpression, MarkArgs, Rect, TileGeom } from '../types';
-import { glyph, healthInk, lineType, railRest } from './marks';
+import { glyph, healthInk, lineType, railNone, railRest } from './marks';
 
 const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
@@ -65,7 +65,7 @@ function expandedRect(t: TileGeom): Rect {
 // ------------------------------------------------------------------------------ one lens, by manifest
 interface Spec {
   d: LensDef;
-  /** 0..1 along the rail; < 0 = nothing to measure (the rail stays a faint hairline). */
+  /** 0..1 along the rail; < 0 = nothing to measure (the rail is a broken hairline, not the measured-zero one). */
   measure(live: FeatureLive): number;
   /**
    * The rail's end marks, for standard and dense readers: dots counting the first evidence field that
@@ -140,7 +140,7 @@ function drawTile(s: Spec, a: MarkArgs) {
   const live = a.live, m = s.measure(live);
   const len = m > 0 ? (x1 - x0) * Math.min(1, m) : 0;
   ctx.globalAlpha = ga * lerp(0.6, 1, e);
-  railRest(ctx, th, x0 + len, x1, ry, rh);
+  if (m < 0) railNone(ctx, th, x0, x1, ry, rh, u); else railRest(ctx, th, x0 + len, x1, ry, rh);
   if (len > 0) lineType(ctx, th, d.line, x0, ry, len, rh, th.inkA(0.92), u);
   if (endW > 0.5 && s.count && fl) {
     const n = live.value(d.id, s.count.key);
@@ -161,7 +161,7 @@ function drawRibbon(s: Spec, a: MarkArgs) {
   ctx.globalAlpha *= a.w;
   // the rail along the segment's foot, growing in from the left as the lens comes up
   const live = a.live, m = s.measure(live), full = r.w * e, len = m > 0 ? full * Math.min(1, m) : 0;
-  railRest(ctx, th, r.x + len, r.x + full, r.y, r.h);
+  if (m < 0) railNone(ctx, th, r.x, r.x + full, r.y, r.h, u); else railRest(ctx, th, r.x + len, r.x + full, r.y, r.h);
   if (len > 0) lineType(ctx, th, d.line, r.x, r.y, len, r.h, th.inkA(0.92), u);
   // the glyph where this lens is unwell, on a small knockout so it reads over any stage fill
   const h = f.lens[d.id]?.h;

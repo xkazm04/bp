@@ -167,3 +167,13 @@ export function railRest(ctx: CanvasRenderingContext2D, th: Theme, x0: number, x
   ctx.fillStyle = th.inkA(0.26);
   ctx.fillRect(x0, Math.round(y + h / 2), x1 - x0, 1);
 }
+
+/** A rail with nothing measured: a broken hairline (a few short dashes, fillRect only), not the measured-zero one. */
+export function railNone(ctx: CanvasRenderingContext2D, th: Theme, x0: number, x1: number, y: number, h: number, u: number) {
+  const w = x1 - x0;
+  if (w < 1) return;
+  const dash = Math.max(2, 2 * u), n = Math.max(1, Math.min(6, Math.floor(w / (dash * 3))));
+  const step = w / n, yy = Math.round(y + h / 2);
+  ctx.fillStyle = th.inkA(0.26);
+  for (let i = 0; i < n; i++) ctx.fillRect(x0 + i * step, yy, Math.min(dash, step), 1);
+}
