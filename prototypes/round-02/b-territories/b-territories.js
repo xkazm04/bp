@@ -25,9 +25,11 @@
      cells; area titles sit in the sea beyond their continent's outer coast.
 
    Levels of detail (continuous zoom; k = hex radius on screen in px; thresholds grow with the opening fit kFit)
-   - L0 (fit): the band mosaic (every cell filled by its band in the current lens, hatched when n/a), coasts and
-     region borders, attention flares; area titles in the sea; the 17 region labels (name, band glyph and score,
-     attention and gate counts).
+   - L0 (fit): the band mosaic in calm fills (every cell filled by its band in the current lens, hatched when n/a;
+     the colour reaches full strength with the features layer, and on the hovered or selected node at any layer),
+     coasts and region borders, a small alarm mark in the corner of every cell that needs attention; area titles
+     in the sea; the 17 region labels on quiet plates (name, band glyph and score, attention and gate counts).
+     Region labels stay inside their own region and drop the counts, then the score, before they would drop a name.
    - L1 (k ≥ t1 = max(20, 1.2·kFit)): module names as city labels (band glyph, name, counts); region names recede to
      faint tracked watermarks that stay inside the visible part of their region.
    - L2 (k ≥ t2): status glyphs in every cell (form = lifecycle), gate halos; feature names where they fit.
@@ -40,8 +42,9 @@
      Once past L0, a location readout shows area › region › module for the middle of the free view.
 
    Rendering: one Canvas 2D per view (sea graticule, land, cells, borders, marks, labels, links), drawn in screen
-   space at device pixel ratio. Token colours are read with getComputedStyle and re-read on 'theme' (and when
-   data-theme changes). Lens and filter events only refresh per-cell arrays and schedule one frame: no DOM rebuild.
+   space at device pixel ratio. Token colours are read with getComputedStyle and re-read on the kit's 'theme' event
+   (which also covers data-theme set outside the shell). Lens and filter events only refresh per-cell arrays and
+   schedule one frame: no DOM rebuild. The free part of the stage comes from shell.freeRectHint() (no layout read).
    The HUD (zoom controls, readout, tooltip) and the timeline ribbon are a few DOM elements.
 
    Timeline ("Time-lapse"): the same territory in its own canvas, as of a chosen release: shipped cells solid,
@@ -91,7 +94,7 @@
   const SEA = 2; // water cells between two coasts, at least
   // Seed anchors in units of the landmass half-extents (x: a, y: b), per size class.
   const ARRANGE = {
-    wide: { aspect: 2.2, anchors: { shopper: [-0.64, -0.36], commerce: [0.02, -0.42], fulfillment: [0.66, -0.3], merchant: [-0.36, 0.52], foundation: [0.36, 0.56] } },
+    wide: { aspect: 2.2, anchors: { shopper: [-0.64, -0.36], commerce: [0.02, -0.42], fulfillment: [0.68, -0.4], merchant: [-0.36, 0.52], foundation: [0.36, 0.56] } },
     square: { aspect: 1.05, anchors: { shopper: [-0.5, -0.56], commerce: [0.48, -0.52], merchant: [-0.56, 0.3], fulfillment: [0.54, 0.24], foundation: [0, 0.78] } },
     tall: { aspect: 0.6, anchors: { shopper: [-0.32, -0.74], commerce: [0.36, -0.34], fulfillment: [-0.36, 0.06], merchant: [0.34, 0.42], foundation: [-0.18, 0.8] } },
   };
@@ -223,7 +226,7 @@
       return { q: c.q, r: c.r, s: d * 1.2 - e * 0.35, e };
     });
     scored.sort((a, b) => b.s - a.s || a.e - b.e || a.r - b.r || a.q - b.q);
-    return { list: scored.slice(0, 10).map((x) => ({ q: x.q, r: x.r })), cx, cy };
+    return { list: scored.slice(0, 10).map((x) => ({ q: x.q, r: x.r })), all: scored, cx, cy };
   }
 
   // ══ loops: chain directed boundary edges into closed loops ═════════════════════════════════════
@@ -345,6 +348,8 @@
       n.bounds = [x0, y0, x1, y1];
       const an = anchorsOf(n.cells);
       n.anchors = an.list.map((p) => at(p.q, p.r));
+      // region labels may sit on any of the deeper cells, best first (see placeLabels)
+      if (n.type === 'domain') n.labelCells = an.all.slice(0, 48).map((p) => at(p.q, p.r));
       n.pole = n.anchors[0];
       n.centroid = { x: an.cx, y: an.cy };
       const prop = n.type === 'area' ? 'area' : n.type === 'domain' ? 'dom' : 'mod';
@@ -436,6 +441,8 @@
   }
   const contrast = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
 
+  /** Opening (L0, L1) fill strength per band: calmer than the features layer, still graded by band. */
+  const FILL_SOFT = { light: { good: 0.32, fair: 0.42, poor: 0.56, critical: 0.72 }, dark: { good: 0.42, fair: 0.5, poor: 0.6, critical: 0.74 } };
   /** The palette for the canvas, read from the kit tokens on the shell. */
   let P = null;
   function readPalette(el) {
@@ -449,8 +456,12 @@
     p.dark = lum(p.paper) < 0.2;
     p.land = p.dark ? mix(p['paper-hi'], p.ink, 0.055) : p['paper-hi'];
     p.sea = mix(p['sky-a'], p['sky-b'], 0.5);
+    // Full strength (features layer and deeper, hover, selection) and the calmer opening fill (L0 and L1). Both grow
+    // with the band, so healthy land stays quiet and critical land stands out, in either strength.
     const strength = p.dark ? { good: 0.46, fair: 0.54, poor: 0.64, critical: 0.78 } : { good: 0.5, fair: 0.58, poor: 0.68, critical: 0.82 };
+    const soft = p.dark ? FILL_SOFT.dark : FILL_SOFT.light;
     p.fill = BANDS.map((b) => (b === 'na' ? mix(p.land, p.na, p.dark ? 0.14 : 0.1) : mix(p.land, p[b], strength[b])));
+    p.fillSoft = BANDS.map((b, i) => (b === 'na' ? p.fill[i] : mix(p.land, p[b], soft[b])));
     // text on a fill: whichever of the two inks reads better
     const darkInk = p.dark ? p.paper : p.ink, lightInk = p.dark ? p.ink : p['paper-hi'];
     p.textOn = p.fill.map((f, i) => (i === 4 ? p['ink-2'] : contrast(f, darkInk) >= contrast(f, lightInk) ? darkInk : lightInk));
@@ -747,8 +758,11 @@
     const ctx = cv.getContext('2d');
     const loc = document.createElement('div');
     loc.className = 'bt-loc';
-    loc.setAttribute('aria-hidden', 'true');
-    loc.innerHTML = '<svg class="bt-loc__mark" width="13" height="13" viewBox="-7 -7 14 14" aria-hidden="true"><circle r="5.6" fill="none" stroke="currentColor" stroke-width="1.1"/><circle r="1.8" fill="currentColor"/><path d="M0-7v2.4M0 4.6V7M-7 0h2.4M4.6 0H7" stroke="currentColor" stroke-width="1.1"/></svg><span class="bt-loc__path"></span><span class="bt-loc__lvl"></span>';
+    loc.setAttribute('role', 'navigation');
+    loc.setAttribute('aria-label', 'Location on the map');
+    // a breadcrumb: the reticle opens the product overview, each place name its inspector. (Handled here rather than
+    // with the kit's data-ok-inspect markup, which switches to the map view: the time-lapse has this readout too.)
+    loc.innerHTML = '<button type="button" class="bt-loc__mark" data-bt-inspect="product" aria-label="' + esc(BP.product.name) + ': the whole product" title="' + esc(BP.product.name) + ': the whole product"><svg width="13" height="13" viewBox="-7 -7 14 14" aria-hidden="true"><circle r="5.6" fill="none" stroke="currentColor" stroke-width="1.1"/><circle r="1.8" fill="currentColor"/><path d="M0-7v2.4M0 4.6V7M-7 0h2.4M4.6 0H7" stroke="currentColor" stroke-width="1.1"/></svg></button><span class="bt-loc__path"></span><span class="bt-loc__lvl" aria-hidden="true"></span>';
     view.appendChild(loc);
     const locPath = loc.querySelector('.bt-loc__path'), locLvl = loc.querySelector('.bt-loc__lvl');
     const zoom = document.createElement('div');
@@ -783,7 +797,7 @@
     let links = [];
     let linkFor = null;
     let lastLevel = -1;
-    let lastLoc = '';
+    let lastLoc = '', lastLocText = '';
     let hatch = null, hatchKey = null;
     const labState = new Map();
     const nameF = new Float32Array(NF);
@@ -813,6 +827,9 @@
       return { x: (box[0] + box[2]) / 2 - (cxs - vw / 2) / k, y: (box[1] + box[3]) / 2 - (cys - vh / 2) / k, k };
     }
     function computeFit() {
+      // the fit sets the zoom-out limit below, so it must not be clamped by the limit of the previous stage size
+      // (after the stage shrinks, e.g. a phone turned upright, the old limit kept the map overzoomed and cut off)
+      T.kMin = 0;
       const c = camFor(fitBox(), { x: 0, y: 0, w: vw, h: vh }, pads());
       kFit = c.k;
       T.t1 = Math.max(20, kFit * 1.22);
@@ -833,11 +850,13 @@
     function fit(animate) {
       const c = computeFit();
       atFit = true;
+      setHover(null); // a camera move the pointer did not make: the tooltip would describe another cell
       if (animate && !reduceMotion()) flyTo(c, 520, true); else { flight = null; setCam(c); }
       invalidate();
     }
     function flyTo(c, dur, keepFit) {
       if (!keepFit) atFit = false;
+      setHover(null);
       if (reduceMotion()) { flight = null; setCam(c); invalidate(); return; }
       flight = { t0: 0, dur: dur || 620, from: { x: cam.x, y: cam.y, k: cam.k }, to: c };
       invalidate();
@@ -865,12 +884,19 @@
       if (l === 0) { fit(true); return; }
       zoomBy(target / cam.k);
     }
-    /** The stage area not covered by the inspector, without a layout read (estimated from the CSS metrics). */
-    let inspW = 392;
+    /** The part of this view not covered by the inspector: the kit's layout-free hint, clipped to the view. */
+    let inspW = 0, legendW = 0;
     function freeRectGuess() {
-      if (!inspOpen) return { x: 0, y: 0, w: vw, h: vh };
-      if (phone()) return { x: 0, y: 0, w: vw, h: Math.max(120, vh * 0.42) };
-      return { x: 0, y: 0, w: Math.max(200, vw - inspW - 22), h: vh };
+      let r = null;
+      try { r = shell.freeRectHint(); } catch (e) { r = null; }
+      if (!r || !r.w || !r.h) return { x: 0, y: 0, w: vw, h: vh };
+      return { x: 0, y: 0, w: Math.min(vw, r.w), h: Math.min(vh, Math.max(120, r.h)) };
+    }
+    /** Right edge of the zoom column, as the CSS places it (beside the inspector and the legend panel). */
+    function zoomRight() {
+      if (phone()) return 10;
+      if (legendW) return inspOpen ? inspW + legendW + 36 : legendW + 26;
+      return inspOpen ? inspW + 26 : 16;
     }
 
     // ── locate: fly to a node and keep it in the free part of the stage ─────────────────────────
@@ -882,6 +908,12 @@
     function locate(ref, rect) {
       if (!ref || !world) return;
       if (!vw) { pendingLocate = ref; return; }
+      if (ref.type === 'product') {
+        // the whole product, in the part of the stage the inspector leaves free
+        const fr0 = rect || freeRectGuess();
+        if (fr0.w >= vw - 1 && fr0.h >= vh - 1) fit(true); else flyTo(camFor(fitBox(), fr0, pads()), 620);
+        return;
+      }
       const fr = rect || freeRectGuess();
       if (ref.type === 'feature') {
         const c = world.byFid.get(ref.id);
@@ -907,12 +939,10 @@
       flyTo(c);
     }
     function locateMeasured(ref) {
-      // the inspector may have just opened: measure the free rect in the next frame, never synchronously
+      // the inspector may have just opened: fly in the next frame, with the kit's layout-free free-rect hint
       requestAnimationFrame(() => {
         if (!vw) { pendingLocate = ref; return; }
-        let fr = null;
-        try { const r = shell.freeRect(); fr = { x: 0, y: 0, w: Math.min(vw, r.w), h: Math.min(vh, r.h) }; } catch (e) { fr = null; }
-        locate(ref, fr);
+        locate(ref);
       });
     }
     function ensureVisible(c) {
@@ -939,7 +969,6 @@
         linkFor = null;
         atFit = true;
       }
-      try { inspW = parseFloat(getComputedStyle(shell.root).getPropertyValue('--ok-insp-w')) || 392; } catch (e) { inspW = 392; }
       const c = computeFit();
       if (atFit || first) setCam(c);
       else if (prevW && prevH) clampCam();
@@ -1053,12 +1082,16 @@
     }
 
     // cell style codes: the map uses band (0–4) and dim; the time-lapse uses its own states
-    function plates(vis, A4, now) {
+    function plates(vis, L, now) {
       const k = cam.k;
+      const A4 = L.A4;
       const gap = clamp(k * 0.055, 0.7, 2.6);
       const rr = k - gap / SQ3 * 1.0;
       const modW = clamp(k * 0.15, 1.6, 6);
-      const fills = P.fill.map((f) => (A4 > 0 ? mix(f, P.land, 0.58 * A4) : f));
+      // calm at the opening layers, full strength from the features layer on; the hovered or selected node is always full
+      const fills = P.fill.map((f, b) => { const c = L.A2 < 1 ? mix(P.fillSoft[b], f, L.A2) : f; return A4 > 0 ? mix(c, P.land, 0.58 * A4) : c; });
+      const strongFills = P.fill.map((f) => (A4 > 0 ? mix(f, P.land, 0.58 * A4) : f));
+      const lift = liftRefs();
       ensureHatch();
       const dimA = P.dark ? 0.24 : 0.2;
       if (hatch && hatch.setTransform) hatch.setTransform(new DOMMatrix([1 / dpr, 0, 0, 1 / dpr, sx(0) % 7, sy(0) % 7]));
@@ -1085,30 +1118,33 @@
           if (x < -k || x > vw + k || y < -k || y > vh + k) return;
           const i = FIDX.get(c.fid);
           let code;
-          if (!isTL) code = M.band[i] * 2 + M.dim[i];
+          const strong = lift.n && (c.dom === lift.dom || c.mod === lift.mod || c.area === lift.area || c.fid === lift.fid) ? 100 : 0;
+          if (!isTL) code = strong + M.band[i] * 2 + M.dim[i];
           else {
             // shipped cells are solid (calmer outside the chosen package); the rest are outlines, drawn with the marks
             if (TL.st[i] !== 0) return;
             if (TL.appear[i] && now - TL.appear[i] < 650) { appearing.push([x, y, i]); return; }
-            code = (TL.kind[i] ? 10 : 20) + M.band[i] * 2 + M.dim[i];
+            code = strong + (TL.kind[i] ? 10 : 20) + M.band[i] * 2 + M.dim[i];
           }
           let p = groups.get(code);
           if (!p) { p = [new Path2D(), A4 > 0.01 ? new Path2D() : null]; groups.set(code, p); }
           hexPath(p[0], x, y, rr);
           if (p[1]) hexPath(p[1], x, y, rr - clamp(k * 0.035, 2, 6) / 2 - 0.5);
         });
-        const paint = (p, band, alpha, inset) => {
+        const paint = (p, band, alpha, inset, strong) => {
           ctx.globalAlpha = alpha;
-          ctx.fillStyle = rgba(fills[band]);
+          ctx.fillStyle = rgba((strong ? strongFills : fills)[band]);
           ctx.fill(p);
           if (band === 4 && hatch) { ctx.fillStyle = hatch; ctx.fill(p); }
           if (A4 > 0.01 && band !== 4 && inset) { ctx.globalAlpha = alpha * A4; ctx.lineWidth = clamp(k * 0.035, 2, 6); ctx.strokeStyle = rgba(P[BANDS[band]]); ctx.stroke(inset); }
           ctx.globalAlpha = 1;
         };
-        groups.forEach((p, code) => {
+        groups.forEach((p, code0) => {
+          const strong = code0 >= 100;
+          const code = code0 % 100;
           const dim = code % 2;
           const base = code < 10 ? 0 : code < 20 ? 10 : 20;
-          paint(p[0], (code - base) >> 1, (dim ? dimA : 1) * (base === 20 ? 0.62 : 1), p[1]);
+          paint(p[0], (code - base) >> 1, (dim ? dimA : 1) * (base === 20 && !strong ? 0.62 : 1), p[1], strong);
         });
         appearing.forEach(([x, y, i]) => {
           const p = new Path2D();
@@ -1136,6 +1172,16 @@
       });
     }
 
+    /** The node under the pointer and the selected node: their cells keep the full band colour at every layer. */
+    function liftRefs() {
+      const o = { n: 0, dom: null, mod: null, area: null, fid: null };
+      [hover, S.selection].forEach((r) => {
+        if (!r) return;
+        if (r.type === 'domain') o.dom = r.id; else if (r.type === 'module') o.mod = r.id; else if (r.type === 'area') o.area = r.id; else if (r.type === 'feature') o.fid = r.id; else return;
+        o.n++;
+      });
+      return o;
+    }
     function hexStroke(x, y, r, col, lw, dash, alpha) {
       ctx.beginPath(); hexPath(ctx, x, y, r);
       ctx.globalAlpha = alpha == null ? 1 : alpha;
@@ -1155,6 +1201,10 @@
       const glyR = clamp(k * 0.125, 4, 8.5);
       const badgeR = clamp(k * 0.115, 4.5, 8);
       const land = P.land;
+      const ph = phone();
+      // small cells (the phone's opening time-lapse): outlines become faint fills and package marks wait for L1
+      const tiny = isTL && k < 10;
+      const pkgA = tiny ? A1 : 1;
       vis.forEach((c) => {
         const i = FIDX.get(c.fid);
         const f = c.f;
@@ -1165,20 +1215,21 @@
         const band = M.band[i];
         // time-lapse outlines for cells that are not shipped as of the chosen release
         if (isTL) {
-          if (st === 1) hexStroke(x, y, k * 0.86, rgba(P['ink-3']), 1, [1.2, 3.2], 0.55 * da);
-          else if (st === 2) {
-            ctx.beginPath(); hexPath(ctx, x, y, k * 0.84); ctx.fillStyle = rgba(P.ink, P.dark ? 0.07 : 0.045); ctx.globalAlpha = da; ctx.fill(); ctx.globalAlpha = 1;
-            hexStroke(x, y, k * 0.84, rgba(P['ink-2']), clamp(k * 0.05, 1, 1.8), [clamp(k * 0.16, 2.5, 6), clamp(k * 0.12, 2, 5)], 0.8 * da);
+          if (st === 1) {
+            if (tiny) { ctx.beginPath(); hexPath(ctx, x, y, k * 0.8); ctx.fillStyle = rgba(P.ink, P.dark ? 0.045 : 0.03); ctx.globalAlpha = da; ctx.fill(); ctx.globalAlpha = 1; }
+            else hexStroke(x, y, k * 0.86, rgba(P['ink-3']), 1, [1.2, 3.2], 0.55 * da);
+          } else if (st === 2) {
+            ctx.beginPath(); hexPath(ctx, x, y, k * 0.84); ctx.fillStyle = rgba(P.ink, (P.dark ? 0.07 : 0.045) * (tiny ? 1.7 : 1)); ctx.globalAlpha = da; ctx.fill(); ctx.globalAlpha = 1;
+            if (!tiny) hexStroke(x, y, k * 0.84, rgba(P['ink-2']), clamp(k * 0.05, 1, 1.8), [clamp(k * 0.16, 2.5, 6), clamp(k * 0.12, 2, 5)], 0.8 * da);
           }
           else if (st === 3) { ctx.beginPath(); hexPath(ctx, x, y, k * 0.9); ctx.fillStyle = rgba(P.fill[band]); ctx.globalAlpha = 0.55 * da; ctx.fill(); ctx.globalAlpha = 1; }
           const kd = TL.kind[i];
           if (kd) {
             // the chosen package glows
-            const glowCol = P.dark ? P.ink : P.ink;
             ctx.save();
-            if (P.dark) { ctx.shadowColor = rgba(P.glow, 0.9); ctx.shadowBlur = 10; }
-            hexStroke(x, y, k * 0.93, rgba(land), clamp(k * 0.2, 3, 8), null, 0.9 * da);
-            hexStroke(x, y, k * 0.93, rgba(glowCol), clamp(k * 0.1, 1.6, 4), null, da);
+            if (P.dark) { ctx.shadowColor = rgba(P.glow, 0.9); ctx.shadowBlur = tiny ? 5 : 10; }
+            hexStroke(x, y, k * 0.93, rgba(land), tiny ? 2.2 : clamp(k * 0.2, 3, 8), null, 0.9 * da);
+            hexStroke(x, y, k * 0.93, rgba(P.ink), tiny ? 1.15 : clamp(k * 0.1, 1.6, 4), null, da);
             ctx.restore();
           }
           if (TL.appear[i]) {
@@ -1225,7 +1276,7 @@
         const nA = nameF[i] * (1 - A4);
         const textCol = isTL && st !== 0 ? rgba(P.ink) : rgba(P.textOn[band]);
         // status glyph: centred at L2, lifted above the name at L3, inside the corona at L4
-        const gA = (isTL && st === 3 ? Math.max(A2, 0.9) : A2) * (1 - A4);
+        const gA = (isTL && st === 3 ? Math.max(A2, 0.9 * pkgA) : A2) * (1 - A4);
         if (gA > 0.01) {
           ctx.globalAlpha = gA * da;
           const gy = y - k * 0.5 * nameF[i];
@@ -1251,11 +1302,12 @@
           ctx.globalAlpha = 1;
         }
         // release package mark (time-lapse)
-        if (isTL && TL.kind[i]) {
+        // (top-left corner once glyphs show: the top-right corner belongs to the attention mark)
+        if (isTL && TL.kind[i] && pkgA > 0.01) {
           const t = A2;
-          const mx = lerp(x, x + k * 0.52, t), my = lerp(y + (st === 3 ? k * 0.0 : 0), y - k * 0.34, t);
+          const mx = lerp(x, x - k * 0.52, t), my = lerp(y, y - k * 0.34, t);
           const mr = lerp(clamp(k * 0.3, 4, 7), badgeR, t);
-          ctx.globalAlpha = da;
+          ctx.globalAlpha = da * pkgA;
           if (st !== 3 || A2 > 0.5) gKind(ctx, KIND_ID[TL.kind[i]], mx, my, mr);
           ctx.globalAlpha = 1;
         }
@@ -1265,19 +1317,23 @@
           gGate(ctx, GK_ID[gk], x - k * 0.54, y - k * 0.34, badgeR, land);
           ctx.globalAlpha = 1;
         }
-        // attention: an alarm flare, always visible; centred at low zoom, a corner badge once glyphs show
+        // attention: always visible. A small alarm mark in the cell's corner at the opening layers (calm, haloed so it
+        // reads on red land too), growing to the full corner badge with the features layer. The soft flare glow
+        // returns only while the attention filter is on.
         if (M.attn[i] && (!isTL || st === 3)) {
-          const t = A2;
-          const fx = lerp(x, x + k * 0.54, t), fy = lerp(y, y - k * 0.34, t);
-          const fr = lerp(clamp(k * 0.36, 3.5, 9), badgeR * 1.05, t);
+          const fx = x + k * 0.54, fy = y - k * 0.35;
+          const r0 = ph ? clamp(k * 0.27, 2.4, 3.4) : clamp(k * 0.2, 2.9, 4.2);
+          const fr = lerp(r0, Math.max(r0, badgeR * 1.05), A2);
           const fa = da * (1 - A4);
           if (fa > 0.01) {
-            const gR = fr * 2.1;
-            const grd = ctx.createRadialGradient(fx, fy, 0, fx, fy, gR);
-            grd.addColorStop(0, rgba(P.alarm, (P.dark ? 0.45 : 0.32) * fa));
-            grd.addColorStop(1, rgba(P.alarm, 0));
-            ctx.fillStyle = grd;
-            ctx.beginPath(); ctx.arc(fx, fy, gR, 0, 2 * Math.PI); ctx.fill();
+            if (S.attention) {
+              const gR = fr * 2.3;
+              const grd = ctx.createRadialGradient(fx, fy, 0, fx, fy, gR);
+              grd.addColorStop(0, rgba(P.alarm, (P.dark ? 0.42 : 0.3) * fa));
+              grd.addColorStop(1, rgba(P.alarm, 0));
+              ctx.fillStyle = grd;
+              ctx.beginPath(); ctx.arc(fx, fy, gR, 0, 2 * Math.PI); ctx.fill();
+            }
             ctx.globalAlpha = fa;
             gAttn(ctx, fx, fy, fr, land);
             ctx.globalAlpha = 1;
@@ -1377,11 +1433,14 @@
       const b = [];
       if (phone()) {
         b.push({ x0: vw - 56, y0: vh - 130, x1: vw, y1: vh });
-        if (level(cam.k) > 0) b.push({ x0: 0, y0: 0, x1: Math.min(vw, 40 + lastLoc.replace(/<[^>]+>/g, '').length * 6.4), y1: 40 });
+        if (level(cam.k) > 0) b.push({ x0: 0, y0: 0, x1: Math.min(vw, 64 + lastLocText.length * 6.4), y1: 40 });
       } else {
         const fr = freeRectGuess();
-        b.push({ x0: fr.w - 62, y0: vh - 214, x1: fr.w, y1: vh });
-        if (level(cam.k) > 0) b.push({ x0: 0, y0: vh - 50, x1: Math.min(fr.w - 70, 200 + lastLoc.replace(/<[^>]+>/g, '').length * 8.6), y1: vh });
+        const zr = vw - zoomRight();
+        b.push({ x0: zr - 50, y0: vh - (isTL ? 196 : 214), x1: zr + 4, y1: vh });
+        // the legend panel (its height follows its content; treat it as full height)
+        if (legendW) { const lx1 = vw - (inspOpen ? inspW + 22 : 12); b.push({ x0: lx1 - legendW - 4, y0: 0, x1: lx1, y1: vh }); }
+        if (level(cam.k) > 0) b.push({ x0: 0, y0: vh - 50, x1: Math.min(fr.w - 70, 230 + lastLocText.length * 8.6), y1: vh });
       }
       return b;
     }
@@ -1394,19 +1453,24 @@
       if (aA > 0.01) {
         BP.areas.forEach((a) => {
           const n = world.nodes.get('area:' + a.id);
-          const fs = ph ? 10 : 12.5;
-          const sp2 = statParts('area', a.id, ph ? 4.5 : 5, ph ? 10 : 11);
-          const parts = [{ t: 'text', s: a.name.toUpperCase(), font: fontL(500, fs), ls: fs * (ph ? 0.2 : 0.3), col: rgba(P.ink) }, { t: 'gap', n: ph ? 8 : 12 }].concat(ph ? sp2.slice(0, 3) : sp2);
-          const rn = run(parts);
+          const fs = ph ? 10 : Math.round(clamp(8.4 + k * 0.22, 12, 14) * 2) / 2;
+          const sp2 = statParts('area', a.id, ph ? 4.5 : 5, ph ? 10 : fs - 1.5);
+          const nameP = { t: 'text', s: a.name.toUpperCase(), font: fontL(500, fs), ls: fs * (ph ? 0.2 : 0.3), col: rgba(P.ink) };
+          // variants: the state line, the score alone, the name alone; a title in open sea beats a fuller one on the coast
+          const variants = (ph ? [sp2.slice(0, 3), null] : [sp2, sp2.slice(0, 3), null]).map((sp) => {
+            const rn = run(sp ? [nameP, { t: 'gap', n: ph ? 8 : 12 }].concat(sp) : [nameP]);
+            return { lines: [{ rn, h: fs * 1.5 }], w: rn.w, h: fs * 1.5 };
+          });
           const off = 0.55 + (fs * 0.75 + 4) / k;
           const yA = n.bounds[1] - off, yB = n.bounds[3] + off, wq = (n.bounds[2] - n.bounds[0]) * 0.28;
           const ys = n.title.below ? [yB, yA] : [yA, yB];
+          const xs = [n.title.x, n.title.x - wq, n.title.x + wq, n.title.x - wq * 1.6, n.title.x + wq * 1.6];
           const cands = [];
-          ys.forEach((y) => { cands.push({ x: n.title.x, y }, { x: n.title.x - wq, y }, { x: n.title.x + wq, y }); });
+          ys.forEach((y) => xs.forEach((x) => cands.push({ x, y, t: 0 })));
           // then across the continent's own coast (the halo keeps it legible), and only then anywhere
-          ys.forEach((y) => { const yy = y + (y === yA ? 1 : -1) * 1.9; cands.push({ x: n.title.x, y: yy, own: a.id }, { x: n.title.x - wq, y: yy, own: a.id }, { x: n.title.x + wq, y: yy, own: a.id }); });
-          cands.push({ x: n.title.x, y: ys[0] + (ys[0] === yA ? 1 : -1) * 1.1, land: true }, { x: n.centroid.x, y: n.centroid.y, land: true }, { x: n.centroid.x, y: n.centroid.y - 3, land: true }, { x: n.centroid.x, y: n.centroid.y + 3, land: true });
-          out.push({ id: 'a:' + a.id, ref: { type: 'area', id: a.id }, layer: aA, lines: [{ rn, h: fs * 1.5 }], w: rn.w, h: fs * 1.5, halo: rgba(P.sea, 0.92), cands, avoidLand: true, clampX: true });
+          ys.forEach((y) => { const yy = y + (y === yA ? 1 : -1) * 1.9; xs.slice(0, 3).forEach((x) => cands.push({ x, y: yy, own: a.id, t: 1 })); });
+          cands.push({ x: n.title.x, y: ys[0] + (ys[0] === yA ? 1 : -1) * 1.1, land: true, t: 2 }, { x: n.centroid.x, y: n.centroid.y, land: true, t: 2 }, { x: n.centroid.x, y: n.centroid.y - 3, land: true, t: 2 }, { x: n.centroid.x, y: n.centroid.y + 3, land: true, t: 2 });
+          out.push({ id: 'a:' + a.id, ref: { type: 'area', id: a.id }, layer: aA, variants, candTiers: [0, 1, 2], halo: rgba(P.sea, 0.92), cands, avoidLand: true, clampX: true });
         });
       }
       // region labels: name and state at L0, faint watermarks after
@@ -1414,19 +1478,28 @@
       const wA = A1 * (1 - A3);
       const doms = BP.domains.map((d) => world.nodes.get('domain:' + d.id)).sort((p, q) => q.cells.length - p.cells.length);
       if (rA > 0.01) {
-        doms.forEach((n) => {
+        // On a quiet plate, sized with the map. Each label has variants, best first: the full state line, then the
+        // score alone, then the name alone (each on one or two lines). placeLabels keeps a label inside its own
+        // region and culls the state before it would cull the name.
+        const nameOnly = isTL && ph; // the phone's time-lapse: names only, the counts live in the area titles
+        const fs = nameOnly ? 9 : ph ? 10 : Math.round(clamp(8.6 + k * 0.25, 11.5, 15) * 2) / 2;
+        const font = fontL(600, fs), ls = fs * (ph ? 0.07 : 0.1);
+        const fsM = Math.max(9.5, fs - 1.5), gr = Math.round(fs * 0.36 * 2) / 2;
+        doms.slice().sort((p, q) => p.cells.length - q.cells.length).forEach((n) => {
           const d = BP.domain(n.id);
-          const fs = ph ? 9.5 : k < 15 ? 10.5 : 11.5;
-          const font = fontL(600, fs), ls = fs * (ph ? 0.08 : 0.12);
           const name = d.name.toUpperCase();
+          const two = splitTwo(name);
           const regionW = (n.bounds[2] - n.bounds[0]) * k;
-          const lines = tw(font, ls, name) > Math.max(regionW * 0.92, 64) ? splitTwo(name) : [name];
-          const runs = lines.map((s) => ({ rn: run([{ t: 'text', s, font, ls, col: rgba(P.ink) }]), h: fs * 1.18 }));
-          const sr = run(statParts('domain', n.id, ph ? 4.2 : 5, ph ? 9.5 : 10.5));
-          runs.push({ rn: sr, h: ph ? 14 : 16 });
-          const w = Math.max(...runs.map((x) => x.rn.w));
-          const h = runs.reduce((s2, x) => s2 + x.h, 0);
-          out.push({ id: 'd:' + n.id, ref: { type: 'domain', id: n.id }, layer: rA, lines: runs, w, h, halo: rgba(P.land, 0.94), haloW: 4, cands: n.anchors.map((c) => ({ x: c.x, y: c.y })) });
+          const shapes = two.length < 2 ? [[name]] : tw(font, ls, name) > regionW * 1.05 ? [two, [name]] : [[name], two];
+          const full = nameOnly ? [] : statParts('domain', n.id, gr, fsM);
+          const stats = full.length > 3 ? [full, full.slice(0, 3), null] : full.length ? [full, null] : [null];
+          const variants = [];
+          stats.forEach((sp) => shapes.forEach((shape) => {
+            const runs = shape.map((s) => ({ rn: run([{ t: 'text', s, font, ls, col: rgba(P.ink) }]), h: fs * 1.16 }));
+            if (sp) runs.push({ rn: run(sp), h: Math.max(fsM * 1.55, gr * 2 + 6) });
+            variants.push({ lines: runs, w: Math.max(...runs.map((x) => x.rn.w)), h: runs.reduce((s2, x) => s2 + x.h, 0) });
+          }));
+          out.push({ id: 'd:' + n.id, ref: { type: 'domain', id: n.id }, layer: rA, variants, plate: nameOnly ? PLATE_XS : ph ? PLATE_PH : PLATE, region: n.id, margin: nameOnly ? 1 : ph ? 2 : 5, cands: n.labelCells.map((c) => ({ x: c.x, y: c.y })) });
         });
       }
       // modules: city labels at L1–L2, boundary tabs at L3+
@@ -1444,7 +1517,8 @@
           if (!isTL && s.gates) parts.push({ t: 'gap', n: 7 }, { t: 'gate', kind: 'approval', r: r * 0.95 }, { t: 'gap', n: 2 }, { t: 'text', s: String(s.gates), font: mono, col: rgba(P.gate) });
           if (isTL && s && s.pkg) parts.push({ t: 'gap', n: 7 }, { t: 'kind', kind: s.pkgKind, r: r * 0.95 }, { t: 'gap', n: 3 }, { t: 'text', s: String(s.pkg), font: mono, col: rgba(P.ink) });
           const rn = run(parts);
-          out.push({ id: 'm:' + n.id, ref: { type: 'module', id: n.id }, layer: mA, lines: [{ rn, h: fs * 1.45 }], w: rn.w, h: fs * 1.45, halo: rgba(P.land, 0.95), haloW: 4, cands: n.anchors.slice(0, 4).map((c) => ({ x: c.x, y: c.y })) });
+          // city labels on a small quiet plate, so status glyphs and attention marks never show through the name
+          out.push({ id: 'm:' + n.id, ref: { type: 'module', id: n.id }, layer: mA, lines: [{ rn, h: fs * 1.3 }], w: rn.w, h: fs * 1.3, plate: PLATE_MOD, margin: 2, cands: n.anchors.slice(0, 6).map((c) => ({ x: c.x, y: c.y })) });
         });
       }
       if (wA > 0.01) {
@@ -1461,7 +1535,8 @@
           const px = bx1 - bx0 > w + 8 ? clamp(cx, bx0 + w / 2 + 4, bx1 - w / 2 - 4) : (bx0 + bx1) / 2;
           const cands = [0, -1, 1, -2, 2, -3, 3].map((j) => ({ sx: px, sy: clamp(cy + j * fs * 1.7, by0 + fs, by1 - fs) }));
           const rn = run([{ t: 'text', s: name, font, ls, col: rgba(P.ink), a: P.dark ? 0.34 : 0.3 }]);
-          out.push({ id: 'w:' + n.id, ref: { type: 'domain', id: n.id }, group: 'wm', layer: wA, lines: [{ rn, h: fs * 1.2 }], w, h: fs * 1.2, cands, passive: true });
+          // kept on its own region where it can be (it is faint, so it may still cross a border rather than vanish)
+          out.push({ id: 'w:' + n.id, ref: { type: 'domain', id: n.id }, group: 'wm', layer: wA, lines: [{ rn, h: fs * 1.2 }], w, h: fs * 1.2, cands, passive: true, region: n.id, tiers: [7, 4, 0] });
         });
       }
       if (A3 > 0.01) {
@@ -1494,6 +1569,22 @@
       return false;
     }
     const overlap = (a, b) => a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0;
+    const PLATE = { x: 6, y: 3 }, PLATE_PH = { x: 4, y: 2 }, PLATE_XS = { x: 3, y: 1.5 }, PLATE_MOD = { x: 5, y: 2, quiet: true };
+    /** How much of a screen box lies on a region's own cells: 9 samples (corners, edge middles, centre); 0 when the centre is outside. */
+    function insideCount(box, domId) {
+      const xs = [box.x0 + 2, (box.x0 + box.x1) / 2, box.x1 - 2], ys = [box.y0 + 2, (box.y0 + box.y1) / 2, box.y1 - 2];
+      let n = 0;
+      for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) {
+        const [q, r] = pixelToHex(wx(xs[a]), wy(ys[b]));
+        const c = world.at(q, r);
+        const inside = !!c && c.dom === domId;
+        if (a === 1 && b === 1 && !inside) return 0;
+        if (inside) n++;
+      }
+      return n;
+    }
+    // region labels: first well inside their region (at most a corner out), then mostly inside, then centred on it
+    const REGION_TIERS = [8, 6, 1];
     function placeLabels(specs, dt) {
       const placed = hudBoxes();
       const reserved = placed.length;
@@ -1506,34 +1597,46 @@
       specs.forEach((sp) => {
         seen.add(sp.id);
         let st = labState.get(sp.id);
-        if (!st) { st = { a: 0, ci: -1 }; labState.set(sp.id, st); }
+        if (!st) { st = { a: 0, ci: -1, vi: 0 }; labState.set(sp.id, st); }
         let ok = false;
         if (sp.layer >= 0.5) {
+          const vars = sp.variants || [sp];
+          const tiers = sp.tiers || (sp.region ? REGION_TIERS : sp.candTiers || [null]);
           const n = sp.cands.length;
-          const order = [];
-          const keep = !sp.avoidLand && st.a > 0.05 && st.ci >= 0 && st.ci < n;
-          if (keep) order.push(st.ci);
-          for (let j = 0; j < n; j++) if (!keep || j !== st.ci) order.push(j);
           const list = sp.group === 'wm' ? wm : placed;
           const also = sp.group === 'wm' ? placed : null;
-          for (const ci of order) {
-            const c = sp.cands[ci];
-            let px = c.sx != null ? c.sx : sx(c.x);
-            const py = c.sy != null ? c.sy : sy(c.y);
-            if (sp.clampX) px = clamp(px, sp.w / 2 + 6, vw - sp.w / 2 - 6);
-            const box = { x0: px - sp.w / 2 - 3, y0: py - sp.h / 2 - 1, x1: px + sp.w / 2 + 3, y1: py + sp.h / 2 + 1 };
-            if (box.x0 < 2 || box.x1 > vw - 2 || box.y0 < 2 || box.y1 > vh - 2) continue;
-            let clash = false;
-            for (let j = 0; j < list.length; j++) if (overlap(box, list[j])) { clash = true; break; }
-            if (!clash && also) for (let j = reserved; j < also.length; j++) if (overlap(box, also[j])) { clash = true; break; }
-            if (clash) continue;
-            if (sp.avoidLand && !c.land && (landUnder(box, c.own) || poleUnder(box))) continue;
-            list.push(box);
-            if (sp.kind === 'tab') tabBoxes.push(box);
-            if (!sp.passive) hits.push({ box, ref: sp.ref });
-            st.ci = ci; st.x = c.x + (sp.clampX ? (px - sx(c.x)) / cam.k : 0); st.y = c.y; st.sx = c.sx; st.sy = c.sy;
-            ok = true;
-            break;
+          const mg = sp.margin || 0;
+          search:
+          for (const tier of tiers) {
+            for (let vi = 0; vi < vars.length; vi++) {
+              const v = vars[vi];
+              const W2 = v.w + (sp.plate ? 2 * sp.plate.x : 0), H2 = v.h + (sp.plate ? 2 * sp.plate.y : 0);
+              // the previous place first (when it is still this variant), so labels hold still while the map moves
+              const keep = !sp.avoidLand && st.a > 0.05 && st.ci >= 0 && st.ci < n && st.vi === vi;
+              for (let j = keep ? -1 : 0; j < n; j++) {
+                const ci = j < 0 ? st.ci : j;
+                if (j >= 0 && keep && ci === st.ci) continue;
+                const c = sp.cands[ci];
+                if (sp.candTiers && (c.t || 0) !== tier) continue;
+                let px = c.sx != null ? c.sx : sx(c.x);
+                const py = c.sy != null ? c.sy : sy(c.y);
+                if (sp.clampX) px = clamp(px, W2 / 2 + 14, vw - W2 / 2 - 14);
+                const box = { x0: px - W2 / 2 - 3 - mg, y0: py - H2 / 2 - 1 - mg, x1: px + W2 / 2 + 3 + mg, y1: py + H2 / 2 + 1 + mg };
+                if (box.x0 + mg < 2 || box.x1 - mg > vw - 2 || box.y0 + mg < 2 || box.y1 - mg > vh - 2) continue;
+                let clash = false;
+                for (let jj = 0; jj < list.length; jj++) if (overlap(box, list[jj])) { clash = true; break; }
+                if (!clash && also) for (let jj = 0; jj < also.length; jj++) if (overlap(box, also[jj])) { clash = true; break; } // incl. the HUD
+                if (clash) continue;
+                if (sp.avoidLand && !c.land && (landUnder(box, c.own) || poleUnder(box))) continue;
+                if (sp.region && tier && insideCount({ x0: px - W2 / 2, y0: py - H2 / 2, x1: px + W2 / 2, y1: py + H2 / 2 }, sp.region) < tier) continue;
+                list.push(box);
+                if (sp.kind === 'tab') tabBoxes.push(box);
+                if (!sp.passive) hits.push({ box, ref: sp.ref });
+                st.ci = ci; st.vi = vi; st.x = c.x + (sp.clampX ? (px - sx(c.x)) / cam.k : 0); st.y = c.y; st.sx = c.sx; st.sy = c.sy;
+                ok = true;
+                break search;
+              }
+            }
           }
         }
         const target = ok ? 1 : 0;
@@ -1562,10 +1665,21 @@
           drawRun(ctx, rn, px - rn.w / 2, py + 0.5, alpha, null);
           return;
         }
-        let y = py - sp.h / 2;
-        sp.lines.forEach((ln) => {
+        const v = sp.variants ? sp.variants[Math.min(st.vi || 0, sp.variants.length - 1)] : sp;
+        if (sp.plate) {
+          // a quiet plate: land colour, a hairline edge and a hard 1px drop, like the region plates themselves
+          const W2 = v.w + 2 * sp.plate.x, H2 = v.h + 2 * sp.plate.y, x0 = px - W2 / 2, y0 = py - H2 / 2;
+          ctx.globalAlpha = alpha;
+          const rad = sp.plate.quiet ? 4 : 5;
+          if (!sp.plate.quiet) { ctx.beginPath(); roundRect(ctx, x0, y0 + 1, W2, H2, rad); ctx.fillStyle = P.plateShadow; ctx.fill(); }
+          ctx.beginPath(); roundRect(ctx, x0, y0, W2, H2, rad); ctx.fillStyle = rgba(P.land, sp.plate.quiet ? 0.9 : 0.93); ctx.fill();
+          ctx.lineWidth = 1; ctx.strokeStyle = rgba(P.ink, (P.dark ? 0.2 : 0.16) * (sp.plate.quiet ? 0.7 : 1)); ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
+        let y = py - v.h / 2;
+        v.lines.forEach((ln) => {
           y += ln.h / 2;
-          drawRun(ctx, ln.rn, px - ln.rn.w / 2, y, alpha, sp.halo || null);
+          drawRun(ctx, ln.rn, px - ln.rn.w / 2, y, alpha, sp.plate ? null : sp.halo || null);
           y += ln.h / 2;
         });
       });
@@ -1592,8 +1706,15 @@
     }
     function drawHover() {
       if (!hover) return;
-      if (hover.type === 'feature') { const c = world.byFid.get(hover.id); if (c) hexStroke(sx(c.x), sy(c.y), cam.k * 0.98, rgba(P['ink-2']), 1.6); }
-      else strokeNode(hover, 1.6, rgba(P['ink-2'], 0.9), 0);
+      // the hovered node is lifted (full band colour, see liftRefs) and drawn with an ink outline on a land halo
+      if (hover.type === 'feature') {
+        const c = world.byFid.get(hover.id);
+        if (c) {
+          const x = sx(c.x), y = sy(c.y), k = cam.k;
+          hexStroke(x, y, k * 0.97, rgba(P.land, 0.95), clamp(k * 0.12, 3.5, 6.5));
+          hexStroke(x, y, k * 0.97, rgba(P.ink), clamp(k * 0.06, 2, 3));
+        }
+      } else strokeNode(hover, 2.2, rgba(P.ink, 0.92), 3);
     }
     function drawSelection(now) {
       const sel = S.selection;
@@ -1695,9 +1816,10 @@
       } else {
         const fr = freeRectGuess();
         const c = nearestCell(wx(fr.x + fr.w / 2), wy(fr.y + fr.h / 2));
-        const parts = [BP.area(c.area).name, BP.domain(c.dom).name];
-        if (lv >= 1) parts.push(BP.module(c.mod).name);
-        txt = parts.map((p, j) => (j === parts.length - 1 ? '<b>' + esc(p) + '</b>' : esc(p))).join('<span class="bt-loc__sep">›</span>');
+        const parts = [['area', c.area, BP.area(c.area).name], ['domain', c.dom, BP.domain(c.dom).name]];
+        if (lv >= 1) parts.push(['module', c.mod, BP.module(c.mod).name]);
+        txt = parts.map(([t, id, name], j) => '<button type="button" class="bt-crumb' + (j === parts.length - 1 ? ' is-here' : '') + '" data-bt-inspect="' + t + ':' + esc(id) + '">' + esc(name) + '</button>').join('<span class="bt-loc__sep" aria-hidden="true">›</span>');
+        lastLocText = parts.map((p) => p[2]).join(' › ');
       }
       if (txt !== lastLoc) { locPath.innerHTML = txt; lastLoc = txt; }
       if (lv !== lastLevel) {
@@ -1732,7 +1854,7 @@
       const vis = world.cells.filter((c) => c.x > X0 && c.x < X1 && c.y > Y0 && c.y < Y1);
       drawSea(now);
       drawLand();
-      plates(vis, L.A4, now);
+      plates(vis, L, now);
       const pl = placeLabels(labelSpecs(L), dt);
       drawLinks(pl.placed);
       marks(vis, L, now, dt, pl.placed);
@@ -1861,6 +1983,9 @@
     cv.addEventListener('pointerup', endPointer);
     cv.addEventListener('pointercancel', endPointer);
     cv.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse' && !drag) setHover(null); });
+    // A tap acts on pointerup and may open the kit's peek or inspector sheet under the finger (phones). Cancel the
+    // browser's compatibility click that follows the touch, or it lands on the new sheet (a lens row, a feature row).
+    cv.addEventListener('touchend', (e) => { if (e.cancelable) e.preventDefault(); }, { passive: false });
     function tap(px, py, ptype) {
       const now = performance.now();
       const touch = ptype !== 'mouse';
@@ -1903,6 +2028,14 @@
       shell.peek(c.fid);
       requestAnimationFrame(() => ensureVisible(c));
     });
+    loc.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-bt-inspect]');
+      if (!b) return;
+      const [type, ...rest] = b.getAttribute('data-bt-inspect').split(':');
+      const ref = type === 'product' ? { type: 'product', id: BP.product.id } : { type, id: rest.join(':') };
+      shell.inspect(ref);
+      locateMeasured(ref);
+    });
     zoom.addEventListener('click', (e) => {
       const b = e.target.closest('[data-bt-z],[data-bt-lvl]');
       if (!b) return;
@@ -1915,10 +2048,13 @@
       el: view, cv, invalidate, fit, zoomBy, zoomToLevel,
       locate: locateMeasured,
       setVisible(v) { visible = v; if (v) invalidate(); else setHover(null); },
-      setInsp(open) { inspOpen = open; invalidate(); },
+      setInsp(open, width) { inspOpen = open; if (width) inspW = width; invalidate(); },
+      setLegend(width) { legendW = width || 0; invalidate(); },
       clearCaches() { labState.clear(); invalidate(); },
       get world() { return world; }, cam, T,
       level: () => level(cam.k),
+      /** Labels on screen now (for QA): ids such as 'd:payments', with the variant drawn (0 = fullest). */
+      labels: () => { const o = []; labState.forEach((st, id) => { if (st.a > 0.5 && st.ci >= 0) o.push(id + (st.vi ? '#' + st.vi : '')); }); return o; },
       stats: () => { const a = drawMs.slice().sort((x, y) => x - y); return { n: a.length, median: a[a.length >> 1], max: a[a.length - 1] }; },
       /** Jump (no animation) to a zoom level centred on a node: used by screenshot scenarios. */
       show(ref, lvl) {
@@ -1926,6 +2062,7 @@
         const kk = [kFit, T.t1 * 1.1, T.t2 * 1.15, T.t3 * 1.15, T.t4 * 1.12][lvl == null ? 2 : lvl];
         const b = ref ? nodeBox(ref) : world.bounds;
         flight = null; atFit = lvl === 0 && !ref;
+        setHover(null);
         setCam({ x: (b[0] + b[2]) / 2, y: (b[1] + b[3]) / 2, k: kk });
         invalidate();
       },
@@ -2054,7 +2191,7 @@
       }
       axis.setAttribute('aria-valuenow', String(TL.idx));
       axis.setAttribute('aria-valuetext', r.label + ', ' + (r.state === 'shipped' ? 'shipped ' : r.state === 'next' ? 'next release, ' : 'future release, ') + OK.fmt.date(r.date));
-      insp.setAttribute('data-ok-inspect', 'release:' + r.id);
+      insp.setAttribute('aria-label', 'Release details: ' + r.label);
     }
     function setIdx(i, animate) {
       i = clamp(i | 0, 0, RELS.length - 1);
@@ -2084,13 +2221,18 @@
       timer = setTimeout(step, 900);
     }
     playBtn.addEventListener('click', play);
-    insp.addEventListener('click', () => stop());
+    // (not data-ok-inspect markup: the kit switches to the map view for it)
+    insp.addEventListener('click', () => { stop(); shell.inspect({ type: 'release', id: RELS[TL.idx].id }); });
     let scrub = null;
+    const noClick = (e) => { if (e.cancelable) e.preventDefault(); };
     const nearest = (px) => { let b = 0, bd = Infinity; RELS.forEach((r, i) => { const d = Math.abs(xOf(dateMs(r.date)) - px); if (d < bd) { bd = d; b = i; } }); return [b, bd]; };
     let axOrigin = { left: 0 };
     axis.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
       try { axis.setPointerCapture(e.pointerId); } catch (err) { /* optional */ }
+      // A tap opens the release sheet under the finger on phones, and the ribbon re-renders below it, so the touch's
+      // own target leaves the DOM: cancel the compatibility click on that node, or it lands on a row of the new sheet.
+      if (e.pointerType !== 'mouse' && e.target && e.target.addEventListener) e.target.addEventListener('touchend', noClick, { passive: false, once: true });
       stop();
       const px = e.clientX - axOrigin.left;
       scrub = { x: px, moved: false };
@@ -2152,7 +2294,8 @@
         row(lgSvg(OK.svg.releaseKind('new', 5), 22) + lgSvg(OK.svg.releaseKind('improved', 5), 22) + lgSvg(OK.svg.releaseKind('fixed', 5), 22), 'New, improved, fixed')) +
         sec('Ribbon', '<p class="ok-lg-note">Each bar is a release package, placed by date. The shaded steps show features live over time; the dashed line is today. Drag along the ribbon to scrub, press play to replay the map growing, click a release for its package.</p>');
     }
-    const bands = ['good', 'fair', 'poor', 'critical'].map((b) => row(cell('var(--ok-' + b + ')', { good: 0.5, fair: 0.58, poor: 0.68, critical: 0.82 }[b]), esc(OK.bandLabel(b)))).join('');
+    const soft = FILL_SOFT[OK.shell && OK.shell.isDark() ? 'dark' : 'light'];
+    const bands = ['good', 'fair', 'poor', 'critical'].map((b) => row(cell('var(--ok-' + b + ')', soft[b] + 0.04), esc(OK.bandLabel(b)))).join('');
     const na = row(lgSvg(HATCH_DEF + '<polygon points="' + hexPts(9.5, 0, 0) + '" fill="var(--ok-na)" fill-opacity="0.12"/><polygon points="' + hexPts(9.5, 0, 0) + '" fill="url(#bt-lg-hatch)"/>'), '<b>Hatched</b>: the lens does not apply');
     const cluster = lgSvg([[-4.3, -3.7], [4.3, -3.7], [0, 3.7]].map(([x, y]) => '<polygon points="' + hexPts(4.6, x, y) + '" fill="var(--ok-good)" fill-opacity="0.5"/>').join(''));
     const plate = lgSvg('<path d="M-10 -2 C-10 -9 -2 -9 1 -7 C6 -9 11 -6 10 0 C11 6 4 9 0 8 C-6 9 -10 5 -10 -2Z" fill="var(--ok-fair)" fill-opacity="0.45" stroke="var(--ok-ink)" stroke-width="1.6"/>');
@@ -2165,19 +2308,23 @@
     return sec('The territory', row(cell('var(--ok-good)', 0.5), '<b>Cell</b>: one feature') + row(cluster, '<b>Module</b>: a cluster of cells with a fine border') +
         row(plate, '<b>Domain</b>: a region with a heavy outline') + row(coast, '<b>Area</b>: a continent; sea channels part the areas')) +
       sec('Cell colour: ' + lensLabel, '<div class="ok-lg-grid">' + bands + '</div>' + na) +
-      sec('Marks', row(OK.html.attention(14), '<b>Alarm flare</b>: needs attention') +
+      sec('Marks', row(lgSvg('<polygon points="' + hexPts(9.5, 0, 0) + '" fill="var(--ok-critical)" fill-opacity="0.6"/><g transform="translate(5 -4)"><circle r="4.6" fill="var(--ok-paper-hi)"/>' + OK.svg.attention(4) + '</g>'), '<b>Alarm mark</b> in a cell’s corner: needs attention') +
         row(lgSvg(halo('triage'), 22) + lgSvg(halo('approval'), 22) + lgSvg(halo('changes'), 22), 'Gate halos: triage, approval, changes requested') +
         row(lgSvg('<polygon points="' + hexPts(8.5, 0, 0) + '" fill="none" stroke="var(--ok-ink)" stroke-width="2.4"/>'), 'Search match') +
         row(lgSvg(reticle), 'Selected feature') +
         row(lgSvg(link) + lgSvg(linkD), 'Depends on (solid arrow) · used by (dashed)') +
         (state.initiative ? row(lgSvg(ini('var(--ok-good)'), 18) + lgSvg(ini('var(--ok-ink-3)'), 18) + lgSvg(ini('var(--ok-ink-4)', true), 18) + lgSvg(ini('var(--ok-alarm)'), 18), 'Initiative: covered, in progress, pending, finding') : '')) +
-      sec('Zoom', '<p class="ok-lg-note">The map opens on areas and domains. Zoom in to uncover modules, then every feature with its status, then names and ratings, then a detail card per cell. Positions never move.</p><p class="ok-lg-keys">+ − zoom · 0 fit · arrows move between cells</p>');
+      sec('Zoom', '<p class="ok-lg-note">The map opens on areas and domains, in calm colours. Zoom in to uncover modules, then every feature with its status in full colour, then names and ratings, then a detail card per cell. Positions never move. The place under the middle of the map shows at the bottom left; click a name there to inspect it.</p>');
   }
 
   // ══ boot ══════════════════════════════════════════════════════════════════════════════════════
   function boot() {
     const app = document.getElementById('app');
-    const shell = OK.mount({ root: app, variant: 'Orbit Territories', legend: (state) => legendHTML(state) });
+    const shell = OK.mount({
+      root: app, variant: 'Orbit Territories', legend: (state) => legendHTML(state),
+      // the map's own keys, appended to the kit's key line in the legend (kit 0.2.1)
+      keys: [['+ −', 'zoom'], ['0', 'fit the map'], ['← → ↑ ↓', 'move between cells']],
+    });
     P = readPalette(shell.root);
     refreshLens(shell.state.lens);
     refreshFilter(shell);
@@ -2191,12 +2338,14 @@
     const retheme = () => { const p = readPalette(shell.root); if (!P || p.dark !== P.dark || rgba(p.ink) !== rgba(P.ink)) { P = p; repaint(); } };
     shell.on('lens', (p) => { refreshLens(p.lens); repaint(); });
     shell.on('filter', () => { refreshFilter(shell); repaint(); });
-    shell.on('select', (ref) => { repaint(); if (ref && ref.type === 'release' && RIDX.has(ref.id)) { rib.stop(); rib.setIdx(RIDX.get(ref.id), true); } });
+    // a release chosen elsewhere (the inspector, the feature page) moves the scrubber; the ribbon's own picks already did
+    shell.on('select', (ref) => { repaint(); if (ref && ref.type === 'release' && ref.source !== 'variant' && RIDX.has(ref.id)) { rib.stop(); rib.setIdx(RIDX.get(ref.id), true); } });
     shell.on('locate', (ref) => { if (ref && ref.type !== 'release') active().locate(ref); });
-    shell.on('theme', retheme);
+    shell.on('theme', () => { retheme(); shell.legend.refresh(); }); // also for data-theme set outside the shell (kit 0.2.1)
     shell.on('view', (p) => { map.setVisible(p.view === 'map'); tl.setVisible(p.view === 'timeline'); if (p.view !== 'timeline') rib.stop(); shell.legend.refresh(); });
-    shell.on('inspector', (p) => views.forEach((v) => v.setInsp(p.open)));
-    new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    shell.on('inspector', (p) => views.forEach((v) => v.setInsp(p.open, p.width)));
+    // the legend panel: move the zoom column out from under it (CSS, .ok-has-legend) and keep labels clear of it
+    shell.on('legend', (p) => views.forEach((v) => v.setLegend(p.open ? p.width : 0)));
     document.addEventListener('keydown', (e) => {
       if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
       const t = e.target;

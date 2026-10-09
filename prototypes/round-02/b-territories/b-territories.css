@@ -12,6 +12,9 @@
 /* zoom controls: a slim instrument column (+, layer ladder, −, fit) */
 .bt-zoom { position: absolute; z-index: 5; right: 16px; bottom: 16px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px; border: 1px solid var(--ok-panel-edge); border-radius: 999px; background: var(--ok-panel-solid); box-shadow: 0 4px 18px var(--ok-shadow); }
 .ok-has-insp .bt-zoom { right: calc(var(--ok-insp-w) + 26px); }
+/* the legend panel (kit 0.2.1 hook): the zoom column steps out from under it */
+.ok-has-legend .bt-zoom { right: calc(var(--ok-legend-w) + 26px); }
+.ok-has-insp.ok-has-legend .bt-zoom { right: calc(var(--ok-insp-w) + var(--ok-legend-w) + 36px); }
 .bt-zbtn { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--ok-ink-2); cursor: pointer; }
 .bt-zbtn:hover { background: var(--ok-band-hi); color: var(--ok-ink); }
 .bt-zbtn svg { display: block; }
@@ -26,15 +29,23 @@
 .bt-rung:hover .bt-rung__t, .bt-rung:focus-visible .bt-rung__t { opacity: 1; }
 .bt-zsep { width: 18px; height: 1px; margin: 2px 0; background: var(--ok-rule); }
 
-/* location readout: area › domain › module for the middle of the view */
-.bt-loc { position: absolute; z-index: 4; left: 16px; bottom: 16px; display: flex; align-items: center; gap: 8px; max-width: calc(100% - 120px); height: 30px; padding: 0 12px 0 10px; border: 1px solid var(--ok-panel-edge); border-radius: 999px; background: var(--ok-panel-solid); box-shadow: 0 4px 18px var(--ok-shadow); font: 500 10px var(--ok-f-label); letter-spacing: 0.15em; text-transform: uppercase; color: var(--ok-ink-2); white-space: nowrap; pointer-events: none; }
-.bt-loc__mark { flex: none; color: var(--ok-ink-3); }
-.bt-loc__path { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.bt-loc__path b { font-weight: 500; color: var(--ok-ink); }
+/* location readout: a breadcrumb of area › domain › module for the middle of the view; each name opens its inspector */
+.bt-loc { position: absolute; z-index: 4; left: 16px; bottom: 16px; display: flex; align-items: center; gap: 6px; max-width: calc(100% - 120px); height: 30px; padding: 0 12px 0 4px; border: 1px solid var(--ok-panel-edge); border-radius: 999px; background: var(--ok-panel-solid); box-shadow: 0 4px 18px var(--ok-shadow); font: 500 10px var(--ok-f-label); letter-spacing: 0.15em; text-transform: uppercase; color: var(--ok-ink-2); white-space: nowrap; }
+.bt-loc__mark { flex: none; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--ok-ink-3); cursor: pointer; }
+.bt-loc__mark:hover { background: var(--ok-band-hi); color: var(--ok-ink); }
+.bt-loc__mark svg { display: block; }
+/* (padding inside the clip, cancelled by the margin, so a focused crumb's outline is not cut off) */
+.bt-loc__path { min-width: 0; overflow: hidden; text-overflow: ellipsis; padding: 4px; margin: 0 -4px; }
+.bt-crumb { padding: 0; border: 0; background: none; font: inherit; letter-spacing: inherit; text-transform: inherit; color: var(--ok-ink-2); cursor: pointer; }
+.bt-crumb.is-here { color: var(--ok-ink); }
+.bt-crumb:hover { color: var(--ok-ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+.bt-loc__mark:focus-visible, .bt-crumb:focus-visible { outline: 2px solid var(--ok-focus); outline-offset: 1px; border-radius: 4px; }
 .bt-loc__sep { color: var(--ok-ink-4); margin: 0 6px; }
 .bt-loc__lvl { flex: none; padding-left: 9px; border-left: 1px solid var(--ok-rule); color: var(--ok-ink-3); }
 .bt-view.is-l0 .bt-loc { display: none; }
 .ok-has-insp .bt-loc { max-width: calc(100% - var(--ok-insp-w) - 140px); }
+.ok-has-legend .bt-loc { max-width: calc(100% - var(--ok-legend-w) - 140px); }
+.ok-has-insp.ok-has-legend .bt-loc { max-width: calc(100% - var(--ok-insp-w) - var(--ok-legend-w) - 150px); }
 
 /* hover tooltip */
 .bt-tip { position: absolute; z-index: 6; left: 0; top: 0; max-width: 280px; padding: 7px 10px 8px; border: 1px solid var(--ok-panel-edge); border-radius: 6px; background: var(--ok-panel-solid); box-shadow: 0 6px 22px var(--ok-shadow); color: var(--ok-ink); font-size: 12.5px; line-height: 1.35; pointer-events: none; }
@@ -104,7 +115,7 @@
   .bt-zbtn { width: 34px; height: 34px; }
   .bt-ladder { display: none; }
   .ok-has-insp .bt-zoom, .ok-has-insp .bt-loc { display: none; }
-  .bt-loc { left: 10px; right: auto; top: 10px; bottom: auto; height: 26px; max-width: calc(100% - 20px); padding: 0 10px 0 8px; font-size: 9px; letter-spacing: 0.12em; }
+  .bt-loc { left: 10px; right: auto; top: 10px; bottom: auto; height: 28px; max-width: calc(100% - 20px); padding: 0 10px 0 2px; font-size: 9px; letter-spacing: 0.12em; }
   .bt-loc__lvl { display: none; }
   .bt-tl .bt-loc { top: 10px; bottom: auto; }
   .bt-tip { display: none; }
