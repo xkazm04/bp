@@ -1,0 +1,491 @@
+{
+  "version": 2,
+  "generator": "hand-partitioned (bp scan-sweep adoption)",
+  "generated_at": "2026-10-09T19:57:07.735Z",
+  "project": {
+    "slug": "bp",
+    "name": "bp - the product blueprint"
+  },
+  "groups": [
+    {
+      "id": "chrome",
+      "name": "Blueprint chrome",
+      "domain": "feature",
+      "color": "#7fd1ff",
+      "context_count": 5
+    },
+    {
+      "id": "canvas",
+      "name": "Canvas plan",
+      "domain": "feature",
+      "color": "#5fe0b4",
+      "context_count": 2
+    },
+    {
+      "id": "variants",
+      "name": "Lens expressions",
+      "domain": "feature",
+      "color": "#ff9fd2",
+      "context_count": 1
+    },
+    {
+      "id": "standard",
+      "name": "App-structure standard",
+      "domain": "shared",
+      "color": "#ffd166",
+      "context_count": 1
+    },
+    {
+      "id": "data",
+      "name": "Data and live products",
+      "domain": "infrastructure",
+      "color": "#c3a6ff",
+      "context_count": 1
+    },
+    {
+      "id": "tooling",
+      "name": "Scripts and checks",
+      "domain": "infrastructure",
+      "color": "#9aa5b1",
+      "context_count": 1
+    }
+  ],
+  "contexts": [
+    {
+      "id": "app-shell",
+      "name": "App shell, header and legend",
+      "group": "Blueprint chrome",
+      "group_id": "chrome",
+      "category": "ui",
+      "description": "The app frame: header with the lens tab strip, status pill, theme toggle, legend, shared symbols, hooks and the base stylesheet with the design tokens.",
+      "keywords": [
+        "header",
+        "tabs",
+        "legend",
+        "theme",
+        "tokens",
+        "layout",
+        "style"
+      ],
+      "tech_stack": [
+        "react",
+        "typescript",
+        "nextjs",
+        "motion",
+        "canvas"
+      ],
+      "file_paths": [
+        "src/app/globals.css",
+        "src/app/layout.tsx",
+        "src/app/page.tsx",
+        "src/components/BlueprintApp.tsx",
+        "src/components/Header.tsx",
+        "src/components/Legend.tsx",
+        "src/components/Symbols.tsx",
+        "src/components/ThemeToggle.tsx",
+        "src/components/blueprint.css",
+        "src/components/hooks.ts"
+      ]
+    },
+    {
+      "id": "rail",
+      "name": "Rail and flyouts",
+      "group": "Blueprint chrome",
+      "group_id": "chrome",
+      "category": "ui",
+      "description": "The slim right-hand rail of counters (find, asks, agents, orders, steer, plan, view) and the flyout panel each opens, including the decisions queue and live proposal cards.",
+      "keywords": [
+        "rail",
+        "flyout",
+        "panel",
+        "queue",
+        "search",
+        "button",
+        "counter"
+      ],
+      "tech_stack": [
+        "react",
+        "typescript",
+        "nextjs",
+        "motion",
+        "canvas"
+      ],
+      "file_paths": [
+        "src/components/Dock.tsx",
+        "src/components/Queue.tsx",
+        "src/components/rail.css",
+        "src/components/rail/panels.tsx"
+      ]
+    },
+    {
+      "id": "timeline",
+      "name": "Timeline strip and panel",
+      "group": "Blueprint chrome",
+      "group_id": "chrome",
+      "category": "ui",
+      "description": "The collapsed timeline strip (time position, clock, travel hairline) and its expanded panel: key plan, sim clock and speeds, revisions chart, the hour ahead.",
+      "keywords": [
+        "timeline",
+        "time travel",
+        "clock",
+        "chart",
+        "strip",
+        "panel"
+      ],
+      "tech_stack": [
+        "react",
+        "typescript",
+        "nextjs",
+        "motion",
+        "canvas"
+      ],
+      "file_paths": [
+        "src/components/BaseBar.tsx",
+        "src/components/timeline.css",
+        "src/components/timeline/Strip.tsx"
+      ]
+    },
+    {
+      "id": "feature-page",
+      "name": "Feature page (L4)",
+      "group": "Blueprint chrome",
+      "group_id": "chrome",
+      "category": "ui",
+      "description": "The L4 feature page: morph from the tile, General overview and per-lens tabs, stat tiles with count-up, metric rows, Business section, Screens strip, and the phone single-document body.",
+      "keywords": [
+        "page",
+        "tabs",
+        "lens",
+        "metrics",
+        "sparkline",
+        "business",
+        "screens",
+        "motion"
+      ],
+      "tech_stack": [
+        "react",
+        "typescript",
+        "nextjs",
+        "motion",
+        "canvas"
+      ],
+      "file_paths": [
+        "src/components/FeatureSheet.tsx",
+        "src/components/page.css",
+        "src/components/page/General.tsx",
+        "src/components/page/LensTab.tsx",
+        "src/components/page/bits.tsx",
+        "src/components/page/motion.tsx",
+        "src/components/sheet/Business.tsx",
+        "src/components/sheet/LensPanel.tsx",
+        "src/components/sheet/Screens.tsx",
+        "src/components/sheet/SheetBody.tsx",
+        "src/components/sheet/words.ts"
+      ]
+    },
+    {
+      "id": "overlays",
+      "name": "Canvas overlays and phone view",
+      "group": "Blueprint chrome",
+      "group_id": "chrome",
+      "category": "ui",
+      "description": "DOM overlays over the canvas: level ladder, scale bar, ticker, selection bar, callout, hover card, decision card, toast, morning watch; and the reduced phone view.",
+      "keywords": [
+        "overlay",
+        "toast",
+        "card",
+        "hover",
+        "modal",
+        "mobile",
+        "phone",
+        "responsive",
+        "touch"
+      ],
+      "tech_stack": [
+        "react",
+        "typescript",
+        "nextjs",
+        "motion",
+        "canvas"
+      ],
+      "file_paths": [
+        "src/components/Overlays.tsx",
+        "src/components/Phone.tsx"
+      ]
+    },
+    {
+      "id": "canvas-render",
+      "name": "Plan rendering",
+      "group": "Canvas plan",
+      "group_id": "canvas",
+      "category": "ui",
+      "description": "Canvas drawing of the plan: tiles, rooms, wings, marks and glyphs per level of detail, text rendering, theme colours and the lens mix.",
+      "keywords": [
+        "canvas",
+        "render",
+        "draw",
+        "theme",
+        "contrast",
+        "text",
+        "glyph",
+        "lens"
+      ],
+      "tech_stack": [
+        "react",
+        "typescript",
+        "nextjs",
+        "motion",
+        "canvas"
+      ],
+      "file_paths": [
+        "src/engine/lens/contract.ts",
+        "src/engine/lens/mix.ts",
+        "src/engine/render/dynamic.ts",
+        "src/engine/render/glyphs.ts",
+        "src/engine/render/illo.ts",
+        "src/engine/render/keyplan.ts",
+        "src/engine/render/plan.ts",
+        "src/engine/render/static-cache.ts",
+        "src/engine/render/view.ts",
+        "src/engine/text.ts",
+        "src/engine/theme.ts"
+      ]
+    },
+    {
+      "id": "engine-interaction",
+      "name": "Engine and interaction",
+      "group": "Canvas plan",
+      "group_id": "canvas",
+      "category": "ui",
+      "description": "The canvas engine: camera, frame loop, hit testing, keyboard and pointer handling, focus, UI state store, chrome safe area.",
+      "keywords": [
+        "engine",
+        "keyboard",
+        "pointer",
+        "focus",
+        "camera",
+        "state",
+        "accessibility"
+      ],
+      "tech_stack": [
+        "react",
+        "typescript",
+        "nextjs",
+        "motion",
+        "canvas"
+      ],
+      "file_paths": [
+        "src/engine/Engine.ts",
+        "src/engine/camera.ts",
+        "src/engine/chrome.ts",
+        "src/engine/state.ts",
+        "src/engine/store.ts"
+      ]
+    },
+    {
+      "id": "lens-variants",
+      "name": "Lens expression variants",
+      "group": "Lens expressions",
+      "group_id": "variants",
+      "category": "ui",
+      "description": "The three lens expressions (subtle adopted, shaped, bold): canvas channels, shapes, decor, palettes, words and their own panel and legend components.",
+      "keywords": [
+        "variant",
+        "design",
+        "style",
+        "palette",
+        "panel",
+        "legend",
+        "decor"
+      ],
+      "tech_stack": [
+        "react",
+        "typescript",
+        "nextjs",
+        "motion",
+        "canvas"
+      ],
+      "file_paths": [
+        "src/variants/README.md",
+        "src/variants/base/expression.ts",
+        "src/variants/base/index.ts",
+        "src/variants/base/legacy.ts",
+        "src/variants/bold/NOTES.md",
+        "src/variants/bold/README.md",
+        "src/variants/bold/channels.ts",
+        "src/variants/bold/decor.ts",
+        "src/variants/bold/index.ts",
+        "src/variants/bold/palette.ts",
+        "src/variants/bold/panels.tsx",
+        "src/variants/bold/perf.py",
+        "src/variants/bold/shots.py",
+        "src/variants/bold/styles.css",
+        "src/variants/bold/words.ts",
+        "src/variants/registry.ts",
+        "src/variants/shaped/Legend.tsx",
+        "src/variants/shaped/NOTES.md",
+        "src/variants/shaped/Panel.tsx",
+        "src/variants/shaped/README.md",
+        "src/variants/shaped/channels.ts",
+        "src/variants/shaped/icons.ts",
+        "src/variants/shaped/index.ts",
+        "src/variants/shaped/perf_lens.py",
+        "src/variants/shaped/shapes.ts",
+        "src/variants/shaped/shots.py",
+        "src/variants/shaped/styles.css",
+        "src/variants/subtle/Legend.tsx",
+        "src/variants/subtle/NOTES.md",
+        "src/variants/subtle/README.md",
+        "src/variants/subtle/expression.ts",
+        "src/variants/subtle/index.ts",
+        "src/variants/subtle/marks.ts",
+        "src/variants/subtle/styles.css",
+        "src/variants/subtle/tools/crop.py",
+        "src/variants/subtle/tools/grid.py",
+        "src/variants/subtle/tools/perf_lens.py",
+        "src/variants/subtle/tools/rebuild.sh",
+        "src/variants/subtle/tools/shots.py",
+        "src/variants/types.ts"
+      ]
+    },
+    {
+      "id": "standard",
+      "name": "App-structure standard",
+      "group": "App-structure standard",
+      "group_id": "standard",
+      "category": "lib",
+      "description": "The app-structure v3.1 types, loader, health evaluator, lens catalog, and the spec, schemas and lens manifests.",
+      "keywords": [
+        "standard",
+        "schema",
+        "lens",
+        "health",
+        "loader"
+      ],
+      "tech_stack": [
+        "react",
+        "typescript",
+        "nextjs",
+        "motion",
+        "canvas"
+      ],
+      "file_paths": [
+        "docs/standard/analysis.md",
+        "docs/standard/app-structure-v3.md",
+        "docs/standard/lens-scan-store.sql",
+        "docs/standard/lenses-custom/com.kettle.cost.json",
+        "docs/standard/lenses/business.json",
+        "docs/standard/lenses/design.json",
+        "docs/standard/lenses/development.json",
+        "docs/standard/lenses/operations.json",
+        "docs/standard/lenses/quality.json",
+        "docs/standard/lenses/security.json",
+        "docs/standard/personas-adoption.md",
+        "docs/standard/schema/app-structure-3.schema.json",
+        "docs/standard/schema/app-structure-event-3.schema.json",
+        "docs/standard/schema/fixtures/invalid-core-field.json",
+        "docs/standard/schema/fixtures/invalid-lens-id.json",
+        "docs/standard/schema/fixtures/invalid-stage.json",
+        "docs/standard/schema/fixtures/invalid-two-operators.json",
+        "docs/standard/schema/fixtures/valid-applies-when.json",
+        "docs/standard/schema/fixtures/valid-map.events.jsonl",
+        "docs/standard/schema/fixtures/valid-map.json",
+        "docs/standard/schema/lens-manifest-1.schema.json",
+        "src/lib/standard/catalog.ts",
+        "src/lib/standard/health.ts",
+        "src/lib/standard/load.ts",
+        "src/lib/standard/present.ts",
+        "src/lib/standard/types.ts"
+      ]
+    },
+    {
+      "id": "model-and-data",
+      "name": "Model, data and live products",
+      "group": "Data and live products",
+      "group_id": "data",
+      "category": "lib",
+      "description": "Derived model (layout, aggregates, search, swarm sim, live feed), the Kettle data loader, the lens-scan store client and server, and the product API routes.",
+      "keywords": [
+        "model",
+        "sim",
+        "data",
+        "scan",
+        "api",
+        "sqlite",
+        "sse"
+      ],
+      "tech_stack": [
+        "react",
+        "typescript",
+        "nextjs",
+        "motion",
+        "canvas"
+      ],
+      "file_paths": [
+        "src/app/api/products/[slug]/proposals/[id]/route.ts",
+        "src/app/api/products/[slug]/scan/route.ts",
+        "src/app/api/products/[slug]/shots/[...path]/route.ts",
+        "src/app/api/products/[slug]/stream/route.ts",
+        "src/app/api/products/[slug]/structure/route.ts",
+        "src/app/api/products/route.ts",
+        "src/app/v/[variant]/page.tsx",
+        "src/app/variants/index.module.css",
+        "src/app/variants/page.tsx",
+        "src/lib/data/index.ts",
+        "src/lib/data/jsonl.d.ts",
+        "src/lib/data/types.ts",
+        "src/lib/model/aggregates.ts",
+        "src/lib/model/constants.ts",
+        "src/lib/model/index.ts",
+        "src/lib/model/layout.ts",
+        "src/lib/model/lens.ts",
+        "src/lib/model/live-feed.ts",
+        "src/lib/model/live.ts",
+        "src/lib/model/product.ts",
+        "src/lib/model/search.ts",
+        "src/lib/model/sim.ts",
+        "src/lib/scan/client.ts",
+        "src/lib/scan/products.server.ts",
+        "src/lib/scan/store.server.ts",
+        "src/lib/scan/types.ts"
+      ]
+    },
+    {
+      "id": "tooling",
+      "name": "Scripts and checks",
+      "group": "Scripts and checks",
+      "group_id": "tooling",
+      "category": "config",
+      "description": "Fixture generators, v3 conversion, structure validator, lens health check, scan demo, perf and screenshot probes.",
+      "keywords": [
+        "scripts",
+        "fixtures",
+        "validator",
+        "perf",
+        "screenshots"
+      ],
+      "tech_stack": [
+        "react",
+        "typescript",
+        "nextjs",
+        "motion",
+        "canvas"
+      ],
+      "file_paths": [
+        "scripts/check-builtin-health.ts",
+        "scripts/fixtures/gen-kettle.mjs",
+        "scripts/fixtures/gen-swarm.mjs",
+        "scripts/kettle-to-v3.ts",
+        "scripts/perf.py",
+        "scripts/scan-demo.mjs",
+        "scripts/shots.py",
+        "scripts/validate-structure.mjs"
+      ]
+    }
+  ],
+  "stats": {
+    "contexts": 11,
+    "groups": 6,
+    "files": 146
+  }
+}

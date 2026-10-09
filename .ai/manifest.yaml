@@ -9,3 +9,4 @@ capabilities:
   test: npm run check:lens-health
 skills:
   - spark
+  - scan-sweep
