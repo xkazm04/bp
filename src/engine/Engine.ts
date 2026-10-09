@@ -902,6 +902,12 @@ export class Engine {
     const mo = new MutationObserver(() => { this.readTheme(); this.dirty(); });
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     this.disposers.push(() => mo.disconnect());
+    // reduced motion follows the OS/browser setting live, like the DOM chrome (useReducedMotion)
+    if (typeof matchMedia !== 'undefined') {
+      const rm = matchMedia('(prefers-reduced-motion: reduce)');
+      const onRm = () => { this.cam.reduced = rm.matches; if (rm.matches && this.mix.moving) this.mix.to(this.S.view, true); };
+      rm.addEventListener('change', onRm); this.disposers.push(() => rm.removeEventListener('change', onRm));
+    }
     // the dashed "marching" styles only move while frames are drawn anyway
   }
 
