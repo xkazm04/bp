@@ -243,7 +243,9 @@ export class Engine {
     this.root.style.setProperty('--lens', this.accentOf(v === 'general' ? null : v));
   }
   fit() {
-    const w = window.innerWidth, h = window.innerHeight, phone = w < 760;
+    const w = window.innerWidth, h = window.innerHeight;
+    // narrow, or a touch device held landscape (a short mouse window stays the desktop plan)
+    const phone = w < 760 || (h < 480 && typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches);
     if (phone !== this.S.phone) this.store.set({ phone });
     if (phone) return;
     this.U = 1 + 0.5 * (clamp(Math.min(w / 1280, h / 800), 1, 2) - 1);
