@@ -11,6 +11,9 @@ import { featRect } from './plan';
 import { onView, rs, sxv, syv, type SRect, type View } from './view';
 
 const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
+// Reduced motion (E.cam.reduced, the engine's one signal): dashes hold still, expanding rings hold at mid radius.
+const dashOff = (E: Engine, m: number) => (E.cam.reduced ? 0 : E.dashT * m);
+const phase = (E: Engine, x: number) => (E.cam.reduced ? 0.5 : x % 1);
 const ease = (u: number) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2);
 
 export interface APos { x: number; y: number; chip: boolean; r: SRect; idx: number; n: number; moving: boolean; trail: null | { qx: number; qy: number; px: number; py: number; mx: number; my: number; u: number; fade: number }; ok: boolean }
@@ -63,7 +66,7 @@ function conduits(E: Engine, ctx: CanvasRenderingContext2D, v: View, id: string)
       const sy = ay + (by > ay ? A.h / 2 : -A.h / 2); ey = by + (by > ay ? -B.h / 2 : B.h / 2); const my = (sy + ey) / 2;
       ctx.moveTo(ax, sy); ctx.lineTo(ax, my); ctx.lineTo(bx, my); ctx.lineTo(bx, ey);
     }
-    ctx.strokeStyle = col; ctx.lineWidth = 1.6; ctx.setLineDash([6, 4]); ctx.lineDashOffset = (rev ? 1 : -1) * E.dashT; ctx.stroke(); ctx.setLineDash([]);
+    ctx.strokeStyle = col; ctx.lineWidth = 1.6; ctx.setLineDash([6, 4]); ctx.lineDashOffset = dashOff(E, rev ? 1 : -1); ctx.stroke(); ctx.setLineDash([]);
     ctx.fillStyle = col; ctx.beginPath(); ctx.arc(rev ? ax : ex, rev ? ay : ey, 2.6, 0, 7); ctx.fill();
   };
   ctx.globalAlpha = 0.95;
@@ -96,7 +99,7 @@ export function drawOverlays(E: Engine, ctx: CanvasRenderingContext2D, v: View, 
   for (const sid of [S.open, S.sel]) {
     if (!sid || !L.TILE[sid]) continue;
     const r = featRect(E, v, sid, lod, sr1)!, pad = clamp(r.w * 0.12, 5, 14);
-    ctx.strokeStyle = E.accentOf(E.S.view === 'general' ? null : E.S.view); ctx.lineWidth = 1.8; ctx.setLineDash([5, 4]); ctx.lineDashOffset = -E.dashT * 0.6;
+    ctx.strokeStyle = E.accentOf(E.S.view === 'general' ? null : E.S.view); ctx.lineWidth = 1.8; ctx.setLineDash([5, 4]); ctx.lineDashOffset = dashOff(E, -0.6);
     ctx.strokeRect(r.x - pad, r.y - pad, r.w + pad * 2, r.h + pad * 2); ctx.setLineDash([]); ctx.lineDashOffset = 0;
   }
   if (S.hover && (S.hover.type === 'tile' || E.placeById(S.hover.type, S.hover.id))) {
@@ -116,26 +119,26 @@ export function drawOrderZones(E: Engine, ctx: CanvasRenderingContext2D, v: View
       for (const R of L.rooms) {
         if (!(R.d.base === sc.domain || R.d.id === sc.domain)) continue;
         const r = rs(v, R, sr1); if (!onView(v, r)) continue;
-        ctx.save(); ctx.strokeStyle = hi ? th.inkHi : th.alpha(th.amber, 0.8); ctx.lineWidth = hi ? 2.5 : 1.5; ctx.setLineDash([9, 5]); ctx.lineDashOffset = -E.dashT * 0.5;
+        ctx.save(); ctx.strokeStyle = hi ? th.inkHi : th.alpha(th.amber, 0.8); ctx.lineWidth = hi ? 2.5 : 1.5; ctx.setLineDash([9, 5]); ctx.lineDashOffset = dashOff(E, -0.5);
         ctx.strokeRect(r.x + 5 * u, r.y + 5 * u, r.w - 10 * u, r.h - 10 * u); ctx.restore();
         if (hi) { ctx.fillStyle = th.alpha(th.amber, 0.08); ctx.fillRect(r.x, r.y, r.w, r.h); }
         if (r.w >= 230 * u && r.h >= 40 * u && (R.labelRight ?? 0) < r.x + r.w - 80 * u) {
           const sx = r.x + r.w - 62 * u, sy = r.y + 17 * u;
           ctx.save(); ctx.translate(sx, sy); ctx.rotate(-0.14); ctx.strokeStyle = th.amber; ctx.fillStyle = th.alpha(th.panel, 0.92); ctx.lineWidth = 1.6;
           ctx.beginPath(); ctx.arc(0, 0, 13 * u, 0, 6.2832); ctx.fill(); ctx.stroke();
-          ctx.textAlign = 'center'; drawText(ctx, o.id, 0, 4.2 * u, E.tx.f(12, 600, true), th.amber); ctx.restore(); ctx.textAlign = 'left';
+          ctx.textAlign = 'center'; drawText(ctx, o.id, 0, 4.2 * u, E.tx.f(12, 600, true), th.amberText); ctx.restore(); ctx.textAlign = 'left';
         }
       }
     } else if (hi || (o.user && E.isNow)) {
       const ids = sim.ordMap()[o.id] || {};
       for (const id in ids) {
         const fr = featRect(E, v, id, lod, sr1); if (!fr || !inView(v, fr, 0)) continue;
-        ctx.save(); ctx.strokeStyle = hi ? th.inkHi : th.alpha(th.amber, 0.8); ctx.lineWidth = hi ? 2.4 : 1.5; ctx.setLineDash([6, 4]); ctx.lineDashOffset = -E.dashT * 0.5;
+        ctx.save(); ctx.strokeStyle = hi ? th.inkHi : th.alpha(th.amber, 0.8); ctx.lineWidth = hi ? 2.4 : 1.5; ctx.setLineDash([6, 4]); ctx.lineDashOffset = dashOff(E, -0.5);
         ctx.strokeRect(fr.x - 2, fr.y - 2, fr.w + 4, fr.h + 4); ctx.restore();
         if (o.user && lod > 0.5 && fr.w >= 60 * u) {
           ctx.fillStyle = th.alpha(th.panel, 0.92); ctx.strokeStyle = th.amber; ctx.lineWidth = 1.3;
           ctx.fillRect(fr.x + 4 * u, fr.y + fr.h - 22 * u, 36 * u, 17 * u); ctx.strokeRect(fr.x + 4.5 * u, fr.y + fr.h - 21.5 * u, 36 * u - 1, 17 * u - 1);
-          drawText(ctx, o.id, fr.x + 9 * u, fr.y + fr.h - 9 * u, E.tx.f(12, 600, true), th.amber);
+          drawText(ctx, o.id, fr.x + 9 * u, fr.y + fr.h - 9 * u, E.tx.f(12, 600, true), th.amberText);
         }
       }
     }
@@ -145,7 +148,7 @@ export function drawOrderZones(E: Engine, ctx: CanvasRenderingContext2D, v: View
 export function drawTargets(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod: number) {
   const S = E.S; if (!S.tgt.n) return;
   const th = E.th, u = E.U;
-  ctx.save(); ctx.strokeStyle = th.accent; ctx.lineWidth = 2; ctx.setLineDash([7, 4]); ctx.lineDashOffset = -E.dashT;
+  ctx.save(); ctx.strokeStyle = th.accent; ctx.lineWidth = 2; ctx.setLineDash([7, 4]); ctx.lineDashOffset = dashOff(E, -1);
   for (const R of E.M.L.rooms) {
     let c = 0; for (const f of R.feats) if (S.tgt.ids[f.id]) c++;
     if (!c) continue;
@@ -186,7 +189,7 @@ export function drawAgents(E: Engine, ctx: CanvasRenderingContext2D, v: View, lo
     const A = sim.agents[i], p = pos[i] || (pos[i] = { x: 0, y: 0, chip: false, r: { x: 0, y: 0, w: 0, h: 0 }, idx: 0, n: 1, moving: false, trail: null, ok: false });
     if (!agentPos(E, v, A, lod, now, p)) continue;
     if (p.x < -40 || p.x > v.FW + 40 || p.y < -40 || p.y > v.FH + 40) { p.ok = false; continue; }
-    if (A.status === 'working' && !A.paused && !p.moving && lod < 0.8 && sim.playing) {
+    if (A.status === 'working' && !A.paused && !p.moving && lod < 0.8 && sim.playing && !E.cam.reduced) {
       const orb = 3.2 * u * (1 - lod); p.x += Math.cos(now * 0.0011 + A.ph) * orb; p.y += Math.sin(now * 0.0013 + A.ph) * orb * 0.7;
     }
     count++;
@@ -208,7 +211,7 @@ export function drawAgents(E: Engine, ctx: CanvasRenderingContext2D, v: View, lo
   for (let i = 0; i < sim.agents.length; i++) {
     const p = pos[i]; if (!p || !p.ok || !p.trail || p.trail.fade <= 0) continue;
     const t = p.trail;
-    ctx.save(); ctx.globalAlpha = clamp(t.fade, 0, 1) * 0.85; ctx.strokeStyle = th.mint; ctx.lineWidth = 1.6; ctx.setLineDash([3, 4]); ctx.lineDashOffset = -E.dashT;
+    ctx.save(); ctx.globalAlpha = clamp(t.fade, 0, 1) * 0.85; ctx.strokeStyle = th.mint; ctx.lineWidth = 1.6; ctx.setLineDash([3, 4]); ctx.lineDashOffset = dashOff(E, -1);
     ctx.beginPath();
     for (let s = 0; s <= 16; s++) { const e = ease((t.u * s) / 16), x = (1 - e) * (1 - e) * t.qx + 2 * (1 - e) * e * t.mx + e * e * t.px, y = (1 - e) * (1 - e) * t.qy + 2 * (1 - e) * e * t.my + e * e * t.py; if (s) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
     ctx.stroke(); ctx.restore();
@@ -237,12 +240,12 @@ export function drawAgents(E: Engine, ctx: CanvasRenderingContext2D, v: View, lo
       ctx.globalAlpha = al;
       ctx.fillStyle = th.chipBg; ctx.fillRect(x0, y0, w, h);
       ctx.strokeStyle = agentColor(th, st); ctx.lineWidth = 1.3; ctx.strokeRect(x0 + 0.5, y0 + 0.5, w - 1, h - 1);
-      glyphAgent(ctx, th, p.x, p.y, st, 4 * u, 1, now / 900 + A.ph, u);
+      glyphAgent(ctx, th, p.x, p.y, st, 4 * u, 1, E.cam.reduced ? A.ph : now / 900 + A.ph, u);
       drawText(ctx, A.code, p.x + 9 * u, p.y + 4.2 * u, chipFont, th.inkHi);
       ctx.globalAlpha = 1;
     } else {
       const s = (p.chip ? 4.6 : 4.4) * u * (rel ? 1 : 0.8) * (p.moving ? 1.15 : 1);
-      glyphAgent(ctx, th, p.x, p.y, st, s, al, sim.playing ? now / 900 + A.ph : A.ph, u);
+      glyphAgent(ctx, th, p.x, p.y, st, s, al, sim.playing && !E.cam.reduced ? now / 900 + A.ph : A.ph, u);
     }
   }
 }
@@ -256,7 +259,7 @@ export function drawPulses(E: Engine, ctx: CanvasRenderingContext2D, v: View, lo
     const age = (now - p.t0) / (p.k === 'dep' || p.k === 'ask' ? 2200 : 1500);
     if (age >= 1 || age < 0) continue;
     const r = featRect(E, v, p.f, lod, sr1); if (!r || !inView(v, r, 40)) continue;
-    const cx = r.x + r.w / 2, cy = r.y + r.h / 2, rad = (5 + age * (p.k === 'dep' ? 46 : 28)) * u;
+    const cx = r.x + r.w / 2, cy = r.y + r.h / 2, rad = (5 + (E.cam.reduced ? 0.5 : age) * (p.k === 'dep' ? 46 : 28)) * u;
     ctx.strokeStyle = col[p.k] || th.mint; ctx.globalAlpha = (1 - age) * 0.85;
     ctx.beginPath(); ctx.arc(cx, cy, rad, 0, 6.2832); ctx.stroke();
     if (p.k === 'dep' || p.k === 'bad') { ctx.beginPath(); ctx.arc(cx, cy, rad * 0.6, 0, 6.2832); ctx.stroke(); }
@@ -280,7 +283,7 @@ export function drawPins(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod:
       const R = E.M.L.rooms[ri], r = rs(v, R, sr1); if (!onView(v, r, 30)) continue;
       let em = 0, hi = false, anyNew = false;
       for (const d of ds) { const e = sim.emph(d, S.who, S.view); if (e) { em++; if (d.urg === 'high') hi = true; } if (d.isNew) anyNew = true; }
-      const ring = anyNew ? (now / 1600) % 1 : 0;
+      const ring = anyNew ? phase(E, now / 1600) : 0;
       ctx.globalAlpha = ga;
       glyphPin(ctx, th, r.x + r.w - 18 * u, r.y + 32 * u, hi ? 'high' : em ? 'med' : 'low', em > 0, 0.9, ds.length, ring, u, pf);
     }
@@ -293,7 +296,7 @@ export function drawPins(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod:
       const T = E.M.L.TILE[fid]; if (!T) continue;
       const r = rs(v, T, sr1); if (!inView(v, r, 20)) continue;
       ds.forEach((d, j) => {
-        const ring = d.isNew ? (now / 1600) % 1 : S.dec === d.id ? (now / 1200) % 1 : 0;
+        const ring = d.isNew ? phase(E, now / 1600) : S.dec === d.id ? phase(E, now / 1200) : 0;
         glyphPin(ctx, th, r.x + r.w - 12 * u - j * 18 * u, r.y + r.h - 5 * u, d.urg, sim.emph(d, S.who, S.view), 0.85, 0, ring, u, pf);
       });
     }
@@ -307,10 +310,10 @@ export function drawBreaches(E: Engine, ctx: CanvasRenderingContext2D, v: View, 
   for (const fid of seen) {
     const r = featRect(E, v, fid, lod, sr1); if (!r || !inView(v, r, 20)) continue;
     const big = lod > 0.5 && r.w >= 40 * u, rr = (big ? 7.5 : 4) * u, cx = big ? r.x : r.x + r.w / 2, cy = big ? r.y : r.y - 7 * u;
-    const pu = sim.playing ? (now / 1500 + hash01(fid)) % 1 : 0.4;
+    const pu = sim.playing && !E.cam.reduced ? (now / 1500 + hash01(fid)) % 1 : 0.4;
     ctx.save(); ctx.strokeStyle = th.red; ctx.globalAlpha = (1 - pu) * 0.7; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(cx, cy, rr + pu * 8 * u, 0, 6.2832); ctx.stroke();
     ctx.globalAlpha = 1; ctx.fillStyle = th.red; ctx.strokeStyle = th.glyphEdge; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.arc(cx, cy, rr, 0, 6.2832); ctx.fill(); ctx.stroke();
-    if (big) { ctx.textAlign = 'center'; drawText(ctx, '!', cx, cy + 4.4 * u, E.tx.f(12, 600, true), '#ffffff'); ctx.textAlign = 'left'; }
+    if (big) { ctx.textAlign = 'center'; drawText(ctx, '!', cx, cy + 4.4 * u, E.tx.f(12, 600, true), th.glyphEdge); ctx.textAlign = 'left'; }
     ctx.restore();
   }
 }
@@ -330,13 +333,13 @@ export function drawPreview(E: Engine, ctx: CanvasRenderingContext2D, v: View, l
   ctx.save();
   for (const id in p.targets) {
     const fr = featRect(E, v, id, lod, sr1); if (!fr || !inView(v, fr, 0)) continue;
-    ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.lineDashOffset = -E.dashT;
+    ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.lineDashOffset = dashOff(E, -1);
     ctx.fillStyle = th.alpha(col, p.kind === 'pause' ? 0.08 : 0.12); ctx.fillRect(fr.x, fr.y, fr.w, fr.h); ctx.strokeRect(fr.x - 2, fr.y - 2, fr.w + 4, fr.h + 4);
   }
   for (const m of p.moves) {
     const q = agentPos(E, v, m.a, lod, now, ap), tr = featRect(E, v, m.to, lod, sr2); if (!q || !tr) continue;
     const qx = q.x, qy = q.y;
-    ctx.setLineDash([8, 5]); ctx.lineDashOffset = -E.dashT * 1.4;
+    ctx.setLineDash([8, 5]); ctx.lineDashOffset = dashOff(E, -1.4);
     curveArrow(ctx, qx, qy, tr.x + tr.w / 2, tr.y + tr.h / 2, th.alpha(th.mint, 0.95), 2, u);
     ctx.setLineDash([3, 3]); ctx.strokeStyle = th.mint; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(qx, qy, 11 * u, 0, 6.2832); ctx.stroke();
   }
@@ -351,15 +354,15 @@ export function drawFocus(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod
   const u = E.U, th = E.th, fr = featRect(E, v, d.f, lod, sr1); if (!fr) return;
   const cx = fr.x + fr.w / 2, cy = fr.y + fr.h / 2;
   ctx.save();
-  for (const id of d.affects) { const a = featRect(E, v, id, lod, sr2); if (!a) continue; ctx.strokeStyle = th.amber; ctx.lineWidth = 2; ctx.setLineDash([5, 4]); ctx.lineDashOffset = -E.dashT; ctx.strokeRect(a.x - 2, a.y - 2, a.w + 4, a.h + 4); }
+  for (const id of d.affects) { const a = featRect(E, v, id, lod, sr2); if (!a) continue; ctx.strokeStyle = th.amber; ctx.lineWidth = 2; ctx.setLineDash([5, 4]); ctx.lineDashOffset = dashOff(E, -1); ctx.strokeRect(a.x - 2, a.y - 2, a.w + 4, a.h + 4); }
   ctx.setLineDash([]);
   for (const A of sim.agents) {
     if (A.wait !== d.id) continue;
     const q = agentPos(E, v, A, lod, now, ap); if (!q) continue;
-    ctx.strokeStyle = th.alpha(th.amber, 0.9); ctx.lineWidth = 1.6; ctx.setLineDash([3, 4]); ctx.lineDashOffset = -E.dashT;
+    ctx.strokeStyle = th.alpha(th.amber, 0.9); ctx.lineWidth = 1.6; ctx.setLineDash([3, 4]); ctx.lineDashOffset = dashOff(E, -1);
     ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(q.x, q.y); ctx.stroke(); ctx.setLineDash([]); ctx.beginPath(); ctx.arc(q.x, q.y, 10 * u, 0, 6.2832); ctx.stroke();
   }
-  const pu = (now / 1100) % 1; ctx.strokeStyle = th.amber; ctx.globalAlpha = 1 - pu; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(cx, cy, (12 + pu * 26) * u, 0, 6.2832); ctx.stroke();
+  const pu = phase(E, now / 1100); ctx.strokeStyle = th.amber; ctx.globalAlpha = 1 - pu; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(cx, cy, (12 + pu * 26) * u, 0, 6.2832); ctx.stroke();
   ctx.restore();
 }
 
@@ -371,13 +374,13 @@ export function drawReleases(E: Engine, ctx: CanvasRenderingContext2D, v: View, 
     const age = (now - d.ans.at) / 3200; if (age >= 1) continue;
     const fr = featRect(E, v, d.f, lod, sr1); if (!fr) continue;
     const cx = fr.x + fr.w / 2, cy = fr.y + fr.h / 2;
-    ctx.save(); ctx.globalAlpha = 1 - age; ctx.strokeStyle = th.mint; ctx.fillStyle = th.mint; ctx.lineWidth = 2; ctx.setLineDash([5, 4]); ctx.lineDashOffset = -E.dashT * 1.6;
+    ctx.save(); ctx.globalAlpha = 1 - age; ctx.strokeStyle = th.mint; ctx.fillStyle = th.mint; ctx.lineWidth = 2; ctx.setLineDash([5, 4]); ctx.lineDashOffset = dashOff(E, -1.6);
     for (const id of d.freedIds) {
       const A = sim.AG[id]; if (!A) continue;
       const q = agentPos(E, v, A, lod, now, ap); if (!q) continue;
-      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(q.x, q.y); ctx.stroke(); ctx.setLineDash([]); ctx.beginPath(); ctx.arc(q.x, q.y, (9 + age * 14) * u, 0, 6.2832); ctx.stroke(); ctx.setLineDash([5, 4]);
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(q.x, q.y); ctx.stroke(); ctx.setLineDash([]); ctx.beginPath(); ctx.arc(q.x, q.y, (9 + (E.cam.reduced ? 0.5 : age) * 14) * u, 0, 6.2832); ctx.stroke(); ctx.setLineDash([5, 4]);
     }
-    ctx.setLineDash([]); ctx.textAlign = 'center'; drawText(ctx, '+' + d.freedIds.length + ' back to work', cx, cy - (18 + age * 22) * u, E.tx.f(13, 600, true), th.mint, th.halo); ctx.textAlign = 'left';
+    ctx.setLineDash([]); ctx.textAlign = 'center'; drawText(ctx, '+' + d.freedIds.length + ' back to work', cx, cy - (18 + age * 22) * u, E.tx.f(13, 600, true), th.mintText, th.halo); ctx.textAlign = 'left';
     ctx.restore();
   }
 }
@@ -385,5 +388,5 @@ export function drawReleases(E: Engine, ctx: CanvasRenderingContext2D, v: View, 
 export function drawLasso(E: Engine, ctx: CanvasRenderingContext2D) {
   const l = E.lasso; if (!l) return;
   const x = Math.min(l.x0, l.x1), y = Math.min(l.y0, l.y1), w = Math.abs(l.x1 - l.x0), h = Math.abs(l.y1 - l.y0), th = E.th;
-  ctx.save(); ctx.fillStyle = th.alpha(th.accent, 0.1); ctx.fillRect(x, y, w, h); ctx.strokeStyle = th.accent; ctx.lineWidth = 1.6; ctx.setLineDash([6, 4]); ctx.lineDashOffset = -E.dashT; ctx.strokeRect(x + 0.5, y + 0.5, w, h); ctx.restore();
+  ctx.save(); ctx.fillStyle = th.alpha(th.accent, 0.1); ctx.fillRect(x, y, w, h); ctx.strokeStyle = th.accent; ctx.lineWidth = 1.6; ctx.setLineDash([6, 4]); ctx.lineDashOffset = dashOff(E, -1); ctx.strokeRect(x + 0.5, y + 0.5, w, h); ctx.restore();
 }

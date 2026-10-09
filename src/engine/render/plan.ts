@@ -28,15 +28,22 @@ export function drawGrid(E: Engine, ctx: CanvasRenderingContext2D, v: View) {
   }
 }
 
+/** Lenses whose channel threw: skipped for the session so one bad manifest costs that lens, not the plan. */
+const failedLenses = new Set<string>();
+function lensFailed(l: string, part: string, err: unknown) {
+  if (!failedLenses.has(l)) { failedLenses.add(l); console.error(`[lens ${l}] ${part} failed`, err); }
+}
+
 /** Variant decoration under the plan, weighted by each lens's dominance. */
 export function drawDecor(E: Engine, ctx: CanvasRenderingContext2D, v: View) {
   const m = E.mixS;
   for (const l of E.lensIds) {
     const ch = E.channel(l);
-    if (!ch || !ch.decor || m.d[l] <= 0.001) continue;
+    if (!ch || !ch.decor || m.d[l] <= 0.001 || failedLenses.has(l)) continue;
     ctx.save();
-    ch.decor(ctx, { x: v.c0x, y: v.c0y, w: v.c1x - v.c0x, h: v.c1y - v.c0y, k: v.k, u: E.U }, m.d[l], E.th);
-    ctx.restore();
+    try { ch.decor(ctx, { x: v.c0x, y: v.c0y, w: v.c1x - v.c0x, h: v.c1y - v.c0y, k: v.k, u: E.U }, m.d[l], E.th); }
+    catch (err) { lensFailed(l, 'decor', err); }
+    finally { ctx.restore(); }
   }
 }
 
@@ -100,7 +107,7 @@ function lensMarks(E: Engine, ctx: CanvasRenderingContext2D, g: TileGeom, f: Fea
   for (const l of E.lensIds) {
     const p = m.p[l];
     if (p <= 0.004) continue;
-    const ch = E.channel(l); if (!ch) continue;
+    const ch = E.channel(l); if (!ch || failedLenses.has(l)) continue;
     const x = m.x[l], slot = slots[l] ?? null;
     const exp = E.expr.expandedRect ? E.expr.expandedRect(g, l) : g.body;
     let r: Rect, w: number;
@@ -108,8 +115,9 @@ function lensMarks(E: Engine, ctx: CanvasRenderingContext2D, g: TileGeom, f: Fea
     else { if (x <= 0.004) continue; r = exp; w = p * x; }
     if (r.w < 1 || r.h < 1) continue;
     ctx.save();
-    ch.marks({ ctx, r, slot, lens: P.LENS[l], tile: g, f, w, x, compact: x < 0.5, th: E.th, stage: st, now: E.isNow, live: L, accent: E.accentOf(l) });
-    ctx.restore();
+    try { ch.marks({ ctx, r, slot, lens: P.LENS[l], tile: g, f, w, x, compact: x < 0.5, th: E.th, stage: st, now: E.isNow, live: L, accent: E.accentOf(l) }); }
+    catch (err) { lensFailed(l, 'marks', err); }
+    finally { ctx.restore(); }
     ctx.globalAlpha = ga;
   }
 }
@@ -119,9 +127,9 @@ function outline(E: Engine, g: TileGeom, f: Feature): Path2D | null {
   const top = E.mixS.top;
   if (!top || E.mixS.topD <= 0.001) return null;
   const ch = E.channel(top);
-  if (!ch || !ch.shape) return null;
+  if (!ch || !ch.shape || failedLenses.has(top)) return null;
   const p = new Path2D();
-  ch.shape(p, g, f, E.mixS.topD);
+  try { ch.shape(p, g, f, E.mixS.topD); } catch (err) { lensFailed(top, 'shape', err); return null; }
   return p;
 }
 
@@ -172,17 +180,17 @@ function paintTile(E: Engine, ctx: CanvasRenderingContext2D, v: View, T: TileNod
     // evidence: general (stage word) crossfading into the dominant lens's content
     const ev = generalEvidence(E, f, st);
     let lensC: { parts: string[]; stamp?: string } | null = null;
-    const ch = top && D > 0.001 && now && st ? E.channel(top) : null;
+    const ch = top && D > 0.001 && now && st && !failedLenses.has(top) ? E.channel(top) : null;
     if (ch) {
-      const c = ch.content(f, Lv);
-      lensC = { parts: c.parts.slice(0, EVIDENCE_BY_DENSITY[ch.density]), stamp: c.stamp };
+      try { const c = ch.content(f, Lv); lensC = { parts: c.parts.slice(0, EVIDENCE_BY_DENSITY[ch.density]), stamp: c.stamp }; }
+      catch (err) { lensFailed(top!, 'content', err); }
     }
     const evFont = (l: string | null) => (l && E.expr.evidenceFont?.(l) === 'sans' ? tx.f(13, 600) : mono);
     let showId = !!code;
     const room = w - 16 * u - idw - 10 * u;
     const gFit = tx.fit(ev, room, mono), lFit = lensC ? tx.fit(lensC.parts, room, evFont(top)) : null;
     if ((gFit == null && D < 0.5) || (lensC && lFit == null && D >= 0.5)) showId = false;
-    if (showId) drawText(ctx, code, x + 7 * u, hy, mono, th.inkA(0.7));
+    if (showId) drawText(ctx, code, x + 7 * u, hy, mono, th.inkA(0.9));
     const roomW = showId ? room : w - 14 * u;
     ctx.textAlign = 'right';
     if (D < 0.999) { const s = showId ? gFit : tx.fit(ev, roomW, mono); if (s) { ctx.globalAlpha = a * (1 - D); drawText(ctx, s, x + w - 7 * u, hy, mono, th.ink); } }
@@ -196,8 +204,8 @@ function paintTile(E: Engine, ctx: CanvasRenderingContext2D, v: View, T: TileNod
     if (!lines) { ns = 14; nf = tx.f(14, 500); lh = 16.2 * u; lines = tx.wrap(f.name, w - 14 * u, nf, Math.max(1, Math.floor(roomH / lh))); }
     if (lines) lines.forEach((l, i) => drawText(ctx, l, x + 7 * u, hy + 6 * u + lh * (i + 0.82), nf, th.inkHi));
     const sf = tx.f(12.5, 600), sy = y + h - 7 * u - (chips ? 22 * u : 0);
-    if (gStamp && D < 0.999) { const s = fitStamp(E, gStamp.cands, gStamp.last, w - 14 * u, sf); if (s) { ctx.globalAlpha = a * (1 - D); drawText(ctx, s, x + 7 * u, sy, sf, th.red2); } }
-    if (lStamp && D > 0.001) { const s = fitStamp(E, [lStamp], null, w - 14 * u, sf); if (s) { ctx.globalAlpha = a * D; drawText(ctx, s, x + 7 * u, sy, sf, th.red2); } }
+    if (gStamp && D < 0.999) { const s = fitStamp(E, gStamp.cands, gStamp.last, w - 14 * u, sf); if (s) { ctx.globalAlpha = a * (1 - D); drawText(ctx, s, x + 7 * u, sy, sf, th.red2, th.halo); } }
+    if (lStamp && D > 0.001) { const s = fitStamp(E, [lStamp], null, w - 14 * u, sf); if (s) { ctx.globalAlpha = a * D; drawText(ctx, s, x + 7 * u, sy, sf, th.red2, th.halo); } }
   } else {
     const nf2 = tx.f(13, 500), l2 = 15 * u;
     const lines2 = tx.wrap(f.name, w - 12 * u, nf2, Math.max(1, Math.floor((h - 8 * u - (chips ? 22 * u : 0) - (hy - y - 12 * u)) / l2)));
@@ -326,7 +334,7 @@ function fadePair(ctx: CanvasRenderingContext2D, a: number, D: number, g: () => 
 function drawSwarmLine(E: Engine, ctx: CanvasRenderingContext2D, x: number, y: number, st: ReturnType<Engine['M']['sim']['stats']>, maxW: number): number {
   if (!E.M.sim.has || !st.n) return 0;
   const th = E.th, u = E.U, f = E.tx.f(13, 500, true);
-  const items: [string, number, string][] = [['working', st.working, th.mint], ['waiting', st.waiting, th.amber], ['blocked', st.blocked + st.failed, th.red]];
+  const items: [string, number, string][] = [['working', st.working, th.mintText], ['waiting', st.waiting, th.amberText], ['blocked', st.blocked + st.failed, th.red]];
   if (st.paused) items.push(['paused', st.paused, th.ink]);
   let gx = x, used = 0;
   for (const it of items) {
@@ -376,7 +384,7 @@ function drawWingLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: Bl
       drawSwarmLine(E, ctx, x, sy, ss, wdt - askW);
       if (ss.asks) {
         glyphPin(ctx, th, x + wdt - askW + 8 * u, sy + 4 * u, ss.high && em > 0 ? 'high' : 'med', em > 0, 0.62, 0, 0, u, tx.f(12, 600, true));
-        drawText(ctx, String(shown), x + wdt - askW + 22 * u, sy, tx.f(13, 600, true), em > 0 ? (ss.high ? th.red2 : th.amber) : th.inkA(0.75), th.halo);
+        drawText(ctx, String(shown), x + wdt - askW + 22 * u, sy, tx.f(13, 600, true), em > 0 ? (ss.high ? th.red2 : th.amberText) : th.inkA(0.75), th.halo);
       }
     }
     const nm = W.def.name.toUpperCase();
@@ -411,7 +419,7 @@ function drawBuildingLabel(E: Engine, ctx: CanvasRenderingContext2D, v: View, B:
   const ss = E.M.sim.has && E.isNow ? E.statsOf(B.id, B.feats) : null, sy = base - 36 * u;
   if (ss && ss.n) {
     const used = drawSwarmLine(E, ctx, x, sy, ss, wdt);
-    if (ss.asks) { glyphPin(ctx, th, x + used + 14 * u, sy + 4 * u, ss.high ? 'high' : 'med', true, 0.65, 0, 0, u, tx.f(12, 600, true)); drawText(ctx, ss.asks + ' questions waiting', x + used + 30 * u, sy, tx.f(13, 500, true), th.amber, th.halo); }
+    if (ss.asks) { glyphPin(ctx, th, x + used + 14 * u, sy + 4 * u, ss.high ? 'high' : 'med', true, 0.65, 0, 0, u, tx.f(12, 600, true)); drawText(ctx, ss.asks + ' questions waiting', x + used + 30 * u, sy, tx.f(13, 500, true), th.amberText, th.halo); }
   }
   const nm = B.name.toUpperCase(), fs = clamp(r.w / 14 / u, 18, 30);
   drawText(ctx, nm, x, base - (ss && ss.n ? 58 : 38) * u, tx.f(fs, 600), th.inkHi, th.halo, fs * 0.06);
