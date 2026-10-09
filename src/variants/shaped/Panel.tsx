@@ -69,7 +69,7 @@ export function ShapedPanel(props: SheetPanelProps) {
     );
   }
   return (
-    <div className={cls.join(' ')} aria-label={LENS_NAME[lens]}>
+    <div className={cls.join(' ')} role="group" aria-label={LENS_NAME[lens]}>
       {badge}
       {expanded && <Edges lens={lens} f={f} rollout={rollout} />}
       <DefaultLensPanel {...props} />

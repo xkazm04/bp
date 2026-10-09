@@ -36,7 +36,7 @@ function DesignBoard({ p }: { p: SheetPanelProps }) {
         <div className={'bd-fact' + (bad ? ' bad' : '')}>{fact}</div>
         {de.status !== 'n/a' && (
           <ol className="bd-ladder" aria-label="Design fidelity">
-            {FID.map((s, i) => <li key={s} className={i <= lv ? 'on' : ''}><i />{s === 'implemented' ? 'built' : s}</li>)}
+            {FID.map((s, i) => <li key={s} className={i <= lv ? 'on' : ''} aria-current={i === lv ? 'step' : undefined}><i />{s === 'implemented' ? 'built' : s}</li>)}
           </ol>
         )}
       </div>
@@ -68,9 +68,9 @@ function Terminal({ p }: { p: SheetPanelProps }) {
     <div className="bd-panel bd-dev">
       <Head p={p} label="Terminal" />
       <div className="bd-term" role="table" aria-label="Development facts">
-        <div className="pr">$ kettle feature show {f.id} --dev</div>
+        <div className="pr" role="caption">$ kettle feature show {f.id} --dev</div>
         {rows.map(([k, v, c]) => <div key={k} className="kv" role="row"><span role="cell">{k}</span><b role="cell" className={c || ''}>{v}{k === 'progress' && <span className="bar"> {bar(prog)}</span>}</b></div>)}
-        <div className="pr dim">{dv.humanReviewed === false ? '! merge blocked until a human reviews' : '# ok'}</div>
+        <div className="pr dim" role="row"><span role="cell">{dv.humanReviewed === false ? '! merge blocked until a human reviews' : '# ok'}</span></div>
       </div>
     </div>
   );
@@ -88,7 +88,7 @@ function Ledger({ p }: { p: SheetPanelProps }) {
       <div className="bd-big"><b>{asks}</b><span>{asks === 1 ? 'customer asked for this' : 'customers asked for this'} in the last 30 days</span></div>
       <p>{rev}</p>
       <p>{b.adoptionPct != null ? b.adoptionPct + '% of the 412 studios use it.' : 'Nobody can use it yet.'}</p>
-      <div className="bd-pips" aria-label={'Value ' + b.value + ' of 5'}>{[1, 2, 3, 4, 5].map((i) => <i key={i} className={i <= b.value ? 'on' : ''} />)}<span>value {b.value} of 5 · {b.confidence}</span></div>
+      <div className="bd-pips">{[1, 2, 3, 4, 5].map((i) => <i key={i} aria-hidden="true" className={i <= b.value ? 'on' : ''} />)}<span>value {b.value} of 5 · {b.confidence}</span></div>
       {b.usageNote && <p className="bd-quiet">{b.usageNote}</p>}
     </div>
   );
@@ -147,7 +147,7 @@ function Perimeter({ p }: { p: SheetPanelProps }) {
         <div><b>{REV_WORD[se.review] ?? se.review}</b><span>{se.openFindings ? se.openFindings + ' open finding' + (se.openFindings === 1 ? '' : 's') : 'no open findings'}{sensitive && open ? ' · handles ' + CLASS_WORD[se.dataClass].toLowerCase() + ' without a review' : ''}</span></div>
       </div>
       <ol className="bd-classes" aria-label="Data class">
-        {CLASSES.map((c, i) => <li key={c} className={(i === ci ? 'on' : '') + (i <= ci ? ' in' : '')}>{CLASS_WORD[c]}</li>)}
+        {CLASSES.map((c, i) => <li key={c} className={(i === ci ? 'on' : '') + (i <= ci ? ' in' : '')} aria-current={i === ci ? 'step' : undefined}>{CLASS_WORD[c]}</li>)}
       </ol>
     </div>
   );
@@ -159,7 +159,7 @@ function Inspection({ p }: { p: SheetPanelProps }) {
   return (
     <div className="bd-panel bd-qa">
       <Head p={p} label="Inspection" />
-      <div className="bd-checks" aria-label={n ? q.e2ePassing + ' of ' + n + ' end-to-end tests pass' : 'No end-to-end tests'}>
+      <div className="bd-checks" role="group" aria-label={n ? q.e2ePassing + ' of ' + n + ' end-to-end tests pass' : 'No end-to-end tests'}>
         {n ? Array.from({ length: n }, (_, i) => <i key={i} className={i < q.e2ePassing ? 'ok' : 'bad'} />) : <i className="none" />}
         <span><b>{n ? q.e2ePassing + ' / ' + n : 'No'}</b> end-to-end tests {n ? 'pass' : 'yet'} · {q.status}</span>
       </div>
