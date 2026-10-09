@@ -2,16 +2,20 @@
 // One feature as a document. The lens panels (one per enabled lens, from the manifests) follow the lens
 // mix: in General they all sit side by side; in a lens, its panel moves to the top and grows to its
 // reader's density while the others collapse to their headline (a Motion layout animation,
-// interruptible like the canvas tween).
+// interruptible like the canvas tween). Each panel ends with its metric rows (MetricRows, from the
+// manifest); the Business section (as-is, core, variations) follows the panels, and a live product's
+// Screens strip follows that.
 import { useEffect, useRef } from 'react';
 import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
 import type { Feature } from '@/lib/data';
 import { REV_DESC, STAGE_WORD, astat, fmtWait, isAgentId, lensOf, pname, type Model } from '@/lib/model';
 import { illoSVG } from '@/engine/render/illo';
-import { DefaultLensPanel } from './sheet/LensPanel';
+import { DefaultLensPanel, MetricRows } from './sheet/LensPanel';
+import { BusinessSection } from './sheet/Business';
+import { ScreensStrip } from './sheet/Screens';
 import { plainLine } from './sheet/words';
 import { Mark, PatternDefs, StageSym, agentMark } from './Symbols';
-import { shallowEqual, useBp, useDensity, useEngine, useVariant } from './hooks';
+import { shallowEqual, useBp, useDensity, useEngine, useLive, useVariant } from './hooks';
 
 function SwarmSection({ f }: { f: Feature }) {
   const E = useEngine(), M = E.M, sim = M.sim;
@@ -20,30 +24,30 @@ function SwarmSection({ f }: { f: Feature }) {
   const ag = sim.AGF[f.id] || [], ds = sim.DOF[f.id] || [], ords = sim.ordersOn(f.id), ev = sim.log.filter((e) => e.f === f.id).slice(0, 4);
   return (
     <div className="swm">
-      <h4>The swarm on this feature · simulated</h4>
+      <h4>{sim.live ? 'The scan on this feature · live' : 'The swarm on this feature · simulated'}</h4>
       {!ag.length && !ds.length && !ev.length && <div style={{ color: 'var(--ink-2)', fontSize: 14, padding: '4px 0' }}>No agent is working here right now.{f.stage === 'live' ? ' It is live and quiet.' : ''}</div>}
       {ag.map((a) => (
         <div key={a.id} className="arow">
           <span><Mark k={agentMark(astat(a))} w={18} h={13} /></span>
           <span><b style={{ color: 'var(--ink-hi)', fontWeight: 500 }}>{a.base}</b> <span style={{ color: 'var(--ink-2)' }}>· {sim.crewName(a.sq)} · {astat(a)}</span><br /><span style={{ color: 'var(--ink-2)', fontSize: 13 }}>{a.task}</span></span>
           <span className="pb"><i style={{ width: Math.round(a.pct) + '%' }} /></span>
-          <span style={{ font: '500 12px var(--mono)', color: 'var(--ink-2)' }}>{Math.round(a.pct)}% · ${a.cost.toFixed(0)}</span>
+          <span style={{ font: '500 12px var(--mono)', color: 'var(--ink-2)' }}>{Math.round(a.pct)}%{sim.live ? '' : ' · $' + a.cost.toFixed(0)}</span>
         </div>
       ))}
       {ds.map((d) => (
         <div key={d.id} className="dq">
           <b>{d.base} · {d.q}</b>
-          <div style={{ fontSize: 13, color: 'var(--ink-2)', margin: '2px 0 4px' }}>{pname(M.P, d.decider)} decides · waiting {fmtWait(sim.waitMin(d))} · holds {sim.blocksNow(d)} agent{sim.blocksNow(d) === 1 ? '' : 's'}</div>
+          <div style={{ fontSize: 13, color: 'var(--ink-2)', margin: '2px 0 4px' }}>{sim.live ? 'For whoever reviews' : pname(M.P, d.decider) + ' decides'} · waiting {fmtWait(sim.waitMin(d))} · holds {sim.blocksNow(d)} agent{sim.blocksNow(d) === 1 ? '' : 's'}</div>
           {d.opts.map((o, i) => <button key={i} type="button" className={'op' + (i === d.rec ? ' rec' : '')} onClick={() => E.decide(d.id, i)}><i className="no">{i + 1}</i><b>{o.label}{i === d.rec && <em>agent suggests</em>}</b><span>{o.consequence}</span></button>)}
         </div>
       ))}
       {ords.length ? <div style={{ marginTop: 8, fontSize: 14 }}>{ords.map((x) => <div key={x.id}><span className="ag" style={{ margin: '0 6px 0 0', color: x.vf.includes(f.id) ? 'var(--red-2)' : 'var(--amber)', borderColor: 'currentColor' }}>{x.id}{x.vf.includes(f.id) ? ' BREACHED' : ''}</span>{x.text}</div>)}</div> : null}
       {ev.length ? <div style={{ marginTop: 8, fontSize: 13, color: 'var(--ink-2)' }}>{ev.map((e, i) => <div key={i}>{new Date(sim.at0 + e.t * 1000).toISOString().slice(11, 16)} · {e.text}</div>)}</div> : null}
-      <div className="btns">
+      {!sim.live && <div className="btns">
         <button type="button" className="btn" onClick={() => E.preview(ag.some((a) => a.paused) ? 'resume' : 'pause', undefined, f.id)}>{ag.some((a) => a.paused) ? 'Resume agents here' : 'Pause agents here'}</button>
         <button type="button" className="btn" onClick={() => E.preview('push', undefined, f.id)}>Put the swarm on this…</button>
         <button type="button" className="btn" onClick={() => { E.setTarget({ [f.id]: 1 }, f.name); E.patch({ ordMenu: true }); }}>Write an order here…</button>
-      </div>
+      </div>}
     </div>
   );
 }
@@ -51,7 +55,7 @@ function SwarmSection({ f }: { f: Feature }) {
 function LensPanels({ f, M }: { f: Feature; M: Model }) {
   const V = useVariant(), dens = useDensity();
   const view = useBp((s) => s.view);
-  const Panel = V.ui?.SheetPanel ?? DefaultLensPanel;
+  const Panel = V.ui?.SheetPanel ?? DefaultLensPanel, scan = useLive()?.product.scan;
   const ids = M.P.lenses.map((l) => l.id);
   const order = lensOf(M.P, view) ? [view, ...ids.filter((l) => l !== view)] : ids;
   return (
@@ -62,6 +66,7 @@ function LensPanels({ f, M }: { f: Feature; M: Model }) {
           return (
             <motion.div key={l} layout transition={{ type: 'spring', stiffness: 260, damping: 30 }} className={'evp ' + (f.lens[l]?.h ?? 'unmeasured') + (cur ? ' cur' : '') + (mini ? ' mini' : '')}>
               <Panel lens={l} def={M.P.LENS[l]} f={f} model={M} density={dens(l)} expanded={cur} view={view} />
+              {!mini && <MetricRows def={M.P.LENS[l]} f={f} model={M} scan={scan} all={cur} fl={f.lens[l]} />}
             </motion.div>
           );
         })}
@@ -115,6 +120,8 @@ export function SheetBody({ f }: { f: Feature }) {
         </div>
         <div>
           <LensPanels f={f} M={M} />
+          <BusinessSection f={f} />
+          <ScreensStrip f={f} />
           <div className="dsec deps">
             <div className="dl"><h4>Depends on · {f.dependsOn.length}</h4>{dl(f.dependsOn, 'Nothing, it stands on its own')}</div>
             <div className="dl"><h4>Used by · {f.usedBy.length} · blast radius {M.closure.of(f.id).length}</h4>{dl(f.usedBy, 'Nothing depends on it')}</div>

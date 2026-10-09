@@ -5,6 +5,7 @@ export * from './aggregates';
 export * from './sim';
 export * from './search';
 export * from './lens';
+export * from './live';
 
 import { SWARM, loadProduct } from '@/lib/data';
 import { buildProduct, type Product } from './product';
@@ -12,6 +13,7 @@ import { layoutProduct, type Layout } from './layout';
 import { AggCache, Closure } from './aggregates';
 import { SwarmSim } from './sim';
 import { AWAY_SINCE } from './constants';
+import type { LiveRef } from './live';
 
 export interface Model {
   P: Product;
@@ -19,6 +21,8 @@ export interface Model {
   sim: SwarmSim;
   agg: AggCache;
   closure: Closure;
+  /** Set for a live product (`?product=<slug>`); absent for Kettle. */
+  live?: LiveRef;
 }
 
 /**

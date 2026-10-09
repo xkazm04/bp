@@ -2,7 +2,12 @@
 // and their breaches, and a replayable hour at 1x..240x. Everything here is a simulation over sample
 // data; nothing talks to a real system. Pure TS: wall-clock time is injected (`now`) and visual
 // effects are recorded as plain data (pulses, heat, travel) for the engine to draw.
-import type { ReplayType, StandingOrder, Swarm, AgentStatus, CrewRole, Squad, ViewId, Feature, Scalar } from '@/lib/data';
+//
+// Live mode (`{ live: true }`, a live product's lens scan): the same state, driven by the feed instead
+// of the replay. There is no recorded hour: waits and ages use the wall clock (`wall`), and each new
+// feed (`applyFeed`) sets the agents, the open questions and the recent events directly. Agents are
+// the truth, not the replay.
+import type { Agent, Decision, ReplayEvent, ReplayType, StandingOrder, Swarm, AgentStatus, CrewRole, Squad, ViewId, Feature, Scalar } from '@/lib/data';
 import { fval } from '@/lib/standard/load';
 import { FIRST_MILESTONE, GA_MILESTONE, HOUR, LATER_MILESTONES, PULSE_OF, type PulseKind } from './constants';
 import { isLiveSt } from './aggregates';
@@ -61,6 +66,17 @@ export interface SimListener {
   event(e: SimEvent): void;
 }
 
+/** Who decides a live question: a scan names no person, so the UI says this where a name would go. */
+export const LIVE_DECIDER = 'whoever reviews';
+export interface SimOptions {
+  /** Driven by `applyFeed` (a live scan) instead of the replay. */
+  live?: boolean;
+  /** Wall clock in ms (live waits and ages). Default Date.now. */
+  wall?: () => number;
+}
+type AgentSnap = { a: SimAgent; status: AgentStatus; task: string; wait: string | null; pct: number };
+const liveKey = (e: ReplayEvent) => e.at + '|' + e.agent + '|' + e.feature + '|' + e.text;
+
 export function hash01(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
@@ -78,7 +94,14 @@ export function fmtWait(m: number): string {
 
 export class SwarmSim {
   readonly has: boolean;
-  readonly at0: number;
+  /** The feed's as-of in ms: the replay's 09:00, or a live run's start. */
+  at0: number;
+  readonly live: boolean;
+  private wall: () => number;
+  /** Live: feed events already applied, so a new feed plays only what is new. */
+  private seen = new Set<string>();
+  /** Live: questions answered here, with what to restore if the store refuses the answer. */
+  private liveSnap = new Map<string, { d: SimDecision; snap: AgentSnap[] }[]>();
   agents: SimAgent[] = []; AG: Record<string, SimAgent> = {};
   decisions: SimDecision[] = []; DEC: Record<string, SimDecision> = {};
   orders: SimOrder[] = []; events: SimEvent[] = [];
@@ -97,11 +120,16 @@ export class SwarmSim {
   private ordCache: Record<string, Record<string, 1>> | null = null;
   private listener: SimListener | null = null;
 
-  constructor(private P: Product, private S0: Swarm | null, private now: () => number) {
+  constructor(private P: Product, private S0: Swarm | null, private now: () => number, opts: SimOptions = {}) {
     this.has = !!(S0 && S0.agents);
+    this.live = !!opts.live; this.wall = opts.wall ?? Date.now;
     this.at0 = S0?.asOf ? Date.parse(S0.asOf) : Date.parse('2026-10-08T09:00:00Z');
+    // live: nothing plays, so the engine's loop sleeps between feeds (and agents skip the idle orbit)
+    if (this.live) this.playing = false;
     this.build();
   }
+  /** The clock questions wait against: the simulated hour's time, or the wall clock when live. */
+  clockMs(): number { return this.live ? this.wall() : this.at0 + this.t * 1000; }
   listen(l: SimListener | null) { this.listener = l; }
   private bump() { this.version++; this.listener?.changed(); }
   private toast(t: SimToast) { this.listener?.toast(t); }
@@ -116,29 +144,41 @@ export class SwarmSim {
       const sf = lineSuffix(P.scale, b);
       for (const a of S0.agents) {
         const g: SimAgent = {
-          id: a.id + sf, base: a.id, b, sq: a.squad, role: a.role, status: a.status, f: a.feature + sf, task: a.task,
+          id: a.id + sf, base: this.live ? this.codeOf(a) : a.id, b, sq: a.squad, role: a.role, status: a.status, f: a.feature + sf, task: a.task,
           pct: a.progressPct, since: Date.parse(a.since), tpm: a.tokensPerMin, cost: a.costUsdToday, done: a.doneToday,
           wait: a.waitingOn ? a.waitingOn + sf : null, blk: a.blockedBy ? a.blockedBy + sf : null, ph: hash01(a.id + sf) * 6.2832,
-          paused: false, tr: null, flash: 0, synth: false, nextSynth: 0, code: crewCode(a.id), act: 0,
+          paused: false, tr: null, flash: 0, synth: false, nextSynth: 0, code: this.codeOf(a), act: 0,
         };
         this.agents.push(g); this.AG[g.id] = g;
       }
-      for (const d of S0.decisions) {
-        const g: SimDecision = {
-          id: d.id + sf, base: d.id, b, f: d.feature + sf, dom: d.domain + sf, lens: d.lens, decider: d.decider, by: d.askedBy + sf,
-          q: d.question, opts: d.options, rec: d.recommended, urg: d.urgency, since: Date.parse(d.waitingSince), blocks: d.blocksAgents,
-          freed: 0, affects: d.affects.map((x) => x + sf), arr: d.arrivesAt || 0, open: !d.arrivesAt, ans: null, isNew: false, freedIds: [],
-        };
-        this.decisions.push(g); this.DEC[g.id] = g;
-      }
+      for (const d of S0.decisions) { const g = this.fromDecision(d, b, sf); this.decisions.push(g); this.DEC[g.id] = g; }
       for (const e of S0.replay) {
         this.events.push({ t: e.t, agent: e.agent + sf, f: e.feature + sf, type: e.type, text: e.text, from: e.from ? e.from + sf : null, dec: e.decision ? e.decision + sf : null });
       }
     }
     this.events.sort((a, b) => a.t - b.t);
+    if (this.live) {
+      // a live feed's events are history, not an hour to play: they seed the log; later feeds append
+      for (const e of S0.replay) this.seen.add(liveKey(e));
+      this.log = this.events.filter((e) => this.P.F[e.f]).reverse().slice(0, 400);
+      this.events = [];
+    }
     for (const o of S0.orders) this.orders.push(this.fromOrder(o));
     this.computeViolations();
     this.index();
+  }
+  private fromDecision(d: Decision, b: number, sf: string): SimDecision {
+    return {
+      id: d.id + sf, base: d.id, b, f: d.feature + sf, dom: d.domain + sf, lens: d.lens, decider: d.decider, by: d.askedBy + sf,
+      q: d.question, opts: d.options, rec: d.recommended, urg: d.urgency, since: Date.parse(d.waitingSince), blocks: d.blocksAgents,
+      freed: 0, affects: d.affects.map((x) => x + sf), arr: d.arrivesAt || 0, open: !d.arrivesAt, ans: null, isNew: false, freedIds: [],
+    };
+  }
+  /** The chip code: the sample's crew codes (F1.3); a live agent reads as its lens's short name (DEV.1). */
+  private codeOf(a: Agent): string {
+    if (!this.live) return crewCode(a.id);
+    const lens = this.SQ[a.squad]?.lenses?.[0], n = /\.(\d+)$/.exec(a.id)?.[1] ?? '1';
+    return lens ? (this.P.LENS[lens]?.short ?? lens.slice(0, 4)).toUpperCase() + '.' + n : a.id;
   }
   private fromOrder(o: StandingOrder): SimOrder {
     return { id: o.id, by: o.by, lens: o.lens, scope: { ...o.scope }, text: o.text, since: o.since, n: o.violations, vf: [], user: false };
@@ -166,7 +206,7 @@ export class SwarmSim {
   }
   openDecs(): SimDecision[] { return this.decisions.filter((d) => d.open); }
   blocksNow(d: SimDecision): number { return Math.max(0, d.blocks - d.freed); }
-  waitMin(d: SimDecision): number { return Math.max(0, Math.round((this.at0 + this.t * 1000 - d.since) / 60000)); }
+  waitMin(d: SimDecision): number { return Math.max(0, Math.round((this.clockMs() - d.since) / 60000)); }
   score(d: SimDecision): number { return ({ high: 3, medium: 2, low: 1 })[d.urg] * 1e6 + this.blocksNow(d) * 1e4 + Math.min(9999, this.waitMin(d)); }
   /**
    * Is this decision for the current reader (person, else lens)? Lens ids are strings: a decision whose
@@ -285,7 +325,7 @@ export class SwarmSim {
     this.tally[e.type] = (this.tally[e.type] || 0) + 1;
     const t = e.type;
     if (t === 'move') { if (A) { this.travel(A, f); if (A.status === 'working') A.task = 'moved here: ' + F.name; discrete.v = true; } }
-    else if (t === 'commit') this.prog[f] = (this.prog[f] || 0) + 0.7;
+    else if (t === 'commit' && !this.live) this.prog[f] = (this.prog[f] || 0) + 0.7;
     else if (t === 'flag-change') { const m = /(\d+)%/.exec(e.text); if (m) { this.roll[f] = +m[1]; this.breachCheck(f, +m[1]); discrete.v = true; } }
     else if (t === 'task-done') { if (A) { A.done++; A.pct = 3; } }
     else if (t === 'decision-asked') { const d = e.dec ? this.DEC[e.dec] : null; if (d) { this.openDecision(d, A); discrete.v = true; } }
@@ -294,7 +334,7 @@ export class SwarmSim {
     this.listener?.event(e);
   }
   private openDecision(d: SimDecision, A: SimAgent | undefined) {
-    d.open = true; d.isNew = true; d.since = this.at0 + this.t * 1000;
+    d.open = true; d.isNew = true; d.since = this.clockMs();
     if (A && A.status === 'working') { A.status = 'waiting'; A.wait = d.id; A.task = 'waiting: ' + d.q; }
     this.index(); this.pulse(d.f, 'ask');
     this.toast({ strong: 'New question', text: 'from ' + (A ? A.base : 'an agent') + ' · ' + this.P.F[d.f].name + ' · for ' + pname(this.P, d.decider), fid: d.f });
@@ -314,7 +354,7 @@ export class SwarmSim {
   }
   /** Advance the hour by wall time `dtMs` at the current speed. Returns true if anything discrete changed. */
   advance(dtMs: number): boolean {
-    if (!this.has || !this.playing) return false;
+    if (!this.has || !this.playing || this.live) return false;
     const dt = (Math.min(dtMs, 90) / 1000) * this.speed, last = this.t;
     this.t = Math.min(HOUR, this.t + dt);
     const disc = { v: false };
@@ -335,6 +375,7 @@ export class SwarmSim {
     return disc.v;
   }
   seek(t: number) {
+    if (this.live) return;
     t = Math.max(0, Math.min(HOUR, t)); if (t <= this.t) return;
     const disc = { v: false };
     while (this.i < this.events.length && this.events[this.i].t <= t) this.apply(this.events[this.i++], disc);
@@ -342,17 +383,19 @@ export class SwarmSim {
     this.t = t; this.index(); this.bump();
   }
   reset() {
+    if (this.live) return;
     const sp = this.speed;
     this.t = 0; this.playing = true; this.speed = sp; this.i = 0; this.log = []; this.pulses = []; this.heat = {}; this.roll = {};
     this.prog = {}; this.undo = null; this.undo2 = null; this.over = false; this.breaches = 0; this.tally = {}; this.ordCache = null;
     this.build(); this.bump();
   }
-  setSpeed(n: number) { this.speed = n; if (!this.over) this.playing = true; this.bump(); }
-  togglePlay() { if (this.over) { this.reset(); return; } this.playing = !this.playing; this.bump(); }
+  setSpeed(n: number) { if (this.live) return; this.speed = n; if (!this.over) this.playing = true; this.bump(); }
+  togglePlay() { if (this.live) return; if (this.over) { this.reset(); return; } this.playing = !this.playing; this.bump(); }
 
   // ---------------------------------------------------------------- deciding
   decide(id: string, oi: number) {
     const d = this.DEC[id]; if (!d || !d.open) return;
+    if (this.live) { this.decideLive(d, oi); return; }
     const freed = this.agents.filter((a) => a.wait === id), now = this.now();
     const snap = freed.map((a) => ({ a, status: a.status, task: a.task, wait: a.wait, pct: a.pct }));
     d.open = false; d.isNew = false; d.ans = { opt: oi, t: this.t, at: now };
@@ -366,6 +409,111 @@ export class SwarmSim {
     const n = freed.length;
     this.toast({ strong: 'Decided', text: d.opts[oi].label + (n ? ' · ' + n + ' agent' + (n > 1 ? 's' : '') + ' back to work' : ' · nobody was blocked') + ' · ' + d.affects.length + ' feature' + (d.affects.length > 1 ? 's' : '') + ' touched', action: 'undo' });
     this.bump();
+  }
+  /**
+   * Live: answer optimistically. Every product line's copy of the question closes and the agents it
+   * held go back to work; the store's answer comes back through `settle`. There is no undo: the
+   * decision is written to the product's store.
+   */
+  private decideLive(d0: SimDecision, oi: number) {
+    const now = this.now(), kept: { d: SimDecision; snap: AgentSnap[] }[] = [];
+    for (const d of this.decisions) {
+      if (d.base !== d0.base || !d.open) continue;
+      const freed = this.agents.filter((a) => a.wait === d.id);
+      kept.push({ d, snap: freed.map((a) => ({ a, status: a.status, task: a.task, wait: a.wait, pct: a.pct })) });
+      d.open = false; d.isNew = false; d.ans = { opt: oi, t: this.t, at: now };
+      for (const a of freed) { a.status = 'working'; a.wait = null; a.task = 'resumed after the decision: ' + d.opts[oi].label; a.flash = now; }
+      d.freed += freed.length; d.freedIds = freed.map((a) => a.id);
+      this.pulse(d.f, 'ok');
+    }
+    this.liveSnap.set(d0.base, kept);
+    this.index();
+    const lb = d0.opts[oi].label;
+    this.toast({ strong: lb === 'Approve' ? 'Approved' : lb === 'Decline' ? 'Declined' : 'Decided: ' + lb, text: d0.q, fid: d0.f });
+    this.bump();
+  }
+  /**
+   * Live: the store's answer to a decision made here (`base` = the proposal id). `err` null = saved.
+   * Otherwise the toast says why, and the question reopens when `reopen` (it stays closed when
+   * someone else already decided it: the next feed shows their answer).
+   */
+  settle(base: string, err: string | null, reopen: boolean) {
+    const kept = this.liveSnap.get(base); this.liveSnap.delete(base);
+    if (!err || !kept) return;
+    if (reopen) {
+      for (const k of kept) {
+        k.d.open = true; k.d.ans = null; k.d.freed = Math.max(0, k.d.freed - k.snap.length);
+        for (const s of k.snap) { s.a.status = s.status; s.a.task = s.task; s.a.wait = s.wait; s.a.pct = s.pct; }
+        if (!this.DEC[k.d.id]) { this.decisions.push(k.d); this.DEC[k.d.id] = k.d; }
+      }
+      this.index();
+    }
+    const d = kept[0]?.d;
+    this.toast({ strong: err, text: (d ? d.q : base) + (reopen ? ' · the question is open again' : ''), fid: d?.f });
+    this.bump();
+  }
+  /**
+   * Live: take a new feed (`swarmFromScan` over the latest scan). Agents are set from it directly
+   * (an agent whose feature changed travels there), questions new to it open (with a toast once a run
+   * has been seen), questions it no longer lists close, and its events not shown yet are applied as
+   * the replay would apply them (log, pulse, ticker). The product, the layout and the engine stay.
+   */
+  applyFeed(S: Swarm) {
+    if (!this.live || !this.has) return;
+    const P = this.P, now = this.now(), had = !!this.S0?.squads.length;
+    const at0 = S.asOf ? Date.parse(S.asOf) : this.at0;
+    if (Number.isFinite(at0) && at0 !== this.at0) { const dt = (this.at0 - at0) / 1000; for (const e of this.log) e.t += dt; this.at0 = at0; }
+    this.S0 = S;
+    this.squads = S.squads.slice(); this.SQ = {}; this.served = {};
+    for (const q of S.squads) this.SQ[q.id] = q;
+    const keep = new Set<string>(), listed = new Set<string>();
+    for (let b = 0; b < P.scale; b++) {
+      const sf = lineSuffix(P.scale, b);
+      for (const a of S.agents) {
+        const id = a.id + sf, f = a.feature + sf;
+        keep.add(id);
+        let g = this.AG[id];
+        if (!g) {
+          g = {
+            id, base: this.codeOf(a), b, sq: a.squad, role: a.role, status: a.status, f, task: a.task, pct: a.progressPct, since: Date.parse(a.since),
+            tpm: a.tokensPerMin, cost: a.costUsdToday, done: a.doneToday, wait: null, blk: null, ph: hash01(id) * 6.2832,
+            paused: false, tr: null, flash: now, synth: false, nextSynth: 0, code: this.codeOf(a), act: now,
+          };
+          this.agents.push(g); this.AG[id] = g;
+        } else if (g.f !== f && P.F[f]) this.travel(g, f);
+        g.sq = a.squad; g.role = a.role; g.status = a.status; g.task = a.task; g.pct = a.progressPct; g.since = Date.parse(a.since);
+        g.done = a.doneToday; g.wait = a.waitingOn ? a.waitingOn + sf : null; g.blk = a.blockedBy ? a.blockedBy + sf : null;
+      }
+      for (const d of S.decisions) {
+        const id = d.id + sf, g = this.DEC[id];
+        listed.add(id);
+        if (g) { g.q = d.question; g.opts = d.options; g.urg = d.urgency; g.affects = d.affects.map((x) => x + sf); continue; }
+        const n = this.fromDecision(d, b, sf);
+        this.decisions.push(n); this.DEC[id] = n;
+        if (had && P.F[n.f]) {
+          n.isNew = true; this.pulse(n.f, 'ask');
+          if (b === 0) this.toast({ strong: 'New question', text: 'from ' + (this.AG[n.by]?.code ?? 'the scan') + ' · ' + P.F[n.f].name + ' · for ' + pname(P, n.decider), fid: n.f });
+        }
+      }
+    }
+    if (keep.size !== this.agents.length) { this.agents = this.agents.filter((a) => keep.has(a.id)); this.AG = {}; for (const a of this.agents) this.AG[a.id] = a; }
+    // decided elsewhere (or moved on by the skill): close it; closed ones the feed no longer lists go once their release has drawn
+    for (const d of this.decisions) if (d.open && !listed.has(d.id)) d.open = false;
+    const n0 = this.decisions.length;
+    this.decisions = this.decisions.filter((d) => listed.has(d.id) || d.open || (d.ans && now - d.ans.at < 10000));
+    if (this.decisions.length !== n0) { this.DEC = {}; for (const d of this.decisions) this.DEC[d.id] = d; }
+    const disc = { v: false };
+    for (const e of S.replay) {
+      const k = liveKey(e); if (this.seen.has(k)) continue;
+      this.seen.add(k);
+      const t = (Date.parse(e.at) - this.at0) / 1000;
+      for (let b = 0; b < P.scale; b++) {
+        const sf = lineSuffix(P.scale, b);
+        this.apply({ t: Number.isFinite(t) ? t : e.t, agent: e.agent + sf, f: e.feature + sf, type: e.type, text: e.text, from: null, dec: null }, disc);
+      }
+    }
+    if (this.seen.size > 2000) this.seen = new Set(S.replay.map(liveKey));
+    this.index(); this.bump();
   }
   undoDecision() {
     const u = this.undo; if (!u) return;

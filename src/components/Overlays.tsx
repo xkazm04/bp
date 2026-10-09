@@ -102,7 +102,7 @@ function HoverBody() {
         <div className="k">{sim.crewName(A.sq)} crew · {A.role}{M.P.scale > 1 ? ' · ' + M.P.buildings[A.b].short : ''}</div>
         <div className="n" style={{ fontSize: 21 }}>{A.base} <span style={{ fontSize: 15, fontWeight: 500, color: col }}>{word}</span></div>
         <div className="s">{A.task}</div>
-        <div className="e">{f.name} · {Math.round(A.pct)}% · ${A.cost.toFixed(0)} today · {A.done} tasks done</div>
+        <div className="e">{f.name} · {Math.round(A.pct)}%{sim.live ? '' : ' · $' + A.cost.toFixed(0) + ' today'} · {A.done} {sim.live ? 'measured' : 'tasks done'}</div>
         {dq && <div className="sw q">Waiting on {pname(M.P, dq.decider)} · {dq.base}</div>}
         <div className="h">{dq ? 'Click to answer its question' : 'Click to open the feature'}</div>
       </>
@@ -376,7 +376,7 @@ export function Morning() {
               <div><b>{ms.changes}</b>changes since 18:00</div>
               <div className="am"><b>{ms.asked}</b>questions asked while you slept</div>
               <div className="am"><b>{who ? mine.length : q.all.filter((d) => d.urg === 'high').length}</b>{who ? 'waiting for you' : 'urgent now'}</div>
-              <div><b>${ms.spend.toLocaleString('en-US')}</b>spent today, cap $2,400</div>
+              {!sim.live && <div><b>${ms.spend.toLocaleString('en-US')}</b>spent today, cap $2,400</div>}
             </div>
             <div className="cols">
               <div><h4>What moved</h4><ul>{ms.ev.slice(0, 7).map((a, i) => <li key={i}><button type="button" onClick={() => E.flyToFeature(a.feature + (M.P.scale > 1 ? '-S' : ''))}><i>{a.at.slice(11, 16)}</i><span>{a.text}</span></button></li>)}</ul></div>

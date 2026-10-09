@@ -397,6 +397,8 @@ export class Engine {
     const now = performance.now();
     if (now - this.lastTickerAt > 400) { this.lastTickerAt = now; this.scheduleSimSync(); }
   }
+  /** A live product's new feed: the sim takes it in place (agents travel, questions open or close). */
+  feed(S: Parameters<Model['sim']['applyFeed']>[0]) { if (this.destroyed) return; this.M.sim.applyFeed(S); this.scheduleSimSync(true); this.dirty(); }
   togglePlay() { if (!this.isNow) { this.setTime(this.M.P.asOf); return; } this.M.sim.togglePlay(); this.scheduleSimSync(true); this.dirty(); }
   setSpeed(n: number) { this.M.sim.setSpeed(n); this.scheduleSimSync(true); this.dirty(); }
   stepSpeed(dir: number) { const i = SPEEDS.indexOf(this.M.sim.speed as (typeof SPEEDS)[number]); this.setSpeed(SPEEDS[clamp(i + dir, 0, SPEEDS.length - 1)]); }
@@ -588,7 +590,27 @@ export class Engine {
     i = i < 0 ? (dir > 0 ? 0 : list.length - 1) : (i + dir + list.length) % list.length;
     this.openDecision(list[i].id);
   }
-  decide(id: string, oi: number) { this.M.sim.decide(id, oi); if (this.S.dec === id) this.store.set({ dec: null }); this.scheduleSimSync(true); this.forceStatic(); }
+  /**
+   * Answer a question. Live products: optimistic, then written to the product's store (option 0 =
+   * approve, 1 = decline, with the optional note); a refusal rolls it back with a toast saying why.
+   */
+  decide(id: string, oi: number, note?: string) {
+    const sim = this.M.sim, d = sim.DEC[id], live = this.M.live;
+    const open = !!d?.open;
+    sim.decide(id, oi);
+    if (this.S.dec === id) this.store.set({ dec: null });
+    this.scheduleSimSync(true); this.forceStatic();
+    if (!live || !sim.live || !d || !open) return;
+    const pid = d.base, body = { decision: oi === 0 ? 'approve' as const : 'decline' as const, ...(note ? { note } : {}) };
+    live.decide(pid, body).then(
+      () => sim.settle(pid, null, false),
+      (e: Error & { status?: number }) => {
+        if (this.destroyed) return;
+        sim.settle(pid, e.status === 409 ? 'Already decided elsewhere' : 'Not saved: ' + e.message, e.status !== 409);
+        this.scheduleSimSync(true); this.forceStatic();
+      },
+    );
+  }
   undoDecision() { this.M.sim.undoDecision(); this.store.set({ toast: null }); this.scheduleSimSync(true); this.forceStatic(); }
   private forceStatic() { this.simSeenV = this.M.sim.version; this.simStaticV++; this.simStaticAt = performance.now(); this.dirty(); }
 

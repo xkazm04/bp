@@ -121,15 +121,15 @@ function SwarmTab() {
   return (
     <>
       <h3 className="dsec-h"><span>Steer the swarm</span><span>{sim.agents.length} agents</span></h3>
-      <div className="steer"><h5>Payments GA first</h5><p>Pull the agents working on M3 and M4 onto the unfinished Payments GA features. Order O-4 allows it.</p>
+      {!sim.live && <><div className="steer"><h5>Payments GA first</h5><p>Pull the agents working on M3 and M4 onto the unfinished Payments GA features. Order O-4 allows it.</p>
         {s.prev && s.prev.order === 'O-4' ? <PreviewBox /> : <button type="button" className="bt" onClick={() => E.preview('ga')}>Preview what it moves</button>}</div>
       <div className="steer"><h5>Pause the research crew</h5><p>The daily spend cap order (O-7) says research stops first. Spend today: ${spend} of ${SPEND_CAP.toLocaleString('en-US')}.</p>
-        {s.prev && s.prev.order === 'O-7' ? <PreviewBox /> : <button type="button" className="bt" onClick={() => E.preview('research')}>Preview</button>}</div>
+        {s.prev && s.prev.order === 'O-7' ? <PreviewBox /> : <button type="button" className="bt" onClick={() => E.preview('research')}>Preview</button>}</div></>}
       {s.tgt.n ? (
         <div className="steer"><h5>On your selection</h5><p>{s.tgt.label} · {s.tgt.n} features</p>
           {s.prev && !s.prev.order ? <PreviewBox /> : <div className="row"><button type="button" className="bt" onClick={() => E.preview('push')}>Put the swarm here</button><button type="button" className="bt" onClick={() => E.preview('pause')}>Pause</button><button type="button" className="bt" onClick={() => E.preview('resume')}>Resume</button></div>}</div>
       ) : <div className="steer"><h5>Point at a place</h5><p>Shift-click a wing, room or fixture, or shift-drag a box, then pull agents, pause them or write an order for exactly that place.</p></div>}
-      <h3 className="dsec-h"><span>Latest from the swarm</span><span>simulated</span></h3>
+      <h3 className="dsec-h"><span>Latest from the swarm</span><span>{sim.live ? 'live scan' : 'simulated'}</span></h3>
       <div className="lat">
         {sim.log.length ? sim.log.filter((e) => !(sim.speed > 60 && e.syn)).slice(0, 7).map((e, i) => {
           const a = sim.AG[e.agent];

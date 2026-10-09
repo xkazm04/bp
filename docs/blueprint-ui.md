@@ -84,6 +84,7 @@ Data (since the app-structure v3 adoption, spark `blueprint-data-standard` WP3):
   reproduces the old stored snapshots exactly.
 - The people and moments of use are in `docs/research/users.md`.
 - The swarm is a simulation, and the UI says so.
+- A live product (`?product=<slug>`) comes from its repo's scan store instead: its own map through the same loader, and the swarm from its scan. See **Live products** below.
 
 ### Lenses are data
 
@@ -248,6 +249,94 @@ back to the subtle manifest-driven channel and the default, manifest-driven shee
 
 All three: General stays the clearest view. A lens is subtle yet noticeable in variant 1, and
 unmistakable in variant 3. Every variant supports both themes and `?scale=4`.
+
+## Live products
+
+Kettle is built in and loads statically (no server route is involved). Any other product is a **live product**: a repo that the `/lens-scan` skill has scanned, opened with `?product=<slug>`. No `?product` means Kettle, exactly as before.
+
+**Product list.** `bp.products.local.json` at the blueprint repo root (gitignored; `bp.products.example.json` shows the shape):
+
+```json
+{ "products": [{ "slug": "personas", "name": "Personas", "root": "C:/code/personas" }] }
+```
+
+`root` is the product repo (absolute, or relative to the blueprint's working directory). The file is re-read on every request, so editing it needs no restart. A missing file means no live products. Duplicate slugs keep the first entry.
+
+**Store location.** Everything sits under `<root>/.ai/lens-scan/`:
+- `scan.db`: the SQLite store (DDL in `docs/standard/lens-scan-store.sql`). The skill writes it in WAL mode.
+- `app-structure.json`: the product's app-structure map.
+- `events.jsonl`: the events log (optional). Without it the revisions strip has one week, the as-of date.
+- `shots/`: screenshots.
+
+The blueprint reads the store through a read-only connection. Its only write is a proposal decision, made on a short-lived read-write connection with a 2000 ms busy timeout. The server code is `src/lib/scan/store.server.ts` and `products.server.ts`. Both throw if loaded in a browser, and only route handlers import them. `node:sqlite` is a Node 24 builtin. It prints an ExperimentalWarning once per process, and it needs no `next.config` change.
+
+**Wire convention.** The row types are in `src/lib/scan/types.ts`. JSON columns (`runs.lenses`, `runs.scope`, `shots.report`) arrive parsed. NULL columns are omitted, so the JSON never contains `null`. A feature with no measurement row is unmeasured.
+
+**Routes.** All routes run on the Node runtime with `force-dynamic`. An unknown slug answers 404 `{ error }`.
+
+| Route | Answer |
+|---|---|
+| `GET /api/products` | `ProductInfo[]`: `{ slug, name, live }`. `live` = `scan.db` exists. |
+| `GET /api/products/<slug>/structure` | `{ structure, events }`. `events` is `''` when there is no log. 404 when `app-structure.json` is missing. |
+| `GET /api/products/<slug>/scan` | `ScanSnapshot`: all runs, measurements, proposals, shots and coverage, plus the latest 200 activity rows in ascending id order. A missing store gives empty arrays. |
+| `GET /api/products/<slug>/stream` | Server-Sent Events, described below. |
+| `POST /api/products/<slug>/proposals/<id>` | Body `{ decision: 'approve' \| 'decline', note?: string }`. Sets `status`, `decided_by = 'blueprint'`, `decided_at`, `decision_note` and `updated_at`, but only while the status is `proposed`. Answers: **200** with the updated `Proposal`; **409** with the current row as the body (someone already decided, or the skill moved it on); **404** for an unknown id or a missing store; **400** for any other body (extra keys, a note that is not a string, a body that is not JSON); **503** when the store stayed locked past the busy timeout. |
+| `GET /api/products/<slug>/shots/<path>` | The file bytes as png, jpeg, webp or webm (by extension; anything else gets 415). `<path>` is relative to `<store>/shots`. A full `Shot.path` with its leading `shots/` is accepted too. **403** for anything that would resolve outside `shots/`: `.`, `..`, empty, absolute or drive segments, `\`, `/` or `:` encoded inside a segment (`..%2F..%2Fx`), NUL, and symlinks that point out. Plain `../` in a URL is collapsed by the HTTP layer before routing, so it never reaches the handler (Next answers 404). |
+
+**SSE semantics** (`/stream`). One long-lived read-only connection per client:
+- `event: snapshot`: a `ScanSnapshot`, sent on connect. While the store file does not exist, it is sent with empty arrays and the route keeps checking. It is sent again, in full, once the file appears.
+- `event: delta`: a `ScanDelta` (same keys, only new or changed rows). Each second the route reads `PRAGMA data_version` on the same connection. That value changes only when another connection commits (the skill, or a decision), so an idle store costs one pragma a second. When it changes, the route sends the rows past its cursors: measurements, activity and shots by `id`; runs and proposals by `updated_at`; coverage by `judged_at`. Rows that tie on a timestamp are not resent. Empty deltas are not sent. A store already open when the stream connects shows a new row within about 1 s.
+- `event: ping`: `{ at }`, sent after 15 s without another event.
+- When the client disconnects, the interval stops and the connection closes. If a read fails (the store was replaced or stayed locked), the route reopens on the next tick and sends a fresh snapshot.
+
+**Client** (`src/lib/scan/client.ts`):
+- `useLiveProduct(slug)`: `null` gives `{ status: 'missing', events: '' }`. Otherwise it fetches the structure (404 gives `missing` with the `error` text), then follows `/stream`. It replaces the scan on `snapshot` and merges each `delta`: rows are upserted by id, coverage by `(feature, standard)`, and only the latest 200 activity rows are kept. Status: `loading` until the first snapshot; `live`; `missing` while the repo has a structure but no store (features read unmeasured; it turns `live` when the store appears); `offline` while reconnecting (the hook reopens the EventSource with backoff of 0.5, 1, 2, 4, 8 s, then every 10 s); `error` when the structure request fails.
+- `decideProposal(slug, id, body)`: resolves to the updated `Proposal`. It rejects with an `Error` that carries `status`, plus `proposal` on a 409.
+- `swarmFromScan(scan, featureSlugs)`: builds the swarm feed from the latest run. One squad and one agent per lens (`scan-<lens>`, `scan-<lens>.1`, role `research` whatever the lens), each on the feature of its lens's latest activity row. Agent status: `idle` once the run is no longer running; `failed` if the lens's latest activity is an error; `waiting` when an open proposal exists for the lens; otherwise `working`. One decision per `proposed` proposal, with options Approve and Decline; urgency from risk (7 or more high, 4 or more medium). The replay is the run's activity, `t` in seconds since the run started.
+
+**How the app draws it** (`BlueprintApp`; `src/lib/model/live-feed.ts` for the model and feed, `live.ts` for the scan indexes):
+- The model is built once the structure is in and the stream has answered: `buildLiveModel` reads the map with the same loader as Kettle (`loadMap`), and the swarm is `liveSwarm(P, scan)`: `swarmFromScan` with what a scan cannot know filled in. The decider is "whoever reviews" (a scan names no person), the domain is the feature's own, and a question on a feature the map lacks is dropped.
+- **The sim's live mode.** The sim does not play a live scan as a replay: there is no recorded hour. Every later scan goes in place through `engine.feed(liveSwarm(...))` → `SwarmSim.applyFeed`. The agents are set from the feed (an agent whose feature changed travels there with the usual animation), questions new to the feed open (with a "New question" toast once a run has been seen), questions it no longer lists close, and its activity rows not shown yet go to the log, the pulses and the ticker. The engine, the layout and the static cache are untouched; only a new structure builds a new model. Nothing plays, so the frame loop sleeps between feeds. A new activity row moves its agent within about 1.5 s (1 s stream poll, then one frame).
+- **Time.** Waits and ages use the wall clock (`sim.clockMs()`); event times are seconds since the run start, so the ticker reads real times. The bottom bar's clock box shows the run (start, `● LIVE · <phase>` or its status, lenses, agents) instead of the sim hour, and the revisions strip drops the hour ahead (no replay to scrub, no arrivals).
+- **What a scan cannot fill** is not shown as zero: spend and tokens are hidden in live mode (sheet, hover card, morning watch, the steering panel). The Kettle-only steering (Payments GA push, the research crew's spend cap) is hidden; pause, push and orders on a selection stay, but the next feed puts the agents back where the scan has them. The "While you were away" digest is Kettle's and is not offered.
+- **Header pill.** `Live · <phase>` while the latest run is running, `Last scan <age>` otherwise, `Offline` while the stream reconnects, `No scan store` before the skill wrote one. Kettle shows nothing.
+- **Queue cards.** A live question is a proposal card: the title, `metric: before → expected` with the unit (before = the latest reading of that feature, lens and metric in the scan; expected = before + `expected_delta`), the standard tag (`no standard` for `none`), size and risk, and Approve and Decline. Decline opens an inline note field (optional, no modal); Enter or the Decline button sends it. Approve is option 0 and Decline option 1, so the decision card and the keys 1 and 2 decide too (without a note).
+- **Deciding** is optimistic: every product line's copy of the question closes at once and the agents it held go back to work. The decision is written to the store, so there is no undo. A refusal rolls it back with a toast saying why; a 409 says "Already decided elsewhere" and leaves the question closed (the next feed shows the other answer).
+- **Empty states.** An unknown slug, or a repo without a structure, shows the standard empty state: "No scan store at `<root>/.ai/lens-scan`" (or "No product … in bp.products.local.json"), with a link to Kettle. A repo with a structure but no store loads, says "No scan store yet" in a toast and the pill, and every feature reads unmeasured.
+
+**Demo product.** `node scripts/scan-demo.mjs [--dir .demo/kettle-live] [--reset] [--live]` builds a sample live product from the Kettle map and registers it as `kettle-live` (create or merge, idempotent). Open it with `?product=kettle-live`.
+- The seed has two finished runs a week apart, with development, security and design metrics on 20 features. It also has 7 proposals in mixed states, including one baseline upgrade with two propagation children, 6 coverage rows, and placeholder PNG shots of 2 features × 2 themes per run.
+- An existing store is kept, because an open stream may hold it. `--reset` recreates the store.
+- `--live` adds a running run. It writes an activity row every 1.5 s, a measurement every 3 s and a proposal every 20 s. Ctrl-C marks the run done; a run left `running` by a hard kill is marked `aborted` at the next `--live`.
+- `.demo/` is gitignored. All of it is invented sample data.
+
+## Metric rows
+
+A lens field with `metric` (app-structure v3.1) is a measured metric: its key is the metric key in the scan store and its latest reading is the facet value. In the feature sheet, every lens panel ends with its metric rows (`MetricRows` in `src/components/sheet/LensPanel.tsx`), after the panel's own evidence fields, whichever variant draws the panel. They come from the manifest alone; there is no lens id in the code.
+
+- A row reads the label, then the value with its unit (the manifest's unit, else the reading's), and an arrow against the previous reading (▲ or ▼) coloured by `metric.better`: mint when it moved the better way, red when it moved the worse way. No arrow when it did not move or there is one reading.
+- The second line holds a 64×16 SVG sparkline of the history, the target (`target 0`; the sparkline draws it as a dashed amber tick), and the method tag (`static`, `probe`, `harness`, `judgement`, the reading's method else the manifest's).
+- History is the scan's readings of that feature, lens and metric, ordered by `measured_at`. Kettle has no store, so its single point is the facet value. One point shows the value only (no arrow, no sparkline). No point reads `—` like any other absent value.
+- In General a panel shows its measured metrics, at most three, then "N more metrics in the lens reading". When the lens stands alone it shows every metric field, unmeasured ones as `—`. A collapsed panel (another lens chosen) shows none.
+- The sparkline is React SVG in the sheet. Nothing about metrics runs in the canvas frame loop. Text stays at the 12 px floor.
+
+## Business section
+
+When a feature has any of `experience`, `core` or `variations` (v3.1), the sheet shows a Business section after the lens panels (`src/components/sheet/Business.tsx`). It is hidden when all three are absent.
+
+- **As-is:** the customer experience today, one paragraph.
+- **Core · what every variation shares:** two bullet lists, Shared tech and Core schema.
+- **Variations:** a compact table with one row per variation: its name and audience, the bullets it adds to the core, its parameters, and a stage chip (the stage symbol and word). Lens values stay on the core feature, so a variation has no lens reading of its own.
+
+The Kettle sample's `invoice-ocr` (Paper invoice to payment) carries all three, with three bank variations.
+
+## Screens strip
+
+For a live product whose scan has shots of the feature, the sheet shows a Screens strip after the Business section (`src/components/sheet/Screens.tsx`). Kettle has no store, so no strip.
+
+- One thumbnail per size and theme: the latest run that has it, served by `/api/products/<slug>/shots/<path>`. A red badge counts the console errors its harness report records (`report.consoleErrors`, a count or a list).
+- A thumbnail opens the viewer under the strip (not a modal). Run A and run B are selectors over the runs that have that size and theme; they default to the latest two. With two runs it compares them side by side or as a swipe (a range slider over the stacked images). With one run it shows that one and says compare needs two. Escape closes the viewer, not the sheet.
+- Images load lazily and are never committed to the repo.
 
 ## Done means
 

@@ -2,12 +2,14 @@
 // The bottom bar: key plan, the simulated hour's clock (1x..240x) and the revisions strip with the
 // next-hour histogram. The clock text and the hour head are written straight to the DOM from the
 // engine's sim-time callback; React only re-renders on discrete changes (speed, play, time travel).
+// A live product has no recorded hour: the clock box shows the scan instead, and the strip drops the
+// hour ahead (no replay to scrub, no arrivals).
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { SWARM } from '@/lib/data';
-import { GA_MILESTONE, HOUR, SPEEDS, dnum, fmtD, revAt } from '@/lib/model';
+import { GA_MILESTONE, HOUR, SPEEDS, dnum, fmtD, latestRun, revAt } from '@/lib/model';
 
 const ARRIVALS = SWARM.decisions.filter((d) => d.arrivesAt).map((d) => ({ id: d.id, t: d.arrivesAt! }));
-import { shallowEqual, useBp, useEngine } from './hooks';
+import { shallowEqual, useBp, useEngine, useLive } from './hooks';
 
 function KeyPlanBox() {
   const E = useEngine();
@@ -22,12 +24,28 @@ function KeyPlanBox() {
   );
 }
 
+/** The clock box for a live product: the latest run, its phase and lenses, and its agents. */
+function LiveClock() {
+  const E = useEngine(), live = useLive(), sim = E.M.sim;
+  useBp((s) => s.simV);
+  const run = latestRun(live?.product.scan), off = live?.product.status === 'offline';
+  const st = !run ? 'NO RUN' : off ? 'OFFLINE' : run.status === 'running' ? '● LIVE · ' + run.phase.toUpperCase() : run.status.toUpperCase();
+  return (
+    <div id="clock" className="live">
+      <div className="t"><span>Lens scan</span><span style={{ color: off ? 'var(--amber)' : run?.status === 'running' ? 'var(--mint)' : 'var(--ink)' }}>{st}</span></div>
+      <div className="hm" title={run?.id}>{run ? (run.started_at.slice(5, 10) + ' ' + run.started_at.slice(11, 16)) : '—'}<small>{run ? 'UTC START' : ''}</small></div>
+      <div className="lv">{run ? run.lenses.join(' · ') + ' · ' + sim.agents.length + ' agent' + (sim.agents.length === 1 ? '' : 's') : 'Waiting for /lens-scan'}</div>
+    </div>
+  );
+}
+
 function Clock() {
   const E = useEngine(), sim = E.M.sim;
   const s = useBp((s) => ({ playing: s.playing, speed: s.speed, over: s.over, t: s.t }), shallowEqual);
   const tref = useRef<HTMLSpanElement>(null);
   useEffect(() => E.onSimTime((t) => { if (tref.current) tref.current.textContent = new Date(sim.at0 + t * 1000).toISOString().slice(11, 19); }), [E, sim]);
   if (!sim.has) return null;
+  if (sim.live) return <LiveClock />;
   const hist = s.t !== E.M.P.asOf;
   const status = hist ? 'HISTORY · PAUSED' : s.over ? 'ENDED' : s.playing ? '● LIVE · ×' + s.speed : 'PAUSED';
   return (
@@ -60,7 +78,8 @@ function Revisions() {
   const L = 76, R = W - 6, avail = R - L, hist = Math.round(avail * 0.46), hourW = Math.round(avail * 0.38), g1 = 26;
   const tl = { h0: L, h1: L + hist, o0: L + hist + g1, o1: L + hist + g1 + hourW, R, top: H < 80 ? 21 : 34, bot: H < 80 ? H - 28 : Math.min(H - 28, 66) };
   const asOf = M.P.asOf, now = s.t === asOf, top = tl.top, bot = tl.bot, RD0 = M.P.weeks[0], NW = M.P.weeks.length;
-  const hx = (d: string) => tl.h0 + ((dnum(d) - dnum(RD0)) / (dnum(asOf) - dnum(RD0))) * (tl.h1 - tl.h0);
+  // `|| 1`: a map without an events log has one week of history (a live product often), not a span
+  const hx = (d: string) => tl.h0 + ((dnum(d) - dnum(RD0)) / (dnum(asOf) - dnum(RD0) || 1)) * (tl.h1 - tl.h0);
   const ox = (t: number) => tl.o0 + (Math.max(0, Math.min(HOUR, t)) / HOUR) * (tl.o1 - tl.o0);
   useEffect(() => E.onSimTime((t) => {
     const x = ox(t);
@@ -77,13 +96,14 @@ function Revisions() {
     return <polygon key={st} points={up.join(' ') + ' ' + dn.reverse().join(' ')} fill={st === 'deprecated' ? 'var(--red)' : 'var(--ink)'} fillOpacity={FILLS[st]} />;
   });
   const bins = new Array(60).fill(0);
-  if (sim.has) for (const e of SWARM.replay) bins[Math.min(59, Math.floor(e.t / 60))]++;
+  const hour = sim.has && !sim.live;
+  if (hour) for (const e of SWARM.replay) bins[Math.min(59, Math.floor(e.t / 60))]++;
   const bw = (tl.o1 - tl.o0) / 60, hxn = hx(s.t), hl = Math.min(hxn, tl.h1);
   const lab = now ? 'NOW · REV ' + NW : 'REV ' + revAt(M.P.weeks, s.t) + ' · ' + fmtD(s.t), pw = 108, px0 = Math.max(tl.h0 - 6, Math.min(hl - pw / 2, tl.h1 - pw + 12));
   const m1 = M.P.milestones.find((m) => m.state === 'done'), m2 = M.P.MS[GA_MILESTONE];
   const drag = useRef<'h' | 'o' | null>(null);
   const apply = (x: number) => {
-    if (sim.has && x >= tl.o0 - 10 && x <= tl.o1 + 6 && drag.current !== 'h') { drag.current = 'o'; E.seek(((x - tl.o0) / (tl.o1 - tl.o0)) * HOUR); return; }
+    if (hour && x >= tl.o0 - 10 && x <= tl.o1 + 6 && drag.current !== 'h') { drag.current = 'o'; E.seek(((x - tl.o0) / (tl.o1 - tl.o0)) * HOUR); return; }
     if (drag.current === 'o') return;
     drag.current = 'h';
     let best = M.P.weeks[0], bd = 1e9;
@@ -112,7 +132,8 @@ function Revisions() {
           return <g key={sn.week}><line className="ax" x1={x} y1={bot} x2={x} y2={bot + 4} opacity={0.6} />{((i % 5 === 0 && i < 25) || i === 26) && Math.abs(x - hxn) > 60 && x < tl.h1 - 40 ? <text x={x} y={bot + 17} textAnchor="middle">{fmtD(sn.week)}</text> : null}</g>;
         })}
         {m1 && m1.date >= RD0 && <g><line x1={hx(m1.date)} y1={top - 16} x2={hx(m1.date)} y2={bot} stroke="var(--ink)" strokeWidth={1.2} /><path d={`M${hx(m1.date)} ${top - 16} h10 l-3 4 l3 4 h-10z`} fill="var(--ink)" /><text x={hx(m1.date) + 13} y={top - 9} style={{ fill: 'var(--ink)' }}>{((m1.code ? m1.code + ' ' : '') + m1.name.split(' ').pop()).toUpperCase()} · DONE</text></g>}
-        {sim.has && (
+        {sim.live && <text className="lbl" x={tl.o0} y={top - 12} style={{ fill: 'var(--mint)' }}>LIVE SCAN · NO REPLAY HOUR</text>}
+        {hour && (
           <g>
             <rect x={tl.o0} y={top - 6} width={tl.o1 - tl.o0} height={bot - top + 6} fill="var(--mint)" fillOpacity={0.05} stroke="var(--mint)" strokeOpacity={0.35} strokeDasharray="3 3" />
             <text className="lbl" x={tl.o0} y={top - 12} style={{ fill: 'var(--mint)' }}>THE NEXT HOUR · SIMULATED</text>

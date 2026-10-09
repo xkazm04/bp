@@ -1,9 +1,11 @@
 'use client';
+import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { sheetOf, views, type BayNode, type BldNode, type RoomNode, type WingNode } from '@/lib/model';
-import { shallowEqual, useBp, useEngine, useVariant } from './hooks';
+import { latestRun, sheetOf, views, type BayNode, type BldNode, type RoomNode, type WingNode } from '@/lib/model';
+import { shallowEqual, useBp, useEngine, useLive, useVariant } from './hooks';
 import { ThemeToggle } from './ThemeToggle';
 import type { Crumb } from '@/engine/state';
+import type { LiveProduct } from '@/lib/scan/client';
 
 function crumbLabel(E: ReturnType<typeof useEngine>, c: Crumb, short: boolean): string {
   const o = E.placeById(c.t, c.id);
@@ -81,6 +83,33 @@ function LensTabs() {
   );
 }
 
+/** "3 min ago", "2 h ago", "4 d ago". */
+export function ago(ms: number): string {
+  const m = Math.max(0, Math.round(ms / 60000));
+  return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 48 * 60 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago';
+}
+
+/**
+ * A live product's scan status: `Live · <phase>` while its latest run is running, `Last scan <age>`
+ * otherwise, `Offline` while the stream reconnects, `No scan store` before the skill wrote one. Kettle
+ * (no live product) shows nothing.
+ */
+function LivePill() {
+  const live = useLive();
+  return live ? <LivePillOn L={live.product} /> : null;
+}
+function LivePillOn({ L }: { L: LiveProduct }) {
+  const [, tick] = useState(0);
+  useEffect(() => { const t = window.setInterval(() => tick((n) => n + 1), 30000); return () => clearInterval(t); }, []);
+  const run = latestRun(L.scan);
+  let cls = '', text: string, title: string;
+  if (L.status === 'offline') { cls = 'off'; text = 'Offline'; title = 'The scan stream dropped; reconnecting (backoff up to 10 s)'; }
+  else if (L.status === 'missing' || !run) { cls = 'idle'; text = L.status === 'missing' ? 'No scan store' : 'No scan yet'; title = 'Every feature reads unmeasured until /lens-scan writes a run'; }
+  else if (run.status === 'running') { cls = 'on'; text = 'Live · ' + run.phase; title = 'Run ' + run.id + ' is running: phase ' + run.phase + ', lenses ' + run.lenses.join(', '); }
+  else { text = 'Last scan ' + ago(Date.now() - Date.parse(run.ended_at ?? run.updated_at)); title = 'Run ' + run.id + ' ' + run.status + (run.note ? ': ' + run.note : ''); }
+  return <span className={'livepill ' + cls} role="status" title={title}><i />{text}</span>;
+}
+
 export function Header() {
   const E = useEngine(), P = E.M.P;
   const view = useBp((s) => s.view);
@@ -88,10 +117,11 @@ export function Header() {
   return (
     <header id="hdr">
       <div id="brand">
-        <div className="proj">Project {P.name} · drawing set · <b>sheet {sh.no} · {sh.title}</b> · simulated swarm</div>
+        <div className="proj">Project {P.name} · drawing set · <b>sheet {sh.no} · {sh.title}</b> · {E.M.live ? 'live lens scan' : 'simulated swarm'}</div>
         <Crumbs />
       </div>
       <div className="hdr-right">
+        <LivePill />
         <LensTabs />
         <ThemeToggle compact />
       </div>

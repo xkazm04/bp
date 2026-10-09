@@ -1,6 +1,7 @@
-// The app's data: the Kettle sample as an app-structure v3 map plus its events log (the only product
-// source), and the simulated swarm (swarm.json, the runtime feed). The map is read by the standard's
-// loader (src/lib/standard/load.ts); `loadProduct()` is cached per lens toggle.
+// The app's data: the Kettle sample as an app-structure v3 map plus its events log (the built-in
+// product), and the simulated swarm (swarm.json, the runtime feed). The map is read by the standard's
+// loader (src/lib/standard/load.ts); `loadProduct()` is cached per lens toggle. A live product's map
+// comes from its route and goes through the same loader (`loadMap`).
 import mapJson from '@/data/kettle.app-structure.json';
 import eventsText from '@/data/kettle.events.jsonl' with { type: 'text' };
 import swarmJson from '@/data/swarm.json';
@@ -18,7 +19,12 @@ const EVENTS: string = eventsText;
  * (`-security,+com.kettle.cost`), applied on top of each lens entry's `enabled`.
  */
 export function loadProduct(lenses?: string | null): Structure {
-  return loadStructure(MAP, EVENTS, { catalog: BUILTIN_LENSES, lenses: lenses ?? null });
+  return loadMap(MAP, EVENTS, lenses);
+}
+
+/** Any product's map and events log (a live product's, from its route), read the way Kettle's is. */
+export function loadMap(map: unknown, events: string | null, lenses?: string | null): Structure {
+  return loadStructure(map, events, { catalog: BUILTIN_LENSES, lenses: lenses ?? null });
 }
 
 /** Which lenses each crew of the sample swarm works for (a runtime feed would carry this per squad). */

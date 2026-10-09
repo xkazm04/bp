@@ -6,9 +6,16 @@ import type { Engine } from '@/engine/Engine';
 import type { UIState } from '@/engine/state';
 import type { Variant } from '@/variants/types';
 import type { Density } from '@/engine/lens/contract';
+import type { LiveProduct } from '@/lib/scan/client';
 
 export const EngineCtx = createContext<Engine | null>(null);
 export const VariantCtx = createContext<Variant | null>(null);
+
+/** The live product the app shows (`?product=<slug>`): its slug and what `useLiveProduct` has of it. */
+export interface LiveInfo { slug: string; product: LiveProduct }
+/** null = Kettle (built in, no store). Its value changes with every scan delta: read it where the scan is shown. */
+export const LiveCtx = createContext<LiveInfo | null>(null);
+export function useLive(): LiveInfo | null { return useContext(LiveCtx); }
 
 export function useEngine(): Engine {
   const e = useContext(EngineCtx);
