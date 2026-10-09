@@ -1,0 +1,50 @@
+/* Orbit Columns (round 2, variant D): the column map and the release stack are drawn on canvases; these rules style
+   the canvas hosts and the small HTML instruments over them (zoom controls, location readout, hover card).
+   Everything is scoped under .dc-* and uses the kit tokens. */
+.dc-view { position: absolute; inset: 0; overflow: hidden; }
+.dc-cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; outline: none; -webkit-tap-highlight-color: transparent; }
+.dc-cv.is-pointer { cursor: pointer; }
+.dc-cv.is-panning { cursor: grabbing; }
+.dc-cv:focus-visible { outline: 2px solid var(--ok-focus); outline-offset: -3px; }
+
+/* zoom instrument: − / level ladder / + / fit, in the bottom strip the layout keeps free at the fit */
+.dc-zoom { position: absolute; z-index: 6; right: 14px; bottom: 12px; display: flex; align-items: center; height: 38px; padding: 0 3px; border: 1px solid var(--ok-panel-edge); border-radius: 999px; background: var(--ok-panel-solid); box-shadow: 0 6px 22px var(--ok-shadow); }
+.dc-zoom > button { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--ok-ink-2); cursor: pointer; }
+.dc-zoom > button:hover { background: var(--ok-band-hi); color: var(--ok-ink); }
+.dc-zoom__sep { width: 1px; height: 18px; margin: 0 2px; background: var(--ok-rule); }
+.dc-ladder { display: flex; align-items: flex-end; gap: 0; height: 26px; padding: 0 3px; }
+.dc-ladder button { display: flex; align-items: flex-end; justify-content: center; width: 13px; height: 26px; padding: 0 0 5px; border: 0; border-radius: 3px; background: transparent; cursor: pointer; }
+.dc-ladder button i { display: block; width: 3px; border-radius: 1.5px; background: var(--ok-ink-4); }
+.dc-ladder button:hover i { background: var(--ok-ink-2); }
+.dc-ladder button[aria-pressed="true"] i { width: 4px; background: var(--ok-ink); }
+.ok-has-insp .dc-zoom { right: calc(var(--ok-insp-w) + 26px); }
+
+/* location readout: area > domain > module at the centre of the view */
+.dc-readout { position: absolute; z-index: 5; left: 14px; bottom: 12px; display: flex; align-items: baseline; gap: 10px; height: 38px; max-width: calc(100% - 260px); padding: 0 14px; align-items: center; border: 1px solid var(--ok-panel-edge); border-radius: 10px; background: var(--ok-panel-solid); box-shadow: 0 4px 16px var(--ok-shadow); pointer-events: none; }
+.dc-readout__lvl { font: 500 9.5px var(--ok-f-label); letter-spacing: 0.16em; text-transform: uppercase; color: var(--ok-ink-3); white-space: nowrap; }
+.dc-readout__path { font-size: 12.5px; color: var(--ok-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ok-has-insp .dc-readout { max-width: calc(100% - var(--ok-insp-w) - 290px); }
+.dc-view--timeline .dc-readout { max-width: calc(100% - 150px); }
+
+/* hover card for marks whose names are not drawn at the current zoom */
+.dc-tip { position: absolute; z-index: 7; left: 0; top: 0; max-width: 300px; padding: 8px 11px 9px; border: 1px solid var(--ok-panel-edge); border-radius: 8px; background: var(--ok-panel-solid); box-shadow: 0 10px 28px var(--ok-shadow); color: var(--ok-ink); font-size: 12.5px; line-height: 1.35; pointer-events: none; will-change: transform; }
+.dc-tip__h { display: flex; align-items: center; gap: 7px; font-weight: 500; font-size: 13.5px; }
+.dc-tip__s { margin-top: 3px; color: var(--ok-ink-3); font-size: 12px; }
+.dc-tip__r { display: flex; align-items: center; gap: 6px; margin-top: 6px; color: var(--ok-ink-2); }
+.dc-tip__r b { font-weight: 400; color: var(--ok-ink); }
+.dc-tip__r span { min-width: 0; }
+.dc-tip__m { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 6px; font-size: 11.5px; }
+.dc-tip__m span { display: inline-flex; align-items: center; gap: 5px; }
+.dc-tip__m .is-alarm { color: var(--ok-alarm); }
+.dc-tip__m .is-gate { color: var(--ok-gate); }
+
+@media (max-width: 760px) {
+  .dc-zoom { right: 8px; bottom: 10px; height: 42px; }
+  .dc-zoom > button { width: 36px; height: 36px; }
+  .dc-ladder { display: none; }
+  .dc-readout { left: 8px; bottom: 10px; height: 42px; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; padding: 0 11px; max-width: calc(100% - 150px); }
+  .dc-readout__lvl { font-size: 8.5px; }
+  .dc-readout__path { font-size: 11.5px; max-width: 100%; }
+  .ok-has-insp .dc-zoom, .ok-has-insp .dc-readout { display: none; }
+  .dc-tip { display: none; }
+}
