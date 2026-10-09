@@ -235,6 +235,7 @@ function checkApp(d, R) {
   const domains = names(d.domains, 'slug'), caps = names(d.capabilities, 'slug');
   const features = names(d.features, 'slug'), milestones = names(d.milestones, 'slug'), kpis = names(d.kpis, 'slug');
   const lenses = new Map((d.lenses ?? []).map((l) => [l.id, l]));
+  const ctxByName = new Map((d.contexts ?? []).map((c) => [c.name, c]));
 
   for (const [list, key, label] of [[d.groups, 'name', 'group name'], [d.contexts, 'name', 'context name'], [d.domains, 'slug', 'domain slug'],
     [d.capabilities, 'slug', 'capability slug'], [d.features, 'slug', 'feature slug'], [d.milestones, 'slug', 'milestone slug'],
@@ -255,6 +256,15 @@ function checkApp(d, R) {
     for (const k of ['depends_on', 'blocked_by']) for (const s of f[k] ?? []) {
       if (s === f.slug) R.error(`${L}: ${k} names itself`);
       else if (!features.has(s)) R.error(`${L}: ${k} "${s}" is not in features[]`);
+    }
+    // v3.1 variations: slugs unique within the feature; the code layout convention is advisory (spec 6.7),
+    // so a feature with variations but no `customizations/` folder in its contexts' files only warns.
+    if (f.variations?.length) {
+      for (const k of dupes(f.variations, 'slug')) R.error(`${L}: variation slug "${k}" appears more than once`);
+      const files = (f.contexts ?? []).flatMap((c) => ctxByName.get(c)?.file_paths ?? []);
+      if (!files.some((p) => /(^|[\\/])customizations([\\/]|$)/.test(p))) {
+        R.warn(`${L}: has ${f.variations.length} variations, but none of its contexts' file_paths has a customizations/ folder (convention: <domain>/<context>/<feature>/customizations/<variation>/)`);
+      }
     }
   }
   for (const k of d.kpis ?? []) {

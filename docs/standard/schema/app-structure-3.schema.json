@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://app-structure.example/schema/app-structure-3.schema.json",
-  "title": "App structure v3 (context-map.json)",
-  "description": "One file per app project: the code tree (v2, unchanged), the product tree, KPIs, lens plugins and per-feature lens values. Normative text: docs/standard/app-structure-v3.md. Unknown keys are allowed where readers ignore them (top level, features, facets, the v2 code tree and KPIs); the v3 grammar objects are closed.",
+  "title": "App structure v3.1 (context-map.json)",
+  "description": "One file per app project: the code tree (v2, unchanged), the product tree (3.1: feature tags, experience, core and variations), KPIs, lens plugins and per-feature lens values. Normative text: docs/standard/app-structure-v3.md. Unknown keys are allowed where readers ignore them (top level, features, facets, the v2 code tree and KPIs); the v3 grammar objects are closed.",
   "type": "object",
   "required": ["$schema", "version", "project"],
   "properties": {
@@ -164,7 +164,33 @@
             "type": "object", "required": ["by", "date", "text"], "additionalProperties": false,
             "properties": { "by": { "type": "string" }, "date": { "$ref": "#/$defs/date" }, "text": { "type": "string" } }
           }
+        },
+        "tags": { "description": "v3.1: free tags (Personas use cases, for example).", "$ref": "#/$defs/stringList" },
+        "experience": { "description": "v3.1: the customer experience as it is today, one short paragraph.", "type": "string" },
+        "core": {
+          "description": "v3.1: what every variation shares: the shared technology and the core schema, as bullets.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "tech": { "$ref": "#/$defs/stringList" }, "schema": { "$ref": "#/$defs/stringList" } }
+        },
+        "variations": {
+          "description": "v3.1: per-customer or per-segment variations that extend the core. Lens values stay on the core feature.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/variation" }
         }
+      }
+    },
+    "variation": {
+      "type": "object",
+      "required": ["slug", "name", "audience", "extends", "params"],
+      "additionalProperties": false,
+      "properties": {
+        "slug": { "$ref": "#/$defs/slug" },
+        "name": { "type": "string", "minLength": 1 },
+        "audience": { "type": "string", "minLength": 1 },
+        "extends": { "$ref": "#/$defs/stringList" },
+        "params": { "$ref": "#/$defs/stringList" },
+        "stage": { "$ref": "#/$defs/stage" }
       }
     },
 

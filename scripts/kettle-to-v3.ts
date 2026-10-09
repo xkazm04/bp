@@ -1,4 +1,5 @@
-// Converts the Kettle sample (src/data/kettle.json) into the app-structure v3 standard:
+// Converts the Kettle sample (src/data/kettle.json) into the app-structure v3 standard (3.1 additions:
+// metric values on about 30 features, and the invoice-ocr feature with experience, core and variations):
 //   src/data/kettle.app-structure.json   the map (context-map.json v3)
 //   src/data/kettle.events.jsonl         its append-only events log
 // Run: node scripts/kettle-to-v3.ts  (Node's type stripping; no build step). Deterministic: the only
@@ -115,7 +116,8 @@ const milestones: Milestone[] = kettle.milestones.map((m) => ({
 
 // -------------------------------------------------------------------------------------- code tree
 // Synthesized ("two trees, linked"): one context per domain x stack surface that has features, grouped
-// by stack layer. No real files exist, so file_paths stay empty.
+// by stack layer. No real files exist, so file_paths stay empty, except on the OCR worker context added
+// for invoice-ocr below, which lists the v3.1 code layout (spec 6.7) as an illustration.
 const GROUPS: (Group & { surfaces: string[] })[] = [
   { id: 'grp-member-apps', name: 'Member apps', color: 'teal', domain: 'feature', surfaces: ['web-member', 'mobile'] },
   { id: 'grp-admin-web', name: 'Admin web', color: 'blue', domain: 'feature', surfaces: ['web-admin'] },
@@ -152,6 +154,20 @@ for (const d of kettle.domains) {
     });
   }
 }
+// v3.1: the OCR worker behind invoice-ocr, laid out as <domain>/<context>/<feature>/ with the shared core in
+// the feature folder and one customizations/<variation>/ folder per bank that only adds to it.
+const OCR_CTX = 'payments-ocr';
+const OCR_DIR = 'src/payments/ocr/invoice-ocr';
+contexts.splice(contexts.findIndex((c) => c.name === ctxName('PAY', 'workers')) + 1, 0, {
+  id: `ctx-${OCR_CTX}`, name: OCR_CTX, group: 'Workers & jobs', group_id: 'grp-workers', category: 'lib',
+  business_feature: domainName.get('PAY'), description: `${domainName.get('PAY')}: OCR worker that turns photographed invoices into payments.`,
+  file_paths: [
+    `${OCR_DIR}/extract.ts`, `${OCR_DIR}/schema.ts`, `${OCR_DIR}/confidence.ts`, `${OCR_DIR}/review-queue.ts`,
+    `${OCR_DIR}/customizations/vltava-bank/fields.ts`, `${OCR_DIR}/customizations/vltava-bank/spd-qr.ts`,
+    `${OCR_DIR}/customizations/nordhavn-sparebank/fields.ts`, `${OCR_DIR}/customizations/nordhavn-sparebank/kid.ts`,
+    `${OCR_DIR}/customizations/banco-alameda/fields.ts`,
+  ],
+});
 const groups: Group[] = GROUPS.map(({ surfaces: _s, ...g }) => ({ ...g, context_count: contexts.filter((c) => c.group === g.name).length }));
 
 // --------------------------------------------------------------------------------------- features
@@ -185,6 +201,58 @@ const features: Feature[] = kettle.features.map((f) => {
   if (f.notes.length) out.notes = f.notes.map((n) => ({ by: n.by, date: n.date, text: n.text }));
   return out;
 });
+
+// v3.1: one feature the sample does not have, to carry experience / core / variations (spec 6.3, 6.6).
+// It is not in kettle.json, so it has no stored health to agree with, and the sample's weekly snapshots
+// (which predate it) are replayed over the sample's own features only.
+const OCR = 'invoice-ocr';
+const OCR_HISTORY: { stage: Stage; date: string }[] = [{ stage: 'specified', date: '2026-09-15' }, { stage: 'in-dev', date: '2026-09-29' }];
+const ocrFeature: Feature = {
+  slug: OCR, id: 'PAY-17', name: 'Paper invoice to payment (OCR)',
+  summary: 'Photograph a paper invoice in the app; its payment fields are read, checked and handed to bank debit.',
+  kind: 'user_flow', tier: 'standard', status: 'active', capability: capSlug.get('PAY.2')!,
+  contexts: [OCR_CTX, ctxName('PAY', 'api'), ctxName('PAY', 'mobile'), ctxName('PAY', 'web-member')], primary_context: OCR_CTX,
+  stage: 'in-dev', stage_since: OCR_HISTORY[1].date, priority: 'P2',
+  depends_on: [slugOf('PAY-10'), slugOf('PAY-13')], owner: 'mara', built_by: ['forge-2'],
+  surfaces: ['mobile', 'web-member', 'api', 'workers'], created: OCR_HISTORY[0].date,
+  parts: [
+    { name: 'OCR engine spike', done: true }, { name: 'Core schema and field extraction', done: true },
+    { name: 'Confidence review queue', done: false }, { name: 'Vltava Bank variation', done: false },
+  ],
+  notes: [{ by: 'mara', date: '2026-10-02', text: 'Three banks asked for it; we build one core and let each bank only add fields and parameters on top.' }],
+  tags: ['ocr', 'invoices', 'bank-variations'],
+  experience:
+    'A member on an invoiced plan (corporate and family plans, and the studios that still post paper invoices) gets a printed ' +
+    'invoice at the front desk or by mail. To pay it they open their own banking app and retype the payee, the IBAN, the amount ' +
+    'and the payment reference by hand. One wrong digit in the reference and the payment lands unmatched: studio staff chase it ' +
+    'by email and match it by hand in payout reconciliation, and Kettle only learns the invoice was paid when the bank statement ' +
+    'arrives, often three to five days later.',
+  core: {
+    tech: [
+      'OCR engine: on-device text recognition, server fallback for low-quality photos',
+      'Field extraction that maps recognised text blocks to the core schema',
+      'Per-field confidence scores; IBAN checksum and amount cross-check',
+      'Confidence review queue: staff confirm fields below the threshold',
+      'Hand-off to bank debit (SEPA) once every field is confirmed',
+    ],
+    schema: [
+      'payee name', 'payee IBAN', 'BIC (optional)', 'amount and currency', 'due date', 'payment reference',
+      'invoice number', 'issue date',
+    ],
+  },
+  variations: [
+    { slug: 'vltava-bank', name: 'Vltava Bank', audience: 'Vltava Bank (fictional, Czech retail bank)',
+      extends: ['variable symbol and constant symbol fields', 'reads the QR Platba (SPD) code before falling back to OCR', 'CZK amounts with a decimal comma'],
+      params: ['confidence threshold 0.92 per field', 'formats: PDF, JPEG, HEIC', 'an SPD payload wins over OCR text'], stage: 'in-dev' },
+    { slug: 'nordhavn-sparebank', name: 'Nordhavn Sparebank', audience: 'Nordhavn Sparebank (fictional, Norwegian savings bank)',
+      extends: ['KID payment reference with its mod-10 / mod-11 check digit', 'eFaktura hand-off instead of a manual transfer'],
+      params: ['confidence threshold 0.95 (the KID check digit confirms the reference)', 'formats: PDF, JPEG', 'at most 2 pages'], stage: 'specified' },
+    { slug: 'banco-alameda', name: 'Banco Alameda', audience: 'Banco Alameda (fictional, Portuguese bank)',
+      extends: ['Multibanco entity and reference fields', 'payee NIF (tax number)'],
+      params: ['confidence threshold 0.90', 'formats: JPEG, PNG, PDF', 'the reference must be 9 digits'], stage: 'idea' },
+  ],
+};
+features.splice(features.findIndex((f) => f.id === 'PAY-16') + 1, 0, ocrFeature);
 const featureBySlug = new Map(features.map((f) => [f.slug, f]));
 
 // ----------------------------------------------------------------------------------------- facets
@@ -255,6 +323,98 @@ for (const f of kettle.features) {
   }
   facets[slugOf(f.id)] = byLens;
 }
+
+// v3.1 metrics (spec 8.7): what a first /lens-scan over Payments, Booking and Member experience would have
+// written, as the latest value per metric, merged into the same facets (history would live in the scan
+// store, not here). Only features with code get them; a metric the scan could not take is omitted, never 0:
+// probes need running code behind an API, the harness needs a built screen, a11y-unknown screens get no
+// axe count. The values are seeded and chosen not to change any health the sample stores (check 2 below):
+// metric rules come after the existing rules, and a value that would trip one is only written where the
+// sample already sits at that health or worse.
+const SCAN_AT = '2026-10-08T07:40:00Z';
+const SCANNED_DOMAINS = ['PAY', 'BKG', 'MEM'];
+const UI = ['web-member', 'web-admin', 'mobile'];
+const rank: Record<string, number> = { good: 0, watch: 1, bad: 2 };
+const atLeast = (h: Health, floor: 'watch' | 'bad') => (rank[h] ?? -1) >= rank[floor];
+let metricFeatures = 0, metricValues = 0;
+for (const f of kettle.features) {
+  const dv = f.development, sv = f.security, gv = f.design;
+  if (!SCANNED_DOMAINS.includes(f.domain) || dv.status === 'not-started') continue;
+  const byLens = facets[slugOf(f.id)];
+  const ui = f.surfaces.some((s) => UI.includes(s));
+  const put = (lens: string, values: FacetValues) => {
+    Object.assign(byLens[lens].values ??= {}, values);
+    const at = byLens[lens].measured_at;
+    if (!at || at < SCAN_AT) byLens[lens].measured_at = SCAN_AT;
+    metricValues += Object.keys(values).length;
+  };
+  metricFeatures++;
+  // development: static footprint, probes for built API code, judgement on duplication and standards
+  let r = seeded(`${f.id}:metrics:development`);
+  const loc = (dv.linesOfCode as number) > 0 ? (dv.linesOfCode as number) : Math.round(300 + r() * 2000);
+  const debt = (dv.techDebt as number | null) ?? 0, cov = dv.unitCoveragePct as number | null;
+  const d: FacetValues = { loc, files: Math.max(2, Math.round(loc / (80 + r() * 80))), depCount: 2 + Math.floor(r() * 16) };
+  if (ui) d.bundleKb = round(loc * (0.008 + r() * 0.01), 1);
+  if (f.surfaces.includes('api') && ['in-review', 'merged', 'done'].includes(dv.status as string)) {
+    const p50 = Math.round(40 + r() * 220);
+    d.p50Ms = p50; d.p95Ms = Math.round(p50 * (1.8 + r() * 1.4)); // at most ~830 ms: under the 1000 ms budget
+  }
+  d.dupSites = Math.floor(r() * 5) + (debt >= 2 ? 3 : 0);
+  d.testRatioPct = cov !== null ? Math.round(cov * (0.5 + r() * 0.3)) : Math.round(15 + r() * 30);
+  d.standardsPct = Math.round(92 - debt * 9 - r() * 12);
+  put('development', d);
+  // security: scan findings (judgement, separate from the review's openFindings), secrets, unsafe sinks
+  if (sv.review !== 'not-started') {
+    r = seeded(`${f.id}:metrics:security`);
+    const s: FacetValues = {
+      findingsCritical: 0,
+      findingsHigh: atLeast(sv.health, 'watch') && r() < 0.5 ? 1 : 0,
+      findingsMedium: Math.floor(r() * 3), findingsLow: Math.floor(r() * 5),
+      secretHits: 0, unsafeSinks: Math.floor(r() * 2) + (f.surfaces.includes('web-admin') ? 1 : 0),
+      standardsPct: Math.round(70 + r() * 25 - (sv.review === 'pending' ? 8 : 0)),
+    };
+    put('security', s);
+  }
+  // design: harness metrics on built screens, static and judgement ones on any designed screen
+  if (gv.status !== 'n/a' && ['hi-fi', 'implemented', 'polished'].includes(gv.status as string)) {
+    r = seeded(`${f.id}:metrics:design`);
+    const g: FacetValues = {
+      undesignedStates: Math.floor(r() * 4) + (gv.status === 'hi-fi' ? 1 : 0), rawLiterals: Math.floor(r() * 30),
+      standardsPct: Math.round(65 + r() * 30),
+    };
+    if (ui && gv.status !== 'hi-fi') {
+      if (gv.a11y === 'pass') g.axeViolations = 0;
+      else if (gv.a11y === 'partial') g.axeViolations = 1 + Math.floor(r() * 4);
+      else if (gv.a11y === 'fail') g.axeViolations = 5 + Math.floor(r() * 8);
+      g.minTextPx = atLeast(gv.health, 'watch') && r() < 0.5 ? 11 : 12 + (r() < 0.5 ? 0 : 1);
+      g.consoleErrors = Math.floor(r() * 3);
+    }
+    put('design', g);
+  }
+}
+// invoice-ocr: a fresh feature with no sample lens objects, so its facets are written here in full. Here
+// the metric rules decide: the OCR call is over the latency budget, and the receipt preview text is 11 px.
+facets[OCR] = {
+  business: { values: { value: 3, confidence: 'hypothesis', customerRequests30d: 6, revenueLink: 'retention' } },
+  development: { values: {
+    status: 'in-progress', progressPct: 35, aiAuthoredPct: 70, humanReviewed: false, openPRs: 2, unitCoveragePct: 58, techDebt: 1,
+    linesOfCode: 2100, lastCommit: '2026-10-07', stalled: false,
+    loc: 2100, files: 19, bundleKb: 38.5, depCount: 7, p50Ms: 520, p95Ms: 1450, dupSites: 2, testRatioPct: 41, standardsPct: 72,
+  } },
+  security: { values: {
+    dataClass: 'payment', review: 'pending', openFindings: 0,
+    findingsCritical: 0, findingsHigh: 1, findingsMedium: 2, findingsLow: 3, secretHits: 0, unsafeSinks: 1, standardsPct: 68,
+  } },
+  design: { values: {
+    status: 'hi-fi', a11y: 'unknown', specDrift: false,
+    axeViolations: 0, undesignedStates: 3, rawLiterals: 14, minTextPx: 11, consoleErrors: 1, standardsPct: 64,
+  } },
+  operations: { values: { environment: 'preview', incidents30d: 0, alerting: false, runbook: false } },
+  quality: { values: { status: 'testing', e2eTests: 2, e2ePassing: 1, e2ePassPct: 50, openBugsP1: 0, openBugsP2: 1, openBugsP3: 2 } },
+};
+for (const facet of Object.values(facets[OCR])) Object.assign(facet, { measured_at: SCAN_AT, source: 'sample' });
+metricFeatures++;
+metricValues += 9 + 7 + 6;
 
 // Overrides for planted stories. They must not change the built-in health the sample stores (the
 // acceptance check below), so the one in force on a built-in lens confirms the rules, the expired one is
@@ -368,7 +528,7 @@ const lenses: LensEntry[] = [
 ];
 
 // ------------------------------------------------------------------------------------------- map
-const audience: Record<string, string> = Object.fromEntries(kettle.features.map((f) => [slugOf(f.id), f.kind]));
+const audience: Record<string, string> = Object.fromEntries(features.map((f) => [f.slug, byId.get(f.id!)?.kind ?? 'customer']));
 const map: AppStructure = {
   $schema: 'app-structure/3',
   version: 3,
@@ -397,6 +557,7 @@ const map: AppStructure = {
       product: { business: kettle.product.business, stack: kettle.product.stack },
       activity: kettle.activity.map((a) => ({ ...a, feature: slugOf(a.feature) })),
       audience,
+      metrics_note: 'Metric values (v3.1 metric fields) are the latest of a synthetic lens scan over Payments, Booking and Member experience on ' + SCAN_AT + '; a real product keeps their history in <root>/.ai/lens-scan/scan.db.',
       audience_note: 'The sample\'s own feature kind (who it serves: customer, internal, business, platform). features[].kind is the standard\'s shape: integration if in the integrations domain or integrations-first, platform -> ops, customer and internal -> user_flow, business -> capability.',
     },
   },
@@ -419,6 +580,8 @@ for (const f of kettle.features) {
     push({ at: logged?.at ?? timeOn(h[i].date, `${f.id}:${to}`, 9, 19), type: 'stage', feature: slug, from, to, actor, source: 'sample' });
   }
 }
+push({ at: timeOn(OCR_HISTORY[0].date, `${OCR}:added`, 7, 9), type: 'feature-added', feature: OCR, to: OCR_HISTORY[0].stage, actor: 'mara', source: 'sample' });
+push({ at: timeOn(OCR_HISTORY[1].date, `${OCR}:in-dev`, 9, 19), type: 'stage', feature: OCR, from: OCR_HISTORY[0].stage, to: OCR_HISTORY[1].stage, actor: 'forge-2', source: 'sample' });
 const m1 = kettle.milestones.find((m) => m.id === 'M1')!;
 push({ at: `${m1.date}T16:30:00Z`, type: 'milestone', milestone: msSlug.get('M1')!, from: 'active', to: 'shipped', actor: 'mara', source: 'sample' });
 push({ at: '2026-09-14T10:12:00Z', type: 'lens-enabled', lens: COST_LENS, actor: 'priya', source: 'sample' });
@@ -437,8 +600,9 @@ function stagesOn(date: string): Map<string, Stage> {
   return s;
 }
 let replayOk = 0;
+const sampleSlugs = new Set(kettle.features.map((f) => slugOf(f.id)));
 for (const snap of kettle.snapshots) {
-  const s = stagesOn(snap.week);
+  const s = new Map([...stagesOn(snap.week)].filter(([slug]) => sampleSlugs.has(slug))); // the snapshots count the sample's features
   const counts = Object.fromEntries(kettle.stages.map((x) => [x, 0])) as Record<Stage, number>;
   for (const v of s.values()) counts[v]++;
   const diff = kettle.stages.filter((x) => counts[x] !== snap.counts[x]);
@@ -487,6 +651,7 @@ const count = <T>(xs: T[], k: (x: T) => string) => xs.reduce<Record<string, numb
 console.log(`wrote ${OUT_MAP} and ${OUT_EVENTS} (as of ${AS_OF})`);
 console.log(`  groups ${groups.length}, contexts ${contexts.length}, domains ${domains.length}, capabilities ${capabilities.length}, features ${features.length}, milestones ${milestones.length}, kpis ${kpis.length}, lenses ${lenses.length}`);
 console.log(`  facets ${Object.values(facets).reduce((a, x) => a + Object.keys(x).length, 0)} (cost ${Object.values(facets).filter((x) => x[COST_LENS]).length}), overrides ${OVERRIDES.length}, events ${eventLines.length} ${JSON.stringify(count(events, (e) => e.type))}`);
+console.log(`  metrics: ${metricValues} values on ${metricFeatures} features (scan ${SCAN_AT}); ${OCR}: ${ocrFeature.variations!.length} variations`);
 console.log(`  feature kinds ${JSON.stringify(count(features, (f) => f.kind!))}, tiers ${JSON.stringify(count(features, (f) => f.tier!))}`);
 console.log(`  kpis by lens ${JSON.stringify(count(kpis, (k) => k.lens ?? '-'))}`);
 console.log(`\nsnapshot replay: ${replayOk} / ${kettle.snapshots.length} weeks match the stored counts exactly; stages on ${TODAY} match all ${features.length} features`);
@@ -498,7 +663,7 @@ for (const l of lenses) {
   if (l.source === 'builtin') {
     const stored = tally();
     for (const f of kettle.features) stored[f[l.id as (typeof BUILTIN)[number]].health]++;
-    console.log(`  ${''.padEnd(16)} sample ${fmt(stored)}   agree ${features.length - misses.length} / ${features.length}`);
+    console.log(`  ${''.padEnd(16)} sample ${fmt(stored)}   agree ${kettle.features.length - misses.length} / ${kettle.features.length} (v3 also counts ${OCR}, which the sample lacks)`);
   }
 }
 const overall6 = tally(), overall7 = tally(), storedOverall = tally();

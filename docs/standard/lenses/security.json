@@ -1,10 +1,10 @@
 {
   "$schema": "lens-manifest/1",
   "id": "security",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "Security",
   "short": "SEC",
-  "description": "Data classes, security reviews and open findings.",
+  "description": "Data classes, security reviews and open findings. Measured: scan findings by severity, secrets, unsafe sinks and standards met.",
   "reader": { "role": "security", "density": "standard" },
   "fields": [
     { "key": "dataClass", "label": "Data class", "type": "enum", "values": ["public", "internal", "personal", "payment"], "headline": true },
@@ -13,7 +13,16 @@
     { "key": "openFindings", "label": "Open findings", "type": "integer", "min": 0 },
     { "key": "stage", "label": "Stage", "type": "enum",
       "values": ["idea", "specified", "in-dev", "in-review", "flagged", "live", "deprecated"],
-      "source": { "feature": "stage" }, "description": "The feature's lifecycle stage, read from the feature." }
+      "source": { "feature": "stage" }, "description": "The feature's lifecycle stage, read from the feature." },
+    { "key": "findingsCritical", "label": "Critical findings", "type": "integer", "min": 0, "metric": { "better": "down", "method": "judgement", "target": 0 } },
+    { "key": "findingsHigh", "label": "High findings", "type": "integer", "min": 0, "metric": { "better": "down", "method": "judgement", "target": 0 } },
+    { "key": "findingsMedium", "label": "Medium findings", "type": "integer", "min": 0, "metric": { "better": "down", "method": "judgement" } },
+    { "key": "findingsLow", "label": "Low findings", "type": "integer", "min": 0, "metric": { "better": "down", "method": "judgement" } },
+    { "key": "secretHits", "label": "Secrets in code", "type": "integer", "min": 0, "metric": { "better": "down", "method": "static", "target": 0 } },
+    { "key": "unsafeSinks", "label": "Unsafe sinks", "type": "integer", "min": 0, "metric": { "better": "down", "method": "static" },
+      "description": "Calls into raw HTML, eval, shell or string-built SQL." },
+    { "key": "standardsPct", "label": "Standards met", "type": "percent", "metric": { "better": "up", "method": "judgement" },
+      "description": "Share of the applicable registry and house standards the code conforms to." }
   ],
   "health": {
     "applies_when": { "all": [
@@ -25,7 +34,10 @@
       { "when": { "field": "openFindings", "gt": 0 }, "health": "bad", "reason": "{openFindings} open findings", "short": "{openFindings} findings" },
       { "when": { "all": [ { "field": "review", "eq": "pending" }, { "field": "stage", "in": ["flagged", "live", "deprecated"] } ] },
         "health": "bad", "reason": "In production ({stage}) without a finished security review", "short": "Live, no security review" },
-      { "when": { "field": "review", "eq": "pending" }, "health": "watch", "reason": "Security review pending", "short": "Review pending" }
+      { "when": { "field": "findingsCritical", "gt": 0 }, "health": "bad", "reason": "{findingsCritical} critical findings from the lens scan", "short": "{findingsCritical} critical" },
+      { "when": { "field": "secretHits", "gt": 0 }, "health": "bad", "reason": "{secretHits} secrets found in code", "short": "Secrets in code" },
+      { "when": { "field": "review", "eq": "pending" }, "health": "watch", "reason": "Security review pending", "short": "Review pending" },
+      { "when": { "field": "findingsHigh", "gt": 0 }, "health": "watch", "reason": "{findingsHigh} high findings from the lens scan", "short": "{findingsHigh} high findings" }
     ],
     "default": "good",
     "rollup": { "method": "worst-of" }

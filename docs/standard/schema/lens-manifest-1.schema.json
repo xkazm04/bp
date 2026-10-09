@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://app-structure.example/schema/lens-manifest-1.schema.json",
-  "title": "Lens manifest v1",
+  "title": "Lens manifest v1 (with the 3.1 metric block)",
   "description": "One lens plugin: its fields, a declarative health rule and presentation hints. Normative text: docs/standard/app-structure-v3.md.",
   "type": "object",
   "required": ["$schema", "id", "version", "name", "reader", "fields", "health", "presentation"],
@@ -69,7 +69,8 @@
             "kpi": { "$ref": "#/$defs/slug" },
             "feature": { "$ref": "#/$defs/featureBoundField" }
           }
-        }
+        },
+        "metric": { "$ref": "#/$defs/metric" }
       },
       "allOf": [
         {
@@ -81,8 +82,26 @@
           "if": { "properties": { "type": { "const": "money" } } },
           "then": { "required": ["currency"] },
           "else": { "not": { "required": ["currency"] } }
+        },
+        {
+          "description": "A metric is a number: only numeric fields carry one.",
+          "if": { "required": ["metric"] },
+          "then": { "properties": { "type": { "enum": ["number", "integer", "percent", "money"] } } }
         }
       ]
+    },
+
+    "metric": {
+      "description": "v3.1: the field is a measured metric. Its key is the metric key in the lens-scan store; the latest measurement is the facet value and history lives in the store. `target` and `warn_at` are display hints; health still comes only from the rules.",
+      "type": "object",
+      "required": ["better", "method"],
+      "additionalProperties": false,
+      "properties": {
+        "better": { "enum": ["up", "down"] },
+        "method": { "enum": ["static", "probe", "harness", "judgement"] },
+        "target": { "type": "number" },
+        "warn_at": { "type": "number" }
+      }
     },
 
     "health": {

@@ -41,7 +41,7 @@ interface FieldBase {
   source?: { kpi: string } | { feature: FeatureBoundField };
   /**
    * v3.1: the field is a measured metric. The field key is the metric key in the lens-scan store
-   * (docs/standard/lens-scan-store.md); its latest measurement is the facet value, history lives in
+   * (docs/standard/lens-scan-store.sql); its latest measurement is the facet value, history lives in
    * the store.
    */
   metric?: MetricSpec;

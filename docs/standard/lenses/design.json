@@ -1,10 +1,10 @@
 {
   "$schema": "lens-manifest/1",
   "id": "design",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "Design",
   "short": "DES",
-  "description": "How far the design got, accessibility, and whether the build matches the design.",
+  "description": "How far the design got, accessibility, and whether the build matches the design. Measured: axe violations, undesigned states, raw literals, smallest text and console errors.",
   "reader": { "role": "design", "density": "simple" },
   "fields": [
     { "key": "status", "label": "Design", "type": "enum",
@@ -14,7 +14,16 @@
     { "key": "specDrift", "label": "Built off-spec", "type": "boolean" },
     { "key": "stage", "label": "Stage", "type": "enum",
       "values": ["idea", "specified", "in-dev", "in-review", "flagged", "live", "deprecated"],
-      "source": { "feature": "stage" }, "description": "The feature's lifecycle stage, read from the feature." }
+      "source": { "feature": "stage" }, "description": "The feature's lifecycle stage, read from the feature." },
+    { "key": "axeViolations", "label": "Axe violations", "type": "integer", "min": 0, "metric": { "better": "down", "method": "harness", "target": 0 } },
+    { "key": "undesignedStates", "label": "Undesigned states", "type": "integer", "min": 0, "metric": { "better": "down", "method": "judgement" },
+      "description": "Empty, loading or error states the screens leave undesigned." },
+    { "key": "rawLiterals", "label": "Raw literals", "type": "integer", "min": 0, "metric": { "better": "down", "method": "static" },
+      "description": "Colours, sizes and spacings written as literals instead of tokens." },
+    { "key": "minTextPx", "label": "Smallest text", "type": "number", "unit": "px", "min": 0, "metric": { "better": "up", "method": "harness", "target": 12 } },
+    { "key": "consoleErrors", "label": "Console errors", "type": "integer", "min": 0, "metric": { "better": "down", "method": "harness", "target": 0 } },
+    { "key": "standardsPct", "label": "Standards met", "type": "percent", "metric": { "better": "up", "method": "judgement" },
+      "description": "Share of the applicable registry and house standards the screens conform to." }
   ],
   "health": {
     "rules": [
@@ -22,7 +31,9 @@
       { "when": { "field": "specDrift", "eq": true }, "health": "bad", "reason": "Built differently from the design", "short": "Off design" },
       { "when": { "all": [ { "field": "stage", "in": ["flagged", "live", "deprecated"] }, { "field": "status", "in": ["none", "sketch", "wireframe"] } ] },
         "health": "watch", "reason": "Shipped with the design at {status}", "short": "Design at {status}" },
-      { "when": { "field": "a11y", "eq": "partial" }, "health": "watch", "reason": "Accessibility only partly passes", "short": "A11y partial" }
+      { "when": { "field": "a11y", "eq": "partial" }, "health": "watch", "reason": "Accessibility only partly passes", "short": "A11y partial" },
+      { "when": { "field": "axeViolations", "gt": 0 }, "health": "watch", "reason": "{axeViolations} axe violations", "short": "{axeViolations} axe issues" },
+      { "when": { "field": "minTextPx", "lt": 12 }, "health": "watch", "reason": "Text down to {minTextPx} px, under the 12 px floor", "short": "Text {minTextPx} px" }
     ],
     "default": "good",
     "rollup": { "method": "share", "watch": 0.25, "bad": 0.15 }

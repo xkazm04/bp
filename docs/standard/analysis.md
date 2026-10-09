@@ -289,7 +289,11 @@ Weekly snapshots and "what changed" are worked out from this log. Readers ignore
 - The agent swarm: agents, decisions, standing orders, the replay. It moves to a separate runtime feed.
 - A UI for installing, authoring or removing lenses. In v3 lenses are added in the file or catalog,
   and the blueprint only displays them.
-- Lens evaluators (skills that fill values) and routing lens questions to deciders.
+- Routing lens questions to deciders. (Lens evaluators, skills that fill values, were a v3 non-goal;
+  since 3.1 they are a goal, served by the ai-registry `/lens-scan` skill: it measures the metric
+  fields of the development, security and design lenses per feature, keeps their history in the
+  lens-scan store and writes the latest values into facets. See app-structure-v3.md sections 8.7
+  and 15.)
 - Changes to the Personas repo itself (WP4 is a brief).
 - Expression languages, or plugin code that runs inside the blueprint.
 

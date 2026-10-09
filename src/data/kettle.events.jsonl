@@ -484,6 +484,7 @@
 {"at":"2026-09-14T10:12:00Z","type":"lens-enabled","lens":"com.kettle.cost","actor":"priya","source":"sample"}
 {"at":"2026-09-14T10:30:00Z","type":"stage","feature":"calendar-feed-ical","from":"flagged","to":"live","actor":"forge-1","source":"sample"}
 {"at":"2026-09-14T12:21:00Z","type":"stage","feature":"auto-written-class-descriptions","from":"in-review","to":"flagged","actor":"forge-1","source":"sample"}
+{"at":"2026-09-15T07:35:00Z","type":"feature-added","feature":"invoice-ocr","to":"specified","actor":"mara","source":"sample"}
 {"at":"2026-09-15T17:31:00Z","type":"stage","feature":"release-train-automation","from":"idea","to":"specified","actor":"priya","source":"sample"}
 {"at":"2026-09-16T07:08:00Z","type":"feature-added","feature":"scheduled-report-emails","to":"idea","actor":"mara","source":"sample"}
 {"at":"2026-09-16T10:21:00Z","type":"stage","feature":"favourites-follow-instructors","from":"idea","to":"specified","actor":"lea","source":"sample"}
@@ -543,6 +544,7 @@
 {"at":"2026-09-28T09:19:00Z","type":"stage","feature":"audit-log","from":"specified","to":"in-dev","actor":"forge-4","source":"sample"}
 {"at":"2026-09-28T14:23:00Z","type":"stage","feature":"substitute-instructor-swap","from":"specified","to":"in-dev","actor":"forge-3","source":"sample"}
 {"at":"2026-09-28T20:22:00Z","type":"stage","feature":"disaster-recovery-plan","from":"idea","to":"specified","actor":"priya","source":"sample"}
+{"at":"2026-09-29T10:48:00Z","type":"stage","feature":"invoice-ocr","from":"specified","to":"in-dev","actor":"forge-2","source":"sample"}
 {"at":"2026-09-29T11:39:00Z","type":"stage","feature":"workshops-events","from":"in-dev","to":"in-review","actor":"forge-1","source":"sample"}
 {"at":"2026-09-29T15:18:00Z","type":"stage","feature":"accounting-sync","from":"specified","to":"in-dev","actor":"tomas","source":"sample"}
 {"at":"2026-09-29T22:46:00Z","type":"stage","feature":"two-factor-auth-for-staff","from":"in-dev","to":"in-review","actor":"forge-1","source":"sample"}

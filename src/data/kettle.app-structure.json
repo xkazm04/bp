@@ -43,10 +43,10 @@
   },
   "stats": {
     "groups": 7,
-    "contexts": 74,
+    "contexts": 75,
     "domains": 13,
     "capabilities": 29,
-    "features": 132,
+    "features": 133,
     "milestones": 4,
     "kpis": 42,
     "lenses": 7
@@ -78,7 +78,7 @@
       "name": "Workers & jobs",
       "color": "amber",
       "domain": "infrastructure",
-      "context_count": 12
+      "context_count": 13
     },
     {
       "id": "grp-data",
@@ -392,6 +392,26 @@
       "business_feature": "Memberships & Payments",
       "description": "Memberships & Payments: Background workers (job queue on Redis).",
       "file_paths": []
+    },
+    {
+      "id": "ctx-payments-ocr",
+      "name": "payments-ocr",
+      "group": "Workers & jobs",
+      "group_id": "grp-workers",
+      "category": "lib",
+      "business_feature": "Memberships & Payments",
+      "description": "Memberships & Payments: OCR worker that turns photographed invoices into payments.",
+      "file_paths": [
+        "src/payments/ocr/invoice-ocr/extract.ts",
+        "src/payments/ocr/invoice-ocr/schema.ts",
+        "src/payments/ocr/invoice-ocr/confidence.ts",
+        "src/payments/ocr/invoice-ocr/review-queue.ts",
+        "src/payments/ocr/invoice-ocr/customizations/vltava-bank/fields.ts",
+        "src/payments/ocr/invoice-ocr/customizations/vltava-bank/spd-qr.ts",
+        "src/payments/ocr/invoice-ocr/customizations/nordhavn-sparebank/fields.ts",
+        "src/payments/ocr/invoice-ocr/customizations/nordhavn-sparebank/kid.ts",
+        "src/payments/ocr/invoice-ocr/customizations/banco-alameda/fields.ts"
+      ]
     },
     {
       "id": "ctx-payments-data",
@@ -3211,6 +3231,139 @@
         "api"
       ],
       "created": "2026-09-04"
+    },
+    {
+      "slug": "invoice-ocr",
+      "id": "PAY-17",
+      "name": "Paper invoice to payment (OCR)",
+      "summary": "Photograph a paper invoice in the app; its payment fields are read, checked and handed to bank debit.",
+      "kind": "user_flow",
+      "tier": "standard",
+      "status": "active",
+      "capability": "payments.billing",
+      "contexts": [
+        "payments-ocr",
+        "payments-api",
+        "payments-mobile",
+        "payments-member-web"
+      ],
+      "primary_context": "payments-ocr",
+      "stage": "in-dev",
+      "stage_since": "2026-09-29",
+      "priority": "P2",
+      "depends_on": [
+        "invoices-receipts",
+        "bank-debit-sepa"
+      ],
+      "owner": "mara",
+      "built_by": [
+        "forge-2"
+      ],
+      "surfaces": [
+        "mobile",
+        "web-member",
+        "api",
+        "workers"
+      ],
+      "created": "2026-09-15",
+      "parts": [
+        {
+          "name": "OCR engine spike",
+          "done": true
+        },
+        {
+          "name": "Core schema and field extraction",
+          "done": true
+        },
+        {
+          "name": "Confidence review queue",
+          "done": false
+        },
+        {
+          "name": "Vltava Bank variation",
+          "done": false
+        }
+      ],
+      "notes": [
+        {
+          "by": "mara",
+          "date": "2026-10-02",
+          "text": "Three banks asked for it; we build one core and let each bank only add fields and parameters on top."
+        }
+      ],
+      "tags": [
+        "ocr",
+        "invoices",
+        "bank-variations"
+      ],
+      "experience": "A member on an invoiced plan (corporate and family plans, and the studios that still post paper invoices) gets a printed invoice at the front desk or by mail. To pay it they open their own banking app and retype the payee, the IBAN, the amount and the payment reference by hand. One wrong digit in the reference and the payment lands unmatched: studio staff chase it by email and match it by hand in payout reconciliation, and Kettle only learns the invoice was paid when the bank statement arrives, often three to five days later.",
+      "core": {
+        "tech": [
+          "OCR engine: on-device text recognition, server fallback for low-quality photos",
+          "Field extraction that maps recognised text blocks to the core schema",
+          "Per-field confidence scores; IBAN checksum and amount cross-check",
+          "Confidence review queue: staff confirm fields below the threshold",
+          "Hand-off to bank debit (SEPA) once every field is confirmed"
+        ],
+        "schema": [
+          "payee name",
+          "payee IBAN",
+          "BIC (optional)",
+          "amount and currency",
+          "due date",
+          "payment reference",
+          "invoice number",
+          "issue date"
+        ]
+      },
+      "variations": [
+        {
+          "slug": "vltava-bank",
+          "name": "Vltava Bank",
+          "audience": "Vltava Bank (fictional, Czech retail bank)",
+          "extends": [
+            "variable symbol and constant symbol fields",
+            "reads the QR Platba (SPD) code before falling back to OCR",
+            "CZK amounts with a decimal comma"
+          ],
+          "params": [
+            "confidence threshold 0.92 per field",
+            "formats: PDF, JPEG, HEIC",
+            "an SPD payload wins over OCR text"
+          ],
+          "stage": "in-dev"
+        },
+        {
+          "slug": "nordhavn-sparebank",
+          "name": "Nordhavn Sparebank",
+          "audience": "Nordhavn Sparebank (fictional, Norwegian savings bank)",
+          "extends": [
+            "KID payment reference with its mod-10 / mod-11 check digit",
+            "eFaktura hand-off instead of a manual transfer"
+          ],
+          "params": [
+            "confidence threshold 0.95 (the KID check digit confirms the reference)",
+            "formats: PDF, JPEG",
+            "at most 2 pages"
+          ],
+          "stage": "specified"
+        },
+        {
+          "slug": "banco-alameda",
+          "name": "Banco Alameda",
+          "audience": "Banco Alameda (fictional, Portuguese bank)",
+          "extends": [
+            "Multibanco entity and reference fields",
+            "payee NIF (tax number)"
+          ],
+          "params": [
+            "confidence threshold 0.90",
+            "formats: JPEG, PNG, PDF",
+            "the reference must be 9 digits"
+          ],
+          "stage": "idea"
+        }
+      ]
     },
     {
       "slug": "member-mobile-app",
@@ -6759,16 +6912,16 @@
     },
     {
       "id": "design",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "source": "builtin",
       "enabled": true,
       "manifest": {
         "$schema": "lens-manifest/1",
         "id": "design",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "name": "Design",
         "short": "DES",
-        "description": "How far the design got, accessibility, and whether the build matches the design.",
+        "description": "How far the design got, accessibility, and whether the build matches the design. Measured: axe violations, undesigned states, raw literals, smallest text and console errors.",
         "reader": {
           "role": "design",
           "density": "simple"
@@ -6822,6 +6975,72 @@
               "feature": "stage"
             },
             "description": "The feature's lifecycle stage, read from the feature."
+          },
+          {
+            "key": "axeViolations",
+            "label": "Axe violations",
+            "type": "integer",
+            "min": 0,
+            "metric": {
+              "better": "down",
+              "method": "harness",
+              "target": 0
+            }
+          },
+          {
+            "key": "undesignedStates",
+            "label": "Undesigned states",
+            "type": "integer",
+            "min": 0,
+            "metric": {
+              "better": "down",
+              "method": "judgement"
+            },
+            "description": "Empty, loading or error states the screens leave undesigned."
+          },
+          {
+            "key": "rawLiterals",
+            "label": "Raw literals",
+            "type": "integer",
+            "min": 0,
+            "metric": {
+              "better": "down",
+              "method": "static"
+            },
+            "description": "Colours, sizes and spacings written as literals instead of tokens."
+          },
+          {
+            "key": "minTextPx",
+            "label": "Smallest text",
+            "type": "number",
+            "unit": "px",
+            "min": 0,
+            "metric": {
+              "better": "up",
+              "method": "harness",
+              "target": 12
+            }
+          },
+          {
+            "key": "consoleErrors",
+            "label": "Console errors",
+            "type": "integer",
+            "min": 0,
+            "metric": {
+              "better": "down",
+              "method": "harness",
+              "target": 0
+            }
+          },
+          {
+            "key": "standardsPct",
+            "label": "Standards met",
+            "type": "percent",
+            "metric": {
+              "better": "up",
+              "method": "judgement"
+            },
+            "description": "Share of the applicable registry and house standards the screens conform to."
           }
         ],
         "health": {
@@ -6877,6 +7096,24 @@
               "health": "watch",
               "reason": "Accessibility only partly passes",
               "short": "A11y partial"
+            },
+            {
+              "when": {
+                "field": "axeViolations",
+                "gt": 0
+              },
+              "health": "watch",
+              "reason": "{axeViolations} axe violations",
+              "short": "{axeViolations} axe issues"
+            },
+            {
+              "when": {
+                "field": "minTextPx",
+                "lt": 12
+              },
+              "health": "watch",
+              "reason": "Text down to {minTextPx} px, under the 12 px floor",
+              "short": "Text {minTextPx} px"
             }
           ],
           "default": "good",
@@ -6903,16 +7140,16 @@
     },
     {
       "id": "development",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "source": "builtin",
       "enabled": true,
       "manifest": {
         "$schema": "lens-manifest/1",
         "id": "development",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "name": "Development",
         "short": "DEV",
-        "description": "Build progress, agent authorship, human review, unit coverage and tech debt.",
+        "description": "Build progress, agent authorship, human review, unit coverage and tech debt. Measured: code size, bundle share, probed latency, duplication, test ratio and standards met.",
         "reader": {
           "role": "development",
           "density": "dense"
@@ -6981,6 +7218,105 @@
             "key": "stalled",
             "label": "Stalled",
             "type": "boolean"
+          },
+          {
+            "key": "loc",
+            "label": "Code size",
+            "type": "integer",
+            "unit": "lines",
+            "min": 0,
+            "metric": {
+              "better": "down",
+              "method": "static"
+            }
+          },
+          {
+            "key": "files",
+            "label": "Files",
+            "type": "integer",
+            "min": 0,
+            "metric": {
+              "better": "down",
+              "method": "static"
+            }
+          },
+          {
+            "key": "bundleKb",
+            "label": "Bundle share",
+            "type": "number",
+            "unit": "KB",
+            "min": 0,
+            "metric": {
+              "better": "down",
+              "method": "static"
+            },
+            "description": "The feature's share of the shipped client bundle. Omitted when the build names no stats file."
+          },
+          {
+            "key": "depCount",
+            "label": "Dependencies",
+            "type": "integer",
+            "min": 0,
+            "metric": {
+              "better": "down",
+              "method": "static"
+            }
+          },
+          {
+            "key": "p50Ms",
+            "label": "p50 latency",
+            "type": "number",
+            "unit": "ms",
+            "min": 0,
+            "metric": {
+              "better": "down",
+              "method": "probe"
+            }
+          },
+          {
+            "key": "p95Ms",
+            "label": "p95 latency",
+            "type": "number",
+            "unit": "ms",
+            "min": 0,
+            "metric": {
+              "better": "down",
+              "method": "probe",
+              "target": 500,
+              "warn_at": 1000
+            },
+            "description": "Probed against a local build. The budget is 1000 ms; above it the lens is at watch."
+          },
+          {
+            "key": "dupSites",
+            "label": "Duplicated sites",
+            "type": "integer",
+            "min": 0,
+            "metric": {
+              "better": "down",
+              "method": "judgement"
+            },
+            "description": "Places that re-implement something a shared module already does."
+          },
+          {
+            "key": "testRatioPct",
+            "label": "Test ratio",
+            "type": "percent",
+            "metric": {
+              "better": "up",
+              "method": "static"
+            },
+            "description": "Test lines as a share of source lines."
+          },
+          {
+            "key": "standardsPct",
+            "label": "Standards met",
+            "type": "percent",
+            "metric": {
+              "better": "up",
+              "method": "judgement"
+            },
+            "description": "Share of the applicable registry and house standards the code conforms to."
           }
         ],
         "health": {
@@ -7046,6 +7382,15 @@
               "health": "watch",
               "reason": "Unit coverage {unitCoveragePct}%",
               "short": "Coverage {unitCoveragePct}%"
+            },
+            {
+              "when": {
+                "field": "p95Ms",
+                "gt": 1000
+              },
+              "health": "watch",
+              "reason": "p95 {p95Ms} ms, over the 1000 ms budget",
+              "short": "p95 {p95Ms} ms"
             }
           ],
           "default": "good",
@@ -7224,16 +7569,16 @@
     },
     {
       "id": "security",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "source": "builtin",
       "enabled": true,
       "manifest": {
         "$schema": "lens-manifest/1",
         "id": "security",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "name": "Security",
         "short": "SEC",
-        "description": "Data classes, security reviews and open findings.",
+        "description": "Data classes, security reviews and open findings. Measured: scan findings by severity, secrets, unsafe sinks and standards met.",
         "reader": {
           "role": "security",
           "density": "standard"
@@ -7287,6 +7632,80 @@
               "feature": "stage"
             },
             "description": "The feature's lifecycle stage, read from the feature."
+          },
+          {
+            "key": "findingsCritical",
+            "label": "Critical findings",
+            "type": "integer",
+            "min": 0,
+            "metric": {
+              "better": "down",
+              "method": "judgement",
+              "target": 0
+            }
+          },
+          {
+            "key": "findingsHigh",
+            "label": "High findings",
+            "type": "integer",
+            "min": 0,
+            "metric": {
+              "better": "down",
+              "method": "judgement",
+              "target": 0
+            }
+          },
+          {
+            "key": "findingsMedium",
+            "label": "Medium findings",
+            "type": "integer",
+            "min": 0,
+            "metric": {
+              "better": "down",
+              "method": "judgement"
+            }
+          },
+          {
+            "key": "findingsLow",
+            "label": "Low findings",
+            "type": "integer",
+            "min": 0,
+            "metric": {
+              "better": "down",
+              "method": "judgement"
+            }
+          },
+          {
+            "key": "secretHits",
+            "label": "Secrets in code",
+            "type": "integer",
+            "min": 0,
+            "metric": {
+              "better": "down",
+              "method": "static",
+              "target": 0
+            }
+          },
+          {
+            "key": "unsafeSinks",
+            "label": "Unsafe sinks",
+            "type": "integer",
+            "min": 0,
+            "metric": {
+              "better": "down",
+              "method": "static"
+            },
+            "description": "Calls into raw HTML, eval, shell or string-built SQL."
+          },
+          {
+            "key": "standardsPct",
+            "label": "Standards met",
+            "type": "percent",
+            "metric": {
+              "better": "up",
+              "method": "judgement"
+            },
+            "description": "Share of the applicable registry and house standards the code conforms to."
           }
         ],
         "health": {
@@ -7354,12 +7773,39 @@
             },
             {
               "when": {
+                "field": "findingsCritical",
+                "gt": 0
+              },
+              "health": "bad",
+              "reason": "{findingsCritical} critical findings from the lens scan",
+              "short": "{findingsCritical} critical"
+            },
+            {
+              "when": {
+                "field": "secretHits",
+                "gt": 0
+              },
+              "health": "bad",
+              "reason": "{secretHits} secrets found in code",
+              "short": "Secrets in code"
+            },
+            {
+              "when": {
                 "field": "review",
                 "eq": "pending"
               },
               "health": "watch",
               "reason": "Security review pending",
               "short": "Review pending"
+            },
+            {
+              "when": {
+                "field": "findingsHigh",
+                "gt": 0
+              },
+              "health": "watch",
+              "reason": "{findingsHigh} high findings from the lens scan",
+              "short": "{findingsHigh} high findings"
             }
           ],
           "default": "good",
@@ -10197,9 +10643,15 @@
         "values": {
           "status": "polished",
           "a11y": "pass",
-          "specDrift": false
+          "specDrift": false,
+          "undesignedStates": 2,
+          "rawLiterals": 23,
+          "standardsPct": 77,
+          "axeViolations": 0,
+          "minTextPx": 13,
+          "consoleErrors": 1
         },
-        "measured_at": "2026-10-02T04:42:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "development": {
@@ -10212,9 +10664,18 @@
           "unitCoveragePct": 55,
           "techDebt": 2,
           "linesOfCode": 3300,
-          "lastCommit": "2026-08-23"
+          "lastCommit": "2026-08-23",
+          "loc": 3300,
+          "files": 22,
+          "depCount": 4,
+          "bundleKb": 59.4,
+          "p50Ms": 155,
+          "p95Ms": 322,
+          "dupSites": 7,
+          "testRatioPct": 32,
+          "standardsPct": 67
         },
-        "measured_at": "2026-10-02T04:42:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -10238,9 +10699,16 @@
         "values": {
           "dataClass": "personal",
           "review": "passed",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 0,
+          "findingsMedium": 0,
+          "findingsLow": 3,
+          "secretHits": 0,
+          "unsafeSinks": 0,
+          "standardsPct": 75
         },
-        "measured_at": "2026-10-02T04:42:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -10281,9 +10749,15 @@
         "values": {
           "status": "polished",
           "a11y": "pass",
-          "specDrift": false
+          "specDrift": false,
+          "undesignedStates": 2,
+          "rawLiterals": 19,
+          "standardsPct": 80,
+          "axeViolations": 0,
+          "minTextPx": 13,
+          "consoleErrors": 2
         },
-        "measured_at": "2026-09-05T15:25:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "development": {
@@ -10296,9 +10770,18 @@
           "unitCoveragePct": 78,
           "techDebt": 0,
           "linesOfCode": 400,
-          "lastCommit": "2026-09-05"
+          "lastCommit": "2026-09-05",
+          "loc": 400,
+          "files": 3,
+          "depCount": 2,
+          "bundleKb": 4.9,
+          "p50Ms": 66,
+          "p95Ms": 167,
+          "dupSites": 2,
+          "testRatioPct": 40,
+          "standardsPct": 85
         },
-        "measured_at": "2026-09-05T15:25:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -10322,9 +10805,16 @@
         "values": {
           "dataClass": "personal",
           "review": "passed",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 0,
+          "findingsMedium": 2,
+          "findingsLow": 1,
+          "secretHits": 0,
+          "unsafeSinks": 0,
+          "standardsPct": 81
         },
-        "measured_at": "2026-09-05T15:25:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -10365,9 +10855,14 @@
         "values": {
           "status": "polished",
           "a11y": "unknown",
-          "specDrift": false
+          "specDrift": false,
+          "undesignedStates": 2,
+          "rawLiterals": 20,
+          "standardsPct": 87,
+          "minTextPx": 13,
+          "consoleErrors": 1
         },
-        "measured_at": "2026-10-06T08:19:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "development": {
@@ -10380,9 +10875,18 @@
           "unitCoveragePct": 72,
           "techDebt": 1,
           "linesOfCode": 2300,
-          "lastCommit": "2026-09-04"
+          "lastCommit": "2026-09-04",
+          "loc": 2300,
+          "files": 15,
+          "depCount": 12,
+          "bundleKb": 26.2,
+          "p50Ms": 64,
+          "p95Ms": 166,
+          "dupSites": 4,
+          "testRatioPct": 56,
+          "standardsPct": 73
         },
-        "measured_at": "2026-10-06T08:19:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -10412,9 +10916,16 @@
         "values": {
           "dataClass": "personal",
           "review": "passed",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 0,
+          "findingsMedium": 2,
+          "findingsLow": 3,
+          "secretHits": 0,
+          "unsafeSinks": 0,
+          "standardsPct": 90
         },
-        "measured_at": "2026-10-06T08:19:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -10455,9 +10966,12 @@
         "values": {
           "status": "hi-fi",
           "a11y": "pass",
-          "specDrift": false
+          "specDrift": false,
+          "undesignedStates": 4,
+          "rawLiterals": 24,
+          "standardsPct": 75
         },
-        "measured_at": "2026-10-06T13:28:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "development": {
@@ -10470,9 +10984,18 @@
           "unitCoveragePct": 71,
           "techDebt": 1,
           "linesOfCode": 1800,
-          "lastCommit": "2026-10-02"
+          "lastCommit": "2026-10-02",
+          "loc": 1800,
+          "files": 20,
+          "depCount": 16,
+          "bundleKb": 16.1,
+          "p50Ms": 106,
+          "p95Ms": 315,
+          "dupSites": 0,
+          "testRatioPct": 56,
+          "standardsPct": 78
         },
-        "measured_at": "2026-10-06T13:28:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -10496,9 +11019,16 @@
         "values": {
           "dataClass": "personal",
           "review": "passed",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 0,
+          "findingsMedium": 2,
+          "findingsLow": 0,
+          "secretHits": 0,
+          "unsafeSinks": 1,
+          "standardsPct": 85
         },
-        "measured_at": "2026-10-06T13:28:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -10553,9 +11083,16 @@
           "unitCoveragePct": 36,
           "techDebt": 0,
           "linesOfCode": 600,
-          "lastCommit": "2026-10-07"
+          "lastCommit": "2026-10-07",
+          "loc": 600,
+          "files": 4,
+          "depCount": 12,
+          "bundleKb": 8.4,
+          "dupSites": 3,
+          "testRatioPct": 23,
+          "standardsPct": 89
         },
-        "measured_at": "2026-10-07T00:14:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -10573,9 +11110,16 @@
         "values": {
           "dataClass": "personal",
           "review": "pending",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 0,
+          "findingsMedium": 0,
+          "findingsLow": 3,
+          "secretHits": 0,
+          "unsafeSinks": 0,
+          "standardsPct": 69
         },
-        "measured_at": "2026-10-07T00:14:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -10673,9 +11217,15 @@
         "values": {
           "status": "implemented",
           "a11y": "partial",
-          "specDrift": false
+          "specDrift": false,
+          "undesignedStates": 3,
+          "rawLiterals": 23,
+          "standardsPct": 82,
+          "axeViolations": 3,
+          "minTextPx": 13,
+          "consoleErrors": 1
         },
-        "measured_at": "2026-10-01T17:49:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "development": {
@@ -10688,9 +11238,18 @@
           "unitCoveragePct": 85,
           "techDebt": 2,
           "linesOfCode": 900,
-          "lastCommit": "2026-09-26"
+          "lastCommit": "2026-09-26",
+          "loc": 900,
+          "files": 8,
+          "depCount": 17,
+          "bundleKb": 8,
+          "p50Ms": 71,
+          "p95Ms": 157,
+          "dupSites": 6,
+          "testRatioPct": 51,
+          "standardsPct": 66
         },
-        "measured_at": "2026-10-01T17:49:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -10714,9 +11273,16 @@
         "values": {
           "dataClass": "personal",
           "review": "passed",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 0,
+          "findingsMedium": 0,
+          "findingsLow": 4,
+          "secretHits": 0,
+          "unsafeSinks": 0,
+          "standardsPct": 74
         },
-        "measured_at": "2026-10-01T17:49:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -10771,9 +11337,18 @@
           "unitCoveragePct": 34,
           "techDebt": 0,
           "linesOfCode": 5900,
-          "lastCommit": "2026-10-02"
+          "lastCommit": "2026-10-02",
+          "loc": 5900,
+          "files": 45,
+          "depCount": 9,
+          "bundleKb": 47.4,
+          "p50Ms": 119,
+          "p95Ms": 239,
+          "dupSites": 0,
+          "testRatioPct": 24,
+          "standardsPct": 90
         },
-        "measured_at": "2026-10-07T16:54:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -10793,9 +11368,16 @@
         "values": {
           "dataClass": "personal",
           "review": "passed",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 0,
+          "findingsMedium": 2,
+          "findingsLow": 0,
+          "secretHits": 0,
+          "unsafeSinks": 2,
+          "standardsPct": 70
         },
-        "measured_at": "2026-10-07T16:54:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -10829,9 +11411,12 @@
         "values": {
           "status": "implemented",
           "a11y": "pass",
-          "specDrift": false
+          "specDrift": false,
+          "undesignedStates": 0,
+          "rawLiterals": 22,
+          "standardsPct": 69
         },
-        "measured_at": "2026-08-12T08:09:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "development": {
@@ -10844,9 +11429,17 @@
           "unitCoveragePct": 83,
           "techDebt": 1,
           "linesOfCode": 4400,
-          "lastCommit": "2026-08-12"
+          "lastCommit": "2026-08-12",
+          "loc": 4400,
+          "files": 45,
+          "depCount": 10,
+          "p50Ms": 99,
+          "p95Ms": 194,
+          "dupSites": 4,
+          "testRatioPct": 57,
+          "standardsPct": 75
         },
-        "measured_at": "2026-08-12T08:09:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -10870,9 +11463,16 @@
         "values": {
           "dataClass": "personal",
           "review": "passed",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 0,
+          "findingsMedium": 2,
+          "findingsLow": 2,
+          "secretHits": 0,
+          "unsafeSinks": 1,
+          "standardsPct": 73
         },
-        "measured_at": "2026-08-12T08:09:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -10913,9 +11513,15 @@
         "values": {
           "status": "implemented",
           "a11y": "pass",
-          "specDrift": false
+          "specDrift": false,
+          "undesignedStates": 3,
+          "rawLiterals": 19,
+          "standardsPct": 79,
+          "axeViolations": 0,
+          "minTextPx": 13,
+          "consoleErrors": 0
         },
-        "measured_at": "2026-10-06T20:52:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "development": {
@@ -10928,9 +11534,18 @@
           "unitCoveragePct": 92,
           "techDebt": 0,
           "linesOfCode": 4900,
-          "lastCommit": "2026-08-20"
+          "lastCommit": "2026-08-20",
+          "loc": 4900,
+          "files": 54,
+          "depCount": 17,
+          "bundleKb": 39.8,
+          "p50Ms": 249,
+          "p95Ms": 658,
+          "dupSites": 1,
+          "testRatioPct": 51,
+          "standardsPct": 84
         },
-        "measured_at": "2026-10-06T20:52:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -10954,9 +11569,16 @@
         "values": {
           "dataClass": "personal",
           "review": "passed",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 0,
+          "findingsMedium": 0,
+          "findingsLow": 0,
+          "secretHits": 0,
+          "unsafeSinks": 1,
+          "standardsPct": 86
         },
-        "measured_at": "2026-10-06T20:52:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -10997,9 +11619,15 @@
         "values": {
           "status": "polished",
           "a11y": "pass",
-          "specDrift": false
+          "specDrift": false,
+          "undesignedStates": 0,
+          "rawLiterals": 2,
+          "standardsPct": 90,
+          "axeViolations": 0,
+          "minTextPx": 12,
+          "consoleErrors": 2
         },
-        "measured_at": "2026-08-21T11:53:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "development": {
@@ -11012,9 +11640,18 @@
           "unitCoveragePct": 82,
           "techDebt": 0,
           "linesOfCode": 2200,
-          "lastCommit": "2026-08-21"
+          "lastCommit": "2026-08-21",
+          "loc": 2200,
+          "files": 26,
+          "depCount": 17,
+          "bundleKb": 33.5,
+          "p50Ms": 200,
+          "p95Ms": 476,
+          "dupSites": 1,
+          "testRatioPct": 57,
+          "standardsPct": 86
         },
-        "measured_at": "2026-08-21T11:53:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -11038,9 +11675,16 @@
         "values": {
           "dataClass": "payment",
           "review": "passed",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 0,
+          "findingsMedium": 1,
+          "findingsLow": 0,
+          "secretHits": 0,
+          "unsafeSinks": 1,
+          "standardsPct": 84
         },
-        "measured_at": "2026-08-21T11:53:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -11081,9 +11725,15 @@
         "values": {
           "status": "implemented",
           "a11y": "pass",
-          "specDrift": false
+          "specDrift": false,
+          "undesignedStates": 1,
+          "rawLiterals": 21,
+          "standardsPct": 67,
+          "axeViolations": 0,
+          "minTextPx": 13,
+          "consoleErrors": 1
         },
-        "measured_at": "2026-09-17T15:49:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "development": {
@@ -11096,9 +11746,18 @@
           "unitCoveragePct": 76,
           "techDebt": 2,
           "linesOfCode": 3200,
-          "lastCommit": "2026-09-17"
+          "lastCommit": "2026-09-17",
+          "loc": 3200,
+          "files": 24,
+          "depCount": 9,
+          "bundleKb": 47.9,
+          "p50Ms": 128,
+          "p95Ms": 253,
+          "dupSites": 5,
+          "testRatioPct": 47,
+          "standardsPct": 64
         },
-        "measured_at": "2026-09-17T15:49:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -11122,9 +11781,16 @@
         "values": {
           "dataClass": "payment",
           "review": "passed",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 0,
+          "findingsMedium": 1,
+          "findingsLow": 4,
+          "secretHits": 0,
+          "unsafeSinks": 0,
+          "standardsPct": 84
         },
-        "measured_at": "2026-09-17T15:49:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -11165,9 +11831,15 @@
         "values": {
           "status": "implemented",
           "a11y": "pass",
-          "specDrift": false
+          "specDrift": false,
+          "undesignedStates": 2,
+          "rawLiterals": 4,
+          "standardsPct": 77,
+          "axeViolations": 0,
+          "minTextPx": 12,
+          "consoleErrors": 1
         },
-        "measured_at": "2026-10-06T13:01:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "development": {
@@ -11180,9 +11852,18 @@
           "unitCoveragePct": 59,
           "techDebt": 2,
           "linesOfCode": 1700,
-          "lastCommit": "2026-10-06"
+          "lastCommit": "2026-10-06",
+          "loc": 1700,
+          "files": 20,
+          "depCount": 13,
+          "bundleKb": 25.9,
+          "p50Ms": 181,
+          "p95Ms": 461,
+          "dupSites": 7,
+          "testRatioPct": 33,
+          "standardsPct": 69
         },
-        "measured_at": "2026-10-06T13:01:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -11206,9 +11887,16 @@
         "values": {
           "dataClass": "payment",
           "review": "passed",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 0,
+          "findingsMedium": 0,
+          "findingsLow": 1,
+          "secretHits": 0,
+          "unsafeSinks": 1,
+          "standardsPct": 87
         },
-        "measured_at": "2026-10-06T13:01:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -11327,9 +12015,16 @@
           "unitCoveragePct": 84,
           "techDebt": 1,
           "linesOfCode": 700,
-          "lastCommit": "2026-10-04"
+          "lastCommit": "2026-10-04",
+          "loc": 700,
+          "files": 4,
+          "depCount": 7,
+          "bundleKb": 7.4,
+          "dupSites": 3,
+          "testRatioPct": 58,
+          "standardsPct": 76
         },
-        "measured_at": "2026-10-04T11:44:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -11347,9 +12042,16 @@
         "values": {
           "dataClass": "payment",
           "review": "pending",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 0,
+          "findingsMedium": 2,
+          "findingsLow": 3,
+          "secretHits": 0,
+          "unsafeSinks": 0,
+          "standardsPct": 79
         },
-        "measured_at": "2026-10-04T11:44:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -11447,9 +12149,14 @@
         "values": {
           "status": "polished",
           "a11y": "unknown",
-          "specDrift": false
+          "specDrift": false,
+          "undesignedStates": 3,
+          "rawLiterals": 29,
+          "standardsPct": 72,
+          "minTextPx": 13,
+          "consoleErrors": 1
         },
-        "measured_at": "2026-08-13T08:15:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "development": {
@@ -11462,9 +12169,18 @@
           "unitCoveragePct": 76,
           "techDebt": 2,
           "linesOfCode": 4700,
-          "lastCommit": "2026-08-13"
+          "lastCommit": "2026-08-13",
+          "loc": 4700,
+          "files": 38,
+          "depCount": 11,
+          "bundleKb": 56.9,
+          "p50Ms": 184,
+          "p95Ms": 402,
+          "dupSites": 6,
+          "testRatioPct": 42,
+          "standardsPct": 62
         },
-        "measured_at": "2026-08-13T08:15:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -11488,9 +12204,16 @@
         "values": {
           "dataClass": "payment",
           "review": "passed",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 0,
+          "findingsMedium": 1,
+          "findingsLow": 2,
+          "secretHits": 0,
+          "unsafeSinks": 0,
+          "standardsPct": 90
         },
-        "measured_at": "2026-08-13T08:15:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -11542,9 +12265,17 @@
           "unitCoveragePct": 61,
           "techDebt": 3,
           "linesOfCode": 5800,
-          "lastCommit": "2026-09-02"
+          "lastCommit": "2026-09-02",
+          "loc": 5800,
+          "files": 55,
+          "depCount": 11,
+          "p50Ms": 156,
+          "p95Ms": 338,
+          "dupSites": 4,
+          "testRatioPct": 45,
+          "standardsPct": 64
         },
-        "measured_at": "2026-09-28T16:41:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -11568,9 +12299,16 @@
         "values": {
           "dataClass": "payment",
           "review": "passed",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 0,
+          "findingsMedium": 0,
+          "findingsLow": 2,
+          "secretHits": 0,
+          "unsafeSinks": 0,
+          "standardsPct": 80
         },
-        "measured_at": "2026-09-28T16:41:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -11610,9 +12348,12 @@
         "values": {
           "status": "implemented",
           "a11y": "partial",
-          "specDrift": false
+          "specDrift": false,
+          "undesignedStates": 3,
+          "rawLiterals": 10,
+          "standardsPct": 72
         },
-        "measured_at": "2026-10-07T13:08:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "development": {
@@ -11625,9 +12366,17 @@
           "unitCoveragePct": 33,
           "techDebt": 0,
           "linesOfCode": 4400,
-          "lastCommit": "2026-10-08"
+          "lastCommit": "2026-10-08",
+          "loc": 4400,
+          "files": 37,
+          "depCount": 8,
+          "p50Ms": 104,
+          "p95Ms": 209,
+          "dupSites": 2,
+          "testRatioPct": 26,
+          "standardsPct": 86
         },
-        "measured_at": "2026-10-07T13:08:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -11651,9 +12400,16 @@
         "values": {
           "dataClass": "payment",
           "review": "pending",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 1,
+          "findingsMedium": 2,
+          "findingsLow": 1,
+          "secretHits": 0,
+          "unsafeSinks": 0,
+          "standardsPct": 86
         },
-        "measured_at": "2026-10-07T13:08:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample",
         "override": {
           "health": "bad",
@@ -11701,9 +12457,12 @@
         "values": {
           "status": "implemented",
           "a11y": "unknown",
-          "specDrift": false
+          "specDrift": false,
+          "undesignedStates": 0,
+          "rawLiterals": 11,
+          "standardsPct": 71
         },
-        "measured_at": "2026-09-19T16:23:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "development": {
@@ -11716,9 +12475,17 @@
           "unitCoveragePct": 67,
           "techDebt": 0,
           "linesOfCode": 5000,
-          "lastCommit": "2026-09-19"
+          "lastCommit": "2026-09-19",
+          "loc": 5000,
+          "files": 37,
+          "depCount": 6,
+          "p50Ms": 78,
+          "p95Ms": 229,
+          "dupSites": 2,
+          "testRatioPct": 44,
+          "standardsPct": 92
         },
-        "measured_at": "2026-09-19T16:23:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -11742,9 +12509,16 @@
         "values": {
           "dataClass": "payment",
           "review": "passed",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 0,
+          "findingsMedium": 1,
+          "findingsLow": 0,
+          "secretHits": 0,
+          "unsafeSinks": 0,
+          "standardsPct": 70
         },
-        "measured_at": "2026-09-19T16:23:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -11785,9 +12559,15 @@
         "values": {
           "status": "polished",
           "a11y": "partial",
-          "specDrift": false
+          "specDrift": false,
+          "undesignedStates": 0,
+          "rawLiterals": 2,
+          "standardsPct": 81,
+          "axeViolations": 4,
+          "minTextPx": 12,
+          "consoleErrors": 0
         },
-        "measured_at": "2026-09-17T16:42:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "development": {
@@ -11800,9 +12580,18 @@
           "unitCoveragePct": 84,
           "techDebt": 2,
           "linesOfCode": 1200,
-          "lastCommit": "2026-09-17"
+          "lastCommit": "2026-09-17",
+          "loc": 1200,
+          "files": 8,
+          "depCount": 14,
+          "bundleKb": 17,
+          "p50Ms": 94,
+          "p95Ms": 183,
+          "dupSites": 6,
+          "testRatioPct": 57,
+          "standardsPct": 63
         },
-        "measured_at": "2026-09-17T16:42:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -11826,9 +12615,16 @@
         "values": {
           "dataClass": "payment",
           "review": "passed",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 0,
+          "findingsMedium": 1,
+          "findingsLow": 4,
+          "secretHits": 0,
+          "unsafeSinks": 1,
+          "standardsPct": 86
         },
-        "measured_at": "2026-09-17T16:42:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -11868,9 +12664,12 @@
         "values": {
           "status": "hi-fi",
           "a11y": "unknown",
-          "specDrift": false
+          "specDrift": false,
+          "undesignedStates": 2,
+          "rawLiterals": 9,
+          "standardsPct": 89
         },
-        "measured_at": "2026-10-07T16:58:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "development": {
@@ -11883,9 +12682,15 @@
           "unitCoveragePct": 78,
           "techDebt": 0,
           "linesOfCode": 4300,
-          "lastCommit": "2026-10-05"
+          "lastCommit": "2026-10-05",
+          "loc": 4300,
+          "files": 27,
+          "depCount": 9,
+          "dupSites": 0,
+          "testRatioPct": 45,
+          "standardsPct": 89
         },
-        "measured_at": "2026-10-07T16:58:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -11903,9 +12708,16 @@
         "values": {
           "dataClass": "payment",
           "review": "pending",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 1,
+          "findingsMedium": 0,
+          "findingsLow": 3,
+          "secretHits": 0,
+          "unsafeSinks": 0,
+          "standardsPct": 72
         },
-        "measured_at": "2026-10-07T16:58:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -11937,9 +12749,12 @@
         "values": {
           "status": "hi-fi",
           "a11y": "unknown",
-          "specDrift": false
+          "specDrift": false,
+          "undesignedStates": 4,
+          "rawLiterals": 3,
+          "standardsPct": 88
         },
-        "measured_at": "2026-10-06T14:38:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "development": {
@@ -11952,9 +12767,18 @@
           "unitCoveragePct": 77,
           "techDebt": 2,
           "linesOfCode": 4700,
-          "lastCommit": "2026-10-04"
+          "lastCommit": "2026-10-04",
+          "loc": 4700,
+          "files": 42,
+          "depCount": 11,
+          "bundleKb": 64.1,
+          "p50Ms": 198,
+          "p95Ms": 411,
+          "dupSites": 3,
+          "testRatioPct": 44,
+          "standardsPct": 63
         },
-        "measured_at": "2026-10-06T14:38:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -11974,9 +12798,16 @@
         "values": {
           "dataClass": "payment",
           "review": "pending",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 1,
+          "findingsMedium": 2,
+          "findingsLow": 2,
+          "secretHits": 0,
+          "unsafeSinks": 1,
+          "standardsPct": 81
         },
-        "measured_at": "2026-10-06T14:38:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -12009,9 +12840,12 @@
         "values": {
           "status": "hi-fi",
           "a11y": "unknown",
-          "specDrift": false
+          "specDrift": false,
+          "undesignedStates": 4,
+          "rawLiterals": 29,
+          "standardsPct": 88
         },
-        "measured_at": "2026-10-04T10:29:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "development": {
@@ -12024,9 +12858,16 @@
           "unitCoveragePct": 48,
           "techDebt": 1,
           "linesOfCode": 1100,
-          "lastCommit": "2026-10-07"
+          "lastCommit": "2026-10-07",
+          "loc": 1100,
+          "files": 7,
+          "depCount": 6,
+          "bundleKb": 10.4,
+          "dupSites": 4,
+          "testRatioPct": 27,
+          "standardsPct": 74
         },
-        "measured_at": "2026-10-04T10:29:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -12044,9 +12885,16 @@
         "values": {
           "dataClass": "payment",
           "review": "pending",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 0,
+          "findingsMedium": 2,
+          "findingsLow": 4,
+          "secretHits": 0,
+          "unsafeSinks": 1,
+          "standardsPct": 79
         },
-        "measured_at": "2026-10-04T10:29:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -12208,9 +13056,15 @@
         "values": {
           "status": "implemented",
           "a11y": "partial",
-          "specDrift": false
+          "specDrift": false,
+          "undesignedStates": 2,
+          "rawLiterals": 23,
+          "standardsPct": 70,
+          "axeViolations": 3,
+          "minTextPx": 12,
+          "consoleErrors": 0
         },
-        "measured_at": "2026-09-29T23:54:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "development": {
@@ -12223,9 +13077,16 @@
           "unitCoveragePct": 84,
           "techDebt": 1,
           "linesOfCode": 600,
-          "lastCommit": "2026-09-22"
+          "lastCommit": "2026-09-22",
+          "loc": 600,
+          "files": 7,
+          "depCount": 15,
+          "bundleKb": 8.2,
+          "dupSites": 1,
+          "testRatioPct": 62,
+          "standardsPct": 81
         },
-        "measured_at": "2026-09-29T23:54:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -12249,9 +13110,16 @@
         "values": {
           "dataClass": "personal",
           "review": "passed",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 0,
+          "findingsMedium": 1,
+          "findingsLow": 4,
+          "secretHits": 0,
+          "unsafeSinks": 0,
+          "standardsPct": 87
         },
-        "measured_at": "2026-09-29T23:54:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -12292,9 +13160,15 @@
         "values": {
           "status": "polished",
           "a11y": "pass",
-          "specDrift": false
+          "specDrift": false,
+          "undesignedStates": 1,
+          "rawLiterals": 23,
+          "standardsPct": 67,
+          "axeViolations": 0,
+          "minTextPx": 12,
+          "consoleErrors": 2
         },
-        "measured_at": "2026-10-03T09:01:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "development": {
@@ -12307,9 +13181,16 @@
           "unitCoveragePct": 65,
           "techDebt": 0,
           "linesOfCode": 2100,
-          "lastCommit": "2026-08-31"
+          "lastCommit": "2026-08-31",
+          "loc": 2100,
+          "files": 25,
+          "depCount": 6,
+          "bundleKb": 21.9,
+          "dupSites": 4,
+          "testRatioPct": 36,
+          "standardsPct": 91
         },
-        "measured_at": "2026-10-03T09:01:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -12333,9 +13214,16 @@
         "values": {
           "dataClass": "personal",
           "review": "passed",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 0,
+          "findingsMedium": 1,
+          "findingsLow": 0,
+          "secretHits": 0,
+          "unsafeSinks": 0,
+          "standardsPct": 88
         },
-        "measured_at": "2026-10-03T09:01:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -12440,9 +13328,14 @@
         "values": {
           "status": "polished",
           "a11y": "unknown",
-          "specDrift": false
+          "specDrift": false,
+          "undesignedStates": 0,
+          "rawLiterals": 27,
+          "standardsPct": 88,
+          "minTextPx": 12,
+          "consoleErrors": 1
         },
-        "measured_at": "2026-10-05T07:38:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "development": {
@@ -12455,9 +13348,18 @@
           "unitCoveragePct": 74,
           "techDebt": 1,
           "linesOfCode": 4000,
-          "lastCommit": "2026-09-28"
+          "lastCommit": "2026-09-28",
+          "loc": 4000,
+          "files": 29,
+          "depCount": 2,
+          "bundleKb": 42.3,
+          "p50Ms": 123,
+          "p95Ms": 283,
+          "dupSites": 2,
+          "testRatioPct": 38,
+          "standardsPct": 77
         },
-        "measured_at": "2026-10-05T07:38:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -12481,9 +13383,16 @@
         "values": {
           "dataClass": "personal",
           "review": "passed",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 0,
+          "findingsMedium": 1,
+          "findingsLow": 0,
+          "secretHits": 0,
+          "unsafeSinks": 1,
+          "standardsPct": 94
         },
-        "measured_at": "2026-10-05T07:38:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -12524,9 +13433,15 @@
         "values": {
           "status": "implemented",
           "a11y": "pass",
-          "specDrift": false
+          "specDrift": false,
+          "undesignedStates": 2,
+          "rawLiterals": 12,
+          "standardsPct": 88,
+          "axeViolations": 0,
+          "minTextPx": 12,
+          "consoleErrors": 0
         },
-        "measured_at": "2026-09-29T10:22:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "development": {
@@ -12539,9 +13454,18 @@
           "unitCoveragePct": 67,
           "techDebt": 0,
           "linesOfCode": 4900,
-          "lastCommit": "2026-09-01"
+          "lastCommit": "2026-09-01",
+          "loc": 4900,
+          "files": 41,
+          "depCount": 15,
+          "bundleKb": 42.9,
+          "p50Ms": 175,
+          "p95Ms": 458,
+          "dupSites": 4,
+          "testRatioPct": 37,
+          "standardsPct": 83
         },
-        "measured_at": "2026-09-29T10:22:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -12565,9 +13489,16 @@
         "values": {
           "dataClass": "personal",
           "review": "passed",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 0,
+          "findingsMedium": 0,
+          "findingsLow": 0,
+          "secretHits": 0,
+          "unsafeSinks": 1,
+          "standardsPct": 82
         },
-        "measured_at": "2026-09-29T10:22:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -12608,9 +13539,15 @@
         "values": {
           "status": "implemented",
           "a11y": "partial",
-          "specDrift": false
+          "specDrift": false,
+          "undesignedStates": 3,
+          "rawLiterals": 21,
+          "standardsPct": 73,
+          "axeViolations": 3,
+          "minTextPx": 13,
+          "consoleErrors": 1
         },
-        "measured_at": "2026-10-04T04:13:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "development": {
@@ -12623,9 +13560,18 @@
           "unitCoveragePct": 44,
           "techDebt": 0,
           "linesOfCode": 2000,
-          "lastCommit": "2026-10-05"
+          "lastCommit": "2026-10-05",
+          "loc": 2000,
+          "files": 13,
+          "depCount": 2,
+          "bundleKb": 32.9,
+          "p50Ms": 129,
+          "p95Ms": 371,
+          "dupSites": 2,
+          "testRatioPct": 35,
+          "standardsPct": 83
         },
-        "measured_at": "2026-10-04T04:13:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -12649,9 +13595,16 @@
         "values": {
           "dataClass": "personal",
           "review": "pending",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 0,
+          "findingsMedium": 1,
+          "findingsLow": 0,
+          "secretHits": 0,
+          "unsafeSinks": 0,
+          "standardsPct": 66
         },
-        "measured_at": "2026-10-04T04:13:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -12707,9 +13660,16 @@
           "techDebt": 1,
           "linesOfCode": 3600,
           "lastCommit": "2026-09-11",
-          "stalled": true
+          "stalled": true,
+          "loc": 3600,
+          "files": 31,
+          "depCount": 7,
+          "bundleKb": 41.9,
+          "dupSites": 3,
+          "testRatioPct": 44,
+          "standardsPct": 75
         },
-        "measured_at": "2026-09-26T06:47:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -12727,9 +13687,16 @@
         "values": {
           "dataClass": "personal",
           "review": "pending",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 0,
+          "findingsMedium": 1,
+          "findingsLow": 2,
+          "secretHits": 0,
+          "unsafeSinks": 0,
+          "standardsPct": 87
         },
-        "measured_at": "2026-09-26T06:47:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -12762,9 +13729,15 @@
         "values": {
           "status": "polished",
           "a11y": "pass",
-          "specDrift": false
+          "specDrift": false,
+          "undesignedStates": 3,
+          "rawLiterals": 27,
+          "standardsPct": 73,
+          "axeViolations": 0,
+          "minTextPx": 13,
+          "consoleErrors": 0
         },
-        "measured_at": "2026-08-25T10:07:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "development": {
@@ -12777,9 +13750,16 @@
           "unitCoveragePct": 64,
           "techDebt": 2,
           "linesOfCode": 1200,
-          "lastCommit": "2026-08-25"
+          "lastCommit": "2026-08-25",
+          "loc": 1200,
+          "files": 9,
+          "depCount": 12,
+          "bundleKb": 14.6,
+          "dupSites": 7,
+          "testRatioPct": 49,
+          "standardsPct": 70
         },
-        "measured_at": "2026-08-25T10:07:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -12803,9 +13783,16 @@
         "values": {
           "dataClass": "personal",
           "review": "passed",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 0,
+          "findingsMedium": 1,
+          "findingsLow": 2,
+          "secretHits": 0,
+          "unsafeSinks": 1,
+          "standardsPct": 92
         },
-        "measured_at": "2026-08-25T10:07:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -12861,9 +13848,16 @@
           "techDebt": 1,
           "linesOfCode": 700,
           "lastCommit": "2026-09-19",
-          "stalled": true
+          "stalled": true,
+          "loc": 700,
+          "files": 5,
+          "depCount": 7,
+          "bundleKb": 7.7,
+          "dupSites": 2,
+          "testRatioPct": 61,
+          "standardsPct": 74
         },
-        "measured_at": "2026-09-19T09:26:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "operations": {
@@ -12881,9 +13875,16 @@
         "values": {
           "dataClass": "personal",
           "review": "pending",
-          "openFindings": 0
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 0,
+          "findingsMedium": 1,
+          "findingsLow": 3,
+          "secretHits": 0,
+          "unsafeSinks": 0,
+          "standardsPct": 86
         },
-        "measured_at": "2026-09-19T09:26:00Z",
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       },
       "quality": {
@@ -17687,6 +18688,97 @@
         "measured_at": "2026-10-04T03:45:00Z",
         "source": "sample"
       }
+    },
+    "invoice-ocr": {
+      "business": {
+        "values": {
+          "value": 3,
+          "confidence": "hypothesis",
+          "customerRequests30d": 6,
+          "revenueLink": "retention"
+        },
+        "measured_at": "2026-10-08T07:40:00Z",
+        "source": "sample"
+      },
+      "development": {
+        "values": {
+          "status": "in-progress",
+          "progressPct": 35,
+          "aiAuthoredPct": 70,
+          "humanReviewed": false,
+          "openPRs": 2,
+          "unitCoveragePct": 58,
+          "techDebt": 1,
+          "linesOfCode": 2100,
+          "lastCommit": "2026-10-07",
+          "stalled": false,
+          "loc": 2100,
+          "files": 19,
+          "bundleKb": 38.5,
+          "depCount": 7,
+          "p50Ms": 520,
+          "p95Ms": 1450,
+          "dupSites": 2,
+          "testRatioPct": 41,
+          "standardsPct": 72
+        },
+        "measured_at": "2026-10-08T07:40:00Z",
+        "source": "sample"
+      },
+      "security": {
+        "values": {
+          "dataClass": "payment",
+          "review": "pending",
+          "openFindings": 0,
+          "findingsCritical": 0,
+          "findingsHigh": 1,
+          "findingsMedium": 2,
+          "findingsLow": 3,
+          "secretHits": 0,
+          "unsafeSinks": 1,
+          "standardsPct": 68
+        },
+        "measured_at": "2026-10-08T07:40:00Z",
+        "source": "sample"
+      },
+      "design": {
+        "values": {
+          "status": "hi-fi",
+          "a11y": "unknown",
+          "specDrift": false,
+          "axeViolations": 0,
+          "undesignedStates": 3,
+          "rawLiterals": 14,
+          "minTextPx": 11,
+          "consoleErrors": 1,
+          "standardsPct": 64
+        },
+        "measured_at": "2026-10-08T07:40:00Z",
+        "source": "sample"
+      },
+      "operations": {
+        "values": {
+          "environment": "preview",
+          "incidents30d": 0,
+          "alerting": false,
+          "runbook": false
+        },
+        "measured_at": "2026-10-08T07:40:00Z",
+        "source": "sample"
+      },
+      "quality": {
+        "values": {
+          "status": "testing",
+          "e2eTests": 2,
+          "e2ePassing": 1,
+          "e2ePassPct": 50,
+          "openBugsP1": 0,
+          "openBugsP2": 1,
+          "openBugsP3": 2
+        },
+        "measured_at": "2026-10-08T07:40:00Z",
+        "source": "sample"
+      }
     }
   },
   "extensions": {
@@ -19672,6 +20764,7 @@
         "payout-reconciliation": "internal",
         "gift-cards": "business",
         "retail-point-of-sale": "business",
+        "invoice-ocr": "customer",
         "member-mobile-app": "customer",
         "push-notifications": "customer",
         "wallet-pass": "customer",
@@ -19747,6 +20840,7 @@
         "agent-sandbox-guardrails": "platform",
         "release-train-automation": "platform"
       },
+      "metrics_note": "Metric values (v3.1 metric fields) are the latest of a synthetic lens scan over Payments, Booking and Member experience on 2026-10-08T07:40:00Z; a real product keeps their history in <root>/.ai/lens-scan/scan.db.",
       "audience_note": "The sample's own feature kind (who it serves: customer, internal, business, platform). features[].kind is the standard's shape: integration if in the integrations domain or integrations-first, platform -> ops, customer and internal -> user_flow, business -> capability."
     }
   }

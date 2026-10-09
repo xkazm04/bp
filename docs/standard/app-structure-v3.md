@@ -1,7 +1,15 @@
 # App structure v3
 
-Status: standard, version 3 (lens manifests version 1). Reference specification.
+Status: standard, version 3.1 (lens manifests version 1). Reference specification.
 Design history and the decisions behind it: [analysis.md](analysis.md).
+
+**Changelog.**
+- **3.1** (minor, additive; `$schema` stays `"app-structure/3"` and `version` stays `3`, so every 3.0
+  file is a 3.1 file and every 3.0 reader can read a 3.1 file): metric fields on lens manifests
+  (`metric`, section 8.7) with the lens-scan store that keeps their history (section 15); feature
+  `tags`, `experience`, `core` and `variations` (section 6.6); the advisory code layout convention
+  (section 6.7). The built-in development, security and design lenses move to 1.1.0 with metric fields.
+- **3.0**: the first version of this standard.
 
 ## 1. Purpose
 
@@ -16,7 +24,8 @@ The file is `context-map.json`, version 3 of Personas' context map. It holds:
 - **lenses**: the plugins the project uses, each with a full copy of its manifest;
 - **facets**: each feature's values for each lens.
 
-History lives beside it in an append-only events log, `context-map.events.jsonl`.
+History lives beside it in an append-only events log, `context-map.events.jsonl`. The history of
+measured metrics lives in a separate local store, the lens-scan store (section 15).
 
 A lens is a plugin, not part of the format. A lens manifest declares its fields, a health rule
 written as JSON data, and how it should be drawn. Six built-in lenses ship in a catalog
@@ -33,6 +42,8 @@ The JSON Schemas (draft 2020-12) in `docs/standard/schema/` are normative for st
 | `app-structure-3.schema.json` | a `context-map.json` v3 file |
 | `lens-manifest-1.schema.json` | one lens manifest (also embedded as `lenses[].manifest`) |
 | `app-structure-event-3.schema.json` | one line of the events log |
+
+The lens-scan store's DDL, `docs/standard/lens-scan-store.sql`, is normative for the store (section 15).
 
 This document is normative for meaning: references, absent values, health evaluation, rollup,
 the events log and merging. The TypeScript types in `src/lib/standard/types.ts` mirror the schemas;
@@ -160,6 +171,10 @@ As Domain, plus `domain` (req.): the slug of its domain.
 | `created` | date | | |
 | `parts` | `{name, done}[]` | | Sub-deliverables. |
 | `notes` | `{by, date, text}[]` | | |
+| `tags` | string[] | | 3.1. Free tags (Personas use cases, for example). |
+| `experience` | string | | 3.1. The customer experience as it is today, one short paragraph (section 6.6). |
+| `core` | `{tech?, schema?}` | | 3.1. What every variation shares: `tech` (string[]) and `schema` (string[]), as bullets. Closed. |
+| `variations` | Variation[] | | 3.1. Per-customer or per-segment variations that extend the core (section 6.6). |
 
 Health is not a feature field. It is computed per lens from facets (section 8.4).
 
@@ -181,6 +196,53 @@ A core field from a fixed, ordered list. It is not a lens. Changes are recorded 
 | `flagged` | Live behind a partial rollout. |
 | `live` | Live for everyone. |
 | `deprecated` | Still running, on its way out. |
+
+### 6.6 Feature variations (3.1)
+
+A feature can serve several customers that each want something a little different: three banks that
+read paper invoices, two franchise chains with their own booking rules. 3.1 describes that on the
+feature itself, in three optional fields that a reader shows together (the blueprint's Business
+section: As-is, Core, Variations; hidden when all three are absent):
+
+- **`experience`**: one paragraph on how the customer gets the job done today, before or without the
+  feature. It is the baseline the feature is judged against.
+- **`core`**: `{ "tech": [...], "schema": [...] }`. What every variation shares, as bullets: the
+  shared technology (`tech`) and the core data schema (`schema`). Both lists are optional.
+- **`variations`**: Variation[], each one customer's or segment's extension of the core.
+
+**Variation** (closed):
+
+| Field | Type | Req. | |
+|---|---|---|---|
+| `slug` | slug | yes | Unique within the feature. |
+| `name` | string | yes | |
+| `audience` | string | yes | Who it is for: a customer, a bank, a segment. |
+| `extends` | string[] | yes | What it adds to the core, as bullets (fields added to the core schema, extra steps). |
+| `params` | string[] | yes | Its parameters, as bullets (a confidence threshold, supported formats, limits). |
+| `stage` | Stage | | The variation's own lifecycle stage (section 6.5). Absent = unknown. |
+
+A variation is **not** a feature: it has no slug in `features[]`, no facets, no KPIs and no events of
+its own. **Lens values stay on the core feature**: the feature's facets describe the shared core and
+every variation together, because they ship as one body of code (section 6.7). A variation that
+grows its own lifecycle, owners and measurements has become a feature and SHOULD be declared as one.
+
+### 6.7 Code layout convention (3.1, advisory)
+
+Code for a feature with variations SHOULD be laid out as
+
+```
+<domain>/<context>/<feature>/                              the shared core
+<domain>/<context>/<feature>/customizations/<variation>/   one folder per variation, adding only
+```
+
+The shared core sits in the feature folder and a variation folder only **adds** to it (extra fields,
+a parser, parameters); it never copies or forks the core. So a fix to the core reaches every variation
+at once, a variation can be read (and deleted) on its own, and a scan can attribute files to the
+feature and to each variation from their paths alone. `<variation>` SHOULD be the variation's `slug`.
+
+This is a convention, not a rule. Validators **warn, never fail**: `validate-structure.mjs` warns when
+a feature has `variations` but none of its contexts' `file_paths` contains a `customizations/`
+segment (section 12).
 
 ## 7. KPIs
 
@@ -255,6 +317,7 @@ keep orphaned facets (section 11).
 | `headline` | boolean | | The field that best sums up the lens. |
 | `description` | string | | |
 | `source` | `{kpi: slug}` \| `{feature: core field}` | | A **bound** field: its value comes from somewhere other than the facet and is filled in at evaluation. Exactly one key. See below. |
+| `metric` | MetricSpec | numeric only | 3.1. The field is a measured metric (section 8.7). |
 
 **Bound fields.** A field with a `source` is read-only for producers: its value is filled in when
 health is evaluated, and a value stored in the facet under its key is ignored (validators warn about
@@ -420,6 +483,70 @@ Renderers MUST draw every name in both sets. A custom `glyph.path` is untrusted 
 MUST parse it only as a path (for example with `Path2D`), never as markup. The schema limits it
 to path commands and numbers, at most 2048 characters.
 
+### 8.7 Metric fields (3.1)
+
+A **metric field** is an ordinary numeric field (`number`, `integer`, `percent` or `money`) with a
+`metric` block, which says the value is measured, how, and which way is better:
+
+```jsonc
+{ "key": "p95Ms", "label": "p95 latency", "type": "number", "unit": "ms", "min": 0,
+  "metric": { "better": "down", "method": "probe", "target": 500, "warn_at": 1000 } }
+```
+
+| `metric` field | Type | Req. | |
+|---|---|---|---|
+| `better` | `up` \| `down` | yes | Which way is better. Readers colour a change by it. |
+| `method` | `static` \| `probe` \| `harness` \| `judgement` | yes | How it is read: `static` from the source (counts, sizes), `probe` by calling running code, `harness` by driving the built UI (screens, axe, console), `judgement` by an agent applying a standard. |
+| `target` | number | | The value to reach. A display hint (a target tick). |
+| `warn_at` | number | | Where it starts to be a concern. A display hint. |
+
+The block is closed (`additionalProperties: false`) and only numeric fields may carry it. `target`
+and `warn_at` never decide health on their own: **health still comes only from the rules** (8.3), so
+a lens that wants a metric to count says so in a rule (`{"field": "p95Ms", "gt": 1000}`).
+
+**Values and history.** The field key is the metric key. A metric's **latest** measurement is its
+facet value: `facets[<feature>][<lens>].values[<key>]`, with the facet's `measured_at` set to when it
+was taken, so every 3.0 reader, the rules and the rollup work on metrics unchanged. The history of
+every measurement lives outside the map, in the lens-scan store (section 15); a map never holds a
+series. **Absent = unmeasured, never 0**: a metric nobody measured has no facet value (and no store
+row); writers MUST NOT write `0` or `null` for it. A feature whose facet holds only some metrics is
+measured on those and unmeasured on the rest.
+
+Metric fields SHOULD NOT be `headline` fields; the headline stays the lens's summary.
+
+**Built-in metric keys (lens manifests 1.1.0).** Rules on metrics are conservative: `watch`, and `bad`
+only where the rule is unambiguous. They sit after the existing rules of the same or a worse health,
+so first match keeps every 1.0.0 outcome.
+
+| Lens | Key | Type, unit | Better | Method | Rule |
+|---|---|---|---|---|---|
+| development | `loc` | integer, lines | down | static | |
+| | `files` | integer | down | static | |
+| | `bundleKb` | number, KB | down | static | (omitted when the build names no stats file) |
+| | `depCount` | integer | down | static | |
+| | `p50Ms` | number, ms | down | probe | |
+| | `p95Ms` | number, ms (target 500, warn_at 1000) | down | probe | `> 1000` → watch (the budget) |
+| | `dupSites` | integer | down | judgement | |
+| | `testRatioPct` | percent | up | static | |
+| | `standardsPct` | percent | up | judgement | |
+| security | `findingsCritical` | integer (target 0) | down | judgement | `> 0` → bad |
+| | `findingsHigh` | integer (target 0) | down | judgement | `> 0` → watch |
+| | `findingsMedium` | integer | down | judgement | |
+| | `findingsLow` | integer | down | judgement | |
+| | `secretHits` | integer (target 0) | down | static | `> 0` → bad |
+| | `unsafeSinks` | integer | down | static | |
+| | `standardsPct` | percent | up | judgement | |
+| design | `axeViolations` | integer (target 0) | down | harness | `> 0` → watch |
+| | `undesignedStates` | integer | down | judgement | |
+| | `rawLiterals` | integer | down | static | |
+| | `minTextPx` | number, px (target 12) | up | harness | `< 12` → watch (the 12 px floor) |
+| | `consoleErrors` | integer (target 0) | down | harness | |
+| | `standardsPct` | percent | up | judgement | |
+
+Security keeps its `openFindings`, `review` and `dataClass` fields: `openFindings` counts the security
+review's open findings, the `findings*` metrics count what a lens scan judged. `standardsPct` is the
+share of the registry and house standards that apply to the feature and that it conforms to.
+
 ## 9. Facets
 
 ```jsonc
@@ -430,7 +557,7 @@ to path commands and numbers, at most 2048 characters.
 |---|---|---|
 | `values` | object | Field key → string, number or boolean. Flat. Unknown values are omitted. Bound fields (8.2) are not stored here. |
 | `applicable` | boolean | `false` = the lens does not apply to this feature (health `na`), whatever `applies_when` says. Absent = the manifest decides. For facts no lens value carries (a feature with no screen has no design); values MAY still be present. |
-| `measured_at` | date-time | When the values were taken. |
+| `measured_at` | date-time | When the values were taken. For metric values (8.7), when the latest measurement was taken. |
 | `source` | string | Who produced them: `scan`, `hand`, a tool name. Used by merging (section 11). |
 | `override` | `{health, by, why, until}` | All four required. `health` is `good`, `watch` or `bad`; `until` is a date (inclusive). After `until` the rules apply again. |
 
@@ -493,7 +620,7 @@ Everything else is merged:
 | `milestones[]` | Declared; kept as is. |
 | `kpis[]` | Matched by `slug`. The scan updates the measured fields it owns (`current`, thresholds, `status`); it keeps `lens` and unknown keys. It does not delete KPIs that other writers added. |
 | `lenses[]` | Kept. A catalog upgrade MAY refresh the manifest copy (and `version`) of `source: "builtin"` entries only. `enabled` is never changed by a scan. |
-| `facets` | Matched by feature slug and lens id. A producer replaces only facets it produced (same `source`) and keeps every other facet. It keeps `override` unless it is the one who set it; it MAY drop an expired override. |
+| `facets` | Matched by feature slug and lens id. A producer replaces only facets it produced (same `source`) and keeps every other facet. It keeps `override` unless it is the one who set it; it MAY drop an expired override. 3.1: a metric writer (the lens-scan skill, section 15) instead merges into the facet whatever its source: it sets only the metric keys it measured, advances `measured_at`, and keeps every other value. |
 | `taxonomy` | Kept; the scan MAY add values to its lists. |
 | `extensions` | Kept verbatim. |
 
@@ -515,12 +642,16 @@ Errors (the file is invalid):
 - a facet keyed by an unknown feature; a facet value that does not fit its field;
 - `lenses[].id` or `version` that differs from its manifest's;
 - `presentation.evidence`/`measures` or a `weighted` rollup naming an unknown field, or a non-numeric
-  weight or measure.
+  weight or measure;
+- (3.1) a `metric` block on a non-numeric field, or with a key outside `better`, `method`, `target`,
+  `warn_at` (schema); a variation slug that appears twice within one feature.
 
 Warnings: rules or reasons naming unknown fields, enum operands outside the field's values, ordering
 operators on enums, a facet that stores a value for a feature-bound field, a field bound to `stage`,
 `priority` or `status` whose enum lacks part of that vocabulary, a KPI lens tag not in `lenses[]`, a `primary_context` outside `contexts`, `stats`
-that disagree with the lists, events naming records not in the map or out of time order.
+that disagree with the lists, events naming records not in the map or out of time order, and (3.1,
+advisory, section 6.7) a feature with `variations` none of whose contexts' `file_paths` contains a
+`customizations/` segment.
 Notes: orphaned facets, expired overrides.
 
 Fixtures in `docs/standard/schema/fixtures/`:
@@ -552,9 +683,15 @@ security is `bad` for a pending review in `flagged`, `live` or `deprecated`; des
 shipped with the design at `none`, `sketch` or `wireframe`; quality is `watch` when shipped with
 fewer than 3 end-to-end tests.
 
+Versions: business, operations and quality are 1.0.0; development, security and design are 1.1.0,
+which add the metric fields and metric rules of section 8.7 (additive: a 1.0.0 facet evaluates to the
+same health under 1.1.0).
+
 The manifests are in `docs/standard/lenses/`; `src/lib/standard/catalog.ts` loads them.
 `node scripts/check-builtin-health.ts` checks the rules against the Kettle sample, handing each
-feature to the evaluator for the bound fields.
+feature to the evaluator for the bound fields. The sample's lens objects carry no metrics; the
+converter (`npm run data:kettle-v3`) adds metric values on about 30 features and fails unless the
+health over the converted facets, metrics included, still equals the sample's on every built-in lens.
 
 ## 14. Example
 
@@ -685,3 +822,48 @@ Its events log (`valid-map.events.jsonl`):
 {"at":"2026-10-01T09:00:00Z","type":"lens-health","feature":"failed-payment-dunning","lens":"security","from":"bad","to":"watch","actor":"jonas","source":"hand"}
 {"at":"2026-10-08T06:00:00Z","type":"kpi-threshold","kpi":"dunning-sms-spend","from":"on-track","to":"at-risk","source":"scan"}
 ```
+
+## 15. Lens-scan store (3.1)
+
+The history of metric measurements (section 8.7), the backlog a scan proposes and the decisions on
+it live in one SQLite file per product repo, `<root>/.ai/lens-scan/scan.db` (schema version
+`PRAGMA user_version = 1`):
+
+```
+<root>/.ai/lens-scan/scan.db        PRAGMA user_version = 1, journal_mode = WAL
+<root>/.ai/lens-scan/shots/...      design screenshots, paths relative to the store dir
+```
+
+The DDL is normative and kept verbatim in [`lens-scan-store.sql`](lens-scan-store.sql) (the same file
+as ai-registry `skills/lens-scan/references/store.sql`, name for name). This section names what the
+map and its readers rely on; the DDL is the full contract.
+
+- **Local and gitignored.** The store is machine-local state: `.ai/lens-scan/` SHOULD be in the
+  product repo's `.gitignore`, and nothing in the map points into it.
+- **One writer.** The `/lens-scan` skill (its `store.mjs`, the owner of the DDL and its migrations) is
+  the only writer of runs, measurements, activity, shots and coverage. The blueprint opens the store
+  read-only, and writes **only proposal decisions** (below).
+- **Back to the map.** The skill writes each metric's latest value into the map's facets
+  (`facets[feature][lens].values[metric]`, with `measured_at`); the store keeps the series. Readers that
+  want history (a sparkline, a before/after) read the store; everything else reads the map.
+
+| Table | Holds | Columns |
+|---|---|---|
+| `runs` | one scan run | `id`, `started_at`, `updated_at`, `ended_at`, `phase` (`measure` \| `propose` \| `execute` \| `propagate`), `status` (`running` \| `done` \| `failed` \| `aborted`), `lenses` (JSON array of lens ids), `scope` (JSON), `skill_version`, `model`, `note` |
+| `measurements` | append-only metric readings | `id`, `run_id`, `feature`, `lens`, `metric` (the lens field key), `value` (REAL, NOT NULL), `unit`, `method` (as `metric.method`), `evidence`, `measured_at` |
+| `proposals` | backlog items, each naming a metric and an expected delta against a standard | `id`, `run_id`, `feature`, `lens`, `metric`, `title`, `body`, `standard`, `expected_delta`, `size` (`XS`..`XL`), `risk` (1..10), `kind` (`fix` \| `baseline-upgrade` \| `propagation`), `parent_id`, `status` (`proposed` \| `approved` \| `declined` \| `executing` \| `done` \| `failed`), `decided_by`, `decided_at`, `decision_note`, `after_value`, `result_sha`, `created_at`, `updated_at` |
+| `activity` | what the scan is doing, for live views | `id`, `run_id`, `at`, `feature`, `lens`, `kind` (`reading` \| `measured` \| `proposed` \| `executing` \| `committed` \| `note` \| `error`), `text` |
+| `shots` | design screenshots | `id`, `run_id`, `feature`, `path` (relative to the store dir), `size`, `theme`, `harness_module`, `captured_at`, `report` (JSON) |
+| `coverage` | judged conformance to a standard | `feature`, `standard`, `state` (`conformant` \| `deviation` \| `not-applicable` \| `unknown`), `evidence`, `judged_at`, `run_id`; key (`feature`, `standard`) |
+
+`feature` is a feature slug and `lens` a lens id, as in the map. **`standard`** names what governs a
+proposal or a coverage row: `<subject>/<technique>` for a registry technique, `house:<subject>/<technique>`
+for a house rule, `none` when nothing governs it.
+
+**Absent values.** No `measurements` row means unmeasured. The store never writes a `NULL` or `0`
+placeholder for a metric, and JSON read from it omits the key.
+
+**Decisions.** A blueprint decision moves a proposal from `proposed` to `approved` or `declined`,
+sets `decided_by = 'blueprint'`, `decided_at` and an optional `decision_note`, and touches nothing
+else; a proposal in any other status is not decided again. The skill executes only `approved`
+proposals, then records `after_value` and `result_sha`.

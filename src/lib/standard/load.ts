@@ -8,13 +8,13 @@
 // stripping can run it: `node -e "import('./src/lib/standard/load.ts')"`.
 import type {
   AppStructure, Density, Facet, FacetOverride, FacetValues, Feature as V3Feature, GlyphName, Health, HealthRule, Kpi, LensEntry, LensField,
-  LensManifest, LineName, Rollup, Scalar, Stage, StructureEvent,
+  LensManifest, LineName, Rollup, Scalar, Stage, StructureEvent, Variation,
 } from './types.ts';
 import { bindValues, conditionFields, explain, lensHealth, matchRule, type EvalContext } from './health.ts';
 import { generalHealth } from './present.ts';
 
 // ------------------------------------------------------------------------------------ the model
-export type { Stage, Health, Density, Scalar, LensField, LensManifest, FacetValues, FacetOverride, Kpi, StructureEvent };
+export type { Stage, Health, Density, Scalar, LensField, LensManifest, FacetValues, FacetOverride, Kpi, StructureEvent, Variation };
 export const STAGES: readonly Stage[] = ['idea', 'specified', 'in-dev', 'in-review', 'flagged', 'live', 'deprecated'];
 export type Priority = 'P0' | 'P1' | 'P2' | 'P3';
 
@@ -95,6 +95,14 @@ export interface Feature {
   builtBy: string[];
   parts: { name: string; done: boolean }[] | null;
   notes: { by: string; date: string; text: string }[];
+  /** v3.1 free tags. */
+  tags: string[];
+  /** v3.1: the as-is customer experience; '' when the map has none. */
+  experience: string;
+  /** v3.1: the shared core (tech and schema bullets); null when the map has none. */
+  core: { tech: string[]; schema: string[] } | null;
+  /** v3.1: variations that extend the core (malformed entries dropped). Lens values stay on the feature. */
+  variations: Variation[];
   /** Every lens with a manifest in the map (enabled or not), by id. */
   lens: Readonly<Record<string, FeatureLens>>;
   /** General health: worst-of over enabled lenses, ignoring unmeasured and na (spec 8.4). */
@@ -155,6 +163,16 @@ const PATH_OK = /^[MmLlHhVvCcSsQqTtAaZz0-9eE.,+\-\s]{1,2048}$/;
 const DAY = 864e5;
 const addDays = (d: string, n: number) => new Date(Date.parse(d + 'T00:00:00Z') + n * DAY).toISOString().slice(0, 10);
 const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9.]+/g, '-').replace(/^-+|-+$/g, '') || 'feature';
+
+/** v3.1 variations, keeping well-formed entries only (slug, name and audience strings; bullets as strings). */
+function variationsOf(v: unknown): Variation[] {
+  if (!Array.isArray(v)) return [];
+  return v.filter((x) => isObj(x) && typeof x.slug === 'string' && typeof x.name === 'string').map((x) => {
+    const out: Variation = { slug: x.slug as string, name: x.name as string, audience: str(x.audience), extends: strs(x.extends), params: strs(x.params) };
+    if (isStage(x.stage)) out.stage = x.stage;
+    return out;
+  });
+}
 
 /** Parses an events log (JSON lines). Blank and malformed lines are skipped; so are lines without `at`/`type`. */
 export function parseEvents(text: string | null | undefined): StructureEvent[] {
@@ -316,7 +334,9 @@ function buildBase(raw: unknown, eventsText: string | null, opts: LoadOptions): 
       milestone: f.milestone ?? null, surfaces: f.surfaces ?? [], contexts: f.contexts ?? [],
       dependsOn: (f.depends_on ?? []).filter((s) => slugs.has(s)), usedBy: [], blockedBy: (f.blocked_by ?? []).filter((s) => slugs.has(s)),
       revs: rv, stageSince: f.stage_since ?? (rv.length ? rv[rv.length - 1].date : ''), created: f.created ?? (rv.length ? rv[0].date : asOf),
-      owner: f.owner ?? '', builtBy: f.built_by ?? [], parts: f.parts ?? null, notes: f.notes ?? [], lens: {}, health: 'unmeasured', trouble: [],
+      owner: f.owner ?? '', builtBy: f.built_by ?? [], parts: f.parts ?? null, notes: f.notes ?? [],
+      tags: strs(f.tags), experience: str(f.experience), core: isObj(f.core) ? { tech: strs(f.core.tech), schema: strs(f.core.schema) } : null,
+      variations: variationsOf(f.variations), lens: {}, health: 'unmeasured', trouble: [],
     };
     cap.features.push(g.id);
     return g;
