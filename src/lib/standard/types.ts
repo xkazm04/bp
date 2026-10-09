@@ -39,7 +39,22 @@ interface FieldBase {
    * feature field. Either way it is filled in at evaluation, and a stored facet value is ignored.
    */
   source?: { kpi: string } | { feature: FeatureBoundField };
+  /**
+   * v3.1: the field is a measured metric. The field key is the metric key in the lens-scan store
+   * (docs/standard/lens-scan-store.md); its latest measurement is the facet value, history lives in
+   * the store.
+   */
+  metric?: MetricSpec;
 }
+
+/** How a metric is read and which way is better. */
+export interface MetricSpec {
+  better: 'up' | 'down';
+  method: MetricMethod;
+  target?: number;
+  warn_at?: number;
+}
+export type MetricMethod = 'static' | 'probe' | 'harness' | 'judgement';
 export type LensField =
   | (FieldBase & { type: 'enum'; /** ordered */ values: string[] })
   | (FieldBase & { type: 'money'; /** ISO 4217 */ currency: string })
@@ -151,7 +166,28 @@ export interface Feature {
   created?: string;
   parts?: { name: string; done: boolean }[];
   notes?: { by: string; date: string; text: string }[];
+  /** v3.1: free tags (Personas use cases, for example). */
+  tags?: string[];
+  /** v3.1: the customer experience as it is today, one short paragraph. */
+  experience?: string;
+  /** v3.1: what every variation shares: the shared technology and the core schema, as bullets. */
+  core?: { tech?: string[]; schema?: string[] };
+  /** v3.1: per-customer or per-segment variations that extend the core. */
+  variations?: Variation[];
   [key: string]: unknown;
+}
+
+/** v3.1: one variation of a feature. Lens values stay on the core feature. */
+export interface Variation {
+  slug: string;
+  name: string;
+  /** Who it is for: a customer, a bank, a segment. */
+  audience: string;
+  /** What it adds to the core, as bullets. */
+  extends: string[];
+  /** Its parameters, as bullets. */
+  params: string[];
+  stage?: Stage;
 }
 
 export interface Milestone {
