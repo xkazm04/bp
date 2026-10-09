@@ -182,7 +182,7 @@ function paintTile(E: Engine, ctx: CanvasRenderingContext2D, v: View, T: TileNod
     const room = w - 16 * u - idw - 10 * u;
     const gFit = tx.fit(ev, room, mono), lFit = lensC ? tx.fit(lensC.parts, room, evFont(top)) : null;
     if ((gFit == null && D < 0.5) || (lensC && lFit == null && D >= 0.5)) showId = false;
-    if (showId) drawText(ctx, code, x + 7 * u, hy, mono, th.inkA(0.7));
+    if (showId) drawText(ctx, code, x + 7 * u, hy, mono, th.inkA(0.9));
     const roomW = showId ? room : w - 14 * u;
     ctx.textAlign = 'right';
     if (D < 0.999) { const s = showId ? gFit : tx.fit(ev, roomW, mono); if (s) { ctx.globalAlpha = a * (1 - D); drawText(ctx, s, x + w - 7 * u, hy, mono, th.ink); } }
@@ -196,8 +196,8 @@ function paintTile(E: Engine, ctx: CanvasRenderingContext2D, v: View, T: TileNod
     if (!lines) { ns = 14; nf = tx.f(14, 500); lh = 16.2 * u; lines = tx.wrap(f.name, w - 14 * u, nf, Math.max(1, Math.floor(roomH / lh))); }
     if (lines) lines.forEach((l, i) => drawText(ctx, l, x + 7 * u, hy + 6 * u + lh * (i + 0.82), nf, th.inkHi));
     const sf = tx.f(12.5, 600), sy = y + h - 7 * u - (chips ? 22 * u : 0);
-    if (gStamp && D < 0.999) { const s = fitStamp(E, gStamp.cands, gStamp.last, w - 14 * u, sf); if (s) { ctx.globalAlpha = a * (1 - D); drawText(ctx, s, x + 7 * u, sy, sf, th.red2); } }
-    if (lStamp && D > 0.001) { const s = fitStamp(E, [lStamp], null, w - 14 * u, sf); if (s) { ctx.globalAlpha = a * D; drawText(ctx, s, x + 7 * u, sy, sf, th.red2); } }
+    if (gStamp && D < 0.999) { const s = fitStamp(E, gStamp.cands, gStamp.last, w - 14 * u, sf); if (s) { ctx.globalAlpha = a * (1 - D); drawText(ctx, s, x + 7 * u, sy, sf, th.red2, th.halo); } }
+    if (lStamp && D > 0.001) { const s = fitStamp(E, [lStamp], null, w - 14 * u, sf); if (s) { ctx.globalAlpha = a * D; drawText(ctx, s, x + 7 * u, sy, sf, th.red2, th.halo); } }
   } else {
     const nf2 = tx.f(13, 500), l2 = 15 * u;
     const lines2 = tx.wrap(f.name, w - 12 * u, nf2, Math.max(1, Math.floor((h - 8 * u - (chips ? 22 * u : 0) - (hy - y - 12 * u)) / l2)));
