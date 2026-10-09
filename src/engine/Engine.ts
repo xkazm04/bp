@@ -10,7 +10,7 @@ import { Camera, clamp, type Cam, type Pad, type Region } from './camera';
 import type { ChannelAggregate, FeatureLive, LensChannel, LensExpression } from './lens/contract';
 import { MixDriver, type MixState } from './lens/mix';
 import { createStore, type Store } from './store';
-import { baseHeight, railWidth } from './chrome';
+import { baseHeight, overlayRight, railWidth } from './chrome';
 import { initialState, type Crumb, type DockTab, type HoverInfo, type UIState } from './state';
 import { readTheme, type Theme } from './theme';
 import { Text } from './text';
@@ -243,7 +243,9 @@ export class Engine {
     this.root.style.setProperty('--lens', this.accentOf(v === 'general' ? null : v));
   }
   fit() {
-    const w = window.innerWidth, h = window.innerHeight, phone = w < 760;
+    const w = window.innerWidth, h = window.innerHeight;
+    // narrow, or a touch device held landscape (a short mouse window stays the desktop plan)
+    const phone = w < 760 || (h < 480 && typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches);
     if (phone !== this.S.phone) this.store.set({ phone });
     if (phone) return;
     this.U = 1 + 0.5 * (clamp(Math.min(w / 1280, h / 800), 1, 2) - 1);
@@ -781,14 +783,14 @@ export class Engine {
   /** Position the hover card next to its target (called on pointer move and after React renders it). */
   placeHover() {
     const el = this.hoverEl, h = this.S.hover; if (!el || !h) return;
-    const u = this.U, w = 360 * u, hh = (el.offsetHeight || 140) * u, S = this.SAFE, px = this.hoverPt.x, py = this.hoverPt.y;
+    const u = this.U, w = 360 * u, hh = (el.offsetHeight || 140) * u, S = this.SAFE, R = this.FW - overlayRight(this.S) * u, px = this.hoverPt.x, py = this.hoverPt.y;
     let x: number, y: number;
     if (h.type === 'tile') {
       const r = this.featureRect(h.id) || { x: px, y: py, w: 0, h: 0 };
       x = r.x + r.w + 14; y = r.y - 6;
-      if (x + w > S.r) x = r.x - w - 14;
-      if (x < 6) { x = clamp(px + 18, 6, S.r - w - 6); y = r.y + r.h + 12; }
-    } else { x = px + 22; y = py + 20; if (x + w > S.r) x = px - w - 22; }
+      if (x + w > R) x = r.x - w - 14;
+      if (x < 6) { x = clamp(px + 18, 6, R - w - 6); y = r.y + r.h + 12; }
+    } else { x = px + 22; y = py + 20; if (x + w > R) x = px - w - 22; }
     if (y + hh > S.b) y = S.b - hh; if (y < S.t) y = S.t; if (x < 6) x = 6;
     el.style.transform = `translate(${x / u}px, ${y / u}px)`;
   }
@@ -902,6 +904,12 @@ export class Engine {
     const mo = new MutationObserver(() => { this.readTheme(); this.dirty(); });
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     this.disposers.push(() => mo.disconnect());
+    // reduced motion follows the OS/browser setting live, like the DOM chrome (useReducedMotion)
+    if (typeof matchMedia !== 'undefined') {
+      const rm = matchMedia('(prefers-reduced-motion: reduce)');
+      const onRm = () => { this.cam.reduced = rm.matches; if (rm.matches && this.mix.moving) this.mix.to(this.S.view, true); };
+      rm.addEventListener('change', onRm); this.disposers.push(() => rm.removeEventListener('change', onRm));
+    }
     // the dashed "marching" styles only move while frames are drawn anyway
   }
 
@@ -981,9 +989,12 @@ export class Engine {
   }
   private readHash() {
     const h: Record<string, string> = {};
-    location.hash.replace(/^#/, '').split('&').forEach((kv) => { const a = kv.split('='); if (a[0]) h[a[0]] = decodeURIComponent(a[1] || ''); });
+    // A mangled share link (truncated at a %-escape) skips that pair; the valid ones still apply.
+    const dec = (s: string): string | null => { try { return decodeURIComponent(s); } catch { return null; } };
+    location.hash.replace(/^#/, '').split('&').forEach((kv) => { const a = kv.split('='); const v = dec(a[1] || ''); if (a[0] && v !== null) h[a[0]] = v; });
     if (!Object.keys(h).length) return;
     this.hashLock = true;
+    try {
     this.endIntro();
     if (h.lens && h.lens !== 'general' && lensOf(this.M.P, h.lens)) { this.store.set({ view: h.lens }); this.mix.to(h.lens, true); }
     if (h.d && ['1', '7', '14'].includes(h.d)) this.store.set({ delta: +h.d as 1 | 7 | 14 });
@@ -996,7 +1007,7 @@ export class Engine {
       if (t) this.cam.set(this.fitOf({ t: t as Crumb['t'], o: this.placeById(t, h.at)! }));
     }
     if (h.open && this.M.P.F[h.open]) { this.openFeature(h.open, 0); this.camBefore = h.at ? null : { ...this.HOME }; }
-    this.hashLock = false;
+    } finally { this.hashLock = false; }
   }
   destroy() {
     this.destroyed = true;
