@@ -23,6 +23,9 @@
   --amber: #ffc35a;
   --red: #ff6a58;
   --red-2: #ff9a8c;
+  /* text-grade status colours (>= 4.5:1 on paper and cards); --mint / --amber stay the marker and fill tones */
+  --mint-2: #6ff2c8;
+  --amber-2: #ffc35a;
   --vignette: rgba(2, 10, 24, 0.62);
   /* added by the foundation: high-contrast ink, glyph edges, label plates, tile base */
   --ink-hi: #ffffff;
@@ -64,6 +67,8 @@
   --amber: #b97800;
   --red: #d2402e;
   --red-2: #b8321f;
+  --mint-2: #087553;
+  --amber-2: #8f5d00;
   --vignette: rgba(14, 58, 104, 0.08);
   --ink-hi: #061a33;
   --on-ink: #ffffff;

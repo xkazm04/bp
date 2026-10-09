@@ -75,6 +75,8 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
   const variant = getVariant(variantId)!;
   const root = useRef<HTMLDivElement>(null), cv = useRef<HTMLCanvasElement>(null), ui = useRef<HTMLDivElement>(null);
   const [engine, setEngine] = useState<Engine | null>(null);
+  // a model or engine build that threw (a stale or malformed structure): shown through the same panel as a fetch error
+  const [buildErr, setBuildErr] = useState<string | null>(null);
   // undefined until mounted (the server render cannot read the query); null = Kettle
   const [product, setProduct] = useState<string | null | undefined>(undefined);
   useEffect(() => { setProduct(new URLSearchParams(location.search).get('product') || null); }, []);
@@ -88,10 +90,18 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
     const qs = new URLSearchParams(location.search), scale = clampScale(qs.get('scale')), now = () => performance.now();
     // ?lenses=-security,+com.kettle.cost switches lenses off or on for the session, on top of the map's `enabled`
     const L = liveRef.current;
-    const model = product
-      ? buildLiveModel(structure, L.events, L.scan ?? EMPTY_SCAN, { slug: product, decide: (id, body) => decideProposal(product, id, body) }, scale, now, qs.get('lenses'))
-      : buildModel(scale, now, qs.get('lenses'));
-    const e = new Engine({ canvas: cv.current!, ui: ui.current!, root: root.current!, model, expression: variant.expression, intro: qs.get('intro') !== '0' && !location.hash });
+    setBuildErr(null);
+    let e: Engine;
+    try {
+      const model = product
+        ? buildLiveModel(structure, L.events, L.scan ?? EMPTY_SCAN, { slug: product, decide: (id, body) => decideProposal(product, id, body) }, scale, now, qs.get('lenses'))
+        : buildModel(scale, now, qs.get('lenses'));
+      e = new Engine({ canvas: cv.current!, ui: ui.current!, root: root.current!, model, expression: variant.expression, intro: qs.get('intro') !== '0' && !location.hash });
+    } catch (err) {
+      console.error(err);
+      setBuildErr(err instanceof Error ? err.message : String(err));
+      return;
+    }
     setEngine(e);
     if (product && L.status === 'missing') e.toast('No scan store yet', 'every feature reads unmeasured until /lens-scan writes one');
     return () => { e.destroy(); setEngine(null); };
@@ -108,7 +118,8 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
         aria-label={'Zoomable floor plan of the product with the ' + (product ? 'live lens scan' : 'simulated agent swarm') + ' working over it. Scroll or pinch to zoom, drag to pan, click to go one level deeper. Plus and minus zoom, arrows walk rooms, Enter opens, Escape goes back. Shift-drag draws a selection.'} />
       <div className="bp-vig" />
       <div className="bp-frame" />
-      {product && !engine && <LiveEmpty slug={product} live={live} />}
+      {!engine && buildErr && <LiveEmpty slug={product || 'kettle'} live={{ ...live, status: 'error', error: buildErr }} />}
+      {product && !engine && !buildErr && <LiveEmpty slug={product} live={live} />}
       <div className="bp-ui" ref={ui}>
         {engine && (
           <EngineCtx.Provider value={engine}>
