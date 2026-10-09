@@ -19,7 +19,7 @@ import type { LensField } from '@/lib/standard/types';
 import { lensLine } from '@/lib/standard/present';
 import { lensAggregate, lensContent } from '@/lib/model/lens';
 import type { FeatureLive, LensChannel, LensExpression, MarkArgs, Rect, TileGeom } from '../types';
-import { glyph, healthInk, lineType, railRest } from './marks';
+import { glyph, healthInk, lineType, railNone, railRest } from './marks';
 
 const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
@@ -65,7 +65,7 @@ function expandedRect(t: TileGeom): Rect {
 // ------------------------------------------------------------------------------ one lens, by manifest
 interface Spec {
   d: LensDef;
-  /** 0..1 along the rail; < 0 = nothing to measure (the rail stays a faint hairline). */
+  /** 0..1 along the rail; < 0 = nothing to measure (the rail is a broken hairline, not the measured-zero one). */
   measure(live: FeatureLive): number;
   /**
    * The rail's end marks, for standard and dense readers: dots counting the first evidence field that
@@ -75,22 +75,34 @@ interface Spec {
   count: LensField | null;
 }
 
+/** The field a lens's rail end counts in dots: the first plain count (integer from 0, no max, no unit) that is not the measured field. */
+export function countField(d: LensDef): LensField | null {
+  if (d.density === 'simple') return null;
+  return d.evidence.find((f) => f.type === 'integer' && f.min === 0 && f.max === undefined && !f.unit && !f.source && f !== d.measures) ?? null;
+}
+
 function specOf(d: LensDef): Spec {
   const m = d.measures;
-  const count = d.density === 'simple' ? null
-    : d.evidence.find((f) => f.type === 'integer' && f.min === 0 && f.max === undefined && !f.unit && !f.source && f !== m) ?? null;
+  const count = countField(d);
   return {
     d, count,
     measure: (live) => (m ? lensLine(m, live.value(d.id, m.key), d.measureMax) ?? -1 : -1),
   };
 }
 
-/** Small dots at the rail's end, right-aligned: n dots, the first `hot` in the status colour. */
+/** Small dots at the rail's end, right-aligned: n dots, the first `hot` in the status colour. Past four the count is capped, and says so: three dots and a '+'. */
 function dots(a: MarkArgs, x1: number, cy: number, n: number, hot: number, col: string, hotCol: string) {
   const { ctx } = a, u = a.tile.u, r = Math.max(1.3, 1.5 * u), sp = 4.6 * u;
-  for (let i = 0; i < Math.min(n, 4); i++) {
+  const more = n > 4, shown = more ? 3 : n;
+  for (let i = 0; i < shown; i++) {
     ctx.fillStyle = i < hot ? hotCol : col;
     ctx.beginPath(); ctx.arc(x1 - r - i * sp, cy, r, 0, 6.2832); ctx.fill();
+  }
+  if (more) {
+    const px = x1 - r - 3 * sp, arm = Math.max(1, r * 0.55), t = Math.max(1, Math.round(u * 0.9));
+    ctx.fillStyle = hot > 3 ? hotCol : col;
+    ctx.fillRect(px - arm - t / 2, cy - t / 2, 2 * arm + t, t);
+    ctx.fillRect(px - t / 2, cy - arm - t / 2, t, 2 * arm + t);
   }
 }
 const END_W = 20;
@@ -128,7 +140,7 @@ function drawTile(s: Spec, a: MarkArgs) {
   const live = a.live, m = s.measure(live);
   const len = m > 0 ? (x1 - x0) * Math.min(1, m) : 0;
   ctx.globalAlpha = ga * lerp(0.6, 1, e);
-  railRest(ctx, th, x0 + len, x1, ry, rh);
+  if (m < 0) railNone(ctx, th, x0, x1, ry, rh, u); else railRest(ctx, th, x0 + len, x1, ry, rh);
   if (len > 0) lineType(ctx, th, d.line, x0, ry, len, rh, th.inkA(0.92), u);
   if (endW > 0.5 && s.count && fl) {
     const n = live.value(d.id, s.count.key);
@@ -149,7 +161,7 @@ function drawRibbon(s: Spec, a: MarkArgs) {
   ctx.globalAlpha *= a.w;
   // the rail along the segment's foot, growing in from the left as the lens comes up
   const live = a.live, m = s.measure(live), full = r.w * e, len = m > 0 ? full * Math.min(1, m) : 0;
-  railRest(ctx, th, r.x + len, r.x + full, r.y, r.h);
+  if (m < 0) railNone(ctx, th, r.x, r.x + full, r.y, r.h, u); else railRest(ctx, th, r.x + len, r.x + full, r.y, r.h);
   if (len > 0) lineType(ctx, th, d.line, r.x, r.y, len, r.h, th.inkA(0.92), u);
   // the glyph where this lens is unwell, on a small knockout so it reads over any stage fill
   const h = f.lens[d.id]?.h;

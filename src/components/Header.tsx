@@ -88,7 +88,7 @@ function LensTabs() {
         const on = s.view === k;
         const sub = V.ui?.tabLabel?.(k) ?? sh.nm;
         return (
-          <button key={k} type="button" role="tab" aria-selected={on} tabIndex={on ? 0 : -1} title={sh.title + (sh.sub ? ': ' + sh.sub : '') + (i < 9 ? ' (' + (i + 1) + ')' : '') + (n ? ' · ' + n + ' questions waiting on this sheet' : '')} onClick={() => E.setView(k)}>
+          <button key={k} type="button" role="tab" data-lens={k} aria-selected={on} tabIndex={on ? 0 : -1} title={sh.title + (sh.sub ? ': ' + sh.sub : '') + (i < 9 ? ' (' + (i + 1) + ')' : '') + (n ? ' · ' + n + ' questions waiting on this sheet' : '')} onClick={() => E.setView(k)}>
             <span className="no">{sh.no}{n ? <b className="ct">{n}</b> : null}</span>
             <span className="nm">{sub}</span>
             {i < 9 ? <span className="kb">{i + 1}</span> : null}

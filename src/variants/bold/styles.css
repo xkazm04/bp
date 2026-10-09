@@ -8,8 +8,6 @@
   border-color: var(--lens);
   box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--lens) 22%, transparent);
 }
-[data-variant='bold'] #dock { border-top: 3px solid var(--ink-3); transition: border-color 0.45s ease; }
-[data-variant='bold']:not([data-view='general']) #dock { border-top-color: var(--lens); }
 [data-variant='bold'] #tabs button[aria-selected='true'] .nm { transition: color 0.3s; }
 [data-variant='bold']:not([data-view='general']) #tabs button[aria-selected='true'] .nm { color: var(--lens); }
 [data-variant='bold'] .qi .note { transition: color 0.3s; }
@@ -129,5 +127,5 @@
 [data-variant='bold'] .bd-bugs .bad b { color: var(--red-2); } [data-variant='bold'] .bd-bugs .watch b { color: var(--amber); }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-variant='bold'] .bp-frame, [data-variant='bold'] #dock, [data-variant='bold'] #detail, [data-variant='bold'] .evp { transition: none; }
+  [data-variant='bold'] .bp-frame, [data-variant='bold'] #detail, [data-variant='bold'] .evp { transition: none; }
 }

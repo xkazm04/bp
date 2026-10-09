@@ -10,6 +10,7 @@ import { readTheme } from '@/engine/theme';
 import { Legend as BaseLegend } from '@/components/Legend';
 import { useEngine } from '@/components/hooks';
 import { useTheme } from '@/components/ThemeToggle';
+import { countField } from './expression';
 import { glyph, lineType, railRest } from './marks';
 
 const LINE_WORD: Record<LineName, string> = {
@@ -41,8 +42,8 @@ function railWords(d: LensDef): string {
   if (m?.type === 'enum') s += ', ' + m.values[0] + ' to ' + m.values[m.values.length - 1];
   else if (m?.type === 'percent') s += ', 0 to 100%';
   else if (m && m.max !== undefined) s += ', up to ' + m.max;
-  const count = d.density === 'simple' ? null : d.evidence.find((f) => f.type === 'integer' && f.min === 0 && f.max === undefined && !f.unit && !f.source && f !== m);
-  if (count) s += '; dots count ' + count.label.toLowerCase();
+  const count = countField(d);
+  if (count) s += '; dots count ' + count.label.toLowerCase() + ' (more than 4 shows 3 dots and a +)';
   return s;
 }
 
@@ -65,7 +66,7 @@ export function SubtleLegend({ view }: { view: ViewId }) {
   return (
     <>
       <div className="sl-key">
-        <div className="sl-one"><Swatch d={d} w={92} h={18} measure={0.62} /><span><b>{LINE_WORD[d.line]}</b> along the top edge: {railWords(d)}.</span></div>
+        <div className="sl-one"><Swatch d={d} w={92} h={18} measure={0.62} /><span><b>{LINE_WORD[d.line]}</b> along the top edge: {railWords(d)}. A broken line means not measured.</span></div>
       </div>
       <BaseLegend view={view} />
     </>
