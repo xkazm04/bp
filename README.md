@@ -18,7 +18,7 @@ shape comes first. The data model, backend and workflows follow in later phases.
 | Round | Focus | Notes |
 | --- | --- | --- |
 | 1 | Theme, canvas shape and content | [docs/rounds/round-01.md](docs/rounds/round-01.md) |
-| 2 | Orbit identity, role lenses, gates and timeline at 500 features | [docs/rounds/round-02.md](docs/rounds/round-02.md) (brief: [round-02-brief.md](docs/rounds/round-02-brief.md)) |
+| 2 | Orbit identity, role lenses, gates and timeline at 500 features. **Winner: C · Orbit Atlas** | [docs/rounds/round-02.md](docs/rounds/round-02.md) (brief: [round-02-brief.md](docs/rounds/round-02-brief.md)) |
 
 ## Repository layout
 
@@ -30,7 +30,7 @@ prototypes/
   shared/v2/                   round 2: blueprint-data.js (generated, 491 features), blueprint-model.js (BP v0.2),
                                orbit-kit.css and orbit-kit.js (the shared Orbit shell, window.OK)
   round-02/kit/                the kit demo and styleguide (#styleguide) that round 2 variants copy their wiring from
-  round-02/<variant>/          a-plan, b-territories, c-atlas, d-columns: index.html plus the variant's own .js and .css
+  round-02/c-atlas/            Orbit Atlas, the round 2 winner and the baseline for round 3 (index.html, c-atlas.js, c-atlas.css)
 docs/
   data-model.md                schema v0.1 and the BP API
   data-model-v2.md             schema v0.2, rating rules and the BP v0.2 API

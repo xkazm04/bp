@@ -17,12 +17,19 @@ All four variants share:
 
 | | Variant | Direction | Live prototype | Source |
 | --- | --- | --- | --- | --- |
-| A | **Orbit Plan**: the product as a floor plan | Plan | [open](https://claude.ai/artifact/WLCw1uWSpjnj4Nvx1i2QEZ) | `prototypes/round-02/a-plan/` |
-| B | **Orbit Territories**: the product as a hex territory map | Plan | [open](https://claude.ai/artifact/NHQWjHNAXQp5eahGMDv1yo) | `prototypes/round-02/b-territories/` |
+| A | **Orbit Plan**: the product as a floor plan | Plan | [open](https://claude.ai/artifact/WLCw1uWSpjnj4Nvx1i2QEZ) | removed (in `f2fbe96`) |
+| B | **Orbit Territories**: the product as a hex territory map | Plan | [open](https://claude.ai/artifact/NHQWjHNAXQp5eahGMDv1yo) | removed (in `f2fbe96`) |
 | C | **Orbit Atlas**: the product as an engraved card tree | Atlas | [open](https://claude.ai/artifact/1PZnZ9LLc8tywH7evd47VR) | `prototypes/round-02/c-atlas/` |
-| D | **Orbit Columns**: the product as a skyline of domain columns | Atlas | [open](https://claude.ai/artifact/UaoUu9yUrfsSJLLYDiH4A7) | `prototypes/round-02/d-columns/` |
+| D | **Orbit Columns**: the product as a skyline of domain columns | Atlas | [open](https://claude.ai/artifact/UaoUu9yUrfsSJLLYDiH4A7) | removed (in `f2fbe96`) |
 
 The kit's demo and styleguide (`prototypes/round-02/kit/`, with the styleguide at `#styleguide`) show the shared parts on their own.
+
+## Decision
+
+The client picked **C · Orbit Atlas** as the winner. It is the baseline for round 3. The source for A, B and D was removed
+from the branch after this round; it remains in git history at commit `f2fbe96`
+(`git checkout f2fbe96 -- prototypes/round-02/<variant>`). The round 3 questions below are still open. Answer them for
+Orbit Atlas, and take ideas from the other variants only where they help it.
 
 ## What every variant does
 
