@@ -75,22 +75,34 @@ interface Spec {
   count: LensField | null;
 }
 
+/** The field a lens's rail end counts in dots: the first plain count (integer from 0, no max, no unit) that is not the measured field. */
+export function countField(d: LensDef): LensField | null {
+  if (d.density === 'simple') return null;
+  return d.evidence.find((f) => f.type === 'integer' && f.min === 0 && f.max === undefined && !f.unit && !f.source && f !== d.measures) ?? null;
+}
+
 function specOf(d: LensDef): Spec {
   const m = d.measures;
-  const count = d.density === 'simple' ? null
-    : d.evidence.find((f) => f.type === 'integer' && f.min === 0 && f.max === undefined && !f.unit && !f.source && f !== m) ?? null;
+  const count = countField(d);
   return {
     d, count,
     measure: (live) => (m ? lensLine(m, live.value(d.id, m.key), d.measureMax) ?? -1 : -1),
   };
 }
 
-/** Small dots at the rail's end, right-aligned: n dots, the first `hot` in the status colour. */
+/** Small dots at the rail's end, right-aligned: n dots, the first `hot` in the status colour. Past four the count is capped, and says so: three dots and a '+'. */
 function dots(a: MarkArgs, x1: number, cy: number, n: number, hot: number, col: string, hotCol: string) {
   const { ctx } = a, u = a.tile.u, r = Math.max(1.3, 1.5 * u), sp = 4.6 * u;
-  for (let i = 0; i < Math.min(n, 4); i++) {
+  const more = n > 4, shown = more ? 3 : n;
+  for (let i = 0; i < shown; i++) {
     ctx.fillStyle = i < hot ? hotCol : col;
     ctx.beginPath(); ctx.arc(x1 - r - i * sp, cy, r, 0, 6.2832); ctx.fill();
+  }
+  if (more) {
+    const px = x1 - r - 3 * sp, arm = Math.max(1, r * 0.55), t = Math.max(1, Math.round(u * 0.9));
+    ctx.fillStyle = hot > 3 ? hotCol : col;
+    ctx.fillRect(px - arm - t / 2, cy - t / 2, 2 * arm + t, t);
+    ctx.fillRect(px - t / 2, cy - arm - t / 2, t, 2 * arm + t);
   }
 }
 const END_W = 20;
