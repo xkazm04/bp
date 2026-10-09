@@ -29,6 +29,16 @@ npm run build && npm start
 | `?theme=light` | The light theme (a toggle in the header too) |
 | `?scale=4` | Four product lines, 528 features: the scale test |
 | `?lenses=-security,+com.kettle.cost` | Switch lenses off or on for the session |
+| `?product=<slug>` | A live product: a repo listed in `bp.products.local.json`, read from its lens-scan store |
+
+## Live products
+
+A real product repo can be opened next to the Kettle sample. The `/lens-scan` skill (ai-registry) measures
+the repo per lens and writes `<repo>/.ai/lens-scan/` (`app-structure.json`, `scan.db`, `shots/`). List the
+repo in `bp.products.local.json` (shape: `bp.products.example.json`) and open `/?product=<slug>`: the scan
+drives the swarm layer live, its proposals wait in the queue for Approve or Decline, and lens panels show
+metric history. `node scripts/scan-demo.mjs [--live]` seeds a demo product (`kettle-live`) without a real
+scan. Details: `docs/blueprint-ui.md` (Live products) and `docs/standard/app-structure-v3.md` §15.
 
 Keys: `/` search · `1`–`9` lenses (1 = General) · `+` `−` zoom · arrows walk rooms · Enter opens · Esc goes back.
 
