@@ -11,3 +11,9 @@ export function railWidth(S: Pick<UIState, 'dockHidden' | 'compact'>): number {
 export function baseHeight(S: Pick<UIState, 'compact'>): number {
   return S.compact ? 36 : 42;
 }
+/** Screen px a rail flyout covers (rail.css #flyout width). It overlays the plan, so plan overlays such as the hover card keep clear of it. */
+export const FLYOUT_W = 340;
+/** Screen px from the right edge that the rail plus any open flyout cover. */
+export function overlayRight(S: Pick<UIState, 'dockHidden' | 'compact' | 'dtab'>): number {
+  return railWidth(S) + (S.dtab ? FLYOUT_W : 0);
+}

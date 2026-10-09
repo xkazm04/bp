@@ -10,7 +10,7 @@ import { Camera, clamp, type Cam, type Pad, type Region } from './camera';
 import type { ChannelAggregate, FeatureLive, LensChannel, LensExpression } from './lens/contract';
 import { MixDriver, type MixState } from './lens/mix';
 import { createStore, type Store } from './store';
-import { baseHeight, railWidth } from './chrome';
+import { baseHeight, overlayRight, railWidth } from './chrome';
 import { initialState, type Crumb, type DockTab, type HoverInfo, type UIState } from './state';
 import { readTheme, type Theme } from './theme';
 import { Text } from './text';
@@ -783,14 +783,14 @@ export class Engine {
   /** Position the hover card next to its target (called on pointer move and after React renders it). */
   placeHover() {
     const el = this.hoverEl, h = this.S.hover; if (!el || !h) return;
-    const u = this.U, w = 360 * u, hh = (el.offsetHeight || 140) * u, S = this.SAFE, px = this.hoverPt.x, py = this.hoverPt.y;
+    const u = this.U, w = 360 * u, hh = (el.offsetHeight || 140) * u, S = this.SAFE, R = this.FW - overlayRight(this.S) * u, px = this.hoverPt.x, py = this.hoverPt.y;
     let x: number, y: number;
     if (h.type === 'tile') {
       const r = this.featureRect(h.id) || { x: px, y: py, w: 0, h: 0 };
       x = r.x + r.w + 14; y = r.y - 6;
-      if (x + w > S.r) x = r.x - w - 14;
-      if (x < 6) { x = clamp(px + 18, 6, S.r - w - 6); y = r.y + r.h + 12; }
-    } else { x = px + 22; y = py + 20; if (x + w > S.r) x = px - w - 22; }
+      if (x + w > R) x = r.x - w - 14;
+      if (x < 6) { x = clamp(px + 18, 6, R - w - 6); y = r.y + r.h + 12; }
+    } else { x = px + 22; y = py + 20; if (x + w > R) x = px - w - 22; }
     if (y + hh > S.b) y = S.b - hh; if (y < S.t) y = S.t; if (x < 6) x = 6;
     el.style.transform = `translate(${x / u}px, ${y / u}px)`;
   }
