@@ -6,7 +6,7 @@
 
   const BP = window.BP;
   if (!BP) throw new Error('orbit-kit.js: window.BP is missing. Load blueprint-data.js and blueprint-model.js first.');
-  const OK = { version: '0.2.1' };
+  const OK = { version: '0.2.2' };
 
   // ══ helpers ═══════════════════════════════════════════════════════════════════════════════════
   const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -420,7 +420,7 @@
         '<span class="ok-statepill ok-statepill--' + esc(rel.state) + '">' + stateLabel + '</span><span class="ok-rel__date">' + esc(fmt.date(rel.date)) + ' · ' + esc(fmt.rel(rel.date)) + '</span></div>';
       if (rel.summary) h += '<p class="ok-rel__sum">' + esc(rel.summary) + '</p>';
     }
-    h += '<div class="ok-rel__counts">' + ['new', 'improved', 'fixed'].map((k) => '<span>' + svg.wrap(svg.releaseKind(k, 5), 6, 12) + REL_KIND[k] + ' <b>' + counts[k] + '</b></span>').join('') + '<span>' + plural(items.length, 'item') + '</span></div>';
+    h += '<div class="ok-rel__counts">' + ['new', 'improved', 'fixed'].filter((k) => counts[k]).map((k) => '<span>' + svg.wrap(svg.releaseKind(k, 5), 6, 12) + REL_KIND[k] + ' <b>' + counts[k] + '</b></span>').join('') + '<span>' + plural(items.length, 'item') + '</span></div>';
     if (planned && items.length) {
       const st = {};
       items.forEach((x) => { if (x.kind === 'new') st[x.f.status] = (st[x.f.status] || 0) + 1; });
@@ -465,6 +465,7 @@
     let ledgerFilter = { lens: 'all', actor: 'all' };
     let returnFocus = null;
     let fitReady = false;
+    let readoutFitRaf = 0;
     let pageObserver = null;
     let inspTop = 0; // the inspector's scroll offset, tracked from scroll events so it is never read synchronously
     let selSrc = null; // who causes the next select when the kit does: 'inspector' | 'page' | 'search' | 'kit' (else 'variant')
@@ -605,6 +606,8 @@
       el.readout.innerHTML = '<span class="ok-readout__q" title="' + esc(l.label + ': ' + l.question) + '"><b>' + esc(l.label) + '</b><span>' + esc(l.question) + '</span></span>' +
         '<span class="ok-bandcounts" role="img" aria-label="' + esc(l.label + ' lens: ' + BAND_IDS.map((b) => (c[b] || 0) + ' ' + BAND[b].label.toLowerCase()).join(', ')) + '">' +
         BAND_IDS.map((b) => '<span class="ok-bandcount" title="' + esc(BAND[b].label + (b === 'na' ? '' : ' (' + BAND[b].range + ')')) + '">' + html.band(b, 12) + (c[b] || 0) + '</span>').join('') + '</span>';
+      // A longer lens label (Development vs Overall) can overflow the rail: re-fit it in the next frame, not in the handler.
+      if (fitReady) { cancelAnimationFrame(readoutFitRaf); readoutFitRaf = requestAnimationFrame(() => { if (shellEl.isConnected) fitFilters(); }); }
     }
     function renderSearch() {
       const q = S.query.trim();
@@ -721,7 +724,7 @@
     }
     function toggleLegend(on) {
       // Phones have no legend panel: the legend lives in the modal "Theme and legend" sheet (no class, no event).
-      if (isPhone()) { openSheet('menu'); return; }
+      if (isPhone()) { if (on === false) { if (sheet === 'menu') closeSheet(); } else openSheet('menu'); return; }
       const want = typeof on === 'boolean' ? on : !legendOpen;
       if (want === legendOpen) { if (want) renderLegend(); return; } // toggle(true) on an open legend re-renders it
       setLegendOpen(want);
@@ -1434,7 +1437,9 @@
         const ref = type === 'product' ? productRef() : { type, id: rest.join(':') }; // "product" or "product:"
         const src = srcOf(t);
         if (S.page) closeFeature();
-        if (S.view !== 'map') setView('map');
+        // Kit chrome (inspector rows, breadcrumbs, search) means "show it on the map". Markup inside the variant's
+        // own stage, and any release, keeps the current view, so a timeline can use it too.
+        if (S.view !== 'map' && src !== 'variant' && ref.type !== 'release') setView('map');
         selectBy(src, () => inspect(ref));
         emit('locate', { type: ref.type, id: ref.id });
       } else if (t.hasAttribute('data-ok-locate')) {

@@ -120,7 +120,8 @@ The `#styleguide` route of the kit demo shows every token with its resolved valu
     the inspector while that is open (`right: calc(var(--ok-insp-w) + 22px)`). Its height follows its content (up to
     the stage height), so move floating controls sideways out from under it, not down.
   - While it is open `.ok-shell` has `ok-has-legend`, and every open or close emits `legend { open, width }`.
-  - **Phones** have no legend panel. `L`, the menu button and `legend.toggle()` open the "Theme and legend" sheet: a
+  - **Phones** have no legend panel. `L`, the menu button and `legend.toggle()` (or `toggle(true)`) open the "Theme and
+    legend" sheet, and `legend.toggle(false)` closes it if it is open. The sheet is a
     modal bottom sheet up to 82% of the height, with a scrim over the whole shell (top bar, stage and inspector) that
     closes it on tap. Nothing behind it can be used while it is open, so there is nothing to move: `ok-has-legend` is
     never set and no `legend` event fires. If the window narrows to a phone with the panel open, the panel closes and
@@ -205,7 +206,8 @@ layout (see **Performance** below).
 and variant markup need no wiring: `data-ok-peek="<featureId>"` (peek and emit `locate`), `data-ok-open="<featureId>"`
 (feature page; add `data-ok-tab="work"` to open a tab), `data-ok-inspect="<type>:<id>"` (standard inspector and
 `locate`; `data-ok-inspect="product"` or `"product:"` opens the product inspector and emits `locate { type: 'product', id }`,
-meaning "show the whole map"), `data-ok-setlens="<lensId>"`. **CSS hooks** on `.ok-shell`: `[data-ok-lens]`,
+meaning "show the whole map"; markup in kit chrome such as inspector rows switches to the Map view first, while markup inside
+the variant's own stage and any `release:` ref keep the current view, so a timeline can use it), `data-ok-setlens="<lensId>"`. **CSS hooks** on `.ok-shell`: `[data-ok-lens]`,
 `[data-ok-view]`, and the classes `ok-filtering`, `ok-has-insp`, `ok-has-legend`, `ok-page-open`. For example, a zoom
 control at the right edge:
 
