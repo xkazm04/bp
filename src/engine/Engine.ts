@@ -10,6 +10,7 @@ import { Camera, clamp, type Cam, type Pad, type Region } from './camera';
 import type { ChannelAggregate, FeatureLive, LensChannel, LensExpression } from './lens/contract';
 import { MixDriver, type MixState } from './lens/mix';
 import { createStore, type Store } from './store';
+import { baseHeight, railWidth } from './chrome';
 import { initialState, type Crumb, type DockTab, type HoverInfo, type UIState } from './state';
 import { readTheme, type Theme } from './theme';
 import { Text } from './text';
@@ -269,9 +270,9 @@ export class Engine {
   }
   private lastFit = false;
   private layoutChrome() {
-    const w = this.FW, h = this.FH, U = this.U, bb = this.S.compact ? 84 : 116;
+    const w = this.FW, h = this.FH, U = this.U, bb = baseHeight(this.S);
     this.ui.style.setProperty('--bb', bb + 'px');
-    this.SAFE = { l: 12 * U, t: 74 * U, b: h - (bb - 2) * U, r: this.S.dockHidden ? w - 12 * U : w - 352 * U };
+    this.SAFE = { l: 12 * U, t: 74 * U, b: h - (bb - 2) * U, r: w - railWidth(this.S) * U };
     this.ui.style.setProperty('--cx', (this.SAFE.l + this.SAFE.r) / 2 / U + 'px');
     this.ui.style.setProperty('--sw', Math.max(300, (this.SAFE.r - this.SAFE.l) / U - 20) + 'px');
   }
