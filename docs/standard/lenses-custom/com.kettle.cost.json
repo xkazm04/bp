@@ -1,0 +1,41 @@
+{
+  "$schema": "lens-manifest/1",
+  "id": "com.kettle.cost",
+  "version": "0.1.0",
+  "name": "Cost",
+  "short": "COST",
+  "description": "What each feature costs to run each month: infrastructure, SMS and model spend, read against the project's SMS bill.",
+  "reader": { "role": "finance", "density": "standard" },
+  "fields": [
+    { "key": "monthlyUsd", "label": "Monthly cost", "type": "money", "currency": "USD", "min": 0, "max": 5000, "unit": "per month",
+      "headline": true, "description": "Everything the feature costs to run in production last month, SMS and model spend included." },
+    { "key": "smsUsd", "label": "SMS spend", "type": "money", "currency": "USD", "min": 0, "unit": "per month",
+      "description": "The part of the monthly cost that is SMS sends. Omitted for features that send no SMS." },
+    { "key": "llmUsd", "label": "Model spend", "type": "money", "currency": "USD", "min": 0, "unit": "per month",
+      "description": "The part of the monthly cost that is model API calls. Omitted for features that call no model." },
+    { "key": "projectSmsUsd", "label": "Project SMS bill", "type": "money", "currency": "USD", "min": 0, "unit": "per month",
+      "source": { "kpi": "sms-spend" },
+      "description": "The whole project's SMS bill this month, read from the sms-spend KPI. The same for every feature." }
+  ],
+  "health": {
+    "rules": [
+      { "when": { "field": "monthlyUsd", "gte": 2000 },
+        "health": "bad", "reason": "Costs {monthlyUsd} USD a month" },
+      { "when": { "all": [ { "field": "smsUsd", "gt": 0 }, { "field": "projectSmsUsd", "gte": 2500 } ] },
+        "health": "watch", "reason": "Sends SMS while the project's SMS bill is {projectSmsUsd} USD a month" },
+      { "when": { "field": "llmUsd", "gte": 100 },
+        "health": "watch", "reason": "Model spend {llmUsd} USD a month" },
+      { "when": { "field": "monthlyUsd", "gte": 500 },
+        "health": "watch", "reason": "Costs {monthlyUsd} USD a month" }
+    ],
+    "default": "good",
+    "rollup": { "method": "weighted", "by": "monthlyUsd" }
+  },
+  "presentation": {
+    "glyph": { "path": "M3 4a5 2 0 1 0 10 0a5 2 0 1 0 -10 0M3 4v4a5 2 0 0 0 10 0V4M3 8v4a5 2 0 0 0 10 0V8" },
+    "line": "solid",
+    "accent": { "dark": "#ffc861", "light": "#946000" },
+    "evidence": ["monthlyUsd", "smsUsd", "llmUsd", "projectSmsUsd"],
+    "measures": "monthlyUsd"
+  }
+}

@@ -260,7 +260,9 @@ keep orphaned facets (section 11).
 health is evaluated, and a value stored in the facet under its key is ignored (validators warn about
 it; writers SHOULD NOT write one).
 - `{"kpi": "<slug>"}`: the KPI's `current.value`. The KPI MUST exist in the map. If it has no
-  current value, the field is absent.
+  current value, the field is absent. The binding lives in the manifest, so the value is the same
+  for every feature that has this lens: bind KPIs that describe the lens's context (a project-wide
+  bill, a group SLO), and keep per-feature measurements in facet values.
 - `{"feature": "<core field>"}`: the feature's own core field, so rules can read lifecycle facts
   without copying them into every lens (stage stays one core field, decision 4). Only these core
   fields can be bound: **`stage`, `priority`, `kind`, `tier`, `milestone`, `status`**. Any other
@@ -448,7 +450,7 @@ Every event has `at` (date-time, req.) and `type` (req.), and MAY have `actor` a
 | `lens-health` | `feature`, `lens`, `from`, `to` | healths, including `unmeasured` and `na` |
 | `kpi-threshold` | `kpi`, `from`, `to` | the KPI's track verdicts (free strings) |
 | `milestone` | `milestone`, `from`, `to` | `planned`, `active`, `shipped` |
-| `feature-added` | `feature` | |
+| `feature-added` | `feature` | `to` (optional): the stage the feature was added at |
 | `feature-archived` | `feature` | |
 | `lens-enabled` | `lens` | |
 | `lens-disabled` | `lens` | |
@@ -456,7 +458,8 @@ Every event has `at` (date-time, req.) and `type` (req.), and MAY have `actor` a
 Readers MUST skip types they do not know. Events MAY name features, KPIs or milestones that no longer
 exist in the map (history outlives records); validators only warn. Weekly snapshots and "what
 changed" are derived from the log: the stage of a feature on a date is the `to` of its last `stage`
-event at or before that date.
+or `feature-added` event at or before that date. Writers SHOULD give `feature-added` a `to`; without
+one, the feature's stage is unknown until its first `stage` event.
 
 ## 11. Compatibility and merging
 

@@ -9,7 +9,8 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "validate:structure": "node scripts/validate-structure.mjs",
-    "check:lens-health": "node scripts/check-builtin-health.ts"
+    "check:lens-health": "node scripts/check-builtin-health.ts",
+    "data:kettle-v3": "node scripts/kettle-to-v3.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",
