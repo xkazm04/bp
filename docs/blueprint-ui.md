@@ -338,6 +338,46 @@ For a live product whose scan has shots of the feature, the sheet shows a Screen
 - A thumbnail opens the viewer under the strip (not a modal). Run A and run B are selectors over the runs that have that size and theme; they default to the latest two. With two runs it compares them side by side or as a swipe (a range slider over the stacked images). With one run it shows that one and says compare needs two. Escape closes the viewer, not the sheet.
 - Images load lazily and are never committed to the repo.
 
+## Chrome and the feature page (2026-10 overhaul)
+
+The owner's verdict: L0 was oversaturated, and L4 tried to hold too much at once. The chrome now
+gets out of the plan's way, and L4 is a page. Earlier sections that say "dock", "bottom bar" or
+"sheet" mean the rail, the timeline and the feature page below.
+
+- **Collapsed chrome sets the plan's safe area; expanded chrome overlays it.** The collapsed
+  sizes live in `src/engine/chrome.ts` (`railWidth`, `baseHeight`) and are the only numbers the
+  home fit reads. Anything that opens on click overlays the plan and never moves it. This is the
+  spatial-stability rule.
+- **Rail** (`src/components/Dock.tsx`, `rail/`, `rail.css`): a 64 px column of counters.
+  - The counters are Find, Asks/Review, Agents, Orders, Steer (Kettle only), Plan and View.
+  - The rail never changes width and never opens by itself. Each counter opens its own flyout
+    (340 px) over the plan.
+  - Esc, the same counter, or a click on the plan closes it. Only one flyout is open at a time.
+  - A changed count counts up or down and pulses once, at most every 3 s.
+  - Keys: `/` opens Find, `\` hides the rail, `P` opens View.
+- **Timeline** (`src/components/BaseBar.tsx`, `timeline/`, `timeline.css`): a 42 px strip.
+  - It shows the time position, the sim clock or the run status, and a hairline you click or drag
+    to time travel.
+  - Click or `T` expands the full panel (key plan, clock and speeds, the revisions chart, the hour
+    ahead) over the plan, up to the rail's edge. It never expands on hover.
+  - The timeline panel and a rail flyout close each other.
+  - When the strip shows a travelled date it turns accent, with "back to now".
+- **Feature page** (`src/components/FeatureSheet.tsx`, `page/`, `page.css`). The page replaces
+  the drawer.
+  - **Open and close:** the tile morphs into a full page, animating only `transform` and opacity.
+    The plan dims behind it, and Esc morphs back into the tile.
+  - **Tabs:** General plus one tab per enabled lens. A tab switch also switches the plan's lens,
+    and opening from a lens view lands on that lens.
+  - **General** is the overview: a stat tile per lens, the swarm, Business, dependencies and
+    activity.
+  - **A lens tab shows that lens only.** Its blocks are chosen by data, never by lens id: metric
+    rows when the lens has metric fields; the Screens strip when it has harness metrics and
+    shots; Business when its reader role is `business`; and its KPIs, decisions and orders.
+    Density follows `reader.density`.
+  - **Motion:** sections enter staggered, and numbers count up. Under reduced motion both are
+    instant.
+  - **Phone:** the phone view keeps the single-document body (`sheet/SheetBody.tsx`).
+
 ## Done means
 
 - `npm run build` and `npm run typecheck` pass. There are no console errors on load or while

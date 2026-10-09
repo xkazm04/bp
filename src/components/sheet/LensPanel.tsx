@@ -40,7 +40,7 @@ const SW = 64, SH = 16;
 const nfmt = (v: number) => (Math.abs(v) >= 100 || Number.isInteger(v) ? Math.round(v) : Math.round(v * 10) / 10).toLocaleString('en-US');
 
 /** A 64x16 sparkline of a metric's readings, with the target as a dashed tick when the manifest sets one. */
-function Spark({ pts, target, cls }: { pts: readonly number[]; target?: number; cls: string }) {
+export function Spark({ pts, target, cls }: { pts: readonly number[]; target?: number; cls: string }) {
   let lo = Math.min(...pts), hi = Math.max(...pts);
   if (target !== undefined) { lo = Math.min(lo, target); hi = Math.max(hi, target); }
   const span = hi - lo || 1, x = (i: number) => 1 + (i / (pts.length - 1)) * (SW - 4), y = (v: number) => SH - 2 - ((v - lo) / span) * (SH - 4);
@@ -110,7 +110,7 @@ export function MetricRows({ def, f, model, scan, all, fl }: { def: LensDef; f: 
   );
 }
 
-const hmark = (h: string) => (h === 'bad' ? 'BAD' : h === 'watch' ? 'WATCH' : h === 'good' ? 'GOOD' : h === 'na' ? 'N/A' : 'NOT MEASURED');
+export const hmark = (h: string) => (h === 'bad' ? 'BAD' : h === 'watch' ? 'WATCH' : h === 'good' ? 'GOOD' : h === 'na' ? 'N/A' : 'NOT MEASURED');
 const LIMIT = { simple: 3, standard: 5, dense: Infinity } as const;
 
 export function DefaultLensPanel({ lens, def, f, model, density, expanded, view }: SheetPanelProps) {

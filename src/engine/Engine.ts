@@ -272,6 +272,7 @@ export class Engine {
   private layoutChrome() {
     const w = this.FW, h = this.FH, U = this.U, bb = baseHeight(this.S);
     this.ui.style.setProperty('--bb', bb + 'px');
+    this.ui.style.setProperty('--rw', railWidth(this.S) + 'px');
     this.SAFE = { l: 12 * U, t: 74 * U, b: h - (bb - 2) * U, r: w - railWidth(this.S) * U };
     this.ui.style.setProperty('--cx', (this.SAFE.l + this.SAFE.r) / 2 / U + 'px');
     this.ui.style.setProperty('--sw', Math.max(300, (this.SAFE.r - this.SAFE.l) / U - 20) + 'px');
@@ -404,6 +405,9 @@ export class Engine {
   setSpeed(n: number) { this.M.sim.setSpeed(n); this.scheduleSimSync(true); this.dirty(); }
   stepSpeed(dir: number) { const i = SPEEDS.indexOf(this.M.sim.speed as (typeof SPEEDS)[number]); this.setSpeed(SPEEDS[clamp(i + dir, 0, SPEEDS.length - 1)]); }
   restart() { this.M.sim.reset(); this.set({ tgt: { ids: {}, n: 0, label: '' }, prev: null, dec: null }); this.scheduleSimSync(true); }
+  /** Expand or collapse the timeline panel (it overlays the plan; the safe area keeps the collapsed strip). */
+  /** The timeline panel and a rail flyout never stand open together: opening one closes the other. */
+  setTimeline(on = !this.S.tl) { if (on !== this.S.tl) this.set(on ? { tl: on, dtab: null } : { tl: on }); }
   seek(t: number) { if (!this.isNow) this.set({ t: this.M.P.asOf }); this.M.sim.seek(t); this.scheduleSimSync(true); this.dirty(); }
 
   // ============================================================================ lens, person, time
@@ -415,7 +419,7 @@ export class Engine {
     this.writeHashSoon();
   }
   setWho(id: string | null) {
-    this.store.set({ who: id || null, whoMenu: false, dtab: 'asks' });
+    this.store.set({ who: id || null, whoMenu: false, dtab: this.S.dtab ? 'asks' : null });
     const pl = personLens(this.M.P, id);
     if (pl) this.setView(pl, true);
     const q = this.M.sim.queueFor(this.S.who, this.S.view);
@@ -458,8 +462,10 @@ export class Engine {
   }
   goUp() {
     const S = this.S;
+    if (S.tl) { this.set({ tl: false }); return; }
     if (S.morning) { this.set({ morning: false }); return; }
     if (S.whoMenu) { this.set({ whoMenu: false }); return; }
+    if (S.dtab) { this.set({ dtab: null }); return; }
     if (S.info) { this.set({ info: false }); return; }
     if (S.open) { this.closeFeature(); return; }
     if (S.dec) { this.closeDecision(); return; }
@@ -503,25 +509,36 @@ export class Engine {
     for (const T of this.M.L.tiles) { const d = Math.hypot(T.x + T.w / 2 - this.cam.x, T.y + T.h / 2 - this.cam.y); if (d < bd) { bd = d; best = T; } }
     return best;
   }
-  private detailRegion(): Region { const w = Math.min(950, this.FW / this.U - 300) * this.U; return { l: this.SAFE.l, t: this.SAFE.t, r: Math.min(this.SAFE.r, this.FW - w - 20 * this.U), b: this.SAFE.b }; }
-  openFeature(id: string, dur?: number) {
+  /**
+   * A feature tile's rect on screen, in the UI layer's px (the chrome is scaled by U): where the
+   * feature page grows from and shrinks back into. null for an unknown feature.
+   */
+  tileRect(id: string): { x: number; y: number; w: number; h: number } | null {
+    const T = this.M.L.TILE[id]; if (!T) return null;
+    const c = this.cam, U = this.U;
+    return { x: c.sx(T.x) / U, y: c.sy(T.y) / U, w: (T.w * c.k) / U, h: (T.h * c.k) / U };
+  }
+  /**
+   * L4 is a full page over the dimmed plan: the plan stays where it is, so the page can grow out of
+   * the tile and shrink back into it. Only a tile that is off screen or too small to see (a search
+   * pick, a deep link, a list row) brings the plan to it first, instantly, behind the page.
+   */
+  openFeature(id: string, _dur?: number) {
     const F = this.M.P.F[id], T = this.M.L.TILE[id]; if (!F || !T) return;
-    if (!this.S.open) this.camBefore = { x: this.cam.x, y: this.cam.y, k: this.cam.k };
+    const r = this.tileRect(id)!, U = this.U, S = this.SAFE;
+    if (!this.S.phone && (r.w * U < 48 || r.x * U < S.l || r.y * U < S.t || (r.x + r.w) * U > S.r || (r.y + r.h) * U > S.b)) {
+      this.cam.set(this.fitCam({ x: T.x - T.w * 1.6, y: T.y - T.h * 1.6, w: T.w * 4.2, h: T.h * 4.2 }, { t: 40, r: 30, b: 60, l: 30 }, 1));
+    }
     this.set({ open: id, sel: null, hl: null, dec: null, hover: null, morning: false });
     if (this.S.phone) return;
-    const R = this.detailRegion();
-    const c = this.fitCam({ x: T.x - 20, y: T.y - 20, w: T.w + 40, h: T.h + 40 }, { t: 40, r: 20, b: 60, l: 20 }, 1, R);
-    c.k = clamp(Math.min(c.k, 1.5), this.cam.KMIN, this.cam.KMAX);
-    const cx = (R.l + R.r) / 2, cy = (R.t + R.b) / 2;
-    this.cam.flyTo({ x: T.x + T.w / 2 - (cx - this.FW / 2) / c.k, y: T.y + T.h / 2 - (cy - this.FH / 2) / c.k, k: c.k }, dur);
     this.placeKey = ''; this.writeHashSoon();
   }
-  closeFeature(fly = true) {
-    const id = this.S.open; if (!id) return;
+  /** Back to the plan: the page shrinks into the tile, so the camera does not move. */
+  closeFeature(focus = true) {
+    if (!this.S.open) return;
     this.set({ open: null });
-    if (fly) { if (this.camBefore) this.cam.flyTo(this.camBefore); else { const T = this.M.L.TILE[id]; this.cam.flyTo(this.fitCam(T.room, PADS.room, OVER.room)); } }
     this.camBefore = null; this.placeKey = ''; this.writeHashSoon();
-    this.cv.focus({ preventScroll: true });
+    if (focus) this.cv.focus({ preventScroll: true });
   }
   setMode(m: { ga?: boolean; blast?: string | null }) {
     const patch: Partial<UIState> = { ...m, info: false };
@@ -550,11 +567,12 @@ export class Engine {
   setHl(id: string | null) { if (this.S.hl !== id) this.set({ hl: id }); }
   setHlDec(id: string | null) { if (this.S.hlDec !== id) this.set({ hlDec: id }); }
   setOrdHi(id: string | null) { if (this.S.ordHi !== id) this.set({ ordHi: id }); }
-  setDockTab(t: DockTab) { this.set({ dtab: t }); }
+  /** Open a rail flyout; the open one again (or null) closes it. */
+  setDockTab(t: DockTab | null) { const dtab = t === this.S.dtab ? null : t; this.set(dtab ? { dtab, tl: false } : { dtab }); }
   patch(p: Partial<UIState>) { this.set(p); }
   toggleDock(on?: boolean) {
     const hide = on == null ? !this.S.dockHidden : !on;
-    this.store.set({ dockHidden: hide });
+    this.store.set(hide ? { dockHidden: hide, dtab: null } : { dockHidden: hide });
     const atHome = Math.abs(this.cam.k / this.HOME.k - 1) < 0.02;
     this.layoutChrome(); this.computeHome();
     if (atHome && !this.S.open) this.cam.flyTo(this.HOME, 400);
@@ -629,7 +647,7 @@ export class Engine {
     let tgt: Target = this.S.tgt;
     if (fid) { tgt = { ids: { [fid]: 1 }, n: 1, label: this.M.P.F[fid].name }; this.store.set({ tgt }); }
     let p: Preview | null = null;
-    if (kind === 'ga') { this.store.set({ dtab: 'swarm' }); p = sim.previewGA(this.wingName); if (!p) this.toast('Nothing to pull:', 'no agent is on M3 or M4 work.'); }
+    if (kind === 'ga') { p = sim.previewGA(this.wingName); if (!p) this.toast('Nothing to pull:', 'no agent is on M3 or M4 work.'); }
     else if (kind === 'research') { p = sim.previewResearch(); if (!p) this.toast('The research crew is already paused.', ''); }
     else {
       if (!tgt.n) { this.needTarget(); return; }
@@ -870,6 +888,7 @@ export class Engine {
     on(cv, 'pointerleave', () => { if (!this.drag) this.setHover(null); });
     on(cv, 'wheel', (e: WheelEvent) => {
       e.preventDefault(); this.endIntro();
+      if (this.S.open) return; // the feature page holds the wheel; the plan behind it stays put
       if (this.S.hover) this.setHover(null);
       const p = this.local(e); let dy = e.deltaMode === 1 ? e.deltaY * 30 : e.deltaY;
       if (e.ctrlKey) dy *= 2.5;
@@ -909,13 +928,14 @@ export class Engine {
     if (k === 'j' || k === 'J') { this.stepDecision(1); return; }
     if (k === 'k' || k === 'K') { this.stepDecision(-1); return; }
     if (k === 'm' || k === 'M') { this.toggleMorning(); return; }
-    if (k === 'p' || k === 'P') { this.set({ whoMenu: !S.whoMenu }); return; }
+    if (k === 'p' || k === 'P') { this.setDockTab('view'); return; }
     if (k === 's' || k === 'S') { this.toggleSelMode(); return; }
     if (k === '\\') { this.toggleDock(); return; }
     if (k === ' ' && tag !== 'button') { e.preventDefault(); this.togglePlay(); return; }
     if (k === ',') { this.stepSpeed(-1); return; }
     if (k === '.') { this.stepSpeed(1); return; }
-    if (S.open && tag !== 'canvas') { if (k === 'b' || k === 'B') this.toggleBlast(); return; }
+    if (k === 't' || k === 'T') { this.setTimeline(); return; }
+    if (S.open) { if (k === 'b' || k === 'B') this.toggleBlast(); return; } // the plan behind the feature page does not move
     if (k === 'ArrowRight') { e.preventDefault(); this.walk(1); return; }
     if (k === 'ArrowLeft') { e.preventDefault(); this.walk(-1); return; }
     if (k === 'ArrowUp' || k === 'ArrowDown') { e.preventDefault(); this.zoomBy(k === 'ArrowUp' ? 1 : -1); return; }

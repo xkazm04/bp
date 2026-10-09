@@ -1,15 +1,25 @@
 'use client';
-// The bottom bar: key plan, the simulated hour's clock (1x..240x) and the revisions strip with the
-// next-hour histogram. The clock text and the hour head are written straight to the DOM from the
+// The timeline. Collapsed (default) it is a thin strip (timeline/Strip.tsx) whose height sets the plan's
+// safe area (chrome.baseHeight). Expanded (a click on the strip, or T; again / Esc / T collapses) a panel
+// slides up OVER the plan with the full content: key plan, the simulated hour's clock (1x..240x) and the
+// revisions chart with the next-hour histogram, entering staggered. The clock text and the hour head are written straight to the DOM from the
 // engine's sim-time callback; React only re-renders on discrete changes (speed, play, time travel).
 // A live product has no recorded hour: the clock box shows the scan instead, and the strip drops the
 // hour ahead (no replay to scrub, no arrivals).
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion, useReducedMotion, type Variants } from 'motion/react';
 import { SWARM } from '@/lib/data';
 import { GA_MILESTONE, HOUR, SPEEDS, dnum, fmtD, latestRun, revAt } from '@/lib/model';
 
 const ARRIVALS = SWARM.decisions.filter((d) => d.arrivesAt).map((d) => ({ id: d.id, t: d.arrivesAt! }));
 import { shallowEqual, useBp, useEngine, useLive } from './hooks';
+import { Strip } from './timeline/Strip';
+import './timeline.css';
+
+/** One staggered item of the panel (the panel's variants drive it). */
+const ITEM: Variants = { hide: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { duration: 0.24, ease: [0.2, 0.7, 0.2, 1] } } };
+const ITEM_RM: Variants = { hide: { opacity: 0 }, show: { opacity: 1, transition: { duration: 0 } } };
+function useItem(): Variants { return useReducedMotion() ? ITEM_RM : ITEM; }
 
 function KeyPlanBox() {
   const E = useEngine();
@@ -17,10 +27,10 @@ function KeyPlanBox() {
   useEffect(() => { E.setKeyplan(ref.current); return () => E.setKeyplan(null); }, [E]);
   useEffect(() => E.onFrame(() => { const z = '×' + (E.cam.k / E.HOME.k).toFixed(1); if (zref.current && zref.current.textContent !== z) zref.current.textContent = z; }), [E]);
   return (
-    <button id="keyplan" type="button" title="Key plan: click to move there" onClick={(e) => { const r = ref.current!.getBoundingClientRect(); E.keyplanClick((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height); }}>
+    <motion.button variants={useItem()} id="keyplan" type="button" title="Key plan: click to move there" onClick={(e) => { const r = ref.current!.getBoundingClientRect(); E.keyplanClick((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height); }}>
       <div className="lab"><span>KEY PLAN</span><span ref={zref} /></div>
       <canvas ref={ref} />
-    </button>
+    </motion.button>
   );
 }
 
@@ -31,25 +41,25 @@ function LiveClock() {
   const run = latestRun(live?.product.scan), off = live?.product.status === 'offline';
   const st = !run ? 'NO RUN' : off ? 'OFFLINE' : run.status === 'running' ? '● LIVE · ' + run.phase.toUpperCase() : run.status.toUpperCase();
   return (
-    <div id="clock" className="live">
+    <motion.div variants={useItem()} id="clock" className="live">
       <div className="t"><span>Lens scan</span><span style={{ color: off ? 'var(--amber)' : run?.status === 'running' ? 'var(--mint)' : 'var(--ink)' }}>{st}</span></div>
       <div className="hm" title={run?.id}>{run ? (run.started_at.slice(5, 10) + ' ' + run.started_at.slice(11, 16)) : '—'}<small>{run ? 'UTC START' : ''}</small></div>
       <div className="lv">{run ? run.lenses.join(' · ') + ' · ' + sim.agents.length + ' agent' + (sim.agents.length === 1 ? '' : 's') : 'Waiting for /lens-scan'}</div>
-    </div>
+    </motion.div>
   );
 }
 
 function Clock() {
   const E = useEngine(), sim = E.M.sim;
   const s = useBp((s) => ({ playing: s.playing, speed: s.speed, over: s.over, t: s.t }), shallowEqual);
-  const tref = useRef<HTMLSpanElement>(null);
+  const tref = useRef<HTMLSpanElement>(null), item = useItem();
   useEffect(() => E.onSimTime((t) => { if (tref.current) tref.current.textContent = new Date(sim.at0 + t * 1000).toISOString().slice(11, 19); }), [E, sim]);
   if (!sim.has) return null;
   if (sim.live) return <LiveClock />;
   const hist = s.t !== E.M.P.asOf;
   const status = hist ? 'HISTORY · PAUSED' : s.over ? 'ENDED' : s.playing ? '● LIVE · ×' + s.speed : 'PAUSED';
   return (
-    <div id="clock">
+    <motion.div variants={item} id="clock">
       <div className="t"><span>Sim hour</span><span style={{ color: hist ? 'var(--amber)' : s.playing && !s.over ? 'var(--mint)' : 'var(--ink)' }}>{status}</span></div>
       <div className="hm"><span ref={tref}>09:00:00</span><small>UTC</small></div>
       <div className="ctl">
@@ -57,7 +67,7 @@ function Clock() {
         {SPEEDS.map((n) => <button key={n} type="button" aria-pressed={s.speed === n} title={'Run at ' + n + '× speed'} onClick={() => E.setSpeed(n)}>{n}×</button>)}
         <button type="button" title="Replay the hour from the start" aria-label="Replay the hour" onClick={() => E.restart()}>↺</button>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -113,7 +123,7 @@ function Revisions() {
   };
   const px = (e: React.PointerEvent) => { const r = svg.current!.getBoundingClientRect(); return ((e.clientX - r.left) / r.width) * W; };
   return (
-    <div id="revs" ref={wrap}>
+    <motion.div variants={useItem()} id="revs" ref={wrap}>
       <svg id="revsvg" ref={svg} tabIndex={0} role="slider" aria-label="Time: revision history, now, and the simulated hour ahead" aria-valuemin={1} aria-valuemax={NW} aria-valuenow={revAt(M.P.weeks, s.t)} aria-valuetext={'Revision ' + revAt(M.P.weeks, s.t) + ', ' + s.t}
         viewBox={`0 0 ${W} ${H}`} data-keys="own"
         onPointerDown={(e) => { drag.current = null; (e.currentTarget as Element).setPointerCapture(e.pointerId); apply(px(e)); }}
@@ -123,6 +133,8 @@ function Revisions() {
           else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); E.stepWeek(1); }
           else if (e.key === 'Home') { e.preventDefault(); E.setTime(M.P.weeks[0]); }
           else if (e.key === 'End') { e.preventDefault(); E.setTime(asOf); }
+          else if (e.key === 't' || e.key === 'T') { e.preventDefault(); E.setTimeline(); }
+          else if (e.key === 'Escape') { e.preventDefault(); E.setTimeline(false); }
         }}>
         <text className="lbl" x="2" y={top + 2}>REVISIONS</text><text x="2" y={top + 18}>{NW} weeks</text>{!s.compact && <text x="2" y={top + 33}>[ ] step</text>}
         {polys}
@@ -150,15 +162,33 @@ function Revisions() {
         {m2 && (() => { const xm = tl.R - 14; return <g><line x1={xm} y1={top - 14} x2={xm} y2={bot} stroke="var(--amber)" strokeWidth={1.2} strokeDasharray="4 3" /><path d={`M${xm} ${top - 14} h-10 l3 4 l-3 4 h10z`} fill="var(--amber)" /><text x={xm - 13} y={top - 7} textAnchor="end" style={{ fill: 'var(--amber)' }}>{m2.code || m2.name} · {fmtD(m2.date)}</text>{!s.compact && <><text x={xm - 4} y={bot - 20} textAnchor="end" style={{ fill: 'var(--amber)' }}>{Math.round(dnum(m2.date) - dnum(asOf))} days</text><text x={xm - 4} y={bot - 5} textAnchor="end">M3, M4 ▸</text></>}</g>; })()}
         <g className="handle"><line x1={hl} y1={top - 16} x2={hl} y2={bot + 2} /><rect x={px0} y={bot + 8} width={pw} height={20} rx={2} /><text x={px0 + pw / 2} y={bot + 22.5} textAnchor="middle">{lab}</text><path d={`M${hl - 5} ${bot + 8} l5 -6 l5 6z`} fill="var(--amber)" /></g>
       </svg>
-    </div>
+    </motion.div>
   );
 }
 
+const PANEL: Variants = {
+  hide: { opacity: 0, y: 22, transition: { duration: 0.16, ease: 'easeIn' } },
+  show: { opacity: 1, y: 0, transition: { duration: 0.26, ease: [0.2, 0.7, 0.2, 1], when: 'beforeChildren', staggerChildren: 0.07 } },
+};
+const BOX: Variants = { hide: {}, show: { transition: { staggerChildren: 0.08 } } };
+const INSTANT: Variants = { hide: { opacity: 0, transition: { duration: 0 } }, show: { opacity: 1, transition: { duration: 0 } } };
+
 export function BaseBar() {
+  const open = useBp((s) => s.tl), rm = useReducedMotion();
+  const panel = useRef<HTMLDivElement>(null), toggle = useRef<HTMLButtonElement>(null);
+  // collapsing with the focus inside the panel hands it back to the strip's toggle
+  useEffect(() => { if (!open && panel.current?.contains(document.activeElement)) toggle.current?.focus(); }, [open]);
   return (
-    <footer id="base">
-      <KeyPlanBox />
-      <div id="timebox"><Clock /><Revisions /></div>
-    </footer>
+    <>
+      <AnimatePresence>
+        {open && (
+          <motion.section key="tl" id="tlpanel" ref={panel} aria-label="Timeline" variants={rm ? INSTANT : PANEL} initial="hide" animate="show" exit="hide">
+            <KeyPlanBox />
+            <motion.div id="timebox" variants={rm ? INSTANT : BOX}><Clock /><Revisions /></motion.div>
+          </motion.section>
+        )}
+      </AnimatePresence>
+      <Strip ref={toggle} open={open} />
+    </>
   );
 }

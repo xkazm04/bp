@@ -1,0 +1,54 @@
+/* The timeline: a thin strip at the bottom (its height is chrome.baseHeight) and the panel that slides up
+   over the plan when it is expanded. The panel reuses #keyplan / #clock / #revs from blueprint.css. */
+
+/* ---------- the strip (collapsed) */
+#base.tl-strip { position: absolute; left: 14px; right: 14px; bottom: 8px; height: 28px; display: flex; align-items: center; gap: 14px; padding-right: 8px; border: 1px solid var(--ink-3); background: var(--panel); font: 500 12px/1 var(--mono); letter-spacing: 0.06em; color: var(--ink-2); cursor: pointer; z-index: 4; white-space: nowrap; transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease, opacity 0.7s ease; }
+.bp-compact #base.tl-strip { bottom: 6px; height: 24px; gap: 10px; }
+#base.tl-strip:hover { border-color: var(--ink-2); }
+.bp .tl-exp { align-self: stretch; display: flex; align-items: center; gap: 7px; padding: 0 10px; background: transparent; border: 0; border-right: 1px solid var(--ink-4); font: 500 12px var(--mono); letter-spacing: 0.12em; color: var(--ink-2); }
+.bp .tl-exp:hover, .bp .tl-strip.open .tl-exp { color: var(--ink-hi); background: color-mix(in srgb, var(--ink) 8%, transparent); }
+.tl-exp kbd { font: 500 12px/1 var(--mono); padding: 1px 4px; border: 1px solid var(--ink-3); color: var(--ink-2); }
+.tl-chev { font-size: 12px; color: var(--ink); }
+.tl-pos { display: flex; align-items: center; gap: 8px; }
+.tl-pos b { font-weight: 500; color: var(--ink-hi); letter-spacing: 0.1em; }
+.tl-dim { color: var(--ink-2); }
+.tl-clk { display: flex; align-items: center; gap: 6px; padding-left: 14px; border-left: 1px solid var(--ink-4); }
+.tl-clk .tl-k { letter-spacing: 0.12em; }
+.tl-hm { color: var(--ink-hi); font-variant-numeric: tabular-nums; }
+.tl-st { color: var(--ink); letter-spacing: 0.08em; }
+.tl-st.on { color: var(--mint); }
+.tl-st.warn { color: var(--amber); }
+@media (max-width: 1100px) { .tl-exp kbd, .tl-pos .tl-dim, .tl-clk .tl-dim { display: none; } }
+
+/* travelled: the strip turns accent so "this is not now" cannot be missed */
+#base.tl-strip.travel { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--panel)); box-shadow: 0 0 0 1px var(--accent), 0 8px 26px var(--shadow); }
+.tl-strip.travel .tl-pos b { color: var(--accent); }
+.bp .tl-back { height: 20px; padding: 0 7px; background: transparent; border: 1px solid var(--accent); color: var(--accent); font: 500 12px var(--mono); letter-spacing: 0.08em; }
+.bp .tl-back:hover { background: var(--accent); color: var(--paper); }
+
+/* the hairline */
+.tl-line { flex: 1 1 auto; min-width: 120px; align-self: stretch; position: relative; cursor: ew-resize; }
+.tl-line svg { display: block; width: 100%; height: 100%; overflow: visible; touch-action: none; }
+.tl-line svg:focus { outline: none; }
+.tl-line svg:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tl-hit { fill: transparent; }
+.tl-area { fill: var(--ink); fill-opacity: 0.12; }
+.tl-spark { fill: none; stroke: var(--ink-2); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.tl-base, .tl-tick { stroke: var(--ink-3); stroke-width: 1; }
+.tl-ms { stroke: var(--ink); stroke-width: 1.2; }
+.tl-hbase { stroke: var(--mint); stroke-opacity: 0.6; stroke-width: 1; }
+.tl-hel { fill: var(--mint); fill-opacity: 0.14; }
+.tl-arr { stroke: var(--amber); stroke-width: 1.4; }
+.tl-hhead { stroke: var(--mint); stroke-width: 1.6; }
+.tl-handle line { stroke: var(--amber); stroke-width: 1.6; }
+.tl-handle path { fill: var(--amber); }
+.tl-strip.travel .tl-handle line { stroke: var(--accent); stroke-width: 2; }
+.tl-strip.travel .tl-handle path { fill: var(--accent); }
+.tl-flag { position: absolute; bottom: calc(100% + 7px); padding: 2px 6px; background: var(--label-bg); border: 1px solid var(--accent); color: var(--accent); font: 500 12px/1.2 var(--mono); pointer-events: none; }
+
+/* ---------- the panel (expanded): slides up over the plan; it never moves the plan */
+#tlpanel { position: absolute; left: 14px; right: var(--rw, 14px); bottom: var(--bb); height: 96px; display: flex; gap: 12px; align-items: stretch; z-index: 8; pointer-events: none; filter: drop-shadow(0 14px 30px var(--shadow)); }
+#tlpanel > * { pointer-events: auto; }
+.bp-compact #tlpanel { height: 66px; }
+#tlpanel { background: var(--paper); }
+#tlpanel #keyplan, #tlpanel #timebox { background: var(--panel-solid); }

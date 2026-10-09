@@ -4,7 +4,8 @@
 // accepts the agent's recommendation (undo sits in the toast). A live product's questions are its
 // scan's open proposals: each card says the metric move it promises (the latest reading, then
 // latest + expected delta), the standard it rests on, size and risk, and offers Approve and Decline
-// (with an optional note, asked inline). Both are written to the product's store.
+// (with an optional note, asked inline). Both are written to the product's store. It lives in the
+// rail's decisions flyout.
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { fmtWait, metricHistory, morningStats, pname, sheetOf, type SimDecision } from '@/lib/model';
@@ -93,6 +94,19 @@ function Item({ d }: { d: SimDecision }) {
   );
 }
 
+/** The morning watch's entry ("While you were away"), in the decisions flyout's header (Kettle only). */
+export function MorningButton() {
+  const E = useEngine(), M = E.M;
+  useBp((s) => s.simV);
+  const ms = morningStats(M);
+  return (
+    <button type="button" className="bt morning-btn" title="Morning watch (M)" onClick={() => { E.setDockTab(null); E.toggleMorning(true); }}>
+      <span>While you were away</span><span className="am">{ms.changes} changes · {ms.asked} asked</span>
+    </button>
+  );
+}
+
+/** The decisions flyout: the reader's queue, most urgent first. */
 export function AsksTab() {
   const E = useEngine(), M = E.M, sim = M.sim;
   const s = useBp((s) => ({ who: s.who, view: s.view, simV: s.simV, askAll: s.askAll }), shallowEqual);
@@ -117,12 +131,8 @@ export function AsksTab() {
       </>
     );
   }
-  const ms = morningStats(M);
   return (
     <>
-      <button type="button" className="bt" style={{ margin: '10px 12px 2px', width: 'calc(100% - 24px)', justifyContent: 'space-between', height: 34, letterSpacing: '.02em', padding: '0 8px' }} onClick={() => E.toggleMorning(true)}>
-        <span>While you were away</span><span style={{ color: 'var(--amber)' }}>{ms.changes} changes · {ms.asked} asked</span>
-      </button>
       {s.who ? (
         <>
           <h3 className="dsec-h"><span>Waiting for {first}</span><span>{q.mine.length}</span></h3>

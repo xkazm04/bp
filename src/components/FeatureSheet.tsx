@@ -1,161 +1,193 @@
 'use client';
-// One feature as a document. The lens panels (one per enabled lens, from the manifests) follow the lens
-// mix: in General they all sit side by side; in a lens, its panel moves to the top and grows to its
-// reader's density while the others collapse to their headline (a Motion layout animation,
-// interruptible like the canvas tween). Each panel ends with its metric rows (MetricRows, from the
-// manifest); the Business section (as-is, core, variations) follows the panels, and a live product's
-// Screens strip follows that.
-import { useEffect, useRef } from 'react';
-import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
+// L4: one feature as a full page nested in the plan. The feature's tile grows into the page (the page
+// is revealed from the tile's rect outward, a clip-path morph of ~320 ms) while the plan dims and
+// blurs behind it, still showing at the edges; closing shrinks the page back into the tile. Under
+// reduced motion, a plain fade.
+//
+// The sticky header carries the breadcrumb (each crumb goes back to that level), the feature's code
+// and name, its stage and progress, and the tab strip: General, then every enabled lens from the
+// registry in order. The tab is the plan's lens: switching a tab switches the plan behind, and opening
+// from a lens view lands on that lens's tab. General is the overview (page/General.tsx); a lens tab is
+// that lens alone, laid out for its reader (page/LensTab.tsx). Sections enter in sequence and numbers
+// count up on open and on every tab switch (page/motion.tsx). The page scrolls inside; the plan behind
+// does not pan or zoom while it is open (the wheel goes to the page).
+//
+// The phone keeps the single-document view (sheet/SheetBody.tsx), re-exported here.
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion, useReducedMotion, type Variants } from 'motion/react';
 import type { Feature } from '@/lib/data';
-import { REV_DESC, STAGE_WORD, astat, fmtWait, isAgentId, lensOf, pname, type Model } from '@/lib/model';
-import { illoSVG } from '@/engine/render/illo';
-import { DefaultLensPanel, MetricRows } from './sheet/LensPanel';
-import { BusinessSection } from './sheet/Business';
-import { ScreensStrip } from './sheet/Screens';
-import { plainLine } from './sheet/words';
-import { Mark, PatternDefs, StageSym, agentMark } from './Symbols';
-import { shallowEqual, useBp, useDensity, useEngine, useLive, useVariant } from './hooks';
+import { views, type BayNode, type BldNode, type RoomNode, type WingNode } from '@/lib/model';
+import type { Crumb } from '@/engine/state';
+import { PatternDefs } from './Symbols';
+import { shallowEqual, useBp, useEngine, useVariant } from './hooks';
+import { GeneralTab } from './page/General';
+import { LensTab } from './page/LensTab';
+import { StageLadder } from './page/bits';
+import { CountMemo, EnterDelay } from './page/motion';
+import './page.css';
 
-function SwarmSection({ f }: { f: Feature }) {
-  const E = useEngine(), M = E.M, sim = M.sim;
-  useBp((s) => s.simV);
-  if (!sim.has) return null;
-  const ag = sim.AGF[f.id] || [], ds = sim.DOF[f.id] || [], ords = sim.ordersOn(f.id), ev = sim.log.filter((e) => e.f === f.id).slice(0, 4);
+export { SheetBody } from './sheet/SheetBody';
+
+type Rect = { x: number; y: number; w: number; h: number };
+const MORPH = 0.32;
+
+/** The page's box in the UI layer's px: inset from the screen so the plan shows around it. */
+function pageBox(U: number): Rect {
+  const W = window.innerWidth / U, H = window.innerHeight / U;
+  const x = Math.max(28, (W - 1360) / 2), y = 18;
+  return { x, y, w: W - 2 * x, h: H - 2 * y };
+}
+/** The transform that lays the page box over the tile's rect (origin top left): where the morph starts and ends. */
+function overTile(t: Rect, b: Rect): string {
+  const sx = Math.max(0.02, t.w / b.w), sy = Math.max(0.02, t.h / b.h);
+  return `translate(${(t.x - b.x).toFixed(1)}px, ${(t.y - b.y).toFixed(1)}px) scale(${sx.toFixed(4)}, ${sy.toFixed(4)})`;
+}
+
+function crumbLabel(E: ReturnType<typeof useEngine>, c: Crumb): string {
+  const o = E.placeById(c.t, c.id);
+  if (!o) return c.id;
+  if (c.t === 'bld') return (o as BldNode).name;
+  if (c.t === 'wing') { const w = o as WingNode; return 'Wing ' + w.def.letter + ' · ' + w.def.name; }
+  if (c.t === 'room') return (o as RoomNode).d.name;
+  return (o as BayNode).cap.name;
+}
+
+function Tabs({ f }: { f: Feature }) {
+  const E = useEngine(), V = useVariant(), P = E.M.P;
+  const view = useBp((s) => s.view);
   return (
-    <div className="swm">
-      <h4>{sim.live ? 'The scan on this feature · live' : 'The swarm on this feature · simulated'}</h4>
-      {!ag.length && !ds.length && !ev.length && <div style={{ color: 'var(--ink-2)', fontSize: 14, padding: '4px 0' }}>No agent is working here right now.{f.stage === 'live' ? ' It is live and quiet.' : ''}</div>}
-      {ag.map((a) => (
-        <div key={a.id} className="arow">
-          <span><Mark k={agentMark(astat(a))} w={18} h={13} /></span>
-          <span><b style={{ color: 'var(--ink-hi)', fontWeight: 500 }}>{a.base}</b> <span style={{ color: 'var(--ink-2)' }}>· {sim.crewName(a.sq)} · {astat(a)}</span><br /><span style={{ color: 'var(--ink-2)', fontSize: 13 }}>{a.task}</span></span>
-          <span className="pb"><i style={{ width: Math.round(a.pct) + '%' }} /></span>
-          <span style={{ font: '500 12px var(--mono)', color: 'var(--ink-2)' }}>{Math.round(a.pct)}%{sim.live ? '' : ' · $' + a.cost.toFixed(0)}</span>
-        </div>
-      ))}
-      {ds.map((d) => (
-        <div key={d.id} className="dq">
-          <b>{d.base} · {d.q}</b>
-          <div style={{ fontSize: 13, color: 'var(--ink-2)', margin: '2px 0 4px' }}>{sim.live ? 'For whoever reviews' : pname(M.P, d.decider) + ' decides'} · waiting {fmtWait(sim.waitMin(d))} · holds {sim.blocksNow(d)} agent{sim.blocksNow(d) === 1 ? '' : 's'}</div>
-          {d.opts.map((o, i) => <button key={i} type="button" className={'op' + (i === d.rec ? ' rec' : '')} onClick={() => E.decide(d.id, i)}><i className="no">{i + 1}</i><b>{o.label}{i === d.rec && <em>agent suggests</em>}</b><span>{o.consequence}</span></button>)}
-        </div>
-      ))}
-      {ords.length ? <div style={{ marginTop: 8, fontSize: 14 }}>{ords.map((x) => <div key={x.id}><span className="ag" style={{ margin: '0 6px 0 0', color: x.vf.includes(f.id) ? 'var(--red-2)' : 'var(--amber)', borderColor: 'currentColor' }}>{x.id}{x.vf.includes(f.id) ? ' BREACHED' : ''}</span>{x.text}</div>)}</div> : null}
-      {ev.length ? <div style={{ marginTop: 8, fontSize: 13, color: 'var(--ink-2)' }}>{ev.map((e, i) => <div key={i}>{new Date(sim.at0 + e.t * 1000).toISOString().slice(11, 16)} · {e.text}</div>)}</div> : null}
-      {!sim.live && <div className="btns">
-        <button type="button" className="btn" onClick={() => E.preview(ag.some((a) => a.paused) ? 'resume' : 'pause', undefined, f.id)}>{ag.some((a) => a.paused) ? 'Resume agents here' : 'Pause agents here'}</button>
-        <button type="button" className="btn" onClick={() => E.preview('push', undefined, f.id)}>Put the swarm on this…</button>
-        <button type="button" className="btn" onClick={() => { E.setTarget({ [f.id]: 1 }, f.name); E.patch({ ordMenu: true }); }}>Write an order here…</button>
-      </div>}
+    <div className="pg-tabs" role="tablist" aria-label="Feature page tabs (the plan's lens follows)">
+      {views(P).map((k, i) => {
+        const d = P.LENS[k], on = view === k, h = d ? f.lens[k]?.h ?? 'unmeasured' : '';
+        const sub = d ? V.ui?.tabLabel?.(k) ?? d.name : 'Overview';
+        return (
+          <button key={k} type="button" role="tab" aria-selected={on} className={on ? 'on' : ''} onClick={() => E.setView(k)}
+            title={(d ? d.name + ': ' + (h === 'na' ? 'does not apply' : h) : 'General: the overview') + (i < 9 ? ' (' + (i + 1) + ')' : '')}>
+            <span className="sh">{d ? d.short : 'GEN'}{d ? <i className={'hd ' + h} aria-hidden="true" /> : null}</span>
+            <span className="nm">{sub}</span>
+            {on && <motion.span layoutId="pg-tab-uline" className="uline" transition={{ type: 'spring', stiffness: 420, damping: 36 }} />}
+          </button>
+        );
+      })}
     </div>
   );
 }
 
-function LensPanels({ f, M }: { f: Feature; M: Model }) {
-  const V = useVariant(), dens = useDensity();
-  const view = useBp((s) => s.view);
-  const Panel = V.ui?.SheetPanel ?? DefaultLensPanel, scan = useLive()?.product.scan;
-  const ids = M.P.lenses.map((l) => l.id);
-  const order = lensOf(M.P, view) ? [view, ...ids.filter((l) => l !== view)] : ids;
+function Head({ f, back, closeRef }: { f: Feature; back: (depth: number) => void; closeRef: React.RefObject<HTMLButtonElement | null> }) {
+  const E = useEngine(), M = E.M, P = M.P, T = M.L.TILE[f.id];
+  const place = useBp((s) => s.place, shallowEqual);
+  const ms = f.milestone ? P.MS[f.milestone] : null;
   return (
-    <LayoutGroup>
-      <div className="ev6">
-        {order.map((l) => {
-          const cur = view === l, mini = view !== 'general' && !cur;
-          return (
-            <motion.div key={l} layout transition={{ type: 'spring', stiffness: 260, damping: 30 }} className={'evp ' + (f.lens[l]?.h ?? 'unmeasured') + (cur ? ' cur' : '') + (mini ? ' mini' : '')}>
-              <Panel lens={l} def={M.P.LENS[l]} f={f} model={M} density={dens(l)} expanded={cur} view={view} />
-              {!mini && <MetricRows def={M.P.LENS[l]} f={f} model={M} scan={scan} all={cur} fl={f.lens[l]} />}
-            </motion.div>
-          );
-        })}
+    <header className="pg-head">
+      <div className="pg-bar">
+        <nav className="pg-crumbs" aria-label="Where this feature is">
+          <button type="button" onClick={() => back(0)}>{P.scale > 1 ? 'Campus' : 'Site'}</button>
+          {place.map((c, i) => <span key={c.id}><i aria-hidden="true">›</i><button type="button" onClick={() => back(i + 1)}>{crumbLabel(E, c)}</button></span>)}
+          <span><i aria-hidden="true">›</i><b aria-current="page">{f.name}</b></span>
+        </nav>
+        <div className="pg-acts">
+          <button type="button" className="btn" onClick={() => E.toggleBlast(f.id)}>Blast radius · B</button>
+          <button type="button" className="btn" ref={closeRef} onClick={() => E.closeFeature()}>Back to plan · Esc</button>
+        </div>
       </div>
-    </LayoutGroup>
+      <div className="pg-title">
+        <div className="bubble" title="Detail callout: detail number over feature code"><span className="a">{T.idx}</span><span className="b">{f.code || '—'}</span></div>
+        <div className="tt">
+          <div className="k">{[f.priority, f.kind, ms ? (ms.code ? ms.code + ' ' : '') + ms.name : null].filter(Boolean).join(' · ') || 'Feature'}</div>
+          <h2>{f.name}</h2>
+        </div>
+        <StageLadder f={f} M={M} />
+      </div>
+      <Tabs f={f} />
+    </header>
   );
 }
 
-export function SheetBody({ f }: { f: Feature }) {
-  const E = useEngine(), M = E.M, P = M.P, T = M.L.TILE[f.id];
-  const pl = plainLine(P, f, M.sim), ms = f.milestone ? P.MS[f.milestone] : null;
-  const acts = P.activity.filter((a) => a.feature === f.id).slice(0, 8);
-  const who = (id: string) => <>{pname(P, id)}{isAgentId(P, id) && <span className="ag">AGENT</span>}</>;
-  const dl = (ids: string[], empty: string) => ids.length ? ids.map((id) => { const g = P.F[id]; return <button key={id} type="button" onClick={() => E.openFeature(id)}><StageSym st={g.stage} w={20} h={13} /><span>{g.name}</span><span className="w">{g.stage ? STAGE_WORD[g.stage] : 'Unknown'}</span></button>; }) : <div className="none">{empty}</div>;
+function Page({ f, enter, onCrumb }: { f: Feature; enter: number; onCrumb: (depth: number) => void }) {
+  const E = useEngine();
+  const view = useBp((s) => s.view);
+  const memo = useMemo(() => new Map<string, number>(), []);
+  const closeRef = useRef<HTMLButtonElement>(null), scroll = useRef<HTMLDivElement>(null);
+  const first = useRef(true);
+  // the first tab waits for the morph; later tab switches enter at once
+  const delay = first.current ? enter : 0;
+  useEffect(() => { first.current = false; }, []);
+  useEffect(() => { scroll.current?.scrollTo({ top: 0 }); }, [view]);
+  useEffect(() => { const t = window.setTimeout(() => closeRef.current?.focus({ preventScroll: true }), enter * 1000 + 40); return () => clearTimeout(t); }, [enter]);
+  const isLens = !!E.M.P.LENS[view];
   return (
-    <>
+    <CountMemo.Provider value={memo}>
       <PatternDefs />
-      <div className="dh">
-        <div className="bubble" title="Detail callout: detail number over feature code"><span className="a">{T.idx}</span><span className="b">{f.code || '—'}</span></div>
-        <div>
-          <div className="k">{P.scale > 1 ? T.wing.bld.name + ' › ' : ''}Wing {T.wing.def.letter} {T.wing.def.name} › {P.D[f.domain].name} › {P.C[f.capability].name}<br />{[f.priority, f.kind, ms ? (ms.code ? ms.code + ' ' : '') + ms.name : null].filter(Boolean).join(' · ')}</div>
-          <h2>{f.name}</h2>
-          <div className="sum">{f.summary}</div>
-          <div className="plain"><b>{pl.strong}</b> {pl.rest.join(' ')} {pl.bad && <span className="bad">{pl.bad}</span>}</div>
-          {(f.trouble.length || f.blockedBy.length) ? (
-            <div className="tens">
-              {f.trouble.filter((t) => t.h === 'bad').map((t) => <span key={t.lens}><i />{P.LENS[t.lens].name}: {t.why}</span>)}
-              {f.blockedBy.length ? <span><i />Blocked by {f.blockedBy.map((x) => <button key={x} type="button" className="btn" style={{ height: 24, marginLeft: 4, textTransform: 'none', fontSize: 14 }} onClick={() => E.openFeature(x)}>{P.F[x].name}</button>)}</span> : null}
-            </div>
-          ) : null}
-        </div>
+      <Head f={f} back={onCrumb} closeRef={closeRef} />
+      <div className="pg-scroll" ref={scroll} tabIndex={-1}>
+        <EnterDelay.Provider value={delay}>
+          <div className="pg-body" key={view} role="tabpanel" aria-label={isLens ? E.M.P.LENS[view].name : 'General'}>
+            {isLens ? <LensTab lens={view} f={f} /> : <GeneralTab f={f} />}
+          </div>
+        </EnterDelay.Provider>
+        <div className="foot">{E.M.live ? 'Read from the live scan' : 'Illustrative sample data · drawings are stylised, not screenshots'}</div>
       </div>
-      <SwarmSection f={f} />
-      <div className="dgrid">
-        <div>
-          <div className="illo"><div dangerouslySetInnerHTML={{ __html: illoSVG(P.D[f.domain].base, 'currentColor') }} style={{ color: 'var(--ink)' }} /><span className="cap">DETAIL {T.idx} · {(P.D[f.domain].code || P.D[f.domain].name).toUpperCase()} · STYLISED</span></div>
-          <div className="mtb">
-            <div><span className="l">Drawn by</span>{f.builtBy.length ? f.builtBy.map((id, i) => <span key={id}>{i ? ', ' : ''}{who(id)}</span>) : '—'}</div>
-            <div><span className="l">Flagged by</span>{(() => {
-              const bad = f.trouble.filter((t) => t.h === 'bad').map((t) => P.LENS[t.lens]?.name ?? t.lens), watch = f.trouble.length - bad.length;
-              return bad.length ? <span className="nc">{bad.join(', ')}</span> : watch ? watch + ' lens' + (watch > 1 ? 'es' : '') + ' to watch' : f.health === 'good' ? 'No lens ✓' : 'Not measured yet';
-            })()}</div>
-            <div><span className="l">Owner</span>{pname(P, f.owner)}</div>
-            <div><span className="l">Stage</span>{f.stage ? STAGE_WORD[f.stage] + ' · since ' + f.stageSince : 'Unknown'}</div>
-            <div className="full"><span className="l">Lives in</span>{f.surfaces.map((s) => <span key={s} className="ag" style={{ margin: '0 4px 0 0' }}>{s}</span>)}</div>
-          </div>
-          <table className="revt"><thead><tr><th>REV</th><th>DATE</th><th>DESCRIPTION</th></tr></thead><tbody>
-            {f.revs.map((h, i) => <tr key={i} className={i === f.revs.length - 1 ? 'now' : ''}><td className="m">{String.fromCharCode(65 + i)}</td><td className="m">{h.date}</td><td>{REV_DESC[h.stage]}</td></tr>)}
-          </tbody></table>
-          {f.parts && <div className="dsec"><h4>Parts · {f.parts.filter((p) => p.done).length} of {f.parts.length} done</h4><div className="parts">{f.parts.map((p) => <span key={p.name} className={p.done ? 'd' : ''}>{p.done ? '✓ ' : '○ '}{p.name}</span>)}</div></div>}
-        </div>
-        <div>
-          <LensPanels f={f} M={M} />
-          <BusinessSection f={f} />
-          <ScreensStrip f={f} />
-          <div className="dsec deps">
-            <div className="dl"><h4>Depends on · {f.dependsOn.length}</h4>{dl(f.dependsOn, 'Nothing, it stands on its own')}</div>
-            <div className="dl"><h4>Used by · {f.usedBy.length} · blast radius {M.closure.of(f.id).length}</h4>{dl(f.usedBy, 'Nothing depends on it')}</div>
-          </div>
-          {f.notes.length ? <div className="dsec"><h4>Red-pencil notes</h4><div className="notes">{f.notes.map((n, i) => <div key={i} className="pn">“{n.text}”<small>— {pname(P, n.by)}, {n.date}</small></div>)}</div></div> : null}
-          <div className="dsec"><h4>Recent activity · 14 days</h4>
-            {acts.length ? <ul className="acts">{acts.map((a, i) => <li key={i} className={a.type === 'incident' ? 'inc' : ''}><span className="m">{a.at.slice(5, 10)} {a.at.slice(11, 16)}</span><span className="a">{pname(P, a.actor)}{isAgentId(P, a.actor) ? ' ◇' : ''}</span><span>{a.text}{a.severity ? ' · ' + a.severity : ''}</span></li>)}</ul> : <div className="dl"><div className="none">Quiet, no events in the last 14 days</div></div>}
-          </div>
-          <div className="foot">Illustrative sample data · drawings are stylised, not screenshots</div>
-        </div>
-      </div>
-    </>
+    </CountMemo.Provider>
   );
+}
+
+/** Mount the page's content one frame after the shell, so the morph is already running (on the compositor) while it renders. */
+function Deferred({ children }: { children: React.ReactNode }) {
+  const [on, setOn] = useState(false);
+  useEffect(() => { const r = requestAnimationFrame(() => setOn(true)); return () => cancelAnimationFrame(r); }, []);
+  return on ? <>{children}</> : null;
 }
 
 export function FeatureSheet() {
-  const E = useEngine(), M = E.M;
+  const E = useEngine();
   const s = useBp((s) => ({ open: s.open, phone: s.phone }), shallowEqual);
-  const closeRef = useRef<HTMLButtonElement>(null), scroll = useRef<HTMLDivElement>(null);
-  const f = s.open ? M.P.F[s.open] : null;
-  useEffect(() => { if (f) { scroll.current?.scrollTo({ top: 0 }); const t = window.setTimeout(() => closeRef.current?.focus({ preventScroll: true }), 420); return () => clearTimeout(t); } }, [f]);
-  const width = `min(950px, calc(100% - 300px))`;
+  const reduce = useReducedMotion() ?? false;
+  const f = s.open ? E.M.P.F[s.open] ?? null : null;
+  // geometry: the page box and the tile rect, read when the page opens and again when it closes
+  const [box, setBox] = useState<Rect | null>(null);
+  const tile = useRef<Rect | null>(null), lastId = useRef<string | null>(null), crumbed = useRef(false);
+  // every opening is a new page instance: one that opens while the last is still shrinking away runs its own morph
+  const nth = useRef(0), wasOpen = useRef(false);
+  if (!!f !== wasOpen.current) { wasOpen.current = !!f; if (f) nth.current++; }
+  useLayoutEffect(() => {
+    if (!f) return;
+    crumbed.current = false; lastId.current = f.id;
+    setBox(pageBox(E.U || 1));
+    const r = () => setBox(pageBox(E.U || 1));
+    window.addEventListener('resize', r);
+    return () => window.removeEventListener('resize', r);
+  }, [f, E]);
+  // the tile's rect at render time: on open (the camera has settled, see Engine.openFeature) and on close (the plan has not moved)
+  if (f) tile.current = E.tileRect(f.id);
+  else if (lastId.current && !crumbed.current) tile.current = E.tileRect(lastId.current);
+  const onCrumb = (depth: number) => { crumbed.current = true; tile.current = null; E.crumb(depth); };
+
+  const b = box ?? (typeof window !== 'undefined' ? pageBox(E.U || 1) : { x: 0, y: 0, w: 0, h: 0 });
+  // transform and opacity only, so the morph runs on the compositor while the page's content mounts
+  const FULL = 'translate(0px, 0px) scale(1, 1)';
+  const vPage: Variants = reduce
+    ? { from: { opacity: 0, transition: { duration: 0.15 } }, full: { opacity: 1, transition: { duration: 0.15 } } }
+    : {
+        from: (t: Rect | null) => (t ? { transform: overTile(t, b), opacity: 1, transition: { duration: MORPH * 0.85, ease: [0.4, 0, 0.2, 1] } } : { transform: FULL, opacity: 0, transition: { duration: 0.18 } }),
+        full: { transform: FULL, opacity: 1, transition: { duration: MORPH, ease: [0.2, 0.7, 0.2, 1] } },
+      };
+  const vInner: Variants = reduce
+    ? { from: { opacity: 1 }, full: { opacity: 1 } }
+    : { from: { opacity: 0, transition: { duration: 0.08 } }, full: { opacity: 1, transition: { duration: 0.2, delay: MORPH * 0.55 } } };
   return (
-    <AnimatePresence>
-      {f && !s.phone && (
-        <motion.section id="detail" key="sheet" aria-label="Feature detail sheet" style={{ width }} initial={{ x: '105%' }} animate={{ x: 0 }} exit={{ x: '105%' }} transition={{ type: 'spring', stiffness: 220, damping: 32 }}>
-          <div className="frame" />
-          <div id="dbar">
-            <button type="button" className="btn" onClick={() => E.toggleBlast(f.id)}>Blast radius · B</button>
-            <button type="button" className="btn" ref={closeRef} onClick={() => E.closeFeature()}>Back to plan · Esc</button>
-          </div>
-          <div id="dscroll" ref={scroll} tabIndex={-1}><SheetBody key={f.id} f={f} /></div>
-        </motion.section>
-      )}
+    <AnimatePresence custom={tile.current}>
+      {f && !s.phone && [
+        <motion.div key={"dim" + nth.current} className="pg-dim" aria-hidden="true" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduce ? 0.15 : MORPH }}
+          onClick={() => E.closeFeature()} onWheel={(e) => document.getElementById('detail')?.querySelector('.pg-scroll')?.scrollBy({ top: e.deltaY })} />,
+        <motion.section key={"page" + nth.current} id="detail" className="pg" aria-label={'Feature page: ' + f.name} role="dialog" aria-modal="false"
+          style={{ left: b.x, top: b.y, width: b.w, height: b.h, transformOrigin: '0 0' }}
+          custom={tile.current} variants={vPage} initial="from" animate="full" exit="from">
+          <motion.div className="pg-in" variants={vInner}>
+            <Deferred key={f.id}><Page f={f} enter={reduce ? 0 : MORPH * 0.55} onCrumb={onCrumb} /></Deferred>
+          </motion.div>
+          <div className="pg-frame" aria-hidden="true" />
+        </motion.section>,
+      ]}
     </AnimatePresence>
   );
 }
