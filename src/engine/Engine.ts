@@ -981,9 +981,12 @@ export class Engine {
   }
   private readHash() {
     const h: Record<string, string> = {};
-    location.hash.replace(/^#/, '').split('&').forEach((kv) => { const a = kv.split('='); if (a[0]) h[a[0]] = decodeURIComponent(a[1] || ''); });
+    // A mangled share link (truncated at a %-escape) skips that pair; the valid ones still apply.
+    const dec = (s: string): string | null => { try { return decodeURIComponent(s); } catch { return null; } };
+    location.hash.replace(/^#/, '').split('&').forEach((kv) => { const a = kv.split('='); const v = dec(a[1] || ''); if (a[0] && v !== null) h[a[0]] = v; });
     if (!Object.keys(h).length) return;
     this.hashLock = true;
+    try {
     this.endIntro();
     if (h.lens && h.lens !== 'general' && lensOf(this.M.P, h.lens)) { this.store.set({ view: h.lens }); this.mix.to(h.lens, true); }
     if (h.d && ['1', '7', '14'].includes(h.d)) this.store.set({ delta: +h.d as 1 | 7 | 14 });
@@ -996,7 +999,7 @@ export class Engine {
       if (t) this.cam.set(this.fitOf({ t: t as Crumb['t'], o: this.placeById(t, h.at)! }));
     }
     if (h.open && this.M.P.F[h.open]) { this.openFeature(h.open, 0); this.camBefore = h.at ? null : { ...this.HOME }; }
-    this.hashLock = false;
+    } finally { this.hashLock = false; }
   }
   destroy() {
     this.destroyed = true;
