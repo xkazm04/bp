@@ -9,3 +9,7 @@ docs/shots/
 .next-*/
 .spark/
 .claude/worktrees/
+
+# live products (bp.products.example.json shows the shape) and the scan-demo product
+bp.products.local.json
+.demo/

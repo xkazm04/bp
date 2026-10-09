@@ -1,0 +1,6 @@
+{
+  "products": [
+    { "slug": "personas", "name": "Personas", "root": "C:/Users/you/code/personas" },
+    { "slug": "kettle-live", "name": "Kettle (live demo)", "root": ".demo/kettle-live" }
+  ]
+}
