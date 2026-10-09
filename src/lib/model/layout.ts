@@ -28,9 +28,13 @@ const dnum = (d: string) => Date.parse(d + 'T00:00:00Z') / 864e5;
 
 /** Wing order is derived from the base data so every product line shares it. */
 export function wingOrder(K: Structure): WingDef[] {
-  const defs = WING_DEFS.map((w) => ({ ...w, doms: w.doms.slice(), letter: '', median: 0 }));
-  const known = new Set(defs.flatMap((w) => w.doms));
-  for (const d of K.domains) if (!known.has(d.id)) defs[defs.length - 1].doms.push(d.id);
+  const sample = new Set(WING_DEFS.flatMap((w) => w.doms));
+  // A product that shares no domain with the sample's wings (a live product) gets one wing per domain;
+  // otherwise unknown domains join the sample's last wing.
+  const defs: WingDef[] = K.domains.some((d) => sample.has(d.id))
+    ? WING_DEFS.map((w) => ({ ...w, doms: w.doms.slice(), letter: '', median: 0 }))
+    : K.domains.map((d) => ({ k: d.id, name: d.name, plain: d.summary || d.name, doms: [d.id], art: d.id, letter: '', median: 0 }));
+  for (const d of K.domains) if (!defs.some((w) => w.doms.includes(d.id))) defs[defs.length - 1].doms.push(d.id);
   for (const w of defs) {
     const ds = K.features.filter((f) => w.doms.includes(f.domain)).map((f) => dnum(f.created)).sort((a, b) => a - b);
     w.median = ds.length ? ds[Math.floor(ds.length / 2)] : 0;

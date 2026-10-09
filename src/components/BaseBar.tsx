@@ -88,7 +88,7 @@ function Revisions() {
     el.current?.setAttribute('width', String(Math.max(0, x - tl.o0)));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [E, W, H]);
-  const snaps = M.P.snapshots, max = Math.max(...snaps.map((x) => x.total)) * 1.05;
+  const snaps = M.P.snapshots, max = Math.max(...snaps.map((x) => x.total)) * 1.05 || 1; // a product with no stages has all-zero totals
   const cum = snaps.map(() => 0);
   const polys = ORDER.map((st) => {
     const up: string[] = [], dn: string[] = [];
