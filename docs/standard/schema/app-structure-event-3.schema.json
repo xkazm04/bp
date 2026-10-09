@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://app-structure.example/schema/app-structure-event-3.schema.json",
+  "title": "App structure v3 event (one line of context-map.events.jsonl)",
+  "description": "Append-only history beside the map. Readers ignore event types they do not know, so `type` is open; the known types require their fields.",
+  "type": "object",
+  "required": ["at", "type"],
+  "properties": {
+    "at": { "$ref": "app-structure-3.schema.json#/$defs/datetime" },
+    "type": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "feature": { "$ref": "app-structure-3.schema.json#/$defs/slug" },
+    "lens": { "$ref": "lens-manifest-1.schema.json#/$defs/lensId" },
+    "kpi": { "$ref": "app-structure-3.schema.json#/$defs/slug" },
+    "milestone": { "$ref": "app-structure-3.schema.json#/$defs/slug" },
+    "from": { "type": "string" },
+    "to": { "type": "string" },
+    "actor": { "type": "string" },
+    "source": { "type": "string" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "type": { "const": "stage" } } },
+      "then": {
+        "required": ["feature", "from", "to"],
+        "properties": {
+          "from": { "$ref": "app-structure-3.schema.json#/$defs/stage" },
+          "to": { "$ref": "app-structure-3.schema.json#/$defs/stage" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "lens-health" } } },
+      "then": {
+        "required": ["feature", "lens", "from", "to"],
+        "properties": {
+          "from": { "enum": ["good", "watch", "bad", "unmeasured", "na"] },
+          "to": { "enum": ["good", "watch", "bad", "unmeasured", "na"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "kpi-threshold" } } },
+      "then": { "required": ["kpi", "from", "to"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "milestone" } } },
+      "then": {
+        "required": ["milestone", "from", "to"],
+        "properties": {
+          "from": { "enum": ["planned", "active", "shipped"] },
+          "to": { "enum": ["planned", "active", "shipped"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "enum": ["feature-added", "feature-archived"] } } },
+      "then": { "required": ["feature"] }
+    },
+    {
+      "if": { "properties": { "type": { "enum": ["lens-enabled", "lens-disabled"] } } },
+      "then": { "required": ["lens"] }
+    }
+  ]
+}

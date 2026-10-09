@@ -1,0 +1,45 @@
+{
+  "$schema": "app-structure/3",
+  "version": 3,
+  "generator": "hand",
+  "project": { "slug": "kettle", "name": "Kettle" },
+  "features": [
+    { "slug": "book-a-class", "name": "Book a class", "stage": "live", "tier": "major" },
+    { "slug": "loyalty-points", "name": "Loyalty points", "stage": "idea", "tier": "standard" },
+    { "slug": "spot-selection", "name": "Spot selection", "stage": "flagged", "tier": "standard" },
+    { "slug": "class-packs", "name": "Class packs", "stage": "live", "tier": "standard" },
+    { "slug": "virtual-classes", "name": "Virtual classes", "stage": "live", "tier": "standard" }
+  ],
+  "lenses": [
+    { "id": "com.kettle.support", "version": "0.1.0", "source": "project", "enabled": true, "manifest": {
+      "$schema": "lens-manifest/1", "id": "com.kettle.support", "version": "0.1.0", "name": "Support", "short": "SUP",
+      "description": "Support load once customers have the feature.",
+      "reader": { "role": "support", "density": "standard" },
+      "fields": [
+        { "key": "tickets30d", "label": "Tickets (30 days)", "type": "integer", "min": 0, "max": 50, "headline": true },
+        { "key": "stage", "label": "Stage", "type": "enum",
+          "values": ["idea", "specified", "in-dev", "in-review", "flagged", "live", "deprecated"], "source": { "feature": "stage" } },
+        { "key": "tier", "label": "Tier", "type": "string", "source": { "feature": "tier" } }
+      ],
+      "health": {
+        "applies_when": { "field": "stage", "in": ["flagged", "live", "deprecated"] },
+        "rules": [
+          { "when": { "all": [ { "field": "tier", "eq": "major" }, { "field": "tickets30d", "gte": 20 } ] },
+            "health": "bad", "reason": "{tickets30d} tickets in 30 days on a {tier} feature" },
+          { "when": { "field": "tickets30d", "gte": 10 }, "health": "watch", "reason": "{tickets30d} tickets in 30 days" }
+        ],
+        "default": "good",
+        "rollup": { "method": "share", "watch": 0.25, "bad": 0.2 }
+      },
+      "presentation": { "glyph": "pulse", "line": "solid", "evidence": ["tickets30d"], "measures": "tickets30d" }
+    } }
+  ],
+  "facets": {
+    "book-a-class": { "com.kettle.support": { "values": { "tickets30d": 25 } } },
+    "loyalty-points": { "com.kettle.support": {
+      "values": { "tickets30d": 3 },
+      "override": { "health": "bad", "by": "sam", "why": "Asked about daily", "until": "2099-12-31" } } },
+    "spot-selection": { "com.kettle.support": { "values": { "tickets30d": 12, "stage": "live" } } },
+    "class-packs": { "com.kettle.support": { "applicable": false, "values": { "tickets30d": 40 } } }
+  }
+}

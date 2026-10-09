@@ -1,0 +1,46 @@
+{
+  "$schema": "lens-manifest/1",
+  "id": "quality",
+  "version": "1.0.0",
+  "name": "Quality",
+  "short": "QA",
+  "description": "End-to-end tests and open bugs.",
+  "reader": { "role": "quality", "density": "standard" },
+  "fields": [
+    { "key": "status", "label": "Tests", "type": "enum", "values": ["untested", "testing", "partial", "failing", "passed"],
+      "description": "Test state. The lens does not apply to untested work or before development starts." },
+    { "key": "e2eTests", "label": "E2E tests", "type": "integer", "min": 0 },
+    { "key": "e2ePassing", "label": "E2E passing", "type": "integer", "min": 0 },
+    { "key": "e2ePassPct", "label": "E2E pass rate", "type": "percent", "headline": true,
+      "description": "e2ePassing as a share of e2eTests. Omitted when there are no end-to-end tests." },
+    { "key": "openBugsP1", "label": "Open P1 bugs", "type": "integer", "min": 0 },
+    { "key": "openBugsP2", "label": "Open P2 bugs", "type": "integer", "min": 0 },
+    { "key": "openBugsP3", "label": "Open P3 bugs", "type": "integer", "min": 0 },
+    { "key": "stage", "label": "Stage", "type": "enum",
+      "values": ["idea", "specified", "in-dev", "in-review", "flagged", "live", "deprecated"],
+      "source": { "feature": "stage" }, "description": "The feature's lifecycle stage, read from the feature." }
+  ],
+  "health": {
+    "applies_when": { "all": [
+      { "not": { "field": "status", "eq": "untested" } },
+      { "not": { "field": "stage", "in": ["idea", "specified"] } }
+    ] },
+    "rules": [
+      { "when": { "field": "status", "eq": "failing" }, "health": "bad", "reason": "End-to-end tests failing" },
+      { "when": { "field": "openBugsP1", "gt": 0 }, "health": "bad", "reason": "{openBugsP1} open P1 bugs" },
+      { "when": { "field": "status", "eq": "partial" }, "health": "watch", "reason": "Tests only partly pass" },
+      { "when": { "field": "e2ePassPct", "lt": 100 }, "health": "watch", "reason": "{e2ePassing} of {e2eTests} end-to-end tests pass" },
+      { "when": { "all": [ { "field": "stage", "in": ["flagged", "live", "deprecated"] }, { "field": "e2eTests", "lt": 3 } ] },
+        "health": "watch", "reason": "Shipped with only {e2eTests} end-to-end tests" }
+    ],
+    "default": "good",
+    "rollup": { "method": "share", "watch": 0.2, "bad": 0.1 }
+  },
+  "presentation": {
+    "glyph": "check",
+    "line": "dimension",
+    "accent": { "dark": "#7cc0ff", "light": "#1f5fbf" },
+    "evidence": ["e2ePassPct", "openBugsP1", "openBugsP2"],
+    "measures": "e2ePassPct"
+  }
+}

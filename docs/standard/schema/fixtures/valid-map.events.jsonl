@@ -1,0 +1,4 @@
+{"at":"2026-09-23T10:00:00Z","type":"stage","feature":"failed-payment-dunning","from":"in-dev","to":"in-review","actor":"forge-1","source":"scan"}
+{"at":"2026-09-30T14:02:00Z","type":"stage","feature":"failed-payment-dunning","from":"in-review","to":"flagged","actor":"tender","source":"scan"}
+{"at":"2026-10-01T09:00:00Z","type":"lens-health","feature":"failed-payment-dunning","lens":"security","from":"bad","to":"watch","actor":"jonas","source":"hand"}
+{"at":"2026-10-08T06:00:00Z","type":"kpi-threshold","kpi":"dunning-sms-spend","from":"on-track","to":"at-risk","source":"scan"}

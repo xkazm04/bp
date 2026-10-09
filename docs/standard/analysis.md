@@ -79,6 +79,13 @@ These conventions were decided directly, without a question, because the evidenc
   must keep them.
 - **`features[]` replaces `use_cases[]`.** A v3 reader accepts `use_cases[]` as a stand-in when
   `features[]` is missing. A v3 writer emits only `features[]`.
+- **Lens rules may read core feature fields (added during the WP1 build).** Fields may bind to
+  core fields with `source: { "feature": "stage" }` (whitelist: stage, priority, kind, tier,
+  milestone, status). These values are read at evaluation and never stored in facets.
+  `health.applies_when` decides when a lens is `na`. Precedence: `applicable: false`, then
+  `applies_when`, then an in-date override, then rules, then the default. Evidence: with only
+  facet values, security reproduced 87.9% of the sample's health; with these two pieces, all six
+  lenses reproduce 100%.
 - **JSON Schema (draft 2020-12) is the normative artifact.** It works for both Rust and
   TypeScript. TypeScript types are written to match it and checked against the Kettle example.
 

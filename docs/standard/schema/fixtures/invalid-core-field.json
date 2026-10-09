@@ -1,0 +1,152 @@
+{
+  "$schema": "lens-manifest/1",
+  "id": "security",
+  "version": "1.0.0",
+  "name": "Security",
+  "short": "SEC",
+  "description": "Data classes, security reviews and open findings.",
+  "reader": {
+    "role": "security",
+    "density": "standard"
+  },
+  "fields": [
+    {
+      "key": "dataClass",
+      "label": "Data class",
+      "type": "enum",
+      "values": [
+        "public",
+        "internal",
+        "personal",
+        "payment"
+      ],
+      "headline": true
+    },
+    {
+      "key": "review",
+      "label": "Review",
+      "type": "enum",
+      "values": [
+        "not-required",
+        "not-started",
+        "pending",
+        "findings",
+        "passed"
+      ],
+      "description": "Security review state. The lens does not apply until a review is due."
+    },
+    {
+      "key": "openFindings",
+      "label": "Open findings",
+      "type": "integer",
+      "min": 0
+    },
+    {
+      "key": "stage",
+      "label": "Stage",
+      "type": "enum",
+      "values": [
+        "idea",
+        "specified",
+        "in-dev",
+        "in-review",
+        "flagged",
+        "live",
+        "deprecated"
+      ],
+      "source": {
+        "feature": "owner"
+      },
+      "description": "The feature's lifecycle stage, read from the feature."
+    }
+  ],
+  "health": {
+    "applies_when": {
+      "all": [
+        {
+          "not": {
+            "field": "review",
+            "eq": "not-started"
+          }
+        },
+        {
+          "not": {
+            "all": [
+              {
+                "field": "dataClass",
+                "eq": "public"
+              },
+              {
+                "field": "review",
+                "ne": "findings"
+              },
+              {
+                "field": "stage",
+                "in": [
+                  "idea",
+                  "specified"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "rules": [
+      {
+        "when": {
+          "field": "openFindings",
+          "gt": 0
+        },
+        "health": "bad",
+        "reason": "{openFindings} open findings"
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "field": "review",
+              "eq": "pending"
+            },
+            {
+              "field": "stage",
+              "in": [
+                "flagged",
+                "live",
+                "deprecated"
+              ]
+            }
+          ]
+        },
+        "health": "bad",
+        "reason": "In production ({stage}) without a finished security review"
+      },
+      {
+        "when": {
+          "field": "review",
+          "eq": "pending"
+        },
+        "health": "watch",
+        "reason": "Security review pending"
+      }
+    ],
+    "default": "good",
+    "rollup": {
+      "method": "worst-of"
+    }
+  },
+  "presentation": {
+    "glyph": "padlock",
+    "line": "hatched",
+    "accent": {
+      "dark": "#d4a8ff",
+      "light": "#7a36c8"
+    },
+    "evidence": [
+      "dataClass",
+      "review",
+      "openFindings"
+    ],
+    "measures": "dataClass"
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "$schema": "lens-manifest/1",
+  "id": "business",
+  "version": "1.0.0",
+  "name": "Business",
+  "short": "BIZ",
+  "description": "Value, customer demand, adoption and the revenue link.",
+  "reader": { "role": "business", "density": "standard" },
+  "fields": [
+    { "key": "value", "label": "Value", "type": "integer", "min": 1, "max": 5, "headline": true,
+      "description": "Business value on a 1 (low) to 5 (top) scale." },
+    { "key": "confidence", "label": "Confidence", "type": "enum", "values": ["hypothesis", "validated", "measured"],
+      "description": "How the value is known: a guess, validated with customers, or measured in use." },
+    { "key": "customerRequests30d", "label": "Customer requests (30 days)", "type": "integer", "min": 0 },
+    { "key": "adoptionPct", "label": "Adoption", "type": "percent",
+      "description": "Share of customers using it in the last 30 days. Omitted until it is in use." },
+    { "key": "revenueLink", "label": "Revenue link", "type": "enum", "values": ["none", "indirect", "retention", "direct"] },
+    { "key": "mrrImpactUsd", "label": "MRR impact", "type": "money", "currency": "USD", "min": 0 },
+    { "key": "usageNote", "label": "Usage note", "type": "string" },
+    { "key": "stage", "label": "Stage", "type": "enum",
+      "values": ["idea", "specified", "in-dev", "in-review", "flagged", "live", "deprecated"],
+      "source": { "feature": "stage" }, "description": "The feature's lifecycle stage, read from the feature." },
+    { "key": "priority", "label": "Priority", "type": "enum", "values": ["P0", "P1", "P2", "P3"],
+      "source": { "feature": "priority" }, "description": "The feature's priority, read from the feature." }
+  ],
+  "health": {
+    "rules": [
+      { "when": { "all": [ { "field": "priority", "eq": "P0" }, { "field": "stage", "in": ["idea", "specified"] } ] },
+        "health": "bad", "reason": "Top priority, not started ({stage})" },
+      { "when": { "all": [ { "field": "customerRequests30d", "gte": 15 }, { "field": "stage", "in": ["idea", "specified", "in-dev", "in-review"] } ] },
+        "health": "bad", "reason": "{customerRequests30d} customer requests in 30 days and nobody can use it yet" },
+      { "when": { "field": "stage", "eq": "deprecated" },
+        "health": "watch", "reason": "Deprecated" },
+      { "when": { "field": "adoptionPct", "lt": 25 },
+        "health": "watch", "reason": "Only {adoptionPct}% adoption" },
+      { "when": { "all": [ { "field": "value", "lte": 2 }, { "field": "stage", "in": ["flagged", "live", "deprecated"] } ] },
+        "health": "watch", "reason": "Shipped, but low value ({value} of 5)" }
+    ],
+    "default": "good",
+    "rollup": { "method": "weighted", "by": "value" }
+  },
+  "presentation": {
+    "glyph": "bars",
+    "line": "double",
+    "accent": { "dark": "#c6ec6e", "light": "#4f7a00" },
+    "evidence": ["value", "customerRequests30d", "adoptionPct"],
+    "measures": "value"
+  }
+}

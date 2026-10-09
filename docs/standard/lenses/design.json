@@ -1,0 +1,37 @@
+{
+  "$schema": "lens-manifest/1",
+  "id": "design",
+  "version": "1.0.0",
+  "name": "Design",
+  "short": "DES",
+  "description": "How far the design got, accessibility, and whether the build matches the design.",
+  "reader": { "role": "design", "density": "simple" },
+  "fields": [
+    { "key": "status", "label": "Design", "type": "enum",
+      "values": ["none", "sketch", "wireframe", "hi-fi", "implemented", "polished"], "headline": true,
+      "description": "How far the design got. A feature with no screen has an inapplicable design facet instead." },
+    { "key": "a11y", "label": "Accessibility", "type": "enum", "values": ["unknown", "fail", "partial", "pass"] },
+    { "key": "specDrift", "label": "Built off-spec", "type": "boolean" },
+    { "key": "stage", "label": "Stage", "type": "enum",
+      "values": ["idea", "specified", "in-dev", "in-review", "flagged", "live", "deprecated"],
+      "source": { "feature": "stage" }, "description": "The feature's lifecycle stage, read from the feature." }
+  ],
+  "health": {
+    "rules": [
+      { "when": { "field": "a11y", "eq": "fail" }, "health": "bad", "reason": "Fails accessibility" },
+      { "when": { "field": "specDrift", "eq": true }, "health": "bad", "reason": "Built differently from the design" },
+      { "when": { "all": [ { "field": "stage", "in": ["flagged", "live", "deprecated"] }, { "field": "status", "in": ["none", "sketch", "wireframe"] } ] },
+        "health": "watch", "reason": "Shipped with the design at {status}" },
+      { "when": { "field": "a11y", "eq": "partial" }, "health": "watch", "reason": "Accessibility only partly passes" }
+    ],
+    "default": "good",
+    "rollup": { "method": "share", "watch": 0.25, "bad": 0.15 }
+  },
+  "presentation": {
+    "glyph": "set-square",
+    "line": "dotted",
+    "accent": { "dark": "#ff9fd2", "light": "#b42a76" },
+    "evidence": ["status", "a11y"],
+    "measures": "status"
+  }
+}

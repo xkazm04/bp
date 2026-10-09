@@ -1,0 +1,403 @@
+{
+  "$schema": "app-structure/3",
+  "version": 3,
+  "generator": "hand",
+  "generated_at": "2026-10-08T09:00:00Z",
+  "declared": true,
+  "project": {
+    "slug": "kettle",
+    "name": "Kettle",
+    "kind": "code"
+  },
+  "stats": {
+    "groups": 1,
+    "contexts": 2,
+    "features": 2,
+    "kpis": 1,
+    "lenses": 2
+  },
+  "groups": [
+    {
+      "name": "Payments",
+      "domain": "feature",
+      "context_count": 2
+    }
+  ],
+  "contexts": [
+    {
+      "name": "billing-engine",
+      "group": "Payments",
+      "category": "lib"
+    },
+    {
+      "name": "dunning-worker",
+      "group": "Payments",
+      "category": "lib"
+    }
+  ],
+  "domains": [
+    {
+      "slug": "payments",
+      "name": "Memberships & Payments",
+      "order": 5,
+      "source": "declared"
+    }
+  ],
+  "capabilities": [
+    {
+      "slug": "payments.billing",
+      "domain": "payments",
+      "name": "Billing",
+      "order": 2
+    }
+  ],
+  "features": [
+    {
+      "slug": "recurring-billing-engine",
+      "name": "Recurring billing engine",
+      "status": "active",
+      "capability": "payments.billing",
+      "contexts": [
+        "billing-engine"
+      ],
+      "primary_context": "billing-engine",
+      "stage": "live",
+      "stage_since": "2026-06-02",
+      "priority": "P0"
+    },
+    {
+      "slug": "failed-payment-dunning",
+      "name": "Failed-payment dunning",
+      "kind": "capability",
+      "tier": "major",
+      "status": "active",
+      "capability": "payments.billing",
+      "contexts": [
+        "billing-engine",
+        "dunning-worker"
+      ],
+      "primary_context": "dunning-worker",
+      "stage": "shipped",
+      "stage_since": "2026-09-30",
+      "priority": "P1",
+      "milestone": "payments-ga",
+      "depends_on": [
+        "recurring-billing-engine"
+      ],
+      "owner": "mara",
+      "built_by": [
+        "forge-1"
+      ]
+    }
+  ],
+  "milestones": [
+    {
+      "slug": "payments-ga",
+      "name": "Payments GA",
+      "status": "active",
+      "target_date": "2026-10-22"
+    }
+  ],
+  "kpis": [
+    {
+      "slug": "dunning-sms-spend",
+      "name": "Dunning SMS spend",
+      "scope": {
+        "feature": "failed-payment-dunning"
+      },
+      "category": "technical",
+      "lens": "com.kettle.cost",
+      "unit": "USD",
+      "direction": "down",
+      "target": 200,
+      "warn_at": 250,
+      "crit_at": 400,
+      "current": {
+        "value": 310,
+        "measured_at": "2026-10-08T06:00:00Z",
+        "env": "production"
+      }
+    }
+  ],
+  "lenses": [
+    {
+      "id": "security",
+      "version": "1.0.0",
+      "source": "builtin",
+      "enabled": true,
+      "manifest": {
+        "$schema": "lens-manifest/1",
+        "id": "security",
+        "version": "1.0.0",
+        "name": "Security",
+        "short": "SEC",
+        "description": "Data classes, security reviews and open findings.",
+        "reader": {
+          "role": "security",
+          "density": "standard"
+        },
+        "fields": [
+          {
+            "key": "dataClass",
+            "label": "Data class",
+            "type": "enum",
+            "values": [
+              "public",
+              "internal",
+              "personal",
+              "payment"
+            ],
+            "headline": true
+          },
+          {
+            "key": "review",
+            "label": "Review",
+            "type": "enum",
+            "values": [
+              "not-required",
+              "not-started",
+              "pending",
+              "findings",
+              "passed"
+            ],
+            "description": "Security review state. The lens does not apply until a review is due."
+          },
+          {
+            "key": "openFindings",
+            "label": "Open findings",
+            "type": "integer",
+            "min": 0
+          },
+          {
+            "key": "stage",
+            "label": "Stage",
+            "type": "enum",
+            "values": [
+              "idea",
+              "specified",
+              "in-dev",
+              "in-review",
+              "flagged",
+              "live",
+              "deprecated"
+            ],
+            "source": {
+              "feature": "stage"
+            },
+            "description": "The feature's lifecycle stage, read from the feature."
+          }
+        ],
+        "health": {
+          "applies_when": {
+            "all": [
+              {
+                "not": {
+                  "field": "review",
+                  "eq": "not-started"
+                }
+              },
+              {
+                "not": {
+                  "all": [
+                    {
+                      "field": "dataClass",
+                      "eq": "public"
+                    },
+                    {
+                      "field": "review",
+                      "ne": "findings"
+                    },
+                    {
+                      "field": "stage",
+                      "in": [
+                        "idea",
+                        "specified"
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "rules": [
+            {
+              "when": {
+                "field": "openFindings",
+                "gt": 0
+              },
+              "health": "bad",
+              "reason": "{openFindings} open findings"
+            },
+            {
+              "when": {
+                "all": [
+                  {
+                    "field": "review",
+                    "eq": "pending"
+                  },
+                  {
+                    "field": "stage",
+                    "in": [
+                      "flagged",
+                      "live",
+                      "deprecated"
+                    ]
+                  }
+                ]
+              },
+              "health": "bad",
+              "reason": "In production ({stage}) without a finished security review"
+            },
+            {
+              "when": {
+                "field": "review",
+                "eq": "pending"
+              },
+              "health": "watch",
+              "reason": "Security review pending"
+            }
+          ],
+          "default": "good",
+          "rollup": {
+            "method": "worst-of"
+          }
+        },
+        "presentation": {
+          "glyph": "padlock",
+          "line": "hatched",
+          "accent": {
+            "dark": "#d4a8ff",
+            "light": "#7a36c8"
+          },
+          "evidence": [
+            "dataClass",
+            "review",
+            "openFindings"
+          ],
+          "measures": "dataClass"
+        }
+      }
+    },
+    {
+      "id": "com.kettle.cost",
+      "version": "0.1.0",
+      "source": "project",
+      "enabled": true,
+      "manifest": {
+        "$schema": "lens-manifest/1",
+        "id": "com.kettle.cost",
+        "version": "0.1.0",
+        "name": "Cost",
+        "short": "COST",
+        "description": "Running cost per feature, including SMS spend.",
+        "reader": {
+          "role": "finance",
+          "density": "standard"
+        },
+        "fields": [
+          {
+            "key": "monthlyUsd",
+            "label": "Monthly cost",
+            "type": "money",
+            "currency": "USD",
+            "min": 0,
+            "max": 5000,
+            "headline": true
+          },
+          {
+            "key": "smsSpendUsd",
+            "label": "SMS spend",
+            "type": "money",
+            "currency": "USD",
+            "min": 0,
+            "source": {
+              "kpi": "dunning-sms-spend"
+            }
+          }
+        ],
+        "health": {
+          "rules": [
+            {
+              "when": {
+                "field": "monthlyUsd",
+                "gte": 2000
+              },
+              "health": "bad",
+              "reason": "Costs {monthlyUsd} USD a month"
+            },
+            {
+              "when": {
+                "field": "smsSpendUsd",
+                "gte": 250
+              },
+              "health": "watch",
+              "reason": "SMS spend {smsSpendUsd} USD this month"
+            }
+          ],
+          "default": "good",
+          "rollup": {
+            "method": "weighted",
+            "by": "monthlyUsd"
+          }
+        },
+        "presentation": {
+          "glyph": {
+            "path": "M2 14h12M4 14V6h8v8M6 6V3h4v3"
+          },
+          "line": "solid",
+          "evidence": [
+            "monthlyUsd",
+            "smsSpendUsd"
+          ],
+          "measures": "monthlyUsd"
+        }
+      }
+    }
+  ],
+  "facets": {
+    "recurring-billing-engine": {
+      "security": {
+        "values": {
+          "dataClass": "payment",
+          "review": "passed",
+          "openFindings": 0
+        },
+        "measured_at": "2026-10-08T08:10:00Z",
+        "source": "scan"
+      },
+      "business": {
+        "values": {
+          "value": 5
+        }
+      }
+    },
+    "failed-payment-dunning": {
+      "security": {
+        "values": {
+          "dataClass": "payment",
+          "review": "pending",
+          "openFindings": 0
+        },
+        "measured_at": "2026-10-08T08:10:00Z",
+        "source": "scan",
+        "override": {
+          "health": "watch",
+          "by": "jonas",
+          "why": "Review booked Thursday",
+          "until": "2026-10-16"
+        }
+      },
+      "com.kettle.cost": {
+        "values": {
+          "monthlyUsd": 340
+        },
+        "source": "hand"
+      }
+    }
+  },
+  "extensions": {
+    "com.kettle.sample": {
+      "note": "sample data"
+    }
+  }
+}

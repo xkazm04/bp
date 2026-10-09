@@ -1,0 +1,41 @@
+{
+  "$schema": "lens-manifest/1",
+  "id": "operations",
+  "version": "1.0.0",
+  "name": "Operations",
+  "short": "OPS",
+  "description": "Rollout, service levels, latency, errors, incidents, alerting and running cost.",
+  "reader": { "role": "operations", "density": "dense" },
+  "fields": [
+    { "key": "environment", "label": "Environment", "type": "enum", "values": ["none", "preview", "staging", "production"],
+      "description": "Where it runs. The lens applies to what runs in production." },
+    { "key": "flagKey", "label": "Feature flag", "type": "string" },
+    { "key": "rolloutPct", "label": "Rollout", "type": "percent", "headline": true,
+      "description": "Share of production traffic that has it. 100 when it is in production without a flag." },
+    { "key": "sloTarget", "label": "SLO target", "type": "percent" },
+    { "key": "sloActual", "label": "SLO actual", "type": "percent" },
+    { "key": "p95ms", "label": "p95 latency", "type": "integer", "min": 0, "unit": "ms" },
+    { "key": "errorRatePct", "label": "Error rate", "type": "percent" },
+    { "key": "incidents30d", "label": "Incidents (30 days)", "type": "integer", "min": 0 },
+    { "key": "alerting", "label": "Alerting", "type": "boolean" },
+    { "key": "runbook", "label": "Runbook", "type": "boolean" },
+    { "key": "costUsdMonth", "label": "Running cost", "type": "money", "currency": "USD", "min": 0, "unit": "per month" }
+  ],
+  "health": {
+    "applies_when": { "not": { "field": "environment", "in": ["none", "preview", "staging"] } },
+    "rules": [
+      { "when": { "field": "incidents30d", "gte": 2 }, "health": "bad", "reason": "{incidents30d} incidents in 30 days" },
+      { "when": { "field": "incidents30d", "eq": 1 }, "health": "watch", "reason": "An incident this month" },
+      { "when": { "field": "alerting", "eq": false }, "health": "watch", "reason": "No alerting" }
+    ],
+    "default": "good",
+    "rollup": { "method": "worst-of" }
+  },
+  "presentation": {
+    "glyph": "pulse",
+    "line": "chain",
+    "accent": { "dark": "#45dcd8", "light": "#007a80" },
+    "evidence": ["rolloutPct", "p95ms", "errorRatePct", "incidents30d"],
+    "measures": "rolloutPct"
+  }
+}

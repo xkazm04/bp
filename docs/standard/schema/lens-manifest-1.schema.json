@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://app-structure.example/schema/lens-manifest-1.schema.json",
+  "title": "Lens manifest v1",
+  "description": "One lens plugin: its fields, a declarative health rule and presentation hints. Normative text: docs/standard/app-structure-v3.md.",
+  "type": "object",
+  "required": ["$schema", "id", "version", "name", "reader", "fields", "health", "presentation"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "const": "lens-manifest/1" },
+    "id": { "$ref": "#/$defs/lensId" },
+    "version": { "$ref": "#/$defs/semver" },
+    "name": { "type": "string", "minLength": 1 },
+    "short": { "type": "string", "pattern": "^[A-Z0-9]{2,4}$" },
+    "description": { "type": "string" },
+    "reader": {
+      "type": "object",
+      "required": ["density"],
+      "additionalProperties": false,
+      "properties": {
+        "role": { "type": "string" },
+        "density": { "enum": ["simple", "standard", "dense"] }
+      }
+    },
+    "fields": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/field" } },
+    "health": { "$ref": "#/$defs/health" },
+    "presentation": { "$ref": "#/$defs/presentation" }
+  },
+  "$defs": {
+    "lensId": {
+      "description": "One of the six built-in short ids, or a reverse-DNS id for a custom lens.",
+      "type": "string",
+      "pattern": "^(?:business|design|development|operations|security|quality)$|^[a-z]{2,}(?:\\.[a-z0-9-]+){2,}$"
+    },
+    "builtinLensId": { "enum": ["business", "design", "development", "operations", "security", "quality"] },
+    "reverseDns": { "type": "string", "pattern": "^[a-z]{2,}(?:\\.[a-z0-9-]+){2,}$" },
+    "slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9.-]*$" },
+    "semver": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$" },
+    "fieldKey": { "type": "string", "pattern": "^[a-z][A-Za-z0-9]*$" },
+    "scalar": { "type": ["string", "number", "boolean"] },
+    "computedHealth": { "enum": ["good", "watch", "bad"] },
+    "featureBoundField": {
+      "description": "The core feature fields a lens field may read (read-only, never stored in facets).",
+      "enum": ["stage", "priority", "kind", "tier", "milestone", "status"]
+    },
+
+    "field": {
+      "type": "object",
+      "required": ["key", "label", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "key": { "$ref": "#/$defs/fieldKey" },
+        "label": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["number", "integer", "percent", "money", "boolean", "string", "enum", "date"] },
+        "description": { "type": "string" },
+        "unit": { "type": "string" },
+        "values": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string" } },
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+        "headline": { "type": "boolean" },
+        "source": {
+          "description": "The value comes from a KPI's current value or from a core feature field, filled in at evaluation; a value stored in the facet is ignored. Exactly one key.",
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 1,
+          "additionalProperties": false,
+          "properties": {
+            "kpi": { "$ref": "#/$defs/slug" },
+            "feature": { "$ref": "#/$defs/featureBoundField" }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "enum" } } },
+          "then": { "required": ["values"] },
+          "else": { "not": { "required": ["values"] } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "money" } } },
+          "then": { "required": ["currency"] },
+          "else": { "not": { "required": ["currency"] } }
+        }
+      ]
+    },
+
+    "health": {
+      "type": "object",
+      "required": ["rules", "default", "rollup"],
+      "additionalProperties": false,
+      "properties": {
+        "applies_when": {
+          "description": "When present and not matching, the lens does not apply to the feature (health na). Same grammar as rules; may read bound fields.",
+          "$ref": "#/$defs/condition"
+        },
+        "rules": { "type": "array", "items": { "$ref": "#/$defs/rule" } },
+        "default": { "$ref": "#/$defs/computedHealth" },
+        "rollup": { "$ref": "#/$defs/rollup" }
+      }
+    },
+    "rule": {
+      "type": "object",
+      "required": ["when", "health", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "when": { "$ref": "#/$defs/condition" },
+        "health": { "$ref": "#/$defs/computedHealth" },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "rollup": {
+      "type": "object",
+      "required": ["method"],
+      "additionalProperties": false,
+      "properties": {
+        "method": { "enum": ["worst-of", "share", "weighted"] },
+        "watch": { "type": "number", "minimum": 0, "maximum": 1 },
+        "bad": { "type": "number", "minimum": 0, "maximum": 1 },
+        "by": { "$ref": "#/$defs/fieldKey" }
+      },
+      "allOf": [
+        { "if": { "properties": { "method": { "const": "worst-of" } } },
+          "then": { "properties": { "watch": false, "bad": false, "by": false } } },
+        { "if": { "properties": { "method": { "const": "share" } } },
+          "then": { "required": ["watch", "bad"], "properties": { "by": false } } },
+        { "if": { "properties": { "method": { "const": "weighted" } } },
+          "then": { "required": ["by"], "properties": { "watch": false, "bad": false } } }
+      ]
+    },
+
+    "condition": {
+      "description": "A leaf {field, <one operator>}, or {all: [...]}, {any: [...]}, {not: cond}. Shapes are told apart by their key, so an error names the shape that failed.",
+      "type": "object",
+      "if": { "required": ["all"] },
+      "then": { "$ref": "#/$defs/allCondition" },
+      "else": {
+        "if": { "required": ["any"] },
+        "then": { "$ref": "#/$defs/anyCondition" },
+        "else": {
+          "if": { "required": ["not"] },
+          "then": { "$ref": "#/$defs/notCondition" },
+          "else": { "$ref": "#/$defs/leaf" }
+        }
+      }
+    },
+    "allCondition": {
+      "type": "object", "required": ["all"], "additionalProperties": false,
+      "properties": { "all": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/condition" } } }
+    },
+    "anyCondition": {
+      "type": "object", "required": ["any"], "additionalProperties": false,
+      "properties": { "any": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/condition" } } }
+    },
+    "notCondition": {
+      "type": "object", "required": ["not"], "additionalProperties": false,
+      "properties": { "not": { "$ref": "#/$defs/condition" } }
+    },
+    "leaf": {
+      "description": "Exactly one operator: `field` plus one more key.",
+      "type": "object",
+      "required": ["field"],
+      "minProperties": 2,
+      "maxProperties": 2,
+      "additionalProperties": false,
+      "properties": {
+        "field": { "$ref": "#/$defs/fieldKey" },
+        "eq": { "$ref": "#/$defs/scalar" },
+        "ne": { "$ref": "#/$defs/scalar" },
+        "lt": { "type": ["number", "string"] },
+        "lte": { "type": ["number", "string"] },
+        "gt": { "type": ["number", "string"] },
+        "gte": { "type": ["number", "string"] },
+        "in": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/scalar" } },
+        "nin": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/scalar" } },
+        "missing": { "const": true },
+        "present": { "const": true }
+      }
+    },
+
+    "presentation": {
+      "type": "object",
+      "required": ["glyph", "line"],
+      "additionalProperties": false,
+      "properties": {
+        "glyph": {
+          "description": "A name from the shared glyph set, or a custom SVG path in a 16x16 box.",
+          "if": { "type": "string" },
+          "then": { "enum": ["bars", "set-square", "brackets", "pulse", "padlock", "check"] },
+          "else": {
+            "type": "object",
+            "required": ["path"],
+            "additionalProperties": false,
+            "properties": {
+              "path": { "type": "string", "maxLength": 2048, "pattern": "^[Mm][MmZzLlHhVvCcSsQqTtAa0-9eE.,+\\- ]*$" }
+            }
+          }
+        },
+        "line": { "enum": ["solid", "double", "dotted", "comb", "chain", "hatched", "dimension"] },
+        "accent": {
+          "type": "object",
+          "required": ["dark", "light"],
+          "additionalProperties": false,
+          "properties": {
+            "dark": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+            "light": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" }
+          }
+        },
+        "evidence": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/fieldKey" } },
+        "measures": { "$ref": "#/$defs/fieldKey" }
+      }
+    }
+  }
+}
