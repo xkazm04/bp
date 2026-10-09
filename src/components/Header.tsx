@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { motion } from 'motion/react';
+import { motion, useReducedMotion } from 'motion/react';
 import { latestRun, sheetOf, views, type BayNode, type BldNode, type RoomNode, type WingNode } from '@/lib/model';
 import { shallowEqual, useBp, useEngine, useLive, useVariant } from './hooks';
 import { ThemeToggle } from './ThemeToggle';
@@ -63,6 +63,7 @@ function LensTabs() {
   const E = useEngine(), V = useVariant(), P = E.M.P;
   const s = useBp((s) => ({ view: s.view, simV: s.simV }), shallowEqual);
   const open = E.M.sim.has ? E.M.sim.openDecs() : [];
+  const reduce = useReducedMotion();
   const strip = useRef<HTMLDivElement>(null);
   const vs = views(P);
   // roving focus (the rail's pattern): arrows/Home/End move between tabs and select, and never reach the engine's walk
@@ -87,7 +88,7 @@ function LensTabs() {
             <span className="no">{sh.no}{n ? <b className="ct">{n}</b> : null}</span>
             <span className="nm">{sub}</span>
             {i < 9 ? <span className="kb">{i + 1}</span> : null}
-            {on && <motion.span layoutId="lens-uline" className="uline" transition={{ type: 'spring', stiffness: 420, damping: 36 }} />}
+            {on && <motion.span layoutId="lens-uline" className="uline" transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 36 }} />}
           </button>
         );
       })}
