@@ -2,10 +2,28 @@
 // and their breaches, and a replayable hour at 1x..240x. Everything here is a simulation over sample
 // data; nothing talks to a real system. Pure TS: wall-clock time is injected (`now`) and visual
 // effects are recorded as plain data (pulses, heat, travel) for the engine to draw.
-import type { LensId, ReplayType, StandingOrder, Swarm, AgentStatus, CrewRole, Squad, ViewId, Feature } from '@/lib/data';
-import { HOUR, PERSON_LENS, PULSE_OF, LENS_CREWS, type PulseKind } from './constants';
+import type { ReplayType, StandingOrder, Swarm, AgentStatus, CrewRole, Squad, ViewId, Feature, Scalar } from '@/lib/data';
+import { fval } from '@/lib/standard/load';
+import { FIRST_MILESTONE, GA_MILESTONE, HOUR, LATER_MILESTONES, PULSE_OF, type PulseKind } from './constants';
 import { isLiveSt } from './aggregates';
+import { personLens } from './lens';
 import { baseId, lineSuffix, pname, type Product } from './product';
+
+/**
+ * The swarm feed's coupling to the product: the simulation moves a feature's rollout and build progress,
+ * which the map keeps as these lens fields (read through the facets whether or not the lens is enabled).
+ * Together with the standing-order rules below (which read the sample's facets the same way), this is
+ * the only place lens field names appear outside the manifests: it belongs to the swarm sample.
+ */
+export const SIM_FIELDS = { rollout: ['operations', 'rolloutPct'], progress: ['development', 'progressPct'] } as const;
+const num = (f: Feature, l: string, k: string): number | null => { const v = fval(f, l, k); return typeof v === 'number' ? v : null; };
+const txt = (f: Feature, l: string, k: string): string => { const v = fval(f, l, k); return typeof v === 'string' ? v : ''; };
+const flag = (f: Feature, l: string, k: string): boolean | null => { const v = fval(f, l, k); return typeof v === 'boolean' ? v : null; };
+/** Card data whose security review is not done (order O-1). */
+function cardUnreviewed(f: Feature): boolean {
+  const r = txt(f, 'security', 'review');
+  return txt(f, 'security', 'dataClass') === 'payment' && r !== 'passed' && r !== 'not-required';
+}
 
 export type AgentState = AgentStatus | 'paused';
 export interface SimAgent {
@@ -15,13 +33,13 @@ export interface SimAgent {
   synth: boolean; nextSynth: number; code: string; act: number;
 }
 export interface SimDecision {
-  id: string; base: string; b: number; f: string; dom: string; lens: LensId; decider: string; by: string; q: string;
+  id: string; base: string; b: number; f: string; dom: string; lens: string; decider: string; by: string; q: string;
   opts: { label: string; consequence: string }[]; rec: number; urg: 'high' | 'medium' | 'low'; since: number;
   blocks: number; freed: number; affects: string[]; arr: number; open: boolean;
   ans: { opt: number; t: number; at: number } | null; isNew: boolean; freedIds: string[];
 }
 export interface OrderScope { domain?: string; milestone?: string; surface?: string; all?: boolean; feats?: Record<string, 1>; label?: string }
-export interface SimOrder { id: string; by: string; lens: LensId; scope: OrderScope; text: string; since: string; n: number; vf: string[]; user: boolean }
+export interface SimOrder { id: string; by: string; lens: string; scope: OrderScope; text: string; since: string; n: number; vf: string[]; user: boolean }
 export interface SimEvent { t: number; agent: string; f: string; type: ReplayType; text: string; from: string | null; dec: string | null; syn?: boolean }
 export interface Pulse { f: string; k: PulseKind; t0: number }
 export interface Target { ids: Record<string, 1>; n: number; label: string }
@@ -135,16 +153,37 @@ export class SwarmSim {
   rolloutOf(f: Feature): number {
     const r = this.roll[f.id];
     if (r != null) return r;
-    return f.operations.flag ? f.operations.flag.rolloutPct : isLiveSt(f.stage) ? 100 : 0;
+    return num(f, ...SIM_FIELDS.rollout) ?? (isLiveSt(f.stage) ? 100 : 0);
   }
-  progOf(f: Feature): number { return Math.min(99, f.development.progressPct + (this.prog[f.id] || 0)); }
+  progOf(f: Feature): number { return Math.min(99, this.baseProgress(f) + (this.prog[f.id] || 0)); }
+  /** Build progress as the map has it (before the simulated hour). */
+  baseProgress(f: Feature): number { return num(f, ...SIM_FIELDS.progress) ?? 0; }
+  /** A lens field's value as the simulation has it now (its live rollout and build progress), else the map's. */
+  liveValue(f: Feature, lens: string, key: string): Scalar | undefined {
+    if (lens === SIM_FIELDS.rollout[0] && key === SIM_FIELDS.rollout[1] && this.roll[f.id] != null) return this.roll[f.id];
+    if (lens === SIM_FIELDS.progress[0] && key === SIM_FIELDS.progress[1] && this.prog[f.id]) { const p = num(f, lens, key); return p != null && p < 100 ? this.progOf(f) : p ?? undefined; }
+    return fval(f, lens, key);
+  }
   openDecs(): SimDecision[] { return this.decisions.filter((d) => d.open); }
   blocksNow(d: SimDecision): number { return Math.max(0, d.blocks - d.freed); }
   waitMin(d: SimDecision): number { return Math.max(0, Math.round((this.at0 + this.t * 1000 - d.since) / 60000)); }
   score(d: SimDecision): number { return ({ high: 3, medium: 2, low: 1 })[d.urg] * 1e6 + this.blocksNow(d) * 1e4 + Math.min(9999, this.waitMin(d)); }
-  /** Is this decision for the current reader (person, else lens)? */
+  /**
+   * Is this decision for the current reader (person, else lens)? Lens ids are strings: a decision whose
+   * lens is disabled or unknown matches no lens tab and shows under General.
+   */
   emph(d: SimDecision, who: string | null, view: ViewId): boolean { return who ? d.decider === who : view === 'general' || d.lens === view; }
-  crewRelevant(a: SimAgent, view: ViewId): boolean { return view === 'general' || (LENS_CREWS[view] || []).includes(a.sq); }
+  /** Crews that serve the viewed lens stay bright (the feed lists each squad's lenses); a lens no crew serves dims nobody. */
+  crewRelevant(a: SimAgent, view: ViewId): boolean {
+    if (view === 'general' || !this.servedLens(view)) return true;
+    return !!this.SQ[a.sq]?.lenses?.includes(view);
+  }
+  private served: Record<string, boolean> = {};
+  private servedLens(view: ViewId): boolean {
+    let v = this.served[view];
+    if (v === undefined) { v = this.squads.some((q) => !!q.lenses?.includes(view)); this.served[view] = v; }
+    return v;
+  }
   queueFor(who: string | null, view: ViewId) {
     const open = this.openDecs().sort((a, b) => this.score(b) - this.score(a));
     const mine = who ? open.filter((d) => d.decider === who) : [];
@@ -182,10 +221,10 @@ export class SwarmSim {
   computeViolations() {
     const P = this.P;
     const rules: Record<string, { rank: (f: Feature) => number | null; desc: boolean }> = {
-      'O-1': { rank: (f) => (isLiveSt(f.stage) && f.security.dataClass === 'payment' && f.security.review !== 'passed' && f.security.review !== 'not-required' && this.rolloutOf(f) > 10 ? this.rolloutOf(f) : null), desc: true },
-      'O-2': { rank: (f) => ((f.stage === 'in-review' || isLiveSt(f.stage)) && f.development.unitCoveragePct != null && f.development.unitCoveragePct < 70 ? f.development.unitCoveragePct : null), desc: false },
-      'O-3': { rank: (f) => { const m = (!f.operations.alerting ? 1 : 0) + (!f.operations.runbook ? 1 : 0); return isLiveSt(f.stage) && m && this.rolloutOf(f) >= 50 ? m * 1000 + this.rolloutOf(f) : null; }, desc: true },
-      'O-5': { rank: (f) => (/kiosk/i.test(f.name + ' ' + f.summary) && f.design.a11y === 'fail' ? 1 : null), desc: true },
+      'O-1': { rank: (f) => (isLiveSt(f.stage) && cardUnreviewed(f) && this.rolloutOf(f) > 10 ? this.rolloutOf(f) : null), desc: true },
+      'O-2': { rank: (f) => { const c = num(f, 'development', 'unitCoveragePct'); return (f.stage === 'in-review' || isLiveSt(f.stage)) && c != null && c < 70 ? c : null; }, desc: false },
+      'O-3': { rank: (f) => { const m = (!flag(f, 'operations', 'alerting') ? 1 : 0) + (!flag(f, 'operations', 'runbook') ? 1 : 0); return isLiveSt(f.stage) && m && this.rolloutOf(f) >= 50 ? m * 1000 + this.rolloutOf(f) : null; }, desc: true },
+      'O-5': { rank: (f) => (/kiosk/i.test(f.name + ' ' + f.summary) && txt(f, 'design', 'a11y') === 'fail' ? 1 : null), desc: true },
     };
     for (const o of this.orders) {
       const r = rules[o.id]; if (!r) continue;
@@ -269,8 +308,9 @@ export class SwarmSim {
         this.toast({ strong: 'Order ' + o.id + ' breached', text: 'at ' + ft.name + ' · ' + why, fid });
       }
     };
-    if (pct > 10 && ft.security.dataClass === 'payment' && ft.security.review !== 'passed' && ft.security.review !== 'not-required') add(o1, 'card data above 10% without a security review');
-    if (pct >= 50 && isLiveSt(ft.stage) && (!ft.operations.alerting || !ft.operations.runbook)) add(o3, 'rollout ' + pct + '% without ' + (!ft.operations.alerting ? 'an alert' : 'a runbook'));
+    if (pct > 10 && cardUnreviewed(ft)) add(o1, 'card data above 10% without a security review');
+    const alerting = flag(ft, 'operations', 'alerting'), runbook = flag(ft, 'operations', 'runbook');
+    if (pct >= 50 && isLiveSt(ft.stage) && (!alerting || !runbook)) add(o3, 'rollout ' + pct + '% without ' + (!alerting ? 'an alert' : 'a runbook'));
   }
   /** Advance the hour by wall time `dtMs` at the current speed. Returns true if anything discrete changed. */
   advance(dtMs: number): boolean {
@@ -344,7 +384,7 @@ export class SwarmSim {
   }
   private mkPush(title: string, donors: SimAgent[], targets: Feature[], extra: string[], wingName: (fid: string) => string): Preview | null {
     if (!donors.length || !targets.length) return null;
-    const prio = (f: Feature) => ({ P0: 0, P1: 1, P2: 2, P3: 3 })[f.priority] ?? 2;
+    const prio = (f: Feature) => (f.priority ? { P0: 0, P1: 1, P2: 2, P3: 3 }[f.priority] : 2);
     const tg = targets.slice().sort((a, b) => (this.AGF[a.id] || []).length - (this.AGF[b.id] || []).length || prio(a) - prio(b));
     const moves = donors.map((a, i) => ({ a, to: tg[i % tg.length].id }));
     const waiting = donors.filter((a) => a.status === 'waiting');
@@ -356,8 +396,8 @@ export class SwarmSim {
     return { kind: 'push', title, moves, targets: tf, paused: [], lines, n: donors.length };
   }
   previewGA(wingName: (fid: string) => string): Preview | null {
-    const donors = this.agents.filter((a) => { const m = this.msOf(a.f); return (m === 'M3' || m === 'M4') && a.status !== 'failed' && !a.paused; });
-    const targets = this.P.features.filter((f) => f.milestone === 'M2' && f.stage !== 'live');
+    const donors = this.agents.filter((a) => { const m = this.msOf(a.f); return !!m && LATER_MILESTONES.includes(m) && a.status !== 'failed' && !a.paused; });
+    const targets = this.P.features.filter((f) => f.milestone === GA_MILESTONE && f.stage !== 'live');
     const p = this.mkPush('Payments GA first', donors, targets, ['Standing order O-4 (Mara) already allows pulling agents from M3 and M4', 'M3 Multi-location and M4 Assistant slow down until you send the agents back'], wingName);
     if (p) p.order = 'O-4';
     return p;
@@ -366,8 +406,8 @@ export class SwarmSim {
     if (!tgt.n) return null;
     const ids = tgt.ids;
     const targets = this.P.features.filter((f) => ids[f.id] && f.stage !== 'live' && f.stage !== 'deprecated');
-    const rank = (a: SimAgent) => { const m = this.msOf(a.f); return m === 'M3' || m === 'M4' ? 0 : m == null ? 1 : m === 'M1' ? 2 : 3; };
-    const donors = this.agents.filter((a) => !ids[a.f] && a.status === 'working' && !a.paused && this.msOf(a.f) !== 'M2').sort((a, b) => rank(a) - rank(b) || a.pct - b.pct).slice(0, 5);
+    const rank = (a: SimAgent) => { const m = this.msOf(a.f); return m && LATER_MILESTONES.includes(m) ? 0 : m == null ? 1 : m === FIRST_MILESTONE ? 2 : 3; };
+    const donors = this.agents.filter((a) => !ids[a.f] && a.status === 'working' && !a.paused && this.msOf(a.f) !== GA_MILESTONE).sort((a, b) => rank(a) - rank(b) || a.pct - b.pct).slice(0, 5);
     return this.mkPush('Put the swarm on ' + (tgt.label || 'this selection'), donors, targets, ['Only agents that are working and not on Payments GA are pulled'], wingName);
   }
   previewPause(tgt: Target, resume: boolean): Preview | null {
@@ -414,7 +454,7 @@ export class SwarmSim {
       for (const a of p.paused) { snap.push({ a, f: a.f, status: a.status, task: a.task, wait: a.wait, paused: a.paused, synth: a.synth }); a.paused = p.kind === 'pause'; a.flash = now; }
     } else if (p.kind === 'order') {
       const no = 'O-' + (this.orders.length + 1), by = who || 'mara';
-      this.orders.push({ id: no, by, lens: PERSON_LENS[by] || 'business', scope: { feats: p.targets, label: p.label }, text: p.text || '', since: new Date(this.at0 + this.t * 1000).toISOString().slice(0, 10), n: 0, vf: [], user: true });
+      this.orders.push({ id: no, by, lens: personLens(this.P, by) ?? 'general', scope: { feats: p.targets, label: p.label }, text: p.text || '', since: new Date(this.at0 + this.t * 1000).toISOString().slice(0, 10), n: 0, vf: [], user: true });
       this.ordCache = null; snap.push({ order: no });
     }
     this.undo2 = { snap, kind: p.kind };

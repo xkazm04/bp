@@ -1,7 +1,8 @@
 // The icon vocabulary of the shaped variant. One source of truth: SVG path strings on a 16-unit grid,
 // used as <path d> in the DOM (sheet, legend) and as cached Path2D objects on the canvas. Each lens has
 // a base icon that names it plus a few state variants, so a General tile reads as six small pictures.
-import type { Feature, LensId } from '@/lib/data';
+import type { Feature } from '@/lib/data';
+import { bl, type BuiltinLens } from '../base/legacy';
 
 export interface IconDef { s: string; f?: string }
 
@@ -32,28 +33,28 @@ export const ICONS = {
 export type IconId = keyof typeof ICONS;
 
 /** The icon a lens shows for a feature. */
-export function iconFor(l: LensId, f: Feature): IconId {
+export function iconFor(l: BuiltinLens, f: Feature): IconId {
   switch (l) {
-    case 'business': return f.business.value >= 4 ? 'ticketHi' : 'ticket';
-    case 'design': return f.design.status === 'none' ? 'boardNone' : 'board';
-    case 'development': return f.development.humanReviewed === false ? 'codeUnrev' : 'code';
-    case 'operations': return f.operations.environment === 'production' && !f.operations.alerting ? 'dialOff' : 'dial';
+    case 'business': return bl(f).business.value >= 4 ? 'ticketHi' : 'ticket';
+    case 'design': return bl(f).design.status === 'none' ? 'boardNone' : 'board';
+    case 'development': return bl(f).development.humanReviewed === false ? 'codeUnrev' : 'code';
+    case 'operations': return bl(f).operations.environment === 'production' && !bl(f).operations.alerting ? 'dialOff' : 'dial';
     case 'security': {
-      const se = f.security, shut = se.review === 'passed' || se.review === 'not-required';
+      const se = bl(f).security, shut = se.review === 'passed' || se.review === 'not-required';
       return se.dataClass === 'payment' ? (shut ? 'lockCard' : 'lockCardOpen') : shut ? 'lock' : 'lockOpen';
     }
     default: {
-      const q = f.quality;
+      const q = bl(f).quality;
       return q.status === 'failing' ? 'checkFail' : q.status === 'passed' ? 'check' : q.status === 'partial' || q.status === 'testing' ? 'checkPart' : 'checkNone';
     }
   }
 }
 /** The lens's name icon (legend, tabs, sheet headers). */
-export const LENS_ICON: Record<LensId, IconId> = { business: 'ticket', design: 'board', development: 'code', operations: 'dial', security: 'lock', quality: 'check' };
+export const LENS_ICON: Record<BuiltinLens, IconId> = { business: 'ticket', design: 'board', development: 'code', operations: 'dial', security: 'lock', quality: 'check' };
 
 /** Needle angle for the operations dial (0..1 of the half turn), or null for no needle. */
 export function dialNeedle(f: Feature, rolloutPct: number): number | null {
-  const op = f.operations;
+  const op = bl(f).operations;
   if (op.environment === 'production') return op.flag ? rolloutPct / 100 : 1;
   if (op.environment === 'staging' || op.environment === 'preview') return 0.08;
   return null;

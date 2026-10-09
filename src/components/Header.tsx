@@ -1,7 +1,6 @@
 'use client';
 import { motion } from 'motion/react';
-import { SHEETS, SHEET, type BayNode, type BldNode, type RoomNode, type WingNode } from '@/lib/model';
-import type { ViewId } from '@/lib/data';
+import { sheetOf, views, type BayNode, type BldNode, type RoomNode, type WingNode } from '@/lib/model';
 import { shallowEqual, useBp, useEngine, useVariant } from './hooks';
 import { ThemeToggle } from './ThemeToggle';
 import type { Crumb } from '@/engine/state';
@@ -11,7 +10,7 @@ function crumbLabel(E: ReturnType<typeof useEngine>, c: Crumb, short: boolean): 
   if (!o) return c.id;
   if (c.t === 'bld') return short ? (o as BldNode).b.short : (o as BldNode).name;
   if (c.t === 'wing') { const w = o as WingNode; return short ? w.def.letter : w.def.letter + ' · ' + w.def.name; }
-  if (c.t === 'room') { const r = o as RoomNode; return short ? r.d.base : r.d.name; }
+  if (c.t === 'room') { const r = o as RoomNode; return short ? r.d.code || r.d.name : r.d.name; }
   return (o as BayNode).cap.name;
 }
 
@@ -39,7 +38,7 @@ function Crumbs() {
       </span>
     );
   }
-  const items = [{ key: 'home', label: M.P.scale > 1 ? 'Kettle campus' : 'Kettle', depth: 0 }].concat(
+  const items = [{ key: 'home', label: M.P.scale > 1 ? M.P.name + ' campus' : M.P.name, depth: 0 }].concat(
     s.place.map((c, i) => ({ key: c.id, label: crumbLabel(E, c, short && i < s.place.length - 1), depth: i + 1 })),
   );
   return (
@@ -57,21 +56,23 @@ function Crumbs() {
   );
 }
 
+/** One tab per view: General, then every enabled lens in file order (name, short and question count from the data). */
 function LensTabs() {
-  const E = useEngine(), V = useVariant();
+  const E = useEngine(), V = useVariant(), P = E.M.P;
   const s = useBp((s) => ({ view: s.view, simV: s.simV }), shallowEqual);
   const open = E.M.sim.has ? E.M.sim.openDecs() : [];
   return (
     <div id="tabs" role="tablist" aria-label="Sheets (lenses)">
-      {SHEETS.map((sh, i) => {
-        const n = sh.k === 'general' ? 0 : open.filter((d) => d.lens === sh.k).length;
-        const on = s.view === sh.k;
-        const sub = V.ui?.tabLabel?.(sh.k) ?? sh.nm;
+      {views(P).map((k, i) => {
+        const sh = sheetOf(P, k);
+        const n = k === 'general' ? 0 : open.filter((d) => d.lens === k).length;
+        const on = s.view === k;
+        const sub = V.ui?.tabLabel?.(k) ?? sh.nm;
         return (
-          <button key={sh.k} type="button" role="tab" aria-selected={on} title={sh.title + ' (' + (i + 1) + ')' + (n ? ' · ' + n + ' questions waiting on this sheet' : '')} onClick={() => E.setView(sh.k as ViewId)}>
+          <button key={k} type="button" role="tab" aria-selected={on} title={sh.title + (sh.sub ? ': ' + sh.sub : '') + (i < 9 ? ' (' + (i + 1) + ')' : '') + (n ? ' · ' + n + ' questions waiting on this sheet' : '')} onClick={() => E.setView(k)}>
             <span className="no">{sh.no}{n ? <b className="ct">{n}</b> : null}</span>
             <span className="nm">{sub}</span>
-            <span className="kb">{i + 1}</span>
+            {i < 9 ? <span className="kb">{i + 1}</span> : null}
             {on && <motion.span layoutId="lens-uline" className="uline" transition={{ type: 'spring', stiffness: 420, damping: 36 }} />}
           </button>
         );
@@ -81,12 +82,13 @@ function LensTabs() {
 }
 
 export function Header() {
+  const E = useEngine(), P = E.M.P;
   const view = useBp((s) => s.view);
-  const sh = SHEET[view];
+  const sh = sheetOf(P, view);
   return (
     <header id="hdr">
       <div id="brand">
-        <div className="proj">Project Kettle · drawing set · <b>sheet {sh.no} · {sh.title}</b> · simulated swarm</div>
+        <div className="proj">Project {P.name} · drawing set · <b>sheet {sh.no} · {sh.title}</b> · simulated swarm</div>
         <Crumbs />
       </div>
       <div className="hdr-right">

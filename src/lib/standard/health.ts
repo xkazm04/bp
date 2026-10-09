@@ -169,14 +169,17 @@ export function lensHealth(manifest: LensManifest, facet: Facet | undefined, tod
  * when no rule decides the health (no facet, not applicable, nothing measured, or the default).
  * It explains the rules, not an override, which carries its own `why`.
  */
-export function explain(manifest: LensManifest, facet: Facet | undefined, ctx?: EvalContext): string | null {
+/** The matched rule's reason with `{field}` filled in; `form: 'short'` gives the rule's `short` (null when it has none). */
+export function explain(manifest: LensManifest, facet: Facet | undefined, ctx?: EvalContext, form: 'full' | 'short' = 'full'): string | null {
   if (!facet || facet.applicable === false) return null;
   const c = compile(manifest);
   const values = bindValues(manifest, facet.values, ctx);
   if (!measuredValues(values, c) || (c.applies && !evaluateCondition(c.applies, values))) return null;
   const r = matchRule(manifest, values);
   if (!r) return null;
-  return r.reason.replace(/\{([A-Za-z][A-Za-z0-9]*)\}/g, (_, k: string) => {
+  const text = form === 'short' ? r.short : r.reason;
+  if (text === undefined) return null;
+  return text.replace(/\{([A-Za-z][A-Za-z0-9]*)\}/g, (_, k: string) => {
     const v = Object.prototype.hasOwnProperty.call(values, k) ? values[k] : undefined;
     return v === undefined ? 'unknown' : String(v);
   });

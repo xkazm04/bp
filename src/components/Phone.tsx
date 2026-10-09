@@ -20,7 +20,7 @@ export function Phone() {
     <div className="ph">
       <PatternDefs />
       <div className="ph-top"><ThemeToggle /></div>
-      <div className="ph-h"><div className="k">PROJECT KETTLE · SHEET G-001 · {P.asOf} · SIMULATED SWARM</div><h1>KETTLE</h1><p>{P.base.product.tagline}</p></div>
+      <div className="ph-h"><div className="k">PROJECT {P.name.toUpperCase()} · SHEET G-001 · {P.asOf} · SIMULATED SWARM</div><h1>{P.name.toUpperCase()}</h1><p>{P.tagline}</p></div>
       <div className="ph-sum">
         <div><b>{P.features.length}</b>features</div><div><b>{c.live}</b>built · live</div><div><b>{c.build}</b>being built</div>
         <div className="am"><b>{sim.has ? qq.all.length : 0}</b>questions waiting</div>

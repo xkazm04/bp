@@ -70,12 +70,46 @@ Two other variants are references only, never to copy wholesale:
 - **A/2** (`judging/entries/A/variant-2/`) shows six full lens rethemes. The owner liked the ambition
   and rejected the readability cost.
 
-Data:
-- `src/data/kettle.json` and `src/data/swarm.json`, typed in `src/lib/data/types.ts` and imported from
-  `@/lib/data`.
-- Field meanings are in `.contest/stage-swarm/data/SCHEMA.md`, and the people and moments of use in
-  `.contest/stage-swarm/data/USERS.md`. Read both.
+Data (since the app-structure v3 adoption, spark `blueprint-data-standard` WP3):
+- The product comes **only** from the v3 map `src/data/kettle.app-structure.json` and its events log
+  `src/data/kettle.events.jsonl` (spec: `docs/standard/app-structure-v3.md`). The standard's loader
+  `src/lib/standard/load.ts` reads them (v3, or v2 per spec section 11) into the internal model that
+  `@/lib/data` exposes (`loadProduct()`); `src/data/swarm.json` stays the runtime feed (`SWARM`).
+  `src/data/kettle.json` is the old sample, kept only for the conversion and check scripts.
+- Feature ids in the app are slugs. A short passthrough `id` (`PAY-09`) is shown as a display code only.
+- People, the activity feed and the tagline come from the map's `extensions` (the sample keeps them
+  under `com.kettle.sample`); without them an actor id is shown as its own name.
+- History is replayed from the events log: a feature's stage revisions (time travel, "what changed",
+  the sheet's revisions table) and the 27 weekly snapshot counts of the revisions strip. The replay
+  reproduces the old stored snapshots exactly.
+- The people and moments of use are in `.contest/stage-swarm/data/USERS.md`.
 - The swarm is a simulation, and the UI says so.
+
+### Lenses are data
+
+- The **registry** is the map's `lenses[]` where `enabled` is true, in file order. Everything about a
+  lens (tab name and short, legend, glyph, line, measured field, evidence fields, density, health,
+  rollup, reasons) comes from its manifest. Adding a lens to the map, or enabling one, makes it appear
+  everywhere with no code change; disabling one removes it everywhere. Lens ids are plain strings.
+- **Session toggle:** `?lenses=-security,+com.kettle.cost` disables or enables lenses for the
+  session, on top of the file's `enabled` (`-id` off, `+id` or a bare id on; unknown ids are ignored).
+  The General legend says so.
+- **Health** per feature and lens is computed once per data load with the reference evaluator
+  (`src/lib/standard/health.ts`, the feature passed as context for bound fields, the KPIs for
+  KPI-bound fields), read on the map's as-of date, and cached with the matched rule's reason. It never
+  runs in the frame loop.
+- **General health** of a feature (tile trouble marks, "in trouble" counts, the phone list) is the
+  **worst of its enabled lenses' measured healths**, bad over watch over good; `unmeasured` and `na`
+  do not count, and a feature with no measured lens reads `unmeasured` (spec 8.4). Over the six
+  built-ins on the Kettle sample this equals the old stored overall health on every feature
+  (54 good, 64 watch, 14 bad); enabling `com.kettle.cost` does not change it.
+- **Place aggregates** (room, wing, building labels under a lens): the manifest's `health.rollup`
+  verdict, the bad and watch counts, and a headline-field summary (money summed, a rate or scale
+  averaged, the top enum value counted).
+- **Keyboard:** 1 = General, 2..9 = the enabled lenses in registry order (beyond nine, the tab strip
+  still reaches them).
+- A decision or standing order in `swarm.json` names its lens by id; one whose lens is disabled or
+  unknown is still listed, under General.
 
 ## Architecture
 
@@ -127,13 +161,13 @@ src/variants/<id>/          one lens expression per variant (see below) + option
 This is the core of the round. The engine models the view as a **mix**:
 
 ```ts
-type LensMix = { general: number } & Record<LensId, number>; // each 0..1
-// General:          general = 1, every lens = 1  → all six lens channels drawn in compact form
+type LensMix = { general: number } & Record<string, number>; // General + one weight per enabled lens, each 0..1
+// General:          general = 1, every lens = 1  → all N lens channels drawn in compact form
 // Lens "security":  general = 0, security = 1, others = 0 → only security remains, expanded
 ```
 
 - Switching lenses tweens the mix with a spring. A switch from General to Security fades and
-  collapses the other five channels, while Security's channel grows into the space they leave. The
+  collapses the other channels, while Security's channel grows into the space they leave. The
   plan, the positions and the **node colours never change**. A tile's base fill is its lifecycle
   stage, and it is the same in every lens.
 - Switching from Security to Design passes smoothly through the shared base. It never cuts.
@@ -152,9 +186,10 @@ The expression contract each variant implements (refine the types as you build, 
 interface LensExpression {
   id: string;                         // 'subtle' | 'shaped' | 'bold'
   name: string;                       // shown on the index page
-  channels: Record<LensId, LensChannel>;
-  /** How the six channels share a tile in General (slots, edges, corners…). */
-  composeGeneral(tile: TileGeom): Record<LensId, Rect>;
+  channels: Record<string, LensChannel>;          // lenses the variant draws itself
+  fallback?(lens: LensDef): LensChannel;           // any other lens, from its manifest alone
+  /** How the registry's channels share a tile in General (slots, edges, corners…). */
+  composeGeneral(tile: TileGeom, lenses: readonly string[]): Record<string, Rect>;
 }
 interface LensChannel {
   density: 'simple' | 'standard' | 'dense';
@@ -178,8 +213,19 @@ and the theme toggle). They share the engine, the UI and the data, and differ on
 `src/variants/<id>/` expression and small UI overrides. They span the owner's range:
 
 1. **subtle: patterns.** Every tile keeps its rectangle. Lenses differ by line patterns, hairline
-   marks and small icon sets in fixed slots. In General, six tiny indicators sit in a strip, and
-   a lens enlarges its own indicator into the tile's evidence line. Ink colours only.
+   marks and small icon sets in fixed slots. In General, one tiny indicator per enabled lens sits in
+   a strip, and a lens enlarges its own indicator into the tile's evidence line. Ink colours only.
+   **It is drawn entirely from the manifests:** the glyph by `presentation.glyph` (the shared set, or a
+   custom `{path}` parsed only by `Path2D`, at most 2048 characters), the line by `presentation.line`
+   (the shared set, `solid` included), the line's length by `presentation.measures` (a number over its
+   `max`, 0..100 for percent, the largest value in the map when there is no `max`; an enum by
+   position / (count - 1)), the evidence text by `presentation.evidence` formatted by type and cut to
+   2, 3 or 4 fields by `reader.density`, the stamp by the matched rule's reason (or the override's
+   why). **The N-slot rule:** a fixture gets a strip when a slot of the six-slot grid, (strip - 5 gaps)
+   / 6, is at least 10u wide, exactly as before. Up to six lenses keep that slot size, left-aligned in
+   registry order. With more than six, the slots shrink to share the strip, (strip - (N - 1) gaps) / N;
+   a slot of at least 10u shows glyph and rail, a narrower one the glyph only. The strip never wraps
+   (it would cover the id row); the tabs and keys reach every lens.
 2. **shaped: reshape and icons.**
    - Each lens reshapes the tile so it says something about that field. Business is a ticket whose
      notch depth shows value. Security cuts the corners of sensitive data. Operations is a pill with
@@ -195,6 +241,10 @@ and the theme toggle). They share the engine, the UI and the data, and differ on
      development lens.
    - Richer content per tile.
    - Still blue and white first, with readability kept. A/2 is the warning.
+
+The shaped and bold variants (and the base expression they share) know the six built-in lens ids and
+read their values from the facets through `src/variants/base/legacy.ts`; for any other lens id they fall
+back to the subtle manifest-driven channel and the default, manifest-driven sheet panel.
 
 All three: General stays the clearest view. A lens is subtle yet noticeable in variant 1, and
 unmistakable in variant 3. Every variant supports both themes and `?scale=4`.

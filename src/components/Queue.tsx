@@ -3,7 +3,7 @@
 // decides what rises; items reorder with a layout animation when the lens changes, and one click
 // accepts the agent's recommendation (undo sits in the toast).
 import { AnimatePresence, motion } from 'motion/react';
-import { SHEET, fmtWait, morningStats, pname, type SimDecision } from '@/lib/model';
+import { fmtWait, morningStats, pname, sheetOf, type SimDecision } from '@/lib/model';
 import { shallowEqual, useBp, useEngine, useVariant } from './hooks';
 
 function Item({ d }: { d: SimDecision }) {
@@ -20,7 +20,7 @@ function Item({ d }: { d: SimDecision }) {
       onClick={() => E.openDecision(d.id)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); E.openDecision(d.id); } }}
       onPointerEnter={() => !E.S.dec && E.setHlDec(d.id)} onPointerLeave={() => E.setHlDec(null)}
     >
-      <div className="k"><span>{urg} · <span className="lz">{SHEET[d.lens].no}</span></span><span>{d.base}{M.P.scale > 1 ? ' · ' + M.P.buildings[d.b].short : ''}{d.isNew ? ' · NEW' : ''}</span></div>
+      <div className="k"><span>{urg} · <span className="lz">{sheetOf(M.P, d.lens).no}</span></span><span>{d.base}{M.P.scale > 1 ? ' · ' + M.P.buildings[d.b].short : ''}{d.isNew ? ' · NEW' : ''}</span></div>
       <h4>{d.q}</h4>
       <div className="mt">{f.name} · {M.P.D[f.domain].name}<br />{pname(M.P, d.decider)} decides · waiting <b>{fmtWait(sim.waitMin(d))}</b> · holds <b>{bn}</b> agent{bn === 1 ? '' : 's'}</div>
       {note && <div className="note">{note}</div>}
@@ -58,7 +58,7 @@ export function AsksTab() {
         </>
       ) : (
         <>
-          <h3 className="dsec-h"><span>{s.view === 'general' ? 'Waiting for a person' : 'Sheet ' + SHEET[s.view].no + ' first'}</span><span>{q.all.length}</span></h3>
+          <h3 className="dsec-h"><span>{s.view === 'general' ? 'Waiting for a person' : 'Sheet ' + sheetOf(M.P, s.view).no + ' first'}</span><span>{q.all.length}</span></h3>
           {list((() => { const all = s.view === 'general' ? q.all : q.rest; return !s.askAll && all.length > 8 ? all.slice(0, 8) : all; })())}
           {more(q.all.length)}
         </>

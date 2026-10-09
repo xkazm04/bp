@@ -2,7 +2,8 @@
 // weight: its OUTLINE (shapes.ts, morphing in with dominance), its ICON (a chip set into the tile's top
 // edge: six side by side in General, one that widens into a tag with a small readout when the lens
 // stands alone), and one ACCENT colour used only for its marks and words. Nothing here fills a tile.
-import type { Feature, Health, LensId } from '@/lib/data';
+import type { Feature, Health } from '@/lib/data';
+import { bl, hof, ruled, type BuiltinLens } from '../base/legacy';
 import { isLiveSt } from '@/lib/model';
 import type { ChannelAggregate, ChannelContent, LensChannel, MarkArgs, Rect, Theme, TileGeom } from '../types';
 import { dialNeedle, drawIcon, iconFor } from './icons';
@@ -11,7 +12,7 @@ import {
 } from './shapes';
 
 /** Secondary accents: kept clear of the status colours (red, amber, mint) and of the blue ink. */
-export const ACCENTS: Record<LensId, { dark: string; light: string }> = {
+export const ACCENTS: Record<BuiltinLens, { dark: string; light: string }> = {
   business: { dark: '#c6ec6e', light: '#4f7a00' },
   design: { dark: '#ff9fd2', light: '#b42a76' },
   development: { dark: '#a9b5ff', light: '#3d48c9' },
@@ -41,7 +42,7 @@ type Edge = (a: MarkArgs, d: number) => void;
 type Readout = (a: MarkArgs, r: Rect) => void;
 type Ribbon = (a: MarkArgs) => void;
 
-function paint(l: LensId, a: MarkArgs, edge: Edge, readout: Readout, ribbon: Ribbon) {
+function paint(l: BuiltinLens, a: MarkArgs, edge: Edge, readout: Readout, ribbon: Ribbon) {
   const { ctx, tile: t, f, th } = a;
   if (!a.stage) return;
   const ga = ctx.globalAlpha;
@@ -55,7 +56,7 @@ function paint(l: LensId, a: MarkArgs, edge: Edge, readout: Readout, ribbon: Rib
   const x = a.x, w = a.w, s = r.h, cy = r.y + s / 2;
   if (s < 10 * u) {
     // too small for a picture: the chip degrades to a plain health cell (General at mid zoom)
-    if (x < 0.99) { ctx.globalAlpha = ga * w * (1 - x); ctx.fillStyle = healthCol(th, f[l].health); ctx.fillRect(r.x, r.y + s * 0.25, r.w, s * 0.5); }
+    if (x < 0.99) { ctx.globalAlpha = ga * w * (1 - x); ctx.fillStyle = healthCol(th, hof(f, l)); ctx.fillRect(r.x, r.y + s * 0.25, r.w, s * 0.5); }
     if (x > 0.01) { ctx.globalAlpha = ga * w * x; ctx.fillStyle = a.accent; ctx.fillRect(r.x, r.y + s * 0.25, r.w, s * 0.5); }
     ctx.globalAlpha = ga; return;
   }
@@ -69,7 +70,7 @@ function paint(l: LensId, a: MarkArgs, edge: Edge, readout: Readout, ribbon: Rib
   }
   const is = s * (0.86 - 0.3 * (1 - w)), lw = clamp(is * 0.1, 1.1, 1.8), icx = r.x + s / 2, id = iconFor(l, f);
   const needle = l === 'operations' ? dialNeedle(f, a.live.rolloutPct) : null;
-  if (x < 0.99) { ctx.globalAlpha = ga * w * (1 - x); drawIcon(ctx, id, icx, cy, is, healthCol(th, f[l].health), lw, needle); }
+  if (x < 0.99) { ctx.globalAlpha = ga * w * (1 - x); drawIcon(ctx, id, icx, cy, is, healthCol(th, hof(f, l)), lw, needle); }
   if (x > 0.01) { ctx.globalAlpha = ga * w * x; drawIcon(ctx, id, icx, cy, is, a.accent, lw, needle); }
   const rw = tagW - s - 3 * u;
   if (x > 0.05 && rw > s * 0.9) {
@@ -104,9 +105,9 @@ const business: LensChannel = {
   accent: ACCENTS.business,
   shape: shapeTicket,
   marks(a) {
-    paint('business', a, (m, d) => edgeTicket(m.ctx, m.tile, m.f, d, m.accent), (m, r) => pips(m.ctx, r, 5, m.f.business.value, m.accent, 'dia'), (m) => {
+    paint('business', a, (m, d) => edgeTicket(m.ctx, m.tile, m.f, d, m.accent), (m, r) => pips(m.ctx, r, 5, bl(m.f).business.value, m.accent, 'dia'), (m) => {
       // L0/L1: a ticket bite out of the segment's top edge, as deep as the value
-      const { ctx, tile: t, f } = m, v = f.business.value;
+      const { ctx, tile: t, f } = m, v = bl(f).business.value;
       const rr = Math.min(t.w * 0.34, t.h * 0.42) * (0.25 + (0.75 * (v - 1)) / 4), cx = t.x + t.w / 2;
       if (rr < 1.2) return;
       ctx.fillStyle = m.th.paper; ctx.beginPath(); ctx.arc(cx, t.y, rr, 0, Math.PI); ctx.fill();
@@ -114,16 +115,16 @@ const business: LensChannel = {
     });
   },
   content(f): ChannelContent {
-    const b = f.business, rev: Record<string, string> = { direct: 'direct revenue', retention: 'retention', indirect: 'indirect', none: '' };
+    const b = bl(f).business, rev: Record<string, string> = { direct: 'direct revenue', retention: 'retention', indirect: 'indirect', none: '' };
     return {
       parts: ['Value ' + b.value + '/5', b.customerRequests30d ? b.customerRequests30d + ' asks' : '', rev[b.revenueLink] ?? ''].filter(Boolean),
-      stamp: f.flags.includes('demand-waiting') ? 'Customers are waiting' : f.flags.includes('priority-not-started') ? 'Priority, not started' : undefined,
+      stamp: ruled(f, 'business', 'customerRequests30d') ? 'Customers are waiting' : ruled(f, 'business', 'priority') ? 'Priority, not started' : undefined,
     };
   },
   aggregate(fs): ChannelAggregate {
-    const asks = fs.reduce((s, f) => s + (f.business.customerRequests30d || 0), 0);
-    const mrr = fs.reduce((s, f) => s + (f.business.mrrImpactUsd || 0), 0);
-    return agg([count(fs, (f) => f.business.value >= 4) + ' high value', asks + ' asks', mrr ? '$' + (mrr >= 1000 ? Math.round(mrr / 100) / 10 + 'k' : mrr) + ' MRR' : '']);
+    const asks = fs.reduce((s, f) => s + (bl(f).business.customerRequests30d || 0), 0);
+    const mrr = fs.reduce((s, f) => s + (bl(f).business.mrrImpactUsd || 0), 0);
+    return agg([count(fs, (f) => bl(f).business.value >= 4) + ' high value', asks + ' asks', mrr ? '$' + (mrr >= 1000 ? Math.round(mrr / 100) / 10 + 'k' : mrr) + ' MRR' : '']);
   },
 };
 
@@ -136,29 +137,29 @@ const design: LensChannel = {
   shape: shapeBoard,
   marks(a) {
     paint('design', a, (m, d) => edgeCrops(m.ctx, m.tile, m.f, d, m.accent, m.th), (m, r) => {
-      if (m.f.design.status === 'n/a') return;
-      pips(m.ctx, r, 5, DSTEP[m.f.design.status] ?? 0, m.accent, 'sq');
+      if (bl(m.f).design.status === 'n/a') return;
+      pips(m.ctx, r, 5, DSTEP[bl(m.f).design.status] ?? 0, m.accent, 'sq');
     }, (m) => {
       // L0/L1: crop marks at the segment's corners, longer the further the design got
-      const { ctx, tile: t } = m, k = (DSTEP[m.f.design.status] ?? 0) / 5;
+      const { ctx, tile: t } = m, k = (DSTEP[bl(m.f).design.status] ?? 0) / 5;
       if (!k) return;
       const L = Math.min(t.w, t.h) * 0.42 * k + 1.5, g = 1.5;
-      ctx.strokeStyle = m.f.design.a11y === 'fail' ? m.th.red : m.accent; ctx.lineWidth = 1.3; ctx.beginPath();
+      ctx.strokeStyle = bl(m.f).design.a11y === 'fail' ? m.th.red : m.accent; ctx.lineWidth = 1.3; ctx.beginPath();
       ctx.moveTo(t.x - g, t.y - g + L); ctx.lineTo(t.x - g, t.y - g); ctx.lineTo(t.x - g + L, t.y - g);
       ctx.moveTo(t.x + t.w + g - L, t.y + t.h + g); ctx.lineTo(t.x + t.w + g, t.y + t.h + g); ctx.lineTo(t.x + t.w + g, t.y + t.h + g - L);
       ctx.stroke();
     });
   },
   content(f) {
-    const de = f.design, built = isLiveSt(f.stage) || f.stage === 'in-review' || f.stage === 'in-dev';
+    const de = bl(f).design, built = isLiveSt(f.stage) || f.stage === 'in-review' || f.stage === 'in-dev';
     return {
       parts: [DWORD[de.status] ?? de.status],
       stamp: de.a11y === 'fail' ? 'Fails accessibility' : de.specDrift ? 'Built off the design' : de.status === 'none' && built ? 'Built without a design' : undefined,
     };
   },
   aggregate(fs) {
-    const ui = fs.filter((f) => f.design.status !== 'n/a');
-    return agg([count(ui, (f) => (DSTEP[f.design.status] ?? 0) >= 3) + ' of ' + ui.length + ' designed', count(ui, (f) => f.design.status === 'none') + ' no design']);
+    const ui = fs.filter((f) => bl(f).design.status !== 'n/a');
+    return agg([count(ui, (f) => (DSTEP[bl(f).design.status] ?? 0) >= 3) + ' of ' + ui.length + ' designed', count(ui, (f) => bl(f).design.status === 'none') + ' no design']);
   },
 };
 
@@ -170,7 +171,7 @@ const development: LensChannel = {
   marks(a) {
     paint('development', a, (m, d) => edgeSpines(m.ctx, m.tile, m.f, d, m.accent, m.th, m.live.progressPct), (m, r) => {
       // agent-written share (filled) against human-written (hollow); one tick per open PR above it
-      const dv = m.f.development;
+      const dv = bl(m.f).development;
       bar(m.ctx, { x: r.x, y: r.y + r.h * 0.3, w: r.w, h: r.h * 0.7 }, dv.aiAuthoredPct / 100, m.accent);
       if (dv.openPRs) { m.ctx.fillStyle = m.accent; for (let i = 0; i < Math.min(dv.openPRs, 4); i++) m.ctx.fillRect(r.x + i * 4 * m.tile.u, r.y - r.h * 0.12, 2 * m.tile.u, r.h * 0.32); }
     }, (m) => {
@@ -179,23 +180,23 @@ const development: LensChannel = {
       if (p <= 0) return;
       const bw = Math.max(2, Math.min(3 * t.u, t.w * 0.18));
       ctx.fillStyle = m.accent; ctx.fillRect(t.x + 1, t.y + t.h * (1 - p), bw, t.h * p);
-      if (m.f.development.humanReviewed === false && t.w > 9) { ctx.strokeStyle = m.accent; ctx.lineWidth = 1; ctx.strokeRect(t.x + 1.5, t.y + 0.5, bw, t.h - 1); }
+      if (bl(m.f).development.humanReviewed === false && t.w > 9) { ctx.strokeStyle = m.accent; ctx.lineWidth = 1; ctx.strokeRect(t.x + 1.5, t.y + 0.5, bw, t.h - 1); }
     });
   },
   content(f, live) {
-    const dv = f.development;
+    const dv = bl(f).development;
     return {
       parts: [dv.progressPct >= 100 ? 'DONE' : Math.round(live.progressPct) + '%', 'AI ' + dv.aiAuthoredPct + '%', dv.unitCoveragePct != null ? 'COV ' + dv.unitCoveragePct : '', dv.openPRs ? 'PR ' + dv.openPRs : '', dv.techDebt ? 'DEBT ' + dv.techDebt : ''].filter(Boolean),
       stamp: dv.humanReviewed === false ? 'No human review' : dv.stalled ? 'Stalled' : undefined,
     };
   },
   aggregate(fs) {
-    const started = fs.filter((f) => f.development.status !== 'not-started');
+    const started = fs.filter((f) => bl(f).development.status !== 'not-started');
     return agg([
-        count(fs, (f) => f.development.humanReviewed === false) + ' unreviewed',
-        Math.round(started.reduce((s, f) => s + f.development.aiAuthoredPct, 0) / Math.max(1, started.length)) + '% agent code',
-        fs.reduce((s, f) => s + f.development.openPRs, 0) + ' PRs',
-        count(fs, (f) => f.development.unitCoveragePct != null && f.development.unitCoveragePct < 50) + ' thin cov',
+        count(fs, (f) => bl(f).development.humanReviewed === false) + ' unreviewed',
+        Math.round(started.reduce((s, f) => s + bl(f).development.aiAuthoredPct, 0) / Math.max(1, started.length)) + '% agent code',
+        fs.reduce((s, f) => s + bl(f).development.openPRs, 0) + ' PRs',
+        count(fs, (f) => (bl(f).development.unitCoveragePct ?? Infinity) < 50) + ' thin cov',
     ]);
   },
 };
@@ -209,10 +210,10 @@ const operations: LensChannel = {
   marks(a) {
     paint('operations', a, (m, d) => edgeGauge(m.ctx, m.tile, m.f, d, m.accent, m.th, m.live.rolloutPct), (m, r) => {
       // how far it has travelled: preview, staging, production
-      pips(m.ctx, { x: r.x, y: r.y, w: Math.min(r.w, r.h * 4.8), h: r.h }, 3, ENVS[m.f.operations.environment] ?? 0, m.accent, 'dot');
+      pips(m.ctx, { x: r.x, y: r.y, w: Math.min(r.w, r.h * 4.8), h: r.h }, 3, ENVS[bl(m.f).operations.environment] ?? 0, m.accent, 'dot');
     }, (m) => {
       // L0/L1: a gauge line along the segment's foot, as long as the rollout
-      const { ctx, tile: t } = m, op = m.f.operations;
+      const { ctx, tile: t } = m, op = bl(m.f).operations;
       if (op.environment === 'none') return;
       const pc = op.environment === 'production' ? (op.flag ? m.live.rolloutPct / 100 : 1) : 0.3, bh = Math.max(2, Math.min(3 * t.u, t.h * 0.16));
       ctx.fillStyle = m.accent;
@@ -221,7 +222,7 @@ const operations: LensChannel = {
     });
   },
   content(f, live) {
-    const op = f.operations;
+    const op = bl(f).operations;
     if (op.environment !== 'production') return { parts: [op.environment === 'none' ? 'NOT DEPLOYED' : op.environment.toUpperCase()] };
     return {
       parts: [(op.flag ? live.rolloutPct : 100) + '%', op.p95ms != null ? 'P95 ' + op.p95ms + 'MS' : '', op.errorRatePct != null ? op.errorRatePct + '% ERR' : '', op.sloActual != null ? 'SLO ' + op.sloActual : '', op.incidents30d ? op.incidents30d + ' INC' : ''].filter(Boolean),
@@ -229,8 +230,8 @@ const operations: LensChannel = {
     };
   },
   aggregate(fs) {
-    const inc = count(fs, (f) => f.operations.incidents30d > 0);
-    return agg([count(fs, (f) => f.operations.environment === 'production') + ' live', count(fs, (f) => f.operations.environment === 'production' && !f.operations.alerting) + ' no alerting', inc ? inc + ' had incidents' : '']);
+    const inc = count(fs, (f) => bl(f).operations.incidents30d > 0);
+    return agg([count(fs, (f) => bl(f).operations.environment === 'production') + ' live', count(fs, (f) => bl(f).operations.environment === 'production' && !bl(f).operations.alerting) + ' no alerting', inc ? inc + ' had incidents' : '']);
   },
 };
 
@@ -245,10 +246,10 @@ const security: LensChannel = {
   marks(a) {
     paint('security', a, (m, d) => edgeCut(m.ctx, m.tile, m.f, d, m.accent), (m, r) => {
       // how sensitive: three steps, internal / personal / card data
-      pips(m.ctx, { x: r.x, y: r.y, w: Math.min(r.w, r.h * 4.8), h: r.h }, 3, CLASSN[m.f.security.dataClass] ?? 0, m.accent, 'dia');
+      pips(m.ctx, { x: r.x, y: r.y, w: Math.min(r.w, r.h * 4.8), h: r.h }, 3, CLASSN[bl(m.f).security.dataClass] ?? 0, m.accent, 'dia');
     }, (m) => {
       // L0/L1: the segment's corner is cut, deeper for card data; unreviewed sensitive data loses two
-      const { ctx, tile: t } = m, se = m.f.security, n = CLASSN[se.dataClass] ?? 0;
+      const { ctx, tile: t } = m, se = bl(m.f).security, n = CLASSN[se.dataClass] ?? 0;
       if (!n) return;
       const c = Math.min(t.w * 0.5, t.h * 0.6) * (n / 3), open = (n >= 2) && (se.review === 'pending' || se.review === 'not-started');
       ctx.fillStyle = m.th.paper; ctx.strokeStyle = m.accent; ctx.lineWidth = 1.3;
@@ -260,7 +261,7 @@ const security: LensChannel = {
     });
   },
   content(f, live) {
-    const se = f.security, sensitive = se.dataClass === 'payment' || se.dataClass === 'personal';
+    const se = bl(f).security, sensitive = se.dataClass === 'payment' || se.dataClass === 'personal';
     const isLive = isLiveSt(f.stage) && live.rolloutPct > 0;
     return {
       parts: [CLASSW[se.dataClass] ?? se.dataClass.toUpperCase(), se.review === 'findings' ? se.openFindings + ' FINDINGS' : REVW[se.review] ?? se.review.toUpperCase()],
@@ -268,8 +269,8 @@ const security: LensChannel = {
     };
   },
   aggregate(fs) {
-    const open = count(fs, (f) => (f.security.dataClass === 'payment' || f.security.dataClass === 'personal') && (f.security.review === 'pending' || f.security.review === 'not-started'));
-    return agg([open + ' sensitive unreviewed', count(fs, (f) => f.security.dataClass === 'payment') + ' card data', count(fs, (f) => f.security.dataClass === 'personal') + ' personal']);
+    const open = count(fs, (f) => (bl(f).security.dataClass === 'payment' || bl(f).security.dataClass === 'personal') && (bl(f).security.review === 'pending' || bl(f).security.review === 'not-started'));
+    return agg([open + ' sensitive unreviewed', count(fs, (f) => bl(f).security.dataClass === 'payment') + ' card data', count(fs, (f) => bl(f).security.dataClass === 'personal') + ' personal']);
   },
 };
 
@@ -280,12 +281,12 @@ const quality: LensChannel = {
   shape: shapeComb,
   marks(a) {
     paint('quality', a, (m, d) => edgeComb(m.ctx, m.tile, m.f, d, m.accent, m.th), (m, r) => {
-      const q = m.f.quality;
+      const q = bl(m.f).quality;
       if (!q.e2eTests) { m.ctx.strokeStyle = m.accent; m.ctx.lineWidth = 1; m.ctx.setLineDash([2, 2]); m.ctx.strokeRect(r.x + 0.5, r.y + r.h * 0.2 + 0.5, r.w - 1, r.h * 0.6 - 1); m.ctx.setLineDash([]); return; }
       bar(m.ctx, r, q.e2ePassing / q.e2eTests, m.accent, q.e2ePassing < q.e2eTests ? m.th.red : m.accent);
     }, (m) => {
       // L0/L1: a ruled tick per quarter of the end-to-end tests that pass, down the segment's right edge
-      const { ctx, tile: t } = m, q = m.f.quality;
+      const { ctx, tile: t } = m, q = bl(m.f).quality;
       if (!q.e2eTests) return;
       const n = Math.round((4 * q.e2ePassing) / q.e2eTests), pitch = t.h / 4.6, tw = Math.max(3, Math.min(6 * t.u, t.w * 0.3));
       ctx.fillStyle = m.accent;
@@ -294,17 +295,17 @@ const quality: LensChannel = {
     });
   },
   content(f) {
-    const q = f.quality;
+    const q = bl(f).quality;
     return {
       parts: [q.e2eTests ? q.e2ePassing + '/' + q.e2eTests + ' E2E' : isLiveSt(f.stage) ? 'NO E2E' : 'UNTESTED', q.openBugs.p1 ? q.openBugs.p1 + ' P1' : '', q.openBugs.p2 ? q.openBugs.p2 + ' P2' : ''].filter(Boolean),
       stamp: q.status === 'failing' ? 'Tests failing' : q.openBugs.p1 ? 'Open P1 bug' : undefined,
     };
   },
   aggregate(fs) {
-    const t = fs.reduce((s, f) => s + f.quality.e2eTests, 0), p = fs.reduce((s, f) => s + f.quality.e2ePassing, 0);
-    const p1 = fs.reduce((s, f) => s + f.quality.openBugs.p1, 0);
-    return agg([p + '/' + t + ' tests pass', count(fs, (f) => isLiveSt(f.stage) && !f.quality.e2eTests) + ' live untested', p1 ? p1 + ' P1' : '']);
+    const t = fs.reduce((s, f) => s + bl(f).quality.e2eTests, 0), p = fs.reduce((s, f) => s + bl(f).quality.e2ePassing, 0);
+    const p1 = fs.reduce((s, f) => s + bl(f).quality.openBugs.p1, 0);
+    return agg([p + '/' + t + ' tests pass', count(fs, (f) => isLiveSt(f.stage) && !bl(f).quality.e2eTests) + ' live untested', p1 ? p1 + ' P1' : '']);
   },
 };
 
-export const CHANNELS: Record<LensId, LensChannel> = { business, design, development, operations, security, quality };
+export const CHANNELS: Record<BuiltinLens, LensChannel> = { business, design, development, operations, security, quality };

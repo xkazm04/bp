@@ -1,6 +1,6 @@
 // Discrete UI state held in the external store. Only things that change on a click, a key or a
 // simulation event live here; continuous values (camera, clock, hover position, mix) stay in the engine.
-import type { FeatureFlag, ViewId } from '@/lib/data';
+import type { ViewId } from '@/lib/data';
 import type { Preview, SimEvent, SimToast, Target } from '@/lib/model';
 
 export type DockTab = 'asks' | 'swarm' | 'orders' | 'plan';
@@ -34,7 +34,8 @@ export interface UIState {
   who: string | null;
   ga: boolean;
   blast: string | null;
-  key: FeatureFlag | null;
+  /** A lens id: highlight the features in trouble under it. */
+  key: string | null;
   dtab: DockTab;
   selMode: boolean;
   dockHidden: boolean;

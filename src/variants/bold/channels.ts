@@ -3,7 +3,8 @@
 // plus at most one ornament around the tile (crop marks, a security perimeter). Marks are lines and small
 // glyphs in the lens accent: they never fill the tile, so the stage fill stays the tile's colour.
 // Budget: a handful of primitives per tile; no measureText; fonts are cached strings.
-import type { Feature, Health, LensId } from '@/lib/data';
+import type { Feature, Health } from '@/lib/data';
+import { bl, ruled, type BuiltinLens } from '../base/legacy';
 import { isLiveSt } from '@/lib/model';
 import type { ChannelAggregate, LensChannel, MarkArgs, Rect, TileGeom, Theme } from '../types';
 import { ACCENT } from './palette';
@@ -101,8 +102,8 @@ const business: LensChannel = {
     p.closePath();
   },
   marks(a) {
-    forms(a, a.f.business.health, (m) => {
-      const b = m.f.business, asks = clamp((b.customerRequests30d || 0) / 30, 0, 1);
+    forms(a, bl(a.f).business.health, (m) => {
+      const b = bl(m.f).business, asks = clamp((b.customerRequests30d || 0) / 30, 0, 1);
       if (small(m)) { footLine(m, b.value / 5); return; }
       const { ctx, r, th } = m, u = m.tile.u;
       // value as five pips (filled = value), customer asks as a bar under them, $ when revenue is direct
@@ -122,17 +123,17 @@ const business: LensChannel = {
     });
   },
   content(f) {
-    const b = f.business, asks = b.customerRequests30d || 0;
+    const b = bl(f).business, asks = b.customerRequests30d || 0;
     const money = b.mrrImpactUsd ? kUsd(b.mrrImpactUsd) + '/mo' : b.revenueLink === 'none' ? 'no revenue link' : b.revenueLink;
     return {
       parts: [asks ? asks + (asks === 1 ? ' ask' : ' asks') : 'no asks', money, 'value ' + b.value + '/5'],
-      stamp: f.flags.includes('demand-waiting') ? 'Customers are waiting' : b.value >= 4 && (f.stage === 'idea' || f.stage === 'specified') ? 'High value, not started' : undefined,
+      stamp: ruled(f, 'business', 'customerRequests30d') ? 'Customers are waiting' : b.value >= 4 && (f.stage === 'idea' || f.stage === 'specified') ? 'High value, not started' : undefined,
     };
   },
   aggregate(fs): ChannelAggregate {
-    const rq = fs.reduce((s, f) => s + (f.business.customerRequests30d || 0), 0);
-    const mrr = fs.reduce((s, f) => s + (f.business.revenueLink === 'direct' ? f.business.mrrImpactUsd || 0 : 0), 0);
-    return { parts: [rq + ' customer asks', kUsd(mrr) + '/mo direct revenue', count(fs, (f) => f.business.value >= 4) + ' high value'] };
+    const rq = fs.reduce((s, f) => s + (bl(f).business.customerRequests30d || 0), 0);
+    const mrr = fs.reduce((s, f) => s + (bl(f).business.revenueLink === 'direct' ? bl(f).business.mrrImpactUsd || 0 : 0), 0);
+    return { parts: [rq + ' customer asks', kUsd(mrr) + '/mo direct revenue', count(fs, (f) => bl(f).business.value >= 4) + ' high value'] };
   },
 };
 
@@ -143,8 +144,8 @@ const design: LensChannel = {
   accent: ACCENT.design,
   shape(p, t, _f, w) { if (plain(p, t)) return; rounded(p, t, Math.min(12 * t.u, t.h / 5) * w); },
   marks(a) {
-    forms(a, a.f.design.health, (m) => {
-      const de = m.f.design, lv = FIDELITY[de.status];
+    forms(a, bl(a.f).design.health, (m) => {
+      const de = bl(m.f).design, lv = FIDELITY[de.status];
       if (lv == null) return; // n/a
       if (small(m)) { footLine(m, lv / 5, lv === 0); return; }
       const { ctx, r, th } = m, u = m.tile.u;
@@ -177,7 +178,7 @@ const design: LensChannel = {
     });
   },
   content(f) {
-    const de = f.design;
+    const de = bl(f).design;
     const words: Record<string, string> = { none: 'No design yet', sketch: 'Sketch', wireframe: 'Wireframe', 'hi-fi': 'Hi-fi design', implemented: 'Built to design', polished: 'Polished', 'n/a': 'No screen' };
     return {
       parts: [de.a11y === 'fail' ? 'Fails accessibility' : words[de.status] ?? de.status],
@@ -185,13 +186,13 @@ const design: LensChannel = {
     };
   },
   aggregate(fs) {
-    return { parts: [count(fs, (f) => f.design.status === 'polished' || f.design.status === 'implemented') + ' built to design', count(fs, (f) => f.design.status === 'none' && f.stage !== 'idea') + ' without design', count(fs, (f) => f.design.a11y === 'fail') + ' fail accessibility'] };
+    return { parts: [count(fs, (f) => bl(f).design.status === 'polished' || bl(f).design.status === 'implemented') + ' built to design', count(fs, (f) => bl(f).design.status === 'none' && f.stage !== 'idea') + ' without design', count(fs, (f) => bl(f).design.a11y === 'fail') + ' fail accessibility'] };
   },
 };
 
 // ------------------------------------------------------------------------------------- development
 function diamond(a: MarkArgs, ga0: number) {
-  const { ctx, th, tile: t } = a, u = t.u, dv = a.f.development;
+  const { ctx, th, tile: t } = a, u = t.u, dv = bl(a.f).development;
   if (!(a.stage && a.now && dv.humanReviewed === false && t.form === 'tile' && t.w < 150 * u && t.w >= 26 * u)) return;
   const dx = t.x + t.w - 7 * u, dy = t.y + t.h - 7 * u, dd = Math.max(2.5 * u, Math.min(4.5 * u, t.w / 28));
   ctx.globalAlpha = ga0 * a.w; ctx.strokeStyle = th.ink; ctx.lineWidth = 1.1;
@@ -203,8 +204,8 @@ const development: LensChannel = {
   shape(p, t, _f, w) { if (plain(p, t)) return; const c = Math.min(7 * t.u, t.h / 8) * w; chamfer(p, t, c, c, c, c); },
   marks(a) {
     const ga0 = a.ctx.globalAlpha;
-    forms(a, a.f.development.health, (m) => {
-      const dv = m.f.development, prog = m.live.progressPct / 100;
+    forms(a, bl(a.f).development.health, (m) => {
+      const dv = bl(m.f).development, prog = m.live.progressPct / 100;
       if (small(m)) { footLine(m, prog); return; }
       const { ctx, r, th } = m, u = m.tile.u;
       // a terminal progress bar of block cells, and the agent-written share as a hairline under it
@@ -222,7 +223,7 @@ const development: LensChannel = {
     diamond(a, ga0);
   },
   content(f, live) {
-    const dv = f.development;
+    const dv = bl(f).development;
     return {
       parts: [
         dv.progressPct < 100 ? Math.round(live.progressPct) + '%' : dv.status === 'merged' ? 'MERGED' : 'DONE',
@@ -234,8 +235,8 @@ const development: LensChannel = {
     };
   },
   aggregate(fs) {
-    const prs = fs.reduce((s, f) => s + (f.development.openPRs || 0), 0);
-    return { parts: [count(fs, (f) => f.development.humanReviewed === false) + ' unreviewed', Math.round(fs.reduce((s, f) => s + f.development.aiAuthoredPct, 0) / Math.max(1, fs.length)) + '% agent-written', prs + ' open PRs', count(fs, (f) => f.development.unitCoveragePct != null && f.development.unitCoveragePct < 50) + ' thin coverage'] };
+    const prs = fs.reduce((s, f) => s + (bl(f).development.openPRs || 0), 0);
+    return { parts: [count(fs, (f) => bl(f).development.humanReviewed === false) + ' unreviewed', Math.round(fs.reduce((s, f) => s + bl(f).development.aiAuthoredPct, 0) / Math.max(1, fs.length)) + '% agent-written', prs + ' open PRs', count(fs, (f) => (bl(f).development.unitCoveragePct ?? Infinity) < 50) + ' thin coverage'] };
   },
 };
 
@@ -245,8 +246,8 @@ const operations: LensChannel = {
   accent: ACCENT.operations,
   shape(p, t, _f, w) { if (plain(p, t)) return; rounded(p, t, Math.min(t.h / 2, 20 * t.u) * w); },
   marks(a) {
-    forms(a, a.f.operations.health, (m) => {
-      const op = m.f.operations, prod = op.environment === 'production';
+    forms(a, bl(a.f).operations.health, (m) => {
+      const op = bl(m.f).operations, prod = op.environment === 'production';
       const rp = prod ? (op.flag ? m.live.rolloutPct : 100) / 100 : 0;
       if (small(m)) { if (op.environment !== 'none') footLine(m, prod ? rp : 1, !prod); return; }
       const { ctx, r, th } = m, u = m.tile.u;
@@ -273,7 +274,7 @@ const operations: LensChannel = {
     });
   },
   content(f, live) {
-    const op = f.operations;
+    const op = bl(f).operations;
     if (op.environment !== 'production') return { parts: [op.environment === 'none' ? 'NOT DEPLOYED' : op.environment.toUpperCase()] };
     return {
       parts: [(op.flag ? live.rolloutPct : 100) + '% OUT', op.p95ms != null ? 'P95 ' + op.p95ms : '', op.errorRatePct != null ? 'ERR ' + op.errorRatePct + '%' : '', op.incidents30d ? op.incidents30d + ' INC' : ''].filter(Boolean),
@@ -281,7 +282,7 @@ const operations: LensChannel = {
     };
   },
   aggregate(fs) {
-    return { parts: [count(fs, (f) => f.operations.environment === 'production') + ' in production', count(fs, (f) => f.operations.environment === 'production' && !f.operations.alerting) + ' without alerting', fs.reduce((s, f) => s + (f.operations.incidents30d || 0), 0) + ' incidents · 30 d'] };
+    return { parts: [count(fs, (f) => bl(f).operations.environment === 'production') + ' in production', count(fs, (f) => bl(f).operations.environment === 'production' && !bl(f).operations.alerting) + ' without alerting', fs.reduce((s, f) => s + (bl(f).operations.incidents30d || 0), 0) + ' incidents · 30 d'] };
   },
 };
 
@@ -293,12 +294,12 @@ const security: LensChannel = {
   shape(p, t, f, w) {
     if (plain(p, t)) return;
     // a shield: the top corners are cut, deeper for more sensitive data
-    const c = Math.min(4 * SENS[f.security.dataClass] * t.u, t.h / 5) * w;
+    const c = Math.min(4 * SENS[bl(f).security.dataClass] * t.u, t.h / 5) * w;
     chamfer(p, t, c, c, 0, 0);
   },
   marks(a) {
-    forms(a, a.f.security.health, (m) => {
-      const se = m.f.security, lvl = SENS[se.dataClass] ?? 0;
+    forms(a, bl(a.f).security.health, (m) => {
+      const se = bl(m.f).security, lvl = SENS[se.dataClass] ?? 0;
       const { ctx, r, th } = m, u = m.tile.u;
       if (small(m)) {
         if (!lvl) return;
@@ -326,7 +327,7 @@ const security: LensChannel = {
       }
     }, (m) => {
       // the perimeter: a fence just inside the tile, double for card data, dashed for personal data
-      const lvl = SENS[m.f.security.dataClass] ?? 0; if (!lvl) return;
+      const lvl = SENS[bl(m.f).security.dataClass] ?? 0; if (!lvl) return;
       const { ctx } = m, t = m.tile, u = t.u, i = 4 * u, c = Math.min(4 * lvl * u, t.h / 5) + i * 0.4;
       const x = t.x + i, y = t.y + i, w = t.w - 2 * i, h = t.h - 2 * i;
       if (w < 20 || h < 14) return;
@@ -340,7 +341,7 @@ const security: LensChannel = {
     });
   },
   content(f, live) {
-    const se = f.security;
+    const se = bl(f).security;
     const cls: Record<string, string> = { payment: 'CARD DATA', personal: 'PERSONAL DATA', internal: 'INTERNAL', public: 'PUBLIC' };
     const rev: Record<string, string> = { 'not-required': 'NO REVIEW NEEDED', 'not-started': 'NOT REVIEWED', pending: 'REVIEW PENDING', passed: 'REVIEWED', findings: se.openFindings + ' FINDINGS' };
     const sensitive = se.dataClass === 'payment' || se.dataClass === 'personal';
@@ -351,7 +352,7 @@ const security: LensChannel = {
     };
   },
   aggregate(fs) {
-    return { parts: [count(fs, (f) => f.security.dataClass === 'payment') + ' card data', count(fs, (f) => f.security.dataClass === 'personal') + ' personal data', count(fs, (f) => (f.security.dataClass === 'payment' || f.security.dataClass === 'personal') && (f.security.review === 'pending' || f.security.review === 'not-started')) + ' unreviewed', fs.reduce((s, f) => s + f.security.openFindings, 0) + ' findings'] };
+    return { parts: [count(fs, (f) => bl(f).security.dataClass === 'payment') + ' card data', count(fs, (f) => bl(f).security.dataClass === 'personal') + ' personal data', count(fs, (f) => (bl(f).security.dataClass === 'payment' || bl(f).security.dataClass === 'personal') && (bl(f).security.review === 'pending' || bl(f).security.review === 'not-started')) + ' unreviewed', fs.reduce((s, f) => s + bl(f).security.openFindings, 0) + ' findings'] };
   },
 };
 
@@ -361,8 +362,8 @@ const quality: LensChannel = {
   accent: ACCENT.quality,
   shape(p, t, _f, w) { if (plain(p, t)) return; const c = Math.min(10 * t.u, t.h / 5) * w; chamfer(p, t, c, 0, 0, c); },
   marks(a) {
-    forms(a, a.f.quality.health, (m) => {
-      const q = m.f.quality, pp = q.e2eTests ? q.e2ePassing / q.e2eTests : 0;
+    forms(a, bl(a.f).quality.health, (m) => {
+      const q = bl(m.f).quality, pp = q.e2eTests ? q.e2ePassing / q.e2eTests : 0;
       if (small(m)) { if (q.e2eTests) footLine(m, pp); return; }
       const { ctx, r, th } = m, u = m.tile.u;
       // the checklist: one box per end-to-end test (up to 8), ticked when it passes, crossed when it fails
@@ -389,19 +390,19 @@ const quality: LensChannel = {
     });
   },
   content(f) {
-    const q = f.quality, b = q.openBugs;
+    const q = bl(f).quality, b = q.openBugs;
     return {
       parts: [q.e2eTests ? q.e2ePassing + '/' + q.e2eTests + ' E2E' : isLiveSt(f.stage) ? 'NO E2E' : 'UNTESTED', b.p1 ? b.p1 + ' P1' : b.p2 ? b.p2 + ' P2' : '0 BUGS'],
       stamp: q.status === 'failing' ? 'Tests failing' : b.p1 ? 'Open P1 bug' : undefined,
     };
   },
   aggregate(fs) {
-    const t = fs.reduce((s, f) => s + f.quality.e2eTests, 0), p = fs.reduce((s, f) => s + f.quality.e2ePassing, 0);
-    return { parts: [p + '/' + t + ' e2e passing', fs.reduce((s, f) => s + f.quality.openBugs.p1, 0) + ' open P1', count(fs, (f) => f.quality.status === 'untested' && isLiveSt(f.stage)) + ' live untested'] };
+    const t = fs.reduce((s, f) => s + bl(f).quality.e2eTests, 0), p = fs.reduce((s, f) => s + bl(f).quality.e2ePassing, 0);
+    return { parts: [p + '/' + t + ' e2e passing', fs.reduce((s, f) => s + bl(f).quality.openBugs.p1, 0) + ' open P1', count(fs, (f) => bl(f).quality.status === 'untested' && isLiveSt(f.stage)) + ' live untested'] };
   },
 };
 
-export const CHANNELS: Record<LensId, LensChannel> = { business, design, development, operations, security, quality };
+export const CHANNELS: Record<BuiltinLens, LensChannel> = { business, design, development, operations, security, quality };
 
 /** The rect a lone lens's instrument grows into: the tile's lower-right corner (the band on ribbons). */
 export function instrumentRect(t: TileGeom): Rect {

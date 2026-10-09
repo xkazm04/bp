@@ -4,8 +4,8 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
-  FLAGS, FLAGNO, SHEET, STAGE_PLAIN, STAGE_WORD, ORDER_TEMPLATES, TICK_CLASS, astat, dnum, fmtWait, isAgentId, isLiveSt, morningStats,
-  pname, stageAt, type BayNode, type BldNode, type OrderTemplate, type RoomNode, type WingNode,
+  GA_MILESTONE, STAGE_PLAIN, STAGE_WORD, ORDER_TEMPLATES, TICK_CLASS, astat, dnum, fmtWait, isAgentId, isLiveSt, lensOf, morningStats,
+  pname, sheetOf, stageAt, type BayNode, type BldNode, type OrderTemplate, type RoomNode, type WingNode,
 } from '@/lib/model';
 import { illoSVG } from '@/engine/render/illo';
 import { shallowEqual, useBp, useEngine, useVariant } from './hooks';
@@ -58,7 +58,7 @@ export function Ticker() {
 function plainStage(E: ReturnType<typeof useEngine>, f: import('@/lib/data').Feature, st: ReturnType<typeof stageAt>, now: boolean) {
   let s = st ? STAGE_PLAIN[st] : 'Not yet on the drawing at this date';
   if (now) {
-    if (st === 'flagged' && f.operations.flag) s = 'Live for ' + E.M.sim.rolloutOf(f) + '% of studios, behind a switch';
+    if (st === 'flagged' && E.M.sim.rolloutOf(f) < 100) s = 'Live for ' + E.M.sim.rolloutOf(f) + '% of studios, behind a switch';
     if (st === 'in-dev') s = 'Being built, about ' + Math.round(E.M.sim.progOf(f)) + '% done';
   }
   return s;
@@ -112,16 +112,16 @@ function HoverBody() {
     const f = M.P.F[h.id]; if (!f) return null;
     const st = stageAt(f, s.t, M.P.asOf);
     let line = plainStage(E, f, st, now);
-    if (now) { const ag = f.builtBy.filter((p) => isAgentId(M.P, p)); if (ag.length) line += '. Built by ' + ag.map((p) => pname(M.P, p)).join(' & ') + (f.development.humanReviewed === false ? ', no human review' : ''); }
-    const lw = now && s.view !== 'general' ? lensWords(f, s.view, sim) : null;
+    if (now) { const ag = f.builtBy.filter((p) => isAgentId(M.P, p)); if (ag.length) line += '. Built by ' + ag.map((p) => pname(M.P, p)).join(' & '); }
+    const lw = now && lensOf(M.P, s.view) ? lensWords(M.P, f, s.view, sim) : null;
     const br = now && sim.has ? sim.breachesOn(f.id) : [];
     return (
       <>
-        <div className="k">{f.id} · {M.P.D[f.domain].name} › {M.P.C[f.capability].name}</div>
+        <div className="k">{f.code ? f.code + ' · ' : ''}{M.P.D[f.domain].name} › {M.P.C[f.capability].name}</div>
         <div className="n">{f.name}</div>
         <div className="s">{line}.</div>
         {lw && <div className="e">{lw}</div>}
-        {now && f.flags.length ? <div className="t">{f.flags.map((k) => <div key={k}>◆ {FLAGS[FLAGNO[k]][1]}</div>)}</div> : null}
+        {now && f.trouble.length ? <div className="t">{f.trouble.slice(0, 3).map((t) => <div key={t.lens} style={t.h === 'watch' ? { color: 'var(--amber)' } : undefined}>◆ {M.P.LENS[t.lens].name}: {t.why}</div>)}</div> : null}
         <SwarmLines fs={[f]} />
         {now && sim.has && (sim.AGF[f.id] || []).slice(0, 4).map((a) => <div key={a.id} className="sw dim">{a.base} · {a.task}</div>)}
         {br.length ? <div className="t">● Breaches order {br.map((b) => b.id).join(', ')}</div> : null}
@@ -136,7 +136,7 @@ function HoverBody() {
   else if (h.type === 'bay') { const b = o as BayNode; title = b.cap.name; kick = 'Bay · ' + b.room.d.name; sub = b.tiles.length + ' features: ' + b.tiles.map((T) => T.f.name).join(', ') + '.'; art = b.room.d.base; }
   else { const b = o as BldNode; title = b.name; kick = 'Building'; sub = b.wings.length + ' wings, ' + b.wings.reduce((n, w) => n + w.rooms.length, 0) + ' rooms'; }
   const c = M.agg.countsOf(o.id, o.feats, s.t, s.delta);
-  const parts = s.view !== 'general' && now ? [o.feats.length + ' features', ...E.lensAgg(o.id, s.view, o.feats).parts] : [o.feats.length + ' features', c.live + c.flagged + ' live', c.build + ' building', c.paper + ' on paper'];
+  const parts = lensOf(M.P, s.view) && now ? [o.feats.length + ' features', ...E.lensAgg(o.id, s.view, o.feats).parts] : [o.feats.length + ' features', c.live + c.flagged + ' live', c.build + ' building', c.paper + ' on paper'];
   const bad = now ? M.agg.healthOf(o.id, o.feats, s.view).bad : 0, tot = Math.max(1, c.n);
   return (
     <>
@@ -200,7 +200,7 @@ export function DecisionCard() {
           <div ref={ref} style={{ position: 'absolute', left: 0, top: 0, zIndex: 8 }}>
             <motion.div id="dcard" key={d.id} className={'u-' + d.urg} role="dialog" aria-label="Decision" style={{ position: 'relative' }}
               initial={{ opacity: 0, y: 8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 6, transition: { duration: 0.15 } }} transition={{ type: 'spring', stiffness: 420, damping: 32 }}>
-              <div className="k"><span>RFI · {d.base} · {d.urg === 'high' ? 'urgent' : d.urg === 'medium' ? 'soon' : 'when you can'} · sheet {SHEET[d.lens].no}</span><button type="button" className="x" aria-label="Close" onClick={() => E.closeDecision()}>Esc</button></div>
+              <div className="k"><span>RFI · {d.base} · {d.urg === 'high' ? 'urgent' : d.urg === 'medium' ? 'soon' : 'when you can'} · sheet {sheetOf(M.P, d.lens).no}</span><button type="button" className="x" aria-label="Close" onClick={() => E.closeDecision()}>Esc</button></div>
               <h3>{d.q}</h3>
               <div className="by"><b>{A ? A.base : d.by}</b> ({A ? sim.crewName(A.sq) : ''}) stopped at <b>{f.name}</b> and asks <b>{pname(M.P, d.decider)}</b>.</div>
               <div className="meta"><span>waiting {fmtWait(sim.waitMin(d))}</span><span>holds {bn} agent{bn === 1 ? '' : 's'}</span><span>touches {d.affects.length}</span></div>
@@ -288,25 +288,26 @@ export function Callout() {
     body = (
       <>
         <button type="button" className="x" onClick={() => E.setMode({ blast: null })}>CLEAR · ESC</button>
-        <h4>Blast radius · {f0.id}</h4><div className="big">If {f0.name} breaks</div>
+        <h4>Blast radius{f0.code ? ' · ' + f0.code : ''}</h4><div className="big">If {f0.name} breaks</div>
         <div className="row"><span>Depend on it directly</span><b>{direct.length}</b></div>
         <div className="row"><span>…of them live for customers</span><b style={{ color: 'var(--red-2)' }}>{prodDir.length}</b></div>
         <div className="row"><span>Reached through the chain</span><b>{bl.length}</b></div>
         <div className="row"><span>…of them live for customers</span><b>{prodAll.length}</b></div>
         {sim.has && <div className="row"><span>Agents working inside that radius</span><b style={{ color: 'var(--mint)' }}>{sim.agents.filter((a) => a.f === s.blast || bl.includes(a.f)).length}</b></div>}
         <div className="sub">DIRECT DEPENDENTS</div>
-        {direct.map((id) => <button key={id} type="button" className="lnk" onClick={() => { E.setMode({ blast: null }); E.openFeature(id); }}><i>{id}</i>{M.P.F[id].name} <span style={{ color: 'var(--ink-2)' }}>· {STAGE_WORD[M.P.F[id].stage].toLowerCase()}</span></button>)}
+        {direct.map((id) => { const g = M.P.F[id]; return <button key={id} type="button" className="lnk" onClick={() => { E.setMode({ blast: null }); E.openFeature(id); }}>{g.code ? <i>{g.code}</i> : null}{g.name} <span style={{ color: 'var(--ink-2)' }}>· {g.stage ? STAGE_WORD[g.stage].toLowerCase() : 'stage unknown'}</span></button>; })}
       </>
     );
   } else if (s.ga) {
-    const m2 = M.P.features.filter((f) => f.milestone === 'M2'), cnt = (fn: (f: (typeof m2)[number]) => boolean) => m2.filter(fn).length;
-    const blocked = m2.filter((f) => f.flags.includes('blocked')), unsafe = m2.filter((f) => isLiveSt(f.stage) && (f.flags.includes('security-gap') || f.flags.includes('ai-unreviewed-in-production')));
-    const days = Math.round(dnum(M.P.MS.M2.date) - dnum(M.P.asOf)), onM2 = sim.has ? sim.agents.filter((a) => sim.msOf(a.f) === 'M2').length : 0;
+    // done but unsafe = live (or flagged) and in trouble under any enabled lens; blocked = has open blockers
+    const ga = M.P.MS[GA_MILESTONE], m2 = M.P.features.filter((f) => f.milestone === GA_MILESTONE), cnt = (fn: (f: (typeof m2)[number]) => boolean) => m2.filter(fn).length;
+    const blocked = m2.filter((f) => f.blockedBy.length > 0), unsafe = m2.filter((f) => isLiveSt(f.stage) && f.health === 'bad');
+    const days = ga ? Math.round(dnum(ga.date) - dnum(M.P.asOf)) : 0, onM2 = sim.has ? sim.agents.filter((a) => sim.msOf(a.f) === GA_MILESTONE).length : 0;
     cls = 'ga';
     body = (
       <>
         <button type="button" className="x" onClick={() => E.setMode({ ga: false })}>CLOSE · G</button>
-        <h4>Milestone M2 · {M.P.MS.M2.date}</h4><div className="big">Payments GA in {days} days</div>
+        <h4>Milestone {ga?.code ?? ''} · {ga?.date}</h4><div className="big">{ga?.name ?? 'The milestone'} in {days} days</div>
         <div className="row"><span>Features in this release</span><b>{m2.length}</b></div>
         <div className="row"><span>Done, live for all</span><b>{cnt((f) => f.stage === 'live')}</b></div>
         <div className="row"><span>Partly open (flagged)</span><b>{cnt((f) => f.stage === 'flagged')}</b></div>
@@ -316,9 +317,9 @@ export function Callout() {
         <div className="row"><span>Done but unsafe</span><b style={{ color: 'var(--red-2)' }}>{unsafe.length}</b></div>
         {sim.has && <><div className="row"><span>Agents on it right now</span><b style={{ color: 'var(--mint)' }}>{onM2} of {sim.agents.length}</b></div><div style={{ marginTop: 8 }}><button type="button" className="bt go" style={{ width: '100%', justifyContent: 'center' }} onClick={() => E.preview('ga')}>Put the swarm on it…</button></div></>}
         <div className="sub">DONE BUT UNSAFE</div>
-        {unsafe.map((f) => <button key={f.id} type="button" className="lnk" onClick={() => E.openFeature(f.id)}><i>{f.id}</i>{f.name}</button>)}
+        {unsafe.map((f) => <button key={f.id} type="button" className="lnk" onClick={() => E.openFeature(f.id)}>{f.code ? <i>{f.code}</i> : null}{f.name}</button>)}
         <div className="sub">BLOCKED</div>
-        {blocked.map((f) => <button key={f.id} type="button" className="lnk" onClick={() => E.openFeature(f.id)}><i>{f.id}</i>{f.name} <span style={{ color: 'var(--ink-2)' }}>← {f.blockedBy.map((b) => M.P.F[b].name).join(', ')}</span></button>)}
+        {blocked.map((f) => <button key={f.id} type="button" className="lnk" onClick={() => E.openFeature(f.id)}>{f.code ? <i>{f.code}</i> : null}{f.name} <span style={{ color: 'var(--ink-2)' }}>← {f.blockedBy.map((b) => M.P.F[b].name).join(', ')}</span></button>)}
       </>
     );
   }

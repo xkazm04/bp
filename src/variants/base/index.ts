@@ -3,7 +3,8 @@
 import type { Variant, VariantId } from '../types';
 import { baseExpression } from './expression';
 
-export { baseExpression, BASE_ACCENTS, LENS_ORDER, band, healthCell } from './expression';
+export { baseExpression, BASE_ACCENTS, band, healthCell } from './expression';
+export { bl, hof, ruled } from './legacy';
 
 /** Build a variant from the base expression under another id and name. */
 export function fromBase(id: VariantId, name: string, description: string): Variant {

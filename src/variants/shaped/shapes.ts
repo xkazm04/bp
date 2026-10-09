@@ -3,7 +3,8 @@
 // morph is continuous and the clip of the stage fill always matches the stroke. The amounts are capped
 // in UI px (u) so the engine's text rows (id/evidence at the top, name, stamp at the foot, all inset 7u)
 // stay clear of the reshaped edges at every zoom.
-import type { Feature, LensId } from '@/lib/data';
+import type { Feature } from '@/lib/data';
+import { bl as builtin, type BuiltinLens } from '../base/legacy';
 import type { Theme, TileGeom } from '../types';
 
 const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
@@ -12,9 +13,9 @@ const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
 // The engine gives `shape` the dominance d but gives `marks` only presence and expansion. Shape is
 // always called just before the same tile's marks, so the dominant lens leaves d here for its own
 // marks to pick up (and clear). Edge marks follow d, exactly like the outline they decorate.
-const stash = { f: '', l: '' as LensId | '', d: 0 };
-function put(l: LensId, f: Feature, d: number) { stash.f = f.id; stash.l = l; stash.d = d; }
-export function takeD(l: LensId, f: Feature): number {
+const stash = { f: '', l: '' as BuiltinLens | '', d: 0 };
+function put(l: BuiltinLens, f: Feature, d: number) { stash.f = f.id; stash.l = l; stash.d = d; }
+export function takeD(l: BuiltinLens, f: Feature): number {
   if (stash.f === f.id && stash.l === l) { stash.f = ''; return stash.d; }
   return 0;
 }
@@ -26,7 +27,7 @@ function box(t: TileGeom) { return { X: t.x + 0.5, Y: t.y + 0.5, W: t.w - 1, H: 
 /** Shallow side bites; their depth is the business value (1..5). */
 export function ticketGeom(t: TileGeom, f: Feature, d: number) {
   const { X, Y, W, H } = box(t), u = t.u;
-  const v = clamp(f.business.value, 1, 5);
+  const v = clamp(builtin(f).business.value, 1, 5);
   const depth = d * Math.min(H * 0.13, 7.2 * u) * (0.22 + (0.78 * (v - 1)) / 4);
   const c = Math.min(H * 0.3, 20 * u);
   return { X, Y, W, H, depth, c, cy: Y + H / 2 };
@@ -55,7 +56,7 @@ export function edgeTicket(ctx: CanvasRenderingContext2D, t: TileGeom, f: Featur
 // ------------------------------------------------------------------------- security: cut corners
 /** Corner cuts [TR, BR, BL] by data class; card data is cut deepest, public data not at all. */
 export function cutGeom(t: TileGeom, f: Feature, d: number) {
-  const { X, Y, W, H } = box(t), u = t.u, cls = f.security.dataClass;
+  const { X, Y, W, H } = box(t), u = t.u, cls = builtin(f).security.dataClass;
   // the foot-right corner carries the depth (the evidence text sits top-right, the stamp foot-left)
   const m = d * Math.min(H * 0.3, W * 0.2, 24 * u), sm = Math.min(m * 0.5, 12 * u * d);
   const k = cls === 'payment' ? [sm, m, sm] : cls === 'personal' ? [sm, m * 0.68, 0] : cls === 'internal' ? [0, m * 0.36, 0] : [0, 0, 0];
@@ -70,7 +71,7 @@ export function shapeCut(p: Path2D, t: TileGeom, f: Feature, d: number) {
 }
 export function edgeCut(ctx: CanvasRenderingContext2D, t: TileGeom, f: Feature, d: number, col: string) {
   const { X, Y, W, H, tr, br, bl } = cutGeom(t, f, d), u = t.u, o = 2.8 * u * d;
-  const se = f.security, open = se.review === 'pending' || se.review === 'not-started' || se.review === 'findings';
+  const se = builtin(f).security, open = se.review === 'pending' || se.review === 'not-started' || se.review === 'findings';
   ctx.strokeStyle = col; ctx.lineWidth = Math.max(1.5, 1.8 * u); ctx.lineCap = 'butt';
   ctx.setLineDash(open ? [3 * u, 2.5 * u] : []);
   ctx.beginPath();
@@ -97,7 +98,7 @@ export function shapePill(p: Path2D, t: TileGeom, f: Feature, d: number) {
 }
 /** The gauge along the straight bottom edge: rollout of the live service (or a dotted staging run). */
 export function edgeGauge(ctx: CanvasRenderingContext2D, t: TileGeom, f: Feature, d: number, col: string, th: Theme, rollout: number) {
-  const { X, Y, W, H, r } = pillGeom(t, d), u = t.u, op = f.operations;
+  const { X, Y, W, H, r } = pillGeom(t, d), u = t.u, op = builtin(f).operations;
   const x0 = X + Math.max(r, 6 * u), x1 = X + W - Math.max(r, 6 * u), y = Y + H - 3.4 * u, len = x1 - x0;
   if (len < 8) return;
   const bh = Math.max(2.5, 3 * u);
@@ -132,7 +133,7 @@ export function shapeBracket(p: Path2D, t: TileGeom, f: Feature, d: number) {
 }
 /** Left recess: progress spine (bottom up). Right recess: the share written by agents. */
 export function edgeSpines(ctx: CanvasRenderingContext2D, t: TileGeom, f: Feature, d: number, col: string, th: Theme, progress: number) {
-  const { X, Y, W, H, b, s } = bracketGeom(t, d), dv = f.development;
+  const { X, Y, W, H, b, s } = bracketGeom(t, d), dv = builtin(f).development;
   if (b < 1.5) return;
   const len = H - 2 * s - 4 * t.u, y1 = Y + H - s - 2 * t.u, bw = Math.max(2, b * 0.62);
   if (len < 6) return;
@@ -149,7 +150,7 @@ export function edgeSpines(ctx: CanvasRenderingContext2D, t: TileGeom, f: Featur
 // ---------------------------------------------------------------------- quality: checklist edge
 /** The left edge becomes a column of checkbox notches, one per end-to-end test (capped by room). */
 export function combGeom(t: TileGeom, f: Feature, d: number) {
-  const { X, Y, W, H } = box(t), u = t.u, q = f.quality;
+  const { X, Y, W, H } = box(t), u = t.u, q = builtin(f).quality;
   const top = Y + Math.min(H * 0.18, 12 * u), bot = Y + H - Math.min(H * 0.14, 9 * u), room = bot - top;
   const pitch0 = Math.max(4.2 * u, 4), n = q.e2eTests > 0 ? Math.max(1, Math.min(q.e2eTests, Math.floor(room / pitch0))) : 0;
   const pitch = n ? room / n : 0, depth = d * Math.min(W * 0.04, 5 * u), nh = Math.min(pitch * 0.62, 5.5 * u);
@@ -180,7 +181,7 @@ export function edgeComb(ctx: CanvasRenderingContext2D, t: TileGeom, f: Feature,
   for (let i = 0; i < pass; i++) { const cy = top + pitch * (i + 0.5); ctx.rect(X + 0.8, cy - nh / 2 + 0.8, depth - 1.6, nh - 1.6); }
   ctx.fill();
   if (pass < n) {
-    ctx.strokeStyle = f.quality.status === 'failing' ? th.red : col; ctx.lineWidth = 1; ctx.beginPath();
+    ctx.strokeStyle = builtin(f).quality.status === 'failing' ? th.red : col; ctx.lineWidth = 1; ctx.beginPath();
     for (let i = pass; i < n; i++) { const cy = top + pitch * (i + 0.5); ctx.rect(X + 1.2, cy - nh / 2 + 1.2, depth - 2.4, nh - 2.4); }
     ctx.stroke();
   }
@@ -198,7 +199,7 @@ export function shapeBoard(p: Path2D, t: TileGeom, f: Feature, d: number) {
   p.rect(X + m, Y + m, W - 2 * m, H - 2 * m);
 }
 export function edgeCrops(ctx: CanvasRenderingContext2D, t: TileGeom, f: Feature, d: number, col: string, th: Theme) {
-  const { X, Y, W, H, m } = boardGeom(t, d), u = t.u, de = f.design, k = CROP[de.status] ?? 0;
+  const { X, Y, W, H, m } = boardGeom(t, d), u = t.u, de = builtin(f).design, k = CROP[de.status] ?? 0;
   if (m < 1 || !k) return;
   const g = 2 * u * d, len = (m + 5 * u) * k * d;
   const x0 = X + m, y0 = Y + m, x1 = X + W - m, y1 = Y + H - m;

@@ -342,6 +342,7 @@
 .evp .r span:first-child { color: var(--ink-2); }
 .evp .r b { font: 500 14px var(--mono); text-align: right; } .evp .r b.bad { color: var(--red-2); } .evp .r b.watch { color: var(--amber); }
 .evp .note { font-size: 14px; color: var(--ink-2); margin-top: 4px; line-height: 1.35; }
+.evp .note.ov { color: var(--ink); border-left: 2px solid var(--amber); padding-left: 7px; } .evp .note.ov b { color: var(--amber); font-weight: 600; }
 .evp .more { font: 500 12px var(--mono); color: var(--ink-2); margin-top: 4px; letter-spacing: 0.04em; }
 .evp.mini .r { display: none; } .evp.mini .r.key { display: flex; }
 .dsec { margin-top: 18px; }

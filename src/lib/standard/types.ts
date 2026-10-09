@@ -55,7 +55,8 @@ export type ConditionLeaf =
   | Leaf<'missing', true> | Leaf<'present', true>;
 export type Condition = ConditionLeaf | { all: Condition[] } | { any: Condition[] } | { not: Condition };
 
-export interface HealthRule { when: Condition; health: ComputedHealth; reason: string }
+/** `short` (optional, max 28 chars) is the reason for tight places such as a tile stamp. */
+export interface HealthRule { when: Condition; health: ComputedHealth; reason: string; short?: string }
 
 export type Rollup =
   | { method: 'worst-of' }

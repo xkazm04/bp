@@ -12,10 +12,11 @@ import { useBp } from '@/components/hooks';
 import type { SheetPanelProps } from '../types';
 import { LENS_NAME } from './palette';
 import { CHANNELS } from './channels';
+import { bl, hof, isBuiltinLens, type BuiltinLens } from '../base/legacy';
 
 const HW: Record<string, string> = { good: 'GOOD', watch: 'WATCH', bad: 'BAD', na: 'N/A' };
 function Head({ p, label }: { p: SheetPanelProps; label: string }) {
-  const h = p.f[p.lens].health, n = LENS_NAME[p.lens];
+  const h = hof(p.f, p.lens), n = LENS_NAME[p.lens as BuiltinLens];
   return <div className="bd-h"><span className="no">{n.no}</span><span className="nm">{label}</span><span className={'hl ' + h}>{HW[h]}</span></div>;
 }
 const usd = (n: number) => '$' + n.toLocaleString('en-US');
@@ -24,7 +25,7 @@ const usd = (n: number) => '$' + n.toLocaleString('en-US');
 const FID = ['sketch', 'wireframe', 'hi-fi', 'implemented', 'polished'];
 const FID_WORD: Record<string, string> = { none: 'No design yet', sketch: 'A sketch', wireframe: 'Wireframed', 'hi-fi': 'Hi-fi design ready', implemented: 'Built to the design', polished: 'Polished', 'n/a': 'No screen to design' };
 function DesignBoard({ p }: { p: SheetPanelProps }) {
-  const de = p.f.design, lv = FID.indexOf(de.status);
+  const de = bl(p.f).design, lv = FID.indexOf(de.status);
   const fact = de.a11y === 'fail' ? 'Fails accessibility' : de.specDrift ? 'Built differently from the design' : FID_WORD[de.status] ?? de.status;
   const bad = de.a11y === 'fail' || de.specDrift;
   return (
@@ -47,7 +48,7 @@ function DesignBoard({ p }: { p: SheetPanelProps }) {
 // ------------------------------------------------------------------------------------- development
 function bar(pct: number, n = 20) { const on = Math.round((pct / 100) * n); return '█'.repeat(on) + '░'.repeat(n - on); }
 function Terminal({ p }: { p: SheetPanelProps }) {
-  const f = p.f, dv = f.development;
+  const f = p.f, dv = bl(f).development;
   useBp((s) => s.simV);
   const prog = Math.round(p.model.sim.progOf(f));
   const rows: [string, string, string?][] = [
@@ -77,7 +78,7 @@ function Terminal({ p }: { p: SheetPanelProps }) {
 
 // ---------------------------------------------------------------------------------------- business
 function Ledger({ p }: { p: SheetPanelProps }) {
-  const b = p.f.business, asks = b.customerRequests30d || 0;
+  const b = bl(p.f).business, asks = b.customerRequests30d || 0;
   const rev = b.revenueLink === 'direct' ? (b.mrrImpactUsd ? 'It brings in about ' + usd(b.mrrImpactUsd) + ' a month.' : 'It earns money directly.')
     : b.revenueLink === 'retention' ? 'It keeps customers from leaving' + (b.mrrImpactUsd ? ', worth about ' + usd(b.mrrImpactUsd) + ' a month.' : '.')
     : b.revenueLink === 'indirect' ? 'It helps sales indirectly.' : 'It is not tied to revenue.';
@@ -110,7 +111,7 @@ function Gauge({ v, max, label, unit, warn }: { v: number | null; max: number; l
 }
 function Control({ p }: { p: SheetPanelProps }) {
   useBp((s) => s.simV);
-  const f = p.f, op = f.operations, prod = op.environment === 'production';
+  const f = p.f, op = bl(f).operations, prod = op.environment === 'production';
   const roll = prod ? (op.flag ? p.model.sim.rolloutOf(f) : 100) : null;
   return (
     <div className="bd-panel bd-ops">
@@ -136,7 +137,7 @@ const CLASSES = ['public', 'internal', 'personal', 'payment'];
 const CLASS_WORD: Record<string, string> = { public: 'Public', internal: 'Internal', personal: 'Personal data', payment: 'Card data' };
 const REV_WORD: Record<string, string> = { 'not-required': 'No review needed', 'not-started': 'Not reviewed', pending: 'Review pending', passed: 'Review passed', findings: 'Open findings' };
 function Perimeter({ p }: { p: SheetPanelProps }) {
-  const se = p.f.security, ci = CLASSES.indexOf(se.dataClass);
+  const se = bl(p.f).security, ci = CLASSES.indexOf(se.dataClass);
   const sensitive = ci >= 2, open = se.review === 'pending' || se.review === 'not-started';
   return (
     <div className="bd-panel bd-sec">
@@ -154,7 +155,7 @@ function Perimeter({ p }: { p: SheetPanelProps }) {
 
 // ----------------------------------------------------------------------------------------- quality
 function Inspection({ p }: { p: SheetPanelProps }) {
-  const q = p.f.quality, b = q.openBugs, n = q.e2eTests;
+  const q = bl(p.f).quality, b = q.openBugs, n = q.e2eTests;
   return (
     <div className="bd-panel bd-qa">
       <Head p={p} label="Inspection" />
@@ -172,20 +173,24 @@ function Inspection({ p }: { p: SheetPanelProps }) {
 }
 
 /** Collapsed under another lens: the header plus this lens's key fact, in its reader's voice. */
-function Mini({ p }: { p: SheetPanelProps }) {
-  const c = CHANNELS[p.lens].content(p.f, { rolloutPct: p.model.sim.rolloutOf(p.f), progressPct: p.f.development.progressPct });
+function Mini({ p }: { p: SheetPanelProps & { lens: BuiltinLens } }) {
+  const f = p.f, sim = p.model.sim;
+  const c = CHANNELS[p.lens].content(f, { rolloutPct: sim.rolloutOf(f), progressPct: bl(f).development.progressPct, value: (l, k) => sim.liveValue(f, l, k) });
   const sans = p.lens === 'business' || p.lens === 'design';
   return (
     <>
-      <div className="bd-h"><span className="no">{LENS_NAME[p.lens].no}</span><span className="nm">{LENS_NAME[p.lens].nm}</span><span className={'hl ' + p.f[p.lens].health}>{HW[p.f[p.lens].health]}</span></div>
+      <div className="bd-h"><span className="no">{LENS_NAME[p.lens].no}</span><span className="nm">{LENS_NAME[p.lens].nm}</span><span className={'hl ' + hof(p.f, p.lens)}>{HW[hof(p.f, p.lens)]}</span></div>
       <div className={'bd-mini' + (sans ? ' sans' : '')}>{c.parts.slice(0, 2).join(' · ')}</div>
     </>
   );
 }
 
 export function BoldPanel(p: SheetPanelProps) {
-  if (!p.expanded) return p.view === 'general' ? <DefaultLensPanel {...p} /> : <Mini p={p} />;
-  switch (p.lens) {
+  // a lens other than the six built-ins: the default, manifest-driven panel
+  const lens = p.lens;
+  if (!isBuiltinLens(lens)) return <DefaultLensPanel {...p} />;
+  if (!p.expanded) return p.view === 'general' ? <DefaultLensPanel {...p} /> : <Mini p={{ ...p, lens }} />;
+  switch (lens) {
     case 'design': return <DesignBoard p={p} />;
     case 'development': return <Terminal p={p} />;
     case 'business': return <Ledger p={p} />;

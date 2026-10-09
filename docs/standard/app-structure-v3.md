@@ -281,7 +281,7 @@ Bound values are not measurements: a facet whose only values would be feature-bo
 ```jsonc
 "health": {
   "applies_when": <condition>,            // optional
-  "rules": [ { "when": <condition>, "health": "good" | "watch" | "bad", "reason": "text with {field}" } ],
+  "rules": [ { "when": <condition>, "health": "good" | "watch" | "bad", "reason": "text with {field}", "short": "≤ 28 chars, optional" } ],
   "default": "good" | "watch" | "bad",
   "rollup": { "method": "worst-of" } | { "method": "share", "watch": 0.2, "bad": 0.34 } | { "method": "weighted", "by": "<field>" }
 }
@@ -330,6 +330,9 @@ Semantics, exactly:
    the health. If none matches, the health is `default`.
 6. **Reasons.** `{key}` in `reason` is replaced by the field's value (bound values included), or by
    `unknown` when it is absent.
+7. **Short reasons.** A rule MAY add `short` (at most 28 characters, same `{key}` substitution):
+   the reason for tight places such as a tile stamp. Viewers use `reason` where it fits and fall
+   back to `short`; a rule without `short` falls back to the lens name.
 
 **What a condition can read.** The lens's own facet values, with bound fields filled in (KPI values
 and the whitelisted core feature fields). It cannot read other lenses' values or compare two fields

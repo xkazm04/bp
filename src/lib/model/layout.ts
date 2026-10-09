@@ -1,7 +1,7 @@
 // Chronological plan layout in world units. Wings run left to right in the order their work began
 // (median creation date); inside a bay, features are placed oldest first. The plan is computed once
 // per product and never moves: lenses, time and decisions change what places say, not where they are.
-import type { Capability, Feature, Kettle } from '@/lib/data';
+import type { Capability, Feature, Structure } from '@/lib/data';
 import { WING_DEFS, type WingDef } from './constants';
 import type { Building, PDomain, Product } from './product';
 
@@ -27,7 +27,7 @@ export interface Layout {
 const dnum = (d: string) => Date.parse(d + 'T00:00:00Z') / 864e5;
 
 /** Wing order is derived from the base data so every product line shares it. */
-export function wingOrder(K: Kettle): WingDef[] {
+export function wingOrder(K: Structure): WingDef[] {
   const defs = WING_DEFS.map((w) => ({ ...w, doms: w.doms.slice(), letter: '', median: 0 }));
   const known = new Set(defs.flatMap((w) => w.doms));
   for (const d of K.domains) if (!known.has(d.id)) defs[defs.length - 1].doms.push(d.id);
@@ -42,7 +42,7 @@ export function wingOrder(K: Kettle): WingDef[] {
 
 const bayH = (n: number, c: number) => { const r = Math.ceil(n / c); return BH + r * TH + (r - 1) * G + BB; };
 const wingW = (c: number) => 2 * PAD + c * TW + (c - 1) * G;
-const byCreated = (a: Feature, b: Feature) => (a.created < b.created ? -1 : a.created > b.created ? 1 : a.id < b.id ? -1 : 1);
+
 
 export function layoutProduct(P: Product): Layout {
   const L: Layout = { blds: [], wings: [], rooms: [], bays: [], tiles: [], TILE: {}, ROOM: {}, BAY: {}, WING: {}, world: { x: 0, y: 0, w: 0, h: 0 }, walk: [], wingDefs: wingOrder(P.base) };
@@ -88,7 +88,8 @@ export function layoutProduct(P: Product): Layout {
             kind: 'bay', id: cid, cap, room: R, x: x + PAD, y: by, w: ww - 2 * PAD, h: bh, tiles: [], feats: [],
             rib: { x: x + PAD + 4, y: by + BH + (inner - rh2) / 2, w: ww - 2 * PAD - 8, h: rh2 },
           };
-          cap.features.map((id) => P.F[id]).sort(byCreated).forEach((f, i) => {
+          // oldest first; features created the same day keep the map's order (stable across slugs and clones)
+          cap.features.map((id) => P.F[id]).sort((a, b) => (a.created < b.created ? -1 : a.created > b.created ? 1 : P.FI[a.id] - P.FI[b.id])).forEach((f, i) => {
             const T: TileNode = {
               kind: 'tile', id: f.id, f, bay: Bay, room: R, wing: Wg, idx: ++idx, bi: i, ti: L.tiles.length,
               x: Bay.x + (i % c) * (TW + G), y: by + BH + Math.floor(i / c) * (TH + G), w: TW, h: TH,

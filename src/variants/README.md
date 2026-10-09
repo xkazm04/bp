@@ -39,12 +39,17 @@ export interface Variant {
 | `channels[lens].density` | evidence part count on tiles; the sheet; the UI | `'simple' \| 'standard' \| 'dense'`. |
 | `channels[lens].accent?` | marks, evidence text, the `--lens` CSS variable | `{ dark, light }`. Omit for ink only (variant 1). |
 | `channels[lens].decor?(ctx, view, w, th)` | under the plan, screen space, weighted by dominance | Bold variant: grids, dimension lines, title-block ornaments. Cached with the static layer. |
-| `composeGeneral(tile)` | every tile in General | Return a rect per lens (screen px) for the compact marks; `tile.strip` is the band reserved along the top edge. Return `{}` for tiles too small (base does this for ribbons). |
+| `fallback?(lens)` | once per lens without an own channel | Build a channel from the lens manifest (`LensDef`). Subtle draws every lens this way (`manifestChannel`); shaped and bold use it for any lens other than the six built-ins. |
+| `composeGeneral(tile, lenses)` | every tile in General | `lenses` = the registry (enabled lenses, file order). Return a rect per lens id (screen px) for the compact marks; `tile.strip` is the band reserved along the top edge. Return `{}` for tiles too small (base does this for ribbons). |
 | `expandedRect?(tile, lens)` | every tile while a lens is expanding | Default `tile.body`. Base uses a foot band so the stage fill stays readable. |
 | `spring?` | lens switches | `{ stiffness, damping }` for the mix tween. |
 | `evidenceFont?(lens)` | tile evidence text | `'mono'` (default) or `'sans'`. |
 
-**The mix (read this before drawing).** The view is seven weights (General + six lenses). The engine
+**Lenses are data.** Lens ids are strings; the set and order come from the map's enabled `lenses[]`
+(plus `?lenses=` for the session). `a.lens` is the lens's `LensDef` (its manifest, resolved) and `a.slot`
+its General slot. Never branch on a lens id outside a variant that explicitly knows the built-ins.
+
+**The mix (read this before drawing).** The view is N + 1 weights (General + one per enabled lens). The engine
 derives per lens: *presence* `p` (draw at all), *expansion* `x = p·(1−general)`, *dominance*
 `d = clamp(x − Σ others)`. Marks get `w = p` and `x`; shape, content, accent and decor follow `d`.
 In General every `d` is 0; on a lens→lens switch `d` passes through 0, so exclusive things always go

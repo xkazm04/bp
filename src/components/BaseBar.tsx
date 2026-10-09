@@ -4,7 +4,7 @@
 // engine's sim-time callback; React only re-renders on discrete changes (speed, play, time travel).
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { SWARM } from '@/lib/data';
-import { HOUR, SPEEDS, dnum, fmtD, revAt } from '@/lib/model';
+import { GA_MILESTONE, HOUR, SPEEDS, dnum, fmtD, revAt } from '@/lib/model';
 
 const ARRIVALS = SWARM.decisions.filter((d) => d.arrivesAt).map((d) => ({ id: d.id, t: d.arrivesAt! }));
 import { shallowEqual, useBp, useEngine } from './hooks';
@@ -43,7 +43,6 @@ function Clock() {
   );
 }
 
-const RD0 = '2026-04-09';
 const ORDER = ['live', 'flagged', 'in-review', 'in-dev', 'specified', 'idea', 'deprecated'] as const;
 const FILLS: Record<(typeof ORDER)[number], number> = { live: 0.62, flagged: 0.44, 'in-review': 0.3, 'in-dev': 0.2, specified: 0.11, idea: 0.06, deprecated: 0.5 };
 
@@ -60,7 +59,7 @@ function Revisions() {
   }, []);
   const L = 76, R = W - 6, avail = R - L, hist = Math.round(avail * 0.46), hourW = Math.round(avail * 0.38), g1 = 26;
   const tl = { h0: L, h1: L + hist, o0: L + hist + g1, o1: L + hist + g1 + hourW, R, top: H < 80 ? 21 : 34, bot: H < 80 ? H - 28 : Math.min(H - 28, 66) };
-  const asOf = M.P.asOf, now = s.t === asOf, top = tl.top, bot = tl.bot;
+  const asOf = M.P.asOf, now = s.t === asOf, top = tl.top, bot = tl.bot, RD0 = M.P.weeks[0], NW = M.P.weeks.length;
   const hx = (d: string) => tl.h0 + ((dnum(d) - dnum(RD0)) / (dnum(asOf) - dnum(RD0))) * (tl.h1 - tl.h0);
   const ox = (t: number) => tl.o0 + (Math.max(0, Math.min(HOUR, t)) / HOUR) * (tl.o1 - tl.o0);
   useEffect(() => E.onSimTime((t) => {
@@ -80,8 +79,8 @@ function Revisions() {
   const bins = new Array(60).fill(0);
   if (sim.has) for (const e of SWARM.replay) bins[Math.min(59, Math.floor(e.t / 60))]++;
   const bw = (tl.o1 - tl.o0) / 60, hxn = hx(s.t), hl = Math.min(hxn, tl.h1);
-  const lab = now ? 'NOW · REV 27' : 'REV ' + revAt(M.P.weeks, s.t) + ' · ' + fmtD(s.t), pw = 108, px0 = Math.max(tl.h0 - 6, Math.min(hl - pw / 2, tl.h1 - pw + 12));
-  const m1 = M.P.milestones[0], m2 = M.P.MS.M2;
+  const lab = now ? 'NOW · REV ' + NW : 'REV ' + revAt(M.P.weeks, s.t) + ' · ' + fmtD(s.t), pw = 108, px0 = Math.max(tl.h0 - 6, Math.min(hl - pw / 2, tl.h1 - pw + 12));
+  const m1 = M.P.milestones.find((m) => m.state === 'done'), m2 = M.P.MS[GA_MILESTONE];
   const drag = useRef<'h' | 'o' | null>(null);
   const apply = (x: number) => {
     if (sim.has && x >= tl.o0 - 10 && x <= tl.o1 + 6 && drag.current !== 'h') { drag.current = 'o'; E.seek(((x - tl.o0) / (tl.o1 - tl.o0)) * HOUR); return; }
@@ -95,7 +94,7 @@ function Revisions() {
   const px = (e: React.PointerEvent) => { const r = svg.current!.getBoundingClientRect(); return ((e.clientX - r.left) / r.width) * W; };
   return (
     <div id="revs" ref={wrap}>
-      <svg id="revsvg" ref={svg} tabIndex={0} role="slider" aria-label="Time: revision history, now, and the simulated hour ahead" aria-valuemin={1} aria-valuemax={27} aria-valuenow={revAt(M.P.weeks, s.t)} aria-valuetext={'Revision ' + revAt(M.P.weeks, s.t) + ', ' + s.t}
+      <svg id="revsvg" ref={svg} tabIndex={0} role="slider" aria-label="Time: revision history, now, and the simulated hour ahead" aria-valuemin={1} aria-valuemax={NW} aria-valuenow={revAt(M.P.weeks, s.t)} aria-valuetext={'Revision ' + revAt(M.P.weeks, s.t) + ', ' + s.t}
         viewBox={`0 0 ${W} ${H}`} data-keys="own"
         onPointerDown={(e) => { drag.current = null; (e.currentTarget as Element).setPointerCapture(e.pointerId); apply(px(e)); }}
         onPointerMove={(e) => { if (drag.current) apply(px(e)); }} onPointerUp={() => { drag.current = null; }}
@@ -105,14 +104,14 @@ function Revisions() {
           else if (e.key === 'Home') { e.preventDefault(); E.setTime(M.P.weeks[0]); }
           else if (e.key === 'End') { e.preventDefault(); E.setTime(asOf); }
         }}>
-        <text className="lbl" x="2" y={top + 2}>REVISIONS</text><text x="2" y={top + 18}>27 weeks</text>{!s.compact && <text x="2" y={top + 33}>[ ] step</text>}
+        <text className="lbl" x="2" y={top + 2}>REVISIONS</text><text x="2" y={top + 18}>{NW} weeks</text>{!s.compact && <text x="2" y={top + 33}>[ ] step</text>}
         {polys}
         <line className="ax" x1={tl.h0} y1={bot} x2={tl.h1} y2={bot} />
         {snaps.map((sn, i) => {
           const x = hx(sn.week);
           return <g key={sn.week}><line className="ax" x1={x} y1={bot} x2={x} y2={bot + 4} opacity={0.6} />{((i % 5 === 0 && i < 25) || i === 26) && Math.abs(x - hxn) > 60 && x < tl.h1 - 40 ? <text x={x} y={bot + 17} textAnchor="middle">{fmtD(sn.week)}</text> : null}</g>;
         })}
-        {m1 && <g><line x1={hx(m1.date)} y1={top - 16} x2={hx(m1.date)} y2={bot} stroke="var(--ink)" strokeWidth={1.2} /><path d={`M${hx(m1.date)} ${top - 16} h10 l-3 4 l3 4 h-10z`} fill="var(--ink)" /><text x={hx(m1.date) + 13} y={top - 9} style={{ fill: 'var(--ink)' }}>M1 BETA · DONE</text></g>}
+        {m1 && m1.date >= RD0 && <g><line x1={hx(m1.date)} y1={top - 16} x2={hx(m1.date)} y2={bot} stroke="var(--ink)" strokeWidth={1.2} /><path d={`M${hx(m1.date)} ${top - 16} h10 l-3 4 l3 4 h-10z`} fill="var(--ink)" /><text x={hx(m1.date) + 13} y={top - 9} style={{ fill: 'var(--ink)' }}>{((m1.code ? m1.code + ' ' : '') + m1.name.split(' ').pop()).toUpperCase()} · DONE</text></g>}
         {sim.has && (
           <g>
             <rect x={tl.o0} y={top - 6} width={tl.o1 - tl.o0} height={bot - top + 6} fill="var(--mint)" fillOpacity={0.05} stroke="var(--mint)" strokeOpacity={0.35} strokeDasharray="3 3" />
@@ -127,7 +126,7 @@ function Revisions() {
           </g>
         )}
         <line x1={tl.o1} y1={bot} x2={tl.R} y2={bot} stroke="var(--ink)" strokeOpacity={0.4} strokeDasharray="2 4" />
-        {m2 && (() => { const xm = tl.R - 14; return <g><line x1={xm} y1={top - 14} x2={xm} y2={bot} stroke="var(--amber)" strokeWidth={1.2} strokeDasharray="4 3" /><path d={`M${xm} ${top - 14} h-10 l3 4 l-3 4 h10z`} fill="var(--amber)" /><text x={xm - 13} y={top - 7} textAnchor="end" style={{ fill: 'var(--amber)' }}>M2 · {fmtD(m2.date)}</text>{!s.compact && <><text x={xm - 4} y={bot - 20} textAnchor="end" style={{ fill: 'var(--amber)' }}>{Math.round(dnum(m2.date) - dnum(asOf))} days</text><text x={xm - 4} y={bot - 5} textAnchor="end">M3, M4 ▸</text></>}</g>; })()}
+        {m2 && (() => { const xm = tl.R - 14; return <g><line x1={xm} y1={top - 14} x2={xm} y2={bot} stroke="var(--amber)" strokeWidth={1.2} strokeDasharray="4 3" /><path d={`M${xm} ${top - 14} h-10 l3 4 l-3 4 h10z`} fill="var(--amber)" /><text x={xm - 13} y={top - 7} textAnchor="end" style={{ fill: 'var(--amber)' }}>{m2.code || m2.name} · {fmtD(m2.date)}</text>{!s.compact && <><text x={xm - 4} y={bot - 20} textAnchor="end" style={{ fill: 'var(--amber)' }}>{Math.round(dnum(m2.date) - dnum(asOf))} days</text><text x={xm - 4} y={bot - 5} textAnchor="end">M3, M4 ▸</text></>}</g>; })()}
         <g className="handle"><line x1={hl} y1={top - 16} x2={hl} y2={bot + 2} /><rect x={px0} y={bot + 8} width={pw} height={20} rx={2} /><text x={px0 + pw / 2} y={bot + 22.5} textAnchor="middle">{lab}</text><path d={`M${hl - 5} ${bot + 8} l5 -6 l5 6z`} fill="var(--amber)" /></g>
       </svg>
     </div>

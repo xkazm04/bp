@@ -1,11 +1,12 @@
 'use client';
-// One feature as a document. The six lens panels follow the lens mix: in General all six sit side by
-// side; in a lens, its panel moves to the top and grows to its reader's density while the other five
-// collapse to their key fact (a Motion layout animation, interruptible like the canvas tween).
+// One feature as a document. The lens panels (one per enabled lens, from the manifests) follow the lens
+// mix: in General they all sit side by side; in a lens, its panel moves to the top and grows to its
+// reader's density while the others collapse to their headline (a Motion layout animation,
+// interruptible like the canvas tween).
 import { useEffect, useRef } from 'react';
 import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
-import { LENSES, type Feature, type LensId } from '@/lib/data';
-import { FLAGS, FLAGNO, REV_DESC, STAGE_WORD, astat, fmtWait, isAgentId, pname, type Model } from '@/lib/model';
+import type { Feature } from '@/lib/data';
+import { REV_DESC, STAGE_WORD, astat, fmtWait, isAgentId, lensOf, pname, type Model } from '@/lib/model';
 import { illoSVG } from '@/engine/render/illo';
 import { DefaultLensPanel } from './sheet/LensPanel';
 import { plainLine } from './sheet/words';
@@ -51,15 +52,16 @@ function LensPanels({ f, M }: { f: Feature; M: Model }) {
   const V = useVariant(), dens = useDensity();
   const view = useBp((s) => s.view);
   const Panel = V.ui?.SheetPanel ?? DefaultLensPanel;
-  const order: LensId[] = view === 'general' ? [...LENSES] : [view, ...LENSES.filter((l) => l !== view)];
+  const ids = M.P.lenses.map((l) => l.id);
+  const order = lensOf(M.P, view) ? [view, ...ids.filter((l) => l !== view)] : ids;
   return (
     <LayoutGroup>
       <div className="ev6">
         {order.map((l) => {
           const cur = view === l, mini = view !== 'general' && !cur;
           return (
-            <motion.div key={l} layout transition={{ type: 'spring', stiffness: 260, damping: 30 }} className={'evp ' + f[l].health + (cur ? ' cur' : '') + (mini ? ' mini' : '')}>
-              <Panel lens={l} f={f} model={M} density={dens(l)} expanded={cur} view={view} />
+            <motion.div key={l} layout transition={{ type: 'spring', stiffness: 260, damping: 30 }} className={'evp ' + (f.lens[l]?.h ?? 'unmeasured') + (cur ? ' cur' : '') + (mini ? ' mini' : '')}>
+              <Panel lens={l} def={M.P.LENS[l]} f={f} model={M} density={dens(l)} expanded={cur} view={view} />
             </motion.div>
           );
         })}
@@ -70,23 +72,23 @@ function LensPanels({ f, M }: { f: Feature; M: Model }) {
 
 export function SheetBody({ f }: { f: Feature }) {
   const E = useEngine(), M = E.M, P = M.P, T = M.L.TILE[f.id];
-  const dv = f.development, pl = plainLine(P, f, M.sim);
+  const pl = plainLine(P, f, M.sim), ms = f.milestone ? P.MS[f.milestone] : null;
   const acts = P.activity.filter((a) => a.feature === f.id).slice(0, 8);
   const who = (id: string) => <>{pname(P, id)}{isAgentId(P, id) && <span className="ag">AGENT</span>}</>;
-  const dl = (ids: string[], empty: string) => ids.length ? ids.map((id) => { const g = P.F[id]; return <button key={id} type="button" onClick={() => E.openFeature(id)}><StageSym st={g.stage} w={20} h={13} /><span>{g.name}</span><span className="w">{STAGE_WORD[g.stage]}</span></button>; }) : <div className="none">{empty}</div>;
+  const dl = (ids: string[], empty: string) => ids.length ? ids.map((id) => { const g = P.F[id]; return <button key={id} type="button" onClick={() => E.openFeature(id)}><StageSym st={g.stage} w={20} h={13} /><span>{g.name}</span><span className="w">{g.stage ? STAGE_WORD[g.stage] : 'Unknown'}</span></button>; }) : <div className="none">{empty}</div>;
   return (
     <>
       <PatternDefs />
       <div className="dh">
-        <div className="bubble" title="Detail callout: detail number over feature id"><span className="a">{T.idx}</span><span className="b">{f.id}</span></div>
+        <div className="bubble" title="Detail callout: detail number over feature code"><span className="a">{T.idx}</span><span className="b">{f.code || '—'}</span></div>
         <div>
-          <div className="k">{P.scale > 1 ? T.wing.bld.name + ' › ' : ''}Wing {T.wing.def.letter} {T.wing.def.name} › {P.D[f.domain].name} › {P.C[f.capability].name}<br />{f.priority} · {f.kind}{f.milestone ? ' · ' + f.milestone + ' ' + P.MS[f.milestone].name : ''}</div>
+          <div className="k">{P.scale > 1 ? T.wing.bld.name + ' › ' : ''}Wing {T.wing.def.letter} {T.wing.def.name} › {P.D[f.domain].name} › {P.C[f.capability].name}<br />{[f.priority, f.kind, ms ? (ms.code ? ms.code + ' ' : '') + ms.name : null].filter(Boolean).join(' · ')}</div>
           <h2>{f.name}</h2>
           <div className="sum">{f.summary}</div>
           <div className="plain"><b>{pl.strong}</b> {pl.rest.join(' ')} {pl.bad && <span className="bad">{pl.bad}</span>}</div>
-          {(f.flags.length || f.blockedBy.length) ? (
+          {(f.trouble.length || f.blockedBy.length) ? (
             <div className="tens">
-              {f.flags.map((k) => <span key={k}><i />{FLAGS[FLAGNO[k]][1]}</span>)}
+              {f.trouble.filter((t) => t.h === 'bad').map((t) => <span key={t.lens}><i />{P.LENS[t.lens].name}: {t.why}</span>)}
               {f.blockedBy.length ? <span><i />Blocked by {f.blockedBy.map((x) => <button key={x} type="button" className="btn" style={{ height: 24, marginLeft: 4, textTransform: 'none', fontSize: 14 }} onClick={() => E.openFeature(x)}>{P.F[x].name}</button>)}</span> : null}
             </div>
           ) : null}
@@ -95,16 +97,19 @@ export function SheetBody({ f }: { f: Feature }) {
       <SwarmSection f={f} />
       <div className="dgrid">
         <div>
-          <div className="illo"><div dangerouslySetInnerHTML={{ __html: illoSVG(P.D[f.domain].base, 'currentColor') }} style={{ color: 'var(--ink)' }} /><span className="cap">DETAIL {T.idx} · {P.D[f.domain].base} · STYLISED</span></div>
+          <div className="illo"><div dangerouslySetInnerHTML={{ __html: illoSVG(P.D[f.domain].base, 'currentColor') }} style={{ color: 'var(--ink)' }} /><span className="cap">DETAIL {T.idx} · {(P.D[f.domain].code || P.D[f.domain].name).toUpperCase()} · STYLISED</span></div>
           <div className="mtb">
             <div><span className="l">Drawn by</span>{f.builtBy.length ? f.builtBy.map((id, i) => <span key={id}>{i ? ', ' : ''}{who(id)}</span>) : '—'}</div>
-            <div><span className="l">Checked by</span>{dv.humanReviewed === true ? 'Human review ✓' : dv.humanReviewed === false ? <span className="nc">NOT CHECKED</span> : 'n/a yet'}</div>
+            <div><span className="l">Flagged by</span>{(() => {
+              const bad = f.trouble.filter((t) => t.h === 'bad').map((t) => P.LENS[t.lens]?.name ?? t.lens), watch = f.trouble.length - bad.length;
+              return bad.length ? <span className="nc">{bad.join(', ')}</span> : watch ? watch + ' lens' + (watch > 1 ? 'es' : '') + ' to watch' : f.health === 'good' ? 'No lens ✓' : 'Not measured yet';
+            })()}</div>
             <div><span className="l">Owner</span>{pname(P, f.owner)}</div>
-            <div><span className="l">Stage</span>{STAGE_WORD[f.stage]} · since {f.stageSince}</div>
+            <div><span className="l">Stage</span>{f.stage ? STAGE_WORD[f.stage] + ' · since ' + f.stageSince : 'Unknown'}</div>
             <div className="full"><span className="l">Lives in</span>{f.surfaces.map((s) => <span key={s} className="ag" style={{ margin: '0 4px 0 0' }}>{s}</span>)}</div>
           </div>
           <table className="revt"><thead><tr><th>REV</th><th>DATE</th><th>DESCRIPTION</th></tr></thead><tbody>
-            {f.history.map((h, i) => <tr key={i} className={i === f.history.length - 1 ? 'now' : ''}><td className="m">{String.fromCharCode(65 + i)}</td><td className="m">{h.date}</td><td>{REV_DESC[h.stage]}</td></tr>)}
+            {f.revs.map((h, i) => <tr key={i} className={i === f.revs.length - 1 ? 'now' : ''}><td className="m">{String.fromCharCode(65 + i)}</td><td className="m">{h.date}</td><td>{REV_DESC[h.stage]}</td></tr>)}
           </tbody></table>
           {f.parts && <div className="dsec"><h4>Parts · {f.parts.filter((p) => p.done).length} of {f.parts.length} done</h4><div className="parts">{f.parts.map((p) => <span key={p.name} className={p.done ? 'd' : ''}>{p.done ? '✓ ' : '○ '}{p.name}</span>)}</div></div>}
         </div>

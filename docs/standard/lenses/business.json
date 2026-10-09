@@ -26,15 +26,15 @@
   "health": {
     "rules": [
       { "when": { "all": [ { "field": "priority", "eq": "P0" }, { "field": "stage", "in": ["idea", "specified"] } ] },
-        "health": "bad", "reason": "Top priority, not started ({stage})" },
+        "health": "bad", "reason": "Top priority, not started ({stage})", "short": "P0 not started" },
       { "when": { "all": [ { "field": "customerRequests30d", "gte": 15 }, { "field": "stage", "in": ["idea", "specified", "in-dev", "in-review"] } ] },
-        "health": "bad", "reason": "{customerRequests30d} customer requests in 30 days and nobody can use it yet" },
+        "health": "bad", "reason": "{customerRequests30d} customer requests in 30 days and nobody can use it yet", "short": "{customerRequests30d} asks" },
       { "when": { "field": "stage", "eq": "deprecated" },
-        "health": "watch", "reason": "Deprecated" },
+        "health": "watch", "reason": "Deprecated", "short": "Deprecated" },
       { "when": { "field": "adoptionPct", "lt": 25 },
-        "health": "watch", "reason": "Only {adoptionPct}% adoption" },
+        "health": "watch", "reason": "Only {adoptionPct}% adoption", "short": "{adoptionPct}% adoption" },
       { "when": { "all": [ { "field": "value", "lte": 2 }, { "field": "stage", "in": ["flagged", "live", "deprecated"] } ] },
-        "health": "watch", "reason": "Shipped, but low value ({value} of 5)" }
+        "health": "watch", "reason": "Shipped, but low value ({value} of 5)", "short": "Low value" }
     ],
     "default": "good",
     "rollup": { "method": "weighted", "by": "value" }

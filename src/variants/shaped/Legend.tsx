@@ -2,8 +2,9 @@
 // The Plan-tab legend, shaped variant. General explains the stage swatches and the six icons set into
 // each fixture's top edge. A lens explains its outline (drawn here with the same proportions as on the
 // plan) and its icon vocabulary, all in that lens's accent.
-import type { LensId, ViewId } from '@/lib/data';
-import { LENSES } from '@/lib/data';
+import type { ViewId } from '@/lib/data';
+import { isBuiltinLens, type BuiltinLens } from '../base/legacy';
+import { Legend } from '@/components/Legend';
 import { Mark, StageSym } from '@/components/Symbols';
 import { LensIcon } from './Panel';
 import { LENS_ICON, type IconId } from './icons';
@@ -13,7 +14,7 @@ const S = { fill: 'none', stroke: 'var(--ink)', strokeWidth: 1.3 } as const;
 const A = { fill: 'none', stroke: 'var(--shp-lens)', strokeWidth: 1.8 } as const;
 
 /** A specimen of the lens outline with its edge marks (strong = deepest form of the shape). */
-function Outline({ lens, strong }: { lens: LensId; strong: boolean }) {
+function Outline({ lens, strong }: { lens: BuiltinLens; strong: boolean }) {
   let body: React.ReactNode;
   switch (lens) {
     case 'business': {
@@ -46,7 +47,7 @@ function Outline({ lens, strong }: { lens: LensId; strong: boolean }) {
   return <svg width={W + 4} height={H + 4} viewBox={`-2 -2 ${W + 4} ${H + 4}`} aria-hidden="true" style={{ overflow: 'visible' }}>{body}</svg>;
 }
 
-const SHAPE_WORDS: Record<LensId, [string, string]> = {
+const SHAPE_WORDS: Record<BuiltinLens, [string, string]> = {
   business: ['Ticket, deep bites: high value', 'Shallow bites: low value'],
   design: ['Artboard, crop marks: designed', 'Dashed crops: sketch or wireframe'],
   development: ['Brackets, left spine: progress', 'Right spine: written by agents'],
@@ -54,7 +55,7 @@ const SHAPE_WORDS: Record<LensId, [string, string]> = {
   security: ['Three cuts: card data', 'Two dashed cuts: personal, unreviewed'],
   quality: ['Checklist edge: tests passing', 'Hollow boxes: tests not passing'],
 };
-const VOCAB: Record<LensId, [IconId, string][]> = {
+const VOCAB: Record<BuiltinLens, [IconId, string][]> = {
   business: [['ticketHi', 'High value (4 or 5)'], ['ticket', 'Value 1 to 3']],
   design: [['board', 'Has a design'], ['boardNone', 'No design yet']],
   development: [['code', 'Code reviewed by a person'], ['codeUnrev', 'No human review']],
@@ -62,7 +63,7 @@ const VOCAB: Record<LensId, [IconId, string][]> = {
   security: [['lockCard', 'Card data, reviewed'], ['lockCardOpen', 'Card data, not reviewed'], ['lock', 'Reviewed or not needed'], ['lockOpen', 'Review pending']],
   quality: [['check', 'Tests pass'], ['checkPart', 'Partly passing'], ['checkFail', 'Failing'], ['checkNone', 'Untested']],
 };
-const ICON_TITLE: Record<LensId, string> = { business: 'Business', design: 'Design', development: 'Development', operations: 'Operations', security: 'Security', quality: 'Quality' };
+const ICON_TITLE: Record<BuiltinLens, string> = { business: 'Business', design: 'Design', development: 'Development', operations: 'Operations', security: 'Security', quality: 'Quality' };
 
 export function ShapedLegend({ view }: { view: ViewId }) {
   if (view === 'general') {
@@ -80,11 +81,13 @@ export function ShapedLegend({ view }: { view: ViewId }) {
         <div><Mark k="work" /><span>Agent working</span></div>
         <div><Mark k="wait" /><span>Waiting for a person</span></div>
         <div><Mark k="pin" /><span>A question (RFI)</span></div>
-        <div className="shp-row">{LENSES.map((l) => <span key={l} title={ICON_TITLE[l]}><LensIcon id={LENS_ICON[l]} size={18} title={ICON_TITLE[l]} /></span>)}</div>
+        <div className="shp-row">{(Object.keys(ICON_TITLE) as BuiltinLens[]).map((l) => <span key={l} title={ICON_TITLE[l]}><LensIcon id={LENS_ICON[l]} size={18} title={ICON_TITLE[l]} /></span>)}</div>
         <div className="shp-cap">Tile colour is always the stage. The six icons on each fixture&apos;s top edge are the six lenses, in tab order; red or amber means that lens is in trouble. Pick a lens and only its icon stays, and the tile takes its shape.</div>
       </div>
     );
   }
+  // a lens other than the six built-ins: the shared legend (specimens drawn by its manifest channel)
+  if (!isBuiltinLens(view)) return <Legend view={view} />;
   const [s1, s2] = SHAPE_WORDS[view];
   return (
     <div className="lg shp-lg shp-lens">

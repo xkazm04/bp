@@ -15,7 +15,7 @@
 // the seam change that would remove it.
 import type { Engine } from '@/engine/Engine';
 import { drawText } from '@/engine/text';
-import type { LensId } from '@/lib/data';
+import { bl, type BuiltinLens } from '../base/legacy';
 import { BH, G, TH, TW, isLiveSt, type BayNode, type BldNode, type RoomNode } from '@/lib/model';
 import type { Theme, Viewport } from '../types';
 import { CHANNELS } from './channels';
@@ -29,7 +29,7 @@ interface Ctx2 {
   /** Screen x/y of world 0,0. */
   ox: number; oy: number;
   accent: string;
-  lens: LensId;
+  lens: BuiltinLens;
 }
 const sx = (P: Ctx2, wx: number) => P.ox + wx * P.k;
 const sy = (P: Ctx2, wy: number) => P.oy + wy * P.k;
@@ -101,7 +101,7 @@ function offsetPath(pts: number[], d: number, into: CanvasPath) {
 
 // ------------------------------------------------------------------------------------------ caches
 const aggCache = new Map<string, string[]>();
-function bldParts(B: BldNode, lens: LensId): string[] {
+function bldParts(B: BldNode, lens: BuiltinLens): string[] {
   const key = B.id + '|' + B.feats.length + '|' + lens;
   let v = aggCache.get(key);
   if (!v) { v = CHANNELS[lens].aggregate(B.feats).parts; aggCache.set(key, v); }
@@ -111,7 +111,7 @@ const SENS: Record<string, number> = { payment: 3, personal: 2, internal: 1, pub
 const roomSens = new Map<string, number>();
 function sensOf(R: RoomNode) {
   let v = roomSens.get(R.id);
-  if (v == null) { v = 0; for (const f of R.feats) v = Math.max(v, SENS[f.security.dataClass] ?? 0); roomSens.set(R.id, v); }
+  if (v == null) { v = 0; for (const f of R.feats) v = Math.max(v, SENS[bl(f).security.dataClass] ?? 0); roomSens.set(R.id, v); }
   return v;
 }
 const kUsd = (n: number) => (n >= 1000 ? '$' + (Math.round(n / 100) / 10).toString().replace(/\.0$/, '') + 'k' : '$' + n);
@@ -327,8 +327,8 @@ function rail(ctx: CanvasRenderingContext2D, P: Ctx2, r: Rail) {
   ctx.strokeStyle = accent; ctx.fillStyle = accent; ctx.lineWidth = 1;
   switch (P.lens) {
     case 'business': {
-      const asks = fs.reduce((s, f) => s + (f.business.customerRequests30d || 0), 0);
-      const mrr = fs.reduce((s, f) => s + (f.business.revenueLink === 'direct' ? f.business.mrrImpactUsd || 0 : 0), 0);
+      const asks = fs.reduce((s, f) => s + (bl(f).business.customerRequests30d || 0), 0);
+      const mrr = fs.reduce((s, f) => s + (bl(f).business.revenueLink === 'direct' ? bl(f).business.mrrImpactUsd || 0 : 0), 0);
       const parts = [asks + (asks === 1 ? ' customer ask' : ' customer asks'), ...(mrr ? [kUsd(mrr) + ' a month'] : [])];
       const end = railText(ctx, P, r, parts, false);
       if (end - r.x0 > 20 * u) { ctx.strokeStyle = th.alpha(accent, 0.75); ctx.lineWidth = 1.5; ctx.setLineDash([1.5, 4 * u]); ctx.beginPath(); ctx.moveTo(r.x0, r.cy + 3 * u); ctx.lineTo(end - 4 * u, r.cy + 3 * u); ctx.stroke(); ctx.setLineDash([]); }
@@ -348,8 +348,8 @@ function rail(ctx: CanvasRenderingContext2D, P: Ctx2, r: Rail) {
     }
     case 'development': { // a dimension string over the bay's columns, with extension lines to the tiles
       const c = r.bay.room.wing.cols, n = Math.min(c, r.bay.tiles.length), ty = r.by + BH * k - 2 * u, dy = r.cy + 9 * u;
-      const pr = fs.reduce((s, f) => s + (f.development.openPRs || 0), 0), ur = fs.reduce((s, f) => s + (f.development.humanReviewed === false ? 1 : 0), 0);
-      const ai = Math.round(fs.reduce((s, f) => s + f.development.aiAuthoredPct, 0) / Math.max(1, fs.length));
+      const pr = fs.reduce((s, f) => s + (bl(f).development.openPRs || 0), 0), ur = fs.reduce((s, f) => s + (bl(f).development.humanReviewed === false ? 1 : 0), 0);
+      const ai = Math.round(fs.reduce((s, f) => s + bl(f).development.aiAuthoredPct, 0) / Math.max(1, fs.length));
       const p = new Path2D();
       const xa = r.bx, xb = r.bx + (n * TW + (n - 1) * G) * k;
       if (dy < ty - 2) {
@@ -365,9 +365,9 @@ function rail(ctx: CanvasRenderingContext2D, P: Ctx2, r: Rail) {
       break;
     }
     case 'operations': { // a flow line of chevrons to a live count
-      const live = fs.filter((f) => f.operations.environment === 'production').length;
-      let roll = 0, nf = 0; for (const f of fs) if (f.operations.flag && isLiveSt(f.stage)) { roll += P.E.M.sim.rolloutOf(f); nf++; }
-      const inc = fs.reduce((s, f) => s + (f.operations.incidents30d || 0), 0);
+      const live = fs.filter((f) => bl(f).operations.environment === 'production').length;
+      let roll = 0, nf = 0; for (const f of fs) if (bl(f).operations.flag && isLiveSt(f.stage)) { roll += P.E.M.sim.rolloutOf(f); nf++; }
+      const inc = fs.reduce((s, f) => s + (bl(f).operations.incidents30d || 0), 0);
       const parts = [live + '/' + fs.length + ' LIVE', ...(nf ? [Math.round(roll / nf) + '% OUT'] : []), ...(inc ? [inc + ' INC'] : [])];
       const end = railText(ctx, P, r, parts, true);
       const step = 16 * u, c = 3.5 * u, p = new Path2D();
@@ -376,8 +376,8 @@ function rail(ctx: CanvasRenderingContext2D, P: Ctx2, r: Rail) {
       break;
     }
     case 'security': { // a fence with a padlock, then what it guards
-      const card = fs.filter((f) => f.security.dataClass === 'payment').length, pers = fs.filter((f) => f.security.dataClass === 'personal').length;
-      const un = fs.filter((f) => (f.security.dataClass === 'payment' || f.security.dataClass === 'personal') && (f.security.review === 'pending' || f.security.review === 'not-started')).length;
+      const card = fs.filter((f) => bl(f).security.dataClass === 'payment').length, pers = fs.filter((f) => bl(f).security.dataClass === 'personal').length;
+      const un = fs.filter((f) => (bl(f).security.dataClass === 'payment' || bl(f).security.dataClass === 'personal') && (bl(f).security.review === 'pending' || bl(f).security.review === 'not-started')).length;
       if (!card && !pers) { railText(ctx, P, r, ['NO SENSITIVE DATA'], true); break; }
       const end = railText(ctx, P, r, [...(card ? [card + ' CARD'] : []), ...(pers ? [pers + ' PERSONAL'] : []), ...(un ? [un + ' UNREVIEWED'] : [])], true);
       const lx = end - 9 * u, ly = r.cy;
@@ -393,7 +393,7 @@ function rail(ctx: CanvasRenderingContext2D, P: Ctx2, r: Rail) {
       if (r.x1 - r.x0 < bw + 20 * u) break;
       const bx0 = r.x1 - bw, y0 = r.cy - s / 2, ok = new Path2D(), bad = new Path2D();
       for (let i = 0; i < n; i++) {
-        const f = fs[i], x = bx0 + i * (s + gap), q = f.quality;
+        const f = fs[i], x = bx0 + i * (s + gap), q = bl(f).quality;
         ctx.strokeStyle = q.status === 'n/a' ? th.alpha(accent, 0.35) : accent; ctx.lineWidth = 1;
         if (q.status === 'untested') ctx.setLineDash([2, 2]);
         ctx.strokeRect(x + 0.5, y0 + 0.5, s - 1, s - 1); ctx.setLineDash([]);
@@ -402,7 +402,7 @@ function rail(ctx: CanvasRenderingContext2D, P: Ctx2, r: Rail) {
         else if (q.status === 'partial' || q.status === 'testing') { ok.moveTo(x + s * 0.25, y0 + s / 2); ok.lineTo(x + s * 0.75, y0 + s / 2); }
       }
       ctx.lineWidth = 1.6; ctx.strokeStyle = accent; ctx.stroke(ok); ctx.strokeStyle = th.red; ctx.stroke(bad);
-      const t = fs.reduce((a, f) => a + f.quality.e2eTests, 0), pp = fs.reduce((a, f) => a + f.quality.e2ePassing, 0), p1 = fs.reduce((a, f) => a + f.quality.openBugs.p1, 0);
+      const t = fs.reduce((a, f) => a + bl(f).quality.e2eTests, 0), pp = fs.reduce((a, f) => a + bl(f).quality.e2ePassing, 0), p1 = fs.reduce((a, f) => a + bl(f).quality.openBugs.p1, 0);
       railText(ctx, P, r, [pp + '/' + t + ' E2E', ...(p1 ? [p1 + ' P1'] : [])], true, bw + 6 * u);
       break;
     }
@@ -470,7 +470,7 @@ function titleBlock(ctx: CanvasRenderingContext2D, P: Ctx2, B: BldNode) {
 }
 
 // ------------------------------------------------------------------------------------------- entry
-export function makeDecor(lens: LensId) {
+export function makeDecor(lens: BuiltinLens) {
   return (ctx: CanvasRenderingContext2D, view: Viewport, w: number, th: Theme) => {
     const E = engine(); if (!E || w <= 0.01) return;
     const k = view.k, FW = view.w + 2 * view.x, FH = view.h + 2 * view.y;
@@ -495,5 +495,5 @@ export function makeDecor(lens: LensId) {
     ctx.globalAlpha = ga;
   };
 }
-const CHANNEL_ACCENT = (l: LensId) => CHANNELS[l].accent!;
+const CHANNEL_ACCENT = (l: BuiltinLens) => CHANNELS[l].accent!;
 

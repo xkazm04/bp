@@ -6670,7 +6670,8 @@
                 ]
               },
               "health": "bad",
-              "reason": "Top priority, not started ({stage})"
+              "reason": "Top priority, not started ({stage})",
+              "short": "P0 not started"
             },
             {
               "when": {
@@ -6691,7 +6692,8 @@
                 ]
               },
               "health": "bad",
-              "reason": "{customerRequests30d} customer requests in 30 days and nobody can use it yet"
+              "reason": "{customerRequests30d} customer requests in 30 days and nobody can use it yet",
+              "short": "{customerRequests30d} asks"
             },
             {
               "when": {
@@ -6699,7 +6701,8 @@
                 "eq": "deprecated"
               },
               "health": "watch",
-              "reason": "Deprecated"
+              "reason": "Deprecated",
+              "short": "Deprecated"
             },
             {
               "when": {
@@ -6707,7 +6710,8 @@
                 "lt": 25
               },
               "health": "watch",
-              "reason": "Only {adoptionPct}% adoption"
+              "reason": "Only {adoptionPct}% adoption",
+              "short": "{adoptionPct}% adoption"
             },
             {
               "when": {
@@ -6727,7 +6731,8 @@
                 ]
               },
               "health": "watch",
-              "reason": "Shipped, but low value ({value} of 5)"
+              "reason": "Shipped, but low value ({value} of 5)",
+              "short": "Low value"
             }
           ],
           "default": "good",
@@ -6827,7 +6832,8 @@
                 "eq": "fail"
               },
               "health": "bad",
-              "reason": "Fails accessibility"
+              "reason": "Fails accessibility",
+              "short": "Fails accessibility"
             },
             {
               "when": {
@@ -6835,7 +6841,8 @@
                 "eq": true
               },
               "health": "bad",
-              "reason": "Built differently from the design"
+              "reason": "Built differently from the design",
+              "short": "Off design"
             },
             {
               "when": {
@@ -6859,7 +6866,8 @@
                 ]
               },
               "health": "watch",
-              "reason": "Shipped with the design at {status}"
+              "reason": "Shipped with the design at {status}",
+              "short": "Design at {status}"
             },
             {
               "when": {
@@ -6867,7 +6875,8 @@
                 "eq": "partial"
               },
               "health": "watch",
-              "reason": "Accessibility only partly passes"
+              "reason": "Accessibility only partly passes",
+              "short": "A11y partial"
             }
           ],
           "default": "good",
@@ -6999,7 +7008,8 @@
                 ]
               },
               "health": "bad",
-              "reason": "Shipped without human review"
+              "reason": "Shipped without human review",
+              "short": "Unreviewed AI code"
             },
             {
               "when": {
@@ -7007,7 +7017,8 @@
                 "eq": 3
               },
               "health": "bad",
-              "reason": "Severe tech debt"
+              "reason": "Severe tech debt",
+              "short": "Severe tech debt"
             },
             {
               "when": {
@@ -7015,7 +7026,8 @@
                 "eq": true
               },
               "health": "watch",
-              "reason": "Stalled since {lastCommit}"
+              "reason": "Stalled since {lastCommit}",
+              "short": "Stalled"
             },
             {
               "when": {
@@ -7023,7 +7035,8 @@
                 "eq": 2
               },
               "health": "watch",
-              "reason": "Heavy tech debt"
+              "reason": "Heavy tech debt",
+              "short": "Tech debt"
             },
             {
               "when": {
@@ -7031,7 +7044,8 @@
                 "lt": 40
               },
               "health": "watch",
-              "reason": "Unit coverage {unitCoveragePct}%"
+              "reason": "Unit coverage {unitCoveragePct}%",
+              "short": "Coverage {unitCoveragePct}%"
             }
           ],
           "default": "good",
@@ -7164,7 +7178,8 @@
                 "gte": 2
               },
               "health": "bad",
-              "reason": "{incidents30d} incidents in 30 days"
+              "reason": "{incidents30d} incidents in 30 days",
+              "short": "{incidents30d} incidents"
             },
             {
               "when": {
@@ -7172,7 +7187,8 @@
                 "eq": 1
               },
               "health": "watch",
-              "reason": "An incident this month"
+              "reason": "An incident this month",
+              "short": "Incident"
             },
             {
               "when": {
@@ -7180,7 +7196,8 @@
                 "eq": false
               },
               "health": "watch",
-              "reason": "No alerting"
+              "reason": "No alerting",
+              "short": "No alerting"
             }
           ],
           "default": "good",
@@ -7311,7 +7328,8 @@
                 "gt": 0
               },
               "health": "bad",
-              "reason": "{openFindings} open findings"
+              "reason": "{openFindings} open findings",
+              "short": "{openFindings} findings"
             },
             {
               "when": {
@@ -7331,7 +7349,8 @@
                 ]
               },
               "health": "bad",
-              "reason": "In production ({stage}) without a finished security review"
+              "reason": "In production ({stage}) without a finished security review",
+              "short": "Live, no security review"
             },
             {
               "when": {
@@ -7339,7 +7358,8 @@
                 "eq": "pending"
               },
               "health": "watch",
-              "reason": "Security review pending"
+              "reason": "Security review pending",
+              "short": "Review pending"
             }
           ],
           "default": "good",
@@ -7476,7 +7496,8 @@
                 "eq": "failing"
               },
               "health": "bad",
-              "reason": "End-to-end tests failing"
+              "reason": "End-to-end tests failing",
+              "short": "E2E failing"
             },
             {
               "when": {
@@ -7484,7 +7505,8 @@
                 "gt": 0
               },
               "health": "bad",
-              "reason": "{openBugsP1} open P1 bugs"
+              "reason": "{openBugsP1} open P1 bugs",
+              "short": "{openBugsP1} P1 bugs"
             },
             {
               "when": {
@@ -7492,7 +7514,8 @@
                 "eq": "partial"
               },
               "health": "watch",
-              "reason": "Tests only partly pass"
+              "reason": "Tests only partly pass",
+              "short": "Tests partly pass"
             },
             {
               "when": {
@@ -7500,7 +7523,8 @@
                 "lt": 100
               },
               "health": "watch",
-              "reason": "{e2ePassing} of {e2eTests} end-to-end tests pass"
+              "reason": "{e2ePassing} of {e2eTests} end-to-end tests pass",
+              "short": "{e2ePassing}/{e2eTests} E2E"
             },
             {
               "when": {
@@ -7520,7 +7544,8 @@
                 ]
               },
               "health": "watch",
-              "reason": "Shipped with only {e2eTests} end-to-end tests"
+              "reason": "Shipped with only {e2eTests} end-to-end tests",
+              "short": "Few E2E tests"
             }
           ],
           "default": "good",
@@ -7613,7 +7638,8 @@
                 "gte": 2000
               },
               "health": "bad",
-              "reason": "Costs {monthlyUsd} USD a month"
+              "reason": "Costs {monthlyUsd} USD a month",
+              "short": "{monthlyUsd} USD/mo"
             },
             {
               "when": {
@@ -7629,7 +7655,8 @@
                 ]
               },
               "health": "watch",
-              "reason": "Sends SMS while the project's SMS bill is {projectSmsUsd} USD a month"
+              "reason": "Sends SMS while the project's SMS bill is {projectSmsUsd} USD a month",
+              "short": "SMS bill {projectSmsUsd} USD"
             },
             {
               "when": {
@@ -7637,7 +7664,8 @@
                 "gte": 100
               },
               "health": "watch",
-              "reason": "Model spend {llmUsd} USD a month"
+              "reason": "Model spend {llmUsd} USD a month",
+              "short": "Model {llmUsd} USD/mo"
             },
             {
               "when": {
@@ -7645,7 +7673,8 @@
                 "gte": 500
               },
               "health": "watch",
-              "reason": "Costs {monthlyUsd} USD a month"
+              "reason": "Costs {monthlyUsd} USD a month",
+              "short": "{monthlyUsd} USD/mo"
             }
           ],
           "default": "good",

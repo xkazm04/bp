@@ -1,6 +1,6 @@
 // Aggregates over places (building, wing, room, bay) and time helpers. Everything the plan says about
 // a place is computed here once per (time, window) and cached, never per frame.
-import type { Feature, Health, LensId, Stage, ViewId } from '@/lib/data';
+import type { Feature, Health, Stage, ViewId } from '@/lib/data';
 import type { Product } from './product';
 
 export const dnum = (d: string) => Date.parse(d + 'T00:00:00Z') / 864e5;
@@ -11,23 +11,26 @@ const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT
 export function fmtD(d: string): string { return MON[+d.slice(5, 7) - 1] + ' ' + d.slice(8, 10); }
 export const isLiveSt = (s: Stage | null) => s === 'live' || s === 'flagged';
 
-/** The stage a feature had on date `d` (null = not yet on the drawing). */
+/**
+ * The stage a feature had on date `d`, replayed from the events log: the `to` of its last stage (or
+ * feature-added) event at or before `d` (spec 10). null = not yet on the drawing, or unknown "now".
+ */
 export function stageAt(f: Feature, d: string, asOf: string): Stage | null {
   if (d >= asOf) return f.stage;
-  if (f.created > d) return null;
   let s: Stage | null = null;
-  for (const h of f.history) if (h.date <= d) s = h.stage;
-  return s || 'idea';
+  for (const h of f.revs) { if (h.date > d) break; s = h.stage; }
+  return s;
 }
-/** The stage change inside the "what changed" window ending at `t`, if any. */
+/** The stage change inside the "what changed" window ending at `t`, if any (from the events log). */
 export function deltaWin(f: Feature, t: string, delta: number): { stage: Stage; date: string } | null {
   const from = addDays(t, -delta);
-  for (let i = f.history.length - 1; i >= 0; i--) { const h = f.history[i]; if (h.date > from && h.date <= t) return h; }
+  for (let i = f.revs.length - 1; i >= 0; i--) { const h = f.revs[i]; if (h.date > from && h.date <= t) return h; }
   return null;
 }
 export function revAt(weeks: string[], d: string): number { let r = 0; weeks.forEach((w, i) => { if (w <= d) r = i + 1; }); return r || 1; }
 
-export function lensHealth(f: Feature, v: ViewId): Health { return v === 'general' ? f.health : f[v].health; }
+/** A feature's health under a view: General = worst-of over enabled lenses (computed at load), else that lens's. */
+export function lensHealth(f: Feature, v: ViewId): Health { return v === 'general' ? f.health : f.lens[v]?.h ?? 'unmeasured'; }
 
 export interface Counts {
   n: number; live: number; flagged: number; build: number; paper: number; dep: number; none: number; chg: number;
@@ -80,7 +83,7 @@ export class AggCache {
     const k = id + '|' + v;
     let h = this.health.get(k);
     if (h) return h;
-    h = { good: 0, watch: 0, bad: 0, na: 0 };
+    h = { good: 0, watch: 0, bad: 0, na: 0, unmeasured: 0 };
     for (const f of fs) h[lensHealth(f, v)]++;
     this.health.set(k, h);
     return h;
@@ -92,4 +95,3 @@ export function stageParts(c: Counts, short: boolean): string[] {
   return [c.n + (short ? '' : ' features'), c.live + c.flagged + ' live', c.build + ' building', c.paper + ' on paper'];
 }
 
-export function lensOfFeatureHealth(f: Feature, l: LensId): Health { return f[l].health; }

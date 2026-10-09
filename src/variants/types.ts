@@ -2,7 +2,7 @@
 // React chrome. Everything a variant author may change is reachable from their own folder through
 // this interface; the engine and the components consult it and fall back to the defaults.
 import type { ComponentType } from 'react';
-import type { Feature, LensId, ViewId } from '@/lib/data';
+import type { Feature, LensDef, ViewId } from '@/lib/data';
 import type { Model, SimDecision } from '@/lib/model';
 import type { Density, LensExpression } from '@/engine/lens/contract';
 
@@ -10,9 +10,11 @@ export type VariantId = 'subtle' | 'shaped' | 'bold';
 export type { LensExpression, LensChannel, MarkArgs, TileGeom, Rect, Density, ChannelContent, ChannelAggregate, FeatureLive, Viewport } from '@/engine/lens/contract';
 export type { Theme } from '@/engine/theme';
 
-/** Props for a lens panel in the feature sheet (one per lens; six in General). */
+/** Props for a lens panel in the feature sheet (one per enabled lens in General). */
 export interface SheetPanelProps {
-  lens: LensId;
+  lens: string;
+  /** The lens's manifest and what was resolved from it. */
+  def: LensDef;
   f: Feature;
   model: Model;
   /** The reader's density for this lens (from the channel, or the UI override). */
@@ -29,7 +31,7 @@ export interface VariantUI {
   /** Replace the legend shown in the Plan tab for a view. */
   Legend?: ComponentType<{ view: ViewId }>;
   /** Density the UI uses for a lens (sheet rows, queue detail). Default: the channel's density. */
-  density?(lens: LensId): Density;
+  density?(lens: string): Density;
   /** An extra line under a queue card, e.g. a lens-specific hint. Return null for none. */
   queueNote?(d: SimDecision, view: ViewId, model: Model): string | null;
   /** Sub-label under a lens tab (default: the sheet's short name). */

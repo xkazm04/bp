@@ -4,8 +4,9 @@ export * from './layout';
 export * from './aggregates';
 export * from './sim';
 export * from './search';
+export * from './lens';
 
-import { KETTLE, SWARM } from '@/lib/data';
+import { SWARM, loadProduct } from '@/lib/data';
 import { buildProduct, type Product } from './product';
 import { layoutProduct, type Layout } from './layout';
 import { AggCache, Closure } from './aggregates';
@@ -20,9 +21,12 @@ export interface Model {
   closure: Closure;
 }
 
-/** Build everything the app needs for one `?scale=N`. ~10 ms at scale 4. */
-export function buildModel(scale: number, now: () => number): Model {
-  const P = buildProduct(KETTLE, scale);
+/**
+ * Build everything the app needs for one `?scale=N` and lens toggle (`?lenses=`). The map is read and its
+ * health evaluated once per data load (cached by the loader); this adds the clones and the layout.
+ */
+export function buildModel(scale: number, now: () => number, lenses?: string | null): Model {
+  const P = buildProduct(loadProduct(lenses), scale);
   const L = layoutProduct(P);
   return { P, L, sim: new SwarmSim(P, SWARM, now), agg: new AggCache(P), closure: new Closure(P) };
 }

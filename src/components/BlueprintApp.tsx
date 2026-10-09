@@ -53,7 +53,8 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
   const [engine, setEngine] = useState<Engine | null>(null);
   useEffect(() => {
     const qs = new URLSearchParams(location.search);
-    const model = buildModel(clampScale(qs.get('scale')), () => performance.now());
+    // ?lenses=-security,+com.kettle.cost switches lenses off or on for the session, on top of the map's `enabled`
+    const model = buildModel(clampScale(qs.get('scale')), () => performance.now(), qs.get('lenses'));
     const e = new Engine({ canvas: cv.current!, ui: ui.current!, root: root.current!, model, expression: variant.expression, intro: qs.get('intro') !== '0' && !location.hash });
     setEngine(e);
     return () => { e.destroy(); setEngine(null); };

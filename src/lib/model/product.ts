@@ -1,15 +1,22 @@
-// The product as the app sees it: the staged data, optionally cloned into N product lines
-// (`?scale=4` = four lines, 528 features), plus id indexes. Pure; no DOM.
-import type { ActivityEvent, Capability, Domain, Feature, Kettle, Milestone, Person, Snapshot } from '@/lib/data';
+// The product as the app sees it: the loaded map (src/lib/standard/load.ts), optionally cloned into N
+// product lines (`?scale=4` = four lines, 528 features), plus id indexes and the lens registry. Pure;
+// no DOM. Feature ids are slugs; clones get a product-line suffix (`failed-payment-dunning-S`).
+import type { ActivityEvent, Capability, Domain, Feature, LensDef, Milestone, Person, Snapshot, Structure } from '@/lib/data';
 import { LINES } from './constants';
 
 export interface Building { i: number; name: string; short: string; sf: string }
-export interface PDomain extends Domain { base: string; bld: number }
+export interface PDomain extends Domain { bld: number }
 
 export interface Product {
   scale: number;
-  base: Kettle;
+  base: Structure;
+  /** Project name and tagline (from the map). */
+  name: string;
+  tagline: string;
   asOf: string; // YYYY-MM-DD
+  /** The lens registry: enabled lenses in file order (after the session toggle). */
+  lenses: readonly LensDef[];
+  LENS: Readonly<Record<string, LensDef>>;
   buildings: Building[];
   domains: PDomain[];
   capabilities: Capability[];
@@ -36,12 +43,12 @@ export function clampScale(raw: string | null | undefined): number {
 export function lineSuffix(scale: number, b: number): string {
   return scale > 1 ? '-' + LINES[b][1] : '';
 }
-/** `PAY-09-S` → `PAY-09`. */
+/** `failed-payment-dunning-S` → `failed-payment-dunning`. */
 export function baseId(id: string): string {
   return id.replace(/-[A-Z]$/, '');
 }
 
-export function buildProduct(K: Kettle, scale: number): Product {
+export function buildProduct(K: Structure, scale: number): Product {
   const buildings: Building[] = [];
   const domains: PDomain[] = [];
   const capabilities: Capability[] = [];
@@ -50,16 +57,14 @@ export function buildProduct(K: Kettle, scale: number): Product {
   for (let i = 0; i < scale; i++) {
     const sf = lineSuffix(scale, i);
     const m = (id: string) => id + sf;
-    buildings.push({ i, name: scale > 1 ? 'Kettle ' + LINES[i][0] : 'Kettle', short: LINES[i][0], sf });
-    for (const d of K.domains) domains.push({ ...d, id: m(d.id), base: d.id, bld: i, capabilities: d.capabilities.map(m) });
+    buildings.push({ i, name: scale > 1 ? K.project.name + ' ' + LINES[i][0] : K.project.name, short: LINES[i][0], sf });
+    for (const d of K.domains) domains.push({ ...d, id: m(d.id), bld: i, capabilities: d.capabilities.map(m) });
     for (const c of K.capabilities) capabilities.push({ ...c, id: m(c.id), domain: m(c.domain), features: c.features.map(m) });
     for (const f of K.features) {
-      const g: Feature = scale > 1 ? (structuredClone(f) as Feature) : f;
-      if (scale > 1) {
-        g.id = m(f.id); g.domain = m(f.domain); g.capability = m(f.capability);
-        g.dependsOn = f.dependsOn.map(m); g.usedBy = f.usedBy.map(m); g.blockedBy = f.blockedBy.map(m);
-      }
-      features.push(g);
+      features.push(scale > 1 ? {
+        ...f, id: m(f.id), code: f.code ? f.code + sf : '', domain: m(f.domain), capability: m(f.capability),
+        dependsOn: f.dependsOn.map(m), usedBy: f.usedBy.map(m), blockedBy: f.blockedBy.map(m),
+      } : f);
     }
     for (const a of K.activity) activity.push(scale > 1 ? { ...a, feature: a.feature ? m(a.feature) : a.feature } : a);
   }
@@ -77,8 +82,9 @@ export function buildProduct(K: Kettle, scale: number): Product {
   for (const p of K.people) P[p.id] = p;
   for (const m of K.milestones) MS[m.id] = m;
   return {
-    scale, base: K, asOf: K.product.asOf.slice(0, 10), buildings, domains, capabilities, features, activity, snapshots,
-    weeks: K.snapshots.map((s) => s.week), people: K.people, milestones: K.milestones, F, D, C, P, MS, FI,
+    scale, base: K, name: K.project.name, tagline: K.project.tagline, asOf: K.asOf, lenses: K.lenses, LENS: K.LENS,
+    buildings, domains, capabilities, features, activity, snapshots, weeks: K.weeks, people: K.people, milestones: K.milestones,
+    F, D, C, P, MS, FI,
   };
 }
 

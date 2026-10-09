@@ -6,7 +6,6 @@ import type { Engine } from '@/engine/Engine';
 import type { UIState } from '@/engine/state';
 import type { Variant } from '@/variants/types';
 import type { Density } from '@/engine/lens/contract';
-import type { LensId } from '@/lib/data';
 
 export const EngineCtx = createContext<Engine | null>(null);
 export const VariantCtx = createContext<Variant | null>(null);
@@ -46,15 +45,8 @@ export function useBp<T>(sel: (s: UIState) => T, eq: (a: T, b: T) => boolean = O
   return useSyncExternalStore(E.store.subscribe, get, get);
 }
 
-/** The reader density the UI uses for a lens (variant override, else the channel's). */
-export function useDensity(): (l: LensId) => Density {
-  const V = useVariant();
-  return (l) => V.ui?.density?.(l) ?? V.expression.channels[l].density;
-}
-
-/** The lens accent for the current theme (falls back to ink). */
-export function accentFor(V: Variant, l: LensId | 'general', mode: 'dark' | 'light'): string {
-  if (l === 'general') return 'var(--ink)';
-  const a = V.expression.channels[l].accent;
-  return a ? a[mode] : 'var(--ink)';
+/** The reader density the UI uses for a lens (variant override, else the channel's, else the manifest's `reader.density`). */
+export function useDensity(): (l: string) => Density {
+  const V = useVariant(), E = useEngine();
+  return (l) => V.ui?.density?.(l) ?? E.channel(l)?.density ?? E.M.P.LENS[l]?.density ?? 'standard';
 }

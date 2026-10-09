@@ -1,8 +1,9 @@
 // The lens-expression contract. A variant (src/variants/<id>/) implements `LensExpression`; the engine
 // owns everything else (geometry, stage fills, the mix, text layout, culling, caching).
 //
-// The model: the view is a MIX of seven weights, General plus one per lens, each 0..1.
-//   General          general = 1, every lens = 1 -> all six channels drawn compact, side by side
+// The model: the view is a MIX of weights, General plus one per enabled lens (the registry: the map's
+// `lenses[]` where `enabled` is true, in file order), each 0..1. Lens ids are plain strings.
+//   General          general = 1, every lens = 1 -> all N channels drawn compact, side by side
 //   Lens "security"  general = 0, security = 1, others = 0 -> only security remains, expanded
 // Switching springs the weights; the other channels collapse while the chosen one grows into the
 // space they leave. Lens -> lens passes through the shared base (see mix.ts for the derived values).
@@ -10,7 +11,7 @@
 // The one hard rule: a tile's base fill is its lifecycle stage and the engine draws it. A lens never
 // recolours a node. It speaks through shape, indicators, content, density, and (only in variants that
 // go that far) a secondary accent and decoration.
-import type { Feature, LensId, Stage } from '@/lib/data';
+import type { Feature, LensDef, Scalar, Stage } from '@/lib/data';
 import type { Theme } from '../theme';
 
 export type Density = 'simple' | 'standard' | 'dense';
@@ -41,9 +42,13 @@ export interface MarkArgs {
   ctx: CanvasRenderingContext2D;
   /** The rect this channel owns right now: its General slot, its expanded rect, or a blend. */
   r: Rect;
+  /** Its General slot on this tile (from composeGeneral), or null when the tile has none for it. */
+  slot: Rect | null;
+  /** The lens (its manifest and what was resolved from it at load). */
+  lens: LensDef;
   tile: TileGeom;
   f: Feature;
-  /** Presence 0..1: multiply your alpha by it (General = 1 for all six; a lens = 1 for itself). */
+  /** Presence 0..1: multiply your alpha by it (General = 1 for every lens; a lens = 1 for itself). */
   w: number;
   /** Expansion 0..1: 0 = compact General form, 1 = this lens alone. */
   x: number;
@@ -60,7 +65,12 @@ export interface MarkArgs {
   accent: string;
 }
 
-export interface FeatureLive { rolloutPct: number; progressPct: number }
+export interface FeatureLive {
+  rolloutPct: number;
+  progressPct: number;
+  /** A lens field's value now: the simulation's live value for the few fields it moves, else the map's. */
+  value(lens: string, key: string): Scalar | undefined;
+}
 
 export interface ChannelContent {
   /** Evidence line on the tile, right-aligned in its header (mono). Parts are dropped from the end to fit. */
@@ -97,16 +107,24 @@ export interface LensChannel {
 export interface LensExpression {
   id: string;
   name: string;
-  channels: Record<LensId, LensChannel>;
+  /** Channels the variant draws itself, by lens id. Lenses without one use `fallback`. */
+  channels: Readonly<Record<string, LensChannel>>;
   /**
-   * How the six channels share a tile in General. Return a rect per lens (screen px) for the compact
-   * marks; omit a lens (or return {}) when the tile is too small to show it.
+   * The channel for any lens the variant has no own channel for, built from the lens manifest alone
+   * (glyph, line, measures, evidence). The subtle variant draws every lens this way; the shaped and bold
+   * variants use it for lenses other than the six built-ins. Called once per lens and cached.
    */
-  composeGeneral(tile: TileGeom): Partial<Record<LensId, Rect>>;
+  fallback?(lens: LensDef): LensChannel;
+  /**
+   * How the channels share a tile in General. `lenses` is the registry order (General's composition).
+   * Return a rect per lens id (screen px) for the compact marks; omit a lens (or return {}) when the
+   * tile is too small to show it. May return a reused object: the engine reads it immediately.
+   */
+  composeGeneral(tile: TileGeom, lenses: readonly string[]): Readonly<Record<string, Rect>>;
   /** The rect a lone lens grows into. Default: the tile body inset by 3 px. */
-  expandedRect?(tile: TileGeom, lens: LensId): Rect;
+  expandedRect?(tile: TileGeom, lens: string): Rect;
   /** Spring for the lens tween (motion `animate`). Default stiffness 170, damping 26. */
   spring?: { stiffness: number; damping: number };
   /** Optional font for tile evidence text under a lens. Default mono. */
-  evidenceFont?(lens: LensId): 'sans' | 'mono';
+  evidenceFont?(lens: string): 'sans' | 'mono';
 }

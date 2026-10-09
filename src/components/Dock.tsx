@@ -3,9 +3,9 @@
 // four tabs (Asks, Swarm, Orders, Plan).
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import type { FeatureFlag, Stage } from '@/lib/data';
+import type { Stage } from '@/lib/data';
 import {
-  FLAGS, PERSON_LENS, SHEET, SHEETS, SPEND_CAP, STAGE_WORD, TICK_CLASS, astat, lensHealth, pname, revAt, search, stageAt,
+  SPEND_CAP, STAGE_WORD, TICK_CLASS, astat, lensHealth, personLens, pname, revAt, search, sheetOf, stageAt, views,
   type RoomNode, type BayNode,
 } from '@/lib/model';
 import type { DockTab } from '@/engine/state';
@@ -42,7 +42,7 @@ function SearchBox() {
             <li key={f.id} role="option" aria-selected={i === sel} className={i === sel ? 'on' : ''} onPointerEnter={() => preview(i)} onClick={() => open(f.id)}>
               <StageSym st={f.stage} w={18} h={12} />
               <span className="t">{f.name}</span>
-              <span className="r">{M.P.scale > 1 ? E.M.L.TILE[f.id].wing.bld.b.short + ' · ' : ''}{M.P.D[f.domain].name} · {STAGE_WORD[f.stage]}</span>
+              <span className="r">{M.P.scale > 1 ? E.M.L.TILE[f.id].wing.bld.b.short + ' · ' : ''}{M.P.D[f.domain].name} · {f.stage ? STAGE_WORD[f.stage] : 'Stage unknown'}</span>
             </li>
           )) : <li className="none">No feature matches “{q}”. Try “gift”, “waitlist” or “tax”.</li>}
         </ul>
@@ -87,7 +87,7 @@ function WhoRow() {
       </div>
       {s.whoMenu && (
         <ul id="whoMenu" role="listbox" aria-label="View as" data-keys="own" onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); E.patch({ whoMenu: false }); } }}>
-          {[{ id: null as string | null, name: 'Everyone', sub: 'the whole product, all sheets', n: open.length }].concat(persons.map((x) => ({ id: x.id, name: x.name, sub: x.title + ' · ' + SHEET[PERSON_LENS[x.id]].nm, n: open.filter((d) => d.decider === x.id).length }))).map((r) => (
+          {[{ id: null as string | null, name: 'Everyone', sub: 'the whole product, all sheets', n: open.length }].concat(persons.map((x) => ({ id: x.id, name: x.name, sub: x.title + ' · ' + sheetOf(M.P, personLens(M.P, x.id)).nm, n: open.filter((d) => d.decider === x.id).length }))).map((r) => (
             <li key={r.id ?? 'all'} role="option" tabIndex={0} aria-selected={(s.who || '') === (r.id || '')} className={(s.who || '') === (r.id || '') ? 'on' : ''}
               onClick={() => E.setWho(r.id)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); E.setWho(r.id); } }}>
               <span className="av">{r.name.charAt(0)}</span><span>{r.name}<small>{r.sub}</small></span><span className="n">{r.n}</span>
@@ -193,18 +193,18 @@ function OrdersTab() {
 }
 
 const HINT = (
-  <div className="hint"><b>Scroll</b> zoom · <b>drag</b> pan · <b>click</b> go in · <b>Esc</b> back<br /><b>Shift-drag</b> box-select · <b>Shift-click</b> target · <b>S</b> target mode<br /><b>/</b> find · <b>1–7</b> sheets · <b>J K</b> questions · <b>1–3</b> answer · <b>Space</b> pause swarm<br /><b>M</b> morning watch · <b>P</b> person · <b>G</b> GA · <b>B</b> blast · <b>\</b> panel</div>
+  <div className="hint"><b>Scroll</b> zoom · <b>drag</b> pan · <b>click</b> go in · <b>Esc</b> back<br /><b>Shift-drag</b> box-select · <b>Shift-click</b> target · <b>S</b> target mode<br /><b>/</b> find · <b>1–9</b> sheets · <b>J K</b> questions · <b>1–3</b> answer · <b>Space</b> pause swarm<br /><b>M</b> morning watch · <b>P</b> person · <b>G</b> GA · <b>B</b> blast · <b>\</b> panel</div>
 );
 
 function TitleBlock() {
   const E = useEngine(), M = E.M;
   const s = useBp((s) => ({ view: s.view, t: s.t, delta: s.delta }), shallowEqual);
-  const sh = SHEET[s.view], c = M.agg.countsOf('ALL', M.P.features, s.t, s.delta), now = s.t === M.P.asOf;
+  const sh = sheetOf(M.P, s.view), vs = views(M.P), c = M.agg.countsOf('ALL', M.P.features, s.t, s.delta), now = s.t === M.P.asOf;
   const bad = now ? M.agg.healthOf('ALL', M.P.features, 'general').bad : null;
   return (
     <div className="tbk">
-      <div className="proj"><div className="v">KETTLE</div><span className="lab">{M.P.scale > 1 ? 'Campus ×' + M.P.scale : 'Project'}</span></div>
-      <div className="sheet"><span className="lab">Sheet</span><span className="no">{sh.no}</span><span className="of">{SHEETS.indexOf(sh) + 1} of 7</span></div>
+      <div className="proj"><div className="v">{M.P.name.toUpperCase()}</div><span className="lab">{M.P.scale > 1 ? 'Campus ×' + M.P.scale : 'Project'}</span></div>
+      <div className="sheet"><span className="lab">Sheet</span><span className="no">{sh.no}</span><span className="of">{vs.indexOf(sh.k) + 1} of {vs.length}</span></div>
       <div className="ttl"><span className="lab">{s.t} · rev {revAt(M.P.weeks, s.t)}/27</span><div className="v">{sh.title}</div></div>
       <div className="schedT"><span className="lab">Schedule · {M.P.features.length - c.none} features</span>
         <table><tbody>
@@ -230,7 +230,7 @@ function PlanTab() {
     return (
       <>
         <PatternDefs />
-        <h3 className="dsec-h"><span>Room schedule · {R.d.base}</span><span>{R.feats.length} features</span></h3>
+        <h3 className="dsec-h"><span>Room schedule · {R.d.code || R.d.name}</span><span>{R.feats.length} features</span></h3>
         <ul className="sched">
           {R.bays.map((Bay) => (
             <li key={Bay.id} style={{ display: 'contents' }}>
@@ -252,20 +252,21 @@ function PlanTab() {
       </>
     );
   }
+  // trouble per enabled lens (bad or watch), from the health computed at load: click to find
   const kc: Record<string, number> = {};
-  for (const f of M.P.features) for (const k of f.flags) kc[k] = (kc[k] || 0) + 1;
+  for (const f of M.P.features) for (const t of f.trouble) kc[t.lens] = (kc[t.lens] || 0) + 1;
   const L = V.ui?.Legend ?? Legend;
   return (
     <>
       <PatternDefs />
-      <h3 className="dsec-h"><span>Legend · {SHEET[s.view].no}</span><span>{SHEET[s.view].nm}</span></h3>
+      <h3 className="dsec-h"><span>Legend · {sheetOf(M.P, s.view).no}</span><span>{sheetOf(M.P, s.view).nm}</span></h3>
       <L view={s.view} />
-      <h3 className="dsec-h"><span>Tensions · click to find</span><span>features</span></h3>
+      <h3 className="dsec-h"><span>Trouble by lens · click to find</span><span>features</span></h3>
       <ul className="kn">
-        {FLAGS.map(([k, long]) => (
-          <li key={k} tabIndex={0} role="button" aria-pressed={s.key === k} className={s.key === k ? 'on' : ''} onClick={() => E.setKey(s.key === k ? null : (k as FeatureFlag))}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); E.setKey(s.key === k ? null : (k as FeatureFlag)); } }}>
-            <span className="d" /><span>{long}</span><span className="c">{kc[k] || 0}</span>
+        {M.P.lenses.map(({ id: k, name }) => (
+          <li key={k} tabIndex={0} role="button" aria-pressed={s.key === k} className={s.key === k ? 'on' : ''} onClick={() => E.setKey(s.key === k ? null : k)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); E.setKey(s.key === k ? null : k); } }}>
+            <span className="d" /><span>{name}: bad or to watch</span><span className="c">{kc[k] || 0}</span>
           </li>
         ))}
       </ul>

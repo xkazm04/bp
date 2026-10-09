@@ -22,10 +22,10 @@
                           { "field": "stage", "in": ["idea", "specified"] } ] } }
     ] },
     "rules": [
-      { "when": { "field": "openFindings", "gt": 0 }, "health": "bad", "reason": "{openFindings} open findings" },
+      { "when": { "field": "openFindings", "gt": 0 }, "health": "bad", "reason": "{openFindings} open findings", "short": "{openFindings} findings" },
       { "when": { "all": [ { "field": "review", "eq": "pending" }, { "field": "stage", "in": ["flagged", "live", "deprecated"] } ] },
-        "health": "bad", "reason": "In production ({stage}) without a finished security review" },
-      { "when": { "field": "review", "eq": "pending" }, "health": "watch", "reason": "Security review pending" }
+        "health": "bad", "reason": "In production ({stage}) without a finished security review", "short": "Live, no security review" },
+      { "when": { "field": "review", "eq": "pending" }, "health": "watch", "reason": "Security review pending", "short": "Review pending" }
     ],
     "default": "good",
     "rollup": { "method": "worst-of" }

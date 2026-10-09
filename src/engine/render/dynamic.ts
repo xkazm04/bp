@@ -3,7 +3,7 @@
 // marks, chips), activity pulses, RFI pennants, breach rivets, steering previews, the focused decision
 // and freed agents. Per-agent position records are reused; nothing big is allocated per frame.
 import type { Feature } from '@/lib/data';
-import { astat, hash01, type SimAgent, type SimDecision } from '@/lib/model';
+import { GA_MILESTONE, astat, hash01, type SimAgent, type SimDecision } from '@/lib/model';
 import type { Engine } from '../Engine';
 import { drawText } from '../text';
 import { agentColor, glyphAgent, glyphPin } from './glyphs';
@@ -89,8 +89,8 @@ export function drawOverlays(E: Engine, ctx: CanvasRenderingContext2D, v: View, 
     ctx.strokeStyle = col; ctx.lineWidth = 1.6;
     for (const f of E.M.P.features) if (pred(f)) { const r = featRect(E, v, f.id, lod, sr1); if (r && inView(v, r, 0)) ctx.strokeRect(r.x - 2, r.y - 2, r.w + 4, r.h + 4); }
   };
-  if (S.ga) outlineIf((f) => f.milestone === 'M2', th.amber);
-  if (S.key) { const key = S.key; outlineIf((f) => f.flags.includes(key), th.red2); }
+  if (S.ga) outlineIf((f) => f.milestone === GA_MILESTONE, th.amber);
+  if (S.key) { const key = S.key; outlineIf((f) => { const h = f.lens[key]?.h; return h === 'bad' || h === 'watch'; }, th.red2); }
   const hid = (S.hover && S.hover.type === 'tile' ? S.hover.id : null) || S.hl || S.open || S.sel;
   if (hid && L.TILE[hid] && k > 0.1 && lod > 0.3) conduits(E, ctx, v, hid);
   for (const sid of [S.open, S.sel]) {

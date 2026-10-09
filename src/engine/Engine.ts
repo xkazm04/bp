@@ -1,13 +1,13 @@
 // The canvas engine. It owns the camera, the frame loop (draws only when dirty), level of detail,
 // hit testing, the cached static layer and the dynamic layers, the lens mix and the simulation clock.
 // React talks to it through the imperative methods below and reads discrete state from `store`.
-import type { Feature, FeatureFlag, LensId, ViewId } from '@/lib/data';
+import type { Feature, LensDef, Scalar, ViewId } from '@/lib/data';
 import {
-  HOUR, LINES, PERSON_LENS, SPEEDS, AWAY_SINCE, inside, revAt, type Box, type BldNode, type BayNode, type Counts, type Model,
+  BLAST_DEFAULT, GA_MILESTONE, HOUR, LINES, SPEEDS, AWAY_SINCE, inside, isView, lensOf, personLens, revAt, views, type Box, type BldNode, type BayNode, type Counts, type Model,
   type OrderTemplate, type PlaceNode, type Preview, type RoomNode, type SimDecision, type SimEvent, type Target, type TileNode, type WingNode,
 } from '@/lib/model';
 import { Camera, clamp, type Cam, type Pad, type Region } from './camera';
-import type { ChannelAggregate, FeatureLive, LensExpression } from './lens/contract';
+import type { ChannelAggregate, FeatureLive, LensChannel, LensExpression } from './lens/contract';
 import { MixDriver, type MixState } from './lens/mix';
 import { createStore, type Store } from './store';
 import { initialState, type Crumb, type DockTab, type HoverInfo, type UIState } from './state';
@@ -40,6 +40,23 @@ const PADS: Record<'site' | 'bld' | 'wing' | 'room' | 'bay', Pad> = {
 };
 const OVER: Record<string, number> = { bld: 1, wing: 1.8, room: 1.3, bay: 1 };
 type Chain = { t: Crumb['t']; o: PlaceNode }[];
+
+/** A feature's live values, reused for every call (the caller reads them at once; nothing keeps it). */
+class LiveView implements FeatureLive {
+  rolloutPct = 0; progressPct = 0;
+  private f: Feature | null = null;
+  constructor(private E: Engine) {}
+  set(f: Feature): this {
+    const sim = this.E.M.sim;
+    this.f = f; this.rolloutPct = sim.rolloutOf(f);
+    this.progressPct = this.E.isNow ? sim.progOf(f) : sim.baseProgress(f);
+    return this;
+  }
+  value(lens: string, key: string): Scalar | undefined {
+    const f = this.f; if (!f) return undefined;
+    return this.E.isNow ? this.E.M.sim.liveValue(f, lens, key) : f.lens[lens]?.v[key];
+  }
+}
 
 export class Engine {
   readonly M: Model;
@@ -103,7 +120,8 @@ export class Engine {
     this.cam.world = this.M.L.world;
     this.cam.reduced = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     this.tx = new Text('sans-serif', 'monospace');
-    this.mix = new MixDriver('general', () => { this.mixV++; this.mixS = this.mix.state; this.dirty(); }, this.expr.spring);
+    this.lensIds = this.M.P.lenses.map((l) => l.id);
+    this.mix = new MixDriver(this.lensIds, 'general', () => { this.mixV++; this.mixS = this.mix.state; this.dirty(); }, this.expr.spring);
     this.mixS = this.mix.state;
     this.cache = new StaticCache();
     this.wallPaths = buildWallPaths(this);
@@ -131,16 +149,31 @@ export class Engine {
   get S(): UIState { return this.store.get(); }
   get isNow(): boolean { return this.S.t === this.M.P.asOf; }
   private set(p: Partial<UIState>) { this.store.set(p); this.dirty(); }
-  live(f: Feature): FeatureLive { return { rolloutPct: this.M.sim.rolloutOf(f), progressPct: this.isNow ? this.M.sim.progOf(f) : f.development.progressPct }; }
-  accentOf(l: LensId | null): string {
+  private liveView = new LiveView(this);
+  /** Live values for a feature. The returned object is reused: read it before the next call. */
+  live(f: Feature): FeatureLive { return this.liveView.set(f); }
+  /** The registry, in order (General's composition). */
+  readonly lensIds: readonly string[];
+  private chans = new Map<string, LensChannel | null>();
+  /** The channel that draws a lens: the variant's own, else its manifest-driven fallback (cached). */
+  channel(l: string): LensChannel | null {
+    let c = this.chans.get(l);
+    if (c === undefined) {
+      const d: LensDef | undefined = this.M.P.LENS[l];
+      c = this.expr.channels[l] ?? (d && this.expr.fallback ? this.expr.fallback(d) : null);
+      this.chans.set(l, c);
+    }
+    return c;
+  }
+  accentOf(l: string | null): string {
     if (!l) return this.th.ink;
-    const a = this.expr.channels[l].accent;
+    const a = this.channel(l)?.accent;
     return a ? a[this.th.mode] : this.th.ink;
   }
   counts(id: string, fs: readonly Feature[]): Counts { return this.M.agg.countsOf(id, fs, this.S.t, this.S.delta); }
-  lensAgg(id: string, l: LensId, fs: readonly Feature[]): ChannelAggregate {
+  lensAgg(id: string, l: string, fs: readonly Feature[]): ChannelAggregate {
     const k = id + '|' + l; let a = this.aggLensCache.get(k);
-    if (!a) { a = this.expr.channels[l].aggregate(fs); this.aggLensCache.set(k, a); }
+    if (!a) { a = this.channel(l)?.aggregate(fs) ?? { parts: [] }; this.aggLensCache.set(k, a); }
     return a;
   }
   statsOf(id: string, fs: readonly Feature[]) {
@@ -292,7 +325,7 @@ export class Engine {
     this.perf.frames++;
     ctx.setTransform(this.RES, 0, 0, this.RES, 0, 0);
     ctx.clearRect(0, 0, this.FW, this.FH);
-    this.dimFn = S.ga ? (f) => f.milestone === 'M2' : S.key ? ((k: FeatureFlag) => (f: Feature) => f.flags.includes(k))(S.key) : null;
+    this.dimFn = S.ga ? (f) => f.milestone === GA_MILESTONE : S.key ? ((k: string) => (f: Feature) => { const h = f.lens[k]?.h; return h === 'bad' || h === 'watch'; })(S.key) : null;
     this.blastSet = S.blast ? new Set(this.M.closure.of(S.blast)) : null;
     // static layer: transform the cached raster during gestures, re-raster when it settles
     const key = this.staticKey();
@@ -372,7 +405,7 @@ export class Engine {
 
   // ============================================================================ lens, person, time
   setView(v: ViewId, quiet = false) {
-    if (v === this.S.view) return;
+    if (v === this.S.view || !isView(this.M.P, v)) return;
     this.set({ view: v });
     this.mix.to(v, quiet || this.cam.reduced);
     this.syncRootView();
@@ -380,7 +413,8 @@ export class Engine {
   }
   setWho(id: string | null) {
     this.store.set({ who: id || null, whoMenu: false, dtab: 'asks' });
-    if (id && PERSON_LENS[id]) this.setView(PERSON_LENS[id], true);
+    const pl = personLens(this.M.P, id);
+    if (pl) this.setView(pl, true);
     const q = this.M.sim.queueFor(this.S.who, this.S.view);
     if (id) this.toast('Viewing as ' + (this.M.P.P[id]?.name ?? id), q.mine.length + ' question' + (q.mine.length === 1 ? '' : 's') + ' wait for them');
     this.dirty();
@@ -491,10 +525,10 @@ export class Engine {
     if (this.S.open && (m.blast || m.ga)) { patch.open = null; this.camBefore = null; }
     this.set(patch);
     const S = this.S;
-    const ids = S.blast ? this.M.closure.of(S.blast).concat([S.blast]) : S.ga ? this.M.P.features.filter((f) => f.milestone === 'M2').map((f) => f.id) : null;
+    const ids = S.blast ? this.M.closure.of(S.blast).concat([S.blast]) : S.ga ? this.M.P.features.filter((f) => f.milestone === GA_MILESTONE).map((f) => f.id) : null;
     if (ids && (m.blast || m.ga)) {
       let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
-      for (const i of ids) { const T = this.M.L.TILE[i]; x0 = Math.min(x0, T.x); y0 = Math.min(y0, T.y); x1 = Math.max(x1, T.x + T.w); y1 = Math.max(y1, T.y + T.h); }
+      for (const i of ids) { const T = this.M.L.TILE[i]; if (!T) continue; x0 = Math.min(x0, T.x); y0 = Math.min(y0, T.y); x1 = Math.max(x1, T.x + T.w); y1 = Math.max(y1, T.y + T.h); }
       this.cam.flyTo(this.fitCam({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, { t: 40, r: 370, b: 56, l: 30 }));
     }
     this.placeKey = ''; this.writeHashSoon();
@@ -503,10 +537,12 @@ export class Engine {
   toggleBlast(id?: string) {
     if (this.S.blast) { this.setMode({ blast: null }); return; }
     const S = this.S, sf = this.M.P.scale > 1 ? '-S' : '';
-    const t = id || S.open || S.sel || (S.hover && S.hover.type === 'tile' ? S.hover.id : null) || 'PLT-02' + sf;
+    const t = id || S.open || S.sel || (S.hover && S.hover.type === 'tile' ? S.hover.id : null) || (this.M.P.F[BLAST_DEFAULT + sf] ? BLAST_DEFAULT + sf : this.M.P.features[0]?.id);
+    if (!t) return;
     this.setMode({ blast: t, ga: false });
   }
-  setKey(k: FeatureFlag | null) { this.set({ key: k }); }
+  /** Highlight the features in trouble (bad or watch) under one lens; null clears. */
+  setKey(k: string | null) { this.set({ key: k }); }
   setSel(id: string | null) { this.set({ sel: id }); }
   setHl(id: string | null) { if (this.S.hl !== id) this.set({ hl: id }); }
   setHlDec(id: string | null) { if (this.S.hlDec !== id) this.set({ hlDec: id }); }
@@ -845,7 +881,8 @@ export class Engine {
       if (/^[1-9]$/.test(k) && +k <= dc.opts.length) { e.preventDefault(); this.decide(dc.id, +k - 1); return; }
       if (k === 'Enter' && tag !== 'button') { e.preventDefault(); this.decide(dc.id, dc.rec); return; }
     }
-    if (/^[1-7]$/.test(k)) { const views: ViewId[] = ['general', 'business', 'design', 'development', 'operations', 'security', 'quality']; this.setView(views[+k - 1]); return; }
+    // 1 = General, 2.. = the enabled lenses in order (up to 9; the tab strip reaches the rest)
+    if (/^[1-9]$/.test(k)) { const vs = views(this.M.P); if (+k <= vs.length) this.setView(vs[+k - 1]); return; }
     if (k === 'j' || k === 'J') { this.stepDecision(1); return; }
     if (k === 'k' || k === 'K') { this.stepDecision(-1); return; }
     if (k === 'm' || k === 'M') { this.toggleMorning(); return; }
@@ -905,11 +942,10 @@ export class Engine {
     if (!Object.keys(h).length) return;
     this.hashLock = true;
     this.endIntro();
-    const views = ['general', 'business', 'design', 'development', 'operations', 'security', 'quality'];
-    if (h.lens && views.includes(h.lens)) { this.store.set({ view: h.lens as ViewId }); this.mix.to(h.lens as ViewId, true); }
+    if (h.lens && h.lens !== 'general' && lensOf(this.M.P, h.lens)) { this.store.set({ view: h.lens }); this.mix.to(h.lens, true); }
     if (h.d && ['1', '7', '14'].includes(h.d)) this.store.set({ delta: +h.d as 1 | 7 | 14 });
     if (h.t && /^\d{4}-\d\d-\d\d$/.test(h.t)) this.setTime(h.t);
-    if (h.who && PERSON_LENS[h.who]) this.store.set({ who: h.who });
+    if (h.who && this.M.P.P[h.who]) this.store.set({ who: h.who });
     if (h.ga === '1') this.store.set({ ga: true });
     if (h.blast && this.M.P.F[h.blast]) this.store.set({ blast: h.blast });
     if (h.at) {

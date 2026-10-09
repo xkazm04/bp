@@ -25,11 +25,11 @@
     "applies_when": { "not": { "field": "status", "eq": "not-started" } },
     "rules": [
       { "when": { "all": [ { "field": "humanReviewed", "eq": false }, { "field": "status", "in": ["merged", "done"] } ] },
-        "health": "bad", "reason": "Shipped without human review" },
-      { "when": { "field": "techDebt", "eq": 3 }, "health": "bad", "reason": "Severe tech debt" },
-      { "when": { "field": "stalled", "eq": true }, "health": "watch", "reason": "Stalled since {lastCommit}" },
-      { "when": { "field": "techDebt", "eq": 2 }, "health": "watch", "reason": "Heavy tech debt" },
-      { "when": { "field": "unitCoveragePct", "lt": 40 }, "health": "watch", "reason": "Unit coverage {unitCoveragePct}%" }
+        "health": "bad", "reason": "Shipped without human review", "short": "Unreviewed AI code" },
+      { "when": { "field": "techDebt", "eq": 3 }, "health": "bad", "reason": "Severe tech debt", "short": "Severe tech debt" },
+      { "when": { "field": "stalled", "eq": true }, "health": "watch", "reason": "Stalled since {lastCommit}", "short": "Stalled" },
+      { "when": { "field": "techDebt", "eq": 2 }, "health": "watch", "reason": "Heavy tech debt", "short": "Tech debt" },
+      { "when": { "field": "unitCoveragePct", "lt": 40 }, "health": "watch", "reason": "Unit coverage {unitCoveragePct}%", "short": "Coverage {unitCoveragePct}%" }
     ],
     "default": "good",
     "rollup": { "method": "share", "watch": 0.25, "bad": 0.15 }

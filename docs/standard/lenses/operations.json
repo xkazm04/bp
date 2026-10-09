@@ -24,9 +24,9 @@
   "health": {
     "applies_when": { "not": { "field": "environment", "in": ["none", "preview", "staging"] } },
     "rules": [
-      { "when": { "field": "incidents30d", "gte": 2 }, "health": "bad", "reason": "{incidents30d} incidents in 30 days" },
-      { "when": { "field": "incidents30d", "eq": 1 }, "health": "watch", "reason": "An incident this month" },
-      { "when": { "field": "alerting", "eq": false }, "health": "watch", "reason": "No alerting" }
+      { "when": { "field": "incidents30d", "gte": 2 }, "health": "bad", "reason": "{incidents30d} incidents in 30 days", "short": "{incidents30d} incidents" },
+      { "when": { "field": "incidents30d", "eq": 1 }, "health": "watch", "reason": "An incident this month", "short": "Incident" },
+      { "when": { "field": "alerting", "eq": false }, "health": "watch", "reason": "No alerting", "short": "No alerting" }
     ],
     "default": "good",
     "rollup": { "method": "worst-of" }

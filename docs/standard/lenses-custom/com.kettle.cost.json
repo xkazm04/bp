@@ -20,13 +20,13 @@
   "health": {
     "rules": [
       { "when": { "field": "monthlyUsd", "gte": 2000 },
-        "health": "bad", "reason": "Costs {monthlyUsd} USD a month" },
+        "health": "bad", "reason": "Costs {monthlyUsd} USD a month", "short": "{monthlyUsd} USD/mo" },
       { "when": { "all": [ { "field": "smsUsd", "gt": 0 }, { "field": "projectSmsUsd", "gte": 2500 } ] },
-        "health": "watch", "reason": "Sends SMS while the project's SMS bill is {projectSmsUsd} USD a month" },
+        "health": "watch", "reason": "Sends SMS while the project's SMS bill is {projectSmsUsd} USD a month", "short": "SMS bill {projectSmsUsd} USD" },
       { "when": { "field": "llmUsd", "gte": 100 },
-        "health": "watch", "reason": "Model spend {llmUsd} USD a month" },
+        "health": "watch", "reason": "Model spend {llmUsd} USD a month", "short": "Model {llmUsd} USD/mo" },
       { "when": { "field": "monthlyUsd", "gte": 500 },
-        "health": "watch", "reason": "Costs {monthlyUsd} USD a month" }
+        "health": "watch", "reason": "Costs {monthlyUsd} USD a month", "short": "{monthlyUsd} USD/mo" }
     ],
     "default": "good",
     "rollup": { "method": "weighted", "by": "monthlyUsd" }

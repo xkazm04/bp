@@ -18,11 +18,11 @@
   ],
   "health": {
     "rules": [
-      { "when": { "field": "a11y", "eq": "fail" }, "health": "bad", "reason": "Fails accessibility" },
-      { "when": { "field": "specDrift", "eq": true }, "health": "bad", "reason": "Built differently from the design" },
+      { "when": { "field": "a11y", "eq": "fail" }, "health": "bad", "reason": "Fails accessibility", "short": "Fails accessibility" },
+      { "when": { "field": "specDrift", "eq": true }, "health": "bad", "reason": "Built differently from the design", "short": "Off design" },
       { "when": { "all": [ { "field": "stage", "in": ["flagged", "live", "deprecated"] }, { "field": "status", "in": ["none", "sketch", "wireframe"] } ] },
-        "health": "watch", "reason": "Shipped with the design at {status}" },
-      { "when": { "field": "a11y", "eq": "partial" }, "health": "watch", "reason": "Accessibility only partly passes" }
+        "health": "watch", "reason": "Shipped with the design at {status}", "short": "Design at {status}" },
+      { "when": { "field": "a11y", "eq": "partial" }, "health": "watch", "reason": "Accessibility only partly passes", "short": "A11y partial" }
     ],
     "default": "good",
     "rollup": { "method": "share", "watch": 0.25, "bad": 0.15 }
