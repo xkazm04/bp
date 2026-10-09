@@ -300,9 +300,9 @@
 
   let L = null; // the current layout
   function headMode(cw, phone) {
-    if (phone) return { wide: false, h: 46, fs: 9 };
+    if (phone) return { wide: false, h: 58, fs: 9 };
     for (const fs of [12, 11.5, 11, 10.5]) if (DOMS.every((d) => wrapLines(lab(500, fs), d.name, cw - 14, 2).ok)) return { wide: true, h: 108, fs };
-    return { wide: false, h: 68, fs: 11 };
+    return { wide: false, h: 82, fs: 11 };
   }
   function cwForWide() {
     let lo = 40, hi = 260;
@@ -976,15 +976,22 @@
   }
 
   // ── domain heads ─────────────────────────────────────────────────────────────────────────────────
-  function drawHead(c, i, x, y, w, h, k, wideA, baseA) {
-    if (y + h < -4 || y > VM.h + 4) return;
+  function drawHead(c, i, x, y0, w, h, k, wideA, baseA) {
+    if (y0 + h < -4 || y0 > VM.h + 4) return;
     const sel = S.selection && S.selection.type === 'domain' && S.selection.id === DOMS[i].id;
     const dA = rampK(k, L.th.hd);
+    // while the sticky strip covers the top of the head region, its content slides down inside the region
+    const stripA = smooth(-6, -46, y0);
+    const cover = (L.tl.AS + L.tl.stripPx + 4) * easeOut(stripA) - y0;
+    // under the strip (which names the domain) the detail head drops its own name line
+    const noName = cover > 8;
+    const contentH = dA > 0.5 ? (noName ? 214 : 286) : L.heads.wide ? 118 : 86;
+    const y = y0 + clamp(cover, 0, Math.max(0, h - contentH));
     if (L.phone && w < 60) { c.globalAlpha = baseA; drawHeadPhone(c, i, x, y, w, h); }
     else {
       if (wideA < 0.99) { c.globalAlpha = baseA * (1 - wideA); drawHeadNarrow(c, i, x, y, w, h); }
       if (wideA > 0.01 && dA < 0.99) { c.globalAlpha = baseA * wideA * (1 - dA); drawHeadWide(c, i, x, y, w, h); }
-      if (dA > 0.01) { c.globalAlpha = baseA * dA; drawHeadDetail(c, i, x, y, w, h); }
+      if (dA > 0.01) { c.globalAlpha = baseA * dA; drawHeadDetail(c, i, x, y, w, h - (y - y0), noName); }
     }
     c.globalAlpha = baseA;
     // initiative coverage across the column head: covered, in progress, pending, finding (share of the domain)
@@ -995,7 +1002,7 @@
       c.fillStyle = P.rule2; c.fillRect(bx0, y + 3, bw0, 4);
       ['covered', 'in-progress', 'pending', 'finding'].forEach((st) => { const ww = bw0 * dc[st] / total; if (ww > 0) { c.fillStyle = P[COV_COLOR[st]]; c.fillRect(bx2, y + 3, ww, 4); bx2 += ww; } });
     }
-    if (sel) { rrect(c, x + 1, y - 2, w - 2, (L.colBottom[i] - L.y.head) * k + 1, Math.min(8, w * 0.08)); c.lineWidth = 2; c.strokeStyle = P.ink; c.stroke(); }
+    if (sel) { rrect(c, x + 1, y0 - 2, w - 2, (L.colBottom[i] - L.y.head) * k + 1, Math.min(8, w * 0.08)); c.lineWidth = 2; c.strokeStyle = P.ink; c.stroke(); }
   }
   function domCounters(c, i, x, y, fs, maxX, center) {
     const d = DOMS[i];
@@ -1052,7 +1059,31 @@
     const gr = clamp(w * 0.25, 5, 11);
     gBand(c, r.band, cx, y + 20 + gr, gr);
     txt(c, r.band === 'na' ? '–' : OK.fmt.score(r.score), cx, y + 20 + 2 * gr + 14, mono(400, w < 34 ? 10 : 12), r.band === 'na' ? P.ink3 : P.ink, 'center');
-    if (h >= 60) domCounters(c, i, cx, y + 20 + 2 * gr + 29, 9.5, x + w - 2, true);
+    if (h >= 60) stackCounters(c, i, cx, y + 20 + 2 * gr + 29, 9.5, w);
+  }
+  /** Attention and gate counters centred under a narrow head: one line when they fit, else one under the other. */
+  function stackCounters(c, i, cx, y, fs, w) {
+    const ro = BP.domainRollup(DOMS[i].id);
+    const gn = S.gates ? domGateN[i] : gateTotal(ro.gates);
+    const font = mono(S.gates ? 500 : 400, fs);
+    const r = fs * 0.4;
+    const items = [];
+    if (ro.attention) items.push(['attn', ro.attention]);
+    if (gn) items.push(['gate', gn]);
+    const wOf = (it) => r * 2 + 2 + tw(font, String(it[1]));
+    const one = items.reduce((sum, it) => sum + wOf(it), 0) + (items.length - 1) * 5;
+    const lines = one <= w - 4 ? [items] : items.map((it) => [it]);
+    lines.forEach((ln, li) => {
+      const tot = ln.reduce((sum, it) => sum + wOf(it), 0) + (ln.length - 1) * 5;
+      let x = cx - tot / 2;
+      const yy = y + li * (fs + 3);
+      ln.forEach((it) => {
+        const sv = String(it[1]);
+        if (it[0] === 'attn') { gAttn(c, x + r, yy - fs * 0.34, r * 1.1); txt(c, sv, x + r * 2 + 2, yy, font, P.alarm); }
+        else { gGate(c, S.gates && S.gates !== 'any' ? S.gates : gateKindOf(ro.gates), x + r, yy - fs * 0.34, r * 1.05); txt(c, sv, x + r * 2 + 2, yy, font, P.gate); }
+        x += wOf(it) + 5;
+      });
+    });
   }
   function drawHeadPhone(c, i, x, y, w, h) {
     const d = DOMS[i];
@@ -1062,21 +1093,29 @@
     const gr = clamp(w * 0.3, 4, 8);
     gBand(c, r.band, cx, y + 16 + gr, gr);
     txt(c, r.band === 'na' ? '–' : OK.fmt.score(r.score), cx, y + 16 + 2 * gr + 11, mono(400, w < 24 ? 8.5 : 10), P.ink, 'center');
-    if (h >= 56 && w >= 26) domCounters(c, i, cx, y + 16 + 2 * gr + 24, 8.5, x + w - 1, true);
+    // attention stays visible even here: the count in alarm red under a small asterisk
+    const ro = BP.domainRollup(d.id);
+    if (h >= 50 && ro.attention) {
+      const ay = y + 16 + 2 * gr + 17;
+      gAttn(c, cx, ay + 2, 3);
+      txt(c, String(ro.attention), cx, ay + 14, mono(500, w < 24 ? 8 : 9), P.alarm, 'center');
+    }
   }
-  function drawHeadDetail(c, i, x, y, w, h) {
+  function drawHeadDetail(c, i, x, y, w, h, noName) {
     const d = DOMS[i];
     const lens = S.lens;
     const r = BP.domainRating(d.id, lens);
     const ro = BP.domainRollup(d.id);
     const px = x + 12, maxW = w - 24;
     let yy = y + 18;
-    txt(c, fitText(mono(400, 10.5), d.code + ' · ' + ro.count + ' features · ' + COLS[i].mods.length + ' modules', maxW), px, yy, mono(400, 10.5), P.ink3);
-    yy += 22;
-    const nf = lab(500, 19);
-    const nl = wrapLines(nf, d.name, maxW, 2).lines;
-    nl.forEach((ln) => { txt(c, ln, px, yy, nf, P.ink); yy += 22; });
-    yy += 6;
+    if (!noName) {
+      txt(c, fitText(mono(400, 10.5), d.code + ' · ' + ro.count + ' features · ' + COLS[i].mods.length + ' modules', maxW), px, yy, mono(400, 10.5), P.ink3);
+      yy += 22;
+      const nf = lab(500, 19);
+      const nl = wrapLines(nf, d.name, maxW, 2).lines;
+      nl.forEach((ln) => { txt(c, ln, px, yy, nf, P.ink); yy += 22; });
+      yy += 6;
+    } else yy -= 4;
     gBand(c, r.band, px + 11, yy + 3, 11);
     const sc = r.band === 'na' ? '–' : OK.fmt.score(r.score);
     txt(c, sc, px + 29, yy + 10, mono(400, 22), r.band === 'na' ? P.ink3 : P.ink);
@@ -1854,7 +1893,7 @@
       if (unshipped) { const sr = clamp(hh * 0.3, 2.6, 5.5); gStatus(c, f.status, right - sr - 1, cy, sr); right -= sr * 2 + 6; }
       if (fAttn[fi] && hh >= 11 && w > 80) { gAttn(c, right - 4, cy, 4.2); right -= 12; }
       if (hh >= 12 && w >= 86) {
-        const fs = hh >= 18 ? 12.5 : 11.5;
+        const fs = hh >= 22 ? 13 : hh >= 16 ? 12.5 : 11.5;
         const ny = hh >= 30 && ch.note ? y + hh / 2 - 2 : cy + fs * 0.34;
         txt(c, fitText(lab(400, fs), f.name, right - nx - 2), nx, ny, lab(400, fs), P.ink);
         if (hh >= 30 && ch.note) txt(c, fitText(lab(400, 10.5), ch.note, right - nx - 2), nx, ny + 14, lab(400, 10.5), P.ink3);
@@ -2117,7 +2156,7 @@
     const r = freeRectCached();
     const top = L.tl.topPx + 10;
     // big enough to read the item names, and the band's top under the strip
-    const k = clamp(Math.max(cam.k, 18 / L.tl.cp, 96 / COL_W), L.th.min, L.th.max);
+    const k = clamp(Math.max(cam.k, Math.min(16 / L.tl.cp, 150 / COL_W), 120 / COL_W), L.th.min, L.th.max);
     const wx = (r.w / 2 - cam.x) / cam.k;
     flyTo(VT, { x: r.w / 2 - wx * k, y: top - b.u0 * k - b.fxTop, k }, 520);
     touched = true;
@@ -2306,5 +2345,5 @@
   fontsReady.then(go, go);
   setTimeout(go, 1500);
   if (document.fonts && document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', () => { if (booted) onStage(stageW, stageH, true); });
-  window.DC = { shell, cam, get L() { return L; }, zoomInto, zoomToLevel, zoomToBand, fitView: () => fitView(active(), false), VM, VT, hitMap, lodOf: () => lodOf(cam.k), setK: (k, sx, sy) => zoomAt(active(), sx == null ? active().w / 2 : sx, sy == null ? active().h / 2 : sy, k, false), focusFeature: (id, k) => { const fi = fIdx.get(id); const g = L.fMod[fi]; const kk = k || L.th.l3 * 1.3; setCam(VM, VM.w / 2 - (g.x + g.w / 2) * kk, VM.h / 2 - (L.rowY[fi] + L.ROW / 2) * kk, kk); } };
+  window.DC = { bench: (n) => { const t0 = performance.now(); for (let i = 0; i < (n || 20); i++) { if (S.view === 'map') drawMap(performance.now()); else drawTimeline(performance.now()); } return (performance.now() - t0) / (n || 20); }, shell, cam, get L() { return L; }, zoomInto, zoomToLevel, zoomToBand, fitView: () => fitView(active(), false), VM, VT, hitMap, lodOf: () => lodOf(cam.k), setK: (k, sx, sy) => zoomAt(active(), sx == null ? active().w / 2 : sx, sy == null ? active().h / 2 : sy, k, false), focusFeature: (id, k) => { const fi = fIdx.get(id); const g = L.fMod[fi]; const kk = k || L.th.l3 * 1.3; setCam(VM, VM.w / 2 - (g.x + g.w / 2) * kk, VM.h / 2 - (L.rowY[fi] + L.ROW / 2) * kk, kk); } };
 })();

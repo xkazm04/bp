@@ -994,16 +994,31 @@
     const cwid = d + 8 + (two ? Math.max(nameW, cw + 60) : nameW + (cw ? cw + 10 : 0));
     // sticky: the plaque slides with the visible part of the plate and never runs past its right edge
     let px = Math.max(bx + 8, Math.min(8, bx + bw - 8 - cwid));
-    // when only a sliver of the plate is on screen, the plaque stays readable at the edge and overflows on a halo
-    const clipped = px < 6 && bx + bw > 36;
-    if (clipped) px = 6;
+    // when only a sliver of the plate is on screen, the plaque stays readable at the edge: on a halo where the
+    // module column leaves room, else as the ring alone, else not at all (the module cards carry the context)
+    let clipped = false, ringOnly = false;
+    if (px < 6 && bx + bw > 36) {
+      const modL = toSX(L.c.xM);
+      if (modL - 14 >= 6 + cwid) { clipped = true; px = 6; }
+      else if (bx + bw - 14 >= d) { ringOnly = true; px = 6; }
+      else px = -1e4;
+    }
+    if (px < -1000) { if (overlayPass) { ctx.globalAlpha = 1; return; } }
     const py = stickyY(by, bh, ch, two ? 4 : 3);
     const rx = px + d / 2, ry = py + ch / 2;
     const tx = px + d + 8;
     const contentR = px + cwid;
     const room = bx + bw - 8;
-    const overflow = bw - 16 < cwid || (clipped && contentR > room);
-    if (overflow && !overlayPass) {
+    const overflow = !ringOnly && (bw - 16 < cwid || (clipped && contentR > room));
+    if (px < -1000) { /* plaque off screen */ }
+    else if (ringOnly) {
+      if (!overlayPass) {
+        const pr = d / 2;
+        gRing(rt, px + pr, py + ch / 2, d, clamp(d * 0.11, 2.2, 4));
+        const sfs = clamp(d * 0.36, 9, 15);
+        text(scoreTxt(rt), px + pr, py + ch / 2 + sfs * 0.36, font(500, rt.band === 'na' ? sfs * 0.8 : sfs, true), C.ink, 'center');
+      }
+    } else if (overflow && !overlayPass) {
       // the label runs past a narrow plate (phones): it is drawn above the cards, on a halo panel
       plaqueQueue.push(dn);
     } else {
@@ -1016,7 +1031,7 @@
     }
     if (overlayPass) { ctx.globalAlpha = 1; return; }
     // grown plates: the status mix beside the plaque, then every lens, while there is room
-    if (bw > 420 && bh >= 34) {
+    if (bw > 420 && bh >= 34 && !ringOnly && px > -1000) {
       let x = contentR + 28;
       const right = bx + bw - 12;
       if (right - x >= 170) {
