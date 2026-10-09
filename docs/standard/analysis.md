@@ -24,7 +24,7 @@ of them off.
 
 ## 2. What exists today
 
-The evidence for this section comes from three read-only scouts over `C:\Users\kazda\kiro\personas`.
+The evidence for this section comes from three read-only scouts over the Personas repo (sibling checkout `../personas`).
 
 | | Personas today | Blueprint today (Kettle sample) |
 |---|---|---|

@@ -1,7 +1,7 @@
 # Kettle blueprint UI: design and build contract
 
-This is the contract for the Next.js app in this repo. It comes from three design contest rounds;
-the archive is under `.contest/` (git-ignored). Read this whole file before writing code.
+This is the contract for the Next.js app in this repo. It comes from three design contest rounds
+(history and the owner's verbatim verdicts: `docs/contest-history.md`). Read this whole file before writing code.
 
 ## What the owner decided (verbatim)
 
@@ -40,9 +40,9 @@ Earlier standing decisions that still hold:
 ## The baseline to port
 
 A/1, "The Drawing Set: Site Watch":
-- Source: `.contest/arena/product-blueprint-swarm/judging/entries/A/variant-1/` (`index.html`,
-  `style.css`, `app.js`, about 230 KB of vanilla canvas code). Read `NOTES.md` first.
-- Screenshots: `.contest/arena/product-blueprint-swarm/runs/visual3/A-1-*.png`.
+- Source: `prototypes/site-watch/` (`index.html`, `style.css`, `app.js`, about 230 KB of vanilla
+  canvas code; opens from disk). Read `NOTES.md` first. Its predecessor, round 2's winner, is
+  `prototypes/drawing-set/`.
 
 Everything it does is in scope to keep:
 - **Levels and wayfinding.**
@@ -65,9 +65,9 @@ Everything it does is in scope to keep:
 - **Keyboard and phone.** Keyboard throughout. On a phone, a reduced view: the queue and a list.
 
 Two other variants are references only, never to copy wholesale:
-- **B/1** (`judging/entries/B/variant-1/`) is simpler and noticeably faster. Study why: fewer
+- **B/1** (round 3 contest archive, not in this repo) is simpler and noticeably faster. Study why: fewer
   layers per frame and less work per tile.
-- **A/2** (`judging/entries/A/variant-2/`) shows six full lens rethemes. The owner liked the ambition
+- **A/2** (round 3 contest archive, not in this repo) shows six full lens rethemes. The owner liked the ambition
   and rejected the readability cost.
 
 Data (since the app-structure v3 adoption, spark `blueprint-data-standard` WP3):
@@ -82,7 +82,7 @@ Data (since the app-structure v3 adoption, spark `blueprint-data-standard` WP3):
 - History is replayed from the events log: a feature's stage revisions (time travel, "what changed",
   the sheet's revisions table) and the 27 weekly snapshot counts of the revisions strip. The replay
   reproduces the old stored snapshots exactly.
-- The people and moments of use are in `.contest/stage-swarm/data/USERS.md`.
+- The people and moments of use are in `docs/research/users.md`.
 - The swarm is a simulation, and the UI says so.
 
 ### Lenses are data

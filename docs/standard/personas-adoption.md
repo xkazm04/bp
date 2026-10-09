@@ -1,8 +1,8 @@
 # Personas adoption of app-structure v3
 
-Status: brief for a spark in `C:\Users\kazda\kiro\personas`, against [app-structure-v3.md](app-structure-v3.md)
+Status: brief for a spark in the Personas repo (sibling checkout `../personas`), against [app-structure-v3.md](app-structure-v3.md)
 (schemas in `schema/`, built-ins in `lenses/`). Paths are relative to Personas at `0a96d32d3f`, except
-P6 (`C:\Users\kazda\kiro\ai-registry` at `196641c6`). Live counts (142 active features, 1,559 KPIs,
+P6 (the ai-registry repo, `../ai-registry`, at `196641c6`). Live counts (142 active features, 1,559 KPIs,
 none linked to a feature) are from the 2026-10-09 scout, not re-queried.
 
 ## 1. Summary

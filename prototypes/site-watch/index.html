@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kettle — The Drawing Set · site watch</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-sans-condensed@5/400.css" media="print" onload="this.media='all'">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-sans-condensed@5/500.css" media="print" onload="this.media='all'">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-sans-condensed@5/600.css" media="print" onload="this.media='all'">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-mono@5/400.css" media="print" onload="this.media='all'">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-mono@5/500.css" media="print" onload="this.media='all'">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/caveat@5/500.css" media="print" onload="this.media='all'">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="intro">
+<div id="paper"></div><div id="tint"></div>
+<canvas id="map" tabindex="0" role="application" aria-label="Zoomable floor plan of the product with the agent swarm working over it. Scroll or pinch to zoom, drag to pan, click to go one level deeper. Plus and minus zoom, arrows walk rooms, Enter opens, Escape goes back. Shift-drag draws a selection."></canvas>
+<div id="grain"></div><div id="vig"></div><div id="vellum"></div>
+
+<div id="ui">
+  <header id="hdr">
+    <div id="brand"><div class="proj" id="proj"></div><nav id="crumbs" aria-label="Where you are"></nav></div>
+    <div id="tabs" role="tablist" aria-label="Sheets (lenses)"></div>
+  </header>
+
+  <aside id="dock" aria-label="Swarm panel">
+    <div id="dtop">
+      <div id="searchbox">
+        <svg class="mg" viewBox="0 0 18 18" aria-hidden="true"><circle cx="7.5" cy="7.5" r="5.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M11.5 11.5 L16 16" stroke="currentColor" stroke-width="1.8"/></svg>
+        <input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="Find a feature, e.g. gift cards" aria-label="Search features" aria-controls="results">
+        <span class="kb">/</span>
+        <ul id="results" role="listbox"></ul>
+      </div>
+      <div id="tools"><div class="seg" role="group" aria-label="What changed: window"><button data-delta="1" title="Show what changed in the last 24 hours">24h</button><button data-delta="7" title="Last 7 days">7d</button><button data-delta="14" title="Last 14 days">14d</button></div><button id="bga" data-act="ga" title="Payments GA readiness (G)">Payments GA</button><button id="bblast" data-act="blast" title="Blast radius of the selected feature (B)">Blast</button></div>
+      <div id="whoRow"><button id="who" aria-haspopup="listbox" aria-expanded="false" title="Whose desk is this? (P)"></button><div id="vitals" aria-live="polite"></div></div>
+      <ul id="whoMenu" role="listbox" aria-label="View as"></ul>
+    </div>
+    <div id="dtabs" role="tablist" aria-label="Panel"></div>
+    <div id="dbody" tabindex="-1"></div>
+    <button id="dhide" aria-label="Hide panel" title="Hide / show panel ( \ )">⟩</button>
+  </aside>
+  <button id="dshow" aria-label="Show panel" title="Show panel ( \ )">⟨</button>
+
+  <footer id="base">
+    <div id="keyplan" title="Key plan: click to move there"><div class="lab"><span>KEY PLAN</span><span id="kpz"></span></div><canvas id="kp"></canvas></div>
+    <div id="timebox">
+      <div id="clock"></div>
+      <div id="revs"><svg id="revsvg" tabindex="0" role="slider" aria-label="Time: revision history, now, and the simulated hour ahead" aria-valuemin="1" aria-valuemax="27"></svg></div>
+    </div>
+  </footer>
+
+  <nav id="ladder" aria-label="Zoom level"></nav>
+  <div id="scalebar"></div>
+  <div id="ticker" aria-live="off"></div>
+  <div id="selbar" role="region" aria-label="Selection"></div>
+  <div id="callout" role="dialog" aria-live="polite"></div>
+  <div id="hov" aria-hidden="true"></div>
+  <div id="dcard" role="dialog" aria-label="Decision"></div>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <button id="skip">SKIP INTRO · ANY KEY</button>
+
+  <section id="detail" aria-label="Feature detail sheet" aria-hidden="true"><div class="frame"></div><div id="dbar"><button class="btn" id="dblast">Blast radius · B</button><button class="btn" id="dclose">Back to plan · Esc</button></div><div id="dscroll" tabindex="-1"></div></section>
+  <section id="morning" aria-label="While you were away" aria-hidden="true"></section>
+</div>
+<div id="phone"></div>
+<div id="pdetail" role="dialog" aria-label="Feature detail"></div>
+<script src="../data/kettle.js"></script>
+<script src="../data/swarm.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
