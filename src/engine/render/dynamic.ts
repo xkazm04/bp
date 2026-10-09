@@ -310,7 +310,7 @@ export function drawBreaches(E: Engine, ctx: CanvasRenderingContext2D, v: View, 
     const pu = sim.playing ? (now / 1500 + hash01(fid)) % 1 : 0.4;
     ctx.save(); ctx.strokeStyle = th.red; ctx.globalAlpha = (1 - pu) * 0.7; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(cx, cy, rr + pu * 8 * u, 0, 6.2832); ctx.stroke();
     ctx.globalAlpha = 1; ctx.fillStyle = th.red; ctx.strokeStyle = th.glyphEdge; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.arc(cx, cy, rr, 0, 6.2832); ctx.fill(); ctx.stroke();
-    if (big) { ctx.textAlign = 'center'; drawText(ctx, '!', cx, cy + 4.4 * u, E.tx.f(12, 600, true), '#ffffff'); ctx.textAlign = 'left'; }
+    if (big) { ctx.textAlign = 'center'; drawText(ctx, '!', cx, cy + 4.4 * u, E.tx.f(12, 600, true), th.glyphEdge); ctx.textAlign = 'left'; }
     ctx.restore();
   }
 }
