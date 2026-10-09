@@ -13,3 +13,9 @@ docs/shots/
 # live products (bp.products.example.json shows the shape) and the scan-demo product
 bp.products.local.json
 .demo/
+
+# BEGIN ai-registry linked skills (managed by ai-registry/scripts/link-registry.mjs)
+# Links are machine state; the declarations live in .ai/manifest.yaml (`skills:` and `knowledge.domains`).
+/.claude/skills/spark
+/.ai/skill-runs.local.jsonl
+# END ai-registry linked skills

@@ -1,0 +1,11 @@
+# bp - the product blueprint. Declarations read by ai-registry/scripts/link-registry.mjs.
+registry:
+  local: ../ai-registry
+knowledge:
+  domains: [software-engineering]
+capabilities:
+  typecheck: npm run typecheck
+  build: npm run build
+  test: npm run check:lens-health
+skills:
+  - spark
