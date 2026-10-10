@@ -6,7 +6,7 @@
 // latest + expected delta), the standard it rests on, size and risk, and offers Approve and Decline
 // (with an optional note, asked inline). Both are written to the product's store. It lives in the
 // rail's decisions flyout.
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { fmtWait, metricHistory, morningStats, pname, sheetOf, type SimDecision } from '@/lib/model';
 import type { Proposal } from '@/lib/scan/types';
@@ -24,6 +24,26 @@ function metricMove(p: Proposal, unitOf: (lens: string, key: string) => string |
   return last ? `${p.metric}: ${fmtN(last.value)} → ${fmtN(last.value + d)}${u}` : `${p.metric}: ${move} (not measured yet)`;
 }
 
+/** What a question's urgency reads as on its card. */
+const URG: Record<SimDecision['urg'], string> = { high: 'Urgent', medium: 'Soon', low: 'When you can' };
+
+/** The shell both queue cards share: entrance and exit, emphasis by the reader, open on click or Enter/Space,
+ * and the hover highlight on the plan. `cls` adds the card's own class. */
+function CardShell({ d, on, emph, cls, children }: { d: SimDecision; on: boolean; emph: boolean; cls?: string; children: ReactNode }) {
+  const E = useEngine();
+  return (
+    <motion.li
+      layout="position" initial={{ opacity: 0, x: 18 }} animate={{ opacity: emph ? 1 : 0.55, x: 0 }} exit={{ opacity: 0, x: -24, transition: { duration: 0.2 } }}
+      transition={{ type: 'spring', stiffness: 380, damping: 34 }}
+      className={'qi' + (cls ? ' ' + cls : '') + ' u-' + d.urg + (on ? ' on' : '')} tabIndex={0} aria-current={on}
+      onClick={() => E.openDecision(d.id)} onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); E.openDecision(d.id); } }}
+      onPointerEnter={() => !E.S.dec && E.setHlDec(d.id)} onPointerLeave={() => E.setHlDec(null)}
+    >
+      {children}
+    </motion.li>
+  );
+}
+
 /** A decline note survives a refused write: the card remounts when the decision reopens, so the draft lives outside it. */
 const declineDrafts = new Map<string, string>();
 
@@ -34,20 +54,13 @@ function LiveItem({ d }: { d: SimDecision }) {
   const cancelDecline = () => { declineDrafts.delete(d.base); setNote(''); setDeclining(false); };
   const f = M.P.F[d.f], on = s.dec === d.id, scan = live?.product.scan;
   const p = scan?.proposals.find((x) => x.id === d.base);
-  const urg = d.urg === 'high' ? 'Urgent' : d.urg === 'medium' ? 'Soon' : 'When you can';
   const field = (lens: string, key: string) => M.P.LENS[lens]?.F[key];
   const mv = p ? metricMove(p, (l, k) => field(l, k)?.unit, scan) : null;
   const label = p?.metric ? field(p.lens, p.metric)?.label : undefined;
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
   return (
-    <motion.li
-      layout="position" initial={{ opacity: 0, x: 18 }} animate={{ opacity: sim.emph(d, s.who, s.view) ? 1 : 0.55, x: 0 }} exit={{ opacity: 0, x: -24, transition: { duration: 0.2 } }}
-      transition={{ type: 'spring', stiffness: 380, damping: 34 }}
-      className={'qi lq u-' + d.urg + (on ? ' on' : '')} tabIndex={0} aria-current={on}
-      onClick={() => E.openDecision(d.id)} onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); E.openDecision(d.id); } }}
-      onPointerEnter={() => !E.S.dec && E.setHlDec(d.id)} onPointerLeave={() => E.setHlDec(null)}
-    >
-      <div className="k"><span>{urg} · <span className="lz">{sheetOf(M.P, d.lens).no}</span></span><span>{p?.kind && p.kind !== 'fix' ? p.kind + ' · ' : ''}{d.base}{d.isNew ? ' · NEW' : ''}</span></div>
+    <CardShell d={d} on={on} emph={sim.emph(d, s.who, s.view)} cls="lq">
+      <div className="k"><span>{URG[d.urg]} · <span className="lz">{sheetOf(M.P, d.lens).no}</span></span><span>{p?.kind && p.kind !== 'fix' ? p.kind + ' · ' : ''}{d.base}{d.isNew ? ' · NEW' : ''}</span></div>
       <h4>{d.q}</h4>
       {mv && <div className="mv" title={label ? label + (p?.expected_delta !== undefined ? ', expected after the change' : '') : undefined}>{mv}</div>}
       <div className="tags">
@@ -69,32 +82,26 @@ function LiveItem({ d }: { d: SimDecision }) {
           <button type="button" className="bt answer" title="Decline, with an optional note" onClick={(e) => { stop(e); setDeclining(true); }}>Decline…</button>
         </div>
       )}
-    </motion.li>
+    </CardShell>
   );
 }
 
 function Item({ d }: { d: SimDecision }) {
   const E = useEngine(), V = useVariant(), M = E.M, sim = M.sim;
   const s = useBp((s) => ({ dec: s.dec, who: s.who, view: s.view }), shallowEqual);
-  const f = M.P.F[d.f], on = s.dec === d.id, urg = d.urg === 'high' ? 'Urgent' : d.urg === 'medium' ? 'Soon' : 'When you can';
+  const f = M.P.F[d.f], on = s.dec === d.id;
   const emph = sim.emph(d, s.who, s.view), bn = sim.blocksNow(d);
   const note = V.ui?.queueNote?.(d, s.view, M) ?? null;
   return (
-    <motion.li
-      layout="position" initial={{ opacity: 0, x: 18 }} animate={{ opacity: emph ? 1 : 0.55, x: 0 }} exit={{ opacity: 0, x: -24, transition: { duration: 0.2 } }}
-      transition={{ type: 'spring', stiffness: 380, damping: 34 }}
-      className={'qi u-' + d.urg + (on ? ' on' : '')} tabIndex={0} aria-current={on}
-      onClick={() => E.openDecision(d.id)} onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); E.openDecision(d.id); } }}
-      onPointerEnter={() => !E.S.dec && E.setHlDec(d.id)} onPointerLeave={() => E.setHlDec(null)}
-    >
-      <div className="k"><span>{urg} · <span className="lz">{sheetOf(M.P, d.lens).no}</span></span><span>{d.base}{M.P.scale > 1 ? ' · ' + M.P.buildings[d.b].short : ''}{d.isNew ? ' · NEW' : ''}</span></div>
+    <CardShell d={d} on={on} emph={emph}>
+      <div className="k"><span>{URG[d.urg]} · <span className="lz">{sheetOf(M.P, d.lens).no}</span></span><span>{d.base}{M.P.scale > 1 ? ' · ' + M.P.buildings[d.b].short : ''}{d.isNew ? ' · NEW' : ''}</span></div>
       <h4>{d.q}</h4>
       <div className="mt">{f.name} · {M.P.D[f.domain].name}<br />{pname(M.P, d.decider)} decides · waiting <b>{fmtWait(sim.waitMin(d))}</b> · holds <b>{bn}</b> agent{bn === 1 ? '' : 's'}</div>
       {note && <div className="note">{note}</div>}
       <div style={{ marginTop: 7 }}>
         <button type="button" className="bt go answer" title="Accept the agent’s recommendation (Enter)" onClick={(e) => { e.stopPropagation(); E.decide(d.id, d.rec); }}>✓ {d.opts[d.rec].label}</button>
       </div>
-    </motion.li>
+    </CardShell>
   );
 }
 
