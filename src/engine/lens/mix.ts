@@ -57,7 +57,12 @@ export class MixDriver {
   readonly mix: LensMix;
   readonly state: MixState;
   private readonly keys: readonly string[];
-  constructor(private readonly ids: readonly string[], view: ViewId, private onChange: () => void, private spring = { stiffness: 170, damping: 26 }) {
+  private readonly ids: readonly string[];
+  private onChange: () => void;
+  private spring: { stiffness: number; damping: number };
+  // Plain fields, not parameter properties: Node's type stripping (how scripts/*.ts run) cannot load those.
+  constructor(ids: readonly string[], view: ViewId, onChange: () => void, spring = { stiffness: 170, damping: 26 }) {
+    this.ids = ids; this.onChange = onChange; this.spring = spring;
     this.keys = ['general', ...ids];
     const t = mixTarget(ids, view);
     this.mix = { ...t };
