@@ -117,6 +117,23 @@ export interface ScanSnapshot {
 /** New or changed rows since the last delta; same keys as the snapshot. */
 export type ScanDelta = ScanSnapshot;
 
+/** The snapshot's tables. A Record over `keyof ScanSnapshot`, so a table added above fails to compile until it is listed here. */
+const TABLE_SET: Record<keyof ScanSnapshot, true> = { runs: true, measurements: true, proposals: true, activity: true, shots: true, coverage: true };
+export const SCAN_TABLES = Object.keys(TABLE_SET) as readonly (keyof ScanSnapshot)[];
+/** Every table present and empty. */
+export function emptyScan(): ScanSnapshot {
+  const s = {} as Record<keyof ScanSnapshot, unknown[]>;
+  for (const t of SCAN_TABLES) s[t] = [];
+  return s as ScanSnapshot;
+}
+/** A wire snapshot with every table present (a store being created may send only some). */
+export function fullScan(x: Partial<ScanSnapshot>): ScanSnapshot {
+  const s = emptyScan() as Record<keyof ScanSnapshot, unknown[]>;
+  for (const t of SCAN_TABLES) if (Array.isArray(x[t])) s[t] = x[t];
+  return s as ScanSnapshot;
+}
+export const isEmptyScan = (s: ScanSnapshot): boolean => SCAN_TABLES.every((t) => s[t].length === 0);
+
 /** One line of `bp.products.local.json` (gitignored). Kettle is built in and never listed. */
 export interface ProductEntry {
   slug: string;

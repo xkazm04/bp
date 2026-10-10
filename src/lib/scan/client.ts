@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import type { AppStructure } from '@/lib/standard/types';
 import type { Agent, AgentStatus, Decision, ReplayEvent, ReplayType, Squad, Swarm } from '@/lib/data/types';
-import type { Activity, ActivityKind, Coverage, DecisionBody, Measurement, Proposal, ProductInfo, Run, ScanDelta, ScanSnapshot } from './types';
+import { fullScan as full, isEmptyScan as isEmpty, type Activity, type ActivityKind, type Coverage, type DecisionBody, type Measurement, type Proposal, type ProductInfo, type Run, type ScanDelta, type ScanSnapshot } from './types.ts';
 
 /** `loading` until the structure arrives; `missing` = no store or structure file; `offline` = reconnecting. */
 export type LiveStatus = 'loading' | 'live' | 'offline' | 'missing' | 'error';
@@ -22,7 +22,6 @@ const MISSING: LiveProduct = { status: 'missing', events: '' };
 const ACTIVITY_KEEP = 200;
 const BACKOFF_MS = 500, BACKOFF_CAP_MS = 10000;
 const api = (slug: string) => '/api/products/' + encodeURIComponent(slug);
-const isEmpty = (s: ScanSnapshot) => !s.runs.length && !s.measurements.length && !s.proposals.length && !s.activity.length && !s.shots.length && !s.coverage.length;
 
 /** Rows of `ys` replace rows of `xs` with the same key, the rest are appended; `xs` is returned as is when nothing came. */
 function upsert<T>(xs: T[], ys: T[] | undefined, key: (t: T) => string | number): T[] {
@@ -46,10 +45,6 @@ function mergeScan(s: ScanSnapshot, d: ScanDelta): ScanSnapshot {
     coverage: upsert<Coverage>(s.coverage, d.coverage, (c) => c.feature + '\u0000' + c.standard),
   };
 }
-/** A wire snapshot with every key present (a store being created may send partial tables). */
-const full = (x: Partial<ScanSnapshot>): ScanSnapshot => ({
-  runs: x.runs ?? [], measurements: x.measurements ?? [], proposals: x.proposals ?? [], activity: x.activity ?? [], shots: x.shots ?? [], coverage: x.coverage ?? [],
-});
 
 /**
  * Follows one live product. `slug` null = no live product (Kettle): returns `{ status: 'missing' }` at once.

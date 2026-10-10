@@ -2,7 +2,7 @@
 // run, the shots of a feature). Pure, and free of the scan client, so the model barrel can export it
 // (the swarm feed and the live model are in live-feed.ts). Ids here are base slugs: at `?scale` > 1 a
 // caller passes `baseId(f.id)`.
-import type { DecisionBody, Measurement, Proposal, Run, ScanSnapshot, Shot } from '@/lib/scan/types';
+import { emptyScan, type DecisionBody, type Measurement, type Proposal, type Run, type ScanSnapshot, type Shot } from '@/lib/scan/types';
 
 /** What the model keeps of a live product: its slug and how a decision reaches its store. */
 export interface LiveRef {
@@ -10,7 +10,7 @@ export interface LiveRef {
   decide(id: string, body: DecisionBody): Promise<Proposal>;
 }
 
-export const EMPTY_SCAN: ScanSnapshot = { runs: [], measurements: [], proposals: [], activity: [], shots: [], coverage: [] };
+export const EMPTY_SCAN: ScanSnapshot = emptyScan();
 
 /** The latest run (by start), or null. */
 export function latestRun(scan: ScanSnapshot | undefined): Run | null {

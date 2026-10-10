@@ -5,13 +5,12 @@
 // columns are omitted (absent-value convention, never null in JSON). Server-only, imported by the route
 // handlers under src/app/api/products and nothing else; node:sqlite is a Node builtin (experimental on 24).
 import { DatabaseSync } from 'node:sqlite';
-import type { Activity, Coverage, DecisionBody, Measurement, Proposal, Run, ScanDelta, ScanSnapshot, Shot } from './types';
+import { emptyScan, isEmptyScan, type Activity, type Coverage, type DecisionBody, type Measurement, type Proposal, type Run, type ScanDelta, type ScanSnapshot, type Shot } from './types.ts';
 
 if (typeof window !== 'undefined') throw new Error('store.server.ts is server-only');
 
 type Row = Record<string, unknown>;
 type Table = keyof ScanSnapshot;
-const TABLES: readonly Table[] = ['runs', 'measurements', 'proposals', 'activity', 'shots', 'coverage'];
 const isObject = (v: unknown): boolean => typeof v === 'object' && v !== null && !Array.isArray(v);
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
 /**
@@ -26,8 +25,7 @@ const JSON_COLS: Partial<Record<Table, Record<string, (v: unknown) => unknown>>>
 const ACTIVITY_LIMIT = 200;
 const BUSY_MS = 2000;
 
-export const emptyScan = (): ScanSnapshot => ({ runs: [], measurements: [], proposals: [], activity: [], shots: [], coverage: [] });
-export const isEmptyScan = (s: ScanSnapshot): boolean => TABLES.every((t) => s[t].length === 0);
+export { emptyScan, isEmptyScan };
 
 function wire<T>(table: Table, r: Row): T {
   const o: Row = {}, js = JSON_COLS[table];
