@@ -22,7 +22,15 @@ export function FindPanel() {
   const qRef = useRef(q); qRef.current = q;
   // the previewed tile clears when the flyout closes (the input takes focus on mount: autoFocus)
   useEffect(() => () => { if (qRef.current.trim()) E.setSel(null); }, [E]);
-  const results = q.trim() ? search(M.P, q) : [];
+  // one search per distinct query: the keystroke's handler and the render share it, and a re-render
+  // (the rail re-renders on every sim sync) reuses it
+  const memo = useRef({ P: M.P, q: '', r: [] as ReturnType<typeof search> });
+  const find = (v: string) => {
+    const m = memo.current;
+    if (m.P !== M.P || m.q !== v) memo.current = { P: M.P, q: v, r: v.trim() ? search(M.P, v) : [] };
+    return memo.current.r;
+  };
+  const results = find(q);
   const preview = (i: number) => { setSel(i); E.setSel(results[i]?.id ?? null); };
   const open = (id: string) => { setQ(''); E.setSel(null); E.setDockTab(null); E.openFeature(id); };
   return (
@@ -30,7 +38,7 @@ export function FindPanel() {
       <div id="searchbox">
         <svg className="mg" viewBox="0 0 18 18" aria-hidden="true"><circle cx="7.5" cy="7.5" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.6" /><path d="M11.5 11.5 L16 16" stroke="currentColor" strokeWidth="1.8" /></svg>
         <input id="q" ref={ref} type="search" autoComplete="off" spellCheck={false} autoFocus placeholder="Find a feature, e.g. gift cards" aria-label="Search features" aria-controls="results" value={q}
-          onChange={(e) => { setQ(e.target.value); const r = e.target.value.trim() ? search(M.P, e.target.value) : []; setSel(0); E.setSel(r[0]?.id ?? null); }}
+          onChange={(e) => { setQ(e.target.value); const r = find(e.target.value); setSel(0); E.setSel(r[0]?.id ?? null); }}
           onKeyDown={(e) => {
             if (e.key === 'ArrowDown') { e.preventDefault(); if (results.length) preview((sel + 1) % results.length); }
             else if (e.key === 'ArrowUp') { e.preventDefault(); if (results.length) preview((sel - 1 + results.length) % results.length); }
