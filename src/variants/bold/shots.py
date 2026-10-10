@@ -1,13 +1,14 @@
-# Bold's screenshot run (a copy of scripts/shots.py with its own port, output dir and lens steps).
+# Bold's screenshot run (scripts/shots.py's matrix with its own output dir and lens steps) with the text-floor
+# check of ../shotkit.py on every page, the phone view included; exits 1 on a problem.
 # Usage: python src/variants/bold/shots.py [quick|full|light]   (server: $BP_BASE, else `npm run dev` on :3000)
 import os, time, sys
 from playwright.sync_api import sync_playwright
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
-from shotkit import base
+from shotkit import base, finish, floor_check
 OUT = 'docs/shots/bold'
 BASE = base()
 MODE = sys.argv[1] if len(sys.argv) > 1 else 'quick'
-MINFONT = """(() => { let min = 99, where = ''; for (const el of document.querySelectorAll('.bp-ui *, main *')) { if (!el.childNodes.length) continue; let txt = false; for (const n of el.childNodes) if (n.nodeType === 3 && n.textContent.trim()) txt = true; if (!txt) continue; const cs = getComputedStyle(el); if (cs.display === 'none' || cs.visibility === 'hidden') continue; const r = el.getBoundingClientRect(); if (!r.width) continue; const px = parseFloat(cs.fontSize) * (window.__bp ? window.__bp.U : 1); if (px < min) { min = px; where = el.tagName + '.' + el.className + ' ' + el.textContent.slice(0, 30); } } return [Math.round(min * 10) / 10, where]; })()"""
+problems = []
 LENS = {'2': 'business', '3': 'design', '4': 'development', '5': 'operations', '6': 'security', '7': 'quality'}
 
 def run(pg, name, url, w, h, steps):
@@ -28,10 +29,7 @@ def run(pg, name, url, w, h, steps):
             pg.evaluate(st[1]); time.sleep(1.0)
         if len(st) > 2 and st[2]:
             pg.screenshot(path=f'{OUT}/{st[2]}.png')
-    mf = pg.evaluate(MINFONT)
-    cmin = pg.evaluate("window.__bp ? window.__bp.tx.minUsed : null")
-    print(name, 'DOM min px', mf, 'canvas min px', cmin, ('LOGS ' + ' | '.join(logs)) if logs else '')
-    sys.stdout.flush()
+    floor_check(pg, name, logs, problems)
 
 def lens_steps(tag, at=(0.4, 0.45)):
     s = [('noop', '', tag + '-L0')]
@@ -62,5 +60,7 @@ with sync_playwright() as p:
             pg = b.new_page()
             run(pg, f'mid-{theme}', f'{BASE}/v/bold?intro=0&theme={theme}', 1920, 1080, [('wheel', (0.4, 0.45)), ('wheel', (0.4, 0.45)), ('key', '6', f'mid-{theme}-Z2-to-security-150ms', 0.03), ('key', '1', None, 1.0), ('key', '6', None, 1.0), ('key', '3', f'mid-{theme}-Z2-security-to-design-150ms', 0.03)])
             pg.close()
-            pg = b.new_page(); run(pg, f'phone-{theme}', f'{BASE}/v/bold?theme={theme}', 390, 844, [('noop', '', f'390x844-{theme}-phone')]); pg.close()
+    for theme in (('dark',) if MODE == 'quick' else ('light',) if MODE == 'light' else ('dark', 'light')):
+        pg = b.new_page(); run(pg, f'phone-{theme}', f'{BASE}/v/bold?theme={theme}', 390, 844, [('noop', '', f'390x844-{theme}-phone')]); pg.close()
     b.close()
+finish(problems)
