@@ -95,7 +95,6 @@ export class Engine {
   private themeV = 0; private fontsV = 0; private mixV = 0; private simStaticV = 0; private simStaticAt = 0; private simSeenV = -1; private simT10 = -1;
   private camSig = ''; private placeKey = ''; private hoverEl: HTMLElement | null = null;
   private place: Chain = [];
-  private camBefore: Cam | null = null;
   private introOn = false; private introT0 = 0;
   private drag: { x0: number; y0: number; cx: number; cy: number; moved: boolean; lasso: boolean; shift: boolean } | null = null;
   private ptrs = new Map<number, { x: number; y: number }>();
@@ -110,7 +109,7 @@ export class Engine {
   private simTimeListeners = new Set<(t: number) => void>();
   private lastSimSec = -1;
   private disposers: (() => void)[] = [];
-  /** Frame-time probe for the perf report (window.__bpPerf). */
+  /** Frame and raster counters for the perf scripts (window.__bp.perf; scripts/perf.py, docs/perf.md). */
   perf = { frames: 0, rasters: 0, lastRasterMs: 0 };
 
   constructor(o: EngineOptions) {
@@ -262,7 +261,7 @@ export class Engine {
       this.cv.width = Math.round(w * r); this.cv.height = Math.round(h * r); this.cv.style.width = w + 'px'; this.cv.style.height = h + 'px';
     }
     if (resChanged) this.readTheme();
-    const atHome = this.lastFit ? Math.abs(this.cam.k / this.HOME.k - 1) < 0.03 && Math.hypot(this.cam.x - this.HOME.x, this.cam.y - this.HOME.y) * this.cam.k < 8 : true;
+    const atHome = this.lastFit ? this.cam.near(this.HOME, 0.03, 8) : true;
     this.layoutChrome();
     this.computeHome();
     if (atHome && !this.S.open) this.cam.set(this.HOME);
@@ -329,8 +328,7 @@ export class Engine {
     this.perf.frames++;
     ctx.setTransform(this.RES, 0, 0, this.RES, 0, 0);
     ctx.clearRect(0, 0, this.FW, this.FH);
-    this.dimFn = S.ga ? (f) => f.milestone === GA_MILESTONE : S.key ? ((k: string) => (f: Feature) => { const h = f.lens[k]?.h; return h === 'bad' || h === 'watch'; })(S.key) : null;
-    this.blastSet = S.blast ? new Set(this.M.closure.of(S.blast)) : null;
+    if (!this.modeSeen || S.ga !== this.modeSeen.ga || S.key !== this.modeSeen.key || S.blast !== this.modeSeen.blast) this.syncModeFilters(S);
     // static layer: transform the cached raster during gestures, re-raster when it settles
     const key = this.staticKey();
     const st = this.cache.check(c, key, this.FW, this.FH);
@@ -341,10 +339,8 @@ export class Engine {
         drawGrid(this, g, v); drawDecor(this, g, v); drawBuildings(this, g, v); drawLabels(this, g, v);
       });
       this.perf.rasters++; this.perf.lastRasterMs = this.cache.lastMs;
-    } else if (st === 'transform' && !settled) {
-      clearTimeout(this.settleTimer);
-      this.settleTimer = window.setTimeout(() => this.dirty(), 160);
     } else if (st === 'transform') {
+      // still moving (or settled mid-gesture): wake once more after the settle window to re-raster
       clearTimeout(this.settleTimer);
       this.settleTimer = window.setTimeout(() => this.dirty(), 160);
     }
@@ -361,6 +357,14 @@ export class Engine {
     drawPins(this, ctx, v, lod, now); drawBreaches(this, ctx, v, lod, now);
     drawPreview(this, ctx, v, lod, now); drawFocus(this, ctx, v, lod, now); drawReleases(this, ctx, v, lod, now);
     drawLasso(this, ctx);
+  }
+  /** The GA / lens-key / blast filters the layers read, rebuilt when one of the three changes, not per frame. */
+  private modeSeen: { ga: boolean; key: string | null; blast: string | null } | null = null;
+  private syncModeFilters(S: UIState) {
+    this.modeSeen = { ga: S.ga, key: S.key, blast: S.blast };
+    const k = S.key;
+    this.dimFn = S.ga ? (f) => f.milestone === GA_MILESTONE : k ? (f) => { const h = f.lens[k]?.h; return h === 'bad' || h === 'watch'; } : null;
+    this.blastSet = S.blast ? new Set(this.M.closure.of(S.blast)) : null;
   }
   private afterFrame(now: number) {
     const c = this.cam, sig = c.x.toFixed(2) + ',' + c.y.toFixed(2) + ',' + c.k.toFixed(5) + ',' + this.FW + ',' + this.FH;
@@ -407,8 +411,10 @@ export class Engine {
   setSpeed(n: number) { this.M.sim.setSpeed(n); this.scheduleSimSync(true); this.dirty(); }
   stepSpeed(dir: number) { const i = SPEEDS.indexOf(this.M.sim.speed as (typeof SPEEDS)[number]); this.setSpeed(SPEEDS[clamp(i + dir, 0, SPEEDS.length - 1)]); }
   restart() { this.M.sim.reset(); this.set({ tgt: { ids: {}, n: 0, label: '' }, prev: null, dec: null }); this.scheduleSimSync(true); }
-  /** Expand or collapse the timeline panel (it overlays the plan; the safe area keeps the collapsed strip). */
-  /** The timeline panel and a rail flyout never stand open together: opening one closes the other. */
+  /**
+   * Expand or collapse the timeline panel (it overlays the plan; the safe area keeps the collapsed strip).
+   * The timeline panel and a rail flyout never stand open together: opening one closes the other.
+   */
   setTimeline(on = !this.S.tl) { if (on !== this.S.tl) this.set(on ? { tl: on, dtab: null } : { tl: on }); }
   seek(t: number) { if (!this.isNow) this.set({ t: this.M.P.asOf }); this.M.sim.seek(t); this.scheduleSimSync(true); this.dirty(); }
 
@@ -458,7 +464,7 @@ export class Engine {
   }
   crumb(depth: number) {
     if (depth === 0) { this.closeFeature(false); this.goHome(); return; }
-    if (this.S.open) { this.store.set({ open: null }); this.camBefore = null; }
+    if (this.S.open) this.store.set({ open: null });
     const p = this.place[depth - 1] || this.place[this.place.length - 1];
     if (p) this.cam.flyTo(this.fitOf(p));
   }
@@ -478,7 +484,7 @@ export class Engine {
     if (S.key) { this.set({ key: null }); return; }
     const p = this.place;
     if (!p.length) {
-      if (Math.abs(this.cam.k / this.HOME.k - 1) > 0.02 || Math.hypot(this.cam.x - this.HOME.x, this.cam.y - this.HOME.y) * this.cam.k > 4) this.goHome();
+      if (!this.cam.near(this.HOME, 0.02, 4)) this.goHome();
       else if (!this.isNow) this.setTime(this.M.P.asOf);
       return;
     }
@@ -525,7 +531,7 @@ export class Engine {
    * the tile and shrink back into it. Only a tile that is off screen or too small to see (a search
    * pick, a deep link, a list row) brings the plan to it first, instantly, behind the page.
    */
-  openFeature(id: string, _dur?: number) {
+  openFeature(id: string) {
     const F = this.M.P.F[id], T = this.M.L.TILE[id]; if (!F || !T) return;
     const r = this.tileRect(id)!, U = this.U, S = this.SAFE;
     if (!this.S.phone && (r.w * U < 48 || r.x * U < S.l || r.y * U < S.t || (r.x + r.w) * U > S.r || (r.y + r.h) * U > S.b)) {
@@ -539,12 +545,12 @@ export class Engine {
   closeFeature(focus = true) {
     if (!this.S.open) return;
     this.set({ open: null });
-    this.camBefore = null; this.placeKey = ''; this.writeHashSoon();
+    this.placeKey = ''; this.writeHashSoon();
     if (focus) this.cv.focus({ preventScroll: true });
   }
   setMode(m: { ga?: boolean; blast?: string | null }) {
     const patch: Partial<UIState> = { ...m, info: false };
-    if (this.S.open && (m.blast || m.ga)) { patch.open = null; this.camBefore = null; }
+    if (this.S.open && (m.blast || m.ga)) patch.open = null;
     this.set(patch);
     const S = this.S;
     const ids = S.blast ? this.M.closure.of(S.blast).concat([S.blast]) : S.ga ? this.M.P.features.filter((f) => f.milestone === GA_MILESTONE).map((f) => f.id) : null;
@@ -575,7 +581,8 @@ export class Engine {
   toggleDock(on?: boolean) {
     const hide = on == null ? !this.S.dockHidden : !on;
     this.store.set(hide ? { dockHidden: hide, dtab: null } : { dockHidden: hide });
-    const atHome = Math.abs(this.cam.k / this.HOME.k - 1) < 0.02;
+    // panned away at the home zoom is not "at home": the rail toggle must not yank the plan back
+    const atHome = this.cam.near(this.HOME, 0.02, 8);
     this.layoutChrome(); this.computeHome();
     if (atHome && !this.S.open) this.cam.flyTo(this.HOME, 400);
     this.placeKey = ''; this.dirty();
@@ -845,11 +852,8 @@ export class Engine {
       if (this.ptrs.has(e.pointerId)) this.ptrs.set(e.pointerId, p);
       if (this.pinch) {
         if (this.ptrs.size < 2) return;
-        const [a, b] = [...this.ptrs.values()], d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-        const wx = this.cam.wx(mx), wy = this.cam.wy(my);
-        this.cam.stopFly(); this.cam.wz = null;
-        this.cam.k = clamp((this.pinch.k * d) / this.pinch.d, this.cam.KMIN, this.cam.KMAX);
-        this.cam.x = wx - (mx - this.FW / 2) / this.cam.k; this.cam.y = wy - (my - this.FH / 2) / this.cam.k; this.cam.clampToWorld(); this.camMoved();
+        const [a, b] = [...this.ptrs.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
+        this.cam.zoomTo((a.x + b.x) / 2, (a.y + b.y) / 2, (this.pinch.k * d) / this.pinch.d);
         return;
       }
       const dg = this.drag;
@@ -1006,7 +1010,7 @@ export class Engine {
       const t = this.placeById('bld', h.at) ? 'bld' : this.M.L.WING[h.at] ? 'wing' : this.M.L.ROOM[h.at] ? 'room' : this.M.L.BAY[h.at] ? 'bay' : null;
       if (t) this.cam.set(this.fitOf({ t: t as Crumb['t'], o: this.placeById(t, h.at)! }));
     }
-    if (h.open && this.M.P.F[h.open]) { this.openFeature(h.open, 0); this.camBefore = h.at ? null : { ...this.HOME }; }
+    if (h.open && this.M.P.F[h.open]) this.openFeature(h.open);
     } finally { this.hashLock = false; }
   }
   destroy() {

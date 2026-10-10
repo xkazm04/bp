@@ -21,7 +21,9 @@ export class Camera {
   flying = false;
   world: Box = { x: 0, y: 0, w: 1, h: 1 };
   reduced = false;
-  constructor(private onMove: () => void) {}
+  // A plain field, not a parameter property: scripts/check-camera.ts loads this file under Node's type stripping.
+  private onMove: () => void;
+  constructor(onMove: () => void) { this.onMove = onMove; }
 
   sx(x: number) { return this.FW / 2 + (x - this.x) * this.k; }
   sy(y: number) { return this.FH / 2 + (y - this.y) * this.k; }
@@ -78,11 +80,20 @@ export class Camera {
     if (!wz) return false;
     let nk = this.k + (wz.k - this.k) * 0.28;
     if (Math.abs(nk - wz.k) / wz.k < 0.003) nk = wz.k;
-    this.k = nk; this.x = wz.wx - (wz.px - this.FW / 2) / nk; this.y = wz.wy - (wz.py - this.FH / 2) / nk;
+    this.k = nk; this.pin(wz.wx, wz.wy, wz.px, wz.py);
     if (nk === wz.k) this.wz = null;
     this.clampToWorld();
     return !!this.wz;
   }
+  /** Zoom to k at once, keeping the world point under screen point (px, py) where it is (a pinch). */
+  zoomTo(px: number, py: number, k: number) {
+    const wx = this.wx(px), wy = this.wy(py);
+    this.stopFly(); this.wz = null;
+    this.k = clamp(k, this.KMIN, this.KMAX); this.pin(wx, wy, px, py);
+    this.clampToWorld(); this.onMove();
+  }
+  /** Place the camera so world point (wx, wy) draws at screen point (px, py) at the current k. */
+  private pin(wx: number, wy: number, px: number, py: number) { this.x = wx - (px - this.FW / 2) / this.k; this.y = wy - (py - this.FH / 2) / this.k; }
   panBy(dx: number, dy: number, from: Cam) { this.stopFly(); this.wz = null; this.x = from.x - dx / this.k; this.y = from.y - dy / this.k; this.clampToWorld(); this.onMove(); }
   clampToWorld() {
     const W = this.world, m = 120 / this.k;
@@ -90,4 +101,8 @@ export class Camera {
     this.y = clamp(this.y, W.y - this.FH / 2 / this.k + m, W.y + W.h + this.FH / 2 / this.k - m);
   }
   get moving() { return !!this.wz || this.flying; }
+  /** Within kTol (relative) of t's scale and px screen px of its centre: "still at home" for re-fits and Esc. */
+  near(t: Cam, kTol: number, px: number): boolean {
+    return Math.abs(this.k / t.k - 1) < kTol && Math.hypot(this.x - t.x, this.y - t.y) * this.k < px;
+  }
 }
