@@ -5,6 +5,8 @@ import os, time, json, sys
 from playwright.sync_api import sync_playwright
 BASE = ((sys.argv[1] if len(sys.argv) > 1 else '') or os.environ.get('BP_BASE') or 'http://localhost:3000').rstrip('/')
 OUT = sys.argv[2] if len(sys.argv) > 2 else 'docs/shots/foundation'
+# The run fails (exit 1) on any of these, so it can stand as a check and not only as a gallery.
+FLOOR = 12  # px, docs/blueprint-ui.md text floor
 problems = []
 # The smallest rendered text on the page: every visible element with its own text, in the chrome (.bp-ui, scaled by the
 # engine's U) and outside it (the phone view, overlays). Returns [px, where, elements measured]; 0 measured means the
@@ -31,6 +33,10 @@ def run(pg, name, url, w, h, steps):
     mf = pg.evaluate(MINFONT)
     cmin = pg.evaluate("window.__bp ? window.__bp.tx.minUsed : null")
     print(name, 'DOM min px', mf, 'canvas min px', cmin, ('LOGS ' + ' | '.join(logs)) if logs else '')
+    if mf[2] == 0: problems.append(f'{name}: no text measured, the floor was not checked')
+    elif mf[0] < FLOOR: problems.append(f'{name}: DOM text at {mf[0]} px < {FLOOR} ({mf[1]})')
+    if cmin is not None and cmin < FLOOR: problems.append(f'{name}: canvas text at {cmin} px < {FLOOR}')
+    problems.extend(f'{name}: {l}' for l in logs if not l.startswith('warning: '))
     sys.stdout.flush()
 with sync_playwright() as p:
     b = p.chromium.launch()
@@ -54,3 +60,9 @@ with sync_playwright() as p:
     pg = b.new_page(); run(pg, 'subtle-1920x1080-dark-sheet', f'{BASE}/v/subtle?intro=0#open=PAY-09', 1920, 1080, [('key', '6', 'subtle-1920x1080-dark-sheet-security')]); pg.close()
     pg = b.new_page(); run(pg, 'subtle-1920x1080-dark-decide', f'{BASE}/v/subtle?intro=0', 1920, 1080, [('key', 'j', 'subtle-1920x1080-dark-decision-card')]); pg.close()
     b.close()
+if problems:
+    print(f'\n{len(problems)} problem(s):')
+    for pr in problems: print('  ' + pr)
+else:
+    print('\nno problems: text floor held on every page and no page errors')
+sys.exit(1 if problems else 0)
