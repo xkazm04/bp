@@ -22,7 +22,7 @@ export function scanStatus(run: ReturnType<typeof latestRun>, off: boolean): { l
 /** The sim clock (Kettle) or the latest run (live product), as one line of small text. */
 function StripClock() {
   const E = useEngine(), sim = E.M.sim, live = useLive();
-  const s = useBp((s) => ({ playing: s.playing, speed: s.speed, over: s.over, now: s.t === E.M.P.asOf, v: s.simV }), shallowEqual);
+  const s = useBp((s) => ({ playing: s.playing, speed: s.speed, over: s.over, now: s.t === E.M.P.asOf }), shallowEqual);
   const tref = useRef<HTMLSpanElement>(null);
   useEffect(() => (sim.has && !sim.live ? E.onSimTime((t) => { if (tref.current) tref.current.textContent = new Date(sim.at0 + t * 1000).toISOString().slice(11, 19); }) : undefined), [E, sim]);
   if (!sim.has) return null;
