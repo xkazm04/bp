@@ -1,0 +1,46 @@
+{"context":"app-shell","title":"Raise the theme toggle to a 44 px touch target in phone mode (measured 78x30 at 390x844; .theme-toggle in src/app/globals.css)"}
+{"context":"app-shell","title":"Derive the crumb-shortening budget from the measured right cluster instead of a hard-coded 760 px (measured 722 Kettle, 930 kettle-live)"}
+{"context":"app-shell","title":"Keep ?theme and ?scale on LiveEmpty's 'Open the Kettle sample instead' link"}
+{"context":"app-shell","title":"Stop LivePill (role=status) re-announcing 'Last scan N min ago' on every 30 s tick"}
+{"context":"canvas-render","title":"Keep agent marks and ask rings from covering room labels at tablet-portrait L0 ('BOOKING & ATTENDANCE' occluded at 820x1180)"}
+{"context":"canvas-render","title":"Thin the in-dev hatch under tile names (inkHi over 0.6-ink hatch lines ~2.7:1 at line pixels, dark)"}
+{"context":"canvas-render","title":"Make parseColor reject unknown formats loudly (hsl()/color-mix()/#rgba silently become dark-theme ink or NaN)"}
+{"context":"canvas-render","title":"Static raster scaled to 1/1.5 mid-gesture draws 12 px labels at ~8 px until settle (static-cache.ts BUCKET)"}
+{"context":"canvas-render","title":"Home fit at 820x1180 portrait leaves the lower ~45% of the plan area empty (Engine.computeHome, outside context)"}
+{"context":"engine-interaction","title":"Inflate pin/agent/tile hit slop for coarse pointers (pins 23x27 px, agents r=10 px at U=1; Engine.ts:738,750,764)"}
+{"context":"engine-interaction","title":"Resume a one-finger pan when the second pinch finger lifts (Engine.ts:871 drops drag, so the remaining finger is dead until re-touch)"}
+{"context":"engine-interaction","title":"Say 'Not saved: connection lost, the question is open again' instead of raw 'Failed to fetch' in decide() rollback (Engine.ts:628)"}
+{"context":"engine-interaction","title":"Move the 370 px blast/GA right pad (Engine.ts:552) and the 340 px #callout offset (Overlays.tsx:265) into chrome.ts as one number"}
+{"context":"feature-page","title":"Voice the metric trend: aria-label on <i class='ar'> is dropped, so the AX tree reads '▼4 violations' with no better/worse (src/components/page/LensTab.tsx:41, src/components/sheet/LensPanel.tsx:99) - XS, accessibility-checker"}
+{"context":"feature-page","title":"Give the page tab strip a roving tabindex, Arrow/Home/End, and tab ids with aria-controls/aria-labelledby (8 Tab stops before content today; FeatureSheet.tsx:59-71) - S, accessibility-checker"}
+{"context":"feature-page","title":"Light-theme amber/mint status words at 12 px read 3.42/3.15:1 (.pg-tile .hw, .pg-mrs b.watch, swarm h4); needs a darker text token in src/app/globals.css (outside context) - S, visual-craft"}
+{"context":"feature-page","title":"Put the tab's health word in its accessible name (the .hd dot is aria-hidden and the title is not exposed; tab reads 'DES Design') - XS, accessibility-checker"}
+{"context":"feature-page","title":"Make phone revision dates time-travel links like the desktop's, and give 'Lives in' its '—' fallback (SheetBody.tsx:116, :119) - XS, ux-reviewer"}
+{"context":"feature-page","title":"Screens viewer scrollIntoView({behavior:'smooth'}) ignores reduced motion (src/components/sheet/Screens.tsx:31) - XS, accessibility-checker"}
+{"context":"feature-page","title":"Phone swarm action buttons are 30 px tall and dependency rows 29 px (under the 44 px platform guideline, over WCAG's 24) - S, mobile-specialist (CSS in blueprint.css, outside context)"}
+{"context":"lens-variants","title":"Bold panel health label renders empty for 'unmeasured' (bold/panels.tsx:17 HW lacks the key)"}
+{"context":"lens-variants","title":"Shared legend caption wraps into three narrow columns in the Plan flyout on subtle (src/components/Legend.tsx / blueprint.css, outside context; shaped works around it with .shp-cap display:block)"}
+{"context":"lens-variants","title":"Subtle General legend says 'its colour is that lens's health' but shows no red or amber swatch example (subtle/Legend.tsx:56)"}
+{"context":"lens-variants","title":"Subtle health glyphs distinguish watch from bad by hue alone (subtle/marks.ts:10-17); a shape cue needs an owner call"}
+{"context":"lens-variants","title":"subtle/tools/shots.py and rebuild.sh target port 3111 and .next-subtle, stale against the one-dev-server rule"}
+{"context":"overlays","title":"Give toasts a severity tone: failures ('Not saved', 'Order breached', 'Nothing to move') render in mint success chrome (Overlays.tsx:345, needs SimToast.tone in sim.ts)"}
+{"context":"overlays","title":"Show a 'No feature matches \"q\"' empty state with a clear button on phone search; hide wing headings with no hits (Phone.tsx:53-82)"}
+{"context":"overlays","title":"Move focus into the phone feature detail on open, mark the list inert, and return focus to the row on Back (Phone.tsx:84-90)"}
+{"context":"overlays","title":"Raise phone touch targets to 44 px: person chips 40 px, feature rows 41 px, theme toggle 30 px (blueprint.css:332,347; outside file_paths)"}
+{"context":"overlays","title":"Light-theme phone text under 4.5:1 on 91 of 428 nodes, e.g. mint 'suggested' 2.92:1 at 12 px (blueprint.css:78 tokens; outside file_paths)"}
+{"context":"overlays","title":"Match the decision card close button's name to its visible text: aria-label 'Close' vs visible 'Esc' (Overlays.tsx:203, WCAG 2.5.3)"}
+{"context":"overlays","title":"Return focus to the opener when the morning watch closes (Overlays.tsx:362, focus is moved in but never back)"}
+{"context":"overlays","title":"Say how many phone queue cards are hidden: list.slice(0,12) under a header count of list.length (Phone.tsx:37-39)"}
+{"context":"rail","title":"Orders card is role=button yet wraps breach buttons (nested interactive) - src/components/rail/panels.tsx:210-216"}
+{"context":"rail","title":"Flyout close button shows 'Esc' but is named 'Close panel' (label-in-name) - src/components/Dock.tsx:179"}
+{"context":"rail","title":"Opening a flyout leaves focus on the rail: 6 Tabs to reach the panel; .fb tabIndex=-1 is never focused - src/components/Dock.tsx:182"}
+{"context":"rail","title":"'Whose desk' listbox makes every option a tab stop with no arrow keys - src/components/rail/panels.tsx:86-95"}
+{"context":"rail","title":"Find box is not a combobox: no aria-activedescendant/option ids for the arrow-key preview - src/components/rail/panels.tsx:32-48"}
+{"context":"rail","title":"A refused live Approve returns the card but drops focus to <body> - src/components/Queue.tsx:64"}
+{"context":"rail","title":"'No swarm data' empty copy differs between Asks and Agents/Orders panels - Queue.tsx:113 vs panels.tsx:117,202"}
+{"context":"timeline","title":"Make the strip's time position a persistent live region: role=status mounts with its text on travel and unmounts on back-to-now, so neither is announced (src/components/timeline/Strip.tsx:130-137; accessibility/live-region-architecture)"}
+{"context":"timeline","title":"Separate the travel-state focus ring from the strip border: tl-exp's 2 px accent outline at offset 2 px lands on the 1 px accent border and accent-tinted fill (rgb(127,224,255) on rgb(127,224,255); timeline.css:24, blueprint.css:13)"}
+{"context":"timeline","title":"Light theme: strip status .tl-st.on 3.33:1 and .tl-st.warn 2.98:1, travel accent text 4.3:1 at 12 px (globals.css mint/amber/accent - already carried by the rail and app-shell rounds' token findings)"}
+{"context":"timeline","title":"Validate scan run rows at the wire: a run without lenses or started_at blanks the whole chrome ('run.lenses is not iterable', src/lib/scan/client.ts:175; outside context - app-shell's error-boundary finding is the catch side)"}
+{"context":"timeline","title":"Raise BACK TO NOW to a 24 px target (20 px tall at every width; timeline.css:26) - passes 2.5.8 only via the spacing exception"}
+{"context":"timeline","title":"Hide the T kbd hint and strip-clock title-only details on coarse pointers: StripClock's run id/lenses live only in a title tooltip (Strip.tsx:25,34)"}
