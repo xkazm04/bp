@@ -4,13 +4,14 @@
 // the session (`?lenses=-security,+com.kettle.cost`). Health per feature and lens is computed ONCE
 // per data load with the reference evaluator (health.ts) and cached with its explanation; the frame
 // loop never evaluates a rule. History (a feature's stage revisions, the weekly snapshots) is replayed
-// from the events log. Pure and dependency-free (type imports and the evaluator only), so Node's type
-// stripping can run it: `node -e "import('./src/lib/standard/load.ts')"`.
+// from the events log. Pure and dependency-free (types, the bound-field list and the evaluator only),
+// so Node's type stripping can run it: `node -e "import('./src/lib/standard/load.ts')"`.
 import type {
   AppStructure, Density, Facet, FacetOverride, FacetValues, Feature as V3Feature, GlyphName, Health, HealthRule, Kpi, LensEntry, LensField,
   LensManifest, LineName, Rollup, Scalar, Stage, StructureEvent, Variation,
 } from './types.ts';
-import { bindValues, conditionFields, explain, lensHealth, matchRule, type EvalContext } from './health.ts';
+import { FEATURE_BOUND_FIELDS } from './types.ts';
+import { bindValues, conditionFields, decidingRule, fillReason, lensHealth, type EvalContext } from './health.ts';
 import { generalHealth } from './present.ts';
 
 // ------------------------------------------------------------------------------------ the model
@@ -158,8 +159,12 @@ const strs = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is st
 const isStage = (v: unknown): v is Stage => typeof v === 'string' && (STAGES as readonly string[]).includes(v);
 const GLYPHS: readonly GlyphName[] = ['bars', 'set-square', 'brackets', 'pulse', 'padlock', 'check'];
 const LINES: readonly LineName[] = ['solid', 'double', 'dotted', 'comb', 'chain', 'hatched', 'dimension'];
-/** A custom glyph is untrusted: path commands and numbers only, at most 2048 characters (spec 8.6). */
-const PATH_OK = /^[MmLlHhVvCcSsQqTtAaZz0-9eE.,+\-\s]{1,2048}$/;
+/**
+ * A custom glyph is untrusted: path commands and numbers only, at most 2048 characters (spec 8.6).
+ * The same rule as the schema's `presentation.glyph.path` (lens-manifest-1.schema.json): it opens with
+ * a moveto and separates with spaces only, so a path the validator rejects falls back here too.
+ */
+const PATH_OK = /^[Mm][MmZzLlHhVvCcSsQqTtAa0-9eE.,+\- ]{0,2047}$/;
 const DAY = 864e5;
 const addDays = (d: string, n: number) => new Date(Date.parse(d + 'T00:00:00Z') + n * DAY).toISOString().slice(0, 10);
 const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9.]+/g, '-').replace(/^-+|-+$/g, '') || 'feature';
@@ -349,16 +354,18 @@ function buildBase(raw: unknown, eventsText: string | null, opts: LoadOptions): 
   for (const f of features) {
     const fx = SRC[f.slug];
     const feature: EvalContext['feature'] = {};
-    for (const k of ['stage', 'priority', 'kind', 'tier', 'milestone', 'status'] as const) if (fx[k] !== undefined) (feature as Record<string, unknown>)[k] = fx[k];
+    for (const k of FEATURE_BOUND_FIELDS) if (fx[k] !== undefined) (feature as Record<string, unknown>)[k] = fx[k];
     const ctx: EvalContext = { feature, kpis };
     const out: Record<string, FeatureLens> = {};
     for (const d of defs) {
       const facet = (facets[f.slug]?.[d.id] ?? null) as Facet | null;
       const h = lensHealth(d.manifest, facet ?? undefined, asOf, ctx);
-      const v = bindValues(d.manifest, facet?.values, ctx);
-      const why = explain(d.manifest, facet ?? undefined, ctx);
-      const short = why !== null ? explain(d.manifest, facet ?? undefined, ctx, 'short') : null;
-      const rule: HealthRule | null = why !== null ? matchRule(d.manifest, v) : null;
+      // one pass for the explanation: the deciding rule and its bound values (spec `explain`)
+      const dr = decidingRule(d.manifest, facet ?? undefined, ctx);
+      const rule: HealthRule | null = dr && dr.rule.reason !== undefined ? dr.rule : null;
+      const v = dr ? dr.values : bindValues(d.manifest, facet?.values, ctx);
+      const why = rule ? fillReason(rule.reason, v) : null;
+      const short = rule && rule.short !== undefined ? fillReason(rule.short, v) : null;
       const o = facet?.override;
       const ov = o && asOf <= o.until && h === o.health ? o : null;
       out[d.id] = { h, v, why, short, whyFields: rule ? conditionFields(rule.when) : [], ov, facet };
