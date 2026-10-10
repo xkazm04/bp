@@ -132,7 +132,7 @@ export function SheetBody({ f }: { f: Feature }) {
           <div className="dsec"><h4>Recent activity · 14 days</h4>
             {acts.length ? <ul className="acts">{acts.map((a, i) => <li key={i} className={a.type === 'incident' ? 'inc' : ''}><span className="m">{a.at.slice(5, 10)} {a.at.slice(11, 16)}</span><span className="a">{pname(P, a.actor)}{isAgentId(P, a.actor) ? ' ◇' : ''}</span><span>{a.text}{a.severity ? ' · ' + a.severity : ''}</span></li>)}</ul> : <div className="dl"><div className="none">Quiet, no events in the last 14 days</div></div>}
           </div>
-          <div className="foot">Illustrative sample data · drawings are stylised, not screenshots</div>
+          <div className="foot">{M.live ? 'Read from the live scan' : 'Illustrative sample data · drawings are stylised, not screenshots'}</div>
         </div>
       </div>
     </>

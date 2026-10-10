@@ -14,11 +14,18 @@ interface Take { run: Run | null; runId: string; shot: Shot }
 const keyOf = (s: Shot) => (s.size ?? 'any size') + ' · ' + (s.theme ?? 'any theme');
 const runLabel = (t: Take) => (t.run ? t.run.started_at.slice(0, 10) + ' ' + t.run.started_at.slice(11, 16) : t.shot.captured_at.slice(0, 16).replace('T', ' ')) + ' · ' + t.runId;
 
+// One scan image. A file gone from the store (the route answers 404) is stated, not left as an empty frame.
+function Shot({ src, alt, label = alt, style }: { src: string; alt: string; label?: string; style?: React.CSSProperties }) {
+  const [bad, setBad] = useState(false);
+  if (bad) return <span className="miss" role="img" aria-label={label + ': missing from the store'} style={style}>Screenshot missing from the store</span>;
+  return <img src={src} alt={alt} style={style} loading="lazy" decoding="async" onError={() => setBad(true)} />;
+}
+
 function Img({ slug, t, alt }: { slug: string; t: Take; alt: string }) {
   const n = shotErrors(t.shot);
   return (
     <figure className="shot">
-      <img src={shotUrl(slug, t.shot)} alt={alt} loading="lazy" decoding="async" />
+      <Shot key={t.shot.id} src={shotUrl(slug, t.shot)} alt={alt} />
       <figcaption>{runLabel(t)}{n ? <span className="err" title="Console errors in the harness report">{n} console error{n > 1 ? 's' : ''}</span> : null}</figcaption>
     </figure>
   );
@@ -53,8 +60,8 @@ function Viewer({ slug, k, takes, name, close }: { slug: string; k: string; take
       ) : (
         <div className="swipe">
           <div className="stack">
-            <img src={shotUrl(slug, A.shot)} alt={name + ', run A'} />
-            <img src={shotUrl(slug, B.shot)} alt={name + ', run B'} style={{ clipPath: `inset(0 0 0 ${cut}%)` }} />
+            <Shot key={A.shot.id} src={shotUrl(slug, A.shot)} alt={name + ', run A'} />
+            <Shot key={B.shot.id} src={shotUrl(slug, B.shot)} alt={name + ', run B'} style={{ clipPath: `inset(0 0 0 ${cut}%)` }} />
             <i className="cut" style={{ left: cut + '%' }} />
           </div>
           <input type="range" min={0} max={100} value={cut} onChange={(e) => setCut(+e.target.value)} aria-label="Swipe between run A (left) and run B (right)" />
@@ -82,7 +89,7 @@ export function ScreensStrip({ f }: { f: Feature }) {
           const t = by.get(k)![0], n = shotErrors(t.shot);
           return (
             <button key={k} type="button" className={'thumb' + (open === k ? ' on' : '')} aria-expanded={open === k} onClick={() => setOpen(open === k ? null : k)} title={'Open ' + k + (by.get(k)!.length > 1 ? ' and compare runs' : '')}>
-              <img src={shotUrl(live.slug, t.shot)} alt="" loading="lazy" decoding="async" />
+              <Shot key={t.shot.id} src={shotUrl(live.slug, t.shot)} alt="" label={'Screenshot ' + k} />
               <span>{k}</span>
               {n ? <em title="Console errors in the harness report">{n}</em> : null}
             </button>
