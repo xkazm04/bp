@@ -82,6 +82,24 @@ const make = () => {
   }
 }
 
+// ------------------------------------------------------------------ "at home": one predicate for every caller
+{
+  const { c } = make();
+  const home = { x: 2000, y: 1200, k: 0.4 };
+  const nr = (c as unknown as { near?: (t: { x: number; y: number; k: number }, kTol: number, px: number) => boolean }).near;
+  expect(typeof nr === 'function', 'Camera.near exists (fit, goUp and toggleDock share one "at home" test)');
+  if (typeof nr === 'function') {
+    c.set(home);
+    expect(nr.call(c, home, 0.02, 4), 'the home camera is near home');
+    c.set({ x: home.x + 2 / home.k, y: home.y, k: home.k * 1.01 });
+    expect(nr.call(c, home, 0.02, 4), 'a 2 px, 1% drift is still home');
+    c.set({ x: home.x + 200 / home.k, y: home.y, k: home.k });
+    expect(!nr.call(c, home, 0.02, 8), 'a 200 px pan at the home zoom is NOT home (the rail toggle must not yank it back)');
+    c.set({ x: home.x, y: home.y, k: home.k * 1.05 });
+    expect(!nr.call(c, home, 0.03, 8), 'a 5% zoom is not home');
+  }
+}
+
 // ------------------------------------------------------------------ clamp to world
 {
   const { c } = make();

@@ -262,7 +262,7 @@ export class Engine {
       this.cv.width = Math.round(w * r); this.cv.height = Math.round(h * r); this.cv.style.width = w + 'px'; this.cv.style.height = h + 'px';
     }
     if (resChanged) this.readTheme();
-    const atHome = this.lastFit ? Math.abs(this.cam.k / this.HOME.k - 1) < 0.03 && Math.hypot(this.cam.x - this.HOME.x, this.cam.y - this.HOME.y) * this.cam.k < 8 : true;
+    const atHome = this.lastFit ? this.cam.near(this.HOME, 0.03, 8) : true;
     this.layoutChrome();
     this.computeHome();
     if (atHome && !this.S.open) this.cam.set(this.HOME);
@@ -478,7 +478,7 @@ export class Engine {
     if (S.key) { this.set({ key: null }); return; }
     const p = this.place;
     if (!p.length) {
-      if (Math.abs(this.cam.k / this.HOME.k - 1) > 0.02 || Math.hypot(this.cam.x - this.HOME.x, this.cam.y - this.HOME.y) * this.cam.k > 4) this.goHome();
+      if (!this.cam.near(this.HOME, 0.02, 4)) this.goHome();
       else if (!this.isNow) this.setTime(this.M.P.asOf);
       return;
     }
@@ -575,7 +575,8 @@ export class Engine {
   toggleDock(on?: boolean) {
     const hide = on == null ? !this.S.dockHidden : !on;
     this.store.set(hide ? { dockHidden: hide, dtab: null } : { dockHidden: hide });
-    const atHome = Math.abs(this.cam.k / this.HOME.k - 1) < 0.02;
+    // panned away at the home zoom is not "at home": the rail toggle must not yank the plan back
+    const atHome = this.cam.near(this.HOME, 0.02, 8);
     this.layoutChrome(); this.computeHome();
     if (atHome && !this.S.open) this.cam.flyTo(this.HOME, 400);
     this.placeKey = ''; this.dirty();

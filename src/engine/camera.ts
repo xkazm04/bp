@@ -101,4 +101,8 @@ export class Camera {
     this.y = clamp(this.y, W.y - this.FH / 2 / this.k + m, W.y + W.h + this.FH / 2 / this.k - m);
   }
   get moving() { return !!this.wz || this.flying; }
+  /** Within kTol (relative) of t's scale and px screen px of its centre: "still at home" for re-fits and Esc. */
+  near(t: Cam, kTol: number, px: number): boolean {
+    return Math.abs(this.k / t.k - 1) < kTol && Math.hypot(this.x - t.x, this.y - t.y) * this.k < px;
+  }
 }
