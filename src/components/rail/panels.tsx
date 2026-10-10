@@ -78,7 +78,7 @@ export function ViewPanel() {
     .concat(persons.map((x) => ({ id: x.id, name: x.name, sub: x.title + ' · ' + sheetOf(M.P, personLens(M.P, x.id)).nm, n: open.filter((d) => d.decider === x.id).length })));
   return (
     <>
-      <h3 className="dsec-h"><span>What changed · window</span><span>[ ] weeks</span></h3>
+      <h3 className="dsec-h"><span>What changed · window</span><span>{s.delta === 1 ? 'last 24 h' : 'last ' + s.delta + ' days'}</span></h3>
       <div className="fly-row">
         <div className="seg" role="group" aria-label="What changed: window">
           {([1, 7, 14] as const).map((d) => <button key={d} type="button" aria-pressed={s.delta === d} title={d === 1 ? 'Show what changed in the last 24 hours' : 'Last ' + d + ' days'} onClick={() => E.setDelta(d)}>{d === 1 ? '24h' : d + 'd'}</button>)}
@@ -232,7 +232,7 @@ export function OrdersPanel() {
 
 // ------------------------------------------------------------------------------------------ plan
 const HINT = (
-  <div className="hint"><b>Scroll</b> zoom · <b>drag</b> pan · <b>click</b> go in · <b>Esc</b> back<br /><b>Shift-drag</b> box-select · <b>Shift-click</b> target · <b>S</b> target mode<br /><b>/</b> find · <b>1–9</b> sheets · <b>J K</b> questions · <b>1–3</b> answer · <b>Space</b> pause swarm<br /><b>M</b> morning watch · <b>P</b> person · <b>G</b> GA · <b>B</b> blast · <b>\</b> rail</div>
+  <div className="hint"><b>Scroll</b> zoom · <b>drag</b> pan · <b>click</b> go in · <b>Esc</b> back<br /><b>Shift-drag</b> box-select · <b>Shift-click</b> target · <b>S</b> target mode<br /><b>/</b> find · <b>1–9</b> sheets · <b>J K</b> questions · <b>1–3</b> answer · <b>Space</b> pause swarm<br /><b>M</b> morning watch · <b>P</b> person · <b>G</b> GA · <b>B</b> blast · <b>\</b> rail<br /><b>T</b> timeline · <b>[ ]</b> week · <b>, .</b> speed · <b>← →</b> next room · <b>↑ ↓</b> zoom · <b>0</b> home · <b>Enter</b> open</div>
 );
 
 function TitleBlock() {
