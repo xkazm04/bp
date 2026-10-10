@@ -30,6 +30,15 @@
 #dhide { flex: 0 0 auto; height: 28px; background: none; border: 0; border-top: 1px solid var(--ink-4); color: var(--ink-2); font-size: 14px; padding: 0; }
 #dshow { position: absolute; right: 0; top: 84px; width: 26px; height: 56px; background: var(--card); border: 1px solid var(--ink-3); border-right: 0; color: var(--ink-2); font-size: 16px; }
 #dhide:hover, #dshow:hover { color: var(--ink-hi); }
+/* short windows (a landscape phone, devtools, a split screen): compact counters so all fit, and a visible scrollbar for any that still do not. Width is unchanged. */
+@media (max-height: 700px) {
+  #rail { scrollbar-width: thin; scrollbar-color: var(--ink-3) transparent; }
+  #rail .ri { gap: 2px; padding: 5px 2px 4px; }
+  #rail .ri .lb, #rail .ri .sb { display: none; }
+  #rail .ri[data-k='find'] { padding-bottom: 6px; margin-bottom: 2px; }
+  #rail .ri[data-k='plan'] { margin-top: 2px; padding-top: 6px; }
+  #dhide { height: 22px; }
+}
 
 /* ---------- flyout (overlays the plan; never moves it) */
 #flyout { position: absolute; right: 86px; top: 74px; bottom: var(--bb); width: 340px; z-index: 6; background: var(--card); border: 1px solid var(--ink-3); box-shadow: 0 18px 50px var(--shadow); display: flex; flex-direction: column; }
