@@ -102,7 +102,11 @@ function Revisions() {
   }), [E, W, H]);
   const snaps = M.P.snapshots, max = Math.max(...snaps.map((x) => x.total)) * 1.05 || 1; // a product with no stages has all-zero totals
   const cum = snaps.map(() => 0);
-  const polys = ORDER.map((st) => {
+  // one snapshot has no span for the stacked areas to cover (zero-width polygons): the same counts as one stacked bar at "now"
+  const polys = snaps.length < 2 ? ORDER.map((st) => {
+    const c = snaps[0]?.counts ?? {}, y0 = bot - (cum[0] / max) * (bot - top); cum[0] += c[st] || 0; const y1 = bot - (cum[0] / max) * (bot - top);
+    return <rect key={st} x={tl.h1 - 14} y={y1} width={14} height={Math.max(0, y0 - y1)} fill={st === 'deprecated' ? 'var(--red)' : 'var(--ink)'} fillOpacity={FILLS[st]} />;
+  }) : ORDER.map((st) => {
     const up: string[] = [], dn: string[] = [];
     snaps.forEach((sn, i) => { const x = hx(sn.week), y0 = bot - (cum[i] / max) * (bot - top); cum[i] += sn.counts[st] || 0; const y1 = bot - (cum[i] / max) * (bot - top); dn.push(x.toFixed(1) + ',' + y0.toFixed(1)); up.push(x.toFixed(1) + ',' + y1.toFixed(1)); });
     return <polygon key={st} points={up.join(' ') + ' ' + dn.reverse().join(' ')} fill={st === 'deprecated' ? 'var(--red)' : 'var(--ink)'} fillOpacity={FILLS[st]} />;
@@ -115,6 +119,7 @@ function Revisions() {
   const m1 = M.P.milestones.find((m) => m.state === 'done'), m2 = M.P.MS[GA_MILESTONE];
   // Labels are placed by priority and culled where they would collide or leave the chart, so a narrow panel shows fewer
   // labels instead of overprinted ones. Priority: handle plate > section heads > milestones > end ticks > week dates > quarter ticks.
+  const later = m2 ? M.P.milestones.filter((m) => m.date > m2.date).map((m) => m.code || m.name) : [];
   const xm = tl.R - 14, hourHead = sim.live ? 'LIVE SCAN · NO REPLAY HOUR' : 'THE NEXT HOUR · SIMULATED';
   const headW = (x: string) => x.length * (CW + 1.44); // `.lbl` carries 0.12em letter-spacing
   const hourLab = hour || sim.live ? (headW(hourHead) <= tl.R - tl.o0 ? hourHead : sim.live ? 'LIVE SCAN' : 'NEXT HOUR') : '';
@@ -129,7 +134,8 @@ function Revisions() {
     ...(hourLab ? [{ k: 'hour', s: hourLab, x: tl.o0, y: top - 12, a: 'start', p: 1, w: headW(hourLab) } as Lab] : []),
     ...(m1Lab ? [{ k: 'm1', s: m1Lab, x: hx(m1!.date) + 13, y: top - 9, a: 'start', p: 2 } as Lab] : []),
     ...(m2 ? [{ k: 'm2', s: m2Lab, x: xm - 13, y: top - 7, a: 'end', p: 2 } as Lab] : []),
-    ...(m2 && !s.compact ? [{ k: 'days', s: Math.round(dnum(m2.date) - dnum(asOf)) + ' days', x: xm - 4, y: bot - 20, a: 'end', p: 2 } as Lab, { k: 'tail', s: 'M3, M4 ▸', x: xm - 4, y: bot - 5, a: 'end', p: 2 } as Lab] : []),
+    ...(m2 && !s.compact ? [{ k: 'days', s: Math.round(dnum(m2.date) - dnum(asOf)) + ' days', x: xm - 4, y: bot - 20, a: 'end', p: 2 } as Lab] : []),
+    ...(m2 && !s.compact && later.length ? [{ k: 'tail', s: later.join(', ') + ' ▸', x: xm - 4, y: bot - 5, a: 'end', p: 2 } as Lab] : []),
     ...(hour ? [0, 15, 30, 45, 60].filter((m) => !(m === 0 && now)).map((m) => ({ k: 'h' + m, s: m === 60 ? '10:00' : '09:' + (m < 10 ? '0' : '') + m, x: tl.o0 + (m / 60) * (tl.o1 - tl.o0), y: bot + 17, a: m === 0 ? 'start' : m === 60 ? 'end' : 'middle', p: m % 60 === 0 ? 3 : 5 }) as Lab) : []),
     ...snaps.flatMap((sn, i) => (i % wk === 0 || i === NW - 1 ? [{ k: 'w' + i, s: fmtD(sn.week), x: hx(sn.week), y: bot + 17, a: 'middle', p: 4 } as Lab] : [])),
   ];
