@@ -8,7 +8,7 @@
 // hour ahead (no replay to scrub, no arrivals).
 import { useEffect, useRef } from 'react';
 import { AnimatePresence, motion, useReducedMotion, type Variants } from 'motion/react';
-import { SWARM } from '@/lib/data';
+import { SWARM, type Stage } from '@/lib/data';
 import { GA_MILESTONE, HOUR, SPEEDS, dnum, fmtD, latestRun, revAt } from '@/lib/model';
 import { shallowEqual, useBp, useEngine, useLive } from './hooks';
 import { ARRIVALS, Strip, scanStatus, simClock, useHourText, useSize } from './timeline/Strip';
@@ -70,8 +70,10 @@ function Clock() {
   );
 }
 
-const ORDER = ['live', 'flagged', 'in-review', 'in-dev', 'specified', 'idea', 'deprecated'] as const;
-const FILLS: Record<(typeof ORDER)[number], number> = { live: 0.62, flagged: 0.44, 'in-review': 0.3, 'in-dev': 0.2, specified: 0.11, idea: 0.06, deprecated: 0.5 };
+/** Each stage's band in the stacked revisions chart, bottom band first, and its fill. Keyed by Stage, so a stage added to
+ *  the standard fails the typecheck here instead of silently dropping out of the chart. */
+const FILLS: Record<Stage, number> = { live: 0.62, flagged: 0.44, 'in-review': 0.3, 'in-dev': 0.2, specified: 0.11, idea: 0.06, deprecated: 0.5 };
+const ORDER = Object.keys(FILLS) as Stage[];
 
 const CW = 7.2; // advance of the 12 px mono label face, for placing chart labels
 
