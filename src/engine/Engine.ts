@@ -339,10 +339,8 @@ export class Engine {
         drawGrid(this, g, v); drawDecor(this, g, v); drawBuildings(this, g, v); drawLabels(this, g, v);
       });
       this.perf.rasters++; this.perf.lastRasterMs = this.cache.lastMs;
-    } else if (st === 'transform' && !settled) {
-      clearTimeout(this.settleTimer);
-      this.settleTimer = window.setTimeout(() => this.dirty(), 160);
     } else if (st === 'transform') {
+      // still moving (or settled mid-gesture): wake once more after the settle window to re-raster
       clearTimeout(this.settleTimer);
       this.settleTimer = window.setTimeout(() => this.dirty(), 160);
     }
