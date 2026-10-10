@@ -80,6 +80,13 @@ function LensTabs() {
     E.setView(vs[j]);
     strip.current?.querySelectorAll<HTMLElement>('[role="tab"]')[j]?.focus();
   };
+  // a narrow window scrolls the strip (blueprint.css #tabs, the offset parent): keep the selected tab in it whatever selected it (a digit key, the page)
+  useEffect(() => {
+    const el = strip.current, b = el?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (!el || !b || el.scrollWidth <= el.clientWidth) return;
+    if (b.offsetLeft < el.scrollLeft) el.scrollLeft = b.offsetLeft;
+    else if (b.offsetLeft + b.offsetWidth > el.scrollLeft + el.clientWidth) el.scrollLeft = b.offsetLeft + b.offsetWidth - el.clientWidth;
+  }, [s.view]);
   return (
     <div id="tabs" role="tablist" aria-label="Sheets (lenses)" ref={strip} onKeyDown={onTabKey}>
       {vs.map((k, i) => {
