@@ -17,7 +17,6 @@ const Ajv2020 = Ajv2020Module.default ?? Ajv2020Module;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SCHEMA_DIR = path.join(ROOT, 'docs/standard/schema');
 const LENS_DIR = path.join(ROOT, 'docs/standard/lenses');
-const BUILTIN = ['business', 'design', 'development', 'operations', 'security', 'quality'];
 const OPS = ['eq', 'ne', 'lt', 'lte', 'gt', 'gte', 'in', 'nin', 'missing', 'present'];
 const NUMERIC = new Set(['number', 'integer', 'percent', 'money']);
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -33,6 +32,9 @@ ajv.addSchema(lensSchema).addSchema(appSchema).addSchema(eventSchema);
 const validateLens = ajv.getSchema(lensSchema.$id);
 const validateApp = ajv.getSchema(appSchema.$id);
 const validateEvent = ajv.getSchema(eventSchema.$id);
+
+// The built-in lens ids are the schema's own enum, not a copy: a built-in added there is validated here too.
+const BUILTIN = lensSchema.$defs.builtinLensId.enum;
 
 const LENS_ID_RE = lensSchema.$defs.lensId.pattern;
 const REVERSE_DNS_RE = lensSchema.$defs.reverseDns.pattern;

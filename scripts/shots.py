@@ -1,9 +1,17 @@
-import time, json, sys
+# Screenshot matrix (themes, sizes, scales, variants, phone, sheet, decision card) with the text-floor readout.
+# Usage: python scripts/shots.py [base_url] [out_dir]
+#   base_url (empty = default): $BP_BASE, else http://localhost:3000 (`npm run dev` / `npm start`); out_dir: docs/shots/foundation
+import os, time, json, sys
 from playwright.sync_api import sync_playwright
-OUT = 'docs/shots/foundation'
-BASE = 'http://localhost:3107'
+BASE = ((sys.argv[1] if len(sys.argv) > 1 else '') or os.environ.get('BP_BASE') or 'http://localhost:3000').rstrip('/')
+OUT = sys.argv[2] if len(sys.argv) > 2 else 'docs/shots/foundation'
+# The run fails (exit 1) on any of these, so it can stand as a check and not only as a gallery.
+FLOOR = 12  # px, docs/blueprint-ui.md text floor
 problems = []
-MINFONT = """(() => { let min = 99, where = ''; for (const el of document.querySelectorAll('.bp-ui *, main *')) { if (!el.childNodes.length) continue; let txt = false; for (const n of el.childNodes) if (n.nodeType === 3 && n.textContent.trim()) txt = true; if (!txt) continue; const cs = getComputedStyle(el); if (cs.display === 'none' || cs.visibility === 'hidden') continue; const r = el.getBoundingClientRect(); if (!r.width) continue; const px = parseFloat(cs.fontSize) * (window.__bp ? window.__bp.U : 1); if (px < min) { min = px; where = el.tagName + '.' + el.className + ' ' + el.textContent.slice(0, 30); } } return [Math.round(min * 10) / 10, where]; })()"""
+# The smallest rendered text on the page: every visible element with its own text, in the chrome (.bp-ui, scaled by the
+# engine's U) and outside it (the phone view, overlays). Returns [px, where, elements measured]; 0 measured means the
+# floor was not checked at all on that page.
+MINFONT = """(() => { const U = window.__bp ? window.__bp.U : 1; let min = 99, where = '', n = 0; for (const el of document.body.querySelectorAll('*')) { if (el.closest('script, style, noscript, template')) continue; let txt = false; for (const c of el.childNodes) if (c.nodeType === 3 && c.textContent.trim()) txt = true; if (!txt) continue; const cs = getComputedStyle(el); if (cs.display === 'none' || cs.visibility === 'hidden') continue; const r = el.getBoundingClientRect(); if (!r.width) continue; n++; const px = parseFloat(cs.fontSize) * (el.closest('.bp-ui') ? U : 1); if (px < min) { min = px; where = el.tagName + '.' + el.className + ' ' + el.textContent.trim().slice(0, 30); } } return [Math.round(min * 10) / 10, where, n]; })()"""
 def run(pg, name, url, w, h, steps):
     logs = []
     pg.on('console', lambda m: logs.append(m.type + ': ' + m.text[:300]) if m.type in ('error', 'warning') else None)
@@ -25,6 +33,10 @@ def run(pg, name, url, w, h, steps):
     mf = pg.evaluate(MINFONT)
     cmin = pg.evaluate("window.__bp ? window.__bp.tx.minUsed : null")
     print(name, 'DOM min px', mf, 'canvas min px', cmin, ('LOGS ' + ' | '.join(logs)) if logs else '')
+    if mf[2] == 0: problems.append(f'{name}: no text measured, the floor was not checked')
+    elif mf[0] < FLOOR: problems.append(f'{name}: DOM text at {mf[0]} px < {FLOOR} ({mf[1]})')
+    if cmin is not None and cmin < FLOOR: problems.append(f'{name}: canvas text at {cmin} px < {FLOOR}')
+    problems.extend(f'{name}: {l}' for l in logs if not l.startswith('warning: '))
     sys.stdout.flush()
 with sync_playwright() as p:
     b = p.chromium.launch()
@@ -48,3 +60,9 @@ with sync_playwright() as p:
     pg = b.new_page(); run(pg, 'subtle-1920x1080-dark-sheet', f'{BASE}/v/subtle?intro=0#open=PAY-09', 1920, 1080, [('key', '6', 'subtle-1920x1080-dark-sheet-security')]); pg.close()
     pg = b.new_page(); run(pg, 'subtle-1920x1080-dark-decide', f'{BASE}/v/subtle?intro=0', 1920, 1080, [('key', 'j', 'subtle-1920x1080-dark-decision-card')]); pg.close()
     b.close()
+if problems:
+    print(f'\n{len(problems)} problem(s):')
+    for pr in problems: print('  ' + pr)
+else:
+    print('\nno problems: text floor held on every page and no page errors')
+sys.exit(1 if problems else 0)

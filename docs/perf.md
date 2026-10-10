@@ -54,6 +54,7 @@ per-frame work is a few hundred cheap primitives.
   first there. Keep marks to a few primitives per tile and reuse `th.pattern(...)`.
 - Headless Chromium here composites in software; a GPU-backed browser should have more headroom.
 
-Reproduce: with the server on port 3107, run `python scripts/perf.py` (rAF deltas while sending
+Reproduce: with the production server running (`npm run build && npm start`, port 3000; another port via
+`BP_BASE=http://localhost:<port>` or a full URL argument), run `python scripts/perf.py` (rAF deltas while sending
 `mouse.wheel(0, -110)` every 50 ms for 1.5 s at (768, 486), then a 1.5 s drag; engine counters are on
 `window.__bp.perf`.
