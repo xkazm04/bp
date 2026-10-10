@@ -1,7 +1,7 @@
 {
   "version": 2,
   "generator": "hand-partitioned (bp scan-sweep adoption)",
-  "generated_at": "2026-10-09T19:57:07.735Z",
+  "generated_at": "2026-10-10T16:39:53.416Z",
   "project": {
     "slug": "bp",
     "name": "bp - the product blueprint"
@@ -473,10 +473,13 @@
       ],
       "file_paths": [
         "scripts/check-builtin-health.ts",
+        "scripts/check-fixtures.ts",
+        "scripts/check-scan-wire.ts",
         "scripts/fixtures/gen-kettle.mjs",
         "scripts/fixtures/gen-swarm.mjs",
         "scripts/kettle-to-v3.ts",
         "scripts/perf.py",
+        "scripts/sample-facets.ts",
         "scripts/scan-demo.mjs",
         "scripts/shots.py",
         "scripts/validate-structure.mjs"
@@ -486,6 +489,6 @@
   "stats": {
     "contexts": 11,
     "groups": 6,
-    "files": 146
+    "files": 149
   }
 }
