@@ -10,6 +10,14 @@ import { shallowEqual, useBp, useEngine, useLive } from '../hooks';
 
 const ARRIVALS = SWARM.decisions.filter((d) => d.arrivesAt).map((d) => d.arrivesAt!);
 
+/** The one status ladder for a live product's scan, shared by the strip and the panel clock. A dropped stream keeps the
+ *  last-known run state and adds a reconnecting marker (`base` is the state alone, `label` carries the marker). */
+export function scanStatus(run: ReturnType<typeof latestRun>, off: boolean): { label: string; base: string; tone: 'on' | 'warn' | '' } {
+  if (!run) return { label: off ? 'OFFLINE' : 'NO RUN', base: off ? 'OFFLINE' : 'NO RUN', tone: off ? 'warn' : '' };
+  const base = run.status === 'running' ? '● LIVE' + (run.phase ? ' · ' + run.phase.toUpperCase() : '') : String(run.status || '').toUpperCase();
+  return { label: off ? base + ' · RECONNECTING' : base, base, tone: off ? 'warn' : run.status === 'running' ? 'on' : '' };
+}
+
 /** The sim clock (Kettle) or the latest run (live product), as one line of small text. */
 function StripClock() {
   const E = useEngine(), sim = E.M.sim, live = useLive();
@@ -19,8 +27,7 @@ function StripClock() {
   if (!sim.has) return null;
   if (sim.live) {
     const run = latestRun(live?.product.scan), off = live?.product.status === 'offline';
-    const st = !run ? 'NO RUN' : off ? 'OFFLINE' : run.status === 'running' ? '● LIVE · ' + run.phase.toUpperCase() : run.status.toUpperCase();
-    const tone = off ? 'warn' : run?.status === 'running' ? 'on' : '';
+    const { label: st, tone } = scanStatus(run, off);
     return (
       <span className="tl-clk" title={run ? run.id + ' · ' + run.lenses.join(' · ') : 'Waiting for /lens-scan'}>
         <span className="tl-k">SCAN</span><span className={'tl-st ' + tone}>{st}</span>

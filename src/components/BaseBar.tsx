@@ -13,7 +13,7 @@ import { GA_MILESTONE, HOUR, SPEEDS, dnum, fmtD, latestRun, revAt } from '@/lib/
 
 const ARRIVALS = SWARM.decisions.filter((d) => d.arrivesAt).map((d) => ({ id: d.id, t: d.arrivesAt! }));
 import { shallowEqual, useBp, useEngine, useLive } from './hooks';
-import { Strip, hourSeekKey, useHourText } from './timeline/Strip';
+import { Strip, hourSeekKey, scanStatus, useHourText } from './timeline/Strip';
 import './timeline.css';
 
 /** One staggered item of the panel (the panel's variants drive it). */
@@ -39,12 +39,12 @@ function LiveClock() {
   const E = useEngine(), live = useLive(), sim = E.M.sim;
   useBp((s) => s.simV);
   const run = latestRun(live?.product.scan), off = live?.product.status === 'offline';
-  const st = !run ? 'NO RUN' : off ? 'OFFLINE' : run.status === 'running' ? '● LIVE · ' + run.phase.toUpperCase() : run.status.toUpperCase();
+  const { base: st, tone } = scanStatus(run, off);
   return (
     <motion.div variants={useItem()} id="clock" className="live">
-      <div className="t"><span>Lens scan</span><span style={{ color: off ? 'var(--amber)' : run?.status === 'running' ? 'var(--mint)' : 'var(--ink)' }}>{st}</span></div>
+      <div className="t"><span>Lens scan</span><span className={'tl-st ' + tone}>{st}</span></div>
       <div className="hm" title={run?.id}>{run ? (run.started_at.slice(5, 10) + ' ' + run.started_at.slice(11, 16)) : '—'}<small>{run ? 'UTC START' : ''}</small></div>
-      <div className="lv">{run ? run.lenses.join(' · ') + ' · ' + sim.agents.length + ' agent' + (sim.agents.length === 1 ? '' : 's') : 'Waiting for /lens-scan'}</div>
+      <div className="lv">{run ? (off ? 'RECONNECTING · ' : '') + (run.lenses ?? []).join(' · ') + ' · ' + sim.agents.length + ' agent' + (sim.agents.length === 1 ? '' : 's') : 'Waiting for /lens-scan'}</div>
     </motion.div>
   );
 }
@@ -60,7 +60,7 @@ function Clock() {
   const status = hist ? 'HISTORY · PAUSED' : s.over ? 'ENDED' : s.playing ? '● LIVE · ×' + s.speed : 'PAUSED';
   return (
     <motion.div variants={item} id="clock">
-      <div className="t"><span>Sim hour</span><span style={{ color: hist ? 'var(--amber)' : s.playing && !s.over ? 'var(--mint)' : 'var(--ink)' }}>{status}</span></div>
+      <div className="t"><span>Sim hour</span><span className={'tl-st ' + (hist ? 'warn' : s.playing && !s.over ? 'on' : '')}>{status}</span></div>
       <div className="hm"><span ref={tref}>09:00:00</span><small>UTC</small></div>
       <div className="ctl">
         <button type="button" className="pp" aria-label="Play or pause the swarm (Space)" onClick={() => E.togglePlay()}>{s.playing && !hist ? '❚❚' : '▶'}</button>
