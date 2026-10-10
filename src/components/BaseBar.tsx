@@ -180,6 +180,7 @@ export function BaseBar() {
   useEffect(() => { if (!open && panel.current?.contains(document.activeElement)) toggle.current?.focus(); }, [open]);
   return (
     <>
+      <Strip ref={toggle} open={open} />
       <AnimatePresence>
         {open && (
           <motion.section key="tl" id="tlpanel" ref={panel} aria-label="Timeline" variants={rm ? INSTANT : PANEL} initial="hide" animate="show" exit="hide">
@@ -188,7 +189,6 @@ export function BaseBar() {
           </motion.section>
         )}
       </AnimatePresence>
-      <Strip ref={toggle} open={open} />
     </>
   );
 }
