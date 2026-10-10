@@ -21,6 +21,8 @@ always:
 - `npm run check:scan-wire`
 - `npm run check:camera`
 - `npm run check:variant-copies`
+- `npm run check:timeline-keys`
+- `npm run check:timeline-size`
 
 when the app-structure fixture or schema changes:
 - `npm run validate:structure -- src/data/kettle.app-structure.json --events src/data/kettle.events.jsonl`

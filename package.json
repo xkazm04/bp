@@ -14,7 +14,9 @@
     "check:fixtures": "node scripts/check-fixtures.ts",
     "check:scan-wire": "node scripts/check-scan-wire.ts",
     "check:camera": "node scripts/check-camera.ts",
-    "check:variant-copies": "node src/variants/check-copies.ts"
+    "check:variant-copies": "node src/variants/check-copies.ts",
+    "check:timeline-keys": "node src/components/timeline/check-keys.ts",
+    "check:timeline-size": "node src/components/timeline/check-size.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",

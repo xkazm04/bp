@@ -1,7 +1,7 @@
 {
   "version": 2,
   "generator": "hand-partitioned (bp scan-sweep adoption)",
-  "generated_at": "2026-10-10T17:10:14.209Z",
+  "generated_at": "2026-10-10T17:51:21.175Z",
   "project": {
     "slug": "bp",
     "name": "bp - the product blueprint"
@@ -142,7 +142,10 @@
       "file_paths": [
         "src/components/BaseBar.tsx",
         "src/components/timeline.css",
-        "src/components/timeline/Strip.tsx"
+        "src/components/timeline/Strip.tsx",
+        "src/components/timeline/check-keys.ts",
+        "src/components/timeline/check-size.ts",
+        "src/components/timeline/keys.ts"
       ]
     },
     {
@@ -492,6 +495,6 @@
   "stats": {
     "contexts": 11,
     "groups": 6,
-    "files": 152
+    "files": 155
   }
 }
