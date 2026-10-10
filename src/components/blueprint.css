@@ -27,7 +27,9 @@
 #hdr { position: absolute; left: 14px; top: 8px; right: 14px; height: 58px; display: flex; justify-content: space-between; align-items: flex-start; pointer-events: none; }
 #hdr > * { pointer-events: auto; }
 #hdr:before { content: ''; position: absolute; left: -14px; right: -14px; top: -8px; height: 86px; background: linear-gradient(180deg, var(--scrim) 0, var(--scrim) 58px, transparent 86px); pointer-events: none; z-index: -1; }
-#brand { min-width: 0; flex: 1 1 auto; padding-right: 14px; }
+/* between the phone cut (760) and ~1000 px the tab strip would take the whole row and squeeze "where you are"
+   to nothing: the brand keeps a floor and the strip scrolls instead (tabs, digits and arrows still reach every tab) */
+#brand { min-width: 240px; flex: 1 1 0; padding-right: 14px; }
 #brand .proj { font: 500 12px/1 var(--mono); letter-spacing: 0.12em; color: var(--ink-2); text-transform: uppercase; margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #brand .proj b { color: var(--lens); font-weight: 500; }
 #crumbs { margin-top: 8px; display: flex; flex-wrap: nowrap; align-items: baseline; gap: 4px; white-space: nowrap; overflow: hidden; }
@@ -39,9 +41,10 @@
 #crumbs button:hover { border-bottom-color: var(--accent); color: var(--ink-hi); }
 #crumbs button.cur { color: var(--ink-hi); }
 #crumbs .sep { color: var(--ink-3); font-size: 17px; }
-.hdr-right { display: flex; gap: 8px; align-items: flex-start; flex: 0 0 auto; }
-#tabs { display: flex; flex: 0 0 auto; border: 1px solid var(--ink-3); border-bottom: 2px solid var(--ink-2); background: var(--panel); }
-#tabs button { min-width: 80px; height: 54px; background: transparent; border: 0; border-right: 1px solid var(--ink-4); text-align: left; padding: 6px 10px 6px 8px; position: relative; transition: background 0.15s; }
+.hdr-right { display: flex; gap: 8px; align-items: flex-start; flex: 0 1 auto; min-width: 0; }
+.hdr-right > :not(#tabs) { flex: 0 0 auto; }
+#tabs { position: relative; display: flex; flex: 0 1 auto; min-width: 0; overflow: auto hidden; scrollbar-width: none; border: 1px solid var(--ink-3); border-bottom: 2px solid var(--ink-2); background: var(--panel); }
+#tabs button { flex: 0 0 auto; min-width: 80px; height: 54px; background: transparent; border: 0; border-right: 1px solid var(--ink-4); text-align: left; padding: 6px 10px 6px 8px; position: relative; transition: background 0.15s; }
 #tabs button:last-child { border-right: 0; }
 #tabs .no { display: block; font: 500 12px/1 var(--mono); letter-spacing: 0.03em; color: var(--ink-2); }
 #tabs .nm { display: block; font-size: 13px; line-height: 1.05; margin-top: 8px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-2); white-space: nowrap; }
