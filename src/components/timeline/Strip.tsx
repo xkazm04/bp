@@ -9,7 +9,22 @@ import { HOUR, dnum, fmtD, latestRun, revAt } from '@/lib/model';
 import { shallowEqual, useBp, useEngine, useLive } from '../hooks';
 import { timeSliderKey } from './keys';
 
-const ARRIVALS = SWARM.decisions.filter((d) => d.arrivesAt).map((d) => d.arrivesAt!);
+/** The questions that arrive during the simulated hour (both time charts mark them). */
+export const ARRIVALS = SWARM.decisions.filter((d) => d.arrivesAt).map((d) => ({ id: d.id, t: d.arrivesAt! }));
+
+/** The simulated wall clock at sim second `t`: HH:MM:SS, or HH:MM with `secs` false. */
+export function simClock(at0: number, t: number, secs = true): string { return new Date(at0 + t * 1000).toISOString().slice(11, secs ? 19 : 16); }
+
+/** An element's client size, kept current by a ResizeObserver (`w0`/`h0` until it has one). */
+export function useSize(ref: React.RefObject<HTMLElement | null>, w0: number, h0: number): [number, number] {
+  const [W, setW] = useState(w0), [H, setH] = useState(h0);
+  useLayoutEffect(() => {
+    const ro = new ResizeObserver(() => { if (ref.current) { setW(ref.current.clientWidth || w0); setH(ref.current.clientHeight || h0); } });
+    if (ref.current) ro.observe(ref.current);
+    return () => ro.disconnect();
+  }, [ref, w0, h0]);
+  return [W, H];
+}
 
 /** The one status ladder for a live product's scan, shared by the strip and the panel clock. A dropped stream keeps the
  *  last-known run state and adds a reconnecting marker (`base` is the state alone, `label` carries the marker). */
@@ -24,7 +39,7 @@ function StripClock() {
   const E = useEngine(), sim = E.M.sim, live = useLive();
   const s = useBp((s) => ({ playing: s.playing, speed: s.speed, over: s.over, now: s.t === E.M.P.asOf }), shallowEqual);
   const tref = useRef<HTMLSpanElement>(null);
-  useEffect(() => (sim.has && !sim.live ? E.onSimTime((t) => { if (tref.current) tref.current.textContent = new Date(sim.at0 + t * 1000).toISOString().slice(11, 19); }) : undefined), [E, sim]);
+  useEffect(() => (sim.has && !sim.live ? E.onSimTime((t) => { if (tref.current) tref.current.textContent = simClock(sim.at0, t); }) : undefined), [E, sim]);
   if (!sim.has) return null;
   if (sim.live) {
     const run = latestRun(live?.product.scan), off = live?.product.status === 'offline';
@@ -51,7 +66,7 @@ export function useHourText(E: ReturnType<typeof useEngine>, svg: React.RefObjec
     if (!hour) return undefined;
     let last = '';
     return E.onSimTime((t) => {
-      const m = new Date(E.M.sim.at0 + t * 1000).toISOString().slice(11, 16);
+      const m = simClock(E.M.sim.at0, t, false);
       if (m !== last) { last = m; svg.current?.setAttribute('aria-valuetext', base + '; simulated ' + m); }
     });
   }, [E, svg, base, hour]);
@@ -63,12 +78,7 @@ function Hairline() {
   const t = useBp((s) => s.t);
   const wrap = useRef<HTMLDivElement>(null), svg = useRef<SVGSVGElement>(null);
   const head = useRef<SVGLineElement>(null), el = useRef<SVGRectElement>(null);
-  const [W, setW] = useState(600), [H, setH] = useState(26);
-  useLayoutEffect(() => {
-    const ro = new ResizeObserver(() => { if (wrap.current) { setW(wrap.current.clientWidth || 600); setH(wrap.current.clientHeight || 26); } });
-    if (wrap.current) ro.observe(wrap.current);
-    return () => ro.disconnect();
-  }, []);
+  const [W, H] = useSize(wrap, 600, 26);
   const hour = sim.has && !sim.live, asOf = M.P.asOf, weeks = M.P.weeks, RD0 = weeks[0], now = t === asOf;
   const L = 4, R = W - 4, gap = hour ? 14 : 0, hourW = hour ? Math.round((R - L) * 0.24) : 0;
   const h0 = L, h1 = R - hourW - gap, o0 = h1 + gap, o1 = R, top = 4, bot = H - 6;
@@ -122,7 +132,7 @@ function Hairline() {
           <g className="tl-hour">
             <line className="tl-hbase" x1={o0} y1={bot} x2={o1} y2={bot} />
             <rect ref={el} className="tl-hel" x={o0} y={top} width={0} height={bot - top} />
-            {ARRIVALS.map((a, i) => <line key={i} className="tl-arr" x1={ox(a)} y1={bot - 7} x2={ox(a)} y2={bot} />)}
+            {ARRIVALS.map((a) => <line key={a.id} className="tl-arr" x1={ox(a.t)} y1={bot - 7} x2={ox(a.t)} y2={bot} />)}
             <line ref={head} className="tl-hhead" x1={o0} x2={o0} y1={top - 2} y2={bot + 3} />
           </g>
         )}

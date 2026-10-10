@@ -6,14 +6,12 @@
 // engine's sim-time callback; React only re-renders on discrete changes (speed, play, time travel).
 // A live product has no recorded hour: the clock box shows the scan instead, and the strip drops the
 // hour ahead (no replay to scrub, no arrivals).
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { AnimatePresence, motion, useReducedMotion, type Variants } from 'motion/react';
 import { SWARM } from '@/lib/data';
 import { GA_MILESTONE, HOUR, SPEEDS, dnum, fmtD, latestRun, revAt } from '@/lib/model';
-
-const ARRIVALS = SWARM.decisions.filter((d) => d.arrivesAt).map((d) => ({ id: d.id, t: d.arrivesAt! }));
 import { shallowEqual, useBp, useEngine, useLive } from './hooks';
-import { Strip, scanStatus, useHourText } from './timeline/Strip';
+import { ARRIVALS, Strip, scanStatus, simClock, useHourText, useSize } from './timeline/Strip';
 import { timeSliderKey } from './timeline/keys';
 import './timeline.css';
 
@@ -54,7 +52,7 @@ function Clock() {
   const E = useEngine(), sim = E.M.sim;
   const s = useBp((s) => ({ playing: s.playing, speed: s.speed, over: s.over, t: s.t }), shallowEqual);
   const tref = useRef<HTMLSpanElement>(null), item = useItem();
-  useEffect(() => E.onSimTime((t) => { if (tref.current) tref.current.textContent = new Date(sim.at0 + t * 1000).toISOString().slice(11, 19); }), [E, sim]);
+  useEffect(() => E.onSimTime((t) => { if (tref.current) tref.current.textContent = simClock(sim.at0, t); }), [E, sim]);
   if (!sim.has) return null;
   if (sim.live) return <LiveClock />;
   const hist = s.t !== E.M.P.asOf;
@@ -82,12 +80,7 @@ function Revisions() {
   const s = useBp((s) => ({ t: s.t, compact: s.compact }), shallowEqual);
   const wrap = useRef<HTMLDivElement>(null), svg = useRef<SVGSVGElement>(null);
   const head = useRef<SVGLineElement>(null), tri = useRef<SVGPathElement>(null), el = useRef<SVGRectElement>(null);
-  const [W, setW] = useState(640), [H, setH] = useState(92);
-  useLayoutEffect(() => {
-    const ro = new ResizeObserver(() => { if (wrap.current) { setW(wrap.current.clientWidth || 640); setH(wrap.current.clientHeight || 92); } });
-    if (wrap.current) ro.observe(wrap.current);
-    return () => ro.disconnect();
-  }, []);
+  const [W, H] = useSize(wrap, 640, 92);
   const L = 76, R = W - 6, avail = R - L, hist = Math.round(avail * 0.46), hourW = Math.round(avail * 0.38), g1 = 26;
   const tl = { h0: L, h1: L + hist, o0: L + hist + g1, o1: L + hist + g1 + hourW, R, top: H < 80 ? 21 : 34, bot: H < 80 ? H - 28 : Math.min(H - 28, 66) };
   const asOf = M.P.asOf, now = s.t === asOf, top = tl.top, bot = tl.bot, RD0 = M.P.weeks[0], NW = M.P.weeks.length;
