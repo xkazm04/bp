@@ -28,10 +28,18 @@ export function drawGrid(E: Engine, ctx: CanvasRenderingContext2D, v: View) {
   }
 }
 
-/** Lenses whose channel threw: skipped for the session so one bad manifest costs that lens, not the plan. */
-const failedLenses = new Set<string>();
-function lensFailed(l: string, part: string, err: unknown) {
-  if (!failedLenses.has(l)) { failedLenses.add(l); console.error(`[lens ${l}] ${part} failed`, err); }
+/**
+ * Lenses whose channel threw: skipped for that engine's life so one bad manifest costs that lens, not the
+ * plan. Kept per engine, because each engine resolves its own channels (the variant's, or a fallback built
+ * from the product's manifest): a lens that failed under one variant or product is drawn and, if it fails
+ * again, logged again under the next.
+ */
+const failedByEngine = new WeakMap<Engine, Set<string>>();
+const failed = (E: Engine, l: string) => failedByEngine.get(E)?.has(l) ?? false;
+function lensFailed(E: Engine, l: string, part: string, err: unknown) {
+  let s = failedByEngine.get(E);
+  if (!s) failedByEngine.set(E, (s = new Set()));
+  if (!s.has(l)) { s.add(l); console.error(`[lens ${l}] ${part} failed`, err); }
 }
 
 /** Variant decoration under the plan, weighted by each lens's dominance. */
@@ -39,10 +47,10 @@ export function drawDecor(E: Engine, ctx: CanvasRenderingContext2D, v: View) {
   const m = E.mixS;
   for (const l of E.lensIds) {
     const ch = E.channel(l);
-    if (!ch || !ch.decor || m.d[l] <= 0.001 || failedLenses.has(l)) continue;
+    if (!ch || !ch.decor || m.d[l] <= 0.001 || failed(E, l)) continue;
     ctx.save();
     try { ch.decor(ctx, { x: v.c0x, y: v.c0y, w: v.c1x - v.c0x, h: v.c1y - v.c0y, k: v.k, u: E.U }, m.d[l], E.th); }
-    catch (err) { lensFailed(l, 'decor', err); }
+    catch (err) { lensFailed(E, l, 'decor', err); }
     finally { ctx.restore(); }
   }
 }
@@ -107,7 +115,7 @@ function lensMarks(E: Engine, ctx: CanvasRenderingContext2D, g: TileGeom, f: Fea
   for (const l of E.lensIds) {
     const p = m.p[l];
     if (p <= 0.004) continue;
-    const ch = E.channel(l); if (!ch || failedLenses.has(l)) continue;
+    const ch = E.channel(l); if (!ch || failed(E, l)) continue;
     const x = m.x[l], slot = slots[l] ?? null;
     const exp = E.expr.expandedRect ? E.expr.expandedRect(g, l) : g.body;
     let r: Rect, w: number;
@@ -116,7 +124,7 @@ function lensMarks(E: Engine, ctx: CanvasRenderingContext2D, g: TileGeom, f: Fea
     if (r.w < 1 || r.h < 1) continue;
     ctx.save();
     try { ch.marks({ ctx, r, slot, lens: P.LENS[l], tile: g, f, w, x, compact: x < 0.5, th: E.th, stage: st, now: E.isNow, live: L, accent: E.accentOf(l) }); }
-    catch (err) { lensFailed(l, 'marks', err); }
+    catch (err) { lensFailed(E, l, 'marks', err); }
     finally { ctx.restore(); }
     ctx.globalAlpha = ga;
   }
@@ -127,9 +135,9 @@ function outline(E: Engine, g: TileGeom, f: Feature): Path2D | null {
   const top = E.mixS.top;
   if (!top || E.mixS.topD <= 0.001) return null;
   const ch = E.channel(top);
-  if (!ch || !ch.shape || failedLenses.has(top)) return null;
+  if (!ch || !ch.shape || failed(E, top)) return null;
   const p = new Path2D();
-  try { ch.shape(p, g, f, E.mixS.topD); } catch (err) { lensFailed(top, 'shape', err); return null; }
+  try { ch.shape(p, g, f, E.mixS.topD); } catch (err) { lensFailed(E, top, 'shape', err); return null; }
   return p;
 }
 
@@ -180,10 +188,10 @@ function paintTile(E: Engine, ctx: CanvasRenderingContext2D, v: View, T: TileNod
     // evidence: general (stage word) crossfading into the dominant lens's content
     const ev = generalEvidence(E, f, st);
     let lensC: { parts: string[]; stamp?: string } | null = null;
-    const ch = top && D > 0.001 && now && st && !failedLenses.has(top) ? E.channel(top) : null;
+    const ch = top && D > 0.001 && now && st && !failed(E, top) ? E.channel(top) : null;
     if (ch) {
       try { const c = ch.content(f, Lv); lensC = { parts: c.parts.slice(0, EVIDENCE_BY_DENSITY[ch.density]), stamp: c.stamp }; }
-      catch (err) { lensFailed(top!, 'content', err); }
+      catch (err) { lensFailed(E, top!, 'content', err); }
     }
     const evFont = (l: string | null) => (l && E.expr.evidenceFont?.(l) === 'sans' ? tx.f(13, 600) : mono);
     let showId = !!code;
