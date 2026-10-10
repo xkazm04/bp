@@ -18,14 +18,15 @@ import type {
   AppStructure, Capability, Context, Domain, Facet, FacetValues, Feature, FeatureBoundField, Group, Health, Kpi, LensEntry,
   LensManifest, Milestone, Stage, StructureEvent,
 } from '../src/lib/standard/types.ts';
-import { BUILTIN_LENS_IDS } from '../src/lib/standard/types.ts';
+import { BUILTIN_LENSES } from '../src/lib/standard/catalog.ts';
 import { FLATTEN, type LensObject } from './sample-facets.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p: string): unknown => JSON.parse(fs.readFileSync(path.join(ROOT, p), 'utf8'));
 const OUT_MAP = 'src/data/kettle.app-structure.json';
 const OUT_EVENTS = 'src/data/kettle.events.jsonl';
-const BUILTIN = BUILTIN_LENS_IDS;
+/** The built-in ids come from the catalog (the one list); the type is the sample's own lens fields. */
+const BUILTIN = BUILTIN_LENSES.map((m) => m.id) as SampleLens[];
 const COST_LENS = 'com.kettle.cost';
 
 // ------------------------------------------------------------------------------- the sample's shape
@@ -37,6 +38,8 @@ interface SampleFeature {
   parts: { name: string; done: boolean }[] | null; notes: { by: string; date: string; text: string }[]; health: Health; flags: string[];
   blockedBy: string[];
 }
+/** The keys of a sample feature that hold a lens object. */
+type SampleLens = { [K in keyof SampleFeature]-?: SampleFeature[K] extends LensObject ? K : never }[keyof SampleFeature];
 interface SampleActivity { at: string; type: string; feature: string; actor: string; text: string; from?: string; to?: string; severity?: string }
 interface Sample {
   product: {
