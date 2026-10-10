@@ -149,3 +149,6 @@
   .pg-hero { grid-template-columns: 1fr; }
   .pg-mrs .mr { grid-template-columns: minmax(0, 1fr) 76px auto; } .pg-mrs .tg { grid-column: 1 / 4; }
 }
+/* Screens: a shot whose file is missing from the store */
+.scr .miss { display: flex; align-items: center; justify-content: center; width: 100%; aspect-ratio: 16 / 10; padding: 4px; box-sizing: border-box; background: var(--paper-lo); font: 500 12px var(--mono); color: var(--ink-2); text-align: center; }
+.scr .stack .miss:nth-child(2) { position: absolute; inset: 0; height: 100%; aspect-ratio: auto; }
