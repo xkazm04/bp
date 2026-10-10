@@ -4,7 +4,8 @@ import './globals.css';
 
 const sans = IBM_Plex_Sans_Condensed({ subsets: ['latin'], weight: ['400', '500', '600'], variable: '--font-sans' });
 const mono = IBM_Plex_Mono({ subsets: ['latin'], weight: ['400', '500'], variable: '--font-mono' });
-const hand = Caveat({ subsets: ['latin'], weight: ['500'], variable: '--font-hand' });
+// the hand face only draws red-pencil notes on the feature page, never on first paint: fetched when used, not preloaded
+const hand = Caveat({ subsets: ['latin'], weight: ['500'], variable: '--font-hand', preload: false });
 
 export const metadata: Metadata = {
   title: 'Kettle blueprint',
