@@ -96,7 +96,7 @@ export function ViewPanel() {
             const on = (s.who || '') === (r.id || '');
             return (
               <li key={r.id ?? 'all'} role="option" tabIndex={0} aria-selected={on} className={on ? 'on' : ''}
-                onClick={() => E.setWho(r.id)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); E.setWho(r.id); } }}>
+                onClick={() => E.setWho(r.id)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.nativeEvent.stopImmediatePropagation(); E.setWho(r.id); } }}>
                 <span className="av">{r.name.charAt(0)}</span><span>{r.name}<small>{r.sub}</small></span><span className="n">{r.n}</span>
               </li>
             );
@@ -217,7 +217,7 @@ export function OrdersPanel() {
         return (
           <div key={o.id} className={'ord' + (n ? ' v' : '') + (s.ordHi === o.id ? ' on' : '')} role="button" tabIndex={0}
             onPointerEnter={() => E.setOrdHi(o.id)} onPointerLeave={() => E.setOrdHi(null)} onClick={() => E.setOrdHi(s.ordHi === o.id ? null : o.id)}
-            onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); E.setOrdHi(s.ordHi === o.id ? null : o.id); } }}>
+            onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.nativeEvent.stopImmediatePropagation(); E.setOrdHi(s.ordHi === o.id ? null : o.id); } }}>
             <span className="st">{o.id}</span>
             <span className="tx">{o.text}</span>
             <span className="sc">{sim.scopeWords(o)} · {by ? by.name.split(' ')[0] : o.by}{o.user ? ' · new' : ' · since ' + o.since.slice(5)}</span>
@@ -304,7 +304,7 @@ export function PlanPanel() {
       <ul className="kn">
         {M.P.lenses.map(({ id: k, name }) => (
           <li key={k} tabIndex={0} role="button" aria-pressed={s.key === k} className={s.key === k ? 'on' : ''} onClick={() => E.setKey(s.key === k ? null : k)}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); E.setKey(s.key === k ? null : k); } }}>
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.nativeEvent.stopImmediatePropagation(); E.setKey(s.key === k ? null : k); } }}>
             <span className="d" /><span>{name}: bad or to watch</span><span className="c">{kc[k] || 0}</span>
           </li>
         ))}

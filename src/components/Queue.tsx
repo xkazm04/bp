@@ -36,7 +36,10 @@ function CardShell({ d, on, emph, cls, children }: { d: SimDecision; on: boolean
       layout="position" initial={{ opacity: 0, x: 18 }} animate={{ opacity: emph ? 1 : 0.55, x: 0 }} exit={{ opacity: 0, x: -24, transition: { duration: 0.2 } }}
       transition={{ type: 'spring', stiffness: 380, damping: 34 }}
       className={'qi' + (cls ? ' ' + cls : '') + ' u-' + d.urg + (on ? ' on' : '')} tabIndex={0} aria-current={on}
-      onClick={() => E.openDecision(d.id)} onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); E.openDecision(d.id); } }}
+      // the key that opens the card ends here. The engine's keys listen on document, the same node React's root
+      // listens on, so only stopImmediatePropagation keeps them from reading this Enter as "accept the open question"
+      // and this Space as "pause the swarm" (React's listener is registered first, at hydration)
+      onClick={() => E.openDecision(d.id)} onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.nativeEvent.stopImmediatePropagation(); E.openDecision(d.id); } }}
       onPointerEnter={() => !E.S.dec && E.setHlDec(d.id)} onPointerLeave={() => E.setHlDec(null)}
     >
       {children}
