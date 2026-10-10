@@ -22,7 +22,15 @@ export function FindPanel() {
   const qRef = useRef(q); qRef.current = q;
   // the previewed tile clears when the flyout closes (the input takes focus on mount: autoFocus)
   useEffect(() => () => { if (qRef.current.trim()) E.setSel(null); }, [E]);
-  const results = q.trim() ? search(M.P, q) : [];
+  // one search per distinct query: the keystroke's handler and the render share it, and a re-render
+  // (the rail re-renders on every sim sync) reuses it
+  const memo = useRef({ P: M.P, q: '', r: [] as ReturnType<typeof search> });
+  const find = (v: string) => {
+    const m = memo.current;
+    if (m.P !== M.P || m.q !== v) memo.current = { P: M.P, q: v, r: v.trim() ? search(M.P, v) : [] };
+    return memo.current.r;
+  };
+  const results = find(q);
   const preview = (i: number) => { setSel(i); E.setSel(results[i]?.id ?? null); };
   const open = (id: string) => { setQ(''); E.setSel(null); E.setDockTab(null); E.openFeature(id); };
   return (
@@ -30,7 +38,7 @@ export function FindPanel() {
       <div id="searchbox">
         <svg className="mg" viewBox="0 0 18 18" aria-hidden="true"><circle cx="7.5" cy="7.5" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.6" /><path d="M11.5 11.5 L16 16" stroke="currentColor" strokeWidth="1.8" /></svg>
         <input id="q" ref={ref} type="search" autoComplete="off" spellCheck={false} autoFocus placeholder="Find a feature, e.g. gift cards" aria-label="Search features" aria-controls="results" value={q}
-          onChange={(e) => { setQ(e.target.value); const r = e.target.value.trim() ? search(M.P, e.target.value) : []; setSel(0); E.setSel(r[0]?.id ?? null); }}
+          onChange={(e) => { setQ(e.target.value); const r = find(e.target.value); setSel(0); E.setSel(r[0]?.id ?? null); }}
           onKeyDown={(e) => {
             if (e.key === 'ArrowDown') { e.preventDefault(); if (results.length) preview((sel + 1) % results.length); }
             else if (e.key === 'ArrowUp') { e.preventDefault(); if (results.length) preview((sel - 1 + results.length) % results.length); }
@@ -70,7 +78,7 @@ export function ViewPanel() {
     .concat(persons.map((x) => ({ id: x.id, name: x.name, sub: x.title + ' · ' + sheetOf(M.P, personLens(M.P, x.id)).nm, n: open.filter((d) => d.decider === x.id).length })));
   return (
     <>
-      <h3 className="dsec-h"><span>What changed · window</span><span>[ ] weeks</span></h3>
+      <h3 className="dsec-h"><span>What changed · window</span><span>{s.delta === 1 ? 'last 24 h' : 'last ' + s.delta + ' days'}</span></h3>
       <div className="fly-row">
         <div className="seg" role="group" aria-label="What changed: window">
           {([1, 7, 14] as const).map((d) => <button key={d} type="button" aria-pressed={s.delta === d} title={d === 1 ? 'Show what changed in the last 24 hours' : 'Last ' + d + ' days'} onClick={() => E.setDelta(d)}>{d === 1 ? '24h' : d + 'd'}</button>)}
@@ -88,7 +96,7 @@ export function ViewPanel() {
             const on = (s.who || '') === (r.id || '');
             return (
               <li key={r.id ?? 'all'} role="option" tabIndex={0} aria-selected={on} className={on ? 'on' : ''}
-                onClick={() => E.setWho(r.id)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); E.setWho(r.id); } }}>
+                onClick={() => E.setWho(r.id)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.nativeEvent.stopImmediatePropagation(); E.setWho(r.id); } }}>
                 <span className="av">{r.name.charAt(0)}</span><span>{r.name}<small>{r.sub}</small></span><span className="n">{r.n}</span>
               </li>
             );
@@ -209,7 +217,7 @@ export function OrdersPanel() {
         return (
           <div key={o.id} className={'ord' + (n ? ' v' : '') + (s.ordHi === o.id ? ' on' : '')} role="button" tabIndex={0}
             onPointerEnter={() => E.setOrdHi(o.id)} onPointerLeave={() => E.setOrdHi(null)} onClick={() => E.setOrdHi(s.ordHi === o.id ? null : o.id)}
-            onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); E.setOrdHi(s.ordHi === o.id ? null : o.id); } }}>
+            onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.nativeEvent.stopImmediatePropagation(); E.setOrdHi(s.ordHi === o.id ? null : o.id); } }}>
             <span className="st">{o.id}</span>
             <span className="tx">{o.text}</span>
             <span className="sc">{sim.scopeWords(o)} · {by ? by.name.split(' ')[0] : o.by}{o.user ? ' · new' : ' · since ' + o.since.slice(5)}</span>
@@ -224,7 +232,7 @@ export function OrdersPanel() {
 
 // ------------------------------------------------------------------------------------------ plan
 const HINT = (
-  <div className="hint"><b>Scroll</b> zoom · <b>drag</b> pan · <b>click</b> go in · <b>Esc</b> back<br /><b>Shift-drag</b> box-select · <b>Shift-click</b> target · <b>S</b> target mode<br /><b>/</b> find · <b>1–9</b> sheets · <b>J K</b> questions · <b>1–3</b> answer · <b>Space</b> pause swarm<br /><b>M</b> morning watch · <b>P</b> person · <b>G</b> GA · <b>B</b> blast · <b>\</b> rail</div>
+  <div className="hint"><b>Scroll</b> zoom · <b>drag</b> pan · <b>click</b> go in · <b>Esc</b> back<br /><b>Shift-drag</b> box-select · <b>Shift-click</b> target · <b>S</b> target mode<br /><b>/</b> find · <b>1–9</b> sheets · <b>J K</b> questions · <b>1–3</b> answer · <b>Space</b> pause swarm<br /><b>M</b> morning watch · <b>P</b> person · <b>G</b> GA · <b>B</b> blast · <b>\</b> rail<br /><b>T</b> timeline · <b>[ ]</b> week · <b>, .</b> speed · <b>← →</b> next room · <b>↑ ↓</b> zoom · <b>0</b> home · <b>Enter</b> open</div>
 );
 
 function TitleBlock() {
@@ -296,7 +304,7 @@ export function PlanPanel() {
       <ul className="kn">
         {M.P.lenses.map(({ id: k, name }) => (
           <li key={k} tabIndex={0} role="button" aria-pressed={s.key === k} className={s.key === k ? 'on' : ''} onClick={() => E.setKey(s.key === k ? null : k)}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); E.setKey(s.key === k ? null : k); } }}>
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.nativeEvent.stopImmediatePropagation(); E.setKey(s.key === k ? null : k); } }}>
             <span className="d" /><span>{name}: bad or to watch</span><span className="c">{kc[k] || 0}</span>
           </li>
         ))}
