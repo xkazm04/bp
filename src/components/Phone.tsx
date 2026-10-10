@@ -83,7 +83,10 @@ export function Phone() {
                       return (
                         <div key={Bay.id}>
                           <h3>{Bay.cap.name}</h3>
-                          {fs.map((T) => <button key={T.id} type="button" onClick={() => E.openFeature(T.id)}><StageSym st={T.f.stage} w={22} h={14} /><span>{T.f.name}</span><span style={{ color: T.f.health === 'bad' ? 'var(--red)' : T.f.health === 'watch' ? 'var(--amber)' : 'transparent' }}>●</span></button>)}
+                          {fs.map((T) => {
+                            const h = T.f.health, bad = h === 'bad';   // health reads by shape (◆ trouble, ● watch) and by name, not hue alone
+                            return <button key={T.id} type="button" aria-label={bad || h === 'watch' ? T.f.name + (bad ? ', in trouble' : ', needs watching') : undefined} onClick={() => E.openFeature(T.id)}><StageSym st={T.f.stage} w={22} h={14} /><span>{T.f.name}</span><span aria-hidden="true" style={{ color: bad ? 'var(--red)' : 'var(--amber)' }}>{bad ? '◆' : h === 'watch' ? '●' : null}</span></button>;
+                          })}
                         </div>
                       );
                     })}
