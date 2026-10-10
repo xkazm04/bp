@@ -4,8 +4,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
-  GA_MILESTONE, STAGE_PLAIN, STAGE_WORD, ORDER_TEMPLATES, TICK_CLASS, astat, dnum, fmtWait, isAgentId, isLiveSt, lensOf, morningStats,
-  pname, sheetOf, stageAt, type BayNode, type BldNode, type OrderTemplate, type RoomNode, type WingNode,
+  AWAY_SINCE, GA_MILESTONE, SPEND_CAP, STAGE_PLAIN, STAGE_WORD, ORDER_TEMPLATES, TICK_CLASS, astat, dnum, fmtWait, isAgentId, isLiveSt, lensOf, lineSuffix,
+  morningStats, pname, sheetOf, stageAt, type BayNode, type BldNode, type OrderTemplate, type RoomNode, type WingNode,
 } from '@/lib/model';
 import { illoSVG } from '@/engine/render/illo';
 import { shallowEqual, useBp, useEngine, useVariant } from './hooks';
@@ -371,19 +371,20 @@ export function Morning() {
         const failed = sim.agents.filter((a) => a.status === 'failed'), blocked = sim.agents.filter((a) => a.status === 'blocked').length;
         const words: Record<string, string> = { commit: 'commits', 'pr-opened': 'pull requests', deploy: 'deploys', flag: 'flag changes', stage: 'stage moves', review: 'reviews', incident: 'incidents', comment: 'comments' };
         const by = Object.keys(ms.by).map((k) => ms.by[k] + ' ' + (words[k] || k)).join(' · ');
+        const since = AWAY_SINCE.slice(11, 16), sf = lineSuffix(M.P.scale, 0);   // the model's away mark and line suffix, not copies of them
         return (
           <motion.section id="morning" key="m" ref={ref} tabIndex={-1} aria-label="While you were away" initial={{ opacity: 0, x: '-50%', y: '-46%', scale: 0.98 }} animate={{ opacity: 1, x: '-50%', y: '-50%', scale: 1 }} exit={{ opacity: 0, x: '-50%', y: '-48%', scale: 0.98 }} transition={{ type: 'spring', stiffness: 320, damping: 32 }}>
-            <div className="kk">While you were away · since 18:00 · simulated sample</div>
+            <div className="kk">While you were away · since {since} · simulated sample</div>
             <h2>{who ? 'Good morning, ' + who + '.' : 'Good morning.'}</h2>
             <div className="lead">The swarm shipped {ms.changes} changes overnight ({by}). {failed.length ? failed.length + ' agent stopped after repeated failures. ' : ''}{blocked} are blocked. <b>{who ? mine.length + ' question' + (mine.length === 1 ? '' : 's') + ' wait for you' : q.all.length + ' questions wait for a person'}.</b></div>
             <div className="big4">
-              <div><b>{ms.changes}</b>changes since 18:00</div>
+              <div><b>{ms.changes}</b>changes since {since}</div>
               <div className="am"><b>{ms.asked}</b>questions asked while you slept</div>
               <div className="am"><b>{who ? mine.length : q.all.filter((d) => d.urg === 'high').length}</b>{who ? 'waiting for you' : 'urgent now'}</div>
-              {!sim.live && <div><b>${ms.spend.toLocaleString('en-US')}</b>spent today, cap $2,400</div>}
+              {!sim.live && <div><b>${ms.spend.toLocaleString('en-US')}</b>spent today, cap ${SPEND_CAP.toLocaleString('en-US')}</div>}
             </div>
             <div className="cols">
-              <div><h4>What moved</h4><ul>{ms.ev.slice(0, 7).map((a, i) => <li key={i}><button type="button" onClick={() => E.flyToFeature(a.feature + (M.P.scale > 1 ? '-S' : ''))}><i>{a.at.slice(11, 16)}</i><span>{a.text}</span></button></li>)}</ul></div>
+              <div><h4>What moved</h4><ul>{ms.ev.slice(0, 7).map((a, i) => <li key={i}><button type="button" onClick={() => E.flyToFeature(a.feature + sf)}><i>{a.at.slice(11, 16)}</i><span>{a.text}</span></button></li>)}</ul></div>
               <div><h4>{who ? 'Waiting for you' : 'Most urgent'}</h4><ul>{mine.slice(0, 6).map((d) => <li key={d.id}><button type="button" onClick={() => E.openDecision(d.id)}><i>{d.base}</i><span>{d.q}</span></button></li>)}{mine.length ? null : <li style={{ color: 'var(--ink-2)', padding: '6px 0' }}>Nothing is waiting. The swarm is working.</li>}</ul></div>
             </div>
             <div className="act">
