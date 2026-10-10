@@ -34,7 +34,7 @@ export function Phone() {
     <div className="ph">
       <PatternDefs />
       <div className="ph-top"><ThemeToggle /></div>
-      <div className="ph-h"><div className="k">PROJECT {P.name.toUpperCase()} · SHEET G-001 · {P.asOf} · SIMULATED SWARM</div><h1>{P.name.toUpperCase()}</h1><p>{P.tagline}</p></div>
+      <div className="ph-h"><div className="k">PROJECT {P.name.toUpperCase()} · SHEET G-001 · {P.asOf} · {M.live ? 'LIVE LENS SCAN' : 'SIMULATED SWARM'}</div><h1>{P.name.toUpperCase()}</h1><p>{P.tagline}</p></div>
       <div className="ph-sum">
         <div><b>{P.features.length}</b>features</div><div><b>{c.live}</b>built · live</div><div><b>{c.build}</b>being built</div>
         <div className="am"><b>{sim.has ? qq.all.length : 0}</b>questions waiting</div>
@@ -94,7 +94,7 @@ export function Phone() {
           ))}
         </div>
       ))}
-      <div className="foot">Illustrative sample data · simulated swarm · open on a wider screen for the zoomable plan.</div>
+      <div className="foot">{M.live ? 'Read from the live scan' : 'Illustrative sample data · simulated swarm'} · open on a wider screen for the zoomable plan.</div>
       <AnimatePresence>
         {f && (
           <motion.div className="ph-detail" role="dialog" aria-label="Feature detail" initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', stiffness: 260, damping: 32 }}>
