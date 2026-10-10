@@ -1,6 +1,6 @@
 'use client';
 // The phone view: the person's queue first, then a searchable reading list. No plan on a phone.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { fmtWait, pname } from '@/lib/model';
 import { SheetBody } from './FeatureSheet';
@@ -17,6 +17,18 @@ export function Phone() {
   const list = s.who ? qq.mine : qq.all, v = q.trim().toLowerCase();
   const persons = P.people.filter((p) => p.kind === 'human'), open = sim.openDecs();
   const f = s.open ? P.F[s.open] : null;
+  const detailOpen = !!s.open;
+  // The full-screen detail owns a history entry, so the platform Back gesture closes it instead of leaving the app.
+  useEffect(() => {
+    if (!detailOpen) return;
+    history.pushState({ ...(history.state ?? {}), phDetail: true }, '');
+    const onPop = () => E.closeFeature(false);
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      if (history.state?.phDetail) history.back();   // closed some other way: consume the stranded entry
+    };
+  }, [E, detailOpen]);
   return (
     <>
     <div className="ph">
@@ -86,7 +98,7 @@ export function Phone() {
       <AnimatePresence>
         {f && (
           <motion.div className="ph-detail" role="dialog" aria-label="Feature detail" initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', stiffness: 260, damping: 32 }}>
-            <button type="button" className="btn" style={{ marginBottom: 10, height: 40 }} onClick={() => E.closeFeature(false)}>‹ Back</button>
+            <button type="button" className="btn" style={{ marginBottom: 10, height: 40 }} onClick={() => { if (history.state?.phDetail) history.back(); else E.closeFeature(false); }}>‹ Back</button>
             <SheetBody key={f.id} f={f} />
           </motion.div>
         )}
