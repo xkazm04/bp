@@ -44,12 +44,12 @@ with sync_playwright() as p:
                 pg.close()
     for theme in ('dark', 'light'):
         pg = b.new_page(viewport={'width': 1920, 'height': 1080}); logs = watch(pg)
-        pg.goto(f'{BASE}/v/shaped?intro=0&theme={theme}#open=PAY-09', wait_until='networkidle'); time.sleep(1.5)
+        pg.goto(f'{BASE}/v/shaped?intro=0&theme={theme}#open=failed-payment-dunning', wait_until='networkidle'); time.sleep(1.5)
         for k, l in [('1', 'general')] + LENS:
             pg.keyboard.press(k); time.sleep(0.9)
             # the sheet may not have opened (a dead #open= link): say so as a problem instead of crashing the run
             if not pg.evaluate("(() => { const e = document.querySelector('.evp.cur') || document.querySelector('.ev6'); if (e) e.scrollIntoView({block: 'center'}); return !!e; })()"):
-                problems.append(f'shaped-1920x1080-{theme}-sheet-{l}: the feature sheet is not open (#open=PAY-09)')
+                problems.append(f'shaped-1920x1080-{theme}-sheet-{l}: the feature sheet is not open (#open=failed-payment-dunning)')
             time.sleep(0.5)
             pg.screenshot(path=f'{OUT}/shaped-1920x1080-{theme}-sheet-{l}.png')
         floor_check(pg, f'shaped-1920x1080-{theme}-sheet', logs, problems); pg.close()

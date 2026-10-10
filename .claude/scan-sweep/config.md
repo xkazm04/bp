@@ -19,6 +19,8 @@ always:
 - `npm run validate:structure` (no arguments: validates the lens manifests and the spec examples)
 - `npm run check:fixtures`
 - `npm run check:scan-wire`
+- `npm run check:camera`
+- `npm run check:variant-copies`
 
 when the app-structure fixture or schema changes:
 - `npm run validate:structure -- src/data/kettle.app-structure.json --events src/data/kettle.events.jsonl`
@@ -39,3 +41,4 @@ when rendering, the engine or chrome changes:
 
 - 2026-10-10 optimize wave 1: the manifest gate (`validate:structure` without arguments) was missing from `always`, so a deliberately broken lens manifest passed every gate (standard round, Lane C). Added, with the two new checks.
 - 2026-10-10: in git-bash, `cmd //c mklink //J a C:\x` loses its backslashes and links nowhere; quote the whole command (`cmd //c 'mklink /J a C:\x'`). Worktree gates then silently resolved packages from the parent checkout.
+- 2026-10-10 wave 2: React and the engine both listen on `document`, so `stopPropagation()` in a React handler does not stop the engine's key handler; only `nativeEvent.stopImmediatePropagation()` does (three rounds hit this independently). A src module a node check imports must avoid TypeScript parameter properties (Node type stripping cannot load them).

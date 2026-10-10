@@ -1,7 +1,7 @@
 {
   "version": 2,
   "generator": "hand-partitioned (bp scan-sweep adoption)",
-  "generated_at": "2026-10-10T16:39:53.416Z",
+  "generated_at": "2026-10-10T17:10:14.209Z",
   "project": {
     "slug": "bp",
     "name": "bp - the product blueprint"
@@ -321,6 +321,7 @@
         "src/variants/bold/shots.py",
         "src/variants/bold/styles.css",
         "src/variants/bold/words.ts",
+        "src/variants/check-copies.ts",
         "src/variants/registry.ts",
         "src/variants/shaped/Legend.tsx",
         "src/variants/shaped/NOTES.md",
@@ -333,6 +334,7 @@
         "src/variants/shaped/shapes.ts",
         "src/variants/shaped/shots.py",
         "src/variants/shaped/styles.css",
+        "src/variants/shotkit.py",
         "src/variants/subtle/Legend.tsx",
         "src/variants/subtle/NOTES.md",
         "src/variants/subtle/README.md",
@@ -473,6 +475,7 @@
       ],
       "file_paths": [
         "scripts/check-builtin-health.ts",
+        "scripts/check-camera.ts",
         "scripts/check-fixtures.ts",
         "scripts/check-scan-wire.ts",
         "scripts/fixtures/gen-kettle.mjs",
@@ -489,6 +492,6 @@
   "stats": {
     "contexts": 11,
     "groups": 6,
-    "files": 149
+    "files": 152
   }
 }

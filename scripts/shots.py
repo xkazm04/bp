@@ -57,7 +57,7 @@ with sync_playwright() as p:
         pg = b.new_page(); run(pg, f'{v}-1920x1080-dark-s1', f'{BASE}/v/{v}?intro=0', 1920, 1080, []); pg.close()
     for theme in ('dark', 'light'):
         pg = b.new_page(); run(pg, f'subtle-390x844-{theme}-phone', f'{BASE}/v/subtle?theme={theme}', 390, 844, []); pg.close()
-    pg = b.new_page(); run(pg, 'subtle-1920x1080-dark-sheet', f'{BASE}/v/subtle?intro=0#open=PAY-09', 1920, 1080, [('key', '6', 'subtle-1920x1080-dark-sheet-security')]); pg.close()
+    pg = b.new_page(); run(pg, 'subtle-1920x1080-dark-sheet', f'{BASE}/v/subtle?intro=0#open=failed-payment-dunning', 1920, 1080, [('key', '6', 'subtle-1920x1080-dark-sheet-security')]); pg.close()
     pg = b.new_page(); run(pg, 'subtle-1920x1080-dark-decide', f'{BASE}/v/subtle?intro=0', 1920, 1080, [('key', 'j', 'subtle-1920x1080-dark-decision-card')]); pg.close()
     b.close()
 if problems:

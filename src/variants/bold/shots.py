@@ -55,7 +55,7 @@ with sync_playwright() as p:
             SC = "document.querySelector('.ev6') && document.querySelector('.ev6').scrollIntoView({block: 'start'}); document.getElementById('dscroll').scrollBy(0, -90)"
             st = [('js', SC, f'sheet-{theme}-general')]
             for k, l in LENS.items(): st += [('key', k), ('js', SC, f'sheet-{theme}-{l}')]
-            run(pg, f'sheet-{theme}', f'{BASE}/v/bold?intro=0&theme={theme}#open=PAY-09', 1920, 1080, st)
+            run(pg, f'sheet-{theme}', f'{BASE}/v/bold?intro=0&theme={theme}#open=failed-payment-dunning', 1920, 1080, st)
             pg.close()
             pg = b.new_page()
             run(pg, f'mid-{theme}', f'{BASE}/v/bold?intro=0&theme={theme}', 1920, 1080, [('wheel', (0.4, 0.45)), ('wheel', (0.4, 0.45)), ('key', '6', f'mid-{theme}-Z2-to-security-150ms', 0.03), ('key', '1', None, 1.0), ('key', '6', None, 1.0), ('key', '3', f'mid-{theme}-Z2-security-to-design-150ms', 0.03)])
