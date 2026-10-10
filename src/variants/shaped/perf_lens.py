@@ -1,10 +1,12 @@
 # Frame times for lens switches (the mix tween re-rasters the plan every frame), shaped variant.
-# Usage: python src/variants/shaped/perf_lens.py [url]   (server: NEXT_DIST_DIR=.next-shaped npx next start -p 3112)
+# Usage: python src/variants/shaped/perf_lens.py [url]   (default: $BP_BASE, else :3000, /v/shaped?intro=0&scale=4)
 # Records requestAnimationFrame deltas while switching General -> Security -> Design -> General at L0 and
 # again zoomed to fixtures (L2/L3), where every visible tile runs shape() + marks() on every frame.
-import time, json, sys
+import os, time, json, sys
 from playwright.sync_api import sync_playwright
-url = sys.argv[1] if len(sys.argv) > 1 else 'http://localhost:3112/v/shaped?intro=0&scale=4'
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from shotkit import base
+url = sys.argv[1] if len(sys.argv) > 1 else base() + '/v/shaped?intro=0&scale=4'
 REC = """() => { const gen = (window.__gen = (window.__gen || 0) + 1), d = (window.__d = []); window.__rec = true; let last = performance.now(); window.__r0 = __bp.perf.rasters;
   const tick = (t) => { if (!window.__rec || window.__gen !== gen) return; d.push(t - last); last = t; requestAnimationFrame(tick); }; requestAnimationFrame(tick); }"""
 STOP = "() => { window.__rec = false; return { d: window.__d, rasters: __bp.perf.rasters - window.__r0, lastRasterMs: __bp.perf.lastRasterMs } }"

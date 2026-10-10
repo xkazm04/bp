@@ -1,8 +1,11 @@
 # Bold's frame-time probe: scripts/perf.py's zoom+drag plus a lens-switch run (the mix tween re-rasters
-# the static layer, decor included, every frame). Usage: python src/variants/bold/perf.py [url]
-import time, json, sys
+# the static layer, decor included, every frame).
+# Usage: python src/variants/bold/perf.py [url]   (default: $BP_BASE, else :3000, /v/bold?intro=0&scale=4)
+import os, time, json, sys
 from playwright.sync_api import sync_playwright
-url = sys.argv[1] if len(sys.argv) > 1 else 'http://localhost:3113/v/bold?intro=0&scale=4'
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from shotkit import base
+url = sys.argv[1] if len(sys.argv) > 1 else base() + '/v/bold?intro=0&scale=4'
 START = """() => { window.__d = []; window.__rec = true; let last = performance.now(); window.__r0 = [__bp.perf.rasters, __bp.perf.frames];
   const tick = (t) => { if (!window.__rec) return; window.__d.push(t - last); last = t; requestAnimationFrame(tick); }; requestAnimationFrame(tick); }"""
 STOP = "() => { window.__rec = false; return { d: window.__d, rasters: __bp.perf.rasters - window.__r0[0], lastRasterMs: __bp.perf.lastRasterMs } }"

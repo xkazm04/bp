@@ -1,9 +1,11 @@
 # Bold's screenshot run (a copy of scripts/shots.py with its own port, output dir and lens steps).
-# Usage: python src/variants/bold/shots.py [quick|full]   (server: NEXT_DIST_DIR=.next-bold npx next start -p 3113)
-import time, sys
+# Usage: python src/variants/bold/shots.py [quick|full|light]   (server: $BP_BASE, else `npm run dev` on :3000)
+import os, time, sys
 from playwright.sync_api import sync_playwright
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from shotkit import base
 OUT = 'docs/shots/bold'
-BASE = 'http://localhost:3113'
+BASE = base()
 MODE = sys.argv[1] if len(sys.argv) > 1 else 'quick'
 MINFONT = """(() => { let min = 99, where = ''; for (const el of document.querySelectorAll('.bp-ui *, main *')) { if (!el.childNodes.length) continue; let txt = false; for (const n of el.childNodes) if (n.nodeType === 3 && n.textContent.trim()) txt = true; if (!txt) continue; const cs = getComputedStyle(el); if (cs.display === 'none' || cs.visibility === 'hidden') continue; const r = el.getBoundingClientRect(); if (!r.width) continue; const px = parseFloat(cs.fontSize) * (window.__bp ? window.__bp.U : 1); if (px < min) { min = px; where = el.tagName + '.' + el.className + ' ' + el.textContent.slice(0, 30); } } return [Math.round(min * 10) / 10, where]; })()"""
 LENS = {'2': 'business', '3': 'design', '4': 'development', '5': 'operations', '6': 'security', '7': 'quality'}

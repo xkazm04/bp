@@ -1,9 +1,11 @@
 # Screenshots for the subtle variant (a copy of scripts/shots.py with its own port and out dir).
-# usage: python src/variants/subtle/tools/shots.py [quick]
-import time, sys, re
+# usage: python src/variants/subtle/tools/shots.py [quick]   (server: $BP_BASE, else `npm run dev` on :3000)
+import os, time, sys, re
 from playwright.sync_api import sync_playwright
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
+from shotkit import base
 OUT = 'docs/shots/subtle'
-BASE = 'http://localhost:3111'
+BASE = base()
 QUICK = len(sys.argv) > 1 and sys.argv[1] == 'quick'
 LENS = ['business', 'design', 'development', 'operations', 'security', 'quality']
 MINFONT = """(() => { let min = 99, where = ''; for (const el of document.querySelectorAll('.bp-ui *, main *')) { if (!el.childNodes.length) continue; let txt = false; for (const n of el.childNodes) if (n.nodeType === 3 && n.textContent.trim()) txt = true; if (!txt) continue; const cs = getComputedStyle(el); if (cs.display === 'none' || cs.visibility === 'hidden') continue; const r = el.getBoundingClientRect(); if (!r.width) continue; const px = parseFloat(cs.fontSize) * (window.__bp ? window.__bp.U : 1); if (px < min) { min = px; where = el.tagName + '.' + el.className + ' ' + el.textContent.slice(0, 30); } } return [Math.round(min * 10) / 10, where]; })()"""
