@@ -24,10 +24,14 @@ function metricMove(p: Proposal, unitOf: (lens: string, key: string) => string |
   return last ? `${p.metric}: ${fmtN(last.value)} → ${fmtN(last.value + d)}${u}` : `${p.metric}: ${move} (not measured yet)`;
 }
 
+/** A decline note survives a refused write: the card remounts when the decision reopens, so the draft lives outside it. */
+const declineDrafts = new Map<string, string>();
+
 function LiveItem({ d }: { d: SimDecision }) {
   const E = useEngine(), M = E.M, sim = M.sim, live = useLive();
   const s = useBp((s) => ({ dec: s.dec, who: s.who, view: s.view }), shallowEqual);
-  const [declining, setDeclining] = useState(false), [note, setNote] = useState('');
+  const [declining, setDeclining] = useState(() => declineDrafts.has(d.base)), [note, setNote] = useState(() => declineDrafts.get(d.base) ?? '');
+  const cancelDecline = () => { declineDrafts.delete(d.base); setNote(''); setDeclining(false); };
   const f = M.P.F[d.f], on = s.dec === d.id, scan = live?.product.scan;
   const p = scan?.proposals.find((x) => x.id === d.base);
   const urg = d.urg === 'high' ? 'Urgent' : d.urg === 'medium' ? 'Soon' : 'When you can';
@@ -53,11 +57,11 @@ function LiveItem({ d }: { d: SimDecision }) {
       </div>
       <div className="mt">{f.name} · {M.P.D[f.domain]?.name ?? f.domain} · waiting <b>{fmtWait(sim.waitMin(d))}</b></div>
       {declining ? (
-        <form className="dn" onClick={stop} onSubmit={(e) => { e.preventDefault(); E.decide(d.id, 1, note.trim() || undefined); setDeclining(false); }}>
+        <form className="dn" onClick={stop} onSubmit={(e) => { e.preventDefault(); declineDrafts.set(d.base, note.trim()); E.decide(d.id, 1, note.trim() || undefined); }}>
           <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why not? (optional)" aria-label="Decline note (optional)" maxLength={500} autoFocus
-            onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); setDeclining(false); } }} />
+            onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); cancelDecline(); } }} />
           <button type="submit" className="bt">Decline</button>
-          <button type="button" className="bt" onClick={() => setDeclining(false)}>Cancel</button>
+          <button type="button" className="bt" onClick={cancelDecline}>Cancel</button>
         </form>
       ) : (
         <div className="row" style={{ marginTop: 7 }}>
