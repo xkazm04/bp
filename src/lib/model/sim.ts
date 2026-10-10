@@ -9,7 +9,7 @@
 // the truth, not the replay.
 import type { Agent, Decision, ReplayEvent, ReplayType, StandingOrder, Swarm, AgentStatus, CrewRole, Squad, ViewId, Feature, Scalar } from '@/lib/data';
 import { fval } from '@/lib/standard/load';
-import { FIRST_MILESTONE, GA_MILESTONE, HOUR, LATER_MILESTONES, PULSE_OF, type PulseKind } from './constants';
+import { FIRST_MILESTONE, GA_MILESTONE, HOUR, LATER_MILESTONES, PULSE_OF, SPEND_CAP, type PulseKind } from './constants';
 import { isLiveSt } from './aggregates';
 import { personLens } from './lens';
 import { baseId, lineSuffix, pname, type Product } from './product';
@@ -584,7 +584,7 @@ export class SwarmSim {
     const ids: Record<string, 1> = {}; for (const a of ag) ids[a.f] = 1;
     return {
       kind: 'pause', title: 'Pause the research crew', moves: [], targets: ids, paused: ag, n: ag.length, order: 'O-7',
-      lines: [ag.length + ' research agents stop (spend cap order O-7 says research goes first)', 'Today’s swarm spend: $' + this.spend().toLocaleString('en-US') + ' of the $2,400 cap'],
+      lines: [ag.length + ' research agents stop (spend cap order O-7 says research goes first)', 'Today’s swarm spend: $' + this.spend().toLocaleString('en-US') + ' of the $' + SPEND_CAP.toLocaleString('en-US') + ' cap'],
     };
   }
   commit(p: Preview, who: string | null) {
