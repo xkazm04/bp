@@ -6,7 +6,7 @@ import type { Feature } from '@/lib/data';
 import { EVIDENCE_BY_DENSITY } from '@/lib/standard/present';
 import { BH, RH, TW, deltaWin, lensHealth, stageAt, stageParts, STAGE_WORD, isLiveSt, type BldNode, type TileNode, type WingNode } from '@/lib/model';
 import type { Engine } from '../Engine';
-import type { Rect, TileGeom } from '../lens/contract';
+import type { ChannelAggregate, Rect, TileGeom } from '../lens/contract';
 import { drawText } from '../text';
 import { cloud, drawHealthBar, drawStageBar, glyphAgent, glyphPin, stageFill, stageStroke } from './glyphs';
 import { onView, rs, smooth, sxv, syv, type SRect, type View } from './view';
@@ -321,11 +321,14 @@ function aggParts(E: Engine, id: string, fs: readonly Feature[], short: boolean)
   const gTrouble = now ? E.M.agg.healthOf(id, fs, 'general').bad : 0;
   const top = E.mixS.top, D = now ? E.mixS.topD : 0;
   let lens: string[] | null = null, lensShort: string[] | null = null, lTrouble = 0;
-  if (top && D > 0.001) {
-    const a = E.lensAgg(id, top, fs);
-    lens = [c.n + (short ? '' : ' features'), ...a.parts];
-    lensShort = [String(c.n), ...a.parts];
-    lTrouble = a.trouble ?? E.M.agg.healthOf(id, fs, top).bad;
+  if (top && D > 0.001 && !failed(E, top)) {
+    let a: ChannelAggregate | null = null;
+    try { a = E.lensAgg(id, top, fs); } catch (err) { lensFailed(E, top, 'aggregate', err); }
+    if (a) {
+      lens = [c.n + (short ? '' : ' features'), ...a.parts];
+      lensShort = [String(c.n), ...a.parts];
+      lTrouble = a.trouble ?? E.M.agg.healthOf(id, fs, top).bad;
+    }
   }
   return { c, general, generalShort, lens, lensShort, gTrouble, lTrouble, D, top };
 }
