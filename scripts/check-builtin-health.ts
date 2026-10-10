@@ -12,7 +12,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { explain, lensHealth } from '../src/lib/standard/health.ts';
-import type { Feature, LensManifest } from '../src/lib/standard/types.ts';
+import { BUILTIN_LENS_IDS, type Feature, type LensManifest } from '../src/lib/standard/types.ts';
 import { FLATTEN, type LensObject } from './sample-facets.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -20,8 +20,7 @@ const read = (p: string): unknown => JSON.parse(fs.readFileSync(path.join(ROOT, 
 
 interface SampleFeature { id: string; name: string; stage: string; priority: string; kind: string; milestone: string | null; [lens: string]: unknown }
 const kettle = read('src/data/kettle.json') as { product: { asOf: string }; features: SampleFeature[] };
-const IDS = ['business', 'design', 'development', 'operations', 'security', 'quality'];
-const manifests = IDS.map((id) => read(`docs/standard/lenses/${id}.json`) as LensManifest);
+const manifests = BUILTIN_LENS_IDS.map((id) => read(`docs/standard/lenses/${id}.json`) as LensManifest);
 
 /** The lowest per-lens agreement the run accepts; below it the run exits 1. */
 const TARGET = 0.95;

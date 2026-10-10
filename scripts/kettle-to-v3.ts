@@ -18,13 +18,14 @@ import type {
   AppStructure, Capability, Context, Domain, Facet, FacetValues, Feature, FeatureBoundField, Group, Health, Kpi, LensEntry,
   LensManifest, Milestone, Stage, StructureEvent,
 } from '../src/lib/standard/types.ts';
+import { BUILTIN_LENS_IDS } from '../src/lib/standard/types.ts';
 import { FLATTEN, type LensObject } from './sample-facets.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p: string): unknown => JSON.parse(fs.readFileSync(path.join(ROOT, p), 'utf8'));
 const OUT_MAP = 'src/data/kettle.app-structure.json';
 const OUT_EVENTS = 'src/data/kettle.events.jsonl';
-const BUILTIN = ['business', 'design', 'development', 'operations', 'security', 'quality'] as const;
+const BUILTIN = BUILTIN_LENS_IDS;
 const COST_LENS = 'com.kettle.cost';
 
 // ------------------------------------------------------------------------------- the sample's shape
