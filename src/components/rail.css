@@ -17,9 +17,9 @@
 #rail .ri .sb { font: 400 12px/1 var(--sans); color: var(--ink-2); max-width: 56px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #rail .ri .n2 { position: absolute; left: 15px; top: -6px; min-width: 18px; height: 16px; padding: 0 3px; border: 1px solid var(--red); background: var(--card); color: var(--red-2); font: 600 12px/14px var(--mono); text-align: center; border-radius: 8px; }
 /* state colours: amber = waiting on a person, red = blocked or breached, mint = working */
-#rail .ri.t-amber .g, #rail .ri.t-amber .n { color: var(--amber); }
+#rail .ri.t-amber .g, #rail .ri.t-amber .n { color: var(--amber-2); }
 #rail .ri.t-red .g, #rail .ri.t-red .n { color: var(--red-2); }
-#rail .ri.t-mint .g, #rail .ri.t-mint .n { color: var(--mint); }
+#rail .ri.t-mint .g, #rail .ri.t-mint .n { color: var(--mint-2); }
 #rail .ri.t-amber { box-shadow: inset -2px 0 0 color-mix(in srgb, var(--amber) 55%, transparent); }
 #rail .ri.t-red { box-shadow: inset -2px 0 0 color-mix(in srgb, var(--red) 60%, transparent); }
 #rail .ri .pl { position: absolute; inset: 3px 4px; border: 1.5px solid currentColor; pointer-events: none; }
@@ -49,7 +49,7 @@
 #flyout .fh .x { height: 26px; padding: 0 7px; background: none; border: 1px solid var(--ink-3); font: 500 12px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); }
 #flyout .fh .x:hover { border-color: var(--ink); color: var(--ink-hi); }
 #flyout .fh .morning-btn { grid-column: 1/4; justify-content: space-between; height: 32px; letter-spacing: 0.02em; padding: 0 8px; margin-top: 4px; }
-#flyout .fh .morning-btn .am { color: var(--amber); }
+#flyout .fh .morning-btn .am { color: var(--amber-2); }
 #flyout .fb { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--ink-3) transparent; outline: none; }
 
 /* staggered entrance of the panel's blocks */
@@ -92,7 +92,7 @@
 #flyout .who-list li:hover, #flyout .who-list li.on, #flyout .who-list li:focus-visible { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 #flyout .who-list li.on { box-shadow: inset 3px 0 0 var(--lens); }
 #flyout .who-list small { display: block; color: var(--ink-2); font-size: 12px; letter-spacing: 0.03em; text-transform: uppercase; }
-#flyout .who-list .n { font: 500 13px var(--mono); color: var(--amber); }
+#flyout .who-list .n { font: 500 13px var(--mono); color: var(--amber-2); }
 #flyout .who-list .av { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--ink); display: grid; place-items: center; font: 600 12px/1 var(--mono); }
 #flyout .vit { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; padding: 10px 12px; font-size: 13px; color: var(--ink-2); }
 #flyout .vit span { display: inline-flex; align-items: center; gap: 4px; }
