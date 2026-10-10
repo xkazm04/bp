@@ -1,7 +1,7 @@
 'use client';
 // Chrome floating over the map: level ladder, scale bar, live ticker, hover card, decision card,
 // selection bar, callouts (blast radius, GA readiness, "what is going on"), toasts and the morning watch.
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   GA_MILESTONE, STAGE_PLAIN, STAGE_WORD, ORDER_TEMPLATES, TICK_CLASS, astat, dnum, fmtWait, isAgentId, isLiveSt, lensOf, morningStats,
@@ -334,15 +334,18 @@ export function Callout() {
 export function Toast() {
   const E = useEngine();
   const t = useBp((s) => s.toast);
+  const [paused, setPaused] = useState(false);       // hover/focus holds the dwell; leaving restarts it in full
+  useEffect(() => { setPaused(false); }, [t?.n]);
   useEffect(() => {
-    if (!t) return;
+    if (!t || paused) return;
     const id = window.setTimeout(() => { if (E.S.toast?.n === t.n) E.dismissToast(); }, t.action ? 9000 : 5200);
     return () => clearTimeout(id);
-  }, [E, t]);
+  }, [E, t, paused]);
   return (
+    <div className="toast-live" role="status" aria-live="polite" aria-atomic="true" style={{ display: 'contents' }}>
     <AnimatePresence>
       {t && (
-        <motion.div id="toast" key={t.n} role="status" aria-live="polite" initial={{ opacity: 0, y: -14, x: '-50%' }} animate={{ opacity: 1, y: 0, x: '-50%' }} exit={{ opacity: 0, y: -10, x: '-50%' }} transition={{ type: 'spring', stiffness: 420, damping: 32 }}>
+        <motion.div id="toast" key={t.n} onPointerEnter={() => setPaused(true)} onPointerLeave={() => setPaused(false)} onFocus={() => setPaused(true)} onBlur={() => setPaused(false)} initial={{ opacity: 0, y: -14, x: '-50%' }} animate={{ opacity: 1, y: 0, x: '-50%' }} exit={{ opacity: 0, y: -10, x: '-50%' }} transition={{ type: 'spring', stiffness: 420, damping: 32 }}>
           <span><b>{t.strong}</b>{t.text ? ' · ' + t.text : ''}</span>
           {t.action === 'undo' && <button type="button" onClick={() => E.undoDecision()}>UNDO</button>}
           {t.action === 'undo2' && <button type="button" onClick={() => { E.undoCommand(); E.dismissToast(); }}>UNDO</button>}
@@ -351,6 +354,7 @@ export function Toast() {
         </motion.div>
       )}
     </AnimatePresence>
+    </div>
   );
 }
 
