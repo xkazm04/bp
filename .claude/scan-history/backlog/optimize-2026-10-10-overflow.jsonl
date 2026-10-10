@@ -13,3 +13,8 @@
 {"context":"Rail and flyouts","title":"The engine key handler could skip defaultPrevented events, removing 4 stopImmediatePropagation calls"}
 {"context":"Lens expression variants","title":"subtle/tools/rebuild.sh still builds into its own .next-subtle on port 3111"}
 {"context":"Lens expression variants","title":"Five code comments still say six lenses"}
+{"context":"Canvas overlays and phone view","title":"Event times are formatted by hand at 7 places in 6 files, all UTC with no zone shown"}
+{"context":"Canvas overlays and phone view","title":"Engine.ts repeats the morning-watch values now read from the model (lines 567, 594, 596)"}
+{"context":"Canvas overlays and phone view","title":"Two \"log this lens failure once\" sets (hover card and plan.ts failedByEngine); one shared set on the engine"}
+{"context":"Canvas overlays and phone view","title":"shots.py covers 2 of the 16 phone cells the docs ask for; no shot of morning watch, callouts, selection bar, phone detail"}
+{"context":"Feature page (L4)","title":"Screens viewer smooth scroll ignores reduced motion (same fix as 23f3bc6; needs a live product to reproduce)"}
