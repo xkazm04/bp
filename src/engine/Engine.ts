@@ -328,8 +328,7 @@ export class Engine {
     this.perf.frames++;
     ctx.setTransform(this.RES, 0, 0, this.RES, 0, 0);
     ctx.clearRect(0, 0, this.FW, this.FH);
-    this.dimFn = S.ga ? (f) => f.milestone === GA_MILESTONE : S.key ? ((k: string) => (f: Feature) => { const h = f.lens[k]?.h; return h === 'bad' || h === 'watch'; })(S.key) : null;
-    this.blastSet = S.blast ? new Set(this.M.closure.of(S.blast)) : null;
+    if (!this.modeSeen || S.ga !== this.modeSeen.ga || S.key !== this.modeSeen.key || S.blast !== this.modeSeen.blast) this.syncModeFilters(S);
     // static layer: transform the cached raster during gestures, re-raster when it settles
     const key = this.staticKey();
     const st = this.cache.check(c, key, this.FW, this.FH);
@@ -360,6 +359,14 @@ export class Engine {
     drawPins(this, ctx, v, lod, now); drawBreaches(this, ctx, v, lod, now);
     drawPreview(this, ctx, v, lod, now); drawFocus(this, ctx, v, lod, now); drawReleases(this, ctx, v, lod, now);
     drawLasso(this, ctx);
+  }
+  /** The GA / lens-key / blast filters the layers read, rebuilt when one of the three changes, not per frame. */
+  private modeSeen: { ga: boolean; key: string | null; blast: string | null } | null = null;
+  private syncModeFilters(S: UIState) {
+    this.modeSeen = { ga: S.ga, key: S.key, blast: S.blast };
+    const k = S.key;
+    this.dimFn = S.ga ? (f) => f.milestone === GA_MILESTONE : k ? (f) => { const h = f.lens[k]?.h; return h === 'bad' || h === 'watch'; } : null;
+    this.blastSet = S.blast ? new Set(this.M.closure.of(S.blast)) : null;
   }
   private afterFrame(now: number) {
     const c = this.cam, sig = c.x.toFixed(2) + ',' + c.y.toFixed(2) + ',' + c.k.toFixed(5) + ',' + this.FW + ',' + this.FH;
