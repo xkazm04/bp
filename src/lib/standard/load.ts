@@ -4,12 +4,13 @@
 // the session (`?lenses=-security,+com.kettle.cost`). Health per feature and lens is computed ONCE
 // per data load with the reference evaluator (health.ts) and cached with its explanation; the frame
 // loop never evaluates a rule. History (a feature's stage revisions, the weekly snapshots) is replayed
-// from the events log. Pure and dependency-free (type imports and the evaluator only), so Node's type
-// stripping can run it: `node -e "import('./src/lib/standard/load.ts')"`.
+// from the events log. Pure and dependency-free (types, the bound-field list and the evaluator only),
+// so Node's type stripping can run it: `node -e "import('./src/lib/standard/load.ts')"`.
 import type {
   AppStructure, Density, Facet, FacetOverride, FacetValues, Feature as V3Feature, GlyphName, Health, HealthRule, Kpi, LensEntry, LensField,
   LensManifest, LineName, Rollup, Scalar, Stage, StructureEvent, Variation,
 } from './types.ts';
+import { FEATURE_BOUND_FIELDS } from './types.ts';
 import { bindValues, conditionFields, explain, lensHealth, matchRule, type EvalContext } from './health.ts';
 import { generalHealth } from './present.ts';
 
@@ -353,7 +354,7 @@ function buildBase(raw: unknown, eventsText: string | null, opts: LoadOptions): 
   for (const f of features) {
     const fx = SRC[f.slug];
     const feature: EvalContext['feature'] = {};
-    for (const k of ['stage', 'priority', 'kind', 'tier', 'milestone', 'status'] as const) if (fx[k] !== undefined) (feature as Record<string, unknown>)[k] = fx[k];
+    for (const k of FEATURE_BOUND_FIELDS) if (fx[k] !== undefined) (feature as Record<string, unknown>)[k] = fx[k];
     const ctx: EvalContext = { feature, kpis };
     const out: Record<string, FeatureLens> = {};
     for (const d of defs) {

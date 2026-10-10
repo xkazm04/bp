@@ -1,7 +1,8 @@
 // Types for the app-structure v3 standard (context-map.json v3) and lens manifests v1. They mirror
 // docs/standard/schema/*.schema.json, which are normative; the spec is docs/standard/app-structure-v3.md.
-// This file holds types only, so Node can load the evaluator with type stripping. The built-in lens
-// ids are not listed here: the catalog (catalog.ts) is the list, and code never branches on a lens id.
+// This file holds types and one constant only (the bound-field whitelist), so Node can load the
+// evaluator with type stripping. The built-in lens ids are not listed here: the catalog (catalog.ts)
+// is the list, and code never branches on a lens id.
 
 // ------------------------------------------------------------------------------------- vocabulary
 /** The fixed, ordered lifecycle. `flagged` = live behind a partial rollout. */
@@ -15,8 +16,13 @@ export type LensId = string;
 export type Scalar = string | number | boolean;
 /** Field key -> value. An unknown value is omitted, never null. */
 export type FacetValues = Record<string, Scalar>;
-/** The core feature fields a lens field may bind to (`source: { feature }`). Read-only, never stored in facets. */
-export type FeatureBoundField = 'stage' | 'priority' | 'kind' | 'tier' | 'milestone' | 'status';
+/**
+ * The core feature fields a lens field may bind to (`source: { feature }`): the schema's whitelist
+ * (lens-manifest-1.schema.json, `source.feature`). Read-only, never stored in facets. The type is
+ * derived from this list, so the loader that hands them to the evaluator cannot miss one.
+ */
+export const FEATURE_BOUND_FIELDS = ['stage', 'priority', 'kind', 'tier', 'milestone', 'status'] as const;
+export type FeatureBoundField = (typeof FEATURE_BOUND_FIELDS)[number];
 
 // ---------------------------------------------------------------------------------- lens manifest
 export type FieldType = 'number' | 'integer' | 'percent' | 'money' | 'boolean' | 'string' | 'enum' | 'date';
