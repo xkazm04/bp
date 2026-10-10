@@ -4,7 +4,7 @@
 // tile body (a lone lens), and text crossfades between the general and the dominant lens's content.
 import type { Feature } from '@/lib/data';
 import { EVIDENCE_BY_DENSITY } from '@/lib/standard/present';
-import { BH, RH, TW, deltaWin, lensHealth, stageAt, stageParts, STAGE_WORD, isLiveSt, type BldNode, type TileNode, type WingNode } from '@/lib/model';
+import { BH, RH, deltaWin, lensHealth, stageAt, stageParts, STAGE_WORD, type BldNode, type TileNode } from '@/lib/model';
 import type { Engine } from '../Engine';
 import type { ChannelAggregate, Rect, TileGeom } from '../lens/contract';
 import { drawText } from '../text';
@@ -358,12 +358,9 @@ function drawSwarmLine(E: Engine, ctx: CanvasRenderingContext2D, x: number, y: n
   return used;
 }
 
-/** Labels are always drawn in the cached layer; the intro reveals the whole raster with a wipe. */
-function labelAlpha(_E: Engine) { return 1; }
-
 function drawWingLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: BldNode): number {
   const k = v.k, u = E.U, th = E.th, tx = E.tx, sim = E.M.sim;
-  const a0 = labelAlpha(E) * (E.M.P.scale > 1 ? smooth(E.KB1 * 0.62, E.KB1 * 0.8, k) : 1);
+  const a0 = E.M.P.scale > 1 ? smooth(E.KB1 * 0.62, E.KB1 * 0.8, k) : 1;
   const vis = B.wings.filter((W) => W.w * k >= 80 * u);
   if (!vis.length || a0 <= 0) return 0;
   let FS = 14, ML = 2;
@@ -416,7 +413,7 @@ function drawBuildingLabel(E: Engine, ctx: CanvasRenderingContext2D, v: View, B:
   if (E.M.P.scale === 1) return;
   const r = rs(v, B, scratch), u = E.U, th = E.th, tx = E.tx;
   if (r.w < 150 * u || !onView(v, r, 200)) return;
-  const base = r.y - 12 * u - (wingA > 0 ? 112 * u * wingA : 0), a = labelAlpha(E);
+  const base = r.y - 12 * u - (wingA > 0 ? 112 * u * wingA : 0), a = 1;
   ctx.globalAlpha = a;
   const wdt = Math.min(r.w, 560 * u), ag = aggParts(E, B.id, B.feats, false), x = r.x;
   fadePair(ctx, a, ag.D, () => drawStageBar(ctx, th, x, base - 6 * u, wdt, 8 * u, ag.c), ag.lens ? () => drawHealthBar(ctx, th, x, base - 6 * u, wdt, 8 * u, E.M.agg.healthOf(B.id, B.feats, ag.top!)) : null);
@@ -440,7 +437,7 @@ function drawBuildingLabel(E: Engine, ctx: CanvasRenderingContext2D, v: View, B:
 function drawRoomLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: BldNode) {
   const k = v.k, u = E.U, th = E.th, tx = E.tx, hasSw = E.M.sim.has;
   for (const W of B.wings) {
-    const a = clamp((W.w * k - 100 * u) / 8, 0, 1) * labelAlpha(E) * (E.M.P.scale > 1 ? smooth(E.KB1 * 0.62, E.KB1 * 0.8, k) : 1);
+    const a = clamp((W.w * k - 100 * u) / 8, 0, 1) * (E.M.P.scale > 1 ? smooth(E.KB1 * 0.62, E.KB1 * 0.8, k) : 1);
     if (a <= 0) continue;
     for (const R of W.rooms) {
       const r = rs(v, R, scratch); if (!onView(v, r)) continue;
@@ -478,7 +475,7 @@ function drawRoomLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: Bl
 function drawBayTags(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: BldNode) {
   const k = v.k, u = E.U, th = E.th, tx = E.tx;
   if (BH * k < 23 * u) return;
-  const a = clamp((BH * k - 23 * u) / 2, 0, 1) * labelAlpha(E);
+  const a = clamp((BH * k - 23 * u) / 2, 0, 1);
   const cf = tx.f(12, 500, true), nf = tx.f(13.5, 600);
   ctx.globalAlpha = a;
   for (const W of B.wings) for (const R of W.rooms) for (const Bay of R.bays) {
@@ -504,7 +501,7 @@ function drawChronology(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: Bl
   const r = rs(v, B, scratch), u = E.U, th = E.th, tx = E.tx;
   if (r.w < 560 * u) return;
   const y = r.y + r.h + 22 * u; if (y > E.SAFE.b - 26 * u) return;
-  ctx.globalAlpha = labelAlpha(E) * 0.95;
+  ctx.globalAlpha = 0.95;
   ctx.strokeStyle = th.inkA(0.55); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(r.x, y); ctx.lineTo(r.x + r.w, y); ctx.stroke();
   ctx.fillStyle = th.inkA(0.75); ctx.beginPath(); ctx.moveTo(r.x + r.w + 6, y); ctx.lineTo(r.x + r.w - 4, y - 4); ctx.lineTo(r.x + r.w - 4, y + 4); ctx.fill();
   const f = tx.f(12, 500, true);
@@ -534,7 +531,3 @@ export function featRect(E: Engine, v: View, fid: string, lod: number, out?: SRe
   r.x = sxv(v, rb.x) + T.bi * sw; r.y = syv(v, rb.y); r.w = sw; r.h = rb.h * v.k;
   return r;
 }
-
-export const TILE_W = TW;
-export type { WingNode };
-export { isLiveSt, lensHealth };
