@@ -138,7 +138,7 @@ export function SwarmPanel() {
           <div key={q.id}>
             <button type="button" className={'crew' + (on ? ' on' : '')} onClick={() => E.patch({ crew: on ? null : q.id })} aria-expanded={on}>
               <span className="n">{q.name.replace(' crew', '')}<i>{q.role}</i></span>
-              <span className="c"><span style={{ color: 'var(--mint)' }}>{cc.working}</span><span style={{ color: 'var(--amber)' }}>{cc.waiting}</span><span style={{ color: 'var(--red)' }}>{cc.blocked + cc.failed}</span></span>
+              <span className="c"><span style={{ color: 'var(--mint-2)' }}>{cc.working}</span><span style={{ color: 'var(--amber-2)' }}>{cc.waiting}</span><span style={{ color: 'var(--red-2)' }}>{cc.blocked + cc.failed}</span></span>
               <span className="f">{q.focus}</span>
               <span className="stk">{(['working', 'waiting', 'blocked', 'failed', 'paused'] as const).map((k) => cc[k] ? <i key={k} style={{ width: (100 * cc[k]) / ag.length + '%', background: k === 'working' ? 'var(--mint)' : k === 'waiting' ? 'var(--amber)' : k === 'paused' ? 'var(--ink-3)' : 'var(--red)' }} /> : null)}</span>
             </button>
@@ -271,7 +271,7 @@ export function PlanPanel() {
                 return (
                   <button key={f.id} type="button" onClick={() => E.openFeature(f.id)} onPointerEnter={() => E.setHl(f.id)} onPointerLeave={() => E.setHl(null)}>
                     <StageSym st={st} w={20} h={13} />
-                    <span>{f.name}{ag ? <span style={{ color: 'var(--mint)', font: '500 12px var(--mono)' }}> ◉{ag}</span> : null}</span>
+                    <span>{f.name}{ag ? <span style={{ color: 'var(--mint-2)', font: '500 12px var(--mono)' }}> ◉{ag}</span> : null}</span>
                     <span className="w" style={{ color: now && hl === 'bad' ? 'var(--red-2)' : now && hl === 'watch' ? 'var(--amber)' : undefined }}>{st ? STAGE_WORD[st] : 'Not yet'}</span>
                   </button>
                 );

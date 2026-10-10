@@ -23,7 +23,7 @@
 #rail .ri.t-amber { box-shadow: inset -2px 0 0 color-mix(in srgb, var(--amber) 55%, transparent); }
 #rail .ri.t-red { box-shadow: inset -2px 0 0 color-mix(in srgb, var(--red) 60%, transparent); }
 #rail .ri .pl { position: absolute; inset: 3px 4px; border: 1.5px solid currentColor; pointer-events: none; }
-#rail .ri.t-amber .pl { color: var(--amber); } #rail .ri.t-red .pl { color: var(--red); } #rail .ri.t-mint .pl { color: var(--mint); }
+#rail .ri.t-amber .pl { color: var(--amber-2); } #rail .ri.t-red .pl { color: var(--red); } #rail .ri.t-mint .pl { color: var(--mint-2); }
 #rail .ri[data-k='find'] { border-bottom: 1px solid var(--ink-4); padding-bottom: 10px; margin-bottom: 3px; }
 #rail .ri[data-k='plan'] { border-top: 1px solid var(--ink-4); margin-top: 3px; padding-top: 10px; }
 #rail .sp { flex: 1 1 auto; min-height: 4px; }
@@ -44,7 +44,7 @@
 #flyout { position: absolute; right: 86px; top: 74px; bottom: var(--bb); width: 340px; z-index: 6; background: var(--card); border: 1px solid var(--ink-3); box-shadow: 0 18px 50px var(--shadow); display: flex; flex-direction: column; }
 #flyout .fh { flex: 0 0 auto; display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 4px 9px; padding: 10px 10px 10px 12px; border-bottom: 1px solid var(--ink-3); }
 #flyout .fh .g svg { width: 22px; height: 22px; display: block; color: var(--ink-2); }
-#flyout .fh.t-amber .g svg { color: var(--amber); } #flyout .fh.t-red .g svg { color: var(--red-2); } #flyout .fh.t-mint .g svg { color: var(--mint); }
+#flyout .fh.t-amber .g svg { color: var(--amber-2); } #flyout .fh.t-red .g svg { color: var(--red-2); } #flyout .fh.t-mint .g svg { color: var(--mint-2); }
 #flyout .fh h2 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: var(--ink-hi); line-height: 1.2; min-width: 0; }
 #flyout .fh .x { height: 26px; padding: 0 7px; background: none; border: 1px solid var(--ink-3); font: 500 12px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); }
 #flyout .fh .x:hover { border-color: var(--ink); color: var(--ink-hi); }

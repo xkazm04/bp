@@ -121,7 +121,7 @@ function HoverBody() {
         <div className="n">{f.name}</div>
         <div className="s">{line}.</div>
         {lw && <div className="e">{lw}</div>}
-        {now && f.trouble.length ? <div className="t">{f.trouble.slice(0, 3).map((t) => <div key={t.lens} style={t.h === 'watch' ? { color: 'var(--amber)' } : undefined}>◆ {M.P.LENS[t.lens].name}: {t.why}</div>)}</div> : null}
+        {now && f.trouble.length ? <div className="t">{f.trouble.slice(0, 3).map((t) => <div key={t.lens} style={t.h === 'watch' ? { color: 'var(--amber-2)' } : undefined}>◆ {M.P.LENS[t.lens].name}: {t.why}</div>)}</div> : null}
         <SwarmLines fs={[f]} />
         {now && sim.has && (sim.AGF[f.id] || []).slice(0, 4).map((a) => <div key={a.id} className="sw dim">{a.base} · {a.task}</div>)}
         {br.length ? <div className="t">● Breaches order {br.map((b) => b.id).join(', ')}</div> : null}
@@ -272,8 +272,8 @@ export function Callout() {
         <button type="button" className="x" onClick={() => E.patch({ info: false })}>CLOSE</button>
         <h4>What is going on here</h4><div className="big">{s.tgt.label}</div>
         <div className="row"><span>Features</span><b>{s.tgt.n}</b></div>
-        <div className="row"><span>Agents on them</span><b style={{ color: 'var(--mint)' }}>{ag.length}</b></div>
-        <div className="row"><span>Questions open</span><b style={{ color: 'var(--amber)' }}>{ds.length}</b></div>
+        <div className="row"><span>Agents on them</span><b style={{ color: 'var(--mint-2)' }}>{ag.length}</b></div>
+        <div className="row"><span>Questions open</span><b style={{ color: 'var(--amber-2)' }}>{ds.length}</b></div>
         <div className="sub">AGENTS</div>
         {ag.length ? ag.slice(0, 8).map((a) => <button key={a.id} type="button" className="lnk" onClick={() => E.flyToFeature(a.f)}><i>{a.base}</i>{astat(a)} · {a.task.length > 60 ? a.task.slice(0, 58) + '…' : a.task}</button>) : <div style={{ color: 'var(--ink-2)' }}>No agent is working here right now.</div>}
         <div className="sub">QUESTIONS</div>
@@ -293,7 +293,7 @@ export function Callout() {
         <div className="row"><span>…of them live for customers</span><b style={{ color: 'var(--red-2)' }}>{prodDir.length}</b></div>
         <div className="row"><span>Reached through the chain</span><b>{bl.length}</b></div>
         <div className="row"><span>…of them live for customers</span><b>{prodAll.length}</b></div>
-        {sim.has && <div className="row"><span>Agents working inside that radius</span><b style={{ color: 'var(--mint)' }}>{sim.agents.filter((a) => a.f === s.blast || bl.includes(a.f)).length}</b></div>}
+        {sim.has && <div className="row"><span>Agents working inside that radius</span><b style={{ color: 'var(--mint-2)' }}>{sim.agents.filter((a) => a.f === s.blast || bl.includes(a.f)).length}</b></div>}
         <div className="sub">DIRECT DEPENDENTS</div>
         {direct.map((id) => { const g = M.P.F[id]; return <button key={id} type="button" className="lnk" onClick={() => { E.setMode({ blast: null }); E.openFeature(id); }}>{g.code ? <i>{g.code}</i> : null}{g.name} <span style={{ color: 'var(--ink-2)' }}>· {g.stage ? STAGE_WORD[g.stage].toLowerCase() : 'stage unknown'}</span></button>; })}
       </>
@@ -313,9 +313,9 @@ export function Callout() {
         <div className="row"><span>Partly open (flagged)</span><b>{cnt((f) => f.stage === 'flagged')}</b></div>
         <div className="row"><span>Still being built or reviewed</span><b>{cnt((f) => f.stage === 'in-dev' || f.stage === 'in-review')}</b></div>
         <div className="row"><span>Not started</span><b>{cnt((f) => f.stage === 'specified' || f.stage === 'idea')}</b></div>
-        <div className="row"><span>Blocked</span><b style={{ color: 'var(--amber)' }}>{blocked.length}</b></div>
+        <div className="row"><span>Blocked</span><b style={{ color: 'var(--amber-2)' }}>{blocked.length}</b></div>
         <div className="row"><span>Done but unsafe</span><b style={{ color: 'var(--red-2)' }}>{unsafe.length}</b></div>
-        {sim.has && <><div className="row"><span>Agents on it right now</span><b style={{ color: 'var(--mint)' }}>{onM2} of {sim.agents.length}</b></div><div style={{ marginTop: 8 }}><button type="button" className="bt go" style={{ width: '100%', justifyContent: 'center' }} onClick={() => E.preview('ga')}>Put the swarm on it…</button></div></>}
+        {sim.has && <><div className="row"><span>Agents on it right now</span><b style={{ color: 'var(--mint-2)' }}>{onM2} of {sim.agents.length}</b></div><div style={{ marginTop: 8 }}><button type="button" className="bt go" style={{ width: '100%', justifyContent: 'center' }} onClick={() => E.preview('ga')}>Put the swarm on it…</button></div></>}
         <div className="sub">DONE BUT UNSAFE</div>
         {unsafe.map((f) => <button key={f.id} type="button" className="lnk" onClick={() => E.openFeature(f.id)}>{f.code ? <i>{f.code}</i> : null}{f.name}</button>)}
         <div className="sub">BLOCKED</div>

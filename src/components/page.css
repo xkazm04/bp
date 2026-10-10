@@ -79,7 +79,7 @@
 .pg-tile .sh { font: 600 12px var(--mono); letter-spacing: 0.1em; color: var(--ink-2); }
 .pg-tile .nm { font-size: 13px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pg-tile .hw { margin-left: auto; font: 600 12px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); white-space: nowrap; }
-.pg-tile.bad .hw { color: var(--red-2); } .pg-tile.watch .hw { color: var(--amber); } .pg-tile.good .hw { color: var(--mint); }
+.pg-tile.bad .hw { color: var(--red-2); } .pg-tile.watch .hw { color: var(--amber-2); } .pg-tile.good .hw { color: var(--mint-2); }
 .pg-tile .lab { font-size: 13px; color: var(--ink-2); margin-top: 4px; }
 .pg-tile .big { font: 500 28px/1.1 var(--mono); color: var(--ink-hi); letter-spacing: -0.01em; overflow-wrap: anywhere; }
 .pg-tile .why { font-size: 13px; line-height: 1.35; color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -91,13 +91,13 @@
 .pg-hero.bad { border-left-color: var(--red); } .pg-hero.watch { border-left-color: var(--amber); } .pg-hero.good { border-left-color: var(--mint); }
 .pg-hero .lab { display: block; font: 500 12px var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-2); }
 .pg-hero .big { display: block; margin: 6px 0 8px; font: 500 54px/1 var(--mono); color: var(--ink-hi); letter-spacing: -0.02em; overflow-wrap: anywhere; }
-.pg-hero .big.bad { color: var(--red-2); } .pg-hero .big.watch { color: var(--amber); }
+.pg-hero .big.bad { color: var(--red-2); } .pg-hero .big.watch { color: var(--amber-2); }
 .pg-hero .desc { display: block; font-size: 14px; line-height: 1.4; color: var(--ink-2); }
 .pg-hero .hw { display: block; font: 600 30px/1 var(--font-sans), system-ui, sans-serif; letter-spacing: 0.01em; color: var(--ink-2); }
-.pg-hero.bad .hw { color: var(--red-2); } .pg-hero.watch .hw { color: var(--amber); } .pg-hero.good .hw { color: var(--mint); }
+.pg-hero.bad .hw { color: var(--red-2); } .pg-hero.watch .hw { color: var(--amber-2); } .pg-hero.good .hw { color: var(--mint-2); }
 .pg-hero .why { margin: 10px 0 0; font-size: 19px; line-height: 1.38; color: var(--ink); }
 .pg-hero .ov { margin: 10px 0 0; font-size: 14px; line-height: 1.4; color: var(--ink); border-left: 2px solid var(--amber); padding-left: 8px; }
-.pg-hero .ov b { color: var(--amber); font-weight: 600; }
+.pg-hero .ov b { color: var(--amber-2); font-weight: 600; }
 .d-simple .pg-hero .big { font-size: 64px; }
 .d-simple .pg-hero .why { font-size: 21px; }
 .d-dense .pg-hero { padding: 14px 20px; } .d-dense .pg-hero .big { font-size: 42px; } .d-dense .pg-hero .why { font-size: 17px; }
@@ -109,13 +109,13 @@
 .pg-ev .lab { font-size: 13px; color: var(--ink-2); }
 .pg-ev b { font: 500 24px/1.15 var(--mono); color: var(--ink-hi); overflow-wrap: anywhere; }
 .d-simple .pg-ev b { font-size: 30px; } .d-dense .pg-ev b { font-size: 19px; }
-.pg-ev .ev.bad b { color: var(--red-2); } .pg-ev .ev.watch b { color: var(--amber); }
+.pg-ev .ev.bad b { color: var(--red-2); } .pg-ev .ev.watch b { color: var(--amber-2); }
 .pg-ev .desc { font-size: 13px; line-height: 1.35; color: var(--ink-2); }
 
 .pg-rest .rows .r { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; line-height: 1.5; padding: 2px 0; border-bottom: 1px solid var(--ink-4); }
 .pg-rest .rows .r span { color: var(--ink-2); }
 .pg-rest .rows .r b { font: 500 14px var(--mono); text-align: right; color: var(--ink); }
-.pg-rest .rows .r b.bad { color: var(--red-2); } .pg-rest .rows .r b.watch { color: var(--amber); }
+.pg-rest .rows .r b.bad { color: var(--red-2); } .pg-rest .rows .r b.watch { color: var(--amber-2); }
 .pg-rest .rows.two { display: grid; grid-template-columns: 1fr 1fr; column-gap: 28px; }
 .pg-rest summary { cursor: pointer; font: 500 12px var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-2); padding: 4px 0; }
 .pg-rest summary:hover { color: var(--ink-hi); }
@@ -128,7 +128,7 @@
 .pg-mrs .sp .one { font: 400 12px var(--mono); color: var(--ink-2); white-space: nowrap; }
 .pg-mrs .sp .spk { width: 72px; height: 18px; }
 .pg-mrs b { font: 500 17px var(--mono); color: var(--ink-hi); text-align: right; white-space: nowrap; }
-.pg-mrs b.bad { color: var(--red-2); } .pg-mrs b.watch { color: var(--amber); }
+.pg-mrs b.bad { color: var(--red-2); } .pg-mrs b.watch { color: var(--amber-2); }
 .pg-mrs .ar { font-style: normal; font-size: 12px; margin-right: 5px; }
 .pg-mrs .tg { font: 400 12px var(--mono); color: var(--ink-2); }
 
