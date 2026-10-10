@@ -94,8 +94,10 @@ function RailItem({ it, on, idx }: { it: Item; on: boolean; idx: number }) {
     if (reduce || now - lastAt.current < 3000) return;
     lastAt.current = now; setPulse((p) => p + 1);
   }, [it.n, reduce]);
+  // the name states each figure by meaning (label first, for voice control), from the target values so it never churns during a count tween
+  const name = it.label + (it.n !== null ? ': ' + it.n : '') + (it.sub ? ' ' + it.sub : '') + (it.n2 ? ', ' + (it.n2title ?? it.n2) : '');
   return (
-    <button type="button" className={'ri t-' + it.tone + (on ? ' on' : '')} data-k={it.k} data-idx={idx} aria-expanded={on} aria-controls="flyout" title={it.title + (it.k === 'find' ? ' ( / )' : it.k === 'view' ? ' ( P )' : '')}
+    <button type="button" className={'ri t-' + it.tone + (on ? ' on' : '')} data-k={it.k} data-idx={idx} aria-expanded={on} aria-controls="flyout" aria-label={name} title={it.title + (it.k === 'find' ? ' ( / )' : it.k === 'view' ? ' ( P )' : '')}
       onClick={() => E.setDockTab(it.k)}>
       {pulse > 0 && <motion.span key={pulse} className="pl" aria-hidden="true" initial={{ opacity: 0.55, scale: 0.92 }} animate={{ opacity: 0, scale: 1.08 }} transition={{ duration: 0.8, ease: 'easeOut' }} />}
       <span className="g">{it.glyph}{it.n2 ? <b className="n2" title={it.n2title}>{it.n2}</b> : null}</span>
