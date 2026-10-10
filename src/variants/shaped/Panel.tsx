@@ -6,7 +6,7 @@
 import type { CSSProperties } from 'react';
 import type { Feature } from '@/lib/data';
 import { bl, isBuiltinLens, type BuiltinLens } from '../base/legacy';
-import { DefaultLensPanel } from '@/components/sheet/LensPanel';
+import { DefaultLensPanel, hmark } from '@/components/sheet/LensPanel';
 import type { SheetPanelProps } from '../types';
 import { ICONS, iconFor, type IconId } from './icons';
 
@@ -62,7 +62,7 @@ export function ShapedPanel(props: SheetPanelProps) {
       <div className={cls.join(' ')}>
         {badge}
         <Edges lens={lens} f={f} rollout={rollout} />
-        <h5><span>{props.def.short} · Design</span><span className="h">{de.health === 'bad' ? 'BAD' : de.health === 'watch' ? 'WATCH' : de.health === 'good' ? 'GOOD' : 'N/A'}</span></h5>
+        <h5><span>{props.def.short} · Design</span><span className="h">{hmark(de.health)}</span></h5>
         <div className="shp-fact">{DWORD[de.status] ?? de.status}</div>
         {(a11y || de.specDrift) && <div className="shp-sub">{[a11y && a11y[0].toUpperCase() + a11y.slice(1), de.specDrift ? 'built off the design' : ''].filter(Boolean).join(' · ')}</div>}
       </div>
