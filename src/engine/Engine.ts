@@ -109,7 +109,7 @@ export class Engine {
   private simTimeListeners = new Set<(t: number) => void>();
   private lastSimSec = -1;
   private disposers: (() => void)[] = [];
-  /** Frame-time probe for the perf report (window.__bpPerf). */
+  /** Frame and raster counters for the perf scripts (window.__bp.perf; scripts/perf.py, docs/perf.md). */
   perf = { frames: 0, rasters: 0, lastRasterMs: 0 };
 
   constructor(o: EngineOptions) {
@@ -411,8 +411,10 @@ export class Engine {
   setSpeed(n: number) { this.M.sim.setSpeed(n); this.scheduleSimSync(true); this.dirty(); }
   stepSpeed(dir: number) { const i = SPEEDS.indexOf(this.M.sim.speed as (typeof SPEEDS)[number]); this.setSpeed(SPEEDS[clamp(i + dir, 0, SPEEDS.length - 1)]); }
   restart() { this.M.sim.reset(); this.set({ tgt: { ids: {}, n: 0, label: '' }, prev: null, dec: null }); this.scheduleSimSync(true); }
-  /** Expand or collapse the timeline panel (it overlays the plan; the safe area keeps the collapsed strip). */
-  /** The timeline panel and a rail flyout never stand open together: opening one closes the other. */
+  /**
+   * Expand or collapse the timeline panel (it overlays the plan; the safe area keeps the collapsed strip).
+   * The timeline panel and a rail flyout never stand open together: opening one closes the other.
+   */
   setTimeline(on = !this.S.tl) { if (on !== this.S.tl) this.set(on ? { tl: on, dtab: null } : { tl: on }); }
   seek(t: number) { if (!this.isNow) this.set({ t: this.M.P.asOf }); this.M.sim.seek(t); this.scheduleSimSync(true); this.dirty(); }
 
