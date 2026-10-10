@@ -2,6 +2,7 @@
 // (median creation date); inside a bay, features are placed oldest first. The plan is computed once
 // per product and never moves: lenses, time and decisions change what places say, not where they are.
 import type { Capability, Feature, Structure } from '@/lib/data';
+import { dnum } from './aggregates';
 import { WING_DEFS, type WingDef } from './constants';
 import type { Building, PDomain, Product } from './product';
 
@@ -23,8 +24,6 @@ export interface Layout {
   walk: RoomNode[];
   wingDefs: WingDef[];
 }
-
-const dnum = (d: string) => Date.parse(d + 'T00:00:00Z') / 864e5;
 
 /** Wing order is derived from the base data so every product line shares it. */
 export function wingOrder(K: Structure): WingDef[] {
