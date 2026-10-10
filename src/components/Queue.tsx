@@ -24,10 +24,14 @@ function metricMove(p: Proposal, unitOf: (lens: string, key: string) => string |
   return last ? `${p.metric}: ${fmtN(last.value)} → ${fmtN(last.value + d)}${u}` : `${p.metric}: ${move} (not measured yet)`;
 }
 
+/** A decline note survives a refused write: the card remounts when the decision reopens, so the draft lives outside it. */
+const declineDrafts = new Map<string, string>();
+
 function LiveItem({ d }: { d: SimDecision }) {
   const E = useEngine(), M = E.M, sim = M.sim, live = useLive();
   const s = useBp((s) => ({ dec: s.dec, who: s.who, view: s.view }), shallowEqual);
-  const [declining, setDeclining] = useState(false), [note, setNote] = useState('');
+  const [declining, setDeclining] = useState(() => declineDrafts.has(d.base)), [note, setNote] = useState(() => declineDrafts.get(d.base) ?? '');
+  const cancelDecline = () => { declineDrafts.delete(d.base); setNote(''); setDeclining(false); };
   const f = M.P.F[d.f], on = s.dec === d.id, scan = live?.product.scan;
   const p = scan?.proposals.find((x) => x.id === d.base);
   const urg = d.urg === 'high' ? 'Urgent' : d.urg === 'medium' ? 'Soon' : 'When you can';
@@ -53,11 +57,11 @@ function LiveItem({ d }: { d: SimDecision }) {
       </div>
       <div className="mt">{f.name} · {M.P.D[f.domain]?.name ?? f.domain} · waiting <b>{fmtWait(sim.waitMin(d))}</b></div>
       {declining ? (
-        <form className="dn" onClick={stop} onSubmit={(e) => { e.preventDefault(); E.decide(d.id, 1, note.trim() || undefined); setDeclining(false); }}>
+        <form className="dn" onClick={stop} onSubmit={(e) => { e.preventDefault(); declineDrafts.set(d.base, note.trim()); E.decide(d.id, 1, note.trim() || undefined); }}>
           <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why not? (optional)" aria-label="Decline note (optional)" maxLength={500} autoFocus
-            onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); setDeclining(false); } }} />
+            onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); cancelDecline(); } }} />
           <button type="submit" className="bt">Decline</button>
-          <button type="button" className="bt" onClick={() => setDeclining(false)}>Cancel</button>
+          <button type="button" className="bt" onClick={cancelDecline}>Cancel</button>
         </form>
       ) : (
         <div className="row" style={{ marginTop: 7 }}>
@@ -80,7 +84,7 @@ function Item({ d }: { d: SimDecision }) {
       layout="position" initial={{ opacity: 0, x: 18 }} animate={{ opacity: emph ? 1 : 0.55, x: 0 }} exit={{ opacity: 0, x: -24, transition: { duration: 0.2 } }}
       transition={{ type: 'spring', stiffness: 380, damping: 34 }}
       className={'qi u-' + d.urg + (on ? ' on' : '')} tabIndex={0} aria-current={on}
-      onClick={() => E.openDecision(d.id)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); E.openDecision(d.id); } }}
+      onClick={() => E.openDecision(d.id)} onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); E.openDecision(d.id); } }}
       onPointerEnter={() => !E.S.dec && E.setHlDec(d.id)} onPointerLeave={() => E.setHlDec(null)}
     >
       <div className="k"><span>{urg} · <span className="lz">{sheetOf(M.P, d.lens).no}</span></span><span>{d.base}{M.P.scale > 1 ? ' · ' + M.P.buildings[d.b].short : ''}{d.isNew ? ' · NEW' : ''}</span></div>
