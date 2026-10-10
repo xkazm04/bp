@@ -63,6 +63,25 @@ const make = () => {
   expect(!c.moving, 'a settled wheel is not moving');
 }
 
+// ------------------------------------------------------------------ pinch: an immediate zoom about a point
+{
+  const { c, moves } = make();
+  c.set({ x: 2000, y: 1200, k: 0.5 });
+  c.zoomAt(900, 500, 1.6); // a wheel in flight: a pinch takes over from it
+  const px = 410, py = 330, wx = c.wx(px), wy = c.wy(py), m0 = moves();
+  const z = (c as unknown as { zoomTo?: (px: number, py: number, k: number) => void }).zoomTo;
+  expect(typeof z === 'function', 'Camera.zoomTo exists (the pinch goes through the camera, not around it)');
+  if (typeof z === 'function') {
+    z.call(c, px, py, 1.3);
+    expect(near(c.k, 1.3), `zoomTo lands on k at once (got ${c.k})`);
+    expect(near(c.wx(px), wx, 1e-9) && near(c.wy(py), wy, 1e-9), 'zoomTo keeps the world point under the pinch centre');
+    expect(!c.wz && !c.moving, 'zoomTo cancels the wheel in flight');
+    expect(moves() === m0 + 1, `zoomTo reports one move (got ${moves() - m0})`);
+    z.call(c, px, py, 99);
+    expect(c.k === c.KMAX, `zoomTo clamps k to KMAX (got ${c.k})`);
+  }
+}
+
 // ------------------------------------------------------------------ clamp to world
 {
   const { c } = make();

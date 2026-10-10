@@ -845,11 +845,8 @@ export class Engine {
       if (this.ptrs.has(e.pointerId)) this.ptrs.set(e.pointerId, p);
       if (this.pinch) {
         if (this.ptrs.size < 2) return;
-        const [a, b] = [...this.ptrs.values()], d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-        const wx = this.cam.wx(mx), wy = this.cam.wy(my);
-        this.cam.stopFly(); this.cam.wz = null;
-        this.cam.k = clamp((this.pinch.k * d) / this.pinch.d, this.cam.KMIN, this.cam.KMAX);
-        this.cam.x = wx - (mx - this.FW / 2) / this.cam.k; this.cam.y = wy - (my - this.FH / 2) / this.cam.k; this.cam.clampToWorld(); this.camMoved();
+        const [a, b] = [...this.ptrs.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
+        this.cam.zoomTo((a.x + b.x) / 2, (a.y + b.y) / 2, (this.pinch.k * d) / this.pinch.d);
         return;
       }
       const dg = this.drag;

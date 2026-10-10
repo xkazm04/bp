@@ -80,11 +80,20 @@ export class Camera {
     if (!wz) return false;
     let nk = this.k + (wz.k - this.k) * 0.28;
     if (Math.abs(nk - wz.k) / wz.k < 0.003) nk = wz.k;
-    this.k = nk; this.x = wz.wx - (wz.px - this.FW / 2) / nk; this.y = wz.wy - (wz.py - this.FH / 2) / nk;
+    this.k = nk; this.pin(wz.wx, wz.wy, wz.px, wz.py);
     if (nk === wz.k) this.wz = null;
     this.clampToWorld();
     return !!this.wz;
   }
+  /** Zoom to k at once, keeping the world point under screen point (px, py) where it is (a pinch). */
+  zoomTo(px: number, py: number, k: number) {
+    const wx = this.wx(px), wy = this.wy(py);
+    this.stopFly(); this.wz = null;
+    this.k = clamp(k, this.KMIN, this.KMAX); this.pin(wx, wy, px, py);
+    this.clampToWorld(); this.onMove();
+  }
+  /** Place the camera so world point (wx, wy) draws at screen point (px, py) at the current k. */
+  private pin(wx: number, wy: number, px: number, py: number) { this.x = wx - (px - this.FW / 2) / this.k; this.y = wy - (py - this.FH / 2) / this.k; }
   panBy(dx: number, dy: number, from: Cam) { this.stopFly(); this.wz = null; this.x = from.x - dx / this.k; this.y = from.y - dy / this.k; this.clampToWorld(); this.onMove(); }
   clampToWorld() {
     const W = this.world, m = 120 / this.k;
