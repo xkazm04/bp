@@ -16,8 +16,8 @@
 .tl-clk .tl-k { letter-spacing: 0.12em; }
 .tl-hm { color: var(--ink-hi); font-variant-numeric: tabular-nums; }
 .tl-st { color: var(--ink); letter-spacing: 0.08em; }
-.tl-st.on { color: var(--mint); }
-.tl-st.warn { color: var(--amber); }
+.tl-st.on, #clock .tl-st.on { color: var(--mint-2); }
+.tl-st.warn, #clock .tl-st.warn { color: var(--amber-2); }
 @media (max-width: 1100px) { .tl-exp kbd, .tl-pos .tl-dim, .tl-clk .tl-dim { display: none; } }
 
 /* travelled: the strip turns accent so "this is not now" cannot be missed */
