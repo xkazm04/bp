@@ -6,7 +6,9 @@ export class KeyPlan {
   private base = document.createElement('canvas');
   private key = '';
   W = 162; H = 72;
-  constructor(private E: Engine, public cv: HTMLCanvasElement) {}
+  private E: Engine; cv: HTMLCanvasElement;
+  // Plain fields, not parameter properties: Node's type stripping (how scripts/*.ts run) cannot load those.
+  constructor(E: Engine, cv: HTMLCanvasElement) { this.E = E; this.cv = cv; }
   scale() {
     const Wd = this.E.M.L.world, s = Math.min((this.W - 12) / Wd.w, (this.H - 10) / Wd.h);
     return { s, ox: (this.W - Wd.w * s) / 2 - Wd.x * s, oy: (this.H - Wd.h * s) / 2 - Wd.y * s };

@@ -15,7 +15,8 @@ export function mixTarget(ids: readonly string[], v: ViewId): LensMix {
 }
 
 /**
- * Derived values, recomputed once per frame from the raw mix:
+ * Derived values, recomputed from the raw mix on every weight change (so once per moving weight per frame
+ * during a tween, up to 1 + lenses times; each pass is O(lenses)):
  *  - presence p[l] = mix[l]                      draw the channel at all (alpha)
  *  - expansion x[l] = mix[l] * (1 - general)     compact General form (0) -> lone lens (1)
  *  - dominance d[l] = clamp(x[l] - sum others)   exclusive things: shape, content, accent, decor.
@@ -56,7 +57,12 @@ export class MixDriver {
   readonly mix: LensMix;
   readonly state: MixState;
   private readonly keys: readonly string[];
-  constructor(private readonly ids: readonly string[], view: ViewId, private onChange: () => void, private spring = { stiffness: 170, damping: 26 }) {
+  private readonly ids: readonly string[];
+  private onChange: () => void;
+  private spring: { stiffness: number; damping: number };
+  // Plain fields, not parameter properties: Node's type stripping (how scripts/*.ts run) cannot load those.
+  constructor(ids: readonly string[], view: ViewId, onChange: () => void, spring = { stiffness: 170, damping: 26 }) {
+    this.ids = ids; this.onChange = onChange; this.spring = spring;
     this.keys = ['general', ...ids];
     const t = mixTarget(ids, view);
     this.mix = { ...t };

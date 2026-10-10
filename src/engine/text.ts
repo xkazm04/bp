@@ -10,7 +10,9 @@ export class Text {
   private m: CanvasRenderingContext2D | null = null;
   /** Smallest font size actually used since the last reset (for the 12 px check). */
   minUsed = Infinity;
-  constructor(public sans: string, public mono: string, public u = 1) {}
+  sans: string; mono: string; u: number;
+  // Plain fields, not parameter properties: Node's type stripping (how scripts/*.ts run) cannot load those.
+  constructor(sans: string, mono: string, u = 1) { this.sans = sans; this.mono = mono; this.u = u; }
   setFamilies(sans: string, mono: string) { this.sans = sans; this.mono = mono; this.clear(); }
   setU(u: number) { if (u !== this.u) { this.u = u; this.clear(); } }
   clear() { this.wc.clear(); this.wr.clear(); }

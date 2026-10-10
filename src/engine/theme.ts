@@ -35,7 +35,9 @@ export function parseColor(c: string): [number, number, number, number] {
 class Patterns {
   private map = new Map<string, { p: CanvasPattern; s: number; r: number }>();
   private ctx: CanvasRenderingContext2D | null = null;
-  constructor(private res: number) {}
+  private res: number;
+  // Plain field, not a parameter property: Node's type stripping (how scripts/*.ts run) cannot load those.
+  constructor(res: number) { this.res = res; }
   get(spec: PatternSpec): CanvasPattern | null {
     const key = spec.kind + '|' + spec.size + '|' + spec.color + '|' + (spec.lw ?? 1) + '|' + (spec.bg ?? '');
     const hit = this.map.get(key);

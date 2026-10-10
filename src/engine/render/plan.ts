@@ -4,9 +4,9 @@
 // tile body (a lone lens), and text crossfades between the general and the dominant lens's content.
 import type { Feature } from '@/lib/data';
 import { EVIDENCE_BY_DENSITY } from '@/lib/standard/present';
-import { BH, RH, TW, deltaWin, lensHealth, stageAt, stageParts, STAGE_WORD, isLiveSt, type BldNode, type TileNode, type WingNode } from '@/lib/model';
+import { BH, RH, deltaWin, lensHealth, stageAt, stageParts, STAGE_WORD, type BldNode, type TileNode } from '@/lib/model';
 import type { Engine } from '../Engine';
-import type { Rect, TileGeom } from '../lens/contract';
+import type { ChannelAggregate, Rect, TileGeom } from '../lens/contract';
 import { drawText } from '../text';
 import { cloud, drawHealthBar, drawStageBar, glyphAgent, glyphPin, stageFill, stageStroke } from './glyphs';
 import { onView, rs, smooth, sxv, syv, type SRect, type View } from './view';
@@ -28,10 +28,18 @@ export function drawGrid(E: Engine, ctx: CanvasRenderingContext2D, v: View) {
   }
 }
 
-/** Lenses whose channel threw: skipped for the session so one bad manifest costs that lens, not the plan. */
-const failedLenses = new Set<string>();
-function lensFailed(l: string, part: string, err: unknown) {
-  if (!failedLenses.has(l)) { failedLenses.add(l); console.error(`[lens ${l}] ${part} failed`, err); }
+/**
+ * Lenses whose channel threw: skipped for that engine's life so one bad manifest costs that lens, not the
+ * plan. Kept per engine, because each engine resolves its own channels (the variant's, or a fallback built
+ * from the product's manifest): a lens that failed under one variant or product is drawn and, if it fails
+ * again, logged again under the next.
+ */
+const failedByEngine = new WeakMap<Engine, Set<string>>();
+const failed = (E: Engine, l: string) => failedByEngine.get(E)?.has(l) ?? false;
+function lensFailed(E: Engine, l: string, part: string, err: unknown) {
+  let s = failedByEngine.get(E);
+  if (!s) failedByEngine.set(E, (s = new Set()));
+  if (!s.has(l)) { s.add(l); console.error(`[lens ${l}] ${part} failed`, err); }
 }
 
 /** Variant decoration under the plan, weighted by each lens's dominance. */
@@ -39,10 +47,10 @@ export function drawDecor(E: Engine, ctx: CanvasRenderingContext2D, v: View) {
   const m = E.mixS;
   for (const l of E.lensIds) {
     const ch = E.channel(l);
-    if (!ch || !ch.decor || m.d[l] <= 0.001 || failedLenses.has(l)) continue;
+    if (!ch || !ch.decor || m.d[l] <= 0.001 || failed(E, l)) continue;
     ctx.save();
     try { ch.decor(ctx, { x: v.c0x, y: v.c0y, w: v.c1x - v.c0x, h: v.c1y - v.c0y, k: v.k, u: E.U }, m.d[l], E.th); }
-    catch (err) { lensFailed(l, 'decor', err); }
+    catch (err) { lensFailed(E, l, 'decor', err); }
     finally { ctx.restore(); }
   }
 }
@@ -107,7 +115,7 @@ function lensMarks(E: Engine, ctx: CanvasRenderingContext2D, g: TileGeom, f: Fea
   for (const l of E.lensIds) {
     const p = m.p[l];
     if (p <= 0.004) continue;
-    const ch = E.channel(l); if (!ch || failedLenses.has(l)) continue;
+    const ch = E.channel(l); if (!ch || failed(E, l)) continue;
     const x = m.x[l], slot = slots[l] ?? null;
     const exp = E.expr.expandedRect ? E.expr.expandedRect(g, l) : g.body;
     let r: Rect, w: number;
@@ -116,7 +124,7 @@ function lensMarks(E: Engine, ctx: CanvasRenderingContext2D, g: TileGeom, f: Fea
     if (r.w < 1 || r.h < 1) continue;
     ctx.save();
     try { ch.marks({ ctx, r, slot, lens: P.LENS[l], tile: g, f, w, x, compact: x < 0.5, th: E.th, stage: st, now: E.isNow, live: L, accent: E.accentOf(l) }); }
-    catch (err) { lensFailed(l, 'marks', err); }
+    catch (err) { lensFailed(E, l, 'marks', err); }
     finally { ctx.restore(); }
     ctx.globalAlpha = ga;
   }
@@ -127,9 +135,9 @@ function outline(E: Engine, g: TileGeom, f: Feature): Path2D | null {
   const top = E.mixS.top;
   if (!top || E.mixS.topD <= 0.001) return null;
   const ch = E.channel(top);
-  if (!ch || !ch.shape || failedLenses.has(top)) return null;
+  if (!ch || !ch.shape || failed(E, top)) return null;
   const p = new Path2D();
-  try { ch.shape(p, g, f, E.mixS.topD); } catch (err) { lensFailed(top, 'shape', err); return null; }
+  try { ch.shape(p, g, f, E.mixS.topD); } catch (err) { lensFailed(E, top, 'shape', err); return null; }
   return p;
 }
 
@@ -180,10 +188,10 @@ function paintTile(E: Engine, ctx: CanvasRenderingContext2D, v: View, T: TileNod
     // evidence: general (stage word) crossfading into the dominant lens's content
     const ev = generalEvidence(E, f, st);
     let lensC: { parts: string[]; stamp?: string } | null = null;
-    const ch = top && D > 0.001 && now && st && !failedLenses.has(top) ? E.channel(top) : null;
+    const ch = top && D > 0.001 && now && st && !failed(E, top) ? E.channel(top) : null;
     if (ch) {
       try { const c = ch.content(f, Lv); lensC = { parts: c.parts.slice(0, EVIDENCE_BY_DENSITY[ch.density]), stamp: c.stamp }; }
-      catch (err) { lensFailed(top!, 'content', err); }
+      catch (err) { lensFailed(E, top!, 'content', err); }
     }
     const evFont = (l: string | null) => (l && E.expr.evidenceFont?.(l) === 'sans' ? tx.f(13, 600) : mono);
     let showId = !!code;
@@ -313,11 +321,14 @@ function aggParts(E: Engine, id: string, fs: readonly Feature[], short: boolean)
   const gTrouble = now ? E.M.agg.healthOf(id, fs, 'general').bad : 0;
   const top = E.mixS.top, D = now ? E.mixS.topD : 0;
   let lens: string[] | null = null, lensShort: string[] | null = null, lTrouble = 0;
-  if (top && D > 0.001) {
-    const a = E.lensAgg(id, top, fs);
-    lens = [c.n + (short ? '' : ' features'), ...a.parts];
-    lensShort = [String(c.n), ...a.parts];
-    lTrouble = a.trouble ?? E.M.agg.healthOf(id, fs, top).bad;
+  if (top && D > 0.001 && !failed(E, top)) {
+    let a: ChannelAggregate | null = null;
+    try { a = E.lensAgg(id, top, fs); } catch (err) { lensFailed(E, top, 'aggregate', err); }
+    if (a) {
+      lens = [c.n + (short ? '' : ' features'), ...a.parts];
+      lensShort = [String(c.n), ...a.parts];
+      lTrouble = a.trouble ?? E.M.agg.healthOf(id, fs, top).bad;
+    }
   }
   return { c, general, generalShort, lens, lensShort, gTrouble, lTrouble, D, top };
 }
@@ -347,12 +358,9 @@ function drawSwarmLine(E: Engine, ctx: CanvasRenderingContext2D, x: number, y: n
   return used;
 }
 
-/** Labels are always drawn in the cached layer; the intro reveals the whole raster with a wipe. */
-function labelAlpha(_E: Engine) { return 1; }
-
 function drawWingLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: BldNode): number {
   const k = v.k, u = E.U, th = E.th, tx = E.tx, sim = E.M.sim;
-  const a0 = labelAlpha(E) * (E.M.P.scale > 1 ? smooth(E.KB1 * 0.62, E.KB1 * 0.8, k) : 1);
+  const a0 = E.M.P.scale > 1 ? smooth(E.KB1 * 0.62, E.KB1 * 0.8, k) : 1;
   const vis = B.wings.filter((W) => W.w * k >= 80 * u);
   if (!vis.length || a0 <= 0) return 0;
   let FS = 14, ML = 2;
@@ -405,7 +413,7 @@ function drawBuildingLabel(E: Engine, ctx: CanvasRenderingContext2D, v: View, B:
   if (E.M.P.scale === 1) return;
   const r = rs(v, B, scratch), u = E.U, th = E.th, tx = E.tx;
   if (r.w < 150 * u || !onView(v, r, 200)) return;
-  const base = r.y - 12 * u - (wingA > 0 ? 112 * u * wingA : 0), a = labelAlpha(E);
+  const base = r.y - 12 * u - (wingA > 0 ? 112 * u * wingA : 0), a = 1;
   ctx.globalAlpha = a;
   const wdt = Math.min(r.w, 560 * u), ag = aggParts(E, B.id, B.feats, false), x = r.x;
   fadePair(ctx, a, ag.D, () => drawStageBar(ctx, th, x, base - 6 * u, wdt, 8 * u, ag.c), ag.lens ? () => drawHealthBar(ctx, th, x, base - 6 * u, wdt, 8 * u, E.M.agg.healthOf(B.id, B.feats, ag.top!)) : null);
@@ -429,7 +437,7 @@ function drawBuildingLabel(E: Engine, ctx: CanvasRenderingContext2D, v: View, B:
 function drawRoomLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: BldNode) {
   const k = v.k, u = E.U, th = E.th, tx = E.tx, hasSw = E.M.sim.has;
   for (const W of B.wings) {
-    const a = clamp((W.w * k - 100 * u) / 8, 0, 1) * labelAlpha(E) * (E.M.P.scale > 1 ? smooth(E.KB1 * 0.62, E.KB1 * 0.8, k) : 1);
+    const a = clamp((W.w * k - 100 * u) / 8, 0, 1) * (E.M.P.scale > 1 ? smooth(E.KB1 * 0.62, E.KB1 * 0.8, k) : 1);
     if (a <= 0) continue;
     for (const R of W.rooms) {
       const r = rs(v, R, scratch); if (!onView(v, r)) continue;
@@ -467,7 +475,7 @@ function drawRoomLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: Bl
 function drawBayTags(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: BldNode) {
   const k = v.k, u = E.U, th = E.th, tx = E.tx;
   if (BH * k < 23 * u) return;
-  const a = clamp((BH * k - 23 * u) / 2, 0, 1) * labelAlpha(E);
+  const a = clamp((BH * k - 23 * u) / 2, 0, 1);
   const cf = tx.f(12, 500, true), nf = tx.f(13.5, 600);
   ctx.globalAlpha = a;
   for (const W of B.wings) for (const R of W.rooms) for (const Bay of R.bays) {
@@ -493,7 +501,7 @@ function drawChronology(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: Bl
   const r = rs(v, B, scratch), u = E.U, th = E.th, tx = E.tx;
   if (r.w < 560 * u) return;
   const y = r.y + r.h + 22 * u; if (y > E.SAFE.b - 26 * u) return;
-  ctx.globalAlpha = labelAlpha(E) * 0.95;
+  ctx.globalAlpha = 0.95;
   ctx.strokeStyle = th.inkA(0.55); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(r.x, y); ctx.lineTo(r.x + r.w, y); ctx.stroke();
   ctx.fillStyle = th.inkA(0.75); ctx.beginPath(); ctx.moveTo(r.x + r.w + 6, y); ctx.lineTo(r.x + r.w - 4, y - 4); ctx.lineTo(r.x + r.w - 4, y + 4); ctx.fill();
   const f = tx.f(12, 500, true);
@@ -523,7 +531,3 @@ export function featRect(E: Engine, v: View, fid: string, lod: number, out?: SRe
   r.x = sxv(v, rb.x) + T.bi * sw; r.y = syv(v, rb.y); r.w = sw; r.h = rb.h * v.k;
   return r;
 }
-
-export const TILE_W = TW;
-export type { WingNode };
-export { isLiveSt, lensHealth };
