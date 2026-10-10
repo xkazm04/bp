@@ -2,12 +2,13 @@
 // Small pieces the feature page's tabs share: a field value that counts, the health word, the
 // lifecycle ladder, and the KPIs a lens is bound to on this feature.
 import type { Feature, Scalar } from '@/lib/data';
-import type { LensField } from '@/lib/standard/types';
+import type { Health, LensField } from '@/lib/standard/types';
 import { STAGES } from '@/lib/standard/load';
 import { STAGE_WORD, fmtValue, type Model } from '@/lib/model';
 import { Count } from './motion';
 
-export const HWORD: Record<string, string> = { bad: 'Bad', watch: 'Watch', good: 'Good', na: 'Does not apply', unmeasured: 'Not measured' };
+/** The health word on a tile and a lens tab. Keyed by the Health union, so a new health is a type error here, not an undefined word. */
+export const HWORD: Record<Health, string> = { bad: 'Bad', watch: 'Watch', good: 'Good', na: 'Does not apply', unmeasured: 'Not measured' };
 
 /** A lens field's value: numbers count (integers, percents, money, ms...), booleans and enums do not. */
 export function Val({ k, field, v, unit = '' }: { k: string; field: LensField; v: Scalar | undefined; unit?: string }) {
