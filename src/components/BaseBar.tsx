@@ -13,7 +13,7 @@ import { GA_MILESTONE, HOUR, SPEEDS, dnum, fmtD, latestRun, revAt } from '@/lib/
 
 const ARRIVALS = SWARM.decisions.filter((d) => d.arrivesAt).map((d) => ({ id: d.id, t: d.arrivesAt! }));
 import { shallowEqual, useBp, useEngine, useLive } from './hooks';
-import { Strip } from './timeline/Strip';
+import { Strip, hourSeekKey, useHourText } from './timeline/Strip';
 import './timeline.css';
 
 /** One staggered item of the panel (the panel's variants drive it). */
@@ -122,13 +122,19 @@ function Revisions() {
     E.setTime(best);
   };
   const px = (e: React.PointerEvent) => { const r = svg.current!.getBoundingClientRect(); return ((e.clientX - r.left) / r.width) * W; };
+  const vtext = 'Revision ' + revAt(M.P.weeks, s.t) + ', ' + s.t;
+  useHourText(E, svg, vtext, hour);
   return (
     <motion.div variants={useItem()} id="revs" ref={wrap}>
-      <svg id="revsvg" ref={svg} tabIndex={0} role="slider" aria-label="Time: revision history, now, and the simulated hour ahead" aria-valuemin={1} aria-valuemax={NW} aria-valuenow={revAt(M.P.weeks, s.t)} aria-valuetext={'Revision ' + revAt(M.P.weeks, s.t) + ', ' + s.t}
-        viewBox={`0 0 ${W} ${H}`} data-keys="own"
+      <svg id="revsvg" ref={svg} tabIndex={0} role="slider" aria-label="Time: revision history, now, and the simulated hour ahead" aria-valuemin={1} aria-valuemax={NW} aria-valuenow={revAt(M.P.weeks, s.t)} aria-valuetext={vtext}
+        viewBox={`0 0 ${W} ${H}`}
         onPointerDown={(e) => { drag.current = null; (e.currentTarget as Element).setPointerCapture(e.pointerId); apply(px(e)); }}
         onPointerMove={(e) => { if (drag.current) apply(px(e)); }} onPointerUp={() => { drag.current = null; }}
         onKeyDown={(e) => {
+          // keys the slider handles stop here (the engine's document handler would act on them too); the rest pass through
+          if (e.ctrlKey || e.metaKey || e.altKey) return;
+          if (hourSeekKey(e, E, hour)) { e.preventDefault(); e.nativeEvent.stopImmediatePropagation(); return; }
+          if (['ArrowLeft', 'ArrowDown', 'ArrowRight', 'ArrowUp', 'Home', 'End', 't', 'T', 'Escape', 'Enter'].includes(e.key)) e.nativeEvent.stopImmediatePropagation();
           if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); E.stepWeek(-1); }
           else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); E.stepWeek(1); }
           else if (e.key === 'Home') { e.preventDefault(); E.setTime(M.P.weeks[0]); }

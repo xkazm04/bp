@@ -37,6 +37,26 @@ function StripClock() {
   );
 }
 
+/** Hour-seek keys shared by both time sliders: PageUp or Shift+ArrowRight skip the simulated hour ahead by 5 minutes.
+ *  Forward only, like the pointer (the sim replays events and cannot rewind). Returns true when the key was ours. */
+export function hourSeekKey(e: React.KeyboardEvent, E: ReturnType<typeof useEngine>, hour: boolean): boolean {
+  if (!hour || !(e.key === 'PageUp' || (e.shiftKey && e.key === 'ArrowRight'))) return false;
+  E.seek(Math.min(HOUR, E.M.sim.t + 300));
+  return true;
+}
+
+/** Keeps a slider's aria-valuetext in step with the simulated clock (whole minutes only, so a screen reader is not flooded). */
+export function useHourText(E: ReturnType<typeof useEngine>, svg: React.RefObject<SVGSVGElement | null>, base: string, hour: boolean) {
+  useEffect(() => {
+    if (!hour) return undefined;
+    let last = '';
+    return E.onSimTime((t) => {
+      const m = new Date(E.M.sim.at0 + t * 1000).toISOString().slice(11, 16);
+      if (m !== last) { last = m; svg.current?.setAttribute('aria-valuetext', base + '; simulated ' + m); }
+    });
+  }, [E, svg, base, hour]);
+}
+
 /** The hairline: revision history (a sparkline of feature counts, a tick per week) and, for Kettle, the hour ahead. */
 function Hairline() {
   const E = useEngine(), M = E.M, sim = M.sim;
@@ -78,14 +98,20 @@ function Hairline() {
   };
   const px = (e: React.PointerEvent) => { const r = svg.current!.getBoundingClientRect(); return ((e.clientX - r.left) / r.width) * W; };
   const rev = revAt(weeks, t);
+  const vtext = now ? 'Now, revision ' + rev : 'Revision ' + rev + ', ' + t;
+  useHourText(E, svg, vtext, hour);
   return (
     <div className="tl-line" ref={wrap}>
-      <svg ref={svg} viewBox={`0 0 ${W} ${H}`} tabIndex={0} role="slider" data-keys="own"
-        aria-label="Time: drag along the revision history to travel; the right end is now" aria-valuemin={1} aria-valuemax={weeks.length} aria-valuenow={rev} aria-valuetext={now ? 'Now, revision ' + rev : 'Revision ' + rev + ', ' + t}
+      <svg ref={svg} viewBox={`0 0 ${W} ${H}`} tabIndex={0} role="slider"
+        aria-label="Time: drag along the revision history to travel; the right end is now" aria-valuemin={1} aria-valuemax={weeks.length} aria-valuenow={rev} aria-valuetext={vtext}
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => { e.stopPropagation(); drag.current = null; (e.currentTarget as Element).setPointerCapture(e.pointerId); apply(px(e)); }}
         onPointerMove={(e) => { if (drag.current) apply(px(e)); }} onPointerUp={() => { drag.current = null; }}
         onKeyDown={(e) => {
+          // keys the slider handles stop here (the engine's document handler would act on them too); the rest pass through
+          if (e.ctrlKey || e.metaKey || e.altKey) return;
+          if (hourSeekKey(e, E, hour)) { e.preventDefault(); e.nativeEvent.stopImmediatePropagation(); return; }
+          if (['ArrowLeft', 'ArrowDown', 'ArrowRight', 'ArrowUp', 'Home', 'End', 't', 'T', 'Escape', 'Enter'].includes(e.key)) e.nativeEvent.stopImmediatePropagation();
           if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); E.stepWeek(-1); }
           else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); E.stepWeek(1); }
           else if (e.key === 'Home') { e.preventDefault(); E.setTime(weeks[0]); }
