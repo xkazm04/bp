@@ -28,7 +28,7 @@ export function BusinessSection({ f }: { f: Feature }) {
       {vs.length ? (
         <>
           <h5>Variations · {vs.length}</h5>
-          <table className="vart">
+          <div className="vart-wrap"><table className="vart">
             <thead><tr><th>Variation</th><th>Extends the core</th><th>Parameters</th><th>Stage</th></tr></thead>
             <tbody>
               {vs.map((v) => (
@@ -40,7 +40,7 @@ export function BusinessSection({ f }: { f: Feature }) {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </>
       ) : null}
     </div>
