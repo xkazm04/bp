@@ -23,8 +23,11 @@
 /* travelled: the strip turns accent so "this is not now" cannot be missed */
 #base.tl-strip.travel { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--panel)); box-shadow: 0 0 0 1px var(--accent), 0 8px 26px var(--shadow); }
 .tl-strip.travel .tl-pos b { color: var(--accent); }
-.bp .tl-back { height: 20px; padding: 0 7px; background: transparent; border: 1px solid var(--accent); color: var(--accent); font: 500 12px var(--mono); letter-spacing: 0.08em; }
+.bp .tl-back { position: relative; height: 20px; padding: 0 7px; background: transparent; border: 1px solid var(--accent); color: var(--accent); font: 500 12px var(--mono); letter-spacing: 0.08em; }
 .bp .tl-back:hover { background: var(--accent); color: var(--paper); }
+/* 20 px drawn, 24 px to the pointer (WCAG 2.5.8): the hit area grows 2 px past the border (the inset counts from the
+   padding box), inside the strip even when compact */
+.bp .tl-back::after { content: ''; position: absolute; inset: -3px -1px; }
 
 /* the hairline */
 .tl-line { flex: 1 1 auto; min-width: 120px; align-self: stretch; position: relative; cursor: ew-resize; }
