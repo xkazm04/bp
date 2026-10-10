@@ -31,7 +31,11 @@ export { SheetBody } from './sheet/SheetBody';
 // Tab cycles inside the open page (the plan behind is dimmed and inert to the pointer). Focusables are
 // collected at keydown time: the content mounts a frame late and changes with every tab switch.
 const FOCUSABLE = 'button:not([disabled]), [href], select:not([disabled]), input:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
-function wrapTab(e: React.KeyboardEvent<HTMLElement>) {
+function pageKeys(e: React.KeyboardEvent<HTMLElement>) {
+  // Space on a fold's <summary> is the fold's own key: keep it from the engine, whose Space plays or pauses
+  // the simulation and cancels the toggle (React and the engine both listen on document, so only
+  // stopImmediatePropagation reaches it)
+  if (e.key === ' ' && (e.target as HTMLElement).tagName === 'SUMMARY') { e.nativeEvent.stopImmediatePropagation(); return; }
   if (e.key !== 'Tab') return;
   const els = Array.from(e.currentTarget.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((x) => x.getClientRects().length);
   if (!els.length) return;
@@ -67,6 +71,8 @@ function crumbLabel(E: ReturnType<typeof useEngine>, c: Crumb): string {
 function Tabs({ f }: { f: Feature }) {
   const E = useEngine(), V = useVariant(), P = E.M.P;
   const view = useBp((s) => s.view);
+  // under reduced motion the underline does not travel: it is simply under the new tab
+  const reduce = useReducedMotion();
   return (
     <div className="pg-tabs" role="tablist" aria-label="Feature page tabs (the plan's lens follows)">
       {views(P).map((k, i) => {
@@ -77,7 +83,7 @@ function Tabs({ f }: { f: Feature }) {
             title={(d ? d.name + ': ' + (h === 'na' ? 'does not apply' : h) : 'General: the overview') + (i < 9 ? ' (' + (i + 1) + ')' : '')}>
             <span className="sh">{d ? d.short : 'GEN'}{d ? <i className={'hd ' + h} aria-hidden="true" /> : null}</span>
             <span className="nm">{sub}</span>
-            {on && <motion.span layoutId="pg-tab-uline" className="uline" transition={{ type: 'spring', stiffness: 420, damping: 36 }} />}
+            {on && <motion.span layoutId={reduce ? undefined : 'pg-tab-uline'} className="uline" transition={{ type: 'spring', stiffness: 420, damping: 36 }} />}
           </button>
         );
       })}
@@ -191,7 +197,7 @@ export function FeatureSheet() {
       {f && !s.phone && [
         <motion.div key={"dim" + nth.current} className="pg-dim" aria-hidden="true" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduce ? 0.15 : MORPH }}
           onClick={() => E.closeFeature()} onWheel={(e) => document.getElementById('detail')?.querySelector('.pg-scroll')?.scrollBy({ top: e.deltaY })} />,
-        <motion.section key={"page" + nth.current} id="detail" className="pg" aria-label={'Feature page: ' + f.name} role="dialog" aria-modal="false" onKeyDown={wrapTab}
+        <motion.section key={"page" + nth.current} id="detail" className="pg" aria-label={'Feature page: ' + f.name} role="dialog" aria-modal="false" onKeyDown={pageKeys}
           style={{ left: b.x, top: b.y, width: b.w, height: b.h, transformOrigin: '0 0' }}
           custom={tile.current} variants={vPage} initial="from" animate="full" exit="from">
           <motion.div className="pg-in" variants={vInner}>

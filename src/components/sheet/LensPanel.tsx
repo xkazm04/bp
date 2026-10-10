@@ -18,6 +18,9 @@ import type { SheetPanelProps } from '@/variants/types';
 
 export interface Row { k: string; v: string; c?: 'bad' | 'watch' | ''; tier: 0 | 1 | 2 }
 
+/** The mark a lens's rule puts on one of its fields: the lens's health when it is bad or watch and the rule names that field. */
+export const hotOf = (fl: FeatureLens | undefined, key: string): 'bad' | 'watch' | '' => (fl && (fl.h === 'bad' || fl.h === 'watch') && fl.whyFields.includes(key) ? fl.h : '');
+
 export function lensRows(d: LensDef, fl: FeatureLens | undefined, value: (key: string) => Scalar | undefined): Row[] {
   const out: Row[] = [], seen = new Set<string>();
   const add = (f: LensField | null, tier: 0 | 1 | 2) => {
@@ -26,8 +29,7 @@ export function lensRows(d: LensDef, fl: FeatureLens | undefined, value: (key: s
     seen.add(f.key);
     const v = value(f.key);
     if (v === undefined && tier === 2) return;
-    const hot = fl && (fl.h === 'bad' || fl.h === 'watch') && fl.whyFields.includes(f.key) ? fl.h : '';
-    out.push({ k: f.label + (f.source && 'kpi' in f.source ? ' · KPI' : ''), v: fmtValue(f, v), c: hot, tier });
+    out.push({ k: f.label + (f.source && 'kpi' in f.source ? ' · KPI' : ''), v: fmtValue(f, v), c: hotOf(fl, f.key), tier });
   };
   add(d.headline, 0);
   for (const f of d.evidence) add(f, 1);
@@ -37,7 +39,7 @@ export function lensRows(d: LensDef, fl: FeatureLens | undefined, value: (key: s
 
 // ------------------------------------------------------------------------------------ metric rows
 const SW = 64, SH = 16;
-const nfmt = (v: number) => (Math.abs(v) >= 100 || Number.isInteger(v) ? Math.round(v) : Math.round(v * 10) / 10).toLocaleString('en-US');
+export const nfmt = (v: number) => (Math.abs(v) >= 100 || Number.isInteger(v) ? Math.round(v) : Math.round(v * 10) / 10).toLocaleString('en-US');
 
 /** A 64x16 sparkline of a metric's readings, with the target as a dashed tick when the manifest sets one. */
 export function Spark({ pts, target, cls }: { pts: readonly number[]; target?: number; cls: string }) {
@@ -55,6 +57,17 @@ export function Spark({ pts, target, cls }: { pts: readonly number[]; target?: n
 }
 
 export interface MetricRow { field: LensField; value: number | undefined; prev: number | undefined; pts: number[]; unit: string; method: string }
+
+/** How a metric moved against its previous reading: up or down, and whether that is the better way (`metric.better`). */
+export function metricMove(r: MetricRow): { dir: 'up' | 'down' | null; cls: 'good' | 'bad' | '' } {
+  const v = r.value, moved = v !== undefined && r.prev !== undefined && v !== r.prev;
+  const dir = moved ? (v! > r.prev! ? 'up' : 'down') : null;
+  return { dir, cls: dir ? (dir === r.field.metric!.better ? 'good' : 'bad') : '' };
+}
+/** The arrow before a moved metric's value (nothing when it did not move). */
+export function MoveArrow({ dir, cls }: { dir: 'up' | 'down' | null; cls: string }) {
+  return dir ? <i className={'ar ' + cls} aria-label={cls === 'good' ? 'better' : 'worse'}>{dir === 'up' ? '▲' : '▼'}</i> : null;
+}
 
 /**
  * A lens's metric fields for one feature. History is the scan's readings of that feature, lens and
@@ -89,14 +102,12 @@ export function MetricRows({ def, f, model, scan, all, fl }: { def: LensDef; f: 
   return (
     <div className="mrs">
       {shown.map((r) => {
-        const m = r.field.metric!, v = r.value, moved = v !== undefined && r.prev !== undefined && v !== r.prev;
-        const dir = moved ? (v! > r.prev! ? 'up' : 'down') : null, cls = dir ? (dir === m.better ? 'good' : 'bad') : '';
-        const hot = fl && (fl.h === 'bad' || fl.h === 'watch') && fl.whyFields.includes(r.field.key) ? fl.h : '';
+        const m = r.field.metric!, v = r.value, { dir, cls } = metricMove(r), hot = hotOf(fl, r.field.key);
         const tip = v === undefined ? 'Not measured' : (r.pts.length > 1 ? r.pts.length + ' readings, the latest ' : 'One reading: ') + fmtValue(r.field, v) + r.unit + (dir ? ', ' + dir + ' from ' + fmtValue(r.field, r.prev!) + ' (' + (cls === 'good' ? 'better' : 'worse') + ')' : '');
         return (
           <div key={r.field.key} className="r mr" title={tip}>
             <span>{r.field.label}</span>
-            <b className={hot}>{dir && <i className={'ar ' + cls} aria-label={cls === 'good' ? 'better' : 'worse'}>{dir === 'up' ? '▲' : '▼'}</i>}{fmtValue(r.field, v)}{v !== undefined ? r.unit : ''}</b>
+            <b className={hot}><MoveArrow dir={dir} cls={cls} />{fmtValue(r.field, v)}{v !== undefined ? r.unit : ''}</b>
             <span className="mx">
               {r.pts.length > 1 ? <Spark pts={r.pts} target={m.target} cls={cls} /> : null}
               {m.target !== undefined && <em className="tgt">target {nfmt(m.target)}</em>}

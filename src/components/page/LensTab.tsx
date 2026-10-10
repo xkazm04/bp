@@ -14,13 +14,12 @@ import type { ScanSnapshot } from '@/lib/scan/types';
 import { BusinessSection } from '../sheet/Business';
 import { ScreensStrip } from '../sheet/Screens';
 import { SwarmSection } from '../sheet/SheetBody';
-import { Spark, metricRows } from '../sheet/LensPanel';
+import { MoveArrow, Spark, hotOf, metricMove, metricRows, nfmt } from '../sheet/LensPanel';
 import { useBp, useDensity, useEngine, useLive, useVariant } from '../hooks';
 import { HWORD, KpiRows, Val } from './bits';
 import { Sec, Stagger } from './motion';
 
 const EVID: Record<Density, number> = { simple: 2, standard: 4, dense: Infinity };
-const nfmt = (v: number) => (Math.abs(v) >= 100 || Number.isInteger(v) ? Math.round(v) : Math.round(v * 10) / 10).toLocaleString('en-US');
 
 /** The lens's metric fields as rows: value (counting), the move against the previous reading, target, method, sparkline. */
 function Metrics({ lens, f, M, scan, all }: { lens: string; f: Feature; M: Model; scan: ScanSnapshot | undefined; all: boolean }) {
@@ -31,14 +30,12 @@ function Metrics({ lens, f, M, scan, all }: { lens: string; f: Feature; M: Model
     <div className="pg-mrs">
       <h4>Measured · {shown.length} metric{shown.length > 1 ? 's' : ''}{scan ? ' · from the scan' : ''}</h4>
       {shown.map((r) => {
-        const m = r.field.metric!, v = r.value, moved = v !== undefined && r.prev !== undefined && v !== r.prev;
-        const dir = moved ? (v! > r.prev! ? 'up' : 'down') : null, cls = dir ? (dir === m.better ? 'good' : 'bad') : '';
-        const hot = fl && (fl.h === 'bad' || fl.h === 'watch') && fl.whyFields.includes(r.field.key) ? fl.h : '';
+        const m = r.field.metric!, v = r.value, { dir, cls } = metricMove(r), hot = hotOf(fl, r.field.key);
         return (
           <div key={r.field.key} className={'mr ' + hot}>
             <span className="nm">{r.field.label}<em className="mth">{r.method}</em></span>
             <span className="sp">{r.pts.length > 1 ? <Spark pts={r.pts} target={m.target} cls={cls} /> : <span className="one">{r.pts.length ? 'one reading' : 'not measured'}</span>}</span>
-            <b className={hot}>{dir && <i className={'ar ' + cls} aria-label={cls === 'good' ? 'better' : 'worse'}>{dir === 'up' ? '▲' : '▼'}</i>}<Val k={f.id + ':' + lens + ':' + r.field.key} field={r.field} v={v} unit={r.unit} /></b>
+            <b className={hot}><MoveArrow dir={dir} cls={cls} /><Val k={f.id + ':' + lens + ':' + r.field.key} field={r.field} v={v} unit={r.unit} /></b>
             <span className="tg">{m.target !== undefined ? 'target ' + nfmt(m.target) : ''}{dir ? (m.target !== undefined ? ' · ' : '') + 'was ' + fmtValue(r.field, r.prev!) : ''}</span>
           </div>
         );
@@ -56,7 +53,7 @@ function Body({ lens, f, M, density }: { lens: string; f: Feature; M: Model; den
   const ev = d.evidence.filter((x) => own(x) && x !== hf), evShown = ev.slice(0, EVID[density]);
   const seen = new Set([hf?.key, ...evShown.map((x) => x.key)]);
   const rest = d.fields.filter((x) => own(x) && !x.metric && !seen.has(x.key) && val(x.key) !== undefined);
-  const hot = (key: string) => (fl && (fl.h === 'bad' || fl.h === 'watch') && fl.whyFields.includes(key) ? fl.h : '');
+  const hot = (key: string) => hotOf(fl, key);
   const restRows = rest.map((x) => <div key={x.key} className="r"><span>{x.label}{x.source && 'kpi' in x.source ? ' · KPI' : ''}</span><b className={hot(x.key)}><Val k={f.id + ':' + lens + ':' + x.key} field={x} v={val(x.key)} /></b></div>);
   return (
     <>

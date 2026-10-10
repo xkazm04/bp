@@ -4,7 +4,7 @@
 // lens mix: in General they all sit side by side; in a lens, its panel moves to the top and grows to
 // its reader's density while the others collapse to their headline. Each panel ends with its metric
 // rows (MetricRows, from the manifest); the Business section and a live product's Screens strip follow.
-import { LayoutGroup, motion } from 'motion/react';
+import { LayoutGroup, motion, useReducedMotion } from 'motion/react';
 import type { Feature } from '@/lib/data';
 import { REV_DESC, STAGE_WORD, astat, fmtWait, isAgentId, lensOf, pname, type Model } from '@/lib/model';
 import { illoSVG } from '@/engine/render/illo';
@@ -54,10 +54,54 @@ export function SwarmSection({ f, lens }: { f: Feature; lens?: string }) {
   );
 }
 
+// ------------------------------------------------------------------ the record (shared with page/General.tsx)
+// The pieces of a feature's record that the phone's document and the desktop page's General tab both show.
+// Each returns its content only; the caller keeps its own wrapper (a staggered section, a plain div).
+
+/** Who built it, people and agents (agents tagged). */
+export function BuiltBy({ f }: { f: Feature }) {
+  const P = useEngine().M.P;
+  return <>{f.builtBy.length ? f.builtBy.map((id, i) => <span key={id}>{i ? ', ' : ''}{pname(P, id)}{isAgentId(P, id) && <span className="ag">AGENT</span>}</span>) : '—'}</>;
+}
+/** The lenses that flag it: the bad ones by name, else how many to watch. */
+export function FlaggedBy({ f }: { f: Feature }) {
+  const P = useEngine().M.P;
+  const bad = f.trouble.filter((t) => t.h === 'bad').map((t) => P.LENS[t.lens]?.name ?? t.lens), watch = f.trouble.length - bad.length;
+  return <>{bad.length ? <span className="nc">{bad.join(', ')}</span> : watch ? watch + ' lens' + (watch > 1 ? 'es' : '') + ' to watch' : f.health === 'good' ? 'No lens ✓' : 'Not measured yet'}</>;
+}
+export const stageSince = (f: Feature) => (f.stage ? STAGE_WORD[f.stage] + ' · since ' + f.stageSince : 'Unknown');
+/** A list of features, each a button that opens it; `empty` when there are none. */
+export function FeatureLinks({ ids, empty }: { ids: readonly string[]; empty: string }) {
+  const E = useEngine(), P = E.M.P;
+  return <>{ids.length ? ids.map((id) => { const g = P.F[id]; return <button key={id} type="button" onClick={() => E.openFeature(id)}><StageSym st={g.stage} w={20} h={13} /><span>{g.name}</span><span className="w">{g.stage ? STAGE_WORD[g.stage] : 'Unknown'}</span></button>; }) : <div className="none">{empty}</div>}</>;
+}
+/** The last 14 days' activity on it (at most 8 events). */
+export function Activity({ f }: { f: Feature }) {
+  const P = useEngine().M.P, acts = P.activity.filter((a) => a.feature === f.id).slice(0, 8);
+  return <><h4>Recent activity · 14 days</h4>
+    {acts.length ? <ul className="acts">{acts.map((a, i) => <li key={i} className={a.type === 'incident' ? 'inc' : ''}><span className="m">{a.at.slice(5, 10)} {a.at.slice(11, 16)}</span><span className="a">{pname(P, a.actor)}{isAgentId(P, a.actor) ? ' ◇' : ''}</span><span>{a.text}{a.severity ? ' · ' + a.severity : ''}</span></li>)}</ul> : <div className="dl"><div className="none">Quiet, no events in the last 14 days</div></div>}</>;
+}
+/** The stylised drawing of its domain, with the detail caption. */
+export function Drawing({ f }: { f: Feature }) {
+  const M = useEngine().M, P = M.P, T = M.L.TILE[f.id];
+  return <><div dangerouslySetInnerHTML={{ __html: illoSVG(P.D[f.domain].base, 'currentColor') }} style={{ color: 'var(--ink)' }} /><span className="cap">DETAIL {T.idx} · {(P.D[f.domain].code || P.D[f.domain].name).toUpperCase()} · STYLISED</span></>;
+}
+/** Its parts, done or not (callers show this only when the feature has parts). */
+export function Parts({ parts }: { parts: NonNullable<Feature['parts']> }) {
+  return <><h4>Parts · {parts.filter((p) => p.done).length} of {parts.length} done</h4><div className="parts">{parts.map((p) => <span key={p.name} className={p.done ? 'd' : ''}>{p.done ? '✓ ' : '○ '}{p.name}</span>)}</div></>;
+}
+/** The red-pencil notes (callers show this only when there are notes). */
+export function Notes({ f }: { f: Feature }) {
+  const P = useEngine().M.P;
+  return <><h4>Red-pencil notes</h4><div className="notes">{f.notes.map((n, i) => <div key={i} className="pn">“{n.text}”<small>— {pname(P, n.by)}, {n.date}</small></div>)}</div></>;
+}
+
 function LensPanels({ f, M }: { f: Feature; M: Model }) {
   const V = useVariant(), dens = useDensity();
   const view = useBp((s) => s.view);
   const Panel = V.ui?.SheetPanel ?? DefaultLensPanel, scan = useLive()?.product.scan;
+  // under reduced motion the panels re-order in place instead of travelling
+  const reduce = useReducedMotion();
   const ids = M.P.lenses.map((l) => l.id);
   const order = lensOf(M.P, view) ? [view, ...ids.filter((l) => l !== view)] : ids;
   return (
@@ -66,7 +110,7 @@ function LensPanels({ f, M }: { f: Feature; M: Model }) {
         {order.map((l) => {
           const cur = view === l, mini = view !== 'general' && !cur;
           return (
-            <motion.div key={l} layout transition={{ type: 'spring', stiffness: 260, damping: 30 }} className={'evp ' + (f.lens[l]?.h ?? 'unmeasured') + (cur ? ' cur' : '') + (mini ? ' mini' : '')}>
+            <motion.div key={l} layout={!reduce} transition={{ type: 'spring', stiffness: 260, damping: 30 }} className={'evp ' + (f.lens[l]?.h ?? 'unmeasured') + (cur ? ' cur' : '') + (mini ? ' mini' : '')}>
               <Panel lens={l} def={M.P.LENS[l]} f={f} model={M} density={dens(l)} expanded={cur} view={view} />
               {!mini && <MetricRows def={M.P.LENS[l]} f={f} model={M} scan={scan} all={cur} fl={f.lens[l]} />}
             </motion.div>
@@ -80,9 +124,6 @@ function LensPanels({ f, M }: { f: Feature; M: Model }) {
 export function SheetBody({ f }: { f: Feature }) {
   const E = useEngine(), M = E.M, P = M.P, T = M.L.TILE[f.id];
   const pl = plainLine(P, f, M.sim), ms = f.milestone ? P.MS[f.milestone] : null;
-  const acts = P.activity.filter((a) => a.feature === f.id).slice(0, 8);
-  const who = (id: string) => <>{pname(P, id)}{isAgentId(P, id) && <span className="ag">AGENT</span>}</>;
-  const dl = (ids: string[], empty: string) => ids.length ? ids.map((id) => { const g = P.F[id]; return <button key={id} type="button" onClick={() => E.openFeature(id)}><StageSym st={g.stage} w={20} h={13} /><span>{g.name}</span><span className="w">{g.stage ? STAGE_WORD[g.stage] : 'Unknown'}</span></button>; }) : <div className="none">{empty}</div>;
   return (
     <>
       <PatternDefs />
@@ -104,34 +145,29 @@ export function SheetBody({ f }: { f: Feature }) {
       <SwarmSection f={f} />
       <div className="dgrid">
         <div>
-          <div className="illo"><div dangerouslySetInnerHTML={{ __html: illoSVG(P.D[f.domain].base, 'currentColor') }} style={{ color: 'var(--ink)' }} /><span className="cap">DETAIL {T.idx} · {(P.D[f.domain].code || P.D[f.domain].name).toUpperCase()} · STYLISED</span></div>
+          <div className="illo"><Drawing f={f} /></div>
           <div className="mtb">
-            <div><span className="l">Drawn by</span>{f.builtBy.length ? f.builtBy.map((id, i) => <span key={id}>{i ? ', ' : ''}{who(id)}</span>) : '—'}</div>
-            <div><span className="l">Flagged by</span>{(() => {
-              const bad = f.trouble.filter((t) => t.h === 'bad').map((t) => P.LENS[t.lens]?.name ?? t.lens), watch = f.trouble.length - bad.length;
-              return bad.length ? <span className="nc">{bad.join(', ')}</span> : watch ? watch + ' lens' + (watch > 1 ? 'es' : '') + ' to watch' : f.health === 'good' ? 'No lens ✓' : 'Not measured yet';
-            })()}</div>
+            <div><span className="l">Drawn by</span><BuiltBy f={f} /></div>
+            <div><span className="l">Flagged by</span><FlaggedBy f={f} /></div>
             <div><span className="l">Owner</span>{pname(P, f.owner)}</div>
-            <div><span className="l">Stage</span>{f.stage ? STAGE_WORD[f.stage] + ' · since ' + f.stageSince : 'Unknown'}</div>
+            <div><span className="l">Stage</span>{stageSince(f)}</div>
             <div className="full"><span className="l">Lives in</span>{f.surfaces.map((s) => <span key={s} className="ag" style={{ margin: '0 4px 0 0' }}>{s}</span>)}</div>
           </div>
           <table className="revt"><thead><tr><th>REV</th><th>DATE</th><th>DESCRIPTION</th></tr></thead><tbody>
             {f.revs.map((h, i) => <tr key={i} className={i === f.revs.length - 1 ? 'now' : ''}><td className="m">{String.fromCharCode(65 + i)}</td><td className="m">{h.date}</td><td>{REV_DESC[h.stage]}</td></tr>)}
           </tbody></table>
-          {f.parts && <div className="dsec"><h4>Parts · {f.parts.filter((p) => p.done).length} of {f.parts.length} done</h4><div className="parts">{f.parts.map((p) => <span key={p.name} className={p.done ? 'd' : ''}>{p.done ? '✓ ' : '○ '}{p.name}</span>)}</div></div>}
+          {f.parts && <div className="dsec"><Parts parts={f.parts} /></div>}
         </div>
         <div>
           <LensPanels f={f} M={M} />
           <BusinessSection f={f} />
           <ScreensStrip f={f} />
           <div className="dsec deps">
-            <div className="dl"><h4>Depends on · {f.dependsOn.length}</h4>{dl(f.dependsOn, 'Nothing, it stands on its own')}</div>
-            <div className="dl"><h4>Used by · {f.usedBy.length} · blast radius {M.closure.of(f.id).length}</h4>{dl(f.usedBy, 'Nothing depends on it')}</div>
+            <div className="dl"><h4>Depends on · {f.dependsOn.length}</h4><FeatureLinks ids={f.dependsOn} empty="Nothing, it stands on its own" /></div>
+            <div className="dl"><h4>Used by · {f.usedBy.length} · blast radius {M.closure.of(f.id).length}</h4><FeatureLinks ids={f.usedBy} empty="Nothing depends on it" /></div>
           </div>
-          {f.notes.length ? <div className="dsec"><h4>Red-pencil notes</h4><div className="notes">{f.notes.map((n, i) => <div key={i} className="pn">“{n.text}”<small>— {pname(P, n.by)}, {n.date}</small></div>)}</div></div> : null}
-          <div className="dsec"><h4>Recent activity · 14 days</h4>
-            {acts.length ? <ul className="acts">{acts.map((a, i) => <li key={i} className={a.type === 'incident' ? 'inc' : ''}><span className="m">{a.at.slice(5, 10)} {a.at.slice(11, 16)}</span><span className="a">{pname(P, a.actor)}{isAgentId(P, a.actor) ? ' ◇' : ''}</span><span>{a.text}{a.severity ? ' · ' + a.severity : ''}</span></li>)}</ul> : <div className="dl"><div className="none">Quiet, no events in the last 14 days</div></div>}
-          </div>
+          {f.notes.length ? <div className="dsec"><Notes f={f} /></div> : null}
+          <div className="dsec"><Activity f={f} /></div>
           <div className="foot">{M.live ? 'Read from the live scan' : 'Illustrative sample data · drawings are stylised, not screenshots'}</div>
         </div>
       </div>
