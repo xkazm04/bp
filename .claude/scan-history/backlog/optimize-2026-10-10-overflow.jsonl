@@ -6,3 +6,10 @@
 {"context":"Scripts and checks","title":"The text-size check is copied into 4 shots.py files; the 3 variant copies miss the phone view"}
 {"context":"Scripts and checks","title":"docs/standard/analysis.md:276 names kettle-to-v3.mjs; the file is .ts"}
 {"context":"Scripts and checks","title":"scan-demo --live: a database-busy error kills the process and leaves the run marked running"}
+{"context":"Plan rendering","title":"The DOM callout (Overlays.tsx:139) calls E.lensAgg without the guard the canvas side now has"}
+{"context":"Plan rendering","title":"units.mjs (57 render invariants) is ready to become scripts/check-render-units.ts"}
+{"context":"Rail and flyouts","title":"First-name extraction split(\" \")[0] is copied at 8 sites; one helper in product.ts"}
+{"context":"Rail and flyouts","title":"The .ord rules in blueprint.css style only the rail Orders panel; move to rail.css"}
+{"context":"Rail and flyouts","title":"The engine key handler could skip defaultPrevented events, removing 4 stopImmediatePropagation calls"}
+{"context":"Lens expression variants","title":"subtle/tools/rebuild.sh still builds into its own .next-subtle on port 3111"}
+{"context":"Lens expression variants","title":"Five code comments still say six lenses"}
