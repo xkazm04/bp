@@ -5,7 +5,7 @@
 // its structure and scan come from `useLiveProduct`; the model is built once the structure and the
 // first snapshot are in, and every later scan goes into the sim in place (`engine.feed`), so the
 // engine and the layout are never rebuilt for a delta. A new structure builds a new model.
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { Component, memo, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from 'react';
 import { Engine } from '@/engine/Engine';
 import { EMPTY_SCAN, buildModel, clampScale } from '@/lib/model';
 import { buildLiveModel, liveSwarm } from '@/lib/model/live-feed';
@@ -52,6 +52,28 @@ function RootFlags({ root }: { root: HTMLDivElement }) {
     root.classList.toggle('bp-phone', s.phone);
   }, [root, s]);
   return s.phone ? <Phone /> : null;
+}
+
+/**
+ * A render failure in the chrome (a malformed scan row, a lens manifest a panel cannot read) would
+ * otherwise unmount the whole app, plan included, behind a page that names nothing. Here it is logged,
+ * the plan stays, and the standard empty-state panel says what failed.
+ */
+class ChromeBoundary extends Component<{ children: ReactNode }, { err: Error | null }> {
+  state = { err: null as Error | null };
+  static getDerivedStateFromError(err: Error) { return { err }; }
+  componentDidCatch(err: Error, info: ErrorInfo) { console.error('blueprint chrome failed', err, info.componentStack); }
+  render() {
+    const { err } = this.state;
+    if (!err) return this.props.children;
+    return (
+      <div className="bp-empty" role="alert">
+        <b>The blueprint chrome failed</b>
+        <span>{err.message || String(err)}</span>
+        <a href={typeof location !== 'undefined' ? location.pathname + location.search : '/'}>Reload</a>
+      </div>
+    );
+  }
 }
 
 /** The standard empty state of a live product that cannot be drawn (unknown slug, no structure, an error), or that is still connecting. */
@@ -125,7 +147,7 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
           <EngineCtx.Provider value={engine}>
             <VariantCtx.Provider value={variant}>
               <LiveCtx.Provider value={info}>
-                <Chrome />
+                <ChromeBoundary><Chrome /></ChromeBoundary>
               </LiveCtx.Provider>
             </VariantCtx.Provider>
           </EngineCtx.Provider>
@@ -135,7 +157,7 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
         <EngineCtx.Provider value={engine}>
           <VariantCtx.Provider value={variant}>
             <LiveCtx.Provider value={info}>
-              <RootFlags root={root.current} />
+              <ChromeBoundary><RootFlags root={root.current} /></ChromeBoundary>
             </LiveCtx.Provider>
           </VariantCtx.Provider>
         </EngineCtx.Provider>
