@@ -37,7 +37,7 @@
   #rail .ri .lb, #rail .ri .sb { display: none; }
   #rail .ri[data-k='find'] { padding-bottom: 6px; margin-bottom: 2px; }
   #rail .ri[data-k='plan'] { margin-top: 2px; padding-top: 6px; }
-  #dhide { height: 22px; }
+  #dhide { height: 24px; } /* the 24 px target floor (WCAG 2.5.8) holds in short windows too */
 }
 
 /* ---------- flyout (overlays the plan; never moves it) */
@@ -103,3 +103,6 @@
 #flyout .spend .bar { height: 6px; margin-top: 6px; border: 1px solid var(--ink-3); }
 #flyout .spend .bar i { display: block; height: 100%; background: var(--mint); }
 #flyout .spend .bar.hi i { background: var(--amber); } #flyout .spend .bar.over i { background: var(--red); }
+
+/* the Orders panel's breach links (base style: .ord in blueprint.css): a 24 px target, not the 19 px text line */
+#flyout .ord .vi button { padding: 3px 0 2px; }
