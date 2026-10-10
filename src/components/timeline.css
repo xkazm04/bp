@@ -1,5 +1,5 @@
-/* The timeline: a thin strip at the bottom (its height is chrome.baseHeight) and the panel that slides up
-   over the plan when it is expanded. The panel reuses #keyplan / #clock / #revs from blueprint.css. */
+/* The timeline: a thin strip at the bottom (28 px, 24 compact; with its bottom margin and a 6 px gap it makes
+   chrome.baseHeight, 42 / 36 - change them together) and the panel that slides up over the plan when it is expanded. The panel reuses #keyplan / #clock / #revs from blueprint.css. */
 
 /* ---------- the strip (collapsed) */
 #base.tl-strip { position: absolute; left: 14px; right: 14px; bottom: 8px; height: 28px; display: flex; align-items: center; gap: 14px; padding-right: 8px; border: 1px solid var(--ink-3); background: var(--panel); font: 500 12px/1 var(--mono); letter-spacing: 0.06em; color: var(--ink-2); cursor: pointer; z-index: 4; white-space: nowrap; transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease, opacity 0.7s ease; }
