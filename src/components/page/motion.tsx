@@ -27,7 +27,8 @@ export function Count({ k, v, fmt }: { k: string; v: number; fmt: (n: number) =>
     const a = shown.current;
     memo.set(k, v);
     if (reduce || a === v || !Number.isFinite(v)) { shown.current = v; el.textContent = fmt(v); return; }
-    const c = animate(a, v, { duration: 0.6, delay, ease: EASE, onUpdate: (n) => { shown.current = n; el.textContent = fmt(n); } });
+    // write only when the formatted text changes: most frames of a small count format the same
+    const c = animate(a, v, { duration: 0.6, delay, ease: EASE, onUpdate: (n) => { shown.current = n; const s = fmt(n); if (s !== el.textContent) el.textContent = s; } });
     return () => c.stop();
     // fmt is recreated by callers every render; the value and key decide
     // eslint-disable-next-line react-hooks/exhaustive-deps
