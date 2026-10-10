@@ -1,8 +1,10 @@
 # Frame times during lens switches (General -> lens -> lens -> General) at L0 and at a zoomed level.
-# usage: python src/variants/subtle/tools/perf_lens.py [url]
-import time, json, sys
+# usage: python src/variants/subtle/tools/perf_lens.py [url]   (default: $BP_BASE, else :3000, /v/subtle?intro=0&scale=4)
+import os, time, json, sys
 from playwright.sync_api import sync_playwright
-url = sys.argv[1] if len(sys.argv) > 1 else 'http://localhost:3111/v/subtle?intro=0&scale=4'
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
+from shotkit import base
+url = sys.argv[1] if len(sys.argv) > 1 else base() + '/v/subtle?intro=0&scale=4'
 REC = """() => { window.__d = []; window.__rm = []; window.__rec = true; let last = performance.now(); window.__r0 = [__bp.perf.rasters, __bp.perf.frames];
   const tick = (t) => { if (!window.__rec) return; window.__d.push(t - last); last = t; window.__rm.push(__bp.perf.lastRasterMs); requestAnimationFrame(tick); }; requestAnimationFrame(tick); }"""
 STOP = "() => { window.__rec = false; return { rm: window.__rm, d: window.__d, rasters: __bp.perf.rasters - window.__r0[0], lastRasterMs: __bp.perf.lastRasterMs } }"

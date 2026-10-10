@@ -7,17 +7,16 @@
 //   operations   live gauges (rollout, SLO, errors) that move with the simulation
 //   security     the data class ladder, the review seal, findings
 //   quality      the checklist of end-to-end tests and the bug counts
-import { DefaultLensPanel } from '@/components/sheet/LensPanel';
+import { DefaultLensPanel, hmark } from '@/components/sheet/LensPanel';
 import { useBp } from '@/components/hooks';
 import type { SheetPanelProps } from '../types';
 import { LENS_NAME } from './palette';
 import { CHANNELS } from './channels';
 import { bl, hof, isBuiltinLens, type BuiltinLens } from '../base/legacy';
 
-const HW: Record<string, string> = { good: 'GOOD', watch: 'WATCH', bad: 'BAD', na: 'N/A' };
 function Head({ p, label }: { p: SheetPanelProps; label: string }) {
   const h = hof(p.f, p.lens), n = LENS_NAME[p.lens as BuiltinLens];
-  return <div className="bd-h"><span className="no">{n.no}</span><span className="nm">{label}</span><span className={'hl ' + h}>{HW[h]}</span></div>;
+  return <div className="bd-h"><span className="no">{n.no}</span><span className="nm">{label}</span><span className={'hl ' + h}>{hmark(h)}</span></div>;
 }
 const usd = (n: number) => '$' + n.toLocaleString('en-US');
 
@@ -179,7 +178,7 @@ function Mini({ p }: { p: SheetPanelProps & { lens: BuiltinLens } }) {
   const sans = p.lens === 'business' || p.lens === 'design';
   return (
     <>
-      <div className="bd-h"><span className="no">{LENS_NAME[p.lens].no}</span><span className="nm">{LENS_NAME[p.lens].nm}</span><span className={'hl ' + hof(p.f, p.lens)}>{HW[hof(p.f, p.lens)]}</span></div>
+      <div className="bd-h"><span className="no">{LENS_NAME[p.lens].no}</span><span className="nm">{LENS_NAME[p.lens].nm}</span><span className={'hl ' + hof(p.f, p.lens)}>{hmark(hof(p.f, p.lens))}</span></div>
       <div className={'bd-mini' + (sans ? ' sans' : '')}>{c.parts.slice(0, 2).join(' · ')}</div>
     </>
   );

@@ -1,5 +1,5 @@
 'use client';
-// The Plan-tab legend, shaped variant. General explains the stage swatches and the six icons set into
+// The Plan-tab legend, shaped variant. General explains the stage swatches and the lens icons set into
 // each fixture's top edge. A lens explains its outline (drawn here with the same proportions as on the
 // plan) and its icon vocabulary, all in that lens's accent.
 import type { ViewId } from '@/lib/data';
@@ -82,7 +82,7 @@ export function ShapedLegend({ view }: { view: ViewId }) {
         <div><Mark k="wait" /><span>Waiting for a person</span></div>
         <div><Mark k="pin" /><span>A question (RFI)</span></div>
         <div className="shp-row">{(Object.keys(ICON_TITLE) as BuiltinLens[]).map((l) => <span key={l} title={ICON_TITLE[l]}><LensIcon id={LENS_ICON[l]} size={18} title={ICON_TITLE[l]} /></span>)}</div>
-        <div className="shp-cap">Tile colour is always the stage. The six icons on each fixture&apos;s top edge are the six lenses, in tab order; red or amber means that lens is in trouble. Pick a lens and only its icon stays, and the tile takes its shape.</div>
+        <div className="shp-cap">Tile colour is always the stage. The icons on each fixture&apos;s top edge are the lenses, one each, in tab order; red or amber means that lens is in trouble. Pick a lens and only its icon stays, and the tile takes its shape.</div>
       </div>
     );
   }
