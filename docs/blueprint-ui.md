@@ -355,7 +355,8 @@ gets out of the plan's way, and L4 is a page. Earlier sections that say "dock", 
   - Esc, the same counter, or a click on the plan closes it. Only one flyout is open at a time.
   - A changed count counts up or down and pulses once, at most every 3 s.
   - Keys: `/` opens Find, `\` hides the rail, `P` opens View.
-- **Timeline** (`src/components/BaseBar.tsx`, `timeline/`, `timeline.css`): a 42 px strip.
+- **Timeline** (`src/components/BaseBar.tsx`, `timeline/`, `timeline.css`): a 28 px strip (24 px
+  compact); with its margin it takes the 42 px (36 px) `baseHeight`.
   - It shows the time position, the sim clock or the run status, and a hairline you click or drag
     to time travel.
   - Click or `T` expands the full panel (key plan, clock and speeds, the revisions chart, the hour

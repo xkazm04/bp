@@ -6,14 +6,13 @@
 // engine's sim-time callback; React only re-renders on discrete changes (speed, play, time travel).
 // A live product has no recorded hour: the clock box shows the scan instead, and the strip drops the
 // hour ahead (no replay to scrub, no arrivals).
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { AnimatePresence, motion, useReducedMotion, type Variants } from 'motion/react';
-import { SWARM } from '@/lib/data';
+import { SWARM, type Stage } from '@/lib/data';
 import { GA_MILESTONE, HOUR, SPEEDS, dnum, fmtD, latestRun, revAt } from '@/lib/model';
-
-const ARRIVALS = SWARM.decisions.filter((d) => d.arrivesAt).map((d) => ({ id: d.id, t: d.arrivesAt! }));
 import { shallowEqual, useBp, useEngine, useLive } from './hooks';
-import { Strip, hourSeekKey, scanStatus, useHourText } from './timeline/Strip';
+import { ARRIVALS, Strip, scanStatus, simClock, useHourText, useSize } from './timeline/Strip';
+import { timeSliderKey } from './timeline/keys';
 import './timeline.css';
 
 /** One staggered item of the panel (the panel's variants drive it). */
@@ -53,7 +52,7 @@ function Clock() {
   const E = useEngine(), sim = E.M.sim;
   const s = useBp((s) => ({ playing: s.playing, speed: s.speed, over: s.over, t: s.t }), shallowEqual);
   const tref = useRef<HTMLSpanElement>(null), item = useItem();
-  useEffect(() => E.onSimTime((t) => { if (tref.current) tref.current.textContent = new Date(sim.at0 + t * 1000).toISOString().slice(11, 19); }), [E, sim]);
+  useEffect(() => E.onSimTime((t) => { if (tref.current) tref.current.textContent = simClock(sim.at0, t); }), [E, sim]);
   if (!sim.has) return null;
   if (sim.live) return <LiveClock />;
   const hist = s.t !== E.M.P.asOf;
@@ -71,8 +70,10 @@ function Clock() {
   );
 }
 
-const ORDER = ['live', 'flagged', 'in-review', 'in-dev', 'specified', 'idea', 'deprecated'] as const;
-const FILLS: Record<(typeof ORDER)[number], number> = { live: 0.62, flagged: 0.44, 'in-review': 0.3, 'in-dev': 0.2, specified: 0.11, idea: 0.06, deprecated: 0.5 };
+/** Each stage's band in the stacked revisions chart, bottom band first, and its fill. Keyed by Stage, so a stage added to
+ *  the standard fails the typecheck here instead of silently dropping out of the chart. */
+const FILLS: Record<Stage, number> = { live: 0.62, flagged: 0.44, 'in-review': 0.3, 'in-dev': 0.2, specified: 0.11, idea: 0.06, deprecated: 0.5 };
+const ORDER = Object.keys(FILLS) as Stage[];
 
 const CW = 7.2; // advance of the 12 px mono label face, for placing chart labels
 
@@ -81,12 +82,7 @@ function Revisions() {
   const s = useBp((s) => ({ t: s.t, compact: s.compact }), shallowEqual);
   const wrap = useRef<HTMLDivElement>(null), svg = useRef<SVGSVGElement>(null);
   const head = useRef<SVGLineElement>(null), tri = useRef<SVGPathElement>(null), el = useRef<SVGRectElement>(null);
-  const [W, setW] = useState(640), [H, setH] = useState(92);
-  useLayoutEffect(() => {
-    const ro = new ResizeObserver(() => { if (wrap.current) { setW(wrap.current.clientWidth || 640); setH(wrap.current.clientHeight || 92); } });
-    if (wrap.current) ro.observe(wrap.current);
-    return () => ro.disconnect();
-  }, []);
+  const [W, H] = useSize(wrap, 640, 92);
   const L = 76, R = W - 6, avail = R - L, hist = Math.round(avail * 0.46), hourW = Math.round(avail * 0.38), g1 = 26;
   const tl = { h0: L, h1: L + hist, o0: L + hist + g1, o1: L + hist + g1 + hourW, R, top: H < 80 ? 21 : 34, bot: H < 80 ? H - 28 : Math.min(H - 28, 66) };
   const asOf = M.P.asOf, now = s.t === asOf, top = tl.top, bot = tl.bot, RD0 = M.P.weeks[0], NW = M.P.weeks.length;
@@ -171,16 +167,8 @@ function Revisions() {
         onPointerDown={(e) => { drag.current = null; (e.currentTarget as Element).setPointerCapture(e.pointerId); apply(px(e)); }}
         onPointerMove={(e) => { if (drag.current) apply(px(e)); }} onPointerUp={() => { drag.current = null; }}
         onKeyDown={(e) => {
-          // keys the slider handles stop here (the engine's document handler would act on them too); the rest pass through
-          if (e.ctrlKey || e.metaKey || e.altKey) return;
-          if (hourSeekKey(e, E, hour)) { e.preventDefault(); e.nativeEvent.stopImmediatePropagation(); return; }
-          if (['ArrowLeft', 'ArrowDown', 'ArrowRight', 'ArrowUp', 'Home', 'End', 't', 'T', 'Escape', 'Enter'].includes(e.key)) e.nativeEvent.stopImmediatePropagation();
-          if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); E.stepWeek(-1); }
-          else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); E.stepWeek(1); }
-          else if (e.key === 'Home') { e.preventDefault(); E.setTime(M.P.weeks[0]); }
-          else if (e.key === 'End') { e.preventDefault(); E.setTime(asOf); }
-          else if (e.key === 't' || e.key === 'T') { e.preventDefault(); E.setTimeline(); }
-          else if (e.key === 'Escape') { e.preventDefault(); E.setTimeline(false); }
+          // the sliders' one key map (timeline/keys.ts); Esc here collapses the panel
+          if (timeSliderKey(e, E, hour, () => E.setTimeline(false))) { e.preventDefault(); e.nativeEvent.stopImmediatePropagation(); }
         }}>
         {txt('rev', { className: 'lbl' })}{txt('nw')}{txt('step')}
         {polys}
