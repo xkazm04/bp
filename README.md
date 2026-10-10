@@ -82,7 +82,8 @@ node scripts/fixtures/gen-swarm.mjs <dir>    # regenerate the swarm over it
 
 `npm run typecheck` · `npm run build` · `python scripts/perf.py` (frame times while zooming at
 `?scale=4`; the budget is 60 fps, see `docs/perf.md`) · `python scripts/shots.py` (screenshots).
-The Python probes need Playwright for Python and a running server.
+The Python probes need Playwright for Python and a running server; they target `http://localhost:3000`
+(`npm run dev` / `npm start`), or `$BP_BASE` / a URL argument for another port.
 
 Stack: Next.js 16, React 19, Motion, TypeScript, and a canvas renderer with no other runtime
 dependencies.

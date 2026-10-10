@@ -1,7 +1,10 @@
-import time, json, sys
+# Screenshot matrix (themes, sizes, scales, variants, phone, sheet, decision card) with the text-floor readout.
+# Usage: python scripts/shots.py [base_url] [out_dir]
+#   base_url (empty = default): $BP_BASE, else http://localhost:3000 (`npm run dev` / `npm start`); out_dir: docs/shots/foundation
+import os, time, json, sys
 from playwright.sync_api import sync_playwright
-OUT = 'docs/shots/foundation'
-BASE = 'http://localhost:3107'
+BASE = ((sys.argv[1] if len(sys.argv) > 1 else '') or os.environ.get('BP_BASE') or 'http://localhost:3000').rstrip('/')
+OUT = sys.argv[2] if len(sys.argv) > 2 else 'docs/shots/foundation'
 problems = []
 MINFONT = """(() => { let min = 99, where = ''; for (const el of document.querySelectorAll('.bp-ui *, main *')) { if (!el.childNodes.length) continue; let txt = false; for (const n of el.childNodes) if (n.nodeType === 3 && n.textContent.trim()) txt = true; if (!txt) continue; const cs = getComputedStyle(el); if (cs.display === 'none' || cs.visibility === 'hidden') continue; const r = el.getBoundingClientRect(); if (!r.width) continue; const px = parseFloat(cs.fontSize) * (window.__bp ? window.__bp.U : 1); if (px < min) { min = px; where = el.tagName + '.' + el.className + ' ' + el.textContent.slice(0, 30); } } return [Math.round(min * 10) / 10, where]; })()"""
 def run(pg, name, url, w, h, steps):

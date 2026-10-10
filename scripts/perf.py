@@ -1,6 +1,10 @@
-import time, json, statistics, sys
+# Frame times while zooming and dragging at ?scale=4 (docs/perf.md).
+# Usage: python scripts/perf.py [url]   default: $BP_BASE (else http://localhost:3000, `npm start`/`npm run dev`)
+#        + /v/subtle?intro=0&scale=4. Measure a production build: `npm run build && npm start`.
+import os, time, json, statistics, sys
 from playwright.sync_api import sync_playwright
-url = sys.argv[1] if len(sys.argv) > 1 else 'http://localhost:3107/v/subtle?intro=0&scale=4'
+BASE = (os.environ.get('BP_BASE') or 'http://localhost:3000').rstrip('/')
+url = sys.argv[1] if len(sys.argv) > 1 else BASE + '/v/subtle?intro=0&scale=4'
 res = {}
 with sync_playwright() as p:
     b = p.chromium.launch(args=['--enable-gpu-rasterization', '--ignore-gpu-blocklist'])
