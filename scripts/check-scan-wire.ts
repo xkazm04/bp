@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { advance, close, newCursor, openRead, readDelta, readSnapshot, snapshotOf } from '../src/lib/scan/store.server.ts';
 import { swarmFromScan } from '../src/lib/scan/client.ts';
+import { PRODUCTS_FILE, listProducts } from '../src/lib/scan/products.server.ts';
 import type { ScanSnapshot } from '../src/lib/scan/types.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -90,6 +91,23 @@ try {
     check('and not again', Object.values(d2).every((xs) => xs.length === 0));
   } finally { close(db); }
   w.close();
+
+  // ---- product list: a missing file is quiet, a broken one is said once (not on every request)
+  const warns: string[] = [], warn = console.warn, cwd = process.cwd();
+  console.warn = (...a: unknown[]) => { warns.push(a.map(String).join(' ')); };
+  try {
+    process.chdir(dir);
+    const pf = path.join(dir, PRODUCTS_FILE);
+    check('no product file: no products, no warning', listProducts().length === 0 && warns.length === 0, warns.join(' | '));
+    fs.writeFileSync(pf, '{ "products": [ ');
+    listProducts(); listProducts(); listProducts();
+    check('a broken product file warns once over 3 reads', warns.length === 1, String(warns.length));
+    fs.writeFileSync(pf, JSON.stringify({ products: [{ slug: 'a', root: dir }] }));
+    check('a fixed product file lists its product', listProducts().length === 1 && warns.length === 1);
+    fs.writeFileSync(pf, '{"products": 7}');
+    listProducts(); listProducts();
+    check('a product file without a products array warns once', warns.length === 2, String(warns.length));
+  } finally { console.warn = warn; process.chdir(cwd); }
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });
 }

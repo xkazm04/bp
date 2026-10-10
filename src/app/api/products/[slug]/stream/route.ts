@@ -7,7 +7,7 @@
 // The change check is `PRAGMA data_version` on ONE long-lived read connection: it moves only when another
 // connection (the skill, or a decision) commits, so an idle store costs one pragma a second.
 import fs from 'node:fs';
-import { findProduct, storeFile } from '@/lib/scan/products.server';
+import { findProduct, recovered, storeFile, warnOnce } from '@/lib/scan/products.server';
 import { advance, close, dataVersion, isEmptyScan, newCursor, openRead, readDelta, readSnapshot, emptyScan, type Cursor } from '@/lib/scan/store.server';
 import type { ScanSnapshot, StreamEvent } from '@/lib/scan/types';
 
@@ -20,7 +20,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   const { slug } = await params;
   const p = findProduct(slug);
   if (!p) return Response.json({ error: `unknown product ${slug}` }, { status: 404 });
-  const file = storeFile(p), enc = new TextEncoder();
+  const file = storeFile(p), enc = new TextEncoder(), logKey = `stream ${slug} (${file})`;
   let db: ReturnType<typeof openRead> = null, dv = -1, cur: Cursor = newCursor();
   let tick: ReturnType<typeof setInterval> | null = null, lastSent = Date.now(), done = false;
 
@@ -47,8 +47,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
           const s: ScanSnapshot = readSnapshot(db);
           cur = newCursor(); advance(cur, s);
           send('snapshot', s);
+          recovered(logKey);
           return true;
-        } catch { close(db); db = null; return false; }
+        } catch (e) { close(db); db = null; warnOnce(logKey, e); return false; }
       };
       if (!connect()) send('snapshot', emptyScan());
       tick = setInterval(() => {
@@ -63,7 +64,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
               if (!isEmptyScan(d)) { advance(cur, d); send('delta', d); }
             }
           }
-        } catch { close(db); db = null; /* store replaced or locked past the timeout: reconnect next tick */ }
+        } catch (e) { close(db); db = null; warnOnce(logKey, e); /* store replaced or locked past the timeout: reconnect next tick */ }
         if (Date.now() - lastSent >= PING_MS) send('ping', { at: new Date().toISOString() });
       }, TICK_MS);
       req.signal.addEventListener('abort', () => { stop(); try { ctrl.close(); } catch { /* already closed */ } });
