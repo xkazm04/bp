@@ -8,12 +8,14 @@ import { bl, ruled, type BuiltinLens } from '../base/legacy';
 import { isLiveSt } from '@/lib/model';
 import type { ChannelAggregate, LensChannel, MarkArgs, Rect, TileGeom, Theme } from '../types';
 import { ACCENT } from './palette';
+import { reviewDiamond } from '../base/expression';
 
 const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
 const TAU = Math.PI * 2;
 const NODASH: number[] = [], DASH63 = [6, 3], DOT = [1.5, 3];
 function count(fs: readonly Feature[], fn: (f: Feature) => boolean) { let n = 0; for (const f of fs) if (fn(f)) n++; return n; }
-const kUsd = (n: number) => (n >= 1000 ? '$' + (Math.round(n / 100) / 10).toString().replace(/\.0$/, '') + 'k' : '$' + n);
+/** Money in short form: $950, $3.2k, $12k (tiles, aggregates, decor rails). */
+export const kUsd = (n: number) => (n >= 1000 ? '$' + (Math.round(n / 100) / 10).toString().replace(/\.0$/, '') + 'k' : '$' + n);
 
 // ------------------------------------------------------------------------------------ fonts (cached)
 const fontCache = new Map<string, string>();
@@ -191,13 +193,6 @@ const design: LensChannel = {
 };
 
 // ------------------------------------------------------------------------------------- development
-function diamond(a: MarkArgs, ga0: number) {
-  const { ctx, th, tile: t } = a, u = t.u, dv = bl(a.f).development;
-  if (!(a.stage && a.now && dv.humanReviewed === false && t.form === 'tile' && t.w < 150 * u && t.w >= 26 * u)) return;
-  const dx = t.x + t.w - 7 * u, dy = t.y + t.h - 7 * u, dd = Math.max(2.5 * u, Math.min(4.5 * u, t.w / 28));
-  ctx.globalAlpha = ga0 * a.w; ctx.strokeStyle = th.ink; ctx.lineWidth = 1.1;
-  ctx.beginPath(); ctx.moveTo(dx, dy - dd); ctx.lineTo(dx + dd * 0.8, dy); ctx.lineTo(dx, dy + dd); ctx.lineTo(dx - dd * 0.8, dy); ctx.closePath(); ctx.stroke();
-}
 const development: LensChannel = {
   density: 'dense',
   accent: ACCENT.development,
@@ -220,7 +215,7 @@ const development: LensChannel = {
       ctx.fillStyle = th.inkA(0.25); ctx.fillRect(r.x, ay, r.w, 1.5);
       ctx.fillStyle = m.accent; ctx.fillRect(r.x, ay - 0.5, r.w * dv.aiAuthoredPct / 100, 2.5);
     });
-    diamond(a, ga0);
+    reviewDiamond(a, ga0);
   },
   content(f, live) {
     const dv = bl(f).development;
@@ -287,7 +282,8 @@ const operations: LensChannel = {
 };
 
 // ---------------------------------------------------------------------------------------- security
-const SENS: Record<string, number> = { payment: 3, personal: 2, internal: 1, public: 0 };
+/** Data-class sensitivity, 0 (public) to 3 (card data): shields, fences, room fences. */
+export const SENS: Record<string, number> = { payment: 3, personal: 2, internal: 1, public: 0 };
 const security: LensChannel = {
   density: 'standard',
   accent: ACCENT.security,

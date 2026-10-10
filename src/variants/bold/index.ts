@@ -4,7 +4,7 @@
 // stays the calm composition: six health cells per fixture, no decoration. See NOTES.md.
 import { baseExpression } from '../base';
 import { manifestChannel } from '../subtle/expression';
-import type { LensChannel, LensExpression, Rect, Variant } from '../types';
+import type { LensChannel, LensExpression, Variant } from '../types';
 import { CHANNELS, instrumentRect } from './channels';
 import { makeDecor } from './decor';
 import { LENS_NAME } from './palette';
@@ -22,14 +22,8 @@ export const boldExpression: LensExpression = {
   name: 'Bold',
   channels,
   fallback: manifestChannel,
-  composeGeneral(tile, ids) {
-    // General: one health cell per enabled lens along the top edge, each capped with its lens's accent
-    // hairline; ribbons stay calm (no cells) so L0 reads like the drawing set
-    if (tile.form !== 'tile' || tile.strip.w < 60 * tile.u || !ids.length) return {};
-    const n = ids.length, s = tile.strip, gap = 2 * tile.u, w = (s.w - gap * (n - 1)) / n, out: Record<string, Rect> = {};
-    ids.forEach((l, i) => { out[l] = { x: s.x + i * (w + gap), y: s.y, w, h: s.h }; });
-    return out;
-  },
+  // composeGeneral is base's (one health cell per enabled lens along the top edge, none on ribbons);
+  // channels.ts caps each cell with its lens's accent hairline
   expandedRect: (tile) => instrumentRect(tile),
   spring: { stiffness: 160, damping: 25 },
   evidenceFont: (l) => (l === 'business' || l === 'design' ? 'sans' : 'mono'),

@@ -3,7 +3,7 @@
 import type { Variant, VariantId } from '../types';
 import { baseExpression } from './expression';
 
-export { baseExpression, BASE_ACCENTS, band, healthCell } from './expression';
+export { baseExpression, BASE_ACCENTS, band, healthCell, reviewDiamond } from './expression';
 export { bl, hof, ruled } from './legacy';
 
 /** Build a variant from the base expression under another id and name. */

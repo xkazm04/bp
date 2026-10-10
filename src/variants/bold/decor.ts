@@ -18,7 +18,7 @@ import { drawText } from '@/engine/text';
 import { bl, type BuiltinLens } from '../base/legacy';
 import { BH, G, TH, TW, isLiveSt, type BayNode, type BldNode, type RoomNode } from '@/lib/model';
 import type { Theme, Viewport } from '../types';
-import { CHANNELS } from './channels';
+import { CHANNELS, SENS, kUsd } from './channels';
 import { LENS_NAME } from './palette';
 
 const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
@@ -107,14 +107,12 @@ function bldParts(B: BldNode, lens: BuiltinLens): string[] {
   if (!v) { v = CHANNELS[lens].aggregate(B.feats).parts; aggCache.set(key, v); }
   return v;
 }
-const SENS: Record<string, number> = { payment: 3, personal: 2, internal: 1, public: 0 };
 const roomSens = new Map<string, number>();
 function sensOf(R: RoomNode) {
   let v = roomSens.get(R.id);
   if (v == null) { v = 0; for (const f of R.feats) v = Math.max(v, SENS[bl(f).security.dataClass] ?? 0); roomSens.set(R.id, v); }
   return v;
 }
-const kUsd = (n: number) => (n >= 1000 ? '$' + (Math.round(n / 100) / 10).toString().replace(/\.0$/, '') + 'k' : '$' + n);
 
 // -------------------------------------------------------------------------------------------- field
 /** Screen rects of the wings on screen: field marks inside them are skipped (they would be clipped). */

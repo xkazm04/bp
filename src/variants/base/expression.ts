@@ -54,6 +54,14 @@ function frame(a: MarkArgs, lw: number) {
   ctx.strokeStyle = a.accent; ctx.lineWidth = lw;
   ctx.strokeRect(r.x + lw / 2, r.y + lw / 2, Math.max(0, r.w - lw), Math.max(0, r.h - lw));
 }
+/** The "no human review" diamond at a mid-sized fixture's foot-right corner; development owns it, General shows it too (A/1). */
+export function reviewDiamond(a: MarkArgs, ga0: number) {
+  const { ctx, th, tile: t } = a, u = t.u;
+  if (!(a.stage && a.now && bl(a.f).development.humanReviewed === false && t.form === 'tile' && t.w < 150 * u && t.w >= 26 * u)) return;
+  const dx = t.x + t.w - 7 * u, dy = t.y + t.h - 7 * u, dd = Math.max(2.5 * u, Math.min(4.5 * u, t.w / 28));
+  ctx.globalAlpha = ga0 * a.w; ctx.strokeStyle = th.ink; ctx.lineWidth = 1.1;
+  ctx.beginPath(); ctx.moveTo(dx, dy - dd); ctx.lineTo(dx + dd * 0.8, dy); ctx.lineTo(dx, dy + dd); ctx.lineTo(dx - dd * 0.8, dy); ctx.closePath(); ctx.stroke();
+}
 function count(fs: readonly Feature[], fn: (f: Feature) => boolean) { let n = 0; for (const f of fs) if (fn(f)) n++; return n; }
 
 // ---------------------------------------------------------------------------------------- channels
@@ -108,13 +116,7 @@ const development: LensChannel = {
       const aw = Math.max(2, Math.min(5 * m.tile.u, m.r.w * 0.04));
       ctx.fillStyle = m.accent; ctx.fillRect(m.r.x + m.r.w - aw - 1, m.r.y + m.r.h - (m.r.h * dv.aiAuthoredPct) / 100, aw, (m.r.h * dv.aiAuthoredPct) / 100);
     });
-    // the "no human review" diamond belongs to development; General shows it too (A/1)
-    const t = a.tile, u = t.u;
-    if (a.stage && a.now && dv.humanReviewed === false && t.form === 'tile' && t.w < 150 * u && t.w >= 26 * u) {
-      const dx = t.x + t.w - 7 * u, dy = t.y + t.h - 7 * u, dd = Math.max(2.5 * u, Math.min(4.5 * u, t.w / 28));
-      ctx.globalAlpha = ga0 * a.w; ctx.strokeStyle = th.ink; ctx.lineWidth = 1.1;
-      ctx.beginPath(); ctx.moveTo(dx, dy - dd); ctx.lineTo(dx + dd * 0.8, dy); ctx.lineTo(dx, dy + dd); ctx.lineTo(dx - dd * 0.8, dy); ctx.closePath(); ctx.stroke();
-    }
+    reviewDiamond(a, ga0);
   },
   content(f, live) {
     const dv = bl(f).development;
