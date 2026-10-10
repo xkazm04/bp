@@ -4,7 +4,7 @@
 positions and stage fills never change; the lens brings its own paper, ornaments, accent ink, words
 and sheet panel. Accents touch marks, ornaments and evidence text only, never a tile fill.
 
-**General** stays calm: no decoration, six health cells along each fixture's top edge, each capped
+**General** stays calm: no decoration, one health cell per enabled lens along each fixture's top edge, each capped
 with its lens accent. On a switch the cells fly to the tile's lower-right corner and become that
 lens's instrument while the other five fade; decoration follows dominance, so lens to lens passes
 through the bare base.

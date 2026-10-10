@@ -14,7 +14,8 @@ src/variants/
 
 **Rule: a variant author edits only their own folder.** Everything a variant may change is reachable
 from `src/variants/<id>/index.ts`, which must export a `Variant` (named export `<id>` and default).
-Today each folder re-exports `base` under its own id and name via `fromBase()`.
+Subtle draws every lens from its manifest (`manifestChannel`); shaped and bold start from `baseExpression`'s
+six built-in channels with their own, and fall back to `manifestChannel` for any other lens.
 
 ## What a variant provides
 
@@ -68,7 +69,7 @@ and never call `measureText` in a loop. See `docs/perf.md`.
 
 | member | consulted by | default |
 |---|---|---|
-| `SheetPanel` | feature sheet, one panel per lens (six in General; the chosen lens first and expanded, others collapsed to their key fact) | `DefaultLensPanel` in `src/components/sheet/LensPanel.tsx` — import and wrap it to extend |
+| `SheetPanel` | feature sheet, one panel per enabled lens (all of them in General; the chosen lens first and expanded, others collapsed to their key fact) | `DefaultLensPanel` in `src/components/sheet/LensPanel.tsx` — import and wrap it to extend |
 | `Legend` | Plan tab legend for a view | `Legend` in `src/components/Legend.tsx` (draws live specimens with your own `marks`, so it follows your expression for free) |
 | `density(lens)` | sheet rows, queue detail | the channel's `density` |
 | `queueNote(d, view, model)` | an extra line under each queue card | none |
