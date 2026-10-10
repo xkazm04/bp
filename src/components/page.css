@@ -26,9 +26,9 @@
 
 .pg-stage { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .pg-stage ol { list-style: none; display: flex; gap: 3px; margin: 0; padding: 0; }
-.pg-stage li { display: flex; align-items: center; gap: 5px; font: 500 12px var(--mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-3); padding: 2px 6px; border: 1px solid var(--ink-4); }
+.pg-stage li { display: flex; align-items: center; gap: 5px; font: 500 12px var(--mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); padding: 2px 6px; border: 1px solid var(--ink-4); }
 .pg-stage li i { width: 7px; height: 7px; border: 1.5px solid currentColor; }
-.pg-stage li.done { color: var(--ink-2); } .pg-stage li.done i { background: currentColor; }
+.pg-stage li.done { color: var(--ink); } .pg-stage li.done i { background: currentColor; }
 .pg-stage li.cur { color: var(--on-ink); background: var(--ink); border-color: var(--ink); } .pg-stage li.cur i { background: currentColor; }
 .pg-stage .pct { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); }
 .pg-stage .pct b { font: 500 15px var(--mono); color: var(--ink-hi); }
@@ -125,7 +125,7 @@
 .pg-mrs .nm { display: flex; align-items: center; gap: 8px; color: var(--ink); }
 .pg-mrs .mth { font: 500 12px var(--mono); font-style: normal; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); border: 1px solid var(--ink-4); padding: 0 4px; }
 .pg-mrs .sp { display: flex; justify-content: center; }
-.pg-mrs .sp .one { font: 400 12px var(--mono); color: var(--ink-3); white-space: nowrap; }
+.pg-mrs .sp .one { font: 400 12px var(--mono); color: var(--ink-2); white-space: nowrap; }
 .pg-mrs .sp .spk { width: 72px; height: 18px; }
 .pg-mrs b { font: 500 17px var(--mono); color: var(--ink-hi); text-align: right; white-space: nowrap; }
 .pg-mrs b.bad { color: var(--red-2); } .pg-mrs b.watch { color: var(--amber); }
