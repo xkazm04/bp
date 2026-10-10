@@ -1,9 +1,10 @@
 'use client';
 // The phone view: the person's queue first, then a searchable reading list. No plan on a phone.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { fmtWait, pname } from '@/lib/model';
 import { SheetBody } from './FeatureSheet';
+import { Toast } from './Overlays';
 import { PatternDefs, StageSym } from './Symbols';
 import { ThemeToggle } from './ThemeToggle';
 import { shallowEqual, useBp, useEngine } from './hooks';
@@ -16,11 +17,24 @@ export function Phone() {
   const list = s.who ? qq.mine : qq.all, v = q.trim().toLowerCase();
   const persons = P.people.filter((p) => p.kind === 'human'), open = sim.openDecs();
   const f = s.open ? P.F[s.open] : null;
+  const detailOpen = !!s.open;
+  // The full-screen detail owns a history entry, so the platform Back gesture closes it instead of leaving the app.
+  useEffect(() => {
+    if (!detailOpen) return;
+    history.pushState({ ...(history.state ?? {}), phDetail: true }, '');
+    const onPop = () => E.closeFeature(false);
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      if (history.state?.phDetail) history.back();   // closed some other way: consume the stranded entry
+    };
+  }, [E, detailOpen]);
   return (
+    <>
     <div className="ph">
       <PatternDefs />
       <div className="ph-top"><ThemeToggle /></div>
-      <div className="ph-h"><div className="k">PROJECT {P.name.toUpperCase()} · SHEET G-001 · {P.asOf} · SIMULATED SWARM</div><h1>{P.name.toUpperCase()}</h1><p>{P.tagline}</p></div>
+      <div className="ph-h"><div className="k">PROJECT {P.name.toUpperCase()} · SHEET G-001 · {P.asOf} · {M.live ? 'LIVE LENS SCAN' : 'SIMULATED SWARM'}</div><h1>{P.name.toUpperCase()}</h1><p>{P.tagline}</p></div>
       <div className="ph-sum">
         <div><b>{P.features.length}</b>features</div><div><b>{c.live}</b>built · live</div><div><b>{c.build}</b>being built</div>
         <div className="am"><b>{sim.has ? qq.all.length : 0}</b>questions waiting</div>
@@ -69,7 +83,10 @@ export function Phone() {
                       return (
                         <div key={Bay.id}>
                           <h3>{Bay.cap.name}</h3>
-                          {fs.map((T) => <button key={T.id} type="button" onClick={() => E.openFeature(T.id)}><StageSym st={T.f.stage} w={22} h={14} /><span>{T.f.name}</span><span style={{ color: T.f.health === 'bad' ? 'var(--red)' : T.f.health === 'watch' ? 'var(--amber)' : 'transparent' }}>●</span></button>)}
+                          {fs.map((T) => {
+                            const h = T.f.health, bad = h === 'bad';   // health reads by shape (◆ trouble, ● watch) and by name, not hue alone
+                            return <button key={T.id} type="button" aria-label={bad || h === 'watch' ? T.f.name + (bad ? ', in trouble' : ', needs watching') : undefined} onClick={() => E.openFeature(T.id)}><StageSym st={T.f.stage} w={22} h={14} /><span>{T.f.name}</span><span aria-hidden="true" style={{ color: bad ? 'var(--red)' : 'var(--amber)' }}>{bad ? '◆' : h === 'watch' ? '●' : null}</span></button>;
+                          })}
                         </div>
                       );
                     })}
@@ -80,15 +97,17 @@ export function Phone() {
           ))}
         </div>
       ))}
-      <div className="foot">Illustrative sample data · simulated swarm · open on a wider screen for the zoomable plan.</div>
+      <div className="foot">{M.live ? 'Read from the live scan' : 'Illustrative sample data · simulated swarm'} · open on a wider screen for the zoomable plan.</div>
       <AnimatePresence>
         {f && (
           <motion.div className="ph-detail" role="dialog" aria-label="Feature detail" initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', stiffness: 260, damping: 32 }}>
-            <button type="button" className="btn" style={{ marginBottom: 10, height: 40 }} onClick={() => E.closeFeature(false)}>‹ Back</button>
+            <button type="button" className="btn" style={{ marginBottom: 10, height: 40 }} onClick={() => { if (history.state?.phDetail) history.back(); else E.closeFeature(false); }}>‹ Back</button>
             <SheetBody key={f.id} f={f} />
           </motion.div>
         )}
       </AnimatePresence>
     </div>
+    <Toast />
+    </>
   );
 }
