@@ -1,6 +1,7 @@
 // Types for the app-structure v3 standard (context-map.json v3) and lens manifests v1. They mirror
 // docs/standard/schema/*.schema.json, which are normative; the spec is docs/standard/app-structure-v3.md.
-// This file holds types and one constant only, so Node can load the evaluator with type stripping.
+// This file holds types only, so Node can load the evaluator with type stripping. The built-in lens
+// ids are not listed here: the catalog (catalog.ts) is the list, and code never branches on a lens id.
 
 // ------------------------------------------------------------------------------------- vocabulary
 /** The fixed, ordered lifecycle. `flagged` = live behind a partial rollout. */
@@ -16,12 +17,6 @@ export type Scalar = string | number | boolean;
 export type FacetValues = Record<string, Scalar>;
 /** The core feature fields a lens field may bind to (`source: { feature }`). Read-only, never stored in facets. */
 export type FeatureBoundField = 'stage' | 'priority' | 'kind' | 'tier' | 'milestone' | 'status';
-
-/**
- * The six built-in lens ids, for loading the catalog only. Code must never branch on this list:
- * every lens, built-in or custom, is drawn and evaluated from its manifest.
- */
-export const BUILTIN_LENS_IDS = ['business', 'design', 'development', 'operations', 'security', 'quality'] as const;
 
 // ---------------------------------------------------------------------------------- lens manifest
 export type FieldType = 'number' | 'integer' | 'percent' | 'money' | 'boolean' | 'string' | 'enum' | 'date';
