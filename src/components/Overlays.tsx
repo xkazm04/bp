@@ -74,6 +74,18 @@ function SwarmLines({ fs }: { fs: readonly import('@/lib/data').Feature[] }) {
     </>
   );
 }
+/**
+ * A lens whose aggregate throws costs that lens's line on the card, not the chrome: the card falls back to the
+ * general counts and the failure is logged once per engine and lens, as the canvas labels do (plan.ts aggParts).
+ */
+const aggFailed = new WeakMap<object, Set<string>>();
+function lensParts(E: ReturnType<typeof useEngine>, id: string, l: string, fs: readonly import('@/lib/data').Feature[]): string[] | null {
+  try { return E.lensAgg(id, l, fs).parts; } catch (err) {
+    let seen = aggFailed.get(E); if (!seen) aggFailed.set(E, (seen = new Set()));
+    if (!seen.has(l)) { seen.add(l); console.error(`[lens ${l}] aggregate failed`, err); }
+    return null;
+  }
+}
 function HoverBody() {
   const E = useEngine(), M = E.M, sim = M.sim;
   const s = useBp((s) => ({ hover: s.hover, view: s.view, t: s.t, delta: s.delta, simV: s.simV, selMode: s.selMode }), shallowEqual);
@@ -136,7 +148,8 @@ function HoverBody() {
   else if (h.type === 'bay') { const b = o as BayNode; title = b.cap.name; kick = 'Bay · ' + b.room.d.name; sub = b.tiles.length + ' features: ' + b.tiles.map((T) => T.f.name).join(', ') + '.'; art = b.room.d.base; }
   else { const b = o as BldNode; title = b.name; kick = 'Building'; sub = b.wings.length + ' wings, ' + b.wings.reduce((n, w) => n + w.rooms.length, 0) + ' rooms'; }
   const c = M.agg.countsOf(o.id, o.feats, s.t, s.delta);
-  const parts = lensOf(M.P, s.view) && now ? [o.feats.length + ' features', ...E.lensAgg(o.id, s.view, o.feats).parts] : [o.feats.length + ' features', c.live + c.flagged + ' live', c.build + ' building', c.paper + ' on paper'];
+  const lp = lensOf(M.P, s.view) && now ? lensParts(E, o.id, s.view, o.feats) : null;
+  const parts = lp ? [o.feats.length + ' features', ...lp] : [o.feats.length + ' features', c.live + c.flagged + ' live', c.build + ' building', c.paper + ' on paper'];
   const bad = now ? M.agg.healthOf(o.id, o.feats, s.view).bad : 0, tot = Math.max(1, c.n);
   return (
     <>
