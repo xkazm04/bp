@@ -28,6 +28,18 @@ import './page.css';
 
 export { SheetBody } from './sheet/SheetBody';
 
+// Tab cycles inside the open page (the plan behind is dimmed and inert to the pointer). Focusables are
+// collected at keydown time: the content mounts a frame late and changes with every tab switch.
+const FOCUSABLE = 'button:not([disabled]), [href], select:not([disabled]), input:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
+function wrapTab(e: React.KeyboardEvent<HTMLElement>) {
+  if (e.key !== 'Tab') return;
+  const els = Array.from(e.currentTarget.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((x) => x.getClientRects().length);
+  if (!els.length) return;
+  const first = els[0], last = els[els.length - 1], at = document.activeElement;
+  if (e.shiftKey && (at === first || !e.currentTarget.contains(at))) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && (at === last || !e.currentTarget.contains(at))) { e.preventDefault(); first.focus(); }
+}
+
 type Rect = { x: number; y: number; w: number; h: number };
 const MORPH = 0.32;
 
@@ -179,7 +191,7 @@ export function FeatureSheet() {
       {f && !s.phone && [
         <motion.div key={"dim" + nth.current} className="pg-dim" aria-hidden="true" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduce ? 0.15 : MORPH }}
           onClick={() => E.closeFeature()} onWheel={(e) => document.getElementById('detail')?.querySelector('.pg-scroll')?.scrollBy({ top: e.deltaY })} />,
-        <motion.section key={"page" + nth.current} id="detail" className="pg" aria-label={'Feature page: ' + f.name} role="dialog" aria-modal="false"
+        <motion.section key={"page" + nth.current} id="detail" className="pg" aria-label={'Feature page: ' + f.name} role="dialog" aria-modal="false" onKeyDown={wrapTab}
           style={{ left: b.x, top: b.y, width: b.w, height: b.h, transformOrigin: '0 0' }}
           custom={tile.current} variants={vPage} initial="from" animate="full" exit="from">
           <motion.div className="pg-in" variants={vInner}>
