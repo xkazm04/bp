@@ -20,3 +20,5 @@ bp.products.local.json
 /.claude/skills/scan-sweep
 /.ai/skill-runs.local.jsonl
 # END ai-registry linked skills
+.ai/consults.jsonl
+.ai/registry-leads.jsonl

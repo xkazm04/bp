@@ -1,0 +1,8 @@
+{"context":"App-structure standard","title":"The loader silently drops bad input on 8 paths in load.ts with no count or trace"}
+{"context":"Model, data and live products","title":"Overlays.tsx:383 still hard-codes the $2,400 spend cap"}
+{"context":"Model, data and live products","title":"The shots route reads whole files with readFileSync and has no Range support (large .webm, iOS seeking)"}
+{"context":"Scripts and checks","title":"No CI: none of the offline gates runs on push (operator)"}
+{"context":"Scripts and checks","title":"perf.py prints frame times but never checks the 60 fps budget"}
+{"context":"Scripts and checks","title":"The text-size check is copied into 4 shots.py files; the 3 variant copies miss the phone view"}
+{"context":"Scripts and checks","title":"docs/standard/analysis.md:276 names kettle-to-v3.mjs; the file is .ts"}
+{"context":"Scripts and checks","title":"scan-demo --live: a database-busy error kills the process and leaves the run marked running"}
