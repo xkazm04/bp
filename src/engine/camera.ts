@@ -21,7 +21,9 @@ export class Camera {
   flying = false;
   world: Box = { x: 0, y: 0, w: 1, h: 1 };
   reduced = false;
-  constructor(private onMove: () => void) {}
+  // A plain field, not a parameter property: scripts/check-camera.ts loads this file under Node's type stripping.
+  private onMove: () => void;
+  constructor(onMove: () => void) { this.onMove = onMove; }
 
   sx(x: number) { return this.FW / 2 + (x - this.x) * this.k; }
   sy(y: number) { return this.FH / 2 + (y - this.y) * this.k; }
