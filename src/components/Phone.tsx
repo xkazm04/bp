@@ -101,7 +101,7 @@ export function Phone() {
       <AnimatePresence>
         {f && (
           <motion.div className="ph-detail" role="dialog" aria-label="Feature detail" initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', stiffness: 260, damping: 32 }}>
-            <button type="button" className="btn" style={{ marginBottom: 10, height: 40 }} onClick={() => { if (history.state?.phDetail) history.back(); else E.closeFeature(false); }}>‹ Back</button>
+            <button type="button" className="btn" style={{ marginBottom: 10, height: 44 }} onClick={() => { if (history.state?.phDetail) history.back(); else E.closeFeature(false); }}>‹ Back</button>
             <SheetBody key={f.id} f={f} />
           </motion.div>
         )}
