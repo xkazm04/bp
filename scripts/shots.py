@@ -6,7 +6,10 @@ from playwright.sync_api import sync_playwright
 BASE = ((sys.argv[1] if len(sys.argv) > 1 else '') or os.environ.get('BP_BASE') or 'http://localhost:3000').rstrip('/')
 OUT = sys.argv[2] if len(sys.argv) > 2 else 'docs/shots/foundation'
 problems = []
-MINFONT = """(() => { let min = 99, where = ''; for (const el of document.querySelectorAll('.bp-ui *, main *')) { if (!el.childNodes.length) continue; let txt = false; for (const n of el.childNodes) if (n.nodeType === 3 && n.textContent.trim()) txt = true; if (!txt) continue; const cs = getComputedStyle(el); if (cs.display === 'none' || cs.visibility === 'hidden') continue; const r = el.getBoundingClientRect(); if (!r.width) continue; const px = parseFloat(cs.fontSize) * (window.__bp ? window.__bp.U : 1); if (px < min) { min = px; where = el.tagName + '.' + el.className + ' ' + el.textContent.slice(0, 30); } } return [Math.round(min * 10) / 10, where]; })()"""
+# The smallest rendered text on the page: every visible element with its own text, in the chrome (.bp-ui, scaled by the
+# engine's U) and outside it (the phone view, overlays). Returns [px, where, elements measured]; 0 measured means the
+# floor was not checked at all on that page.
+MINFONT = """(() => { const U = window.__bp ? window.__bp.U : 1; let min = 99, where = '', n = 0; for (const el of document.body.querySelectorAll('*')) { if (el.closest('script, style, noscript, template')) continue; let txt = false; for (const c of el.childNodes) if (c.nodeType === 3 && c.textContent.trim()) txt = true; if (!txt) continue; const cs = getComputedStyle(el); if (cs.display === 'none' || cs.visibility === 'hidden') continue; const r = el.getBoundingClientRect(); if (!r.width) continue; n++; const px = parseFloat(cs.fontSize) * (el.closest('.bp-ui') ? U : 1); if (px < min) { min = px; where = el.tagName + '.' + el.className + ' ' + el.textContent.trim().slice(0, 30); } } return [Math.round(min * 10) / 10, where, n]; })()"""
 def run(pg, name, url, w, h, steps):
     logs = []
     pg.on('console', lambda m: logs.append(m.type + ': ' + m.text[:300]) if m.type in ('error', 'warning') else None)
