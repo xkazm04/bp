@@ -165,24 +165,38 @@ export function lensHealth(manifest: LensManifest, facet: Facet | undefined, tod
 }
 
 /**
- * The matched rule's reason with `{field}` replaced by the bound value ("unknown" when absent); null
- * when no rule decides the health (no facet, not applicable, nothing measured, or the default).
- * It explains the rules, not an override, which carries its own `why`.
+ * The rule that decides the health, with the bound values it was matched against; null when no rule
+ * decides (no facet, not applicable, nothing measured, `applies_when` not matching, or the default).
+ * Like `explain`, it ignores an override. A reader that wants the reason, the short form and the
+ * rule's fields calls this once instead of `explain` twice plus `matchRule`.
  */
-/** The matched rule's reason with `{field}` filled in; `form: 'short'` gives the rule's `short` (null when it has none). */
-export function explain(manifest: LensManifest, facet: Facet | undefined, ctx?: EvalContext, form: 'full' | 'short' = 'full'): string | null {
+export function decidingRule(manifest: LensManifest, facet: Facet | undefined, ctx?: EvalContext): { rule: HealthRule; values: FacetValues } | null {
   if (!facet || facet.applicable === false) return null;
   const c = compile(manifest);
   const values = bindValues(manifest, facet.values, ctx);
   if (!measuredValues(values, c) || (c.applies && !evaluateCondition(c.applies, values))) return null;
-  const r = matchRule(manifest, values);
-  if (!r) return null;
-  const text = form === 'short' ? r.short : r.reason;
-  if (text === undefined) return null;
+  const rule = matchRule(manifest, values);
+  return rule ? { rule, values } : null;
+}
+
+/** A reason (or short reason) with `{field}` replaced by the bound value, or `unknown` when absent. */
+export function fillReason(text: string, values: Values): string {
   return text.replace(/\{([A-Za-z][A-Za-z0-9]*)\}/g, (_, k: string) => {
     const v = Object.prototype.hasOwnProperty.call(values, k) ? values[k] : undefined;
     return v === undefined ? 'unknown' : String(v);
   });
+}
+
+/**
+ * The matched rule's reason with `{field}` replaced by the bound value ("unknown" when absent);
+ * `form: 'short'` gives the rule's `short` (null when it has none). Null when no rule decides the
+ * health (see `decidingRule`). It explains the rules, not an override, which carries its own `why`.
+ */
+export function explain(manifest: LensManifest, facet: Facet | undefined, ctx?: EvalContext, form: 'full' | 'short' = 'full'): string | null {
+  const d = decidingRule(manifest, facet, ctx);
+  if (!d) return null;
+  const text = form === 'short' ? d.rule.short : d.rule.reason;
+  return text === undefined ? null : fillReason(text, d.values);
 }
 
 /** One feature's input to a rollup: its health, plus its values when the rollup is weighted. */

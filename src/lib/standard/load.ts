@@ -11,7 +11,7 @@ import type {
   LensManifest, LineName, Rollup, Scalar, Stage, StructureEvent, Variation,
 } from './types.ts';
 import { FEATURE_BOUND_FIELDS } from './types.ts';
-import { bindValues, conditionFields, explain, lensHealth, matchRule, type EvalContext } from './health.ts';
+import { bindValues, conditionFields, decidingRule, fillReason, lensHealth, type EvalContext } from './health.ts';
 import { generalHealth } from './present.ts';
 
 // ------------------------------------------------------------------------------------ the model
@@ -360,10 +360,12 @@ function buildBase(raw: unknown, eventsText: string | null, opts: LoadOptions): 
     for (const d of defs) {
       const facet = (facets[f.slug]?.[d.id] ?? null) as Facet | null;
       const h = lensHealth(d.manifest, facet ?? undefined, asOf, ctx);
-      const v = bindValues(d.manifest, facet?.values, ctx);
-      const why = explain(d.manifest, facet ?? undefined, ctx);
-      const short = why !== null ? explain(d.manifest, facet ?? undefined, ctx, 'short') : null;
-      const rule: HealthRule | null = why !== null ? matchRule(d.manifest, v) : null;
+      // one pass for the explanation: the deciding rule and its bound values (spec `explain`)
+      const dr = decidingRule(d.manifest, facet ?? undefined, ctx);
+      const rule: HealthRule | null = dr && dr.rule.reason !== undefined ? dr.rule : null;
+      const v = dr ? dr.values : bindValues(d.manifest, facet?.values, ctx);
+      const why = rule ? fillReason(rule.reason, v) : null;
+      const short = rule && rule.short !== undefined ? fillReason(rule.short, v) : null;
       const o = facet?.override;
       const ov = o && asOf <= o.until && h === o.health ? o : null;
       out[d.id] = { h, v, why, short, whyFields: rule ? conditionFields(rule.when) : [], ov, facet };
