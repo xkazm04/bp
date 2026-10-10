@@ -36,7 +36,7 @@ export function Phone() {
       <div className="ph-top"><ThemeToggle /></div>
       <div className="ph-h"><div className="k">PROJECT {P.name.toUpperCase()} · SHEET G-001 · {P.asOf} · {M.live ? 'LIVE LENS SCAN' : 'SIMULATED SWARM'}</div><h1>{P.name.toUpperCase()}</h1><p>{P.tagline}</p></div>
       <div className="ph-sum">
-        <div><b>{P.features.length}</b>features</div><div><b>{c.live}</b>built · live</div><div><b>{c.build}</b>being built</div>
+        <div><b>{P.features.length}</b>features</div><div><b>{c.live + c.flagged}</b>live</div><div><b>{c.build}</b>being built</div>
         <div className="am"><b>{sim.has ? qq.all.length : 0}</b>questions waiting</div>
         <div><b>{sim.has ? sim.agents.filter((a) => a.status === 'working').length : 0}</b>agents working</div>
         <div className="tr"><b>{P.features.filter((x) => x.health === 'bad').length}</b>in trouble</div>
