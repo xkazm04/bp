@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { fmtWait, pname } from '@/lib/model';
 import { SheetBody } from './FeatureSheet';
+import { Toast } from './Overlays';
 import { PatternDefs, StageSym } from './Symbols';
 import { ThemeToggle } from './ThemeToggle';
 import { shallowEqual, useBp, useEngine } from './hooks';
@@ -17,6 +18,7 @@ export function Phone() {
   const persons = P.people.filter((p) => p.kind === 'human'), open = sim.openDecs();
   const f = s.open ? P.F[s.open] : null;
   return (
+    <>
     <div className="ph">
       <PatternDefs />
       <div className="ph-top"><ThemeToggle /></div>
@@ -90,5 +92,7 @@ export function Phone() {
         )}
       </AnimatePresence>
     </div>
+    <Toast />
+    </>
   );
 }

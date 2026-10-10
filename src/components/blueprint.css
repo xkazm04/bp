@@ -238,6 +238,8 @@
 #toast { position: absolute; left: var(--cx, 50%); top: 76px; background: var(--card-hi); border: 1px solid var(--mint); padding: 9px 14px; font-size: 14px; color: var(--ink-hi); z-index: 40; /* above the feature page (z 30): an undo toast must stay reachable */ display: flex; gap: 12px; align-items: center; max-width: 620px; box-shadow: 0 10px 30px var(--shadow); }
 #toast b { color: var(--mint); font-weight: 600; }
 #toast button { background: none; border: 1px solid var(--ink-2); color: var(--ink); padding: 0 9px; height: 26px; font: 500 12px var(--mono); letter-spacing: 0.06em; }
+.bp-phone #toast { width: max-content; top: auto; bottom: calc(16px + env(safe-area-inset-bottom)); max-width: calc(100% - 32px); }
+.bp-phone #toast button { min-height: 44px; }
 #morning { position: absolute; left: 50%; top: 50%; width: min(760px, calc(100% - 40px)); max-height: calc(100% - 80px); background: var(--card-hi); border: 1px solid var(--ink); box-shadow: 0 30px 100px var(--shadow); z-index: 40; overflow: auto; padding: 22px 26px 20px; }
 #morning .kk { font: 500 12px var(--mono); letter-spacing: 0.12em; color: var(--ink-2); text-transform: uppercase; }
 #morning h2 { margin: 4px 0; font-size: 36px; line-height: 1.05; font-weight: 600; color: var(--ink-hi); }
