@@ -16,8 +16,9 @@ import { fileURLToPath } from 'node:url';
 import { lensHealth } from '../src/lib/standard/health.ts';
 import type {
   AppStructure, Capability, Context, Domain, Facet, FacetValues, Feature, FeatureBoundField, Group, Health, Kpi, LensEntry,
-  LensManifest, Milestone, Scalar, Stage, StructureEvent,
+  LensManifest, Milestone, Stage, StructureEvent,
 } from '../src/lib/standard/types.ts';
+import { FLATTEN, type LensObject } from './sample-facets.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p: string): unknown => JSON.parse(fs.readFileSync(path.join(ROOT, p), 'utf8'));
@@ -27,7 +28,6 @@ const BUILTIN = ['business', 'design', 'development', 'operations', 'security', 
 const COST_LENS = 'com.kettle.cost';
 
 // ------------------------------------------------------------------------------- the sample's shape
-type LensObject = Record<string, unknown> & { health: Health };
 interface SampleFeature {
   id: string; name: string; summary: string; domain: string; capability: string; stage: Stage; priority: 'P0' | 'P1' | 'P2' | 'P3';
   kind: 'customer' | 'internal' | 'business' | 'platform'; milestone: string | null; surfaces: string[]; dependsOn: string[];
@@ -256,39 +256,7 @@ features.splice(features.findIndex((f) => f.id === 'PAY-16') + 1, 0, ocrFeature)
 const featureBySlug = new Map(features.map((f) => [f.slug, f]));
 
 // ----------------------------------------------------------------------------------------- facets
-// The flattening is scripts/check-builtin-health.ts's, copied verbatim (that script is the producer
-// reference): only what the lens object says, unknown values omitted, never the feature's stage or
-// priority (the manifests bind those). The one producer-side applicability: design "n/a" = no screen.
-function scalars(o: Record<string, unknown>, skip: string[] = []): FacetValues {
-  const out: FacetValues = {};
-  for (const [k, v] of Object.entries(o)) {
-    if (skip.includes(k) || k === 'health') continue;
-    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') out[k] = v as Scalar;
-  }
-  return out;
-}
-const FLATTEN: Record<string, (o: LensObject) => Facet> = {
-  business: (o) => ({ values: scalars(o) }),
-  design: (o) => (o.status === 'n/a' ? { applicable: false } : { values: scalars(o) }),
-  development: (o) => ({ values: scalars(o) }),
-  operations: (o) => {
-    const flag = o.flag as { key: string; rolloutPct: number } | null;
-    const values = scalars(o, ['flag']);
-    if (flag) { values.flagKey = flag.key; values.rolloutPct = flag.rolloutPct; }
-    else if (o.environment === 'production') values.rolloutPct = 100;
-    return { values };
-  },
-  security: (o) => ({ values: scalars(o) }),
-  quality: (o) => {
-    const b = o.openBugs as { p1: number; p2: number; p3: number };
-    const values = scalars(o, ['openBugs']);
-    if (o.status === 'n/a') delete values.status; // "nothing to test yet": not a status, so omitted
-    values.openBugsP1 = b.p1; values.openBugsP2 = b.p2; values.openBugsP3 = b.p3;
-    const tests = o.e2eTests as number;
-    if (tests > 0) values.e2ePassPct = Math.round(((o.e2ePassing as number) / tests) * 100);
-    return { values };
-  },
-};
+// The flattening (scalars, FLATTEN) is scripts/sample-facets.ts, shared with scripts/check-builtin-health.ts.
 
 /** When a feature's lens values were taken: its latest activity in the feed, else its latest known change. */
 const lastActivity = new Map<string, string>();
