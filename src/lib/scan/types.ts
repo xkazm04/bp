@@ -1,6 +1,6 @@
 // Wire types for the lens-scan store: one SQLite file per product repo, `<root>/.ai/lens-scan/scan.db`,
 // written by the /lens-scan skill and read (plus proposal decisions) by the blueprint's routes. The
-// DDL is docs/standard/lens-scan-store.md, name for name. Absent values are omitted, never null or 0:
+// DDL is docs/standard/lens-scan-store.sql, name for name. Absent values are omitted, never null or 0:
 // no measurement row means "unmeasured".
 import type { MetricMethod } from '@/lib/standard/types';
 
