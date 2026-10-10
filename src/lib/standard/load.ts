@@ -158,8 +158,12 @@ const strs = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is st
 const isStage = (v: unknown): v is Stage => typeof v === 'string' && (STAGES as readonly string[]).includes(v);
 const GLYPHS: readonly GlyphName[] = ['bars', 'set-square', 'brackets', 'pulse', 'padlock', 'check'];
 const LINES: readonly LineName[] = ['solid', 'double', 'dotted', 'comb', 'chain', 'hatched', 'dimension'];
-/** A custom glyph is untrusted: path commands and numbers only, at most 2048 characters (spec 8.6). */
-const PATH_OK = /^[MmLlHhVvCcSsQqTtAaZz0-9eE.,+\-\s]{1,2048}$/;
+/**
+ * A custom glyph is untrusted: path commands and numbers only, at most 2048 characters (spec 8.6).
+ * The same rule as the schema's `presentation.glyph.path` (lens-manifest-1.schema.json): it opens with
+ * a moveto and separates with spaces only, so a path the validator rejects falls back here too.
+ */
+const PATH_OK = /^[Mm][MmZzLlHhVvCcSsQqTtAa0-9eE.,+\- ]{0,2047}$/;
 const DAY = 864e5;
 const addDays = (d: string, n: number) => new Date(Date.parse(d + 'T00:00:00Z') + n * DAY).toISOString().slice(0, 10);
 const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9.]+/g, '-').replace(/^-+|-+$/g, '') || 'feature';
