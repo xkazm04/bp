@@ -69,6 +69,8 @@
 .pg-tt { background: none; border: 0; padding: 0; font: inherit; color: var(--ink); text-decoration: underline dotted; text-underline-offset: 3px; }
 .pg-tt:hover { color: var(--ink-hi); text-decoration-style: solid; }
 .pg-blast { margin-top: 10px; }
+/* on touch (a tablet gets this page, not the phone body) the crumbs and revision dates reach the 24 px target minimum */
+@media (pointer: coarse) { .pg-crumbs button, .pg-tt { min-height: 24px; } }
 
 /* ------------------------------------------------------------------ General: headline tiles */
 .pg-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
