@@ -67,6 +67,8 @@ function crumbLabel(E: ReturnType<typeof useEngine>, c: Crumb): string {
 function Tabs({ f }: { f: Feature }) {
   const E = useEngine(), V = useVariant(), P = E.M.P;
   const view = useBp((s) => s.view);
+  // under reduced motion the underline does not travel: it is simply under the new tab
+  const reduce = useReducedMotion();
   return (
     <div className="pg-tabs" role="tablist" aria-label="Feature page tabs (the plan's lens follows)">
       {views(P).map((k, i) => {
@@ -77,7 +79,7 @@ function Tabs({ f }: { f: Feature }) {
             title={(d ? d.name + ': ' + (h === 'na' ? 'does not apply' : h) : 'General: the overview') + (i < 9 ? ' (' + (i + 1) + ')' : '')}>
             <span className="sh">{d ? d.short : 'GEN'}{d ? <i className={'hd ' + h} aria-hidden="true" /> : null}</span>
             <span className="nm">{sub}</span>
-            {on && <motion.span layoutId="pg-tab-uline" className="uline" transition={{ type: 'spring', stiffness: 420, damping: 36 }} />}
+            {on && <motion.span layoutId={reduce ? undefined : 'pg-tab-uline'} className="uline" transition={{ type: 'spring', stiffness: 420, damping: 36 }} />}
           </button>
         );
       })}

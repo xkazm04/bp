@@ -4,7 +4,7 @@
 // lens mix: in General they all sit side by side; in a lens, its panel moves to the top and grows to
 // its reader's density while the others collapse to their headline. Each panel ends with its metric
 // rows (MetricRows, from the manifest); the Business section and a live product's Screens strip follow.
-import { LayoutGroup, motion } from 'motion/react';
+import { LayoutGroup, motion, useReducedMotion } from 'motion/react';
 import type { Feature } from '@/lib/data';
 import { REV_DESC, STAGE_WORD, astat, fmtWait, isAgentId, lensOf, pname, type Model } from '@/lib/model';
 import { illoSVG } from '@/engine/render/illo';
@@ -58,6 +58,8 @@ function LensPanels({ f, M }: { f: Feature; M: Model }) {
   const V = useVariant(), dens = useDensity();
   const view = useBp((s) => s.view);
   const Panel = V.ui?.SheetPanel ?? DefaultLensPanel, scan = useLive()?.product.scan;
+  // under reduced motion the panels re-order in place instead of travelling
+  const reduce = useReducedMotion();
   const ids = M.P.lenses.map((l) => l.id);
   const order = lensOf(M.P, view) ? [view, ...ids.filter((l) => l !== view)] : ids;
   return (
@@ -66,7 +68,7 @@ function LensPanels({ f, M }: { f: Feature; M: Model }) {
         {order.map((l) => {
           const cur = view === l, mini = view !== 'general' && !cur;
           return (
-            <motion.div key={l} layout transition={{ type: 'spring', stiffness: 260, damping: 30 }} className={'evp ' + (f.lens[l]?.h ?? 'unmeasured') + (cur ? ' cur' : '') + (mini ? ' mini' : '')}>
+            <motion.div key={l} layout={!reduce} transition={{ type: 'spring', stiffness: 260, damping: 30 }} className={'evp ' + (f.lens[l]?.h ?? 'unmeasured') + (cur ? ' cur' : '') + (mini ? ' mini' : '')}>
               <Panel lens={l} def={M.P.LENS[l]} f={f} model={M} density={dens(l)} expanded={cur} view={view} />
               {!mini && <MetricRows def={M.P.LENS[l]} f={f} model={M} scan={scan} all={cur} fl={f.lens[l]} />}
             </motion.div>
