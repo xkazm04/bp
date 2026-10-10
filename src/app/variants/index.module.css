@@ -4,7 +4,7 @@
 .kicker { font: 500 12px/1 var(--font-mono), monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-2); }
 .h1 { margin: 10px 0 8px; font-size: 44px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-hi); }
 .lead { margin: 0; max-width: 720px; font-size: 16px; line-height: 1.5; color: var(--ink-2); }
-.cards { list-style: none; margin: 28px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+.cards { list-style: none; margin: 28px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 18px; }
 .card { position: relative; border: 1.5px solid var(--ink); background: var(--panel); display: flex; flex-direction: column; transition: transform 0.2s, box-shadow 0.2s; }
 .card:hover { transform: translateY(-2px); box-shadow: 0 14px 40px var(--shadow); }
 .link { display: flex; flex-direction: column; gap: 10px; padding: 18px 20px 16px; color: inherit; text-decoration: none; flex: 1 1 auto; }
@@ -14,7 +14,7 @@
 .desc { font-size: 15px; line-height: 1.45; color: var(--ink); }
 .open { margin-top: auto; font: 500 12px var(--font-mono), monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); }
 .alts { border-top: 1px solid var(--ink-3); padding: 8px 20px; font: 500 12px var(--font-mono), monospace; letter-spacing: 0.06em; }
-.alts a { color: var(--ink-2); text-decoration: none; border-bottom: 1px dashed var(--ink-3); }
+.alts a { display: inline-block; padding: 5px 0 4px; color: var(--ink-2); text-decoration: none; border-bottom: 1px dashed var(--ink-3); }
 .alts a:hover { color: var(--ink-hi); }
 .foot { margin-top: 28px; font: 400 12px var(--font-mono), monospace; color: var(--ink-2); }
 @media (max-width: 600px) { .main { padding: 24px 16px; } .h1 { font-size: 32px; } }
