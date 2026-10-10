@@ -95,7 +95,6 @@ export class Engine {
   private themeV = 0; private fontsV = 0; private mixV = 0; private simStaticV = 0; private simStaticAt = 0; private simSeenV = -1; private simT10 = -1;
   private camSig = ''; private placeKey = ''; private hoverEl: HTMLElement | null = null;
   private place: Chain = [];
-  private camBefore: Cam | null = null;
   private introOn = false; private introT0 = 0;
   private drag: { x0: number; y0: number; cx: number; cy: number; moved: boolean; lasso: boolean; shift: boolean } | null = null;
   private ptrs = new Map<number, { x: number; y: number }>();
@@ -458,7 +457,7 @@ export class Engine {
   }
   crumb(depth: number) {
     if (depth === 0) { this.closeFeature(false); this.goHome(); return; }
-    if (this.S.open) { this.store.set({ open: null }); this.camBefore = null; }
+    if (this.S.open) this.store.set({ open: null });
     const p = this.place[depth - 1] || this.place[this.place.length - 1];
     if (p) this.cam.flyTo(this.fitOf(p));
   }
@@ -525,7 +524,7 @@ export class Engine {
    * the tile and shrink back into it. Only a tile that is off screen or too small to see (a search
    * pick, a deep link, a list row) brings the plan to it first, instantly, behind the page.
    */
-  openFeature(id: string, _dur?: number) {
+  openFeature(id: string) {
     const F = this.M.P.F[id], T = this.M.L.TILE[id]; if (!F || !T) return;
     const r = this.tileRect(id)!, U = this.U, S = this.SAFE;
     if (!this.S.phone && (r.w * U < 48 || r.x * U < S.l || r.y * U < S.t || (r.x + r.w) * U > S.r || (r.y + r.h) * U > S.b)) {
@@ -539,12 +538,12 @@ export class Engine {
   closeFeature(focus = true) {
     if (!this.S.open) return;
     this.set({ open: null });
-    this.camBefore = null; this.placeKey = ''; this.writeHashSoon();
+    this.placeKey = ''; this.writeHashSoon();
     if (focus) this.cv.focus({ preventScroll: true });
   }
   setMode(m: { ga?: boolean; blast?: string | null }) {
     const patch: Partial<UIState> = { ...m, info: false };
-    if (this.S.open && (m.blast || m.ga)) { patch.open = null; this.camBefore = null; }
+    if (this.S.open && (m.blast || m.ga)) patch.open = null;
     this.set(patch);
     const S = this.S;
     const ids = S.blast ? this.M.closure.of(S.blast).concat([S.blast]) : S.ga ? this.M.P.features.filter((f) => f.milestone === GA_MILESTONE).map((f) => f.id) : null;
@@ -1004,7 +1003,7 @@ export class Engine {
       const t = this.placeById('bld', h.at) ? 'bld' : this.M.L.WING[h.at] ? 'wing' : this.M.L.ROOM[h.at] ? 'room' : this.M.L.BAY[h.at] ? 'bay' : null;
       if (t) this.cam.set(this.fitOf({ t: t as Crumb['t'], o: this.placeById(t, h.at)! }));
     }
-    if (h.open && this.M.P.F[h.open]) { this.openFeature(h.open, 0); this.camBefore = h.at ? null : { ...this.HOME }; }
+    if (h.open && this.M.P.F[h.open]) this.openFeature(h.open);
     } finally { this.hashLock = false; }
   }
   destroy() {
