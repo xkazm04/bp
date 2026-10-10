@@ -13,7 +13,8 @@ import { GA_MILESTONE, HOUR, SPEEDS, dnum, fmtD, latestRun, revAt } from '@/lib/
 
 const ARRIVALS = SWARM.decisions.filter((d) => d.arrivesAt).map((d) => ({ id: d.id, t: d.arrivesAt! }));
 import { shallowEqual, useBp, useEngine, useLive } from './hooks';
-import { Strip, hourSeekKey, scanStatus, useHourText } from './timeline/Strip';
+import { Strip, scanStatus, useHourText } from './timeline/Strip';
+import { timeSliderKey } from './timeline/keys';
 import './timeline.css';
 
 /** One staggered item of the panel (the panel's variants drive it). */
@@ -171,16 +172,8 @@ function Revisions() {
         onPointerDown={(e) => { drag.current = null; (e.currentTarget as Element).setPointerCapture(e.pointerId); apply(px(e)); }}
         onPointerMove={(e) => { if (drag.current) apply(px(e)); }} onPointerUp={() => { drag.current = null; }}
         onKeyDown={(e) => {
-          // keys the slider handles stop here (the engine's document handler would act on them too); the rest pass through
-          if (e.ctrlKey || e.metaKey || e.altKey) return;
-          if (hourSeekKey(e, E, hour)) { e.preventDefault(); e.nativeEvent.stopImmediatePropagation(); return; }
-          if (['ArrowLeft', 'ArrowDown', 'ArrowRight', 'ArrowUp', 'Home', 'End', 't', 'T', 'Escape', 'Enter'].includes(e.key)) e.nativeEvent.stopImmediatePropagation();
-          if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); E.stepWeek(-1); }
-          else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); E.stepWeek(1); }
-          else if (e.key === 'Home') { e.preventDefault(); E.setTime(M.P.weeks[0]); }
-          else if (e.key === 'End') { e.preventDefault(); E.setTime(asOf); }
-          else if (e.key === 't' || e.key === 'T') { e.preventDefault(); E.setTimeline(); }
-          else if (e.key === 'Escape') { e.preventDefault(); E.setTimeline(false); }
+          // the sliders' one key map (timeline/keys.ts); Esc here collapses the panel
+          if (timeSliderKey(e, E, hour, () => E.setTimeline(false))) { e.preventDefault(); e.nativeEvent.stopImmediatePropagation(); }
         }}>
         {txt('rev', { className: 'lbl' })}{txt('nw')}{txt('step')}
         {polys}

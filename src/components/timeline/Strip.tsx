@@ -7,6 +7,7 @@ import { forwardRef, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { SWARM } from '@/lib/data';
 import { HOUR, dnum, fmtD, latestRun, revAt } from '@/lib/model';
 import { shallowEqual, useBp, useEngine, useLive } from '../hooks';
+import { timeSliderKey } from './keys';
 
 const ARRIVALS = SWARM.decisions.filter((d) => d.arrivesAt).map((d) => d.arrivesAt!);
 
@@ -42,14 +43,6 @@ function StripClock() {
       <span className="tl-hm" ref={tref}>09:00:00</span><span className="tl-dim">UTC</span><span className={'tl-st ' + tone}>{st}</span>
     </span>
   );
-}
-
-/** Hour-seek keys shared by both time sliders: PageUp or Shift+ArrowRight skip the simulated hour ahead by 5 minutes.
- *  Forward only, like the pointer (the sim replays events and cannot rewind). Returns true when the key was ours. */
-export function hourSeekKey(e: React.KeyboardEvent, E: ReturnType<typeof useEngine>, hour: boolean): boolean {
-  if (!hour || !(e.key === 'PageUp' || (e.shiftKey && e.key === 'ArrowRight'))) return false;
-  E.seek(Math.min(HOUR, E.M.sim.t + 300));
-  return true;
 }
 
 /** Keeps a slider's aria-valuetext in step with the simulated clock (whole minutes only, so a screen reader is not flooded). */
@@ -115,16 +108,9 @@ function Hairline() {
         onPointerDown={(e) => { e.stopPropagation(); drag.current = null; (e.currentTarget as Element).setPointerCapture(e.pointerId); apply(px(e)); }}
         onPointerMove={(e) => { if (drag.current) apply(px(e)); }} onPointerUp={() => { drag.current = null; }}
         onKeyDown={(e) => {
-          // keys the slider handles stop here (the engine's document handler would act on them too); the rest pass through
-          if (e.ctrlKey || e.metaKey || e.altKey) return;
-          if (hourSeekKey(e, E, hour)) { e.preventDefault(); e.nativeEvent.stopImmediatePropagation(); return; }
-          if (['ArrowLeft', 'ArrowDown', 'ArrowRight', 'ArrowUp', 'Home', 'End', 't', 'T', 'Escape', 'Enter'].includes(e.key)) e.nativeEvent.stopImmediatePropagation();
-          if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); E.stepWeek(-1); }
-          else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); E.stepWeek(1); }
-          else if (e.key === 'Home') { e.preventDefault(); E.setTime(weeks[0]); }
-          else if (e.key === 'End') { e.preventDefault(); E.setTime(asOf); }
-          else if (e.key === 't' || e.key === 'T') { e.preventDefault(); E.setTimeline(); }
-          else if (e.key === 'Escape') { e.preventDefault(); if (E.store.get().tl) E.setTimeline(false); else if (!now) E.setTime(asOf); else (e.currentTarget as SVGSVGElement).blur(); }
+          // Esc here collapses the panel, else returns to now, else leaves the hairline
+          const esc = () => { if (E.store.get().tl) E.setTimeline(false); else if (!now) E.setTime(asOf); else (e.currentTarget as SVGSVGElement).blur(); };
+          if (timeSliderKey(e, E, hour, esc)) { e.preventDefault(); e.nativeEvent.stopImmediatePropagation(); }
         }}>
         <rect className="tl-hit" x={0} y={0} width={W} height={H} />
         {area && <path className="tl-area" d={area} />}
