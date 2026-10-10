@@ -1,6 +1,6 @@
 'use client';
-// The right-hand rail: a slim column of counters (decisions waiting, agents, orders, steering, plan,
-// find, view). It never changes width; each item opens ITS OWN flyout over the plan to its left, one at
+// The right-hand rail: a slim column of counters (find, decisions waiting, agents, orders, steering,
+// plan, view). It never changes width; each item opens ITS OWN flyout over the plan to its left, one at
 // a time. The same item, Esc, or a click on the plan closes it. Counts tween when they move and the item
 // pulses once; nothing opens by itself. `\` hides the whole rail (the plan takes the width back).
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
@@ -162,7 +162,7 @@ export function Dock() {
   const asks = open === 'asks';
   return (
     <>
-      <motion.nav id="rail" ref={nav} aria-label="Rail: decisions, agents, orders, plan, find, view" aria-orientation="vertical" onKeyDown={onNavKey}
+      <motion.nav id="rail" ref={nav} aria-label={'Rail: ' + items.map((x) => x.label.toLowerCase()).join(', ')} aria-orientation="vertical" onKeyDown={onNavKey}
         initial={false} animate={s.hidden ? { x: 96, opacity: 0 } : { x: 0, opacity: 1 }} transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 320, damping: 34 }}
         style={{ pointerEvents: s.hidden ? 'none' : 'auto' }} inert={s.hidden || undefined}>
         {items.map((x, i) => <RailItem key={x.k} it={x} idx={i} on={open === x.k} />)}
