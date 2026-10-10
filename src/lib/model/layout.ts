@@ -56,15 +56,17 @@ export function layoutProduct(P: Product): Layout {
     const wings = L.wingDefs
       .map((def) => ({ def, doms: def.doms.map((base) => doms.find((d) => d.base === base)).filter((d): d is PDomain => !!d) }))
       .filter((w) => w.doms.length);
-    // pick a target wing height that makes the building about twice as wide as tall, with even wings
+    // pick a target wing height that makes the building about twice as wide as tall, with even wings.
+    // A wing's height per column count does not depend on the target: computed once, not per target.
+    const wingH = wings.map((w) => [3, 4, 5, 6].map((c) => w.doms.reduce((a, d) => a + roomH(d, c), 0)));
     let best: { sc: number; cs: number[]; hs: number[]; Hm: number } | null = null;
     for (let Ht = 500; Ht <= 2600; Ht += 20) {
       const cs: number[] = [], hs: number[] = [];
       let W = 0, Hm = 0;
-      for (const w of wings) {
+      for (let wi = 0; wi < wings.length; wi++) {
         let bc: { c: number; h: number; sc: number } | null = null;
         for (let c = 3; c <= 6; c++) {
-          const h = w.doms.reduce((a, d) => a + roomH(d, c), 0), sc = Math.abs(h - Ht) + c * 8;
+          const h = wingH[wi][c - 3], sc = Math.abs(h - Ht) + c * 8;
           if (!bc || sc < bc.sc) bc = { c, h, sc };
         }
         cs.push(bc!.c); hs.push(bc!.h); W += wingW(bc!.c); Hm = Math.max(Hm, bc!.h);
