@@ -231,6 +231,9 @@ export function OrdersPanel() {
 }
 
 // ------------------------------------------------------------------------------------------ plan
+const HINT_LIVE = (
+  <div className="hint"><b>Scroll</b> zoom · <b>drag</b> pan · <b>click</b> go in · <b>Esc</b> back<br /><b>Shift-drag</b> box-select · <b>Shift-click</b> target · <b>S</b> target mode<br /><b>/</b> find · <b>1–9</b> sheets · <b>J K</b> proposals · <b>1–2</b> answer<br /><b>P</b> person · <b>B</b> blast · <b>\</b> rail<br /><b>T</b> timeline · <b>[ ]</b> week · <b>← →</b> next room · <b>↑ ↓</b> zoom · <b>0</b> home · <b>Enter</b> open</div>
+);
 const HINT = (
   <div className="hint"><b>Scroll</b> zoom · <b>drag</b> pan · <b>click</b> go in · <b>Esc</b> back<br /><b>Shift-drag</b> box-select · <b>Shift-click</b> target · <b>S</b> target mode<br /><b>/</b> find · <b>1–9</b> sheets · <b>J K</b> questions · <b>1–3</b> answer · <b>Space</b> pause swarm<br /><b>M</b> morning watch · <b>P</b> person · <b>G</b> GA · <b>B</b> blast · <b>\</b> rail<br /><b>T</b> timeline · <b>[ ]</b> week · <b>, .</b> speed · <b>← →</b> next room · <b>↑ ↓</b> zoom · <b>0</b> home · <b>Enter</b> open</div>
 );
@@ -244,7 +247,7 @@ function TitleBlock() {
     <div className="tbk">
       <div className="proj"><div className="v">{M.P.name.toUpperCase()}</div><span className="lab">{M.P.scale > 1 ? 'Campus ×' + M.P.scale : 'Project'}</span></div>
       <div className="sheet"><span className="lab">Sheet</span><span className="no">{sh.no}</span><span className="of">{vs.indexOf(sh.k) + 1} of {vs.length}</span></div>
-      <div className="ttl"><span className="lab">{s.t} · rev {revAt(M.P.weeks, s.t)}/27</span><div className="v">{sh.title}</div></div>
+      <div className="ttl"><span className="lab">{M.live ? s.t : s.t + ' · rev ' + revAt(M.P.weeks, s.t) + '/27'}</span><div className="v">{sh.title}</div></div>
       <div className="schedT"><span className="lab">Schedule · {M.P.features.length - c.none} features</span>
         <table><tbody>
           <tr><td className="sy"><StageSym st="live" w={18} h={11} /></td><td>Built, live for all</td><td className="n">{c.live}</td></tr>
@@ -255,7 +258,7 @@ function TitleBlock() {
           <tr className="tr"><td className="sy"><Mark k="cloud" w={20} h={14} /></td><td>In trouble</td><td className="n">{bad ?? '—'}</td></tr>
           <tr><td className="sy"><Mark k="delta" w={20} h={14} /></td><td>Changed, last {s.delta === 1 ? '24 h' : s.delta + ' days'}</td><td className="n">{c.chg}</td></tr>
         </tbody></table></div>
-      <div className="disc">Sample data · simulated swarm · artwork stylised</div>
+      {!M.live && <div className="disc">Sample data · simulated swarm · artwork stylised</div>}
     </div>
   );
 }
@@ -288,7 +291,7 @@ export function PlanPanel() {
             </li>
           ))}
         </ul>
-        {HINT}
+        {M.live ? HINT_LIVE : HINT}
       </>
     );
   }
@@ -311,7 +314,7 @@ export function PlanPanel() {
         ))}
       </ul>
       <TitleBlock />
-      {HINT}
+      {M.live ? HINT_LIVE : HINT}
     </>
   );
 }

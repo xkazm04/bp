@@ -6,7 +6,7 @@
 // latest + expected delta), the standard it rests on, size and risk, and offers Approve and Decline
 // (with an optional note, asked inline). Both are written to the product's store. It lives in the
 // rail's decisions flyout.
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { fmtWait, metricHistory, morningStats, pname, sheetOf, type SimDecision } from '@/lib/model';
 import type { Proposal } from '@/lib/scan/types';
@@ -22,6 +22,12 @@ function metricMove(p: Proposal, unitOf: (lens: string, key: string) => string |
   if (p.expected_delta === undefined) return p.metric + ': ' + (last ? fmtN(last.value) + u : 'not measured yet');
   const d = p.expected_delta, move = (d > 0 ? '+' : '') + fmtN(d) + u;
   return last ? `${p.metric}: ${fmtN(last.value)} → ${fmtN(last.value + d)}${u}` : `${p.metric}: ${move} (not measured yet)`;
+}
+
+/** A live proposal once: at ?scale>1 the feed makes one decision per product line for each proposal (deciding one closes them all). */
+export function oncePerProposal(ds: SimDecision[]): SimDecision[] {
+  const seen = new Set<string>();
+  return ds.filter((d) => !seen.has(d.base) && !!seen.add(d.base));
 }
 
 /** What a question's urgency reads as on its card. */
@@ -63,7 +69,7 @@ function LiveItem({ d }: { d: SimDecision }) {
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
   return (
     <CardShell d={d} on={on} emph={sim.emph(d, s.who, s.view)} cls="lq">
-      <div className="k"><span>{URG[d.urg]} · <span className="lz">{sheetOf(M.P, d.lens).no}</span></span><span>{p?.kind && p.kind !== 'fix' ? p.kind + ' · ' : ''}{d.base}{d.isNew ? ' · NEW' : ''}</span></div>
+      <div className="k"><span>{URG[d.urg]} · <span className="lz">{sheetOf(M.P, d.lens).no}</span></span><span>{p?.kind && p.kind !== 'fix' ? p.kind + ' · ' : ''}{d.base}{M.P.scale > 1 ? ' · ' + M.P.buildings[d.b].short : ''}{d.isNew ? ' · NEW' : ''}</span></div>
       <h4>{d.q}</h4>
       {mv && <div className="mv" title={label ? label + (p?.expected_delta !== undefined ? ', expected after the change' : '') : undefined}>{mv}</div>}
       <div className="tags">
@@ -120,10 +126,28 @@ export function MorningButton() {
   );
 }
 
+/** What the live review list says when it is empty: only a connected stream can say the scan has nothing open. */
+function LiveEmpty() {
+  const st = useLive()?.product;
+  const [head, text] = !st || st.status === 'live' ? ['Nothing to review', 'The scan has no open proposal. New ones appear here as it proposes them.']
+    : st.status === 'loading' ? ['Connecting', 'Waiting for the scan store. Proposals appear here once it answers.']
+    : st.status === 'missing' ? ['Product not found', 'This product is not registered, so there is nothing to review.']
+    : st.status === 'offline' ? ['Scan stream offline', 'Reconnecting. Open proposals may exist; they cannot be shown until the stream is back.']
+    : ['Scan unreadable', (st.error ?? 'The scan store could not be read') + '. Open proposals may exist.'];
+  return <div className="qempty"><b>{head}</b>{text}</div>;
+}
+
 /** The decisions flyout: the reader's queue, most urgent first. */
 export function AsksTab() {
   const E = useEngine(), M = E.M, sim = M.sim;
   const s = useBp((s) => ({ who: s.who, view: s.view, simV: s.simV, askAll: s.askAll }), shallowEqual);
+  const proposals = useLive()?.product.scan?.proposals;
+  // a draft lives until its proposal is decided: a refused write keeps it, a stream that shows the row decided drops it
+  useEffect(() => {
+    if (!proposals || !declineDrafts.size) return;
+    const open = new Set(proposals.filter((p) => p.status === 'proposed').map((p) => p.id));
+    for (const id of [...declineDrafts.keys()]) if (!open.has(id)) declineDrafts.delete(id);
+  }, [proposals]);
   if (!sim.has) return <div className="qempty"><b>No swarm data</b>The swarm file did not load.</div>;
   const q = sim.queueFor(s.who, s.view);
   const first = s.who ? pname(M.P, s.who).split(' ')[0] : '';
@@ -136,11 +160,11 @@ export function AsksTab() {
   );
   if (sim.live) {
     // a scan's proposals wait for whoever reviews (no person, no overnight digest); the reader's lens still sorts them
-    const all = s.view === 'general' ? q.all : q.rest;
+    const all = oncePerProposal(s.view === 'general' ? q.all : q.rest);
     return (
       <>
-        <h3 className="dsec-h"><span>{s.view === 'general' ? 'Proposals to review' : 'Sheet ' + sheetOf(M.P, s.view).no + ' first'}</span><span>{q.all.length}</span></h3>
-        {all.length ? list(!s.askAll && all.length > 8 ? all.slice(0, 8) : all) : <div className="qempty"><b>Nothing to review</b>The scan has no open proposal. New ones appear here as it proposes them.</div>}
+        <h3 className="dsec-h"><span>{s.view === 'general' ? 'Proposals to review' : 'Sheet ' + sheetOf(M.P, s.view).no + ' first'}</span><span>{oncePerProposal(q.all).length}</span></h3>
+        {all.length ? list(!s.askAll && all.length > 8 ? all.slice(0, 8) : all) : <LiveEmpty />}
         {more(all.length)}
       </>
     );

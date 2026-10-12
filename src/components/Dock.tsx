@@ -7,7 +7,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { AnimatePresence, animate, motion, useReducedMotion } from 'motion/react';
 import { SPEND_CAP, pname, sheetOf } from '@/lib/model';
 import type { DockTab } from '@/engine/state';
-import { AsksTab, MorningButton } from './Queue';
+import { AsksTab, MorningButton, oncePerProposal } from './Queue';
 import { FindPanel, OrdersPanel, PlanPanel, SteerPanel, SwarmPanel, ViewPanel } from './rail/panels';
 import { shallowEqual, useBp, useEngine } from './hooks';
 import './rail.css';
@@ -59,7 +59,7 @@ function useItems(): Item[] {
   const out: Item[] = [];
   out.push({ k: 'find', label: 'Find', title: 'Find a feature', glyph: G.find, n: null, tone: 'ink' });
   if (sim.has) {
-    const q = sim.queueFor(s.who, s.view), mine = s.who ? q.mine : q.all, hi = mine.filter((d) => d.urg === 'high').length;
+    const q = sim.queueFor(s.who, s.view), mine = sim.live ? oncePerProposal(q.all) : s.who ? q.mine : q.all, hi = mine.filter((d) => d.urg === 'high').length;
     const first = s.who ? pname(M.P, s.who).split(' ')[0] : '';
     out.push({
       k: 'asks', label: sim.live ? 'Review' : 'Asks', title: sim.live ? 'Proposals to review' : s.who ? 'Waiting for ' + first : 'Decisions waiting',
