@@ -9,7 +9,8 @@ import {
 } from '@/lib/model';
 import { overlayRight } from '@/engine/chrome';
 import { illoSVG } from '@/engine/render/illo';
-import { shallowEqual, useBp, useEngine, useVariant } from './hooks';
+import { shallowEqual, useBp, useEngine, useLive, useVariant } from './hooks';
+import { proposalSummary } from './Queue';
 import { lensWords } from './sheet/words';
 
 // ---------------------------------------------------------------------------------- ladder, scale
@@ -198,7 +199,7 @@ export function DecisionCard() {
   const E = useEngine(), M = E.M, sim = M.sim;
   const s = useBp((s) => ({ dec: s.dec, simV: s.simV, who: s.who, view: s.view }), shallowEqual);
   const ref = useRef<HTMLDivElement>(null), hgt = useRef(0);
-  const d = s.dec ? sim.DEC[s.dec] : null;
+  const d = s.dec ? sim.DEC[s.dec] : null, scan = useLive()?.product.scan;
   useEffect(() => {
     if (!d) return;
     // the card's height comes from a ResizeObserver, not an offsetHeight read per frame; a change re-places it
@@ -229,6 +230,7 @@ export function DecisionCard() {
               initial={{ opacity: 0, y: 8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 6, transition: { duration: 0.15 } }} transition={{ type: 'spring', stiffness: 420, damping: 32 }}>
               <div className="k"><span>RFI · {d.base} · {d.urg === 'high' ? 'urgent' : d.urg === 'medium' ? 'soon' : 'when you can'} · sheet {sheetOf(M.P, d.lens).no}</span><button type="button" className="x" aria-label="Close" onClick={() => E.closeDecision()}>Esc</button></div>
               <h3>{d.q}</h3>
+              {(() => { const p = scan?.proposals.find((x) => x.id === d.base), sm = p ? proposalSummary(p) : null; return sm ? <div className="sm">{sm}</div> : null; })()}
               <div className="by"><b>{A ? A.base : d.by}</b> ({A ? sim.crewName(A.sq) : ''}) stopped at <b>{f.name}</b> and asks <b>{pname(M.P, d.decider)}</b>.</div>
               <div className="meta"><span>waiting {fmtWait(sim.waitMin(d))}</span><span>holds {bn} agent{bn === 1 ? '' : 's'}</span><span>touches {d.affects.length}</span></div>
               {d.opts.map((o, i) => (

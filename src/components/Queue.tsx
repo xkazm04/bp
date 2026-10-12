@@ -6,10 +6,10 @@
 // latest + expected delta), the standard it rests on, size and risk, and offers Approve and Decline
 // (with an optional note, asked inline). Both are written to the product's store. It lives in the
 // rail's decisions flyout.
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { fmtWait, metricHistory, morningStats, pname, sheetOf, type SimDecision } from '@/lib/model';
-import type { Proposal } from '@/lib/scan/types';
+import type { Proposal, ScanSnapshot } from '@/lib/scan/types';
 import { shallowEqual, useBp, useEngine, useLive, useVariant } from './hooks';
 
 const fmtN = (n: number) => (Number.isInteger(n) ? n.toLocaleString('en-US') : (Math.round(n * 100) / 100).toLocaleString('en-US'));
@@ -22,6 +22,52 @@ function metricMove(p: Proposal, unitOf: (lens: string, key: string) => string |
   if (p.expected_delta === undefined) return p.metric + ': ' + (last ? fmtN(last.value) + u : 'not measured yet');
   const d = p.expected_delta, move = (d > 0 ? '+' : '') + fmtN(d) + u;
   return last ? `${p.metric}: ${fmtN(last.value)} → ${fmtN(last.value + d)}${u}` : `${p.metric}: ${move} (not measured yet)`;
+}
+
+// ------------------------------------------------------------------------------------ proposal text
+/** A proposal's body (markdown) as `## Heading` sections; text before the first heading is the Summary. Plain text only: nothing is rendered as markup or HTML. */
+export function bodySections(body: string | undefined): { head: string; text: string }[] {
+  const out: { head: string; text: string }[] = [];
+  let cur: { head: string; lines: string[] } | null = null;
+  const flush = () => { if (cur) { const text = cur.lines.join('\n').trim(); if (text) out.push({ head: cur.head, text }); } };
+  for (const line of (body ?? '').split(/\r?\n/)) {
+    const m = /^#{1,6}\s+(.*?)\s*#*\s*$/.exec(line);
+    if (m) { flush(); cur = { head: m[1], lines: [] }; } else { (cur ??= { head: 'Summary', lines: [] }).lines.push(line); }
+  }
+  flush();
+  return out;
+}
+const sectionOf = (ss: { head: string; text: string }[], re: RegExp) => ss.find((x) => re.test(x.head))?.text;
+const MAX_SUM = 180;
+/** The one-line summary: the first sentence of the Summary (else of the body), when it says more than the title. */
+export function proposalSummary(p: Proposal): string | null {
+  const ss = bodySections(p.body), t = sectionOf(ss, /^summary$/i) ?? ss[0]?.text;
+  if (!t) return null;
+  const para = t.split('\n')[0].trim(), one = (/^.*?[.!?](?=\s|$)/.exec(para)?.[0] ?? para).replace(/\s+/g, ' ');
+  const line = one.length > MAX_SUM ? one.slice(0, MAX_SUM - 1).trimEnd() + '…' : one;
+  return !line || line.toLowerCase() === p.title.trim().toLowerCase() ? null : line;
+}
+
+/** Details a reviewer needs before approving: Summary, Impact and Evaluation from the body, and the measurement behind the before value. Folded; the button says so. */
+function ProposalDetails({ p, scan }: { p: Proposal; scan: ScanSnapshot | undefined }) {
+  const [open, setOpen] = useState(false), id = useId();
+  const ss = bodySections(p.body);
+  const parts = [['Summary', sectionOf(ss, /^summary$/i) ?? (ss.length && !/^(description|flow|(expected )?impact|evaluation)$/i.test(ss[0].head) ? ss[0].text : undefined)], ['Impact', sectionOf(ss, /impact/i)], ['Evaluation', sectionOf(ss, /^evaluation/i)]] as const;
+  const h = p.metric ? metricHistory(scan, p.feature, p.lens, p.metric) : [], last = h[h.length - 1];
+  const ev = last ? [last.evidence, last.method && 'measured by ' + last.method, last.measured_at && 'on ' + last.measured_at.slice(0, 10), h.length > 1 ? h.length + ' readings' : ''].filter(Boolean) : [];
+  const meta = [p.parent_id && 'follows ' + p.parent_id, p.after_value !== undefined && 'after the change: ' + fmtN(p.after_value)].filter(Boolean);
+  return (
+    <div className="pd" onClick={(e) => e.stopPropagation()}>
+      <button type="button" className="pd-t" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}><i aria-hidden="true">{open ? '▾' : '▸'}</i> Details</button>
+      {open && (
+        <div id={id} className="pd-b" role="region" aria-label="Proposal details">
+          {parts.map(([head, text]) => <section key={head}><h5>{head}</h5>{text ? text.split('\n').filter(Boolean).map((t, i) => <p key={i}>{t}</p>) : <p className="none">Not stated.</p>}</section>)}
+          <section><h5>Evidence for the before value</h5>{ev.length ? <p>{ev.join(' · ')}</p> : <p className="none">{last ? 'The reading carries no evidence.' : 'No reading yet.'}</p>}</section>
+          {meta.length ? <p className="meta">{meta.join(' · ')}</p> : null}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** A live proposal once: at ?scale>1 the feed makes one decision per product line for each proposal (deciding one closes them all). */
@@ -79,12 +125,13 @@ function LiveItem({ d }: { d: SimDecision }) {
   const p = scan?.proposals.find((x) => x.id === d.base);
   const field = (lens: string, key: string) => M.P.LENS[lens]?.F[key];
   const mv = p ? metricMove(p, (l, k) => field(l, k)?.unit, scan) : null;
-  const label = p?.metric ? field(p.lens, p.metric)?.label : undefined;
+  const label = p?.metric ? field(p.lens, p.metric)?.label : undefined, sum = p ? proposalSummary(p) : null;
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
   return (
     <CardShell d={d} on={on} emph={sim.emph(d, s.who, s.view)} cls="lq" liRef={liRef}>
       <div className="k"><span>{URG[d.urg]} · <span className="lz">{sheetOf(M.P, d.lens).no}</span></span><span>{p?.kind && p.kind !== 'fix' ? p.kind + ' · ' : ''}{d.base}{M.P.scale > 1 ? ' · ' + M.P.buildings[d.b].short : ''}{d.isNew ? ' · NEW' : ''}</span></div>
       <h4>{d.q}</h4>
+      {sum && <div className="sm">{sum}</div>}
       {mv && <div className="mv" title={label ? label + (p?.expected_delta !== undefined ? ', expected after the change' : '') : undefined}>{mv}</div>}
       <div className="tags">
         {p && <span className="std" title="The standard this item rests on">{p.standard === 'none' ? 'no standard' : p.standard}</span>}
@@ -92,6 +139,7 @@ function LiveItem({ d }: { d: SimDecision }) {
         {p?.risk !== undefined && <span title="Risk, 1 to 10" className={p.risk >= 7 ? 'hi' : ''}>risk {p.risk}</span>}
       </div>
       <div className="mt">{f.name} · {M.P.D[f.domain]?.name ?? f.domain} · waiting <b>{fmtWait(sim.waitMin(d))}</b></div>
+      {p && <ProposalDetails p={p} scan={scan} />}
       {declining ? (
         <form className="dn" onClick={stop} onSubmit={(e) => { e.preventDefault(); declineDrafts.set(d.base, note.trim()); const go = focusHeir(e.currentTarget); E.decide(d.id, 1, note.trim() || undefined); go(); }}>
           <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why not? (optional)" aria-label="Decline note (optional)" maxLength={500} autoFocus

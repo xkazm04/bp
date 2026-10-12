@@ -227,6 +227,7 @@
 #dcard .k { display: flex; justify-content: space-between; font: 500 12px/1.2 var(--mono); letter-spacing: 0.08em; color: var(--ink-2); text-transform: uppercase; gap: 8px; }
 #dcard .x { background: none; border: 1px solid var(--ink-3); color: var(--ink-2); font: 500 12px var(--mono); padding: 0 6px; height: 22px; }
 #dcard h3 { margin: 7px 0 4px; font-size: 20px; line-height: 1.2; font-weight: 600; color: var(--ink-hi); }
+#dcard .sm { margin: 0 0 6px; font-size: 14px; line-height: 1.4; color: var(--ink); }
 #dcard .by { font-size: 14px; color: var(--ink-2); line-height: 1.4; }
 #dcard .by b { color: var(--ink); font-weight: 500; }
 #dcard .meta { display: flex; flex-wrap: wrap; gap: 2px 14px; margin: 8px 0 2px; font: 500 13px var(--mono); color: var(--amber-2); }
@@ -380,6 +381,14 @@
 #clock.live .lv { font: 500 12px var(--mono); color: var(--ink-2); letter-spacing: 0.04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---- live queue cards: metric move, standard, size and risk, approve / decline with a note ---- */
+.qi.lq .sm { font-size: 13px; line-height: 1.4; color: var(--ink-2); margin: 0 0 3px; }
+.qi.lq .pd { margin: 4px 0 2px; }
+.qi.lq .pd-t { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 0 4px; background: none; border: 0; color: var(--lens); font: 500 13px var(--mono); cursor: pointer; }
+.qi.lq .pd-t:hover { text-decoration: underline; } .qi.lq .pd-t:focus-visible { outline: 2px solid var(--lens); outline-offset: 1px; }
+.qi.lq .pd-b { display: grid; gap: 6px; padding: 6px 0 2px; border-top: 1px solid var(--ink-3); cursor: auto; }
+.qi.lq .pd-b h5 { margin: 0 0 1px; font: 600 12px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); }
+.qi.lq .pd-b p { margin: 0 0 3px; font-size: 13px; line-height: 1.4; color: var(--ink); white-space: pre-line; overflow-wrap: anywhere; }
+.qi.lq .pd-b p.none, .qi.lq .pd-b p.meta { color: var(--ink-2); }
 .qi.lq .mv { font: 500 13px var(--mono); color: var(--ink-hi); margin: 2px 0 4px; }
 .qi.lq .tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
 .qi.lq .tags span { font: 500 12px var(--mono); border: 1px solid var(--ink-3); padding: 0 5px; color: var(--ink-2); }
