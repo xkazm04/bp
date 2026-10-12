@@ -61,6 +61,10 @@ class LiveView implements FeatureLive {
   }
 }
 
+const CTL = 'button,a,input,textarea,select,summary,[role=button],[role=tab],[role=option],[role=slider],[role=menuitem],[contenteditable=""],[contenteditable=true]';
+/** True when the key event's target is an interactive element, whose own Enter / Space must not trigger an engine shortcut. */
+const isControl = (t: HTMLElement | null) => !!t?.closest?.(CTL);
+
 export class Engine {
   readonly M: Model;
   readonly expr: LensExpression;
@@ -983,12 +987,13 @@ export class Engine {
     const k = e.key;
     if (k === '/') { e.preventDefault(); this.focusSearch(); return; }
     if (k === 'Escape') { e.preventDefault(); this.goUp(); return; }
-    if (S.morning) { if (k === 'Enter') { e.preventDefault(); this.set({ morning: false }); const l = this.M.sim.cardOrder(S.who, S.view); if (l.length) this.openDecision(l[0].id); } return; }
-    if (S.prev && k === 'Enter') { e.preventDefault(); this.commitPreview(); return; }
+    const ctl = isControl(tgt); // Enter / Space on a focused control belong to that control
+    if (S.morning) { if (k === 'Enter' && !ctl) { e.preventDefault(); this.set({ morning: false }); const l = this.M.sim.cardOrder(S.who, S.view); if (l.length) this.openDecision(l[0].id); } return; }
+    if (S.prev && k === 'Enter' && !ctl) { e.preventDefault(); this.commitPreview(); return; }
     const dc = S.dec ? this.M.sim.DEC[S.dec] : null;
     if (dc && dc.open) {
       if (/^[1-9]$/.test(k) && +k <= dc.opts.length) { e.preventDefault(); this.decide(dc.id, +k - 1); return; }
-      if (k === 'Enter' && tag !== 'button') { e.preventDefault(); this.decide(dc.id, dc.rec); return; }
+      if (k === 'Enter' && !ctl) { e.preventDefault(); this.decide(dc.id, dc.rec); return; }
     }
     // 1 = General, 2.. = the enabled lenses in order (up to 9; the tab strip reaches the rest)
     if (/^[1-9]$/.test(k)) { const vs = views(this.M.P); if (+k <= vs.length) this.setView(vs[+k - 1]); return; }
@@ -998,7 +1003,7 @@ export class Engine {
     if (k === 'p' || k === 'P') { this.setDockTab('view'); return; }
     if (k === 's' || k === 'S') { this.toggleSelMode(); return; }
     if (k === '\\') { this.toggleDock(); return; }
-    if (k === ' ' && tag !== 'button') { e.preventDefault(); this.togglePlay(); return; }
+    if (k === ' ' && !ctl) { e.preventDefault(); this.togglePlay(); return; }
     if (k === ',') { this.stepSpeed(-1); return; }
     if (k === '.') { this.stepSpeed(1); return; }
     if (k === 't' || k === 'T') { this.setTimeline(); return; }
@@ -1010,7 +1015,7 @@ export class Engine {
     if (k === '-' || k === '_') { this.zoomBy(-1); return; }
     if (k === '0' || k === 'Home') { this.goHome(); return; }
     if (k === 'Enter') {
-      if (tag === 'button' || tag === 'a') return;
+      if (ctl) return;
       const T = this.nearestTile(), cx = (this.SAFE.l + this.SAFE.r) / 2, cy = (this.SAFE.t + this.SAFE.b) / 2;
       if (T && T.w * this.cam.k >= 96 * this.U && this.lod() > 0.5) this.openFeature(T.id); else this.clickAt(cx, cy);
       return;

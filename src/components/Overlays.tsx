@@ -376,7 +376,12 @@ export function Morning() {
   const E = useEngine(), M = E.M, sim = M.sim;
   const s = useBp((s) => ({ on: s.morning, who: s.who, view: s.view, simV: s.simV }), shallowEqual);
   const ref = useRef<HTMLElement>(null);
-  useEffect(() => { if (s.on) ref.current?.focus(); }, [s.on]);
+  useEffect(() => {
+    if (!s.on) return;
+    const was = document.activeElement as HTMLElement | null;
+    ref.current?.focus();
+    return () => { if (was && was !== document.body && was.isConnected) was.focus({ preventScroll: true }); };
+  }, [s.on]);
   return (
     <AnimatePresence>
       {s.on && (() => {
@@ -386,7 +391,7 @@ export function Morning() {
         const by = Object.keys(ms.by).map((k) => ms.by[k] + ' ' + (words[k] || k)).join(' · ');
         const since = AWAY_SINCE.slice(11, 16), sf = lineSuffix(M.P.scale, 0);   // the model's away mark and line suffix, not copies of them
         return (
-          <motion.section id="morning" key="m" ref={ref} tabIndex={-1} aria-label="While you were away" initial={{ opacity: 0, x: '-50%', y: '-46%', scale: 0.98 }} animate={{ opacity: 1, x: '-50%', y: '-50%', scale: 1 }} exit={{ opacity: 0, x: '-50%', y: '-48%', scale: 0.98 }} transition={{ type: 'spring', stiffness: 320, damping: 32 }}>
+          <motion.section id="morning" key="m" ref={ref} tabIndex={-1} role="dialog" aria-modal="false" aria-label="While you were away" initial={{ opacity: 0, x: '-50%', y: '-46%', scale: 0.98 }} animate={{ opacity: 1, x: '-50%', y: '-50%', scale: 1 }} exit={{ opacity: 0, x: '-50%', y: '-48%', scale: 0.98 }} transition={{ type: 'spring', stiffness: 320, damping: 32 }}>
             <div className="kk">While you were away · since {since} · simulated sample</div>
             <h2>{who ? 'Good morning, ' + who + '.' : 'Good morning.'}</h2>
             <div className="lead">The swarm shipped {ms.changes} changes overnight ({by}). {failed.length ? failed.length + ' agent stopped after repeated failures. ' : ''}{blocked} are blocked. <b>{who ? mine.length + ' question' + (mine.length === 1 ? '' : 's') + ' wait for you' : q.all.length + ' questions wait for a person'}.</b></div>
