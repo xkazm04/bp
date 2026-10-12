@@ -27,20 +27,21 @@ export interface Layout {
 
 /** Wing order is derived from the base data so every product line shares it. */
 export function wingOrder(K: Structure): WingDef[] {
-  const sample = new Set(WING_DEFS.flatMap((w) => w.doms));
-  // A product that shares no domain with the sample's wings (a live product) gets one wing per domain;
-  // otherwise unknown domains join the sample's last wing.
-  const defs: WingDef[] = K.domains.some((d) => sample.has(d.id))
+  // The sample's named wings belong to the sample alone (its slug is reserved, so a live product never has it):
+  // a live product gets one wing per domain, however its domains happen to be named.
+  const defs: WingDef[] = K.project.slug === 'kettle'
     ? WING_DEFS.map((w) => ({ ...w, doms: w.doms.slice(), letter: '', median: 0 }))
     : K.domains.map((d) => ({ k: d.id, name: d.name, plain: d.summary || d.name, doms: [d.id], art: d.id, letter: '', median: 0 }));
   for (const d of K.domains) if (!defs.some((w) => w.doms.includes(d.id))) defs[defs.length - 1].doms.push(d.id);
-  for (const w of defs) {
+  // Only wings that will be laid out get a letter, so letters run A, B, C without gaps.
+  const used = defs.filter((w) => K.domains.some((d) => w.doms.includes(d.id)));
+  for (const w of used) {
     const ds = K.features.filter((f) => w.doms.includes(f.domain)).map((f) => dnum(f.created)).sort((a, b) => a - b);
     w.median = ds.length ? ds[Math.floor(ds.length / 2)] : 0;
   }
-  defs.sort((a, b) => a.median - b.median);
-  defs.forEach((w, i) => { w.letter = String.fromCharCode(65 + i); });
-  return defs;
+  used.sort((a, b) => a.median - b.median);
+  used.forEach((w, i) => { w.letter = String.fromCharCode(65 + i); });
+  return used;
 }
 
 const bayH = (n: number, c: number) => { const r = Math.ceil(n / c); return BH + r * TH + (r - 1) * G + BB; };
