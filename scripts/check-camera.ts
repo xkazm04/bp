@@ -125,6 +125,7 @@ const make = () => {
   expect(w.kind === 'pan' && w.dx === 4 && w.dy === 7.5, 'a small fractional delta with dx pans by the deltas');
   expect(W(new WheelIntent(), 0, 12.5).kind === 'pan', 'a small fractional dy pans');
   expect(W(new WheelIntent(), 30, 200).kind === 'pan', 'any deltaX pans, however large');
+  expect(W(new WheelIntent(), 12.5, 8.25, { wdy: -120 }).kind === 'pan', 'a deltaX pans even when wheelDeltaY carries the 120 signature (Chromium synthesises it)');
   w = new WheelIntent(); W(w, 0, 6.2, { t: 1000 });
   expect(W(w, 0, 180, { t: 1016 }).kind === 'pan', 'inside a running trackpad stream a large delta keeps panning');
   expect(W(w, 0, 100, { t: 1500 }).kind === 'zoom', 'after the stream pauses a large integer delta zooms again');

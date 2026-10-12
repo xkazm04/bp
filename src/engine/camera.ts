@@ -150,7 +150,8 @@ export class WheelIntent {
     if (ctrl) { this.kind = 'zoom'; this.zoom = Math.exp(-dy * (mode === 0 && Math.abs(dy) < 50 ? 0.01 : 0.004)); return; }
     if (shift) { this.kind = 'pan'; this.dx = dx || dy; return; }
     const notch = wdy !== 0 && wdy % 120 === 0;
-    const pad = mode === 0 && !notch && (dx !== 0 || now - this.padAt < WHEEL_STREAM || Math.abs(dy) < 50 || !Number.isInteger(dy));
+    // a horizontal component pans whatever wheelDelta says (trackpads; a tilt wheel pans sideways too)
+    const pad = mode === 0 && (dx !== 0 || (!notch && (now - this.padAt < WHEEL_STREAM || Math.abs(dy) < 50 || !Number.isInteger(dy))));
     if (pad) { this.kind = 'pan'; this.dx = dx; this.dy = dy; this.padAt = now; return; }
     this.kind = 'zoom'; this.zoom = Math.exp(-dy * 0.0016);
   }
