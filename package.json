@@ -17,6 +17,7 @@
     "check:scan-wire": "node scripts/check-scan-wire.ts",
     "check:live-health": "node scripts/check-live-health.ts",
     "check:local-only": "node scripts/check-local-only.ts",
+    "check:route-guards": "node scripts/check-route-guards.mjs",
     "check:camera": "node scripts/check-camera.ts",
     "check:variant-copies": "node src/variants/check-copies.ts",
     "check:timeline-keys": "node src/components/timeline/check-keys.ts",

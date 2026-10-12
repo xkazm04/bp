@@ -83,6 +83,8 @@ node scripts/fixtures/gen-swarm.mjs <dir>    # regenerate the swarm over it
 
 `npm run check` runs typecheck, every `check:*` script in package.json (new ones join automatically)
 and `validate:structure`, prints one line each with time and pass/fail, and exits 1 on any failure.
+`check:route-guards` asserts every `src/app/api/**/route.ts` handler opens with `localHost` (GET) or `localOnly`
+(+ `jsonOnly` before a body parse); known gaps are listed in the script and reported on each run.
 `check:python-deps` needs Python and is skipped (and reported as skipped) when `python` is not on PATH.
 The production build warns "Dynamic filesystem access causes tracing of the whole project" for the
 products shots route; that is expected and not a check failure.
