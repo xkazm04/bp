@@ -30,11 +30,16 @@ export class Camera {
   wx(x: number) { return this.x + (x - this.FW / 2) / this.k; }
   wy(y: number) { return this.y + (y - this.FH / 2) / this.k; }
 
+  /** The scale a fit would pick; no record is built (the hot paths ask only this). */
+  fitK(box: Box, pt: number, pr: number, pb: number, pl: number, over: number, R: Region): number {
+    const rw = Math.max(80, R.r - pr - (R.l + pl)), rh = Math.max(80, R.b - pb - (R.t + pt));
+    return clamp(Math.min(rw / box.w, (rh / box.h) * (over || 1)), this.KMIN, this.KMAX);
+  }
   /** Fit a world box into a screen region (with padding in px, already scaled by U). */
   fit(box: Box, pad: Pad, over: number, R: Region): Cam {
     const rx0 = R.l + pad.l, rx1 = R.r - pad.r, ry0 = R.t + pad.t, ry1 = R.b - pad.b;
-    const rw = Math.max(80, rx1 - rx0), rh = Math.max(80, ry1 - ry0);
-    const k = clamp(Math.min(rw / box.w, (rh / box.h) * (over || 1)), this.KMIN, this.KMAX), h = Math.min(box.h, rh / k);
+    const rh = Math.max(80, ry1 - ry0);
+    const k = this.fitK(box, pad.t, pad.r, pad.b, pad.l, over, R), h = Math.min(box.h, rh / k);
     const sx = (rx0 + rx1) / 2, sy = (ry0 + ry1) / 2;
     return { x: box.x + box.w / 2 - (sx - this.FW / 2) / k, y: box.y + h / 2 - (sy - this.FH / 2) / k, k };
   }

@@ -15,7 +15,7 @@ import { lensWords } from './sheet/words';
 // ---------------------------------------------------------------------------------- ladder, scale
 export function Ladder() {
   const E = useEngine();
-  const s = useBp((s) => ({ level: s.level, names: s.levelNames, selMode: s.selMode, open: s.open }), shallowEqual);
+  const s = useBp((s) => ({ level: s.level, names: s.levelNames, selMode: s.selMode }), shallowEqual);
   return (
     <nav id="ladder" aria-label="Zoom level">
       <button type="button" className="zb" aria-label="Zoom out" title="Zoom out (−)" onClick={() => E.zoomBy(-1)}>−</button>
@@ -32,16 +32,23 @@ export function Ladder() {
 export function ScaleBar() {
   const E = useEngine();
   const ref = useRef<HTMLDivElement>(null), txt = useRef<HTMLSpanElement>(null), bar = useRef<HTMLElement>(null), tail = useRef<HTMLSpanElement>(null);
+  // Layout is read only when something it depends on changed (text length, bar shown, UI scale, free width, ladder content): never per frame.
+  const m = useRef({ len: -1, show: false, U: 0, FW: 0, r: -1, names: null as unknown, w: 0, bw: 0, lw: 560, right: -1, hide: false });
   useEffect(() => E.onFrame(() => {
     const el = ref.current; if (!el) return;
-    const sc = E.scaleText(), U = E.U;
+    const sc = E.scaleText(), U = E.U, c = m.current;
     if (txt.current && txt.current.textContent !== sc.text) txt.current.textContent = sc.text;
-    const show = sc.bar <= 150;
-    if (bar.current) { bar.current.style.display = show ? '' : 'none'; bar.current.style.width = Math.round(Math.max(sc.bar, 10)) + 'px'; }
+    const show = sc.bar <= 150, bw = Math.round(Math.max(sc.bar, 10));
+    if (bar.current) { bar.current.style.display = show ? '' : 'none'; bar.current.style.width = bw + 'px'; }
     if (tail.current) tail.current.style.display = show ? '' : 'none';
-    el.style.right = Math.round((E.FW - E.SAFE.r) / U + 12) + 'px';
-    const ladder = document.getElementById('ladder');
-    el.style.visibility = E.SAFE.r / U - 12 - el.offsetWidth < (ladder?.offsetWidth || 560) + 28 ? 'hidden' : 'visible';
+    const right = Math.round((E.FW - E.SAFE.r) / U + 12), names = E.S.levelNames;
+    if (right !== c.right) { c.right = right; el.style.right = right + 'px'; }
+    if (c.len !== sc.text.length || c.show !== show || c.U !== U || c.FW !== E.FW || c.r !== E.SAFE.r || c.names !== names) {
+      c.len = sc.text.length; c.show = show; c.U = U; c.FW = E.FW; c.r = E.SAFE.r; c.names = names;
+      c.w = el.offsetWidth; c.bw = show ? bw : 0; c.lw = document.getElementById('ladder')?.offsetWidth || 560;
+    }
+    const w = c.w + (show ? bw - c.bw : 0), hide = E.SAFE.r / U - 12 - w < c.lw + 28;
+    if (hide !== c.hide || !el.style.visibility) { c.hide = hide; el.style.visibility = hide ? 'hidden' : 'visible'; }
   }), [E]);
   return <div id="scalebar" ref={ref}><span ref={txt} /><i ref={bar} className="sb" /><span ref={tail}>= one feature</span></div>;
 }
@@ -190,20 +197,26 @@ export function HoverCard() {
 export function DecisionCard() {
   const E = useEngine(), M = E.M, sim = M.sim;
   const s = useBp((s) => ({ dec: s.dec, simV: s.simV, who: s.who, view: s.view }), shallowEqual);
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement>(null), hgt = useRef(0);
   const d = s.dec ? sim.DEC[s.dec] : null;
   useEffect(() => {
     if (!d) return;
-    return E.onFrame(() => {
+    // the card's height comes from a ResizeObserver, not an offsetHeight read per frame; a change re-places it
+    let seen: HTMLElement | null = null;
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver((es) => { const h = es[0]?.contentRect.height || 0; if (h !== hgt.current) { hgt.current = h; place(); } }) : null;
+    const place = () => {
       const el = ref.current; if (!el) return;
+      if (el !== seen) { seen = el; ro?.disconnect(); hgt.current = 0; ro?.observe(el); }
       const r = E.featureRect(d.f); if (!r) return;
-      const u = E.U, S = E.SAFE, w = 372 * u, h = (el.offsetHeight || 380) * u, R = Math.min(S.r, E.FW - overlayRight(E.S) * u);   // never under an open flyout
+      const u = E.U, S = E.SAFE, w = 372 * u, h = (hgt.current || 380) * u, R = Math.min(S.r, E.FW - overlayRight(E.S) * u);   // never under an open flyout
       let x = r.x + r.w + 16 * u, y = r.y + r.h / 2 - h / 2;
       if (x + w > R) x = r.x - w - 16 * u;
       if (x < S.l) x = Math.max(S.l, Math.min(R, R - w - 8 * u));
       y = Math.max(S.t, Math.min(Math.max(S.t, S.b - h), y));
       el.style.transform = `translate(${x / u}px, ${y / u}px)`;
-    });
+    };
+    const off = E.onFrame(place);
+    return () => { off(); ro?.disconnect(); };
   }, [E, d]);
   useLayoutEffect(() => { E.dirty(); });
   return (

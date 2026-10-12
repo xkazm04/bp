@@ -43,6 +43,8 @@ const make = () => {
   expect(near(my, (R.t + R.b) / 2, 1e-9), `fit centres the box vertically in the region (got ${my})`);
   const huge = c.fit({ x: 0, y: 0, w: 1e7, h: 1e7 }, pad, 1, R);
   expect(huge.k === c.KMIN, `fit clamps to KMIN (got ${huge.k})`);
+  const fk = c.fitK(box, pad.t, pad.r, pad.b, pad.l, 1.8, R);
+  expect(fk === c.fit(box, pad, 1.8, R).k && fk === c.fitK(box, 20, 20, 20, 20, 1.8, R), `fitK is the scale fit() picks, without building a record (got ${fk})`);
 }
 
 // ------------------------------------------------------------------ wheel zoom keeps the anchor

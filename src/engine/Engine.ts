@@ -106,6 +106,14 @@ export class Engine {
   private themeV = 0; private fontsV = 0; private mixV = 0; private simStaticV = 0; private simStaticAt = 0; private simSeenV = -1; private simT10 = -1;
   private camSig = { x: NaN, y: NaN, k: NaN, w: 0, h: 0 }; private kpSig = { themeV: -1, t: '', delta: 0, sv: -1, str: '' }; private placeKey = ''; private hoverEl: HTMLElement | null = null;
   private place: Chain = [];
+  /** Place bookkeeping, all pooled: syncPlace runs only when its inputs moved and builds no record on that path. */
+  private bestBuf: Chain = []; private bestPool: Chain = [0, 1, 2, 3].map(() => ({ t: 'bld' as Crumb['t'], o: null as unknown as PlaceNode }));
+  private placeBuf: Chain = []; private placePool: Chain = [0, 1, 2, 3].map(() => ({ t: 'bld' as Crumb['t'], o: null as unknown as PlaceNode }));
+  private placeIds: string[] = []; private placeOpen: string | null = null;
+  private placeSig = { x: NaN, y: NaN, k: NaN, FW: 0, FH: 0, l: 0, t: 0, r: 0, b: 0, U: 0, hk: 0, open: null as string | null };
+  /** Frame listeners run on frames where the camera moved, plus once after anything that can move their anchors (store change, layout, a new subscriber). */
+  private listenForce = true;
+  private lastExpire = 0; private settleArmed = false;
   private introOn = false; private introT0 = 0;
   private drag: { x0: number; y0: number; cx: number; cy: number; moved: boolean; lasso: boolean; shift: boolean } | null = null;
   private ptrs = new Map<number, { x: number; y: number }>();
@@ -116,7 +124,7 @@ export class Engine {
   private statsCache = new Map<string, ReturnType<Model['sim']['stats']>>(); private statsKey = '';
   private roomDecCache: SimDecision[][] | null = null; private roomDecV = -1;
   private breachCache: Set<string> | null = null; private breachV = -1;
-  private camListeners = new Set<() => void>();
+  private camFns: (() => void)[] = [];
   private simTimeListeners = new Set<(t: number) => void>();
   private lastSimSec = -1;
   private disposers: (() => void)[] = [];
@@ -128,6 +136,7 @@ export class Engine {
     this.ctx = this.cv.getContext('2d', { alpha: true })!;
     this.store = createStore(initialState(this.M.P.scale, this.M.P.asOf));
     this.cam = new Camera(() => this.camMoved());
+    this.store.subscribe(() => { this.listenForce = true; });
     this.cam.world = this.M.L.world;
     this.cam.reduced = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     this.tx = new Text('sans-serif', 'monospace');
@@ -290,6 +299,7 @@ export class Engine {
   private lastFit = false;
   private layoutChrome() {
     const w = this.FW, h = this.FH, U = this.U, bb = baseHeight(this.S);
+    this.listenForce = true;
     this.ui.style.setProperty('--bb', bb + 'px');
     this.ui.style.setProperty('--rw', railWidth(this.S) + 'px');
     this.SAFE = { l: 12 * U, t: 74 * U, b: h - (bb - 2) * U, r: w - railWidth(this.S) * U };
@@ -328,7 +338,13 @@ export class Engine {
     return k.ver;
   }
   private sk = { ver: 0, themeV: -1, fontsV: -1, U: -1, FW: -1, FH: -1, safeR: -1, mixV: -1, t: '' as string, delta: 0 as number, blast: null as string | null, ga: false, key: null as string | null, who: null as string | null, view: '' as string, simStaticV: -1 };
-  private wake = () => this.dirty();
+  private wake = () => { this.settleArmed = false; this.dirty(); };
+  /** One wake-up for the settle window, armed once per gesture (not per frame): it fires when the camera has been still for ~150 ms. */
+  private armSettle() {
+    if (this.settleArmed) return;
+    this.settleArmed = true;
+    this.settleTimer = window.setTimeout(this.wake, clamp(150 - (performance.now() - this.lastCamMove), 16, 160));
+  }
   private artGen = 0;
   private frame = (now: number) => {
     this.raf = 0;
@@ -355,11 +371,11 @@ export class Engine {
     if (this.retest && !gesture && !this.cam.moving) {
       // the camera came to rest under a still cursor: say what is there now (after the settle window, with the re-raster)
       if (performance.now() - this.lastCamMove > 140) { this.retest = false; if (this.ptr && !S.open) this.hoverAt(this.ptr.x, this.ptr.y); }
-      else { clearTimeout(this.settleTimer); this.settleTimer = window.setTimeout(this.wake, 160); }
+      else this.armSettle();
     }
     this.syncPlace();
     this.afterFrame(now);
-    if (sim.pulses.length > 40 || (now | 0) % 50 === 0) sim.expire(now);
+    if (sim.pulses.length > 40 || now - this.lastExpire >= 500) { this.lastExpire = now; sim.expire(now); }
     if (gesture || this.mix.moving || this.introOn || live || animating) this.raf = requestAnimationFrame(this.frame);
   };
   private draw(now: number, gesture: boolean) {
@@ -381,8 +397,7 @@ export class Engine {
       this.perf.rasters++; this.perf.lastRasterMs = this.cache.lastMs; rastered = true;
     } else if (st === 'transform') {
       // still moving (or settled mid-gesture): wake once more after the settle window to re-raster
-      clearTimeout(this.settleTimer);
-      this.settleTimer = window.setTimeout(this.wake, 160);
+      this.armSettle();
     }
     const reveal = this.introOn ? (this.FW + 60) * this.introP : undefined;
     const td = rastered ? performance.now() : 0;
@@ -423,13 +438,13 @@ export class Engine {
       }
       this.keyplan.draw(q.str, this.RES);
     }
-    for (const fn of this.camListeners) fn();
+    if (camChanged || this.listenForce) { this.listenForce = false; const fns = this.camFns; for (let i = 0; i < fns.length; i++) fns[i](); }
     const sec = Math.floor(this.M.sim.t);
     if (sec !== this.lastSimSec) { this.lastSimSec = sec; for (const fn of this.simTimeListeners) fn(this.M.sim.t); }
   }
   private kpAt = 0;
-  /** Subscribe to every drawn frame (positioned DOM like the decision card and scale bar). */
-  onFrame(fn: () => void) { this.camListeners.add(fn); return () => { this.camListeners.delete(fn); }; }
+  /** Subscribe to the frames where the camera moved (positioned DOM like the decision card and scale bar), and once more after a store change or a layout change. Runs once right after subscribing. Not called on simulation-only frames: use onSimTime for the clock. */
+  onFrame(fn: () => void) { this.camFns = [...this.camFns, fn]; this.listenForce = true; this.dirty(); return () => { this.camFns = this.camFns.filter((f) => f !== fn); }; }
   /** Subscribe to the simulation clock (called when the displayed second changes). */
   onSimTime(fn: (t: number) => void) { this.simTimeListeners.add(fn); fn(this.M.sim.t); return () => { this.simTimeListeners.delete(fn); }; }
 
@@ -500,6 +515,8 @@ export class Engine {
   // ============================================================================ navigation
   goHome(dur?: number) { this.cam.flyTo(this.HOME, dur); }
   private fitOf(c: Chain[number]): Cam { return this.fitCam(c.o, PADS[c.t], OVER[c.t] ?? 1); }
+  /** fitOf(c).k without building a record. */
+  private fitKOf(c: Chain[number]): number { const U = this.U, p = PADS[c.t]; return this.cam.fitK(c.o, p.t * U, p.r * U, p.b * U, p.l * U, OVER[c.t] ?? 1, this.SAFE); }
   zoomBy(dir: number) { const S = this.SAFE; this.cam.zoomAt((S.l + S.r) / 2, (S.t + S.b) / 2, dir > 0 ? 1.6 : 1 / 1.6); this.endIntro(); }
   zoomAt(px: number, py: number, f: number) { this.cam.zoomAt(px, py, f); }
   goLevel(depth: number) {
@@ -728,14 +745,17 @@ export class Engine {
     return x1 <= x0 || y1 <= y0 ? 0 : (x1 - x0) * (y1 - y0);
   }
   private pickShare<T extends Box>(list: T[]): T | null { let best: T | null = null, bs = 0; for (const o of list) { const s = this.visShare(o); if (s > bs) { bs = s; best = o; } } return best; }
+  /** The best-covered place at each level. The returned array and its records are reused by the next call: read it at once. */
   private chainBest(): Chain {
-    const out: Chain = [], B = this.pickShare(this.M.L.blds); if (!B) return out;
-    if (this.M.P.scale > 1) out.push({ t: 'bld', o: B });
-    const W = this.pickShare(B.wings); if (!W) return out; out.push({ t: 'wing', o: W });
-    const R = this.pickShare(W.rooms); if (!R) return out; out.push({ t: 'room', o: R });
-    const Bay = this.pickShare(R.bays); if (Bay) out.push({ t: 'bay', o: Bay });
+    const out = this.bestBuf; out.length = 0;
+    const B = this.pickShare(this.M.L.blds); if (!B) return out;
+    if (this.M.P.scale > 1) this.put(out, 'bld', B);
+    const W = this.pickShare(B.wings); if (!W) return out; this.put(out, 'wing', W);
+    const R = this.pickShare(W.rooms); if (!R) return out; this.put(out, 'room', R);
+    const Bay = this.pickShare(R.bays); if (Bay) this.put(out, 'bay', Bay);
     return out;
   }
+  private put(out: Chain, t: Crumb['t'], o: PlaceNode) { const r = this.bestPool[out.length]; r.t = t; r.o = o; out.push(r); }
   chainAt(wx: number, wy: number): Chain {
     const out: Chain = [];
     const B = this.M.L.blds.find((b) => inside(b, wx, wy)); if (!B) return out;
@@ -745,20 +765,27 @@ export class Engine {
     const Bay = R.bays.find((b) => inside(b, wx, wy)); if (Bay) out.push({ t: 'bay', o: Bay });
     return out;
   }
-  private entered(c: Chain[number]) { return this.cam.k >= this.fitOf(c).k * 0.86 && this.cam.k >= this.HOME.k * 1.18; }
+  private entered(c: Chain[number]) { return this.cam.k >= this.fitKOf(c) * 0.86 && this.cam.k >= this.HOME.k * 1.18; }
   private computePlace(): Chain {
     if (this.S.open && this.M.L.TILE[this.S.open]) { const T = this.M.L.TILE[this.S.open]; return this.chainAt(T.x + T.w / 2, T.y + T.h / 2); }
     const ch = this.chainBest(); let deepest = -1;
     for (let i = 0; i < ch.length; i++) if (this.entered(ch[i])) deepest = i;
-    return ch.slice(0, deepest + 1);
+    const out = this.placeBuf; out.length = 0;
+    for (let i = 0; i <= deepest; i++) { const r = this.placePool[i]; r.t = ch[i].t; r.o = ch[i].o; out.push(r); }
+    return out;
   }
   private syncPlace() {
-    this.place = this.computePlace();
-    const key = this.place.map((c) => c.o.id).join('>') + '|' + (this.S.open || '');
-    if (key === this.placeKey) return;
-    this.placeKey = key;
+    const c = this.cam, g = this.placeSig, R = this.SAFE, open = this.S.open, force = this.placeKey === '';
+    if (!force && g.x === c.x && g.y === c.y && g.k === c.k && g.FW === this.FW && g.FH === this.FH && g.l === R.l && g.t === R.t && g.r === R.r && g.b === R.b && g.U === this.U && g.hk === this.HOME.k && g.open === open) return;
+    g.x = c.x; g.y = c.y; g.k = c.k; g.FW = this.FW; g.FH = this.FH; g.l = R.l; g.t = R.t; g.r = R.r; g.b = R.b; g.U = this.U; g.hk = this.HOME.k; g.open = open;
+    const pl = this.place = this.computePlace(), ids = this.placeIds;
+    let same = !force && this.placeOpen === open && ids.length === pl.length;
+    for (let i = 0; same && i < pl.length; i++) if (ids[i] !== pl[i].o.id) same = false;
+    if (same) return;
+    ids.length = 0; for (let i = 0; i < pl.length; i++) ids.push(pl[i].o.id);
+    this.placeKey = '1'; this.placeOpen = open;
     const names = this.levelNames();
-    this.store.set({ place: this.place.map((c) => ({ t: c.t, id: c.o.id })), level: this.S.open ? names.length - 1 : this.place.length });
+    this.store.set({ place: pl.map((c) => ({ t: c.t, id: c.o.id })), level: open ? names.length - 1 : pl.length });
     this.writeHashSoon();
   }
 
@@ -1116,7 +1143,7 @@ export class Engine {
   }
   destroy() {
     this.destroyed = true;
-    cancelAnimationFrame(this.raf); clearTimeout(this.settleTimer); clearTimeout(this.simSyncTimer); clearTimeout(this.hashTimer);
+    cancelAnimationFrame(this.raf); clearTimeout(this.settleTimer); this.settleArmed = false; clearTimeout(this.simSyncTimer); clearTimeout(this.hashTimer);
     this.cam.stopFly(); this.mix.destroy(); this.M.sim.listen(null);
     for (const d of this.disposers) d();
     const w = window as unknown as { __bp?: Engine }; if (w.__bp === this) delete w.__bp;

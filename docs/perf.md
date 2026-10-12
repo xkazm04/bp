@@ -68,6 +68,17 @@ per-frame work is a few hundred cheap primitives.
   lines in plan.ts. Moving that to the dynamic layer needs plan.ts and the variant channels, which this pass did not
   own; it is the honest fix for the hitch and is left as the next step. No frame-rate figure is claimed here.
 
+## Frame-loop allocations and layout reads (engine-frame-alloc)
+
+- `syncPlace` runs only when the camera, the safe area, U, the home scale or `open` moved (a numeric signature, compared
+  field by field); its per-level work (`chainBest`, `entered` via `Camera.fitK`) reuses pooled records and builds no
+  `Pad`/`Cam`/array/key string. The place store is written only when the place ids change.
+- `onFrame` listeners (scale bar, zoom readout, decision card) run on frames where the camera moved, and once more after a
+  store change, a layout change or a new subscription; sim-only frames skip them (the sim clock has `onSimTime`).
+- ScaleBar reads layout only when its inputs change (text length, bar shown, U, free width, ladder content), never per
+  frame; DecisionCard gets its height from a ResizeObserver instead of `offsetHeight` per frame.
+- The settle wake-up is armed once per gesture (not clear+set per frame); `sim.expire` runs every 500 ms of wall time.
+
 ## Known costs
 
 - During a gesture the cached raster is scaled up to x1.5 before re-rastering, so text can look soft (and
