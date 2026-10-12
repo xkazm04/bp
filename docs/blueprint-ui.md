@@ -69,6 +69,10 @@ Everything it does is in scope to keep:
   the 120-aligned `wheelDeltaY` of a notch, small/fractional pixel deltas, a latched running stream); its doc
   comment lists the failure modes. A touch pinch anchors the world point under its starting midpoint, so moving
   the fingers pans while pinching, and the finger left after a pinch carries on as a pan.
+- **Phone parity.** The phone queue answers like the desktop one: urgency in words, a live proposal's summary and
+  `before → expected` line, Approve / Decline with an optional note, "Show N more" past 12. The simulation keeps
+  running on a light timer while no plan is drawn (a toast's Show opens the feature), the footer is the honest
+  `LiveFoot`, the header carries the product name and the scan status, and the springs obey reduced motion.
 - **Back / forward.** The URL hash carries lens, place (`at=` or `open=`), time, modes and person. A place the user
   rests at for 600 ms, or opening or closing a feature, pushes a history entry; lens, time and toggles only replace
   the current one, so a fly-through spams nothing. Back, forward and a hash pasted into the tab restore lens, time,

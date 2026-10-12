@@ -1,20 +1,81 @@
 'use client';
 // The phone view: the person's queue first, then a searchable reading list. No plan on a phone.
 import { useEffect, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
-import { fmtWait, pname } from '@/lib/model';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { fmtWait, metricHistory, pname, sheetOf, type SimDecision } from '@/lib/model';
+import { useProductName } from '@/lib/scan/projects';
+import type { Proposal, ScanSnapshot } from '@/lib/scan/types';
 import { SheetBody } from './FeatureSheet';
 import { Toast } from './Overlays';
+import { oncePerProposal, proposalSummary } from './Queue';
+import { LiveFoot } from './sheet/SheetBody';
 import { PatternDefs, StageSym } from './Symbols';
 import { ThemeToggle } from './ThemeToggle';
-import { shallowEqual, useBp, useEngine } from './hooks';
+import { shallowEqual, useBp, useEngine, useLive } from './hooks';
+
+const SHOWN = 12;
+// Queue.tsx keeps its urgency words and its before -> expected line module-private: these two are the same 3-word map and the same arithmetic.
+const URG: Record<SimDecision['urg'], string> = { high: 'Urgent', medium: 'Soon', low: 'When you can' };
+const fmtN = (n: number) => (Number.isInteger(n) ? n.toLocaleString('en-US') : (Math.round(n * 100) / 100).toLocaleString('en-US'));
+function metricMove(p: Proposal, unitOf: (lens: string, key: string) => string | undefined, scan: ScanSnapshot | undefined): string | null {
+  if (!p.metric) return null;
+  const h = metricHistory(scan, p.feature, p.lens, p.metric), last = h[h.length - 1], unit = last?.unit ?? unitOf(p.lens, p.metric), u = unit ? ' ' + unit : '';
+  if (p.expected_delta === undefined) return p.metric + ': ' + (last ? fmtN(last.value) + u : 'not measured yet');
+  const d = p.expected_delta;
+  return last ? `${p.metric}: ${fmtN(last.value)} → ${fmtN(last.value + d)}${u}` : `${p.metric}: ${(d > 0 ? '+' : '') + fmtN(d)}${u} (not measured yet)`;
+}
+/** A decline note survives a refused write (the card remounts when the decision reopens). */
+const drafts = new Map<string, string>();
+
+/** The scan's state as a compact pill in the header (the desktop header's LivePill is module-private and sits in the desktop layout). */
+function PhoneStatus() {
+  const L = useLive()?.product;
+  if (!L) return null;
+  const [cls, text] = L.status === 'live' ? ['on', 'Live scan'] : L.status === 'offline' ? ['off', 'Offline'] : L.status === 'error' ? ['off', 'Scan error'] : L.status === 'loading' ? ['idle', 'Connecting'] : ['idle', 'No scan store'];
+  return <span className={'livepill ' + cls} role="status"><i />{text}</span>;
+}
+
+function Question({ d, rm }: { d: SimDecision; rm: boolean }) {
+  const E = useEngine(), M = E.M, P = M.P, sim = M.sim, live = useLive();
+  const [declining, setDeclining] = useState(() => drafts.has(d.base)), [note, setNote] = useState(() => drafts.get(d.base) ?? '');
+  const scan = live?.product.scan, prop = sim.live ? scan?.proposals.find((x) => x.id === d.base) : undefined;
+  const sum = prop ? proposalSummary(prop) : null, mv = prop ? metricMove(prop, (l, k) => P.LENS[l]?.F[k]?.unit, scan) : null;
+  return (
+    <motion.div layout={!rm} className={'ph-q u-' + d.urg} exit={rm ? { opacity: 0 } : { opacity: 0, height: 0, marginBottom: 0 }} transition={rm ? { duration: 0 } : undefined}>
+      <div className="k">{d.base} · {URG[d.urg]}{sim.live ? '' : ' · ' + pname(P, d.decider)}</div>
+      <h4>{d.q}</h4>
+      {sum && <div className="sm">{sum}</div>}
+      {mv && <div className="mv">{mv}</div>}
+      <div className="mt">{P.F[d.f].name} · waiting {fmtWait(sim.waitMin(d))}{sim.live ? '' : ' · holds ' + sim.blocksNow(d) + ' agent' + (sim.blocksNow(d) === 1 ? '' : 's')}</div>
+      {sim.live ? (
+        declining ? (
+          <form className="dn" onSubmit={(e) => { e.preventDefault(); drafts.set(d.base, note.trim()); E.decide(d.id, 1, note.trim() || undefined); }}>
+            <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why not? (optional)" aria-label="Decline note (optional)" maxLength={500} />
+            <button type="submit" className="bt">Decline</button>
+            <button type="button" className="bt" onClick={() => { drafts.delete(d.base); setNote(''); setDeclining(false); }}>Cancel</button>
+          </form>
+        ) : (
+          <div className="row">
+            <button type="button" className="bt go" onClick={() => E.decide(d.id, 0)}>✓ Approve</button>
+            <button type="button" className="bt" onClick={() => setDeclining(true)}>Decline…</button>
+          </div>
+        )
+      ) : d.opts.map((o, i) => <button key={i} type="button" className={'op' + (i === d.rec ? ' rec' : '')} onClick={() => E.decide(d.id, i)}><i className="no">{i + 1}</i><b>{o.label}{i === d.rec && <em>suggested</em>}</b><span>{o.consequence}</span></button>)}
+    </motion.div>
+  );
+}
 
 export function Phone() {
   const E = useEngine(), M = E.M, P = M.P, sim = M.sim;
   const s = useBp((s) => ({ who: s.who, view: s.view, simV: s.simV, open: s.open }), shallowEqual);
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState(''), [all, setAll] = useState(false), rm = !!useReducedMotion();
+  const name = useProductName(M.live?.slug ?? null, P.name);
+  // the sim runs on a timer here (no frames): a re-render every 30 simulated seconds keeps the waits honest
+  const [, setTick] = useState(0);
+  useEffect(() => E.onSimTime((t) => setTick(Math.floor(t / 30))), [E]);
   const c = M.agg.countsOf('ALL', P.features, P.asOf, 7), qq = sim.queueFor(s.who, s.view);
-  const list = s.who ? qq.mine : qq.all, v = q.trim().toLowerCase();
+  const once = (ds: SimDecision[]) => (sim.live ? oncePerProposal(ds) : ds);
+  const list = once(s.who ? qq.mine : qq.all), v = q.trim().toLowerCase();
   const persons = P.people.filter((p) => p.kind === 'human'), open = sim.openDecs();
   const f = s.open ? P.F[s.open] : null;
   const detailOpen = !!s.open;
@@ -33,11 +94,11 @@ export function Phone() {
     <>
     <div className="ph">
       <PatternDefs />
-      <div className="ph-top"><ThemeToggle /></div>
-      <div className="ph-h"><div className="k">PROJECT {P.name.toUpperCase()} · SHEET G-001 · {P.asOf} · {M.live ? 'LIVE LENS SCAN' : 'SIMULATED SWARM'}</div><h1>{P.name.toUpperCase()}</h1><p>{P.tagline}</p></div>
+      <div className="ph-top"><b className="ph-brand">{name}</b><PhoneStatus /><ThemeToggle /></div>
+      <div className="ph-h"><div className="k">PROJECT {P.name.toUpperCase()} · SHEET {sheetOf(P, s.view).no} · {P.asOf} · {M.live ? 'LIVE LENS SCAN' : 'SIMULATED SWARM'}</div><h1>{P.name.toUpperCase()}</h1><p>{P.tagline}</p></div>
       <div className="ph-sum">
         <div><b>{P.features.length}</b>features</div><div><b>{c.live + c.flagged}</b>live</div><div><b>{c.build}</b>being built</div>
-        <div className="am"><b>{sim.has ? qq.all.length : 0}</b>questions waiting</div>
+        <div className="am"><b>{sim.has ? once(qq.all).length : 0}</b>questions waiting</div>
         <div><b>{sim.has ? sim.agents.filter((a) => a.status === 'working').length : 0}</b>agents working</div>
         <div className="tr"><b>{P.features.filter((x) => x.health === 'bad').length}</b>in trouble</div>
       </div>
@@ -50,15 +111,9 @@ export function Phone() {
           </div>
           <div className="ph-sec"><span>{s.who ? 'Waiting for ' + pname(P, s.who).split(' ')[0] : 'Waiting for a person'}</span><span>{list.length}</span></div>
           <AnimatePresence initial={false}>
-            {list.slice(0, 12).map((d) => (
-              <motion.div key={d.id} layout className={'ph-q u-' + d.urg} exit={{ opacity: 0, height: 0, marginBottom: 0 }}>
-                <div className="k">{d.base} · {d.urg} · {pname(P, d.decider)}</div>
-                <h4>{d.q}</h4>
-                <div className="mt">{P.F[d.f].name} · waiting {fmtWait(sim.waitMin(d))} · holds {sim.blocksNow(d)} agent{sim.blocksNow(d) === 1 ? '' : 's'}</div>
-                {d.opts.map((o, i) => <button key={i} type="button" className={'op' + (i === d.rec ? ' rec' : '')} onClick={() => E.decide(d.id, i)}><i className="no">{i + 1}</i><b>{o.label}{i === d.rec && <em>suggested</em>}</b><span>{o.consequence}</span></button>)}
-              </motion.div>
-            ))}
+            {(all ? list : list.slice(0, SHOWN)).map((d) => <Question key={d.id} d={d} rm={rm} />)}
           </AnimatePresence>
+          {list.length > SHOWN && <button type="button" className="ph-more" onClick={() => setAll(!all)}>{all ? 'Show fewer' : 'Show ' + (list.length - SHOWN) + ' more'}</button>}
           {s.who && !qq.mine.length && <div className="qempty"><b>Nothing waits for you.</b>The swarm has what it needs.</div>}
         </>
       )}
@@ -97,10 +152,11 @@ export function Phone() {
           ))}
         </div>
       ))}
-      <div className="foot">{M.live ? 'Read from the live scan' : 'Illustrative sample data · simulated swarm'} · open on a wider screen for the zoomable plan.</div>
+      <LiveFoot />
+      <div className="foot">Open on a wider screen for the zoomable plan.</div>
       <AnimatePresence>
         {f && (
-          <motion.div className="ph-detail" role="dialog" aria-label="Feature detail" initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', stiffness: 260, damping: 32 }}>
+          <motion.div className="ph-detail" role="dialog" aria-label="Feature detail" initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={rm ? { duration: 0 } : { type: 'spring', stiffness: 260, damping: 32 }}>
             <button type="button" className="btn" style={{ marginBottom: 10, height: 44 }} onClick={() => { if (history.state?.phDetail) history.back(); else E.closeFeature(false); }}>‹ Back</button>
             <SheetBody key={f.id} f={f} />
           </motion.div>

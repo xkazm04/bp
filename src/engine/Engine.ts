@@ -279,6 +279,7 @@ export class Engine {
     // narrow, or a touch device held landscape (a short mouse window stays the desktop plan)
     const phone = w < 760 || (h < 480 && typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches);
     if (phone !== this.S.phone) this.store.set({ phone });
+    this.phoneSim(phone);
     if (phone) return;
     this.U = 1 + 0.5 * (clamp(Math.min(w / 1280, h / 800), 1, 2) - 1);
     this.tx.setU(this.U);
@@ -461,9 +462,26 @@ export class Engine {
       this.keyplan.draw(q.str, this.RES);
     }
     if (camChanged || this.listenForce) { this.listenForce = false; const fns = this.camFns; for (let i = 0; i < fns.length; i++) fns[i](); }
+    this.tickSimTime();
+  }
+  private tickSimTime() {
     const sec = Math.floor(this.M.sim.t);
     if (sec !== this.lastSimSec) { this.lastSimSec = sec; for (const fn of this.simTimeListeners) fn(this.M.sim.t); }
   }
+  /** The phone draws no plan, so frame() never runs there: a light timer advances the simulation (waits, agents, new questions) and syncs the store. It stops with the phone layout, and a hidden tab skips its ticks without banking the time. */
+  private phoneSim(on: boolean) {
+    if (!on) { clearInterval(this.phoneTimer); this.phoneTimer = 0; return; }
+    if (this.phoneTimer || this.destroyed) return;
+    this.phoneAt = performance.now();
+    this.phoneTimer = window.setInterval(() => {
+      const now = performance.now(); let dt = Math.min(now - this.phoneAt, 2000); this.phoneAt = now;
+      const sim = this.M.sim;
+      if (this.destroyed || document.hidden || !sim.has) return;
+      if (this.isNow && sim.playing) { let ch = false; while (dt > 0) { ch = sim.advance(Math.min(dt, 90)) || ch; dt -= 90; } if (ch) this.scheduleSimSync(); }
+      sim.expire(now); this.tickSimTime();
+    }, 250);
+  }
+  private phoneTimer = 0; private phoneAt = 0;
   private kpAt = 0;
   /** Subscribe to the frames where the camera moved (positioned DOM like the decision card and scale bar), and once more after a store change or a layout change. Runs once right after subscribing. Not called on simulation-only frames: use onSimTime for the clock. */
   onFrame(fn: () => void) { this.camFns = [...this.camFns, fn]; this.listenForce = true; this.dirty(); return () => { this.camFns = this.camFns.filter((f) => f !== fn); }; }
@@ -589,6 +607,7 @@ export class Engine {
   }
   flyToFeature(id: string, highlight = true) {
     const T = this.M.L.TILE[id]; if (!T) return;
+    if (this.S.phone) { this.openFeature(id); return; } // no plan to fly over on a phone: show the feature
     if (this.S.open) this.closeFeature(false);
     this.set({ morning: false });
     this.cam.flyTo(this.fitCam({ x: T.x - 120, y: T.y - 90, w: T.w + 240, h: T.h + 180 }, { t: 40, r: 30, b: 60, l: 30 }, 1));
@@ -1246,7 +1265,7 @@ export class Engine {
   }
   destroy() {
     this.destroyed = true;
-    cancelAnimationFrame(this.raf); clearTimeout(this.settleTimer); this.settleArmed = false; clearTimeout(this.simSyncTimer); clearTimeout(this.hashTimer); clearTimeout(this.pushTimer); clearTimeout(this.hlTimer); clearTimeout(this.resizeTimer);
+    cancelAnimationFrame(this.raf); clearTimeout(this.settleTimer); this.settleArmed = false; clearTimeout(this.simSyncTimer); clearTimeout(this.hashTimer); clearTimeout(this.pushTimer); clearInterval(this.phoneTimer); clearTimeout(this.hlTimer); clearTimeout(this.resizeTimer);
     this.cam.stopFly(); this.mix.destroy(); this.M.sim.listen(null);
     for (const d of this.disposers) d();
     const w = window as unknown as { __bp?: Engine }; if (w.__bp === this) delete w.__bp;
