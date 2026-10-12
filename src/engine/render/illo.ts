@@ -35,12 +35,18 @@ export function illoSVG(base: string, col: string, sw = 1.7): string {
 
 export const ILLO_KEYS = Object.keys(ILLO);
 
-/** Raster images of the art in one colour, for the canvas. `onload` asks for a redraw. */
+/**
+ * Raster images of the art in one colour, for the canvas. `onload` asks for a redraw: it is called once,
+ * after the last image has settled (loaded or failed), not once per image - the static layer re-rasters
+ * once for the whole set. The images are drawn as soon as each completes (the plan checks `complete`).
+ */
 export function loadArt(col: string, onload: () => void): Record<string, HTMLImageElement> {
   const out: Record<string, HTMLImageElement> = {};
+  let left = ILLO_KEYS.length;
+  const settle = () => { if (--left === 0) onload(); };
   for (const k of ILLO_KEYS) {
     const im = new Image();
-    im.onload = onload;
+    im.onload = settle; im.onerror = settle;
     im.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(illoSVG(k, col, 3));
     out[k] = im;
   }

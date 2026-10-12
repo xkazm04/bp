@@ -50,6 +50,24 @@ per-frame work is a few hundred cheap primitives.
   halved the frame rate (p50 33.3 ms, p95 50 ms) because every panel re-blurred the moving canvas each
   frame. Removing it gave the numbers above. Do not put `backdrop-filter` over the map.
 
+## Canvas-render pass (cache resolution, frame allocations, illustration loads)
+
+- **Cache resolution.** `deviceRes()` (render/static-cache.ts) is the one resolution authority for the screen canvas and
+  the static raster, so the cached bitmap is always at the screen's device resolution and an at-rest draw is 1:1
+  (smoothing off only then; any scale ratio smooths). Memory is bounded by shrinking the pan margin, not the
+  resolution: the raster stays under 12 MP (the screen cap is 6.5 MP, so the margin is >= ~0.18 of the viewport at the
+  worst case instead of 0.22). Patterns are built at that same resolution.
+- **Frame allocations.** A plain pan frame builds no flag records (pooled), no static-key string (a version counter,
+  field-compared), no view record, no camera-signature string, no font/colour key strings (cached per theme and U), and
+  no pattern re-anchor (no dynamic layer draws a pattern; patterns are anchored at raster time). Remaining: the
+  `Set` iterator over frame listeners and whatever `sim`/`featRect` allocate.
+- **Illustration loads.** `loadArt` calls back once after all 13 images settle, and a newer `readTheme` supersedes an
+  older set still loading, so a theme/font/DPR change costs one extra re-raster, not up to 13.
+- **Sim-play refresh (~every 900 ms) is still a full raster.** What the static layer reads from the sim is the
+  per-feature rollout/progress (`m.live.*` inside each variant's channel `marks()`), agent chips and the swarm/stats
+  lines in plan.ts. Moving that to the dynamic layer needs plan.ts and the variant channels, which this pass did not
+  own; it is the honest fix for the hitch and is left as the next step. No frame-rate figure is claimed here.
+
 ## Known costs
 
 - During a gesture the cached raster is scaled up to x1.5 before re-rastering, so text can look soft (and

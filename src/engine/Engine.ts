@@ -228,7 +228,9 @@ export class Engine {
     const h = readTheme(this.RES);
     this.th = h.theme; this.anchor = h.anchor;
     this.tx.setFamilies(this.th.sans, this.th.mono);
-    this.art = loadArt(this.th.ink, () => { this.themeV++; this.dirty(); });
+    // one re-raster for the whole illustration set; a newer theme read supersedes an older set still loading
+    const gen = ++this.artGen;
+    this.art = loadArt(this.th.ink, () => { if (gen !== this.artGen || this.destroyed) return; this.themeV++; this.dirty(); });
     this.makeSprites();
     this.themeV++;
     this.syncRootView();
@@ -315,6 +317,7 @@ export class Engine {
   }
   private sk = { ver: 0, themeV: -1, fontsV: -1, U: -1, FW: -1, FH: -1, safeR: -1, mixV: -1, t: '' as string, delta: 0 as number, blast: null as string | null, ga: false, key: null as string | null, who: null as string | null, view: '' as string, simStaticV: -1 };
   private wake = () => this.dirty();
+  private artGen = 0;
   private frame = (now: number) => {
     this.raf = 0;
     if (this.destroyed || this.S.phone) return;
