@@ -23,6 +23,13 @@ always:
 - `npm run check:variant-copies`
 - `npm run check:timeline-keys`
 - `npm run check:timeline-size`
+- `npm run check:standard-fixtures`
+- `npm run check:python-deps`
+- `npm run check:overlays`
+- `npm run check:stream`
+- `npm run check:tokens`
+- `npm run check:chrome`
+- `npm run check:legacy`
 
 when the app-structure fixture or schema changes:
 - `npm run validate:structure -- src/data/kettle.app-structure.json --events src/data/kettle.events.jsonl`
@@ -30,6 +37,7 @@ when the app-structure fixture or schema changes:
 when rendering, the engine or chrome changes:
 - `npm run build` (never while a `next dev` runs in the same directory)
 - `python scripts/perf.py` (needs a running server; budget 60 fps at `?scale=4`)
+- `python scripts/perf.py --lod` (needs a running server; exits 1 when perf.lastRasterMs reads under 80% of the full raster at any LOD) and `--tween` (frames during a lens-mix spring)
 
 ## Repo law
 
@@ -44,3 +52,4 @@ when rendering, the engine or chrome changes:
 - 2026-10-10 optimize wave 1: the manifest gate (`validate:structure` without arguments) was missing from `always`, so a deliberately broken lens manifest passed every gate (standard round, Lane C). Added, with the two new checks.
 - 2026-10-10: in git-bash, `cmd //c mklink //J a C:\x` loses its backslashes and links nowhere; quote the whole command (`cmd //c 'mklink /J a C:\x'`). Worktree gates then silently resolved packages from the parent checkout.
 - 2026-10-10 wave 2: React and the engine both listen on `document`, so `stopPropagation()` in a React handler does not stop the engine's key handler; only `nativeEvent.stopImmediatePropagation()` does (three rounds hit this independently). A src module a node check imports must avoid TypeScript parameter properties (Node type stripping cannot load them).
+- 2026-10-12 --ab-only wave: `git rm --cached <f>` followed by the pathspec commit `git commit -- <f>` re-adds the working-tree file (pathspec commits take the working copy), so an "untrack" commit can land as a content edit. The worker's report said untracked; only reading the diff (`git ls-tree HEAD <f>`) caught it. Untrack with `git rm --cached <f> && git commit -m ...` (no pathspec, after checking the index holds only that change).

@@ -16,7 +16,14 @@
     "check:camera": "node scripts/check-camera.ts",
     "check:variant-copies": "node src/variants/check-copies.ts",
     "check:timeline-keys": "node src/components/timeline/check-keys.ts",
-    "check:timeline-size": "node src/components/timeline/check-size.ts"
+    "check:timeline-size": "node src/components/timeline/check-size.ts",
+    "check:standard-fixtures": "node scripts/check-standard-fixtures.mjs",
+    "check:python-deps": "node scripts/check-python-deps.mjs",
+    "check:overlays": "node scripts/check-overlays.ts",
+    "check:stream": "node scripts/check-stream-status.mjs",
+    "check:tokens": "node scripts/check-tokens.mjs",
+    "check:chrome": "node scripts/check-chrome-sizes.mjs",
+    "check:legacy": "node scripts/check-legacy-unmeasured.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
