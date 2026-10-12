@@ -17,12 +17,8 @@ const API = path.join(ROOT, 'src/app/api');
 const METHODS = ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'];
 const mutations = JSON.parse(process.env.BP_ROUTE_GUARDS_MUTATE || '[]');
 
-// KNOWN GAPS - DECISION NEEDED (routes are outside tooling's write set). key: `<route path> <METHOD> <rule>`.
-const KNOWN = {
-  'products/route.ts GET localHost': 'TODO: GET() takes no request and lists registered roots without the Host check (DNS rebinding); take req and call localHost.',
-  'products/route.ts POST jsonOnly': 'TODO: parses req.json() without the Content-Type check; add jsonOnly(req) -> 415 after localOnly.',
-  'products/[slug]/route.ts PATCH jsonOnly': 'TODO: parses req.json() without the Content-Type check; add jsonOnly(req) -> 415 after localOnly.',
-};
+// KNOWN GAPS (none today). key: `<route path> <METHOD> <rule>`: a gap listed here is reported, not failed.
+const KNOWN = {};
 
 const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : e.name === 'route.ts' ? [path.join(d, e.name)] : []));
 const matchClose = (s, i, open, close) => { // index of the bracket closing the one at s[i]

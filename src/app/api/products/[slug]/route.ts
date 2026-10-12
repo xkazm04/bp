@@ -2,6 +2,7 @@
 // its identity and does not change). DELETE /api/products/[slug]: unregister it; the repo and its
 // `.ai/lens-scan/` stay on disk untouched. Both localhost only (403 otherwise); 404 for an unknown slug;
 // 400 for a bad body or a root that is not a directory; 409 when the registry file cannot be parsed.
+import { jsonOnly } from '@/lib/scan/local-only';
 import { localOnly, patchProduct, removeProduct, type RegistryResult } from '@/lib/scan/registry.server';
 
 export const runtime = 'nodejs';
@@ -14,6 +15,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
   const denied = localOnly(req);
   if (denied) return Response.json({ error: denied }, { status: 403 });
   const { slug } = await params;
+  const notJson = jsonOnly(req);
+  if (notJson) return Response.json({ error: notJson }, { status: 415 });
   let body: unknown;
   try { body = await req.json(); } catch { return Response.json({ error: 'body must be JSON' }, { status: 400 }); }
   try { return answer(patchProduct(slug, body)); } catch (e) { return failed(e); }
