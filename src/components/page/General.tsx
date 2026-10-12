@@ -8,7 +8,7 @@ import type { Feature } from '@/lib/data';
 import { REV_DESC, pname, type Model } from '@/lib/model';
 import { BusinessSection } from '../sheet/Business';
 import { Activity, BuiltBy, Drawing, FeatureLinks, FlaggedBy, Notes, Parts, SwarmSection, stageSince } from '../sheet/SheetBody';
-import { plainLine } from '../sheet/words';
+import { plainLine, revLabel } from '../sheet/words';
 import { useEngine } from '../hooks';
 import { HWORD, Val, useSimSig } from './bits';
 import { Sec, Stagger } from './motion';
@@ -72,7 +72,7 @@ export function GeneralTab({ f }: { f: Feature }) {
         </Sec>
         <Sec label="Revisions">
           <table className="revt"><thead><tr><th>REV</th><th>DATE</th><th>DESCRIPTION</th></tr></thead><tbody>
-            {f.revs.map((h, i) => <tr key={i} className={i === f.revs.length - 1 ? 'now' : ''}><td className="m">{String.fromCharCode(65 + i)}</td><td className="m"><button type="button" className="pg-tt" title="Travel the plan back to this date" onClick={() => E.setTime(h.date)}>{h.date}</button></td><td>{REV_DESC[h.stage]}</td></tr>)}
+            {f.revs.map((h, i) => <tr key={i} className={i === f.revs.length - 1 ? 'now' : ''}><td className="m">{revLabel(i)}</td><td className="m"><button type="button" className="pg-tt" title="Travel the plan back to this date" onClick={() => E.setTime(h.date)}>{h.date}</button></td><td>{REV_DESC[h.stage]}</td></tr>)}
           </tbody></table>
         </Sec>
         {f.parts ? <Sec className="dsec" label="Parts"><Parts parts={f.parts} /></Sec> : null}

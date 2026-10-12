@@ -22,6 +22,7 @@ import { PatternDefs } from './Symbols';
 import { shallowEqual, useBp, useEngine, useVariant } from './hooks';
 import { GeneralTab } from './page/General';
 import { LensTab } from './page/LensTab';
+import { LiveFoot } from './sheet/SheetBody';
 import { StageLadder } from './page/bits';
 import { CountMemo, EnterDelay } from './page/motion';
 import './page.css';
@@ -143,7 +144,7 @@ function Page({ f, enter, onCrumb }: { f: Feature; enter: number; onCrumb: (dept
             {isLens ? <LensTab lens={view} f={f} /> : <GeneralTab f={f} />}
           </div>
         </EnterDelay.Provider>
-        <div className="foot">{E.M.live ? 'Read from the live scan' : 'Illustrative sample data · drawings are stylised, not screenshots'}</div>
+        <LiveFoot />
       </div>
     </CountMemo.Provider>
   );

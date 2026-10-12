@@ -4,17 +4,41 @@
 // lens mix: in General they all sit side by side; in a lens, its panel moves to the top and grows to
 // its reader's density while the others collapse to their headline. Each panel ends with its metric
 // rows (MetricRows, from the manifest); the Business section and a live product's Screens strip follow.
+import { useMemo } from 'react';
 import { LayoutGroup, motion, useReducedMotion } from 'motion/react';
 import type { Feature } from '@/lib/data';
+import type { ScanSnapshot } from '@/lib/scan/types';
 import { REV_DESC, STAGE_WORD, astat, fmtWait, isAgentId, lensOf, pname, type Model, type SwarmSim } from '@/lib/model';
 import { useSimSig } from '../page/bits';
 import { illoSVG } from '@/engine/render/illo';
 import { DefaultLensPanel, MetricRows } from './LensPanel';
 import { BusinessSection } from './Business';
 import { ScreensStrip } from './Screens';
-import { plainLine } from './words';
+import { plainLine, revLabel } from './words';
 import { Mark, PatternDefs, StageSym, agentMark } from '../Symbols';
 import { useBp, useDensity, useEngine, useLive, useVariant } from '../hooks';
+
+/** The latest moment the scan changed: the newest run update, measurement or activity row. */
+function scanUpdated(s: ScanSnapshot | undefined): string | null {
+  if (!s) return null;
+  let m = '';
+  for (const r of s.runs) if (r.updated_at > m) m = r.updated_at;
+  for (const x of s.measurements) if (x.measured_at > m) m = x.measured_at;
+  for (const a of s.activity) if (a.at > m) m = a.at;
+  return m ? m.slice(0, 16).replace('T', ' ') : null;
+}
+/** The sheet's footer: what the data is, and for a live product the stream's actual state and the age of what is shown. */
+export function LiveFoot() {
+  const live = useLive(), scan = live?.product.scan, at = useMemo(() => scanUpdated(scan), [scan]);
+  if (!live) return <div className="foot">Illustrative sample data · drawings are stylised, not screenshots</div>;
+  const { status, error } = live.product, upd = at ? 'last update ' + at : 'no update yet';
+  const t = status === 'live' ? 'Read from the live scan · ' + upd
+    : status === 'offline' ? 'Live scan offline, reconnecting · showing the data as of ' + (at ?? 'the start')
+    : status === 'error' ? 'Live scan error' + (error ? ': ' + error : '') + ' · showing the data as of ' + (at ?? 'the start')
+    : status === 'loading' ? 'Loading the live scan…'
+    : 'No scan store for this product · structure only';
+  return <div className="foot" role="status">{t}</div>;
+}
 
 /** The swarm (or a live product's scan) on one feature: agents, open decisions, orders, recent events, steering. */
 /**
@@ -94,11 +118,13 @@ export function FeatureLinks({ ids, empty }: { ids: readonly string[]; empty: st
   const E = useEngine(), P = E.M.P;
   return <>{ids.length ? ids.map((id) => { const g = P.F[id]; return <button key={id} type="button" onClick={() => E.openFeature(id)}><StageSym st={g.stage} w={20} h={13} /><span>{g.name}</span><span className="w">{g.stage ? STAGE_WORD[g.stage] : 'Unknown'}</span></button>; }) : <div className="none">{empty}</div>}</>;
 }
-/** The last 14 days' activity on it (at most 8 events). */
+/** The latest activity on it (at most 8 events, newest first); the title states the window that is really shown. */
 export function Activity({ f }: { f: Feature }) {
-  const P = useEngine().M.P, acts = P.activity.filter((a) => a.feature === f.id).slice(0, 8);
-  return <><h4>Recent activity · 14 days</h4>
-    {acts.length ? <ul className="acts">{acts.map((a, i) => <li key={i} className={a.type === 'incident' ? 'inc' : ''}><span className="m">{a.at.slice(5, 10)} {a.at.slice(11, 16)}</span><span className="a">{pname(P, a.actor)}{isAgentId(P, a.actor) ? ' ◇' : ''}</span><span>{a.text}{a.severity ? ' · ' + a.severity : ''}</span></li>)}</ul> : <div className="dl"><div className="none">Quiet, no events in the last 14 days</div></div>}</>;
+  const P = useEngine().M.P;
+  const all = useMemo(() => P.activity.filter((a) => a.feature === f.id).sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0)), [P, f.id]);
+  const acts = all.slice(0, 8);
+  return <><h4>Recent activity · {all.length > acts.length ? 'latest ' + acts.length + ' of ' + all.length : all.length}{acts.length ? ', back to ' + acts[acts.length - 1].at.slice(0, 10) : ''}</h4>
+    {acts.length ? <ul className="acts">{acts.map((a, i) => <li key={i} className={a.type === 'incident' ? 'inc' : ''}><span className="m">{a.at.slice(5, 10)} {a.at.slice(11, 16)}</span><span className="a">{pname(P, a.actor)}{isAgentId(P, a.actor) ? ' ◇' : ''}</span><span>{a.text}{a.severity ? ' · ' + a.severity : ''}</span></li>)}</ul> : <div className="dl"><div className="none">Quiet, no events recorded</div></div>}</>;
 }
 /** The stylised drawing of its domain, with the detail caption. */
 export function Drawing({ f }: { f: Feature }) {
@@ -173,7 +199,7 @@ export function SheetBody({ f }: { f: Feature }) {
             <div className="full"><span className="l">Lives in</span>{f.surfaces.map((s) => <span key={s} className="ag" style={{ margin: '0 4px 0 0' }}>{s}</span>)}</div>
           </div>
           <table className="revt"><thead><tr><th>REV</th><th>DATE</th><th>DESCRIPTION</th></tr></thead><tbody>
-            {f.revs.map((h, i) => <tr key={i} className={i === f.revs.length - 1 ? 'now' : ''}><td className="m">{String.fromCharCode(65 + i)}</td><td className="m">{h.date}</td><td>{REV_DESC[h.stage]}</td></tr>)}
+            {f.revs.map((h, i) => <tr key={i} className={i === f.revs.length - 1 ? 'now' : ''}><td className="m">{revLabel(i)}</td><td className="m">{h.date}</td><td>{REV_DESC[h.stage]}</td></tr>)}
           </tbody></table>
           {f.parts && <div className="dsec"><Parts parts={f.parts} /></div>}
         </div>
@@ -187,7 +213,7 @@ export function SheetBody({ f }: { f: Feature }) {
           </div>
           {f.notes.length ? <div className="dsec"><Notes f={f} /></div> : null}
           <div className="dsec"><Activity f={f} /></div>
-          <div className="foot">{M.live ? 'Read from the live scan' : 'Illustrative sample data · drawings are stylised, not screenshots'}</div>
+          <LiveFoot />
         </div>
       </div>
     </>
