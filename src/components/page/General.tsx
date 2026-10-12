@@ -12,6 +12,7 @@ import { Activity, BuiltBy, Drawing, FeatureLinks, FlaggedBy, Notes, Parts, Swar
 import { plainLine, revLabel } from '../sheet/words';
 import { useEngine } from '../hooks';
 import { HWORD, Val, useAsOf, useHeadlineAt, useSimSig } from './bits';
+import { CodeTree } from './CodeTree';
 import { Sec, Stagger } from './motion';
 
 function Tile({ f, M, d }: { f: Feature; M: Model; d: LensDef }) {
@@ -62,6 +63,7 @@ export function GeneralTab({ f }: { f: Feature }) {
             {blast ? <button type="button" className="btn pg-blast" onClick={() => E.toggleBlast(f.id)}>Show the blast radius on the plan · B</button> : null}
           </div>
         </Sec>
+        {f.contexts.length ? <Sec className="dsec" label="Lives in code"><CodeTree f={f} /></Sec> : null}
         <Sec className="dsec" label="Recent activity"><Activity f={f} /></Sec>
       </Stagger>
       <Stagger className="pg-side">

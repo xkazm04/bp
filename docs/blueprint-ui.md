@@ -432,6 +432,9 @@ gets out of the plan's way, and L4 is a page. Earlier sections that say "dock", 
     and opening from a lens view lands on that lens.
   - **General** is the overview: a stat tile per lens, the swarm, Business, dependencies and
     activity.
+  - **Lives in code** (`page/CodeTree.tsx`, General): each context the feature belongs to, its group and
+    its file paths (six shown, the rest behind "N more"), read from the map's contexts (the live product's
+    structure, else Kettle's). A feature with no context shows no section.
   - **A lens tab shows that lens only.** Its blocks are chosen by data, never by lens id: metric
     rows when the lens has metric fields; the Screens strip when it has harness metrics and
     shots; Business when its reader role is `business`; and its KPIs, decisions and orders.
