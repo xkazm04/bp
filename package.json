@@ -23,6 +23,7 @@
     "check:standard-fixtures": "node scripts/check-standard-fixtures.mjs",
     "check:python-deps": "node scripts/check-python-deps.mjs",
     "check:overlays": "node scripts/check-overlays.ts",
+    "check:search": "node scripts/check-search.ts",
     "check:stream": "node scripts/check-stream-status.mjs",
     "check:tokens": "node scripts/check-tokens.mjs",
     "check:chrome": "node scripts/check-chrome-sizes.mjs",

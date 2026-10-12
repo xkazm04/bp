@@ -6,8 +6,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { Stage } from '@/lib/data';
 import {
-  GA_MILESTONE, SPEND_CAP, STAGE_WORD, TICK_CLASS, astat, lensHealth, personLens, revAt, search, sheetOf, stageAt, views,
-  type RoomNode, type BayNode,
+  GA_MILESTONE, SPEND_CAP, STAGE_WORD, TICK_CLASS, astat, lensHealth, personLens, revAt, searchPage, sheetOf, stageAt, views,
+  type RoomNode, type BayNode, type BldNode,
 } from '@/lib/model';
 import { Legend } from '../Legend';
 import { Mark, PatternDefs, StageSym, agentMark } from '../Symbols';
@@ -24,13 +24,16 @@ export function FindPanel() {
   useEffect(() => () => { if (qRef.current.trim()) E.setSel(null); }, [E]);
   // one search per distinct query: the keystroke's handler and the render share it, and a re-render
   // (the rail re-renders on every sim sync) reuses it
-  const memo = useRef({ P: M.P, q: '', r: [] as ReturnType<typeof search> });
+  // at ?scale>1 a feature shows once; the clone in the product line the reader is in wins a tie
+  const bld = useBp((s) => s.place.find((c) => c.t === 'bld')?.id);
+  const prefer = bld ? (E.placeById('bld', bld) as BldNode | null)?.b.i : undefined;
+  const memo = useRef({ P: M.P, q: '', pr: prefer, r: { hits: [], total: 0 } as ReturnType<typeof searchPage> });
   const find = (v: string) => {
     const m = memo.current;
-    if (m.P !== M.P || m.q !== v) memo.current = { P: M.P, q: v, r: v.trim() ? search(M.P, v) : [] };
-    return memo.current.r;
+    if (m.P !== M.P || m.q !== v || m.pr !== prefer) memo.current = { P: M.P, q: v, pr: prefer, r: v.trim() ? searchPage(M.P, v, 8, prefer) : { hits: [], total: 0 } };
+    return memo.current.r.hits;
   };
-  const results = find(q), listed = !!q.trim();
+  const results = find(q), listed = !!q.trim(), total = memo.current.r.total;
   const preview = (i: number) => { setSel(i); E.setSel(results[i]?.id ?? null); };
   const open = (id: string) => { setQ(''); E.setSel(null); E.setDockTab(null); E.openFeature(id); };
   return (
@@ -52,6 +55,7 @@ export function FindPanel() {
         <span className="kb">/</span>
       </div>
       {q.trim() ? (
+        <>
         <ul id="results" role="listbox" aria-label="Matching features">
           {results.length ? results.map((f, i) => (
             <li key={f.id} id={'res-' + f.id} role="option" aria-selected={i === sel} className={i === sel ? 'on' : ''} onPointerEnter={() => preview(i)} onClick={() => open(f.id)}>
@@ -61,6 +65,8 @@ export function FindPanel() {
             </li>
           )) : <li className="none">No feature matches “{q}”.{M.live ? '' : ' Try “gift”, “waitlist” or “tax”.'}</li>}
         </ul>
+        {total > results.length && <div className="fly-note">{total - results.length} more · refine the search to narrow it.</div>}
+        </>
       ) : (
         <div className="fly-note">Type part of a name. <b>↑ ↓</b> preview each match on the plan, <b>Enter</b> opens it, <b>Esc</b> clears, then closes.</div>
       )}
