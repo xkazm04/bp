@@ -6,6 +6,7 @@
 // first snapshot are in, and every later scan goes into the sim in place (`engine.feed`), so the
 // engine and the layout are never rebuilt for a delta. A new structure builds a new model.
 import { Component, memo, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from 'react';
+import { MotionConfig } from 'motion/react';
 import { Engine } from '@/engine/Engine';
 import { EMPTY_SCAN, clampScale, type Model } from '@/lib/model';
 import { applyScan, buildLiveModel, liveSwarm, refreshLiveModel } from '@/lib/model/live-feed';
@@ -168,6 +169,7 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
   }, [engine, live.structureRev, live.structure, live.events, live.scan]);
   const info = useMemo<LiveInfo | null>(() => (product ? { slug: product, product: live } : null), [product, live]);
   return (
+    <MotionConfig reducedMotion="user">
     <div className="bp" ref={root} data-variant={variant.id} data-view="general">
       <div className="bp-paper" />
       <canvas ref={cv} className="bp-map" tabIndex={0} role="application"
@@ -199,5 +201,6 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
         </EngineCtx.Provider>
       )}
     </div>
+    </MotionConfig>
   );
 }
