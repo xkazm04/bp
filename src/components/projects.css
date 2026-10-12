@@ -65,3 +65,7 @@
 .pj-add .pj-note { margin: 0; font-size: 12px; }
 .pj-add .pj-acts { margin-top: 2px; }
 @media (max-width: 520px) { .pj-add { grid-template-columns: 1fr; } .projsw-pop { width: min(320px, calc(100vw - 28px)); } }
+.projsw-it.off { cursor: not-allowed; color: var(--ink-2); }
+.projsw-it .why { display: block; font-size: 12px; white-space: normal; color: var(--ink-2); }
+.projsw-rl { margin-left: 8px; height: 24px; padding: 0 8px; border: 1px solid var(--ink-3); background: transparent; color: var(--ink); font: 500 12px var(--mono); text-transform: uppercase; }
+.pj-stale { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

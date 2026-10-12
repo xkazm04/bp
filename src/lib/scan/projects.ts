@@ -4,38 +4,61 @@
 import { useSyncExternalStore } from 'react';
 import type { ProductInfo } from './types';
 
-export interface ProjectsState { list: ProductInfo[] | null; loading: boolean; error: string | null }
+/** `stale`: the open product was removed or got a new root; the running page still shows the old one until it reloads. */
+export type Stale = 'removed' | 'root' | null;
+export interface ProjectsState { list: ProductInfo[] | null; loading: boolean; error: string | null; stale: Stale }
 
-let state: ProjectsState = { list: null, loading: false, error: null };
+let state: ProjectsState = { list: null, loading: false, error: null, stale: null };
 const subs = new Set<() => void>();
 const put = (p: Partial<ProjectsState>) => { state = { ...state, ...p }; subs.forEach((f) => f()); };
 const subscribe = (f: () => void) => { subs.add(f); return () => { subs.delete(f); }; };
 const get = () => state;
 
 let inflight: Promise<ProductInfo[] | null> | null = null;
-/** Re-reads the list (the registry and the repos change outside the app). Concurrent calls share one request. */
-export function refreshProjects(): Promise<ProductInfo[] | null> {
-  if (inflight) return inflight;
+let seq = 0;
+/**
+ * Re-reads the list (the registry and the repos change outside the app). Concurrent plain calls share one
+ * request; `fresh` (after a write) always issues its own, since a request already in flight may have been
+ * answered from before the write. Only the newest request's answer is kept.
+ */
+export function refreshProjects(fresh = false): Promise<ProductInfo[] | null> {
+  if (inflight && !fresh) return inflight;
+  const my = ++seq;
   put({ loading: true });
-  inflight = (async () => {
+  let p!: Promise<ProductInfo[] | null>;
+  p = (async () => {
     try {
       const r = await fetch('/api/products', { cache: 'no-store' });
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const list = (await r.json()) as ProductInfo[];
-      put({ list, loading: false, error: null });
+      if (my === seq) put({ list, loading: false, error: null });
       return list;
     } catch (e) {
-      put({ loading: false, error: 'Could not read the project list: ' + (e as Error).message });
+      if (my === seq) put({ loading: false, error: 'Could not read the project list: ' + (e as Error).message });
       return null;
     } finally {
-      inflight = null;
+      if (inflight === p) inflight = null;
     }
   })();
-  return inflight;
+  inflight = p;
+  return p;
 }
+
+/** Note that the open product's registry entry changed under the running page (shown with a Reload action). */
+export function markStale(s: Stale) { put({ stale: s }); }
 
 export function useProjects(): ProjectsState {
   return useSyncExternalStore(subscribe, get, get);
+}
+
+/**
+ * The one name for a product everywhere in the chrome: the registry's (what the person typed and the project
+ * list shows) when the product is registered, else `fallback` (the map's own name for the header, the slug
+ * while the list loads). Kettle has no entry and keeps its map name.
+ */
+export function useProductName(slug: string | null, fallback: string): string {
+  const { list } = useProjects();
+  return (slug && list?.find((p) => p.slug === slug)?.name) || fallback;
 }
 
 async function write(url: string, method: 'POST' | 'PATCH' | 'DELETE', body?: unknown): Promise<void> {
@@ -47,7 +70,7 @@ async function write(url: string, method: 'POST' | 'PATCH' | 'DELETE', body?: un
     const j = (await r.json().catch(() => null)) as { error?: string } | null;
     throw new Error(j?.error || 'HTTP ' + r.status);
   }
-  await refreshProjects();
+  await refreshProjects(true);
 }
 
 const one = (slug: string) => '/api/products/' + encodeURIComponent(slug);

@@ -4,7 +4,7 @@
 // computed. Every error the API answers is shown inline next to what caused it.
 import { useEffect, useRef, useState } from 'react';
 import { LEVEL_LABEL, RESERVED_SLUGS, SLUG_RE, readinessLevel, type Readiness } from '@/lib/scan/readiness';
-import { addProject, patchProject, projectHref, refreshProjects, removeProject, useProjects } from '@/lib/scan/projects';
+import { addProject, markStale, patchProject, projectHref, refreshProjects, removeProject, useProjects } from '@/lib/scan/projects';
 import type { ProductInfo } from '@/lib/scan/types';
 import { LevelIcon } from './ProjectSwitcher';
 
@@ -48,15 +48,16 @@ function Row({ p, current }: { p: ProductInfo; current: string | null }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const level = readinessLevel(p.readiness);
-  const run = async (f: () => Promise<void>) => {
+  const run = async (f: () => Promise<void>, stale?: 'removed' | 'root') => {
     setBusy(true); setErr(null);
-    try { await f(); setEdit(null); } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+    // the open product's page keeps what it loaded: say so, and let the person reload when ready
+    try { await f(); if (stale && p.slug === current) markStale(stale); setEdit(null); } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   };
   const save = () => {
     if (!edit || edit.kind === 'remove') return;
     const v = edit.value.trim();
     if (!v) { setErr(edit.kind === 'name' ? 'The name cannot be empty' : 'The root cannot be empty'); return; }
-    void run(() => patchProject(p.slug, edit.kind === 'name' ? { name: v } : { root: v }));
+    void run(() => patchProject(p.slug, edit.kind === 'name' ? { name: v } : { root: v }), edit.kind === 'root' ? 'root' : undefined);
   };
   const field = (kind: 'name' | 'root', label: string) => edit && edit.kind === kind && (
     <form className="pj-edit" onSubmit={(e) => { e.preventDefault(); save(); }}>
@@ -85,7 +86,7 @@ function Row({ p, current }: { p: ProductInfo; current: string | null }) {
       {edit?.kind === 'remove' ? (
         <div className="pj-confirm" role="group" aria-label={'Remove ' + p.name}>
           <span>Remove <b>{p.name}</b> from the list? The repo and its scan files stay on disk.</span>
-          <button type="button" className="pj-bt warn" autoFocus disabled={busy} onClick={() => void run(() => removeProject(p.slug))}>Remove</button>
+          <button type="button" className="pj-bt warn" autoFocus disabled={busy} onClick={() => void run(() => removeProject(p.slug), 'removed')}>Remove</button>
           <button type="button" className="pj-bt" disabled={busy} onClick={() => setEdit(null)}>Keep</button>
         </div>
       ) : !edit && (
@@ -102,35 +103,41 @@ function Row({ p, current }: { p: ProductInfo; current: string | null }) {
 const slugify = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 63);
 
 function AddForm() {
-  const [slug, setSlug] = useState(''), [slugTouched, setSlugTouched] = useState(false);
+  const [slug, setSlug] = useState(''), [slugTouched, setSlugTouched] = useState(false), [slugSeen, setSlugSeen] = useState(false);
   const [name, setName] = useState(''), [root, setRoot] = useState('');
   const [busy, setBusy] = useState(false), [err, setErr] = useState<string | null>(null);
   const s = slugTouched ? slug : slugify(name);
   const local = !s ? null : !SLUG_RE.test(s) ? 'Slug: lower-case letters, digits and hyphens, starting with a letter or digit' : RESERVED_SLUGS.includes(s) ? '“' + s + '” is the built-in sample' : null;
+  const dirty = !!(name || slug || root);
+  const reset = () => { setSlug(''); setSlugTouched(false); setSlugSeen(false); setName(''); setRoot(''); setErr(null); };
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!s || !name.trim() || !root.trim()) { setErr('Slug, name and root path are all needed'); return; }
-    if (local) { setErr(local); return; }
+    if (local) { setSlugSeen(true); setErr(local); return; }
     setBusy(true); setErr(null);
-    try { await addProject({ slug: s, name: name.trim(), root: root.trim() }); setSlug(''); setSlugTouched(false); setName(''); setRoot(''); }
+    try { await addProject({ slug: s, name: name.trim(), root: root.trim() }); reset(); }
     catch (x) { setErr((x as Error).message); }
     finally { setBusy(false); }
   };
+  // Esc in a form with typed text clears the form first (the dialog stays); a second Esc closes the dialog
+  const onKey = (e: React.KeyboardEvent) => { if (e.key === 'Escape' && dirty && !busy) { e.preventDefault(); e.stopPropagation(); reset(); } };
   return (
-    <form className="pj-add" onSubmit={submit} aria-label="Add a project">
+    <form className="pj-add" onSubmit={submit} onKeyDown={onKey} aria-label="Add a project">
       <h3 className="pj-sec">Add a project</h3>
       <label><span>Name</span><input value={name} disabled={busy} placeholder="Personas" onChange={(e) => setName(e.target.value)} /></label>
-      <label><span>Slug</span><input value={s} disabled={busy} spellCheck={false} placeholder="personas" aria-invalid={!!local} onChange={(e) => { setSlugTouched(true); setSlug(e.target.value); }} /></label>
+      <label><span>Slug</span><input value={s} disabled={busy} spellCheck={false} placeholder="personas" aria-invalid={slugSeen && !!local} aria-describedby={slugSeen && local ? 'pj-slug-err' : undefined}
+        onChange={(e) => { setSlugTouched(true); setSlug(e.target.value); setErr(null); }} onBlur={() => setSlugSeen(true)} /></label>
       <label className="wide"><span>Root path</span><input value={root} disabled={busy} spellCheck={false} placeholder="C:/code/personas" onChange={(e) => setRoot(e.target.value)} /></label>
       <p className="pj-note">The repo folder (absolute, or relative to where bp runs). bp reads its <code>.ai/lens-scan/</code>.</p>
-      {(err || local) && <p className="pj-err" role="alert">{err || local}</p>}
+      {slugSeen && local && !err && <p className="pj-err" id="pj-slug-err" role="status">{local}</p>}
+      {err && <p className="pj-err" role="alert">{err}</p>}
       <div className="pj-acts"><button type="submit" className="pj-bt go" disabled={busy}>{busy ? 'Adding…' : 'Add project'}</button></div>
     </form>
   );
 }
 
 export function ProjectsDialog({ current, onClose }: { current: string | null; onClose: () => void }) {
-  const { list, error } = useProjects();
+  const { list, error, stale } = useProjects();
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => { void refreshProjects(); box.current?.querySelector<HTMLElement>('.pj-x')?.focus(); }, []);
   const onKey = (e: React.KeyboardEvent) => {
@@ -151,6 +158,12 @@ export function ProjectsDialog({ current, onClose }: { current: string | null; o
           <button type="button" className="pj-bt pj-x" onClick={onClose}>Close · Esc</button>
         </div>
         <p className="pj-note">The products bp can open, from <code>bp.products.local.json</code>. Removing one only takes it off this list.</p>
+        {stale && (
+          <p className="pj-hint pj-stale" role="status">
+            {stale === 'removed' ? 'The open project was removed from the list; this page still shows it.' : 'The open project’s root changed; this page still reads the old one.'}
+            <button type="button" className="pj-bt go" onClick={() => location.reload()}>Reload</button>
+          </p>
+        )}
         {error && <p className="pj-err" role="alert">{error}</p>}
         <ul className="pj-list">
           <li className="pj-row sample">

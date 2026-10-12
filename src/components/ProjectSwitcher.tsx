@@ -7,7 +7,7 @@
 // and holds its own state; opening it re-renders only itself, never the canvas.
 import { useEffect, useRef, useState } from 'react';
 import { LEVEL_LABEL, LEVEL_TITLE, readinessLevel, type ReadinessLevel } from '@/lib/scan/readiness';
-import { projectHref, refreshProjects, useProjects } from '@/lib/scan/projects';
+import { projectHref, refreshProjects, useProductName, useProjects } from '@/lib/scan/projects';
 import { ProjectsDialog } from './ProjectsDialog';
 import './projects.css';
 
@@ -26,10 +26,10 @@ export function LevelIcon({ level }: { level: ReadinessLevel | 'sample' }) {
   );
 }
 
-interface Item { slug: string | null; name: string; level: ReadinessLevel | 'sample'; label: string; title: string }
+interface Item { slug: string | null; name: string; level: ReadinessLevel | 'sample'; label: string; title: string; off?: boolean }
 
-export function ProjectSwitcher({ current }: { current: string | null }) {
-  const { list, loading, error } = useProjects();
+export function ProjectSwitcher({ current, fallbackName }: { current: string | null; fallbackName?: string }) {
+  const { list, loading, error, stale } = useProjects();
   const [open, setOpen] = useState(false);
   const [manage, setManage] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null), pop = useRef<HTMLDivElement>(null);
@@ -38,11 +38,12 @@ export function ProjectSwitcher({ current }: { current: string | null }) {
   const items: Item[] = ([{ slug: null, name: 'Kettle (sample)', level: 'sample', label: 'Sample', title: 'The built-in sample product' }] as Item[]).concat(
     (list ?? []).map((p) => {
       const l = readinessLevel(p.readiness);
-      return { slug: p.slug, name: p.name, level: l, label: LEVEL_LABEL[l], title: LEVEL_TITLE[l] + (p.readiness.error ? ' (' + p.readiness.error + ')' : '') };
+      return { slug: p.slug, name: p.name, level: l, label: LEVEL_LABEL[l], title: LEVEL_TITLE[l] + (p.readiness.error ? ' (' + p.readiness.error + ')' : ''), off: l === 'missing' };
     }),
   );
   const cur = current ? list?.find((p) => p.slug === current) : null;
-  const curName = current ? cur?.name ?? current : 'Kettle (sample)';
+  const regName = useProductName(current, fallbackName || current || '');
+  const curName = current ? regName : 'Kettle (sample)';
   const nItems = items.length + 1; // + Manage projects…
 
   const focusItem = (i: number) => pop.current?.querySelectorAll<HTMLElement>('[role^="menuitem"]')[i]?.focus();
@@ -56,8 +57,9 @@ export function ProjectSwitcher({ current }: { current: string | null }) {
       focusItem(i < 0 ? nItems - 1 : i);
     });
   };
-  const choose = (slug: string | null) => {
+  const choose = (slug: string | null, off?: boolean) => {
     if (slug === current) { close(); return; }
+    if (off) return; // cannot be drawn: the menu says why
     setOpen(false);
     location.assign(projectHref(slug));
   };
@@ -107,13 +109,14 @@ export function ProjectSwitcher({ current }: { current: string | null }) {
           {items.map((it) => {
             const on = it.slug === current;
             return (
-              <button key={it.slug ?? '-kettle'} type="button" role="menuitemradio" aria-checked={on} tabIndex={-1} className={'projsw-it' + (on ? ' on' : '')}
-                title={it.title} onClick={() => choose(it.slug)}>
-                <span className="nm">{it.name}</span>
+              <button key={it.slug ?? '-kettle'} type="button" role="menuitemradio" aria-checked={on} aria-disabled={it.off && !on ? true : undefined} tabIndex={-1} className={'projsw-it' + (on ? ' on' : '') + (it.off && !on ? ' off' : '')}
+                title={it.title} onClick={() => choose(it.slug, it.off)}>
+                <span className="nm">{it.name}{it.off && !on ? <span className="why">{it.title}</span> : null}</span>
                 <span className="lv"><LevelIcon level={it.level} />{it.label}</span>
               </button>
             );
           })}
+          {stale && <div className="projsw-err" role="status">{stale === 'removed' ? 'This project was removed from the list.' : 'This project’s root changed.'} <button type="button" className="projsw-rl" onClick={() => location.reload()}>Reload</button></div>}
           {error && <div className="projsw-err" role="alert">{error}</div>}
           <button type="button" role="menuitem" tabIndex={-1} className="projsw-it mg" onClick={openManage}>Manage projects…</button>
         </div>

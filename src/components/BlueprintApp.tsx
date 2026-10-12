@@ -10,7 +10,7 @@ import { Engine } from '@/engine/Engine';
 import { EMPTY_SCAN, buildModel, clampScale } from '@/lib/model';
 import { buildLiveModel, liveSwarm } from '@/lib/model/live-feed';
 import { decideProposal, useLiveProduct, type LiveProduct } from '@/lib/scan/client';
-import { refreshProjects } from '@/lib/scan/projects';
+import { refreshProjects, useProductName } from '@/lib/scan/projects';
 import { getVariant } from '@/variants/registry';
 import type { VariantId } from '@/variants/types';
 import { EngineCtx, LiveCtx, VariantCtx, shallowEqual, useBp, type LiveInfo } from './hooks';
@@ -105,13 +105,10 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
   const [product, setProduct] = useState<string | null | undefined>(undefined);
   useEffect(() => { setProduct(new URLSearchParams(location.search).get('product') || null); }, []);
   // a live product's tab reads "<name> · blueprint" (the name from the registry, else the slug); Kettle keeps the page metadata
-  useEffect(() => {
-    if (!product) return;
-    let dead = false;
-    document.title = product + ' · blueprint';
-    void refreshProjects().then((list) => { if (!dead) document.title = (list?.find((p) => p.slug === product)?.name ?? product) + ' · blueprint'; });
-    return () => { dead = true; };
-  }, [product]);
+  // it follows the registry name, so a rename shows at once
+  const title = useProductName(product || null, product || '');
+  useEffect(() => { if (product) void refreshProjects(); }, [product]);
+  useEffect(() => { if (product) document.title = title + ' · blueprint'; }, [product, title]);
   const live = useLiveProduct(product ?? null);
   const structure = product ? live.structure : undefined;
   // a live product is drawn once its structure is in and the stream has answered (or given up for now)

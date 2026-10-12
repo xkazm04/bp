@@ -7,6 +7,7 @@ import { ThemeToggle } from './ThemeToggle';
 import { ProjectSwitcher } from './ProjectSwitcher';
 import type { Crumb } from '@/engine/state';
 import type { LiveProduct } from '@/lib/scan/client';
+import { useProductName } from '@/lib/scan/projects';
 
 function crumbLabel(E: ReturnType<typeof useEngine>, c: Crumb, short: boolean): string {
   const o = E.placeById(c.t, c.id);
@@ -49,6 +50,7 @@ const SUM_MIN = 220;
 const Crumbs = memo(function Crumbs() {
   const E = useEngine(), M = E.M;
   const place = useBp((s) => s.place);
+  const name = useProductName(M.live?.slug ?? null, M.P.name);
   const key = place.map((c) => c.t + c.id).join('/');
   const nav = useRef<HTMLElement>(null), full = useRef(0);
   // parents shorten only when the full chain does not fit the header's real width: measure it once per
@@ -68,7 +70,7 @@ const Crumbs = memo(function Crumbs() {
     ro.observe(n);
     return () => ro.disconnect();
   }, [key]);
-  const items = [{ key: 'home', label: M.P.scale > 1 ? M.P.name + ' campus' : M.P.name, depth: 0 }].concat(
+  const items = [{ key: 'home', label: M.P.scale > 1 ? name + ' campus' : name, depth: 0 }].concat(
     place.map((c, i) => ({ key: c.id, label: crumbLabel(E, c, short && i < place.length - 1), depth: i + 1 })),
   );
   return (
@@ -184,8 +186,9 @@ const Theme = memo(function Theme() { return <ThemeToggle compact />; });
 function ProjLine() {
   const E = useEngine(), P = E.M.P;
   const view = useBp((s) => s.view);
+  const name = useProductName(E.M.live?.slug ?? null, P.name);
   const sh = sheetOf(P, view);
-  return <div className="proj">Project {P.name} · drawing set · <b>sheet {sh.no} · {sh.title}</b> · {E.M.live ? 'live lens scan' : 'simulated swarm'}</div>;
+  return <div className="proj">Project {name} · drawing set · <b>sheet {sh.no} · {sh.title}</b> · {E.M.live ? 'live lens scan' : 'simulated swarm'}</div>;
 }
 
 export const Header = memo(function Header() {
@@ -197,7 +200,7 @@ export const Header = memo(function Header() {
         <Crumbs />
       </div>
       <div className="hdr-right">
-        <Switcher current={E.M.live?.slug ?? null} />
+        <Switcher current={E.M.live?.slug ?? null} fallbackName={E.M.P.name} />
         <LivePill />
         <LensTabs />
         <Theme />
