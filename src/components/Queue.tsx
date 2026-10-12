@@ -15,7 +15,7 @@ import { shallowEqual, useBp, useEngine, useLive, useVariant } from './hooks';
 const fmtN = (n: number) => (Number.isInteger(n) ? n.toLocaleString('en-US') : (Math.round(n * 100) / 100).toLocaleString('en-US'));
 
 /** `metric: before → expected unit`, from the latest reading of that feature, lens and metric; null when the proposal names no metric. */
-function metricMove(p: Proposal, unitOf: (lens: string, key: string) => string | undefined, scan: Parameters<typeof metricHistory>[0]): string | null {
+export function metricMove(p: Proposal, unitOf: (lens: string, key: string) => string | undefined, scan: Parameters<typeof metricHistory>[0]): string | null {
   if (!p.metric) return null;
   const h = metricHistory(scan, p.feature, p.lens, p.metric), last = h[h.length - 1];
   const unit = last?.unit ?? unitOf(p.lens, p.metric), u = unit ? ' ' + unit : '';
@@ -77,7 +77,7 @@ export function oncePerProposal(ds: SimDecision[]): SimDecision[] {
 }
 
 /** What a question's urgency reads as on its card. */
-const URG: Record<SimDecision['urg'], string> = { high: 'Urgent', medium: 'Soon', low: 'When you can' };
+export const URG: Record<SimDecision['urg'], string> = { high: 'Urgent', medium: 'Soon', low: 'When you can' };
 
 /** Where focus goes when a card is answered and leaves: the next card, else the previous, else the list's heading. Resolved before the answer
  * (the leaving card stays in the DOM through its exit); `go` runs after it, once the DOM has the optimistic state. */

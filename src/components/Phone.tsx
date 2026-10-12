@@ -2,28 +2,17 @@
 // The phone view: the person's queue first, then a searchable reading list. No plan on a phone.
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { fmtWait, metricHistory, pname, sheetOf, type SimDecision } from '@/lib/model';
+import { fmtWait, pname, sheetOf, type SimDecision } from '@/lib/model';
 import { useProductName } from '@/lib/scan/projects';
-import type { Proposal, ScanSnapshot } from '@/lib/scan/types';
 import { SheetBody } from './FeatureSheet';
 import { Toast } from './Overlays';
-import { oncePerProposal, proposalSummary } from './Queue';
+import { URG, metricMove, oncePerProposal, proposalSummary } from './Queue';
 import { LiveFoot } from './sheet/SheetBody';
 import { PatternDefs, StageSym } from './Symbols';
 import { ThemeToggle } from './ThemeToggle';
 import { shallowEqual, useBp, useEngine, useLive } from './hooks';
 
 const SHOWN = 12;
-// Queue.tsx keeps its urgency words and its before -> expected line module-private: these two are the same 3-word map and the same arithmetic.
-const URG: Record<SimDecision['urg'], string> = { high: 'Urgent', medium: 'Soon', low: 'When you can' };
-const fmtN = (n: number) => (Number.isInteger(n) ? n.toLocaleString('en-US') : (Math.round(n * 100) / 100).toLocaleString('en-US'));
-function metricMove(p: Proposal, unitOf: (lens: string, key: string) => string | undefined, scan: ScanSnapshot | undefined): string | null {
-  if (!p.metric) return null;
-  const h = metricHistory(scan, p.feature, p.lens, p.metric), last = h[h.length - 1], unit = last?.unit ?? unitOf(p.lens, p.metric), u = unit ? ' ' + unit : '';
-  if (p.expected_delta === undefined) return p.metric + ': ' + (last ? fmtN(last.value) + u : 'not measured yet');
-  const d = p.expected_delta;
-  return last ? `${p.metric}: ${fmtN(last.value)} → ${fmtN(last.value + d)}${u}` : `${p.metric}: ${(d > 0 ? '+' : '') + fmtN(d)}${u} (not measured yet)`;
-}
 /** A decline note survives a refused write (the card remounts when the decision reopens). */
 const drafts = new Map<string, string>();
 
