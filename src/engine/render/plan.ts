@@ -208,9 +208,10 @@ function paintTile(E: Engine, ctx: CanvasRenderingContext2D, v: View, T: TileNod
   if (!g.text) { ctx.globalAlpha = 1; return; }
   // text ramps in over a few px instead of popping; the two layouts hand over in sequence (below)
   const ta = a * clamp((w - 100 * u) / (14 * u), 0, 1) * clamp((h - 44 * u) / (8 * u), 0, 1);
-  // sequential handover: the small layout fades out over the first half of the band, the big one in over the second, so two differently placed copies of the name never show together
+  // the two layouts switch at the band's midpoint: one copy of the name is always fully drawn (a fade between them either
+  // ghosts two offset copies or, at rest mid-band, shows neither - both measured on screen at 1280 px)
   const bigR = clamp((w - 150 * u) / (16 * u), 0, 1) * clamp((h - 64 * u) / (8 * u), 0, 1);
-  const bigA = clamp((bigR - 0.5) * 2, 0, 1), smallA = clamp((0.5 - bigR) * 2, 0, 1);
+  const bigA = bigR >= 0.5 ? 1 : 0, smallA = 1 - bigA;
   if (ta <= 0.004) { ctx.globalAlpha = 1; return; }
   const agentsHere = now && E.M.sim.has && E.M.sim.AGF[f.id] && E.M.sim.AGF[f.id].length;
   const chips = !!agentsHere && w >= 100 * u && h >= 58 * u;
