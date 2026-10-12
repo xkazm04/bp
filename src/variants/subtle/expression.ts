@@ -16,7 +16,7 @@
 // the id row); the lens tabs and keys reach every lens.
 import type { LensDef } from '@/lib/data';
 import type { LensField } from '@/lib/standard/types';
-import { lensLine } from '@/lib/standard/present';
+import { hotHealth, lensLine } from '@/lib/standard/present';
 import { lensAggregate, lensContent } from '@/lib/model/lens';
 import type { FeatureLive, LensChannel, LensExpression, MarkArgs, Rect, TileGeom } from '../types';
 import { flagsOn } from '@/engine/render/flags';
@@ -147,7 +147,7 @@ function drawTile(s: Spec, a: MarkArgs) {
     const n = live.value(d.id, s.count.key);
     if (typeof n === 'number' && n > 0) {
       ctx.globalAlpha = ga * smooth((a.x - 0.5) / 0.5);
-      const hot = (fl.h === 'bad' || fl.h === 'watch') && fl.whyFields.includes(s.count.key) ? n : 0;
+      const hot = hotHealth(fl, s.count.key) ? n : 0;
       dots(a, rx + rw, cy, n, hot, th.inkA(0.85), healthInk(th, fl.h, true));
     }
   }

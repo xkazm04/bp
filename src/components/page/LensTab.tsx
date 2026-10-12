@@ -10,13 +10,13 @@
 import { memo, useMemo } from 'react';
 import type { Feature } from '@/lib/data';
 import type { Density } from '@/engine/lens/contract';
-import { DENSITY_COUNT } from '@/lib/standard/present';
+import { DENSITY_COUNT, hotHealth, reasonOf } from '@/lib/standard/present';
 import { fmtValue, pname, type Model } from '@/lib/model';
 import type { ScanSnapshot } from '@/lib/scan/types';
 import { BusinessSection } from '../sheet/Business';
 import { ScreensStrip } from '../sheet/Screens';
 import { SwarmSection } from '../sheet/SheetBody';
-import { MoveArrow, Spark, hotOf, metricMove, metricRows, nfmt } from '../sheet/LensPanel';
+import { MoveArrow, Spark, metricMove, metricRows, nfmt } from '../sheet/LensPanel';
 import { useDensity, useEngine, useLive, useVariant } from '../hooks';
 import { NOT_RECORDED } from '@/lib/model/timeview';
 import { HWORD, KpiRows, Val, useAsOf, useHeadlineAt, useSimSig } from './bits';
@@ -33,7 +33,7 @@ const Metrics = memo(function Metrics({ lens, f, M, scan, all, sig }: { lens: st
     <div className="pg-mrs">
       <h4>Measured · {measured === shown.length ? shown.length + ' metric' + (shown.length > 1 ? 's' : '') : measured + ' of ' + shown.length + ' metrics'}{scan ? ' · from the scan' : ''}</h4>
       {shown.map((r) => {
-        const m = r.field.metric!, v = r.value, { dir, cls } = metricMove(r), hot = hotOf(fl, r.field.key);
+        const m = r.field.metric!, v = r.value, { dir, cls } = metricMove(r), hot = hotHealth(fl, r.field.key);
         return (
           <div key={r.field.key} className={'mr ' + hot}>
             <span className="nm">{r.field.label}<em className="mth">{r.method}</em></span>
@@ -58,7 +58,7 @@ const Body = memo(function Body({ lens, f, M, density }: { lens: string; f: Feat
   const ev = past ? [] : d.evidence.filter((x) => own(x) && x !== hf), evShown = ev.slice(0, DENSITY_COUNT.page[density]);
   const seen = new Set([hf?.key, ...evShown.map((x) => x.key)]);
   const rest = past ? [] : d.fields.filter((x) => own(x) && !x.metric && !seen.has(x.key) && val(x.key) !== undefined);
-  const hot = (key: string) => hotOf(fl, key);
+  const hot = (key: string) => hotHealth(fl, key);
   const restRows = rest.map((x) => <div key={x.key} className="r"><span>{x.label}{x.source && 'kpi' in x.source ? ' · KPI' : ''}</span><b className={hot(x.key)}><Val k={f.id + ':' + lens + ':' + x.key} field={x} v={val(x.key)} /></b></div>);
   return (
     <>
@@ -70,7 +70,7 @@ const Body = memo(function Body({ lens, f, M, density }: { lens: string; f: Feat
         </div>
         <div className="hh">
           <span className="hw">{past ? 'Not recorded' : HWORD[h]}</span>
-          <p className="why">{past ? (then ? 'Read on ' + then.measured + '. Health is not recorded for that date.' : NOT_RECORDED + ' (' + t + ').') : h === 'na' ? 'This lens does not apply to this feature.' : h === 'unmeasured' && !fl?.facet ? 'No ' + d.name.toLowerCase() + ' reading for this feature yet.' : fl?.ov ? fl.ov.why : fl?.why ?? 'No rule raised anything: it reads ' + HWORD[h].toLowerCase() + '.'}</p>
+          <p className="why">{past ? (then ? 'Read on ' + then.measured + '. Health is not recorded for that date.' : NOT_RECORDED + ' (' + t + ').') : h === 'na' ? 'This lens does not apply to this feature.' : h === 'unmeasured' && !fl?.facet ? 'No ' + d.name.toLowerCase() + ' reading for this feature yet.' : (fl && reasonOf(fl)) ?? 'No rule raised anything: it reads ' + HWORD[h].toLowerCase() + '.'}</p>
           {!past && fl?.ov ? <p className="ov"><b>Held at {fl.ov.health.toUpperCase()}</b> by {pname(M.P, fl.ov.by)} until {fl.ov.until}{fl.why ? '. The rules say: ' + fl.why : ''}</p> : null}
         </div>
       </Sec>

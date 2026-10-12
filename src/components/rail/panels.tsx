@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { Stage } from '@/lib/data';
 import {
-  GA_MILESTONE, SPEND_CAP, STAGE_WORD, TICK_CLASS, astat, lensHealth, personLens, revAt, searchPage, sheetOf, stageAt, views,
+  GA_MILESTONE, SPEND_CAP, STAGE_WORD, TICK_CLASS, astat, healthUnder, personLens, revAt, searchPage, sheetOf, stageAt, views,
   type RoomNode, type BayNode, type BldNode,
 } from '@/lib/model';
 import { Legend } from '../Legend';
@@ -292,7 +292,7 @@ export function PlanPanel() {
             <li key={Bay.id} style={{ display: 'contents' }}>
               <div className="cap">{Bay.cap.name}</div>
               {Bay.tiles.map((T) => {
-                const f = T.f, st: Stage | null = stageAt(f, s.t, M.P.asOf), now = s.t === M.P.asOf, hl = lensHealth(f, s.view), ag = M.sim.has ? (M.sim.AGF[f.id] || []).length : 0;
+                const f = T.f, st: Stage | null = stageAt(f, s.t, M.P.asOf), now = s.t === M.P.asOf, hl = healthUnder(f, s.view), ag = M.sim.has ? (M.sim.AGF[f.id] || []).length : 0;
                 return (
                   <button key={f.id} type="button" onClick={() => E.openFeature(f.id)} onPointerEnter={() => E.setHl(f.id)} onPointerLeave={() => E.setHl(null)}>
                     <StageSym st={st} w={20} h={13} />

@@ -12,7 +12,7 @@ import type {
 } from './types.ts';
 import { FEATURE_BOUND_FIELDS } from './types.ts';
 import { conditionFields, evaluateLens, fillReason, type EvalContext } from './health.ts';
-import { generalHealth } from './present.ts';
+import { generalHealth, reasonOf, stageOn } from './present.ts';
 
 // ------------------------------------------------------------------------------------ the model
 export type { Stage, Health, Density, Scalar, LensField, LensManifest, FacetValues, FacetOverride, Kpi, StructureEvent, Variation };
@@ -65,6 +65,29 @@ export interface FeatureLens {
   facet: Facet | null;
 }
 export interface Trouble { lens: string; h: 'bad' | 'watch'; why: string; short: string | null }
+
+/** One lens read for one facet: the single evaluation (health, deciding rule, bound values: spec `explain`) and all the app keeps from it. */
+export function readLens(d: { manifest: LensManifest; name: string }, facet: Facet | null, asOf: string, ctx: EvalContext): FeatureLens {
+  const { health: h, rule, values: v } = evaluateLens(d.manifest, facet ?? undefined, asOf, ctx);
+  const o = facet?.override;
+  return {
+    h, v, why: rule ? fillReason(rule.reason, v) : null,
+    // spec 8.3 rule 7: a rule without `short` falls back to the lens name
+    short: rule ? fillReason(rule.short ?? d.name, v) : null,
+    whyFields: rule ? conditionFields(rule.when) : [], ov: o && asOf <= o.until && h === o.health ? o : null, facet,
+  };
+}
+
+/** A feature's trouble list over the given lenses, worst first, and its General health (the rule shared by the loader and the live re-evaluation). */
+export function troubleOf(lenses: readonly { id: string; name: string }[], lensOf: (id: string) => FeatureLens | undefined): { trouble: Trouble[]; health: Health } {
+  const trouble: Trouble[] = [];
+  for (const { id, name } of lenses) {
+    const fl = lensOf(id);
+    if (fl && (fl.h === 'bad' || fl.h === 'watch')) trouble.push({ lens: id, h: fl.h, why: reasonOf(fl) ?? (name + ': ' + fl.h), short: fl.ov ? null : fl.short });
+  }
+  trouble.sort((a, c) => (a.h === c.h ? 0 : a.h === 'bad' ? -1 : 1));
+  return { trouble, health: generalHealth(lenses.map(({ id }) => lensOf(id)?.h ?? 'unmeasured')) };
+}
 
 export interface Feature {
   /** The key everywhere in the app: the slug (plus a product-line suffix at `?scale` > 1). */
@@ -451,14 +474,7 @@ function buildBase(raw: unknown, eventsText: string | null, opts: LoadOptions): 
     const out: Record<string, FeatureLens> = {};
     for (const d of defs) {
       const facet = facetOf(facets[f.slug]?.[d.id], `facet ${f.slug}/${d.id}`, warn);
-      // one evaluation: health, the deciding rule and the bound values (spec `explain`)
-      const { health: h, rule, values: v } = evaluateLens(d.manifest, facet ?? undefined, asOf, ctx);
-      const why = rule ? fillReason(rule.reason, v) : null;
-      // spec 8.3 rule 7: a rule without `short` falls back to the lens name
-      const short = rule ? fillReason(rule.short ?? d.name, v) : null;
-      const o = facet?.override;
-      const ov = o && asOf <= o.until && h === o.health ? o : null;
-      out[d.id] = { h, v, why, short, whyFields: rule ? conditionFields(rule.when) : [], ov, facet };
+      out[d.id] = readLens(d, facet, asOf, ctx);
     }
     f.lens = out;
   }
@@ -503,8 +519,7 @@ function buildBase(raw: unknown, eventsText: string | null, opts: LoadOptions): 
     const counts = Object.fromEntries(STAGES.map((s) => [s, 0])) as Record<Stage, number>;
     let total = 0;
     for (const f of features) {
-      let s: Stage | null = null;
-      for (const r of f.revs) { if (r.date > week) break; s = r.stage; }
+      let s = stageOn(f.revs, week);
       if (week >= asOf && f.stage) s = f.stage;
       if (s) { counts[s]++; total++; }
     }
@@ -531,13 +546,7 @@ function withToggle(b: Base, toggle: string | null): Structure {
   b.entries.forEach((e, k) => { if (t.get(e.id) ?? e.enabled) { all[k].i = lenses.length; lenses.push(all[k]); } });
   const ids = lenses.map((l) => l.id);
   const features = b.features.map((f) => {
-    const trouble: Trouble[] = [];
-    for (const id of ids) {
-      const fl = f.lens[id];
-      if (fl.h === 'bad' || fl.h === 'watch') trouble.push({ lens: id, h: fl.h, why: fl.ov ? fl.ov.why : fl.why ?? (b.defs.find((d) => d.id === id)!.name + ': ' + fl.h), short: fl.ov ? null : fl.short });
-    }
-    trouble.sort((a, c) => (a.h === c.h ? 0 : a.h === 'bad' ? -1 : 1));
-    return { ...f, health: generalHealth(ids.map((id) => f.lens[id].h)), trouble };
+    return { ...f, ...troubleOf(lenses, (id) => f.lens[id]) };
   });
   const s: Structure = {
     version: b.version, project: b.project, asOf: b.asOf, asOfTime: b.asOfTime, lenses, allLenses: all,

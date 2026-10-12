@@ -2,7 +2,7 @@
 // feature (spec 8.4, last paragraph), how many evidence fields a reader shows (8.6, `evidence`) and
 // the measured length of a lens line (8.6, "The lens line"). Pure and dependency-free like health.ts,
 // so Node's type stripping and a Rust port can follow it.
-import type { ComputedHealth, Density, Health, LensField, Scalar } from './types.ts';
+import type { ComputedHealth, Density, Health, LensField, Scalar, Stage } from './types.ts';
 
 const SCORE: Record<ComputedHealth, number> = { good: 0, watch: 1, bad: 2 };
 
@@ -53,4 +53,38 @@ export function lensLine(field: LensField | null | undefined, value: Scalar | nu
   const max = field.max ?? (field.type === 'percent' ? 100 : fallbackMax);
   if (max === undefined || !(max > 0)) return null;
   return Math.max(0, Math.min(1, value / max));
+}
+
+/** The reason a lens is unwell: the override's `why` when one holds the health, else the deciding rule's filled `why` (null when none decided). */
+export function reasonOf(fl: { ov: { why: string } | null; why: string | null }): string | null {
+  return fl.ov ? fl.ov.why : fl.why;
+}
+
+/** Bad or watch, and the rule that decided it names `key`: the health to mark that field with, else ''. */
+export function hotHealth(fl: { h: Health; whyFields: readonly string[] } | undefined, key: string): 'bad' | 'watch' | '' {
+  return fl && (fl.h === 'bad' || fl.h === 'watch') && fl.whyFields.includes(key) ? fl.h : '';
+}
+
+/** The words for a Health in each register: `plain` (sentences), `label` (a tab or tile), `mark` (a panel heading). One table, so a new health is a type error here. */
+export const HEALTH_TEXT: Readonly<Record<Health, { plain: string; label: string; mark: string }>> = {
+  good: { plain: 'good', label: 'Good', mark: 'GOOD' },
+  watch: { plain: 'needs watching', label: 'Watch', mark: 'WATCH' },
+  bad: { plain: 'in trouble', label: 'Bad', mark: 'BAD' },
+  na: { plain: 'not applicable', label: 'Does not apply', mark: 'N/A' },
+  unmeasured: { plain: 'not measured', label: 'Not measured', mark: 'NOT MEASURED' },
+};
+
+/** The stage a revision list (oldest first) puts a feature in on `d`: the last revision at or before it; null before the first. */
+export function stageOn(revs: readonly { stage: Stage; date: string }[], d: string): Stage | null {
+  let s: Stage | null = null;
+  for (const h of revs) { if (h.date > d) break; s = h.stage; }
+  return s;
+}
+
+/**
+ * The stage a feature had on date `d`, replayed from the events log (spec 10): the `to` of its last stage (or
+ * feature-added) event at or before `d`. null = not yet on the drawing, or unknown "now".
+ */
+export function stageAt(f: { stage: Stage | null; revs: readonly { stage: Stage; date: string }[] }, d: string, asOf: string): Stage | null {
+  return d >= asOf ? f.stage : stageOn(f.revs, d);
 }

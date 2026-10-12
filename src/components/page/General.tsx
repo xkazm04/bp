@@ -6,6 +6,7 @@
 // drawing, who owns and built it, the revisions (each one a time-travel link), parts and notes.
 import type { Feature, LensDef } from '@/lib/data';
 import { NOT_RECORDED, stageView } from '@/lib/model/timeview';
+import { reasonOf } from '@/lib/standard/present';
 import { REV_DESC, STAGE_WORD, pname, type Model } from '@/lib/model';
 import { BusinessSection } from '../sheet/Business';
 import { Activity, BuiltBy, Drawing, FeatureLinks, FlaggedBy, Notes, Parts, SwarmSection, stageSince } from '../sheet/SheetBody';
@@ -19,7 +20,7 @@ function Tile({ f, M, d }: { f: Feature; M: Model; d: LensDef }) {
   const E = useEngine(), at = useHeadlineAt(f, d), past = at.at !== 'now';
   const fl = f.lens[d.id], hf = d.headline, v = hf ? M.sim.liveValue(f, d.id, hf.key) : undefined;
   // on a past date health has no history: the tile says so and shows only a reading the scan recorded then
-  const h = past ? 'unmeasured' : fl?.h ?? 'unmeasured', why = fl?.ov ? fl.ov.why : fl?.why;
+  const h = past ? 'unmeasured' : fl?.h ?? 'unmeasured', why = fl && reasonOf(fl);
   const then = at.at === 'then' ? at : null;
   return (
     <Sec as="div" className={'pg-tile ' + h}>

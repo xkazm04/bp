@@ -3,6 +3,7 @@
 // feature and cached, so those variants keep working for the built-in ids while every other lens falls
 // back to the manifest-driven subtle channel. Nothing outside src/variants/{base,shaped,bold} reads this.
 import type { Feature, Health, Scalar } from '@/lib/data';
+import { hotHealth } from '@/lib/standard/present';
 
 type V = Readonly<Record<string, Scalar>>;
 const n = (v: V, k: string, d = 0): number => (typeof v[k] === 'number' ? (v[k] as number) : d);
@@ -87,6 +88,5 @@ export function hof(f: Feature, l: string): Health { return f.lens[l]?.h ?? 'unm
 
 /** True when the rule that decided this lens's health names the field (the evidence behind a tension). */
 export function ruled(f: Feature, l: string, field: string): boolean {
-  const fl = f.lens[l];
-  return !!fl && (fl.h === 'bad' || fl.h === 'watch') && fl.whyFields.includes(field);
+  return hotHealth(f.lens[l], field) !== '';
 }

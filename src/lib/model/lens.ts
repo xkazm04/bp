@@ -4,7 +4,7 @@
 import type { Feature, FeatureLens, Health, LensDef, Scalar, ViewId } from '@/lib/data';
 import type { LensField } from '@/lib/standard/types';
 import { rollupHealth, type RollupItem } from '@/lib/standard/health';
-import { EVIDENCE_BY_DENSITY } from '@/lib/standard/present';
+import { EVIDENCE_BY_DENSITY, HEALTH_TEXT, reasonOf } from '@/lib/standard/present';
 import { GENERAL_SHEET, type SheetMeta } from './constants';
 import type { Product } from './product';
 
@@ -80,11 +80,11 @@ export function lensContent(d: LensDef, fl: FeatureLens | undefined, src: ValueS
   const parts: string[] = [];
   for (const f of evidenceFields(d)) { const p = fieldPart(f, src.value(d.id, f.key)); if (p) parts.push(p); }
   if (!parts.length) return { parts: [fl.h === 'na' ? 'NOT APPLICABLE' : fl.h === 'unmeasured' ? 'NOT MEASURED' : HEALTH_WORD[fl.h].toUpperCase()] };
-  return { parts, stamp: fl.h === 'bad' || fl.h === 'watch' ? (fl.ov ? fl.ov.why : fl.why ?? undefined) : undefined };
+  return { parts, stamp: fl.h === 'bad' || fl.h === 'watch' ? (reasonOf(fl) ?? undefined) : undefined };
 }
 
-/** Plain words for a lens's health. */
-export const HEALTH_WORD: Record<Health, string> = { good: 'good', watch: 'needs watching', bad: 'in trouble', na: 'not applicable', unmeasured: 'not measured' };
+/** Plain words for a lens's health (derived from the standard's one table). */
+export const HEALTH_WORD: Record<Health, string> = Object.fromEntries(Object.entries(HEALTH_TEXT).map(([h, t]) => [h, t.plain])) as Record<Health, string>;
 
 // -------------------------------------------------------------------------------- aggregates
 /** The headline field summed up over a place: total money, mean of a scale or rate, a count of the top enum value. */

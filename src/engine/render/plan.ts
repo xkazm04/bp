@@ -4,7 +4,7 @@
 // tile body (a lone lens), and text crossfades between the general and the dominant lens's content.
 import type { Feature } from '@/lib/data';
 import { EVIDENCE_BY_DENSITY } from '@/lib/standard/present';
-import { BH, RH, deltaWin, lensHealth, stageAt, stageParts, STAGE_WORD, type BldNode, type TileNode } from '@/lib/model';
+import { BH, RH, deltaWin, healthUnder, stageAt, stageParts, STAGE_WORD, type BldNode, type TileNode } from '@/lib/model';
 import type { Engine } from '../Engine';
 import type { ChannelAggregate, FeatureLive, MarkArgs, Rect, TileGeom } from '../lens/contract';
 import type { Theme } from '../theme';
@@ -194,7 +194,7 @@ function paintTile(E: Engine, ctx: CanvasRenderingContext2D, v: View, T: TileNod
   if (S.blast === f.id) { ctx.strokeStyle = th.red; ctx.lineWidth = 3; ctx.strokeRect(x, y, w, h); }
   // trouble marks: general health crossfades into the dominant lens's health
   if (st && now) {
-    const D = E.mixS.topD, top = E.mixS.top, hg = f.health, hl = top ? lensHealth(f, top) : hg;
+    const D = E.mixS.topD, top = E.mixS.top, hg = f.health, hl = top ? healthUnder(f, top) : hg;
     if (hg === hl || D <= 0.001) healthMarks(E, ctx, D > 0.999 ? hl : hg, x, y, w, h, false, 1);
     else { healthMarks(E, ctx, hg, x, y, w, h, false, 1 - D); healthMarks(E, ctx, hl, x, y, w, h, false, D); }
   }
@@ -274,7 +274,7 @@ function ribSeg(E: Engine, ctx: CanvasRenderingContext2D, f: Feature, x: number,
   stageFill(ctx, th, st, x, y, w, h, Lv.rolloutPct, Lv.progressPct, E.isNow);
   if (!st || st === 'specified' || st === 'idea') { stageStroke(ctx, th, st, aa, 1); ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1); ctx.setLineDash([]); ctx.globalAlpha = aa; }
   if (st && E.isNow) {
-    const D = E.mixS.topD, top = E.mixS.top, hg = f.health, hl = top ? lensHealth(f, top) : hg;
+    const D = E.mixS.topD, top = E.mixS.top, hg = f.health, hl = top ? healthUnder(f, top) : hg;
     if (hg === hl || D <= 0.001) healthMarks(E, ctx, D > 0.999 ? hl : hg, x, y, w, h, true, 1);
     else { healthMarks(E, ctx, hg, x, y, w, h, true, 1 - D); healthMarks(E, ctx, hl, x, y, w, h, true, D); }
   }

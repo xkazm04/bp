@@ -2,6 +2,7 @@
 // The lens line is the manifest's evidence fields, by label and formatted value, then the reason when
 // the lens is unwell.
 import type { Feature } from '@/lib/data';
+import { reasonOf } from '@/lib/standard/present';
 import { STAGE_PLAIN, evidenceFields, fmtValue, isAgentId, lensOf, pname, type Product, type SwarmSim } from '@/lib/model';
 
 export function lensWords(P: Product, f: Feature, l: string, sim: SwarmSim): string {
@@ -10,7 +11,7 @@ export function lensWords(P: Product, f: Feature, l: string, sim: SwarmSim): str
   if (fl.h === 'na') return d.name + ': does not apply';
   const parts = evidenceFields(d).map((x) => { const v = sim.liveValue(f, l, x.key); return v === undefined ? '' : x.label + ' ' + fmtValue(x, v); }).filter(Boolean);
   if (fl.h === 'unmeasured' && !parts.length) return d.name + ': not measured';
-  const why = fl.h === 'bad' || fl.h === 'watch' ? (fl.ov ? fl.ov.why : fl.why) : null;
+  const why = fl.h === 'bad' || fl.h === 'watch' ? reasonOf(fl) : null;
   return parts.join(' · ') + (why ? ' · ' + why : '');
 }
 

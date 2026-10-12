@@ -5,6 +5,7 @@ import { useMemo } from 'react';
 import type { Feature, Scalar } from '@/lib/data';
 import type { Health, Kpi, LensField } from '@/lib/standard/types';
 import { STAGES } from '@/lib/standard/load';
+import { HEALTH_TEXT } from '@/lib/standard/present';
 import { STAGE_WORD, fmtValue, baseId, type Model } from '@/lib/model';
 import { NOT_RECORDED, stageView, valueView, type ValueAsOf } from '@/lib/model/timeview';
 import type { LensDef } from '@/lib/data';
@@ -50,7 +51,7 @@ export function AsOfBar() {
 export { NOT_RECORDED };
 
 /** The health word on a tile and a lens tab. Keyed by the Health union, so a new health is a type error here, not an undefined word. */
-export const HWORD: Record<Health, string> = { bad: 'Bad', watch: 'Watch', good: 'Good', na: 'Does not apply', unmeasured: 'Not measured' };
+export const HWORD: Record<Health, string> = Object.fromEntries(Object.entries(HEALTH_TEXT).map(([h, t]) => [h, t.label])) as Record<Health, string>;
 
 /** A lens field's value: numbers count (integers, percents, money, ms...), booleans and enums do not. */
 export function Val({ k, field, v, unit = '' }: { k: string; field: LensField; v: Scalar | undefined; unit?: string }) {

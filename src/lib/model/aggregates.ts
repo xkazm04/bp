@@ -11,16 +11,8 @@ const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT
 export function fmtD(d: string): string { return MON[+d.slice(5, 7) - 1] + ' ' + d.slice(8, 10); }
 export const isLiveSt = (s: Stage | null) => s === 'live' || s === 'flagged';
 
-/**
- * The stage a feature had on date `d`, replayed from the events log: the `to` of its last stage (or
- * feature-added) event at or before `d` (spec 10). null = not yet on the drawing, or unknown "now".
- */
-export function stageAt(f: Feature, d: string, asOf: string): Stage | null {
-  if (d >= asOf) return f.stage;
-  let s: Stage | null = null;
-  for (const h of f.revs) { if (h.date > d) break; s = h.stage; }
-  return s;
-}
+export { stageAt } from '@/lib/standard/present';
+import { stageAt } from '@/lib/standard/present';
 /** The stage change inside the "what changed" window ending at `t`, if any (from the events log). */
 export function deltaWin(f: Feature, t: string, delta: number): { stage: Stage; date: string } | null {
   const from = addDays(t, -delta);
@@ -30,7 +22,7 @@ export function deltaWin(f: Feature, t: string, delta: number): { stage: Stage; 
 export function revAt(weeks: string[], d: string): number { let r = 0; weeks.forEach((w, i) => { if (w <= d) r = i + 1; }); return r || 1; }
 
 /** A feature's health under a view: General = worst-of over enabled lenses (computed at load), else that lens's. */
-export function lensHealth(f: Feature, v: ViewId): Health { return v === 'general' ? f.health : f.lens[v]?.h ?? 'unmeasured'; }
+export function healthUnder(f: Feature, v: ViewId): Health { return v === 'general' ? f.health : f.lens[v]?.h ?? 'unmeasured'; }
 
 export interface Counts {
   n: number; live: number; flagged: number; build: number; paper: number; dep: number; none: number; chg: number;
@@ -86,7 +78,7 @@ export class AggCache {
     let h = this.health.get(k);
     if (h) return h;
     h = { good: 0, watch: 0, bad: 0, na: 0, unmeasured: 0 };
-    for (const f of fs) h[lensHealth(f, v)]++;
+    for (const f of fs) h[healthUnder(f, v)]++;
     this.health.set(k, h);
     return h;
   }

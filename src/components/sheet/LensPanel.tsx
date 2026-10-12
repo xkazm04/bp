@@ -12,7 +12,7 @@
 // panel's evidence, for every variant's panel (the sheet places it), from the manifest alone.
 import type { Feature, FeatureLens, LensDef, Scalar } from '@/lib/data';
 import type { LensField } from '@/lib/standard/types';
-import { DENSITY_COUNT } from '@/lib/standard/present';
+import { DENSITY_COUNT, HEALTH_TEXT, hotHealth } from '@/lib/standard/present';
 import type { ScanSnapshot } from '@/lib/scan/types';
 import { baseId, fmtValue, metricHistory, pname, type Model } from '@/lib/model';
 import type { SheetPanelProps } from '@/variants/types';
@@ -20,7 +20,6 @@ import type { SheetPanelProps } from '@/variants/types';
 export interface Row { k: string; v: string; c?: 'bad' | 'watch' | ''; tier: 0 | 1 | 2 }
 
 /** The mark a lens's rule puts on one of its fields: the lens's health when it is bad or watch and the rule names that field. */
-export const hotOf = (fl: FeatureLens | undefined, key: string): 'bad' | 'watch' | '' => (fl && (fl.h === 'bad' || fl.h === 'watch') && fl.whyFields.includes(key) ? fl.h : '');
 
 export function lensRows(d: LensDef, fl: FeatureLens | undefined, value: (key: string) => Scalar | undefined): Row[] {
   const out: Row[] = [], seen = new Set<string>();
@@ -30,7 +29,7 @@ export function lensRows(d: LensDef, fl: FeatureLens | undefined, value: (key: s
     seen.add(f.key);
     const v = value(f.key);
     if (v === undefined && tier === 2) return;
-    out.push({ k: f.label + (f.source && 'kpi' in f.source ? ' · KPI' : ''), v: fmtValue(f, v), c: hotOf(fl, f.key), tier });
+    out.push({ k: f.label + (f.source && 'kpi' in f.source ? ' · KPI' : ''), v: fmtValue(f, v), c: hotHealth(fl, f.key), tier });
   };
   add(d.headline, 0);
   for (const f of d.evidence) add(f, 1);
@@ -104,7 +103,7 @@ export function MetricRows({ def, f, model, scan, all, fl }: { def: LensDef; f: 
   return (
     <div className="mrs">
       {shown.map((r) => {
-        const m = r.field.metric!, v = r.value, { dir, cls } = metricMove(r), hot = hotOf(fl, r.field.key);
+        const m = r.field.metric!, v = r.value, { dir, cls } = metricMove(r), hot = hotHealth(fl, r.field.key);
         const tip = v === undefined ? 'Not measured' : (r.pts.length > 1 ? r.pts.length + ' readings, the latest ' : 'One reading: ') + fmtValue(r.field, v) + r.unit + (dir ? ', ' + dir + ' from ' + fmtValue(r.field, r.prev!) + ' (' + (cls === 'good' ? 'better' : 'worse') + ')' : '');
         return (
           <div key={r.field.key} className="r mr" title={tip}>
@@ -123,7 +122,7 @@ export function MetricRows({ def, f, model, scan, all, fl }: { def: LensDef; f: 
   );
 }
 
-export const hmark = (h: string) => (h === 'bad' ? 'BAD' : h === 'watch' ? 'WATCH' : h === 'good' ? 'GOOD' : h === 'na' ? 'N/A' : 'NOT MEASURED');
+export const hmark = (h: string) => (HEALTH_TEXT[h as keyof typeof HEALTH_TEXT] ?? HEALTH_TEXT.unmeasured).mark;
 
 export function DefaultLensPanel({ lens, def, f, model, density, expanded, view }: SheetPanelProps) {
   const fl = f.lens[lens];

@@ -5,8 +5,9 @@
 // the canvas (tile health), the sheet's headline (`sim.liveValue`) and its metric rows say the same. Pure
 // and React-free; the model's Feature objects are updated in place (identity, layout and caches stay).
 import type { Feature, FeatureLens } from '@/lib/data';
-import { conditionFields, evaluateLens, fillReason, type EvalContext } from '@/lib/standard/health';
-import { generalHealth, NUMERIC } from '@/lib/standard/present';
+import type { EvalContext } from '@/lib/standard/health';
+import { readLens, troubleOf } from '@/lib/standard/load';
+import { NUMERIC } from '@/lib/standard/present';
 import type { Facet, FacetValues, FeatureBoundField } from '@/lib/standard/types';
 import type { Measurement, ScanSnapshot } from '@/lib/scan/types';
 import type { AggCache } from './aggregates';
@@ -24,14 +25,7 @@ export function lineCopies(P: Product, baseId: string): Feature[] {
 
 /** A feature's General health and trouble list from its lens healths (the loader's rule, for the enabled lenses). */
 export function restate(P: Product, f: Feature): void {
-  const ids = P.lenses.map((l) => l.id), trouble: Feature['trouble'] = [];
-  for (const id of ids) {
-    const fl = f.lens[id];
-    if (fl && (fl.h === 'bad' || fl.h === 'watch')) trouble.push({ lens: id, h: fl.h, why: fl.ov ? fl.ov.why : fl.why ?? (P.LENS[id].name + ': ' + fl.h), short: fl.ov ? null : fl.short });
-  }
-  trouble.sort((a, c) => (a.h === c.h ? 0 : a.h === 'bad' ? -1 : 1));
-  f.health = generalHealth(ids.map((id) => f.lens[id]?.h ?? 'unmeasured'));
-  f.trouble = trouble;
+  Object.assign(f, troubleOf(P.lenses, (id) => f.lens[id]));
 }
 
 export class LiveFacets {
@@ -110,11 +104,6 @@ export class LiveFacets {
     const feature: Record<string, unknown> = {};
     for (const x of def.manifest.fields) if (x.source && 'feature' in x.source && prev.v[x.key] !== undefined) feature[x.source.feature as FeatureBoundField] = prev.v[x.key];
     const ctx: EvalContext = { feature: feature as EvalContext['feature'], kpis: P.base.kpis };
-    const { health: h, rule, values: v } = evaluateLens(def.manifest, facet, P.base.asOf, ctx);
-    const o = facet.override;
-    return {
-      h, v, why: rule ? fillReason(rule.reason, v) : null, short: rule ? fillReason(rule.short ?? def.name, v) : null,
-      whyFields: rule ? conditionFields(rule.when) : [], ov: o && P.base.asOf <= o.until && h === o.health ? o : null, facet,
-    };
+    return readLens(def, facet, P.base.asOf, ctx);
   }
 }
