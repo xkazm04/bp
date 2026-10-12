@@ -82,6 +82,11 @@ per-frame work is a few hundred cheap primitives.
   fraction of `lastRasterMs`; patch cost grows with the number of changed items, not with the plan.
 - Remaining full rasters while playing: anything in `staticKey` (theme, fonts, size, lens mix, time, delta, blast, GA, key,
   who, view) and the pan/zoom settle, exactly as without a sim.
+- **LOD ramps (canvas-render).** The ribbon -> tile blend (`Engine.lod`) spans a zoom ratio of 1.5 (`smooth(1.1, 1.65, k/KB1)`),
+  the cache's `BUCKET`. The blend is baked into the bitmap, so the cache also re-rasters when the live blend drifts 0.2 from the
+  baked one (`LOD_STEP`): a wheel zoom through the crossfade costs at most five extra rasters (one per 0.2 of blend) instead
+  of one jump at a bucket crossing; outside the blend (pure ribbons, pure tiles) nothing changes. Tile text, the big/small tile
+  layout, bay tags and room labels now fade over 8-16 px of size (room labels over the last 24 px of width they need).
 
 ## Frame-loop allocations and layout reads (engine-frame-alloc)
 

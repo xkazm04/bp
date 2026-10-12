@@ -1,12 +1,14 @@
 // The static layer cache. The plan (walls, fills, tiles, lens marks, labels) is rastered once into an
 // offscreen bitmap that covers the viewport plus a margin, at the zoom of the moment (the "bucket").
 // During a gesture the bitmap is only transformed (translate + scale, one drawImage per frame). It is
-// re-rastered when the gesture settles, when the zoom leaves the bucket (x1.5 either way), when the view
+// re-rastered when the gesture settles, when the zoom leaves the bucket (x1.5 either way), when the ribbon/tile blend drifts by LOD_STEP, when the view
 // leaves the covered area, or when anything static changes (lens mix, time, theme, filters...).
 import type { Cam } from '../camera';
 import type { SRect, View } from './view';
 
 export const BUCKET = 1.5;
+/** How far the live ribbon/tile blend may drift from the one baked into the bitmap before it is re-rastered (so a wheel zoom through the crossfade steps in at most 1/LOD_STEP rasters, never one jump). */
+const LOD_STEP = 0.2;
 const MARGIN = 0.22;
 const MAX_PX = 12e6;
 /** The screen canvas's device-pixel budget; the one place both the screen (Engine.fit) and the cache take their resolution from. */
@@ -20,7 +22,7 @@ export function deviceRes(w: number, h: number, dpr: number): number {
 export class StaticCache {
   readonly canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
-  private cam: Cam | null = null;
+  private cam: Cam | null = null; private lodAt = 0;
   private key = -1;
   private mx = 0; private my = 0; private res = 1;
   private cssW = 0; private cssH = 0; private FW = 0; private FH = 0;
@@ -35,11 +37,11 @@ export class StaticCache {
   }
 
   /** Is the cached bitmap usable at camera `c` for content `key`? 'exact' = no transform needed. */
-  check(c: Cam, key: number, FW: number, FH: number): 'exact' | 'transform' | 'stale' {
+  check(c: Cam, key: number, FW: number, FH: number, lod = this.lodAt): 'exact' | 'transform' | 'stale' {
     const o = this.cam;
     if (!o || key !== this.key || FW !== this.FW || FH !== this.FH) return 'stale';
     const r = c.k / o.k;
-    if (r > BUCKET || r < 1 / BUCKET) return 'stale';
+    if (r > BUCKET || r < 1 / BUCKET || Math.abs(lod - this.lodAt) > LOD_STEP) return 'stale';
     // covered world rect vs the current viewport
     const cx0 = o.x + (-this.mx - FW / 2) / o.k, cx1 = o.x + (FW + this.mx - FW / 2) / o.k;
     const cy0 = o.y + (-this.my - FH / 2) / o.k, cy1 = o.y + (FH + this.my - FH / 2) / o.k;
@@ -50,7 +52,7 @@ export class StaticCache {
   }
 
   /** Raster the static scene at camera `c`. `paint` draws in screen coordinates of that camera. */
-  render(c: Cam, key: number, FW: number, FH: number, dpr: number, paint: (ctx: CanvasRenderingContext2D, v: View) => void, margin = MARGIN) {
+  render(c: Cam, key: number, FW: number, FH: number, dpr: number, paint: (ctx: CanvasRenderingContext2D, v: View) => void, margin = MARGIN, lod = 0) {
     const t0 = performance.now();
     this.FW = FW; this.FH = FH;
     // the bitmap is always at the screen's resolution (1:1 at rest); the pan margin shrinks instead to bound memory (<= MAX_PX)
@@ -71,7 +73,7 @@ export class StaticCache {
     v.x = c.x; v.y = c.y; v.k = c.k; v.FW = FW; v.FH = FH; v.c0x = -this.mx; v.c0y = -this.my; v.c1x = FW + this.mx; v.c1y = FH + this.my;
     paint(ctx, v);
     this.cam = { x: c.x, y: c.y, k: c.k };
-    this.key = key;
+    this.key = key; this.lodAt = lod;
     this.rasters++;
     this.lastMs = performance.now() - t0;
   }

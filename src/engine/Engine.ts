@@ -221,7 +221,8 @@ export class Engine {
     this.breachCache = s; this.breachV = sim.version;
     return s;
   }
-  lod(k = this.cam.k) { return smooth(1.2, 1.5, k / this.KB1); }
+  /** The ribbon -> tile blend: spans a zoom ratio of 1.5, the static cache's BUCKET, so a bucket crossing never lands on a jump (the cache also re-rasters when the blend drifts, see static-cache LOD_STEP). */
+  lod(k = this.cam.k) { return smooth(1.1, 1.65, k / this.KB1); }
   levelNames(): string[] { return (this.M.P.scale > 1 ? ['Campus', 'Building'] : ['Site']).concat(['Wing', 'Room', 'Bay', 'Feature']); }
   placeById(t: string, id: string): PlaceNode | null {
     const L = this.M.L;
@@ -390,11 +391,11 @@ export class Engine {
     if (!this.modeSeen || S.ga !== this.modeSeen.ga || S.key !== this.modeSeen.key || S.blast !== this.modeSeen.blast) this.syncModeFilters(S);
     // static layer: transform the cached raster during gestures, re-raster when it settles
     const key = this.staticKey();
-    const st = this.cache.check(c, key, this.FW, this.FH);
+    const st = this.cache.check(c, key, this.FW, this.FH, this.lod());
     const settled = performance.now() - this.lastCamMove > 140;
     let rastered = false;
     if (st === 'stale' || (st === 'transform' && settled && !gesture)) {
-      this.cache.render(c, key, this.FW, this.FH, this.RES, (g, v) => { this.watch.begin(); this.paintPlan(g, v); }, this.mix.moving ? 0 : undefined); // the camera is still while the lens mix springs: no pan margin to pay for
+      this.cache.render(c, key, this.FW, this.FH, this.RES, (g, v) => { this.watch.begin(); this.paintPlan(g, v); }, this.mix.moving ? 0 : undefined, this.lod(c.k)); // the camera is still while the lens mix springs: no pan margin to pay for
       this.perf.rasters++; this.perf.lastRasterMs = this.cache.lastMs; rastered = true; this.simPatch = false;
     } else if (st === 'transform') {
       // still moving (or settled mid-gesture): wake once more after the settle window to re-raster

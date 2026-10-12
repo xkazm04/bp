@@ -156,8 +156,8 @@ function drawTile(s: Spec, a: MarkArgs) {
 function drawRibbon(s: Spec, a: MarkArgs) {
   if (!a.now) return;
   const { ctx, th, tile: t, f, r } = a, u = t.u, d = s.d;
-  // on ribbons the leaving lenses peak at a quarter of their weight mid-tween: not worth a raster
-  if (r.w < 3 || a.w < 0.12) return;
+  // the rail fades in from nothing with the lens's weight (below 2% it is invisible: not worth a raster)
+  if (r.w < 3 || a.w < 0.02) return;
   const e = smooth(a.x);
   ctx.globalAlpha *= a.w;
   // the rail along the segment's foot, growing in from the left as the lens comes up

@@ -181,11 +181,17 @@ function paintTile(E: Engine, ctx: CanvasRenderingContext2D, v: View, T: TileNod
   ctx.globalAlpha = a;
   ctx.textBaseline = 'alphabetic';
   if (!g.text) { ctx.globalAlpha = 1; return; }
+  // text and its layouts ramp in over a few px instead of switching: nothing pops, and no size ever shrinks
+  const ta = a * clamp((w - 100 * u) / (14 * u), 0, 1) * clamp((h - 44 * u) / (8 * u), 0, 1);
+  const bigA = clamp((w - 150 * u) / (16 * u), 0, 1) * clamp((h - 64 * u) / (8 * u), 0, 1);
+  if (ta <= 0.004) { ctx.globalAlpha = 1; return; }
   const agentsHere = now && E.M.sim.has && E.M.sim.AGF[f.id] && E.M.sim.AGF[f.id].length;
   const chips = !!agentsHere && w >= 100 * u && h >= 58 * u;
   const tx = E.tx, D = E.mixS.topD, top = E.mixS.top;
   const hy = g.strip.y + g.strip.h + 12 * u;
-  if (w >= 150 * u && h >= 64 * u) {
+  if (bigA > 0.002) {
+    const a = ta * bigA;
+    ctx.globalAlpha = a;
     const mono = tx.f(12, 500, true);
     const code = f.code, idw = code ? tx.w(code, mono) : -10 * u;
     // evidence: general (stage word) crossfading into the dominant lens's content
@@ -217,7 +223,10 @@ function paintTile(E: Engine, ctx: CanvasRenderingContext2D, v: View, T: TileNod
     const sf = tx.f(12.5, 600), sy = y + h - 7 * u - (chips ? 22 * u : 0);
     if (gStamp && D < 0.999) { const s = fitStamp(E, gStamp.cands, gStamp.last, w - 14 * u, sf); if (s) { ctx.globalAlpha = a * (1 - D); drawText(ctx, s, x + 7 * u, sy, sf, th.red2, th.halo); } }
     if (lStamp && D > 0.001) { const s = fitStamp(E, [lStamp], null, w - 14 * u, sf); if (s) { ctx.globalAlpha = a * D; drawText(ctx, s, x + 7 * u, sy, sf, th.red2, th.halo); } }
-  } else {
+  }
+  if (bigA < 0.998) {
+    const a = ta * (1 - bigA);
+    ctx.globalAlpha = a;
     const nf2 = tx.f(13, 500), l2 = 15 * u;
     const lines2 = tx.wrap(f.name, w - 12 * u, nf2, Math.max(1, Math.floor((h - 8 * u - (chips ? 22 * u : 0) - (hy - y - 12 * u)) / l2)));
     if (lines2) { const top2 = hy - 12 * u + (h - (hy - y - 12 * u) - lines2.length * l2 - (chips ? 20 * u : 0)) / 2; lines2.forEach((l, i) => drawText(ctx, l, x + 6 * u, top2 + l2 * (i + 0.78), nf2, th.inkHi)); }
@@ -452,11 +461,19 @@ function drawRoomLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: Bl
     if (a <= 0) continue;
     for (const R of W.rooms) {
       const r = rs(v, R, scratch); if (!onView(v, r)) continue;
-      ctx.globalAlpha = a;
       const hh = RH * k, nm = R.d.name.toUpperCase(), maxW = r.w - 28 * u - (hasSw ? 38 * u : 0);
       let fs = clamp((hh * 0.36) / u, 14, 26), ls = fs * 0.06, lines = tx.wrap(nm, maxW, tx.f(fs, 600), 2, ls);
       if (!lines && fs > 14) { fs = 14; ls = 0.8; lines = tx.wrap(nm, maxW, tx.f(14, 600), 2, ls); }
       if (!lines) { ctx.globalAlpha = 1; R.labelRight = r.x; continue; }
+      // at the smallest size the label fades out over the last 24 px of width it needs (its fit limit found by bisection), instead of vanishing
+      let fa = 1;
+      if (fs <= 14 && !tx.wrap(nm, maxW - 24 * u, tx.f(fs, 600), 2, ls)) {
+        let lo = maxW - 24 * u, hi = maxW;
+        for (let i = 0; i < 4; i++) { const mid = (lo + hi) / 2; if (tx.wrap(nm, mid, tx.f(fs, 600), 2, ls)) hi = mid; else lo = mid; }
+        fa = clamp((maxW - hi) / (24 * u), 0, 1);
+        if (fa <= 0.01) { ctx.globalAlpha = 1; R.labelRight = r.x; continue; }
+      }
+      const aa = a * fa; ctx.globalAlpha = aa;
       const lh = fs * 1.08 * u, blockH = lines.length * lh, inHeader = hh >= blockH + 14 * u;
       const topLimit = Math.max(v.c0y, E.SAFE.t) + 8 * u;
       const x = r.x + 14 * u;
@@ -478,10 +495,10 @@ function drawRoomLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: Bl
           if (s) drawText(ctx, s, x, y + blockH + 17 * u, af, col);
           if (trouble && s) drawText(ctx, trouble + ' in trouble', x + tx.w(s, af) + 12 * u, y + blockH + 17 * u, tx.f(13, 600), th.red2);
         };
-        fadePair(ctx, a, ag.D, line(ag.general, ag.gTrouble, th.inkA(0.8)), ag.lens ? line(ag.lens, ag.lTrouble, E.accentOf(ag.top!)) : null);
+        fadePair(ctx, aa, ag.D, line(ag.general, ag.gTrouble, th.inkA(0.8)), ag.lens ? line(ag.lens, ag.lTrouble, E.accentOf(ag.top!)) : null);
       }
       const art = E.art[R.d.base];
-      if (art && art.complete && art.naturalWidth && r.w > 420 * u && hh > 70 * u) { const ah = hh - 14 * u, aw = ah * 1.5; ctx.globalAlpha = a * 0.5; ctx.drawImage(art, r.x + r.w - aw - 52 * u, r.y + 7 * u, aw, ah); }
+      if (art && art.complete && art.naturalWidth && r.w > 420 * u && hh > 70 * u) { const ah = hh - 14 * u, aw = ah * 1.5; ctx.globalAlpha = aa * 0.5; ctx.drawImage(art, r.x + r.w - aw - 52 * u, r.y + 7 * u, aw, ah); }
       ctx.globalAlpha = 1;
     }
   }
@@ -490,7 +507,7 @@ function drawRoomLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: Bl
 function drawBayTags(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: BldNode) {
   const k = v.k, u = E.U, th = E.th, tx = E.tx;
   if (BH * k < 23 * u) return;
-  const a = clamp((BH * k - 23 * u) / 2, 0, 1);
+  const a = clamp((BH * k - 23 * u) / (12 * u), 0, 1);
   const cf = tx.f(12, 500, true), nf = tx.f(13.5, 600);
   ctx.globalAlpha = a;
   for (const W of B.wings) for (const R of W.rooms) for (const Bay of R.bays) {
