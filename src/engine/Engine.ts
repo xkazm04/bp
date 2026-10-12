@@ -627,13 +627,13 @@ export class Engine {
     }
     this.set({ open: id, sel: null, hl: null, dec: null, hover: null, morning: false });
     if (this.S.phone) return;
-    this.placeKey = ''; this.writeHashSoon();
+    this.placeKey = ''; this.writeHashSoon(true);
   }
   /** Back to the plan: the page shrinks into the tile, so the camera does not move. */
   closeFeature(focus = true) {
     if (!this.S.open) return;
     this.set({ open: null });
-    this.placeKey = ''; this.writeHashSoon();
+    this.placeKey = ''; this.writeHashSoon(true);
     if (focus) this.cv.focus({ preventScroll: true });
   }
   setMode(m: { ga?: boolean; blast?: string | null }) {
@@ -1066,6 +1066,8 @@ export class Engine {
       arm(); this.disposers.push(() => { mq?.removeEventListener('change', onDpr); mq = null; });
     }
     on(document, 'keydown', (e: KeyboardEvent) => this.onKey(e));
+    // back / forward and a hash pasted into the tab: popstate for the one, hashchange for the other (restoreHash ignores the second of a pair)
+    on(window, 'popstate', () => this.restoreHash()); on(window, 'hashchange', () => this.restoreHash());
     // theme changes: re-read tokens and re-raster
     const mo = new MutationObserver(() => { this.readTheme(); this.dirty(); });
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
@@ -1141,26 +1143,65 @@ export class Engine {
 
   // ============================================================================ intro, hash, teardown
   private endIntro() { if (!this.introOn) return; this.introOn = false; this.introP = 1; this.store.set({ intro: false }); this.dirty(); }
-  private hashTimer = 0; private hashLock = false;
-  private writeHashSoon() { clearTimeout(this.hashTimer); this.hashTimer = window.setTimeout(() => this.writeHash(), 250); }
-  private writeHash() {
-    if (this.hashLock || this.destroyed) return;
+  private hashTimer = 0; private hashLock = false; private pushTimer = 0;
+  /** The place part of the current history entry (what the last write committed), the last hash this engine wrote or read, whether the next place change is explicit navigation, and the end of the restore window. */
+  private hashPlace = ''; private hashSeen = ''; private navPush = false; private restoreUntil = 0; private adopt = false;
+  /** Rest time at a new place before it earns a history entry (a fly-through pushes nothing). */
+  private static readonly PUSH_MS = 600;
+  /** `nav`: an explicit navigation (opening or closing a feature) pushes without waiting for the place to rest. */
+  private writeHashSoon(nav = false) { if (nav) this.navPush = true; clearTimeout(this.hashTimer); this.hashTimer = window.setTimeout(() => this.writeHash(), 250); }
+  private placeParam(): string {
+    const S = this.S;
+    return S.open ? 'open=' + S.open : this.place.length ? 'at=' + encodeURIComponent(this.place[this.place.length - 1].o.id) : '';
+  }
+  private hashOf(place: string): string {
     const S = this.S, p: string[] = [];
     if (S.view !== 'general') p.push('lens=' + S.view);
-    if (S.open) p.push('open=' + S.open); else if (this.place.length) p.push('at=' + encodeURIComponent(this.place[this.place.length - 1].o.id));
+    if (place) p.push(place);
     if (!this.isNow) p.push('t=' + S.t);
     if (S.blast) p.push('blast=' + S.blast);
     if (S.ga) p.push('ga=1');
     if (S.delta !== 7) p.push('d=' + S.delta);
     if (S.who) p.push('who=' + S.who);
-    const h = p.length ? '#' + p.join('&') : '';
-    try { history.replaceState(history.state, '', location.pathname + location.search + h); } catch { /* ignore */ }
+    return p.length ? '#' + p.join('&') : '';
   }
-  private readHash() {
+  /** Write the hash. Lens, time and toggles replace the current entry; a new place pushes one once it has rested (or at once when navigation was explicit). A restore (back / forward / pasted hash) and the first second after load only adopt. */
+  private writeHash() {
+    if (this.hashLock || this.destroyed) return;
+    clearTimeout(this.pushTimer);
+    if (this.cam.flying || performance.now() < this.restoreUntil) { this.writeHashSoon(); return; } // the camera is still arriving: the place is not known yet
+    const place = this.placeParam(), nav = this.navPush; this.navPush = false;
+    if (this.adopt) { this.adopt = false; this.commitHash(place, false); return; }
+    if (place === this.hashPlace) { this.commitHash(place, false); return; }
+    if (nav) { this.commitHash(place, true); return; }
+    this.commitHash(this.hashPlace, false); // the entry keeps its place while the new one proves itself
+    this.pushTimer = window.setTimeout(() => {
+      if (this.destroyed || this.hashLock) return;
+      const now = this.placeParam();
+      if (now !== this.hashPlace) this.commitHash(now, true);
+    }, Engine.PUSH_MS);
+  }
+  private commitHash(place: string, push: boolean) {
+    const h = this.hashOf(place), url = location.pathname + location.search + h;
+    this.hashPlace = place;
+    try {
+      if (push && h !== location.hash) history.pushState(history.state, '', url); else history.replaceState(history.state, '', url);
+      this.hashSeen = location.hash;
+    } catch { /* ignore */ }
+  }
+  private parseHash(): Record<string, string> {
     const h: Record<string, string> = {};
     // A mangled share link (truncated at a %-escape) skips that pair; the valid ones still apply.
     const dec = (s: string): string | null => { try { return decodeURIComponent(s); } catch { return null; } };
     location.hash.replace(/^#/, '').split('&').forEach((kv) => { const a = kv.split('='); const v = dec(a[1] || ''); if (a[0] && v !== null) h[a[0]] = v; });
+    return h;
+  }
+  private placeOfHash(h: Record<string, string>): string {
+    return h.open && this.M.P.F[h.open] ? 'open=' + h.open : h.at ? 'at=' + encodeURIComponent(h.at) : '';
+  }
+  private readHash() {
+    const h = this.parseHash();
+    this.hashSeen = location.hash; this.restoreUntil = performance.now() + 1000; this.adopt = true; this.hashPlace = this.placeOfHash(h);
     if (!Object.keys(h).length) return;
     this.hashLock = true;
     try {
@@ -1178,9 +1219,34 @@ export class Engine {
     if (h.open && this.M.P.F[h.open]) this.openFeature(h.open);
     } finally { this.hashLock = false; }
   }
+  /** Back / forward / a hash pasted into the same tab: bring lens, time, modes, place and the open feature to what the hash says (absent = the default). Writes are held until the camera arrives, then adopt. */
+  private restoreHash() {
+    if (this.destroyed || location.hash === this.hashSeen) return; // our own write, or popstate + hashchange for one move
+    const h = this.parseHash();
+    this.hashSeen = location.hash; this.restoreUntil = performance.now() + 400; this.adopt = true;
+    clearTimeout(this.pushTimer); this.navPush = false; this.hashPlace = this.placeOfHash(h);
+    this.hashLock = true;
+    try {
+      this.endIntro();
+      const view = h.lens && lensOf(this.M.P, h.lens) ? h.lens : 'general';
+      if (view !== this.S.view && isView(this.M.P, view)) this.setView(view);
+      this.setDelta(h.d && ['1', '7', '14'].includes(h.d) ? (+h.d as 1 | 7 | 14) : 7);
+      this.setTime(h.t && /^\d{4}-\d\d-\d\d$/.test(h.t) ? h.t : this.M.P.asOf);
+      const who = h.who && this.M.P.P[h.who] ? h.who : null;
+      if (who !== this.S.who) this.store.set({ who });
+      const blast = h.blast && this.M.P.F[h.blast] ? h.blast : null, ga = h.ga === '1' && this.hasGA;
+      const moded = !!(blast || ga);
+      if (blast !== this.S.blast || ga !== this.S.ga) this.setMode({ blast, ga });
+      if (h.open && this.M.P.F[h.open]) { if (this.S.open !== h.open) this.openFeature(h.open); return; }
+      if (this.S.open) this.closeFeature(false);
+      if (this.S.phone || moded) return; // a mode frames its own features
+      const t = h.at ? (this.placeById('bld', h.at) ? 'bld' : this.M.L.WING[h.at] ? 'wing' : this.M.L.ROOM[h.at] ? 'room' : this.M.L.BAY[h.at] ? 'bay' : null) : null;
+      if (t) this.cam.flyTo(this.fitOf({ t: t as Crumb['t'], o: this.placeById(t, h.at)! })); else this.goHome();
+    } finally { this.hashLock = false; }
+  }
   destroy() {
     this.destroyed = true;
-    cancelAnimationFrame(this.raf); clearTimeout(this.settleTimer); this.settleArmed = false; clearTimeout(this.simSyncTimer); clearTimeout(this.hashTimer); clearTimeout(this.hlTimer); clearTimeout(this.resizeTimer);
+    cancelAnimationFrame(this.raf); clearTimeout(this.settleTimer); this.settleArmed = false; clearTimeout(this.simSyncTimer); clearTimeout(this.hashTimer); clearTimeout(this.pushTimer); clearTimeout(this.hlTimer); clearTimeout(this.resizeTimer);
     this.cam.stopFly(); this.mix.destroy(); this.M.sim.listen(null);
     for (const d of this.disposers) d();
     const w = window as unknown as { __bp?: Engine }; if (w.__bp === this) delete w.__bp;

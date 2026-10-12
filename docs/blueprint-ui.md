@@ -69,6 +69,10 @@ Everything it does is in scope to keep:
   the 120-aligned `wheelDeltaY` of a notch, small/fractional pixel deltas, a latched running stream); its doc
   comment lists the failure modes. A touch pinch anchors the world point under its starting midpoint, so moving
   the fingers pans while pinching, and the finger left after a pinch carries on as a pan.
+- **Back / forward.** The URL hash carries lens, place (`at=` or `open=`), time, modes and person. A place the user
+  rests at for 600 ms, or opening or closing a feature, pushes a history entry; lens, time and toggles only replace
+  the current one, so a fly-through spams nothing. Back, forward and a hash pasted into the tab restore lens, time,
+  modes, place (fly) and the open feature; while the camera arrives the engine writes nothing, then adopts.
 
 Two other variants are references only, never to copy wholesale:
 - **B/1** (round 3 contest archive, not in this repo) is simpler and noticeably faster. Study why: fewer
