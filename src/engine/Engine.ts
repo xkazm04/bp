@@ -843,7 +843,7 @@ export class Engine {
       this.endIntro();
       try { cv.setPointerCapture(e.pointerId); } catch { /* ignore */ }
       const p = this.local(e); this.ptrs.set(e.pointerId, p);
-      if (this.ptrs.size === 2) { const [a, b] = [...this.ptrs.values()]; this.pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), k: this.cam.k }; this.drag = null; return; }
+      if (this.ptrs.size === 2) { const [a, b] = [...this.ptrs.values()]; this.pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), k: this.cam.k }; this.drag = null; this.lasso = null; return; }
       this.drag = { x0: p.x, y0: p.y, cx: this.cam.x, cy: this.cam.y, moved: false, lasso: e.shiftKey || this.S.selMode, shift: e.shiftKey };
     });
     on(cv, 'pointermove', (e: PointerEvent) => {
@@ -874,7 +874,7 @@ export class Engine {
     });
     const end = (e: PointerEvent) => {
       const p = this.ptrs.get(e.pointerId); this.ptrs.delete(e.pointerId);
-      if (this.pinch) { if (this.ptrs.size < 2) this.pinch = null; this.drag = null; return; }
+      if (this.pinch) { if (this.ptrs.size < 2) this.pinch = null; this.drag = null; this.lasso = null; return; }
       const dg = this.drag;
       if (dg && e.type === 'pointerup' && p) {
         if (dg.moved && dg.lasso && this.lasso) { const r = this.lassoSelect(this.lasso); this.lasso = null; if (r.n) this.setTarget(r.ids, r.n + ' features in the box'); }
