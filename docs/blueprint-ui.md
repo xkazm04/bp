@@ -207,6 +207,47 @@ interface LensChannel {
 }
 ```
 
+## Trouble flags (2026-10-12)
+
+The owner's rule: lens icons are the top-priority signals to watch and act on, and managing the
+blueprint is mostly finding flags and resolving them. Three prototypes were compared (index tabs on the
+top border, trouble-only flags, large icon cells). Flags won, but a flag sized to fit its tile was
+unreadable when zoomed out, so flags are not part of any tile. They are an engine layer in
+`src/engine/render/flags.ts`, the same for every variant.
+
+- **One flag per feature and lens that is bad or on watch**, read from `feature.trouble`, only at
+  "now" (time travel shows stage only). A lens filter that dims a feature hides its flags too.
+- **On-screen size, not world size.** A flag is 32 px (times UI scale) on every level, from the site
+  plan to a single tile, and grows over a large tile up to 44 px (12% of the tile's width). A watch flag
+  is 0.8 of a bad one. Bad is red, watch is amber, with the lens glyph in paper colour. Health
+  colours carry status only, never the lens.
+- **It may cross the tile's top border.** A flag stands on the top edge of its tile and rises into the
+  gap above. At bay zoom it can cover the foot of the tile on the row above (its stamp and chips).
+  That is accepted, because the flag outranks it.
+- **Its position names the lens.** Over a tile, flags stand across the top edge in registry order,
+  the order of General's strip. Over a ribbon segment (site and wing plans) a flag stands over the
+  segment's middle. A lens fades its flags with its presence in the mix, so a lens view keeps only its
+  own.
+- **Clusters, like map markers.** Flags are placed bad first, then by presence, then left to right.
+  A flag that would collide with one already placed merges into it, which then shows a count badge
+  (12 px text, the floor). The merge distance is 4 px over tiles and widens to 26 px on the site
+  plan, so the site shows a few large flags per room and zooming in splits them.
+- **Room labels stay readable.** The room label renderer records its header label box in world units
+  (`RoomNode.labelBox`). A flag whose body would cover it steps to the label's right and draws a
+  leader line to a dot on its feature. A label floating over a room's content does not push flags.
+- **Act on it.** Hovering a flag grows it slightly and shows the feature's hover card. Clicking a flag
+  (or a cluster of one feature) switches to the flag's lens and opens the feature on that lens's tab.
+  Clicking a cluster of several features flies to them so it splits. When the camera cannot get
+  meaningfully closer, the click opens the first feature. The engine hit-tests the flags of the last
+  frame. No flag reacts while a feature page is open.
+- **Drawn on top, each frame**, after every dynamic layer, so they stay crisp at one size during a
+  gesture. On the Kettle sample about 100 candidates are laid out per frame. That breaks the rule of
+  allocating nothing in the frame loop (small per-frame arrays), so profile before `?scale=4` sign-off.
+- **The lens glyph set** (`glyph()`) lives in `src/engine/render/lens-glyph.ts` so the engine can draw
+  it. The subtle variant re-exports it from `marks.ts`, and its ribbon no longer draws its own glyph
+  knockout while flags are on.
+- `?flags=0` turns the layer off, to compare against the plan without it.
+
 ## The three variants
 
 These are routes `/v/subtle`, `/v/shaped` and `/v/bold`, plus `/` (the blueprint, subtle) and `/variants` (an index with the three cards
