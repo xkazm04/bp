@@ -76,7 +76,9 @@ function Clock() {
  *  the standard fails the typecheck here instead of silently dropping out of the chart. */
 const FILLS: Record<Stage, number> = { live: 0.62, flagged: 0.44, 'in-review': 0.3, 'in-dev': 0.2, specified: 0.11, idea: 0.06, deprecated: 0.5 };
 const ORDER = Object.keys(FILLS) as Stage[];
+const TITLE = 'Features by stage, per revision', TITLE_S = 'Features by stage';
 
+type Lab = { k: string; s: string; x: number; y: number; a: 'start' | 'middle' | 'end'; p: number; w?: number };
 const CW = 7.2; // advance of the 12 px mono label face, for placing chart labels
 
 function Revisions() {
@@ -112,6 +114,17 @@ function Revisions() {
     snaps.forEach((sn, i) => { const x = hx(sn.week), y0 = bot - (cum[i] / max) * (bot - top); cum[i] += sn.counts[st] || 0; const y1 = bot - (cum[i] / max) * (bot - top); dn.push(x.toFixed(1) + ',' + y0.toFixed(1)); up.push(x.toFixed(1) + ',' + y1.toFixed(1)); });
     return <polygon key={st} points={up.join(' ') + ' ' + dn.reverse().join(' ')} fill={st === 'deprecated' ? 'var(--red)' : 'var(--ink)'} fillOpacity={FILLS[st]} />;
   });
+  // direct band labels at the right edge: stage name + its count at the selected date, where the band is tall enough for 12 px text
+  const sel = snaps.filter((sn) => sn.week <= s.t).pop() ?? snaps[0], rawMax = Math.round(max / 1.05), edge = snaps[snaps.length - 1];
+  const bandLabs: Lab[] = [];
+  if (edge && sel) {
+    let acc = 0;
+    for (const st of ORDER) {
+      const c = edge.counts[st] || 0, hgt = (c / max) * (bot - top), mid = bot - ((acc + c / 2) / max) * (bot - top);
+      acc += c;
+      if (hgt >= 15) bandLabs.push({ k: 'b_' + st, s: st + ' ' + (sel.counts[st] || 0), x: tl.h1 - (snaps.length < 2 ? 18 : 4), y: mid + 4, a: 'end', p: 6 });
+    }
+  }
   const bins = new Array(60).fill(0);
   if (hour) for (const e of SWARM.replay) bins[Math.min(59, Math.floor(e.t / 60))]++;
   const bw = (tl.o1 - tl.o0) / 60, hxn = hx(s.t), hl = Math.min(hxn, tl.h1);
@@ -127,11 +140,14 @@ function Revisions() {
   const m1Lab = m1 && m1.date >= RD0 ? ((m1.code ? m1.code + ' ' : '') + m1.name.split(' ').pop()).toUpperCase() + ' · DONE' : '';
   const m2Lab = m2 ? (m2.code || m2.name) + ' · ' + fmtD(m2.date) : '';
   const pxWeek = NW > 1 ? (tl.h1 - tl.h0) / (NW - 1) : tl.h1 - tl.h0, wk = Math.max(1, Math.ceil((6 * CW + 12) / Math.max(1, pxWeek)));
-  type Lab = { k: string; s: string; x: number; y: number; a: 'start' | 'middle' | 'end'; p: number; w?: number };
+  const title = headW(TITLE) <= tl.R - 2 ? TITLE : TITLE_S;
   const cand: Lab[] = [
-    { k: 'rev', s: 'REVISIONS', x: 2, y: top + 2, a: 'start', p: 1, w: headW('REVISIONS') },
-    { k: 'nw', s: NW + (NW === 1 ? ' week' : ' weeks'), x: 2, y: top + 18, a: 'start', p: 1 },
-    ...(!s.compact && NW > 1 ? [{ k: 'step', s: '[ ] step', x: 2, y: top + 33, a: 'start', p: 1 } as Lab] : []),
+    // the title says what the chart counts; it stays in every size, the long form first, the short one when the history is narrow
+    { k: 'rev', s: title, x: 2, y: s.compact ? top - 12 : top - 24, a: 'start', p: 0, w: headW(title) },
+    { k: 'nw', s: NW + (NW === 1 ? ' week' : ' weeks'), x: 2, y: top + 2, a: 'start', p: 1 },
+    ...(!s.compact && rawMax > 0 ? [{ k: 'sc', s: 'max ' + rawMax, x: 2, y: top + 18, a: 'start', p: 3 } as Lab] : []),
+    ...(!s.compact && NW > 1 ? [{ k: 'step', s: '[ ] step', x: 2, y: top + 34, a: 'start', p: 1 } as Lab] : []),
+    ...bandLabs,
     ...(hourLab ? [{ k: 'hour', s: hourLab, x: tl.o0, y: top - 12, a: 'start', p: 1, w: headW(hourLab) } as Lab] : []),
     ...(rf && rp ? [
       { k: 'run1', s: s.compact ? rp.done + '/' + rp.total + ' · ' + rf.time : rf.progress, x: tl.o0 + 6, y: bot - 6, a: 'start', p: 2 } as Lab,
@@ -169,8 +185,9 @@ function Revisions() {
           if (timeSliderKey(e, E, hour, () => E.setTimeline(false))) { e.preventDefault(); e.nativeEvent.stopImmediatePropagation(); }
         }}>
         {still && <title>One week of history: nothing earlier to travel to yet</title>}
-        {txt('rev', { className: 'lbl' })}{txt('nw')}{txt('step')}
+        {txt('rev', { className: 'lbl' })}{txt('nw')}{txt('sc')}{txt('step')}
         {polys}
+        {bandLabs.filter((l) => shown.has(l.k)).map((l) => { const b = boxOf(l); return <g key={l.k}><rect x={b.x0 - 3} y={b.y0 + 1} width={b.x1 - b.x0 + 6} height={b.y1 - b.y0 - 1} fill="var(--label-bg)" fillOpacity={0.85} />{txt(l.k)}</g>; })}
         <line className="ax" x1={tl.h0} y1={bot} x2={tl.h1} y2={bot} />
         {snaps.map((sn, i) => {
           const x = hx(sn.week);

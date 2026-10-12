@@ -420,6 +420,9 @@ gets out of the plan's way, and L4 is a page. Earlier sections that say "dock", 
     measured against the run's scope, elapsed time or "<age> · <duration>", worded like the header's
     "Last scan <age>"); with no run the history takes the full width. `timeline/run.ts`,
     `check:timeline-run`.
+  - The revisions chart is titled "Features by stage, per revision" (it stays when the panel is compact)
+    and labels the stage bands at the right edge (name and count at the travelled date) where a band
+    is tall enough for 12 px text; the ink scheme is unchanged. Strip and panel format dates with `fmtD`.
 - **Feature page** (`src/components/FeatureSheet.tsx`, `page/`, `page.css`). The page replaces
   the drawer.
   - **Open and close:** the tile morphs into a full page, animating only `transform` and opacity.

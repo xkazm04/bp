@@ -113,7 +113,7 @@ export const Strip = forwardRef<HTMLButtonElement, { open: boolean }>(function S
         ? <span className="tl-pos"><b>NOW</b><span className="tl-dim">REV {rev} · {fmtD(t)}</span></span>
         : (
           <span className="tl-pos" role="status">
-            <b>VIEWING {t}</b><span className="tl-dim">REV {rev} of {M.P.weeks.length}</span>
+            <b>VIEWING {fmtD(t)}</b><span className="tl-dim">REV {rev} of {M.P.weeks.length}</span>
             <button type="button" className="tl-back" onClick={(e) => { e.stopPropagation(); E.setTime(M.P.asOf); }} title="Back to now (Esc on the hairline)">BACK TO NOW ▸</button>
           </span>
         )}
