@@ -6,7 +6,7 @@ import {
   BLAST_DEFAULT, GA_MILESTONE, HOUR, LINES, SPEEDS, AWAY_SINCE, inside, isView, lensOf, personLens, revAt, views, type Box, type BldNode, type BayNode, type Counts, type Model,
   type OrderTemplate, type PlaceNode, type Preview, type RoomNode, type SimDecision, type SimEvent, type Target, type TileNode, type WingNode,
 } from '@/lib/model';
-import { Camera, clamp, type Cam, type Pad, type Region } from './camera';
+import { Camera, WheelIntent, clamp, type Cam, type Pad, type Region } from './camera';
 import type { ChannelAggregate, FeatureLive, LensChannel, LensExpression } from './lens/contract';
 import { MixDriver, type MixState } from './lens/mix';
 import { createStore, type Store } from './store';
@@ -118,7 +118,7 @@ export class Engine {
   private introOn = false; private introT0 = 0;
   private drag: { x0: number; y0: number; cx: number; cy: number; moved: boolean; lasso: boolean; shift: boolean } | null = null;
   private ptrs = new Map<number, { x: number; y: number }>();
-  private pinch: { d: number; k: number } | null = null;
+  private pinch: { d: number; k: number; wx: number; wy: number } | null = null; private wheelI = new WheelIntent();
   private simSyncTimer = 0; private hlTimer = 0; private resizeTimer = 0; private lastTickerAt = 0; private pendingTicker: SimEvent | null = null;
   private toastN = 0;
   private aggLensCache = new Map<string, ChannelAggregate>();
@@ -993,7 +993,7 @@ export class Engine {
       this.endIntro();
       try { cv.setPointerCapture(e.pointerId); } catch { /* ignore */ }
       const p = this.local(e); this.ptrs.set(e.pointerId, p);
-      if (this.ptrs.size === 2) { const [a, b] = [...this.ptrs.values()]; this.pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), k: this.cam.k }; this.drag = null; this.lasso = null; return; }
+      if (this.ptrs.size === 2) { const [a, b] = [...this.ptrs.values()]; this.pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), k: this.cam.k, wx: this.cam.wx((a.x + b.x) / 2), wy: this.cam.wy((a.y + b.y) / 2) }; this.drag = null; this.lasso = null; return; }
       this.drag = { x0: p.x, y0: p.y, cx: this.cam.x, cy: this.cam.y, moved: false, lasso: e.shiftKey || this.S.selMode, shift: e.shiftKey };
     });
     on(cv, 'pointermove', (e: PointerEvent) => {
@@ -1003,7 +1003,7 @@ export class Engine {
       if (this.pinch) {
         if (this.ptrs.size < 2) return;
         const [a, b] = [...this.ptrs.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
-        this.cam.zoomTo((a.x + b.x) / 2, (a.y + b.y) / 2, (this.pinch.k * d) / this.pinch.d);
+        this.cam.pinchTo(this.pinch.wx, this.pinch.wy, (a.x + b.x) / 2, (a.y + b.y) / 2, (this.pinch.k * d) / this.pinch.d);
         return;
       }
       const dg = this.drag;
@@ -1021,7 +1021,16 @@ export class Engine {
     });
     const end = (e: PointerEvent) => {
       const p = this.ptrs.get(e.pointerId); this.ptrs.delete(e.pointerId);
-      if (this.pinch) { if (this.ptrs.size < 2) this.pinch = null; this.drag = null; this.lasso = null; return; }
+      if (this.pinch) {
+        this.drag = null; this.lasso = null;
+        if (this.ptrs.size < 2) {
+          this.pinch = null;
+          // one finger stays down: it carries on as a pan from where it is, and its lift is not a tap
+          const r = this.ptrs.values().next().value;
+          if (r) { this.drag = { x0: r.x, y0: r.y, cx: this.cam.x, cy: this.cam.y, moved: true, lasso: false, shift: false }; cv.dataset.cursor = 'pan'; }
+        }
+        return;
+      }
       const dg = this.drag;
       if (dg && e.type === 'pointerup' && p) {
         if (dg.moved && dg.lasso && this.lasso) { const r = this.lassoSelect(this.lasso); this.lasso = null; if (r.n) this.setTarget(r.ids, r.n + ' features in the box'); }
@@ -1043,9 +1052,9 @@ export class Engine {
       e.preventDefault(); this.endIntro();
       if (this.S.open) return; // the feature page holds the wheel; the plan behind it stays put
       if (this.S.hover) this.setHover(null);
-      const p = this.local(e); let dy = e.deltaMode === 1 ? e.deltaY * 30 : e.deltaY;
-      if (e.ctrlKey) dy *= 2.5;
-      this.cam.zoomAt(p.x, p.y, Math.exp(-dy * 0.0016));
+      const p = this.local(e), wi = this.wheelI;
+      wi.classify(e.deltaX, e.deltaY, e.deltaMode, e.ctrlKey, e.shiftKey, (e as unknown as { wheelDeltaY?: number }).wheelDeltaY || 0, performance.now(), this.FW, this.FH);
+      if (wi.kind === 'pan') this.cam.panPx(wi.dx, wi.dy); else this.cam.zoomAt(p.x, p.y, wi.zoom);
     }, { passive: false });
     on(cv, 'dblclick', (e: MouseEvent) => e.preventDefault());
     on(window, 'resize', () => { clearTimeout(this.resizeTimer); this.resizeTimer = window.setTimeout(() => this.fit(), 60); });

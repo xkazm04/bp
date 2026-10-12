@@ -4,7 +4,7 @@
 // reduced motion lands a fly-to at once. Without this, a change to any of them passes every other gate
 // and shows up only as a drop landing beside the cursor.
 // Run: node scripts/check-camera.ts  (Node's type stripping; no build step). Exit 1 when any expectation fails.
-import { Camera } from '../src/engine/camera.ts';
+import { Camera, WheelIntent } from '../src/engine/camera.ts';
 
 let held = 0;
 const failures: string[] = [];
@@ -82,6 +82,59 @@ const make = () => {
     z.call(c, px, py, 99);
     expect(c.k === c.KMAX, `zoomTo clamps k to KMAX (got ${c.k})`);
   }
+}
+
+// ------------------------------------------------------------------ pinch anchors the world point captured at its start
+{
+  const { c } = make();
+  c.set({ x: 2000, y: 1200, k: 0.5 });
+  const wx = c.wx(500), wy = c.wy(300); // the midpoint when the pinch began
+  c.pinchTo(wx, wy, 500, 300, 0.5);
+  expect(near(c.wx(500), wx, 1e-9) && near(c.wy(300), wy, 1e-9), 'a pinch step at the start midpoint changes nothing');
+  c.pinchTo(wx, wy, 620, 380, 0.9); // fingers spread and the midpoint moved right and down
+  expect(near(c.k, 0.9), `a pinch step lands on k (got ${c.k})`);
+  expect(near(c.sx(wx), 620, 1e-9) && near(c.sy(wy), 380, 1e-9), 'the captured world point follows the midpoint: moving it pans while pinching');
+  c.pinchTo(wx, wy, 620, 380, 99);
+  expect(c.k === c.KMAX && near(c.sx(wx), 620, 1e-6), 'a pinch clamps k and still anchors');
+}
+
+// ------------------------------------------------------------------ trackpad pan
+{
+  const { c } = make();
+  c.set({ x: 2000, y: 1200, k: 0.5 });
+  c.panPx(50, -20);
+  expect(near(c.x, 2000 + 50 / 0.5) && near(c.y, 1200 - 20 / 0.5), 'panPx moves the content with the fingers (camera x += dx / k)');
+  c.reduced = false;
+  c.zoomAt(300, 200, 1.5);
+  const w = { x: c.wz!.wx, y: c.wz!.wy };
+  c.panPx(40, 10);
+  expect(!!c.wz && near(c.wz.wx, w.x) && near(c.wz.px, 260) && near(c.wz.py, 190), 'a pan during a wheel zoom keeps the zoom and moves its screen anchor');
+}
+
+// ------------------------------------------------------------------ wheel intent
+{
+  const W = (w: WheelIntent, dx: number, dy: number, o: { mode?: number; ctrl?: boolean; shift?: boolean; wdy?: number; t?: number } = {}) => {
+    w.classify(dx, dy, o.mode ?? 0, !!o.ctrl, !!o.shift, o.wdy ?? 0, o.t ?? 0, 1280, 800); return w;
+  };
+  let w = new WheelIntent();
+  expect(W(w, 0, 100, { wdy: -120 }).kind === 'zoom', 'a mouse notch (wheelDeltaY 120) zooms');
+  expect(W(new WheelIntent(), 0, 133.33, { wdy: -120 }).kind === 'zoom', 'a display-scaled fractional notch with the 120 signature still zooms');
+  expect(W(new WheelIntent(), 0, 3, { mode: 1 }).kind === 'zoom', 'a line-mode wheel zooms');
+  expect(W(new WheelIntent(), 0, 100).kind === 'zoom', 'a large integer pixel delta without dx zooms');
+  w = W(new WheelIntent(), 4, 7.5);
+  expect(w.kind === 'pan' && w.dx === 4 && w.dy === 7.5, 'a small fractional delta with dx pans by the deltas');
+  expect(W(new WheelIntent(), 0, 12.5).kind === 'pan', 'a small fractional dy pans');
+  expect(W(new WheelIntent(), 30, 200).kind === 'pan', 'any deltaX pans, however large');
+  w = new WheelIntent(); W(w, 0, 6.2, { t: 1000 });
+  expect(W(w, 0, 180, { t: 1016 }).kind === 'pan', 'inside a running trackpad stream a large delta keeps panning');
+  expect(W(w, 0, 100, { t: 1500 }).kind === 'zoom', 'after the stream pauses a large integer delta zooms again');
+  w = W(new WheelIntent(), 0, 5.5, { ctrl: true });
+  expect(w.kind === 'zoom' && w.zoom < 1, 'ctrl+wheel (pinch in) zooms out');
+  expect(W(new WheelIntent(), 0, -5.5, { ctrl: true }).zoom > 1, 'pinch spread zooms in');
+  w = W(new WheelIntent(), 0, 100, { shift: true });
+  expect(w.kind === 'pan' && w.dx === 100 && w.dy === 0, 'shift+wheel pans horizontally');
+  expect(W(new WheelIntent(), 0, 1, { mode: 2 }).kind === 'zoom', 'a page-mode wheel is a mouse');
+  expect(W(new WheelIntent(), 0, 1, { mode: 2, shift: true }).dx === 800, 'page-mode deltas scale by the viewport');
 }
 
 // ------------------------------------------------------------------ "at home": one predicate for every caller

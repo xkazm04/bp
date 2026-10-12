@@ -63,6 +63,12 @@ Everything it does is in scope to keep:
   - Targeting (click, shift-drag lasso), and steering commands that preview before commit (Payments
     GA push, pause, orders).
 - **Keyboard and phone.** Keyboard throughout. On a phone, a reduced view: the queue and a list.
+- **Map navigation (Google-Maps / Figma feel).** Trackpad pinch and Ctrl+wheel zoom to the cursor; a two-finger
+  trackpad scroll pans; Shift+wheel pans horizontally; a classic mouse wheel still zooms to the cursor. The
+  wheel has no device field, so `WheelIntent` (`engine/camera.ts`) classifies the stream (line/page mode, deltaX,
+  the 120-aligned `wheelDeltaY` of a notch, small/fractional pixel deltas, a latched running stream); its doc
+  comment lists the failure modes. A touch pinch anchors the world point under its starting midpoint, so moving
+  the fingers pans while pinching, and the finger left after a pinch carries on as a pan.
 
 Two other variants are references only, never to copy wholesale:
 - **B/1** (round 3 contest archive, not in this repo) is simpler and noticeably faster. Study why: fewer

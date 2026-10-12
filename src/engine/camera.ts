@@ -97,6 +97,19 @@ export class Camera {
     this.k = clamp(k, this.KMIN, this.KMAX); this.pin(wx, wy, px, py);
     this.clampToWorld(); this.onMove();
   }
+  /** Pinch step: zoom to k at once and put the world point (wx, wy), captured when the pinch began, under screen point (px, py): moving the midpoint pans. */
+  pinchTo(wx: number, wy: number, px: number, py: number, k: number) {
+    this.stopFly(); this.wz = null;
+    this.k = clamp(k, this.KMIN, this.KMAX); this.pin(wx, wy, px, py);
+    this.clampToWorld(); this.onMove();
+  }
+  /** Pan by screen px (a trackpad scroll: content follows the fingers). A wheel zoom in flight keeps its world anchor, moved with the content. */
+  panPx(dx: number, dy: number) {
+    this.stopFly();
+    const wz = this.wz;
+    if (wz) { wz.px -= dx; wz.py -= dy; }
+    this.x += dx / this.k; this.y += dy / this.k; this.clampToWorld(); this.onMove();
+  }
   /** Place the camera so world point (wx, wy) draws at screen point (px, py) at the current k. */
   private pin(wx: number, wy: number, px: number, py: number) { this.x = wx - (px - this.FW / 2) / this.k; this.y = wy - (py - this.FH / 2) / this.k; }
   panBy(dx: number, dy: number, from: Cam) { this.stopFly(); this.wz = null; this.x = from.x - dx / this.k; this.y = from.y - dy / this.k; this.clampToWorld(); this.onMove(); }
@@ -109,5 +122,36 @@ export class Camera {
   /** Within kTol (relative) of t's scale and px screen px of its centre: "still at home" for re-fits and Esc. */
   near(t: Cam, kTol: number, px: number): boolean {
     return Math.abs(this.k / t.k - 1) < kTol && Math.hypot(this.x - t.x, this.y - t.y) * this.k < px;
+  }
+}
+
+/**
+ * Tells a trackpad / mouse-wheel event stream what it means. Wheel events carry no device, so this is a heuristic:
+ *  - ctrlKey: zoom to the cursor (a trackpad pinch arrives as ctrl+wheel with tiny fractional deltas; Ctrl+wheel with a mouse too).
+ *  - shiftKey: pan horizontally.
+ *  - line / page deltaMode: a classic mouse wheel (Firefox, Windows) -> zoom.
+ *  - deltaX != 0: only a trackpad (or a tilt wheel) -> pan.
+ *  - wheelDeltaY a multiple of 120: a mouse notch -> zoom (survives display scaling, which makes deltaY fractional).
+ *  - a trackpad stream already running (an event within WHEEL_STREAM ms): keeps panning, which carries the flick and its momentum tail.
+ *  - otherwise a pixel delta under 50 or a fractional one -> trackpad pan; a large integer one -> mouse notch zoom.
+ * Failure modes: a Mac mouse with an accelerated wheel sends small integer pixel deltas without the 120 signature, so its first
+ * notches read as a trackpad scroll (they pan; Ctrl or the +/- buttons zoom); a very fast first trackpad event (>= 50, integer,
+ * dx == 0, not 120-aligned) reads as a notch and zooms once before the stream latches; two devices used within 120 ms mix up.
+ */
+export const WHEEL_STREAM = 120;
+export class WheelIntent {
+  kind: 'zoom' | 'pan' = 'zoom';
+  /** zoom: the factor to apply about the cursor; pan: screen px to move the content. */
+  zoom = 1; dx = 0; dy = 0;
+  private padAt = -1e9;
+  classify(dx: number, dy: number, mode: number, ctrl: boolean, shift: boolean, wdy: number, now: number, pw: number, ph: number) {
+    if (mode === 1) { dx *= 30; dy *= 30; } else if (mode === 2) { dx *= pw; dy *= ph; }
+    this.dx = 0; this.dy = 0; this.zoom = 1;
+    if (ctrl) { this.kind = 'zoom'; this.zoom = Math.exp(-dy * (mode === 0 && Math.abs(dy) < 50 ? 0.01 : 0.004)); return; }
+    if (shift) { this.kind = 'pan'; this.dx = dx || dy; return; }
+    const notch = wdy !== 0 && wdy % 120 === 0;
+    const pad = mode === 0 && !notch && (dx !== 0 || now - this.padAt < WHEEL_STREAM || Math.abs(dy) < 50 || !Number.isInteger(dy));
+    if (pad) { this.kind = 'pan'; this.dx = dx; this.dy = dy; this.padAt = now; return; }
+    this.kind = 'zoom'; this.zoom = Math.exp(-dy * 0.0016);
   }
 }
