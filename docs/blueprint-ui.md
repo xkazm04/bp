@@ -209,7 +209,7 @@ interface LensChannel {
 
 ## The three variants
 
-These are routes `/v/subtle`, `/v/shaped` and `/v/bold`, plus `/` (an index with the three cards
+These are routes `/v/subtle`, `/v/shaped` and `/v/bold`, plus `/` (the blueprint, subtle) and `/variants` (an index with the three cards
 and the theme toggle). They share the engine, the UI and the data, and differ only in their
 `src/variants/<id>/` expression and small UI overrides. They span the owner's range:
 
