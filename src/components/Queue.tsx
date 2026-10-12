@@ -6,7 +6,7 @@
 // latest + expected delta), the standard it rests on, size and risk, and offers Approve and Decline
 // (with an optional note, asked inline). Both are written to the product's store. It lives in the
 // rail's decisions flyout.
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { fmtWait, metricHistory, morningStats, pname, sheetOf, type SimDecision } from '@/lib/model';
 import type { Proposal } from '@/lib/scan/types';
@@ -33,12 +33,25 @@ export function oncePerProposal(ds: SimDecision[]): SimDecision[] {
 /** What a question's urgency reads as on its card. */
 const URG: Record<SimDecision['urg'], string> = { high: 'Urgent', medium: 'Soon', low: 'When you can' };
 
+/** Where focus goes when a card is answered and leaves: the next card, else the previous, else the list's heading. Resolved before the answer
+ * (the leaving card stays in the DOM through its exit); `go` runs after it, once the DOM has the optimistic state. */
+function focusHeir(from: Element | null): () => void {
+  const li = from?.closest('li.qi'), ul = li?.parentElement;
+  const heir = (e: Element | null | undefined) => (e?.matches('li.qi') ? (e as HTMLElement) : null);
+  const t = heir(li?.nextElementSibling) ?? heir(li?.previousElementSibling) ?? (ul?.previousElementSibling as HTMLElement | null) ?? null;
+  return () => requestAnimationFrame(() => {
+    if (!t?.isConnected) return;
+    if (!t.matches('li.qi')) t.tabIndex = -1;
+    t.focus({ preventScroll: false });
+  });
+}
+
 /** The shell both queue cards share: entrance and exit, emphasis by the reader, open on click or Enter/Space,
  * and the hover highlight on the plan. `cls` adds the card's own class. */
-function CardShell({ d, on, emph, cls, children }: { d: SimDecision; on: boolean; emph: boolean; cls?: string; children: ReactNode }) {
+function CardShell({ d, on, emph, cls, children, liRef }: { d: SimDecision; on: boolean; emph: boolean; cls?: string; children: ReactNode; liRef?: React.Ref<HTMLLIElement> }) {
   const E = useEngine();
   return (
-    <motion.li
+    <motion.li ref={liRef}
       layout="position" initial={{ opacity: 0, x: 18 }} animate={{ opacity: emph ? 1 : 0.55, x: 0 }} exit={{ opacity: 0, x: -24, transition: { duration: 0.2 } }}
       transition={{ type: 'spring', stiffness: 380, damping: 34 }}
       className={'qi' + (cls ? ' ' + cls : '') + ' u-' + d.urg + (on ? ' on' : '')} tabIndex={0} aria-current={on}
@@ -60,7 +73,8 @@ function LiveItem({ d }: { d: SimDecision }) {
   const E = useEngine(), M = E.M, sim = M.sim, live = useLive();
   const s = useBp((s) => ({ dec: s.dec, who: s.who, view: s.view }), shallowEqual);
   const [declining, setDeclining] = useState(() => declineDrafts.has(d.base)), [note, setNote] = useState(() => declineDrafts.get(d.base) ?? '');
-  const cancelDecline = () => { declineDrafts.delete(d.base); setNote(''); setDeclining(false); };
+  const cancelDecline = () => { declineDrafts.delete(d.base); setNote(''); setDeclining(false); requestAnimationFrame(() => (liRef.current?.querySelector('button.answer:not(.go)') as HTMLElement | null)?.focus()); };
+  const liRef = useRef<HTMLLIElement>(null);
   const f = M.P.F[d.f], on = s.dec === d.id, scan = live?.product.scan;
   const p = scan?.proposals.find((x) => x.id === d.base);
   const field = (lens: string, key: string) => M.P.LENS[lens]?.F[key];
@@ -68,7 +82,7 @@ function LiveItem({ d }: { d: SimDecision }) {
   const label = p?.metric ? field(p.lens, p.metric)?.label : undefined;
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
   return (
-    <CardShell d={d} on={on} emph={sim.emph(d, s.who, s.view)} cls="lq">
+    <CardShell d={d} on={on} emph={sim.emph(d, s.who, s.view)} cls="lq" liRef={liRef}>
       <div className="k"><span>{URG[d.urg]} · <span className="lz">{sheetOf(M.P, d.lens).no}</span></span><span>{p?.kind && p.kind !== 'fix' ? p.kind + ' · ' : ''}{d.base}{M.P.scale > 1 ? ' · ' + M.P.buildings[d.b].short : ''}{d.isNew ? ' · NEW' : ''}</span></div>
       <h4>{d.q}</h4>
       {mv && <div className="mv" title={label ? label + (p?.expected_delta !== undefined ? ', expected after the change' : '') : undefined}>{mv}</div>}
@@ -79,7 +93,7 @@ function LiveItem({ d }: { d: SimDecision }) {
       </div>
       <div className="mt">{f.name} · {M.P.D[f.domain]?.name ?? f.domain} · waiting <b>{fmtWait(sim.waitMin(d))}</b></div>
       {declining ? (
-        <form className="dn" onClick={stop} onSubmit={(e) => { e.preventDefault(); declineDrafts.set(d.base, note.trim()); E.decide(d.id, 1, note.trim() || undefined); }}>
+        <form className="dn" onClick={stop} onSubmit={(e) => { e.preventDefault(); declineDrafts.set(d.base, note.trim()); const go = focusHeir(e.currentTarget); E.decide(d.id, 1, note.trim() || undefined); go(); }}>
           <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why not? (optional)" aria-label="Decline note (optional)" maxLength={500} autoFocus
             onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); cancelDecline(); } }} />
           <button type="submit" className="bt">Decline</button>
@@ -87,7 +101,7 @@ function LiveItem({ d }: { d: SimDecision }) {
         </form>
       ) : (
         <div className="row" style={{ marginTop: 7 }}>
-          <button type="button" className="bt go answer" title="Approve: the scan executes it in its next execute phase" onClick={(e) => { stop(e); E.decide(d.id, 0); }}>✓ Approve</button>
+          <button type="button" className="bt go answer" title="Approve: the scan executes it in its next execute phase" onClick={(e) => { stop(e); const go = focusHeir(e.currentTarget); E.decide(d.id, 0); go(); }}>✓ Approve</button>
           <button type="button" className="bt answer" title="Decline, with an optional note" onClick={(e) => { stop(e); setDeclining(true); }}>Decline…</button>
         </div>
       )}
@@ -108,7 +122,7 @@ function Item({ d }: { d: SimDecision }) {
       <div className="mt">{f.name} · {M.P.D[f.domain].name}<br />{pname(M.P, d.decider)} decides · waiting <b>{fmtWait(sim.waitMin(d))}</b> · holds <b>{bn}</b> agent{bn === 1 ? '' : 's'}</div>
       {note && <div className="note">{note}</div>}
       <div style={{ marginTop: 7 }}>
-        <button type="button" className="bt go answer" title="Accept the agent’s recommendation (Enter)" onClick={(e) => { e.stopPropagation(); E.decide(d.id, d.rec); }}>✓ {d.opts[d.rec].label}</button>
+        <button type="button" className="bt go answer" title="Accept the agent’s recommendation (Enter)" onClick={(e) => { e.stopPropagation(); const go = focusHeir(e.currentTarget); E.decide(d.id, d.rec); go(); }}>✓ {d.opts[d.rec].label}</button>
       </div>
     </CardShell>
   );

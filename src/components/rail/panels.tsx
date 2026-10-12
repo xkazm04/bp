@@ -30,14 +30,15 @@ export function FindPanel() {
     if (m.P !== M.P || m.q !== v) memo.current = { P: M.P, q: v, r: v.trim() ? search(M.P, v) : [] };
     return memo.current.r;
   };
-  const results = find(q);
+  const results = find(q), listed = !!q.trim();
   const preview = (i: number) => { setSel(i); E.setSel(results[i]?.id ?? null); };
   const open = (id: string) => { setQ(''); E.setSel(null); E.setDockTab(null); E.openFeature(id); };
   return (
     <>
       <div id="searchbox">
         <svg className="mg" viewBox="0 0 18 18" aria-hidden="true"><circle cx="7.5" cy="7.5" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.6" /><path d="M11.5 11.5 L16 16" stroke="currentColor" strokeWidth="1.8" /></svg>
-        <input id="q" ref={ref} type="search" autoComplete="off" spellCheck={false} autoFocus placeholder={M.live ? 'Find a feature' : 'Find a feature, e.g. gift cards'} aria-label="Search features" aria-controls="results" value={q}
+        <input id="q" ref={ref} type="search" autoComplete="off" spellCheck={false} autoFocus placeholder={M.live ? 'Find a feature' : 'Find a feature, e.g. gift cards'} aria-label="Search features" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-expanded={listed} aria-controls={listed ? 'results' : undefined}
+          aria-activedescendant={listed && results.length ? 'res-' + results[Math.min(sel, results.length - 1)].id : undefined} value={q}
           onChange={(e) => { setQ(e.target.value); const r = find(e.target.value); setSel(0); E.setSel(r[0]?.id ?? null); }}
           onKeyDown={(e) => {
             if (e.key === 'ArrowDown') { e.preventDefault(); if (results.length) preview((sel + 1) % results.length); }
@@ -53,7 +54,7 @@ export function FindPanel() {
       {q.trim() ? (
         <ul id="results" role="listbox" aria-label="Matching features">
           {results.length ? results.map((f, i) => (
-            <li key={f.id} role="option" aria-selected={i === sel} className={i === sel ? 'on' : ''} onPointerEnter={() => preview(i)} onClick={() => open(f.id)}>
+            <li key={f.id} id={'res-' + f.id} role="option" aria-selected={i === sel} className={i === sel ? 'on' : ''} onPointerEnter={() => preview(i)} onClick={() => open(f.id)}>
               <StageSym st={f.stage} w={18} h={12} />
               <span className="t">{f.name}</span>
               <span className="r">{M.P.scale > 1 ? E.M.L.TILE[f.id].wing.bld.b.short + ' · ' : ''}{M.P.D[f.domain].name} · {f.stage ? STAGE_WORD[f.stage] : 'Stage unknown'}</span>
