@@ -19,6 +19,7 @@ import { useBp, useDensity, useEngine, useLive, useVariant } from '../hooks';
 export function SwarmSection({ f, lens }: { f: Feature; lens?: string }) {
   const E = useEngine(), M = E.M, sim = M.sim;
   useBp((s) => s.simV);
+  const phone = useBp((s) => s.phone);   // the phone mounts no SelBar, so a preview or an order menu started here would be invisible
   if (!sim.has) return null;
   // `lens`: only the decisions and orders that name this lens (a lens page); null when there are none
   let ag = sim.AGF[f.id] || [], ds = sim.DOF[f.id] || [], ords = sim.ordersOn(f.id), ev = sim.log.filter((e) => e.f === f.id).slice(0, 4);
@@ -45,7 +46,7 @@ export function SwarmSection({ f, lens }: { f: Feature; lens?: string }) {
       ))}
       {ords.length ? <div style={{ marginTop: 8, fontSize: 14 }}>{ords.map((x) => <div key={x.id}><span className="ag" style={{ margin: '0 6px 0 0', color: x.vf.includes(f.id) ? 'var(--red-2)' : 'var(--amber)', borderColor: 'currentColor' }}>{x.id}{x.vf.includes(f.id) ? ' BREACHED' : ''}</span>{x.text}</div>)}</div> : null}
       {ev.length ? <div style={{ marginTop: 8, fontSize: 13, color: 'var(--ink-2)' }}>{ev.map((e, i) => <div key={i}>{new Date(sim.at0 + e.t * 1000).toISOString().slice(11, 16)} · {e.text}</div>)}</div> : null}
-      {!sim.live && !lens && <div className="btns">
+      {!sim.live && !lens && !phone && <div className="btns">
         <button type="button" className="btn" onClick={() => E.preview(ag.some((a) => a.paused) ? 'resume' : 'pause', undefined, f.id)}>{ag.some((a) => a.paused) ? 'Resume agents here' : 'Pause agents here'}</button>
         <button type="button" className="btn" onClick={() => E.preview('push', undefined, f.id)}>Put the swarm on this…</button>
         <button type="button" className="btn" onClick={() => { E.setTarget({ [f.id]: 1 }, f.name); E.patch({ ordMenu: true }); }}>Write an order here…</button>
