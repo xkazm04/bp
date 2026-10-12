@@ -83,5 +83,18 @@ const back = (ph.html.match(/<button[^>]*>‹ Back<\/button>/) || [''])[0];
 const h = Number((back.match(/height:\s*(\d+)px/) || [])[1]);
 expect(h >= 44, `Phone Back button height ${Number.isNaN(h) ? 'unset' : h + 'px'}, expected at least 44px`);
 
+// 7-9. Toast: an undoable toast is not displaced by an informational one (it queues), the queue drains in order,
+// a close button and a persistently mounted live region exist (not display:contents)
+const tt = (n: number, strong: string, extra: Record<string, unknown> = {}) => ({ n, strong, text: '', ...extra });
+let q = O.toastArrive({ cur: null, q: [] }, tt(1, 'Decided', { action: 'undo' }));
+q = O.toastArrive(q, tt(2, 'New question', { fid: 'f1' }));
+q = O.toastArrive(q, tt(3, 'Viewing as x'));
+expect(q.cur.n === 1 && q.q.length === 2, `an undo toast was displaced (cur ${q.cur?.n}, queued ${q.q.length})`);
+q = O.toastNext(q);
+expect(q.cur.n === 2 && q.q.length === 1, 'the queue did not hand over in arrival order');
+expect(O.toastArrive({ cur: tt(5, 'Decided', { action: 'undo' }), q: [] }, tt(6, 'Decided', { action: 'undo' })).cur.n === 6, 'a newer undoable toast did not supersede an older one');
+const to = render(() => React.createElement(O.Toast), { toast: tt(7, 'Hello') }, () => ({ parts: [] }));
+expect(to.threw === null && /role="status"/.test(to.html) && !/display:\s*contents/.test(to.html), `Toast live region missing or display:contents (${to.threw ?? 'rendered'})`);
+
 if (failures.length) { console.error(`check-overlays: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
 console.log(`check-overlays: ${held} expectations held`);

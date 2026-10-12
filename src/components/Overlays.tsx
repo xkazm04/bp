@@ -8,6 +8,7 @@ import {
   morningStats, pname, sheetOf, stageAt, type BayNode, type BldNode, type OrderTemplate, type RoomNode, type WingNode,
 } from '@/lib/model';
 import { overlayRight } from '@/engine/chrome';
+import type { ToastItem } from '@/engine/state';
 import { illoSVG } from '@/engine/render/illo';
 import { shallowEqual, useBp, useEngine, useLive, useVariant } from './hooks';
 import { proposalSummary } from './Queue';
@@ -371,30 +372,58 @@ export function Callout() {
 }
 
 // ------------------------------------------------------------------------------------------ toast
+export interface ToastQ { cur: ToastItem | null; q: ToastItem[] }
+const toastRank = (t: ToastItem) => (t.action ? 2 : t.fid ? 1 : 0);   // UNDO/REPLAY > SHOW > plain
+/** A toast arrived: it replaces the showing one only when it outranks it (or both are undoable, the newer undo wins); otherwise it waits its turn. */
+export function toastArrive(st: ToastQ, t: ToastItem): ToastQ {
+  if (!st.cur) return { cur: t, q: st.q };
+  const a = toastRank(t), c = toastRank(st.cur);
+  if (c === 0 || a > c || (a === 2 && c === 2)) return { cur: t, q: st.q };
+  return { cur: st.cur, q: [...st.q, t].slice(-4) };
+}
+/** The showing toast ended (timed out, closed, or undone): the next waiting one takes over. */
+export function toastNext(st: ToastQ): ToastQ { return { cur: st.q[0] ?? null, q: st.q.slice(1) }; }
+const toastLine = (t: ToastItem) => t.strong + (t.text ? ' · ' + t.text : '');
+const SR_ONLY: React.CSSProperties = { position: 'absolute', width: 1, height: 1, margin: -1, padding: 0, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0 };
+
 export function Toast() {
   const E = useEngine();
   const t = useBp((s) => s.toast);
+  const [st, setSt] = useState<ToastQ>({ cur: null, q: [] });
+  const seen = useRef(0);
   const [paused, setPaused] = useState(false);       // hover/focus holds the dwell; leaving restarts it in full
-  useEffect(() => { setPaused(false); }, [t?.n]);
+  const cur = st.cur;
   useEffect(() => {
-    if (!t || paused) return;
-    const id = window.setTimeout(() => { if (E.S.toast?.n === t.n) E.dismissToast(); }, t.action ? 9000 : 5200);
+    if (t && t.n !== seen.current) { seen.current = t.n; setSt((p) => toastArrive(p, t)); }
+    else if (!t) setSt((p) => (p.cur ? toastNext(p) : p));   // dismissed from outside (undo): the next one waits no longer
+  }, [t]);
+  useEffect(() => { setPaused(false); }, [cur?.n]);
+  const end = () => { if (E.S.toast?.n === cur?.n) E.dismissToast(); else setSt(toastNext); };   // the store's own null advances the queue, so only one of the two runs
+  useEffect(() => {
+    if (!cur || paused) return;
+    const id = window.setTimeout(end, cur.action ? 9000 : 5200);
     return () => clearTimeout(id);
-  }, [E, t, paused]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [E, cur, paused]);
   return (
-    <div className="toast-live" role="status" aria-live="polite" aria-atomic="true" style={{ display: 'contents' }}>
+    <>
+    <div className="toast-live" role="status" aria-live="polite" aria-atomic="true" style={SR_ONLY}>{cur ? toastLine(cur) : ''}</div>
     <AnimatePresence>
-      {t && (
-        <motion.div id="toast" key={t.n} onPointerEnter={() => setPaused(true)} onPointerLeave={() => setPaused(false)} onFocus={() => setPaused(true)} onBlur={() => setPaused(false)} initial={{ opacity: 0, y: -14, x: '-50%' }} animate={{ opacity: 1, y: 0, x: '-50%' }} exit={{ opacity: 0, y: -10, x: '-50%' }} transition={{ type: 'spring', stiffness: 420, damping: 32 }}>
-          <span><b>{t.strong}</b>{t.text ? ' · ' + t.text : ''}</span>
-          {t.action === 'undo' && <button type="button" onClick={() => E.undoDecision()}>UNDO</button>}
-          {t.action === 'undo2' && <button type="button" onClick={() => { E.undoCommand(); E.dismissToast(); }}>UNDO</button>}
-          {t.action === 'replay' && <button type="button" onClick={() => { E.restart(); E.dismissToast(); }}>↺ REPLAY</button>}
-          {t.fid && <button type="button" onClick={() => E.flyToFeature(t.fid!)}>SHOW</button>}
+      {cur && (
+        <motion.div id="toast" key={cur.n} onPointerEnter={() => setPaused(true)} onPointerLeave={() => setPaused(false)} onFocus={() => setPaused(true)} onBlur={() => setPaused(false)}
+          onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); end(); } }}
+          initial={{ opacity: 0, y: -14, x: '-50%' }} animate={{ opacity: 1, y: 0, x: '-50%' }} exit={{ opacity: 0, y: -10, x: '-50%' }} transition={{ type: 'spring', stiffness: 420, damping: 32 }}>
+          <span><b>{cur.strong}</b>{cur.text ? ' · ' + cur.text : ''}</span>
+          {cur.action === 'undo' && <button type="button" onClick={() => E.undoDecision()}>UNDO</button>}
+          {cur.action === 'undo2' && <button type="button" onClick={() => { E.undoCommand(); E.dismissToast(); }}>UNDO</button>}
+          {cur.action === 'replay' && <button type="button" onClick={() => { E.restart(); E.dismissToast(); }}>↺ REPLAY</button>}
+          {cur.fid && <button type="button" onClick={() => E.flyToFeature(cur.fid!)}>SHOW</button>}
+          {st.q.length > 0 && <span className="more" title={st.q.map(toastLine).join(', ')}>+{st.q.length} more</span>}
+          <button type="button" className="tx" aria-label="Dismiss" title="Dismiss (Esc)" onClick={end}>×</button>
         </motion.div>
       )}
     </AnimatePresence>
-    </div>
+    </>
   );
 }
 

@@ -243,6 +243,8 @@
 #selbar .ord-tpl { border-color: var(--amber); color: var(--amber-2); }
 #toast { position: absolute; left: var(--cx, 50%); top: 104px; /* below the one-row ticker (top 70) */ background: var(--card-hi); border: 1px solid var(--mint); padding: 9px 14px; font-size: 14px; color: var(--ink-hi); z-index: 40; /* above the feature page (z 30): an undo toast must stay reachable */ display: flex; gap: 12px; align-items: center; max-width: 620px; box-shadow: 0 10px 30px var(--shadow); }
 #toast b { color: var(--mint-2); font-weight: 600; }
+#toast .more { font: 500 12px var(--mono); color: var(--ink-2); white-space: nowrap; }
+#toast button.tx { border-color: transparent; font-size: 16px; padding: 0 6px; }
 #toast button { background: none; border: 1px solid var(--ink-2); color: var(--ink); padding: 0 9px; height: 26px; font: 500 12px var(--mono); letter-spacing: 0.06em; }
 .bp-phone #toast { width: max-content; top: auto; bottom: calc(16px + env(safe-area-inset-bottom)); max-width: calc(100% - 32px); }
 .bp-phone #toast button { min-height: 44px; }
