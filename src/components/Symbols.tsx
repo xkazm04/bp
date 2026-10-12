@@ -27,12 +27,13 @@ export function StageSym({ st, w = 22, h = 14 }: { st: Stage | null; w?: number;
   return <svg width={w + 2} height={h + 2} viewBox={`-1 -1 ${w + 2} ${h + 2}`} aria-hidden="true">{body}</svg>;
 }
 
-type MarkKind = 'cloud' | 'tick' | 'delta' | 'dia' | 'work' | 'wait' | 'block' | 'fail' | 'pin' | 'ord' | 'paused';
+type MarkKind = 'cloud' | 'tick' | 'delta' | 'dia' | 'work' | 'wait' | 'block' | 'fail' | 'pin' | 'ord' | 'paused' | 'barBad';
 export function Mark({ k, w = 28, h = 19 }: { k: MarkKind; w?: number; h?: number }) {
   let inner: React.ReactNode = null;
   switch (k) {
     case 'cloud': inner = <path d="M2 2 q3 -3 6 0 q3 -3 6 0 q3 -3 6 0 q3 -3 4 0 q3 3 0 6 q3 3 0 6 q-1 3 -4 2 q-3 3 -6 0 q-3 3 -6 0 q-3 3 -6 -1 q-3 -3 0 -6 q-3 -3 0 -7z" fill="none" stroke="var(--red)" strokeWidth="1.3" />; break;
     case 'tick': inner = <><rect x="3" y="5" width="20" height="11" fill="none" stroke="var(--ink)" strokeWidth="1" opacity=".5" /><path d="M14 4 l3 -4 M18 4 l3 -4" stroke="var(--amber)" strokeWidth="1.8" strokeLinecap="round" /></>; break;
+    case 'barBad': inner = <><rect x="1" y="6" width="24" height="10" fill="var(--ink)" fillOpacity=".3" stroke="var(--ink)" strokeWidth="1" /><rect x="1" y="2.5" width="24" height="3" fill="var(--red)" /></>; break;
     case 'delta': inner = <path d="M13 2 l8 13 h-16z" fill="var(--delta)" />; break;
     case 'dia': inner = <path d="M13 2 l5 7 l-5 7 l-5 -7z" fill="none" stroke="var(--ink)" strokeWidth="1.2" />; break;
     case 'work': inner = <><circle cx="13" cy="9" r="4.5" fill="var(--mint)" stroke="var(--glyph-edge)" strokeWidth="1.2" /><path d="M13 1.5v2.2M13 14.3v2.2M5.5 9h2.2M18.3 9h2.2" stroke="var(--mint)" strokeWidth="1.3" /></>; break;

@@ -4,7 +4,7 @@
 // plan) and its icon vocabulary, all in that lens's accent.
 import type { ViewId } from '@/lib/data';
 import { isBuiltinLens, type BuiltinLens } from '../base/legacy';
-import { Legend } from '@/components/Legend';
+import { Legend, TroubleKey } from '@/components/Legend';
 import { Mark, StageSym } from '@/components/Symbols';
 import { LensIcon } from './Panel';
 import { LENS_ICON, type IconId } from './icons';
@@ -75,6 +75,7 @@ export function ShapedLegend({ view }: { view: ViewId }) {
         <div><StageSym st="in-dev" w={24} h={15} /><span>Construction</span></div>
         <div><StageSym st="specified" w={24} h={15} /><span>Proposed</span></div>
         <div><StageSym st="idea" w={24} h={15} /><span>Future idea</span></div>
+        <TroubleKey />
         <div><Mark k="cloud" /><span>Trouble</span></div>
         <div><Mark k="tick" /><span>Watch</span></div>
         <div><Mark k="delta" /><span>Changed</span></div>

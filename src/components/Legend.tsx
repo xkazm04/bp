@@ -9,6 +9,8 @@ import { lensOf } from '@/lib/model';
 import { readTheme } from '@/engine/theme';
 import type { TileGeom } from '@/engine/lens/contract';
 import { stageFill } from '@/engine/render/glyphs';
+import { drawFlags, type Flag } from '@/engine/render/flags';
+import type { Engine } from '@/engine/Engine';
 import { Mark, StageSym } from './Symbols';
 import { useEngine, useVariant } from './hooks';
 import { useTheme } from './ThemeToggle';
@@ -41,6 +43,38 @@ function Specimen({ lens, f }: { lens: string; f: Feature }) {
   return <canvas ref={ref} style={{ width: 46, height: 28 }} aria-hidden="true" />;
 }
 
+/** A trouble flag drawn by the canvas's own drawFlags (one lens' glyph; `count` > 1 adds the cluster tag), on a 1:1 screen. */
+function FlagSpecimen({ bad, count }: { bad: boolean; count: number }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const E = useEngine(), mode = useTheme();
+  const lens = E.lensIds[0];
+  useEffect(() => {
+    const cv = ref.current; if (!cv) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1), W = 40, H = 40;
+    cv.width = W * dpr; cv.height = H * dpr;
+    const ctx = cv.getContext('2d')!, th = readTheme(dpr).theme;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+    // the live engine with this theme read fresh and the UI scale 1 (the legend sits inside the scaled UI layer)
+    const Ex = Object.create(E, { th: { value: th }, U: { value: 1 } }) as Engine;
+    const s = bad ? 24 : 19, w = s * 1.1, tipX = 18, tipY = H - 2, ids = Array.from({ length: count }, (_, i) => 'x' + i);
+    const F: Flag = { x: tipX - w / 2, y: tipY - s * 0.26 - s, w, h: s, tipX, tipY, bad, lens, fid: ids[0], fids: ids, lenses: ids.map(() => lens), a: 1 };
+    drawFlags(Ex, ctx, [F], null);
+  }, [E, bad, count, lens, mode]);
+  return <canvas ref={ref} style={{ width: 40, height: 40 }} aria-hidden="true" />;
+}
+
+/** The shared trouble vocabulary: the canvas's flags (single, cluster), the L0/L1 ribbon bar, and the deprecated stage. */
+export function TroubleKey() {
+  return (
+    <>
+      <div><StageSym st="deprecated" w={24} h={15} /><span>Being retired</span></div>
+      <div><FlagSpecimen bad count={1} /><span>Flag: a lens in trouble</span></div>
+      <div><FlagSpecimen bad={false} count={3} /><span>Flag with count: merged</span></div>
+      <div><Mark k="barBad" /><span>Ribbon bar: trouble (amber: watch)</span></div>
+    </>
+  );
+}
+
 function samples(fs: readonly Feature[], key: (f: Feature) => string, n = 6): { f: Feature; label: string }[] {
   const seen = new Map<string, Feature>();
   for (const f of fs) { const k = key(f); if (k && !seen.has(k)) seen.set(k, f); if (seen.size >= n) break; }
@@ -58,6 +92,7 @@ export function Legend({ view }: { view: ViewId }) {
         <div><StageSym st="in-dev" w={24} h={15} /><span>Construction</span></div>
         <div><StageSym st="specified" w={24} h={15} /><span>Proposed</span></div>
         <div><StageSym st="idea" w={24} h={15} /><span>Future idea</span></div>
+        <TroubleKey />
         <div><Mark k="cloud" /><span>Trouble</span></div>
         <div><Mark k="tick" /><span>Watch</span></div>
         <div><Mark k="delta" /><span>Changed</span></div>
