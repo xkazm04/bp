@@ -985,6 +985,7 @@ export class Engine {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (tgt?.closest?.('[data-keys="own"]')) return;
     const k = e.key;
+    if (S.open && k.length === 1 && '/mMpPsStT\\'.includes(k)) return; // the feature page is modal: no flyout, timeline, mode or search opens under it (Esc and the lens digits still work)
     if (k === '/') { e.preventDefault(); this.focusSearch(); return; }
     if (k === 'Escape') { e.preventDefault(); this.goUp(); return; }
     const ctl = isControl(tgt); // Enter / Space on a focused control belong to that control

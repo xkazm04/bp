@@ -31,7 +31,7 @@ export { SheetBody } from './sheet/SheetBody';
 
 // Tab cycles inside the open page (the plan behind is dimmed and inert to the pointer). Focusables are
 // collected at keydown time: the content mounts a frame late and changes with every tab switch.
-const FOCUSABLE = 'button:not([disabled]), [href], select:not([disabled]), input:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE = 'button:not([disabled]):not([tabindex="-1"]), [href], select:not([disabled]), input:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
 function pageKeys(e: React.KeyboardEvent<HTMLElement>) {
   // Space on a fold's <summary> is the fold's own key: keep it from the engine, whose Space plays or pauses
   // the simulation and cancels the toggle (React and the engine both listen on document, so only
@@ -74,13 +74,23 @@ function Tabs({ f }: { f: Feature }) {
   const view = useBp((s) => s.view);
   // under reduced motion the underline does not travel: it is simply under the new tab
   const reduce = useReducedMotion();
+  const ks = views(P);
+  // roving tabindex: Tab reaches the selected tab only, the arrows move between the rest (and switch the plan's lens with them)
+  const onKeys = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const at = Math.max(0, ks.indexOf(view)), n = ks.length;
+    const to = e.key === 'ArrowRight' ? (at + 1) % n : e.key === 'ArrowLeft' ? (at - 1 + n) % n : e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : -1;
+    if (to < 0) return;
+    e.preventDefault(); E.setView(ks[to]);
+    e.currentTarget.querySelectorAll<HTMLElement>('[role=tab]')[to]?.focus();
+  };
   return (
-    <div className="pg-tabs" role="tablist" aria-label="Feature page tabs (the plan's lens follows)">
-      {views(P).map((k, i) => {
+    <div className="pg-tabs" role="tablist" aria-label="Feature page tabs (the plan's lens follows)" onKeyDown={onKeys}>
+      {ks.map((k, i) => {
         const d = P.LENS[k], on = view === k, h = d ? f.lens[k]?.h ?? 'unmeasured' : '';
         const sub = d ? V.ui?.tabLabel?.(k) ?? d.name : 'Overview';
         return (
-          <button key={k} type="button" role="tab" aria-selected={on} className={on ? 'on' : ''} onClick={() => E.setView(k)}
+          <button key={k} type="button" role="tab" id={'pg-tab-' + k} aria-selected={on} aria-controls={on ? 'pg-panel' : undefined} tabIndex={on ? 0 : -1} className={on ? 'on' : ''} onClick={() => E.setView(k)}
             title={(d ? d.name + ': ' + (h === 'na' ? 'does not apply' : h) : 'General: the overview') + (i < 9 ? ' (' + (i + 1) + ')' : '')}>
             <span className="sh">{d ? d.short : 'GEN'}{d ? <i className={'hd ' + h} aria-hidden="true" /> : null}</span>
             <span className="nm">{sub}</span>
@@ -140,7 +150,7 @@ function Page({ f, enter, onCrumb }: { f: Feature; enter: number; onCrumb: (dept
       <Head f={f} back={onCrumb} closeRef={closeRef} />
       <div className="pg-scroll" ref={scroll} tabIndex={-1}>
         <EnterDelay.Provider value={delay}>
-          <div className="pg-body" key={view} role="tabpanel" aria-label={isLens ? E.M.P.LENS[view].name : 'General'}>
+          <div className="pg-body" key={view} id="pg-panel" role="tabpanel" aria-labelledby={'pg-tab-' + view}>
             {isLens ? <LensTab lens={view} f={f} /> : <GeneralTab f={f} />}
           </div>
         </EnterDelay.Provider>
@@ -162,6 +172,23 @@ export function FeatureSheet() {
   const s = useBp((s) => ({ open: s.open, phone: s.phone }), shallowEqual);
   const reduce = useReducedMotion() ?? false;
   const f = s.open ? E.M.P.F[s.open] ?? null : null;
+  const shown = !!f && !s.phone;
+  // while the page is open the plan and chrome behind it are inert (the toast stays reachable); on close they come back
+  // and focus returns to what opened the page, if it is still there and nothing else has taken focus meanwhile
+  useLayoutEffect(() => {
+    if (!shown) return;
+    const opener = document.activeElement as HTMLElement | null, page = document.getElementById('detail'), root = page?.closest('.bp');
+    const held: HTMLElement[] = [];
+    root?.querySelectorAll<HTMLElement>('.bp-map, .bp-ui > *').forEach((el) => {
+      if (el === page || el.contains(page) || el.id === 'toast' || el.classList.contains('toast-live') || el.classList.contains('pg-dim')) return;
+      if (!el.inert) { el.inert = true; held.push(el); }
+    });
+    return () => {
+      for (const el of held) el.inert = false;
+      const at = document.activeElement;
+      if (!at || at === document.body || page?.contains(at)) (opener && opener !== document.body && opener.isConnected ? opener : root?.querySelector<HTMLElement>('.bp-map'))?.focus({ preventScroll: true });
+    };
+  }, [shown, E]);
   // geometry: the page box and the tile rect, read when the page opens and again when it closes
   const [box, setBox] = useState<Rect | null>(null);
   const tile = useRef<Rect | null>(null), lastId = useRef<string | null>(null), crumbed = useRef(false);
@@ -198,7 +225,7 @@ export function FeatureSheet() {
       {f && !s.phone && [
         <motion.div key={"dim" + nth.current} className="pg-dim" aria-hidden="true" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduce ? 0.15 : MORPH }}
           onClick={() => E.closeFeature()} onWheel={(e) => document.getElementById('detail')?.querySelector('.pg-scroll')?.scrollBy({ top: e.deltaY })} />,
-        <motion.section key={"page" + nth.current} id="detail" className="pg" aria-label={'Feature page: ' + f.name} role="dialog" aria-modal="false" onKeyDown={pageKeys}
+        <motion.section key={"page" + nth.current} id="detail" className="pg" aria-label={'Feature page: ' + f.name} role="dialog" aria-modal="true" onKeyDown={pageKeys}
           style={{ left: b.x, top: b.y, width: b.w, height: b.h, transformOrigin: '0 0' }}
           custom={tile.current} variants={vPage} initial="from" animate="full" exit="from">
           <motion.div className="pg-in" variants={vInner}>
