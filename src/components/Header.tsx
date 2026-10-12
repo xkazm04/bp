@@ -18,30 +18,54 @@ function crumbLabel(E: ReturnType<typeof useEngine>, c: Crumb, short: boolean): 
   return (o as BayNode).cap.name;
 }
 
+/** Clauses the summary drops, in order, when the measured room is short: proposed/retired, being built, the feature count, live. Trouble and waiting questions go last (never). */
+const SUM_LAST = 4;
+
 /** The place's summary line (counts, trouble, waiting questions): the only crumb part that follows the sim and the time. */
-const CrumbSum = memo(function CrumbSum() {
+const CrumbSum = memo(function CrumbSum({ navRef, pk }: { navRef: React.RefObject<HTMLElement | null>; pk: string }) {
   const E = useEngine(), M = E.M;
   const s = useBp((s) => ({ place: s.place, open: s.open, t: s.t, delta: s.delta, simV: s.simV, who: s.who, view: s.view }), shallowEqual);
-  return useMemo(() => {
+  const el = useRef<HTMLSpanElement>(null);
+  const d = useMemo(() => {
     if (s.open) return null;
     const last = s.place[s.place.length - 1], cur = last ? E.placeById(last.t, last.id) : null, fs = cur ? cur.feats : M.P.features;
     const id = cur ? cur.id : 'ALL';
     const c = M.agg.countsOf(id, fs, s.t, s.delta), now = s.t === M.P.asOf;
     const bad = now ? M.agg.healthOf(id, fs, 'general').bad : 0;
     const asks = M.sim.has && now ? M.sim.stats(fs, s.who, s.view).asks : 0;
-    return (
-      <span className="sum">
-        <span className="st">{fs.length} features · <b>{c.live + c.flagged} live</b> · {c.build} being built · {c.paper} proposed{c.dep ? <> · {c.dep} being retired</> : null}</span>
-        {bad || asks ? (
-          <span className="att">
-            {bad ? <> · <em>{bad} in trouble</em></> : null}
-            {asks ? <> · <i>{asks} {asks === 1 ? 'question' : 'questions'} waiting</i></> : null}
-          </span>
-        ) : null}
-      </span>
-    );
+    return { n: fs.length, live: c.live + c.flagged, build: c.build, paper: c.paper, dep: c.dep, bad, asks };
     // simV is the sim's version: the asks change with it
   }, [E, M, s.place, s.open, s.t, s.delta, s.simV, s.who, s.view]);
+  // measured, not estimated: render everything, and while the line is wider than the room the flex layout leaves it, drop one tier and look again
+  const sig = pk + '|' + (d ? [d.n, d.live, d.build, d.paper, d.dep, d.bad, d.asks].join() : '');
+  const [st, setSt] = useState({ sig: '', lv: 0 });
+  const lv = st.sig === sig ? st.lv : 0;
+  useLayoutEffect(() => {
+    const n = el.current; if (!n) return;
+    if (n.scrollWidth > n.clientWidth + 1 && lv < SUM_LAST) setSt({ sig, lv: lv + 1 });
+    else if (st.sig !== sig) setSt({ sig, lv });
+  });
+  useEffect(() => {
+    const n = navRef.current; if (!n || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => setSt({ sig: '', lv: 0 }));
+    ro.observe(n);
+    return () => ro.disconnect();
+  }, [navRef]);
+  if (!d) return null;
+  const parts: React.ReactNode[] = [];
+  if (lv < 3) parts.push(<span key="n">{d.n} features</span>);
+  if (lv < 4) parts.push(<b key="l">{d.live} live</b>);
+  if (lv < 2) parts.push(<span key="b">{d.build} being built</span>);
+  if (lv < 1) { parts.push(<span key="p">{d.paper} proposed</span>); if (d.dep) parts.push(<span key="d">{d.dep} being retired</span>); }
+  const att: React.ReactNode[] = [];
+  if (d.bad) att.push(<em key="t">{d.bad} in trouble</em>);
+  if (d.asks) att.push(<i key="q">{d.asks} {d.asks === 1 ? 'question' : 'questions'} waiting</i>);
+  const all = parts.concat(att);
+  return (
+    <span className="sum" ref={el}>
+      {all.map((x, i) => <span key={i} className="cl">{i > 0 ? ' · ' : ''}{x}</span>)}
+    </span>
+  );
 });
 
 /** Room kept for the summary line beside the crumbs (it ellipsises below this). */
@@ -83,7 +107,7 @@ const Crumbs = memo(function Crumbs() {
           </button>
         </span>
       ))}
-      <CrumbSum />
+      <CrumbSum navRef={nav} pk={key} />
     </nav>
   );
 });
