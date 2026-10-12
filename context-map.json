@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "generator": "hand-partitioned (bp scan-sweep adoption; /perfect delta 2026-10-12)",
-  "generated_at": "2026-10-12T19:11:11.523Z",
+  "generator": "hand-partitioned (bp scan-sweep adoption; /perfect deltas 2026-10-12)",
+  "generated_at": "2026-10-12T21:30:35.406Z",
   "project": {
     "slug": "bp",
     "name": "bp - the product blueprint"
@@ -148,7 +148,12 @@
         "src/components/timeline/Strip.tsx",
         "src/components/timeline/check-keys.ts",
         "src/components/timeline/check-size.ts",
-        "src/components/timeline/keys.ts"
+        "src/components/timeline/keys.ts",
+        "src/components/timeline/check-run.ts",
+        "src/components/timeline/check-scrub.ts",
+        "src/components/timeline/run.ts",
+        "src/components/timeline/scrub.ts",
+        "src/components/timeline/shared.ts"
       ]
     },
     {
@@ -186,7 +191,8 @@
         "src/components/sheet/LensPanel.tsx",
         "src/components/sheet/Screens.tsx",
         "src/components/sheet/SheetBody.tsx",
-        "src/components/sheet/words.ts"
+        "src/components/sheet/words.ts",
+        "src/components/page/CodeTree.tsx"
       ]
     },
     {
@@ -256,7 +262,8 @@
         "src/engine/text.ts",
         "src/engine/theme.ts",
         "src/engine/render/flags.ts",
-        "src/engine/render/lens-glyph.ts"
+        "src/engine/render/lens-glyph.ts",
+        "src/engine/render/simwatch.ts"
       ]
     },
     {
@@ -353,9 +360,9 @@
         "src/variants/subtle/tools/crop.py",
         "src/variants/subtle/tools/grid.py",
         "src/variants/subtle/tools/perf_lens.py",
-        "src/variants/subtle/tools/rebuild.sh",
         "src/variants/subtle/tools/shots.py",
-        "src/variants/types.ts"
+        "src/variants/types.ts",
+        "src/variants/base/util.ts"
       ]
     },
     {
@@ -466,7 +473,14 @@
         "src/data/kettle.app-structure.json",
         "src/data/kettle.events.jsonl",
         "src/data/kettle.json",
-        "src/data/swarm.json"
+        "src/data/swarm.json",
+        "src/lib/data/sample.ts",
+        "src/lib/model/live-health.ts",
+        "src/lib/model/sample.ts",
+        "src/lib/model/timeview.ts",
+        "src/lib/scan/derive.ts",
+        "src/lib/scan/local-only.ts",
+        "src/lib/scan/scope.ts"
       ]
     },
     {
@@ -510,13 +524,22 @@
         "scripts/check-standard-fixtures.mjs",
         "scripts/check-stream-status.mjs",
         "scripts/check-tokens.mjs",
-        "scripts/overlays-loader.mjs"
+        "scripts/overlays-loader.mjs",
+        "scripts/check-all.mjs",
+        "scripts/check-live-health.ts",
+        "scripts/check-local-only.ts",
+        "scripts/check-route-guards.mjs",
+        "scripts/check-search.ts",
+        "scripts/check-timeview.ts",
+        "scripts/lib/prng.ts",
+        "scripts/lib/source.ts",
+        "scripts/lib/src-hooks.mjs"
       ]
     }
   ],
   "stats": {
     "contexts": 11,
     "groups": 6,
-    "files": 177
+    "files": 200
   }
 }

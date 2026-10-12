@@ -72,3 +72,7 @@ Context ids for commit scopes are the `id` fields in `context-map.json` (e.g. `a
 - Nightly runs: auto-accept every direction sized S/M/L; XL directions are parked `proposed` for human triage.
 
 ## Skill improvement log
+- 2026-10-12 (nightly, 7 waves, 52 directions over 11 contexts): scouting ALL contexts up front (2 parallel batches) and grouping waves by write set kept 3 builders busy with zero collisions; Engine.ts was the contention point and had to be serialised across 5 waves - put Engine.ts-touching directions in one lot per wave.
+- Builder "needs a browser" lists are not optional: the Director's `python scripts/shots.py` + small Playwright probes against `next start -p 3123` caught 3 regressions/defects gates could not (ghosted then vanished tile names from an LOD crossfade, a trackpad classifier misreading Chromium's synthetic wheelDeltaY, a header summary still clipping). Run shots after every wave that touches render or chrome.
+- A "fix" to a visual regression must be re-shot at the SAME view: the first ghosting fix (sequential fade) produced blank tiles at rest mid-band - verify at the exact viewport the bug was seen.
+- Hypothesis-framed directions work: dev-lens-dense-canvas was honestly refuted by its builder with evidence (dense lenses already show 4 parts) instead of shipping redundant chrome.
