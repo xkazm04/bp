@@ -87,6 +87,10 @@ per-frame work is a few hundred cheap primitives.
   baked one (`LOD_STEP`): a wheel zoom through the crossfade costs at most five extra rasters (one per 0.2 of blend) instead
   of one jump at a bucket crossing; outside the blend (pure ribbons, pure tiles) nothing changes. Tile text, the big/small tile
   layout, bay tags and room labels now fade over 8-16 px of size (room labels over the last 24 px of width they need).
+- **Per-tile records (canvas-render hygiene).** `makeGeom`, the blended mark rect and the `MarkArgs` handed to channels are
+  one reused record each (read during the call, never keep them; noted in lens/contract.ts), base's `composeGeneral`/`band`
+  hand back reused rects like subtle's, and a lens-dominated tile's outline `Path2D` is rebuilt only when its geometry, lens or
+  dominance changed since the last full raster (patches reuse it). The text width and wrap caches are capped (clear on overflow).
 
 ## Frame-loop allocations and layout reads (engine-frame-alloc)
 

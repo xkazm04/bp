@@ -4,6 +4,9 @@
 /** Smallest canvas text size the engine will ever set, in CSS px. */
 export const MIN_PX = 12;
 
+/** Cache caps: a map that outgrows its cap is cleared (entries are cheap to measure again; the working set is a few hundred strings per zoom). */
+const WC_MAX = 8000, WR_MAX = 4000;
+
 export class Text {
   private wc = new Map<string, number>();
   private wr = new Map<string, string[] | null>();
@@ -34,6 +37,7 @@ export class Text {
       this.m ||= document.createElement('canvas').getContext('2d');
       this.m!.font = font;
       v = this.m!.measureText(t).width;
+      if (this.wc.size >= WC_MAX) this.wc.clear();
       this.wc.set(key, v);
     }
     return v + ls * t.length;
@@ -50,6 +54,7 @@ export class Text {
     }
     if (cur) lines.push(cur);
     const r = ok && lines.length <= maxL ? lines : null;
+    if (this.wr.size >= WR_MAX) this.wr.clear();
     this.wr.set(key, r);
     return r;
   }

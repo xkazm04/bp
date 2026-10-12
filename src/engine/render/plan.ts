@@ -6,13 +6,14 @@ import type { Feature } from '@/lib/data';
 import { EVIDENCE_BY_DENSITY } from '@/lib/standard/present';
 import { BH, RH, deltaWin, lensHealth, stageAt, stageParts, STAGE_WORD, type BldNode, type TileNode } from '@/lib/model';
 import type { Engine } from '../Engine';
-import type { ChannelAggregate, Rect, TileGeom } from '../lens/contract';
+import type { ChannelAggregate, FeatureLive, MarkArgs, Rect, TileGeom } from '../lens/contract';
+import type { Theme } from '../theme';
+import { clamp } from '../camera';
 import { drawText } from '../text';
 import { cloud, drawHealthBar, drawStageBar, glyphAgent, glyphPin, stageFill, stageStroke } from './glyphs';
 import { patchMiss } from './simwatch';
 import { onView, rs, smooth, sxv, syv, type SRect, type View } from './view';
 
-const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const scratch: SRect = { x: 0, y: 0, w: 0, h: 0 };
 
@@ -57,14 +58,20 @@ export function drawDecor(E: Engine, ctx: CanvasRenderingContext2D, v: View) {
 }
 
 // ------------------------------------------------------------------------------------------- tiles
+// one geometry record, refilled per tile: a tile is painted to its end before the next begins, and channels read it during the call
+const GEO: TileGeom = { x: 0, y: 0, w: 0, h: 0, form: 'tile', u: 1, k: 1, strip: { x: 0, y: 0, w: 0, h: 0 }, body: { x: 0, y: 0, w: 0, h: 0 }, text: false };
 function makeGeom(E: Engine, x: number, y: number, w: number, h: number, form: 'ribbon' | 'tile', k: number): TileGeom {
-  const u = E.U;
-  const text = form === 'tile' && w >= 100 * u && h >= 44 * u;
-  const strip: Rect = form === 'tile'
-    ? { x: x + 6 * u, y: y + 3 * u, w: w - 12 * u, h: clamp(h * 0.07, 3 * u, 6 * u) }
-    : { x, y, w, h: Math.min(3 * u, h * 0.2) };
-  const body: Rect = form === 'tile' ? { x: x + 3 * u, y: y + 3 * u, w: w - 6 * u, h: h - 6 * u } : { x: x + 1, y: y + 1, w: Math.max(0, w - 2), h: Math.max(0, h - 2) };
-  return { x, y, w, h, form, u, k, strip, body, text };
+  const u = E.U, g = GEO, s = g.strip, b = g.body;
+  g.x = x; g.y = y; g.w = w; g.h = h; g.form = form; g.u = u; g.k = k;
+  g.text = form === 'tile' && w >= 100 * u && h >= 44 * u;
+  if (form === 'tile') {
+    s.x = x + 6 * u; s.y = y + 3 * u; s.w = w - 12 * u; s.h = clamp(h * 0.07, 3 * u, 6 * u);
+    b.x = x + 3 * u; b.y = y + 3 * u; b.w = w - 6 * u; b.h = h - 6 * u;
+  } else {
+    s.x = x; s.y = y; s.w = w; s.h = Math.min(3 * u, h * 0.2);
+    b.x = x + 1; b.y = y + 1; b.w = Math.max(0, w - 2); b.h = Math.max(0, h - 2);
+  }
+  return g;
 }
 
 function generalEvidence(E: Engine, f: Feature, st: ReturnType<typeof stageAt>): string[] {
@@ -110,6 +117,10 @@ function healthMarks(E: Engine, ctx: CanvasRenderingContext2D, h: string, x: num
   ctx.globalAlpha = ga;
 }
 
+// the blended rect and the channel's arguments: refilled per tile per lens, never allocated (channels use them during the call)
+const BLEND: Rect = { x: 0, y: 0, w: 0, h: 0 };
+const MA = { ctx: null, r: BLEND, slot: null, lens: null, tile: GEO, f: null, w: 0, x: 0, compact: false, th: null, stage: null, now: false, live: null, accent: '' } as unknown as MarkArgs;
+
 /** Lens channels on one tile or ribbon segment. */
 function lensMarks(E: Engine, ctx: CanvasRenderingContext2D, g: TileGeom, f: Feature, st: ReturnType<typeof stageAt>) {
   const m = E.mixS, slots = E.expr.composeGeneral(g, E.lensIds), L = E.live(f), ga = ctx.globalAlpha, P = E.M.P;
@@ -120,25 +131,39 @@ function lensMarks(E: Engine, ctx: CanvasRenderingContext2D, g: TileGeom, f: Fea
     const x = m.x[l], slot = slots[l] ?? null;
     const exp = E.expr.expandedRect ? E.expr.expandedRect(g, l) : g.body;
     let r: Rect, w: number;
-    if (slot) { r = { x: lerp(slot.x, exp.x, x), y: lerp(slot.y, exp.y, x), w: lerp(slot.w, exp.w, x), h: lerp(slot.h, exp.h, x) }; w = p; }
+    if (slot) { r = BLEND; r.x = lerp(slot.x, exp.x, x); r.y = lerp(slot.y, exp.y, x); r.w = lerp(slot.w, exp.w, x); r.h = lerp(slot.h, exp.h, x); w = p; }
     else { if (x <= 0.004) continue; r = exp; w = p * x; }
     if (r.w < 1 || r.h < 1) continue;
+    const a = MA; a.ctx = ctx; a.r = r; a.slot = slot; a.lens = P.LENS[l]; a.tile = g; a.f = f; a.w = w; a.x = x; a.compact = x < 0.5; a.th = E.th; a.stage = st; a.now = E.isNow; a.live = L; a.accent = E.accentOf(l);
     ctx.save();
-    try { ch.marks({ ctx, r, slot, lens: P.LENS[l], tile: g, f, w, x, compact: x < 0.5, th: E.th, stage: st, now: E.isNow, live: L, accent: E.accentOf(l) }); }
+    try { ch.marks(a); }
     catch (err) { lensFailed(E, l, 'marks', err); }
     finally { ctx.restore(); }
     ctx.globalAlpha = ga;
   }
 }
 
+/** A built outline and what it was built from: a tile repainted with the same geometry, lens and dominance (a patch, a neighbour's repaint) reuses it. */
+interface Outline { top: string; d: number; x: number; y: number; w: number; h: number; u: number; k: number; p: Path2D }
+const outlines = new WeakMap<Engine, Map<string, Outline>>();
+/** A full raster starts: shapes are rebuilt (feature data may have moved); only the patches that follow it reuse them. */
+export function resetOutlines(E: Engine) { outlines.get(E)?.clear(); }
+
 /** Outline path: the base rectangle, or the dominant lens's shape blended in by its dominance. */
 function outline(E: Engine, g: TileGeom, f: Feature): Path2D | null {
-  const top = E.mixS.top;
-  if (!top || E.mixS.topD <= 0.001) return null;
+  const top = E.mixS.top, d = E.mixS.topD;
+  if (!top || d <= 0.001) return null;
   const ch = E.channel(top);
   if (!ch || !ch.shape || failed(E, top)) return null;
+  let m = outlines.get(E);
+  if (!m) outlines.set(E, (m = new Map()));
+  let o = m.get(f.id);
+  if (o && o.top === top && o.d === d && o.x === g.x && o.y === g.y && o.w === g.w && o.h === g.h && o.u === g.u && o.k === g.k) return o.p;
   const p = new Path2D();
-  try { ch.shape(p, g, f, E.mixS.topD); } catch (err) { lensFailed(E, top, 'shape', err); return null; }
+  try { ch.shape(p, g, f, d); } catch (err) { lensFailed(E, top, 'shape', err); return null; }
+  if (m.size > 1500) m.clear();
+  if (o) { o.top = top; o.d = d; o.x = g.x; o.y = g.y; o.w = g.w; o.h = g.h; o.u = g.u; o.k = g.k; o.p = p; }
+  else m.set(f.id, { top, d, x: g.x, y: g.y, w: g.w, h: g.h, u: g.u, k: g.k, p });
   return p;
 }
 
@@ -361,7 +386,7 @@ function fadePair(ctx: CanvasRenderingContext2D, a: number, D: number, g: () => 
 function drawSwarmLine(E: Engine, ctx: CanvasRenderingContext2D, x: number, y: number, st: ReturnType<Engine['M']['sim']['stats']>, maxW: number): number {
   if (!E.M.sim.has || !st.n) return 0;
   const th = E.th, u = E.U, f = E.tx.f(13, 500, true);
-  const items: [string, number, string][] = [['working', st.working, th.mintText], ['waiting', st.waiting, th.amberText], ['blocked', st.blocked + st.failed, th.red]];
+  const items: [string, number, string][] = [['working', st.working, th.mintText], ['waiting', st.waiting, th.amberText], ['blocked', st.blocked + st.failed, th.red2]];
   if (st.paused) items.push(['paused', st.paused, th.ink]);
   let gx = x, used = 0;
   for (const it of items) {

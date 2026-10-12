@@ -14,12 +14,12 @@
 // cluster of several, flies to them so they split. The engine hit-tests the flags of the last frame.
 import type { Feature } from '@/lib/data';
 import type { Engine } from '../Engine';
+import { clamp } from '../camera';
 import { drawText } from '../text';
 import { glyph } from './lens-glyph';
 import { featRect } from './plan';
 import { sxv, syv, type SRect, type View } from './view';
 
-const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
 
 let ON: boolean | null = null;
 /** Flags are on unless the page asks ?flags=0 (to compare against the plan without them). */

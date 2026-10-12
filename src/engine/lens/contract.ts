@@ -37,7 +37,7 @@ export interface TileGeom extends Rect {
   text: boolean;
 }
 
-/** What a channel is asked to draw. All geometry is screen px. */
+/** What a channel is asked to draw. All geometry is screen px. The engine reuses this record, `r` and the tile geometry for every call: read them during the call, never keep them. */
 export interface MarkArgs {
   ctx: CanvasRenderingContext2D;
   /** The rect this channel owns right now: its General slot, its expanded rect, or a blend. */

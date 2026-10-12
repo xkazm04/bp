@@ -7,9 +7,9 @@ export interface PatternSpec { kind: PatternKind; size: number; color: string; l
 
 export interface Theme {
   mode: 'dark' | 'light';
-  paper: string; ink: string; inkHi: string; ink2: string; ink3: string; ink4: string; line: string; grid: string;
+  paper: string; ink: string; inkHi: string;
   halo: string; accent: string; mint: string; amber: string; amberText: string; mintText: string; red: string; red2: string; delta: string;
-  glyphEdge: string; labelBg: string; tileBase: string; poche: string; chipBg: string; onInk: string; panel: string;
+  glyphEdge: string; labelBg: string; tileBase: string; poche: string; chipBg: string; panel: string;
   inkRGB: RGB;
   /** Ink at alpha `a` (cached string). */
   inkA(a: number): string;
@@ -17,7 +17,7 @@ export interface Theme {
   alpha(color: string, a: number): string;
   /** A cached, world-anchored hatch pattern. */
   pattern(spec: PatternSpec): CanvasPattern | null;
-  sans: string; mono: string; hand: string;
+  sans: string; mono: string;
 }
 
 export function parseColor(c: string): [number, number, number, number] {
@@ -109,13 +109,12 @@ export function readTheme(res: number): ThemeHandle {
   };
   const theme: Theme = {
     mode,
-    paper: v('--paper', '#071a33'), ink, inkHi: v('--ink-hi', '#ffffff'), ink2: v('--ink-2', 'rgba(223,240,255,.74)'),
-    ink3: v('--ink-3', 'rgba(223,240,255,.38)'), ink4: v('--ink-4', 'rgba(223,240,255,.16)'), line: v('--line', 'rgba(223,240,255,.55)'),
-    grid: v('--grid', 'rgba(127,224,255,.07)'), halo: v('--halo', 'rgba(7,26,51,.92)'), accent: v('--accent', '#7fe0ff'),
+    paper: v('--paper', '#071a33'), ink, inkHi: v('--ink-hi', '#ffffff'),
+    halo: v('--halo', 'rgba(7,26,51,.92)'), accent: v('--accent', '#7fe0ff'),
     mint: mintMark, amber: amberMark, amberText: textGrade('--amber-2', amberMark), mintText: textGrade('--mint-2', mintMark), red: v('--red', '#ff6a58'), red2: v('--red-2', '#ff9a8c'),
     delta: v('--delta', '#9fe8ff'), glyphEdge: v('--glyph-edge', '#04223a'), labelBg: v('--label-bg', '#0b2c52'),
     tileBase: v('--tile-base', 'rgba(3,18,40,.30)'), poche: v('--poche', '#0c2f57'), chipBg: v('--chip-bg', 'rgba(5,26,50,.95)'),
-    onInk: v('--on-ink', '#061b38'), panel: v('--panel-solid', '#0a2342'),
+    panel: v('--panel-solid', '#0a2342'),
     inkRGB: [ir, ig, ib],
     inkA(a) {
       const k = Math.round(a * 1000);
@@ -135,7 +134,6 @@ export function readTheme(res: number): ThemeHandle {
     pattern: (spec) => pats.get(spec),
     sans: fam('--font-sans', '"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif'),
     mono: fam('--font-mono', '"IBM Plex Mono",Consolas,monospace'),
-    hand: fam('--font-hand', 'cursive'),
   };
   return { theme, anchor: (ox, oy) => pats.anchor(ox, oy) };
 }

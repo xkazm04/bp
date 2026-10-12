@@ -5,11 +5,11 @@
 import { GA_MILESTONE, astat, hash01, type SimAgent, type SimDecision } from '@/lib/model';
 import type { Engine } from '../Engine';
 import { drawText } from '../text';
+import { clamp } from '../camera';
 import { agentColor, glyphAgent, glyphPin } from './glyphs';
 import { featRect } from './plan';
 import { onView, rs, sxv, syv, type SRect, type View } from './view';
 
-const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
 // Reduced motion (E.cam.reduced, the engine's one signal): dashes hold still, expanding rings hold at mid radius.
 const dashOff = (E: Engine, m: number) => (E.cam.reduced ? 0 : E.dashT * m);
 const phase = (E: Engine, x: number) => (E.cam.reduced ? 0.5 : x % 1);
@@ -50,8 +50,6 @@ export function agentPos(E: Engine, v: View, A: SimAgent, lod: number, now: numb
   }
   return out;
 }
-
-function inView(v: View, r: SRect | null, m: number) { return !!r && !(r.x > v.FW + m || r.y > v.FH + m || r.x + r.w < -m || r.y + r.h < -m); }
 
 // ------------------------------------------------------------------------------------- overlays
 const sr3: SRect = { x: 0, y: 0, w: 0, h: 0 };
@@ -96,7 +94,7 @@ function outlineIf(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod: numbe
   ctx.strokeStyle = col; ctx.lineWidth = 1.6;
   for (const f of E.M.P.features) {
     if (ga) { if (f.milestone !== GA_MILESTONE) continue; } else { const h = f.lens[key!]?.h; if (h !== 'bad' && h !== 'watch') continue; }
-    const r = featRect(E, v, f.id, lod, sr1); if (r && inView(v, r, 0)) ctx.strokeRect(r.x - 2, r.y - 2, r.w + 4, r.h + 4);
+    const r = featRect(E, v, f.id, lod, sr1); if (r && onView(v, r, 0)) ctx.strokeRect(r.x - 2, r.y - 2, r.w + 4, r.h + 4);
   }
 }
 function selBox(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod: number, sid: string | null) {
@@ -155,7 +153,7 @@ export function drawOrderZones(E: Engine, ctx: CanvasRenderingContext2D, v: View
     } else if (hi || (o.user && E.isNow)) {
       const ids = sim.ordMap()[o.id] || {};
       for (const id in ids) {
-        const fr = featRect(E, v, id, lod, sr1); if (!fr || !inView(v, fr, 0)) continue;
+        const fr = featRect(E, v, id, lod, sr1); if (!fr || !onView(v, fr, 0)) continue;
         ctx.save(); ctx.strokeStyle = hi ? th.inkHi : th.alpha(th.amber, 0.8); ctx.lineWidth = hi ? 2.4 : 1.5; ctx.setLineDash([6, 4]); ctx.lineDashOffset = dashOff(E, -0.5);
         ctx.strokeRect(fr.x - 2, fr.y - 2, fr.w + 4, fr.h + 4); ctx.restore();
         if (o.user && lod > 0.5 && fr.w >= 60 * u) {
@@ -196,7 +194,7 @@ export function drawHeat(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod:
     for (const a of ag) if (a.status === 'working' && !a.paused) { working = true; break; }
     const hv = sim.heatNow(fid, now);
     if (!working && hv <= 0.15) continue;
-    const r = featRect(E, v, fid, lod, sr1); if (!r || !inView(v, r, 0)) continue;
+    const r = featRect(E, v, fid, lod, sr1); if (!r || !onView(v, r, 0)) continue;
     const hh = clamp(0.35 + hv * 0.25, 0.2, 1);
     ctx.globalAlpha = hh * lod;
     ctx.drawImage(glow, r.x, r.y + r.h * 0.15, r.w, r.h * 0.85);
@@ -283,7 +281,7 @@ export function drawPulses(E: Engine, ctx: CanvasRenderingContext2D, v: View, lo
   for (const p of sim.pulses) {
     const age = (now - p.t0) / (p.k === 'dep' || p.k === 'ask' ? 2200 : 1500);
     if (age >= 1 || age < 0) continue;
-    const r = featRect(E, v, p.f, lod, sr1); if (!r || !inView(v, r, 40)) continue;
+    const r = featRect(E, v, p.f, lod, sr1); if (!r || !onView(v, r, 40)) continue;
     const cx = r.x + r.w / 2, cy = r.y + r.h / 2, rad = (5 + (E.cam.reduced ? 0.5 : age) * (p.k === 'dep' ? 46 : 28)) * u;
     ctx.strokeStyle = pulseCol(th, p.k); ctx.globalAlpha = (1 - age) * 0.85;
     ctx.beginPath(); ctx.arc(cx, cy, rad, 0, 6.2832); ctx.stroke();
@@ -292,9 +290,12 @@ export function drawPulses(E: Engine, ctx: CanvasRenderingContext2D, v: View, lo
   ctx.restore();
 }
 
+const pinXY = { x: 0, y: 0 };
+/** Where a room's question pin stands (screen px). One shared record: read it at once. */
 export function roomPinPos(E: Engine, v: View, ri: number): { x: number; y: number } {
-  const R = E.M.L.rooms[ri], r = rs(v, R, sr2), u = E.U;
-  return { x: r.x + r.w - 18 * u, y: r.y + 32 * u };
+  const r = rs(v, E.M.L.rooms[ri], sr2), u = E.U;
+  pinXY.x = r.x + r.w - 18 * u; pinXY.y = r.y + 32 * u;
+  return pinXY;
 }
 
 export function drawPins(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod: number, now: number) {
@@ -310,7 +311,8 @@ export function drawPins(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod:
       for (const d of ds) { const e = sim.emph(d, S.who, S.view); if (e) { em++; if (d.urg === 'high') hi = true; } if (d.isNew) anyNew = true; }
       const ring = anyNew ? phase(E, now / 1600) : 0;
       ctx.globalAlpha = ga;
-      glyphPin(ctx, th, r.x + r.w - 18 * u, r.y + 32 * u, hi ? 'high' : em ? 'med' : 'low', em > 0, 0.9, ds.length, ring, u, pf);
+      const pp = roomPinPos(E, v, ri);
+      glyphPin(ctx, th, pp.x, pp.y, hi ? 'high' : em ? 'med' : 'low', em > 0, 0.9, ds.length, ring, u, pf);
     }
     ctx.restore();
   }
@@ -319,7 +321,7 @@ export function drawPins(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod:
     for (const fid in sim.DOF) {
       const ds = sim.DOF[fid]; if (!ds.length) continue;
       const T = E.M.L.TILE[fid]; if (!T) continue;
-      const r = rs(v, T, sr1); if (!inView(v, r, 20)) continue;
+      const r = rs(v, T, sr1); if (!onView(v, r, 20)) continue;
       for (let j = 0; j < ds.length; j++) {
         const d = ds[j], ring = d.isNew ? phase(E, now / 1600) : S.dec === d.id ? phase(E, now / 1200) : 0;
         glyphPin(ctx, th, r.x + r.w - 12 * u - j * 18 * u, r.y + r.h - 5 * u, d.urg, sim.emph(d, S.who, S.view), 0.85, 0, ring, u, pf);
@@ -333,7 +335,7 @@ export function drawBreaches(E: Engine, ctx: CanvasRenderingContext2D, v: View, 
   const sim = E.M.sim; if (!sim.has || !E.isNow) return;
   const u = E.U, th = E.th, seen = E.breachSet();
   for (const fid of seen) {
-    const r = featRect(E, v, fid, lod, sr1); if (!r || !inView(v, r, 20)) continue;
+    const r = featRect(E, v, fid, lod, sr1); if (!r || !onView(v, r, 20)) continue;
     const big = lod > 0.5 && r.w >= 40 * u, rr = (big ? 7.5 : 4) * u, cx = big ? r.x : r.x + r.w / 2, cy = big ? r.y : r.y - 7 * u;
     const pu = sim.playing && !E.cam.reduced ? (now / 1500 + hash01(fid)) % 1 : 0.4;
     ctx.save(); ctx.strokeStyle = th.red; ctx.globalAlpha = (1 - pu) * 0.7; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(cx, cy, rr + pu * 8 * u, 0, 6.2832); ctx.stroke();
@@ -357,7 +359,7 @@ export function drawPreview(E: Engine, ctx: CanvasRenderingContext2D, v: View, l
   const u = E.U, th = E.th, col = p.kind === 'pause' ? th.amber : th.mint;
   ctx.save();
   for (const id in p.targets) {
-    const fr = featRect(E, v, id, lod, sr1); if (!fr || !inView(v, fr, 0)) continue;
+    const fr = featRect(E, v, id, lod, sr1); if (!fr || !onView(v, fr, 0)) continue;
     ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.lineDashOffset = dashOff(E, -1);
     ctx.fillStyle = th.alpha(col, p.kind === 'pause' ? 0.08 : 0.12); ctx.fillRect(fr.x, fr.y, fr.w, fr.h); ctx.strokeRect(fr.x - 2, fr.y - 2, fr.w + 4, fr.h + 4);
   }

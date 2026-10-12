@@ -32,10 +32,12 @@ export function healthCell(a: MarkArgs, h: Health) {
   ctx.fillRect(r.x, r.y, r.w, r.h);
 }
 /** The evidence band: the lower part of the tile body (bottom half on small segments). */
+const BAND: Rect = { x: 0, y: 0, w: 0, h: 0 };
+/** One reused record (the engine reads it at once and never keeps it). */
 export function band(tile: TileGeom): Rect {
-  const b = tile.body;
-  const f = tile.text ? 0.34 : 0.55;
-  return { x: b.x, y: b.y + b.h * (1 - f), w: b.w, h: b.h * f };
+  const b = tile.body, f = tile.text ? 0.34 : 0.55;
+  BAND.x = b.x; BAND.y = b.y + b.h * (1 - f); BAND.w = b.w; BAND.h = b.h * f;
+  return BAND;
 }
 /** Crossfade helper: compact (health cell) below x = 0.5, expanded marks above. */
 function twoForms(a: MarkArgs, h: Health, expanded: (a: MarkArgs) => void) {
@@ -199,6 +201,10 @@ const quality: LensChannel = {
   aggregate(fs) { return { parts: [count(fs, (f) => bl(f).quality.status === 'failing') + ' failing tests', fs.reduce((s, f) => s + bl(f).quality.openBugs.p1, 0) + ' open P1 bugs'] }; },
 };
 
+// composeGeneral runs per tile per frame of a tween: reused records (the registry is fixed per engine)
+const SLOTS: Record<string, Rect> = {};
+const NO_SLOTS: Readonly<Record<string, Rect>> = {};
+
 export const baseExpression: LensExpression = {
   id: 'base',
   name: 'Base',
@@ -206,10 +212,13 @@ export const baseExpression: LensExpression = {
   fallback: manifestChannel,
   composeGeneral(tile, ids) {
     // one health cell per enabled lens in the strip along the top edge; ribbons keep A/1's calm segments
-    if (tile.form !== 'tile' || tile.strip.w < 60 * tile.u || !ids.length) return {};
-    const n = ids.length, s = tile.strip, gap = 2 * tile.u, w = (s.w - gap * (n - 1)) / n, out: Record<string, Rect> = {};
-    ids.forEach((l, i) => { out[l] = { x: s.x + i * (w + gap), y: s.y, w, h: s.h }; });
-    return out;
+    if (tile.form !== 'tile' || tile.strip.w < 60 * tile.u || !ids.length) return NO_SLOTS;
+    const n = ids.length, s = tile.strip, gap = 2 * tile.u, w = (s.w - gap * (n - 1)) / n;
+    for (let i = 0; i < n; i++) {
+      const r = SLOTS[ids[i]] ?? (SLOTS[ids[i]] = { x: 0, y: 0, w: 0, h: 0 });
+      r.x = s.x + i * (w + gap); r.y = s.y; r.w = w; r.h = s.h;
+    }
+    return SLOTS;
   },
   expandedRect: (tile) => band(tile),
   spring: { stiffness: 170, damping: 26 },

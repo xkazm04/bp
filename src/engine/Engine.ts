@@ -15,10 +15,10 @@ import { initialState, type Crumb, type DockTab, type HoverInfo, type UIState } 
 import { readTheme, type Theme } from './theme';
 import { Text } from './text';
 import { StaticCache, deviceRes } from './render/static-cache';
-import { buildWallPaths, drawBuildings, drawDecor, drawGrid, drawLabels, featRect } from './render/plan';
+import { buildWallPaths, drawBuildings, drawDecor, drawGrid, drawLabels, featRect, resetOutlines } from './render/plan';
 import {
   agentPos, drawAgents, drawBreaches, drawFocus, drawHeat, drawLasso, drawOrderZones, drawOverlays, drawPins, drawPreview,
-  drawPulses, drawReleases, drawTargets, type APos,
+  drawPulses, drawReleases, drawTargets, roomPinPos, type APos,
 } from './render/dynamic';
 import { KeyPlan } from './render/keyplan';
 import { SimWatch } from './render/simwatch';
@@ -395,7 +395,7 @@ export class Engine {
     const settled = performance.now() - this.lastCamMove > 140;
     let rastered = false;
     if (st === 'stale' || (st === 'transform' && settled && !gesture)) {
-      this.cache.render(c, key, this.FW, this.FH, this.RES, (g, v) => { this.watch.begin(); this.paintPlan(g, v); }, this.mix.moving ? 0 : undefined, this.lod(c.k)); // the camera is still while the lens mix springs: no pan margin to pay for
+      this.cache.render(c, key, this.FW, this.FH, this.RES, (g, v) => { this.watch.begin(); resetOutlines(this); this.paintPlan(g, v); }, this.mix.moving ? 0 : undefined, this.lod(c.k)); // the camera is still while the lens mix springs: no pan margin to pay for
       this.perf.rasters++; this.perf.lastRasterMs = this.cache.lastMs; rastered = true; this.simPatch = false;
     } else if (st === 'transform') {
       // still moving (or settled mid-gesture): wake once more after the settle window to re-raster
@@ -841,7 +841,7 @@ export class Engine {
       const rd = this.roomDecs();
       for (let i = 0; i < rd.length; i++) {
         if (!rd[i].length) continue;
-        const R = this.M.L.rooms[i], r = rs(v, R), bx = r.x + r.w - 18 * u, by = r.y + 32 * u;
+        const R = this.M.L.rooms[i], pp = roomPinPos(this, v, i), bx = pp.x, by = pp.y;
         if (px >= bx - 15 * u && px <= bx + 16 * u && py >= by - 27 * u && py <= by + 4 * u) {
           const ds = rd[i].slice().sort((a, b) => Number(sim.emph(b, S.who, S.view)) - Number(sim.emph(a, S.who, S.view)) || sim.score(b) - sim.score(a));
           return { list: ds, d: ds[0], cluster: true, at: R.d.name };
