@@ -4,6 +4,8 @@
 import { useEffect, useState } from 'react';
 import type { AppStructure } from '@/lib/standard/types';
 import type { Agent, AgentStatus, Decision, ReplayEvent, ReplayType, Squad, Swarm } from '@/lib/data/types';
+import { latestRun, latestReading, measuredFeatures } from './derive.ts';
+import { scopeFeatures } from '../../components/timeline/run.ts';
 import { fullScan as full, isEmptyScan as isEmpty, type Activity, type ActivityKind, type Coverage, type DecisionBody, type Measurement, type Proposal, type ProductInfo, type Run, type ScanDelta, type ScanSnapshot } from './types.ts';
 
 /** `loading` until the structure arrives; `missing` = no store or structure file; `offline` = reconnecting. */
@@ -152,23 +154,27 @@ const fmt = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(
 const title = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** The Approve option's consequence: the metric move the proposal promises, from its latest reading when there is one. */
-function expectedText(p: Proposal, readings: Measurement[]): string {
+function expectedText(p: Proposal, scan: ScanSnapshot): string {
   if (!p.metric || p.expected_delta === undefined) return 'Queued for the next execute phase';
-  let last: Measurement | undefined;
-  for (const m of readings) if (m.feature === p.feature && m.lens === p.lens && m.metric === p.metric && (!last || m.measured_at >= last.measured_at)) last = m;
+  const last = latestReading(scan, p.feature, p.lens, p.metric);
   const unit = last?.unit ? ' ' + last.unit : '', d = p.expected_delta;
   const move = (d > 0 ? '+' : '') + fmt(d) + unit;
   return last ? `${p.metric}: ${fmt(last.value)} → ${fmt(last.value + d)}${unit} (${move})` : `${p.metric} ${move}`;
 }
+
+/** A feature as the swarm feed needs it: its id and the domain and capability a run's scope can name. */
+export interface SwarmFeature { id: string; domain: string; capability: string }
 
 /**
  * The scan as a swarm: one squad and one agent per lens in the latest run, each on the feature of its
  * latest activity row (`error` -> failed); open proposals (`proposed`) become decisions whose options
  * are Approve / Decline; activity rows become the replay.
  */
-export function swarmFromScan(scan: ScanSnapshot, featureSlugs: readonly string[]): Swarm {
-  const run = scan.runs.reduce<Run | undefined>((b, r) => (!b || r.started_at > b.started_at ? r : b), undefined);
-  const known = new Set(featureSlugs), first = featureSlugs[0] ?? '';
+export function swarmFromScan(scan: ScanSnapshot, features: readonly (string | SwarmFeature)[]): Swarm {
+  const run = latestRun(scan) ?? undefined;
+  const feats: SwarmFeature[] = features.map((f) => (typeof f === 'string' ? { id: f, domain: '', capability: '' } : f));
+  const known = new Set(feats.map((f) => f.id)), first = feats[0]?.id ?? '';
+  const total = run ? scopeFeatures(run, feats).length : 0; // progress is against what the run was pointed at
   const empty: Swarm = { asOf: run?.started_at ?? new Date().toISOString(), note: 'Live lens scan: no run yet.', squads: [], agents: [], decisions: [], orders: [], replay: [], totals: {} };
   if (!run) return empty;
   const t0 = ms(run.started_at), running = run.status === 'running';
@@ -187,8 +193,8 @@ export function swarmFromScan(scan: ScanSnapshot, featureSlugs: readonly string[
     for (let i = rows.length - 1; i >= 0 && !placed; i--) if (rows[i].feature && known.has(rows[i].feature!)) placed = rows[i];
     const wait = open.find((p) => p.lens === lens);
     const status: AgentStatus = !running ? 'idle' : last?.kind === 'error' ? 'failed' : wait ? 'waiting' : 'working';
-    const measured = new Set(scan.measurements.filter((m) => m.run_id === run.id && m.lens === lens).map((m) => m.feature));
-    const pct = featureSlugs.length ? Math.min(99, Math.round((measured.size / featureSlugs.length) * 100)) : 0;
+    const measured = measuredFeatures(scan, run.id, lens);
+    const pct = total ? Math.min(99, Math.round((measured.size / total) * 100)) : 0;
     const a: Agent = {
       id: agentOf(lens), squad: sq, role, status, feature: placed?.feature ?? first,
       task: last?.text ?? (running ? `starting the ${lens} scan` : `${lens} scan ${run.status}`),
@@ -202,7 +208,7 @@ export function swarmFromScan(scan: ScanSnapshot, featureSlugs: readonly string[
   const decisions: Decision[] = open.map((p) => ({
     id: p.id, feature: p.feature, domain: '', lens: p.lens, decider: '', askedBy: agentIds.has(agentOf(p.lens)) ? agentOf(p.lens) : '',
     question: p.title,
-    options: [{ label: 'Approve', consequence: expectedText(p, scan.measurements) }, { label: 'Decline', consequence: 'Stays in the backlog as declined' }],
+    options: [{ label: 'Approve', consequence: expectedText(p, scan) }, { label: 'Decline', consequence: 'Stays in the backlog as declined' }],
     recommended: 0, urgency: (p.risk ?? 0) >= 7 ? 'high' : (p.risk ?? 0) >= 4 ? 'medium' : 'low',
     waitingSince: p.created_at, blocksAgents: 0, affects: [p.feature],
   }));

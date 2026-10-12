@@ -18,7 +18,7 @@ import { LIVE_DECIDER, SwarmSim } from './sim';
  */
 export function liveSwarm(P: Product, scan: ScanSnapshot): Swarm {
   const F = P.base.features, dom = new Map(F.map((f) => [f.id, f.domain]));
-  const S = swarmFromScan(scan, F.map((f) => f.id));
+  const S = swarmFromScan(scan, F);
   return {
     ...S,
     decisions: S.decisions.filter((d) => dom.has(d.feature)).map((d) => ({ ...d, domain: d.domain || dom.get(d.feature)!, decider: d.decider || LIVE_DECIDER })),

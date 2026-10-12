@@ -4,6 +4,7 @@
 //     `shots.report` an object or absent, whatever text the writer left in them;
 //   - the JSON never contains `null`;
 //   - a run row in any of those states does not break the swarm feed (`swarmFromScan`);
+//   - swarm progress is measured against the run's scope, and an unscoped run derives what a brute-force pass does;
 //   - the stream cursor resends nothing after `advance`, and a row that ties on the cursor's timestamp
 //     is sent exactly once.
 // Run: node scripts/check-scan-wire.ts  (Node's type stripping; no build step). Exit 1 on any failure.
@@ -16,7 +17,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { advance, close, newCursor, openRead, readDelta, readSnapshot, snapshotOf } from '../src/lib/scan/store.server.ts';
 import { swarmFromScan } from '../src/lib/scan/client.ts';
 import { PRODUCTS_FILE, listProducts } from '../src/lib/scan/products.server.ts';
-import type { ScanSnapshot } from '../src/lib/scan/types.ts';
+import type { Measurement, Proposal, Run, ScanSnapshot } from '../src/lib/scan/types.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-scan-wire-'));
@@ -71,6 +72,30 @@ try {
     let err = '';
     try { swarmFromScan(only, ['f1']); } catch (e) { err = (e as Error).message; }
     check(`swarmFromScan survives run ${id}`, !err, err);
+  }
+
+  // ---- swarm derivation: scoped progress, and the indexed pass equals a brute-force one on an unscoped run
+  {
+    const feats = ['a', 'b', 'c', 'd'].map((id, i) => ({ id, domain: i < 2 ? 'Pay' : 'Ops', capability: 'cap-' + id }));
+    const mk = (i: number, feature: string, value: number, at: string, run = 'rs'): Measurement => ({ id: i, run_id: run, feature, lens: 'dev', metric: 'cov', value, unit: '%', measured_at: at });
+    const run = (scope?: Record<string, unknown>): Run => ({ id: 'rs', started_at: '2026-10-11T00:00:00Z', updated_at: T, phase: 'measure', status: 'running', lenses: ['dev'], ...(scope ? { scope } : {}) });
+    const prop = (id: string, feature: string): Proposal => ({ id, run_id: 'rs', feature, lens: 'dev', metric: 'cov', title: id, standard: 'none', expected_delta: 5, kind: 'fix', status: 'proposed', created_at: T, updated_at: T });
+    const base: ScanSnapshot = { ...s, runs: [], activity: [], shots: [], coverage: [],
+      measurements: [mk(1, 'a', 10, '2026-10-11T01:00:00Z'), mk(2, 'a', 20, '2026-10-11T02:00:00Z'), mk(3, 'b', 30, '2026-10-11T01:00:00Z'), mk(4, 'b', 31, '2026-10-11T01:00:00Z'), mk(5, 'c', 5, '2026-10-11T01:00:00Z')],
+      proposals: [prop('pa', 'a'), prop('pb', 'b'), prop('pd', 'd')] };
+    const pct = (sc?: ScanSnapshot) => swarmFromScan(sc!, feats).agents[0].progressPct;
+    check('unscoped progress is against every feature (3 of 4 measured)', pct({ ...base, runs: [run()] }) === 75, String(pct({ ...base, runs: [run()] })));
+    check('scoped progress is against the scope (1 of 2: group Pay measures a, b)', pct({ ...base, runs: [run({ group: 'pay' })], measurements: base.measurements.filter((m) => m.feature === 'a') }) === 50);
+    check('a scope that names nothing falls back to every feature', pct({ ...base, runs: [run({ group: 'nope' })] }) === 75);
+    // brute force: the pre-index derivation, copied
+    const brute = (p: Proposal) => { let last: Measurement | undefined; for (const m of base.measurements) if (m.feature === p.feature && m.lens === p.lens && m.metric === p.metric && (!last || m.measured_at >= last.measured_at)) last = m; return last; };
+    const sw = swarmFromScan({ ...base, runs: [run()] }, feats);
+    const f = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100));
+    for (const p of base.proposals) {
+      const l = brute(p), want = l ? `cov: ${f(l.value)} → ${f(l.value + 5)} % (+5 %)` : 'cov +5';
+      check(`proposal ${p.id}: the indexed consequence equals the brute-force one`, sw.decisions.find((d) => d.id === p.id)?.options[0].consequence === want, want);
+    }
+    check('the agent counts the distinct features it measured', sw.agents[0].doneToday === new Set(base.measurements.filter((m) => m.run_id === 'rs' && m.lens === 'dev').map((m) => m.feature)).size);
   }
 
   // ---- stream cursor

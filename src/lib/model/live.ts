@@ -12,12 +12,7 @@ export interface LiveRef {
 
 export const EMPTY_SCAN: ScanSnapshot = emptyScan();
 
-/** The latest run (by start), or null. */
-export function latestRun(scan: ScanSnapshot | undefined): Run | null {
-  let r: Run | null = null;
-  for (const x of scan?.runs ?? []) if (!r || x.started_at > r.started_at) r = x;
-  return r;
-}
+export { latestRun } from '@/lib/scan/derive';
 
 const HIST = new WeakMap<Measurement[], Map<string, Measurement[]>>();
 const hkey = (feature: string, lens: string, metric: string) => feature + '\u0000' + lens + '\u0000' + metric;
