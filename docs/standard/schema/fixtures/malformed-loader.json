@@ -1,0 +1,54 @@
+{
+  "$schema": "app-structure/3",
+  "version": 3,
+  "generator": "hand",
+  "project": { "slug": "kettle", "name": "Kettle" },
+  "domains": [
+    { "slug": "booking", "name": "Booking" },
+    { "slug": "booking", "name": "Booking again" }
+  ],
+  "capabilities": [
+    { "slug": "classes", "domain": "booking", "name": "Classes" },
+    { "slug": "orphans", "domain": "nowhere", "name": "Orphans" },
+    { "slug": "classes", "domain": "booking", "name": "Classes again" }
+  ],
+  "milestones": [
+    { "slug": "m1", "name": "Launch", "status": "done" }
+  ],
+  "features": [
+    { "slug": "book-a-class", "name": "Book a class", "capability": "classes", "stage": "shipped", "priority": "P9", "status": "paused",
+      "milestone": 5, "built_by": "ann", "depends_on": "other", "notes": { "by": "ann" },
+      "variations": [
+        { "slug": "bank", "name": "Bank" },
+        { "slug": "chain", "name": "Chain", "audience": "Franchise chains", "extends": [], "params": [] },
+        { "slug": "chain", "name": "Chain again", "audience": "Franchise chains", "extends": [], "params": [] }
+      ] },
+    { "slug": "book-a-class", "name": "Duplicate slug", "capability": "classes" },
+    { "slug": "waitlist", "name": "Waitlist", "capability": "orphans" }
+  ],
+  "lenses": [
+    { "id": "com.kettle.probe", "version": "0.1.0", "source": "project", "enabled": true, "manifest": {
+      "$schema": "lens-manifest/1", "id": "com.kettle.probe", "version": "0.1.0", "name": "Probe",
+      "reader": { "role": "engineer", "density": "standard" },
+      "fields": [ { "key": "incidents30d", "label": "Incidents", "type": "integer" } ],
+      "health": { "rules": [ { "when": { "field": "incidents30d", "gte": 1 }, "health": "watch", "reason": "{incidents30d} incidents" } ],
+        "default": "good", "rollup": { "method": "worst-of" } },
+      "presentation": { "glyph": "pulse", "line": "solid", "evidence": ["incidents30d"] }
+    } },
+    { "id": "com.kettle.probe", "version": "0.2.0", "source": "project", "enabled": true, "manifest": {
+      "$schema": "lens-manifest/1", "id": "com.kettle.probe", "version": "0.2.0", "name": "Probe two",
+      "reader": { "role": "engineer", "density": "standard" },
+      "fields": [ { "key": "incidents30d", "label": "Incidents", "type": "integer" } ],
+      "health": { "rules": [], "default": "good", "rollup": { "method": "worst-of" } },
+      "presentation": { "glyph": "pulse", "line": "solid" }
+    } },
+    { "id": "com.kettle.broken", "version": "0.1.0", "source": "project", "enabled": true, "manifest": {
+      "$schema": "lens-manifest/1", "id": "com.kettle.broken", "version": "0.1.0", "name": "Broken"
+    } },
+    { "id": "com.kettle.nomanifest", "version": "0.1.0", "source": "project", "enabled": true }
+  ],
+  "facets": {
+    "book-a-class": { "com.kettle.probe": { "values": { "incidents30d": 3 } } },
+    "waitlist": { "com.kettle.probe": "not an object" }
+  }
+}

@@ -25,6 +25,7 @@ const RUNS: [string[], 0 | 1, string][] = [
   [[`${FIX}/valid-map.json`, '--events', `${FIX}/valid-map.events.jsonl`], 0, '2 of 2 valid'],
   [[`${FIX}/valid-applies-when.json`], 0, 'value "stage" is bound to feature stage; a stored value is ignored'],
   [[`${FIX}/malformed-missing-values.json`], 1, 'an unknown value is omitted, never written as null'],
+  [[`${FIX}/malformed-loader.json`], 1, 'manifest: missing required key "reader"'],
   [[`${FIX}/invalid-stage.json`], 1, '.stage: must be one of: idea, specified, in-dev, in-review, flagged, live, deprecated (got "shipped")'],
   [[`${FIX}/invalid-lens-id.json`], 1, 'a custom lens (source "project") needs a reverse-DNS id'],
   [[`${FIX}/invalid-two-operators.json`], 1, 'has 2 operators'],
@@ -81,6 +82,47 @@ expect(rolled === 'bad', `valid-applies-when rollup: ${rolled}, expected bad`);
   expect(sh('short-given') === 'Some incidents', `missing-values: a given short is kept, got ${JSON.stringify(sh('short-given'))}`);
   expect(sh('null-value') === null, 'missing-values: an unmeasured feature has no short');
   expect(lf('absent-in-reason').trouble[0]?.short === 'Probe', 'missing-values: Trouble.short carries the fallback');
+}
+
+// ------------------------------------------------------------------ the loader on malformed input (malformed-loader.json)
+// Schema-invalid on purpose: the loader must degrade with a warning per problem (first duplicate wins), never throw.
+{
+  const bad = JSON.parse(fs.readFileSync(path.join(ROOT, FIX, 'malformed-loader.json'), 'utf8')) as AppStructure;
+  const st = loadStructure(bad, null);
+  const has = (frag: string) => expect(st.warnings.some((w) => w.includes(frag)), `malformed-loader: no warning containing ${JSON.stringify(frag)}; got ${JSON.stringify(st.warnings)}`);
+  for (const frag of [
+    'duplicate domains slug "booking"', 'duplicate capabilities slug "classes"', 'unknown domain "nowhere"', 'duplicate features slug "book-a-class"',
+    'stage "shipped"', 'priority "P9"', 'status "paused"', 'milestone is not a string', 'built_by is not an array', 'depends_on is not an array', 'notes is not an array',
+    'variations[0] needs a slug, name and audience', 'duplicate variation slug "chain"', 'milestone "m1": status "done"',
+    'duplicate lens id "com.kettle.probe"', 'lens "com.kettle.broken": reader is missing', 'lenses[3] needs an id and a manifest',
+    'facet waitlist/com.kettle.probe is not an object',
+  ]) has(frag);
+  const f1 = st.features.find((x) => x.slug === 'book-a-class')!;
+  expect(st.features.filter((x) => x.slug === 'book-a-class').length === 1 && f1.name === 'Book a class', 'malformed-loader: the first duplicate feature wins');
+  expect(st.domains.filter((d) => d.id === 'booking').length === 1 && st.domains.find((d) => d.id === 'booking')!.name === 'Booking', 'malformed-loader: the first duplicate domain wins');
+  expect(st.allLenses.length === 1 && st.allLenses[0].manifest.version === '0.1.0', 'malformed-loader: one lens survives, the first of the duplicate id');
+  expect(f1.stage === null && f1.priority === null && f1.status === 'active' && f1.milestone === null, 'malformed-loader: bad enums read as unknown / defaults');
+  expect(f1.builtBy.length === 0 && f1.notes.length === 0 && f1.dependsOn.length === 0, 'malformed-loader: non-array lists read as empty');
+  expect(f1.variations.length === 1 && f1.variations[0].slug === 'chain' && f1.variations[0].name === 'Chain', 'malformed-loader: only the first well-formed variation is kept');
+  expect(st.features.find((x) => x.slug === 'waitlist')!.capability === 'unplaced', 'malformed-loader: a feature of a dropped capability lands in Unplaced');
+  expect(st.milestones[0].state === 'planned', 'malformed-loader: an unknown milestone status reads as planned');
+  expect(f1.lens['com.kettle.probe'].h === 'watch', 'malformed-loader: the surviving lens still evaluates');
+  // Kettle-shaped input is clean, and total failures still throw
+  expect(loadStructure(map, null).warnings.length === 0, 'valid-applies-when: a valid map loads with no warnings');
+  for (const [name, v] of [['not an object', 5], ['null', null], ['an array', []], ['neither v2 nor v3', { $schema: 'app-structure/9' }]] as const) {
+    let threw = false;
+    try { loadStructure(v, null); } catch { threw = true; }
+    expect(threw, `loader: ${name} must still throw`);
+  }
+  // the cache keys on every option that changes the result
+  const ev = ['2019-01-01', '2020-01-01'].map((d) => JSON.stringify({ at: d + 'T00:00:00Z', type: 'noop' })).join('\n');
+  const w3 = loadStructure(map, ev, { weeks: 3 }), w9 = loadStructure(map, ev, { weeks: 9 });
+  expect(w3.weeks.length !== w9.weeks.length && w3 !== w9, 'loader cache: weeks changes the result');
+  const v2 = { version: 2, use_cases: [{ name: 'Thing' }] };
+  const catA = [lens.manifest], catB: typeof catA = [];
+  const a = loadStructure(v2, null, { catalog: catA }), b = loadStructure(v2, null, { catalog: catB });
+  expect(a.allLenses.length === 1 && b.allLenses.length === 0, 'loader cache: catalog changes the result');
+  expect(loadStructure(v2, null, { catalog: catA }) === a, 'loader cache: the same map, events and options hit the cache');
 }
 
 const total = held + failures.length;
