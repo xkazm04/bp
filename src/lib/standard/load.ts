@@ -7,11 +7,11 @@
 // from the events log. Pure and dependency-free (types, the bound-field list and the evaluator only),
 // so Node's type stripping can run it: `node -e "import('./src/lib/standard/load.ts')"`.
 import type {
-  AppStructure, Density, Facet, FacetOverride, FacetValues, Feature as V3Feature, GlyphName, Health, HealthRule, Kpi, LensEntry, LensField,
+  AppStructure, Density, Facet, FacetOverride, FacetValues, Feature as V3Feature, GlyphName, Health, Kpi, LensEntry, LensField,
   LensManifest, LineName, Rollup, Scalar, Stage, StructureEvent, Variation,
 } from './types.ts';
 import { FEATURE_BOUND_FIELDS } from './types.ts';
-import { bindValues, conditionFields, decidingRule, fillReason, lensHealth, type EvalContext } from './health.ts';
+import { conditionFields, evaluateLens, fillReason, type EvalContext } from './health.ts';
 import { generalHealth } from './present.ts';
 
 // ------------------------------------------------------------------------------------ the model
@@ -56,7 +56,7 @@ export interface FeatureLens {
   v: FacetValues;
   /** The matched rule's reason with values filled in; null when no rule decided (spec `explain`). */
   why: string | null;
-  /** The matched rule's short form, for tile stamps; null when the rule has none. */
+  /** The matched rule's short form, for tile stamps (the lens name when the rule has none); null when no rule decided. */
   short: string | null;
   /** The fields the matched rule's condition names (to point at the evidence that decided). */
   whyFields: readonly string[];
@@ -359,13 +359,11 @@ function buildBase(raw: unknown, eventsText: string | null, opts: LoadOptions): 
     const out: Record<string, FeatureLens> = {};
     for (const d of defs) {
       const facet = (facets[f.slug]?.[d.id] ?? null) as Facet | null;
-      const h = lensHealth(d.manifest, facet ?? undefined, asOf, ctx);
-      // one pass for the explanation: the deciding rule and its bound values (spec `explain`)
-      const dr = decidingRule(d.manifest, facet ?? undefined, ctx);
-      const rule: HealthRule | null = dr && dr.rule.reason !== undefined ? dr.rule : null;
-      const v = dr ? dr.values : bindValues(d.manifest, facet?.values, ctx);
+      // one evaluation: health, the deciding rule and the bound values (spec `explain`)
+      const { health: h, rule, values: v } = evaluateLens(d.manifest, facet ?? undefined, asOf, ctx);
       const why = rule ? fillReason(rule.reason, v) : null;
-      const short = rule && rule.short !== undefined ? fillReason(rule.short, v) : null;
+      // spec 8.3 rule 7: a rule without `short` falls back to the lens name
+      const short = rule ? fillReason(rule.short ?? d.name, v) : null;
       const o = facet?.override;
       const ov = o && asOf <= o.until && h === o.health ? o : null;
       out[d.id] = { h, v, why, short, whyFields: rule ? conditionFields(rule.when) : [], ov, facet };

@@ -1,0 +1,40 @@
+{
+  "$schema": "app-structure/3",
+  "version": 3,
+  "generator": "hand",
+  "project": { "slug": "kettle", "name": "Kettle" },
+  "features": [
+    { "slug": "null-value", "name": "Null value", "stage": "live" },
+    { "slug": "undeclared-key", "name": "Undeclared key", "stage": "live" },
+    { "slug": "absent-in-reason", "name": "Absent in reason", "stage": "live" },
+    { "slug": "null-in-reason", "name": "Null in reason", "stage": "live" },
+    { "slug": "short-given", "name": "Short given", "stage": "live" }
+  ],
+  "lenses": [
+    { "id": "com.kettle.probe", "version": "0.1.0", "source": "project", "enabled": true, "manifest": {
+      "$schema": "lens-manifest/1", "id": "com.kettle.probe", "version": "0.1.0", "name": "Probe", "short": "PRB",
+      "description": "Exercises missing values: null is missing, an undeclared key is no measurement, short falls back to the lens name.",
+      "reader": { "role": "engineer", "density": "standard" },
+      "fields": [
+        { "key": "incidents30d", "label": "Incidents (30 days)", "type": "integer", "min": 0, "headline": true },
+        { "key": "region", "label": "Region", "type": "string" }
+      ],
+      "health": {
+        "rules": [
+          { "when": { "field": "incidents30d", "gte": 5 }, "health": "bad", "reason": "{incidents30d} incidents in {region}" },
+          { "when": { "field": "incidents30d", "gte": 1 }, "health": "watch", "reason": "{incidents30d} incidents", "short": "Some incidents" }
+        ],
+        "default": "good",
+        "rollup": { "method": "worst-of" }
+      },
+      "presentation": { "glyph": "pulse", "line": "solid", "evidence": ["incidents30d"], "measures": "incidents30d" }
+    } }
+  ],
+  "facets": {
+    "null-value": { "com.kettle.probe": { "values": { "incidents30d": null } } },
+    "undeclared-key": { "com.kettle.probe": { "values": { "foo": 1 } } },
+    "absent-in-reason": { "com.kettle.probe": { "values": { "incidents30d": 6 } } },
+    "null-in-reason": { "com.kettle.probe": { "values": { "incidents30d": 6, "region": null } } },
+    "short-given": { "com.kettle.probe": { "values": { "incidents30d": 2 } } }
+  }
+}

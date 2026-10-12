@@ -87,6 +87,8 @@ interface Compiled {
   applies: Condition | null;
   /** Keys of feature-bound fields: never measurements, so they do not make a facet "measured". */
   featureBound: Set<string>;
+  /** Every declared key: a facet value under any other key is not a measurement. */
+  declared: Set<string>;
 }
 // Health is evaluated per feature and lens whenever data changes; compile each manifest once (which
 // rules are usable, which fields are bound) instead of walking its field list once per feature.
@@ -100,6 +102,7 @@ function compile(m: LensManifest): Compiled {
     c = {
       rules: m.health.rules.filter((r) => usable(r.when)),
       applies: aw && usable(aw) ? aw : null,
+      declared: known,
       featureBound: new Set(m.fields.filter((f) => f.source && 'feature' in f.source).map((f) => f.key)),
     };
     COMPILED.set(m, c);
@@ -115,7 +118,8 @@ const isScalar = (v: unknown): v is Scalar => typeof v === 'string' || typeof v 
  * whatever the facet stored. Returns a new object.
  */
 export function bindValues(manifest: LensManifest, values: FacetValues | undefined, ctx: EvalContext = {}): FacetValues {
-  const out: FacetValues = { ...(values ?? {}) };
+  const out: FacetValues = {};
+  for (const k in values) if (values[k] !== null && values[k] !== undefined) out[k] = values[k];
   for (const f of manifest.fields) {
     const s = f.source;
     if (!s) continue;
@@ -127,9 +131,9 @@ export function bindValues(manifest: LensManifest, values: FacetValues | undefin
   return out;
 }
 
-/** True when something was measured: any value other than a feature-bound one. */
+/** True when something was measured: a present value (null is missing) under a declared, non-feature-bound key. */
 function measuredValues(values: FacetValues, c: Compiled): boolean {
-  for (const k in values) if (!c.featureBound.has(k)) return true;
+  for (const k in values) if (c.declared.has(k) && !c.featureBound.has(k) && isScalar(values[k])) return true;
   return false;
 }
 
@@ -139,8 +143,12 @@ export function matchRule(manifest: LensManifest, values: Values): HealthRule | 
   return null;
 }
 
+/** One evaluation of a feature under a lens: its health, the rule that matched (if any) and the bound values. */
+export interface LensEval { health: Health; rule: HealthRule | null; values: FacetValues }
+
 /**
- * One feature's health under one lens. In order:
+ * One feature's health under one lens, evaluated once: binding and `applies_when` run a single time and
+ * the matched rule comes back with the health. In order:
  *  1. no facet -> unmeasured;
  *  2. `applicable: false` -> na;
  *  3. no measured values and no override -> unmeasured;
@@ -148,42 +156,45 @@ export function matchRule(manifest: LensManifest, values: Values): HealthRule | 
  *  5. an override whose `until` (inclusive) is not past -> its health;
  *  6. no measured values (the override has expired) -> unmeasured;
  *  7. the first matching rule, else the manifest's default.
- * `today` is an ISO date or date-time; only its date part is compared.
+ * `rule` is the first matching rule whenever the facet is measured and the lens applies, even when an
+ * override decides the health (like `explain`, it explains the rules, not the override); null otherwise
+ * and when only the default applies. `today` is an ISO date or date-time; only its date part is compared.
  */
-export function lensHealth(manifest: LensManifest, facet: Facet | undefined, today: string, ctx?: EvalContext): Health {
-  if (!facet) return 'unmeasured';
-  if (facet.applicable === false) return 'na';
+export function evaluateLens(manifest: LensManifest, facet: Facet | undefined, today: string, ctx?: EvalContext): LensEval {
+  const values = bindValues(manifest, facet?.values, ctx);
+  if (!facet) return { health: 'unmeasured', rule: null, values };
+  if (facet.applicable === false) return { health: 'na', rule: null, values };
   const c = compile(manifest);
-  const values = bindValues(manifest, facet.values, ctx);
   const measured = measuredValues(values, c);
   const o = facet.override;
-  if (!measured && !o) return 'unmeasured';
-  if (c.applies && !evaluateCondition(c.applies, values)) return 'na';
-  if (o && today.slice(0, 10) <= o.until) return o.health;
-  if (!measured) return 'unmeasured';
-  return matchRule(manifest, values)?.health ?? manifest.health.default;
+  if (!measured && !o) return { health: 'unmeasured', rule: null, values };
+  if (c.applies && !evaluateCondition(c.applies, values)) return { health: 'na', rule: null, values };
+  const rule = measured ? matchRule(manifest, values) : null;
+  if (o && today.slice(0, 10) <= o.until) return { health: o.health, rule, values };
+  if (!measured) return { health: 'unmeasured', rule: null, values };
+  return { health: rule?.health ?? manifest.health.default, rule, values };
+}
+
+/** One feature's health under one lens (see `evaluateLens`). */
+export function lensHealth(manifest: LensManifest, facet: Facet | undefined, today: string, ctx?: EvalContext): Health {
+  return evaluateLens(manifest, facet, today, ctx).health;
 }
 
 /**
  * The rule that decides the health, with the bound values it was matched against; null when no rule
  * decides (no facet, not applicable, nothing measured, `applies_when` not matching, or the default).
- * Like `explain`, it ignores an override. A reader that wants the reason, the short form and the
- * rule's fields calls this once instead of `explain` twice plus `matchRule`.
+ * Like `explain`, it ignores an override. A reader that also needs the health calls `evaluateLens`.
  */
 export function decidingRule(manifest: LensManifest, facet: Facet | undefined, ctx?: EvalContext): { rule: HealthRule; values: FacetValues } | null {
-  if (!facet || facet.applicable === false) return null;
-  const c = compile(manifest);
-  const values = bindValues(manifest, facet.values, ctx);
-  if (!measuredValues(values, c) || (c.applies && !evaluateCondition(c.applies, values))) return null;
-  const rule = matchRule(manifest, values);
-  return rule ? { rule, values } : null;
+  const e = evaluateLens(manifest, facet, '', ctx);
+  return e.rule ? { rule: e.rule, values: e.values } : null;
 }
 
 /** A reason (or short reason) with `{field}` replaced by the bound value, or `unknown` when absent. */
 export function fillReason(text: string, values: Values): string {
   return text.replace(/\{([A-Za-z][A-Za-z0-9]*)\}/g, (_, k: string) => {
     const v = Object.prototype.hasOwnProperty.call(values, k) ? values[k] : undefined;
-    return v === undefined ? 'unknown' : String(v);
+    return v === undefined || v === null ? 'unknown' : String(v);
   });
 }
 

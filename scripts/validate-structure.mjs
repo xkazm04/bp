@@ -128,7 +128,7 @@ function humanize(errors, data) {
       case 'not':
         msg = sp.includes('allOf/0') ? '"values" is only allowed on enum fields' : sp.includes('allOf/1') ? '"currency" is only allowed on money fields' : e.message;
         break;
-      case 'type': msg = `must be ${e.params.type.replace(',', ' or ')} (got ${v === null ? show(v) : typeof v})`; break;
+      case 'type': msg = `must be ${[].concat(e.params.type).join(' or ')} (got ${v === null ? show(v) : typeof v})`; break;
       default: msg = `${e.message}${v !== undefined && typeof v !== 'object' ? ` (got ${show(v)})` : ''}`;
     }
     out.add(`${loc}: ${msg}`);
