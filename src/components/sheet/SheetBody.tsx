@@ -6,7 +6,8 @@
 // rows (MetricRows, from the manifest); the Business section and a live product's Screens strip follow.
 import { LayoutGroup, motion, useReducedMotion } from 'motion/react';
 import type { Feature } from '@/lib/data';
-import { REV_DESC, STAGE_WORD, astat, fmtWait, isAgentId, lensOf, pname, type Model } from '@/lib/model';
+import { REV_DESC, STAGE_WORD, astat, fmtWait, isAgentId, lensOf, pname, type Model, type SwarmSim } from '@/lib/model';
+import { useSimSig } from '../page/bits';
 import { illoSVG } from '@/engine/render/illo';
 import { DefaultLensPanel, MetricRows } from './LensPanel';
 import { BusinessSection } from './Business';
@@ -16,9 +17,26 @@ import { Mark, PatternDefs, StageSym, agentMark } from '../Symbols';
 import { useBp, useDensity, useEngine, useLive, useVariant } from '../hooks';
 
 /** The swarm (or a live product's scan) on one feature: agents, open decisions, orders, recent events, steering. */
+/**
+ * Everything SwarmSection reads about one feature, as a string: its agents (status, task, progress, cost), its open
+ * decisions (blocked agents, minutes waiting), the orders on it, its latest events. Equal strings = identical render,
+ * so it cannot miss an update; a lens page keeps only the decisions and orders that name the lens.
+ */
+function swarmSig(sim: SwarmSim, f: Feature, lens?: string): string {
+  if (!sim.has) return '';
+  let s = sim.live ? 'L' : 'S';
+  for (const d of sim.DOF[f.id] || []) if (!lens || d.lens === lens) s += '|d' + d.id + ':' + sim.blocksNow(d) + ':' + sim.waitMin(d);
+  for (const o of sim.ordersOn(f.id)) if (!lens || o.lens === lens) s += '|o' + o.id + ':' + o.text + ':' + o.vf.includes(f.id);
+  if (lens) return s;
+  for (const a of sim.AGF[f.id] || []) s += '|a' + a.id + ':' + astat(a) + ':' + a.task + ':' + Math.round(a.pct) + ':' + Math.round(a.cost);
+  let n = 0;
+  for (const e of sim.log) if (e.f === f.id) { s += '|e' + e.t + e.text; if (++n === 4) break; }
+  return s;
+}
+
 export function SwarmSection({ f, lens }: { f: Feature; lens?: string }) {
   const E = useEngine(), M = E.M, sim = M.sim;
-  useBp((s) => s.simV);
+  useSimSig((sm) => swarmSig(sm, f, lens));
   const phone = useBp((s) => s.phone);   // the phone mounts no SelBar, so a preview or an order menu started here would be invisible
   if (!sim.has) return null;
   // `lens`: only the decisions and orders that name this lens (a lens page); null when there are none

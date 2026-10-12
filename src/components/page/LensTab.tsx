@@ -7,6 +7,7 @@
 // it, the Screens strip (a lens with harness-measured metrics, when the scan has shots), the Business
 // section (a lens whose reader role is business). Blocks are chosen by data, never by lens id. A
 // variant's `ui.SheetPanel` replaces the body (headline to the rest) as it replaced the sheet panel.
+import { memo, useMemo } from 'react';
 import type { Feature } from '@/lib/data';
 import type { Density } from '@/engine/lens/contract';
 import { fmtValue, pname, type Model } from '@/lib/model';
@@ -15,20 +16,22 @@ import { BusinessSection } from '../sheet/Business';
 import { ScreensStrip } from '../sheet/Screens';
 import { SwarmSection } from '../sheet/SheetBody';
 import { MoveArrow, Spark, hotOf, metricMove, metricRows, nfmt } from '../sheet/LensPanel';
-import { useBp, useDensity, useEngine, useLive, useVariant } from '../hooks';
-import { HWORD, KpiRows, Val } from './bits';
+import { useDensity, useEngine, useLive, useVariant } from '../hooks';
+import { HWORD, KpiRows, Val, useSimSig } from './bits';
 import { Sec, Stagger } from './motion';
 
 const EVID: Record<Density, number> = { simple: 2, standard: 4, dense: Infinity };
 
 /** The lens's metric fields as rows: value (counting), the move against the previous reading, target, method, sparkline. */
-function Metrics({ lens, f, M, scan, all }: { lens: string; f: Feature; M: Model; scan: ScanSnapshot | undefined; all: boolean }) {
-  const d = M.P.LENS[lens], rows = metricRows(d, f, M, scan), fl = f.lens[lens];
+const Metrics = memo(function Metrics({ lens, f, M, scan, all, sig }: { lens: string; f: Feature; M: Model; scan: ScanSnapshot | undefined; all: boolean; sig: string }) {
+  // rows depend on the scan, the feature and the sim's live values (sig): nothing else moves them
+  const d = M.P.LENS[lens], rows = useMemo(() => metricRows(d, f, M, scan), [d, f, M, scan, sig]), fl = f.lens[lens];  // eslint-disable-line react-hooks/exhaustive-deps
   const shown = all ? rows : rows.filter((r) => r.value !== undefined);
   if (!shown.length) return null;
+  const measured = shown.filter((r) => r.value !== undefined).length;
   return (
     <div className="pg-mrs">
-      <h4>Measured · {shown.length} metric{shown.length > 1 ? 's' : ''}{scan ? ' · from the scan' : ''}</h4>
+      <h4>Measured · {measured === shown.length ? shown.length + ' metric' + (shown.length > 1 ? 's' : '') : measured + ' of ' + shown.length + ' metrics'}{scan ? ' · from the scan' : ''}</h4>
       {shown.map((r) => {
         const m = r.field.metric!, v = r.value, { dir, cls } = metricMove(r), hot = hotOf(fl, r.field.key);
         return (
@@ -42,9 +45,9 @@ function Metrics({ lens, f, M, scan, all }: { lens: string; f: Feature; M: Model
       })}
     </div>
   );
-}
+});
 
-function Body({ lens, f, M, density }: { lens: string; f: Feature; M: Model; density: Density }) {
+const Body = memo(function Body({ lens, f, M, density }: { lens: string; f: Feature; M: Model; density: Density; sig: string }) {
   const d = M.P.LENS[lens], fl = f.lens[lens], h = fl?.h ?? 'unmeasured', sim = M.sim;
   const val = (k: string) => sim.liveValue(f, lens, k);
   // core feature-bound fields (stage, priority) live in the page header, not here
@@ -91,12 +94,15 @@ function Body({ lens, f, M, density }: { lens: string; f: Feature; M: Model; den
       ) : null}
     </>
   );
-}
+});
 
 export function LensTab({ lens, f }: { lens: string; f: Feature }) {
   const E = useEngine(), M = E.M, V = useVariant(), dens = useDensity(), live = useLive();
-  useBp((s) => s.simV);
-  const d = M.P.LENS[lens]; if (!d) return null;
+  // what this tab reads from the sim is the lens's field values for this feature (the swarm section has its own
+  // signature): the string changes exactly when one of them does, so a sim tick elsewhere re-renders nothing here
+  const d = M.P.LENS[lens];
+  const sig = useSimSig((sm) => (d ? d.fields.map((x) => String(sm.liveValue(f, lens, x.key))).join('|') : ''));
+  if (!d) return null;
   const density = dens(lens), scan = live?.product.scan, fl = f.lens[lens];
   const Panel = V.ui?.SheetPanel;
   // attachments, by data: screens belong to a lens that measures through the harness; Business to a business reader
@@ -106,8 +112,8 @@ export function LensTab({ lens, f }: { lens: string; f: Feature }) {
     <Stagger className={'pg-lens d-' + density}>
       {Panel
         ? <Sec className={'evp cur pg-vpanel ' + (fl?.h ?? 'unmeasured')} label={d.name}><Panel lens={lens} def={d} f={f} model={M} density={density} expanded view={lens} /></Sec>
-        : <Body lens={lens} f={f} M={M} density={density} />}
-      <Sec label="Metrics"><Metrics lens={lens} f={f} M={M} scan={scan} all={density !== 'simple'} /></Sec>
+        : <Body lens={lens} f={f} M={M} density={density} sig={sig} />}
+      <Sec label="Metrics"><Metrics lens={lens} f={f} M={M} scan={scan} all={density !== 'simple'} sig={sig} /></Sec>
       <Sec label="KPIs"><KpiRows M={M} f={f} lens={lens} /></Sec>
       <Sec label="Questions and orders"><SwarmSection f={f} lens={lens} /></Sec>
       {shots ? <Sec label="Screens"><ScreensStrip f={f} /></Sec> : null}

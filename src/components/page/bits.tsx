@@ -1,11 +1,24 @@
 'use client';
 // Small pieces the feature page's tabs share: a field value that counts, the health word, the
 // lifecycle ladder, and the KPIs a lens is bound to on this feature.
+import { useMemo } from 'react';
 import type { Feature, Scalar } from '@/lib/data';
 import type { Health, LensField } from '@/lib/standard/types';
 import { STAGES } from '@/lib/standard/load';
 import { STAGE_WORD, fmtValue, type Model } from '@/lib/model';
+import type { SwarmSim } from '@/lib/model';
+import { useBp, useEngine } from '../hooks';
 import { Count } from './motion';
+
+/**
+ * A string read off the simulation, re-evaluated on every store change and compared by value: the component
+ * re-renders only when the string changes. `sel` must return everything the component reads from `sim`
+ * (so the string changing is exactly "something this component shows changed"), and nothing else.
+ */
+export function useSimSig(sel: (sim: SwarmSim) => string): string {
+  const E = useEngine();
+  return useBp(() => sel(E.M.sim));
+}
 
 /** The health word on a tile and a lens tab. Keyed by the Health union, so a new health is a type error here, not an undefined word. */
 export const HWORD: Record<Health, string> = { bad: 'Bad', watch: 'Watch', good: 'Good', na: 'Does not apply', unmeasured: 'Not measured' };
@@ -49,7 +62,7 @@ export function lensKpis(M: Model, f: Feature, lens: string) {
 }
 
 export function KpiRows({ M, f, lens }: { M: Model; f: Feature; lens: string }) {
-  const ks = lensKpis(M, f, lens);
+  const ks = useMemo(() => lensKpis(M, f, lens), [M, f, lens]);
   if (!ks.length) return null;
   return (
     <div className="pg-kpis">

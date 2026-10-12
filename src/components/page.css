@@ -1,7 +1,7 @@
 /* L4 feature page (src/components/FeatureSheet.tsx and src/components/page/*). Tokens only. */
 
-/* the plan behind: dimmed and slightly blurred, still visible at the edges */
-.pg-dim { position: absolute; inset: 0; z-index: 29; background: color-mix(in srgb, var(--paper) 58%, transparent); backdrop-filter: blur(2.5px) saturate(0.85); -webkit-backdrop-filter: blur(2.5px) saturate(0.85); }
+/* the plan behind: dimmed (colour only: a backdrop-filter over the live canvas halves the frame rate, docs/perf.md), still visible at the edges */
+.pg-dim { position: absolute; inset: 0; z-index: 29; background: color-mix(in srgb, var(--paper) 68%, transparent); }
 
 .pg { position: absolute; z-index: 30; display: flex; flex-direction: column; overflow: hidden; background: linear-gradient(165deg, var(--sheet-a), var(--sheet-b) 55%, var(--sheet-c)); border: 1.5px solid var(--ink); box-shadow: 0 30px 90px var(--shadow), 0 0 0 1px var(--ink-4); will-change: transform; }
 .pg-in { flex: 1; min-height: 0; display: flex; flex-direction: column; }

@@ -4,7 +4,7 @@
 // report of that shot records console errors. A thumbnail opens the viewer under the strip: run A
 // and run B (default: the latest two runs with that size and theme), side by side or as a swipe.
 // Kettle has no store, so no strip. Images come from the shots route; nothing is drawn on the canvas.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Feature } from '@/lib/data';
 import { baseId, shotErrors, shotUrl, shotsByRun } from '@/lib/model';
 import type { Run, Shot } from '@/lib/scan/types';
@@ -73,14 +73,19 @@ function Viewer({ slug, k, takes, name, close }: { slug: string; k: string; take
 }
 
 export function ScreensStrip({ f }: { f: Feature }) {
-  const live = useLive(), [open, setOpen] = useState<string | null>(null);
-  if (!live) return null;
-  const groups = shotsByRun(live.product.scan, baseId(f.id));
-  if (!groups.length) return null;
-  // per size and theme: every run's take of it, newest run first
-  const by = new Map<string, Take[]>();
-  for (const g of groups) for (const s of g.shots) { const k = keyOf(s); let a = by.get(k); if (!a) by.set(k, (a = [])); if (!a.some((t) => t.runId === g.runId)) a.push({ run: g.run, runId: g.runId, shot: s }); }
-  const keys = [...by.keys()].sort();
+  const live = useLive(), [open, setOpen] = useState<string | null>(null), scan = live?.product.scan, fid = baseId(f.id);
+  // grouped by what it reads: the scan and the feature (a re-render for any other reason regroups nothing)
+  const g = useMemo(() => {
+    if (!scan) return null;
+    const groups = shotsByRun(scan, fid);
+    if (!groups.length) return null;
+    // per size and theme: every run's take of it, newest run first
+    const by = new Map<string, Take[]>();
+    for (const g of groups) for (const s of g.shots) { const k = keyOf(s); let a = by.get(k); if (!a) by.set(k, (a = [])); if (!a.some((t) => t.runId === g.runId)) a.push({ run: g.run, runId: g.runId, shot: s }); }
+    return { groups, by, keys: [...by.keys()].sort() };
+  }, [scan, fid]);
+  if (!live || !g) return null;
+  const { groups, by, keys } = g;
   return (
     <div className="dsec scr">
       <h4>Screens · {keys.length} · {groups.length} run{groups.length > 1 ? 's' : ''}</h4>

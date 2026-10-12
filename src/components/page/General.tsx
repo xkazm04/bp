@@ -9,13 +9,14 @@ import { REV_DESC, pname, type Model } from '@/lib/model';
 import { BusinessSection } from '../sheet/Business';
 import { Activity, BuiltBy, Drawing, FeatureLinks, FlaggedBy, Notes, Parts, SwarmSection, stageSince } from '../sheet/SheetBody';
 import { plainLine } from '../sheet/words';
-import { useBp, useEngine } from '../hooks';
-import { HWORD, Val } from './bits';
+import { useEngine } from '../hooks';
+import { HWORD, Val, useSimSig } from './bits';
 import { Sec, Stagger } from './motion';
 
 function StatTiles({ f, M }: { f: Feature; M: Model }) {
   const E = useEngine();
-  useBp((s) => s.simV);
+  // the tiles read only each lens's headline value from the sim: re-render when one of those changes
+  useSimSig((sm) => M.P.lenses.map((d) => (d.headline ? String(sm.liveValue(f, d.id, d.headline.key)) : '')).join('|'));
   return (
     <Stagger className="pg-tiles" gap={0.04}>
       {M.P.lenses.map((d) => {
