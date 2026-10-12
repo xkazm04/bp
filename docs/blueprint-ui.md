@@ -436,6 +436,12 @@ gets out of the plan's way, and L4 is a page. Earlier sections that say "dock", 
     rows when the lens has metric fields; the Screens strip when it has harness metrics and
     shots; Business when its reader role is `business`; and its KPIs, decisions and orders.
     Density follows `reader.density`.
+  - **Time travel on the page** (`lib/model/timeview.ts`, `check:timeview`). When the plan is travelled
+    back, the header carries an "As of <date> / Back to now" marker. The stage ladder and the lede
+    show the stage on that date (`stageAt`, replayed from the events log); a headline or metric shows
+    the scan's last reading on or before that date. Health, evidence, other fields and KPIs have no
+    history and read "Not recorded for that date": a now-value is never shown for a past date.
+    At now nothing changes. Swarm, Business, dependencies and activity stay the current record.
   - **KPIs on a lens tab** resolve over all four scopes (feature, context, group, project; the group
     comes from the map's contexts), narrowest first, each with a scope hint, its age from
     `current.measured_at`, and a health from `warn_at`/`crit_at` read by `direction` (up: at or below

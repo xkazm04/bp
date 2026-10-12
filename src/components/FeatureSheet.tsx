@@ -23,7 +23,7 @@ import { shallowEqual, useBp, useEngine, useVariant } from './hooks';
 import { GeneralTab } from './page/General';
 import { LensTab } from './page/LensTab';
 import { LiveFoot } from './sheet/SheetBody';
-import { StageLadder } from './page/bits';
+import { AsOfBar, StageLadder } from './page/bits';
 import { CountMemo, EnterDelay } from './page/motion';
 import './page.css';
 
@@ -127,6 +127,7 @@ function Head({ f, back, closeRef }: { f: Feature; back: (depth: number) => void
         </div>
         <StageLadder f={f} M={M} />
       </div>
+      <AsOfBar />
       <Tabs f={f} />
     </header>
   );

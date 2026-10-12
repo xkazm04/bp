@@ -5,7 +5,9 @@ import { useMemo } from 'react';
 import type { Feature, Scalar } from '@/lib/data';
 import type { Health, Kpi, LensField } from '@/lib/standard/types';
 import { STAGES } from '@/lib/standard/load';
-import { STAGE_WORD, fmtValue, type Model } from '@/lib/model';
+import { STAGE_WORD, fmtValue, baseId, type Model } from '@/lib/model';
+import { NOT_RECORDED, stageView, valueView, type ValueAsOf } from '@/lib/model/timeview';
+import type { LensDef } from '@/lib/data';
 import type { SwarmSim } from '@/lib/model';
 import { useBp, useEngine, useLive } from '../hooks';
 import kettleMap from '@/data/kettle.app-structure.json';
@@ -21,6 +23,33 @@ export function useSimSig(sel: (sim: SwarmSim) => string): string {
   return useBp(() => sel(E.M.sim));
 }
 
+/** The date the page shows: `past` when the plan has been travelled back from the data's now. */
+export function useAsOf(): { t: string; now: string; past: boolean } {
+  const E = useEngine(), t = useBp((s) => s.t), now = E.M.P.asOf;
+  return { t, now, past: t < now };
+}
+
+/** A lens's headline on the page's date: what the history records, else "not recorded" (never the now-value). */
+export function useHeadlineAt(f: Feature, d: LensDef): ValueAsOf {
+  const { t, now } = useAsOf(), scan = useLive()?.product.scan;
+  return d.headline ? valueView(scan, baseId(f.id), d.id, d.headline, t, now) : { at: 'none' };
+}
+
+/** The marker over a page that shows a past date: what date, what is dated and what is not, and the way back. */
+export function AsOfBar() {
+  const E = useEngine(), { t, past } = useAsOf();
+  if (!past) return null;
+  return (
+    <div className="pg-asof" role="status">
+      <b>As of {t}</b>
+      <span>The stage and measured readings are those of that date; what has no history is marked not recorded. Other sections show the current record.</span>
+      <button type="button" className="btn" onClick={() => E.setTime(E.M.P.asOf)}>Back to now</button>
+    </div>
+  );
+}
+
+export { NOT_RECORDED };
+
 /** The health word on a tile and a lens tab. Keyed by the Health union, so a new health is a type error here, not an undefined word. */
 export const HWORD: Record<Health, string> = { bad: 'Bad', watch: 'Watch', good: 'Good', na: 'Does not apply', unmeasured: 'Not measured' };
 
@@ -33,11 +62,12 @@ export function Val({ k, field, v, unit = '' }: { k: string; field: LensField; v
 
 /** Where the feature is in its life: the stages in order, the current one marked; build or rollout percent when it has one. */
 export function StageLadder({ f, M }: { f: Feature; M: Model }) {
-  const st = f.stage, sim = M.sim;
-  const pct = st === 'in-dev' ? Math.round(sim.progOf(f)) : st === 'flagged' ? sim.rolloutOf(f) : null;
+  const { t, now } = useAsOf(), sv = stageView(f, t, now), st = sv.at === 'now' || sv.at === 'then' ? sv.stage : null, sim = M.sim;
+  const isNow = sv.at === 'now';
+  const pct = !isNow ? null : st === 'in-dev' ? Math.round(sim.progOf(f)) : st === 'flagged' ? sim.rolloutOf(f) : null;
   const steps = STAGES.filter((s) => s !== 'deprecated' || st === 'deprecated'), at = st ? steps.indexOf(st) : -1;
   return (
-    <div className="pg-stage" aria-label={'Stage: ' + (st ? STAGE_WORD[st] : 'unknown')}>
+    <div className="pg-stage" aria-label={(isNow ? 'Stage: ' : 'Stage on ' + t + ': ') + (st ? STAGE_WORD[st] : sv.at === 'before' ? 'not on the drawing yet' : 'unknown')}>
       <ol>{steps.map((s, i) => <li key={s} className={i < at ? 'done' : i === at ? 'cur' : ''}><i />{STAGE_WORD[s]}</li>)}</ol>
       {pct !== null && (
         <span className="pct" title={st === 'in-dev' ? 'Build progress' : 'Rollout'}>
@@ -45,7 +75,9 @@ export function StageLadder({ f, M }: { f: Feature; M: Model }) {
           <b><Count k={f.id + ':stage%'} v={pct} fmt={(n) => Math.round(n) + '%'} /></b>{st === 'in-dev' ? ' built' : ' rolled out'}
         </span>
       )}
-      {!st && <span className="pct">Stage unknown</span>}
+      {sv.at === 'then' && (st === 'in-dev' || st === 'flagged') && <span className="pct">{st === 'in-dev' ? 'Progress' : 'Rollout'}: {NOT_RECORDED.toLowerCase()}</span>}
+      {sv.at === 'before' && <span className="pct">Not on the drawing yet on {t}</span>}
+      {(sv.at === 'unknown' || (isNow && !st)) && <span className="pct">Stage unknown</span>}
     </div>
   );
 }

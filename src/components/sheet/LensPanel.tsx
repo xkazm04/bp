@@ -74,11 +74,12 @@ export function MoveArrow({ dir, cls }: { dir: 'up' | 'down' | null; cls: string
  * metric, oldest first (a live product); without one, the facet value is the single point. The value
  * is the latest reading, else the facet's.
  */
-export function metricRows(d: LensDef, f: Feature, model: Model, scan: ScanSnapshot | undefined): MetricRow[] {
+export function metricRows(d: LensDef, f: Feature, model: Model, scan: ScanSnapshot | undefined, on?: { t: string; now: string }): MetricRow[] {
   const out: MetricRow[] = [], id = baseId(f.id);
   for (const fd of d.fields) {
     const m = fd.metric; if (!m) continue;
-    const h = metricHistory(scan, id, d.id, fd.key), fv = model.sim.liveValue(f, d.id, fd.key);
+    // on a past date only the readings taken by then count; the facet's value is today's, so it is no stand-in
+    const past = !!on && on.t < on.now, h = past ? metricHistory(scan, id, d.id, fd.key).filter((x) => x.measured_at.slice(0, 10) <= on!.t) : metricHistory(scan, id, d.id, fd.key), fv = past ? undefined : model.sim.liveValue(f, d.id, fd.key);
     const pts = h.length ? h.map((x) => x.value) : typeof fv === 'number' ? [fv] : [];
     const last = h[h.length - 1];
     // the manifest's unit when it has one (fmtValue adds it), else the reading's

@@ -17,7 +17,8 @@ import { ScreensStrip } from '../sheet/Screens';
 import { SwarmSection } from '../sheet/SheetBody';
 import { MoveArrow, Spark, hotOf, metricMove, metricRows, nfmt } from '../sheet/LensPanel';
 import { useDensity, useEngine, useLive, useVariant } from '../hooks';
-import { HWORD, KpiRows, Val, useSimSig } from './bits';
+import { NOT_RECORDED } from '@/lib/model/timeview';
+import { HWORD, KpiRows, Val, useAsOf, useHeadlineAt, useSimSig } from './bits';
 import { Sec, Stagger } from './motion';
 
 const EVID: Record<Density, number> = { simple: 2, standard: 4, dense: Infinity };
@@ -25,8 +26,8 @@ const EVID: Record<Density, number> = { simple: 2, standard: 4, dense: Infinity 
 /** The lens's metric fields as rows: value (counting), the move against the previous reading, target, method, sparkline. */
 const Metrics = memo(function Metrics({ lens, f, M, scan, all, sig }: { lens: string; f: Feature; M: Model; scan: ScanSnapshot | undefined; all: boolean; sig: string }) {
   // rows depend on the scan, the feature and the sim's live values (sig): nothing else moves them
-  const d = M.P.LENS[lens], rows = useMemo(() => metricRows(d, f, M, scan), [d, f, M, scan, sig]), fl = f.lens[lens];  // eslint-disable-line react-hooks/exhaustive-deps
-  const shown = all ? rows : rows.filter((r) => r.value !== undefined);
+  const d = M.P.LENS[lens], { t, now } = useAsOf(), rows = useMemo(() => metricRows(d, f, M, scan, { t, now }), [d, f, M, scan, sig, t, now]), fl = f.lens[lens];  // eslint-disable-line react-hooks/exhaustive-deps
+  const shown = all || t < now ? rows : rows.filter((r) => r.value !== undefined);
   if (!shown.length) return null;
   const measured = shown.filter((r) => r.value !== undefined).length;
   return (
@@ -48,14 +49,16 @@ const Metrics = memo(function Metrics({ lens, f, M, scan, all, sig }: { lens: st
 });
 
 const Body = memo(function Body({ lens, f, M, density }: { lens: string; f: Feature; M: Model; density: Density; sig: string }) {
-  const d = M.P.LENS[lens], fl = f.lens[lens], h = fl?.h ?? 'unmeasured', sim = M.sim;
+  const d = M.P.LENS[lens], fl = f.lens[lens], sim = M.sim, { t, past } = useAsOf(), at = useHeadlineAt(f, d);
+  // on a past date health has no history; the headline is the scan's reading by then, else nothing
+  const h = past ? 'unmeasured' : fl?.h ?? 'unmeasured', then = at.at === 'then' ? at : null;
   const val = (k: string) => sim.liveValue(f, lens, k);
   // core feature-bound fields (stage, priority) live in the page header, not here
   const own = (x: (typeof d.fields)[number]) => !(x.source && 'feature' in x.source);
   const hf = d.headline && own(d.headline) ? d.headline : null;
-  const ev = d.evidence.filter((x) => own(x) && x !== hf), evShown = ev.slice(0, EVID[density]);
+  const ev = past ? [] : d.evidence.filter((x) => own(x) && x !== hf), evShown = ev.slice(0, EVID[density]);
   const seen = new Set([hf?.key, ...evShown.map((x) => x.key)]);
-  const rest = d.fields.filter((x) => own(x) && !x.metric && !seen.has(x.key) && val(x.key) !== undefined);
+  const rest = past ? [] : d.fields.filter((x) => own(x) && !x.metric && !seen.has(x.key) && val(x.key) !== undefined);
   const hot = (key: string) => hotOf(fl, key);
   const restRows = rest.map((x) => <div key={x.key} className="r"><span>{x.label}{x.source && 'kpi' in x.source ? ' · KPI' : ''}</span><b className={hot(x.key)}><Val k={f.id + ':' + lens + ':' + x.key} field={x} v={val(x.key)} /></b></div>);
   return (
@@ -63,15 +66,16 @@ const Body = memo(function Body({ lens, f, M, density }: { lens: string; f: Feat
       <Sec className={'pg-hero ' + h} label="Headline and health">
         <div className="hl">
           <span className="lab">{hf ? hf.label : d.name}</span>
-          <b className={'big ' + (hf ? hot(hf.key) : '')}>{hf && h !== 'na' ? <Val k={f.id + ':' + lens + ':' + hf.key} field={hf} v={val(hf.key)} /> : '—'}</b>
+          <b className={'big ' + (hf && !past ? hot(hf.key) : '')}>{hf && (past ? then : fl?.h !== 'na') ? <Val k={f.id + ':' + lens + ':' + hf.key} field={hf} v={then ? then.value : val(hf.key)} /> : '—'}</b>
           {d.description ? <span className="desc">{d.description}</span> : null}
         </div>
         <div className="hh">
-          <span className="hw">{HWORD[h]}</span>
-          <p className="why">{h === 'na' ? 'This lens does not apply to this feature.' : h === 'unmeasured' && !fl?.facet ? 'No ' + d.name.toLowerCase() + ' reading for this feature yet.' : fl?.ov ? fl.ov.why : fl?.why ?? 'No rule raised anything: it reads ' + HWORD[h].toLowerCase() + '.'}</p>
-          {fl?.ov ? <p className="ov"><b>Held at {fl.ov.health.toUpperCase()}</b> by {pname(M.P, fl.ov.by)} until {fl.ov.until}{fl.why ? '. The rules say: ' + fl.why : ''}</p> : null}
+          <span className="hw">{past ? 'Not recorded' : HWORD[h]}</span>
+          <p className="why">{past ? (then ? 'Read on ' + then.measured + '. Health is not recorded for that date.' : NOT_RECORDED + ' (' + t + ').') : h === 'na' ? 'This lens does not apply to this feature.' : h === 'unmeasured' && !fl?.facet ? 'No ' + d.name.toLowerCase() + ' reading for this feature yet.' : fl?.ov ? fl.ov.why : fl?.why ?? 'No rule raised anything: it reads ' + HWORD[h].toLowerCase() + '.'}</p>
+          {!past && fl?.ov ? <p className="ov"><b>Held at {fl.ov.health.toUpperCase()}</b> by {pname(M.P, fl.ov.by)} until {fl.ov.until}{fl.why ? '. The rules say: ' + fl.why : ''}</p> : null}
         </div>
       </Sec>
+      {past ? <Sec label="Not recorded"><p className="pg-nr">Evidence and the other fields are not kept by date. Measured metrics below show their readings up to {t}.</p></Sec> : null}
       {evShown.length ? (
         <Sec label="Evidence">
           <div className="pg-ev">
@@ -97,7 +101,7 @@ const Body = memo(function Body({ lens, f, M, density }: { lens: string; f: Feat
 });
 
 export function LensTab({ lens, f }: { lens: string; f: Feature }) {
-  const E = useEngine(), M = E.M, V = useVariant(), dens = useDensity(), live = useLive();
+  const E = useEngine(), M = E.M, V = useVariant(), dens = useDensity(), live = useLive(), { past } = useAsOf();
   // what this tab reads from the sim is the lens's field values for this feature (the swarm section has its own
   // signature): the string changes exactly when one of them does, so a sim tick elsewhere re-renders nothing here
   const d = M.P.LENS[lens];
@@ -114,7 +118,7 @@ export function LensTab({ lens, f }: { lens: string; f: Feature }) {
         ? <Sec className={'evp cur pg-vpanel ' + (fl?.h ?? 'unmeasured')} label={d.name}><Panel lens={lens} def={d} f={f} model={M} density={density} expanded view={lens} /></Sec>
         : <Body lens={lens} f={f} M={M} density={density} sig={sig} />}
       <Sec label="Metrics"><Metrics lens={lens} f={f} M={M} scan={scan} all={density !== 'simple'} sig={sig} /></Sec>
-      <Sec label="KPIs"><KpiRows M={M} f={f} lens={lens} /></Sec>
+      {past ? null : <Sec label="KPIs"><KpiRows M={M} f={f} lens={lens} /></Sec>}
       <Sec label="Questions and orders"><SwarmSection f={f} lens={lens} /></Sec>
       {shots ? <Sec label="Screens"><ScreensStrip f={f} /></Sec> : null}
       {biz ? <Sec label="Business"><BusinessSection f={f} /></Sec> : null}
