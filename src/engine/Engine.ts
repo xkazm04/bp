@@ -118,7 +118,7 @@ export class Engine {
   private drag: { x0: number; y0: number; cx: number; cy: number; moved: boolean; lasso: boolean; shift: boolean } | null = null;
   private ptrs = new Map<number, { x: number; y: number }>();
   private pinch: { d: number; k: number } | null = null;
-  private simSyncTimer = 0; private lastTickerAt = 0; private pendingTicker: SimEvent | null = null;
+  private simSyncTimer = 0; private hlTimer = 0; private resizeTimer = 0; private lastTickerAt = 0; private pendingTicker: SimEvent | null = null;
   private toastN = 0;
   private aggLensCache = new Map<string, ChannelAggregate>();
   private statsCache = new Map<string, ReturnType<Model['sim']['stats']>>(); private statsKey = '';
@@ -270,6 +270,7 @@ export class Engine {
     this.root.style.setProperty('--lens', this.accentOf(v === 'general' ? null : v));
   }
   fit() {
+    if (this.destroyed) return;
     const w = window.innerWidth, h = window.innerHeight;
     // narrow, or a touch device held landscape (a short mouse window stays the desktop plan)
     const phone = w < 760 || (h < 480 && typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches);
@@ -570,7 +571,7 @@ export class Engine {
     if (this.S.open) this.closeFeature(false);
     this.set({ morning: false });
     this.cam.flyTo(this.fitCam({ x: T.x - 120, y: T.y - 90, w: T.w + 240, h: T.h + 180 }, { t: 40, r: 30, b: 60, l: 30 }, 1));
-    if (highlight) { this.set({ hl: id }); window.setTimeout(() => { if (this.S.hl === id) this.set({ hl: null }); }, 2600); }
+    if (highlight) { this.set({ hl: id }); clearTimeout(this.hlTimer); this.hlTimer = window.setTimeout(() => { if (!this.destroyed && this.S.hl === id) this.set({ hl: null }); }, 2600); }
   }
   /** Click on the key plan at fractions (0..1) of its width and height. */
   keyplanClick(fx: number, fy: number) {
@@ -699,7 +700,7 @@ export class Engine {
     if (!live || !sim.live || !d || !open) return;
     const pid = d.base, body = { decision: oi === 0 ? 'approve' as const : 'decline' as const, ...(note ? { note } : {}) };
     live.decide(pid, body).then(
-      () => sim.settle(pid, null, false),
+      () => { if (!this.destroyed) sim.settle(pid, null, false); },
       (e: Error & { status?: number }) => {
         if (this.destroyed) return;
         sim.settle(pid, e.status === 409 ? 'Already decided elsewhere' : 'Not saved: ' + e.message, e.status !== 409);
@@ -1026,8 +1027,14 @@ export class Engine {
       this.cam.zoomAt(p.x, p.y, Math.exp(-dy * 0.0016));
     }, { passive: false });
     on(cv, 'dblclick', (e: MouseEvent) => e.preventDefault());
-    let rt = 0;
-    on(window, 'resize', () => { clearTimeout(rt); rt = window.setTimeout(() => this.fit(), 60); });
+    on(window, 'resize', () => { clearTimeout(this.resizeTimer); this.resizeTimer = window.setTimeout(() => this.fit(), 60); });
+    // a DPR change without a resize (the window moved to another monitor, browser zoom via a shortcut): the query matches only the current ratio, so it re-arms on each change
+    if (typeof matchMedia !== 'undefined') {
+      let mq: MediaQueryList | null = null;
+      const onDpr = () => { if (this.destroyed) return; arm(); this.fit(); };
+      const arm = () => { mq?.removeEventListener('change', onDpr); mq = matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`); mq.addEventListener('change', onDpr); };
+      arm(); this.disposers.push(() => { mq?.removeEventListener('change', onDpr); mq = null; });
+    }
     on(document, 'keydown', (e: KeyboardEvent) => this.onKey(e));
     // theme changes: re-read tokens and re-raster
     const mo = new MutationObserver(() => { this.readTheme(); this.dirty(); });
@@ -1143,7 +1150,7 @@ export class Engine {
   }
   destroy() {
     this.destroyed = true;
-    cancelAnimationFrame(this.raf); clearTimeout(this.settleTimer); this.settleArmed = false; clearTimeout(this.simSyncTimer); clearTimeout(this.hashTimer);
+    cancelAnimationFrame(this.raf); clearTimeout(this.settleTimer); this.settleArmed = false; clearTimeout(this.simSyncTimer); clearTimeout(this.hashTimer); clearTimeout(this.hlTimer); clearTimeout(this.resizeTimer);
     this.cam.stopFly(); this.mix.destroy(); this.M.sim.listen(null);
     for (const d of this.disposers) d();
     const w = window as unknown as { __bp?: Engine }; if (w.__bp === this) delete w.__bp;
