@@ -298,7 +298,7 @@ and the theme toggle). They share the engine, the UI and the data, and differ on
    - Richer content per tile.
    - Still blue and white first, with readability kept. A/2 is the warning.
 
-The shaped and bold variants (and the base expression they share) know the six built-in lens ids and
+The shaped and bold variants know the six built-in lens ids and
 read their values from the facets through `src/variants/base/legacy.ts`; for any other lens id they fall
 back to the subtle manifest-driven channel and the default, manifest-driven sheet panel.
 

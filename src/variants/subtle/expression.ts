@@ -21,8 +21,8 @@ import { lensAggregate, lensContent } from '@/lib/model/lens';
 import type { FeatureLive, LensChannel, LensExpression, MarkArgs, Rect, TileGeom } from '../types';
 import { flagsOn } from '@/engine/render/flags';
 import { glyph, healthInk, lineType, railNone, railRest } from './marks';
+import { clamp } from '../base/util';
 
-const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const smooth = (t: number) => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
 

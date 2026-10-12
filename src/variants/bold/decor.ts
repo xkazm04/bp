@@ -20,8 +20,8 @@ import { BH, G, TH, TW, isLiveSt, type BayNode, type BldNode, type RoomNode } fr
 import type { Theme, Viewport } from '../types';
 import { CHANNELS, SENS, kUsd } from './channels';
 import { LENS_NAME } from './palette';
+import { clamp } from '../base/util';
 
-const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
 const TAU = Math.PI * 2;
 
 interface Ctx2 {

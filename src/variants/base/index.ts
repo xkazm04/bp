@@ -1,4 +1,5 @@
-// The base expression: A/1's lens behaviour under the no-recolour rule. Shaped and bold build on it in
-// their own folders; subtle draws every lens from its manifest.
-export { baseExpression, BASE_ACCENTS, band, healthCell, reviewDiamond } from './expression';
+// The base expression: General's compact layout and the shared helpers. Bold builds on it; shaped and subtle
+// import only the helpers.
+export { baseExpression, reviewDiamond } from './expression';
+export { clamp, count } from './util';
 export { bl, hof, ruled } from './legacy';

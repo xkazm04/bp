@@ -2,7 +2,7 @@
 // weight: its OUTLINE (shapes.ts, morphing in with dominance), its ICON (a chip set into the tile's top
 // edge: six side by side in General, one that widens into a tag with a small readout when the lens
 // stands alone), and one ACCENT colour used only for its marks and words. Nothing here fills a tile.
-import type { Feature, Health } from '@/lib/data';
+import type { Health } from '@/lib/data';
 import { bl, hof, measuredContent, ruled, type BuiltinLens } from '../base/legacy';
 import { isLiveSt } from '@/lib/model';
 import type { ChannelAggregate, ChannelContent, LensChannel, MarkArgs, Rect, Theme, TileGeom } from '../types';
@@ -10,6 +10,7 @@ import { dialNeedle, drawIcon, iconFor } from './icons';
 import {
   edgeComb, edgeCrops, edgeCut, edgeGauge, edgeSpines, edgeTicket, shapeBoard, shapeBracket, shapeComb, shapeCut, shapePill, shapeTicket, takeD,
 } from './shapes';
+import { clamp, count } from '../base/util';
 
 /** Secondary accents: kept clear of the status colours (red, amber, mint) and of the blue ink. */
 export const ACCENTS: Record<BuiltinLens, { dark: string; light: string }> = {
@@ -21,8 +22,6 @@ export const ACCENTS: Record<BuiltinLens, { dark: string; light: string }> = {
   quality: { dark: '#7cc0ff', light: '#1f5fbf' },
 };
 
-const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
-function count(fs: readonly Feature[], fn: (f: Feature) => boolean) { let n = 0; for (const f of fs) if (fn(f)) n++; return n; }
 /** Aggregate parts: the first always stays; later parts that count nothing ('0 …') are dropped. */
 function agg(parts: string[]): ChannelAggregate { return { parts: parts.filter((p, i) => p && (i === 0 || !p.startsWith('0 '))) }; }
 function healthCol(th: Theme, h: Health) { return h === 'bad' ? th.red : h === 'watch' ? th.amber : h === 'good' ? th.inkA(0.66) : th.inkA(0.3); }

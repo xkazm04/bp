@@ -6,7 +6,7 @@ Three routes share one engine, one UI and one data model, and differ only by wha
 src/variants/
   types.ts        Variant, VariantUI, SheetPanelProps (+ re-exports of the lens contract types)
   registry.ts     imports the three folders; the foundation owns it
-  base/           the reference expression (A/1's lens behaviour under the no-recolour rule)
+  base/           shared pieces: General's compact layout, legacy lens objects, clamp/count (no channels of its own)
   subtle/         variant 1 — owned by its author
   shaped/         variant 2 — owned by its author
   bold/           variant 3 — owned by its author
@@ -14,8 +14,11 @@ src/variants/
 
 **Rule: a variant author edits only their own folder.** Everything a variant may change is reachable
 from `src/variants/<id>/index.ts`, which must export a `Variant` (named export `<id>` and default).
-Subtle draws every lens from its manifest (`manifestChannel`); shaped and bold start from `baseExpression`'s
-six built-in channels with their own, and fall back to `manifestChannel` for any other lens.
+Subtle draws every lens from its manifest (`manifestChannel`). Shaped and bold each write their own channels for
+the six built-in lens ids (`shaped/channels.ts`, `bold/channels.ts`, reading the lens values through `base/legacy.ts`)
+and fall back to `manifestChannel` for any other lens. `base/` holds only what is shared: `baseExpression`
+(General's compact layout, which bold spreads, and the spring), `reviewDiamond`, `legacy.ts` and `util.ts`
+(`clamp`, `count`: import them, do not copy).
 
 ## What a variant provides
 
@@ -92,22 +95,28 @@ Never use `backdrop-filter` over the map (it halves the frame rate; see `docs/pe
 
 ## How to start a variant
 
-```ts
-// src/variants/shaped/index.ts
-import { baseExpression } from '../base';
-import type { Variant } from '../types';
-import { business } from './business';   // your channels, one file each if you like
+Shaped is the shortest real example: its own channels for the built-in ids, `manifestChannel` for the rest, its
+own General layout and expanded rect.
 
-export const shaped: Variant = {
-  id: 'shaped', name: 'Shaped · reshape and icons', description: '…',
-  expression: {
-    ...baseExpression, id: 'shaped', name: 'Shaped',
-    channels: { ...baseExpression.channels, business },
-  },
-  ui: {},
+```ts
+// src/variants/shaped/index.ts (abridged)
+import { manifestChannel } from '../subtle/expression';
+import type { LensExpression, Variant } from '../types';
+import { CHANNELS, homeRect } from './channels';   // Record<BuiltinLens, LensChannel>
+
+export const shapedExpression: LensExpression = {
+  id: 'shaped', name: 'Shaped',
+  channels: CHANNELS,
+  fallback: manifestChannel,
+  composeGeneral(t, ids) { /* a rect per lens id, or {} on ribbons */ },
+  expandedRect: (t) => homeRect(t),
+  spring: { stiffness: 170, damping: 26 },
 };
+export const shaped: Variant = { id: 'shaped', name: '…', description: '…', expression: shapedExpression, ui: {} };
 export default shaped;
 ```
+
+To reuse General's cell layout instead, spread `baseExpression` (as bold does) and override `id`, `name`, `channels`.
 
 Hard rules from the contract (`docs/blueprint-ui.md`): node colour = lifecycle stage, never changed by
 a lens; positions never move; nothing readable under 12 px (the engine's `tx.f()` clamps canvas text,

@@ -6,8 +6,8 @@
 import type { Feature } from '@/lib/data';
 import { bl as builtin, type BuiltinLens } from '../base/legacy';
 import type { Theme, TileGeom } from '../types';
+import { clamp } from '../base/util';
 
-const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
 
 // --------------------------------------------------------------------------- dominance hand-off
 // The engine gives `shape` the dominance d but gives `marks` only presence and expansion. Shape is

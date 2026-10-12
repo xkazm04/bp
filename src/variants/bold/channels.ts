@@ -3,17 +3,16 @@
 // plus at most one ornament around the tile (crop marks, a security perimeter). Marks are lines and small
 // glyphs in the lens accent: they never fill the tile, so the stage fill stays the tile's colour.
 // Budget: a handful of primitives per tile; no measureText; fonts are cached strings.
-import type { Feature, Health } from '@/lib/data';
+import type { Health } from '@/lib/data';
 import { bl, measuredContent, ruled, type BuiltinLens } from '../base/legacy';
 import { isLiveSt } from '@/lib/model';
 import type { ChannelAggregate, LensChannel, MarkArgs, Rect, TileGeom, Theme } from '../types';
 import { ACCENT } from './palette';
 import { reviewDiamond } from '../base/expression';
+import { clamp, count } from '../base/util';
 
-const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
 const TAU = Math.PI * 2;
 const NODASH: number[] = [], DASH63 = [6, 3], DOT = [1.5, 3];
-function count(fs: readonly Feature[], fn: (f: Feature) => boolean) { let n = 0; for (const f of fs) if (fn(f)) n++; return n; }
 /** Money in short form: $950, $3.2k, $12k (tiles, aggregates, decor rails). */
 export const kUsd = (n: number) => (n >= 1000 ? '$' + (Math.round(n / 100) / 10).toString().replace(/\.0$/, '') + 'k' : '$' + n);
 
