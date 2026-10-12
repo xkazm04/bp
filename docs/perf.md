@@ -16,9 +16,13 @@ for Python, viewport 1920x1080, device pixel ratio 1, `?scale=4` (four product l
 **Result: p50 16.7 ms, p95 16.7 ms at `?scale=4` — the 60 fps budget holds.** The engine's own work per
 frame during the gesture is about 1.1 ms median, 2.4 ms p95 (draw 0.7 / 1.7 ms).
 
-Lens switch at ×4 L0 (the mix tween re-rasters the static layer every frame for ~0.5 s, 28–33 rasters
-of 3–4 ms each): p50 16.7 ms, p95 33.4 ms. A few frames drop while the queue's layout animation and the
-canvas tween run together; see "Known costs" below.
+Lens switch at ×4, measured 2026-10-12 on a busier machine than the table above (the mix tween re-rasters the static layer every frame for ~0.5 s, 32–50 rasters).
+`perf.lastRasterMs` now includes the deferred raster Chrome pays in the first `drawImage` (it used to read
+only the 4–11 ms of recorded canvas calls). Full raster per frame, production build, 1920x1080 DPR1
+(`python scripts/perf.py --lod`): home 17.6 ms, L-bld 20.4, L-blend 26.9, L-tiles 40.5, L-room 47.9,
+L-feat 21.6. `python scripts/perf.py --tween` (rAF deltas, lens switch and back): home p50 33.3 / p95 66.7 ms,
+L-bld 33.3 / 50, L-tiles 33.3 / 66.7, L-room 50 / 83.2. So the lens switch is a ~30 fps spring, not 60,
+and worse the more zoomed in (the raster covers the viewport plus the margin); see "Known costs" below.
 
 ## What the cache and culling do
 

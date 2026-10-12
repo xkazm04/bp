@@ -333,19 +333,23 @@ export class Engine {
     const key = this.staticKey();
     const st = this.cache.check(c, key, this.FW, this.FH);
     const settled = performance.now() - this.lastCamMove > 140;
+    let rastered = false;
     if (st === 'stale' || (st === 'transform' && settled && !gesture)) {
       this.cache.render(c, key, this.FW, this.FH, this.RES, (g, v) => {
         this.anchor(this.FW / 2 - v.x * v.k, this.FH / 2 - v.y * v.k);
         drawGrid(this, g, v); drawDecor(this, g, v); drawBuildings(this, g, v); drawLabels(this, g, v);
       });
-      this.perf.rasters++; this.perf.lastRasterMs = this.cache.lastMs;
+      this.perf.rasters++; this.perf.lastRasterMs = this.cache.lastMs; rastered = true;
     } else if (st === 'transform') {
       // still moving (or settled mid-gesture): wake once more after the settle window to re-raster
       clearTimeout(this.settleTimer);
       this.settleTimer = window.setTimeout(() => this.dirty(), 160);
     }
     const reveal = this.introOn ? (this.FW + 60) * this.introP : undefined;
+    const td = rastered ? performance.now() : 0;
     this.cache.draw(ctx, c, reveal);
+    // Chrome defers the 2D raster to this first drawImage: count it, so the counter is the cost the frame pays
+    if (rastered) this.perf.lastRasterMs += performance.now() - td;
     // dynamic layers at the live camera
     this.anchor(this.FW / 2 - c.x * c.k, this.FH / 2 - c.y * c.k);
     const v = this.view, lod = this.lod();
