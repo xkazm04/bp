@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { latestRun, sheetOf, views, type BayNode, type BldNode, type RoomNode, type WingNode } from '@/lib/model';
 import { shallowEqual, useBp, useEngine, useLive, useVariant } from './hooks';
@@ -17,23 +17,18 @@ function crumbLabel(E: ReturnType<typeof useEngine>, c: Crumb, short: boolean): 
   return (o as BayNode).cap.name;
 }
 
-function Crumbs() {
-  const E = useEngine();
+/** The place's summary line (counts, trouble, waiting questions): the only crumb part that follows the sim and the time. */
+const CrumbSum = memo(function CrumbSum() {
+  const E = useEngine(), M = E.M;
   const s = useBp((s) => ({ place: s.place, open: s.open, t: s.t, delta: s.delta, simV: s.simV, who: s.who, view: s.view }), shallowEqual);
-  const M = E.M;
-  // short labels for the parents only when the full chain would crowd the header
-  const fullLen = s.place.reduce((n, c) => n + crumbLabel(E, c, false).length + 3, 6);
-  const room = (typeof window !== 'undefined' ? window.innerWidth / (E.U || 1) : 1280) - 760 - (s.open ? 0 : 420);
-  const short = fullLen * 12.5 > room;
-  const cur = s.place.length ? E.placeById(s.place[s.place.length - 1].t, s.place[s.place.length - 1].id) : null;
-  const fs = s.open ? null : cur ? cur.feats : M.P.features;
-  let sum: React.ReactNode = null;
-  if (fs) {
+  return useMemo(() => {
+    if (s.open) return null;
+    const last = s.place[s.place.length - 1], cur = last ? E.placeById(last.t, last.id) : null, fs = cur ? cur.feats : M.P.features;
     const id = cur ? cur.id : 'ALL';
     const c = M.agg.countsOf(id, fs, s.t, s.delta), now = s.t === M.P.asOf;
     const bad = now ? M.agg.healthOf(id, fs, 'general').bad : 0;
     const asks = M.sim.has && now ? M.sim.stats(fs, s.who, s.view).asks : 0;
-    sum = (
+    return (
       <span className="sum">
         <span className="st">{fs.length} features · <b>{c.live + c.flagged} live</b> · {c.build} being built · {c.paper} proposed{c.dep ? <> · {c.dep} being retired</> : null}</span>
         {bad || asks ? (
@@ -44,12 +39,40 @@ function Crumbs() {
         ) : null}
       </span>
     );
-  }
+    // simV is the sim's version: the asks change with it
+  }, [E, M, s.place, s.open, s.t, s.delta, s.simV, s.who, s.view]);
+});
+
+/** Room kept for the summary line beside the crumbs (it ellipsises below this). */
+const SUM_MIN = 220;
+
+const Crumbs = memo(function Crumbs() {
+  const E = useEngine(), M = E.M;
+  const place = useBp((s) => s.place);
+  const key = place.map((c) => c.t + c.id).join('/');
+  const nav = useRef<HTMLElement>(null), full = useRef(0);
+  // parents shorten only when the full chain does not fit the header's real width: measure it once per
+  // place with full labels, then compare on every resize (`full` is always the unshortened width)
+  const [sh, setSh] = useState({ key: '', short: false });
+  const short = sh.key === key && sh.short;
+  const fit = () => { const n = nav.current; return !!n && full.current > n.clientWidth - SUM_MIN; };
+  useLayoutEffect(() => {
+    const n = nav.current; if (!n || sh.key === key) return;
+    const bs = n.querySelectorAll<HTMLElement>('button'), a = bs[0], z = bs[bs.length - 1];
+    full.current = a && z ? z.offsetLeft + z.offsetWidth - a.offsetLeft : 0;
+    setSh({ key, short: fit() });
+  });
+  useEffect(() => {
+    const n = nav.current; if (!n || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => { const v = fit(); setSh((o) => (o.key === key && o.short !== v && full.current ? { key, short: v } : o)); });
+    ro.observe(n);
+    return () => ro.disconnect();
+  }, [key]);
   const items = [{ key: 'home', label: M.P.scale > 1 ? M.P.name + ' campus' : M.P.name, depth: 0 }].concat(
-    s.place.map((c, i) => ({ key: c.id, label: crumbLabel(E, c, short && i < s.place.length - 1), depth: i + 1 })),
+    place.map((c, i) => ({ key: c.id, label: crumbLabel(E, c, short && i < place.length - 1), depth: i + 1 })),
   );
   return (
-    <nav id="crumbs" aria-label="Where you are">
+    <nav id="crumbs" aria-label="Where you are" ref={nav}>
       {items.map((it, i) => (
         <span key={it.key} style={{ display: 'contents' }}>
           {i > 0 && <span className="sep">›</span>}
@@ -58,10 +81,10 @@ function Crumbs() {
           </button>
         </span>
       ))}
-      {sum}
+      <CrumbSum />
     </nav>
   );
-}
+});
 
 /** One tab per view: General, then every enabled lens in file order (name, short and question count from the data). */
 function LensTabs() {
@@ -114,15 +137,26 @@ export function ago(ms: number): string {
   return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 48 * 60 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago';
 }
 
+/** A run still `running` with no sign of life this long shows as stalled. Scans bump the run row per phase and write activity rows per feature; one LLM batch can stay quiet for a couple of minutes, so 5 min of silence from both means the scanner is gone (a hard kill leaves `running` forever). */
+export const STALL_MS = 5 * 60000;
+/** Last sign of life of a run: its row's updated_at or its newest activity row. */
+export function lastSeen(L: LiveProduct, run: { id: string; updated_at: string }): number {
+  let t = Date.parse(run.updated_at) || 0;
+  const a = L.scan?.activity;
+  if (a) for (let i = a.length - 1; i >= 0; i--) if (a[i].run_id === run.id) { t = Math.max(t, Date.parse(a[i].at) || 0); break; }
+  return t;
+}
+
 /**
- * A live product's scan status: `Live · <phase>` while its latest run is running, `Last scan <age>`
- * otherwise, `Offline` while the stream reconnects, `No scan store` before the skill wrote one. Kettle
- * (no live product) shows nothing.
+ * A live product's scan status: `Live · <phase>` while its latest run is running, `Stalled · last update
+ * <age>` when it is `running` but silent past STALL_MS, `Last scan failed/aborted <age>` for a bad end,
+ * `Last scan <age>` otherwise, `Offline` while the stream reconnects, `No scan store` before the skill
+ * wrote one. Kettle (no live product) shows nothing.
  */
-function LivePill() {
+const LivePill = memo(function LivePill() {
   const live = useLive();
   return live ? <LivePillOn L={live.product} /> : null;
-}
+});
 function LivePillOn({ L }: { L: LiveProduct }) {
   const [, tick] = useState(0);
   useEffect(() => { const t = window.setInterval(() => tick((n) => n + 1), 30000); return () => clearInterval(t); }, []);
@@ -131,27 +165,43 @@ function LivePillOn({ L }: { L: LiveProduct }) {
   if (L.status === 'error' && L.structure) { cls = 'off'; text = 'Scan store error'; title = L.error ?? 'The scan store cannot be read'; }
   else if (L.status === 'offline') { cls = 'off'; text = 'Offline'; title = 'The scan stream dropped; reconnecting (backoff up to 10 s)'; }
   else if (L.status === 'missing' || !run) { cls = 'idle'; text = L.status === 'missing' ? 'No scan store' : 'No scan yet'; title = 'Every feature reads unmeasured until /lens-scan writes a run'; }
-  else if (run.status === 'running') { cls = 'on'; text = 'Live · ' + run.phase; title = 'Run ' + run.id + ' is running: phase ' + run.phase + ', lenses ' + run.lenses.join(', '); }
-  else { text = 'Last scan ' + ago(Date.now() - Date.parse(run.ended_at ?? run.updated_at)); title = 'Run ' + run.id + ' ' + run.status + (run.note ? ': ' + run.note : ''); }
+  else if (run.status === 'running') {
+    const age = Date.now() - lastSeen(L, run);
+    if (age > STALL_MS) { cls = 'off'; text = 'Stalled · last update ' + ago(age); title = 'Run ' + run.id + ' still says running (phase ' + run.phase + ') but nothing was written for ' + ago(age).replace(' ago', '') + ': the scan was probably stopped'; }
+    else { cls = 'on'; text = 'Live · ' + run.phase; title = 'Run ' + run.id + ' is running: phase ' + run.phase + ', lenses ' + run.lenses.join(', '); }
+  } else {
+    const bad = run.status === 'failed' || run.status === 'aborted';
+    if (bad) cls = 'off';
+    text = 'Last scan ' + (bad ? run.status + ' ' : '') + ago(Date.now() - Date.parse(run.ended_at ?? run.updated_at));
+    title = 'Run ' + run.id + ' ' + run.status + (run.note ? ': ' + run.note : '');
+  }
   return <span className={'livepill ' + cls} role="status" title={title}><i />{text}</span>;
 }
 
-export function Header() {
+const Switcher = memo(ProjectSwitcher);
+const Theme = memo(function Theme() { return <ThemeToggle compact />; });
+/** The title line: the only header part that follows the sheet. */
+function ProjLine() {
   const E = useEngine(), P = E.M.P;
   const view = useBp((s) => s.view);
   const sh = sheetOf(P, view);
+  return <div className="proj">Project {P.name} · drawing set · <b>sheet {sh.no} · {sh.title}</b> · {E.M.live ? 'live lens scan' : 'simulated swarm'}</div>;
+}
+
+export const Header = memo(function Header() {
+  const E = useEngine();
   return (
     <header id="hdr">
       <div id="brand">
-        <div className="proj">Project {P.name} · drawing set · <b>sheet {sh.no} · {sh.title}</b> · {E.M.live ? 'live lens scan' : 'simulated swarm'}</div>
+        <ProjLine />
         <Crumbs />
       </div>
       <div className="hdr-right">
-        <ProjectSwitcher current={E.M.live?.slug ?? null} />
+        <Switcher current={E.M.live?.slug ?? null} />
         <LivePill />
         <LensTabs />
-        <ThemeToggle compact />
+        <Theme />
       </div>
     </header>
   );
-}
+});
