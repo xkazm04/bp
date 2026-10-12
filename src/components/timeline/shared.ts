@@ -1,10 +1,12 @@
 'use client';
 // What the strip (Strip.tsx) and the panel (BaseBar.tsx) share: the sim clock text, the scan status ladder, the size
 // observer and the one pointer handler both time sliders use (the x <-> time mapping itself is scrub.ts).
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { SWARM } from '@/lib/data';
-import type { latestRun } from '@/lib/model';
-import { useEngine } from '../hooks';
+import { latestRun } from '@/lib/model';
+import { useEngine, useLive } from '../hooks';
+import { ago } from '../Header';
+import { runFacts, runProgress } from './run';
 import { scrubAt, type ScrubGeom } from './scrub';
 
 /** The questions that arrive during the simulated hour (both time charts mark them). */
@@ -74,4 +76,16 @@ export function useScrub(E: ReturnType<typeof useEngine>, svg: React.RefObject<S
     onPointerMove: (e: React.PointerEvent) => { if (lock.current) apply(e); },
     onPointerUp: end, onPointerCancel: end, onLostPointerCapture: end,
   };
+}
+
+/** A live product's latest run with what the timeline says about it: status ladder, features measured against the scope, and
+ *  the time facts worded like the header's "Last scan <age>". Re-reads the clock every 30 s (the header's cadence). null on Kettle. */
+export function useRunInfo() {
+  const E = useEngine(), live = useLive(), scan = live?.product.scan, run = latestRun(scan), on = !!live;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { if (!on) return undefined; const t = window.setInterval(() => setNow(Date.now()), 30000); return () => clearInterval(t); }, [on]);
+  const p = useMemo(() => (run && scan ? runProgress(run, scan.measurements, E.M.P.features) : null), [run, scan?.measurements, E]);
+  if (!live) return null;
+  const off = live.product.status === 'offline';
+  return { run, off, ...scanStatus(run, off), p, facts: run && p ? runFacts(run, p, Math.max(now, Date.parse(run.started_at) || 0), ago) : null };
 }

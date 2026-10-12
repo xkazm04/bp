@@ -416,6 +416,10 @@ gets out of the plan's way, and L4 is a page. Earlier sections that say "dock", 
     hour only moves forward: dragging left of the head leaves it clamped and shows not-allowed.
     With one week of history the slider is inert and says why. A keyboard-activated key plan flies
     to its centre, never off the plan.
+  - A live product has no replay hour. The area right of "now" shows its latest run (status, features
+    measured against the run's scope, elapsed time or "<age> · <duration>", worded like the header's
+    "Last scan <age>"); with no run the history takes the full width. `timeline/run.ts`,
+    `check:timeline-run`.
 - **Feature page** (`src/components/FeatureSheet.tsx`, `page/`, `page.css`). The page replaces
   the drawer.
   - **Open and close:** the tile morphs into a full page, animating only `transform` and opacity.

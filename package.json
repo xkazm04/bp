@@ -19,6 +19,7 @@
     "check:timeline-keys": "node src/components/timeline/check-keys.ts",
     "check:timeline-size": "node src/components/timeline/check-size.ts",
     "check:timeline-scrub": "node src/components/timeline/check-scrub.ts",
+    "check:timeline-run": "node src/components/timeline/check-run.ts",
     "check:standard-fixtures": "node scripts/check-standard-fixtures.mjs",
     "check:python-deps": "node scripts/check-python-deps.mjs",
     "check:overlays": "node scripts/check-overlays.ts",

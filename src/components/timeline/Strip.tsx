@@ -4,26 +4,26 @@
 // drag it to travel), and the sim clock (Kettle) or the scan's run status (a live product). Clicking the
 // strip anywhere but the hairline expands the full panel; the strip never expands on hover.
 import { forwardRef, useEffect, useRef } from 'react';
-import { dnum, fmtD, latestRun, revAt } from '@/lib/model';
-import { shallowEqual, useBp, useEngine, useLive } from '../hooks';
+import { dnum, fmtD, revAt } from '@/lib/model';
+import { shallowEqual, useBp, useEngine } from '../hooks';
 import { timeSliderKey } from './keys';
-import { ARRIVALS, scanStatus, simClock, useHourText, useScrub, useSize } from './shared';
+import { ARRIVALS, simClock, useHourText, useRunInfo, useScrub, useSize } from './shared';
+import { runLenses } from './run';
 import { histX, hourX, valueText, type ScrubGeom } from './scrub';
 
 /** The sim clock (Kettle) or the latest run (live product), as one line of small text. */
 function StripClock() {
-  const E = useEngine(), sim = E.M.sim, live = useLive();
+  const E = useEngine(), sim = E.M.sim, ri = useRunInfo();
   const s = useBp((s) => ({ playing: s.playing, speed: s.speed, over: s.over, now: s.t === E.M.P.asOf }), shallowEqual);
   const tref = useRef<HTMLSpanElement>(null);
   useEffect(() => (sim.has && !sim.live ? E.onSimTime((t) => { if (tref.current) tref.current.textContent = simClock(sim.at0, t); }) : undefined), [E, sim]);
   if (!sim.has) return null;
   if (sim.live) {
-    const run = latestRun(live?.product.scan), off = live?.product.status === 'offline';
-    const { label: st, tone } = scanStatus(run, off);
+    const run = ri?.run, f = ri?.facts, running = run?.status === 'running';
     return (
-      <span className="tl-clk" title={run ? run.id + ' · ' + run.lenses.join(' · ') : 'Waiting for /lens-scan'}>
-        <span className="tl-k">SCAN</span><span className={'tl-st ' + tone}>{st}</span>
-        {run && <span className="tl-dim">{run.started_at.slice(5, 10) + ' ' + run.started_at.slice(11, 16)} UTC</span>}
+      <span className="tl-clk" title={run ? run.id + ' · ' + runLenses(run).join(' · ') + ' · started ' + run.started_at.slice(0, 16).replace('T', ' ') + ' UTC' : 'Waiting for /lens-scan'}>
+        <span className="tl-k">SCAN</span><span className={'tl-st ' + (ri?.tone ?? '')}>{ri?.label}</span>
+        {f && ri?.p && <span className="tl-dim">{running ? ri.p.done + '/' + ri.p.total + ' · ' + f.time : f.time}</span>}
       </span>
     );
   }

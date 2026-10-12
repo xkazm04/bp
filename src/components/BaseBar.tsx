@@ -9,10 +9,11 @@
 import { useEffect, useRef } from 'react';
 import { AnimatePresence, motion, useReducedMotion, type Variants } from 'motion/react';
 import { SWARM, type Stage } from '@/lib/data';
-import { GA_MILESTONE, SPEEDS, dnum, fmtD, latestRun, revAt } from '@/lib/model';
-import { shallowEqual, useBp, useEngine, useLive } from './hooks';
+import { GA_MILESTONE, SPEEDS, dnum, fmtD, revAt } from '@/lib/model';
+import { shallowEqual, useBp, useEngine } from './hooks';
 import { Strip } from './timeline/Strip';
-import { ARRIVALS, scanStatus, simClock, useHourText, useScrub, useSize } from './timeline/shared';
+import { ARRIVALS, simClock, useHourText, useRunInfo, useScrub, useSize } from './timeline/shared';
+import { runLenses } from './timeline/run';
 import { histX, hourX, keyPlanFrac, valueText, type ScrubGeom } from './timeline/scrub';
 import { timeSliderKey } from './timeline/keys';
 import './timeline.css';
@@ -37,15 +38,14 @@ function KeyPlanBox() {
 
 /** The clock box for a live product: the latest run, its phase and lenses, and its agents. */
 function LiveClock() {
-  const E = useEngine(), live = useLive(), sim = E.M.sim;
+  const E = useEngine(), ri = useRunInfo(), sim = E.M.sim;
   useBp((s) => s.simV);
-  const run = latestRun(live?.product.scan), off = live?.product.status === 'offline';
-  const { base: st, tone } = scanStatus(run, off);
+  const run = ri?.run, off = !!ri?.off, st = ri?.base ?? '', tone = ri?.tone ?? '';
   return (
     <motion.div variants={useItem()} id="clock" className="live">
       <div className="t"><span>Lens scan</span><span className={'tl-st ' + tone}>{st}</span></div>
       <div className="hm" title={run?.id}>{run ? (run.started_at.slice(5, 10) + ' ' + run.started_at.slice(11, 16)) : '—'}<small>{run ? 'UTC START' : ''}</small></div>
-      <div className="lv">{run ? (off ? 'RECONNECTING · ' : '') + (run.lenses ?? []).join(' · ') + ' · ' + sim.agents.length + ' agent' + (sim.agents.length === 1 ? '' : 's') : 'Waiting for /lens-scan'}</div>
+      <div className="lv">{run ? (off ? 'RECONNECTING · ' : '') + runLenses(run).join(' · ') + ' · ' + sim.agents.length + ' agent' + (sim.agents.length === 1 ? '' : 's') : 'Waiting for /lens-scan'}</div>
     </motion.div>
   );
 }
@@ -85,7 +85,10 @@ function Revisions() {
   const wrap = useRef<HTMLDivElement>(null), svg = useRef<SVGSVGElement>(null);
   const head = useRef<SVGLineElement>(null), tri = useRef<SVGPathElement>(null), el = useRef<SVGRectElement>(null);
   const [W, H] = useSize(wrap, 640, 92);
-  const L = 76, R = W - 6, avail = R - L, hist = Math.round(avail * 0.46), hourW = Math.round(avail * 0.38), g1 = 26;
+  // a live product with no run has nothing to put right of "now": the history takes the whole width (no axis around nothing)
+  const ri = useRunInfo(), liveRun = sim.has && sim.live && !!ri?.run, area = (sim.has && !sim.live) || liveRun;
+  const L = 76, R = W - 6, avail = R - L, g1 = area ? 26 : 0, hourW = area ? Math.round(avail * 0.38) : 0;
+  const hist = area ? Math.round(avail * 0.46) : avail - Math.max(0, Math.round(avail * 0.16) - 26);
   const tl = { h0: L, h1: L + hist, o0: L + hist + g1, o1: L + hist + g1 + hourW, R, top: H < 80 ? 21 : 34, bot: H < 80 ? H - 28 : Math.min(H - 28, 66) };
   const asOf = M.P.asOf, now = s.t === asOf, top = tl.top, bot = tl.bot, RD0 = M.P.weeks[0], NW = M.P.weeks.length;
   // the one mapping (timeline/scrub.ts): a map without an events log has one week of history (a live product often), no span
@@ -117,9 +120,10 @@ function Revisions() {
   // Labels are placed by priority and culled where they would collide or leave the chart, so a narrow panel shows fewer
   // labels instead of overprinted ones. Priority: handle plate > section heads > milestones > end ticks > week dates > quarter ticks.
   const later = m2 ? M.P.milestones.filter((m) => m.date > m2.date).map((m) => m.code || m.name) : [];
-  const xm = tl.R - 14, hourHead = sim.live ? 'LIVE SCAN · NO REPLAY HOUR' : 'THE NEXT HOUR · SIMULATED';
+  const xm = tl.R - 14, hourHead = liveRun ? 'LENS SCAN · ' + (ri?.base ?? '') : 'THE NEXT HOUR · SIMULATED';
   const headW = (x: string) => x.length * (CW + 1.44); // `.lbl` carries 0.12em letter-spacing
-  const hourLab = hour || sim.live ? (headW(hourHead) <= tl.R - tl.o0 ? hourHead : sim.live ? 'LIVE SCAN' : 'NEXT HOUR') : '';
+  const hourLab = hour || liveRun ? (headW(hourHead) <= tl.R - tl.o0 ? hourHead : liveRun ? 'LENS SCAN' : 'NEXT HOUR') : '';
+  const rf = liveRun ? ri?.facts : null, rp = ri?.p, ow = tl.o1 - tl.o0;
   const m1Lab = m1 && m1.date >= RD0 ? ((m1.code ? m1.code + ' ' : '') + m1.name.split(' ').pop()).toUpperCase() + ' · DONE' : '';
   const m2Lab = m2 ? (m2.code || m2.name) + ' · ' + fmtD(m2.date) : '';
   const pxWeek = NW > 1 ? (tl.h1 - tl.h0) / (NW - 1) : tl.h1 - tl.h0, wk = Math.max(1, Math.ceil((6 * CW + 12) / Math.max(1, pxWeek)));
@@ -129,6 +133,11 @@ function Revisions() {
     { k: 'nw', s: NW + (NW === 1 ? ' week' : ' weeks'), x: 2, y: top + 18, a: 'start', p: 1 },
     ...(!s.compact && NW > 1 ? [{ k: 'step', s: '[ ] step', x: 2, y: top + 33, a: 'start', p: 1 } as Lab] : []),
     ...(hourLab ? [{ k: 'hour', s: hourLab, x: tl.o0, y: top - 12, a: 'start', p: 1, w: headW(hourLab) } as Lab] : []),
+    ...(rf && rp ? [
+      { k: 'run1', s: s.compact ? rp.done + '/' + rp.total + ' · ' + rf.time : rf.progress, x: tl.o0 + 6, y: bot - 6, a: 'start', p: 2 } as Lab,
+      ...(!s.compact ? [{ k: 'run2', s: rf.time, x: tl.o0 + 6, y: bot - 23, a: 'start', p: 2 } as Lab] : []),
+      { k: 'run3', s: rp.done + '/' + rp.total, x: tl.o0 + 6, y: bot - 6, a: 'start', p: 3 } as Lab,
+    ] : []),
     ...(m1Lab ? [{ k: 'm1', s: m1Lab, x: hx(m1!.date) + 13, y: top - 9, a: 'start', p: 2 } as Lab] : []),
     ...(m2 ? [{ k: 'm2', s: m2Lab, x: xm - 13, y: top - 7, a: 'end', p: 2 } as Lab] : []),
     ...(m2 && !s.compact ? [{ k: 'days', s: Math.round(dnum(m2.date) - dnum(asOf)) + ' days', x: xm - 4, y: bot - 20, a: 'end', p: 2 } as Lab] : []),
@@ -168,7 +177,13 @@ function Revisions() {
           return <g key={sn.week}><line className="ax" x1={x} y1={bot} x2={x} y2={bot + 4} opacity={0.6} />{txt('w' + i)}</g>;
         })}
         {m1 && m1.date >= RD0 && <g><line x1={hx(m1.date)} y1={top - 16} x2={hx(m1.date)} y2={bot} stroke="var(--ink)" strokeWidth={1.2} /><path d={`M${hx(m1.date)} ${top - 16} h10 l-3 4 l3 4 h-10z`} fill="var(--ink)" />{txt('m1', { style: { fill: 'var(--ink)' } })}</g>}
-        {sim.live && txt('hour', { className: 'lbl', style: { fill: 'var(--mint)' } })}
+        {liveRun && (
+          <g>
+            <rect x={tl.o0} y={top - 6} width={ow} height={bot - top + 6} fill="var(--mint)" fillOpacity={0.05} stroke="var(--mint)" strokeOpacity={0.35} strokeDasharray="3 3" />
+            {rp && rp.total > 0 && <rect x={tl.o0} y={top - 6} width={ow * Math.min(1, rp.done / rp.total)} height={bot - top + 6} fill="var(--mint)" fillOpacity={0.14} />}
+            {txt('hour', { className: 'lbl', style: { fill: 'var(--mint)' } })}{txt('run2')}{shown.has('run1') ? txt('run1') : txt('run3')}
+          </g>
+        )}
         {hour && (
           <g>
             <rect x={tl.o0} y={top - 6} width={tl.o1 - tl.o0} height={bot - top + 6} fill="var(--mint)" fillOpacity={0.05} stroke="var(--mint)" strokeOpacity={0.35} strokeDasharray="3 3" />
@@ -182,7 +197,7 @@ function Revisions() {
             <path ref={tri} d={`M${tl.o0} ${bot + 3} l-5 7 h10z`} fill="var(--mint)" />
           </g>
         )}
-        <line x1={tl.o1} y1={bot} x2={tl.R} y2={bot} stroke="var(--ink)" strokeOpacity={0.4} strokeDasharray="2 4" />
+        {area && tl.R > tl.o1 && <line x1={tl.o1} y1={bot} x2={tl.R} y2={bot} stroke="var(--ink)" strokeOpacity={0.4} strokeDasharray="2 4" />}
         {m2 && <g><line x1={xm} y1={top - 14} x2={xm} y2={bot} stroke="var(--amber)" strokeWidth={1.2} strokeDasharray="4 3" /><path d={`M${xm} ${top - 14} h-10 l3 4 l-3 4 h10z`} fill="var(--amber)" />{txt('m2', { style: { fill: 'var(--amber)' } })}{txt('days', { style: { fill: 'var(--amber)' } })}{txt('tail')}</g>}
         <g className="handle"><line x1={hl} y1={top - 16} x2={hl} y2={bot + 2} /><rect x={px0} y={bot + 8} width={pw} height={20} rx={2} /><text x={px0 + pw / 2} y={bot + 22.5} textAnchor="middle">{lab}</text><path d={`M${hl - 5} ${bot + 8} l5 -6 l5 6z`} fill="var(--amber)" /></g>
       </svg>
