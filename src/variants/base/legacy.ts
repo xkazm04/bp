@@ -32,7 +32,11 @@ export const isBuiltinLens = (l: string): l is BuiltinLens => Object.prototype.h
 const EMPTY: V = {};
 const CACHE = new WeakMap<object, Legacy>();
 
-/** bl = "built-in lenses": the built-in lens objects of a feature (clones share them: the cache is keyed by the shared lens record). */
+/**
+ * bl = "built-in lenses": the built-in lens objects of a feature (clones share them: the cache is keyed by the shared lens record).
+ * A field the facet does not carry stays unknown: '' (or the vocabulary's own 'unknown') for text, 0 for `business.value` (outside its 1..5 scale) and for counts.
+ * The old defaults ('public', 'none', 'not-started', value 1) read as measurements on a feature nobody measured.
+ */
 export function bl(f: Feature): Legacy {
   let L = CACHE.get(f.lens);
   if (L) return L;
@@ -41,29 +45,41 @@ export function bl(f: Feature): Legacy {
   const flagKey = s(op, 'flagKey');
   L = {
     business: {
-      value: n(bu, 'value', 1), confidence: s(bu, 'confidence'), customerRequests30d: n(bu, 'customerRequests30d'), adoptionPct: nn(bu, 'adoptionPct'),
-      revenueLink: s(bu, 'revenueLink', 'none'), mrrImpactUsd: n(bu, 'mrrImpactUsd'), usageNote: s(bu, 'usageNote') || undefined, health: h('business'),
+      value: n(bu, 'value'), confidence: s(bu, 'confidence'), customerRequests30d: n(bu, 'customerRequests30d'), adoptionPct: nn(bu, 'adoptionPct'),
+      revenueLink: s(bu, 'revenueLink'), mrrImpactUsd: n(bu, 'mrrImpactUsd'), usageNote: s(bu, 'usageNote') || undefined, health: h('business'),
     },
     // a design facet marked not applicable is the old "n/a" (a feature with no screen)
-    design: { status: s(de, 'status', h('design') === 'na' ? 'n/a' : 'none'), a11y: s(de, 'a11y', 'unknown'), specDrift: b(de, 'specDrift') === true, health: h('design') },
+    design: { status: s(de, 'status', h('design') === 'na' ? 'n/a' : ''), a11y: s(de, 'a11y', 'unknown'), specDrift: b(de, 'specDrift') === true, health: h('design') },
     development: {
-      status: s(dv, 'status', 'not-started'), progressPct: n(dv, 'progressPct'), aiAuthoredPct: n(dv, 'aiAuthoredPct'), humanReviewed: b(dv, 'humanReviewed'),
+      status: s(dv, 'status'), progressPct: n(dv, 'progressPct'), aiAuthoredPct: n(dv, 'aiAuthoredPct'), humanReviewed: b(dv, 'humanReviewed'),
       openPRs: n(dv, 'openPRs'), unitCoveragePct: nn(dv, 'unitCoveragePct'), techDebt: nn(dv, 'techDebt'), linesOfCode: n(dv, 'linesOfCode'),
       lastCommit: s(dv, 'lastCommit') || null, stalled: b(dv, 'stalled') ?? undefined, health: h('development'),
     },
     operations: {
-      environment: s(op, 'environment', 'none'), flag: flagKey ? { key: flagKey, rolloutPct: n(op, 'rolloutPct') } : null, sloTarget: nn(op, 'sloTarget'),
+      environment: s(op, 'environment'), flag: flagKey ? { key: flagKey, rolloutPct: n(op, 'rolloutPct') } : null, sloTarget: nn(op, 'sloTarget'),
       sloActual: nn(op, 'sloActual'), p95ms: nn(op, 'p95ms'), errorRatePct: nn(op, 'errorRatePct'), incidents30d: n(op, 'incidents30d'),
       alerting: b(op, 'alerting') === true, runbook: b(op, 'runbook') === true, costUsdMonth: n(op, 'costUsdMonth'), health: h('operations'),
     },
-    security: { dataClass: s(se, 'dataClass', 'public'), review: s(se, 'review', 'not-started'), openFindings: n(se, 'openFindings'), health: h('security') },
+    security: { dataClass: s(se, 'dataClass'), review: s(se, 'review'), openFindings: n(se, 'openFindings'), health: h('security') },
     quality: {
-      status: s(q, 'status', 'n/a'), e2eTests: n(q, 'e2eTests'), e2ePassing: n(q, 'e2ePassing'),
+      status: s(q, 'status'), e2eTests: n(q, 'e2eTests'), e2ePassing: n(q, 'e2ePassing'),
       openBugs: { p1: n(q, 'openBugsP1'), p2: n(q, 'openBugsP2'), p3: n(q, 'openBugsP3') }, health: h('quality'),
     },
   };
   CACHE.set(f.lens, L);
   return L;
+}
+
+/** The words a channel's evidence line says for a lens nobody measured (the same wording as the manifest-driven channel). */
+export const NOT_MEASURED = 'NOT MEASURED';
+
+/**
+ * A built-in channel that says NOT MEASURED, and nothing else, for a feature whose facet for this lens is absent
+ * (health 'unmeasured'): no stamp, no default-driven words. Marks and aggregates are the channel's own.
+ */
+export function measuredContent<C extends { content(f: Feature, live: never): { parts: string[]; stamp?: string } }>(lens: BuiltinLens, ch: C): C {
+  const own = ch.content.bind(ch) as (f: Feature, live: never) => { parts: string[]; stamp?: string };
+  return { ...ch, content: (f: Feature, live: never) => (hof(f, lens) === 'unmeasured' ? { parts: [NOT_MEASURED] } : own(f, live)) };
 }
 
 /** A feature's health under a lens (any id). */

@@ -4,6 +4,9 @@
 //   event: delta     a ScanDelta: rows new since the last event (append-only tables by id, runs/proposals
 //                    by updated_at, coverage by judged_at), checked each 1000 ms
 //   event: ping      every 15 s, so proxies and the client know the stream is alive
+//   event: error     { message }: the store file exists but cannot be read (corrupt, mid-migration, locked past
+//                    the timeout). Sent once per distinct message; the route keeps retrying and a good read
+//                    sends a snapshot. An absent store is NOT an error: it gets the empty snapshot.
 // The change check is `PRAGMA data_version` on ONE long-lived read connection: it moves only when another
 // connection (the skill, or a decision) commits, so an idle store costs one pragma a second.
 import fs from 'node:fs';
@@ -22,7 +25,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   if (!p) return Response.json({ error: `unknown product ${slug}` }, { status: 404 });
   const file = storeFile(p), enc = new TextEncoder(), logKey = `stream ${slug} (${file})`;
   let db: ReturnType<typeof openRead> = null, dv = -1, cur: Cursor = newCursor();
-  let tick: ReturnType<typeof setInterval> | null = null, lastSent = Date.now(), done = false;
+  let tick: ReturnType<typeof setInterval> | null = null, lastSent = Date.now(), done = false, sentErr = '';
 
   const stop = () => {
     if (done) return;
@@ -41,17 +44,23 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
       const connect = (): boolean => {
         if (!fs.existsSync(file)) return false;
         db = openRead(file);
-        if (!db) return false;
+        if (!db) { fail(new Error('cannot open the scan store')); return false; }
         try {
           dv = dataVersion(db);
           const s: ScanSnapshot = readSnapshot(db);
           cur = newCursor(); advance(cur, s);
           send('snapshot', s);
-          recovered(logKey);
+          recovered(logKey); sentErr = '';
           return true;
-        } catch (e) { close(db); db = null; warnOnce(logKey, e); return false; }
+        } catch (e) { close(db); db = null; fail(e); return false; }
       };
-      if (!connect()) send('snapshot', emptyScan());
+      /** The file exists and cannot be read: log it once and tell the client once per distinct message. */
+      const fail = (e: unknown) => {
+        warnOnce(logKey, e);
+        const message = e instanceof Error ? e.message : String(e);
+        if (message !== sentErr) { sentErr = message; send('error', { message }); }
+      };
+      if (!connect() && !sentErr) send('snapshot', emptyScan());
       tick = setInterval(() => {
         if (done) return;
         try {

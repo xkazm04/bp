@@ -3,7 +3,7 @@
 // edge: six side by side in General, one that widens into a tag with a small readout when the lens
 // stands alone), and one ACCENT colour used only for its marks and words. Nothing here fills a tile.
 import type { Feature, Health } from '@/lib/data';
-import { bl, hof, ruled, type BuiltinLens } from '../base/legacy';
+import { bl, hof, measuredContent, ruled, type BuiltinLens } from '../base/legacy';
 import { isLiveSt } from '@/lib/model';
 import type { ChannelAggregate, ChannelContent, LensChannel, MarkArgs, Rect, Theme, TileGeom } from '../types';
 import { dialNeedle, drawIcon, iconFor } from './icons';
@@ -308,4 +308,7 @@ const quality: LensChannel = {
   },
 };
 
-export const CHANNELS: Record<BuiltinLens, LensChannel> = { business, design, development, operations, security, quality };
+export const CHANNELS: Record<BuiltinLens, LensChannel> = {
+  business: measuredContent('business', business), design: measuredContent('design', design), development: measuredContent('development', development),
+  operations: measuredContent('operations', operations), security: measuredContent('security', security), quality: measuredContent('quality', quality),
+};

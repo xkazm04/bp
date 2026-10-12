@@ -127,7 +127,8 @@ function LivePillOn({ L }: { L: LiveProduct }) {
   useEffect(() => { const t = window.setInterval(() => tick((n) => n + 1), 30000); return () => clearInterval(t); }, []);
   const run = latestRun(L.scan);
   let cls = '', text: string, title: string;
-  if (L.status === 'offline') { cls = 'off'; text = 'Offline'; title = 'The scan stream dropped; reconnecting (backoff up to 10 s)'; }
+  if (L.status === 'error' && L.structure) { cls = 'off'; text = 'Scan store error'; title = L.error ?? 'The scan store cannot be read'; }
+  else if (L.status === 'offline') { cls = 'off'; text = 'Offline'; title = 'The scan stream dropped; reconnecting (backoff up to 10 s)'; }
   else if (L.status === 'missing' || !run) { cls = 'idle'; text = L.status === 'missing' ? 'No scan store' : 'No scan yet'; title = 'Every feature reads unmeasured until /lens-scan writes a run'; }
   else if (run.status === 'running') { cls = 'on'; text = 'Live · ' + run.phase; title = 'Run ' + run.id + ' is running: phase ' + run.phase + ', lenses ' + run.lenses.join(', '); }
   else { text = 'Last scan ' + ago(Date.now() - Date.parse(run.ended_at ?? run.updated_at)); title = 'Run ' + run.id + ' ' + run.status + (run.note ? ': ' + run.note : ''); }

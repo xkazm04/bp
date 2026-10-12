@@ -51,7 +51,8 @@ function mergeScan(s: ScanSnapshot, d: ScanDelta): ScanSnapshot {
  * The structure is fetched once per slug; the scan follows the SSE stream (snapshot, then deltas). On a
  * stream error the native EventSource is closed and reopened here with exponential backoff capped at
  * 10 s (its own retry has no cap we control); status reads `offline` meanwhile. A product whose repo has
- * no store yet reads `missing` with its structure, and turns `live` when the store appears.
+ * no store yet reads `missing` with its structure, and turns `live` when the store appears. A store that
+ * exists but cannot be read reads `error` with the server's text (`error` event) until the next snapshot.
  */
 export function useLiveProduct(slug: string | null): LiveProduct {
   const [state, setState] = useState<{ slug: string | null; live: LiveProduct }>(() => ({ slug, live: slug ? { status: 'loading', events: '' } : MISSING }));
@@ -80,9 +81,18 @@ export function useLiveProduct(slug: string | null): LiveProduct {
         scan = mergeScan(scan, full(JSON.parse((ev as MessageEvent<string>).data) as Partial<ScanSnapshot>));
         hasStore = true;
         const s = scan;
-        put((l) => ({ ...l, status: 'live', scan: s }));
+        put((l) => ({ ...l, status: 'live', scan: s, error: undefined }));
       });
-      src.onerror = () => {
+      // A named server `error` event (the store exists and cannot be read) is a MessageEvent; the connection stays up.
+      src.addEventListener('error', (ev) => {
+        const data = (ev as MessageEvent<unknown>).data;
+        if (typeof data !== 'string') return; // a dropped connection: onerror below
+        let message = 'The scan store cannot be read';
+        try { message = String((JSON.parse(data) as { message?: unknown }).message ?? message); } catch { /* keep the generic text */ }
+        put((l) => ({ ...l, status: 'error', error: message }));
+      });
+      src.onerror = (ev) => {
+        if (ev instanceof MessageEvent) return; // the server's `error` event, handled above
         src.close();
         if (es === src) es = null;
         if (dead) return;
