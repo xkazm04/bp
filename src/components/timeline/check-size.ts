@@ -6,11 +6,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { stripBlock } from '../../../scripts/lib/source.ts';
 import { baseHeight } from '../../engine/chrome.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const GAP = 6; // chrome.ts: "the strip, its bottom margin and a 6 px gap"
-const css = fs.readFileSync(path.join(HERE, '../timeline.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+const css = stripBlock(fs.readFileSync(path.join(HERE, '../timeline.css'), 'utf8'));
 
 let held = 0;
 const failures: string[] = [];

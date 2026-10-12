@@ -10,11 +10,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readStripped } from '../../scripts/lib/source.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const LENSES = ['business', 'design', 'development', 'operations', 'security', 'quality'];
 /** Source text with comments removed, so a rule described in a comment cannot stand in for the rule. */
-const read = (p: string) => fs.readFileSync(path.join(HERE, p), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"])\/\/.*$/gm, '$1');
+const read = (p: string) => readStripped(path.join(HERE, p));
 
 let agree = 0;
 const failures: string[] = [];

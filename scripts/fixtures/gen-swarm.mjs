@@ -3,11 +3,11 @@
 // the standing orders humans gave, and one replayable hour of swarm events. Writes swarm.json + swarm.js.
 import fs from 'node:fs';
 import path from 'node:path';
+import { mulberry32 } from '../lib/prng.ts';
 
 const DIR = process.argv[2];
 const K = JSON.parse(fs.readFileSync(path.join(DIR, 'kettle.json'), 'utf8'));
-let seed = 7310;
-const rnd = () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+const rnd = mulberry32(7310);
 const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
 const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
 const chance = (p) => rnd() < p;

@@ -7,12 +7,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readStripped } from './lib/source.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const GAP = 8;
-const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
-const ts = strip(fs.readFileSync(path.join(ROOT, 'src/engine/chrome.ts'), 'utf8'));
-const css = strip(fs.readFileSync(path.join(ROOT, 'src/components/rail.css'), 'utf8'));
+const ts = readStripped(path.join(ROOT, 'src/engine/chrome.ts'));
+const css = readStripped(path.join(ROOT, 'src/components/rail.css'));
 
 let failed = 0, pairs = 0;
 const fail = (m) => { failed++; console.log('FAIL ' + m); };

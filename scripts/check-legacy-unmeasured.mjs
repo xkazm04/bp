@@ -11,7 +11,7 @@
 // Run: node scripts/check-legacy-unmeasured.mjs   (Node type stripping; exit 1 on any failure)
 import fs from 'node:fs';
 import path from 'node:path';
-import { register } from 'node:module';
+import { registerSrcHooks } from './lib/src-hooks.mjs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
@@ -23,25 +23,7 @@ if (!process.execArgv.includes('--experimental-transform-types')) {
 }
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const hooks = `
-import fs from 'node:fs'; import path from 'node:path'; import { pathToFileURL, fileURLToPath } from 'node:url';
-const ROOT = ${JSON.stringify(ROOT)};
-const tryFile = (p) => { for (const c of [p, p + '.ts', p + '.tsx', path.join(p, 'index.ts')]) if (fs.existsSync(c) && fs.statSync(c).isFile()) return c; return null; };
-export async function resolve(spec, ctx, next) {
-  let base = null;
-  if (spec.startsWith('@/')) base = path.join(ROOT, 'src', spec.slice(2));
-  else if ((spec.startsWith('./') || spec.startsWith('../')) && ctx.parentURL?.startsWith('file:')) base = path.resolve(path.dirname(fileURLToPath(ctx.parentURL)), spec);
-  if (base) { const f = tryFile(base); if (f) return { url: pathToFileURL(f).href, shortCircuit: true, format: f.endsWith('.json') || f.endsWith('.jsonl') ? 'module' : undefined }; }
-  return next(spec, ctx);
-}
-export async function load(url, ctx, next) {
-  if (url.endsWith('.json') || url.endsWith('.jsonl')) {
-    const text = fs.readFileSync(fileURLToPath(url), 'utf8');
-    return { format: 'module', source: url.endsWith('.json') ? 'export default ' + text : 'export default ' + JSON.stringify(text), shortCircuit: true };
-  }
-  return next(url, { ...ctx, importAttributes: {} });
-}`;
-register('data:text/javascript,' + encodeURIComponent(hooks));
+registerSrcHooks(ROOT);
 const imp = (rel) => import(pathToFileURL(path.join(ROOT, rel)).href);
 const { bl } = await imp('src/variants/base/legacy.ts');
 const shaped = (await imp('src/variants/shaped/channels.ts')).CHANNELS;

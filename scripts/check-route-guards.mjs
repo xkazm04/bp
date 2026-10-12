@@ -10,6 +10,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { stripComments as strip } from './lib/source.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const API = path.join(ROOT, 'src/app/api');
@@ -24,7 +25,6 @@ const KNOWN = {
 };
 
 const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : e.name === 'route.ts' ? [path.join(d, e.name)] : []));
-const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/.*$/gm, '$1');
 const matchClose = (s, i, open, close) => { // index of the bracket closing the one at s[i]
   for (let d = 0; i < s.length; i++) { if (s[i] === open) d++; else if (s[i] === close && --d === 0) return i; }
   return -1;

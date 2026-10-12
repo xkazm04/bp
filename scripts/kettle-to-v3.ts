@@ -13,6 +13,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { seeded } from './lib/prng.ts';
 import { lensHealth } from '../src/lib/standard/health.ts';
 import type {
   AppStructure, Capability, Context, Domain, Facet, FacetValues, Feature, FeatureBoundField, Group, Health, Kpi, LensEntry,
@@ -61,22 +62,6 @@ const AS_OF = kettle.product.asOf;
 const TODAY = AS_OF.slice(0, 10);
 
 // --------------------------------------------------------------------------------------- helpers
-/** FNV-1a, 32 bit. */
-function hash(s: string): number {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
-  return h >>> 0;
-}
-/** mulberry32 seeded by a string: the only source of synthetic variation. */
-function seeded(seed: string): () => number {
-  let a = hash(seed);
-  return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 const kebab = (s: string) => s.toLowerCase().replace(/&/g, ' ').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 const round = (v: number, d = 0) => Math.round(v * 10 ** d) / 10 ** d;
 const pad = (n: number) => String(n).padStart(2, '0');
