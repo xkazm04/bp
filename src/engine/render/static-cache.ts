@@ -41,10 +41,10 @@ export class StaticCache {
   }
 
   /** Raster the static scene at camera `c`. `paint` draws in screen coordinates of that camera. */
-  render(c: Cam, key: string, FW: number, FH: number, dpr: number, paint: (ctx: CanvasRenderingContext2D, v: View) => void) {
+  render(c: Cam, key: string, FW: number, FH: number, dpr: number, paint: (ctx: CanvasRenderingContext2D, v: View) => void, margin = MARGIN) {
     const t0 = performance.now();
     this.FW = FW; this.FH = FH;
-    this.mx = Math.round(FW * MARGIN); this.my = Math.round(FH * MARGIN);
+    this.mx = Math.round(FW * margin); this.my = Math.round(FH * margin);
     this.cssW = FW + 2 * this.mx; this.cssH = FH + 2 * this.my;
     this.res = Math.min(dpr, Math.sqrt(MAX_PX / (this.cssW * this.cssH)));
     const pw = Math.round(this.cssW * this.res), ph = Math.round(this.cssH * this.res);

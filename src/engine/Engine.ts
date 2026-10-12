@@ -338,7 +338,7 @@ export class Engine {
       this.cache.render(c, key, this.FW, this.FH, this.RES, (g, v) => {
         this.anchor(this.FW / 2 - v.x * v.k, this.FH / 2 - v.y * v.k);
         drawGrid(this, g, v); drawDecor(this, g, v); drawBuildings(this, g, v); drawLabels(this, g, v);
-      });
+      }, this.mix.moving ? 0 : undefined); // the camera is still while the lens mix springs: no pan margin to pay for
       this.perf.rasters++; this.perf.lastRasterMs = this.cache.lastMs; rastered = true;
     } else if (st === 'transform') {
       // still moving (or settled mid-gesture): wake once more after the settle window to re-raster
