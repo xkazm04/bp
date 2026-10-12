@@ -10,6 +10,7 @@
 import { memo, useMemo } from 'react';
 import type { Feature } from '@/lib/data';
 import type { Density } from '@/engine/lens/contract';
+import { DENSITY_COUNT } from '@/lib/standard/present';
 import { fmtValue, pname, type Model } from '@/lib/model';
 import type { ScanSnapshot } from '@/lib/scan/types';
 import { BusinessSection } from '../sheet/Business';
@@ -20,8 +21,6 @@ import { useDensity, useEngine, useLive, useVariant } from '../hooks';
 import { NOT_RECORDED } from '@/lib/model/timeview';
 import { HWORD, KpiRows, Val, useAsOf, useHeadlineAt, useSimSig } from './bits';
 import { Sec, Stagger } from './motion';
-
-const EVID: Record<Density, number> = { simple: 2, standard: 4, dense: Infinity };
 
 /** The lens's metric fields as rows: value (counting), the move against the previous reading, target, method, sparkline. */
 const Metrics = memo(function Metrics({ lens, f, M, scan, all, sig }: { lens: string; f: Feature; M: Model; scan: ScanSnapshot | undefined; all: boolean; sig: string }) {
@@ -56,7 +55,7 @@ const Body = memo(function Body({ lens, f, M, density }: { lens: string; f: Feat
   // core feature-bound fields (stage, priority) live in the page header, not here
   const own = (x: (typeof d.fields)[number]) => !(x.source && 'feature' in x.source);
   const hf = d.headline && own(d.headline) ? d.headline : null;
-  const ev = past ? [] : d.evidence.filter((x) => own(x) && x !== hf), evShown = ev.slice(0, EVID[density]);
+  const ev = past ? [] : d.evidence.filter((x) => own(x) && x !== hf), evShown = ev.slice(0, DENSITY_COUNT.page[density]);
   const seen = new Set([hf?.key, ...evShown.map((x) => x.key)]);
   const rest = past ? [] : d.fields.filter((x) => own(x) && !x.metric && !seen.has(x.key) && val(x.key) !== undefined);
   const hot = (key: string) => hotOf(fl, key);

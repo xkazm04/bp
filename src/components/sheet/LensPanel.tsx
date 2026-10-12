@@ -12,6 +12,7 @@
 // panel's evidence, for every variant's panel (the sheet places it), from the manifest alone.
 import type { Feature, FeatureLens, LensDef, Scalar } from '@/lib/data';
 import type { LensField } from '@/lib/standard/types';
+import { DENSITY_COUNT } from '@/lib/standard/present';
 import type { ScanSnapshot } from '@/lib/scan/types';
 import { baseId, fmtValue, metricHistory, pname, type Model } from '@/lib/model';
 import type { SheetPanelProps } from '@/variants/types';
@@ -123,12 +124,11 @@ export function MetricRows({ def, f, model, scan, all, fl }: { def: LensDef; f: 
 }
 
 export const hmark = (h: string) => (h === 'bad' ? 'BAD' : h === 'watch' ? 'WATCH' : h === 'good' ? 'GOOD' : h === 'na' ? 'N/A' : 'NOT MEASURED');
-const LIMIT = { simple: 3, standard: 5, dense: Infinity } as const;
 
 export function DefaultLensPanel({ lens, def, f, model, density, expanded, view }: SheetPanelProps) {
   const fl = f.lens[lens];
   const rows = lensRows(def, fl, (k) => model.sim.liveValue(f, lens, k));
-  const limit = expanded ? LIMIT[density] : view === 'general' ? 3 : 1;
+  const limit = expanded ? DENSITY_COUNT.drawer[density] : view === 'general' ? 3 : 1;
   const shown = rows.slice(0, limit), hidden = rows.length - shown.length;
   const h = fl?.h ?? 'unmeasured';
   return (

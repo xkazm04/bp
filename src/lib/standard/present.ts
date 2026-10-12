@@ -19,8 +19,17 @@ export function generalHealth(hs: Iterable<Health>): Health {
   return worst ?? 'unmeasured';
 }
 
-/** How many evidence fields a reader of this density sees: 2 (simple), 3 (standard), 4 (dense). */
-export const EVIDENCE_BY_DENSITY: Readonly<Record<Density, number>> = { simple: 2, standard: 3, dense: 4 };
+/**
+ * The one density table: how many evidence fields / metric rows a reader of each density sees on each surface
+ * (simple reads light, dense is terminal-dense; Infinity = all). Every surface reads this, none keeps its own.
+ */
+export const DENSITY_COUNT: Readonly<Record<'canvas' | 'drawer' | 'page', Readonly<Record<Density, number>>>> = {
+  canvas: { simple: 2, standard: 3, dense: 4 },
+  drawer: { simple: 3, standard: 5, dense: Infinity },
+  page: { simple: 2, standard: 4, dense: Infinity },
+};
+/** The canvas column (tile evidence, lens evidence). */
+export const EVIDENCE_BY_DENSITY = DENSITY_COUNT.canvas;
 
 /** The numeric field types: the ones with bounds, a metric, a measured line or a rollup weight. */
 export const NUMERIC = new Set<string>(['number', 'integer', 'percent', 'money']);
