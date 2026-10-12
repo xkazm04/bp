@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "generator": "hand-partitioned (bp scan-sweep adoption)",
-  "generated_at": "2026-10-10T17:51:21.175Z",
+  "generator": "hand-partitioned (bp scan-sweep adoption; /perfect delta 2026-10-12)",
+  "generated_at": "2026-10-12T19:11:11.523Z",
   "project": {
     "slug": "bp",
     "name": "bp - the product blueprint"
@@ -84,7 +84,10 @@
         "src/components/Symbols.tsx",
         "src/components/ThemeToggle.tsx",
         "src/components/blueprint.css",
-        "src/components/hooks.ts"
+        "src/components/hooks.ts",
+        "src/components/ProjectSwitcher.tsx",
+        "src/components/ProjectsDialog.tsx",
+        "src/components/projects.css"
       ]
     },
     {
@@ -251,7 +254,9 @@
         "src/engine/render/static-cache.ts",
         "src/engine/render/view.ts",
         "src/engine/text.ts",
-        "src/engine/theme.ts"
+        "src/engine/theme.ts",
+        "src/engine/render/flags.ts",
+        "src/engine/render/lens-glyph.ts"
       ]
     },
     {
@@ -452,7 +457,16 @@
         "src/lib/scan/client.ts",
         "src/lib/scan/products.server.ts",
         "src/lib/scan/store.server.ts",
-        "src/lib/scan/types.ts"
+        "src/lib/scan/types.ts",
+        "src/app/api/products/[slug]/route.ts",
+        "src/lib/scan/projects.ts",
+        "src/lib/scan/readiness.server.ts",
+        "src/lib/scan/readiness.ts",
+        "src/lib/scan/registry.server.ts",
+        "src/data/kettle.app-structure.json",
+        "src/data/kettle.events.jsonl",
+        "src/data/kettle.json",
+        "src/data/swarm.json"
       ]
     },
     {
@@ -488,13 +502,21 @@
         "scripts/sample-facets.ts",
         "scripts/scan-demo.mjs",
         "scripts/shots.py",
-        "scripts/validate-structure.mjs"
+        "scripts/validate-structure.mjs",
+        "scripts/check-chrome-sizes.mjs",
+        "scripts/check-legacy-unmeasured.mjs",
+        "scripts/check-overlays.ts",
+        "scripts/check-python-deps.mjs",
+        "scripts/check-standard-fixtures.mjs",
+        "scripts/check-stream-status.mjs",
+        "scripts/check-tokens.mjs",
+        "scripts/overlays-loader.mjs"
       ]
     }
   ],
   "stats": {
     "contexts": 11,
     "groups": 6,
-    "files": 155
+    "files": 177
   }
 }
