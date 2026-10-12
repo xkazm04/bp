@@ -414,7 +414,8 @@ gets out of the plan's way, and L4 is a page. Earlier sections that say "dock", 
 - **Feature page** (`src/components/FeatureSheet.tsx`, `page/`, `page.css`). The page replaces
   the drawer.
   - **Open and close:** the tile morphs into a full page, animating only `transform` and opacity.
-    The plan dims behind it, and Esc morphs back into the tile.
+    The plan dims behind it (a token colour only: never a `backdrop-filter` over the live canvas,
+    see `docs/perf.md`), and Esc morphs back into the tile.
   - **Tabs:** General plus one tab per enabled lens. A tab switch also switches the plan's lens,
     and opening from a lens view lands on that lens.
   - **General** is the overview: a stat tile per lens, the swarm, Business, dependencies and
@@ -423,6 +424,16 @@ gets out of the plan's way, and L4 is a page. Earlier sections that say "dock", 
     rows when the lens has metric fields; the Screens strip when it has harness metrics and
     shots; Business when its reader role is `business`; and its KPIs, decisions and orders.
     Density follows `reader.density`.
+  - **KPIs on a lens tab** resolve over all four scopes (feature, context, group, project; the group
+    comes from the map's contexts), narrowest first, each with a scope hint, its age from
+    `current.measured_at`, and a health from `warn_at`/`crit_at` read by `direction` (up: at or below
+    is worse; down: at or above; no direction: read off which threshold is the worse one; no
+    thresholds, no health). The health word and colours are the lens tiles'.
+  - **Sections re-render on their own feature's data.** The page does not subscribe to the global
+    `simV`; the lens tab, the stat tiles and the swarm section each select a string of what they
+    read from the sim for this feature (`useSimSig`).
+  - **The footer is honest:** the sample says it is illustrative; a live product states the stream
+    status and the newest scan update it shows. Activity is titled by the window it shows.
   - **Motion:** sections enter staggered, and numbers count up. Under reduced motion both are
     instant.
   - **Phone:** the phone view keeps the single-document body (`sheet/SheetBody.tsx`).
