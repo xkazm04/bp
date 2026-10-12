@@ -206,9 +206,11 @@ function paintTile(E: Engine, ctx: CanvasRenderingContext2D, v: View, T: TileNod
   ctx.globalAlpha = a;
   ctx.textBaseline = 'alphabetic';
   if (!g.text) { ctx.globalAlpha = 1; return; }
-  // text and its layouts ramp in over a few px instead of switching: nothing pops, and no size ever shrinks
+  // text ramps in over a few px instead of popping; the two layouts hand over in sequence (below)
   const ta = a * clamp((w - 100 * u) / (14 * u), 0, 1) * clamp((h - 44 * u) / (8 * u), 0, 1);
-  const bigA = clamp((w - 150 * u) / (16 * u), 0, 1) * clamp((h - 64 * u) / (8 * u), 0, 1);
+  // sequential handover: the small layout fades out over the first half of the band, the big one in over the second, so two differently placed copies of the name never show together
+  const bigR = clamp((w - 150 * u) / (16 * u), 0, 1) * clamp((h - 64 * u) / (8 * u), 0, 1);
+  const bigA = clamp((bigR - 0.5) * 2, 0, 1), smallA = clamp((0.5 - bigR) * 2, 0, 1);
   if (ta <= 0.004) { ctx.globalAlpha = 1; return; }
   const agentsHere = now && E.M.sim.has && E.M.sim.AGF[f.id] && E.M.sim.AGF[f.id].length;
   const chips = !!agentsHere && w >= 100 * u && h >= 58 * u;
@@ -249,8 +251,8 @@ function paintTile(E: Engine, ctx: CanvasRenderingContext2D, v: View, T: TileNod
     if (gStamp && D < 0.999) { const s = fitStamp(E, gStamp.cands, gStamp.last, w - 14 * u, sf); if (s) { ctx.globalAlpha = a * (1 - D); drawText(ctx, s, x + 7 * u, sy, sf, th.red2, th.halo); } }
     if (lStamp && D > 0.001) { const s = fitStamp(E, [lStamp], null, w - 14 * u, sf); if (s) { ctx.globalAlpha = a * D; drawText(ctx, s, x + 7 * u, sy, sf, th.red2, th.halo); } }
   }
-  if (bigA < 0.998) {
-    const a = ta * (1 - bigA);
+  if (smallA > 0.002) {
+    const a = ta * smallA;
     ctx.globalAlpha = a;
     const nf2 = tx.f(13, 500), l2 = 15 * u;
     const lines2 = tx.wrap(f.name, w - 12 * u, nf2, Math.max(1, Math.floor((h - 8 * u - (chips ? 22 * u : 0) - (hy - y - 12 * u)) / l2)));
