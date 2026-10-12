@@ -5,11 +5,9 @@
 import { useMemo, useState } from 'react';
 import type { Feature } from '@/lib/data';
 import type { Context } from '@/lib/standard/types';
-import kettleMap from '@/data/kettle.app-structure.json';
 import { useEngine, useLive } from '../hooks';
 
 const SHOWN = 6;
-const KETTLE = new Map(((kettleMap as { contexts?: Context[] }).contexts ?? []).map((c) => [c.name, c]));
 
 function Ctx({ name, c }: { name: string; c: Context | undefined }) {
   const [all, setAll] = useState(false);
@@ -31,7 +29,8 @@ function Ctx({ name, c }: { name: string; c: Context | undefined }) {
 
 export function CodeTree({ f }: { f: Feature }) {
   const E = useEngine(), live = useLive(), ctxs = live?.product.structure?.contexts as Context[] | undefined;
-  const by = useMemo(() => (E.M.live ? new Map((ctxs ?? []).map((c) => [c.name, c])) : KETTLE), [E, ctxs]);
+  // Kettle's contexts come from the model (the sample module keeps the JSON out of live bundles); they are the map's full objects
+  const by = useMemo(() => new Map(((E.M.live ? ctxs : E.M.kettleContexts as Context[] | undefined) ?? []).map((c) => [c.name, c])), [E, ctxs]);
   if (!f.contexts.length) return null;
   return (
     <>
