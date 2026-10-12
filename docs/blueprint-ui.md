@@ -115,7 +115,7 @@ Data (since the app-structure v3 adoption, spark `blueprint-data-standard` WP3):
 ## Architecture
 
 ```
-src/app/                    routes (App Router). '/' = variant index; '/v/[variant]' = the blueprint
+src/app/                    routes (App Router). '/' = the blueprint (subtle); '/variants' = the index; '/v/[variant]' = one variant
 src/lib/data/               typed data (done)
 src/lib/model/              pure TS: indexes, aggregates, layout, scale clone, swarm sim state
 src/engine/                 canvas engine: camera, frame loop, LOD, hit testing, layers, lens mixing
