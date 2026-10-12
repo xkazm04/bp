@@ -14,7 +14,7 @@ import { baseHeight, overlayRight, railWidth } from './chrome';
 import { initialState, type Crumb, type DockTab, type HoverInfo, type UIState } from './state';
 import { readTheme, type Theme } from './theme';
 import { Text } from './text';
-import { StaticCache } from './render/static-cache';
+import { StaticCache, deviceRes } from './render/static-cache';
 import { buildWallPaths, drawBuildings, drawDecor, drawGrid, drawLabels, featRect } from './render/plan';
 import {
   agentPos, drawAgents, drawBreaches, drawFocus, drawHeat, drawLasso, drawOrderZones, drawOverlays, drawPins, drawPreview,
@@ -256,8 +256,7 @@ export class Engine {
     if (compact !== this.S.compact) this.store.set({ compact });
     this.ui.style.width = w / U + 'px'; this.ui.style.height = h / U + 'px'; this.ui.style.transform = U === 1 ? 'none' : `scale(${U})`;
     this.FW = w; this.FH = h; this.cam.FW = w; this.cam.FH = h;
-    let r = Math.min(window.devicePixelRatio || 1, 2);
-    if (w * h * r * r > 6.5e6) r = Math.sqrt(6.5e6 / (w * h));
+    const r = deviceRes(w, h, window.devicePixelRatio);
     const resChanged = Math.abs(r - this.RES) > 1e-3;
     this.RES = r;
     if (resChanged || this.cv.width !== Math.round(w * r) || this.cv.height !== Math.round(h * r)) {
@@ -350,7 +349,7 @@ export class Engine {
     }
     const reveal = this.introOn ? (this.FW + 60) * this.introP : undefined;
     const td = rastered ? performance.now() : 0;
-    this.cache.draw(ctx, c, reveal);
+    this.cache.draw(ctx, c, reveal, this.RES);
     // Chrome defers the 2D raster to this first drawImage: count it, so the counter is the cost the frame pays
     if (rastered) this.perf.lastRasterMs += performance.now() - td;
     // dynamic layers at the live camera

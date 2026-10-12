@@ -9,6 +9,13 @@ import type { View } from './view';
 export const BUCKET = 1.5;
 const MARGIN = 0.22;
 const MAX_PX = 12e6;
+/** The screen canvas's device-pixel budget; the one place both the screen (Engine.fit) and the cache take their resolution from. */
+const SCREEN_PX = 6.5e6;
+/** The resolution authority: device px per CSS px for a w x h viewport. The screen canvas and the static cache both use exactly this. */
+export function deviceRes(w: number, h: number, dpr: number): number {
+  const r = Math.min(dpr || 1, 2);
+  return w * h * r * r > SCREEN_PX ? Math.sqrt(SCREEN_PX / (w * h)) : r;
+}
 
 export class StaticCache {
   readonly canvas: HTMLCanvasElement;
@@ -44,9 +51,13 @@ export class StaticCache {
   render(c: Cam, key: string, FW: number, FH: number, dpr: number, paint: (ctx: CanvasRenderingContext2D, v: View) => void, margin = MARGIN) {
     const t0 = performance.now();
     this.FW = FW; this.FH = FH;
-    this.mx = Math.round(FW * margin); this.my = Math.round(FH * margin);
+    // the bitmap is always at the screen's resolution (1:1 at rest); the pan margin shrinks instead to bound memory (<= MAX_PX)
+    this.res = dpr;
+    const room = Math.max(0, (Math.sqrt(MAX_PX / (FW * FH * dpr * dpr)) - 1) / 2);
+    const m = Math.min(margin, room);
+    // margins are whole device px, so an exact draw lands on the pixel grid
+    this.mx = Math.round(FW * m * dpr) / dpr; this.my = Math.round(FH * m * dpr) / dpr;
     this.cssW = FW + 2 * this.mx; this.cssH = FH + 2 * this.my;
-    this.res = Math.min(dpr, Math.sqrt(MAX_PX / (this.cssW * this.cssH)));
     const pw = Math.round(this.cssW * this.res), ph = Math.round(this.cssH * this.res);
     if (this.canvas.width !== pw || this.canvas.height !== ph) { this.canvas.width = pw; this.canvas.height = ph; }
     const ctx = this.ctx;
@@ -62,15 +73,18 @@ export class StaticCache {
   }
 
   /** Draw the cached bitmap onto the screen context (in CSS px) for camera `c`. */
-  draw(ctx: CanvasRenderingContext2D, c: Cam, clipW?: number) {
+  draw(ctx: CanvasRenderingContext2D, c: Cam, clipW?: number, screenRes = this.res) {
     const o = this.cam; if (!o) return;
     const s = c.k / o.k, FW = this.FW, FH = this.FH;
     const dx = (-this.mx - FW / 2) * s + FW / 2 + (o.x - c.x) * c.k;
     const dy = (-this.my - FH / 2) * s + FH / 2 + (o.y - c.y) * c.k;
     const ex = Math.abs(s - 1) < 1e-6;
     if (clipW != null) { ctx.save(); ctx.beginPath(); ctx.rect(0, 0, clipW, FH); ctx.clip(); }
-    ctx.imageSmoothingEnabled = !ex;
-    ctx.drawImage(this.canvas, ex ? Math.round(dx) : dx, ex ? Math.round(dy) : dy, this.cssW * s, this.cssH * s);
+    // 1:1 device pixels only when nothing scales (zoom ratio 1 and the bitmap at the screen's resolution); any other ratio smooths
+    const one = ex && Math.abs(this.res - screenRes) < 1e-6, r = this.res;
+    ctx.imageSmoothingEnabled = !one;
+    if (one) ctx.drawImage(this.canvas, Math.round(dx * r) / r, Math.round(dy * r) / r, this.canvas.width / r, this.canvas.height / r);
+    else ctx.drawImage(this.canvas, dx, dy, this.cssW * s, this.cssH * s);
     ctx.imageSmoothingEnabled = true;
     if (clipW != null) ctx.restore();
   }
