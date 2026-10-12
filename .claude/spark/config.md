@@ -50,7 +50,9 @@ None declared.
 - The operator keeps compound sparks whole: offer the split once, never re-ask it.
 - Name a real target repo as an option when the work needs real data. The operator chose Personas through "Other" here.
 - The operator accepts the Recommended option on most architecture forks. Spend questions on scope and target, not on convention.
+- Skill names: the operator renames generic skill names to say what they serve (/adopt -> /adopt-bp). Offer a scoped name first.
 
 ## Skill improvement log
 
 - 2026-10-09 measured-lens-scans: scouts traced the data path but missed the sample-specific tables in the model (WING_DEFS), and only the real-data smoke test found them. Promoted to Repo law above.
+- 2026-10-12 adopt: a fixture-green product still failed the canvas (deprecated counted as promised); the real-data smoke caught it, as the Repo law predicts. Scouts of a registry skill must also list sibling skills in the registry checkout (lens-scan appeared mid-run as the store's declared writer).
