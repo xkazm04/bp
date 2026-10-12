@@ -120,6 +120,8 @@ export class SwarmSim {
   breaches = 0; tally: Partial<Record<ReplayType, number>> = {};
   /** Bumped on every discrete change (status, queue, orders): cheap change detection for caches. */
   version = 0;
+  /** Live: bumped when features' health or fields changed in place (a reading, a map refresh); the static raster must be redone, not patched. */
+  healthV = 0;
   private ordCache: Record<string, Record<string, 1>> | null = null;
   private listener: SimListener | null = null;
 
@@ -135,6 +137,8 @@ export class SwarmSim {
   }
   /** The clock questions wait against: the simulated hour's time, or the wall clock when live. */
   clockMs(): number { return this.live ? this.wall() : this.at0 + this.t * 1000; }
+  /** Live: features changed in place outside a feed (a map refresh): tell the listeners. */
+  restamp() { this.healthV++; this.bump(); }
   listen(l: SimListener | null) { this.listener = l; }
   private bump() { this.version++; this.listener?.changed(); }
   private toast(t: SimToast) { this.listener?.toast(t); }

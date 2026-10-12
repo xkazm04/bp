@@ -14,7 +14,10 @@ export type LiveStatus = 'loading' | 'live' | 'offline' | 'missing' | 'error';
 
 export interface LiveProduct {
   status: LiveStatus;
+  /** The latest map the server answered with. */
   structure?: AppStructure;
+  /** Counts the maps taken (1 = the first): the app refreshes its model in place when this moves, never rebuilds it. */
+  structureRev?: number;
   /** The product's events log text, '' when it has none. */
   events: string;
   scan?: ScanSnapshot;
@@ -51,7 +54,9 @@ function mergeScan(s: ScanSnapshot, d: ScanDelta): ScanSnapshot {
 
 /**
  * Follows one live product. `slug` null = no live product (Kettle): returns `{ status: 'missing' }` at once.
- * The structure is fetched once per slug; the scan follows the SSE stream (snapshot, then deltas). On a
+ * The structure is fetched on open and again when the stream says the map files changed (`map` event) or a run
+ * ends (the skill writes the metrics back into the map, spec 15), a changed answer replacing `structure`;
+ * the scan follows the SSE stream (snapshot, then deltas). On a
  * stream error the native EventSource is closed and reopened here with exponential backoff capped at
  * 10 s (its own retry has no cap we control); status reads `offline` meanwhile. A product whose repo has
  * no store yet reads `missing` with its structure, and turns `live` when the store appears. A store that
@@ -63,10 +68,33 @@ export function useLiveProduct(slug: string | null): LiveProduct {
   useEffect(() => {
     if (!slug) { setState({ slug, live: MISSING }); return; }
     let dead = false, es: EventSource | null = null, timer: ReturnType<typeof setTimeout> | undefined, attempt = 0;
-    let scan: ScanSnapshot | undefined, hasStore = false;
+    let scan: ScanSnapshot | undefined, hasStore = false, mapText = '', mapRev = '', rev = 0, fetching = false, again = false, retry: ReturnType<typeof setTimeout> | undefined;
     const ac = new AbortController(), base = api(slug);
     const put = (f: (l: LiveProduct) => LiveProduct) => { if (!dead) setState((s) => ({ slug, live: f(s.slug === slug ? s.live : { status: 'loading', events: '' }) })); };
     const shown = (): LiveProduct['status'] => (hasStore ? 'live' : 'missing');
+
+    /** Fetch the map; a body equal to the one held changes nothing. Returns false on a failed fetch (the old map stays). */
+    const refetch = async (): Promise<boolean> => {
+      if (fetching) { again = true; return true; }
+      fetching = true;
+      try {
+        const r = await fetch(base + '/structure', { signal: ac.signal, cache: 'no-store' });
+        if (!r.ok) return false;
+        const text = await r.text();
+        if (dead) return true;
+        const j = JSON.parse(text) as { structure: AppStructure; events?: string; rev?: string };
+        mapRev = j.rev ?? mapRev;
+        if (text === mapText) return true;
+        mapText = text;
+        const s = j.structure, ev = j.events ?? '', n = ++rev;
+        put((l) => ({ ...l, structure: s, structureRev: n, events: ev }));
+        return true;
+      } catch { return false; } finally {
+        fetching = false;
+        if (again && !dead) { again = false; void refetch(); }
+      }
+    };
+    const refresh = () => { clearTimeout(retry); void refetch().then((ok) => { if (!ok && !dead) retry = setTimeout(refresh, 3000); }); };
 
     const open = () => {
       if (dead) return;
@@ -79,10 +107,19 @@ export function useLiveProduct(slug: string | null): LiveProduct {
         const s = scan;
         put((l) => ({ ...l, status: shown(), scan: s, error: undefined }));
       });
+      // the map files changed under the page (the skill wrote its metrics back): take the new map
+      src.addEventListener('map', (ev) => {
+        let r = '';
+        try { r = String((JSON.parse((ev as MessageEvent<string>).data) as { rev?: unknown }).rev ?? ''); } catch { return; }
+        if (r && r !== mapRev) refresh();
+      });
       src.addEventListener('delta', (ev) => {
         if (!scan) return;
+        const was = latestRun(scan);
         scan = mergeScan(scan, full(JSON.parse((ev as MessageEvent<string>).data) as Partial<ScanSnapshot>));
         hasStore = true;
+        const now = latestRun(scan);
+        if (was && now && was.id === now.id && was.status === 'running' && now.status !== 'running') refresh(); // a run ended: its metrics are in the map
         const s = scan;
         put((l) => ({ ...l, status: 'live', scan: s, error: undefined }));
       });
@@ -117,9 +154,11 @@ export function useLiveProduct(slug: string | null): LiveProduct {
           return;
         }
         if (!r.ok) throw new Error(`structure: HTTP ${r.status}`);
-        const j = (await r.json()) as { structure: AppStructure; events?: string };
+        mapText = await r.text();
+        const j = JSON.parse(mapText) as { structure: AppStructure; events?: string; rev?: string };
+        mapRev = j.rev ?? '';
         hasStore = !!list.find((p) => p.slug === slug)?.live;
-        put((l) => ({ ...l, status: 'loading', structure: j.structure, events: j.events ?? '' }));
+        put((l) => ({ ...l, status: 'loading', structure: j.structure, structureRev: ++rev, events: j.events ?? '' }));
         open();
       } catch (e) {
         if (dead || (e as Error).name === 'AbortError') return;
@@ -127,7 +166,7 @@ export function useLiveProduct(slug: string | null): LiveProduct {
       }
     })();
 
-    return () => { dead = true; ac.abort(); clearTimeout(timer); es?.close(); es = null; };
+    return () => { dead = true; ac.abort(); clearTimeout(timer); clearTimeout(retry); es?.close(); es = null; };
   }, [slug]);
 
   // Until the effect for a new slug has run, do not hand out the previous product's data.

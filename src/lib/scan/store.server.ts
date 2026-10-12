@@ -4,6 +4,8 @@
 // busy timeout. Rows become wire objects (src/lib/scan/types.ts) here: JSON columns are parsed and NULL
 // columns are omitted (absent-value convention, never null in JSON). Server-only, imported by the route
 // handlers under src/app/api/products and nothing else; node:sqlite is a Node builtin (experimental on 24).
+import fs from 'node:fs';
+import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { emptyScan, isEmptyScan, type Activity, type Coverage, type DecisionBody, type Measurement, type Proposal, type Run, type ScanDelta, type ScanSnapshot, type Shot } from './types.ts';
 
@@ -26,6 +28,20 @@ const ACTIVITY_LIMIT = 200;
 const BUSY_MS = 2000;
 
 export { emptyScan, isEmptyScan };
+
+/**
+ * A cheap fingerprint of the product's map files (`app-structure.json`, `events.jsonl` in the store directory:
+ * mtime and size of each), '' while there is no map. It moves when the skill writes the map back (spec 15);
+ * the stream sends it as `map` and the structure route returns it, so a client knows whether it holds the
+ * current map without downloading it.
+ */
+export function mapRev(dir: string): string {
+  let rev = '';
+  for (const f of ['app-structure.json', 'events.jsonl']) {
+    try { const s = fs.statSync(path.join(dir, f)); rev += f[0] + s.mtimeMs + ':' + s.size + ';'; } catch { rev += f[0] + '-;'; }
+  }
+  return rev.startsWith('a-') ? '' : rev;
+}
 
 function wire<T>(table: Table, r: Row): T {
   const o: Row = {}, js = JSON_COLS[table];

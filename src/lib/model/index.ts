@@ -13,6 +13,7 @@ import { type AggCache, type Closure } from './aggregates';
 import { type SwarmSim } from './sim';
 import { AWAY_SINCE } from './constants';
 import type { LiveRef } from './live';
+import type { LiveFacets } from './live-health';
 
 export interface Model {
   P: Product;
@@ -22,6 +23,8 @@ export interface Model {
   closure: Closure;
   /** Set for a live product (`?product=<slug>`); absent for Kettle. */
   live?: LiveRef;
+  /** Set for a live product: the scan's readings laid over the loaded map's facets (src/lib/model/live-health.ts). */
+  liveFacets?: LiveFacets;
   /** The Kettle sample map's contexts (name -> group); set by `buildModel` in ./sample, absent for a live product (its structure carries them). */
   kettleContexts?: readonly { name: string; group?: string }[];
 }

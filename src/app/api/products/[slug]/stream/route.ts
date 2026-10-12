@@ -3,6 +3,8 @@
 //                    when the store file appears)
 //   event: delta     a ScanDelta: rows new since the last event (append-only tables by id, runs/proposals
 //                    by updated_at, coverage by judged_at), checked each 1000 ms
+//   event: map       { rev }: the fingerprint of the map files (app-structure.json, events.jsonl), sent once the map exists and
+//                    again whenever it changes (the skill writes metrics back into it): the client then refetches /structure
 //   event: ping      every 15 s, so proxies and the client know the stream is alive
 //   event: error     { message }: the store file exists but cannot be read (corrupt, mid-migration, locked past
 //                    the timeout). Sent once per distinct message; the route keeps retrying and a good read
@@ -10,9 +12,9 @@
 // The change check is `PRAGMA data_version` on ONE long-lived read connection: it moves only when another
 // connection (the skill, or a decision) commits, so an idle store costs one pragma a second.
 import fs from 'node:fs';
-import { findProduct, recovered, storeFile, warnOnce } from '@/lib/scan/products.server';
+import { findProduct, recovered, storeDir, storeFile, warnOnce } from '@/lib/scan/products.server';
 import { localHost } from '@/lib/scan/local-only';
-import { advance, close, dataVersion, isEmptyScan, newCursor, openRead, readDelta, readSnapshot, emptyScan, type Cursor } from '@/lib/scan/store.server';
+import { advance, close, dataVersion, isEmptyScan, mapRev, newCursor, openRead, readDelta, readSnapshot, emptyScan, type Cursor } from '@/lib/scan/store.server';
 import type { ScanSnapshot, StreamEvent } from '@/lib/scan/types';
 
 export const runtime = 'nodejs';
@@ -28,6 +30,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   if (!p) return Response.json({ error: `unknown product ${slug}` }, { status: 404 });
   const file = storeFile(p), enc = new TextEncoder(), logKey = `stream ${slug} (${file})`;
   let db: ReturnType<typeof openRead> = null, dv = -1, cur: Cursor = newCursor();
+  const dir = storeDir(p);
+  let rev = '';
   let tick: ReturnType<typeof setInterval> | null = null, lastSent = Date.now(), done = false, sentErr = '';
 
   const stop = () => {
@@ -63,9 +67,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
         const message = e instanceof Error ? e.message : String(e);
         if (message !== sentErr) { sentErr = message; send('error', { message }); }
       };
+      /** The map files changed (or appeared): say so once per change. Independent of the store: a map can exist before the first scan. */
+      const watchMap = () => { const r = mapRev(dir); if (r && r !== rev) { rev = r; send('map', { rev }); } };
       if (!connect() && !sentErr) send('snapshot', emptyScan());
+      watchMap();
       tick = setInterval(() => {
         if (done) return;
+        watchMap();
         try {
           if (!db) connect();
           else {

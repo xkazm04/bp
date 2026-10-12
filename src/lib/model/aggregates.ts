@@ -64,6 +64,8 @@ export class AggCache {
     if (k !== this.key) { this.key = k; this.counts.clear(); }
   }
   get timeKey() { return this.key; }
+  /** Forget every aggregate: feature health or stages changed in place (a live product's readings or map refresh). */
+  clear() { this.counts.clear(); this.health.clear(); this.key = ''; }
   countsOf(id: string, fs: readonly Feature[], t: string, delta: number): Counts {
     this.setTime(t, delta);
     let c = this.counts.get(id);

@@ -1,7 +1,8 @@
 // Checks the stream status contract (docs/blueprint-ui.md, "SSE semantics"): a scan store that EXISTS but
 // cannot be read reaches the client as `event: error` ({ message }), never as an empty snapshot; a store
 // that does not exist yet still answers the empty snapshot ('No scan store yet'); a readable store answers
-// its snapshot. Runs the real route handler (GET) over three throwaway stores for ~2.5 s each, then pins
+// its snapshot; a product with a map answers `map` { rev } after the snapshot and again when the map file changes
+// (and the structure route answers the same rev). Runs the real route handler (GET) over three throwaway stores for ~2.5 s each, then pins
 // the in-tree consumers of the contract by reading their sources (comments stripped):
 //   types.ts   StreamEvent names 'error'
 //   client.ts  listens for a named 'error' event and sets status 'error' from it; its onerror ignores that
@@ -49,6 +50,7 @@ const mk = (slug, write) => {
 const products = [
   mk('corrupt', (f) => fs.writeFileSync(f, 'this is not a sqlite database, just bytes '.repeat(200))),
   mk('absent'),
+  mk('mapped', (f) => { const w = new DatabaseSync(f); w.exec(fs.readFileSync(path.join(ROOT, 'docs/standard/lens-scan-store.sql'), 'utf8')); w.close(); }),
   mk('good', (f) => { const w = new DatabaseSync(f); w.exec(fs.readFileSync(path.join(ROOT, 'docs/standard/lens-scan-store.sql'), 'utf8')); w.close(); }),
 ];
 fs.writeFileSync(path.join(dir, 'bp.products.local.json'), JSON.stringify({ products }));
@@ -57,11 +59,12 @@ const warns = [];
 console.warn = (...a) => { warns.push(a.map(String).join(' ')); };
 const { GET } = await import(pathToFileURL(path.join(ROOT, 'src/app/api/products/[slug]/stream/route.ts')).href);
 
-async function events(slug, ms) {
+async function events(slug, ms, during) {
   const ac = new AbortController();
   const res = await GET(new Request('http://x/api/products/' + slug + '/stream', { signal: ac.signal, headers: { host: 'localhost:3000' } }), { params: Promise.resolve({ slug }) });
   const reader = res.body.getReader(), dec = new TextDecoder();
   let text = '';
+  if (during) setTimeout(during, 1300);
   const pump = (async () => { for (;;) { const r = await reader.read(); if (r.done) break; text += dec.decode(r.value); } })();
   await new Promise((r) => setTimeout(r, ms));
   ac.abort(); await reader.cancel().catch(() => {}); await pump.catch(() => {});
@@ -79,8 +82,21 @@ try {
   const ok = await events('good', 1500);
   check('readable store: answers its snapshot, no error', names(ok) === 'snapshot', names(ok));
 
+  // a product with a map: the snapshot, then the map's rev; rewriting the map sends the new rev (once)
+  const mapFile = path.join(products.find((p) => p.slug === 'mapped').root, '.ai/lens-scan/app-structure.json');
+  fs.writeFileSync(mapFile, '{"a":1}');
+  const mapped = await events('mapped', 3400, () => fs.writeFileSync(mapFile, '{"a":1,"bb":2}'));
+  check('mapped product: snapshot, map, then map again after the file changed', names(mapped) === 'snapshot,map,map', names(mapped));
+  const revs = mapped.filter((x) => x.ev === 'map').map((x) => JSON.parse(x.data).rev);
+  check('mapped product: the two revs differ', revs.length === 2 && revs[0] !== revs[1] && revs.every((r) => typeof r === 'string' && r), revs.join(' | '));
+  const { GET: STRUCT } = await import(pathToFileURL(path.join(ROOT, 'src/app/api/products/[slug]/structure/route.ts')).href);
+  const sj = await (await STRUCT(new Request('http://x/api/products/mapped/structure', { headers: { host: 'localhost:3000' } }), { params: Promise.resolve({ slug: 'mapped' }) })).json();
+  check('structure route answers the current rev of the stream', sj.rev === revs[1], sj.rev + ' vs ' + revs[1]);
+
   const code = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\s\/\/ .*$/gm, '');
   const types = code('src/lib/scan/types.ts'), client = code('src/lib/scan/client.ts'), header = code('src/components/Header.tsx');
+  check('types.ts: StreamEvent names map', /type StreamEvent\s*=[^;]*'map'/.test(types));
+  check("client.ts: addEventListener('map') refetches the structure", /addEventListener\(\s*'map'[\s\S]{0,400}refresh\(\)/.test(client));
   check('types.ts: StreamEvent names error', /type StreamEvent\s*=[^;]*'error'/.test(types));
   check("client.ts: addEventListener('error') sets status 'error'", /addEventListener\(\s*'error'[\s\S]{0,400}status:\s*'error'/.test(client));
   check('client.ts: onerror ignores the server error event', /onerror\s*=\s*\(\s*\w+[^)]*\)\s*=>\s*\{[^}]*instanceof MessageEvent/.test(client));

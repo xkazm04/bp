@@ -1,11 +1,13 @@
 // GET /api/products/[slug]/structure: `{ structure, events }` from the product's
-// `.ai/lens-scan/app-structure.json` and optional `events.jsonl` ('' when absent). 404 for an unknown
+// `.ai/lens-scan/app-structure.json` and optional `events.jsonl` ('' when absent), and `rev`, their fingerprint
+// (the stream's `map` event carries the same string when the files change). 404 for an unknown
 // slug or a missing structure file. The structure is passed through as the skill wrote it; the client
 // loads it with the standard's loader like the Kettle map.
 import fs from 'node:fs';
 import path from 'node:path';
 import { findProduct, storeDir } from '@/lib/scan/products.server';
 import { localHost } from '@/lib/scan/local-only';
+import { mapRev } from '@/lib/scan/store.server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,6 +19,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   const p = findProduct(slug);
   if (!p) return Response.json({ error: `unknown product ${slug}` }, { status: 404 });
   const dir = storeDir(p), file = path.join(dir, 'app-structure.json');
+  const rev = mapRev(dir); // before the read: a write in between shows up as a newer rev
   let structure: unknown;
   try { structure = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {
     const missing = (e as NodeJS.ErrnoException).code === 'ENOENT';
@@ -24,5 +27,5 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   }
   let events = '';
   try { events = fs.readFileSync(path.join(dir, 'events.jsonl'), 'utf8'); } catch { /* no events log */ }
-  return Response.json({ structure, events });
+  return Response.json({ structure, events, rev });
 }

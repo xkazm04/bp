@@ -8,7 +8,7 @@
 import { Component, memo, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from 'react';
 import { Engine } from '@/engine/Engine';
 import { EMPTY_SCAN, clampScale, type Model } from '@/lib/model';
-import { buildLiveModel, liveSwarm } from '@/lib/model/live-feed';
+import { applyScan, buildLiveModel, liveSwarm, refreshLiveModel } from '@/lib/model/live-feed';
 import { decideProposal, useLiveProduct, type LiveProduct } from '@/lib/scan/client';
 import { refreshProjects, useProductName } from '@/lib/scan/projects';
 import { getVariant } from '@/variants/registry';
@@ -122,12 +122,15 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
   // a live product is drawn once its structure is in and the stream has answered (or given up for now)
   const settled = !!structure && (!!live.scan || live.status !== 'loading');
   const liveRef = useRef(live); liveRef.current = live;
+  // the map revision the model on screen was built (or last refreshed) from
+  const mapRev = useRef(0);
   useEffect(() => {
     if (product === undefined || (product && !settled)) return;
     let dead = false, built: Engine | null = null;
     const qs = new URLSearchParams(location.search), scale = clampScale(qs.get('scale')), now = () => performance.now();
     // ?lenses=-security,+com.kettle.cost switches lenses off or on for the session, on top of the map's `enabled`
     const L = liveRef.current;
+    mapRev.current = L.structureRev ?? 0;
     setBuildErr(null);
     const mount = (model: Model) => {
       const e = new Engine({ canvas: cv.current!, ui: ui.current!, root: root.current!, model, expression: variant.expression, intro: qs.get('intro') !== '0' && !location.hash });
@@ -137,15 +140,32 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
     };
     const fail = (err: unknown) => { console.error(err); setBuildErr(err instanceof Error ? err.message : String(err)); };
     try {
-      if (product) mount(buildLiveModel(structure, L.events, L.scan ?? EMPTY_SCAN, { slug: product, decide: (id, body) => decideProposal(product, id, body) }, scale, now, qs.get('lenses')));
+      if (product) mount(buildLiveModel(L.structure, L.events, L.scan ?? EMPTY_SCAN, { slug: product, decide: (id, body) => decideProposal(product, id, body) }, scale, now, qs.get('lenses')));
       else void loadSample().then((build) => { if (!dead) mount(build(scale, now, qs.get('lenses'))); }).catch((err) => { sampleChunk = null; if (!dead) fail(err); });
     } catch (err) { fail(err); return; }
     return () => { dead = true; built?.destroy(); built = null; setEngine(null); };
-  }, [variant, product, structure, settled]);
-  // every later scan: into the sim in place (the first one built the model)
+    // not on `structure`: a newer map refreshes this model in place (below), never rebuilds it (the camera and the layout stay)
+  }, [variant, product, settled]);
+  // every later scan: its readings over the facets of the features it touched, then into the sim (the first one built the model)
   useEffect(() => {
-    if (engine?.M.live && live.scan) engine.feed(liveSwarm(engine.M.P, live.scan));
+    if (!engine?.M.live || !live.scan) return;
+    applyScan(engine.M, live.scan);
+    engine.feed(liveSwarm(engine.M.P, live.scan));
   }, [engine, live.scan]);
+  // a newer map (the skill wrote its metrics back): the same features take the new fields in place; nothing moves
+  useEffect(() => {
+    const rev = live.structureRev ?? 0;
+    if (!engine?.M.live || !live.structure || rev === mapRev.current) return;
+    mapRev.current = rev;
+    try {
+      const r = refreshLiveModel(engine.M, live.structure, live.events, live.scan ?? EMPTY_SCAN, new URLSearchParams(location.search).get('lenses'));
+      engine.feed(liveSwarm(engine.M.P, live.scan ?? EMPTY_SCAN));
+      if (r.structural) engine.toast('The map has changed shape', 'features that moved or are new appear after a reload');
+    } catch (err) {
+      console.error(err);
+      engine.toast('Could not read the updated map', 'the page keeps the one it has; ' + (err instanceof Error ? err.message : String(err)));
+    }
+  }, [engine, live.structureRev, live.structure, live.events, live.scan]);
   const info = useMemo<LiveInfo | null>(() => (product ? { slug: product, product: live } : null), [product, live]);
   return (
     <div className="bp" ref={root} data-variant={variant.id} data-view="general">
