@@ -84,6 +84,11 @@
           "else": { "not": { "required": ["currency"] } }
         },
         {
+          "description": "Bounds are for numeric fields: min and max on any other type are rejected.",
+          "if": { "properties": { "type": { "enum": ["number", "integer", "percent", "money"] } } },
+          "else": { "not": { "anyOf": [ { "required": ["min"] }, { "required": ["max"] } ] } }
+        },
+        {
           "description": "A metric is a number: only numeric fields carry one.",
           "if": { "required": ["metric"] },
           "then": { "properties": { "type": { "enum": ["number", "integer", "percent", "money"] } } }

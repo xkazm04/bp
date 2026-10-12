@@ -1,0 +1,39 @@
+{
+  "$schema": "app-structure/3",
+  "version": 3,
+  "generator": "hand",
+  "generated_at": "2026-01-01T09:00:00Z",
+  "project": { "slug": "kettle", "name": "Kettle" },
+  "features": [ { "slug": "dunning", "name": "Dunning", "stage": "live" } ],
+  "kpis": [
+    { "slug": "sms-spend", "name": "SMS spend", "scope": { "project": true }, "unit": "USD", "current": { "value": 310 } }
+  ],
+  "lenses": [
+    { "id": "com.kettle.gaps", "version": "0.1.0", "source": "project", "enabled": true, "manifest": {
+      "$schema": "lens-manifest/1", "id": "com.kettle.gaps", "version": "0.1.0", "name": "Gaps",
+      "reader": { "role": "engineer", "density": "standard" },
+      "fields": [
+        { "key": "spend", "label": "Spend", "type": "money", "currency": "USD", "min": 0, "source": { "kpi": "sms-spend" } },
+        { "key": "specDrift", "label": "Spec drift", "type": "boolean" },
+        { "key": "level", "label": "Level", "type": "integer", "min": 0 },
+        { "key": "mode", "label": "Mode", "type": "enum", "values": ["a", "b"] }
+      ],
+      "health": {
+        "rules": [
+          { "when": { "field": "specDrift", "eq": "true" }, "health": "bad", "reason": "Spec drift", "short": "Drift {missing}" },
+          { "when": { "field": "level", "gt": "3" }, "health": "watch", "reason": "Level {level}" },
+          { "when": { "field": "specDrift", "gte": 1 }, "health": "watch", "reason": "Ordered boolean" },
+          { "when": { "field": "mode", "in": ["a", 2] }, "health": "watch", "reason": "Mixed operands" }
+        ],
+        "default": "good",
+        "rollup": { "method": "worst-of" }
+      },
+      "presentation": { "glyph": "pulse", "line": "solid", "evidence": ["level"] }
+    } }
+  ],
+  "facets": {
+    "dunning": { "com.kettle.gaps": {
+      "values": { "spend": 5, "specDrift": false, "level": 2 },
+      "override": { "health": "watch", "by": "sam", "why": "Booked", "until": "2026-06-01" } } }
+  }
+}

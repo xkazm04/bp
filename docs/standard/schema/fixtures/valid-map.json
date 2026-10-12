@@ -280,13 +280,13 @@
     },
     {
       "id": "com.kettle.cost",
-      "version": "0.1.0",
+      "version": "0.0.1",
       "source": "project",
       "enabled": true,
       "manifest": {
         "$schema": "lens-manifest/1",
         "id": "com.kettle.cost",
-        "version": "0.1.0",
+        "version": "0.0.1",
         "name": "Cost",
         "short": "COST",
         "description": "Running cost per feature, including SMS spend.",

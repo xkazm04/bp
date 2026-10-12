@@ -1,0 +1,10 @@
+{
+  "$schema": "lens-manifest/1",
+  "id": "com.kettle.bounds",
+  "version": "0.1.0",
+  "name": "Bounds",
+  "reader": { "role": "engineer", "density": "standard" },
+  "fields": [ { "key": "owner", "label": "Owner", "type": "string", "min": 0, "max": 10 } ],
+  "health": { "rules": [], "default": "good", "rollup": { "method": "worst-of" } },
+  "presentation": { "glyph": "pulse", "line": "solid" }
+}

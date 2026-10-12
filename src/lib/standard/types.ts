@@ -32,14 +32,18 @@ interface FieldBase {
   label: string;
   description?: string;
   unit?: string;
-  min?: number;
-  max?: number;
   headline?: boolean;
   /**
    * Where the value comes from instead of the facet: a KPI's current value (decision 6), or a core
    * feature field. Either way it is filled in at evaluation, and a stored facet value is ignored.
    */
   source?: { kpi: string } | { feature: FeatureBoundField };
+}
+
+/** Only numeric fields have bounds (`max` also scales the lens line) and can be a measured metric. */
+interface NumericPart {
+  min?: number;
+  max?: number;
   /**
    * v3.1: the field is a measured metric. The field key is the metric key in the lens-scan store
    * (docs/standard/lens-scan-store.sql); its latest measurement is the facet value, history lives in
@@ -47,6 +51,8 @@ interface FieldBase {
    */
   metric?: MetricSpec;
 }
+/** The non-numeric members carry these as `never` so a reader can ask any field for its bounds. */
+interface NoNumericPart { min?: never; max?: never; metric?: never }
 
 /** How a metric is read and which way is better. */
 export interface MetricSpec {
@@ -57,9 +63,10 @@ export interface MetricSpec {
 }
 export type MetricMethod = 'static' | 'probe' | 'harness' | 'judgement';
 export type LensField =
-  | (FieldBase & { type: 'enum'; /** ordered */ values: string[] })
-  | (FieldBase & { type: 'money'; /** ISO 4217 */ currency: string })
-  | (FieldBase & { type: Exclude<FieldType, 'enum' | 'money'> });
+  | (FieldBase & NoNumericPart & { type: 'enum'; /** ordered */ values: string[] })
+  | (FieldBase & NumericPart & { type: 'money'; /** ISO 4217 */ currency: string })
+  | (FieldBase & NumericPart & { type: 'number' | 'integer' | 'percent' })
+  | (FieldBase & NoNumericPart & { type: 'boolean' | 'string' | 'date' });
 
 type Leaf<Op extends string, V> = { field: string } & { [K in Op]: V };
 /** A leaf names one field and exactly one operator. */

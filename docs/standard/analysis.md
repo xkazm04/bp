@@ -273,14 +273,14 @@ Weekly snapshots and "what changed" are worked out from this log. Readers ignore
 | WP | Builder session | Files | Done when |
 |---|---|---|---|
 | **1. Standard** (Director, first, committed before the others) | `docs/standard/app-structure-v3.md` (the spec), `docs/standard/schema/app-structure-3.schema.json`, `docs/standard/schema/lens-manifest-1.schema.json`, `docs/standard/lenses/*.json` (the six built-ins), `scripts/validate-structure.mjs` | The schemas validate the six manifests. The validator fails on an unknown stage, a bad lens id, or a condition with two operators. The spec owns the doc surface. |
-| **2. Kettle as v3** | `scripts/kettle-to-v3.mjs`, `src/data/kettle.app-structure.json`, `src/data/kettle.events.jsonl` | All 132 features, 13 domains, 29 capabilities, 4 milestones, and **KPIs derived from the sample**. The six built-in lenses plus one custom lens, `com.kettle.cost` (monthly cost, SMS spend), to prove a lens is a plugin. The events log rebuilds the 27 weekly snapshots exactly. The file validates. |
+| **2. Kettle as v3** | `scripts/kettle-to-v3.ts`, `src/data/kettle.app-structure.json`, `src/data/kettle.events.jsonl` | All 133 features, 13 domains, 29 capabilities, 4 milestones, and **KPIs derived from the sample**. The six built-in lenses plus one custom lens, `com.kettle.cost` (monthly cost, SMS spend), to prove a lens is a plugin. The events log rebuilds the 27 weekly snapshots exactly. The file validates. |
 | **3. Blueprint adoption** | `src/lib/standard/` (types, loader for v3 and v2, rule evaluator, rollup), `src/lib/model/*`, `src/engine/lens/*`, `src/components/*` that read lens lists, and `src/variants/subtle/` | The `LensId` union and the `LENSES` constant are gone. Tabs, legend, sheet, queue emphasis and the General strip come from `lenses[]` where `enabled` is true. The subtle variant draws any lens from its manifest's `glyph`, `line` and `measures`. Health comes only from the rules. `?lenses=-security` and an enabled custom lens both work. Type checks, the build and frame time are unchanged. |
 | **4. Personas adoption brief** (document only) | `docs/standard/personas-adoption.md` | Covers the changes in the Personas repo: v3 export and merge, a v3 declaration reader, a `stage` column on `dev_use_cases` plus events, a lens catalog modelled on connectors (`scripts/lenses/builtin/*.json`, a `lens_definitions` table with `is_builtin`), facet rows shaped like council verdicts, a `lens` tag on `dev_kpis`, and a v3-aware ai-registry `build-registry-map`. It is ready to hand to a spark in that repo. |
 
 - **Order:** WP1 first, then WP2 and WP3 in parallel (WP3 codes against the WP1 types and a stub
   file until WP2 lands). WP4 can run any time after WP1.
-- **Landing:** this repo has **no commits yet**. Building means first committing the current app
-  (scaffold, engine, variants, docs) as the base, then building in a worktree.
+- **Landing:** this plan was written before the first commit; the repo has history now
+  (see `git log`).
 - **Shaped and bold variants:** they know only the six built-in ids. For any other lens they fall
   back to the manifest-driven subtle channel. They stay reachable at `/variants`.
 

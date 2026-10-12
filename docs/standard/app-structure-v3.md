@@ -312,7 +312,7 @@ keep orphaned facets (section 11).
 | `type` | FieldType | yes | See below. |
 | `values` | string[] | enum only, required | The ordered list of allowed values, first to last. |
 | `currency` | ISO 4217 | money only, required | |
-| `min`, `max` | number | | Bounds for numeric fields. `max` also scales the lens line (8.6). |
+| `min`, `max` | number | | Bounds for numeric fields only (the schema rejects them on other types). `max` also scales the lens line (8.6). |
 | `unit` | string | | Display unit, e.g. `ms`. |
 | `headline` | boolean | | The field that best sums up the lens. |
 | `description` | string | | |
@@ -580,7 +580,7 @@ Every event has `at` (date-time, req.) and `type` (req.), and MAY have `actor` a
 | `lens-health` | `feature`, `lens`, `from`, `to` | healths, including `unmeasured` and `na` |
 | `kpi-threshold` | `kpi`, `from`, `to` | the KPI's track verdicts (free strings) |
 | `milestone` | `milestone`, `from`, `to` | `planned`, `active`, `shipped` |
-| `feature-added` | `feature` | `to` (optional): the stage the feature was added at |
+| `feature-added` | `feature` | `to` (optional): the stage the feature was added at, one of the stages (6.5) |
 | `feature-archived` | `feature` | |
 | `lens-enabled` | `lens` | |
 | `lens-disabled` | `lens` | |
@@ -630,7 +630,8 @@ A map with `declared: true` is hand-owned: exporters MUST NOT overwrite it.
 
 `node scripts/validate-structure.mjs <file.json>... [--events <file.jsonl>]` (`npm run validate:structure`)
 runs the schema (ajv, 2020 dialect) and then the reference checks a schema cannot express. With no
-arguments it validates the six built-in manifests.
+arguments it validates the six built-in manifests and every custom manifest in `docs/standard/lenses-custom/`
+(its id must equal its file name and be reverse-DNS). `--events` is checked against exactly one map.
 
 Errors (the file is invalid):
 - duplicate slugs, names or lens ids; duplicate field keys in a manifest;
@@ -646,13 +647,15 @@ Errors (the file is invalid):
 - (3.1) a `metric` block on a non-numeric field, or with a key outside `better`, `method`, `target`,
   `warn_at` (schema); a variation slug that appears twice within one feature.
 
-Warnings: rules or reasons naming unknown fields, enum operands outside the field's values, ordering
-operators on enums, a facet that stores a value for a feature-bound field, a field bound to `stage`,
+Warnings: rules, reasons or `short` texts naming unknown fields, an operand whose type is not the field's
+(`{"field": "specDrift", "eq": "true"}` on a boolean never matches, since there is no coercion), enum operands
+outside the field's values, ordering operators on enums and booleans, a facet that stores a value for any
+bound field (KPI-bound or feature-bound), a field bound to `stage`,
 `priority` or `status` whose enum lacks part of that vocabulary, a KPI lens tag not in `lenses[]`, a `primary_context` outside `contexts`, `stats`
-that disagree with the lists, events naming records not in the map or out of time order, and (3.1,
+that disagree with the lists, events naming records (features, KPIs, milestones, lenses) not in the map or out of time order, and (3.1,
 advisory, section 6.7) a feature with `variations` none of whose contexts' `file_paths` contains a
 `customizations/` segment.
-Notes: orphaned facets, expired overrides.
+Notes: orphaned facets, overrides expired on the map's as-of date (`generated_at`, else today).
 
 Fixtures in `docs/standard/schema/fixtures/`:
 - `valid-map.json` with `valid-map.events.jsonl`: the example in section 14.
@@ -662,9 +665,16 @@ Fixtures in `docs/standard/schema/fixtures/`:
   outranks overrides; `spot-selection` is `watch`, and the `stage` its facet stores is ignored (a
   warning); `class-packs` is `na` from `"applicable": false`; `virtual-classes` has no facet and is
   `unmeasured`. The rollup (share 0.25 / 0.2 over the two measured features) is `bad`.
+- `warn-validator-gaps.json` with `warn-validator-gaps.events.jsonl`: valid, with one warning for each check above
+  that is not an error. `malformed-missing-values.json` and `malformed-loader.json` are schema-invalid on purpose
+  (null values, bad enums, duplicates): the evaluator and the loader must still read them, with the
+  spec's missing-value rules and a warning per repair. The outcomes of all fixtures, and of the section 14
+  example below, are asserted by `scripts/check-fixtures.ts` (`npm run check:fixtures`).
 - Files that must fail: `invalid-stage.json` (unknown stage), `invalid-lens-id.json` (a custom lens
   without a reverse-DNS id), `invalid-two-operators.json` (a condition leaf with two operators),
-  `invalid-core-field.json` (a field bound to the core field `owner`, outside the whitelist).
+  `invalid-core-field.json` (a field bound to the core field `owner`, outside the whitelist),
+  `invalid-min-on-string.json` (`min`/`max` on a string field) and `invalid-event-feature-added.events.jsonl`
+  (a `feature-added` event whose `to` is not a stage).
 
 ## 13. The built-in lenses
 
@@ -695,7 +705,8 @@ health over the converted facets, metrics included, still equals the sample's on
 
 ## 14. Example
 
-A complete, valid map (`docs/standard/schema/fixtures/valid-map.json`): one group, two contexts,
+A complete, valid map (`docs/standard/schema/fixtures/valid-map.json`; its `com.kettle.cost` is a reduced draft at
+version 0.0.1, distinct from the Kettle sample's 0.1.0 in `docs/standard/lenses-custom/`): one group, two contexts,
 two features in one capability, a milestone, a KPI, one built-in lens (security, which binds the
 feature's `stage` and has an `applies_when`) and one custom lens bound to the KPI, facets with an
 override, and an orphaned `business` facet that writers keep.
@@ -764,8 +775,8 @@ override, and an orphaned `business` facet that writers keep.
       "presentation": { "glyph": "padlock", "line": "hatched", "accent": { "dark": "#d4a8ff", "light": "#7a36c8" },
                         "evidence": ["dataClass", "review", "openFindings"], "measures": "dataClass" }
     } },
-    { "id": "com.kettle.cost", "version": "0.1.0", "source": "project", "enabled": true, "manifest": {
-      "$schema": "lens-manifest/1", "id": "com.kettle.cost", "version": "0.1.0", "name": "Cost", "short": "COST",
+    { "id": "com.kettle.cost", "version": "0.0.1", "source": "project", "enabled": true, "manifest": {
+      "$schema": "lens-manifest/1", "id": "com.kettle.cost", "version": "0.0.1", "name": "Cost", "short": "COST",
       "description": "Running cost per feature, including SMS spend.",
       "reader": { "role": "finance", "density": "standard" },
       "fields": [

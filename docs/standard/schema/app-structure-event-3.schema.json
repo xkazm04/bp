@@ -53,7 +53,14 @@
       }
     },
     {
-      "if": { "properties": { "type": { "enum": ["feature-added", "feature-archived"] } } },
+      "if": { "properties": { "type": { "const": "feature-added" } } },
+      "then": {
+        "required": ["feature"],
+        "properties": { "to": { "$ref": "app-structure-3.schema.json#/$defs/stage" } }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "feature-archived" } } },
       "then": { "required": ["feature"] }
     },
     {

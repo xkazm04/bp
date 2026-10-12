@@ -3,7 +3,7 @@
 // (draft 2020-12, via ajv), then the checks a schema cannot express (references resolve, keys are
 // unique, facet values fit their fields). Spec: docs/standard/app-structure-v3.md.
 //
-//   node scripts/validate-structure.mjs                      the six built-in lens manifests
+//   node scripts/validate-structure.mjs                      the six built-in lens manifests and lenses-custom/*
 //   node scripts/validate-structure.mjs <file.json>...       maps (app-structure/3) or manifests (lens-manifest/1)
 //   node scripts/validate-structure.mjs <map.json> --events <map.events.jsonl>
 //
@@ -12,13 +12,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Ajv2020Module from 'ajv/dist/2020.js';
+// The evaluator's own definitions, not copies: Node strips the types (the fixture gate imports it the same way).
+import { OPS, conditionLeaves } from '../src/lib/standard/health.ts';
+import { NUMERIC } from '../src/lib/standard/present.ts';
 
 const Ajv2020 = Ajv2020Module.default ?? Ajv2020Module;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SCHEMA_DIR = path.join(ROOT, 'docs/standard/schema');
 const LENS_DIR = path.join(ROOT, 'docs/standard/lenses');
-const OPS = ['eq', 'ne', 'lt', 'lte', 'gt', 'gte', 'in', 'nin', 'missing', 'present'];
-const NUMERIC = new Set(['number', 'integer', 'percent', 'money']);
+const CUSTOM_DIR = path.join(ROOT, 'docs/standard/lenses-custom');
+/** What a condition operand must be for a field type (spec 8.3: no coercion, so another type never matches). */
+const OPERAND = { number: 'number', integer: 'number', percent: 'number', money: 'number', boolean: 'boolean', string: 'string', date: 'string', enum: 'string' };
+const PLACEHOLDER = /\{([A-Za-z][A-Za-z0-9]*)\}/g;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 // ------------------------------------------------------------------------------------------- ajv
@@ -126,7 +131,7 @@ function humanize(errors, data) {
         break;
       case 'false schema': msg = 'not allowed here (for example a threshold on a rollup method that takes none)'; break;
       case 'not':
-        msg = sp.includes('allOf/0') ? '"values" is only allowed on enum fields' : sp.includes('allOf/1') ? '"currency" is only allowed on money fields' : e.message;
+        msg = sp.includes('allOf/0') ? '"values" is only allowed on enum fields' : sp.includes('allOf/1') ? '"currency" is only allowed on money fields' : sp.includes('allOf/2') ? '"min" and "max" are only allowed on numeric fields (number, integer, percent, money)' : e.message;
         break;
       case 'type': msg = `must be ${[].concat(e.params.type).join(' or ')} (got ${v === null ? show(v) : typeof v})`; break;
       default: msg = `${e.message}${v !== undefined && typeof v !== 'object' ? ` (got ${show(v)})` : ''}`;
@@ -142,15 +147,6 @@ class Report {
   error(m) { this.errors.push(m); }
   warn(m) { this.warnings.push(m); }
   note(m) { this.notes.push(m); }
-}
-
-function conditionFields(c, out = []) {
-  if (!c || typeof c !== 'object') return out;
-  if (c.all) c.all.forEach((x) => conditionFields(x, out));
-  else if (c.any) c.any.forEach((x) => conditionFields(x, out));
-  else if (c.not) conditionFields(c.not, out);
-  else out.push(c);
-  return out;
 }
 
 function dupes(list, key) {
@@ -179,7 +175,7 @@ function checkManifest(m, R, label, kpis) {
   }
   /** The leaves of one condition against the fields. `strict`: an unknown field is an error, not a warning. */
   const checkCondition = (cond, where, strict) => {
-    for (const leaf of conditionFields(cond)) {
+    for (const leaf of conditionLeaves(cond)) {
       const f = fields.get(leaf.field);
       if (!f) {
         if (strict) R.error(`${label}: ${where} names unknown field "${leaf.field}"; such an applies_when is ignored, so the lens would always apply`);
@@ -187,18 +183,24 @@ function checkManifest(m, R, label, kpis) {
         continue;
       }
       const operands = [leaf.eq, leaf.ne, ...(leaf.in ?? []), ...(leaf.nin ?? [])].filter((x) => x !== undefined);
-      if (f.type === 'enum') for (const x of operands) if (!f.values.includes(x)) R.warn(`${label}: ${where} compares "${f.key}" with ${show(x)}, which is not one of its values`);
+      // an operand of another type than the field is a strict mismatch: it never equals (spec 8.3 rule 2)
+      for (const x of operands) {
+        if (typeof x !== OPERAND[f.type]) R.warn(`${label}: ${where} compares ${f.type} "${f.key}" with ${show(x)} (${typeof x}); no type coercion, so it never equals`);
+        else if (f.type === 'enum' && !f.values.includes(x)) R.warn(`${label}: ${where} compares "${f.key}" with ${show(x)}, which is not one of its values`);
+      }
       for (const op of ['lt', 'lte', 'gt', 'gte']) {
         if (leaf[op] === undefined) continue;
         if (f.type === 'enum') R.warn(`${label}: ${where} orders enum "${f.key}" with ${op}; comparisons are not by enum position — use "in"`);
-        else if (NUMERIC.has(f.type) && typeof leaf[op] !== 'number') R.warn(`${label}: ${where} compares numeric "${f.key}" with a string, which never matches`);
+        else if (f.type === 'boolean') R.warn(`${label}: ${where} orders boolean "${f.key}" with ${op}, which never matches`);
+        else if (typeof leaf[op] !== OPERAND[f.type]) R.warn(`${label}: ${where} compares ${f.type} "${f.key}" with ${show(leaf[op])} (${typeof leaf[op]}) using ${op}, which never matches`);
       }
     }
   };
   if (m.health.applies_when) checkCondition(m.health.applies_when, 'applies_when', true);
   m.health.rules.forEach((r, i) => {
     checkCondition(r.when, `rule ${i + 1}`, false);
-    for (const [, k] of r.reason.matchAll(/\{([A-Za-z][A-Za-z0-9]*)\}/g)) if (!fields.has(k)) R.warn(`${label}: rule ${i + 1} reason names unknown field {${k}}`);
+    for (const [, k] of r.reason.matchAll(PLACEHOLDER)) if (!fields.has(k)) R.warn(`${label}: rule ${i + 1} reason names unknown field {${k}}`);
+    for (const [, k] of (r.short ?? '').matchAll(PLACEHOLDER)) if (!fields.has(k)) R.warn(`${label}: rule ${i + 1} short names unknown field {${k}}`);
   });
   const ro = m.health.rollup;
   if (ro.method === 'weighted') {
@@ -282,7 +284,8 @@ function checkApp(d, R) {
     if (l.manifest.version !== l.version) R.error(`${L}: entry version ${l.version} but manifest version ${l.manifest.version}`);
     checkManifest(l.manifest, R, L, kpis);
   }
-  const today = new Date().toISOString().slice(0, 10);
+  // overrides are read on the map's as-of date, like the loader (generated_at), else today
+  const today = (typeof d.generated_at === 'string' ? d.generated_at : new Date().toISOString()).slice(0, 10);
   for (const [slug, byLens] of Object.entries(d.facets ?? {})) {
     if (!features.has(slug)) R.error(`facets: "${slug}" is not in features[]`);
     for (const [id, facet] of Object.entries(byLens)) {
@@ -293,7 +296,7 @@ function checkApp(d, R) {
       for (const [k, v] of Object.entries(facet.values ?? {})) {
         const f = fields.get(k);
         if (!f) R.warn(`${L}: value "${k}" is not a field of lens "${id}"`);
-        else if (f.source?.feature) R.warn(`${L}: value "${k}" is bound to feature ${f.source.feature}; a stored value is ignored and should not be written`);
+        else if (f.source) R.warn(`${L}: value "${k}" is bound to ${f.source.feature ? 'feature ' + f.source.feature : 'KPI "' + f.source.kpi + '"'}; a stored value is ignored and should not be written`);
         else checkValue(f, v, R, `${L}.values`);
       }
       if (facet.override && facet.override.until < today) R.note(`${L}: override expired on ${facet.override.until} (harmless; a writer may drop it)`);
@@ -307,6 +310,7 @@ function checkApp(d, R) {
 function checkEvents(file, map, R) {
   const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
   const has = (list, key, v) => !map || (map[list] ?? []).some((x) => x[key] === v);
+  const lensIds = map ? new Set((map.lenses ?? []).map((l) => l.id)) : null;
   let prev = '', n = 0;
   lines.forEach((line, i) => {
     if (!line.trim()) return;
@@ -319,6 +323,7 @@ function checkEvents(file, map, R) {
     prev = e.at;
     if (e.feature && !has('features', 'slug', e.feature)) R.warn(`${L}: feature "${e.feature}" is not in the map (renamed or removed?)`);
     if (e.kpi && !has('kpis', 'slug', e.kpi)) R.warn(`${L}: KPI "${e.kpi}" is not in the map`);
+    if (e.lens && lensIds && !lensIds.has(e.lens)) R.warn(`${L}: lens "${e.lens}" is not in the map's lenses[]`);
     if (e.milestone && !has('milestones', 'slug', e.milestone)) R.warn(`${L}: milestone "${e.milestone}" is not in the map`);
   });
   return n;
@@ -355,20 +360,25 @@ for (let i = 0; i < args.length; i++) {
   else files.push(args[i]);
 }
 const builtinRun = !files.length && !eventsFile;
-if (builtinRun) files.push(...BUILTIN.map((id) => path.join(LENS_DIR, `${id}.json`)));
+const customFiles = fs.existsSync(CUSTOM_DIR) ? fs.readdirSync(CUSTOM_DIR).filter((f) => f.endsWith('.json')).sort().map((f) => path.join(CUSTOM_DIR, f)) : [];
+if (builtinRun) files.push(...BUILTIN.map((id) => path.join(LENS_DIR, `${id}.json`)), ...customFiles);
 
 let failed = 0, maps = [];
 for (const file of files) {
   const { R, kind, d } = validateFile(file);
   if (builtinRun && d) {
     const id = path.basename(file, '.json');
-    if (d.id !== id) R.error(`a built-in manifest's id must match its file name (${id})`);
+    const custom = customFiles.includes(file);
+    if (d.id !== id) R.error(`a ${custom ? 'custom' : 'built-in'} manifest's id must match its file name (${id})`);
+    if (custom && !new RegExp(REVERSE_DNS_RE).test(String(d.id))) R.error(`a custom lens in lenses-custom/ needs a reverse-DNS id such as com.example.cost (got ${show(d.id)})`);
   }
   if (kind === 'app-structure/3' && d) maps.push(d);
   if (!print(`${path.relative(process.cwd(), file)} (${kind})`, R)) failed++;
 }
 if (eventsFile) {
   const R = new Report();
+  // references are checked against the one map on the command line; several would make the check ambiguous
+  if (maps.length > 1) R.error(`--events is checked against one map, but ${maps.length} maps were given; pass one`);
   const n = checkEvents(eventsFile, maps.length === 1 ? maps[0] : null, R);
   if (!print(`${path.relative(process.cwd(), eventsFile)} (events, ${n} lines)`, R)) failed++;
 }

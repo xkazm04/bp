@@ -9,7 +9,8 @@ import type {
 type Values = Readonly<Record<string, Scalar | null | undefined>>;
 type LeafLike = Record<string, unknown> & { field: string };
 
-const OPS = ['eq', 'ne', 'lt', 'lte', 'gt', 'gte', 'in', 'nin', 'missing', 'present'] as const;
+/** The condition operators (spec 8.3); the validator reads this list too. */
+export const OPS = ['eq', 'ne', 'lt', 'lte', 'gt', 'gte', 'in', 'nin', 'missing', 'present'] as const;
 type Op = (typeof OPS)[number];
 const isOp = (k: string): k is Op => (OPS as readonly string[]).includes(k);
 
@@ -62,13 +63,18 @@ export function evaluateCondition(cond: Condition, values: Values): boolean {
   }
 }
 
-/** Every field a condition names. */
-export function conditionFields(cond: Condition, out: string[] = []): string[] {
-  if ('all' in cond) cond.all.forEach((c) => conditionFields(c, out));
-  else if ('any' in cond) cond.any.forEach((c) => conditionFields(c, out));
-  else if ('not' in cond) conditionFields(cond.not, out);
-  else out.push((cond as unknown as LeafLike).field);
+/** Every leaf of a condition, in order (the validator checks operands against the field a leaf names). */
+export function conditionLeaves(cond: Condition, out: Record<string, unknown>[] = []): Record<string, unknown>[] {
+  if ('all' in cond) cond.all.forEach((c) => conditionLeaves(c, out));
+  else if ('any' in cond) cond.any.forEach((c) => conditionLeaves(c, out));
+  else if ('not' in cond) conditionLeaves(cond.not, out);
+  else out.push(cond as unknown as LeafLike);
   return out;
+}
+
+/** Every field a condition names. */
+export function conditionFields(cond: Condition): string[] {
+  return conditionLeaves(cond).map((l) => l.field as string);
 }
 
 /**

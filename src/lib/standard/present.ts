@@ -22,7 +22,8 @@ export function generalHealth(hs: Iterable<Health>): Health {
 /** How many evidence fields a reader of this density sees: 2 (simple), 3 (standard), 4 (dense). */
 export const EVIDENCE_BY_DENSITY: Readonly<Record<Density, number>> = { simple: 2, standard: 3, dense: 4 };
 
-const NUMERIC = new Set(['number', 'integer', 'percent', 'money']);
+/** The numeric field types: the ones with bounds, a metric, a measured line or a rollup weight. */
+export const NUMERIC = new Set<string>(['number', 'integer', 'percent', 'money']);
 
 /**
  * The measured length of a lens line as a fraction 0..1 of the rail, or null when nothing is measured
