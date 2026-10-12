@@ -3,36 +3,12 @@
 // where in time the plan is ("now" or the travelled date), a hairline of the revision history (click or
 // drag it to travel), and the sim clock (Kettle) or the scan's run status (a live product). Clicking the
 // strip anywhere but the hairline expands the full panel; the strip never expands on hover.
-import { forwardRef, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { SWARM } from '@/lib/data';
-import { HOUR, dnum, fmtD, latestRun, revAt } from '@/lib/model';
+import { forwardRef, useEffect, useRef } from 'react';
+import { dnum, fmtD, latestRun, revAt } from '@/lib/model';
 import { shallowEqual, useBp, useEngine, useLive } from '../hooks';
 import { timeSliderKey } from './keys';
-
-/** The questions that arrive during the simulated hour (both time charts mark them). */
-export const ARRIVALS = SWARM.decisions.filter((d) => d.arrivesAt).map((d) => ({ id: d.id, t: d.arrivesAt! }));
-
-/** The simulated wall clock at sim second `t`: HH:MM:SS, or HH:MM with `secs` false. */
-export function simClock(at0: number, t: number, secs = true): string { return new Date(at0 + t * 1000).toISOString().slice(11, secs ? 19 : 16); }
-
-/** An element's client size, kept current by a ResizeObserver (`w0`/`h0` until it has one). */
-export function useSize(ref: React.RefObject<HTMLElement | null>, w0: number, h0: number): [number, number] {
-  const [W, setW] = useState(w0), [H, setH] = useState(h0);
-  useLayoutEffect(() => {
-    const ro = new ResizeObserver(() => { if (ref.current) { setW(ref.current.clientWidth || w0); setH(ref.current.clientHeight || h0); } });
-    if (ref.current) ro.observe(ref.current);
-    return () => ro.disconnect();
-  }, [ref, w0, h0]);
-  return [W, H];
-}
-
-/** The one status ladder for a live product's scan, shared by the strip and the panel clock. A dropped stream keeps the
- *  last-known run state and adds a reconnecting marker (`base` is the state alone, `label` carries the marker). */
-export function scanStatus(run: ReturnType<typeof latestRun>, off: boolean): { label: string; base: string; tone: 'on' | 'warn' | '' } {
-  if (!run) return { label: off ? 'OFFLINE' : 'NO RUN', base: off ? 'OFFLINE' : 'NO RUN', tone: off ? 'warn' : '' };
-  const base = run.status === 'running' ? '● LIVE' + (run.phase ? ' · ' + run.phase.toUpperCase() : '') : String(run.status || '').toUpperCase();
-  return { label: off ? base + ' · RECONNECTING' : base, base, tone: off ? 'warn' : run.status === 'running' ? 'on' : '' };
-}
+import { ARRIVALS, scanStatus, simClock, useHourText, useScrub, useSize } from './shared';
+import { histX, hourX, valueText, type ScrubGeom } from './scrub';
 
 /** The sim clock (Kettle) or the latest run (live product), as one line of small text. */
 function StripClock() {
@@ -60,18 +36,6 @@ function StripClock() {
   );
 }
 
-/** Keeps a slider's aria-valuetext in step with the simulated clock (whole minutes only, so a screen reader is not flooded). */
-export function useHourText(E: ReturnType<typeof useEngine>, svg: React.RefObject<SVGSVGElement | null>, base: string, hour: boolean) {
-  useEffect(() => {
-    if (!hour) return undefined;
-    let last = '';
-    return E.onSimTime((t) => {
-      const m = simClock(E.M.sim.at0, t, false);
-      if (m !== last) { last = m; svg.current?.setAttribute('aria-valuetext', base + '; simulated ' + m); }
-    });
-  }, [E, svg, base, hour]);
-}
-
 /** The hairline: revision history (a sparkline of feature counts, a tick per week) and, for Kettle, the hour ahead. */
 function Hairline() {
   const E = useEngine(), M = E.M, sim = M.sim;
@@ -82,9 +46,8 @@ function Hairline() {
   const hour = sim.has && !sim.live, asOf = M.P.asOf, weeks = M.P.weeks, RD0 = weeks[0], now = t === asOf;
   const L = 4, R = W - 4, gap = hour ? 14 : 0, hourW = hour ? Math.round((R - L) * 0.24) : 0;
   const h0 = L, h1 = R - hourW - gap, o0 = h1 + gap, o1 = R, top = 4, bot = H - 6;
-  // a map with one week of history has no span: everything sits at "now", the right end
-  const span = dnum(asOf) - dnum(RD0), hx = (d: string) => (span > 0 ? h0 + ((dnum(d) - dnum(RD0)) / span) * (h1 - h0) : h1);
-  const ox = (s: number) => o0 + (Math.max(0, Math.min(HOUR, s)) / HOUR) * (o1 - o0);
+  const dn = weeks.map(dnum), g: ScrubGeom = { h0, h1, o0, o1, hour, d0: dnum(RD0), d1: dnum(asOf), weeks, dn, asOf };
+  const hx = (d: string) => histX(g, dnum(d)), ox = (v: number) => hourX(g, v);
   useEffect(() => (hour ? E.onSimTime((s) => {
     const x = ox(s);
     head.current?.setAttribute('x1', String(x)); head.current?.setAttribute('x2', String(x));
@@ -96,32 +59,22 @@ function Hairline() {
   const line = pts.length > 1 ? 'M' + pts.join(' L') : '';
   const area = line ? line + ` L${hx(snaps[snaps.length - 1].week).toFixed(1)},${bot} L${hx(snaps[0].week).toFixed(1)},${bot}Z` : '';
   const m1 = M.P.milestones.find((m) => m.state === 'done'), xt = Math.min(hx(t), h1);
-  const drag = useRef<'h' | 'o' | null>(null);
-  const apply = (x: number) => {
-    if (hour && x >= o0 - 4 && drag.current !== 'h') { drag.current = 'o'; E.seek(((x - o0) / (o1 - o0)) * HOUR); return; }
-    if (drag.current === 'o') return;
-    drag.current = 'h';
-    let best = weeks[0], bd = 1e9;
-    for (const w of weeks) { const d = Math.abs(hx(w) - x); if (d < bd) { bd = d; best = w; } }
-    if (x > h1 - 3) best = asOf;
-    E.setTime(best);
-  };
-  const px = (e: React.PointerEvent) => { const r = svg.current!.getBoundingClientRect(); return ((e.clientX - r.left) / r.width) * W; };
+  const scrub = useScrub(E, svg, W, g, true), still = weeks.length < 2 && !hour;
   const rev = revAt(weeks, t);
-  const vtext = now ? 'Now, revision ' + rev : 'Revision ' + rev + ', ' + t;
+  const vtext = valueText(now, rev, t, weeks.length, hour);
   useHourText(E, svg, vtext, hour);
   return (
     <div className="tl-line" ref={wrap}>
-      <svg ref={svg} viewBox={`0 0 ${W} ${H}`} tabIndex={0} role="slider"
+      <svg ref={svg} viewBox={`0 0 ${W} ${H}`} tabIndex={0} role="slider" data-still={still ? '' : undefined} aria-disabled={still || undefined}
         aria-label="Time: drag along the revision history to travel; the right end is now" aria-valuemin={1} aria-valuemax={weeks.length} aria-valuenow={rev} aria-valuetext={vtext}
         onClick={(e) => e.stopPropagation()}
-        onPointerDown={(e) => { e.stopPropagation(); drag.current = null; (e.currentTarget as Element).setPointerCapture(e.pointerId); apply(px(e)); }}
-        onPointerMove={(e) => { if (drag.current) apply(px(e)); }} onPointerUp={() => { drag.current = null; }}
+        {...scrub}
         onKeyDown={(e) => {
           // Esc here collapses the panel, else returns to now, else leaves the hairline
           const esc = () => { if (E.store.get().tl) E.setTimeline(false); else if (!now) E.setTime(asOf); else (e.currentTarget as SVGSVGElement).blur(); };
           if (timeSliderKey(e, E, hour, esc)) { e.preventDefault(); e.nativeEvent.stopImmediatePropagation(); }
         }}>
+        {still && <title>One week of history: nothing earlier to travel to yet</title>}
         <rect className="tl-hit" x={0} y={0} width={W} height={H} />
         {area && <path className="tl-area" d={area} />}
         {line && <path className="tl-spark" d={line} />}

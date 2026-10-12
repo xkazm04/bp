@@ -168,6 +168,8 @@
 #revsvg .handle line { stroke: var(--amber); stroke-width: 1.6; }
 #revsvg .handle rect { fill: var(--label-bg); stroke: var(--amber); stroke-width: 1.4; }
 #revsvg .handle text { fill: var(--amber); font: 500 12px var(--mono); }
+#revsvg[data-still] { cursor: default; }
+#revsvg[data-back] { cursor: not-allowed; }
 #revsvg:focus { outline: none; }
 #revsvg:focus-visible .handle rect { stroke-width: 2.6; }
 .bp-compact #keyplan { flex-basis: 134px; }

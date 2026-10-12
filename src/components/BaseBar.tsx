@@ -9,9 +9,11 @@
 import { useEffect, useRef } from 'react';
 import { AnimatePresence, motion, useReducedMotion, type Variants } from 'motion/react';
 import { SWARM, type Stage } from '@/lib/data';
-import { GA_MILESTONE, HOUR, SPEEDS, dnum, fmtD, latestRun, revAt } from '@/lib/model';
+import { GA_MILESTONE, SPEEDS, dnum, fmtD, latestRun, revAt } from '@/lib/model';
 import { shallowEqual, useBp, useEngine, useLive } from './hooks';
-import { ARRIVALS, Strip, scanStatus, simClock, useHourText, useSize } from './timeline/Strip';
+import { Strip } from './timeline/Strip';
+import { ARRIVALS, scanStatus, simClock, useHourText, useScrub, useSize } from './timeline/shared';
+import { histX, hourX, keyPlanFrac, valueText, type ScrubGeom } from './timeline/scrub';
 import { timeSliderKey } from './timeline/keys';
 import './timeline.css';
 
@@ -26,7 +28,7 @@ function KeyPlanBox() {
   useEffect(() => { E.setKeyplan(ref.current); return () => E.setKeyplan(null); }, [E]);
   useEffect(() => E.onFrame(() => { const z = '×' + (E.cam.k / E.HOME.k).toFixed(1); if (zref.current && zref.current.textContent !== z) zref.current.textContent = z; }), [E]);
   return (
-    <motion.button variants={useItem()} id="keyplan" type="button" title="Key plan: click to move there" onClick={(e) => { const r = ref.current!.getBoundingClientRect(); E.keyplanClick((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height); }}>
+    <motion.button variants={useItem()} id="keyplan" type="button" title="Key plan: click to move there" onClick={(e) => { const [fx, fy] = keyPlanFrac(e.clientX, e.clientY, ref.current!.getBoundingClientRect(), e.detail); E.keyplanClick(fx, fy); }}>
       <div className="lab"><span>KEY PLAN</span><span ref={zref} /></div>
       <canvas ref={ref} />
     </motion.button>
@@ -86,9 +88,9 @@ function Revisions() {
   const L = 76, R = W - 6, avail = R - L, hist = Math.round(avail * 0.46), hourW = Math.round(avail * 0.38), g1 = 26;
   const tl = { h0: L, h1: L + hist, o0: L + hist + g1, o1: L + hist + g1 + hourW, R, top: H < 80 ? 21 : 34, bot: H < 80 ? H - 28 : Math.min(H - 28, 66) };
   const asOf = M.P.asOf, now = s.t === asOf, top = tl.top, bot = tl.bot, RD0 = M.P.weeks[0], NW = M.P.weeks.length;
-  // `|| 1`: a map without an events log has one week of history (a live product often), not a span
-  const hx = (d: string) => tl.h0 + ((dnum(d) - dnum(RD0)) / (dnum(asOf) - dnum(RD0) || 1)) * (tl.h1 - tl.h0);
-  const ox = (t: number) => tl.o0 + (Math.max(0, Math.min(HOUR, t)) / HOUR) * (tl.o1 - tl.o0);
+  // the one mapping (timeline/scrub.ts): a map without an events log has one week of history (a live product often), no span
+  const hour = sim.has && !sim.live, g: ScrubGeom = { h0: tl.h0, h1: tl.h1, o0: tl.o0, o1: tl.o1, hour, d0: dnum(RD0), d1: dnum(asOf), weeks: M.P.weeks, dn: M.P.weeks.map(dnum), asOf };
+  const hx = (d: string) => histX(g, dnum(d)), ox = (v: number) => hourX(g, v);
   useEffect(() => E.onSimTime((t) => {
     const x = ox(t);
     head.current?.setAttribute('x1', String(x)); head.current?.setAttribute('x2', String(x));
@@ -108,7 +110,6 @@ function Revisions() {
     return <polygon key={st} points={up.join(' ') + ' ' + dn.reverse().join(' ')} fill={st === 'deprecated' ? 'var(--red)' : 'var(--ink)'} fillOpacity={FILLS[st]} />;
   });
   const bins = new Array(60).fill(0);
-  const hour = sim.has && !sim.live;
   if (hour) for (const e of SWARM.replay) bins[Math.min(59, Math.floor(e.t / 60))]++;
   const bw = (tl.o1 - tl.o0) / 60, hxn = hx(s.t), hl = Math.min(hxn, tl.h1);
   const lab = now ? 'NOW · REV ' + NW : 'REV ' + revAt(M.P.weeks, s.t) + ' · ' + fmtD(s.t), pw = Math.max(108, Math.ceil(lab.length * CW) + 16), px0 = Math.max(tl.h0 - 6, Math.min(hl - pw / 2, tl.h1 - pw + 12));
@@ -147,29 +148,18 @@ function Revisions() {
     const l = cand.find((c) => c.k === k);
     return l && shown.has(k) ? <text key={k} className={extra?.className} x={l.x} y={l.y} textAnchor={l.a === 'start' ? undefined : l.a} style={extra?.style}>{l.s}</text> : null;
   };
-  const drag = useRef<'h' | 'o' | null>(null);
-  const apply = (x: number) => {
-    if (hour && x >= tl.o0 - 10 && x <= tl.o1 + 6 && drag.current !== 'h') { drag.current = 'o'; E.seek(((x - tl.o0) / (tl.o1 - tl.o0)) * HOUR); return; }
-    if (drag.current === 'o') return;
-    drag.current = 'h';
-    let best = M.P.weeks[0], bd = 1e9;
-    for (const w of M.P.weeks) { const d = Math.abs(hx(w) - x); if (d < bd) { bd = d; best = w; } }
-    if (x > tl.h1 + 2 && x < tl.o0) best = asOf;
-    E.setTime(best);
-  };
-  const px = (e: React.PointerEvent) => { const r = svg.current!.getBoundingClientRect(); return ((e.clientX - r.left) / r.width) * W; };
-  const vtext = 'Revision ' + revAt(M.P.weeks, s.t) + ', ' + s.t;
+  const scrub = useScrub(E, svg, W, g, false), still = NW < 2 && !hour;
+  const vtext = valueText(now, revAt(M.P.weeks, s.t), s.t, NW, hour);
   useHourText(E, svg, vtext, hour);
   return (
     <motion.div variants={useItem()} id="revs" ref={wrap}>
       <svg id="revsvg" ref={svg} tabIndex={0} role="slider" aria-label="Time: revision history, now, and the simulated hour ahead" aria-valuemin={1} aria-valuemax={NW} aria-valuenow={revAt(M.P.weeks, s.t)} aria-valuetext={vtext}
-        viewBox={`0 0 ${W} ${H}`}
-        onPointerDown={(e) => { drag.current = null; (e.currentTarget as Element).setPointerCapture(e.pointerId); apply(px(e)); }}
-        onPointerMove={(e) => { if (drag.current) apply(px(e)); }} onPointerUp={() => { drag.current = null; }}
+        data-still={still ? '' : undefined} aria-disabled={still || undefined} viewBox={`0 0 ${W} ${H}`} {...scrub}
         onKeyDown={(e) => {
           // the sliders' one key map (timeline/keys.ts); Esc here collapses the panel
           if (timeSliderKey(e, E, hour, () => E.setTimeline(false))) { e.preventDefault(); e.nativeEvent.stopImmediatePropagation(); }
         }}>
+        {still && <title>One week of history: nothing earlier to travel to yet</title>}
         {txt('rev', { className: 'lbl' })}{txt('nw')}{txt('step')}
         {polys}
         <line className="ax" x1={tl.h0} y1={bot} x2={tl.h1} y2={bot} />

@@ -411,6 +411,11 @@ gets out of the plan's way, and L4 is a page. Earlier sections that say "dock", 
     ahead) over the plan, up to the rail's edge. It never expands on hover.
   - The timeline panel and a rail flyout close each other.
   - When the strip shows a travelled date it turns accent, with "back to now".
+  - Strip and panel share one scrub (`timeline/scrub.ts`, `check:timeline-scrub`): same date and hour
+    mapping, same hour zone and snap to now, and a drag ends on release, cancel or lost capture. The
+    hour only moves forward: dragging left of the head leaves it clamped and shows not-allowed.
+    With one week of history the slider is inert and says why. A keyboard-activated key plan flies
+    to its centre, never off the plan.
 - **Feature page** (`src/components/FeatureSheet.tsx`, `page/`, `page.css`). The page replaces
   the drawer.
   - **Open and close:** the tile morphs into a full page, animating only `transform` and opacity.
