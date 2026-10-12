@@ -2,6 +2,8 @@
 // measured against its scope, its duration and its age. Pure and React-free (no '@/' imports) so Node runs check-run.ts on
 // it as-is; the wording of the age is the header pill's `ago`, passed in.
 
+import { scopeFeatures } from '../../lib/scan/scope.ts';
+
 interface RunLike { id: string; started_at: string; updated_at: string; ended_at?: string; status: string; lenses?: string[]; scope?: Record<string, unknown> }
 interface MeasLike { run_id: string; feature: string }
 interface FeatLike { id: string; domain: string; capability: string }
@@ -9,16 +11,7 @@ interface FeatLike { id: string; domain: string; capability: string }
 /** The one guarded read of a run's lenses (a row written by an older skill may lack them). */
 export const runLenses = (run: Pick<RunLike, 'lenses'> | null | undefined): string[] => (run && Array.isArray(run.lenses) ? run.lenses : []);
 
-/** The features the run was pointed at: `scope.domain` / `scope.capability` / `scope.group` matching a feature's domain or
- *  capability (by value, case-blind), else every feature. A scope that matches nothing is not trusted: all features. */
-export function scopeFeatures<F extends FeatLike>(run: Pick<RunLike, 'scope'>, features: readonly F[]): readonly F[] {
-  const sc = run.scope;
-  if (!sc) return features;
-  const want = [sc.domain, sc.capability, sc.group].filter((v): v is string => typeof v === 'string' && v !== '').map((v) => v.toLowerCase());
-  if (!want.length) return features;
-  const hit = features.filter((f) => want.includes(f.domain.toLowerCase()) || want.includes(f.capability.toLowerCase()));
-  return hit.length ? hit : features;
-}
+export { scopeFeatures };
 
 /** Features this run has measured so far (distinct, by run id) against its scope. `total` is never below `done`. */
 export function runProgress(run: RunLike, measurements: readonly MeasLike[], features: readonly FeatLike[]): { done: number; total: number } {

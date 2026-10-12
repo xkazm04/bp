@@ -6,7 +6,7 @@ import type { AppStructure } from '@/lib/standard/types';
 import type { Agent, AgentStatus, Decision, ReplayEvent, ReplayType, Squad, Swarm } from '@/lib/data/types';
 import { refreshProjects } from './projects.ts';
 import { latestRun, latestReading, measuredFeatures } from './derive.ts';
-import { scopeFeatures } from '../../components/timeline/run.ts';
+import { scopeFeatures } from './scope.ts';
 import { fullScan as full, isEmptyScan as isEmpty, type Activity, type ActivityKind, type Coverage, type DecisionBody, type Measurement, type Proposal, type ProductInfo, type Run, type ScanDelta, type ScanSnapshot } from './types.ts';
 
 /** `loading` until the structure arrives; `missing` = no store or structure file; `offline` = reconnecting. */
