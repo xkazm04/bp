@@ -2,7 +2,6 @@
 // selection outlines, dependency conduits, standing-order zones, targets, the swarm (glow, trails,
 // marks, chips), activity pulses, RFI pennants, breach rivets, steering previews, the focused decision
 // and freed agents. Per-agent position records are reused; nothing big is allocated per frame.
-import type { Feature } from '@/lib/data';
 import { GA_MILESTONE, astat, hash01, type SimAgent, type SimDecision } from '@/lib/model';
 import type { Engine } from '../Engine';
 import { drawText } from '../text';
@@ -16,7 +15,8 @@ const dashOff = (E: Engine, m: number) => (E.cam.reduced ? 0 : E.dashT * m);
 const phase = (E: Engine, x: number) => (E.cam.reduced ? 0.5 : x % 1);
 const ease = (u: number) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2);
 
-export interface APos { x: number; y: number; chip: boolean; r: SRect; idx: number; n: number; moving: boolean; trail: null | { qx: number; qy: number; px: number; py: number; mx: number; my: number; u: number; fade: number }; ok: boolean }
+export interface Trail { qx: number; qy: number; px: number; py: number; mx: number; my: number; u: number; fade: number }
+export interface APos { x: number; y: number; chip: boolean; r: SRect; idx: number; n: number; moving: boolean; trail: null | Trail; ok: boolean; /** the record `trail` points at while moving (allocated once) */ tbuf?: Trail }
 const sr1: SRect = { x: 0, y: 0, w: 0, h: 0 }, sr2: SRect = { x: 0, y: 0, w: 0, h: 0 };
 
 function posAt(E: Engine, v: View, fid: string, i: number, n: number, lod: number, out: { x: number; y: number; chip: boolean; r: SRect }): boolean {
@@ -43,7 +43,9 @@ export function agentPos(E: Engine, v: View, A: SimAgent, lod: number, now: numb
       const mx = (tmpQ.x + out.x) / 2, my = (tmpQ.y + out.y) / 2 - Math.hypot(out.x - tmpQ.x, out.y - tmpQ.y) * 0.18 - 10 * E.U;
       const e = ease(clamp(uu, 0, 1)), px = out.x, py = out.y;
       if (uu < 1) { out.x = (1 - e) * (1 - e) * tmpQ.x + 2 * (1 - e) * e * mx + e * e * px; out.y = (1 - e) * (1 - e) * tmpQ.y + 2 * (1 - e) * e * my + e * e * py; out.chip = false; out.moving = true; }
-      out.trail = { qx: tmpQ.x, qy: tmpQ.y, px, py, mx, my, u: Math.min(1, uu), fade: uu < 1 ? 1 : 1 - (now - A.tr.t0 - A.tr.dur) / 5000 };
+      const T = (out.tbuf ||= { qx: 0, qy: 0, px: 0, py: 0, mx: 0, my: 0, u: 0, fade: 0 });
+      T.qx = tmpQ.x; T.qy = tmpQ.y; T.px = px; T.py = py; T.mx = mx; T.my = my; T.u = Math.min(1, uu); T.fade = uu < 1 ? 1 : 1 - (now - A.tr.t0 - A.tr.dur) / 5000;
+      out.trail = T;
     }
   }
   return out;
@@ -52,28 +54,58 @@ export function agentPos(E: Engine, v: View, A: SimAgent, lod: number, now: numb
 function inView(v: View, r: SRect | null, m: number) { return !!r && !(r.x > v.FW + m || r.y > v.FH + m || r.x + r.w < -m || r.y + r.h < -m); }
 
 // ------------------------------------------------------------------------------------- overlays
+const sr3: SRect = { x: 0, y: 0, w: 0, h: 0 };
+function route(E: Engine, ctx: CanvasRenderingContext2D, A: SRect, B: SRect, col: string, rev: boolean) {
+  const ax = A.x + A.w / 2, ay = A.y + A.h / 2, bx = B.x + B.w / 2, by = B.y + B.h / 2;
+  let ex = bx, ey = by;
+  ctx.beginPath();
+  if (Math.abs(bx - ax) > Math.abs(by - ay)) {
+    const sx = ax + (bx > ax ? A.w / 2 : -A.w / 2); ex = bx + (bx > ax ? -B.w / 2 : B.w / 2); const mx = (sx + ex) / 2;
+    ctx.moveTo(sx, ay); ctx.lineTo(mx, ay); ctx.lineTo(mx, by); ctx.lineTo(ex, by);
+  } else {
+    const sy = ay + (by > ay ? A.h / 2 : -A.h / 2); ey = by + (by > ay ? -B.h / 2 : B.h / 2); const my = (sy + ey) / 2;
+    ctx.moveTo(ax, sy); ctx.lineTo(ax, my); ctx.lineTo(bx, my); ctx.lineTo(bx, ey);
+  }
+  ctx.strokeStyle = col; ctx.lineWidth = 1.6; ctx.setLineDash(DASH_C); ctx.lineDashOffset = dashOff(E, rev ? 1 : -1); ctx.stroke(); ctx.setLineDash(NO_DASH);
+  ctx.fillStyle = col; ctx.beginPath(); ctx.arc(rev ? ax : ex, rev ? ay : ey, 2.6, 0, 7); ctx.fill();
+}
+// dash patterns, shared (setLineDash copies them)
+const DASH_C = [6, 4], NO_DASH: number[] = [];
+
 function conduits(E: Engine, ctx: CanvasRenderingContext2D, v: View, id: string) {
   const f = E.M.P.F[id], T = E.M.L.TILE[id]; if (!f || !T) return;
-  const A = rs(v, T, { x: 0, y: 0, w: 0, h: 0 }), ax = A.x + A.w / 2, ay = A.y + A.h / 2, th = E.th;
-  const route = (B: SRect, col: string, rev: boolean) => {
-    const bx = B.x + B.w / 2, by = B.y + B.h / 2;
-    let ex = bx, ey = by;
-    ctx.beginPath();
-    if (Math.abs(bx - ax) > Math.abs(by - ay)) {
-      const sx = ax + (bx > ax ? A.w / 2 : -A.w / 2); ex = bx + (bx > ax ? -B.w / 2 : B.w / 2); const mx = (sx + ex) / 2;
-      ctx.moveTo(sx, ay); ctx.lineTo(mx, ay); ctx.lineTo(mx, by); ctx.lineTo(ex, by);
-    } else {
-      const sy = ay + (by > ay ? A.h / 2 : -A.h / 2); ey = by + (by > ay ? -B.h / 2 : B.h / 2); const my = (sy + ey) / 2;
-      ctx.moveTo(ax, sy); ctx.lineTo(ax, my); ctx.lineTo(bx, my); ctx.lineTo(bx, ey);
-    }
-    ctx.strokeStyle = col; ctx.lineWidth = 1.6; ctx.setLineDash([6, 4]); ctx.lineDashOffset = dashOff(E, rev ? 1 : -1); ctx.stroke(); ctx.setLineDash([]);
-    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(rev ? ax : ex, rev ? ay : ey, 2.6, 0, 7); ctx.fill();
-  };
+  const A = rs(v, T, sr3), th = E.th;
   ctx.globalAlpha = 0.95;
-  for (const d of f.dependsOn) { const t = E.M.L.TILE[d]; if (t) route(rs(v, t, sr1), th.accent, false); }
-  for (const x of f.usedBy) { const t = E.M.L.TILE[x]; if (t) route(rs(v, t, sr1), th.inkA(0.75), true); }
+  for (const d of f.dependsOn) { const t = E.M.L.TILE[d]; if (t) route(E, ctx, A, rs(v, t, sr1), th.accent, false); }
+  for (const x of f.usedBy) { const t = E.M.L.TILE[x]; if (t) route(E, ctx, A, rs(v, t, sr1), th.inkA(0.75), true); }
   ctx.globalAlpha = 1; ctx.lineDashOffset = 0;
 }
+
+/** The domains a blast radius touches (the closure never changes after load: one slot, keyed by the blast id). */
+let blastRoomsOf = '', blastRoomsM: unknown = null, blastRooms: string[] = [];
+function roomsOfBlast(E: Engine, id: string): string[] {
+  if (blastRoomsOf !== id || blastRoomsM !== E.M) {
+    const set = new Set<string>(); for (const f of E.M.closure.of(id)) set.add(E.M.P.F[f].domain);
+    blastRooms = Array.from(set); blastRoomsOf = id; blastRoomsM = E.M;
+  }
+  return blastRooms;
+}
+
+/** Outline features that are GA-milestone (ga) or bad/watch under lens `key`. */
+function outlineIf(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod: number, ga: boolean, key: string | null, col: string) {
+  ctx.strokeStyle = col; ctx.lineWidth = 1.6;
+  for (const f of E.M.P.features) {
+    if (ga) { if (f.milestone !== GA_MILESTONE) continue; } else { const h = f.lens[key!]?.h; if (h !== 'bad' && h !== 'watch') continue; }
+    const r = featRect(E, v, f.id, lod, sr1); if (r && inView(v, r, 0)) ctx.strokeRect(r.x - 2, r.y - 2, r.w + 4, r.h + 4);
+  }
+}
+function selBox(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod: number, sid: string | null) {
+  if (!sid || !E.M.L.TILE[sid]) return;
+  const r = featRect(E, v, sid, lod, sr1)!, pad = clamp(r.w * 0.12, 5, 14);
+  ctx.strokeStyle = E.accentOf(E.S.view === 'general' ? null : E.S.view); ctx.lineWidth = 1.8; ctx.setLineDash(DASH_S); ctx.lineDashOffset = dashOff(E, -0.6);
+  ctx.strokeRect(r.x - pad, r.y - pad, r.w + pad * 2, r.h + pad * 2); ctx.setLineDash(NO_DASH); ctx.lineDashOffset = 0;
+}
+const DASH_S = [5, 4], DASH_B = [8, 4];
 
 export function drawOverlays(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod: number) {
   const S = E.S, th = E.th, k = v.k, L = E.M.L;
@@ -83,25 +115,16 @@ export function drawOverlays(E: Engine, ctx: CanvasRenderingContext2D, v: View, 
     if (o) { const hr = rs(v, o, sr1); ctx.fillStyle = th.alpha(th.accent, 0.08); ctx.fillRect(hr.x, hr.y, hr.w, hr.h); }
   }
   if (S.blast) {
-    const rooms = new Set<string>(); for (const id of E.M.closure.of(S.blast)) rooms.add(E.M.P.F[id].domain);
-    ctx.strokeStyle = th.red; ctx.lineWidth = 1.6; ctx.setLineDash([8, 4]);
-    for (const d of rooms) { const r = rs(v, L.ROOM[d], sr1); ctx.strokeRect(r.x + 5, r.y + 5, r.w - 10, r.h - 10); }
-    ctx.setLineDash([]);
+    const rooms = roomsOfBlast(E, S.blast);
+    ctx.strokeStyle = th.red; ctx.lineWidth = 1.6; ctx.setLineDash(DASH_B);
+    for (let i = 0; i < rooms.length; i++) { const r = rs(v, L.ROOM[rooms[i]], sr1); ctx.strokeRect(r.x + 5, r.y + 5, r.w - 10, r.h - 10); }
+    ctx.setLineDash(NO_DASH);
   }
-  const outlineIf = (pred: (f: Feature) => boolean, col: string) => {
-    ctx.strokeStyle = col; ctx.lineWidth = 1.6;
-    for (const f of E.M.P.features) if (pred(f)) { const r = featRect(E, v, f.id, lod, sr1); if (r && inView(v, r, 0)) ctx.strokeRect(r.x - 2, r.y - 2, r.w + 4, r.h + 4); }
-  };
-  if (S.ga) outlineIf((f) => f.milestone === GA_MILESTONE, th.amber);
-  if (S.key) { const key = S.key; outlineIf((f) => { const h = f.lens[key]?.h; return h === 'bad' || h === 'watch'; }, th.red2); }
+  if (S.ga) outlineIf(E, ctx, v, lod, true, null, th.amber);
+  if (S.key) outlineIf(E, ctx, v, lod, false, S.key, th.red2);
   const hid = (S.hover && S.hover.type === 'tile' ? S.hover.id : null) || S.hl || S.open || S.sel;
   if (hid && L.TILE[hid] && k > 0.1 && lod > 0.3) conduits(E, ctx, v, hid);
-  for (const sid of [S.open, S.sel]) {
-    if (!sid || !L.TILE[sid]) continue;
-    const r = featRect(E, v, sid, lod, sr1)!, pad = clamp(r.w * 0.12, 5, 14);
-    ctx.strokeStyle = E.accentOf(E.S.view === 'general' ? null : E.S.view); ctx.lineWidth = 1.8; ctx.setLineDash([5, 4]); ctx.lineDashOffset = dashOff(E, -0.6);
-    ctx.strokeRect(r.x - pad, r.y - pad, r.w + pad * 2, r.h + pad * 2); ctx.setLineDash([]); ctx.lineDashOffset = 0;
-  }
+  selBox(E, ctx, v, lod, S.open); selBox(E, ctx, v, lod, S.sel);
   if (S.hover && (S.hover.type === 'tile' || E.placeById(S.hover.type, S.hover.id))) {
     const hr = S.hover.type === 'tile' ? featRect(E, v, S.hover.id, lod, sr1) : rs(v, E.placeById(S.hover.type, S.hover.id)!, sr1);
     if (hr) { ctx.strokeStyle = S.hover.type === 'tile' ? th.inkHi : th.accent; ctx.lineWidth = S.hover.type === 'tile' ? 2.5 : 2; ctx.strokeRect(hr.x, hr.y, hr.w, hr.h); }
@@ -250,17 +273,19 @@ export function drawAgents(E: Engine, ctx: CanvasRenderingContext2D, v: View, lo
   }
 }
 
+function pulseCol(th: Engine['th'], k: string): string {
+  switch (k) { case 'bad': return th.red; case 'pr': return th.accent; case 'dep': return th.inkHi; case 'flag': case 'warn': case 'ask': return th.amber; default: return th.mint; }
+}
 export function drawPulses(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod: number, now: number) {
   const sim = E.M.sim; if (!sim.has || !E.isNow || !sim.pulses.length) return;
   const u = E.U, th = E.th;
-  const col: Record<string, string> = { c: th.mint, ok: th.mint, bad: th.red, pr: th.accent, dep: th.inkHi, flag: th.amber, warn: th.amber, ask: th.amber, mv: th.mint };
   ctx.save(); ctx.lineWidth = 2;
   for (const p of sim.pulses) {
     const age = (now - p.t0) / (p.k === 'dep' || p.k === 'ask' ? 2200 : 1500);
     if (age >= 1 || age < 0) continue;
     const r = featRect(E, v, p.f, lod, sr1); if (!r || !inView(v, r, 40)) continue;
     const cx = r.x + r.w / 2, cy = r.y + r.h / 2, rad = (5 + (E.cam.reduced ? 0.5 : age) * (p.k === 'dep' ? 46 : 28)) * u;
-    ctx.strokeStyle = col[p.k] || th.mint; ctx.globalAlpha = (1 - age) * 0.85;
+    ctx.strokeStyle = pulseCol(th, p.k); ctx.globalAlpha = (1 - age) * 0.85;
     ctx.beginPath(); ctx.arc(cx, cy, rad, 0, 6.2832); ctx.stroke();
     if (p.k === 'dep' || p.k === 'bad') { ctx.beginPath(); ctx.arc(cx, cy, rad * 0.6, 0, 6.2832); ctx.stroke(); }
   }
@@ -295,10 +320,10 @@ export function drawPins(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod:
       const ds = sim.DOF[fid]; if (!ds.length) continue;
       const T = E.M.L.TILE[fid]; if (!T) continue;
       const r = rs(v, T, sr1); if (!inView(v, r, 20)) continue;
-      ds.forEach((d, j) => {
-        const ring = d.isNew ? phase(E, now / 1600) : S.dec === d.id ? phase(E, now / 1200) : 0;
+      for (let j = 0; j < ds.length; j++) {
+        const d = ds[j], ring = d.isNew ? phase(E, now / 1600) : S.dec === d.id ? phase(E, now / 1200) : 0;
         glyphPin(ctx, th, r.x + r.w - 12 * u - j * 18 * u, r.y + r.h - 5 * u, d.urg, sim.emph(d, S.who, S.view), 0.85, 0, ring, u, pf);
-      });
+      }
     }
     ctx.restore();
   }

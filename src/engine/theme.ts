@@ -69,10 +69,14 @@ class Patterns {
     return p;
   }
   /** Anchor every pattern to the screen position of the world origin (ox, oy). */
+  private mtx: DOMMatrix | null = null;
   anchor(ox: number, oy: number) {
+    if (!this.map.size) return;
+    const M = (this.mtx ||= new DOMMatrix());
     for (const v of this.map.values()) {
       const s = v.s;
-      v.p.setTransform?.(new DOMMatrix([1 / v.r, 0, 0, 1 / v.r, ((ox % s) + s) % s, ((oy % s) + s) % s]));
+      M.a = M.d = 1 / v.r; M.e = ((ox % s) + s) % s; M.f = ((oy % s) + s) % s;
+      v.p.setTransform?.(M);
     }
   }
 }
@@ -86,7 +90,7 @@ export function readTheme(res: number): ThemeHandle {
   const ink = v('--ink', '#dff0ff');
   const [ir, ig, ib] = parseColor(ink);
   const inkCache = new Map<number, string>();
-  const anyCache = new Map<string, string>();
+  const anyCache = new Map<string, Map<number, string>>();
   const pats = new Patterns(res);
   // Text-grade status colours: --amber-2/--mint-2 when the CSS defines them, else dark = the mark colour and
   // light = the mark colour mixed 30% toward ink (marks keep 3:1, text needs 4.5:1).
@@ -120,9 +124,12 @@ export function readTheme(res: number): ThemeHandle {
       return s;
     },
     alpha(color, a) {
-      const key = color + '|' + Math.round(a * 1000);
-      let s = anyCache.get(key);
-      if (!s) { const [r, g, b, a0] = parseColor(color); s = `rgba(${r},${g},${b},${(a0 * a).toFixed(3)})`; anyCache.set(key, s); }
+      // colour -> alpha(per mille) -> string: no key concatenation per call; one theme object, so it dies with the theme
+      let byA = anyCache.get(color);
+      if (!byA) { byA = new Map(); anyCache.set(color, byA); }
+      const k = Math.round(a * 1000);
+      let s = byA.get(k);
+      if (!s) { const [r, g, b, a0] = parseColor(color); s = `rgba(${r},${g},${b},${(a0 * a).toFixed(3)})`; byA.set(k, s); }
       return s;
     },
     pattern: (spec) => pats.get(spec),

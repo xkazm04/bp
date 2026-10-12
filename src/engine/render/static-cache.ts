@@ -21,7 +21,7 @@ export class StaticCache {
   readonly canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private cam: Cam | null = null;
-  private key = '';
+  private key = -1;
   private mx = 0; private my = 0; private res = 1;
   private cssW = 0; private cssH = 0; private FW = 0; private FH = 0;
   /** Stats for the perf report. */
@@ -33,7 +33,7 @@ export class StaticCache {
   }
 
   /** Is the cached bitmap usable at camera `c` for content `key`? 'exact' = no transform needed. */
-  check(c: Cam, key: string, FW: number, FH: number): 'exact' | 'transform' | 'stale' {
+  check(c: Cam, key: number, FW: number, FH: number): 'exact' | 'transform' | 'stale' {
     const o = this.cam;
     if (!o || key !== this.key || FW !== this.FW || FH !== this.FH) return 'stale';
     const r = c.k / o.k;
@@ -48,7 +48,7 @@ export class StaticCache {
   }
 
   /** Raster the static scene at camera `c`. `paint` draws in screen coordinates of that camera. */
-  render(c: Cam, key: string, FW: number, FH: number, dpr: number, paint: (ctx: CanvasRenderingContext2D, v: View) => void, margin = MARGIN) {
+  render(c: Cam, key: number, FW: number, FH: number, dpr: number, paint: (ctx: CanvasRenderingContext2D, v: View) => void, margin = MARGIN) {
     const t0 = performance.now();
     this.FW = FW; this.FH = FH;
     // the bitmap is always at the screen's resolution (1:1 at rest); the pan margin shrinks instead to bound memory (<= MAX_PX)
@@ -88,5 +88,5 @@ export class StaticCache {
     ctx.imageSmoothingEnabled = true;
     if (clipW != null) ctx.restore();
   }
-  invalidate() { this.key = ''; }
+  invalidate() { this.key = -1; }
 }

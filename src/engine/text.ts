@@ -7,6 +7,7 @@ export const MIN_PX = 12;
 export class Text {
   private wc = new Map<string, number>();
   private wr = new Map<string, string[] | null>();
+  private fc = new Map<number, string>();
   private m: CanvasRenderingContext2D | null = null;
   /** Smallest font size actually used since the last reset (for the 12 px check). */
   minUsed = Infinity;
@@ -15,12 +16,16 @@ export class Text {
   constructor(sans: string, mono: string, u = 1) { this.sans = sans; this.mono = mono; this.u = u; }
   setFamilies(sans: string, mono: string) { this.sans = sans; this.mono = mono; this.clear(); }
   setU(u: number) { if (u !== this.u) { this.u = u; this.clear(); } }
-  clear() { this.wc.clear(); this.wr.clear(); }
+  clear() { this.wc.clear(); this.wr.clear(); this.fc.clear(); }
   /** Font string; `sz` is in UI units (scaled by U), never below 12 px on screen. */
   f(sz: number, wt = 500, mono = false): string {
     const px = Math.max(MIN_PX, Math.round(sz * this.u * 10) / 10);
     if (px < this.minUsed) this.minUsed = px;
-    return wt + ' ' + px + 'px ' + (mono ? this.mono : this.sans);
+    // one string per (size, weight, family) until the families or U change: the frame loop builds none
+    const key = (Math.round(px * 10) * 1000 + wt) * 2 + (mono ? 1 : 0);
+    let s = this.fc.get(key);
+    if (s === undefined) { s = wt + ' ' + px + 'px ' + (mono ? this.mono : this.sans); this.fc.set(key, s); }
+    return s;
   }
   w(t: string, font: string, ls = 0): number {
     const key = font + '|' + t;

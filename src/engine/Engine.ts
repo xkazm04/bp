@@ -42,6 +42,7 @@ const PADS: Record<'site' | 'bld' | 'wing' | 'room' | 'bay', Pad> = {
 };
 const OVER: Record<string, number> = { bld: 1, wing: 1.8, room: 1.3, bay: 1 };
 type Chain = { t: Crumb['t']; o: PlaceNode }[];
+const NO_FLAGS: Flag[] = [];
 
 /** A feature's live values, reused for every call (the caller reads them at once; nothing keeps it). */
 class LiveView implements FeatureLive {
@@ -96,7 +97,7 @@ export class Engine {
   private raf = 0; private lastT = 0; private lastDraw = 0; private lastCamMove = 0; private settleTimer = 0;
   private destroyed = false;
   private themeV = 0; private fontsV = 0; private mixV = 0; private simStaticV = 0; private simStaticAt = 0; private simSeenV = -1; private simT10 = -1;
-  private camSig = ''; private placeKey = ''; private hoverEl: HTMLElement | null = null;
+  private camSig = { x: NaN, y: NaN, k: NaN, w: 0, h: 0 }; private kpSig = { themeV: -1, t: '', delta: 0, sv: -1, str: '' }; private placeKey = ''; private hoverEl: HTMLElement | null = null;
   private place: Chain = [];
   private introOn = false; private introT0 = 0;
   private drag: { x0: number; y0: number; cx: number; cy: number; moved: boolean; lasso: boolean; shift: boolean } | null = null;
@@ -205,13 +206,19 @@ export class Engine {
   levelNames(): string[] { return (this.M.P.scale > 1 ? ['Campus', 'Building'] : ['Site']).concat(['Wing', 'Room', 'Bay', 'Feature']); }
   placeById(t: string, id: string): PlaceNode | null {
     const L = this.M.L;
-    if (t === 'bld') return L.blds.find((b) => b.id === id) || null;
+    if (t === 'bld') { for (const b of L.blds) if (b.id === id) return b; return null; }
     if (t === 'wing') return L.WING[id] || null;
     if (t === 'room') return L.ROOM[id] || null;
     if (t === 'bay') return L.BAY[id] || null;
     return null;
   }
-  get view(): View { const c = this.cam; return { x: c.x, y: c.y, k: c.k, FW: this.FW, FH: this.FH, c0x: 0, c0y: 0, c1x: this.FW, c1y: this.FH }; }
+  /** The live camera's view. One record, refreshed per read: use it at once, never keep it. */
+  get view(): View {
+    const c = this.cam, v = this.viewRec;
+    v.x = c.x; v.y = c.y; v.k = c.k; v.FW = this.FW; v.FH = this.FH; v.c1x = this.FW; v.c1y = this.FH;
+    return v;
+  }
+  private viewRec: View = { x: 0, y: 0, k: 1, FW: 0, FH: 0, c0x: 0, c0y: 0, c1x: 0, c1y: 0 };
   /** Screen rect (CSS px of the page) of a feature at the current zoom. */
   featureRect(fid: string): SRect | null { return featRect(this, this.view, fid, this.lod()); }
   wingName = (fid: string) => { const T = this.M.L.TILE[fid]; return T ? T.wing.def.name : '?'; };
@@ -295,10 +302,19 @@ export class Engine {
   // ============================================================================ loop
   dirty() { if (!this.raf && !this.destroyed) this.raf = requestAnimationFrame(this.frame); }
   private camMoved() { this.lastCamMove = performance.now(); this.dirty(); }
-  private staticKey(): string {
-    const S = this.S;
-    return [this.themeV, this.fontsV, this.U, this.FW, this.FH, this.SAFE.r, this.mixV, S.t, S.delta, S.blast, S.ga, S.key, S.who, S.view, this.simStaticV].join('|');
+  /** The static raster's content version: a counter that moves when any field it depends on does (compared field by field, no string built). */
+  private staticKey(): number {
+    const S = this.S, k = this.sk;
+    if (k.themeV !== this.themeV || k.fontsV !== this.fontsV || k.U !== this.U || k.FW !== this.FW || k.FH !== this.FH || k.safeR !== this.SAFE.r || k.mixV !== this.mixV
+      || k.t !== S.t || k.delta !== S.delta || k.blast !== S.blast || k.ga !== S.ga || k.key !== S.key || k.who !== S.who || k.view !== S.view || k.simStaticV !== this.simStaticV) {
+      k.themeV = this.themeV; k.fontsV = this.fontsV; k.U = this.U; k.FW = this.FW; k.FH = this.FH; k.safeR = this.SAFE.r; k.mixV = this.mixV;
+      k.t = S.t; k.delta = S.delta; k.blast = S.blast; k.ga = S.ga; k.key = S.key; k.who = S.who; k.view = S.view; k.simStaticV = this.simStaticV;
+      k.ver++;
+    }
+    return k.ver;
   }
+  private sk = { ver: 0, themeV: -1, fontsV: -1, U: -1, FW: -1, FH: -1, safeR: -1, mixV: -1, t: '' as string, delta: 0 as number, blast: null as string | null, ga: false, key: null as string | null, who: null as string | null, view: '' as string, simStaticV: -1 };
+  private wake = () => this.dirty();
   private frame = (now: number) => {
     this.raf = 0;
     if (this.destroyed || this.S.phone) return;
@@ -345,18 +361,17 @@ export class Engine {
     } else if (st === 'transform') {
       // still moving (or settled mid-gesture): wake once more after the settle window to re-raster
       clearTimeout(this.settleTimer);
-      this.settleTimer = window.setTimeout(() => this.dirty(), 160);
+      this.settleTimer = window.setTimeout(this.wake, 160);
     }
     const reveal = this.introOn ? (this.FW + 60) * this.introP : undefined;
     const td = rastered ? performance.now() : 0;
     this.cache.draw(ctx, c, reveal, this.RES);
     // Chrome defers the 2D raster to this first drawImage: count it, so the counter is the cost the frame pays
     if (rastered) this.perf.lastRasterMs += performance.now() - td;
-    // dynamic layers at the live camera
-    this.anchor(this.FW / 2 - c.x * c.k, this.FH / 2 - c.y * c.k);
+    // dynamic layers at the live camera (no dynamic layer draws a pattern: the patterns stay anchored to the last raster)
     const v = this.view, lod = this.lod();
     drawOverlays(this, ctx, v, lod);
-    if (this.introOn) { this.flags = []; return; }
+    if (this.introOn) { this.flags = NO_FLAGS; return; }
     drawOrderZones(this, ctx, v, lod); drawTargets(this, ctx, v, lod);
     drawHeat(this, ctx, v, lod, now);
     drawAgents(this, ctx, v, lod, now); drawPulses(this, ctx, v, lod, now);
@@ -375,12 +390,17 @@ export class Engine {
     this.blastSet = S.blast ? new Set(this.M.closure.of(S.blast)) : null;
   }
   private afterFrame(now: number) {
-    const c = this.cam, sig = c.x.toFixed(2) + ',' + c.y.toFixed(2) + ',' + c.k.toFixed(5) + ',' + this.FW + ',' + this.FH;
-    const camChanged = sig !== this.camSig;
-    this.camSig = sig;
+    const c = this.cam, sg = this.camSig;
+    const cx = Math.round(c.x * 100), cy = Math.round(c.y * 100), ck = Math.round(c.k * 1e5);
+    const camChanged = cx !== sg.x || cy !== sg.y || ck !== sg.k || this.FW !== sg.w || this.FH !== sg.h;
+    sg.x = cx; sg.y = cy; sg.k = ck; sg.w = this.FW; sg.h = this.FH;
     if (this.keyplan && (camChanged || now - this.kpAt > 1000)) {
       this.kpAt = now;
-      this.keyplan.draw(this.themeV + '|' + this.S.t + '|' + this.S.delta + '|' + this.simStaticV, this.RES);
+      const S = this.S, q = this.kpSig;
+      if (q.themeV !== this.themeV || q.t !== S.t || q.delta !== S.delta || q.sv !== this.simStaticV) {
+        q.themeV = this.themeV; q.t = S.t; q.delta = S.delta; q.sv = this.simStaticV; q.str = q.themeV + '|' + q.t + '|' + q.delta + '|' + q.sv;
+      }
+      this.keyplan.draw(q.str, this.RES);
     }
     for (const fn of this.camListeners) fn();
     const sec = Math.floor(this.M.sim.t);

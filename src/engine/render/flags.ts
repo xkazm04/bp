@@ -54,14 +54,25 @@ function sizeOf(E: Engine, r: SRect, tile: boolean): number {
 const tipOf = (s: number) => s * 0.26;
 const sr: SRect = { x: 0, y: 0, w: 0, h: 0 };
 
+// Layout pools: flags are reused frame to frame (a plain pan allocates nothing). The returned array and its
+// Flag records are valid until the next layoutFlags call.
+const POOL: Flag[] = [], CANDS: Flag[] = [], OUT: Flag[] = [];
+let nPool = 0;
+function take(): Flag {
+  if (nPool === POOL.length) POOL.push({ x: 0, y: 0, w: 0, h: 0, tipX: 0, tipY: 0, bad: false, lens: '', fid: '', fids: [], lenses: [], a: 0 });
+  return POOL[nPool++];
+}
+// bad before watch, then the more present lens, then left to right: the first flag placed in a spot keeps it
+const byPlace = (p: Flag, q: Flag) => Number(q.bad) - Number(p.bad) || q.a - p.a || p.tipX - q.tipX;
+
 /** Lay out this frame's flags (clustered), in draw order reversed: index 0 is drawn last, on top. */
 export function layoutFlags(E: Engine, v: View, lod: number): Flag[] {
-  const out: Flag[] = [];
+  const out = OUT; out.length = 0;
   if (!flagsOn() || !E.isNow) return out;
   const u = E.U, m = E.mixS, ids = E.lensIds, n = ids.length, tile = lod > 0.5;
   // merge distance: generous on the site and wing plans (a few markers per room), tight over tiles
   const gap = (tile ? 4 : 4 + 22 * (1 - lod / 0.5)) * u;
-  const cands: Flag[] = [];
+  const cands = CANDS; cands.length = 0; nPool = 0;
   for (const f of troubled(E.M.P.features)) {
     if (E.dimFn && !E.dimFn(f)) continue;
     const r = featRect(E, v, f.id, lod, sr); if (!r) continue;
@@ -79,14 +90,18 @@ export function layoutFlags(E: Engine, v: View, lod: number): Flag[] {
         const lx = sxv(v, lb.x), ly = syv(v, lb.y), lw = lb.w * v.k, lh = lb.h * v.k, y = tipY - tip - s;
         if (x < lx + lw && x + w > lx && y < ly + lh && y + s > ly) x = Math.max(x, lx + lw + 3 * u);
       }
-      cands.push({ x, y: tipY - tip - s, w, h: s, tipX, tipY, bad: t.h === 'bad', lens: t.lens, fid: f.id, fids: [f.id], lenses: [t.lens], a });
+      const c = take();
+      c.x = x; c.y = tipY - tip - s; c.w = w; c.h = s; c.tipX = tipX; c.tipY = tipY; c.bad = t.h === 'bad'; c.lens = t.lens; c.fid = f.id; c.a = a;
+      c.fids.length = 0; c.fids.push(f.id); c.lenses.length = 0; c.lenses.push(t.lens);
+      cands.push(c);
     }
   }
-  // bad before watch, then the more present lens, then left to right: the first flag placed in a spot keeps it
-  cands.sort((p, q) => Number(q.bad) - Number(p.bad) || q.a - p.a || p.tipX - q.tipX);
-  for (const c of cands) {
+  cands.sort(byPlace);
+  for (let i = 0; i < cands.length; i++) {
+    const c = cands[i];
     let hit: Flag | null = null;
-    for (const o of out) {
+    for (let j = 0; j < out.length; j++) {
+      const o = out[j];
       if (c.x < o.x + o.w + gap && c.x + c.w + gap > o.x && c.y < o.y + o.h + tipOf(o.h) + gap && c.y + c.h + tipOf(c.h) + gap > o.y) { hit = o; break; }
     }
     if (hit) { hit.fids.push(c.fid); hit.lenses.push(c.lens); hit.a = Math.max(hit.a, c.a); }
@@ -97,6 +112,8 @@ export function layoutFlags(E: Engine, v: View, lod: number): Flag[] {
 
 /** A flag's identity across frames (its first feature and lens): what hover remembers. */
 export const flagKey = (F: Flag) => F.fid + '|' + F.lens;
+
+const COUNTS: string[] = [];
 
 /** Draw the flags of this frame; `hot` is the hovered one's key (drawn a little larger). */
 export function drawFlags(E: Engine, ctx: CanvasRenderingContext2D, flags: readonly Flag[], hot: string | null) {
@@ -129,7 +146,7 @@ export function drawFlags(E: Engine, ctx: CanvasRenderingContext2D, flags: reado
     const cnt = F.fids.length;
     if (cnt > 1) {
       // the cluster's count, a tag on the flag's top right corner (12 px text: the floor)
-      const label = cnt > 99 ? '99+' : String(cnt), tw = E.tx.w(label, nf), bh = 17 * u, bw = Math.max(bh, tw + 9 * u);
+      const label = cnt > 99 ? '99+' : (COUNTS[cnt] ||= String(cnt)), tw = E.tx.w(label, nf), bh = 17 * u, bw = Math.max(bh, tw + 9 * u);
       const bx = x + w - bw * 0.55, by = y - bh * 0.45;
       ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, bh / 2);
       ctx.fillStyle = th.paper; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1.6 * u; ctx.stroke();
