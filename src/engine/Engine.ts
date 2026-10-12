@@ -64,6 +64,9 @@ class LiveView implements FeatureLive {
 const CTL = 'button,a,input,textarea,select,summary,[role=button],[role=tab],[role=option],[role=slider],[role=menuitem],[contenteditable=""],[contenteditable=true]';
 /** True when the key event's target is an interactive element, whose own Enter / Space must not trigger an engine shortcut. */
 const isControl = (t: HTMLElement | null) => !!t?.closest?.(CTL);
+/** Keys that move the plan. They belong to the widget they came from: a control, the rail / flyout / timeline / feature page / cards, or a handler that already took them. */
+const NAV_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End']);
+const OWN_ZONES = '#rail,#flyout,#tlpanel,#detail,#dcard,#callout,#morning';
 
 export class Engine {
   readonly M: Model;
@@ -307,7 +310,12 @@ export class Engine {
 
   // ============================================================================ loop
   dirty() { if (!this.raf && !this.destroyed) this.raf = requestAnimationFrame(this.frame); }
-  private camMoved() { this.lastCamMove = performance.now(); this.dirty(); }
+  private camMoved() {
+    this.lastCamMove = performance.now();
+    if (this.S.hover) this.setHover(null); // the card describes where the camera was
+    if (this.ptr) this.retest = true;
+    this.dirty();
+  }
   /** The static raster's content version: a counter that moves when any field it depends on does (compared field by field, no string built). */
   private staticKey(): number {
     const S = this.S, k = this.sk;
@@ -342,7 +350,13 @@ export class Engine {
     if (sim.version !== this.simSeenV || (live && Math.floor(sim.t / 15) !== this.simT10)) {
       if (!live || now - this.simStaticAt > 900) { this.simSeenV = sim.version; this.simT10 = Math.floor(sim.t / 15); this.simStaticV++; this.simStaticAt = now; }
     }
+    if (gesture && S.hover) this.setHover(null); // a flight just began: the card describes the old place
     this.draw(now, gesture);
+    if (this.retest && !gesture && !this.cam.moving) {
+      // the camera came to rest under a still cursor: say what is there now (after the settle window, with the re-raster)
+      if (performance.now() - this.lastCamMove > 140) { this.retest = false; if (this.ptr && !S.open) this.hoverAt(this.ptr.x, this.ptr.y); }
+      else { clearTimeout(this.settleTimer); this.settleTimer = window.setTimeout(this.wake, 160); }
+    }
     this.syncPlace();
     this.afterFrame(now);
     if (sim.pulses.length > 40 || (now | 0) % 50 === 0) sim.expire(now);
@@ -880,6 +894,36 @@ export class Engine {
     for (const c of h.chain) { const fk = this.fitOf(c); if (fk.k > this.cam.k * 1.12) { this.cam.flyTo(fk); return; } }
     if (h.t === 'tile') this.openFeature(h.o.id);
   }
+  /**
+   * A plain click. The second click of a double-click lands on the plan the first one is already flying to and would
+   * step one level deeper (or open a feature): a click within the double-click window (500 ms, 8 px) of one that
+   * navigated is dropped, so a double-click is exactly one step. A real second click elsewhere or later still works.
+   */
+  private navClick(px: number, py: number, at: number) {
+    const n = this.lastNav;
+    if (n && at - n.at < 500 && Math.hypot(px - n.x, py - n.y) <= 8) return;
+    const S = this.S, k0 = this.cam.k, open0 = S.open, dec0 = S.dec, sel0 = S.sel;
+    this.clickAt(px, py);
+    const S1 = this.S;
+    if (this.cam.flying || this.cam.k !== k0 || S1.open !== open0 || S1.dec !== dec0 || S1.sel !== sel0) {
+      this.lastNav = { x: px, y: py, at };
+      if (this.cam.flying && S1.hover) this.setHover(null);
+    }
+  }
+  private lastNav: { x: number; y: number; at: number } | null = null;
+  /** What the pointer rests on: flag, pin, agent or place; sets the hover card and cursor. */
+  private hoverAt(px: number, py: number) {
+    const fl = this.flagUnder(px, py), fk = fl ? flagKey(fl) : null;
+    if (fk !== this.flagHot) { this.flagHot = fk; this.dirty(); }
+    if (fl) { this.setHover(new Set(fl.fids).size === 1 ? { type: 'tile', id: fl.fid } : null, px, py); this.cv.dataset.cursor = 'pt'; return; }
+    const pn = this.pinAt(px, py);
+    if (pn) { this.setHover({ type: 'pin', id: pn.d.id, ids: pn.cluster ? pn.list.map((d) => d.id) : undefined }, px, py); return; }
+    const ag = this.agentAt(px, py);
+    if (ag) { this.setHover({ type: 'agent', id: ag.id }, px, py); return; }
+    this.setHover(this.hitTarget(this.hitAt(px, py)), px, py);
+  }
+  /** Last mouse / pen position over the canvas (null once it left); the hover is re-tested there when the camera settles. */
+  private ptr: { x: number; y: number } | null = null; private retest = false;
   private lassoSelect(l: { x0: number; y0: number; x1: number; y1: number }) {
     const x0 = Math.min(l.x0, l.x1), x1 = Math.max(l.x0, l.x1), y0 = Math.min(l.y0, l.y1), y1 = Math.max(l.y0, l.y1), lod = this.lod(), v = this.view;
     const ids: Record<string, 1> = {}; let n = 0;
@@ -896,6 +940,7 @@ export class Engine {
       el.addEventListener(ev, fn as EventListener, opts); this.disposers.push(() => el.removeEventListener(ev, fn as EventListener, opts));
     };
     on(cv, 'pointerdown', (e: PointerEvent) => {
+      if (e.button !== 0) return; // right / middle / pen barrel: the browser's own menu or nothing, never a navigation
       this.endIntro();
       try { cv.setPointerCapture(e.pointerId); } catch { /* ignore */ }
       const p = this.local(e); this.ptrs.set(e.pointerId, p);
@@ -922,14 +967,8 @@ export class Engine {
         }
         return;
       }
-      const fl = this.flagUnder(p.x, p.y), fk = fl ? flagKey(fl) : null;
-      if (fk !== this.flagHot) { this.flagHot = fk; this.dirty(); }
-      if (fl) { this.setHover(new Set(fl.fids).size === 1 ? { type: 'tile', id: fl.fid } : null, p.x, p.y); cv.dataset.cursor = 'pt'; return; }
-      const pn = this.pinAt(p.x, p.y);
-      if (pn) { this.setHover({ type: 'pin', id: pn.d.id, ids: pn.cluster ? pn.list.map((d) => d.id) : undefined }, p.x, p.y); return; }
-      const ag = this.agentAt(p.x, p.y);
-      if (ag) { this.setHover({ type: 'agent', id: ag.id }, p.x, p.y); return; }
-      this.setHover(this.hitTarget(this.hitAt(p.x, p.y)), p.x, p.y);
+      if (e.pointerType !== 'touch') this.ptr = p;
+      this.hoverAt(p.x, p.y);
     });
     const end = (e: PointerEvent) => {
       const p = this.ptrs.get(e.pointerId); this.ptrs.delete(e.pointerId);
@@ -944,13 +983,13 @@ export class Engine {
               if (dg.shift && this.S.tgt.n) { const ids = { ...this.S.tgt.ids, ...tg.ids }; this.setTarget(ids, Object.keys(ids).length + ' places'); }
               else this.setTarget(tg.ids, tg.label);
             }
-          } else this.clickAt(p.x, p.y);
+          } else this.navClick(p.x, p.y, e.timeStamp);
         }
       }
       this.lasso = null; this.drag = null; if (cv.dataset.cursor === 'pan') cv.dataset.cursor = ''; this.lastCamMove = performance.now(); this.dirty();
     };
     on(cv, 'pointerup', end); on(cv, 'pointercancel', end);
-    on(cv, 'pointerleave', () => { if (!this.drag) this.setHover(null); });
+    on(cv, 'pointerleave', () => { this.ptr = null; if (!this.drag) this.setHover(null); });
     on(cv, 'wheel', (e: WheelEvent) => {
       e.preventDefault(); this.endIntro();
       if (this.S.open) return; // the feature page holds the wheel; the plan behind it stays put
@@ -988,6 +1027,7 @@ export class Engine {
     if (S.open && k.length === 1 && '/mMpPsStT\\'.includes(k)) return; // the feature page is modal: no flyout, timeline, mode or search opens under it (Esc and the lens digits still work)
     if (k === '/') { e.preventDefault(); this.focusSearch(); return; }
     if (k === 'Escape') { e.preventDefault(); this.goUp(); return; }
+    if (NAV_KEYS.has(k) && (e.defaultPrevented || isControl(tgt) || tgt?.closest?.(OWN_ZONES))) return;
     const ctl = isControl(tgt); // Enter / Space on a focused control belong to that control
     if (S.morning) { if (k === 'Enter' && !ctl) { e.preventDefault(); this.set({ morning: false }); const l = this.M.sim.cardOrder(S.who, S.view); if (l.length) this.openDecision(l[0].id); } return; }
     if (S.prev && k === 'Enter' && !ctl) { e.preventDefault(); this.commitPreview(); return; }
