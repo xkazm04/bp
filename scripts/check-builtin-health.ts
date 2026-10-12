@@ -24,7 +24,7 @@ const kettle = read('src/data/kettle.json') as { product: { asOf: string }; feat
 const manifests: readonly LensManifest[] = BUILTIN_LENSES;
 
 /** The lowest per-lens agreement the run accepts; below it the run exits 1. */
-const TARGET = 0.95;
+const TARGET = 1;
 const today = kettle.product.asOf.slice(0, 10);
 const n = kettle.features.length;
 let worst = 1;
@@ -44,7 +44,7 @@ for (const m of manifests) {
   console.log(`${m.id.padEnd(12)} ${String(agree).padStart(3)} / ${n}  ${((agree / n) * 100).toFixed(1)}%`);
   for (const line of misses) console.log(`    ${line}`);
 }
-console.log(`\nlowest agreement ${(worst * 100).toFixed(1)}% (target >= ${TARGET * 100}%)`);
+console.log(`\nlowest agreement ${(worst * 100).toFixed(1)}% (target ${TARGET * 100}%)`);
 // This is a gate (`npm run check:lens-health`): a lens under the target must fail the run, not just print.
 if (worst < TARGET) {
   console.error(`FAIL: lowest agreement is under the ${TARGET * 100}% target`);

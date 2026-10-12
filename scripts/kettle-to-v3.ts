@@ -614,8 +614,23 @@ const worstOf = (hs: Health[]): Health => {
 };
 
 // ----------------------------------------------------------------------------------------- write
-fs.writeFileSync(path.join(ROOT, OUT_MAP), `${JSON.stringify(map, null, 2)}\n`);
-fs.writeFileSync(path.join(ROOT, OUT_EVENTS), `${eventLines.join('\n')}\n`);
+const OUTPUTS: [string, string][] = [[OUT_MAP, `${JSON.stringify(map, null, 2)}\n`], [OUT_EVENTS, `${eventLines.join('\n')}\n`]];
+if (process.argv.includes('--check')) {
+  // --check: regenerate in memory, diff against the committed files, write nothing.
+  const drift: string[] = [];
+  for (const [file, text] of OUTPUTS) {
+    const have = fs.readFileSync(path.join(ROOT, file), 'utf8').replace(/\r\n/g, '\n').split('\n'), want = text.split('\n');
+    const bad: string[] = [];
+    for (let i = 0; i < Math.max(have.length, want.length) && bad.length < 3; i++) {
+      if (have[i] !== want[i]) bad.push(`    line ${i + 1}\n      committed: ${(have[i] ?? '(end)').slice(0, 110)}\n      generated: ${(want[i] ?? '(end)').slice(0, 110)}`);
+    }
+    if (bad.length) drift.push(`  ${file}: ${have.length} committed lines vs ${want.length} generated\n${bad.join('\n')}`);
+  }
+  if (drift.length) { console.error(`DRIFT: the committed data is not what kettle-to-v3.ts generates:\n${drift.join('\n')}`); process.exit(1); }
+  console.log(`ok: ${OUTPUTS.map(([f]) => f).join(' and ')} reproduce exactly (as of ${AS_OF})`);
+  process.exit(0);
+}
+for (const [file, text] of OUTPUTS) fs.writeFileSync(path.join(ROOT, file), text);
 
 // ---------------------------------------------------------------------------------------- report
 const fmt = (t: Record<Health, number>) => HEALTHS.map((h) => `${h} ${String(t[h]).padStart(3)}`).join('  ');

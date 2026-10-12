@@ -73,12 +73,19 @@ own lens or switch any lens off. The spec is `docs/standard/app-structure-v3.md`
 ```sh
 npm run data:kettle-v3                 # rebuild the v3 map + events from src/data/kettle.json
 npm run validate:structure -- src/data/kettle.app-structure.json --events src/data/kettle.events.jsonl
-npm run check:lens-health              # built-in lens rules vs the sample's stored health (132/132)
+npm run check:lens-health              # built-in lens rules vs the sample's stored health (gate: 132/132, every lens 100%)
+npm run check:data                     # the committed src/data map + events are exactly what data:kettle-v3 generates (writes nothing)
 node scripts/fixtures/gen-kettle.mjs <dir>   # regenerate the original sample (deterministic)
 node scripts/fixtures/gen-swarm.mjs <dir>    # regenerate the swarm over it
 ```
 
 ## Checks
+
+`npm run check` runs typecheck, every `check:*` script in package.json (new ones join automatically)
+and `validate:structure`, prints one line each with time and pass/fail, and exits 1 on any failure.
+`check:python-deps` needs Python and is skipped (and reported as skipped) when `python` is not on PATH.
+The production build warns "Dynamic filesystem access causes tracing of the whole project" for the
+products shots route; that is expected and not a check failure.
 
 `npm run typecheck` · `npm run build` · `python scripts/perf.py` (frame times while zooming at
 `?scale=4`; the budget is 60 fps, see `docs/perf.md`) · `python scripts/shots.py` (screenshots).
