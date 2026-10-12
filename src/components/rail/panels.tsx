@@ -250,7 +250,8 @@ function TitleBlock() {
           <tr><td className="sy"><StageSym st="live" w={18} h={11} /></td><td>Built, live for all</td><td className="n">{c.live}</td></tr>
           <tr><td className="sy"><StageSym st="flagged" w={18} h={11} /></td><td>Partly open, flagged</td><td className="n">{c.flagged}</td></tr>
           <tr><td className="sy"><StageSym st="in-dev" w={18} h={11} /></td><td>Being built or reviewed</td><td className="n">{c.build}</td></tr>
-          <tr><td className="sy"><StageSym st="specified" w={18} h={11} /></td><td>On paper, promised</td><td className="n">{c.paper + c.dep}</td></tr>
+          <tr><td className="sy"><StageSym st="specified" w={18} h={11} /></td><td>On paper, promised</td><td className="n">{c.paper}</td></tr>
+          {c.dep ? <tr><td className="sy"><StageSym st="deprecated" w={18} h={11} /></td><td>Being retired</td><td className="n">{c.dep}</td></tr> : null}
           <tr className="tr"><td className="sy"><Mark k="cloud" w={20} h={14} /></td><td>In trouble</td><td className="n">{bad ?? '—'}</td></tr>
           <tr><td className="sy"><Mark k="delta" w={20} h={14} /></td><td>Changed, last {s.delta === 1 ? '24 h' : s.delta + ' days'}</td><td className="n">{c.chg}</td></tr>
         </tbody></table></div>
