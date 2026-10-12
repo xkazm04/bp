@@ -13,6 +13,7 @@
     "data:kettle-v3": "node scripts/kettle-to-v3.ts",
     "check:fixtures": "node scripts/check-fixtures.ts",
     "check:scan-wire": "node scripts/check-scan-wire.ts",
+    "check:local-only": "node scripts/check-local-only.ts",
     "check:camera": "node scripts/check-camera.ts",
     "check:variant-copies": "node src/variants/check-copies.ts",
     "check:timeline-keys": "node src/components/timeline/check-keys.ts",

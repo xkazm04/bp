@@ -107,28 +107,4 @@ export function removeProduct(slug: string): RegistryResult<{ slug: string }> {
   return { ok: true, value: { slug } };
 }
 
-const LOOPBACK_HOST = /^(localhost|127(?:\.\d{1,3}){3}|\[::1\]|::1)$/i;
-const isLoopbackAddr = (a: string): boolean => /^(127(?:\.\d{1,3}){3}|::1|::ffff:127(?:\.\d{1,3}){3}|localhost)$/i.test(a.trim());
-const hostOnly = (h: string): string => (h.startsWith('[') ? h.slice(0, h.indexOf(']') + 1) : h.split(':')[0]);
-
-/**
- * Registry writes come from this machine only (bp runs locally). The Host must be a loopback name (this
- * also stops DNS rebinding); a browser's Origin, when sent, must be loopback too, and `Sec-Fetch-Site`
- * must not be cross-site (no other page can post here); every `X-Forwarded-For` hop (Next sets it from
- * the socket) must be loopback. Next does not expose the socket address to route handlers, so this is
- * the strongest check available at this layer.
- */
-export function localOnly(req: Request): string | null {
-  const h = req.headers, host = h.get('host') ?? '';
-  if (!LOOPBACK_HOST.test(hostOnly(host))) return `writes are only accepted on localhost (Host: ${host || 'none'})`;
-  const origin = h.get('origin');
-  if (origin && origin !== 'null') {
-    let oh = '';
-    try { oh = new URL(origin).hostname; } catch { /* unparseable: refused below */ }
-    if (!LOOPBACK_HOST.test(oh)) return `writes are only accepted from a localhost page (Origin: ${origin})`;
-  } else if (origin === 'null') return 'writes are not accepted from an opaque origin';
-  if (h.get('sec-fetch-site') === 'cross-site') return 'cross-site writes are refused';
-  const xff = h.get('x-forwarded-for');
-  if (xff && !xff.split(',').every(isLoopbackAddr)) return `writes are only accepted from this machine (X-Forwarded-For: ${xff})`;
-  return null;
-}
+export { localHost, localOnly, jsonOnly } from './local-only';

@@ -5,11 +5,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { findProduct, storeDir } from '@/lib/scan/products.server';
+import { localHost } from '@/lib/scan/local-only';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }): Promise<Response> {
+export async function GET(req: Request, { params }: { params: Promise<{ slug: string }> }): Promise<Response> {
+  const denied = localHost(req);
+  if (denied) return Response.json({ error: denied }, { status: 403 });
   const { slug } = await params;
   const p = findProduct(slug);
   if (!p) return Response.json({ error: `unknown product ${slug}` }, { status: 404 });

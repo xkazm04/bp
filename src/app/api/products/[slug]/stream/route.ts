@@ -11,6 +11,7 @@
 // connection (the skill, or a decision) commits, so an idle store costs one pragma a second.
 import fs from 'node:fs';
 import { findProduct, recovered, storeFile, warnOnce } from '@/lib/scan/products.server';
+import { localHost } from '@/lib/scan/local-only';
 import { advance, close, dataVersion, isEmptyScan, newCursor, openRead, readDelta, readSnapshot, emptyScan, type Cursor } from '@/lib/scan/store.server';
 import type { ScanSnapshot, StreamEvent } from '@/lib/scan/types';
 
@@ -20,6 +21,8 @@ export const dynamic = 'force-dynamic';
 const TICK_MS = 1000, PING_MS = 15000;
 
 export async function GET(req: Request, { params }: { params: Promise<{ slug: string }> }): Promise<Response> {
+  const denied = localHost(req);
+  if (denied) return Response.json({ error: denied }, { status: 403 });
   const { slug } = await params;
   const p = findProduct(slug);
   if (!p) return Response.json({ error: `unknown product ${slug}` }, { status: 404 });

@@ -2,12 +2,17 @@
 // 200 + the updated Proposal; 400 for a bad body; 404 for an unknown product, store or proposal; 409 with the
 // current row (a Proposal, as the body) when it is no longer `proposed` (someone decided first, or the skill has moved it on).
 import { findProduct, hasStore, storeFile } from '@/lib/scan/products.server';
+import { localOnly, jsonOnly } from '@/lib/scan/local-only';
 import { decide, parseDecision } from '@/lib/scan/store.server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string; id: string }> }): Promise<Response> {
+  const denied = localOnly(req);
+  if (denied) return Response.json({ error: denied }, { status: 403 });
+  const notJson = jsonOnly(req);
+  if (notJson) return Response.json({ error: notJson }, { status: 415 });
   const { slug, id } = await params;
   const p = findProduct(slug);
   if (!p) return Response.json({ error: `unknown product ${slug}` }, { status: 404 });

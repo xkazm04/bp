@@ -59,7 +59,7 @@ const { GET } = await import(pathToFileURL(path.join(ROOT, 'src/app/api/products
 
 async function events(slug, ms) {
   const ac = new AbortController();
-  const res = await GET(new Request('http://x/api/products/' + slug + '/stream', { signal: ac.signal }), { params: Promise.resolve({ slug }) });
+  const res = await GET(new Request('http://x/api/products/' + slug + '/stream', { signal: ac.signal, headers: { host: 'localhost:3000' } }), { params: Promise.resolve({ slug }) });
   const reader = res.body.getReader(), dec = new TextDecoder();
   let text = '';
   const pump = (async () => { for (;;) { const r = await reader.read(); if (r.done) break; text += dec.decode(r.value); } })();
