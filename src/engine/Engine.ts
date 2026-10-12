@@ -588,7 +588,7 @@ export class Engine {
     this.placeKey = ''; this.dirty();
   }
   toggleSelMode() { const on = !this.S.selMode; this.set({ selMode: on }); this.toast(on ? 'Target mode.' : 'Target mode off.', on ? 'Click or drag to select places. Press S again to leave.' : ''); }
-  toggleMorning(on?: boolean) { this.set({ morning: on == null ? !this.S.morning : on }); }
+  toggleMorning(on?: boolean) { if (on !== false && this.M.sim.live) return; this.set({ morning: on == null ? !this.S.morning : on }); }
   morningShow() {
     const ids: Record<string, 1> = {};
     for (const a of this.M.P.base.activity) if (a.at >= AWAY_SINCE && a.feature) for (let b = 0; b < this.M.P.scale; b++) ids[a.feature + (this.M.P.scale > 1 ? '-' + LINES[b][1] : '')] = 1;
