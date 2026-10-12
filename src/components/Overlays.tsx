@@ -7,6 +7,7 @@ import {
   AWAY_SINCE, GA_MILESTONE, SPEND_CAP, STAGE_PLAIN, STAGE_WORD, ORDER_TEMPLATES, TICK_CLASS, astat, dnum, fmtWait, isAgentId, isLiveSt, lensOf, lineSuffix,
   morningStats, pname, sheetOf, stageAt, type BayNode, type BldNode, type OrderTemplate, type RoomNode, type WingNode,
 } from '@/lib/model';
+import { overlayRight } from '@/engine/chrome';
 import { illoSVG } from '@/engine/render/illo';
 import { shallowEqual, useBp, useEngine, useVariant } from './hooks';
 import { lensWords } from './sheet/words';
@@ -196,10 +197,10 @@ export function DecisionCard() {
     return E.onFrame(() => {
       const el = ref.current; if (!el) return;
       const r = E.featureRect(d.f); if (!r) return;
-      const u = E.U, S = E.SAFE, w = 372 * u, h = (el.offsetHeight || 380) * u;
+      const u = E.U, S = E.SAFE, w = 372 * u, h = (el.offsetHeight || 380) * u, R = Math.min(S.r, E.FW - overlayRight(E.S) * u);   // never under an open flyout
       let x = r.x + r.w + 16 * u, y = r.y + r.h / 2 - h / 2;
-      if (x + w > S.r) x = r.x - w - 16 * u;
-      if (x < S.l) x = Math.max(S.l, Math.min(S.r, S.r - w - 8 * u));
+      if (x + w > R) x = r.x - w - 16 * u;
+      if (x < S.l) x = Math.max(S.l, Math.min(R, R - w - 8 * u));
       y = Math.max(S.t, Math.min(Math.max(S.t, S.b - h), y));
       el.style.transform = `translate(${x / u}px, ${y / u}px)`;
     });
@@ -236,11 +237,22 @@ export function DecisionCard() {
 export function SelBar() {
   const E = useEngine(), sim = E.M.sim;
   const s = useBp((s) => ({ tgt: s.tgt, prev: s.prev, ordMenu: s.ordMenu, simV: s.simV }), shallowEqual);
-  const p = s.prev;
+  const p = s.prev, ref = useRef<HTMLDivElement>(null);
+  // sits above the level ladder when the two would meet; measured on content / viewport change, never per frame
+  useLayoutEffect(() => {
+    const fit = () => {
+      const el = ref.current; if (!el) return;
+      el.style.bottom = '';
+      const ld = document.getElementById('ladder'); if (!ld) return;
+      const a = el.getBoundingClientRect(), b = ld.getBoundingClientRect();
+      if (a.left < b.right + 8 && a.bottom > b.top - 4) el.style.bottom = `calc(var(--bb) + ${Math.ceil(b.height / E.U) + 8}px)`;
+    };
+    fit(); window.addEventListener('resize', fit); return () => window.removeEventListener('resize', fit);
+  });
   let body: React.ReactNode = null;
   if (p) {
     body = (
-      <motion.div id="selbar" key="prev" className="prev" role="region" aria-label="Preview" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}>
+      <motion.div ref={ref} id="selbar" key="prev" className="prev" role="region" aria-label="Preview" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}>
         <div className="kk">ADDENDUM · NOT ISSUED YET</div>
         <div className="big">{p.title}</div>
         <ul>{p.lines.map((l) => <li key={l}>{l}</li>)}</ul>
@@ -254,7 +266,7 @@ export function SelBar() {
   } else if (s.tgt.n) {
     const ag = sim.agentsIn(s.tgt.ids), ds = Object.keys(s.tgt.ids).flatMap((id) => sim.DOF[id] || []), wk = ag.filter((a) => a.status === 'working' && !a.paused).length;
     body = (
-      <motion.div id="selbar" key="sel" role="region" aria-label="Selection" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}>
+      <motion.div ref={ref} id="selbar" key="sel" role="region" aria-label="Selection" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}>
         <span className="sm"><b>{s.tgt.label}</b> · {s.tgt.n} feature{s.tgt.n > 1 ? 's' : ''} · {ag.length} agent{ag.length === 1 ? '' : 's'}{ag.length ? ' (' + wk + ' working)' : ''} · {ds.length} question{ds.length === 1 ? '' : 's'}</span>
         <button type="button" className="btn" onClick={() => E.lookAtTarget()}>Look closer</button>
         <button type="button" className="btn" onClick={() => E.patch({ info: true })}>What is going on?</button>
@@ -274,8 +286,8 @@ export function SelBar() {
 // -------------------------------------------------------------------------------------- callouts
 export function Callout() {
   const E = useEngine(), M = E.M, sim = M.sim;
-  const s = useBp((s) => ({ blast: s.blast, ga: s.ga, info: s.info, tgt: s.tgt, simV: s.simV, dock: s.dockHidden }), shallowEqual);
-  const pos = { left: Math.max(10, E.SAFE.r / E.U - 340), top: E.SAFE.t / E.U + 4, maxHeight: `calc(100% - ${E.SAFE.t / E.U + 140}px)` };
+  const s = useBp((s) => ({ blast: s.blast, ga: s.ga, info: s.info, tgt: s.tgt, simV: s.simV, dock: s.dockHidden, dtab: s.dtab }), shallowEqual);
+  const pos = { left: Math.max(10, E.FW / E.U - overlayRight(E.S) - 340), top: E.SAFE.t / E.U + 4, maxHeight: `calc(100% - ${E.SAFE.t / E.U + 140}px)` };
   let body: React.ReactNode = null, cls = '';
   if (s.info && s.tgt.n) {
     const ids = s.tgt.ids, ag = sim.agentsIn(ids), ds = Object.keys(ids).flatMap((id) => sim.DOF[id] || []), ev = sim.log.filter((e) => ids[e.f]).slice(0, 6);

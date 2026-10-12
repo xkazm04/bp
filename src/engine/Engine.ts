@@ -641,7 +641,7 @@ export class Engine {
     d.isNew = false;
     this.set({ dec: id, hl: null, hover: null, morning: false });
     if (!noFly && !this.S.phone) {
-      const T = this.M.L.TILE[d.f], R = { l: this.SAFE.l, t: this.SAFE.t, r: this.SAFE.r - 400 * this.U, b: this.SAFE.b };
+      const T = this.M.L.TILE[d.f], R = { l: this.SAFE.l, t: this.SAFE.t, r: Math.min(this.SAFE.r, this.FW - overlayRight(this.S) * this.U) - 400 * this.U, b: this.SAFE.b };
       const c = this.fitCam({ x: T.x - 30, y: T.y - 30, w: T.w + 60, h: T.h + 60 }, { t: 60, r: 40, b: 60, l: 40 }, 1, R);
       c.k = clamp(Math.min(c.k, 1.25), this.cam.KMIN, this.cam.KMAX);
       const cx = (R.l + R.r) / 2, cy = (R.t + R.b) / 2, k = Math.max(c.k, Math.min(1.0, (160 * this.U) / T.w));
