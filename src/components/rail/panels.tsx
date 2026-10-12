@@ -2,7 +2,7 @@
 // The rail's flyout panels, one per rail item: Find, View (window, modes, reader, swarm health),
 // Agents, Orders, Plan and Steer (Kettle's steering presets). The decisions panel is `AsksTab` in
 // ../Queue. Each returns a flat list of blocks so the flyout can stagger them in.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { Stage } from '@/lib/data';
 import {
@@ -122,7 +122,7 @@ export function ViewPanel() {
 // ------------------------------------------------------------------------------------------ agents
 export function SwarmPanel() {
   const E = useEngine(), M = E.M, sim = M.sim;
-  const s = useBp((s) => ({ simV: s.simV, prev: s.prev, tgt: s.tgt, crew: s.crew, ticker: s.ticker }), shallowEqual);
+  const s = useBp((s) => ({ simV: s.simV, prev: s.prev, tgt: s.tgt, crew: s.crew }), shallowEqual);
   if (!sim.has) return <div className="qempty">No swarm data.</div>;
   const tm = (t: number) => new Date(sim.at0 + t * 1000).toISOString().slice(11, 16);
   return (
@@ -242,8 +242,8 @@ const HINT = (
 function TitleBlock() {
   const E = useEngine(), M = E.M;
   const s = useBp((s) => ({ view: s.view, t: s.t, delta: s.delta }), shallowEqual);
-  const sh = sheetOf(M.P, s.view), vs = views(M.P), c = M.agg.countsOf('ALL', M.P.features, s.t, s.delta), now = s.t === M.P.asOf;
-  const bad = now ? M.agg.healthOf('ALL', M.P.features, 'general').bad : null;
+  const sh = sheetOf(M.P, s.view), vs = views(M.P), now = s.t === M.P.asOf;
+  const { c, bad } = useMemo(() => ({ c: M.agg.countsOf('ALL', M.P.features, s.t, s.delta), bad: now ? M.agg.healthOf('ALL', M.P.features, 'general').bad : null }), [M.P, M.agg, s.t, s.delta, now]);
   return (
     <div className="tbk">
       <div className="proj"><div className="v">{M.P.name.toUpperCase()}</div><span className="lab">{M.P.scale > 1 ? 'Campus ×' + M.P.scale : 'Project'}</span></div>
@@ -267,6 +267,12 @@ function TitleBlock() {
 export function PlanPanel() {
   const E = useEngine(), M = E.M, V = useVariant();
   const s = useBp((s) => ({ view: s.view, place: s.place, ga: s.ga, blast: s.blast, key: s.key, t: s.t, simV: s.simV }), shallowEqual);
+  // trouble per enabled lens (bad or watch) is fixed at load: recount only when the model changes
+  const kc = useMemo(() => {
+    const kc: Record<string, number> = {};
+    for (const f of M.P.features) for (const t of f.trouble) kc[t.lens] = (kc[t.lens] || 0) + 1;
+    return kc;
+  }, [M.P]);
   const deep = s.place.find((c) => c.t === 'room' || c.t === 'bay');
   if (deep && !s.ga && !s.blast) {
     const o = E.placeById(deep.t, deep.id);
@@ -296,9 +302,6 @@ export function PlanPanel() {
       </>
     );
   }
-  // trouble per enabled lens (bad or watch), from the health computed at load: click to find
-  const kc: Record<string, number> = {};
-  for (const f of M.P.features) for (const t of f.trouble) kc[t.lens] = (kc[t.lens] || 0) + 1;
   const L = V.ui?.Legend ?? Legend;
   return (
     <>

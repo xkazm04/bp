@@ -3,7 +3,7 @@
 // plan, view). It never changes width; each item opens ITS OWN flyout over the plan to its left, one at
 // a time. The same item, Esc, or a click on the plan closes it. Counts tween when they move and the item
 // pulses once; nothing opens by itself. `\` hides the whole rail (the plan takes the width back).
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, animate, motion, useReducedMotion } from 'motion/react';
 import { SPEND_CAP, pname, sheetOf } from '@/lib/model';
 import type { DockTab } from '@/engine/state';
@@ -53,28 +53,35 @@ const G = {
   view: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="1.5" /><circle cx="9" cy="7" r="2.1" fill="var(--card)" stroke="currentColor" strokeWidth="1.6" /><circle cx="15.5" cy="12" r="2.1" fill="var(--card)" stroke="currentColor" strokeWidth="1.6" /><circle cx="7" cy="17" r="2.1" fill="var(--card)" stroke="currentColor" strokeWidth="1.6" /></svg>,
 };
 
+/** The figures the rail shows, as primitives: the rail re-renders only when one of them moves, not on every sim sync. */
+interface Counts { who: string | null; view: string; delta: number; asks: number; hi: number; working: number; blocked: number; failed: number; br: number; orders: number; pct: number; agents: number }
+
 function useItems(): Item[] {
   const E = useEngine(), M = E.M, sim = M.sim;
-  const s = useBp((s) => ({ simV: s.simV, who: s.who, view: s.view, delta: s.delta, tgt: s.tgt.n }), shallowEqual);
+  // the sim is read once per (sim version, reader, sheet), however often the store notifies
+  const memo = useRef<{ sim: typeof sim; key: string; c: Counts } | null>(null);
+  const s = useBp((s): Counts => {
+    const key = s.simV + '|' + s.who + '|' + s.view + '|' + s.delta;
+    if (memo.current?.key === key && memo.current.sim === sim) return memo.current.c;
+    let c: Counts = { who: s.who, view: s.view, delta: s.delta, asks: 0, hi: 0, working: 0, blocked: 0, failed: 0, br: 0, orders: 0, pct: 0, agents: 0 };
+    if (sim.has) {
+      const q = sim.queueFor(s.who, s.view), mine = sim.live ? oncePerProposal(q.all) : s.who ? q.mine : q.all, t = sim.tallyStatus();
+      c = { ...c, asks: mine.length, hi: mine.filter((d) => d.urg === 'high').length, working: t.working, blocked: t.blocked, failed: t.failed, br: sim.orders.filter((o) => o.vf.length).length, orders: sim.orders.length, pct: sim.live ? 0 : Math.round((100 * sim.spend()) / SPEND_CAP), agents: sim.agents.length };
+    }
+    memo.current = { sim, key, c };
+    return c;
+  }, shallowEqual);
   const out: Item[] = [];
   out.push({ k: 'find', label: 'Find', title: 'Find a feature', glyph: G.find, n: null, tone: 'ink' });
   if (sim.has) {
-    const q = sim.queueFor(s.who, s.view), mine = sim.live ? oncePerProposal(q.all) : s.who ? q.mine : q.all, hi = mine.filter((d) => d.urg === 'high').length;
     const first = s.who ? pname(M.P, s.who).split(' ')[0] : '';
     out.push({
       k: 'asks', label: sim.live ? 'Review' : 'Asks', title: sim.live ? 'Proposals to review' : s.who ? 'Waiting for ' + first : 'Decisions waiting',
-      glyph: G.asks, n: mine.length, n2: hi, n2title: hi + ' urgent', tone: mine.length ? 'amber' : 'ink', sub: s.who ? 'for ' + first : undefined,
+      glyph: G.asks, n: s.asks, n2: s.hi, n2title: s.hi + ' urgent', tone: s.asks ? 'amber' : 'ink', sub: s.who ? 'for ' + first : undefined,
     });
-    const c = sim.tallyStatus(), bad = c.blocked + c.failed;
-    out.push({ k: 'swarm', label: 'Agents', title: 'Agents · ' + c.working + ' working of ' + sim.agents.length, glyph: G.swarm, n: c.working, n2: bad, n2title: c.blocked + ' blocked, ' + c.failed + ' failed', tone: 'mint' });
-    if (sim.orders.length || !sim.live) {
-      const br = sim.orders.filter((o) => o.vf.length).length;
-      out.push({ k: 'orders', label: 'Orders', title: 'Standing orders · ' + br + ' of ' + sim.orders.length + ' breached', glyph: G.orders, n: br, tone: br ? 'red' : 'ink', sub: 'of ' + sim.orders.length });
-    }
-    if (!sim.live) {
-      const pct = Math.round((100 * sim.spend()) / SPEND_CAP);
-      out.push({ k: 'steer', label: 'Steer', title: 'Steer the swarm · spend ' + pct + '% of the cap', glyph: G.steer, n: pct + '%', tone: pct >= 100 ? 'red' : pct >= 80 ? 'amber' : 'ink' });
-    }
+    out.push({ k: 'swarm', label: 'Agents', title: 'Agents · ' + s.working + ' working of ' + s.agents, glyph: G.swarm, n: s.working, n2: s.blocked + s.failed, n2title: s.blocked + ' blocked, ' + s.failed + ' failed', tone: 'mint' });
+    if (s.orders || !sim.live) out.push({ k: 'orders', label: 'Orders', title: 'Standing orders · ' + s.br + ' of ' + s.orders + ' breached', glyph: G.orders, n: s.br, tone: s.br ? 'red' : 'ink', sub: 'of ' + s.orders });
+    if (!sim.live) out.push({ k: 'steer', label: 'Steer', title: 'Steer the swarm · spend ' + s.pct + '% of the cap', glyph: G.steer, n: s.pct + '%', tone: s.pct >= 100 ? 'red' : s.pct >= 80 ? 'amber' : 'ink' });
   }
   const sh = sheetOf(M.P, s.view);
   out.push({ k: 'plan', label: 'Plan', title: 'Plan · sheet ' + sh.no, glyph: G.plan, n: sh.no, tone: 'ink' });
@@ -82,7 +89,7 @@ function useItems(): Item[] {
   return out;
 }
 
-function RailItem({ it, on, idx }: { it: Item; on: boolean; idx: number }) {
+const RailItem = memo(function RailItem({ it, on, idx }: { it: Item; on: boolean; idx: number }) {
   const E = useEngine(), reduce = useReducedMotion();
   // one subtle pulse when the main figure moves (at most every 3 s: a simulated swarm moves all the time)
   const [pulse, setPulse] = useState(0);
@@ -106,11 +113,12 @@ function RailItem({ it, on, idx }: { it: Item; on: boolean; idx: number }) {
       {it.sub && <span className="sb">{it.sub}</span>}
     </button>
   );
-}
+}, (a, b) => a.on === b.on && a.idx === b.idx && shallowEqual(a.it, b.it));
 
-const PANEL: Record<DockTab, () => ReactNode> = {
-  asks: () => <AsksTab />, swarm: () => <SwarmPanel />, orders: () => <OrdersPanel />, steer: () => <SteerPanel />,
-  plan: () => <PlanPanel />, find: () => <FindPanel />, view: () => <ViewPanel />,
+/** One element per panel, created once: the flyout bails out of re-rendering a panel that subscribes to what it reads. */
+const PANEL: Record<DockTab, ReactNode> = {
+  asks: <AsksTab />, swarm: <SwarmPanel />, orders: <OrdersPanel />, steer: <SteerPanel />,
+  plan: <PlanPanel />, find: <FindPanel />, view: <ViewPanel />,
 };
 
 export function Dock() {
@@ -181,7 +189,7 @@ export function Dock() {
               <button type="button" className="x" aria-label="Close panel" title="Close ( Esc )" onClick={() => E.setDockTab(null)}>Esc</button>
               {asks && sim.has && !sim.live && <MorningButton />}
             </header>
-            <div className={'fb' + (reduce ? ' still' : '')} key={open} tabIndex={-1}>{PANEL[open]()}</div>
+            <div className={'fb' + (reduce ? ' still' : '')} key={open} tabIndex={-1}>{PANEL[open]}</div>
           </motion.section>
         )}
       </AnimatePresence>
