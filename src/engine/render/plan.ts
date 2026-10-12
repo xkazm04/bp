@@ -438,6 +438,7 @@ function drawRoomLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: Bl
   const k = v.k, u = E.U, th = E.th, tx = E.tx, hasSw = E.M.sim.has;
   for (const W of B.wings) {
     const a = clamp((W.w * k - 100 * u) / 8, 0, 1) * (E.M.P.scale > 1 ? smooth(E.KB1 * 0.62, E.KB1 * 0.8, k) : 1);
+    for (const R of W.rooms) R.labelBox = null;
     if (a <= 0) continue;
     for (const R of W.rooms) {
       const r = rs(v, R, scratch); if (!onView(v, r)) continue;
@@ -454,6 +455,10 @@ function drawRoomLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: Bl
       const pw = Math.max(...lines.map((l) => tx.w(l, tx.f(fs, 600), ls)));
       if (!inHeader || y > r.y + 8 * u) { ctx.fillStyle = th.alpha(th.labelBg, 0.92); ctx.fillRect(x - 6 * u, y - 3 * u, pw + 12 * u, blockH + 8 * u); }
       R.labelRight = x + pw + 6 * u;
+      // world units, so the flags (drawn at the live camera) can find it between rasters; only a label in
+      // its room's header (a label floating over the room's content lets flags pass over it)
+      const ox = v.FW / 2 - v.x * k, oy = v.FH / 2 - v.y * k;
+      if (y === r.y + 8 * u) R.labelBox = { x: (x - 6 * u - ox) / k, y: (y - 3 * u - oy) / k, w: (pw + 12 * u) / k, h: (blockH + 8 * u) / k };
       lines.forEach((l, i) => drawText(ctx, l, x, y + lh * (i + 0.8), tx.f(fs, 600), th.inkHi, null, ls));
       if (inHeader && hh >= blockH + 34 * u && y === r.y + 8 * u) {
         const ag = aggParts(E, R.id, R.feats, false), af = tx.f(13, 500);

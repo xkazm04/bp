@@ -19,6 +19,7 @@ import type { LensField } from '@/lib/standard/types';
 import { lensLine } from '@/lib/standard/present';
 import { lensAggregate, lensContent } from '@/lib/model/lens';
 import type { FeatureLive, LensChannel, LensExpression, MarkArgs, Rect, TileGeom } from '../types';
+import { flagsOn } from '@/engine/render/flags';
 import { glyph, healthInk, lineType, railNone, railRest } from './marks';
 
 const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
@@ -163,9 +164,10 @@ function drawRibbon(s: Spec, a: MarkArgs) {
   const live = a.live, m = s.measure(live), full = r.w * e, len = m > 0 ? full * Math.min(1, m) : 0;
   if (m < 0) railNone(ctx, th, r.x, r.x + full, r.y, r.h, u); else railRest(ctx, th, r.x + len, r.x + full, r.y, r.h);
   if (len > 0) lineType(ctx, th, d.line, r.x, r.y, len, r.h, th.inkA(0.92), u);
-  // the glyph where this lens is unwell, on a small knockout so it reads over any stage fill
+  // the glyph where this lens is unwell, on a small knockout so it reads over any stage fill (unless the
+  // engine's trouble flags already stand over the segment)
   const h = f.lens[d.id]?.h;
-  if (h !== 'bad' && h !== 'watch') return;
+  if ((h !== 'bad' && h !== 'watch') || flagsOn()) return;
   const room = r.y - t.body.y - 1, gs = Math.min(room - 2, t.w - 5, 11 * u);
   if (gs < 7) return;
   const gx = t.x + (t.w - gs) / 2, gy = t.body.y + (room - gs) / 2;

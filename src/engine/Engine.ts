@@ -21,6 +21,7 @@ import {
   drawPulses, drawReleases, drawTargets, type APos,
 } from './render/dynamic';
 import { KeyPlan } from './render/keyplan';
+import { drawFlags, flagAt, flagKey, layoutFlags, type Flag } from './render/flags';
 import { loadArt } from './render/illo';
 import { rs, smooth, type SRect, type View } from './render/view';
 
@@ -80,6 +81,8 @@ export class Engine {
   introP = 1;
   lasso: { x0: number; y0: number; x1: number; y1: number } | null = null;
   dimFn: ((f: Feature) => boolean) | null = null;
+  /** This frame's trouble flags (render/flags.ts), kept for hit testing; the hovered one's key. */
+  private flags: Flag[] = []; private flagHot: string | null = null;
   blastSet: Set<string> | null = null;
   /** Called when the search box should take focus ('/'). */
   focusSearch: () => void = () => {};
@@ -354,12 +357,14 @@ export class Engine {
     this.anchor(this.FW / 2 - c.x * c.k, this.FH / 2 - c.y * c.k);
     const v = this.view, lod = this.lod();
     drawOverlays(this, ctx, v, lod);
-    if (this.introOn) return;
+    if (this.introOn) { this.flags = []; return; }
     drawOrderZones(this, ctx, v, lod); drawTargets(this, ctx, v, lod);
     drawHeat(this, ctx, v, lod, now);
     drawAgents(this, ctx, v, lod, now); drawPulses(this, ctx, v, lod, now);
     drawPins(this, ctx, v, lod, now); drawBreaches(this, ctx, v, lod, now);
     drawPreview(this, ctx, v, lod, now); drawFocus(this, ctx, v, lod, now); drawReleases(this, ctx, v, lod, now);
+    // trouble flags over everything: the first thing to find on the plan
+    this.flags = layoutFlags(this, v, lod); drawFlags(this, ctx, this.flags, this.flagHot);
     drawLasso(this, ctx);
   }
   /** The GA / lens-key / blast filters the layers read, rebuilt when one of the three changes, not per frame. */
@@ -816,7 +821,26 @@ export class Engine {
     const label = t.type === 'wing' ? (o as WingNode).def.name + ' wing' : t.type === 'room' ? (o as RoomNode).d.name : t.type === 'bay' ? (o as BayNode).cap.name : (o as BldNode).name;
     return { ids, label };
   }
+  /** A trouble flag under the pointer (none while a feature page is open). */
+  private flagUnder(px: number, py: number): Flag | null { return this.S.open ? null : flagAt(this, this.flags, px, py); }
+  /**
+   * A click on a flag: one feature opens in the flag's lens; a cluster of several flies to them so they
+   * split (and, when the camera cannot get meaningfully closer, opens the first).
+   */
+  private flagClick(F: Flag) {
+    const fids = [...new Set(F.fids)];
+    if (fids.length > 1) {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const id of fids) { const T = this.M.L.TILE[id]; if (!T) continue; x0 = Math.min(x0, T.x); y0 = Math.min(y0, T.y); x1 = Math.max(x1, T.x + T.w); y1 = Math.max(y1, T.y + T.h); }
+      const c = this.fitCam({ x: x0 - 40, y: y0 - 60, w: x1 - x0 + 80, h: y1 - y0 + 100 }, { t: 60, r: 40, b: 60, l: 40 }, 1);
+      if (c.k > this.cam.k * 1.15) { this.flagHot = null; this.cam.flyTo(c); return; }
+    }
+    this.flagHot = null;
+    this.setView(F.lens);
+    this.openFeature(F.fid);
+  }
   private clickAt(px: number, py: number) {
+    const fl = this.flagUnder(px, py); if (fl) { this.flagClick(fl); return; }
     const pn = this.pinAt(px, py); if (pn) { this.openDecision(pn.d.id); return; }
     const ag = this.agentAt(px, py);
     if (ag) {
@@ -872,6 +896,9 @@ export class Engine {
         }
         return;
       }
+      const fl = this.flagUnder(p.x, p.y), fk = fl ? flagKey(fl) : null;
+      if (fk !== this.flagHot) { this.flagHot = fk; this.dirty(); }
+      if (fl) { this.setHover(new Set(fl.fids).size === 1 ? { type: 'tile', id: fl.fid } : null, p.x, p.y); cv.dataset.cursor = 'pt'; return; }
       const pn = this.pinAt(p.x, p.y);
       if (pn) { this.setHover({ type: 'pin', id: pn.d.id, ids: pn.cluster ? pn.list.map((d) => d.id) : undefined }, p.x, p.y); return; }
       const ag = this.agentAt(p.x, p.y);

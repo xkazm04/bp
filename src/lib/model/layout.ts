@@ -11,7 +11,7 @@ export const TW = 160, TH = 76, G = 10, BH = 46, RH = 72, PAD = 16, BB = 12;
 export interface Box { x: number; y: number; w: number; h: number }
 export interface BldNode extends Box { kind: 'bld'; id: string; i: number; name: string; b: Building; wings: WingNode[]; feats: Feature[] }
 export interface WingNode extends Box { kind: 'wing'; id: string; def: WingDef; bld: BldNode; rooms: RoomNode[]; feats: Feature[]; cols: number }
-export interface RoomNode extends Box { kind: 'room'; id: string; d: PDomain; wing: WingNode; bays: BayNode[]; feats: Feature[]; ri: number; /** Right edge of the drawn room label (screen px), set by the renderer. */ labelRight?: number }
+export interface RoomNode extends Box { kind: 'room'; id: string; d: PDomain; wing: WingNode; bays: BayNode[]; feats: Feature[]; ri: number; /** Right edge of the drawn room label (screen px), set by the renderer. */ labelRight?: number; /** The drawn label's box (world units), set by the renderer; null when no label is drawn. Trouble flags step aside from it. */ labelBox?: Box | null }
 export interface BayNode extends Box { kind: 'bay'; id: string; cap: Capability; room: RoomNode; tiles: TileNode[]; feats: Feature[]; rib: Box }
 export interface TileNode extends Box { kind: 'tile'; id: string; f: Feature; bay: BayNode; room: RoomNode; wing: WingNode; idx: number; bi: number; ti: number }
 export type PlaceNode = BldNode | WingNode | RoomNode | BayNode;
