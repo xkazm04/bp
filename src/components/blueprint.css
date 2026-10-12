@@ -35,6 +35,8 @@
 #crumbs { margin-top: 8px; display: flex; flex-wrap: nowrap; align-items: baseline; gap: 4px; white-space: nowrap; overflow: hidden; }
 #crumbs .sum { margin-left: 14px; font-size: 15px; color: var(--ink-2); letter-spacing: 0.01em; display: inline-flex; flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: pre; }
 #crumbs .sum .cl { flex: 0 0 auto; }
+#crumbs .sum .cl svg { vertical-align: middle; margin-right: 3px; } #crumbs .sum .cl + .cl { margin-left: 10px; }
+#crumbs .sum.off { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip-path: inset(50%); }
 #crumbs .sum b { color: var(--ink-hi); font-weight: 500; } #crumbs .sum em { font-style: normal; color: var(--red-2); } #crumbs .sum i { font-style: normal; color: var(--amber-2); }
 #crumbs button { background: none; border: 0; padding: 2px 3px; font-size: 19px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-2); border-bottom: 1px solid transparent; flex: 0 0 auto; }
 #crumbs button:hover { border-bottom-color: var(--accent); color: var(--ink-hi); }

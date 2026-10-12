@@ -8,6 +8,7 @@ import { ProjectSwitcher } from './ProjectSwitcher';
 import type { Crumb } from '@/engine/state';
 import type { LiveProduct } from '@/lib/scan/client';
 import { useProductName } from '@/lib/scan/projects';
+import { Mark } from './Symbols';
 
 function crumbLabel(E: ReturnType<typeof useEngine>, c: Crumb, short: boolean): string {
   const o = E.placeById(c.t, c.id);
@@ -18,8 +19,8 @@ function crumbLabel(E: ReturnType<typeof useEngine>, c: Crumb, short: boolean): 
   return (o as BayNode).cap.name;
 }
 
-/** Clauses the summary drops, in order, when the measured room is short: proposed/retired, being built, the feature count, live. Trouble and waiting questions go last (never). */
-const SUM_LAST = 4;
+/** Clauses the summary drops, in order, when the measured room is short: proposed/retired, being built, the feature count, live. Trouble and waiting questions go last: first as a short icon + count (level 5), then the line is hidden and its text moves to the crumb row's title (level 6). Never cut mid-word. */
+const SUM_LAST = 6;
 
 /** The place's summary line (counts, trouble, waiting questions): the only crumb part that follows the sim and the time. */
 const CrumbSum = memo(function CrumbSum({ navRef, pk }: { navRef: React.RefObject<HTMLElement | null>; pk: string }) {
@@ -42,7 +43,7 @@ const CrumbSum = memo(function CrumbSum({ navRef, pk }: { navRef: React.RefObjec
   const lv = st.sig === sig ? st.lv : 0;
   useLayoutEffect(() => {
     const n = el.current; if (!n) return;
-    if (n.scrollWidth > n.clientWidth + 1 && lv < SUM_LAST) setSt({ sig, lv: lv + 1 });
+    if (n.scrollWidth > n.clientWidth + 1 && lv < SUM_LAST) setSt({ sig, lv: lv + 1 === 5 && !d?.bad && !d?.asks ? SUM_LAST : lv + 1 });
     else if (st.sig !== sig) setSt({ sig, lv });
   });
   useEffect(() => {
@@ -51,7 +52,23 @@ const CrumbSum = memo(function CrumbSum({ navRef, pk }: { navRef: React.RefObjec
     ro.observe(n);
     return () => ro.disconnect();
   }, [navRef]);
+  // hidden, the summary stays reachable: its text is the title of the crumb row
+  const text = d ? [d.n + ' features', d.live + ' live', d.build + ' being built', d.paper + ' proposed', d.dep ? d.dep + ' being retired' : '', d.bad ? d.bad + ' in trouble' : '', d.asks ? d.asks + (d.asks === 1 ? ' question' : ' questions') + ' waiting' : ''].filter(Boolean).join(' · ') : '';
+  useEffect(() => {
+    const n = navRef.current; if (!n || lv < SUM_LAST || !text) return;
+    n.title = text;
+    return () => { n.removeAttribute('title'); };
+  }, [navRef, lv, text]);
   if (!d) return null;
+  if (lv >= SUM_LAST) return <span className="sum off" ref={el}>{text}</span>;
+  if (lv === 5) {
+    return (
+      <span className="sum" ref={el} title={text}>
+        {d.bad > 0 && <span className="cl" role="img" aria-label={d.bad + ' in trouble'}><Mark k="cloud" w={22} h={15} /><em>{d.bad}</em></span>}
+        {d.asks > 0 && <span className="cl" role="img" aria-label={d.asks + (d.asks === 1 ? ' question' : ' questions') + ' waiting'}><Mark k="wait" w={22} h={15} /><i>{d.asks}</i></span>}
+      </span>
+    );
+  }
   const parts: React.ReactNode[] = [];
   if (lv < 3) parts.push(<span key="n">{d.n} features</span>);
   if (lv < 4) parts.push(<b key="l">{d.live} live</b>);
