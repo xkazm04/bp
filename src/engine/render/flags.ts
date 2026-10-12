@@ -13,7 +13,9 @@
 // A click on a flag opens its feature in its lens; on a cluster of one feature, in its worst lens; on a
 // cluster of several, flies to them so they split. The engine hit-tests the flags of the last frame.
 import type { Feature } from '@/lib/data';
+import type { RoomNode, WingNode } from '@/lib/model';
 import type { Engine } from '../Engine';
+import { RH } from '@/lib/model';
 import { clamp } from '../camera';
 import { drawText } from '../text';
 import { glyph } from './lens-glyph';
@@ -54,6 +56,40 @@ function sizeOf(E: Engine, r: SRect, tile: boolean): number {
 const tipOf = (s: number) => s * 0.26;
 const sr: SRect = { x: 0, y: 0, w: 0, h: 0 };
 
+// Title boxes a flag must not cover. A room label in its header is `labelBox` (set by the renderer); a label
+// pinned to the top of the view and the wing title above the wing are recomputed here from the layout and the
+// live camera (the same rules plan.ts draws them by), so they hold between rasters and cost no allocation.
+const UP = new Map<string, string>();
+const upper = (s: string) => { let t = UP.get(s); if (t === undefined) { t = s.toUpperCase(); UP.set(s, t); } return t; };
+/** Step the body (x, width w, top y, height s) clear of a box, to whichever side is nearer. */
+function clear(x: number, y: number, w: number, s: number, bx: number, by: number, bw: number, bh: number, u: number): number {
+  if (!(x < bx + bw && x + w > bx && y < by + bh && y + s > by)) return x;
+  const r = bx + bw + 3 * u, l = bx - w - 3 * u;
+  return r - x <= x - l ? r : l;
+}
+/** The room's label pinned to the top of the view (not in its header): where plan.ts draws it, or null. */
+function pinnedBox(E: Engine, v: View, R: RoomNode, out: SRect): SRect | null {
+  const u = E.U, k = v.k, hh = RH * k, ry = syv(v, R.y), rh = R.h * k;
+  const fs = clamp((hh * 0.36) / u, 14, 26), ls = fs * 0.06, font = E.tx.f(fs, 600);
+  const maxW = R.w * k - 28 * u - (E.M.sim.has ? 38 * u : 0), tw = E.tx.w(upper(R.d.name), font, ls);
+  if (tw > maxW * 2 || maxW <= 0) return null;
+  const blockH = (tw > maxW ? 2 : 1) * fs * 1.08 * u;
+  if (hh < blockH + 14 * u) return null;
+  const y = Math.max(ry + 8 * u, Math.min(Math.max(v.c0y, E.SAFE.t) + 8 * u, ry + rh - blockH - 30 * u));
+  if (y <= ry + 8 * u) return null;
+  out.x = sxv(v, R.x) + 8 * u; out.y = y - 3 * u; out.w = Math.min(tw, maxW) + 12 * u; out.h = blockH + 8 * u;
+  return out;
+}
+/** The wing's title stack above it (bubble, name; up to two lines), generously: null while the renderer draws none. */
+function wingBox(E: Engine, v: View, W: WingNode, out: SRect): SRect | null {
+  const u = E.U, k = v.k, ww = W.w * k;
+  if (ww < 80 * u || (E.M.P.scale > 1 && k <= E.KB1 * 0.62)) return null;
+  const base = syv(v, W.y) - 10 * u, tw = 28 * u + E.tx.w(upper(W.def.name), E.tx.f(18, 600), 1);
+  out.x = sxv(v, W.x) + 6 * u; out.w = Math.min(tw, ww - 14 * u); out.y = base - 108 * u; out.h = 74 * u;
+  return out;
+}
+const tb: SRect = { x: 0, y: 0, w: 0, h: 0 };
+
 // Layout pools: flags are reused frame to frame (a plain pan allocates nothing). The returned array and its
 // Flag records are valid until the next layoutFlags call.
 const POOL: Flag[] = [], CANDS: Flag[] = [], OUT: Flag[] = [];
@@ -85,11 +121,15 @@ export function layoutFlags(E: Engine, v: View, lod: number): Flag[] {
       const tipX = tile ? r.x + r.w * ((li + 0.5) / n) : r.x + r.w / 2, tipY = r.y + (tile ? 2 * u : 0);
       let x = tipX - w / 2;
       // step right of a room label the body would cover (the label names the place the flag is in)
-      const lb = E.M.L.TILE[f.id]?.room.labelBox;
+      const tl = E.M.L.TILE[f.id], lb = tl?.room.labelBox;
       if (lb) {
         const lx = sxv(v, lb.x), ly = syv(v, lb.y), lw = lb.w * v.k, lh = lb.h * v.k, y = tipY - tip - s;
         if (x < lx + lw && x + w > lx && y < ly + lh && y + s > ly) x = Math.max(x, lx + lw + 3 * u);
+      } else if (tl) {
+        const pb = pinnedBox(E, v, tl.room, tb);
+        if (pb) x = clear(x, tipY - tip - s, w, s, pb.x, pb.y, pb.w, pb.h, u);
       }
+      if (tl) { const wb = wingBox(E, v, tl.wing, tb); if (wb) x = clear(x, tipY - tip - s, w, s, wb.x, wb.y, wb.w, wb.h, u); }
       const c = take();
       c.x = x; c.y = tipY - tip - s; c.w = w; c.h = s; c.tipX = tipX; c.tipY = tipY; c.bad = t.h === 'bad'; c.lens = t.lens; c.fid = f.id; c.a = a;
       c.fids.length = 0; c.fids.push(f.id); c.lenses.length = 0; c.lenses.push(t.lens);
