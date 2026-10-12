@@ -104,7 +104,7 @@ export class Engine {
   private keyplan: KeyPlan | null = null;
   private raf = 0; private lastT = 0; private lastDraw = 0; private lastCamMove = 0; private settleTimer = 0;
   private destroyed = false;
-  private themeV = 0; private fontsV = 0; private mixV = 0; private simStaticV = 0; private simStaticAt = 0; private simSeenV = -1; private simT10 = -1;
+  private themeV = 0; private fontsV = 0; private mixV = 0; private simStaticV = 0; private simStaticAt = 0; private simSeenV = -1; private simT10 = -1; private healthSeenV = -1;
   private camSig = { x: NaN, y: NaN, k: NaN, w: 0, h: 0 }; private kpSig = { themeV: -1, t: '', delta: 0, sv: -1, str: '' }; private placeKey = ''; private hoverEl: HTMLElement | null = null;
   private place: Chain = [];
   /** Place bookkeeping, all pooled: syncPlace runs only when its inputs moved and builds no record on that path. */
@@ -367,6 +367,8 @@ export class Engine {
     if (!gesture && !this.mix.moving && !this.introOn && (live || animating) && now - this.lastDraw < 30) { this.raf = requestAnimationFrame(this.frame); return; }
     this.lastDraw = now;
     this.dashT = (now / 40) % 1000;
+    // a live reading or map refresh re-judged health (tile fills, marks, troubles): the cached plan is stale everywhere
+    if (sim.healthV !== this.healthSeenV) { if (this.healthSeenV >= 0) this.cache.invalidate(); this.healthSeenV = sim.healthV; }
     // throttle static changes driven by the simulation
     if (sim.version !== this.simSeenV || (live && Math.floor(sim.t / 15) !== this.simT10)) {
       if (!live || now - this.simStaticAt > 900) { this.simSeenV = sim.version; this.simT10 = Math.floor(sim.t / 15); this.simStaticV++; this.simStaticAt = now; this.simPatch = true; }
