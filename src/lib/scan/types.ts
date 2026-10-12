@@ -3,6 +3,7 @@
 // DDL is docs/standard/lens-scan-store.sql, name for name. Absent values are omitted, never null or 0:
 // no measurement row means "unmeasured".
 import type { MetricMethod } from '@/lib/standard/types';
+import type { Readiness } from './readiness';
 
 export type RunPhase = 'measure' | 'propose' | 'execute' | 'propagate';
 export type RunStatus = 'running' | 'done' | 'failed' | 'aborted';
@@ -145,8 +146,12 @@ export interface ProductEntry {
 export interface ProductInfo {
   slug: string;
   name: string;
+  /** The repo root, resolved to an absolute path. */
+  root: string;
   /** true = the repo has a lens-scan store. */
   live: boolean;
+  /** What the repo has of the files a live product needs (src/lib/scan/readiness.ts). */
+  readiness: Readiness;
 }
 
 export type Decision = 'approve' | 'decline';

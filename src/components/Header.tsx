@@ -4,6 +4,7 @@ import { motion, useReducedMotion } from 'motion/react';
 import { latestRun, sheetOf, views, type BayNode, type BldNode, type RoomNode, type WingNode } from '@/lib/model';
 import { shallowEqual, useBp, useEngine, useLive, useVariant } from './hooks';
 import { ThemeToggle } from './ThemeToggle';
+import { ProjectSwitcher } from './ProjectSwitcher';
 import type { Crumb } from '@/engine/state';
 import type { LiveProduct } from '@/lib/scan/client';
 
@@ -146,6 +147,7 @@ export function Header() {
         <Crumbs />
       </div>
       <div className="hdr-right">
+        <ProjectSwitcher current={E.M.live?.slug ?? null} />
         <LivePill />
         <LensTabs />
         <ThemeToggle compact />

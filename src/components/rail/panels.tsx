@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { Stage } from '@/lib/data';
 import {
-  SPEND_CAP, STAGE_WORD, TICK_CLASS, astat, lensHealth, personLens, revAt, search, sheetOf, stageAt, views,
+  GA_MILESTONE, SPEND_CAP, STAGE_WORD, TICK_CLASS, astat, lensHealth, personLens, revAt, search, sheetOf, stageAt, views,
   type RoomNode, type BayNode,
 } from '@/lib/model';
 import { Legend } from '../Legend';
@@ -37,7 +37,7 @@ export function FindPanel() {
     <>
       <div id="searchbox">
         <svg className="mg" viewBox="0 0 18 18" aria-hidden="true"><circle cx="7.5" cy="7.5" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.6" /><path d="M11.5 11.5 L16 16" stroke="currentColor" strokeWidth="1.8" /></svg>
-        <input id="q" ref={ref} type="search" autoComplete="off" spellCheck={false} autoFocus placeholder="Find a feature, e.g. gift cards" aria-label="Search features" aria-controls="results" value={q}
+        <input id="q" ref={ref} type="search" autoComplete="off" spellCheck={false} autoFocus placeholder={M.live ? 'Find a feature' : 'Find a feature, e.g. gift cards'} aria-label="Search features" aria-controls="results" value={q}
           onChange={(e) => { setQ(e.target.value); const r = find(e.target.value); setSel(0); E.setSel(r[0]?.id ?? null); }}
           onKeyDown={(e) => {
             if (e.key === 'ArrowDown') { e.preventDefault(); if (results.length) preview((sel + 1) % results.length); }
@@ -58,7 +58,7 @@ export function FindPanel() {
               <span className="t">{f.name}</span>
               <span className="r">{M.P.scale > 1 ? E.M.L.TILE[f.id].wing.bld.b.short + ' · ' : ''}{M.P.D[f.domain].name} · {f.stage ? STAGE_WORD[f.stage] : 'Stage unknown'}</span>
             </li>
-          )) : <li className="none">No feature matches “{q}”. Try “gift”, “waitlist” or “tax”.</li>}
+          )) : <li className="none">No feature matches “{q}”.{M.live ? '' : ' Try “gift”, “waitlist” or “tax”.'}</li>}
         </ul>
       ) : (
         <div className="fly-note">Type part of a name. <b>↑ ↓</b> preview each match on the plan, <b>Enter</b> opens it, <b>Esc</b> clears, then closes.</div>
@@ -86,7 +86,7 @@ export function ViewPanel() {
       </div>
       <h3 className="dsec-h"><span>Modes</span><span>keys</span></h3>
       <div className="fly-row">
-        <button type="button" className="tog ga" aria-pressed={s.ga} title="Payments GA readiness (G)" onClick={() => E.toggleGA()}>Payments GA <kbd>G</kbd></button>
+        {E.hasGA && <button type="button" className="tog ga" aria-pressed={s.ga} title={M.P.MS[GA_MILESTONE].name + ' readiness (G)'} onClick={() => E.toggleGA()}>{M.P.MS[GA_MILESTONE].name} <kbd>G</kbd></button>}
         <button type="button" className="tog bl" aria-pressed={!!s.blast} title="Blast radius of the selected feature (B)" onClick={() => E.toggleBlast()}>Blast <kbd>B</kbd></button>
       </div>
       {sim.has && persons.length > 0 && <>

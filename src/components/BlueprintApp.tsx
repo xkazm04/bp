@@ -10,6 +10,7 @@ import { Engine } from '@/engine/Engine';
 import { EMPTY_SCAN, buildModel, clampScale } from '@/lib/model';
 import { buildLiveModel, liveSwarm } from '@/lib/model/live-feed';
 import { decideProposal, useLiveProduct, type LiveProduct } from '@/lib/scan/client';
+import { refreshProjects } from '@/lib/scan/projects';
 import { getVariant } from '@/variants/registry';
 import type { VariantId } from '@/variants/types';
 import { EngineCtx, LiveCtx, VariantCtx, shallowEqual, useBp, type LiveInfo } from './hooks';
@@ -19,6 +20,7 @@ import { BaseBar } from './BaseBar';
 import { Callout, DecisionCard, HoverCard, Ladder, Morning, ScaleBar, SelBar, Ticker, Toast } from './Overlays';
 import { FeatureSheet } from './FeatureSheet';
 import { Phone } from './Phone';
+import { ProjectSwitcher } from './ProjectSwitcher';
 import './blueprint.css';
 
 // memo: the app re-renders on every scan delta (the live context); the chrome re-renders only where it reads it
@@ -102,6 +104,14 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
   // undefined until mounted (the server render cannot read the query); null = Kettle
   const [product, setProduct] = useState<string | null | undefined>(undefined);
   useEffect(() => { setProduct(new URLSearchParams(location.search).get('product') || null); }, []);
+  // a live product's tab reads "<name> · blueprint" (the name from the registry, else the slug); Kettle keeps the page metadata
+  useEffect(() => {
+    if (!product) return;
+    let dead = false;
+    document.title = product + ' · blueprint';
+    void refreshProjects().then((list) => { if (!dead) document.title = (list?.find((p) => p.slug === product)?.name ?? product) + ' · blueprint'; });
+    return () => { dead = true; };
+  }, [product]);
   const live = useLiveProduct(product ?? null);
   const structure = product ? live.structure : undefined;
   // a live product is drawn once its structure is in and the stream has answered (or given up for now)
@@ -142,6 +152,7 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
       <div className="bp-frame" />
       {!engine && buildErr && <LiveEmpty slug={product || 'kettle'} live={{ ...live, status: 'error', error: buildErr }} />}
       {product && !engine && !buildErr && <LiveEmpty slug={product} live={live} />}
+      {product && !engine && <div className="bp-hdr-lite"><ProjectSwitcher current={product} /></div>}
       <div className="bp-ui" ref={ui}>
         {engine && (
           <EngineCtx.Provider value={engine}>

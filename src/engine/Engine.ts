@@ -565,7 +565,9 @@ export class Engine {
     }
     this.placeKey = ''; this.writeHashSoon();
   }
-  toggleGA() { this.setMode({ ga: !this.S.ga, blast: null }); }
+  /** The GA readiness mode needs the sample's GA milestone in the map (a live product's map may not have it: then the mode, its key and its overlay do not exist). */
+  get hasGA(): boolean { return !!this.M.P.MS[GA_MILESTONE]; }
+  toggleGA() { if (this.hasGA || this.S.ga) this.setMode({ ga: !this.S.ga, blast: null }); }
   toggleBlast(id?: string) {
     if (this.S.blast) { this.setMode({ blast: null }); return; }
     const S = this.S, sf = this.M.P.scale > 1 ? '-S' : '';
@@ -965,7 +967,7 @@ export class Engine {
       return;
     }
     if (k === 'b' || k === 'B') { this.toggleBlast(); return; }
-    if (k === 'g' || k === 'G') { this.toggleGA(); return; }
+    if ((k === 'g' || k === 'G') && this.hasGA) { this.toggleGA(); return; }
     if (k === '[') { this.stepWeek(-1); return; }
     if (k === ']') { this.stepWeek(1); return; }
   }
@@ -1008,7 +1010,7 @@ export class Engine {
     if (h.d && ['1', '7', '14'].includes(h.d)) this.store.set({ delta: +h.d as 1 | 7 | 14 });
     if (h.t && /^\d{4}-\d\d-\d\d$/.test(h.t)) this.setTime(h.t);
     if (h.who && this.M.P.P[h.who]) this.store.set({ who: h.who });
-    if (h.ga === '1') this.store.set({ ga: true });
+    if (h.ga === '1' && this.hasGA) this.store.set({ ga: true });
     if (h.blast && this.M.P.F[h.blast]) this.store.set({ blast: h.blast });
     if (h.at) {
       const t = this.placeById('bld', h.at) ? 'bld' : this.M.L.WING[h.at] ? 'wing' : this.M.L.ROOM[h.at] ? 'room' : this.M.L.BAY[h.at] ? 'bay' : null;

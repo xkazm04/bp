@@ -1,12 +1,30 @@
-// GET /api/products: the live products of bp.products.local.json (Kettle is built in and not listed).
-// `live` = the product repo has a lens-scan store.
+// GET /api/products: the live products of bp.products.local.json (Kettle is built in and not listed), each
+// with `live` (= the repo has a lens-scan store) and `readiness` (src/lib/scan/readiness.ts).
+// POST /api/products: register one, body `{ slug, name, root }` (localhost only). 201 + the entry; 400 for a
+// bad body, a root that is not a directory or a reserved slug; 409 for a slug in use (or a registry file
+// that cannot be parsed, which is never overwritten); 403 off localhost.
 import { hasStore, listProducts } from '@/lib/scan/products.server';
+import { readinessOf } from '@/lib/scan/readiness.server';
+import { addProduct, localOnly } from '@/lib/scan/registry.server';
 import type { ProductInfo } from '@/lib/scan/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export function GET(): Response {
-  const out: ProductInfo[] = listProducts().map((p) => ({ slug: p.slug, name: p.name, live: hasStore(p) }));
+  const out: ProductInfo[] = listProducts().map((p) => ({ slug: p.slug, name: p.name, root: p.root, live: hasStore(p), readiness: readinessOf(p) }));
   return Response.json(out);
+}
+
+export async function POST(req: Request): Promise<Response> {
+  const denied = localOnly(req);
+  if (denied) return Response.json({ error: denied }, { status: 403 });
+  let body: unknown;
+  try { body = await req.json(); } catch { return Response.json({ error: 'body must be JSON' }, { status: 400 }); }
+  try {
+    const r = addProduct(body);
+    return r.ok ? Response.json(r.value, { status: 201 }) : Response.json({ error: r.error }, { status: r.status });
+  } catch (e) {
+    return Response.json({ error: `could not write the registry: ${(e as Error).message}` }, { status: 500 });
+  }
 }
