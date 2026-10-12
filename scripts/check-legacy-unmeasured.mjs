@@ -61,8 +61,8 @@ for (const [lens, o] of Object.entries(empty)) for (const [k, v] of Object.entri
   if (k === 'health' || k === 'openBugs') continue; // health is 'unmeasured' already; counts stay 0
   flat.push([lens + '.' + k, v]);
 }
-// a field "asserts a value" when it is a non-empty string, or the rating `value` (1..5 scale) is not 0
-const asserts = flat.filter(([k, v]) => (typeof v === 'string' && v !== '') || (k === 'business.value' && v !== 0));
+// a field "asserts a value" when it is a non-empty string other than the vocabulary's own 'unknown', or the rating `value` (1..5 scale) is not 0
+const asserts = flat.filter(([k, v]) => (typeof v === 'string' && v !== '' && v !== 'unknown') || (k === 'business.value' && v !== 0));
 check('bl(no facet): no field asserts a value', asserts.length === 0, `${asserts.length} of ${flat.length}: ` + asserts.map(([k, v]) => k + '=' + JSON.stringify(v)).join(', '));
 check('bl(no facet): every health is unmeasured', LENSES.every((l) => empty[l].health === 'unmeasured'));
 

@@ -4,7 +4,7 @@
 // glyphs in the lens accent: they never fill the tile, so the stage fill stays the tile's colour.
 // Budget: a handful of primitives per tile; no measureText; fonts are cached strings.
 import type { Feature, Health } from '@/lib/data';
-import { bl, ruled, type BuiltinLens } from '../base/legacy';
+import { bl, measuredContent, ruled, type BuiltinLens } from '../base/legacy';
 import { isLiveSt } from '@/lib/model';
 import type { ChannelAggregate, LensChannel, MarkArgs, Rect, TileGeom, Theme } from '../types';
 import { ACCENT } from './palette';
@@ -290,7 +290,7 @@ const security: LensChannel = {
   shape(p, t, f, w) {
     if (plain(p, t)) return;
     // a shield: the top corners are cut, deeper for more sensitive data
-    const c = Math.min(4 * SENS[bl(f).security.dataClass] * t.u, t.h / 5) * w;
+    const c = Math.min(4 * (SENS[bl(f).security.dataClass] ?? 0) * t.u, t.h / 5) * w;
     chamfer(p, t, c, c, 0, 0);
   },
   marks(a) {
@@ -398,7 +398,10 @@ const quality: LensChannel = {
   },
 };
 
-export const CHANNELS: Record<BuiltinLens, LensChannel> = { business, design, development, operations, security, quality };
+export const CHANNELS: Record<BuiltinLens, LensChannel> = {
+  business: measuredContent('business', business), design: measuredContent('design', design), development: measuredContent('development', development),
+  operations: measuredContent('operations', operations), security: measuredContent('security', security), quality: measuredContent('quality', quality),
+};
 
 /** The rect a lone lens's instrument grows into: the tile's lower-right corner (the band on ribbons). */
 export function instrumentRect(t: TileGeom): Rect {

@@ -2,11 +2,12 @@
 // lens's facts about its feature (plain words for business and design, terse codes for development).
 import type { ViewId } from '@/lib/data';
 import type { Model, SimDecision } from '@/lib/model';
-import { bl } from '../base/legacy';
+import { bl, hof, NOT_MEASURED } from '../base/legacy';
 
 export function queueNote(d: SimDecision, view: ViewId, model: Model): string | null {
   if (view === 'general') return null;
   const f = model.P.F[d.f]; if (!f) return null;
+  if (hof(f, view) === 'unmeasured') return NOT_MEASURED.charAt(0) + NOT_MEASURED.slice(1).toLowerCase();
   switch (view) {
     case 'business': {
       const b = bl(f).business, asks = b.customerRequests30d || 0;
