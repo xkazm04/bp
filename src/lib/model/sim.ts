@@ -96,6 +96,9 @@ export class SwarmSim {
   readonly has: boolean;
   /** The feed's as-of in ms: the replay's 09:00, or a live run's start. */
   at0: number;
+  /** The feed's replay offsets in seconds (once per feed event, whatever the scale) and the questions that arrive during it: what the time charts draw. */
+  readonly replayT: readonly number[];
+  readonly arrivals: readonly { id: string; t: number }[];
   readonly live: boolean;
   private wall: () => number;
   /** Live: feed events already applied, so a new feed plays only what is new. */
@@ -122,6 +125,8 @@ export class SwarmSim {
 
   constructor(private P: Product, private S0: Swarm | null, private now: () => number, opts: SimOptions = {}) {
     this.has = !!(S0 && S0.agents);
+    this.replayT = S0?.replay?.map((e) => e.t) ?? [];
+    this.arrivals = S0?.decisions?.filter((d) => d.arrivesAt).map((d) => ({ id: d.id, t: d.arrivesAt! })) ?? [];
     this.live = !!opts.live; this.wall = opts.wall ?? Date.now;
     this.at0 = S0?.asOf ? Date.parse(S0.asOf) : Date.parse('2026-10-08T09:00:00Z');
     // live: nothing plays, so the engine's loop sleeps between feeds (and agents skip the idle orbit)

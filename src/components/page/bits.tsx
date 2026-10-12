@@ -10,7 +10,6 @@ import { NOT_RECORDED, stageView, valueView, type ValueAsOf } from '@/lib/model/
 import type { LensDef } from '@/lib/data';
 import type { SwarmSim } from '@/lib/model';
 import { useBp, useEngine, useLive } from '../hooks';
-import kettleMap from '@/data/kettle.app-structure.json';
 import { Count } from './motion';
 
 /**
@@ -94,7 +93,6 @@ export function groupOfIn(contexts: readonly { name: string; group?: string }[] 
   const g = m;
   return (c) => g.get(c);
 }
-const KETTLE_GROUPS = groupOfIn((kettleMap as { contexts?: { name: string; group?: string }[] }).contexts);
 
 /** Where a KPI's scope meets this feature, per the spec's precedence (feature, context, group, project); null when it does not apply. */
 function scopeHit(groupOf: GroupOf, f: Feature, k: Kpi): { rank: 0 | 1 | 2 | 3; hint: string } | null {
@@ -136,7 +134,7 @@ function ageOf(at: string | undefined, nowMs: number): string | null {
  * lens whose scope applies (feature, context, group or project, spec section 7). Narrowest scope first, then name;
  * each carries a scope hint and a health from its thresholds.
  */
-export function lensKpis(M: Model, f: Feature, lens: string, groupOf: GroupOf = KETTLE_GROUPS): KpiView[] {
+export function lensKpis(M: Model, f: Feature, lens: string, groupOf: GroupOf = groupOfIn(M.kettleContexts)): KpiView[] {
   const d = M.P.LENS[lens], read = new Set<string>(), out: KpiView[] = [];
   for (const x of d?.fields ?? []) if (x.source && 'kpi' in x.source) read.add(x.source.kpi);
   for (const k of M.P.base.kpis) {
@@ -151,7 +149,7 @@ export function lensKpis(M: Model, f: Feature, lens: string, groupOf: GroupOf = 
 
 export function KpiRows({ M, f, lens }: { M: Model; f: Feature; lens: string }) {
   const ctxs = useLive()?.product.structure?.contexts;
-  const ks = useMemo(() => lensKpis(M, f, lens, M.live ? groupOfIn(ctxs) : KETTLE_GROUPS), [M, f, lens, ctxs]);
+  const ks = useMemo(() => lensKpis(M, f, lens, groupOfIn(M.live ? ctxs : M.kettleContexts)), [M, f, lens, ctxs]);
   if (!ks.length) return null;
   const now = M.sim.clockMs();
   return (

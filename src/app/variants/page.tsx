@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { SWARM, loadProduct } from '@/lib/data';
+import { SWARM, loadProduct } from '@/lib/data/sample';
 import { VARIANTS } from '@/variants/registry';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import styles from './index.module.css';

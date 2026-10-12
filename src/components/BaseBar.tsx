@@ -8,11 +8,11 @@
 // hour ahead (no replay to scrub, no arrivals).
 import { useEffect, useRef } from 'react';
 import { AnimatePresence, motion, useReducedMotion, type Variants } from 'motion/react';
-import { SWARM, type Stage } from '@/lib/data';
+import type { Stage } from '@/lib/data';
 import { GA_MILESTONE, SPEEDS, dnum, fmtD, revAt } from '@/lib/model';
 import { shallowEqual, useBp, useEngine } from './hooks';
 import { Strip } from './timeline/Strip';
-import { ARRIVALS, simClock, useHourText, useRunInfo, useScrub, useSize } from './timeline/shared';
+import { simClock, useHourText, useRunInfo, useScrub, useSize } from './timeline/shared';
 import { runLenses } from './timeline/run';
 import { histX, hourX, keyPlanFrac, valueText, type ScrubGeom } from './timeline/scrub';
 import { timeSliderKey } from './timeline/keys';
@@ -126,7 +126,7 @@ function Revisions() {
     }
   }
   const bins = new Array(60).fill(0);
-  if (hour) for (const e of SWARM.replay) bins[Math.min(59, Math.floor(e.t / 60))]++;
+  if (hour) for (const t of sim.replayT) bins[Math.min(59, Math.floor(t / 60))]++;
   const bw = (tl.o1 - tl.o0) / 60, hxn = hx(s.t), hl = Math.min(hxn, tl.h1);
   const lab = now ? 'NOW · REV ' + NW : 'REV ' + revAt(M.P.weeks, s.t) + ' · ' + fmtD(s.t), pw = Math.max(108, Math.ceil(lab.length * CW) + 16), px0 = Math.max(tl.h0 - 6, Math.min(hl - pw / 2, tl.h1 - pw + 12));
   const m1 = M.P.milestones.find((m) => m.state === 'done'), m2 = M.P.MS[GA_MILESTONE];
@@ -208,7 +208,7 @@ function Revisions() {
             {bins.map((c, i) => c ? <rect key={i} x={tl.o0 + i * bw + 0.5} y={bot - Math.min(22, c * 3)} width={Math.max(1, bw - 1)} height={Math.min(22, c * 3)} fill="var(--mint)" fillOpacity={0.5} /> : null)}
             <line className="ax" x1={tl.o0} y1={bot} x2={tl.o1} y2={bot} />
             {[0, 15, 30, 45, 60].map((m) => { const xx = tl.o0 + (m / 60) * (tl.o1 - tl.o0); return <g key={m}><line className="ax" x1={xx} y1={bot} x2={xx} y2={bot + 4} />{txt('h' + m)}</g>; })}
-            {ARRIVALS.map((d) => { const xa = ox(d.t); return <g key={d.id}><path d={`M${xa} ${bot} v-14`} stroke="var(--amber)" strokeWidth={1.6} /><path d={`M${xa} ${bot - 14} l8 3 l-8 3z`} fill="var(--amber)"><title>{'A new question arrives: ' + d.id}</title></path></g>; })}
+            {sim.arrivals.map((d) => { const xa = ox(d.t); return <g key={d.id}><path d={`M${xa} ${bot} v-14`} stroke="var(--amber)" strokeWidth={1.6} /><path d={`M${xa} ${bot - 14} l8 3 l-8 3z`} fill="var(--amber)"><title>{'A new question arrives: ' + d.id}</title></path></g>; })}
             <rect ref={el} x={tl.o0} y={top - 6} width={0} height={bot - top + 6} fill="var(--mint)" fillOpacity={0.14} />
             <line ref={head} x1={tl.o0} x2={tl.o0} y1={top - 10} y2={bot + 3} stroke="var(--mint)" strokeWidth={2} />
             <path ref={tri} d={`M${tl.o0} ${bot + 3} l-5 7 h10z`} fill="var(--mint)" />

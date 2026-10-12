@@ -2,15 +2,11 @@
 // What the strip (Strip.tsx) and the panel (BaseBar.tsx) share: the sim clock text, the scan status ladder, the size
 // observer and the one pointer handler both time sliders use (the x <-> time mapping itself is scrub.ts).
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { SWARM } from '@/lib/data';
 import { latestRun } from '@/lib/model';
 import { useEngine, useLive } from '../hooks';
 import { ago } from '../Header';
 import { runFacts, runProgress } from './run';
 import { scrubAt, type ScrubGeom } from './scrub';
-
-/** The questions that arrive during the simulated hour (both time charts mark them). */
-export const ARRIVALS = SWARM.decisions.filter((d) => d.arrivesAt).map((d) => ({ id: d.id, t: d.arrivesAt! }));
 
 /** The simulated wall clock at sim second `t`: HH:MM:SS, or HH:MM with `secs` false. */
 export function simClock(at0: number, t: number, secs = true): string { return new Date(at0 + t * 1000).toISOString().slice(11, secs ? 19 : 16); }

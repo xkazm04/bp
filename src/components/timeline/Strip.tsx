@@ -7,7 +7,7 @@ import { forwardRef, useEffect, useRef } from 'react';
 import { dnum, fmtD, revAt } from '@/lib/model';
 import { shallowEqual, useBp, useEngine } from '../hooks';
 import { timeSliderKey } from './keys';
-import { ARRIVALS, simClock, useHourText, useRunInfo, useScrub, useSize } from './shared';
+import { simClock, useHourText, useRunInfo, useScrub, useSize } from './shared';
 import { runLenses } from './run';
 import { histX, hourX, valueText, type ScrubGeom } from './scrub';
 
@@ -85,7 +85,7 @@ function Hairline() {
           <g className="tl-hour">
             <line className="tl-hbase" x1={o0} y1={bot} x2={o1} y2={bot} />
             <rect ref={el} className="tl-hel" x={o0} y={top} width={0} height={bot - top} />
-            {ARRIVALS.map((a) => <line key={a.id} className="tl-arr" x1={ox(a.t)} y1={bot - 7} x2={ox(a.t)} y2={bot} />)}
+            {sim.arrivals.map((a) => <line key={a.id} className="tl-arr" x1={ox(a.t)} y1={bot - 7} x2={ox(a.t)} y2={bot} />)}
             <line ref={head} className="tl-hhead" x1={o0} x2={o0} y1={top - 2} y2={bot + 3} />
           </g>
         )}

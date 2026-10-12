@@ -7,11 +7,10 @@ export * from './search';
 export * from './lens';
 export * from './live';
 
-import { SWARM, loadProduct } from '@/lib/data';
-import { buildProduct, type Product } from './product';
-import { layoutProduct, type Layout } from './layout';
-import { AggCache, Closure } from './aggregates';
-import { SwarmSim } from './sim';
+import { type Product } from './product';
+import { type Layout } from './layout';
+import { type AggCache, type Closure } from './aggregates';
+import { type SwarmSim } from './sim';
 import { AWAY_SINCE } from './constants';
 import type { LiveRef } from './live';
 
@@ -23,16 +22,8 @@ export interface Model {
   closure: Closure;
   /** Set for a live product (`?product=<slug>`); absent for Kettle. */
   live?: LiveRef;
-}
-
-/**
- * Build everything the app needs for one `?scale=N` and lens toggle (`?lenses=`). The map is read and its
- * health evaluated once per data load (cached by the loader); this adds the clones and the layout.
- */
-export function buildModel(scale: number, now: () => number, lenses?: string | null): Model {
-  const P = buildProduct(loadProduct(lenses), scale);
-  const L = layoutProduct(P);
-  return { P, L, sim: new SwarmSim(P, SWARM, now), agg: new AggCache(P), closure: new Closure(P) };
+  /** The Kettle sample map's contexts (name -> group); set by `buildModel` in ./sample, absent for a live product (its structure carries them). */
+  kettleContexts?: readonly { name: string; group?: string }[];
 }
 
 /** "While you were away": overnight activity and the questions asked since 18:00. */

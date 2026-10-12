@@ -7,7 +7,7 @@
 // engine and the layout are never rebuilt for a delta. A new structure builds a new model.
 import { Component, memo, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from 'react';
 import { Engine } from '@/engine/Engine';
-import { EMPTY_SCAN, buildModel, clampScale } from '@/lib/model';
+import { EMPTY_SCAN, clampScale, type Model } from '@/lib/model';
 import { buildLiveModel, liveSwarm } from '@/lib/model/live-feed';
 import { decideProposal, useLiveProduct, type LiveProduct } from '@/lib/scan/client';
 import { refreshProjects, useProductName } from '@/lib/scan/projects';
@@ -22,6 +22,14 @@ import { FeatureSheet } from './FeatureSheet';
 import { Phone } from './Phone';
 import { ProjectSwitcher } from './ProjectSwitcher';
 import './blueprint.css';
+
+// The Kettle sample (~770 KB of map, events and swarm) is its own chunk, fetched only when the sample is shown.
+// Nothing reachable from here imports it statically (@/lib/model/sample is the only door). Started at module load on
+// a sample URL so the download overlaps hydration.
+type BuildSample = typeof import('@/lib/model/sample').buildModel;
+let sampleChunk: Promise<BuildSample> | null = null;
+const loadSample = () => (sampleChunk ??= import('@/lib/model/sample').then((m) => m.buildModel));
+if (typeof window !== 'undefined' && !new URLSearchParams(location.search).get('product')) loadSample().catch(() => { sampleChunk = null; });
 
 // memo: the app re-renders on every scan delta (the live context); the chrome re-renders only where it reads it
 const Chrome = memo(function Chrome() {
@@ -116,24 +124,23 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
   const liveRef = useRef(live); liveRef.current = live;
   useEffect(() => {
     if (product === undefined || (product && !settled)) return;
+    let dead = false, built: Engine | null = null;
     const qs = new URLSearchParams(location.search), scale = clampScale(qs.get('scale')), now = () => performance.now();
     // ?lenses=-security,+com.kettle.cost switches lenses off or on for the session, on top of the map's `enabled`
     const L = liveRef.current;
     setBuildErr(null);
-    let e: Engine;
+    const mount = (model: Model) => {
+      const e = new Engine({ canvas: cv.current!, ui: ui.current!, root: root.current!, model, expression: variant.expression, intro: qs.get('intro') !== '0' && !location.hash });
+      built = e;
+      setEngine(e);
+      if (product && L.status === 'missing') e.toast('No scan store yet', 'every feature reads unmeasured until /lens-scan writes one');
+    };
+    const fail = (err: unknown) => { console.error(err); setBuildErr(err instanceof Error ? err.message : String(err)); };
     try {
-      const model = product
-        ? buildLiveModel(structure, L.events, L.scan ?? EMPTY_SCAN, { slug: product, decide: (id, body) => decideProposal(product, id, body) }, scale, now, qs.get('lenses'))
-        : buildModel(scale, now, qs.get('lenses'));
-      e = new Engine({ canvas: cv.current!, ui: ui.current!, root: root.current!, model, expression: variant.expression, intro: qs.get('intro') !== '0' && !location.hash });
-    } catch (err) {
-      console.error(err);
-      setBuildErr(err instanceof Error ? err.message : String(err));
-      return;
-    }
-    setEngine(e);
-    if (product && L.status === 'missing') e.toast('No scan store yet', 'every feature reads unmeasured until /lens-scan writes one');
-    return () => { e.destroy(); setEngine(null); };
+      if (product) mount(buildLiveModel(structure, L.events, L.scan ?? EMPTY_SCAN, { slug: product, decide: (id, body) => decideProposal(product, id, body) }, scale, now, qs.get('lenses')));
+      else void loadSample().then((build) => { if (!dead) mount(build(scale, now, qs.get('lenses'))); }).catch((err) => { sampleChunk = null; if (!dead) fail(err); });
+    } catch (err) { fail(err); return; }
+    return () => { dead = true; built?.destroy(); built = null; setEngine(null); };
   }, [variant, product, structure, settled]);
   // every later scan: into the sim in place (the first one built the model)
   useEffect(() => {
@@ -149,6 +156,7 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
       <div className="bp-frame" />
       {!engine && buildErr && <LiveEmpty slug={product || 'kettle'} live={{ ...live, status: 'error', error: buildErr }} />}
       {product && !engine && !buildErr && <LiveEmpty slug={product} live={live} />}
+      {product === null && !engine && !buildErr && <div className="bp-empty" role="status"><b>Loading the Kettle sample…</b></div>}
       {product && !engine && <div className="bp-hdr-lite"><ProjectSwitcher current={product} /></div>}
       <div className="bp-ui" ref={ui}>
         {engine && (

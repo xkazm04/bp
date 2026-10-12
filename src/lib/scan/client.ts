@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react';
 import type { AppStructure } from '@/lib/standard/types';
 import type { Agent, AgentStatus, Decision, ReplayEvent, ReplayType, Squad, Swarm } from '@/lib/data/types';
+import { refreshProjects } from './projects.ts';
 import { latestRun, latestReading, measuredFeatures } from './derive.ts';
 import { scopeFeatures } from '../../components/timeline/run.ts';
 import { fullScan as full, isEmptyScan as isEmpty, type Activity, type ActivityKind, type Coverage, type DecisionBody, type Measurement, type Proposal, type ProductInfo, type Run, type ScanDelta, type ScanSnapshot } from './types.ts';
@@ -108,7 +109,7 @@ export function useLiveProduct(slug: string | null): LiveProduct {
       try {
         const [r, list] = await Promise.all([
           fetch(base + '/structure', { signal: ac.signal, cache: 'no-store' }),
-          fetch('/api/products', { signal: ac.signal, cache: 'no-store' }).then((x) => (x.ok ? (x.json() as Promise<ProductInfo[]>) : [])).catch(() => [] as ProductInfo[]),
+          refreshProjects().then((l) => l ?? ([] as ProductInfo[])), // the one request for the list: the header's store shares it
         ]);
         if (r.status === 404) {
           const j = (await r.json().catch(() => ({}))) as { error?: string };
