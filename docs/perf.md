@@ -63,10 +63,25 @@ per-frame work is a few hundred cheap primitives.
   `Set` iterator over frame listeners and whatever `sim`/`featRect` allocate.
 - **Illustration loads.** `loadArt` calls back once after all 13 images settle, and a newer `readTheme` supersedes an
   older set still loading, so a theme/font/DPR change costs one extra re-raster, not up to 13.
-- **Sim-play refresh (~every 900 ms) is still a full raster.** What the static layer reads from the sim is the
-  per-feature rollout/progress (`m.live.*` inside each variant's channel `marks()`), agent chips and the swarm/stats
-  lines in plan.ts. Moving that to the dynamic layer needs plan.ts and the variant channels, which this pass did not
-  own; it is the honest fix for the hitch and is left as the next step. No frame-rate figure is claimed here.
+- **Sim-play refresh (~every 900 ms) is a patch, not a raster (canvas-render sim-static-to-dynamic).** The static raster
+  reads the simulation in exactly three places: a tile or ribbon segment's live rollout/progress (the stage fill and every
+  variant channel's `marks()`/`content()` through `E.live`), whether an agent chip sits on the tile (plan.ts reserves its row),
+  and the wing/building swarm lines (`statsOf`, whose agent count also moves the name). Each is registered while it paints
+  (`render/simwatch.ts`: the values it painted plus its rect). `simStaticV` is no longer an input of `staticKey()` (it still
+  feeds the minimap's signature), so a sim tick never changes the raster's key: with the camera still, `check()` answers
+  'exact', and the frame runs `patchSim()` instead. That compares every registered value with the simulation (a few lookups
+  per item, no allocation), clears only the changed rects in the cached bitmap (snapped outward to whole device pixels) and
+  runs the same `paintPlan` clipped to them; plan.ts skips every building, wing, bay, tile and label block that misses the
+  clip (`patchMiss`), so the repaint is the grid, decor, wing fill, walls and labels under the changed pixels plus the few
+  changed tiles and neighbours. Because it is the same code in the same order the pixels equal a full raster's (z-order
+  with walls and labels is kept), and it applies to every variant (subtle, shaped, bold) with no per-variant code. A change
+  that shifts a label's layout (a wing gaining its first agent moves the wing name) clears the whole label block. During a
+  gesture the patch still runs on the cached bitmap at the camera it was rastered with. Counters on `window.__bp.perf`:
+  `rasters` (does not move on sim ticks), `patches` and `lastPatchMs`. Not measured here (no browser in the build tree):
+  `python scripts/perf.py` with the sim playing and the camera still should show `rasters` flat and `lastPatchMs` a
+  fraction of `lastRasterMs`; patch cost grows with the number of changed items, not with the plan.
+- Remaining full rasters while playing: anything in `staticKey` (theme, fonts, size, lens mix, time, delta, blast, GA, key,
+  who, view) and the pan/zoom settle, exactly as without a sim.
 
 ## Frame-loop allocations and layout reads (engine-frame-alloc)
 

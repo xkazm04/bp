@@ -4,7 +4,7 @@
 // re-rastered when the gesture settles, when the zoom leaves the bucket (x1.5 either way), when the view
 // leaves the covered area, or when anything static changes (lens mix, time, theme, filters...).
 import type { Cam } from '../camera';
-import type { View } from './view';
+import type { SRect, View } from './view';
 
 export const BUCKET = 1.5;
 const MARGIN = 0.22;
@@ -24,8 +24,10 @@ export class StaticCache {
   private key = -1;
   private mx = 0; private my = 0; private res = 1;
   private cssW = 0; private cssH = 0; private FW = 0; private FH = 0;
+  /** The view the bitmap was rastered with: a patch repaints with exactly it. */
+  private view: View = { x: 0, y: 0, k: 1, FW: 0, FH: 0, c0x: 0, c0y: 0, c1x: 0, c1y: 0 };
   /** Stats for the perf report. */
-  rasters = 0; lastMs = 0;
+  rasters = 0; lastMs = 0; patches = 0; lastPatchMs = 0;
 
   constructor() {
     this.canvas = document.createElement('canvas');
@@ -65,11 +67,38 @@ export class StaticCache {
     ctx.clearRect(0, 0, pw, ph);
     ctx.setTransform(this.res, 0, 0, this.res, this.mx * this.res, this.my * this.res);
     ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left'; ctx.globalAlpha = 1;
-    paint(ctx, { x: c.x, y: c.y, k: c.k, FW, FH, c0x: -this.mx, c0y: -this.my, c1x: FW + this.mx, c1y: FH + this.my });
+    const v = this.view;
+    v.x = c.x; v.y = c.y; v.k = c.k; v.FW = FW; v.FH = FH; v.c0x = -this.mx; v.c0y = -this.my; v.c1x = FW + this.mx; v.c1y = FH + this.my;
+    paint(ctx, v);
     this.cam = { x: c.x, y: c.y, k: c.k };
     this.key = key;
     this.rasters++;
     this.lastMs = performance.now() - t0;
+  }
+
+  /**
+   * Repaint part of the bitmap in place: clear the first `n` rects (raster screen px; snapped outward to whole
+   * device pixels, in place, so no edge is half-covered) and run `paint` with the raster's own view clipped to
+   * them. `paint` must draw the whole plan: what lies under and over a rect is repainted with it.
+   */
+  patch(rects: SRect[], n: number, paint: (ctx: CanvasRenderingContext2D, v: View) => void) {
+    if (!this.cam || !n) return;
+    const t0 = performance.now(), ctx = this.ctx, r = this.res, mx = this.mx, my = this.my;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const q = rects[i];
+      const x0 = Math.max(0, Math.floor((q.x + mx) * r)), y0 = Math.max(0, Math.floor((q.y + my) * r));
+      const x1 = Math.min(this.canvas.width, Math.ceil((q.x + q.w + mx) * r)), y1 = Math.min(this.canvas.height, Math.ceil((q.y + q.h + my) * r));
+      q.x = x0 / r - mx; q.y = y0 / r - my; q.w = Math.max(0, x1 - x0) / r; q.h = Math.max(0, y1 - y0) / r;
+      ctx.clearRect(x0, y0, x1 - x0, y1 - y0); ctx.rect(x0, y0, x1 - x0, y1 - y0);
+    }
+    ctx.save(); ctx.clip();
+    ctx.setTransform(r, 0, 0, r, mx * r, my * r);
+    ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left'; ctx.globalAlpha = 1;
+    try { paint(ctx, this.view); } finally { ctx.restore(); }
+    this.patches++;
+    this.lastPatchMs = performance.now() - t0;
   }
 
   /** Draw the cached bitmap onto the screen context (in CSS px) for camera `c`. */

@@ -9,6 +9,7 @@ import type { Engine } from '../Engine';
 import type { ChannelAggregate, Rect, TileGeom } from '../lens/contract';
 import { drawText } from '../text';
 import { cloud, drawHealthBar, drawStageBar, glyphAgent, glyphPin, stageFill, stageStroke } from './glyphs';
+import { patchMiss } from './simwatch';
 import { onView, rs, smooth, sxv, syv, type SRect, type View } from './view';
 
 const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
@@ -145,9 +146,11 @@ function paintTile(E: Engine, ctx: CanvasRenderingContext2D, v: View, T: TileNod
   const f = T.f, u = E.U, th = E.th, k = v.k;
   const x = sxv(v, T.x), y = syv(v, T.y), w = T.w * k, h = T.h * k;
   if (x > v.c1x + 10 || y > v.c1y + 10 || x + w < v.c0x - 10 || y + h < v.c0y - 10) return;
+  if (patchMiss(x, y, w, h, 12)) return;
   const S = E.S, now = E.isNow, st = stageAt(f, S.t, E.M.P.asOf);
   const a = (E.dimFn && !E.dimFn(f) ? 0.13 : 1) * alphaMul;
   if (a <= 0.01) return;
+  if (now && E.M.sim.has) E.watch.tile(E, false, f, x, y, w, h);
   ctx.globalAlpha = a;
   const g = makeGeom(E, x, y, w, h, 'tile', k);
   const shape = outline(E, g, f);
@@ -225,6 +228,8 @@ function paintTile(E: Engine, ctx: CanvasRenderingContext2D, v: View, T: TileNod
 function ribSeg(E: Engine, ctx: CanvasRenderingContext2D, f: Feature, x: number, y: number, w: number, h: number, a0: number, k: number) {
   const S = E.S, th = E.th, st = stageAt(f, S.t, E.M.P.asOf);
   const aa = (E.dimFn && !E.dimFn(f) ? 0.13 : 1) * a0; if (aa <= 0.01) return;
+  if (patchMiss(x, y, w, h, 12)) return;
+  if (E.isNow && E.M.sim.has) E.watch.tile(E, true, f, x, y, w, h);
   ctx.globalAlpha = aa;
   ctx.fillStyle = th.tileBase; ctx.fillRect(x, y, w, h);
   if (S.blast && (S.blast === f.id || E.blastSet?.has(f.id))) { ctx.fillStyle = th.alpha(th.red, 0.5); ctx.fillRect(x, y, w, h); }
@@ -252,7 +257,7 @@ function drawRibbons(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: BldNo
       if (!onView(v, rs(v, R, scratch), 20)) continue;
       for (const Bay of R.bays) {
         const rb = Bay.rib, x = sxv(v, rb.x), y = syv(v, rb.y), w = rb.w * k, h = rb.h * k, n = Bay.tiles.length, sw = w / n;
-        if (y > v.c1y + 10 || y + h < v.c0y - 10 || x > v.c1x + 10 || x + w < v.c0x - 10) continue;
+        if (y > v.c1y + 10 || y + h < v.c0y - 10 || x > v.c1x + 10 || x + w < v.c0x - 10 || patchMiss(x, y, w, h, 12)) continue;
         for (let i = 0; i < n; i++) ribSeg(E, ctx, Bay.tiles[i].f, x + i * sw + 1, y, sw - 2, h, alpha, k);
         ctx.globalAlpha = alpha * 0.55; ctx.strokeStyle = E.th.inkA(0.7); ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1); ctx.globalAlpha = 1;
       }
@@ -270,9 +275,11 @@ export function drawBuildings(E: Engine, ctx: CanvasRenderingContext2D, v: View)
   const k = v.k, th = E.th, lod = E.lod(k);
   for (const B of E.M.L.blds) {
     const br = rs(v, B, scratch);
-    if (!onView(v, br, 140)) continue;
+    if (!onView(v, br, 140) || patchMiss(br.x, br.y, br.w, br.h, 24)) continue;
     for (const W of B.wings) {
-      const r = rs(v, W, scratch), c0 = E.counts(W.id, W.feats), sh = (c0.live + c0.flagged) / Math.max(1, c0.n);
+      const r = rs(v, W, scratch);
+      if (patchMiss(r.x, r.y, r.w, r.h, 0)) continue;
+      const c0 = E.counts(W.id, W.feats), sh = (c0.live + c0.flagged) / Math.max(1, c0.n);
       ctx.fillStyle = th.inkA(0.02 + 0.075 * sh); ctx.fillRect(r.x, r.y, r.w, r.h);
     }
     if (lod < 0.995) drawRibbons(E, ctx, v, B, 1 - lod);
@@ -372,7 +379,7 @@ function drawWingLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: Bl
     aMax = Math.max(aMax, a); ctx.globalAlpha = a;
     const r = rs(v, W, scratch); if (r.x > v.c1x || r.x + r.w < v.c0x) continue;
     const base = r.y - 10 * u, x = r.x + 6 * u, wdt = r.w - 14 * u;
-    if (base < v.c0y - 10 || base > v.c1y + 120) continue;
+    if (base < v.c0y - 10 || base > v.c1y + 120 || patchMiss(r.x, base - 112 * u, r.w, 120 * u, 4)) continue;
     const ag = aggParts(E, W.id, W.feats, false);
     fadePair(ctx, a, ag.D, () => drawStageBar(ctx, th, x, base - 6 * u, wdt, 7 * u, ag.c), ag.lens ? () => drawHealthBar(ctx, th, x, base - 6 * u, wdt, 7 * u, E.M.agg.healthOf(W.id, W.feats, ag.top!)) : null);
     const af = tx.f(13, 500), tf = tx.f(13, 600);
@@ -386,6 +393,7 @@ function drawWingLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: Bl
     fadePair(ctx, a, ag.D, line(ag.general, ag.generalShort, ag.gTrouble, th.ink), ag.lens ? line(ag.lens, ag.lensShort!, ag.lTrouble, E.accentOf(ag.top!)) : null);
     ctx.globalAlpha = a;
     const sy = base - 32 * u, ss = sim.has && E.isNow ? E.statsOf(W.id, W.feats) : null;
+    if (ss) E.watch.swarm(W.id, W.feats, ss, x - 4 * u, sy - 20 * u, wdt + 8 * u, 30 * u, r.x, base - 112 * u, r.w, 120 * u);
     if (ss && ss.n) {
       const focus = E.S.who || E.S.view !== 'general', em = focus ? ss.mine : ss.asks, shown = em > 0 ? em : ss.asks;
       const askW = ss.asks ? tx.w(String(shown), tx.f(13, 600, true)) + 26 * u : 0;
@@ -414,6 +422,7 @@ function drawBuildingLabel(E: Engine, ctx: CanvasRenderingContext2D, v: View, B:
   const r = rs(v, B, scratch), u = E.U, th = E.th, tx = E.tx;
   if (r.w < 150 * u || !onView(v, r, 200)) return;
   const base = r.y - 12 * u - (wingA > 0 ? 112 * u * wingA : 0), a = 1;
+  if (patchMiss(r.x, base - 100 * u, r.w + 280 * u, 108 * u, 10)) return;
   ctx.globalAlpha = a;
   const wdt = Math.min(r.w, 560 * u), ag = aggParts(E, B.id, B.feats, false), x = r.x;
   fadePair(ctx, a, ag.D, () => drawStageBar(ctx, th, x, base - 6 * u, wdt, 8 * u, ag.c), ag.lens ? () => drawHealthBar(ctx, th, x, base - 6 * u, wdt, 8 * u, E.M.agg.healthOf(B.id, B.feats, ag.top!)) : null);
@@ -425,6 +434,7 @@ function drawBuildingLabel(E: Engine, ctx: CanvasRenderingContext2D, v: View, B:
   fadePair(ctx, a, ag.D, line(ag.general, ag.gTrouble, th.ink), ag.lens ? line(ag.lens, ag.lTrouble, E.accentOf(ag.top!)) : null);
   ctx.globalAlpha = a;
   const ss = E.M.sim.has && E.isNow ? E.statsOf(B.id, B.feats) : null, sy = base - 36 * u;
+  if (ss) E.watch.swarm(B.id, B.feats, ss, x - 4 * u, sy - 20 * u, wdt + 280 * u, 30 * u, x, base - 100 * u, Math.max(r.w, wdt + 280 * u), 108 * u);
   if (ss && ss.n) {
     const used = drawSwarmLine(E, ctx, x, sy, ss, wdt);
     if (ss.asks) { glyphPin(ctx, th, x + used + 14 * u, sy + 4 * u, ss.high ? 'high' : 'med', true, 0.65, 0, 0, u, tx.f(12, 600, true)); drawText(ctx, ss.asks + ' questions waiting', x + used + 30 * u, sy, tx.f(13, 500, true), th.amberText, th.halo); }
@@ -521,7 +531,10 @@ function drawChronology(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: Bl
 }
 
 export function drawLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View) {
+  const u = E.U;
   for (const B of E.M.L.blds) {
+    const br = rs(v, B, scratch);
+    if (patchMiss(br.x - 120 * u, br.y - 320 * u, br.w + 240 * u, br.h + 400 * u, 0)) continue;
     drawBayTags(E, ctx, v, B); drawRoomLabels(E, ctx, v, B);
     const wa = drawWingLabels(E, ctx, v, B); drawBuildingLabel(E, ctx, v, B, wa); drawChronology(E, ctx, v, B);
   }

@@ -21,6 +21,7 @@ import {
   drawPulses, drawReleases, drawTargets, type APos,
 } from './render/dynamic';
 import { KeyPlan } from './render/keyplan';
+import { SimWatch } from './render/simwatch';
 import { drawFlags, flagAt, flagKey, layoutFlags, type Flag } from './render/flags';
 import { loadArt } from './render/illo';
 import { rs, smooth, type SRect, type View } from './render/view';
@@ -129,7 +130,9 @@ export class Engine {
   private lastSimSec = -1;
   private disposers: (() => void)[] = [];
   /** Frame and raster counters for the perf scripts (window.__bp.perf; scripts/perf.py, docs/perf.md). */
-  perf = { frames: 0, rasters: 0, lastRasterMs: 0 };
+  perf = { frames: 0, rasters: 0, lastRasterMs: 0, patches: 0, lastPatchMs: 0 };
+  /** What the static raster read from the simulation (render/simwatch.ts). */
+  readonly watch = new SimWatch();
 
   constructor(o: EngineOptions) {
     this.M = o.model; this.expr = o.expression; this.cv = o.canvas; this.ui = o.ui; this.root = o.root;
@@ -331,14 +334,14 @@ export class Engine {
   private staticKey(): number {
     const S = this.S, k = this.sk;
     if (k.themeV !== this.themeV || k.fontsV !== this.fontsV || k.U !== this.U || k.FW !== this.FW || k.FH !== this.FH || k.safeR !== this.SAFE.r || k.mixV !== this.mixV
-      || k.t !== S.t || k.delta !== S.delta || k.blast !== S.blast || k.ga !== S.ga || k.key !== S.key || k.who !== S.who || k.view !== S.view || k.simStaticV !== this.simStaticV) {
+      || k.t !== S.t || k.delta !== S.delta || k.blast !== S.blast || k.ga !== S.ga || k.key !== S.key || k.who !== S.who || k.view !== S.view) {
       k.themeV = this.themeV; k.fontsV = this.fontsV; k.U = this.U; k.FW = this.FW; k.FH = this.FH; k.safeR = this.SAFE.r; k.mixV = this.mixV;
-      k.t = S.t; k.delta = S.delta; k.blast = S.blast; k.ga = S.ga; k.key = S.key; k.who = S.who; k.view = S.view; k.simStaticV = this.simStaticV;
+      k.t = S.t; k.delta = S.delta; k.blast = S.blast; k.ga = S.ga; k.key = S.key; k.who = S.who; k.view = S.view;
       k.ver++;
     }
     return k.ver;
   }
-  private sk = { ver: 0, themeV: -1, fontsV: -1, U: -1, FW: -1, FH: -1, safeR: -1, mixV: -1, t: '' as string, delta: 0 as number, blast: null as string | null, ga: false, key: null as string | null, who: null as string | null, view: '' as string, simStaticV: -1 };
+  private sk = { ver: 0, themeV: -1, fontsV: -1, U: -1, FW: -1, FH: -1, safeR: -1, mixV: -1, t: '' as string, delta: 0 as number, blast: null as string | null, ga: false, key: null as string | null, who: null as string | null, view: '' as string };
   private wake = () => { this.settleArmed = false; this.dirty(); };
   /** One wake-up for the settle window, armed once per gesture (not per frame): it fires when the camera has been still for ~150 ms. */
   private armSettle() {
@@ -365,7 +368,7 @@ export class Engine {
     this.dashT = (now / 40) % 1000;
     // throttle static changes driven by the simulation
     if (sim.version !== this.simSeenV || (live && Math.floor(sim.t / 15) !== this.simT10)) {
-      if (!live || now - this.simStaticAt > 900) { this.simSeenV = sim.version; this.simT10 = Math.floor(sim.t / 15); this.simStaticV++; this.simStaticAt = now; }
+      if (!live || now - this.simStaticAt > 900) { this.simSeenV = sim.version; this.simT10 = Math.floor(sim.t / 15); this.simStaticV++; this.simStaticAt = now; this.simPatch = true; }
     }
     if (gesture && S.hover) this.setHover(null); // a flight just began: the card describes the old place
     this.draw(now, gesture);
@@ -391,15 +394,15 @@ export class Engine {
     const settled = performance.now() - this.lastCamMove > 140;
     let rastered = false;
     if (st === 'stale' || (st === 'transform' && settled && !gesture)) {
-      this.cache.render(c, key, this.FW, this.FH, this.RES, (g, v) => {
-        this.anchor(this.FW / 2 - v.x * v.k, this.FH / 2 - v.y * v.k);
-        drawGrid(this, g, v); drawDecor(this, g, v); drawBuildings(this, g, v); drawLabels(this, g, v);
-      }, this.mix.moving ? 0 : undefined); // the camera is still while the lens mix springs: no pan margin to pay for
-      this.perf.rasters++; this.perf.lastRasterMs = this.cache.lastMs; rastered = true;
+      this.cache.render(c, key, this.FW, this.FH, this.RES, (g, v) => { this.watch.begin(); this.paintPlan(g, v); }, this.mix.moving ? 0 : undefined); // the camera is still while the lens mix springs: no pan margin to pay for
+      this.perf.rasters++; this.perf.lastRasterMs = this.cache.lastMs; rastered = true; this.simPatch = false;
     } else if (st === 'transform') {
       // still moving (or settled mid-gesture): wake once more after the settle window to re-raster
       this.armSettle();
     }
+    // a sim tick with the raster still valid: repaint only what the simulation moved (render/simwatch.ts), never the whole plan
+    if (this.simPatch && !rastered && st !== 'stale') this.patchSim();
+    this.simPatch = false;
     const reveal = this.introOn ? (this.FW + 60) * this.introP : undefined;
     const td = rastered ? performance.now() : 0;
     this.cache.draw(ctx, c, reveal, this.RES);
@@ -418,6 +421,21 @@ export class Engine {
     this.flags = layoutFlags(this, v, lod); drawFlags(this, ctx, this.flags, this.flagHot);
     drawLasso(this, ctx);
   }
+  /** The whole static plan at raster view `v` (a full raster, or a clipped patch of it). */
+  private paintPlan(g: CanvasRenderingContext2D, v: View) {
+    this.anchor(this.FW / 2 - v.x * v.k, this.FH / 2 - v.y * v.k);
+    drawGrid(this, g, v); drawDecor(this, g, v); drawBuildings(this, g, v); drawLabels(this, g, v);
+  }
+  /** Sim-dependent paint: tiles, ribbon segments and swarm lines whose live values moved since they were painted. */
+  private patchSim() {
+    const W = this.watch;
+    if (!W.collect(this)) return;
+    const t0 = performance.now();
+    this.cache.patch(W.rects, W.n, (g, v) => { W.arm(); try { this.paintPlan(g, v); } finally { W.disarm(); } });
+    this.perf.patches++; this.perf.lastPatchMs = performance.now() - t0;
+  }
+  /** Set by a sim tick (see frame): the next draw patches the raster instead of re-rastering it. */
+  private simPatch = false;
   /** The GA / lens-key / blast filters the layers read, rebuilt when one of the three changes, not per frame. */
   private modeSeen: { ga: boolean; key: string | null; blast: string | null } | null = null;
   private syncModeFilters(S: UIState) {
@@ -709,7 +727,7 @@ export class Engine {
     );
   }
   undoDecision() { this.M.sim.undoDecision(); this.store.set({ toast: null }); this.scheduleSimSync(true); this.forceStatic(); }
-  private forceStatic() { this.simSeenV = this.M.sim.version; this.simStaticV++; this.simStaticAt = performance.now(); this.dirty(); }
+  private forceStatic() { this.simSeenV = this.M.sim.version; this.simStaticV++; this.simStaticAt = performance.now(); this.simPatch = true; this.dirty(); }
 
   // ============================================================================ targeting + steering
   setTarget(ids: Record<string, 1>, label: string) { this.set({ tgt: { ids, n: Object.keys(ids).length, label }, prev: null }); }
