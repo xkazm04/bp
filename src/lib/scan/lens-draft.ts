@@ -41,13 +41,17 @@ export interface DraftReply {
   error?: string;
 }
 
-const BLOCK = /```lens-manifest[^\S\r\n]*\r?\n([\s\S]*?)\r?\n?```/;
+const BLOCK = /```lens-manifest[^\S\r\n]*\r?\n([\s\S]*?)\r?\n?```/g;
 
-/** Splits a reply into its text and the drafted manifest. No block: just the text (a question, most likely). */
+/**
+ * Splits a reply into its text and the drafted manifest. No block: just the text (a question, most likely).
+ * The LAST block wins: a model that corrects itself mid-reply puts the fix last (seen on the first real chat,
+ * 2026-10-13: "one value in that block is not valid, here is the corrected block"). Every block leaves the text.
+ */
 export function parseDraftReply(result: string): DraftReply {
-  const m = BLOCK.exec(result);
+  const all = [...result.matchAll(BLOCK)], m = all[all.length - 1];
   if (!m) return { reply: result.trim() };
-  const reply = (result.slice(0, m.index) + result.slice(m.index + m[0].length)).replace(/\n{3,}/g, '\n\n').trim();
+  const reply = result.replace(BLOCK, '').replace(/\n{3,}/g, '\n\n').trim();
   let json: unknown;
   try { json = JSON.parse(m[1]); } catch (e) { return { reply, error: `the lens-manifest block is not valid JSON (${(e as Error).message})` }; }
   const bad = checkTempManifest(json);

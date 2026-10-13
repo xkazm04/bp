@@ -148,6 +148,8 @@ try {
   check('draft: a metric on a non-numeric field -> error', !strField.draft && /not numeric/.test(strField.error ?? ''), strField.error);
   const notJson = parseDraftReply('Here.\n```lens-manifest\n{ nope\n```');
   check('draft: a block that is not JSON -> error', !notJson.draft && /not valid JSON/.test(notJson.error ?? ''), notJson.error);
+  const twice = parseDraftReply('First try.\n```lens-manifest\n' + JSON.stringify({ ...MANIFEST, id: 'com.x.money' }) + '\n```\nOne value was wrong; corrected:\n```lens-manifest\n' + JSON.stringify(MANIFEST) + '\n```');
+  check('draft: two blocks -> the last (corrected) one wins, no block left in the reply', twice.draft?.id === 'tmp.money-migration' && !twice.error && !twice.reply.includes('```'), JSON.stringify(twice).slice(0, 200));
   const none = parseDraftReply('Which features does it touch?');
   check('draft: no block -> just the reply', !none.draft && !none.error && none.reply === 'Which features does it touch?');
 
