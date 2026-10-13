@@ -1,10 +1,9 @@
 'use client';
-// The findings ledger's one model, shared by its four variants (triage table, status board, feature x lens matrix,
-// impact queue). Findings are store-shaped proposals from either source, and nothing here branches on which:
+// The findings ledger's one model, shared by its two views (the triage table and the feature x lens matrix). Findings are store-shaped proposals from either source, and nothing here branches on which:
 //   live product: `useLive().product.scan.proposals`, jobs from `useLive().product.jobs`;
 //   Kettle:       the generated fixture `E.M.findings` overlaid by id with the scan sim's `snapshot().proposals`
 //                 (the sim's current state wins; a proposal the sim made itself is appended), jobs from `scanSim.jobs()`.
-// The selection, the filters and the focused row live in the page (they survive a variant switch and closing the
+// The selection, the filters and the focused row live in the page (they survive a view switch and closing the
 // ledger); this hook derives the rest. Dispatch goes through `dispatch(useScanCtx(), ids)` (src/lib/scan/actions.ts),
 // optimistic: the proposed ones read approved until the next store or sim update, and a refusal rolls back with a toast.
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -21,10 +20,8 @@ import { useEngine, useLive, useScanCtx } from '../hooks';
 /** Status order everywhere in the ledger: open first, then moving, then closed. */
 export const STATUSES: readonly ProposalStatus[] = ['proposed', 'approved', 'executing', 'done', 'failed', 'declined'];
 const OPEN: ReadonlySet<ProposalStatus> = new Set(['proposed', 'approved']);
-/** Effort per size (the impact queue's denominator and its budget unit). */
+/** Effort per size (the rank's denominator and the dispatch bar's effort). */
 export const SIZE_W: Record<ProposalSize, number> = { XS: 1, S: 2, M: 3, L: 5, XL: 8 };
-/** The suggested batch's effort budget: two L items. */
-export const BUDGET = 2 * SIZE_W.L;
 export const sizeW = (p: Proposal): number => SIZE_W[p.size ?? 'M'] ?? SIZE_W.M;
 /** Risk bands, the same cut as the live queue's urgency (7 and up high, 4 and up medium). A missing risk reads medium. */
 export type RiskBand = 'high' | 'medium' | 'low';
@@ -43,7 +40,7 @@ export interface Finding {
   fi: number;
   /** An execute job queued or running over it. */
   job: ScanJob | null;
-  /** Expected value per effort (the impact queue's rank): see `rankValue`. */
+  /** Expected value per effort (the triage order within a status): see `rankValue`. */
   ev: number;
   /** Whether it can be dispatched now: proposed or approved, and no job is on it. */
   can: boolean;
@@ -86,7 +83,7 @@ export function useOpenCount(): number {
 }
 
 /**
- * Expected value per effort, the impact queue's order (the order `/lens-scan execute` builds a batch in):
+ * Expected value per effort, the triage table's order within a status (the order `/lens-scan execute` builds a batch in):
  *   ev = gain x confidence / effort
  *   gain       = 0.25 + 0.75 x |expected_delta| / the largest |expected_delta| among the findings of the same lens and
  *                metric (normalised per metric, so a KB and a finding count compare); 0.5 when the finding names no
@@ -109,15 +106,17 @@ export function rankValue(ps: readonly Proposal[]): Map<string, number> {
 }
 const byRank = (a: Finding, b: Finding) => b.ev - a.ev || (a.p.created_at < b.p.created_at ? -1 : a.p.created_at > b.p.created_at ? 1 : 0) || (a.p.id < b.p.id ? -1 : 1);
 
-/** The ledger's page-level state: survives a variant switch and the ledger being closed and opened again. */
+/** The ledger's page-level state: survives a view switch and the ledger being closed and opened again. */
 export interface LedgerUi {
   sel: ReadonlySet<string>;
   lens: ReadonlySet<string>;
   status: ReadonlySet<ProposalStatus>;
+  /** Feature slugs: the matrix's "Table" drill-down (empty: every feature). */
+  feat: ReadonlySet<string>;
   q: string;
   focus: string | null;
 }
-export const EMPTY_UI: LedgerUi = { sel: new Set(), lens: new Set(), status: new Set(), q: '', focus: null };
+export const EMPTY_UI: LedgerUi = { sel: new Set(), lens: new Set(), status: new Set(), feat: new Set(), q: '', focus: null };
 export type SetUi = (f: (u: LedgerUi) => LedgerUi) => void;
 
 export interface Ledger {
@@ -126,12 +125,8 @@ export interface Ledger {
   /** Every finding, merged, with the optimistic overlay. */
   all: readonly Finding[];
   byId: ReadonlyMap<string, Finding>;
-  /** After the lens, status and text filters, in triage order (status, then rank). */
+  /** After the lens, status, feature and text filters, in triage order (status, then rank). */
   rows: readonly Finding[];
-  /** Open findings after the lens and text filters (the status filter does not apply), best value per effort first. */
-  ranked: readonly Finding[];
-  /** The suggested batch: the ranked ones that fit the budget, in rank order. */
-  suggested: readonly string[];
   lenses: readonly LensCol[];
   counts: Readonly<Record<ProposalStatus, number>>;
   /** Selected findings that can be dispatched. */
@@ -148,11 +143,13 @@ export interface Ledger {
   setFocus(id: string | null): void;
   /** Dispatch `ids` (default: the selection) as one execute run. Only the dispatchable ones go. */
   dispatchIds(ids?: readonly string[]): Promise<void>;
+  /** The matrix's drill-down: the triage table, showing only this feature's findings (the other filters stay). */
+  showInTable(slug: string): void;
   /** Switch to the drawing set and open the finding's feature on its lens's tab. */
   openFeature(f: Finding): void;
   /** `metric: before → expected unit` (Queue's helper), the before from the scan, else the map's facet value. */
   move(p: Proposal): string | null;
-  /** The keyboard order of the variant shown (J/K). Matrix rows are `feat:<slug>`. */
+  /** The keyboard order of the view shown (J/K). Matrix rows are `feat:<slug>`. */
   order(lv: LedgerVariant): readonly string[];
 }
 
@@ -211,15 +208,8 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
   const q = tidy(ui.q.trim());
   const textOk = useCallback((f: Finding) => !q || tidy([f.p.title, f.fname, f.p.feature, f.p.lens, P.LENS[f.p.lens]?.name ?? '', f.p.standard, f.p.id, f.p.metric ?? ''].join(' ')).includes(q), [q, P]);
   const rank = useMemo(() => new Map(STATUSES.map((s, i) => [s, i])), []);
-  const rows = useMemo(() => all.filter((f) => (!ui.lens.size || ui.lens.has(f.p.lens)) && (!ui.status.size || ui.status.has(f.status)) && textOk(f))
-    .sort((a, b) => rank.get(a.status)! - rank.get(b.status)! || byRank(a, b)), [all, ui.lens, ui.status, textOk, rank]);
-  const ranked = useMemo(() => all.filter((f) => f.can && (!ui.lens.size || ui.lens.has(f.p.lens)) && textOk(f)).sort(byRank), [all, ui.lens, textOk]);
-  const suggested = useMemo(() => {
-    const out: string[] = [];
-    let w = 0;
-    for (const f of ranked) { const x = sizeW(f.p); if (w + x <= BUDGET) { out.push(f.p.id); w += x; } }
-    return out;
-  }, [ranked]);
+  const rows = useMemo(() => all.filter((f) => (!ui.lens.size || ui.lens.has(f.p.lens)) && (!ui.status.size || ui.status.has(f.status)) && (!ui.feat.size || ui.feat.has(f.p.feature)) && textOk(f))
+    .sort((a, b) => rank.get(a.status)! - rank.get(b.status)! || byRank(a, b)), [all, ui.lens, ui.status, ui.feat, textOk, rank]);
 
   const ready = useMemo(() => all.filter((f) => f.can && ui.sel.has(f.p.id)), [all, ui.sel]);
   const effort = ready.reduce((s, f) => s + sizeW(f.p), 0);
@@ -271,6 +261,11 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
     } finally { setBusy(false); }
   }, [busy, ui.sel, byId, ctx, E, set]);
 
+  const showInTable = useCallback((slug: string) => {
+    set((u) => ({ ...u, feat: new Set([slug]), focus: null }));
+    E.setPage('ledger', 'triage');
+  }, [E, set]);
+
   const openFeature = useCallback((f: Finding) => {
     if (!f.fid) { E.toast('Not on the plan', f.p.feature + ' is not a feature of this map'); return; }
     E.setPage('plan');
@@ -278,36 +273,15 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
     E.openFeature(f.fid);
   }, [E, P]);
 
-  const order = useCallback((lv: LedgerVariant): readonly string[] => {
-    if (lv === 'queue') return ranked.map((f) => f.p.id);
-    if (lv === 'matrix') return matrixRows(rows).map((r) => 'feat:' + r.slug);
-    if (lv === 'board') return boardCols(rows, lenses).flatMap((c) => c.groups.flatMap((g) => g.items.map((f) => f.p.id)));
-    return rows.map((f) => f.p.id);
-  }, [ranked, rows, lenses]);
+  const order = useCallback((lv: LedgerVariant): readonly string[] => (lv === 'matrix' ? matrixRows(rows).map((r) => 'feat:' + r.slug) : rows.map((f) => f.p.id)), [rows]);
 
-  return { ui, set, all, byId, rows, ranked, suggested, lenses, counts, ready, effort, busy, scan: moveScan, toggle, select, selectWhere, clear, setFocus, dispatchIds, openFeature, move, order };
+  return { ui, set, all, byId, rows, lenses, counts, ready, effort, busy, scan: moveScan, toggle, select, selectWhere, clear, setFocus, dispatchIds, showInTable, openFeature, move, order };
 }
 
-// ------------------------------------------------------------------------------------------- variant shapes
+// ------------------------------------------------------------------------------------------- the matrix's rows
 /** The matrix's rows: one per feature with findings, in map order. */
 export function matrixRows(rows: readonly Finding[]): { slug: string; name: string; domain: string; items: Finding[] }[] {
   const m = new Map<string, { slug: string; name: string; domain: string; fi: number; items: Finding[] }>();
   for (const f of rows) { let r = m.get(f.p.feature); if (!r) m.set(f.p.feature, (r = { slug: f.p.feature, name: f.fname, domain: f.domain, fi: f.fi, items: [] })); r.items.push(f); }
   return [...m.values()].sort((a, b) => a.fi - b.fi || (a.slug < b.slug ? -1 : 1));
-}
-
-export interface BoardCol { k: string; label: string; statuses: readonly ProposalStatus[]; groups: { lens: LensCol; items: Finding[] }[]; n: number }
-export const BOARD: readonly { k: string; label: string; statuses: readonly ProposalStatus[] }[] = [
-  { k: 'proposed', label: 'Proposed', statuses: ['proposed'] },
-  { k: 'approved', label: 'Approved', statuses: ['approved'] },
-  { k: 'executing', label: 'Executing', statuses: ['executing'] },
-  { k: 'closed', label: 'Done · failed', statuses: ['done', 'failed', 'declined'] },
-];
-/** The board: a column per status group, cards grouped by lens (registry order), best value first. */
-export function boardCols(rows: readonly Finding[], lenses: readonly LensCol[]): BoardCol[] {
-  return BOARD.map((c) => {
-    const items = rows.filter((f) => c.statuses.includes(f.status));
-    const groups = lenses.map((lens) => ({ lens, items: items.filter((f) => f.p.lens === lens.id).sort(byRank) })).filter((g) => g.items.length);
-    return { ...c, groups, n: items.length };
-  });
 }

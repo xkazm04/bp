@@ -2,7 +2,8 @@
 // Feature x lens matrix: a row per feature with findings (map order), a column per lens (the registry, then any lens
 // the findings name that the map does not enable). A cell counts the findings there by risk (▲ high, ◆ medium,
 // ▽ low): a click selects them all (again: deselects). The row header selects the feature's findings across every
-// lens, and the row's Dispatch sends its open ones in one click. J/K move between rows, Space selects the row.
+// lens, and the row's Dispatch sends its open ones in one click. The row's Table (or Enter) opens the triage table on
+// that feature alone: the matrix finds where, the table reads what. J/K move between rows, Space selects the row.
 import { matrixRows, riskBand, type Finding, type Ledger, type LensCol, type RiskBand } from '../useLedger';
 import { LensGlyph } from './bits';
 
@@ -54,7 +55,9 @@ export function Matrix({ L }: { L: Ledger }) {
                 </th>
                 {cols.map((l) => <Cell key={l.id} items={r.items.filter((f) => f.p.lens === l.id)} lens={l} feat={r.name} L={L} act={act} />)}
                 <td className="lg-md">
-                  <button type="button" className="bt" tabIndex={act ? 0 : -1} disabled={!open.length || L.busy} title={open.length ? 'Dispatch the ' + open.length + ' open findings on ' + r.name + ' across ' + new Set(open.map((f) => f.p.lens)).size + ' lenses' : 'Nothing open on this feature'}
+                  <button type="button" className="bt lg-drill" tabIndex={act ? 0 : -1} title={'Read the ' + r.items.length + ' findings on ' + r.name + ' in the triage table (Enter)'}
+                    onClick={() => L.showInTable(r.slug)}>Table</button>
+                  <button type="button" className="bt lg-dsp" tabIndex={act ? 0 : -1} disabled={!open.length || L.busy} title={open.length ? 'Dispatch the ' + open.length + ' open findings on ' + r.name + ' across ' + new Set(open.map((f) => f.p.lens)).size + ' lenses' : 'Nothing open on this feature'}
                     onClick={() => void L.dispatchIds(open.map((f) => f.p.id))}>Dispatch {open.length || ''}</button>
                 </td>
               </tr>

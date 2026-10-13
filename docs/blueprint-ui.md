@@ -588,20 +588,22 @@ Rejected: a looping radar sweep (fake progress, perpetual frames) and a per-tile
   running scans that are not already agents on the plan: in Kettle every running job; live, a running job unless
   its run is the latest run, whose lenses `swarmFromScan` already shows as working agents.
 - **Ledger page hooks.** `E.setPage(page, lv?)` shows the drawing set or the ledger. The hash carries `page=ledger`
-  and `lv=<prototype>` (plan and triage are omitted) and replaces the entry like the lens. While the ledger shows,
-  the frame loop draws nothing and sleeps, the simulation keeps the phone's light timer (`lightSim`), no plan key
-  fires wherever focus is (Esc only closes what overlays it, never the ledger), and pointer and wheel on the plan
-  do nothing; leaving draws once.
+  and `lv=matrix` (plan and triage are omitted; an unknown `lv`, such as a retired prototype's, reads triage) and
+  replaces the entry like the lens. While the ledger shows, the frame loop draws nothing and sleeps, the simulation
+  keeps the phone's light timer (`lightSim`), no plan key fires wherever focus is (Esc only closes what overlays it,
+  never the ledger), and pointer and wheel on the plan do nothing; leaving draws once.
 - **Live products** behave the same through the routes; nothing here is Kettle-only except the sim and the
   temporary-lens subscription.
 
 ## Findings ledger (2026-10-13)
 
 The owner's words: findings need a standalone page, a ledger of items to click and dispatch across lenses. Four
-prototypes share one model; the header's "drawing set" label became the switch.
+prototypes shared one model; on 2026-10-14 the owner kept two, the triage table and the feature × lens matrix, as a
+pair that complements each other (the status board and the impact queue are gone). The header's "drawing set" label
+became the switch.
 
 - **Same route, a page over the plan** (`src/components/ledger/LedgerPage.tsx`). UI state `page: 'plan' | 'ledger'`
-  and `lv: 'triage' | 'board' | 'matrix' | 'queue'` (`src/engine/state.ts`); `E.setPage(page, lv?)` switches. The
+  and `lv: 'triage' | 'matrix'` (`src/engine/state.ts`); `E.setPage(page, lv?)` switches. The
   engine, the live stream and running scans stay alive behind it. The header stays (the switch, the project, the lens
   tabs); the page covers the rail and the timeline, which act on the plan and say nothing about a list, and it gets
   the width the triage table needs. Everything it covers is `inert` while it shows; the toast stays above it. Opaque
@@ -613,7 +615,7 @@ prototypes share one model; the header's "drawing set" label became the switch.
   the open feature page and the morning watch. Going to the ledger closes an open flyout or timeline panel.
 - **Phone.** The phone's title line carries the same switch; the ledger there is the triage list alone, in the page
   flow (rows fold into two-line cards below 760 px of the ledger's width, 44 px dispatch buttons).
-- **Findings** (`useLedger.ts`, one model for every variant). Live: `useLive().product.scan.proposals`, jobs from
+- **Findings** (`useLedger.ts`, one model for both views). Live: `useLive().product.scan.proposals`, jobs from
   `useLive().product.jobs`. Kettle: `M.findings` (the fixture below) overlaid by id with `M.scanSim.snapshot().proposals`
   (the sim's state wins; proposals the sim made are appended), jobs from `M.scanSim.jobs()`, re-read on
   `scanSim.subscribe`. Nothing else branches on the source. The before value of `metric: before → expected` is
@@ -624,9 +626,9 @@ prototypes share one model; the header's "drawing set" label became the switch.
   (○ proposed, ◐ approved, ◔ executing, ● done, ✕ failed, – declined, struck through) and a kind tag for a baseline
   upgrade or a propagation (`of <parent>`). A queued or running execute job over it replaces the mark with a ring that
   turns while the job runs (still under reduced motion).
-- **Selection and filters** live in the page, so they survive a variant switch and closing the ledger: a selection
-  set, lens and status filter chips (the status chips carry the counts), a text filter (`/`). Every variant shows the
-  same **Dispatch bar**: what is selected, how many can go, the lenses spanned, the effort, Clear (Esc) and
+- **Selection and filters** live in the page, so they survive a view switch and closing the ledger: a selection
+  set, lens and status filter chips (the status chips carry the counts), a feature chip from the matrix's drill-down
+  (`feature <name> ×`), a text filter (`/`). Both views show the same **Dispatch bar**: what is selected, how many can go, the lenses spanned, the effort, Clear (Esc) and
   Dispatch n (D).
 - **Dispatch** is `dispatch(useScanCtx(), ids)` (`src/lib/scan/actions.ts`): only proposed or approved findings with no
   job on them go, as one execute run across lenses. Optimistic: the proposed ones read approved until the next store or
@@ -634,26 +636,22 @@ prototypes share one model; the header's "drawing set" label became the switch.
   went from the selection.
 - **Keys** while the page has focus (`data-keys="own"`, so the engine's plan keys stay out): J/K or the arrows move the
   focused row, Space or X selects it, D dispatches the selection, A dispatches the focused finding (a matrix row: its
-  findings), Enter opens its feature, `/` filters, 1-4 switch the prototype, Esc clears the selection and, with none,
+  findings), Enter opens its feature (a matrix row: that feature in the table), `/` filters, 1-2 switch the view, Esc clears the selection and, with none,
   goes back to the drawing set. Only the focused row's controls are in the Tab order; focus is always visible.
-- **The prototypes** (`ledger/variants/`):
+- **The two views** (`ledger/variants/`), a pair: the matrix finds where findings sit and picks them by area, the
+  table reads and decides them one by one. The selection is shared, so what the matrix picked is ticked in the table.
   1. *Triage table*: one dense row per finding, open first, best value per effort first within a status; an
      "Inbox zero" note when nothing is proposed under the filters.
-  2. *Status board*: columns Proposed, Approved, Executing, Done · failed (declined too), cards grouped by lens in
-     registry order. Dragging a proposed card onto Approved, or A, dispatches it (with the selection when it is
-     selected).
-  3. *Feature × lens matrix*: a row per feature with findings (map order), a column per enabled lens (then any lens
+  2. *Feature × lens matrix*: a row per feature with findings (map order), a column per enabled lens (then any lens
      the findings name that the map does not enable), cells counting findings by risk band. A cell click selects its
-     findings (again: deselects them), the row header selects the feature's findings across lenses, and the row's
+     findings (again: deselects them), the row header selects the feature's findings across lenses, the row's
+     **Table** (or Enter) opens the triage table on that feature alone (`showInTable`, the feature chip), and its
      Dispatch sends its open ones in one click.
-  4. *Impact queue*: open findings ranked by value per effort, a running "selected effort" against the budget, and
-     the suggested batch pre-ticked when the queue opens with nothing selected.
-- **Value per effort** (`rankValue`, the order `/lens-scan execute` builds a batch in):
+- **Value per effort** (`rankValue`, the triage order within a status and the order `/lens-scan execute` builds a batch in):
   `ev = gain × confidence ÷ effort`. Gain = 0.25 + 0.75 × |expected_delta| ÷ the largest |expected_delta| among the
   findings of the same lens and metric (normalised per metric, so KB and finding counts compare); 0.5 when a finding
   names no metric or delta. Confidence = (11 − risk) ÷ 10 (risk 1..10, missing reads 5). Effort = size weight XS 1,
-  S 2, M 3, L 5, XL 8 (missing reads M). Ties: older, then id. The **suggested batch** walks that order and takes each
-  finding that still fits a budget of 2 × L = 10.
+  S 2, M 3, L 5, XL 8 (missing reads M). Ties: older, then id.
 - **The temporary-lens slot.** `LedgerPage` takes `lensButton` (top bar) and `lensPanel` (a side column beside the body)
   as nodes; the temporary-lens components plug in there.
 - **Kettle findings** (`src/data/kettle.findings.json`, generated, never hand-edited): `node scripts/fixtures/kettle-findings.mjs`

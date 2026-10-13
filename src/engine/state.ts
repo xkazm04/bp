@@ -60,15 +60,15 @@ export interface UIState {
   tl: boolean;
   /** Which page fills the plan area: the drawing set, or the findings ledger. */
   page: AppPage;
-  /** The findings ledger prototype shown. */
+  /** The findings ledger view shown: the triage table or the feature x lens matrix. */
   lv: LedgerVariant;
   /** The plan's right-click scan menu, at canvas CSS px, with what was under the pointer. */
   menu: ScanMenuState | null;
 }
 
 export type AppPage = 'plan' | 'ledger';
-export type LedgerVariant = 'triage' | 'board' | 'matrix' | 'queue';
-export const LEDGER_VARIANTS: readonly LedgerVariant[] = ['triage', 'board', 'matrix', 'queue'];
+export type LedgerVariant = 'triage' | 'matrix';
+export const LEDGER_VARIANTS: readonly LedgerVariant[] = ['triage', 'matrix'];
 export interface ScanMenuState {
   x: number;
   y: number;

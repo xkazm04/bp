@@ -96,10 +96,10 @@ button.lg-chip:hover { border-color: var(--ink-2); color: var(--ink-hi); }
 .lg-zero, .lg-empty { margin: 14px 18px; padding: 12px 14px; border: 1px dashed var(--ink-3); color: var(--ink-2); font-size: 14px; }
 .lg-zero b { display: block; font-size: 16px; color: var(--mint-2); margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.06em; }
 
-/* selected and focused rows and cards, the same in every variant */
-.lg-tr.on, .lg-card.on, .lg-qi.on, .lg-mx tr.on > th { background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 3px 0 0 var(--accent); }
-.lg-tr:focus-visible, .lg-card:focus-visible, .lg-qi:focus-visible, .lg-mx tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.lg-tr input, .lg-qi input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+/* selected and focused rows, the same in both views */
+.lg-tr.on, .lg-mx tr.on > th { background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 3px 0 0 var(--accent); }
+.lg-tr:focus-visible, .lg-mx tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.lg-tr input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
 
 /* ---------------------------------------------------------------- Triage table */
 .lg-tri { padding-bottom: 8px; }
@@ -122,20 +122,6 @@ button.lg-chip:hover { border-color: var(--ink-2); color: var(--ink-hi); }
   .lg-tr input { width: 22px; height: 22px; }
 }
 
-/* ---------------------------------------------------------------- Status board */
-.lg-board { display: grid; grid-template-columns: repeat(4, minmax(240px, 1fr)); gap: 12px; padding: 12px 18px; min-height: 100%; align-items: start; }
-.lg-col { min-width: 0; border: 1px solid var(--ink-4); background: color-mix(in srgb, var(--paper) 30%, transparent); padding: 0 8px 8px; }
-.lg-col.drop { border: 1px dashed var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
-.lg-col h3 { display: flex; justify-content: space-between; margin: 0 -8px 8px; padding: 8px 10px 6px; font: 500 12px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-hi); border-bottom: 1px solid var(--ink-3); }
-.lg-grp h4 { display: flex; justify-content: space-between; align-items: center; margin: 10px 0 6px; font: 500 12px var(--mono); color: var(--ink-2); }
-.lg-grp ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.lg-card { padding: 8px 10px; background: var(--card); border: 1px solid var(--ink-4); cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
-.lg-card[draggable='true'] { cursor: grab; }
-.lg-card:hover { border-color: var(--ink-2); }
-.lg-card .k { display: flex; justify-content: space-between; gap: 6px; font: 500 12px var(--mono); color: var(--ink-2); letter-spacing: 0.04em; }
-.lg-card .row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
-.lg-hint, .lg-none { margin: 6px 2px; font-size: 13px; color: var(--ink-2); }
-
 /* ---------------------------------------------------------------- Feature x lens matrix */
 .lg-mx-wrap { padding: 8px 18px 14px; overflow-x: auto; }
 .lg-mx { border-collapse: collapse; width: 100%; font-size: 14px; }
@@ -157,27 +143,9 @@ button.lg-chip:hover { border-color: var(--ink-2); color: var(--ink-hi); }
 .lg-mc .r-high b { color: var(--red-2); font-weight: 400; } .lg-mc .r-medium b { color: var(--amber-2); font-weight: 400; } .lg-mc .r-low b { color: var(--ink-2); font-weight: 400; }
 .lg-md { padding: 0 0 0 10px !important; width: 1%; white-space: nowrap; }
 .lg-md .bt { height: 28px; }
+.lg-md .lg-drill { margin-right: 6px; }
+.lg-md .lg-dsp { min-width: 112px; justify-content: center; }  /* disabled or not, the Table buttons line up */
+.lg-fchip span { margin-left: 2px; font-size: 14px; line-height: 1; }
 .lg-mx tbody tr:hover > * { background: color-mix(in srgb, var(--ink) 4%, transparent); }
 
-/* ---------------------------------------------------------------- Impact queue */
-.lg-qh { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 10px 18px; border-bottom: 1px solid var(--ink-4); }
-.lg-meter { display: flex; flex-direction: column; gap: 4px; min-width: 240px; }
-.lg-meter span { font-size: 14px; color: var(--ink-2); } .lg-meter b { color: var(--ink-hi); font-size: 16px; } .lg-meter em { font-style: normal; font-size: 13px; }
-.lg-meter i { display: block; height: 6px; border: 1px solid var(--ink-3); position: relative; }
-.lg-meter s { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); text-decoration: none; }
-.lg-meter s.over { background: var(--amber); }
-.lg-how { flex: 1 1 280px; font-size: 13px; color: var(--ink-2); }
-.lg-how summary { cursor: pointer; font-size: 13px; color: var(--ink); }
-.lg-how p { margin: 6px 0 0; max-width: 760px; line-height: 1.45; }
-.lg-ql { list-style: none; margin: 0; padding: 0 0 8px; }
-.lg-qi { display: grid; grid-template-columns: 32px 20px minmax(0, 1fr) auto; align-items: center; gap: 0 10px; padding: 8px 18px; border-bottom: 1px solid var(--ink-4); cursor: pointer; }
-.lg-qi:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }
-.lg-qi .no { font: 600 14px var(--mono); color: var(--ink-2); text-align: right; }
-.lg-qi .mid { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.lg-qi .top, .lg-qi .sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
-.lg-qi .ev { display: flex; flex-direction: column; align-items: flex-end; font: 500 12px var(--mono); color: var(--ink-2); white-space: nowrap; }
-.lg-qi .ev b { font-size: 16px; color: var(--ink-hi); }
-.lg-qi.sug { box-shadow: inset 3px 0 0 var(--ink-3); }
-.lg-qi.sug.on { box-shadow: inset 3px 0 0 var(--accent); }
-.lg-sugt { font: 500 12px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); border: 1px solid var(--accent); padding: 0 5px; }
 .pgsw button:focus-visible { outline-offset: -2px; }
