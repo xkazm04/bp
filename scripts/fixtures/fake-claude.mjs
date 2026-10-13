@@ -49,8 +49,15 @@ if (input.includes('--lens refuse')) { console.log('lens-scan refused: unknown s
 if (input.includes('--lens wait')) await sleep(1500);
 const dir = path.join(process.cwd(), '.ai', 'lens-scan');
 fs.mkdirSync(dir, { recursive: true });
+// lens-scan's openStore sequence (store.mjs 1.2.3): the check starts 3 fakes on a new store at once; the WAL switch can
+// answer SQLITE_BUSY without the busy handler, and the DDL sets user_version before its tables
 const db = new DatabaseSync(path.join(dir, 'scan.db'), { timeout: 5000 });
-db.exec(fs.readFileSync(path.join(ROOT, 'docs/standard/lens-scan-store.sql'), 'utf8'));
+for (let i = 0; ; i++) {
+  try { db.exec('PRAGMA journal_mode = WAL'); break; } catch (e) { if (e.errcode !== 5 || i >= 100) throw e; await sleep(20 + Math.random() * 30); }
+}
+db.exec('BEGIN IMMEDIATE');
+if (db.prepare('PRAGMA user_version').get().user_version === 0) db.exec(fs.readFileSync(path.join(ROOT, 'docs/standard/lens-scan-store.sql'), 'utf8'));
+db.exec('COMMIT');
 const now = new Date().toISOString(), id = 'run-' + process.env.BP_JOB_ID;
 db.prepare("INSERT INTO runs (id, started_at, updated_at, ended_at, phase, status, lenses, note) VALUES (?, ?, ?, ?, ?, 'done', '[]', ?)")
   .run(id, now, now, now, input.includes('execute') ? 'execute' : 'measure', 'bp-job:' + process.env.BP_JOB_ID + ' · fake');
