@@ -1,17 +1,103 @@
 // Temporary lenses of the Kettle sample, kept in this browser (a live product keeps them in its map,
-// through the lens routes). Every read and write is wrapped: storage can be absent or refuse.
+// through the lens routes). Every read and write is wrapped: storage can be absent or refuse. Pure
+// apart from `localStorage` and `window` (both guarded), so a Node check loads it as-is.
 import type { LensEntry } from '@/lib/standard/types';
+import { checkTempManifest } from './manifest-check.ts';
+import { TEMP_LENS_ID } from './jobs.ts';
 
 export const TEMP_LENS_KEY = 'bp.tmpLenses.kettle';
 
-/** The stored temporary lens entries (enabled or retired). [] when storage is empty, absent or unreadable. */
-export function readTempLenses(): LensEntry[] { return []; }
+const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
-/** Add one (id must be new). Notifies subscribers. */
-export function addTempLens(entry: LensEntry): void { void entry; throw new Error('temp-lens: not built yet (WP6)'); }
-/** Retire (false) or restore (true). */
-export function setTempLensEnabled(id: string, enabled: boolean): void { void id; void enabled; throw new Error('temp-lens: not built yet (WP6)'); }
-export function deleteTempLens(id: string): void { void id; throw new Error('temp-lens: not built yet (WP6)'); }
+/** null when `x` is a stored temporary lens entry the model can take; else why not (one phrase). */
+export function tempEntryProblem(x: unknown): string | null {
+  if (!isObj(x)) return 'not an object';
+  if (typeof x.id !== 'string' || !TEMP_LENS_ID.test(x.id)) return 'id is not tmp.<kebab>';
+  if (typeof x.version !== 'string' || !x.version) return 'no version';
+  if (x.source !== 'project') return "source is not 'project'";
+  if (typeof x.enabled !== 'boolean') return 'enabled is not a boolean';
+  if (x.temporary !== true) return 'temporary is not true';
+  if (typeof x.created_at !== 'string' || !Number.isFinite(Date.parse(x.created_at))) return 'created_at is not a date-time';
+  const bad = checkTempManifest(x.manifest);
+  if (bad) return 'manifest: ' + bad;
+  if ((x.manifest as { id?: unknown }).id !== x.id) return 'the manifest id differs from the entry id';
+  return null;
+}
+
+/** The valid entries of a stored value, in stored order; malformed ones and repeated ids are dropped (first wins). */
+export function parseTempLenses(raw: string | null): LensEntry[] {
+  if (!raw) return [];
+  let j: unknown;
+  try { j = JSON.parse(raw); } catch { return []; }
+  if (!Array.isArray(j)) return [];
+  const seen = new Set<string>(), out: LensEntry[] = [];
+  for (const e of j) {
+    if (tempEntryProblem(e)) continue;
+    const en = e as LensEntry;
+    if (seen.has(en.id)) continue;
+    seen.add(en.id); out.push(en);
+  }
+  return out;
+}
+
+function readRaw(): string | null {
+  try { return typeof localStorage === 'undefined' ? null : localStorage.getItem(TEMP_LENS_KEY); } catch { return null; }
+}
+
+// The parsed list, kept while the stored text is unchanged: the same array comes back on every read, so
+// `useSyncExternalStore(subscribeTempLenses, readTempLenses)` re-renders only on a real change.
+let memo: { raw: string | null; list: LensEntry[] } = { raw: null, list: [] };
+
+/** The stored temporary lens entries (enabled or retired). [] when storage is empty, absent or unreadable. */
+export function readTempLenses(): LensEntry[] {
+  const raw = readRaw();
+  if (raw !== memo.raw) memo = { raw, list: parseTempLenses(raw) };
+  return memo.list;
+}
+
+const subs = new Set<() => void>();
+function notify() { for (const fn of [...subs]) { try { fn(); } catch (e) { console.error(e); } } }
+
+/** Writes the list and tells subscribers; throws (with a sentence a person can read) when the browser refuses. */
+function write(list: LensEntry[]): void {
+  try {
+    if (typeof localStorage === 'undefined') throw new Error('no storage');
+    localStorage.setItem(TEMP_LENS_KEY, JSON.stringify(list));
+  } catch (e) {
+    throw new Error('This browser did not store the lens (storage is blocked or full): ' + (e as Error).message);
+  }
+  notify();
+}
+
+/** Add one (id must be new). Notifies subscribers. Throws when the entry is malformed, the id exists or storage refuses. */
+export function addTempLens(entry: LensEntry): void {
+  const bad = tempEntryProblem(entry);
+  if (bad) throw new Error(`The lens entry is not valid: ${bad}`);
+  const list = readTempLenses();
+  if (list.some((e) => e.id === entry.id)) throw new Error(`A temporary lens with id ${entry.id} exists in this browser`);
+  write([...list, entry]);
+}
+
+/** Retire (false) or restore (true). A no-op for an unknown id. */
+export function setTempLensEnabled(id: string, enabled: boolean): void {
+  const list = readTempLenses();
+  if (!list.some((e) => e.id === id && e.enabled !== enabled)) return;
+  write(list.map((e) => (e.id === id ? { ...e, enabled } : e)));
+}
+
+/** Remove the entry (the scan sim's readings of it stay). A no-op for an unknown id. */
+export function deleteTempLens(id: string): void {
+  const list = readTempLenses();
+  if (!list.some((e) => e.id === id)) return;
+  write(list.filter((e) => e.id !== id));
+}
 
 /** Called after any change in this tab or another (storage event). Returns the unsubscribe. */
-export function subscribeTempLenses(fn: () => void): () => void { void fn; return () => {}; }
+export function subscribeTempLenses(fn: () => void): () => void {
+  subs.add(fn);
+  // another tab wrote (or cleared all storage: key null); this tab's own writes never fire `storage`
+  const onStorage = (e: StorageEvent) => { if (e.key === TEMP_LENS_KEY || e.key === null) fn(); };
+  const w = typeof window === 'undefined' ? null : window;
+  w?.addEventListener('storage', onStorage);
+  return () => { subs.delete(fn); w?.removeEventListener('storage', onStorage); };
+}

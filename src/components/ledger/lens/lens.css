@@ -1,0 +1,87 @@
+/* Temporary lenses on the findings ledger (TempLensPanel, LensChat, DraftCard). Tokens only; 12 px floor, body 14 px.
+   The panel is in the flow of the ledger's side slot (LedgerPage's `.lg-side`, which draws the left rule and the card
+   background and is hidden while the panel is closed): it takes the slot's full height and scrolls inside itself. */
+
+/* ---------- the opener */
+.tl-open { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 10px; background: var(--panel); border: 1px solid var(--ink-3); color: var(--ink); font: 500 13px var(--sans); letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; cursor: pointer; }
+.tl-open:hover, .tl-open[aria-expanded='true'] { border-color: var(--ink); color: var(--ink-hi); }
+.tl-open .n { min-width: 18px; height: 18px; padding: 0 4px; border: 1px solid var(--ink-3); font: 600 12px/16px var(--mono); text-align: center; color: var(--ink-hi); }
+
+/* ---------- the panel */
+.tl-panel { position: relative; display: flex; flex-direction: column; width: 380px; max-width: 100%; height: 100%; min-height: 0; box-sizing: border-box; background: var(--card); color: var(--ink); font-size: 14px; outline: none; }
+.tl-h { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--ink-3); }
+.tl-h h2 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: var(--ink-hi); }
+.tl-b { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--ink-3) transparent; }
+.tl-sec { display: flex; justify-content: space-between; gap: 8px; margin: 0; padding: 10px 12px 6px; font: 500 12px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); border-top: 1px solid var(--ink-4); }
+.tl-b > section:first-child .tl-sec { border-top: 0; }
+.tl-note { margin: 0; padding: 4px 12px 12px; color: var(--ink-2); font-size: 13px; line-height: 1.45; }
+
+/* buttons: the flyout's look */
+.tl-bt { height: 28px; padding: 0 9px; background: var(--panel); border: 1px solid var(--ink-3); color: var(--ink); font: 500 12px var(--mono); letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap; cursor: pointer; }
+.tl-bt:hover:not(:disabled) { border-color: var(--ink); color: var(--ink-hi); }
+.tl-bt:disabled { opacity: 0.55; cursor: default; }
+.tl-bt.go { border-color: var(--accent); color: var(--ink-hi); }
+.tl-bt.bad { border-color: var(--red); color: var(--red-2); }
+.tl-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-top: 8px; }
+.tl-ask span { flex: 1 1 100%; font-size: 13px; color: var(--ink-hi); }
+.tl-err { margin: 8px 0 0; padding: 6px 8px; border-left: 3px solid var(--red); background: color-mix(in srgb, var(--red) 10%, transparent); color: var(--red-2); font-size: 13px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tl-short { margin-left: 6px; padding: 0 4px; border: 1px solid var(--ink-3); font: 500 12px/16px var(--mono); color: var(--ink-2); }
+.tl-gl, .tl-ln { display: block; flex: 0 0 auto; }
+
+/* ---------- the list */
+.tl-list { margin: 0; padding: 0; list-style: none; }
+.tl-row { padding: 9px 12px 10px; border-bottom: 1px solid var(--ink-4); }
+.tl-row-h { display: flex; gap: 9px; align-items: flex-start; }
+.tl-row-h .tl-gl { margin-top: 2px; }
+.tl-row-t { min-width: 0; }
+.tl-row-t b { font-size: 15px; font-weight: 600; color: var(--ink-hi); }
+.tl-row-t small { display: block; margin-top: 2px; font-size: 12px; color: var(--ink-2); letter-spacing: 0.02em; }
+.tl-row .st.off { color: var(--amber-2); }
+.tl-row-d { margin: 5px 0 0; font-size: 13px; line-height: 1.4; color: var(--ink-2); overflow-wrap: anywhere; }
+.tl-row.off .tl-row-t b, .tl-row.off .tl-gl { opacity: 0.6; }
+
+/* ---------- the chat */
+.tl-chat { padding: 4px 12px 12px; }
+.tl-msgs { margin: 0 0 8px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.tl-m p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
+.tl-m .who { display: block; font: 500 12px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 2px; }
+.tl-m.you { align-self: flex-end; max-width: 88%; padding: 7px 9px; background: color-mix(in srgb, var(--accent) 12%, transparent); border: 1px solid var(--ink-4); }
+.tl-m.claude { padding: 7px 9px; border-left: 2px solid var(--accent); }
+.tl-m.note { font-size: 13px; color: var(--ink-2); padding: 4px 9px; }
+.tl-m.note.err { color: var(--red-2); border-left: 3px solid var(--red); }
+.tl-wait { display: flex; align-items: center; gap: 8px; margin: 4px 0 8px; font-size: 13px; color: var(--ink-2); }
+.tl-wait > span:not(.dot) { flex: 1 1 auto; }
+.tl-wait .tm { font: 500 13px var(--mono); font-variant-numeric: tabular-nums; color: var(--ink-hi); }
+.tl-wait .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: tl-pulse 1.2s ease-in-out infinite; }
+@keyframes tl-pulse { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .tl-wait .dot { animation: none; } }
+.tl-in textarea { display: block; width: 100%; box-sizing: border-box; resize: vertical; min-height: 56px; max-height: 240px; padding: 8px 9px; background: var(--panel); border: 1px solid var(--ink-2); color: var(--ink-hi); font: 400 14px/1.45 var(--sans); outline: none; }
+.tl-in textarea::placeholder { color: var(--ink-2); }
+.tl-in textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
+.tl-in-b { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.tl-in-b .hint { flex: 1 1 auto; font-size: 12px; color: var(--ink-2); }
+
+/* ---------- the draft card */
+.tl-card { margin: 4px 0 10px; padding: 10px; border: 1px solid var(--ink-3); background: var(--panel); }
+.tl-card-h { display: flex; gap: 9px; align-items: center; }
+.tl-card-t { min-width: 0; }
+.tl-card-t h4 { margin: 0; font-size: 15px; font-weight: 600; color: var(--ink-hi); }
+.tl-card-t code { font: 400 12px var(--mono); color: var(--ink-2); overflow-wrap: anywhere; }
+.tl-desc { margin: 7px 0 0; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+.tl-dl { display: grid; grid-template-columns: 64px 1fr; gap: 6px 8px; margin: 9px 0 0; }
+.tl-dl dt { font: 500 12px var(--mono); letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-2); padding-top: 2px; }
+.tl-dl dd { margin: 0; min-width: 0; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.tl-dl dd:has(> .tl-ln) { display: flex; align-items: center; gap: 8px; }
+.tl-fields, .tl-rules { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.tl-fields b { font-weight: 600; color: var(--ink-hi); }
+.tl-fields code { font: 400 12px var(--mono); color: var(--ink-2); }
+.tl-fields span, .tl-rules span { display: block; font-size: 12px; color: var(--ink-2); }
+.tl-rules li { padding-left: 7px; border-left: 2px solid var(--ink-3); }
+.tl-rules b { font: 500 13px var(--mono); }
+.tl-rules .h-bad { border-left-color: var(--red); } .tl-rules .h-bad b { color: var(--red-2); }
+.tl-rules .h-watch { border-left-color: var(--amber); } .tl-rules .h-watch b { color: var(--amber-2); }
+.tl-rules .h-good { border-left-color: var(--mint); } .tl-rules .h-good b { color: var(--mint-2); }
+.tl-rules .tl-def { color: var(--ink-2); font-size: 12px; }
+.tl-roll { margin: 5px 0 0; font-size: 12px; color: var(--ink-2); }
+.tl-instr { white-space: pre-wrap; }
+.tl-ok { font: 600 12px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--mint-2); }

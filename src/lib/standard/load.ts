@@ -47,6 +47,9 @@ export interface LensDef {
   line: LineName;
   accent: { dark: string; light: string } | null;
   rollup: Rollup;
+  /** A temporary lens (spec 8.1: a refactor, a migration); absent = permanent. Carried so tabs, legend and
+   *  the temporary-lens panel can say so without going back to the map's entries. */
+  temporary?: true;
 }
 
 /** One feature under one lens, computed at load. */
@@ -281,7 +284,7 @@ function lensDef(e: LensEntry, i: number): LensDef {
     description: m.description ?? '', role: m.reader.role ?? '', density: DENSITIES.includes(m.reader.density) ? m.reader.density : 'standard', fields: m.fields, F, headline,
     evidence: evidence.length ? evidence : headline ? [headline] : [], measures: m.presentation.measures ? F[m.presentation.measures] ?? null : null,
     measureMax: undefined, glyph, line: LINES.includes(m.presentation.line) ? m.presentation.line : 'solid', accent: isObj(m.presentation.accent) ? m.presentation.accent as LensDef['accent'] : null,
-    rollup: m.health.rollup,
+    rollup: m.health.rollup, ...(e.temporary === true ? { temporary: true as const } : {}),
   };
 }
 

@@ -1,5 +1,6 @@
 'use client';
-// The phone view: the person's queue first, then a searchable reading list. No plan on a phone.
+// The phone view: the person's queue first, then a searchable reading list. No plan on a phone. The title line's
+// "drawing set | findings ledger" switch swaps both for the findings ledger, triage list only (ledger/LedgerPage.tsx).
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { fmtWait, pname, sheetOf, type SimDecision } from '@/lib/model';
@@ -11,6 +12,8 @@ import { LiveFoot } from './sheet/SheetBody';
 import { PatternDefs, StageSym } from './Symbols';
 import { ThemeToggle } from './ThemeToggle';
 import { shallowEqual, useBp, useEngine, useLive } from './hooks';
+import { PageSwitch } from './Header';
+import { LedgerPage } from './ledger/LedgerPage';
 
 const SHOWN = 12;
 /** A decline note survives a refused write (the card remounts when the decision reopens). */
@@ -56,7 +59,7 @@ function Question({ d, rm }: { d: SimDecision; rm: boolean }) {
 
 export function Phone() {
   const E = useEngine(), M = E.M, P = M.P, sim = M.sim;
-  const s = useBp((s) => ({ who: s.who, view: s.view, simV: s.simV, open: s.open }), shallowEqual);
+  const s = useBp((s) => ({ who: s.who, view: s.view, simV: s.simV, open: s.open, page: s.page }), shallowEqual);
   const [q, setQ] = useState(''), [all, setAll] = useState(false), rm = !!useReducedMotion();
   const name = useProductName(M.live?.slug ?? null, P.name);
   // the sim runs on a timer here (no frames): a re-render every 30 simulated seconds keeps the waits honest
@@ -84,7 +87,8 @@ export function Phone() {
     <div className="ph">
       <PatternDefs />
       <div className="ph-top"><b className="ph-brand">{name}</b><PhoneStatus /><ThemeToggle /></div>
-      <div className="ph-h"><div className="k">PROJECT {P.name.toUpperCase()} · SHEET {sheetOf(P, s.view).no} · {P.asOf} · {M.live ? 'LIVE LENS SCAN' : 'SIMULATED SWARM'}</div><h1>{P.name.toUpperCase()}</h1><p>{P.tagline}</p></div>
+      <div className="ph-h"><div className="k">PROJECT {P.name.toUpperCase()} · <PageSwitch /> · SHEET {sheetOf(P, s.view).no} · {P.asOf} · {M.live ? 'LIVE LENS SCAN' : 'SIMULATED SWARM'}</div><h1>{P.name.toUpperCase()}</h1><p>{P.tagline}</p></div>
+      {s.page === 'ledger' ? <LedgerPage phone /> : <>
       <div className="ph-sum">
         <div><b>{P.features.length}</b>features</div><div><b>{c.live + c.flagged}</b>live</div><div><b>{c.build}</b>being built</div>
         <div className="am"><b>{sim.has ? once(qq.all).length : 0}</b>questions waiting</div>
@@ -141,6 +145,7 @@ export function Phone() {
           ))}
         </div>
       ))}
+      </>}
       <LiveFoot />
       <div className="foot">Open on a wider screen for the zoomable plan.</div>
       <AnimatePresence>

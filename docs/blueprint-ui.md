@@ -523,6 +523,125 @@ gets out of the plan's way, and L4 is a page. Earlier sections that say "dock", 
     instant.
   - **Phone:** the phone view keeps the single-document body (`sheet/SheetBody.tsx`).
 
+## Findings ledger (2026-10-13)
+
+The owner's words: findings need a standalone page, a ledger of items to click and dispatch across lenses. Four
+prototypes share one model; the header's "drawing set" label became the switch.
+
+- **Same route, a page over the plan** (`src/components/ledger/LedgerPage.tsx`). UI state `page: 'plan' | 'ledger'`
+  and `lv: 'triage' | 'board' | 'matrix' | 'queue'` (`src/engine/state.ts`); `E.setPage(page, lv?)` switches. The
+  engine, the live stream and running scans stay alive behind it. The header stays (the switch, the project, the lens
+  tabs); the page covers the rail and the timeline, which act on the plan and say nothing about a list, and it gets
+  the width the triage table needs. Everything it covers is `inert` while it shows; the toast stays above it. Opaque
+  paper (the sheet tokens), no `backdrop-filter`; it rises in with `motion/react` and leaves at once (a feature page
+  opened from a row then takes the chrome over in the same commit).
+- **The switch** (`PageSwitch` in `Header.tsx`): the title line reads `Project <name> · [drawing set | findings
+  ledger] · sheet … · simulated swarm|live lens scan`, two `aria-pressed` buttons, the open (proposed) count as a
+  12 px badge. **L** toggles it (the engine's keys do not use L) except in a text field, a dialog that owns its keys,
+  the open feature page and the morning watch. Going to the ledger closes an open flyout or timeline panel.
+- **Phone.** The phone's title line carries the same switch; the ledger there is the triage list alone, in the page
+  flow (rows fold into two-line cards below 760 px of the ledger's width, 44 px dispatch buttons).
+- **Findings** (`useLedger.ts`, one model for every variant). Live: `useLive().product.scan.proposals`, jobs from
+  `useLive().product.jobs`. Kettle: `M.findings` (the fixture below) overlaid by id with `M.scanSim.snapshot().proposals`
+  (the sim's state wins; proposals the sim made are appended), jobs from `M.scanSim.jobs()`, re-read on
+  `scanSim.subscribe`. Nothing else branches on the source. The before value of `metric: before → expected` is
+  Queue's `metricMove` over the scan's readings, falling back to the map's facet value (Kettle has no store).
+- **A finding** shows the lens glyph (the plan's `glyph()` set, drawn once per glyph, ink, size and resolution into an
+  image) and short name, the feature (click: back to the drawing set, the plan's lens set to the finding's, the feature
+  page on that tab), the title, `before → expected`, risk (▲ high 7+, ◆ medium 4+, ▽ low), size, a status chip
+  (○ proposed, ◐ approved, ◔ executing, ● done, ✕ failed, – declined, struck through) and a kind tag for a baseline
+  upgrade or a propagation (`of <parent>`). A queued or running execute job over it replaces the mark with a ring that
+  turns while the job runs (still under reduced motion).
+- **Selection and filters** live in the page, so they survive a variant switch and closing the ledger: a selection
+  set, lens and status filter chips (the status chips carry the counts), a text filter (`/`). Every variant shows the
+  same **Dispatch bar**: what is selected, how many can go, the lenses spanned, the effort, Clear (Esc) and
+  Dispatch n (D).
+- **Dispatch** is `dispatch(useScanCtx(), ids)` (`src/lib/scan/actions.ts`): only proposed or approved findings with no
+  job on them go, as one execute run across lenses. Optimistic: the proposed ones read approved until the next store or
+  sim update; a refusal rolls back and toasts "Dispatch failed" with the reason; success toasts the job and clears what
+  went from the selection.
+- **Keys** while the page has focus (`data-keys="own"`, so the engine's plan keys stay out): J/K or the arrows move the
+  focused row, Space or X selects it, D dispatches the selection, A dispatches the focused finding (a matrix row: its
+  findings), Enter opens its feature, `/` filters, 1-4 switch the prototype, Esc clears the selection and, with none,
+  goes back to the drawing set. Only the focused row's controls are in the Tab order; focus is always visible.
+- **The prototypes** (`ledger/variants/`):
+  1. *Triage table*: one dense row per finding, open first, best value per effort first within a status; an
+     "Inbox zero" note when nothing is proposed under the filters.
+  2. *Status board*: columns Proposed, Approved, Executing, Done · failed (declined too), cards grouped by lens in
+     registry order. Dragging a proposed card onto Approved, or A, dispatches it (with the selection when it is
+     selected).
+  3. *Feature × lens matrix*: a row per feature with findings (map order), a column per enabled lens (then any lens
+     the findings name that the map does not enable), cells counting findings by risk band. A cell click selects its
+     findings (again: deselects them), the row header selects the feature's findings across lenses, and the row's
+     Dispatch sends its open ones in one click.
+  4. *Impact queue*: open findings ranked by value per effort, a running "selected effort" against the budget, and
+     the suggested batch pre-ticked when the queue opens with nothing selected.
+- **Value per effort** (`rankValue`, the order `/lens-scan execute` builds a batch in):
+  `ev = gain × confidence ÷ effort`. Gain = 0.25 + 0.75 × |expected_delta| ÷ the largest |expected_delta| among the
+  findings of the same lens and metric (normalised per metric, so KB and finding counts compare); 0.5 when a finding
+  names no metric or delta. Confidence = (11 − risk) ÷ 10 (risk 1..10, missing reads 5). Effort = size weight XS 1,
+  S 2, M 3, L 5, XL 8 (missing reads M). Ties: older, then id. The **suggested batch** walks that order and takes each
+  finding that still fits a budget of 2 × L = 10.
+- **The temporary-lens slot.** `LedgerPage` takes `lensButton` (top bar) and `lensPanel` (a side column beside the body)
+  as nodes; the temporary-lens components plug in there.
+- **Kettle findings** (`src/data/kettle.findings.json`, generated, never hand-edited): `node scripts/fixtures/kettle-findings.mjs`
+  writes 60 store-shaped proposals over the sample map, run `sample-run-1`, created in the week before the map's
+  as-of date, from the map itself: every enabled lens gets findings (a lens with metric fields gets metric findings,
+  the before from the feature's facet, the delta in the metric's `better` direction; any other lens gets findings
+  without a metric), features in trouble under a lens first, mixed statuses (mostly proposed), risk 1-10, sizes, one
+  baseline upgrade with two propagation children, bodies with Summary, Impact and Evaluation. Seeded with the shared
+  PRNG (`scripts/lib/prng.ts`). `npm run check:findings` regenerates in memory and fails on drift.
+- **A live product** shows its store's proposals and its jobs the same way; a finding on a feature its map lacks
+  stays listed, its feature link disabled.
+
+## Temporary lenses (2026-10-13)
+
+A temporary lens brings one refactor, migration or project onto the table: a lens like any other (fields, JSON
+health rules, a glyph and a line, spec 8.1-8.2), plus a `scan` block whose instructions the scanner judges every
+feature against, made from the blueprint and retired or deleted there. It lays the baseline for customising the
+preset lenses later. Files: `src/components/ledger/lens/` (`TempLensPanel.tsx`, `LensChat.tsx`, `DraftCard.tsx`,
+`lens.css`) and `src/lib/scan/temp-lens.ts`.
+
+- **Where it opens.** The findings ledger's top bar carries **New temporary lens** (`TempLensButton`, with the
+  number the product has); it opens `TempLensPanel` in the ledger's side slot (380 px, the slot's full height,
+  `data-keys="own"`, Esc closes and gives focus back to the button, Tab stays inside while focus is in it, a click
+  outside is not caught). Whether it is open is a module store in `TempLensPanel.tsx`, so the two exports can sit in
+  different slots.
+- **Your temporary lenses.** One row per lens, enabled or retired: the glyph (drawn by the canvas's own `glyph()`),
+  name, short, the creation day, enabled / retired, and from the model `N measured · M no impact` (health
+  good/watch/bad vs `na`), `not scanned yet`, or `not on the plan yet` while the app has not rebuilt for the new
+  lens set. Actions: **Scan now** (`startScan(ctx, id, { kind: 'all', label: 'Everything', features: [] })`,
+  outcome as a toast), **Retire** / **Restore** (`enabled` false / true; readings kept), **Delete** (asks inline
+  "Delete <name>? Readings stay in the store.", no modal). The list reads a live product's map entries marked
+  `temporary` (`useLive().product.structure.lenses`, refreshed by the stream's `map` event) and Kettle's browser
+  store; nothing branches on which beyond the write call.
+- **The chat.** The person describes the change and what an affected feature looks like; each turn is one
+  `POST /api/lens-draft` (`product`: the live slug, else `kettle`; the CLI session id from the previous answer).
+  Claude asks at most 3 questions (plain-text messages; nothing is rendered as markup), then drafts. While a turn
+  runs: "Claude is thinking · m:ss" (a 1 s timer only while waiting) and **Cancel**, which aborts the fetch; the
+  route sees the request's abort signal and kills the CLI's process tree, so the turn is gone server side, the
+  previous session stays resumable, and the message goes back into the box. 503 (no CLI), 502 (the CLI failed),
+  504 (3 minutes, the server killed it) and a network failure show as a note with **Retry**; a draft the check
+  refused shows as a note and the chat goes on. The chat state is a module store: closing the panel mid-turn
+  neither loses the conversation nor cancels Claude. **New chat** starts a new session.
+- **The draft card** shows the manifest whole before anything is written: name, short, id and version, the glyph and
+  a run of the line type as the plan draws them, the reader, each field (label, key, type, unit, which way is
+  better, headline), each health rule in words (`bad when riskScore >= 7` and its reason), the default and the
+  rollup, and the scan instructions. **Accept** re-checks it with `checkTempManifest`, then: live,
+  `postLens(slug, manifest)` (201: toast "Lens <name> added"; the map change reaches every client through the
+  stream's `map` event and the lens-set rebuild adds the tab); Kettle, `addTempLens` with
+  `{ id, version, source: 'project', enabled: true, temporary: true, created_at: <now ISO>, manifest }` (the
+  model rebuilds on `subscribeTempLenses`). A 400 (what the manifest lacks), a 409 (the id exists) or a storage
+  refusal shows on the card. Then the card offers **Scan now**. **Keep refining** focuses the box.
+- **Kettle's store** (`src/lib/scan/temp-lens.ts`): `localStorage['bp.tmpLenses.kettle']`, a JSON array of
+  `LensEntry`. Every access is wrapped; a read keeps only well-formed entries (a `tmp.` id equal to the manifest's,
+  `source: 'project'`, boolean `enabled`, `temporary: true`, a parseable `created_at`, a manifest that passes
+  `checkTempManifest`; the first of a repeated id) and returns the same array while the stored text is unchanged
+  (a `useSyncExternalStore` snapshot). `subscribeTempLenses` fires on this tab's writes and on the `storage` event
+  of another tab (or a storage clear). A write the browser refuses throws a sentence the card shows.
+- **The model** keeps `temporary` on `LensDef` (`src/lib/standard/load.ts`), so a tab or the legend can mark a
+  temporary lens from the registry alone.
+
 ## Done means
 
 - `npm run build` and `npm run typecheck` pass. There are no console errors on load or while

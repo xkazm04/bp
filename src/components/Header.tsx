@@ -9,6 +9,10 @@ import type { Crumb } from '@/engine/state';
 import type { LiveProduct } from '@/lib/scan/client';
 import { useProductName } from '@/lib/scan/projects';
 import { Mark } from './Symbols';
+import { useOpenCount } from './ledger/useLedger';
+import type { Engine } from '@/engine/Engine';
+import type { AppPage } from '@/engine/state';
+import './ledger/ledger.css';
 
 function crumbLabel(E: ReturnType<typeof useEngine>, c: Crumb, short: boolean): string {
   const o = E.placeById(c.t, c.id);
@@ -222,6 +226,44 @@ function LivePillOn({ L }: { L: LiveProduct }) {
   return <span className={'livepill ' + cls} role="status" title={title}><i />{text}</span>;
 }
 
+/** Show the drawing set or the findings ledger; the ledger covers the rail and the timeline, so their open panels close. */
+function goPage(E: Engine, p: AppPage) {
+  if (E.S.page === p) return;
+  if (p === 'ledger' && (E.S.dtab || E.S.tl)) E.patch({ dtab: null, tl: false });
+  E.setPage(p);
+}
+/**
+ * "drawing set | findings ledger": which page fills the plan area, with the open (proposed) findings as a badge. L
+ * toggles it from anywhere but a text field, a dialog that owns its keys, the open feature page and the morning watch
+ * (the engine's keys do not use L). The phone's title line carries the same switch.
+ */
+export const PageSwitch = memo(function PageSwitch() {
+  const E = useEngine();
+  const page = useBp((s) => s.page);
+  const n = useOpenCount();
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.key !== 'l' && e.key !== 'L') || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      const own = t?.closest?.('[data-keys="own"]');
+      if ((own && !own.classList.contains('lg-page')) || E.S.open || E.S.morning) return;
+      e.preventDefault();
+      goPage(E, E.S.page === 'ledger' ? 'plan' : 'ledger');
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [E]);
+  return (
+    <span className="pgsw" role="group" aria-label="Page (L)">
+      <button type="button" aria-pressed={page === 'plan'} onClick={() => goPage(E, 'plan')} title="The drawing set: the plan (L)">drawing set</button>
+      <button type="button" aria-pressed={page === 'ledger'} onClick={() => goPage(E, 'ledger')} title={'Findings ledger: every lens’s findings, to select and dispatch' + (n ? ' · ' + n + ' proposed' : '') + ' (L)'}>
+        findings ledger{n ? <b className="ct" aria-label={n + ' proposed'}>{n}</b> : null}
+      </button>
+    </span>
+  );
+});
+
 const Switcher = memo(ProjectSwitcher);
 const Theme = memo(function Theme() { return <ThemeToggle compact />; });
 /** The title line: the only header part that follows the sheet. */
@@ -230,7 +272,7 @@ function ProjLine() {
   const view = useBp((s) => s.view);
   const name = useProductName(E.M.live?.slug ?? null, P.name);
   const sh = sheetOf(P, view);
-  return <div className="proj">Project {name} · drawing set · <b>sheet {sh.no} · {sh.title}</b> · {E.M.live ? 'live lens scan' : 'simulated swarm'}</div>;
+  return <div className="proj">Project {name} · <PageSwitch /> · <b>sheet {sh.no} · {sh.title}</b> · {E.M.live ? 'live lens scan' : 'simulated swarm'}</div>;
 }
 
 export const Header = memo(function Header() {
