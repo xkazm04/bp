@@ -14,6 +14,8 @@ import { type SwarmSim } from './sim';
 import { AWAY_SINCE } from './constants';
 import type { LiveRef } from './live';
 import type { LiveFacets } from './live-health';
+import type { ScanSim } from './scan-sim';
+import type { Proposal } from '@/lib/scan/types';
 
 export interface Model {
   P: Product;
@@ -27,6 +29,10 @@ export interface Model {
   liveFacets?: LiveFacets;
   /** The Kettle sample map's contexts (name -> group); set by `buildModel` in ./sample, absent for a live product (its structure carries them). */
   kettleContexts?: readonly { name: string; group?: string }[];
+  /** The Kettle sample's stand-in for the Claude Code CLI (scans, dispatch); absent for a live product (its routes spawn the CLI). */
+  scanSim?: ScanSim;
+  /** The Kettle sample's findings (a generated fixture); a live product's are its store's proposals. */
+  findings?: readonly Proposal[];
 }
 
 /** "While you were away": overnight activity and the questions asked since 18:00. */

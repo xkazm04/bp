@@ -7,6 +7,7 @@ import type { UIState } from '@/engine/state';
 import type { Variant } from '@/variants/types';
 import type { Density } from '@/engine/lens/contract';
 import type { LiveProduct } from '@/lib/scan/client';
+import type { ScanCtx } from '@/lib/scan/actions';
 
 export const EngineCtx = createContext<Engine | null>(null);
 export const VariantCtx = createContext<Variant | null>(null);
@@ -16,6 +17,10 @@ export interface LiveInfo { slug: string; product: LiveProduct }
 /** null = Kettle (built in, no store). Its value changes with every scan delta: read it where the scan is shown. */
 export const LiveCtx = createContext<LiveInfo | null>(null);
 export function useLive(): LiveInfo | null { return useContext(LiveCtx); }
+
+/** Where scan work goes: the live product's routes, or the Kettle scan sim (src/lib/scan/actions.ts). */
+export const ScanCtxCtx = createContext<ScanCtx>({ slug: null, sim: null });
+export function useScanCtx(): ScanCtx { return useContext(ScanCtxCtx); }
 
 export function useEngine(): Engine {
   const e = useContext(EngineCtx);

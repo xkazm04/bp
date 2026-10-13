@@ -5,7 +5,7 @@ import type { Proposal, ScanSnapshot } from '@/lib/scan/types';
 import type { ScanJob, ScanScope } from '@/lib/scan/jobs';
 
 export class ScanSim {
-  constructor(opts: { now: () => number; findings: Proposal[] }) { void opts; }
+  constructor(opts: { now: () => number; findings: readonly Proposal[] }) { void opts; }
   /** Every job so far, oldest first. */
   jobs(): readonly ScanJob[] { return []; }
   /** The synthetic store so far: runs, measurements, activity and the findings' current states. */
