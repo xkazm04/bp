@@ -31,8 +31,10 @@ export function restate(P: Product, f: Feature): void {
 export class LiveFacets {
   /** The reading in force per feature + lens, by metric. */
   private pairs = new Map<string, Map<string, Measurement>>();
-  /** The map's own facet of each pair that holds a reading: what it falls back to. */
+  /** The map's own facet of each pair that holds a reading or a not-applicable mark: what it falls back to. */
   private orig = new Map<string, Facet | null>();
+  /** Pairs a scan judged out of the lens's reach (a temporary lens's "no impact"): read with `applicable: false`, so health is `na`. */
+  private na = new Set<string>();
   private base = new Map<string, Feature>();
   private tbl: readonly Measurement[] | null = null;
   private seen = 0;
@@ -41,7 +43,34 @@ export class LiveFacets {
   private index() { this.base = new Map(this.P.base.features.map((f) => [f.id, f])); }
 
   /** Forget every reading taken (the map was replaced: its facets are the new baseline). */
-  reset() { this.pairs.clear(); this.orig.clear(); this.tbl = null; this.seen = 0; this.lastId = -1; this.index(); }
+  reset() { this.pairs.clear(); this.orig.clear(); this.na.clear(); this.tbl = null; this.seen = 0; this.lastId = -1; this.index(); }
+
+  /**
+   * Mark (feature, lens) pairs not applicable, in place: the lens is re-read with `applicable: false` (health `na`,
+   * so the tile fades in that lens and carries no flag), and General health and trouble follow. Pairs already marked,
+   * unknown features and unknown lenses are skipped. Returns the base ids it changed.
+   */
+  setNa(pairs: Iterable<readonly [feature: string, lens: string]>): string[] {
+    const dirty = new Set<string>();
+    for (const [feature, lens] of pairs) {
+      const k = feature + SEP + lens, f = this.base.get(feature);
+      if (this.na.has(k) || !f || !f.lens[lens] || !this.P.LENS[lens]) continue;
+      this.na.add(k);
+      if (!this.orig.has(k)) this.orig.set(k, f.lens[lens].facet);
+      dirty.add(k);
+    }
+    return this.restamp(dirty);
+  }
+
+  /**
+   * Put every touched pair back to the map's own facet (readings and not-applicable marks dropped) and forget them.
+   * The Kettle sample's features are the loader's cached objects, so a model that is torn down restores them here.
+   */
+  restore(): string[] {
+    const dirty = new Set<string>([...this.pairs.keys(), ...this.na]);
+    this.pairs.clear(); this.na.clear(); this.tbl = null; this.seen = 0; this.lastId = -1;
+    return this.restamp(dirty);
+  }
 
   /**
    * Take the measurements a scan carries that this has not seen (the table only grows: rows past the ones taken)
@@ -86,7 +115,7 @@ export class LiveFacets {
       const f = this.base.get(feature);
       if (!f) continue;
       (f.lens as Record<string, FeatureLens>)[lens] = this.evaluate(f, lens, this.orig.get(k) ?? null, this.pairs.get(k));
-      if (!this.pairs.get(k)?.size) this.orig.delete(k);
+      if (!this.pairs.get(k)?.size && !this.na.has(k)) this.orig.delete(k);
       ids.add(feature);
     }
     for (const id of ids) for (const c of lineCopies(this.P, id)) restate(this.P, c);
@@ -100,6 +129,7 @@ export class LiveFacets {
     const values: FacetValues = { ...own?.values };
     if (readings) for (const [k, m] of readings) values[k] = m.value;
     const facet: Facet = { ...own, values };
+    if (this.na.has(f.id + SEP + lens)) facet.applicable = false;
     // bound fields keep the values the loader bound (the feature's own fields; KPIs come from the map)
     const feature: Record<string, unknown> = {};
     for (const x of def.manifest.fields) if (x.source && 'feature' in x.source && prev.v[x.key] !== undefined) feature[x.source.feature as FeatureBoundField] = prev.v[x.key];

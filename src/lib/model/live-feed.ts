@@ -60,16 +60,19 @@ const sameSet = (a: readonly string[], b: readonly string[]) => a.length === b.l
  * the sheet keep their references); the scan's readings are laid over again. Nothing moves. A map whose
  * features, places, links or lenses differ in shape (a feature added or removed, moved to another capability)
  * cannot be placed without a new layout: the features both maps have are still updated and `structural` is
- * true, so the caller can say that a reload places the rest.
+ * true, so the caller can say that a reload places the rest. `why` says what differs: when it is only the lens
+ * set, the layout is the same and the caller rebuilds the model in place instead.
  */
-export function refreshLiveModel(M: Model, structure: unknown, events: string, scan: ScanSnapshot, lenses?: string | null): { structural: boolean; features: number } {
+export function refreshLiveModel(M: Model, structure: unknown, events: string, scan: ScanSnapshot, lenses?: string | null): { structural: boolean; features: number; why: ShapeChange[] } {
   const P = M.P, S = loadMap(structure, events, lenses), next = new Map(S.features.map((f) => [f.id, f]));
-  const old = P.base.features;
-  let structural = S.features.length !== old.length || !sameSet(S.lenses.map((l) => l.id), P.lenses.map((l) => l.id));
+  const old = P.base.features, why = new Set<ShapeChange>();
+  if (S.features.length !== old.length) why.add('features');
+  if (!sameSet(S.lenses.map((l) => l.id), P.lenses.map((l) => l.id))) why.add('lenses');
   for (const f0 of old) {
     const f1 = next.get(f0.id);
-    if (!f1) { structural = true; continue; }
-    if (f1.domain !== f0.domain || f1.capability !== f0.capability || !sameSet(f1.dependsOn, f0.dependsOn) || !sameSet(f1.blockedBy, f0.blockedBy)) structural = true;
+    if (!f1) { why.add('features'); continue; }
+    if (f1.domain !== f0.domain || f1.capability !== f0.capability) why.add('places');
+    if (!sameSet(f1.dependsOn, f0.dependsOn) || !sameSet(f1.blockedBy, f0.blockedBy)) why.add('links');
     const rest: Record<string, unknown> = {};
     for (const k of Object.keys(f1)) if (!(FIXED as readonly string[]).includes(k)) rest[k] = (f1 as unknown as Record<string, unknown>)[k];
     const rec = f0.lens as Record<string, Feature['lens'][string]>;
@@ -84,5 +87,10 @@ export function refreshLiveModel(M: Model, structure: unknown, events: string, s
   for (const f0 of old) for (const c of lineCopies(P, f0.id)) restate(P, c);
   M.agg.clear();
   M.sim.restamp();
-  return { structural, features: old.length };
+  return { structural: why.size > 0, features: old.length, why: [...why] };
 }
+
+/** Why a newer map cannot be placed in place: features added or removed, moved to another place, other links, another lens set. */
+export type ShapeChange = 'features' | 'places' | 'links' | 'lenses';
+/** Only the lens set changed (a temporary lens added, retired or deleted): the caller rebuilds the model and engine in place. */
+export const lensesOnly = (why: readonly ShapeChange[]): boolean => why.length === 1 && why[0] === 'lenses';

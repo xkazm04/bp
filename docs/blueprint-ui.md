@@ -523,6 +523,78 @@ gets out of the plan's way, and L4 is a page. Earlier sections that say "dock", 
     instant.
   - **Phone:** the phone view keeps the single-document body (`sheet/SheetBody.tsx`).
 
+## Scans on the plan (2026-10-13)
+
+The owner's words: each lens view needs to run its scan at the feature, context or all, from a right-click on the
+place; scans show where they work, several at once, each lens in its own colour, and parallel scans of the same lens.
+Rejected: a looping radar sweep (fake progress, perpetual frames) and a per-tile shimmer.
+
+- **Right-click menu** (`src/components/ScanMenu.tsx`, `scan.css`). The engine's `contextmenu` (never the browser's
+  own) puts `S.menu = { x, y, chain, tile }` (canvas CSS px; the hit chain outermost first, a tile only when one is
+  hit). Ignored while a feature page or the ledger is shown. The menu names what was hit, then one group per scope,
+  narrowest first: Feature, Bay, Room, Wing, Everything (`scopesAt` in `src/lib/scan/scan-views.ts`; a wider scope
+  with the same features as a narrower one is dropped, so a live product's one-room wing is not offered twice).
+  Scope ids are base ids (feature slug, capability, domain, wing key): a `?scale` clone scans its base feature. In a
+  lens view each scope is one item, "Scan <lens> · <scope>"; in General each scope has "Scan all lenses" (one job per
+  scannable lens) and a row of lens buttons (glyph + short). A lens that is not `scannable` (live: no built-in and no
+  manifest `scan` block) is disabled and named under "No scan method". Live products add the footer "Runs Claude
+  Code in <root> with permissions skipped". It is placed at the pointer, flipped and clamped into the safe area
+  clear of an open flyout; keys are its own (arrows, Home, End, Enter, Esc, Tab: ProjectSwitcher's roving focus);
+  a choice, Esc (first in `goUp`), a click elsewhere or a wheel closes it. A refusal toasts the reason
+  (`refusalText`), and a job that fails toasts its error (e.g. "Claude Code CLI not found (set BP_CLAUDE_BIN)").
+- **Actions** (`src/lib/scan/actions.ts`): `startScan`, `dispatch`, `cancelJob` go to the live routes
+  (`postScan`, `postDispatch`, `deleteJob`) or to the Kettle scan sim. `ScanCtxCtx` (BlueprintApp) says which.
+- **Views** (`scanViews`): every queued or running measure job, a done one for 3 s with all ticks, a failed one for
+  6 s in the bad colour with "failed"; cancelled ones vanish. A job's run is `run_id`, else the run whose note is
+  `bp-job:<id>` (`isJobNote` in `jobs.ts`); done = the features measured in that run on that lens, plus those with a
+  `measured` activity row (judged, nothing to measure: a temporary lens's "no impact"); current = the feature of
+  the run's latest reading or measured row; m = the scope's features (everything = every base feature). The place is
+  the scope's layout node; at `?scale` > 1 a job draws once per product line (the readings land in every line), and
+  everything outlines each building (at 1x, the site). The accent is the manifest's `presentation.accent` for the
+  theme, else ink. BlueprintApp recomputes views on discrete changes only (live: the jobs or the scan moved; Kettle:
+  the sim notified) and hands them to `E.setScans`.
+- **Drawing** (`src/engine/render/scans.ts`, after the swarm layers, before the flags; only at now). A dashed
+  outline in the accent (2 px, marching while running) around the place; each further view on the same place
+  nests 6 px further in, in start order. A chip on the outline's top-left edge: glyph, lens short, `n/m` (`queued`,
+  `failed`, `m/m done`), 12 px text, paper ground, accent border; nested chips line up side by side. The feature
+  being judged gets a soft accent band sweeping left to right (1.2 s), clipped to its tile; done features get a
+  small check at the tile's top-left when the tile is at least 24 px. Reduced motion: still dashes, no sweep, ticks
+  stay. Boxes, nesting, chip text and widths and the done lists are worked out in `set()`; a frame reads arrays,
+  reuses two rect records and allocates nothing; ticks are culled to the viewport (528 tiles at `?scale=4`).
+- **The loop sleeps** unless a view is running: `scans.animating` joins the keep-alive (at most ~30 fps, 33 ms
+  when only scans move); queued, done and failed views are static and draw once.
+- **Kettle scan sim** (`src/lib/model/scan-sim.ts`). `bind()` gives it the base slugs in layout order, the enabled
+  manifests and the facet values. A job is queued, then running (3 at most, FIFO, 16 queued); it walks its features
+  left to right, one per 1.2 s, writing a `reading` row, then a `measured` row and one measurement per numeric
+  metric field (the facet's value when it has one, else a deterministic value in the field's range). A temporary
+  lens (`tmp.*`) finds about 40% of features out of its reach (deterministic): no measurement, `no impact` in the
+  activity, listed by `noImpact()`. One run row per job (`run-<job>`, note `bp-job:<job>`). `dispatch` approves the
+  proposed findings (decided by `blueprint`), keeps approved ones, skips the rest, and builds them in one execute
+  job over about 15 s: approved, executing, done with `after_value` = before + `expected_delta`, a fake 7-hex
+  `result_sha` and a measurement of the after value. `cancel` stops a job (its run aborted, a finding being built
+  back to approved). A timer runs only while a job runs; subscribers hear once per tick.
+- **Kettle readings** go the live way: BlueprintApp gives the Kettle model a `LiveFacets` on first use and applies
+  the sim's snapshot (`apply`), then `setNa` for the no-impact pairs (the lens re-read with `applicable: false`, so
+  the tile fades in that lens and carries no flag), and `sim.restamp()` re-rasters fills, "?" and fades. The Kettle
+  features are the loader's cached objects, so a torn-down model puts them back (`LiveFacets.restore`).
+- **Lens-set rebuild.** `refreshLiveModel` now says why a map changed shape (`why`: features, places, links,
+  lenses). When only the lens set changed (a temporary lens added, retired or deleted), the model and engine are
+  rebuilt on the same layout: the hash restores lens, place and page, the camera is set back exactly, the intro does
+  not play, and the Kettle sim (jobs, rows, findings) carries over. Kettle rebuilds on `subscribeTempLenses` with
+  `readTempLenses()` (all entries; the loader honours `enabled`).
+- **Rail.** The Agents flyout opens with "Scans": every job newest first (glyph and lens, or "Execute · N
+  findings"), scope, status, n/m, elapsed (a 1 s clock only while one runs), Cancel for queued and running, and for
+  live products the log tail behind "Log" (`useLiveJobs`, every log line). The Agents figure is working agents plus
+  running scans that are not already agents on the plan: in Kettle every running job; live, a running job unless
+  its run is the latest run, whose lenses `swarmFromScan` already shows as working agents.
+- **Ledger page hooks.** `E.setPage(page, lv?)` shows the drawing set or the ledger. The hash carries `page=ledger`
+  and `lv=<prototype>` (plan and triage are omitted) and replaces the entry like the lens. While the ledger shows,
+  the frame loop draws nothing and sleeps, the simulation keeps the phone's light timer (`lightSim`), no plan key
+  fires wherever focus is (Esc only closes what overlays it, never the ledger), and pointer and wheel on the plan
+  do nothing; leaving draws once.
+- **Live products** behave the same through the routes; nothing here is Kettle-only except the sim and the
+  temporary-lens subscription.
+
 ## Findings ledger (2026-10-13)
 
 The owner's words: findings need a standalone page, a ledger of items to click and dispatch across lenses. Four

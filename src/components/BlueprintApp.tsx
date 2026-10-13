@@ -4,17 +4,28 @@
 // around it. No `?product` = Kettle, built in, exactly as before. `?product=<slug>` = a live product:
 // its structure and scan come from `useLiveProduct`; the model is built once the structure and the
 // first snapshot are in, and every later scan goes into the sim in place (`engine.feed`), so the
-// engine and the layout are never rebuilt for a delta. A new structure builds a new model.
+// engine and the layout are never rebuilt for a delta. A new structure builds a new model, and so does a
+// change of the lens set alone (a temporary lens added, retired or deleted), in place: the camera stays.
+// Scans: the jobs (live: the stream's; Kettle: the scan sim's) become the plan's scan views on every discrete
+// change, and the Kettle sim's readings go over the model the way a live scan's do (LiveFacets).
 import { Component, memo, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from 'react';
 import { MotionConfig } from 'motion/react';
 import { Engine } from '@/engine/Engine';
+import type { Cam } from '@/engine/camera';
 import { EMPTY_SCAN, clampScale, type Model } from '@/lib/model';
-import { applyScan, buildLiveModel, liveSwarm, refreshLiveModel } from '@/lib/model/live-feed';
+import { applyScan, buildLiveModel, lensesOnly, liveSwarm, refreshLiveModel } from '@/lib/model/live-feed';
+import { LiveFacets } from '@/lib/model/live-health';
+import type { ScanSim } from '@/lib/model/scan-sim';
 import { decideProposal, useLiveProduct, type LiveProduct } from '@/lib/scan/client';
+import type { JobStatus, ScanJob } from '@/lib/scan/jobs';
+import type { ScanSnapshot } from '@/lib/scan/types';
+import type { ScanCtx } from '@/lib/scan/actions';
+import { scanViews } from '@/lib/scan/scan-views';
+import { readTempLenses, subscribeTempLenses } from '@/lib/scan/temp-lens';
 import { refreshProjects, useProductName } from '@/lib/scan/projects';
 import { getVariant } from '@/variants/registry';
 import type { VariantId } from '@/variants/types';
-import { EngineCtx, LiveCtx, VariantCtx, shallowEqual, useBp, type LiveInfo } from './hooks';
+import { EngineCtx, LiveCtx, ScanCtxCtx, VariantCtx, shallowEqual, useBp, type LiveInfo } from './hooks';
 import { Header } from './Header';
 import { Dock } from './Dock';
 import { BaseBar } from './BaseBar';
@@ -22,6 +33,9 @@ import { Callout, DecisionCard, HoverCard, Ladder, Morning, ScaleBar, SelBar, Ti
 import { FeatureSheet } from './FeatureSheet';
 import { Phone } from './Phone';
 import { ProjectSwitcher } from './ProjectSwitcher';
+import { ScanMenu } from './ScanMenu';
+import { LedgerPage } from './ledger/LedgerPage';
+import { TempLensButton, TempLensPanel } from './ledger/lens/TempLensPanel';
 import './blueprint.css';
 
 // The Kettle sample (~770 KB of map, events and swarm) is its own chunk, fetched only when the sample is shown.
@@ -50,6 +64,8 @@ const Chrome = memo(function Chrome() {
       <DecisionCard />
       <Toast />
       <FeatureSheet />
+      <LedgerPage lensButton={<TempLensButton />} lensPanel={<TempLensPanel />} />
+      <ScanMenu />
       <Morning />
     </>
   );
@@ -104,6 +120,35 @@ function LiveEmpty({ slug, live }: { slug: string; live: LiveProduct }) {
   );
 }
 
+/** Toast a job that failed since it was last seen (or failed within 15 s of being queued here); the first pass only learns the statuses. */
+function toastFailures(E: Engine, jobs: readonly ScanJob[], seen: { init: boolean; st: Map<string, JobStatus> }) {
+  const now = Date.now();
+  for (const j of jobs) {
+    const was = seen.st.get(j.id);
+    if (seen.init && j.status === 'failed' && (was ? was !== 'failed' : now - Date.parse(j.queued_at) < 15000)) {
+      E.toast(j.kind === 'measure' ? 'Scan failed' : 'Execute run failed', (j.lens ? j.lens + ': ' : '') + (j.error ?? 'no reason given'));
+    }
+    seen.st.set(j.id, j.status);
+  }
+  seen.init = true;
+}
+/** The plan's scan views for these jobs and rows; returns when the next lingering one expires (ms from now), or null. */
+function pushViews(E: Engine, jobs: readonly ScanJob[], scan: ScanSnapshot | undefined): number | null {
+  const now = Date.now(), { views, next } = scanViews(jobs, scan, E.M, (l) => E.lensAccent(l), now);
+  E.setScans(views);
+  return next === Infinity ? null : Math.max(0, next - now) + 20;
+}
+/** What the Kettle scan sim needs of the model: base slugs in layout order, the enabled lenses, the facet values now. */
+function bindSim(sim: ScanSim, M: Model) {
+  const P = M.P, base = new Map(P.base.features.map((f) => [f.id, f])), on = new Set(P.lenses.map((l) => l.id));
+  const order = [...new Set(M.L.tiles.filter((T) => T.wing.bld.i === 0).map((T) => T.f.slug))];
+  sim.bind({
+    order,
+    manifest: (l) => (on.has(l) ? P.LENS[l]?.manifest : undefined),
+    value: (f, l, k) => { const v = base.get(f)?.lens[l]?.facet?.values?.[k]; return typeof v === 'number' ? v : undefined; },
+  });
+}
+
 export function BlueprintApp({ variantId }: { variantId: VariantId }) {
   const variant = getVariant(variantId)!;
   const root = useRef<HTMLDivElement>(null), cv = useRef<HTMLCanvasElement>(null), ui = useRef<HTMLDivElement>(null);
@@ -125,6 +170,12 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
   const liveRef = useRef(live); liveRef.current = live;
   // the map revision the model on screen was built (or last refreshed) from
   const mapRev = useRef(0);
+  // a rebuild in place (the lens set changed): the camera and the Kettle scan sim carry over to the new engine
+  const [rebuild, setRebuild] = useState(0);
+  const rebuilding = useRef(false), carry = useRef<{ cam: Cam; sim?: ScanSim } | null>(null);
+  const rebuildNow = () => { rebuilding.current = true; setRebuild((n) => n + 1); };
+  // Kettle's temporary lenses live in this browser (src/lib/scan/temp-lens.ts): a change rebuilds the model with them
+  useEffect(() => (product === null ? subscribeTempLenses(rebuildNow) : undefined), [product]);
   useEffect(() => {
     if (product === undefined || (product && !settled)) return;
     let dead = false, built: Engine | null = null;
@@ -133,8 +184,12 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
     const L = liveRef.current;
     mapRev.current = L.structureRev ?? 0;
     setBuildErr(null);
+    const kept = carry.current; carry.current = null;
     const mount = (model: Model) => {
-      const e = new Engine({ canvas: cv.current!, ui: ui.current!, root: root.current!, model, expression: variant.expression, intro: qs.get('intro') !== '0' && !location.hash });
+      // the Kettle sim's jobs, rows and findings outlive a rebuild: its readings go over the new model from scratch
+      if (kept?.sim && model.scanSim && !model.live) { model.scanSim.dispose(); model.scanSim = kept.sim; }
+      const e = new Engine({ canvas: cv.current!, ui: ui.current!, root: root.current!, model, expression: variant.expression, intro: !kept && qs.get('intro') !== '0' && !location.hash });
+      if (kept) e.cam.set(kept.cam); // the hash restored lens, place and page; the camera stands exactly where it was
       built = e;
       setEngine(e);
       if (product && L.status === 'missing') e.toast('No scan store yet', 'every feature reads unmeasured until /lens-scan writes one');
@@ -142,11 +197,18 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
     const fail = (err: unknown) => { console.error(err); setBuildErr(err instanceof Error ? err.message : String(err)); };
     try {
       if (product) mount(buildLiveModel(L.structure, L.events, L.scan ?? EMPTY_SCAN, { slug: product, decide: (id, body) => decideProposal(product, id, body) }, scale, now, qs.get('lenses')));
-      else void loadSample().then((build) => { if (!dead) mount(build(scale, now, qs.get('lenses'))); }).catch((err) => { sampleChunk = null; if (!dead) fail(err); });
+      else void loadSample().then((build) => { if (!dead) mount(build(scale, now, qs.get('lenses'), readTempLenses())); }).catch((err) => { sampleChunk = null; if (!dead) fail(err); });
     } catch (err) { fail(err); return; }
-    return () => { dead = true; built?.destroy(); built = null; setEngine(null); };
-    // not on `structure`: a newer map refreshes this model in place (below), never rebuilds it (the camera and the layout stay)
-  }, [variant, product, settled]);
+    return () => {
+      dead = true;
+      if (built && rebuilding.current) carry.current = { cam: { x: built.cam.x, y: built.cam.y, k: built.cam.k }, sim: built.M.scanSim };
+      else built?.M.scanSim?.dispose();
+      rebuilding.current = false;
+      built?.destroy(); built = null; setEngine(null);
+    };
+    // not on `structure`: a newer map refreshes this model in place (below), never rebuilds it (the camera and the layout stay);
+    // `rebuild` moves when only the lens set changed (a temporary lens), which needs a new model on the same layout
+  }, [variant, product, settled, rebuild]);
   // every later scan: its readings over the facets of the features it touched, then into the sim (the first one built the model)
   useEffect(() => {
     if (!engine?.M.live || !live.scan) return;
@@ -161,12 +223,46 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
     try {
       const r = refreshLiveModel(engine.M, live.structure, live.events, live.scan ?? EMPTY_SCAN, new URLSearchParams(location.search).get('lenses'));
       engine.feed(liveSwarm(engine.M.P, live.scan ?? EMPTY_SCAN));
-      if (r.structural) engine.toast('The map has changed shape', 'features that moved or are new appear after a reload');
+      if (r.structural && lensesOnly(r.why)) rebuildNow();
+      else if (r.structural) engine.toast('The map has changed shape', 'features that moved or are new appear after a reload');
     } catch (err) {
       console.error(err);
       engine.toast('Could not read the updated map', 'the page keeps the one it has; ' + (err instanceof Error ? err.message : String(err)));
     }
   }, [engine, live.structureRev, live.structure, live.events, live.scan]);
+  // Kettle: the scan sim's rows go over the model like a live scan's (readings, and `na` where a temporary lens found
+  // nothing), the plan's scan views follow its jobs, and a teardown puts the loader's cached features back
+  const failSeen = useRef({ init: false, st: new Map<string, JobStatus>() });
+  useEffect(() => {
+    const M = engine?.M, sim = M?.scanSim;
+    if (!engine || !M || M.live || !sim) return;
+    bindSim(sim, M);
+    const facets = (M.liveFacets ??= new LiveFacets(M.P, M.agg));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const sync = () => {
+      const snap = sim.snapshot(), pairs: [string, string][] = [];
+      for (const [lens, fs] of sim.noImpact()) for (const f of fs) pairs.push([f, lens]);
+      if (facets.apply(snap).length + facets.setNa(pairs).length) M.sim.restamp(); // re-raster the fills, '?' and fades; the sheet re-reads
+      toastFailures(engine, sim.jobs(), failSeen.current);
+      clearTimeout(timer);
+      const next = pushViews(engine, sim.jobs(), snap);
+      if (next !== null) timer = setTimeout(sync, next);
+    };
+    sync();
+    const off = sim.subscribe(sync);
+    return () => { off(); clearTimeout(timer); if (facets.restore().length) M.agg.clear(); };
+  }, [engine]);
+  // live: the stream's jobs and rows become the plan's scan views (a lingering finished one expires on a timer)
+  const [scanTick, setScanTick] = useState(0);
+  useEffect(() => {
+    if (!engine?.M.live) return;
+    toastFailures(engine, live.jobs, failSeen.current);
+    const next = pushViews(engine, live.jobs, live.scan);
+    if (next === null) return;
+    const t = setTimeout(() => setScanTick((n) => n + 1), next);
+    return () => clearTimeout(t);
+  }, [engine, live.jobs, live.scan, scanTick]);
+  const scanCtx = useMemo<ScanCtx>(() => ({ slug: product || null, sim: product ? null : engine?.M.scanSim ?? null }), [product, engine]);
   const info = useMemo<LiveInfo | null>(() => (product ? { slug: product, product: live } : null), [product, live]);
   return (
     <MotionConfig reducedMotion="user">
@@ -185,7 +281,9 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
           <EngineCtx.Provider value={engine}>
             <VariantCtx.Provider value={variant}>
               <LiveCtx.Provider value={info}>
-                <ChromeBoundary><Chrome /></ChromeBoundary>
+                <ScanCtxCtx.Provider value={scanCtx}>
+                  <ChromeBoundary><Chrome /></ChromeBoundary>
+                </ScanCtxCtx.Provider>
               </LiveCtx.Provider>
             </VariantCtx.Provider>
           </EngineCtx.Provider>
@@ -195,7 +293,9 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
         <EngineCtx.Provider value={engine}>
           <VariantCtx.Provider value={variant}>
             <LiveCtx.Provider value={info}>
-              <ChromeBoundary><RootFlags root={root.current} /></ChromeBoundary>
+              <ScanCtxCtx.Provider value={scanCtx}>
+                <ChromeBoundary><RootFlags root={root.current} /></ChromeBoundary>
+              </ScanCtxCtx.Provider>
             </LiveCtx.Provider>
           </VariantCtx.Provider>
         </EngineCtx.Provider>

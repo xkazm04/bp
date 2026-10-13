@@ -53,3 +53,5 @@ export const SAFE_ID = /^[a-z0-9][a-z0-9._-]{0,80}$/i;
 
 /** lens-scan writes `bp-job:<id>` into a run's note when started with BP_JOB_ID set. */
 export const RUN_NOTE_PREFIX = 'bp-job:';
+/** Whether a run's note names job `id`: `bp-job:<id>`, or `bp-job:<id> <more>` (never a bare prefix: j-1 is not j-10). */
+export const isJobNote = (note: string | undefined, id: string): boolean => note === RUN_NOTE_PREFIX + id || !!note?.startsWith(RUN_NOTE_PREFIX + id + ' ');

@@ -8,7 +8,7 @@ import { AnimatePresence, animate, motion, useReducedMotion } from 'motion/react
 import { SPEND_CAP, pname, sheetOf } from '@/lib/model';
 import type { DockTab } from '@/engine/state';
 import { AsksTab, MorningButton, oncePerProposal } from './Queue';
-import { FindPanel, OrdersPanel, PlanPanel, SteerPanel, SwarmPanel, ViewPanel } from './rail/panels';
+import { FindPanel, OrdersPanel, PlanPanel, SteerPanel, SwarmPanel, ViewPanel, useRunningScans } from './rail/panels';
 import { shallowEqual, useBp, useEngine } from './hooks';
 import './rail.css';
 
@@ -71,6 +71,8 @@ function useItems(): Item[] {
     memo.current = { sim, key, c };
     return c;
   }, shallowEqual);
+  // the Agents figure: working agents plus running scans that are not already agents on the plan (useRunningScans)
+  const scans = useRunningScans();
   const out: Item[] = [];
   out.push({ k: 'find', label: 'Find', title: 'Find a feature', glyph: G.find, n: null, tone: 'ink' });
   if (sim.has) {
@@ -79,7 +81,7 @@ function useItems(): Item[] {
       k: 'asks', label: sim.live ? 'Review' : 'Asks', title: sim.live ? 'Proposals to review' : s.who ? 'Waiting for ' + first : 'Decisions waiting',
       glyph: G.asks, n: s.asks, n2: s.hi, n2title: s.hi + ' urgent', tone: s.asks ? 'amber' : 'ink', sub: s.who ? 'for ' + first : undefined,
     });
-    out.push({ k: 'swarm', label: 'Agents', title: 'Agents · ' + s.working + ' working of ' + s.agents, glyph: G.swarm, n: s.working, n2: s.blocked + s.failed, n2title: s.blocked + ' blocked, ' + s.failed + ' failed', tone: 'mint' });
+    out.push({ k: 'swarm', label: 'Agents', title: 'Agents · ' + s.working + ' working of ' + s.agents + (scans ? ' · ' + scans + ' scan' + (scans === 1 ? '' : 's') + ' running' : ''), glyph: G.swarm, n: s.working + scans, n2: s.blocked + s.failed, n2title: s.blocked + ' blocked, ' + s.failed + ' failed', tone: 'mint' });
     if (s.orders || !sim.live) out.push({ k: 'orders', label: 'Orders', title: 'Standing orders · ' + s.br + ' of ' + s.orders + ' breached', glyph: G.orders, n: s.br, tone: s.br ? 'red' : 'ink', sub: 'of ' + s.orders });
     if (!sim.live) out.push({ k: 'steer', label: 'Steer', title: 'Steer the swarm · spend ' + s.pct + '% of the cap', glyph: G.steer, n: s.pct + '%', tone: s.pct >= 100 ? 'red' : s.pct >= 80 ? 'amber' : 'ink' });
   }

@@ -1,17 +1,26 @@
 'use client';
 // The rail's flyout panels, one per rail item: Find, View (window, modes, reader, swarm health),
 // Agents, Orders, Plan and Steer (Kettle's steering presets). The decisions panel is `AsksTab` in
-// ../Queue. Each returns a flat list of blocks so the flyout can stagger them in.
-import { useEffect, useMemo, useRef, useState } from 'react';
+// ../Queue. Each returns a flat list of blocks so the flyout can stagger them in. Agents opens with the
+// scan jobs (live: the product's routes; Kettle: the scan sim), newest first.
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { Stage } from '@/lib/data';
 import {
   GA_MILESTONE, SPEND_CAP, STAGE_WORD, TICK_CLASS, astat, healthUnder, personLens, revAt, searchPage, sheetOf, stageAt, views,
   type RoomNode, type BayNode, type BldNode,
 } from '@/lib/model';
+import { cancelJob, refusalText } from '@/lib/scan/actions';
+import { useLiveJobs } from '@/lib/scan/client';
+import { latestRun } from '@/lib/scan/derive';
+import type { ScanJob } from '@/lib/scan/jobs';
+import { jobProgress } from '@/lib/scan/scan-views';
+import type { ScanSnapshot } from '@/lib/scan/types';
 import { Legend } from '../Legend';
+import { ScanGlyph } from '../ScanMenu';
 import { Mark, PatternDefs, StageSym, agentMark } from '../Symbols';
-import { shallowEqual, useBp, useEngine, useVariant } from '../hooks';
+import { shallowEqual, useBp, useEngine, useLive, useScanCtx, useVariant } from '../hooks';
+import '../scan.css';
 
 // ------------------------------------------------------------------------------------------ find
 export function FindPanel() {
@@ -125,14 +134,89 @@ export function ViewPanel() {
   );
 }
 
+// ------------------------------------------------------------------------------------------ scans
+const NO_JOBS: readonly ScanJob[] = [];
+const noSub = () => () => {};
+/**
+ * The scan jobs (and, with `rows`, the store rows their progress is read from). Live: the stream's jobs (with `log`,
+ * every jobs event, log lines included; else only discrete changes) and scan. Kettle: the scan sim's, which notifies
+ * once per tick while a job runs.
+ */
+export function useScanJobs(log: boolean, rows: boolean): { jobs: readonly ScanJob[]; scan: ScanSnapshot | undefined } {
+  const E = useEngine(), live = useLive(), sim = live ? null : E.M.scanSim ?? null;
+  const logged = useLiveJobs(log && live ? live.slug : null);
+  const simJobs = useSyncExternalStore(sim ? sim.subscribe : noSub, () => (sim ? sim.jobs() : NO_JOBS), () => NO_JOBS);
+  const simScan = useSyncExternalStore(sim && rows ? sim.subscribe : noSub, () => (sim && rows ? sim.snapshot() : undefined), () => undefined);
+  if (live) return { jobs: log ? logged : live.product.jobs, scan: live.product.scan };
+  return { jobs: simJobs, scan: simScan };
+}
+/**
+ * Scans that run and are not already on the plan as agents. Kettle: every running job (the sim's swarm has no scan
+ * agents). Live: the latest run's lenses already stand as working agents (swarmFromScan), so a running job counts
+ * unless it is that run.
+ */
+export function useRunningScans(): number {
+  const live = useLive(), { jobs } = useScanJobs(false, false);
+  const latest = live ? latestRun(live.product.scan) : null, own = latest?.status === 'running' ? latest.id : null;
+  let n = 0;
+  for (const j of jobs) if (j.status === 'running' && (!own || j.run_id !== own)) n++;
+  return n;
+}
+const mmss = (ms: number) => { const s = Math.max(0, Math.round(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+
+/** The Agents flyout's Scans section: every job, newest first, with its progress, elapsed time, Cancel, and (live) the log tail. */
+function ScansSection() {
+  const E = useEngine(), M = E.M, ctx = useScanCtx(), live = useLive();
+  const { jobs, scan } = useScanJobs(true, true);
+  const running = jobs.some((j) => j.status === 'running' || j.status === 'queued');
+  // the elapsed clocks: one 1 s interval, only while something runs
+  const [, setTick] = useState(0);
+  useEffect(() => { if (!running) return; const t = setInterval(() => setTick((n) => n + 1), 1000); return () => clearInterval(t); }, [running]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const cancel = (id: string) => { setBusy(id); cancelJob(ctx, id).catch((e) => E.toast('Not cancelled', refusalText(e))).finally(() => setBusy(null)); };
+  const now = Date.now(), total = M.P.base.features.length;
+  return (
+    <>
+      <h3 className="dsec-h"><span>Scans</span><span>{jobs.length ? jobs.filter((j) => j.status === 'running').length + ' running · ' + jobs.filter((j) => j.status === 'queued').length + ' queued' : live ? 'Claude Code' : 'simulated'}</span></h3>
+      {jobs.length ? (
+        <ul className="scans" aria-label="Scan jobs, newest first">
+          {jobs.slice().reverse().map((j) => {
+            const d = j.lens ? M.P.LENS[j.lens] : undefined, measure = j.kind === 'measure';
+            const pr = measure ? jobProgress(j, scan, total) : null;
+            const built = !measure && scan ? scan.proposals.filter((p) => j.proposals?.includes(p.id) && p.status === 'done').length : 0;
+            const nm = measure ? (pr && j.status === 'done' ? pr.m : pr?.n ?? 0) + '/' + (pr?.m ?? 0) : built + '/' + (j.proposals?.length ?? 0);
+            const t0 = Date.parse(j.started_at ?? j.queued_at), t1 = j.ended_at ? Date.parse(j.ended_at) : now;
+            const open = j.status === 'queued' || j.status === 'running';
+            return (
+              <li key={j.id} className="scan-j">
+                {d ? <ScanGlyph g={d.glyph} /> : <span aria-hidden="true" />}
+                <span className="nm" title={j.lens}>{measure ? d?.name ?? j.lens : 'Execute · ' + (j.proposals?.length ?? 0) + ' finding' + (j.proposals?.length === 1 ? '' : 's')}</span>
+                <span className={'st ' + j.status}>{j.status}</span>
+                <span className="sc" title={j.scope?.label}>{measure ? j.scope?.label ?? 'Everything' : (j.proposals ?? []).join(', ')}</span>
+                <span className="row">
+                  <span>{nm}</span><span>{j.status === 'queued' ? 'waiting ' + mmss(now - Date.parse(j.queued_at)) : mmss(t1 - t0)}</span><span className="sp" />
+                  {open && <button type="button" disabled={busy === j.id} onClick={() => cancel(j.id)} aria-label={'Cancel ' + (d?.name ?? 'execute') + ' job ' + j.id}>Cancel</button>}
+                </span>
+                {j.error && <span className="er">{j.error}</span>}
+                {live && j.log_tail ? <details className="row" style={{ display: 'block' }}><summary>Log</summary><pre>{j.log_tail}</pre></details> : null}
+              </li>
+            );
+          })}
+        </ul>
+      ) : <div className="fly-note">No scans yet. Right-click a feature, bay, room or wing on the plan (or empty plan for everything) to scan it.</div>}
+    </>
+  );
+}
+
 // ------------------------------------------------------------------------------------------ agents
 export function SwarmPanel() {
   const E = useEngine(), M = E.M, sim = M.sim;
   const s = useBp((s) => ({ simV: s.simV, prev: s.prev, tgt: s.tgt, crew: s.crew }), shallowEqual);
-  if (!sim.has) return <div className="qempty">No swarm data.</div>;
+  if (!sim.has) return <><ScansSection /><div className="qempty">No swarm data.</div></>;
   const tm = (t: number) => new Date(sim.at0 + t * 1000).toISOString().slice(11, 16);
   return (
     <>
+      <ScansSection />
       {s.tgt.n ? (
         <div className="steer"><h5>On your selection</h5><p>{s.tgt.label} · {s.tgt.n} features</p>
           {s.prev && !s.prev.order ? <PreviewBox /> : <div className="row"><button type="button" className="bt" onClick={() => E.preview('push')}>Put the swarm here</button><button type="button" className="bt" onClick={() => E.preview('pause')}>Pause</button><button type="button" className="bt" onClick={() => E.preview('resume')}>Resume</button></div>}</div>

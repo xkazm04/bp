@@ -11,7 +11,7 @@ import type { ChannelAggregate, FeatureLive, LensChannel, LensExpression } from 
 import { MixDriver, type MixState } from './lens/mix';
 import { createStore, type Store } from './store';
 import { baseHeight, overlayRight, railWidth } from './chrome';
-import { initialState, type Crumb, type DockTab, type HoverInfo, type UIState } from './state';
+import { LEDGER_VARIANTS, initialState, type Crumb, type DockTab, type HoverInfo, type LedgerVariant, type UIState } from './state';
 import { readTheme, type Theme } from './theme';
 import { Text } from './text';
 import { StaticCache, deviceRes } from './render/static-cache';
@@ -23,6 +23,7 @@ import {
 import { KeyPlan } from './render/keyplan';
 import { SimWatch } from './render/simwatch';
 import { drawFlags, flagAt, flagKey, layoutFlags, type Flag } from './render/flags';
+import { ScanLayer, type ScanView } from './render/scans';
 import { loadArt } from './render/illo';
 import { rs, smooth, type SRect, type View } from './render/view';
 
@@ -68,6 +69,8 @@ const isControl = (t: HTMLElement | null) => !!t?.closest?.(CTL);
 /** Keys that move the plan. They belong to the widget they came from: a control, the rail / flyout / timeline / feature page / cards, or a handler that already took them. */
 const NAV_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End']);
 const OWN_ZONES = '#rail,#flyout,#tlpanel,#detail,#dcard,#callout,#morning';
+/** The hash's ledger prototype, else the default. */
+const ledgerVariant = (v: string | undefined): LedgerVariant => (LEDGER_VARIANTS as readonly string[]).includes(v ?? '') ? v as LedgerVariant : 'triage';
 
 export class Engine {
   readonly M: Model;
@@ -93,6 +96,8 @@ export class Engine {
   /** This frame's trouble flags (render/flags.ts), kept for hit testing; the hovered one's key. */
   private flags: Flag[] = []; private flagHot: string | null = null;
   blastSet: Set<string> | null = null;
+  /** Running scans drawn over the plan (render/scans.ts), fed on discrete changes by setScans. */
+  readonly scans = new ScanLayer();
   /** Called when the search box should take focus ('/'). */
   focusSearch: () => void = () => {};
 
@@ -193,6 +198,13 @@ export class Engine {
     const a = this.channel(l)?.accent;
     return a ? a[this.th.mode] : this.th.ink;
   }
+  /** A lens's mark colour for scan outlines and chips: the manifest's `presentation.accent`, else the channel's, else ink. */
+  lensAccent(l: string): string {
+    const a = this.M.P.LENS[l]?.accent;
+    return a ? a[this.th.mode] : this.accentOf(l);
+  }
+  /** The scans to draw (a discrete change: a job moved, a reading came in). The loop runs while one of them runs. */
+  setScans(views: readonly ScanView[]) { if (this.destroyed) return; this.scans.set(views, this); this.dirty(); }
   counts(id: string, fs: readonly Feature[]): Counts { return this.M.agg.countsOf(id, fs, this.S.t, this.S.delta); }
   lensAgg(id: string, l: string, fs: readonly Feature[]): ChannelAggregate {
     const k = id + '|' + l; let a = this.aggLensCache.get(k);
@@ -279,7 +291,7 @@ export class Engine {
     // narrow, or a touch device held landscape (a short mouse window stays the desktop plan)
     const phone = w < 760 || (h < 480 && typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches);
     if (phone !== this.S.phone) this.store.set({ phone });
-    this.phoneSim(phone);
+    this.lightSim(phone || this.S.page === 'ledger');
     if (phone) return;
     this.U = 1 + 0.5 * (clamp(Math.min(w / 1280, h / 800), 1, 2) - 1);
     this.tx.setU(this.U);
@@ -354,7 +366,8 @@ export class Engine {
   private artGen = 0;
   private frame = (now: number) => {
     this.raf = 0;
-    if (this.destroyed || this.S.phone) return;
+    // the phone and the findings ledger draw no plan: the light timer keeps the simulation going (lightSim)
+    if (this.destroyed || this.S.phone || this.S.page === 'ledger') return;
     const dt = this.lastT ? now - this.lastT : 16; this.lastT = now;
     const wheel = this.cam.stepWheel();
     if (wheel) this.lastCamMove = now;
@@ -364,12 +377,14 @@ export class Engine {
     if (live) sim.advance(dt);
     const gesture = wheel || this.cam.flying || !!this.drag?.moved || !!this.pinch;
     const animating = sim.has && this.isNow && sim.animating(now);
-    // only the simulation is moving: draw at ~30 fps
-    if (!gesture && !this.mix.moving && !this.introOn && (live || animating) && now - this.lastDraw < 30) { this.raf = requestAnimationFrame(this.frame); return; }
+    // a running scan marches its outline and sweeps its feature (reduced motion: both hold still, so no frames)
+    const scanning = this.scans.animating && this.isNow && !this.cam.reduced;
+    // only the simulation or a scan is moving: draw at ~30 fps
+    if (!gesture && !this.mix.moving && !this.introOn && (live || animating || scanning) && now - this.lastDraw < (live || animating ? 30 : 33)) { this.raf = requestAnimationFrame(this.frame); return; }
     this.lastDraw = now;
     this.dashT = (now / 40) % 1000;
     // a live reading or map refresh re-judged health (tile fills, marks, troubles): the cached plan is stale everywhere
-    if (sim.healthV !== this.healthSeenV) { if (this.healthSeenV >= 0) this.cache.invalidate(); this.healthSeenV = sim.healthV; }
+    if (sim.healthV !== this.healthSeenV) { if (this.healthSeenV >= 0) { this.cache.invalidate(); this.aggLensCache.clear(); } this.healthSeenV = sim.healthV; }
     // throttle static changes driven by the simulation
     if (sim.version !== this.simSeenV || (live && Math.floor(sim.t / 15) !== this.simT10)) {
       if (!live || now - this.simStaticAt > 900) { this.simSeenV = sim.version; this.simT10 = Math.floor(sim.t / 15); this.simStaticV++; this.simStaticAt = now; this.simPatch = true; }
@@ -384,7 +399,7 @@ export class Engine {
     this.syncPlace();
     this.afterFrame(now);
     if (sim.pulses.length > 40 || now - this.lastExpire >= 500) { this.lastExpire = now; sim.expire(now); }
-    if (gesture || this.mix.moving || this.introOn || live || animating) this.raf = requestAnimationFrame(this.frame);
+    if (gesture || this.mix.moving || this.introOn || live || animating || scanning) this.raf = requestAnimationFrame(this.frame);
   };
   private draw(now: number, gesture: boolean) {
     const ctx = this.ctx, c = this.cam, S = this.S;
@@ -421,6 +436,7 @@ export class Engine {
     drawAgents(this, ctx, v, lod, now); drawPulses(this, ctx, v, lod, now);
     drawPins(this, ctx, v, lod, now); drawBreaches(this, ctx, v, lod, now);
     drawPreview(this, ctx, v, lod, now); drawFocus(this, ctx, v, lod, now); drawReleases(this, ctx, v, lod, now);
+    this.scans.draw(this, ctx, v, lod, now);
     // trouble flags over everything: the first thing to find on the plan
     this.flags = layoutFlags(this, v, lod); drawFlags(this, ctx, this.flags, this.flagHot);
     drawLasso(this, ctx);
@@ -468,8 +484,8 @@ export class Engine {
     const sec = Math.floor(this.M.sim.t);
     if (sec !== this.lastSimSec) { this.lastSimSec = sec; for (const fn of this.simTimeListeners) fn(this.M.sim.t); }
   }
-  /** The phone draws no plan, so frame() never runs there: a light timer advances the simulation (waits, agents, new questions) and syncs the store. It stops with the phone layout, and a hidden tab skips its ticks without banking the time. */
-  private phoneSim(on: boolean) {
+  /** The phone and the findings ledger draw no plan, so frame() never runs there: a light timer advances the simulation (waits, agents, new questions) and syncs the store. It stops when the plan is drawn again, and a hidden tab skips its ticks without banking the time. */
+  private lightSim(on: boolean) {
     if (!on) { clearInterval(this.phoneTimer); this.phoneTimer = 0; return; }
     if (this.phoneTimer || this.destroyed) return;
     this.phoneAt = performance.now();
@@ -576,11 +592,13 @@ export class Engine {
   }
   goUp() {
     const S = this.S;
+    if (S.menu) { this.set({ menu: null }); return; }
     if (S.tl) { this.set({ tl: false }); return; }
     if (S.morning) { this.set({ morning: false }); return; }
     if (S.whoMenu) { this.set({ whoMenu: false }); return; }
     if (S.dtab) { this.set({ dtab: null }); return; }
     if (S.info) { this.set({ info: false }); return; }
+    if (S.page === 'ledger') return; // Esc never leaves the ledger (it clears its own selection); nothing on the plan behind it moves
     if (S.open) { this.closeFeature(); return; }
     if (S.dec) { this.closeDecision(); return; }
     if (S.prev) { this.set({ prev: null }); return; }
@@ -644,7 +662,7 @@ export class Engine {
     if (!this.S.phone && (r.w * U < 48 || r.x * U < S.l || r.y * U < S.t || (r.x + r.w) * U > S.r || (r.y + r.h) * U > S.b)) {
       this.cam.set(this.fitCam({ x: T.x - T.w * 1.6, y: T.y - T.h * 1.6, w: T.w * 4.2, h: T.h * 4.2 }, { t: 40, r: 30, b: 60, l: 30 }, 1));
     }
-    this.set({ open: id, sel: null, hl: null, dec: null, hover: null, morning: false });
+    this.set({ open: id, sel: null, hl: null, dec: null, hover: null, morning: false, menu: null });
     if (this.S.phone) return;
     this.placeKey = ''; this.writeHashSoon(true);
   }
@@ -687,8 +705,23 @@ export class Engine {
   /** Open a rail flyout; the open one again (or null) closes it. */
   setDockTab(t: DockTab | null) { const dtab = t === this.S.dtab ? null : t; this.set(dtab ? { dtab, tl: false } : { dtab }); }
   patch(p: Partial<UIState>) { this.set(p); }
-  /** Show the drawing set or the findings ledger (spark scan-package: WP3 adds the hash and the sleeping plan). */
-  setPage(page: UIState['page'], lv?: UIState['lv']) { this.set(lv ? { page, lv, menu: null } : { page, menu: null }); }
+  /**
+   * Show the drawing set or the findings ledger (a DOM page over the plan). While the ledger shows, the frame loop
+   * draws nothing and sleeps (the simulation keeps its light timer, like the phone), and plan keys and pointer are
+   * ignored; leaving it draws once. Page and prototype ride in the hash (`page=ledger`, `lv=`) and replace the entry.
+   */
+  setPage(page: UIState['page'], lv?: UIState['lv']) {
+    const S = this.S;
+    if (page === S.page && (!lv || lv === S.lv)) return;
+    const leaving = S.page === 'ledger' && page !== 'ledger';
+    this.endIntro();
+    const p: Partial<UIState> = { page, menu: null, hover: null };
+    if (lv) p.lv = lv;
+    this.store.set(p);
+    this.lightSim(S.phone || page === 'ledger');
+    if (leaving) { this.lastT = 0; this.placeKey = ''; this.dirty(); } // the sim advanced on the light timer meanwhile: no banked frame delta
+    this.writeHashSoon();
+  }
   toggleDock(on?: boolean) {
     const hide = on == null ? !this.S.dockHidden : !on;
     this.store.set(hide ? { dockHidden: hide, dtab: null } : { dockHidden: hide });
@@ -1010,7 +1043,9 @@ export class Engine {
       el.addEventListener(ev, fn as EventListener, opts); this.disposers.push(() => el.removeEventListener(ev, fn as EventListener, opts));
     };
     on(cv, 'pointerdown', (e: PointerEvent) => {
-      if (e.button !== 0) return; // right / middle / pen barrel: the browser's own menu or nothing, never a navigation
+      if (this.S.page === 'ledger') return;
+      if (this.S.menu) this.set({ menu: null }); // a click on the plan closes the scan menu (a right-click reopens it at the new point)
+      if (e.button !== 0) return; // right / middle / pen barrel: the scan menu (contextmenu) or nothing, never a navigation
       this.endIntro();
       try { cv.setPointerCapture(e.pointerId); } catch { /* ignore */ }
       const p = this.local(e); this.ptrs.set(e.pointerId, p);
@@ -1071,13 +1106,24 @@ export class Engine {
     on(cv, 'pointerleave', () => { this.ptr = null; if (!this.drag) this.setHover(null); });
     on(cv, 'wheel', (e: WheelEvent) => {
       e.preventDefault(); this.endIntro();
-      if (this.S.open) return; // the feature page holds the wheel; the plan behind it stays put
+      if (this.S.open || this.S.page === 'ledger') return; // the feature page holds the wheel; the plan behind it stays put
+      if (this.S.menu) this.set({ menu: null });
       if (this.S.hover) this.setHover(null);
       const p = this.local(e), wi = this.wheelI;
       wi.classify(e.deltaX, e.deltaY, e.deltaMode, e.ctrlKey, e.shiftKey, (e as unknown as { wheelDeltaY?: number }).wheelDeltaY || 0, performance.now(), this.FW, this.FH);
       if (wi.kind === 'pan') this.cam.panPx(wi.dx, wi.dy); else this.cam.zoomAt(p.x, p.y, wi.zoom);
     }, { passive: false });
     on(cv, 'dblclick', (e: MouseEvent) => e.preventDefault());
+    // right-click: the scan menu for what is under the pointer (src/components/ScanMenu.tsx); never the browser's own
+    on(cv, 'contextmenu', (e: MouseEvent) => {
+      e.preventDefault();
+      const S = this.S;
+      if (S.open || S.page === 'ledger' || S.phone) return;
+      this.endIntro();
+      const p = this.local(e), h = this.hitAt(p.x, p.y);
+      this.setHover(null);
+      this.set({ menu: { x: p.x, y: p.y, chain: h ? h.chain.map((c) => ({ t: c.t, id: c.o.id })) : [], tile: h && h.t === 'tile' ? h.o.id : null } });
+    });
     on(window, 'resize', () => { clearTimeout(this.resizeTimer); this.resizeTimer = window.setTimeout(() => this.fit(), 60); });
     // a DPR change without a resize (the window moved to another monitor, browser zoom via a shortcut): the query matches only the current ratio, so it re-arms on each change
     if (typeof matchMedia !== 'undefined') {
@@ -1111,6 +1157,8 @@ export class Engine {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (tgt?.closest?.('[data-keys="own"]')) return;
     const k = e.key;
+    // the findings ledger is a page over the plan: no plan key fires under it, wherever focus is (Esc only closes what overlays it)
+    if (S.page === 'ledger') { if (k === 'Escape') { e.preventDefault(); this.goUp(); } return; }
     if (S.open && k.length === 1 && '/mMpPsStT\\'.includes(k)) return; // the feature page is modal: no flyout, timeline, mode or search opens under it (Esc and the lens digits still work)
     if (k === '/') { e.preventDefault(); this.focusSearch(); return; }
     if (k === 'Escape') { e.preventDefault(); this.goUp(); return; }
@@ -1184,6 +1232,7 @@ export class Engine {
     if (S.ga) p.push('ga=1');
     if (S.delta !== 7) p.push('d=' + S.delta);
     if (S.who) p.push('who=' + S.who);
+    if (S.page === 'ledger') { p.push('page=ledger'); if (S.lv !== 'triage') p.push('lv=' + S.lv); }
     return p.length ? '#' + p.join('&') : '';
   }
   /** Write the hash. Lens, time and toggles replace the current entry; a new place pushes one once it has rested (or at once when navigation was explicit). A restore (back / forward / pasted hash) and the first second after load only adopt. */
@@ -1233,6 +1282,7 @@ export class Engine {
     if (h.who && this.M.P.P[h.who]) this.store.set({ who: h.who });
     if (h.ga === '1' && this.hasGA) this.store.set({ ga: true });
     if (h.blast && this.M.P.F[h.blast]) this.store.set({ blast: h.blast });
+    if (h.page === 'ledger') { this.store.set({ page: 'ledger', lv: ledgerVariant(h.lv) }); this.lightSim(true); }
     if (h.at) {
       const t = this.placeById('bld', h.at) ? 'bld' : this.M.L.WING[h.at] ? 'wing' : this.M.L.ROOM[h.at] ? 'room' : this.M.L.BAY[h.at] ? 'bay' : null;
       if (t) this.cam.set(this.fitOf({ t: t as Crumb['t'], o: this.placeById(t, h.at)! }));
@@ -1258,6 +1308,7 @@ export class Engine {
       const blast = h.blast && this.M.P.F[h.blast] ? h.blast : null, ga = h.ga === '1' && this.hasGA;
       const moded = !!(blast || ga);
       if (blast !== this.S.blast || ga !== this.S.ga) this.setMode({ blast, ga });
+      if (h.page === 'ledger') this.setPage('ledger', ledgerVariant(h.lv)); else this.setPage('plan');
       if (h.open && this.M.P.F[h.open]) { if (this.S.open !== h.open) this.openFeature(h.open); return; }
       if (this.S.open) this.closeFeature(false);
       if (this.S.phone || moded) return; // a mode frames its own features
