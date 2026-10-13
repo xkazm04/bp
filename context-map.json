@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "generator": "hand-partitioned (bp scan-sweep adoption; /perfect deltas 2026-10-12)",
-  "generated_at": "2026-10-12T21:30:35.406Z",
+  "generator": "hand-partitioned (bp scan-sweep adoption; /perfect deltas 2026-10-12; spark scan-package 2026-10-13)",
+  "generated_at": "2026-10-13T18:06:11.000Z",
   "project": {
     "slug": "bp",
     "name": "bp - the product blueprint"
@@ -87,7 +87,19 @@
         "src/components/hooks.ts",
         "src/components/ProjectSwitcher.tsx",
         "src/components/ProjectsDialog.tsx",
-        "src/components/projects.css"
+        "src/components/projects.css",
+        "src/components/ledger/LedgerPage.tsx",
+        "src/components/ledger/ledger.css",
+        "src/components/ledger/useLedger.ts",
+        "src/components/ledger/variants/Board.tsx",
+        "src/components/ledger/variants/Matrix.tsx",
+        "src/components/ledger/variants/Queue.tsx",
+        "src/components/ledger/variants/Triage.tsx",
+        "src/components/ledger/variants/bits.tsx",
+        "src/components/ledger/lens/DraftCard.tsx",
+        "src/components/ledger/lens/LensChat.tsx",
+        "src/components/ledger/lens/TempLensPanel.tsx",
+        "src/components/ledger/lens/lens.css"
       ]
     },
     {
@@ -222,7 +234,9 @@
       ],
       "file_paths": [
         "src/components/Overlays.tsx",
-        "src/components/Phone.tsx"
+        "src/components/Phone.tsx",
+        "src/components/ScanMenu.tsx",
+        "src/components/scan.css"
       ]
     },
     {
@@ -263,7 +277,9 @@
         "src/engine/theme.ts",
         "src/engine/render/flags.ts",
         "src/engine/render/lens-glyph.ts",
-        "src/engine/render/simwatch.ts"
+        "src/engine/render/simwatch.ts",
+        "src/engine/render/patterns.ts",
+        "src/engine/render/scans.ts"
       ]
     },
     {
@@ -480,7 +496,23 @@
         "src/lib/model/timeview.ts",
         "src/lib/scan/derive.ts",
         "src/lib/scan/local-only.ts",
-        "src/lib/scan/scope.ts"
+        "src/lib/scan/scope.ts",
+        "src/app/api/lens-draft/route.ts",
+        "src/app/api/products/[slug]/dispatch/route.ts",
+        "src/app/api/products/[slug]/lenses/[id]/route.ts",
+        "src/app/api/products/[slug]/lenses/route.ts",
+        "src/app/api/products/[slug]/scans/[job]/route.ts",
+        "src/app/api/products/[slug]/scans/route.ts",
+        "src/data/kettle.findings.json",
+        "src/lib/model/scan-sim.ts",
+        "src/lib/scan/actions.ts",
+        "src/lib/scan/jobs.server.ts",
+        "src/lib/scan/jobs.ts",
+        "src/lib/scan/lens-draft.ts",
+        "src/lib/scan/lens-write.server.ts",
+        "src/lib/scan/manifest-check.ts",
+        "src/lib/scan/scan-views.ts",
+        "src/lib/scan/temp-lens.ts"
       ]
     },
     {
@@ -533,13 +565,16 @@
         "scripts/check-timeview.ts",
         "scripts/lib/prng.ts",
         "scripts/lib/source.ts",
-        "scripts/lib/src-hooks.mjs"
+        "scripts/lib/src-hooks.mjs",
+        "scripts/check-scan-jobs.ts",
+        "scripts/fixtures/fake-claude.mjs",
+        "scripts/fixtures/kettle-findings.mjs"
       ]
     }
   ],
   "stats": {
     "contexts": 11,
     "groups": 6,
-    "files": 200
+    "files": 235
   }
 }
