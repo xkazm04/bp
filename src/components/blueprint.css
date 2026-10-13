@@ -30,7 +30,11 @@
 /* between the phone cut (760) and ~1000 px the tab strip would take the whole row and squeeze "where you are"
    to nothing: the brand keeps a floor and the strip scrolls instead (tabs, digits and arrows still reach every tab) */
 #brand { min-width: 240px; flex: 1 1 0; padding-right: 14px; }
-#brand .proj { font: 500 12px/1 var(--mono); letter-spacing: 0.12em; color: var(--ink-2); text-transform: uppercase; margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#brand .proj { display: flex; align-items: center; min-width: 0; font: 500 12px/1 var(--mono); letter-spacing: 0.12em; color: var(--ink-2); text-transform: uppercase; margin-top: 5px; white-space: nowrap; overflow: hidden; }
+/* segments drop whole (Header.tsx ProjLine sets data-fit); only the sheet ellipsizes */
+#brand .proj > span { flex: none; white-space: pre; }
+#brand .proj .pj-sheet { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#brand .proj:is([data-fit='1'], [data-fit='2'], [data-fit='3']) .pj-mode, #brand .proj:is([data-fit='2'], [data-fit='3']) .pj-name, #brand .proj[data-fit='3'] .pj-sheet { display: none; }
 #brand .proj b { color: var(--lens); font-weight: 500; }
 #crumbs { margin-top: 8px; display: flex; flex-wrap: nowrap; align-items: baseline; gap: 4px; white-space: nowrap; overflow: hidden; }
 #crumbs .sum { margin-left: 14px; font-size: 15px; color: var(--ink-2); letter-spacing: 0.01em; display: inline-flex; flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: pre; }

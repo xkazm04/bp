@@ -272,7 +272,30 @@ function ProjLine() {
   const view = useBp((s) => s.view);
   const name = useProductName(E.M.live?.slug ?? null, P.name);
   const sh = sheetOf(P, view);
-  return <div className="proj">Project {name} · <PageSwitch /> · <b>sheet {sh.no} · {sh.title}</b> · {E.M.live ? 'live lens scan' : 'simulated swarm'}</div>;
+  const mode = E.M.live ? 'live lens scan' : 'simulated swarm';
+  const ref = useRef<HTMLDivElement>(null);
+  // Too narrow for the whole line: the mode goes first, then the project name (the h1 below repeats it), then the sheet
+  // ellipsizes, and goes once not even its number shows (the active lens tab names it too); the page switch never goes.
+  // Measured on resize and when the line's text or the switch's count changes.
+  useLayoutEffect(() => {
+    const el = ref.current, sheet = el?.querySelector<HTMLElement>('.pj-sheet'), no = el?.querySelector<HTMLElement>('.pj-no');
+    if (!el || !sheet || !no) return;
+    const fit = () => {
+      for (const f of ['0', '1', '2']) { el.dataset.fit = f; if (sheet.scrollWidth <= sheet.clientWidth) return; }
+      if (no.offsetLeft + no.offsetWidth - sheet.offsetLeft > sheet.clientWidth) el.dataset.fit = '3';
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    const sw = el.querySelector('.pgsw');
+    if (sw) ro.observe(sw);
+    return () => ro.disconnect();
+  }, [name, sh.no, sh.title, mode]);
+  return (
+    <div className="proj" ref={ref} title={`Project ${name} · sheet ${sh.no} · ${sh.title} · ${mode}`}>
+      <span className="pj-name">Project {name} · </span><PageSwitch /><span className="pj-sheet"> · <b><span className="pj-no">sheet {sh.no}</span> · {sh.title}</b></span><span className="pj-mode"> · {mode}</span>
+    </div>
+  );
 }
 
 export const Header = memo(function Header() {
