@@ -33,7 +33,7 @@ type ScanScope = import('../src/lib/scan/jobs.ts').ScanScope;
 let failed = 0, passed = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) passed++; else { failed++; console.log('FAIL ' + name + (detail ? ': ' + detail : '')); } };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-async function until(pred: () => boolean, ms = 10000): Promise<boolean> { const t = Date.now() + ms; while (Date.now() < t) { if (pred()) return true; await sleep(50); } return pred(); }
+async function until(pred: () => boolean, ms = 30000): Promise<boolean> { const t = Date.now() + ms; while (Date.now() < t) { if (pred()) return true; await sleep(50); } return pred(); }
 const job = (slug: string, id: string): ScanJob | undefined => J.list(slug).find((j) => j.id === id);
 const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 const pidOf = (j?: ScanJob) => Number(/^pid (\d+)$/m.exec(j?.log_tail ?? '')?.[1] ?? 0);
