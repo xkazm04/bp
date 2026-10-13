@@ -51,8 +51,10 @@ None declared.
 - Name a real target repo as an option when the work needs real data. The operator chose Personas through "Other" here.
 - The operator accepts the Recommended option on most architecture forks. Spend questions on scope and target, not on convention.
 - Skill names: the operator renames generic skill names to say what they serve (/adopt -> /adopt-bp). Offer a scoped name first.
+- When options trade scope or safety for speed, the operator picks more and faster: all 4 ledger prototypes (asked for 3), `--dangerously-skip-permissions` over a scoped allow-list, chat onboarding over a draft card. Offer the bigger option explicitly, and write its condition (the risk) into the option text.
 
 ## Skill improvement log
 
 - 2026-10-09 measured-lens-scans: scouts traced the data path but missed the sample-specific tables in the model (WING_DEFS), and only the real-data smoke test found them. Promoted to Repo law above.
 - 2026-10-12 adopt: a fixture-green product still failed the canvas (deprecated counted as promised); the real-data smoke caught it, as the Repo law predicts. Scouts of a registry skill must also list sibling skills in the registry checkout (lens-scan appeared mid-run as the store's declared writer).
+- 2026-10-13 scan-package: a design that SPAWNS a skill headless (`claude -p "/lens-scan ..."`) must scout where that skill resolves - lens-scan was linked nowhere (not user scope, not pof), and its scripts silently no-op'd through a junction (argv[1] vs realpath). Only the real-CLI smoke found both. Screenshots were first taken from a stale `next start` on 3123 left by /perfect: probe a route only the new build has before trusting a server. Stubs-first (types + compilable stubs + one Engine method) ran 6 packages 3-wide with zero collisions.
