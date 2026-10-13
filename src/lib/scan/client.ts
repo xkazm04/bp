@@ -1,12 +1,14 @@
 // Client side of a live product: fetch its structure, follow its scan store over SSE, decide proposals,
 // and turn a scan into the swarm feed the canvas already draws. Browser-only; the server half is
 // store.server.ts and the routes under src/app/api/products.
-import { useEffect, useState } from 'react';
-import type { AppStructure } from '@/lib/standard/types';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import type { AppStructure, LensEntry, LensManifest } from '@/lib/standard/types';
 import type { Agent, AgentStatus, Decision, ReplayEvent, ReplayType, Squad, Swarm } from '@/lib/data/types';
 import { refreshProjects } from './projects.ts';
 import { latestRun, latestReading, measuredFeatures } from './derive.ts';
 import { scopeFeatures } from './scope.ts';
+import type { ScanJob, ScanScope } from './jobs.ts';
+import type { DispatchResult } from './actions.ts';
 import { fullScan as full, isEmptyScan as isEmpty, type Activity, type ActivityKind, type Coverage, type DecisionBody, type Measurement, type Proposal, type ProductInfo, type Run, type ScanDelta, type ScanSnapshot } from './types.ts';
 
 /** `loading` until the structure arrives; `missing` = no store or structure file; `offline` = reconnecting. */
@@ -21,10 +23,14 @@ export interface LiveProduct {
   /** The product's events log text, '' when it has none. */
   events: string;
   scan?: ScanSnapshot;
+  /** The blueprint's scan jobs for this product (the stream's `jobs` event; [] before one). It moves on discrete
+   *  changes only (a job added, a status, a run attached); a log line alone reaches `useLiveJobs`, not this. */
+  jobs: ScanJob[];
   error?: string;
 }
 
-const MISSING: LiveProduct = { status: 'missing', events: '' };
+const NO_JOBS: ScanJob[] = [];
+const MISSING: LiveProduct = { status: 'missing', events: '', jobs: NO_JOBS };
 const ACTIVITY_KEEP = 200;
 const BACKOFF_MS = 500, BACKOFF_CAP_MS = 10000;
 const api = (slug: string) => '/api/products/' + encodeURIComponent(slug);
@@ -52,6 +58,23 @@ function mergeScan(s: ScanSnapshot, d: ScanDelta): ScanSnapshot {
   };
 }
 
+// ------------------------------------------------------------------------------------------- jobs
+/** Every jobs event per slug, log lines included, for the views that show them (useLiveJobs). */
+const jobStore = new Map<string, { jobs: ScanJob[]; subs: Set<() => void> }>();
+const jobsOf = (slug: string) => { let s = jobStore.get(slug); if (!s) jobStore.set(slug, (s = { jobs: NO_JOBS, subs: new Set() })); return s; };
+function setJobs(slug: string, jobs: ScanJob[]): void { const s = jobsOf(slug); s.jobs = jobs; for (const fn of s.subs) fn(); }
+/** What a job list says apart from its log lines: when this does not move, LiveProduct.jobs keeps its identity. */
+const jobsKey = (js: ScanJob[]): string => js.map((j) => [j.id, j.status, j.run_id ?? '', j.exit_code ?? '', j.error ?? ''].join('|')).join('\n');
+
+/** The live product's jobs with every log line (re-renders on each `jobs` event; [] for Kettle or before one). */
+export function useLiveJobs(slug: string | null): ScanJob[] {
+  return useSyncExternalStore(
+    (fn) => { if (!slug) return () => {}; const s = jobsOf(slug); s.subs.add(fn); return () => { s.subs.delete(fn); }; },
+    () => (slug ? jobsOf(slug).jobs : NO_JOBS),
+    () => NO_JOBS,
+  );
+}
+
 /**
  * Follows one live product. `slug` null = no live product (Kettle): returns `{ status: 'missing' }` at once.
  * The structure is fetched on open and again when the stream says the map files changed (`map` event) or a run
@@ -63,14 +86,15 @@ function mergeScan(s: ScanSnapshot, d: ScanDelta): ScanSnapshot {
  * exists but cannot be read reads `error` with the server's text (`error` event) until the next snapshot.
  */
 export function useLiveProduct(slug: string | null): LiveProduct {
-  const [state, setState] = useState<{ slug: string | null; live: LiveProduct }>(() => ({ slug, live: slug ? { status: 'loading', events: '' } : MISSING }));
+  const [state, setState] = useState<{ slug: string | null; live: LiveProduct }>(() => ({ slug, live: slug ? { status: 'loading', events: '', jobs: NO_JOBS } : MISSING }));
 
   useEffect(() => {
     if (!slug) { setState({ slug, live: MISSING }); return; }
     let dead = false, es: EventSource | null = null, timer: ReturnType<typeof setTimeout> | undefined, attempt = 0;
+    let jobs: ScanJob[] = NO_JOBS;
     let scan: ScanSnapshot | undefined, hasStore = false, mapText = '', mapRev = '', rev = 0, fetching = false, again = false, retry: ReturnType<typeof setTimeout> | undefined;
     const ac = new AbortController(), base = api(slug);
-    const put = (f: (l: LiveProduct) => LiveProduct) => { if (!dead) setState((s) => ({ slug, live: f(s.slug === slug ? s.live : { status: 'loading', events: '' }) })); };
+    const put = (f: (l: LiveProduct) => LiveProduct) => { if (!dead) setState((s) => ({ slug, live: f(s.slug === slug ? s.live : { status: 'loading', events: '', jobs: NO_JOBS }) })); };
     const shown = (): LiveProduct['status'] => (hasStore ? 'live' : 'missing');
 
     /** Fetch the map; a body equal to the one held changes nothing. Returns false on a failed fetch (the old map stays). */
@@ -105,7 +129,18 @@ export function useLiveProduct(slug: string | null): LiveProduct {
         scan = full(JSON.parse((ev as MessageEvent<string>).data) as Partial<ScanSnapshot>);
         if (!isEmpty(scan)) hasStore = true;
         const s = scan;
-        put((l) => ({ ...l, status: shown(), scan: s, error: undefined }));
+        // a (re)connect: the server follows the snapshot with its jobs when it has any, so until then there are none
+        if (jobs.length) { jobs = NO_JOBS; setJobs(slug, jobs); }
+        put((l) => ({ ...l, status: shown(), scan: s, jobs, error: undefined }));
+      });
+      src.addEventListener('jobs', (ev) => {
+        let next: ScanJob[];
+        try { next = JSON.parse((ev as MessageEvent<string>).data) as ScanJob[]; } catch { return; }
+        if (!Array.isArray(next)) return;
+        setJobs(slug, next);
+        const discrete = jobsKey(next) !== jobsKey(jobs);
+        jobs = next;
+        if (discrete) { const j = next; put((l) => ({ ...l, jobs: j })); }
       });
       // the map files changed under the page (the skill wrote its metrics back): take the new map
       src.addEventListener('map', (ev) => {
@@ -150,7 +185,7 @@ export function useLiveProduct(slug: string | null): LiveProduct {
         ]);
         if (r.status === 404) {
           const j = (await r.json().catch(() => ({}))) as { error?: string };
-          put(() => ({ status: 'missing', events: '', error: j.error }));
+          put(() => ({ status: 'missing', events: '', jobs: NO_JOBS, error: j.error }));
           return;
         }
         if (!r.ok) throw new Error(`structure: HTTP ${r.status}`);
@@ -171,7 +206,7 @@ export function useLiveProduct(slug: string | null): LiveProduct {
 
   // Until the effect for a new slug has run, do not hand out the previous product's data.
   if (!slug) return MISSING;
-  return state.slug === slug ? state.live : { status: 'loading', events: '' };
+  return state.slug === slug ? state.live : { status: 'loading', events: '', jobs: NO_JOBS };
 }
 
 /** Approve or decline a proposal; resolves to the updated row, rejects on any non-2xx (409 = already decided). */
@@ -186,6 +221,36 @@ export async function decideProposal(slug: string, id: string, body: DecisionBod
   }
   return j as Proposal;
 }
+
+/** An answer of the lens-draft chat (POST /api/lens-draft). */
+export interface LensDraftAnswer { session?: string; reply: string; draft?: LensManifest; done: boolean; error?: string }
+
+/** One JSON request to a scan route; rejects on any non-2xx with an Error carrying `status` and the parsed `body`. */
+async function send<T>(url: string, method: 'POST' | 'PATCH' | 'DELETE', body?: unknown): Promise<T> {
+  const r = await fetch(url, {
+    method, cache: 'no-store',
+    ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+  });
+  const j = (await r.json().catch(() => null)) as unknown;
+  if (!r.ok) throw Object.assign(new Error((j as { error?: string } | null)?.error ?? `HTTP ${r.status}`), { status: r.status, body: j });
+  return j as T;
+}
+
+/** Queue a lens scan over a scope (202 = the job). Errors: 400 unknown-lens / no-scan-method / bad-scope, 429 queue full. */
+export const postScan = (slug: string, lens: string, scope: ScanScope): Promise<ScanJob> => send(api(slug) + '/scans', 'POST', { lens, scope });
+/** Approve the proposed ones among `ids` and build them all in one execute job. 409 = none could go (`body.skipped`). */
+export const postDispatch = (slug: string, ids: string[]): Promise<DispatchResult> => send(api(slug) + '/dispatch', 'POST', { ids });
+/** Cancel a queued or running job. */
+export const deleteJob = (slug: string, id: string): Promise<ScanJob> => send(api(slug) + '/scans/' + encodeURIComponent(id), 'DELETE');
+/** Add a temporary lens to the product's map. 400 says what the manifest lacks; 409 = the id exists. */
+export const postLens = (slug: string, manifest: LensManifest): Promise<LensEntry> => send(api(slug) + '/lenses', 'POST', { manifest });
+/** Retire (false) or restore (true) a temporary lens. 403 = not temporary. */
+export const patchLens = (slug: string, id: string, enabled: boolean): Promise<LensEntry> => send(api(slug) + '/lenses/' + encodeURIComponent(id), 'PATCH', { enabled });
+/** Delete a temporary lens's entry (its facets stay). 403 = not temporary. */
+export const deleteLens = (slug: string, id: string): Promise<{ id: string }> => send(api(slug) + '/lenses/' + encodeURIComponent(id), 'DELETE');
+/** One turn of the temporary-lens chat: `product` is a slug or 'kettle'; `session` from the previous answer. 504 after 3 minutes. */
+export const postLensDraft = (product: string, message: string, session?: string): Promise<LensDraftAnswer> =>
+  send('/api/lens-draft', 'POST', session ? { product, message, session } : { product, message });
 
 // ------------------------------------------------------------------------------------------- swarm
 const REPLAY_OF: Partial<Record<ActivityKind, ReplayType>> = { measured: 'scan-clean', proposed: 'finding', committed: 'commit', error: 'alert' };

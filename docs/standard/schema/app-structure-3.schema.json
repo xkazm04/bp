@@ -263,7 +263,9 @@
         "version": { "$ref": "lens-manifest-1.schema.json#/$defs/semver" },
         "source": { "enum": ["builtin", "project"] },
         "enabled": { "type": "boolean" },
-        "manifest": { "$ref": "lens-manifest-1.schema.json" }
+        "manifest": { "$ref": "lens-manifest-1.schema.json" },
+        "temporary": { "description": "A temporary lens (a refactor, a migration), made and retired from the blueprint. Absent = permanent.", "const": true },
+        "created_at": { "$ref": "#/$defs/datetime" }
       },
       "allOf": [
         {
@@ -271,8 +273,12 @@
           "then": { "properties": { "id": { "$ref": "lens-manifest-1.schema.json#/$defs/builtinLensId" } } }
         },
         {
-          "if": { "properties": { "source": { "const": "project" } } },
+          "if": { "properties": { "source": { "const": "project" } }, "not": { "required": ["temporary"] } },
           "then": { "properties": { "id": { "$ref": "lens-manifest-1.schema.json#/$defs/reverseDns" } } }
+        },
+        {
+          "if": { "required": ["temporary"] },
+          "then": { "properties": { "source": { "const": "project" }, "id": { "$ref": "lens-manifest-1.schema.json#/$defs/tempLensId" } } }
         }
       ]
     },

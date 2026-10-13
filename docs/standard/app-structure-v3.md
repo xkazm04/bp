@@ -281,12 +281,17 @@ copy of each manifest it uses, so the file is self-describing.
 |---|---|---|---|
 | `id` | lens id | yes | Unique within `lenses[]`. MUST equal `manifest.id`. |
 | `version` | semver | yes | MUST equal `manifest.version`. |
-| `source` | `builtin` \| `project` | yes | `builtin` requires a built-in id; `project` requires a reverse-DNS id. |
+| `source` | `builtin` \| `project` | yes | `builtin` requires a built-in id; `project` requires a reverse-DNS id (a temporary lens: a `tmp.` id, below). |
 | `enabled` | boolean | yes | `false` hides the lens. Its facets are kept. |
 | `manifest` | LensManifest | yes | A full copy. |
+| `temporary` | `true` | | A **temporary lens**, made from the blueprint for a refactor, a migration or one project. Absent = permanent. Requires `source: "project"` and an id `tmp.<kebab>` (`^tmp\.[a-z0-9][a-z0-9-]{1,40}$`); a permanent lens never takes a `tmp.` id. |
+| `created_at` | date-time | | When the temporary lens was made. |
 
 Switching a lens off is not deleting it. Removing an entry orphans its facets, and a writer MUST
-keep orphaned facets (section 11).
+keep orphaned facets (section 11). A temporary lens is retired with `enabled: false` and deleted by
+removing its entry; either way its facets stay. The blueprint changes temporary entries only (its
+lens routes refuse a permanent one); every other writer keeps `temporary` and `created_at` like any
+other key of the entry.
 
 ### 8.2 Lens manifest (`$schema: "lens-manifest/1"`)
 
@@ -302,6 +307,14 @@ keep orphaned facets (section 11).
 | `fields` | Field[] | yes | At least one. Keys unique. |
 | `health` | Health | yes | Section 8.3. |
 | `presentation` | Presentation | yes | Section 8.5. |
+| `scan` | `{method, instructions}` | | How a lens scan measures this lens when no built-in scan method exists. See below. |
+
+**Scan block.** `scan: { "method": "judgement", "instructions": "<text>" }` (closed; both keys
+required, `instructions` non-empty). A scanner judges every feature in a scan's scope against the
+instructions and writes one reading per numeric `metric` field (method `judgement`); a feature the
+instructions do not touch gets a facet with `applicable: false` ("no impact", health `na`), never a
+zero. A lens without the block can be scanned only by a built-in method (lens-scan v1 has them for
+`development`, `security` and `design`). Readers that do not scan ignore the block.
 
 **Field:**
 

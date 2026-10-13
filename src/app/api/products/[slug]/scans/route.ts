@@ -1,0 +1,58 @@
+// POST /api/products/[slug]/scans, body `{ lens, scope: ScanScope }`: queue a lens scan, which runs the Claude Code
+// CLI headless in the product repo (`/lens-scan measure`, src/lib/scan/jobs.server.ts). 202 + the ScanJob; 400
+// `{ error: 'unknown-lens' }` (not an enabled lens of the map), `'no-scan-method'` (no built-in method and no manifest
+// `scan` block), `'bad-scope'` (kind, label, id or features wrong, or a feature the map lacks); 429 when 16 jobs are
+// queued already; 404 for an unknown product or a product without a map. Localhost only.
+// GET /api/products/[slug]/scans: the product's ScanJob[], oldest first.
+import { findProduct } from '@/lib/scan/products.server';
+import { localHost, localOnly, jsonOnly } from '@/lib/scan/local-only';
+import { SAFE_ID, scannable, type ScanScope, type ScanScopeKind } from '@/lib/scan/jobs';
+import { enqueueMeasure, list } from '@/lib/scan/jobs.server';
+import { readLensesAndFeatures } from '@/lib/scan/lens-write.server';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+const KINDS: readonly ScanScopeKind[] = ['feature', 'bay', 'room', 'wing', 'all'];
+const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+
+/** The scope as the job keeps it (unknown keys dropped), or null. Every feature must be a map feature. */
+function parseScope(x: unknown, features: Set<string>): ScanScope | null {
+  if (!isObj(x) || !KINDS.includes(x.kind as ScanScopeKind) || typeof x.label !== 'string' || !x.label.trim() || x.label.length > 200) return null;
+  const kind = x.kind as ScanScopeKind;
+  if (!Array.isArray(x.features) || x.features.length > 2000 || x.features.some((f) => typeof f !== 'string' || !SAFE_ID.test(f) || !features.has(f))) return null;
+  const feats = [...new Set(x.features as string[])];
+  if (kind === 'all') return x.id === undefined && !feats.length ? { kind, label: x.label.trim(), features: [] } : null;
+  if (typeof x.id !== 'string' || !SAFE_ID.test(x.id) || !feats.length) return null;
+  return { kind, id: x.id, label: x.label.trim(), features: feats };
+}
+
+export async function GET(req: Request, { params }: { params: Promise<{ slug: string }> }): Promise<Response> {
+  const denied = localHost(req);
+  if (denied) return Response.json({ error: denied }, { status: 403 });
+  const { slug } = await params;
+  if (!findProduct(slug)) return Response.json({ error: `unknown product ${slug}` }, { status: 404 });
+  return Response.json(list(slug));
+}
+
+export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }): Promise<Response> {
+  const denied = localOnly(req);
+  if (denied) return Response.json({ error: denied }, { status: 403 });
+  const notJson = jsonOnly(req);
+  if (notJson) return Response.json({ error: notJson }, { status: 415 });
+  const { slug } = await params;
+  const p = findProduct(slug);
+  if (!p) return Response.json({ error: `unknown product ${slug}` }, { status: 404 });
+  let body: unknown;
+  try { body = await req.json(); } catch { return Response.json({ error: 'body must be JSON' }, { status: 400 }); }
+  const map = readLensesAndFeatures(p);
+  if (!map) return Response.json({ error: `no readable structure for ${slug}` }, { status: 404 });
+  if (!isObj(body)) return Response.json({ error: 'unknown-lens' }, { status: 400 });
+  const lens = body.lens, entry = typeof lens === 'string' && SAFE_ID.test(lens) ? map.lenses.find((e) => e.id === lens && e.enabled) : undefined;
+  if (!entry) return Response.json({ error: 'unknown-lens' }, { status: 400 });
+  if (!scannable(entry, false)) return Response.json({ error: 'no-scan-method' }, { status: 400 });
+  const scope = parseScope(body.scope, map.features);
+  if (!scope) return Response.json({ error: 'bad-scope' }, { status: 400 });
+  const r = enqueueMeasure(slug, p.root, entry.id, scope);
+  return r.ok ? Response.json(r.job, { status: 202 }) : Response.json({ error: r.error }, { status: r.status });
+}

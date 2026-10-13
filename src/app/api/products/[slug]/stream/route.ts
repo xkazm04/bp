@@ -5,6 +5,9 @@
 //                    by updated_at, coverage by judged_at), checked each 1000 ms
 //   event: map       { rev }: the fingerprint of the map files (app-structure.json, events.jsonl), sent once the map exists and
 //                    again whenever it changes (the skill writes metrics back into it): the client then refetches /structure
+//   event: jobs      ScanJob[]: the blueprint's scan jobs for this product (src/lib/scan/jobs.server.ts), after each
+//                    snapshot when there are any, and on every change of the job registry (log lines at most every
+//                    400 ms). A run whose note is `bp-job:<id>` (in a snapshot or delta) is attached to that job.
 //   event: ping      every 15 s, so proxies and the client know the stream is alive
 //   event: error     { message }: the store file exists but cannot be read (corrupt, mid-migration, locked past
 //                    the timeout). Sent once per distinct message; the route keeps retrying and a good read
@@ -16,6 +19,8 @@ import { findProduct, recovered, storeDir, storeFile, warnOnce } from '@/lib/sca
 import { localHost } from '@/lib/scan/local-only';
 import { advance, close, dataVersion, isEmptyScan, mapRev, newCursor, openRead, readDelta, readSnapshot, emptyScan, type Cursor } from '@/lib/scan/store.server';
 import type { ScanSnapshot, StreamEvent } from '@/lib/scan/types';
+import { RUN_NOTE_PREFIX } from '@/lib/scan/jobs';
+import { attachRun, list as listJobs, subscribe as onJobs } from '@/lib/scan/jobs.server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -33,11 +38,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   const dir = storeDir(p);
   let rev = '';
   let tick: ReturnType<typeof setInterval> | null = null, lastSent = Date.now(), done = false, sentErr = '';
+  let unsubscribe: (() => void) | null = null;
 
   const stop = () => {
     if (done) return;
     done = true;
     if (tick) clearInterval(tick);
+    unsubscribe?.(); unsubscribe = null;
     close(db); db = null;
   };
 
@@ -47,6 +54,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
         if (done) return;
         try { ctrl.enqueue(enc.encode(`event: ${ev}\ndata: ${JSON.stringify(data)}\n\n`)); lastSent = Date.now(); } catch { stop(); }
       };
+      /** Runs a blueprint job started (lens-scan wrote `bp-job:<id>` in the note) name their job. attachRun notifies: a jobs event follows. */
+      const attach = (s: ScanSnapshot) => { for (const r of s.runs) if (r.note?.startsWith(RUN_NOTE_PREFIX)) attachRun(slug, r.id, r.note); };
+      /** After a snapshot the client holds no jobs: send them when there are any (an empty list is what it already has). */
+      const sendJobs = () => { const j = listJobs(slug); if (j.length) send('jobs', j); };
       /** (Re)open the store and send it whole. data_version is read before the rows: a write in between shows up as a delta. */
       const connect = (): boolean => {
         if (!fs.existsSync(file)) return false;
@@ -57,6 +68,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
           const s: ScanSnapshot = readSnapshot(db);
           cur = newCursor(); advance(cur, s);
           send('snapshot', s);
+          attach(s); sendJobs();
           recovered(logKey); sentErr = '';
           return true;
         } catch (e) { close(db); db = null; fail(e); return false; }
@@ -69,8 +81,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
       };
       /** The map files changed (or appeared): say so once per change. Independent of the store: a map can exist before the first scan. */
       const watchMap = () => { const r = mapRev(dir); if (r && r !== rev) { rev = r; send('map', { rev }); } };
-      if (!connect() && !sentErr) send('snapshot', emptyScan());
+      if (!connect() && !sentErr) { send('snapshot', emptyScan()); sendJobs(); }
       watchMap();
+      if (!done) unsubscribe = onJobs(slug, (jobs) => send('jobs', jobs));
       tick = setInterval(() => {
         if (done) return;
         watchMap();
@@ -81,7 +94,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
             if (v !== dv) {
               dv = v;
               const d = readDelta(db, cur);
-              if (!isEmptyScan(d)) { advance(cur, d); send('delta', d); }
+              if (!isEmptyScan(d)) { advance(cur, d); send('delta', d); attach(d); }
             }
           }
         } catch (e) { close(db); db = null; warnOnce(logKey, e); /* store replaced or locked past the timeout: reconnect next tick */ }

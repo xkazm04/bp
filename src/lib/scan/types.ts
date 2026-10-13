@@ -162,4 +162,4 @@ export interface DecisionBody {
 }
 
 /** The SSE event names of `GET /api/products/[slug]/stream`. */
-export type StreamEvent = 'snapshot' | 'delta' | 'map' | 'ping' | 'error';
+export type StreamEvent = 'snapshot' | 'delta' | 'map' | 'ping' | 'error' | 'jobs';
