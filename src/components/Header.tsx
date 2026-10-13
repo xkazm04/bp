@@ -258,7 +258,7 @@ export const PageSwitch = memo(function PageSwitch() {
     <span className="pgsw" role="group" aria-label="Page (L)">
       <button type="button" aria-pressed={page === 'plan'} onClick={() => goPage(E, 'plan')} title="The drawing set: the plan (L)">drawing set</button>
       <button type="button" aria-pressed={page === 'ledger'} onClick={() => goPage(E, 'ledger')} title={'Findings ledger: every lens’s findings, to select and dispatch' + (n ? ' · ' + n + ' proposed' : '') + ' (L)'}>
-        findings ledger{n ? <b className="ct" aria-label={n + ' proposed'}>{n}</b> : null}
+        ledger{n ? <b className="ct" aria-label={n + ' proposed'}>{n}</b> : null}
       </button>
     </span>
   );

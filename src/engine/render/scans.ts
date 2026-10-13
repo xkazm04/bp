@@ -127,7 +127,10 @@ export class ScanLayer {
         tick(ctx, f.x + 4 * u, f.y + 4 * u, 10 * u, col, th.paper, u);
       }
       // the chip: glyph, lens short, n/m (or queued / failed), on paper with an accent border
-      const cw = this.chipW[i], ch = 20 * u, cx = x + 8 * u + this.chipX[i], cy = y - ch / 2;
+      // it stays on screen while its outline does: zoomed into the scope, it rides the safe area's top-left
+      const S = E.SAFE, cw = this.chipW[i], ch = 20 * u;
+      const cx = Math.min(Math.max(x + 8 * u, S.l + 4 * u) + this.chipX[i], x + w - cw - 4 * u);
+      const cy = Math.min(Math.max(y - ch - 2 * u, S.t + 4 * u), y + h - ch - 4 * u); // above the outline: the place's own label stays readable
       ctx.fillStyle = th.paper; ctx.fillRect(cx, cy, cw, ch);
       ctx.strokeStyle = col; ctx.lineWidth = 1.5 * u; ctx.strokeRect(cx + 0.75 * u, cy + 0.75 * u, cw - 1.5 * u, ch - 1.5 * u);
       glyph(ctx, E.M.P.LENS[V.lens]?.glyph ?? null, cx + 6 * u, cy + 4 * u, 12 * u, col);
