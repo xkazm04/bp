@@ -58,6 +58,24 @@ export interface UIState {
   intro: boolean;
   /** The timeline panel is expanded over the plan (click on the strip, or T). */
   tl: boolean;
+  /** Which page fills the plan area: the drawing set, or the findings ledger. */
+  page: AppPage;
+  /** The findings ledger prototype shown. */
+  lv: LedgerVariant;
+  /** The plan's right-click scan menu, at canvas CSS px, with what was under the pointer. */
+  menu: ScanMenuState | null;
+}
+
+export type AppPage = 'plan' | 'ledger';
+export type LedgerVariant = 'triage' | 'board' | 'matrix' | 'queue';
+export const LEDGER_VARIANTS: readonly LedgerVariant[] = ['triage', 'board', 'matrix', 'queue'];
+export interface ScanMenuState {
+  x: number;
+  y: number;
+  /** Places under the pointer, outermost first (the hit chain). */
+  chain: Crumb[];
+  /** The feature tile under the pointer, if any. */
+  tile: string | null;
 }
 
 export function initialState(scale: number, asOf: string): UIState {
@@ -67,5 +85,6 @@ export function initialState(scale: number, asOf: string): UIState {
     t: asOf, delta: 7, who: null, ga: false, blast: null, key: null, dtab: null, selMode: false, dockHidden: false,
     morning: false, info: false, ordHi: null, crew: null, askAll: false, ordMenu: false, whoMenu: false, simV: 0,
     playing: true, speed: 8, over: false, toast: null, ticker: null, intro: false, tl: false,
+    page: 'plan', lv: 'triage', menu: null,
   };
 }

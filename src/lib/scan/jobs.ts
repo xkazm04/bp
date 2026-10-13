@@ -1,0 +1,55 @@
+// Scan jobs: a lens scan or an execute run the blueprint started. Client-safe types and rules; the
+// live registry that spawns the Claude Code CLI is jobs.server.ts, the Kettle stand-in is
+// lib/model/scan-sim.ts. Absent values are omitted, never null (the store's wire convention).
+import type { LensEntry } from '@/lib/standard/types';
+
+export type ScanScopeKind = 'feature' | 'bay' | 'room' | 'wing' | 'all';
+
+/** What a scan is pointed at. `features` are feature slugs; `all` carries none (every feature). */
+export interface ScanScope {
+  kind: ScanScopeKind;
+  /** The place id: a feature slug, capability, domain or wing id. Absent for `all`. */
+  id?: string;
+  /** What the UI calls it: "Invoice OCR", "Payments room", "Everything". */
+  label: string;
+  features: string[];
+}
+
+export type JobKind = 'measure' | 'execute';
+export type JobStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
+
+export interface ScanJob {
+  id: string;
+  kind: JobKind;
+  /** The lens a measure job scans. */
+  lens?: string;
+  scope?: ScanScope;
+  /** The proposals an execute job builds. */
+  proposals?: string[];
+  status: JobStatus;
+  queued_at: string;
+  started_at?: string;
+  ended_at?: string;
+  /** The store run this job produced, once lens-scan wrote its run-start (run note `bp-job:<id>`). */
+  run_id?: string;
+  exit_code?: number;
+  error?: string;
+  /** The last lines of the job's log. */
+  log_tail?: string;
+}
+
+/** Lenses lens-scan can measure without a manifest `scan` block (lens-scan v1). */
+export const SCAN_BUILTINS: readonly string[] = ['development', 'security', 'design'];
+
+/** Whether a lens can be scanned: always in the Kettle sim; live, a built-in method or a `scan` block. */
+export function scannable(entry: Pick<LensEntry, 'id' | 'manifest'>, sim: boolean): boolean {
+  return sim || SCAN_BUILTINS.includes(entry.id) || entry.manifest.scan?.method === 'judgement';
+}
+
+/** A temporary lens id: `tmp.<kebab>`. */
+export const TEMP_LENS_ID = /^tmp\.[a-z0-9][a-z0-9-]{1,40}$/;
+/** Lens ids, feature slugs and place ids that may reach a spawned command line. */
+export const SAFE_ID = /^[a-z0-9][a-z0-9._-]{0,80}$/i;
+
+/** lens-scan writes `bp-job:<id>` into a run's note when started with BP_JOB_ID set. */
+export const RUN_NOTE_PREFIX = 'bp-job:';

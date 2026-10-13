@@ -117,6 +117,15 @@ export interface LensManifest {
     rollup: Rollup;
   };
   presentation: Presentation;
+  /** How a scan measures this lens when no built-in method exists (spec 8.2): judge each feature
+   *  against the instructions. A lens without it can only be scanned by a built-in method. */
+  scan?: LensScan;
+}
+
+export interface LensScan {
+  method: 'judgement';
+  /** What to look for, in the author's words; the scanner judges every scoped feature against it. */
+  instructions: string;
 }
 
 // ------------------------------------------------------------------------------- context-map v3
@@ -235,6 +244,11 @@ export interface LensEntry {
   enabled: boolean;
   /** A full copy of the manifest the project uses. */
   manifest: LensManifest;
+  /** A temporary lens (a refactor, a migration): made from the blueprint, retired or deleted there.
+   *  Absent = permanent. Only `source: 'project'` lenses are temporary. */
+  temporary?: true;
+  /** ISO time the temporary lens was made. */
+  created_at?: string;
 }
 
 export interface FacetOverride { health: ComputedHealth; by: string; why: string; /** inclusive, YYYY-MM-DD */ until: string }
