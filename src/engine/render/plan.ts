@@ -11,6 +11,7 @@ import type { Theme } from '../theme';
 import { clamp } from '../camera';
 import { drawText } from '../text';
 import { cloud, drawHealthBar, drawStageBar, glyphAgent, glyphPin, stageFill, stageStroke } from './glyphs';
+import { unknownFill } from './patterns';
 import { patchMiss } from './simwatch';
 import { onView, rs, smooth, sxv, syv, type SRect, type View } from './view';
 
@@ -143,6 +144,27 @@ function lensMarks(E: Engine, ctx: CanvasRenderingContext2D, g: TileGeom, f: Fea
   }
 }
 
+/**
+ * What the lenses in view say about a feature as a whole, on the same weights the trouble marks crossfade
+ * on (General's health into the dominant lens's by its dominance): a lens with nothing to say here (`na`)
+ * fades the tile to 0.35, and one no scan has measured (`unmeasured`) lays the "?" texture over it. In
+ * General only a feature with no measured lens at all gets the "?". Returns the alpha factor and leaves the
+ * "?" weight in `unknownW` (scalars, no record: this runs per tile per raster). Draws nothing itself.
+ */
+let unknownW = 0;
+function lensVerdict(E: Engine, f: Feature): number {
+  const D = E.mixS.topD, top = E.mixS.top;
+  let measured = false, unknown = false;
+  const ids = E.lensIds;
+  for (let i = 0; i < ids.length && !measured; i++) {
+    const h = f.lens[ids[i]]?.h ?? 'unmeasured';
+    if (h === 'unmeasured') unknown = true; else if (h !== 'na') measured = true;
+  }
+  const hl = top && D > 0.001 ? f.lens[top]?.h ?? 'unmeasured' : null;
+  unknownW = (!measured && unknown ? 1 - D : 0) + (hl === 'unmeasured' ? D : 0);
+  return hl === 'na' ? 1 - 0.65 * D : 1;
+}
+
 /** A built outline and what it was built from: a tile repainted with the same geometry, lens and dominance (a patch, a neighbour's repaint) reuses it. */
 interface Outline { top: string; d: number; x: number; y: number; w: number; h: number; u: number; k: number; p: Path2D }
 const outlines = new WeakMap<Engine, Map<string, Outline>>();
@@ -173,8 +195,11 @@ function paintTile(E: Engine, ctx: CanvasRenderingContext2D, v: View, T: TileNod
   if (x > v.c1x + 10 || y > v.c1y + 10 || x + w < v.c0x - 10 || y + h < v.c0y - 10) return;
   if (patchMiss(x, y, w, h, 12)) return;
   const S = E.S, now = E.isNow, st = stageAt(f, S.t, E.M.P.asOf);
-  const a = (E.dimFn && !E.dimFn(f) ? 0.13 : 1) * alphaMul;
+  // lens verdicts speak of the feature now, like the trouble marks: not on a past date, not before it is drawn
+  const fade = st && now ? lensVerdict(E, f) : (unknownW = 0, 1);
+  const a = (E.dimFn && !E.dimFn(f) ? 0.13 : 1) * alphaMul * fade;
   if (a <= 0.01) return;
+  const unk = unknownW;
   if (now && E.M.sim.has) E.watch.tile(E, false, f, x, y, w, h);
   ctx.globalAlpha = a;
   const g = makeGeom(E, x, y, w, h, 'tile', k);
@@ -204,6 +229,7 @@ function paintTile(E: Engine, ctx: CanvasRenderingContext2D, v: View, T: TileNod
   }
   lensMarks(E, ctx, g, f, st);
   ctx.globalAlpha = a;
+  if (unk > 0.004) unknownFill(ctx, th, g.body.x, g.body.y, g.body.w, g.body.h, u, a * Math.min(1, unk));
   ctx.textBaseline = 'alphabetic';
   if (!g.text) { ctx.globalAlpha = 1; return; }
   // text ramps in over a few px instead of popping; the two layouts hand over in sequence (below)
@@ -264,7 +290,8 @@ function paintTile(E: Engine, ctx: CanvasRenderingContext2D, v: View, T: TileNod
 
 function ribSeg(E: Engine, ctx: CanvasRenderingContext2D, f: Feature, x: number, y: number, w: number, h: number, a0: number, k: number) {
   const S = E.S, th = E.th, st = stageAt(f, S.t, E.M.P.asOf);
-  const aa = (E.dimFn && !E.dimFn(f) ? 0.13 : 1) * a0; if (aa <= 0.01) return;
+  const fade = st && E.isNow ? lensVerdict(E, f) : (unknownW = 0, 1), unk = unknownW;
+  const aa = (E.dimFn && !E.dimFn(f) ? 0.13 : 1) * a0 * fade; if (aa <= 0.01) return;
   if (patchMiss(x, y, w, h, 12)) return;
   if (E.isNow && E.M.sim.has) E.watch.tile(E, true, f, x, y, w, h);
   ctx.globalAlpha = aa;
@@ -282,7 +309,10 @@ function ribSeg(E: Engine, ctx: CanvasRenderingContext2D, f: Feature, x: number,
     const ds = clamp((w * 0.9) / 9, 4 * E.U, 8 * E.U), xw = x + w * 0.9; ctx.fillStyle = th.delta; ctx.beginPath();
     ctx.moveTo(xw + 1, y - ds * 1.2); ctx.lineTo(xw + 1 + ds * 0.7, y + ds * 0.3); ctx.lineTo(xw + 1 - ds * 0.7, y + ds * 0.3); ctx.closePath(); ctx.fill();
   }
-  lensMarks(E, ctx, makeGeom(E, x, y, w, h, 'ribbon', k), f, st);
+  const g = makeGeom(E, x, y, w, h, 'ribbon', k);
+  lensMarks(E, ctx, g, f, st);
+  ctx.globalAlpha = aa;
+  if (unk > 0.004) unknownFill(ctx, th, g.body.x, g.body.y, g.body.w, g.body.h, E.U, aa * Math.min(1, unk));
   ctx.globalAlpha = 1;
 }
 

@@ -3,9 +3,10 @@
 // `presentation.line`). In General one slot per enabled lens sits along a fixture's top edge, in
 // registry order, each with a short rail in its lens's line type measuring `presentation.measures`
 // (the composition of all lenses). Choosing a lens lifts the others off the drawing (they fade,
-// shrink and rise a hair) while the chosen glyph slides to the head of the strip and its rail runs the
-// full width: the tile's evidence line. On the site plan (ribbons) a lens draws its rail along each
-// segment's foot and its glyph where that lens is unwell. Nothing here knows a lens id: any lens in
+// shrink and rise a hair) while the chosen glyph slides to the head of the strip and its rail hands over
+// to a fill: the lens's line type laid across the tile body, left to right, up to the measure
+// (docs/blueprint-ui.md, "Lens fill and unknowns"). On the site plan (ribbons) a lens fills each segment
+// the same way and draws its glyph where that lens is unwell. Nothing here knows a lens id: any lens in
 // the map, built-in or custom, is drawn from its manifest alone.
 //
 // The N-slot rule (General strip). The strip is the six-slot grid it always was: a fixture gets a strip
@@ -20,6 +21,7 @@ import { hotHealth, lensLine } from '@/lib/standard/present';
 import { lensAggregate, lensContent } from '@/lib/model/lens';
 import type { FeatureLive, LensChannel, LensExpression, MarkArgs, Rect, TileGeom } from '../types';
 import { flagsOn } from '@/engine/render/flags';
+import { lineFill } from '@/engine/render/patterns';
 import { glyph, healthInk, lineType, railNone, railRest } from './marks';
 import { clamp } from '../base/util';
 
@@ -110,7 +112,7 @@ const END_W = 20;
 
 // ------------------------------------------------------------------------------------------- marks
 function drawTile(s: Spec, a: MarkArgs) {
-  const { ctx, th, tile: t, f } = a, u = t.u, d = s.d, fl = f.lens[d.id];
+  const { ctx, th, tile: t, f } = a, u = t.u, d = s.d, fl = f.lens[d.id], h = fl ? fl.h : 'unmeasured';
   const e = smooth(a.x);
   // Where this lens sits: its General slot, the head of the strip, or a blend (own easing, so the ones
   // that leave barely drift while they fade). Tiles too small for slots only ever show the lone lens.
@@ -121,8 +123,20 @@ function drawTile(s: Spec, a: MarkArgs) {
   const gs = Math.max(6, lerp(Math.min(H - u, sW * 0.5, 8 * u), Math.min(H, 9 * u), e) * lerp(0.55, 1, a.w));
   const cy = bandY(t) + H / 2 - lift, gy = cy - gs / 2;
   const ga = ctx.globalAlpha * a.w;
+  const live = a.live, m = a.now ? s.measure(live) : -1;
+  // The lens view's fill: the lens's line type laid across the body below the band, left to right up to the
+  // measure (a thin rail is unreadable at a glance). It fades in with the expansion while the General rail
+  // fades out, so the tween is one movement both ways. The band above keeps the glyph and the count dots.
+  if (m > 0 && e > 0.004) {
+    const b = t.body, top = bandY(t) + H, fh = b.y + b.h - top, fw = b.w * Math.min(1, m);
+    if (fh >= 2) {
+      lineFill(ctx, th, d.line, b.x, top, fw, fh, u, ga * e);
+      // the measure's end as a hairline, so "how far" has an edge even where the motif is sparse
+      if (m < 1 && fw >= 1) { ctx.globalAlpha = ga * e; ctx.fillStyle = th.inkA(0.55); ctx.fillRect(Math.round(b.x + fw) - 1, top, 1, fh); }
+    }
+  }
   ctx.globalAlpha = ga;
-  glyph(ctx, d.glyph, rx, gy, gs, healthInk(th, fl ? fl.h : 'unmeasured', a.now));
+  glyph(ctx, d.glyph, rx, gy, gs, healthInk(th, h, a.now));
   // on a large fixture the lone lens also leaves its glyph as a faint watermark in a fixed place
   // (right, below the middle): the quiet second echo that tells a glance which lens is up
   if (e > 0.01 && t.text && t.w >= 250 * u && t.h >= 120 * u) {
@@ -132,17 +146,21 @@ function drawTile(s: Spec, a: MarkArgs) {
     ctx.globalAlpha = ga;
   }
   if (!a.now) return;
-  // the rail: this lens's line type over the measured part, a faint hairline over the rest
+  // the General rail: this lens's line type over the measured part, a faint hairline over the rest. It hands
+  // over to the fill as the lens expands; only "nothing measured" (a broken hairline) stays in the lens view,
+  // and not where the lens has no facet ("?") or does not apply (the tile fades): those say it themselves.
   const x0 = rx + gs + 3 * u;
   const endW = s.count ? END_W * u * smooth((a.x - 0.4) / 0.6) : 0;
   const x1 = rx + rw - endW - (endW ? 3 * u : 0);
   if (x1 - x0 < 3 * u) return;
-  const rh = lerp(Math.min(3 * u, H * 0.4), Math.min(5 * u, H * 0.62), e), ry = cy - rh / 2;
-  const live = a.live, m = s.measure(live);
-  const len = m > 0 ? (x1 - x0) * Math.min(1, m) : 0;
-  ctx.globalAlpha = ga * lerp(0.6, 1, e);
-  if (m < 0) railNone(ctx, th, x0, x1, ry, rh, u); else railRest(ctx, th, x0 + len, x1, ry, rh);
-  if (len > 0) lineType(ctx, th, d.line, x0, ry, len, rh, th.inkA(0.92), u);
+  const railA = m < 0 && h !== 'unmeasured' && h !== 'na' ? 1 : 1 - e;
+  if (railA > 0.004) {
+    const rh = lerp(Math.min(3 * u, H * 0.4), Math.min(5 * u, H * 0.62), e), ry = cy - rh / 2;
+    const len = m > 0 ? (x1 - x0) * Math.min(1, m) : 0;
+    ctx.globalAlpha = ga * lerp(0.6, 1, e) * railA;
+    if (m < 0) railNone(ctx, th, x0, x1, ry, rh, u); else railRest(ctx, th, x0 + len, x1, ry, rh);
+    if (len > 0) lineType(ctx, th, d.line, x0, ry, len, rh, th.inkA(0.92), u);
+  }
   if (endW > 0.5 && s.count && fl) {
     const n = live.value(d.id, s.count.key);
     if (typeof n === 'number' && n > 0) {
@@ -156,17 +174,22 @@ function drawTile(s: Spec, a: MarkArgs) {
 function drawRibbon(s: Spec, a: MarkArgs) {
   if (!a.now) return;
   const { ctx, th, tile: t, f, r } = a, u = t.u, d = s.d;
-  // the rail fades in from nothing with the lens's weight (below 2% it is invisible: not worth a raster)
+  // the fill fades in from nothing with the lens's weight (below 2% it is invisible: not worth a raster)
   if (r.w < 3 || a.w < 0.02) return;
   const e = smooth(a.x);
   ctx.globalAlpha *= a.w;
-  // the rail along the segment's foot, growing in from the left as the lens comes up
-  const live = a.live, m = s.measure(live), full = r.w * e, len = m > 0 ? full * Math.min(1, m) : 0;
-  if (m < 0) railNone(ctx, th, r.x, r.x + full, r.y, r.h, u); else railRest(ctx, th, r.x + len, r.x + full, r.y, r.h);
-  if (len > 0) lineType(ctx, th, d.line, r.x, r.y, len, r.h, th.inkA(0.92), u);
+  const h = f.lens[d.id]?.h ?? 'unmeasured';
+  // the segment filled with this lens's line type up to its measure, growing in from the left as the lens
+  // comes up; nothing measured keeps the broken hairline along the foot (not where "?" or the fade says it)
+  const live = a.live, m = s.measure(live);
+  if (m < 0) { if (h !== 'unmeasured' && h !== 'na') railNone(ctx, th, r.x, r.x + r.w * e, r.y, r.h, u); }
+  else if (m > 0) {
+    const b = t.body, fw = b.w * e * Math.min(1, m);
+    lineFill(ctx, th, d.line, b.x, b.y, fw, b.h, u, ctx.globalAlpha);
+    if (m < 1 && fw >= 1) { ctx.fillStyle = th.inkA(0.55); ctx.fillRect(Math.round(b.x + fw) - 1, b.y, 1, b.h); }
+  }
   // the glyph where this lens is unwell, on a small knockout so it reads over any stage fill (unless the
   // engine's trouble flags already stand over the segment)
-  const h = f.lens[d.id]?.h;
   if ((h !== 'bad' && h !== 'watch') || flagsOn()) return;
   const room = r.y - t.body.y - 1, gs = Math.min(room - 2, t.w - 5, 11 * u);
   if (gs < 7) return;

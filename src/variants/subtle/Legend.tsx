@@ -1,12 +1,14 @@
 'use client';
 // The subtle legend: the glyphs and their line types are the whole vocabulary, so the key shows them
-// first (General: the registry order of the strip; a lens: what its rail measures), then the shared
-// legend underneath. Everything here comes from the lens manifests.
-import { useEffect, useRef } from 'react';
-import type { LensDef, ViewId } from '@/lib/data';
+// first (General: the registry order of the strip; a lens: what its fill measures, then the "?" of an
+// unscanned feature and the fade of one the lens has nothing to say about), then the shared legend
+// underneath. Everything here comes from the lens manifests; the swatches use the canvas's own fills.
+import { useEffect, useMemo, useRef } from 'react';
+import type { Feature, LensDef, ViewId } from '@/lib/data';
 import type { LineName } from '@/lib/standard/types';
 import { lensOf } from '@/lib/model/lens';
 import { readTheme } from '@/engine/theme';
+import { lineFill, unknownFill } from '@/engine/render/patterns';
 import { Legend as BaseLegend } from '@/components/Legend';
 import { useEngine } from '@/components/hooks';
 import { useTheme } from '@/components/ThemeToggle';
@@ -35,21 +37,58 @@ function Swatch({ d, w, h, measure }: { d: LensDef; w: number; h: number; measur
   return <canvas ref={ref} style={{ width: w, height: h, flex: '0 0 auto' }} aria-hidden="true" />;
 }
 
-/** What a lens's rail measures, in words, from its manifest. */
-function railWords(d: LensDef): string {
+type TileKind = 'fill' | 'unknown' | 'faded';
+const TW = 46, TH = 28;
+/** A small fixture drawn with the canvas's own fills: the lens fill at 62%, the "?" texture, or a faded tile. */
+function TileSwatch({ d, kind }: { d: LensDef | null; kind: TileKind }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const mode = useTheme();
+  useEffect(() => {
+    const cv = ref.current; if (!cv) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = TW * dpr; cv.height = TH * dpr;
+    const ctx = cv.getContext('2d')!, th = readTheme(dpr).theme;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, TW, TH);
+    ctx.globalAlpha = kind === 'faded' ? 0.35 : 1;
+    ctx.fillStyle = th.tileBase; ctx.fillRect(1, 1, TW - 2, TH - 2);
+    if (kind === 'unknown') unknownFill(ctx, th, 2, 2, TW - 4, TH - 4, 1, 1);
+    else if (d) {
+      glyph(ctx, d.glyph, 4, 3, 8, th.inkA(0.9));
+      const fw = (TW - 6) * 0.62;
+      lineFill(ctx, th, d.line, 3, 12, fw, TH - 15, 1, ctx.globalAlpha);
+      ctx.fillStyle = th.inkA(0.55); ctx.fillRect(Math.round(3 + fw) - 1, 12, 1, TH - 15);
+    }
+    ctx.strokeStyle = th.ink; ctx.lineWidth = 1; ctx.strokeRect(1.5, 1.5, TW - 3, TH - 3);
+  }, [d, kind, mode]);
+  return <canvas ref={ref} style={{ width: TW, height: TH, flex: '0 0 auto' }} aria-hidden="true" />;
+}
+
+/** True when some feature has no measured lens among `ids`: General lays the "?" over it. */
+function anyUnscanned(fs: readonly Feature[], ids: readonly string[]): boolean {
+  return fs.some((f) => {
+    let unknown = false;
+    for (const l of ids) { const h = f.lens[l]?.h ?? 'unmeasured'; if (h === 'unmeasured') unknown = true; else if (h !== 'na') return false; }
+    return unknown;
+  });
+}
+
+/** What a lens's fill measures, in words, from its manifest. */
+function fillWords(d: LensDef): string {
   const m = d.measures;
-  let s = m ? m.label.toLowerCase() : 'nothing (no measured field)';
+  let s = m ? m.label.toLowerCase() + ' progress' : 'nothing measured (no measured field)';
   if (m?.type === 'enum') s += ', ' + m.values[0] + ' to ' + m.values[m.values.length - 1];
   else if (m?.type === 'percent') s += ', 0 to 100%';
   else if (m && m.max !== undefined) s += ', up to ' + m.max;
+  s += ': a ' + LINE_WORD[d.line].toLowerCase() + ' pattern from the left';
   const count = countField(d);
-  if (count) s += '; dots count ' + count.label.toLowerCase() + ' (more than 4 shows 3 dots and a +)';
+  if (count) s += '; dots on the top edge count ' + count.label.toLowerCase() + ' (more than 4 shows 3 dots and a +)';
   return s;
 }
 
 export function SubtleLegend({ view }: { view: ViewId }) {
   const E = useEngine(), P = E.M.P;
   const d = lensOf(P, view);
+  const unscanned = useMemo(() => anyUnscanned(P.features, E.lensIds), [P, E]);
   if (!d) {
     return (
       <>
@@ -58,6 +97,7 @@ export function SubtleLegend({ view }: { view: ViewId }) {
           <div className="sl-grid">
             {P.lenses.map((l) => <div key={l.id}><Swatch d={l} w={48} h={16} measure={0.7} /><span>{l.name}</span></div>)}
           </div>
+          {unscanned && <div className="sl-one"><TileSwatch d={null} kind="unknown" /><span><b>?</b> = no lens has scanned it yet - run a scan</span></div>}
         </div>
         <BaseLegend view={view} />
       </>
@@ -66,7 +106,9 @@ export function SubtleLegend({ view }: { view: ViewId }) {
   return (
     <>
       <div className="sl-key">
-        <div className="sl-one"><Swatch d={d} w={92} h={18} measure={0.62} /><span><b>{LINE_WORD[d.line]}</b> along the top edge: {railWords(d)}. A broken line means not measured.</span></div>
+        <div className="sl-one"><TileSwatch d={d} kind="fill" /><span><b>Fill</b> = {fillWords(d)}. A broken line on the top edge means not measured.</span></div>
+        <div className="sl-one"><TileSwatch d={d} kind="unknown" /><span><b>?</b> = not scanned yet - run a scan</span></div>
+        <div className="sl-one"><TileSwatch d={d} kind="faded" /><span><b>Faded</b> = this lens has nothing here</span></div>
       </div>
       <BaseLegend view={view} />
     </>

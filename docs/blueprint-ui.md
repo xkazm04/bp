@@ -262,6 +262,44 @@ unreadable when zoomed out, so flags are not part of any tile. They are an engin
   knockout while flags are on.
 - `?flags=0` turns the layer off, to compare against the plan without it.
 
+## Lens fill and unknowns (2026-10-13)
+
+The owner's rules: a progress rail as a thin line is unreadable at its size, so a lens view fills the
+tile instead; a feature a lens knows nothing about shows a "?" so a glance says "rescan"; a feature a
+lens has nothing to add to goes transparent.
+
+- **Fill = the lens's measure, in its own line type.** In a lens view (subtle variant, and the manifest
+  channel any variant uses for a custom lens) the lens's `presentation.line` is laid as an ink pattern
+  across the tile body, left to right, up to `lensLine(measures, value)` (enums: position / (count - 1)).
+  The motifs: solid = ruled lines, double = paired rules, dotted = a dot grid, comb = ticks on a base,
+  chain = dash and dot, hatched = back diagonals, dimension = a rule with end ticks. A hairline marks
+  where the measure ends. Ink at about 0.26 alpha (sparse motifs carry a little more ink so every lens
+  reads equally dark): never a hue, so the stage fill beneath stays legible and text on top stays
+  readable in both themes. This is the one sanctioned exception to "a lens never fills a tile": a
+  pattern, not a colour. It starts below the top band, which keeps the lens glyph and the count dots on
+  a clean ground. Ribbon segments (L0/L1) fill the same way, growing in from the left with the lens.
+- **The tween.** General keeps its compact strip rails exactly as before. As a lens expands, its rail
+  fades out while its fill fades in on the same weight (the expansion), so General to lens and back is
+  one movement. A measured headline that is absent (other values are measured) keeps the broken
+  hairline on the top edge in the lens view.
+- **"?" = not scanned yet.** When the feature's health under the dominant lens is `unmeasured` (no
+  facet), a texture of "?" glyphs lies over the tile body. Each glyph is 13 px times UI scale, never
+  under the 12 px floor. A body too small for one cell of the texture gets a single centred "?"; one
+  too small for a 12 px glyph gets nothing (the evidence line still says NOT MEASURED). In General only
+  a feature with no measured lens at all gets the texture (Kettle has none; a live product before its
+  first scan shows it everywhere). The engine draws it (`src/engine/render/plan.ts`), so every variant
+  shows it.
+- **Faded = this lens has nothing here.** When the dominant lens's health is `na` (`applicable: false`
+  or an `applies_when` miss) the whole tile or segment fades to 0.35, in that lens's view only. `na` is
+  never trouble, so a faded feature carries no flag for that lens.
+- **Weights.** The "?" and the fade use the weights the trouble marks crossfade on: General's verdict
+  by (1 - dominance), the dominant lens's by its dominance. Both are part of the static raster (the lens
+  tween re-rasters anyway); nothing changes position.
+- **Patterns are cached.** `src/engine/render/patterns.ts` builds each pattern once per theme object,
+  motif, device resolution and size bucket (UI scale in quarter steps), anchors it to the rect it fills
+  (snapped to a device pixel) and hands it out by number. The per-tile path never calls
+  `createPattern` and allocates nothing.
+
 ## The three variants
 
 These are routes `/v/subtle`, `/v/shaped` and `/v/bold`, plus `/` (the blueprint, subtle) and `/variants` (an index with the three cards
