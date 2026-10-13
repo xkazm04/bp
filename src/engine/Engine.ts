@@ -687,6 +687,8 @@ export class Engine {
   /** Open a rail flyout; the open one again (or null) closes it. */
   setDockTab(t: DockTab | null) { const dtab = t === this.S.dtab ? null : t; this.set(dtab ? { dtab, tl: false } : { dtab }); }
   patch(p: Partial<UIState>) { this.set(p); }
+  /** Show the drawing set or the findings ledger (spark scan-package: WP3 adds the hash and the sleeping plan). */
+  setPage(page: UIState['page'], lv?: UIState['lv']) { this.set(lv ? { page, lv, menu: null } : { page, menu: null }); }
   toggleDock(on?: boolean) {
     const hide = on == null ? !this.S.dockHidden : !on;
     this.store.set(hide ? { dockHidden: hide, dtab: null } : { dockHidden: hide });
