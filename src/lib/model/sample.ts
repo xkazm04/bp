@@ -16,7 +16,10 @@ import { ScanSim } from './scan-sim';
  * `extra` are the session's temporary lenses (kept in the browser, src/lib/scan/temp-lens.ts), appended to the map's.
  */
 export function buildModel(scale: number, now: () => number, lenses?: string | null, extra?: readonly LensEntry[]): Model {
-  const P = buildProduct(loadProduct(lenses, extra), scale);
+  // own copies of the features and their lens records (like buildLiveModel): the scan sim lays readings over them in
+  // place, and the loader's cached structure must stay the map's
+  const S = loadProduct(lenses, extra);
+  const P = buildProduct({ ...S, features: S.features.map((f) => ({ ...f, lens: { ...f.lens } })) }, scale);
   const L = layoutProduct(P);
   const findings = KETTLE_FINDINGS;
   return {
