@@ -26,6 +26,7 @@ Context ids for commit scopes are the `id` fields in `context-map.json` (e.g. `a
 - when a variant CSS source changed: `npm run check:variant-copies` must stay green (copies are generated, see Class C).
 - when `src/app/globals.css` or a theme token changed: `npm run check:tokens`.
 - when `src/engine/chrome.ts`, `rail.css` or `timeline.css` changed: `npm run check:chrome` and `npm run check:timeline-size`.
+- visual (any wave touching `src/engine/**`, `src/components/**`, variant or global CSS): `npm run build && npx next start -p 3123`, then `python scripts/shots.py http://localhost:3123 <scratch-outdir>` (both themes, three widths, page errors, 12 px floor) plus a short Playwright probe of each interaction the wave changed. Read the builders' "needs a browser" lists as the probe agenda.
 - slow: `python scripts/perf.py` (needs a running server) - not part of the nightly gate.
 - builder: `npm run typecheck` plus the `check:*` scripts that cover files in the write set. Never `npm run build` and never `npm run dev` (one tree, one `.next/`).
 
@@ -76,3 +77,4 @@ Context ids for commit scopes are the `id` fields in `context-map.json` (e.g. `a
 - Builder "needs a browser" lists are not optional: the Director's `python scripts/shots.py` + small Playwright probes against `next start -p 3123` caught 3 regressions/defects gates could not (ghosted then vanished tile names from an LOD crossfade, a trackpad classifier misreading Chromium's synthetic wheelDeltaY, a header summary still clipping). Run shots after every wave that touches render or chrome.
 - A "fix" to a visual regression must be re-shot at the SAME view: the first ghosting fix (sequential fade) produced blank tiles at rest mid-band - verify at the exact viewport the bug was seen.
 - Hypothesis-framed directions work: dev-lens-dense-canvas was honestly refuted by its builder with evidence (dense lenses already show 4 parts) instead of shipping redundant chrome.
+- 2026-10-13: the four bullets above were applied to the shared method as perfect 2.8.0 (`/perfect unattended`, hot-file lots, importer-owning moves, the visual integration gate); this overlay gained `## Gates > visual`.
