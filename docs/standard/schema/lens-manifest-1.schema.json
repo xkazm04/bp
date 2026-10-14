@@ -206,13 +206,62 @@
     },
 
     "scan": {
-      "description": "How a scan measures this lens when no built-in method exists (spec 8.2): judge every scoped feature against the instructions.",
+      "description": "How a scan measures this lens when no built-in method exists (spec 8.2): judge every scoped feature against the instructions, or run composed steps in order. Told apart by `method`, so an error names the form that failed.",
+      "type": "object",
+      "required": ["method"],
+      "if": { "properties": { "method": { "const": "steps" } } },
+      "then": { "$ref": "#/$defs/scanSteps" },
+      "else": { "$ref": "#/$defs/scanJudgement" }
+    },
+    "scanJudgement": {
       "type": "object",
       "required": ["method", "instructions"],
       "additionalProperties": false,
       "properties": {
         "method": { "const": "judgement" },
         "instructions": { "type": "string", "minLength": 1 }
+      }
+    },
+    "scanSteps": {
+      "type": "object",
+      "required": ["method", "steps"],
+      "additionalProperties": false,
+      "properties": {
+        "method": { "const": "steps" },
+        "steps": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "$ref": "#/$defs/scanStep" } }
+      }
+    },
+    "scanStep": {
+      "description": "One composed step, told apart by `kind` (spec 8.2). A script's `yields` and a judgement step's lens must name numeric metric fields; the validator checks that.",
+      "type": "object",
+      "required": ["kind"],
+      "if": { "properties": { "kind": { "const": "script" } } },
+      "then": {
+        "type": "object", "required": ["kind", "run", "yields"], "additionalProperties": false,
+        "properties": {
+          "kind": { "const": "script" },
+          "run": { "type": "string", "minLength": 1 },
+          "yields": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/fieldKey" } }
+        }
+      },
+      "else": {
+        "if": { "properties": { "kind": { "const": "skill" } } },
+        "then": {
+          "type": "object", "required": ["kind", "skill"], "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "skill" },
+            "skill": { "const": "conform" },
+            "args": { "type": "string" },
+            "budget": { "type": "integer", "minimum": 1, "maximum": 50 }
+          }
+        },
+        "else": {
+          "type": "object", "required": ["kind", "instructions"], "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "judgement" },
+            "instructions": { "type": "string", "minLength": 1 }
+          }
+        }
       }
     },
 

@@ -289,9 +289,16 @@ copy of each manifest it uses, so the file is self-describing.
 
 Switching a lens off is not deleting it. Removing an entry orphans its facets, and a writer MUST
 keep orphaned facets (section 11). A temporary lens is retired with `enabled: false` and deleted by
-removing its entry; either way its facets stay. The blueprint changes temporary entries only (its
-lens routes refuse a permanent one); every other writer keeps `temporary` and `created_at` like any
-other key of the entry.
+removing its entry; either way its facets stay. Every other writer keeps `temporary` and `created_at`
+like any other key of the entry.
+
+**Project lenses.** A permanent lens a product adds for itself (a registry lens, a cost lens) is an
+entry with `source: "project"`, no `temporary`, and a reverse-DNS id (section 3, `com.xkazm04.registry`).
+It is made straight as a permanent lens, never by promoting a temporary one: an id is never renamed, so
+a `tmp.` lens stays temporary for life. The blueprint writes, edits, retires and deletes `source:
+"project"` entries, temporary or not, and refuses a `builtin` one. A manifest it writes passes the same
+check in either mode (the id form apart): the scan block below, the glyph path rules and the look rule
+of 8.6.
 
 ### 8.2 Lens manifest (`$schema: "lens-manifest/1"`)
 
@@ -307,14 +314,32 @@ other key of the entry.
 | `fields` | Field[] | yes | At least one. Keys unique. |
 | `health` | Health | yes | Section 8.3. |
 | `presentation` | Presentation | yes | Section 8.5. |
-| `scan` | `{method, instructions}` | | How a lens scan measures this lens when no built-in scan method exists. See below. |
+| `scan` | `{method: "judgement", instructions}` \| `{method: "steps", steps}` | | How a lens scan measures this lens when no built-in scan method exists. See below. |
 
-**Scan block.** `scan: { "method": "judgement", "instructions": "<text>" }` (closed; both keys
-required, `instructions` non-empty). A scanner judges every feature in a scan's scope against the
-instructions and writes one reading per numeric `metric` field (method `judgement`); a feature the
-instructions do not touch gets a facet with `applicable: false` ("no impact", health `na`), never a
-zero. A lens without the block can be scanned only by a built-in method (lens-scan v1 has them for
-`development`, `security` and `design`). Readers that do not scan ignore the block.
+**Scan block.** One of two closed forms, told apart by `method`:
+- **Judgement:** `{ "method": "judgement", "instructions": "<text>" }` (both keys required,
+  `instructions` non-empty). A scanner judges every feature in a scan's scope against the
+  instructions and writes one reading per numeric `metric` field it can read.
+- **Steps:** `{ "method": "steps", "steps": [<step>, ...] }`, 1 to 8 steps run in order, each closed
+  and told apart by `kind`:
+
+  | `kind` | Keys | What the scanner does |
+  |---|---|---|
+  | `script` | `run` (non-empty), `yields` (field keys, at least one, unique) | Runs `run` in the product root with the placeholders `{root}`, `{structure}`, `{registry}` and `{features}` filled in (lens-scan's `references/lens-manifest-scan.md` names their values), and reads stdout as JSON rows `[{feature, metric, value, evidence?, applicable?, reason?}]`. A row is a reading with method `static`; `applicable: false` marks the feature as not touched by the lens. A script fills only the fields it `yields`. |
+  | `skill` | `skill` (`"conform"`), `args` (string), `budget` (integer 1..50) | Runs the named skill headless in the same scan; `budget` caps its unit of work (for `conform`, the pairs judged). `conform` is the only skill a step may name. |
+  | `judgement` | `instructions` (non-empty) | Judges every scoped feature against `instructions`, as the judgement form does. |
+
+  A later step sees what earlier ones wrote, so a script can run again after a skill to read what it
+  changed. Every key a script `yields` MUST be a numeric field with a `metric` block (validators error
+  on any other), and a lens with a judgement form or a judgement step MUST have at least one.
+
+Either way, a feature the scan does not touch gets a facet with `applicable: false` ("no impact",
+health `na`) and a reason, never a zero, and an absent reading is unmeasured (8.7). Evidence is
+text: a judged count lists the items it counted, one line each with `file:line`. A count's unit
+comes from the field's `unit`, never from the scanner, so the store cannot drift from the manifest.
+A lens without the block can be scanned only by a built-in method (lens-scan has them for
+`development`, `security` and `design`); the built-in `business`, `operations` and `quality`
+(1.1.0) carry a judgement block. Readers that do not scan ignore the block.
 
 **Field:**
 
@@ -494,7 +519,17 @@ the rollup is `na` when every feature is `na`, else `unmeasured` (also for an em
 
 Renderers MUST draw every name in both sets. A custom `glyph.path` is untrusted input: renderers
 MUST parse it only as a path (for example with `Path2D`), never as markup. The schema limits it
-to path commands and numbers, at most 2048 characters.
+to path commands and numbers, at most 2048 characters. A writer (the blueprint, lens-scan's
+onboarding) also refuses a path that does not parse, one whose end or control points leave the box
+(-0.5..16.5 on both axes, half a unit for the stroke; relative commands are followed, an arc's
+bulge is not), and one of fewer than two strokes, which reads as nothing at 7 px.
+
+**One look per lens.** Lenses differ by glyph and line only, never by colour, so within one product
+no two enabled lenses draw the same glyph AND the same line. Glyphs are the same when they are the
+same name, or paths equal after whitespace is normalised (runs collapse to one space, none around a
+command letter or a comma). A writer refuses a lens whose look another enabled lens already draws
+("lens look `<glyph>` + `<line>` is already drawn by another lens; pick another glyph or line"); the
+same glyph with another line, or another glyph with the same line, is a different look.
 
 ### 8.7 Metric fields (3.1)
 
@@ -559,6 +594,27 @@ so first match keeps every 1.0.0 outcome.
 Security keeps its `openFindings`, `review` and `dataClass` fields: `openFindings` counts the security
 review's open findings, the `findings*` metrics count what a lens scan judged. `standardsPct` is the
 share of the registry and house standards that apply to the feature and that it conforms to.
+
+**Judged metric keys (business, operations and quality 1.1.0).** Each lens gains judgement integers
+and a judgement scan block (8.2) whose instructions say what to read, how to count and what evidence
+to list. The new rules sit after the existing rules of the same health, and a missing value never
+fires one, so every 1.0.0 facet keeps its health.
+
+| Lens | Key | Unit | Better | Rule |
+|---|---|---|---|---|
+| business | `valuePathSteps` | steps | down | (user actions on the feature's main value path) |
+| | `hardcodedRules` | rules | down | (limits, prices, eligibility rules written into the code) |
+| | `unhandledCases` | cases | down | `>= 3` → bad, `>= 1` → watch; the evidence lists each case |
+| operations | `capacityUsers` | users | up | (an **estimate**: the concurrent-user ceiling as built; the evidence names the bottleneck) |
+| | `limitations` | cases | down | `>= 5` → bad, `>= 1` → watch; the evidence lists each limitation |
+| quality | `flowTests` | tests | up | (automated tests that drive a user flow) |
+| | `untestedPaths` | paths | down | `>= 3` → watch |
+| | `brokenTests` | tests | down | `>= 1` → bad (failing or skipped) |
+
+Operations' `applies_when` reads `environment`, which a scan never fills. An absent `environment`
+does not match `in`, so the `not` matches and the lens applies: a scanned feature's readings decide
+its health, while a feature declared `none`, `preview` or `staging` stays `na` whatever was read.
+Quality likewise applies to a feature with no `status`, and stays `na` at stage `idea` or `specified`.
 
 ## 9. Facets
 
@@ -658,7 +714,10 @@ Errors (the file is invalid):
 - `presentation.evidence`/`measures` or a `weighted` rollup naming an unknown field, or a non-numeric
   weight or measure;
 - (3.1) a `metric` block on a non-numeric field, or with a key outside `better`, `method`, `target`,
-  `warn_at` (schema); a variation slug that appears twice within one feature.
+  `warn_at` (schema); a variation slug that appears twice within one feature;
+- a scan block of neither form, or a step outside its kind's keys (schema); a script step yielding a
+  field that is not a numeric metric field, or a judgement form or step on a lens with no numeric
+  metric field (8.2).
 
 Warnings: rules, reasons or `short` texts naming unknown fields, an operand whose type is not the field's
 (`{"field": "specDrift", "eq": "true"}` on a boolean never matches, since there is no coercion), enum operands
@@ -686,8 +745,11 @@ Fixtures in `docs/standard/schema/fixtures/`:
 - Files that must fail: `invalid-stage.json` (unknown stage), `invalid-lens-id.json` (a custom lens
   without a reverse-DNS id), `invalid-two-operators.json` (a condition leaf with two operators),
   `invalid-core-field.json` (a field bound to the core field `owner`, outside the whitelist),
-  `invalid-min-on-string.json` (`min`/`max` on a string field) and `invalid-event-feature-added.events.jsonl`
+  `invalid-min-on-string.json` (`min`/`max` on a string field), `invalid-steps-yields.json` (a steps scan whose
+  script yields `leadsLanded`, a field the lens does not declare) and `invalid-event-feature-added.events.jsonl`
   (a `feature-added` event whose `to` is not a stage).
+- `valid-steps-lens.json`: a project lens (`com.example.registry`) with a steps scan of a script, the
+  `conform` skill with a budget and a judgement, and a custom path glyph.
 
 ## 13. The built-in lenses
 
@@ -696,7 +758,7 @@ Fixtures in `docs/standard/schema/fixtures/`:
 | `business` | standard | `bars` | `double` | `value` (1..5) | weighted by `value` | `stage`, `priority` | always |
 | `design` | simple | `set-square` | `dotted` | `status` (enum) | share 0.25 / 0.15 | `stage` | always (a feature with no screen: `"applicable": false`) |
 | `development` | dense | `brackets` | `comb` | `progressPct` | share 0.25 / 0.15 | | `status` is not `not-started` |
-| `operations` | dense | `pulse` | `chain` | `rolloutPct` | worst-of | | `environment` is not `none`, `preview` or `staging` |
+| `operations` | dense | `pulse` | `chain` | `rolloutPct` | worst-of | | `environment` is not `none`, `preview` or `staging` (absent: applies) |
 | `security` | standard | `padlock` | `hatched` | `dataClass` (enum) | worst-of | `stage` | the review has started, and not (public data, no findings, stage `idea` or `specified`) |
 | `quality` | standard | `check` | `dimension` | `e2ePassPct` | share 0.2 / 0.1 | `stage` | `status` is not `untested`, and stage is not `idea` or `specified` |
 
@@ -704,11 +766,14 @@ Stage-aware rules in the built-ins: business is `bad` for a P0 at `idea`/`specif
 customer requests before it ships, and `watch` when deprecated or when shipped with value ≤ 2;
 security is `bad` for a pending review in `flagged`, `live` or `deprecated`; design is `watch` when
 shipped with the design at `none`, `sketch` or `wireframe`; quality is `watch` when shipped with
-fewer than 3 end-to-end tests.
+fewer than 3 end-to-end tests. The judged metrics of 8.7 add: business `bad` at 3+ unhandled cases
+and `watch` at 1+; operations `bad` at 5+ limitations and `watch` at 1+; quality `bad` at 1+ broken
+test and `watch` at 3+ untested paths.
 
-Versions: business, operations and quality are 1.0.0; development, security and design are 1.1.0,
-which add the metric fields and metric rules of section 8.7 (additive: a 1.0.0 facet evaluates to the
-same health under 1.1.0).
+Versions: all six are 1.1.0. Development, security and design add the measured metric fields and
+metric rules of section 8.7; business, operations and quality add judged metric fields, their rules
+and a judgement scan block (8.2, 8.7). Each is additive: a 1.0.0 facet evaluates to the same health
+under 1.1.0.
 
 The manifests are in `docs/standard/lenses/`; `src/lib/standard/catalog.ts` loads them.
 `node scripts/check-builtin-health.ts` checks the rules against the Kettle sample, handing each

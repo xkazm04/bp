@@ -216,6 +216,17 @@ function checkManifest(m, R, label, kpis) {
     else if (!NUMERIC.has(f.type) && f.type !== 'enum') R.error(`${label}: presentation.measures "${p.measures}" must be a number or an ordered enum`);
     else if (NUMERIC.has(f.type) && f.type !== 'percent' && f.max === undefined) R.warn(`${label}: presentation.measures "${p.measures}" has no max, so the rail cannot be scaled`);
   }
+  // A scan fills numeric metric fields (spec 8.2): a script names the ones it yields, a judgement fills the lens's own.
+  const s = m.scan;
+  if (s) {
+    const isMetric = (k) => { const f = fields.get(k); return !!f && NUMERIC.has(f.type) && !!f.metric; };
+    const judged = m.fields.some((f) => isMetric(f.key));
+    if (s.method === 'judgement' && !judged) R.error(`${label}: a judgement scan needs a numeric metric field to fill`);
+    (s.steps ?? []).forEach((st, i) => {
+      if (st.kind === 'script') for (const k of st.yields) if (!isMetric(k)) R.error(`${label}: scan step ${i + 1} yields "${k}", which is not a numeric metric field`);
+      if (st.kind === 'judgement' && !judged) R.error(`${label}: scan step ${i + 1} is a judgement, but the lens has no numeric metric field to fill`);
+    });
+  }
 }
 
 /** One facet value against its field: type, enum membership, bounds. */

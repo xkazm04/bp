@@ -118,7 +118,7 @@ export interface LensManifest {
   };
   presentation: Presentation;
   /** How a scan measures this lens when no built-in method exists (spec 8.2): judge each feature
-   *  against the instructions. A lens without it can only be scanned by a built-in method. */
+   *  against the instructions, or run composed steps. A lens without it can only be scanned by a built-in method. */
   scan?: LensScan;
 }
 

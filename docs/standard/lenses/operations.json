@@ -1,10 +1,10 @@
 {
   "$schema": "lens-manifest/1",
   "id": "operations",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "Operations",
   "short": "OPS",
-  "description": "Rollout, service levels, latency, errors, incidents, alerting and running cost.",
+  "description": "Rollout, service levels, latency, errors, incidents, alerting and running cost. Measured: an estimated concurrent-user ceiling and the business-case limitations of the feature as built.",
   "reader": { "role": "operations", "density": "dense" },
   "fields": [
     { "key": "environment", "label": "Environment", "type": "enum", "values": ["none", "preview", "staging", "production"],
@@ -19,14 +19,20 @@
     { "key": "incidents30d", "label": "Incidents (30 days)", "type": "integer", "min": 0 },
     { "key": "alerting", "label": "Alerting", "type": "boolean" },
     { "key": "runbook", "label": "Runbook", "type": "boolean" },
-    { "key": "costUsdMonth", "label": "Running cost", "type": "money", "currency": "USD", "min": 0, "unit": "per month" }
+    { "key": "costUsdMonth", "label": "Running cost", "type": "money", "currency": "USD", "min": 0, "unit": "per month" },
+    { "key": "capacityUsers", "label": "Capacity (estimate)", "type": "integer", "unit": "users", "min": 0, "metric": { "better": "up", "method": "judgement" },
+      "description": "An estimate, not a load test: how many people could use the feature at the same time, as built, before it fails or degrades badly. The evidence names the bottleneck." },
+    { "key": "limitations", "label": "Limitations", "type": "integer", "unit": "cases", "min": 0, "metric": { "better": "down", "method": "judgement" },
+      "description": "Business cases a customer or operator would expect the feature to handle that it cannot, as built." }
   ],
   "health": {
     "applies_when": { "not": { "field": "environment", "in": ["none", "preview", "staging"] } },
     "rules": [
       { "when": { "field": "incidents30d", "gte": 2 }, "health": "bad", "reason": "{incidents30d} incidents in 30 days", "short": "{incidents30d} incidents" },
+      { "when": { "field": "limitations", "gte": 5 }, "health": "bad", "reason": "{limitations} business-case limitations as built", "short": "{limitations} limitations" },
       { "when": { "field": "incidents30d", "eq": 1 }, "health": "watch", "reason": "An incident this month", "short": "Incident" },
-      { "when": { "field": "alerting", "eq": false }, "health": "watch", "reason": "No alerting", "short": "No alerting" }
+      { "when": { "field": "alerting", "eq": false }, "health": "watch", "reason": "No alerting", "short": "No alerting" },
+      { "when": { "field": "limitations", "gte": 1 }, "health": "watch", "reason": "{limitations} business-case limitations as built", "short": "{limitations} limitations" }
     ],
     "default": "good",
     "rollup": { "method": "worst-of" }
@@ -37,5 +43,9 @@
     "accent": { "dark": "#45dcd8", "light": "#007a80" },
     "evidence": ["rolloutPct", "p95ms", "errorRatePct", "incidents30d"],
     "measures": "rolloutPct"
+  },
+  "scan": {
+    "method": "judgement",
+    "instructions": "Judge one feature at a time from its code (the files of its contexts and its evidence in the map), its configuration and its deployment files. A feature with no runtime of its own (documentation, build scripts, developer tooling) gets no readings: mark it not applicable with the reason. capacityUsers is an estimate, not a load test: how many people could use the feature at the same time, as built, before it fails or degrades badly. Read its concurrency model (one process or thread, async I/O, worker pools), its storage (a local file or embedded database, connection pools, locks, single-writer designs), the external services it calls and their rate limits or quotas, in-memory state that cannot be shared across instances, and single-actor designs (one desktop window, one command-line session). The ceiling is the tightest of these. Give one integer, rounded to a plausible order of magnitude (1, 10, 50, 100, 1000 and so on) and never more precise than the code supports; the first evidence line names that bottleneck with file:line, the next lines the next tightest. A desktop or command-line app one person runs answers honestly: 1, with that reason. limitations: count business-case limitations of the feature as built, things a customer or operator would reasonably expect it to do that it cannot (one account only, one currency, no undo, no export, no retry after a failed payment, a hard size cap); the evidence lists one short line per limitation with file:line. The capacity ceiling is not counted again as a limitation. Each reading is one integer; 0 is a reading only when you looked and found none."
   }
 }

@@ -66,7 +66,9 @@ const LENS_TEXT = {
 const NOTES = ['Not before the release.', 'Covered by the platform work next month.', 'The owner wants a design pass first.'];
 
 // ------------------------------------------------------------------------------------------- the lenses
-const LENSES = st.lenses.map((d) => ({ d, metrics: d.fields.filter((x) => x.metric && (x.type === 'integer' || x.type === 'number' || x.type === 'percent')) }));
+// only metrics Kettle measures on some feature: a lens whose metric fields Kettle never fills (business, operations and
+// quality 1.1.0) keeps its non-metric findings rather than dropping out
+const LENSES = st.lenses.map((d) => ({ d, metrics: d.fields.filter((x) => x.metric && (x.type === 'integer' || x.type === 'number' || x.type === 'percent') && st.features.some((f) => typeof f.lens[d.id]?.v?.[x.key] === 'number')) }));
 if (!LENSES.length) throw new Error(MAP + ': no enabled lens');
 
 /** The feature's numeric facet value for a field, if the map has one. */

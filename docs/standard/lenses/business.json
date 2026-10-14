@@ -1,10 +1,10 @@
 {
   "$schema": "lens-manifest/1",
   "id": "business",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "Business",
   "short": "BIZ",
-  "description": "Value, customer demand, adoption and the revenue link.",
+  "description": "Value, customer demand, adoption and the revenue link. Measured: steps on the value path, business rules written into code and business cases the code does not handle.",
   "reader": { "role": "business", "density": "standard" },
   "fields": [
     { "key": "value", "label": "Value", "type": "integer", "min": 1, "max": 5, "headline": true,
@@ -21,7 +21,13 @@
       "values": ["idea", "specified", "in-dev", "in-review", "flagged", "live", "deprecated"],
       "source": { "feature": "stage" }, "description": "The feature's lifecycle stage, read from the feature." },
     { "key": "priority", "label": "Priority", "type": "enum", "values": ["P0", "P1", "P2", "P3"],
-      "source": { "feature": "priority" }, "description": "The feature's priority, read from the feature." }
+      "source": { "feature": "priority" }, "description": "The feature's priority, read from the feature." },
+    { "key": "valuePathSteps", "label": "Value path steps", "type": "integer", "unit": "steps", "min": 0, "metric": { "better": "down", "method": "judgement" },
+      "description": "User actions on the feature's main value path, from entering the feature to getting what it is for." },
+    { "key": "hardcodedRules", "label": "Hard-coded rules", "type": "integer", "unit": "rules", "min": 0, "metric": { "better": "down", "method": "judgement" },
+      "description": "Limits, prices, fees and eligibility rules written into the code, where a business owner cannot change them without a release." },
+    { "key": "unhandledCases", "label": "Unhandled cases", "type": "integer", "unit": "cases", "min": 0, "metric": { "better": "down", "method": "judgement" },
+      "description": "Business cases the feature meets in normal use that the code does not handle." }
   ],
   "health": {
     "rules": [
@@ -29,12 +35,16 @@
         "health": "bad", "reason": "Top priority, not started ({stage})", "short": "P0 not started" },
       { "when": { "all": [ { "field": "customerRequests30d", "gte": 15 }, { "field": "stage", "in": ["idea", "specified", "in-dev", "in-review"] } ] },
         "health": "bad", "reason": "{customerRequests30d} customer requests in 30 days and nobody can use it yet", "short": "{customerRequests30d} asks" },
+      { "when": { "field": "unhandledCases", "gte": 3 },
+        "health": "bad", "reason": "{unhandledCases} business cases the code does not handle", "short": "{unhandledCases} unhandled" },
       { "when": { "field": "stage", "eq": "deprecated" },
         "health": "watch", "reason": "Deprecated", "short": "Deprecated" },
       { "when": { "field": "adoptionPct", "lt": 25 },
         "health": "watch", "reason": "Only {adoptionPct}% adoption", "short": "{adoptionPct}% adoption" },
       { "when": { "all": [ { "field": "value", "lte": 2 }, { "field": "stage", "in": ["flagged", "live", "deprecated"] } ] },
-        "health": "watch", "reason": "Shipped, but low value ({value} of 5)", "short": "Low value" }
+        "health": "watch", "reason": "Shipped, but low value ({value} of 5)", "short": "Low value" },
+      { "when": { "field": "unhandledCases", "gte": 1 },
+        "health": "watch", "reason": "{unhandledCases} business cases the code does not handle", "short": "{unhandledCases} unhandled" }
     ],
     "default": "good",
     "rollup": { "method": "weighted", "by": "value" }
@@ -45,5 +55,9 @@
     "accent": { "dark": "#c6ec6e", "light": "#4f7a00" },
     "evidence": ["value", "customerRequests30d", "adoptionPct"],
     "measures": "value"
+  },
+  "scan": {
+    "method": "judgement",
+    "instructions": "Judge one feature at a time from its code (the files of its contexts and its evidence in the map) and the copy its users read. A feature with no business behaviour of its own (build, infrastructure or developer tooling) gets no readings: mark it not applicable with the reason. valuePathSteps: walk the feature's main value path, the shortest route a user takes from entering the feature to getting what it is for, and count the user actions on it (each screen to fill or read, each submit, confirmation or required choice is one step; automatic transitions and redirects are not); the evidence lists the steps in order, one line each with file:line. hardcodedRules: count business rules written into the code as literals that a business owner would want to change without a release: limits, quotas, prices, fees, thresholds, durations, eligibility and role checks; configuration, environment variables, database rows and feature flags do not count, nor do technical constants (timeouts, page sizes, retries); the evidence lists one line per rule: file:line, the value and what it governs. unhandledCases: count business cases the feature meets in normal use that the code does not handle, where an input, state or customer situation falls through to a generic error, a crash, silent data loss or a dead end (a refund on a partly shipped order, a currency the code never formats); the evidence lists one short line per case with the file:line where it would be handled. Count only what the code shows, never a case from a product you imagine. Each reading is one integer; 0 is a reading only when you looked and found none."
   }
 }

@@ -1,6 +1,8 @@
 // Checks the six built-in lens manifests against the Kettle sample: flattens each feature's lens
 // objects into facet values, runs the declarative rules, and compares with the health the sample
-// generator stored. Run: node scripts/check-builtin-health.ts  (Node's type stripping; no build step)
+// generator stored; then holds the 1.1.0 judged metrics (business, operations, quality) to the healths a
+// scanned product's readings must get, with no environment or status filled in.
+// Run: node scripts/check-builtin-health.ts  (Node's type stripping; no build step)
 //
 // The flattening (scripts/sample-facets.ts, shared with the converter) stands in for a producer (a scan,
 // a person): it writes only what the lens object says and omits unknown values instead of writing null.
@@ -45,6 +47,34 @@ for (const m of manifests) {
   for (const line of misses) console.log(`    ${line}`);
 }
 console.log(`\nlowest agreement ${(worst * 100).toFixed(1)}% (target ${TARGET * 100}%)`);
+
+// A scanned product (1.1.0 judgement metrics) fills only the metric fields: no environment, status or adoption.
+// Its readings must still decide health (never na for want of a field the scan does not fill), the new rules
+// fire, and the lens stays na where an applies_when field says so (a Kettle feature in staging).
+const lens = (id: string) => manifests.find((m) => m.id === id)!;
+const SCANNED: [string, Record<string, number | string>, Partial<Feature>, string][] = [
+  ['operations', { capacityUsers: 1, limitations: 0 }, {}, 'good'],
+  ['operations', { capacityUsers: 50, limitations: 2 }, {}, 'watch'],
+  ['operations', { limitations: 6 }, {}, 'bad'],
+  ['operations', { environment: 'staging', limitations: 6 }, {}, 'na'],
+  ['business', { valuePathSteps: 4, hardcodedRules: 7, unhandledCases: 0 }, { stage: 'live', priority: 'P2' }, 'good'],
+  ['business', { unhandledCases: 1 }, { stage: 'live', priority: 'P2' }, 'watch'],
+  ['business', { unhandledCases: 3 }, { stage: 'live', priority: 'P2' }, 'bad'],
+  ['quality', { flowTests: 2, untestedPaths: 1, brokenTests: 0 }, { stage: 'live' }, 'good'],
+  ['quality', { untestedPaths: 3 }, { stage: 'live' }, 'watch'],
+  ['quality', { brokenTests: 1 }, { stage: 'live' }, 'bad'],
+  ['quality', { brokenTests: 1 }, { stage: 'idea' }, 'na'],
+];
+let scanMisses = 0;
+for (const [id, values, feature, want] of SCANNED) {
+  const got = lensHealth(lens(id), { values }, today, { feature });
+  if (got !== want) { scanMisses++; console.log(`    scanned ${id} ${JSON.stringify(values)}: ${got}, expected ${want}`); }
+}
+console.log(`scanned-product readings: ${SCANNED.length - scanMisses} of ${SCANNED.length} healths as expected`);
+if (scanMisses) {
+  console.error('FAIL: a scanned product\'s readings do not evaluate as the 1.1.0 manifests intend');
+  process.exit(1);
+}
 // This is a gate (`npm run check:lens-health`): a lens under the target must fail the run, not just print.
 if (worst < TARGET) {
   console.error(`FAIL: lowest agreement is under the ${TARGET * 100}% target`);

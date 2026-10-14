@@ -1,10 +1,10 @@
 {
   "$schema": "lens-manifest/1",
   "id": "quality",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "Quality",
   "short": "QA",
-  "description": "End-to-end tests and open bugs.",
+  "description": "End-to-end tests and open bugs. Measured: automated tests of the user flows, user paths no test exercises and broken tests.",
   "reader": { "role": "quality", "density": "standard" },
   "fields": [
     { "key": "status", "label": "Tests", "type": "enum", "values": ["untested", "testing", "partial", "failing", "passed"],
@@ -18,7 +18,13 @@
     { "key": "openBugsP3", "label": "Open P3 bugs", "type": "integer", "min": 0 },
     { "key": "stage", "label": "Stage", "type": "enum",
       "values": ["idea", "specified", "in-dev", "in-review", "flagged", "live", "deprecated"],
-      "source": { "feature": "stage" }, "description": "The feature's lifecycle stage, read from the feature." }
+      "source": { "feature": "stage" }, "description": "The feature's lifecycle stage, read from the feature." },
+    { "key": "flowTests", "label": "Flow tests", "type": "integer", "unit": "tests", "min": 0, "metric": { "better": "up", "method": "judgement" },
+      "description": "Automated tests that drive one of the feature's user flows end to end or through its public interface." },
+    { "key": "untestedPaths", "label": "Untested paths", "type": "integer", "unit": "paths", "min": 0, "metric": { "better": "down", "method": "judgement" },
+      "description": "User-visible paths (a main flow, a branch, an error a user can see) that no test exercises." },
+    { "key": "brokenTests", "label": "Broken tests", "type": "integer", "unit": "tests", "min": 0, "metric": { "better": "down", "method": "judgement" },
+      "description": "The feature's tests that fail or are skipped." }
   ],
   "health": {
     "applies_when": { "all": [
@@ -28,10 +34,12 @@
     "rules": [
       { "when": { "field": "status", "eq": "failing" }, "health": "bad", "reason": "End-to-end tests failing", "short": "E2E failing" },
       { "when": { "field": "openBugsP1", "gt": 0 }, "health": "bad", "reason": "{openBugsP1} open P1 bugs", "short": "{openBugsP1} P1 bugs" },
+      { "when": { "field": "brokenTests", "gte": 1 }, "health": "bad", "reason": "{brokenTests} tests failing or skipped", "short": "{brokenTests} broken tests" },
       { "when": { "field": "status", "eq": "partial" }, "health": "watch", "reason": "Tests only partly pass", "short": "Tests partly pass" },
       { "when": { "field": "e2ePassPct", "lt": 100 }, "health": "watch", "reason": "{e2ePassing} of {e2eTests} end-to-end tests pass", "short": "{e2ePassing}/{e2eTests} E2E" },
       { "when": { "all": [ { "field": "stage", "in": ["flagged", "live", "deprecated"] }, { "field": "e2eTests", "lt": 3 } ] },
-        "health": "watch", "reason": "Shipped with only {e2eTests} end-to-end tests", "short": "Few E2E tests" }
+        "health": "watch", "reason": "Shipped with only {e2eTests} end-to-end tests", "short": "Few E2E tests" },
+      { "when": { "field": "untestedPaths", "gte": 3 }, "health": "watch", "reason": "{untestedPaths} user paths no test exercises", "short": "{untestedPaths} untested" }
     ],
     "default": "good",
     "rollup": { "method": "share", "watch": 0.2, "bad": 0.1 }
@@ -42,5 +50,9 @@
     "accent": { "dark": "#7cc0ff", "light": "#1f5fbf" },
     "evidence": ["e2ePassPct", "openBugsP1", "openBugsP2"],
     "measures": "e2ePassPct"
+  },
+  "scan": {
+    "method": "judgement",
+    "instructions": "Judge one feature at a time from its tests: the unit, integration and end-to-end files that exercise its code, found through imports and through the routes, components and commands of its contexts. A feature with no behaviour to test (documentation, static assets) gets no readings: mark it not applicable with the reason. flowTests: count automated tests that drive one of the feature's user flows end to end or through its public interface (a Playwright or Cypress spec, an API or command test that walks a flow); a unit test of a helper does not count; the evidence lists one line per test: file:line and the test's name. untestedPaths: list the feature's user-visible paths (each main flow, each branch a user can take, each error a user can see) and count those no test exercises; the evidence lists one line per untested path with the file:line of its code. brokenTests: count the feature's tests that fail or are skipped (skip, todo, a focused only that silences the rest, a test commented out), from the latest test output the repo keeps and otherwise from the skip markers in the source; the evidence lists one line per test: file:line, its name, and failing or skipped. Never run a suite that writes outside the repo, and never count a test you did not find. Each reading is one integer; 0 is a reading only when you looked and found none."
   }
 }

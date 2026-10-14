@@ -1,0 +1,38 @@
+{
+  "$schema": "lens-manifest/1",
+  "id": "com.example.registry",
+  "version": "0.1.0",
+  "name": "Registry (bad steps)",
+  "short": "REG",
+  "description": "How the product is registered in a shared registry, and how far its topics cover the product's contexts.",
+  "reader": { "role": "platform", "density": "standard" },
+  "fields": [
+    { "key": "registered", "label": "Registered", "type": "integer", "min": 0, "max": 1, "metric": { "better": "up", "method": "static" },
+      "description": "1 when the product is in the registry's project list." },
+    { "key": "topicsMapped", "label": "Topics mapped", "type": "integer", "unit": "topics", "min": 0, "metric": { "better": "up", "method": "static" } },
+    { "key": "conformantPct", "label": "Conformant", "type": "percent", "metric": { "better": "up", "method": "static" } },
+    { "key": "deviations", "label": "Deviations", "type": "integer", "unit": "deviations", "min": 0, "metric": { "better": "down", "method": "judgement" } }
+  ],
+  "health": {
+    "rules": [
+      { "when": { "field": "registered", "eq": 0 }, "health": "bad", "reason": "Not registered", "short": "Not registered" },
+      { "when": { "field": "deviations", "gte": 1 }, "health": "watch", "reason": "{deviations} deviations from the registry", "short": "{deviations} deviations" }
+    ],
+    "default": "good",
+    "rollup": { "method": "worst-of" }
+  },
+  "presentation": {
+    "glyph": { "path": "M2 3h12v10H2zM5 6h6M5 9h4" },
+    "line": "solid",
+    "evidence": ["topicsMapped", "conformantPct", "deviations"],
+    "measures": "conformantPct"
+  },
+  "scan": {
+    "method": "steps",
+    "steps": [
+      { "kind": "script", "run": "node {registry}/scripts/registry-lens.mjs --path {root} --structure {structure} --json", "yields": ["registered", "topicsMapped", "leadsLanded"] },
+      { "kind": "skill", "skill": "conform", "budget": 6 },
+      { "kind": "judgement", "instructions": "Count the feature's deviations from the registry topics it maps to; the evidence lists one line per deviation with file:line." }
+    ]
+  }
+}
