@@ -8,8 +8,10 @@ builds the product. People watch the swarm, answer its questions where they aris
 This is the standalone home of the blueprint. Integrations with Personas and other apps will take
 subsets of it later. **Status: a working prototype. The design and the product are far from final.**
 
-![General view, dark](docs/img/general-dark.png)
-![Security lens, light theme](docs/img/security-light.png)
+| General view, dark theme | Security lens, light theme |
+|---|---|
+| ![General view, dark](docs/img/general-dark.png) | ![Security lens, light theme](docs/img/security-light.png) |
+| *Whole product at site zoom: five wings, per-wing health counts, and the people-questions queue on the right.* | *Same plan zoomed to one bay under the Security lens: fixtures show the lens's marks, and the questions queue is filtered to security.* |
 
 All data is sample data (a fictional product, *Kettle*, with 132 features), and the swarm is a
 simulation.
