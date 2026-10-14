@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS shots (
   id             INTEGER PRIMARY KEY,
   run_id         TEXT NOT NULL REFERENCES runs(id),
   feature        TEXT NOT NULL,
-  path           TEXT NOT NULL,  -- relative to the store dir: shots/<feature>/<run>-<size>-<theme>.png
+  path           TEXT NOT NULL,  -- relative to the store dir: shots/<run>/<feature>-<theme>-<size>.png
   size           TEXT,
   theme          TEXT,
   harness_module TEXT,

@@ -1,6 +1,6 @@
 // GET /api/products/[slug]/shots/[...path]: a screenshot (or recording) from the product's store, by
 // its path under `<store>/shots`. A Shot row's `path` is relative to the store dir
-// (`shots/<feature>/<run>-<size>-<theme>.png`); its leading `shots/` may be kept or dropped in the URL.
+// (`shots/<run>/<feature>-<theme>-<size>.png`); its leading `shots/` may be kept or dropped in the URL.
 // Anything that would resolve outside `<store>/shots` is refused with 403: `..`, `.`, empty, absolute or
 // drive segments, separators smuggled in an encoded segment (`..%2F..`), NUL, and symlinks pointing out.
 import fs from 'node:fs';

@@ -87,7 +87,7 @@ export interface Shot {
   id: number;
   run_id: string;
   feature: string;
-  /** Relative to the store directory: `shots/<feature>/<run>-<size>-<theme>.png`. */
+  /** Relative to the store directory: `shots/<run>/<feature>-<theme>-<size>.png`. */
   path: string;
   size?: string;
   theme?: string;

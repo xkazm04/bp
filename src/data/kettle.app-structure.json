@@ -7038,6 +7038,7 @@
             "key": "axeViolations",
             "label": "Axe violations",
             "type": "integer",
+            "unit": "violations",
             "min": 0,
             "metric": {
               "better": "down",
@@ -7049,6 +7050,7 @@
             "key": "undesignedStates",
             "label": "Undesigned states",
             "type": "integer",
+            "unit": "states",
             "min": 0,
             "metric": {
               "better": "down",
@@ -7060,6 +7062,7 @@
             "key": "rawLiterals",
             "label": "Raw literals",
             "type": "integer",
+            "unit": "literals",
             "min": 0,
             "metric": {
               "better": "down",
@@ -7083,6 +7086,7 @@
             "key": "consoleErrors",
             "label": "Console errors",
             "type": "integer",
+            "unit": "errors",
             "min": 0,
             "metric": {
               "better": "down",
@@ -7292,6 +7296,7 @@
             "key": "files",
             "label": "Files",
             "type": "integer",
+            "unit": "files",
             "min": 0,
             "metric": {
               "better": "down",
@@ -7314,6 +7319,7 @@
             "key": "depCount",
             "label": "Dependencies",
             "type": "integer",
+            "unit": "packages",
             "min": 0,
             "metric": {
               "better": "down",
@@ -7349,6 +7355,7 @@
             "key": "dupSites",
             "label": "Duplicated sites",
             "type": "integer",
+            "unit": "sites",
             "min": 0,
             "metric": {
               "better": "down",
@@ -7741,6 +7748,7 @@
             "key": "findingsCritical",
             "label": "Critical findings",
             "type": "integer",
+            "unit": "findings",
             "min": 0,
             "metric": {
               "better": "down",
@@ -7752,6 +7760,7 @@
             "key": "findingsHigh",
             "label": "High findings",
             "type": "integer",
+            "unit": "findings",
             "min": 0,
             "metric": {
               "better": "down",
@@ -7763,6 +7772,7 @@
             "key": "findingsMedium",
             "label": "Medium findings",
             "type": "integer",
+            "unit": "findings",
             "min": 0,
             "metric": {
               "better": "down",
@@ -7773,6 +7783,7 @@
             "key": "findingsLow",
             "label": "Low findings",
             "type": "integer",
+            "unit": "findings",
             "min": 0,
             "metric": {
               "better": "down",
@@ -7783,6 +7794,7 @@
             "key": "secretHits",
             "label": "Secrets in code",
             "type": "integer",
+            "unit": "hits",
             "min": 0,
             "metric": {
               "better": "down",
@@ -7794,6 +7806,7 @@
             "key": "unsafeSinks",
             "label": "Unsafe sinks",
             "type": "integer",
+            "unit": "sinks",
             "min": 0,
             "metric": {
               "better": "down",
