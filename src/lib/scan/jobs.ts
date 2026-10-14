@@ -53,6 +53,19 @@ export const PROJECT_LENS_ID = /^[a-z]{2,}(?:\.[a-z0-9-]+){2,}$/;
 /** Most features one `selection` scan may name. */
 export const MAX_SELECTION = 200;
 
+/** A glyph+line pair, as checkLensManifest's `taken` lists it (src/lib/scan/manifest-check.ts TakenLook). */
+export interface LensLook { glyph: string | { path: string }; line: string }
+
+/** The looks of the enabled lenses other than `id`: what a new lens may not repeat. Entries without a presentation are skipped. */
+export function takenLooks(entries: readonly Pick<LensEntry, 'id' | 'enabled' | 'manifest'>[], id: string): LensLook[] {
+  const out: LensLook[] = [];
+  for (const e of entries) {
+    const p = e.enabled && e.id !== id ? e.manifest?.presentation : undefined;
+    if (p && p.glyph !== undefined && typeof p.line === 'string') out.push({ glyph: p.glyph, line: p.line });
+  }
+  return out;
+}
+
 /** A temporary lens id: `tmp.<kebab>`. */
 export const TEMP_LENS_ID = /^tmp\.[a-z0-9][a-z0-9-]{1,40}$/;
 /** Lens ids, feature slugs and place ids that may reach a spawned command line. */

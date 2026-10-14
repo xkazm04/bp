@@ -1,22 +1,24 @@
-// Temporary-lens writes to a live product's map (`<root>/.ai/lens-scan/app-structure.json`, spec 8.1): add
-// one, retire or restore it (`enabled`), delete its entry. Only `temporary` entries are ever changed; facets
-// are never touched (a deleted lens's facets stay, orphaned, as the spec asks). The file is read, changed and
-// rewritten atomically (a temp file in the same directory, then a rename), keeping key order, unknown keys,
-// its indentation and line endings; a file that does not parse is never overwritten. The stream's `map`
-// event then tells every client (the rename moves the rev). Server-only: the lens routes import it.
+// Project-lens writes to a live product's map (`<root>/.ai/lens-scan/app-structure.json`, spec 8.1): add a
+// temporary or permanent project lens, retire or restore it (`enabled`), delete its entry. Only `source:
+// 'project'` entries are ever changed (built-ins never); facets are never touched (a deleted lens's facets
+// stay, orphaned, as the spec asks). The file is read, changed and rewritten atomically (a temp file in the
+// same directory, then a rename), keeping key order, unknown keys, its indentation and line endings; a file
+// that does not parse is never overwritten. The stream's `map` event then tells every client (the rename
+// moves the rev). Server-only: the lens routes import it.
 import fs from 'node:fs';
 import path from 'node:path';
 import type { LensEntry, LensManifest } from '@/lib/standard/types';
 import { storeDir } from './products.server';
+import { takenLooks, type LensLook } from './jobs';
 import type { ProductEntry } from './types';
 
 if (typeof window !== 'undefined') throw new Error('lens-write.server.ts is server-only');
 
-export type LensWrite<T> = { ok: true; value: T } | { ok: false; status: 403 | 404 | 409 | 500; error: string };
+export type LensWrite<T> = { ok: true; value: T } | { ok: false; status: 400 | 403 | 404 | 409 | 500; error: string };
 type Doc = Record<string, unknown> & { lenses?: unknown };
 interface Read { doc: Doc; indent: string; eol: string }
 
-const fail = (status: 403 | 404 | 409 | 500, error: string): { ok: false; status: typeof status; error: string } => ({ ok: false, status, error });
+const fail = (status: 400 | 403 | 404 | 409 | 500, error: string): { ok: false; status: typeof status; error: string } => ({ ok: false, status, error });
 const mapFile = (p: ProductEntry): string => path.join(storeDir(p), 'app-structure.json');
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
@@ -59,38 +61,47 @@ function edit<T>(p: ProductEntry, change: (lenses: Record<string, unknown>[], do
   return res;
 }
 
-/** The temporary entry `id`, or why it cannot be changed (404 unknown, 403 permanent). */
-function temporary(lenses: Record<string, unknown>[], id: string): LensWrite<number> {
+/** The project entry `id`, or why it cannot be changed (404 unknown, 403 built-in). */
+function projectEntry(lenses: Record<string, unknown>[], id: string): LensWrite<number> {
   const i = lenses.findIndex((e) => isObj(e) && e.id === id);
   if (i < 0) return fail(404, `no lens ${id}`);
-  if (lenses[i].temporary !== true) return fail(403, `lens ${id} is not temporary; the blueprint changes temporary lenses only`);
+  if (lenses[i].source !== 'project') return fail(403, `lens ${id} is built in; the blueprint changes project lenses only`);
   return { ok: true, value: i };
 }
 
-/** Append a temporary lens (the manifest has passed checkTempManifest). 409 when the id exists. */
-export function addTempLens(p: ProductEntry, manifest: LensManifest): LensWrite<LensEntry> {
+/**
+ * Append a lens: a temporary one (`temporary: true`, a tmp.* id) or a permanent project lens (reverse-DNS id).
+ * `check` sees the manifest and the looks of the map's other enabled lenses, read in the same edit, and answers
+ * null or why the manifest is refused (400). 409 when the id exists, whatever its source.
+ */
+export function addLens(p: ProductEntry, manifest: LensManifest, temporary: boolean, check: (taken: LensLook[]) => string | null): LensWrite<LensEntry> {
   return edit(p, (lenses) => {
+    const entries = lenses.filter((e): e is Record<string, unknown> & LensEntry => isObj(e) && typeof e.id === 'string' && isObj(e.manifest));
+    const bad = check(takenLooks(entries, manifest.id));
+    if (bad) return fail(400, bad);
     if (lenses.some((e) => isObj(e) && e.id === manifest.id)) return fail(409, `lens ${manifest.id} already exists`);
-    const entry: LensEntry = { id: manifest.id, version: manifest.version, source: 'project', enabled: true, temporary: true, created_at: new Date().toISOString(), manifest };
+    const entry: LensEntry = temporary
+      ? { id: manifest.id, version: manifest.version, source: 'project', enabled: true, temporary: true, created_at: new Date().toISOString(), manifest }
+      : { id: manifest.id, version: manifest.version, source: 'project', enabled: true, created_at: new Date().toISOString(), manifest };
     lenses.push(entry as unknown as Record<string, unknown>);
     return { ok: true, value: entry };
   });
 }
 
-/** Retire (false) or restore (true) a temporary lens. */
-export function setTempLensEnabled(p: ProductEntry, id: string, enabled: boolean): LensWrite<LensEntry> {
+/** Retire (false) or restore (true) a project lens, temporary or permanent. */
+export function setLensEnabled(p: ProductEntry, id: string, enabled: boolean): LensWrite<LensEntry> {
   return edit(p, (lenses) => {
-    const t = temporary(lenses, id);
+    const t = projectEntry(lenses, id);
     if (!t.ok) return t;
     lenses[t.value].enabled = enabled;
     return { ok: true, value: lenses[t.value] as unknown as LensEntry };
   });
 }
 
-/** Remove a temporary lens's entry; its facets stay (spec 8.1). */
-export function deleteTempLens(p: ProductEntry, id: string): LensWrite<{ id: string }> {
+/** Remove a project lens's entry, temporary or permanent; its facets stay (spec 8.1). */
+export function deleteLens(p: ProductEntry, id: string): LensWrite<{ id: string }> {
   return edit(p, (lenses) => {
-    const t = temporary(lenses, id);
+    const t = projectEntry(lenses, id);
     if (!t.ok) return t;
     lenses.splice(t.value, 1);
     return { ok: true, value: { id } };

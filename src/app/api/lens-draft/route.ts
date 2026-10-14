@@ -1,16 +1,21 @@
-// POST /api/lens-draft, body `{ product: <slug> | 'kettle', message (1..4000 chars), session? }`: one turn of the
-// temporary-lens onboarding chat. Runs `claude -p --output-format json --dangerously-skip-permissions [--resume
-// <session>]` in the product repo (Kettle: the blueprint repo, whose sample map Claude reads), the message on
-// stdin; the first turn (no session) carries the onboarding contract (src/lib/scan/lens-draft.ts) before it.
-// 200 `{ session, reply, done: false }` (a question), `{ session, reply, draft, done: true }` (a valid manifest
-// in a ```lens-manifest block), `{ session, reply, done: false, error }` (a block that failed the check: the chat
-// goes on). 400 for a bad body; 404 for an unknown product; 502 when the CLI failed; 503 when it is not
+// POST /api/lens-draft, body `{ product: <slug> | 'kettle', message (1..4000 chars), session?, kind?: 'project' |
+// 'temporary' }`: one turn of the lens onboarding chat (kind 'project' by default: a permanent reverse-DNS lens).
+// Runs `claude -p --output-format json --dangerously-skip-permissions [--resume <session>]` in the product repo
+// (Kettle: the blueprint repo, whose sample map Claude reads), the prompt on stdin. The first turn (no session) is
+// `/lens-scan onboard --draft-only [--temporary]` followed by the user's message: the onboarding contract lives in
+// the lens-scan skill (references/lens-onboarding.md), which prints one fenced `lens-manifest` block when it has a
+// draft, else a question; later turns resume the session with the message alone. The block is checked with
+// checkLensManifest in the kind's mode (with a live product's taken looks). 200 `{ session, reply, done: false }`
+// (a question), `{ session, reply, draft, done: true }` (a valid manifest in a ```lens-manifest block), `{ session,
+// reply, done: false, error }` (a block that failed the check: the chat goes on). 400 for a bad body; 404 for an unknown product; 502 when the CLI failed; 503 when it is not
 // installed; 504 after 3 minutes (the process tree is killed). Kettle runs the real CLI too. Localhost only.
 import path from 'node:path';
 import { findProduct } from '@/lib/scan/products.server';
 import { localOnly, jsonOnly } from '@/lib/scan/local-only';
 import { killTree, spawnCli } from '@/lib/scan/jobs.server';
-import { draftMapPath, onboardingContract, parseDraftReply } from '@/lib/scan/lens-draft';
+import { onboardPrompt, parseDraftReply, type DraftKind } from '@/lib/scan/lens-draft';
+import { readLensesAndFeatures } from '@/lib/scan/lens-write.server';
+import { takenLooks } from '@/lib/scan/jobs';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -40,16 +45,18 @@ export async function POST(req: Request): Promise<Response> {
   if (notJson) return Response.json({ error: notJson }, { status: 415 });
   let body: unknown;
   try { body = await req.json(); } catch { return Response.json({ error: 'body must be JSON' }, { status: 400 }); }
-  const b = (body ?? {}) as { product?: unknown; message?: unknown; session?: unknown };
+  const b = (body ?? {}) as { product?: unknown; message?: unknown; session?: unknown; kind?: unknown };
   if (typeof b.product !== 'string' || !b.product) return Response.json({ error: 'product must be a product slug or "kettle"' }, { status: 400 });
   if (typeof b.message !== 'string' || !b.message.trim() || b.message.length > MAX_MESSAGE) return Response.json({ error: `message must be 1..${MAX_MESSAGE} characters` }, { status: 400 });
   if (b.session !== undefined && (typeof b.session !== 'string' || !SESSION.test(b.session))) return Response.json({ error: 'session must be the id a previous turn answered' }, { status: 400 });
+  if (b.kind !== undefined && b.kind !== 'project' && b.kind !== 'temporary') return Response.json({ error: "kind must be 'project' or 'temporary'" }, { status: 400 });
+  const kind: DraftKind = b.kind ?? 'project';
   const kettle = b.product === 'kettle', p = kettle ? null : findProduct(b.product);
   if (!kettle && !p) return Response.json({ error: `unknown product ${b.product}` }, { status: 404 });
   const cwd = p ? p.root : path.resolve(/* turbopackIgnore: true */ process.cwd());
   const session = b.session as string | undefined;
   const args = ['-p', '--output-format', 'json', '--dangerously-skip-permissions', ...(session ? ['--resume', session] : [])];
-  const prompt = session ? b.message : `${onboardingContract(draftMapPath(kettle))}\n\n---\n\nThe user's request:\n${b.message}`;
+  const prompt = session ? b.message : onboardPrompt(b.message, kind, kettle);
 
   const s = spawnCli(args, cwd);
   if (!s.ok) return Response.json({ error: s.error }, { status: s.missing ? 503 : 500 });
@@ -75,7 +82,9 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: `Claude Code failed: ${why}` }, { status: 502 });
   }
   const sess = res.session ?? session;
-  const d = parseDraftReply(res.result);
+  // a live map's looks are read here; Kettle's are checked when the draft is accepted (the browser keeps its lenses)
+  const map = p ? readLensesAndFeatures(p) : null;
+  const d = parseDraftReply(res.result, { mode: kind, taken: map ? takenLooks(map.lenses, '') : [] });
   if (d.draft) return Response.json({ session: sess, reply: d.reply, draft: d.draft, done: true });
   return Response.json(d.error ? { session: sess, reply: d.reply, done: false, error: d.error } : { session: sess, reply: d.reply, done: false });
 }

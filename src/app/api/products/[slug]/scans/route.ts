@@ -2,18 +2,19 @@
 // CLI headless in the product repo (`/lens-scan measure`, src/lib/scan/jobs.server.ts). 202 + the ScanJob; 400
 // `{ error: 'unknown-lens' }` (not an enabled lens of the map), `'no-scan-method'` (no built-in method and no manifest
 // `scan` block), `'bad-scope'` (kind, label, id or features wrong, or a feature the map lacks); 429 when 16 jobs are
-// queued already; 404 for an unknown product or a product without a map. Localhost only.
+// queued already; 404 for an unknown product or a product without a map. A `selection` scope (the ledger's selected
+// features) carries no id and 1..MAX_SELECTION (200) features. Localhost only.
 // GET /api/products/[slug]/scans: the product's ScanJob[], oldest first.
 import { findProduct } from '@/lib/scan/products.server';
 import { localHost, localOnly, jsonOnly } from '@/lib/scan/local-only';
-import { SAFE_ID, scannable, type ScanScope, type ScanScopeKind } from '@/lib/scan/jobs';
+import { MAX_SELECTION, SAFE_ID, scannable, type ScanScope, type ScanScopeKind } from '@/lib/scan/jobs';
 import { enqueueMeasure, list } from '@/lib/scan/jobs.server';
 import { readLensesAndFeatures } from '@/lib/scan/lens-write.server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const KINDS: readonly ScanScopeKind[] = ['feature', 'bay', 'room', 'wing', 'all'];
+const KINDS: readonly ScanScopeKind[] = ['feature', 'bay', 'room', 'wing', 'all', 'selection'];
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
 /** The scope as the job keeps it (unknown keys dropped), or null. Every feature must be a map feature. */
@@ -23,6 +24,7 @@ function parseScope(x: unknown, features: Set<string>): ScanScope | null {
   if (!Array.isArray(x.features) || x.features.length > 2000 || x.features.some((f) => typeof f !== 'string' || !SAFE_ID.test(f) || !features.has(f))) return null;
   const feats = [...new Set(x.features as string[])];
   if (kind === 'all') return x.id === undefined && !feats.length ? { kind, label: x.label.trim(), features: [] } : null;
+  if (kind === 'selection') return x.id === undefined && feats.length && x.features.length <= MAX_SELECTION ? { kind, label: x.label.trim(), features: feats } : null;
   if (typeof x.id !== 'string' || !SAFE_ID.test(x.id) || !feats.length) return null;
   return { kind, id: x.id, label: x.label.trim(), features: feats };
 }

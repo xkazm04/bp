@@ -1,24 +1,27 @@
-// Temporary lenses of the Kettle sample, kept in this browser (a live product keeps them in its map,
-// through the lens routes). Every read and write is wrapped: storage can be absent or refuse. Pure
-// apart from `localStorage` and `window` (both guarded), so a Node check loads it as-is.
+// The Kettle sample's own lenses, kept in this browser: temporary ones (`tmp.*`, `temporary: true`) and permanent
+// project lenses (a reverse-DNS id, no `temporary`). A live product keeps them in its map, through the lens
+// routes. Every read and write is wrapped: storage can be absent or refuse. Pure apart from `localStorage` and
+// `window` (both guarded), so a Node check loads it as-is. The names keep "temp" from when only temporary
+// lenses were kept here, and so does the storage key (a browser's stored lenses survive the change).
 import type { LensEntry } from '@/lib/standard/types';
-import { checkTempManifest } from './manifest-check.ts';
-import { TEMP_LENS_ID } from './jobs.ts';
+import { checkLensManifest } from './manifest-check.ts';
+import { PROJECT_LENS_ID, TEMP_LENS_ID } from './jobs.ts';
 
 export const TEMP_LENS_KEY = 'bp.tmpLenses.kettle';
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
-/** null when `x` is a stored temporary lens entry the model can take; else why not (one phrase). */
+/** null when `x` is a stored lens entry (temporary or project) the model can take; else why not (one phrase). */
 export function tempEntryProblem(x: unknown): string | null {
   if (!isObj(x)) return 'not an object';
-  if (typeof x.id !== 'string' || !TEMP_LENS_ID.test(x.id)) return 'id is not tmp.<kebab>';
+  const temporary = typeof x.id === 'string' && TEMP_LENS_ID.test(x.id);
+  if (!temporary && (typeof x.id !== 'string' || !PROJECT_LENS_ID.test(x.id))) return 'id is neither tmp.<kebab> nor reverse DNS';
   if (typeof x.version !== 'string' || !x.version) return 'no version';
   if (x.source !== 'project') return "source is not 'project'";
   if (typeof x.enabled !== 'boolean') return 'enabled is not a boolean';
-  if (x.temporary !== true) return 'temporary is not true';
+  if (temporary ? x.temporary !== true : x.temporary !== undefined) return temporary ? 'temporary is not true' : 'a project lens carries no temporary';
   if (typeof x.created_at !== 'string' || !Number.isFinite(Date.parse(x.created_at))) return 'created_at is not a date-time';
-  const bad = checkTempManifest(x.manifest);
+  const bad = checkLensManifest(x.manifest, { mode: temporary ? 'temporary' : 'project' });
   if (bad) return 'manifest: ' + bad;
   if ((x.manifest as { id?: unknown }).id !== x.id) return 'the manifest id differs from the entry id';
   return null;
@@ -48,7 +51,7 @@ function readRaw(): string | null {
 // `useSyncExternalStore(subscribeTempLenses, readTempLenses)` re-renders only on a real change.
 let memo: { raw: string | null; list: LensEntry[] } = { raw: null, list: [] };
 
-/** The stored temporary lens entries (enabled or retired). [] when storage is empty, absent or unreadable. */
+/** The stored lens entries, temporary and project (enabled or retired). [] when storage is empty, absent or unreadable. */
 export function readTempLenses(): LensEntry[] {
   const raw = readRaw();
   if (raw !== memo.raw) memo = { raw, list: parseTempLenses(raw) };
@@ -74,7 +77,7 @@ export function addTempLens(entry: LensEntry): void {
   const bad = tempEntryProblem(entry);
   if (bad) throw new Error(`The lens entry is not valid: ${bad}`);
   const list = readTempLenses();
-  if (list.some((e) => e.id === entry.id)) throw new Error(`A temporary lens with id ${entry.id} exists in this browser`);
+  if (list.some((e) => e.id === entry.id)) throw new Error(`A lens with id ${entry.id} exists in this browser`);
   write([...list, entry]);
 }
 

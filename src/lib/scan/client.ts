@@ -254,9 +254,10 @@ export const postProjectLens = (slug: string, manifest: LensManifest, temporary 
 export interface LensExecuteResult { jobs: ScanJob[]; approved: string[]; skipped: { id: string; status: string }[] }
 /** Approve the lens's proposed findings and build them with its approved ones, in execute jobs of at most 50. 409 = nothing to build. */
 export const executeLens = (slug: string, lens: string): Promise<LensExecuteResult> => send(api(slug) + '/lenses/' + encodeURIComponent(lens) + '/execute', 'POST', {});
-/** One turn of the temporary-lens chat: `product` is a slug or 'kettle'; `session` from the previous answer. 504 after 3 minutes. */
-export const postLensDraft = (product: string, message: string, session?: string): Promise<LensDraftAnswer> =>
-  send('/api/lens-draft', 'POST', session ? { product, message, session } : { product, message });
+/** One turn of the lens onboarding chat: `product` is a slug or 'kettle'; `session` from the previous answer; `kind`
+ *  asks for a permanent project lens (the default) or a temporary one. 504 after 3 minutes. */
+export const postLensDraft = (product: string, message: string, session?: string, kind: 'project' | 'temporary' = 'project'): Promise<LensDraftAnswer> =>
+  send('/api/lens-draft', 'POST', { product, message, ...(session ? { session } : {}), kind });
 
 // ------------------------------------------------------------------------------------------- swarm
 const REPLAY_OF: Partial<Record<ActivityKind, ReplayType>> = { measured: 'scan-clean', proposed: 'finding', committed: 'commit', error: 'alert' };

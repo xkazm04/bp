@@ -8,7 +8,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { RUN_NOTE_PREFIX, SAFE_ID, type ScanJob, type ScanScope } from './jobs.ts';
+import { MAX_SELECTION, RUN_NOTE_PREFIX, SAFE_ID, type ScanJob, type ScanScope } from './jobs.ts';
 import { close, openRead } from './store.server.ts';
 
 if (typeof window !== 'undefined') throw new Error('jobs.server.ts is server-only');
@@ -145,6 +145,7 @@ export function enqueueMeasure(slug: string, root: string, lens: string, scope: 
   if (!SAFE_ID.test(lens)) return { ok: false, status: 400, error: 'unknown-lens' };
   const all = scope.kind === 'all';
   if ((!all && !scope.features.length) || scope.features.some((f) => !SAFE_ID.test(f)) || (scope.id !== undefined && !SAFE_ID.test(scope.id))) return { ok: false, status: 400, error: 'bad-scope' };
+  if (scope.kind === 'selection' && (scope.id !== undefined || scope.features.length > MAX_SELECTION)) return { ok: false, status: 400, error: 'bad-scope' };
   const prompt = `/lens-scan measure --lens ${lens}` + (all ? '' : ` --scope ${scope.features.join(',')}`);
   return enqueue(slug, root, { id: jobId(), kind: 'measure', lens, scope, status: 'queued', queued_at: now() }, prompt);
 }
@@ -154,6 +155,15 @@ export function enqueueExecute(slug: string, root: string, ids: string[]): Enque
   if (!ids.length || ids.length > MAX_PROPOSALS || ids.some((i) => !SAFE_ID.test(i))) return { ok: false, status: 400, error: 'bad-ids' };
   const prompt = `/lens-scan execute --proposals ${ids.join(',')}`;
   return enqueue(slug, root, { id: jobId(), kind: 'execute', proposals: [...ids], status: 'queued', queued_at: now() }, prompt);
+}
+
+/** Proposal ids a queued or running execute job of the product is building: a lens execute leaves them alone. */
+export function busyProposals(slug: string): Set<string> {
+  const out = new Set<string>();
+  for (const r of registry.get(slug)?.recs ?? []) {
+    if (r.job.kind === 'execute' && (r.job.status === 'queued' || r.job.status === 'running')) for (const id of r.job.proposals ?? []) out.add(id);
+  }
+  return out;
 }
 
 function pump(slug: string): void {

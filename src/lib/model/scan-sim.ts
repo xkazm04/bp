@@ -5,8 +5,9 @@
 // '@/' value imports, so Node can drive it (the scan-package probes).
 import type { Activity, ActivityKind, Measurement, Proposal, Run, ScanSnapshot } from '@/lib/scan/types';
 import type { ScanJob, ScanScope } from '@/lib/scan/jobs';
-import type { LensField, LensManifest } from '@/lib/standard/types';
-import { RUN_NOTE_PREFIX, TEMP_LENS_ID } from '../scan/jobs.ts';
+import type { LensExecuteResult } from '@/lib/scan/client';
+import type { LensEntry, LensField, LensManifest } from '@/lib/standard/types';
+import { MAX_SELECTION, RUN_NOTE_PREFIX, TEMP_LENS_ID } from '../scan/jobs.ts';
 
 /** What the sim needs of the product: bound once the model is built (`ScanSim.bind`). */
 export interface ScanSimProduct {
@@ -16,13 +17,16 @@ export interface ScanSimProduct {
   manifest(lens: string): LensManifest | undefined;
   /** The value a feature's facet holds now for a lens field (a reading laid over it included), else undefined. */
   value(feature: string, lens: string, key: string): number | undefined;
+  /** Every lens entry of the model, enabled or not: the ids and looks a new Kettle lens may not repeat. Absent = the
+   *  enabled ones `manifest` answers for are all that is known. */
+  lenses?(): readonly LensEntry[];
 }
 
 /** One feature per STEP_MS; an execute job takes about EXEC_MS over all its proposals. */
 const STEP_MS = 1200, EXEC_MS = 15000, TICK_MS = 200, MAX_RUNNING = 3, MAX_QUEUED = 16, MAX_IDS = 50;
 /** Share of features a temporary lens finds nothing to say about (deterministic per feature and lens). */
 const NO_IMPACT = 0.4;
-const KINDS = new Set(['feature', 'bay', 'room', 'wing', 'all']);
+const KINDS = new Set(['feature', 'bay', 'room', 'wing', 'all', 'selection']);
 const NUMERIC = new Set(['number', 'integer', 'percent', 'money']);
 
 /** FNV-1a then one mulberry32 step: a stable 0..1 per string (the fixture scripts' PRNG idea, inline). */
@@ -99,7 +103,8 @@ export class ScanSim {
     if (!P.manifest(lens)) throw refuse(400, 'unknown-lens');
     const all = scope?.kind === 'all', known = new Set(P.order);
     if (!scope || !KINDS.has(scope.kind) || typeof scope.label !== 'string' || !scope.label || !Array.isArray(scope.features)
-      || (all ? scope.features.length > 0 || scope.id !== undefined : !scope.features.length || scope.features.some((f) => !known.has(f)))) throw refuse(400, 'bad-scope');
+      || (all ? scope.features.length > 0 || scope.id !== undefined : !scope.features.length || scope.features.some((f) => !known.has(f)))
+      || (scope.kind === 'selection' && (scope.id !== undefined || scope.features.length > MAX_SELECTION))) throw refuse(400, 'bad-scope');
     if (this.recs.filter((r) => r.job.status === 'queued').length >= MAX_QUEUED) throw refuse(429, 'queue-full');
     const at = this.iso();
     const id = 'sim-' + ++this.nextId;
@@ -124,13 +129,48 @@ export class ScanSim {
       else skipped.push({ id: pid, status: p.status });
     }
     if (!go.length) throw refuse(409, 'Nothing to dispatch: none of them is proposed or approved', { skipped });
-    const id = 'sim-' + ++this.nextId;
-    const job: ScanJob = { id, kind: 'execute', proposals: go, status: 'queued', queued_at: at };
-    this.recs.push({ job, items: go, i: 0, stepAt: 0, step: Math.max(1500, EXEC_MS / go.length), runId: 'run-' + id });
+    const id = this.queueExecute(go, at);
     this.pump();
     this.changed();
     return { job: this.recOf(id)!.job, approved, skipped };
   }
+
+  /**
+   * Execute a lens's backlog, as POST /lenses/<id>/execute does: approve its proposed findings, take its approved
+   * ones (store order), skip the rest with their status (`in-job` for one a queued or running job builds), and queue
+   * execute jobs of at most 50. 400 unknown-lens, 409 nothing to execute, 429 queue-full (the approvals stand).
+   */
+  executeLens(lens: string): LensExecuteResult {
+    const P = this.prod;
+    if (!P) throw refuse(503, 'The sample is still loading');
+    if (!P.manifest(lens)) throw refuse(400, 'unknown-lens');
+    const busy = new Set<string>();
+    for (const r of this.recs) if (r.job.kind === 'execute' && (r.job.status === 'queued' || r.job.status === 'running')) for (const x of r.items) busy.add(x);
+    const approved: string[] = [], go: string[] = [], skipped: { id: string; status: string }[] = [];
+    const at = this.iso();
+    for (const p of this.props.filter((x) => x.lens === lens).sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : a.id < b.id ? -1 : 1))) {
+      if (p.status !== 'proposed' && p.status !== 'approved') { skipped.push({ id: p.id, status: p.status }); continue; }
+      if (busy.has(p.id)) { skipped.push({ id: p.id, status: 'in-job' }); continue; }
+      if (p.status === 'proposed') { this.setProp(p.id, { status: 'approved', decided_by: 'blueprint', decided_at: at, updated_at: at }); approved.push(p.id); }
+      go.push(p.id);
+    }
+    if (!go.length) throw refuse(409, 'nothing to execute', { skipped });
+    const jobs: ScanJob[] = [];
+    let full = false;
+    for (let i = 0; i < go.length; i += MAX_IDS) {
+      if (this.recs.filter((r) => r.job.status === 'queued').length >= MAX_QUEUED) { full = true; break; }
+      jobs.push(this.recOf(this.queueExecute(go.slice(i, i + MAX_IDS), at))!.job);
+      this.pump();
+    }
+    this.changed();
+    if (full) throw refuse(429, 'queue-full', { jobs: jobs.map((j) => this.recOf(j.id)!.job), approved, skipped });
+    return { jobs: jobs.map((j) => this.recOf(j.id)!.job), approved, skipped };
+  }
+
+  /** Every lens entry the bound model knows (enabled or not); [] before bind or when the model gave none. */
+  lensEntries(): readonly LensEntry[] { return this.prod?.lenses?.() ?? []; }
+  /** Whether the model has a lens with this id, enabled or not (as far as it was told). */
+  hasLens(id: string): boolean { return !!this.prod?.manifest(id) || this.lensEntries().some((e) => e.id === id); }
 
   cancel(id: string): ScanJob {
     const r = this.recOf(id);
@@ -157,6 +197,12 @@ export class ScanSim {
   // ------------------------------------------------------------------------------------------ engine
   private iso(t = this.now()): string { return new Date(t).toISOString(); }
   private recOf(id: string): Rec | undefined { return this.recs.find((r) => r.job.id === id); }
+  /** Add a queued execute job over `ids`; answers its id (the caller pumps and notifies). */
+  private queueExecute(ids: string[], at: string): string {
+    const id = 'sim-' + ++this.nextId;
+    this.recs.push({ job: { id, kind: 'execute', proposals: ids, status: 'queued', queued_at: at }, items: ids, i: 0, stepAt: 0, step: Math.max(1500, EXEC_MS / ids.length), runId: 'run-' + id });
+    return id;
+  }
   private prop(id: string | undefined): Proposal | undefined { const i = id === undefined ? undefined : this.pAt.get(id); return i === undefined ? undefined : this.props[i]; }
   private setProp(id: string, patch: Partial<Proposal>) { const i = this.pAt.get(id); if (i !== undefined) this.props[i] = { ...this.props[i], ...patch }; }
   private setJob(r: Rec, patch: Partial<ScanJob>) { r.job = { ...r.job, ...patch }; }

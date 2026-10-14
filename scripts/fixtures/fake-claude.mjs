@@ -6,9 +6,13 @@
 //   --lens fail     prints `boom: failed on purpose` on stderr, exits 3
 //   --lens refuse   prints `lens-scan refused: unknown slug`, exits 0 without a run (a headless refusal)
 //   anything else   writes a run with note `bp-job:<BP_JOB_ID>` into <cwd>/.ai/lens-scan/scan.db, exits 0
-// With `--output-format json` it answers like `claude -p --output-format json` (the lens-draft chat):
+// With `--output-format json` it answers like `claude -p --output-format json` running `/lens-scan onboard --draft-only`
+// (the lens-draft chat):
 //   DRAFT-VALID / DRAFT-INVALID in the prompt -> a reply with a valid / invalid ```lens-manifest block; else a question.
-// The reply says `contract:yes|no` (whether the onboarding contract came first) and `resume:<session|none>`.
+//   The drafted id is the project lens `com.example.money`, or `tmp.money-migration` when the first line carries
+//   `--temporary` (a first turn) or the prompt says TEMPORARY (a later turn); the invalid block's id is `money`.
+// The reply says `onboard:yes|no` (whether the prompt opened with `/lens-scan onboard --draft-only`),
+// `kind:project|temporary` and `resume:<session|none>`.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,7 +26,7 @@ for await (const chunk of process.stdin) input += chunk;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const VALID = {
-  $schema: 'lens-manifest/1', id: 'tmp.money-migration', version: '1.0.0', name: 'Money migration', short: 'MIG',
+  $schema: 'lens-manifest/1', id: 'com.example.money', version: '1.0.0', name: 'Money migration', short: 'MIG',
   description: 'How much of each feature still uses the old money type.', reader: { role: 'tech lead', density: 'simple' },
   fields: [{ key: 'oldMoneySites', label: 'Old money sites', type: 'integer', headline: true, metric: { better: 'down', method: 'judgement' } }],
   health: { rules: [{ when: { field: 'oldMoneySites', gt: 0 }, health: 'watch', reason: '{oldMoneySites} sites left' }], default: 'good', rollup: { method: 'worst-of' } },
@@ -32,9 +36,12 @@ const VALID = {
 
 if (argv.includes('json')) {
   const resume = argv.includes('--resume') ? argv[argv.indexOf('--resume') + 1] : 'none';
-  const tag = `contract:${input.includes('TEMPORARY blueprint lens') ? 'yes' : 'no'} resume:${resume}`;
+  const onboard = /^\/lens-scan onboard --draft-only(?: --temporary)?\r?\n/.test(input);
+  const temp = /^\/lens-scan onboard --draft-only --temporary\r?\n/.test(input) || input.includes('TEMPORARY');
+  const draft = temp ? { ...VALID, id: 'tmp.money-migration' } : VALID;
+  const tag = `onboard:${onboard ? 'yes' : 'no'} kind:${temp ? 'temporary' : 'project'} resume:${resume}`;
   let result = `Which features does the migration touch? (${tag})`;
-  if (input.includes('DRAFT-VALID')) result = `Here is the lens. (${tag})\n\n\`\`\`lens-manifest\n${JSON.stringify(VALID, null, 2)}\n\`\`\`\n`;
+  if (input.includes('DRAFT-VALID')) result = `Here is the lens. (${tag})\n\n\`\`\`lens-manifest\n${JSON.stringify(draft, null, 2)}\n\`\`\`\n`;
   if (input.includes('DRAFT-INVALID')) result = `Here is the lens. (${tag})\n\n\`\`\`lens-manifest\n${JSON.stringify({ ...VALID, id: 'money' })}\n\`\`\``;
   process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result, session_id: 'abcdef12-3456-7890' }));
   process.exit(0);

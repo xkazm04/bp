@@ -5,10 +5,15 @@
 //     and of a running job (its process is gone); the queue cap (429); a missing CLI;
 //   - the prompt goes on stdin, never in argv; an unsafe lens id or feature is refused before anything spawns;
 //   - attachRun by note (`bp-job:<id>` and `bp-job:<id> <more>`, never a bare prefix), and subscribe;
-//   - the lens-draft parser (a valid block, an invalid one, none) and the onboarding chat route over the fake;
-//   - the routes: scans (202 / unknown-lens / no-scan-method / bad-scope), dispatch (approve + one execute job, 409),
-//     lenses (201 / 409 / PATCH / 403 / DELETE, the map's key order and facets kept), and a map carrying the new
-//     temporary entry passes validate-structure while a temporary entry with a reverse-DNS id does not.
+//   - the lens-draft parser (a valid block, an invalid one, none; project and temporary modes, a taken look) and the
+//     onboarding chat route over the fake (`/lens-scan onboard --draft-only [--temporary]` on the first turn);
+//   - the routes: scans (202 / unknown-lens / no-scan-method / bad-scope; a selection of 1..200 features), dispatch
+//     (approve + one execute job, 409), lens execute (approve + jobs of 50 in store order, 409, 400), lenses (project
+//     and temporary 201 / bad reverse DNS 400 / taken look 400 / 409 / PATCH and DELETE of project lenses / built-in
+//     403, the map's key order and facets kept), and a map carrying the new temporary entry passes
+//     validate-structure while a temporary entry with a reverse-DNS id does not;
+//   - Kettle parity: the scan sim's selection scans and lens execute, and addProjectLens over the browser's store.
+// Checks that need WP1's full checkLensManifest (project mode, taken looks) print SKIP while it is the S0 stub.
 // Run: node scripts/check-scan-jobs.ts  (Node's type stripping; no build step). Exit 1 on any failure. ~15 s.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -27,11 +32,16 @@ process.env.BP_CLAUDE_BIN = FAKE;
 const J = await import(pathToFileURL(path.join(ROOT, 'src/lib/scan/jobs.server.ts')).href) as typeof import('../src/lib/scan/jobs.server.ts');
 const { parseDraftReply } = await import(pathToFileURL(path.join(ROOT, 'src/lib/scan/lens-draft.ts')).href) as typeof import('../src/lib/scan/lens-draft.ts');
 const { scopeFeatures } = await import(pathToFileURL(path.join(ROOT, 'src/lib/scan/scope.ts')).href) as typeof import('../src/lib/scan/scope.ts');
+const { checkLensManifest } = await import(pathToFileURL(path.join(ROOT, 'src/lib/scan/manifest-check.ts')).href) as typeof import('../src/lib/scan/manifest-check.ts');
+const { ScanSim } = await import(pathToFileURL(path.join(ROOT, 'src/lib/model/scan-sim.ts')).href) as typeof import('../src/lib/model/scan-sim.ts');
 type ScanJob = import('../src/lib/scan/jobs.ts').ScanJob;
 type ScanScope = import('../src/lib/scan/jobs.ts').ScanScope;
+type Proposal = import('../src/lib/scan/types.ts').Proposal;
 
-let failed = 0, passed = 0;
+let failed = 0, passed = 0, skipped = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) passed++; else { failed++; console.log('FAIL ' + name + (detail ? ': ' + detail : '')); } };
+/** A check that needs the full checkLensManifest (project mode, taken looks): skipped, said so, while it is the S0 stub. */
+const checkIf = (ready: boolean, name: string, ok: () => boolean, detail = () => '') => { if (ready) check(name, ok(), detail()); else { skipped++; console.log('SKIP ' + name + ' (checkLensManifest is still the stub)'); } };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function until(pred: () => boolean, ms = 30000): Promise<boolean> { const t = Date.now() + ms; while (Date.now() < t) { if (pred()) return true; await sleep(50); } return pred(); }
 const job = (slug: string, id: string): ScanJob | undefined => J.list(slug).find((j) => j.id === id);
@@ -49,6 +59,11 @@ const MANIFEST = {
   presentation: { glyph: 'brackets', line: 'comb', measures: 'oldMoneySites' },
   scan: { method: 'judgement', instructions: 'Count the call sites of the old Money type; untouched features are no impact.' },
 };
+/** A permanent project lens: reverse-DNS id, a look of its own. */
+const PROJECT = { ...MANIFEST, id: 'com.example.money', presentation: { glyph: 'padlock', line: 'chain', measures: 'oldMoneySites' } };
+// feature tests on the checker (WP1 lands the full one; the S0 stub checks a temporary manifest only)
+const projectReady = checkLensManifest(PROJECT, { mode: 'project' }) === null;
+const lookReady = checkLensManifest(MANIFEST, { mode: 'temporary', taken: [{ glyph: 'brackets', line: 'comb' }] }) !== null;
 
 try {
   // ------------------------------------------------------------------ queue cap, done, stdin prompt, attach at exit
@@ -138,27 +153,34 @@ try {
 
   // ------------------------------------------------------------------ draft parser
   const block = (o: unknown) => 'Here it is.\n\n```lens-manifest\n' + JSON.stringify(o, null, 2) + '\n```\n\nSay if it fits.';
-  const ok = parseDraftReply(block(MANIFEST));
+  const TMP = { mode: 'temporary' } as const;
+  const ok = parseDraftReply(block(MANIFEST), TMP);
   check('draft: a valid block -> draft, reply without the block', !!ok.draft && ok.draft.id === 'tmp.money-migration' && !ok.error && ok.reply === 'Here it is.\n\nSay if it fits.', JSON.stringify(ok).slice(0, 200));
-  const badId = parseDraftReply(block({ ...MANIFEST, id: 'com.x.money' }));
+  const badId = parseDraftReply(block({ ...MANIFEST, id: 'com.x.money' }), TMP);
   check('draft: invalid manifest -> error says why', !badId.draft && /tmp\.<kebab>/.test(badId.error ?? ''), badId.error);
-  const noScan = parseDraftReply(block({ ...MANIFEST, scan: undefined }));
+  const noScan = parseDraftReply(block({ ...MANIFEST, scan: undefined }), TMP);
   check('draft: no scan block -> error', !noScan.draft && /scan/.test(noScan.error ?? ''), noScan.error);
-  const strField = parseDraftReply(block({ ...MANIFEST, fields: [{ key: 'oldMoneySites', label: 'x', type: 'string', metric: { better: 'down', method: 'judgement' } }] }));
+  const strField = parseDraftReply(block({ ...MANIFEST, fields: [{ key: 'oldMoneySites', label: 'x', type: 'string', metric: { better: 'down', method: 'judgement' } }] }), TMP);
   check('draft: a metric on a non-numeric field -> error', !strField.draft && /not numeric/.test(strField.error ?? ''), strField.error);
-  const notJson = parseDraftReply('Here.\n```lens-manifest\n{ nope\n```');
+  const notJson = parseDraftReply('Here.\n```lens-manifest\n{ nope\n```', TMP);
   check('draft: a block that is not JSON -> error', !notJson.draft && /not valid JSON/.test(notJson.error ?? ''), notJson.error);
-  const twice = parseDraftReply('First try.\n```lens-manifest\n' + JSON.stringify({ ...MANIFEST, id: 'com.x.money' }) + '\n```\nOne value was wrong; corrected:\n```lens-manifest\n' + JSON.stringify(MANIFEST) + '\n```');
+  const twice = parseDraftReply('First try.\n```lens-manifest\n' + JSON.stringify({ ...MANIFEST, id: 'com.x.money' }) + '\n```\nOne value was wrong; corrected:\n```lens-manifest\n' + JSON.stringify(MANIFEST) + '\n```', TMP);
   check('draft: two blocks -> the last (corrected) one wins, no block left in the reply', twice.draft?.id === 'tmp.money-migration' && !twice.error && !twice.reply.includes('```'), JSON.stringify(twice).slice(0, 200));
-  const none = parseDraftReply('Which features does it touch?');
+  checkIf(projectReady, 'draft: project mode takes a reverse-DNS id', () => parseDraftReply(block(PROJECT), { mode: 'project' }).draft?.id === 'com.example.money');
+  checkIf(projectReady, 'draft: project mode refuses a tmp. id', () => !!parseDraftReply(block(MANIFEST), { mode: 'project' }).error);
+  checkIf(lookReady, 'draft: a look another enabled lens draws is refused', () => !!parseDraftReply(block(MANIFEST), { mode: 'temporary', taken: [{ glyph: 'brackets', line: 'comb' }] }).error);
+  const none = parseDraftReply('Which features does it touch?', TMP);
   check('draft: no block -> just the reply', !none.draft && !none.error && none.reply === 'Which features does it touch?');
 
   // ------------------------------------------------------------------ routes
   const pr = repo('prod'), store = path.join(pr, '.ai/lens-scan');
   fs.mkdirSync(store, { recursive: true });
   const lensE = (id: string, source: string, scan?: object, extra: object = {}) => ({ id, version: '1.0.0', source, enabled: true, ...extra, manifest: { id, ...(scan ? { scan } : {}) } });
-  const map = { $schema: 'app-structure/3', version: 3, project: { slug: 'prod', name: 'Prod' }, features: [{ slug: 'a', name: 'A' }, { slug: 'b', name: 'B' }],
-    lenses: [lensE('development', 'builtin'), lensE('com.x.plain', 'project'), lensE('com.x.off', 'project', { method: 'judgement', instructions: 'x' }, { enabled: false })],
+  // 201 more features: one more than a selection may name
+  const many = Array.from({ length: 201 }, (_, i) => 'f' + i);
+  const map = { $schema: 'app-structure/3', version: 3, project: { slug: 'prod', name: 'Prod' }, features: [{ slug: 'a', name: 'A' }, { slug: 'b', name: 'B' }, ...many.map((s) => ({ slug: s, name: s }))],
+    lenses: [lensE('development', 'builtin'), lensE('com.x.plain', 'project'), lensE('com.x.off', 'project', { method: 'judgement', instructions: 'x' }, { enabled: false }),
+      lensE('com.x.exec', 'project'), lensE('com.x.settled', 'project')],
     facets: { a: { 'tmp.gone': { values: { n: 1 } } } }, extensions: { 'com.x.keep': { k: 1 } } };
   fs.writeFileSync(path.join(store, 'app-structure.json'), JSON.stringify(map, null, 2).replace(/\n/g, '\r\n') + '\r\n');
   const w = new DatabaseSync(path.join(store, 'scan.db'));
@@ -167,6 +189,15 @@ try {
   w.prepare("INSERT INTO runs (id, started_at, updated_at, phase, status, lenses) VALUES ('r0', ?, ?, 'measure', 'done', '[]')").run(T, T);
   const prop = w.prepare("INSERT INTO proposals (id, run_id, feature, lens, title, kind, status, created_at, updated_at) VALUES (?, 'r0', 'a', 'development', 't', 'fix', ?, ?, ?)");
   for (const [id, s] of [['p1', 'proposed'], ['p2', 'approved'], ['p3', 'done']]) prop.run(id, s, T, T);
+  // a lens backlog: 55 proposed (created in reverse id order, so the store's created_at order is checked), 1 approved,
+  // 1 declined and 1 done; and a lens whose findings are all settled
+  const lprop = w.prepare("INSERT INTO proposals (id, run_id, feature, lens, title, kind, status, created_at, updated_at) VALUES (?, 'r0', 'a', ?, 't', 'fix', ?, ?, ?)");
+  const at = (i: number) => new Date(Date.parse(T) + i * 1000).toISOString();
+  for (let i = 0; i < 55; i++) lprop.run('x' + String(54 - i).padStart(2, '0'), 'com.x.exec', 'proposed', at(i), at(i));
+  lprop.run('xa', 'com.x.exec', 'approved', at(60), at(60));
+  lprop.run('xd', 'com.x.exec', 'declined', at(61), at(61));
+  lprop.run('xe', 'com.x.exec', 'done', at(62), at(62));
+  lprop.run('s1', 'com.x.settled', 'done', T, T);
   w.close();
   fs.writeFileSync(path.join(dir, 'bp.products.local.json'), JSON.stringify({ products: [{ slug: 'prod', name: 'Prod', root: pr }] }));
   process.chdir(dir);
@@ -192,6 +223,21 @@ try {
   check('POST scans refusals: unknown, disabled, no method, foreign feature, all+features, bad kind, unknown product',
     codes.map((c) => c.status + ':' + (c.body.error ?? '')).join() === '400:unknown-lens,400:unknown-lens,400:no-scan-method,400:bad-scope,400:bad-scope,400:bad-scope,404:unknown product nope',
     codes.map((c) => c.status + ':' + c.body.error).join());
+  const sel = (features: string[], extra: object = {}) => ({ kind: 'selection', label: 'Selection (' + features.length + ')', features, ...extra });
+  const s202sel = await call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'development', scope: sel(['b', 'a']) });
+  check('POST scans selection -> 202, no id, the features kept', s202sel.status === 202 && s202sel.body.scope.kind === 'selection' && s202sel.body.scope.id === undefined && s202sel.body.scope.features.join() === 'b,a', JSON.stringify(s202sel.body));
+  check('selection: the prompt scopes exactly those features', await until(() => /^stdin \/lens-scan measure --lens development --scope b,a$/m.test(job('prod', s202sel.body.id)?.log_tail ?? '')), job('prod', s202sel.body.id)?.log_tail);
+  const s200 = await call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'development', scope: sel(many.slice(0, 200)) });
+  check('selection of 200 features -> 202', s200.status === 202 && s200.body.scope.features.length === 200, String(s200.status));
+  const selBad = await Promise.all([
+    call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'development', scope: sel([]) }),
+    call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'development', scope: sel(many) }),
+    call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'development', scope: sel(['a', 'zz']) }),
+    call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'development', scope: sel(['a'], { id: 'a' }) }),
+    call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'development', scope: sel(['a'], { label: ' ' }) }),
+  ]);
+  check('selection refusals: empty, 201 features, an unknown slug, an id, no label -> 400 bad-scope',
+    selBad.map((c) => c.status + ':' + c.body.error).join() === Array(5).fill('400:bad-scope').join(), selBad.map((c) => c.status + ':' + c.body.error).join());
   const g = await call(scans.GET, '/x', 'GET', { slug: 'prod' });
   check('GET scans lists the job', g.status === 200 && g.body.some((j: ScanJob) => j.id === s202.body.id));
   const del = await route('products/[slug]/scans/[job]/route.ts');
@@ -212,6 +258,30 @@ try {
   check('dispatch with nothing buildable -> 409 with skipped', d409.status === 409 && d409.body.skipped[0]?.status === 'done', JSON.stringify(d409.body));
   check('dispatch bad body -> 400', (await call(disp.POST, '/x', 'POST', { slug: 'prod' }, { ids: [] })).status === 400 && (await call(disp.POST, '/x', 'POST', { slug: 'prod' }, { ids: ['a b'] })).status === 400);
 
+  const exe = await route('products/[slug]/lenses/[id]/execute/route.ts');
+  const ex = await call(exe.POST, '/x', 'POST', { slug: 'prod', id: 'com.x.exec' }, {});
+  const exJobs: ScanJob[] = ex.body.jobs ?? [];
+  const order = Array.from({ length: 55 }, (_, i) => 'x' + String(54 - i).padStart(2, '0')).concat('xa');
+  check('execute a lens -> 202, 2 jobs of 50 and 6 in store order, 55 approved, declined/done skipped', ex.status === 202 && exJobs.length === 2
+    && exJobs[0].proposals?.join() === order.slice(0, 50).join() && exJobs[1].proposals?.join() === order.slice(50).join()
+    && ex.body.approved.length === 55 && !ex.body.approved.includes('xa') && JSON.stringify(ex.body.skipped) === '[{"id":"xd","status":"declined"},{"id":"xe","status":"done"}]',
+  JSON.stringify(ex.body).slice(0, 400));
+  const dbx = new DatabaseSync(path.join(store, 'scan.db'), { readOnly: true });
+  const exRows = dbx.prepare("SELECT status, decided_by FROM proposals WHERE lens = 'com.x.exec' AND id LIKE 'x__'").all() as { status: string; decided_by: string }[];
+  dbx.close();
+  check('execute approved them through the store (decided_by blueprint)', exRows.length === 55 && exRows.every((r) => r.status === 'approved' && r.decided_by === 'blueprint'), JSON.stringify(exRows.slice(0, 2)));
+  check('the execute jobs name their batch on stdin', await until(() => exJobs.length === 2 && exJobs.every((j) => (job('prod', j.id)?.log_tail ?? '').includes('stdin /lens-scan execute --proposals ' + j.proposals!.join(',')))), exJobs.map((j) => job('prod', j.id)?.log_tail).join(' | ').slice(0, 300));
+  const exCodes = await Promise.all([
+    call(exe.POST, '/x', 'POST', { slug: 'prod', id: 'com.x.settled' }, {}),
+    call(exe.POST, '/x', 'POST', { slug: 'prod', id: 'com.x.nope' }, {}),
+    call(exe.POST, '/x', 'POST', { slug: 'prod', id: 'com.x.off' }, {}),
+    call(exe.POST, '/x', 'POST', { slug: 'nope', id: 'com.x.exec' }, {}),
+  ]);
+  check('execute refusals: all settled 409 (skipped), unknown 400, disabled 400, unknown product 404',
+    exCodes.map((c) => c.status + ':' + c.body.error).join() === '409:nothing to execute,400:unknown-lens,400:unknown-lens,404:unknown product nope' && exCodes[0].body.skipped[0]?.status === 'done',
+    exCodes.map((c) => c.status + ':' + c.body.error).join());
+  await until(() => J.list('prod').every((j) => j.status !== 'running' && j.status !== 'queued'));
+
   const lenses = await route('products/[slug]/lenses/route.ts'), one = await route('products/[slug]/lenses/[id]/route.ts');
   const mapFile = path.join(store, 'app-structure.json');
   const l201 = await call(lenses.POST, '/x', 'POST', { slug: 'prod' }, { manifest: MANIFEST });
@@ -221,11 +291,34 @@ try {
   check('POST the same id -> 409', (await call(lenses.POST, '/x', 'POST', { slug: 'prod' }, { manifest: MANIFEST })).status === 409);
   const l400 = await call(lenses.POST, '/x', 'POST', { slug: 'prod' }, { manifest: { ...MANIFEST, id: 'tmp.xx', presentation: { glyph: 'star', line: 'comb' } } });
   check('POST a bad manifest -> 400 with why', l400.status === 400 && /glyph/.test(l400.body.error), JSON.stringify(l400.body));
+  const lt = await call(lenses.POST, '/x', 'POST', { slug: 'prod' }, { manifest: { ...MANIFEST, id: 'tmp.flagged', presentation: { glyph: 'pulse', line: 'dotted' } }, temporary: true });
+  check('POST lenses temporary: true -> 201 temporary entry', lt.status === 201 && lt.body.temporary === true, JSON.stringify(lt.body).slice(0, 200));
+  const lDup = await call(lenses.POST, '/x', 'POST', { slug: 'prod' }, { manifest: { ...MANIFEST, id: 'tmp.copycat' } });
+  checkIf(lookReady, 'POST a lens repeating an enabled lens\'s glyph+line -> 400', () => lDup.status === 400 && !!lDup.body.error, () => JSON.stringify(lDup.body));
+  if (lDup.status === 201) await call(one.DELETE, '/x', 'DELETE', { slug: 'prod', id: 'tmp.copycat' }); // the stub let it in
+  const lp = await call(lenses.POST, '/x', 'POST', { slug: 'prod' }, { manifest: PROJECT });
+  checkIf(projectReady, 'POST a project lens -> 201 permanent entry (source project, created_at, no temporary)', () => lp.status === 201 && lp.body.id === 'com.example.money' && lp.body.source === 'project'
+    && lp.body.enabled === true && typeof lp.body.created_at === 'string' && !('temporary' in lp.body), () => JSON.stringify(lp.body).slice(0, 200));
+  const lp409 = await call(lenses.POST, '/x', 'POST', { slug: 'prod' }, { manifest: PROJECT });
+  checkIf(projectReady, 'POST the same project id -> 409', () => lp409.status === 409, () => JSON.stringify(lp409));
+  const badDns = await Promise.all([
+    call(lenses.POST, '/x', 'POST', { slug: 'prod' }, { manifest: { ...PROJECT, id: 'money' } }),
+    call(lenses.POST, '/x', 'POST', { slug: 'prod' }, { manifest: { ...PROJECT, id: 'com.money' } }),
+    call(lenses.POST, '/x', 'POST', { slug: 'prod' }, { manifest: { ...PROJECT, id: 'Com.Example.Money' } }),
+    call(lenses.POST, '/x', 'POST', { slug: 'prod' }, { manifest: PROJECT, temporary: 'yes' }),
+  ]);
+  check('POST a project lens without a reverse-DNS id -> 400; temporary not a boolean -> 400', badDns.every((c) => c.status === 400 && !!c.body.error), badDns.map((c) => c.status + ':' + c.body.error).join(' | '));
+  check('POST the id of a built-in or project lens -> 409', (await call(lenses.POST, '/x', 'POST', { slug: 'prod' }, { manifest: { ...MANIFEST, id: 'tmp.flagged', presentation: { glyph: 'check', line: 'double' } } })).status === 409);
   const pa = await call(one.PATCH, '/x', 'PATCH', { slug: 'prod', id: 'tmp.money-migration' }, { enabled: false });
-  check('PATCH enabled false -> 200 retired', pa.status === 200 && pa.body.enabled === false && JSON.parse(fs.readFileSync(mapFile, 'utf8')).lenses.at(-1).enabled === false);
-  check('PATCH a permanent lens -> 403', (await call(one.PATCH, '/x', 'PATCH', { slug: 'prod', id: 'development' }, { enabled: false })).status === 403);
+  check('PATCH enabled false -> 200 retired', pa.status === 200 && pa.body.enabled === false && JSON.parse(fs.readFileSync(mapFile, 'utf8')).lenses.find((e: { id: string }) => e.id === 'tmp.money-migration').enabled === false);
+  check('PATCH a built-in lens -> 403', (await call(one.PATCH, '/x', 'PATCH', { slug: 'prod', id: 'development' }, { enabled: false })).status === 403);
   check('PATCH a bad body -> 400', (await call(one.PATCH, '/x', 'PATCH', { slug: 'prod', id: 'tmp.money-migration' }, { enabled: 'no' })).status === 400);
-  check('DELETE a permanent lens -> 403', (await call(one.DELETE, '/x', 'DELETE', { slug: 'prod', id: 'com.x.plain' })).status === 403);
+  const pp = await call(one.PATCH, '/x', 'PATCH', { slug: 'prod', id: 'com.x.plain' }, { enabled: false });
+  const pp2 = await call(one.PATCH, '/x', 'PATCH', { slug: 'prod', id: 'com.x.plain' }, { enabled: true });
+  check('PATCH a permanent project lens -> 200 (retire, restore)', pp.status === 200 && pp.body.enabled === false && pp2.status === 200 && pp2.body.enabled === true, JSON.stringify([pp, pp2]));
+  check('DELETE a built-in lens -> 403', (await call(one.DELETE, '/x', 'DELETE', { slug: 'prod', id: 'development' })).status === 403);
+  const dp = await call(one.DELETE, '/x', 'DELETE', { slug: 'prod', id: 'com.x.plain' });
+  check('DELETE a permanent project lens -> 200, entry gone', dp.status === 200 && !JSON.parse(fs.readFileSync(mapFile, 'utf8')).lenses.some((e: { id: string }) => e.id === 'com.x.plain'), JSON.stringify(dp));
   const dl = await call(one.DELETE, '/x', 'DELETE', { slug: 'prod', id: 'tmp.money-migration' });
   const m3 = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
   check('DELETE a temporary lens -> 200, entry gone, facets kept', dl.status === 200 && dl.body.id === 'tmp.money-migration' && !m3.lenses.some((e: { id: string }) => e.id === 'tmp.money-migration') && m3.facets.a['tmp.gone'].values.n === 1);
@@ -236,22 +329,84 @@ try {
   // the onboarding chat over the fake (json mode): first turn carries the contract, later turns resume
   const draft = await route('lens-draft/route.ts');
   const t1 = await call(draft.POST, '/x', 'POST', {}, { product: 'kettle', message: 'a lens for the money migration' });
-  check('lens-draft first turn: question, session, contract sent', t1.status === 200 && t1.body.done === false && t1.body.session === 'abcdef12-3456-7890' && /contract:yes resume:none/.test(t1.body.reply), JSON.stringify(t1.body));
+  check('lens-draft first turn: question, session, `/lens-scan onboard --draft-only` sent, project by default', t1.status === 200 && t1.body.done === false && t1.body.session === 'abcdef12-3456-7890' && /onboard:yes kind:project resume:none/.test(t1.body.reply), JSON.stringify(t1.body));
   const t2 = await call(draft.POST, '/x', 'POST', {}, { product: 'prod', message: 'DRAFT-VALID please', session: t1.body.session });
-  check('lens-draft resume: valid block -> done with draft, no contract, --resume', t2.status === 200 && t2.body.done === true && t2.body.draft?.id === 'tmp.money-migration' && /contract:no resume:abcdef12-3456-7890/.test(t2.body.reply) && !t2.body.reply.includes('```'), JSON.stringify(t2.body).slice(0, 300));
+  check('lens-draft resume: the message alone, --resume', t2.status === 200 && /onboard:no kind:project resume:abcdef12-3456-7890/.test(t2.body.reply) && !t2.body.reply.includes('```'), JSON.stringify(t2.body).slice(0, 300));
+  checkIf(projectReady, 'lens-draft resume: a valid project block -> done with the draft', () => t2.body.done === true && t2.body.draft?.id === 'com.example.money', () => JSON.stringify(t2.body).slice(0, 300));
+  const tt = await call(draft.POST, '/x', 'POST', {}, { product: 'prod', message: 'DRAFT-VALID', kind: 'temporary' });
+  check('lens-draft kind temporary: `--temporary` sent, a tmp. draft -> done', tt.status === 200 && tt.body.done === true && tt.body.draft?.id === 'tmp.money-migration' && /onboard:yes kind:temporary resume:none/.test(tt.body.reply), JSON.stringify(tt.body).slice(0, 300));
   const t3 = await call(draft.POST, '/x', 'POST', {}, { product: 'kettle', message: 'DRAFT-INVALID', session: t1.body.session });
-  check('lens-draft: invalid block -> done false with error', t3.status === 200 && t3.body.done === false && /tmp\.<kebab>/.test(t3.body.error ?? ''), JSON.stringify(t3.body));
+  check('lens-draft: invalid block -> done false with error', t3.status === 200 && t3.body.done === false && !t3.body.draft && !!t3.body.error, JSON.stringify(t3.body));
+  const t4 = await call(draft.POST, '/x', 'POST', {}, { product: 'kettle', message: 'TEMPORARY DRAFT-INVALID', session: t1.body.session, kind: 'temporary' });
+  check('lens-draft: an invalid temporary block -> error says why', t4.status === 200 && t4.body.done === false && /tmp\.<kebab>/.test(t4.body.error ?? ''), JSON.stringify(t4.body));
   const bads = await Promise.all([
     call(draft.POST, '/x', 'POST', {}, { product: 'kettle', message: '' }),
     call(draft.POST, '/x', 'POST', {}, { product: 'kettle', message: 'x'.repeat(4001) }),
     call(draft.POST, '/x', 'POST', {}, { product: 'kettle', message: 'hi', session: 'abc; calc' }),
+    call(draft.POST, '/x', 'POST', {}, { product: 'kettle', message: 'hi', kind: 'forever' }),
     call(draft.POST, '/x', 'POST', {}, { product: 'nope', message: 'hi' }),
   ]);
-  check('lens-draft refusals: empty, too long, bad session, unknown product', bads.map((b) => b.status).join() === '400,400,400,404', bads.map((b) => b.status).join());
+  check('lens-draft refusals: empty, too long, bad session, bad kind, unknown product', bads.map((b) => b.status).join() === '400,400,400,400,404', bads.map((b) => b.status).join());
   process.env.BP_CLAUDE_BIN = 'bp-no-such-cli-' + process.pid;
   const t503 = await call(draft.POST, '/x', 'POST', {}, { product: 'kettle', message: 'hi' });
   check('lens-draft without the CLI -> 503', t503.status === 503 && t503.body.error === J.CLI_MISSING, JSON.stringify(t503));
   process.env.BP_CLAUDE_BIN = FAKE;
+
+  // ------------------------------------------------------------------ Kettle parity: the scan sim and the browser's lens store
+  const clock = Date.parse(T); // frozen: the sim's jobs start and never step, so what is queued or running stays put
+  const fprop = (id: string, lens: string, status: Proposal['status'], i: number): Proposal => ({ id, run_id: 'r0', feature: 'a', lens, title: 't', standard: 'none', kind: 'fix', status, created_at: at(i), updated_at: at(i) });
+  const findings = [...Array.from({ length: 55 }, (_, i) => fprop('k' + String(54 - i).padStart(2, '0'), 'com.k.exec', 'proposed', i)), fprop('ka', 'com.k.exec', 'approved', 60), fprop('kd', 'com.k.exec', 'declined', 61), fprop('ks', 'com.k.settled', 'done', 62)];
+  type Manifest = import('../src/lib/standard/types.ts').LensManifest;
+  // the model's lenses, each with a look none of the lenses added below draws (but tmp.copy, which repeats tmp.known's)
+  const km = (id: string, glyph: string, line: string) => ({ ...MANIFEST, id, presentation: { glyph, line } }) as unknown as Manifest;
+  const known: Record<string, Manifest> = { 'com.k.exec': km('com.k.exec', 'bars', 'solid'), 'com.k.settled': km('com.k.settled', 'bars', 'double'),
+    development: km('development', 'set-square', 'solid'), 'tmp.known': km('tmp.known', 'check', 'hatched') };
+  const sim = new ScanSim({ now: () => clock, findings });
+  sim.bind({ order: ['a', 'b', ...many], manifest: (l) => known[l], value: () => undefined,
+    lenses: () => Object.entries(known).map(([id, manifest]) => ({ id, version: '1.0.0', source: 'project' as const, enabled: true, manifest })) });
+  const simErr = (fn: () => unknown): string => { try { fn(); return 'ok'; } catch (e) { return (e as { status?: number }).status + ':' + (e as Error).message; } };
+  try {
+    const sj = sim.startScan('development', sel(['b', 'a']) as ScanScope);
+    check('sim: a selection scan starts, features walked in layout order', sj.scope?.kind === 'selection' && sj.scope.features.join() === 'b,a' && sim.jobs().length === 1, JSON.stringify(sj));
+    const simBad = [sel([]), sel(many), sel(['a', 'zz']), sel(['a'], { id: 'a' })].map((s) => simErr(() => sim.startScan('development', s as ScanScope)));
+    check('sim: selection refusals: empty, 201, unknown slug, an id -> 400 bad-scope', simBad.every((x) => x === '400:bad-scope'), simBad.join());
+    const se = sim.executeLens('com.k.exec');
+    const korder = Array.from({ length: 55 }, (_, i) => 'k' + String(54 - i).padStart(2, '0')).concat('ka');
+    check('sim: execute a lens -> 2 jobs of 50 and 6 in created_at order, 55 approved, declined skipped', se.jobs.length === 2 && se.jobs[0].proposals?.join() === korder.slice(0, 50).join()
+      && se.jobs[1].proposals?.join() === korder.slice(50).join() && se.approved.length === 55 && JSON.stringify(se.skipped) === '[{"id":"kd","status":"declined"}]', JSON.stringify(se).slice(0, 300));
+    // each running job has opened its first finding (executing); the rest wait approved
+    check('sim: the approvals show in the snapshot (decided_by blueprint)', sim.snapshot().proposals.filter((p) => p.lens === 'com.k.exec' && (p.status === 'approved' || p.status === 'executing') && p.decided_by === 'blueprint').length === 55);
+    let again: { status?: number; body?: { skipped?: { id: string; status: string }[] } } = {};
+    try { sim.executeLens('com.k.exec'); } catch (e) { again = e as typeof again; }
+    const sk = again.body?.skipped ?? [];
+    check('sim: again while its jobs run -> 409, the waiting ones skipped as in-job', again.status === 409 && sk.length === 57 && sk.filter((x) => x.status === 'in-job').length === 54
+      && sk.filter((x) => x.status === 'executing').length === 2, JSON.stringify(again.body).slice(0, 200));
+    const simEx = [simErr(() => sim.executeLens('com.k.settled')), simErr(() => sim.executeLens('com.k.nope'))];
+    check('sim: execute refusals: all settled 409, unknown lens 400', simEx.join() === '409:nothing to execute,400:unknown-lens', simEx.join());
+
+    // addProjectLens's Kettle branch writes the browser's store (a Map stands in for localStorage)
+    const ls = new Map<string, string>();
+    (globalThis as { localStorage?: unknown }).localStorage = { getItem: (k: string) => ls.get(k) ?? null, setItem: (k: string, v: string) => { ls.set(k, v); }, removeItem: (k: string) => { ls.delete(k); } };
+    const A = await import(pathToFileURL(path.join(ROOT, 'src/lib/scan/actions.ts')).href) as typeof import('../src/lib/scan/actions.ts');
+    const TL = await import(pathToFileURL(path.join(ROOT, 'src/lib/scan/temp-lens.ts')).href) as typeof import('../src/lib/scan/temp-lens.ts');
+    const kctx = { slug: null, sim };
+    const aErr = async (fn: () => Promise<unknown>): Promise<string> => { try { await fn(); return 'ok'; } catch (e) { return (e as { status?: number }).status + ':' + (e as Error).message; } };
+    const kt = await A.addProjectLens(kctx, MANIFEST as unknown as Manifest, true);
+    check('Kettle addProjectLens temporary -> a stored temporary entry', kt.temporary === true && kt.source === 'project' && TL.readTempLenses().some((e) => e.id === MANIFEST.id), JSON.stringify(kt).slice(0, 200));
+    const kDup = await aErr(() => A.addProjectLens(kctx, MANIFEST as unknown as Manifest, true));
+    const kKnown = await aErr(() => A.addProjectLens(kctx, { ...MANIFEST, id: 'tmp.known', presentation: { glyph: 'pulse', line: 'hatched' } } as unknown as Manifest, true));
+    check('Kettle addProjectLens: a stored id or a model lens id -> 409', kDup.startsWith('409:') && kKnown.startsWith('409:'), kDup + ' | ' + kKnown);
+    const kBad = await aErr(() => A.addProjectLens(kctx, { ...PROJECT, id: 'com.money' } as unknown as Manifest));
+    check('Kettle addProjectLens: no reverse-DNS id -> 400', kBad.startsWith('400:'), kBad);
+    const kLook = await aErr(() => A.addProjectLens(kctx, { ...MANIFEST, id: 'tmp.copy', presentation: { glyph: 'check', line: 'hatched' } } as unknown as Manifest, true));
+    checkIf(lookReady, 'Kettle addProjectLens: a model lens\'s glyph+line -> 400', () => kLook.startsWith('400:'), () => kLook);
+    const kp = await aErr(async () => { const e = await A.addProjectLens(kctx, PROJECT as unknown as Manifest); if (e.temporary !== undefined) throw new Error('temporary set'); });
+    checkIf(projectReady, 'Kettle addProjectLens project -> a stored permanent entry (no temporary) the store reads back', () => kp === 'ok' && TL.readTempLenses().some((e) => e.id === PROJECT.id && e.temporary === undefined), () => kp);
+    const ke = await A.executeLensBacklog(kctx, 'com.k.exec').catch((e: { status?: number }) => e.status);
+    check('executeLensBacklog over the sim answers like the route (409 while its jobs run)', ke === 409, String(ke));
+    const ks = await A.startSelectionScan(kctx, 'development', ['a']);
+    check('startSelectionScan over the sim -> a selection job labelled "Selection (1)"', ks.scope?.kind === 'selection' && ks.scope.label === 'Selection (1)', JSON.stringify(ks.scope));
+  } finally { sim.dispose(); delete (globalThis as { localStorage?: unknown }).localStorage; }
 
   // ------------------------------------------------------------------ the standard accepts the entry
   const valid = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/standard/schema/fixtures/valid-map.json'), 'utf8'));
@@ -269,5 +424,6 @@ try {
   await sleep(300);
   try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a dying child still holds a file */ }
 }
-console.log(failed ? `check-scan-jobs: ${failed} failed, ${passed} passed` : `check-scan-jobs: ${passed} checks passed`);
+const skips = skipped ? `, ${skipped} skipped` : '';
+console.log(failed ? `check-scan-jobs: ${failed} failed, ${passed} passed${skips}` : `check-scan-jobs: ${passed} checks passed${skips}`);
 process.exit(failed ? 1 : 0);
