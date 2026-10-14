@@ -3,7 +3,8 @@
 // lib/model/scan-sim.ts. Absent values are omitted, never null (the store's wire convention).
 import type { LensEntry } from '@/lib/standard/types';
 
-export type ScanScopeKind = 'feature' | 'bay' | 'room' | 'wing' | 'all';
+/** `selection`: exactly the features behind the ledger's selected findings or matrix rows (1..200 slugs). */
+export type ScanScopeKind = 'feature' | 'bay' | 'room' | 'wing' | 'all' | 'selection';
 
 /** What a scan is pointed at. `features` are feature slugs; `all` carries none (every feature). */
 export interface ScanScope {
@@ -43,8 +44,14 @@ export const SCAN_BUILTINS: readonly string[] = ['development', 'security', 'des
 
 /** Whether a lens can be scanned: always in the Kettle sim; live, a built-in method or a `scan` block. */
 export function scannable(entry: Pick<LensEntry, 'id' | 'manifest'>, sim: boolean): boolean {
-  return sim || SCAN_BUILTINS.includes(entry.id) || entry.manifest.scan?.method === 'judgement';
+  const m = entry.manifest.scan?.method;
+  return sim || SCAN_BUILTINS.includes(entry.id) || m === 'judgement' || m === 'steps';
 }
+
+/** A permanent project lens id: reverse DNS, `com.org.name` (lens-manifest-1.schema.json $defs/reverseDns). */
+export const PROJECT_LENS_ID = /^[a-z]{2,}(?:\.[a-z0-9-]+){2,}$/;
+/** Most features one `selection` scan may name. */
+export const MAX_SELECTION = 200;
 
 /** A temporary lens id: `tmp.<kebab>`. */
 export const TEMP_LENS_ID = /^tmp\.[a-z0-9][a-z0-9-]{1,40}$/;

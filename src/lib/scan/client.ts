@@ -248,6 +248,12 @@ export const postLens = (slug: string, manifest: LensManifest): Promise<LensEntr
 export const patchLens = (slug: string, id: string, enabled: boolean): Promise<LensEntry> => send(api(slug) + '/lenses/' + encodeURIComponent(id), 'PATCH', { enabled });
 /** Delete a temporary lens's entry (its facets stay). 403 = not temporary. */
 export const deleteLens = (slug: string, id: string): Promise<{ id: string }> => send(api(slug) + '/lenses/' + encodeURIComponent(id), 'DELETE');
+/** Add a permanent project lens (reverse-DNS id) or, with `temporary`, a tmp.* lens. 400 says what failed; 409 = the id exists. */
+export const postProjectLens = (slug: string, manifest: LensManifest, temporary = false): Promise<LensEntry> => send(api(slug) + '/lenses', 'POST', temporary ? { manifest, temporary: true } : { manifest });
+/** What executing a lens's backlog answered: the execute jobs (batches of 50), the ids it approved, and what it skipped. */
+export interface LensExecuteResult { jobs: ScanJob[]; approved: string[]; skipped: { id: string; status: string }[] }
+/** Approve the lens's proposed findings and build them with its approved ones, in execute jobs of at most 50. 409 = nothing to build. */
+export const executeLens = (slug: string, lens: string): Promise<LensExecuteResult> => send(api(slug) + '/lenses/' + encodeURIComponent(lens) + '/execute', 'POST', {});
 /** One turn of the temporary-lens chat: `product` is a slug or 'kettle'; `session` from the previous answer. 504 after 3 minutes. */
 export const postLensDraft = (product: string, message: string, session?: string): Promise<LensDraftAnswer> =>
   send('/api/lens-draft', 'POST', session ? { product, message, session } : { product, message });

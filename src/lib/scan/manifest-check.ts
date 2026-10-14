@@ -30,6 +30,25 @@ function condFields(c: unknown, out: string[]): string[] {
   return out;
 }
 
+/** A glyph+line pair another enabled lens of the product already draws. */
+export interface TakenLook { glyph: string | { path: string }; line: string }
+export interface CheckLensOptions {
+  /** `temporary`: a `tmp.<kebab>` id. `project`: a permanent reverse-DNS id (PROJECT_LENS_ID). */
+  mode: 'temporary' | 'project';
+  /** The product's other enabled lenses' looks: a manifest drawing the same glyph AND line is refused. */
+  taken?: readonly TakenLook[];
+}
+
+/**
+ * null when `x` is a lens manifest the blueprint can write and a scan can measure; else what failed, one sentence.
+ * Accepts a scan block of `{method:'judgement', instructions}` or `{method:'steps', steps}` (LensScanStep).
+ * S0 STUB: WP1 implements the project mode, steps, the path-box check and the taken-look refusal.
+ */
+export function checkLensManifest(x: unknown, opts: CheckLensOptions): string | null {
+  void opts;
+  return checkTempManifest(x);
+}
+
 /** null when `x` is a temporary lens manifest the blueprint can write and a scan can measure; else what failed, one sentence. */
 export function checkTempManifest(x: unknown): string | null {
   if (!isObj(x)) return 'the manifest must be a JSON object';

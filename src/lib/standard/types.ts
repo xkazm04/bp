@@ -122,11 +122,33 @@ export interface LensManifest {
   scan?: LensScan;
 }
 
-export interface LensScan {
+/** How a scan measures a lens with no built-in method (spec 8.2): judge every scoped feature against the
+ *  instructions, or run composed steps in order. */
+export type LensScan = LensScanJudgement | LensScanSteps;
+export interface LensScanJudgement {
   method: 'judgement';
   /** What to look for, in the author's words; the scanner judges every scoped feature against it. */
   instructions: string;
 }
+export interface LensScanSteps {
+  method: 'steps';
+  /** 1..8 steps, run in order by lens-scan measure. */
+  steps: LensScanStep[];
+}
+/**
+ * One composed step.
+ *  - script: lens-scan runs `run` in the product root with the placeholders {root} {structure} {registry} {features}
+ *    replaced, and reads stdout as JSON rows `[{feature, metric, value, evidence?, applicable?, reason?}]`
+ *    (method static; `applicable: false` marks the feature as not touched by the lens). `yields` names the metric
+ *    fields it may fill.
+ *  - skill: lens-scan runs the named skill headless in the same session (1.3.0 allows `conform` only), `budget` caps
+ *    its unit of work (conform: pairs judged).
+ *  - judgement: judge every scoped feature against `instructions` and fill the lens's judgement metric fields.
+ */
+export type LensScanStep =
+  | { kind: 'script'; run: string; yields: string[] }
+  | { kind: 'skill'; skill: 'conform'; args?: string; budget?: number }
+  | { kind: 'judgement'; instructions: string };
 
 // ------------------------------------------------------------------------------- context-map v3
 export interface Project {

@@ -124,7 +124,7 @@ export function DraftCard({ draft: m, state, error, onAccept, onRefine, onScan, 
           </ul>
           <p className="tl-roll">Rollup {rollupText(h.rollup)}</p>
         </dd>
-        {m.scan ? <><dt>Scan</dt><dd className="tl-instr">{m.scan.instructions}</dd></> : null}
+        {m.scan ? <><dt>Scan</dt><dd className="tl-instr">{m.scan.method === 'judgement' ? m.scan.instructions : m.scan.steps.map((st) => (st.kind === 'script' ? 'script: ' + st.run : st.kind === 'skill' ? 'skill: /' + st.skill + (st.budget ? ' (budget ' + st.budget + ')' : '') : 'judgement: ' + st.instructions)).join(' -> ')}</dd></> : null}
       </dl>
       {error ? <p className="tl-err" role="alert">{error}</p> : null}
       <div className="tl-acts">
