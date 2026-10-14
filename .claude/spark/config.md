@@ -41,6 +41,7 @@ None declared.
 - Never stage, never stash. Only the Director touches the git index.
 - The model and chrome still carry Kettle-only tables (`src/lib/model/constants.ts`: WING_DEFS, GA_MILESTONE, LATER_MILESTONES, BLAST_DEFAULT; Dock steering; the search placeholder). Any work that makes bp show another product must grep them and say how each behaves for a non-Kettle product.
 - `next dev` writes AGENTS.md into the checkout it runs in; delete it before handback, never commit it.
+- A server under test must be the new build: stopping a background `npx next start` task leaves its node child holding the port, so free the port by its owning PID and probe a route or string only the new build has before trusting a screenshot (stale servers misled runs on 2026-10-13 and 2026-10-14).
 - Live products (`?product=<slug>`) are smoke-tested on a real store (`node scripts/scan-demo.mjs` at minimum, a real repo when one is listed) before ship: fixture-green packages never cross the store/route/UI seam.
 
 ## Wave defaults
