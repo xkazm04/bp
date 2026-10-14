@@ -3,7 +3,8 @@
 // branch on which.
 import type { ScanSim } from '@/lib/model/scan-sim';
 import type { ScanJob, ScanScope } from './jobs';
-import { deleteJob, postDispatch, postScan } from './client';
+import type { LensEntry, LensManifest } from '@/lib/standard/types';
+import { deleteJob, executeLens, postDispatch, postProjectLens, postScan, type LensExecuteResult } from './client';
 
 export interface ScanCtx {
   /** The live product's slug; null for the Kettle sample. */
@@ -27,6 +28,26 @@ export async function startScan(ctx: ScanCtx, lens: string, scope: ScanScope): P
 export async function dispatch(ctx: ScanCtx, ids: string[]): Promise<DispatchResult> {
   if (ctx.slug) return postDispatch(ctx.slug, ids);
   if (ctx.sim) return ctx.sim.dispatch(ids);
+  throw nowhere();
+}
+
+/** Measure one lens over exactly `features` (the ledger's selection, 1..MAX_SELECTION slugs): a `selection` scope.
+ *  S0 STUB: WP4 implements the live route and the Kettle sim. */
+export async function startSelectionScan(ctx: ScanCtx, lens: string, features: string[]): Promise<ScanJob> {
+  return startScan(ctx, lens, { kind: 'selection', label: 'Selection (' + features.length + ')', features });
+}
+
+/** Execute a lens's backlog: approve its proposed findings, build them with its approved ones, in jobs of at most 50.
+ *  S0 STUB: WP4 implements the Kettle sim branch. */
+export async function executeLensBacklog(ctx: ScanCtx, lens: string): Promise<LensExecuteResult> {
+  if (ctx.slug) return executeLens(ctx.slug, lens);
+  throw nowhere();
+}
+
+/** Add a lens to the product: a permanent project lens (reverse-DNS id) or, with `temporary`, a tmp.* lens. Kettle
+ *  keeps it in localStorage. S0 STUB: WP4 implements the Kettle branch. */
+export async function addProjectLens(ctx: ScanCtx, manifest: LensManifest, temporary = false): Promise<LensEntry> {
+  if (ctx.slug) return postProjectLens(ctx.slug, manifest, temporary);
   throw nowhere();
 }
 
