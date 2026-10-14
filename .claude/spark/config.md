@@ -41,6 +41,9 @@ None declared.
 - Never stage, never stash. Only the Director touches the git index.
 - The model and chrome still carry Kettle-only tables (`src/lib/model/constants.ts`: WING_DEFS, GA_MILESTONE, LATER_MILESTONES, BLAST_DEFAULT; Dock steering; the search placeholder). Any work that makes bp show another product must grep them and say how each behaves for a non-Kettle product.
 - `next dev` writes AGENTS.md into the checkout it runs in; delete it before handback, never commit it.
+- A design that spawns a skill headless must verify, before the first real run, that the skill AND every sibling it reads by relative path (lens-scan reads ../scan-sweep) resolve at user scope; a missing sibling silently skipped Opus judgements on 2026-10-14, after a missing lens-scan link on 2026-10-13.
+- Before trusting any real product's lens readings, check its context map's COVERAGE of tracked source (files claimed / files tracked, per UI and code root), not its dead paths: paypal 326 of 922, athena 111 of 257 desktop files; every static metric and judge inherits the gap. Personas owns those maps (rescan through its dev-tools API, project-populate contexts lane).
+- Building a worktree: Turbopack refuses the node_modules junction; build from the main checkout root with `NEXT_DIST_DIR=.next-<x> npx next build .claude/worktrees/<wt>` (and revert the tsconfig include it adds).
 - A server under test must be the new build: stopping a background `npx next start` task leaves its node child holding the port, so free the port by its owning PID and probe a route or string only the new build has before trusting a screenshot (stale servers misled runs on 2026-10-13 and 2026-10-14).
 - Live products (`?product=<slug>`) are smoke-tested on a real store (`node scripts/scan-demo.mjs` at minimum, a real repo when one is listed) before ship: fixture-green packages never cross the store/route/UI seam.
 
@@ -54,8 +57,12 @@ None declared.
 - Skill names: the operator renames generic skill names to say what they serve (/adopt -> /adopt-bp). Offer a scoped name first.
 - When options trade scope or safety for speed, the operator picks more and faster: all 4 ledger prototypes (asked for 3), `--dangerously-skip-permissions` over a scoped allow-list, chat onboarding over a draft card. Offer the bigger option explicitly, and write its condition (the risk) into the option text.
 
+- Partial-scope picks: the operator drops Recommended extras that do not serve the flow they have in mind (picked only "selection from the ledger" for partial scans). Offer scope options as independent, not as a bundle.
+- The operator chose the most capable model and the full option set again (Opus judgement, all four registry-execute behaviours, a free icon per lens, build in one go). For data ownership (another tool's file, Personas' context map) they want it done through the owning tool, not patched.
+
 ## Skill improvement log
 
 - 2026-10-09 measured-lens-scans: scouts traced the data path but missed the sample-specific tables in the model (WING_DEFS), and only the real-data smoke test found them. Promoted to Repo law above.
 - 2026-10-12 adopt: a fixture-green product still failed the canvas (deprecated counted as promised); the real-data smoke caught it, as the Repo law predicts. Scouts of a registry skill must also list sibling skills in the registry checkout (lens-scan appeared mid-run as the store's declared writer).
 - 2026-10-13 scan-package: a design that SPAWNS a skill headless (`claude -p "/lens-scan ..."`) must scout where that skill resolves - lens-scan was linked nowhere (not user scope, not pof), and its scripts silently no-op'd through a junction (argv[1] vs realpath). Only the real-CLI smoke found both. Screenshots were first taken from a stale `next start` on 3123 left by /perfect: probe a route only the new build has before trusting a server. Stubs-first (types + compilable stubs + one Engine method) ran 6 packages 3-wide with zero collisions.
+- 2026-10-14 registry-lens-validation: scout claimed lens-scan ignores scan blocks on all six built-ins (BUILTIN_METHODS holds three) - a presence/absence claim about a list must quote the list. Stubs-first again ran 5 builders 3+2-wide with zero collisions; route-guards needs a stub route to parse its body. The real-data run, not the gates, found every important defect (adopt scope crash, skipped judgement, partial maps, harness theme mode).
