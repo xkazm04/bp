@@ -18,24 +18,31 @@
 // (with none: back to the drawing set).
 // On a phone the page is the triage list alone (Phone.tsx hosts it with `phone`).
 //
-// Mount: `<LedgerPage lensButton={<TempLensButton />} lensPanel={<TempLensPanel />} />` in BlueprintApp's Chrome
-// (it renders nothing unless the store's `page` is 'ledger'); the slots take the temporary-lens button and panel.
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+// Lens actions: each lens chip has a disclosure (▾) with Scan this lens, Scan selection, Execute backlog (n) and Open in
+// Lenses panel; with a selection the top bar offers "Scan selected features" (a picker of scannable lenses, one
+// selection scan each). Both go through lens/lens-ops.ts, as the Lenses panel does.
+//
+// Mount: `<LedgerPage lensButton={<LensesButton />} lensPanel={<LensesPanel />} />` in BlueprintApp's Chrome
+// (it renders nothing unless the store's `page` is 'ledger'); the slots take the Lenses button and panel.
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { LEDGER_VARIANTS, type LedgerVariant } from '@/engine/state';
 import type { ProposalStatus } from '@/lib/scan/types';
 import { useProductName } from '@/lib/scan/projects';
-import { shallowEqual, useBp, useEngine, useLive } from '../hooks';
-import { EMPTY_UI, STATUSES, useLedger, type Ledger, type LedgerUi, type SetUi } from './useLedger';
+import { MAX_SELECTION } from '@/lib/scan/jobs';
+import { shallowEqual, useBp, useEngine, useLive, useScanCtx } from '../hooks';
+import { STATUSES, setLedgerUi, useLedger, useLedgerSelection, useLedgerUi, type Ledger, type LedgerUi, type LensCol, type SetUi } from './useLedger';
 import { DispatchBar, LensGlyph } from './variants/bits';
+import { EXEC_BATCH, executeAsk, executeBacklog, scanBlock, scanNow, scanSelection, useLensRows, useLensStats } from './lens/lens-ops';
+import { setLensesPanelOpen } from './lens/LensesPanel';
 import { Triage } from './variants/Triage';
 import { Matrix } from './variants/Matrix';
 import './ledger.css';
 
 export interface LedgerPageProps {
-  /** The "New temporary lens" button (WP6's TempLensButton), shown in the top bar. */
+  /** The "Lenses" button (LensesButton), shown in the top bar. */
   lensButton?: ReactNode;
-  /** The temporary-lens panel (WP6's TempLensPanel), shown beside the ledger's body; it renders nothing while closed. */
+  /** The Lenses panel (LensesPanel), shown beside the ledger's body; it renders nothing while closed. */
   lensPanel?: ReactNode;
   /** The phone view hosts the ledger: triage only, in the page flow. */
   phone?: boolean;
@@ -43,11 +50,10 @@ export interface LedgerPageProps {
 
 const NAMES: Record<LedgerVariant, string> = { triage: 'Triage table', matrix: 'Feature × lens matrix' };
 
-/** Mounted always (cheap: one store slice); the page state lives here, so the selection and filters outlive a close. */
+/** Mounted always (cheap: one store slice); the page state is useLedger.ts's store, so the selection and filters outlive a close. */
 export function LedgerPage({ lensButton, lensPanel, phone = false }: LedgerPageProps) {
   const s = useBp((s) => ({ page: s.page, lv: s.lv, phone: s.phone }), shallowEqual);
-  const [ui, setUi] = useState<LedgerUi>(EMPTY_UI);
-  const set = useCallback<SetUi>((f) => setUi(f), []);
+  const ui = useLedgerUi(useLive()?.slug ?? 'kettle'), set: SetUi = setLedgerUi;
   const shown = s.page === 'ledger' && s.phone === phone;
   if (phone) return shown ? <Body ui={ui} set={set} lv="triage" phone lensButton={null} lensPanel={null} /> : null;
   // no exit animation: leaving unmounts at once, so the chrome it made inert is released in the same commit that a
@@ -109,7 +115,7 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
       if (k === 'Escape') { e.preventDefault(); if (ui.q) set((u) => ({ ...u, q: '' })); else root.current?.focus(); }
       return;
     }
-    if (t.closest('.lg-side')) return; // the temporary-lens panel keeps its own keys
+    if (t.closest('.lg-side, .lg-pop')) return; // the Lenses panel and the lens menus keep their own keys
     const ctl = isControl(t);
     if (k === 'Escape') { e.preventDefault(); if (ui.sel.size) L.clear(); else E.setPage('plan'); return; }
     if (k === 'j' || k === 'J' || k === 'ArrowDown') { e.preventDefault(); step(1); return; }
@@ -143,12 +149,13 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
             ))}
           </div>
         )}
+        {!phone && ui.sel.size ? <SelScan L={L} /> : null}
         {lensButton ? <div className="lg-slot">{lensButton}</div> : null}
       </header>
-      <Filters L={L} filter={filter} />
+      <Filters L={L} filter={filter} menus={!phone} />
       <div className="lg-main">
         <div className="lg-body" role={phone ? undefined : 'tabpanel'} aria-label={NAMES[lv]}>{view}</div>
-        {lensPanel ? <aside className="lg-side" aria-label="Temporary lens">{lensPanel}</aside> : null}
+        {lensPanel ? <aside className="lg-side" aria-label="Lenses">{lensPanel}</aside> : null}
       </div>
       <DispatchBar L={L} />
     </>
@@ -163,7 +170,7 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
 }
 
 /** Status chips (they carry the counts), lens chips (glyph, short, count), the matrix's feature drill-down and the text filter. */
-function Filters({ L, filter }: { L: Ledger; filter: React.RefObject<HTMLInputElement | null> }) {
+function Filters({ L, filter, menus }: { L: Ledger; filter: React.RefObject<HTMLInputElement | null>; menus: boolean }) {
   const { ui, set } = L;
   const flip = <T,>(xs: ReadonlySet<T>, x: T) => { const s = new Set(xs); if (!s.delete(x)) s.add(x); return s; };
   const any = ui.lens.size || ui.status.size || ui.feat.size || ui.q;
@@ -174,9 +181,12 @@ function Filters({ L, filter }: { L: Ledger; filter: React.RefObject<HTMLInputEl
       </div>
       <div className="lg-chips" role="group" aria-label="Lens">
         {L.lenses.filter((l) => l.n).map((l) => (
-          <button key={l.id} type="button" className="lg-chip" aria-pressed={ui.lens.has(l.id)} title={l.name} onClick={() => set((u) => ({ ...u, lens: flip(u.lens, l.id) }))}>
-            <LensGlyph g={l.glyph} />{l.short}<b>{l.n}</b>
-          </button>
+          <span key={l.id} className="lg-lchip">
+            <button type="button" className="lg-chip" aria-pressed={ui.lens.has(l.id)} title={l.name} onClick={() => set((u) => ({ ...u, lens: flip(u.lens, l.id) }))}>
+              <LensGlyph g={l.glyph} />{l.short}<b>{l.n}</b>
+            </button>
+            {menus ? <LensMenu l={l} /> : null}
+          </span>
         ))}
       </div>
       {ui.feat.size ? (
@@ -191,5 +201,130 @@ function Filters({ L, filter }: { L: Ledger; filter: React.RefObject<HTMLInputEl
       <input ref={filter} className="lg-q" type="search" value={ui.q} placeholder="Filter findings…  /" aria-label="Filter findings by text" onChange={(e) => { const q = e.target.value; set((u) => ({ ...u, q })); }} />
       {any ? <button type="button" className="lg-x" onClick={() => set((u) => ({ ...u, lens: new Set(), status: new Set(), feat: new Set(), q: '' }))}>Clear filters</button> : null}
     </div>
+  );
+}
+
+// ------------------------------------------------------------------------------------------- lens menus
+/** A small panel a button opens under itself: Esc or a click outside closes it (Esc gives focus back to the button),
+ *  focus leaving it closes it, the arrows move between its controls. The page's keys stay out (`.lg-pop`). */
+function usePop() {
+  const [open, setOpen] = useState(false);
+  const btn = useRef<HTMLButtonElement>(null), box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    box.current?.querySelector<HTMLElement>('button:not([aria-disabled="true"]), input')?.focus({ preventScroll: true });
+    const down = (e: PointerEvent) => { const t = e.target as Node; if (!box.current?.contains(t) && !btn.current?.contains(t)) setOpen(false); };
+    document.addEventListener('pointerdown', down, true);
+    return () => document.removeEventListener('pointerdown', down, true);
+  }, [open]);
+  const close = () => { setOpen(false); btn.current?.focus({ preventScroll: true }); };
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); return; }
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    const els = Array.from(box.current?.querySelectorAll<HTMLElement>('button, input') ?? []);
+    const i = els.indexOf(document.activeElement as HTMLElement), n = els.length;
+    if (!n) return;
+    e.preventDefault(); e.stopPropagation();
+    els[(i + (e.key === 'ArrowDown' ? 1 : -1) + n) % n]?.focus();
+  };
+  const onBlur = (e: React.FocusEvent) => { const t = e.relatedTarget as Node | null; if (t && !box.current?.contains(t) && !btn.current?.contains(t)) setOpen(false); };
+  return { open, setOpen, btn, box, close, onKey, onBlur };
+}
+
+/** The disclosure next to a lens chip: Scan this lens, Scan selection, Execute backlog (n), Open in Lenses panel. */
+function LensMenu({ l }: { l: LensCol }) {
+  const pop = usePop();
+  return (
+    <>
+      <button ref={pop.btn} type="button" className="lg-chip lg-chipm" aria-haspopup="true" aria-expanded={pop.open} aria-label={'Actions for ' + l.name}
+        title={'Scan or execute ' + l.name} onClick={() => pop.setOpen(!pop.open)}>
+        <span aria-hidden="true">▾</span>
+      </button>
+      {pop.open ? (
+        <div ref={pop.box} className="lg-pop" role="group" aria-label={l.name + ' actions'} data-keys="own" onKeyDown={pop.onKey} onBlur={pop.onBlur}>
+          <LensMenuBody l={l} close={pop.close} />
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function LensMenuBody({ l, close }: { l: LensCol; close: () => void }) {
+  const E = useEngine(), ctx = useScanCtx(), { rows } = useLensRows(), stat = useLensStats().get(l.id), sel = useLedgerSelection();
+  const [ask, setAsk] = useState(false);
+  const r = rows.find((x) => x.id === l.id);
+  const block = r ? scanBlock(r, !!ctx.sim) : 'This map has no lens ' + l.id;
+  const selBlock = block ?? (sel.features.length ? null : 'Select findings in the ledger first');
+  const n = stat.backlog, exBlock = !r ? block : n ? null : 'Nothing to build: no proposed or approved finding without a job';
+  const item = (label: string, why: string | null, go: () => void, extra?: string) => (
+    <button type="button" className="lg-mi" aria-disabled={why ? true : undefined} title={why ?? undefined} onClick={() => { if (!why) go(); }}>
+      <span>{label}</span>{why ? <small>{why}</small> : extra ? <small>{extra}</small> : null}
+    </button>
+  );
+  if (ask) return (
+    <div className="lg-ask" role="group" aria-label={'Execute the ' + l.name + ' backlog'}>
+      <p>{executeAsk(n)}</p>
+      <div>
+        <button type="button" className="bt go" onClick={() => { close(); void executeBacklog(E, ctx, l.id, l.name); }}>Build {n}</button>
+        <button type="button" className="bt" onClick={() => setAsk(false)}>Keep</button>
+      </div>
+    </div>
+  );
+  return (
+    <>
+      <div className="lg-pop-h"><LensGlyph g={l.glyph} />{l.name}</div>
+      {item('Scan this lens · everything', block, () => { close(); void scanNow(E, ctx, l.id, l.name); })}
+      {item('Scan selection', selBlock, () => { close(); void scanSelection(E, ctx, [{ id: l.id, name: l.name }], sel.features); },
+        sel.features.length ? sel.features.length + (sel.features.length === 1 ? ' feature' : ' features') + (sel.features.length > MAX_SELECTION ? ', the first ' + MAX_SELECTION : '') : undefined)}
+      {item('Execute backlog (' + n + ')', exBlock, () => setAsk(true), n > EXEC_BATCH ? 'in jobs of ' + EXEC_BATCH : undefined)}
+      {item('Open in Lenses panel', null, () => { close(); setLensesPanelOpen(true, l.id); })}
+    </>
+  );
+}
+
+/** "Scan selected features": a picker of scannable lenses (default: the lenses of the selected findings), one
+ *  selection scan per chosen lens over the features behind the selection. */
+function SelScan({ L }: { L: Ledger }) {
+  const pop = usePop();
+  return (
+    <div className="lg-selscan">
+      <button ref={pop.btn} type="button" className="bt" aria-haspopup="true" aria-expanded={pop.open} onClick={() => pop.setOpen(!pop.open)}
+        title="Measure the features behind the selected findings with the lenses you pick">Scan selected features</button>
+      {pop.open ? (
+        <div ref={pop.box} className="lg-pop end" role="group" aria-label="Scan selected features" data-keys="own" onKeyDown={pop.onKey} onBlur={pop.onBlur}>
+          <SelScanBody L={L} close={pop.close} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SelScanBody({ L, close }: { L: Ledger; close: () => void }) {
+  const E = useEngine(), ctx = useScanCtx(), { rows } = useLensRows(), sel = useLedgerSelection();
+  const ok = rows.filter((r) => !scanBlock(r, !!ctx.sim));
+  const [pick, setPick] = useState<ReadonlySet<string>>(() => { const d = sel.lenses.filter((id) => ok.some((r) => r.id === id)); return new Set(d.length ? d : []); });
+  const meta = (id: string) => L.lenses.find((c) => c.id === id);
+  const fs = sel.features.length, go = ok.filter((r) => pick.has(r.id));
+  return (
+    <>
+      <div className="lg-pop-h">{fs} {fs === 1 ? 'feature' : 'features'} behind {sel.n} {sel.n === 1 ? 'finding' : 'findings'}</div>
+      {fs > MAX_SELECTION ? <p className="lg-pop-n">A selection scan takes at most {MAX_SELECTION} features: the first {MAX_SELECTION} in map order go.</p> : null}
+      {!fs ? <p className="lg-pop-n">The selected findings name no feature of this map.</p> : null}
+      <fieldset className="lg-picks">
+        <legend>Lenses</legend>
+        {ok.length ? ok.map((r) => (
+          <label key={r.id}>
+            <input type="checkbox" checked={pick.has(r.id)} onChange={() => setPick((p) => { const s = new Set(p); if (!s.delete(r.id)) s.add(r.id); return s; })} />
+            {meta(r.id) ? <LensGlyph g={meta(r.id)!.glyph} /> : null}{r.manifest.name}
+          </label>
+        )) : <p className="lg-pop-n">No lens can be scanned here.</p>}
+      </fieldset>
+      <div className="lg-pop-a">
+        <button type="button" className="bt go" disabled={!go.length || !fs} onClick={() => { close(); void scanSelection(E, ctx, go.map((r) => ({ id: r.id, name: r.manifest.name })), sel.features); }}>
+          {go.length === 1 ? 'Start 1 scan' : 'Start ' + go.length + ' scans'}
+        </button>
+        <button type="button" className="bt" onClick={close}>Cancel</button>
+      </div>
+    </>
   );
 }

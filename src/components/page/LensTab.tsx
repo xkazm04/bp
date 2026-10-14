@@ -3,15 +3,18 @@
 // The headline first and big, the health and the matched rule's reason big beside it, then the
 // evidence fields, then the rest (how many follows the reader's density: a simple reader gets a few
 // and the rest folded away, a dense one gets everything open), then the metric rows with sparklines,
-// then what already exists for this lens on this feature: its KPIs, the questions and orders that name
-// it, the Screens strip (a lens with harness-measured metrics, when the scan has shots), the Business
+// each with the latest reading's evidence text under it (the bottleneck behind a capacity estimate,
+// the cases behind a count; two lines, "more" opens the rest), then what already exists for this lens
+// on this feature: its KPIs, the questions and orders that name it, the Screens strip (a lens with
+// harness-measured metrics, when the scan has shots; a feature the harness could not render says why,
+// from the scan's "unscreenable: <why>" note), the Business
 // section (a lens whose reader role is business). Blocks are chosen by data, never by lens id. A
 // variant's `ui.SheetPanel` replaces the body (headline to the rest) as it replaced the sheet panel.
-import { memo, useMemo } from 'react';
+import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Feature } from '@/lib/data';
 import type { Density } from '@/engine/lens/contract';
 import { DENSITY_COUNT, hotHealth, reasonOf } from '@/lib/standard/present';
-import { fmtValue, pname, type Model } from '@/lib/model';
+import { baseId, fmtValue, metricHistory, pname, shotsByRun, type Model } from '@/lib/model';
 import type { ScanSnapshot } from '@/lib/scan/types';
 import { BusinessSection } from '../sheet/Business';
 import { ScreensStrip } from '../sheet/Screens';
@@ -22,7 +25,28 @@ import { NOT_RECORDED } from '@/lib/model/timeview';
 import { HWORD, KpiRows, Val, useAsOf, useHeadlineAt, useSimSig } from './bits';
 import { Sec, Stagger } from './motion';
 
-/** The lens's metric fields as rows: value (counting), the move against the previous reading, target, method, sparkline. */
+/** A reading's evidence text: two lines, and "more" when it runs longer (the toggle shows only then). */
+function EvidenceText({ text }: { text: string }) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  const [open, setOpen] = useState(false), [long, setLong] = useState(false);
+  useLayoutEffect(() => { const el = ref.current; if (el && !open) setLong(el.scrollHeight > el.clientHeight + 1); }, [text, open]);
+  return (
+    <div className={'evd' + (open ? ' open' : '')}>
+      <p ref={ref}>{text}</p>
+      {long || open ? <button type="button" className="more" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? 'less' : 'more'}</button> : null}
+    </div>
+  );
+}
+
+/** The latest reading's evidence for a metric (on a past date: the latest by then); undefined when it has none. */
+function evidenceOf(scan: ScanSnapshot | undefined, f: Feature, lens: string, key: string, t: string, past: boolean): string | undefined {
+  const h = metricHistory(scan, baseId(f.id), lens, key);
+  for (let i = h.length - 1; i >= 0; i--) if (!past || h[i].measured_at.slice(0, 10) <= t) return h[i].evidence?.trim() || undefined;
+  return undefined;
+}
+
+/** The lens's metric fields as rows: value (counting), the move against the previous reading, target, method, sparkline,
+ *  and the latest reading's evidence text. */
 const Metrics = memo(function Metrics({ lens, f, M, scan, all, sig }: { lens: string; f: Feature; M: Model; scan: ScanSnapshot | undefined; all: boolean; sig: string }) {
   // rows depend on the scan, the feature and the sim's live values (sig): nothing else moves them
   const d = M.P.LENS[lens], { t, now } = useAsOf(), rows = useMemo(() => metricRows(d, f, M, scan, { t, now }), [d, f, M, scan, sig, t, now]), fl = f.lens[lens];  // eslint-disable-line react-hooks/exhaustive-deps
@@ -34,12 +58,14 @@ const Metrics = memo(function Metrics({ lens, f, M, scan, all, sig }: { lens: st
       <h4>Measured · {measured === shown.length ? shown.length + ' metric' + (shown.length > 1 ? 's' : '') : measured + ' of ' + shown.length + ' metrics'}{scan ? ' · from the scan' : ''}</h4>
       {shown.map((r) => {
         const m = r.field.metric!, v = r.value, { dir, cls } = metricMove(r), hot = hotHealth(fl, r.field.key);
+        const ev = evidenceOf(scan, f, lens, r.field.key, t, t < now);
         return (
           <div key={r.field.key} className={'mr ' + hot}>
             <span className="nm">{r.field.label}<em className="mth">{r.method}</em></span>
             <span className="sp">{r.pts.length > 1 ? <Spark pts={r.pts} target={m.target} cls={cls} /> : <span className="one">{r.pts.length ? 'one reading' : 'not measured'}</span>}</span>
             <b className={hot}><MoveArrow dir={dir} cls={cls} /><Val k={f.id + ':' + lens + ':' + r.field.key} field={r.field} v={v} unit={r.unit} /></b>
             <span className="tg">{m.target !== undefined ? 'target ' + nfmt(m.target) : ''}{dir ? (m.target !== undefined ? ' · ' : '') + 'was ' + fmtValue(r.field, r.prev!) : ''}</span>
+            {ev ? <EvidenceText text={ev} /> : null}
           </div>
         );
       })}
@@ -99,6 +125,25 @@ const Body = memo(function Body({ lens, f, M, density }: { lens: string; f: Feat
   );
 });
 
+const UNSCREENABLE = /^unscreenable:\s*/i;
+/** "Not screenable in a browser: <why>" when the scan noted the harness could not render this feature (an activity
+ *  `note` "unscreenable: <why>" on this lens, or on no lens) and it has no shots. Newest note wins. */
+function Unscreenable({ f, lens, scan }: { f: Feature; lens: string; scan: ScanSnapshot | undefined }) {
+  const why = useMemo(() => {
+    if (!scan) return null;
+    const id = baseId(f.id);
+    if (shotsByRun(scan, id).length) return null;
+    let best: { at: string; text: string } | null = null;
+    for (const a of scan.activity) {
+      if (a.kind !== 'note' || a.feature !== id || (a.lens && a.lens !== lens) || !UNSCREENABLE.test(a.text)) continue;
+      if (!best || a.at > best.at) best = { at: a.at, text: a.text.replace(UNSCREENABLE, '').trim() };
+    }
+    return best;
+  }, [scan, f.id, lens]);
+  if (!why) return null;
+  return <p className="pg-unscr">Not screenable in a browser: {why.text || 'the harness gave no reason'}</p>;
+}
+
 export function LensTab({ lens, f }: { lens: string; f: Feature }) {
   const E = useEngine(), M = E.M, V = useVariant(), dens = useDensity(), live = useLive(), { past } = useAsOf();
   // what this tab reads from the sim is the lens's field values for this feature (the swarm section has its own
@@ -119,7 +164,7 @@ export function LensTab({ lens, f }: { lens: string; f: Feature }) {
       <Sec label="Metrics"><Metrics lens={lens} f={f} M={M} scan={scan} all={density !== 'simple'} sig={sig} /></Sec>
       {past ? null : <Sec label="KPIs"><KpiRows M={M} f={f} lens={lens} /></Sec>}
       <Sec label="Questions and orders"><SwarmSection f={f} lens={lens} /></Sec>
-      {shots ? <Sec label="Screens"><ScreensStrip f={f} /></Sec> : null}
+      {shots ? <Sec label="Screens"><ScreensStrip f={f} /><Unscreenable f={f} lens={lens} scan={scan} /></Sec> : null}
       {biz ? <Sec label="Business"><BusinessSection f={f} /></Sec> : null}
     </Stagger>
   );

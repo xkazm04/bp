@@ -1,10 +1,11 @@
 'use client';
-// The lens Claude drafted in the onboarding chat, shown whole before it is accepted: name, glyph and
-// line as the plan will draw them, the fields, the health rules in words and the scan instructions.
-// Everything from the manifest is rendered as text (React escapes it); nothing is parsed as markup.
-// Also exports the small pieces the temporary-lens list shares: the drawn glyph and line sample.
+// The lens Claude drafted in the onboarding chat, shown whole before it is added: name, the glyph at the sizes
+// the plan draws it (7 px on a tile's rail, 14 px in chips and tabs) and the line, the fields, the health rules in
+// words and the scan (judgement instructions, or the composed steps in order). Everything from the manifest is
+// rendered as text (React escapes it); nothing is parsed as markup.
+// Also exports the small pieces the Lenses panel shares: the drawn glyph and line sample.
 import { useEffect, useRef } from 'react';
-import type { Condition, GlyphName, HealthRule, LensField, LensManifest, LineName, Rollup } from '@/lib/standard/types';
+import type { Condition, GlyphName, HealthRule, LensField, LensManifest, LensScan, LensScanStep, LineName, Rollup } from '@/lib/standard/types';
 import { readTheme } from '@/engine/theme';
 import { glyph, lineType } from '@/variants/subtle/marks';
 import { useTheme } from '../../ThemeToggle';
@@ -79,14 +80,36 @@ function fieldText(f: LensField): string {
   return bits.join(' · ');
 }
 
+/** One composed scan step in words: what it runs and what it yields. */
+export function stepText(st: LensScanStep): string {
+  if (st.kind === 'script') return st.run + (st.yields.length ? ' → ' + st.yields.join(', ') : '');
+  if (st.kind === 'skill') return '/' + st.skill + (st.args ? ' ' + st.args : '') + (st.budget ? ' · budget ' + st.budget : '');
+  return st.instructions;
+}
+
+function ScanText({ scan }: { scan: LensScan }) {
+  if (scan.method === 'judgement') return <dd className="tl-instr"><span className="tl-step-k">judgement</span>{scan.instructions}</dd>;
+  return (
+    <dd>
+      <ol className="tl-steps">
+        {scan.steps.map((st, i) => <li key={i}><span className="tl-step-k">{st.kind}</span><span className="tl-instr">{stepText(st)}</span></li>)}
+      </ol>
+    </dd>
+  );
+}
+
 // ------------------------------------------------------------------------------------------- card
 export type DraftState = 'new' | 'saving' | 'added';
 
 export interface DraftCardProps {
   draft: LensManifest;
+  /** The kind the chat drafts: a permanent project lens or a temporary one. */
+  kind: 'project' | 'temporary';
   state: DraftState;
-  /** Why the last Accept failed (validation, a duplicate id, storage): shown on the card. */
+  /** Why the lens cannot be added (the check's refusal), or why the last Add failed (a duplicate id, storage). */
   error: string | null;
+  /** The check refuses the draft: Add lens is off until Claude sends a fixed one. */
+  blocked: boolean;
   onAccept: () => void;
   /** Focus the chat's textarea. */
   onRefine: () => void;
@@ -95,7 +118,7 @@ export interface DraftCardProps {
   scanBusy: boolean;
 }
 
-export function DraftCard({ draft: m, state, error, onAccept, onRefine, onScan, scanBusy }: DraftCardProps) {
+export function DraftCard({ draft: m, kind, state, error, blocked, onAccept, onRefine, onScan, scanBusy }: DraftCardProps) {
   const h = m.health, p = m.presentation;
   return (
     <article className="tl-card" aria-label={'Drafted lens ' + m.name}>
@@ -103,11 +126,17 @@ export function DraftCard({ draft: m, state, error, onAccept, onRefine, onScan, 
         <LensGlyph g={p.glyph} size={22} />
         <div className="tl-card-t">
           <h4>{m.name}{m.short ? <span className="tl-short">{m.short}</span> : null}</h4>
-          <code>{m.id} · v{m.version}</code>
+          <code>{m.id} · v{m.version} · {kind === 'project' ? 'permanent' : 'temporary'}</code>
         </div>
       </header>
       {m.description ? <p className="tl-desc">{m.description}</p> : null}
       <dl className="tl-dl">
+        <dt>Glyph</dt>
+        <dd className="tl-sizes">
+          <span><LensGlyph g={p.glyph} size={7} /><small>7 px</small></span>
+          <span><LensGlyph g={p.glyph} size={14} /><small>14 px</small></span>
+          <span className="tl-gk">{typeof p.glyph === 'string' ? p.glyph : 'own path'}</span>
+        </dd>
         <dt>Line</dt><dd><LineSample line={p.line} /> <span>{p.line}</span></dd>
         <dt>Reader</dt><dd>{(m.reader.role ? m.reader.role + ' · ' : '') + m.reader.density}</dd>
         <dt>Fields</dt>
@@ -124,7 +153,7 @@ export function DraftCard({ draft: m, state, error, onAccept, onRefine, onScan, 
           </ul>
           <p className="tl-roll">Rollup {rollupText(h.rollup)}</p>
         </dd>
-        {m.scan ? <><dt>Scan</dt><dd className="tl-instr">{m.scan.method === 'judgement' ? m.scan.instructions : m.scan.steps.map((st) => (st.kind === 'script' ? 'script: ' + st.run : st.kind === 'skill' ? 'skill: /' + st.skill + (st.budget ? ' (budget ' + st.budget + ')' : '') : 'judgement: ' + st.instructions)).join(' -> ')}</dd></> : null}
+        {m.scan ? <><dt>Scan</dt><ScanText scan={m.scan} /></> : null}
       </dl>
       {error ? <p className="tl-err" role="alert">{error}</p> : null}
       <div className="tl-acts">
@@ -135,7 +164,7 @@ export function DraftCard({ draft: m, state, error, onAccept, onRefine, onScan, 
           </>
         ) : (
           <>
-            <button type="button" className="tl-bt go" disabled={state === 'saving'} onClick={onAccept}>{state === 'saving' ? 'Adding…' : 'Accept'}</button>
+            <button type="button" className="tl-bt go" disabled={state === 'saving' || blocked} onClick={onAccept}>{state === 'saving' ? 'Adding…' : 'Add lens'}</button>
             <button type="button" className="tl-bt" onClick={onRefine}>Keep refining</button>
           </>
         )}

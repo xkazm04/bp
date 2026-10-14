@@ -35,7 +35,7 @@ import { Phone } from './Phone';
 import { ProjectSwitcher } from './ProjectSwitcher';
 import { ScanMenu } from './ScanMenu';
 import { LedgerPage } from './ledger/LedgerPage';
-import { TempLensButton, TempLensPanel } from './ledger/lens/TempLensPanel';
+import { LensesButton, LensesPanel } from './ledger/lens/LensesPanel';
 import './blueprint.css';
 
 // The Kettle sample (~770 KB of map, events and swarm) is its own chunk, fetched only when the sample is shown.
@@ -64,7 +64,7 @@ const Chrome = memo(function Chrome() {
       <DecisionCard />
       <Toast />
       <FeatureSheet />
-      <LedgerPage lensButton={<TempLensButton />} lensPanel={<TempLensPanel />} />
+      <LedgerPage lensButton={<LensesButton />} lensPanel={<LensesPanel />} />
       <ScanMenu />
       <Morning />
     </>
@@ -146,6 +146,8 @@ function bindSim(sim: ScanSim, M: Model) {
     order,
     manifest: (l) => (on.has(l) ? P.LENS[l]?.manifest : undefined),
     value: (f, l, k) => { const v = base.get(f)?.lens[l]?.facet?.values?.[k]; return typeof v === 'number' ? v : undefined; },
+    // every lens the model knows, enabled or not: the ids and looks a new Kettle lens may not repeat
+    lenses: () => Object.values(P.LENS).map((d) => ({ id: d.id, version: d.manifest.version, source: d.source, enabled: d.i >= 0, manifest: d.manifest, ...(d.temporary ? { temporary: true as const } : {}) })),
   });
 }
 

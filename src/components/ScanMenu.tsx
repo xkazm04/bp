@@ -2,18 +2,21 @@
 // The plan's right-click menu: run a lens scan on what is under the pointer, at the feature, bay, room, wing or
 // everything (narrowest first). In a lens view it offers that lens per scope; in General, per scope, "Scan all
 // lenses" and a compact row of lens buttons (glyph + short). A lens without a scan method (live products: no
-// built-in and no manifest `scan` block) is shown disabled. The engine opens it (`contextmenu` -> `S.menu`, canvas
+// built-in and no manifest `scan` block) is shown disabled. When the findings ledger holds a selection, a last group,
+// "Ledger selection (n features)", offers the same items over exactly the features behind it (a `selection` scope,
+// capped at MAX_SELECTION). The engine opens it (`contextmenu` -> `S.menu`, canvas
 // CSS px); it closes on a choice, Esc, Tab, a click elsewhere, a pan or a wheel. Keys are its own (data-keys="own"):
 // arrows / Home / End move through the items (ProjectSwitcher's roving focus), Enter or Space chooses.
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { overlayRight } from '@/engine/chrome';
 import type { ScanMenuState } from '@/engine/state';
 import { glyph, type GlyphSpec } from '@/engine/render/lens-glyph';
-import { refusalText, startScan } from '@/lib/scan/actions';
-import { scannable, type ScanScope } from '@/lib/scan/jobs';
+import { refusalText, startScan, startSelectionScan } from '@/lib/scan/actions';
+import { MAX_SELECTION, scannable, type ScanScope } from '@/lib/scan/jobs';
 import { useProjects } from '@/lib/scan/projects';
 import { scopesAt } from '@/lib/scan/scan-views';
 import { shallowEqual, useBp, useEngine, useScanCtx } from './hooks';
+import { useLedgerSelection } from './ledger/useLedger';
 import { useTheme } from './ThemeToggle';
 import './scan.css';
 
@@ -51,20 +54,27 @@ const focusPlan = () => (document.querySelector('.bp-map') as HTMLElement | null
 function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
   const E = useEngine(), ctx = useScanCtx(), P = E.M.P, { list } = useProjects();
   const ref = useRef<HTMLDivElement>(null);
-  const opts = useMemo(() => scopesAt(E.M, m.chain, m.tile), [E, m]);
+  const sel = useLedgerSelection().features;
+  // the ledger's selection, when it has one, as a last scope (the first MAX_SELECTION features in map order)
+  const opts = useMemo(() => {
+    const at = scopesAt(E.M, m.chain, m.tile);
+    if (!sel.length) return at;
+    const fs = sel.slice(0, MAX_SELECTION);
+    return [...at, { kind: 'selection' as const, title: 'Ledger selection', scope: { kind: 'selection' as const, label: 'Selection (' + fs.length + ')', features: fs } }];
+  }, [E, m, sel]);
   const lenses = useMemo(() => P.lenses.map((d) => ({ id: d.id, name: d.name, short: d.short, glyph: d.glyph, ok: scannable({ id: d.id, manifest: d.manifest }, !!ctx.sim) })), [P, ctx.sim]);
   const lensView = view !== 'general' ? lenses.find((l) => l.id === view) : undefined;
   const scanOk = lenses.filter((l) => l.ok), off = lenses.filter((l) => !l.ok);
   const T = m.tile ? E.M.L.TILE[m.tile] : undefined, last = m.chain[m.chain.length - 1];
   const at = last ? E.placeById(last.t, last.id) : null;
-  const what = T ? T.f.name : opts.find((o) => o.kind !== 'feature' && o.kind !== 'all')?.scope.label ?? (at ? 'this place' : 'the whole plan');
+  const what = T ? T.f.name : opts.find((o) => o.kind !== 'feature' && o.kind !== 'all' && o.kind !== 'selection')?.scope.label ?? (at ? 'this place' : 'the whole plan');
   const root = ctx.slug ? list?.find((p) => p.slug === ctx.slug)?.root ?? ctx.slug : null;
 
   const close = (refocus = true) => { E.patch({ menu: null }); if (refocus) focusPlan(); };
   const run = (ids: string[], scope: ScanScope) => {
     close();
     const name = (id: string) => P.LENS[id]?.name ?? id;
-    void Promise.allSettled(ids.map((id) => startScan(ctx, id, scope))).then((rs) => {
+    void Promise.allSettled(ids.map((id) => (scope.kind === 'selection' ? startSelectionScan(ctx, id, scope.features) : startScan(ctx, id, scope)))).then((rs) => {
       const bad = rs.map((r, i) => (r.status === 'rejected' ? name(ids[i]) + ': ' + refusalText(r.reason) : null)).filter((x): x is string => !!x);
       const n = rs.length - bad.length;
       if (bad.length) E.toast(n ? 'Some scans did not start' : 'Scan not started', bad.join('; '));
@@ -116,14 +126,15 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
         <button key={o.kind} type="button" role="menuitem" tabIndex={-1} className={'sm-it' + (lensView.ok ? '' : ' off')} aria-disabled={lensView.ok ? undefined : true}
           onClick={() => lensView.ok && run([lensView.id], o.scope)}>
           <ScanGlyph g={lensView.glyph} />
-          <span className="t">Scan {lensView.name} · <i>{o.title}</i> {o.kind === 'all' ? '' : o.scope.label}</span>
+          <span className="t">Scan {lensView.name} · <i>{o.title}</i> {o.kind === 'all' || o.kind === 'selection' ? '' : o.scope.label}</span>
           <span className="n">{lensView.ok ? count(o.scope) : 'no scan method'}</span>
         </button>
       ) : (
-        <div key={o.kind} className="sm-g" role="group" aria-label={o.title + ': ' + o.scope.label}>
+        <div key={o.kind} className="sm-g" role="group" aria-label={o.kind === 'selection' ? 'Ledger selection (' + count(o.scope) + ' features)' : o.title + ': ' + o.scope.label}>
+          {o.kind === 'selection' ? <div className="sm-h"><span>Ledger selection</span><b>{count(o.scope)} features{sel.length > MAX_SELECTION ? ' of ' + sel.length + ' selected' : ''}</b></div> : null}
           <button type="button" role="menuitem" tabIndex={-1} className={'sm-it' + (scanOk.length ? '' : ' off')} aria-disabled={scanOk.length ? undefined : true}
             onClick={() => scanOk.length && run(scanOk.map((l) => l.id), o.scope)}>
-            <span className="t">Scan all lenses · <i>{o.title}</i> {o.kind === 'all' ? '' : o.scope.label}</span>
+            <span className="t">Scan all lenses · <i>{o.title}</i> {o.kind === 'all' || o.kind === 'selection' ? '' : o.scope.label}</span>
             <span className="n">{count(o.scope)}</span>
           </button>
           <div className="sm-ls">

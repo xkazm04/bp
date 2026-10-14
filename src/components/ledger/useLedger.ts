@@ -3,10 +3,11 @@
 //   live product: `useLive().product.scan.proposals`, jobs from `useLive().product.jobs`;
 //   Kettle:       the generated fixture `E.M.findings` overlaid by id with the scan sim's `snapshot().proposals`
 //                 (the sim's current state wins; a proposal the sim made itself is appended), jobs from `scanSim.jobs()`.
-// The selection, the filters and the focused row live in the page (they survive a view switch and closing the
-// ledger); this hook derives the rest. Dispatch goes through `dispatch(useScanCtx(), ids)` (src/lib/scan/actions.ts),
+// The selection, the filters and the focused row live in a module store here (`useLedgerUi`): they survive a view
+// switch and closing the ledger, and the Lenses panel and the plan's right-click read the selection (`useLedgerSelection`:
+// the features behind the selected findings) to offer a selection scan. This hook derives the rest. Dispatch goes through `dispatch(useScanCtx(), ids)` (src/lib/scan/actions.ts),
 // optimistic: the proposed ones read approved until the next store or sim update, and a refusal rolls back with a toast.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { isView, lineSuffix } from '@/lib/model';
 import type { Measurement, Proposal, ProposalSize, ProposalStatus, ScanSnapshot } from '@/lib/scan/types';
 import type { ScanJob } from '@/lib/scan/jobs';
@@ -118,6 +119,33 @@ export interface LedgerUi {
 }
 export const EMPTY_UI: LedgerUi = { sel: new Set(), lens: new Set(), status: new Set(), feat: new Set(), q: '', focus: null };
 export type SetUi = (f: (u: LedgerUi) => LedgerUi) => void;
+
+// The page state, one per tab: a module store, so the ledger (desktop or phone), the Lenses panel and the plan's
+// right-click menu read the same selection. `product` resets it when another product is shown.
+let UI: { product: string; ui: LedgerUi } = { product: '', ui: EMPTY_UI };
+const uiSubs = new Set<() => void>();
+const subUi = (f: () => void) => { uiSubs.add(f); return () => { uiSubs.delete(f); }; };
+const getUi = () => UI.ui;
+/** Change the ledger's page state (a no-op when `f` returns the same object). */
+export const setLedgerUi: SetUi = (f) => { const n = f(UI.ui); if (n === UI.ui) return; UI = { ...UI, ui: n }; for (const s of [...uiSubs]) s(); };
+/** The ledger's page state for `product` (a live slug, or 'kettle'): another product starts from an empty one. */
+export function useLedgerUi(product: string): LedgerUi {
+  if (UI.product !== product) UI = { product, ui: EMPTY_UI }; // read during render, before any subscriber hears of it
+  return useSyncExternalStore(subUi, getUi, getUi);
+}
+
+/** The ledger's selection as the plan's feature slugs (map order, each once) and the lenses of the selected findings
+ *  (first seen first). Findings on a feature the map lacks add no feature. */
+export function useLedgerSelection(): { n: number; features: string[]; lenses: string[] } {
+  const P = useEngine().M.P, sel = useSyncExternalStore(subUi, getUi, getUi).sel, { proposals } = useFindings();
+  return useMemo(() => {
+    if (!sel.size) return { n: 0, features: [], lenses: [] };
+    const at = new Map(P.base.features.map((f, i) => [f.slug, i])), fs = new Set<string>(), ls = new Set<string>();
+    let n = 0;
+    for (const p of proposals) if (sel.has(p.id)) { n++; ls.add(p.lens); if (at.has(p.feature)) fs.add(p.feature); }
+    return { n, features: [...fs].sort((a, b) => at.get(a)! - at.get(b)!), lenses: [...ls] };
+  }, [P, sel, proposals]);
+}
 
 export interface Ledger {
   ui: LedgerUi;

@@ -1,42 +1,38 @@
 'use client';
-// The temporary-lens onboarding chat: the person describes the refactor, migration or project; Claude Code
-// (POST /api/lens-draft, the real CLI on the server, Kettle included) asks at most 3 questions, then drafts
-// a lens manifest the route has already checked. Accept writes it: a live product through POST /lenses
-// (the map's `map` event brings the new lens to every client), the Kettle sample into this browser
-// (temp-lens.ts; the model rebuilds on that store's subscription). Messages are plain text, never markup.
+// The lens onboarding chat: the person picks Permanent (a project lens, reverse-DNS id; the default) or Temporary
+// (a tmp.* lens for one refactor, migration or project), then describes what to measure; Claude Code
+// (POST /api/lens-draft with that `kind`: the server runs `/lens-scan onboard --draft-only`, Kettle included) asks
+// at most 3 questions, then drafts a lens manifest the route has already checked. The card checks it again with
+// checkLensManifest in the chosen mode against the looks (glyph + line) of the product's other enabled lenses.
+// Add lens is addProjectLens(ctx, manifest, temporary): a live product through POST /lenses (the map's `map` event
+// brings the new lens to every client), the Kettle sample into this browser. Messages are plain text, never markup.
 //
 // The chat lives in a module store, not in the component: closing the panel mid-turn neither loses the
 // conversation nor cancels Claude (only Cancel does), and reopening shows the answer when it came.
-import { useEffect, useReducer, useRef, useSyncExternalStore } from 'react';
-import type { LensEntry, LensManifest } from '@/lib/standard/types';
+import { useEffect, useMemo, useReducer, useRef, useSyncExternalStore } from 'react';
+import type { LensManifest } from '@/lib/standard/types';
 import type { LensDraftAnswer } from '@/lib/scan/client';
-import { postLens } from '@/lib/scan/client';
-import { checkTempManifest } from '@/lib/scan/manifest-check';
-import { addTempLens, readTempLenses } from '@/lib/scan/temp-lens';
-import { startScan, type ScanCtx } from '@/lib/scan/actions';
-import type { ScanScope } from '@/lib/scan/jobs';
-import type { Engine } from '@/engine/Engine';
+import { checkLensManifest, type TakenLook } from '@/lib/scan/manifest-check';
+import { addProjectLens } from '@/lib/scan/actions';
+import { takenLooks } from '@/lib/scan/jobs';
 import { useEngine, useScanCtx } from '../../hooks';
 import { DraftCard, type DraftState } from './DraftCard';
+import { scanNow } from './lens-ops';
 
 const MAX = 4000;
-export const FIRST_PLACEHOLDER = 'Describe the refactor, migration or project, and what a feature looks like when it is affected.';
-const EVERYTHING: ScanScope = { kind: 'all', label: 'Everything', features: [] };
-
-/** Start a measure scan of one lens over every feature; the outcome is a toast (a refusal says why). */
-export async function scanNow(E: Engine, ctx: ScanCtx, id: string, name: string): Promise<void> {
-  try {
-    await startScan(ctx, id, EVERYTHING);
-    E.toast(`Scanning ${name}`, 'every feature; readings fill the plan as they come');
-  } catch (e) {
-    E.toast(`Could not start the ${name} scan:`, (e as Error).message);
-  }
-}
+/** Permanent: a project lens kept with the product. Temporary: one refactor, migration or project, then retired. */
+export type LensKind = 'project' | 'temporary';
+export const FIRST_PLACEHOLDER: Record<LensKind, string> = {
+  project: 'Describe what this lens should measure across the product, and what a feature looks like when it does well or badly.',
+  temporary: 'Describe the refactor, migration or project, and what a feature looks like when it is affected.',
+};
 
 // -------------------------------------------------------------------------------------- the store
 export interface Msg { n: number; who: 'you' | 'claude' | 'note'; text: string; err?: boolean }
 export interface ChatState {
   product: string;
+  /** What the chat drafts; fixed once the first message is sent (New chat changes it). */
+  kind: LensKind;
   msgs: Msg[];
   /** The CLI session the next turn resumes; absent before the first answer. */
   session?: string;
@@ -52,7 +48,7 @@ export interface ChatState {
   scanning: boolean;
 }
 
-const fresh = (product: string): ChatState => ({ product, msgs: [], since: null, text: '', retry: null, draft: null, dstate: 'new', derr: null, scanning: false });
+const fresh = (product: string): ChatState => ({ product, kind: 'project', msgs: [], since: null, text: '', retry: null, draft: null, dstate: 'new', derr: null, scanning: false });
 let S: ChatState = fresh('kettle');
 let N = 0, ctl: AbortController | null = null;
 const subs = new Set<() => void>();
@@ -60,12 +56,15 @@ const put = (p: Partial<ChatState>) => { S = { ...S, ...p }; for (const f of [..
 const say = (who: Msg['who'], text: string, err?: boolean) => put({ msgs: [...S.msgs, { n: ++N, who, text, ...(err ? { err } : {}) }] });
 const subscribe = (f: () => void) => { subs.add(f); return () => { subs.delete(f); }; };
 const get = () => S;
+const isStarted = () => S.msgs.length > 0 || S.draft !== null;
+/** Whether the chat has a conversation (the panel then shows it open). */
+export function useChatStarted(): boolean { return useSyncExternalStore(subscribe, isStarted, () => false); }
 
 /** One turn, cancellable (client.ts's postLensDraft takes no signal). Rejects like it: an Error with `status` and `body`. */
-async function turn(product: string, message: string, session: string | undefined, signal: AbortSignal): Promise<LensDraftAnswer> {
+async function turn(product: string, kind: LensKind, message: string, session: string | undefined, signal: AbortSignal): Promise<LensDraftAnswer> {
   const r = await fetch('/api/lens-draft', {
     method: 'POST', cache: 'no-store', signal, headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(session ? { product, message, session } : { product, message }),
+    body: JSON.stringify(session ? { product, kind, message, session } : { product, kind, message }),
   });
   const j = (await r.json().catch(() => null)) as unknown;
   if (!r.ok) throw Object.assign(new Error((j as { error?: string } | null)?.error ?? `HTTP ${r.status}`), { status: r.status, body: j });
@@ -88,15 +87,15 @@ function failure(e: unknown): string {
 async function send(text: string) {
   const msg = text.trim();
   if (!msg || msg.length > MAX || S.since !== null) return;
-  const product = S.product, session = S.session;
+  const product = S.product, session = S.session, kind = S.kind;
   say('you', msg);
   put({ text: S.text.trim() === msg ? '' : S.text, retry: null, since: performance.now() });
   const ac = new AbortController(); ctl = ac;
   try {
-    const a = await turn(product, msg, session, ac.signal);
+    const a = await turn(product, kind, msg, session, ac.signal);
     if (S.product !== product) return; // the chat was reset meanwhile
-    // the route checked the draft; check again here so a Kettle draft never reaches the store unchecked
-    const bad = a.draft ? checkTempManifest(a.draft) : null;
+    // the route checked the draft; check its shape again here (the card adds the looks the product already draws)
+    const bad = a.draft ? checkLensManifest(a.draft, { mode: kind }) : null;
     put({ session: a.session ?? session, since: null });
     if (a.reply) say('claude', a.reply);
     if (a.draft && !bad) put({ draft: a.draft, dstate: 'new', derr: null });
@@ -116,7 +115,7 @@ async function send(text: string) {
 function cancel() { ctl?.abort(); }
 
 /** Start over: a new CLI session (the old one is left alone on the server). Cancels a turn in flight. */
-export function resetChat(product?: string) { ctl?.abort(); ctl = null; S = fresh(product ?? S.product); for (const f of [...subs]) f(); }
+export function resetChat(product?: string) { const kind = S.kind; ctl?.abort(); ctl = null; S = { ...fresh(product ?? S.product), kind }; for (const f of [...subs]) f(); }
 
 // ------------------------------------------------------------------------------------- component
 function useElapsed(since: number | null): string {
@@ -140,19 +139,19 @@ export function LensChat({ slug, inputRef }: { slug: string | null; inputRef: Re
   useEffect(() => { end.current?.scrollIntoView({ block: 'nearest' }); }, [s.msgs.length, s.draft, s.since]);
   const elapsed = useElapsed(s.since);
   const busy = s.since !== null;
+  // the looks the product's other enabled lenses draw: a draft with the same glyph AND line is refused
+  const P = E.M.P;
+  const taken = useMemo<TakenLook[]>(() => takenLooks(P.lenses.map((d) => ({ id: d.id, enabled: true, manifest: d.manifest })), s.draft?.id ?? ''), [P, s.draft]);
+  const refusal = useMemo(() => (s.draft && s.dstate !== 'added' ? checkLensManifest(s.draft, { mode: s.kind, taken }) : null), [s.draft, s.dstate, s.kind, taken]);
 
   const accept = async () => {
     const m = S.draft; if (!m || S.dstate !== 'new') return;
-    const bad = checkTempManifest(m);
+    const bad = checkLensManifest(m, { mode: S.kind, taken });
     if (bad) { put({ derr: `This lens cannot be added: ${bad}. Ask Claude to fix it.` }); return; }
     put({ dstate: 'saving', derr: null });
     try {
-      if (slug) await postLens(slug, m);
-      else {
-        if (readTempLenses().some((e) => e.id === m.id) || E.M.P.LENS[m.id]) throw Object.assign(new Error(`A lens with id ${m.id} exists`), { status: 409 });
-        const entry: LensEntry = { id: m.id, version: m.version, source: 'project', enabled: true, temporary: true, created_at: new Date().toISOString(), manifest: m };
-        addTempLens(entry);
-      }
+      if (P.LENS[m.id]) throw Object.assign(new Error(`A lens with id ${m.id} exists`), { status: 409 });
+      await addProjectLens(ctx, m, S.kind === 'temporary');
       if (S.draft !== m) return;
       put({ dstate: 'added' });
       E.toast(`Lens ${m.name} added`, 'scan it to measure the features; until then every feature reads ?');
@@ -171,10 +170,19 @@ export function LensChat({ slug, inputRef }: { slug: string | null; inputRef: Re
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(S.text); }
   };
-  const first = !s.msgs.some((m) => m.who === 'claude');
+  const first = !s.msgs.some((m) => m.who === 'claude'), fixed = s.msgs.length > 0 || busy;
 
   return (
     <div className="tl-chat">
+      <fieldset className="tl-kind-pick" disabled={fixed}>
+        <legend>Kind of lens{fixed ? ' · New chat to change' : ''}</legend>
+        {(['project', 'temporary'] as const).map((k) => (
+          <label key={k}>
+            <input type="radio" name="tl-kind" value={k} checked={s.kind === k} onChange={() => put({ kind: k })} />
+            <span><b>{k === 'project' ? 'Permanent' : 'Temporary'}</b>{k === 'project' ? 'kept with the project, reverse-DNS id' : 'one refactor or migration, tmp.* id'}</span>
+          </label>
+        ))}
+      </fieldset>
       {s.msgs.length > 0 && (
         <ol className="tl-msgs" aria-label="Conversation with Claude" aria-live="polite">
           {s.msgs.map((m) => (
@@ -185,7 +193,7 @@ export function LensChat({ slug, inputRef }: { slug: string | null; inputRef: Re
           ))}
         </ol>
       )}
-      {s.draft && <DraftCard draft={s.draft} state={s.dstate} error={s.derr} onAccept={() => void accept()} onRefine={() => inputRef.current?.focus()} onScan={() => void scan()} scanBusy={s.scanning} />}
+      {s.draft && <DraftCard draft={s.draft} kind={s.kind} state={s.dstate} error={s.derr ?? (refusal ? `This lens cannot be added: ${refusal}. Ask Claude to fix it.` : null)} blocked={!!refusal} onAccept={() => void accept()} onRefine={() => inputRef.current?.focus()} onScan={() => void scan()} scanBusy={s.scanning} />}
       {busy && (
         <div className="tl-wait" role="status">
           <span className="dot" aria-hidden="true" />
@@ -202,7 +210,7 @@ export function LensChat({ slug, inputRef }: { slug: string | null; inputRef: Re
       <div ref={end} />
       <form className="tl-in" onSubmit={(e) => { e.preventDefault(); void send(S.text); }}>
         <textarea ref={inputRef} value={s.text} rows={first ? 4 : 2} maxLength={MAX} spellCheck
-          placeholder={first ? FIRST_PLACEHOLDER : 'Answer Claude, or say what to change in the lens.'} aria-label="Message to Claude"
+          placeholder={first ? FIRST_PLACEHOLDER[s.kind] : 'Answer Claude, or say what to change in the lens.'} aria-label="Message to Claude"
           onChange={(e) => put({ text: e.target.value })} onKeyDown={onKey} />
         <div className="tl-in-b">
           <span className="hint">Enter sends · Shift+Enter new line</span>

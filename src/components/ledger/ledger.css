@@ -49,6 +49,33 @@ button.lg-chip:hover { border-color: var(--ink-2); color: var(--ink-hi); }
 .lg-x { background: none; border: 0; padding: 4px 2px; font-size: 13px; color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; }
 .lg-x:hover { color: var(--ink-hi); }
 
+/* ---------------------------------------------------------------- lens chip menu, "Scan selected features" */
+.lg-lchip { position: relative; display: inline-flex; }
+.lg-lchip .lg-chip:first-child { border-right: 0; }
+.lg-chipm { padding: 0 6px; }
+.lg-chipm span { font-size: 12px; }
+.lg-selscan { position: relative; display: flex; align-items: center; }
+.lg-selscan > .bt { height: 30px; }
+.lg-pop { position: absolute; top: calc(100% + 4px); left: 0; z-index: 5; display: flex; flex-direction: column; width: 290px; max-width: calc(100vw - 40px); padding: 4px 0;
+  background: var(--card-hi); border: 1px solid var(--ink-2); box-shadow: 0 16px 44px var(--shadow); font-size: 14px; color: var(--ink); }
+.lg-pop.end { left: auto; right: 0; }
+.lg-pop-h { display: flex; align-items: center; gap: 7px; padding: 6px 12px 6px; border-bottom: 1px solid var(--ink-4); font-weight: 600; color: var(--ink-hi); }
+.lg-pop-n { margin: 6px 12px 0; font-size: 13px; line-height: 1.4; color: var(--ink-2); }
+.lg-mi { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; min-height: 34px; padding: 6px 12px; background: none; border: 0; border-left: 3px solid transparent; text-align: left; font: inherit; color: var(--ink); }
+.lg-mi small { font-size: 12px; color: var(--ink-2); }
+.lg-mi:hover, .lg-mi:focus-visible { background: var(--ink-4); outline: none; border-left-color: var(--accent); }
+.lg-mi[aria-disabled='true'] { cursor: help; }
+.lg-mi[aria-disabled='true'] > span { opacity: 0.55; }
+.lg-ask { padding: 8px 12px; }
+.lg-ask p { margin: 0 0 8px; color: var(--ink-hi); }
+.lg-ask div, .lg-pop-a { display: flex; gap: 6px; }
+.lg-pop-a { padding: 8px 12px 6px; border-top: 1px solid var(--ink-4); }
+.lg-pop .bt { height: 30px; }
+.lg-picks { margin: 0; padding: 6px 12px; border: 0; min-width: 0; max-height: 280px; overflow: auto; }
+.lg-picks legend { padding: 0 0 4px; font: 500 12px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
+.lg-picks label { display: flex; align-items: center; gap: 7px; min-height: 28px; cursor: pointer; }
+.lg-picks input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+
 /* ---------------------------------------------------------------- body, temporary-lens slot, dispatch bar */
 .lg-main { flex: 1; min-height: 0; display: flex; }
 .lg-body { flex: 1; min-width: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--ink-3) transparent; container-type: inline-size; }

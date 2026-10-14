@@ -1,4 +1,4 @@
-/* Temporary lenses on the findings ledger (TempLensPanel, LensChat, DraftCard). Tokens only; 12 px floor, body 14 px.
+/* The Lenses panel on the findings ledger (LensesPanel, LensChat, DraftCard). Tokens only; 12 px floor, body 14 px.
    The panel is in the flow of the ledger's side slot (LedgerPage's `.lg-side`, which draws the left rule and the card
    background and is hidden while the panel is closed): it takes the slot's full height and scrolls inside itself. */
 
@@ -20,6 +20,9 @@
 .tl-bt { height: 28px; padding: 0 9px; background: var(--panel); border: 1px solid var(--ink-3); color: var(--ink); font: 500 12px var(--mono); letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap; cursor: pointer; }
 .tl-bt:hover:not(:disabled) { border-color: var(--ink); color: var(--ink-hi); }
 .tl-bt:disabled { opacity: 0.55; cursor: default; }
+/* an action that cannot run now: still in the Tab order, says why when chosen */
+.tl-bt[aria-disabled='true'] { opacity: 0.55; cursor: help; }
+.tl-bt[aria-disabled='true']:hover { border-color: var(--ink-3); color: var(--ink); }
 .tl-bt.go { border-color: var(--accent); color: var(--ink-hi); }
 .tl-bt.bad { border-color: var(--red); color: var(--red-2); }
 .tl-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-top: 8px; }
@@ -39,9 +42,31 @@
 .tl-row .st.off { color: var(--amber-2); }
 .tl-row-d { margin: 5px 0 0; font-size: 13px; line-height: 1.4; color: var(--ink-2); overflow-wrap: anywhere; }
 .tl-row.off .tl-row-t b, .tl-row.off .tl-gl { opacity: 0.6; }
+.tl-row:focus { outline: none; }
+.tl-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tl-look { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 3px; margin-top: 2px; }
+.tl-kind { margin-left: 6px; padding: 0 4px; border: 1px dashed var(--ink-3); font: 500 12px/16px var(--mono); letter-spacing: 0.04em; color: var(--ink-2); white-space: nowrap; cursor: help; }
+.tl-kind.k-builtin { border-style: solid; }
+.tl-note.in { padding: 6px 0 0; font-size: 13px; }
+/* a measure or execute job on the lens: a ring that turns while it runs (dotted and still when queued, and under reduced motion) */
+.tl-job { display: inline-block; width: 11px; height: 11px; margin-left: 7px; vertical-align: -1px; border-radius: 50%; border: 2px solid var(--accent); border-right-color: transparent; }
+.tl-job.running { animation: tl-spin 1.1s linear infinite; }
+.tl-job.queued { border-style: dotted; border-right-color: var(--accent); }
+@keyframes tl-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .tl-job.running { animation: none; } }
 
 /* ---------- the chat */
 .tl-chat { padding: 4px 12px 12px; }
+.tl-kind-pick { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; padding: 0; border: 0; min-width: 0; }
+.tl-kind-pick legend { padding: 0 0 4px; font: 500 12px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); }
+.tl-kind-pick label { flex: 1 1 150px; display: flex; gap: 7px; align-items: flex-start; padding: 6px 8px; border: 1px solid var(--ink-3); background: var(--panel); cursor: pointer; }
+.tl-kind-pick label:has(input:checked) { border-color: var(--ink); box-shadow: inset 0 -2px 0 var(--ink); }
+.tl-kind-pick label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tl-kind-pick input { margin: 2px 0 0; accent-color: var(--accent); }
+.tl-kind-pick span { font-size: 12px; line-height: 1.35; color: var(--ink-2); }
+.tl-kind-pick b { display: block; font-size: 14px; font-weight: 600; color: var(--ink-hi); }
+.tl-kind-pick:disabled label { cursor: default; opacity: 0.7; }
+.tl-kind-pick:disabled label:has(input:checked) { opacity: 1; }
 .tl-msgs { margin: 0 0 8px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
 .tl-m p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
 .tl-m .who { display: block; font: 500 12px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 2px; }
@@ -84,4 +109,11 @@
 .tl-rules .tl-def { color: var(--ink-2); font-size: 12px; }
 .tl-roll { margin: 5px 0 0; font-size: 12px; color: var(--ink-2); }
 .tl-instr { white-space: pre-wrap; }
+.tl-sizes { display: flex; align-items: flex-end; gap: 14px; }
+.tl-sizes > span:not(.tl-gk) { display: inline-flex; flex-direction: column; align-items: center; gap: 3px; }
+.tl-sizes small { font: 400 12px var(--mono); color: var(--ink-2); }
+.tl-gk { font-size: 12px; color: var(--ink-2); align-self: center; }
+.tl-steps { margin: 0; padding: 0 0 0 18px; display: flex; flex-direction: column; gap: 5px; }
+.tl-steps li { padding-left: 2px; }
+.tl-step-k { display: inline-block; margin-right: 6px; padding: 0 4px; border: 1px solid var(--ink-4); font: 500 12px/16px var(--mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); }
 .tl-ok { font: 600 12px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--mint-2); }

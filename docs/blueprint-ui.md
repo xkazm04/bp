@@ -380,16 +380,17 @@ Registry writes (`src/lib/scan/registry.server.ts`) rewrite `bp.products.local.j
 | `GET /api/products/<slug>/stream` | Server-Sent Events, described below. |
 | `POST /api/products/<slug>/proposals/<id>` | Body `{ decision: 'approve' \| 'decline', note?: string }`. Sets `status`, `decided_by = 'blueprint'`, `decided_at`, `decision_note` and `updated_at`, but only while the status is `proposed`. Answers: **200** with the updated `Proposal`; **409** with the current row as the body (someone already decided, or the skill moved it on); **404** for an unknown id or a missing store; **400** for any other body (extra keys, a note that is not a string, a body that is not JSON); **503** when the store stayed locked past the busy timeout. |
 | `GET /api/products/<slug>/shots/<path>` | The file bytes as png, jpeg, webp or webm (by extension; anything else gets 415). `<path>` is relative to `<store>/shots`. A full `Shot.path` with its leading `shots/` is accepted too. **403** for anything that would resolve outside `shots/`: `.`, `..`, empty, absolute or drive segments, `\`, `/` or `:` encoded inside a segment (`..%2F..%2Fx`), NUL, and symlinks that point out. Plain `../` in a URL is collapsed by the HTTP layer before routing, so it never reaches the handler (Next answers 404). |
-| `POST /api/products/<slug>/scans` | Body `{ lens, scope: ScanScope }`: queue a lens scan (`/lens-scan measure`). **202** with the `ScanJob`; **400** `{ error: 'unknown-lens' }` (not an enabled lens of the map), `'no-scan-method'` (no built-in method and no manifest `scan` block), `'bad-scope'` (a kind outside feature/bay/room/wing/all, an empty label, an `id` or feature failing `SAFE_ID`, a feature the map lacks, `all` with features or an id, another kind without them); **429** when 16 jobs are queued; **404** for an unknown slug or a product without a map. |
+| `POST /api/products/<slug>/scans` | Body `{ lens, scope: ScanScope }`: queue a lens scan (`/lens-scan measure`). **202** with the `ScanJob`; **400** `{ error: 'unknown-lens' }` (not an enabled lens of the map), `'no-scan-method'` (no built-in method and no manifest `scan` block), `'bad-scope'` (a kind outside feature/bay/room/wing/all/selection, an empty label, an `id` or feature failing `SAFE_ID`, a feature the map lacks, `all` with features or an id, another kind without them, more than 200 selection features). `selection` is the ledger's selected features: no `id`, 1..200 features, each in the map; the UI labels it `Selection (n)`; **429** when 16 jobs are queued; **404** for an unknown slug or a product without a map. |
 | `GET /api/products/<slug>/scans` | `ScanJob[]`, oldest first. |
 | `DELETE /api/products/<slug>/scans/<job>` | Cancel: a queued job leaves the queue, a running one is killed with its process tree. **200** with the `ScanJob` (a finished one as it is); **404**. |
 | `POST /api/products/<slug>/dispatch` | Body `{ ids }` (1..50 proposal ids). Each `proposed` id is approved through the decision write (`decided_by = 'blueprint'`), an `approved` one is taken as it is, anything else is skipped as `{ id, status }` (`unknown` when the store lacks it). Then one execute job (`/lens-scan execute`) builds them all: **202** `{ job, approved, skipped }` (`approved` = the ids this call approved, `job.proposals` = all of them); **409** `{ error, skipped }` when none can go; **400**; **404** without a store; **503** when the store stayed locked. |
-| `POST /api/products/<slug>/lenses` | Body `{ manifest }`: add a temporary lens (spec 8.1) to the map's `lenses[]` as `{ id, version, source: 'project', enabled: true, temporary: true, created_at, manifest }`. The manifest must pass `checkTempManifest` (`src/lib/scan/manifest-check.ts`: a `tmp.<kebab>` id, numeric metric fields, health rules over known fields, default, rollup, a shared glyph and line, a `scan` block with instructions). **201** with the entry; **400** `{ error }` saying what failed; **409** when the id exists or the map does not parse. |
-| `PATCH /api/products/<slug>/lenses/<id>` | `{ enabled }`: retire or restore a temporary lens. **200** with the entry; **403** for a permanent lens; **404**. |
-| `DELETE /api/products/<slug>/lenses/<id>` | Remove a temporary lens's entry; its facets stay. **200** `{ id }`; **403** for a permanent lens; **404**. |
-| `POST /api/lens-draft` | Body `{ product: <slug> \| 'kettle', message (1..4000), session? }`: one turn of the temporary-lens onboarding chat (Kettle runs the real CLI too, in the blueprint repo). **200** `{ session, reply, done: false }` (a question), `{ session, reply, draft, done: true }` (a valid fenced `lens-manifest` block, lifted out of `reply`), or `{ session, reply, done: false, error }` (a block that failed the check; the chat goes on). **400**; **404**; **502** when the CLI failed; **503** when it is not installed; **504** after 3 minutes (the process tree is killed). |
+| `POST /api/products/<slug>/lenses` | Body `{ manifest, temporary? }`: add a lens to the map's `lenses[]` (spec 8.1). A permanent project lens (default; a reverse-DNS id) becomes `{ id, version, source: 'project', enabled: true, created_at, manifest }`; a temporary one (`temporary: true`, or a `tmp.` id) also carries `temporary: true`. The manifest must pass `checkLensManifest` in that mode with `taken` = the map's other enabled lenses' glyph+line looks, read inside the same atomic write. **201** the entry; **400** `{ error }` saying what failed (also for a non-boolean `temporary`); **404**; **409** when the id exists (any source) or the map does not parse. |
+| `PATCH /api/products/<slug>/lenses/<id>` | `{ enabled }`: retire or restore a project lens (temporary or permanent). **200** the entry; **403** for a built-in (`source: 'builtin'`); **404**. |
+| `DELETE /api/products/<slug>/lenses/<id>` | Remove a project lens's entry (temporary or permanent); its facets stay. **200** `{ id }`; **403** for a built-in; **404**. |
+| `POST /api/products/<slug>/lenses/<id>/execute` | Body `{}`: execute the lens's backlog. Its `proposed` findings are approved through the decision write (`decided_by = 'blueprint'`), its `approved` ones taken as they are, in store order (created_at, then id), and execute jobs of at most 50 are queued over them. Skipped `{ id, status }`: `executing` / `done` / `failed` / `declined`, and `in-job` for one a queued or running execute job already builds. **202** `{ jobs, approved, skipped }`; **409** `{ error: 'nothing to execute', skipped }`; **400** `unknown-lens` (not in the map, or disabled); **404** unknown product / map / store; **429** `{ error, jobs, approved, skipped }` when the queue cap stopped it (the approvals stand; `jobs` holds the ones queued); **503** when the store stayed locked. |
+| `POST /api/lens-draft` | Body `{ product: <slug> \| 'kettle', message (1..4000), session?, kind?: 'project' \| 'temporary' }` (kind defaults to `project`): one turn of the lens onboarding chat. The first turn's prompt is `/lens-scan onboard --draft-only [--temporary]` followed by the message (the contract lives in the lens-scan skill, `references/lens-onboarding.md`); later turns `--resume` with the message alone. The last fenced `lens-manifest` block is checked with `checkLensManifest` in the kind's mode (a live product's taken looks included). **200** `{ session, reply, done: false }`, `{ session, reply, draft, done: true }` or `{ session, reply, done: false, error }`; **400** (also a bad `kind`); **404**; **502**; **503**; **504**. |
 
-**Scan jobs** (`src/lib/scan/jobs.server.ts`). For a live product the scan routes run the Claude Code CLI headless in the product repo: `BP_CLAUDE_BIN`, else `claude` on PATH (on Windows `claude.exe`, `.com`, then a `.cmd`/`.bat` shim through `cmd.exe`, whose command line then holds only the shim path and characters with no meaning to cmd; a `.js`/`.mjs` path runs on the server's Node). Its argv is fixed, `-p --dangerously-skip-permissions --output-format text`, and **the prompt goes on stdin**, never on the command line: `/lens-scan measure --lens <lens>[ --scope <feature,...>]` or `/lens-scan execute --proposals <id,...>`, every id held to `SAFE_ID` and to the map or the store first. **Every job runs with `--dangerously-skip-permissions`** (the operator's choice: a headless run cannot answer permission prompts), so it can edit and run anything in that repo; the routes stay localhost-only. The env adds `BP_JOB_ID`, which lens-scan writes into its run's note (`bp-job:<id>`, or `bp-job:<id> <more>`): the job takes that run's id (`run_id`) from the stream, and at exit from the store. A registry per product on `globalThis` (it survives a dev reload) keeps the latest 50 jobs, at most 3 running and a FIFO queue of at most 16. Status: `queued` → `running` → `done` (exit 0 with a run), `failed` (another exit code, with the last stderr line or `exit <n>` as `error`; or exit 0 with no run, with lens-scan's `lens-scan refused: …` line; or `Claude Code CLI not found (set BP_CLAUDE_BIN)`), or `cancelled`. Each job logs stdout and stderr to `<root>/.ai/lens-scan/work/bp-jobs/<job>.log` and keeps its last 20 lines (at most 2 KB) as `log_tail`. The stream sends `event: jobs` (`ScanJob[]`) after each snapshot when the product has jobs, and on every change of the registry (log lines at most every 400 ms). `useLiveProduct` returns `jobs` (`[]` before the first event; it changes only on a discrete change: a job added, a status, a run attached, so a log line re-renders nothing); `useLiveJobs(slug)` follows every event, log lines included. Fetch helpers: `postScan`, `postDispatch`, `deleteJob`, `postLens`, `patchLens`, `deleteLens`, `postLensDraft`, each rejecting with an `Error` that carries `status` and `body`. The onboarding chat runs `claude -p --output-format json --dangerously-skip-permissions [--resume <session>]` the same way; its first turn carries the contract in `src/lib/scan/lens-draft.ts`. Temporary-lens writes (`src/lib/scan/lens-write.server.ts`) rewrite the map atomically (temp file + rename), keeping key order, unknown keys, indentation and line endings, and never overwrite a map that does not parse; the stream's `map` event carries them to every client. `npm run check:scan-jobs` drives all of it against a fake CLI (`scripts/fixtures/fake-claude.mjs`).
+**Scan jobs** (`src/lib/scan/jobs.server.ts`). For a live product the scan routes run the Claude Code CLI headless in the product repo: `BP_CLAUDE_BIN`, else `claude` on PATH (on Windows `claude.exe`, `.com`, then a `.cmd`/`.bat` shim through `cmd.exe`, whose command line then holds only the shim path and characters with no meaning to cmd; a `.js`/`.mjs` path runs on the server's Node). Its argv is fixed, `-p --dangerously-skip-permissions --output-format text`, and **the prompt goes on stdin**, never on the command line: `/lens-scan measure --lens <lens>[ --scope <feature,...>]` or `/lens-scan execute --proposals <id,...>`, every id held to `SAFE_ID` and to the map or the store first. **Every job runs with `--dangerously-skip-permissions`** (the operator's choice: a headless run cannot answer permission prompts), so it can edit and run anything in that repo; the routes stay localhost-only. The env adds `BP_JOB_ID`, which lens-scan writes into its run's note (`bp-job:<id>`, or `bp-job:<id> <more>`): the job takes that run's id (`run_id`) from the stream, and at exit from the store. A registry per product on `globalThis` (it survives a dev reload) keeps the latest 50 jobs, at most 3 running and a FIFO queue of at most 16. Status: `queued` → `running` → `done` (exit 0 with a run), `failed` (another exit code, with the last stderr line or `exit <n>` as `error`; or exit 0 with no run, with lens-scan's `lens-scan refused: …` line; or `Claude Code CLI not found (set BP_CLAUDE_BIN)`), or `cancelled`. Each job logs stdout and stderr to `<root>/.ai/lens-scan/work/bp-jobs/<job>.log` and keeps its last 20 lines (at most 2 KB) as `log_tail`. The stream sends `event: jobs` (`ScanJob[]`) after each snapshot when the product has jobs, and on every change of the registry (log lines at most every 400 ms). `useLiveProduct` returns `jobs` (`[]` before the first event; it changes only on a discrete change: a job added, a status, a run attached, so a log line re-renders nothing); `useLiveJobs(slug)` follows every event, log lines included. Fetch helpers: `postScan`, `postDispatch`, `deleteJob`, `postLens`, `postProjectLens`, `patchLens`, `deleteLens`, `executeLens`, `postLensDraft`, each rejecting with an `Error` that carries `status` and `body`. The onboarding chat runs `claude -p --output-format json --dangerously-skip-permissions [--resume <session>]` the same way; its first turn is `/lens-scan onboard --draft-only [--temporary]` and the user's message (`onboardPrompt` in `src/lib/scan/lens-draft.ts`); the contract lives in the lens-scan skill. A selection scan's prompt is `--scope <slug,...>` like any other kind. A lens execute queues one `/lens-scan execute --proposals ...` job per 50 ids. Actions `startSelectionScan`, `executeLensBacklog` and `addProjectLens` sit beside `startScan`; the Kettle sim answers the same (`ScanSim.executeLens`, selection scopes), and `addProjectLens` writes this browser's store (`temp-lens.ts`, which now keeps project entries too) under the same checks (400 / 409). Project-lens writes (temporary or permanent; never a built-in) (`src/lib/scan/lens-write.server.ts`) rewrite the map atomically (temp file + rename), keeping key order, unknown keys, indentation and line endings, and never overwrite a map that does not parse; the stream's `map` event carries them to every client. `npm run check:scan-jobs` drives all of it against a fake CLI (`scripts/fixtures/fake-claude.mjs`).
 
 **SSE semantics** (`/stream`). One long-lived read-only connection per client:
 - `event: snapshot`: a `ScanSnapshot`, sent on connect. While the store file does not exist, it is sent with empty arrays and the route keeps checking. It is sent again, in full, once the file appears.
@@ -431,6 +432,12 @@ A lens field with `metric` (app-structure v3.1) is a measured metric: its key is
 - History is the scan's readings of that feature, lens and metric, ordered by `measured_at`. Kettle has no store, so its single point is the facet value. One point shows the value only (no arrow, no sparkline). No point reads `—` like any other absent value.
 - In General a panel shows its measured metrics, at most three, then "N more metrics in the lens reading". When the lens stands alone it shows every metric field, unmeasured ones as `—`. A collapsed panel (another lens chosen) shows none.
 - The sparkline is React SVG in the sheet. Nothing about metrics runs in the canvas frame loop. Text stays at the 12 px floor.
+- **Evidence** (2026-10-14). On the feature page's lens tab (`src/components/page/LensTab.tsx`), each row in "Measured"
+  carries the latest reading's `evidence` text under it (on a past date: the latest reading by then), 14 px, two lines
+  clamped, a **more** / **less** toggle only when it runs longer. It is the store's `measurements.evidence`, so it is
+  where a judgement lens explains its number: the bottleneck behind Operations' capacity estimate and the listed
+  limitations, Business' unhandled cases, Quality's untested paths. A reading without evidence (every Kettle sim
+  reading) shows nothing extra.
 
 ## Business section
 
@@ -449,6 +456,10 @@ For a live product whose scan has shots of the feature, the sheet shows a Screen
 - One thumbnail per size and theme: the latest run that has it, served by `/api/products/<slug>/shots/<path>`. A red badge counts the console errors its harness report records (`report.consoleErrors`, a count or a list).
 - A thumbnail opens the viewer under the strip (not a modal). Run A and run B are selectors over the runs that have that size and theme; they default to the latest two. With two runs it compares them side by side or as a swipe (a range slider over the stacked images). With one run it shows that one and says compare needs two. Escape closes the viewer, not the sheet.
 - Images load lazily and are never committed to the repo.
+- **Not screenable** (2026-10-14). The lens-scan harness never fakes a shot: a feature it cannot render in a browser
+  (a desktop shell's window, say) gets an activity `note` "unscreenable: <why>". When the feature has no shots and
+  such a note exists for the lens (or for no lens), the lens tab's Screens section says "Not screenable in a browser:
+  <why>" (the newest note) instead of nothing. Native window capture is a follow-up, not this build.
 
 ## Chrome and the feature page (2026-10 overhaul)
 
@@ -542,8 +553,15 @@ Rejected: a looping radar sweep (fake progress, perpetual frames) and a per-tile
   clear of an open flyout; keys are its own (arrows, Home, End, Enter, Esc, Tab: ProjectSwitcher's roving focus);
   a choice, Esc (first in `goUp`), a click elsewhere or a wheel closes it. A refusal toasts the reason
   (`refusalText`), and a job that fails toasts its error (e.g. "Claude Code CLI not found (set BP_CLAUDE_BIN)").
+  When the findings ledger holds a selection (`useLedgerSelection`, below), a last group "Ledger selection
+  (n features)" offers the same items over exactly the features behind the selected findings: a `selection` scope
+  (`{ kind: 'selection', label: 'Selection (n)', features }`, at most `MAX_SELECTION` = 200 slugs in map order),
+  started with `startSelectionScan`.
 - **Actions** (`src/lib/scan/actions.ts`): `startScan`, `dispatch`, `cancelJob` go to the live routes
   (`postScan`, `postDispatch`, `deleteJob`) or to the Kettle scan sim. `ScanCtxCtx` (BlueprintApp) says which.
+  `startSelectionScan(ctx, lens, features)`, `executeLensBacklog(ctx, lens)` (`{ jobs, approved, skipped }`) and
+  `addProjectLens(ctx, manifest, temporary?)` do the same for the Lenses panel. The UI's toasts and per-lens counts
+  around them are `src/components/ledger/lens/lens-ops.ts`, shared by the panel, the ledger and this menu.
 - **Views** (`scanViews`): every queued or running measure job, a done one for 3 s with all ticks, a failed one for
   6 s in the bad colour with "failed"; cancelled ones vanish. A job's run is `run_id`, else the run whose note is
   `bp-job:<id>` (`isJobNote` in `jobs.ts`); done = the features measured in that run on that lens, plus those with a
@@ -626,7 +644,10 @@ became the switch.
   (○ proposed, ◐ approved, ◔ executing, ● done, ✕ failed, – declined, struck through) and a kind tag for a baseline
   upgrade or a propagation (`of <parent>`). A queued or running execute job over it replaces the mark with a ring that
   turns while the job runs (still under reduced motion).
-- **Selection and filters** live in the page, so they survive a view switch and closing the ledger: a selection
+- **Selection and filters** live in a module store in `useLedger.ts` (`useLedgerUi(product)`, `setLedgerUi`), so
+  they survive a view switch and closing the ledger, the desktop and phone ledgers share them, another product starts
+  from an empty one, and the Lenses panel and the plan's right-click can read the selection (`useLedgerSelection()`:
+  how many findings, the plan features behind them in map order, their lenses): a selection
   set, lens and status filter chips (the status chips carry the counts), a feature chip from the matrix's drill-down
   (`feature <name> ×`), a text filter (`/`). Both views show the same **Dispatch bar**: what is selected, how many can go, the lenses spanned, the effort, Clear (Esc) and
   Dispatch n (D).
@@ -652,8 +673,18 @@ became the switch.
   findings of the same lens and metric (normalised per metric, so KB and finding counts compare); 0.5 when a finding
   names no metric or delta. Confidence = (11 − risk) ÷ 10 (risk 1..10, missing reads 5). Effort = size weight XS 1,
   S 2, M 3, L 5, XL 8 (missing reads M). Ties: older, then id.
-- **The temporary-lens slot.** `LedgerPage` takes `lensButton` (top bar) and `lensPanel` (a side column beside the body)
-  as nodes; the temporary-lens components plug in there.
+- **The Lenses slot.** `LedgerPage` takes `lensButton` (top bar) and `lensPanel` (a side column beside the body)
+  as nodes; `LensesButton` and `LensesPanel` plug in there (below).
+- **Lens chip menus** (2026-10-14). Each lens filter chip has a disclosure (▾, its own button, not a right-click):
+  **Scan this lens · everything**, **Scan selection** (the features behind the selection), **Execute backlog (n)**
+  (n = the lens's proposed and approved findings with no job on them; it asks "Approve and build n findings in k
+  jobs?" inside the menu first) and **Open in Lenses panel** (opens the panel with that lens's row focused). An item
+  that cannot run stays focusable and says why under its label. Esc or a click outside closes the menu, focus goes
+  back to the chip's disclosure, the arrows move between items; the page's keys stay out of it (`.lg-pop`).
+- **Scan selected features** (2026-10-14). With a selection, the top bar offers it: a picker of the lenses that can be
+  scanned (checkboxes, preset to the lenses of the selected findings), then one `selection` scan per checked lens over
+  the features behind the selection, one toast for all (a selection over 200 features takes the first 200 and says
+  so).
 - **Kettle findings** (`src/data/kettle.findings.json`, generated, never hand-edited): `node scripts/fixtures/kettle-findings.mjs`
   writes 60 store-shaped proposals over the sample map, run `sample-run-1`, created in the week before the map's
   as-of date, from the map itself: every enabled lens gets findings (a lens with metric fields gets metric findings,
@@ -664,53 +695,73 @@ became the switch.
 - **A live product** shows its store's proposals and its jobs the same way; a finding on a feature its map lacks
   stays listed, its feature link disabled.
 
-## Temporary lenses (2026-10-13)
+## Lenses panel (2026-10-14; was Temporary lenses, 2026-10-13)
 
-A temporary lens brings one refactor, migration or project onto the table: a lens like any other (fields, JSON
-health rules, a glyph and a line, spec 8.1-8.2), plus a `scan` block whose instructions the scanner judges every
-feature against, made from the blueprint and retired or deleted there. It lays the baseline for customising the
-preset lenses later. Files: `src/components/ledger/lens/` (`TempLensPanel.tsx`, `LensChat.tsx`, `DraftCard.tsx`,
-`lens.css`) and `src/lib/scan/temp-lens.ts`.
+The ledger's temporary-lens panel grew into the place every lens of a product is managed: enable or disable, scan
+everything or the ledger's selection, execute its backlog, and onboard a new one with Claude, permanent or temporary.
+A temporary lens still brings one refactor, migration or project onto the table and is retired after; a permanent
+project lens (a reverse-DNS id, `com.org.name`) stays with the product. Both are lenses like any other (fields, JSON
+health rules, a glyph and a line, spec 8.1-8.2) with a `scan` block: judgement instructions, or composed steps
+(script, skill, judgement) run in order. Files: `src/components/ledger/lens/` (`LensesPanel.tsx`, `lens-ops.ts`,
+`LensChat.tsx`, `DraftCard.tsx`, `lens.css`) and `src/lib/scan/temp-lens.ts`.
 
-- **Where it opens.** The findings ledger's top bar carries **New temporary lens** (`TempLensButton`, with the
-  number the product has); it opens `TempLensPanel` in the ledger's side slot (380 px, the slot's full height,
-  `data-keys="own"`, Esc closes and gives focus back to the button, Tab stays inside while focus is in it, a click
-  outside is not caught). Whether it is open is a module store in `TempLensPanel.tsx`, so the two exports can sit in
-  different slots.
-- **Your temporary lenses.** One row per lens, enabled or retired: the glyph (drawn by the canvas's own `glyph()`),
-  name, short, the creation day, enabled / retired, and from the model `N measured · M no impact` (health
-  good/watch/bad vs `na`), `not scanned yet`, or `not on the plan yet` while the app has not rebuilt for the new
-  lens set. Actions: **Scan now** (`startScan(ctx, id, { kind: 'all', label: 'Everything', features: [] })`,
-  outcome as a toast), **Retire** / **Restore** (`enabled` false / true; readings kept), **Delete** (asks inline
-  "Delete <name>? Readings stay in the store.", no modal). The list reads a live product's map entries marked
-  `temporary` (`useLive().product.structure.lenses`, refreshed by the stream's `map` event) and Kettle's browser
-  store; nothing branches on which beyond the write call.
-- **The chat.** The person describes the change and what an affected feature looks like; each turn is one
-  `POST /api/lens-draft` (`product`: the live slug, else `kettle`; the CLI session id from the previous answer).
-  Claude asks at most 3 questions (plain-text messages; nothing is rendered as markup), then drafts. While a turn
-  runs: "Claude is thinking · m:ss" (a 1 s timer only while waiting) and **Cancel**, which aborts the fetch; the
-  route sees the request's abort signal and kills the CLI's process tree, so the turn is gone server side, the
-  previous session stays resumable, and the message goes back into the box. 503 (no CLI), 502 (the CLI failed),
-  504 (3 minutes, the server killed it) and a network failure show as a note with **Retry**; a draft the check
-  refused shows as a note and the chat goes on. The chat state is a module store: closing the panel mid-turn
-  neither loses the conversation nor cancels Claude. **New chat** starts a new session.
-- **The draft card** shows the manifest whole before anything is written: name, short, id and version, the glyph and
-  a run of the line type as the plan draws them, the reader, each field (label, key, type, unit, which way is
-  better, headline), each health rule in words (`bad when riskScore >= 7` and its reason), the default and the
-  rollup, and the scan instructions. **Accept** re-checks it with `checkTempManifest`, then: live,
-  `postLens(slug, manifest)` (201: toast "Lens <name> added"; the map change reaches every client through the
-  stream's `map` event and the lens-set rebuild adds the tab); Kettle, `addTempLens` with
-  `{ id, version, source: 'project', enabled: true, temporary: true, created_at: <now ISO>, manifest }` (the
-  model rebuilds on `subscribeTempLenses`). A 400 (what the manifest lacks), a 409 (the id exists) or a storage
-  refusal shows on the card. Then the card offers **Scan now**. **Keep refining** focuses the box.
+- **Where it opens.** The findings ledger's top bar carries **Lenses** (`LensesButton`, with the number of lenses); a
+  lens chip's **Open in Lenses panel** opens it on that lens's row. It sits in the ledger's side slot (380 px, the
+  slot's full height, `data-keys="own"`, Esc closes and gives focus back to what opened it, Tab stays inside while
+  focus is in it, a click outside is not caught). Whether it is open, and which row to bring into view, is a module
+  store in `LensesPanel.tsx`, so the two exports can sit in different slots.
+- **Every lens** (`useLensRows` in `lens-ops.ts`): the model's every lens entry, enabled or not, in the map's order
+  (`E.M.P.base.allLenses`), then any entry the model has not rebuilt for yet (a live map's `lenses[]`, Kettle's
+  browser store) as "not on the plan yet". One row each: the glyph and a run of the line (drawn by the canvas's own
+  `glyph()` and `lineType()`), name, short, the kind tag (**built-in**, **project**, **temporary**), enabled /
+  disabled (a temporary one reads retired), `measured n of m` features (health good/watch/bad, from the model) and
+  `k no impact` (`na`), the open (proposed) findings, the creation day when known, and a ring while a measure or
+  execute job on the lens is queued (dotted, still) or running (turning; still under reduced motion). The section
+  header counts the kinds; with built-ins only, a note invites onboarding one.
+- **Row actions.** **Scan all** (`startScan` with the `all` scope); **Scan selection (n)** (`startSelectionScan`
+  over the features behind the ledger's selection, at most 200); **Execute backlog (n)**, which confirms inline
+  ("Approve and build n findings in k jobs?", k = n / 50 rounded up) before `executeLensBacklog`; then, for project
+  and temporary lenses only, **Disable** / **Enable** (**Retire** / **Restore** for a temporary one; live: `PATCH
+  /lenses/<id>`, Kettle: the browser store) and **Delete** (inline "Delete <name>? Readings stay in the store.").
+  Built-ins have neither: the kind tag's tooltip says "built-in lenses are set in the map". An action that cannot
+  run stays in the Tab order (`aria-disabled`) and, chosen, says why under the row: "Enable the lens first", "This
+  lens has no scan method: no built-in and no manifest scan block", "Select findings in the ledger first", "Nothing
+  to build: no proposed or approved finding without a job". Outcomes are toasts; a refusal carries the route's or
+  the sim's words as they are (a "lens-scan refused: …" line verbatim).
+- **Onboard a lens.** Below the list, **Onboard a lens** opens the chat (open at once when a conversation exists).
+  First a choice, **Permanent** (the default: kept with the project, reverse-DNS id) or **Temporary** (one refactor or
+  migration, `tmp.*` id), fixed once the first message is sent (**New chat** keeps the choice and starts over). Each
+  turn is one `POST /api/lens-draft` with `{ product, kind: 'project' | 'temporary', message, session? }`
+  (`product`: the live slug, else `kettle`); the server runs `/lens-scan onboard --draft-only`, so the onboarding
+  contract lives in the skill. Claude asks at most 3 questions (plain-text messages; nothing is rendered as markup),
+  then drafts. While a turn runs: "Claude is thinking · m:ss" (a 1 s timer only while waiting) and **Cancel**, which
+  aborts the fetch; the route sees the request's abort signal and kills the CLI's process tree, the previous session
+  stays resumable, and the message goes back into the box. 503 (no CLI), 502 (the CLI failed), 504 (3 minutes) and a
+  network failure show as a note with **Retry**; a draft whose shape the check refuses shows as a note and the chat
+  goes on. The chat state is a module store: closing the panel mid-turn neither loses the conversation nor cancels
+  Claude.
+- **The draft card** shows the manifest whole before anything is written: name, short, id, version and kind, the
+  glyph at **7 px** and **14 px** side by side (labelled; the sizes the plan draws it on a tile's rail and in chips)
+  and whether it is a shared glyph or its own path, a run of the line type, the reader, each field (label, key, type,
+  unit, which way is better, headline), each health rule in words (`bad when riskScore >= 7` and its reason), the
+  default and the rollup, and the scan: judgement instructions, or the steps numbered in order (`script` with what it
+  yields, `skill` with its args and budget, `judgement` with its instructions). It is checked with
+  `checkLensManifest(draft, { mode, taken })` in the chosen mode, `taken` being the glyph+line looks of the
+  product's other enabled lenses; a refusal (an id of the wrong form, a glyph path outside the 16×16 box, the same
+  glyph and line as another lens) shows on the card and keeps **Add lens** off. **Add lens** calls
+  `addProjectLens(ctx, manifest, temporary)`: live, `POST /lenses` (the map change reaches every client through the
+  stream's `map` event and the lens-set rebuild adds the tab); Kettle, this browser's store (the model rebuilds on
+  `subscribeTempLenses`). A 400, a 409 (the id exists) or a storage refusal shows on the card. Then the card offers
+  **Scan now**. **Keep refining** focuses the box.
 - **Kettle's store** (`src/lib/scan/temp-lens.ts`): `localStorage['bp.tmpLenses.kettle']`, a JSON array of
-  `LensEntry`. Every access is wrapped; a read keeps only well-formed entries (a `tmp.` id equal to the manifest's,
-  `source: 'project'`, boolean `enabled`, `temporary: true`, a parseable `created_at`, a manifest that passes
-  `checkTempManifest`; the first of a repeated id) and returns the same array while the stored text is unchanged
-  (a `useSyncExternalStore` snapshot). `subscribeTempLenses` fires on this tab's writes and on the `storage` event
-  of another tab (or a storage clear). A write the browser refuses throws a sentence the card shows.
+  `LensEntry` (temporary and permanent project lenses). Every access is wrapped; a read keeps only well-formed entries and returns the same array while the
+  stored text is unchanged (a `useSyncExternalStore` snapshot). `subscribeTempLenses` fires on this tab's writes and
+  on the `storage` event of another tab (or a storage clear). A write the browser refuses throws a sentence the card
+  shows.
 - **The model** keeps `temporary` on `LensDef` (`src/lib/standard/load.ts`), so a tab or the legend can mark a
   temporary lens from the registry alone.
+- **Lenses stay data.** Nothing in the panel, the chip menus or the right-click branches on a lens id; lenses differ
+  by glyph and line only, and the accent colour marks scan work (the job ring) and nothing else.
 
 ## Done means
 
