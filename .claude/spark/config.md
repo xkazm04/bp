@@ -46,6 +46,9 @@ None declared.
 - Building a worktree: Turbopack refuses the node_modules junction; build from the main checkout root with `NEXT_DIST_DIR=.next-<x> npx next build .claude/worktrees/<wt>` (and revert the tsconfig include it adds).
 - A server under test must be the new build: stopping a background `npx next start` task leaves its node child holding the port, so free the port by its owning PID and probe a route or string only the new build has before trusting a screenshot (stale servers misled runs on 2026-10-13 and 2026-10-14).
 - Live products (`?product=<slug>`) are smoke-tested on a real store (`node scripts/scan-demo.mjs` at minimum, a real repo when one is listed) before ship: fixture-green packages never cross the store/route/UI seam.
+- Never create two files whose names differ only by case (`marks.ts` beside `Marks.tsx`): Windows resolves `./ui/Marks` to the `.ts` one and typecheck fails (TS1149) for every importer (release-ledger 2026-10-15, all three UI builders hit it).
+- A UI port measures under bp's own rules: `.bp button { font: inherit }` outranks a one-class button rule (raise it under the surface's root class), and bp scales its UI by `1 + 0.5*(clamp(min(w/1280, h/800),1,2)-1)` (1.0625 at 1600x900), so compare widths at 1600x800 where the scale is 1.
+- A contest port is held by `scripts/fidelity/` (style-contract roles + drive.py on the winner's own data): rerun it after any ledger CSS change; the arena's winner copy and its data must stay (do not `contest.mjs wrap --apply` release-manager while the contract is in use).
 
 ## Wave defaults
 
@@ -59,6 +62,7 @@ None declared.
 
 - Partial-scope picks: the operator drops Recommended extras that do not serve the flow they have in mind (picked only "selection from the ledger" for partial scans). Offer scope options as independent, not as a bundle.
 - The operator chose the most capable model and the full option set again (Opus judgement, all four registry-execute behaviours, a free icon per lens, build in one go). For data ownership (another tool's file, Personas' context map) they want it done through the owning tool, not patched.
+- When a contest winner is chosen for its look ("styling approach and typography strategy"), the owner wants its own fonts and colours too, over the product's palette: they overrode the Recommended bp fonts. Ask the family/palette question in wave 1 of a port, with the winner's option first.
 
 ## Skill improvement log
 
@@ -66,3 +70,4 @@ None declared.
 - 2026-10-12 adopt: a fixture-green product still failed the canvas (deprecated counted as promised); the real-data smoke caught it, as the Repo law predicts. Scouts of a registry skill must also list sibling skills in the registry checkout (lens-scan appeared mid-run as the store's declared writer).
 - 2026-10-13 scan-package: a design that SPAWNS a skill headless (`claude -p "/lens-scan ..."`) must scout where that skill resolves - lens-scan was linked nowhere (not user scope, not pof), and its scripts silently no-op'd through a junction (argv[1] vs realpath). Only the real-CLI smoke found both. Screenshots were first taken from a stale `next start` on 3123 left by /perfect: probe a route only the new build has before trusting a server. Stubs-first (types + compilable stubs + one Engine method) ran 6 packages 3-wide with zero collisions.
 - 2026-10-14 registry-lens-validation: scout claimed lens-scan ignores scan blocks on all six built-ins (BUILTIN_METHODS holds three) - a presence/absence claim about a list must quote the list. Stubs-first again ran 5 builders 3+2-wide with zero collisions; route-guards needs a stub route to parse its body. The real-data run, not the gates, found every important defect (adopt scope crash, skipped judgement, partial maps, harness theme mode).
+- 2026-10-15 release-ledger: stubs-first ran 7 builders in 3 waves with zero collisions (4th spark in a row). The Director's own shared-file naming caused the one cross-builder failure (case collision, promoted above). The quality gate written and proven red before the first ported line held 49 files at 0 with no builder fighting it. The scout missed a missing store capability (no triage undo) that the chosen design needed: when a design adopts a prototype, scout every action the prototype offers against the backend's transition table, not only the fields it reads.
