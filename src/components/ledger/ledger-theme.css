@@ -1,0 +1,20 @@
+/* The findings ledger's own type and palette: contest release-manager winner A/1, whose fonts and exact blues the owner
+   chose for the ledger (2026-10-15) over the drawing set's Plex and palette. Scoped to the ledger page, so the header,
+   plan and rail around it keep theirs. The roles are bp's token names (globals.css); only their values change here,
+   in both themes, so every ledger rule that reads a role repaints with no rule of its own. Values are A/1's
+   (index.html :root and html[data-theme='light']), byte-equal. */
+.lg-page {
+  --sans: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --mono: "Cascadia Mono", "JetBrains Mono", Consolas, "SFMono-Regular", Menlo, monospace;
+  --sheet-a: #12345e; --sheet-b: #0d2a4f; --sheet-c: #0a2345; --paper: #071a33;
+  --ink: #cfe3fb; --ink-hi: #ffffff; --ink-2: #93b2d6; --ink-3: #3c6594; --ink-4: #22477a; --on-ink: #071a33;
+  --accent: #5ccfff; --mint: #5fe3b3; --mint-2: #5fe3b3; --red: #ff8b9b; --red-2: #ff8b9b; --amber: #ffc86b; --amber-2: #ffc86b;
+  --panel: #0a2142; --panel-solid: #0a2142; --card: #0c2850; --card-hi: #10305c; --shadow: rgba(0, 8, 20, .55); --code-bg: #08203f;
+  font-family: var(--sans);
+}
+:root[data-theme='light'] .lg-page {
+  --sheet-a: #f6f9fd; --sheet-b: #eef4fb; --sheet-c: #e8f0fa; --paper: #dfe9f5;
+  --ink: #1d3c63; --ink-hi: #0a2244; --ink-2: #4f6c90; --ink-3: #9db5d3; --ink-4: #ccdaeb; --on-ink: #ffffff;
+  --accent: #0b6fc2; --mint: #0f8a5f; --mint-2: #0f8a5f; --red: #c23047; --red-2: #c23047; --amber: #a26300; --amber-2: #a26300;
+  --panel: #ffffff; --panel-solid: #ffffff; --card: #f3f7fc; --card-hi: #e6eef8; --shadow: rgba(20, 50, 90, .18); --code-bg: #f7fafd;
+}

@@ -40,6 +40,7 @@ import { Matrix } from './variants/Matrix';
 import { ComparePanel } from './train/compare/ComparePanel';
 import { ReleaseView, SummaryStrip } from './train/release/ReleaseView';
 import './ledger.css';
+import './ledger-theme.css';
 
 export interface LedgerPageProps {
   /** The "Lenses" button (LensesButton), shown in the top bar. */

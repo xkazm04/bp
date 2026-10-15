@@ -17,6 +17,7 @@
     "check:scan-wire": "node scripts/check-scan-wire.ts",
     "check:scan-jobs": "node scripts/check-scan-jobs.ts",
     "check:release-train": "node scripts/check-release-train.ts",
+    "check:train-quality": "node scripts/check-train-quality.mjs",
     "check:lens-manifest": "node scripts/check-lens-manifest.ts",
     "check:live-health": "node scripts/check-live-health.ts",
     "check:local-only": "node scripts/check-local-only.ts",
