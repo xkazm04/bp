@@ -10,8 +10,15 @@ export function latestRun(scan: Pick<ScanSnapshot, 'runs'> | undefined): Run | n
   return r;
 }
 
+/**
+ * Whether a reading counts as the feature's state: an `after` reading (v2) was taken on an unmerged pack branch,
+ * so it is that item's evidence, never the product's current value - as store.mjs `latest` and `gaps` read it.
+ * Unlinked readings and `before` readings count.
+ */
+export const isCurrent = (m: Pick<Measurement, 'phase'>): boolean => m.phase !== 'after';
+
 export interface MeasureIndex {
-  /** feature + lens + metric -> its latest reading (a tie on the time goes to the later row). */
+  /** feature + lens + metric -> its latest current reading (isCurrent; a tie on the time goes to the later row). */
   latest: Map<string, Measurement>;
   /** run + lens -> the features that run has measured on that lens. */
   measured: Map<string, Set<string>>;
@@ -26,7 +33,7 @@ export function measureIndex(measurements: readonly Measurement[]): MeasureIndex
   ix = { latest: new Map(), measured: new Map() };
   for (const m of measurements) {
     const k = metricKey(m.feature, m.lens, m.metric), p = ix.latest.get(k);
-    if (!p || m.measured_at >= p.measured_at) ix.latest.set(k, m);
+    if (isCurrent(m) && (!p || m.measured_at >= p.measured_at)) ix.latest.set(k, m);
     const rk = runLensKey(m.run_id, m.lens);
     let s = ix.measured.get(rk);
     if (!s) ix.measured.set(rk, (s = new Set()));

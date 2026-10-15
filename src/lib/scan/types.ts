@@ -8,10 +8,17 @@ import type { Readiness } from './readiness';
 export type RunPhase = 'measure' | 'propose' | 'execute' | 'propagate';
 export type RunStatus = 'running' | 'done' | 'failed' | 'aborted';
 export type ProposalKind = 'fix' | 'baseline-upgrade' | 'propagation';
-export type ProposalStatus = 'proposed' | 'approved' | 'declined' | 'executing' | 'done' | 'failed';
+/** v2 adds a person's triage of a built item (accepted, rework, descoped) and `released` (its release was tagged). */
+export type ProposalStatus = 'proposed' | 'approved' | 'declined' | 'executing' | 'done' | 'failed' | 'accepted' | 'rework' | 'descoped' | 'released';
 export type ProposalSize = 'XS' | 'S' | 'M' | 'L' | 'XL';
 export type ActivityKind = 'reading' | 'measured' | 'proposed' | 'executing' | 'committed' | 'note' | 'error';
 export type CoverageState = 'conformant' | 'deviation' | 'not-applicable' | 'unknown';
+/** v2: a reading or a capture taken for one proposal, before or after its build. */
+export type EvidencePhase = 'before' | 'after';
+export type PackStatus = 'open' | 'triaged' | 'closed';
+export type ReleaseStatus = 'draft' | 'building' | 'pr-open' | 'merged' | 'tagged' | 'failed';
+/** A person's call on a built item (`POST /api/products/[slug]/triage`). */
+export type TriageDecision = 'accept' | 'rework' | 'descope';
 
 export interface Run {
   id: string;
@@ -41,6 +48,12 @@ export interface Measurement {
   method?: MetricMethod;
   evidence?: string;
   measured_at: string;
+  /** v2: the proposal this reading is before/after evidence for (with `phase`). An `after` reading was taken on the
+   *  pack branch, so it never counts as the feature's current state (src/lib/scan/derive.ts isCurrent). */
+  proposal_id?: string;
+  phase?: EvidencePhase;
+  /** v2: the commit the reading was taken on. */
+  commit_sha?: string;
 }
 
 /**
@@ -71,6 +84,18 @@ export interface Proposal {
   result_sha?: string;
   created_at: string;
   updated_at: string;
+  /** v2: the pack that built it. */
+  pack_id?: string;
+  /** v2: the item's own squashed commit on its pack branch. */
+  commit_sha?: string;
+  /** v2: the previous attempt, when this row is a rework rebuild. */
+  attempt_of?: string;
+  /** v2: the release it ships in. */
+  release_id?: string;
+  triage_note?: string;
+  /** `<kind>:<name>`, e.g. `user:octocat`. */
+  triaged_by?: string;
+  triaged_at?: string;
 }
 
 export interface Activity {
@@ -95,6 +120,45 @@ export interface Shot {
   captured_at: string;
   /** The harness report for this shot (console errors, unknown IPC, text checks). */
   report?: Record<string, unknown>;
+  /** v2: the proposal this capture is before/after evidence for (with `phase`). */
+  proposal_id?: string;
+  phase?: EvidencePhase;
+}
+
+/** v2: one lens's built items on one branch, `pack/<short>-<n>`, cut from `base_ref` at `base_sha`. */
+export interface Pack {
+  /** `k-<short>-<n>`, e.g. `k-des-3`. */
+  id: string;
+  lens: string;
+  /** Per-lens counter, 1-based. */
+  n: number;
+  branch: string;
+  base_ref: string;
+  base_sha: string;
+  /** The execute run that built it. */
+  run_id?: string;
+  status: PackStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+/** v2: accepted items cherry-picked onto `release/<version>`, a PR, then the tag `v<version>`. */
+export interface Release {
+  /** `rel-<version>`. */
+  id: string;
+  /** Semver without the v. */
+  version: string;
+  branch: string;
+  base_sha?: string;
+  status: ReleaseStatus;
+  pr_url?: string;
+  tag?: string;
+  /** Markdown release notes. */
+  notes?: string;
+  error?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Coverage {
@@ -114,12 +178,16 @@ export interface ScanSnapshot {
   activity: Activity[];
   shots: Shot[];
   coverage: Coverage[];
+  /** v2 (empty on a v1 store). */
+  packs: Pack[];
+  /** v2, oldest first (empty on a v1 store). */
+  releases: Release[];
 }
 /** New or changed rows since the last delta; same keys as the snapshot. */
 export type ScanDelta = ScanSnapshot;
 
 /** The snapshot's tables. A Record over `keyof ScanSnapshot`, so a table added above fails to compile until it is listed here. */
-const TABLE_SET: Record<keyof ScanSnapshot, true> = { runs: true, measurements: true, proposals: true, activity: true, shots: true, coverage: true };
+const TABLE_SET: Record<keyof ScanSnapshot, true> = { runs: true, measurements: true, proposals: true, activity: true, shots: true, coverage: true, packs: true, releases: true };
 export const SCAN_TABLES = Object.keys(TABLE_SET) as readonly (keyof ScanSnapshot)[];
 /** Every table present and empty. */
 export function emptyScan(): ScanSnapshot {
@@ -159,6 +227,32 @@ export type Decision = 'approve' | 'decline';
 export interface DecisionBody {
   decision: Decision;
   note?: string;
+}
+
+/** `POST /api/products/[slug]/triage` body. */
+export interface TriageBody {
+  ids: string[];
+  decision: TriageDecision;
+  note?: string;
+}
+/** What store.mjs `triage` answers (and the triage route returns). */
+export interface TriageResult {
+  /** The status the items moved to. */
+  decision: 'accepted' | 'rework' | 'descoped';
+  by: string;
+  triaged: string[];
+  /** Items left as they were: their status, and a reason (`note-required`, `in-release`) where the status alone does not say why. */
+  skipped: { id: string; status: string; reason?: string }[];
+  /** Packs that moved open -> triaged in the same transaction. */
+  packs_triaged: string[];
+}
+/** `GET /api/products/[slug]/releases/suggest`. */
+export interface VersionSuggestion {
+  /** Semver without the v. */
+  version: string;
+  /** What it was derived from: the latest tag (`v1.4.0`), a manifest (`package.json`, `src-tauri/Cargo.toml`), or `none`. */
+  from: string;
+  reason: string;
 }
 
 /** The SSE event names of `GET /api/products/[slug]/stream`. */

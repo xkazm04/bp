@@ -5,6 +5,12 @@
 //   --lens slow     sleeps until killed (cancel)          --lens wait    sleeps 1.5 s, then succeeds (queue cap)
 //   --lens fail     prints `boom: failed on purpose` on stderr, exits 3
 //   --lens refuse   prints `lens-scan refused: unknown slug`, exits 0 without a run (a headless refusal)
+//   /lens-scan release --id rel-<v> [--finish]   acts on the release as store.mjs would (lens-scan references/release.md):
+//                   a cut moves it draft|failed -> building, writes the release-head measure run (note
+//                   `bp-job:<BP_JOB_ID> · release rel-<v> at <sha>`), then -> pr-open with a PR url; a version with `-fail`
+//                   in it ends failed instead (`lens-scan release failed: gate ...`). --finish moves pr-open -> merged ->
+//                   tagged (tag v<v>), its accepted items -> released and every pack left with only released, descoped
+//                   or declined items -> closed, with no run. An unknown release: `lens-scan refused: ...`, exit 0.
 //   anything else   writes a run with note `bp-job:<BP_JOB_ID>` into <cwd>/.ai/lens-scan/scan.db, exits 0
 // With `--output-format json` it answers like `claude -p --output-format json` running `/lens-scan onboard --draft-only`
 // (the lens-draft chat):
@@ -66,6 +72,47 @@ db.exec('BEGIN IMMEDIATE');
 if (db.prepare('PRAGMA user_version').get().user_version === 0) db.exec(fs.readFileSync(path.join(ROOT, 'docs/standard/lens-scan-store.sql'), 'utf8'));
 db.exec('COMMIT');
 const now = new Date().toISOString(), id = 'run-' + process.env.BP_JOB_ID;
+const rel = /^\/lens-scan release --id (\S+)( --finish)?\s*$/m.exec(input);
+if (rel) {
+  const [, rid, fin] = rel, at = () => new Date().toISOString();
+  const r = db.prepare('SELECT * FROM releases WHERE id = ?').get(rid);
+  // each move a compare-and-set on the status read, as store.mjs release-update makes it
+  const move = (to, from, extra = {}) => {
+    const cols = Object.keys(extra).map((k) => `, ${k} = ?`).join('');
+    if (!db.prepare(`UPDATE releases SET status = ?, updated_at = ?${cols} WHERE id = ? AND status = ?`).run(to, at(), ...Object.values(extra), rid, from).changes) throw new Error(`${rid} moved on`);
+  };
+  if (!r) { console.log(`lens-scan refused: release ${rid} does not exist`); db.close(); process.exit(0); }
+  if (fin) {
+    if (r.status !== 'pr-open' && r.status !== 'merged') { console.log(`lens-scan refused: ${rid} is ${r.status}`); db.close(); process.exit(0); }
+    if (r.status === 'pr-open') move('merged', 'pr-open');
+    db.exec('BEGIN IMMEDIATE');
+    move('tagged', 'merged', { tag: 'v' + r.version });
+    const items = db.prepare("SELECT id, pack_id FROM proposals WHERE release_id = ? AND status = 'accepted'").all(rid);
+    db.prepare("UPDATE proposals SET status = 'released', updated_at = ? WHERE release_id = ? AND status = 'accepted'").run(at(), rid);
+    for (const k of new Set(items.map((p) => p.pack_id).filter(Boolean))) {
+      if (!db.prepare("SELECT COUNT(*) AS n FROM proposals WHERE pack_id = ? AND status NOT IN ('released', 'descoped', 'declined')").get(k).n) {
+        db.prepare("UPDATE packs SET status = 'closed', updated_at = ? WHERE id = ? AND status IN ('open', 'triaged')").run(at(), k);
+      }
+    }
+    db.exec('COMMIT');
+    console.log(`lens-scan release ${rid} tagged v${r.version}`);
+  } else {
+    if (r.status !== 'draft' && r.status !== 'failed') { console.log(`lens-scan refused: ${rid} is ${r.status}`); db.close(); process.exit(0); }
+    move('building', r.status);
+    const sha = 'f'.repeat(40);
+    db.prepare("INSERT INTO runs (id, started_at, updated_at, ended_at, phase, status, lenses, note) VALUES (?, ?, ?, ?, 'measure', 'done', '[]', ?)")
+      .run(id, now, now, now, `bp-job:${process.env.BP_JOB_ID} · release ${rid} at ${sha}`);
+    if (r.version.includes('-fail')) {
+      move('failed', 'building', { error: 'gate npm test: 1 failing' });
+      console.log('lens-scan release failed: gate npm test: 1 failing');
+    } else {
+      move('pr-open', 'building', { pr_url: `https://github.com/example/prod/pull/${r.version.replace(/\D/g, '')}` });
+      console.log(`lens-scan release ${rid} pr-open`);
+    }
+  }
+  db.close();
+  process.exit(0);
+}
 db.prepare("INSERT INTO runs (id, started_at, updated_at, ended_at, phase, status, lenses, note) VALUES (?, ?, ?, ?, ?, 'done', '[]', ?)")
   .run(id, now, now, now, input.includes('execute') ? 'execute' : 'measure', 'bp-job:' + process.env.BP_JOB_ID + ' · fake');
 db.close();

@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { TICK_CLASS, astat, type SimAgent } from '@/lib/model';
 import { cancelJob, refusalText } from '@/lib/scan/actions';
-import type { ScanJob } from '@/lib/scan/jobs';
+import { jobLabel, type ScanJob } from '@/lib/scan/jobs';
 import { jobProgress } from '@/lib/scan/scan-views';
 import type { ScanSnapshot } from '@/lib/scan/types';
 import { ScanGlyph } from '../../ScanMenu';
@@ -73,7 +73,7 @@ export function Agents() {
           return (
             <Row key={j.id} id={k} on={cur === k} onPick={() => setSel(k)} cls={'job st-' + j.status}>
               <span className="rk">{d?.glyph ? <ScanGlyph g={d.glyph} px={16} /> : null}<span className={'st ' + j.status}>{j.status}</span><span>{x.clock}</span></span>
-              <span className="rt one">{x.measure ? d?.name ?? j.lens : 'Execute · ' + (j.proposals?.length ?? 0) + ' finding' + (j.proposals?.length === 1 ? '' : 's')}</span>
+              <span className="rt one">{x.measure ? d?.name ?? j.lens : jobLabel(j)}</span>
               <span className="rm"><span>{x.measure ? j.scope?.label ?? 'Everything' : (j.proposals ?? []).join(', ')}</span><span>{x.n}/{x.m}</span></span>
               <span className="bar" aria-hidden="true"><i style={{ width: (x.m ? (100 * x.n) / x.m : 0) + '%' }} /></span>
             </Row>
@@ -128,8 +128,8 @@ function JobDetail({ j, scan, total, now, live }: { j: ScanJob; scan: ScanSnapsh
   const pct = x.m ? Math.round((100 * x.n) / x.m) : 0;
   return (
     <>
-      <div className="wb-kick"><span className={'st ' + j.status}>{j.status}</span><span>{x.measure ? 'Measure' : 'Execute'}</span><span>{j.id}</span></div>
-      <h3 className="wb-title wb-glyph">{d?.glyph ? <ScanGlyph g={d.glyph} px={24} /> : null}{x.measure ? d?.name ?? j.lens ?? 'Scan' : 'Execute ' + (j.proposals?.length ?? 0) + ' approved finding' + (j.proposals?.length === 1 ? '' : 's')}</h3>
+      <div className="wb-kick"><span className={'st ' + j.status}>{j.status}</span><span>{x.measure ? 'Measure' : j.kind === 'release' ? 'Release' : 'Execute'}</span><span>{j.id}</span></div>
+      <h3 className="wb-title wb-glyph">{d?.glyph ? <ScanGlyph g={d.glyph} px={24} /> : null}{x.measure ? d?.name ?? j.lens ?? 'Scan' : j.kind === 'release' ? jobLabel(j) : 'Execute ' + (j.proposals?.length ?? 0) + ' approved finding' + (j.proposals?.length === 1 ? '' : 's')}</h3>
       <p className="wb-lede">{x.measure ? 'Scope: ' + (j.scope?.label ?? 'everything') : (j.proposals ?? []).join(', ') || 'No proposals named.'}</p>
       <div className="wb-figs">
         <Fig n={x.n + '/' + x.m} label={x.measure ? 'features measured' : 'findings built'} tone={j.status === 'done' ? 'mint' : undefined} />

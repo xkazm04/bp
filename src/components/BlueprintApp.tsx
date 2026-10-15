@@ -126,7 +126,7 @@ function toastFailures(E: Engine, jobs: readonly ScanJob[], seen: { init: boolea
   for (const j of jobs) {
     const was = seen.st.get(j.id);
     if (seen.init && j.status === 'failed' && (was ? was !== 'failed' : now - Date.parse(j.queued_at) < 15000)) {
-      E.toast(j.kind === 'measure' ? 'Scan failed' : 'Execute run failed', (j.lens ? j.lens + ': ' : '') + (j.error ?? 'no reason given'));
+      E.toast(j.kind === 'measure' ? 'Scan failed' : j.kind === 'release' ? 'Release ' + (j.version ?? '') + ' failed' : 'Execute run failed', (j.lens ? j.lens + ': ' : '') + (j.error ?? 'no reason given'));
     }
     seen.st.set(j.id, j.status);
   }

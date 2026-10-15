@@ -1,0 +1,30 @@
+// The build and finish routes' shared handler: start a release job (src/lib/scan/jobs.server.ts enqueueRelease) for
+// `rel-<version>`, after the route's localhost guards. 202 + the ScanJob; 400 for a bad release id; 404 for an unknown product, store or release; 409 when
+// the release is in no state for that step (build: draft or failed; finish: pr-open or merged) or already has a job
+// queued or running; 412 `{ error: 'gh not authenticated' }` when `gh auth status` fails; 429 when 16 jobs are queued.
+import { findProduct, hasStore, storeFile } from '@/lib/scan/products.server';
+import type { ReleaseStep } from '@/lib/scan/jobs';
+import { enqueueRelease, releaseBusy } from '@/lib/scan/jobs.server';
+import { RELEASE_ID } from '@/lib/scan/release';
+import { ghAuthed } from '@/lib/scan/release.server';
+import { snapshotOf } from '@/lib/scan/store.server';
+import type { Release } from '@/lib/scan/types';
+
+const FROM: Record<ReleaseStep, string[]> = { build: ['draft', 'failed'], finish: ['pr-open', 'merged'] };
+
+export async function startRelease(req: Request, params: Promise<{ slug: string; id: string }>, step: ReleaseStep): Promise<Response> {
+  void req; // the route guarded it (localOnly, jsonOnly); a release job takes no body
+  const { slug, id } = await params;
+  const p = findProduct(slug);
+  if (!p) return Response.json({ error: `unknown product ${slug}` }, { status: 404 });
+  if (!RELEASE_ID.test(id)) return Response.json({ error: 'bad-release' }, { status: 400 });
+  if (!hasStore(p)) return Response.json({ error: `no scan store for ${slug}` }, { status: 404 });
+  let rel: Release | undefined;
+  try { rel = snapshotOf(storeFile(p)).releases.find((r) => r.id === id); } catch (e) { return Response.json({ error: `cannot read the scan store: ${(e as Error).message}` }, { status: 503 }); }
+  if (!rel) return Response.json({ error: `no release ${id}` }, { status: 404 });
+  if (!FROM[step].includes(rel.status)) return Response.json({ error: `${id} is ${rel.status}; ${step} starts from ${FROM[step].join(' or ')}`, release: rel }, { status: 409 });
+  if (releaseBusy(slug, id)) return Response.json({ error: `a release job for ${id} is already queued or running` }, { status: 409 });
+  if (!(await ghAuthed())) return Response.json({ error: 'gh not authenticated' }, { status: 412 });
+  const r = enqueueRelease(slug, p.root, id, rel.version, step);
+  return r.ok ? Response.json(r.job, { status: 202 }) : Response.json({ error: r.error }, { status: r.status });
+}

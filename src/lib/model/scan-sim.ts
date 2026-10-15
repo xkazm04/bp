@@ -90,7 +90,7 @@ export class ScanSim {
   snapshot(): ScanSnapshot {
     if (!this.snap || this.snapV !== this.v) {
       this.snapV = this.v;
-      this.snap = { runs: this.runs.slice(), measurements: this.ms.slice(), proposals: this.props.slice(), activity: this.act.slice(), shots: [], coverage: [] };
+      this.snap = { runs: this.runs.slice(), measurements: this.ms.slice(), proposals: this.props.slice(), activity: this.act.slice(), shots: [], coverage: [], packs: [], releases: [] };
     }
     return this.snap;
   }

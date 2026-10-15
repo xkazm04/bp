@@ -12,6 +12,8 @@
 //     and temporary 201 / bad reverse DNS 400 / taken look 400 / 409 / PATCH and DELETE of project lenses / built-in
 //     403, the map's key order and facets kept), and a map carrying the new temporary entry passes
 //     validate-structure while a temporary entry with a reverse-DNS id does not;
+//   - the release train: triage (through lens-scan store.mjs), releases POST, suggest, build/finish release jobs over the
+//     fake (draft -> building -> pr-open -> tagged, run_id from the release-head measure run, 412 when gh is signed out);
 //   - Kettle parity: the scan sim's selection scans and lens execute, and addProjectLens over the browser's store.
 // Checks that need WP1's full checkLensManifest (project mode, taken looks) print SKIP while it is the S0 stub.
 // Run: node scripts/check-scan-jobs.ts  (Node's type stripping; no build step). Exit 1 on any failure. ~15 s.
@@ -352,6 +354,118 @@ try {
   check('lens-draft without the CLI -> 503', t503.status === 503 && t503.body.error === J.CLI_MISSING, JSON.stringify(t503));
   process.env.BP_CLAUDE_BIN = FAKE;
 
+  // ------------------------------------------------------------------ the release train: triage, releases, release jobs
+  // A product `rel` with a v2 store: pack k-dev-1 (a1, a2 done, a3 failed). Triage and release-create run lens-scan's own
+  // store.mjs (BP_LENS_SCAN_DIR or ~/.claude/skills/lens-scan; SKIP and seed by SQL when it is not installed); gh is a fake
+  // (BP_GH_BIN), signed in or out by FAKE_GH_OUT.
+  {
+    const RS = await import(pathToFileURL(path.join(ROOT, 'src/lib/scan/release.server.ts')).href) as typeof import('../src/lib/scan/release.server.ts');
+    const { jobLabel } = await import(pathToFileURL(path.join(ROOT, 'src/lib/scan/jobs.ts')).href) as typeof import('../src/lib/scan/jobs.ts');
+    const ghFake = path.join(dir, 'fake-gh.mjs');
+    fs.writeFileSync(ghFake, "if (process.env.FAKE_GH_OUT === '1') { console.error('You are not logged into any GitHub hosts.'); process.exit(1); }\n"
+      + "if (process.argv[2] === 'api') console.log('octocat');\nprocess.exit(0);\n");
+    process.env.BP_GH_BIN = ghFake;
+    delete (globalThis as { __bpGhBy?: unknown }).__bpGhBy;
+    const rr = repo('rel'), rstore = path.join(rr, '.ai/lens-scan'), rdb = path.join(rstore, 'scan.db');
+    fs.mkdirSync(rstore, { recursive: true });
+    fs.writeFileSync(path.join(rr, 'package.json'), JSON.stringify({ name: 'rel', version: '2.3.0' }));
+    const sw = new DatabaseSync(rdb);
+    sw.exec(fs.readFileSync(path.join(ROOT, 'docs/standard/lens-scan-store.sql'), 'utf8'));
+    sw.prepare("INSERT INTO runs (id, started_at, updated_at, phase, status, lenses) VALUES ('r0', ?, ?, 'execute', 'done', '[\"development\"]')").run(T, T);
+    sw.prepare("INSERT INTO packs (id, lens, n, branch, base_ref, base_sha, run_id, status, created_at, updated_at) VALUES ('k-dev-1', 'development', 1, 'pack/dev-1', 'main', ?, 'r0', 'open', ?, ?)").run('a'.repeat(40), T, T);
+    const ip = sw.prepare("INSERT INTO proposals (id, run_id, feature, lens, metric, title, kind, status, created_at, updated_at, pack_id, commit_sha) VALUES (?, 'r0', 'a', 'development', 'cov', ?, 'fix', ?, ?, ?, 'k-dev-1', ?)");
+    for (const [id, st] of [['a1', 'done'], ['a2', 'done'], ['a3', 'failed']]) ip.run(id, 'item ' + id, st, at(Number(id[1])), at(Number(id[1])), id.repeat(20));
+    sw.close();
+    fs.writeFileSync(path.join(dir, 'bp.products.local.json'), JSON.stringify({ products: [{ slug: 'prod', name: 'Prod', root: pr }, { slug: 'rel', name: 'Rel', root: rr }] }));
+    const status = (table: string, id: string) => { const d = new DatabaseSync(rdb, { readOnly: true }); try { return (d.prepare(`SELECT status FROM ${table} WHERE id = ?`).get(id) as { status?: string } | undefined)?.status; } finally { d.close(); } };
+    const relRow = (id: string) => { const d = new DatabaseSync(rdb, { readOnly: true }); try { return d.prepare('SELECT * FROM releases WHERE id = ?').get(id) as Record<string, string> | undefined; } finally { d.close(); } };
+
+    const tri = await route('products/[slug]/triage/route.ts'), rels = await route('products/[slug]/releases/route.ts');
+    const sug = await route('products/[slug]/releases/suggest/route.ts');
+    const build = await route('products/[slug]/releases/[id]/build/route.ts'), fin = await route('products/[slug]/releases/[id]/finish/route.ts');
+    const hasStoreMjs = RS.storeScript() !== null;
+    const triBad = await Promise.all([
+      call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a b'], decision: 'accept' }),
+      call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a1'], decision: 'ship' }),
+      call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: Array.from({ length: 201 }, (_, i) => 'p' + i), decision: 'accept' }),
+      call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: [], decision: 'accept' }),
+      call(tri.POST, '/x', 'POST', { slug: 'nope' }, { ids: ['a1'], decision: 'accept' }),
+    ]);
+    check('triage refusals: unsafe id, bad decision, 201 ids, none, unknown product', triBad.map((b) => b.status).join() === '400,400,400,400,404', triBad.map((b) => b.status).join());
+    if (hasStoreMjs) {
+      const t1 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a1', 'a2'], decision: 'accept' });
+      check('triage accept -> 200 through store.mjs, by user:<gh login>', t1.status === 200 && t1.body.triaged.join() === 'a1,a2' && t1.body.by === 'user:octocat' && t1.body.decision === 'accepted', JSON.stringify(t1.body));
+      const t2 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a3'], decision: 'accept' });
+      check('triage accept of a failed item without a note -> 409, skipped note-required', t2.status === 409 && t2.body.skipped[0]?.reason === 'note-required', JSON.stringify(t2.body));
+      const t3 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a3'], decision: 'descope', note: 'not worth it' });
+      check('triage descope -> 200, the pack settles open -> triaged', t3.status === 200 && t3.body.packs_triaged.join() === 'k-dev-1' && status('packs', 'k-dev-1') === 'triaged', JSON.stringify(t3.body));
+    } else {
+      skipped++; console.log('SKIP triage and release-create through store.mjs (lens-scan not installed; set BP_LENS_SCAN_DIR)');
+      const d = new DatabaseSync(rdb);
+      d.exec("UPDATE proposals SET status = 'accepted' WHERE id IN ('a1', 'a2'); UPDATE proposals SET status = 'descoped' WHERE id = 'a3'; UPDATE packs SET status = 'triaged'");
+      d.close();
+    }
+    const sg = await call(sug.GET, '/x', 'GET', { slug: 'rel' });
+    check('suggest with no v* tag -> the manifest version as it stands', sg.status === 200 && sg.body.version === '2.3.0' && sg.body.from === 'package.json', JSON.stringify(sg.body));
+    check('POST releases bad version -> 400', (await call(rels.POST, '/x', 'POST', { slug: 'rel' }, { version: 'v2.3.0' })).status === 400);
+    check('POST releases with no accepted item among the ids -> 409', (await call(rels.POST, '/x', 'POST', { slug: 'rel' }, { version: '2.3.0', ids: ['a3'] })).status === 409);
+    if (hasStoreMjs) {
+      const c1 = await call(rels.POST, '/x', 'POST', { slug: 'rel' }, { version: '2.3.0' });
+      check('POST releases -> 201, a draft with every accepted item', c1.status === 201 && c1.body.release.id === 'rel-2.3.0' && c1.body.release.status === 'draft' && c1.body.release.created_by === 'user:octocat'
+        && c1.body.added.join() === 'a1,a2' && c1.body.release.items.map((p: Proposal) => p.id).join() === 'a1,a2', JSON.stringify(c1.body).slice(0, 400));
+      const c2 = await call(rels.POST, '/x', 'POST', { slug: 'rel' }, { version: '2.3.1', ids: ['a1'] });
+      check('POST releases of items already in one -> 409', c2.status === 409, JSON.stringify(c2.body));
+    } else {
+      const d = new DatabaseSync(rdb);
+      d.prepare("INSERT INTO releases (id, version, branch, status, created_by, created_at, updated_at) VALUES ('rel-2.3.0', '2.3.0', 'release/2.3.0', 'draft', 'user:octocat', ?, ?)").run(T, T);
+      d.exec("UPDATE proposals SET release_id = 'rel-2.3.0' WHERE id IN ('a1', 'a2')");
+      d.close();
+    }
+    const sg2 = await call(sug.GET, '/x', 'GET', { slug: 'rel' });
+    check('suggest passes over a version that has a release', sg2.body.version === '2.3.1', JSON.stringify(sg2.body));
+
+    process.env.FAKE_GH_OUT = '1';
+    const b412 = await call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0' }, {});
+    check('build with gh signed out -> 412 gh not authenticated', b412.status === 412 && b412.body.error === 'gh not authenticated', JSON.stringify(b412));
+    delete process.env.FAKE_GH_OUT;
+    const bBad = await Promise.all([
+      call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0;calc' }, {}),
+      call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-9.9.9' }, {}),
+      call(fin.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0' }, {}),
+    ]);
+    check('build/finish refusals: bad id 400, unknown release 404, finish of a draft 409', bBad.map((b) => b.status).join() === '400,404,409', bBad.map((b) => b.status + ':' + b.body.error).join());
+    const b1 = await call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0' }, {});
+    check('build -> 202 release job (kind release, step build)', b1.status === 202 && b1.body.kind === 'release' && b1.body.release === 'rel-2.3.0' && b1.body.version === '2.3.0' && b1.body.step === 'build', JSON.stringify(b1.body));
+    check('a release job reads "Release 2.3.0 · build"', jobLabel(b1.body) === 'Release 2.3.0 · build', jobLabel(b1.body));
+    const again = await call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0' }, {});
+    check('a second build while one is queued or running -> 409', again.status === 409, JSON.stringify(again));
+    check('build: the job ends done once the release is pr-open', await until(() => job('rel', b1.body.id)?.status === 'done' || job('rel', b1.body.id)?.status === 'failed'), JSON.stringify(job('rel', b1.body.id)));
+    const jb = job('rel', b1.body.id);
+    check('build: done, the release pr-open with its url, run_id = the release-head measure run (bp-job note)', jb?.status === 'done' && relRow('rel-2.3.0')?.status === 'pr-open' && !!relRow('rel-2.3.0')?.pr_url && jb.run_id === 'run-' + jb.id, JSON.stringify(jb));
+    check('build: the prompt is /lens-scan release --id rel-2.3.0 on stdin', /^stdin \/lens-scan release --id rel-2\.3\.0$/m.test(jb?.log_tail ?? ''), jb?.log_tail);
+    check('build of a pr-open release -> 409', (await call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0' }, {})).status === 409);
+    const f1 = await call(fin.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0' }, {});
+    check('finish -> 202 (step finish)', f1.status === 202 && f1.body.step === 'finish' && jobLabel(f1.body) === 'Release 2.3.0 · finish', JSON.stringify(f1.body));
+    await until(() => job('rel', f1.body.id)?.status === 'done' || job('rel', f1.body.id)?.status === 'failed');
+    const jf2 = job('rel', f1.body.id);
+    check('finish: done with no run, the release tagged v2.3.0', jf2?.status === 'done' && jf2.run_id === undefined && relRow('rel-2.3.0')?.status === 'tagged' && relRow('rel-2.3.0')?.tag === 'v2.3.0', JSON.stringify(jf2));
+    check('finish: the accepted items released, the pack closed', status('proposals', 'a1') === 'released' && status('proposals', 'a2') === 'released' && status('packs', 'k-dev-1') === 'closed', [status('proposals', 'a1'), status('packs', 'k-dev-1')].join());
+
+    // a cut that fails its gates, an unknown release, a bad id: the registry directly
+    const d = new DatabaseSync(rdb);
+    d.prepare("INSERT INTO releases (id, version, branch, status, created_at, updated_at) VALUES ('rel-3.0.0-fail', '3.0.0-fail', 'release/3.0.0-fail', 'draft', ?, ?)").run(T, T);
+    d.close();
+    const e1 = J.enqueueRelease('rel', rr, 'rel-3.0.0-fail', '3.0.0-fail', 'build'), e2 = J.enqueueRelease('rel', rr, 'rel-9.9.9', '9.9.9', 'build');
+    await until(() => [e1, e2].every((e) => e.ok && ['done', 'failed'].includes(job('rel', e.job.id)?.status ?? '')));
+    const je1 = e1.ok ? job('rel', e1.job.id) : undefined, je2 = e2.ok ? job('rel', e2.job.id) : undefined;
+    check('a cut whose gate fails -> failed with lens-scan\'s line, its measure run still attached', je1?.status === 'failed' && je1.error === 'lens-scan release failed: gate npm test: 1 failing' && je1.run_id === 'run-' + je1.id && relRow('rel-3.0.0-fail')?.status === 'failed', JSON.stringify(je1));
+    check('an unknown release -> failed with the refusal', je2?.status === 'failed' && /^lens-scan refused:/.test(je2.error ?? ''), JSON.stringify(je2));
+    const e3 = J.enqueueRelease('rel', rr, 'rel-1.0.0', '1.0.1', 'build'), e4 = J.enqueueRelease('rel', rr, 'release-1', '1', 'finish');
+    check('enqueueRelease refuses an id that is not rel-<version> -> 400', !e3.ok && e3.status === 400 && !e4.ok && e4.status === 400);
+    delete process.env.BP_GH_BIN;
+    delete (globalThis as { __bpGhBy?: unknown }).__bpGhBy;
+  }
+
   // ------------------------------------------------------------------ Kettle parity: the scan sim and the browser's lens store
   const clock = Date.parse(T); // frozen: the sim's jobs start and never step, so what is queued or running stays put
   const fprop = (id: string, lens: string, status: Proposal['status'], i: number): Proposal => ({ id, run_id: 'r0', feature: 'a', lens, title: 't', standard: 'none', kind: 'fix', status, created_at: at(i), updated_at: at(i) });
@@ -420,7 +534,7 @@ try {
   check('validate-structure refuses a temporary entry without a tmp. id', v2.status === 1, (v2.stdout + v2.stderr).slice(-400));
 } finally {
   process.chdir(os.tmpdir());
-  for (const slug of ['cap', 'fail', 'cancel', 'attach', 'prod']) for (const j of J.list(slug)) J.cancel(slug, j.id);
+  for (const slug of ['cap', 'fail', 'cancel', 'attach', 'prod', 'rel']) for (const j of J.list(slug)) J.cancel(slug, j.id);
   await sleep(300);
   try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a dying child still holds a file */ }
 }

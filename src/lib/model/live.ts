@@ -12,17 +12,20 @@ export interface LiveRef {
 
 export const EMPTY_SCAN: ScanSnapshot = emptyScan();
 
+import { isCurrent } from '@/lib/scan/derive';
+
 export { latestRun } from '@/lib/scan/derive';
 
 const HIST = new WeakMap<Measurement[], Map<string, Measurement[]>>();
 const hkey = (feature: string, lens: string, metric: string) => feature + '\u0000' + lens + '\u0000' + metric;
-/** A metric's readings for one feature and lens, oldest first (cached per measurements table). */
+/** A metric's readings for one feature and lens, oldest first (cached per measurements table). A pack's `after`
+ *  readings are left out: they were taken on an unmerged branch, not the product (derive.ts isCurrent). */
 export function metricHistory(scan: ScanSnapshot | undefined, feature: string, lens: string, metric: string): readonly Measurement[] {
   if (!scan) return [];
   let m = HIST.get(scan.measurements);
   if (!m) {
     m = new Map();
-    for (const x of scan.measurements) { const k = hkey(x.feature, x.lens, x.metric); let a = m.get(k); if (!a) m.set(k, (a = [])); a.push(x); }
+    for (const x of scan.measurements) { if (!isCurrent(x)) continue; const k = hkey(x.feature, x.lens, x.metric); let a = m.get(k); if (!a) m.set(k, (a = [])); a.push(x); }
     for (const a of m.values()) a.sort((p, q) => (p.measured_at < q.measured_at ? -1 : p.measured_at > q.measured_at ? 1 : p.id - q.id));
     HIST.set(scan.measurements, m);
   }

@@ -10,6 +10,7 @@ import { readLens, troubleOf } from '@/lib/standard/load';
 import { NUMERIC } from '@/lib/standard/present';
 import type { Facet, FacetValues, FeatureBoundField } from '@/lib/standard/types';
 import type { Measurement, ScanSnapshot } from '@/lib/scan/types';
+import { isCurrent } from '@/lib/scan/derive';
 import type { AggCache } from './aggregates';
 import { lineSuffix, type Product } from './product';
 
@@ -93,7 +94,7 @@ export class LiveFacets {
   /** Lay one reading over its facet value when it is newer than the facet and fits the field; the pair's key, or null. */
   private take(m: Measurement): string | null {
     const f = this.base.get(m.feature), def = this.P.LENS[m.lens];
-    if (!f || !def) return null;
+    if (!f || !def || !isCurrent(m)) return null; // a pack's `after` reading is not the product's state
     const fl = f.lens[m.lens], field = def.manifest.fields.find((x) => x.key === m.metric);
     if (!fl || !field || field.source || !NUMERIC.has(field.type) || typeof m.value !== 'number') return null;
     const k = m.feature + SEP + m.lens, held = this.pairs.get(k)?.get(m.metric);

@@ -9,7 +9,8 @@
 // optimistic: the proposed ones read approved until the next store or sim update, and a refusal rolls back with a toast.
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { isView, lineSuffix } from '@/lib/model';
-import type { Measurement, Proposal, ProposalSize, ProposalStatus, ScanSnapshot } from '@/lib/scan/types';
+import { emptyScan, type Measurement, type Proposal, type ProposalSize, type ProposalStatus, type ScanSnapshot } from '@/lib/scan/types';
+import { isCurrent } from '@/lib/scan/derive';
 import type { ScanJob } from '@/lib/scan/jobs';
 import { dispatch } from '@/lib/scan/actions';
 import type { ScanSim } from '@/lib/model/scan-sim';
@@ -229,7 +230,7 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
 
   const counts = useMemo(() => {
     const c = Object.fromEntries(STATUSES.map((s) => [s, 0])) as Record<ProposalStatus, number>;
-    for (const f of all) c[f.status]++;
+    for (const f of all) c[f.status] = (c[f.status] ?? 0) + 1; // a v2 triage status has no chip yet: counted, never NaN
     return c;
   }, [all]);
 
@@ -237,7 +238,7 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
   const textOk = useCallback((f: Finding) => !q || tidy([f.p.title, f.fname, f.p.feature, f.p.lens, P.LENS[f.p.lens]?.name ?? '', f.p.standard, f.p.id, f.p.metric ?? ''].join(' ')).includes(q), [q, P]);
   const rank = useMemo(() => new Map(STATUSES.map((s, i) => [s, i])), []);
   const rows = useMemo(() => all.filter((f) => (!ui.lens.size || ui.lens.has(f.p.lens)) && (!ui.status.size || ui.status.has(f.status)) && (!ui.feat.size || ui.feat.has(f.p.feature)) && textOk(f))
-    .sort((a, b) => rank.get(a.status)! - rank.get(b.status)! || byRank(a, b)), [all, ui.lens, ui.status, ui.feat, textOk, rank]);
+    .sort((a, b) => (rank.get(a.status) ?? STATUSES.length) - (rank.get(b.status) ?? STATUSES.length) || byRank(a, b)), [all, ui.lens, ui.status, ui.feat, textOk, rank]);
 
   const ready = useMemo(() => all.filter((f) => f.can && ui.sel.has(f.p.id)), [all, ui.sel]);
   const effort = ready.reduce((s, f) => s + sizeW(f.p), 0);
@@ -245,7 +246,7 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
   // the before value: the scan's latest reading, else the map's facet value (Kettle has no store, a live map may hold a newer facet than any reading)
   const moveScan = useMemo<ScanSnapshot | undefined>(() => {
     const ms = src.scan?.measurements ?? [];
-    const have = new Set(ms.map((m) => m.feature + '\u0000' + m.lens + '\u0000' + m.metric)), extra: Measurement[] = [];
+    const have = new Set(ms.filter(isCurrent).map((m) => m.feature + '\u0000' + m.lens + '\u0000' + m.metric)), extra: Measurement[] = [];
     for (const p of src.proposals) {
       if (!p.metric) continue;
       const k = p.feature + '\u0000' + p.lens + '\u0000' + p.metric, fid = feats.get(p.feature)?.fid;
@@ -256,7 +257,7 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
       extra.push({ id: -1 - extra.length, run_id: 'map', feature: p.feature, lens: p.lens, metric: p.metric, value: v, measured_at: fl?.facet?.measured_at ?? P.asOf });
     }
     if (!extra.length) return src.scan;
-    const base = src.scan ?? { runs: [], measurements: [], proposals: [], activity: [], shots: [], coverage: [] };
+    const base = src.scan ?? emptyScan();
     return { ...base, measurements: ms.concat(extra) };
   }, [src.scan, src.proposals, feats, P]);
   const move = useCallback((p: Proposal) => metricMove(p, (l, k) => P.LENS[l]?.F[k]?.unit, moveScan), [P, moveScan]);

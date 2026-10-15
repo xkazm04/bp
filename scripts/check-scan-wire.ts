@@ -6,7 +6,9 @@
 //   - a run row in any of those states does not break the swarm feed (`swarmFromScan`);
 //   - swarm progress is measured against the run's scope, and an unscoped run derives what a brute-force pass does;
 //   - the stream cursor resends nothing after `advance`, and a row that ties on the cursor's timestamp
-//     is sent exactly once.
+//     is sent exactly once;
+//   - v2: packs and releases reach the snapshot and the delta (by updated_at, like proposals), measurements carry their
+//     proposal/phase/commit, and a v1 store (no v2 tables or columns) reads them empty without an error.
 // Run: node scripts/check-scan-wire.ts  (Node's type stripping; no build step). Exit 1 on any failure.
 // The store lives in the OS temp dir and is removed on exit.
 import fs from 'node:fs';
@@ -115,6 +117,57 @@ try {
     const d2 = readDelta(db, cur);
     check('and not again', Object.values(d2).every((xs) => xs.length === 0));
   } finally { close(db); }
+
+  // ---- v2: packs and releases reach the snapshot and the stream with the same change detection; a v1 store reads them empty
+  {
+    const db2 = openRead(file);
+    if (!db2) throw new Error('openRead returned null for an existing store');
+    try {
+      const cur = newCursor();
+      advance(cur, readSnapshot(db2));
+      w.prepare("INSERT INTO packs (id, lens, n, branch, base_ref, base_sha, status, created_at, updated_at) VALUES ('k-dev-1', 'dev', 1, 'pack/dev-1', 'main', 'abc', 'open', ?, ?)").run(T, T);
+      w.prepare("INSERT INTO releases (id, version, branch, status, created_at, updated_at) VALUES ('rel-1.0.0', '1.0.0', 'release/1.0.0', 'draft', ?, ?)").run(T, T);
+      const d1 = readDelta(db2, cur);
+      check('v2: a new pack and a new release arrive in a delta', d1.packs.length === 1 && d1.packs[0].id === 'k-dev-1' && d1.releases.length === 1 && d1.releases[0].status === 'draft', JSON.stringify({ k: d1.packs, r: d1.releases }));
+      check('v2: absent release columns are omitted, never null', !('pr_url' in d1.releases[0]) && !('run_id' in d1.packs[0]) && !JSON.stringify(d1).includes('null'));
+      advance(cur, d1);
+      check('v2: and not again', readDelta(db2, cur).packs.length === 0 && readDelta(db2, cur).releases.length === 0);
+      const T2 = '2026-10-10T11:00:00Z';
+      w.prepare("UPDATE packs SET status = 'triaged', updated_at = ? WHERE id = 'k-dev-1'").run(T2);
+      w.prepare("UPDATE releases SET status = 'building', updated_at = ? WHERE id = 'rel-1.0.0'").run(T2);
+      const d2 = readDelta(db2, cur);
+      check('v2: a pack or release moving on is resent by its updated_at', d2.packs[0]?.status === 'triaged' && d2.releases[0]?.status === 'building', JSON.stringify({ k: d2.packs, r: d2.releases }));
+      w.prepare("INSERT INTO measurements (run_id, feature, lens, metric, value, measured_at, proposal_id, phase, commit_sha) VALUES ('r-ok', 'f1', 'dev', 'cov', 70, ?, 'p1', 'after', 'deadbeef')").run(T2);
+      const after = readDelta(db2, cur).measurements.find((m) => m.phase === 'after');
+      check('v2: a measurement carries proposal_id, phase and commit_sha', after?.proposal_id === 'p1' && after.commit_sha === 'deadbeef', JSON.stringify(after));
+      const snap = snapshotOf(file);
+      check('v2: the snapshot holds packs and releases', snap.packs.length === 1 && snap.releases.length === 1);
+    } finally { close(db2); }
+
+    // a v1 store: no packs or releases tables, no v2 columns
+    const v1 = path.join(dir, 'v1.db'), w1 = new DatabaseSync(v1);
+    w1.exec(`PRAGMA user_version = 1;
+      CREATE TABLE runs (id TEXT PRIMARY KEY, started_at TEXT NOT NULL, updated_at TEXT NOT NULL, ended_at TEXT, phase TEXT NOT NULL, status TEXT NOT NULL, lenses TEXT NOT NULL, scope TEXT, skill_version TEXT, model TEXT, note TEXT);
+      CREATE TABLE measurements (id INTEGER PRIMARY KEY, run_id TEXT NOT NULL, feature TEXT NOT NULL, lens TEXT NOT NULL, metric TEXT NOT NULL, value REAL NOT NULL, unit TEXT, method TEXT, evidence TEXT, measured_at TEXT NOT NULL);
+      CREATE TABLE proposals (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, feature TEXT NOT NULL, lens TEXT NOT NULL, metric TEXT, title TEXT NOT NULL, body TEXT, standard TEXT NOT NULL DEFAULT 'none', expected_delta REAL, size TEXT, risk INTEGER, kind TEXT NOT NULL, parent_id TEXT, status TEXT NOT NULL, decided_by TEXT, decided_at TEXT, decision_note TEXT, after_value REAL, result_sha TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+      CREATE TABLE activity (id INTEGER PRIMARY KEY, run_id TEXT NOT NULL, at TEXT NOT NULL, feature TEXT, lens TEXT, kind TEXT NOT NULL, text TEXT NOT NULL);
+      CREATE TABLE shots (id INTEGER PRIMARY KEY, run_id TEXT NOT NULL, feature TEXT NOT NULL, path TEXT NOT NULL, size TEXT, theme TEXT, harness_module TEXT, captured_at TEXT NOT NULL, report TEXT);
+      CREATE TABLE coverage (feature TEXT NOT NULL, standard TEXT NOT NULL, state TEXT NOT NULL, evidence TEXT, judged_at TEXT NOT NULL, run_id TEXT, PRIMARY KEY (feature, standard));`);
+    w1.prepare("INSERT INTO runs (id, started_at, updated_at, phase, status, lenses) VALUES ('r1', ?, ?, 'measure', 'done', '[]')").run(T, T);
+    w1.prepare("INSERT INTO measurements (run_id, feature, lens, metric, value, measured_at) VALUES ('r1', 'f1', 'dev', 'cov', 5, ?)").run(T);
+    w1.close();
+    let s1: ScanSnapshot | undefined, err = '';
+    try { s1 = snapshotOf(v1); } catch (e) { err = (e as Error).message; }
+    check('v1 store: a snapshot, packs and releases empty, never an error', !err && s1?.packs.length === 0 && s1.releases.length === 0 && s1.runs.length === 1 && s1.measurements.length === 1, err);
+    const r1 = openRead(v1);
+    try {
+      const c1 = newCursor();
+      advance(c1, readSnapshot(r1!));
+      const d = readDelta(r1!, c1);
+      check('v1 store: a delta reads with the v2 tables absent', d.packs.length === 0 && d.releases.length === 0);
+    } finally { close(r1); }
+  }
+
   w.close();
 
   // ---- product list: a missing file is quiet, a broken one is said once (not on every request)

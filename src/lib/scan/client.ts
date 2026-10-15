@@ -55,6 +55,8 @@ function mergeScan(s: ScanSnapshot, d: ScanDelta): ScanSnapshot {
     activity,
     shots: upsert(s.shots, d.shots, byId),
     coverage: upsert<Coverage>(s.coverage, d.coverage, (c) => c.feature + '\u0000' + c.standard),
+    packs: upsert(s.packs, d.packs, byId),
+    releases: upsert(s.releases, d.releases, byId),
   };
 }
 

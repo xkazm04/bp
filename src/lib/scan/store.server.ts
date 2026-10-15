@@ -1,13 +1,14 @@
-// The lens-scan store, read side (and the one write the blueprint makes: a proposal decision). The DDL is
+// The lens-scan store, read side (and the one write the blueprint makes itself: a proposal decision; triage and
+// releases go through lens-scan's own store.mjs, src/lib/scan/release.server.ts). The DDL is
 // docs/standard/lens-scan-store.sql; the /lens-scan skill writes the file concurrently in WAL mode, so
 // reads go through a read-only connection and a decision opens its own short read-write connection with a
-// busy timeout. Rows become wire objects (src/lib/scan/types.ts) here: JSON columns are parsed and NULL
-// columns are omitted (absent-value convention, never null in JSON). Server-only, imported by the route
+// busy timeout. A v1 store (no packs or releases tables, no v2 columns) reads with those arrays empty. Rows
+// become wire objects (src/lib/scan/types.ts) here: JSON columns are parsed and NULL columns are omitted (absent-value convention, never null in JSON). Server-only, imported by the route
 // handlers under src/app/api/products and nothing else; node:sqlite is a Node builtin (experimental on 24).
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { emptyScan, isEmptyScan, type Activity, type Coverage, type DecisionBody, type Measurement, type Proposal, type Run, type ScanDelta, type ScanSnapshot, type Shot } from './types.ts';
+import { emptyScan, isEmptyScan, type Activity, type Coverage, type DecisionBody, type Measurement, type Pack, type Proposal, type Release, type Run, type ScanDelta, type ScanSnapshot, type Shot } from './types.ts';
 
 if (typeof window !== 'undefined') throw new Error('store.server.ts is server-only');
 
@@ -86,19 +87,24 @@ export function readSnapshot(db: DatabaseSync): ScanSnapshot {
   if (has.has('activity')) s.activity = wireAll<Activity>('activity', all(db, 'SELECT * FROM (SELECT * FROM activity ORDER BY id DESC LIMIT ?) ORDER BY id', ACTIVITY_LIMIT));
   if (has.has('shots')) s.shots = wireAll<Shot>('shots', all(db, 'SELECT * FROM shots ORDER BY id'));
   if (has.has('coverage')) s.coverage = wireAll<Coverage>('coverage', all(db, 'SELECT * FROM coverage ORDER BY judged_at, feature, standard'));
+  // v2 tables: a v1 store has neither, and its snapshot carries them empty
+  if (has.has('packs')) s.packs = wireAll<Pack>('packs', all(db, 'SELECT * FROM packs ORDER BY created_at, lens, n'));
+  if (has.has('releases')) s.releases = wireAll<Release>('releases', all(db, 'SELECT * FROM releases ORDER BY created_at, id'));
   return s;
 }
 
 /**
- * Where a stream has got to. Append-only tables move by id; runs/proposals by updated_at and coverage by
- * judged_at, which can tie: the keys already sent at the max timestamp are kept so `>=` resends nothing.
+ * Where a stream has got to. Append-only tables move by id; runs/proposals/packs/releases by updated_at and
+ * coverage by judged_at, which can tie: the keys already sent at the max timestamp are kept so `>=` resends nothing.
  */
+interface AtCursor { at: string; keys: Set<string> }
 export interface Cursor {
   measurements: number; activity: number; shots: number;
-  runs: { at: string; keys: Set<string> }; proposals: { at: string; keys: Set<string> }; coverage: { at: string; keys: Set<string> };
+  runs: AtCursor; proposals: AtCursor; coverage: AtCursor; packs: AtCursor; releases: AtCursor;
 }
+const atCursor = (): AtCursor => ({ at: '', keys: new Set() });
 export function newCursor(): Cursor {
-  return { measurements: 0, activity: 0, shots: 0, runs: { at: '', keys: new Set() }, proposals: { at: '', keys: new Set() }, coverage: { at: '', keys: new Set() } };
+  return { measurements: 0, activity: 0, shots: 0, runs: atCursor(), proposals: atCursor(), coverage: atCursor(), packs: atCursor(), releases: atCursor() };
 }
 function advanceId(rows: { id: number }[], last: number): number { for (const r of rows) if (r.id > last) last = r.id; return last; }
 function advanceAt<T>(rows: T[], c: { at: string; keys: Set<string> }, at: (r: T) => string, key: (r: T) => string) {
@@ -116,6 +122,8 @@ export function advance(c: Cursor, s: ScanSnapshot): void {
   advanceAt(s.runs, c.runs, (r) => r.updated_at, (r) => r.id);
   advanceAt(s.proposals, c.proposals, (r) => r.updated_at, (r) => r.id);
   advanceAt(s.coverage, c.coverage, (r) => r.judged_at, covKey);
+  advanceAt(s.packs, c.packs, (r) => r.updated_at, (r) => r.id);
+  advanceAt(s.releases, c.releases, (r) => r.updated_at, (r) => r.id);
 }
 
 /** Rows new or changed since `c` (the cursor is not moved; call advance() after sending). */
@@ -130,6 +138,11 @@ export function readDelta(db: DatabaseSync, c: Cursor): ScanDelta {
     .filter((r) => !(r.updated_at === c.proposals.at && c.proposals.keys.has(r.id)));
   if (has.has('coverage')) d.coverage = wireAll<Coverage>('coverage', all(db, 'SELECT * FROM coverage WHERE judged_at >= ? ORDER BY judged_at, feature, standard', c.coverage.at))
     .filter((r) => !(r.judged_at === c.coverage.at && c.coverage.keys.has(covKey(r))));
+  // every v2 write (pack-create/-update, triage settling a pack, release-*) bumps the row's updated_at
+  if (has.has('packs')) d.packs = wireAll<Pack>('packs', all(db, 'SELECT * FROM packs WHERE updated_at >= ? ORDER BY updated_at, id', c.packs.at))
+    .filter((r) => !(r.updated_at === c.packs.at && c.packs.keys.has(r.id)));
+  if (has.has('releases')) d.releases = wireAll<Release>('releases', all(db, 'SELECT * FROM releases WHERE updated_at >= ? ORDER BY updated_at, id', c.releases.at))
+    .filter((r) => !(r.updated_at === c.releases.at && c.releases.keys.has(r.id)));
   return d;
 }
 

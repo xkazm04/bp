@@ -1,4 +1,4 @@
-// Scan jobs: a lens scan or an execute run the blueprint started. Client-safe types and rules; the
+// Scan jobs: a lens scan, an execute run or a release run (cut or finish) the blueprint started. Client-safe types and rules; the
 // live registry that spawns the Claude Code CLI is jobs.server.ts, the Kettle stand-in is
 // lib/model/scan-sim.ts. Absent values are omitted, never null (the store's wire convention).
 import type { LensEntry } from '@/lib/standard/types';
@@ -16,7 +16,9 @@ export interface ScanScope {
   features: string[];
 }
 
-export type JobKind = 'measure' | 'execute';
+export type JobKind = 'measure' | 'execute' | 'release';
+/** A release job's step: `build` cuts the release (`/lens-scan release --id <rel>`), `finish` tags it after the merge (`--finish`). */
+export type ReleaseStep = 'build' | 'finish';
 export type JobStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 
 export interface ScanJob {
@@ -27,6 +29,10 @@ export interface ScanJob {
   scope?: ScanScope;
   /** The proposals an execute job builds. */
   proposals?: string[];
+  /** A release job's release id (`rel-<version>`), its version and step. */
+  release?: string;
+  version?: string;
+  step?: ReleaseStep;
   status: JobStatus;
   queued_at: string;
   started_at?: string;
@@ -37,6 +43,13 @@ export interface ScanJob {
   error?: string;
   /** The last lines of the job's log. */
   log_tail?: string;
+}
+
+/** What the UI calls a job when it names it in a line: a release job reads "Release 1.4.1 · build". */
+export function jobLabel(j: Pick<ScanJob, 'kind' | 'lens' | 'proposals' | 'version' | 'release' | 'step'>): string {
+  if (j.kind === 'release') return 'Release ' + (j.version ?? j.release ?? '') + ' · ' + (j.step ?? 'build');
+  if (j.kind === 'execute') return 'Execute · ' + (j.proposals?.length ?? 0) + ' finding' + (j.proposals?.length === 1 ? '' : 's');
+  return j.lens ?? 'Scan';
 }
 
 /** Lenses lens-scan can measure without a manifest `scan` block (lens-scan v1). */

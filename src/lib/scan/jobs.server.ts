@@ -1,14 +1,18 @@
-// The live scan-job registry: lens scans and execute runs the blueprint starts by running the Claude Code
+// The live scan-job registry: lens scans, execute runs and release runs the blueprint starts by running the Claude Code
 // CLI headless in the product repo (`claude -p --dangerously-skip-permissions`, the operator's choice: a
 // headless run cannot answer permission prompts). Per product: the latest 50 jobs, a FIFO queue, at most
 // 3 running. The prompt goes to the CLI on stdin, never on the command line; every id in it was held to
 // SAFE_ID here and to the map or store by the route. Each job logs to
 // `<root>/.ai/lens-scan/work/bp-jobs/<job>.log` and keeps its last lines as `log_tail`. The registry lives on
 // globalThis so a dev-server module reload keeps the running children. Server-only: route handlers import it.
+// A release job (`/lens-scan release --id <rel> [--finish]`) ends `done` by the release's status in the store, not by
+// a run alone: a cut must leave it pr-open (or later), a finish tagged; its run_id is the release-head measure run
+// the cut starts (note `bp-job:<id> · release <rel> at <sha>`), when it got that far.
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { MAX_SELECTION, RUN_NOTE_PREFIX, SAFE_ID, type ScanJob, type ScanScope } from './jobs.ts';
+import { MAX_SELECTION, RUN_NOTE_PREFIX, SAFE_ID, type ReleaseStep, type ScanJob, type ScanScope } from './jobs.ts';
+import { RELEASE_ID } from './release.ts';
 import { close, openRead } from './store.server.ts';
 
 if (typeof window !== 'undefined') throw new Error('jobs.server.ts is server-only');
@@ -157,6 +161,20 @@ export function enqueueExecute(slug: string, root: string, ids: string[]): Enque
   return enqueue(slug, root, { id: jobId(), kind: 'execute', proposals: [...ids], status: 'queued', queued_at: now() }, prompt);
 }
 
+/** Queue a release run: `build` cuts it (`/lens-scan release --id <rel>`), `finish` tags it (`--finish`). The route checked the
+ *  release's status and `gh auth status`; one release has at most one queued or running job (409 otherwise). */
+export function enqueueRelease(slug: string, root: string, release: string, version: string, step: ReleaseStep): Enqueued | { ok: false; status: 409; error: string } {
+  if (!RELEASE_ID.test(release) || release !== 'rel-' + version || (step !== 'build' && step !== 'finish')) return { ok: false, status: 400, error: 'bad-release' };
+  if (releaseBusy(slug, release)) return { ok: false, status: 409, error: `a release job for ${release} is already queued or running` };
+  const prompt = `/lens-scan release --id ${release}` + (step === 'finish' ? ' --finish' : '');
+  return enqueue(slug, root, { id: jobId(), kind: 'release', release, version, step, status: 'queued', queued_at: now() }, prompt);
+}
+
+/** Whether a release job of that release is queued or running. */
+export function releaseBusy(slug: string, release: string): boolean {
+  return (registry.get(slug)?.recs ?? []).some((r) => r.job.kind === 'release' && r.job.release === release && (r.job.status === 'queued' || r.job.status === 'running'));
+}
+
 /** Proposal ids a queued or running execute job of the product is building: a lens execute leaves them alone. */
 export function busyProposals(slug: string): Set<string> {
   const out = new Set<string>();
@@ -215,7 +233,14 @@ function start(slug: string, r: Rec): void {
   c.stderr?.on('data', (d: Buffer) => onOutput(slug, r, d, true));
   c.on('error', (e: NodeJS.ErrnoException) => finish(slug, r, 'failed', { error: e.code === 'ENOENT' ? CLI_MISSING : e.message }));
   c.on('close', (code, signal) => {
-    if (code === 0) {
+    if (code === 0 && r.job.kind === 'release') {
+      // a release ends by its status: a finish starts no run, and a cut can fail after its measure run
+      const run = r.job.run_id ?? runOf(r.root, r.job.id), rel = releaseOf(r.root, r.job.release ?? '');
+      const ok = !!rel && (r.job.step === 'finish' ? rel.status === 'tagged' : ['pr-open', 'merged', 'tagged'].includes(rel.status));
+      const extra: Partial<ScanJob> = { exit_code: 0, ...(run ? { run_id: run } : {}) };
+      if (ok) finish(slug, r, 'done', extra);
+      else finish(slug, r, 'failed', { ...extra, error: failedLine(r) ?? (rel?.status === 'failed' && rel.error ? rel.error : refusal(r)) });
+    } else if (code === 0) {
       // lens-scan refuses a headless run before its run-start (an unknown slug, no map) and still exits 0: no run = failed
       const run = r.job.run_id ?? runOf(r.root, r.job.id);
       if (run) { r.job.run_id = run; finish(slug, r, 'done', { exit_code: 0 }); }
@@ -253,6 +278,22 @@ function runOf(root: string, id: string): string | undefined {
     const rows = db.prepare('SELECT id, note FROM runs WHERE note LIKE ? ORDER BY started_at DESC').all(RUN_NOTE_PREFIX + id + '%') as { id: string; note: string | null }[];
     return rows.find((x) => isNoteOf(x.note ?? undefined, id))?.id;
   } catch { return undefined; /* no runs table yet */ } finally { close(db); }
+}
+
+/** A release's status and error, read from the product's store at exit. */
+function releaseOf(root: string, id: string): { status: string; error?: string } | undefined {
+  const db = openRead(path.join(root, '.ai', 'lens-scan', 'scan.db'));
+  if (!db) return undefined;
+  try {
+    const row = db.prepare('SELECT status, error FROM releases WHERE id = ?').get(id) as { status: string; error: string | null } | undefined;
+    return row ? { status: row.status, ...(row.error ? { error: row.error } : {}) } : undefined;
+  } catch { return undefined; /* a v1 store: no releases table */ } finally { close(db); }
+}
+
+/** lens-scan's `lens-scan release failed: <what>` or `lens-scan refused: <why>` line, the latest one. */
+function failedLine(r: Rec): string | undefined {
+  const lines = r.buf.replace(/\r/g, '').split('\n').map((l) => l.trim()).filter(Boolean);
+  return [...lines].reverse().find((l) => l.startsWith('lens-scan release failed:') || l.startsWith('lens-scan refused:'));
 }
 
 /** Why a job that exited 0 made no run: lens-scan's `lens-scan refused: <why>` line, else the last log line. */

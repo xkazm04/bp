@@ -39,7 +39,9 @@ export function LensTag({ lens, short = true }: { lens: LensCol | undefined; sho
 }
 
 // ------------------------------------------------------------------------------------------- status, kind, risk, size
-const MARK: Record<ProposalStatus, string> = { proposed: '○', approved: '◐', executing: '◔', done: '●', failed: '✕', declined: '–' };
+const MARK: Record<ProposalStatus, string> = { proposed: '○', approved: '◐', executing: '◔', done: '●', failed: '✕', declined: '–',
+  // v2 triage and release statuses (placeholder marks until the triage page's design lands)
+  accepted: '✓', rework: '↺', descoped: '⊘', released: '◆' };
 /** The status as a word with its own mark (shape first, colour second); a job on it adds the progress ring. */
 export function StatusChip({ f }: { f: Finding }) {
   const j = f.job;
