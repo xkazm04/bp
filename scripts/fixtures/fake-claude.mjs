@@ -9,8 +9,8 @@
 //                   a cut moves it draft|failed -> building, writes the release-head measure run (note
 //                   `bp-job:<BP_JOB_ID> · release rel-<v> at <sha>`), then -> pr-open with a PR url; a version with `-fail`
 //                   in it ends failed instead (`lens-scan release failed: gate ...`). --finish moves pr-open -> merged ->
-//                   tagged (tag v<v>), its accepted items -> released and every pack left with only released, descoped
-//                   or declined items -> closed, with no run. An unknown release: `lens-scan refused: ...`, exit 0.
+//                   tagged (tag v<v>), its accepted items -> released and every pack left with only settled items
+//                   (released, descoped, declined, or a rework whose rebuild is settled) -> closed, with no run. An unknown release: `lens-scan refused: ...`, exit 0.
 //   anything else   writes a run with note `bp-job:<BP_JOB_ID>` into <cwd>/.ai/lens-scan/scan.db, exits 0
 // With `--output-format json` it answers like `claude -p --output-format json` running `/lens-scan onboard --draft-only`
 // (the lens-draft chat):
@@ -89,8 +89,15 @@ if (rel) {
     move('tagged', 'merged', { tag: 'v' + r.version });
     const items = db.prepare("SELECT id, pack_id FROM proposals WHERE release_id = ? AND status = 'accepted'").all(rid);
     db.prepare("UPDATE proposals SET status = 'released', updated_at = ? WHERE release_id = ? AND status = 'accepted'").run(at(), rid);
-    for (const k of new Set(items.map((p) => p.pack_id).filter(Boolean))) {
-      if (!db.prepare("SELECT COUNT(*) AS n FROM proposals WHERE pack_id = ? AND status NOT IN ('released', 'descoped', 'declined')").get(k).n) {
+    // store.mjs closePacks: a rework item counts as settled once its rebuild (attempt_of = it) is, and the packs looked
+    // at include those of the items the released ones rebuild
+    const row = db.prepare('SELECT id, pack_id, attempt_of FROM proposals WHERE id = ?');
+    const kids = db.prepare('SELECT id, status FROM proposals WHERE attempt_of = ?');
+    const settled = (p, d = 0) => ['released', 'descoped', 'declined'].includes(p.status) || (p.status === 'rework' && d < 32 && kids.all(p.id).some((c) => settled(c, d + 1)));
+    const packsOf = new Set();
+    for (const it of items) for (let p = row.get(it.id), i = 0; p && i < 32; i += 1, p = p.attempt_of ? row.get(p.attempt_of) : undefined) if (p.pack_id) packsOf.add(p.pack_id);
+    for (const k of packsOf) {
+      if (db.prepare('SELECT id, status FROM proposals WHERE pack_id = ?').all(k).every((p) => settled(p))) {
         db.prepare("UPDATE packs SET status = 'closed', updated_at = ? WHERE id = ? AND status IN ('open', 'triaged')").run(at(), k);
       }
     }
