@@ -37,6 +37,8 @@ import { EXEC_BATCH, executeAsk, executeBacklog, scanBlock, scanNow, scanSelecti
 import { setLensesPanelOpen } from './lens/LensesPanel';
 import { Triage } from './variants/Triage';
 import { Matrix } from './variants/Matrix';
+import { ComparePanel } from './train/compare/ComparePanel';
+import { ReleaseView, SummaryStrip } from './train/release/ReleaseView';
 import './ledger.css';
 
 export interface LedgerPageProps {
@@ -48,7 +50,7 @@ export interface LedgerPageProps {
   phone?: boolean;
 }
 
-const NAMES: Record<LedgerVariant, string> = { triage: 'Triage table', matrix: 'Feature × lens matrix' };
+const NAMES: Record<LedgerVariant, string> = { triage: 'Triage table', matrix: 'Feature × lens matrix', release: 'Release' };
 
 /** Mounted always (cheap: one store slice); the page state is useLedger.ts's store, so the selection and filters outlive a close. */
 export function LedgerPage({ lensButton, lensPanel, phone = false }: LedgerPageProps) {
@@ -129,10 +131,15 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
       const f = L.byId.get(id ?? ''); if (f) { e.preventDefault(); L.openFeature(f); } return;
     }
     if (k === '/') { e.preventDefault(); filter.current?.focus(); return; }
-    if (!phone && /^[1-2]$/.test(k)) { e.preventDefault(); E.setPage('ledger', LEDGER_VARIANTS[+k - 1]); }
+    if (!phone && /^[1-3]$/.test(k)) { e.preventDefault(); E.setPage('ledger', LEDGER_VARIANTS[+k - 1]); }
   };
 
-  const view = lv === 'matrix' ? <Matrix L={L} /> : <Triage L={L} />;
+  const view = lv === 'release' ? <ReleaseView phone={phone} /> : lv === 'matrix' ? <Matrix L={L} /> : <Triage L={L} />;
+  // the compare panel (WP4b) docks beside the table while an item is open; the release tab has none
+  const cmp = ui.open && lv !== 'release' ? (
+    <ComparePanel id={ui.open} view={ui.cmp} wide={ui.wide} phone={phone}
+      onView={(v) => set((u) => ({ ...u, cmp: v }))} onWide={() => set((u) => ({ ...u, wide: !u.wide }))} onClose={() => set((u) => ({ ...u, open: null, wide: false }))} />
+  ) : null;
   const inner = (
     <>
       <header className="lg-top">
@@ -149,12 +156,14 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
             ))}
           </div>
         )}
+        {!phone ? <SummaryStrip /> : null}
         {!phone && ui.sel.size ? <SelScan L={L} /> : null}
         {lensButton ? <div className="lg-slot">{lensButton}</div> : null}
       </header>
       <Filters L={L} filter={filter} menus={!phone} />
       <div className="lg-main">
         <div className="lg-body" role={phone ? undefined : 'tabpanel'} aria-label={NAMES[lv]}>{view}</div>
+        {cmp}
         {lensPanel ? <aside className="lg-side" aria-label="Lenses">{lensPanel}</aside> : null}
       </div>
       <DispatchBar L={L} />

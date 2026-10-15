@@ -4,7 +4,8 @@
 import type { ScanSim } from '@/lib/model/scan-sim';
 import { takenLooks, type ScanJob, type ScanScope } from './jobs';
 import type { LensEntry, LensManifest } from '@/lib/standard/types';
-import { deleteJob, executeLens, postDispatch, postProjectLens, postScan, type LensExecuteResult } from './client';
+import { deleteJob, executeLens, getCommitDiff, getReleaseSuggestion, postDispatch, postProjectLens, postRelease, postReleaseBuild, postReleaseFinish, postScan, postTriage, type LensExecuteResult } from './client';
+import type { CommitDiff, ReleaseCreated, TriageBody, TriageDecision, TriageResult, VersionSuggestion } from './types';
 import { checkLensManifest } from './manifest-check';
 import { addTempLens, readTempLenses } from './temp-lens';
 
@@ -66,6 +67,48 @@ export async function addProjectLens(ctx: ScanCtx, manifest: LensManifest, tempo
   const entry: LensEntry = temp ? { ...base, temporary: true } : base;
   addTempLens(entry);
   return entry;
+}
+
+// ------------------------------------------------------------------------------------------- the release train
+// The ledger's triage and release actions: a live product goes to its routes (store.mjs and the Claude Code CLI with
+// the user's gh login); Kettle goes to the scan sim's sample train. Same results, same refusals (Error + status + body).
+
+/** Triage built items: accept, rework, descope, or reopen (the undo). Rejects 409 when none moved (`body` = the result). */
+export async function triageItems(ctx: ScanCtx, ids: string[], decision: TriageDecision, note?: string): Promise<TriageResult> {
+  const body: TriageBody = note === undefined ? { ids, decision } : { ids, decision, note };
+  if (ctx.slug) return postTriage(ctx.slug, body);
+  if (ctx.sim) return ctx.sim.triage(body);
+  throw nowhere();
+}
+/** The suggested next version, with what it came from and why. */
+export async function suggestRelease(ctx: ScanCtx): Promise<VersionSuggestion> {
+  if (ctx.slug) return getReleaseSuggestion(ctx.slug);
+  if (ctx.sim) return ctx.sim.suggestRelease();
+  throw nowhere();
+}
+/** A draft release of accepted items (default: every accepted item with no release). */
+export async function createRelease(ctx: ScanCtx, version: string, ids?: string[]): Promise<ReleaseCreated> {
+  if (ctx.slug) return postRelease(ctx.slug, version, ids);
+  if (ctx.sim) return ctx.sim.createRelease(version, ids);
+  throw nowhere();
+}
+/** Start the job that builds a release (cherry-picks, gates, notes, PR). Rejects 412 'gh not authenticated'. */
+export async function buildRelease(ctx: ScanCtx, id: string): Promise<ScanJob> {
+  if (ctx.slug) return postReleaseBuild(ctx.slug, id);
+  if (ctx.sim) return ctx.sim.buildRelease(id);
+  throw nowhere();
+}
+/** Start the job that finishes a release after its PR merged (tag, GitHub release). Rejects 412 as build. */
+export async function finishRelease(ctx: ScanCtx, id: string): Promise<ScanJob> {
+  if (ctx.slug) return postReleaseFinish(ctx.slug, id);
+  if (ctx.sim) return ctx.sim.finishRelease(id);
+  throw nowhere();
+}
+/** One item commit's stat and patch. */
+export async function commitDiff(ctx: ScanCtx, sha: string): Promise<CommitDiff> {
+  if (ctx.slug) return getCommitDiff(ctx.slug, sha);
+  if (ctx.sim) return ctx.sim.commitDiff(sha);
+  throw nowhere();
 }
 
 export async function cancelJob(ctx: ScanCtx, id: string): Promise<ScanJob> {

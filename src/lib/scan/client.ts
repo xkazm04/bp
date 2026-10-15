@@ -10,6 +10,7 @@ import { scopeFeatures } from './scope.ts';
 import type { ScanJob, ScanScope } from './jobs.ts';
 import type { DispatchResult } from './actions.ts';
 import { fullScan as full, isEmptyScan as isEmpty, type Activity, type ActivityKind, type Coverage, type DecisionBody, type Measurement, type Proposal, type ProductInfo, type Run, type ScanDelta, type ScanSnapshot } from './types.ts';
+import type { CommitDiff, ReleaseCreated, TriageBody, TriageResult, VersionSuggestion } from './types.ts';
 
 /** `loading` until the structure arrives; `missing` = no store or structure file; `offline` = reconnecting. */
 export type LiveStatus = 'loading' | 'live' | 'offline' | 'missing' | 'error';
@@ -256,6 +257,21 @@ export const postProjectLens = (slug: string, manifest: LensManifest, temporary 
 export interface LensExecuteResult { jobs: ScanJob[]; approved: string[]; skipped: { id: string; status: string }[] }
 /** Approve the lens's proposed findings and build them with its approved ones, in execute jobs of at most 50. 409 = nothing to build. */
 export const executeLens = (slug: string, lens: string): Promise<LensExecuteResult> => send(api(slug) + '/lenses/' + encodeURIComponent(lens) + '/execute', 'POST', {});
+
+// The release train's routes (WP2 implements, each through src/lib/train/wire.ts). Rejections carry `status` and `body`.
+const notYet = (): Promise<never> => Promise.reject(Object.assign(new Error('not implemented'), { status: 501 }));
+/** Triage built items (POST triage). 409 = nothing moved (the result is in `body`). */
+export const postTriage = (slug: string, body: TriageBody): Promise<TriageResult> => { void slug; void body; return notYet(); };
+/** The suggested next version (GET releases/suggest). */
+export const getReleaseSuggestion = (slug: string): Promise<VersionSuggestion> => { void slug; return notYet(); };
+/** A draft release of accepted items (POST releases, 201). 409 = nothing to ship or the version exists. */
+export const postRelease = (slug: string, version: string, ids?: string[]): Promise<ReleaseCreated> => { void slug; void version; void ids; return notYet(); };
+/** Start the release job that builds `id` (202 = the job). 412 = gh not authenticated; 409 = wrong status or busy. */
+export const postReleaseBuild = (slug: string, id: string): Promise<ScanJob> => { void slug; void id; return notYet(); };
+/** Start the release job that finishes `id` after its PR merged (202 = the job). 412 / 409 as build. */
+export const postReleaseFinish = (slug: string, id: string): Promise<ScanJob> => { void slug; void id; return notYet(); };
+/** One item commit's diff (GET commits/[sha]). 404 = not an item commit of this store. */
+export const getCommitDiff = (slug: string, sha: string): Promise<CommitDiff> => { void slug; void sha; return notYet(); };
 /** One turn of the lens onboarding chat: `product` is a slug or 'kettle'; `session` from the previous answer; `kind`
  *  asks for a permanent project lens (the default) or a temporary one. 504 after 3 minutes. */
 export const postLensDraft = (product: string, message: string, session?: string, kind: 'project' | 'temporary' = 'project'): Promise<LensDraftAnswer> =>

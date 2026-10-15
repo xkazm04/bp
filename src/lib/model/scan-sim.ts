@@ -3,7 +3,10 @@
 // live path (applyScan) and every scan view is shared with live products.
 // A timer runs only while a job runs (never a rAF); every change notifies once per tick. Pure and free of
 // '@/' value imports, so Node can drive it (the scan-package probes).
-import type { Activity, ActivityKind, Measurement, Proposal, Run, ScanSnapshot } from '@/lib/scan/types';
+import type { Activity, ActivityKind, CommitDiff, Measurement, Proposal, ReleaseCreated, Run, ScanSnapshot, TriageBody, TriageResult, VersionSuggestion } from '@/lib/scan/types';
+
+/** Kettle only: what the sample release job runs into. */
+export interface TrainToggles { ghOff: boolean; conflict: boolean; gateFails: boolean }
 import type { ScanJob, ScanScope } from '@/lib/scan/jobs';
 import type { LensExecuteResult } from '@/lib/scan/client';
 import type { LensEntry, LensField, LensManifest } from '@/lib/standard/types';
@@ -166,6 +169,30 @@ export class ScanSim {
     if (full) throw refuse(429, 'queue-full', { jobs: jobs.map((j) => this.recOf(j.id)!.job), approved, skipped });
     return { jobs: jobs.map((j) => this.recOf(j.id)!.job), approved, skipped };
   }
+
+  // ----------------------------------------------------------------------------------------- the sample train
+  // Kettle's release train (WP3 implements): sample packs over Kettle features, triage and reopen, a version
+  // suggestion, and a release job draft -> building -> pr-open -> (sampleMerge) -> merged -> tagged on the sim timer.
+  // Same results and refusals as the routes (Error + status + body). Everything it makes is labelled sample.
+
+  /** Triage built items, as POST triage: 409 with the result as `body` when none moved. */
+  triage(body: TriageBody): TriageResult { void body; throw refuse(501, 'not implemented'); }
+  /** The next version for the accepted items with no release, as GET releases/suggest. */
+  suggestRelease(): VersionSuggestion { throw refuse(501, 'not implemented'); }
+  /** A draft release, as POST releases. */
+  createRelease(version: string, ids?: string[]): ReleaseCreated { void version; void ids; throw refuse(501, 'not implemented'); }
+  /** The sample job that builds a release; 412 'gh not authenticated' when the gh toggle is off. */
+  buildRelease(id: string): ScanJob { void id; throw refuse(501, 'not implemented'); }
+  /** The sample job that finishes a merged release. */
+  finishRelease(id: string): ScanJob { void id; throw refuse(501, 'not implemented'); }
+  /** Kettle only: stands in for the person merging the PR on GitHub (pr-open -> merged). */
+  sampleMerge(id: string): void { void id; throw refuse(501, 'not implemented'); }
+  /** A sample item commit's diff. */
+  commitDiff(sha: string): CommitDiff { void sha; throw refuse(501, 'not implemented'); }
+  /** Kettle only: what the sample release job should run into (all off = a clean run, gh logged in). */
+  get trainToggles(): TrainToggles { return this.toggles; }
+  setTrainToggles(t: TrainToggles): void { this.toggles = t; this.changed(); }
+  private toggles: TrainToggles = { ghOff: false, conflict: false, gateFails: false };
 
   /** Every lens entry the bound model knows (enabled or not); [] before bind or when the model gave none. */
   lensEntries(): readonly LensEntry[] { return this.prod?.lenses?.() ?? []; }

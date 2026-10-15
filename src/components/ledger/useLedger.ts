@@ -117,8 +117,23 @@ export interface LedgerUi {
   feat: ReadonlySet<string>;
   q: string;
   focus: string | null;
+  /** The triage table's scope: the built items of the packs (triage), or every finding (the backlog, dispatch). */
+  scope: LedgerScope;
+  /** The pack item whose evidence the compare panel shows; null = the panel is closed. */
+  open: string | null;
+  /** How the compare panel shows screens: which theme(s), and side by side, a slider, a blink or the change map. */
+  cmp: CompareView;
+  /** The compare panel takes the page's width (the table hides behind it). */
+  wide: boolean;
 }
-export const EMPTY_UI: LedgerUi = { sel: new Set(), lens: new Set(), status: new Set(), feat: new Set(), q: '', focus: null };
+export type LedgerScope = 'packs' | 'backlog';
+export type CompareTheme = 'light' | 'dark' | 'both';
+export type CompareMode = 'side' | 'slider' | 'blink' | 'map';
+export interface CompareView { theme: CompareTheme; mode: CompareMode }
+export const EMPTY_UI: LedgerUi = {
+  sel: new Set(), lens: new Set(), status: new Set(), feat: new Set(), q: '', focus: null,
+  scope: 'packs', open: null, cmp: { theme: 'light', mode: 'side' }, wide: false,
+};
 export type SetUi = (f: (u: LedgerUi) => LedgerUi) => void;
 
 // The page state, one per tab: a module store, so the ledger (desktop or phone), the Lenses panel and the plan's

@@ -17,8 +17,9 @@ export type CoverageState = 'conformant' | 'deviation' | 'not-applicable' | 'unk
 export type EvidencePhase = 'before' | 'after';
 export type PackStatus = 'open' | 'triaged' | 'closed';
 export type ReleaseStatus = 'draft' | 'building' | 'pr-open' | 'merged' | 'tagged' | 'failed';
-/** A person's call on a built item (`POST /api/products/[slug]/triage`). */
-export type TriageDecision = 'accept' | 'rework' | 'descope';
+/** A person's call on a built item (`POST /api/products/[slug]/triage`). `reopen` (v3) takes an accepted, rework or
+ *  descoped item back to the status it had before (its `triaged_from`) while its release is still a draft: the undo. */
+export type TriageDecision = 'accept' | 'rework' | 'descope' | 'reopen';
 
 export interface Run {
   id: string;
@@ -93,6 +94,8 @@ export interface Proposal {
   /** v2: the release it ships in. */
   release_id?: string;
   triage_note?: string;
+  /** v3: the status the item had before its latest triage, so `reopen` can put it back. */
+  triaged_from?: ProposalStatus;
   /** `<kind>:<name>`, e.g. `user:octocat`. */
   triaged_by?: string;
   triaged_at?: string;
@@ -237,14 +240,33 @@ export interface TriageBody {
 }
 /** What store.mjs `triage` answers (and the triage route returns). */
 export interface TriageResult {
-  /** The status the items moved to. */
-  decision: 'accepted' | 'rework' | 'descoped';
+  /** The status the items moved to; `reopened` when each went back to its own `triaged_from`. */
+  decision: 'accepted' | 'rework' | 'descoped' | 'reopened';
   by: string;
   triaged: string[];
   /** Items left as they were: their status, and a reason (`note-required`, `in-release`) where the status alone does not say why. */
   skipped: { id: string; status: string; reason?: string }[];
   /** Packs that moved open -> triaged in the same transaction. */
   packs_triaged: string[];
+}
+/** `POST /api/products/[slug]/releases` (201): the draft with its items, and what release-add left out. */
+export interface ReleaseCreated {
+  release: Release & { items: Proposal[] };
+  added: string[];
+  skipped: { id: string; status: string; reason?: string }[];
+}
+/** `GET /api/products/[slug]/commits/[sha]`: one item commit, for the ledger's compare panel. `patch` is cut at
+ *  2000 lines (`truncated`); `lines` is the full count. */
+export interface CommitDiff {
+  sha: string;
+  /** The full commit message, trailers included. */
+  message: string;
+  /** `git show --stat` as git prints it. */
+  stat: string;
+  files: { path: string; add: number; del: number }[];
+  patch: string;
+  lines: number;
+  truncated: boolean;
 }
 /** `GET /api/products/[slug]/releases/suggest`. */
 export interface VersionSuggestion {
