@@ -10,6 +10,8 @@
   --ink: #cfe3fb; --ink-hi: #ffffff; --ink-2: #93b2d6; --ink-3: #3c6594; --ink-4: #22477a; --on-ink: #071a33;
   --accent: #5ccfff; --mint: #5fe3b3; --mint-2: #5fe3b3; --red: #ff8b9b; --red-2: #ff8b9b; --amber: #ffc86b; --amber-2: #ffc86b;
   --panel: #0a2142; --panel-solid: #0a2142; --card: #0c2850; --card-hi: #10305c; --shadow: rgba(0, 8, 20, .55); --code-bg: #08203f;
+  /* the compare slider's knob: ink on the accent and its ring, the same in both themes as in A/1 */
+  --knob-ink: #003322; --knob-ring: rgba(0, 0, 0, .4);
   font-family: var(--sans);
 }
 :root[data-theme='light'] .lg-page {

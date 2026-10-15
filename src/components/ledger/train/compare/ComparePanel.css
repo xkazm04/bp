@@ -1,0 +1,43 @@
+/* The compare panel: the winner A/1's .cmp side sheet, .cm-h header, .cm-b body, .sec headings and .cm-d decision row
+   (index.html), byte-equal through the globals.css tokens. Docked right from 1100 px, an overlay on the table below
+   that, a full-screen sheet on the phone; Wide takes the page's width and the table hides behind it. */
+
+.tr-cmp { flex: none; width: clamp(var(--cmp-min), 52%, var(--cmp-max)); display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--ink-3); background: var(--card); }
+.tr-cmp.wide { width: 100%; border-left: 0; }
+.lg-main:has(> .tr-cmp.wide) > .lg-body { display: none; }
+
+.tr-cmp-h { flex: none; display: flex; align-items: flex-start; gap: var(--sp-10); padding: var(--sp-12) var(--sp-16) var(--sp-10); border-bottom: 1px solid var(--ink-3); }
+.tr-cmp-h .tt { flex: 1; min-width: 0; }
+.tr-cmp-h .tt small { display: flex; flex-wrap: wrap; gap: var(--sp-4) var(--sp-10); align-items: center; font: 500 var(--fs-12) var(--mono); letter-spacing: var(--ls-2); text-transform: uppercase; color: var(--ink-2); }
+.tr-cmp-h h3 { margin: var(--sp-4) 0 0; font-size: var(--fs-18); line-height: var(--lh-title); font-weight: 600; color: var(--ink-hi); }
+.tr-cmp-h .nav { display: flex; gap: var(--sp-4); }
+.tr-nb { display: inline-flex; align-items: center; gap: var(--sp-4); height: var(--h-ctl-md); padding: 0 var(--sp-9); background: var(--panel); border: 1px solid var(--ink-3); font: 500 var(--fs-13) var(--mono); letter-spacing: var(--ls-2); text-transform: uppercase; color: var(--ink-hi); white-space: nowrap; cursor: pointer; }
+.tr-nb:hover:not(:disabled) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); }
+.tr-nb:disabled { opacity: 0.45; cursor: default; }
+
+.tr-cmp-b { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 0 var(--sp-16) var(--sp-16); scrollbar-width: thin; scrollbar-color: var(--ink-3) transparent; }
+.tr-cmp-b > .tr-call { margin-top: var(--sp-14); }
+.tr-cmp .tr-call.flag > b { flex: none; }
+.tr-sec { margin-top: var(--sp-14); }
+.tr-sec > h4 { display: flex; align-items: center; gap: var(--sp-10); margin: 0 0 var(--sp-8); font: 600 var(--fs-12) var(--mono); letter-spacing: var(--ls-5); text-transform: uppercase; color: var(--ink-2); }
+.tr-sec > h4::after { content: ''; flex: 1; height: 1px; background: var(--ink-4); }
+.tr-sec > h4 .r { order: 2; display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--sp-4); }
+.tr-sec > h4 .r .tr-seg button { white-space: nowrap; }
+.tr-sec > h4 code.c { text-transform: none; letter-spacing: 0; }
+
+.tr-cmp-d { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-8); padding: var(--sp-10) var(--sp-16); border-top: 1px solid var(--ink-3); background: var(--card-hi); }
+.tr-cmp-d .st { flex: 1 1 calc(var(--sp-20) * 8); min-width: 0; font-size: var(--fs-13); color: var(--ink-2); }
+
+/* below 1100 px the panel overlays the table; on the phone it is a full-screen sheet */
+.lg-main:has(> .tr-cmp) { position: relative; }
+@media (max-width: 1099px) {
+  .tr-cmp:not(.phone) { position: absolute; top: 0; right: 0; bottom: 0; z-index: 2; box-shadow: var(--elev-sheet); }
+  .tr-cmp.wide:not(.phone) { left: 0; }
+}
+.tr-cmp.phone { position: fixed; inset: 0; z-index: 30; width: auto; border: 0; }
+.tr-cmp.phone .tr-nb { height: var(--h-touch); }
+.tr-cmp.phone .tr-nb.wd { display: none; }
+.tr-cmp.phone .tr-sec > h4 { flex-wrap: wrap; }
+.tr-cmp.phone .tr-sec > h4 .r { flex-basis: 100%; justify-content: flex-start; }
+.tr-cmp.phone .tr-sec > h4 .r .tr-seg button { padding: 0 var(--sp-6); }
+.tr-cmp.phone .tr-cmp-d .st { max-width: none; flex: 1 1 100%; }

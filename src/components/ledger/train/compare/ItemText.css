@@ -1,0 +1,12 @@
+/* An item's body: the winner A/1's .md (core.css), byte-equal through the globals.css tokens, plus the quote and the
+   fenced code block it did not draw (the quote as the decision bar's note, the block as the commit message box). */
+
+.tr-md { font-size: var(--fs-14); line-height: 1.55; color: var(--ink); }
+.tr-md h4 { margin: var(--sp-14) 0 var(--sp-4); font: 600 var(--fs-12) var(--mono); letter-spacing: var(--ls-4); text-transform: uppercase; color: var(--ink-2); }
+.tr-md h4:first-child { margin-top: 0; }
+.tr-md p { margin: 0 0 var(--sp-8); }
+.tr-md ol, .tr-md ul { margin: 0 0 var(--sp-8); padding-left: calc(var(--sp-20) + 2px); }
+.tr-md li { margin: 2px 0; }
+.tr-md blockquote { margin: 0 0 var(--sp-8); padding: var(--sp-4) var(--sp-10); border-left: var(--bw-bar) solid var(--amber); color: var(--ink-hi); background: var(--panel); }
+.tr-md pre { margin: 0 0 var(--sp-8); padding: var(--sp-10) var(--sp-12); background: var(--code-bg); border: 1px solid var(--ink-4); font: var(--fs-13)/var(--lh-code) var(--mono); white-space: pre-wrap; color: var(--ink); overflow: auto; }
+.tr-md pre code { padding: 0; background: none; }

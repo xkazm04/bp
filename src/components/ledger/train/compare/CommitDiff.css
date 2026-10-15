@@ -1,0 +1,29 @@
+/* The commit section: the winner A/1's .files, .msg, details > summary and .diff / .dfh / .dl (core.css, index.html),
+   through the globals.css tokens. The diff's 12.5 px is the contract's 13 (--fs-13). Each chunk of 100 lines skips
+   layout while off screen; its intrinsic height is 100 lines of 13 px at line-height 1.5. */
+
+.tr-sec > h4 .n { font-weight: 500; letter-spacing: var(--ls-2); }
+.tr-det > summary { cursor: pointer; font: 500 var(--fs-13) var(--mono); color: var(--accent); margin: var(--sp-4) 0 var(--sp-6); }
+.tr-dim { margin: 0 0 var(--sp-8); color: var(--ink-2); font-size: var(--fs-14); }
+
+.tr-files { display: grid; grid-template-columns: 1fr auto calc(var(--sp-16) * 4); gap: var(--sp-3) var(--sp-10); align-items: center; margin-bottom: var(--sp-8); font: var(--fs-13) var(--mono); }
+.tr-files .fp { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; color: var(--ink); }
+.tr-files .fn { text-align: right; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.tr-files .fb { display: flex; height: var(--sp-6); background: color-mix(in srgb, var(--ink) 8%, transparent); }
+.tr-files .fb b { background: var(--mint); }
+.tr-files .fb s { background: var(--red); }
+
+.tr-msg { margin: 0 0 var(--sp-8); padding: var(--sp-10) var(--sp-12); background: var(--code-bg); border: 1px solid var(--ink-4); font: var(--fs-13)/var(--lh-code) var(--mono); white-space: pre-wrap; color: var(--ink); max-height: var(--msg-max); overflow: auto; }
+.tr-msg .trl { color: var(--ink-2); }
+
+.tr-diff { font: var(--fs-13)/var(--lh-code) var(--mono); color: var(--ink); background: var(--code-bg); border: 1px solid var(--ink-4); overflow: auto; max-height: var(--diff-max); }
+.tr-dchunk { content-visibility: auto; contain-intrinsic-size: auto calc(var(--fs-13) * 150); }
+.tr-diff .dfh { position: sticky; top: 0; z-index: 1; padding: var(--sp-5) var(--sp-10); background: var(--card-hi); border-bottom: 1px solid var(--ink-4); border-top: 1px solid var(--ink-4); font-weight: 600; color: var(--ink-hi); }
+.tr-diff .dl { display: grid; grid-template-columns: var(--col-ln) var(--col-ln) 1fr; min-width: max-content; }
+.tr-diff .dl i { font-style: normal; text-align: right; padding-right: var(--sp-8); color: var(--ink-2); opacity: 0.7; user-select: none; }
+.tr-diff .dl span { white-space: pre; padding-right: var(--sp-16); }
+.tr-diff .dl.add { background: color-mix(in srgb, var(--mint) 13%, transparent); }
+.tr-diff .dl.add span::first-letter { color: var(--mint); }
+.tr-diff .dl.del { background: color-mix(in srgb, var(--red) 13%, transparent); }
+.tr-diff .dl.hunk { color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.tr-diff .dl.cut { color: var(--ink-2); font-style: italic; }

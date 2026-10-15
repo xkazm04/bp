@@ -1,0 +1,19 @@
+/* The compare panel's screens: the winner A/1's .pairs, .pair, .pixline spacing and the .heat layer, through the
+   globals.css tokens. The heat colours are the screen tokens (--heat, --heat-box), the same in both themes. */
+
+.tr-sec > .tr-call { margin-bottom: var(--sp-8); }
+.tr-pairs { display: grid; gap: var(--sp-10); }
+.tr-pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-8); }
+.tr-pair.one { grid-template-columns: 1fr; }
+
+.tr-heat { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.tr-heat rect { fill: var(--heat); }
+.tr-heat rect.bb { fill: none; stroke: var(--heat-box); stroke-width: 0.08; stroke-dasharray: 0.3 0.2; opacity: 1; }
+.tr-computing { position: absolute; left: var(--sp-6); bottom: var(--sp-6); padding: 2px var(--sp-6); background: var(--shot-tag-bg); color: var(--shot-tag-ink); font: 600 var(--fs-12) var(--mono); letter-spacing: var(--ls-3); text-transform: uppercase; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tr-blink-a { display: none; }
+}
+@media (max-width: 759px) {
+  .tr-pair { grid-template-columns: 1fr; }
+}
