@@ -1,6 +1,7 @@
 /* The right-hand rail and its flyouts (Dock.tsx, rail/panels.tsx). Tokens only; 12 px floor.
    The rail's footprint is railWidth() in engine/chrome.ts (64 + 14 edge + 8 gap), which the engine publishes as --rw: the
-   flyout sits at it. The rail's own 64 + 14 and the flyout's 340 (FLYOUT_W) are still kept in step by hand. */
+   flyout sits at it. The rail's own 64 + 14 and the classic flyout's 340 (FLYOUT_W) are still kept in step by hand; a wide flyout
+   (rail/wide) reports its measured width to the engine (chrome.ts setFlyoutWidth). */
 .bp-intro #rail { opacity: 0; }
 #rail { transition: opacity 0.7s ease; }
 
@@ -66,14 +67,6 @@
 /* ---------- panels */
 #flyout .fly-note { padding: 10px 12px; color: var(--ink-2); font-size: 13px; line-height: 1.45; }
 #flyout .fly-note b { color: var(--ink); font-weight: 500; }
-#flyout .fly-row { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 12px; }
-#flyout .fly-row .seg { display: flex; }
-#flyout .fly-row button { background: var(--panel); border: 1px solid var(--ink-3); font-size: 13px; letter-spacing: 0.05em; text-transform: uppercase; padding: 0 10px; height: 30px; white-space: nowrap; color: var(--ink); display: inline-flex; align-items: center; gap: 7px; }
-#flyout .fly-row button:hover { border-color: var(--ink); }
-#flyout .fly-row button[aria-pressed='true'] { background: color-mix(in srgb, var(--ink) 16%, transparent); border-color: var(--ink); color: var(--ink-hi); }
-#flyout .fly-row .seg button { border-right: 0; } #flyout .fly-row .seg button:last-child { border-right: 1px solid var(--ink-3); }
-#flyout .fly-row .ga[aria-pressed='true'] { box-shadow: inset 0 -3px 0 var(--amber); } #flyout .fly-row .bl[aria-pressed='true'] { box-shadow: inset 0 -3px 0 var(--red); }
-#flyout .fly-row kbd { font: 500 12px/1 var(--mono); color: var(--ink-2); border: 1px solid var(--ink-4); padding: 1px 4px; }
 
 #flyout #searchbox { position: relative; height: 40px; margin: 10px 12px 4px; }
 #flyout #q { width: 100%; height: 40px; background: var(--panel); border: 1px solid var(--ink-2); color: var(--ink-hi); font: 500 16px var(--sans); padding: 0 34px; letter-spacing: 0.02em; outline: none; }
@@ -88,16 +81,6 @@
 #flyout #results li.on { background: color-mix(in srgb, var(--accent) 16%, transparent); }
 #flyout #results li.none { display: block; color: var(--ink-2); cursor: default; font-size: 14px; }
 
-#flyout .who-list { margin: 0; padding: 4px 0; list-style: none; }
-#flyout .who-list li { display: grid; grid-template-columns: 28px 1fr auto; gap: 8px; align-items: center; padding: 6px 12px; cursor: pointer; font-size: 14px; }
-#flyout .who-list li:hover, #flyout .who-list li.on, #flyout .who-list li:focus-visible { background: color-mix(in srgb, var(--accent) 14%, transparent); }
-#flyout .who-list li.on { box-shadow: inset 3px 0 0 var(--lens); }
-#flyout .who-list small { display: block; color: var(--ink-2); font-size: 12px; letter-spacing: 0.03em; text-transform: uppercase; }
-#flyout .who-list .n { font: 500 13px var(--mono); color: var(--amber-2); }
-#flyout .who-list .av { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--ink); display: grid; place-items: center; font: 600 12px/1 var(--mono); }
-#flyout .vit { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; padding: 10px 12px; font-size: 13px; color: var(--ink-2); }
-#flyout .vit span { display: inline-flex; align-items: center; gap: 4px; }
-#flyout .vit b { font: 600 14px var(--mono); color: var(--ink-hi); }
 
 #flyout .spend { padding: 10px 12px; border-bottom: 1px solid var(--ink-4); }
 #flyout .spend .k { display: flex; justify-content: space-between; font: 500 12px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); }

@@ -7,9 +7,11 @@ import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } fr
 import { AnimatePresence, animate, motion, useReducedMotion } from 'motion/react';
 import { SPEND_CAP, pname, sheetOf } from '@/lib/model';
 import type { DockTab } from '@/engine/state';
-import { AsksTab, MorningButton, oncePerProposal } from './Queue';
-import { FindPanel, OrdersPanel, PlanPanel, SteerPanel, SwarmPanel, ViewPanel, useRunningScans } from './rail/panels';
+import { MorningButton, oncePerProposal } from './Queue';
+import { FindPanel, useRunningScans } from './rail/panels';
 import { shallowEqual, useBp, useEngine } from './hooks';
+import { WideBody, isWide } from './rail/wide';
+import { setFlyoutWidth } from '@/engine/chrome';
 import './rail.css';
 
 /** A number that counts to its new value (instant under reduced motion). */
@@ -117,11 +119,8 @@ const RailItem = memo(function RailItem({ it, on, idx }: { it: Item; on: boolean
   );
 }, (a, b) => a.on === b.on && a.idx === b.idx && shallowEqual(a.it, b.it));
 
-/** One element per panel, created once: the flyout bails out of re-rendering a panel that subscribes to what it reads. */
-const PANEL: Record<DockTab, ReactNode> = {
-  asks: <AsksTab />, swarm: <SwarmPanel />, orders: <OrdersPanel />, steer: <SteerPanel />,
-  plan: <PlanPanel />, find: <FindPanel />, view: <ViewPanel />,
-};
+/** Find, the one classic flyout, created once: the flyout bails out of re-rendering it. The others are wide (rail/wide). */
+const FIND = <FindPanel />;
 
 export function Dock() {
   const E = useEngine(), sim = E.M.sim, reduce = useReducedMotion();
@@ -129,6 +128,7 @@ export function Dock() {
   const items = useItems();
   const nav = useRef<HTMLElement>(null), fly = useRef<HTMLElement>(null);
   const open = s.dtab && items.some((i) => i.k === s.dtab) ? s.dtab : null, it = items.find((i) => i.k === open);
+  const wide = isWide(open);
 
   // `/` opens Find (and shows the rail if it was hidden); a second `/` refocuses the box
   useEffect(() => {
@@ -156,6 +156,15 @@ export function Dock() {
     }
   }, [open]);
 
+  // plan overlays keep clear of the flyout by its real width (a wide one is up to three times the classic)
+  useLayoutEffect(() => {
+    const el = fly.current;
+    if (!el || typeof ResizeObserver === 'undefined') { setFlyoutWidth(0); return; }
+    const ro = new ResizeObserver(() => setFlyoutWidth(el.offsetWidth));
+    ro.observe(el); setFlyoutWidth(el.offsetWidth);
+    return () => { ro.disconnect(); setFlyoutWidth(0); };
+  }, [open, wide]);
+
   const onNavKey = (e: React.KeyboardEvent) => {
     const bs = Array.from(nav.current?.querySelectorAll<HTMLButtonElement>('button.ri') ?? []);
     const i = bs.indexOf(document.activeElement as HTMLButtonElement);
@@ -182,7 +191,7 @@ export function Dock() {
       {s.hidden && <button id="dshow" type="button" aria-label="Show rail" title="Show rail ( \ )" onClick={() => E.toggleDock(true)}>⟨</button>}
       <AnimatePresence>
         {open && it && !s.hidden && (
-          <motion.section id="flyout" key="flyout" ref={fly} role="region" aria-labelledby="flyout-h" data-k={open}
+          <motion.section id="flyout" key="flyout" ref={fly} role="region" aria-labelledby="flyout-h" data-k={open} className={wide ? 'wide' : undefined}
             initial={reduce ? false : { opacity: 0, x: 22 }} animate={{ opacity: 1, x: 0 }} exit={reduce ? { opacity: 0, transition: { duration: 0 } } : { opacity: 0, x: 16, transition: { duration: 0.14 } }}
             transition={{ type: 'spring', stiffness: 420, damping: 36 }}>
             <header className={'fh t-' + it.tone}>
@@ -191,7 +200,7 @@ export function Dock() {
               <button type="button" className="x" aria-label="Close panel" title="Close ( Esc )" onClick={() => E.setDockTab(null)}>Esc</button>
               {asks && sim.has && !sim.live && <MorningButton />}
             </header>
-            <div className={'fb' + (reduce ? ' still' : '')} key={open} tabIndex={-1}>{PANEL[open]}</div>
+            <div className={'fb' + (reduce ? ' still' : '')} key={open} tabIndex={-1}>{wide ? <WideBody k={open} /> : FIND}</div>
           </motion.section>
         )}
       </AnimatePresence>

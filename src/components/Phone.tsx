@@ -36,7 +36,7 @@ function Question({ d, rm }: { d: SimDecision; rm: boolean }) {
     <motion.div layout={!rm} className={'ph-q u-' + d.urg} exit={rm ? { opacity: 0 } : { opacity: 0, height: 0, marginBottom: 0 }} transition={rm ? { duration: 0 } : undefined}>
       <div className="k">{d.base} · {URG[d.urg]}{sim.live ? '' : ' · ' + pname(P, d.decider)}</div>
       <h4>{d.q}</h4>
-      {sum && <div className="sm">{sum}</div>}
+      {sum && <div className="psum">{sum}</div>}
       {mv && <div className="mv">{mv}</div>}
       <div className="mt">{P.F[d.f].name} · waiting {fmtWait(sim.waitMin(d))}{sim.live ? '' : ' · holds ' + sim.blocksNow(d) + ' agent' + (sim.blocksNow(d) === 1 ? '' : 's')}</div>
       {sim.live ? (

@@ -269,9 +269,12 @@ function paintTile(E: Engine, ctx: CanvasRenderingContext2D, v: View, T: TileNod
     ctx.textAlign = 'left'; ctx.globalAlpha = a;
     const gStamp = now && st ? generalStamp(E, f) : null, lStamp = lensC?.stamp ?? null;
     const stamp = D < 0.5 ? gStamp : lStamp;
-    let ns = clamp(13.5 + (w / u - 150) / 60, 14, 17), lh = ns * 1.16 * u;
+    // at L3 (the camera at the bay's fit) the title is twice its plan size; it grows over the last stretch of the zoom
+    // in, and steps back down (2 px at a time) when the doubled name does not fit the tile
+    const l3 = smooth(0.78, 0.94, k / E.bayFitK(T.bay));
     const roomH = h - (hy - y) - 8 * u - (stamp ? 20 * u : 6 * u) - (chips ? 24 * u : 0);
-    let nf = tx.f(ns, 500), lines = tx.wrap(f.name, w - 14 * u, nf, Math.max(1, Math.floor(roomH / lh)));
+    let ns = Math.round(2 * clamp(13.5 + (w / u - 150) / 60, 14, 17) * (1 + l3)) / 2, lh = 0, nf = '', lines: string[] | null = null;
+    for (; ns >= 14; ns -= 2) { lh = ns * 1.16 * u; nf = tx.f(ns, 500); lines = tx.wrap(f.name, w - 14 * u, nf, Math.max(1, Math.floor(roomH / lh))); if (lines) break; }
     if (!lines) { ns = 14; nf = tx.f(14, 500); lh = 16.2 * u; lines = tx.wrap(f.name, w - 14 * u, nf, Math.max(1, Math.floor(roomH / lh))); }
     if (lines) lines.forEach((l, i) => drawText(ctx, l, x + 7 * u, hy + 6 * u + lh * (i + 0.82), nf, th.inkHi));
     const sf = tx.f(12.5, 600), sy = y + h - 7 * u - (chips ? 22 * u : 0);

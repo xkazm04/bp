@@ -76,7 +76,7 @@ and never call `measureText` in a loop. See `docs/perf.md`.
 | `Legend` | Plan tab legend for a view | `Legend` in `src/components/Legend.tsx` (draws live specimens with your own `marks`, so it follows your expression for free) |
 | `density(lens)` | sheet rows, queue detail | the channel's `density` |
 | `queueNote(d, view, model)` | an extra line under each queue card | none |
-| `tabLabel(view)` | the lens tab sub-label | the sheet's short name |
+| `tabLabel(view)` | the feature page's lens tab sub-label (the header tabs show the short code only) | the sheet's short name |
 
 React components in a variant folder must be client components (`'use client'` at the top).
 

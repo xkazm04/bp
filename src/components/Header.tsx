@@ -2,7 +2,7 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { latestRun, sheetOf, views, type BayNode, type BldNode, type RoomNode, type WingNode } from '@/lib/model';
-import { shallowEqual, useBp, useEngine, useLive, useVariant } from './hooks';
+import { shallowEqual, useBp, useEngine, useLive } from './hooks';
 import { ThemeToggle } from './ThemeToggle';
 import { ProjectSwitcher } from './ProjectSwitcher';
 import type { Crumb } from '@/engine/state';
@@ -135,14 +135,20 @@ const Crumbs = memo(function Crumbs() {
   );
 });
 
-/** One tab per view: General, then every enabled lens in file order (name, short and question count from the data). */
+/**
+ * One tab per view, as its short code (BIZ, DEV, …), its question count and its digit key; the full name is the
+ * tooltip. Two rows: General and the built-in lenses on top, the project's own (custom) lenses below, both in file
+ * order. A product with no custom lens has one row of full-height tabs.
+ */
 function LensTabs() {
-  const E = useEngine(), V = useVariant(), P = E.M.P;
+  const E = useEngine(), P = E.M.P;
   const s = useBp((s) => ({ view: s.view, simV: s.simV }), shallowEqual);
   const open = E.M.sim.has ? E.M.sim.openDecs() : [];
   const strip = useRef<HTMLDivElement>(null);
   const vs = views(P);
-  // roving focus (the rail's pattern): arrows/Home/End move between tabs and select, and never reach the engine's walk
+  const custom = new Set(P.lenses.filter((l) => l.source === 'project').map((l) => l.id));
+  const rows = [vs.filter((k) => !custom.has(k)), vs.filter((k) => custom.has(k))];
+  // roving focus (the rail's pattern): arrows/Home/End move between tabs in key order and select, and never reach the engine's walk
   const onTabKey = (e: React.KeyboardEvent) => {
     const i = Math.max(0, vs.indexOf(s.view)), n = vs.length;
     const j = e.key === 'ArrowRight' ? (i + 1) % n : e.key === 'ArrowLeft' ? (i + n - 1) % n : e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : -1;
@@ -150,7 +156,7 @@ function LensTabs() {
     e.preventDefault(); e.stopPropagation();
     e.nativeEvent.stopImmediatePropagation(); // React listens on `document` (App Router), where the engine's handler also sits
     E.setView(vs[j]);
-    strip.current?.querySelectorAll<HTMLElement>('[role="tab"]')[j]?.focus();
+    strip.current?.querySelector<HTMLElement>(`[role="tab"][data-lens="${CSS.escape(vs[j])}"]`)?.focus();
   };
   // a narrow window scrolls the strip (blueprint.css #tabs, the offset parent): keep the selected tab in it whatever selected it (a digit key, the page)
   useEffect(() => {
@@ -159,22 +165,23 @@ function LensTabs() {
     if (b.offsetLeft < el.scrollLeft) el.scrollLeft = b.offsetLeft;
     else if (b.offsetLeft + b.offsetWidth > el.scrollLeft + el.clientWidth) el.scrollLeft = b.offsetLeft + b.offsetWidth - el.clientWidth;
   }, [s.view]);
+  const tab = (k: string) => {
+    const i = vs.indexOf(k), sh = sheetOf(P, k);
+    const n = k === 'general' ? 0 : open.filter((d) => d.lens === k).length;
+    const on = s.view === k;
+    return (
+      <button key={k} type="button" role="tab" data-lens={k} aria-selected={on} aria-label={sh.nm + (n ? ', ' + n + ' questions waiting' : '')} tabIndex={on ? 0 : -1}
+        title={sh.title + (sh.sub ? ': ' + sh.sub : '') + (i < 9 ? ' (' + (i + 1) + ')' : '') + (n ? ' · ' + n + ' questions waiting on this sheet' : '')} onClick={() => E.setView(k)}>
+        <span className="no">{sh.no}{n ? <b className="ct">{n}</b> : null}</span>
+        {i < 9 ? <span className="kb">{i + 1}</span> : null}
+        {on && <motion.span layoutId="lens-uline" className="uline" transition={{ type: 'spring', stiffness: 420, damping: 36 }} />}
+      </button>
+    );
+  };
   return (
-    <div id="tabs" role="tablist" aria-label="Sheets (lenses)" ref={strip} onKeyDown={onTabKey}>
-      {vs.map((k, i) => {
-        const sh = sheetOf(P, k);
-        const n = k === 'general' ? 0 : open.filter((d) => d.lens === k).length;
-        const on = s.view === k;
-        const sub = V.ui?.tabLabel?.(k) ?? sh.nm;
-        return (
-          <button key={k} type="button" role="tab" data-lens={k} aria-selected={on} tabIndex={on ? 0 : -1} title={sh.title + (sh.sub ? ': ' + sh.sub : '') + (i < 9 ? ' (' + (i + 1) + ')' : '') + (n ? ' · ' + n + ' questions waiting on this sheet' : '')} onClick={() => E.setView(k)}>
-            <span className="no">{sh.no}{n ? <b className="ct">{n}</b> : null}</span>
-            <span className="nm">{sub}</span>
-            {i < 9 ? <span className="kb">{i + 1}</span> : null}
-            {on && <motion.span layoutId="lens-uline" className="uline" transition={{ type: 'spring', stiffness: 420, damping: 36 }} />}
-          </button>
-        );
-      })}
+    <div id="tabs" role="tablist" aria-label="Sheets (lenses)" ref={strip} onKeyDown={onTabKey} data-rows={rows[1].length ? 2 : 1}>
+      <div className="tab-row">{rows[0].map(tab)}</div>
+      {rows[1].length > 0 && <div className="tab-row custom"><span className="tab-cap" aria-hidden="true">Custom</span>{rows[1].map(tab)}</div>}
     </div>
   );
 }

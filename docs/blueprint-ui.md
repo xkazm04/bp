@@ -48,6 +48,9 @@ Everything it does is in scope to keep:
 - **Levels and wayfinding.**
   - The L0 site of five wings, then L1 wing, L2 room, L3 bay, L4 feature sheet, all by continuous
     semantic zoom.
+  - At L3 a feature tile's name is twice its plan size: it grows over the last stretch of the zoom into the bay
+    (0.78 to 0.94 of the bay's fit zoom, `Engine.bayFitK`) and steps back 2 px at a time when the doubled name does
+    not fit the tile.
   - The level ladder, scale bar and key plan (minimap). The breadcrumb names the container with the
     largest visible share.
   - The `?scale=4` campus.
@@ -123,6 +126,10 @@ Data (since the app-structure v3 adoption, spark `blueprint-data-standard` WP3):
   averaged, the top enum value counted).
 - **Keyboard:** 1 = General, 2..9 = the enabled lenses in registry order (beyond nine, the tab strip
   still reaches them).
+- **Header tabs** show each lens as its short code, its question count and its digit key; the full name and
+  description are the tooltip. General and the built-in lenses fill the top row; the product's own (custom,
+  `source: 'project'`) lenses sit on a second row below, labelled Custom. With no custom lens the strip is one
+  row of full-height tabs.
 - A decision or standing order in `swarm.json` names its lens by id; one whose lens is disabled or
   unknown is still listed, under General.
 
@@ -473,8 +480,23 @@ gets out of the plan's way, and L4 is a page. Earlier sections that say "dock", 
   spatial-stability rule.
 - **Rail** (`src/components/Dock.tsx`, `rail/`, `rail.css`): a 64 px column of counters.
   - The counters are Find, Asks/Review, Agents, Orders, Steer (Kettle only), Plan and View.
-  - The rail never changes width and never opens by itself. Each counter opens its own flyout
-    (340 px) over the plan.
+  - The rail never changes width and never opens by itself. Each counter opens its own flyout over the plan.
+  - Find is a 340 px search. Every other flyout is a **workbench** (`rail/wide/`, chosen on 2026-10-15 over a
+    column board and a table): three times as wide (`min(1020px, viewport − rail − 48px)`), opaque, a strip of key
+    figures over two panes, a list on the left (J/K and the arrows walk it) and the selected item read in full on the
+    right, each pane scrolling on its own. Type: body 15–16 px, meta 13 px, labels 12 px mono, titles 20–24 px,
+    figures 28–38 px mono.
+    - Review: the proposal or question, its metric move as a before → after figure, every body section open, and a
+      sticky Approve / Decline (live) or the answers (Kettle). Agents: an overview (steering, the swarm's latest
+      lines), each scan job (progress, clock, Cancel, log), each crew (agents and tasks). Orders: breached first;
+      an order's words, scope, breaches and governed features (the plan outlines its places while it is selected),
+      and a writer that turns the selection into an order from the four templates. Steer: spend against the cap by
+      crew, the two presets with the standing order each rests on and their preview, and steering for the
+      selection. Plan: the room schedule or the features in trouble, a feature's health by lens, or the legend,
+      title block and keys. View: window, modes, whose desk and health as sections.
+    - The flyout reports its measured width to the engine (`setFlyoutWidth`), so the hover card, the decision card
+      and the selection bar keep to the plan left of it. With Agents, Orders or Steer open the selection bar steps
+      aside: those panels carry the same controls and preview.
   - Esc, the same counter, or a click on the plan closes it. Only one flyout is open at a time.
   - A changed count counts up or down and pulses once, at most every 3 s.
   - Keys: `/` opens Find, `\` hides the rail, `P` opens View.

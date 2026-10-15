@@ -573,6 +573,16 @@ export class Engine {
   private fitOf(c: Chain[number]): Cam { return this.fitCam(c.o, PADS[c.t], OVER[c.t] ?? 1); }
   /** fitOf(c).k without building a record. */
   private fitKOf(c: Chain[number]): number { const U = this.U, p = PADS[c.t]; return this.cam.fitK(c.o, p.t * U, p.r * U, p.b * U, p.l * U, OVER[c.t] ?? 1, this.SAFE); }
+  /** The zoom at which a bay fills the view (its L3 fit), cached until the UI scale or the safe area moves: the plan's
+   *  feature titles grow toward double size as the camera reaches it (render/plan.ts paintTile). */
+  bayFitK(B: BayNode): number {
+    const R = this.SAFE, sig = this.U + '|' + R.l + '|' + R.t + '|' + R.r + '|' + R.b;
+    if (sig !== this.bayFitSig) { this.bayFitSig = sig; this.bayFit.clear(); }
+    let k = this.bayFit.get(B.id);
+    if (k === undefined) { k = this.fitKOf({ t: 'bay', o: B }); this.bayFit.set(B.id, k); }
+    return k;
+  }
+  private bayFit = new Map<string, number>(); private bayFitSig = '';
   zoomBy(dir: number) { const S = this.SAFE; this.cam.zoomAt((S.l + S.r) / 2, (S.t + S.b) / 2, dir > 0 ? 1.6 : 1 / 1.6); this.endIntro(); }
   zoomAt(px: number, py: number, f: number) { this.cam.zoomAt(px, py, f); }
   goLevel(depth: number) {

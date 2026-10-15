@@ -231,7 +231,7 @@ export function DecisionCard() {
               initial={{ opacity: 0, y: 8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 6, transition: { duration: 0.15 } }} transition={{ type: 'spring', stiffness: 420, damping: 32 }}>
               <div className="k"><span>RFI · {d.base} · {d.urg === 'high' ? 'urgent' : d.urg === 'medium' ? 'soon' : 'when you can'} · sheet {sheetOf(M.P, d.lens).no}</span><button type="button" className="x" aria-label="Close" onClick={() => E.closeDecision()}>Esc</button></div>
               <h3>{d.q}</h3>
-              {(() => { const p = scan?.proposals.find((x) => x.id === d.base), sm = p ? proposalSummary(p) : null; return sm ? <div className="sm">{sm}</div> : null; })()}
+              {(() => { const p = scan?.proposals.find((x) => x.id === d.base), sm = p ? proposalSummary(p) : null; return sm ? <div className="psum">{sm}</div> : null; })()}
               <div className="by"><b>{A ? A.base : d.by}</b> ({A ? sim.crewName(A.sq) : ''}) stopped at <b>{f.name}</b> and asks <b>{pname(M.P, d.decider)}</b>.</div>
               <div className="meta"><span>waiting {fmtWait(sim.waitMin(d))}</span><span>holds {bn} agent{bn === 1 ? '' : 's'}</span><span>touches {d.affects.length}</span></div>
               {d.opts.map((o, i) => (
@@ -252,8 +252,12 @@ export function DecisionCard() {
 // --------------------------------------------------------------------------------- selection bar
 export function SelBar() {
   const E = useEngine(), sim = E.M.sim;
-  const s = useBp((s) => ({ tgt: s.tgt, prev: s.prev, ordMenu: s.ordMenu, simV: s.simV }), shallowEqual);
+  const s = useBp((s) => ({ tgt: s.tgt, prev: s.prev, ordMenu: s.ordMenu, simV: s.simV, dtab: s.dtab, hidden: s.dockHidden }), shallowEqual);
   const p = s.prev, ref = useRef<HTMLDivElement>(null);
+  // a wide flyout covers most of the plan: Agents, Orders and Steer carry the same selection controls and preview, so
+  // the bar steps aside; with another flyout open it centres in the plan left of it (the flyout reports its width)
+  const fly = s.dtab && s.dtab !== 'find' && !s.hidden;
+  const at: React.CSSProperties | undefined = fly ? { left: `calc((${E.SAFE.l / E.U}px + 100% - ${overlayRight(E.S)}px) / 2)`, maxWidth: `calc(100% - ${overlayRight(E.S) + E.SAFE.l / E.U + 24}px)` } : undefined;
   // sits above the level ladder when the two would meet; measured on content / viewport change, never per frame
   useLayoutEffect(() => {
     const fit = () => {
@@ -268,7 +272,7 @@ export function SelBar() {
   let body: React.ReactNode = null;
   if (p) {
     body = (
-      <motion.div ref={ref} id="selbar" key="prev" className="prev" role="region" aria-label="Preview" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}>
+      <motion.div ref={ref} id="selbar" key="prev" className="prev" style={at} role="region" aria-label="Preview" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}>
         <div className="kk">ADDENDUM · NOT ISSUED YET</div>
         <div className="big">{p.title}</div>
         <ul>{p.lines.map((l) => <li key={l}>{l}</li>)}</ul>
@@ -282,8 +286,8 @@ export function SelBar() {
   } else if (s.tgt.n) {
     const ag = sim.agentsIn(s.tgt.ids), ds = Object.keys(s.tgt.ids).flatMap((id) => sim.DOF[id] || []), wk = ag.filter((a) => a.status === 'working' && !a.paused).length;
     body = (
-      <motion.div ref={ref} id="selbar" key="sel" role="region" aria-label="Selection" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}>
-        <span className="sm"><b>{s.tgt.label}</b> · {s.tgt.n} feature{s.tgt.n > 1 ? 's' : ''} · {ag.length} agent{ag.length === 1 ? '' : 's'}{ag.length ? ' (' + wk + ' working)' : ''} · {ds.length} question{ds.length === 1 ? '' : 's'}</span>
+      <motion.div ref={ref} id="selbar" key="sel" style={at} role="region" aria-label="Selection" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}>
+        <span className="sel-sum"><b>{s.tgt.label}</b> · {s.tgt.n} feature{s.tgt.n > 1 ? 's' : ''} · {ag.length} agent{ag.length === 1 ? '' : 's'}{ag.length ? ' (' + wk + ' working)' : ''} · {ds.length} question{ds.length === 1 ? '' : 's'}</span>
         <button type="button" className="btn" onClick={() => E.lookAtTarget()}>Look closer</button>
         <button type="button" className="btn" onClick={() => E.patch({ info: true })}>What is going on?</button>
         <button type="button" className="btn" onClick={() => E.preview('push')}>Put the swarm here…</button>
@@ -296,6 +300,7 @@ export function SelBar() {
       </motion.div>
     );
   }
+  if (fly && (s.dtab === 'swarm' || s.dtab === 'steer' || s.dtab === 'orders')) body = null;
   return <AnimatePresence mode="wait">{body}</AnimatePresence>;
 }
 

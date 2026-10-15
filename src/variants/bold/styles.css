@@ -8,13 +8,13 @@
   border-color: var(--lens);
   box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--lens) 22%, transparent);
 }
-[data-variant='bold'] #tabs button[aria-selected='true'] .nm { transition: color 0.3s; }
-[data-variant='bold']:not([data-view='general']) #tabs button[aria-selected='true'] .nm { color: var(--lens); }
-[data-variant='bold'] .qi .note { transition: color 0.3s; }
+[data-variant='bold'] #tabs button[aria-selected='true'] .no { transition: color 0.3s; }
+[data-variant='bold']:not([data-view='general']) #tabs button[aria-selected='true'] .no { color: var(--lens); }
+[data-variant='bold'] #flyout .wb-note { transition: color 0.3s; }
 /* plain language for business and design, terse mono for development */
-[data-variant='bold'][data-view='business'] .qi .note,
-[data-variant='bold'][data-view='design'] .qi .note { font: 600 13px/1.35 var(--font-sans), system-ui, sans-serif; }
-[data-variant='bold'][data-view='development'] .qi .note { font: 500 12px/1.3 var(--mono); letter-spacing: 0.01em; }
+[data-variant='bold'][data-view='business'] #flyout .wb-note,
+[data-variant='bold'][data-view='design'] #flyout .wb-note { font: 600 13px/1.35 var(--font-sans), system-ui, sans-serif; }
+[data-variant='bold'][data-view='development'] #flyout .wb-note { font: 500 12px/1.3 var(--mono); letter-spacing: 0.01em; }
 
 /* ------------------------------------------------------------------------------ sheet: shared */
 /* The sheet's current panel cannot read --lens (FeatureSheet sets it to var(--lens) on that element, a
