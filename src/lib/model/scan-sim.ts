@@ -2,15 +2,16 @@
 // browser and emit the same store rows a real lens-scan run writes, so the model applies them on the
 // live path (applyScan) and every scan view is shared with live products.
 // A timer runs only while a job runs (never a rAF); every change notifies once per tick. Pure and free of
-// '@/' value imports, so Node can drive it (the scan-package probes).
+// '@/' value imports, so Node can drive it (the scan-package probes). The sample release train (packs, triage, releases,
+// the release job's steps) is train-sim.ts, seeded at the first bind; its jobs run on this timer.
 import type { Activity, ActivityKind, CommitDiff, Measurement, Proposal, ReleaseCreated, Run, ScanSnapshot, TriageBody, TriageResult, VersionSuggestion } from '@/lib/scan/types';
-
-/** Kettle only: what the sample release job runs into. */
-export interface TrainToggles { ghOff: boolean; conflict: boolean; gateFails: boolean }
-import type { ScanJob, ScanScope } from '@/lib/scan/jobs';
+import type { ReleaseStep, ScanJob, ScanScope } from '@/lib/scan/jobs';
 import type { LensExecuteResult } from '@/lib/scan/client';
 import type { LensEntry, LensField, LensManifest } from '@/lib/standard/types';
 import { MAX_SELECTION, RUN_NOTE_PREFIX, TEMP_LENS_ID } from '../scan/jobs.ts';
+import { TrainSim, type TrainToggles } from './train-sim.ts';
+
+export type { TrainToggles };
 
 /** What the sim needs of the product: bound once the model is built (`ScanSim.bind`). */
 export interface ScanSimProduct {
@@ -27,6 +28,8 @@ export interface ScanSimProduct {
 
 /** One feature per STEP_MS; an execute job takes about EXEC_MS over all its proposals. */
 const STEP_MS = 1200, EXEC_MS = 15000, TICK_MS = 200, MAX_RUNNING = 3, MAX_QUEUED = 16, MAX_IDS = 50;
+/** One release-job step (cut, a cherry-pick per item, gates, notes, PR): a build of 2-6 items takes about 6-10 s. */
+const RELEASE_STEP_MS = 1000, LOG_LINES = 20;
 /** Share of features a temporary lens finds nothing to say about (deterministic per feature and lens). */
 const NO_IMPACT = 0.4;
 const KINDS = new Set(['feature', 'bay', 'room', 'wing', 'all', 'selection']);
@@ -72,15 +75,26 @@ export class ScanSim {
   private snapV = -1; private snap: ScanSnapshot | null = null;
   private jobsV = -1; private jobList: readonly ScanJob[] = [];
   private dead = false;
+  private train: TrainSim;
+  private seeded = false;
 
   constructor(opts: { now: () => number; findings: readonly Proposal[] }) {
     this.now = opts.now;
     this.props = opts.findings.slice();
     this.props.forEach((p, i) => this.pAt.set(p.id, i));
+    this.train = new TrainSim({
+      now: () => this.now(), runs: this.runs, ms: this.ms, act: this.act, props: this.props, pAt: this.pAt,
+      nextMeasurement: () => ++this.mId, nextActivity: () => ++this.aId, changed: () => this.changed(),
+      field: (lens, key) => (this.prod?.manifest(lens) ?? this.lensEntries().find((e) => e.id === lens)?.manifest)?.fields.find((f) => f.key === key),
+    });
   }
 
-  /** Give the sim the product it scans (the model, once built). Scans refuse until then. */
-  bind(p: ScanSimProduct): void { this.prod = p; }
+  /** Give the sim the product it scans (the model, once built). Scans refuse until then. The first bind seeds the
+   *  sample release train over its features; a rebind (the model rebuilt in place) keeps it. */
+  bind(p: ScanSimProduct): void {
+    this.prod = p;
+    if (!this.seeded) { this.seeded = true; this.train.seed(p.order); this.changed(); }
+  }
   /** Bumped on every change. */
   get version(): number { return this.v; }
 
@@ -93,7 +107,7 @@ export class ScanSim {
   snapshot(): ScanSnapshot {
     if (!this.snap || this.snapV !== this.v) {
       this.snapV = this.v;
-      this.snap = { runs: this.runs.slice(), measurements: this.ms.slice(), proposals: this.props.slice(), activity: this.act.slice(), shots: [], coverage: [], packs: [], releases: [] };
+      this.snap = { runs: this.runs.slice(), measurements: this.ms.slice(), proposals: this.props.slice(), activity: this.act.slice(), shots: this.train.shots.slice(), coverage: [], packs: this.train.packs.slice(), releases: this.train.releases.slice() };
     }
     return this.snap;
   }
@@ -171,24 +185,24 @@ export class ScanSim {
   }
 
   // ----------------------------------------------------------------------------------------- the sample train
-  // Kettle's release train (WP3 implements): sample packs over Kettle features, triage and reopen, a version
+  // Kettle's release train (train-sim.ts): sample packs over Kettle features, triage and reopen, a version
   // suggestion, and a release job draft -> building -> pr-open -> (sampleMerge) -> merged -> tagged on the sim timer.
   // Same results and refusals as the routes (Error + status + body). Everything it makes is labelled sample.
 
   /** Triage built items, as POST triage: 409 with the result as `body` when none moved. */
-  triage(body: TriageBody): TriageResult { void body; throw refuse(501, 'not implemented'); }
+  triage(body: TriageBody): TriageResult { return this.train.triage(body); }
   /** The next version for the accepted items with no release, as GET releases/suggest. */
-  suggestRelease(): VersionSuggestion { throw refuse(501, 'not implemented'); }
+  suggestRelease(): VersionSuggestion { return this.train.suggest(); }
   /** A draft release, as POST releases. */
-  createRelease(version: string, ids?: string[]): ReleaseCreated { void version; void ids; throw refuse(501, 'not implemented'); }
-  /** The sample job that builds a release; 412 'gh not authenticated' when the gh toggle is off. */
-  buildRelease(id: string): ScanJob { void id; throw refuse(501, 'not implemented'); }
-  /** The sample job that finishes a merged release. */
-  finishRelease(id: string): ScanJob { void id; throw refuse(501, 'not implemented'); }
+  createRelease(version: string, ids?: string[]): ReleaseCreated { return this.train.create(version, ids); }
+  /** The sample job that builds a release (draft or failed); 412 'gh not authenticated' when the gh toggle is off. */
+  buildRelease(id: string): ScanJob { return this.queueRelease(id, 'build'); }
+  /** The sample job that finishes a merged release (tag, items released, settled packs closed). */
+  finishRelease(id: string): ScanJob { return this.queueRelease(id, 'finish'); }
   /** Kettle only: stands in for the person merging the PR on GitHub (pr-open -> merged). */
-  sampleMerge(id: string): void { void id; throw refuse(501, 'not implemented'); }
+  sampleMerge(id: string): void { this.train.merge(id); }
   /** A sample item commit's diff. */
-  commitDiff(sha: string): CommitDiff { void sha; throw refuse(501, 'not implemented'); }
+  commitDiff(sha: string): CommitDiff { return this.train.diff(sha); }
   /** Kettle only: what the sample release job should run into (all off = a clean run, gh logged in). */
   get trainToggles(): TrainToggles { return this.toggles; }
   setTrainToggles(t: TrainToggles): void { this.toggles = t; this.changed(); }
@@ -209,6 +223,7 @@ export class ScanSim {
       this.setRun(r.runId, { status: 'aborted', ended_at: at, updated_at: at });
       // the proposal being built goes back to approved: nothing was committed
       if (r.job.kind === 'execute') { const p = this.prop(r.items[r.i]); if (p?.status === 'executing') this.setProp(p.id, { status: 'approved', updated_at: at }); }
+      if (r.job.kind === 'release') this.train.cancelled(r.job);
     }
     this.setJob(r, { status: 'cancelled', ended_at: at });
     this.pump();
@@ -229,6 +244,18 @@ export class ScanSim {
     const id = 'sim-' + ++this.nextId;
     this.recs.push({ job: { id, kind: 'execute', proposals: ids, status: 'queued', queued_at: at }, items: ids, i: 0, stepAt: 0, step: Math.max(1500, EXEC_MS / ids.length), runId: 'run-' + id });
     return id;
+  }
+  /** Queue a release job as the build and finish routes do: 400/404/409 from the release's state, 409 when one runs, 412, 429. */
+  private queueRelease(id: string, step: ReleaseStep): ScanJob {
+    const rel = this.train.startable(id, step);
+    if (this.recs.some((r) => r.job.kind === 'release' && r.job.release === id && (r.job.status === 'queued' || r.job.status === 'running'))) throw refuse(409, `a release job for ${id} is already queued or running`);
+    if (this.toggles.ghOff) throw refuse(412, 'gh not authenticated');
+    if (this.recs.filter((r) => r.job.status === 'queued').length >= MAX_QUEUED) throw refuse(429, 'queue-full');
+    const jid = 'sim-' + ++this.nextId;
+    this.recs.push({ job: { id: jid, kind: 'release', release: id, version: rel.version, step, status: 'queued', queued_at: this.iso() }, items: [], i: 0, stepAt: 0, step: RELEASE_STEP_MS, runId: 'run-' + jid });
+    this.pump();
+    this.changed();
+    return this.recOf(jid)!.job;
   }
   private prop(id: string | undefined): Proposal | undefined { const i = id === undefined ? undefined : this.pAt.get(id); return i === undefined ? undefined : this.props[i]; }
   private setProp(id: string, patch: Partial<Proposal>) { const i = this.pAt.get(id); if (i !== undefined) this.props[i] = { ...this.props[i], ...patch }; }
@@ -260,6 +287,12 @@ export class ScanSim {
 
   private begin(r: Rec) {
     const t = this.now(), at = this.iso(t), j = r.job;
+    if (j.kind === 'release') {
+      r.items = this.train.begin(j, r.runId, this.toggles);
+      this.setJob(r, { status: 'running', started_at: at, ...(j.step !== 'finish' && r.items.length ? { run_id: r.runId } : {}) });
+      r.i = 0; r.stepAt = t + r.step;
+      return;
+    }
     const lenses = j.kind === 'measure' ? [j.lens!] : [...new Set(r.items.map((id) => this.prop(id)?.lens).filter((l): l is string => !!l))];
     const scope = j.kind === 'measure' ? { features: j.scope!.features.slice() } : { proposals: r.items.slice() };
     this.runs.push({ id: r.runId, started_at: at, updated_at: at, phase: j.kind === 'measure' ? 'measure' : 'execute', status: 'running', lenses, scope, model: 'sample', note: RUN_NOTE_PREFIX + j.id });
@@ -271,7 +304,7 @@ export class ScanSim {
   /** The current item starts: a feature is read, or a proposal goes to executing. */
   private open(r: Rec) {
     const j = r.job, x = r.items[r.i];
-    if (x === undefined) return;
+    if (x === undefined || j.kind === 'release') return;
     if (j.kind === 'measure') { this.log(r.runId, 'reading', 'reading ' + x, x, j.lens); return; }
     const p = this.prop(x);
     if (p && p.status === 'approved') { this.setProp(x, { status: 'executing', updated_at: this.iso() }); this.log(r.runId, 'executing', 'building ' + p.title, p.feature, p.lens); }
@@ -281,6 +314,7 @@ export class ScanSim {
   private close(r: Rec) {
     const j = r.job, x = r.items[r.i], P = this.prod!, at = this.iso();
     if (x === undefined) return;
+    if (j.kind === 'release') { const line = this.train.step(j, x, r.runId); this.setJob(r, { log_tail: [...(j.log_tail ? j.log_tail.split('\n') : []), line].slice(-LOG_LINES).join('\n') }); return; }
     if (j.kind === 'measure') {
       const lens = j.lens!, m = P.manifest(lens);
       if (!m) { this.log(r.runId, 'error', lens + ' is no longer enabled', x, lens); return; }
@@ -325,9 +359,9 @@ export class ScanSim {
         if (r.i < r.items.length) { r.stepAt += r.step; this.open(r); }
       }
       if (r.i >= r.items.length) {
-        const at = this.iso(t);
-        this.setRun(r.runId, { status: 'done', ended_at: at, updated_at: at });
-        this.setJob(r, { status: 'done', ended_at: at, exit_code: 0 });
+        const at = this.iso(t), err = r.job.kind === 'release' ? this.train.end(r.job).error : undefined;
+        this.setRun(r.runId, { status: err ? 'failed' : 'done', ended_at: at, updated_at: at });
+        this.setJob(r, { status: err ? 'failed' : 'done', ended_at: at, exit_code: 0, ...(err ? { error: err } : {}) });
         stepped = true;
       } else if (stepped) this.setRun(r.runId, { updated_at: this.iso(t) });
       moved ||= stepped;
