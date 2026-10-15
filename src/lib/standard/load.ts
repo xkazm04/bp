@@ -189,8 +189,8 @@ const MILESTONE_STATUS = ['planned', 'active', 'shipped'] as const;
 const DENSITIES: readonly Density[] = ['simple', 'standard', 'dense'];
 const COMPUTED = ['good', 'watch', 'bad'];
 const isStage = (v: unknown): v is Stage => typeof v === 'string' && (STAGES as readonly string[]).includes(v);
-const GLYPHS: readonly GlyphName[] = ['bars', 'set-square', 'brackets', 'pulse', 'padlock', 'check'];
-const LINES: readonly LineName[] = ['solid', 'double', 'dotted', 'comb', 'chain', 'hatched', 'dimension'];
+const GLYPHS: readonly GlyphName[] = ['bars', 'set-square', 'brackets', 'pulse', 'padlock', 'check', 'stopwatch'];
+const LINES: readonly LineName[] = ['solid', 'double', 'dotted', 'comb', 'chain', 'hatched', 'dimension', 'wave'];
 /**
  * A custom glyph is untrusted: path commands and numbers only, at most 2048 characters (spec 8.6).
  * The same rule as the schema's `presentation.glyph.path` (lens-manifest-1.schema.json): it opens with

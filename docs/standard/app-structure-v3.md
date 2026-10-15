@@ -28,7 +28,7 @@ History lives beside it in an append-only events log, `context-map.events.jsonl`
 measured metrics lives in a separate local store, the lens-scan store (section 15).
 
 A lens is a plugin, not part of the format. A lens manifest declares its fields, a health rule
-written as JSON data, and how it should be drawn. Six built-in lenses ship in a catalog
+written as JSON data, and how it should be drawn. Seven built-in lenses ship in a catalog
 (`docs/standard/lenses/`); a project can add its own or switch any of them off.
 
 ## 2. Conformance
@@ -79,8 +79,8 @@ v3 grammar objects are closed, so typos fail validation: domains, capabilities, 
 scopes, lens entries, manifests and everything inside them, conditions, overrides, feature
 `parts` and `notes`.
 
-**Lens ids.** The six built-in lenses use short ids: `business`, `design`, `development`,
-`operations`, `security`, `quality`. Every other lens MUST use a reverse-DNS id matching
+**Lens ids.** The seven built-in lenses use short ids: `business`, `design`, `development`,
+`operations`, `security`, `quality`, `performance`. Every other lens MUST use a reverse-DNS id matching
 `^[a-z]{2,}(\.[a-z0-9-]+){2,}$` (`com.kettle.cost`), so it can never take a built-in's name. Code
 MUST NOT branch on the built-in ids; every lens is drawn and evaluated from its manifest.
 
@@ -504,6 +504,7 @@ the rollup is `na` when every feature is `na`, else `unmeasured` (also for an em
 | `pulse` | a pulse line: flat, a sharp peak and trough, flat | operations |
 | `padlock` | a padlock: filled body and shackle | security |
 | `check` | a check mark | quality |
+| `stopwatch` | a stopwatch: a dial with a filled crown and one hand | performance |
 
 **Shared line set** (drawn along a rail band):
 
@@ -516,6 +517,7 @@ the rollup is `na` when every feature is `na`, else `unmeasured` (also for an em
 | `chain` | long dash, dot, long dash: a centre line | operations |
 | `hatched` | a band between two rules filled with diagonal hatching, a fire-rated wall | security |
 | `dimension` | a rule with end ticks, a dimension line | quality |
+| `wave` | a square wave: high and low runs joined by risers, a timing trace | performance |
 
 Renderers MUST draw every name in both sets. A custom `glyph.path` is untrusted input: renderers
 MUST parse it only as a path (for example with `Path2D`), never as markup. The schema limits it
@@ -590,6 +592,16 @@ so first match keeps every 1.0.0 outcome.
 | | `minTextPx` | number, px (target 12) | up | harness | `< 12` → watch (the 12 px floor) |
 | | `consoleErrors` | integer (target 0) | down | harness | |
 | | `standardsPct` | percent | up | judgement | |
+| performance (1.0.0) | `bundleKb` | number, KB | down | static | (omitted when the build names no stats file) |
+| | `startupMs` | number, ms (target 1500, warn_at 3000) | down | probe | `> 5000` → bad, `> 3000` → watch |
+| | `interactionP95Ms` | number, ms (target 100, warn_at 200) | down | probe | `> 200` → watch (the budget) |
+| | `frameP95Ms` | number, ms (target 16.7, warn_at 33.3) | down | probe | `> 50` → bad, `> 33.3` → watch |
+| | `memoryMb` | number, MB (warn_at 500) | down | probe | `> 500` → watch; no target, a budget is the app's own |
+
+Performance also carries `budgetMet` (boolean; `false` → watch) and `probeEnv` (where the probes ran).
+Its probes are commands the product's lens-scan overlay names, so a baseline and a fix's commit run
+the same probe; a feature with no probe for a key stays unmeasured on it. Its `bundleKb` is the same
+reading as development's.
 
 Security keeps its `openFindings`, `review` and `dataClass` fields: `openFindings` counts the security
 review's open findings, the `findings*` metrics count what a lens scan judged. `standardsPct` is the
@@ -664,7 +676,7 @@ one, the feature's stage is unknown until its first `stage` event.
 
 **Reading v2.** A file without `$schema` and with `version: 2` is a v2 map. A v3 reader that accepts
 it maps `use_cases[]` to `features[]` (slug, name, kind, tier, status and context links) with no
-`stage`, shown as unknown and never guessed. The six built-in lenses are available but every feature
+`stage`, shown as unknown and never guessed. The seven built-in lenses are available but every feature
 is `unmeasured`. A v3 reader also accepts `use_cases[]` as a stand-in when a v3 file has no
 `features[]`. A v3 writer emits only `features[]`.
 
@@ -699,7 +711,7 @@ A map with `declared: true` is hand-owned: exporters MUST NOT overwrite it.
 
 `node scripts/validate-structure.mjs <file.json>... [--events <file.jsonl>]` (`npm run validate:structure`)
 runs the schema (ajv, 2020 dialect) and then the reference checks a schema cannot express. With no
-arguments it validates the six built-in manifests and every custom manifest in `docs/standard/lenses-custom/`
+arguments it validates the seven built-in manifests and every custom manifest in `docs/standard/lenses-custom/`
 (its id must equal its file name and be reverse-DNS). `--events` is checked against exactly one map.
 
 Errors (the file is invalid):
@@ -761,6 +773,7 @@ Fixtures in `docs/standard/schema/fixtures/`:
 | `operations` | dense | `pulse` | `chain` | `rolloutPct` | worst-of | | `environment` is not `none`, `preview` or `staging` (absent: applies) |
 | `security` | standard | `padlock` | `hatched` | `dataClass` (enum) | worst-of | `stage` | the review has started, and not (public data, no findings, stage `idea` or `specified`) |
 | `quality` | standard | `check` | `dimension` | `e2ePassPct` | share 0.2 / 0.1 | `stage` | `status` is not `untested`, and stage is not `idea` or `specified` |
+| `performance` | dense | `stopwatch` | `wave` | `interactionP95Ms` (scaled to the map's largest) | share 0.25 / 0.15 | | always |
 
 Stage-aware rules in the built-ins: business is `bad` for a P0 at `idea`/`specified` and for 15+
 customer requests before it ships, and `watch` when deprecated or when shipped with value ≤ 2;
@@ -770,16 +783,20 @@ fewer than 3 end-to-end tests. The judged metrics of 8.7 add: business `bad` at 
 and `watch` at 1+; operations `bad` at 5+ limitations and `watch` at 1+; quality `bad` at 1+ broken
 test and `watch` at 3+ untested paths.
 
-Versions: all six are 1.1.0. Development, security and design add the measured metric fields and
+Versions: the first six are 1.1.0. Development, security and design add the measured metric fields and
 metric rules of section 8.7; business, operations and quality add judged metric fields, their rules
 and a judgement scan block (8.2, 8.7). Each is additive: a 1.0.0 facet evaluates to the same health
-under 1.1.0.
+under 1.1.0. Performance, added later, is 1.0.0: its probed metrics (8.7), `budgetMet` and `probeEnv`. A map written before performance existed does not list it, and a reader does not add it:
+`lenses[]` is what the map uses (8.1). A writer adds it as any lens is added (lens-scan's onboarding).
 
 The manifests are in `docs/standard/lenses/`; `src/lib/standard/catalog.ts` loads them.
 `node scripts/check-builtin-health.ts` checks the rules against the Kettle sample, handing each
 feature to the evaluator for the bound fields. The sample's lens objects carry no metrics; the
 converter (`npm run data:kettle-v3`) adds metric values on about 30 features and fails unless the
 health over the converted facets, metrics included, still equals the sample's on every built-in lens.
+The sample has no performance lens object: the converter writes probe readings on the built screens of
+the scanned domains (19 features; over budget only where the sample already sits at watch or worse) and
+every other feature reads unmeasured on it; the health check holds performance to scanned readings only.
 
 ## 14. Example
 

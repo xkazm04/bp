@@ -16,7 +16,7 @@ import { countField } from './expression';
 import { glyph, lineType, railRest } from './marks';
 
 const LINE_WORD: Record<LineName, string> = {
-  solid: 'Solid rule', double: 'Double rule', dotted: 'Dotted line', comb: 'Comb', chain: 'Chain line', hatched: 'Hatched band', dimension: 'Dimension line',
+  solid: 'Solid rule', double: 'Double rule', dotted: 'Dotted line', comb: 'Comb', chain: 'Chain line', hatched: 'Hatched band', dimension: 'Dimension line', wave: 'Square wave',
 };
 
 function Swatch({ d, w, h, measure }: { d: LensDef; w: number; h: number; measure: number }) {

@@ -29,11 +29,11 @@
   },
   "$defs": {
     "lensId": {
-      "description": "One of the six built-in short ids, a reverse-DNS id for a custom lens, or tmp.<kebab> for a temporary lens (spec 8.1).",
+      "description": "One of the seven built-in short ids, a reverse-DNS id for a custom lens, or tmp.<kebab> for a temporary lens (spec 8.1).",
       "type": "string",
-      "pattern": "^(?:business|design|development|operations|security|quality)$|^[a-z]{2,}(?:\\.[a-z0-9-]+){2,}$|^tmp\\.[a-z0-9][a-z0-9-]{1,40}$"
+      "pattern": "^(?:business|design|development|operations|security|quality|performance)$|^[a-z]{2,}(?:\\.[a-z0-9-]+){2,}$|^tmp\\.[a-z0-9][a-z0-9-]{1,40}$"
     },
-    "builtinLensId": { "enum": ["business", "design", "development", "operations", "security", "quality"] },
+    "builtinLensId": { "enum": ["business", "design", "development", "operations", "security", "quality", "performance"] },
     "tempLensId": { "type": "string", "pattern": "^tmp\\.[a-z0-9][a-z0-9-]{1,40}$" },
     "reverseDns": { "type": "string", "pattern": "^[a-z]{2,}(?:\\.[a-z0-9-]+){2,}$" },
     "slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9.-]*$" },
@@ -273,7 +273,7 @@
         "glyph": {
           "description": "A name from the shared glyph set, or a custom SVG path in a 16x16 box.",
           "if": { "type": "string" },
-          "then": { "enum": ["bars", "set-square", "brackets", "pulse", "padlock", "check"] },
+          "then": { "enum": ["bars", "set-square", "brackets", "pulse", "padlock", "check", "stopwatch"] },
           "else": {
             "type": "object",
             "required": ["path"],
@@ -283,7 +283,7 @@
             }
           }
         },
-        "line": { "enum": ["solid", "double", "dotted", "comb", "chain", "hatched", "dimension"] },
+        "line": { "enum": ["solid", "double", "dotted", "comb", "chain", "hatched", "dimension", "wave"] },
         "accent": {
           "type": "object",
           "required": ["dark", "light"],

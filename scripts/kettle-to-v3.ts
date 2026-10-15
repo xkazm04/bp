@@ -26,8 +26,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p: string): unknown => JSON.parse(fs.readFileSync(path.join(ROOT, p), 'utf8'));
 const OUT_MAP = 'src/data/kettle.app-structure.json';
 const OUT_EVENTS = 'src/data/kettle.events.jsonl';
-/** The built-in ids come from the catalog (the one list); the type is the sample's own lens fields. */
-const BUILTIN = BUILTIN_LENSES.map((m) => m.id) as SampleLens[];
+/** The built-in ids come from the catalog (the one list): every one gets a lens entry in the map. */
+const BUILTIN: readonly string[] = BUILTIN_LENSES.map((m) => m.id);
 const COST_LENS = 'com.kettle.cost';
 
 // ------------------------------------------------------------------------------- the sample's shape
@@ -55,9 +55,14 @@ interface Sample {
   features: SampleFeature[];
   activity: SampleActivity[];
   snapshots: { week: string; counts: Record<Stage, number>; total: number }[];
+  /** The lens objects each sample feature carries (the six of gen-kettle.mjs). */
+  lenses: string[];
 }
 
 const kettle = read('src/data/kettle.json') as Sample;
+/** The built-ins the sample carries a lens object for. A later built-in (performance) has none: its values come
+ *  from the synthetic scan below or nowhere, and its health is not compared with a stored one. */
+const SAMPLED = BUILTIN.filter((id) => kettle.lenses.includes(id)) as SampleLens[];
 const AS_OF = kettle.product.asOf;
 const TODAY = AS_OF.slice(0, 10);
 
@@ -270,7 +275,7 @@ const facets: Record<string, Record<string, Facet>> = {};
 for (const f of kettle.features) {
   const byLens: Record<string, Facet> = {};
   const at = measuredAt(f);
-  for (const id of BUILTIN) byLens[id] = { ...FLATTEN[id](f[id]), measured_at: at, source: 'sample' };
+  for (const id of SAMPLED) byLens[id] = { ...FLATTEN[id](f[id]), measured_at: at, source: 'sample' };
   const cost = f.operations.costUsdMonth as number;
   if (cost > 0) {
     const values: FacetValues = { monthlyUsd: cost };
@@ -300,6 +305,7 @@ for (const f of kettle.features) {
   const byLens = facets[slugOf(f.id)];
   const ui = f.surfaces.some((s) => UI.includes(s));
   const put = (lens: string, values: FacetValues) => {
+    byLens[lens] ??= { values: {}, measured_at: SCAN_AT, source: 'sample' };
     Object.assign(byLens[lens].values ??= {}, values);
     const at = byLens[lens].measured_at;
     if (!at || at < SCAN_AT) byLens[lens].measured_at = SCAN_AT;
@@ -347,6 +353,23 @@ for (const f of kettle.features) {
       g.consoleErrors = Math.floor(r() * 3);
     }
     put('design', g);
+  }
+  // performance: probes on built screens (a local production build, the overlay's ## Probes commands), the
+  // bundle share where development has one. A screen still in review is probed too; a planned one is not.
+  // Over-budget readings only where the sample already sits at watch or worse, so General health holds.
+  if (ui && ['in-review', 'merged', 'done'].includes(dv.status as string)) {
+    r = seeded(`${f.id}:metrics:performance`);
+    const slow = atLeast(f.health, 'watch') && r() < 0.6, mobile = f.surfaces.includes('mobile');
+    const p: FacetValues = {
+      startupMs: Math.round((mobile ? 1300 : 700) + r() * 1200),
+      interactionP95Ms: slow ? Math.round(205 + r() * 140) : Math.round(45 + r() * 120),
+      frameP95Ms: round(9 + r() * 14, 1),
+      memoryMb: Math.round((mobile ? 140 : 70) + r() * 180),
+      probeEnv: mobile ? 'Pixel 7 emulator, release build' : 'local production build, Chrome 1600x1000',
+    };
+    if (d.bundleKb !== undefined) p.bundleKb = d.bundleKb;
+    put('performance', p);
+    metricValues -= 1; // probeEnv is context, not a metric
   }
 }
 // invoice-ocr: a fresh feature with no sample lens objects, so its facets are written here in full. Here
@@ -578,7 +601,7 @@ const HEALTHS: Health[] = ['good', 'watch', 'bad', 'unmeasured', 'na'];
 const tally = () => Object.fromEntries(HEALTHS.map((h) => [h, 0])) as Record<Health, number>;
 const computed = new Map<string, Map<string, Health>>(); // lens -> feature slug -> health
 for (const l of lenses) {
-  if (l.source === 'builtin' && JSON.stringify(l.manifest) !== JSON.stringify(JSON.parse(builtinFiles.get(l.id as (typeof BUILTIN)[number])!))) {
+  if (l.source === 'builtin' && JSON.stringify(l.manifest) !== JSON.stringify(JSON.parse(builtinFiles.get(l.id)!))) {
     fail(`lens ${l.id}: the manifest copy differs from the catalog`);
   }
   const hs = new Map<string, Health>();
@@ -586,7 +609,7 @@ for (const l of lenses) {
   computed.set(l.id, hs);
 }
 const misses: string[] = [];
-for (const id of BUILTIN) for (const f of kettle.features) {
+for (const id of SAMPLED) for (const f of kettle.features) {
   const got = computed.get(id)!.get(slugOf(f.id))!;
   if (got !== f[id].health) misses.push(`${id} ${f.id}: stored ${f[id].health}, computed ${got}`);
 }
@@ -632,20 +655,20 @@ for (const l of lenses) {
   const got = tally();
   for (const h of computed.get(l.id)!.values()) got[h]++;
   console.log(`  ${l.id.padEnd(16)} v3     ${fmt(got)}`);
-  if (l.source === 'builtin') {
+  if ((SAMPLED as readonly string[]).includes(l.id)) {
     const stored = tally();
-    for (const f of kettle.features) stored[f[l.id as (typeof BUILTIN)[number]].health]++;
+    for (const f of kettle.features) stored[f[l.id as SampleLens].health]++;
     console.log(`  ${''.padEnd(16)} sample ${fmt(stored)}   agree ${kettle.features.length - misses.length} / ${kettle.features.length} (v3 also counts ${OCR}, which the sample lacks)`);
   }
 }
-const overall6 = tally(), overall7 = tally(), storedOverall = tally();
+const overall6 = tally(), overallAll = tally(), storedOverall = tally();
 for (const f of features) {
-  overall6[worstOf(BUILTIN.map((id) => computed.get(id)!.get(f.slug)!))]++;
-  overall7[worstOf(lenses.filter((l) => l.enabled).map((l) => computed.get(l.id)!.get(f.slug)!))]++;
+  overall6[worstOf(SAMPLED.map((id) => computed.get(id)!.get(f.slug)!))]++;
+  overallAll[worstOf(lenses.filter((l) => l.enabled).map((l) => computed.get(l.id)!.get(f.slug)!))]++;
 }
 for (const f of kettle.features) storedOverall[f.health]++;
-console.log(`  ${'overall'.padEnd(16)} v3 six built-ins     ${fmt(overall6)}`);
-console.log(`  ${''.padEnd(16)} v3 all enabled (7)  ${fmt(overall7)}`);
+console.log(`  ${'overall'.padEnd(16)} v3 sampled built-ins ${fmt(overall6)}`);
+console.log(`  ${''.padEnd(16)} v3 all enabled (${lenses.filter((l) => l.enabled).length})  ${fmt(overallAll)}`);
 console.log(`  ${''.padEnd(16)} sample stored       ${fmt(storedOverall)}`);
 const costOf = (slug: string) => computed.get(COST_LENS)!.get(slug);
 console.log(`\noverrides: ${OVERRIDES.map((o) => `${slugOf(o.feature)}/${o.lens} ${o.health} until ${o.until} -> ${computed.get(o.lens)!.get(slugOf(o.feature))}`).join('; ')}`);

@@ -40,7 +40,7 @@ export interface ScanJob {
 }
 
 /** Lenses lens-scan can measure without a manifest `scan` block (lens-scan v1). */
-export const SCAN_BUILTINS: readonly string[] = ['development', 'security', 'design'];
+export const SCAN_BUILTINS: readonly string[] = ['development', 'security', 'design', 'performance'];
 
 /** Whether a lens can be scanned: always in the Kettle sim; live, a built-in method or a `scan` block. */
 export function scannable(entry: Pick<LensEntry, 'id' | 'manifest'>, sim: boolean): boolean {

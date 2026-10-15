@@ -44,7 +44,7 @@ function pat(th: Theme, kind: keyof typeof KIND, size: number, col: string, lw: 
  * A line type over [x, x+len] in a band (y, h): the measured part of the evidence rail. The shared set:
  * solid = one continuous rule, double = a ledger's double underline, dotted = a guide line, comb =
  * ruler ticks, chain = a centre line (long dash, dot), hatched = a fire-rated wall, dimension = a rule
- * with end ticks.
+ * with end ticks, wave = a square wave (a timing trace).
  */
 export function lineType(ctx: CanvasRenderingContext2D, th: Theme, l: LineName, x: number, y: number, len: number, h: number, col: string, u: number) {
   if (len < 0.5) return;
@@ -95,6 +95,19 @@ export function lineType(ctx: CanvasRenderingContext2D, th: Theme, l: LineName, 
       const lw = Math.max(1, Math.round(1.3 * u)), t = Math.round(y), hh = Math.max(2, Math.round(h));
       ctx.fillRect(x, mid - (lw >> 1), len, lw);
       ctx.fillRect(x, t, 1, hh); ctx.fillRect(x + len - 1, t, 1, hh);
+      return;
+    }
+    case 'wave': {
+      // high and low runs joined by risers, fillRect only; a band under 3 px collapses to its low run
+      const half = Math.max(3, Math.round(3.5 * u)), t = Math.round(y), b = Math.max(t, Math.round(y + h) - 1), end = x + len;
+      let px = x, hi = true;
+      while (px < end) {
+        const w = Math.min(half, end - px);
+        ctx.fillRect(px, hi ? t : b, w, 1);
+        px += half;
+        if (px < end && b - t > 1) ctx.fillRect(px, t, 1, b - t + 1);
+        hi = !hi;
+      }
       return;
     }
   }

@@ -3,7 +3,7 @@
 // (draft 2020-12, via ajv), then the checks a schema cannot express (references resolve, keys are
 // unique, facet values fit their fields). Spec: docs/standard/app-structure-v3.md.
 //
-//   node scripts/validate-structure.mjs                      the six built-in lens manifests and lenses-custom/*
+//   node scripts/validate-structure.mjs                      the seven built-in lens manifests and lenses-custom/*
 //   node scripts/validate-structure.mjs <file.json>...       maps (app-structure/3) or manifests (lens-manifest/1)
 //   node scripts/validate-structure.mjs <map.json> --events <map.events.jsonl>
 //

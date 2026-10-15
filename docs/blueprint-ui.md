@@ -279,7 +279,8 @@ lens has nothing to add to goes transparent.
   channel any variant uses for a custom lens) the lens's `presentation.line` is laid as an ink pattern
   across the tile body, left to right, up to `lensLine(measures, value)` (enums: position / (count - 1)).
   The motifs: solid = ruled lines, double = paired rules, dotted = a dot grid, comb = ticks on a base,
-  chain = dash and dot, hatched = back diagonals, dimension = a rule with end ticks. A hairline marks
+  chain = dash and dot, hatched = back diagonals, dimension = a rule with end ticks, wave = a square
+  wave. A hairline marks
   where the measure ends. Ink at about 0.26 alpha (sparse motifs carry a little more ink so every lens
   reads equally dark): never a hue, so the stage fill beneath stays legible and text on top stays
   readable in both themes. This is the one sanctioned exception to "a lens never fills a tile": a

@@ -1,7 +1,9 @@
-// Checks the six built-in lens manifests against the Kettle sample: flattens each feature's lens
-// objects into facet values, runs the declarative rules, and compares with the health the sample
-// generator stored; then holds the 1.1.0 judged metrics (business, operations, quality) to the healths a
-// scanned product's readings must get, with no environment or status filled in.
+// Checks the built-in lens manifests the Kettle sample carries (its `lenses`: the six of gen-kettle.mjs)
+// against it: flattens each feature's lens objects into facet values, runs the declarative rules, and
+// compares with the health the sample generator stored; then holds the 1.1.0 judged metrics (business,
+// operations, quality) and the probed performance metrics to the healths a scanned product's readings
+// must get, with no environment or status filled in. A built-in the sample has no lens object for
+// (performance) is only held to those readings.
 // Run: node scripts/check-builtin-health.ts  (Node's type stripping; no build step)
 //
 // The flattening (scripts/sample-facets.ts, shared with the converter) stands in for a producer (a scan,
@@ -22,15 +24,16 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p: string): unknown => JSON.parse(fs.readFileSync(path.join(ROOT, p), 'utf8'));
 
 interface SampleFeature { id: string; name: string; stage: string; priority: string; kind: string; milestone: string | null; [lens: string]: unknown }
-const kettle = read('src/data/kettle.json') as { product: { asOf: string }; features: SampleFeature[] };
+const kettle = read('src/data/kettle.json') as { product: { asOf: string }; lenses: string[]; features: SampleFeature[] };
 const manifests: readonly LensManifest[] = BUILTIN_LENSES;
+const sampled = manifests.filter((m) => kettle.lenses.includes(m.id));
 
 /** The lowest per-lens agreement the run accepts; below it the run exits 1. */
 const TARGET = 1;
 const today = kettle.product.asOf.slice(0, 10);
 const n = kettle.features.length;
 let worst = 1;
-for (const m of manifests) {
+for (const m of sampled) {
   const misses: string[] = [];
   let agree = 0;
   for (const f of kettle.features) {
@@ -64,6 +67,14 @@ const SCANNED: [string, Record<string, number | string>, Partial<Feature>, strin
   ['quality', { untestedPaths: 3 }, { stage: 'live' }, 'watch'],
   ['quality', { brokenTests: 1 }, { stage: 'live' }, 'bad'],
   ['quality', { brokenTests: 1 }, { stage: 'idea' }, 'na'],
+  ['performance', { startupMs: 1200, interactionP95Ms: 80, frameP95Ms: 14.2, memoryMb: 120 }, {}, 'good'],
+  ['performance', { interactionP95Ms: 240 }, {}, 'watch'],
+  ['performance', { frameP95Ms: 40 }, {}, 'watch'],
+  ['performance', { startupMs: 3400 }, {}, 'watch'],
+  ['performance', { memoryMb: 620 }, {}, 'watch'],
+  ['performance', { frameP95Ms: 62 }, {}, 'bad'],
+  ['performance', { startupMs: 5600, interactionP95Ms: 90 }, {}, 'bad'],
+  ['performance', { bundleKb: 48 }, {}, 'good'],
 ];
 let scanMisses = 0;
 for (const [id, values, feature, want] of SCANNED) {
@@ -72,7 +83,7 @@ for (const [id, values, feature, want] of SCANNED) {
 }
 console.log(`scanned-product readings: ${SCANNED.length - scanMisses} of ${SCANNED.length} healths as expected`);
 if (scanMisses) {
-  console.error('FAIL: a scanned product\'s readings do not evaluate as the 1.1.0 manifests intend');
+  console.error('FAIL: a scanned product\'s readings do not evaluate as the built-in manifests intend');
   process.exit(1);
 }
 // This is a gate (`npm run check:lens-health`): a lens under the target must fail the run, not just print.

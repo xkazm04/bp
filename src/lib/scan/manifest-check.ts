@@ -7,15 +7,15 @@ import type { ComputedHealth, Density, FieldType, GlyphName, LineName, MetricMet
 import { PROJECT_LENS_ID, TEMP_LENS_ID } from './jobs.ts';
 
 // Records, not lists: a name added to the type without one here fails the typecheck.
-const GLYPHS: Record<GlyphName, 1> = { bars: 1, 'set-square': 1, brackets: 1, pulse: 1, padlock: 1, check: 1 };
-const LINES: Record<LineName, 1> = { solid: 1, double: 1, dotted: 1, comb: 1, chain: 1, hatched: 1, dimension: 1 };
+const GLYPHS: Record<GlyphName, 1> = { bars: 1, 'set-square': 1, brackets: 1, pulse: 1, padlock: 1, check: 1, stopwatch: 1 };
+const LINES: Record<LineName, 1> = { solid: 1, double: 1, dotted: 1, comb: 1, chain: 1, hatched: 1, dimension: 1, wave: 1 };
 const DENSITY: Record<Density, 1> = { simple: 1, standard: 1, dense: 1 };
 const TYPES: Record<FieldType, 1> = { number: 1, integer: 1, percent: 1, money: 1, boolean: 1, string: 1, enum: 1, date: 1 };
 const NUMERIC: Partial<Record<FieldType, 1>> = { number: 1, integer: 1, percent: 1, money: 1 };
 const HEALTH: Record<ComputedHealth, 1> = { good: 1, watch: 1, bad: 1 };
 const METHODS: Record<MetricMethod, 1> = { static: 1, probe: 1, harness: 1, judgement: 1 };
-/** The six built-in ids (the schema's builtinLensId): a project lens never takes one. */
-const BUILTIN_IDS = new Set(['business', 'design', 'development', 'operations', 'security', 'quality']);
+/** The seven built-in ids (the schema's builtinLensId): a project lens never takes one. */
+const BUILTIN_IDS = new Set(['business', 'design', 'development', 'operations', 'security', 'quality', 'performance']);
 const TOP = new Set(['$schema', 'id', 'version', 'name', 'short', 'description', 'reader', 'fields', 'health', 'presentation', 'scan']);
 const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, KEY = /^[a-z][A-Za-z0-9]*$/, SHORT = /^[A-Z0-9]{2,4}$/;
 const PATH_OK = /^[Mm][MmZzLlHhVvCcSsQqTtAa0-9eE.,+\- ]{0,2047}$/;

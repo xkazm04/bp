@@ -1,0 +1,45 @@
+{
+  "$schema": "lens-manifest/1",
+  "id": "performance",
+  "version": "1.0.0",
+  "name": "Performance",
+  "short": "PERF",
+  "description": "How fast the feature feels and how much it costs the device. Measured: its share of the shipped bundle, cold start, the p95 of its main interaction, p95 frame time while it animates or scrolls, and memory after its main flow. Every probe is a command the product's lens-scan overlay names, so a baseline and a fix run the same probe.",
+  "reader": { "role": "performance", "density": "dense" },
+  "fields": [
+    { "key": "bundleKb", "label": "Bundle share", "type": "number", "unit": "KB", "min": 0, "metric": { "better": "down", "method": "static" },
+      "description": "The feature's share of the shipped client bundle, read from the build's stats file. Omitted when the build names no stats file." },
+    { "key": "startupMs", "label": "Cold start", "type": "number", "unit": "ms", "min": 0, "metric": { "better": "down", "method": "probe", "target": 1500, "warn_at": 3000 },
+      "description": "Cold start to the first interactive frame of the feature's entry screen." },
+    { "key": "interactionP95Ms", "label": "Interaction p95", "type": "number", "unit": "ms", "min": 0, "metric": { "better": "down", "method": "probe", "target": 100, "warn_at": 200 },
+      "description": "p95 of the feature's main interaction, from input to the next paint, over 20 or more samples." },
+    { "key": "frameP95Ms", "label": "Frame p95", "type": "number", "unit": "ms", "min": 0, "metric": { "better": "down", "method": "probe", "target": 16.7, "warn_at": 33.3 },
+      "description": "p95 frame time while the feature animates or scrolls. 16.7 ms is 60 frames a second." },
+    { "key": "memoryMb", "label": "Memory", "type": "number", "unit": "MB", "min": 0, "metric": { "better": "down", "method": "probe", "warn_at": 500 },
+      "description": "Resident memory after the feature's main flow. No target: a budget is the app's own." },
+    { "key": "budgetMet", "label": "Budget met", "type": "boolean",
+      "description": "Whether the feature meets the performance budget the product set for it." },
+    { "key": "probeEnv", "label": "Probed on", "type": "string",
+      "description": "Where the probes ran (a local production build, a named device). Readings from different places do not compare." }
+  ],
+  "health": {
+    "rules": [
+      { "when": { "field": "frameP95Ms", "gt": 50 }, "health": "bad", "reason": "Frame p95 {frameP95Ms} ms, under 20 frames a second", "short": "Frames {frameP95Ms} ms" },
+      { "when": { "field": "startupMs", "gt": 5000 }, "health": "bad", "reason": "Cold start {startupMs} ms, over 5 s", "short": "Start {startupMs} ms" },
+      { "when": { "field": "interactionP95Ms", "gt": 200 }, "health": "watch", "reason": "p95 {interactionP95Ms} ms, over the 200 ms budget", "short": "p95 {interactionP95Ms} ms" },
+      { "when": { "field": "frameP95Ms", "gt": 33.3 }, "health": "watch", "reason": "Frame p95 {frameP95Ms} ms, over the 33.3 ms budget", "short": "Frames {frameP95Ms} ms" },
+      { "when": { "field": "startupMs", "gt": 3000 }, "health": "watch", "reason": "Cold start {startupMs} ms, over the 3000 ms budget", "short": "Start {startupMs} ms" },
+      { "when": { "field": "memoryMb", "gt": 500 }, "health": "watch", "reason": "Memory {memoryMb} MB after the main flow, over 500 MB", "short": "Memory {memoryMb} MB" },
+      { "when": { "field": "budgetMet", "eq": false }, "health": "watch", "reason": "Over the product's own performance budget", "short": "Over budget" }
+    ],
+    "default": "good",
+    "rollup": { "method": "share", "watch": 0.25, "bad": 0.15 }
+  },
+  "presentation": {
+    "glyph": "stopwatch",
+    "line": "wave",
+    "accent": { "dark": "#8fe39a", "light": "#1f7a3c" },
+    "evidence": ["interactionP95Ms", "frameP95Ms", "startupMs", "memoryMb"],
+    "measures": "interactionP95Ms"
+  }
+}

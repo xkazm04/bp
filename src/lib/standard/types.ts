@@ -87,8 +87,8 @@ export type Rollup =
   | { method: 'share'; watch: number; bad: number }
   | { method: 'weighted'; by: string };
 
-export type GlyphName = 'bars' | 'set-square' | 'brackets' | 'pulse' | 'padlock' | 'check';
-export type LineName = 'solid' | 'double' | 'dotted' | 'comb' | 'chain' | 'hatched' | 'dimension';
+export type GlyphName = 'bars' | 'set-square' | 'brackets' | 'pulse' | 'padlock' | 'check' | 'stopwatch';
+export type LineName = 'solid' | 'double' | 'dotted' | 'comb' | 'chain' | 'hatched' | 'dimension' | 'wave';
 export type Density = 'simple' | 'standard' | 'dense';
 
 export interface Presentation {

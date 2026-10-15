@@ -44,7 +44,7 @@ const RUNS: [string[], 0 | 1, ...string[]][] = [
   [[`${FIX}/valid-steps-lens.json`], 0, '1 of 1 valid'],
   [[`${FIX}/invalid-steps-yields.json`], 1, 'scan step 1 yields "leadsLanded", which is not a numeric metric field'],
   [[VALID, GAPS, '--events', `${FIX}/valid-map.events.jsonl`], 1, '--events is checked against one map, but 2 maps were given'],
-  [[], 0, 'com.kettle.cost.json (lens-manifest/1)', '7 of 7 valid'],
+  [[], 0, 'com.kettle.cost.json (lens-manifest/1)', '8 of 8 valid'],
 ];
 for (const [args, code, ...texts] of RUNS) {
   const r = spawnSync(process.execPath, [VALIDATOR, ...args], { cwd: ROOT, encoding: 'utf8' });

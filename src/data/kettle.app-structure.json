@@ -49,7 +49,7 @@
     "features": 133,
     "milestones": 4,
     "kpis": 42,
-    "lenses": 7
+    "lenses": 8
   },
   "groups": [
     {
@@ -8193,6 +8193,193 @@
       }
     },
     {
+      "id": "performance",
+      "version": "1.0.0",
+      "source": "builtin",
+      "enabled": true,
+      "manifest": {
+        "$schema": "lens-manifest/1",
+        "id": "performance",
+        "version": "1.0.0",
+        "name": "Performance",
+        "short": "PERF",
+        "description": "How fast the feature feels and how much it costs the device. Measured: its share of the shipped bundle, cold start, the p95 of its main interaction, p95 frame time while it animates or scrolls, and memory after its main flow. Every probe is a command the product's lens-scan overlay names, so a baseline and a fix run the same probe.",
+        "reader": {
+          "role": "performance",
+          "density": "dense"
+        },
+        "fields": [
+          {
+            "key": "bundleKb",
+            "label": "Bundle share",
+            "type": "number",
+            "unit": "KB",
+            "min": 0,
+            "metric": {
+              "better": "down",
+              "method": "static"
+            },
+            "description": "The feature's share of the shipped client bundle, read from the build's stats file. Omitted when the build names no stats file."
+          },
+          {
+            "key": "startupMs",
+            "label": "Cold start",
+            "type": "number",
+            "unit": "ms",
+            "min": 0,
+            "metric": {
+              "better": "down",
+              "method": "probe",
+              "target": 1500,
+              "warn_at": 3000
+            },
+            "description": "Cold start to the first interactive frame of the feature's entry screen."
+          },
+          {
+            "key": "interactionP95Ms",
+            "label": "Interaction p95",
+            "type": "number",
+            "unit": "ms",
+            "min": 0,
+            "metric": {
+              "better": "down",
+              "method": "probe",
+              "target": 100,
+              "warn_at": 200
+            },
+            "description": "p95 of the feature's main interaction, from input to the next paint, over 20 or more samples."
+          },
+          {
+            "key": "frameP95Ms",
+            "label": "Frame p95",
+            "type": "number",
+            "unit": "ms",
+            "min": 0,
+            "metric": {
+              "better": "down",
+              "method": "probe",
+              "target": 16.7,
+              "warn_at": 33.3
+            },
+            "description": "p95 frame time while the feature animates or scrolls. 16.7 ms is 60 frames a second."
+          },
+          {
+            "key": "memoryMb",
+            "label": "Memory",
+            "type": "number",
+            "unit": "MB",
+            "min": 0,
+            "metric": {
+              "better": "down",
+              "method": "probe",
+              "warn_at": 500
+            },
+            "description": "Resident memory after the feature's main flow. No target: a budget is the app's own."
+          },
+          {
+            "key": "budgetMet",
+            "label": "Budget met",
+            "type": "boolean",
+            "description": "Whether the feature meets the performance budget the product set for it."
+          },
+          {
+            "key": "probeEnv",
+            "label": "Probed on",
+            "type": "string",
+            "description": "Where the probes ran (a local production build, a named device). Readings from different places do not compare."
+          }
+        ],
+        "health": {
+          "rules": [
+            {
+              "when": {
+                "field": "frameP95Ms",
+                "gt": 50
+              },
+              "health": "bad",
+              "reason": "Frame p95 {frameP95Ms} ms, under 20 frames a second",
+              "short": "Frames {frameP95Ms} ms"
+            },
+            {
+              "when": {
+                "field": "startupMs",
+                "gt": 5000
+              },
+              "health": "bad",
+              "reason": "Cold start {startupMs} ms, over 5 s",
+              "short": "Start {startupMs} ms"
+            },
+            {
+              "when": {
+                "field": "interactionP95Ms",
+                "gt": 200
+              },
+              "health": "watch",
+              "reason": "p95 {interactionP95Ms} ms, over the 200 ms budget",
+              "short": "p95 {interactionP95Ms} ms"
+            },
+            {
+              "when": {
+                "field": "frameP95Ms",
+                "gt": 33.3
+              },
+              "health": "watch",
+              "reason": "Frame p95 {frameP95Ms} ms, over the 33.3 ms budget",
+              "short": "Frames {frameP95Ms} ms"
+            },
+            {
+              "when": {
+                "field": "startupMs",
+                "gt": 3000
+              },
+              "health": "watch",
+              "reason": "Cold start {startupMs} ms, over the 3000 ms budget",
+              "short": "Start {startupMs} ms"
+            },
+            {
+              "when": {
+                "field": "memoryMb",
+                "gt": 500
+              },
+              "health": "watch",
+              "reason": "Memory {memoryMb} MB after the main flow, over 500 MB",
+              "short": "Memory {memoryMb} MB"
+            },
+            {
+              "when": {
+                "field": "budgetMet",
+                "eq": false
+              },
+              "health": "watch",
+              "reason": "Over the product's own performance budget",
+              "short": "Over budget"
+            }
+          ],
+          "default": "good",
+          "rollup": {
+            "method": "share",
+            "watch": 0.25,
+            "bad": 0.15
+          }
+        },
+        "presentation": {
+          "glyph": "stopwatch",
+          "line": "wave",
+          "accent": {
+            "dark": "#8fe39a",
+            "light": "#1f7a3c"
+          },
+          "evidence": [
+            "interactionP95Ms",
+            "frameP95Ms",
+            "startupMs",
+            "memoryMb"
+          ],
+          "measures": "interactionP95Ms"
+        }
+      }
+    },
+    {
       "id": "com.kettle.cost",
       "version": "0.1.0",
       "source": "project",
@@ -10905,6 +11092,18 @@
         },
         "measured_at": "2026-10-02T04:42:00Z",
         "source": "sample"
+      },
+      "performance": {
+        "values": {
+          "startupMs": 1854,
+          "interactionP95Ms": 135,
+          "frameP95Ms": 10.3,
+          "memoryMb": 234,
+          "probeEnv": "Pixel 7 emulator, release build",
+          "bundleKb": 59.4
+        },
+        "measured_at": "2026-10-08T07:40:00Z",
+        "source": "sample"
       }
     },
     "cancellation-late-cancel-policy": {
@@ -11010,6 +11209,18 @@
           "monthlyUsd": 210
         },
         "measured_at": "2026-09-05T15:25:00Z",
+        "source": "sample"
+      },
+      "performance": {
+        "values": {
+          "startupMs": 1448,
+          "interactionP95Ms": 48,
+          "frameP95Ms": 18.8,
+          "memoryMb": 199,
+          "probeEnv": "Pixel 7 emulator, release build",
+          "bundleKb": 4.9
+        },
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       }
     },
@@ -11122,6 +11333,18 @@
         },
         "measured_at": "2026-10-06T08:19:00Z",
         "source": "sample"
+      },
+      "performance": {
+        "values": {
+          "startupMs": 2372,
+          "interactionP95Ms": 158,
+          "frameP95Ms": 12,
+          "memoryMb": 189,
+          "probeEnv": "Pixel 7 emulator, release build",
+          "bundleKb": 26.2
+        },
+        "measured_at": "2026-10-08T07:40:00Z",
+        "source": "sample"
       }
     },
     "spot-selection": {
@@ -11224,6 +11447,18 @@
           "monthlyUsd": 260
         },
         "measured_at": "2026-10-06T13:28:00Z",
+        "source": "sample"
+      },
+      "performance": {
+        "values": {
+          "startupMs": 2165,
+          "interactionP95Ms": 67,
+          "frameP95Ms": 21,
+          "memoryMb": 302,
+          "probeEnv": "Pixel 7 emulator, release build",
+          "bundleKb": 16.1
+        },
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       }
     },
@@ -11479,6 +11714,18 @@
         },
         "measured_at": "2026-10-01T17:49:00Z",
         "source": "sample"
+      },
+      "performance": {
+        "values": {
+          "startupMs": 2080,
+          "interactionP95Ms": 80,
+          "frameP95Ms": 10.5,
+          "memoryMb": 186,
+          "probeEnv": "Pixel 7 emulator, release build",
+          "bundleKb": 8
+        },
+        "measured_at": "2026-10-08T07:40:00Z",
+        "source": "sample"
       }
     },
     "front-desk-check-in-kiosk": {
@@ -11566,6 +11813,18 @@
           "e2ePassPct": 100
         },
         "measured_at": "2026-10-07T16:54:00Z",
+        "source": "sample"
+      },
+      "performance": {
+        "values": {
+          "startupMs": 984,
+          "interactionP95Ms": 257,
+          "frameP95Ms": 11.6,
+          "memoryMb": 183,
+          "probeEnv": "local production build, Chrome 1600x1000",
+          "bundleKb": 47.4
+        },
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       }
     },
@@ -11775,6 +12034,18 @@
         },
         "measured_at": "2026-10-06T20:52:00Z",
         "source": "sample"
+      },
+      "performance": {
+        "values": {
+          "startupMs": 2242,
+          "interactionP95Ms": 217,
+          "frameP95Ms": 21.8,
+          "memoryMb": 268,
+          "probeEnv": "Pixel 7 emulator, release build",
+          "bundleKb": 39.8
+        },
+        "measured_at": "2026-10-08T07:40:00Z",
+        "source": "sample"
       }
     },
     "membership-plans": {
@@ -11880,6 +12151,18 @@
           "monthlyUsd": 310
         },
         "measured_at": "2026-08-21T11:53:00Z",
+        "source": "sample"
+      },
+      "performance": {
+        "values": {
+          "startupMs": 1376,
+          "interactionP95Ms": 139,
+          "frameP95Ms": 23,
+          "memoryMb": 234,
+          "probeEnv": "local production build, Chrome 1600x1000",
+          "bundleKb": 33.5
+        },
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       }
     },
@@ -11987,6 +12270,18 @@
         },
         "measured_at": "2026-09-17T15:49:00Z",
         "source": "sample"
+      },
+      "performance": {
+        "values": {
+          "startupMs": 733,
+          "interactionP95Ms": 158,
+          "frameP95Ms": 21.7,
+          "memoryMb": 243,
+          "probeEnv": "local production build, Chrome 1600x1000",
+          "bundleKb": 47.9
+        },
+        "measured_at": "2026-10-08T07:40:00Z",
+        "source": "sample"
       }
     },
     "intro-offers": {
@@ -12092,6 +12387,18 @@
           "monthlyUsd": 140
         },
         "measured_at": "2026-10-06T13:01:00Z",
+        "source": "sample"
+      },
+      "performance": {
+        "values": {
+          "startupMs": 1136,
+          "interactionP95Ms": 217,
+          "frameP95Ms": 14.6,
+          "memoryMb": 83,
+          "probeEnv": "local production build, Chrome 1600x1000",
+          "bundleKb": 25.9
+        },
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       }
     },
@@ -12409,6 +12716,18 @@
           "monthlyUsd": 280
         },
         "measured_at": "2026-08-13T08:15:00Z",
+        "source": "sample"
+      },
+      "performance": {
+        "values": {
+          "startupMs": 1775,
+          "interactionP95Ms": 263,
+          "frameP95Ms": 20,
+          "memoryMb": 203,
+          "probeEnv": "Pixel 7 emulator, release build",
+          "bundleKb": 56.9
+        },
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       }
     },
@@ -12821,6 +13140,18 @@
         },
         "measured_at": "2026-09-17T16:42:00Z",
         "source": "sample"
+      },
+      "performance": {
+        "values": {
+          "startupMs": 853,
+          "interactionP95Ms": 74,
+          "frameP95Ms": 18.7,
+          "memoryMb": 81,
+          "probeEnv": "local production build, Chrome 1600x1000",
+          "bundleKb": 17
+        },
+        "measured_at": "2026-10-08T07:40:00Z",
+        "source": "sample"
       }
     },
     "tax-handling": {
@@ -12996,6 +13327,18 @@
           "e2ePassPct": 75
         },
         "measured_at": "2026-10-06T14:38:00Z",
+        "source": "sample"
+      },
+      "performance": {
+        "values": {
+          "startupMs": 906,
+          "interactionP95Ms": 301,
+          "frameP95Ms": 14.7,
+          "memoryMb": 82,
+          "probeEnv": "local production build, Chrome 1600x1000",
+          "bundleKb": 64.1
+        },
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       }
     },
@@ -13316,6 +13659,18 @@
         },
         "measured_at": "2026-09-29T23:54:00Z",
         "source": "sample"
+      },
+      "performance": {
+        "values": {
+          "startupMs": 1900,
+          "interactionP95Ms": 214,
+          "frameP95Ms": 14.2,
+          "memoryMb": 170,
+          "probeEnv": "Pixel 7 emulator, release build",
+          "bundleKb": 8.2
+        },
+        "measured_at": "2026-10-08T07:40:00Z",
+        "source": "sample"
       }
     },
     "push-notifications": {
@@ -13419,6 +13774,18 @@
           "monthlyUsd": 160
         },
         "measured_at": "2026-10-03T09:01:00Z",
+        "source": "sample"
+      },
+      "performance": {
+        "values": {
+          "startupMs": 2159,
+          "interactionP95Ms": 102,
+          "frameP95Ms": 21.6,
+          "memoryMb": 293,
+          "probeEnv": "Pixel 7 emulator, release build",
+          "bundleKb": 21.9
+        },
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       }
     },
@@ -13589,6 +13956,18 @@
         },
         "measured_at": "2026-10-05T07:38:00Z",
         "source": "sample"
+      },
+      "performance": {
+        "values": {
+          "startupMs": 2146,
+          "interactionP95Ms": 125,
+          "frameP95Ms": 17.6,
+          "memoryMb": 281,
+          "probeEnv": "Pixel 7 emulator, release build",
+          "bundleKb": 42.3
+        },
+        "measured_at": "2026-10-08T07:40:00Z",
+        "source": "sample"
       }
     },
     "digital-waiver-signing": {
@@ -13695,6 +14074,18 @@
         },
         "measured_at": "2026-09-29T10:22:00Z",
         "source": "sample"
+      },
+      "performance": {
+        "values": {
+          "startupMs": 1903,
+          "interactionP95Ms": 63,
+          "frameP95Ms": 22.3,
+          "memoryMb": 269,
+          "probeEnv": "Pixel 7 emulator, release build",
+          "bundleKb": 42.9
+        },
+        "measured_at": "2026-10-08T07:40:00Z",
+        "source": "sample"
       }
     },
     "progress-milestones": {
@@ -13800,6 +14191,18 @@
           "monthlyUsd": 50
         },
         "measured_at": "2026-10-04T04:13:00Z",
+        "source": "sample"
+      },
+      "performance": {
+        "values": {
+          "startupMs": 1855,
+          "interactionP95Ms": 294,
+          "frameP95Ms": 10.3,
+          "memoryMb": 247,
+          "probeEnv": "Pixel 7 emulator, release build",
+          "bundleKb": 32.9
+        },
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       }
     },
@@ -13988,6 +14391,18 @@
           "monthlyUsd": 190
         },
         "measured_at": "2026-08-25T10:07:00Z",
+        "source": "sample"
+      },
+      "performance": {
+        "values": {
+          "startupMs": 1468,
+          "interactionP95Ms": 153,
+          "frameP95Ms": 10.5,
+          "memoryMb": 206,
+          "probeEnv": "local production build, Chrome 1600x1000",
+          "bundleKb": 14.6
+        },
+        "measured_at": "2026-10-08T07:40:00Z",
         "source": "sample"
       }
     },

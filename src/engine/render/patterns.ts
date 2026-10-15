@@ -12,10 +12,10 @@ export const FILL_A = 0.26;
 /** The "?" texture's ink. A lone centred "?" (tile too small for the texture) gets more, so one glyph still reads. */
 const Q_A = 0.18, Q_ONE_A = 0.34;
 
-const LINE_NO: Record<LineName, number> = { solid: 1, double: 2, dotted: 3, comb: 4, chain: 5, hatched: 6, dimension: 7 };
+const LINE_NO: Record<LineName, number> = { solid: 1, double: 2, dotted: 3, comb: 4, chain: 5, hatched: 6, dimension: 7, wave: 8 };
 const Q_NO = 9;
 /** Per motif, so every lens's fill reads about equally dark: the sparse ones (dots, chain) carry more ink. */
-const WEIGHT: Record<LineName, number> = { solid: 1, double: 0.9, dotted: 1.5, comb: 1, chain: 1.3, hatched: 0.9, dimension: 1.1 };
+const WEIGHT: Record<LineName, number> = { solid: 1, double: 0.9, dotted: 1.5, comb: 1, chain: 1.3, hatched: 0.9, dimension: 1.1, wave: 0.9 };
 
 interface Per { res: number; pats: Map<number, CanvasPattern | null>; font: Map<number, string> }
 // keyed by the theme object: a theme is rebuilt on every resolution, font or colour change, so its device
@@ -51,6 +51,7 @@ function build(th: Theme, P: Per, no: number, sz: number): CanvasPattern | null 
     case 5: cw = Math.round(15 * s); ch = Math.round(8 * s); break;                 // chain: dash, dot
     case 6: cw = ch = Math.round(6 * s); break;                                     // hatched: back diagonals
     case 7: cw = Math.round(14 * s); ch = Math.round(9 * s); break;                 // dimension: rule with end ticks
+    case 8: cw = Math.round(10 * s); ch = Math.round(9 * s); break;                 // wave: a square wave (a timing trace)
     default: cw = qW(sz); ch = qH(sz);                                              // "?" (sz = glyph px)
   }
   const r = P.res, c = document.createElement('canvas');
@@ -66,6 +67,7 @@ function build(th: Theme, P: Per, no: number, sz: number): CanvasPattern | null 
     case 5: { const y = Math.round(ch / 2); g.fillRect(0, y, Math.round(8 * s), 1); g.fillRect(Math.round(10.5 * s), y, Math.max(1.5, Math.round(1.6 * s)), 1); break; }
     case 6: g.beginPath(); g.moveTo(0, 0); g.lineTo(cw, ch); g.moveTo(-1, ch - 1); g.lineTo(1, ch + 1); g.moveTo(cw - 1, -1); g.lineTo(cw + 1, 1); g.stroke(); break;
     case 7: { const y = Math.round(ch / 2), t = Math.round(2.5 * s); g.fillRect(0, y, cw, 1); g.fillRect(0, y - t, 1, 2 * t + 1); break; }
+    case 8: { const hw = Math.round(cw / 2), t = Math.round(ch * 0.3), b = Math.round(ch * 0.7); g.fillRect(0, t, hw, 1); g.fillRect(hw, t, 1, b - t + 1); g.fillRect(hw, b, cw - hw, 1); g.fillRect(cw - 1, t, 1, b - t + 1); break; }
     default: {
       // two staggered glyphs per cell (a brick bond), so the texture never lines up into stripes
       g.font = '600 ' + sz + 'px ' + th.sans; g.textAlign = 'center'; g.textBaseline = 'middle';

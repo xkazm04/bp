@@ -21,7 +21,7 @@ export type GlyphSpec = GlyphName | { path: string } | null;
 /**
  * One glyph in the square (x, y, s). The shared set, chosen to stay distinct at 7 px: bars = rising
  * bars, set-square = a drafting set square, brackets = < >, pulse = a pulse line, padlock = a padlock,
- * check = a check mark. A custom path is stroked in its 16x16 box, scaled to the square. `lwMax` caps
+ * check = a check mark, stopwatch = a dial with a crown and one hand. A custom path is stroked in its 16x16 box, scaled to the square. `lwMax` caps
  * the stroke (1.8 for the strip; the large trouble flags pass more).
  */
 export function glyph(ctx: CanvasRenderingContext2D, g: GlyphSpec, x: number, y: number, s: number, col: string, lwMax = 1.8) {
@@ -66,6 +66,15 @@ export function glyph(ctx: CanvasRenderingContext2D, g: GlyphSpec, x: number, y:
     case 'check':
       ctx.moveTo(x + s * 0.06, y + s * 0.55); ctx.lineTo(x + s * 0.38, y + s * 0.88); ctx.lineTo(x + s * 0.96, y + s * 0.1);
       break;
+    case 'stopwatch': {
+      // the crown is filled so the glyph never reads as the plain ring a missing glyph falls back to
+      const cx = x + s * 0.5, cy = y + s * 0.6, r = s * 0.38;
+      ctx.rect(cx - s * 0.16, y, s * 0.32, s * 0.12); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(cx, y + s * 0.1); ctx.lineTo(cx, cy - r);
+      ctx.moveTo(cx + r, cy); ctx.arc(cx, cy, r, 0, 6.2832);
+      ctx.moveTo(cx, cy); ctx.lineTo(cx + r * 0.62, cy - r * 0.5);
+      break;
+    }
   }
   ctx.stroke();
   ctx.lineCap = 'butt';
