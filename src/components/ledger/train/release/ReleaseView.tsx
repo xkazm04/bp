@@ -16,3 +16,8 @@ export function ReleaseView(props: ReleaseViewProps) {
 export function SummaryStrip() {
   return null;
 }
+
+/** The phone ledger's one read-only line about the open release ("Release v0.1.0 · building"), else nothing. */
+export function ReleaseStatusLine() {
+  return null;
+}
