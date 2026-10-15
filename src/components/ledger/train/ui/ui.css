@@ -1,0 +1,44 @@
+/* The release train's shared marks and controls (Marks.tsx, Controls.tsx), ported from the contest winner A/1 (its
+   .lg-st, .vd, .mv, .lg-lens, .sample-tag, .lg-seg, .pixline, .flag, .err, .noshot) with byte-equal values through the
+   tokens in globals.css. Token-only: scripts/check-train-quality.mjs holds this file to it. */
+
+.tr-st { display: inline-flex; align-items: center; gap: var(--sp-5); height: var(--h-tag); padding: 0 var(--sp-7); border: 1px solid var(--ink-4); font: 500 var(--fs-12) var(--mono); letter-spacing: var(--ls-1); text-transform: uppercase; color: var(--ink-2); white-space: nowrap; }
+.tr-st b { font-weight: 400; }
+.tr-st i { font-style: normal; color: var(--amber); }
+.tr-st.s-done { color: var(--ink-hi); border-color: var(--ink-3); }
+.tr-st.s-failed { color: var(--red); border-color: var(--red); }
+.tr-st.s-accepted { color: var(--mint); border-color: var(--mint); background: color-mix(in srgb, var(--mint) 10%, transparent); }
+.tr-st.s-rework { color: var(--amber); border-color: var(--amber); }
+.tr-st.s-descoped { text-decoration: line-through; }
+.tr-st.s-released { color: var(--accent); border-color: var(--accent); }
+.tr-st.pending { border-style: dashed; }
+.tr-vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+.tr-vd { display: inline-flex; align-items: center; gap: var(--sp-5); font: 500 var(--fs-12)/1.2 var(--mono); letter-spacing: var(--ls-1); text-transform: uppercase; white-space: nowrap; color: var(--ink-2); }
+.tr-vd b { font-weight: 600; font-size: var(--fs-12); }
+.tr-vd.v-moved { color: var(--mint); }
+.tr-vd.v-flat { color: var(--amber); }
+.tr-vd.v-worse { color: var(--red); }
+.tr-vd.v-unmeasured { color: var(--ink-2); }
+
+.tr-mv { font: 500 var(--fs-13) var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tr-mv small { display: block; font-size: var(--fs-12); color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; }
+
+.tr-lens { display: inline-flex; align-items: center; gap: var(--sp-5); font: 600 var(--fs-12) var(--mono); letter-spacing: var(--ls-3); color: var(--ink); white-space: nowrap; }
+
+.tr-sample { display: inline-flex; align-items: center; gap: var(--sp-4); padding: 1px var(--sp-6); border: 1px dashed var(--amber); color: var(--amber); font: 600 var(--fs-12)/1.4 var(--mono); letter-spacing: var(--ls-2); text-transform: uppercase; white-space: nowrap; }
+
+.tr-seg { display: inline-flex; border: 1px solid var(--ink-3); }
+.tr-seg button { height: var(--h-ctl-sm); padding: 0 var(--sp-10); background: none; border: 0; font: 500 var(--fs-12) var(--mono); letter-spacing: var(--ls-2); text-transform: uppercase; color: var(--ink-2); }
+.tr-seg button + button { border-left: 1px solid var(--ink-3); }
+.tr-seg button[aria-pressed='true'] { background: var(--ink); color: var(--on-ink); }
+
+.tr-call { display: flex; gap: var(--sp-8); align-items: flex-start; font-size: var(--fs-14); line-height: var(--lh-read); }
+.tr-call b { color: var(--ink-hi); }
+.tr-call.note, .tr-call.diff { padding: var(--sp-8) var(--sp-10); border: 1px solid var(--ink-4); border-left: var(--bw-bar) solid var(--amber); background: var(--panel); }
+.tr-call.diff { border-left-color: var(--accent); }
+.tr-call.flag { padding: var(--sp-8) var(--sp-10); border: 1px solid var(--red); color: var(--ink); background: color-mix(in srgb, var(--red) 8%, transparent); }
+.tr-call.flag b { color: var(--red); }
+.tr-call.error { display: block; padding: var(--sp-9) var(--sp-12); border: 1px solid var(--red); border-left-width: calc(var(--bw-bar) + 1px); background: color-mix(in srgb, var(--red) 9%, transparent); color: var(--ink-hi); }
+.tr-call.error b { color: var(--red); }
+.tr-call.empty { display: block; padding: var(--sp-14); border: 1px dashed var(--ink-3); color: var(--ink-2); line-height: 1.5; }
