@@ -8,7 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const STDLIB = new Set(['os', 'sys', 'time', 'json', 'statistics', 're', 'math', 'pathlib', 'argparse', 'subprocess', 'collections', 'itertools', 'functools', 'typing', 'glob', 'shutil', 'datetime', 'random', 'io', 'urllib']);
+const STDLIB = new Set(['os', 'sys', 'time', 'json', 'statistics', 're', 'math', 'pathlib', 'argparse', 'subprocess', 'collections', 'itertools', 'functools', 'typing', 'glob', 'shutil', 'datetime', 'random', 'io', 'urllib', 'importlib']);
 // import name -> requirements distribution name
 const DIST = { PIL: 'pillow', playwright: 'playwright' };
 
