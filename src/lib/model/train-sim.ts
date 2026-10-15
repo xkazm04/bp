@@ -85,7 +85,7 @@ export const SAMPLE_ITEMS: readonly SampleItem[] = [
   { key: 'des1-booking', pack: 'k-des-1', feature: 'book-a-class', name: 'Book a class', lens: 'design', metric: 'undesignedStates',
     title: 'Show a refused booking in the class sheet with a retry', summary: 'A refused booking closes the class sheet without a word. Show the reason in the sheet, with a way to try again.',
     standard: 'async-ui-states/failure-states', delta: -1, size: 'S', risk: 2, status: 'done', before: [3], after: 2,
-    evidence: ['3 undesigned states: a refused booking closes the sheet silently, a full class gives no waitlist hint, a slow booking shows no progress', 'the refused booking keeps the sheet open with its reason and Try again; the waitlist hint and slow booking stay open: 2 states'],
+    evidence: ['undesigned states, among them a refused booking that closes the sheet silently and a slow booking with no progress', 'the refused booking keeps the sheet open with its reason and Try again; the slow booking is still open'],
     files: ['src/features/book-a-class/ClassSheet.tsx', 'src/features/book-a-class/useBooking.ts', 'src/features/book-a-class/ClassSheet.test.tsx'], patch: 'state',
     ui: { text: 'We could not book this class. No credit was used.', action: 'Try again' },
     screen: { panels: [{ title: 'Vinyasa Flow · 18:00', lines: ['Riverside studio, room 2', 'Instructor: Mara Lind', '9 of 14 spots left'], button: 'Book this class' },
@@ -94,7 +94,7 @@ export const SAMPLE_ITEMS: readonly SampleItem[] = [
   { key: 'des1-waitlist', pack: 'k-des-1', feature: 'waitlist-with-auto-promote', name: 'Waitlist with auto-promote', lens: 'design', metric: 'undesignedStates',
     title: 'Say why Join waitlist is unavailable', summary: 'Join waitlist turns grey with no reason once the waitlist is full. Say why next to the button.',
     standard: 'async-ui-states/disabled-reasons', delta: -1, size: 'XS', risk: 1, status: 'done', before: [2], after: 2,
-    evidence: ['2 undesigned states: a full waitlist greys the button with no reason, a promotion gives no notice in the app', 'the reason renders only when the waitlist is full; the promotion notice is still open: 2 states'],
+    evidence: ['undesigned states, among them a full waitlist that greys the button with no reason', 'the reason renders only when the waitlist is full, a state the default screen never reaches; the count is unchanged'],
     files: ['src/features/waitlist/WaitlistButton.tsx', 'src/features/waitlist/WaitlistButton.test.tsx'], patch: 'state',
     ui: { text: 'The waitlist is full (10 of 10). Try a later class.' },
     screen: { panels: [{ title: 'Pilates Core · 12:15', lines: ['Riverside studio, room 1', 'Class is full', '3 people on the waitlist'], button: 'Join waitlist' },
@@ -102,23 +102,23 @@ export const SAMPLE_ITEMS: readonly SampleItem[] = [
   { key: 'des1-card', pack: 'k-des-1', feature: 'card-payments', name: 'Card payments', lens: 'design', metric: 'undesignedStates',
     title: 'Show a declined card with a way to fix it', summary: 'A declined card clears the form and starts over. Keep what was typed and say what to fix.',
     standard: 'async-ui-states/failure-states', delta: -1, size: 'M', risk: 3, status: 'done', before: [2], after: 3,
-    evidence: ['2 undesigned states: a declined card clears the form, a slow authorisation shows nothing', 'the declined card keeps the form and names the field, but the new disabled Pay has no state for a slow authorisation either: 3 states'],
+    evidence: ['undesigned states, among them a declined card that clears the form', 'the declined card keeps the form and names the field, but the new disabled Pay adds a slow-authorisation state nobody designed: one more'],
     files: ['src/features/card-payments/PayButton.tsx', 'src/features/card-payments/CardForm.tsx', 'src/features/card-payments/card-errors.ts', 'src/features/card-payments/CardForm.test.tsx'], patch: 'state',
     ui: { text: 'Enter the CVC on the back of the card to pay.' },
     screen: { panels: [{ title: 'Pay for Class pack · 10', lines: ['Card ending 4242', 'Expires 08/28'], button: 'Pay €120.00' },
       { title: 'Order', lines: ['Class pack · 10 credits', 'Valid 6 months · VAT included'] }],
     change: { kind: 'reason', at: 0, text: 'Enter the CVC on the back of the card to pay.' } } },
-  { key: 'des1-profile', pack: 'k-des-1', feature: 'member-profile', name: 'Member profile', lens: 'design', metric: 'undesignedStates',
-    title: 'Show a failed avatar upload inline', summary: 'A refused avatar upload leaves the old picture and says nothing. Show the reason under the picture.',
+  { key: 'des1-waiver', pack: 'k-des-1', feature: 'digital-waiver-signing', name: 'Digital waiver signing', lens: 'design', metric: 'undesignedStates',
+    title: 'Show a refused waiver signature inline', summary: 'A signature the server refuses clears the pad and says nothing. Keep the stroke and say why, with a way to sign again.',
     standard: 'async-ui-states/failure-states', delta: -1, size: 'S', risk: 2, status: 'failed', before: [2], after: 1,
-    evidence: ['2 undesigned states: a refused upload says nothing, an oversize file is cut silently', 'the refused upload shows its reason inline; gate failed: vitest AvatarUpload.test.tsx (2 of 11 failing: Retry keeps the rejected file)'],
-    files: ['src/features/member-profile/AvatarUpload.tsx', 'src/features/member-profile/AvatarUpload.test.tsx', 'src/features/member-profile/profile.css'], patch: 'state',
-    ui: { text: 'That picture is over 5 MB. Choose a smaller one.', action: 'Choose another' },
-    gate: 'vitest src/features/member-profile/AvatarUpload.test.tsx (2 of 11 failing: Retry keeps the rejected file)' },
+    evidence: ['undesigned states, among them a refused signature that clears the pad silently', 'the refused signature shows its reason inline; gate failed: vitest SignaturePad.test.tsx (2 of 11 failing: Sign again keeps the old stroke)'],
+    files: ['src/features/waiver/SignaturePad.tsx', 'src/features/waiver/SignaturePad.test.tsx', 'src/features/waiver/waiver.css'], patch: 'state',
+    ui: { text: 'Your signature did not save. Sign again to finish.', action: 'Sign again' },
+    gate: 'vitest src/features/waiver/SignaturePad.test.tsx (2 of 11 failing: Sign again keeps the old stroke)' },
   { key: 'des1-kiosk', pack: 'k-des-1', feature: 'front-desk-check-in-kiosk', name: 'Front-desk check-in kiosk', lens: 'design', metric: 'undesignedStates',
     title: 'Design the kiosk\'s offline state', summary: 'Offline, the kiosk keeps scanning and drops every check-in. Say it is offline and keep the check-ins for later.',
     standard: 'async-ui-states/offline-states', delta: -1, size: 'M', risk: 3, status: 'rework', before: [2], after: 1,
-    evidence: ['2 undesigned states: offline drops check-ins silently, a pass of another studio reads as invalid', 'offline shows a banner and keeps check-ins; the other-studio pass is still open: 1 state'],
+    evidence: ['undesigned states, among them offline dropping check-ins silently', 'offline shows a banner and keeps check-ins; the other-studio pass is still open'],
     files: ['src/features/kiosk/KioskScanner.tsx', 'src/features/kiosk/OfflineNote.tsx', 'src/features/kiosk/KioskScanner.test.tsx'], patch: 'state',
     ui: { text: 'Offline: check-ins are kept and sent when the kiosk reconnects.', action: 'Retry now' },
     screen: { panels: KIOSK, change: { kind: 'banner', at: 0, place: 'top', text: 'Offline: check-ins are kept and sent when the kiosk reconnects.', action: 'Retry now' } },
@@ -126,7 +126,7 @@ export const SAMPLE_ITEMS: readonly SampleItem[] = [
   { key: 'des2-kiosk', pack: 'k-des-2', feature: 'front-desk-check-in-kiosk', name: 'Front-desk check-in kiosk', lens: 'design', metric: 'undesignedStates',
     title: 'Design the kiosk\'s offline state', summary: 'The rebuild: the offline note sits under the scanner, so the QR code stays in view, and Retry is within reach.',
     standard: 'async-ui-states/offline-states', delta: -1, size: 'M', risk: 3, status: 'done', before: [2], after: 1,
-    evidence: ['2 undesigned states at base, as the first attempt read them', 'offline note under the scanner, check-ins kept, Retry in reach; the other-studio pass is still open: 1 state'],
+    evidence: ['undesigned states at base, as the first attempt read them', 'offline note under the scanner, check-ins kept, Retry in reach; the other-studio pass is still open'],
     files: ['src/features/kiosk/KioskScanner.tsx', 'src/features/kiosk/OfflineNote.tsx', 'src/features/kiosk/KioskScanner.test.tsx'], patch: 'state',
     ui: { text: 'Offline: check-ins are kept and sent when the kiosk reconnects.', action: 'Retry now' },
     screen: { panels: KIOSK, change: { kind: 'banner', at: 0, place: 'bottom', text: 'Offline: check-ins are kept and sent when the kiosk reconnects.', action: 'Retry now' } },
@@ -183,6 +183,7 @@ const BUSY: ReadonlySet<ProposalStatus> = new Set<ProposalStatus>(['executing', 
 const SETTLED: ReadonlySet<ProposalStatus> = new Set<ProposalStatus>(['released', 'descoped', 'declined']);
 const BAD_TRIAGE = `body must be { ids: string[] (1..${MAX_IDS}), decision: 'accept' | 'rework' | 'descope' | 'reopen', note?: string }`;
 const BAD_RELEASE = `body must be { version: semver without the v, ids?: string[] (1..${MAX_IDS}) }`;
+const round = (v: number) => Math.round(v * 100) / 100;
 const semverDesc = (a: string, b: string) => { const x = a.split(/[.+-]/).map(Number), y = b.split(/[.+-]/).map(Number); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return y[i] - x[i]; return 0; };
 
 /** A release job's plan, fixed when it starts. */
@@ -218,8 +219,10 @@ export class TrainSim {
   private unit(lens: string, key: string) { return this.h.field(lens, key)?.unit; }
 
   // ----------------------------------------------------------------------------------------- seed
-  /** Lay the sample packs over the bound product's features (the named Kettle feature, else the next free one in `order`). */
-  seed(order: readonly string[]): void {
+  /** Lay the sample packs over the bound product's features (the named Kettle feature, else the next free one in `order`).
+   *  `value` is the map's current value of a feature's lens field: an item's baseline ends on it (its runs, after and
+   *  expected impact shift with it), so seeding changes no number the map already shows; with none, the sample's own. */
+  seed(order: readonly string[], value?: (feature: string, lens: string, key: string) => number | undefined): void {
     const T = this.h.now() - 5 * 60 * MIN, at = (m: number) => this.iso(T + m * MIN), used = new Set<string>(), feat = new Map<string, string>();
     for (const it of SAMPLE_ITEMS) {
       const f = it.attemptOf ? feat.get(it.attemptOf)! : order.includes(it.feature) && !used.has(it.feature) ? it.feature : order.find((x) => !used.has(x)) ?? it.feature;
@@ -241,18 +244,20 @@ export class TrainSim {
       this.log(run, 'note', `pack ${k} on ${pack.branch} from ${MAIN_REF} at ${BASE_SHA.slice(0, 7)} (sample)`, at(t0));
       items.forEach((it, j) => {
         const id = ids.get(it.key)!, f = feat.get(it.key)!, sha = sha40('commit|' + it.key), m0 = t0 + 2 + j * 6;
+        const cur = value?.(f, it.lens, it.metric), off = cur === undefined ? 0 : cur - it.before[it.before.length - 1];
+        const before = it.before.map((x) => round(x + off)), after = round(it.after + off);
         this.spec.set(id, it);
         const method = it.lens === 'performance' ? 'probe' : 'judgement';
         const reading = (metric: string, value: number, phase: 'before' | 'after', m: number, evidence: string, commit: string) =>
           this.h.ms.push({ id: this.h.nextMeasurement(), run_id: run, feature: f, lens: it.lens, metric, value, ...(this.unit(it.lens, metric) ? { unit: this.unit(it.lens, metric)! } : {}), method, evidence, measured_at: at(m), proposal_id: id, phase, commit_sha: commit });
-        it.before.forEach((v, r) => reading(it.metric, v, 'before', m0 + r * 0.5, (it.before.length > 1 ? `run ${r + 1} of ${it.before.length}: ` : '') + `${it.evidence[0]} at base ${BASE_SHA.slice(0, 7)} (sample)`, BASE_SHA));
-        for (const [key, v] of Object.entries(it.context ?? {})) reading(key, v, 'before', m0 + 1.6, `context at base ${BASE_SHA.slice(0, 7)}, same passes (sample probe)`, BASE_SHA);
-        reading(it.metric, it.after, 'after', m0 + 5, `${it.evidence[1]} at ${sha.slice(0, 7)} (sample)`, sha);
+        before.forEach((v, r) => reading(it.metric, v, 'before', m0 + r * 0.5, (before.length > 1 ? `run ${r + 1} of ${before.length}: ` : '') + `${it.evidence[0]} at base ${BASE_SHA.slice(0, 7)} (sample)`, BASE_SHA));
+        for (const [key, v] of Object.entries(it.context ?? {})) reading(key, value?.(f, it.lens, key) ?? v, 'before', m0 + 1.6, `context at base ${BASE_SHA.slice(0, 7)}, same passes (sample probe)`, BASE_SHA);
+        reading(it.metric, after, 'after', m0 + 5, `${it.evidence[1]} at ${sha.slice(0, 7)} (sample)`, sha);
         const decided = it.attemptOf ? this.prop(ids.get(it.attemptOf)!)! : undefined;
         const p: Proposal = {
-          id, run_id: it.attemptOf ? run : propose, feature: f, lens: it.lens, metric: it.metric, title: it.title, body: bodyOf(it, ids.get(it.attemptOf ?? '')), standard: it.standard,
+          id, run_id: it.attemptOf ? run : propose, feature: f, lens: it.lens, metric: it.metric, title: it.title, body: bodyOf(it, ids.get(it.attemptOf ?? ''), before[before.length - 1]), standard: it.standard,
           expected_delta: it.delta, ...(it.size ? { size: it.size } : {}), risk: it.risk, kind: 'fix', status: it.status === 'rework' ? 'rework' : it.status,
-          decided_by: decided?.decided_by ?? BY, decided_at: decided?.decided_at ?? at(t0 - 5), after_value: it.after, result_sha: sha, created_at: it.attemptOf ? at(t0) : at(1 + SAMPLE_ITEMS.indexOf(it) * 0.1),
+          decided_by: decided?.decided_by ?? BY, decided_at: decided?.decided_at ?? at(t0 - 5), after_value: after, result_sha: sha, created_at: it.attemptOf ? at(t0) : at(1 + SAMPLE_ITEMS.indexOf(it) * 0.1),
           updated_at: at(m0 + 5), pack_id: k, commit_sha: sha, ...(it.attemptOf ? { attempt_of: ids.get(it.attemptOf)! } : {}),
           ...(it.note ? { triaged_from: 'done' as const, triaged_by: BY, triaged_at: at(140), triage_note: it.note, updated_at: at(140) } : {}),
         };
@@ -427,14 +432,28 @@ export class TrainSim {
       const items = this.items(r.id).filter((p) => p.status === 'accepted');
       this.setRel(r.id, { status: 'tagged', tag: 'v' + v });
       for (const p of items) this.put({ ...p, status: 'released', updated_at: at });
-      const closed: string[] = [];
-      for (const k of new Set(items.map((p) => p.pack_id).filter((x): x is string => !!x))) {
-        const i = this.packs.findIndex((x) => x.id === k);
-        if (i >= 0 && this.packs[i].status !== 'closed' && this.h.props.every((p) => p.pack_id !== k || SETTLED.has(p.status))) { this.packs[i] = { ...this.packs[i], status: 'closed', updated_at: at }; closed.push(k); }
-      }
+      const closed = this.closePacks(items.map((p) => p.id), at);
       return `tagged v${v}: ${items.length} item${items.length === 1 ? '' : 's'} released${closed.length ? ', closed ' + closed.join(', ') : ''} (sample)`;
     }
     return `GitHub release v${v} published (sample)`;
+  }
+
+  /** Settled for closing its pack (store.mjs 1.6.1): released, descoped or declined, or a `rework` item whose rebuild is settled. */
+  private settled(p: Proposal, depth = 0): boolean {
+    if (SETTLED.has(p.status)) return true;
+    if (p.status !== 'rework' || depth > 32) return false;
+    return this.h.props.some((c) => c.attempt_of === p.id && this.settled(c, depth + 1));
+  }
+  /** Close every open or triaged pack whose items are all settled, among the packs of `ids` and of the items they
+   *  rebuild (up the attempt_of chain: a rebuild ships from a later pack, and the reworked item's pack waits on it). */
+  private closePacks(ids: readonly string[], at: string): string[] {
+    const packs = new Set<string>(), closed: string[] = [];
+    for (const id of ids) for (let p = this.prop(id), n = 0; p && n < 32; n++) { if (p.pack_id) packs.add(p.pack_id); p = p.attempt_of ? this.prop(p.attempt_of) : undefined; }
+    for (const k of packs) {
+      const i = this.packs.findIndex((x) => x.id === k);
+      if (i >= 0 && this.packs[i].status !== 'closed' && this.h.props.every((p) => p.pack_id !== k || this.settled(p))) { this.packs[i] = { ...this.packs[i], status: 'closed', updated_at: at }; closed.push(k); }
+    }
+    return closed;
   }
 
   /** How a release job ended: an error when its release did not get where the step goes. */
@@ -488,11 +507,11 @@ export class TrainSim {
   }
 }
 
-function bodyOf(it: SampleItem, attemptOf: string | undefined): string {
+function bodyOf(it: SampleItem, attemptOf: string | undefined, base: number): string {
   const brief = it.attemptOf ? `## Brief\nThe rebuild of ${attemptOf}, sent back to rework with this note:\n\n> ${SAMPLE_ITEMS.find((x) => x.key === it.attemptOf)?.note}\n\n` : '';
   const unit = it.lens === 'performance' ? ' ms' : '';
   return `${brief}## Summary\n${it.summary}\n\n## Description\nSample finding: Kettle is the sample product, so this item, its commit and its readings are simulated.\n\n`
-    + `## Flow\n${it.files.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n\n## Expected impact\n${it.metric} on ${it.feature} ${it.before[it.before.length - 1]} -> ${it.before[it.before.length - 1] + it.delta}${unit}.\n\n`
+    + `## Flow\n${it.files.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n\n## Expected impact\n${it.metric} on ${it.feature} ${base} -> ${round(base + it.delta)}${unit}.\n\n`
     + `## Evaluation\nRe-measure ${it.metric} (${it.lens === 'performance' ? 'probe, 3 baseline runs' : 'judgement'}) on the pack branch. Standard ${it.standard}.\n`;
 }
 

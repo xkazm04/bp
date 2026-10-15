@@ -93,7 +93,7 @@ export class ScanSim {
    *  sample release train over its features; a rebind (the model rebuilt in place) keeps it. */
   bind(p: ScanSimProduct): void {
     this.prod = p;
-    if (!this.seeded) { this.seeded = true; this.train.seed(p.order); this.changed(); }
+    if (!this.seeded) { this.seeded = true; this.train.seed(p.order, (f, l, k) => p.value(f, l, k)); this.changed(); }
   }
   /** Bumped on every change. */
   get version(): number { return this.v; }
