@@ -71,3 +71,24 @@ export const KEYMAP: Readonly<Record<KeyScope, readonly KeyBinding[]>> = {
     { keys: ['Escape'], action: 'escape', label: 'back to triage' },
   ],
 };
+
+/** The action `key` triggers in the first of `scopes` that binds it (a layered scope first: compare over packs), or
+ *  null. Letters compare case-insensitively; every other key (Enter, Escape, the arrows, '?', ' ') as it is. */
+export function keyAction(scopes: readonly KeyScope[], key: string): KeyAction | null {
+  const k = key.length === 1 ? key.toLowerCase() : key;
+  for (const s of scopes) for (const b of KEYMAP[s]) if (b.keys.some((x) => (x.length === 1 ? x.toLowerCase() : x) === k)) return b.action;
+  return null;
+}
+
+const NAMES: Readonly<Record<string, string>> = { ' ': 'Space', ArrowDown: '↓', ArrowUp: '↑', Escape: 'Esc', Enter: 'Enter' };
+/** A key as the footer and the `?` sheet print it: letters uppercase, Space, the arrows as arrows, Esc. */
+export const keyName = (k: string): string => NAMES[k] ?? (k.length === 1 ? k.toUpperCase() : k);
+
+/** The footer's short list per scope: the few actions worth a reminder while nothing is selected (the decision and
+ *  dispatch buttons carry their own keys; the `?` sheet lists the rest). */
+export const SHORT: Readonly<Record<KeyScope, readonly KeyAction[]>> = {
+  packs: ['next', 'select', 'open', 'help'],
+  backlog: ['next', 'select', 'open', 'help'],
+  compare: ['theme', 'mode', 'wide'],
+  release: ['build', 'finish', 'help'],
+};

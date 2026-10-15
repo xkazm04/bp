@@ -1,12 +1,13 @@
 'use client';
 // Parts every ledger variant shows the same way: the lens glyph (the plan's own glyph set, drawn once per lens, colour
-// and resolution into an image), the status chip with its job mark, the kind tag, risk and size, the feature link and
-// the Dispatch bar. Lenses differ by glyph and short name here, never by colour.
+// and resolution into an image), the kind tag, risk and size, the feature link and the before -> expected move. The
+// state mark and the lens tag are train/ui/Marks.tsx's (one component each); the dispatch bar is the backlog's
+// (Triage.tsx). Lenses differ by glyph and short name here, never by colour.
 import { useMemo } from 'react';
 import { glyph, type GlyphSpec } from '@/engine/render/lens-glyph';
-import type { Proposal, ProposalStatus } from '@/lib/scan/types';
+import type { Proposal } from '@/lib/scan/types';
 import { useTheme } from '../../ThemeToggle';
-import { riskBand, type Finding, type Ledger, type LensCol } from '../useLedger';
+import { riskBand, type Finding, type Ledger } from '../useLedger';
 
 // ------------------------------------------------------------------------------------------- lens glyph
 const URLS = new Map<string, string>();
@@ -33,25 +34,7 @@ export function LensGlyph({ g, px = 14 }: { g: GlyphSpec; px?: number }) {
   }, [g, px, mode]);
   return src ? <img className="lg-gl" src={src} width={px} height={px} alt="" aria-hidden="true" /> : null;
 }
-export function LensTag({ lens, short = true }: { lens: LensCol | undefined; short?: boolean }) {
-  if (!lens) return null;
-  return <span className="lg-lens" title={lens.name}><LensGlyph g={lens.glyph} />{short ? lens.short : lens.name}</span>;
-}
-
-// ------------------------------------------------------------------------------------------- status, kind, risk, size
-const MARK: Record<ProposalStatus, string> = { proposed: '○', approved: '◐', executing: '◔', done: '●', failed: '✕', declined: '–',
-  // v2 triage and release statuses (placeholder marks until the triage page's design lands)
-  accepted: '✓', rework: '↺', descoped: '⊘', released: '◆' };
-/** The status as a word with its own mark (shape first, colour second); a job on it adds the progress ring. */
-export function StatusChip({ f }: { f: Finding }) {
-  const j = f.job;
-  return (
-    <span className={'lg-st s-' + f.status} title={j ? 'Execute job ' + j.id + ' ' + j.status + (j.started_at ? ' since ' + j.started_at.slice(11, 16) : '') : undefined}>
-      {j ? <i className={'lg-job ' + j.status} aria-hidden="true" /> : <b aria-hidden="true">{MARK[f.status]}</b>}
-      {f.status}{j ? <span className="vh"> · job {j.status}</span> : null}
-    </span>
-  );
-}
+// ------------------------------------------------------------------------------------------- kind, risk, size
 export function KindTag({ p }: { p: Proposal }) {
   if (p.kind === 'fix') return null;
   return <span className="lg-kind" title={p.parent_id ? 'Follows ' + p.parent_id : undefined}>{p.kind === 'baseline-upgrade' ? 'baseline upgrade' : 'propagation' + (p.parent_id ? ' of ' + p.parent_id : '')}</span>;
@@ -81,23 +64,4 @@ export function Move({ f, L }: { f: Finding; L: Ledger }) {
 export function fromControl(e: React.SyntheticEvent): boolean {
   const t = e.target as HTMLElement;
   return !!t.closest('button, input, a, select, textarea, label') && t !== e.currentTarget;
-}
-
-// ------------------------------------------------------------------------------------------- dispatch bar
-/** The same in every variant: what is selected, which lenses it spans, Dispatch (D) and Clear (Esc). */
-export function DispatchBar({ L }: { L: Ledger }) {
-  const n = L.ui.sel.size, m = L.ready.length;
-  const spans = L.lenses.filter((l) => L.ready.some((f) => f.p.lens === l.id));
-  return (
-    <div className="lg-bar" role="region" aria-label="Dispatch">
-      <span className="lg-bar-n" aria-live="polite">{n ? n + ' selected' : 'Nothing selected'}{n && m !== n ? ' · ' + m + ' can go' : ''}</span>
-      {spans.length ? <span className="lg-bar-l" title={spans.map((l) => l.name).join(', ')}>{spans.length === 1 ? '1 lens' : spans.length + ' lenses'}{spans.map((l) => <LensTag key={l.id} lens={l} />)}</span> : null}
-      {m ? <span className="lg-bar-e" title="Effort: XS 1, S 2, M 3, L 5, XL 8">effort {L.effort}</span> : null}
-      <span className="lg-sp" />
-      <button type="button" className="bt" disabled={!n} onClick={L.clear} title="Clear the selection (Esc)">Clear <kbd>Esc</kbd></button>
-      <button type="button" className="bt go" disabled={!m || L.busy} onClick={() => void L.dispatchIds()} title="Approve the proposed ones and start one execute run over all of them (D)">
-        {L.busy ? 'Dispatching…' : 'Dispatch ' + m}<kbd>D</kbd>
-      </button>
-    </div>
-  );
 }

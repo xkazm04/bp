@@ -1,22 +1,30 @@
 'use client';
 // The findings ledger: a full page over the plan area, on the same route (the header's "drawing set | findings
-// ledger" switch, or L), so the engine, the live stream and running scans stay alive behind it. Every finding of
-// every lens in one place for quick select-and-dispatch across lenses, in two views over one model (useLedger.ts)
-// that work as a pair: the Feature × lens matrix shows where findings sit and picks them by area (a cell, a row), the
-// Triage table reads and decides them one by one. The selection and the filters are shared, so a pick in the matrix
-// is the table's selection; a matrix row's Table (or Enter) opens the table on that feature alone, a removable chip.
-// (The owner kept these two of four prototypes on 2026-10-14; the status board and the impact queue are gone.)
+// ledger" switch, or L), so the engine, the live stream and running scans stay alive behind it. Three tabs (1-3): the
+// Triage table, the Feature × lens matrix and the Release (train/release/ReleaseView.tsx). The table and the matrix
+// work in one of two scopes, "In packs N | Backlog N" (LedgerUi.scope):
+//   In packs   the built items of the lens packs (train/PackTable.tsx): sticky pack rows over their items, a click
+//              opens an item in the compare panel docked beside the table (train/compare), and the decision bar
+//              (train/DecisionBar.tsx) accepts, sends to rework, descopes or undoes (train/Decide.tsx, the one control);
+//   Backlog    every finding of every lens (variants/Triage.tsx), selected and dispatched as before.
+// The matrix shows where findings (or, in packs, pack items by their state marks) sit and picks them by area; a
+// matrix row's Table (or Enter) opens the table on that feature alone, a removable chip. The selection and the filters
+// are shared by the views; a scope switch drops the status filter (the scopes' chips differ). The contest winner A/1
+// (release-manager) is the look: its type, density and palette (ledger-theme.css).
 //
 // Layout: the header stays (the switch, the project, the lens tabs); the page covers the rail and the timeline,
 // which act on the plan (fly, scrub, open a flyout) and have nothing to say about a list, and it gets the full
 // width the triage table needs. The chrome it covers is inert while it shows (Tab never lands behind it); the toast
 // stays reachable above it. Opaque paper, no backdrop-filter over the live canvas (docs/perf.md).
 //
-// Keys while the page has focus (it owns them: `data-keys="own"`, so the engine's plan keys stay out): J/K or the
-// arrows move, Space or X selects, D dispatches the selection, A dispatches the focused finding, Enter opens its
-// feature (on a matrix row: that feature in the table), / filters, 1-2 switch the view, Esc clears the selection
-// (with none: back to the drawing set).
-// On a phone the page is the triage list alone (Phone.tsx hosts it with `phone`).
+// Keys while the page has focus (it owns them: `data-keys="own"`, so the engine's plan keys stay out) come from one
+// table, train/keymap.ts, by scope: In packs J/K move, X/Space select, Enter compares (again: full width), A R S U
+// decide, the compare panel's L M W while it is open; Backlog D dispatches the selection and A the focused finding,
+// Enter opens its feature; Release B and F press the release view's Build and Finish (its `data-act` buttons). Every
+// scope: / filters, 1-3 switch the tab, ? shows every key. Esc is layered: a note being written, then full width, then
+// the compare panel, then the selection, then (Release) the table, else back to the drawing set.
+// On a phone the page is the table alone (Phone.tsx hosts it with `phone`): pack items as cards over the decision
+// bar, compare as a full-screen sheet that owns a history entry (Back closes it), the release as one status line.
 //
 // Lens actions: each lens chip has a disclosure (▾) with Scan this lens, Scan selection, Execute backlog (n) and Open in
 // Lenses panel; with a selection the top bar offers "Scan selected features" (a picker of scannable lenses, one
@@ -24,21 +32,27 @@
 //
 // Mount: `<LedgerPage lensButton={<LensesButton />} lensPanel={<LensesPanel />} />` in BlueprintApp's Chrome
 // (it renders nothing unless the store's `page` is 'ledger'); the slots take the Lenses button and panel.
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { LEDGER_VARIANTS, type LedgerVariant } from '@/engine/state';
-import type { ProposalStatus } from '@/lib/scan/types';
 import { useProductName } from '@/lib/scan/projects';
 import { MAX_SELECTION } from '@/lib/scan/jobs';
 import { shallowEqual, useBp, useEngine, useLive, useScanCtx } from '../hooks';
-import { STATUSES, setLedgerUi, useLedger, useLedgerSelection, useLedgerUi, type Ledger, type LedgerUi, type LensCol, type SetUi } from './useLedger';
-import { DispatchBar, LensGlyph } from './variants/bits';
+import { setLedgerUi, useLedger, useLedgerSelection, useLedgerUi, type CompareMode, type CompareTheme, type Ledger, type LedgerUi, type LensCol, type SetUi } from './useLedger';
+import { LensGlyph } from './variants/bits';
 import { EXEC_BATCH, executeAsk, executeBacklog, scanBlock, scanNow, scanSelection, useLensRows, useLensStats } from './lens/lens-ops';
 import { setLensesPanelOpen } from './lens/LensesPanel';
-import { Triage } from './variants/Triage';
+import { DispatchBar, Triage } from './variants/Triage';
 import { Matrix } from './variants/Matrix';
+import { PackTable } from './train/PackTable';
+import { DecisionBar } from './train/DecisionBar';
+import { DecideOrder, useDecide } from './train/Decide';
+import { KeyLine, KeysSheet } from './train/KeysSheet';
+import { keyAction, type KeyScope } from './train/keymap';
+import { Seg } from './train/ui/Controls';
+import { StateMark } from './train/ui/Marks.tsx';
 import { ComparePanel } from './train/compare/ComparePanel';
-import { ReleaseView, SummaryStrip } from './train/release/ReleaseView';
+import { ReleaseStatusLine, ReleaseView, SummaryStrip } from './train/release/ReleaseView';
 import './ledger.css';
 import './ledger-theme.css';
 
@@ -47,11 +61,14 @@ export interface LedgerPageProps {
   lensButton?: ReactNode;
   /** The Lenses panel (LensesPanel), shown beside the ledger's body; it renders nothing while closed. */
   lensPanel?: ReactNode;
-  /** The phone view hosts the ledger: triage only, in the page flow. */
+  /** The phone view hosts the ledger: the table only, in the page flow. */
   phone?: boolean;
 }
 
 const NAMES: Record<LedgerVariant, string> = { triage: 'Triage table', matrix: 'Feature × lens matrix', release: 'Release' };
+const THEMES: readonly CompareTheme[] = ['light', 'dark', 'both'];
+const MODES: readonly CompareMode[] = ['side', 'slider', 'blink', 'map'];
+const cycle = <T,>(xs: readonly T[], x: T): T => xs[(xs.indexOf(x) + 1) % xs.length];
 
 /** Mounted always (cheap: one store slice); the page state is useLedger.ts's store, so the selection and filters outlive a close. */
 export function LedgerPage({ lensButton, lensPanel, phone = false }: LedgerPageProps) {
@@ -71,6 +88,13 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
   const E = useEngine(), L = useLedger(ui, set), live = useLive();
   const name = useProductName(E.M.live?.slug ?? null, E.M.P.name);
   const root = useRef<HTMLElement>(null), filter = useRef<HTMLInputElement>(null);
+  const [keys, setKeys] = useState(false);
+  const scope: KeyScope = lv === 'release' ? 'release' : ui.scope, packs = scope === 'packs';
+  const cmpOpen = packs && !!ui.open;
+  // the order "next waiting" walks after a decision: the table's kept rows
+  const scopedIds = useMemo(() => L.scoped.map((f) => f.p.id), [L.scoped]);
+  const order = useCallback(() => scopedIds, [scopedIds]);
+  const { decide } = useDecide(order);
 
   // the chrome behind (rail, timeline, plan overlays, the canvas) is inert while the page shows; the header and toast are not
   useLayoutEffect(() => {
@@ -97,100 +121,191 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
     if (page && (!at || at === document.body)) page.focus({ preventScroll: true });
   });
 
-  // keyboard focus follows the focused finding (J/K); the element is found by its data-fid
-  const focusEl = (id: string) => requestAnimationFrame(() => {
-    const el = root.current?.querySelector<HTMLElement>('[data-fid="' + CSS.escape(id) + '"]');
-    el?.focus({ preventScroll: true }); el?.scrollIntoView({ block: 'nearest' });
-  });
+  // the focused row takes the keyboard focus when it changes (J/K, a decision's advance) while the page, a row or
+  // nothing holds it; a control, the note editor or the compare panel keep theirs
+  useEffect(() => {
+    const page = root.current, at = document.activeElement as HTMLElement | null, id = ui.focus;
+    if (!page || !id || (at && at !== document.body && at !== page && !at.hasAttribute('data-fid'))) return;
+    const el = page.querySelector<HTMLElement>('[data-fid="' + CSS.escape(id) + '"]');
+    if (el && el !== at) { el.focus({ preventScroll: true }); el.scrollIntoView({ block: 'nearest' }); }
+  }, [ui.focus]);
+
+  // a wide window opens the first pack item in the compare panel the first time the table shows it (A/1); once per
+  // show, so a later close stays closed
+  const autoOpened = useRef(false), first = L.scoped[0]?.p.id;
+  useEffect(() => {
+    if (autoOpened.current || !first) return;
+    autoOpened.current = true;
+    if (phone || lv !== 'triage' || ui.scope !== 'packs' || window.innerWidth <= 1100) return;
+    set((u) => (u.open || u.focus ? u : { ...u, focus: first, open: first }));
+  }, [first, phone, lv, ui.scope, set]);
+
+  // the phone's compare sheet owns a history entry, so the platform Back gesture closes it (as Phone.tsx's detail)
+  const sheet = phone && cmpOpen;
+  useEffect(() => {
+    if (!sheet) return;
+    history.pushState({ ...(history.state ?? {}), lgCompare: true }, '');
+    const onPop = () => set((u) => ({ ...u, open: null, wide: false }));
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      if (history.state?.lgCompare) history.back();   // closed some other way: consume the stranded entry
+    };
+  }, [sheet, set]);
+
   const current = (): string | null => { const ord = L.order(lv); return ui.focus && ord.includes(ui.focus) ? ui.focus : ord[0] ?? null; };
   const step = (d: number) => {
     const ord = L.order(lv); if (!ord.length) return;
-    const i = ui.focus ? ord.indexOf(ui.focus) : -1, j = i < 0 ? 0 : Math.max(0, Math.min(ord.length - 1, i + d));
-    L.setFocus(ord[j]); focusEl(ord[j]);
+    const i = ui.focus ? ord.indexOf(ui.focus) : -1, j = i < 0 ? (d > 0 ? 0 : ord.length - 1) : Math.max(0, Math.min(ord.length - 1, i + d)), id = ord[j];
+    // the open compare follows the focus (A/1)
+    set((u) => (u.focus === id && (!u.open || u.open === id) ? u : { ...u, focus: id, open: u.open && packs && lv === 'triage' ? id : u.open }));
   };
   /** The findings a focus id stands for: one, or a matrix row's. */
-  const under = (id: string | null): string[] => !id ? [] : id.startsWith('feat:') ? L.rows.filter((f) => 'feat:' + f.p.feature === id).map((f) => f.p.id) : [id];
+  const under = (id: string | null): string[] => !id ? [] : id.startsWith('feat:') ? L.scoped.filter((f) => 'feat:' + f.p.feature === id).map((f) => f.p.id) : [id];
 
+  // what a decision acts on: the selected pack items, else the open item, else the focused one
+  const itemIds = useMemo(() => new Set(L.items.map((f) => f.p.id)), [L.items]);
+  const targets = useMemo(() => {
+    const sel = [...ui.sel].filter((id) => itemIds.has(id));
+    if (sel.length) return sel;
+    if (ui.open && itemIds.has(ui.open)) return [ui.open];
+    const f = ui.focus && itemIds.has(ui.focus) ? ui.focus : null;
+    return f ? [f] : [];
+  }, [ui.sel, ui.open, ui.focus, itemIds]);
+
+  const toRelease = () => { if (!phone) E.setPage('ledger', 'release'); };
   const onKey = (e: React.KeyboardEvent<HTMLElement>) => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const t = e.target as HTMLElement, k = e.key;
+    if (keys) { if (k === 'Escape' || k === '?') { e.preventDefault(); setKeys(false); } return; }
     if (isTyping(t)) {
       if (k === 'Escape') { e.preventDefault(); if (ui.q) set((u) => ({ ...u, q: '' })); else root.current?.focus(); }
       return;
     }
     if (t.closest('.lg-side, .lg-pop')) return; // the Lenses panel and the lens menus keep their own keys
-    const ctl = isControl(t);
-    if (k === 'Escape') { e.preventDefault(); if (ui.sel.size) L.clear(); else E.setPage('plan'); return; }
-    if (k === 'j' || k === 'J' || k === 'ArrowDown') { e.preventDefault(); step(1); return; }
-    if (k === 'k' || k === 'K' || k === 'ArrowUp') { e.preventDefault(); step(-1); return; }
-    if ((k === ' ' && !ctl) || k === 'x' || k === 'X') { e.preventDefault(); const ids = under(current()); if (ids.length) L.select(ids); return; }
-    if (k === 'd' || k === 'D') { e.preventDefault(); void L.dispatchIds(); return; }
-    if (k === 'a' || k === 'A') { e.preventDefault(); void L.dispatchIds(under(current())); return; }
-    if (k === 'Enter' && !ctl) {
-      const id = current();
-      if (id?.startsWith('feat:')) { e.preventDefault(); L.showInTable(id.slice(5)); return; }
-      const f = L.byId.get(id ?? ''); if (f) { e.preventDefault(); L.openFeature(f); } return;
+    const ctl = isControl(t), a = keyAction(cmpOpen ? ['compare', scope] : [scope], k);
+    if (!a || ((a === 'select' && k === ' ') || a === 'open') && ctl) return;
+    if (phone && (a === 'view1' || a === 'view2' || a === 'view3')) return;
+    e.preventDefault();
+    switch (a) {
+      case 'next': step(1); return;
+      case 'prev': step(-1); return;
+      case 'select': { const ids = under(current()); if (ids.length) L.select(ids); return; }
+      case 'open': {
+        const id = current();
+        if (id?.startsWith('feat:')) { L.showInTable(id.slice(5)); return; }
+        if (!id) return;
+        if (packs) { set((u) => (u.open === id ? { ...u, wide: !u.wide } : { ...u, focus: id, open: id })); return; }
+        const f = L.byId.get(id); if (f) L.openFeature(f);
+        return;
+      }
+      case 'accept': void decide(targets, 'accept'); return;
+      case 'rework': void decide(targets, 'rework'); return;
+      case 'descope': void decide(targets, 'descope'); return;
+      case 'undo': void decide(targets, 'reopen'); return;
+      case 'dispatch': void L.dispatchIds(); return;
+      case 'dispatchFocused': void L.dispatchIds(under(current())); return;
+      case 'filter': filter.current?.focus(); return;
+      case 'view1': case 'view2': case 'view3': E.setPage('ledger', LEDGER_VARIANTS[+a.slice(4) - 1]); return;
+      case 'theme': set((u) => ({ ...u, cmp: { ...u.cmp, theme: cycle(THEMES, u.cmp.theme) } })); return;
+      case 'mode': set((u) => ({ ...u, cmp: { ...u.cmp, mode: cycle(MODES, u.cmp.mode) } })); return;
+      case 'wide': set((u) => ({ ...u, wide: !u.wide })); return;
+      // the release view owns B and F (its root's handler runs them with their confirmations); nothing to do here
+      case 'build': case 'finish': return;
+      case 'help': setKeys(true); return;
+      case 'escape':
+        if (ui.note) set((u) => ({ ...u, note: null }));
+        else if (cmpOpen && ui.wide) set((u) => ({ ...u, wide: false }));
+        else if (cmpOpen) set((u) => ({ ...u, open: null, wide: false }));
+        else if (ui.sel.size) L.clear();
+        else if (lv === 'release') E.setPage('ledger', 'triage');
+        else E.setPage('plan');
+        return;
     }
-    if (k === '/') { e.preventDefault(); filter.current?.focus(); return; }
-    if (!phone && /^[1-3]$/.test(k)) { e.preventDefault(); E.setPage('ledger', LEDGER_VARIANTS[+k - 1]); }
   };
 
-  const view = lv === 'release' ? <ReleaseView phone={phone} /> : lv === 'matrix' ? <Matrix L={L} /> : <Triage L={L} />;
-  // the compare panel (WP4b) docks beside the table while an item is open; the release tab has none
-  const cmp = ui.open && lv !== 'release' ? (
-    <ComparePanel id={ui.open} view={ui.cmp} wide={ui.wide} phone={phone}
+  const view = lv === 'release' ? <ReleaseView phone={phone} />
+    : lv === 'matrix' ? <Matrix L={L} />
+      : packs ? <PackTable L={L} sample={!live} onLenses={() => setLensesPanelOpen(true)} /> : <Triage L={L} />;
+  // the compare panel (WP4b) docks beside the table while a pack item is open; the release tab and the backlog have none
+  const cmp = cmpOpen && lv !== 'release' ? (
+    <ComparePanel id={ui.open!} view={ui.cmp} wide={ui.wide} phone={phone}
       onView={(v) => set((u) => ({ ...u, cmp: v }))} onWide={() => set((u) => ({ ...u, wide: !u.wide }))} onClose={() => set((u) => ({ ...u, open: null, wide: false }))} />
   ) : null;
+  const pkg = useMemo(() => L.items.filter((f) => f.status === 'accepted' && !f.p.release_id).length, [L.items]);
+  const hint = <KeyLine scope={scope} />;
+  const bar = lv === 'release' ? null
+    : packs ? <DecisionBar L={L} targets={targets} onRelease={toRelease} hint={phone ? null : hint} phone={phone} />
+      : <DispatchBar L={L} hint={phone ? null : hint} />;
   const inner = (
-    <>
+    <DecideOrder.Provider value={order}>
       <header className="lg-top">
         <div className="lg-h">
           <h2>Findings ledger</h2>
-          <span className="lg-prod">{name} · {live ? 'live lens scan' : 'sample findings, simulated execution'} · {L.all.length} findings</span>
+          <span className="lg-prod">{name} · {live ? 'live lens scan' : 'sample findings, simulated execution'} · {L.all.length} findings · {L.items.length} items in {L.packs.length} packs</span>
+          {phone ? <ReleaseStatusLine /> : null}
         </div>
+        {!phone ? <SummaryStrip /> : null}
         {!phone && (
-          <div className="lg-tabs" role="tablist" aria-label="Ledger views">
+          <div className="lg-tabs" role="tablist" aria-label="Ledger views" data-role="tr-tabs">
             {LEDGER_VARIANTS.map((k, i) => (
               <button key={k} type="button" role="tab" aria-selected={lv === k} className={lv === k ? 'on' : ''} onClick={() => E.setPage('ledger', k)} title={NAMES[k] + ' (' + (i + 1) + ')'}>
-                {NAMES[k]}<kbd>{i + 1}</kbd>
+                {NAMES[k]}{k === 'release' && pkg ? ' · ' + pkg : ''}<kbd>{i + 1}</kbd>
               </button>
             ))}
           </div>
         )}
-        {!phone ? <SummaryStrip /> : null}
         {!phone && ui.sel.size ? <SelScan L={L} /> : null}
         {lensButton ? <div className="lg-slot">{lensButton}</div> : null}
       </header>
-      <Filters L={L} filter={filter} menus={!phone} />
+      {lv !== 'release' ? <Filters L={L} filter={filter} menus={!phone} /> : null}
       <div className="lg-main">
         <div className="lg-body" role={phone ? undefined : 'tabpanel'} aria-label={NAMES[lv]}>{view}</div>
         {cmp}
         {lensPanel ? <aside className="lg-side" aria-label="Lenses">{lensPanel}</aside> : null}
       </div>
-      <DispatchBar L={L} />
-    </>
+      {bar}
+      {keys ? <KeysSheet scopes={cmpOpen ? [scope, 'compare'] : [scope]} onClose={() => setKeys(false)} /> : null}
+    </DecideOrder.Provider>
   );
-  if (phone) return <section ref={root} className="lg-page phone" aria-label="Findings ledger" tabIndex={-1} onKeyDown={onKey}>{inner}</section>;
+  const cls = 'lg-page' + (cmp && ui.wide ? ' wide' : '');
+  if (phone) return <section ref={root} className={cls + ' phone'} aria-label="Findings ledger" tabIndex={-1} onKeyDown={onKey}>{inner}</section>;
   return (
-    <motion.section ref={root} className="lg-page" aria-label="Findings ledger" tabIndex={-1} data-keys="own" onKeyDown={onKey}
+    <motion.section ref={root} className={cls} aria-label="Findings ledger" tabIndex={-1} data-keys="own" onKeyDown={onKey}
       initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.24, ease: [0.2, 0.7, 0.2, 1] }}>
       {inner}
     </motion.section>
   );
 }
 
-/** Status chips (they carry the counts), lens chips (glyph, short, count), the matrix's feature drill-down and the text filter. */
+/** The scope (In packs | Backlog), the status chips of the scope (each with its state mark and count), lens chips
+ *  (glyph, short, count in the scope), the matrix's feature drill-down and the text filter. */
 function Filters({ L, filter, menus }: { L: Ledger; filter: React.RefObject<HTMLInputElement | null>; menus: boolean }) {
-  const { ui, set } = L;
+  const { ui, set } = L, packs = ui.scope === 'packs';
   const flip = <T,>(xs: ReadonlySet<T>, x: T) => { const s = new Set(xs); if (!s.delete(x)) s.add(x); return s; };
   const any = ui.lens.size || ui.status.size || ui.feat.size || ui.q;
+  // a lens chip counts the scope's rows: the pack items' lenses in packs, every lens with findings in the backlog
+  const lenses = useMemo(() => {
+    if (!packs) return L.lenses.filter((l) => l.n);
+    const n = new Map<string, number>();
+    for (const f of L.items) n.set(f.p.lens, (n.get(f.p.lens) ?? 0) + 1);
+    return L.lenses.filter((l) => n.has(l.id)).map((l) => ({ ...l, n: n.get(l.id)! }));
+  }, [packs, L.lenses, L.items]);
   return (
     <div className="lg-filt">
+      <Seg label="Scope" value={ui.scope} onChange={L.setScope} options={[
+        { value: 'packs', label: 'In packs ' + L.items.length, title: 'The built items of the lens packs: accept, rework, descope' },
+        { value: 'backlog', label: 'Backlog ' + L.all.length, title: 'Every finding of every lens: select and dispatch' },
+      ]} />
       <div className="lg-chips" role="group" aria-label="Status">
-        {STATUSES.map((st: ProposalStatus) => <button key={st} type="button" className={'lg-chip s-' + st} aria-pressed={ui.status.has(st)} onClick={() => set((u) => ({ ...u, status: flip(u.status, st) }))}>{st}<b>{L.counts[st]}</b></button>)}
+        {L.chips.map(({ status: st, n }) => (
+          <button key={st} type="button" className={'lg-chip s-' + st} aria-pressed={ui.status.has(st)} onClick={() => set((u) => ({ ...u, status: flip(u.status, st) }))}>
+            <StateMark status={st} form="glyph" />{st}<b>{n}</b>
+          </button>
+        ))}
       </div>
       <div className="lg-chips" role="group" aria-label="Lens">
-        {L.lenses.filter((l) => l.n).map((l) => (
+        {lenses.map((l) => (
           <span key={l.id} className="lg-lchip">
             <button type="button" className="lg-chip" aria-pressed={ui.lens.has(l.id)} title={l.name} onClick={() => set((u) => ({ ...u, lens: flip(u.lens, l.id) }))}>
               <LensGlyph g={l.glyph} />{l.short}<b>{l.n}</b>
@@ -208,7 +323,7 @@ function Filters({ L, filter, menus }: { L: Ledger; filter: React.RefObject<HTML
           ))}
         </div>
       ) : null}
-      <input ref={filter} className="lg-q" type="search" value={ui.q} placeholder="Filter findings…  /" aria-label="Filter findings by text" onChange={(e) => { const q = e.target.value; set((u) => ({ ...u, q })); }} />
+      <input ref={filter} className="lg-q" type="search" value={ui.q} placeholder={packs ? 'Filter items…  /' : 'Filter findings…  /'} aria-label={packs ? 'Filter pack items by text' : 'Filter findings by text'} onChange={(e) => { const q = e.target.value; set((u) => ({ ...u, q })); }} />
       {any ? <button type="button" className="lg-x" onClick={() => set((u) => ({ ...u, lens: new Set(), status: new Set(), feat: new Set(), q: '' }))}>Clear filters</button> : null}
     </div>
   );

@@ -1,26 +1,27 @@
 'use client';
-// Triage table: one dense, keyboard-first row per finding (lens, feature, title, before → expected, risk, size,
-// status), open ones first and best value per effort first within a status. J/K move, Space selects, D dispatches,
-// Enter opens the feature; the goal is an empty Proposed list ("inbox zero"). Below ~720 px a row folds into a
-// two-line card, the phone's ledger.
-import { memo } from 'react';
+// The Backlog scope of the triage table: one dense, keyboard-first row per finding (lens, feature, title, before →
+// expected, risk, size, status), open ones first and best value per effort first within a status. J/K move, Space
+// selects, D dispatches, A dispatches the focused one, Enter opens the feature; the goal is an empty Proposed list
+// ("inbox zero"). Below ~720 px a row folds into a two-line card, the phone's backlog. Its bar is the dispatch bar
+// (below); the In packs scope has train/PackTable.tsx and the decision bar instead.
+import { memo, type ReactNode } from 'react';
 import type { Finding, Ledger } from '../useLedger';
-import { FeatureLink, KindTag, LensTag, Move, Risk, Size, StatusChip, fromControl } from './bits';
+import { LensTag, StateMark } from '../train/ui/Marks.tsx';
+import { FeatureLink, KindTag, Move, Risk, Size, fromControl } from './bits';
 
 const Row = memo(function Row({ f, L, on, focus }: { f: Finding; L: Ledger; on: boolean; focus: boolean }) {
-  const lens = L.lenses.find((l) => l.id === f.p.lens);
   return (
     <div role="row" className={'lg-tr' + (on ? ' on' : '') + ' s-' + f.status} data-fid={f.p.id} tabIndex={focus ? 0 : -1}
       onFocus={() => L.setFocus(f.p.id)}
       onClick={(e) => { L.setFocus(f.p.id); if (!fromControl(e)) L.toggle(f.p.id); }}>
       <span role="cell" className="c-sel"><input type="checkbox" tabIndex={-1} checked={on} onChange={() => L.toggle(f.p.id)} aria-label={'Select ' + f.p.title} /></span>
-      <span role="cell" className="c-lens"><LensTag lens={lens} /></span>
+      <span role="cell" className="c-lens"><LensTag id={f.p.lens} /></span>
       <span role="cell" className="c-feat"><FeatureLink f={f} L={L} act={focus} /></span>
       <span role="cell" className="c-title"><span className="lg-t">{f.p.title}</span><KindTag p={f.p} /></span>
       <span role="cell" className="c-mv"><Move f={f} L={L} /></span>
       <span role="cell" className="c-risk"><Risk p={f.p} /></span>
       <span role="cell" className="c-size"><Size p={f.p} /></span>
-      <span role="cell" className="c-st"><StatusChip f={f} /></span>
+      <span role="cell" className="c-st"><StateMark status={f.status} job={f.job} /></span>
     </div>
   );
 });
@@ -51,6 +52,26 @@ export function Triage({ L }: { L: Ledger }) {
           </div>
         </div>
       ) : <div className="lg-empty">{L.all.length ? 'No finding matches these filters.' : 'No findings yet. A lens scan proposes them; they appear here as it does.'}</div>}
+    </div>
+  );
+}
+
+/** The backlog's bar: what is selected, which lenses it spans, its effort, Clear (Esc) and Dispatch (D). With nothing
+ *  selected it shows the scope's key reminders (`hint`). */
+export function DispatchBar({ L, hint }: { L: Ledger; hint?: ReactNode }) {
+  const n = L.ui.sel.size, m = L.ready.length;
+  const spans = L.lenses.filter((l) => L.ready.some((f) => f.p.lens === l.id));
+  return (
+    <div className="lg-bar" role="region" aria-label="Dispatch">
+      <span className="lg-bar-n" aria-live="polite">{n ? n + ' selected' : 'Nothing selected'}{n && m !== n ? ' · ' + m + ' can go' : ''}</span>
+      {spans.length ? <span className="lg-bar-l" title={spans.map((l) => l.name).join(', ')}>{spans.length === 1 ? '1 lens' : spans.length + ' lenses'}{spans.map((l) => <LensTag key={l.id} id={l.id} />)}</span>
+        : !n && hint ? <span className="lg-bar-l">{hint}</span> : null}
+      {m ? <span className="lg-bar-e" title="Effort: XS 1, S 2, M 3, L 5, XL 8">effort {L.effort}</span> : null}
+      <span className="lg-sp" />
+      <button type="button" className="bt" disabled={!n} onClick={L.clear} title="Clear the selection (Esc)">Clear <kbd>Esc</kbd></button>
+      <button type="button" className="bt go" disabled={!m || L.busy} onClick={() => void L.dispatchIds()} title="Approve the proposed ones and start one execute run over all of them (D)">
+        {L.busy ? 'Dispatching…' : 'Dispatch ' + m}<kbd>D</kbd>
+      </button>
     </div>
   );
 }

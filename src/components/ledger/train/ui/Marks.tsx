@@ -6,26 +6,36 @@ import type { Verdict } from '@/lib/scan/compare';
 import { useEngine } from '../../../hooks';
 import { lensMeta } from '../../useLedger';
 import { LensGlyph } from '../../variants/bits';
-import { STATE, VERDICT, num } from './marks';
+import { STATE, VERDICT, num } from './tables';
 import './ui.css';
 
+/** How a state mark is drawn: `tag` the boxed mark and word (a row, the decision strip), `box` the mark alone in a
+ *  square (a pack row's progress), `glyph` the bare mark in its colour (a matrix cell, a status chip). */
+export type StateForm = 'tag' | 'box' | 'glyph';
+/** An execute job on the item (the backlog): the mark becomes a ring that turns while it runs. */
+export interface StateJob { id: string; status: string; started_at?: string }
+
 /** A status as its mark and word. `flagged`: accepted although it failed or did not move (⚑); `pending`: a decision
- *  on it is on its way to the store. */
-export const StateMark = memo(function StateMark({ status, flagged = false, pending = false }: { status: ProposalStatus; flagged?: boolean; pending?: boolean }) {
+ *  on it is on its way to the store; `title` replaces the hint (a pack row's progress names its item). */
+export const StateMark = memo(function StateMark({ status, flagged = false, pending = false, form = 'tag', job, title }: { status: ProposalStatus; flagged?: boolean; pending?: boolean; form?: StateForm; job?: StateJob | null; title?: string }) {
   const m = STATE[status];
+  if (form !== 'tag') return <i className={(form === 'box' ? 'tr-stb' : 'tr-stg') + ' s-' + status} title={title ?? m.word + ': ' + m.hint} aria-hidden={form === 'glyph' ? true : undefined} data-role="tr-state">{m.mark}</i>;
+  const jt = job ? 'Execute job ' + job.id + ' ' + job.status + (job.started_at ? ' since ' + job.started_at.slice(11, 16) : '') : undefined;
   return (
-    <span className={'tr-st s-' + status + (pending ? ' pending' : '')} title={m.hint} data-role="tr-state">
-      <b aria-hidden="true">{m.mark}</b>{m.word}
+    <span className={'tr-st s-' + status + (pending ? ' pending' : '')} title={title ?? jt ?? m.hint} data-role="tr-state">
+      {job ? <i className={'tr-job ' + job.status} aria-hidden="true" /> : <b aria-hidden="true">{m.mark}</b>}{m.word}
       {flagged ? <i title="accepted with a flag"> ⚑</i> : null}
-      {pending ? <span className="tr-vh"> · deciding</span> : null}
+      {pending ? <><i className="tr-job running" aria-hidden="true" /><span className="tr-vh"> · deciding</span></> : null}
+      {job ? <span className="tr-vh"> · job {job.status}</span> : null}
     </span>
   );
 });
 
-/** A verdict as its mark and word; `label` replaces the word (a failed build says "build failed"). */
-export const VerdictChip = memo(function VerdictChip({ verdict, label }: { verdict: Verdict; label?: string }) {
+/** A verdict as its mark and word; `label` replaces the word. `failed`: the item's build failed, which outranks what
+ *  its metric did, so it reads "build failed" in the failure tone whatever the verdict. */
+export const VerdictChip = memo(function VerdictChip({ verdict, label, failed = false }: { verdict: Verdict; label?: string; failed?: boolean }) {
   const m = VERDICT[verdict];
-  return <span className={'tr-vd v-' + verdict} title={m.hint}><b aria-hidden="true">{m.mark}</b>{label ?? m.word}</span>;
+  return <span className={'tr-vd v-' + (failed ? 'failed' : verdict)} title={failed ? 'did not build or broke a gate; ' + m.word : m.hint}><b aria-hidden="true">{failed ? '✕' : m.mark}</b>{failed ? 'build failed' : label ?? m.word}</span>;
 });
 
 /** `before → after unit`, with the metric key under it when given. A missing side reads "–". */
