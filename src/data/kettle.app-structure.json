@@ -8194,16 +8194,16 @@
     },
     {
       "id": "performance",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "source": "builtin",
       "enabled": true,
       "manifest": {
         "$schema": "lens-manifest/1",
         "id": "performance",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "name": "Performance",
         "short": "PERF",
-        "description": "How fast the feature feels and how much it costs the device. Measured: its share of the shipped bundle, cold start, the p95 of its main interaction, p95 frame time while it animates or scrolls, and memory after its main flow. Every probe is a command the product's lens-scan overlay names, so a baseline and a fix run the same probe.",
+        "description": "How fast the feature feels and how much it costs the device. Measured: its share of the shipped bundle, cold start, the p95 of its main interaction, p95 frame time while it animates or scrolls, the main thread time it blocks, its janky frames, how often it wakes the device at rest, and memory after its main flow. Every probe is a command the product's lens-scan overlay names, so a baseline and a fix run the same probe.",
         "reader": {
           "role": "performance",
           "density": "dense"
@@ -8264,6 +8264,48 @@
             "description": "p95 frame time while the feature animates or scrolls. 16.7 ms is 60 frames a second."
           },
           {
+            "key": "blockingMs",
+            "label": "Blocking time",
+            "type": "number",
+            "unit": "ms",
+            "min": 0,
+            "metric": {
+              "better": "down",
+              "method": "probe",
+              "target": 0,
+              "warn_at": 200
+            },
+            "description": "Main-thread time lost to long tasks (each task's time over 50 ms, summed) along the feature's scripted path. A healthy page at 60 frames a second can still block; frame p95 does not see it."
+          },
+          {
+            "key": "jankFrames",
+            "label": "Jank frames",
+            "type": "integer",
+            "unit": "frames",
+            "min": 0,
+            "metric": {
+              "better": "down",
+              "method": "probe",
+              "target": 0,
+              "warn_at": 3
+            },
+            "description": "Frames slower than twice the frame budget (over 33.3 ms) along the scripted path: the visible stutters a p95 averages away."
+          },
+          {
+            "key": "idleWakeups",
+            "label": "Idle wake-ups",
+            "type": "integer",
+            "unit": "callbacks/s",
+            "min": 0,
+            "metric": {
+              "better": "down",
+              "method": "probe",
+              "target": 0,
+              "warn_at": 10
+            },
+            "description": "Frame callbacks the page still requests in a quiet second after its motion ends: work done at rest that costs battery and heat."
+          },
+          {
             "key": "memoryMb",
             "label": "Memory",
             "type": "number",
@@ -8308,6 +8350,42 @@
               "health": "bad",
               "reason": "Cold start {startupMs} ms, over 5 s",
               "short": "Start {startupMs} ms"
+            },
+            {
+              "when": {
+                "field": "jankFrames",
+                "gt": 10
+              },
+              "health": "bad",
+              "reason": "{jankFrames} janky frames along the main path",
+              "short": "{jankFrames} jank frames"
+            },
+            {
+              "when": {
+                "field": "blockingMs",
+                "gt": 200
+              },
+              "health": "watch",
+              "reason": "Blocks the main thread {blockingMs} ms, over the 200 ms budget",
+              "short": "Blocks {blockingMs} ms"
+            },
+            {
+              "when": {
+                "field": "jankFrames",
+                "gt": 3
+              },
+              "health": "watch",
+              "reason": "{jankFrames} janky frames, over the 3-frame budget",
+              "short": "{jankFrames} jank frames"
+            },
+            {
+              "when": {
+                "field": "idleWakeups",
+                "gt": 10
+              },
+              "health": "watch",
+              "reason": "Wakes {idleWakeups} times a second at rest",
+              "short": "{idleWakeups} wakes/s idle"
             },
             {
               "when": {
@@ -8371,9 +8449,10 @@
           },
           "evidence": [
             "interactionP95Ms",
-            "frameP95Ms",
-            "startupMs",
-            "memoryMb"
+            "blockingMs",
+            "jankFrames",
+            "idleWakeups",
+            "frameP95Ms"
           ],
           "measures": "interactionP95Ms"
         }
