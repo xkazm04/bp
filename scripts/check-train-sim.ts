@@ -199,7 +199,6 @@ try {
 
   // ------------------------------------------------------------------ merge and finish
   check('build: a pr-open release does not build again -> 409', err(() => sim.buildRelease('rel-0.1.0')).status === 409);
-  check('finish: before the merge -> 409', err(() => sim.finishRelease('rel-0.1.0')).status === 409);
   sim.sampleMerge('rel-0.1.0');
   check('sampleMerge: pr-open -> merged; again -> 409', rel('rel-0.1.0').status === 'merged' && err(() => sim.sampleMerge('rel-0.1.0')).status === 409);
   sim.setTrainToggles({ ghOff: true, conflict: false, gateFails: false });
@@ -220,7 +219,7 @@ try {
   const c2 = sim.createRelease(sg2.version);
   check('create 0.1.1 with the two free items', c2.added.length === 2, JSON.stringify(c2.added));
   await run(sim.buildRelease('rel-0.1.1'));
-  sim.sampleMerge('rel-0.1.1');
+  // as the live route: finish may start from pr-open (the release run checks the merge first)
   await run(sim.finishRelease('rel-0.1.1'));
   check('0.1.1 tagged; every pack closed, k-des-1 with its reworked item still rework (its rebuild shipped)', prop('des1-kiosk').status === 'rework' &&
     rel('rel-0.1.1').status === 'tagged' && snap().packs.every((k) => k.status === 'closed'), snap().packs.map((k) => k.id + ':' + k.status).join());

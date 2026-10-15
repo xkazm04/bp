@@ -372,7 +372,7 @@ export class TrainSim {
     if (!RELEASE_ID.test(id)) throw refuse(400, 'bad-release');
     const r = this.rel(id);
     if (!r) throw refuse(404, `no release ${id}`);
-    const from = step === 'build' ? ['draft', 'failed'] : ['merged'];
+    const from = step === 'build' ? ['draft', 'failed'] : ['pr-open', 'merged'];
     if (!from.includes(r.status)) throw refuse(409, `${id} is ${r.status}; ${step} starts from ${from.join(' or ')}`, { release: r });
     return r;
   }
@@ -391,7 +391,7 @@ export class TrainSim {
   begin(job: ScanJob, run: string, toggles: TrainToggles): string[] {
     const id = job.release ?? '', step = job.step ?? 'build', r = this.rel(id), plan: Plan = { rel: id, step, gateFails: toggles.gateFails };
     this.plans.set(job.id, plan);
-    const ok = step === 'build' ? r && (r.status === 'draft' || r.status === 'failed') : r?.status === 'merged';
+    const ok = step === 'build' ? r && (r.status === 'draft' || r.status === 'failed') : r?.status === 'pr-open' || r?.status === 'merged';
     if (!r || !ok) { plan.error = r ? `${id} is ${r.status}; ${step} cannot start` : `no release ${id}`; return []; }
     if (step === 'finish') return ['fetch', 'tag', 'publish'];
     const items = this.items(id), at = this.iso();
@@ -426,7 +426,8 @@ export class TrainSim {
       this.setRel(r.id, { status: 'pr-open', pr_url: url });
       return line('note', `opened ${url} (sample PR)`);
     }
-    if (s === 'fetch') return `fetched ${MAIN_REF}: ${r.branch} merged (sample)`;
+    // as the live --finish from pr-open: it checks the PR is merged first (the sample's PR always is, once Finish runs)
+    if (s === 'fetch') { if (r.status === 'pr-open') this.setRel(r.id, { status: 'merged' }); return `fetched ${MAIN_REF}: ${r.branch} merged (sample)`; }
     if (s === 'tag') {
       // store.mjs release-update merged -> tagged: the accepted items ship, and packs left with only settled items close
       const items = this.items(r.id).filter((p) => p.status === 'accepted');
