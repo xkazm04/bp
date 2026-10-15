@@ -1,5 +1,5 @@
 /* The release train's shared marks and controls (Marks.tsx, Controls.tsx), ported from the contest winner A/1 (its
-   .lg-st, .vd, .mv, .lg-lens, .sample-tag, .lg-seg, .pixline, .flag, .err, .noshot) with byte-equal values through the
+   .lg-st, .vd, .mv, .lg-lens, .sample-tag, .bt, .lg-seg, .pixline, .flag, .err, .noshot) with byte-equal values through the
    tokens in globals.css. Token-only: scripts/check-train-quality.mjs holds this file to it. */
 
 .tr-st { display: inline-flex; align-items: center; gap: var(--sp-5); height: var(--h-tag); padding: 0 var(--sp-7); border: 1px solid var(--ink-4); font: 500 var(--fs-12) var(--mono); letter-spacing: var(--ls-1); text-transform: uppercase; color: var(--ink-2); white-space: nowrap; }
@@ -54,7 +54,7 @@
 
 .tr-seg { display: inline-flex; border: 1px solid var(--ink-3); }
 .lg-page .tr-seg button { height: var(--h-ctl-sm); padding: 0 var(--sp-10); background: none; border: 0; font: 500 var(--fs-12) var(--mono); letter-spacing: var(--ls-2); text-transform: uppercase; color: var(--ink-2); }
-.tr-seg button + button { border-left: 1px solid var(--ink-3); }
+.lg-page .tr-seg button + button { border-left: 1px solid var(--ink-3); }
 .tr-seg button[aria-pressed='true'] { background: var(--ink); color: var(--on-ink); }
 
 .tr-call { display: flex; gap: var(--sp-8); align-items: flex-start; font-size: var(--fs-14); line-height: var(--lh-read); }
@@ -66,3 +66,20 @@
 .tr-call.error { display: block; padding: var(--sp-9) var(--sp-12); border: 1px solid var(--red); border-left-width: calc(var(--bw-bar) + 1px); background: color-mix(in srgb, var(--red) 9%, transparent); color: var(--ink-hi); }
 .tr-call.error b { color: var(--red); }
 .tr-call.empty { display: block; padding: var(--sp-14); border: 1px dashed var(--ink-3); color: var(--ink-2); line-height: 1.5; }
+
+/* A/1's .bt (Btn): the ledger's one action button and its tones. Under `.lg-page` because blueprint.css's `.bp button`
+   (one class and a type) would otherwise hand it the page's family and size, and ledger.css's disabled opacity. */
+.lg-page .tr-btn { display: inline-flex; align-items: center; gap: var(--sp-4); height: var(--h-ctl); padding: 0 var(--sp-12); background: var(--panel); border: 1px solid var(--ink-3); font: 500 var(--fs-13) var(--mono); letter-spacing: var(--ls-2); text-transform: uppercase; color: var(--ink-hi); white-space: nowrap; cursor: pointer; }
+.lg-page .tr-btn:hover:not(:disabled) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); }
+.lg-page .tr-btn:disabled { opacity: 0.45; cursor: default; }
+.lg-page .tr-btn.go { background: var(--mint); color: var(--on-mint); border-color: var(--mint); }
+.lg-page .tr-btn.go:hover:not(:disabled) { background: color-mix(in srgb, var(--mint) 85%, var(--lift)); }
+.lg-page .tr-btn.acc { border-color: var(--mint); color: var(--mint); }
+.lg-page .tr-btn.rw { border-color: var(--amber); color: var(--amber); }
+.lg-page .tr-btn.ds { border-color: var(--ink-2); }
+.lg-page .tr-btn.warn { border-color: var(--red); color: var(--red); }
+.lg-page .tr-btn.nav { height: var(--h-ctl-md); padding: 0 var(--sp-9); }
+.lg-page .tr-btn.row { height: var(--h-ctl-sm); padding: 0 var(--sp-8); background: none; border-color: var(--ink-4); color: var(--ink-2); font-size: var(--fs-12); letter-spacing: normal; text-transform: none; }
+.lg-page .tr-btn.row:hover:not(:disabled) { color: var(--ink-hi); border-color: var(--ink-2); background: none; }
+.lg-page .tr-btn kbd { font: 500 var(--fs-12)/1 var(--mono); padding: 1px var(--sp-4); border: 1px solid var(--ink-3); color: inherit; opacity: 0.85; margin-left: var(--sp-6); border-radius: var(--r-sm); }
+.lg-page.phone .tr-btn kbd { display: none; }

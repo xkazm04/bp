@@ -5,9 +5,10 @@
 // in the decision bar, or in the compare footer (`compact`).
 import { useEffect, useRef, useState } from 'react';
 import { setLedgerUi, type NoteAsk } from '../useLedger';
+import { Btn, type BtnTone } from './ui/Controls';
 
 const VERB: Record<NoteAsk['decision'], string> = { accept: 'Accept', rework: 'Send to rework', descope: 'Descope' };
-const CLS: Record<NoteAsk['decision'], string> = { accept: 'acc', rework: 'rw', descope: 'ds' };
+const TONE: Record<NoteAsk['decision'], BtnTone> = { accept: 'acc', rework: 'rw', descope: 'ds' };
 const QUICK: Record<NoteAsk['decision'], readonly string[]> = {
   rework: ['Shoot the designed state, not the default', 'Scope is wider than the finding', 'Re-measure: three runs, not one'],
   descope: ['Not worth the risk now', 'Superseded by another item', 'Within noise: nothing to ship'],
@@ -56,8 +57,8 @@ export function NoteEditor({ ask, flagged, onSend, compact = false }: NoteEditor
       <span className="qk">
         {QUICK[d].map((q) => <button key={q} type="button" onClick={() => { setText(q); setEmpty(false); input.current?.focus(); }}>{q}</button>)}
       </span>
-      <button type="button" className={'tr-btn ' + CLS[d]} onClick={confirm}>{verb}<kbd>↵</kbd></button>
-      <button type="button" className="tr-btn" onClick={cancel}>Cancel<kbd>Esc</kbd></button>
+      <Btn tone={TONE[d]} kbd="↵" onClick={confirm}>{verb}</Btn>
+      <Btn kbd="Esc" onClick={cancel}>Cancel</Btn>
       <span className="why">{why}</span>
     </div>
   );

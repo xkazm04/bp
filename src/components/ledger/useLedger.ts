@@ -8,7 +8,7 @@
 // switch and closing the ledger, and the Lenses panel and the plan's right-click read the selection (`useLedgerSelection`:
 // the features behind the selected findings) to offer a selection scan. This hook derives the rest. Dispatch goes through `dispatch(useScanCtx(), ids)` (src/lib/scan/actions.ts),
 // optimistic: the proposed ones read approved until the next store or sim update, and a refusal rolls back with a toast.
-// Two scopes over the same findings: In packs (the built items of the lens packs, grouped by pack, newest pack first:
+// Two scopes over the same findings: In packs (the built items of the lens packs, grouped by pack, oldest pack first:
 // `packs`, triaged through train/Decide.tsx) and Backlog (every finding, dispatched from here). The filters apply to both.
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { isView, lineSuffix } from '@/lib/model';
@@ -21,6 +21,7 @@ import type { LedgerVariant } from '@/engine/state';
 import type { GlyphSpec } from '@/engine/render/lens-glyph';
 import { metricMove } from '../Queue';
 import { useEngine, useLive, useScanCtx } from '../hooks';
+import { byPackAge } from '@/lib/train/rules';
 
 /** Status order everywhere in the ledger: open first, then moving, then built and waiting, then a person's triage and
  *  the release (v2), then declined. */
@@ -197,7 +198,7 @@ export interface Ledger {
   effort: number;
   busy: boolean;
   scan: ScanSnapshot | undefined;
-  /** The packs, newest first, each with its items (created order) and the ones the filters keep. */
+  /** The packs, oldest first, each with its items (created order) and the ones the filters keep. */
   packs: readonly PackView[];
   /** Every pack item. */
   items: readonly Finding[];
@@ -284,12 +285,12 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
   const rows = useMemo(() => all.filter(keep)
     .sort((a, b) => (rank.get(a.status) ?? STATUSES.length) - (rank.get(b.status) ?? STATUSES.length) || byRank(a, b)), [all, keep, rank]);
 
-  // the packs, newest first; a pack's items in created order (store.mjs `proposals --pack`), the kept ones beside them
+  // the packs, oldest first (rules.ts byPackAge); a pack's items in created order (store.mjs `proposals --pack`), the kept ones beside them
   const packList = src.scan?.packs;
   const { items, packs } = useMemo(() => {
     const by = new Map<string, Finding[]>(), items: Finding[] = [];
     for (const f of all) if (f.p.pack_id) { let a = by.get(f.p.pack_id); if (!a) by.set(f.p.pack_id, (a = [])); a.push(f); items.push(f); }
-    const order = [...(packList ?? [])].sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : a.id < b.id ? 1 : -1));
+    const order = [...(packList ?? [])].sort(byPackAge);
     const packs = order.map((pack) => {
       const its = (by.get(pack.id) ?? []).sort((a, b) => (a.p.created_at < b.p.created_at ? -1 : a.p.created_at > b.p.created_at ? 1 : a.p.id < b.p.id ? -1 : 1));
       return { pack, items: its, shown: its.filter(keep) };

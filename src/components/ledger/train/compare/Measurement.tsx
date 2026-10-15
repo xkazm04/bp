@@ -1,5 +1,6 @@
 // What the measurement says: the item's before and after evidence lines (the latest reading of its own metric in each
-// phase) with the run and the commit each was taken on, and the standard the item was built against.
+// phase) with the commit each was taken on (its run on hover), in the winner A/1's two-line block. The standard the item
+// was built against heads the item's own text below ("The item · <standard>"), as in A/1.
 import { memo } from 'react';
 import type { Comparison } from '@/lib/scan/compare';
 import type { Measurement as Reading } from '@/lib/scan/types';
@@ -13,7 +14,7 @@ function Line({ label, m }: { label: string; m: Reading }) {
   return (
     <>
       <b>{label}</b>
-      <span>{m.evidence ?? 'no evidence text'}{sha ? <> <code>{sha}</code></> : null} <span className="dim">· {m.run_id}</span></span>
+      <span title={'run ' + m.run_id}>{m.evidence ?? 'no evidence text'}{sha ? <> <code>{sha}</code></> : null}</span>
     </>
   );
 }
@@ -27,7 +28,6 @@ export const Measurement = memo(function Measurement({ c }: { c: Comparison }) {
         <div className="evid">
           {b ? <Line label="Before" m={b} /> : <><b>Before</b><span className="dim">no reading</span></>}
           {a ? <Line label="After" m={a} /> : <><b>After</b><span className="dim">no reading{p.status === 'failed' ? ': the build did not get that far' : ''}</span></>}
-          <b>Standard</b><span><code>{p.standard}</code></span>
         </div>
       </div>
     </section>

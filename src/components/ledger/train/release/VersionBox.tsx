@@ -1,21 +1,13 @@
 // The Release tab's version box: with no open release, the suggested next version (GET releases/suggest, asked when
 // the tab opens and whenever the accepted set changes, never polled) with what it came from and why, editable and
 // checked as semver, and Create draft (POST releases), whose answer lists what release-add left out; with a release,
-// its version, id and branch. Also the tab's one button form and the suggestion hook the header strip shares.
+// its version, id and branch. Also the suggestion hook the header strip shares.
 import { useEffect, useRef, useState } from 'react';
 import type { ReleaseCreated, VersionSuggestion } from '@/lib/scan/types';
 import { createRelease, refusalText, suggestRelease, type ScanCtx } from '@/lib/scan/actions';
 import { isVersion } from '@/lib/scan/release';
+import { Btn } from '../ui/Controls';
 import type { ReleaseModel } from './releaseState';
-
-/** The tab's one button form (the contest winner's `.bt` and its filled `.go`), with the key it answers to. */
-export function Btn({ label, onClick, go = false, kbd, disabled = false, title }: { label: string; onClick(): void; go?: boolean; kbd?: string; disabled?: boolean; title?: string }) {
-  return (
-    <button type="button" className={'tr-rbtn' + (go ? ' go' : '')} onClick={onClick} disabled={disabled} title={title}>
-      {label}{kbd ? <kbd>{kbd}</kbd> : null}
-    </button>
-  );
-}
 
 // ------------------------------------------------------------------------------------------- the suggestion
 // One request per (product, accepted set, releases): the strip and the version box share it rather than each asking.
@@ -73,8 +65,8 @@ export function VersionBox({ m, phone }: { m: ReleaseModel; phone: boolean }) {
         <input id="tr-rel-v" value={text} disabled={!!rel || phone} spellCheck={false} aria-invalid={!rel && !!text && !valid} aria-describedby="tr-rel-why"
           className={!rel && text && !valid ? 'bad' : undefined} onChange={(e) => setEdited(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && canCreate) { e.preventDefault(); void create(); } }} />
-        {!rel && !phone ? <Btn go label={creating ? 'Creating…' : 'Create draft'} onClick={() => void create()} disabled={!canCreate}
-          title={!m.items.length ? 'Accept items in triage first' : !valid ? 'A version is semver: 1.4.0' : 'A draft release of the accepted items'} /> : null}
+        {!rel && !phone ? <Btn tone="go" onClick={() => void create()} disabled={!canCreate}
+          title={!m.items.length ? 'Accept items in triage first' : !valid ? 'A version is semver: 1.4.0' : 'A draft release of the accepted items'}>{creating ? 'Creating…' : 'Create draft'}</Btn> : null}
       </span>
       <span className="why" id="tr-rel-why">
         {rel ? <>Release <code>{rel.id}</code> on <code>{rel.branch}</code> · {rel.status}{rel.created_by ? ' · by ' + rel.created_by : ''}.</>

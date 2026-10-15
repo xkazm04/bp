@@ -20,6 +20,7 @@ import { useEngine } from '../../hooks';
 import { setLedgerUi, useLedgerUi, type NoteAsk } from '../useLedger';
 import { useTrain, type TrainData } from './data';
 import { NoteEditor } from './NoteEditor';
+import { Btn, type BtnTone } from './ui/Controls';
 import './DecisionBar.css';
 
 export interface DecideProps {
@@ -116,8 +117,8 @@ function whyNot(T: TrainData, ps: readonly Proposal[], d: TriageDecision): strin
 }
 
 /** The decision buttons: the bar's full set (Undo, Accept n, Rework, Descope, each with its key), or the compare
- *  footer's one-line strip (the same four, compact; the footer shows the state). The note editor replaces them while
- *  asked. */
+ *  footer's one-line strip (compact: the footer shows the state, and Undo only while there is a decision to undo, as
+ *  A/1). The note editor replaces them while asked. */
 export function Decide({ ids, compact = false }: DecideProps) {
   const T = useTrain(), ui = useLedgerUi(T.slug ?? 'kettle'), { decide, pending } = useDecide();
   const ps = useMemo(() => ids.map((id) => T.byId.get(id)).filter((p): p is Proposal => !!p), [ids, T]);
@@ -126,20 +127,19 @@ export function Decide({ ids, compact = false }: DecideProps) {
     const flagged = ask.ids.map((id) => T.byId.get(id)).filter((p): p is Proposal => !!p && isFlagged(p, verdictIn(T, p))).length;
     return <NoteEditor ask={ask} flagged={flagged} compact={compact} onSend={(note) => void decide(ask.ids, ask.decision, note, ask.at)} />;
   }
-  const btn = (d: TriageDecision, cls: string, label: string, key: string, role?: string) => {
+  const btn = (d: TriageDecision, tone: BtnTone | undefined, label: string, key: string, role?: string) => {
     const why = whyNot(T, ps, d);
     return (
-      <button type="button" className={'tr-btn ' + cls} disabled={!!why} title={why ?? label + ' (' + key + ')'} data-role={role}
-        onClick={() => void decide(ps.map((p) => p.id), d, undefined, at)}>
-        {label}<kbd>{key}</kbd>
-      </button>
+      <Btn tone={tone} kbd={key} disabled={!!why} title={why ?? label + ' (' + key + ')'} role={role} onClick={() => void decide(ps.map((p) => p.id), d, undefined, at)}>
+        {label}
+      </Btn>
     );
   };
   // the compare footer shows the item's state itself; the strip marks only a decision on its way
   const busy = compact && ps.some((p) => pending.has(p.id));
   return (
     <span className={'tr-decide' + (compact ? ' compact' : '')} role="group" aria-label="Decide" aria-busy={busy || undefined}>
-      {btn('reopen', '', 'Undo', 'U')}
+      {compact && whyNot(T, ps, 'reopen') ? null : btn('reopen', undefined, 'Undo', 'U')}
       {btn('accept', 'acc', '✓ Accept' + (!compact && ps.length ? ' ' + ps.length : ''), 'A', compact ? undefined : 'tr-btn-accept')}
       {btn('rework', 'rw', '↺ Rework', 'R')}
       {btn('descope', 'ds', '⊘ Descope', 'S')}

@@ -1,0 +1,16 @@
+{
+  "about": "The fidelity contract's performance scene (scripts/fidelity/contract.py, scene perf): a performance item open in the wide compare panel (both tables at the panel's full width), the winner A/1's sample-perf-1 against the first item of Kettle's sample pack k-perf-1 (Athena has no performance pack). Only the performance table's roles: the rest of the page is held by roles.json on Athena.",
+  "roles": {
+    "perf-section":  { "winner": ".cm-b .sec:has(.pt)",                     "port": "[data-role=tr-cmp-perf]" },
+    "perf-label":    { "winner": ".cm-b .sec:has(.pt) > h4",                "port": "[data-role=tr-cmp-perf] > h4" },
+    "perf-table":    { "winner": ".pt",                                     "port": "[data-role=tr-cmp-perf] .tr-perf" },
+    "perf-head":     { "winner": ".pt thead th",                            "port": "[data-role=tr-cmp-perf] .tr-perf thead th", "accept": ["width"], "why": "column widths: the port moves the range strip under its row (a 7-column table that fits the docked panel; the winner's 9 columns overflowed it by 325 px and clipped Spread and the range) and the scene compares Kettle's sample numbers with the winner's; type, padding and borders hold. Structural, not owner-accepted: the Director confirms" },
+    "perf-head-num": { "winner": ".pt thead th:nth-child(3)",               "port": "[data-role=tr-cmp-perf] .tr-perf thead th:nth-child(3)", "accept": ["width"], "why": "column widths: the port moves the range strip under its row (a 7-column table that fits the docked panel; the winner's 9 columns overflowed it by 325 px and clipped Spread and the range) and the scene compares Kettle's sample numbers with the winner's; type, padding and borders hold. Structural, not owner-accepted: the Director confirms" },
+    "perf-feature":  { "winner": ".pt tbody th b",                          "port": "[data-role=tr-cmp-perf] .tr-perf tbody th b", "accept": ["width"], "why": "column widths: the port moves the range strip under its row (a 7-column table that fits the docked panel; the winner's 9 columns overflowed it by 325 px and clipped Spread and the range) and the scene compares Kettle's sample numbers with the winner's; type, padding and borders hold. Structural, not owner-accepted: the Director confirms" },
+    "perf-after":    { "winner": ".pt td.aft",                              "port": "[data-role=tr-cmp-perf] .tr-perf td.aft", "accept": ["width"], "why": "column widths: the port moves the range strip under its row (a 7-column table that fits the docked panel; the winner's 9 columns overflowed it by 325 px and clipped Spread and the range) and the scene compares Kettle's sample numbers with the winner's; type, padding and borders hold. Structural, not owner-accepted: the Director confirms" },
+    "perf-unit":     { "winner": ".pt td.aft u",                            "port": "[data-role=tr-cmp-perf] .tr-perf td.aft u" },
+    "perf-run":      { "winner": ".pt .runs span",                          "port": "[data-role=tr-cmp-perf] .tr-perf .runs span" },
+    "perf-key":      { "winner": ".pt-key",                                 "port": "[data-role=tr-cmp-perf] .tr-pt-key" },
+    "perf-why":      { "winner": ".cm-b .sec:has(.pt) > p",                 "port": "[data-role=tr-cmp-perf] .tr-pt-why" }
+  }
+}

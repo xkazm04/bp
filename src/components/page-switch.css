@@ -1,0 +1,12 @@
+/* The header's page switch ("drawing set | findings ledger", Header.tsx PageSwitch, and the phone's title line): in
+   the first-load stylesheet, so the ledger's own CSS can load with its chunk. */
+.pgsw { display: inline-flex; vertical-align: middle; border: 1px solid var(--ink-3); margin: -3px 0 -2px; }
+.pgsw button { display: inline-flex; align-items: center; gap: 5px; height: 18px; padding: 0 6px; background: none; border: 0; font: inherit; letter-spacing: inherit; text-transform: inherit; color: var(--ink-2); }
+.pgsw button + button { border-left: 1px solid var(--ink-3); }
+.pgsw button:hover { color: var(--ink-hi); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.pgsw button[aria-pressed='true'] { background: var(--ink); color: var(--on-ink); }
+#brand .proj .pgsw b, .pgsw b { font: 600 12px/1 var(--mono); letter-spacing: 0; color: var(--amber-2); }
+.pgsw button[aria-pressed='true'] b { color: var(--on-ink); }
+.ph .pgsw { margin: 4px 0; }
+.ph .pgsw button { height: 32px; padding: 0 10px; }
+.pgsw button:focus-visible { outline-offset: -2px; }

@@ -38,11 +38,12 @@ export const VerdictChip = memo(function VerdictChip({ verdict, label, failed = 
   return <span className={'tr-vd v-' + (failed ? 'failed' : verdict)} title={failed ? 'did not build or broke a gate; ' + m.word : m.hint}><b aria-hidden="true">{failed ? '✕' : m.mark}</b>{failed ? 'build failed' : label ?? m.word}</span>;
 });
 
-/** `before → after unit`, with the metric key under it when given. A missing side reads "–". */
-export const MetricMove = memo(function MetricMove({ before, after, unit, metric }: { before?: number; after?: number; unit?: string; metric?: string }) {
+/** `before → after unit`, with the metric key under it when given. A missing side reads "–". `cell`: it is the
+ *  table row's own cell (A/1's `.c-mv.mv`: the cell carries the type, so its padding and width are the type's box). */
+export const MetricMove = memo(function MetricMove({ before, after, unit, metric, cell = false }: { before?: number; after?: number; unit?: string; metric?: string; cell?: boolean }) {
   const side = (n: number | undefined) => (n === undefined ? '–' : num(n));
   return (
-    <span className="tr-mv" data-role="tr-row-metric">
+    <span className={cell ? 'c-mv tr-mv' : 'tr-mv'} role={cell ? 'cell' : undefined} data-role="tr-row-metric">
       {side(before)} → {side(after)}{unit ? ' ' + unit : ''}
       {metric ? <small>{metric}</small> : null}
     </span>

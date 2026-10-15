@@ -1,17 +1,7 @@
 /* The decision controls (Decide, DecisionBar, NoteEditor) and the keys (KeysSheet: the `?` sheet and the footer's key
-   line), ported from the contest winner A/1 (index.html .bt .acc .rw .ds, .lg-bar, .pkgb, .note-ed, .keys) with
+   line), ported from the contest winner A/1 (index.html .lg-bar, .pkgb, .note-ed, .keys; its .bt is ui.css's Btn) with
    byte-equal values through the globals.css tokens. The bar itself keeps the ledger's `.lg-bar` (ledger.css), which
    carries A/1's values; `.tr-bar` adds what the decision bar needs on top. */
-
-/* A/1's .bt: the ledger's buttons, with the decision tones. Under `.lg-page` because blueprint.css's `.bp button`
-   (one class and a type) would otherwise hand them the page's family and size. */
-.lg-page .tr-btn { display: inline-flex; align-items: center; gap: var(--sp-4); height: var(--h-ctl); padding: 0 var(--sp-12); background: var(--panel); border: 1px solid var(--ink-3); font: 500 var(--fs-13) var(--mono); letter-spacing: var(--ls-2); text-transform: uppercase; color: var(--ink-hi); white-space: nowrap; cursor: pointer; }
-.tr-btn:hover:not(:disabled) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); }
-.tr-btn:disabled { opacity: 0.45; cursor: default; }
-.tr-btn.acc { border-color: var(--mint); color: var(--mint); }
-.tr-btn.rw { border-color: var(--amber); color: var(--amber); }
-.tr-btn.ds { border-color: var(--ink-2); }
-.tr-btn kbd { font: 500 var(--fs-12)/1 var(--mono); padding: 1px var(--sp-4); border: 1px solid var(--ink-3); color: inherit; opacity: 0.85; margin-left: var(--sp-6); border-radius: var(--r-sm); }
 
 .tr-decide { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-8); }
 .tr-decide.compact { flex-wrap: nowrap; }
@@ -26,7 +16,7 @@
 /* the release package pill */
 .tr-pkg { display: inline-flex; align-items: center; gap: var(--sp-8); padding: 0 var(--sp-4) 0 var(--sp-12); height: var(--h-field); border: 1px solid var(--mint); color: var(--ink-hi); }
 .tr-pkg b { font: 600 var(--fs-14) var(--mono); color: var(--mint); }
-.tr-pkg .tr-btn { height: var(--h-ctl-xs); border: 0; background: var(--mint); color: var(--on-mint); }
+.lg-page .tr-pkg .tr-btn { height: var(--h-ctl-xs); border: 0; background: var(--mint); color: var(--on-mint); }
 
 /* the note editor: the bar's line while a decision asks for a note */
 .tr-note { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-8); flex: 1 1 100%; }
@@ -40,11 +30,10 @@
 
 /* the phone: 44 px targets, the key reminders and Clear stay off */
 .lg-page.phone .tr-btn { height: calc(var(--h-touch) + var(--sp-4)); }
-.lg-page.phone .tr-btn kbd { display: none; }
 .lg-page.phone .tr-pkg { height: auto; }
 .lg-page.phone .tr-pkg .tr-btn { height: calc(var(--h-touch) + var(--sp-4)); }
 .lg-page.phone .tr-note input { height: calc(var(--h-touch) + var(--sp-4)); }
-.lg-page.phone .lg-page .tr-note .qk button { height: calc(var(--h-touch) + var(--sp-4)); }
+.lg-page.phone .tr-note .qk button { height: calc(var(--h-touch) + var(--sp-4)); }
 
 /* the `?` sheet */
 .tr-keys { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: var(--veil); }
@@ -57,8 +46,8 @@
 .tr-keys dd { margin: 0; color: var(--ink); }
 .tr-keys p { margin: var(--sp-12) 0 0; font-size: var(--fs-13); color: var(--ink-2); }
 
-/* the phone: the four decisions as one row of equal 44 px targets (the bar and the compare sheet), the package on its
-   own row */
-.lg-page.phone .tr-decide { display: grid; width: 100%; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-4); flex: 1 1 100%; }
+/* the phone: the decisions (four, or three while there is nothing to undo) as one row of equal 44 px targets (the bar
+   and the compare sheet), the package on its own row */
+.lg-page.phone .tr-decide { display: grid; width: 100%; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--sp-4); flex: 1 1 100%; }
 .lg-page.phone .tr-decide .tr-btn { justify-content: center; padding: 0 var(--sp-4); min-width: 0; overflow: hidden; }
 .lg-page.phone .tr-bar > .tr-pkg { flex: 1 1 100%; justify-content: space-between; }

@@ -12,7 +12,7 @@ import { Mark } from './Symbols';
 import { useOpenCount } from './ledger/useLedger';
 import type { Engine } from '@/engine/Engine';
 import type { AppPage } from '@/engine/state';
-import './ledger/ledger.css';
+import './page-switch.css';
 
 function crumbLabel(E: ReturnType<typeof useEngine>, c: Crumb, short: boolean): string {
   const o = E.placeById(c.t, c.id);
@@ -250,7 +250,8 @@ export const PageSwitch = memo(function PageSwitch() {
   const n = useOpenCount();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.key !== 'l' && e.key !== 'L') || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+      // a key the ledger (or any own-key surface) already handled is not the page switch's (L cycles the compare theme there)
+      if (e.defaultPrevented || (e.key !== 'l' && e.key !== 'L') || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
       const own = t?.closest?.('[data-keys="own"]');

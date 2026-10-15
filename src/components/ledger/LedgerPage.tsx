@@ -30,7 +30,7 @@
 // Lenses panel; with a selection the top bar offers "Scan selected features" (a picker of scannable lenses, one
 // selection scan each). Both go through lens/lens-ops.ts, as the Lenses panel does.
 //
-// Mount: `<LedgerPage lensButton={<LensesButton />} lensPanel={<LensesPanel />} />` in BlueprintApp's Chrome
+// Mount: through `LedgerPageLazy` (Phone.tsx: React.lazy, its own chunk), `<LedgerPageLazy lensButton={<LensesButton />} lensPanel={<LensesPanel />} />` in BlueprintApp's Chrome
 // (it renders nothing unless the store's `page` is 'ledger'); the slots take the Lenses button and panel.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { motion } from 'motion/react';
@@ -242,7 +242,7 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
       <header className="lg-top">
         <div className="lg-h">
           <h2>Findings ledger</h2>
-          <span className="lg-prod">{name} · {live ? 'live lens scan' : 'sample findings, simulated execution'} · {L.all.length} findings · {L.items.length} items in {L.packs.length} packs</span>
+          <span className="lg-prod">{name} · {live ? 'lens release train' : 'sample findings, simulated execution'} · {L.all.length} findings · {L.items.length} items in {L.packs.length} packs</span>
           {phone ? <ReleaseStatusLine /> : null}
         </div>
         {!phone ? <SummaryStrip /> : null}

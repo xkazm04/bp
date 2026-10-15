@@ -45,7 +45,7 @@ const cmpWord = (better: 'up' | 'down') => (better === 'up' ? '≥ ' : '≤ ');
 export const PerfTable = memo(function PerfTable({ items }: { items: readonly PerfItem[] }) {
   return (
     <div className="tr-pt-wrap">
-      <table className="tr-pt">
+      <table className="tr-perf">
         <thead>
           <tr>
             <th className="l">Scene · metric · verdict</th><th>Baseline runs</th><th>Median</th><th>After</th><th>Change</th><th>Noise ±</th><th>Target</th>

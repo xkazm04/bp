@@ -1,0 +1,20 @@
+{
+  "about": "The fidelity contract's table scene (scripts/fidelity/contract.py, scene table): the In packs table at the page's full width, compare closed (Esc), on Athena. Every column shows here (the docked compare folds the rows into their narrow two-line form, which roles.json holds).",
+  "roles": {
+    "table-head":      { "winner": ".lg-tr.hd",                                 "port": "[data-role=tr-thead]", "accept": ["height"], "why": "owner-accepted: A/1's head row also matched its page header's .hd rule (66 px tall, a bug); the port's is the 34 px row it meant (--row-hd). The instrument does not measure height; drive.py asserts the 34 px." },
+    "table-head-cell": { "winner": ".lg-tr.hd > span:nth-child(4)",             "port": "[data-role=tr-thead] > span:nth-child(4)" },
+    "pack-row":        { "winner": ".pk[data-pack=k-des-1]",                    "port": "[data-role=tr-pack][data-pack=k-des-1]" },
+    "pack-title":      { "winner": ".pk[data-pack=k-des-1] h3",                 "port": "[data-pack=k-des-1] [data-role=tr-pack-title]" },
+    "pack-meta":       { "winner": ".pk[data-pack=k-des-1] .meta",              "port": "[data-pack=k-des-1] .meta" },
+    "item-row":        { "winner": ".lg-tr[data-id=p-271316]",                  "port": "[data-role=tr-row][data-fid=p-271316]" },
+    "item-feature":    { "winner": ".lg-tr[data-id=p-271316] .c-feat",          "port": "[data-fid=p-271316] .c-feat" },
+    "item-feature-id": { "winner": ".lg-tr[data-id=p-271316] .c-feat small",    "port": "[data-fid=p-271316] .c-feat small" },
+    "item-title":      { "winner": ".lg-tr[data-id=p-271316] .c-title",         "port": "[data-fid=p-271316] [data-role=tr-row-title]" },
+    "item-metric":     { "winner": ".lg-tr[data-id=p-271316] .mv",              "port": "[data-fid=p-271316] [data-role=tr-row-metric]" },
+    "item-metric-key": { "winner": ".lg-tr[data-id=p-271316] .mv small",        "port": "[data-fid=p-271316] [data-role=tr-row-metric] small" },
+    "verdict-cell":    { "winner": ".lg-tr[data-id=p-271316] .c-vd",           "port": "[data-fid=p-271316] .c-vd" },
+    "evidence":        { "winner": ".lg-tr[data-id=p-271316] .ev",              "port": "[data-fid=p-271316] .tr-ev" },
+    "state-cell":      { "winner": ".lg-tr[data-id=p-271316] .c-st",            "port": "[data-fid=p-271316] .c-st" },
+    "state-mark":      { "winner": ".lg-tr[data-id=p-271316] .lg-st",           "port": "[data-fid=p-271316] .tr-st" }
+  }
+}

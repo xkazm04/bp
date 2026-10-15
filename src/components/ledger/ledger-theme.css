@@ -12,6 +12,10 @@
   --panel: #0a2142; --panel-solid: #0a2142; --card: #0c2850; --card-hi: #10305c; --shadow: rgba(0, 8, 20, .55); --code-bg: #08203f;
   /* the compare slider's knob: ink on the accent and its ring, the same in both themes as in A/1 */
   --knob-ink: #003322; --knob-ring: rgba(0, 0, 0, .4);
+  /* ink on the filled mint button (Btn go, the package pill's Release): A/1's #04261a, the same in both themes */
+  --on-mint: #04261a;
+  /* A/1 sets no color-scheme, so its checkboxes and native controls are the light ones in both themes */
+  color-scheme: light;
   font-family: var(--sans);
 }
 :root[data-theme='light'] .lg-page {

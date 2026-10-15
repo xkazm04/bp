@@ -2,16 +2,18 @@
 // decision bar, the phone cards). store.mjs owns the transitions and enforces its own subset (a failed item needs a
 // note to be accepted; nothing leaves a release that is no longer a draft); these tables only decide what the UI
 // offers and asks for, so a refused move is rare and always explained. Pure, type-only imports: Node checks import it.
-import type { Proposal, ProposalStatus, Release, TriageDecision } from '../scan/types.ts';
+import type { Pack, Proposal, ProposalStatus, Release, TriageDecision } from '../scan/types.ts';
 import type { Verdict } from '../scan/compare.ts';
 
 /** Built and measured, waiting for a person: what the triage scope lists first and what "waiting for you" counts. */
 export const WAITING: ReadonlySet<ProposalStatus> = new Set<ProposalStatus>(['done', 'failed']);
-/** A person's triage outcome: what `reopen` takes back. */
-export const TRIAGED: ReadonlySet<ProposalStatus> = new Set<ProposalStatus>(['accepted', 'rework', 'descoped']);
 
 export const isWaiting = (p: Pick<Proposal, 'status'>): boolean => WAITING.has(p.status);
-export const isTriaged = (p: Pick<Proposal, 'status'>): boolean => TRIAGED.has(p.status);
+
+/** The packs' order everywhere (the table, the compare panel's prev/next): oldest first, left to right in time as the
+ *  owner reads every chronology (the contest winner's order too). */
+export const byPackAge = (a: Pick<Pack, 'created_at' | 'id'>, b: Pick<Pack, 'created_at' | 'id'>): number =>
+  a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 
 /** The statuses each decision may start from (store.mjs TRIAGE, plus v3 reopen). */
 export const TRIAGE_FROM: Readonly<Record<TriageDecision, readonly ProposalStatus[]>> = {

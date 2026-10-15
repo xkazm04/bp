@@ -118,7 +118,7 @@ export const ItemRow = memo(function ItemRow({ p, fname, facts: x, sel, focus, o
         {note ? <small className={p.status === 'accepted' && !x?.flagged ? 'dn' : undefined}>“{note}”</small>
           : x?.prevNote ? <small>↺ from attempt {x.attempt - 1}: “{x.prevNote}”</small> : null}
       </span>
-      <span role="cell" className="c-mv"><MetricMove before={x?.before} after={x?.after} unit={x?.unit} metric={p.metric} /></span>
+      <MetricMove cell before={x?.before} after={x?.after} unit={x?.unit} metric={p.metric} />
       <span role="cell" className="c-vd">{x ? <VerdictChip verdict={x.verdict} failed={x.failed} /> : null}</span>
       <span role="cell" className="c-ev"><Evidence p={p} x={x} /></span>
       <span role="cell" className="c-st"><StateMark status={p.status} flagged={!!x?.flagged} pending={pending} /></span>

@@ -12,6 +12,7 @@ import type { Ledger } from '../useLedger';
 import { useTrain } from './data';
 import { Decide, releaseIn, verdictIn } from './Decide';
 import { LensTag } from './ui/Marks.tsx';
+import { Btn } from './ui/Controls';
 import './DecisionBar.css';
 
 export interface DecisionBarProps {
@@ -47,7 +48,8 @@ export function DecisionBar({ L, targets, onRelease, hint, phone = false }: Deci
   }, [T.ctx, rel, pkg]);
   const ver = rel?.version ?? suggested;
 
-  const label = n ? n + ' selected' : targets.length ? '1 ' + (L.ui.open === targets[0] ? 'open' : 'focused') + ' · ' + targets[0] : 'Nothing selected';
+  // A/1's words: the focused item reads "focused" (open in compare or not); only an open item the focus left reads "open"
+  const label = n ? n + ' selected' : targets.length ? '1 ' + (L.ui.focus === targets[0] || L.ui.open !== targets[0] ? 'focused' : 'open') + ' · ' + targets[0] : 'Nothing selected';
   return (
     <div className="lg-bar tr-bar" role="region" aria-label="Decide" data-role="tr-bar">
       {L.ui.note?.at === 'bar' ? <Decide ids={L.ui.note.ids} /> : (
@@ -61,11 +63,11 @@ export function DecisionBar({ L, targets, onRelease, hint, phone = false }: Deci
             </span>
           ) : hint ? <span className="lg-bar-l">{hint}</span> : null}
           <span className="lg-sp" />
-          {!phone ? <button type="button" className="tr-btn" disabled={!n} onClick={L.clear} title="Clear the selection (Esc)">Clear<kbd>Esc</kbd></button> : null}
+          {!phone ? <Btn kbd="Esc" disabled={!n} onClick={L.clear} title="Clear the selection (Esc)">Clear</Btn> : null}
           <Decide ids={targets} />
           <span className="tr-pkg" title="The release package: accepted items waiting for a release">
             <span>Package</span><b>{ver ? 'v' + ver + ' · ' : ''}{pkg}</b>
-            <button type="button" className="tr-btn" onClick={onRelease} title="Open the release (3)">{rel && rel.status !== 'draft' ? rel.status : 'Release'} →</button>
+            <Btn onClick={onRelease} title="Open the release (3)">{rel && rel.status !== 'draft' ? rel.status : 'Release'} →</Btn>
           </span>
         </>
       )}

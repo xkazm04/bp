@@ -1,5 +1,5 @@
 /* The Release tab and the header's summary strip, ported from the contest winner A/1 (index.html .rv, .ver, .pl,
-   .stepper, .sim, .acts, .pr-link, .term, .notes, .hist, .sum, .bt) with byte-equal values through the tokens in
+   .stepper, .sim, .acts, .pr-link, .term, .notes, .hist, .sum; its .bt is ui.css's Btn) with byte-equal values through the tokens in
    globals.css. Token-only: scripts/check-train-quality.mjs holds this file to it. */
 
 /* ---------------------------------------------------------------- the summary strip (header band) */
@@ -37,7 +37,7 @@
 .tr-rel-ver input { width: calc(var(--sp-10) * 15); height: var(--h-touch); padding: 0 var(--sp-10); background: var(--card); border: 1px solid var(--ink-3); color: var(--ink-hi); font: 600 var(--fs-24) var(--mono); }
 .tr-rel-ver input:disabled { opacity: 1; }
 .tr-rel-ver input.bad { border-color: var(--red); }
-.tr-rel-ver .vin .tr-rbtn { margin-left: var(--sp-6); }
+.tr-rel-ver .vin .tr-btn { margin-left: var(--sp-6); }
 .tr-rel-ver .why { grid-column: 2; font-size: var(--fs-13); color: var(--ink-2); }
 .tr-rel-ver .why b { color: var(--ink-hi); }
 .tr-rel-ver .bad { color: var(--red); }
@@ -50,9 +50,6 @@
 .tr-pl li .t small { display: block; font-size: var(--fs-13); color: var(--ink-2); }
 .tr-pl li .t small.fl { color: var(--red); }
 .tr-pl li .t small.warn { color: var(--amber); }
-.tr-pl li .x { height: var(--h-ctl-sm); padding: 0 var(--sp-8); background: none; border: 1px solid var(--ink-4); color: var(--ink-2); font: 500 var(--fs-12) var(--mono); cursor: pointer; }
-.tr-pl li .x:hover:not(:disabled) { color: var(--ink-hi); border-color: var(--ink-2); }
-.tr-pl li .x:disabled { opacity: .45; cursor: default; }
 .tr-pl .lgrp { display: block; padding: var(--sp-8) var(--sp-4) var(--sp-4); border-bottom: 0; font: 600 var(--fs-12) var(--mono); letter-spacing: var(--ls-4); text-transform: uppercase; color: var(--ink-2); }
 .tr-pl .lgrp .tr-lens { color: var(--ink-2); letter-spacing: var(--ls-4); }
 
@@ -80,14 +77,6 @@
 .tr-rel-pr { display: inline-flex; gap: var(--sp-8); align-items: center; padding: var(--sp-6) var(--sp-10); border: 1px solid var(--accent); color: var(--accent); font: 500 var(--fs-13) var(--mono); text-decoration: none; }
 .tr-rel-pr:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 
-.tr-rel .tr-rbtn { display: inline-flex; align-items: center; gap: var(--sp-4); height: var(--h-ctl); padding: 0 var(--sp-12); background: var(--panel); border: 1px solid var(--ink-3); font: 500 var(--fs-13) var(--mono); letter-spacing: var(--ls-2); text-transform: uppercase; color: var(--ink-hi); white-space: nowrap; cursor: pointer; }
-.tr-rel .tr-rbtn:hover:not(:disabled) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); }
-.tr-rel .tr-rbtn:disabled { opacity: .45; cursor: default; }
-.tr-rel .tr-rbtn.go { background: var(--mint); color: var(--on-mint); border-color: var(--mint); }
-.tr-rel .tr-rbtn.go:hover:not(:disabled) { background: color-mix(in srgb, var(--mint) 85%, var(--lift)); }
-.tr-rel .tr-rbtn kbd { font: 500 var(--fs-12)/1 var(--mono); padding: 1px var(--sp-4); border: 1px solid var(--ink-3); color: inherit; opacity: .85; margin-left: var(--sp-6); border-radius: var(--r-sm); }
-
-/* (.tr-rbtn is scoped under .tr-rel: the app's `.bp button` outranks a lone class) */
 /* ---------------------------------------------------------------- the job log, the notes, the history */
 .tr-rel-log { height: var(--log-h); overflow: auto; padding: var(--sp-10) var(--sp-12); background: var(--term-bg); border: 1px solid var(--ink-3); font: var(--fs-13)/1.6 var(--mono); color: var(--term-ink); }
 .tr-rel-log div { white-space: pre-wrap; }

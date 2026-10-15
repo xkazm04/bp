@@ -10,7 +10,7 @@ import { useEngine } from '../../../hooks';
 import { setLedgerUi } from '../../useLedger';
 import { useDecide } from '../Decide';
 import { LensTag } from '../ui/Marks.tsx';
-import { Callout } from '../ui/Controls';
+import { Btn, Callout } from '../ui/Controls';
 import { byLens, isConflict, moveText, type PkgItem, type ReleaseModel } from './releaseState';
 
 interface RowCtl {
@@ -26,7 +26,7 @@ const short = (sha: string | undefined) => (sha ? sha.slice(0, 7) : 'no sha');
 const UndoBtn = ({ p, c, why }: { p: Proposal; c: RowCtl; why?: string }) => {
   const off = c.phone || c.pending.has(p.id) || !canDecide('reopen', p, c.rel) || !!why;
   const title = why ?? (c.pending.has(p.id) ? 'Undoing…' : !canDecide('reopen', p, c.rel) ? 'Locked: the release left draft' : 'Undo the decision (back to waiting)');
-  return <button type="button" className="x" disabled={off} title={title} onClick={() => c.undo(p.id)}>{c.pending.has(p.id) ? 'Undoing' : 'Undo'}</button>;
+  return <Btn size="row" disabled={off} title={title} onClick={() => c.undo(p.id)}>{c.pending.has(p.id) ? 'Undoing' : 'Undo'}</Btn>;
 };
 
 const PkgRow = memo(function PkgRow({ x, c }: { x: PkgItem; c: RowCtl }) {
@@ -37,7 +37,7 @@ const PkgRow = memo(function PkgRow({ x, c }: { x: PkgItem; c: RowCtl }) {
       <span className="t">{p.title}
         <small className={x.flagged ? 'fl' : undefined}>{p.feature} · {p.metric ? p.metric + ' ' : ''}{moveText(x)}{x.flagged ? ` · ⚑ accepted ${why}${p.triage_note ? ': “' + p.triage_note + '”' : ''}` : ''}</small>
       </span>
-      <button type="button" className="x" title="Compare its before and after" onClick={() => c.compare(p.id)}>Compare</button>
+      <Btn size="row" title="Compare its before and after" onClick={() => c.compare(p.id)}>Compare</Btn>
       <UndoBtn p={p} c={c} />
     </li>
   );

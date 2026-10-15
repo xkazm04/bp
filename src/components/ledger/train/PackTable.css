@@ -48,7 +48,7 @@
   .tr-thead .c-feat, .tr-thead .c-ev, .tr-thead .c-vd, .tr-row .c-feat, .tr-row .c-ev, .tr-row .c-vd { display: none; }
 }
 @container (max-width: 760px) {
-  .tr-thead { display: none; }
+  .tr-thead { display: none; padding-left: var(--sp-14); padding-right: var(--sp-14); }
   .tr-row { grid-template-columns: var(--col-check) 1fr auto; grid-template-areas: 'sel title st' 'sel meta vd'; gap: var(--sp-3) var(--sp-10); padding: var(--sp-8) var(--sp-14); align-items: start; }
   .tr-row .c-sel { grid-area: sel; padding-top: 2px; }
   .tr-row .c-title { grid-area: title; }

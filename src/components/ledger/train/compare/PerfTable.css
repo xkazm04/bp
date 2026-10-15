@@ -3,33 +3,33 @@
    the numbers of a column align. The change's colour follows the metric's direction (good / bad), not "down". */
 
 .tr-pt-wrap { overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--ink-3) transparent; }
-.tr-pt { width: 100%; border-collapse: collapse; font-size: var(--fs-14); font-variant-numeric: tabular-nums; }
-.tr-pt th, .tr-pt td { padding: var(--sp-7) var(--sp-10); text-align: right; border-bottom: 1px solid var(--ink-4); vertical-align: middle; white-space: nowrap; }
-.tr-pt thead th { font: 500 var(--fs-12) var(--mono); letter-spacing: var(--ls-3); text-transform: uppercase; color: var(--ink-2); border-bottom-color: var(--ink-3); position: sticky; top: 0; background: var(--card-hi); z-index: 1; }
-.tr-pt .l { text-align: left; }
-.tr-pt tbody th { font-weight: 400; }
-.tr-pt tbody th b { display: block; font-weight: 600; color: var(--ink-hi); }
-.tr-pt tbody th span { font-size: var(--fs-13); color: var(--ink-2); }
-.tr-pt tbody th em { display: block; margin-top: var(--sp-6); font-style: normal; }
-.tr-pt tbody tr.main th { white-space: normal; min-width: calc(var(--sp-20) * 8); }
+.tr-perf { width: 100%; border-collapse: collapse; font-size: var(--fs-14); font-variant-numeric: tabular-nums; }
+.tr-perf th, .tr-perf td { padding: var(--sp-7) var(--sp-10); text-align: right; border-bottom: 1px solid var(--ink-4); vertical-align: middle; white-space: nowrap; }
+.tr-perf thead th { font: 500 var(--fs-12) var(--mono); letter-spacing: var(--ls-3); text-transform: uppercase; color: var(--ink-2); border-bottom-color: var(--ink-3); position: sticky; top: 0; background: var(--card-hi); z-index: 1; }
+.tr-perf .l { text-align: left; }
+.tr-perf tbody th { font-weight: 400; }
+.tr-perf tbody th b { display: block; font-weight: 600; color: var(--ink-hi); }
+.tr-perf tbody th span { font-size: var(--fs-13); color: var(--ink-2); }
+.tr-perf tbody th em { display: block; margin-top: var(--sp-6); font-style: normal; }
+.tr-perf tbody tr.main th { white-space: normal; min-width: calc(var(--sp-20) * 8); }
 .tr-tg { margin-right: var(--sp-6); font: 600 var(--fs-12) var(--mono); }
 .tr-tg.ok { color: var(--mint); }
 .tr-tg.over { color: var(--red); }
-.tr-pt td u { text-decoration: none; display: inline-block; min-width: 2.2em; text-align: left; margin-left: var(--sp-3); font-size: var(--fs-12); color: var(--ink-2); }
-.tr-pt td small { display: block; font-size: var(--fs-12); color: var(--ink-2); }
-.tr-pt td.aft { font-weight: 700; color: var(--ink-hi); }
-.tr-pt td.chg.good { color: var(--mint); }
-.tr-pt td.chg.bad { color: var(--red); }
-.tr-pt .runs span { display: inline-block; min-width: 2.4em; margin-left: var(--sp-4); padding: 1px var(--sp-4); border: 1px solid var(--ink-4); text-align: right; }
-.tr-pt .runs span.out { border-color: var(--amber); color: var(--amber); }
-.tr-pt .dim { color: var(--ink-2); font-size: var(--fs-13); }
-.tr-pt tr.main > * { border-top: 1px solid var(--ink-3); }
-.tr-pt tr.main > td { border-bottom: 0; padding-bottom: var(--sp-3); }
-.tr-pt tr.ctx > * { padding-top: var(--sp-4); padding-bottom: var(--sp-4); }
-.tr-pt tr.ctx th span { padding-left: var(--sp-14); }
-.tr-pt tr.strip > td { padding-top: 0; padding-bottom: var(--sp-4); }
-.tr-pt tr.strip + tr.ctx > * { border-top: 1px solid var(--ink-4); }
-.tr-pt td.rng { white-space: normal; }
+.tr-perf td u { text-decoration: none; display: inline-block; min-width: 2.2em; text-align: left; margin-left: var(--sp-3); font-size: var(--fs-12); color: var(--ink-2); }
+.tr-perf td small { display: block; font-size: var(--fs-12); color: var(--ink-2); }
+.tr-perf td.aft { font-weight: 700; color: var(--ink-hi); }
+.tr-perf td.chg.good { color: var(--mint); }
+.tr-perf td.chg.bad { color: var(--red); }
+.tr-perf .runs span { display: inline-block; min-width: 2.4em; margin-left: var(--sp-4); padding: 1px var(--sp-4); border: 1px solid var(--ink-4); text-align: right; }
+.tr-perf .runs span.out { border-color: var(--amber); color: var(--amber); }
+.tr-perf .dim { color: var(--ink-2); font-size: var(--fs-13); }
+.tr-perf tr.main > * { border-top: 1px solid var(--ink-3); }
+.tr-perf tr.main > td { border-bottom: 0; padding-bottom: var(--sp-3); }
+.tr-perf tr.ctx > * { padding-top: var(--sp-4); padding-bottom: var(--sp-4); }
+.tr-perf tr.ctx th span { padding-left: var(--sp-14); }
+.tr-perf tr.strip > td { padding-top: 0; padding-bottom: var(--sp-4); }
+.tr-perf tr.strip + tr.ctx > * { border-top: 1px solid var(--ink-4); }
+.tr-perf td.rng { white-space: normal; }
 
 /* the range strip */
 .tr-pr { position: relative; height: var(--plot-h); margin: 0 var(--sp-10); }

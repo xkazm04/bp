@@ -1,7 +1,8 @@
-// The item's commit: fetched (actions.ts commitDiff: the commits route, or Kettle's sample diff) only when its section is
-// opened, and once per product and sha for the session (a module cache, so walking items back and forth never refetches).
-// Shows the files with add/del bars, the message with its trailers, and the patch, whose lines mount only while the
-// patch is open, in chunks of 100 that the browser skips laying out off screen (content-visibility).
+// The item's commit: fetched (actions.ts commitDiff: the commits route, or Kettle's sample diff) when the compare panel
+// shows the item, once per product and sha for the session (a module cache, so walking items back and forth never
+// refetches). Shows the files with add/del bars at once (A/1: the file list is part of the evidence), the message with
+// its trailers behind a disclosure, and the patch, whose lines mount only while the patch is open (open from the start
+// in the wide panel), in chunks of 100 that the browser skips laying out off screen (content-visibility).
 import { memo, useEffect, useMemo, useState } from 'react';
 import type { CommitDiff as Diff } from '@/lib/scan/types';
 import { commitDiff, refusalText, type ScanCtx } from '@/lib/scan/actions';
@@ -17,7 +18,7 @@ function load(ctx: ScanCtx, product: string, sha: string): Promise<Diff> {
   if (!p) {
     if (DEV) console.debug(`[commit-diff] fetch #${++fetches} ${key}`);
     p = commitDiff(ctx, sha);
-    p.catch(() => cache.delete(key)); // a failed fetch is tried again the next time the section opens
+    p.catch(() => cache.delete(key)); // a failed fetch is tried again the next time the item is shown
     cache.set(key, p);
   }
   return p;
@@ -93,39 +94,35 @@ export interface CommitDiffProps {
   /** The product (its slug, 'kettle' for the sample): the cache key's first half. */
   product: string;
   sha: string;
-  /** Open at mount (the wide panel shows everything). */
+  /** The patch open at mount (the wide panel shows everything). */
   initiallyOpen?: boolean;
 }
 
 type Got = { sha: string; d: Diff } | { sha: string; error: string };
 
 export const CommitDiff = memo(function CommitDiff({ ctx, product, sha, initiallyOpen = false }: CommitDiffProps) {
-  const [open, setOpen] = useState(initiallyOpen), [patch, setPatch] = useState(false);
+  const [patch, setPatch] = useState(initiallyOpen);
   const [got, setGot] = useState<Got | null>(null);
   useEffect(() => {
-    if (!open) return;
     let live = true;
     load(ctx, product, sha).then((d) => { if (live) setGot({ sha, d }); }, (e: unknown) => { if (live) setGot({ sha, error: refusalText(e) }); });
     return () => { live = false; };
-  }, [open, ctx, product, sha]);
+  }, [ctx, product, sha]);
   const cur = got && got.sha === sha ? got : null, d = cur && 'd' in cur ? cur.d : null;
   const add = d ? d.files.reduce((n, f) => n + f.add, 0) : 0, del = d ? d.files.reduce((n, f) => n + f.del, 0) : 0;
   return (
     <section className="tr-sec" data-role="tr-cmp-diff">
-      <h4>Commit <code className="c">{sha.slice(0, 7)}</code>{d ? <span className="n">{d.files.length} {d.files.length === 1 ? 'file' : 'files'} · +{add} −{del}</span> : null}</h4>
-      <details className="tr-det" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
-        <summary>{open ? 'The change' : 'Show the files, the message and the patch'}</summary>
-        {!open ? null : !cur ? <p className="tr-dim">loading the commit…</p> : 'error' in cur ? <p className="tr-dim" role="alert">The commit did not load: {cur.error}</p> : (
-          <>
-            <Files d={cur.d} />
-            <details className="tr-det"><summary>Commit message</summary><Message text={cur.d.message} /></details>
-            <details className="tr-det" open={patch} onToggle={(e) => setPatch(e.currentTarget.open)}>
-              <summary>The patch · {cur.d.lines} lines{cur.d.truncated ? ' (truncated)' : ''}</summary>
-              {patch ? <Patch d={cur.d} /> : null}
-            </details>
-          </>
-        )}
-      </details>
+      <h4>Commit <code className="c">{sha.slice(0, 7)}</code>{d ? <span className="n">· {d.files.length} {d.files.length === 1 ? 'file' : 'files'} · +{add} −{del}</span> : null}</h4>
+      {!cur ? <p className="tr-dim">loading the commit…</p> : 'error' in cur ? <p className="tr-dim" role="alert">The commit did not load: {cur.error}</p> : (
+        <>
+          <Files d={cur.d} />
+          <details className="tr-det"><summary>Commit message</summary><Message text={cur.d.message} /></details>
+          <details className="tr-det" open={patch} onToggle={(e) => setPatch(e.currentTarget.open)}>
+            <summary>The patch · {cur.d.lines} lines{cur.d.truncated ? ' (truncated)' : ''}</summary>
+            {patch ? <Patch d={cur.d} /> : null}
+          </details>
+        </>
+      )}
     </section>
   );
 });

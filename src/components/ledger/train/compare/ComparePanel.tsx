@@ -2,23 +2,25 @@
 // the item (lens, id, pack and place in it, feature, title) with prev / next, Wide and close; the body holds the metric
 // line or, for an item measured in baseline runs, the performance table, the screens (light / dark / both x side by
 // side / slider / blink / change map), what the measurement says, the commit and its diff, and the item's own text; the
-// footer carries what the item's state means (or its triage note) and the decision strip (Decide, compact: its mark). It docks right at
-// clamp(--cmp-min, 52%, --cmp-max) from 1100 px, overlays the table below that, and is a full-screen sheet on the phone.
+// footer carries the state mark over its triage note (or what the state means) and the decision strip (Decide,
+// compact). It docks right at clamp(--cmp-min, 52%, --cmp-max) from 1100 px, overlays the table below that, and is a
+// full-screen sheet on the phone. Full width takes the keyboard focus when it hides the table's focused row.
 // Everything derives from useTrain(); the theme / mode (LedgerUi.cmp) and the width are the ledger store's, the rest
 // resets when the item changes (the body is keyed by id). The next item's screens are prefetched while the browser idles.
-// Keys (L, M, W, J/K, Esc) are LedgerPage's handler; `nextView` is the L / M step it applies.
-import { memo, useEffect, useMemo } from 'react';
+// Keys (L, M, W, J/K, Esc) are LedgerPage's handler.
+import { memo, useEffect, useMemo, useRef } from 'react';
 import { compareOf, type Comparison } from '@/lib/scan/compare';
 import type { Proposal } from '@/lib/scan/types';
 import { shotSrc } from '@/lib/train/shots';
 import type { LensDef } from '@/lib/standard/load';
 import { useEngine } from '../../../hooks';
-import { setLedgerUi, type CompareMode, type CompareTheme, type CompareView } from '../../useLedger';
+import { isFlagged } from '@/lib/train/rules';
+import { setLedgerUi, useLedgerUi, type CompareTheme, type CompareView } from '../../useLedger';
 import { useTrain, type TrainData } from '../data';
 import { Decide } from '../Decide';
-import { LensTag, SampleTag } from '../ui/Marks.tsx';
+import { LensTag, SampleTag, StateMark } from '../ui/Marks.tsx';
 import { STATE } from '../ui/tables';
-import { Callout } from '../ui/Controls';
+import { Btn, Callout } from '../ui/Controls';
 import { CommitDiff } from './CommitDiff';
 import { ItemText } from './ItemText';
 import { Measurement } from './Measurement';
@@ -26,6 +28,7 @@ import { MetricStrip } from './MetricStrip';
 import { PerfKey, PerfTable, hasRuns, perfItem, perfReason } from './PerfTable';
 import { Screens, shownPairs } from './Screens';
 import './ComparePanel.css';
+import { byPackAge } from '@/lib/train/rules';
 
 export interface ComparePanelProps {
   /** The pack item shown. */
@@ -39,20 +42,13 @@ export interface ComparePanelProps {
   onClose(): void;
 }
 
-const THEME_ORDER: readonly CompareTheme[] = ['light', 'dark', 'both'];
-const MODE_ORDER: readonly CompareMode[] = ['side', 'slider', 'blink', 'map'];
-/** The view after one press of L (theme) or M (mode): the next in the cycle. */
-export function nextView(v: CompareView, what: 'theme' | 'mode'): CompareView {
-  if (what === 'theme') return { ...v, theme: THEME_ORDER[(THEME_ORDER.indexOf(v.theme) + 1) % THEME_ORDER.length] };
-  return { ...v, mode: MODE_ORDER[(MODE_ORDER.indexOf(v.mode) + 1) % MODE_ORDER.length] };
-}
 
-/** Every pack item in the packs table's order: packs newest first, each pack's items as built (created_at, id). */
+/** Every pack item in the packs table's order: packs oldest first (rules.ts byPackAge), each pack's items as built (created_at, id). */
 export function packOrder(T: Pick<TrainData, 'packs' | 'proposals'>): string[] {
   const by = new Map<string, Proposal[]>();
   for (const p of T.proposals) if (p.pack_id) { let a = by.get(p.pack_id); if (!a) by.set(p.pack_id, (a = [])); a.push(p); }
   const byCreated = (a: Proposal, b: Proposal) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : a.id < b.id ? -1 : 1);
-  return [...T.packs].sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0))
+  return [...T.packs].sort(byPackAge)
     .flatMap((k) => (by.get(k.id) ?? []).sort(byCreated).map((p) => p.id));
 }
 
@@ -70,19 +66,21 @@ function stateLine(p: Proposal): string {
 }
 
 export function ComparePanel({ id, view, wide, phone, onView, onWide, onClose }: ComparePanelProps) {
-  const T = useTrain(), P = useEngine().M.P, scan = useScan(T);
+  const T = useTrain(), P = useEngine().M.P, scan = useScan(T), pending = useLedgerUi(T.slug ?? 'kettle').pending;
   const c = useMemo(() => compareOf(scan, id, T.lenses), [scan, id, T.lenses]);
   const order = useMemo(() => packOrder(T), [T]);
   const at = order.indexOf(id), nextId = at >= 0 ? order[at + 1] : undefined;
   const next = useMemo(() => (nextId ? compareOf(scan, nextId, T.lenses) : null), [scan, nextId, T.lenses]);
   const nameOf = useMemo(() => { const m = new Map(P.base.features.map((f) => [f.slug, f.name])); return (slug: string) => m.get(slug) ?? slug; }, [P]);
   usePrefetch(T.slug, next, view.theme);
+  const box = useRef<HTMLElement>(null);
+  useKeepKeys(box, wide);
 
   const cls = 'tr-cmp' + (wide ? ' wide' : '') + (phone ? ' phone' : '');
   if (!c) {
     return (
-      <aside className={cls} data-role="tr-cmp" aria-label="Compare one item">
-        <Head title="Item not found" meta={<span>{id}</span>} prev={null} next={null} wide={wide} onWide={onWide} onClose={onClose} />
+      <aside ref={box} tabIndex={-1} className={cls} data-role="tr-cmp" aria-label="Compare one item">
+        <Head title="Item not found" meta={<span>{id}</span>} prev={null} next={null} wide={wide} phone={phone} onWide={onWide} onClose={onClose} />
         <div className="tr-cmp-b"><Callout tone="empty">This item is no longer in the store. Close the panel and pick another.</Callout></div>
       </aside>
     );
@@ -100,19 +98,23 @@ export function ComparePanel({ id, view, wide, phone, onView, onWide, onClose }:
     </>
   );
   return (
-    <aside className={cls} data-role="tr-cmp" aria-label={'Compare ' + p.title}>
-      <Head title={p.title} meta={meta} prev={go(at > 0 ? order[at - 1] : undefined)} next={go(nextId)} wide={wide} onWide={onWide} onClose={onClose} />
+    <aside ref={box} tabIndex={-1} className={cls} data-role="tr-cmp" aria-label={'Compare ' + p.title}>
+      <Head title={p.title} meta={meta} prev={go(at > 0 ? order[at - 1] : undefined)} next={go(nextId)} wide={wide} phone={phone} onWide={onWide} onClose={onClose} />
       <Body key={p.id} c={c} T={T} scan={scan} lens={P.LENS[p.lens]} nameOf={nameOf} view={view} onView={onView} wide={wide} />
       <footer className="tr-cmp-d">
-        {/* Decide's compact strip carries the state mark (with its pending state); the line says what it means */}
-        <span className="st">{p.triage_note ? '“' + p.triage_note + '”' : STATE[p.status].hint}</span>
+        {/* the state mark (deciding while a decision is on its way) over its triage note, or what the state means */}
+        <span className="st">
+          <StateMark status={p.status} pending={pending.get(p.id) === p.status}
+            flagged={p.status === 'accepted' && isFlagged({ status: p.triaged_from ?? p.status }, c.verdict)} />
+          <span>{p.triage_note ? '“' + p.triage_note + '”' : STATE[p.status].hint}</span>
+        </span>
         <Decide ids={[p.id]} compact />
       </footer>
     </aside>
   );
 }
 
-function Head({ title, meta, prev, next, wide, onWide, onClose }: { title: string; meta: React.ReactNode; prev: (() => void) | null; next: (() => void) | null; wide: boolean; onWide(): void; onClose(): void }) {
+function Head({ title, meta, prev, next, wide, phone, onWide, onClose }: { title: string; meta: React.ReactNode; prev: (() => void) | null; next: (() => void) | null; wide: boolean; phone: boolean; onWide(): void; onClose(): void }) {
   return (
     <header className="tr-cmp-h">
       <div className="tt">
@@ -120,10 +122,11 @@ function Head({ title, meta, prev, next, wide, onWide, onClose }: { title: strin
         <h3 data-role="tr-cmp-title">{title}</h3>
       </div>
       <div className="nav">
-        <button type="button" className="tr-nb" disabled={!prev} onClick={prev ?? undefined} title="Previous (K)" aria-label="Previous item">↑</button>
-        <button type="button" className="tr-nb" disabled={!next} onClick={next ?? undefined} title="Next (J)" aria-label="Next item">↓</button>
-        <button type="button" className="tr-nb wd" aria-pressed={wide} onClick={onWide} title="Full width (W)">{wide ? 'Narrow' : 'Wide'}</button>
-        <button type="button" className="tr-nb" onClick={onClose} title="Close (Esc)" aria-label="Close the compare panel">✕</button>
+        <Btn size="nav" disabled={!prev} onClick={prev ?? undefined} title="Previous (K)" label="Previous item">↑</Btn>
+        <Btn size="nav" disabled={!next} onClick={next ?? undefined} title="Next (J)" label="Next item">↓</Btn>
+        {/* the phone's sheet is already the whole screen */}
+        {phone ? null : <Btn size="nav" pressed={wide} onClick={onWide} title="Full width (W)" role="tr-nav-wide">{wide ? 'Narrow' : 'Wide'}</Btn>}
+        <Btn size="nav" onClick={onClose} title="Close (Esc)" label="Close the compare panel">✕</Btn>
       </div>
     </header>
   );
@@ -164,6 +167,15 @@ const Body = memo(function Body({ c, T, scan, lens, nameOf, view, onView, wide }
     </div>
   );
 });
+
+/** Full width hides the table, and with it the focused row: the browser drops the focus to the body, where the page's
+ *  keys (Esc, J/K, A R S U, L M W) no longer arrive. The panel takes it instead, inside the page that owns the keys. */
+function useKeepKeys(box: React.RefObject<HTMLElement | null>, wide: boolean) {
+  useEffect(() => {
+    const at = document.activeElement;
+    if (wide && box.current && (!at || at === document.body || !!at.closest('.lg-body'))) box.current.focus({ preventScroll: true });
+  }, [box, wide]);
+}
 
 /** While the browser idles, fetch the next item's shown screens (one Image per source), so J lands on decoded pixels;
  *  cancelled (callback and requests) when the open item or the theme changes. */

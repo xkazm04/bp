@@ -20,7 +20,8 @@ import {
   ACTION, RELEASE_STATE, evidenceOf, failedStep, historyOf, isActive, jobsOf, keysOf, openRelease, readingsBy, STEPS,
   type ReleaseModel, type RelAction,
 } from './releaseState';
-import { Btn, VersionBox, suggestKey, useSuggestion } from './VersionBox';
+import { VersionBox, suggestKey, useSuggestion } from './VersionBox';
+import { Btn } from '../ui/Controls';
 import { Package } from './Package';
 import { Stepper } from './Stepper';
 import { JobLog } from './JobLog';
@@ -99,12 +100,12 @@ const ActionsRow = memo(function ActionsRow({ m, a }: { m: ReleaseModel; a: Rele
         {a.asking ? (
           <span className="tr-rel-ask" role="group" aria-label="Finish the release">
             <span>Merged on GitHub? Finish tags v{v} and publishes the release.</span>
-            <Btn go label="Finish" kbd={keysOf('finish')} onClick={() => a.run('finish')} disabled={!a.available.includes('finish')} />
-            <Btn label="Not yet" onClick={a.cancelAsk} />
+            <Btn tone="go" kbd={keysOf('finish')} onClick={() => a.run('finish')} disabled={!a.available.includes('finish')}>Finish</Btn>
+            <Btn onClick={a.cancelAsk}>Not yet</Btn>
           </span>
         ) : a.available.map((x) => x === 'pr'
           ? <a key={x} className="tr-rel-pr" href={rel.pr_url} target="_blank" rel="noreferrer">⇱ {prName(rel.pr_url)}{m.T.ctx.sim ? ' · sample' : ''}</a>
-          : <Btn key={x} go={ACTION[x].go} label={ACTION[x].label(v)} kbd={keysOf(ACTION[x].key)} onClick={() => a.run(x)} disabled={x === 'build' && !m.items.length} />)}
+          : <Btn key={x} tone={ACTION[x].go ? 'go' : undefined} kbd={keysOf(ACTION[x].key)} onClick={() => a.run(x)} disabled={x === 'build' && !m.items.length}>{ACTION[x].label(v)}</Btn>)}
       </div>
       <p className="tr-rel-hint">{a.busy && !isActive(m.last) ? 'Starting the release job…' : st.hint(v, m.items.length)}</p>
     </>
