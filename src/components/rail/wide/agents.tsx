@@ -25,13 +25,15 @@ function tally(ag: readonly SimAgent[]) {
   return c;
 }
 
-/** A job's figures, shared by its row and its detail. */
+/** A job's figures, shared by its row and its detail. A release job names no proposals: its progress is its release's
+ *  status (`rel`, when the snapshot has the row), never a count. */
 function jobFacts(j: ScanJob, scan: ScanSnapshot | undefined, total: number, now: number) {
-  const measure = j.kind === 'measure', pr = measure ? jobProgress(j, scan, total) : null;
-  const built = !measure && scan ? scan.proposals.filter((p) => j.proposals?.includes(p.id) && p.status === 'done').length : 0;
+  const measure = j.kind === 'measure', release = j.kind === 'release', pr = measure ? jobProgress(j, scan, total) : null;
+  const built = j.kind === 'execute' && scan ? scan.proposals.filter((p) => j.proposals?.includes(p.id) && p.status === 'done').length : 0;
   const n = measure ? (pr && j.status === 'done' ? pr.m : pr?.n ?? 0) : built, m = measure ? pr?.m ?? 0 : j.proposals?.length ?? 0;
+  const rel = release && j.release ? scan?.releases.find((r) => r.id === j.release) : undefined;
   const t0 = Date.parse(j.started_at ?? j.queued_at), t1 = j.ended_at ? Date.parse(j.ended_at) : now;
-  return { measure, n, m, clock: j.status === 'queued' ? mmss(now - Date.parse(j.queued_at)) : mmss(t1 - t0), open: j.status === 'queued' || j.status === 'running' };
+  return { measure, release, rel, n, m, clock: j.status === 'queued' ? mmss(now - Date.parse(j.queued_at)) : mmss(t1 - t0), open: j.status === 'queued' || j.status === 'running' };
 }
 
 export function Agents() {
@@ -74,8 +76,10 @@ export function Agents() {
             <Row key={j.id} id={k} on={cur === k} onPick={() => setSel(k)} cls={'job st-' + j.status}>
               <span className="rk">{d?.glyph ? <ScanGlyph g={d.glyph} px={16} /> : null}<span className={'st ' + j.status}>{j.status}</span><span>{x.clock}</span></span>
               <span className="rt one">{x.measure ? d?.name ?? j.lens : jobLabel(j)}</span>
-              <span className="rm"><span>{x.measure ? j.scope?.label ?? 'Everything' : (j.proposals ?? []).join(', ')}</span><span>{x.n}/{x.m}</span></span>
-              <span className="bar" aria-hidden="true"><i style={{ width: (x.m ? (100 * x.n) / x.m : 0) + '%' }} /></span>
+              {x.release
+                ? <span className="rm"><span>{j.release}</span>{x.rel && <span>{x.rel.status}</span>}</span>
+                : <span className="rm"><span>{x.measure ? j.scope?.label ?? 'Everything' : (j.proposals ?? []).join(', ')}</span><span>{x.n}/{x.m}</span></span>}
+              {!x.release && <span className="bar" aria-hidden="true"><i style={{ width: (x.m ? (100 * x.n) / x.m : 0) + '%' }} /></span>}
             </Row>
           );
         }) : <li className="wb-none">No scans yet. Right-click a feature, bay, room or wing on the plan to scan it.</li>}
@@ -130,17 +134,31 @@ function JobDetail({ j, scan, total, now, live }: { j: ScanJob; scan: ScanSnapsh
     <>
       <div className="wb-kick"><span className={'st ' + j.status}>{j.status}</span><span>{x.measure ? 'Measure' : j.kind === 'release' ? 'Release' : 'Execute'}</span><span>{j.id}</span></div>
       <h3 className="wb-title wb-glyph">{d?.glyph ? <ScanGlyph g={d.glyph} px={24} /> : null}{x.measure ? d?.name ?? j.lens ?? 'Scan' : j.kind === 'release' ? jobLabel(j) : 'Execute ' + (j.proposals?.length ?? 0) + ' approved finding' + (j.proposals?.length === 1 ? '' : 's')}</h3>
-      <p className="wb-lede">{x.measure ? 'Scope: ' + (j.scope?.label ?? 'everything') : (j.proposals ?? []).join(', ') || 'No proposals named.'}</p>
-      <div className="wb-figs">
-        <Fig n={x.n + '/' + x.m} label={x.measure ? 'features measured' : 'findings built'} tone={j.status === 'done' ? 'mint' : undefined} />
-        <Fig n={pct + '%'} label="progress" />
-        <Fig n={x.clock} label={j.status === 'queued' ? 'waiting' : x.open ? 'elapsed' : 'took'} />
-        {j.exit_code !== undefined && <Fig n={j.exit_code} label="exit code" tone={j.exit_code ? 'red' : undefined} />}
-      </div>
-      <div className="wb-prog" role="progressbar" aria-valuemin={0} aria-valuemax={x.m} aria-valuenow={x.n} aria-label="Progress"><i style={{ width: pct + '%' }} /></div>
+      <p className="wb-lede">{x.release ? (j.step === 'finish' ? 'Finish: tag the merged release and publish it on GitHub.' : 'Build: cherry-pick the accepted items, run the gates, open the pull request.')
+        : x.measure ? 'Scope: ' + (j.scope?.label ?? 'everything') : (j.proposals ?? []).join(', ') || 'No proposals named.'}</p>
+      {x.release ? (
+        <div className="wb-figs">
+          <Fig n={j.step ?? 'build'} label="step" />
+          {j.version && <Fig n={j.version} label="version" />}
+          {x.rel && <Fig n={x.rel.status} label="release" tone={x.rel.status === 'failed' ? 'red' : x.rel.status === 'tagged' ? 'mint' : undefined} />}
+          <Fig n={x.clock} label={j.status === 'queued' ? 'waiting' : x.open ? 'elapsed' : 'took'} />
+          {j.exit_code !== undefined && <Fig n={j.exit_code} label="exit code" tone={j.exit_code ? 'red' : undefined} />}
+        </div>
+      ) : (
+        <>
+          <div className="wb-figs">
+            <Fig n={x.n + '/' + x.m} label={x.measure ? 'features measured' : 'findings built'} tone={j.status === 'done' ? 'mint' : undefined} />
+            <Fig n={pct + '%'} label="progress" />
+            <Fig n={x.clock} label={j.status === 'queued' ? 'waiting' : x.open ? 'elapsed' : 'took'} />
+            {j.exit_code !== undefined && <Fig n={j.exit_code} label="exit code" tone={j.exit_code ? 'red' : undefined} />}
+          </div>
+          <div className="wb-prog" role="progressbar" aria-valuemin={0} aria-valuemax={x.m} aria-valuenow={x.n} aria-label="Progress"><i style={{ width: pct + '%' }} /></div>
+        </>
+      )}
       <div className="wb-inline">
-        {x.open && <button type="button" className="bt" disabled={busy} onClick={cancel} aria-label={'Cancel ' + (d?.name ?? 'execute') + ' job ' + j.id}>Cancel job</button>}
-        <span className="wb-meta">queued {j.queued_at.slice(11, 19)}{j.started_at ? ' · started ' + j.started_at.slice(11, 19) : ''}{j.ended_at ? ' · ended ' + j.ended_at.slice(11, 19) : ''}{j.run_id ? ' · run ' + j.run_id : ''}</span>
+        {x.open && <button type="button" className="bt" disabled={busy} onClick={cancel} aria-label={'Cancel ' + (d?.name ?? (x.release ? 'release' : 'execute')) + ' job ' + j.id}>Cancel job</button>}
+        <span className="wb-meta">queued {j.queued_at.slice(11, 19)}{j.started_at ? ' · started ' + j.started_at.slice(11, 19) : ''}{j.ended_at ? ' · ended ' + j.ended_at.slice(11, 19) : ''}{j.run_id ? ' · run ' + j.run_id : ''}{j.release ? ' · ' + j.release : ''}</span>
+        {x.rel?.pr_url && <a className="wb-meta" href={x.rel.pr_url} target="_blank" rel="noreferrer">pull request</a>}
       </div>
       {j.error && <div className="wb-err">{j.error}</div>}
       <Sec head="Log" aside={live ? 'last lines' : 'simulated'}>

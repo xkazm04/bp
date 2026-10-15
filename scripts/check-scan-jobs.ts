@@ -12,8 +12,11 @@
 //     and temporary 201 / bad reverse DNS 400 / taken look 400 / 409 / PATCH and DELETE of project lenses / built-in
 //     403, the map's key order and facets kept), and a map carrying the new temporary entry passes
 //     validate-structure while a temporary entry with a reverse-DNS id does not;
-//   - the release train: triage (through lens-scan store.mjs), releases POST, suggest, build/finish release jobs over the
-//     fake (draft -> building -> pr-open -> tagged, run_id from the release-head measure run, 412 when gh is signed out);
+//   - the release train: triage (through lens-scan store.mjs) and its undo (reopen: back to the status left, the pack
+//     open again, refused in-release once the release left draft), releases POST, suggest, build/finish release jobs over
+//     the fake (draft -> building -> pr-open -> tagged, run_id from the release-head measure run, 412 when gh is signed
+//     out), and the commits route on a fixture git repo (200 with stat, numstat and the patch cut at 2000 lines; 404 for
+//     a sha that is no item commit, even one the repo has; 400 for a bad sha), each 200 body through the parser door;
 //   - Kettle parity: the scan sim's selection scans and lens execute, and addProjectLens over the browser's store.
 // Checks that need WP1's full checkLensManifest (project mode, taken looks) print SKIP while it is the S0 stub.
 // Run: node scripts/check-scan-jobs.ts  (Node's type stripping; no build step). Exit 1 on any failure. ~15 s.
@@ -360,6 +363,8 @@ try {
   // (BP_GH_BIN), signed in or out by FAKE_GH_OUT.
   {
     const RS = await import(pathToFileURL(path.join(ROOT, 'src/lib/scan/release.server.ts')).href) as typeof import('../src/lib/scan/release.server.ts');
+    const W = await import(pathToFileURL(path.join(ROOT, 'src/lib/train/wire.ts')).href) as typeof import('../src/lib/train/wire.ts');
+    const show = (what: string, x: unknown) => { if (process.env.BP_SHOW_EXAMPLES) console.log('EXAMPLE ' + what + '\n' + JSON.stringify(x, null, 1)); };
     const { jobLabel } = await import(pathToFileURL(path.join(ROOT, 'src/lib/scan/jobs.ts')).href) as typeof import('../src/lib/scan/jobs.ts');
     const ghFake = path.join(dir, 'fake-gh.mjs');
     fs.writeFileSync(ghFake, "if (process.env.FAKE_GH_OUT === '1') { console.error('You are not logged into any GitHub hosts.'); process.exit(1); }\n"
@@ -392,6 +397,7 @@ try {
       call(tri.POST, '/x', 'POST', { slug: 'nope' }, { ids: ['a1'], decision: 'accept' }),
     ]);
     check('triage refusals: unsafe id, bad decision, 201 ids, none, unknown product', triBad.map((b) => b.status).join() === '400,400,400,400,404', triBad.map((b) => b.status).join());
+    check('triage 400 names the four decisions', /'accept' \| 'rework' \| 'descope' \| 'reopen'/.test(triBad[1].body.error ?? ''), triBad[1].body.error);
     if (hasStoreMjs) {
       const t1 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a1', 'a2'], decision: 'accept' });
       check('triage accept -> 200 through store.mjs, by user:<gh login>', t1.status === 200 && t1.body.triaged.join() === 'a1,a2' && t1.body.by === 'user:octocat' && t1.body.decision === 'accepted', JSON.stringify(t1.body));
@@ -399,6 +405,17 @@ try {
       check('triage accept of a failed item without a note -> 409, skipped note-required', t2.status === 409 && t2.body.skipped[0]?.reason === 'note-required', JSON.stringify(t2.body));
       const t3 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a3'], decision: 'descope', note: 'not worth it' });
       check('triage descope -> 200, the pack settles open -> triaged', t3.status === 200 && t3.body.packs_triaged.join() === 'k-dev-1' && status('packs', 'k-dev-1') === 'triaged', JSON.stringify(t3.body));
+      // the undo: each item back to the status it left, the pack open again; a second undo has nothing to go back to
+      const t4 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a3', 'a1'], decision: 'reopen' });
+      show('POST /api/products/rel/triage {"ids":["a3","a1"],"decision":"reopen"} -> ' + t4.status, t4.body);
+      const p4 = W.parseTriageResult(t4.body);
+      check('triage reopen -> 200 reopened, a3 failed and a1 done again, the pack open', t4.status === 200 && p4.ok && p4.value.decision === 'reopened' && p4.value.triaged.join() === 'a3,a1'
+        && status('proposals', 'a3') === 'failed' && status('proposals', 'a1') === 'done' && status('packs', 'k-dev-1') === 'open', JSON.stringify(t4.body) + (p4.ok ? '' : ' ' + p4.error));
+      const t5 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a1'], decision: 'reopen' });
+      check('triage reopen of an untriaged item -> 409, skipped with its status', t5.status === 409 && t5.body.skipped[0]?.status === 'done' && t5.body.triaged.length === 0, JSON.stringify(t5.body));
+      const t6 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a1'], decision: 'accept' });
+      const t7 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a3'], decision: 'descope', note: 'not worth it' });
+      check('triage after the undo: a1 accepted, a3 descoped, the pack triaged again', t6.status === 200 && t7.status === 200 && status('packs', 'k-dev-1') === 'triaged', JSON.stringify([t6.body, t7.body]));
     } else {
       skipped++; console.log('SKIP triage and release-create through store.mjs (lens-scan not installed; set BP_LENS_SCAN_DIR)');
       const d = new DatabaseSync(rdb);
@@ -406,11 +423,13 @@ try {
       d.close();
     }
     const sg = await call(sug.GET, '/x', 'GET', { slug: 'rel' });
+    show('GET /api/products/rel/releases/suggest -> ' + sg.status, sg.body);
     check('suggest with no v* tag -> the manifest version as it stands', sg.status === 200 && sg.body.version === '2.3.0' && sg.body.from === 'package.json', JSON.stringify(sg.body));
     check('POST releases bad version -> 400', (await call(rels.POST, '/x', 'POST', { slug: 'rel' }, { version: 'v2.3.0' })).status === 400);
     check('POST releases with no accepted item among the ids -> 409', (await call(rels.POST, '/x', 'POST', { slug: 'rel' }, { version: '2.3.0', ids: ['a3'] })).status === 409);
     if (hasStoreMjs) {
       const c1 = await call(rels.POST, '/x', 'POST', { slug: 'rel' }, { version: '2.3.0' });
+      show('POST /api/products/rel/releases {"version":"2.3.0"} -> ' + c1.status, c1.body);
       check('POST releases -> 201, a draft with every accepted item', c1.status === 201 && c1.body.release.id === 'rel-2.3.0' && c1.body.release.status === 'draft' && c1.body.release.created_by === 'user:octocat'
         && c1.body.added.join() === 'a1,a2' && c1.body.release.items.map((p: Proposal) => p.id).join() === 'a1,a2', JSON.stringify(c1.body).slice(0, 400));
       const c2 = await call(rels.POST, '/x', 'POST', { slug: 'rel' }, { version: '2.3.1', ids: ['a1'] });
@@ -435,6 +454,7 @@ try {
     ]);
     check('build/finish refusals: bad id 400, unknown release 404, finish of a draft 409', bBad.map((b) => b.status).join() === '400,404,409', bBad.map((b) => b.status + ':' + b.body.error).join());
     const b1 = await call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0' }, {});
+    show('POST /api/products/rel/releases/rel-2.3.0/build -> ' + b1.status, b1.body);
     check('build -> 202 release job (kind release, step build)', b1.status === 202 && b1.body.kind === 'release' && b1.body.release === 'rel-2.3.0' && b1.body.version === '2.3.0' && b1.body.step === 'build', JSON.stringify(b1.body));
     check('a release job reads "Release 2.3.0 · build"', jobLabel(b1.body) === 'Release 2.3.0 · build', jobLabel(b1.body));
     const again = await call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0' }, {});
@@ -444,6 +464,11 @@ try {
     check('build: done, the release pr-open with its url, run_id = the release-head measure run (bp-job note)', jb?.status === 'done' && relRow('rel-2.3.0')?.status === 'pr-open' && !!relRow('rel-2.3.0')?.pr_url && jb.run_id === 'run-' + jb.id, JSON.stringify(jb));
     check('build: the prompt is /lens-scan release --id rel-2.3.0 on stdin', /^stdin \/lens-scan release --id rel-2\.3\.0$/m.test(jb?.log_tail ?? ''), jb?.log_tail);
     check('build of a pr-open release -> 409', (await call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0' }, {})).status === 409);
+    if (hasStoreMjs) {
+      const t8 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a1'], decision: 'reopen' });
+      show('POST /api/products/rel/triage {"ids":["a1"],"decision":"reopen"} (release pr-open) -> ' + t8.status, t8.body);
+      check('triage reopen of an item whose release left draft -> 409 in-release', t8.status === 409 && t8.body.skipped[0]?.reason === 'in-release' && status('proposals', 'a1') === 'accepted', JSON.stringify(t8.body));
+    }
     const f1 = await call(fin.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0' }, {});
     check('finish -> 202 (step finish)', f1.status === 202 && f1.body.step === 'finish' && jobLabel(f1.body) === 'Release 2.3.0 · finish', JSON.stringify(f1.body));
     await until(() => job('rel', f1.body.id)?.status === 'done' || job('rel', f1.body.id)?.status === 'failed');
@@ -462,6 +487,47 @@ try {
     check('an unknown release -> failed with the refusal', je2?.status === 'failed' && /^lens-scan refused:/.test(je2.error ?? ''), JSON.stringify(je2));
     const e3 = J.enqueueRelease('rel', rr, 'rel-1.0.0', '1.0.1', 'build'), e4 = J.enqueueRelease('rel', rr, 'release-1', '1', 'finish');
     check('enqueueRelease refuses an id that is not rel-<version> -> 400', !e3.ok && e3.status === 400 && !e4.ok && e4.status === 400);
+
+    // the commits route: rr becomes a git repo with three commits; two are item commits (g1: a text and a binary file;
+    // g2: 2100 lines, so the patch is cut), the third is in the repo but no item's
+    const git = (...a: string[]) => { const r = spawnSync('git', ['-c', 'user.name=bp-check', '-c', 'user.email=bp-check@localhost', '-c', 'commit.gpgsign=false', '-c', 'core.autocrlf=false', ...a], { cwd: rr, encoding: 'utf8' });
+      if (r.status !== 0) throw new Error('git ' + a.join(' ') + ': ' + r.stderr); return r.stdout.trim(); };
+    git('init', '-q');
+    fs.mkdirSync(path.join(rr, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(rr, 'src/x.ts'), 'export const a = 1;\nexport const b = 2;\nexport const c = 3;\n');
+    fs.writeFileSync(path.join(rr, 'logo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 1, 2, 0, 3]));
+    git('add', 'src/x.ts', 'logo.png'); git('commit', '-q', '-m', 'feat: x and a logo', '-m', 'Lens-Item: g1');
+    const g1 = git('rev-parse', 'HEAD');
+    fs.writeFileSync(path.join(rr, 'src/big.ts'), Array.from({ length: 2100 }, (_, i) => 'export const v' + i + ' = ' + i + ';').join('\n') + '\n');
+    git('add', 'src/big.ts'); git('commit', '-q', '-m', 'feat: a big file');
+    const g2 = git('rev-parse', 'HEAD');
+    fs.writeFileSync(path.join(rr, 'src/x.ts'), 'export const a = 9;\n');
+    git('add', 'src/x.ts'); git('commit', '-q', '-m', 'chore: not an item');
+    const g3 = git('rev-parse', 'HEAD');
+    const gd = new DatabaseSync(rdb);
+    const gi = gd.prepare("INSERT INTO proposals (id, run_id, feature, lens, title, kind, status, created_at, updated_at, commit_sha) VALUES (?, 'r0', 'a', 'development', 't', 'fix', 'declined', ?, ?, ?)");
+    gi.run('g1', T, T, g1); gi.run('g2', T, T, g2);
+    gd.close();
+    const commits = await route('products/[slug]/commits/[sha]/route.ts');
+    const getCommit = (sha: string) => commits.GET(new Request('http://localhost:3000/x', { headers: { host: 'localhost:3000' } }), { params: Promise.resolve({ slug: 'rel', sha }) }) as Promise<Response>;
+    const r1 = await getCommit(g1.slice(0, 7)), c1 = await r1.json(), d1 = W.parseCommitDiff(c1);
+    show('GET /api/products/rel/commits/' + g1.slice(0, 7) + ' -> ' + r1.status + ' cache-control: ' + r1.headers.get('cache-control'), c1);
+    const png = d1.ok ? d1.value.files.find((f) => f.path === 'logo.png') : undefined, xts = d1.ok ? d1.value.files.find((f) => f.path === 'src/x.ts') : undefined;
+    check('commits: a 7-char prefix of an item commit -> 200, the full sha, message, stat, files (binary 0/0), cached an hour',
+      r1.status === 200 && d1.ok && d1.value.sha === g1 && d1.value.message.startsWith('feat: x and a logo') && d1.value.message.includes('Lens-Item: g1')
+      && /src\/x\.ts/.test(d1.value.stat) && /2 files changed/.test(d1.value.stat) && png?.add === 0 && png.del === 0 && xts?.add === 3 && xts.del === 0
+      && !d1.value.truncated && d1.value.lines > 0 && d1.value.patch.includes('+export const b = 2;') && r1.headers.get('cache-control') === 'private, max-age=3600',
+      JSON.stringify(c1).slice(0, 600) + (d1.ok ? '' : ' ' + d1.error));
+    const r2 = await getCommit(g2), c2 = await r2.json(), d2 = W.parseCommitDiff(c2);
+    check('commits: a patch over 2000 lines is cut at 2000, lines the full count', r2.status === 200 && d2.ok && d2.value.truncated && d2.value.lines > 2000 && d2.value.patch.split('\n').length === 2000
+      && d2.value.files.length === 1 && d2.value.files[0].add === 2100, d2.ok ? JSON.stringify({ lines: d2.value.lines, truncated: d2.value.truncated, files: d2.value.files }) : d2.error);
+    const misses = await Promise.all([getCommit('deadbeef'), getCommit(g3), getCommit(g3.slice(0, 10))]);
+    check('commits: a sha that is no item commit -> 404, even one the repo has', misses.map((r) => r.status).join() === '404,404,404', misses.map((r) => r.status).join());
+    const bads = await Promise.all([getCommit('abc123'), getCommit('xyz1234'), getCommit('a'.repeat(41)), getCommit(g1.slice(0, 7) + ';ls')]);
+    check('commits: a bad sha -> 400 (short, not hex, too long, a shell char)', bads.map((r) => r.status).join() === '400,400,400,400', bads.map((r) => r.status).join());
+    const unknown = await commits.GET(new Request('http://localhost:3000/x', { headers: { host: 'localhost:3000' } }), { params: Promise.resolve({ slug: 'nope', sha: g1 }) }) as Response;
+    const remote = await commits.GET(new Request('http://evil.example/x', { headers: { host: 'evil.example' } }), { params: Promise.resolve({ slug: 'rel', sha: g1 }) }) as Response;
+    check('commits: unknown product 404, a non-loopback Host 403', unknown.status === 404 && remote.status === 403, unknown.status + ',' + remote.status);
     delete process.env.BP_GH_BIN;
     delete (globalThis as { __bpGhBy?: unknown }).__bpGhBy;
   }

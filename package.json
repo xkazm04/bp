@@ -18,6 +18,8 @@
     "check:scan-jobs": "node scripts/check-scan-jobs.ts",
     "check:release-train": "node scripts/check-release-train.ts",
     "check:train-quality": "node scripts/check-train-quality.mjs",
+    "check:train-wire": "node scripts/check-train-wire.ts",
+    "check:train-sim": "node scripts/check-train-sim.ts",
     "check:lens-manifest": "node scripts/check-lens-manifest.ts",
     "check:live-health": "node scripts/check-live-health.ts",
     "check:local-only": "node scripts/check-local-only.ts",

@@ -294,15 +294,30 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
     const mine = go.filter((id) => byId.get(id)!.status === 'proposed');
     setOver((o) => { const n = new Map(o); for (const id of mine) n.set(id, 'approved'); return n; });
     setBusy(true);
+    // /dispatch takes at most 50 ids (MAX_PROPOSALS): one execute job per 50, sent in order; the first refusal stops the
+    // rest, and the toast says what went before it
+    const CHUNK = 50, jobs: string[] = [], sent = new Set<string>(), skipped: { id: string; status: string }[] = [];
+    let built = 0;
+    const line = () => 'execute job' + (jobs.length === 1 ? ' ' : 's ') + jobs.join(', ')
+      + (skipped.length ? ' · ' + skipped.length + ' skipped (' + skipped.map((s) => s.id + ' ' + s.status).join(', ') + ')' : '');
     try {
-      const r = await dispatch(ctx, go);
-      const sent = r.job.proposals?.length ?? go.length;
-      E.toast('Dispatched ' + sent + (sent === 1 ? ' finding' : ' findings'), 'execute job ' + r.job.id + (r.skipped.length ? ' · ' + r.skipped.length + ' skipped (' + r.skipped.map((s) => s.id + ' ' + s.status).join(', ') + ')' : ''));
-      set((u) => { const s = new Set(u.sel); for (const id of go) s.delete(id); return { ...u, sel: s }; });
+      for (let i = 0; i < go.length; i += CHUNK) {
+        const part = go.slice(i, i + CHUNK);
+        const r = await dispatch(ctx, part);
+        jobs.push(r.job.id); skipped.push(...r.skipped); built += r.job.proposals?.length ?? part.length;
+        for (const id of part) sent.add(id);
+      }
+      E.toast('Dispatched ' + built + (built === 1 ? ' finding' : ' findings'), line());
     } catch (err) {
-      setOver((o) => { const n = new Map(o); for (const id of mine) n.delete(id); return n; });
-      E.toast('Dispatch failed', err instanceof Error ? err.message : String(err));
-    } finally { setBusy(false); }
+      // the overlay keeps what was sent; the unsent ids go back to what the store says
+      setOver((o) => { const n = new Map(o); for (const id of mine) if (!sent.has(id)) n.delete(id); return n; });
+      const why = err instanceof Error ? err.message : String(err);
+      if (jobs.length) E.toast('Dispatch stopped after ' + built + ' of ' + go.length, line() + ' · then: ' + why);
+      else E.toast('Dispatch failed', why);
+    } finally {
+      if (sent.size) set((u) => { const s = new Set(u.sel); for (const id of sent) s.delete(id); return { ...u, sel: s }; });
+      setBusy(false);
+    }
   }, [busy, ui.sel, byId, ctx, E, set]);
 
   const showInTable = useCallback((slug: string) => {

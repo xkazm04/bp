@@ -1,7 +1,10 @@
-// POST /api/products/[slug]/triage, body `{ ids: string[], decision: 'accept' | 'rework' | 'descope', note?: string }`
+// POST /api/products/[slug]/triage, body `{ ids: string[], decision: 'accept' | 'rework' | 'descope' | 'reopen', note?: string }`
 // (1..200 proposal ids): a person's call on built items. It runs lens-scan's own `store.mjs triage` (the single owner of
 // the transition rules: which statuses each decision may move, the note a failed item needs to be accepted, leaving a
 // draft release, settling packs open -> triaged), `--by user:<gh login>` (src/lib/scan/release.server.ts triageBy).
+// `reopen` is the undo (lens-scan 1.6.0, store v3): each item back to the status it left, refused per item while its
+// release is past draft, its rework rebuilt, its pack closed or nothing was recorded (skipped reasons `in-release`,
+// `rebuilt`, `pack-closed`, `no-prior-status`); decision `reopened`.
 // 200 + store.mjs's JSON `{ decision, by, triaged, skipped, packs_triaged }`; 409 with the same JSON when nothing moved;
 // 400 for a bad body (or one store.mjs calls bad input); 404 for an unknown product or a missing store; 503 when
 // lens-scan is not installed or the store stayed locked. The stream sees the write through the store's data_version.
@@ -15,7 +18,7 @@ import type { TriageBody } from '@/lib/scan/types';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const DECISIONS = ['accept', 'rework', 'descope'];
+const DECISIONS = ['accept', 'rework', 'descope', 'reopen'];
 
 /** `null` = not a valid TriageBody. */
 function parse(x: unknown): TriageBody | null {
@@ -41,7 +44,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   let raw: unknown;
   try { raw = await req.json(); } catch { return Response.json({ error: 'body must be JSON' }, { status: 400 }); }
   const body = parse(raw);
-  if (!body) return Response.json({ error: `body must be { ids: string[] (1..${MAX_TRIAGE}), decision: 'accept' | 'rework' | 'descope', note?: string }` }, { status: 400 });
+  if (!body) return Response.json({ error: `body must be { ids: string[] (1..${MAX_TRIAGE}), decision: 'accept' | 'rework' | 'descope' | 'reopen', note?: string }` }, { status: 400 });
   if (!hasStore(p)) return Response.json({ error: `no scan store for ${slug}` }, { status: 404 });
   const r = await triage(storeFile(p), body, await triageBy());
   if (!r.ok) return Response.json({ error: r.error }, { status: r.kind === 'bad' ? 400 : r.kind === 'refused' ? 409 : 503 });

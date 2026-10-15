@@ -6,13 +6,14 @@
 //   gh          `gh api user --jq .login` once per server process (who triages: `user:<login>`, else `user:blueprint`),
 //               and `gh auth status` before a release job starts. BP_GH_BIN overrides the binary (a .mjs runs on this
 //               Node: the checks' fake).
-//   git         `git tag --list v* --sort=-v:refname` in the product root, for the version suggestion.
+//   git         `git tag --list v* --sort=-v:refname` in the product root, for the version suggestion; `git show` of one
+//               item commit (message + stat, numstat, the patch cut at 2000 lines) for the commits route.
 // Server-only: route handlers import it.
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { TriageBody, TriageResult } from './types';
+import type { CommitDiff, TriageBody, TriageResult } from './types';
 
 if (typeof window !== 'undefined') throw new Error('release.server.ts is server-only');
 
@@ -88,6 +89,42 @@ export async function ghAuthed(): Promise<boolean> {
 }
 
 // ------------------------------------------------------------------------------------- git and manifests
+/** The most patch lines a CommitDiff carries (`lines` still counts them all). */
+export const DIFF_LINES = 2000;
+/** What `git show` of one commit came to: the diff, or `missing` (git ran and has no such commit) or `error` (git did not run). */
+export type DiffAnswer = { ok: true; data: CommitDiff } | { ok: false; kind: 'missing' | 'error'; error: string };
+
+/**
+ * One commit of the repo at `root` as the ledger's compare panel shows it, by three `git show`s (no pager, colour,
+ * external diff or textconv; paths unquoted): `--stat=200 --format=%H%n%B%x00` for the full sha, the message and the
+ * stat; `--numstat --format=` for the files (a binary file's `-` counts read 0); `--format= --unified=3` for the
+ * patch, cut at DIFF_LINES. The caller has already checked `sha` is an item commit of the product's store.
+ */
+export async function commitDiff(root: string, sha: string): Promise<DiffAnswer> {
+  const git = (args: string[]) => run('git', ['-c', 'core.quotepath=off', '--no-pager', 'show', '--no-color', '--no-ext-diff', '--no-textconv', ...args, sha], { cwd: root, timeout: GIT_MS });
+  const [head, num, diff] = await Promise.all([git(['--stat=200', '--format=%H%n%B%x00']), git(['--numstat', '--format=']), git(['--format=', '--unified=3'])]);
+  const bad = [head, num, diff].find((r) => r.code !== 0);
+  if (bad) {
+    const why = bad.stderr.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)[0] ?? `exit ${bad.code}`;
+    return { ok: false, kind: bad.missing || bad.code === -1 ? 'error' : 'missing', error: why };
+  }
+  // head: <full sha>\n<message>\0\n\n<stat>
+  const cut = head.stdout.indexOf('\0');
+  const top = cut < 0 ? head.stdout : head.stdout.slice(0, cut), nl = top.indexOf('\n');
+  const full = (nl < 0 ? top : top.slice(0, nl)).trim();
+  const message = nl < 0 ? '' : top.slice(nl + 1).replace(/\s+$/, '');
+  const stat = cut < 0 ? '' : head.stdout.slice(cut + 1).replace(/^\s*\n/, '').replace(/\s+$/, '');
+  const files: CommitDiff['files'] = [];
+  for (const line of num.stdout.split(/\r?\n/)) {
+    const m = /^(-|\d+)\t(-|\d+)\t(.+)$/.exec(line);
+    if (m) files.push({ path: m[3], add: m[1] === '-' ? 0 : Number(m[1]), del: m[2] === '-' ? 0 : Number(m[2]) });
+  }
+  const all = diff.stdout.replace(/^\n+/, '').replace(/\n$/, '');
+  const lines = all ? all.split('\n') : [];
+  const truncated = lines.length > DIFF_LINES;
+  return { ok: true, data: { sha: full, message, stat, files, patch: (truncated ? lines.slice(0, DIFF_LINES) : lines).join('\n'), lines: lines.length, truncated } };
+}
+
 /** `git tag --list 'v*' --sort=-v:refname` in the repo, newest first; [] when it is not a git repo or has none. */
 export async function versionTags(root: string): Promise<string[]> {
   const r = await run('git', ['tag', '--list', 'v*', '--sort=-v:refname'], { cwd: root, timeout: GIT_MS });

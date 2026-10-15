@@ -1,4 +1,4 @@
--- lens-scan store v2. One file per product repo: <root>/.ai/lens-scan/scan.db (gitignored).
+-- lens-scan store v3. One file per product repo: <root>/.ai/lens-scan/scan.db (gitignored).
 -- Written by the /lens-scan skill (ai-registry skills/lens-scan/scripts/store.mjs, the owner of this DDL);
 -- read by the blueprint, which writes only proposal decisions. This file is copied name for name between
 -- ai-registry skills/lens-scan/references/store.sql and bp docs/standard/lens-scan-store.sql.
@@ -13,6 +13,10 @@
 -- proposal statuses. No v1 column or status is renamed or dropped. store.mjs migrates a v1 file in place
 -- (one transaction: proposals is rebuilt, since SQLite cannot widen a CHECK; every row is copied).
 --
+-- v3 (the undo): proposals.triaged_from, the status an item left at its latest triage, so `triage --decision
+-- reopen` can put a person's call back while its release is still a draft. One nullable column, last in
+-- proposals; store.mjs migrates a v2 file in place by ALTER (one transaction), a v1 file straight to v3.
+--
 -- proposals.status, what each one means:
 --   proposed   the skill proposed it; nobody has decided
 --   approved   a person (review UI or `decide --by`) approved it; waiting to be built
@@ -24,8 +28,9 @@
 --   rework     (v2) triage: the person wants it rebuilt; a new attempt row (attempt_of = this id) carries the rebuild
 --   descoped   (v2) triage: the person drops it; it never ships
 --   released   (v2) shipped: its release was merged and tagged
+--   a reopen (v3) is no status of its own: the item goes back to its triaged_from
 PRAGMA journal_mode = WAL;
-PRAGMA user_version = 2;
+PRAGMA user_version = 3;
 
 CREATE TABLE IF NOT EXISTS runs (
   id            TEXT PRIMARY KEY,
@@ -128,7 +133,9 @@ CREATE TABLE IF NOT EXISTS proposals (
   release_id     TEXT REFERENCES releases(id),
   triage_note    TEXT,
   triaged_by     TEXT,                           -- <kind>:<name>
-  triaged_at     TEXT
+  triaged_at     TEXT,
+  -- v3
+  triaged_from   TEXT                            -- the status it left at its latest triage; reopen's target
 );
 CREATE INDEX IF NOT EXISTS proposals_updated ON proposals (updated_at);
 CREATE INDEX IF NOT EXISTS proposals_pack ON proposals (pack_id);

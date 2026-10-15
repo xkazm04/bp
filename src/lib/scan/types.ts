@@ -248,6 +248,8 @@ export interface TriageResult {
   skipped: { id: string; status: string; reason?: string }[];
   /** Packs that moved open -> triaged in the same transaction. */
   packs_triaged: string[];
+  /** v3, reopen only: packs that moved triaged -> open because an item went back to waiting. */
+  packs_reopened?: string[];
 }
 /** `POST /api/products/[slug]/releases` (201): the draft with its items, and what release-add left out. */
 export interface ReleaseCreated {

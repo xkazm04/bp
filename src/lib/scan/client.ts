@@ -11,6 +11,7 @@ import type { ScanJob, ScanScope } from './jobs.ts';
 import type { DispatchResult } from './actions.ts';
 import { fullScan as full, isEmptyScan as isEmpty, type Activity, type ActivityKind, type Coverage, type DecisionBody, type Measurement, type Proposal, type ProductInfo, type Run, type ScanDelta, type ScanSnapshot } from './types.ts';
 import type { CommitDiff, ReleaseCreated, TriageBody, TriageResult, VersionSuggestion } from './types.ts';
+import { errorText, parseCommitDiff, parseJson, parseReleaseCreated, parseScanJob, parseTriageResult, parseVersionSuggestion, type Parsed } from '../train/wire.ts';
 
 /** `loading` until the structure arrives; `missing` = no store or structure file; `offline` = reconnecting. */
 export type LiveStatus = 'loading' | 'live' | 'offline' | 'missing' | 'error';
@@ -258,20 +259,40 @@ export interface LensExecuteResult { jobs: ScanJob[]; approved: string[]; skippe
 /** Approve the lens's proposed findings and build them with its approved ones, in execute jobs of at most 50. 409 = nothing to build. */
 export const executeLens = (slug: string, lens: string): Promise<LensExecuteResult> => send(api(slug) + '/lenses/' + encodeURIComponent(lens) + '/execute', 'POST', {});
 
-// The release train's routes (WP2 implements, each through src/lib/train/wire.ts). Rejections carry `status` and `body`.
-const notYet = (): Promise<never> => Promise.reject(Object.assign(new Error('not implemented'), { status: 501 }));
+// The release train's routes, each answer through the one parser door (src/lib/train/wire.ts). A rejection carries
+// `status` and `body`: a non-2xx has the route's status and its body (the validated value when it is one, as triage's
+// 409 TriageResult; else the parsed JSON); an answer that fails its validator has status 0 and the field in the message.
+type Validate<T> = (x: unknown) => Parsed<T>;
+async function call<T>(url: string, method: 'GET' | 'POST', parse: Validate<T>, body?: unknown): Promise<T> {
+  const r = await fetch(url, {
+    method, cache: 'no-store',
+    ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+  });
+  const text = await r.text();
+  const j = parseJson(text);
+  const json = j.ok ? j.value : undefined;
+  if (!r.ok) {
+    const v = j.ok ? parse(json) : undefined;
+    throw Object.assign(new Error(errorText(json) ?? `HTTP ${r.status}`), { status: r.status, body: v?.ok ? v.value : json });
+  }
+  if (!j.ok) throw Object.assign(new Error(j.error), { status: 0, body: text });
+  const v = parse(json);
+  if (!v.ok) throw Object.assign(new Error(`${url} answered an unexpected shape: ${v.error}`), { status: 0, body: json });
+  return v.value;
+}
 /** Triage built items (POST triage). 409 = nothing moved (the result is in `body`). */
-export const postTriage = (slug: string, body: TriageBody): Promise<TriageResult> => { void slug; void body; return notYet(); };
+export const postTriage = (slug: string, body: TriageBody): Promise<TriageResult> => call(api(slug) + '/triage', 'POST', parseTriageResult, body);
 /** The suggested next version (GET releases/suggest). */
-export const getReleaseSuggestion = (slug: string): Promise<VersionSuggestion> => { void slug; return notYet(); };
+export const getReleaseSuggestion = (slug: string): Promise<VersionSuggestion> => call(api(slug) + '/releases/suggest', 'GET', parseVersionSuggestion);
 /** A draft release of accepted items (POST releases, 201). 409 = nothing to ship or the version exists. */
-export const postRelease = (slug: string, version: string, ids?: string[]): Promise<ReleaseCreated> => { void slug; void version; void ids; return notYet(); };
+export const postRelease = (slug: string, version: string, ids?: string[]): Promise<ReleaseCreated> =>
+  call(api(slug) + '/releases', 'POST', parseReleaseCreated, ids === undefined ? { version } : { version, ids });
 /** Start the release job that builds `id` (202 = the job). 412 = gh not authenticated; 409 = wrong status or busy. */
-export const postReleaseBuild = (slug: string, id: string): Promise<ScanJob> => { void slug; void id; return notYet(); };
+export const postReleaseBuild = (slug: string, id: string): Promise<ScanJob> => call(api(slug) + '/releases/' + encodeURIComponent(id) + '/build', 'POST', parseScanJob, {});
 /** Start the release job that finishes `id` after its PR merged (202 = the job). 412 / 409 as build. */
-export const postReleaseFinish = (slug: string, id: string): Promise<ScanJob> => { void slug; void id; return notYet(); };
-/** One item commit's diff (GET commits/[sha]). 404 = not an item commit of this store. */
-export const getCommitDiff = (slug: string, sha: string): Promise<CommitDiff> => { void slug; void sha; return notYet(); };
+export const postReleaseFinish = (slug: string, id: string): Promise<ScanJob> => call(api(slug) + '/releases/' + encodeURIComponent(id) + '/finish', 'POST', parseScanJob, {});
+/** One item commit's diff (GET commits/[sha]). 400 = not a sha; 404 = not an item commit of this store. */
+export const getCommitDiff = (slug: string, sha: string): Promise<CommitDiff> => call(api(slug) + '/commits/' + encodeURIComponent(sha), 'GET', parseCommitDiff);
 /** One turn of the lens onboarding chat: `product` is a slug or 'kettle'; `session` from the previous answer; `kind`
  *  asks for a permanent project lens (the default) or a temporary one. 504 after 3 minutes. */
 export const postLensDraft = (product: string, message: string, session?: string, kind: 'project' | 'temporary' = 'project'): Promise<LensDraftAnswer> =>
