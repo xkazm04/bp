@@ -1,5 +1,5 @@
 'use client';
-// The In packs scope of the triage table (contest A/1's triageView): a sticky head row, then each pack newest first,
+// The In packs scope of the triage table (contest A/1's triageView): a sticky head row, then each pack oldest first,
 // its sticky pack row over its shown items. The rows are memoised (ItemRow, PackRow) and skip layout off screen
 // (`content-visibility: auto`), so a decision repaints one row. The focused row is the ledger's `focus` when it is
 // shown, else the first; clicking a row opens it in the compare panel. Below ~760 px of width (the phone, a split
@@ -25,10 +25,12 @@ export function PackTable({ L, sample, onLenses }: PackTableProps) {
   const { ui, set } = L;
   const first = L.scoped[0]?.p.id, foc = ui.focus && L.scoped.some((f) => f.p.id === ui.focus) ? ui.focus : first;
   const onOpen = useCallback((id: string) => set((u) => (u.open === id && u.focus === id ? u : { ...u, focus: id, open: id })), [set]);
+  // by the ledger's parts, never the Ledger object (new on every render): a J/K step must not re-render the pack rows
+  const { packs, select } = L;
   const onSelect = useCallback((packId: string) => {
-    const k = L.packs.find((x) => x.pack.id === packId);
-    if (k) L.select(k.shown.map((f) => f.p.id));
-  }, [L]);
+    const k = packs.find((x) => x.pack.id === packId);
+    if (k) select(k.shown.map((f) => f.p.id));
+  }, [packs, select]);
   const progress = useMemo(() => new Map(L.packs.map((k) => [k.pack.id, k.items.map((f) => ({ id: f.p.id, status: f.status }))])), [L.packs]);
 
   if (!L.packs.length) return (

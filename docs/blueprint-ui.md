@@ -653,87 +653,144 @@ Rejected: a looping radar sweep (fake progress, perpetual frames) and a per-tile
 - **Live products** behave the same through the routes; nothing here is Kettle-only except the sim and the
   temporary-lens subscription.
 
-## Findings ledger (2026-10-13)
+## Findings ledger (2026-10-13; the release train 2026-10-15)
 
-The owner's words: findings need a standalone page, a ledger of items to click and dispatch across lenses. Four
-prototypes shared one model; on 2026-10-14 the owner kept two, the triage table and the feature × lens matrix, as a
-pair that complements each other (the status board and the impact queue are gone). The header's "drawing set" label
-became the switch.
+The owner's words: findings need a standalone page, a ledger of items to click and dispatch across lenses. On
+2026-10-14 the owner kept two of four prototypes, the triage table and the feature × lens matrix, as a pair; on
+2026-10-15 the release-manager contest's winner A/1 ("The Ledger, Carried Through to Release") carried the ledger on
+to the release: built pack items are triaged here, compared before and after, and shipped from a third tab. A/1's
+type, density and palette are the look (`ledger-theme.css` redefines bp's colour roles on `.lg-page`; the train's
+CSS is `train/**`, prefix `tr-`, every value through the `globals.css` tokens, and `node
+scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label is the switch.
 
 - **Same route, a page over the plan** (`src/components/ledger/LedgerPage.tsx`). UI state `page: 'plan' | 'ledger'`
-  and `lv: 'triage' | 'matrix'` (`src/engine/state.ts`); `E.setPage(page, lv?)` switches. The
-  engine, the live stream and running scans stay alive behind it. The header stays (the switch, the project, the lens
-  tabs); the page covers the rail and the timeline, which act on the plan and say nothing about a list, and it gets
-  the width the triage table needs. Everything it covers is `inert` while it shows; the toast stays above it. Opaque
-  paper (the sheet tokens), no `backdrop-filter`; it rises in with `motion/react` and leaves at once (a feature page
-  opened from a row then takes the chrome over in the same commit).
-- **The switch** (`PageSwitch` in `Header.tsx`): the title line reads `Project <name> · [drawing set | findings
-  ledger] · sheet … · simulated swarm|live lens scan`, two `aria-pressed` buttons, the open (proposed) count as a
-  12 px badge. **L** toggles it (the engine's keys do not use L) except in a text field, a dialog that owns its keys,
-  the open feature page and the morning watch. Going to the ledger closes an open flyout or timeline panel.
-- **Phone.** The phone's title line carries the same switch; the ledger there is the triage list alone, in the page
-  flow (rows fold into two-line cards below 760 px of the ledger's width, 44 px dispatch buttons).
-- **Findings** (`useLedger.ts`, one model for both views). Live: `useLive().product.scan.proposals`, jobs from
-  `useLive().product.jobs`. Kettle: `M.findings` (the fixture below) overlaid by id with `M.scanSim.snapshot().proposals`
-  (the sim's state wins; proposals the sim made are appended), jobs from `M.scanSim.jobs()`, re-read on
-  `scanSim.subscribe`. Nothing else branches on the source. The before value of `metric: before → expected` is
-  Queue's `metricMove` over the scan's readings, falling back to the map's facet value (Kettle has no store).
-- **A finding** shows the lens glyph (the plan's `glyph()` set, drawn once per glyph, ink, size and resolution into an
-  image) and short name, the feature (click: back to the drawing set, the plan's lens set to the finding's, the feature
-  page on that tab), the title, `before → expected`, risk (▲ high 7+, ◆ medium 4+, ▽ low), size, a status chip
-  (○ proposed, ◐ approved, ◔ executing, ● done, ✕ failed, – declined, struck through) and a kind tag for a baseline
-  upgrade or a propagation (`of <parent>`). A queued or running execute job over it replaces the mark with a ring that
-  turns while the job runs (still under reduced motion).
-- **Selection and filters** live in a module store in `useLedger.ts` (`useLedgerUi(product)`, `setLedgerUi`), so
-  they survive a view switch and closing the ledger, the desktop and phone ledgers share them, another product starts
-  from an empty one, and the Lenses panel and the plan's right-click can read the selection (`useLedgerSelection()`:
-  how many findings, the plan features behind them in map order, their lenses): a selection
-  set, lens and status filter chips (the status chips carry the counts), a feature chip from the matrix's drill-down
-  (`feature <name> ×`), a text filter (`/`). Both views show the same **Dispatch bar**: what is selected, how many can go, the lenses spanned, the effort, Clear (Esc) and
-  Dispatch n (D).
-- **Dispatch** is `dispatch(useScanCtx(), ids)` (`src/lib/scan/actions.ts`): only proposed or approved findings with no
-  job on them go, as one execute run across lenses. Optimistic: the proposed ones read approved until the next store or
-  sim update; a refusal rolls back and toasts "Dispatch failed" with the reason; success toasts the job and clears what
-  went from the selection.
-- **Keys** while the page has focus (`data-keys="own"`, so the engine's plan keys stay out): J/K or the arrows move the
-  focused row, Space or X selects it, D dispatches the selection, A dispatches the focused finding (a matrix row: its
-  findings), Enter opens its feature (a matrix row: that feature in the table), `/` filters, 1-2 switch the view, Esc clears the selection and, with none,
-  goes back to the drawing set. Only the focused row's controls are in the Tab order; focus is always visible.
-- **The two views** (`ledger/variants/`), a pair: the matrix finds where findings sit and picks them by area, the
-  table reads and decides them one by one. The selection is shared, so what the matrix picked is ticked in the table.
-  1. *Triage table*: one dense row per finding, open first, best value per effort first within a status; an
-     "Inbox zero" note when nothing is proposed under the filters.
-  2. *Feature × lens matrix*: a row per feature with findings (map order), a column per enabled lens (then any lens
-     the findings name that the map does not enable), cells counting findings by risk band. A cell click selects its
-     findings (again: deselects them), the row header selects the feature's findings across lenses, the row's
-     **Table** (or Enter) opens the triage table on that feature alone (`showInTable`, the feature chip), and its
-     Dispatch sends its open ones in one click.
-- **Value per effort** (`rankValue`, the triage order within a status and the order `/lens-scan execute` builds a batch in):
-  `ev = gain × confidence ÷ effort`. Gain = 0.25 + 0.75 × |expected_delta| ÷ the largest |expected_delta| among the
-  findings of the same lens and metric (normalised per metric, so KB and finding counts compare); 0.5 when a finding
-  names no metric or delta. Confidence = (11 − risk) ÷ 10 (risk 1..10, missing reads 5). Effort = size weight XS 1,
-  S 2, M 3, L 5, XL 8 (missing reads M). Ties: older, then id.
-- **The Lenses slot.** `LedgerPage` takes `lensButton` (top bar) and `lensPanel` (a side column beside the body)
-  as nodes; `LensesButton` and `LensesPanel` plug in there (below).
-- **Lens chip menus** (2026-10-14). Each lens filter chip has a disclosure (▾, its own button, not a right-click):
-  **Scan this lens · everything**, **Scan selection** (the features behind the selection), **Execute backlog (n)**
-  (n = the lens's proposed and approved findings with no job on them; it asks "Approve and build n findings in k
-  jobs?" inside the menu first) and **Open in Lenses panel** (opens the panel with that lens's row focused). An item
-  that cannot run stays focusable and says why under its label. Esc or a click outside closes the menu, focus goes
-  back to the chip's disclosure, the arrows move between items; the page's keys stay out of it (`.lg-pop`).
-- **Scan selected features** (2026-10-14). With a selection, the top bar offers it: a picker of the lenses that can be
-  scanned (checkboxes, preset to the lenses of the selected findings), then one `selection` scan per checked lens over
-  the features behind the selection, one toast for all (a selection over 200 features takes the first 200 and says
-  so).
-- **Kettle findings** (`src/data/kettle.findings.json`, generated, never hand-edited): `node scripts/fixtures/kettle-findings.mjs`
-  writes 60 store-shaped proposals over the sample map, run `sample-run-1`, created in the week before the map's
-  as-of date, from the map itself: every enabled lens gets findings (a lens with metric fields gets metric findings,
-  the before from the feature's facet, the delta in the metric's `better` direction; any other lens gets findings
-  without a metric), features in trouble under a lens first, mixed statuses (mostly proposed), risk 1-10, sizes, one
-  baseline upgrade with two propagation children, bodies with Summary, Impact and Evaluation. Seeded with the shared
-  PRNG (`scripts/lib/prng.ts`). `npm run check:findings` regenerates in memory and fails on drift.
-- **A live product** shows its store's proposals and its jobs the same way; a finding on a feature its map lacks
-  stays listed, its feature link disabled.
+  and `lv: 'triage' | 'matrix' | 'release'` (`src/engine/state.ts`); `E.setPage(page, lv?)` switches. The engine, the
+  live stream and running scans stay alive behind it. The header stays (the switch, the project, the lens tabs); the
+  page covers the rail and the timeline, and everything it covers is `inert` while it shows; the toast stays above it.
+  Opaque paper, no `backdrop-filter`; it rises in with `motion/react` and leaves at once.
+- **Its own chunk.** The page and `train/**` load on demand: `LedgerPageLazy` (`Phone.tsx`, `React.lazy` + Suspense,
+  mounted by BlueprintApp's chrome and by the phone only while `page` is `'ledger'`) is the one door; nothing `/`
+  imports statically reaches them. The header keeps `useLedger.ts` (the open count) and `ledger.css` (the switch).
+- **The switch** (`PageSwitch` in `Header.tsx`): `Project <name> · [drawing set | findings ledger] · sheet …`, two
+  `aria-pressed` buttons, the open (proposed) count as a 12 px badge. **L** toggles it except in a text field, a
+  dialog that owns its keys, the open feature page and the morning watch.
+- **The top bar**: the title and `<product> · live lens scan | sample findings, simulated execution · n findings · n
+  items in k packs`, the summary strip (changed, waiting for you, will ship: `SummaryStrip`), the three tabs (Triage
+  table 1, Feature × lens matrix 2, Release 3 with the package count), Scan selected features, the Lenses button.
+- **Two scopes** for the table and the matrix, `In packs n | Backlog n` (`LedgerUi.scope`); a scope switch drops the
+  status filter (their chips differ), and the focus and the compare panel start over.
+  1. *In packs* (`train/PackTable.tsx`): packs newest first, each a sticky pack row (lens glyph and id, branch, base
+     commit, item count, state, SAMPLE on Kettle, one state mark per item and `n/m decided`) over its items. An item
+     row: checkbox, lens, feature with the item id (and its attempt), title with its triage note, before → after with
+     the metric key, the verdict (moved, flat, worse, unmeasured: `compare.ts verdictOf`), evidence (screens, a perf
+     item's runs, the commit) and the state mark (`train/ui/Marks.tsx StateMark`, the one drawing of a state; ⚑ for an
+     item accepted although it failed or did not move). Focused (ring), open (tint) and selected (accent bar) look
+     different. A click opens the item in the compare panel; under the table sits the **decision bar**.
+  2. *Backlog* (`variants/Triage.tsx`): every finding, open first, best value per effort first within a status, an
+     "Inbox zero" note when nothing is proposed; under it the **dispatch bar** (selected, how many can go, the lenses
+     spanned, effort, Clear, Dispatch n).
+
+  The matrix in packs shows each item's state mark per cell and has no Dispatch (packs are triaged).
+- **Decisions** (`train/Decide.tsx`, the one control; the decision bar and the compare footer both render it): Accept,
+  Rework, Descope and Undo over the selection, else the open item, else the focused one. The rules live in
+  `src/lib/train/rules.ts` alone: which statuses a decision starts from; rework and descope always need a note; an
+  accept needs one when the item failed or did not move (it then ships flagged). The note editor takes the bar's line
+  (or the compare footer's), with quick notes. Sent items are pending (`LedgerUi.pending`) until the store or the sim
+  shows them in another status: no optimistic flip; a refusal toasts what was skipped and why (`skipped[].reason`). A
+  single decision on the focused item moves the focus, and the open compare, to the next waiting item. **Undo** is
+  `reopen`: the item goes back to its `triaged_from` and out of a draft release, one step deep. The bar's package
+  pill reads `Package v<draft or suggested> · n accepted`, with Release →.
+- **The compare panel** (`train/compare/ComparePanel.tsx`): one pack item's evidence, docked right at
+  `clamp(--cmp-min, 52%, --cmp-max)` from 1100 px (a wide window opens the first item the first time the table shows),
+  over the table below that; **W** (or Enter again) gives it the full width. The head names the lens, id, pack and
+  place in it, feature and title, with prev / next. The body: the metric strip or, for an item measured in baseline
+  runs, the **perf table** (each run, the median, the after, the change and its %, the noise, the target, the verdict,
+  a range strip, then the pack's other run items). **The noise rule** (`compare.ts runStats`): a change must beat the
+  larger of the runs' spread (max − min) and, for a timing in ms with several runs, one frame (16.7 ms); within it,
+  the item reads flat. Then the **screens**: before/after pairs by theme and size; **L** cycles light · dark · both,
+  **M** side by side · slider · blink · change map, with the pixel verdict in words. The **change map** is a 32 × 18
+  grid of the largest channel change per cell, computed once per pair per session in a worker (`changeMap.worker.ts`,
+  with a main-thread fallback); more than 3 of 255 levels moved, more than 24 is visible (`src/lib/train/pixels.ts`,
+  A/1's thresholds). Then what the measurement says, the commit (its files with add/del bars at once; the message and
+  the patch behind a disclosure, the patch open from the start at full width, in chunks that skip layout off screen;
+  fetched once per sha through the commits route, Kettle's sample diff) and the item's own text. The footer: what its
+  state means, or its note, and Decide. The next item's screens are prefetched while the browser idles.
+- **The Release tab** (`train/release/ReleaseView.tsx`; the states as data in `releaseState.ts`): the version
+  (suggested with its reason by `GET releases/suggest`, editable, semver), **Create draft** (`POST releases`: the
+  accepted items with no release, then what release-add left out), the package by lens (flagged items with their
+  notes; Compare and Undo per item while the release is a draft), the rework queue and the descoped, the stepper
+  **draft → building → pr-open → merged → tagged** (failed shows at the step it failed on, with Retry), the job log,
+  the notes it will publish, and the history of past releases. **Build** (B) and **Finish** (F) run Claude Code on the
+  person's machine with their own `gh` login (the build and finish routes; 412 while gh is not logged in): Build
+  cherry-picks the accepted commits onto `release/<version>`, runs the gates, writes the notes and opens the PR; Finish,
+  after the merge on GitHub, tags, publishes and marks the items released. Progress comes only from the stream (the
+  release rows and the jobs event), never from polling. Esc goes back to triage.
+- **Keys** (`train/keymap.ts`, one table: the handler, the footer reminders and the `?` sheet all read it, so a key
+  shown is a key bound; the page owns them, `data-keys="own"`):
+  - *In packs*: J/K or ↓/↑ move, X or Space selects, Enter compares (again: full width), A accept, R rework, S
+    descope, U undo, `/` filter, 1-3 tabs, ? the keys, Esc.
+  - *Backlog*: J/K, X/Space, Enter opens the feature, D dispatches the selection, A dispatches the focused finding,
+    `/`, 1-3, ?, Esc.
+  - *Compare* (layered over the scope it was opened from): L theme, M mode, W full width.
+  - *Release*: B build, F finish, 1-3, ?, Esc back to triage.
+
+  Esc is layered: a note being written, then full width, then the compare panel, then the selection, then (Release)
+  the table, else the drawing set. Only the focused row's controls are in the Tab order; focus is always visible.
+- **Phone** (`Phone.tsx` hosts it with `phone`): the table alone, in the page flow; pack items as cards over the
+  decision bar (44 px buttons), compare as a full-screen sheet that owns a history entry (Back closes it), the release
+  as one status line (`ReleaseStatusLine`); no tabs.
+- **Kettle's sample train** (`src/lib/model/train-sim.ts`, on the scan sim's timer): packs k-des-1 (a moved, a flat, a
+  worse, a failed and a reworked item), k-des-2 (the rework's rebuild) and k-perf-1 (two probe items with three
+  baseline runs each) over real Kettle features, with readings, sample screens (`public/sample-shots`,
+  `scripts/gen-sample-shots.mjs`) and commits; triage, reopen, the version suggestion and a release job, with the
+  answers and refusals of the routes. The Release tab's sample toggles make the job run into a missing gh login, a
+  conflict or a failing gate; a sample merge stands in for GitHub. Everything it makes says SAMPLE.
+- **Findings** (`useLedger.ts`, one model for every view; `train/data.ts useTrain()` for packs, releases and
+  evidence). Live: `useLive().product.scan`, jobs from `useLive().product.jobs`. Kettle: `M.findings` (the fixture
+  below) overlaid by id with the scan sim's snapshot, jobs from `M.scanSim.jobs()`. Nothing else branches on the
+  source. A finding's before value is Queue's `metricMove` over the readings, falling back to the map's facet value.
+- **Selection and filters** live in a module store in `useLedger.ts` (`useLedgerUi(product)`, `setLedgerUi`): they
+  survive a tab switch and closing the ledger, the desktop and phone ledgers share them, another product starts empty,
+  and the Lenses panel and the plan's right-click read the selection (`useLedgerSelection()`). Status chips (state
+  mark and count), lens chips (glyph, short, count in the scope), a feature chip from the matrix's **Table**
+  (`feature <name> ×`), a text filter (`/`).
+- **Dispatch** (the backlog) is `dispatch(useScanCtx(), ids)` (`src/lib/scan/actions.ts`): proposed or approved
+  findings with no job go as one execute run across lenses; optimistic until the next store or sim update, a refusal
+  rolls back with a toast.
+- **Value per effort** (`rankValue`, the backlog's order within a status and the order `/lens-scan execute` builds a
+  batch in): `ev = gain × confidence ÷ effort`. Gain = 0.25 + 0.75 × |expected_delta| ÷ the largest |expected_delta|
+  among the findings of the same lens and metric; 0.5 when a finding names no metric or delta. Confidence =
+  (11 − risk) ÷ 10 (risk 1..10, missing reads 5). Effort = XS 1, S 2, M 3, L 5, XL 8 (missing reads M). Ties: the
+  older, then the id.
+- **The Lenses slot.** `LedgerPage` takes `lensButton` (top bar) and `lensPanel` (a side column) as nodes;
+  `LensesButton` and `LensesPanel` plug in there (below).
+- **Lens chip menus** (2026-10-14). Each lens chip has a disclosure (▾): **Scan this lens · everything**, **Scan
+  selection**, **Execute backlog (n)** (it asks "Approve and build n findings in k jobs?" first) and **Open in Lenses
+  panel**. An item that cannot run stays focusable and says why. Esc or a click outside closes it, the arrows move
+  between items; the page's keys stay out (`.lg-pop`).
+- **Scan selected features** (2026-10-14): with a selection, a picker of the scannable lenses (preset to the lenses of
+  the selected findings), one `selection` scan per checked lens over the features behind it (at most 200 features).
+- **Kettle findings** (`src/data/kettle.findings.json`, generated, never hand-edited): `node
+  scripts/fixtures/kettle-findings.mjs` writes 60 store-shaped proposals over the sample map from the map itself
+  (every enabled lens, features in trouble first, mixed statuses, one baseline upgrade with two propagation
+  children), seeded with the shared PRNG. `npm run check:findings` regenerates them in memory and fails on drift.
+- **A live product** shows its store's proposals, packs and releases the same way; a finding on a feature its map
+  lacks stays listed, its feature link disabled.
+- **Budgets** (counted, never timed: `npm run check:train-budget`, `node scripts/check-train-budget.ts`):
+  - *The chunk*: nothing `/` imports statically reaches `LedgerPage.tsx` or `train/**`. With `--bundle .next-wp5b
+    [--before <dir>]` it reads a production build (`NEXT_DIST_DIR=.next-wp5b npx next build`, then restore
+    `tsconfig.json`): `/`'s first-load scripts and styles must not carry `tr-cmp`; it prints their bytes and the
+    ledger's chunks. At the cutover: first-load JS 1,367 → 1,277 KB (gzip 435 → 409 KB), CSS 184 → 149 KB; the
+    ledger's own chunk is 95 KB of JS (gzip 30 KB) and 35 KB of CSS, fetched when the ledger first opens.
+  - *The DOM at 10x*: a synthetic snapshot of 1,000 backlog findings and 120 pack items in 10 packs, server-rendered
+    through the real components: the In packs table ≤ 3,300 elements (3,013: 25 per row), the Backlog ≤ 24,600
+    (22,414: 20 per row; every row is mounted so J/K can focus it, and `content-visibility: auto` skips the off-screen
+    ones' layout), the compare panel with its diff closed ≤ 110 (97), a perf item's ≤ 270 (243). A browser on a 10x
+    store counts the same.
+  - *Work per key*: a J/K step re-renders the two rows whose focus changed and nothing else (the rows are memoised and
+    get the ledger's stable callbacks, never the `Ledger` object, which is new on every render). Counted in a dev
+    build through React's devtools hook (a memoised row that bails out keeps its `memoizedProps` object): 2 item rows
+    and 0 pack rows in packs, 2 rows in the backlog, on Kettle and on a 10x store.
 
 ## Lenses panel (2026-10-14; was Temporary lenses, 2026-10-13)
 

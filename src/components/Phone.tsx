@@ -1,7 +1,9 @@
 'use client';
 // The phone view: the person's queue first, then a searchable reading list. No plan on a phone. The title line's
 // "drawing set | findings ledger" switch swaps both for the findings ledger, triage list only (ledger/LedgerPage.tsx).
-import { useEffect, useState } from 'react';
+// The ledger is its own chunk (LedgerPageLazy, below; BlueprintApp mounts the same one), fetched the first time the
+// ledger page shows: `/`'s first-load JS carries none of it (scripts/check-train-budget.ts --bundle proves it).
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { fmtWait, pname, sheetOf, type SimDecision } from '@/lib/model';
 import { useProductName } from '@/lib/scan/projects';
@@ -13,7 +15,17 @@ import { PatternDefs, StageSym } from './Symbols';
 import { ThemeToggle } from './ThemeToggle';
 import { shallowEqual, useBp, useEngine, useLive } from './hooks';
 import { PageSwitch } from './Header';
-import { LedgerPage } from './ledger/LedgerPage';
+import type { LedgerPageProps } from './ledger/LedgerPage';
+
+const LedgerChunk = lazy(() => import('./ledger/LedgerPage').then((m) => ({ default: m.LedgerPage })));
+/**
+ * The findings ledger, loaded on demand: mount it only while the store's `page` is 'ledger' (the import starts at the
+ * first mount, and nothing shows until it lands: the page fades in as it always did). The one door to the ledger's
+ * chunk; nothing else imports ledger/LedgerPage.tsx or train/** statically.
+ */
+export function LedgerPageLazy(props: LedgerPageProps) {
+  return <Suspense fallback={null}><LedgerChunk {...props} /></Suspense>;
+}
 
 const SHOWN = 12;
 /** A decline note survives a refused write (the card remounts when the decision reopens). */
@@ -88,7 +100,7 @@ export function Phone() {
       <PatternDefs />
       <div className="ph-top"><b className="ph-brand">{name}</b><PhoneStatus /><ThemeToggle /></div>
       <div className="ph-h"><div className="k">PROJECT {P.name.toUpperCase()} · <PageSwitch /> · SHEET {sheetOf(P, s.view).no} · {P.asOf} · {M.live ? 'LIVE LENS SCAN' : 'SIMULATED SWARM'}</div><h1>{P.name.toUpperCase()}</h1><p>{P.tagline}</p></div>
-      {s.page === 'ledger' ? <LedgerPage phone /> : <>
+      {s.page === 'ledger' ? <LedgerPageLazy phone /> : <>
       <div className="ph-sum">
         <div><b>{P.features.length}</b>features</div><div><b>{c.live + c.flagged}</b>live</div><div><b>{c.build}</b>being built</div>
         <div className="am"><b>{sim.has ? once(qq.all).length : 0}</b>questions waiting</div>

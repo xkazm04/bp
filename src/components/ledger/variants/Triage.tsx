@@ -9,16 +9,28 @@ import type { Finding, Ledger } from '../useLedger';
 import { LensTag, StateMark } from '../train/ui/Marks.tsx';
 import { FeatureLink, KindTag, Move, Risk, Size, fromControl } from './bits';
 
-const Row = memo(function Row({ f, L, on, focus }: { f: Finding; L: Ledger; on: boolean; focus: boolean }) {
+interface RowProps {
+  f: Finding;
+  on: boolean;
+  focus: boolean;
+  /** The ledger's own callbacks (stable: useLedger memoises them), never the Ledger object, which is new on every
+   *  render: a J/K step re-renders the two rows whose `focus` changed and no other (scripts/check-train-budget.ts). */
+  onFocus(id: string): void;
+  onToggle(id: string): void;
+  onOpen(f: Finding): void;
+  move(p: Finding['p']): string | null;
+}
+
+const Row = memo(function Row({ f, on, focus, onFocus, onToggle, onOpen, move }: RowProps) {
   return (
     <div role="row" className={'lg-tr' + (on ? ' on' : '') + ' s-' + f.status} data-fid={f.p.id} tabIndex={focus ? 0 : -1}
-      onFocus={() => L.setFocus(f.p.id)}
-      onClick={(e) => { L.setFocus(f.p.id); if (!fromControl(e)) L.toggle(f.p.id); }}>
-      <span role="cell" className="c-sel"><input type="checkbox" tabIndex={-1} checked={on} onChange={() => L.toggle(f.p.id)} aria-label={'Select ' + f.p.title} /></span>
+      onFocus={() => onFocus(f.p.id)}
+      onClick={(e) => { onFocus(f.p.id); if (!fromControl(e)) onToggle(f.p.id); }}>
+      <span role="cell" className="c-sel"><input type="checkbox" tabIndex={-1} checked={on} onChange={() => onToggle(f.p.id)} aria-label={'Select ' + f.p.title} /></span>
       <span role="cell" className="c-lens"><LensTag id={f.p.lens} /></span>
-      <span role="cell" className="c-feat"><FeatureLink f={f} L={L} act={focus} /></span>
+      <span role="cell" className="c-feat"><FeatureLink f={f} onOpen={onOpen} act={focus} /></span>
       <span role="cell" className="c-title"><span className="lg-t">{f.p.title}</span><KindTag p={f.p} /></span>
-      <span role="cell" className="c-mv"><Move f={f} L={L} /></span>
+      <span role="cell" className="c-mv"><Move f={f} move={move} /></span>
       <span role="cell" className="c-risk"><Risk p={f.p} /></span>
       <span role="cell" className="c-size"><Size p={f.p} /></span>
       <span role="cell" className="c-st"><StateMark status={f.status} job={f.job} /></span>
@@ -48,7 +60,7 @@ export function Triage({ L }: { L: Ledger }) {
             </div>
           </div>
           <div role="rowgroup">
-            {L.rows.map((f) => <Row key={f.p.id} f={f} L={L} on={L.ui.sel.has(f.p.id)} focus={f.p.id === foc} />)}
+            {L.rows.map((f) => <Row key={f.p.id} f={f} on={L.ui.sel.has(f.p.id)} focus={f.p.id === foc} onFocus={L.setFocus} onToggle={L.toggle} onOpen={L.openFeature} move={L.move} />)}
           </div>
         </div>
       ) : <div className="lg-empty">{L.all.length ? 'No finding matches these filters.' : 'No findings yet. A lens scan proposes them; they appear here as it does.'}</div>}

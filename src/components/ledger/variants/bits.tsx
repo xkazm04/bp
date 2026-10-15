@@ -7,7 +7,7 @@ import { useMemo } from 'react';
 import { glyph, type GlyphSpec } from '@/engine/render/lens-glyph';
 import type { Proposal } from '@/lib/scan/types';
 import { useTheme } from '../../ThemeToggle';
-import { riskBand, type Finding, type Ledger } from '../useLedger';
+import { riskBand, type Finding } from '../useLedger';
 
 // ------------------------------------------------------------------------------------------- lens glyph
 const URLS = new Map<string, string>();
@@ -49,14 +49,15 @@ export function Size({ p }: { p: Proposal }) {
 }
 /** The feature name: opens the feature on the finding's lens tab, in the drawing set. `act` false keeps it out of the
  *  Tab order (only the focused row's controls are tabbable; J/K move between rows). */
-export function FeatureLink({ f, L, act = true }: { f: Finding; L: Ledger; act?: boolean }) {
+export function FeatureLink({ f, onOpen, act = true }: { f: Finding; onOpen(f: Finding): void; act?: boolean }) {
   return (
     <button type="button" className="lg-feat" disabled={!f.fid} tabIndex={act ? 0 : -1} title={f.fid ? 'Open ' + f.fname + ' on its ' + f.p.lens + ' tab' : f.p.feature + ' is not in this map'}
-      onClick={(e) => { e.stopPropagation(); L.openFeature(f); }}>{f.fname}</button>
+      onClick={(e) => { e.stopPropagation(); onOpen(f); }}>{f.fname}</button>
   );
 }
-export function Move({ f, L }: { f: Finding; L: Ledger }) {
-  const mv = L.move(f.p);
+/** Before -> expected (the ledger's `move`, useLedger's stable callback). */
+export function Move({ f, move }: { f: Finding; move(p: Proposal): string | null }) {
+  const mv = move(f.p);
   return mv ? <span className="lg-mv">{mv}</span> : null;
 }
 

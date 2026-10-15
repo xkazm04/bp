@@ -31,10 +31,9 @@ import { Dock } from './Dock';
 import { BaseBar } from './BaseBar';
 import { Callout, DecisionCard, HoverCard, Ladder, Morning, ScaleBar, SelBar, Ticker, Toast } from './Overlays';
 import { FeatureSheet } from './FeatureSheet';
-import { Phone } from './Phone';
+import { LedgerPageLazy, Phone } from './Phone';
 import { ProjectSwitcher } from './ProjectSwitcher';
 import { ScanMenu } from './ScanMenu';
-import { LedgerPage } from './ledger/LedgerPage';
 import { LensesButton, LensesPanel } from './ledger/lens/LensesPanel';
 import './blueprint.css';
 
@@ -46,9 +45,10 @@ let sampleChunk: Promise<BuildSample> | null = null;
 const loadSample = () => (sampleChunk ??= import('@/lib/model/sample').then((m) => m.buildModel));
 if (typeof window !== 'undefined' && !new URLSearchParams(location.search).get('product')) loadSample().catch(() => { sampleChunk = null; });
 
-// memo: the app re-renders on every scan delta (the live context); the chrome re-renders only where it reads it
+// memo: the app re-renders on every scan delta (the live context); the chrome re-renders only where it reads it.
+// The findings ledger is a chunk of its own (Phone.tsx's LedgerPageLazy), mounted only while its page shows.
 const Chrome = memo(function Chrome() {
-  const s = useBp((s) => ({ phone: s.phone }), shallowEqual);
+  const s = useBp((s) => ({ phone: s.phone, ledger: s.page === 'ledger' }), shallowEqual);
   if (s.phone) return null;
   return (
     <>
@@ -64,7 +64,7 @@ const Chrome = memo(function Chrome() {
       <DecisionCard />
       <Toast />
       <FeatureSheet />
-      <LedgerPage lensButton={<LensesButton />} lensPanel={<LensesPanel />} />
+      {s.ledger ? <LedgerPageLazy lensButton={<LensesButton />} lensPanel={<LensesPanel />} /> : null}
       <ScanMenu />
       <Morning />
     </>
