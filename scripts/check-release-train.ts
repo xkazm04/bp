@@ -10,7 +10,7 @@
 // Run: node scripts/check-release-train.ts  (Node's type stripping; no build step). Exit 1 on any failure.
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { betterOf, compareOf, packGroups, packItems, releaseItems, unreleased, awaitingTriage, type LensFields } from '../src/lib/scan/compare.ts';
+import { FRAME_MS, runStats, betterOf, compareOf, packGroups, packItems, releaseItems, unreleased, awaitingTriage, type LensFields } from '../src/lib/scan/compare.ts';
 import { bump, bumpOf, isVersion, suggestVersion, RELEASE_ID } from '../src/lib/scan/release.ts';
 import { isCurrent, latestReading } from '../src/lib/scan/derive.ts';
 import { emptyScan, type Measurement, type Pack, type Proposal, type Release, type ScanSnapshot, type Shot } from '../src/lib/scan/types.ts';
@@ -94,6 +94,27 @@ const LENSES: LensFields[] = [
   check('latestReading: a newer after does not replace the before', latestReading(onlyAfter, 'f2', 'dev', 'cov')?.value === 50, String(latestReading(onlyAfter, 'f2', 'dev', 'cov')?.value));
   const hist = metricHistory(scan, 'f1', 'dev', 'cov').map((m) => m.value).join();
   check('metricHistory: before and unlinked readings, no after readings', hist === '50,50,50,55,40', hist);
+}
+
+// ---- baseline runs: the after against the runs' median, a change within their noise reads flat
+{
+  const PERF: LensFields[] = [{ id: 'perf', manifest: { fields: [{ key: 'p95', metric: { better: 'down' } }] } }];
+  const runs = (p: string, before: number[], after: number) => [
+    ...before.map((v, i) => ({ ...ms('f1', 'perf', 'p95', v, T(2, i), { p, phase: 'before' }), unit: 'ms' })),
+    { ...ms('f1', 'perf', 'p95', after, T(4), { p, phase: 'after' }), unit: 'ms' },
+  ];
+  const scan: ScanSnapshot = {
+    ...emptyScan(),
+    proposals: ['a', 'b', 'c', 'd'].map((id) => prop(id, { lens: 'perf', metric: 'p95' })),
+    // Athena's real experiment (80/88/80 -> 64 and 80/184/80 -> 88), the sample's real gain, one run
+    measurements: [...runs('a', [80, 88, 80], 64), ...runs('b', [80, 184, 80], 88), ...runs('c', [96, 104, 98], 72), ...runs('d', [80], 76)],
+  };
+  check('runStats: median, spread, noise = max(spread, one frame) for ms', JSON.stringify(runStats([80, 88, 80], 'ms')) === JSON.stringify({ runs: [80, 80, 88], median: 80, spread: 8, noise: FRAME_MS }));
+  check('runStats: no frame floor for a unit that is not ms, or one run', runStats([3, 3], 'states').noise === 0 && runStats([80], 'ms').noise === 0);
+  check('runs: 80/88/80 -> 64 is flat (16 within one frame)', compareOf(scan, 'a', PERF)?.verdict === 'flat');
+  check('runs: 80/184/80 -> 88 is flat (within the 104 spread)', compareOf(scan, 'b', PERF)?.verdict === 'flat');
+  check('runs: 96/104/98 -> 72 moved (26 beyond the 16.7 noise)', compareOf(scan, 'c', PERF)?.verdict === 'moved');
+  check('one run: 80 -> 76 moved, as before', compareOf(scan, 'd', PERF)?.verdict === 'moved');
 }
 
 // ---- packs and releases

@@ -37,19 +37,36 @@ const byMeasure = (a: Measurement, b: Measurement) =>
     : a.measured_at < b.measured_at ? -1 : a.measured_at > b.measured_at ? 1 : a.id - b.id;
 const byCapture = (a: Shot, b: Shot) => (a.captured_at < b.captured_at ? -1 : a.captured_at > b.captured_at ? 1 : a.id - b.id);
 
+/** One frame at 60 Hz: a timing below it cannot be told apart from the display's own interval. */
+export const FRAME_MS = 16.7;
+
+/** Baseline runs (several `before` readings of one metric): their median, spread (max - min) and the noise a change
+ *  must exceed to count, the larger of the spread and, for a timing in ms, one frame. One reading: spread 0. */
+export interface RunStats { runs: number[]; median: number; spread: number; noise: number }
+export function runStats(values: readonly number[], unit?: string): RunStats {
+  const runs = [...values].sort((a, b) => a - b), n = runs.length, mid = n >> 1;
+  const median = n === 0 ? NaN : n % 2 ? runs[mid] : (runs[mid - 1] + runs[mid]) / 2;
+  const spread = n ? runs[n - 1] - runs[0] : 0;
+  return { runs, median, spread, noise: Math.max(spread, unit === 'ms' && n > 1 ? FRAME_MS : 0) };
+}
+
 /**
- * The verdict on one item: its metric's latest `before` against its latest `after` reading (same lens and metric).
- * The direction is the lens field's `better` (manifest), else the sign of the item's expected delta. No metric,
- * a missing reading on either side or no direction: `unmeasured`. Equal values: `flat`.
+ * The verdict on one item: its metric's `before` against its latest `after` reading (same lens and metric). One
+ * `before` reading is compared as it is; several are baseline runs, and the after is compared with their median, a
+ * change within their noise (runStats) reading `flat`. The direction is the lens field's `better` (manifest), else the
+ * sign of the item's expected delta. No metric, a missing reading on either side or no direction: `unmeasured`.
  */
 export function verdictOf(p: Proposal, before: readonly Measurement[], after: readonly Measurement[], lenses?: readonly LensFields[]): { verdict: Verdict; from?: Measurement; to?: Measurement } {
   if (!p.metric) return { verdict: 'unmeasured' };
-  const last = (xs: readonly Measurement[]) => { let r: Measurement | undefined; for (const m of xs) if (m.lens === p.lens && m.metric === p.metric && (!r || byMeasure(r, m) <= 0)) r = m; return r; };
+  const mine = (m: Measurement) => m.lens === p.lens && m.metric === p.metric;
+  const last = (xs: readonly Measurement[]) => { let r: Measurement | undefined; for (const m of xs) if (mine(m) && (!r || byMeasure(r, m) <= 0)) r = m; return r; };
   const from = last(before), to = last(after);
   if (!from || !to) return { verdict: 'unmeasured' };
   const dir = betterOf(lenses, p.lens, p.metric) ?? (p.expected_delta ? (p.expected_delta > 0 ? 'up' : 'down') : undefined);
-  const d = to.value - from.value;
-  if (d === 0) return { verdict: 'flat', from, to };
+  const base = before.filter(mine);
+  const s = base.length > 1 ? runStats(base.map((m) => m.value), from.unit) : undefined;
+  const d = to.value - (s ? s.median : from.value);
+  if (d === 0 || (s && Math.abs(d) <= s.noise)) return { verdict: 'flat', from, to };
   if (!dir) return { verdict: 'unmeasured' };
   return { verdict: (d > 0) === (dir === 'up') ? 'moved' : 'worse', from, to };
 }
