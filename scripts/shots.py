@@ -1,9 +1,9 @@
 # Screenshot matrix (themes, sizes, scales, variants, phone, sheet, decision card) with the text-floor readout.
 # Usage: python scripts/shots.py [base_url] [out_dir]
-#   base_url (empty = default): $BP_BASE, else http://localhost:3000 (`npm run dev` / `npm start`); out_dir: docs/shots/foundation
+#   base_url (empty = default): $BP_BASE, else http://localhost:3010 (`npm run dev` / `npm start`); out_dir: docs/shots/foundation
 import os, time, json, sys
 from playwright.sync_api import sync_playwright
-BASE = ((sys.argv[1] if len(sys.argv) > 1 else '') or os.environ.get('BP_BASE') or 'http://localhost:3000').rstrip('/')
+BASE = ((sys.argv[1] if len(sys.argv) > 1 else '') or os.environ.get('BP_BASE') or 'http://localhost:3010').rstrip('/')
 OUT = sys.argv[2] if len(sys.argv) > 2 else 'docs/shots/foundation'
 # The run fails (exit 1) on any of these, so it can stand as a check and not only as a gallery.
 FLOOR = 12  # px, docs/blueprint-ui.md text floor

@@ -6,12 +6,12 @@
 #                                           the counter reads under 80% of the full figure at any LOD.
 #   python scripts/perf.py --tween [url]    rAF deltas and raster counts during a lens switch (General -> lens ->
 #                                           General) at home and three zooms
-# Env: BP_BASE (default http://localhost:3000, `npm start`/`npm run dev`), RUNS (gesture runs, default 3),
+# Env: BP_BASE (default http://localhost:3010, `npm start`/`npm run dev`), RUNS (gesture runs, default 3),
 #      N (rasters per LOD, default 30), TWEEN_RUNS (default 1), VW / VH / DPR (viewport, default 1920x1080 @1).
 # Measure a production build: `npm run build && npm start`.
 import os, time, json, statistics, sys
 from playwright.sync_api import sync_playwright
-BASE = (os.environ.get('BP_BASE') or 'http://localhost:3000').rstrip('/')
+BASE = (os.environ.get('BP_BASE') or 'http://localhost:3010').rstrip('/')
 args = [a for a in sys.argv[1:] if not a.startswith('--')]
 mode = 'lod' if '--lod' in sys.argv else 'tween' if '--tween' in sys.argv else 'gesture'
 url = args[0] if args else BASE + '/v/subtle?intro=0&scale=4'

@@ -20,7 +20,7 @@ simulation.
 
 ```sh
 npm install
-npm run dev            # http://localhost:3000
+npm run dev            # http://localhost:3010
 npm run build && npm start
 ```
 
@@ -108,7 +108,7 @@ products shots route; that is expected and not a check failure.
 
 `npm run typecheck` · `npm run build` · `python scripts/perf.py` (frame times while zooming at
 `?scale=4`; the budget is 60 fps, see `docs/perf.md`) · `python scripts/shots.py` (screenshots).
-The Python tools need `pip install -r requirements-tools.txt && playwright install chromium`, and a running server; they target `http://localhost:3000`
+The Python tools need `pip install -r requirements-tools.txt && playwright install chromium`, and a running server; they target `http://localhost:3010`
 (`npm run dev` / `npm start`), or `$BP_BASE` / a URL argument for another port.
 
 Stack: Next.js 16, React 19, Motion, TypeScript, and a canvas renderer with no other runtime
