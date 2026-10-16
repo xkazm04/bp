@@ -81,9 +81,9 @@ export function DispatchBar({ L, hint }: { L: Ledger; hint?: ReactNode }) {
       {m ? <span className="lg-bar-e" title="Effort: XS 1, S 2, M 3, L 5, XL 8">effort {L.effort}</span> : null}
       <span className="lg-sp" />
       <button type="button" className="bt" disabled={!n} onClick={L.clear} title="Clear the selection (Esc)">Clear <kbd>Esc</kbd></button>
-      <button type="button" className="bt go" disabled={!m || L.busy} onClick={() => void L.dispatchIds()} title="Approve the proposed ones and start one execute run over all of them (D)">
+      {L.writes ? <button type="button" className="bt go" disabled={!m || L.busy} onClick={() => void L.dispatchIds()} title="Approve the proposed ones and start one execute run over all of them (D)">
         {L.busy ? 'Dispatching…' : 'Dispatch ' + m}<kbd>D</kbd>
-      </button>
+      </button> : null}
     </div>
   );
 }

@@ -116,6 +116,7 @@ export async function scanSelection(E: Engine, ctx: ScanCtx, lenses: readonly { 
 /** Approve the lens's proposed findings and build them with its approved ones (jobs of EXEC_BATCH); a toast says what
  *  went. Resolves true when jobs started. */
 export async function executeBacklog(E: Engine, ctx: ScanCtx, id: string, name: string): Promise<boolean> {
+  if (E.refuseReadOnly()) return false; // BP_WRITES=off: an execute approves, which is a decision
   try {
     const r = await executeLensBacklog(ctx, id);
     const built = r.jobs.reduce((s, j) => s + (j.proposals?.length ?? 0), 0);

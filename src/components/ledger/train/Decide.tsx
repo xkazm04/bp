@@ -10,13 +10,14 @@
 // another status: no optimistic flip, the row says "deciding" until the stream says what happened. A single decision on
 // the focused (or open) item moves the focus, and the open compare, to the next waiting item of the order DecideOrder
 // provides (LedgerPage: the table's visible rows).
+// BP_WRITES=off (src/lib/scan/writes.ts): Decide renders nothing and useDecide refuses with a toast (a key still reaches it).
 import { createContext, useCallback, useContext, useEffect, useMemo } from 'react';
 import type { Proposal, Release, TriageDecision, TriageResult } from '@/lib/scan/types';
 import { triageItems, refusalText } from '@/lib/scan/actions';
 import { verdictOf, type Verdict } from '@/lib/scan/compare';
 import { TRIAGE_FROM, WAITING, canDecide, isFlagged, noteRequired } from '@/lib/train/rules';
 import { parseTriageResult } from '@/lib/train/wire';
-import { useEngine } from '../../hooks';
+import { useEngine, useWritesOn } from '../../hooks';
 import { setLedgerUi, useLedgerUi, type NoteAsk } from '../useLedger';
 import { useTrain, type TrainData } from './data';
 import { NoteEditor } from './NoteEditor';
@@ -71,6 +72,7 @@ export function useDecide(own?: () => readonly string[]): DecideApi {
   const pending = useMemo(() => new Set([...ui.pending].filter(([id, s]) => T.byId.get(id)?.status === s).map(([id]) => id)), [T, ui.pending]);
 
   const decide = useCallback(async (raw: readonly string[], decision: TriageDecision, note?: string, at: NoteAsk['at'] = 'bar') => {
+    if (E.refuseReadOnly()) return;
     const ids = [...new Set(raw)].filter((id) => T.byId.has(id) && !pending.has(id));
     if (!ids.length) { E.toast('Nothing to decide', raw.length ? 'a decision on these is on its way' : 'focus or select a pack item first'); return; }
     const can = ids.map((id) => T.byId.get(id)!).filter((p) => canDecide(decision, p, releaseIn(T, p)));
@@ -120,8 +122,9 @@ function whyNot(T: TrainData, ps: readonly Proposal[], d: TriageDecision): strin
  *  footer's one-line strip (compact: the footer shows the state, and Undo only while there is a decision to undo, as
  *  A/1). The note editor replaces them while asked. */
 export function Decide({ ids, compact = false }: DecideProps) {
-  const T = useTrain(), ui = useLedgerUi(T.slug ?? 'kettle'), { decide, pending } = useDecide();
+  const T = useTrain(), ui = useLedgerUi(T.slug ?? 'kettle'), { decide, pending } = useDecide(), writes = useWritesOn();
   const ps = useMemo(() => ids.map((id) => T.byId.get(id)).filter((p): p is Proposal => !!p), [ids, T]);
+  if (!writes) return null; // BP_WRITES=off: triage is read-only
   const at: NoteAsk['at'] = compact ? 'compare' : 'bar', ask = ui.note && ui.note.at === at ? ui.note : null;
   if (ask) {
     const flagged = ask.ids.map((id) => T.byId.get(id)).filter((p): p is Proposal => !!p && isFlagged(p, verdictIn(T, p))).length;

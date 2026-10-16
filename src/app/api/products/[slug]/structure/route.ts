@@ -1,13 +1,15 @@
-// GET /api/products/[slug]/structure: `{ structure, events }` from the product's
+// GET /api/products/[slug]/structure: `{ structure, events, writes }` from the product's
 // `.ai/lens-scan/app-structure.json` and optional `events.jsonl` ('' when absent), and `rev`, their fingerprint
 // (the stream's `map` event carries the same string when the files change). 404 for an unknown
 // slug or a missing structure file. The structure is passed through as the skill wrote it; the client
-// loads it with the standard's loader like the Kettle map.
+// loads it with the standard's loader like the Kettle map. `writes`: false while BP_WRITES=off (src/lib/scan/writes.ts), so
+// the UI hides the decide and triage controls.
 import fs from 'node:fs';
 import path from 'node:path';
 import { findProduct, storeDir } from '@/lib/scan/products.server';
 import { localHost } from '@/lib/scan/local-only';
 import { mapRev } from '@/lib/scan/store.server';
+import { writesOn } from '@/lib/scan/writes';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -27,5 +29,5 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   }
   let events = '';
   try { events = fs.readFileSync(path.join(dir, 'events.jsonl'), 'utf8'); } catch { /* no events log */ }
-  return Response.json({ structure, events, rev });
+  return Response.json({ structure, events, rev, writes: writesOn() });
 }

@@ -68,7 +68,7 @@ export function Matrix({ L }: { L: Ledger }) {
                 <td className="lg-md">
                   <button type="button" className="bt lg-drill" tabIndex={act ? 0 : -1} title={'Read the ' + r.items.length + ' findings on ' + r.name + ' in the triage table (Enter)'}
                     onClick={() => L.showInTable(r.slug)}>Table</button>
-                  {packs ? null : <button type="button" className="bt lg-dsp" tabIndex={act ? 0 : -1} disabled={!open.length || L.busy} title={open.length ? 'Dispatch the ' + open.length + ' open findings on ' + r.name + ' across ' + new Set(open.map((f) => f.p.lens)).size + ' lenses' : 'Nothing open on this feature'}
+                  {packs || !L.writes ? null : <button type="button" className="bt lg-dsp" tabIndex={act ? 0 : -1} disabled={!open.length || L.busy} title={open.length ? 'Dispatch the ' + open.length + ' open findings on ' + r.name + ' across ' + new Set(open.map((f) => f.p.lens)).size + ' lenses' : 'Nothing open on this feature'}
                     onClick={() => void L.dispatchIds(open.map((f) => f.p.id))}>Dispatch {open.length || ''}</button>}
                 </td>
               </tr>

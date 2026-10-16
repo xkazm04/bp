@@ -32,6 +32,7 @@ npm run build && npm start
 | `?scale=4` | Four product lines, 528 features: the scale test |
 | `?lenses=-security,+com.kettle.cost` | Switch lenses off or on for the session |
 | `?product=<slug>` | A live product: a repo listed in `bp.products.local.json`, read from its lens-scan store |
+| `?product=<slug>&page=ledger&tab=release` | That product's findings ledger at the Release tab (`tab=triage` / `matrix` for the others); the link Personas' Release card opens. bp reads it once into its hash state and drops it from the query |
 
 ## Live products
 
@@ -43,6 +44,20 @@ metric history. `node scripts/scan-demo.mjs [--live]` seeds a demo product (`ket
 scan. Details: `docs/blueprint-ui.md` (Live products) and `docs/standard/app-structure-v3.md` §15.
 
 Keys: `/` search · `1`–`9` lenses (1 = General) · `+` `−` zoom · arrows walk rooms · Enter opens · Esc goes back.
+
+## Running under Personas
+
+With the Personas desktop app as the one point of control (spark one-control), three server env vars (set them in
+`.env.local`, then restart `npm run dev`) hand bp's work to it:
+
+| Env var | What it does |
+|---|---|
+| `BP_RUNNER=personas` | Every scan, execute and release job runs through the Personas fleet shim instead of a `claude` of its own, so it waits in the Personas fleet's one queue (its cap and budgets) and shows in its Fleet Monitor as origin `lens_scan`, labelled `bp-job:<id>`. The Personas app must be running (the shim reads its local handshake). The onboarding chat still runs `claude` itself. An explicit `BP_CLAUDE_BIN` still wins. |
+| `PERSONAS_RUN_SHIM` | Where the shim is. Default: `<bp root>/../personas/scripts/fleet/personas-run.mjs` (the sibling checkout). A job fails with "Personas fleet shim not found" when neither exists. |
+| `BP_WRITES=off` | Read-only decisions: the approve / decline, dispatch, lens execute and triage controls are hidden and their routes answer 403 naming the flag. Scans, lens edits and the whole Release tab stay live (bp composes releases). Nothing is deleted; the default is writes on. |
+
+Every decision bp writes (approve, decline, the approvals a dispatch or lens execute makes, triage, a release) is signed
+`user:<gh login>` (`gh api user --jq .login`, once per server process; `user:blueprint` when gh is missing or signed out).
 
 ## What is where
 

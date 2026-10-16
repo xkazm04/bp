@@ -10,7 +10,7 @@ import {
 import { overlayRight } from '@/engine/chrome';
 import type { ToastItem } from '@/engine/state';
 import { illoSVG } from '@/engine/render/illo';
-import { shallowEqual, useBp, useEngine, useLive, useVariant } from './hooks';
+import { shallowEqual, useBp, useEngine, useLive, useVariant, useWritesOn } from './hooks';
 import { proposalSummary } from './Queue';
 import { lensWords } from './sheet/words';
 
@@ -200,7 +200,7 @@ export function DecisionCard() {
   const E = useEngine(), M = E.M, sim = M.sim;
   const s = useBp((s) => ({ dec: s.dec, simV: s.simV, who: s.who, view: s.view }), shallowEqual);
   const ref = useRef<HTMLDivElement>(null), hgt = useRef(0);
-  const d = s.dec ? sim.DEC[s.dec] : null, scan = useLive()?.product.scan;
+  const d = s.dec ? sim.DEC[s.dec] : null, scan = useLive()?.product.scan, writes = useWritesOn();
   useEffect(() => {
     if (!d) return;
     // the card's height comes from a ResizeObserver, not an offsetHeight read per frame; a change re-places it
@@ -234,7 +234,7 @@ export function DecisionCard() {
               {(() => { const p = scan?.proposals.find((x) => x.id === d.base), sm = p ? proposalSummary(p) : null; return sm ? <div className="psum">{sm}</div> : null; })()}
               <div className="by"><b>{A ? A.base : d.by}</b> ({A ? sim.crewName(A.sq) : ''}) stopped at <b>{f.name}</b> and asks <b>{pname(M.P, d.decider)}</b>.</div>
               <div className="meta"><span>waiting {fmtWait(sim.waitMin(d))}</span><span>holds {bn} agent{bn === 1 ? '' : 's'}</span><span>touches {d.affects.length}</span></div>
-              {d.opts.map((o, i) => (
+              {(writes || !sim.live) && d.opts.map((o, i) => (
                 <button key={i} type="button" className={'op' + (i === d.rec ? ' rec' : '')} onClick={() => E.decide(d.id, i)}>
                   <i className="no">{i + 1}</i><b>{o.label}{i === d.rec && <em>agent suggests</em>}</b><span>{o.consequence}</span>
                 </button>

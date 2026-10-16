@@ -16,7 +16,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { deleteLens, patchLens } from '@/lib/scan/client';
 import { deleteTempLens, setTempLensEnabled } from '@/lib/scan/temp-lens';
 import { MAX_SELECTION } from '@/lib/scan/jobs';
-import { useBp, useEngine, useLive, useScanCtx } from '../../hooks';
+import { useBp, useEngine, useLive, useScanCtx, useWritesOn } from '../../hooks';
 import { useLedgerSelection } from '../useLedger';
 import { LensGlyph, LineSample } from './DraftCard';
 import { LensChat, useChatStarted } from './LensChat';
@@ -64,7 +64,7 @@ const KIND_TIP: Record<LensRow['kind'], string> = {
 };
 
 function Row({ r, slug, sel }: { r: LensRow; slug: string | null; sel: readonly string[] }) {
-  const E = useEngine(), ctx = useScanCtx(), stat = useLensStats().get(r.id);
+  const E = useEngine(), ctx = useScanCtx(), stat = useLensStats().get(r.id), writes = useWritesOn();
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -136,7 +136,7 @@ function Row({ r, slug, sel }: { r: LensRow; slug: string | null; sel: readonly 
           {act('scan', 'Scan all', block, () => void run('scan', () => scanNow(E, ctx, r.id, name)), 'go')}
           {act('sel', sel.length ? `Scan selection (${Math.min(sel.length, MAX_SELECTION)})` : 'Scan selection', block ?? (sel.length ? null : 'Select findings in the ledger first'),
             () => void run('sel', () => scanSelection(E, ctx, [{ id: r.id, name }], sel)))}
-          {act('execute', `Execute backlog (${n})`, n ? null : 'Nothing to build: no proposed or approved finding without a job', () => setAsk('execute'))}
+          {writes ? act('execute', `Execute backlog (${n})`, n ? null : 'Nothing to build: no proposed or approved finding without a job', () => setAsk('execute')) : null}
           {builtin ? null : act(enabled ? 'off' : 'on', enabled ? (temp ? 'Retire' : 'Disable') : (temp ? 'Restore' : 'Enable'),
             writable ? null : 'This lens is in the sample map; it cannot be changed here', () => void toggle(), '', enabled ? 'Disabling…' : 'Enabling…')}
           {builtin ? null : act('delete', 'Delete', writable ? null : 'This lens is in the sample map; it cannot be changed here', () => setAsk('delete'))}

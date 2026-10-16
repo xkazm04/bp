@@ -20,7 +20,7 @@ import type { ScanSim } from '@/lib/model/scan-sim';
 import type { LedgerVariant } from '@/engine/state';
 import type { GlyphSpec } from '@/engine/render/lens-glyph';
 import { metricMove } from '../Queue';
-import { useEngine, useLive, useScanCtx } from '../hooks';
+import { useEngine, useLive, useScanCtx, useWritesOn } from '../hooks';
 import { byPackAge } from '@/lib/train/rules';
 
 /** Status order everywhere in the ledger: open first, then moving, then built and waiting, then a person's triage and
@@ -197,6 +197,8 @@ export interface Ledger {
   /** Effort of the selection's dispatchable findings. */
   effort: number;
   busy: boolean;
+  /** false while decisions are read-only (BP_WRITES=off): the dispatch controls are hidden. */
+  writes: boolean;
   scan: ScanSnapshot | undefined;
   /** The packs, oldest first, each with its items (created order) and the ones the filters keep. */
   packs: readonly PackView[];
@@ -237,6 +239,7 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
   // the optimistic overlay: cleared by the next store or sim update (the rows then say what really happened)
   const [over, setOver] = useState<ReadonlyMap<string, ProposalStatus>>(() => new Map());
   const [busy, setBusy] = useState(false);
+  const writes = useWritesOn();
   useEffect(() => { setOver((o) => (o.size ? new Map() : o)); }, [src.proposals]);
 
   // the plan's features by slug (line 0 at ?scale > 1), names and domains from the map
@@ -333,6 +336,7 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
 
   const dispatchIds = useCallback(async (ids?: readonly string[]) => {
     if (busy) return; // one dispatch at a time: the next one would race the optimistic overlay
+    if (E.refuseReadOnly()) return; // BP_WRITES=off: a key reached a control that is hidden
     const go = (ids ?? [...ui.sel]).map((id) => byId.get(id)).filter((f): f is Finding => !!f && f.can).map((f) => f.p.id);
     if (!go.length) { E.toast('Nothing to dispatch', 'select proposed or approved findings that no job is building'); return; }
     const mine = go.filter((id) => byId.get(id)!.status === 'proposed');
@@ -387,7 +391,7 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
   // the scopes' status chips differ, so a status filter does not cross a scope switch; focus and compare start over
   const setScope = useCallback((scope: LedgerScope) => set((u) => (u.scope === scope ? u : { ...u, scope, status: new Set(), focus: null, open: null, wide: false, note: null })), [set]);
 
-  return { ui, set, all, byId, rows, lenses, counts, ready, effort, busy, scan: moveScan, packs, items, chips, scoped, setScope, toggle, select, selectWhere, clear, setFocus, dispatchIds, showInTable, openFeature, move, order };
+  return { ui, set, all, byId, rows, lenses, counts, ready, effort, busy, writes, scan: moveScan, packs, items, chips, scoped, setScope, toggle, select, selectWhere, clear, setFocus, dispatchIds, showInTable, openFeature, move, order };
 }
 
 // ------------------------------------------------------------------------------------------- the matrix's rows

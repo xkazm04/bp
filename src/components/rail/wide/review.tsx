@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { fmtWait, metricHistory, pname, sheetOf, type SimDecision } from '@/lib/model';
 import type { Proposal, ScanSnapshot } from '@/lib/scan/types';
 import { LiveEmpty, URG, bodySections, declineDrafts, metricMove, oncePerProposal, proposalSummary } from '../../Queue';
-import { shallowEqual, useBp, useEngine, useLive, useVariant } from '../../hooks';
+import { shallowEqual, useBp, useEngine, useLive, useVariant, useWritesOn } from '../../hooks';
 import { Group, Row, Sec, Workbench, useListRef, useWalk } from './shell';
 
 const fmtN = (n: number) => (Number.isInteger(n) ? n.toLocaleString('en-US') : (Math.round(n * 100) / 100).toLocaleString('en-US'));
@@ -146,7 +146,7 @@ function PlaceActions({ d }: { d: SimDecision }) {
 }
 
 function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi: number, note?: string) => void }) {
-  const E = useEngine(), M = E.M, sim = M.sim, live = useLive(), scan = live?.product.scan;
+  const E = useEngine(), M = E.M, sim = M.sim, live = useLive(), scan = live?.product.scan, writes = useWritesOn();
   const p = scan?.proposals.find((x) => x.id === d.base);
   const f = M.P.F[d.f];
   const [declining, setDeclining] = useState(() => declineDrafts.has(d.base)), [note, setNote] = useState(() => declineDrafts.get(d.base) ?? '');
@@ -206,8 +206,8 @@ function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi
           </form>
         ) : (
           <>
-            <button type="button" className="bt go" title="Approve: the scan executes it in its next execute phase" onClick={() => decide(d, 0)}>✓ Approve</button>
-            <button type="button" className="bt" title="Decline, with an optional note" onClick={() => setDeclining(true)}>Decline…</button>
+            {writes ? <button type="button" className="bt go" title="Approve: the scan executes it in its next execute phase" onClick={() => decide(d, 0)}>✓ Approve</button> : null}
+            {writes ? <button type="button" className="bt" title="Decline, with an optional note" onClick={() => setDeclining(true)}>Decline…</button> : null}
             <span className="sp" />
             <PlaceActions d={d} />
           </>

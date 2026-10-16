@@ -18,6 +18,11 @@
 //     out), and the commits route on a fixture git repo (200 with stat, numstat and the patch cut at 2000 lines; 404 for
 //     a sha that is no item commit, even one the repo has; 400 for a bad sha), each 200 body through the parser door;
 //   - Kettle parity: the scan sim's selection scans and lens execute, and addProjectLens over the browser's store.
+//   - running under Personas (spark one-control): BP_RUNNER=personas sends a job to the fleet shim (PERSONAS_RUN_SHIM, else
+//     <bp root>/../personas/scripts/fleet/personas-run.mjs; BP_CLAUDE_BIN still wins; the onboarding chat never goes
+//     there), the job env carries BP_JOB_ID and PERSONAS_RUN_LABEL=bp-job:<id>; a decision (proposals, dispatch, lens
+//     execute) is signed user:<gh login> through a fake gh; BP_WRITES=off answers 403 on the decision and triage routes,
+//     the structure route says writes: false, and the release routes still work.
 // Checks that need WP1's full checkLensManifest (project mode, taken looks) print SKIP while it is the S0 stub.
 // Run: node scripts/check-scan-jobs.ts  (Node's type stripping; no build step). Exit 1 on any failure. ~15 s.
 import fs from 'node:fs';
@@ -193,7 +198,7 @@ try {
   const T = '2026-10-13T10:00:00Z';
   w.prepare("INSERT INTO runs (id, started_at, updated_at, phase, status, lenses) VALUES ('r0', ?, ?, 'measure', 'done', '[]')").run(T, T);
   const prop = w.prepare("INSERT INTO proposals (id, run_id, feature, lens, title, kind, status, created_at, updated_at) VALUES (?, 'r0', 'a', 'development', 't', 'fix', ?, ?, ?)");
-  for (const [id, s] of [['p1', 'proposed'], ['p2', 'approved'], ['p3', 'done']]) prop.run(id, s, T, T);
+  for (const [id, s] of [['p1', 'proposed'], ['p2', 'approved'], ['p3', 'done'], ['p4', 'proposed'], ['p5', 'proposed']]) prop.run(id, s, T, T);
   // a lens backlog: 55 proposed (created in reverse id order, so the store's created_at order is checked), 1 approved,
   // 1 declined and 1 done; and a lens whose findings are all settled
   const lprop = w.prepare("INSERT INTO proposals (id, run_id, feature, lens, title, kind, status, created_at, updated_at) VALUES (?, 'r0', 'a', ?, 't', 'fix', ?, ?, ?)");
@@ -212,6 +217,12 @@ try {
     const res = await fn(new Request('http://localhost:3000' + url, { method, headers: H, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }), { params: Promise.resolve(params) });
     return { status: res.status, body: await res.json() as any }; // eslint-disable-line @typescript-eslint/no-explicit-any
   };
+  // every decision is signed user:<gh login> (release.server.ts triageBy): a fake gh, never the real one
+  const ghFake = path.join(dir, 'fake-gh.mjs');
+  fs.writeFileSync(ghFake, "if (process.env.FAKE_GH_OUT === '1') { console.error('You are not logged into any GitHub hosts.'); process.exit(1); }\n"
+    + "if (process.argv[2] === 'api') console.log('octocat');\nprocess.exit(0);\n");
+  process.env.BP_GH_BIN = ghFake;
+  delete (globalThis as { __bpGhBy?: unknown }).__bpGhBy;
   const scans = await route('products/[slug]/scans/route.ts');
   const room = { kind: 'room', id: 'r1', label: 'Room', features: ['a'] };
   const s202 = await call(scans.POST, '/api/products/prod/scans', 'POST', { slug: 'prod' }, { lens: 'development', scope: room });
@@ -257,7 +268,7 @@ try {
   const db = new DatabaseSync(path.join(store, 'scan.db'), { readOnly: true });
   const p1 = db.prepare("SELECT status, decided_by FROM proposals WHERE id = 'p1'").get() as { status: string; decided_by: string };
   db.close();
-  check('dispatch approved p1 through the store (decided_by blueprint)', p1.status === 'approved' && p1.decided_by === 'blueprint', JSON.stringify(p1));
+  check('dispatch approved p1 through the store, signed by the person (decided_by user:<gh login>)', p1.status === 'approved' && p1.decided_by === 'user:octocat', JSON.stringify(p1));
   check('the execute prompt names the proposals', await until(() => /^stdin \/lens-scan execute --proposals p1,p2$/m.test(job('prod', d.body.job.id)?.log_tail ?? '')), job('prod', d.body.job.id)?.log_tail);
   const d409 = await call(disp.POST, '/x', 'POST', { slug: 'prod' }, { ids: ['p3'] });
   check('dispatch with nothing buildable -> 409 with skipped', d409.status === 409 && d409.body.skipped[0]?.status === 'done', JSON.stringify(d409.body));
@@ -274,7 +285,7 @@ try {
   const dbx = new DatabaseSync(path.join(store, 'scan.db'), { readOnly: true });
   const exRows = dbx.prepare("SELECT status, decided_by FROM proposals WHERE lens = 'com.x.exec' AND id LIKE 'x__'").all() as { status: string; decided_by: string }[];
   dbx.close();
-  check('execute approved them through the store (decided_by blueprint)', exRows.length === 55 && exRows.every((r) => r.status === 'approved' && r.decided_by === 'blueprint'), JSON.stringify(exRows.slice(0, 2)));
+  check('execute approved them through the store, signed by the person (decided_by user:<gh login>)', exRows.length === 55 && exRows.every((r) => r.status === 'approved' && r.decided_by === 'user:octocat'), JSON.stringify(exRows.slice(0, 2)));
   check('the execute jobs name their batch on stdin', await until(() => exJobs.length === 2 && exJobs.every((j) => (job('prod', j.id)?.log_tail ?? '').includes('stdin /lens-scan execute --proposals ' + j.proposals!.join(',')))), exJobs.map((j) => job('prod', j.id)?.log_tail).join(' | ').slice(0, 300));
   const exCodes = await Promise.all([
     call(exe.POST, '/x', 'POST', { slug: 'prod', id: 'com.x.settled' }, {}),
@@ -286,6 +297,76 @@ try {
     exCodes.map((c) => c.status + ':' + c.body.error).join() === '409:nothing to execute,400:unknown-lens,400:unknown-lens,404:unknown product nope' && exCodes[0].body.skipped[0]?.status === 'done',
     exCodes.map((c) => c.status + ':' + c.body.error).join());
   await until(() => J.list('prod').every((j) => j.status !== 'running' && j.status !== 'queued'));
+
+  // ------------------------------------------------------------------ the decision route signs as the person
+  const props = await route('products/[slug]/proposals/[id]/route.ts');
+  const rowOf = (id: string) => { const d = new DatabaseSync(path.join(store, 'scan.db'), { readOnly: true }); try { return d.prepare('SELECT status, decided_by, decision_note FROM proposals WHERE id = ?').get(id) as { status: string; decided_by: string | null; decision_note: string | null }; } finally { d.close(); } };
+  const a4 = await call(props.POST, '/x', 'POST', { slug: 'prod', id: 'p4' }, { decision: 'decline', note: 'not now' });
+  check('POST proposals decline -> 200, decided_by user:<gh login> (triageBy, the fake gh), the note kept', a4.status === 200 && a4.body.decided_by === 'user:octocat'
+    && rowOf('p4').status === 'declined' && rowOf('p4').decided_by === 'user:octocat' && rowOf('p4').decision_note === 'not now', JSON.stringify([a4.body, rowOf('p4')]));
+  check('POST proposals of a decided row -> 409 with the row', (await call(props.POST, '/x', 'POST', { slug: 'prod', id: 'p4' }, { decision: 'approve' })).status === 409);
+  check('nothing in the bp sources signs a decision as the blueprint any more',
+    !/decided_by = 'blueprint'/.test(fs.readFileSync(path.join(ROOT, 'src/lib/scan/store.server.ts'), 'utf8')));
+
+  // ------------------------------------------------------------------ BP_WRITES=off: decisions read-only, the rest live
+  {
+    const structureR = await route('products/[slug]/structure/route.ts');
+    const st = await call(structureR.GET, '/x', 'GET', { slug: 'prod' });
+    check('structure says writes: true by default', st.status === 200 && st.body.writes === true, JSON.stringify(st.body.writes));
+    process.env.BP_WRITES = 'off';
+    const off = await Promise.all([
+      call(props.POST, '/x', 'POST', { slug: 'prod', id: 'p5' }, { decision: 'approve' }),
+      call(disp.POST, '/x', 'POST', { slug: 'prod' }, { ids: ['p5'] }),
+      call(exe.POST, '/x', 'POST', { slug: 'prod', id: 'com.x.exec' }, {}),
+      call((await route('products/[slug]/triage/route.ts')).POST, '/x', 'POST', { slug: 'prod' }, { ids: ['p5'], decision: 'accept' }),
+    ]);
+    check('BP_WRITES=off: proposals, dispatch, lens execute and triage -> 403 naming the flag', off.every((r) => r.status === 403 && /BP_WRITES=off/.test(r.body.error ?? '')),
+      off.map((r) => r.status + ':' + r.body.error).join(' | '));
+    check('BP_WRITES=off: nothing was decided (p5 still proposed, no job queued)', rowOf('p5').status === 'proposed' && rowOf('p5').decided_by === null
+      && J.list('prod').every((j) => j.status !== 'queued' && j.status !== 'running'), JSON.stringify(rowOf('p5')));
+    const st2 = await call(structureR.GET, '/x', 'GET', { slug: 'prod' });
+    check('BP_WRITES=off: structure says writes: false (the UI hides decide and triage)', st2.status === 200 && st2.body.writes === false, JSON.stringify(st2.body.writes));
+    const sc = await call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'development', scope: room });
+    check('BP_WRITES=off: a scan still starts (measuring is not a decision)', sc.status === 202, JSON.stringify(sc));
+    process.env.BP_WRITES = 'OFF';
+    check('BP_WRITES is read in any case', (await call(props.POST, '/x', 'POST', { slug: 'prod', id: 'p5' }, { decision: 'approve' })).status === 403);
+    process.env.BP_WRITES = 'on';
+    check('BP_WRITES=on (or unset): decisions are on', (await call(structureR.GET, '/x', 'GET', { slug: 'prod' })).body.writes === true);
+    delete process.env.BP_WRITES;
+    await until(() => J.list('prod').every((j) => j.status !== 'running' && j.status !== 'queued'));
+  }
+
+  // ------------------------------------------------------------------ BP_RUNNER=personas: jobs through the fleet shim
+  {
+    const bpRoot = path.join(dir, 'kiro', 'bp'), sib = path.join(dir, 'kiro', 'personas', 'scripts', 'fleet', 'personas-run.mjs');
+    fs.mkdirSync(bpRoot, { recursive: true });
+    const env = (o: Record<string, string>) => o as NodeJS.ProcessEnv;
+    const shimAt = path.join(dir, 'named-shim.mjs');
+    fs.writeFileSync(shimAt, '// a stand-in path for PERSONAS_RUN_SHIM\n');
+    check('BP_RUNNER unset: claude', JSON.stringify(J.cliBin(env({}), bpRoot, true)) === JSON.stringify({ bin: 'claude', via: 'claude' }));
+    check('BP_RUNNER=personas + PERSONAS_RUN_SHIM: that shim', JSON.stringify(J.cliBin(env({ BP_RUNNER: 'personas', PERSONAS_RUN_SHIM: shimAt }), bpRoot, true)) === JSON.stringify({ bin: shimAt, via: 'personas' }));
+    const none = J.cliBin(env({ BP_RUNNER: 'personas' }), bpRoot, true);
+    check('BP_RUNNER=personas, no shim anywhere: the missing error names both variables', 'missing' in none && none.missing === J.SHIM_MISSING && /PERSONAS_RUN_SHIM/.test(J.SHIM_MISSING) && /BP_CLAUDE_BIN/.test(J.SHIM_MISSING), JSON.stringify(none));
+    fs.mkdirSync(path.dirname(sib), { recursive: true });
+    fs.writeFileSync(sib, '// the sibling Personas checkout\'s shim\n');
+    check('BP_RUNNER=personas, no PERSONAS_RUN_SHIM: <bp root>/../personas/scripts/fleet/personas-run.mjs', JSON.stringify(J.cliBin(env({ BP_RUNNER: 'personas' }), bpRoot, true)) === JSON.stringify({ bin: sib, via: 'personas' }), JSON.stringify(J.cliBin(env({ BP_RUNNER: 'personas' }), bpRoot, true)));
+    check('BP_RUNNER=personas, a named PERSONAS_RUN_SHIM that is missing: missing (no silent fallback)', 'missing' in J.cliBin(env({ BP_RUNNER: 'personas', PERSONAS_RUN_SHIM: path.join(dir, 'gone.mjs') }), bpRoot, true));
+    check('an explicit BP_CLAUDE_BIN beats BP_RUNNER=personas', JSON.stringify(J.cliBin(env({ BP_RUNNER: 'personas', PERSONAS_RUN_SHIM: shimAt, BP_CLAUDE_BIN: FAKE }), bpRoot, true)) === JSON.stringify({ bin: FAKE, via: 'env' }));
+    check('the onboarding chat (not a job) never takes the shim', JSON.stringify(J.cliBin(env({ BP_RUNNER: 'personas', PERSONAS_RUN_SHIM: shimAt }), bpRoot, false)) === JSON.stringify({ bin: 'claude', via: 'claude' }));
+    // end to end over the fake CLI standing in for the shim: the job runs it, and its env carries the job id and label
+    delete process.env.BP_CLAUDE_BIN;
+    process.env.BP_RUNNER = 'personas';
+    process.env.PERSONAS_RUN_SHIM = FAKE;
+    const viaShim = J.enqueueMeasure('prod', pr, 'x', ALL);
+    const vid = viaShim.ok ? viaShim.job.id : '';
+    check('BP_RUNNER=personas: the job runs through the shim and ends done', await until(() => job('prod', vid)?.status === 'done' || job('prod', vid)?.status === 'failed') && job('prod', vid)?.status === 'done', JSON.stringify(job('prod', vid)));
+    check('the job env carries BP_JOB_ID (the shim\'s origin lens_scan) and PERSONAS_RUN_LABEL=bp-job:<id>', new RegExp('^env BP_JOB_ID=' + vid + ' PERSONAS_RUN_LABEL=bp-job:' + vid + '$', 'm').test(job('prod', vid)?.log_tail ?? ''), job('prod', vid)?.log_tail);
+    process.env.PERSONAS_RUN_SHIM = path.join(dir, 'gone.mjs');
+    const lost = J.enqueueMeasure('prod', pr, 'x', ALL);
+    check('BP_RUNNER=personas with no shim: the job fails with the missing error', await until(() => lost.ok && job('prod', lost.job.id)?.status === 'failed') && lost.ok && job('prod', lost.job.id)?.error === J.SHIM_MISSING, JSON.stringify(lost.ok && job('prod', lost.job.id)));
+    delete process.env.BP_RUNNER; delete process.env.PERSONAS_RUN_SHIM;
+    process.env.BP_CLAUDE_BIN = FAKE;
+  }
 
   const lenses = await route('products/[slug]/lenses/route.ts'), one = await route('products/[slug]/lenses/[id]/route.ts');
   const mapFile = path.join(store, 'app-structure.json');
@@ -366,10 +447,7 @@ try {
     const W = await import(pathToFileURL(path.join(ROOT, 'src/lib/train/wire.ts')).href) as typeof import('../src/lib/train/wire.ts');
     const show = (what: string, x: unknown) => { if (process.env.BP_SHOW_EXAMPLES) console.log('EXAMPLE ' + what + '\n' + JSON.stringify(x, null, 1)); };
     const { jobLabel } = await import(pathToFileURL(path.join(ROOT, 'src/lib/scan/jobs.ts')).href) as typeof import('../src/lib/scan/jobs.ts');
-    const ghFake = path.join(dir, 'fake-gh.mjs');
-    fs.writeFileSync(ghFake, "if (process.env.FAKE_GH_OUT === '1') { console.error('You are not logged into any GitHub hosts.'); process.exit(1); }\n"
-      + "if (process.argv[2] === 'api') console.log('octocat');\nprocess.exit(0);\n");
-    process.env.BP_GH_BIN = ghFake;
+    process.env.BP_GH_BIN = ghFake; // the fake the decision routes above signed with
     delete (globalThis as { __bpGhBy?: unknown }).__bpGhBy;
     const rr = repo('rel'), rstore = path.join(rr, '.ai/lens-scan'), rdb = path.join(rstore, 'scan.db');
     fs.mkdirSync(rstore, { recursive: true });
@@ -422,6 +500,10 @@ try {
       d.exec("UPDATE proposals SET status = 'accepted' WHERE id IN ('a1', 'a2'); UPDATE proposals SET status = 'descoped' WHERE id = 'a3'; UPDATE packs SET status = 'triaged'");
       d.close();
     }
+    // BP_WRITES=off from here to the build checks: triage refuses, every release route still works (bp composes releases)
+    process.env.BP_WRITES = 'off';
+    const triOff = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a1'], decision: 'reopen' });
+    check('BP_WRITES=off: triage -> 403 naming the flag, nothing moved', triOff.status === 403 && /BP_WRITES=off/.test(triOff.body.error ?? '') && status('proposals', 'a1') === 'accepted', JSON.stringify(triOff));
     const sg = await call(sug.GET, '/x', 'GET', { slug: 'rel' });
     show('GET /api/products/rel/releases/suggest -> ' + sg.status, sg.body);
     check('suggest with no v* tag -> the manifest version as it stands', sg.status === 200 && sg.body.version === '2.3.0' && sg.body.from === 'package.json', JSON.stringify(sg.body));
@@ -464,6 +546,8 @@ try {
     check('build: done, the release pr-open with its url, run_id = the release-head measure run (bp-job note)', jb?.status === 'done' && relRow('rel-2.3.0')?.status === 'pr-open' && !!relRow('rel-2.3.0')?.pr_url && jb.run_id === 'run-' + jb.id, JSON.stringify(jb));
     check('build: the prompt is /lens-scan release --id rel-2.3.0 on stdin', /^stdin \/lens-scan release --id rel-2\.3\.0$/m.test(jb?.log_tail ?? ''), jb?.log_tail);
     check('build of a pr-open release -> 409', (await call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0' }, {})).status === 409);
+    check('BP_WRITES=off left the Release tab live: suggest, create, build all answered as with writes on', sg.status === 200 && jb?.status === 'done');
+    delete process.env.BP_WRITES;
     if (hasStoreMjs) {
       const t8 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a1'], decision: 'reopen' });
       show('POST /api/products/rel/triage {"ids":["a1"],"decision":"reopen"} (release pr-open) -> ' + t8.status, t8.body);

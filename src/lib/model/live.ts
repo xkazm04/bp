@@ -8,6 +8,8 @@ import { emptyScan, type DecisionBody, type Measurement, type Proposal, type Run
 export interface LiveRef {
   slug: string;
   decide(id: string, body: DecisionBody): Promise<Proposal>;
+  /** false while the server runs with BP_WRITES=off: decisions are read-only (absent = on). */
+  writes?(): boolean;
 }
 
 export const EMPTY_SCAN: ScanSnapshot = emptyScan();

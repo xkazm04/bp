@@ -1,18 +1,20 @@
 // POST /api/products/[slug]/lenses/[id]/execute, body `{}`: execute a lens's backlog. Its `proposed` findings are
-// approved through the store's decision write (decided_by 'blueprint'), its `approved` ones are taken as they are,
+// approved through the store's decision write (decided_by `user:<gh login>`, triageBy), its `approved` ones are taken as they are,
 // and execute jobs of at most 50 (MAX_PROPOSALS) are queued over them (`/lens-scan execute --proposals ...`), in the
 // store's order (created_at, then id). Skipped, as `{ id, status }`: findings in any other status (`executing`,
 // `done`, `failed`, `declined`), `in-job` for one a queued or running execute job already builds, `unsafe-id` for an
 // id that may not reach a command line. 202 `{ jobs, approved, skipped }`; 409 `{ error, skipped }` when nothing could
 // go; 400 `{ error: 'unknown-lens' }` for a lens the map lacks or has disabled; 404 for an unknown product, a missing
 // map or a missing store; 429 `{ error, jobs, approved, skipped }` when the queue cap stopped it (the approvals stand,
-// `jobs` holds the ones queued before the cap); 503 when the store stayed locked. Localhost only.
+// `jobs` holds the ones queued before the cap); 503 when the store stayed locked; 403 while BP_WRITES=off. Localhost only.
 import { findProduct, hasStore, storeFile } from '@/lib/scan/products.server';
 import { localOnly, jsonOnly } from '@/lib/scan/local-only';
 import { SAFE_ID, type ScanJob } from '@/lib/scan/jobs';
 import { MAX_PROPOSALS, busyProposals, enqueueExecute } from '@/lib/scan/jobs.server';
 import { readLensesAndFeatures } from '@/lib/scan/lens-write.server';
 import { decide, snapshotOf } from '@/lib/scan/store.server';
+import { triageBy } from '@/lib/scan/release.server';
+import { writesOff } from '@/lib/scan/writes';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -20,6 +22,8 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string; id: string }> }): Promise<Response> {
   const denied = localOnly(req);
   if (denied) return Response.json({ error: denied }, { status: 403 });
+  const readOnly = writesOff();
+  if (readOnly) return Response.json({ error: readOnly }, { status: 403 });
   const notJson = jsonOnly(req);
   if (notJson) return Response.json({ error: notJson }, { status: 415 });
   const { slug, id: lens } = await params;
@@ -32,6 +36,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   if (!hasStore(p)) return Response.json({ error: `no scan store for ${slug}` }, { status: 404 });
 
   const file = storeFile(p), busy = busyProposals(slug), approved: string[] = [], go: string[] = [], skipped: { id: string; status: string }[] = [];
+  const by = await triageBy();
   try {
     for (const x of snapshotOf(file).proposals) {
       if (x.lens !== lens) continue;
@@ -39,7 +44,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       if (busy.has(x.id)) { skipped.push({ id: x.id, status: 'in-job' }); continue; }
       if (!SAFE_ID.test(x.id)) { skipped.push({ id: x.id, status: 'unsafe-id' }); continue; }
       if (x.status === 'approved') { go.push(x.id); continue; }
-      const r = decide(file, x.id, { decision: 'approve' });
+      const r = decide(file, x.id, { decision: 'approve' }, by);
       if (r.ok) { approved.push(x.id); go.push(x.id); }
       else if (r.status === 409 && r.proposal.status === 'approved') go.push(x.id); // approved elsewhere a moment ago
       else skipped.push({ id: x.id, status: r.status === 409 ? r.proposal.status : 'unknown' });

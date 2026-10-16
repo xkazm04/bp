@@ -13,7 +13,7 @@ import { URG, metricMove, oncePerProposal, proposalSummary } from './Queue';
 import { LiveFoot } from './sheet/SheetBody';
 import { PatternDefs, StageSym } from './Symbols';
 import { ThemeToggle } from './ThemeToggle';
-import { shallowEqual, useBp, useEngine, useLive } from './hooks';
+import { shallowEqual, useBp, useEngine, useLive, useWritesOn } from './hooks';
 import { PageSwitch } from './Header';
 import type { LedgerPageProps } from './ledger/LedgerPage';
 
@@ -40,7 +40,7 @@ function PhoneStatus() {
 }
 
 function Question({ d, rm }: { d: SimDecision; rm: boolean }) {
-  const E = useEngine(), M = E.M, P = M.P, sim = M.sim, live = useLive();
+  const E = useEngine(), M = E.M, P = M.P, sim = M.sim, live = useLive(), writes = useWritesOn();
   const [declining, setDeclining] = useState(() => drafts.has(d.base)), [note, setNote] = useState(() => drafts.get(d.base) ?? '');
   const scan = live?.product.scan, prop = sim.live ? scan?.proposals.find((x) => x.id === d.base) : undefined;
   const sum = prop ? proposalSummary(prop) : null, mv = prop ? metricMove(prop, (l, k) => P.LENS[l]?.F[k]?.unit, scan) : null;
@@ -52,7 +52,7 @@ function Question({ d, rm }: { d: SimDecision; rm: boolean }) {
       {mv && <div className="mv">{mv}</div>}
       <div className="mt">{P.F[d.f].name} · waiting {fmtWait(sim.waitMin(d))}{sim.live ? '' : ' · holds ' + sim.blocksNow(d) + ' agent' + (sim.blocksNow(d) === 1 ? '' : 's')}</div>
       {sim.live ? (
-        declining ? (
+        !writes ? null : declining ? (
           <form className="dn" onSubmit={(e) => { e.preventDefault(); drafts.set(d.base, note.trim()); E.decide(d.id, 1, note.trim() || undefined); }}>
             <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why not? (optional)" aria-label="Decline note (optional)" maxLength={500} />
             <button type="submit" className="bt">Decline</button>

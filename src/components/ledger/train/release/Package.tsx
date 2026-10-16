@@ -6,7 +6,7 @@
 import { memo, useMemo } from 'react';
 import type { Proposal, Release } from '@/lib/scan/types';
 import { canDecide } from '@/lib/train/rules';
-import { useEngine } from '../../../hooks';
+import { useEngine, useWritesOn } from '../../../hooks';
 import { setLedgerUi } from '../../useLedger';
 import { useDecide } from '../Decide';
 import { LensTag } from '../ui/Marks.tsx';
@@ -16,6 +16,8 @@ import { byLens, isConflict, moveText, type PkgItem, type ReleaseModel } from '.
 interface RowCtl {
   rel?: Release;
   phone: boolean;
+  /** false while triage is read-only (BP_WRITES=off): Undo is hidden. */
+  writes: boolean;
   pending: ReadonlySet<string>;
   undo(id: string): void;
   compare(id: string): void;
@@ -24,6 +26,7 @@ interface RowCtl {
 const short = (sha: string | undefined) => (sha ? sha.slice(0, 7) : 'no sha');
 
 const UndoBtn = ({ p, c, why }: { p: Proposal; c: RowCtl; why?: string }) => {
+  if (!c.writes) return null;
   const off = c.phone || c.pending.has(p.id) || !canDecide('reopen', p, c.rel) || !!why;
   const title = why ?? (c.pending.has(p.id) ? 'Undoing…' : !canDecide('reopen', p, c.rel) ? 'Locked: the release left draft' : 'Undo the decision (back to waiting)');
   return <Btn size="row" disabled={off} title={title} onClick={() => c.undo(p.id)}>{c.pending.has(p.id) ? 'Undoing' : 'Undo'}</Btn>;
@@ -58,16 +61,16 @@ const NoteRow = memo(function NoteRow({ p, c, struck, rebuilt }: { p: Proposal; 
 });
 
 export function Package({ m, phone }: { m: ReleaseModel; phone: boolean }) {
-  const E = useEngine(), d = useDecide(), rel = m.rel, { pending, decide } = d;
+  const E = useEngine(), d = useDecide(), rel = m.rel, { pending, decide } = d, writes = useWritesOn();
   const c = useMemo<RowCtl>(() => {
     const o: RowCtl = {
-      phone, pending,
+      phone, writes, pending,
       undo: (id) => void decide([id], 'reopen'),
       compare: (id) => { setLedgerUi((u) => ({ ...u, open: id, scope: 'packs' })); E.setPage('ledger', 'triage'); },
     };
     if (rel) o.rel = rel;
     return o;
-  }, [phone, pending, decide, rel, E]);
+  }, [phone, writes, pending, decide, rel, E]);
   const props = m.T.proposals;
   const rework = props.filter((p) => p.status === 'rework'), descoped = props.filter((p) => p.status === 'descoped' && p.pack_id);
   const rebuiltBy = new Map<string, string>();

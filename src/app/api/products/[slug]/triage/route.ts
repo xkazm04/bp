@@ -7,13 +7,14 @@
 // `rebuilt`, `pack-closed`, `no-prior-status`); decision `reopened`.
 // 200 + store.mjs's JSON `{ decision, by, triaged, skipped, packs_triaged }`; 409 with the same JSON when nothing moved;
 // 400 for a bad body (or one store.mjs calls bad input); 404 for an unknown product or a missing store; 503 when
-// lens-scan is not installed or the store stayed locked. The stream sees the write through the store's data_version.
-// Localhost only.
+// lens-scan is not installed or the store stayed locked; 403 while BP_WRITES=off. The stream sees the write through the
+// store's data_version. Localhost only.
 import { findProduct, hasStore, storeFile } from '@/lib/scan/products.server';
 import { localOnly, jsonOnly } from '@/lib/scan/local-only';
 import { SAFE_ID } from '@/lib/scan/jobs';
 import { MAX_TRIAGE, triage, triageBy } from '@/lib/scan/release.server';
 import type { TriageBody } from '@/lib/scan/types';
+import { writesOff } from '@/lib/scan/writes';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,6 +37,8 @@ function parse(x: unknown): TriageBody | null {
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }): Promise<Response> {
   const denied = localOnly(req);
   if (denied) return Response.json({ error: denied }, { status: 403 });
+  const readOnly = writesOff();
+  if (readOnly) return Response.json({ error: readOnly }, { status: 403 });
   const notJson = jsonOnly(req);
   if (notJson) return Response.json({ error: notJson }, { status: 415 });
   const { slug } = await params;

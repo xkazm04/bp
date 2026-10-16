@@ -12,6 +12,7 @@ import { MixDriver, type MixState } from './lens/mix';
 import { createStore, type Store } from './store';
 import { baseHeight, overlayRight, railWidth } from './chrome';
 import { LEDGER_VARIANTS, initialState, type Crumb, type DockTab, type HoverInfo, type LedgerVariant, type UIState } from './state';
+import { DEEP_LINK_KEYS, deepLinkHash, withoutDeepLink } from './deep-link';
 import { readTheme, type Theme } from './theme';
 import { Text } from './text';
 import { StaticCache, deviceRes } from './render/static-cache';
@@ -779,6 +780,7 @@ export class Engine {
   decide(id: string, oi: number, note?: string) {
     const sim = this.M.sim, d = sim.DEC[id], live = this.M.live;
     const open = !!d?.open;
+    if (live && sim.live && this.refuseReadOnly()) return;
     sim.decide(id, oi);
     if (this.S.dec === id) this.store.set({ dec: null });
     this.scheduleSimSync(true); this.forceStatic();
@@ -792,6 +794,15 @@ export class Engine {
         this.scheduleSimSync(true); this.forceStatic();
       },
     );
+  }
+  /** True while the live product's server runs with BP_WRITES=off: decisions are read-only (approve / decline, dispatch,
+   *  triage). Kettle's sim always takes them. */
+  readOnly(): boolean { return this.M.live?.writes?.() === false; }
+  /** readOnly(), saying so in a toast: a key or a stale control reached a decision the server would refuse (403). */
+  refuseReadOnly(): boolean {
+    if (!this.readOnly()) return false;
+    this.toast('Read only', 'decisions are turned off on this blueprint (BP_WRITES=off)');
+    return true;
   }
   undoDecision() { this.M.sim.undoDecision(); this.store.set({ toast: null }); this.scheduleSimSync(true); this.forceStatic(); }
   private forceStatic() { this.simSeenV = this.M.sim.version; this.simStaticV++; this.simStaticAt = performance.now(); this.simPatch = true; this.dirty(); }
@@ -1281,6 +1292,14 @@ export class Engine {
   }
   private readHash() {
     const h = this.parseHash();
+    // a deep link (?page=ledger&tab=release, deep-link.ts) says what the hash has not said, once: the query drops it and
+    // the hash written next carries the page from here on
+    const deep = deepLinkHash(location.search);
+    if (deep.page && !h.page) { h.page = deep.page; if (deep.lv) h.lv = deep.lv; }
+    const q = new URLSearchParams(location.search);
+    if (DEEP_LINK_KEYS.some((k) => q.has(k))) {
+      try { history.replaceState(history.state, '', location.pathname + withoutDeepLink(location.search) + location.hash); } catch { /* ignore */ }
+    }
     this.hashSeen = location.hash; this.restoreUntil = performance.now() + 1000; this.adopt = true; this.hashPlace = this.placeOfHash(h);
     if (!Object.keys(h).length) return;
     this.hashLock = true;

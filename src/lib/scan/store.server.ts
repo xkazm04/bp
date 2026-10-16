@@ -165,14 +165,15 @@ export function parseDecision(x: unknown): DecisionBody | null {
 
 export type DecideResult = { ok: true; proposal: Proposal } | { ok: false; status: 404 } | { ok: false; status: 409; proposal: Proposal };
 
-/** Approve or decline a `proposed` row, on a short-lived read-write connection. */
-export function decide(file: string, id: string, body: DecisionBody): DecideResult {
+/** Approve or decline a `proposed` row, on a short-lived read-write connection, signed `by` the person (the route passes
+ *  release.server.ts triageBy(): `user:<gh login>`, as triage and release sign). */
+export function decide(file: string, id: string, body: DecisionBody, by: string): DecideResult {
   const db = new DatabaseSync(file, { timeout: BUSY_MS });
   try {
     const now = new Date().toISOString();
     const row = db.prepare(
-      "UPDATE proposals SET status = ?, decided_by = 'blueprint', decided_at = ?, decision_note = ?, updated_at = ? WHERE id = ? AND status = 'proposed' RETURNING *",
-    ).get(body.decision === 'approve' ? 'approved' : 'declined', now, body.note ?? null, now, id) as Row | undefined;
+      "UPDATE proposals SET status = ?, decided_by = ?, decided_at = ?, decision_note = ?, updated_at = ? WHERE id = ? AND status = 'proposed' RETURNING *",
+    ).get(body.decision === 'approve' ? 'approved' : 'declined', by, now, body.note ?? null, now, id) as Row | undefined;
     if (row) return { ok: true, proposal: wire<Proposal>('proposals', row) };
     const cur = db.prepare('SELECT * FROM proposals WHERE id = ?').get(id) as Row | undefined;
     return cur ? { ok: false, status: 409, proposal: wire<Proposal>('proposals', cur) } : { ok: false, status: 404 };

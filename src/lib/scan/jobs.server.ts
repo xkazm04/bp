@@ -8,6 +8,11 @@
 // A release job (`/lens-scan release --id <rel> [--finish]`) ends `done` by the release's status in the store, not by
 // a run alone: a cut must leave it pr-open (or later), a finish tagged; its run_id is the release-head measure run
 // the cut starts (note `bp-job:<id> · release <rel> at <sha>`), when it got that far.
+// Under Personas (spark one-control): BP_RUNNER=personas runs every JOB through the Personas fleet shim
+// (`scripts/fleet/personas-run.mjs`, a `claude -p` stand-in that admits the run through the Personas app's fleet queue),
+// found at PERSONAS_RUN_SHIM, else `<bp root>/../personas/scripts/fleet/personas-run.mjs`. An explicit BP_CLAUDE_BIN
+// still wins. The shim reads BP_JOB_ID as its origin (`lens_scan`) and PERSONAS_RUN_LABEL (`bp-job:<id>`) as its label.
+// The onboarding chat (lens-draft) never goes through the shim: it needs `--output-format json` and `--resume`.
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -19,6 +24,7 @@ if (typeof window !== 'undefined') throw new Error('jobs.server.ts is server-onl
 
 export const MAX_RUNNING = 3, MAX_QUEUED = 16, KEEP_JOBS = 50, MAX_PROPOSALS = 50;
 export const CLI_MISSING = 'Claude Code CLI not found (set BP_CLAUDE_BIN)';
+export const SHIM_MISSING = 'Personas fleet shim not found (BP_RUNNER=personas: set PERSONAS_RUN_SHIM, or BP_CLAUDE_BIN)';
 const TAIL_LINES = 20, TAIL_BYTES = 2048, NOTIFY_MS = 400;
 /** The flags of a job run; the prompt follows on stdin. */
 const JOB_ARGS = ['-p', '--dangerously-skip-permissions', '--output-format', 'text'];
@@ -39,9 +45,19 @@ function winLookup(bin: string): string | null {
   return null;
 }
 
-/** How to start the CLI with `args`: null = not installed. A string = refused (unsafe for cmd.exe). */
-function resolveCli(args: string[]): Cli | string | null {
-  const bin = process.env.BP_CLAUDE_BIN || 'claude';
+/** Which CLI a run starts. `fleet` = a scan job (BP_RUNNER may send it to the Personas shim); `missing` = the shim was
+ *  asked for and is not there. Pure over `env` and `root` (bp's own root: the server's cwd), so the checks drive it. */
+export type CliBin = { bin: string; via: 'env' | 'personas' | 'claude' } | { missing: string };
+export function cliBin(env: NodeJS.ProcessEnv = process.env, root: string = process.cwd(), fleet = false): CliBin {
+  if (env.BP_CLAUDE_BIN) return { bin: env.BP_CLAUDE_BIN, via: 'env' };
+  if (!fleet || (env.BP_RUNNER ?? '').trim().toLowerCase() !== 'personas') return { bin: 'claude', via: 'claude' };
+  const named = (env.PERSONAS_RUN_SHIM ?? '').trim();
+  const shim = named || path.resolve(/* turbopackIgnore: true */ root, '..', 'personas', 'scripts', 'fleet', 'personas-run.mjs');
+  return fs.existsSync(shim) ? { bin: shim, via: 'personas' } : { missing: SHIM_MISSING };
+}
+
+/** How to start the CLI `bin` with `args`: null = not installed. A string = refused (unsafe for cmd.exe). */
+function resolveCli(args: string[], bin: string): Cli | string | null {
   if (/\.(mjs|cjs|js)$/i.test(bin)) return fs.existsSync(bin) ? { file: process.execPath, args: [bin, ...args], verbatim: false } : null;
   if (process.platform !== 'win32') return { file: bin, args, verbatim: false };
   const f = winLookup(bin);
@@ -56,10 +72,13 @@ function resolveCli(args: string[]): Cli | string | null {
 
 export type SpawnResult = { ok: true; child: ChildProcess } | { ok: false; error: string; missing: boolean };
 
-/** Start the Claude Code CLI (BP_CLAUDE_BIN, else `claude` on PATH; a .js/.mjs path runs on this Node). */
-export function spawnCli(args: string[], cwd: string, env: NodeJS.ProcessEnv = process.env): SpawnResult {
-  const cli = resolveCli(args);
-  if (cli === null) return { ok: false, error: CLI_MISSING, missing: true };
+/** Start the Claude Code CLI (BP_CLAUDE_BIN, else `claude` on PATH; a .js/.mjs path runs on this Node). `fleet`: a scan
+ *  job, which BP_RUNNER=personas hands to the Personas fleet shim (cliBin). */
+export function spawnCli(args: string[], cwd: string, env: NodeJS.ProcessEnv = process.env, fleet = false): SpawnResult {
+  const pick = cliBin(process.env, process.cwd(), fleet);
+  if ('missing' in pick) return { ok: false, error: pick.missing, missing: true };
+  const cli = resolveCli(args, pick.bin);
+  if (cli === null) return { ok: false, error: pick.via === 'personas' ? SHIM_MISSING : CLI_MISSING, missing: true };
   if (typeof cli === 'string') return { ok: false, error: cli, missing: false };
   try {
     const child = spawn(cli.file, cli.args, {
@@ -226,7 +245,9 @@ function start(slug: string, r: Rec): void {
     r.log.on('error', () => { r.log = undefined; });
     r.log.write(`# bp job ${r.job.id} started ${r.job.started_at}\n# prompt (stdin): ${r.prompt}\n`);
   } catch { r.log = undefined; /* a read-only repo still runs; log_tail still fills */ }
-  const s = spawnCli(JOB_ARGS, r.root, { ...process.env, BP_JOB_ID: r.job.id });
+  // BP_JOB_ID: lens-scan notes its run with it (and the Personas shim takes it as origin lens_scan); the label names
+  // the job on the Personas fleet board
+  const s = spawnCli(JOB_ARGS, r.root, { ...process.env, BP_JOB_ID: r.job.id, PERSONAS_RUN_LABEL: RUN_NOTE_PREFIX + r.job.id }, true);
   if (!s.ok) { finish(slug, r, 'failed', { error: s.error }); return; }
   const c = (r.child = s.child);
   c.stdout?.on('data', (d: Buffer) => onOutput(slug, r, d, false));

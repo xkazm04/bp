@@ -16,7 +16,7 @@ import { BusinessSection } from './Business';
 import { ScreensStrip } from './Screens';
 import { plainLine, revLabel } from './words';
 import { Mark, PatternDefs, StageSym, agentMark } from '../Symbols';
-import { useBp, useDensity, useEngine, useLive, useVariant } from '../hooks';
+import { useBp, useDensity, useEngine, useLive, useVariant, useWritesOn } from '../hooks';
 
 /** The latest moment the scan changed: the newest run update, measurement or activity row. */
 function scanUpdated(s: ScanSnapshot | undefined): string | null {
@@ -59,7 +59,7 @@ function swarmSig(sim: SwarmSim, f: Feature, lens?: string): string {
 }
 
 export function SwarmSection({ f, lens }: { f: Feature; lens?: string }) {
-  const E = useEngine(), M = E.M, sim = M.sim;
+  const E = useEngine(), M = E.M, sim = M.sim, writes = useWritesOn();
   useSimSig((sm) => swarmSig(sm, f, lens));
   const phone = useBp((s) => s.phone);   // the phone mounts no SelBar, so a preview or an order menu started here would be invisible
   if (!sim.has) return null;
@@ -83,7 +83,7 @@ export function SwarmSection({ f, lens }: { f: Feature; lens?: string }) {
         <div key={d.id} className="dq">
           <b>{d.base} · {d.q}</b>
           <div style={{ fontSize: 13, color: 'var(--ink-2)', margin: '2px 0 4px' }}>{sim.live ? 'For whoever reviews' : pname(M.P, d.decider) + ' decides'} · waiting {fmtWait(sim.waitMin(d))} · holds {sim.blocksNow(d)} agent{sim.blocksNow(d) === 1 ? '' : 's'}</div>
-          {d.opts.map((o, i) => <button key={i} type="button" className={'op' + (i === d.rec ? ' rec' : '')} onClick={() => E.decide(d.id, i)}><i className="no">{i + 1}</i><b>{o.label}{i === d.rec && <em>agent suggests</em>}</b><span>{o.consequence}</span></button>)}
+          {(writes || !sim.live) && d.opts.map((o, i) => <button key={i} type="button" className={'op' + (i === d.rec ? ' rec' : '')} onClick={() => E.decide(d.id, i)}><i className="no">{i + 1}</i><b>{o.label}{i === d.rec && <em>agent suggests</em>}</b><span>{o.consequence}</span></button>)}
         </div>
       ))}
       {ords.length ? <div style={{ marginTop: 8, fontSize: 14 }}>{ords.map((x) => <div key={x.id}><span className="ag" style={{ margin: '0 6px 0 0', color: x.vf.includes(f.id) ? 'var(--red-2)' : 'var(--amber)', borderColor: 'currentColor' }}>{x.id}{x.vf.includes(f.id) ? ' BREACHED' : ''}</span>{x.text}</div>)}</div> : null}

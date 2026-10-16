@@ -37,7 +37,7 @@ import { motion } from 'motion/react';
 import { LEDGER_VARIANTS, type LedgerVariant } from '@/engine/state';
 import { useProductName } from '@/lib/scan/projects';
 import { MAX_SELECTION } from '@/lib/scan/jobs';
-import { shallowEqual, useBp, useEngine, useLive, useScanCtx } from '../hooks';
+import { shallowEqual, useBp, useEngine, useLive, useScanCtx, useWritesOn } from '../hooks';
 import { setLedgerUi, useLedger, useLedgerSelection, useLedgerUi, type CompareMode, type CompareTheme, type Ledger, type LedgerUi, type LensCol, type SetUi } from './useLedger';
 import { LensGlyph } from './variants/bits';
 import { EXEC_BATCH, executeAsk, executeBacklog, scanBlock, scanNow, scanSelection, useLensRows, useLensStats } from './lens/lens-ops';
@@ -375,7 +375,7 @@ function LensMenu({ l }: { l: LensCol }) {
 }
 
 function LensMenuBody({ l, close }: { l: LensCol; close: () => void }) {
-  const E = useEngine(), ctx = useScanCtx(), { rows } = useLensRows(), stat = useLensStats().get(l.id), sel = useLedgerSelection();
+  const E = useEngine(), ctx = useScanCtx(), { rows } = useLensRows(), stat = useLensStats().get(l.id), sel = useLedgerSelection(), writes = useWritesOn();
   const [ask, setAsk] = useState(false);
   const r = rows.find((x) => x.id === l.id);
   const block = r ? scanBlock(r, !!ctx.sim) : 'This map has no lens ' + l.id;
@@ -401,7 +401,7 @@ function LensMenuBody({ l, close }: { l: LensCol; close: () => void }) {
       {item('Scan this lens · everything', block, () => { close(); void scanNow(E, ctx, l.id, l.name); })}
       {item('Scan selection', selBlock, () => { close(); void scanSelection(E, ctx, [{ id: l.id, name: l.name }], sel.features); },
         sel.features.length ? sel.features.length + (sel.features.length === 1 ? ' feature' : ' features') + (sel.features.length > MAX_SELECTION ? ', the first ' + MAX_SELECTION : '') : undefined)}
-      {item('Execute backlog (' + n + ')', exBlock, () => setAsk(true), n > EXEC_BATCH ? 'in jobs of ' + EXEC_BATCH : undefined)}
+      {writes ? item('Execute backlog (' + n + ')', exBlock, () => setAsk(true), n > EXEC_BATCH ? 'in jobs of ' + EXEC_BATCH : undefined) : null}
       {item('Open in Lenses panel', null, () => { close(); setLensesPanelOpen(true, l.id); })}
     </>
   );

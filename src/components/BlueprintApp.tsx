@@ -198,7 +198,7 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
     };
     const fail = (err: unknown) => { console.error(err); setBuildErr(err instanceof Error ? err.message : String(err)); };
     try {
-      if (product) mount(buildLiveModel(L.structure, L.events, L.scan ?? EMPTY_SCAN, { slug: product, decide: (id, body) => decideProposal(product, id, body) }, scale, now, qs.get('lenses')));
+      if (product) mount(buildLiveModel(L.structure, L.events, L.scan ?? EMPTY_SCAN, { slug: product, decide: (id, body) => decideProposal(product, id, body), writes: () => liveRef.current.writes !== false }, scale, now, qs.get('lenses')));
       else void loadSample().then((build) => { if (!dead) mount(build(scale, now, qs.get('lenses'), readTempLenses())); }).catch((err) => { sampleChunk = null; if (!dead) fail(err); });
     } catch (err) { fail(err); return; }
     return () => {

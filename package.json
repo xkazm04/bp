@@ -25,6 +25,7 @@
     "check:lens-manifest": "node scripts/check-lens-manifest.ts",
     "check:live-health": "node scripts/check-live-health.ts",
     "check:local-only": "node scripts/check-local-only.ts",
+    "check:deep-link": "node scripts/check-deep-link.ts",
     "check:route-guards": "node scripts/check-route-guards.mjs",
     "check:camera": "node scripts/check-camera.ts",
     "check:variant-copies": "node src/variants/check-copies.ts",

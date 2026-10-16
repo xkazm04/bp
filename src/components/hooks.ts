@@ -17,6 +17,9 @@ export interface LiveInfo { slug: string; product: LiveProduct }
 /** null = Kettle (built in, no store). Its value changes with every scan delta: read it where the scan is shown. */
 export const LiveCtx = createContext<LiveInfo | null>(null);
 export function useLive(): LiveInfo | null { return useContext(LiveCtx); }
+/** Whether the person's decisions (approve / decline, dispatch, triage) are on: false only for a live product whose server
+ *  runs with BP_WRITES=off (src/lib/scan/writes.ts). Kettle's sim always takes them. */
+export function useWritesOn(): boolean { return useContext(LiveCtx)?.product.writes !== false; }
 
 /** Where scan work goes: the live product's routes, or the Kettle scan sim (src/lib/scan/actions.ts). */
 export const ScanCtxCtx = createContext<ScanCtx>({ slug: null, sim: null });

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // A stand-in for the Claude Code CLI, for scripts/check-scan-jobs.ts (BP_CLAUDE_BIN points here; the registry runs a
 // .mjs on this Node). It reads its prompt from stdin, prints `argv [...]`, `pid <n>` and `stdin <prompt>`, then acts
-// on the prompt text:
+// on the prompt text (then `env BP_JOB_ID=<id> PERSONAS_RUN_LABEL=<label>`, what the job env carried):
 //   --lens slow     sleeps until killed (cancel)          --lens wait    sleeps 1.5 s, then succeeds (queue cap)
 //   --lens fail     prints `boom: failed on purpose` on stderr, exits 3
 //   --lens refuse   prints `lens-scan refused: unknown slug`, exits 0 without a run (a headless refusal)
@@ -56,6 +56,7 @@ if (argv.includes('json')) {
 console.log('argv ' + JSON.stringify(argv));
 console.log('pid ' + process.pid);
 console.log('stdin ' + input.trim());
+console.log('env BP_JOB_ID=' + (process.env.BP_JOB_ID ?? '') + ' PERSONAS_RUN_LABEL=' + (process.env.PERSONAS_RUN_LABEL ?? ''));
 if (input.includes('--lens slow')) { await sleep(120000); process.exit(0); }
 if (input.includes('--lens fail')) { console.error('working...'); console.error('boom: failed on purpose'); process.exit(3); }
 if (input.includes('--lens refuse')) { console.log('lens-scan refused: unknown slug'); process.exit(0); }

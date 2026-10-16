@@ -28,6 +28,8 @@ export interface LiveProduct {
   /** The blueprint's scan jobs for this product (the stream's `jobs` event; [] before one). It moves on discrete
    *  changes only (a job added, a status, a run attached); a log line alone reaches `useLiveJobs`, not this. */
   jobs: ScanJob[];
+  /** false while the server runs with BP_WRITES=off (the structure route says so): decide and triage are read-only. */
+  writes?: boolean;
   error?: string;
 }
 
@@ -110,12 +112,12 @@ export function useLiveProduct(slug: string | null): LiveProduct {
         if (!r.ok) return false;
         const text = await r.text();
         if (dead) return true;
-        const j = JSON.parse(text) as { structure: AppStructure; events?: string; rev?: string };
+        const j = JSON.parse(text) as { structure: AppStructure; events?: string; rev?: string; writes?: boolean };
         mapRev = j.rev ?? mapRev;
         if (text === mapText) return true;
         mapText = text;
         const s = j.structure, ev = j.events ?? '', n = ++rev;
-        put((l) => ({ ...l, structure: s, structureRev: n, events: ev }));
+        put((l) => ({ ...l, structure: s, structureRev: n, events: ev, writes: j.writes !== false }));
         return true;
       } catch { return false; } finally {
         fetching = false;
