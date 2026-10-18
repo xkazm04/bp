@@ -2,7 +2,7 @@
 // through these, and `JSON.parse` lives nowhere else in the train's code. A validator answers the typed value or what
 // was wrong with it (`<field>: <what>`); the fetch helpers in client.ts turn a failure into an Error. A value carries
 // only the fields its type names (an unknown extra field stays out) and omits an absent one, never null.
-import type { CommitDiff, Proposal, ProposalKind, ProposalSize, ProposalStatus, Release, ReleaseCreated, ReleaseStatus, TriageResult, VersionSuggestion } from '../scan/types.ts';
+import type { CommitDiff, Proposal, ProposalKind, ProposalOrigin, ProposalSize, ProposalStatus, Release, ReleaseCreated, ReleaseStatus, RiskClass, Tier, TriageResult, VersionSuggestion } from '../scan/types.ts';
 import type { JobKind, JobStatus, ReleaseStep, ScanJob, ScanScope, ScanScopeKind } from '../scan/jobs.ts';
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -62,6 +62,13 @@ function member<T extends string>(set: Members<T>, o: Obj, k: string, at: string
 function optMember<T extends string>(set: Members<T>, o: Obj, k: string, at: string): T | undefined {
   return o[k] === undefined ? undefined : member(set, o, k, at);
 }
+/** v4 tier: an integer 0..3 (0 stop-ship .. 3 backlog), or absent (untriaged). */
+function optTier(o: Obj, k: string, at: string): Tier | undefined {
+  const v = o[k];
+  if (v === undefined) return undefined;
+  if (v !== 0 && v !== 1 && v !== 2 && v !== 3) fail(join(at, k), `expected one of 0, 1, 2, 3 (got ${JSON.stringify(v)})`);
+  return v;
+}
 function list<T>(o: Obj, k: string, at: string, item: (x: unknown, at: string) => T): T[] {
   const v = o[k], here = join(at, k);
   if (!Array.isArray(v)) fail(here, v === undefined ? 'missing' : 'expected an array');
@@ -78,7 +85,10 @@ function put<T, K extends keyof T>(t: T, k: K, v: T[K] | undefined): void { if (
 const PROPOSAL_STATUS: Members<ProposalStatus> = {
   proposed: true, approved: true, declined: true, executing: true, done: true, failed: true, accepted: true, rework: true, descoped: true, released: true,
 };
-const PROPOSAL_KIND: Members<ProposalKind> = { fix: true, 'baseline-upgrade': true, propagation: true };
+const PROPOSAL_KIND: Members<ProposalKind> = { fix: true, 'baseline-upgrade': true, propagation: true, 'work-item': true };
+// v4: where an item came from ('scan' is normally omitted on the wire, but accepted) and the kind of harm its problem is
+const PROPOSAL_ORIGIN: Members<ProposalOrigin> = { scan: true, ado: true, sweep: true };
+const RISK_CLASS: Members<RiskClass> = { secret: true, authz: true, money: true, data: true, llm: true, perf: true, reliability: true, ux: true, debt: true };
 const PROPOSAL_SIZE: Members<ProposalSize> = { XS: true, S: true, M: true, L: true, XL: true };
 const RELEASE_STATUS: Members<ReleaseStatus> = { draft: true, building: true, 'pr-open': true, merged: true, tagged: true, failed: true };
 const TRIAGED: Members<TriageResult['decision']> = { accepted: true, rework: true, descoped: true, reopened: true };
@@ -104,11 +114,15 @@ function proposal(x: unknown, at: string): Proposal {
     status: member(PROPOSAL_STATUS, o, 'status', at), created_at: str(o, 'created_at', at), updated_at: str(o, 'updated_at', at),
   };
   const texts = ['metric', 'body', 'parent_id', 'decided_by', 'decided_at', 'decision_note', 'result_sha', 'pack_id', 'commit_sha',
-    'attempt_of', 'release_id', 'triage_note', 'triaged_by', 'triaged_at'] as const;
+    'attempt_of', 'release_id', 'triage_note', 'triaged_by', 'triaged_at', 'external_ref', 'external_url', 'ranked_by', 'ranked_at'] as const;
   for (const k of texts) put(p, k, optStr(o, k, at));
   for (const k of ['expected_delta', 'risk', 'after_value'] as const) put(p, k, optNum(o, k, at));
   put(p, 'size', optMember(PROPOSAL_SIZE, o, 'size', at));
   put(p, 'triaged_from', optMember(PROPOSAL_STATUS, o, 'triaged_from', at));
+  const origin = optMember(PROPOSAL_ORIGIN, o, 'origin', at);
+  if (origin !== 'scan') put(p, 'origin', origin); // 'scan' is the absent value: kept out, like the store's serializer
+  put(p, 'tier', optTier(o, 'tier', at));
+  put(p, 'risk_class', optMember(RISK_CLASS, o, 'risk_class', at));
   return p;
 }
 

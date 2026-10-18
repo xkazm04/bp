@@ -37,7 +37,8 @@ export function LensGlyph({ g, px = 14 }: { g: GlyphSpec; px?: number }) {
 // ------------------------------------------------------------------------------------------- kind, risk, size
 export function KindTag({ p }: { p: Proposal }) {
   if (p.kind === 'fix') return null;
-  return <span className="lg-kind" title={p.parent_id ? 'Follows ' + p.parent_id : undefined}>{p.kind === 'baseline-upgrade' ? 'baseline upgrade' : 'propagation' + (p.parent_id ? ' of ' + p.parent_id : '')}</span>;
+  const word = p.kind === 'baseline-upgrade' ? 'baseline upgrade' : p.kind === 'work-item' ? 'work item' : 'propagation' + (p.parent_id ? ' of ' + p.parent_id : '');
+  return <span className="lg-kind" title={p.parent_id ? 'Follows ' + p.parent_id : undefined}>{word}</span>;
 }
 const RISK_MARK = { high: '▲', medium: '◆', low: '▽' } as const;
 export function Risk({ p }: { p: Proposal }) {

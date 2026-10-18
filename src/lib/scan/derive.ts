@@ -3,6 +3,13 @@
 // imports: Node runs scripts/check-scan-wire.ts over it as-is.
 import type { Measurement, Run, ScanSnapshot } from './types.ts';
 
+/**
+ * v4: a severity tier as a sort key, ascending: tier 0 (stop-ship) .. 3 (backlog), and an untriaged item (no tier)
+ * after tier 3. The ledger and the review queue order by it first, then by their own order; with no tier anywhere
+ * every key is 4 and their order is exactly what it was.
+ */
+export const tierRank = (tier: number | undefined): number => (tier === undefined ? 4 : tier);
+
 /** The latest run (by start), or null. */
 export function latestRun(scan: Pick<ScanSnapshot, 'runs'> | undefined): Run | null {
   let r: Run | null = null;

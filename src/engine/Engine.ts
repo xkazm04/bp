@@ -909,7 +909,7 @@ export class Engine {
         if (!rd[i].length) continue;
         const R = this.M.L.rooms[i], pp = roomPinPos(this, v, i), bx = pp.x, by = pp.y;
         if (px >= bx - 15 * u && px <= bx + 16 * u && py >= by - 27 * u && py <= by + 4 * u) {
-          const ds = rd[i].slice().sort((a, b) => Number(sim.emph(b, S.who, S.view)) - Number(sim.emph(a, S.who, S.view)) || sim.score(b) - sim.score(a));
+          const ds = rd[i].slice().sort((a, b) => Number(sim.emph(b, S.who, S.view)) - Number(sim.emph(a, S.who, S.view)) || sim.queueCmp(a, b));
           return { list: ds, d: ds[0], cluster: true, at: R.d.name };
         }
       }

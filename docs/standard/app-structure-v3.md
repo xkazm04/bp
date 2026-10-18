@@ -973,3 +973,12 @@ placeholder for a metric, and JSON read from it omits the key.
 sets `decided_by = 'blueprint'`, `decided_at` and an optional `decision_note`, and touches nothing
 else; a proposal in any other status is not decided again. The skill executes only `approved`
 proposals, then records `after_value` and `result_sha`.
+
+**v4: origin and severity** (`PRAGMA user_version = 4`; the DDL is the contract). `proposals` gains
+`origin` (`scan` | `ado` | `sweep`, NOT NULL DEFAULT `scan`), `external_ref` (`<origin>:<id>`, unique when
+set: the import key), `external_url`, `tier` (0 stop-ship, 1 before production, 2 soon after, 3 backlog;
+NULL = untriaged), `risk_class` (`secret` | `authz` | `money` | `data` | `llm` | `perf` | `reliability` \|
+`ux` | `debt`), `ranked_by`, `ranked_at`; `kind` gains `work-item` (an imported item, no metric). `tier` is the
+severity of the problem; `risk` stays the risk of making the change. On the wire `origin` is omitted when it is
+`scan`, and every NULL v4 column is omitted; a v3 store reads with all of them absent. Readers order a backlog by
+`tier` ascending first, untriaged after tier 3.

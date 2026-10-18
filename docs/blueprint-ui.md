@@ -371,7 +371,7 @@ Kettle is built in and needs no server route. Its map, events and swarm (~770 KB
 
 The blueprint reads the store through a read-only connection. Its own only write is a proposal decision, made on a short-lived read-write connection with a 2000 ms busy timeout (triage and release writes go through lens-scan's store.mjs: see Packs, triage and releases). The server code is `src/lib/scan/store.server.ts` and `products.server.ts`. Both throw if loaded in a browser, and only route handlers import them. `node:sqlite` is a Node 24 builtin. It prints an ExperimentalWarning once per process, and it needs no `next.config` change.
 
-**Wire convention.** The row types are in `src/lib/scan/types.ts`. JSON columns (`runs.lenses`, `runs.scope`, `shots.report`) arrive parsed. NULL columns are omitted, so the JSON never contains `null`. A feature with no measurement row is unmeasured.
+**Wire convention.** The row types are in `src/lib/scan/types.ts`. JSON columns (`runs.lenses`, `runs.scope`, `shots.report`) arrive parsed. NULL columns are omitted, so the JSON never contains `null`. A feature with no measurement row is unmeasured. Store v4 (`proposals`): `origin` is omitted when it is `scan` (only `ado` / `sweep` travel), and `external_ref`, `external_url`, `tier` (0..3), `risk_class`, `ranked_by`, `ranked_at` are omitted when NULL; a v3 store reads with none of them (`store.server.ts` reads `SELECT *`, so absent columns are absent keys). The train's parser door (`src/lib/train/wire.ts`) holds tier to 0..3 and `risk_class` / `origin` to their enums. Checked by `npm run check:scan-wire` (a v4 row, a scan row, a v3 file).
 
 **Routes.** All routes run on the Node runtime with `force-dynamic`. An unknown slug answers 404 `{ error }`.
 
@@ -754,6 +754,13 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
   and the Lenses panel and the plan's right-click read the selection (`useLedgerSelection()`). Status chips (state
   mark and count), lens chips (glyph, short, count in the scope), a feature chip from the matrix's **Table**
   (`feature <name> ×`), a text filter (`/`).
+- **Tier first** (store v4). The backlog orders by `tier` ascending first (untriaged after tier 3, `derive.ts tierRank`), then
+  status rank, then value per effort; with no tier anywhere the order is exactly the v3 one. The review queue does the
+  same ahead of its own order (`swarmFromScan` sorts open proposals tier then age; `sim.queueCmp` tier then score). A
+  ranked item shows a tier chip `T0`..`T3` with its risk class word (`Queue.tsx TierChip`; T0 in the bad red, T1 in
+  the watch amber, 12 px mono); an Azure DevOps item shows `ADO #<n>` (`OriginChip`), a link to the work item in a new
+  tab (`rel="noopener noreferrer"`, http(s) only) on a ledger row and the review detail, plain text on a review list row
+  (a listbox option holds no control). `kind` `work-item` reads "work item".
 - **Dispatch** (the backlog) is `dispatch(useScanCtx(), ids)` (`src/lib/scan/actions.ts`): proposed or approved
   findings with no job go as one execute run across lenses; optimistic until the next store or sim update, a refusal
   rolls back with a toast.

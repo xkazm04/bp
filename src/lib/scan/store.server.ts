@@ -3,7 +3,8 @@
 // docs/standard/lens-scan-store.sql; the /lens-scan skill writes the file concurrently in WAL mode, so
 // reads go through a read-only connection and a decision opens its own short read-write connection with a
 // busy timeout. A v1 store (no packs or releases tables, no v2 columns) reads with those arrays empty. Rows
-// become wire objects (src/lib/scan/types.ts) here: JSON columns are parsed and NULL columns are omitted (absent-value convention, never null in JSON). Server-only, imported by the route
+// become wire objects (src/lib/scan/types.ts) here: JSON columns are parsed and NULL columns are omitted (absent-value convention, never null in JSON),
+// and so is a column at its wire default (v4 `origin` 'scan'); a v3 store (no v4 columns) reads with those keys absent. Server-only, imported by the route
 // handlers under src/app/api/products and nothing else; node:sqlite is a Node builtin (experimental on 24).
 import fs from 'node:fs';
 import path from 'node:path';
@@ -25,6 +26,14 @@ const JSON_COLS: Partial<Record<Table, Record<string, (v: unknown) => unknown>>>
   runs: { lenses: strings, scope: (v) => (isObject(v) ? v : undefined) },
   shots: { report: (v) => (isObject(v) ? v : undefined) },
 };
+/**
+ * Columns whose default is the absent value on the wire, per table: v4's `proposals.origin` is NOT NULL DEFAULT 'scan',
+ * and the wire omits 'scan' (an omitted origin means the scan proposed it). A v3 store has no such column, so its rows
+ * read the same way: no origin key, and every other v4 key (tier, risk_class, external_ref, ...) simply absent.
+ */
+const DEFAULTS: Partial<Record<Table, Record<string, unknown>>> = {
+  proposals: { origin: 'scan' },
+};
 const ACTIVITY_LIMIT = 200;
 const BUSY_MS = 2000;
 
@@ -45,7 +54,7 @@ export function mapRev(dir: string): string {
 }
 
 function wire<T>(table: Table, r: Row): T {
-  const o: Row = {}, js = JSON_COLS[table];
+  const o: Row = {}, js = JSON_COLS[table], dflt = DEFAULTS[table];
   for (const k in r) {
     let v = r[k];
     const shape = js?.[k];
@@ -54,7 +63,7 @@ function wire<T>(table: Table, r: Row): T {
       try { parsed = typeof v === 'string' ? JSON.parse(v) : undefined; } catch { /* malformed JSON: the shape's empty value */ }
       v = shape(parsed);
     }
-    if (v === null || v === undefined) continue;
+    if (v === null || v === undefined || (dflt && k in dflt && dflt[k] === v)) continue;
     o[k] = v;
   }
   return o as T;

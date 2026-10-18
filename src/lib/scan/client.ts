@@ -5,7 +5,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { AppStructure, LensEntry, LensManifest } from '@/lib/standard/types';
 import type { Agent, AgentStatus, Decision, ReplayEvent, ReplayType, Squad, Swarm } from '@/lib/data/types';
 import { refreshProjects } from './projects.ts';
-import { latestRun, latestReading, measuredFeatures } from './derive.ts';
+import { latestRun, latestReading, measuredFeatures, tierRank } from './derive.ts';
 import { scopeFeatures } from './scope.ts';
 import type { ScanJob, ScanScope } from './jobs.ts';
 import type { DispatchResult } from './actions.ts';
@@ -329,7 +329,9 @@ export function swarmFromScan(scan: ScanSnapshot, features: readonly (string | S
   const empty: Swarm = { asOf: run?.started_at ?? new Date().toISOString(), note: 'Live lens scan: no run yet.', squads: [], agents: [], decisions: [], orders: [], replay: [], totals: {} };
   if (!run) return empty;
   const t0 = ms(run.started_at), running = run.status === 'running';
-  const open = scan.proposals.filter((p) => p.status === 'proposed').sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0));
+  // tier first (untriaged after tier 3, contract v4), then oldest first as before
+  const open = scan.proposals.filter((p) => p.status === 'proposed')
+    .sort((a, b) => tierRank(a.tier) - tierRank(b.tier) || (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0));
   const inRun = scan.activity.filter((a) => a.run_id === run.id);
   const agentOf = (lens: string) => `scan-${lens}.1`;
 
@@ -357,6 +359,7 @@ export function swarmFromScan(scan: ScanSnapshot, features: readonly (string | S
   const agentIds = new Set(agents.map((a) => a.id)), byLens = new Map(run.lenses.map((l, i) => [l, agents[i]]));
 
   const decisions: Decision[] = open.map((p) => ({
+    ...(p.tier !== undefined ? { tier: p.tier } : {}),
     id: p.id, feature: p.feature, domain: '', lens: p.lens, decider: '', askedBy: agentIds.has(agentOf(p.lens)) ? agentOf(p.lens) : '',
     question: p.title,
     options: [{ label: 'Approve', consequence: expectedText(p, scan) }, { label: 'Decline', consequence: 'Stays in the backlog as declined' }],
