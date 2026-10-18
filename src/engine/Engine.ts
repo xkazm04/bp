@@ -730,7 +730,7 @@ export class Engine {
   /** The highlighted option's dry run (sim.previewAnswer), computed once per (sim version, decision, option), never per frame. */
   answerPreview(): Preview | null {
     const h = this.S.hlOpt, sim = this.M.sim; if (!h) return null;
-    if (this.apV !== sim.version || this.apDec !== h.dec || this.apOi !== h.oi) { this.apV = sim.version; this.apDec = h.dec; this.apOi = h.oi; this.apVal = sim.previewAnswer(h.dec, h.oi); }
+    if (this.apV !== sim.version || this.apDec !== h.dec || this.apOi !== h.oi) { this.apV = sim.version; this.apDec = h.dec; this.apOi = h.oi; this.apVal = h.dec.startsWith('batch:') ? sim.previewBatch(h.dec.slice(6)) : sim.previewAnswer(h.dec, h.oi); }
     return this.apVal;
   }
   setOrdHi(id: string | null) { if (this.S.ordHi !== id) this.set({ ordHi: id }); }
@@ -824,6 +824,22 @@ export class Engine {
         this.scheduleSimSync(true); this.forceStatic();
       },
     );
+  }
+  /** Answer and keep it as a standing order (sample only): signed like a written order, scoped to the target if one is set, else the question's room. */
+  keepAnswer(id: string, oi: number) {
+    const sim = this.M.sim; if (sim.live) return;
+    if (!sim.keepAnswer(id, oi, this.signer(), this.S.tgt.n ? this.S.tgt : null)) return;
+    if (this.S.dec === id) this.store.set({ dec: null });
+    if (this.S.hlOpt) this.store.set({ hlOpt: null });
+    this.scheduleSimSync(true); this.forceStatic();
+  }
+  /** Decide a batch of like questions at their recommendations, with one undo (sample only; never an urgent one). */
+  decideBatch(key: string) {
+    const sim = this.M.sim; if (sim.live) return;
+    if (!sim.decideBatch(key)) return;
+    if (this.S.dec && !sim.DEC[this.S.dec]?.open) this.store.set({ dec: null });
+    if (this.S.hlOpt) this.store.set({ hlOpt: null });
+    this.scheduleSimSync(true); this.forceStatic();
   }
   undoDecision() { this.M.sim.undoDecision(); this.store.set({ toast: null }); this.scheduleSimSync(true); this.forceStatic(); }
   private forceStatic() { this.simSeenV = this.M.sim.version; this.simStaticV++; this.simStaticAt = performance.now(); this.simPatch = true; this.dirty(); }

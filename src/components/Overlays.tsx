@@ -214,7 +214,8 @@ export function HoverCard() {
 // -------------------------------------------------------------------------------- decision card
 export function DecisionCard() {
   const E = useEngine(), M = E.M, sim = M.sim;
-  const s = useBp((s) => ({ dec: s.dec, simV: s.simV, who: s.who, view: s.view }), shallowEqual);
+  const s = useBp((s) => ({ dec: s.dec, simV: s.simV, who: s.who, view: s.view, tl: s.tgt.n ? s.tgt.label : '' }), shallowEqual);
+  const [keep, setKeep] = useState(false);
   const ref = useRef<HTMLDivElement>(null), hgt = useRef(0);
   const d = s.dec ? sim.DEC[s.dec] : null, scan = useLive()?.product.scan, note = useAnswerNote(d?.id ?? '');
   useEffect(() => {
@@ -237,6 +238,7 @@ export function DecisionCard() {
     return () => { off(); ro?.disconnect(); };
   }, [E, d]);
   useLayoutEffect(() => { E.dirty(); });
+  useEffect(() => setKeep(false), [d?.id]);
   return (
     <AnimatePresence>
       {d && d.open && (() => {
@@ -251,10 +253,11 @@ export function DecisionCard() {
               <div className="by"><b>{A ? A.base : d.by}</b> ({A ? sim.crewName(A.sq) : ''}) stopped at <b>{f.name}</b> and asks <b>{pname(M.P, d.decider)}</b>{d.ord ? <>, asked because of <b>{d.ord}</b></> : null}.</div>
               <div className="meta"><span>waiting {fmtWait(sim.waitMin(d))}</span><span>holds {bn} agent{bn === 1 ? '' : 's'}</span><span>touches {d.affects.length}</span>{down ? <span>{down} agent{down === 1 ? '' : 's'} blocked downstream</span> : null}</div>
               {d.opts.map((o, i) => (
-                <button key={i} type="button" className={'op' + (i === d.rec ? ' rec' : '')} onClick={() => E.decide(d.id, i)} {...optHover(E, d.id, i)}>
-                  <i className="no">{i + 1}</i><b>{o.label}{i === d.rec && <em>agent suggests</em>}</b><span>{o.consequence}</span>
+                <button key={i} type="button" className={'op' + (i === d.rec ? ' rec' : '')} onClick={() => (keep ? E.keepAnswer(d.id, i) : E.decide(d.id, i))} {...optHover(E, d.id, i)}>
+                  <i className="no">{i + 1}</i><b>{o.label}{i === d.rec && <em>{d.recBy ? d.recBy + ' recommends' : 'agent suggests'}</em>}</b><span>{o.consequence}</span>
                 </button>
               ))}
+              {!sim.live && <label className="keep"><input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} />Answer and keep as an order<small>{s.tl || M.P.D[f.domain]?.name || f.domain}</small></label>}
               <div className="fx" aria-live="polite">{note ?? <>{wa.length ? 'Answering frees ' + wa.map((a) => a.base).join(', ') + '. ' : 'Nobody is blocked on it. '}The amber outlines on the plan are the {d.affects.length} feature{d.affects.length > 1 ? 's' : ''} it touches.</>}</div>
               <div className="nav"><button type="button" aria-label="Previous question" onClick={() => E.stepDecision(-1)}>‹ K</button><span>{pos || '–'} of {list.length}</span><button type="button" aria-label="Next question" onClick={() => E.stepDecision(1)}>J ›</button></div>
             </motion.div>

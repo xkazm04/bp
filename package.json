@@ -41,6 +41,7 @@
     "check:morning-cursor": "node scripts/check-morning-cursor.ts",
     "check:sim-answers": "node scripts/check-sim-answers.ts",
     "check:sim-orders": "node scripts/check-sim-orders.ts",
+    "check:sim-precedent": "node scripts/check-sim-precedent.ts",
     "check:search": "node scripts/check-search.ts",
     "check:timeview": "node scripts/check-timeview.ts",
     "check:stream": "node scripts/check-stream-status.mjs",

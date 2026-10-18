@@ -64,11 +64,11 @@ export function Review() {
   const urgent = all.filter((d) => d.urg === 'high').length;
   const short = (l: string) => M.P.LENS[l]?.short ?? sheetOf(M.P, l).no;
   /** Decide, then select the row after it (else the one before). */
-  const decide = (d: SimDecision, oi: number, note?: string) => {
+  const decide = (d: SimDecision, oi: number, note?: string, keep?: boolean) => {
     const i = items.findIndex((x) => x.id === d.id), next = items[i + 1] ?? items[i - 1] ?? null;
     setSelId(next?.id ?? null);
     E.setHlDec(null);
-    E.decide(d.id, oi, note);
+    if (keep) E.keepAnswer(d.id, oi); else E.decide(d.id, oi, note);
     requestAnimationFrame(() => {
       const row = next && listRef.current?.querySelector<HTMLElement>(`[data-row="${CSS.escape(next.id)}"]`);
       if (row) { row.focus({ preventScroll: true }); row.scrollIntoView({ block: 'nearest' }); }
@@ -99,10 +99,21 @@ export function Review() {
       <Group head={sim.live ? 'Proposals' : 'Questions'} n={items.length} label={sim.live ? 'Open proposals, most urgent first' : 'Open questions, most urgent first'}>{items.map(row)}</Group>
     );
 
+  const batches = sim.batchGroups();
   const strip = (
     <>
       <div className="wb-count"><b>{all.length}</b><span>{sim.live ? 'open proposals' : 'open questions'}</span></div>
       <div className="wb-count t-amber"><b>{urgent}</b><span>urgent</span></div>
+      {batches.length > 0 && (
+        <div className="wb-filter" role="group" aria-label="Batch-decide like questions">
+          {batches.map((g) => (
+            <button key={g.key} type="button" title={'Decide ' + g.ids.length + ' ' + (M.P.LENS[g.lens]?.name ?? g.lens) + ' questions at their recommendation (' + g.label + '), with one undo'}
+              onClick={() => { setSelId(null); E.decideBatch(g.key); }} {...optHover(E, 'batch:' + g.key, 0)} style={{ '--lens': E.lensAccent(g.lens) } as React.CSSProperties}>
+              <i aria-hidden="true" />Batch-decide {g.ids.length} · {short(g.lens)}
+            </button>
+          ))}
+        </div>
+      )}
       {lenses.length > 1 && (
         <div className="wb-filter" role="group" aria-label="Filter by lens">
           <button type="button" aria-pressed={!fl} onClick={() => setLens(null)}>All <small>{all.length}</small></button>
@@ -219,7 +230,8 @@ function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi
   );
 }
 
-function SimDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi: number) => void }) {
+function SimDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi: number, note?: string, keep?: boolean) => void }) {
+  const [keep, setKeep] = useState(false), tl = useBp((s) => (s.tgt.n ? s.tgt.label : ''));
   const E = useEngine(), V = useVariant(), M = E.M, sim = M.sim;
   const view = useBp((s) => s.view);
   const f = M.P.F[d.f], bn = sim.blocksNow(d);
@@ -242,14 +254,16 @@ function SimDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi:
           <ol className="wb-opts">
             {d.opts.map((o, i) => (
               <li key={i}>
-                <button type="button" className={'wb-opt' + (i === d.rec ? ' rec' : '')} onClick={() => decide(d, i)} {...optHover(E, d.id, i)}>
+                <button type="button" className={'wb-opt' + (i === d.rec ? ' rec' : '')} onClick={() => decide(d, i, undefined, keep)} {...optHover(E, d.id, i)}>
                   <i className="no">{i + 1}</i>
-                  <b>{o.label}{i === d.rec && <em>Recommended</em>}</b>
+                  <b>{o.label}{i === d.rec && <em>{d.recBy ? d.recBy + ' recommends' : 'Recommended'}</em>}</b>
                   <span>{o.consequence}</span>
                 </button>
               </li>
             ))}
           </ol>
+          <label className="wb-keep"><input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} />Answer and keep as an order · {tl || M.P.D[f?.domain ?? '']?.name || d.dom}</label>
+          {d.recBy && <p className="wb-help">{d.recBy} recommends “{d.opts[d.rec]?.label}”: an answer kept as an order. It does not answer for you.</p>}
           {hn && <p className="wb-help" aria-live="polite">{hn}</p>}
         </Sec>
         {affects.length > 0 && (

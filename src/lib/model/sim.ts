@@ -59,6 +59,8 @@ export interface SimDecision {
   ans: { opt: number; t: number; at: number } | null; isNew: boolean; freedIds: string[];
   /** Asked because of this standing order (an `ask` or `review` order's question). */
   ord?: string;
+  /** A kept answer (`keepAnswer`) recommends option `rec` here; `rec0` is the agent's own recommendation, put back if that order goes. */
+  recBy?: string; rec0?: number;
 }
 export interface OrderScope { domain?: string; milestone?: string; surface?: string; all?: boolean; feats?: Record<string, 1>; label?: string }
 /**
@@ -66,7 +68,15 @@ export interface OrderScope { domain?: string; milestone?: string; surface?: str
  * last asked for, where each refused agent last wanted to go, the questions it opened and the agents they made wait.
  */
 export interface OrderHeld { n: number; rolls: Record<string, number>; moves: Record<string, string>; asks: string[]; snap: AgentFull[] }
-export interface SimOrder { id: string; by: string; lens: string; scope: OrderScope; text: string; since: string; n: number; vf: string[]; user: boolean; tpl?: OrderTemplate; held?: OrderHeld }
+/**
+ * An answer kept as a standing order: the decision, its lens, the option's label and effect kinds, and the effects (a roll
+ * or cap holds every rollout in scope through the shared constraint path). Later questions it covers are still asked; it
+ * only becomes their recommendation.
+ */
+export interface KeptAnswer { dec: string; lens: string; label: string; kinds: OptionEffect['k'][]; fx: OptionEffect[] }
+export interface SimOrder { id: string; by: string; lens: string; scope: OrderScope; text: string; since: string; n: number; vf: string[]; user: boolean; tpl?: OrderTemplate; held?: OrderHeld; keep?: KeptAnswer }
+/** Open questions one action may decide together (`batchGroups`): same lens, none urgent, the same kind of recommended answer. */
+export interface BatchGroup { key: string; lens: string; ids: string[]; label: string }
 /** `held`: the order (O-n) or answer (D-n) that overrode this event; the log shows it as "held by". */
 export interface SimEvent { t: number; agent: string; f: string; type: ReplayType; text: string; from: string | null; dec: string | null; syn?: boolean; held?: string }
 export interface Pulse { f: string; k: PulseKind; t0: number }
@@ -108,6 +118,8 @@ export interface SimOptions {
 type AgentSnap = { a: SimAgent; status: AgentStatus; task: string; wait: string | null; pct: number };
 export type AgentFull = AgentSnap & { f: string; synth: boolean; nextSynth: number; paused: boolean };
 const full = (a: SimAgent): AgentFull => ({ a, f: a.f, status: a.status, task: a.task, wait: a.wait, pct: a.pct, synth: a.synth, nextSynth: a.nextSynth, paused: a.paused });
+/** An effect kind in words (batch labels). */
+const KIND_WORDS: Record<string, string> = { roll: 'sets a rollout', cap: 'holds a rollout', staff: 'moves agents', ask: 'opens a follow-up', cover: 'sets coverage' };
 const REVIEW_EV: Partial<Record<ReplayType, 1>> = { 'pr-open': 1, 'review-pass': 1, 'review-changes': 1 };
 /** What one answer does (`planAnswer`): the agents it frees, then its option's effects, and the breaches they add or clear. */
 interface AnswerPlan {
@@ -171,7 +183,7 @@ export class SwarmSim {
   private paidT = 0;
   /** Per-event toasts above 60x and while seeking: counted, then shown as one. */
   private burst: { n: number; last: SimToast; at: number } | null = null; private seeking = false;
-  undo: DecisionUndo | null = null;
+  undo: { list: DecisionUndo[]; order?: string } | null = null;
   undo2: { kind: PreviewKind; snap: ({ order: string } | { a: SimAgent; f: string; status: AgentStatus; task: string; wait: string | null; paused: boolean; synth: boolean })[] } | null = null;
   breaches = 0; tally: Partial<Record<ReplayType, number>> = {};
   /** Bumped on every discrete change (status, queue, orders): cheap change detection for caches. */
@@ -391,6 +403,11 @@ export class SwarmSim {
       if (o.tpl !== 'ask' || !m[o.id]?.[fid] || this.DEC[this.oq(o, fid)]?.ans) continue;
       if (!lim || 10 < lim.max) lim = { max: 10, by: o.id, o };
     }
+    // a kept answer's roll / cap: the same hold over every feature in its scope (after the ask orders, so they still ask)
+    for (const o of this.orders) {
+      if (!o.keep || !m[o.id]?.[fid]) continue;
+      for (const e of o.keep.fx) { const max = e.k === 'cap' ? e.max : e.k === 'roll' ? e.pct : null; if (max != null && (!lim || max < lim.max)) lim = { max, by: o.id, o: null }; }
+    }
     return lim;
   }
   /** A `review` order whose question on this feature is open: build progress there waits for the answer. */
@@ -469,7 +486,7 @@ export class SwarmSim {
         { label: 'Approve the merge', consequence: 'Build work here resumes.' },
         { label: 'Send back', consequence: 'Agents rework it; build work resumes on the changes.' },
       ],
-      rec: 0, urg: ask ? 'high' : 'medium', since: 0, blocks: A && A.status === 'working' ? 1 : 0, freed: 0, affects: [fid], arr: 0,
+      rec: 0, urg: 'medium', since: 0, blocks: A && A.status === 'working' ? 1 : 0, freed: 0, affects: [fid], arr: 0,
       open: false, ans: null, isNew: false, freedIds: [], ord: o.id,
     };
     const h = this.heldOf(o); h.asks.push(id); if (A && A.status === 'working') h.snap.push(full(A));
@@ -503,8 +520,25 @@ export class SwarmSim {
     if (A) A.act = this.now();
     this.listener?.event(le);
   }
+  /**
+   * A kept answer as this question's recommendation (never its answer): an order kept from another question, with the same
+   * lens, whose scope covers this feature, and an option here with the kept effect kind (effect-free: the same label).
+   * Urgent questions keep the agent's own recommendation.
+   */
+  private precedent(d: SimDecision) {
+    if (this.live || d.urg === 'high') return;
+    const m = this.ordMap();
+    for (const o of this.orders) {
+      const k = o.keep; if (!k || k.dec === d.id || k.lens !== d.lens || !m[o.id]?.[d.f]) continue;
+      const i = d.opts.findIndex((x) => (k.kinds.length ? !!x.effects?.some((e) => k.kinds.includes(e.k)) : x.label.toLowerCase() === k.label.toLowerCase()));
+      if (i < 0) continue;
+      d.rec0 ??= d.rec; d.rec = i; d.recBy = o.id;
+      return;
+    }
+  }
   private openDecision(d: SimDecision, A: SimAgent | undefined, quiet = false) {
     d.open = true; d.isNew = true; d.since = this.clockMs();
+    this.precedent(d);
     if (A && A.status === 'working') { A.status = 'waiting'; A.wait = d.id; A.task = 'waiting: ' + d.q; }
     this.index(); this.pulse(d.f, 'ask');
     if (!quiet) this.evToast({ strong: 'New question', text: 'from ' + (A ? A.base : 'an agent') + ' · ' + this.P.F[d.f].name + ' · for ' + pname(this.P, d.decider), fid: d.f });
@@ -673,13 +707,22 @@ export class SwarmSim {
   decide(id: string, oi: number) {
     const d = this.DEC[id]; if (!d || !d.open) return;
     if (this.live) { this.decideLive(d, oi); return; }
-    const pl = this.planAnswer(d, oi), pv = this.describe(pl), now = this.now(), P = this.P;
+    const pl = this.planAnswer(d, oi), pv = this.describe(pl);
+    this.undo = { list: [this.applyAnswer(pl)] };
+    const n = pl.freed.length, fx = pv.marks!.map((m) => m.text);
+    const cleared = pl.breaks.filter((b) => !b.add).map((b) => b.o.id);
+    this.toast({ strong: cleared.length ? 'Decided · breach cleared' : 'Decided', text: d.opts[oi].label + (n ? ' · ' + n + ' agent' + (n > 1 ? 's' : '') + ' back to work' : ' · nobody was blocked') + (fx.length ? ' · ' + fx.join(' · ') : ' · ' + d.affects.length + ' feature' + (d.affects.length > 1 ? 's' : '') + ' touched'), action: 'undo' });
+    this.bump();
+  }
+  /** Write one answer's plan; returns what it overwrote (the undo record). Decide and batch-decide both go through here. */
+  private applyAnswer(pl: AnswerPlan): DecisionUndo {
+    const d = pl.d, oi = pl.oi, now = this.now(), P = this.P;
     // keep what the plan overwrites, before any of it is written
     const snap: AgentFull[] = [], keep = (a: SimAgent) => { if (!snap.some((s) => s.a === a)) snap.push(full(a)); };
     for (const a of pl.freed) keep(a);
     for (const m of pl.moves) keep(m.a);
     for (const x of pl.asks) if (x.hold) keep(x.hold);
-    this.undo = {
+    const u: DecisionUndo = {
       d, oi, snap, dd: { isNew: d.isNew, freed: d.freed, freedIds: d.freedIds },
       roll: pl.rolls.map((r) => [r.f, this.roll[r.f], this.cap[r.f], this.capBy[r.f]]), cov: pl.cover.map((c) => [c.f, this.cov[c.f]]),
       ords: [...new Set(pl.breaks.map((b) => b.o))].map((o) => ({ o, vf: o.vf.slice(), n: o.n })), breaches: this.breaches, asks: pl.asks.map((x) => x.d.id),
@@ -700,10 +743,79 @@ export class SwarmSim {
     this.index();
     for (const x of pl.asks) { this.decisions.push(x.d); this.DEC[x.d.id] = x.d; this.openDecision(x.d, x.hold ?? undefined, true); }
     this.pulse(d.f, 'ok'); for (const x of d.affects) if (P.F[x]) this.pulse(x, 'ok');
-    const n = pl.freed.length, fx = pv.marks!.map((m) => m.text);
-    const cleared = pl.breaks.filter((b) => !b.add).map((b) => b.o.id);
-    this.toast({ strong: cleared.length ? 'Decided · breach cleared' : 'Decided', text: d.opts[oi].label + (n ? ' · ' + n + ' agent' + (n > 1 ? 's' : '') + ' back to work' : ' · nobody was blocked') + (fx.length ? ' · ' + fx.join(' · ') : ' · ' + d.affects.length + ' feature' + (d.affects.length > 1 ? 's' : '') + ' touched'), action: 'undo' });
+    return u;
+  }
+  /** A written order's next free id (O-9, O-10, ...), never one an undone order left behind for a later one to collide with. */
+  private nextOrderId(): string { let n = 0; for (const o of this.orders) { const m = /^O-(\d+)$/.exec(o.id); if (m) n = Math.max(n, +m[1]); } return 'O-' + (n + 1); }
+  /**
+   * Answer and keep it as a standing order (sample only). Decides option `oi`, then mints an order signed by `who` (null =
+   * refused, nothing decided), scoped to the current target if one is set, else the question's domain (its room), in the
+   * question's lens. Its constraint is the option's effect: a roll / cap holds rollouts in scope (rollLimit). It never
+   * answers anything itself; later questions it covers only show it as their recommendation (`precedent`). One undo
+   * takes back the answer and the order.
+   */
+  keepAnswer(id: string, oi: number, who: string | null, tgt?: Target | null): boolean {
+    const d = this.DEC[id]; if (this.live || !d || !d.open || !d.opts[oi]) return false;
+    if (!who) { this.toast({ strong: 'Not kept:', text: 'nobody to sign the order. Pick who you are (or a lens one person reads), then answer again.' }); return false; }
+    this.decide(id, oi);
+    const o = d.opts[oi], no = this.nextOrderId(), fx = o.effects ?? [];
+    const scope: OrderScope = tgt?.n ? { feats: tgt.ids, label: tgt.label } : { domain: d.dom };
+    this.orders.push({
+      id: no, by: who, lens: d.lens, scope, text: 'Answer like ' + d.base + ': ' + o.label, since: new Date(this.at0 + this.t * 1000).toISOString().slice(0, 10),
+      n: 0, vf: [], user: true, keep: { dec: d.id, lens: d.lens, label: o.label, kinds: [...new Set(fx.map((e) => e.k))], fx },
+    });
+    this.ordCache = null;
+    if (this.undo) this.undo.order = no;
+    this.toast({ strong: 'Decided and kept as ' + no, text: o.label + ' · ' + this.scopeWords(this.orders[this.orders.length - 1]), action: 'undo' });
     this.bump();
+    return true;
+  }
+  private batchCache: { v: number; g: BatchGroup[] } | null = null;
+  /**
+   * Open questions one action may decide together (sample only): at least two in one lens, none urgent, whose recommended
+   * answers share an effect kind (or, effect-free, the same label), touching no feature twice. Cached per sim version.
+   */
+  batchGroups(): BatchGroup[] {
+    if (this.live) return [];
+    if (this.batchCache?.v === this.version) return this.batchCache.g;
+    const by = new Map<string, SimDecision[]>();
+    for (const d of this.openDecs()) {
+      if (d.urg === 'high') continue;
+      const o = d.opts[d.rec]; if (!o) continue;
+      const ks = [...new Set((o.effects ?? []).map((e) => e.k))].sort().join('+'), key = d.lens + '|' + (ks || 'label:' + o.label.toLowerCase());
+      let l = by.get(key); if (!l) by.set(key, (l = [])); l.push(d);
+    }
+    const g: BatchGroup[] = [];
+    for (const [key, ds] of by) {
+      if (ds.length < 2) continue;
+      const fs = new Set<string>(); let clash = false;
+      for (const d of ds) for (const e of d.opts[d.rec].effects ?? []) { if (fs.has(e.feature)) clash = true; fs.add(e.feature); }
+      if (clash) continue;
+      const o = ds[0].opts[ds[0].rec], ks = key.split('|')[1];
+      g.push({ key, lens: ds[0].lens, ids: ds.map((d) => d.id), label: ks.startsWith('label:') ? o.label : 'each ' + ks.split('+').map((k) => KIND_WORDS[k] ?? k).join(' and ') });
+    }
+    this.batchCache = { v: this.version, g };
+    return g;
+  }
+  /** The union of a batch's plans on the plan layer (each question at its recommended answer), before it applies. */
+  previewBatch(key: string): Preview | null {
+    const grp = this.batchGroups().find((x) => x.key === key); if (!grp) return null;
+    const pls = grp.ids.map((id) => this.planAnswer(this.DEC[id], this.DEC[id].rec));
+    const u: AnswerPlan = { ...pls[0], freed: [], moves: [], rolls: [], cover: [], asks: [], breaks: [] };
+    for (const p of pls) { u.freed.push(...p.freed); u.moves.push(...p.moves); u.rolls.push(...p.rolls); u.cover.push(...p.cover); u.asks.push(...p.asks); u.breaks.push(...p.breaks); }
+    const pv = this.describe(u);
+    pv.title = 'Batch: ' + grp.ids.length + ' questions'; pv.dec = 'batch:' + key; pv.lines.unshift(grp.ids.length + ' questions decided at their recommendation: ' + grp.ids.map((id) => this.DEC[id].base).join(', '));
+    return pv;
+  }
+  /** Decide a batch, each at its recommended answer, with ONE undo that takes all of them back. High urgency never batches. */
+  decideBatch(key: string): number {
+    const grp = this.batchGroups().find((x) => x.key === key); if (!grp) return 0;
+    const list: DecisionUndo[] = [];
+    for (const id of grp.ids) { const d = this.DEC[id]; if (d?.open && d.urg !== 'high') list.push(this.applyAnswer(this.planAnswer(d, d.rec))); }
+    this.undo = { list };
+    this.toast({ strong: 'Decided ' + list.length + ' together', text: grp.label + ' · one undo takes all of them back', action: 'undo' });
+    this.bump();
+    return list.length;
   }
   /**
    * Live: answer optimistically. Every product line's copy of the question closes and the agents it
@@ -813,7 +925,17 @@ export class SwarmSim {
   }
   /** Take the last answer back: every field `decide` wrote is put back from what it kept (the same plan). */
   undoDecision() {
-    const u = this.undo; if (!u) return;
+    const U = this.undo; if (!U) return;
+    for (let i = U.list.length - 1; i >= 0; i--) this.revertAnswer(U.list[i]);
+    if (U.order) {   // a kept answer: its order goes, and the recommendations it set go back to the agents'
+      this.orders = this.orders.filter((o) => o.id !== U.order); this.ordCache = null;
+      for (const d of this.decisions) if (d.recBy === U.order) { d.rec = d.rec0 ?? d.rec; delete d.recBy; delete d.rec0; }
+    }
+    this.undo = null; this.index();
+    this.toast({ strong: U.list.length > 1 ? U.list.length + ' decisions taken back' : U.order ? 'Decision and order ' + U.order + ' taken back' : 'Decision taken back', text: U.list.length > 1 ? 'the questions are open again' : 'the question is open again' });
+    this.bump();
+  }
+  private revertAnswer(u: DecisionUndo) {
     const d = u.d; d.open = true; d.ans = null; d.isNew = u.dd.isNew; d.freed = u.dd.freed; d.freedIds = u.dd.freedIds;
     for (const s of u.snap) {
       const a = s.a; a.status = s.status; a.task = s.task; a.wait = s.wait; a.pct = s.pct; a.synth = s.synth; a.nextSynth = s.nextSynth; a.paused = s.paused;
@@ -824,9 +946,6 @@ export class SwarmSim {
     for (const o of u.ords) { o.o.vf = o.vf; o.o.n = o.n; }
     this.breaches = u.breaches;
     if (u.asks.length) { this.decisions = this.decisions.filter((x) => !u.asks.includes(x.id)); for (const id of u.asks) delete this.DEC[id]; }
-    this.undo = null; this.index();
-    this.toast({ strong: 'Decision taken back', text: 'the question is open again' });
-    this.bump();
   }
 
   // ---------------------------------------------------------------- steering (preview, then commit)
@@ -927,7 +1046,7 @@ export class SwarmSim {
     } else if (p.kind === 'order') {
       // signed by the reader; nobody to sign it = refused (never a default author)
       if (!who) { this.toast({ strong: 'Order not written:', text: 'nobody to sign it. Pick who you are (or a lens one person reads), then write it again.' }); return; }
-      const no = 'O-' + (this.orders.length + 1), by = who;
+      const no = this.nextOrderId(), by = who;
       this.orders.push({ id: no, by, lens: personLens(this.P, by) ?? 'general', scope: { feats: p.targets, label: p.label }, text: p.text || '', since: new Date(this.at0 + this.t * 1000).toISOString().slice(0, 10), n: 0, vf: [], user: true, tpl: p.tpl });
       this.ordCache = null; snap.push({ order: no });
     }
