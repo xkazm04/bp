@@ -384,6 +384,42 @@ export function drawPreview(E: Engine, ctx: CanvasRenderingContext2D, v: View, l
   ctx.restore();
 }
 
+/**
+ * An answer option under the pointer or focus (S.hlOpt): what choosing it would move, from the engine's memoised dry run
+ * (sim.previewAnswer, the plan decide applies). Touched tiles, agents freed and moved, and one label per change at its
+ * tile (rollout, coverage, follow-up question, an order breached or cleared with its owner; live: the expected move).
+ */
+export function drawAnswer(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod: number, now: number) {
+  const p = E.answerPreview(); if (!p || !p.marks || !E.isNow) return;
+  const u = E.U, th = E.th, font = E.tx.f(12, 600, true), bad = th.mode === 'dark' ? th.red2 : th.red;
+  ctx.save();
+  for (const id in p.targets) {
+    const fr = featRect(E, v, id, lod, sr1); if (!fr || !onView(v, fr, 0)) continue;
+    ctx.strokeStyle = th.accent; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.lineDashOffset = dashOff(E, -1); ctx.strokeRect(fr.x - 3, fr.y - 3, fr.w + 6, fr.h + 6);
+  }
+  for (const m of p.moves) {
+    const q = agentPos(E, v, m.a, lod, now, ap), tr = featRect(E, v, m.to, lod, sr2); if (!q || !tr) continue;
+    const qx = q.x, qy = q.y;
+    ctx.setLineDash([8, 5]); ctx.lineDashOffset = dashOff(E, -1.4);
+    curveArrow(ctx, qx, qy, tr.x + tr.w / 2, tr.y + tr.h / 2, th.alpha(th.mint, 0.95), 2, u);
+    ctx.setLineDash([3, 3]); ctx.strokeStyle = th.mint; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(qx, qy, 11 * u, 0, 6.2832); ctx.stroke();
+  }
+  if (p.freed) for (const a of p.freed) { const q = agentPos(E, v, a, lod, now, ap); if (!q) continue; ctx.setLineDash([3, 3]); ctx.strokeStyle = th.mint; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.arc(q.x, q.y, 11 * u, 0, 6.2832); ctx.stroke(); }
+  ctx.setLineDash([]); ctx.textAlign = 'center';
+  for (const m of p.marks) {
+    const fr = featRect(E, v, m.f, lod, sr1); if (!fr || !onView(v, fr, 40)) continue;
+    const col = m.tone === 'bad' ? bad : m.tone === 'ok' ? th.mintText : th.inkHi;
+    if (m.ring) {   // a ghost breach rivet where drawBreaches puts the real one: dashed red = would breach, mint = would clear
+      const big = lod > 0.5 && fr.w >= 40 * u, cx = big ? fr.x : fr.x + fr.w / 2, cy = big ? fr.y : fr.y - 7 * u;
+      ctx.strokeStyle = m.ring === 'add' ? th.red : th.mint; ctx.lineWidth = 2; ctx.setLineDash([4, 3]); ctx.lineDashOffset = dashOff(E, -1);
+      ctx.beginPath(); ctx.arc(cx, cy, (big ? 12 : 8) * u, 0, 6.2832); ctx.stroke(); ctx.setLineDash([]);
+    }
+    drawText(ctx, m.text, fr.x + fr.w / 2, fr.y - (9 + m.row * 17) * u, font, col, th.halo);
+  }
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+
 export function drawFocus(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod: number, now: number) {
   const sim = E.M.sim, S = E.S;
   const d: SimDecision | null = S.dec ? sim.DEC[S.dec] : S.hlDec ? sim.DEC[S.hlDec] : null;

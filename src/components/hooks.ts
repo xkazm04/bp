@@ -1,7 +1,7 @@
 'use client';
 // React <-> engine glue. Components select slices of the discrete store with useSyncExternalStore, so a
 // change to one slice re-renders only the components that read it. Continuous values never pass here.
-import { createContext, useCallback, useContext, useRef, useSyncExternalStore } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useSyncExternalStore } from 'react';
 import type { Engine } from '@/engine/Engine';
 import type { UIState } from '@/engine/state';
 import type { Variant } from '@/variants/types';
@@ -58,6 +58,21 @@ export function useBp<T>(sel: (s: UIState) => T, eq: (a: T, b: T) => boolean = O
 }
 
 /** The reader density the UI uses for a lens (variant override, else the channel's, else the manifest's `reader.density`). */
+/** Pointer / focus handlers for an answer option: the plan previews what choosing it moves (Engine.setHlOpt), cleared on leave / blur. */
+export function optHover(E: Engine, dec: string, oi: number) {
+  const on = () => E.setHlOpt(dec, oi), off = () => E.setHlOpt(null);
+  return { onPointerEnter: on, onPointerLeave: off, onFocus: on, onBlur: off };
+}
+/** What the highlighted option of question `dec` would do, in words; null when none of its options is highlighted. */
+export function useAnswerNote(dec: string): string | null {
+  const E = useEngine(), h = useBp((s) => s.hlOpt);
+  useEffect(() => () => E.setHlOpt(null), [E, dec]);   // a closed card or flyout leaves no preview behind (no pointerleave fires)
+  if (!h || h.dec !== dec) return null;
+  const p = E.answerPreview();
+  if (p) return p.expected ? 'Expected, not simulated: ' + p.expected : 'If you choose this: ' + p.lines.join(' · ') + '.';
+  return E.M.sim.live ? 'Nothing to preview: an answer on a real product is not simulated.' : 'No modelled effect: only the agents it holds go back to work.';
+}
+
 export function useDensity(): (l: string) => Density {
   const V = useVariant(), E = useEngine();
   return (l) => V.ui?.density?.(l) ?? E.channel(l)?.density ?? E.M.P.LENS[l]?.density ?? 'standard';

@@ -641,15 +641,36 @@
    "options": [
     {
      "label": "Go to 100% now",
-     "consequence": "Recovers about $3.1k MRR a month sooner; no human or security review yet."
+     "consequence": "Recovers about $3.1k MRR a month sooner; no human or security review yet.",
+     "effects": [
+      {
+       "k": "roll",
+       "feature": "PAY-09",
+       "pct": 100
+      }
+     ]
     },
     {
      "label": "Hold at 25% until review",
-     "consequence": "GA date holds only if the review lands this week."
+     "consequence": "GA date holds only if the review lands this week.",
+     "effects": [
+      {
+       "k": "cap",
+       "feature": "PAY-09",
+       "max": 25
+      }
+     ]
     },
     {
      "label": "Roll back to 0%",
-     "consequence": "Stops the risk; failed payments go back to manual follow-up."
+     "consequence": "Stops the risk; failed payments go back to manual follow-up.",
+     "effects": [
+      {
+       "k": "roll",
+       "feature": "PAY-09",
+       "pct": 0
+      }
+     ]
     }
    ],
    "recommended": 1,
@@ -759,7 +780,18 @@
    "options": [
     {
      "label": "Move two agents",
-     "consequence": "Analytics exports slip about a week."
+     "consequence": "Analytics exports slip about a week.",
+     "effects": [
+      {
+       "k": "staff",
+       "feature": "BKG-06",
+       "n": 2,
+       "from": {
+        "domain": "ANA",
+        "role": "build"
+       }
+      }
+     ]
     },
     {
      "label": "Start next sprint",
@@ -904,7 +936,28 @@
     },
     {
      "label": "Cash via payouts",
-     "consequence": "Needs a security review of the payout path."
+     "consequence": "Needs a security review of the payout path.",
+     "effects": [
+      {
+       "k": "ask",
+       "feature": "GRO-02",
+       "lens": "security",
+       "decider": "jonas",
+       "question": "Referral rewards will be paid in cash. Review the payout path before the payout flow ships?",
+       "options": [
+        {
+         "label": "Review first",
+         "consequence": "Sentinel crew prepares the review; the payout flow waits for it."
+        },
+        {
+         "label": "Ship, review later",
+         "consequence": "Cash leaves through a path nobody has reviewed."
+        }
+       ],
+       "recommended": 0,
+       "urgency": "medium"
+      }
+     ]
     }
    ],
    "recommended": 0,
@@ -978,7 +1031,14 @@
    "options": [
     {
      "label": "Quarantine",
-     "consequence": "Merges unblock; coverage drops 6%."
+     "consequence": "Merges unblock; coverage drops 6%.",
+     "effects": [
+      {
+       "k": "cover",
+       "feature": "SCH-12",
+       "delta": -6
+      }
+     ]
     },
     {
      "label": "Fix first",
@@ -1223,11 +1283,25 @@
    "options": [
     {
      "label": "Forge-4.2 version",
-     "consequence": "Simpler, 71% coverage."
+     "consequence": "Simpler, 71% coverage.",
+     "effects": [
+      {
+       "k": "cover",
+       "feature": "INT-05",
+       "pct": 71
+      }
+     ]
     },
     {
      "label": "Forge-4.4 version",
-     "consequence": "Handles partial refunds, 58% coverage."
+     "consequence": "Handles partial refunds, 58% coverage.",
+     "effects": [
+      {
+       "k": "cover",
+       "feature": "INT-05",
+       "pct": 58
+      }
+     ]
     }
    ],
    "recommended": 0,

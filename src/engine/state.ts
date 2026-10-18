@@ -28,6 +28,8 @@ export interface UIState {
   /** A list row under the pointer highlights its tile. */
   hl: string | null;
   hlDec: string | null;
+  /** An answer option under the pointer or keyboard focus: the plan previews what choosing it moves (never S.prev). */
+  hlOpt: { dec: string; oi: number } | null;
   tgt: Target;
   prev: Preview | null;
   /** A live product's steer (measure, build, stop) shown under NOT ISSUED YET; never set together with `prev`. */
@@ -84,7 +86,7 @@ export interface ScanMenuState {
 export function initialState(scale: number, asOf: string): UIState {
   return {
     ready: false, scale, phone: false, compact: false, view: 'general', place: [], levelNames: [], level: 0,
-    open: null, dec: null, hover: null, sel: null, hl: null, hlDec: null, tgt: { ids: {}, n: 0, label: '' }, prev: null, lprev: null,
+    open: null, dec: null, hover: null, sel: null, hl: null, hlDec: null, hlOpt: null, tgt: { ids: {}, n: 0, label: '' }, prev: null, lprev: null,
     t: asOf, delta: 7, who: null, ga: false, blast: null, key: null, dtab: null, selMode: false, dockHidden: false,
     morning: false, info: false, ordHi: null, crew: null, askAll: false, ordMenu: false, whoMenu: false, simV: 0,
     playing: true, speed: 8, over: false, toast: null, ticker: null, intro: false, tl: false,

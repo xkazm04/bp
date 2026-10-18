@@ -25,11 +25,29 @@ export interface Agent {
 export interface Decision {
   /** `lens` is a lens id string; a decision whose lens is disabled or unknown still shows under General. */
   id: string; feature: string; domain: string; lens: string; decider: string; askedBy: string;
-  question: string; options: { label: string; consequence: string }[]; recommended: number;
+  question: string; options: DecisionOption[]; recommended: number;
   urgency: 'high' | 'medium' | 'low'; waitingSince: string; blocksAgents: number; affects: string[];
   /** Seconds after 09:00 when the decision is asked during the replay; absent = open at 09:00. */
   arrivesAt?: number;
 }
+/**
+ * An answer option. `effects`: what choosing it does in the simulation, in a closed vocabulary, and only what
+ * the consequence sentence states; absent = narrative only. `expected` (live): the proposal's own expected move,
+ * the one thing an Approve may preview on a real product.
+ */
+export interface DecisionOption { label: string; consequence: string; effects?: OptionEffect[]; expected?: string }
+/**
+ * The option-effect vocabulary (sample swarm). `feature` is a feature id (re-keyed with the feed's ids):
+ * `roll` sets its rollout and holds it there; `cap` holds the rollout at most `max` (lowered if above); `staff`
+ * moves `n` working agents of a domain / squad / role onto it; `ask` opens a follow-up question on it; `cover`
+ * sets its unit coverage (`pct`) or moves it by `delta` points (the O-2 coverage rule reads it).
+ */
+export type OptionEffect =
+  | { k: 'roll'; feature: string; pct: number }
+  | { k: 'cap'; feature: string; max: number }
+  | { k: 'staff'; feature: string; n: number; from: { domain?: string; squad?: string; role?: CrewRole } }
+  | { k: 'ask'; feature: string; lens: string; decider: string; question: string; options: { label: string; consequence: string }[]; recommended: number; urgency: 'high' | 'medium' | 'low' }
+  | { k: 'cover'; feature: string; pct?: number; delta?: number };
 export interface StandingOrder {
   id: string; by: string; lens: string;
   scope: { domain?: string; milestone?: string; surface?: string; all?: boolean };

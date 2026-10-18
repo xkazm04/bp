@@ -18,7 +18,7 @@ import { Text } from './text';
 import { StaticCache, deviceRes } from './render/static-cache';
 import { buildWallPaths, drawBuildings, drawDecor, drawGrid, drawLabels, featRect, resetOutlines } from './render/plan';
 import {
-  agentPos, drawAgents, drawBlockers, drawBreaches, drawFocus, drawHeat, drawLasso, drawOrderZones, drawOverlays, drawPins, drawPreview,
+  agentPos, drawAgents, drawAnswer, drawBlockers, drawBreaches, drawFocus, drawHeat, drawLasso, drawOrderZones, drawOverlays, drawPins, drawPreview,
   drawPulses, drawReleases, drawTargets, roomPinPos, type APos,
 } from './render/dynamic';
 import { KeyPlan } from './render/keyplan';
@@ -436,7 +436,7 @@ export class Engine {
     drawHeat(this, ctx, v, lod, now);
     drawAgents(this, ctx, v, lod, now); drawPulses(this, ctx, v, lod, now);
     drawPins(this, ctx, v, lod, now); drawBreaches(this, ctx, v, lod, now);
-    drawPreview(this, ctx, v, lod, now); drawFocus(this, ctx, v, lod, now); drawBlockers(this, ctx, v, lod); drawReleases(this, ctx, v, lod, now);
+    drawPreview(this, ctx, v, lod, now); drawFocus(this, ctx, v, lod, now); drawAnswer(this, ctx, v, lod, now); drawBlockers(this, ctx, v, lod); drawReleases(this, ctx, v, lod, now);
     this.scans.draw(this, ctx, v, lod, now);
     // trouble flags over everything: the first thing to find on the plan
     this.flags = layoutFlags(this, v, lod); drawFlags(this, ctx, this.flags, this.flagHot);
@@ -712,6 +712,19 @@ export class Engine {
   setSel(id: string | null) { this.set({ sel: id }); }
   setHl(id: string | null) { if (this.S.hl !== id) this.set({ hl: id }); }
   setHlDec(id: string | null) { if (this.S.hlDec !== id) this.set({ hlDec: id }); }
+  /** An answer option under the pointer / focus (null clears): the plan shows what choosing it would move. */
+  setHlOpt(dec: string | null, oi = 0) {
+    const h = this.S.hlOpt;
+    if (!dec) { if (h) this.set({ hlOpt: null }); return; }
+    if (!h || h.dec !== dec || h.oi !== oi) this.set({ hlOpt: { dec, oi } });
+  }
+  private apV = -1; private apDec = ''; private apOi = -1; private apVal: Preview | null = null;
+  /** The highlighted option's dry run (sim.previewAnswer), computed once per (sim version, decision, option), never per frame. */
+  answerPreview(): Preview | null {
+    const h = this.S.hlOpt, sim = this.M.sim; if (!h) return null;
+    if (this.apV !== sim.version || this.apDec !== h.dec || this.apOi !== h.oi) { this.apV = sim.version; this.apDec = h.dec; this.apOi = h.oi; this.apVal = sim.previewAnswer(h.dec, h.oi); }
+    return this.apVal;
+  }
   setOrdHi(id: string | null) { if (this.S.ordHi !== id) this.set({ ordHi: id }); }
   /** Open a rail flyout; the open one again (or null) closes it. */
   setDockTab(t: DockTab | null) { const dtab = t === this.S.dtab ? null : t; this.set(dtab ? { dtab, tl: false } : { dtab }); }
@@ -764,7 +777,7 @@ export class Engine {
     const sim = this.M.sim, d = sim.DEC[id]; if (!d || !d.open) return;
     if (this.S.open) this.closeFeature(false);
     d.isNew = false;
-    this.set({ dec: id, hl: null, hover: null, morning: false });
+    this.set({ dec: id, hl: null, hover: null, morning: false, hlOpt: null });
     if (!noFly && !this.S.phone) {
       const T = this.M.L.TILE[d.f], R = { l: this.SAFE.l, t: this.SAFE.t, r: Math.min(this.SAFE.r, this.FW - overlayRight(this.S) * this.U) - 400 * this.U, b: this.SAFE.b };
       const c = this.fitCam({ x: T.x - 30, y: T.y - 30, w: T.w + 60, h: T.h + 60 }, { t: 60, r: 40, b: 60, l: 40 }, 1, R);
@@ -773,7 +786,7 @@ export class Engine {
       this.cam.flyTo({ x: T.x + T.w / 2 - (cx - this.FW / 2) / k, y: T.y + T.h / 2 - (cy - this.FH / 2) / k, k });
     }
   }
-  closeDecision() { this.set({ dec: null }); }
+  closeDecision() { this.set({ dec: null, hlOpt: null }); }
   stepDecision(dir: number) {
     const list = this.M.sim.cardOrder(this.S.who, this.S.view); if (!list.length) return;
     let i = list.findIndex((d) => d.id === this.S.dec);
@@ -789,6 +802,7 @@ export class Engine {
     const open = !!d?.open;
     sim.decide(id, oi);
     if (this.S.dec === id) this.store.set({ dec: null });
+    if (this.S.hlOpt) this.store.set({ hlOpt: null });
     this.scheduleSimSync(true); this.forceStatic();
     if (!live || !sim.live || !d || !open) return;
     const pid = d.base, body = { decision: oi === 0 ? 'approve' as const : 'decline' as const, ...(note ? { note } : {}) };

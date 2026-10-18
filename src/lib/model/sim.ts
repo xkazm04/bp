@@ -7,7 +7,7 @@
 // of the replay. There is no recorded hour: waits and ages use the wall clock (`wall`), and each new
 // feed (`applyFeed`) sets the agents, the open questions and the recent events directly. Agents are
 // the truth, not the replay.
-import type { Agent, Decision, ReplayEvent, ReplayType, StandingOrder, Swarm, AgentStatus, CrewRole, Squad, ViewId, Feature, Scalar } from '@/lib/data';
+import type { Agent, Decision, DecisionOption, OptionEffect, ReplayEvent, ReplayType, StandingOrder, Swarm, AgentStatus, CrewRole, Squad, ViewId, Feature, Scalar } from '@/lib/data';
 import { fval } from '@/lib/standard/load';
 import { FIRST_MILESTONE, GA_MILESTONE, HOUR, LATER_MILESTONES, PULSE_OF, SPEND_CAP, type PulseKind } from './constants';
 import { isLiveSt } from './aggregates';
@@ -20,7 +20,7 @@ import { baseId, lineSuffix, pname, type Product } from './product';
  * Together with the standing-order rules below (which read the sample's facets the same way), this is
  * the only place lens field names appear outside the manifests: it belongs to the swarm sample.
  */
-export const SIM_FIELDS = { rollout: ['operations', 'rolloutPct'], progress: ['development', 'progressPct'] } as const;
+export const SIM_FIELDS = { rollout: ['operations', 'rolloutPct'], progress: ['development', 'progressPct'], coverage: ['development', 'unitCoveragePct'] } as const;
 const num = (f: Feature, l: string, k: string): number | null => { const v = fval(f, l, k); return typeof v === 'number' ? v : null; };
 const txt = (f: Feature, l: string, k: string): string => { const v = fval(f, l, k); return typeof v === 'string' ? v : ''; };
 const flag = (f: Feature, l: string, k: string): boolean | null => { const v = fval(f, l, k); return typeof v === 'boolean' ? v : null; };
@@ -29,6 +29,15 @@ function cardUnreviewed(f: Feature): boolean {
   const r = txt(f, 'security', 'review');
   return txt(f, 'security', 'dataClass') === 'payment' && r !== 'passed' && r !== 'not-required';
 }
+/**
+ * The standing-order rules the simulation can move (at a feature's rollout `r` and unit coverage `c`): read at
+ * build to rank the sample's breaches, and re-read on one feature when a flag change or an answer touches it.
+ */
+const RULES: Record<string, { hit: (f: Feature, r: number, c: number | null) => boolean; why: (f: Feature, r: number, c: number | null) => string }> = {
+  'O-1': { hit: (f, r) => isLiveSt(f.stage) && cardUnreviewed(f) && r > 10, why: () => 'card data above 10% without a security review' },
+  'O-2': { hit: (f, _r, c) => (f.stage === 'in-review' || isLiveSt(f.stage)) && c != null && c < 70, why: (_f, _r, c) => 'unit coverage ' + c + '%, under 70%' },
+  'O-3': { hit: (f, r) => isLiveSt(f.stage) && (!flag(f, 'operations', 'alerting') || !flag(f, 'operations', 'runbook')) && r >= 50, why: (f, r) => 'rollout ' + r + '% without ' + (!flag(f, 'operations', 'alerting') ? 'an alert' : 'a runbook') },
+};
 
 export type AgentState = AgentStatus | 'paused';
 export interface SimAgent {
@@ -39,7 +48,7 @@ export interface SimAgent {
 }
 export interface SimDecision {
   id: string; base: string; b: number; f: string; dom: string; lens: string; decider: string; by: string; q: string;
-  opts: { label: string; consequence: string }[]; rec: number; urg: 'high' | 'medium' | 'low'; since: number;
+  opts: DecisionOption[]; rec: number; urg: 'high' | 'medium' | 'low'; since: number;
   blocks: number; freed: number; affects: string[]; arr: number; open: boolean;
   ans: { opt: number; t: number; at: number } | null; isNew: boolean; freedIds: string[];
 }
@@ -48,10 +57,18 @@ export interface SimOrder { id: string; by: string; lens: string; scope: OrderSc
 export interface SimEvent { t: number; agent: string; f: string; type: ReplayType; text: string; from: string | null; dec: string | null; syn?: boolean }
 export interface Pulse { f: string; k: PulseKind; t0: number }
 export interface Target { ids: Record<string, 1>; n: number; label: string }
-export type PreviewKind = 'push' | 'pause' | 'resume' | 'order';
+export type PreviewKind = 'push' | 'pause' | 'resume' | 'order' | 'answer';
+/** A label an answer preview draws at a feature (`row` stacks several on one tile); `ring` = a breach it adds or clears. */
+export interface AnswerMark { f: string; text: string; tone: 'ok' | 'bad' | 'info'; row: number; ring?: 'add' | 'clear' }
 export interface Preview {
   kind: PreviewKind; title: string; moves: { a: SimAgent; to: string }[]; targets: Record<string, 1>; paused: SimAgent[];
   lines: string[]; n: number; order?: string; tpl?: OrderTemplate; text?: string; label?: string;
+  /** kind 'answer' (`previewAnswer`): the decision and option, and what answering it changes. */
+  dec?: string; oi?: number; freed?: SimAgent[]; rolls?: { f: string; from: number; to: number }[]; cover?: { f: string; from: number; to: number }[];
+  asks?: { id: string; f: string; lens: string; decider: string; q: string }[]; breaks?: { o: string; by: string; f: string; add: boolean }[];
+  marks?: AnswerMark[];
+  /** Live: the proposal's own expected move, the only thing a real product's answer may preview. */
+  expected?: string;
 }
 export type OrderTemplate = 'review' | 'ask' | 'first' | 'hold';
 export const ORDER_TEMPLATES: Record<OrderTemplate, string> = {
@@ -75,6 +92,20 @@ export interface SimOptions {
   wall?: () => number;
 }
 type AgentSnap = { a: SimAgent; status: AgentStatus; task: string; wait: string | null; pct: number };
+type AgentFull = AgentSnap & { f: string; synth: boolean; nextSynth: number; paused: boolean };
+/** What one answer does (`planAnswer`): the agents it frees, then its option's effects, and the breaches they add or clear. */
+interface AnswerPlan {
+  d: SimDecision; oi: number; freed: SimAgent[]; moves: { a: SimAgent; to: string }[];
+  rolls: { f: string; from: number; to: number; cap: number }[]; cover: { f: string; from: number; to: number }[];
+  asks: { d: SimDecision; hold: SimAgent | null }[]; breaks: { o: SimOrder; f: string; add: boolean }[];
+}
+/** What `decide` overwrote, so `undoDecision` restores exactly that. */
+interface DecisionUndo {
+  d: SimDecision; oi: number; snap: AgentFull[]; dd: { isNew: boolean; freed: number; freedIds: string[] };
+  roll: [string, number | undefined, number | undefined][]; cov: [string, number | undefined][];
+  ords: { o: SimOrder; vf: string[]; n: number }[]; breaches: number; asks: string[];
+}
+const sfx = (e: OptionEffect, sf: string): OptionEffect => (e.k === 'staff' ? { ...e, feature: e.feature + sf, from: e.from.domain ? { ...e.from, domain: e.from.domain + sf } : e.from } : { ...e, feature: e.feature + sf });
 const liveKey = (e: ReplayEvent) => e.at + '|' + e.agent + '|' + e.feature + '|' + e.text;
 
 export function hash01(s: string): number {
@@ -116,7 +147,9 @@ export class SwarmSim {
   t = 0; playing = true; speed = 8; i = 0; over = false;
   log: SimEvent[] = []; pulses: Pulse[] = []; heat: Record<string, { v: number; t: number }> = {};
   roll: Record<string, number> = {}; prog: Record<string, number> = {};
-  undo: { d: SimDecision; snap: { a: SimAgent; status: AgentStatus; task: string; wait: string | null; pct: number }[]; oi: number } | null = null;
+  /** Rollouts an answer holds (agents' flag changes stop there) and unit coverage an answer set, by feature. */
+  cap: Record<string, number> = {}; cov: Record<string, number> = {};
+  undo: DecisionUndo | null = null;
   undo2: { kind: PreviewKind; snap: ({ order: string } | { a: SimAgent; f: string; status: AgentStatus; task: string; wait: string | null; paused: boolean; synth: boolean })[] } | null = null;
   breaches = 0; tally: Partial<Record<ReplayType, number>> = {};
   /** Bumped on every discrete change (status, queue, orders): cheap change detection for caches. */
@@ -180,7 +213,7 @@ export class SwarmSim {
   private fromDecision(d: Decision, b: number, sf: string): SimDecision {
     return {
       id: d.id + sf, base: d.id, b, f: d.feature + sf, dom: d.domain + sf, lens: d.lens, decider: d.decider, by: d.askedBy + sf,
-      q: d.question, opts: d.options, rec: d.recommended, urg: d.urgency, since: Date.parse(d.waitingSince), blocks: d.blocksAgents,
+      q: d.question, opts: sf ? d.options.map((o) => (o.effects ? { ...o, effects: o.effects.map((e) => sfx(e, sf)) } : o)) : d.options, rec: d.recommended, urg: d.urgency, since: Date.parse(d.waitingSince), blocks: d.blocksAgents,
       freed: 0, affects: d.affects.map((x) => x + sf), arr: d.arrivesAt || 0, open: !d.arrivesAt, ans: null, isNew: false, freedIds: [],
     };
   }
@@ -208,9 +241,12 @@ export class SwarmSim {
   progOf(f: Feature): number { return Math.min(99, this.baseProgress(f) + (this.prog[f.id] || 0)); }
   /** Build progress as the map has it (before the simulated hour). */
   baseProgress(f: Feature): number { return num(f, ...SIM_FIELDS.progress) ?? 0; }
+  /** Unit coverage as the simulation has it (an answer may set it), else the map's; null = not measured. */
+  covOf(f: Feature): number | null { return this.cov[f.id] ?? num(f, ...SIM_FIELDS.coverage); }
   /** A lens field's value as the simulation has it now (its live rollout and build progress), else the map's. */
   liveValue(f: Feature, lens: string, key: string): Scalar | undefined {
     if (lens === SIM_FIELDS.rollout[0] && key === SIM_FIELDS.rollout[1] && this.roll[f.id] != null) return this.roll[f.id];
+    if (lens === SIM_FIELDS.coverage[0] && key === SIM_FIELDS.coverage[1] && this.cov[f.id] != null) return this.cov[f.id];
     if (lens === SIM_FIELDS.progress[0] && key === SIM_FIELDS.progress[1] && this.prog[f.id]) { const p = num(f, lens, key); return p != null && p < 100 ? this.progOf(f) : p ?? undefined; }
     return fval(f, lens, key);
   }
@@ -272,10 +308,11 @@ export class SwarmSim {
   // ---------------------------------------------------------------- orders
   computeViolations() {
     const P = this.P;
+    // ranked by the same RULES the live re-check reads; the sample's stamp counts pick the top n
     const rules: Record<string, { rank: (f: Feature) => number | null; desc: boolean }> = {
-      'O-1': { rank: (f) => (isLiveSt(f.stage) && cardUnreviewed(f) && this.rolloutOf(f) > 10 ? this.rolloutOf(f) : null), desc: true },
-      'O-2': { rank: (f) => { const c = num(f, 'development', 'unitCoveragePct'); return (f.stage === 'in-review' || isLiveSt(f.stage)) && c != null && c < 70 ? c : null; }, desc: false },
-      'O-3': { rank: (f) => { const m = (!flag(f, 'operations', 'alerting') ? 1 : 0) + (!flag(f, 'operations', 'runbook') ? 1 : 0); return isLiveSt(f.stage) && m && this.rolloutOf(f) >= 50 ? m * 1000 + this.rolloutOf(f) : null; }, desc: true },
+      'O-1': { rank: (f) => { const r = this.rolloutOf(f); return RULES['O-1'].hit(f, r, null) ? r : null; }, desc: true },
+      'O-2': { rank: (f) => { const c = this.covOf(f); return RULES['O-2'].hit(f, 0, c) ? c : null; }, desc: false },
+      'O-3': { rank: (f) => { const r = this.rolloutOf(f), m = (!flag(f, 'operations', 'alerting') ? 1 : 0) + (!flag(f, 'operations', 'runbook') ? 1 : 0); return RULES['O-3'].hit(f, r, null) ? m * 1000 + r : null; }, desc: true },
       'O-5': { rank: (f) => (/kiosk/i.test(f.name + ' ' + f.summary) && txt(f, 'design', 'a11y') === 'fail' ? 1 : null), desc: true },
     };
     for (const o of this.orders) {
@@ -338,31 +375,43 @@ export class SwarmSim {
     const t = e.type;
     if (t === 'move') { if (A) { this.travel(A, f); if (A.status === 'working') A.task = 'moved here: ' + F.name; discrete.v = true; } }
     else if (t === 'commit' && !this.live) this.prog[f] = (this.prog[f] || 0) + 0.7;
-    else if (t === 'flag-change') { const m = /(\d+)%/.exec(e.text); if (m) { this.roll[f] = +m[1]; this.breachCheck(f, +m[1]); discrete.v = true; } }
+    else if (t === 'flag-change') { const m = /(\d+)%/.exec(e.text); if (m) { const c = this.cap[f], r = c != null ? Math.min(c, +m[1]) : +m[1], bs = this.ruleDiff(f, r); this.roll[f] = r; this.applyBreaks(bs, true); discrete.v = true; } }
     else if (t === 'task-done') { if (A) { A.done++; A.pct = 3; } }
     else if (t === 'decision-asked') { const d = e.dec ? this.DEC[e.dec] : null; if (d) { this.openDecision(d, A); discrete.v = true; } }
     this.pulse(f, PULSE_OF[t] || 'c');
     if (A) A.act = this.now();
     this.listener?.event(e);
   }
-  private openDecision(d: SimDecision, A: SimAgent | undefined) {
+  private openDecision(d: SimDecision, A: SimAgent | undefined, quiet = false) {
     d.open = true; d.isNew = true; d.since = this.clockMs();
     if (A && A.status === 'working') { A.status = 'waiting'; A.wait = d.id; A.task = 'waiting: ' + d.q; }
     this.index(); this.pulse(d.f, 'ask');
-    this.toast({ strong: 'New question', text: 'from ' + (A ? A.base : 'an agent') + ' · ' + this.P.F[d.f].name + ' · for ' + pname(this.P, d.decider), fid: d.f });
+    if (!quiet) this.toast({ strong: 'New question', text: 'from ' + (A ? A.base : 'an agent') + ' · ' + this.P.F[d.f].name + ' · for ' + pname(this.P, d.decider), fid: d.f });
   }
-  private breachCheck(fid: string, pct: number) {
-    const ft = this.P.F[fid]; if (!ft) return;
-    const o1 = this.orders.find((o) => o.id === 'O-1'), o3 = this.orders.find((o) => o.id === 'O-3');
-    const add = (o: SimOrder | undefined, why: string) => {
-      if (o && !o.vf.includes(fid)) {
-        o.vf.push(fid); o.n++; this.breaches++; this.pulse(fid, 'bad');
-        this.toast({ strong: 'Order ' + o.id + ' breached', text: 'at ' + ft.name + ' · ' + why, fid });
-      }
-    };
-    if (pct > 10 && cardUnreviewed(ft)) add(o1, 'card data above 10% without a security review');
-    const alerting = flag(ft, 'operations', 'alerting'), runbook = flag(ft, 'operations', 'runbook');
-    if (pct >= 50 && isLiveSt(ft.stage) && (!alerting || !runbook)) add(o3, 'rollout ' + pct + '% without ' + (!alerting ? 'an alert' : 'a runbook'));
+  /**
+   * Breaches by difference, read BEFORE the change: the order rules on one feature only, at its current rollout /
+   * coverage and at the new ones (`r`, `c`; undefined = unchanged). A rule the change starts to meet adds a stamp;
+   * one it stops meeting clears the stamp. Never a recount: the sample's t=0 stamps (top n of more candidates) stay
+   * until something moves their feature across the rule.
+   */
+  private ruleDiff(fid: string, r?: number, c?: number): { o: SimOrder; f: string; add: boolean }[] {
+    const F = this.P.F[fid], out: { o: SimOrder; f: string; add: boolean }[] = []; if (!F) return out;
+    const r0 = this.rolloutOf(F), c0 = this.covOf(F), r1 = r ?? r0, c1 = c ?? c0;
+    for (const o of this.orders) {
+      const R = o.user ? null : RULES[o.id]; if (!R) continue;
+      const was = R.hit(F, r0, c0), now = R.hit(F, r1, c1), on = o.vf.includes(fid);
+      if (now && !was && !on) out.push({ o, f: fid, add: true });
+      else if (was && !now && on) out.push({ o, f: fid, add: false });
+    }
+    return out;
+  }
+  private applyBreaks(bs: { o: SimOrder; f: string; add: boolean }[], toast: boolean) {
+    for (const { o, f, add } of bs) {
+      const F = this.P.F[f], i = o.vf.indexOf(f); if (!F || add === i >= 0) continue;
+      if (add) { o.vf.push(f); o.n++; this.breaches++; this.pulse(f, 'bad'); }
+      else { o.vf.splice(i, 1); o.n = Math.max(0, o.n - 1); this.pulse(f, 'ok'); }
+      if (toast) this.toast(add ? { strong: 'Order ' + o.id + ' breached', text: 'at ' + F.name + ' · ' + RULES[o.id].why(F, this.rolloutOf(F), this.covOf(F)), fid: f } : { strong: 'Breach cleared', text: o.id + ' (' + pname(this.P, o.by) + ') holds again at ' + F.name, fid: f });
+    }
   }
   /** Advance the hour by wall time `dtMs` at the current speed. Returns true if anything discrete changed. */
   advance(dtMs: number): boolean {
@@ -398,28 +447,135 @@ export class SwarmSim {
     if (this.live) return;
     const sp = this.speed;
     this.t = 0; this.playing = true; this.speed = sp; this.i = 0; this.log = []; this.pulses = []; this.heat = {}; this.roll = {};
-    this.prog = {}; this.undo = null; this.undo2 = null; this.over = false; this.breaches = 0; this.tally = {}; this.ordCache = null;
+    this.prog = {}; this.cap = {}; this.cov = {}; this.undo = null; this.undo2 = null; this.over = false; this.breaches = 0; this.tally = {}; this.ordCache = null;
     this.build(); this.bump();
   }
   setSpeed(n: number) { if (this.live) return; this.speed = n; if (!this.over) this.playing = true; this.bump(); }
   togglePlay() { if (this.live) return; if (this.over) { this.reset(); return; } this.playing = !this.playing; this.bump(); }
 
   // ---------------------------------------------------------------- deciding
+  /**
+   * The one answer reducer: what option `oi` of `d` does, as a plan over the current state (nothing changes here).
+   * It frees the agents the question holds, then applies the option's effects: rollouts set or held, coverage set,
+   * agents moved, follow-up questions opened, and the breaches those changes add or clear (by difference).
+   * `previewAnswer` describes this plan, `decide` applies it, `undoDecision` reverts what applying overwrote:
+   * preview, outcome and undo read the same plan, so they cannot drift.
+   */
+  private planAnswer(d: SimDecision, oi: number): AnswerPlan {
+    const P = this.P, freed = this.agents.filter((a) => a.wait === d.id);
+    const pl: AnswerPlan = { d, oi, freed, moves: [], rolls: [], cover: [], asks: [], breaks: [] };
+    const R: Record<string, number> = {}, C: Record<string, number> = {};
+    for (const e of d.opts[oi]?.effects ?? []) {
+      const F = P.F[e.feature]; if (!F) continue;
+      if (e.k === 'roll' || e.k === 'cap') {
+        const from = R[F.id] ?? this.rolloutOf(F), to = e.k === 'roll' ? e.pct : Math.min(from, e.max);
+        R[F.id] = to; pl.rolls.push({ f: F.id, from, to, cap: e.k === 'roll' ? e.pct : e.max });
+      } else if (e.k === 'cover') {
+        const from = C[F.id] ?? this.covOf(F); if (from == null) continue;
+        const to = Math.max(0, Math.min(100, e.pct ?? from + (e.delta ?? 0)));
+        C[F.id] = to; pl.cover.push({ f: F.id, from, to });
+      } else if (e.k === 'staff') {
+        const s = e.from; let k = 0;
+        for (const a of this.agents) {
+          if (k >= e.n) break;
+          if (a.status !== 'working' || a.paused || a.f === F.id || pl.moves.some((m) => m.a === a)) continue;
+          if ((s.domain && P.F[a.f]?.domain !== s.domain) || (s.squad && a.sq !== s.squad) || (s.role && a.role !== s.role)) continue;
+          pl.moves.push({ a, to: F.id }); k++;
+        }
+      } else if (e.k === 'ask') {
+        // one follow-up per (question, option): id D-10.2 = D-10's option 2 (per product line)
+        const base = d.base + '.' + (oi + 1), id = base + lineSuffix(P.scale, d.b);
+        if (this.DEC[id] || pl.asks.some((x) => x.d.id === id)) continue;
+        // openDecision holds the asker when it works by then (freed or moved agents do)
+        const A = this.AG[d.by], hold = A && (A.status === 'working' || freed.includes(A) || pl.moves.some((m) => m.a === A)) ? A : null;
+        pl.asks.push({ hold, d: {
+          id, base, b: d.b, f: F.id, dom: F.domain, lens: e.lens, decider: e.decider, by: d.by, q: e.question, opts: e.options, rec: e.recommended, urg: e.urgency,
+          since: 0, blocks: hold ? 1 : 0, freed: 0, affects: [F.id], arr: 0, open: false, ans: null, isNew: false, freedIds: [],
+        } });
+      }
+    }
+    for (const fid of new Set([...Object.keys(R), ...Object.keys(C)])) pl.breaks.push(...this.ruleDiff(fid, R[fid], C[fid]));
+    return pl;
+  }
+  /** The plan in words and marks for the plan layer (kind 'answer'). */
+  private describe(pl: AnswerPlan): Preview {
+    const P = this.P, d = pl.d, nm = (f: string) => P.F[f]?.name ?? f, lines: string[] = [], marks: AnswerMark[] = [], targets: Record<string, 1> = {}, rows: Record<string, number> = {};
+    const mark = (f: string, text: string, tone: AnswerMark['tone'], ring?: AnswerMark['ring']) => { targets[f] = 1; marks.push({ f, text, tone, row: (rows[f] = (rows[f] ?? -1) + 1), ring }); };
+    const ag = (n: number) => n + ' agent' + (n === 1 ? '' : 's');
+    for (const r of pl.rolls) {
+      const held = r.from === r.to;
+      lines.push(nm(r.f) + (held ? ': rollout stays at ' + r.to + '%, held there' : ': rollout ' + r.from + '% → ' + r.to + '%'));
+      mark(r.f, held ? 'held at ' + r.to + '%' : 'rollout ' + r.from + '% → ' + r.to + '%', 'info');
+    }
+    for (const c of pl.cover) { lines.push(nm(c.f) + ': unit coverage ' + c.from + '% → ' + c.to + '%'); mark(c.f, 'coverage ' + c.from + '% → ' + c.to + '%', 'info'); }
+    if (pl.freed.length) lines.push(ag(pl.freed.length) + ' back to work: ' + pl.freed.map((a) => a.base).join(', '));
+    if (pl.moves.length) {
+      const to = pl.moves[0].to, from = [...new Set(pl.moves.map((m) => P.D[P.F[m.a.f]?.domain ?? '']?.name ?? '?'))].join(', ');
+      lines.push(ag(pl.moves.length) + ' move to ' + nm(to) + ': ' + pl.moves.map((m) => m.a.base).join(', ') + ' (off ' + from + ')');
+      mark(to, '+' + ag(pl.moves.length), 'ok');
+    }
+    for (const x of pl.asks) {
+      lines.push('Opens a ' + (P.LENS[x.d.lens]?.name ?? x.d.lens).toLowerCase() + ' question for ' + pname(P, x.d.decider) + ': “' + x.d.q + '”' + (x.hold ? ' (' + x.hold.base + ' waits on it)' : ''));
+      mark(x.d.f, 'question for ' + pname(P, x.d.decider).split(' ')[0], 'info');
+    }
+    for (const b of pl.breaks) {
+      const who = pname(P, b.o.by);
+      lines.push((b.add ? 'Breaks ' : 'Clears ') + 'order ' + b.o.id + ' (' + who + ') at ' + nm(b.f));
+      mark(b.f, b.add ? b.o.id + ' breached · ' + who.split(' ')[0] : b.o.id + ' cleared · ' + who.split(' ')[0], b.add ? 'bad' : 'ok', b.add ? 'add' : 'clear');
+    }
+    return {
+      kind: 'answer', title: d.opts[pl.oi].label, moves: pl.moves, targets, paused: [], lines, n: pl.rolls.length + pl.cover.length + pl.moves.length + pl.asks.length + pl.breaks.length,
+      dec: d.id, oi: pl.oi, freed: pl.freed, rolls: pl.rolls.map(({ f, from, to }) => ({ f, from, to })), cover: pl.cover.slice(),
+      asks: pl.asks.map((x) => ({ id: x.d.id, f: x.d.f, lens: x.d.lens, decider: x.d.decider, q: x.d.q })), breaks: pl.breaks.map((b) => ({ o: b.o.id, by: b.o.by, f: b.f, add: b.add })), marks,
+    };
+  }
+  /** Does choosing this option have anything to preview (a modelled effect; live: the proposal's expected move)? */
+  hasEffect(d: SimDecision, oi: number): boolean { const o = d.opts[oi]; return !!o && (this.live ? !!o.expected : !!o.effects?.length); }
+  /**
+   * What answering `id` with option `oi` would change, without changing it (the dry run of `decide`). Null for an
+   * option without a modelled effect. Live: never a simulated effect, only the proposal's own expected move.
+   */
+  previewAnswer(id: string, oi: number): Preview | null {
+    const d = this.DEC[id]; if (!d || !d.open || !this.hasEffect(d, oi)) return null;
+    if (this.live) {
+      const x = d.opts[oi].expected as string;
+      return { kind: 'answer', title: d.opts[oi].label, moves: [], targets: { [d.f]: 1 }, paused: [], n: 0, dec: id, oi, expected: x, lines: ['Expected: ' + x], marks: [{ f: d.f, text: 'expected: ' + x, tone: 'info', row: 0 }] };
+    }
+    return this.describe(this.planAnswer(d, oi));
+  }
   decide(id: string, oi: number) {
     const d = this.DEC[id]; if (!d || !d.open) return;
     if (this.live) { this.decideLive(d, oi); return; }
-    const freed = this.agents.filter((a) => a.wait === id), now = this.now();
-    const snap = freed.map((a) => ({ a, status: a.status, task: a.task, wait: a.wait, pct: a.pct }));
+    const pl = this.planAnswer(d, oi), pv = this.describe(pl), now = this.now(), P = this.P;
+    // keep what the plan overwrites, before any of it is written
+    const snap: AgentFull[] = [], keep = (a: SimAgent) => { if (!snap.some((s) => s.a === a)) snap.push({ a, f: a.f, status: a.status, task: a.task, wait: a.wait, pct: a.pct, synth: a.synth, nextSynth: a.nextSynth, paused: a.paused }); };
+    for (const a of pl.freed) keep(a);
+    for (const m of pl.moves) keep(m.a);
+    for (const x of pl.asks) if (x.hold) keep(x.hold);
+    this.undo = {
+      d, oi, snap, dd: { isNew: d.isNew, freed: d.freed, freedIds: d.freedIds },
+      roll: pl.rolls.map((r) => [r.f, this.roll[r.f], this.cap[r.f]]), cov: pl.cover.map((c) => [c.f, this.cov[c.f]]),
+      ords: [...new Set(pl.breaks.map((b) => b.o))].map((o) => ({ o, vf: o.vf.slice(), n: o.n })), breaches: this.breaches, asks: pl.asks.map((x) => x.d.id),
+    };
     d.open = false; d.isNew = false; d.ans = { opt: oi, t: this.t, at: now };
-    for (const a of freed) {
+    for (const a of pl.freed) {
       a.status = 'working'; a.wait = null; a.task = 'resumed after the decision: ' + d.opts[oi].label; a.flash = now; a.synth = true;
       a.nextSynth = this.t + 3 + hash01(a.id) * 10;
     }
-    d.freed += freed.length; d.freedIds = freed.map((a) => a.id);
-    this.undo = { d, snap, oi };
-    this.index(); this.pulse(d.f, 'ok'); for (const x of d.affects) if (this.P.F[x]) this.pulse(x, 'ok');
-    const n = freed.length;
-    this.toast({ strong: 'Decided', text: d.opts[oi].label + (n ? ' · ' + n + ' agent' + (n > 1 ? 's' : '') + ' back to work' : ' · nobody was blocked') + ' · ' + d.affects.length + ' feature' + (d.affects.length > 1 ? 's' : '') + ' touched', action: 'undo' });
+    d.freed += pl.freed.length; d.freedIds = pl.freed.map((a) => a.id);
+    for (const r of pl.rolls) { this.roll[r.f] = r.to; this.cap[r.f] = r.cap; }
+    for (const c of pl.cover) this.cov[c.f] = c.to;
+    for (const m of pl.moves) {
+      const a = m.a; a.status = 'working'; a.wait = null; a.synth = true; a.nextSynth = this.t + 4 + hash01(a.id) * 14; a.task = 'moved by ' + d.base + ': ' + P.F[m.to].name;
+      this.travel(a, m.to);
+    }
+    this.applyBreaks(pl.breaks, false);
+    this.index();
+    for (const x of pl.asks) { this.decisions.push(x.d); this.DEC[x.d.id] = x.d; this.openDecision(x.d, x.hold ?? undefined, true); }
+    this.pulse(d.f, 'ok'); for (const x of d.affects) if (P.F[x]) this.pulse(x, 'ok');
+    const n = pl.freed.length, fx = pv.marks!.map((m) => m.text);
+    const cleared = pl.breaks.filter((b) => !b.add).map((b) => b.o.id);
+    this.toast({ strong: cleared.length ? 'Decided · breach cleared' : 'Decided', text: d.opts[oi].label + (n ? ' · ' + n + ' agent' + (n > 1 ? 's' : '') + ' back to work' : ' · nobody was blocked') + (fx.length ? ' · ' + fx.join(' · ') : ' · ' + d.affects.length + ' feature' + (d.affects.length > 1 ? 's' : '') + ' touched'), action: 'undo' });
     this.bump();
   }
   /**
@@ -528,10 +684,19 @@ export class SwarmSim {
     if (this.seen.size > 2000) this.seen = new Set(S.replay.map(liveKey));
     this.index(); this.bump();
   }
+  /** Take the last answer back: every field `decide` wrote is put back from what it kept (the same plan). */
   undoDecision() {
     const u = this.undo; if (!u) return;
-    u.d.open = true; u.d.ans = null; u.d.freed = Math.max(0, u.d.freed - u.snap.length);
-    for (const s of u.snap) { s.a.status = s.status; s.a.task = s.task; s.a.wait = s.wait; s.a.pct = s.pct; s.a.synth = false; }
+    const d = u.d; d.open = true; d.ans = null; d.isNew = u.dd.isNew; d.freed = u.dd.freed; d.freedIds = u.dd.freedIds;
+    for (const s of u.snap) {
+      const a = s.a; a.status = s.status; a.task = s.task; a.wait = s.wait; a.pct = s.pct; a.synth = s.synth; a.nextSynth = s.nextSynth; a.paused = s.paused;
+      if (a.f !== s.f) this.travel(a, s.f);
+    }
+    for (const [f, r, c] of u.roll) { if (r == null) delete this.roll[f]; else this.roll[f] = r; if (c == null) delete this.cap[f]; else this.cap[f] = c; }
+    for (const [f, c] of u.cov) { if (c == null) delete this.cov[f]; else this.cov[f] = c; }
+    for (const o of u.ords) { o.o.vf = o.vf; o.o.n = o.n; }
+    this.breaches = u.breaches;
+    if (u.asks.length) { this.decisions = this.decisions.filter((x) => !u.asks.includes(x.id)); for (const id of u.asks) delete this.DEC[id]; }
     this.undo = null; this.index();
     this.toast({ strong: 'Decision taken back', text: 'the question is open again' });
     this.bump();
@@ -601,6 +766,7 @@ export class SwarmSim {
     };
   }
   commit(p: Preview, who: string | null) {
+    if (p.kind === 'answer') return;   // an answer preview is applied by decide, never as a command
     const snap: NonNullable<SwarmSim['undo2']>['snap'] = [];
     if (p.kind === 'push') {
       for (const m of p.moves) {
