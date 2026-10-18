@@ -13,6 +13,7 @@ import { FIRST_MILESTONE, GA_MILESTONE, HOUR, LATER_MILESTONES, PULSE_OF, SPEND_
 import { isLiveSt } from './aggregates';
 import { personLens } from './lens';
 import { baseId, lineSuffix, pname, type Product } from './product';
+import { tierRank } from '@/lib/scan/derive';
 
 /**
  * The swarm feed's coupling to the product: the simulation moves a feature's rollout and build progress,
@@ -61,6 +62,8 @@ export interface SimDecision {
   ord?: string;
   /** A kept answer (`keepAnswer`) recommends option `rec` here; `rec0` is the agent's own recommendation, put back if that order goes. */
   recBy?: string; rec0?: number;
+  /** v4: a live proposal's severity tier (0 stop-ship .. 3 backlog); absent = untriaged (Kettle's questions never have one). */
+  tier?: number;
 }
 export interface OrderScope { domain?: string; milestone?: string; surface?: string; all?: boolean; feats?: Record<string, 1>; label?: string }
 /**
@@ -249,6 +252,7 @@ export class SwarmSim {
       id: d.id + sf, base: d.id, b, f: d.feature + sf, dom: d.domain + sf, lens: d.lens, decider: d.decider, by: d.askedBy + sf,
       q: d.question, opts: sf ? d.options.map((o) => (o.effects ? { ...o, effects: o.effects.map((e) => sfx(e, sf)) } : o)) : d.options, rec: d.recommended, urg: d.urgency, since: Date.parse(d.waitingSince), blocks: d.blocksAgents,
       freed: 0, affects: d.affects.map((x) => x + sf), arr: d.arrivesAt || 0, open: !d.arrivesAt, ans: null, isNew: false, freedIds: [],
+      ...(d.tier !== undefined ? { tier: d.tier } : {}),
     };
   }
   /** The chip code: the sample's crew codes (F1.3); a live agent reads as its lens's short name (DEV.1). */
@@ -290,6 +294,8 @@ export class SwarmSim {
   blocksNow(d: SimDecision): number { return Math.max(0, d.blocks - d.freed); }
   waitMin(d: SimDecision): number { return Math.max(0, Math.round((this.clockMs() - d.since) / 60000)); }
   score(d: SimDecision): number { return ({ high: 3, medium: 2, low: 1 })[d.urg] * 1e6 + this.blocksNow(d) * 1e4 + Math.min(9999, this.waitMin(d)); }
+  /** The queue's order: tier ascending (untriaged after tier 3; v4), then the score, highest first. */
+  queueCmp = (a: SimDecision, b: SimDecision): number => tierRank(a.tier) - tierRank(b.tier) || this.score(b) - this.score(a);
   /**
    * Is this decision for the current reader (person, else lens)? Lens ids are strings: a decision whose
    * lens is disabled or unknown matches no lens tab and shows under General.
@@ -307,10 +313,10 @@ export class SwarmSim {
     return v;
   }
   queueFor(who: string | null, view: ViewId) {
-    const open = this.openDecs().sort((a, b) => this.score(b) - this.score(a));
+    const open = this.openDecs().sort(this.queueCmp);
     const mine = who ? open.filter((d) => d.decider === who) : [];
     const rest = open.filter((d) => !mine.includes(d));
-    if (!who && view !== 'general') rest.sort((a, b) => Number(b.lens === view) - Number(a.lens === view) || this.score(b) - this.score(a));
+    if (!who && view !== 'general') rest.sort((a, b) => tierRank(a.tier) - tierRank(b.tier) || Number(b.lens === view) - Number(a.lens === view) || this.score(b) - this.score(a));
     return { mine, rest, all: open };
   }
   /** Order in which J/K walk the questions. */
@@ -895,7 +901,7 @@ export class SwarmSim {
       for (const d of S.decisions) {
         const id = d.id + sf, g = this.DEC[id];
         listed.add(id);
-        if (g) { g.q = d.question; g.opts = d.options; g.urg = d.urgency; g.blocks = d.blocksAgents; g.affects = d.affects.map((x) => x + sf); continue; }
+        if (g) { g.q = d.question; g.opts = d.options; g.urg = d.urgency; g.tier = d.tier; g.blocks = d.blocksAgents; g.affects = d.affects.map((x) => x + sf); continue; }
         const n = this.fromDecision(d, b, sf);
         this.decisions.push(n); this.DEC[id] = n;
         if (had && P.F[n.f]) {

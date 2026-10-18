@@ -1,0 +1,55 @@
+{
+  "$schema": "lens-manifest/1",
+  "id": "ai.takeover.security-depth",
+  "version": "0.1.0",
+  "name": "Security depth",
+  "short": "SECD",
+  "description": "What the built-in security lens's pattern counts cannot see: unauthenticated writes, missing owner or tenant scoping, injection reached from request input, loose CORS, secrets in client config, vulnerable dependencies and weak sessions. Judged by reading the context's code.",
+  "reader": { "role": "security", "density": "dense" },
+  "fields": [
+    { "key": "unauthRoutes", "label": "Unauthenticated writes", "type": "integer", "unit": "handlers", "min": 0,
+      "metric": { "better": "down", "method": "judgement", "target": 0 },
+      "description": "Mutating handlers reachable with no authentication, unsigned webhooks included." },
+    { "key": "authzGaps", "label": "Authorization gaps", "type": "integer", "unit": "handlers", "min": 0, "headline": true,
+      "metric": { "better": "down", "method": "judgement", "target": 0 },
+      "description": "Authenticated handlers that read or change a record by a request id without scoping it to the caller's owner, tenant or role (IDOR)." },
+    { "key": "injectionSinks", "label": "Reachable injection sinks", "type": "integer", "unit": "sinks", "min": 0,
+      "metric": { "better": "down", "method": "judgement", "target": 0 },
+      "description": "Request input reaching string-built SQL or NoSQL, a shell, a file path or a server-side fetch of a user URL (SSRF)." },
+    { "key": "corsLoose", "label": "Loose CORS", "type": "integer", "unit": "configs", "min": 0,
+      "metric": { "better": "down", "method": "judgement", "target": 0 },
+      "description": "CORS that reflects any Origin, or allows any origin on an authenticated or credentialed API." },
+    { "key": "secretsInClient", "label": "Secrets in client", "type": "integer", "unit": "secrets", "min": 0,
+      "metric": { "better": "down", "method": "judgement", "target": 0 },
+      "description": "Secrets carried by public env prefixes or shipped client config. Publishable keys are not secrets." },
+    { "key": "depVulnsHigh", "label": "High dependency advisories", "type": "integer", "unit": "packages", "min": 0,
+      "metric": { "better": "down", "method": "judgement", "target": 0 },
+      "description": "Resolved dependency versions with a high or critical advisory, counted only from an audit tool's output; otherwise left unread and noted unverified." },
+    { "key": "sessionWeakness", "label": "Session weaknesses", "type": "integer", "unit": "findings", "min": 0,
+      "metric": { "better": "down", "method": "judgement", "target": 0 },
+      "description": "Session cookies without HttpOnly, Secure or SameSite, tokens in localStorage, tokens with no expiry or unverified signature, no invalidation on logout." }
+  ],
+  "health": {
+    "rules": [
+      { "when": { "field": "unauthRoutes", "gt": 0 }, "health": "bad", "reason": "{unauthRoutes} mutating handlers need no authentication", "short": "{unauthRoutes} open writes" },
+      { "when": { "field": "authzGaps", "gt": 0 }, "health": "bad", "reason": "{authzGaps} handlers do not scope records to the caller", "short": "{authzGaps} authz gaps" },
+      { "when": { "field": "injectionSinks", "gt": 0 }, "health": "bad", "reason": "{injectionSinks} injection sinks reachable from request input", "short": "{injectionSinks} injectable" },
+      { "when": { "field": "secretsInClient", "gt": 0 }, "health": "bad", "reason": "{secretsInClient} secrets shipped to the client", "short": "{secretsInClient} in client" },
+      { "when": { "field": "depVulnsHigh", "gt": 0 }, "health": "watch", "reason": "{depVulnsHigh} dependencies with high or critical advisories", "short": "{depVulnsHigh} vuln deps" },
+      { "when": { "field": "corsLoose", "gt": 0 }, "health": "watch", "reason": "{corsLoose} loose CORS configurations", "short": "{corsLoose} loose CORS" },
+      { "when": { "field": "sessionWeakness", "gt": 0 }, "health": "watch", "reason": "{sessionWeakness} session weaknesses", "short": "{sessionWeakness} session" }
+    ],
+    "default": "good",
+    "rollup": { "method": "worst-of" }
+  },
+  "presentation": {
+    "glyph": { "path": "M8 1.5L13.5 3.5V8C13.5 11 11 13.5 8 14.5C5 13.5 2.5 11 2.5 8V3.5ZM8 5.5V10M6 7.5H10" },
+    "line": "dimension",
+    "accent": { "dark": "#ff8f8f", "light": "#b42318" },
+    "evidence": ["authzGaps", "unauthRoutes", "injectionSinks", "secretsInClient"]
+  },
+  "scan": {
+    "method": "judgement",
+    "instructions": "Judge authentication, authorization and input handling on every route the context exposes. The built-in security lens already counts regex hits (secretHits, unsafeSinks); this lens counts only what you can show is reachable. Evidence rules - a finding that breaks one is not counted: (1) each finding names file:line, the reachable entry point (route, server action, GraphQL mutation, webhook, job) and one sentence on why an attacker reaches it; no file:line, no count. (2) Count only shipped code: never tests, fixtures, seeds, admin scripts no route calls, dead code. (3) Before counting, try to refute it: trace the middleware, base controller, policy or row-level rule in front of the handler. Protection counts only if you point to the file:line where it is configured - Next middleware matcher or a session check in the handler; Express router-level auth; ASP.NET [Authorize] or a fallback policy ([AllowAnonymous] overrides it); Django login_required or DRF DEFAULT_PERMISSION_CLASSES; FastAPI Depends on an auth dependency; Spring SecurityFilterChain matchers. (4) One root cause is one finding listing every entry it reaches. (5) Never guess versions or CVEs: write 'unverified' and name the tool that would confirm. (6) Per finding suggest a tier 0-3 and a risk_class (secret|authz|money|data|llm|perf|reliability|ux|debt) per lens-scan references/triage.md. (7) A context with no handlers, config or dependencies of its own is not applicable, with a one-line reason; 0 means judged and clean. Doubtful cases go under 'unconfirmed' and never raise a count. Fields: unauthRoutes - POST/PUT/PATCH/DELETE, server actions, mutations and webhooks with no authn; a webhook is protected only by a verified signature (tier 0, authz). authzGaps - a record loaded or changed by a request id with no owner, tenant or role filter (findUnique({id}) with no userId or orgId, Find(id) then save, get_object_or_404 without owner, no RLS policy); show the query (tier 0, authz). injectionSinks - request input into string-built SQL, raw NoSQL operators from the body ($where, $ne), exec/spawn/Process.Start/subprocess with shell, path joins for file access, or a server fetch of a user URL; parameterized queries and ORM builders are safe (tier 0, data). corsLoose - reflected Origin or * with credentials or on an authenticated API (tier 1, authz). secretsInClient - a secret under NEXT_PUBLIC_, VITE_, REACT_APP_, EXPO_PUBLIC_ or in shipped config; publishable keys (Stripe pk_, a Supabase anon key with RLS you can show) are not secrets; name, never print (tier 0, secret). depVulnsHigh - count only from an audit's output (npm audit, dotnet list package --vulnerable, pip-audit, mvn dependency-check) that you ran or found; without one leave the field unread and write 'unverified' (tier 1, data). sessionWeakness - cookie flags missing, tokens in localStorage, JWT with no exp, alg none or unverified, no server-side logout (tier 1, authz)."
+  }
+}

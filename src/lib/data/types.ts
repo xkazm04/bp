@@ -29,6 +29,8 @@ export interface Decision {
   urgency: 'high' | 'medium' | 'low'; waitingSince: string; blocksAgents: number; affects: string[];
   /** Seconds after 09:00 when the decision is asked during the replay; absent = open at 09:00. */
   arrivesAt?: number;
+  /** v4 (a live scan's proposal): its severity tier, 0 stop-ship .. 3 backlog; absent = untriaged. The queue's first key. */
+  tier?: 0 | 1 | 2 | 3;
 }
 /**
  * An answer option. `effects`: what choosing it does in the simulation, in a closed vocabulary, and only what

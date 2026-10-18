@@ -1,10 +1,10 @@
 'use client';
 // The review queue's shared words and helpers: a proposal's metric move (the latest reading, then latest + expected
 // delta), its body sections and one-line summary, urgency words, one decision per proposal, the decline-note drafts,
-// the live empty state and the morning watch's entry. The Review flyout itself is rail/wide/review.tsx; the phone
+// the live empty state, the morning watch's entry, and the v4 tier and origin chips (the queue and the ledger show them alike). The Review flyout itself is rail/wide/review.tsx; the phone
 // list (Phone.tsx) and the plan's decision card (Overlays.tsx) read the same helpers.
 import { cursorFor, metricHistory, watchFor, type SimDecision } from '@/lib/model';
-import type { Proposal } from '@/lib/scan/types';
+import type { Proposal, RiskClass } from '@/lib/scan/types';
 import { useBp, useEngine, useLive } from './hooks';
 
 const fmtN = (n: number) => (Number.isInteger(n) ? n.toLocaleString('en-US') : (Math.round(n * 100) / 100).toLocaleString('en-US'));
@@ -47,6 +47,30 @@ export function proposalSummary(p: Proposal): string | null {
 export function oncePerProposal(ds: SimDecision[]): SimDecision[] {
   const seen = new Set<string>();
   return ds.filter((d) => !seen.has(d.base) && !!seen.add(d.base));
+}
+
+// ------------------------------------------------------------------------------------ tier and origin (store v4)
+const TIER_SAYS = ['stop-ship', 'before production', 'soon after production', 'backlog'] as const;
+const RISK_WORD: Record<RiskClass, string> = { secret: 'secret', authz: 'authz', money: 'money', data: 'data', llm: 'LLM', perf: 'perf', reliability: 'reliability', ux: 'UX', debt: 'debt' };
+/** `T0`..`T3` and the risk class word, when the item is ranked (no tier: nothing). T0 reads in the bad colour, T1 in watch. */
+export function TierChip({ p }: { p: Proposal }) {
+  if (p.tier === undefined) return null;
+  const title = 'Tier ' + p.tier + ': ' + TIER_SAYS[p.tier] + (p.risk_class ? ' · ' + RISK_WORD[p.risk_class] : '') + (p.ranked_by ? ' · ranked by ' + p.ranked_by : '');
+  return <span className={'tierchip t-' + p.tier} title={title}>T{p.tier}{p.risk_class && <small>{RISK_WORD[p.risk_class]}</small>}</span>;
+}
+/** The work item number of an imported item (`ado:1234` -> `1234`). */
+const extNo = (p: Proposal): string => (p.external_ref ?? '').replace(/^[a-z]+:/i, '');
+/**
+ * `ADO #<n>` for an item imported from Azure DevOps (origin 'ado'; others: nothing). `link` makes it a link to the work
+ * item in a new tab (http(s) only); a list row passes false, as a row is one option and holds no control of its own.
+ */
+export function OriginChip({ p, link = true, act = true }: { p: Proposal; link?: boolean; act?: boolean }) {
+  if (p.origin !== 'ado') return null;
+  const n = extNo(p), label = n ? 'ADO #' + n : 'ADO';
+  const url = p.external_url && /^https?:\/\//i.test(p.external_url) ? p.external_url : null;
+  return link && url
+    ? <a className="extchip" href={url} target="_blank" rel="noopener noreferrer" tabIndex={act ? 0 : -1} title={'Open work item ' + (n || '') + ' in Azure DevOps'} onClick={(e) => e.stopPropagation()}>{label}</a>
+    : <span className="extchip" title="Imported from Azure DevOps">{label}</span>;
 }
 
 /** What a question's urgency reads as on its card. */

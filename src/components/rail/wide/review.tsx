@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fmtWait, metricHistory, pname, sheetOf, type SimDecision } from '@/lib/model';
 import type { Proposal, ScanSnapshot } from '@/lib/scan/types';
-import { LiveEmpty, URG, bodySections, declineDrafts, metricMove, oncePerProposal, proposalSummary } from '../../Queue';
+import { LiveEmpty, OriginChip, TierChip, URG, bodySections, declineDrafts, metricMove, oncePerProposal, proposalSummary } from '../../Queue';
 import { optHover, shallowEqual, useAnswerNote, useBp, useEngine, useLive, useVariant } from '../../hooks';
 import { Group, Row, Sec, Workbench, useListRef, useWalk } from './shell';
 
@@ -56,6 +56,8 @@ export function Review() {
   const fl = lens && lenses.some(([l]) => l === lens) ? lens : null;
   const items = useMemo(() => (fl ? all.filter((d) => d.lens === fl) : all), [all, fl]);
   const ids = useMemo(() => items.map((d) => d.id), [items]);
+  // a live row's proposal, for its tier and origin chips (Kettle's questions have none)
+  const propOf = useMemo(() => new Map((proposals ?? []).map((p) => [p.id, p])), [proposals]);
   const cur = items.find((d) => d.id === selId) ?? items[0] ?? null;
   const onKey = useWalk(ids, cur?.id ?? null, setSelId as (id: string | null) => void, listRef);
 
@@ -77,12 +79,12 @@ export function Review() {
 
   const first = s.who ? pname(M.P, s.who).split(' ')[0] : '';
   const row = (d: SimDecision) => {
-    const f = M.P.F[d.f], on = cur?.id === d.id;
+    const f = M.P.F[d.f], on = cur?.id === d.id, p = sim.live ? propOf.get(d.base) : undefined;
     return (
       <Row key={d.id} id={d.id} on={on} onPick={() => setSelId(d.id)} cls={'u-' + d.urg}
         onEnter={() => !E.S.dec && E.setHlDec(d.id)} onLeave={() => E.setHlDec(null)}>
         <i className="urg" aria-hidden="true" />
-        <span className="rk"><span>{URG_SHORT[d.urg]}</span><span className="lz">{short(d.lens)}</span>{d.isNew && <span className="nw">New</span>}</span>
+        <span className="rk"><span>{URG_SHORT[d.urg]}</span><span className="lz">{short(d.lens)}</span>{d.isNew && <span className="nw">New</span>}{p && <TierChip p={p} />}{p && <OriginChip p={p} link={false} />}</span>
         <span className="rt">{d.q}</span>
         <span className="rm"><span>{f?.name ?? d.f}</span><span>{fmtWait(sim.waitMin(d))}</span></span>
       </Row>
@@ -176,6 +178,7 @@ function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi
     <>
       <div className="wb-scroll">
         <Kicker d={d} extra={p?.kind && p.kind !== 'fix' ? p.kind : undefined} />
+        {p && (p.tier !== undefined || p.origin === 'ado') && <div className="wb-tier"><TierChip p={p} /><OriginChip p={p} /></div>}
         <h3 className="wb-title">{d.q}</h3>
         {sum && <p className="wb-lede">{sum}</p>}
         <div className="wb-where">{f?.name ?? d.f} · {M.P.D[f?.domain ?? '']?.name ?? f?.domain} · waiting <b>{fmtWait(sim.waitMin(d))}</b>{M.P.scale > 1 ? ' · ' + M.P.buildings[d.b].short : ''}</div>

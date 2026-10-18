@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { isView, lineSuffix } from '@/lib/model';
 import { emptyScan, type Measurement, type Pack, type Proposal, type ProposalSize, type ProposalStatus, type ScanSnapshot, type TriageDecision } from '@/lib/scan/types';
-import { isCurrent } from '@/lib/scan/derive';
+import { isCurrent, tierRank } from '@/lib/scan/derive';
 import type { ScanJob } from '@/lib/scan/jobs';
 import { dispatch } from '@/lib/scan/actions';
 import type { ScanSim } from '@/lib/model/scan-sim';
@@ -283,7 +283,8 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
     [ui.lens, ui.status, ui.feat, textOk]);
   const rank = useMemo(() => new Map(STATUSES.map((s, i) => [s, i])), []);
   const rows = useMemo(() => all.filter(keep)
-    .sort((a, b) => (rank.get(a.status) ?? STATUSES.length) - (rank.get(b.status) ?? STATUSES.length) || byRank(a, b)), [all, keep, rank]);
+    // tier first (untriaged after tier 3, contract v4), then status rank, then value per effort
+    .sort((a, b) => tierRank(a.p.tier) - tierRank(b.p.tier) || (rank.get(a.status) ?? STATUSES.length) - (rank.get(b.status) ?? STATUSES.length) || byRank(a, b)), [all, keep, rank]);
 
   // the packs, oldest first (rules.ts byPackAge); a pack's items in created order (store.mjs `proposals --pack`), the kept ones beside them
   const packList = src.scan?.packs;

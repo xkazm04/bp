@@ -8,6 +8,7 @@ import { memo, type ReactNode } from 'react';
 import type { Finding, Ledger } from '../useLedger';
 import { LensTag, StateMark } from '../train/ui/Marks.tsx';
 import { FeatureLink, KindTag, Move, Risk, Size, fromControl } from './bits';
+import { OriginChip, TierChip } from '../../Queue';
 
 interface RowProps {
   f: Finding;
@@ -29,7 +30,7 @@ const Row = memo(function Row({ f, on, focus, onFocus, onToggle, onOpen, move }:
       <span role="cell" className="c-sel"><input type="checkbox" tabIndex={-1} checked={on} onChange={() => onToggle(f.p.id)} aria-label={'Select ' + f.p.title} /></span>
       <span role="cell" className="c-lens"><LensTag id={f.p.lens} /></span>
       <span role="cell" className="c-feat"><FeatureLink f={f} onOpen={onOpen} act={focus} /></span>
-      <span role="cell" className="c-title"><span className="lg-t">{f.p.title}</span><KindTag p={f.p} /></span>
+      <span role="cell" className="c-title"><TierChip p={f.p} /><span className="lg-t">{f.p.title}</span><KindTag p={f.p} /><OriginChip p={f.p} act={focus} /></span>
       <span role="cell" className="c-mv"><Move f={f} move={move} /></span>
       <span role="cell" className="c-risk"><Risk p={f.p} /></span>
       <span role="cell" className="c-size"><Size p={f.p} /></span>
