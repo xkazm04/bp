@@ -1,0 +1,25 @@
+{
+  "id": "2026-10-18-swarm-steer",
+  "area": [
+    "src/lib/model",
+    "src/components/rail",
+    "src/components/overlays"
+  ],
+  "head": "fbef86726dd6680bcf3c4e82960760944d8d7c04",
+  "created": "2026-10-18T08:29:16.407Z",
+  "rounds": {
+    "1": {
+      "started": "2026-10-18T08:34:05.451Z",
+      "seats": {},
+      "finished": "2026-10-18T08:45:08.619Z",
+      "stray_changes": 0
+    },
+    "2": {
+      "started": "2026-10-18T08:45:18.056Z",
+      "seats": {},
+      "finished": "2026-10-18T08:52:04.607Z",
+      "stray_changes": 0
+    }
+  },
+  "seats": "agy:gemini-4-argon@high,codex:gpt-6.1-sol@xhigh,claude:claude-opus-5-5@xhigh"
+}
