@@ -171,7 +171,7 @@ expect(refused.every((r) => r === false) && calls === 0, '(d) commitSample refus
 const sample = new SwarmSim(M.P, liveSwarm(M.P, scan), () => 0);
 spy(sample);
 expect(!sample.live && LS.commitSample(sample, pv('pause'), 'jonas') === true && calls === 1, '(d) control: on a sample sim commitSample does call sim.commit (the spy counts)', 'calls ' + calls);
-const eng = fs.readFileSync(path.join(SRC, 'engine/Engine.ts'), 'utf8');
+const eng = fs.readFileSync(path.join(SRC, 'engine/Engine.ts'), 'utf8').replace(/\r\n/g, '\n'); // a Windows checkout is CRLF
 expect(!/\.commit\(/.test(eng.replace(/commitSample\(|commitPreview\(|commitLive\(/g, '')), '(d) Engine.ts never calls sim.commit directly (only through commitSample)');
 expect(/preview\(kind[^\n]*\{\n\s*const sim = this\.M\.sim;\n\s*if \(sim\.live\) \{[^\n]*SAMPLE_REFUSED/.test(eng) && /commitPreview\(\) \{[\s\S]{0,400}?commitSample\(this\.M\.sim/.test(eng), '(d) Engine.preview refuses a sample steer on live first, and commitPreview commits through commitSample');
 
