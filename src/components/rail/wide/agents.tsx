@@ -8,6 +8,7 @@ import { cancelJob, refusalText } from '@/lib/scan/actions';
 import { jobLabel, type ScanJob } from '@/lib/scan/jobs';
 import { jobProgress } from '@/lib/scan/scan-views';
 import type { ScanSnapshot } from '@/lib/scan/types';
+import { LiveSteerButtons } from '../../LiveSteer';
 import { ScanGlyph } from '../../ScanMenu';
 import { Mark, agentMark } from '../../Symbols';
 import { shallowEqual, useBp, useEngine, useLive, useScanCtx } from '../../hooks';
@@ -208,7 +209,7 @@ function CrewDetail({ id }: { id: string }) {
 
 function Overview() {
   const E = useEngine(), M = E.M, sim = M.sim;
-  const s = useBp((s) => ({ simV: s.simV, prev: s.prev, tgt: s.tgt }), shallowEqual);
+  const s = useBp((s) => ({ simV: s.simV, prev: s.prev, lprev: s.lprev, tgt: s.tgt }), shallowEqual);
   if (!sim.has) return <div className="wb-empty"><b>No swarm data</b>The swarm file did not load. Scans still run from the plan’s right-click menu.</div>;
   const tm = (t: number) => new Date(sim.at0 + t * 1000).toISOString().slice(11, 16);
   const log = sim.log.filter((e) => !(sim.speed > 60 && e.syn)).slice(0, 40);
@@ -218,7 +219,9 @@ function Overview() {
         {s.tgt.n ? (
           <div className="wb-steer">
             <p>{s.tgt.label} · {s.tgt.n} features</p>
-            {s.prev && !s.prev.order ? <PreviewBox /> : (
+            {(s.prev && !s.prev.order) || s.lprev ? <PreviewBox /> : sim.live ? (
+              <div className="wb-inline"><LiveSteerButtons cls="bt" /></div>
+            ) : (
               <div className="wb-inline">
                 <button type="button" className="bt" onClick={() => E.preview('push')}>Put the swarm here</button>
                 <button type="button" className="bt" onClick={() => E.preview('pause')}>Pause</button>
@@ -226,7 +229,7 @@ function Overview() {
               </div>
             )}
           </div>
-        ) : <p>Shift-click a wing, room or fixture, or shift-drag a box, then pull agents, pause them or write an order for exactly that place.</p>}
+        ) : <p>{sim.live ? 'Shift-click a wing, room or fixture, or shift-drag a box, then measure it, build what is approved there or stop the work on it.' : 'Shift-click a wing, room or fixture, or shift-drag a box, then pull agents, pause them or write an order for exactly that place.'}</p>}
       </Sec>
       <Sec head="Latest from the swarm" aside={sim.live ? 'live scan' : 'simulated'}>
         {log.length ? (

@@ -14,16 +14,34 @@ import { buildProduct, lineSuffix, type Product } from './product';
 import { LIVE_DECIDER, SwarmSim } from './sim';
 
 /**
- * The feed for the sim. A scan names no decider and no domain: the decider reads "whoever reviews"
- * and the domain is the feature's own. A question on a feature the map does not have is dropped (it
- * has no place to stand).
+ * The feed for the sim. A scan names no decider and no domain: the decider is the person the map names
+ * for it (`liveDecider`) and the domain is the feature's own. A question on a feature the map does not
+ * have is dropped (it has no place to stand).
  */
 export function liveSwarm(P: Product, scan: ScanSnapshot): Swarm {
   const F = P.base.features, dom = new Map(F.map((f) => [f.id, f.domain]));
-  const S = swarmFromScan(scan, F);
+  const S = swarmFromScan(scan, F), who = deciders(P);
   return {
     ...S,
-    decisions: S.decisions.filter((d) => dom.has(d.feature)).map((d) => ({ ...d, domain: d.domain || dom.get(d.feature)!, decider: d.decider || LIVE_DECIDER })),
+    decisions: S.decisions.filter((d) => dom.has(d.feature)).map((d) => ({ ...d, domain: d.domain || dom.get(d.feature)!, decider: d.decider || who(d.lens, d.feature) })),
+  };
+}
+
+/**
+ * Who decides a live question on `feature` under `lens`, from the map's people: the human whose field is the
+ * lens (the feature's owner when several are), else the feature's owner when that is a human, else nobody named
+ * (LIVE_DECIDER, "whoever reviews"). Kettle's map routes a security proposal to jonas; a map without people
+ * routes by owner, or to nobody.
+ */
+export function liveDecider(P: Product, lens: string, feature: string): string { return deciders(P)(lens, feature); }
+function deciders(P: Product): (lens: string, feature: string) => string {
+  const human = new Map<string, string>(), byField = new Map<string, string>();
+  for (const p of P.people) if (p.kind === 'human') { human.set(p.id, p.field); if (p.field && !byField.has(p.field)) byField.set(p.field, p.id); }
+  const owner = new Map(P.base.features.map((f) => [f.id, f.owner]));
+  return (lens, feature) => {
+    const o = owner.get(feature), of = o !== undefined ? human.get(o) : undefined;
+    if (o && of === lens) return o;
+    return byField.get(lens) ?? (o && of !== undefined ? o : LIVE_DECIDER);
   };
 }
 

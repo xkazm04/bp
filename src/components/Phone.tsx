@@ -5,7 +5,7 @@
 // ledger page shows: `/`'s first-load JS carries none of it (scripts/check-train-budget.ts --bundle proves it).
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { fmtWait, pname, sheetOf, type SimDecision } from '@/lib/model';
+import { LIVE_DECIDER, fmtWait, pname, sheetOf, type SimDecision } from '@/lib/model';
 import { useProductName } from '@/lib/scan/projects';
 import { SheetBody } from './FeatureSheet';
 import { Toast } from './Overlays';
@@ -46,7 +46,7 @@ function Question({ d, rm }: { d: SimDecision; rm: boolean }) {
   const sum = prop ? proposalSummary(prop) : null, mv = prop ? metricMove(prop, (l, k) => P.LENS[l]?.F[k]?.unit, scan) : null;
   return (
     <motion.div layout={!rm} className={'ph-q u-' + d.urg} exit={rm ? { opacity: 0 } : { opacity: 0, height: 0, marginBottom: 0 }} transition={rm ? { duration: 0 } : undefined}>
-      <div className="k">{d.base} · {URG[d.urg]}{sim.live ? '' : ' · ' + pname(P, d.decider)}</div>
+      <div className="k">{d.base} · {URG[d.urg]}{sim.live && d.decider === LIVE_DECIDER ? '' : ' · ' + pname(P, d.decider)}</div>
       <h4>{d.q}</h4>
       {sum && <div className="psum">{sum}</div>}
       {mv && <div className="mv">{mv}</div>}

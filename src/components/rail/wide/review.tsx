@@ -88,7 +88,7 @@ export function Review() {
       </Row>
     );
   };
-  const mine = s.who && !sim.live ? items.filter((d) => d.decider === s.who) : null;
+  const mine = s.who ? items.filter((d) => d.decider === s.who) : null; // live too: the map names deciders (live-feed.ts liveDecider)
   const list = !items.length ? (sim.live ? <LiveEmpty /> : <div className="wb-empty"><b>Nothing waiting</b>Every agent has what it needs. The swarm is working.</div>)
     : mine ? (
       <>

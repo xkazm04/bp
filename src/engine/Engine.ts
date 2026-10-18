@@ -6,6 +6,7 @@ import {
   BLAST_DEFAULT, GA_MILESTONE, HOUR, LINES, SPEEDS, inside, isView, lensOf, personLens, revAt, views, type Box, type BldNode, type BayNode, type Counts, type Model,
   type OrderTemplate, type PlaceNode, type Preview, type RoomNode, type SimDecision, type SimEvent, type Target, type TileNode, type WingNode,
 } from '@/lib/model';
+import { LIVE_VERB_LABEL, SAMPLE_REFUSED, commitSample, runLivePlan, type LivePlan } from '@/lib/model/live-steer';
 import { Camera, WheelIntent, clamp, type Cam, type Pad, type Region } from './camera';
 import type { ChannelAggregate, FeatureLive, LensChannel, LensExpression } from './lens/contract';
 import { MixDriver, type MixState } from './lens/mix';
@@ -530,7 +531,7 @@ export class Engine {
   togglePlay() { if (!this.isNow) { this.setTime(this.M.P.asOf); return; } this.M.sim.togglePlay(); this.scheduleSimSync(true); this.dirty(); }
   setSpeed(n: number) { this.M.sim.setSpeed(n); this.scheduleSimSync(true); this.dirty(); }
   stepSpeed(dir: number) { const i = SPEEDS.indexOf(this.M.sim.speed as (typeof SPEEDS)[number]); this.setSpeed(SPEEDS[clamp(i + dir, 0, SPEEDS.length - 1)]); }
-  restart() { this.M.sim.reset(); this.set({ tgt: { ids: {}, n: 0, label: '' }, prev: null, dec: null }); this.scheduleSimSync(true); }
+  restart() { this.M.sim.reset(); this.set({ tgt: { ids: {}, n: 0, label: '' }, prev: null, lprev: null, dec: null }); this.scheduleSimSync(true); }
   /**
    * Expand or collapse the timeline panel (it overlays the plan; the safe area keeps the collapsed strip).
    * The timeline panel and a rail flyout never stand open together: opening one closes the other.
@@ -611,7 +612,7 @@ export class Engine {
     if (S.page === 'ledger') return; // Esc never leaves the ledger (it clears its own selection); nothing on the plan behind it moves
     if (S.open) { this.closeFeature(); return; }
     if (S.dec) { this.closeDecision(); return; }
-    if (S.prev) { this.set({ prev: null }); return; }
+    if (S.prev || S.lprev) { this.set({ prev: null, lprev: null }); return; }
     if (S.tgt.n) { this.clearTarget(); return; }
     if (S.blast) { this.setMode({ blast: null }); return; }
     if (S.ga) { this.setMode({ ga: false }); return; }
@@ -804,16 +805,18 @@ export class Engine {
   private forceStatic() { this.simSeenV = this.M.sim.version; this.simStaticV++; this.simStaticAt = performance.now(); this.simPatch = true; this.dirty(); }
 
   // ============================================================================ targeting + steering
-  setTarget(ids: Record<string, 1>, label: string) { this.set({ tgt: { ids, n: Object.keys(ids).length, label }, prev: null }); }
-  clearTarget() { this.set({ tgt: { ids: {}, n: 0, label: '' }, prev: null, ordMenu: false }); }
+  setTarget(ids: Record<string, 1>, label: string) { this.set({ tgt: { ids, n: Object.keys(ids).length, label }, prev: null, lprev: null }); }
+  clearTarget() { this.set({ tgt: { ids: {}, n: 0, label: '' }, prev: null, lprev: null, ordMenu: false }); }
   lookAtTarget() {
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
     for (const id in this.S.tgt.ids) { const T = this.M.L.TILE[id]; if (!T) continue; x0 = Math.min(x0, T.x); y0 = Math.min(y0, T.y); x1 = Math.max(x1, T.x + T.w); y1 = Math.max(y1, T.y + T.h); }
     if (x1 > x0) this.cam.flyTo(this.fitCam({ x: x0 - 40, y: y0 - 40, w: x1 - x0 + 80, h: y1 - y0 + 80 }, { t: 40, r: 30, b: 60, l: 30 }, 1));
   }
   private needTarget() { this.toast('Point at a place first:', 'shift-click a wing, room or fixture, or shift-drag a box.'); }
+  /** A sample steer's preview. Refused on a live product (its verbs are measure, build and stop: `previewLive`). */
   preview(kind: 'ga' | 'research' | 'push' | 'pause' | 'resume' | 'order', tpl?: OrderTemplate, fid?: string) {
     const sim = this.M.sim;
+    if (sim.live) { this.toast(SAMPLE_REFUSED.strong, SAMPLE_REFUSED.text); return; }
     let tgt: Target = this.S.tgt;
     if (fid) { tgt = { ids: { [fid]: 1 }, n: 1, label: this.M.P.F[fid].name }; this.store.set({ tgt }); }
     let p: Preview | null = null;
@@ -825,10 +828,28 @@ export class Engine {
       else if (kind === 'pause' || kind === 'resume') { p = sim.previewPause(tgt, kind === 'resume'); if (!p) this.toast(kind === 'resume' ? 'No paused agent' : 'No agent is working', 'inside the selection.'); }
       else if (kind === 'order' && tpl) p = sim.previewOrder(tgt, tpl);
     }
-    this.set({ prev: p, ordMenu: false });
+    this.set({ prev: p, lprev: null, ordMenu: false });
   }
-  commitPreview() { const p = this.S.prev; if (!p) return; this.M.sim.commit(p, this.S.who); this.set({ prev: null }); this.scheduleSimSync(true); this.forceStatic(); }
-  cancelPreview() { this.set({ prev: null }); }
+  /** A live product's steer over the target (planned by `planLive`): shown under NOT ISSUED YET, or its reason toasted when it cannot run. */
+  previewLive(p: LivePlan) {
+    if (!this.M.sim.live || !this.M.live) return;
+    if (p.off) { this.toast(LIVE_VERB_LABEL[p.verb] + ':', p.off); return; }
+    this.set({ lprev: p, prev: null, ordMenu: false });
+  }
+  commitPreview() {
+    const lp = this.S.lprev;
+    if (lp) { this.set({ lprev: null }); this.commitLive(lp); return; }
+    const p = this.S.prev; if (!p) return;
+    this.set({ prev: null });
+    if (!commitSample(this.M.sim, p, this.S.who)) { this.toast(SAMPLE_REFUSED.strong, SAMPLE_REFUSED.text); return; }
+    this.scheduleSimSync(true); this.forceStatic();
+  }
+  /** Run a live steer through the product's routes; the swarm answers through the jobs and the scan feed, and the toast says what started. */
+  private commitLive(p: LivePlan) {
+    const live = this.M.live; if (!live) return;
+    void runLivePlan({ slug: live.slug, sim: null }, p, (id) => this.M.P.LENS[id]?.name ?? id).then((t) => { if (!this.destroyed) this.toast(t.strong, t.text); });
+  }
+  cancelPreview() { this.set({ prev: null, lprev: null }); }
   undoCommand() { this.M.sim.undoCommand(); this.scheduleSimSync(true); this.forceStatic(); }
 
   // ============================================================================ places, crumbs, levels
@@ -1182,7 +1203,7 @@ export class Engine {
     if (NAV_KEYS.has(k) && (e.defaultPrevented || isControl(tgt) || tgt?.closest?.(OWN_ZONES))) return;
     const ctl = isControl(tgt); // Enter / Space on a focused control belong to that control
     if (S.morning) { if (k === 'Enter' && !ctl) { e.preventDefault(); this.set({ morning: false }); const l = this.M.sim.cardOrder(S.who, S.view); if (l.length) this.openDecision(l[0].id); } return; }
-    if (S.prev && k === 'Enter' && !ctl) { e.preventDefault(); this.commitPreview(); return; }
+    if ((S.prev || S.lprev) && k === 'Enter' && !ctl) { e.preventDefault(); this.commitPreview(); return; }
     const dc = S.dec ? this.M.sim.DEC[S.dec] : null;
     if (dc && dc.open) {
       if (/^[1-9]$/.test(k) && +k <= dc.opts.length) { e.preventDefault(); this.decide(dc.id, +k - 1); return; }

@@ -65,6 +65,9 @@ export function scannable(entry: Pick<LensEntry, 'id' | 'manifest'>, sim: boolea
 export const PROJECT_LENS_ID = /^[a-z]{2,}(?:\.[a-z0-9-]+){2,}$/;
 /** Most features one `selection` scan may name. */
 export const MAX_SELECTION = 200;
+/** The job registry's limits per product (jobs.server.ts enforces them; the Kettle scan sim mirrors them): at most this
+ *  many jobs run at once, at most this many wait queued (the next is refused 429), at most this many proposals per execute job. */
+export const MAX_RUNNING = 3, MAX_QUEUED = 16, MAX_PROPOSALS = 50;
 
 /** A glyph+line pair, as checkLensManifest's `taken` lists it (src/lib/scan/manifest-check.ts TakenLook). */
 export interface LensLook { glyph: string | { path: string }; line: string }

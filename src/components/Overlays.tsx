@@ -10,7 +10,9 @@ import {
 import { overlayRight } from '@/engine/chrome';
 import type { ToastItem } from '@/engine/state';
 import { illoSVG } from '@/engine/render/illo';
+import { steerVerbs } from '@/lib/model/live-steer';
 import { shallowEqual, useBp, useEngine, useLive, useVariant } from './hooks';
+import { LiveSteerButtons } from './LiveSteer';
 import { proposalSummary } from './Queue';
 import { lensWords } from './sheet/words';
 
@@ -254,8 +256,8 @@ export function DecisionCard() {
 // --------------------------------------------------------------------------------- selection bar
 export function SelBar() {
   const E = useEngine(), sim = E.M.sim;
-  const s = useBp((s) => ({ tgt: s.tgt, prev: s.prev, ordMenu: s.ordMenu, simV: s.simV, dtab: s.dtab, hidden: s.dockHidden }), shallowEqual);
-  const p = s.prev, ref = useRef<HTMLDivElement>(null);
+  const s = useBp((s) => ({ tgt: s.tgt, prev: s.prev, lprev: s.lprev, ordMenu: s.ordMenu, simV: s.simV, dtab: s.dtab, hidden: s.dockHidden }), shallowEqual);
+  const p = s.prev ?? s.lprev, ref = useRef<HTMLDivElement>(null);
   // a wide flyout covers most of the plan: Agents, Orders and Steer carry the same selection controls and preview, so
   // the bar steps aside; with another flyout open it centres in the plan left of it (the flyout reports its width)
   const fly = s.dtab && s.dtab !== 'find' && !s.hidden;
@@ -281,21 +283,23 @@ export function SelBar() {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button type="button" className="bt go" onClick={() => E.commitPreview()}>Commit · Enter</button>
           <button type="button" className="bt" onClick={() => E.cancelPreview()}>Cancel · Esc</button>
-          <span style={{ alignSelf: 'center', fontSize: 13, color: 'var(--ink-2)' }}>Nothing has moved yet. The plan shows what would.</span>
+          <span style={{ alignSelf: 'center', fontSize: 13, color: 'var(--ink-2)' }}>{s.lprev ? 'Nothing has started yet. Commit starts it on the product.' : 'Nothing has moved yet. The plan shows what would.'}</span>
         </div>
       </motion.div>
     );
   } else if (s.tgt.n) {
     const ag = sim.agentsIn(s.tgt.ids), ds = Object.keys(s.tgt.ids).flatMap((id) => sim.DOF[id] || []), wk = ag.filter((a) => a.status === 'working' && !a.paused).length;
+    const verbs = steerVerbs(sim.live); // a live product: measure, build, stop (LiveSteerButtons); the sample: push, pause, resume, orders
     body = (
       <motion.div ref={ref} id="selbar" key="sel" style={at} role="region" aria-label="Selection" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}>
         <span className="sel-sum"><b>{s.tgt.label}</b> · {s.tgt.n} feature{s.tgt.n > 1 ? 's' : ''} · {ag.length} agent{ag.length === 1 ? '' : 's'}{ag.length ? ' (' + wk + ' working)' : ''} · {ds.length} question{ds.length === 1 ? '' : 's'}</span>
         <button type="button" className="btn" onClick={() => E.lookAtTarget()}>Look closer</button>
         <button type="button" className="btn" onClick={() => E.patch({ info: true })}>What is going on?</button>
-        <button type="button" className="btn" onClick={() => E.preview('push')}>Put the swarm here…</button>
-        <button type="button" className="btn" onClick={() => E.preview('pause')}>Pause…</button>
-        <button type="button" className="btn" onClick={() => E.preview('resume')}>Resume…</button>
-        {s.ordMenu ? (Object.keys(ORDER_TEMPLATES) as OrderTemplate[]).map((k) => (
+        {sim.live && <LiveSteerButtons cls="btn" />}
+        {verbs.includes('push') && <button type="button" className="btn" onClick={() => E.preview('push')}>Put the swarm here…</button>}
+        {verbs.includes('pause') && <button type="button" className="btn" onClick={() => E.preview('pause')}>Pause…</button>}
+        {verbs.includes('resume') && <button type="button" className="btn" onClick={() => E.preview('resume')}>Resume…</button>}
+        {!verbs.includes('order') ? null : s.ordMenu ? (Object.keys(ORDER_TEMPLATES) as OrderTemplate[]).map((k) => (
           <button key={k} type="button" className="btn ord-tpl" onClick={() => E.preview('order', k)}>{{ review: 'Human review first', ask: 'Ask me before rollout', first: 'Agents here go first', hold: 'Hold here' }[k]}</button>
         )) : <button type="button" className="btn" onClick={() => E.patch({ ordMenu: true })}>Write an order…</button>}
         <button type="button" className="btn" title="Clear (Esc)" aria-label="Clear selection" onClick={() => E.clearTarget()}>✕</button>

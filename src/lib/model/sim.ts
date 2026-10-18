@@ -495,11 +495,12 @@ export class SwarmSim {
         } else if (g.f !== f && P.F[f]) this.travel(g, f);
         g.sq = a.squad; g.role = a.role; g.status = a.status; g.task = a.task; g.pct = a.progressPct; g.since = Date.parse(a.since);
         g.done = a.doneToday; g.wait = a.waitingOn ? a.waitingOn + sf : null; g.blk = a.blockedBy ? a.blockedBy + sf : null;
+        g.paused = false; // the feed is the truth: nothing pauses a live agent (sample steers are refused on live)
       }
       for (const d of S.decisions) {
         const id = d.id + sf, g = this.DEC[id];
         listed.add(id);
-        if (g) { g.q = d.question; g.opts = d.options; g.urg = d.urgency; g.affects = d.affects.map((x) => x + sf); continue; }
+        if (g) { g.q = d.question; g.opts = d.options; g.urg = d.urgency; g.blocks = d.blocksAgents; g.affects = d.affects.map((x) => x + sf); continue; }
         const n = this.fromDecision(d, b, sf);
         this.decisions.push(n); this.DEC[id] = n;
         if (had && P.F[n.f]) {

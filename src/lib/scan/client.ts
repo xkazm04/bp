@@ -319,7 +319,8 @@ export interface SwarmFeature { id: string; domain: string; capability: string }
 /**
  * The scan as a swarm: one squad and one agent per lens in the latest run, each on the feature of its
  * latest activity row (`error` -> failed); open proposals (`proposed`) become decisions whose options
- * are Approve / Decline; activity rows become the replay.
+ * are Approve / Decline (the one a waiting lens agent stands on holds that agent: blocksAgents 1, else 0);
+ * activity rows become the replay.
  */
 export function swarmFromScan(scan: ScanSnapshot, features: readonly (string | SwarmFeature)[]): Swarm {
   const run = latestRun(scan) ?? undefined;
@@ -355,13 +356,14 @@ export function swarmFromScan(scan: ScanSnapshot, features: readonly (string | S
     agents.push(a);
   }
   const agentIds = new Set(agents.map((a) => a.id)), byLens = new Map(run.lenses.map((l, i) => [l, agents[i]]));
+  const held = new Set(agents.map((a) => a.waitingOn).filter((w): w is string => !!w)); // the proposal each waiting lens agent stands on
 
   const decisions: Decision[] = open.map((p) => ({
     id: p.id, feature: p.feature, domain: '', lens: p.lens, decider: '', askedBy: agentIds.has(agentOf(p.lens)) ? agentOf(p.lens) : '',
     question: p.title,
     options: [{ label: 'Approve', consequence: expectedText(p, scan) }, { label: 'Decline', consequence: 'Stays in the backlog as declined' }],
     recommended: 0, urgency: (p.risk ?? 0) >= 7 ? 'high' : (p.risk ?? 0) >= 4 ? 'medium' : 'low',
-    waitingSince: p.created_at, blocksAgents: 0, affects: [p.feature],
+    waitingSince: p.created_at, blocksAgents: held.has(p.id) ? 1 : 0, affects: [p.feature],
   }));
 
   const replay: ReplayEvent[] = inRun.map((e) => {

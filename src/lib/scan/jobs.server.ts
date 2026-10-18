@@ -11,13 +11,14 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { MAX_SELECTION, RUN_NOTE_PREFIX, SAFE_ID, type ReleaseStep, type ScanJob, type ScanScope } from './jobs.ts';
+import { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, RUN_NOTE_PREFIX, SAFE_ID, type ReleaseStep, type ScanJob, type ScanScope } from './jobs.ts';
 import { RELEASE_ID } from './release.ts';
 import { close, openRead } from './store.server.ts';
 
 if (typeof window !== 'undefined') throw new Error('jobs.server.ts is server-only');
 
-export const MAX_RUNNING = 3, MAX_QUEUED = 16, KEEP_JOBS = 50, MAX_PROPOSALS = 50;
+export { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING }; // defined in jobs.ts, where the client's steer plan reads them too
+export const KEEP_JOBS = 50;
 export const CLI_MISSING = 'Claude Code CLI not found (set BP_CLAUDE_BIN)';
 const TAIL_LINES = 20, TAIL_BYTES = 2048, NOTIFY_MS = 400;
 /** The flags of a job run; the prompt follows on stdin. */
