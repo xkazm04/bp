@@ -2,6 +2,7 @@
 // simulation event live here; continuous values (camera, clock, hover position, mix) stay in the engine.
 import type { ViewId } from '@/lib/data';
 import type { Preview, SimEvent, SimToast, Target } from '@/lib/model';
+import type { LivePlan } from '@/lib/model/live-steer';
 
 /** The right-hand rail's items; each opens its own flyout over the plan. */
 export type DockTab = 'asks' | 'swarm' | 'orders' | 'plan' | 'find' | 'view' | 'steer';
@@ -29,6 +30,8 @@ export interface UIState {
   hlDec: string | null;
   tgt: Target;
   prev: Preview | null;
+  /** A live product's steer (measure, build, stop) shown under NOT ISSUED YET; never set together with `prev`. */
+  lprev: LivePlan | null;
   /** Viewed date (time travel); equals the as-of date when "now". */
   t: string;
   delta: 1 | 7 | 14;
@@ -81,7 +84,7 @@ export interface ScanMenuState {
 export function initialState(scale: number, asOf: string): UIState {
   return {
     ready: false, scale, phone: false, compact: false, view: 'general', place: [], levelNames: [], level: 0,
-    open: null, dec: null, hover: null, sel: null, hl: null, hlDec: null, tgt: { ids: {}, n: 0, label: '' }, prev: null,
+    open: null, dec: null, hover: null, sel: null, hl: null, hlDec: null, tgt: { ids: {}, n: 0, label: '' }, prev: null, lprev: null,
     t: asOf, delta: 7, who: null, ga: false, blast: null, key: null, dtab: null, selMode: false, dockHidden: false,
     morning: false, info: false, ordHi: null, crew: null, askAll: false, ordMenu: false, whoMenu: false, simV: 0,
     playing: true, speed: 8, over: false, toast: null, ticker: null, intro: false, tl: false,

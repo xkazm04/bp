@@ -105,7 +105,7 @@ export const mmss = (ms: number) => { const s = Math.max(0, Math.round(ms / 1000
 // ------------------------------------------------------------------------------------------ steer
 export function PreviewBox() {
   const E = useEngine();
-  const p = useBp((s) => s.prev);
+  const p = useBp((s) => s.lprev ?? s.prev); // a live steer's plan, else the sample's (never both)
   if (!p) return null;
   return (
     <div className="prev">

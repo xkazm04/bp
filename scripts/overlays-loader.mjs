@@ -32,6 +32,7 @@ export async function load(url, ctx, next) {
     let src = fs.readFileSync(fileURLToPath(url), 'utf8');
     for (const [suffix, find, repl] of MUTATE) if (url.endsWith(suffix) && src.includes(find)) src = src.split(find).join(repl);
     const out = ts.transpileModule(src, {
+      fileName: fileURLToPath(url), // a .ts file parses as TypeScript, not TSX (`<T>(x) =>` is a generic there, not a tag)
       compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, verbatimModuleSyntax: false },
     });
     return { format: 'module', source: out.outputText, shortCircuit: true };

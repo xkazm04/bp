@@ -8,7 +8,7 @@ import { useMemo } from 'react';
 import { LayoutGroup, motion, useReducedMotion } from 'motion/react';
 import type { Feature } from '@/lib/data';
 import type { ScanSnapshot } from '@/lib/scan/types';
-import { REV_DESC, STAGE_WORD, astat, fmtWait, isAgentId, lensOf, pname, type Model, type SwarmSim } from '@/lib/model';
+import { LIVE_DECIDER, REV_DESC, STAGE_WORD, astat, fmtWait, isAgentId, lensOf, pname, type Model, type SwarmSim } from '@/lib/model';
 import { useSimSig } from '../page/bits';
 import { illoSVG } from '@/engine/render/illo';
 import { DefaultLensPanel, MetricRows } from './LensPanel';
@@ -82,7 +82,7 @@ export function SwarmSection({ f, lens }: { f: Feature; lens?: string }) {
       {ds.map((d) => (
         <div key={d.id} className="dq">
           <b>{d.base} · {d.q}</b>
-          <div style={{ fontSize: 13, color: 'var(--ink-2)', margin: '2px 0 4px' }}>{sim.live ? 'For whoever reviews' : pname(M.P, d.decider) + ' decides'} · waiting {fmtWait(sim.waitMin(d))} · holds {sim.blocksNow(d)} agent{sim.blocksNow(d) === 1 ? '' : 's'}</div>
+          <div style={{ fontSize: 13, color: 'var(--ink-2)', margin: '2px 0 4px' }}>{sim.live && d.decider === LIVE_DECIDER ? 'For whoever reviews' : pname(M.P, d.decider) + ' decides'} · waiting {fmtWait(sim.waitMin(d))} · holds {sim.blocksNow(d)} agent{sim.blocksNow(d) === 1 ? '' : 's'}</div>
           {d.opts.map((o, i) => <button key={i} type="button" className={'op' + (i === d.rec ? ' rec' : '')} onClick={() => E.decide(d.id, i)}><i className="no">{i + 1}</i><b>{o.label}{i === d.rec && <em>agent suggests</em>}</b><span>{o.consequence}</span></button>)}
         </div>
       ))}

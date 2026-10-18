@@ -79,6 +79,7 @@
 .op em { font-style: normal; font: 500 12px var(--mono); letter-spacing: 0.06em; color: var(--mint-2); text-transform: uppercase; float: right; margin-left: 6px; }
 .btn, .bt { background: var(--panel); border: 1px solid var(--ink-3); font-size: 13px; letter-spacing: 0.05em; text-transform: uppercase; padding: 0 10px; height: 30px; white-space: nowrap; color: var(--ink); display: inline-flex; align-items: center; gap: 6px; }
 .btn:hover, .bt:hover { border-color: var(--ink); }
+.btn[aria-disabled="true"], .bt[aria-disabled="true"] { border-style: dashed; color: var(--ink-2); cursor: not-allowed; } /* still focusable: pressing it says why */
 .bt.go { background: var(--mint-2); border-color: var(--mint-2); /* text-grade fill: on-mint text clears 4.5:1 in light */ color: var(--on-mint); font-weight: 600; }
 .bt.answer { height: auto; min-height: 28px; padding: 4px 10px; white-space: normal; text-align: left; text-transform: none; letter-spacing: 0; font-size: 14px; }
 .steer { padding: 10px 12px; border-bottom: 1px solid var(--ink-4); }

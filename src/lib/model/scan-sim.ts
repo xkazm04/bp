@@ -8,7 +8,7 @@ import type { Activity, ActivityKind, CommitDiff, Measurement, Proposal, Release
 import type { ReleaseStep, ScanJob, ScanScope } from '@/lib/scan/jobs';
 import type { LensExecuteResult } from '@/lib/scan/client';
 import type { LensEntry, LensField, LensManifest } from '@/lib/standard/types';
-import { MAX_SELECTION, RUN_NOTE_PREFIX, TEMP_LENS_ID } from '../scan/jobs.ts';
+import { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, RUN_NOTE_PREFIX, TEMP_LENS_ID } from '../scan/jobs.ts';
 import { TrainSim, type TrainToggles } from './train-sim.ts';
 
 export type { TrainToggles };
@@ -27,7 +27,7 @@ export interface ScanSimProduct {
 }
 
 /** One feature per STEP_MS; an execute job takes about EXEC_MS over all its proposals. */
-const STEP_MS = 1200, EXEC_MS = 15000, TICK_MS = 200, MAX_RUNNING = 3, MAX_QUEUED = 16, MAX_IDS = 50;
+const STEP_MS = 1200, EXEC_MS = 15000, TICK_MS = 200, MAX_IDS = MAX_PROPOSALS; // the registry's limits (jobs.ts)
 /** One release-job step (cut, a cherry-pick per item, gates, notes, PR): a build of 2-6 items takes about 6-10 s. */
 const RELEASE_STEP_MS = 1000, LOG_LINES = 20;
 /** Share of features a temporary lens finds nothing to say about (deterministic per feature and lens). */
