@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { fmtWait, metricHistory, pname, sheetOf, type SimDecision } from '@/lib/model';
 import type { Proposal, ScanSnapshot } from '@/lib/scan/types';
 import { LiveEmpty, URG, bodySections, declineDrafts, metricMove, oncePerProposal, proposalSummary } from '../../Queue';
-import { shallowEqual, useBp, useEngine, useLive, useVariant } from '../../hooks';
+import { optHover, shallowEqual, useAnswerNote, useBp, useEngine, useLive, useVariant } from '../../hooks';
 import { Group, Row, Sec, Workbench, useListRef, useWalk } from './shell';
 
 const fmtN = (n: number) => (Number.isInteger(n) ? n.toLocaleString('en-US') : (Math.round(n * 100) / 100).toLocaleString('en-US'));
@@ -150,6 +150,7 @@ function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi
   const p = scan?.proposals.find((x) => x.id === d.base);
   const f = M.P.F[d.f];
   const [declining, setDeclining] = useState(() => declineDrafts.has(d.base)), [note, setNote] = useState(() => declineDrafts.get(d.base) ?? '');
+  useAnswerNote(d.id);   // Approve previews its expected move on the plan; this clears it when the detail goes
   const field = p?.metric ? M.P.LENS[p.lens]?.F[p.metric] : undefined;
   const mv = p ? moveParts(p, field?.unit, field?.label, scan) : null;
   const mvText = p && !mv ? metricMove(p, (l, k) => M.P.LENS[l]?.F[k]?.unit, scan) : null;
@@ -206,7 +207,7 @@ function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi
           </form>
         ) : (
           <>
-            <button type="button" className="bt go" title="Approve: the scan executes it in its next execute phase" onClick={() => decide(d, 0)}>✓ Approve</button>
+            <button type="button" className="bt go" title="Approve: the scan executes it in its next execute phase" onClick={() => decide(d, 0)} {...optHover(E, d.id, 0)}>✓ Approve</button>
             <button type="button" className="bt" title="Decline, with an optional note" onClick={() => setDeclining(true)}>Decline…</button>
             <span className="sp" />
             <PlaceActions d={d} />
@@ -221,7 +222,7 @@ function SimDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi:
   const E = useEngine(), V = useVariant(), M = E.M, sim = M.sim;
   const view = useBp((s) => s.view);
   const f = M.P.F[d.f], bn = sim.blocksNow(d);
-  const note = V.ui?.queueNote?.(d, view, M) ?? null;
+  const note = V.ui?.queueNote?.(d, view, M) ?? null, hn = useAnswerNote(d.id);
   const affects = d.affects.filter((id) => id !== d.f && M.P.F[id]).slice(0, 8);
   return (
     <>
@@ -240,7 +241,7 @@ function SimDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi:
           <ol className="wb-opts">
             {d.opts.map((o, i) => (
               <li key={i}>
-                <button type="button" className={'wb-opt' + (i === d.rec ? ' rec' : '')} onClick={() => decide(d, i)}>
+                <button type="button" className={'wb-opt' + (i === d.rec ? ' rec' : '')} onClick={() => decide(d, i)} {...optHover(E, d.id, i)}>
                   <i className="no">{i + 1}</i>
                   <b>{o.label}{i === d.rec && <em>Recommended</em>}</b>
                   <span>{o.consequence}</span>
@@ -248,6 +249,7 @@ function SimDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi:
               </li>
             ))}
           </ol>
+          {hn && <p className="wb-help" aria-live="polite">{hn}</p>}
         </Sec>
         {affects.length > 0 && (
           <Sec head="Also affects" aside={affects.length + ' feature' + (affects.length === 1 ? '' : 's')}>
@@ -256,8 +258,8 @@ function SimDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi:
         )}
       </div>
       <div className="wb-act">
-        <button type="button" className="bt go" title="Accept the agent’s recommendation" onClick={() => decide(d, d.rec)}>✓ {d.opts[d.rec]?.label ?? 'Accept'}</button>
-        {d.opts.map((o, i) => i === d.rec ? null : <button key={i} type="button" className="bt" onClick={() => decide(d, i)}>{o.label}</button>)}
+        <button type="button" className="bt go" title="Accept the agent’s recommendation" onClick={() => decide(d, d.rec)} {...optHover(E, d.id, d.rec)}>✓ {d.opts[d.rec]?.label ?? 'Accept'}</button>
+        {d.opts.map((o, i) => i === d.rec ? null : <button key={i} type="button" className="bt" onClick={() => decide(d, i)} {...optHover(E, d.id, i)}>{o.label}</button>)}
         <span className="sp" />
         <PlaceActions d={d} />
       </div>

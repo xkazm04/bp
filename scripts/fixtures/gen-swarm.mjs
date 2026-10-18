@@ -54,20 +54,22 @@ for (const s of squads) {
 }
 
 // ---------- decisions waiting on a human ----------
+// An option's optional third element is its effects (OptionEffect in src/lib/data/types.ts): only what the consequence
+// sentence states, on the decision's feature; every other option is narrative only. No rnd() here: effects are data.
 const decisionDefs = [
-  ['PAY', 'business', 'mara', 'Raise dunning rollout from 25% to 100% before Payments GA?', [['Go to 100% now', 'Recovers about $3.1k MRR a month sooner; no human or security review yet.'], ['Hold at 25% until review', 'GA date holds only if the review lands this week.'], ['Roll back to 0%', 'Stops the risk; failed payments go back to manual follow-up.']], 1, 'high'],
+  ['PAY', 'business', 'mara', 'Raise dunning rollout from 25% to 100% before Payments GA?', [['Go to 100% now', 'Recovers about $3.1k MRR a month sooner; no human or security review yet.', [{ k: 'roll', pct: 100 }]], ['Hold at 25% until review', 'GA date holds only if the review lands this week.', [{ k: 'cap', max: 25 }]], ['Roll back to 0%', 'Stops the risk; failed payments go back to manual follow-up.', [{ k: 'roll', pct: 0 }]]], 1, 'high'],
   ['PAY', 'security', 'jonas', 'Dunning emails include the last 4 card digits. Allowed under the card data policy?', [['Allow', 'Matches what most processors show.'], ['Mask fully', 'Two templates and one test to change; about 40 minutes of agent work.']], 1, 'high'],
   ['PAY', 'development', 'tomas', 'Tax handling: use the provider\'s tax API or keep the in-house tables?', [['Provider API', 'Adds a dependency and $0.004 per call; removes 1,900 lines.'], ['In-house tables', 'Agents estimate 3 more days; we own the rate updates.']], 0, 'high'],
   ['BKG', 'operations', 'priya', 'Waitlist promotion caused the incident on Monday. Re-enable for all studios?', [['Re-enable', 'Fix is merged and passing; no load test yet.'], ['Re-enable for 10 studios', 'Canary for 48 h first.'], ['Keep off', 'Members join the waitlist but are never promoted.']], 1, 'high'],
-  ['BKG', 'business', 'dev', 'Recurring auto-booking (P0) is not started. Pull two Forge-1 agents off Analytics to start it?', [['Move two agents', 'Analytics exports slip about a week.'], ['Start next sprint', 'P0 waits 9 more days.']], 0, 'high'],
+  ['BKG', 'business', 'dev', 'Recurring auto-booking (P0) is not started. Pull two Forge-1 agents off Analytics to start it?', [['Move two agents', 'Analytics exports slip about a week.', [{ k: 'staff', n: 2, from: { domain: 'ANA', role: 'build' } }]], ['Start next sprint', 'P0 waits 9 more days.']], 0, 'high'],
   ['INT', 'security', 'jonas', 'Public API has no rate limiting. Block the partner launch until it ships?', [['Block launch', 'Partner integration slips about 5 days.'], ['Launch with a static limit', '100 req/min per key, refined later.']], 1, 'high'],
   ['MEM', 'design', 'lea', 'Kiosk check-in fails the contrast check on two screens. Accept the agent\'s proposed palette?', [['Accept proposal', 'Passes AA; buttons change from teal to deep blue.'], ['Send back with notes', 'Agent iterates; adds a day.']], 0, 'medium'],
   ['COM', 'business', 'mara', 'SMS reminders cost $1,240 a month and rising. Cap per studio?', [['Cap at 300 per studio', 'Saves about $410 a month; 11 studios hit the cap.'], ['Charge studios for SMS', 'Needs a pricing change and billing work.'], ['No cap', 'Cost keeps growing with bookings.']], 1, 'medium'],
   ['STU', 'development', 'tomas', 'Legacy landing page builder is deprecated but 23 studios still use it. Agents want to delete 6,200 lines.', [['Delete after migration', 'Migration tool first, then delete.'], ['Delete now', 'The 38 studios lose their pages.']], 0, 'medium'],
-  ['GRO', 'business', 'sam', 'Referral rewards: credit or cash? Agents need an answer to finish the payout flow.', [['Class credit', 'No payout compliance work.'], ['Cash via payouts', 'Needs a security review of the payout path.']], 0, 'medium'],
+  ['GRO', 'business', 'sam', 'Referral rewards: credit or cash? Agents need an answer to finish the payout flow.', [['Class credit', 'No payout compliance work.'], ['Cash via payouts', 'Needs a security review of the payout path.', [{ k: 'ask', lens: 'security', decider: 'jonas', question: 'Referral rewards will be paid in cash. Review the payout path before the payout flow ships?', options: [{ label: 'Review first', consequence: 'Sentinel crew prepares the review; the payout flow waits for it.' }, { label: 'Ship, review later', consequence: 'Cash leaves through a path nobody has reviewed.' }], recommended: 0, urgency: 'medium' }]]], 0, 'medium'],
   ['AIA', 'security', 'jonas', 'Assistant reads member chat history to suggest classes. Allowed by the privacy notice?', [['Allow with opt-out', 'Privacy notice update needed.'], ['Opt-in only', 'Lower adoption; agents estimate 20% opt in.']], 1, 'medium'],
   ['AIA', 'design', 'lea', 'Assistant tone: two drafts of the churn outreach message. Pick one.', [['Warm and short', '3 sentences, first name, one offer.'], ['Detailed', 'Lists the classes the member missed.']], 0, 'low'],
-  ['SCH', 'quality', 'ines', '14 flaky e2e tests on class scheduling. Quarantine them so agents can merge?', [['Quarantine', 'Merges unblock; coverage drops 6%.'], ['Fix first', 'Warden crew spends about 2 days.']], 1, 'medium'],
+  ['SCH', 'quality', 'ines', '14 flaky e2e tests on class scheduling. Quarantine them so agents can merge?', [['Quarantine', 'Merges unblock; coverage drops 6%.', [{ k: 'cover', delta: -6 }]], ['Fix first', 'Warden crew spends about 2 days.']], 1, 'medium'],
   ['PLT', 'operations', 'priya', 'Database at 78% storage. Upgrade the plan now?', [['Upgrade now', '+$220 a month.'], ['Archive old events', 'Agent proposes a job; frees about 30%.']], 1, 'medium'],
   ['ANA', 'business', 'mara', 'Revenue dashboard: show gross or net of refunds by default?', [['Net', 'Matches the accounting export.'], ['Gross', 'Matches what studios see at the till.']], 0, 'low'],
   ['IAM', 'security', 'jonas', 'Staff accounts without two-factor: force it on next login?', [['Force now', 'About 60 staff accounts affected.'], ['Nudge for 2 weeks', 'Then force.']], 1, 'medium'],
@@ -76,7 +78,7 @@ const decisionDefs = [
   ['COM', 'operations', 'priya', 'Email provider bounced 4% yesterday. Switch the sending domain?', [['Switch domain', 'DNS work; 24 h warm-up.'], ['Investigate first', 'Tender crew opens a ticket.']], 1, 'medium'],
   ['MEM', 'business', 'dev', 'Members ask for family plans (31 requests). Pull them into M3?', [['Add to M3', 'Scout crew writes the spec.'], ['Park', 'Stays an idea.']], 0, 'low'],
   ['PAY', 'quality', 'ines', 'Payout reconciliation passes on test data only. Require a run on last month\'s real payouts?', [['Require', 'One day; needs read access to production payouts.'], ['Accept test data', 'Faster; risk at GA.']], 0, 'high'],
-  ['INT', 'development', 'tomas', 'Accounting sync: two agents wrote competing implementations. Keep which?', [['Forge-4.2 version', 'Simpler, 71% coverage.'], ['Forge-4.4 version', 'Handles partial refunds, 58% coverage.']], 0, 'medium'],
+  ['INT', 'development', 'tomas', 'Accounting sync: two agents wrote competing implementations. Keep which?', [['Forge-4.2 version', 'Simpler, 71% coverage.', [{ k: 'cover', pct: 71 }]], ['Forge-4.4 version', 'Handles partial refunds, 58% coverage.', [{ k: 'cover', pct: 58 }]]], 0, 'medium'],
   ['BKG', 'design', 'lea', 'Cancellation flow: add a "why are you cancelling" step?', [['Add', 'Better data; one more tap.'], ['Skip', 'Faster cancellation.']], 1, 'low'],
   ['PLT', 'security', 'jonas', 'Rotate the payment provider keys before GA?', [['Rotate now', '5 min downtime window at night.'], ['After GA', 'Keys are 14 months old.']], 0, 'high'],
   ['GRO', 'design', 'lea', 'Landing page for studios: agents generated three hero images. Pick one or ask for more.', [['Pick image 2', 'Studio at dawn.'], ['Ask for more', 'Scout crew generates five more.']], 0, 'low'],
@@ -88,7 +90,7 @@ const decisions = decisionDefs.map(([dom, lens, owner, question, opts, rec, urge
   const waitingMin = urgency === 'high' ? ri(20, 600) : ri(10, 2400);
   return {
     id: `D-${String(i + 1).padStart(2, '0')}`, feature: f.id, domain: dom, lens, decider: owner, askedBy: asker.id,
-    question, options: opts.map(([label, consequence]) => ({ label, consequence })), recommended: rec, urgency,
+    question, options: opts.map(([label, consequence, fx]) => ({ label, consequence, ...(fx ? { effects: fx.map(({ k, ...e }) => ({ k, feature: f.id, ...e })) } : {}) })), recommended: rec, urgency,
     waitingSince: ago(waitingMin), blocksAgents: urgency === 'high' ? ri(1, 2) : urgency === 'medium' ? ri(0, 1) : 0,
     affects: [f.id, ...f.usedBy.slice(0, 4)],
   };

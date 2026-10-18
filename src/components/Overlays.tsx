@@ -10,7 +10,7 @@ import {
 import { overlayRight } from '@/engine/chrome';
 import type { ToastItem } from '@/engine/state';
 import { illoSVG } from '@/engine/render/illo';
-import { shallowEqual, useBp, useEngine, useLive, useVariant } from './hooks';
+import { optHover, shallowEqual, useAnswerNote, useBp, useEngine, useLive, useVariant } from './hooks';
 import { proposalSummary } from './Queue';
 import { lensWords } from './sheet/words';
 
@@ -200,7 +200,7 @@ export function DecisionCard() {
   const E = useEngine(), M = E.M, sim = M.sim;
   const s = useBp((s) => ({ dec: s.dec, simV: s.simV, who: s.who, view: s.view }), shallowEqual);
   const ref = useRef<HTMLDivElement>(null), hgt = useRef(0);
-  const d = s.dec ? sim.DEC[s.dec] : null, scan = useLive()?.product.scan;
+  const d = s.dec ? sim.DEC[s.dec] : null, scan = useLive()?.product.scan, note = useAnswerNote(d?.id ?? '');
   useEffect(() => {
     if (!d) return;
     // the card's height comes from a ResizeObserver, not an offsetHeight read per frame; a change re-places it
@@ -235,11 +235,11 @@ export function DecisionCard() {
               <div className="by"><b>{A ? A.base : d.by}</b> ({A ? sim.crewName(A.sq) : ''}) stopped at <b>{f.name}</b> and asks <b>{pname(M.P, d.decider)}</b>.</div>
               <div className="meta"><span>waiting {fmtWait(sim.waitMin(d))}</span><span>holds {bn} agent{bn === 1 ? '' : 's'}</span><span>touches {d.affects.length}</span></div>
               {d.opts.map((o, i) => (
-                <button key={i} type="button" className={'op' + (i === d.rec ? ' rec' : '')} onClick={() => E.decide(d.id, i)}>
+                <button key={i} type="button" className={'op' + (i === d.rec ? ' rec' : '')} onClick={() => E.decide(d.id, i)} {...optHover(E, d.id, i)}>
                   <i className="no">{i + 1}</i><b>{o.label}{i === d.rec && <em>agent suggests</em>}</b><span>{o.consequence}</span>
                 </button>
               ))}
-              <div className="fx">{wa.length ? 'Answering frees ' + wa.map((a) => a.base).join(', ') + '. ' : 'Nobody is blocked on it. '}The amber outlines on the plan are the {d.affects.length} feature{d.affects.length > 1 ? 's' : ''} it touches.</div>
+              <div className="fx" aria-live="polite">{note ?? <>{wa.length ? 'Answering frees ' + wa.map((a) => a.base).join(', ') + '. ' : 'Nobody is blocked on it. '}The amber outlines on the plan are the {d.affects.length} feature{d.affects.length > 1 ? 's' : ''} it touches.</>}</div>
               <div className="nav"><button type="button" aria-label="Previous question" onClick={() => E.stepDecision(-1)}>‹ K</button><span>{pos || '–'} of {list.length}</span><button type="button" aria-label="Next question" onClick={() => E.stepDecision(1)}>J ›</button></div>
             </motion.div>
           </div>

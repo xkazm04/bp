@@ -359,7 +359,8 @@ export function swarmFromScan(scan: ScanSnapshot, features: readonly (string | S
   const decisions: Decision[] = open.map((p) => ({
     id: p.id, feature: p.feature, domain: '', lens: p.lens, decider: '', askedBy: agentIds.has(agentOf(p.lens)) ? agentOf(p.lens) : '',
     question: p.title,
-    options: [{ label: 'Approve', consequence: expectedText(p, scan) }, { label: 'Decline', consequence: 'Stays in the backlog as declined' }],
+    // `expected`: the proposal's own expected move, the one thing an Approve previews on the plan (never a simulated effect)
+    options: [{ label: 'Approve', consequence: expectedText(p, scan), ...(p.metric && p.expected_delta !== undefined ? { expected: expectedText(p, scan) } : {}) }, { label: 'Decline', consequence: 'Stays in the backlog as declined' }],
     recommended: 0, urgency: (p.risk ?? 0) >= 7 ? 'high' : (p.risk ?? 0) >= 4 ? 'medium' : 'low',
     waitingSince: p.created_at, blocksAgents: 0, affects: [p.feature],
   }));

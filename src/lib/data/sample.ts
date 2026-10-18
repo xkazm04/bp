@@ -9,7 +9,7 @@ import findingsJson from '@/data/kettle.findings.json';
 import type { LensEntry } from '@/lib/standard/types';
 import type { Proposal } from '@/lib/scan/types';
 import { loadMap } from './index';
-import type { Structure, Swarm } from './types';
+import type { DecisionOption, OptionEffect, Structure, Swarm } from './types';
 
 const MAP: unknown = mapJson;
 const EVENTS: string = eventsText;
@@ -47,11 +47,14 @@ function adaptSwarm(raw: unknown, map: unknown): Swarm {
   const idx = (xs: { slug: string; id?: string }[] | undefined) => new Map((xs ?? []).filter((x) => x.id).map((x) => [x.id as string, x.slug]));
   const F = idx(m.features), D = idx(m.domains), MS = idx(m.milestones);
   const f = (id: string) => F.get(id) ?? id, d = (id: string) => D.get(id) ?? id;
+  // an option's effects name a feature (and a staff move a domain): re-keyed like the rest
+  const fx = (e: OptionEffect): OptionEffect => (e.k === 'staff' ? { ...e, feature: f(e.feature), from: { ...e.from, ...(e.from.domain ? { domain: d(e.from.domain) } : {}) } } : { ...e, feature: f(e.feature) });
+  const opt = (o: DecisionOption): DecisionOption => (o.effects ? { ...o, effects: o.effects.map(fx) } : o);
   return {
     ...S,
     squads: S.squads.map((q) => ({ ...q, lenses: q.lenses ?? SQUAD_LENSES[q.id] ?? [] })),
     agents: S.agents.map((a) => ({ ...a, feature: f(a.feature) })),
-    decisions: S.decisions.map((x) => ({ ...x, feature: f(x.feature), domain: d(x.domain), affects: x.affects.map(f) })),
+    decisions: S.decisions.map((x) => ({ ...x, feature: f(x.feature), domain: d(x.domain), affects: x.affects.map(f), options: x.options.map(opt) })),
     orders: S.orders.map((o) => ({ ...o, scope: { ...o.scope, ...(o.scope.domain ? { domain: d(o.scope.domain) } : {}), ...(o.scope.milestone ? { milestone: MS.get(o.scope.milestone) ?? o.scope.milestone } : {}) } })),
     replay: S.replay.map((e) => ({ ...e, feature: f(e.feature) })),
   };
