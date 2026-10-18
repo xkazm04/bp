@@ -1,0 +1,54 @@
+{
+  "$schema": "lens-manifest/1",
+  "id": "ai.takeover.api-llm",
+  "version": "0.1.0",
+  "name": "API & LLM calls",
+  "short": "API",
+  "description": "Outbound API and model call hygiene for an app being taken over: timeouts, retries, metering, key exposure, PII in prompts and untraced handlers. Judged by reading the context's code.",
+  "reader": { "role": "engineering", "density": "standard" },
+  "fields": [
+    { "key": "callsNoTimeout", "label": "Calls without timeout", "type": "integer", "unit": "call sites", "min": 0, "headline": true,
+      "metric": { "better": "down", "method": "judgement", "target": 0 },
+      "description": "Outbound HTTP or SDK calls on a request or job path with no timeout at the call or on its shared client." },
+    { "key": "callsNoRetryPolicy", "label": "Calls without retry policy", "type": "integer", "unit": "call sites", "min": 0,
+      "metric": { "better": "down", "method": "judgement", "target": 0 },
+      "description": "Calls to a flaky dependency with no retry or backoff where a retry is safe, plus retries wrapped around a non-idempotent call with no idempotency key." },
+    { "key": "llmCalls", "label": "Model call sites", "type": "integer", "unit": "call sites", "min": 0,
+      "metric": { "better": "down", "method": "judgement" },
+      "description": "Inventory: every place the code calls a model. Not a defect; the denominator for the two LLM counts below." },
+    { "key": "llmUnmetered", "label": "Unmetered model calls", "type": "integer", "unit": "call sites", "min": 0,
+      "metric": { "better": "down", "method": "judgement", "target": 0 },
+      "description": "Model call sites that capture none of tokens, cost, latency or a trace span." },
+    { "key": "llmKeyExposure", "label": "Exposed model or API keys", "type": "integer", "unit": "keys", "min": 0,
+      "metric": { "better": "down", "method": "judgement", "target": 0 },
+      "description": "A model or third-party API key reachable by a client bundle, or committed to the repository. Named by variable, never by value." },
+    { "key": "promptPiiRisk", "label": "PII in prompts", "type": "integer", "unit": "call sites", "min": 0,
+      "metric": { "better": "down", "method": "judgement", "target": 0 },
+      "description": "Model calls that send user or financial personal data with no redaction step and no recorded consent or processing agreement." },
+    { "key": "untracedEndpoints", "label": "Untraced endpoints", "type": "integer", "unit": "handlers", "min": 0,
+      "metric": { "better": "down", "method": "judgement", "target": 0 },
+      "description": "API handlers whose failure path reaches neither an error reporter nor structured logging, directly or through a global handler." }
+  ],
+  "health": {
+    "rules": [
+      { "when": { "field": "llmKeyExposure", "gt": 0 }, "health": "bad", "reason": "{llmKeyExposure} model or API keys reachable by a client or committed", "short": "Exposed keys" },
+      { "when": { "field": "promptPiiRisk", "gt": 0 }, "health": "bad", "reason": "{promptPiiRisk} model calls send personal data unredacted", "short": "PII in prompts" },
+      { "when": { "field": "callsNoTimeout", "gt": 0 }, "health": "watch", "reason": "{callsNoTimeout} outbound calls have no timeout", "short": "{callsNoTimeout} no timeout" },
+      { "when": { "field": "callsNoRetryPolicy", "gt": 0 }, "health": "watch", "reason": "{callsNoRetryPolicy} calls have no safe retry policy", "short": "No retry policy" },
+      { "when": { "field": "llmUnmetered", "gt": 0 }, "health": "watch", "reason": "{llmUnmetered} of {llmCalls} model calls are unmetered", "short": "{llmUnmetered} unmetered" },
+      { "when": { "field": "untracedEndpoints", "gt": 0 }, "health": "watch", "reason": "{untracedEndpoints} handlers fail without a trace", "short": "{untracedEndpoints} untraced" }
+    ],
+    "default": "good",
+    "rollup": { "method": "worst-of" }
+  },
+  "presentation": {
+    "glyph": { "path": "M2 3h12v8H7l-3 3v-3H2zM5 6h6M5 8.5h3" },
+    "line": "chain",
+    "accent": { "dark": "#6fd3ff", "light": "#0a6c96" },
+    "evidence": ["callsNoTimeout", "llmKeyExposure", "llmUnmetered", "untracedEndpoints"]
+  },
+  "scan": {
+    "method": "judgement",
+    "instructions": "Judge the context's outbound calls and model calls. Evidence rules - a finding that breaks one is not counted: (1) each finding names file:line, the reachable entry point (route, server action, job, queue consumer, page) and one sentence on why it is reachable from there; no file:line, no count. (2) Count only shipped code: never tests, fixtures, seeds, stories, scripts no route or job calls, dead or commented code. (3) Before counting, try to refute it: look for the shared client, wrapper, middleware or global handler that already covers the site. Protection counts only if you can point to the file:line where it is configured; 'the framework probably does it' is not evidence. (4) One root cause is one finding, listing every entry point that reaches it. (5) Never guess versions or defaults you have not read: write 'unverified'. (6) Per finding suggest a tier 0-3 and a risk_class (secret|authz|money|data|llm|perf|reliability|ux|debt) per lens-scan references/triage.md: 0 stop-ship, 1 before production, 2 soon after, 3 backlog. (7) When the context makes no outbound or model calls, mark the facet not applicable with a one-line reason; write 0 only for a field you judged and found clean. Doubtful sites go under 'unconfirmed' in the note and never raise a count. Fields: callsNoTimeout - fetch without an AbortSignal, axios/got without timeout, .NET HttpClient left at its 100 s default on a request path, requests/httpx without timeout=, RestTemplate/WebClient without connect/read timeouts, model SDK clients without a timeout option (tier 1, reliability). callsNoRetryPolicy - no retry or backoff (Polly, tenacity, axios-retry, resilience4j, SDK maxRetries) on a call that is safe to retry; also count a retry around a non-idempotent call (payment, email, invoice create) with no idempotency key. llmCalls - every model call site (openai, @anthropic-ai/sdk, Azure OpenAI, LangChain, LlamaIndex, Semantic Kernel, raw HTTPS to a model endpoint); an inventory, not a defect. llmUnmetered - model calls that record none of usage tokens, cost, latency or a span (OpenTelemetry, Langfuse, Helicone, a log line with usage) (tier 2, llm). llmKeyExposure - a key under a public prefix (NEXT_PUBLIC_, VITE_, REACT_APP_, EXPO_PUBLIC_), passed to a client component, dangerouslyAllowBrowser, or committed in .env, appsettings.json, settings.py or application.yml; name the variable, never print the value (tier 0, secret). promptPiiRisk - names, emails, IBANs, invoice lines or customer records put into a prompt with no redaction step and no consent or DPA reference (tier 0, llm). untracedEndpoints - handlers whose errors reach neither Sentry, Application Insights, OpenTelemetry nor structured logging; a global error middleware you can point to covers every handler behind it (tier 1, reliability, on money paths)."
+  }
+}

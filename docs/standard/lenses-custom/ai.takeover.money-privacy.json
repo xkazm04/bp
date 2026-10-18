@@ -1,0 +1,55 @@
+{
+  "$schema": "lens-manifest/1",
+  "id": "ai.takeover.money-privacy",
+  "version": "0.1.0",
+  "name": "Money & privacy",
+  "short": "FIN",
+  "description": "Correctness of money handling and care of personal data: float amounts, unspecified rounding, mixed currencies, non-idempotent financial writes, missing audit trails, PII in logs and undefined retention. Judged by reading the context's code.",
+  "reader": { "role": "finance", "density": "standard" },
+  "fields": [
+    { "key": "floatMoney", "label": "Float money", "type": "integer", "unit": "sites", "min": 0, "headline": true,
+      "metric": { "better": "down", "method": "judgement", "target": 0 },
+      "description": "Amounts stored, summed, taxed or converted as float, double or plain JS number arithmetic." },
+    { "key": "roundingUnspecified", "label": "Unspecified rounding", "type": "integer", "unit": "sites", "min": 0,
+      "metric": { "better": "down", "method": "judgement", "target": 0 },
+      "description": "Money divided, multiplied by a rate or allocated with no explicit rounding mode and scale." },
+    { "key": "currencyMixing", "label": "Currency mixing", "type": "integer", "unit": "sites", "min": 0,
+      "metric": { "better": "down", "method": "judgement", "target": 0 },
+      "description": "Amounts of different or unknown currencies added or compared with no currency field or conversion." },
+    { "key": "nonIdempotentWrites", "label": "Non-idempotent money writes", "type": "integer", "unit": "handlers", "min": 0,
+      "metric": { "better": "down", "method": "judgement", "target": 0 },
+      "description": "Payment, invoice, posting or payout writes with no idempotency key, unique constraint or dedupe, so a retry writes twice." },
+    { "key": "auditTrailMissing", "label": "Unaudited money changes", "type": "integer", "unit": "mutations", "min": 0,
+      "metric": { "better": "down", "method": "judgement", "target": 0 },
+      "description": "Financial mutations with no who, when and before/after record." },
+    { "key": "piiInLogs", "label": "PII in logs", "type": "integer", "unit": "sites", "min": 0,
+      "metric": { "better": "down", "method": "judgement", "target": 0 },
+      "description": "Personal or financial data written to logs, error reporters or analytics." },
+    { "key": "retentionUndefined", "label": "Undefined retention", "type": "integer", "unit": "stores", "min": 0,
+      "metric": { "better": "down", "method": "judgement", "target": 0 },
+      "description": "Stores of personal data or financial documents with no retention or deletion rule anywhere in the repo." }
+  ],
+  "health": {
+    "rules": [
+      { "when": { "field": "floatMoney", "gt": 0 }, "health": "bad", "reason": "{floatMoney} sites do money in floating point", "short": "{floatMoney} float money" },
+      { "when": { "field": "nonIdempotentWrites", "gt": 0 }, "health": "bad", "reason": "{nonIdempotentWrites} financial writes can run twice", "short": "Replayable money writes" },
+      { "when": { "field": "currencyMixing", "gt": 0 }, "health": "bad", "reason": "{currencyMixing} sites mix currencies", "short": "{currencyMixing} mixed FX" },
+      { "when": { "field": "piiInLogs", "gt": 0 }, "health": "bad", "reason": "{piiInLogs} sites write personal data to logs", "short": "{piiInLogs} PII in logs" },
+      { "when": { "field": "auditTrailMissing", "gt": 0 }, "health": "watch", "reason": "{auditTrailMissing} financial mutations leave no audit record", "short": "{auditTrailMissing} no audit" },
+      { "when": { "field": "roundingUnspecified", "gt": 0 }, "health": "watch", "reason": "{roundingUnspecified} money calculations round implicitly", "short": "Implicit rounding" },
+      { "when": { "field": "retentionUndefined", "gt": 0 }, "health": "watch", "reason": "{retentionUndefined} data stores have no retention rule", "short": "{retentionUndefined} no TTL" }
+    ],
+    "default": "good",
+    "rollup": { "method": "worst-of" }
+  },
+  "presentation": {
+    "glyph": { "path": "M8 2a6 6 0 1 0 0 12a6 6 0 1 0 0 -12M8 4v8M10 6H7a1.25 1.25 0 0 0 0 2.5h2a1.25 1.25 0 0 1 0 2.5H6" },
+    "line": "double",
+    "accent": { "dark": "#f5a3d6", "light": "#9c2370" },
+    "evidence": ["floatMoney", "nonIdempotentWrites", "auditTrailMissing", "piiInLogs"]
+  },
+  "scan": {
+    "method": "judgement",
+    "instructions": "Judge how the context computes, stores and changes money, and where its personal data goes. Evidence rules - a finding that breaks one is not counted: (1) each finding names file:line, the reachable entry point (route, server action, job, import, webhook) and one sentence on why real amounts or real people's data pass through it; no file:line, no count. (2) Count only shipped code: never tests, fixtures, seeds, demo data, dead code. (3) Before counting, try to refute it: look for the money type, decimal column, idempotency middleware, audit interceptor or log redactor that already covers the site; it counts only if you can point to the file:line where it is configured. (4) One root cause is one finding listing every entry it reaches; a float column is one finding, not one per query that reads it. (5) Never guess what a library does by default: write 'unverified'. (6) Per finding suggest a tier 0-3 and a risk_class (money, data, or secret for exposed credentials) per lens-scan references/triage.md - float money in a ledger write, a non-idempotent payment and PII in logs are tier 0; a missing audit trail on financial mutations is tier 1. (7) A context that touches no amounts and no personal data is not applicable, with a one-line reason; 0 means judged and clean. Doubtful sites go under 'unconfirmed' and never raise a count. Fields: floatMoney - amounts in FLOAT, REAL or double precision columns, C# double or float, Java double, Python float, or JS number arithmetic on amounts (sum, tax, FX) with no integer minor units or decimal library; safe: integer cents, NUMERIC/DECIMAL columns, C# decimal, Python Decimal, BigDecimal, decimal.js, dinero.js, big.js. Display-only formatting is not a finding. roundingUnspecified - division, rate multiplication or allocation with no explicit mode and scale (Math.round or toFixed on currency, Math.Round with the default MidpointRounding, Decimal without quantize, BigDecimal without a RoundingMode). currencyMixing - amounts summed or compared across rows or sources with no currency column beside the amount or no conversion step. nonIdempotentWrites - creating payments, invoices, ledger postings or payouts with no idempotency key, unique constraint or dedupe check, so a retry, a double click or a redelivered webhook writes twice. auditTrailMissing - invoice edits, payment status changes, postings or supplier bank-detail changes with no who, when and before/after record (audit table, event log, temporal table, Envers, django-simple-history). piiInLogs - emails, names, IBANs or account numbers, card fragments, tax ids or whole request bodies sent to console, a logger, Sentry or analytics without a redactor. retentionUndefined - per store (table, bucket, log sink) of personal data or financial documents with no TTL, scheduled purge or written policy in the repo; one finding per store, citing where you looked."
+  }
+}

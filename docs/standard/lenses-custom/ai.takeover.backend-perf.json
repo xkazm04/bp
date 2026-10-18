@@ -1,0 +1,51 @@
+{
+  "$schema": "lens-manifest/1",
+  "id": "ai.takeover.backend-perf",
+  "version": "0.1.0",
+  "name": "Backend performance",
+  "short": "BEP",
+  "description": "Server-side query and I/O shape on request and job paths: N+1 queries, unbounded reads, serial awaits, missing indexes, heavy server-rendered fetches and absent caches. Counted sites, not timings; client rendering stays with the built-in performance lens.",
+  "reader": { "role": "engineering", "density": "standard" },
+  "fields": [
+    { "key": "nPlusOne", "label": "N+1 queries", "type": "integer", "unit": "sites", "min": 0,
+      "metric": { "better": "down", "method": "judgement", "target": 0 },
+      "description": "A query or remote call issued inside a loop over rows on a request or job path." },
+    { "key": "unboundedQueries", "label": "Unbounded queries", "type": "integer", "unit": "queries", "min": 0, "headline": true,
+      "metric": { "better": "down", "method": "judgement", "target": 0 },
+      "description": "List endpoints or exports that read every row, with no limit or pagination." },
+    { "key": "sequentialAwaits", "label": "Serial awaits", "type": "integer", "unit": "sites", "min": 0,
+      "metric": { "better": "down", "method": "judgement", "target": 0 },
+      "description": "Independent I/O awaited one after another on a request path." },
+    { "key": "missingIndexes", "label": "Missing indexes", "type": "integer", "unit": "columns", "min": 0,
+      "metric": { "better": "down", "method": "judgement", "target": 0 },
+      "description": "Columns filtered, joined or sorted on a hot path with no index in the migrations or schema." },
+    { "key": "heavyRenderFetches", "label": "Heavy render fetches", "type": "integer", "unit": "pages", "min": 0,
+      "metric": { "better": "down", "method": "judgement", "target": 0 },
+      "description": "Server-rendered pages or components that fetch unbounded or wide data to render a small view." },
+    { "key": "cacheAbsent", "label": "Uncached hot reads", "type": "integer", "unit": "paths", "min": 0,
+      "metric": { "better": "down", "method": "judgement", "target": 0 },
+      "description": "Hot read paths for slow-changing data recomputed on every request with no cache." }
+  ],
+  "health": {
+    "rules": [
+      { "when": { "field": "unboundedQueries", "gt": 0 }, "health": "watch", "reason": "{unboundedQueries} list reads have no limit or pagination", "short": "{unboundedQueries} unbounded" },
+      { "when": { "field": "nPlusOne", "gt": 0 }, "health": "watch", "reason": "{nPlusOne} N+1 query sites", "short": "{nPlusOne} N+1 sites" },
+      { "when": { "field": "missingIndexes", "gt": 0 }, "health": "watch", "reason": "{missingIndexes} hot-path columns have no index", "short": "{missingIndexes} no index" },
+      { "when": { "field": "heavyRenderFetches", "gt": 0 }, "health": "watch", "reason": "{heavyRenderFetches} pages fetch unbounded data to render", "short": "Heavy render fetches" },
+      { "when": { "field": "sequentialAwaits", "gt": 0 }, "health": "watch", "reason": "{sequentialAwaits} request paths await independent I/O in series", "short": "{sequentialAwaits} serial" },
+      { "when": { "field": "cacheAbsent", "gt": 0 }, "health": "watch", "reason": "{cacheAbsent} hot reads of slow-changing data are uncached", "short": "{cacheAbsent} uncached reads" }
+    ],
+    "default": "good",
+    "rollup": { "method": "worst-of" }
+  },
+  "presentation": {
+    "glyph": { "path": "M2 4a6 2 0 1 0 12 0a6 2 0 1 0 -12 0M2 4v8a6 2 0 0 0 7 2M14 4v4M12 9l-2 3h3l-2 3" },
+    "line": "comb",
+    "accent": { "dark": "#ffab70", "light": "#a64b00" },
+    "evidence": ["unboundedQueries", "nPlusOne", "missingIndexes", "sequentialAwaits"]
+  },
+  "scan": {
+    "method": "judgement",
+    "instructions": "Judge the server side of the context: request handlers, server-rendered pages, jobs and the data access they call. Client rendering belongs to the built-in performance lens. Evidence rules - a finding that breaks one is not counted: (1) each finding names file:line, the reachable entry point (route, page, job) and one sentence on why that path is hot or user-facing; no file:line, no count. (2) Count only shipped code: never tests, seeds, one-off scripts, dead code. (3) Before counting, try to refute it: look for the include, batch loader, pagination wrapper, index or cache that already covers the site; it counts only if you can point to the file:line where it is configured. (4) One root cause is one finding listing every entry it reaches. (5) Do not estimate milliseconds or row counts you have not read; this lens counts sites, and a probe measures time. Write 'unverified' for any table size you assume. (6) Per finding suggest a tier 0-3 and a risk_class (usually perf; data when a query can time out a money path) per lens-scan references/triage.md - unbounded reads on hot endpoints are tier 1, N+1 on cold paths tier 2. (7) A context with no server code or data access is not applicable, with a one-line reason; 0 means judged and clean. Doubtful sites go under 'unconfirmed' and never raise a count. Fields: nPlusOne - a query or remote call inside a loop over rows: await prisma.x.findUnique in a for/map, EF Core lazy navigation without Include, Django access without select_related/prefetch_related, JPA lazy collections without a fetch join; show the loop and the query. unboundedQueries - list endpoints or exports reading all rows: findMany() with no take, ToList() on a DbSet with no Take, Model.objects.all() serialized whole, findAll() with no Pageable, SELECT without LIMIT; a table you can show is bounded by design (a fixed lookup) is not a finding. sequentialAwaits - two or more awaits in series where neither uses the other's result and Promise.all, Task.WhenAll, asyncio.gather or CompletableFuture.allOf would apply; show they are independent. missingIndexes - a column filtered, joined or ordered on a hot path with no index in the schema (Prisma @@index, EF HasIndex, Django db_index or Meta.indexes, JPA @Index, CREATE INDEX); primary keys and unique constraints count as indexes; name the query and the schema file you checked. heavyRenderFetches - server components, getServerSideProps, loaders, Razor pages or templates fetching every row or every column to render a small view. cacheAbsent - a hot read of slow-changing data (reference lists, exchange rates, settings, dashboard aggregates) recomputed per request with no cache (revalidate or unstable_cache, IMemoryCache or output cache, Django cache, Spring @Cacheable, Redis); count only when you can say why the data changes slowly."
+  }
+}
