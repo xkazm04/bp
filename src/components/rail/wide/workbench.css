@@ -22,6 +22,7 @@
 #flyout.wide .t-red > b, #flyout.wide b.t-red { color: var(--red-2); }
 #flyout.wide .wb-src { margin-left: auto; font: 500 12px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
 #flyout.wide .wb-filter { display: flex; flex-wrap: wrap; gap: 6px; }
+#flyout.wide .wb-keep { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 14px; color: var(--ink-2); cursor: pointer; }
 #flyout.wide .wb-filter button { height: 32px; padding: 0 11px; display: inline-flex; align-items: center; gap: 7px; background: none; border: 1px solid var(--ink-3); font: 500 13px var(--mono); letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-2); }
 #flyout.wide .wb-filter button small { font-size: 12px; color: var(--ink-2); }
 #flyout.wide .wb-filter button i { width: 9px; height: 9px; background: var(--lens); }
