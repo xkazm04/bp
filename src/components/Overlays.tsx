@@ -13,6 +13,7 @@ import { illoSVG } from '@/engine/render/illo';
 import { steerVerbs } from '@/lib/model/live-steer';
 import { shallowEqual, useBp, useEngine, useLive, useVariant } from './hooks';
 import { LiveSteerButtons } from './LiveSteer';
+import { STAGE_WORDS, TrackRecord } from './TrackRecord';
 import { proposalSummary } from './Queue';
 import { lensWords } from './sheet/words';
 
@@ -113,6 +114,17 @@ function HoverBody() {
         {cluster ? ids.slice(1, 4).map((x) => { const o = sim.DEC[x]; return <div key={x} className="sw q" style={{ fontSize: 13 }}>{o.base} · {o.q.length > 70 ? o.q.slice(0, 68) + '…' : o.q}</div>; })
           : <div className="sw q">waiting {fmtWait(sim.waitMin(d))} · holds {sim.blocksNow(d)} agent{sim.blocksNow(d) === 1 ? '' : 's'}</div>}
         <div className="h">Click to answer it here</div>
+      </>
+    );
+  }
+  if (h.type === 'track') {
+    const t = M.tracks?.T[h.id]; if (!t) return null;
+    return (
+      <>
+        <div className="k">{M.P.LENS[t.lens]?.name ?? t.lens} · {STAGE_WORDS[t.stage]} · {t.id}</div>
+        <div className="n q">{t.title}</div>
+        {t.lines.map((l) => <div key={l} className="sw" style={{ fontSize: 13 }}>{l}</div>)}
+        <div className="h">Click for the record{t.next ? ' and the next step' : ''}</div>
       </>
     );
   }
@@ -313,10 +325,13 @@ export function SelBar() {
 // -------------------------------------------------------------------------------------- callouts
 export function Callout() {
   const E = useEngine(), M = E.M, sim = M.sim;
-  const s = useBp((s) => ({ blast: s.blast, ga: s.ga, info: s.info, tgt: s.tgt, simV: s.simV, dock: s.dockHidden, dtab: s.dtab }), shallowEqual);
+  const s = useBp((s) => ({ blast: s.blast, ga: s.ga, info: s.info, tgt: s.tgt, simV: s.simV, dock: s.dockHidden, dtab: s.dtab, track: s.track }), shallowEqual);
   const pos = { left: Math.max(10, E.FW / E.U - overlayRight(E.S) - 340), top: E.SAFE.t / E.U + 4, maxHeight: `calc(100% - ${E.SAFE.t / E.U + 140}px)` };
   let body: React.ReactNode = null, cls = '';
-  if (s.info && s.tgt.n) {
+  if (s.track && M.tracks?.T[s.track]) {
+    cls = 'info';
+    body = <TrackRecord id={s.track} />;
+  } else if (s.info && s.tgt.n) {
     const ids = s.tgt.ids, ag = sim.agentsIn(ids), ds = Object.keys(ids).flatMap((id) => sim.DOF[id] || []), ev = sim.log.filter((e) => ids[e.f]).slice(0, 6);
     cls = 'info';
     body = (

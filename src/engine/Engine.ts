@@ -7,6 +7,9 @@ import {
   type OrderTemplate, type PlaceNode, type Preview, type RoomNode, type SimDecision, type SimEvent, type Target, type TileNode, type WingNode,
 } from '@/lib/model';
 import { LIVE_VERB_LABEL, SAMPLE_REFUSED, commitSample, runLivePlan, type LivePlan } from '@/lib/model/live-steer';
+import type { ScanJob } from '@/lib/scan/jobs';
+import type { ScanSnapshot } from '@/lib/scan/types';
+import { TRACK_LABEL_W, drawTracks, trackMarkPos } from './render/tracks';
 import { Camera, WheelIntent, clamp, type Cam, type Pad, type Region } from './camera';
 import type { ChannelAggregate, FeatureLive, LensChannel, LensExpression } from './lens/contract';
 import { MixDriver, type MixState } from './lens/mix';
@@ -435,7 +438,7 @@ export class Engine {
     drawOrderZones(this, ctx, v, lod); drawTargets(this, ctx, v, lod);
     drawHeat(this, ctx, v, lod, now);
     drawAgents(this, ctx, v, lod, now); drawPulses(this, ctx, v, lod, now);
-    drawPins(this, ctx, v, lod, now); drawBreaches(this, ctx, v, lod, now);
+    drawPins(this, ctx, v, lod, now); drawTracks(this, ctx, v, lod); drawBreaches(this, ctx, v, lod, now);
     drawPreview(this, ctx, v, lod, now); drawFocus(this, ctx, v, lod, now); drawBlockers(this, ctx, v, lod); drawReleases(this, ctx, v, lod, now);
     this.scans.draw(this, ctx, v, lod, now);
     // trouble flags over everything: the first thing to find on the plan
@@ -528,6 +531,10 @@ export class Engine {
   }
   /** A live product's new feed: the sim takes it in place (agents travel, questions open or close). */
   feed(S: Parameters<Model['sim']['applyFeed']>[0]) { if (this.destroyed) return; this.M.sim.applyFeed(S); this.scheduleSimSync(true); this.dirty(); }
+  /** A live product's snapshot and jobs, for its answer tracks (src/lib/model/live-tracks.ts). */
+  feedTracks(scan: ScanSnapshot, jobs: readonly ScanJob[]) { const T = this.M.tracks; if (this.destroyed || !T) return; T.feed(scan, jobs); this.set({ simV: this.S.simV + 1 }); this.dirty(); }
+  /** Open a track's record beside the plan (null closes it). */
+  openTrack(id: string | null) { this.set({ track: id }); }
   togglePlay() { if (!this.isNow) { this.setTime(this.M.P.asOf); return; } this.M.sim.togglePlay(); this.scheduleSimSync(true); this.dirty(); }
   setSpeed(n: number) { this.M.sim.setSpeed(n); this.scheduleSimSync(true); this.dirty(); }
   stepSpeed(dir: number) { const i = SPEEDS.indexOf(this.M.sim.speed as (typeof SPEEDS)[number]); this.setSpeed(SPEEDS[clamp(i + dir, 0, SPEEDS.length - 1)]); }
@@ -612,6 +619,7 @@ export class Engine {
     if (S.page === 'ledger') return; // Esc never leaves the ledger (it clears its own selection); nothing on the plan behind it moves
     if (S.open) { this.closeFeature(); return; }
     if (S.dec) { this.closeDecision(); return; }
+    if (S.track) { this.set({ track: null }); return; }
     if (S.prev || S.lprev) { this.set({ prev: null, lprev: null }); return; }
     if (S.tgt.n) { this.clearTarget(); return; }
     if (S.blast) { this.setMode({ blast: null }); return; }
@@ -792,8 +800,10 @@ export class Engine {
     this.scheduleSimSync(true); this.forceStatic();
     if (!live || !sim.live || !d || !open) return;
     const pid = d.base, body = { decision: oi === 0 ? 'approve' as const : 'decline' as const, ...(note ? { note } : {}) };
-    live.decide(pid, body).then(
-      () => { if (!this.destroyed) sim.settle(pid, null, false); },
+    // the tile's track takes over from the question at once: saving, then the store's row (a 409: the decision it holds)
+    const tracks = this.M.tracks, sent = tracks ? tracks.decide(pid, body, (i, b) => live.decide(i, b)) : live.decide(pid, body);
+    sent.then(
+      () => { if (this.destroyed) return; sim.settle(pid, null, false); this.dirty(); },
       (e: Error & { status?: number }) => {
         if (this.destroyed) return;
         sim.settle(pid, e.status === 409 ? 'Already decided elsewhere' : 'Not saved: ' + e.message, e.status !== 409);
@@ -954,6 +964,17 @@ export class Engine {
     }
     return null;
   }
+  /** The answer track under the pointer: a tile's glyph, or its label where one is drawn (tile levels only). */
+  trackAt(px: number, py: number): string | null {
+    const T = this.M.tracks; if (!T || !T.list.length || !this.isNow || this.S.open || this.lod() <= 0.5) return null;
+    const u = this.U, v = this.view;
+    for (const fid in T.F) {
+      const Ti = this.M.L.TILE[fid]; if (!Ti) continue;
+      const r = rs(v, Ti), p = trackMarkPos(r, u), x1 = r.w >= TRACK_LABEL_W * u ? r.x + r.w * 0.6 : p.x + 9 * u;
+      if (px >= p.x - 9 * u && px <= x1 && py >= p.y - 9 * u && py <= p.y + 9 * u) return T.F[fid][0].id;
+    }
+    return null;
+  }
   agentAt(px: number, py: number) {
     const sim = this.M.sim; if (!sim.has || !this.isNow || this.S.open) return null;
     const lod = this.lod(), now = performance.now(), u = this.U, v = this.view;
@@ -976,7 +997,7 @@ export class Engine {
     const same = (!cur && !h) || (cur && h && cur.type === h.type && cur.id === h.id);
     this.hoverPt = { x: px, y: py };
     if (!same) this.set({ hover: h });
-    this.cv.dataset.cursor = this.S.selMode ? 'sel' : !h ? '' : h.type === 'tile' || h.type === 'agent' || h.type === 'pin' ? 'pt' : 'zin';
+    this.cv.dataset.cursor = this.S.selMode ? 'sel' : !h ? '' : h.type === 'tile' || h.type === 'agent' || h.type === 'pin' || h.type === 'track' ? 'pt' : 'zin';
     this.placeHover();
   }
   /** Position the hover card next to its target (called on pointer move and after React renders it). */
@@ -1023,6 +1044,7 @@ export class Engine {
   private clickAt(px: number, py: number) {
     const fl = this.flagUnder(px, py); if (fl) { this.flagClick(fl); return; }
     const pn = this.pinAt(px, py); if (pn) { this.openDecision(pn.d.id); return; }
+    const tk = this.trackAt(px, py); if (tk) { this.openTrack(tk); return; }
     const ag = this.agentAt(px, py);
     if (ag) {
       const dq = ag.wait && this.M.sim.DEC[ag.wait]?.open ? this.M.sim.DEC[ag.wait] : null;
@@ -1059,6 +1081,8 @@ export class Engine {
     if (fl) { this.setHover(new Set(fl.fids).size === 1 ? { type: 'tile', id: fl.fid } : null, px, py); this.cv.dataset.cursor = 'pt'; return; }
     const pn = this.pinAt(px, py);
     if (pn) { this.setHover({ type: 'pin', id: pn.d.id, ids: pn.cluster ? pn.list.map((d) => d.id) : undefined }, px, py); return; }
+    const tk = this.trackAt(px, py);
+    if (tk) { this.setHover({ type: 'track', id: tk }, px, py); return; }
     const ag = this.agentAt(px, py);
     if (ag) { this.setHover({ type: 'agent', id: ag.id }, px, py); return; }
     this.setHover(this.hitTarget(this.hitAt(px, py)), px, py);

@@ -12,6 +12,7 @@
 // client through actions.ts.
 import { cancelJob, dispatch, refusalText, startSelectionScan, type ScanCtx } from '@/lib/scan/actions';
 import { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, jobLabel, scannable, type ScanJob } from '@/lib/scan/jobs';
+import type { Track, TrackNext } from '@/lib/scan/track';
 import type { Proposal } from '@/lib/scan/types';
 import { baseId, type Product } from './product';
 import type { Preview, SwarmSim } from './sim';
@@ -155,4 +156,16 @@ export async function runLivePlan(ctx: ScanCtx, p: LivePlan, lensName: (id: stri
   const n = rs.length - bad.length;
   if (bad.length) return { strong: n ? 'Some work did not stop' : 'Nothing stopped', text: bad.join('; ') };
   return { strong: 'Stopped ' + s(n, 'job'), text: p.label };
+}
+
+/** The words for a track's one next verb (src/lib/scan/track.ts `next`). */
+export const TRACK_NEXT_LABEL: Record<TrackNext, string> = { build: 'Build what is approved here', measure: 'Measure here to confirm', stop: 'Stop work here' };
+/** A track's next verb as a plan over its own tile, through the same preview as the selection's verbs; measuring to confirm
+ *  reads only the track's lens. Null when the track offers no verb. */
+export function trackPlan(P: Product, t: Pick<Track, 'feature' | 'lens' | 'next'>, jobs: readonly ScanJob[], proposals: readonly Proposal[]): LivePlan | null {
+  if (!t.next) return null;
+  const F0 = steerFacts(P, { ids: { [t.feature]: 1 }, label: P.base.features.find((f) => f.id === t.feature)?.name ?? t.feature }, jobs, proposals);
+  const F = t.next === 'measure' ? { ...F0, lenses: F0.lenses.filter((l) => l.id === t.lens) } : F0;
+  const p = planLive(t.next, F);
+  return { ...p, title: TRACK_NEXT_LABEL[t.next] + ': ' + F.label };
 }

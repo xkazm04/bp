@@ -217,6 +217,8 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
     applyScan(engine.M, live.scan);
     engine.feed(liveSwarm(engine.M.P, live.scan));
   }, [engine, live.scan]);
+  // the answer tracks read the snapshot and the jobs (an execute job holding a proposal reads "building")
+  useEffect(() => { if (engine?.M.live) engine.feedTracks(live.scan ?? EMPTY_SCAN, live.jobs); }, [engine, live.scan, live.jobs]);
   // a newer map (the skill wrote its metrics back): the same features take the new fields in place; nothing moves
   useEffect(() => {
     const rev = live.structureRev ?? 0;
