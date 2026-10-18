@@ -19,6 +19,7 @@ bp.products.local.json
 /.claude/skills/spark
 /.claude/skills/scan-sweep
 /.claude/skills/perfect
+/.claude/skills/tiger
 /.ai/skill-runs.local.jsonl
 # END ai-registry linked skills
 .ai/consults.jsonl
