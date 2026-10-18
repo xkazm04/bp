@@ -3,7 +3,7 @@
 // React talks to it through the imperative methods below and reads discrete state from `store`.
 import type { Feature, LensDef, Scalar, ViewId } from '@/lib/data';
 import {
-  BLAST_DEFAULT, GA_MILESTONE, HOUR, LINES, SPEEDS, inside, isView, lensOf, personLens, revAt, views, type Box, type BldNode, type BayNode, type Counts, type Model,
+  BLAST_DEFAULT, GA_MILESTONE, HOUR, LINES, SPEEDS, inside, isView, lensOf, lensPerson, personLens, revAt, views, type Box, type BldNode, type BayNode, type Counts, type Model,
   type OrderTemplate, type PlaceNode, type Preview, type RoomNode, type SimDecision, type SimEvent, type Target, type TileNode, type WingNode,
 } from '@/lib/model';
 import { LIVE_VERB_LABEL, SAMPLE_REFUSED, commitSample, runLivePlan, type LivePlan } from '@/lib/model/live-steer';
@@ -850,7 +850,7 @@ export class Engine {
       if (!tgt.n) { this.needTarget(); return; }
       if (kind === 'push') { p = sim.previewPushHere(tgt, this.wingName); if (!p) this.toast('Nothing to move:', 'no free working agent, or the selection is already live.'); }
       else if (kind === 'pause' || kind === 'resume') { p = sim.previewPause(tgt, kind === 'resume'); if (!p) this.toast(kind === 'resume' ? 'No paused agent' : 'No agent is working', 'inside the selection.'); }
-      else if (kind === 'order' && tpl) p = sim.previewOrder(tgt, tpl);
+      else if (kind === 'order' && tpl) p = sim.previewOrder(tgt, tpl, this.signer());
     }
     this.set({ prev: p, lprev: null, ordMenu: false });
   }
@@ -865,7 +865,7 @@ export class Engine {
     if (lp) { this.set({ lprev: null }); this.commitLive(lp); return; }
     const p = this.S.prev; if (!p) return;
     this.set({ prev: null });
-    if (!commitSample(this.M.sim, p, this.S.who)) { this.toast(SAMPLE_REFUSED.strong, SAMPLE_REFUSED.text); return; }
+    if (!commitSample(this.M.sim, p, this.signer())) { this.toast(SAMPLE_REFUSED.strong, SAMPLE_REFUSED.text); return; }
     this.scheduleSimSync(true); this.forceStatic();
   }
   /** Run a live steer through the product's routes; the swarm answers through the jobs and the scan feed, and the toast says what started. */
@@ -873,6 +873,8 @@ export class Engine {
     const live = this.M.live; if (!live) return;
     void runLivePlan({ slug: live.slug, sim: null }, p, (id) => this.M.P.LENS[id]?.name ?? id).then((t) => { if (!this.destroyed) this.toast(t.strong, t.text); });
   }
+  /** Who signs a written order: the reader, else the one person who reads the current lens; null = nobody (refused). */
+  signer(): string | null { return this.S.who ?? lensPerson(this.M.P, this.S.view); }
   cancelPreview() { this.set({ prev: null, lprev: null }); }
   undoCommand() { this.M.sim.undoCommand(); this.scheduleSimSync(true); this.forceStatic(); }
 

@@ -35,6 +35,14 @@ export function personLens(P: Product, who: string | null | undefined): ViewId |
   return p && lensOf(P, p.field) ? p.field : null;
 }
 
+/** The one person who reads a lens (a human whose `field` it is); null when nobody or several do (business: Mara and Sam). */
+export function lensPerson(P: Product, view: ViewId | null | undefined): string | null {
+  if (!view || view === 'general') return null;
+  let hit: string | null = null;
+  for (const id in P.P) { const p = P.P[id]; if (p.kind === 'human' && p.field === view) { if (hit) return null; hit = id; } }
+  return hit;
+}
+
 // ------------------------------------------------------------------------------------ fields
 const shortLabel = (f: LensField) => f.label.replace(/\s*\([^)]*\)/g, '');
 const round = (v: number) => (Math.abs(v) >= 100 || Number.isInteger(v) ? Math.round(v) : Math.round(v * 10) / 10);

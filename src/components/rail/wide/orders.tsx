@@ -88,11 +88,12 @@ function OrderDetail({ o }: { o: SimOrder }) {
     <>
       <div className="wb-kick"><span className={o.vf.length ? 'st failed' : 'st done'}>{o.vf.length ? 'breached' : 'holding'}</span><span>{o.id}</span><span>sheet {sheetOf(P, o.lens).no}</span></div>
       <h3 className="wb-title">{o.text}</h3>
-      <p className="wb-lede">Governs {sim.scopeWords(o).replace(/^./, (c) => c.toLowerCase()) || 'its places'}. Set by {by ? by.name : pname(P, o.by)}{o.user ? ', written in this session' : ' since ' + o.since}.</p>
+      <p className="wb-lede">Governs {sim.scopeWords(o).replace(/^./, (c) => c.toLowerCase()) || 'its places'}. Set by {by ? by.name : pname(P, o.by)}{o.user ? ', written in this session' : ' since ' + o.since}.{o.held?.asks.length ? ' It asked ' + o.held.asks.length + ' question' + (o.held.asks.length === 1 ? '' : 's') + '.' : ''}</p>
       <div className="wb-figs">
         <Fig n={o.vf.length} label={o.vf.length === 1 ? 'breach' : 'breaches'} tone={o.vf.length ? 'red' : 'mint'} />
         <Fig n={gov.length} label="features governed" />
         <Fig n={gov.reduce((n, id) => n + (sim.AGF[id] || []).length, 0)} label="agents inside" />
+        {o.tpl && o.tpl !== 'first' && <Fig n={o.held?.n ?? 0} label={(o.held?.n ?? 0) === 1 ? 'event held' : 'events held'} />}
       </div>
       <div className="wb-inline">
         <button type="button" className="bt" onClick={() => { E.setOrdHi(o.id); if (gov.length) { E.setTarget(Object.fromEntries(gov.map((id) => [id, 1])) as Record<string, 1>, sim.scopeWords(o) || o.id); E.lookAtTarget(); } }}>Show its places</button>

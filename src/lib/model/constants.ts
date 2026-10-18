@@ -61,3 +61,5 @@ export const HOUR = 3600;
 export const AWAY_SINCE = '2026-10-07T18:00:00Z';
 /** Daily swarm spend cap (order O-7). */
 export const SPEND_CAP = 2400;
+/** The sample's assumed blended model price, USD per 1,000 tokens: working agents' spend accrues from their tokens a minute at this rate (simulated). */
+export const USD_PER_KTOK = 0.01;

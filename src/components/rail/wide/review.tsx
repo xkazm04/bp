@@ -130,6 +130,7 @@ function Kicker({ d, extra }: { d: SimDecision; extra?: string }) {
       <span className="urg">{URG[d.urg]}</span>
       <span className="lz" style={{ '--lens': E.lensAccent(d.lens) } as React.CSSProperties} title={ld?.name ?? d.lens}><i aria-hidden="true" />{ld?.short ?? sheetOf(M.P, d.lens).no} · {ld?.name ?? 'General'}</span>
       {extra && <span>{extra}</span>}
+      {d.ord && <span>asked because of {d.ord}</span>}
       <span>{d.base}</span>
       {d.isNew && <span className="nw">New</span>}
     </div>
