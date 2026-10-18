@@ -10,6 +10,7 @@ import type { Model } from './index';
 import { layoutProduct } from './layout';
 import type { LiveRef } from './live';
 import { LiveFacets, lineCopies, restate } from './live-health';
+import { LiveTracks } from './live-tracks';
 import { buildProduct, lineSuffix, type Product } from './product';
 import { LIVE_DECIDER, SwarmSim } from './sim';
 
@@ -59,7 +60,9 @@ export function buildLiveModel(structure: unknown, events: string, scan: ScanSna
   const agg = new AggCache(P), liveFacets = new LiveFacets(P, agg);
   liveFacets.apply(scan); // the store may be ahead of the map the page loaded
   const L = layoutProduct(P);
-  return { P, L, sim: new SwarmSim(P, liveSwarm(P, scan), now, { live: true }), agg, closure: new Closure(P), live, liveFacets };
+  const tracks = new LiveTracks(P);
+  tracks.feed(scan); // the jobs arrive with the stream (Engine.feedTracks)
+  return { P, L, sim: new SwarmSim(P, liveSwarm(P, scan), now, { live: true }), agg, closure: new Closure(P), live, liveFacets, tracks };
 }
 
 /** What a scan delta did to the facets: base ids of the features whose lens health or values moved. */

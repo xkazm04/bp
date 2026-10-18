@@ -15,6 +15,7 @@ import { type SwarmSim } from './sim';
 import { AWAY_SINCE } from './constants';
 import type { LiveRef } from './live';
 import type { LiveFacets } from './live-health';
+import type { LiveTracks } from './live-tracks';
 import type { ScanSim } from './scan-sim';
 import type { Proposal } from '@/lib/scan/types';
 
@@ -28,6 +29,8 @@ export interface Model {
   live?: LiveRef;
   /** Set for a live product: the scan's readings laid over the loaded map's facets (src/lib/model/live-health.ts). */
   liveFacets?: LiveFacets;
+  /** Set for a live product: its decided proposals' tracks on the plan, apart from the questions (src/lib/model/live-tracks.ts). */
+  tracks?: LiveTracks;
   /** The Kettle sample map's contexts (name -> group); set by `buildModel` in ./sample, absent for a live product (its structure carries them). */
   kettleContexts?: readonly { name: string; group?: string }[];
   /** The Kettle sample's stand-in for the Claude Code CLI (scans, dispatch); absent for a live product (its routes spawn the CLI). */

@@ -7,7 +7,8 @@ import type { LivePlan } from '@/lib/model/live-steer';
 /** The right-hand rail's items; each opens its own flyout over the plan. */
 export type DockTab = 'asks' | 'swarm' | 'orders' | 'plan' | 'find' | 'view' | 'steer';
 export interface Crumb { t: 'bld' | 'wing' | 'room' | 'bay'; id: string }
-export interface HoverInfo { type: 'tile' | 'bld' | 'wing' | 'room' | 'bay' | 'agent' | 'pin'; id: string; ids?: string[] }
+/** `track`: a live answer's marker on its tile (`id` = the proposal id). */
+export interface HoverInfo { type: 'tile' | 'bld' | 'wing' | 'room' | 'bay' | 'agent' | 'pin' | 'track'; id: string; ids?: string[] }
 export interface ToastItem extends SimToast { n: number }
 
 export interface UIState {
@@ -34,6 +35,8 @@ export interface UIState {
   prev: Preview | null;
   /** A live product's steer (measure, build, stop) shown under NOT ISSUED YET; never set together with `prev`. */
   lprev: LivePlan | null;
+  /** A live answer's track whose record is open beside the plan (a proposal id). */
+  track: string | null;
   /** Viewed date (time travel); equals the as-of date when "now". */
   t: string;
   delta: 1 | 7 | 14;
@@ -86,7 +89,7 @@ export interface ScanMenuState {
 export function initialState(scale: number, asOf: string): UIState {
   return {
     ready: false, scale, phone: false, compact: false, view: 'general', place: [], levelNames: [], level: 0,
-    open: null, dec: null, hover: null, sel: null, hl: null, hlDec: null, hlOpt: null, tgt: { ids: {}, n: 0, label: '' }, prev: null, lprev: null,
+    open: null, dec: null, hover: null, sel: null, hl: null, hlDec: null, hlOpt: null, tgt: { ids: {}, n: 0, label: '' }, prev: null, lprev: null, track: null,
     t: asOf, delta: 7, who: null, ga: false, blast: null, key: null, dtab: null, selMode: false, dockHidden: false,
     morning: false, info: false, ordHi: null, crew: null, askAll: false, ordMenu: false, whoMenu: false, simV: 0,
     playing: true, speed: 8, over: false, toast: null, ticker: null, intro: false, tl: false,
