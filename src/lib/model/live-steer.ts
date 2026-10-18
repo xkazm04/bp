@@ -97,7 +97,7 @@ export function planLive(verb: LiveVerb, F: SteerFacts): LivePlan {
       slotLine(sl),
     ];
     if (sl.refused) lines.push(`${sl.refused} would be refused: the queue holds ${MAX_QUEUED}`);
-    if (skip.length) lines.push(s(skip.length, 'lens', 'lenses') + ' cannot be measured and are left out: ' + skip.map((l) => l.name).join(', '));
+    if (skip.length) lines.push(s(skip.length, 'lens', 'lenses') + (skip.length === 1 ? ' cannot be measured and is left out: ' : ' cannot be measured and are left out: ') + skip.map((l) => l.name).join(', '));
     lines.push('Each scan shows on these features while it runs; its readings land on the tiles');
     const plan = { ...base, lines, scans: ok.map((l) => ({ lens: l.id, features: fs })) };
     return sl.now + sl.wait ? plan : { ...plan, off: `the scan queue is full (${MAX_QUEUED} waiting)` };

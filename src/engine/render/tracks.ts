@@ -7,7 +7,6 @@ import type { TrackStage } from '@/lib/scan/track';
 import type { Engine } from '../Engine';
 import type { Theme } from '../theme';
 import { drawText } from '../text';
-import { roomPinPos } from './dynamic';
 import { onView, rs, type SRect, type View } from './view';
 
 const sr: SRect = { x: 0, y: 0, w: 0, h: 0 };
@@ -78,7 +77,8 @@ export function drawTracks(E: Engine, ctx: CanvasRenderingContext2D, v: View, lo
     for (let ri = 0; ri < rc.n.length; ri++) {
       if (!rc.n[ri]) continue;
       const r = rs(v, E.M.L.rooms[ri], sr); if (!onView(v, r, 30)) continue;
-      const pp = roomPinPos(E, v, ri), x = pp.x - 6 * u, y = pp.y + 16 * u;
+      // the room's bottom-right corner: its question pins own the top row, so a label there was cut by them
+      const x = r.x + r.w - 14 * u, y = r.y + r.h - 14 * u;
       trackGlyph(ctx, th, 'approved', x, y, u);
       ctx.textAlign = 'right'; drawText(ctx, rc.label[ri], x - 10 * u, y + 4 * u, f12, th.ink, th.halo); ctx.textAlign = 'left';
     }
