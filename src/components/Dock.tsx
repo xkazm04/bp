@@ -198,7 +198,7 @@ export function Dock() {
               <span className="g">{it.glyph}</span>
               <h2 id="flyout-h">{it.title}</h2>
               <button type="button" className="x" aria-label="Close panel" title="Close ( Esc )" onClick={() => E.setDockTab(null)}>Esc</button>
-              {asks && sim.has && !sim.live && <MorningButton />}
+              {asks && sim.has && <MorningButton />}
             </header>
             <div className={'fb' + (reduce ? ' still' : '')} key={open} tabIndex={-1}>{wide ? <WideBody k={open} /> : FIND}</div>
           </motion.section>

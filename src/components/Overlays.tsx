@@ -4,8 +4,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
-  AWAY_SINCE, GA_MILESTONE, SPEND_CAP, STAGE_PLAIN, STAGE_WORD, ORDER_TEMPLATES, TICK_CLASS, astat, dnum, fmtWait, isAgentId, isLiveSt, lensOf, lineSuffix,
-  morningStats, pname, sheetOf, stageAt, type BayNode, type BldNode, type OrderTemplate, type RoomNode, type WingNode,
+  GA_MILESTONE, SPEND_CAP, STAGE_PLAIN, STAGE_WORD, ORDER_TEMPLATES, TICK_CLASS, astat, cursorFor, dnum, fmtWait, isAgentId, isLiveSt, kindWords, lensOf,
+  morningStats, pname, sheetOf, stageAt, watchFor, watchKey, writeCursor, type WatchCursor, type BayNode, type BldNode, type OrderTemplate, type RoomNode, type WingNode,
 } from '@/lib/model';
 import { overlayRight } from '@/engine/chrome';
 import type { ToastItem } from '@/engine/state';
@@ -117,6 +117,7 @@ function HoverBody() {
   if (h.type === 'agent') {
     const A = sim.AG[h.id]; if (!A) return null;
     const f = M.P.F[A.f], st = astat(A), dq = A.wait && sim.DEC[A.wait]?.open ? sim.DEC[A.wait] : null;
+    const bf = !dq && A.blk && A.status === 'blocked' ? M.P.F[A.blk] : undefined, bq = bf ? sim.DOF[bf.id]?.[0] : undefined;
     const word = { working: 'working', waiting: 'waiting for a person', blocked: 'blocked', failed: 'stopped, failed', paused: 'paused by you', idle: 'idle' }[st];
     const col = st === 'working' ? 'var(--mint)' : st === 'waiting' ? 'var(--amber)' : st === 'paused' ? 'var(--ink)' : 'var(--red)';
     return (
@@ -126,7 +127,8 @@ function HoverBody() {
         <div className="s">{A.task}</div>
         <div className="e">{f.name} · {Math.round(A.pct)}%{sim.live ? '' : ' · $' + A.cost.toFixed(0) + ' today'} · {A.done} {sim.live ? 'measured' : 'tasks done'}</div>
         {dq && <div className="sw q">Waiting on {pname(M.P, dq.decider)} · {dq.base}</div>}
-        <div className="h">{dq ? 'Click to answer its question' : 'Click to open the feature'}</div>
+        {bf && <div className="sw">Blocked by {bf.name}{bq ? ' · its question waits for ' + pname(M.P, bq.decider) : ''}</div>}
+        <div className="h">{dq ? 'Click to answer its question' : bf ? (bq ? 'Click to open the question that holds it' : 'Click to go to ' + bf.name) : 'Click to open the feature'}</div>
       </>
     );
   }
@@ -224,7 +226,7 @@ export function DecisionCard() {
   return (
     <AnimatePresence>
       {d && d.open && (() => {
-        const f = M.P.F[d.f], A = sim.AG[d.by], list = sim.cardOrder(s.who, s.view), pos = list.indexOf(d) + 1, wa = sim.agents.filter((a) => a.wait === d.id), bn = sim.blocksNow(d);
+        const f = M.P.F[d.f], A = sim.AG[d.by], list = sim.cardOrder(s.who, s.view), pos = list.indexOf(d) + 1, wa = sim.agents.filter((a) => a.wait === d.id), bn = sim.blocksNow(d), down = sim.blockedByFeature(d.f).length;
         return (
           <div ref={ref} style={{ position: 'absolute', left: 0, top: 0, zIndex: 8 }}>
             <motion.div id="dcard" key={d.id} className={'u-' + d.urg} role="dialog" aria-label="Decision" style={{ position: 'relative' }}
@@ -233,7 +235,7 @@ export function DecisionCard() {
               <h3>{d.q}</h3>
               {(() => { const p = scan?.proposals.find((x) => x.id === d.base), sm = p ? proposalSummary(p) : null; return sm ? <div className="psum">{sm}</div> : null; })()}
               <div className="by"><b>{A ? A.base : d.by}</b> ({A ? sim.crewName(A.sq) : ''}) stopped at <b>{f.name}</b> and asks <b>{pname(M.P, d.decider)}</b>.</div>
-              <div className="meta"><span>waiting {fmtWait(sim.waitMin(d))}</span><span>holds {bn} agent{bn === 1 ? '' : 's'}</span><span>touches {d.affects.length}</span></div>
+              <div className="meta"><span>waiting {fmtWait(sim.waitMin(d))}</span><span>holds {bn} agent{bn === 1 ? '' : 's'}</span><span>touches {d.affects.length}</span>{down ? <span>{down} agent{down === 1 ? '' : 's'} blocked downstream</span> : null}</div>
               {d.opts.map((o, i) => (
                 <button key={i} type="button" className={'op' + (i === d.rec ? ' rec' : '')} onClick={() => E.decide(d.id, i)}>
                   <i className="no">{i + 1}</i><b>{o.label}{i === d.rec && <em>agent suggests</em>}</b><span>{o.consequence}</span>
@@ -433,10 +435,34 @@ export function Toast() {
 }
 
 // ------------------------------------------------------------------------------- morning watch
+const hhmm = (at: string) => at.slice(11, 16);
+/** "18:00", or "18:00 on 7 Oct" when the time is on another day than the clock's. */
+function sinceWords(at: string, clockMs: number): string {
+  const d = new Date(Date.parse(at)), c = new Date(clockMs);
+  return hhmm(at) + (d.toISOString().slice(0, 10) === c.toISOString().slice(0, 10) ? '' : ' on ' + d.getUTCDate() + ' ' + d.toLocaleString('en-GB', { month: 'short', timeZone: 'UTC' }));
+}
+const NONE_LI = { color: 'var(--ink-2)', padding: '6px 0' } as const;
+/**
+ * "While you were away", from where this reader last said they were caught up (a browser-local mark per product and
+ * reader; without one the sample starts at its evening before, and a live product shows all it kept). Events are
+ * grouped by place; the questions still open for the reader always stay. What arrives while the panel is open waits
+ * behind "N new" and never moves the list, the focus or the scroll.
+ */
 export function Morning() {
-  const E = useEngine(), M = E.M, sim = M.sim;
+  const E = useEngine(), M = E.M, sim = M.sim, rows = useLive()?.product.scan?.activity;
   const s = useBp((s) => ({ on: s.morning, who: s.who, view: s.view, simV: s.simV }), shallowEqual);
   const ref = useRef<HTMLElement>(null);
+  // the window's end is frozen when the panel opens (or for another reader); "N new" moves it on request only
+  const [upto, setUpto] = useState<WatchCursor | null | undefined>(undefined);
+  // after "caught up": whether the browser kept the mark (re-read from storage on every render while open)
+  const [saved, setSaved] = useState<boolean | null>(null);
+  // the mark as set in this visit, so "caught up" holds even where the browser keeps nothing
+  const [mem, setMem] = useState<{ key: string; c: WatchCursor } | null>(null);
+  useEffect(() => {
+    if (!s.on) { setUpto(undefined); return; }
+    setUpto(watchFor(M, rows, s.who, s.view, null).upto);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s.on, s.who]);
   useEffect(() => {
     if (!s.on) return;
     const was = document.activeElement as HTMLElement | null;
@@ -446,30 +472,57 @@ export function Morning() {
   return (
     <AnimatePresence>
       {s.on && (() => {
-        const ms = morningStats(M), q = sim.queueFor(s.who, s.view), mine = s.who ? q.mine : q.all.slice(0, 6), who = s.who ? pname(M.P, s.who).split(' ')[0] : null;
+        const key = watchKey(M, s.who), cursor = mem && mem.key === key ? mem.c : cursorFor(M, s.who), v = watchFor(M, rows, s.who, s.view, cursor, upto), ms = morningStats(M);
+        const who = s.who ? pname(M.P, s.who).split(' ')[0] : null, clock = sim.clockMs();
+        const mine = s.who ? v.open : v.open.filter((d) => d.urg === 'high').concat(v.open.filter((d) => d.urg !== 'high'));
         const failed = sim.agents.filter((a) => a.status === 'failed'), blocked = sim.agents.filter((a) => a.status === 'blocked').length;
-        const words: Record<string, string> = { commit: 'commits', 'pr-opened': 'pull requests', deploy: 'deploys', flag: 'flag changes', stage: 'stage moves', review: 'reviews', incident: 'incidents', comment: 'comments' };
-        const by = Object.keys(ms.by).map((k) => ms.by[k] + ' ' + (words[k] || k)).join(' · ');
-        const since = AWAY_SINCE.slice(11, 16), sf = lineSuffix(M.P.scale, 0);   // the model's away mark and line suffix, not copies of them
+        const from = cursor?.at ?? v.retainedFrom, since = from ? ' since ' + hhmm(from) : '';
+        const ack = () => { if (v.upto) { setMem({ key, c: v.upto }); setSaved(writeCursor(key, v.upto)); } };
+        const takeNew = () => { setUpto(watchFor(M, rows, s.who, s.view, null).upto); ref.current?.focus({ preventScroll: true }); };
+        const ids = v.places.map((g) => g.place).filter((x): x is string => !!x && !!M.P.F[x]);
+        const nq = v.open.length;
         return (
           <motion.section id="morning" key="m" ref={ref} tabIndex={-1} role="dialog" aria-modal="false" aria-label="While you were away" initial={{ opacity: 0, x: '-50%', y: '-46%', scale: 0.98 }} animate={{ opacity: 1, x: '-50%', y: '-50%', scale: 1 }} exit={{ opacity: 0, x: '-50%', y: '-48%', scale: 0.98 }} transition={{ type: 'spring', stiffness: 320, damping: 32 }}>
-            <div className="kk">While you were away · since {since} · simulated sample</div>
+            <div className="kk">While you were away · {from ? 'since ' + sinceWords(from, clock) : 'everything on record'} · {sim.live ? 'live product' : 'simulated sample'}</div>
             <h2>{who ? 'Good morning, ' + who + '.' : 'Good morning.'}</h2>
-            <div className="lead">The swarm shipped {ms.changes} changes overnight ({by}). {failed.length ? failed.length + ' agent stopped after repeated failures. ' : ''}{blocked} are blocked. <b>{who ? mine.length + ' question' + (mine.length === 1 ? '' : 's') + ' wait for you' : q.all.length + ' questions wait for a person'}.</b></div>
+            <div className="lead">
+              {v.total ? v.total + ' event' + (v.total === 1 ? '' : 's') + ' in ' + v.places.length + ' place' + (v.places.length === 1 ? '' : 's') + since + '. ' : 'Nothing new' + since + '. '}
+              {failed.length ? failed.length + ' agent' + (failed.length === 1 ? '' : 's') + ' stopped after repeated failures. ' : ''}{blocked} {blocked === 1 ? 'is' : 'are'} blocked.{' '}
+              <b>{nq + ' question' + (nq === 1 ? '' : 's') + (who ? (nq === 1 ? ' waits' : ' wait') + ' for you' : (nq === 1 ? ' waits' : ' wait') + ' for a person')}.</b>
+            </div>
+            {v.incomplete && v.retainedFrom && <div className="lead" role="note"><b>History before {sinceWords(v.retainedFrom, clock)} is not kept.</b> Anything earlier is missing from this list.</div>}
             <div className="big4">
-              <div><b>{ms.changes}</b>changes since {since}</div>
-              <div className="am"><b>{ms.asked}</b>questions asked while you slept</div>
-              <div className="am"><b>{who ? mine.length : q.all.filter((d) => d.urg === 'high').length}</b>{who ? 'waiting for you' : 'urgent now'}</div>
+              <div><b>{v.total}</b>events{since}</div>
+              <div className="am"><b>{v.askedSince}</b>questions asked since then</div>
+              <div className="am"><b>{who ? nq : v.open.filter((d) => d.urg === 'high').length}</b>{who ? 'waiting for you' : 'urgent now'}</div>
               {!sim.live && <div><b>${ms.spend.toLocaleString('en-US')}</b>spent today, cap ${SPEND_CAP.toLocaleString('en-US')}</div>}
             </div>
             <div className="cols">
-              <div><h4>What moved</h4><ul>{ms.ev.slice(0, 7).map((a, i) => <li key={i}><button type="button" onClick={() => E.flyToFeature(a.feature + sf)}><i>{a.at.slice(11, 16)}</i><span>{a.text}</span></button></li>)}</ul></div>
-              <div><h4>{who ? 'Waiting for you' : 'Most urgent'}</h4><ul>{mine.slice(0, 6).map((d) => <li key={d.id}><button type="button" onClick={() => E.openDecision(d.id)}><i>{d.base}</i><span>{d.q}</span></button></li>)}{mine.length ? null : <li style={{ color: 'var(--ink-2)', padding: '6px 0' }}>Nothing is waiting. The swarm is working.</li>}</ul></div>
+              <div>
+                <h4>What happened, by place{v.newCount ? <button type="button" className="bt" style={{ marginLeft: 10, padding: '2px 8px', fontSize: 13 }} onClick={takeNew} aria-label={v.newCount + ' new since you opened this: show them'}>{v.newCount} new</button> : null}</h4>
+                <ul>
+                  {v.places.slice(0, 8).map((g) => {
+                    const f = g.place ? M.P.F[g.place] : undefined, room = f ? M.P.D[f.domain]?.name : undefined;
+                    return (
+                      <li key={g.place ?? '-'}>
+                        <button type="button" disabled={!f} onClick={() => f && E.flyToFeature(f.id)}>
+                          <i>{hhmm(g.events[0].at)}</i>
+                          <span><b>{f ? f.name : 'Across the product'}</b>{room ? ' · ' + room : ''} · {kindWords(g.events)}<br />{g.events[0].text}</span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                  {v.places.length > 8 && <li style={NONE_LI}>and {v.places.length - 8} more place{v.places.length - 8 === 1 ? '' : 's'}</li>}
+                  {v.places.length ? null : <li style={NONE_LI}>{saved === false ? 'Nothing new. This browser does not keep your mark, so it lasts for this visit only.' : 'Nothing new since you last caught up.'}</li>}
+                </ul>
+              </div>
+              <div><h4>{who ? 'Waiting for you' : 'Most urgent'}</h4><ul>{mine.slice(0, 6).map((d) => <li key={d.id}><button type="button" onClick={() => E.openDecision(d.id)}><i>{d.base}</i><span>{d.q}</span></button></li>)}{mine.length ? null : <li style={NONE_LI}>Nothing is waiting. The swarm is working.</li>}</ul></div>
             </div>
             <div className="act">
-              <button type="button" className="bt" onClick={() => E.morningShow()}>Show the changes on the plan</button>
+              <button type="button" className="bt" disabled={!ids.length} onClick={() => E.morningShow(ids, 'changed' + since)}>Show these places on the plan</button>
+              <button type="button" className="bt" disabled={!v.upto || !v.total} onClick={ack} title="Next time, start from here">I’m caught up</button>
               <button type="button" className="bt" onClick={() => E.toggleMorning(false)}>Close</button>
-              <button type="button" className="bt go" onClick={() => { E.toggleMorning(false); const l = sim.cardOrder(s.who, s.view); if (l.length) E.openDecision(l[0].id); }}>{mine.length ? 'Go through the questions ▸' : 'Watch the swarm ▸'}</button>
+              <button type="button" className="bt go" onClick={() => { E.toggleMorning(false); const l = sim.cardOrder(s.who, s.view); if (l.length) E.openDecision(l[0].id); }}>{nq ? 'Go through the questions ▸' : 'Watch the swarm ▸'}</button>
             </div>
           </motion.section>
         );

@@ -3,7 +3,7 @@
 // delta), its body sections and one-line summary, urgency words, one decision per proposal, the decline-note drafts,
 // the live empty state and the morning watch's entry. The Review flyout itself is rail/wide/review.tsx; the phone
 // list (Phone.tsx) and the plan's decision card (Overlays.tsx) read the same helpers.
-import { metricHistory, morningStats, type SimDecision } from '@/lib/model';
+import { cursorFor, metricHistory, watchFor, type SimDecision } from '@/lib/model';
 import type { Proposal } from '@/lib/scan/types';
 import { useBp, useEngine, useLive } from './hooks';
 
@@ -55,14 +55,15 @@ export const URG: Record<SimDecision['urg'], string> = { high: 'Urgent', medium:
 /** A decline note survives a refused write: the card remounts when the decision reopens, so the draft lives outside it. */
 export const declineDrafts = new Map<string, string>();
 
-/** The morning watch's entry ("While you were away"), in the decisions flyout's header (Kettle only). */
+/** The morning watch's entry ("While you were away"), in the decisions flyout's header: what is new since this reader's mark. */
 export function MorningButton() {
-  const E = useEngine(), M = E.M;
+  const E = useEngine(), M = E.M, rows = useLive()?.product.scan?.activity;
   useBp((s) => s.simV);
-  const ms = morningStats(M);
+  const who = useBp((s) => s.who), view = useBp((s) => s.view);
+  const v = watchFor(M, rows, who, view, cursorFor(M, who));
   return (
     <button type="button" className="bt morning-btn" title="Morning watch (M)" onClick={() => { E.setDockTab(null); E.toggleMorning(true); }}>
-      <span>While you were away</span><span className="am">{ms.changes} changes · {ms.asked} asked</span>
+      <span>While you were away</span><span className="am">{v.total} event{v.total === 1 ? '' : 's'} · {v.askedSince} asked</span>
     </button>
   );
 }

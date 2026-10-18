@@ -202,6 +202,15 @@ export function drawHeat(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod:
   ctx.globalAlpha = 1;
 }
 
+/**
+ * How bright an agent draws. A crew picked in the Agents flyout (`S.crew`) lights up: its agents stay at full
+ * alpha (and get a ring), every other agent dims. With no crew picked, crews that do not serve the viewed lens dim.
+ */
+export function agentAlpha(sq: string, crew: string | null, rel: boolean): number {
+  if (crew) return sq === crew ? 1 : 0.22;
+  return rel ? 1 : 0.42;
+}
+
 export function drawAgents(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod: number, now: number) {
   const sim = E.M.sim; if (!sim.has || !E.isNow) return;
   const th = E.th, u = E.U, S = E.S, pos = E.agentPos;
@@ -222,8 +231,8 @@ export function drawAgents(E: Engine, ctx: CanvasRenderingContext2D, v: View, lo
     ctx.save(); ctx.globalCompositeOperation = th.mode === 'dark' ? 'lighter' : 'source-over';
     for (let i = 0; i < sim.agents.length; i++) {
       const p = pos[i], A = sim.agents[i]; if (!p || !p.ok || astat(A) !== 'working') continue;
-      const rel = sim.crewRelevant(A, S.view), rad = (15 + lod * 10) * u * (rel ? 1 : 0.6);
-      ctx.globalAlpha = rel ? 1 : 0.4;
+      const ga = agentAlpha(A.sq, S.crew, sim.crewRelevant(A, S.view)), rad = (15 + lod * 10) * u * (ga === 1 ? 1 : 0.6);
+      ctx.globalAlpha = ga === 1 ? 1 : ga * 0.95;
       ctx.drawImage(glow, p.x - rad, p.y - rad, rad * 2, rad * 2);
     }
     ctx.restore();
@@ -241,7 +250,8 @@ export function drawAgents(E: Engine, ctx: CanvasRenderingContext2D, v: View, lo
   const chipFont = E.tx.f(12, 500, true);
   for (let i = 0; i < sim.agents.length; i++) {
     const p = pos[i], A = sim.agents[i]; if (!p || !p.ok) continue;
-    const st = astat(A), rel = sim.crewRelevant(A, S.view), al = rel ? 1 : 0.42;
+    const st = astat(A), al = agentAlpha(A.sq, S.crew, sim.crewRelevant(A, S.view)), rel = al === 1;
+    if (S.crew && A.sq === S.crew) { ctx.strokeStyle = th.accent; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(p.x, p.y, (p.chip && !p.moving ? 15 : 9) * u, 0, 6.2832); ctx.stroke(); }
     if (A.flash && now - A.flash < 1100) {
       const fu = (now - A.flash) / 1100; ctx.save(); ctx.strokeStyle = th.inkHi; ctx.globalAlpha = (1 - fu) * 0.9; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(p.x, p.y, (6 + fu * 22) * u, 0, 6.2832); ctx.stroke(); ctx.restore();
@@ -392,6 +402,34 @@ export function drawFocus(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod
   const pu = phase(E, now / 1100); ctx.strokeStyle = th.amber; ctx.globalAlpha = 1 - pu; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(cx, cy, (12 + pu * 26) * u, 0, 6.2832); ctx.stroke();
   ctx.restore();
 }
+
+/**
+ * Blocker chains, for one item at a time: the hovered blocked agent (its feature -> the feature that blocks it), or
+ * the focused question when its feature blocks agents (each blocked agent's feature -> it). A dashed conduit per
+ * chain and a "holds N" badge on the blocker. Nothing is drawn for agents nobody points at.
+ */
+export function drawBlockers(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod: number) {
+  const sim = E.M.sim, S = E.S; if (!sim.has || !E.isNow) return;
+  let blocker: string | null = null, only: SimAgent | null = null;
+  if (S.hover && S.hover.type === 'agent') { const A = sim.AG[S.hover.id]; if (A && A.blk && A.status === 'blocked' && E.M.P.F[A.blk]) { blocker = A.blk; only = A; } }
+  if (!blocker) { const d = S.dec ? sim.DEC[S.dec] : S.hlDec ? sim.DEC[S.hlDec] : null; if (d && d.open && sim.blockedByFeature(d.f).length) blocker = d.f; }
+  if (!blocker) return;
+  const held = sim.blockedByFeature(blocker), B = featRect(E, v, blocker, lod, sr3); if (!B) return;
+  const th = E.th, u = E.U;
+  ctx.save(); ctx.globalAlpha = 0.95;
+  for (let i = 0; i < held.length; i++) {
+    const A = held[i]; if (only && A !== only) continue;
+    if (A.f === blocker) continue;
+    const r = featRect(E, v, A.f, lod, sr4); if (r) route(E, ctx, r, B, th.red, false);
+  }
+  ctx.globalAlpha = 1; ctx.lineDashOffset = 0;
+  const n = held.length, label = 'holds ' + n, w = (label.length * 7.4 + 14) * u, h = 20 * u, x0 = B.x + B.w / 2 - w / 2, y0 = B.y - h - 6 * u;
+  ctx.fillStyle = th.alpha(th.panel, 0.94); ctx.fillRect(x0, y0, w, h);
+  ctx.strokeStyle = th.red; ctx.lineWidth = 1.4; ctx.strokeRect(x0 + 0.5, y0 + 0.5, w - 1, h - 1);
+  ctx.textAlign = 'center'; drawText(ctx, label, x0 + w / 2, y0 + 14.2 * u, E.tx.f(12, 600, true), th.inkHi); ctx.textAlign = 'left';
+  ctx.restore();
+}
+const sr4: SRect = { x: 0, y: 0, w: 0, h: 0 };
 
 export function drawReleases(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod: number, now: number) {
   const sim = E.M.sim; if (!sim.has || !E.isNow) return;

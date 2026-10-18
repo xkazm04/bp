@@ -183,7 +183,7 @@ function CrewDetail({ id }: { id: string }) {
       <Sec head="Agents and tasks" aside="click to find on the plan">
         <ul className="wb-agents-l" aria-label={'Agents of ' + q.name}>
           {ag.map((a) => {
-            const st = astat(a);
+            const st = astat(a), bf = a.blk && a.status === 'blocked' ? M.P.F[a.blk] : undefined;
             return (
               <li key={a.id}>
                 <button type="button" onClick={() => E.flyToFeature(a.f)} onPointerEnter={() => E.setHl(a.f)} onPointerLeave={() => E.setHl(null)}>
@@ -191,6 +191,12 @@ function CrewDetail({ id }: { id: string }) {
                   <span className="tx"><small>{a.base} · {M.P.F[a.f]?.name ?? a.f} · {st}</small>{a.task}</span>
                   <span className="pc"><b>{Math.round(a.pct)}%</b><span className="bar"><i style={{ width: Math.round(a.pct) + '%' }} /></span></span>
                 </button>
+                {bf && (
+                  <button type="button" className="blk" onClick={() => E.goToBlocker(bf.id)} onPointerEnter={() => E.setHl(bf.id)} onPointerLeave={() => E.setHl(null)}
+                    title={sim.DOF[bf.id]?.length ? 'Open the question that holds it' : 'Go to ' + bf.name}>
+                    Blocked by {bf.name}{sim.DOF[bf.id]?.length ? ' · open its question' : ''}
+                  </button>
+                )}
               </li>
             );
           })}

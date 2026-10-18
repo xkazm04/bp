@@ -3,7 +3,7 @@
 // React talks to it through the imperative methods below and reads discrete state from `store`.
 import type { Feature, LensDef, Scalar, ViewId } from '@/lib/data';
 import {
-  BLAST_DEFAULT, GA_MILESTONE, HOUR, LINES, SPEEDS, AWAY_SINCE, inside, isView, lensOf, personLens, revAt, views, type Box, type BldNode, type BayNode, type Counts, type Model,
+  BLAST_DEFAULT, GA_MILESTONE, HOUR, LINES, SPEEDS, inside, isView, lensOf, personLens, revAt, views, type Box, type BldNode, type BayNode, type Counts, type Model,
   type OrderTemplate, type PlaceNode, type Preview, type RoomNode, type SimDecision, type SimEvent, type Target, type TileNode, type WingNode,
 } from '@/lib/model';
 import { Camera, WheelIntent, clamp, type Cam, type Pad, type Region } from './camera';
@@ -17,7 +17,7 @@ import { Text } from './text';
 import { StaticCache, deviceRes } from './render/static-cache';
 import { buildWallPaths, drawBuildings, drawDecor, drawGrid, drawLabels, featRect, resetOutlines } from './render/plan';
 import {
-  agentPos, drawAgents, drawBreaches, drawFocus, drawHeat, drawLasso, drawOrderZones, drawOverlays, drawPins, drawPreview,
+  agentPos, drawAgents, drawBlockers, drawBreaches, drawFocus, drawHeat, drawLasso, drawOrderZones, drawOverlays, drawPins, drawPreview,
   drawPulses, drawReleases, drawTargets, roomPinPos, type APos,
 } from './render/dynamic';
 import { KeyPlan } from './render/keyplan';
@@ -435,7 +435,7 @@ export class Engine {
     drawHeat(this, ctx, v, lod, now);
     drawAgents(this, ctx, v, lod, now); drawPulses(this, ctx, v, lod, now);
     drawPins(this, ctx, v, lod, now); drawBreaches(this, ctx, v, lod, now);
-    drawPreview(this, ctx, v, lod, now); drawFocus(this, ctx, v, lod, now); drawReleases(this, ctx, v, lod, now);
+    drawPreview(this, ctx, v, lod, now); drawFocus(this, ctx, v, lod, now); drawBlockers(this, ctx, v, lod); drawReleases(this, ctx, v, lod, now);
     this.scans.draw(this, ctx, v, lod, now);
     // trouble flags over everything: the first thing to find on the plan
     this.flags = layoutFlags(this, v, lod); drawFlags(this, ctx, this.flags, this.flagHot);
@@ -742,16 +742,23 @@ export class Engine {
     this.placeKey = ''; this.dirty();
   }
   toggleSelMode() { const on = !this.S.selMode; this.set({ selMode: on }); this.toast(on ? 'Target mode.' : 'Target mode off.', on ? 'Click or drag to select places. Press S again to leave.' : ''); }
-  toggleMorning(on?: boolean) { if (on !== false && this.M.sim.live) return; this.set({ morning: on == null ? !this.S.morning : on }); }
-  morningShow() {
-    const ids: Record<string, 1> = {};
-    for (const a of this.M.P.base.activity) if (a.at >= AWAY_SINCE && a.feature) for (let b = 0; b < this.M.P.scale; b++) ids[a.feature + (this.M.P.scale > 1 ? '-' + LINES[b][1] : '')] = 1;
+  toggleMorning(on?: boolean) { this.set({ morning: on == null ? !this.S.morning : on }); }
+  /** The morning watch's places (features of line 1) targeted on the plan, on every product line. */
+  morningShow(fids: readonly string[], label: string) {
+    const ids: Record<string, 1> = {}, sc = this.M.P.scale, sf0 = sc > 1 ? '-' + LINES[0][1] : '';
+    for (const f of fids) { const base = sf0 && f.endsWith(sf0) ? f.slice(0, -sf0.length) : f; for (let b = 0; b < sc; b++) { const id = base + (sc > 1 ? '-' + LINES[b][1] : ''); if (this.M.P.F[id]) ids[id] = 1; } }
     this.set({ morning: false });
-    this.setTarget(ids, 'changed since 18:00');
+    if (!Object.keys(ids).length) return;
+    this.setTarget(ids, label);
     this.lookAtTarget();
   }
 
   // ============================================================================ decisions
+  /** What holds a blocked agent: its open question when it has one (the card flies there), else fly to the feature. */
+  goToBlocker(fid: string) {
+    const d = this.M.sim.DOF[fid]?.[0];
+    if (d) this.openDecision(d.id); else this.flyToFeature(fid);
+  }
   openDecision(id: string, noFly = false) {
     const sim = this.M.sim, d = sim.DEC[id]; if (!d || !d.open) return;
     if (this.S.open) this.closeFeature(false);
@@ -998,7 +1005,7 @@ export class Engine {
     const ag = this.agentAt(px, py);
     if (ag) {
       const dq = ag.wait && this.M.sim.DEC[ag.wait]?.open ? this.M.sim.DEC[ag.wait] : null;
-      if (dq) this.openDecision(dq.id); else if (this.lod() > 0.5) this.openFeature(ag.f); else this.flyToFeature(ag.f, false);
+      if (dq) this.openDecision(dq.id); else if (ag.blk && ag.status === 'blocked' && this.M.P.F[ag.blk]) this.goToBlocker(ag.blk); else if (this.lod() > 0.5) this.openFeature(ag.f); else this.flyToFeature(ag.f, false);
       return;
     }
     const h = this.hitAt(px, py);

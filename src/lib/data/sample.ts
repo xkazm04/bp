@@ -39,8 +39,9 @@ const SQUAD_LENSES: Record<string, string[]> = {
 
 /**
  * The swarm sample was written against the old sample's short ids (`PAY-09`, domain `PAY`, milestone
- * `M2`). The map passes those through as `id`, so the feed is re-keyed to slugs once, here; ids the map
- * does not know are left as they are.
+ * `M2`). The map passes those through as `id`, so the feed is re-keyed to slugs once, here: an agent's
+ * feature and the feature that blocks it (`waitingOn` names a decision, not a feature); ids the map does
+ * not know are left as they are.
  */
 function adaptSwarm(raw: unknown, map: unknown): Swarm {
   const S = raw as Swarm, m = map as { features?: { slug: string; id?: string }[]; domains?: { slug: string; id?: string }[]; milestones?: { slug: string; id?: string }[] };
@@ -50,7 +51,7 @@ function adaptSwarm(raw: unknown, map: unknown): Swarm {
   return {
     ...S,
     squads: S.squads.map((q) => ({ ...q, lenses: q.lenses ?? SQUAD_LENSES[q.id] ?? [] })),
-    agents: S.agents.map((a) => ({ ...a, feature: f(a.feature) })),
+    agents: S.agents.map((a) => ({ ...a, feature: f(a.feature), ...(a.blockedBy ? { blockedBy: f(a.blockedBy) } : {}) })),
     decisions: S.decisions.map((x) => ({ ...x, feature: f(x.feature), domain: d(x.domain), affects: x.affects.map(f) })),
     orders: S.orders.map((o) => ({ ...o, scope: { ...o.scope, ...(o.scope.domain ? { domain: d(o.scope.domain) } : {}), ...(o.scope.milestone ? { milestone: MS.get(o.scope.milestone) ?? o.scope.milestone } : {}) } })),
     replay: S.replay.map((e) => ({ ...e, feature: f(e.feature) })),

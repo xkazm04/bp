@@ -87,6 +87,7 @@ function crewCode(id: string): string {
   if (!m) return id;
   return ({ forge: 'F' + m[2], warden: 'WD', tender: 'TD', scout: 'SC', sentinel: 'SN' } as Record<string, string>)[m[1]] + '.' + m[3];
 }
+const NONE: readonly SimAgent[] = [];
 export const astat = (a: SimAgent): AgentState => (a.paused ? 'paused' : a.status);
 export function fmtWait(m: number): string {
   return m >= 120 ? Math.floor(m / 60) + ' h ' + (m % 60 ? (m % 60) + ' min' : '') : m >= 60 ? '1 h ' + (m % 60) + ' min' : m + ' min';
@@ -109,8 +110,8 @@ export class SwarmSim {
   decisions: SimDecision[] = []; DEC: Record<string, SimDecision> = {};
   orders: SimOrder[] = []; events: SimEvent[] = [];
   squads: Squad[] = []; SQ: Record<string, Squad> = {};
-  /** agents by feature, open decisions by feature */
-  AGF: Record<string, SimAgent[]> = {}; DOF: Record<string, SimDecision[]> = {};
+  /** agents by feature, open decisions by feature, blocked agents by the feature that blocks them */
+  AGF: Record<string, SimAgent[]> = {}; DOF: Record<string, SimDecision[]> = {}; BLF: Record<string, SimAgent[]> = {};
   // clock
   t = 0; playing = true; speed = 8; i = 0; over = false;
   log: SimEvent[] = []; pulses: Pulse[] = []; heat: Record<string, { v: number; t: number }> = {};
@@ -193,8 +194,8 @@ export class SwarmSim {
     return { id: o.id, by: o.by, lens: o.lens, scope: { ...o.scope }, text: o.text, since: o.since, n: o.violations, vf: [], user: false };
   }
   index() {
-    this.AGF = {}; this.DOF = {};
-    for (const a of this.agents) (this.AGF[a.f] ||= []).push(a);
+    this.AGF = {}; this.DOF = {}; this.BLF = {};
+    for (const a of this.agents) { (this.AGF[a.f] ||= []).push(a); if (a.blk && a.status === 'blocked') (this.BLF[a.blk] ||= []).push(a); }
     for (const d of this.decisions) if (d.open) (this.DOF[d.f] ||= []).push(d);
   }
 
@@ -213,6 +214,8 @@ export class SwarmSim {
     if (lens === SIM_FIELDS.progress[0] && key === SIM_FIELDS.progress[1] && this.prog[f.id]) { const p = num(f, lens, key); return p != null && p < 100 ? this.progOf(f) : p ?? undefined; }
     return fval(f, lens, key);
   }
+  /** The blocked agents this feature holds (their `blockedBy` names it). */
+  blockedByFeature(fid: string): readonly SimAgent[] { return this.BLF[fid] ?? NONE; }
   openDecs(): SimDecision[] { return this.decisions.filter((d) => d.open); }
   blocksNow(d: SimDecision): number { return Math.max(0, d.blocks - d.freed); }
   waitMin(d: SimDecision): number { return Math.max(0, Math.round((this.clockMs() - d.since) / 60000)); }

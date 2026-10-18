@@ -184,6 +184,7 @@
 #flyout.wide .wb-agents-l .pc b { font: 600 15px var(--mono); text-align: right; color: var(--ink-hi); }
 #flyout.wide .wb-agents-l .bar { display: flex; height: 4px; background: var(--ink-4); }
 #flyout.wide .wb-agents-l .bar i { background: var(--mint); }
+#flyout.wide .wb-agents-l button.blk { display: block; padding: 6px 6px 10px 48px; margin-top: -1px; font-size: 13px; color: var(--red-2); text-decoration: underline; text-underline-offset: 3px; }
 #flyout.wide .wb-feed { list-style: none; margin: 0; padding: 0; }
 #flyout.wide .wb-feed button { width: 100%; display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 10px; padding: 9px 12px 9px 10px; background: none; border: 0; border-bottom: 1px solid var(--ink-4); border-left: 3px solid var(--ink-3); text-align: left; color: var(--ink); font-size: 15px; line-height: 1.4; }
 #flyout.wide .wb-feed button:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }

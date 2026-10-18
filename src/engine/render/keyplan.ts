@@ -1,6 +1,14 @@
 // The key plan (minimap). Its rooms and swarm dots are cached in a small bitmap; each redraw only
 // blits that and strokes the viewport rectangle.
 import type { Engine } from '../Engine';
+import type { SimAgent } from '@/lib/model';
+import type { Theme } from '../theme';
+
+/** A swarm dot's colour: working mint, waiting amber, paused a neutral ink (paused by a person, not a fault), blocked or failed red. */
+export function keyDotColor(th: Pick<Theme, 'mint' | 'amber' | 'red' | 'inkA'>, a: Pick<SimAgent, 'status' | 'paused'>): string {
+  if (a.paused) return th.inkA(0.55);
+  return a.status === 'working' ? th.mint : a.status === 'waiting' ? th.amber : th.red;
+}
 
 export class KeyPlan {
   private base = document.createElement('canvas');
@@ -31,7 +39,7 @@ export class KeyPlan {
     if (sim.has && E.isNow) {
       for (const a of sim.agents) {
         const T = E.M.L.TILE[a.f]; if (!T) continue;
-        g.fillStyle = a.status === 'working' && !a.paused ? th.mint : a.status === 'waiting' ? th.amber : th.red;
+        g.fillStyle = keyDotColor(th, a);
         g.fillRect((T.x + T.w / 2) * m.s + m.ox - 1, (T.y + T.h / 2) * m.s + m.oy - 1, 2.4, 2.4);
       }
       g.fillStyle = th.amber;
