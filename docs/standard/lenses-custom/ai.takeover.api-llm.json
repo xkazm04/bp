@@ -42,7 +42,7 @@
     "rollup": { "method": "worst-of" }
   },
   "presentation": {
-    "glyph": { "path": "M2 3h12v8H7l-3 3v-3H2zM5 6h6M5 8.5h3" },
+    "glyph": { "path": "M2 3H14V11H7L4 14V11H2ZM5 6H11M5 8.5H8" },
     "line": "chain",
     "accent": { "dark": "#6fd3ff", "light": "#0a6c96" },
     "evidence": ["callsNoTimeout", "llmKeyExposure", "llmUnmetered", "untracedEndpoints"]

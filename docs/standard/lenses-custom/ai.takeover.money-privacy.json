@@ -43,7 +43,7 @@
     "rollup": { "method": "worst-of" }
   },
   "presentation": {
-    "glyph": { "path": "M8 2a6 6 0 1 0 0 12a6 6 0 1 0 0 -12M8 4v8M10 6H7a1.25 1.25 0 0 0 0 2.5h2a1.25 1.25 0 0 1 0 2.5H6" },
+    "glyph": { "path": "M8 2A6 6 0 1 0 8 14A6 6 0 1 0 8 2M8 4V12M10 6H7A1.25 1.25 0 0 0 7 8.5H9A1.25 1.25 0 0 1 9 11H6" },
     "line": "double",
     "accent": { "dark": "#f5a3d6", "light": "#9c2370" },
     "evidence": ["floatMoney", "nonIdempotentWrites", "auditTrailMissing", "piiInLogs"]
