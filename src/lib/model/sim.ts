@@ -9,7 +9,7 @@
 // the truth, not the replay.
 import type { Agent, Decision, DecisionOption, OptionEffect, ReplayEvent, ReplayType, StandingOrder, Swarm, AgentStatus, CrewRole, Squad, ViewId, Feature, Scalar } from '@/lib/data';
 import { fval } from '@/lib/standard/load';
-import { FIRST_MILESTONE, GA_MILESTONE, HOUR, LATER_MILESTONES, PULSE_OF, SPEND_CAP, type PulseKind } from './constants';
+import { FIRST_MILESTONE, GA_MILESTONE, HOUR, LATER_MILESTONES, PULSE_OF, SPEND_CAP, USD_PER_KTOK, type PulseKind } from './constants';
 import { isLiveSt } from './aggregates';
 import { personLens } from './lens';
 import { baseId, lineSuffix, pname, type Product } from './product';
@@ -33,11 +33,17 @@ function cardUnreviewed(f: Feature): boolean {
  * The standing-order rules the simulation can move (at a feature's rollout `r` and unit coverage `c`): read at
  * build to rank the sample's breaches, and re-read on one feature when a flag change or an answer touches it.
  */
-const RULES: Record<string, { hit: (f: Feature, r: number, c: number | null) => boolean; why: (f: Feature, r: number, c: number | null) => string }> = {
+const RULES: Record<string, { hit: (f: Feature, r: number, c: number | null, ms: (slug: string) => string | null) => boolean; why: (f: Feature, r: number, c: number | null) => string; scoped?: boolean }> = {
   'O-1': { hit: (f, r) => isLiveSt(f.stage) && cardUnreviewed(f) && r > 10, why: () => 'card data above 10% without a security review' },
   'O-2': { hit: (f, _r, c) => (f.stage === 'in-review' || isLiveSt(f.stage)) && c != null && c < 70, why: (_f, _r, c) => 'unit coverage ' + c + '%, under 70%' },
   'O-3': { hit: (f, r) => isLiveSt(f.stage) && (!flag(f, 'operations', 'alerting') || !flag(f, 'operations', 'runbook')) && r >= 50, why: (f, r) => 'rollout ' + r + '% without ' + (!flag(f, 'operations', 'alerting') ? 'an alert' : 'a runbook') },
+  // "A P1 bug stops the feature's rollout": an open P1 (quality.openBugsP1) on a feature that is rolled out at all
+  'O-6': { hit: (f, r) => (num(f, 'quality', 'openBugsP1') ?? 0) > 0 && r > 0, why: (f, r) => (num(f, 'quality', 'openBugsP1') ?? 0) + ' open P1 bug, rollout ' + r + '%' },
+  // "Assistant features stay behind an internal flag until M3 ships": in its scope, any rollout to customers before M3 has shipped
+  'O-8': { hit: (f, r, _c, ms) => isLiveSt(f.stage) && r > 0 && ms(M3) !== 'shipped', why: (_f, r) => 'rollout ' + r + '% before M3 ships', scoped: true },
 };
+/** O-8's "until M3 ships" (the sample's multi-location milestone). */
+const M3 = 'multi-location';
 
 export type AgentState = AgentStatus | 'paused';
 export interface SimAgent {
@@ -51,10 +57,18 @@ export interface SimDecision {
   opts: DecisionOption[]; rec: number; urg: 'high' | 'medium' | 'low'; since: number;
   blocks: number; freed: number; affects: string[]; arr: number; open: boolean;
   ans: { opt: number; t: number; at: number } | null; isNew: boolean; freedIds: string[];
+  /** Asked because of this standing order (an `ask` or `review` order's question). */
+  ord?: string;
 }
 export interface OrderScope { domain?: string; milestone?: string; surface?: string; all?: boolean; feats?: Record<string, 1>; label?: string }
-export interface SimOrder { id: string; by: string; lens: string; scope: OrderScope; text: string; since: string; n: number; vf: string[]; user: boolean }
-export interface SimEvent { t: number; agent: string; f: string; type: ReplayType; text: string; from: string | null; dec: string | null; syn?: boolean }
+/**
+ * What a written order overrode, so undoing it puts the hour back: `n` events held, the rollout each held feature's agents
+ * last asked for, where each refused agent last wanted to go, the questions it opened and the agents they made wait.
+ */
+export interface OrderHeld { n: number; rolls: Record<string, number>; moves: Record<string, string>; asks: string[]; snap: AgentFull[] }
+export interface SimOrder { id: string; by: string; lens: string; scope: OrderScope; text: string; since: string; n: number; vf: string[]; user: boolean; tpl?: OrderTemplate; held?: OrderHeld }
+/** `held`: the order (O-n) or answer (D-n) that overrode this event; the log shows it as "held by". */
+export interface SimEvent { t: number; agent: string; f: string; type: ReplayType; text: string; from: string | null; dec: string | null; syn?: boolean; held?: string }
 export interface Pulse { f: string; k: PulseKind; t0: number }
 export interface Target { ids: Record<string, 1>; n: number; label: string }
 export type PreviewKind = 'push' | 'pause' | 'resume' | 'order' | 'answer';
@@ -92,7 +106,9 @@ export interface SimOptions {
   wall?: () => number;
 }
 type AgentSnap = { a: SimAgent; status: AgentStatus; task: string; wait: string | null; pct: number };
-type AgentFull = AgentSnap & { f: string; synth: boolean; nextSynth: number; paused: boolean };
+export type AgentFull = AgentSnap & { f: string; synth: boolean; nextSynth: number; paused: boolean };
+const full = (a: SimAgent): AgentFull => ({ a, f: a.f, status: a.status, task: a.task, wait: a.wait, pct: a.pct, synth: a.synth, nextSynth: a.nextSynth, paused: a.paused });
+const REVIEW_EV: Partial<Record<ReplayType, 1>> = { 'pr-open': 1, 'review-pass': 1, 'review-changes': 1 };
 /** What one answer does (`planAnswer`): the agents it frees, then its option's effects, and the breaches they add or clear. */
 interface AnswerPlan {
   d: SimDecision; oi: number; freed: SimAgent[]; moves: { a: SimAgent; to: string }[];
@@ -102,7 +118,7 @@ interface AnswerPlan {
 /** What `decide` overwrote, so `undoDecision` restores exactly that. */
 interface DecisionUndo {
   d: SimDecision; oi: number; snap: AgentFull[]; dd: { isNew: boolean; freed: number; freedIds: string[] };
-  roll: [string, number | undefined, number | undefined][]; cov: [string, number | undefined][];
+  roll: [string, number | undefined, number | undefined, string | undefined][]; cov: [string, number | undefined][];
   ords: { o: SimOrder; vf: string[]; n: number }[]; breaches: number; asks: string[];
 }
 const sfx = (e: OptionEffect, sf: string): OptionEffect => (e.k === 'staff' ? { ...e, feature: e.feature + sf, from: e.from.domain ? { ...e.from, domain: e.from.domain + sf } : e.from } : { ...e, feature: e.feature + sf });
@@ -149,6 +165,12 @@ export class SwarmSim {
   roll: Record<string, number> = {}; prog: Record<string, number> = {};
   /** Rollouts an answer holds (agents' flag changes stop there) and unit coverage an answer set, by feature. */
   cap: Record<string, number> = {}; cov: Record<string, number> = {};
+  /** Which answer set each `cap` (its decision's base id): a held flag change logs "held by D-01" like an order's. */
+  capBy: Record<string, string> = {};
+  /** Spend accrues per whole simulated second up to here (deterministic whatever the frame rate). */
+  private paidT = 0;
+  /** Per-event toasts above 60x and while seeking: counted, then shown as one. */
+  private burst: { n: number; last: SimToast; at: number } | null = null; private seeking = false;
   undo: DecisionUndo | null = null;
   undo2: { kind: PreviewKind; snap: ({ order: string } | { a: SimAgent; f: string; status: AgentStatus; task: string; wait: string | null; paused: boolean; synth: boolean })[] } | null = null;
   breaches = 0; tally: Partial<Record<ReplayType, number>> = {};
@@ -301,18 +323,25 @@ export class SwarmSim {
   }
   agentsIn(ids: Record<string, 1>): SimAgent[] { return this.agents.filter((a) => ids[a.f]); }
   spend(): number { return Math.round(this.agents.reduce((s, a) => s + a.cost, 0)); }
+  /** The swarm's burn in USD an hour now: working, unpaused agents at their tokens a minute (`skip` leaves some out, for a preview). */
+  burn(skip?: (a: SimAgent) => boolean): number { let s = 0; for (const a of this.agents) if (a.status === 'working' && !a.paused && !skip?.(a)) s += a.tpm * 60 * USD_PER_KTOK / 1000; return Math.round(s); }
+  private accrue(to: number) {
+    const s = Math.floor(to), n = s - this.paidT; if (n <= 0) return;
+    for (const a of this.agents) if (a.status === 'working' && !a.paused) a.cost += (n * a.tpm * USD_PER_KTOK) / 60000;
+    this.paidT = s;
+  }
   msOf(fid: string): string | null { return this.P.F[fid] ? this.P.F[fid].milestone : null; }
   heatNow(fid: string, now: number): number { const h = this.heat[fid]; return h ? h.v * Math.exp(-(now - h.t) / 9000) : 0; }
   crewName(sq: string): string { return this.SQ[sq] ? this.SQ[sq].name.replace(' crew', '') : sq; }
 
   // ---------------------------------------------------------------- orders
   computeViolations() {
-    const P = this.P;
+    const P = this.P, ms = (s: string) => P.MS[s]?.state ?? null;
     // ranked by the same RULES the live re-check reads; the sample's stamp counts pick the top n
     const rules: Record<string, { rank: (f: Feature) => number | null; desc: boolean }> = {
-      'O-1': { rank: (f) => { const r = this.rolloutOf(f); return RULES['O-1'].hit(f, r, null) ? r : null; }, desc: true },
-      'O-2': { rank: (f) => { const c = this.covOf(f); return RULES['O-2'].hit(f, 0, c) ? c : null; }, desc: false },
-      'O-3': { rank: (f) => { const r = this.rolloutOf(f), m = (!flag(f, 'operations', 'alerting') ? 1 : 0) + (!flag(f, 'operations', 'runbook') ? 1 : 0); return RULES['O-3'].hit(f, r, null) ? m * 1000 + r : null; }, desc: true },
+      'O-1': { rank: (f) => { const r = this.rolloutOf(f); return RULES['O-1'].hit(f, r, null, ms) ? r : null; }, desc: true },
+      'O-2': { rank: (f) => { const c = this.covOf(f); return RULES['O-2'].hit(f, 0, c, ms) ? c : null; }, desc: false },
+      'O-3': { rank: (f) => { const r = this.rolloutOf(f), m = (!flag(f, 'operations', 'alerting') ? 1 : 0) + (!flag(f, 'operations', 'runbook') ? 1 : 0); return RULES['O-3'].hit(f, r, null, ms) ? m * 1000 + r : null; }, desc: true },
       'O-5': { rank: (f) => (/kiosk/i.test(f.name + ' ' + f.summary) && txt(f, 'design', 'a11y') === 'fail' ? 1 : null), desc: true },
     };
     for (const o of this.orders) {
@@ -343,6 +372,33 @@ export class SwarmSim {
     if (!this.ordCache) { this.ordCache = {}; for (const o of this.orders) this.ordCache[o.id] = this.orderFeats(o); }
     return this.ordCache;
   }
+  /** The first written order of template `tpl` that governs this feature. */
+  orderOn(fid: string, tpl: OrderTemplate): SimOrder | null {
+    const m = this.ordMap();
+    for (const o of this.orders) if (o.tpl === tpl && m[o.id]?.[fid]) return o;
+    return null;
+  }
+  /** An order's one question on a feature (per (order, feature)). */
+  oq(o: SimOrder, fid: string): string { return o.id + '@' + fid; }
+  /**
+   * The one rollout constraint every flag change passes: the lowest of an answer's hold (`cap`, set by decide) and the
+   * 10% of each `ask` order over the feature whose question is not answered yet. Null = nothing holds it.
+   */
+  rollLimit(fid: string): { max: number; by: string; o: SimOrder | null } | null {
+    let lim: { max: number; by: string; o: SimOrder | null } | null = this.cap[fid] != null ? { max: this.cap[fid], by: this.capBy[fid] ?? 'an answer', o: null } : null;
+    const m = this.ordMap();
+    for (const o of this.orders) {
+      if (o.tpl !== 'ask' || !m[o.id]?.[fid] || this.DEC[this.oq(o, fid)]?.ans) continue;
+      if (!lim || 10 < lim.max) lim = { max: 10, by: o.id, o };
+    }
+    return lim;
+  }
+  /** A `review` order whose question on this feature is open: build progress there waits for the answer. */
+  reviewGate(fid: string): SimOrder | null {
+    const m = this.ordMap();
+    for (const o of this.orders) if (o.tpl === 'review' && m[o.id]?.[fid] && this.DEC[this.oq(o, fid)]?.open) return o;
+    return null;
+  }
   ordersOn(fid: string): SimOrder[] { const m = this.ordMap(); return this.orders.filter((o) => m[o.id] && m[o.id][fid]); }
   breachesOn(fid: string): SimOrder[] { return this.orders.filter((o) => o.vf.includes(fid)); }
   scopeWords(o: SimOrder): string {
@@ -367,26 +423,91 @@ export class SwarmSim {
     const now = this.now();
     a.tr = { from: a.f, to, t0: now, dur: 1700 }; a.f = to; a.flash = now;
   }
+  /**
+   * The one constraint path every event passes before it applies (answers' rollout holds and written orders alike).
+   * Null = it applies as recorded. Otherwise `by` holds it (logged "held by"), and a flag change applies at `r`.
+   * Opens the order's question where its rule says so (one per order and feature).
+   */
+  private govern(e: SimEvent, A: SimAgent | undefined, discrete: { v: boolean }): { by: string; r?: number } | null {
+    if (this.live) return null;
+    const f = e.f, t = e.type;
+    if (t === 'flag-change') {
+      const m = /(\d+)%/.exec(e.text); if (!m) return null;
+      const want = +m[1], lim = this.rollLimit(f);
+      if (!lim || want <= lim.max) { for (const o of this.orders) if (o.held) delete o.held.rolls[f]; return null; }
+      if (lim.o) { const h = this.heldOf(lim.o); h.n++; h.rolls[f] = want; if (this.orderAsk(lim.o, f, A, want)) discrete.v = true; }
+      return { by: lim.by, r: lim.max };
+    }
+    if (t === 'move') {
+      if (!A) return null;
+      const o = A.f !== f ? this.orderOn(f, 'hold') : null;
+      if (!o) { for (const x of this.orders) if (x.held) delete x.held.moves[A.id]; return null; }
+      const h = this.heldOf(o); h.n++; h.moves[A.id] = f;
+      if (A.status === 'working') A.task = 'held by ' + o.id + ': stays off ' + this.P.F[f].name;
+      return { by: o.id };
+    }
+    if (t === 'commit') { const o = this.reviewGate(f); if (o) { this.heldOf(o).n++; return { by: o.id }; } return null; }
+    if (REVIEW_EV[t]) { const o = this.orderOn(f, 'review'); if (o && this.orderAsk(o, f, A)) discrete.v = true; }
+    return null;
+  }
+  private heldOf(o: SimOrder): OrderHeld { return (o.held ||= { n: 0, rolls: {}, moves: {}, asks: [], snap: [] }); }
+  /**
+   * Open an order's question on a feature for its author, once per (order, feature). `ask`: the agent wanted `want`%;
+   * "Go ahead" sets it through the answer reducer (a roll effect), "Hold at 10%" keeps the order's limit as an answer's
+   * cap. `review`: build progress waits until either answer. The agent that raised it waits on it.
+   */
+  private orderAsk(o: SimOrder, fid: string, A: SimAgent | undefined, want?: number): boolean {
+    const id = this.oq(o, fid); if (this.DEC[id]) return false;
+    const P = this.P, F = P.F[fid], ask = o.tpl === 'ask', who = A ? A.base : 'An agent';
+    const d: SimDecision = {
+      id, base: o.id + '/' + (F.code || baseId(fid)), b: A?.b ?? 0, f: fid, dom: F.domain, lens: o.lens, decider: o.by, by: A?.id ?? '',
+      q: ask ? who + ' wants ' + F.name + ' at ' + want + '%. Your order ' + o.id + ' says ask above 10%.' : F.name + ' is ready for review. Your order ' + o.id + ' says a human reviews before it merges.',
+      opts: ask ? [
+        { label: 'Go ahead to ' + want + '%', consequence: 'The flag moves to ' + want + '% and is held there.', effects: [{ k: 'roll', feature: fid, pct: want! }] },
+        { label: 'Hold at 10%', consequence: 'The flag stays at 10% or below; agents work on.', effects: [{ k: 'cap', feature: fid, max: 10 }] },
+      ] : [
+        { label: 'Approve the merge', consequence: 'Build work here resumes.' },
+        { label: 'Send back', consequence: 'Agents rework it; build work resumes on the changes.' },
+      ],
+      rec: 0, urg: ask ? 'high' : 'medium', since: 0, blocks: A && A.status === 'working' ? 1 : 0, freed: 0, affects: [fid], arr: 0,
+      open: false, ans: null, isNew: false, freedIds: [], ord: o.id,
+    };
+    const h = this.heldOf(o); h.asks.push(id); if (A && A.status === 'working') h.snap.push(full(A));
+    this.decisions.push(d); this.DEC[id] = d;
+    this.openDecision(d, A, true);
+    this.evToast({ strong: 'Asked because of ' + o.id, text: (ask ? F.name + ' held at 10%' : F.name + ' waits for review') + ' · for ' + pname(P, o.by), fid });
+    return true;
+  }
+  private evToast(t: SimToast) {
+    if (this.speed <= 60 && !this.seeking) { this.toast(t); return; }
+    if (this.burst) { this.burst.n++; this.burst.last = t; } else this.burst = { n: 1, last: t, at: this.now() };
+  }
+  private flushBurst(force: boolean) {
+    const b = this.burst; if (!b || (!force && this.now() - b.at < 2000)) return;
+    this.burst = null;
+    this.toast(b.n === 1 ? b.last : { strong: b.n + ' updates', text: 'latest: ' + b.last.strong + ' · ' + b.last.text, fid: b.last.fid });
+  }
   private apply(e: SimEvent, discrete: { v: boolean }) {
     const A = this.AG[e.agent], f = e.f, F = this.P.F[f];
     if (!F) return;
-    this.log.unshift(e); if (this.log.length > 400) this.log.pop();
+    const g = this.govern(e, A, discrete), le: SimEvent = g ? { ...e, text: e.text + ' · held by ' + g.by + (g.r != null ? ' at ' + g.r + '%' : ''), held: g.by } : e;
+    this.log.unshift(le); if (this.log.length > 400) this.log.pop();
     this.tally[e.type] = (this.tally[e.type] || 0) + 1;
     const t = e.type;
-    if (t === 'move') { if (A) { this.travel(A, f); if (A.status === 'working') A.task = 'moved here: ' + F.name; discrete.v = true; } }
-    else if (t === 'commit' && !this.live) this.prog[f] = (this.prog[f] || 0) + 0.7;
-    else if (t === 'flag-change') { const m = /(\d+)%/.exec(e.text); if (m) { const c = this.cap[f], r = c != null ? Math.min(c, +m[1]) : +m[1], bs = this.ruleDiff(f, r); this.roll[f] = r; this.applyBreaks(bs, true); discrete.v = true; } }
+    if (t === 'move') { if (A && !g) { this.travel(A, f); if (A.status === 'working') A.task = 'moved here: ' + F.name; discrete.v = true; } }
+    else if (t === 'commit' && !this.live) { if (!g) this.prog[f] = (this.prog[f] || 0) + 0.7; }
+    else if (t === 'flag-change') { const m = /(\d+)%/.exec(e.text); if (m) { const r = g?.r ?? +m[1], bs = this.ruleDiff(f, r); this.roll[f] = r; this.applyBreaks(bs, true); discrete.v = true; } }
     else if (t === 'task-done') { if (A) { A.done++; A.pct = 3; } }
     else if (t === 'decision-asked') { const d = e.dec ? this.DEC[e.dec] : null; if (d) { this.openDecision(d, A); discrete.v = true; } }
-    this.pulse(f, PULSE_OF[t] || 'c');
+    this.pulse(f, g ? 'bad' : PULSE_OF[t] || 'c');
     if (A) A.act = this.now();
-    this.listener?.event(e);
+    this.listener?.event(le);
   }
   private openDecision(d: SimDecision, A: SimAgent | undefined, quiet = false) {
     d.open = true; d.isNew = true; d.since = this.clockMs();
     if (A && A.status === 'working') { A.status = 'waiting'; A.wait = d.id; A.task = 'waiting: ' + d.q; }
     this.index(); this.pulse(d.f, 'ask');
-    if (!quiet) this.toast({ strong: 'New question', text: 'from ' + (A ? A.base : 'an agent') + ' · ' + this.P.F[d.f].name + ' · for ' + pname(this.P, d.decider), fid: d.f });
+    if (!quiet) this.evToast({ strong: 'New question', text: 'from ' + (A ? A.base : 'an agent') + ' · ' + this.P.F[d.f].name + ' · for ' + pname(this.P, d.decider), fid: d.f });
   }
   /**
    * Breaches by difference, read BEFORE the change: the order rules on one feature only, at its current rollout /
@@ -396,10 +517,10 @@ export class SwarmSim {
    */
   private ruleDiff(fid: string, r?: number, c?: number): { o: SimOrder; f: string; add: boolean }[] {
     const F = this.P.F[fid], out: { o: SimOrder; f: string; add: boolean }[] = []; if (!F) return out;
-    const r0 = this.rolloutOf(F), c0 = this.covOf(F), r1 = r ?? r0, c1 = c ?? c0;
+    const r0 = this.rolloutOf(F), c0 = this.covOf(F), r1 = r ?? r0, c1 = c ?? c0, ms = (s: string) => this.P.MS[s]?.state ?? null;
     for (const o of this.orders) {
-      const R = o.user ? null : RULES[o.id]; if (!R) continue;
-      const was = R.hit(F, r0, c0), now = R.hit(F, r1, c1), on = o.vf.includes(fid);
+      const R = o.user ? null : RULES[o.id]; if (!R || (R.scoped && !this.ordMap()[o.id]?.[fid])) continue;
+      const was = R.hit(F, r0, c0, ms), now = R.hit(F, r1, c1, ms), on = o.vf.includes(fid);
       if (now && !was && !on) out.push({ o, f: fid, add: true });
       else if (was && !now && on) out.push({ o, f: fid, add: false });
     }
@@ -410,7 +531,7 @@ export class SwarmSim {
       const F = this.P.F[f], i = o.vf.indexOf(f); if (!F || add === i >= 0) continue;
       if (add) { o.vf.push(f); o.n++; this.breaches++; this.pulse(f, 'bad'); }
       else { o.vf.splice(i, 1); o.n = Math.max(0, o.n - 1); this.pulse(f, 'ok'); }
-      if (toast) this.toast(add ? { strong: 'Order ' + o.id + ' breached', text: 'at ' + F.name + ' · ' + RULES[o.id].why(F, this.rolloutOf(F), this.covOf(F)), fid: f } : { strong: 'Breach cleared', text: o.id + ' (' + pname(this.P, o.by) + ') holds again at ' + F.name, fid: f });
+      if (toast) this.evToast(add ? { strong: 'Order ' + o.id + ' breached', text: 'at ' + F.name + ' · ' + RULES[o.id].why(F, this.rolloutOf(F), this.covOf(F)), fid: f } : { strong: 'Breach cleared', text: o.id + ' (' + pname(this.P, o.by) + ') holds again at ' + F.name, fid: f });
     }
   }
   /** Advance the hour by wall time `dtMs` at the current speed. Returns true if anything discrete changed. */
@@ -419,12 +540,15 @@ export class SwarmSim {
     const dt = (Math.min(dtMs, 90) / 1000) * this.speed, last = this.t;
     this.t = Math.min(HOUR, this.t + dt);
     const disc = { v: false };
-    while (this.i < this.events.length && this.events[this.i].t <= this.t) this.apply(this.events[this.i++], disc);
+    while (this.i < this.events.length && this.events[this.i].t <= this.t) { const e = this.events[this.i++]; this.accrue(e.t); this.apply(e, disc); }
+    this.accrue(this.t);
     const step = this.t - last;
     for (const a of this.agents) {
       if (a.status === 'working' && !a.paused) a.pct = Math.min(99, a.pct + step * 0.012);
       if (a.synth && !a.paused && this.t >= a.nextSynth && this.P.F[a.f]) {
         a.nextSynth = this.t + 12 + hash01(a.id + this.t) * 26;
+        // a hold order: no new work starts inside it, so an agent there generates no commits
+        const ho = this.orderOn(a.f, 'hold'); if (ho) { if (a.status === 'working' && !a.task.startsWith('held by')) { a.task = 'held by ' + ho.id + ': no new work here'; disc.v = true; } continue; }
         this.apply({ t: this.t, agent: a.id, f: a.f, type: 'commit', text: 1 + Math.floor(hash01(a.id + a.f + this.t) * 5) + ' commits on ' + this.P.F[a.f].name, from: null, dec: null, syn: true }, disc);
       }
     }
@@ -432,6 +556,7 @@ export class SwarmSim {
       this.playing = false; this.over = true; disc.v = true;
       this.toast({ strong: 'The hour is over.', text: 'That was the simulated swarm’s next 60 minutes.', action: 'replay' });
     }
+    this.flushBurst(this.over);
     if (disc.v) { this.index(); this.bump(); }
     return disc.v;
   }
@@ -439,7 +564,9 @@ export class SwarmSim {
     if (this.live) return;
     t = Math.max(0, Math.min(HOUR, t)); if (t <= this.t) return;
     const disc = { v: false };
-    while (this.i < this.events.length && this.events[this.i].t <= t) this.apply(this.events[this.i++], disc);
+    this.seeking = true;
+    while (this.i < this.events.length && this.events[this.i].t <= t) { const e = this.events[this.i++]; this.accrue(e.t); this.apply(e, disc); }
+    this.accrue(t); this.seeking = false; this.flushBurst(true);
     for (const a of this.agents) if (a.status === 'working' && !a.paused) a.pct = Math.min(99, a.pct + (t - this.t) * 0.012);
     this.t = t; this.index(); this.bump();
   }
@@ -447,7 +574,7 @@ export class SwarmSim {
     if (this.live) return;
     const sp = this.speed;
     this.t = 0; this.playing = true; this.speed = sp; this.i = 0; this.log = []; this.pulses = []; this.heat = {}; this.roll = {};
-    this.prog = {}; this.cap = {}; this.cov = {}; this.undo = null; this.undo2 = null; this.over = false; this.breaches = 0; this.tally = {}; this.ordCache = null;
+    this.prog = {}; this.cap = {}; this.cov = {}; this.capBy = {}; this.paidT = 0; this.burst = null; this.undo = null; this.undo2 = null; this.over = false; this.breaches = 0; this.tally = {}; this.ordCache = null;
     this.build(); this.bump();
   }
   setSpeed(n: number) { if (this.live) return; this.speed = n; if (!this.over) this.playing = true; this.bump(); }
@@ -548,13 +675,13 @@ export class SwarmSim {
     if (this.live) { this.decideLive(d, oi); return; }
     const pl = this.planAnswer(d, oi), pv = this.describe(pl), now = this.now(), P = this.P;
     // keep what the plan overwrites, before any of it is written
-    const snap: AgentFull[] = [], keep = (a: SimAgent) => { if (!snap.some((s) => s.a === a)) snap.push({ a, f: a.f, status: a.status, task: a.task, wait: a.wait, pct: a.pct, synth: a.synth, nextSynth: a.nextSynth, paused: a.paused }); };
+    const snap: AgentFull[] = [], keep = (a: SimAgent) => { if (!snap.some((s) => s.a === a)) snap.push(full(a)); };
     for (const a of pl.freed) keep(a);
     for (const m of pl.moves) keep(m.a);
     for (const x of pl.asks) if (x.hold) keep(x.hold);
     this.undo = {
       d, oi, snap, dd: { isNew: d.isNew, freed: d.freed, freedIds: d.freedIds },
-      roll: pl.rolls.map((r) => [r.f, this.roll[r.f], this.cap[r.f]]), cov: pl.cover.map((c) => [c.f, this.cov[c.f]]),
+      roll: pl.rolls.map((r) => [r.f, this.roll[r.f], this.cap[r.f], this.capBy[r.f]]), cov: pl.cover.map((c) => [c.f, this.cov[c.f]]),
       ords: [...new Set(pl.breaks.map((b) => b.o))].map((o) => ({ o, vf: o.vf.slice(), n: o.n })), breaches: this.breaches, asks: pl.asks.map((x) => x.d.id),
     };
     d.open = false; d.isNew = false; d.ans = { opt: oi, t: this.t, at: now };
@@ -563,7 +690,7 @@ export class SwarmSim {
       a.nextSynth = this.t + 3 + hash01(a.id) * 10;
     }
     d.freed += pl.freed.length; d.freedIds = pl.freed.map((a) => a.id);
-    for (const r of pl.rolls) { this.roll[r.f] = r.to; this.cap[r.f] = r.cap; }
+    for (const r of pl.rolls) { this.roll[r.f] = r.to; this.cap[r.f] = r.cap; this.capBy[r.f] = d.base; }
     for (const c of pl.cover) this.cov[c.f] = c.to;
     for (const m of pl.moves) {
       const a = m.a; a.status = 'working'; a.wait = null; a.synth = true; a.nextSynth = this.t + 4 + hash01(a.id) * 14; a.task = 'moved by ' + d.base + ': ' + P.F[m.to].name;
@@ -692,7 +819,7 @@ export class SwarmSim {
       const a = s.a; a.status = s.status; a.task = s.task; a.wait = s.wait; a.pct = s.pct; a.synth = s.synth; a.nextSynth = s.nextSynth; a.paused = s.paused;
       if (a.f !== s.f) this.travel(a, s.f);
     }
-    for (const [f, r, c] of u.roll) { if (r == null) delete this.roll[f]; else this.roll[f] = r; if (c == null) delete this.cap[f]; else this.cap[f] = c; }
+    for (const [f, r, c, by] of u.roll) { if (r == null) delete this.roll[f]; else this.roll[f] = r; if (c == null) delete this.cap[f]; else this.cap[f] = c; if (by == null) delete this.capBy[f]; else this.capBy[f] = by; }
     for (const [f, c] of u.cov) { if (c == null) delete this.cov[f]; else this.cov[f] = c; }
     for (const o of u.ords) { o.o.vf = o.vf; o.o.n = o.n; }
     this.breaches = u.breaches;
@@ -722,7 +849,7 @@ export class SwarmSim {
     return { kind: 'push', title, moves, targets: tf, paused: [], lines, n: donors.length };
   }
   previewGA(wingName: (fid: string) => string): Preview | null {
-    const donors = this.agents.filter((a) => { const m = this.msOf(a.f); return !!m && LATER_MILESTONES.includes(m) && a.status !== 'failed' && !a.paused; });
+    const donors = this.agents.filter((a) => { const m = this.msOf(a.f); return !!m && LATER_MILESTONES.includes(m) && a.status !== 'failed' && !a.paused && !this.orderOn(a.f, 'first'); });
     const targets = this.P.features.filter((f) => f.milestone === GA_MILESTONE && f.stage !== 'live');
     const p = this.mkPush('Payments GA first', donors, targets, ['Standing order O-4 (Mara) already allows pulling agents from M3 and M4', 'M3 Multi-location and M4 Assistant slow down until you send the agents back'], wingName);
     if (p) p.order = 'O-4';
@@ -733,8 +860,9 @@ export class SwarmSim {
     const ids = tgt.ids;
     const targets = this.P.features.filter((f) => ids[f.id] && f.stage !== 'live' && f.stage !== 'deprecated');
     const rank = (a: SimAgent) => { const m = this.msOf(a.f); return m && LATER_MILESTONES.includes(m) ? 0 : m == null ? 1 : m === FIRST_MILESTONE ? 2 : 3; };
-    const donors = this.agents.filter((a) => !ids[a.f] && a.status === 'working' && !a.paused && this.msOf(a.f) !== GA_MILESTONE).sort((a, b) => rank(a) - rank(b) || a.pct - b.pct).slice(0, 5);
-    return this.mkPush('Put the swarm on ' + (tgt.label || 'this selection'), donors, targets, ['Only agents that are working and not on Payments GA are pulled'], wingName);
+    const donors = this.agents.filter((a) => !ids[a.f] && a.status === 'working' && !a.paused && this.msOf(a.f) !== GA_MILESTONE && !this.orderOn(a.f, 'first')).sort((a, b) => rank(a) - rank(b) || a.pct - b.pct).slice(0, 5);
+    const kept = this.orders.filter((o) => o.tpl === 'first').map((o) => o.id);
+    return this.mkPush('Put the swarm on ' + (tgt.label || 'this selection'), donors, targets, ['Only agents that are working and not on Payments GA are pulled'].concat(kept.length ? ['Agents under ' + kept.join(', ') + ' (go first) stay where they are'] : []), wingName);
   }
   previewPause(tgt: Target, resume: boolean): Preview | null {
     if (!tgt.n) return null;
@@ -748,12 +876,28 @@ export class SwarmSim {
       lines: [ag.length + ' agent' + s + (resume ? ' pick up where they stopped' : ' stop where they are: no work is lost'), n ? n + ' open question' + (n > 1 ? 's stay' : ' stays') + ' open' : 'No open question is affected'],
     };
   }
-  previewOrder(tgt: Target, tpl: OrderTemplate): Preview | null {
+  /**
+   * A written order before it applies: what it would hold in the rest of the recorded hour (a dry read of the events
+   * still to come, by the same rules `govern` applies), and who signs it (`who`; null = nobody to sign, it is refused).
+   */
+  previewOrder(tgt: Target, tpl: OrderTemplate, who: string | null = null): Preview | null {
     if (!tgt.n) return null;
-    const T = ORDER_TEMPLATES[tpl], gov = this.P.features.filter((f) => tgt.ids[f.id]).length;
+    const T = ORDER_TEMPLATES[tpl], gov = this.P.features.filter((f) => tgt.ids[f.id]).length, s = (n: number) => (n === 1 ? '' : 's');
+    let held = 0; const asked = new Set<string>();
+    for (let k = this.i; k < this.events.length; k++) {
+      const e = this.events[k]; if (!tgt.ids[e.f]) continue;
+      if (tpl === 'ask' && e.type === 'flag-change') { const m = /(\d+)%/.exec(e.text); if (m && +m[1] > 10) { held++; asked.add(e.f); } }
+      else if (tpl === 'hold' && e.type === 'move' && this.AG[e.agent]?.f !== e.f) held++;
+      else if (tpl === 'review') { if (REVIEW_EV[e.type]) asked.add(e.f); else if (e.type === 'commit' && asked.has(e.f)) held++; }
+    }
+    const inside = this.agents.filter((a) => tgt.ids[a.f]).length, name = who ? pname(this.P, who) : null;
+    const rule = tpl === 'ask' ? held + ' flag change' + s(held) + ' above 10% held at 10% in the rest of the hour; ' + asked.size + ' question' + s(asked.size) + ' for ' + (name ?? 'its author')
+      : tpl === 'hold' ? held + ' move' + s(held) + ' into it refused in the rest of the hour; agents inside generate no new commits'
+      : tpl === 'review' ? asked.size + ' review question' + s(asked.size) + ' for ' + (name ?? 'its author') + ' in the rest of the hour; ' + held + ' recorded commit' + s(held) + ' held until answered'
+      : 'No recorded event changes; push previews leave its ' + inside + ' agent' + s(inside) + ' where they are';
     return {
-      kind: 'order', title: 'Standing order: ' + T, moves: [], targets: tgt.ids, paused: [], tpl, text: T, label: tgt.label, n: 0,
-      lines: ['Written on ' + gov + ' feature' + (gov > 1 ? 's' : '') + ' (' + (tgt.label || 'selection') + ')', 'Shows as a stamp on those places; a breach is marked where it happens', 'Agents read it before their next task'],
+      kind: 'order', title: 'Standing order: ' + T, moves: [], targets: tgt.ids, paused: [], tpl, text: T, label: tgt.label, n: held,
+      lines: ['Written on ' + gov + ' feature' + s(gov) + ' (' + (tgt.label || 'selection') + ')', rule, name ? 'Signed by ' + name : 'Nobody to sign it: pick who you are (or a lens one person reads) first'],
     };
   }
   previewResearch(): Preview | null {
@@ -762,7 +906,8 @@ export class SwarmSim {
     const ids: Record<string, 1> = {}; for (const a of ag) ids[a.f] = 1;
     return {
       kind: 'pause', title: 'Pause the research crew', moves: [], targets: ids, paused: ag, n: ag.length, order: 'O-7',
-      lines: [ag.length + ' research agents stop (spend cap order O-7 says research goes first)', 'Today’s swarm spend: $' + this.spend().toLocaleString('en-US') + ' of the $' + SPEND_CAP.toLocaleString('en-US') + ' cap'],
+      lines: [ag.length + ' research agents stop (spend cap order O-7 says research goes first)', 'Today’s swarm spend: $' + this.spend().toLocaleString('en-US') + ' of the $' + SPEND_CAP.toLocaleString('en-US') + ' cap',
+        ((b0, b1) => (b0 === b1 ? 'None of them is working now, so the burn stays at $' + b0 + ' an hour' : 'The burn falls from $' + b0 + ' to $' + b1 + ' an hour'))(this.burn(), this.burn((a) => a.sq === 'scout'))],
     };
   }
   commit(p: Preview, who: string | null) {
@@ -780,8 +925,10 @@ export class SwarmSim {
       const now = this.now();
       for (const a of p.paused) { snap.push({ a, f: a.f, status: a.status, task: a.task, wait: a.wait, paused: a.paused, synth: a.synth }); a.paused = p.kind === 'pause'; a.flash = now; }
     } else if (p.kind === 'order') {
-      const no = 'O-' + (this.orders.length + 1), by = who || 'mara';
-      this.orders.push({ id: no, by, lens: personLens(this.P, by) ?? 'general', scope: { feats: p.targets, label: p.label }, text: p.text || '', since: new Date(this.at0 + this.t * 1000).toISOString().slice(0, 10), n: 0, vf: [], user: true });
+      // signed by the reader; nobody to sign it = refused (never a default author)
+      if (!who) { this.toast({ strong: 'Order not written:', text: 'nobody to sign it. Pick who you are (or a lens one person reads), then write it again.' }); return; }
+      const no = 'O-' + (this.orders.length + 1), by = who;
+      this.orders.push({ id: no, by, lens: personLens(this.P, by) ?? 'general', scope: { feats: p.targets, label: p.label }, text: p.text || '', since: new Date(this.at0 + this.t * 1000).toISOString().slice(0, 10), n: 0, vf: [], user: true, tpl: p.tpl });
       this.ordCache = null; snap.push({ order: no });
     }
     this.undo2 = { snap, kind: p.kind };
@@ -792,13 +939,30 @@ export class SwarmSim {
   undoCommand() {
     const u = this.undo2; if (!u) return;
     for (const s of u.snap) {
-      if ('order' in s) { this.orders = this.orders.filter((o) => o.id !== s.order); this.ordCache = null; continue; }
+      if ('order' in s) { const o = this.orders.find((x) => x.id === s.order); this.orders = this.orders.filter((x) => x.id !== s.order); this.ordCache = null; if (o?.held) this.unhold(o.held); continue; }
       const a = s.a; a.status = s.status; a.task = s.task; a.wait = s.wait; a.paused = s.paused; a.synth = s.synth;
       if (a.f !== s.f) this.travel(a, s.f);
     }
     this.undo2 = null; this.index();
     this.toast({ strong: 'Command taken back', text: '' });
     this.bump();
+  }
+  /**
+   * A written order taken back: its unanswered questions go (the agents they held wait as before), each feature it held
+   * gets the rollout its agents last asked for, and each agent it kept out goes where it last wanted to. An answered
+   * question stays: that answer is the reader's own decision, with its own undo.
+   */
+  private unhold(h: OrderHeld) {
+    const gone = new Set<string>();
+    for (const id of h.asks) { const d = this.DEC[id]; if (d && !d.ans) { gone.add(id); delete this.DEC[id]; } }
+    if (gone.size) this.decisions = this.decisions.filter((d) => !gone.has(d.id));
+    for (const s of h.snap) if (s.a.wait && gone.has(s.a.wait)) { s.a.status = s.status; s.a.task = s.task; s.a.wait = s.wait; }
+    for (const f in h.rolls) {
+      if (this.cap[f] != null) continue;   // an answer holds it now
+      const r = h.rolls[f], bs = this.ruleDiff(f, r); this.roll[f] = r; this.applyBreaks(bs, false);
+    }
+    for (const id in h.moves) { const a = this.AG[id]; if (a && this.P.F[h.moves[id]]) { this.travel(a, h.moves[id]); if (a.task.startsWith('held by')) a.task = 'moved here: ' + this.P.F[h.moves[id]].name; } }
+    for (const a of this.agents) if (a.task.startsWith('held by') && a.status === 'working' && !h.moves[a.id]) a.task = 'back to work: ' + (this.P.F[a.f]?.name ?? a.f);
   }
   /** Drop visual bookkeeping that has expired (called by the engine, not per frame). */
   expire(now: number) {
