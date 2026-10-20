@@ -70,7 +70,7 @@ main checkout's. Nothing was fixed while measuring.
 
 | Goal | Measure | Result | Evidence |
 |---|---|---|---|
-| 1 Check chain and perf | `npm run check` with 44 or more passed and 0 failed; `python scripts/perf.py` holds 60 fps at `?scale=4` | **check chain pass; perf fail** (re-measured 2026-10-20, see the readings below) | Check chain: `node .../isolated-gate.mjs npm run check` (it replaces the worktree junction with `npm ci`), on `82a0743`: `45 passed, 0 failed, 0 skipped of 45`, typecheck included. Perf: `python scripts/perf.py` at `?scale=4`, three runs, p50 33.3, 16.7 and 33.2 ms (30, 60, 30 fps), p95 66.7, 66.6 and 50 ms. The 60 fps budget did not hold in these runs. |
+| 1 Check chain and perf | `npm run check` with 44 or more passed and 0 failed; `python scripts/perf.py` holds 60 fps at `?scale=4` | **check chain pass; perf p50 pass on a near-idle host** (6 of 6 runs p50 16.7 ms, re-measured 2026-10-21, see 'Milestone 1 idle re-measure'; p95 33.3 to 33.4 ms in 4 of 6 runs; the 2026-10-20 loaded reading failed) | Check chain: `node .../isolated-gate.mjs npm run check` (it replaces the worktree junction with `npm ci`), on `82a0743`: `45 passed, 0 failed, 0 skipped of 45`, typecheck included. Perf: `python scripts/perf.py` at `?scale=4`, three runs, p50 33.3, 16.7 and 33.2 ms (30, 60, 30 fps), p95 66.7, 66.6 and 50 ms. The 60 fps budget did not hold in these runs. |
 | 2 `apps/server` serves Kettle | with no products file, GET `/api/products/kettle/structure` answers 200 with the wing count of `packages/core/data`, and a Kettle write answers 4xx | **pass** | `npm run check:server`: `ok GET /api/products/kettle/structure: 200 with no products file (13 wings)`, `ok kettle structure: wing count equals the data's 13`, `ok a Kettle write: 4xx`, `ok Kettle stays unlisted: GET /api/products still []`, `check-server: 14 passed, 0 failed` (`bfc8e66`) |
 | 3 TS types decided and enforced | a dated decision in `tech-stack.md` §3 and `packages/schema/README.md`; `check:schema` fails on its seeded control | **pass** | `tech-stack.md` §3: *Decided 2026-10-20 (WP1.5 follow-up).*, with **TS types.** `types.ts` stays the hand-written source. `packages/schema/README.md`: `### Decision (2026-10-20): hand-written TS types, generated TS as a parity artifact`. `npm run check:schema`: `ok types.ts agrees with the generated types on every field and its optionality (29 shapes ...)` and `ok control: Rule.reason made optional in the generated types fails the parity` (`bc7cdfb`) |
 | 4 The 5 unmapped fields carried | `check:schema` fails when a schema field is neither mapped in `BpSchema.h` nor carried by the generated fix-up, shown by its seeded control | **pass** | `npm run check:schema`: `ok every schema field is held in UE: 197 mapped, 5 renamed and 2 raw carried by FixUp` and `ok control: deleting Rule.short's fix-up fails the coverage`. The five fields are `short`, `default`, `$schema` (renamed) and `glyph`, `cross_refs` (raw JSON text, `BpSchemaFixups.h:101` for `cross_refs`). The read-through line: `FixUp carries AppStructure.Schema_ 2, LensManifest.Schema_ 23, LensManifest.Short_ 23, Rule.Short_ 132, Health.Default_ 23, Presentation.Glyph_ 23` (`624d15e`) |
@@ -101,6 +101,39 @@ evidence that the engine regressed (see the caveats).
 - Observation, not a gate: none of the 15 sample documents carries `cross_refs`, so the FixUp read-through
   never exercises its raw copy. Only the coverage check holds it. A sample or fixture containing
   `cross_refs` would close that.
+
+### Milestone 1 idle re-measure (2026-10-21)
+
+Retake of the loaded `d110384` perf reading, on Lynx (Windows ARM64), master tip `cd0272a`, in a builder worktree
+with an isolated install (`isolated-gate.mjs`: the junction replaced by `npm ci`). No file other than this one changed.
+
+- **Idle-state evidence.** Check used: `Get-CimInstance Win32_Process` filtered for node, chrome, chromium, claude,
+  python and next, plus `Get-Counter '\Processor(_Total)\% Processor Time'`. Result: no other builder run (the
+  only node processes were the fleet runner and this run's own await), no `next` server, no Playwright Chromium.
+  **The host was not fully idle:** the operator's own session was up (desktop Chrome with about 20 renderer
+  processes, several interactive `claude` sessions, a ComfyUI python and two uvicorn servers). Total CPU was 8 to 12 % before the build, 14.9 to 23.6 % when the server had just started (before set 1)
+  and 13.1 to 15.2 % before set 2 (1 to 2 s samples). So this is a near-idle reading, not an exclusive one. Nothing of the operator's
+  was stopped.
+- **Build and serve.** `npm run build` (isolated install), `PORT=3217 npm start` (HTTP 200 on `/v/subtle`),
+  `BP_BASE=http://localhost:3217 RUNS=3 python scripts/perf.py` (default `/v/subtle?intro=0&scale=4`, 1920x1080 @1,
+  headless Chromium). Set 2 ran about 4 minutes after set 1 on the same server. Output lines, verbatim:
+  - Set 1, run 1: `{"n": 159, "p50": 16.7, "p95": 33.4, "p99": 50.1, "max": 66.6, "rasters": 7, "engineFrames": 159, "lastRasterMs": 26.8}`
+  - Set 1, run 2: `{"n": 175, "p50": 16.7, "p95": 16.8, "p99": 33.4, "max": 33.4, "rasters": 7, "engineFrames": 176, "lastRasterMs": 11.7}`
+  - Set 1, run 3: `{"n": 178, "p50": 16.7, "p95": 16.8, "p99": 33.4, "max": 33.4, "rasters": 8, "engineFrames": 179, "lastRasterMs": 12.1}`
+  - Set 2, run 1: `{"n": 144, "p50": 16.7, "p95": 33.4, "p99": 66.7, "max": 100, "rasters": 6, "engineFrames": 144, "lastRasterMs": 49.2}`
+  - Set 2, run 2: `{"n": 165, "p50": 16.7, "p95": 33.3, "p99": 33.4, "max": 33.4, "rasters": 7, "engineFrames": 165, "lastRasterMs": 22.8}`
+  - Set 2, run 3: `{"n": 166, "p50": 16.7, "p95": 33.3, "p99": 33.5, "max": 50, "rasters": 8, "engineFrames": 166, "lastRasterMs": 17.5}`
+- **Check chain.** `node .../isolated-gate.mjs npm run check`: `45 passed, 0 failed, 0 skipped of 45`.
+- **Verdict.** Against 60 fps as the budget is written (p50 at or under 16.7 ms): **pass in all 6 runs, and overall**
+  (p50 16.7 ms every run; the loaded `d110384` reading had it in 1 of 3 runs, with p50 33.3, 16.7 and 33.2 ms).
+  Not a clean pass on the tail: p95 was 33.3 to 33.4 ms in 4 of 6 runs (16.8 ms in 2), and `docs/perf.md` reports p95
+  16.7 ms on its reference machine; p99 was 33.4 to 66.7 ms and the worst frame 100 ms. The loaded reading's p95 was 50 to
+  66.7 ms, so the tail also improved. Frame counts (144 to 178 against the 182 to 184 in `docs/perf.md`) are
+  lower, meaning some gesture time is spent in frames longer than one tick. The idle reading shows the budget as
+  written holds on this headless-Chromium Windows ARM64 host once it is not loaded; the earlier fail was load.
+  Open: the host was near-idle and not exclusive, and p95 does not match the reference table, so whether the
+  budget should also carry a p95 line, and whether it is to be measured on the reference machine, is left to the
+  operator.
 
 ### P3-prep readings 2026-10-20
 
