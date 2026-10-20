@@ -6,6 +6,7 @@ import { takenLooks, type ScanJob, type ScanScope } from './jobs';
 import type { LensEntry, LensManifest } from '@/lib/standard/types';
 import { deleteJob, executeLens, getCommitDiff, getReleaseSuggestion, postDispatch, postProjectLens, postRelease, postReleaseBuild, postReleaseFinish, postScan, postTriage, type LensExecuteResult } from './client';
 import type { CommitDiff, ReleaseCreated, TriageBody, TriageDecision, TriageResult, VersionSuggestion } from './types';
+import type { Wave, WaveBody, WaveDispatchResult } from './waves.ts';
 import { checkLensManifest } from './manifest-check';
 import { addTempLens, readTempLenses } from './temp-lens';
 
@@ -128,3 +129,17 @@ export function refusalText(e: unknown): string {
   const msg = (e as Error | undefined)?.message || String(e);
   return REFUSAL[msg] ?? msg;
 }
+
+// ------------------------------------------------------------------------------------------- waves
+// Findings grouped into packages (each with a model and an effort) and dispatched as a whole (waves.ts). A live product
+// goes to its /waves routes (waves.server.ts); Kettle keeps its waves in this browser (scan-sim). Same results, same
+// refusals (Error + status + body): 400 bad body, 409 taken (a finding in another draft wave) / not a draft / none could go,
+// 429 queue full (body.wave + body.jobs: what was queued before it).
+const notYet = () => Object.assign(new Error('waves are not wired yet'), { status: 501 });
+export async function listWaves(ctx: ScanCtx): Promise<Wave[]> { void ctx; throw notYet(); }
+export async function createWave(ctx: ScanCtx, body: WaveBody): Promise<Wave> { void ctx; void body; throw notYet(); }
+/** A draft wave's name and/or packages (the packages replace the old ones). */
+export async function updateWave(ctx: ScanCtx, id: string, patch: Partial<WaveBody>): Promise<Wave> { void ctx; void id; void patch; throw notYet(); }
+export async function deleteWave(ctx: ScanCtx, id: string): Promise<{ id: string }> { void ctx; void id; throw notYet(); }
+/** Dispatch the wave (default: every package) or only the named packages: one execute job per package and 50 findings. */
+export async function dispatchWave(ctx: ScanCtx, id: string, packages?: string[]): Promise<WaveDispatchResult> { void ctx; void id; void packages; throw notYet(); }

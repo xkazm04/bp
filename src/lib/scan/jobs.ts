@@ -2,6 +2,7 @@
 // live registry that spawns the Claude Code CLI is jobs.server.ts, the Kettle stand-in is
 // lib/model/scan-sim.ts. Absent values are omitted, never null (the store's wire convention).
 import type { LensEntry } from '@/lib/standard/types';
+import type { WaveEffort, WaveModel } from './waves.ts';
 
 /** `selection`: exactly the features behind the ledger's selected findings or matrix rows (1..200 slugs). */
 export type ScanScopeKind = 'feature' | 'bay' | 'room' | 'wing' | 'all' | 'selection';
@@ -33,6 +34,11 @@ export interface ScanJob {
   release?: string;
   version?: string;
   step?: ReleaseStep;
+  /** An execute job a wave package queued: the model and effort it runs with (absent: the CLI's default), and where it came from. */
+  model?: WaveModel;
+  effort?: WaveEffort;
+  wave?: string;
+  package?: string;
   status: JobStatus;
   queued_at: string;
   started_at?: string;
