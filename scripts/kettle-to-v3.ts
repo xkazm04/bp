@@ -247,7 +247,6 @@ const ocrFeature: Feature = {
   ],
 };
 features.splice(features.findIndex((f) => f.id === 'PAY-16') + 1, 0, ocrFeature);
-const featureBySlug = new Map(features.map((f) => [f.slug, f]));
 
 // ----------------------------------------------------------------------------------------- facets
 // The flattening (scalars, FLATTEN) is scripts/sample-facets.ts, shared with scripts/check-builtin-health.ts.
