@@ -70,27 +70,51 @@ main checkout's. Nothing was fixed while measuring.
 
 | Goal | Measure | Result | Evidence |
 |---|---|---|---|
-| 1 Check chain and perf | `npm run check` with 44 or more passed and 0 failed; `python scripts/perf.py` holds 60 fps at `?scale=4` | **not evaluated** (check chain red only in this worktree, perf not run) | `npm run check`: `43 passed, 1 failed, 0 skipped of 44`. The one failure is `typecheck`: `scripts/check-waves.ts(164,102): error TS2322: Type 'import(".../worktrees/bp/03dafca1/packages/core/src/model/scan-sim").ScanSim' is not assignable to type 'import("C:/Users/kazda/kiro/bp/packages/core/src/model/scan-sim").ScanSim'. Types have separate declarations of a private property 'now'.` The junction resolves `@bp/core` to the main checkout's copy, so two copies of one class meet. That is the worktree layout, not the code (`isolated-gate.mjs` exists for this case). Perf: `python scripts/perf.py` exits 1 with `ModuleNotFoundError: No module named 'playwright'`, and nothing listens on :3000. No perf number was taken. |
+| 1 Check chain and perf | `npm run check` with 44 or more passed and 0 failed; `python scripts/perf.py` holds 60 fps at `?scale=4` | **check chain pass; perf fail** (re-measured 2026-10-20, see the readings below) | Check chain: `node .../isolated-gate.mjs npm run check` (it replaces the worktree junction with `npm ci`), on `82a0743`: `45 passed, 0 failed, 0 skipped of 45`, typecheck included. Perf: `python scripts/perf.py` at `?scale=4`, three runs, p50 33.3, 16.7 and 33.2 ms (30, 60, 30 fps), p95 66.7, 66.6 and 50 ms. The 60 fps budget did not hold in these runs. |
 | 2 `apps/server` serves Kettle | with no products file, GET `/api/products/kettle/structure` answers 200 with the wing count of `packages/core/data`, and a Kettle write answers 4xx | **pass** | `npm run check:server`: `ok GET /api/products/kettle/structure: 200 with no products file (13 wings)`, `ok kettle structure: wing count equals the data's 13`, `ok a Kettle write: 4xx`, `ok Kettle stays unlisted: GET /api/products still []`, `check-server: 14 passed, 0 failed` (`bfc8e66`) |
 | 3 TS types decided and enforced | a dated decision in `tech-stack.md` §3 and `packages/schema/README.md`; `check:schema` fails on its seeded control | **pass** | `tech-stack.md` §3: *Decided 2026-10-20 (WP1.5 follow-up).*, with **TS types.** `types.ts` stays the hand-written source. `packages/schema/README.md`: `### Decision (2026-10-20): hand-written TS types, generated TS as a parity artifact`. `npm run check:schema`: `ok types.ts agrees with the generated types on every field and its optionality (29 shapes ...)` and `ok control: Rule.reason made optional in the generated types fails the parity` (`bc7cdfb`) |
 | 4 The 5 unmapped fields carried | `check:schema` fails when a schema field is neither mapped in `BpSchema.h` nor carried by the generated fix-up, shown by its seeded control | **pass** | `npm run check:schema`: `ok every schema field is held in UE: 197 mapped, 5 renamed and 2 raw carried by FixUp` and `ok control: deleting Rule.short's fix-up fails the coverage`. The five fields are `short`, `default`, `$schema` (renamed) and `glyph`, `cross_refs` (raw JSON text, `BpSchemaFixups.h:101` for `cross_refs`). The read-through line: `FixUp carries AppStructure.Schema_ 2, LensManifest.Schema_ 23, LensManifest.Short_ 23, Rule.Short_ 132, Health.Default_ 23, Presentation.Glyph_ 23` (`624d15e`) |
 | 5 Kettle source path | `scripts/kettle-to-v3.ts` and the provenance in `packages/core/data/kettle.app-structure.json` name `packages/core/data/kettle.json`; `check:data` green | **pass** | `scripts/kettle-to-v3.ts:1` and `:62` read `packages/core/data/kettle.json`. The data's `provenance` is `{"source":"packages/core/data/kettle.json","converter":"scripts/kettle-to-v3.ts"}`. `npm run check:data`: `ok: packages/core/data/kettle.app-structure.json and packages/core/data/kettle.events.jsonl reproduce exactly (as of 2026-10-08T09:00:00Z)` (`5efb461`) |
 
-Milestone 1 is not closed yet. Goals 2 to 5 pass. Goal 1 has two gaps:
+Milestone 1 reading (2026-10-20, later run): goals 2 to 5 pass; goal 1's check chain passes and its perf
+measure **fails** on this host, see below. The measure is therefore not met by this reading; it is not
+evidence that the engine regressed (see the caveats).
 
-- **Check chain green from a clean install.** In the junctioned worktree, `typecheck` is red only
-  because `@bp/core` resolves to two copies. To close it, run `npm run check` once on master in a
-  tree with its own install: the merge gate's `isolated-gate.mjs`, or the main checkout with no
-  uncommitted work. It needs `44 passed, 0 failed`. The builder did not replace the junction,
-  because the brief rules out reinstalling.
-- **Perf budget.** Not evaluated: `playwright` (listed in `requirements-tools.txt`) is not installed
-  on Lynx, and no web app is serving on :3000. To close it, the operator installs the Python tools
-  from `requirements-tools.txt` (a tool change, so it is the operator's decision), starts the web
-  app, and records the fps that `python scripts/perf.py` reports at `?scale=4` against the 60 fps
-  budget.
+- **Check chain.** Run through `isolated-gate.mjs` (isolated `npm ci` in the worktree), not the junction:
+  `45 passed, 0 failed, 0 skipped of 45` (the chain has grown from 44 to 45 checks). The earlier red
+  typecheck was the junction's two copies of `@bp/core`. `npm run build` also fails with the junction
+  (`Symlink node_modules could not be resolved`), so the build needed the isolated install too.
+- **Perf budget (taken, not estimated).** Tools: `python -m pip install --user -r requirements-tools.txt`
+  (playwright 1.64.0, Pillow 13.0.0) and `python -m playwright install chromium`, both exit 0 on Lynx;
+  no repo file changed. Web app: `npm run build`, then `PORT=3217 npm start`; `BP_BASE=http://localhost:3217
+  python scripts/perf.py` (gesture mode, default URL `/v/subtle?intro=0&scale=4`, viewport 1920x1080 @1,
+  headless Chromium, 3 runs). Output lines:
+  - `{"n": 61, "p50": 33.3, "p95": 66.7, "p99": 166.6, "max": 166.6, "rasters": 2, "engineFrames": 63, "lastRasterMs": 121.5}`
+  - `{"n": 113, "p50": 16.7, "p95": 66.6, "p99": 133.3, "max": 133.3, "rasters": 5, "engineFrames": 112, "lastRasterMs": 116.1}`
+  - `{"n": 115, "p50": 33.2, "p95": 50, "p99": 66.7, "max": 66.7, "rasters": 5, "engineFrames": 114, "lastRasterMs": 37.1}`
+
+  Verdict: **fail** against 60 fps (p50 16.7 ms in 1 of 3 runs). Caveats: `docs/perf.md` took its baseline
+  (p50 and p95 16.7 ms) on a different machine; this is a Windows ARM64 laptop-class host with a headless
+  Chromium that probably rasterises in software, and other builders may have been running on it at the
+  same time, so the load was not controlled. The run is a true reading of this host, not a verdict on the
+  budget on the reference machine. Closing it needs a rerun on an idle machine with a GPU browser.
 - Observation, not a gate: none of the 15 sample documents carries `cross_refs`, so the FixUp read-through
   never exercises its raw copy. Only the coverage check holds it. A sample or fixture containing
   `cross_refs` would close that.
+
+### P3-prep readings 2026-10-20
+
+Back-measure of the milestone 2 goals (`f8c79e6`, `9f58e0a`, `fb937a3`), on `82a0743`, on Lynx
+(Windows ARM64). **No Unreal Engine build was run on this machine; Lynx has no Unreal Engine and no
+clang.** These readings cover the TypeScript and Node checks only.
+
+| Goal | Result | Command and output line |
+|---|---|---|
+| `check:bplink` green on master | **pass** | `npm run check:bplink`: `check-bplink: 8 passed, 0 failed` |
+| `check:schema` green | **pass** | `npm run check:schema`: `ok packages/schema/generated/ue/BpSchema.h is current (29 structs from 3 schemas)` and every control `ok` |
+| `check:schema` fails on a stale `BpSchema.h` | **pass** | one line appended to `packages/schema/generated/ue/BpSchema.h`, then `npm run check:schema` exit 1: `FAIL  packages/schema/generated/ue/BpSchema.h is stale: run npm run schema:generate (first difference at line 910: committed "// seeded stale", fresh "")`. Reverted with `git checkout`; nothing seeded is committed. |
+| `apps/vr` holds the BpLink Source and WP3.1.md says it is uncompiled | **pass** | `apps/vr/Source/BpLink/{BpLink.Build.cs,Private/BpLink.cpp,Public/BpLink.h}` exist. `apps/vr/WP3.1.md` line 3: `**Status: not yet run on any UE host.**`, and: `It has not been compiled against Unreal and has not been syntax-checked.` |
+| WP3.1 acceptance (editor and Win64 build boot, a `BpLink` log line prints 13 wings) | **not evaluated** | needs a UE-equipped host; none here |
 
 ## P2 Look-dev
 
