@@ -4,7 +4,7 @@
 no Unreal Engine and no clang. It has not been compiled against Unreal and has not been syntax-checked. Every step below
 is for a UE-equipped host; none has been run.
 
-Acceptance (plan P3, WP3.1): the editor and a Win64 build boot, and a `BpLink` log line prints Kettle's 13 wings from the server.
+Acceptance (plan P3, WP3.1): the editor and a Win64 build boot, and a `BpLink` log line prints Kettle's 5 wings from `GET /api/products/kettle/plan`.
 
 ## Steps
 
@@ -16,19 +16,20 @@ Acceptance (plan P3, WP3.1): the editor and a Win64 build boot, and a `BpLink` l
 | 4 | Add the module to the `.uproject` (`"Modules": [{ "Name": "BpLink", "Type": "Runtime", "LoadingPhase": "PostEngineInit" }]`) and to the project's `*.Target.cs` / `*Editor.Target.cs` `ExtraModuleNames`. Generate project files. | The solution shows `BpLink` under `Source/`. |
 | 5 | Resolve the UHT include question (see Risks): UHT must process `packages/schema/generated/ue/BpSchema.h`. | UHT writes `BpSchema.generated.h` for the module with no error. |
 | 6 | Build the editor target and the `Win64` Development Game target. | Both builds exit 0. Record the UE and compiler versions in `docs/concepts/vr-light-table/machine.md`. |
-| 7 | With the server up, start the editor (or the Win64 game), or run `BpLink.Fetch` in the console. Override the server with `-BpLinkUrl=http://host:3100` or `BP_LINK_URL`. | `LogBpLink` prints one line `BpLink: Kettle wings=13 [<13 wing names>] lenses=8 events=N rev=...`, then `Kettle has no live stream (405); using rev ... read once`. The 13 matches `structure.domains` in `packages/core/data`. |
+| 7 | With the server up, start the editor (or the Win64 game), or run `BpLink.Fetch` in the console. Override the server with `-BpLinkUrl=http://host:3100` or `BP_LINK_URL`. | `LogBpLink` prints one line `BpLink: Kettle wings=5 [<5 wing names>] lenses=8 events=N rev=...`, then `Kettle has no live stream (405); using rev ... read once`. The 5 is the plan's `wings` (`WING_DEFS` groups the 13 `structure.domains`). Until the plan call is added to `BpLink.cpp`, the line still prints the 13 domains: the code has not been changed or compiled. |
 | 8 | Stop the server and run `BpLink.Fetch`. | `LogBpLink` errors `GET .../structure failed ... Is npm run server running?` and nothing else crashes. |
 
 Step 7's line is WP3.1's acceptance. Copy it into the commit that records the first real run.
 
 ## The requests BpLink makes
 
-All three are pinned by `scripts/check-bplink.mjs` and the README's BpLink contract:
+The structure, events and stream rows are pinned today, and the plan row once its endpoint lands, by `scripts/check-bplink.mjs` and the README BpLink contract:
 
 | Source (`Private/BpLink.cpp`) | Pinned request |
 |---|---|
-| `GET {base}/api/products/kettle/structure`, `Accept: application/json` | structure: 200 `{ structure, events, rev }`; wings = `structure.domains`, lens manifests = `structure.lenses` |
+| `GET {base}/api/products/kettle/structure`, `Accept: application/json` | structure: 200 `{ structure, events, rev }`; domains = `structure.domains`, lens manifests = `structure.lenses` |
 | the `events` string of that payload, split by line, each line through `BpSchema::FromJson` | events: the payload's JSONL, one valid JSON object per line |
+| `GET {base}/api/products/kettle/plan`, `Accept: application/json` (planned) | plan: 200 `{ rev, lenses, wings, rooms, bays, tiles }`; 5 wings, 13 rooms, 29 bays, 133 tiles |
 | `GET {base}/api/products/kettle/stream`, `Accept: text/event-stream` | stream: 405 JSON `error`; fallback is the `rev` read once from structure |
 
 ## Risks to settle on the UE host (unverified)

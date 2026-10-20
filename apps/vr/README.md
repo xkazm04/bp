@@ -20,21 +20,31 @@ What the client will consume, already in this repo:
 - `apps/server`: the product over HTTP and SSE (`npm run server`, `http://127.0.0.1:3100`), the same
   handlers apps/web mounts (`packages/core/src/server/api`).
 - Kettle, read-only, with no product registered: `GET /api/products/kettle/structure` answers
-  `{ structure, events, rev }` from `packages/core/data` (13 wings in `structure.domains`, rooms and fixtures in
-  `capabilities`/`features`, the 8 lens manifests in `structure.lenses`, the event log in `events`). Kettle is not in
+  `{ structure, events, rev }` from `packages/core/data` (13 domains in `structure.domains`, capabilities and features, the 8 lens manifests in `structure.lenses`, the event log in `events`). Kettle is not in
   `GET /api/products`, and every write route answers it 405.
 - `packages/schema`: the app-structure v3 JSON Schemas and the UE `USTRUCT` headers generated from
   them, so `FJsonObjectConverter` fills the structs with no hand-written parsing.
 
+- `GET /api/products/kettle/plan` (planned, WP3.1): the derived plan, `{ rev, lenses, wings, rooms, bays, tiles }`, schema
+  `packages/schema/schema/plan-1.schema.json`. VR uses the web's levels, wing, room, bay and tile (decision 2026-10-21,
+  `docs/architecture-review-2026-10-21.md`): Kettle is 5 wings, 13 rooms, 29 bays and 133 tiles, read from this endpoint,
+  not from `structure.domains`.
+
 It never computes a health rule or a layout rule; those stay in `packages/core`.
+
+**Not compiled.** Nothing in `apps/vr` has been compiled on this machine: Lynx has no Unreal Engine. The generated structs
+have only been syntax-checked with clang against stand-in declarations.
 
 ## BpLink contract
 
 The requests the `BpLink` module will make for Kettle, against `apps/server` with no products file. `npm run check:bplink`
 (`scripts/check-bplink.mjs`) starts the server and guards each answer; the counts are read from `packages/core/data`.
 
-- `GET /api/products/kettle/structure`: 200 JSON `{ structure, events, rev }`, `structure.domains` = the wings,
-  `structure.lenses` = the lens manifests.
+- `GET /api/products/kettle/structure`: 200 JSON `{ structure, events, rev }`, `structure.domains` = the domains (not
+  the wings), `structure.lenses` = the lens manifests.
+- `GET /api/products/kettle/plan` (planned call, pinned by `check:bplink` once the endpoint lands): 200 JSON
+  `{ rev, lenses, wings, rooms, bays, tiles }`; 5 wings, 13 rooms, 29 bays, 133 tiles, derived from `WING_DEFS` and the data;
+  `rev` equals the structure's.
 - The events BpLink reads: the `events` string of that payload (JSONL, one valid JSON object per line, the same lines as
   `kettle.events.jsonl`).
 - `GET /api/products/kettle/stream`: 405 with a JSON `error`, not an SSE stream. Kettle has no live stream, so BpLink's

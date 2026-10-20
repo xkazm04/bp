@@ -172,12 +172,20 @@ The first VR session on real data, ugly on purpose.
 
 | Package | Work | Acceptance |
 |---|---|---|
-| WP3.1 `apps/vr` project | UE 5.8 project with Meta XR v207 and the Interaction SDK; a `BpLink` module (HTTP + SSE client over `apps/server`, structs from `packages/schema`) | the editor and a Win64 build boot; a `BpLink` log line prints Kettle's 13 wings from the server |
-| WP3.2 the table | table mesh, a blueprint paper material, wing footprints into a render target from `core`'s layout | the 13 wings in chronological order, readable names, at a natural standing height |
-| WP3.3 volumes | instanced rooms and fixtures; edge-glow material v0 | 29 rooms and 133 fixtures as instances; one draw call per instance batch |
+| WP3.1 `apps/vr` project | UE 5.8 project with Meta XR v207 and the Interaction SDK; a `BpLink` module (HTTP + SSE client over `apps/server`, structs from `packages/schema`) | the editor and a Win64 build boot; a `BpLink` log line prints Kettle's 5 wings from `GET /api/products/kettle/plan` |
+| WP3.2 the table | table mesh, a blueprint paper material, wing footprints into a render target from `core`'s layout | the 5 wings, from the plan endpoint's layout, in chronological order, readable names, at a natural standing height |
+| WP3.3 volumes | instanced rooms and fixtures; edge-glow material v0 | 13 rooms, 29 bays and 133 fixtures (the web's tiles) as instances; one draw call per instance batch |
 | WP3.4 hands and zoom | Meta hand tracking; point to highlight; pinch-pull lifts a room (L0 to L2); a breadcrumb and a way back | every level reachable and reversible; tracking loss handled as a state (registry `hand-tracked-timing-windows`) |
 | WP3.5 lenses | lens switch on the wrist; a lens changes what places say, never where they are | all 8 lenses switch without moving any wing |
 | WP3.6 render spike | forward + MSAA versus deferred + Lumen at Quest 3 resolution | frame time for both on the box, recorded in `machine.md`; forward chosen unless Lumen fits 11.1 ms |
+
+- 2026-10-21: VR uses the web's levels, wing, room, bay and tile, and reads them from the derived-plan endpoint
+  (`GET /api/products/[slug]/plan`, schema `plan-1`), never from `structure.domains`. Kettle is 5 wings (`WING_DEFS`
+  groups its 13 domains), 13 rooms (domains), 29 bays (capabilities) and 133 tiles. This replaces the earlier "13 wings",
+  "29 rooms" and "133 fixtures" counts in WP3.1 to WP3.3. Reason and evidence: `docs/architecture-review-2026-10-21.md`,
+  findings 1 and 2 ("one logic, three channels", tech-stack.md section 3). The endpoint is not on master yet: it needs a
+  two-line change in `packages/core/src/model/aggregates.ts` first (see the delivery report), because apps/server runs
+  core under Node's type stripping.
 
 **Gate:** 90 Hz on the box on the forward path with the full Kettle plan; text legible at the
 standing distance (an angular-size floor recorded as the VR equivalent of bp's 12 px); the owner
