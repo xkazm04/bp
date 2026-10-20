@@ -20,7 +20,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 
-const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'src');
+const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
 const arg = (k: string) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : undefined; };
 let held = 0;
 const failures: string[] = [];

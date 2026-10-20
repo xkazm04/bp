@@ -25,9 +25,9 @@ if (!process.execArgv.includes('--experimental-transform-types')) {
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 registerSrcHooks(ROOT);
 const imp = (rel) => import(pathToFileURL(path.join(ROOT, rel)).href);
-const { bl } = await imp('src/variants/base/legacy.ts');
-const shaped = (await imp('src/variants/shaped/channels.ts')).CHANNELS;
-const bold = (await imp('src/variants/bold/channels.ts')).CHANNELS;
+const { bl } = await imp('apps/web/src/variants/base/legacy.ts');
+const shaped = (await imp('apps/web/src/variants/shaped/channels.ts')).CHANNELS;
+const bold = (await imp('apps/web/src/variants/bold/channels.ts')).CHANNELS;
 
 let failed = 0, passed = 0;
 const check = (name, ok, detail = '') => { if (ok) passed++; else { failed++; console.log('FAIL ' + name + (detail ? ': ' + detail : '')); } };

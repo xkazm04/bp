@@ -11,8 +11,8 @@ import { readStripped } from './lib/source.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const GAP = 8;
-const ts = readStripped(path.join(ROOT, 'src/engine/chrome.ts'));
-const css = readStripped(path.join(ROOT, 'src/components/rail.css'));
+const ts = readStripped(path.join(ROOT, 'apps/web/src/engine/chrome.ts'));
+const css = readStripped(path.join(ROOT, 'apps/web/src/components/rail.css'));
 
 let failed = 0, pairs = 0;
 const fail = (m) => { failed++; console.log('FAIL ' + m); };

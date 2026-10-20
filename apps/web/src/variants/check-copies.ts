@@ -10,7 +10,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readStripped } from '../../scripts/lib/source.ts';
+import { readStripped } from '../../../../scripts/lib/source.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const LENSES = ['business', 'design', 'development', 'operations', 'security', 'quality'];

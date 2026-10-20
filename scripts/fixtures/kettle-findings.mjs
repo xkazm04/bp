@@ -11,10 +11,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { seeded } from '../lib/prng.ts';
-import { loadStructure } from '../../src/lib/standard/load.ts';
+import { loadStructure } from '../../apps/web/src/lib/standard/load.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const MAP = 'src/data/kettle.app-structure.json', OUT = 'src/data/kettle.findings.json';
+const MAP = 'apps/web/src/data/kettle.app-structure.json', OUT = 'apps/web/src/data/kettle.findings.json';
 const map = JSON.parse(fs.readFileSync(path.join(ROOT, MAP), 'utf8'));
 const st = loadStructure(map, null);
 const rnd = seeded('kettle-findings/1');

@@ -85,8 +85,8 @@ function insert(db, table, row) {
 
 // ------------------------------------------------------------------------------- files
 fs.mkdirSync(STORE, { recursive: true });
-const map = JSON.parse(fs.readFileSync(path.join(ROOT, 'src/data/kettle.app-structure.json'), 'utf8'));
-fs.copyFileSync(path.join(ROOT, 'src/data/kettle.app-structure.json'), path.join(STORE, 'app-structure.json'));
+const map = JSON.parse(fs.readFileSync(path.join(ROOT, 'apps/web/src/data/kettle.app-structure.json'), 'utf8'));
+fs.copyFileSync(path.join(ROOT, 'apps/web/src/data/kettle.app-structure.json'), path.join(STORE, 'app-structure.json'));
 const FEATURES = map.features.slice(0, 20).map((f) => f.slug);
 const SHOT_FEATURES = FEATURES.slice(0, 2);
 

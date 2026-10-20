@@ -14,18 +14,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { seeded } from './lib/prng.ts';
-import { lensHealth } from '../src/lib/standard/health.ts';
+import { lensHealth } from '../apps/web/src/lib/standard/health.ts';
 import type {
   AppStructure, Capability, Context, Domain, Facet, FacetValues, Feature, FeatureBoundField, Group, Health, Kpi, LensEntry,
   LensManifest, Milestone, Stage, StructureEvent,
-} from '../src/lib/standard/types.ts';
-import { BUILTIN_LENSES } from '../src/lib/standard/catalog.ts';
+} from '../apps/web/src/lib/standard/types.ts';
+import { BUILTIN_LENSES } from '../apps/web/src/lib/standard/catalog.ts';
 import { FLATTEN, type LensObject } from './sample-facets.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p: string): unknown => JSON.parse(fs.readFileSync(path.join(ROOT, p), 'utf8'));
-const OUT_MAP = 'src/data/kettle.app-structure.json';
-const OUT_EVENTS = 'src/data/kettle.events.jsonl';
+const OUT_MAP = 'apps/web/src/data/kettle.app-structure.json';
+const OUT_EVENTS = 'apps/web/src/data/kettle.events.jsonl';
 /** The built-in ids come from the catalog (the one list): every one gets a lens entry in the map. */
 const BUILTIN: readonly string[] = BUILTIN_LENSES.map((m) => m.id);
 const COST_LENS = 'com.kettle.cost';
@@ -59,7 +59,7 @@ interface Sample {
   lenses: string[];
 }
 
-const kettle = read('src/data/kettle.json') as Sample;
+const kettle = read('apps/web/src/data/kettle.json') as Sample;
 /** The built-ins the sample carries a lens object for. A later built-in (performance) has none: its values come
  *  from the synthetic scan below or nowhere, and its health is not compared with a stored one. */
 const SAMPLED = BUILTIN.filter((id) => kettle.lenses.includes(id)) as SampleLens[];

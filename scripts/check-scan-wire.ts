@@ -19,11 +19,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
-import { advance, close, newCursor, openRead, readDelta, readSnapshot, snapshotOf } from '../src/lib/scan/store.server.ts';
-import { swarmFromScan } from '../src/lib/scan/client.ts';
-import { parseReleaseCreated } from '../src/lib/train/wire.ts';
-import { PRODUCTS_FILE, listProducts } from '../src/lib/scan/products.server.ts';
-import type { Measurement, Proposal, Run, ScanSnapshot } from '../src/lib/scan/types.ts';
+import { advance, close, newCursor, openRead, readDelta, readSnapshot, snapshotOf } from '../apps/web/src/lib/scan/store.server.ts';
+import { swarmFromScan } from '../apps/web/src/lib/scan/client.ts';
+import { parseReleaseCreated } from '../apps/web/src/lib/train/wire.ts';
+import { PRODUCTS_FILE, listProducts } from '../apps/web/src/lib/scan/products.server.ts';
+import type { Measurement, Proposal, Run, ScanSnapshot } from '../apps/web/src/lib/scan/types.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-scan-wire-'));

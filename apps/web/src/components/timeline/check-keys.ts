@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readStripped } from '../../../scripts/lib/source.ts';
+import { readStripped } from '../../../../../scripts/lib/source.ts';
 import { HOUR } from '../../lib/model/constants.ts';
 import { timeSliderKey, type KeyLike, type TimeSliderEngine } from './keys.ts';
 

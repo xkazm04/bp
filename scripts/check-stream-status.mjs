@@ -39,7 +39,7 @@ fs.writeFileSync(path.join(dir, 'bp.products.local.json'), JSON.stringify({ prod
 process.chdir(dir);
 const warns = [];
 console.warn = (...a) => { warns.push(a.map(String).join(' ')); };
-const { GET } = await import(pathToFileURL(path.join(ROOT, 'src/app/api/products/[slug]/stream/route.ts')).href);
+const { GET } = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/app/api/products/[slug]/stream/route.ts')).href);
 
 async function events(slug, ms, during) {
   const ac = new AbortController();
@@ -71,12 +71,12 @@ try {
   check('mapped product: snapshot, map, then map again after the file changed', names(mapped) === 'snapshot,map,map', names(mapped));
   const revs = mapped.filter((x) => x.ev === 'map').map((x) => JSON.parse(x.data).rev);
   check('mapped product: the two revs differ', revs.length === 2 && revs[0] !== revs[1] && revs.every((r) => typeof r === 'string' && r), revs.join(' | '));
-  const { GET: STRUCT } = await import(pathToFileURL(path.join(ROOT, 'src/app/api/products/[slug]/structure/route.ts')).href);
+  const { GET: STRUCT } = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/app/api/products/[slug]/structure/route.ts')).href);
   const sj = await (await STRUCT(new Request('http://x/api/products/mapped/structure', { headers: { host: 'localhost:3000' } }), { params: Promise.resolve({ slug: 'mapped' }) })).json();
   check('structure route answers the current rev of the stream', sj.rev === revs[1], sj.rev + ' vs ' + revs[1]);
 
   const code = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\s\/\/ .*$/gm, '');
-  const types = code('src/lib/scan/types.ts'), client = code('src/lib/scan/client.ts'), header = code('src/components/Header.tsx');
+  const types = code('apps/web/src/lib/scan/types.ts'), client = code('apps/web/src/lib/scan/client.ts'), header = code('apps/web/src/components/Header.tsx');
   check('types.ts: StreamEvent names map', /type StreamEvent\s*=[^;]*'map'/.test(types));
   check("client.ts: addEventListener('map') refetches the structure", /addEventListener\(\s*'map'[\s\S]{0,400}refresh\(\)/.test(client));
   check('types.ts: StreamEvent names error', /type StreamEvent\s*=[^;]*'error'/.test(types));

@@ -9,7 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkLensManifest, checkTempManifest, type TakenLook } from '../src/lib/scan/manifest-check.ts';
+import { checkLensManifest, checkTempManifest, type TakenLook } from '../apps/web/src/lib/scan/manifest-check.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p: string) => JSON.parse(fs.readFileSync(path.join(ROOT, p), 'utf8')) as Record<string, any>;

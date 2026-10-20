@@ -24,6 +24,9 @@ npm run dev            # http://localhost:3000
 npm run build && npm start
 ```
 
+bp is an npm workspace (`apps/*`, `packages/*`). The Next app lives in `apps/web` and is always started from the
+repo root (`next dev apps/web`), so the server's working directory is the root, where `bp.products.local.json` lives.
+
 | Route | What |
 |---|---|
 | `/` | The blueprint, with the adopted *subtle* lens expression |
@@ -47,36 +50,37 @@ Keys: `/` search · `1`–`9` lenses (1 = General) · `+` `−` zoom · arrows w
 ## What is where
 
 ```
-src/app/              routes: / (blueprint), /variants, /v/[variant]
-src/engine/           canvas engine: camera, frame loop, levels of detail, cached plan raster, lens mix
-src/components/       React UI around the canvas (header, dock, queue, feature sheet, legend, phone view)
-src/variants/         lens expressions: subtle (adopted), shaped, bold
-src/lib/standard/     app-structure v3: types, loader, health-rule evaluator, built-in lens catalog
-src/lib/model/        derived model: layout, aggregates, search, swarm simulation
-src/data/             fixtures: kettle.app-structure.json + kettle.events.jsonl (the product, v3),
-                      swarm.json (the simulated swarm), kettle.json (the original sample)
-docs/blueprint-ui.md          the UI contract: levels, 12 px text floor, performance rules, lenses as data
-docs/standard/                app-structure v3: spec, analysis, JSON Schemas, lens manifests, Personas brief
-docs/research/users.md        the user analysis: eight people, eleven moments of use
-docs/contest-history.md       how the design was chosen, with the owner's verbatim verdicts
-docs/fixtures/kettle-sample.md  field reference for the original sample
-prototypes/           the two static HTML contest winners the app descends from
-scripts/              fixture generators, v3 conversion, validator, perf and screenshot probes
+apps/web/                      the Next.js app (npm workspace @bp/web); run from the repo root: npm run dev
+apps/web/src/app/              routes: / (blueprint), /variants, /v/[variant]
+apps/web/src/engine/           canvas engine: camera, frame loop, levels of detail, cached plan raster, lens mix
+apps/web/src/components/       React UI around the canvas (header, dock, queue, feature sheet, legend, phone view)
+apps/web/src/variants/         lens expressions: subtle (adopted), shaped, bold
+apps/web/src/lib/standard/     app-structure v3: types, loader, health-rule evaluator, built-in lens catalog
+apps/web/src/lib/model/        derived model: layout, aggregates, search, swarm simulation
+apps/web/src/data/             fixtures: kettle.app-structure.json + kettle.events.jsonl (the product, v3),
+                               swarm.json (the simulated swarm), kettle.json (the original sample)
+docs/blueprint-ui.md           the UI contract: levels, 12 px text floor, performance rules, lenses as data
+docs/standard/                 app-structure v3: spec, analysis, JSON Schemas, lens manifests, Personas brief
+docs/research/users.md         the user analysis: eight people, eleven moments of use
+docs/contest-history.md        how the design was chosen, with the owner's verbatim verdicts
+docs/fixtures/kettle-sample.md field reference for the original sample
+prototypes/                    the two static HTML contest winners the app descends from
+scripts/                       fixture generators, v3 conversion, validator, perf and screenshot probes
 ```
 
 ## Data: app-structure v3
 
-The app reads one file per product: `src/data/kettle.app-structure.json`, plus an append-only events
+The app reads one file per product: `apps/web/src/data/kettle.app-structure.json`, plus an append-only events
 log. The format is a superset of Personas' `context-map.json` v2. It adds a product tree, features
 with a lifecycle stage, milestones and KPIs. **Lenses are plugins:** each one is a manifest with
 fields, health rules written as JSON (no code runs), and presentation hints. A project can add its
 own lens or switch any lens off. The spec is `docs/standard/app-structure-v3.md`.
 
 ```sh
-npm run data:kettle-v3                 # rebuild the v3 map + events from src/data/kettle.json
-npm run validate:structure -- src/data/kettle.app-structure.json --events src/data/kettle.events.jsonl
+npm run data:kettle-v3                 # rebuild the v3 map + events from apps/web/src/data/kettle.json
+npm run validate:structure -- apps/web/src/data/kettle.app-structure.json --events apps/web/src/data/kettle.events.jsonl
 npm run check:lens-health              # built-in lens rules vs the sample's stored health (gate: 132/132, every lens 100%)
-npm run check:data                     # the committed src/data map + events are exactly what data:kettle-v3 generates (writes nothing)
+npm run check:data                     # the committed apps/web/src/data map + events are exactly what data:kettle-v3 generates (writes nothing)
 node scripts/fixtures/gen-kettle.mjs <dir>   # regenerate the original sample (deterministic)
 node scripts/fixtures/gen-swarm.mjs <dir>    # regenerate the swarm over it
 ```
@@ -85,7 +89,7 @@ node scripts/fixtures/gen-swarm.mjs <dir>    # regenerate the swarm over it
 
 `npm run check` runs typecheck, every `check:*` script in package.json (new ones join automatically)
 and `validate:structure`, prints one line each with time and pass/fail, and exits 1 on any failure.
-`check:route-guards` asserts every `src/app/api/**/route.ts` handler opens with `localHost` (GET) or `localOnly`
+`check:route-guards` asserts every `apps/web/src/app/api/**/route.ts` handler opens with `localHost` (GET) or `localOnly`
 (+ `jsonOnly` before a body parse); known gaps are listed in the script and reported on each run.
 `check:python-deps` needs Python and is skipped (and reported as skipped) when `python` is not on PATH.
 The production build warns "Dynamic filesystem access causes tracing of the whole project" for the

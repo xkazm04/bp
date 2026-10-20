@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { stripBlock } from '../../../scripts/lib/source.ts';
+import { stripBlock } from '../../../../../scripts/lib/source.ts';
 import { baseHeight } from '../../engine/chrome.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));

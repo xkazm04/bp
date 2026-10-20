@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { stripComments } from './lib/source.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const SRC = path.join(ROOT, 'src');
+const SRC = path.join(ROOT, 'apps/web/src');
 const strip = stripComments;
 const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]));
 const files = walk(SRC).filter((f) => /\.(css|ts|tsx)$/.test(f));
@@ -73,7 +73,7 @@ for (const f of files) {
   const s = strip(read(f));
   for (const m of s.matchAll(/var\(\s*(--[\w-]+)/g)) use(m[1], f);
   for (const m of s.matchAll(/getPropertyValue\(\s*['"`](--[\w-]+)['"`]/g)) use(m[1], f);
-  if (rel(f) === 'src/engine/theme.ts') {
+  if (rel(f) === 'apps/web/src/engine/theme.ts') {
     themeLiterals = [...s.matchAll(/['"`](--[\w-]+)['"`]/g)].map((m) => m[1]);
     for (const n of themeLiterals) use(n, f);
   }

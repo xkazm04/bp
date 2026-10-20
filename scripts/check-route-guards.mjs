@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { stripComments as strip } from './lib/source.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const API = path.join(ROOT, 'src/app/api');
+const API = path.join(ROOT, 'apps/web/src/app/api');
 const METHODS = ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'];
 const mutations = JSON.parse(process.env.BP_ROUTE_GUARDS_MUTATE || '[]');
 

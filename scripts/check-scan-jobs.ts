@@ -34,14 +34,14 @@ const HOOKS = './lib/src-hooks.mjs';
 const FAKE = path.join(ROOT, 'scripts/fixtures/fake-claude.mjs');
 process.env.BP_CLAUDE_BIN = FAKE;
 
-const J = await import(pathToFileURL(path.join(ROOT, 'src/lib/scan/jobs.server.ts')).href) as typeof import('../src/lib/scan/jobs.server.ts');
-const { parseDraftReply } = await import(pathToFileURL(path.join(ROOT, 'src/lib/scan/lens-draft.ts')).href) as typeof import('../src/lib/scan/lens-draft.ts');
-const { scopeFeatures } = await import(pathToFileURL(path.join(ROOT, 'src/lib/scan/scope.ts')).href) as typeof import('../src/lib/scan/scope.ts');
-const { checkLensManifest } = await import(pathToFileURL(path.join(ROOT, 'src/lib/scan/manifest-check.ts')).href) as typeof import('../src/lib/scan/manifest-check.ts');
-const { ScanSim } = await import(pathToFileURL(path.join(ROOT, 'src/lib/model/scan-sim.ts')).href) as typeof import('../src/lib/model/scan-sim.ts');
-type ScanJob = import('../src/lib/scan/jobs.ts').ScanJob;
-type ScanScope = import('../src/lib/scan/jobs.ts').ScanScope;
-type Proposal = import('../src/lib/scan/types.ts').Proposal;
+const J = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/lib/scan/jobs.server.ts')).href) as typeof import('../apps/web/src/lib/scan/jobs.server.ts');
+const { parseDraftReply } = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/lib/scan/lens-draft.ts')).href) as typeof import('../apps/web/src/lib/scan/lens-draft.ts');
+const { scopeFeatures } = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/lib/scan/scope.ts')).href) as typeof import('../apps/web/src/lib/scan/scope.ts');
+const { checkLensManifest } = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/lib/scan/manifest-check.ts')).href) as typeof import('../apps/web/src/lib/scan/manifest-check.ts');
+const { ScanSim } = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/lib/model/scan-sim.ts')).href) as typeof import('../apps/web/src/lib/model/scan-sim.ts');
+type ScanJob = import('../apps/web/src/lib/scan/jobs.ts').ScanJob;
+type ScanScope = import('../apps/web/src/lib/scan/jobs.ts').ScanScope;
+type Proposal = import('../apps/web/src/lib/scan/types.ts').Proposal;
 
 let failed = 0, passed = 0, skipped = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) passed++; else { failed++; console.log('FAIL ' + name + (detail ? ': ' + detail : '')); } };
@@ -206,7 +206,7 @@ try {
   w.close();
   fs.writeFileSync(path.join(dir, 'bp.products.local.json'), JSON.stringify({ products: [{ slug: 'prod', name: 'Prod', root: pr }] }));
   process.chdir(dir);
-  const route = async (rel: string) => import(pathToFileURL(path.join(ROOT, 'src/app/api', rel)).href);
+  const route = async (rel: string) => import(pathToFileURL(path.join(ROOT, 'apps/web/src/app/api', rel)).href);
   const H = { host: 'localhost:3000', 'content-type': 'application/json' };
   const call = async (fn: (req: Request, ctx: unknown) => Promise<Response>, url: string, method: string, params: object, body?: unknown) => {
     const res = await fn(new Request('http://localhost:3000' + url, { method, headers: H, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }), { params: Promise.resolve(params) });
@@ -362,10 +362,10 @@ try {
   // store.mjs (BP_LENS_SCAN_DIR or ~/.claude/skills/lens-scan; SKIP and seed by SQL when it is not installed); gh is a fake
   // (BP_GH_BIN), signed in or out by FAKE_GH_OUT.
   {
-    const RS = await import(pathToFileURL(path.join(ROOT, 'src/lib/scan/release.server.ts')).href) as typeof import('../src/lib/scan/release.server.ts');
-    const W = await import(pathToFileURL(path.join(ROOT, 'src/lib/train/wire.ts')).href) as typeof import('../src/lib/train/wire.ts');
+    const RS = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/lib/scan/release.server.ts')).href) as typeof import('../apps/web/src/lib/scan/release.server.ts');
+    const W = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/lib/train/wire.ts')).href) as typeof import('../apps/web/src/lib/train/wire.ts');
     const show = (what: string, x: unknown) => { if (process.env.BP_SHOW_EXAMPLES) console.log('EXAMPLE ' + what + '\n' + JSON.stringify(x, null, 1)); };
-    const { jobLabel } = await import(pathToFileURL(path.join(ROOT, 'src/lib/scan/jobs.ts')).href) as typeof import('../src/lib/scan/jobs.ts');
+    const { jobLabel } = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/lib/scan/jobs.ts')).href) as typeof import('../apps/web/src/lib/scan/jobs.ts');
     const ghFake = path.join(dir, 'fake-gh.mjs');
     fs.writeFileSync(ghFake, "if (process.env.FAKE_GH_OUT === '1') { console.error('You are not logged into any GitHub hosts.'); process.exit(1); }\n"
       + "if (process.argv[2] === 'api') console.log('octocat');\nprocess.exit(0);\n");
@@ -536,7 +536,7 @@ try {
   const clock = Date.parse(T); // frozen: the sim's jobs start and never step, so what is queued or running stays put
   const fprop = (id: string, lens: string, status: Proposal['status'], i: number): Proposal => ({ id, run_id: 'r0', feature: 'a', lens, title: 't', standard: 'none', kind: 'fix', status, created_at: at(i), updated_at: at(i) });
   const findings = [...Array.from({ length: 55 }, (_, i) => fprop('k' + String(54 - i).padStart(2, '0'), 'com.k.exec', 'proposed', i)), fprop('ka', 'com.k.exec', 'approved', 60), fprop('kd', 'com.k.exec', 'declined', 61), fprop('ks', 'com.k.settled', 'done', 62)];
-  type Manifest = import('../src/lib/standard/types.ts').LensManifest;
+  type Manifest = import('../apps/web/src/lib/standard/types.ts').LensManifest;
   // the model's lenses, each with a look none of the lenses added below draws (but tmp.copy, which repeats tmp.known's)
   const km = (id: string, glyph: string, line: string) => ({ ...MANIFEST, id, presentation: { glyph, line } }) as unknown as Manifest;
   const known: Record<string, Manifest> = { 'com.k.exec': km('com.k.exec', 'bars', 'solid'), 'com.k.settled': km('com.k.settled', 'bars', 'double'),
@@ -567,8 +567,8 @@ try {
     // addProjectLens's Kettle branch writes the browser's store (a Map stands in for localStorage)
     const ls = new Map<string, string>();
     (globalThis as { localStorage?: unknown }).localStorage = { getItem: (k: string) => ls.get(k) ?? null, setItem: (k: string, v: string) => { ls.set(k, v); }, removeItem: (k: string) => { ls.delete(k); } };
-    const A = await import(pathToFileURL(path.join(ROOT, 'src/lib/scan/actions.ts')).href) as typeof import('../src/lib/scan/actions.ts');
-    const TL = await import(pathToFileURL(path.join(ROOT, 'src/lib/scan/temp-lens.ts')).href) as typeof import('../src/lib/scan/temp-lens.ts');
+    const A = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/lib/scan/actions.ts')).href) as typeof import('../apps/web/src/lib/scan/actions.ts');
+    const TL = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/lib/scan/temp-lens.ts')).href) as typeof import('../apps/web/src/lib/scan/temp-lens.ts');
     const kctx = { slug: null, sim };
     const aErr = async (fn: () => Promise<unknown>): Promise<string> => { try { await fn(); return 'ok'; } catch (e) { return (e as { status?: number }).status + ':' + (e as Error).message; } };
     const kt = await A.addProjectLens(kctx, MANIFEST as unknown as Manifest, true);

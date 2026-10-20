@@ -5,7 +5,7 @@
 // It writes only what the lens object says and omits unknown values instead of writing null. It never writes
 // the feature's stage or priority into a facet: the manifests bind those fields to the feature
 // (`source: { feature }`). The one producer-side applicability: design "n/a" means the feature has no screen.
-import type { Facet, FacetValues, Health, Scalar } from '../src/lib/standard/types.ts';
+import type { Facet, FacetValues, Health, Scalar } from '../apps/web/src/lib/standard/types.ts';
 
 export type LensObject = Record<string, unknown> & { health: Health };
 

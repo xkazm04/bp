@@ -13,7 +13,7 @@ export function initialize(data) { ROOT = data.root; }
 const tryFile = (p) => { for (const c of [p, p + '.ts', p + '.tsx', path.join(p, 'index.ts')]) if (fs.existsSync(c) && fs.statSync(c).isFile()) return c; return null; };
 export async function resolve(spec, ctx, next) {
   let base = null;
-  if (spec.startsWith('@/')) base = path.join(ROOT, 'src', spec.slice(2));
+  if (spec.startsWith('@/')) base = path.join(ROOT, 'apps/web/src', spec.slice(2));
   else if ((spec.startsWith('./') || spec.startsWith('../')) && ctx.parentURL?.startsWith('file:')) base = path.resolve(path.dirname(fileURLToPath(ctx.parentURL)), spec);
   if (base) { const f = tryFile(base); if (f) return { url: pathToFileURL(f).href, shortCircuit: true, format: f.endsWith('.json') || f.endsWith('.jsonl') ? 'module' : undefined }; }
   return next(spec, ctx);

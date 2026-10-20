@@ -3,7 +3,7 @@
 // with an unknown extra field left out and an absent one still absent; and refuses a bad one, naming the field
 // (`<field>: <what>`). Plus parseJson (the train's only JSON.parse) and errorText.
 // Run: node scripts/check-train-wire.ts  (Node's type stripping; no build step). Exit 1 on any failure.
-import { errorText, parseCommitDiff, parseJson, parseReleaseCreated, parseScanJob, parseTriageResult, parseVersionSuggestion, type Parsed } from '../src/lib/train/wire.ts';
+import { errorText, parseCommitDiff, parseJson, parseReleaseCreated, parseScanJob, parseTriageResult, parseVersionSuggestion, type Parsed } from '../apps/web/src/lib/train/wire.ts';
 
 let failed = 0, passed = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) passed++; else { failed++; console.log('FAIL ' + name + (detail ? ': ' + detail : '')); } };

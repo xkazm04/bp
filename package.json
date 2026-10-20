@@ -3,10 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "next dev apps/web",
+    "build": "next build apps/web",
+    "start": "next start apps/web",
     "typecheck": "tsc --noEmit",
     "check": "node scripts/check-all.mjs",
     "validate:structure": "node scripts/validate-structure.mjs",
@@ -30,11 +34,11 @@
     "check:local-only": "node scripts/check-local-only.ts",
     "check:route-guards": "node scripts/check-route-guards.mjs",
     "check:camera": "node scripts/check-camera.ts",
-    "check:variant-copies": "node src/variants/check-copies.ts",
-    "check:timeline-keys": "node src/components/timeline/check-keys.ts",
-    "check:timeline-size": "node src/components/timeline/check-size.ts",
-    "check:timeline-scrub": "node src/components/timeline/check-scrub.ts",
-    "check:timeline-run": "node src/components/timeline/check-run.ts",
+    "check:variant-copies": "node apps/web/src/variants/check-copies.ts",
+    "check:timeline-keys": "node apps/web/src/components/timeline/check-keys.ts",
+    "check:timeline-size": "node apps/web/src/components/timeline/check-size.ts",
+    "check:timeline-scrub": "node apps/web/src/components/timeline/check-scrub.ts",
+    "check:timeline-run": "node apps/web/src/components/timeline/check-run.ts",
     "check:standard-fixtures": "node scripts/check-standard-fixtures.mjs",
     "check:python-deps": "node scripts/check-python-deps.mjs",
     "check:overlays": "node scripts/check-overlays.ts",
@@ -57,12 +61,6 @@
     "@types/react-dom": "^19.3.0",
     "ajv": "^8.20.0",
     "typescript": "^5.9.3"
-  },
-  "dependencies": {
-    "motion": "^14.0.0",
-    "next": "^16.4.0",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0"
   },
   "engines": {
     "node": ">=22.18"
