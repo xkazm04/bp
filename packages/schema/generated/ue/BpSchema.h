@@ -3,8 +3,9 @@
 //
 // app-structure v3 for the VR client (apps/vr, module BpLink). Field names are the JSON keys, so
 // FJsonObjectConverter::JsonObjectToUStruct fills these from apps/server's answers. A missing key keeps the
-// default; enums are FString (their values in the comment); fields a USTRUCT cannot hold are listed per struct
-// as "not mapped" and are read from the raw FJsonObject.
+// default; enums are FString (their values in the comment). A key that is no C++ name, or a value no UPROPERTY
+// type holds, is a `<Key>_` field the converter skips; read a document with BpSchema::FromJson
+// (BpSchemaFixups.h), which runs the converter and then BpSchema::FixUp to fill those fields.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -62,7 +63,7 @@ struct BPLINK_API FBpGroup
 };
 
 /** v2 context, unchanged. `name` is the stable key. */
-// not mapped (read from the raw JSON): cross_refs (untyped items)
+// carried by BpSchema::FixUp (BpSchemaFixups.h): cross_refs -> CrossRefs_
 USTRUCT(BlueprintType)
 struct BPLINK_API FBpContext
 {
@@ -104,6 +105,10 @@ struct BPLINK_API FBpContext
 
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString api_surface;
+
+	/** JSON key "cross_refs" as its condensed JSON text (untyped): filled by BpSchema::FixUp, not by FJsonObjectConverter */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString CrossRefs_;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	TArray<FString> tech_stack;
@@ -561,7 +566,7 @@ struct BPLINK_API FBpField
 	FBpMetric metric;
 };
 
-// not mapped (read from the raw JSON): short (a C++ keyword or Unreal macro)
+// carried by BpSchema::FixUp (BpSchemaFixups.h): short -> Short_
 USTRUCT(BlueprintType)
 struct BPLINK_API FBpRule
 {
@@ -578,6 +583,10 @@ struct BPLINK_API FBpRule
 	/** required */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString reason;
+
+	/** JSON key "short" (a C++ keyword or Unreal macro): filled by BpSchema::FixUp, not by FJsonObjectConverter */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString Short_;
 };
 
 USTRUCT(BlueprintType)
@@ -599,7 +608,7 @@ struct BPLINK_API FBpRollup
 	FString by;
 };
 
-// not mapped (read from the raw JSON): default (a C++ keyword or Unreal macro)
+// carried by BpSchema::FixUp (BpSchemaFixups.h): default -> Default_
 USTRUCT(BlueprintType)
 struct BPLINK_API FBpHealth
 {
@@ -612,6 +621,10 @@ struct BPLINK_API FBpHealth
 	/** required */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	TArray<FBpRule> rules;
+
+	/** JSON key "default" (a C++ keyword or Unreal macro): filled by BpSchema::FixUp, not by FJsonObjectConverter. one of: good, watch, bad. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString Default_;
 
 	/** required */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
@@ -632,11 +645,15 @@ struct BPLINK_API FBpPresentationAccent
 	FString light;
 };
 
-// not mapped (read from the raw JSON): glyph (a string or an object)
+// carried by BpSchema::FixUp (BpSchemaFixups.h): glyph -> Glyph_
 USTRUCT(BlueprintType)
 struct BPLINK_API FBpPresentation
 {
 	GENERATED_BODY()
+
+	/** JSON key "glyph" as its condensed JSON text (a string or an object): filled by BpSchema::FixUp, not by FJsonObjectConverter. A name from the shared glyph set, or a custom SVG path in a 16x16 box. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString Glyph_;
 
 	/** one of: solid, double, dotted, comb, chain, hatched, dimension, wave. required */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
@@ -653,11 +670,15 @@ struct BPLINK_API FBpPresentation
 };
 
 /** One lens plugin: its fields, a declarative health rule and presentation hints. Normative text: docs/standard/app-structure-v3.md. */
-// not mapped (read from the raw JSON): $schema (not an identifier); short (a C++ keyword or Unreal macro)
+// carried by BpSchema::FixUp (BpSchemaFixups.h): $schema -> Schema_; short -> Short_
 USTRUCT(BlueprintType)
 struct BPLINK_API FBpLensManifest
 {
 	GENERATED_BODY()
+
+	/** JSON key "$schema" (not an identifier): filled by BpSchema::FixUp, not by FJsonObjectConverter. always "lens-manifest/1". required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString Schema_;
 
 	/** One of the seven built-in short ids, a reverse-DNS id for a custom lens, or tmp.<kebab> for a temporary lens (spec 8.1). required */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
@@ -670,6 +691,10 @@ struct BPLINK_API FBpLensManifest
 	/** required */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString name;
+
+	/** JSON key "short" (a C++ keyword or Unreal macro): filled by BpSchema::FixUp, not by FJsonObjectConverter */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString Short_;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString description;
@@ -773,11 +798,15 @@ struct BPLINK_API FBpFacet
 };
 
 /** One file per app project: the code tree (v2, unchanged), the product tree (3.1: feature tags, experience, core and variations), KPIs, lens plugins and per-feature lens values. Normative text: docs/standard/app-structure-v3.md. Unknown keys are allowed where readers ignore them (top level, features, facets, the v2 code tree and KPIs); the v3 grammar objects are closed. */
-// not mapped (read from the raw JSON): $schema (not an identifier); taxonomy (an array inside a container)
+// carried by BpSchema::FixUp (BpSchemaFixups.h): $schema -> Schema_
 USTRUCT(BlueprintType)
 struct BPLINK_API FBpAppStructure
 {
 	GENERATED_BODY()
+
+	/** JSON key "$schema" (not an identifier): filled by BpSchema::FixUp, not by FJsonObjectConverter. always "app-structure/3". required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString Schema_;
 
 	/** required */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
@@ -798,6 +827,10 @@ struct BPLINK_API FBpAppStructure
 	/** required */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FBpAppStructureProject project;
+
+	/** raw JSON: an object of values no UPROPERTY can hold (an array inside a container) */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FJsonObjectWrapper taxonomy;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	TMap<FString, int32> stats;
