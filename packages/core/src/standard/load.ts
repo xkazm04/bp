@@ -547,7 +547,6 @@ function withToggle(b: Base, toggle: string | null): Structure {
   const all = b.defs.map((d) => ({ ...d, i: -1 }));
   const lenses: LensDef[] = [];
   b.entries.forEach((e, k) => { if (t.get(e.id) ?? e.enabled) { all[k].i = lenses.length; lenses.push(all[k]); } });
-  const ids = lenses.map((l) => l.id);
   const features = b.features.map((f) => {
     return { ...f, ...troubleOf(lenses, (id) => f.lens[id]) };
   });
