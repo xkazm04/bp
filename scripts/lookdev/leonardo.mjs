@@ -1,0 +1,207 @@
+#!/usr/bin/env node
+// P2 look-dev: one Leonardo generation per call, logged. Dependency-free (Node's fetch and fs only).
+// Every prompt is the state text (docs/concepts/vr-light-table/lookdev/states.json) plus the full style
+// block (lookdev/style-block.json), so the block is restated in every call (art-breakdown.md, 'The style block').
+//
+//   node scripts/lookdev/leonardo.mjs gen --state 03-scan-sweeping --variant a --seed 101 --quality LOW [--out name.png] [--stop-at 230]
+//   node scripts/lookdev/leonardo.mjs total          the night's running credit total from log.jsonl
+//   node scripts/lookdev/leonardo.mjs prompt --state 00-hero --variant b    print the composed prompt, no call
+//
+// The key is LEONARDO_API_KEY, read at run time from the main checkout's untracked .env. It is never printed,
+// logged or written anywhere; neither is the authorization header. Every call is "public": false.
+// One JSON line per call goes to lookdev/log.jsonl. The night's total (log + PRIOR_SPEND) may never pass
+// HARD_CAP; --stop-at only lowers it (the exploration stop).
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const DIR = path.join(ROOT, 'docs/concepts/vr-light-table/lookdev');
+const LOG = path.join(DIR, 'log.jsonl');
+const EXPLORE = path.join(DIR, 'explore');
+const OVERSIZE = path.join(os.tmpdir(), 'bp-lookdev'); // exploration frames too big to commit: URL and id stay in the log
+const ENV_FILE = 'C:/Users/kazda/kiro/bp/.env';
+const API = 'https://cloud.leonardo.ai/api/rest';
+const MODEL = 'openai/gpt-image-2.5-flare';
+const STYLE_ID = '111dc692-d470-4eec-b791-3475abac4c46';
+const WIDTH = 1376;
+const HEIGHT = 768;
+const HARD_CAP = 390; // of the operator's 400 per night
+const PRIOR_SPEND = 6; // the Director's LOW test call on 2026-10-20, made before this log existed
+const LOW_FALLBACK = 6; // the Director's measured LOW cost
+const PROBE_ESTIMATE = { MEDIUM: 40, HIGH: 120 }; // a deliberately high guess, used only to gate the first probe
+const COMMIT_LIMIT = 400 * 1024;
+const POLL_MS = 5000;
+const POLL_LIMIT_MS = 180000;
+
+const args = process.argv.slice(2);
+const cmd = args[0];
+const opt = (name, dflt) => {
+  const i = args.indexOf(`--${name}`);
+  return i > 0 && i + 1 < args.length ? args[i + 1] : dflt;
+};
+
+const readJson = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
+const style = readJson(path.join(DIR, 'style-block.json'));
+const states = readJson(path.join(DIR, 'states.json'));
+
+export function styleText(s = style) {
+  const palette = s.palette.map((p) => `${p.role}: ${p.name} ${p.hex.join(' to ')}`).join('; ');
+  return [
+    `Style block. Technique: ${s.technique}.`,
+    `Subject treatment: ${s.subject}.`,
+    `Subject lock: ${s.subjectLock}.`,
+    `Palette with roles: ${palette}.`,
+    `Finish: ${s.finish}.`,
+    `Never: ${s.never.join(', ')}.`,
+  ].join(' ');
+}
+
+export function composePrompt(stateId, variant) {
+  const st = states.states.find((x) => x.id === stateId);
+  if (!st) throw new Error(`unknown state ${stateId}; known: ${states.states.map((x) => x.id).join(', ')}`);
+  if (variant === 'a') return `${st.text} ${styleText()}`;
+  if (variant === 'b') return `Style frame of one state: ${st.focus}. ${states.pose}. ${st.text} ${styleText()}`;
+  throw new Error(`unknown variant ${variant} (a or b)`);
+}
+
+const readLog = () => (fs.existsSync(LOG) ? fs.readFileSync(LOG, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
+export const nightTotal = (log = readLog()) => PRIOR_SPEND + log.reduce((n, e) => n + (Number(e.credits) || 0), 0);
+
+/** What a call at this quality is expected to cost: LOW is known; MEDIUM and HIGH come from the first measured call. */
+function expectedCost(quality, log) {
+  const measured = log.find((e) => e.quality === quality && e.creditsSource !== 'fallback' && Number(e.credits) > 0);
+  if (measured) return { cost: Number(measured.credits), measured: true };
+  if (quality === 'LOW') return { cost: LOW_FALLBACK, measured: true };
+  return { cost: PROBE_ESTIMATE[quality], measured: false };
+}
+
+function readKey() {
+  const m = fs.readFileSync(ENV_FILE, 'utf8').match(/^\s*LEONARDO_API_KEY\s*=\s*(.+?)\s*$/m);
+  if (!m) throw new Error(`LEONARDO_API_KEY not found in ${ENV_FILE}`);
+  return m[1].replace(/^['"]|['"]$/g, '');
+}
+
+async function call(key, method, url, body) {
+  const res = await fetch(url, {
+    method,
+    headers: { accept: 'application/json', authorization: `Bearer ${key}`, ...(body ? { 'content-type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const text = await res.text();
+  let json;
+  try { json = JSON.parse(text); } catch { json = { raw: text.slice(0, 500) }; }
+  if (!res.ok) throw new Error(`${method} ${url} -> HTTP ${res.status}: ${JSON.stringify(json).slice(0, 500)}`);
+  return json;
+}
+
+/** Sum of every numeric token pool on the account; the difference across a call is what it cost. */
+async function balance(key) {
+  try {
+    const me = await call(key, 'GET', `${API}/v1/me`);
+    const u = me.user_details?.[0] ?? {};
+    return Object.entries(u).filter(([k, v]) => /tokens$/i.test(k) && typeof v === 'number').reduce((n, [, v]) => n + v, 0);
+  } catch {
+    return null;
+  }
+}
+
+/** A cost the API reports itself, if it does: any numeric field named like cost or credit. */
+function reportedCost(obj, depth = 0) {
+  if (!obj || typeof obj !== 'object' || depth > 4) return null;
+  for (const [k, v] of Object.entries(obj)) {
+    if (/cost|credit/i.test(k)) {
+      if (typeof v === 'number') return v;
+      if (v && typeof v === 'object' && typeof v.amount === 'number') return v.amount;
+    }
+  }
+  for (const v of Object.values(obj)) {
+    const c = reportedCost(v, depth + 1);
+    if (c != null) return c;
+  }
+  return null;
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function gen() {
+  const state = opt('state');
+  const variant = opt('variant', 'a');
+  const seed = Number(opt('seed', '1'));
+  const quality = opt('quality', 'LOW').toUpperCase();
+  const stopAt = Math.min(HARD_CAP, Number(opt('stop-at', HARD_CAP)));
+  if (!['LOW', 'MEDIUM', 'HIGH'].includes(quality)) throw new Error(`quality must be LOW, MEDIUM or HIGH`);
+  if (!Number.isInteger(seed)) throw new Error('seed must be an integer');
+  const prompt = composePrompt(state, variant);
+
+  const log = readLog();
+  const total = nightTotal(log);
+  const { cost, measured } = expectedCost(quality, log);
+  if (total + cost > stopAt) {
+    console.error(`REFUSED: night total ${total} + expected ${cost}${measured ? '' : ' (unmeasured guess)'} at ${quality} would pass ${stopAt}`);
+    process.exit(2);
+  }
+
+  const key = readKey();
+  const before = await balance(key);
+  const body = {
+    model: MODEL,
+    public: false,
+    parameters: { width: WIDTH, height: HEIGHT, prompt_enhance: 'OFF', quality, quantity: 1, seed, style_ids: [STYLE_ID], prompt },
+  };
+  const entry = { time: new Date().toISOString(), state, variant, model: MODEL, prompt, seed, quality, width: WIDTH, height: HEIGHT, generationId: null, status: 'ERROR', credits: 0, creditsSource: null, file: null, urls: [], committed: false };
+  let created = null;
+  let reported = null;
+  try {
+    created = await call(key, 'POST', `${API}/v2/generations`, body);
+    entry.generationId = created.generate?.generationId ?? created.generationId ?? null;
+    reported = reportedCost(created);
+    if (!entry.generationId) throw new Error(`no generationId in response: ${JSON.stringify(created).slice(0, 300)}`);
+    const t0 = Date.now();
+    let g;
+    for (;;) {
+      await sleep(POLL_MS);
+      g = (await call(key, 'GET', `${API}/v1/generations/${entry.generationId}`)).generations_by_pk;
+      entry.status = g?.status ?? 'UNKNOWN';
+      if (entry.status === 'COMPLETE' || entry.status === 'FAILED') break;
+      if (Date.now() - t0 > POLL_LIMIT_MS) { entry.status = 'TIMEOUT'; break; }
+    }
+    reported ??= reportedCost(g);
+    entry.urls = (g?.generated_images ?? []).map((i) => i.url);
+    if (entry.status === 'COMPLETE' && entry.urls.length) {
+      const url = entry.urls[0];
+      const ext = (path.extname(new URL(url).pathname) || '.png').toLowerCase();
+      const name = opt('out') ?? `explore/${state}-${variant}-s${seed}-${quality.toLowerCase()}${ext}`;
+      const buf = Buffer.from(await (await fetch(url)).arrayBuffer());
+      const explore = name.startsWith('explore/');
+      const dest = explore && buf.length > COMMIT_LIMIT ? path.join(OVERSIZE, path.basename(name)) : path.join(DIR, name);
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.writeFileSync(dest, buf);
+      entry.committed = dest.startsWith(DIR);
+      entry.file = entry.committed ? path.relative(ROOT, dest).replaceAll('\\', '/') : dest.replaceAll('\\', '/');
+      entry.bytes = buf.length;
+    }
+  } catch (e) {
+    entry.error = String(e.message ?? e).slice(0, 500);
+  }
+  const after = await balance(key);
+  if (reported != null) { entry.credits = reported; entry.creditsSource = 'api'; }
+  else if (before != null && after != null && before - after > 0) { entry.credits = before - after; entry.creditsSource = 'balance'; }
+  else if (entry.generationId) { entry.credits = cost; entry.creditsSource = 'fallback'; }
+  else { entry.credits = 0; entry.creditsSource = 'no-generation'; }
+  fs.mkdirSync(DIR, { recursive: true });
+  fs.appendFileSync(LOG, JSON.stringify(entry) + '\n');
+  console.log(`${entry.status} ${state} ${variant} s${seed} ${quality} credits=${entry.credits} (${entry.creditsSource}) total=${nightTotal()} file=${entry.file ?? '-'}${entry.error ? ` error=${entry.error}` : ''}`);
+  if (entry.status !== 'COMPLETE') process.exit(1);
+}
+
+if (cmd === 'gen') await gen();
+else if (cmd === 'total') {
+  const log = readLog();
+  const by = {};
+  for (const e of log) { const q = (by[e.quality] ??= { calls: 0, credits: 0 }); q.calls++; q.credits += Number(e.credits) || 0; }
+  console.log(JSON.stringify({ priorSpend: PRIOR_SPEND, byQuality: by, logCredits: nightTotal(log) - PRIOR_SPEND, nightTotal: nightTotal(log), cap: HARD_CAP }, null, 2));
+} else if (cmd === 'prompt') console.log(composePrompt(opt('state'), opt('variant', 'a')));
+else if (cmd) { console.error(`unknown command ${cmd}`); process.exit(1); }
+else if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) { console.error('usage: gen | total | prompt (see the header)'); process.exit(1); }

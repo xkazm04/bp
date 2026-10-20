@@ -1,0 +1,15 @@
+{
+  "$comment": "The style block from art-breakdown.md ('The style block'), as the file scripts/lookdev/leonardo.mjs reads and restates in full in every generation call. subjectLock was added after the Director's 2026-10-20 test, where a generic prompt drew a campus.",
+  "technique": "photographic concept render, first-person, shallow depth of field at the far edge",
+  "subject": "architectural drafting: thin luminous linework, translucent paper-thin volumes, physical drafting objects",
+  "subjectLock": "the plan is the wings, rooms and fixtures of a software product, drawn as an architect's site plan; no buildings, no trees, no landscape, no readable text or labels",
+  "palette": [
+    { "role": "ground", "name": "blueprint blue", "hex": ["#0B2A6B", "#123A8C"] },
+    { "role": "linework and volumes", "name": "cyan-white", "hex": ["#BFE8FF"] },
+    { "role": "attention (pins, scan, agent head)", "name": "amber", "hex": ["#FFB547"] },
+    { "role": "decision accents", "name": "warm paper", "hex": ["#F3E9D2"] },
+    { "role": "studio", "name": "near-black blue", "hex": ["#0A0F18"] }
+  ],
+  "finish": "soft bloom on edges, light haze, warm practical lights against a cool table, slight film grain",
+  "never": ["galaxy or star imagery", "neon cyberpunk clutter", "fisheye", "readable fake text", "purple gradients"]
+}
