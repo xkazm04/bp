@@ -88,11 +88,11 @@ Two other variants are references only, never to copy wholesale:
   and rejected the readability cost.
 
 Data (since the app-structure v3 adoption, spark `blueprint-data-standard` WP3):
-- The product comes **only** from the v3 map `src/data/kettle.app-structure.json` and its events log
-  `src/data/kettle.events.jsonl` (spec: `docs/standard/app-structure-v3.md`). The standard's loader
-  `src/lib/standard/load.ts` reads them (v3, or v2 per spec section 11) into the internal model that
-  `@/lib/data` exposes (`loadProduct()`); `src/data/swarm.json` stays the runtime feed (`SWARM`).
-  `src/data/kettle.json` is the old sample, kept only for the conversion and check scripts.
+- The product comes **only** from the v3 map `packages/core/data/kettle.app-structure.json` and its events log
+  `packages/core/data/kettle.events.jsonl` (spec: `docs/standard/app-structure-v3.md`). The standard's loader
+  `packages/core/src/standard/load.ts` reads them (v3, or v2 per spec section 11) into the internal model that
+  `@/lib/data` exposes (`loadProduct()`); `packages/core/data/swarm.json` stays the runtime feed (`SWARM`).
+  `packages/core/data/kettle.json` is the old sample, kept only for the conversion and check scripts.
 - Feature ids in the app are slugs. A short passthrough `id` (`PAY-09`) is shown as a display code only.
 - People, the activity feed and the tagline come from the map's `extensions` (the sample keeps them
   under `com.kettle.sample`); without them an actor id is shown as its own name.
@@ -113,7 +113,7 @@ Data (since the app-structure v3 adoption, spark `blueprint-data-standard` WP3):
   session, on top of the file's `enabled` (`-id` off, `+id` or a bare id on; unknown ids are ignored).
   The General legend says so.
 - **Health** per feature and lens is computed once per data load with the reference evaluator
-  (`src/lib/standard/health.ts`, the feature passed as context for bound fields, the KPIs for
+  (`packages/core/src/standard/health.ts`, the feature passed as context for bound fields, the KPIs for
   KPI-bound fields), read on the map's as-of date, and cached with the matched rule's reason. It never
   runs in the frame loop.
 - **General health** of a feature (tile trouble marks, "in trouble" counts, the phone list) is the
@@ -136,12 +136,12 @@ Data (since the app-structure v3 adoption, spark `blueprint-data-standard` WP3):
 ## Architecture
 
 ```
-src/app/                    routes (App Router). '/' = the blueprint (subtle); '/variants' = the index; '/v/[variant]' = one variant
-src/lib/data/               typed data (done)
-src/lib/model/              pure TS: indexes, aggregates, layout, scale clone, swarm sim state
-src/engine/                 canvas engine: camera, frame loop, LOD, hit testing, layers, lens mixing
-src/components/             React UI around the canvas (header, tabs, dock, queue, sheet, ladder…)
-src/variants/<id>/          one lens expression per variant (see below) + optional UI overrides
+apps/web/src/app/                    routes (App Router). '/' = the blueprint (subtle); '/variants' = the index; '/v/[variant]' = one variant
+packages/core/src/data/               typed data (done)
+packages/core/src/model/              pure TS: indexes, aggregates, layout, scale clone, swarm sim state
+apps/web/src/engine/                 canvas engine: camera, frame loop, LOD, hit testing, layers, lens mixing
+apps/web/src/components/             React UI around the canvas (header, tabs, dock, queue, sheet, ladder…)
+apps/web/src/variants/<id>/          one lens expression per variant (see below) + optional UI overrides
 ```
 
 ### Performance rules (the B/1 lesson: give it all)
@@ -171,8 +171,8 @@ src/variants/<id>/          one lens expression per variant (see below) + option
 
 ### Theme
 
-- `data-theme="dark" | "light"` on `<html>`, set before paint (see `src/app/layout.tsx`).
-- Tokens live in `src/app/globals.css`. Light is the dark palette roughly inverted: white paper,
+- `data-theme="dark" | "light"` on `<html>`, set before paint (see `apps/web/src/app/layout.tsx`).
+- Tokens live in `apps/web/src/app/globals.css`. Light is the dark palette roughly inverted: white paper,
   navy ink, the same blues, with the status colours darkened for contrast.
 - The engine reads the tokens with `getComputedStyle` on mount and on theme change, then re-rasters.
 - A toggle in the UI (and `?theme=light`) switches the theme and remembers it in `localStorage`
@@ -234,7 +234,7 @@ The owner's rule: lens icons are the top-priority signals to watch and act on, a
 blueprint is mostly finding flags and resolving them. Three prototypes were compared (index tabs on the
 top border, trouble-only flags, large icon cells). Flags won, but a flag sized to fit its tile was
 unreadable when zoomed out, so flags are not part of any tile. They are an engine layer in
-`src/engine/render/flags.ts`, the same for every variant.
+`apps/web/src/engine/render/flags.ts`, the same for every variant.
 
 - **One flag per feature and lens that is bad or on watch**, read from `feature.trouble`, only at
   "now" (time travel shows stage only). A lens filter that dims a feature hides its flags too.
@@ -264,7 +264,7 @@ unreadable when zoomed out, so flags are not part of any tile. They are an engin
 - **Drawn on top, each frame**, after every dynamic layer, so they stay crisp at one size during a
   gesture. On the Kettle sample about 100 candidates are laid out per frame. That breaks the rule of
   allocating nothing in the frame loop (small per-frame arrays), so profile before `?scale=4` sign-off.
-- **The lens glyph set** (`glyph()`) lives in `src/engine/render/lens-glyph.ts` so the engine can draw
+- **The lens glyph set** (`glyph()`) lives in `apps/web/src/engine/render/lens-glyph.ts` so the engine can draw
   it. The subtle variant re-exports it from `marks.ts`, and its ribbon no longer draws its own glyph
   knockout while flags are on.
 - `?flags=0` turns the layer off, to compare against the plan without it.
@@ -295,7 +295,7 @@ lens has nothing to add to goes transparent.
   under the 12 px floor. A body too small for one cell of the texture gets a single centred "?"; one
   too small for a 12 px glyph gets nothing (the evidence line still says NOT MEASURED). In General only
   a feature with no measured lens at all gets the texture (Kettle has none; a live product before its
-  first scan shows it everywhere). The engine draws it (`src/engine/render/plan.ts`), so every variant
+  first scan shows it everywhere). The engine draws it (`apps/web/src/engine/render/plan.ts`), so every variant
   shows it.
 - **Faded = this lens has nothing here.** When the dominant lens's health is `na` (`applicable: false`
   or an `applies_when` miss) the whole tile or segment fades to 0.35, in that lens's view only. `na` is
@@ -303,7 +303,7 @@ lens has nothing to add to goes transparent.
 - **Weights.** The "?" and the fade use the weights the trouble marks crossfade on: General's verdict
   by (1 - dominance), the dominant lens's by its dominance. Both are part of the static raster (the lens
   tween re-rasters anyway); nothing changes position.
-- **Patterns are cached.** `src/engine/render/patterns.ts` builds each pattern once per theme object,
+- **Patterns are cached.** `apps/web/src/engine/render/patterns.ts` builds each pattern once per theme object,
   motif, device resolution and size bucket (UI scale in quarter steps), anchors it to the rect it fills
   (snapped to a device pixel) and hands it out by number. The per-tile path never calls
   `createPattern` and allocates nothing.
@@ -312,7 +312,7 @@ lens has nothing to add to goes transparent.
 
 These are routes `/v/subtle`, `/v/shaped` and `/v/bold`, plus `/` (the blueprint, subtle) and `/variants` (an index with the three cards
 and the theme toggle). They share the engine, the UI and the data, and differ only in their
-`src/variants/<id>/` expression and small UI overrides. They span the owner's range:
+`apps/web/src/variants/<id>/` expression and small UI overrides. They span the owner's range:
 
 1. **subtle: patterns.** Every tile keeps its rectangle. Lenses differ by line patterns, hairline
    marks and small icon sets in fixed slots. In General, one tiny indicator per enabled lens sits in
@@ -345,7 +345,7 @@ and the theme toggle). They share the engine, the UI and the data, and differ on
    - Still blue and white first, with readability kept. A/2 is the warning.
 
 The shaped and bold variants know the six built-in lens ids and
-read their values from the facets through `src/variants/base/legacy.ts`; for any other lens id they fall
+read their values from the facets through `apps/web/src/variants/base/legacy.ts`; for any other lens id they fall
 back to the subtle manifest-driven channel and the default, manifest-driven sheet panel.
 
 All three: General stays the clearest view. A lens is subtle yet noticeable in variant 1, and
@@ -353,7 +353,7 @@ unmistakable in variant 3. Every variant supports both themes and `?scale=4`.
 
 ## Live products
 
-Kettle is built in and needs no server route. Its map, events and swarm (~770 KB) are a lazy chunk (`src/lib/data/sample.ts`, `src/lib/model/sample.ts`), fetched with a dynamic `import()` only when the sample is shown, so a live product's page never ships them: nothing on the live path imports them statically (the model barrel and `@/lib/data` carry types and the loader only). Any other product is a **live product**: a repo that the `/lens-scan` skill has scanned, opened with `?product=<slug>`. No `?product` means Kettle, exactly as before.
+Kettle is built in and needs no server route. Its map, events and swarm (~770 KB) are a lazy chunk (`packages/core/src/data/sample.ts`, `packages/core/src/model/sample.ts`), fetched with a dynamic `import()` only when the sample is shown, so a live product's page never ships them: nothing on the live path imports them statically (the model barrel and `@/lib/data` carry types and the loader only). Any other product is a **live product**: a repo that the `/lens-scan` skill has scanned, opened with `?product=<slug>`. No `?product` means Kettle, exactly as before.
 
 **Product list.** `bp.products.local.json` at the blueprint repo root (gitignored; `bp.products.example.json` shows the shape):
 
@@ -369,20 +369,20 @@ Kettle is built in and needs no server route. Its map, events and swarm (~770 KB
 - `events.jsonl`: the events log (optional). Without it the revisions strip has one week, the as-of date.
 - `shots/`: screenshots.
 
-The blueprint reads the store through a read-only connection. Its own only write is a proposal decision, made on a short-lived read-write connection with a 2000 ms busy timeout (triage and release writes go through lens-scan's store.mjs: see Packs, triage and releases). The server code is `src/lib/scan/store.server.ts` and `products.server.ts`. Both throw if loaded in a browser, and only route handlers import them. `node:sqlite` is a Node 24 builtin. It prints an ExperimentalWarning once per process, and it needs no `next.config` change.
+The blueprint reads the store through a read-only connection. Its own only write is a proposal decision, made on a short-lived read-write connection with a 2000 ms busy timeout (triage and release writes go through lens-scan's store.mjs: see Packs, triage and releases). The server code is `packages/core/src/server/store.server.ts` and `products.server.ts`. Both throw if loaded in a browser, and only route handlers import them. `node:sqlite` is a Node 24 builtin. It prints an ExperimentalWarning once per process, and it needs no `next.config` change.
 
-**Wire convention.** The row types are in `src/lib/scan/types.ts`. JSON columns (`runs.lenses`, `runs.scope`, `shots.report`) arrive parsed. NULL columns are omitted, so the JSON never contains `null`. A feature with no measurement row is unmeasured. Store v4 (`proposals`): `origin` is omitted when it is `scan` (only `ado` / `sweep` travel), and `external_ref`, `external_url`, `tier` (0..3), `risk_class`, `ranked_by`, `ranked_at` are omitted when NULL; a v3 store reads with none of them (`store.server.ts` reads `SELECT *`, so absent columns are absent keys). The train's parser door (`src/lib/train/wire.ts`) holds tier to 0..3 and `risk_class` / `origin` to their enums. Checked by `npm run check:scan-wire` (a v4 row, a scan row, a v3 file).
+**Wire convention.** The row types are in `packages/core/src/scan/types.ts`. JSON columns (`runs.lenses`, `runs.scope`, `shots.report`) arrive parsed. NULL columns are omitted, so the JSON never contains `null`. A feature with no measurement row is unmeasured. Store v4 (`proposals`): `origin` is omitted when it is `scan` (only `ado` / `sweep` travel), and `external_ref`, `external_url`, `tier` (0..3), `risk_class`, `ranked_by`, `ranked_at` are omitted when NULL; a v3 store reads with none of them (`store.server.ts` reads `SELECT *`, so absent columns are absent keys). The train's parser door (`packages/core/src/train/wire.ts`) holds tier to 0..3 and `risk_class` / `origin` to their enums. Checked by `npm run check:scan-wire` (a v4 row, a scan row, a v3 file).
 
 **Routes.** All routes run on the Node runtime with `force-dynamic`. An unknown slug answers 404 `{ error }`.
 
 | Route | Answer |
 |---|---|
-| `GET /api/products` | `ProductInfo[]`: `{ slug, name, root, live, readiness }`. `live` = `scan.db` exists. `readiness` (`src/lib/scan/readiness.ts`): `{ rootExists, map, mapVersion: 2\|3\|null, events, store, features, lenses, measuredFacets, proposals: n\|null (open), lastRunAt: iso\|null, error? }`, from stats, one cached parse of the map and one read-only store query; a broken product reports what it lacks and never breaks the list. `readinessLevel(r)` gives `missing` (no root or map), `map-only`, `measured` (readings in the store), `full` (measured + events log). |
+| `GET /api/products` | `ProductInfo[]`: `{ slug, name, root, live, readiness }`. `live` = `scan.db` exists. `readiness` (`packages/core/src/scan/readiness.ts`): `{ rootExists, map, mapVersion: 2\|3\|null, events, store, features, lenses, measuredFacets, proposals: n\|null (open), lastRunAt: iso\|null, error? }`, from stats, one cached parse of the map and one read-only store query; a broken product reports what it lacks and never breaks the list. `readinessLevel(r)` gives `missing` (no root or map), `map-only`, `measured` (readings in the store), `full` (measured + events log). |
 | `POST /api/products` | Register `{ slug, name, root }`. **201** with the entry; **400** for a bad body, a slug outside `^[a-z0-9][a-z0-9-]{0,62}$`, `kettle`, an empty name, or a root that is not a directory; **409** for a slug in use. |
 | `PATCH /api/products/<slug>` | `{ name?, root? }` (the slug never changes). **200** with the entry; **400**; **404** for an unknown slug. |
 | `DELETE /api/products/<slug>` | Unregister: drops the line only, nothing on disk is deleted. **200** `{ slug }`; **404**. |
 
-Registry writes (`src/lib/scan/registry.server.ts`) rewrite `bp.products.local.json` atomically (temp file + rename), create it when absent, and keep unknown keys and entry order; a file that does not parse is never overwritten (**409**). They answer **403** unless the request is local: a loopback `Host`, a loopback `Origin` when one is sent, no cross-site `Sec-Fetch-Site`, and only loopback `X-Forwarded-For` hops.
+Registry writes (`packages/core/src/server/registry.server.ts`) rewrite `bp.products.local.json` atomically (temp file + rename), create it when absent, and keep unknown keys and entry order; a file that does not parse is never overwritten (**409**). They answer **403** unless the request is local: a loopback `Host`, a loopback `Origin` when one is sent, no cross-site `Sec-Fetch-Site`, and only loopback `X-Forwarded-For` hops.
 | `GET /api/products/<slug>/structure` | `{ structure, events, rev }`. `events` is `''` when there is no log. `rev` fingerprints the map files (mtime and size of `app-structure.json` and `events.jsonl`), the string the stream's `map` event carries. 404 when `app-structure.json` is missing. |
 | `GET /api/products/<slug>/scan` | `ScanSnapshot`: all runs, measurements, proposals, shots and coverage, plus the latest 200 activity rows in ascending id order. A missing store gives empty arrays. |
 | `GET /api/products/<slug>/stream` | Server-Sent Events, described below. |
@@ -398,7 +398,7 @@ Registry writes (`src/lib/scan/registry.server.ts`) rewrite `bp.products.local.j
 | `POST /api/products/<slug>/lenses/<id>/execute` | Body `{}`: execute the lens's backlog. Its `proposed` findings are approved through the decision write (`decided_by = 'blueprint'`), its `approved` ones taken as they are, in store order (created_at, then id), and execute jobs of at most 50 are queued over them. Skipped `{ id, status }`: `executing` / `done` / `failed` / `declined`, and `in-job` for one a queued or running execute job already builds. **202** `{ jobs, approved, skipped }`; **409** `{ error: 'nothing to execute', skipped }`; **400** `unknown-lens` (not in the map, or disabled); **404** unknown product / map / store; **429** `{ error, jobs, approved, skipped }` when the queue cap stopped it (the approvals stand; `jobs` holds the ones queued); **503** when the store stayed locked. |
 | `POST /api/lens-draft` | Body `{ product: <slug> \| 'kettle', message (1..4000), session?, kind?: 'project' \| 'temporary' }` (kind defaults to `project`): one turn of the lens onboarding chat. The first turn's prompt is `/lens-scan onboard --draft-only [--temporary]` followed by the message (the contract lives in the lens-scan skill, `references/lens-onboarding.md`); later turns `--resume` with the message alone. The last fenced `lens-manifest` block is checked with `checkLensManifest` in the kind's mode (a live product's taken looks included). **200** `{ session, reply, done: false }`, `{ session, reply, draft, done: true }` or `{ session, reply, done: false, error }`; **400** (also a bad `kind`); **404**; **502**; **503**; **504**. |
 
-**Scan jobs** (`src/lib/scan/jobs.server.ts`). For a live product the scan routes run the Claude Code CLI headless in the product repo: `BP_CLAUDE_BIN`, else `claude` on PATH (on Windows `claude.exe`, `.com`, then a `.cmd`/`.bat` shim through `cmd.exe`, whose command line then holds only the shim path and characters with no meaning to cmd; a `.js`/`.mjs` path runs on the server's Node). Its argv is fixed, `-p --dangerously-skip-permissions --output-format text`, and **the prompt goes on stdin**, never on the command line: `/lens-scan measure --lens <lens>[ --scope <feature,...>]` or `/lens-scan execute --proposals <id,...>`, every id held to `SAFE_ID` and to the map or the store first. **Every job runs with `--dangerously-skip-permissions`** (the operator's choice: a headless run cannot answer permission prompts), so it can edit and run anything in that repo; the routes stay localhost-only. The env adds `BP_JOB_ID`, which lens-scan writes into its run's note (`bp-job:<id>`, or `bp-job:<id> <more>`): the job takes that run's id (`run_id`) from the stream, and at exit from the store. A registry per product on `globalThis` (it survives a dev reload) keeps the latest 50 jobs, at most 3 running and a FIFO queue of at most 16. Status: `queued` → `running` → `done` (exit 0 with a run), `failed` (another exit code, with the last stderr line or `exit <n>` as `error`; or exit 0 with no run, with lens-scan's `lens-scan refused: …` line; or `Claude Code CLI not found (set BP_CLAUDE_BIN)`), or `cancelled`. Each job logs stdout and stderr to `<root>/.ai/lens-scan/work/bp-jobs/<job>.log` and keeps its last 20 lines (at most 2 KB) as `log_tail`. The stream sends `event: jobs` (`ScanJob[]`) after each snapshot when the product has jobs, and on every change of the registry (log lines at most every 400 ms). `useLiveProduct` returns `jobs` (`[]` before the first event; it changes only on a discrete change: a job added, a status, a run attached, so a log line re-renders nothing); `useLiveJobs(slug)` follows every event, log lines included. Fetch helpers: `postScan`, `postDispatch`, `deleteJob`, `postLens`, `postProjectLens`, `patchLens`, `deleteLens`, `executeLens`, `postLensDraft`, each rejecting with an `Error` that carries `status` and `body`. The onboarding chat runs `claude -p --output-format json --dangerously-skip-permissions [--resume <session>]` the same way; its first turn is `/lens-scan onboard --draft-only [--temporary]` and the user's message (`onboardPrompt` in `src/lib/scan/lens-draft.ts`); the contract lives in the lens-scan skill. A selection scan's prompt is `--scope <slug,...>` like any other kind. A lens execute queues one `/lens-scan execute --proposals ...` job per 50 ids. Actions `startSelectionScan`, `executeLensBacklog` and `addProjectLens` sit beside `startScan`; the Kettle sim answers the same (`ScanSim.executeLens`, selection scopes), and `addProjectLens` writes this browser's store (`temp-lens.ts`, which now keeps project entries too) under the same checks (400 / 409). Project-lens writes (temporary or permanent; never a built-in) (`src/lib/scan/lens-write.server.ts`) rewrite the map atomically (temp file + rename), keeping key order, unknown keys, indentation and line endings, and never overwrite a map that does not parse; the stream's `map` event carries them to every client. `npm run check:scan-jobs` drives all of it against a fake CLI (`scripts/fixtures/fake-claude.mjs`).
+**Scan jobs** (`packages/core/src/server/jobs.server.ts`). For a live product the scan routes run the Claude Code CLI headless in the product repo: `BP_CLAUDE_BIN`, else `claude` on PATH (on Windows `claude.exe`, `.com`, then a `.cmd`/`.bat` shim through `cmd.exe`, whose command line then holds only the shim path and characters with no meaning to cmd; a `.js`/`.mjs` path runs on the server's Node). Its argv is fixed, `-p --dangerously-skip-permissions --output-format text`, and **the prompt goes on stdin**, never on the command line: `/lens-scan measure --lens <lens>[ --scope <feature,...>]` or `/lens-scan execute --proposals <id,...>`, every id held to `SAFE_ID` and to the map or the store first. **Every job runs with `--dangerously-skip-permissions`** (the operator's choice: a headless run cannot answer permission prompts), so it can edit and run anything in that repo; the routes stay localhost-only. The env adds `BP_JOB_ID`, which lens-scan writes into its run's note (`bp-job:<id>`, or `bp-job:<id> <more>`): the job takes that run's id (`run_id`) from the stream, and at exit from the store. A registry per product on `globalThis` (it survives a dev reload) keeps the latest 50 jobs, at most 3 running and a FIFO queue of at most 16. Status: `queued` → `running` → `done` (exit 0 with a run), `failed` (another exit code, with the last stderr line or `exit <n>` as `error`; or exit 0 with no run, with lens-scan's `lens-scan refused: …` line; or `Claude Code CLI not found (set BP_CLAUDE_BIN)`), or `cancelled`. Each job logs stdout and stderr to `<root>/.ai/lens-scan/work/bp-jobs/<job>.log` and keeps its last 20 lines (at most 2 KB) as `log_tail`. The stream sends `event: jobs` (`ScanJob[]`) after each snapshot when the product has jobs, and on every change of the registry (log lines at most every 400 ms). `useLiveProduct` returns `jobs` (`[]` before the first event; it changes only on a discrete change: a job added, a status, a run attached, so a log line re-renders nothing); `useLiveJobs(slug)` follows every event, log lines included. Fetch helpers: `postScan`, `postDispatch`, `deleteJob`, `postLens`, `postProjectLens`, `patchLens`, `deleteLens`, `executeLens`, `postLensDraft`, each rejecting with an `Error` that carries `status` and `body`. The onboarding chat runs `claude -p --output-format json --dangerously-skip-permissions [--resume <session>]` the same way; its first turn is `/lens-scan onboard --draft-only [--temporary]` and the user's message (`onboardPrompt` in `packages/core/src/scan/lens-draft.ts`); the contract lives in the lens-scan skill. A selection scan's prompt is `--scope <slug,...>` like any other kind. A lens execute queues one `/lens-scan execute --proposals ...` job per 50 ids. Actions `startSelectionScan`, `executeLensBacklog` and `addProjectLens` sit beside `startScan`; the Kettle sim answers the same (`ScanSim.executeLens`, selection scopes), and `addProjectLens` writes this browser's store (`temp-lens.ts`, which now keeps project entries too) under the same checks (400 / 409). Project-lens writes (temporary or permanent; never a built-in) (`packages/core/src/server/lens-write.server.ts`) rewrite the map atomically (temp file + rename), keeping key order, unknown keys, indentation and line endings, and never overwrite a map that does not parse; the stream's `map` event carries them to every client. `npm run check:scan-jobs` drives all of it against a fake CLI (`scripts/fixtures/fake-claude.mjs`).
 
 **SSE semantics** (`/stream`). One long-lived read-only connection per client:
 - `event: snapshot`: a `ScanSnapshot`, sent on connect. While the store file does not exist, it is sent with empty arrays and the route keeps checking. It is sent again, in full, once the file appears.
@@ -408,30 +408,30 @@ Registry writes (`src/lib/scan/registry.server.ts`) rewrite `bp.products.local.j
 - `event: error`: `{ message }`, sent when the store file exists but cannot be read (corrupt, mid-migration, locked past the timeout). It is sent once per distinct message, never in place of the empty snapshot of an absent store; the route keeps retrying and a good read sends a snapshot. The client shows status `error` with the text until then.
 - When the client disconnects, the interval stops and the connection closes. If a read fails (the store was replaced or stayed locked), the route reopens on the next tick and sends a fresh snapshot.
 
-**Client** (`src/lib/scan/client.ts`):
+**Client** (`apps/web/src/lib/scan/client.ts`):
 - `useLiveProduct(slug)`: `null` gives `{ status: 'missing', events: '' }`. Otherwise it fetches the structure (404 gives `missing` with the `error` text), then follows `/stream`. It refetches the structure when the stream sends `map` with a new `rev`, and when the latest run leaves `running` (a body equal to the one held changes nothing; a failed fetch keeps the old map and retries after 3 s); `structureRev` counts the maps taken. It replaces the scan on `snapshot` and merges each `delta`: rows are upserted by id, coverage by `(feature, standard)`, and only the latest 200 activity rows are kept. Status: `loading` until the first snapshot; `live`; `missing` while the repo has a structure but no store (features read unmeasured; it turns `live` when the store appears); `offline` while reconnecting (the hook reopens the EventSource with backoff of 0.5, 1, 2, 4, 8 s, then every 10 s); `error` when the structure request fails, or when the stream sends `event: error` (the store exists and cannot be read; the header pill reads `Scan store error` with the text, and the next snapshot clears it).
 - `decideProposal(slug, id, body)`: resolves to the updated `Proposal`. It rejects with an `Error` that carries `status`, plus `proposal` on a 409.
-- `swarmFromScan(scan, features)`: builds the swarm feed from the latest run (`features` are ids, or `{ id, domain, capability }` so a run's `scope` can be matched: the same rule as the timeline's `scopeFeatures`; an agent's progress is the features its lens measured in this run over the features in scope, not over all). The scan is indexed once per measurements table (`src/lib/scan/derive.ts`: latest reading per feature, lens and metric; features measured per run and lens), so a delta costs one linear pass, not a scan per proposal and lens. One squad and one agent per lens (`scan-<lens>`, `scan-<lens>.1`, role `research` whatever the lens), each on the feature of its lens's latest activity row. Agent status: `idle` once the run is no longer running; `failed` if the lens's latest activity is an error; `waiting` when an open proposal exists for the lens; otherwise `working`. One decision per `proposed` proposal, with options Approve and Decline; urgency from risk (7 or more high, 4 or more medium); the proposal a waiting lens agent stands on holds that agent (`blocksAgents` 1), every other one holds none. The replay is the run's activity, `t` in seconds since the run started.
+- `swarmFromScan(scan, features)`: builds the swarm feed from the latest run (`features` are ids, or `{ id, domain, capability }` so a run's `scope` can be matched: the same rule as the timeline's `scopeFeatures`; an agent's progress is the features its lens measured in this run over the features in scope, not over all). The scan is indexed once per measurements table (`packages/core/src/scan/derive.ts`: latest reading per feature, lens and metric; features measured per run and lens), so a delta costs one linear pass, not a scan per proposal and lens. One squad and one agent per lens (`scan-<lens>`, `scan-<lens>.1`, role `research` whatever the lens), each on the feature of its lens's latest activity row. Agent status: `idle` once the run is no longer running; `failed` if the lens's latest activity is an error; `waiting` when an open proposal exists for the lens; otherwise `working`. One decision per `proposed` proposal, with options Approve and Decline; urgency from risk (7 or more high, 4 or more medium); the proposal a waiting lens agent stands on holds that agent (`blocksAgents` 1), every other one holds none. The replay is the run's activity, `t` in seconds since the run started.
 
-**How the app draws it** (`BlueprintApp`; `src/lib/model/live-feed.ts` for the model and feed, `live.ts` for the scan indexes):
+**How the app draws it** (`BlueprintApp`; `packages/core/src/model/live-feed.ts` for the model and feed, `live.ts` for the scan indexes):
 - The model is built once the structure is in and the stream has answered: `buildLiveModel` reads the map with the same loader as Kettle (`loadMap`), and the swarm is `liveSwarm(P, scan)`: `swarmFromScan` with what a scan cannot know filled in. The decider is the person the map names (`liveDecider`: the human whose `field` is the proposal's lens, the feature's owner first when several are; else the feature's owner when that is a human; "whoever reviews" only when the map names nobody), so Review groups "Waiting for <person>" on a live product too; the domain is the feature's own, and a question on a feature the map lacks is dropped.
 - **Readings and map refreshes in place.** The map the page loaded can be older than the store, and a newer map arrives while it is open; neither rebuilds the model or moves anything. (1) *Readings*: `applyScan(M, scan)` (`live-feed.ts`, `live-health.ts`) takes the measurements past the ones it has seen and, per touched (feature, lens), lays the latest reading of each metric over the load-time facet value when it is not older than the facet's `measured_at` and fits a numeric, unbound field, then re-evaluates the lens with the standard evaluator (`evaluateLens`) and updates the feature's lens record, General health and trouble in place at every product line; the aggregates are cleared. `sim.liveValue`, the tile health, the headline and the metric rows therefore agree, and the cost is the touched features only. An emptied or replaced store restores the map's own values. (2) *Map*: `refreshLiveModel(M, structure, events, scan)` copies the new map's fields, lens records, KPIs and activity onto the same `Feature` objects (layout, caches and references stay; the time axis and as-of date stay), lays the readings over again and restamps the sim; a map that differs in shape (a feature added, removed or moved, other links or lenses) updates what both maps have and toasts that a reload places the rest. `sim.healthV` counts these in-place changes.
 - **The sim's live mode.** The sim does not play a live scan as a replay: there is no recorded hour. Every later scan goes in place through `engine.feed(liveSwarm(...))` → `SwarmSim.applyFeed`. The agents are set from the feed (an agent whose feature changed travels there with the usual animation), questions new to the feed open (with a "New question" toast once a run has been seen), questions it no longer lists close, and its activity rows not shown yet go to the log, the pulses and the ticker. The engine, the layout and the static cache are untouched; only a new structure builds a new model. Nothing plays, so the frame loop sleeps between feeds. A new activity row moves its agent within about 1.5 s (1 s stream poll, then one frame).
 - **Time.** Waits and ages use the wall clock (`sim.clockMs()`); event times are seconds since the run start, so the ticker reads real times. The bottom bar's clock box shows the run (start, `● LIVE · <phase>` or its status, lenses, agents) instead of the sim hour, and the revisions strip drops the hour ahead (no replay to scrub, no arrivals).
-- **What a scan cannot fill** is not shown as zero: spend and tokens are hidden in live mode (sheet, hover card, morning watch, the steering panel). The Kettle-only steering (Payments GA push, the research crew's spend cap) is hidden; the GA mode (its View button, the `G` key, `#ga=1` and its overlay) exists only when the map has the `payments-ga` milestone; the search placeholder drops the Kettle example; pause, push and orders steer the sample swarm only: on a live product they are not offered and `Engine.preview` / `commitPreview` refuse them (`commitSample`, `src/lib/model/live-steer.ts`), and a feed clears any `paused` left on an agent it updates. The "While you were away" digest is Kettle's and is not offered.
-- **Steering a live product** (`src/lib/model/live-steer.ts`, `src/components/LiveSteer.tsx`). With a selection, the selection bar and the Agents overview offer three real verbs, each planned from the map, the stream's jobs and the scan (`planLive`, pure) and shown under the usual "ADDENDUM · NOT ISSUED YET" preview with Commit / Cancel (Enter / Esc): **Measure here** queues one `selection` scan per scannable lens over the selection's base features (the first 200), and the preview says how many start now and how many wait from the registry's limits (`MAX_RUNNING` 3, `MAX_QUEUED` 16 in `src/lib/scan/jobs.ts`); **Build what is approved here** dispatches ONE execute job over only the proposals already `approved` there (at most 50; ones a running or queued build holds are left out) - `dispatch()` approves what it is given, so it is never given a proposed one and the Review queue stays the only place anything is approved; with nothing approved it is unavailable and says why; **Stop work here** cancels the queued and running jobs whose scope (or execute job's proposals' features) meets the selection, and says which of them also cover places outside it. A verb that cannot run stays visible, marked unavailable (dashed), and says why when pressed. Refusals toast in words (`refusalText`); the swarm answers through the existing paths (the jobs become scan views, the store's rows reach `applyFeed`). Checked by `npm run check:live-steer`.
-- **Project switcher** (`src/components/ProjectSwitcher.tsx`, `ProjectsDialog.tsx`). In the header, before the pill: the current project's name, and a menu of Kettle (sample) and every registered product with its readiness as a shape and a word (dashed square = no map, outline = map only, half = measured, filled = full; diamond = the sample), then "Manage projects…". Choosing one loads `?product=<slug>` (no parameter for Kettle) on the same route with the other query parameters kept. The dialog adds, renames, re-roots and removes products, with the readiness checklist per row. A live product that cannot be drawn shows the switcher alone at the top right. A live product's tab title is `<name> · blueprint`.
+- **What a scan cannot fill** is not shown as zero: spend and tokens are hidden in live mode (sheet, hover card, morning watch, the steering panel). The Kettle-only steering (Payments GA push, the research crew's spend cap) is hidden; the GA mode (its View button, the `G` key, `#ga=1` and its overlay) exists only when the map has the `payments-ga` milestone; the search placeholder drops the Kettle example; pause, push and orders steer the sample swarm only: on a live product they are not offered and `Engine.preview` / `commitPreview` refuse them (`commitSample`, `apps/web/src/lib/model/live-steer.ts`), and a feed clears any `paused` left on an agent it updates. The "While you were away" digest is Kettle's and is not offered.
+- **Steering a live product** (`apps/web/src/lib/model/live-steer.ts`, `apps/web/src/components/LiveSteer.tsx`). With a selection, the selection bar and the Agents overview offer three real verbs, each planned from the map, the stream's jobs and the scan (`planLive`, pure) and shown under the usual "ADDENDUM · NOT ISSUED YET" preview with Commit / Cancel (Enter / Esc): **Measure here** queues one `selection` scan per scannable lens over the selection's base features (the first 200), and the preview says how many start now and how many wait from the registry's limits (`MAX_RUNNING` 3, `MAX_QUEUED` 16 in `packages/core/src/scan/jobs.ts`); **Build what is approved here** dispatches ONE execute job over only the proposals already `approved` there (at most 50; ones a running or queued build holds are left out) - `dispatch()` approves what it is given, so it is never given a proposed one and the Review queue stays the only place anything is approved; with nothing approved it is unavailable and says why; **Stop work here** cancels the queued and running jobs whose scope (or execute job's proposals' features) meets the selection, and says which of them also cover places outside it. A verb that cannot run stays visible, marked unavailable (dashed), and says why when pressed. Refusals toast in words (`refusalText`); the swarm answers through the existing paths (the jobs become scan views, the store's rows reach `applyFeed`). Checked by `npm run check:live-steer`.
+- **Project switcher** (`apps/web/src/components/ProjectSwitcher.tsx`, `ProjectsDialog.tsx`). In the header, before the pill: the current project's name, and a menu of Kettle (sample) and every registered product with its readiness as a shape and a word (dashed square = no map, outline = map only, half = measured, filled = full; diamond = the sample), then "Manage projects…". Choosing one loads `?product=<slug>` (no parameter for Kettle) on the same route with the other query parameters kept. The dialog adds, renames, re-roots and removes products, with the readiness checklist per row. A live product that cannot be drawn shows the switcher alone at the top right. A live product's tab title is `<name> · blueprint`.
 - **Header pill.** `Live · <phase>` while the latest run is running, `Last scan <age>` otherwise, `Offline` while the stream reconnects, `No scan store` before the skill wrote one. Kettle shows nothing.
 - **Queue cards.** A live question is a proposal card: the title, `metric: before → expected` with the unit (before = the latest reading of that feature, lens and metric in the scan; expected = before + `expected_delta`), the standard tag (`no standard` for `none`), size and risk, and Approve and Decline. Decline opens an inline note field (optional, no modal); Enter or the Decline button sends it. Approve is option 0 and Decline option 1, so the decision card and the keys 1 and 2 decide too (without a note). The card also says the proposal's one-line summary (first sentence of the body's Summary, shown when it adds to the title; the decision card carries the same line) and folds a **Details** region (a button with `aria-expanded`): the Summary, Impact and Evaluation sections of the body as plain-text paragraphs (never rendered as HTML; a missing section reads "Not stated."), the evidence and method of the reading behind the before value, and `parent_id` / `after_value` when set. Kettle's sample cards are unchanged.
-- **Answer tracks** (`src/lib/scan/track.ts` `trackOf` / `tracksOf`, pure; `src/lib/model/live-tracks.ts`; the canvas layer `src/engine/render/tracks.ts`). A decided proposal leaves the queue but stays on its tile until the store has evidence for it: one stage glyph and a 12 px label at the tile's bottom-left (the newest track; "+N" when the tile has more; the label only where it fits left of the question pins), and "N tracked" beside each room's question pin at the overview levels, culled to the viewport. Stages, read from the store's own record so the same marker returns after a reload: `saving` (the decision's POST is out; a 409 shows the decision the store holds, by whom) -> `approved` -> `building` (an execute job holds it, with the job id) -> `built on branch 46 (expected 52)` (its `after` reading on the pack branch, never the product's) -> `accepted` -> after the release, `confirmed` only when a current reading taken after the release meets the expected value (baseline + `expected_delta`, in its direction), `measured 50, expected 52` (not confirmed) when it falls short, `unknown` with no metric or no reading since; also `declined`, `build failed`, `sent back for rework`, `descoped`. A current reading taken before the release is labelled an observation, not evidence. Shown: decided in the last 14 days, or not finished. Tracks are not questions: the queue, J/K and every count stay proposed-only. Hover shows the record (expected vs branch vs current, job, commit, release); a click opens it beside the plan with its one next verb (`approved`: Build what is approved here; `building`: Stop work here; released and not confirmed: Measure here to confirm, its lens only), through the same NOT ISSUED YET preview as the selection's live verbs (`trackPlan`). Checked by `npm run check:live-tracks`.
+- **Answer tracks** (`packages/core/src/scan/track.ts` `trackOf` / `tracksOf`, pure; `packages/core/src/model/live-tracks.ts`; the canvas layer `apps/web/src/engine/render/tracks.ts`). A decided proposal leaves the queue but stays on its tile until the store has evidence for it: one stage glyph and a 12 px label at the tile's bottom-left (the newest track; "+N" when the tile has more; the label only where it fits left of the question pins), and "N tracked" beside each room's question pin at the overview levels, culled to the viewport. Stages, read from the store's own record so the same marker returns after a reload: `saving` (the decision's POST is out; a 409 shows the decision the store holds, by whom) -> `approved` -> `building` (an execute job holds it, with the job id) -> `built on branch 46 (expected 52)` (its `after` reading on the pack branch, never the product's) -> `accepted` -> after the release, `confirmed` only when a current reading taken after the release meets the expected value (baseline + `expected_delta`, in its direction), `measured 50, expected 52` (not confirmed) when it falls short, `unknown` with no metric or no reading since; also `declined`, `build failed`, `sent back for rework`, `descoped`. A current reading taken before the release is labelled an observation, not evidence. Shown: decided in the last 14 days, or not finished. Tracks are not questions: the queue, J/K and every count stay proposed-only. Hover shows the record (expected vs branch vs current, job, commit, release); a click opens it beside the plan with its one next verb (`approved`: Build what is approved here; `building`: Stop work here; released and not confirmed: Measure here to confirm, its lens only), through the same NOT ISSUED YET preview as the selection's live verbs (`trackPlan`). Checked by `npm run check:live-tracks`.
 - **Deciding** is optimistic: every product line's copy of the question closes at once and the agents it held go back to work. The decision is written to the store, so there is no undo. A refusal rolls it back with a toast saying why; a 409 says "Already decided elsewhere" and leaves the question closed (the next feed shows the other answer).
 - **Empty states.** An unknown slug, or a repo without a structure, shows the standard empty state: "No scan store at `<root>/.ai/lens-scan`" (or "No product … in bp.products.local.json"), with a link to Kettle. A repo with a structure but no store loads, says "No scan store yet" in a toast and the pill, and every feature reads unmeasured.
 
 ### Packs, triage and releases (server)
 
-lens-scan 1.5 builds approved items into a **pack** (`packs`: one lens's items on `pack/<short>-<n>`, never merged to main), a person **triages** each built item (accept, rework, descope), and accepted items ship in a **release** (`releases`: draft → building → pr-open → merged → tagged, or failed). The store is v3 (`docs/standard/lens-scan-store.sql`; v3 adds `proposals.triaged_from`, the status an item left at its latest triage, for the undo below; lens-scan 1.6.0 migrates a v1 or v2 file on open); a v1 store reads with `packs` and `releases` empty, never an error. `ScanSnapshot` carries both arrays; the stream sends them in a delta by `updated_at` like proposals, and the client upserts them by id. Measurements carry `proposal_id`, `phase` (`before` | `after`) and `commit_sha`; shots carry `proposal_id` and `phase`. **An `after` reading is never the feature's current state** (it was taken on an unmerged pack branch): `derive.ts` `isCurrent` keeps it out of `latestReading`, `metricHistory`, the live model's readings and the ledger's "before", as store.mjs `latest` and `gaps` do. Pure helpers: `src/lib/scan/compare.ts` (`compareOf(scan, id, lenses?)` → `{ p, before, after, shots, verdict, from?, to? }`, mirroring store.mjs `compare`; `verdict` is `moved` / `flat` / `worse` / `unmeasured` from the lens field's `better`, else the sign of `expected_delta`; `packItems`, `releaseItems`, `unreleased`, `packGroups` with counts per status) and `src/lib/scan/release.ts` (`suggestVersion`, `RELEASE_ID`). Checked by `npm run check:release-train`.
+lens-scan 1.5 builds approved items into a **pack** (`packs`: one lens's items on `pack/<short>-<n>`, never merged to main), a person **triages** each built item (accept, rework, descope), and accepted items ship in a **release** (`releases`: draft → building → pr-open → merged → tagged, or failed). The store is v3 (`docs/standard/lens-scan-store.sql`; v3 adds `proposals.triaged_from`, the status an item left at its latest triage, for the undo below; lens-scan 1.6.0 migrates a v1 or v2 file on open); a v1 store reads with `packs` and `releases` empty, never an error. `ScanSnapshot` carries both arrays; the stream sends them in a delta by `updated_at` like proposals, and the client upserts them by id. Measurements carry `proposal_id`, `phase` (`before` | `after`) and `commit_sha`; shots carry `proposal_id` and `phase`. **An `after` reading is never the feature's current state** (it was taken on an unmerged pack branch): `derive.ts` `isCurrent` keeps it out of `latestReading`, `metricHistory`, the live model's readings and the ledger's "before", as store.mjs `latest` and `gaps` do. Pure helpers: `packages/core/src/scan/compare.ts` (`compareOf(scan, id, lenses?)` → `{ p, before, after, shots, verdict, from?, to? }`, mirroring store.mjs `compare`; `verdict` is `moved` / `flat` / `worse` / `unmeasured` from the lens field's `better`, else the sign of `expected_delta`; `packItems`, `releaseItems`, `unreleased`, `packGroups` with counts per status) and `packages/core/src/scan/release.ts` (`suggestVersion`, `RELEASE_ID`). Checked by `npm run check:release-train`.
 
-The blueprint never writes a triage or release move itself: `src/lib/scan/release.server.ts` runs lens-scan's own `store.mjs` (`BP_LENS_SCAN_DIR`, else `~/.claude/skills/lens-scan`, through realpath) with `execFile node … --db <root>/.ai/lens-scan/scan.db`, so store.mjs stays the single owner of the transition rules. Who triages is `user:<gh login>` (`gh api user --jq .login`, once per server process, 5 s timeout), else `user:blueprint`. The stream sees every such write through `PRAGMA data_version` like any other commit. All routes are localhost-only; writes need `Content-Type: application/json`.
+The blueprint never writes a triage or release move itself: `packages/core/src/server/release.server.ts` runs lens-scan's own `store.mjs` (`BP_LENS_SCAN_DIR`, else `~/.claude/skills/lens-scan`, through realpath) with `execFile node … --db <root>/.ai/lens-scan/scan.db`, so store.mjs stays the single owner of the transition rules. Who triages is `user:<gh login>` (`gh api user --jq .login`, once per server process, 5 s timeout), else `user:blueprint`. The stream sees every such write through `PRAGMA data_version` like any other commit. All routes are localhost-only; writes need `Content-Type: application/json`.
 
 | Route | Answer |
 |---|---|
@@ -452,14 +452,14 @@ The blueprint never writes a triage or release move itself: `src/lib/scan/releas
 
 ## Metric rows
 
-A lens field with `metric` (app-structure v3.1) is a measured metric: its key is the metric key in the scan store and its latest reading is the facet value. In the feature sheet, every lens panel ends with its metric rows (`MetricRows` in `src/components/sheet/LensPanel.tsx`), after the panel's own evidence fields, whichever variant draws the panel. They come from the manifest alone; there is no lens id in the code.
+A lens field with `metric` (app-structure v3.1) is a measured metric: its key is the metric key in the scan store and its latest reading is the facet value. In the feature sheet, every lens panel ends with its metric rows (`MetricRows` in `apps/web/src/components/sheet/LensPanel.tsx`), after the panel's own evidence fields, whichever variant draws the panel. They come from the manifest alone; there is no lens id in the code.
 
 - A row reads the label, then the value with its unit (the manifest's unit, else the reading's), and an arrow against the previous reading (▲ or ▼) coloured by `metric.better`: mint when it moved the better way, red when it moved the worse way. No arrow when it did not move or there is one reading.
 - The second line holds a 64×16 SVG sparkline of the history, the target (`target 0`; the sparkline draws it as a dashed amber tick), and the method tag (`static`, `probe`, `harness`, `judgement`, the reading's method else the manifest's).
 - History is the scan's readings of that feature, lens and metric, ordered by `measured_at`. Kettle has no store, so its single point is the facet value. One point shows the value only (no arrow, no sparkline). No point reads `—` like any other absent value.
 - In General a panel shows its measured metrics, at most three, then "N more metrics in the lens reading". When the lens stands alone it shows every metric field, unmeasured ones as `—`. A collapsed panel (another lens chosen) shows none.
 - The sparkline is React SVG in the sheet. Nothing about metrics runs in the canvas frame loop. Text stays at the 12 px floor.
-- **Evidence** (2026-10-14). On the feature page's lens tab (`src/components/page/LensTab.tsx`), each row in "Measured"
+- **Evidence** (2026-10-14). On the feature page's lens tab (`apps/web/src/components/page/LensTab.tsx`), each row in "Measured"
   carries the latest reading's `evidence` text under it (on a past date: the latest reading by then), 14 px, two lines
   clamped, a **more** / **less** toggle only when it runs longer. It is the store's `measurements.evidence`, so it is
   where a judgement lens explains its number: the bottleneck behind Operations' capacity estimate and the listed
@@ -468,7 +468,7 @@ A lens field with `metric` (app-structure v3.1) is a measured metric: its key is
 
 ## Business section
 
-When a feature has any of `experience`, `core` or `variations` (v3.1), the sheet shows a Business section after the lens panels (`src/components/sheet/Business.tsx`). It is hidden when all three are absent.
+When a feature has any of `experience`, `core` or `variations` (v3.1), the sheet shows a Business section after the lens panels (`apps/web/src/components/sheet/Business.tsx`). It is hidden when all three are absent.
 
 - **As-is:** the customer experience today, one paragraph.
 - **Core · what every variation shares:** two bullet lists, Shared tech and Core schema.
@@ -478,7 +478,7 @@ The Kettle sample's `invoice-ocr` (Paper invoice to payment) carries all three, 
 
 ## Screens strip
 
-For a live product whose scan has shots of the feature, the sheet shows a Screens strip after the Business section (`src/components/sheet/Screens.tsx`). Kettle has no store, so no strip.
+For a live product whose scan has shots of the feature, the sheet shows a Screens strip after the Business section (`apps/web/src/components/sheet/Screens.tsx`). Kettle has no store, so no strip.
 
 - One thumbnail per size and theme: the latest run that has it, served by `/api/products/<slug>/shots/<path>`. A red badge counts the console errors its harness report records (`report.consoleErrors`, a count or a list).
 - A thumbnail opens the viewer under the strip (not a modal). Run A and run B are selectors over the runs that have that size and theme; they default to the latest two. With two runs it compares them side by side or as a swipe (a range slider over the stacked images). With one run it shows that one and says compare needs two. Escape closes the viewer, not the sheet.
@@ -495,10 +495,10 @@ gets out of the plan's way, and L4 is a page. Earlier sections that say "dock", 
 "sheet" mean the rail, the timeline and the feature page below.
 
 - **Collapsed chrome sets the plan's safe area; expanded chrome overlays it.** The collapsed
-  sizes live in `src/engine/chrome.ts` (`railWidth`, `baseHeight`) and are the only numbers the
+  sizes live in `apps/web/src/engine/chrome.ts` (`railWidth`, `baseHeight`) and are the only numbers the
   home fit reads. Anything that opens on click overlays the plan and never moves it. This is the
   spatial-stability rule.
-- **Rail** (`src/components/Dock.tsx`, `rail/`, `rail.css`): a 64 px column of counters.
+- **Rail** (`apps/web/src/components/Dock.tsx`, `rail/`, `rail.css`): a 64 px column of counters.
   - The counters are Find, Asks/Review, Agents, Orders, Steer (Kettle only), Plan and View.
   - The rail never changes width and never opens by itself. Each counter opens its own flyout over the plan.
   - Find is a 340 px search. Every other flyout is a **workbench** (`rail/wide/`, chosen on 2026-10-15 over a
@@ -520,7 +520,7 @@ gets out of the plan's way, and L4 is a page. Earlier sections that say "dock", 
   - Esc, the same counter, or a click on the plan closes it. Only one flyout is open at a time.
   - A changed count counts up or down and pulses once, at most every 3 s.
   - Keys: `/` opens Find, `\` hides the rail, `P` opens View.
-- **Timeline** (`src/components/BaseBar.tsx`, `timeline/`, `timeline.css`): a 28 px strip (24 px
+- **Timeline** (`apps/web/src/components/BaseBar.tsx`, `timeline/`, `timeline.css`): a 28 px strip (24 px
   compact); with its margin it takes the 42 px (36 px) `baseHeight`.
   - It shows the time position, the sim clock or the run status, and a hairline you click or drag
     to time travel.
@@ -540,7 +540,7 @@ gets out of the plan's way, and L4 is a page. Earlier sections that say "dock", 
   - The revisions chart is titled "Features by stage, per revision" (it stays when the panel is compact)
     and labels the stage bands at the right edge (name and count at the travelled date) where a band
     is tall enough for 12 px text; the ink scheme is unchanged. Strip and panel format dates with `fmtD`.
-- **Feature page** (`src/components/FeatureSheet.tsx`, `page/`, `page.css`). The page replaces
+- **Feature page** (`apps/web/src/components/FeatureSheet.tsx`, `page/`, `page.css`). The page replaces
   the drawer.
   - **Open and close:** the tile morphs into a full page, animating only `transform` and opacity.
     The plan dims behind it (a token colour only: never a `backdrop-filter` over the live canvas,
@@ -582,10 +582,10 @@ The owner's words: each lens view needs to run its scan at the feature, context 
 place; scans show where they work, several at once, each lens in its own colour, and parallel scans of the same lens.
 Rejected: a looping radar sweep (fake progress, perpetual frames) and a per-tile shimmer.
 
-- **Right-click menu** (`src/components/ScanMenu.tsx`, `scan.css`). The engine's `contextmenu` (never the browser's
+- **Right-click menu** (`apps/web/src/components/ScanMenu.tsx`, `scan.css`). The engine's `contextmenu` (never the browser's
   own) puts `S.menu = { x, y, chain, tile }` (canvas CSS px; the hit chain outermost first, a tile only when one is
   hit). Ignored while a feature page or the ledger is shown. The menu names what was hit, then one group per scope,
-  narrowest first: Feature, Bay, Room, Wing, Everything (`scopesAt` in `src/lib/scan/scan-views.ts`; a wider scope
+  narrowest first: Feature, Bay, Room, Wing, Everything (`scopesAt` in `apps/web/src/lib/scan/scan-views.ts`; a wider scope
   with the same features as a narrower one is dropped, so a live product's one-room wing is not offered twice).
   Scope ids are base ids (feature slug, capability, domain, wing key): a `?scale` clone scans its base feature. In a
   lens view each scope is one item, "Scan <lens> · <scope>"; in General each scope has "Scan all lenses" (one job per
@@ -599,11 +599,11 @@ Rejected: a looping radar sweep (fake progress, perpetual frames) and a per-tile
   (n features)" offers the same items over exactly the features behind the selected findings: a `selection` scope
   (`{ kind: 'selection', label: 'Selection (n)', features }`, at most `MAX_SELECTION` = 200 slugs in map order),
   started with `startSelectionScan`.
-- **Actions** (`src/lib/scan/actions.ts`): `startScan`, `dispatch`, `cancelJob` go to the live routes
+- **Actions** (`apps/web/src/lib/scan/actions.ts`): `startScan`, `dispatch`, `cancelJob` go to the live routes
   (`postScan`, `postDispatch`, `deleteJob`) or to the Kettle scan sim. `ScanCtxCtx` (BlueprintApp) says which.
   `startSelectionScan(ctx, lens, features)`, `executeLensBacklog(ctx, lens)` (`{ jobs, approved, skipped }`) and
   `addProjectLens(ctx, manifest, temporary?)` do the same for the Lenses panel. The UI's toasts and per-lens counts
-  around them are `src/components/ledger/lens/lens-ops.ts`, shared by the panel, the ledger and this menu.
+  around them are `apps/web/src/components/ledger/lens/lens-ops.ts`, shared by the panel, the ledger and this menu.
 - **Views** (`scanViews`): every queued or running measure job, a done one for 3 s with all ticks, a failed one for
   6 s in the bad colour with "failed"; cancelled ones vanish. A job's run is `run_id`, else the run whose note is
   `bp-job:<id>` (`isJobNote` in `jobs.ts`); done = the features measured in that run on that lens, plus those with a
@@ -613,7 +613,7 @@ Rejected: a looping radar sweep (fake progress, perpetual frames) and a per-tile
   everything outlines each building (at 1x, the site). The accent is the manifest's `presentation.accent` for the
   theme, else ink. BlueprintApp recomputes views on discrete changes only (live: the jobs or the scan moved; Kettle:
   the sim notified) and hands them to `E.setScans`.
-- **Drawing** (`src/engine/render/scans.ts`, after the swarm layers, before the flags; only at now). A dashed
+- **Drawing** (`apps/web/src/engine/render/scans.ts`, after the swarm layers, before the flags; only at now). A dashed
   outline in the accent (2 px, marching while running) around the place; each further view on the same place
   nests 6 px further in, in start order. A chip on the outline's top-left edge: glyph, lens short, `n/m` (`queued`,
   `failed`, `m/m done`), 12 px text, paper ground, accent border; nested chips line up side by side. The feature
@@ -623,7 +623,7 @@ Rejected: a looping radar sweep (fake progress, perpetual frames) and a per-tile
   reuses two rect records and allocates nothing; ticks are culled to the viewport (528 tiles at `?scale=4`).
 - **The loop sleeps** unless a view is running: `scans.animating` joins the keep-alive (at most ~30 fps, 33 ms
   when only scans move); queued, done and failed views are static and draw once.
-- **Kettle scan sim** (`src/lib/model/scan-sim.ts`). `bind()` gives it the base slugs in layout order, the enabled
+- **Kettle scan sim** (`packages/core/src/model/scan-sim.ts`). `bind()` gives it the base slugs in layout order, the enabled
   manifests and the facet values. A job is queued, then running (3 at most, FIFO, 16 queued); it walks its features
   left to right, one per 1.2 s, writing a `reading` row, then a `measured` row and one measurement per numeric
   metric field (the facet's value when it has one, else a deterministic value in the field's range). A temporary
@@ -665,8 +665,8 @@ type, density and palette are the look (`ledger-theme.css` redefines bp's colour
 CSS is `train/**`, prefix `tr-`, every value through the `globals.css` tokens, and `node
 scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label is the switch.
 
-- **Same route, a page over the plan** (`src/components/ledger/LedgerPage.tsx`). UI state `page: 'plan' | 'ledger'`
-  and `lv: 'triage' | 'matrix' | 'release'` (`src/engine/state.ts`); `E.setPage(page, lv?)` switches. The engine, the
+- **Same route, a page over the plan** (`apps/web/src/components/ledger/LedgerPage.tsx`). UI state `page: 'plan' | 'ledger'`
+  and `lv: 'triage' | 'matrix' | 'release'` (`apps/web/src/engine/state.ts`); `E.setPage(page, lv?)` switches. The engine, the
   live stream and running scans stay alive behind it. The header stays (the switch, the project, the lens tabs); the
   page covers the rail and the timeline, and everything it covers is `inert` while it shows; the toast stays above it.
   Opaque paper, no `backdrop-filter`; it rises in with `motion/react` and leaves at once.
@@ -695,7 +695,7 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
   The matrix in packs shows each item's state mark per cell and has no Dispatch (packs are triaged).
 - **Decisions** (`train/Decide.tsx`, the one control; the decision bar and the compare footer both render it): Accept,
   Rework, Descope and Undo over the selection, else the open item, else the focused one. The rules live in
-  `src/lib/train/rules.ts` alone: which statuses a decision starts from; rework and descope always need a note; an
+  `packages/core/src/train/rules.ts` alone: which statuses a decision starts from; rework and descope always need a note; an
   accept needs one when the item failed or did not move (it then ships flagged). The note editor takes the bar's line
   (or the compare footer's), with quick notes. Sent items are pending (`LedgerUi.pending`) until the store or the sim
   shows them in another status: no optimistic flip; a refusal toasts what was skipped and why (`skipped[].reason`). A
@@ -712,7 +712,7 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
   the item reads flat. Then the **screens**: before/after pairs by theme and size; **L** cycles light · dark · both,
   **M** side by side · slider · blink · change map, with the pixel verdict in words. The **change map** is a 32 × 18
   grid of the largest channel change per cell, computed once per pair per session in a worker (`changeMap.worker.ts`,
-  with a main-thread fallback); more than 3 of 255 levels moved, more than 24 is visible (`src/lib/train/pixels.ts`,
+  with a main-thread fallback); more than 3 of 255 levels moved, more than 24 is visible (`packages/core/src/train/pixels.ts`,
   A/1's thresholds). Then what the measurement says, the commit (its files with add/del bars at once; the message and
   the patch behind a disclosure, the patch open from the start at full width, in chunks that skip layout off screen;
   fetched once per sha through the commits route, Kettle's sample diff) and the item's own text. The footer: what its
@@ -741,7 +741,7 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
 - **Phone** (`Phone.tsx` hosts it with `phone`): the table alone, in the page flow; pack items as cards over the
   decision bar (44 px buttons), compare as a full-screen sheet that owns a history entry (Back closes it), the release
   as one status line (`ReleaseStatusLine`); no tabs.
-- **Kettle's sample train** (`src/lib/model/train-sim.ts`, on the scan sim's timer): packs k-des-1 (a moved, a flat, a
+- **Kettle's sample train** (`packages/core/src/model/train-sim.ts`, on the scan sim's timer): packs k-des-1 (a moved, a flat, a
   worse, a failed and a reworked item), k-des-2 (the rework's rebuild) and k-perf-1 (two probe items with three
   baseline runs each) over real Kettle features, with readings, sample screens (`public/sample-shots`,
   `scripts/gen-sample-shots.mjs`) and commits; triage, reopen, the version suggestion and a release job, with the
@@ -756,7 +756,7 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
   and the Lenses panel and the plan's right-click read the selection (`useLedgerSelection()`). Status chips (state
   mark and count), lens chips (glyph, short, count in the scope), a feature chip from the matrix's **Table**
   (`feature <name> ×`), a text filter (`/`).
-- **Waves** (`useWaves.ts`, `waves/WavesBar.tsx`, `waves/WaveComposer.tsx`, `waves/waves.css`; contract `src/lib/scan/waves.ts`).
+- **Waves** (`useWaves.ts`, `waves/WavesBar.tsx`, `waves/WaveComposer.tsx`, `waves/waves.css`; contract `packages/core/src/scan/waves.ts`).
   In the Backlog scope a strip tops the body: `All | one tab per wave | + New wave` (a tab is the wave's state mark, name and
   finding count; the selected tab, `LedgerUi.wave`, keeps only its findings in `rows`). The dispatch bar's **Add to wave**
   (beside Dispatch, which stays the direct path) opens the inline composer (`LedgerUi.composer`, not a modal) over the
@@ -778,7 +778,7 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
   the watch amber, 12 px mono); an Azure DevOps item shows `ADO #<n>` (`OriginChip`), a link to the work item in a new
   tab (`rel="noopener noreferrer"`, http(s) only) on a ledger row and the review detail, plain text on a review list row
   (a listbox option holds no control). `kind` `work-item` reads "work item".
-- **Dispatch** (the backlog) is `dispatch(useScanCtx(), ids)` (`src/lib/scan/actions.ts`): proposed or approved
+- **Dispatch** (the backlog) is `dispatch(useScanCtx(), ids)` (`apps/web/src/lib/scan/actions.ts`): proposed or approved
   findings with no job go as one execute run across lenses; optimistic until the next store or sim update, a refusal
   rolls back with a toast.
 - **Value per effort** (`rankValue`, the backlog's order within a status and the order `/lens-scan execute` builds a
@@ -794,7 +794,7 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
   between items; the page's keys stay out (`.lg-pop`).
 - **Scan selected features** (2026-10-14): with a selection, a picker of the scannable lenses (preset to the lenses of
   the selected findings), one `selection` scan per checked lens over the features behind it (at most 200 features).
-- **Kettle findings** (`src/data/kettle.findings.json`, generated, never hand-edited): `node
+- **Kettle findings** (`packages/core/data/kettle.findings.json`, generated, never hand-edited): `node
   scripts/fixtures/kettle-findings.mjs` writes 60 store-shaped proposals over the sample map from the map itself
   (every enabled lens, features in trouble first, mixed statuses, one baseline upgrade with two propagation
   children), seeded with the shared PRNG. `npm run check:findings` regenerates them in memory and fails on drift.
@@ -823,8 +823,8 @@ everything or the ledger's selection, execute its backlog, and onboard a new one
 A temporary lens still brings one refactor, migration or project onto the table and is retired after; a permanent
 project lens (a reverse-DNS id, `com.org.name`) stays with the product. Both are lenses like any other (fields, JSON
 health rules, a glyph and a line, spec 8.1-8.2) with a `scan` block: judgement instructions, or composed steps
-(script, skill, judgement) run in order. Files: `src/components/ledger/lens/` (`LensesPanel.tsx`, `lens-ops.ts`,
-`LensChat.tsx`, `DraftCard.tsx`, `lens.css`) and `src/lib/scan/temp-lens.ts`.
+(script, skill, judgement) run in order. Files: `apps/web/src/components/ledger/lens/` (`LensesPanel.tsx`, `lens-ops.ts`,
+`LensChat.tsx`, `DraftCard.tsx`, `lens.css`) and `apps/web/src/lib/scan/temp-lens.ts`.
 
 - **Where it opens.** The findings ledger's top bar carries **Lenses** (`LensesButton`, with the number of lenses); a
   lens chip's **Open in Lenses panel** opens it on that lens's row. It sits in the ledger's side slot (380 px, the
@@ -874,12 +874,12 @@ health rules, a glyph and a line, spec 8.1-8.2) with a `scan` block: judgement i
   stream's `map` event and the lens-set rebuild adds the tab); Kettle, this browser's store (the model rebuilds on
   `subscribeTempLenses`). A 400, a 409 (the id exists) or a storage refusal shows on the card. Then the card offers
   **Scan now**. **Keep refining** focuses the box.
-- **Kettle's store** (`src/lib/scan/temp-lens.ts`): `localStorage['bp.tmpLenses.kettle']`, a JSON array of
+- **Kettle's store** (`apps/web/src/lib/scan/temp-lens.ts`): `localStorage['bp.tmpLenses.kettle']`, a JSON array of
   `LensEntry` (temporary and permanent project lenses). Every access is wrapped; a read keeps only well-formed entries and returns the same array while the
   stored text is unchanged (a `useSyncExternalStore` snapshot). `subscribeTempLenses` fires on this tab's writes and
   on the `storage` event of another tab (or a storage clear). A write the browser refuses throws a sentence the card
   shows.
-- **The model** keeps `temporary` on `LensDef` (`src/lib/standard/load.ts`), so a tab or the legend can mark a
+- **The model** keeps `temporary` on `LensDef` (`packages/core/src/standard/load.ts`), so a tab or the legend can mark a
   temporary lens from the registry alone.
 - **Lenses stay data.** Nothing in the panel, the chip menus or the right-click branches on a lens id; lenses differ
   by glyph and line only, and the accent colour marks scan work (the job ring) and nothing else.

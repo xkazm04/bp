@@ -3,7 +3,7 @@
 // the main thread does no pixel work. Where Worker or OffscreenCanvas is missing, or the worker cannot start, the pair
 // is computed once on the main thread instead; the panel shows "computing…" either way until the result arrives.
 import { useEffect, useSyncExternalStore } from 'react';
-import { diffPixels, type PixGrid } from '@/lib/train/pixels';
+import { diffPixels, type PixGrid } from '@bp/core/train/pixels';
 import type { MapReply, MapRequest } from './changeMap.worker';
 
 /** A shot pair to compare: its cache key and the two image URLs. */

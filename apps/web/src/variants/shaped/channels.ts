@@ -2,9 +2,9 @@
 // weight: its OUTLINE (shapes.ts, morphing in with dominance), its ICON (a chip set into the tile's top
 // edge: six side by side in General, one that widens into a tag with a small readout when the lens
 // stands alone), and one ACCENT colour used only for its marks and words. Nothing here fills a tile.
-import type { Health } from '@/lib/data';
+import type { Health } from '@bp/core/data';
 import { bl, hof, measuredContent, ruled, type BuiltinLens } from '../base/legacy';
-import { isLiveSt } from '@/lib/model';
+import { isLiveSt } from '@bp/core/model';
 import type { ChannelAggregate, ChannelContent, LensChannel, MarkArgs, Rect, Theme, TileGeom } from '../types';
 import { dialNeedle, drawIcon, iconFor } from './icons';
 import {

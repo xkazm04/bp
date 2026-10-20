@@ -28,15 +28,16 @@ process.env.BP_CLAUDE_BIN = path.join(ROOT, 'scripts/fixtures/fake-claude.mjs');
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
 const imp = (p: string): Promise<Any> => import(pathToFileURL(path.join(SRC, p)).href);
+const impCore = (p: string): Promise<Any> => import(pathToFileURL(path.join(ROOT, 'packages/core', p)).href);
 const LS = await imp('lib/model/live-steer.ts');
-const J = await imp('lib/scan/jobs.server.ts');
-const { MAX_RUNNING, MAX_QUEUED } = await imp('lib/scan/jobs.ts');
-const { snapshotOf } = await imp('lib/scan/store.server.ts');
-const { buildLiveModel, liveSwarm, liveDecider } = await imp('lib/model/live-feed.ts');
+const J = await impCore('src/server/jobs.server.ts');
+const { MAX_RUNNING, MAX_QUEUED } = await impCore('src/scan/jobs.ts');
+const { snapshotOf } = await impCore('src/server/store.server.ts');
+const { buildLiveModel, liveSwarm, liveDecider } = await impCore('src/model/live-feed.ts');
 const { swarmFromScan } = await imp('lib/scan/client.ts');
-const { LIVE_DECIDER, SwarmSim } = await imp('lib/model/sim.ts');
-const { lineSuffix } = await imp('lib/model/product.ts');
-const { emptyScan } = await imp('lib/scan/types.ts');
+const { LIVE_DECIDER, SwarmSim } = await impCore('src/model/sim.ts');
+const { lineSuffix } = await impCore('src/model/product.ts');
+const { emptyScan } = await impCore('src/scan/types.ts');
 
 let held = 0;
 const failures: string[] = [];
@@ -143,8 +144,8 @@ try {
 }
 
 // ------------------------------------------------------------------ Kettle's map as a live product
-const map3: Any = JSON.parse(fs.readFileSync(path.join(SRC, 'data/kettle.app-structure.json'), 'utf8'));
-const events = fs.readFileSync(path.join(SRC, 'data/kettle.events.jsonl'), 'utf8');
+const map3: Any = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.app-structure.json'), 'utf8'));
+const events = fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.events.jsonl'), 'utf8');
 const live = { slug: 'kettle-live', decide: async () => { throw new Error('unused'); } };
 const kf = map3.features as Any[];
 const f0 = kf[0].slug, f1 = kf[1].slug;

@@ -27,21 +27,22 @@ process.env.BP_CLAUDE_BIN = path.join(ROOT, 'scripts/fixtures/fake-claude.mjs');
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
 const imp = (p: string): Promise<Any> => import(pathToFileURL(path.join(SRC, p)).href);
-const TR = await imp('lib/scan/track.ts');
+const impCore = (p: string): Promise<Any> => import(pathToFileURL(path.join(ROOT, 'packages/core', p)).href);
+const TR = await impCore('src/scan/track.ts');
 const LS = await imp('lib/model/live-steer.ts');
-const J = await imp('lib/scan/jobs.server.ts');
-const { snapshotOf } = await imp('lib/scan/store.server.ts');
-const { buildLiveModel } = await imp('lib/model/live-feed.ts');
+const J = await impCore('src/server/jobs.server.ts');
+const { snapshotOf } = await impCore('src/server/store.server.ts');
+const { buildLiveModel } = await impCore('src/model/live-feed.ts');
 const { decideProposal } = await imp('lib/scan/client.ts');
-const { emptyScan } = await imp('lib/scan/types.ts');
-const { lineSuffix } = await imp('lib/model/product.ts');
+const { emptyScan } = await impCore('src/scan/types.ts');
+const { lineSuffix } = await impCore('src/model/product.ts');
 
 let held = 0;
 const failures: string[] = [];
 const expect = (ok: boolean, what: string, detail = '') => { if (ok) held++; else failures.push(what + (detail ? ': ' + detail : '')); };
 
-const map: Any = JSON.parse(fs.readFileSync(path.join(SRC, 'data/kettle.app-structure.json'), 'utf8'));
-const events = fs.readFileSync(path.join(SRC, 'data/kettle.events.jsonl'), 'utf8');
+const map: Any = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.app-structure.json'), 'utf8'));
+const events = fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.events.jsonl'), 'utf8');
 const kf = (map.features as Any[]).map((f) => f.slug);
 const [FA, FB, FC, FD] = kf;
 
@@ -158,7 +159,7 @@ MD.tracks.feed(scan1, []);
 const e0 = MD.tracks.T.e1;
 const scan2 = { ...scan1, proposals: [dprop('e1', 'failed'), dprop('o1', 'proposed'), dprop('o2', 'proposed', FC)] };
 MD.tracks.feed(scan2, []);
-MD.sim.applyFeed((await imp('lib/model/live-feed.ts')).liveSwarm(MD.P, scan2));
+MD.sim.applyFeed((await impCore('src/model/live-feed.ts')).liveSwarm(MD.P, scan2));
 const e1 = MD.tracks.T.e1;
 expect(e0?.stage === 'building' && e1?.stage === 'failed' && e1.feature === e0.feature && MD.tracks.list.filter((t: Any) => t.id === 'e1').length === 1, '(d) executing -> failed marks the same tile, once', JSON.stringify([e0?.stage, e1?.stage]));
 expect(MD.tracks.F[FD + lineSuffix(2, 0)]?.[0]?.id === 'e1' && MD.tracks.F[FD + lineSuffix(2, 1)]?.[0]?.id === 'e1', '(d) at ?scale=2 the marker stands on every product line\'s copy', Object.keys(MD.tracks.F).join());

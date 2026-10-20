@@ -9,8 +9,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ScanCtx } from '@/lib/scan/actions';
 import { createWave, deleteWave, dispatchWave, listWaves, refusalText, updateWave } from '@/lib/scan/actions';
-import type { ScanJob } from '@/lib/scan/jobs';
-import { waveOfId, waveState, type Wave, type WaveBody, type WaveDispatchResult, type WavePackage, type WaveState } from '@/lib/scan/waves';
+import type { ScanJob } from '@bp/core/scan/jobs';
+import { waveOfId, waveState, type Wave, type WaveBody, type WaveDispatchResult, type WavePackage, type WaveState } from '@bp/core/scan/waves';
 import { useEngine } from '../hooks';
 
 const NO_WAVES: readonly Wave[] = [];

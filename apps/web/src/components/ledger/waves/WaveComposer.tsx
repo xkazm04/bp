@@ -7,7 +7,7 @@
 // useWaves; on success the selection clears and the wave's tab is selected, on a refusal the panel stays open with its
 // edits (the hook toasted the reason). The names and counts are checked with the contract's own checkWaveBody.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { checkWaveBody, MAX_PACKAGES, WAVE_EFFORTS, WAVE_MODELS, type WaveBody, type WaveEffort, type WaveModel } from '@/lib/scan/waves';
+import { checkWaveBody, MAX_PACKAGES, WAVE_EFFORTS, WAVE_MODELS, type WaveBody, type WaveEffort, type WaveModel } from '@bp/core/scan/waves';
 import type { ComposerAsk, Ledger } from '../useLedger';
 import { Seg } from '../train/ui/Controls';
 

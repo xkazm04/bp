@@ -1,8 +1,8 @@
 // The release train's small marks: a status, a verdict, a metric's before -> after, a lens tag and the sample tag. One
 // component per visual thing (port-quality.md Q3); every surface of the ledger renders these.
 import { memo } from 'react';
-import type { ProposalStatus } from '@/lib/scan/types';
-import type { Verdict } from '@/lib/scan/compare';
+import type { ProposalStatus } from '@bp/core/scan/types';
+import type { Verdict } from '@bp/core/scan/compare';
 import { useEngine } from '../../../hooks';
 import { lensMeta } from '../../useLedger';
 import { LensGlyph } from '../../variants/bits';

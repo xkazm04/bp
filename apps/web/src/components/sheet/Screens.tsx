@@ -5,9 +5,9 @@
 // and run B (default: the latest two runs with that size and theme), side by side or as a swipe.
 // Kettle has no store, so no strip. Images come from the shots route; nothing is drawn on the canvas.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Feature } from '@/lib/data';
-import { baseId, shotErrors, shotUrl, shotsByRun } from '@/lib/model';
-import type { Run, Shot } from '@/lib/scan/types';
+import type { Feature } from '@bp/core/data';
+import { baseId, shotErrors, shotUrl, shotsByRun } from '@bp/core/model';
+import type { Run, Shot } from '@bp/core/scan/types';
 import { useLive } from '../hooks';
 
 interface Take { run: Run | null; runId: string; shot: Shot }

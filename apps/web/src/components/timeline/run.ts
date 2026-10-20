@@ -2,7 +2,7 @@
 // measured against its scope, its duration and its age. Pure and React-free (no '@/' imports) so Node runs check-run.ts on
 // it as-is; the wording of the age is the header pill's `ago`, passed in.
 
-import { scopeFeatures } from '../../lib/scan/scope.ts';
+import { scopeFeatures } from '@bp/core/scan/scope';
 
 interface RunLike { id: string; started_at: string; updated_at: string; ended_at?: string; status: string; lenses?: string[]; scope?: Record<string, unknown> }
 interface MeasLike { run_id: string; feature: string }

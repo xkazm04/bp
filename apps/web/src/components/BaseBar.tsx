@@ -8,8 +8,8 @@
 // hour ahead (no replay to scrub, no arrivals).
 import { useEffect, useRef } from 'react';
 import { AnimatePresence, motion, useReducedMotion, type Variants } from 'motion/react';
-import type { Stage } from '@/lib/data';
-import { GA_MILESTONE, SPEEDS, dnum, fmtD, revAt } from '@/lib/model';
+import type { Stage } from '@bp/core/data';
+import { GA_MILESTONE, SPEEDS, dnum, fmtD, revAt } from '@bp/core/model';
 import { shallowEqual, useBp, useEngine } from './hooks';
 import { Strip } from './timeline/Strip';
 import { simClock, useHourText, useRunInfo, useScrub, useSize } from './timeline/shared';

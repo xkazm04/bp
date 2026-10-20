@@ -5,8 +5,8 @@
 // drive segments, separators smuggled in an encoded segment (`..%2F..`), NUL, and symlinks pointing out.
 import fs from 'node:fs';
 import path from 'node:path';
-import { findProduct, storeDir } from '@/lib/scan/products.server';
-import { localHost } from '@/lib/scan/local-only';
+import { findProduct, storeDir } from '@bp/core/server/products.server';
+import { localHost } from '@bp/core/scan/local-only';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

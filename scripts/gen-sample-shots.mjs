@@ -10,7 +10,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { NAV, SAMPLE_ITEMS, screenTexts, shotFile } from '../apps/web/src/lib/model/train-sim.ts';
+import { NAV, SAMPLE_ITEMS, screenTexts, shotFile } from '../packages/core/src/model/train-sim.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = path.join(ROOT, 'apps/web/public');

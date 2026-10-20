@@ -1,7 +1,7 @@
 // The lens glyph set of the standard (spec 8.6), drawn by NAME so any lens manifest can pick one, plus
 // custom glyph paths. Shared by the subtle variant's strip (re-exported from src/variants/subtle/marks.ts)
 // and the engine's trouble flags (render/flags.ts).
-import type { GlyphName } from '@/lib/standard/types';
+import type { GlyphName } from '@bp/core/standard/types';
 
 // A custom glyph is an SVG path in a 16x16 box from a manifest: untrusted input. It was checked at load
 // (path commands and numbers only, at most 2048 characters) and is only ever parsed by Path2D.

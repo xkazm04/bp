@@ -2,10 +2,10 @@
 // the live store (useLive) or Kettle's sample train (the scan sim), through the same hook the findings use. Each
 // array keeps its identity until its source changes, so memoised rows and panels re-render only on a real change.
 import { useMemo } from 'react';
-import type { Measurement, Pack, Proposal, Release, Shot } from '@/lib/scan/types';
-import type { ScanJob } from '@/lib/scan/jobs';
+import type { Measurement, Pack, Proposal, Release, Shot } from '@bp/core/scan/types';
+import type { ScanJob } from '@bp/core/scan/jobs';
 import type { ScanCtx } from '@/lib/scan/actions';
-import type { LensDef } from '@/lib/standard/load';
+import type { LensDef } from '@bp/core/standard/load';
 import { useEngine, useLive, useScanCtx } from '../../hooks';
 import { useFindings } from '../useLedger';
 

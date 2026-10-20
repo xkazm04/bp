@@ -3,8 +3,8 @@
 // checkbox that selects every shown item of the pack, the lens glyph and the pack id, the branch, base commit, item
 // count and state, a SAMPLE tag on Kettle's sample packs, then one progress mark per item and "n/m decided".
 import { memo } from 'react';
-import type { Pack, ProposalStatus } from '@/lib/scan/types';
-import { WAITING } from '@/lib/train/rules';
+import type { Pack, ProposalStatus } from '@bp/core/scan/types';
+import { WAITING } from '@bp/core/train/rules';
 import { useEngine } from '../../hooks';
 import { lensMeta } from '../useLedger';
 import { LensGlyph } from '../variants/bits';

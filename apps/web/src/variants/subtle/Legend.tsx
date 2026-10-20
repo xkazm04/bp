@@ -4,9 +4,9 @@
 // unscanned feature and the fade of one the lens has nothing to say about), then the shared legend
 // underneath. Everything here comes from the lens manifests; the swatches use the canvas's own fills.
 import { useEffect, useMemo, useRef } from 'react';
-import type { Feature, LensDef, ViewId } from '@/lib/data';
-import type { LineName } from '@/lib/standard/types';
-import { lensOf } from '@/lib/model/lens';
+import type { Feature, LensDef, ViewId } from '@bp/core/data';
+import type { LineName } from '@bp/core/standard/types';
+import { lensOf } from '@bp/core/model/lens';
 import { readTheme } from '@/engine/theme';
 import { lineFill, unknownFill } from '@/engine/render/patterns';
 import { Legend as BaseLegend } from '@/components/Legend';

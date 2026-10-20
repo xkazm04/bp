@@ -2,8 +2,8 @@
 // RELEASE_STATE), the current step marked (a spinner while a job runs), a failed release shown at the step it failed
 // on; under it the release job's step and elapsed time from the jobs list. Before any release: the draft step, empty.
 import { memo } from 'react';
-import type { Release } from '@/lib/scan/types';
-import type { ScanJob } from '@/lib/scan/jobs';
+import type { Release } from '@bp/core/scan/types';
+import type { ScanJob } from '@bp/core/scan/jobs';
 import { RELEASE_STATE, STEPS, STEP_WORD, elapsed, failedStep, isActive } from './releaseState';
 
 export const Stepper = memo(function Stepper({ rel, last }: { rel?: Release; last?: ScanJob }) {

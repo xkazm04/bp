@@ -46,8 +46,8 @@ The JSON Schemas (draft 2020-12) in `docs/standard/schema/` are normative for st
 The lens-scan store's DDL, `docs/standard/lens-scan-store.sql`, is normative for the store (section 15).
 
 This document is normative for meaning: references, absent values, health evaluation, rollup,
-the events log and merging. The TypeScript types in `src/lib/standard/types.ts` mirror the schemas;
-`src/lib/standard/health.ts` is the reference evaluator.
+the events log and merging. The TypeScript types in `packages/core/src/standard/types.ts` mirror the schemas;
+`packages/core/src/standard/health.ts` is the reference evaluator.
 
 - A **reader** is anything that loads the file. A reader MUST ignore keys it does not know.
 - A **writer** is anything that saves it. A writer MUST keep what it does not own (section 11).
@@ -789,7 +789,7 @@ and a judgement scan block (8.2, 8.7). Each is additive: a 1.0.0 facet evaluates
 under 1.1.0. Performance, added later, is 1.0.0: its probed metrics (8.7), `budgetMet` and `probeEnv`. A map written before performance existed does not list it, and a reader does not add it:
 `lenses[]` is what the map uses (8.1). A writer adds it as any lens is added (lens-scan's onboarding).
 
-The manifests are in `docs/standard/lenses/`; `src/lib/standard/catalog.ts` loads them.
+The manifests are in `docs/standard/lenses/`; `packages/core/src/standard/catalog.ts` loads them.
 `node scripts/check-builtin-health.ts` checks the rules against the Kettle sample, handing each
 feature to the evaluator for the bound fields. The sample's lens objects carry no metrics; the
 converter (`npm run data:kettle-v3`) adds metric values on about 30 features and fails unless the

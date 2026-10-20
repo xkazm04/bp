@@ -1,7 +1,7 @@
 // Camera: world <-> screen, fitting boxes into the free part of the screen, a smoothed wheel zoom and a
 // fly-to driven by motion's animate() on a plain 0..1 progress value. Never touches React.
 import { animate, type AnimationPlaybackControls } from 'motion';
-import type { Box } from '@/lib/model';
+import type { Box } from '@bp/core/model';
 
 export interface Cam { x: number; y: number; k: number }
 export interface Region { l: number; t: number; r: number; b: number }

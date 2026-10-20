@@ -1,4 +1,4 @@
-import type { Box } from '@/lib/model';
+import type { Box } from '@bp/core/model';
 
 /** A camera snapshot plus the screen rectangle to draw into (for culling). */
 export interface View {

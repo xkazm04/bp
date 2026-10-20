@@ -5,7 +5,7 @@
 // a click on a track's glyph on its tile (Engine.trackAt); Esc or CLOSE closes it.
 import { useMemo } from 'react';
 import { TRACK_NEXT_LABEL, trackPlan } from '@/lib/model/live-steer';
-import type { TrackStage } from '@/lib/scan/track';
+import type { TrackStage } from '@bp/core/scan/track';
 import { useBp, useEngine, useLive } from './hooks';
 
 /** A stage in words, for the record's kicker and the hover card. */

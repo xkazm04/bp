@@ -12,13 +12,13 @@ import { Component, memo, useEffect, useMemo, useRef, useState, type ErrorInfo, 
 import { MotionConfig } from 'motion/react';
 import { Engine } from '@/engine/Engine';
 import type { Cam } from '@/engine/camera';
-import { EMPTY_SCAN, clampScale, type Model } from '@/lib/model';
-import { applyScan, buildLiveModel, lensesOnly, liveSwarm, refreshLiveModel } from '@/lib/model/live-feed';
-import { LiveFacets } from '@/lib/model/live-health';
-import type { ScanSim } from '@/lib/model/scan-sim';
+import { EMPTY_SCAN, clampScale, type Model } from '@bp/core/model';
+import { applyScan, buildLiveModel, lensesOnly, liveSwarm, refreshLiveModel } from '@bp/core/model/live-feed';
+import { LiveFacets } from '@bp/core/model/live-health';
+import type { ScanSim } from '@bp/core/model/scan-sim';
 import { decideProposal, useLiveProduct, type LiveProduct } from '@/lib/scan/client';
-import type { JobStatus, ScanJob } from '@/lib/scan/jobs';
-import type { ScanSnapshot } from '@/lib/scan/types';
+import type { JobStatus, ScanJob } from '@bp/core/scan/jobs';
+import type { ScanSnapshot } from '@bp/core/scan/types';
 import type { ScanCtx } from '@/lib/scan/actions';
 import { scanViews } from '@/lib/scan/scan-views';
 import { readTempLenses, subscribeTempLenses } from '@/lib/scan/temp-lens';
@@ -40,9 +40,9 @@ import './blueprint.css';
 // The Kettle sample (~770 KB of map, events and swarm) is its own chunk, fetched only when the sample is shown.
 // Nothing reachable from here imports it statically (@/lib/model/sample is the only door). Started at module load on
 // a sample URL so the download overlaps hydration.
-type BuildSample = typeof import('@/lib/model/sample').buildModel;
+type BuildSample = typeof import('@bp/core/model/sample').buildModel;
 let sampleChunk: Promise<BuildSample> | null = null;
-const loadSample = () => (sampleChunk ??= import('@/lib/model/sample').then((m) => m.buildModel));
+const loadSample = () => (sampleChunk ??= import('@bp/core/model/sample').then((m) => m.buildModel));
 if (typeof window !== 'undefined' && !new URLSearchParams(location.search).get('product')) loadSample().catch(() => { sampleChunk = null; });
 
 // memo: the app re-renders on every scan delta (the live context); the chrome re-renders only where it reads it.

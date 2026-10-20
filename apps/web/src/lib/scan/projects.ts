@@ -2,7 +2,7 @@
 // external store, and the writes (`POST /api/products`, `PATCH|DELETE /api/products/<slug>`). The header's
 // project switcher and the manage dialog read it; nothing here touches the engine or the canvas.
 import { useSyncExternalStore } from 'react';
-import type { ProductInfo } from './types';
+import type { ProductInfo } from '@bp/core/scan/types';
 
 /** `stale`: the open product was removed or got a new root; the running page still shows the old one until it reloads. */
 export type Stale = 'removed' | 'root' | null;

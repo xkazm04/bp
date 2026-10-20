@@ -2,12 +2,12 @@
 // at a place (`scopesAt`), a job's progress read from the store rows (`jobProgress`), and the views the
 // engine's scan layer draws (`scanViews`). Pure, discrete-time only (never per frame); type-only imports
 // from the model and relative value imports, so Node runs it as-is (the scan-package probes).
-import type { Layout, Product } from '@/lib/model';
+import type { Layout, Product } from '@bp/core/model';
 import type { Crumb } from '@/engine/state';
 import type { ScanView } from '@/engine/render/scans';
-import type { ScanSnapshot } from './types';
-import { isJobNote, type ScanJob, type ScanScope, type ScanScopeKind } from './jobs.ts';
-import { measuredFeatures } from './derive.ts';
+import type { ScanSnapshot } from '@bp/core/scan/types';
+import { isJobNote, type ScanJob, type ScanScope, type ScanScopeKind } from '@bp/core/scan/jobs';
+import { measuredFeatures } from '@bp/core/scan/derive';
 
 export interface ScopeOption { kind: ScanScopeKind; /** "Feature", "Bay", "Room", "Wing", "Everything". */ title: string; scope: ScanScope }
 type Geo = { P: Product; L: Layout };

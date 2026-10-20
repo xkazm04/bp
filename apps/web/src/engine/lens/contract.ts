@@ -11,7 +11,7 @@
 // The one hard rule: a tile's base fill is its lifecycle stage and the engine draws it. A lens never
 // recolours a node. It speaks through shape, indicators, content, density, and (only in variants that
 // go that far) a secondary accent and decoration.
-import type { Feature, LensDef, Scalar, Stage } from '@/lib/data';
+import type { Feature, LensDef, Scalar, Stage } from '@bp/core/data';
 import type { Theme } from '../theme';
 
 export type Density = 'simple' | 'standard' | 'dense';

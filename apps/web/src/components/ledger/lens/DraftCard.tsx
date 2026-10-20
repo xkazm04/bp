@@ -5,7 +5,7 @@
 // rendered as text (React escapes it); nothing is parsed as markup.
 // Also exports the small pieces the Lenses panel shares: the drawn glyph and line sample.
 import { useEffect, useRef } from 'react';
-import type { Condition, GlyphName, HealthRule, LensField, LensManifest, LensScan, LensScanStep, LineName, Rollup } from '@/lib/standard/types';
+import type { Condition, GlyphName, HealthRule, LensField, LensManifest, LensScan, LensScanStep, LineName, Rollup } from '@bp/core/standard/types';
 import { readTheme } from '@/engine/theme';
 import { glyph, lineType } from '@/variants/subtle/marks';
 import { useTheme } from '../../ThemeToggle';

@@ -6,10 +6,10 @@
 //   - pixels: on tiny synthetic RGBA images, identical -> nothing moved; noise under the threshold -> nothing moved;
 //     a faint change -> moved but "visually identical"; a block -> its exact grid cells, bbox, shares and words.
 // Run: node scripts/check-train-compare.ts  (Node's type stripping; no build step). Exit 1 on any failure.
-import { verdictOf, type LensFields } from '../apps/web/src/lib/scan/compare.ts';
-import { atTarget, beyondNoise, isOutlier, perfFigures, rangeScale, signed } from '../apps/web/src/lib/train/perf.ts';
-import { GRID_H, GRID_W, NOISE, bboxCells, diffPixels, pixWords } from '../apps/web/src/lib/train/pixels.ts';
-import type { Measurement, Proposal } from '../apps/web/src/lib/scan/types.ts';
+import { verdictOf, type LensFields } from '../packages/core/src/scan/compare.ts';
+import { atTarget, beyondNoise, isOutlier, perfFigures, rangeScale, signed } from '../packages/core/src/train/perf.ts';
+import { GRID_H, GRID_W, NOISE, bboxCells, diffPixels, pixWords } from '../packages/core/src/train/pixels.ts';
+import type { Measurement, Proposal } from '../packages/core/src/scan/types.ts';
 
 let n = 0, bad = 0;
 function ok(cond: boolean, what: string, got?: unknown) {

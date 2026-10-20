@@ -2,8 +2,8 @@
 // its identity and does not change). DELETE /api/products/[slug]: unregister it; the repo and its
 // `.ai/lens-scan/` stay on disk untouched. Both localhost only (403 otherwise); 404 for an unknown slug;
 // 400 for a bad body or a root that is not a directory; 409 when the registry file cannot be parsed.
-import { jsonOnly } from '@/lib/scan/local-only';
-import { localOnly, patchProduct, removeProduct, type RegistryResult } from '@/lib/scan/registry.server';
+import { jsonOnly } from '@bp/core/scan/local-only';
+import { localOnly, patchProduct, removeProduct, type RegistryResult } from '@bp/core/server/registry.server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

@@ -4,13 +4,13 @@
 // else patch; with no tag, the manifest's version as it stands (package.json, Cargo.toml, tauri.conf.json at the root or
 // src-tauri/app/desktop), else 0.1.0. A version the store already has a release for is passed over. 404 for an unknown
 // product; 503 when the store cannot be read. Localhost only.
-import { findProduct, storeFile } from '@/lib/scan/products.server';
-import { localHost } from '@/lib/scan/local-only';
-import { unreleased } from '@/lib/scan/compare';
-import { suggestVersion } from '@/lib/scan/release';
-import { manifestVersion, versionTags } from '@/lib/scan/release.server';
-import { snapshotOf } from '@/lib/scan/store.server';
-import type { ScanSnapshot } from '@/lib/scan/types';
+import { findProduct, storeFile } from '@bp/core/server/products.server';
+import { localHost } from '@bp/core/scan/local-only';
+import { unreleased } from '@bp/core/scan/compare';
+import { suggestVersion } from '@bp/core/scan/release';
+import { manifestVersion, versionTags } from '@bp/core/server/release.server';
+import { snapshotOf } from '@bp/core/server/store.server';
+import type { ScanSnapshot } from '@bp/core/scan/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

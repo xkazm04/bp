@@ -6,11 +6,11 @@
 // Also the header's summary strip and the phone's one-line release status. What a status allows is releaseState.ts's
 // table; the progress comes only from the stream (the release rows and the jobs list), never from polling.
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import type { Proposal } from '@/lib/scan/types';
-import type { ScanJob } from '@/lib/scan/jobs';
+import type { Proposal } from '@bp/core/scan/types';
+import type { ScanJob } from '@bp/core/scan/jobs';
 import { buildRelease, finishRelease, refusalText } from '@/lib/scan/actions';
-import { releaseItems, unreleased, verdictOf } from '@/lib/scan/compare';
-import { isWaiting } from '@/lib/train/rules';
+import { releaseItems, unreleased, verdictOf } from '@bp/core/scan/compare';
+import { isWaiting } from '@bp/core/train/rules';
 import { useEngine } from '../../../hooks';
 import { setLedgerUi } from '../../useLedger';
 import { KEYMAP } from '../keymap';

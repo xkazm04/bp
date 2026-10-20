@@ -1,7 +1,7 @@
 // Small drawing primitives shared by the static and dynamic layers: survey marks (agents), RFI
 // pennants (questions), revision clouds (trouble), stage strokes and the stage bar.
-import type { Stage } from '@/lib/data';
-import type { AgentState } from '@/lib/model';
+import type { Stage } from '@bp/core/data';
+import type { AgentState } from '@bp/core/model';
 import type { Theme } from '../theme';
 
 export function cloud(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {

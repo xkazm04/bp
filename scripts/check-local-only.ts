@@ -1,7 +1,7 @@
 // Checks the localhost request guards (src/lib/scan/local-only.ts): Host allow/deny for reads and writes,
 // Origin / Sec-Fetch-Site / X-Forwarded-For for writes, Content-Type for JSON bodies.
 // Run: node scripts/check-local-only.ts  (Node's type stripping). Exit 1 on any failure.
-import { jsonOnly, localHost, localOnly } from '../apps/web/src/lib/scan/local-only.ts';
+import { jsonOnly, localHost, localOnly } from '../packages/core/src/scan/local-only.ts';
 
 let failed = 0, passed = 0;
 const check = (name: string, ok: boolean) => { if (ok) passed++; else { failed++; console.log('FAIL ' + name); } };

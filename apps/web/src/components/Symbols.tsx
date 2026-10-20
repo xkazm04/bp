@@ -1,5 +1,5 @@
 // Small SVG symbols shared by the legend, lists and the sheet (stage swatches, swarm marks).
-import type { Stage } from '@/lib/data';
+import type { Stage } from '@bp/core/data';
 
 export function PatternDefs() {
   return (

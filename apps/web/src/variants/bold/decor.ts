@@ -16,7 +16,7 @@
 import type { Engine } from '@/engine/Engine';
 import { drawText } from '@/engine/text';
 import { bl, type BuiltinLens } from '../base/legacy';
-import { BH, G, TH, TW, isLiveSt, type BayNode, type BldNode, type RoomNode } from '@/lib/model';
+import { BH, G, TH, TW, isLiveSt, type BayNode, type BldNode, type RoomNode } from '@bp/core/model';
 import type { Theme, Viewport } from '../types';
 import { CHANNELS, SENS, kUsd } from './channels';
 import { LENS_NAME } from './palette';

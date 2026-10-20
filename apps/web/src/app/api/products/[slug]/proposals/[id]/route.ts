@@ -1,9 +1,9 @@
 // POST /api/products/[slug]/proposals/[id] with a DecisionBody: approve or decline a `proposed` row.
 // 200 + the updated Proposal; 400 for a bad body; 404 for an unknown product, store or proposal; 409 with the
 // current row (a Proposal, as the body) when it is no longer `proposed` (someone decided first, or the skill has moved it on).
-import { findProduct, hasStore, storeFile } from '@/lib/scan/products.server';
-import { localOnly, jsonOnly } from '@/lib/scan/local-only';
-import { decide, parseDecision } from '@/lib/scan/store.server';
+import { findProduct, hasStore, storeFile } from '@bp/core/server/products.server';
+import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
+import { decide, parseDecision } from '@bp/core/server/store.server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

@@ -149,7 +149,7 @@ Changes:
   `ON DELETE RESTRICT`, `values_json NOT NULL`, nullable `applicable`, `measured_at`,
   `source NOT NULL`, `override_health` (CHECK `good|watch|bad`), `override_by`, `override_why`,
   `override_until` (a CHECK: all four set or all NULL), `UNIQUE(use_case_id, lens_id)`.
-- **Evaluator.** Port this repo's `src/lib/standard/health.ts` to Rust. It takes the feature's core
+- **Evaluator.** Port this repo's `packages/core/src/standard/health.ts` to Rust. It takes the feature's core
   fields (`stage`, `priority`, `kind`, `tier`, `milestone`, `status`), since four built-ins bind
   `stage`, and evaluates `applies_when` (spec §8.2-8.4). Personas has no `priority`, so rules on it
   never match. A change in computed health appends `lens-health`.

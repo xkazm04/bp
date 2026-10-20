@@ -7,12 +7,12 @@
 // go; 400 `{ error: 'unknown-lens' }` for a lens the map lacks or has disabled; 404 for an unknown product, a missing
 // map or a missing store; 429 `{ error, jobs, approved, skipped }` when the queue cap stopped it (the approvals stand,
 // `jobs` holds the ones queued before the cap); 503 when the store stayed locked. Localhost only.
-import { findProduct, hasStore, storeFile } from '@/lib/scan/products.server';
-import { localOnly, jsonOnly } from '@/lib/scan/local-only';
-import { SAFE_ID, type ScanJob } from '@/lib/scan/jobs';
-import { MAX_PROPOSALS, busyProposals, enqueueExecute } from '@/lib/scan/jobs.server';
-import { readLensesAndFeatures } from '@/lib/scan/lens-write.server';
-import { decide, snapshotOf } from '@/lib/scan/store.server';
+import { findProduct, hasStore, storeFile } from '@bp/core/server/products.server';
+import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
+import { SAFE_ID, type ScanJob } from '@bp/core/scan/jobs';
+import { MAX_PROPOSALS, busyProposals, enqueueExecute } from '@bp/core/server/jobs.server';
+import { readLensesAndFeatures } from '@bp/core/server/lens-write.server';
+import { decide, snapshotOf } from '@bp/core/server/store.server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

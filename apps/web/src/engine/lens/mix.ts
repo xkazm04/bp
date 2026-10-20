@@ -3,7 +3,7 @@
 // derived per-lens quantities every drawing pass uses. Lens ids are strings; the set is fixed per
 // engine (it comes from the map and the session's `?lenses=` toggle).
 import { animate, motionValue, type MotionValue } from 'motion';
-import type { ViewId } from '@/lib/data';
+import type { ViewId } from '@bp/core/data';
 
 /** `general` plus one weight per registry lens id, each 0..1. */
 export type LensMix = { general: number } & Record<string, number>;

@@ -2,7 +2,7 @@
 // the cell), and the dashed box around every moved pixel, drawn as an SVG over the after screen. The grid comes from
 // useChangeMap (the worker); this only draws it.
 import { memo } from 'react';
-import { GRID_H, GRID_W, bboxCells, type PixGrid } from '@/lib/train/pixels';
+import { GRID_H, GRID_W, bboxCells, type PixGrid } from '@bp/core/train/pixels';
 import './Screens.css';
 
 export const ChangeMap = memo(function ChangeMap({ grid }: { grid: PixGrid }) {

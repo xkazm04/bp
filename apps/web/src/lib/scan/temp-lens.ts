@@ -3,9 +3,9 @@
 // routes. Every read and write is wrapped: storage can be absent or refuse. Pure apart from `localStorage` and
 // `window` (both guarded), so a Node check loads it as-is. The names keep "temp" from when only temporary
 // lenses were kept here, and so does the storage key (a browser's stored lenses survive the change).
-import type { LensEntry } from '@/lib/standard/types';
-import { checkLensManifest } from './manifest-check.ts';
-import { PROJECT_LENS_ID, TEMP_LENS_ID } from './jobs.ts';
+import type { LensEntry } from '@bp/core/standard/types';
+import { checkLensManifest } from '@bp/core/scan/manifest-check';
+import { PROJECT_LENS_ID, TEMP_LENS_ID } from '@bp/core/scan/jobs';
 
 export const TEMP_LENS_KEY = 'bp.tmpLenses.kettle';
 

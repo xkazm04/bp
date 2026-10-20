@@ -16,19 +16,19 @@
 // selection into what a new wave can take and what another draft wave already holds, and `dispatchWave` goes through the same
 // optimistic overlay as `dispatchIds`.
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { isView, lineSuffix } from '@/lib/model';
-import { emptyScan, type Measurement, type Pack, type Proposal, type ProposalSize, type ProposalStatus, type ScanSnapshot, type TriageDecision } from '@/lib/scan/types';
-import { isCurrent, tierRank } from '@/lib/scan/derive';
-import type { ScanJob } from '@/lib/scan/jobs';
+import { isView, lineSuffix } from '@bp/core/model';
+import { emptyScan, type Measurement, type Pack, type Proposal, type ProposalSize, type ProposalStatus, type ScanSnapshot, type TriageDecision } from '@bp/core/scan/types';
+import { isCurrent, tierRank } from '@bp/core/scan/derive';
+import type { ScanJob } from '@bp/core/scan/jobs';
 import { dispatch } from '@/lib/scan/actions';
-import type { ScanSim } from '@/lib/model/scan-sim';
+import type { ScanSim } from '@bp/core/model/scan-sim';
 import type { LedgerVariant } from '@/engine/state';
 import type { GlyphSpec } from '@/engine/render/lens-glyph';
 import { metricMove } from '../Queue';
 import { useEngine, useLive, useScanCtx } from '../hooks';
 import { useWaves, type WavesModel } from './useWaves';
-import type { Wave, WaveDispatchResult } from '@/lib/scan/waves';
-import { byPackAge } from '@/lib/train/rules';
+import type { Wave, WaveDispatchResult } from '@bp/core/scan/waves';
+import { byPackAge } from '@bp/core/train/rules';
 
 /** Status order everywhere in the ledger: open first, then moving, then built and waiting, then a person's triage and
  *  the release (v2), then declined. */

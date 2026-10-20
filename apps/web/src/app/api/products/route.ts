@@ -3,11 +3,11 @@
 // POST /api/products: register one, body `{ slug, name, root }` (localhost only). 201 + the entry; 400 for a
 // bad body, a root that is not a directory or a reserved slug; 409 for a slug in use (or a registry file
 // that cannot be parsed, which is never overwritten); 403 off localhost; 415 for a non-JSON body.
-import { hasStore, listProducts } from '@/lib/scan/products.server';
-import { readinessOf } from '@/lib/scan/readiness.server';
-import { addProduct, localOnly } from '@/lib/scan/registry.server';
-import { jsonOnly, localHost } from '@/lib/scan/local-only';
-import type { ProductInfo } from '@/lib/scan/types';
+import { hasStore, listProducts } from '@bp/core/server/products.server';
+import { readinessOf } from '@bp/core/server/readiness.server';
+import { addProduct, localOnly } from '@bp/core/server/registry.server';
+import { jsonOnly, localHost } from '@bp/core/scan/local-only';
+import type { ProductInfo } from '@bp/core/scan/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

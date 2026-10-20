@@ -7,9 +7,9 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { explain, lensHealth, rollupHealth } from '../apps/web/src/lib/standard/health.ts';
-import { loadStructure } from '../apps/web/src/lib/standard/load.ts';
-import type { AppStructure, Health } from '../apps/web/src/lib/standard/types.ts';
+import { explain, lensHealth, rollupHealth } from '../packages/core/src/standard/health.ts';
+import { loadStructure } from '../packages/core/src/standard/load.ts';
+import type { AppStructure, Health } from '../packages/core/src/standard/types.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const FIX = 'docs/standard/schema/fixtures';

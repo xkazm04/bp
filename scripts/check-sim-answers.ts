@@ -21,11 +21,12 @@ register('./overlays-loader.mjs', { parentURL: import.meta.url, data: { src: SRC
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
 const imp = (p: string): Promise<Any> => import(pathToFileURL(path.join(SRC, p)).href);
-const { buildModel } = await imp('lib/model/sample.ts');
-const { SwarmSim } = await imp('lib/model/sim.ts');
-const { SWARM } = await imp('lib/data/sample.ts');
-const MAP = (await imp('data/kettle.app-structure.json')).default as { features: { id?: string; slug: string }[] };
-const RAW = (await imp('data/swarm.json')).default as { orders: { id: string; violations: number }[] };
+const impCore = (p: string): Promise<Any> => import(pathToFileURL(path.join(ROOT, 'packages/core', p)).href);
+const { buildModel } = await impCore('src/model/sample.ts');
+const { SwarmSim } = await impCore('src/model/sim.ts');
+const { SWARM } = await impCore('src/data/sample.ts');
+const MAP = (await impCore('data/kettle.app-structure.json')).default as { features: { id?: string; slug: string }[] };
+const RAW = (await impCore('data/swarm.json')).default as { orders: { id: string; violations: number }[] };
 
 let held = 0;
 const failures: string[] = [];

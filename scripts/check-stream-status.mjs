@@ -76,7 +76,7 @@ try {
   check('structure route answers the current rev of the stream', sj.rev === revs[1], sj.rev + ' vs ' + revs[1]);
 
   const code = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\s\/\/ .*$/gm, '');
-  const types = code('apps/web/src/lib/scan/types.ts'), client = code('apps/web/src/lib/scan/client.ts'), header = code('apps/web/src/components/Header.tsx');
+  const types = code('packages/core/src/scan/types.ts'), client = code('apps/web/src/lib/scan/client.ts'), header = code('apps/web/src/components/Header.tsx');
   check('types.ts: StreamEvent names map', /type StreamEvent\s*=[^;]*'map'/.test(types));
   check("client.ts: addEventListener('map') refetches the structure", /addEventListener\(\s*'map'[\s\S]{0,400}refresh\(\)/.test(client));
   check('types.ts: StreamEvent names error', /type StreamEvent\s*=[^;]*'error'/.test(types));

@@ -9,12 +9,12 @@
 // resets when the item changes (the body is keyed by id). The next item's screens are prefetched while the browser idles.
 // Keys (L, M, W, J/K, Esc) are LedgerPage's handler.
 import { memo, useEffect, useMemo, useRef } from 'react';
-import { compareOf, type Comparison } from '@/lib/scan/compare';
-import type { Proposal } from '@/lib/scan/types';
-import { shotSrc } from '@/lib/train/shots';
-import type { LensDef } from '@/lib/standard/load';
+import { compareOf, type Comparison } from '@bp/core/scan/compare';
+import type { Proposal } from '@bp/core/scan/types';
+import { shotSrc } from '@bp/core/train/shots';
+import type { LensDef } from '@bp/core/standard/load';
 import { useEngine } from '../../../hooks';
-import { isFlagged } from '@/lib/train/rules';
+import { isFlagged } from '@bp/core/train/rules';
 import { setLedgerUi, useLedgerUi, type CompareTheme, type CompareView } from '../../useLedger';
 import { useTrain, type TrainData } from '../data';
 import { Decide } from '../Decide';
@@ -28,7 +28,7 @@ import { MetricStrip } from './MetricStrip';
 import { PerfKey, PerfTable, hasRuns, perfItem, perfReason } from './PerfTable';
 import { Screens, shownPairs } from './Screens';
 import './ComparePanel.css';
-import { byPackAge } from '@/lib/train/rules';
+import { byPackAge } from '@bp/core/train/rules';
 
 export interface ComparePanelProps {
   /** The pack item shown. */

@@ -10,12 +10,12 @@
 // reply, done: false, error }` (a block that failed the check: the chat goes on). 400 for a bad body; 404 for an unknown product; 502 when the CLI failed; 503 when it is not
 // installed; 504 after 3 minutes (the process tree is killed). Kettle runs the real CLI too. Localhost only.
 import path from 'node:path';
-import { findProduct } from '@/lib/scan/products.server';
-import { localOnly, jsonOnly } from '@/lib/scan/local-only';
-import { killTree, spawnCli } from '@/lib/scan/jobs.server';
-import { onboardPrompt, parseDraftReply, type DraftKind } from '@/lib/scan/lens-draft';
-import { readLensesAndFeatures } from '@/lib/scan/lens-write.server';
-import { takenLooks } from '@/lib/scan/jobs';
+import { findProduct } from '@bp/core/server/products.server';
+import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
+import { killTree, spawnCli } from '@bp/core/server/jobs.server';
+import { onboardPrompt, parseDraftReply, type DraftKind } from '@bp/core/scan/lens-draft';
+import { readLensesAndFeatures } from '@bp/core/server/lens-write.server';
+import { takenLooks } from '@bp/core/scan/jobs';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

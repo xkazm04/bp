@@ -3,8 +3,8 @@
 // Monospace on the terminal surface, newest at the bottom; it follows the end only while the reader is at the bottom.
 // Lines are memoised and keyed by activity id, so a new line appends and nothing is rebuilt.
 import { memo, useLayoutEffect, useMemo, useRef } from 'react';
-import type { ActivityKind } from '@/lib/scan/types';
-import { isJobNote, jobLabel, type ScanJob } from '@/lib/scan/jobs';
+import type { ActivityKind } from '@bp/core/scan/types';
+import { isJobNote, jobLabel, type ScanJob } from '@bp/core/scan/jobs';
 import { useFindings } from '../../useLedger';
 
 interface Line { key: string; at?: string; text: string; tone: string }

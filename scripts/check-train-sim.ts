@@ -15,18 +15,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { ScanSim } from '../apps/web/src/lib/model/scan-sim.ts';
-import { SAMPLE_ITEMS } from '../apps/web/src/lib/model/train-sim.ts';
-import { compareOf, type LensFields } from '../apps/web/src/lib/scan/compare.ts';
-import { isJobNote, type ScanJob } from '../apps/web/src/lib/scan/jobs.ts';
-import { shotSrc } from '../apps/web/src/lib/train/shots.ts';
-import type { Proposal, Shot } from '../apps/web/src/lib/scan/types.ts';
-import type { LensManifest } from '../apps/web/src/lib/standard/types.ts';
+import { ScanSim } from '../packages/core/src/model/scan-sim.ts';
+import { SAMPLE_ITEMS } from '../packages/core/src/model/train-sim.ts';
+import { compareOf, type LensFields } from '../packages/core/src/scan/compare.ts';
+import { isJobNote, type ScanJob } from '../packages/core/src/scan/jobs.ts';
+import { shotSrc } from '../packages/core/src/train/shots.ts';
+import type { Proposal, Shot } from '../packages/core/src/scan/types.ts';
+import type { LensManifest } from '../packages/core/src/standard/types.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HOOKS = './lib/src-hooks.mjs';
 ((await import(HOOKS)) as { registerSrcHooks: (root: string) => void }).registerSrcHooks(ROOT); // live.ts imports through '@/'
-const { shotUrl } = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/lib/model/live.ts')).href) as typeof import('../apps/web/src/lib/model/live.ts');
+const { shotUrl } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/model/live.ts')).href) as typeof import('../packages/core/src/model/live.ts');
 
 let failed = 0, passed = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) passed++; else { failed++; console.log('FAIL ' + name + (detail ? ': ' + detail : '')); } };
@@ -34,7 +34,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 type Refusal = { status?: number; message?: string; body?: Record<string, unknown> };
 const err = (fn: () => unknown): Refusal => { try { fn(); return {}; } catch (e) { return e as Refusal; } };
 
-const structure = JSON.parse(fs.readFileSync(path.join(ROOT, 'apps/web/src/data/kettle.app-structure.json'), 'utf8')) as { features: { slug: string }[]; lenses: { id: string; manifest: LensManifest }[]; facets: Record<string, Record<string, { values?: Record<string, unknown> }>> };
+const structure = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.app-structure.json'), 'utf8')) as { features: { slug: string }[]; lenses: { id: string; manifest: LensManifest }[]; facets: Record<string, Record<string, { values?: Record<string, unknown> }>> };
 /** The map's value of a feature's lens field, as BlueprintApp's bindSim answers it. */
 const mapValue = (f: string, l: string, k: string): number | undefined => { const v = structure.facets[f]?.[l]?.values?.[k]; return typeof v === 'number' ? v : undefined; };
 const order = structure.features.map((f) => f.slug);

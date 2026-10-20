@@ -4,10 +4,10 @@
 // lens's tab), the swarm on it, the Business section when the map has one, what it depends on and
 // what depends on it, and the recent activity. The side column keeps the record: the stylised
 // drawing, who owns and built it, the revisions (each one a time-travel link), parts and notes.
-import type { Feature, LensDef } from '@/lib/data';
-import { NOT_RECORDED, stageView } from '@/lib/model/timeview';
-import { reasonOf } from '@/lib/standard/present';
-import { REV_DESC, STAGE_WORD, pname, type Model } from '@/lib/model';
+import type { Feature, LensDef } from '@bp/core/data';
+import { NOT_RECORDED, stageView } from '@bp/core/model/timeview';
+import { reasonOf } from '@bp/core/standard/present';
+import { REV_DESC, STAGE_WORD, pname, type Model } from '@bp/core/model';
 import { BusinessSection } from '../sheet/Business';
 import { Activity, BuiltBy, Drawing, FeatureLinks, FlaggedBy, Notes, Parts, SwarmSection, stageSince } from '../sheet/SheetBody';
 import { plainLine, revLabel } from '../sheet/words';

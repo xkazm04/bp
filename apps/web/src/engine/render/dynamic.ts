@@ -2,7 +2,7 @@
 // selection outlines, dependency conduits, standing-order zones, targets, the swarm (glow, trails,
 // marks, chips), activity pulses, RFI pennants, breach rivets, steering previews, the focused decision
 // and freed agents. Per-agent position records are reused; nothing big is allocated per frame.
-import { GA_MILESTONE, astat, hash01, type SimAgent, type SimDecision } from '@/lib/model';
+import { GA_MILESTONE, astat, hash01, type SimAgent, type SimDecision } from '@bp/core/model';
 import type { Engine } from '../Engine';
 import { drawText } from '../text';
 import { clamp } from '../camera';

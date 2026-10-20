@@ -13,8 +13,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Ajv2020Module from 'ajv/dist/2020.js';
 // The evaluator's own definitions, not copies: Node strips the types (the fixture gate imports it the same way).
-import { OPS, conditionLeaves } from '../apps/web/src/lib/standard/health.ts';
-import { NUMERIC } from '../apps/web/src/lib/standard/present.ts';
+import { OPS, conditionLeaves } from '../packages/core/src/standard/health.ts';
+import { NUMERIC } from '../packages/core/src/standard/present.ts';
 
 const Ajv2020 = Ajv2020Module.default ?? Ajv2020Module;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');

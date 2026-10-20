@@ -5,9 +5,9 @@
 // loads it with the standard's loader like the Kettle map.
 import fs from 'node:fs';
 import path from 'node:path';
-import { findProduct, storeDir } from '@/lib/scan/products.server';
-import { localHost } from '@/lib/scan/local-only';
-import { mapRev } from '@/lib/scan/store.server';
+import { findProduct, storeDir } from '@bp/core/server/products.server';
+import { localHost } from '@bp/core/scan/local-only';
+import { mapRev } from '@bp/core/server/store.server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

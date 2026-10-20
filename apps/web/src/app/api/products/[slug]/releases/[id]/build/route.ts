@@ -1,6 +1,6 @@
 // POST /api/products/[slug]/releases/[id]/build, body `{}`: cut release `id` with a release job (`/lens-scan release
 // --id <id>`): cherry-pick, gates, re-measure, a PR. Status codes: ../release-job.ts. Localhost only.
-import { localOnly, jsonOnly } from '@/lib/scan/local-only';
+import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
 import { startRelease } from '../release-job';
 
 export const runtime = 'nodejs';

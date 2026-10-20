@@ -1,0 +1,12 @@
+{
+  "name": "@bp/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "bp's logic, once: app-structure v3, lenses and health rules, the derived model, scans, waves and the release train. Pure TypeScript (no React, DOM or Next); src/server is the Node-only half.",
+  "exports": {
+    "./model": "./src/model/index.ts",
+    "./data": "./src/data/index.ts",
+    "./*": "./src/*.ts"
+  }
+}

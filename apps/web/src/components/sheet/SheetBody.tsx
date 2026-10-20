@@ -6,9 +6,9 @@
 // rows (MetricRows, from the manifest); the Business section and a live product's Screens strip follow.
 import { useMemo } from 'react';
 import { LayoutGroup, motion, useReducedMotion } from 'motion/react';
-import type { Feature } from '@/lib/data';
-import type { ScanSnapshot } from '@/lib/scan/types';
-import { LIVE_DECIDER, REV_DESC, STAGE_WORD, astat, fmtWait, isAgentId, lensOf, pname, type Model, type SwarmSim } from '@/lib/model';
+import type { Feature } from '@bp/core/data';
+import type { ScanSnapshot } from '@bp/core/scan/types';
+import { LIVE_DECIDER, REV_DESC, STAGE_WORD, astat, fmtWait, isAgentId, lensOf, pname, type Model, type SwarmSim } from '@bp/core/model';
 import { useSimSig } from '../page/bits';
 import { illoSVG } from '@/engine/render/illo';
 import { DefaultLensPanel, MetricRows } from './LensPanel';

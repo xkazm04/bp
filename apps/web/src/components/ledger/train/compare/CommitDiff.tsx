@@ -4,7 +4,7 @@
 // its trailers behind a disclosure, and the patch, whose lines mount only while the patch is open (open from the start
 // in the wide panel), in chunks of 100 that the browser skips laying out off screen (content-visibility).
 import { memo, useEffect, useMemo, useState } from 'react';
-import type { CommitDiff as Diff } from '@/lib/scan/types';
+import type { CommitDiff as Diff } from '@bp/core/scan/types';
 import { commitDiff, refusalText, type ScanCtx } from '@/lib/scan/actions';
 import './CommitDiff.css';
 

@@ -12,10 +12,10 @@
 //
 // A click on a flag opens its feature in its lens; on a cluster of one feature, in its worst lens; on a
 // cluster of several, flies to them so they split. The engine hit-tests the flags of the last frame.
-import type { Feature } from '@/lib/data';
-import type { RoomNode, WingNode } from '@/lib/model';
+import type { Feature } from '@bp/core/data';
+import type { RoomNode, WingNode } from '@bp/core/model';
 import type { Engine } from '../Engine';
-import { RH } from '@/lib/model';
+import { RH } from '@bp/core/model';
 import { clamp } from '../camera';
 import { drawText } from '../text';
 import { glyph } from './lens-glyph';

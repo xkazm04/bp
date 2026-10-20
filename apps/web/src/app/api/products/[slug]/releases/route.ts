@@ -4,14 +4,14 @@
 // store.mjs `release --id` (the row with its `items`), `skipped` what release-add left out (`{ id, status, reason? }`).
 // 400 for a bad body; 404 for an unknown product or a missing store; 409 when no named item is accepted and free, or
 // the version already has a release; 503 when lens-scan is not installed or the store stayed locked. Localhost only.
-import { findProduct, hasStore, storeFile } from '@/lib/scan/products.server';
-import { localOnly, jsonOnly } from '@/lib/scan/local-only';
-import { SAFE_ID } from '@/lib/scan/jobs';
-import { isVersion } from '@/lib/scan/release';
-import { MAX_TRIAGE, storeCall, triageBy } from '@/lib/scan/release.server';
-import { snapshotOf } from '@/lib/scan/store.server';
-import { unreleased } from '@/lib/scan/compare';
-import type { Proposal, Release } from '@/lib/scan/types';
+import { findProduct, hasStore, storeFile } from '@bp/core/server/products.server';
+import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
+import { SAFE_ID } from '@bp/core/scan/jobs';
+import { isVersion } from '@bp/core/scan/release';
+import { MAX_TRIAGE, storeCall, triageBy } from '@bp/core/server/release.server';
+import { snapshotOf } from '@bp/core/server/store.server';
+import { unreleased } from '@bp/core/scan/compare';
+import type { Proposal, Release } from '@bp/core/scan/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

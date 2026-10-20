@@ -101,10 +101,11 @@ g.document ??= { documentElement: {}, createElement: () => ({ getContext: () => 
 g.getComputedStyle ??= () => ({ getPropertyValue: () => '' });
 
 const imp = (p: string): Promise<Any> => import(pathToFileURL(path.join(SRC, p)).href);
+const impCore = (p: string): Promise<Any> => import(pathToFileURL(path.join(ROOT, 'packages/core', p)).href);
 const req = createRequire(path.join(ROOT, 'package.json'));
 const React: Any = req('react'), { renderToString }: Any = req('react-dom/server');
 const h = React.createElement;
-const { buildModel } = await imp('lib/model/sample.ts');
+const { buildModel } = await impCore('src/model/sample.ts');
 const { initialState } = await imp('engine/state.ts');
 const { EngineCtx, VariantCtx, LiveCtx } = await imp('components/hooks.ts');
 const { getVariant } = await imp('variants/registry.ts');

@@ -1,7 +1,7 @@
 // Discrete UI state held in the external store. Only things that change on a click, a key or a
 // simulation event live here; continuous values (camera, clock, hover position, mix) stay in the engine.
-import type { ViewId } from '@/lib/data';
-import type { Preview, SimEvent, SimToast, Target } from '@/lib/model';
+import type { ViewId } from '@bp/core/data';
+import type { Preview, SimEvent, SimToast, Target } from '@bp/core/model';
 import type { LivePlan } from '@/lib/model/live-steer';
 
 /** The right-hand rail's items; each opens its own flyout over the plan. */

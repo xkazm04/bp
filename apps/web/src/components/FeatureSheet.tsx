@@ -15,8 +15,8 @@
 // The phone keeps the single-document view (sheet/SheetBody.tsx), re-exported here.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion, type Variants } from 'motion/react';
-import type { Feature } from '@/lib/data';
-import { views, type BayNode, type BldNode, type RoomNode, type WingNode } from '@/lib/model';
+import type { Feature } from '@bp/core/data';
+import { views, type BayNode, type BldNode, type RoomNode, type WingNode } from '@bp/core/model';
 import type { Crumb } from '@/engine/state';
 import { PatternDefs } from './Symbols';
 import { shallowEqual, useBp, useEngine, useVariant } from './hooks';

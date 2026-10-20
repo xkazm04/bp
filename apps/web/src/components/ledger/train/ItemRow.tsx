@@ -10,9 +10,9 @@
 // over the measurements and shots: the verdict (compare.ts verdictOf, noise-aware), before/after, screens, runs and
 // the attempt chain.
 import { memo, useMemo, useRef } from 'react';
-import type { Measurement, Proposal } from '@/lib/scan/types';
-import { runStats, verdictOf, type Verdict } from '@/lib/scan/compare';
-import { isFlagged } from '@/lib/train/rules';
+import type { Measurement, Proposal } from '@bp/core/scan/types';
+import { runStats, verdictOf, type Verdict } from '@bp/core/scan/compare';
+import { isFlagged } from '@bp/core/train/rules';
 import { useTrain } from './data';
 import { LensTag, MetricMove, StateMark, VerdictChip } from './ui/Marks.tsx';
 

@@ -32,7 +32,7 @@ always:
 - `npm run check:legacy`
 
 when the app-structure fixture or schema changes:
-- `npm run validate:structure -- src/data/kettle.app-structure.json --events src/data/kettle.events.jsonl`
+- `npm run validate:structure -- packages/core/data/kettle.app-structure.json --events packages/core/data/kettle.events.jsonl`
 
 when rendering, the engine or chrome changes:
 - `npm run build` (never while a `next dev` runs in the same directory)
@@ -42,7 +42,7 @@ when rendering, the engine or chrome changes:
 ## Repo law
 
 - `docs/blueprint-ui.md` is the UI contract: 12 px text floor (body 14 px), spatial stability (expanded chrome overlays the plan), lenses are data (never branch on a lens id), keyboard throughout, reduced motion honoured.
-- Design tokens are the CSS variables in `src/components/blueprint.css`; no raw colours in components or css.
+- Design tokens are the CSS variables in `apps/web/src/components/blueprint.css`; no raw colours in components or css.
 - Kettle `/`, the live product `?product=<slug>`, `?scale=4`, `?theme=light` and the three variants `/v/subtle|shaped|bold` must keep working.
 - Next allows one `next dev` per directory.
 - A worktree with a `node_modules` junction runs the node gates but not `next dev` (Turbopack panics on the junction); a worktree that needs a browser runs `npm ci`. `next dev` writes AGENTS.md and rewrites next-env.d.ts: never commit either.

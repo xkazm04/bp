@@ -22,15 +22,15 @@ const FAKE = path.join(ROOT, 'scripts/fixtures/fake-claude.mjs');
 process.env.BP_CLAUDE_BIN = FAKE;
 
 const load = <T>(rel: string) => import(pathToFileURL(path.join(ROOT, rel)).href) as Promise<T>;
-const W = await load<typeof import('../apps/web/src/lib/scan/waves.ts')>('apps/web/src/lib/scan/waves.ts');
-const J = await load<typeof import('../apps/web/src/lib/scan/jobs.server.ts')>('apps/web/src/lib/scan/jobs.server.ts');
-const WS = await load<typeof import('../apps/web/src/lib/scan/waves.server.ts')>('apps/web/src/lib/scan/waves.server.ts');
-const { ScanSim } = await load<typeof import('../apps/web/src/lib/model/scan-sim.ts')>('apps/web/src/lib/model/scan-sim.ts');
+const W = await load<typeof import('../packages/core/src/scan/waves.ts')>('packages/core/src/scan/waves.ts');
+const J = await load<typeof import('../packages/core/src/server/jobs.server.ts')>('packages/core/src/server/jobs.server.ts');
+const WS = await load<typeof import('../packages/core/src/server/waves.server.ts')>('packages/core/src/server/waves.server.ts');
+const { ScanSim } = await load<typeof import('../packages/core/src/model/scan-sim.ts')>('packages/core/src/model/scan-sim.ts');
 const A = await load<typeof import('../apps/web/src/lib/scan/actions.ts')>('apps/web/src/lib/scan/actions.ts');
-type ScanJob = import('../apps/web/src/lib/scan/jobs.ts').ScanJob;
-type Proposal = import('../apps/web/src/lib/scan/types.ts').Proposal;
-type Wave = import('../apps/web/src/lib/scan/waves.ts').Wave;
-type Manifest = import('../apps/web/src/lib/standard/types.ts').LensManifest;
+type ScanJob = import('../packages/core/src/scan/jobs.ts').ScanJob;
+type Proposal = import('../packages/core/src/scan/types.ts').Proposal;
+type Wave = import('../packages/core/src/scan/waves.ts').Wave;
+type Manifest = import('../packages/core/src/standard/types.ts').LensManifest;
 
 let failed = 0, passed = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) passed++; else { failed++; console.log('FAIL ' + name + (detail ? ': ' + detail : '')); } };
@@ -41,7 +41,7 @@ const err = async (fn: () => unknown): Promise<{ status?: number; message: strin
   try { await fn(); return { message: 'ok' }; } catch (e) { return e as { status?: number; message: string; body?: unknown }; }
 };
 
-type Pkg = Omit<import('../apps/web/src/lib/scan/waves.ts').WavePackage, 'id'>;
+type Pkg = Omit<import('../packages/core/src/scan/waves.ts').WavePackage, 'id'>;
 /** A package body; `model` and `effort` are loose so the refusals can be fed bad values. */
 const pkg = (name: string, ids: string[], model = 'opus', effort = 'high'): Pkg => ({ name, model, effort, ids } as Pkg);
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-waves-'));

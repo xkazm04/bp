@@ -4,7 +4,7 @@
 // once per (theme, motif, device resolution, size bucket) and kept; a tile asks for one by number, so the
 // per-tile path allocates nothing. Patterns are anchored to the rect they fill (the fill starts with a
 // whole motif at the tile's left edge), not to the world like the theme's stage hatches.
-import type { LineName } from '@/lib/standard/types';
+import type { LineName } from '@bp/core/standard/types';
 import type { Theme } from '../theme';
 
 /** Fill ink: a pattern at this alpha keeps 14 px text above it readable in both themes. */

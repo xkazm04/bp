@@ -10,8 +10,8 @@ const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'app
 register('./overlays-loader.mjs', { parentURL: import.meta.url, data: { src: SRC, root: ROOT, mutate: [] } });
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
-const { buildModel } = (await import(pathToFileURL(path.join(SRC, 'lib/model/sample.ts')).href)) as Any;
-const { search, searchAll, searchPage, baseId } = (await import(pathToFileURL(path.join(SRC, 'lib/model/index.ts')).href)) as Any;
+const { buildModel } = (await import(pathToFileURL(path.join(ROOT, 'packages/core/src/model/sample.ts')).href)) as Any;
+const { search, searchAll, searchPage, baseId } = (await import(pathToFileURL(path.join(ROOT, 'packages/core/src/model/index.ts')).href)) as Any;
 
 let held = 0;
 const failures: string[] = [];

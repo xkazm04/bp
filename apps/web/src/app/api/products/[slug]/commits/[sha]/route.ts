@@ -5,10 +5,10 @@
 // only, never an arbitrary object of the repo. 200 with `cache-control: private, max-age=3600` (a commit never
 // changes); 400 for a bad or ambiguous sha; 404 for an unknown product, a missing store, a sha that is no item commit,
 // or one the repo does not have; 503 when the store cannot be read or git does not run. Localhost only.
-import { findProduct, hasStore, storeFile } from '@/lib/scan/products.server';
-import { localHost } from '@/lib/scan/local-only';
-import { close, openRead } from '@/lib/scan/store.server';
-import { commitDiff } from '@/lib/scan/release.server';
+import { findProduct, hasStore, storeFile } from '@bp/core/server/products.server';
+import { localHost } from '@bp/core/scan/local-only';
+import { close, openRead } from '@bp/core/server/store.server';
+import { commitDiff } from '@bp/core/server/release.server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

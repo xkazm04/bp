@@ -10,11 +10,11 @@
 //
 // Metric fields (v3.1, a field with `metric`) are not rows here: `MetricRows` draws them after the
 // panel's evidence, for every variant's panel (the sheet places it), from the manifest alone.
-import type { Feature, FeatureLens, LensDef, Scalar } from '@/lib/data';
-import type { LensField } from '@/lib/standard/types';
-import { DENSITY_COUNT, HEALTH_TEXT, hotHealth } from '@/lib/standard/present';
-import type { ScanSnapshot } from '@/lib/scan/types';
-import { baseId, fmtValue, metricHistory, pname, type Model } from '@/lib/model';
+import type { Feature, FeatureLens, LensDef, Scalar } from '@bp/core/data';
+import type { LensField } from '@bp/core/standard/types';
+import { DENSITY_COUNT, HEALTH_TEXT, hotHealth } from '@bp/core/standard/present';
+import type { ScanSnapshot } from '@bp/core/scan/types';
+import { baseId, fmtValue, metricHistory, pname, type Model } from '@bp/core/model';
 import type { SheetPanelProps } from '@/variants/types';
 
 export interface Row { k: string; v: string; c?: 'bad' | 'watch' | ''; tier: 0 | 1 | 2 }

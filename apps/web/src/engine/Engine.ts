@@ -1,14 +1,14 @@
 // The canvas engine. It owns the camera, the frame loop (draws only when dirty), level of detail,
 // hit testing, the cached static layer and the dynamic layers, the lens mix and the simulation clock.
 // React talks to it through the imperative methods below and reads discrete state from `store`.
-import type { Feature, LensDef, Scalar, ViewId } from '@/lib/data';
+import type { Feature, LensDef, Scalar, ViewId } from '@bp/core/data';
 import {
   BLAST_DEFAULT, GA_MILESTONE, HOUR, LINES, SPEEDS, inside, isView, lensOf, lensPerson, personLens, revAt, views, type Box, type BldNode, type BayNode, type Counts, type Model,
   type OrderTemplate, type PlaceNode, type Preview, type RoomNode, type SimDecision, type SimEvent, type Target, type TileNode, type WingNode,
-} from '@/lib/model';
+} from '@bp/core/model';
 import { LIVE_VERB_LABEL, SAMPLE_REFUSED, commitSample, runLivePlan, type LivePlan } from '@/lib/model/live-steer';
-import type { ScanJob } from '@/lib/scan/jobs';
-import type { ScanSnapshot } from '@/lib/scan/types';
+import type { ScanJob } from '@bp/core/scan/jobs';
+import type { ScanSnapshot } from '@bp/core/scan/types';
 import { TRACK_LABEL_W, drawTracks, trackMarkPos } from './render/tracks';
 import { Camera, WheelIntent, clamp, type Cam, type Pad, type Region } from './camera';
 import type { ChannelAggregate, FeatureLive, LensChannel, LensExpression } from './lens/contract';

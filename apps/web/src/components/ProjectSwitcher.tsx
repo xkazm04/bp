@@ -6,7 +6,7 @@
 // from scratch and nothing of the previous product's engine survives. The control lives in the chrome
 // and holds its own state; opening it re-renders only itself, never the canvas.
 import { useEffect, useRef, useState } from 'react';
-import { LEVEL_LABEL, LEVEL_TITLE, readinessLevel, type ReadinessLevel } from '@/lib/scan/readiness';
+import { LEVEL_LABEL, LEVEL_TITLE, readinessLevel, type ReadinessLevel } from '@bp/core/scan/readiness';
 import { projectHref, refreshProjects, useProductName, useProjects } from '@/lib/scan/projects';
 import { ProjectsDialog } from './ProjectsDialog';
 import './projects.css';

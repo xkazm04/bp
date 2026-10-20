@@ -11,11 +11,11 @@
 // become scan views, the store's rows reach applyFeed). Kept out of the `@/lib/model` barrel: it imports the scan
 // client through actions.ts.
 import { cancelJob, dispatch, refusalText, startSelectionScan, type ScanCtx } from '@/lib/scan/actions';
-import { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, jobLabel, scannable, type ScanJob } from '@/lib/scan/jobs';
-import type { Track, TrackNext } from '@/lib/scan/track';
-import type { Proposal } from '@/lib/scan/types';
-import { baseId, type Product } from './product';
-import type { Preview, SwarmSim } from './sim';
+import { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, jobLabel, scannable, type ScanJob } from '@bp/core/scan/jobs';
+import type { Track, TrackNext } from '@bp/core/scan/track';
+import type { Proposal } from '@bp/core/scan/types';
+import { baseId, type Product } from '@bp/core/model/product';
+import type { Preview, SwarmSim } from '@bp/core/model/sim';
 
 export type LiveVerb = 'measure' | 'build' | 'stop';
 export type SampleVerb = 'push' | 'pause' | 'resume' | 'order';

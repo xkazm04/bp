@@ -55,9 +55,16 @@ apps/web/src/app/              routes: / (blueprint), /variants, /v/[variant]
 apps/web/src/engine/           canvas engine: camera, frame loop, levels of detail, cached plan raster, lens mix
 apps/web/src/components/       React UI around the canvas (header, dock, queue, feature sheet, legend, phone view)
 apps/web/src/variants/         lens expressions: subtle (adopted), shaped, bold
-apps/web/src/lib/standard/     app-structure v3: types, loader, health-rule evaluator, built-in lens catalog
-apps/web/src/lib/model/        derived model: layout, aggregates, search, swarm simulation
-apps/web/src/data/             fixtures: kettle.app-structure.json + kettle.events.jsonl (the product, v3),
+apps/web/src/lib/              the web-only half of the logic: the live client and project store (React), scan
+                               actions and temporary lenses (browser), scan views (engine) and live steering
+packages/core/                 the logic, once (npm workspace @bp/core; no React, DOM or Next: check:core-purity)
+packages/core/src/standard/    app-structure v3: types, loader, health-rule evaluator, built-in lens catalog
+packages/core/src/model/       derived model: layout, aggregates, search, swarm simulation
+packages/core/src/scan/        lens-scan store types, jobs, waves, release, scopes (pure)
+packages/core/src/train/       the release train's rules, wire parsers and comparisons (pure)
+packages/core/src/data/        the data types, the map loader and the Kettle sample loader
+packages/core/src/server/      the Node-only half: store, products registry, job runner, git and release (*.server.ts)
+packages/core/data/            fixtures: kettle.app-structure.json + kettle.events.jsonl (the product, v3),
                                swarm.json (the simulated swarm), kettle.json (the original sample)
 docs/blueprint-ui.md           the UI contract: levels, 12 px text floor, performance rules, lenses as data
 docs/standard/                 app-structure v3: spec, analysis, JSON Schemas, lens manifests, Personas brief
@@ -70,17 +77,17 @@ scripts/                       fixture generators, v3 conversion, validator, per
 
 ## Data: app-structure v3
 
-The app reads one file per product: `apps/web/src/data/kettle.app-structure.json`, plus an append-only events
+The app reads one file per product: `packages/core/data/kettle.app-structure.json`, plus an append-only events
 log. The format is a superset of Personas' `context-map.json` v2. It adds a product tree, features
 with a lifecycle stage, milestones and KPIs. **Lenses are plugins:** each one is a manifest with
 fields, health rules written as JSON (no code runs), and presentation hints. A project can add its
 own lens or switch any lens off. The spec is `docs/standard/app-structure-v3.md`.
 
 ```sh
-npm run data:kettle-v3                 # rebuild the v3 map + events from apps/web/src/data/kettle.json
-npm run validate:structure -- apps/web/src/data/kettle.app-structure.json --events apps/web/src/data/kettle.events.jsonl
+npm run data:kettle-v3                 # rebuild the v3 map + events from packages/core/data/kettle.json
+npm run validate:structure -- packages/core/data/kettle.app-structure.json --events packages/core/data/kettle.events.jsonl
 npm run check:lens-health              # built-in lens rules vs the sample's stored health (gate: 132/132, every lens 100%)
-npm run check:data                     # the committed apps/web/src/data map + events are exactly what data:kettle-v3 generates (writes nothing)
+npm run check:data                     # the committed packages/core/data map + events are exactly what data:kettle-v3 generates (writes nothing)
 node scripts/fixtures/gen-kettle.mjs <dir>   # regenerate the original sample (deterministic)
 node scripts/fixtures/gen-swarm.mjs <dir>    # regenerate the swarm over it
 ```
@@ -91,6 +98,9 @@ node scripts/fixtures/gen-swarm.mjs <dir>    # regenerate the swarm over it
 and `validate:structure`, prints one line each with time and pass/fail, and exits 1 on any failure.
 `check:route-guards` asserts every `apps/web/src/app/api/**/route.ts` handler opens with `localHost` (GET) or `localOnly`
 (+ `jsonOnly` before a body parse); known gaps are listed in the script and reported on each run.
+`check:core-purity` fails when `packages/core` imports React, Next or Motion, the web app (`@/`, `apps/`), or (outside
+`src/server`) a Node built-in or a server file, when its pure half does not typecheck without the DOM lib, or when `apps/web` reaches
+core by a relative path instead of `@bp/core/*`; seeded controls prove each rule red on every run.
 `check:python-deps` needs Python and is skipped (and reported as skipped) when `python` is not on PATH.
 The production build warns "Dynamic filesystem access causes tracing of the whole project" for the
 products shots route; that is expected and not a check failure.

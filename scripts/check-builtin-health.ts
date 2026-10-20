@@ -15,16 +15,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { explain, lensHealth } from '../apps/web/src/lib/standard/health.ts';
-import { BUILTIN_LENSES } from '../apps/web/src/lib/standard/catalog.ts';
-import type { Feature, LensManifest } from '../apps/web/src/lib/standard/types.ts';
+import { explain, lensHealth } from '../packages/core/src/standard/health.ts';
+import { BUILTIN_LENSES } from '../packages/core/src/standard/catalog.ts';
+import type { Feature, LensManifest } from '../packages/core/src/standard/types.ts';
 import { FLATTEN, type LensObject } from './sample-facets.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p: string): unknown => JSON.parse(fs.readFileSync(path.join(ROOT, p), 'utf8'));
 
 interface SampleFeature { id: string; name: string; stage: string; priority: string; kind: string; milestone: string | null; [lens: string]: unknown }
-const kettle = read('apps/web/src/data/kettle.json') as { product: { asOf: string }; lenses: string[]; features: SampleFeature[] };
+const kettle = read('packages/core/data/kettle.json') as { product: { asOf: string }; lenses: string[]; features: SampleFeature[] };
 const manifests: readonly LensManifest[] = BUILTIN_LENSES;
 const sampled = manifests.filter((m) => kettle.lenses.includes(m.id));
 

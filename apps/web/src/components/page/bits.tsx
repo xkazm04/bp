@@ -2,14 +2,14 @@
 // Small pieces the feature page's tabs share: a field value that counts, the health word, the
 // lifecycle ladder, and the KPIs a lens is bound to on this feature.
 import { useMemo } from 'react';
-import type { Feature, Scalar } from '@/lib/data';
-import type { Health, Kpi, LensField } from '@/lib/standard/types';
-import { STAGES } from '@/lib/standard/load';
-import { HEALTH_TEXT } from '@/lib/standard/present';
-import { STAGE_WORD, fmtValue, baseId, type Model } from '@/lib/model';
-import { NOT_RECORDED, stageView, valueView, type ValueAsOf } from '@/lib/model/timeview';
-import type { LensDef } from '@/lib/data';
-import type { SwarmSim } from '@/lib/model';
+import type { Feature, Scalar } from '@bp/core/data';
+import type { Health, Kpi, LensField } from '@bp/core/standard/types';
+import { STAGES } from '@bp/core/standard/load';
+import { HEALTH_TEXT } from '@bp/core/standard/present';
+import { STAGE_WORD, fmtValue, baseId, type Model } from '@bp/core/model';
+import { NOT_RECORDED, stageView, valueView, type ValueAsOf } from '@bp/core/model/timeview';
+import type { LensDef } from '@bp/core/data';
+import type { SwarmSim } from '@bp/core/model';
 import { useBp, useEngine, useLive } from '../hooks';
 import { Count } from './motion';
 

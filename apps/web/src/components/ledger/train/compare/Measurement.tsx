@@ -2,8 +2,8 @@
 // phase) with the commit each was taken on (its run on hover), in the winner A/1's two-line block. The standard the item
 // was built against heads the item's own text below ("The item · <standard>"), as in A/1.
 import { memo } from 'react';
-import type { Comparison } from '@/lib/scan/compare';
-import type { Measurement as Reading } from '@/lib/scan/types';
+import type { Comparison } from '@bp/core/scan/compare';
+import type { Measurement as Reading } from '@bp/core/scan/types';
 import { latestOf } from './MetricStrip';
 import './MetricStrip.css';
 

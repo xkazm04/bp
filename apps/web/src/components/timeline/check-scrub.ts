@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { HOUR } from '../../lib/model/constants.ts';
+import { HOUR } from '@bp/core/model/constants';
 import { HOUR_PAD, NOW_SNAP, histX, hourAt, hourX, inHour, keyPlanFrac, scrubAt, valueText, type ScrubGeom } from './scrub.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));

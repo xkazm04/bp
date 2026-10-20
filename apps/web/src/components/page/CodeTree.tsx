@@ -3,8 +3,8 @@
 // contexts come from the map itself (the live product's structure, else Kettle's): the loaded model keeps
 // only the names. Hidden when the feature has no context.
 import { useMemo, useState } from 'react';
-import type { Feature } from '@/lib/data';
-import type { Context } from '@/lib/standard/types';
+import type { Feature } from '@bp/core/data';
+import type { Context } from '@bp/core/standard/types';
 import { useEngine, useLive } from '../hooks';
 
 const SHOWN = 6;

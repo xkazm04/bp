@@ -1,7 +1,7 @@
 // The one x <-> time mapping of the two time sliders (the strip's hairline in Strip.tsx and the panel's revisions chart in
 // BaseBar.tsx): history x for a date, hour x for a sim second, which zone a pointer x falls in, and what a drag at x
 // means. Pure and React-free (no '@/' imports) so Node runs check-scrub.ts on it as-is.
-import { HOUR } from '../../lib/model/constants.ts';
+import { HOUR } from '@bp/core/model/constants';
 
 /** A pointer within this many px left of the hour zone still counts as the hour (the gap between the two axes is dead otherwise). */
 export const HOUR_PAD = 6;

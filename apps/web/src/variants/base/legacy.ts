@@ -2,8 +2,8 @@
 // object per lens. They are rebuilt here from the facets (the loader's per-feature lens values) once per
 // feature and cached, so those variants keep working for the built-in ids while every other lens falls
 // back to the manifest-driven subtle channel. Nothing outside src/variants/{base,shaped,bold} reads this.
-import type { Feature, Health, Scalar } from '@/lib/data';
-import { hotHealth } from '@/lib/standard/present';
+import type { Feature, Health, Scalar } from '@bp/core/data';
+import { hotHealth } from '@bp/core/standard/present';
 
 type V = Readonly<Record<string, Scalar>>;
 const n = (v: V, k: string, d = 0): number => (typeof v[k] === 'number' ? (v[k] as number) : d);

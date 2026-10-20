@@ -1,13 +1,13 @@
 // The one way the UI starts, dispatches and cancels scan work. A live product goes to its localhost
 // routes (the server spawns the Claude Code CLI); the Kettle sample goes to the scan sim. Callers never
 // branch on which.
-import type { ScanSim } from '@/lib/model/scan-sim';
-import { takenLooks, type ScanJob, type ScanScope } from './jobs';
-import type { LensEntry, LensManifest } from '@/lib/standard/types';
+import type { ScanSim } from '@bp/core/model/scan-sim';
+import { takenLooks, type ScanJob, type ScanScope } from '@bp/core/scan/jobs';
+import type { LensEntry, LensManifest } from '@bp/core/standard/types';
 import { deleteJob, deleteWaveReq, executeLens, getCommitDiff, getReleaseSuggestion, getWaves, patchWaveReq, postDispatch, postProjectLens, postRelease, postReleaseBuild, postReleaseFinish, postScan, postTriage, postWave, postWaveDispatch, type LensExecuteResult } from './client';
-import type { CommitDiff, ReleaseCreated, TriageBody, TriageDecision, TriageResult, VersionSuggestion } from './types';
-import type { Wave, WaveBody, WaveDispatchResult } from './waves.ts';
-import { checkLensManifest } from './manifest-check';
+import type { CommitDiff, ReleaseCreated, TriageBody, TriageDecision, TriageResult, VersionSuggestion } from '@bp/core/scan/types';
+import type { Wave, WaveBody, WaveDispatchResult } from '@bp/core/scan/waves';
+import { checkLensManifest } from '@bp/core/scan/manifest-check';
 import { addTempLens, readTempLenses } from './temp-lens';
 
 export interface ScanCtx {

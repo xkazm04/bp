@@ -4,8 +4,8 @@
 // (so every variant's legend matches its plan without extra work): a few sample features whose
 // evidence differs, each drawn as a small tile with that lens alone.
 import { useEffect, useRef } from 'react';
-import type { Feature, ViewId } from '@/lib/data';
-import { lensOf } from '@/lib/model';
+import type { Feature, ViewId } from '@bp/core/data';
+import { lensOf } from '@bp/core/model';
 import { readTheme } from '@/engine/theme';
 import type { TileGeom } from '@/engine/lens/contract';
 import { stageFill } from '@/engine/render/glyphs';

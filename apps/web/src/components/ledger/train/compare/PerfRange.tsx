@@ -2,7 +2,7 @@
 // and the target and warn lines, on one 0..max scale (src/lib/train/perf.ts rangeScale). Positions are percentages
 // on absolutely placed spans: no layout read, no canvas.
 import { memo } from 'react';
-import { rangeScale, type PerfFigures } from '@/lib/train/perf';
+import { rangeScale, type PerfFigures } from '@bp/core/train/perf';
 import { num } from '../ui/tables';
 import './PerfTable.css';
 

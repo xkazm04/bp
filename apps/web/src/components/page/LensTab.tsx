@@ -11,17 +11,17 @@
 // section (a lens whose reader role is business). Blocks are chosen by data, never by lens id. A
 // variant's `ui.SheetPanel` replaces the body (headline to the rest) as it replaced the sheet panel.
 import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { Feature } from '@/lib/data';
+import type { Feature } from '@bp/core/data';
 import type { Density } from '@/engine/lens/contract';
-import { DENSITY_COUNT, hotHealth, reasonOf } from '@/lib/standard/present';
-import { baseId, fmtValue, metricHistory, pname, shotsByRun, type Model } from '@/lib/model';
-import type { ScanSnapshot } from '@/lib/scan/types';
+import { DENSITY_COUNT, hotHealth, reasonOf } from '@bp/core/standard/present';
+import { baseId, fmtValue, metricHistory, pname, shotsByRun, type Model } from '@bp/core/model';
+import type { ScanSnapshot } from '@bp/core/scan/types';
 import { BusinessSection } from '../sheet/Business';
 import { ScreensStrip } from '../sheet/Screens';
 import { SwarmSection } from '../sheet/SheetBody';
 import { MoveArrow, Spark, metricMove, metricRows, nfmt } from '../sheet/LensPanel';
 import { useDensity, useEngine, useLive, useVariant } from '../hooks';
-import { NOT_RECORDED } from '@/lib/model/timeview';
+import { NOT_RECORDED } from '@bp/core/model/timeview';
 import { HWORD, KpiRows, Val, useAsOf, useHeadlineAt, useSimSig } from './bits';
 import { Sec, Stagger } from './motion';
 

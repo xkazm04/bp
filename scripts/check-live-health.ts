@@ -15,17 +15,18 @@ register('./overlays-loader.mjs', { parentURL: import.meta.url, data: { src: SRC
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
 const imp = (p: string): Promise<Any> => import(pathToFileURL(path.join(SRC, p)).href);
-const { buildLiveModel, applyScan, refreshLiveModel } = await imp('lib/model/live-feed.ts');
-const { lineSuffix } = await imp('lib/model/product.ts');
-const { emptyScan } = await imp('lib/scan/types.ts');
-const { NUMERIC, generalHealth } = await imp('lib/standard/present.ts');
+const impCore = (p: string): Promise<Any> => import(pathToFileURL(path.join(ROOT, 'packages/core', p)).href);
+const { buildLiveModel, applyScan, refreshLiveModel } = await impCore('src/model/live-feed.ts');
+const { lineSuffix } = await impCore('src/model/product.ts');
+const { emptyScan } = await impCore('src/scan/types.ts');
+const { NUMERIC, generalHealth } = await impCore('src/standard/present.ts');
 
 let held = 0;
 const failures: string[] = [];
 const expect = (ok: boolean, what: string) => { if (ok) held++; else failures.push(what); };
 
-const map: Any = JSON.parse(fs.readFileSync(path.join(SRC, 'data/kettle.app-structure.json'), 'utf8'));
-const events = fs.readFileSync(path.join(SRC, 'data/kettle.events.jsonl'), 'utf8');
+const map: Any = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.app-structure.json'), 'utf8'));
+const events = fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.events.jsonl'), 'utf8');
 const live = { slug: 'x', decide: async () => { throw new Error('unused'); } };
 const NEW = '2999-01-01T00:00:00Z', OLD = '1999-01-01T00:00:00Z';
 let nid = 0;

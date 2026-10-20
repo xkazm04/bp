@@ -3,9 +3,9 @@
 // checked as semver, and Create draft (POST releases), whose answer lists what release-add left out; with a release,
 // its version, id and branch. Also the suggestion hook the header strip shares.
 import { useEffect, useRef, useState } from 'react';
-import type { ReleaseCreated, VersionSuggestion } from '@/lib/scan/types';
+import type { ReleaseCreated, VersionSuggestion } from '@bp/core/scan/types';
 import { createRelease, refusalText, suggestRelease, type ScanCtx } from '@/lib/scan/actions';
-import { isVersion } from '@/lib/scan/release';
+import { isVersion } from '@bp/core/scan/release';
 import { Btn } from '../ui/Controls';
 import type { ReleaseModel } from './releaseState';
 

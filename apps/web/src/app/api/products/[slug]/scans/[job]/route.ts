@@ -1,9 +1,9 @@
 // DELETE /api/products/[slug]/scans/[job]: cancel a scan job. A queued one leaves the queue; a running one is
 // killed with its process tree. 200 + the ScanJob (a finished job is answered as it is); 404 for an unknown
 // product or job. Localhost only.
-import { findProduct } from '@/lib/scan/products.server';
-import { localOnly } from '@/lib/scan/local-only';
-import { cancel } from '@/lib/scan/jobs.server';
+import { findProduct } from '@bp/core/server/products.server';
+import { localOnly } from '@bp/core/scan/local-only';
+import { cancel } from '@bp/core/server/jobs.server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

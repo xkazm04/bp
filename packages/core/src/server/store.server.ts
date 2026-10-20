@@ -1,0 +1,189 @@
+// The lens-scan store, read side (and the one write the blueprint makes itself: a proposal decision; triage and
+// releases go through lens-scan's own store.mjs, src/lib/scan/release.server.ts). The DDL is
+// docs/standard/lens-scan-store.sql; the /lens-scan skill writes the file concurrently in WAL mode, so
+// reads go through a read-only connection and a decision opens its own short read-write connection with a
+// busy timeout. A v1 store (no packs or releases tables, no v2 columns) reads with those arrays empty. Rows
+// become wire objects (src/lib/scan/types.ts) here: JSON columns are parsed and NULL columns are omitted (absent-value convention, never null in JSON),
+// and so is a column at its wire default (v4 `origin` 'scan'); a v3 store (no v4 columns) reads with those keys absent. Server-only, imported by the route
+// handlers under src/app/api/products and nothing else; node:sqlite is a Node builtin (experimental on 24).
+import fs from 'node:fs';
+import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { emptyScan, isEmptyScan, type Activity, type Coverage, type DecisionBody, type Measurement, type Pack, type Proposal, type Release, type Run, type ScanDelta, type ScanSnapshot, type Shot } from '../scan/types.ts';
+
+if (typeof window !== 'undefined') throw new Error('store.server.ts is server-only');
+
+type Row = Record<string, unknown>;
+type Table = keyof ScanSnapshot;
+const isObject = (v: unknown): boolean => typeof v === 'object' && v !== null && !Array.isArray(v);
+const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+/**
+ * Columns that hold JSON text, per table, each with the shape the wire promises. The writer is another
+ * program, so the text is parsed and then held to that shape: a lens list is always a string[] (`[]` when
+ * the text is not one), an object column is an object or omitted. Never the raw text, never `null`.
+ */
+const JSON_COLS: Partial<Record<Table, Record<string, (v: unknown) => unknown>>> = {
+  runs: { lenses: strings, scope: (v) => (isObject(v) ? v : undefined) },
+  shots: { report: (v) => (isObject(v) ? v : undefined) },
+};
+/**
+ * Columns whose default is the absent value on the wire, per table: v4's `proposals.origin` is NOT NULL DEFAULT 'scan',
+ * and the wire omits 'scan' (an omitted origin means the scan proposed it). A v3 store has no such column, so its rows
+ * read the same way: no origin key, and every other v4 key (tier, risk_class, external_ref, ...) simply absent.
+ */
+const DEFAULTS: Partial<Record<Table, Record<string, unknown>>> = {
+  proposals: { origin: 'scan' },
+};
+const ACTIVITY_LIMIT = 200;
+const BUSY_MS = 2000;
+
+export { emptyScan, isEmptyScan };
+
+/**
+ * A cheap fingerprint of the product's map files (`app-structure.json`, `events.jsonl` in the store directory:
+ * mtime and size of each), '' while there is no map. It moves when the skill writes the map back (spec 15);
+ * the stream sends it as `map` and the structure route returns it, so a client knows whether it holds the
+ * current map without downloading it.
+ */
+export function mapRev(dir: string): string {
+  let rev = '';
+  for (const f of ['app-structure.json', 'events.jsonl']) {
+    try { const s = fs.statSync(path.join(dir, f)); rev += f[0] + s.mtimeMs + ':' + s.size + ';'; } catch { rev += f[0] + '-;'; }
+  }
+  return rev.startsWith('a-') ? '' : rev;
+}
+
+function wire<T>(table: Table, r: Row): T {
+  const o: Row = {}, js = JSON_COLS[table], dflt = DEFAULTS[table];
+  for (const k in r) {
+    let v = r[k];
+    const shape = js?.[k];
+    if (shape) {
+      let parsed: unknown;
+      try { parsed = typeof v === 'string' ? JSON.parse(v) : undefined; } catch { /* malformed JSON: the shape's empty value */ }
+      v = shape(parsed);
+    }
+    if (v === null || v === undefined || (dflt && k in dflt && dflt[k] === v)) continue;
+    o[k] = v;
+  }
+  return o as T;
+}
+const wireAll = <T>(table: Table, rows: Row[]): T[] => rows.map((r) => wire<T>(table, r));
+
+/** The read connection. null when the file does not exist yet (the skill has not run). */
+export function openRead(file: string): DatabaseSync | null {
+  try { return new DatabaseSync(file, { readOnly: true, timeout: BUSY_MS }); } catch { return null; }
+}
+export function close(db: DatabaseSync | null): void { try { db?.close(); } catch { /* already closed */ } }
+
+/** Changes only when another connection commits (the skill, or a decision's write connection). */
+export function dataVersion(db: DatabaseSync): number {
+  return Number((db.prepare('PRAGMA data_version').get() as Row).data_version);
+}
+
+/** The store's tables that exist (a store being created by the skill may not have all of them yet). */
+function present(db: DatabaseSync): Set<string> {
+  const rows = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Row[];
+  return new Set(rows.map((r) => String(r.name)));
+}
+const all = (db: DatabaseSync, sql: string, ...args: (string | number)[]): Row[] => db.prepare(sql).all(...args) as Row[];
+
+export function readSnapshot(db: DatabaseSync): ScanSnapshot {
+  const s = emptyScan(), has = present(db);
+  if (has.has('runs')) s.runs = wireAll<Run>('runs', all(db, 'SELECT * FROM runs ORDER BY started_at, id'));
+  if (has.has('measurements')) s.measurements = wireAll<Measurement>('measurements', all(db, 'SELECT * FROM measurements ORDER BY id'));
+  if (has.has('proposals')) s.proposals = wireAll<Proposal>('proposals', all(db, 'SELECT * FROM proposals ORDER BY created_at, id'));
+  if (has.has('activity')) s.activity = wireAll<Activity>('activity', all(db, 'SELECT * FROM (SELECT * FROM activity ORDER BY id DESC LIMIT ?) ORDER BY id', ACTIVITY_LIMIT));
+  if (has.has('shots')) s.shots = wireAll<Shot>('shots', all(db, 'SELECT * FROM shots ORDER BY id'));
+  if (has.has('coverage')) s.coverage = wireAll<Coverage>('coverage', all(db, 'SELECT * FROM coverage ORDER BY judged_at, feature, standard'));
+  // v2 tables: a v1 store has neither, and its snapshot carries them empty
+  if (has.has('packs')) s.packs = wireAll<Pack>('packs', all(db, 'SELECT * FROM packs ORDER BY created_at, lens, n'));
+  if (has.has('releases')) s.releases = wireAll<Release>('releases', all(db, 'SELECT * FROM releases ORDER BY created_at, id'));
+  return s;
+}
+
+/**
+ * Where a stream has got to. Append-only tables move by id; runs/proposals/packs/releases by updated_at and
+ * coverage by judged_at, which can tie: the keys already sent at the max timestamp are kept so `>=` resends nothing.
+ */
+interface AtCursor { at: string; keys: Set<string> }
+export interface Cursor {
+  measurements: number; activity: number; shots: number;
+  runs: AtCursor; proposals: AtCursor; coverage: AtCursor; packs: AtCursor; releases: AtCursor;
+}
+const atCursor = (): AtCursor => ({ at: '', keys: new Set() });
+export function newCursor(): Cursor {
+  return { measurements: 0, activity: 0, shots: 0, runs: atCursor(), proposals: atCursor(), coverage: atCursor(), packs: atCursor(), releases: atCursor() };
+}
+function advanceId(rows: { id: number }[], last: number): number { for (const r of rows) if (r.id > last) last = r.id; return last; }
+function advanceAt<T>(rows: T[], c: { at: string; keys: Set<string> }, at: (r: T) => string, key: (r: T) => string) {
+  for (const r of rows) {
+    const t = at(r);
+    if (t > c.at) { c.at = t; c.keys = new Set([key(r)]); } else if (t === c.at) c.keys.add(key(r));
+  }
+}
+const covKey = (r: Coverage) => r.feature + '\u0000' + r.standard;
+/** Move the cursor past every row in `s` (a snapshot or a delta). */
+export function advance(c: Cursor, s: ScanSnapshot): void {
+  c.measurements = advanceId(s.measurements, c.measurements);
+  c.activity = advanceId(s.activity, c.activity);
+  c.shots = advanceId(s.shots, c.shots);
+  advanceAt(s.runs, c.runs, (r) => r.updated_at, (r) => r.id);
+  advanceAt(s.proposals, c.proposals, (r) => r.updated_at, (r) => r.id);
+  advanceAt(s.coverage, c.coverage, (r) => r.judged_at, covKey);
+  advanceAt(s.packs, c.packs, (r) => r.updated_at, (r) => r.id);
+  advanceAt(s.releases, c.releases, (r) => r.updated_at, (r) => r.id);
+}
+
+/** Rows new or changed since `c` (the cursor is not moved; call advance() after sending). */
+export function readDelta(db: DatabaseSync, c: Cursor): ScanDelta {
+  const d = emptyScan(), has = present(db);
+  if (has.has('measurements')) d.measurements = wireAll<Measurement>('measurements', all(db, 'SELECT * FROM measurements WHERE id > ? ORDER BY id', c.measurements));
+  if (has.has('activity')) d.activity = wireAll<Activity>('activity', all(db, 'SELECT * FROM activity WHERE id > ? ORDER BY id', c.activity));
+  if (has.has('shots')) d.shots = wireAll<Shot>('shots', all(db, 'SELECT * FROM shots WHERE id > ? ORDER BY id', c.shots));
+  if (has.has('runs')) d.runs = wireAll<Run>('runs', all(db, 'SELECT * FROM runs WHERE updated_at >= ? ORDER BY updated_at, id', c.runs.at))
+    .filter((r) => !(r.updated_at === c.runs.at && c.runs.keys.has(r.id)));
+  if (has.has('proposals')) d.proposals = wireAll<Proposal>('proposals', all(db, 'SELECT * FROM proposals WHERE updated_at >= ? ORDER BY updated_at, id', c.proposals.at))
+    .filter((r) => !(r.updated_at === c.proposals.at && c.proposals.keys.has(r.id)));
+  if (has.has('coverage')) d.coverage = wireAll<Coverage>('coverage', all(db, 'SELECT * FROM coverage WHERE judged_at >= ? ORDER BY judged_at, feature, standard', c.coverage.at))
+    .filter((r) => !(r.judged_at === c.coverage.at && c.coverage.keys.has(covKey(r))));
+  // every v2 write (pack-create/-update, triage settling a pack, release-*) bumps the row's updated_at
+  if (has.has('packs')) d.packs = wireAll<Pack>('packs', all(db, 'SELECT * FROM packs WHERE updated_at >= ? ORDER BY updated_at, id', c.packs.at))
+    .filter((r) => !(r.updated_at === c.packs.at && c.packs.keys.has(r.id)));
+  if (has.has('releases')) d.releases = wireAll<Release>('releases', all(db, 'SELECT * FROM releases WHERE updated_at >= ? ORDER BY updated_at, id', c.releases.at))
+    .filter((r) => !(r.updated_at === c.releases.at && c.releases.keys.has(r.id)));
+  return d;
+}
+
+/** Snapshot of a store file, or the empty scan when it does not exist. */
+export function snapshotOf(file: string): ScanSnapshot {
+  const db = openRead(file);
+  if (!db) return emptyScan();
+  try { return readSnapshot(db); } finally { close(db); }
+}
+
+/** `null` = not a valid DecisionBody. */
+export function parseDecision(x: unknown): DecisionBody | null {
+  if (!x || typeof x !== 'object' || Array.isArray(x)) return null;
+  const o = x as Row;
+  if (o.decision !== 'approve' && o.decision !== 'decline') return null;
+  if (o.note !== undefined && typeof o.note !== 'string') return null;
+  if (Object.keys(o).some((k) => k !== 'decision' && k !== 'note')) return null;
+  return o.note === undefined ? { decision: o.decision } : { decision: o.decision, note: o.note };
+}
+
+export type DecideResult = { ok: true; proposal: Proposal } | { ok: false; status: 404 } | { ok: false; status: 409; proposal: Proposal };
+
+/** Approve or decline a `proposed` row, on a short-lived read-write connection. */
+export function decide(file: string, id: string, body: DecisionBody): DecideResult {
+  const db = new DatabaseSync(file, { timeout: BUSY_MS });
+  try {
+    const now = new Date().toISOString();
+    const row = db.prepare(
+      "UPDATE proposals SET status = ?, decided_by = 'blueprint', decided_at = ?, decision_note = ?, updated_at = ? WHERE id = ? AND status = 'proposed' RETURNING *",
+    ).get(body.decision === 'approve' ? 'approved' : 'declined', now, body.note ?? null, now, id) as Row | undefined;
+    if (row) return { ok: true, proposal: wire<Proposal>('proposals', row) };
+    const cur = db.prepare('SELECT * FROM proposals WHERE id = ?').get(id) as Row | undefined;
+    return cur ? { ok: false, status: 409, proposal: wire<Proposal>('proposals', cur) } : { ok: false, status: 404 };
+  } finally { close(db); }
+}

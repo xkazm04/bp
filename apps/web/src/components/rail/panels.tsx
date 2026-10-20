@@ -2,11 +2,11 @@
 // The rail's classic Find flyout, and the pieces the wide workbench panels (./wide) share: the scan jobs hooks,
 // the steering preview box, the sheet's title block and the keys hints.
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { STAGE_WORD, revAt, searchPage, sheetOf, views, type BldNode } from '@/lib/model';
+import { STAGE_WORD, revAt, searchPage, sheetOf, views, type BldNode } from '@bp/core/model';
 import { useLiveJobs } from '@/lib/scan/client';
-import { latestRun } from '@/lib/scan/derive';
-import type { ScanJob } from '@/lib/scan/jobs';
-import type { ScanSnapshot } from '@/lib/scan/types';
+import { latestRun } from '@bp/core/scan/derive';
+import type { ScanJob } from '@bp/core/scan/jobs';
+import type { ScanSnapshot } from '@bp/core/scan/types';
 import { Mark, StageSym } from '../Symbols';
 import { shallowEqual, useBp, useEngine, useLive } from '../hooks';
 import '../scan.css';

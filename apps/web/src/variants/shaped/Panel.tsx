@@ -4,7 +4,7 @@
 // and its edge marks as small absolutely placed elements, and its reading follows the reader: design
 // is one plain sentence, development is a terse mono readout, the rest use the default rows.
 import type { CSSProperties } from 'react';
-import type { Feature } from '@/lib/data';
+import type { Feature } from '@bp/core/data';
 import { bl, isBuiltinLens, type BuiltinLens } from '../base/legacy';
 import { DefaultLensPanel, hmark } from '@/components/sheet/LensPanel';
 import type { SheetPanelProps } from '../types';

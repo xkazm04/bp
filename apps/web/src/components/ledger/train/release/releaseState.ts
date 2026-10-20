@@ -3,10 +3,10 @@
 // and the notes preview. One table (RELEASE_STATE) maps a release status to its step, its words, what a person can do
 // and whether its items are locked; the Stepper, the actions row and the Package read it, and nothing else branches
 // on a release status. Value-free of React, so it stays cheap to import from the header strip.
-import type { Measurement, Proposal, Release, ReleaseStatus } from '@/lib/scan/types';
-import type { ScanJob } from '@/lib/scan/jobs';
-import { verdictOf, type LensFields, type Verdict } from '@/lib/scan/compare';
-import { isFlagged } from '@/lib/train/rules';
+import type { Measurement, Proposal, Release, ReleaseStatus } from '@bp/core/scan/types';
+import type { ScanJob } from '@bp/core/scan/jobs';
+import { verdictOf, type LensFields, type Verdict } from '@bp/core/scan/compare';
+import { isFlagged } from '@bp/core/train/rules';
 import { KEYMAP, type KeyAction } from '../keymap';
 import type { TrainData } from '../data';
 

@@ -1,7 +1,7 @@
 // The icon vocabulary of the shaped variant. One source of truth: SVG path strings on a 16-unit grid,
 // used as <path d> in the DOM (sheet, legend) and as cached Path2D objects on the canvas. Each lens has
 // a base icon that names it plus a few state variants, so a General tile reads as six small pictures.
-import type { Feature } from '@/lib/data';
+import type { Feature } from '@bp/core/data';
 import { bl, type BuiltinLens } from '../base/legacy';
 
 export interface IconDef { s: string; f?: string }

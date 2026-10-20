@@ -5,7 +5,7 @@
 // ledger page shows: `/`'s first-load JS carries none of it (scripts/check-train-budget.ts --bundle proves it).
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { LIVE_DECIDER, fmtWait, pname, sheetOf, type SimDecision } from '@/lib/model';
+import { LIVE_DECIDER, fmtWait, pname, sheetOf, type SimDecision } from '@bp/core/model';
 import { useProductName } from '@/lib/scan/projects';
 import { SheetBody } from './FeatureSheet';
 import { Toast } from './Overlays';

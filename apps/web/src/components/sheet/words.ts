@@ -1,9 +1,9 @@
 // Plain-words lines about one feature under a lens (hover card) and the sheet's opening paragraph.
 // The lens line is the manifest's evidence fields, by label and formatted value, then the reason when
 // the lens is unwell.
-import type { Feature } from '@/lib/data';
-import { reasonOf } from '@/lib/standard/present';
-import { STAGE_PLAIN, evidenceFields, fmtValue, isAgentId, lensOf, pname, type Product, type SwarmSim } from '@/lib/model';
+import type { Feature } from '@bp/core/data';
+import { reasonOf } from '@bp/core/standard/present';
+import { STAGE_PLAIN, evidenceFields, fmtValue, isAgentId, lensOf, pname, type Product, type SwarmSim } from '@bp/core/model';
 
 export function lensWords(P: Product, f: Feature, l: string, sim: SwarmSim): string {
   const d = lensOf(P, l), fl = f.lens[l];

@@ -11,10 +11,10 @@
 //     Kettle:       this browser's store (src/lib/scan/temp-lens.ts), through its subscription.
 import { useMemo, useSyncExternalStore } from 'react';
 import type { Engine } from '@/engine/Engine';
-import type { LensDef } from '@/lib/standard/load';
-import type { LensEntry, LensManifest } from '@/lib/standard/types';
+import type { LensDef } from '@bp/core/standard/load';
+import type { LensEntry, LensManifest } from '@bp/core/standard/types';
 import { executeLensBacklog, refusalText, startScan, startSelectionScan, type ScanCtx } from '@/lib/scan/actions';
-import { MAX_SELECTION, scannable, type ScanJob, type ScanScope } from '@/lib/scan/jobs';
+import { MAX_SELECTION, scannable, type ScanJob, type ScanScope } from '@bp/core/scan/jobs';
 import { readTempLenses, subscribeTempLenses } from '@/lib/scan/temp-lens';
 import { useEngine, useLive } from '../../hooks';
 import { useFindings } from '../useLedger';

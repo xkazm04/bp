@@ -10,16 +10,16 @@
 // Run: node scripts/check-release-train.ts  (Node's type stripping; no build step). Exit 1 on any failure.
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { FRAME_MS, runStats, betterOf, compareOf, packGroups, packItems, releaseItems, unreleased, awaitingTriage, type LensFields } from '../apps/web/src/lib/scan/compare.ts';
-import { bump, bumpOf, isVersion, suggestVersion, RELEASE_ID } from '../apps/web/src/lib/scan/release.ts';
-import { isCurrent, latestReading } from '../apps/web/src/lib/scan/derive.ts';
-import { emptyScan, type Measurement, type Pack, type Proposal, type Release, type ScanSnapshot, type Shot } from '../apps/web/src/lib/scan/types.ts';
+import { FRAME_MS, runStats, betterOf, compareOf, packGroups, packItems, releaseItems, unreleased, awaitingTriage, type LensFields } from '../packages/core/src/scan/compare.ts';
+import { bump, bumpOf, isVersion, suggestVersion, RELEASE_ID } from '../packages/core/src/scan/release.ts';
+import { isCurrent, latestReading } from '../packages/core/src/scan/derive.ts';
+import { emptyScan, type Measurement, type Pack, type Proposal, type Release, type ScanSnapshot, type Shot } from '../packages/core/src/scan/types.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // live.ts imports through '@/': the hooks resolve it
 const HOOKS = './lib/src-hooks.mjs';
 ((await import(HOOKS)) as { registerSrcHooks: (root: string) => void }).registerSrcHooks(ROOT);
-const { metricHistory } = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/lib/model/live.ts')).href) as typeof import('../apps/web/src/lib/model/live.ts');
+const { metricHistory } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/model/live.ts')).href) as typeof import('../packages/core/src/model/live.ts');
 
 let failed = 0, passed = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) passed++; else { failed++; console.log('FAIL ' + name + (detail ? ': ' + detail : '')); } };

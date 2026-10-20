@@ -1,7 +1,7 @@
 // The key plan (minimap). Its rooms and swarm dots are cached in a small bitmap; each redraw only
 // blits that and strokes the viewport rectangle.
 import type { Engine } from '../Engine';
-import type { SimAgent } from '@/lib/model';
+import type { SimAgent } from '@bp/core/model';
 import type { Theme } from '../theme';
 
 /** A swarm dot's colour: working mint, waiting amber, paused a neutral ink (paused by a person, not a fault), blocked or failed red. */

@@ -5,7 +5,7 @@
 // (Triage.tsx). Lenses differ by glyph and short name here, never by colour.
 import { useMemo } from 'react';
 import { glyph, type GlyphSpec } from '@/engine/render/lens-glyph';
-import type { Proposal } from '@/lib/scan/types';
+import type { Proposal } from '@bp/core/scan/types';
 import { useTheme } from '../../ThemeToggle';
 import { riskBand, type Finding } from '../useLedger';
 

@@ -15,12 +15,12 @@
 // The change check is `PRAGMA data_version` on ONE long-lived read connection: it moves only when another
 // connection (the skill, or a decision) commits, so an idle store costs one pragma a second.
 import fs from 'node:fs';
-import { findProduct, recovered, storeDir, storeFile, warnOnce } from '@/lib/scan/products.server';
-import { localHost } from '@/lib/scan/local-only';
-import { advance, close, dataVersion, isEmptyScan, mapRev, newCursor, openRead, readDelta, readSnapshot, emptyScan, type Cursor } from '@/lib/scan/store.server';
-import type { ScanSnapshot, StreamEvent } from '@/lib/scan/types';
-import { RUN_NOTE_PREFIX } from '@/lib/scan/jobs';
-import { attachRun, list as listJobs, subscribe as onJobs } from '@/lib/scan/jobs.server';
+import { findProduct, recovered, storeDir, storeFile, warnOnce } from '@bp/core/server/products.server';
+import { localHost } from '@bp/core/scan/local-only';
+import { advance, close, dataVersion, isEmptyScan, mapRev, newCursor, openRead, readDelta, readSnapshot, emptyScan, type Cursor } from '@bp/core/server/store.server';
+import type { ScanSnapshot, StreamEvent } from '@bp/core/scan/types';
+import { RUN_NOTE_PREFIX } from '@bp/core/scan/jobs';
+import { attachRun, list as listJobs, subscribe as onJobs } from '@bp/core/server/jobs.server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

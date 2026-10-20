@@ -2,7 +2,7 @@
 // A · View: a section nav on the left (Window, Modes, Whose desk, Health); every section stacked on the right at a
 // reading size. The nav scrolls the detail to a section, and follows the detail's scroll.
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { GA_MILESTONE, personLens, sheetOf } from '@/lib/model';
+import { GA_MILESTONE, personLens, sheetOf } from '@bp/core/model';
 import { Mark } from '../../Symbols';
 import { shallowEqual, useBp, useEngine } from '../../hooks';
 import { Fig, Row, Sec, swallow, useListRef, useWalk } from './shell';

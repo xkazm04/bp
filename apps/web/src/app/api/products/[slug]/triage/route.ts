@@ -9,11 +9,11 @@
 // 400 for a bad body (or one store.mjs calls bad input); 404 for an unknown product or a missing store; 503 when
 // lens-scan is not installed or the store stayed locked. The stream sees the write through the store's data_version.
 // Localhost only.
-import { findProduct, hasStore, storeFile } from '@/lib/scan/products.server';
-import { localOnly, jsonOnly } from '@/lib/scan/local-only';
-import { SAFE_ID } from '@/lib/scan/jobs';
-import { MAX_TRIAGE, triage, triageBy } from '@/lib/scan/release.server';
-import type { TriageBody } from '@/lib/scan/types';
+import { findProduct, hasStore, storeFile } from '@bp/core/server/products.server';
+import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
+import { SAFE_ID } from '@bp/core/scan/jobs';
+import { MAX_TRIAGE, triage, triageBy } from '@bp/core/server/release.server';
+import type { TriageBody } from '@bp/core/scan/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

@@ -11,11 +11,11 @@
 // the focused (or open) item moves the focus, and the open compare, to the next waiting item of the order DecideOrder
 // provides (LedgerPage: the table's visible rows).
 import { createContext, useCallback, useContext, useEffect, useMemo } from 'react';
-import type { Proposal, Release, TriageDecision, TriageResult } from '@/lib/scan/types';
+import type { Proposal, Release, TriageDecision, TriageResult } from '@bp/core/scan/types';
 import { triageItems, refusalText } from '@/lib/scan/actions';
-import { verdictOf, type Verdict } from '@/lib/scan/compare';
-import { TRIAGE_FROM, WAITING, canDecide, isFlagged, noteRequired } from '@/lib/train/rules';
-import { parseTriageResult } from '@/lib/train/wire';
+import { verdictOf, type Verdict } from '@bp/core/scan/compare';
+import { TRIAGE_FROM, WAITING, canDecide, isFlagged, noteRequired } from '@bp/core/train/rules';
+import { parseTriageResult } from '@bp/core/train/wire';
 import { useEngine } from '../../hooks';
 import { setLedgerUi, useLedgerUi, type NoteAsk } from '../useLedger';
 import { useTrain, type TrainData } from './data';

@@ -3,11 +3,11 @@
 // the crews. The detail reads the selection in full: a job's progress, clock, Cancel and log; a crew's agents and
 // tasks; or the overview, which keeps the steering of the current selection and the swarm's latest lines.
 import { useEffect, useMemo, useState } from 'react';
-import { TICK_CLASS, astat, type SimAgent } from '@/lib/model';
+import { TICK_CLASS, astat, type SimAgent } from '@bp/core/model';
 import { cancelJob, refusalText } from '@/lib/scan/actions';
-import { jobLabel, type ScanJob } from '@/lib/scan/jobs';
+import { jobLabel, type ScanJob } from '@bp/core/scan/jobs';
 import { jobProgress } from '@/lib/scan/scan-views';
-import type { ScanSnapshot } from '@/lib/scan/types';
+import type { ScanSnapshot } from '@bp/core/scan/types';
 import { LiveSteerButtons } from '../../LiveSteer';
 import { ScanGlyph } from '../../ScanMenu';
 import { Mark, agentMark } from '../../Symbols';

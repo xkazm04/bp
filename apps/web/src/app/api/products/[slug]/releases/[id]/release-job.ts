@@ -2,13 +2,13 @@
 // `rel-<version>`, after the route's localhost guards. 202 + the ScanJob; 400 for a bad release id; 404 for an unknown product, store or release; 409 when
 // the release is in no state for that step (build: draft or failed; finish: pr-open or merged) or already has a job
 // queued or running; 412 `{ error: 'gh not authenticated' }` when `gh auth status` fails; 429 when 16 jobs are queued.
-import { findProduct, hasStore, storeFile } from '@/lib/scan/products.server';
-import type { ReleaseStep } from '@/lib/scan/jobs';
-import { enqueueRelease, releaseBusy } from '@/lib/scan/jobs.server';
-import { RELEASE_ID } from '@/lib/scan/release';
-import { ghAuthed } from '@/lib/scan/release.server';
-import { snapshotOf } from '@/lib/scan/store.server';
-import type { Release } from '@/lib/scan/types';
+import { findProduct, hasStore, storeFile } from '@bp/core/server/products.server';
+import type { ReleaseStep } from '@bp/core/scan/jobs';
+import { enqueueRelease, releaseBusy } from '@bp/core/server/jobs.server';
+import { RELEASE_ID } from '@bp/core/scan/release';
+import { ghAuthed } from '@bp/core/server/release.server';
+import { snapshotOf } from '@bp/core/server/store.server';
+import type { Release } from '@bp/core/scan/types';
 
 const FROM: Record<ReleaseStep, string[]> = { build: ['draft', 'failed'], finish: ['pr-open', 'merged'] };
 

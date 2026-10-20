@@ -2,7 +2,7 @@
 // What the strip (Strip.tsx) and the panel (BaseBar.tsx) share: the sim clock text, the scan status ladder, the size
 // observer and the one pointer handler both time sliders use (the x <-> time mapping itself is scrub.ts).
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { latestRun } from '@/lib/model';
+import { latestRun } from '@bp/core/model';
 import { useEngine, useLive } from '../hooks';
 import { ago } from '../Header';
 import { runFacts, runProgress } from './run';

@@ -6,7 +6,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
   GA_MILESTONE, SPEND_CAP, STAGE_PLAIN, STAGE_WORD, ORDER_TEMPLATES, TICK_CLASS, astat, cursorFor, dnum, fmtWait, isAgentId, isLiveSt, kindWords, lensOf,
   morningStats, pname, sheetOf, stageAt, watchFor, watchKey, writeCursor, type WatchCursor, type BayNode, type BldNode, type OrderTemplate, type RoomNode, type WingNode,
-} from '@/lib/model';
+} from '@bp/core/model';
 import { overlayRight } from '@/engine/chrome';
 import type { ToastItem } from '@/engine/state';
 import { illoSVG } from '@/engine/render/illo';
@@ -68,7 +68,7 @@ export function Ticker() {
 }
 
 // ----------------------------------------------------------------------------------- hover card
-function plainStage(E: ReturnType<typeof useEngine>, f: import('@/lib/data').Feature, st: ReturnType<typeof stageAt>, now: boolean) {
+function plainStage(E: ReturnType<typeof useEngine>, f: import('@bp/core/data').Feature, st: ReturnType<typeof stageAt>, now: boolean) {
   let s = st ? STAGE_PLAIN[st] : 'Not yet on the drawing at this date';
   if (now) {
     if (st === 'flagged' && E.M.sim.rolloutOf(f) < 100) s = 'Live for ' + E.M.sim.rolloutOf(f) + '% of studios, behind a switch';
@@ -76,7 +76,7 @@ function plainStage(E: ReturnType<typeof useEngine>, f: import('@/lib/data').Fea
   }
   return s;
 }
-function SwarmLines({ fs }: { fs: readonly import('@/lib/data').Feature[] }) {
+function SwarmLines({ fs }: { fs: readonly import('@bp/core/data').Feature[] }) {
   const E = useEngine(), sim = E.M.sim, S = E.S;
   if (!sim.has || S.t !== E.M.P.asOf) return null;
   const ss = sim.stats(fs, S.who, S.view);
@@ -92,7 +92,7 @@ function SwarmLines({ fs }: { fs: readonly import('@/lib/data').Feature[] }) {
  * general counts and the failure is logged once per engine and lens, as the canvas labels do (plan.ts aggParts).
  */
 const aggFailed = new WeakMap<object, Set<string>>();
-function lensParts(E: ReturnType<typeof useEngine>, id: string, l: string, fs: readonly import('@/lib/data').Feature[]): string[] | null {
+function lensParts(E: ReturnType<typeof useEngine>, id: string, l: string, fs: readonly import('@bp/core/data').Feature[]): string[] | null {
   try { return E.lensAgg(id, l, fs).parts; } catch (err) {
     let seen = aggFailed.get(E); if (!seen) aggFailed.set(E, (seen = new Set()));
     if (!seen.has(l)) { seen.add(l); console.error(`[lens ${l}] aggregate failed`, err); }

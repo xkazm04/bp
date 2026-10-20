@@ -1,7 +1,7 @@
 // POST /api/products/[slug]/releases/[id]/finish, body `{}`: finish release `id` once its PR is merged, with a release
 // job (`/lens-scan release --id <id> --finish`): tag, GitHub release, items released, packs closed. Status codes:
 // ../release-job.ts. Localhost only.
-import { localOnly, jsonOnly } from '@/lib/scan/local-only';
+import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
 import { startRelease } from '../release-job';
 
 export const runtime = 'nodejs';

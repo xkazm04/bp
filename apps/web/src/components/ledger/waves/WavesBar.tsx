@@ -8,7 +8,7 @@
 // Dispatching goes through Ledger.dispatchWave, the optimistic path the direct Dispatch uses.
 import { useState } from 'react';
 import type { Ledger } from '../useLedger';
-import type { Wave, WaveState } from '@/lib/scan/waves';
+import type { Wave, WaveState } from '@bp/core/scan/waves';
 import { WaveComposer } from './WaveComposer';
 import './waves.css';
 

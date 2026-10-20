@@ -4,10 +4,10 @@
 // the feature's other metrics of the same lens from their latest `before` reading, against their targets. Which metrics
 // and targets come from the lens manifest's fields: no lens or metric is named here.
 import { memo } from 'react';
-import { FRAME_MS, type Comparison } from '@/lib/scan/compare';
-import type { LensDef } from '@/lib/standard/load';
-import type { LensField } from '@/lib/standard/types';
-import { atTarget, isOutlier, perfFigures, shortUnit, signed, type PerfFigures } from '@/lib/train/perf';
+import { FRAME_MS, type Comparison } from '@bp/core/scan/compare';
+import type { LensDef } from '@bp/core/standard/load';
+import type { LensField } from '@bp/core/standard/types';
+import { atTarget, isOutlier, perfFigures, shortUnit, signed, type PerfFigures } from '@bp/core/train/perf';
 import { VerdictChip } from '../ui/Marks.tsx';
 import { num } from '../ui/tables';
 import { latestOf } from './MetricStrip';

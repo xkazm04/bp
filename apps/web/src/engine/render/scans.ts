@@ -4,8 +4,8 @@
 // chip text and widths, the done lists) is worked out there, so a frame allocates nothing: it reads
 // preallocated arrays, reuses two rect records and draws, culled to the viewport. A lens accent marks the
 // outline, the chip border, the sweep and the ticks; it never fills a tile.
-import type { Box } from '@/lib/model';
-import type { JobStatus } from '@/lib/scan/jobs';
+import type { Box } from '@bp/core/model';
+import type { JobStatus } from '@bp/core/scan/jobs';
 import type { Engine } from '../Engine';
 import { drawText } from '../text';
 import { glyph } from './lens-glyph';

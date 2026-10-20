@@ -33,6 +33,7 @@
     "check:live-health": "node scripts/check-live-health.ts",
     "check:local-only": "node scripts/check-local-only.ts",
     "check:route-guards": "node scripts/check-route-guards.mjs",
+    "check:core-purity": "node scripts/check-core-purity.mjs",
     "check:camera": "node scripts/check-camera.ts",
     "check:variant-copies": "node apps/web/src/variants/check-copies.ts",
     "check:timeline-keys": "node apps/web/src/components/timeline/check-keys.ts",

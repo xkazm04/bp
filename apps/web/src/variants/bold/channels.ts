@@ -3,9 +3,9 @@
 // plus at most one ornament around the tile (crop marks, a security perimeter). Marks are lines and small
 // glyphs in the lens accent: they never fill the tile, so the stage fill stays the tile's colour.
 // Budget: a handful of primitives per tile; no measureText; fonts are cached strings.
-import type { Health } from '@/lib/data';
+import type { Health } from '@bp/core/data';
 import { bl, measuredContent, ruled, type BuiltinLens } from '../base/legacy';
-import { isLiveSt } from '@/lib/model';
+import { isLiveSt } from '@bp/core/model';
 import type { ChannelAggregate, LensChannel, MarkArgs, Rect, TileGeom, Theme } from '../types';
 import { ACCENT } from './palette';
 import { reviewDiamond } from '../base/expression';

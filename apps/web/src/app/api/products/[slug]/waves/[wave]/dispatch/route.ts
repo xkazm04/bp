@@ -6,10 +6,10 @@
 // body or package; 404 for an unknown product, wave or missing store; 429 `{ error, wave, jobs, approved, skipped }` when the
 // queue cap stopped it (the jobs queued so far are recorded in the wave, the approvals stand); 503 when the store stayed locked.
 // Localhost only.
-import { findProduct, hasStore } from '@/lib/scan/products.server';
-import { localOnly, jsonOnly } from '@/lib/scan/local-only';
-import { SAFE_ID } from '@/lib/scan/jobs';
-import { dispatchWave } from '@/lib/scan/waves.server';
+import { findProduct, hasStore } from '@bp/core/server/products.server';
+import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
+import { SAFE_ID } from '@bp/core/scan/jobs';
+import { dispatchWave } from '@bp/core/server/waves.server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

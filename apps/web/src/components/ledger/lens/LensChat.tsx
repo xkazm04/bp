@@ -10,11 +10,11 @@
 // The chat lives in a module store, not in the component: closing the panel mid-turn neither loses the
 // conversation nor cancels Claude (only Cancel does), and reopening shows the answer when it came.
 import { useEffect, useMemo, useReducer, useRef, useSyncExternalStore } from 'react';
-import type { LensManifest } from '@/lib/standard/types';
+import type { LensManifest } from '@bp/core/standard/types';
 import type { LensDraftAnswer } from '@/lib/scan/client';
-import { checkLensManifest, type TakenLook } from '@/lib/scan/manifest-check';
+import { checkLensManifest, type TakenLook } from '@bp/core/scan/manifest-check';
 import { addProjectLens } from '@/lib/scan/actions';
-import { takenLooks } from '@/lib/scan/jobs';
+import { takenLooks } from '@bp/core/scan/jobs';
 import { useEngine, useScanCtx } from '../../hooks';
 import { DraftCard, type DraftState } from './DraftCard';
 import { scanNow } from './lens-ops';

@@ -2,9 +2,9 @@
 // the metric key with the verdict (compare.ts verdictOf: moved, flat, worse, unmeasured; a failed build says so), and
 // how to read it: the better direction, the target and the method. The readings are the item's own phased ones.
 import { memo } from 'react';
-import type { Comparison } from '@/lib/scan/compare';
-import type { Measurement } from '@/lib/scan/types';
-import type { LensField } from '@/lib/standard/types';
+import type { Comparison } from '@bp/core/scan/compare';
+import type { Measurement } from '@bp/core/scan/types';
+import type { LensField } from '@bp/core/standard/types';
 import { VerdictChip } from '../ui/Marks.tsx';
 import { num } from '../ui/tables';
 import './MetricStrip.css';

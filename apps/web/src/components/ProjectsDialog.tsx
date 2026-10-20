@@ -3,9 +3,9 @@
 // from the list (the repo itself is never touched). Each row shows the readiness checklist the server
 // computed. Every error the API answers is shown inline next to what caused it.
 import { useEffect, useRef, useState } from 'react';
-import { LEVEL_LABEL, RESERVED_SLUGS, SLUG_RE, readinessLevel, type Readiness } from '@/lib/scan/readiness';
+import { LEVEL_LABEL, RESERVED_SLUGS, SLUG_RE, readinessLevel, type Readiness } from '@bp/core/scan/readiness';
 import { addProject, markStale, patchProject, projectHref, refreshProjects, removeProject, useProjects } from '@/lib/scan/projects';
-import type { ProductInfo } from '@/lib/scan/types';
+import type { ProductInfo } from '@bp/core/scan/types';
 import { LevelIcon } from './ProjectSwitcher';
 
 const MAP_HINT = 'Run /adopt-bp in that repo to create .ai/lens-scan/app-structure.json';

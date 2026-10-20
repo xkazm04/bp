@@ -3,8 +3,8 @@
 // read in full on the right, with the metric move as a large before -> after figure, the body's sections open, and a
 // sticky action bar. Deciding selects the next row. Hovering a row marks its feature on the plan.
 import { useEffect, useMemo, useState } from 'react';
-import { fmtWait, metricHistory, pname, sheetOf, type SimDecision } from '@/lib/model';
-import type { Proposal, ScanSnapshot } from '@/lib/scan/types';
+import { fmtWait, metricHistory, pname, sheetOf, type SimDecision } from '@bp/core/model';
+import type { Proposal, ScanSnapshot } from '@bp/core/scan/types';
 import { LiveEmpty, OriginChip, TierChip, URG, bodySections, declineDrafts, metricMove, oncePerProposal, proposalSummary } from '../../Queue';
 import { optHover, shallowEqual, useAnswerNote, useBp, useEngine, useLive, useVariant } from '../../hooks';
 import { Group, Row, Sec, Workbench, useListRef, useWalk } from './shell';

@@ -4,7 +4,7 @@
 // drag it to travel), and the sim clock (Kettle) or the scan's run status (a live product). Clicking the
 // strip anywhere but the hairline expands the full panel; the strip never expands on hover.
 import { forwardRef, useEffect, useRef } from 'react';
-import { dnum, fmtD, revAt } from '@/lib/model';
+import { dnum, fmtD, revAt } from '@bp/core/model';
 import { shallowEqual, useBp, useEngine } from '../hooks';
 import { timeSliderKey } from './keys';
 import { simClock, useHourText, useRunInfo, useScrub, useSize } from './shared';

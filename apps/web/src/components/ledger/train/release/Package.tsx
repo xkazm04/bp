@@ -4,8 +4,8 @@
 // the reopen decision through the one decision path (Decide.tsx), offered while rules.ts canDecide allows it (the
 // release is still a draft); Compare opens the item's evidence in the triage table's compare panel.
 import { memo, useMemo } from 'react';
-import type { Proposal, Release } from '@/lib/scan/types';
-import { canDecide } from '@/lib/train/rules';
+import type { Proposal, Release } from '@bp/core/scan/types';
+import { canDecide } from '@bp/core/train/rules';
 import { useEngine } from '../../../hooks';
 import { setLedgerUi } from '../../useLedger';
 import { useDecide } from '../Decide';

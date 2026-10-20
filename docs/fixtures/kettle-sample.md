@@ -1,4 +1,4 @@
-> Field reference for the original Kettle sample (`src/data/kettle.json`, `src/data/swarm.json`), as staged
+> Field reference for the original Kettle sample (`packages/core/data/kettle.json`, `packages/core/data/swarm.json`), as staged
 > for the design contests. Regenerate both with `scripts/fixtures/gen-kettle.mjs` and `gen-swarm.mjs`.
 > The app itself reads the app-structure v3 map built from it (`npm run data:kettle-v3`); that format is
 > specified in `docs/standard/app-structure-v3.md`.

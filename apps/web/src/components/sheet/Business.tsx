@@ -3,8 +3,8 @@
 // variation shares (shared tech and core schema), and the variations that extend it, per customer or
 // segment. All three come from the feature in the map; the section is hidden when all are absent.
 // Lens values stay on the core feature, so a variation has no lens reading of its own.
-import type { Feature } from '@/lib/data';
-import { STAGE_WORD } from '@/lib/model';
+import type { Feature } from '@bp/core/data';
+import { STAGE_WORD } from '@bp/core/model';
 import { StageSym } from '../Symbols';
 
 const Bullets = ({ xs }: { xs: readonly string[] }) => <ul>{xs.map((x, i) => <li key={i}>{x}</li>)}</ul>;

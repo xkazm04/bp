@@ -15,10 +15,11 @@ register('./overlays-loader.mjs', { parentURL: import.meta.url, data: { src: SRC
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
 const imp = (p: string): Promise<Any> => import(pathToFileURL(path.join(SRC, p)).href);
+const impCore = (p: string): Promise<Any> => import(pathToFileURL(path.join(ROOT, 'packages/core', p)).href);
 const req = createRequire(path.join(ROOT, 'package.json'));
 const React: Any = req('react'), { renderToString }: Any = req('react-dom/server');
-const rawSwarm: Any = (await imp('data/swarm.json')).default;
-const { buildModel } = await imp('lib/model/sample.ts');
+const rawSwarm: Any = (await impCore('data/swarm.json')).default;
+const { buildModel } = await impCore('src/model/sample.ts');
 const { initialState } = await imp('engine/state.ts');
 const { EngineCtx, VariantCtx } = await imp('components/hooks.ts');
 const { getVariant } = await imp('variants/registry.ts');

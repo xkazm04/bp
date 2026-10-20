@@ -3,7 +3,7 @@
 // morph is continuous and the clip of the stage fill always matches the stroke. The amounts are capped
 // in UI px (u) so the engine's text rows (id/evidence at the top, name, stamp at the foot, all inset 7u)
 // stay clear of the reshaped edges at every zoom.
-import type { Feature } from '@/lib/data';
+import type { Feature } from '@bp/core/data';
 import { bl as builtin, type BuiltinLens } from '../base/legacy';
 import type { Theme, TileGeom } from '../types';
 import { clamp } from '../base/util';

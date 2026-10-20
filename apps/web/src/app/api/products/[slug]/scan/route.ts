@@ -1,8 +1,8 @@
 // GET /api/products/[slug]/scan: the whole ScanSnapshot (activity = the latest 200 rows, ascending id).
 // A product without a store answers the empty scan, so every feature reads unmeasured.
-import { findProduct, storeFile } from '@/lib/scan/products.server';
-import { localHost } from '@/lib/scan/local-only';
-import { snapshotOf } from '@/lib/scan/store.server';
+import { findProduct, storeFile } from '@bp/core/server/products.server';
+import { localHost } from '@bp/core/scan/local-only';
+import { snapshotOf } from '@bp/core/server/store.server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

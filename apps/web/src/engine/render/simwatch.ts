@@ -4,7 +4,7 @@
 // the values it painted. On a sim tick the engine asks for the items whose values moved, clears only their
 // rectangles in the cached raster and runs the same plan again clipped to them (render/plan.ts culls
 // everything else). No full raster runs on a sim tick, and the pixels equal a full raster's.
-import type { Feature } from '@/lib/data';
+import type { Feature } from '@bp/core/data';
 import type { Engine } from '../Engine';
 import type { SRect } from './view';
 

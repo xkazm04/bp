@@ -2,9 +2,9 @@
 // lens, temporary or permanent. DELETE: remove its entry from the map; its facets stay (spec 8.1). 200 + the entry
 // (PATCH) or `{ id }` (DELETE); 403 for a built-in lens (`source: 'builtin'`: the blueprint never changes one); 404
 // for an unknown product, map or lens; 400 for a bad body; 409 when the map does not parse. Localhost only.
-import { findProduct } from '@/lib/scan/products.server';
-import { localOnly, jsonOnly } from '@/lib/scan/local-only';
-import { deleteLens, setLensEnabled, type LensWrite } from '@/lib/scan/lens-write.server';
+import { findProduct } from '@bp/core/server/products.server';
+import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
+import { deleteLens, setLensEnabled, type LensWrite } from '@bp/core/server/lens-write.server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

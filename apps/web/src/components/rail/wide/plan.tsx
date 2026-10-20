@@ -3,8 +3,8 @@
 // every feature) grouped by wing and room. The detail reads the selected feature (stage, each lens's health and why,
 // agents and questions on it) or, with the overview row selected, the legend, trouble by lens, title block and keys.
 import { useEffect, useMemo, useState } from 'react';
-import type { Stage } from '@/lib/data';
-import { STAGE_WORD, astat, fmtWait, healthUnder, sheetOf, stageAt, type BayNode, type RoomNode } from '@/lib/model';
+import type { Stage } from '@bp/core/data';
+import { STAGE_WORD, astat, fmtWait, healthUnder, sheetOf, stageAt, type BayNode, type RoomNode } from '@bp/core/model';
 import { Legend } from '../../Legend';
 import { Mark, PatternDefs, StageSym, agentMark } from '../../Symbols';
 import { shallowEqual, useBp, useEngine, useVariant } from '../../hooks';

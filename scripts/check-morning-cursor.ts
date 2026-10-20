@@ -14,8 +14,9 @@ register('./overlays-loader.mjs', { parentURL: import.meta.url, data: { src: SRC
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
 const imp = (p: string): Promise<Any> => import(pathToFileURL(path.join(SRC, p)).href);
-const W = await imp('lib/model/morning.ts');
-const { buildModel } = await imp('lib/model/sample.ts');
+const impCore = (p: string): Promise<Any> => import(pathToFileURL(path.join(ROOT, 'packages/core', p)).href);
+const W = await impCore('src/model/morning.ts');
+const { buildModel } = await impCore('src/model/sample.ts');
 
 let held = 0;
 const failures: string[] = [];

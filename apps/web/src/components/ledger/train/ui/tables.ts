@@ -1,8 +1,8 @@
 // The release train's two mark tables: every status and every verdict as a shape, a word and a hint. Shape first,
 // colour second (the owner's rule: never colour alone). StateMark and VerdictChip read these and nothing else draws a
 // status or a verdict, so the six copies of the state mark and three of the verdict in the contest winner are one.
-import type { ProposalStatus } from '@/lib/scan/types';
-import type { Verdict } from '@/lib/scan/compare';
+import type { ProposalStatus } from '@bp/core/scan/types';
+import type { Verdict } from '@bp/core/scan/compare';
 
 export interface Mark { mark: string; word: string; hint: string }
 

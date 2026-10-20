@@ -1,7 +1,7 @@
 // The Release tab's history: tagged and failed releases (other than the open one), newest first, each its version,
 // tag or failure, date, item count and PR link, then its items (a flagged one marked ⚑: it shipped failed or unmoved).
 import { memo, useMemo } from 'react';
-import type { Release } from '@/lib/scan/types';
+import type { Release } from '@bp/core/scan/types';
 import { SampleTag } from '../ui/Marks.tsx';
 import { evidenceOf, readingsBy, type PkgItem, type ReleaseModel } from './releaseState';
 

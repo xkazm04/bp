@@ -5,7 +5,7 @@
 // the current selection into an order from the four templates, through the same preview and commit as the
 // selection bar.
 import { useEffect, useMemo, useState } from 'react';
-import { ORDER_TEMPLATES, STAGE_WORD, pname, sheetOf, stageAt, type OrderTemplate, type SimOrder } from '@/lib/model';
+import { ORDER_TEMPLATES, STAGE_WORD, pname, sheetOf, stageAt, type OrderTemplate, type SimOrder } from '@bp/core/model';
 import { StageSym } from '../../Symbols';
 import { shallowEqual, useBp, useEngine } from '../../hooks';
 import { PreviewBox } from '../panels';

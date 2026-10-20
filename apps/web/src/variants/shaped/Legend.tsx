@@ -2,7 +2,7 @@
 // The Plan-tab legend, shaped variant. General explains the stage swatches and the lens icons set into
 // each fixture's top edge. A lens explains its outline (drawn here with the same proportions as on the
 // plan) and its icon vocabulary, all in that lens's accent.
-import type { ViewId } from '@/lib/data';
+import type { ViewId } from '@bp/core/data';
 import { isBuiltinLens, type BuiltinLens } from '../base/legacy';
 import { Legend, TroubleKey } from '@/components/Legend';
 import { Mark, StageSym } from '@/components/Symbols';

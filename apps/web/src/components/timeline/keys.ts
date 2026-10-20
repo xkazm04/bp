@@ -2,7 +2,7 @@
 // (BaseBar.tsx). One table: the keys a slider handles are exactly the keys it claims, so the two sliders cannot drift
 // apart and a key the slider does nothing with still reaches the engine's shortcuts. Pinned by check-keys.ts.
 // No React and no '@/' imports: Node loads this file as-is for the check.
-import { HOUR } from '../../lib/model/constants.ts';
+import { HOUR } from '@bp/core/model/constants';
 
 /** The slice of the engine a time slider drives (Engine satisfies it; the check passes a recorder). */
 export interface TimeSliderEngine {

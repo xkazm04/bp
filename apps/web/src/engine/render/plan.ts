@@ -2,9 +2,9 @@
 // is drawn into the cached raster (static-cache.ts), never per frame during a gesture. The lens mix is
 // applied here: stage fills stay put, lens channels draw their marks into slots (General) or into the
 // tile body (a lone lens), and text crossfades between the general and the dominant lens's content.
-import type { Feature } from '@/lib/data';
-import { EVIDENCE_BY_DENSITY } from '@/lib/standard/present';
-import { BH, RH, deltaWin, healthUnder, stageAt, stageParts, STAGE_WORD, type BldNode, type TileNode } from '@/lib/model';
+import type { Feature } from '@bp/core/data';
+import { EVIDENCE_BY_DENSITY } from '@bp/core/standard/present';
+import { BH, RH, deltaWin, healthUnder, stageAt, stageParts, STAGE_WORD, type BldNode, type TileNode } from '@bp/core/model';
 import type { Engine } from '../Engine';
 import type { ChannelAggregate, FeatureLive, MarkArgs, Rect, TileGeom } from '../lens/contract';
 import type { Theme } from '../theme';

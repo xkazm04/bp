@@ -2,10 +2,10 @@
 // are numbered pk-1... again). 200 `{ wave }`; 400 `{ error }` for a bad body or wave id; 404 for an unknown product, wave or
 // missing store; 409 `{ error }` when the wave was dispatched, `{ error, taken }` when a finding is in another draft wave.
 // DELETE /api/products/[slug]/waves/[wave]: delete a draft wave. 200 `{ id }`; 404; 409 when it was dispatched. Localhost only.
-import { findProduct, hasStore } from '@/lib/scan/products.server';
-import { localOnly, jsonOnly } from '@/lib/scan/local-only';
-import { SAFE_ID } from '@/lib/scan/jobs';
-import { patchWave, removeWave } from '@/lib/scan/waves.server';
+import { findProduct, hasStore } from '@bp/core/server/products.server';
+import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
+import { SAFE_ID } from '@bp/core/scan/jobs';
+import { patchWave, removeWave } from '@bp/core/server/waves.server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

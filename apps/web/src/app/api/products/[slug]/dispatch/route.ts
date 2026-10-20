@@ -6,11 +6,11 @@
 // `{ job, approved, skipped }` (`approved` = the ids this call approved; `job.proposals` = every id it builds);
 // 409 `{ error, skipped }` when none could go; 400 for a bad body; 404 for an unknown product or a missing store;
 // 429 when 16 jobs are queued (the approvals stand); 503 when the store stayed locked. Localhost only.
-import { findProduct, hasStore, storeFile } from '@/lib/scan/products.server';
-import { localOnly, jsonOnly } from '@/lib/scan/local-only';
-import { SAFE_ID } from '@/lib/scan/jobs';
-import { MAX_PROPOSALS, enqueueExecute } from '@/lib/scan/jobs.server';
-import { takeForBuild } from '@/lib/scan/waves.server';
+import { findProduct, hasStore, storeFile } from '@bp/core/server/products.server';
+import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
+import { SAFE_ID } from '@bp/core/scan/jobs';
+import { MAX_PROPOSALS, enqueueExecute } from '@bp/core/server/jobs.server';
+import { takeForBuild } from '@bp/core/server/waves.server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

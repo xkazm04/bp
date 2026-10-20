@@ -15,7 +15,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { deleteLens, patchLens } from '@/lib/scan/client';
 import { deleteTempLens, setTempLensEnabled } from '@/lib/scan/temp-lens';
-import { MAX_SELECTION } from '@/lib/scan/jobs';
+import { MAX_SELECTION } from '@bp/core/scan/jobs';
 import { useBp, useEngine, useLive, useScanCtx } from '../../hooks';
 import { useLedgerSelection } from '../useLedger';
 import { LensGlyph, LineSample } from './DraftCard';

@@ -2,8 +2,8 @@
 // React chrome. Everything a variant author may change is reachable from their own folder through
 // this interface; the engine and the components consult it and fall back to the defaults.
 import type { ComponentType } from 'react';
-import type { Feature, LensDef, ViewId } from '@/lib/data';
-import type { Model, SimDecision } from '@/lib/model';
+import type { Feature, LensDef, ViewId } from '@bp/core/data';
+import type { Model, SimDecision } from '@bp/core/model';
 import type { Density, LensExpression } from '@/engine/lens/contract';
 
 export type VariantId = 'subtle' | 'shaped' | 'bold';

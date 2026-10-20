@@ -12,7 +12,7 @@ import { overlayRight } from '@/engine/chrome';
 import type { ScanMenuState } from '@/engine/state';
 import { glyph, type GlyphSpec } from '@/engine/render/lens-glyph';
 import { refusalText, startScan, startSelectionScan } from '@/lib/scan/actions';
-import { MAX_SELECTION, scannable, type ScanScope } from '@/lib/scan/jobs';
+import { MAX_SELECTION, scannable, type ScanScope } from '@bp/core/scan/jobs';
 import { useProjects } from '@/lib/scan/projects';
 import { scopesAt } from '@/lib/scan/scan-views';
 import { shallowEqual, useBp, useEngine, useScanCtx } from './hooks';

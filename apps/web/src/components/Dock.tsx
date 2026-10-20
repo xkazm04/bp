@@ -5,7 +5,7 @@
 // pulses once; nothing opens by itself. `\` hides the whole rail (the plan takes the width back).
 import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, animate, motion, useReducedMotion } from 'motion/react';
-import { SPEND_CAP, pname, sheetOf } from '@/lib/model';
+import { SPEND_CAP, pname, sheetOf } from '@bp/core/model';
 import type { DockTab } from '@/engine/state';
 import { MorningButton, oncePerProposal } from './Queue';
 import { FindPanel, useRunningScans } from './rail/panels';

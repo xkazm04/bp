@@ -2,8 +2,8 @@
 // bottom-left of each tile that has a decided proposal (the newest; "+N" when it has more), and a count per room at
 // the overview levels, beside the room's question pin. Culled to the viewport like the pins; the labels and room
 // counts are strings the tracks built once per change, so a frame allocates nothing.
-import type { LiveTracks } from '@/lib/model/live-tracks';
-import type { TrackStage } from '@/lib/scan/track';
+import type { LiveTracks } from '@bp/core/model/live-tracks';
+import type { TrackStage } from '@bp/core/scan/track';
 import type { Engine } from '../Engine';
 import type { Theme } from '../theme';
 import { drawText } from '../text';

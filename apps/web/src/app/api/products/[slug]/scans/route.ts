@@ -5,11 +5,11 @@
 // queued already; 404 for an unknown product or a product without a map. A `selection` scope (the ledger's selected
 // features) carries no id and 1..MAX_SELECTION (200) features. Localhost only.
 // GET /api/products/[slug]/scans: the product's ScanJob[], oldest first.
-import { findProduct } from '@/lib/scan/products.server';
-import { localHost, localOnly, jsonOnly } from '@/lib/scan/local-only';
-import { MAX_SELECTION, SAFE_ID, scannable, type ScanScope, type ScanScopeKind } from '@/lib/scan/jobs';
-import { enqueueMeasure, list } from '@/lib/scan/jobs.server';
-import { readLensesAndFeatures } from '@/lib/scan/lens-write.server';
+import { findProduct } from '@bp/core/server/products.server';
+import { localHost, localOnly, jsonOnly } from '@bp/core/scan/local-only';
+import { MAX_SELECTION, SAFE_ID, scannable, type ScanScope, type ScanScopeKind } from '@bp/core/scan/jobs';
+import { enqueueMeasure, list } from '@bp/core/server/jobs.server';
+import { readLensesAndFeatures } from '@bp/core/server/lens-write.server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readStripped } from '../../../../../scripts/lib/source.ts';
-import { HOUR } from '../../lib/model/constants.ts';
+import { HOUR } from '@bp/core/model/constants';
 import { timeSliderKey, type KeyLike, type TimeSliderEngine } from './keys.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));

@@ -15,10 +15,10 @@
 // slots shrink to share the strip: (strip - (N - 1) gaps) / N. A slot at least 10u wide shows glyph and
 // rail; a narrower one shows the glyph only (down to 6 px). The strip never wraps (wrapping would cover
 // the id row); the lens tabs and keys reach every lens.
-import type { LensDef } from '@/lib/data';
-import type { LensField } from '@/lib/standard/types';
-import { hotHealth, lensLine } from '@/lib/standard/present';
-import { lensAggregate, lensContent } from '@/lib/model/lens';
+import type { LensDef } from '@bp/core/data';
+import type { LensField } from '@bp/core/standard/types';
+import { hotHealth, lensLine } from '@bp/core/standard/present';
+import { lensAggregate, lensContent } from '@bp/core/model/lens';
 import type { FeatureLive, LensChannel, LensExpression, MarkArgs, Rect, TileGeom } from '../types';
 import { flagsOn } from '@/engine/render/flags';
 import { lineFill } from '@/engine/render/patterns';

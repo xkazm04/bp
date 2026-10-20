@@ -1,7 +1,7 @@
 // The queue speaks the reader's language too: under a lens, each question card gets one line of that
 // lens's facts about its feature (plain words for business and design, terse codes for development).
-import type { ViewId } from '@/lib/data';
-import type { Model, SimDecision } from '@/lib/model';
+import type { ViewId } from '@bp/core/data';
+import type { Model, SimDecision } from '@bp/core/model';
 import { bl, hof, NOT_MEASURED } from '../base/legacy';
 
 export function queueNote(d: SimDecision, view: ViewId, model: Model): string | null {

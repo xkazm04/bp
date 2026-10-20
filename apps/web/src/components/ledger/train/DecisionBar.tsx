@@ -5,9 +5,9 @@
 // "Package v<draft or suggested version> · <n accepted>" with Release -> (the Release tab). With nothing to act on it
 // shows the scope's key reminders instead. The note editor takes the bar's line while a decision asks for a note.
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { Proposal } from '@/lib/scan/types';
+import type { Proposal } from '@bp/core/scan/types';
 import { suggestRelease } from '@/lib/scan/actions';
-import { isFlagged, isWaiting } from '@/lib/train/rules';
+import { isFlagged, isWaiting } from '@bp/core/train/rules';
 import type { Ledger } from '../useLedger';
 import { useTrain } from './data';
 import { Decide, releaseIn, verdictIn } from './Decide';

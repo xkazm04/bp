@@ -1,7 +1,7 @@
 'use client';
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { latestRun, sheetOf, views, type BayNode, type BldNode, type RoomNode, type WingNode } from '@/lib/model';
+import { latestRun, sheetOf, views, type BayNode, type BldNode, type RoomNode, type WingNode } from '@bp/core/model';
 import { shallowEqual, useBp, useEngine, useLive } from './hooks';
 import { ThemeToggle } from './ThemeToggle';
 import { ProjectSwitcher } from './ProjectSwitcher';

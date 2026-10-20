@@ -2,8 +2,8 @@
 // standard (spec 8.6), drawn by NAME so any lens manifest can pick them, plus custom glyph paths.
 // Everything is ink (status colours only for status meaning), a handful of strokes each, no allocation
 // per call: patterns and custom paths are cached.
-import type { Health } from '@/lib/data';
-import type { LineName } from '@/lib/standard/types';
+import type { Health } from '@bp/core/data';
+import type { LineName } from '@bp/core/standard/types';
 import type { Theme } from '../types';
 
 /** Glyph colour = that lens's health. Ink when fine, amber to watch, red for trouble, faint when n/a or unmeasured. */

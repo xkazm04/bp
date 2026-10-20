@@ -4,7 +4,7 @@
 // preset's reason, the standing order it rests on and its preview (what moves, then Commit or Cancel); the overview
 // is today's spend against the cap, by crew.
 import { useMemo, useState } from 'react';
-import { SPEND_CAP, astat } from '@/lib/model';
+import { SPEND_CAP, astat } from '@bp/core/model';
 import { shallowEqual, useBp, useEngine } from '../../hooks';
 import { PreviewBox } from '../panels';
 import { Fig, Group, Row, Sec, Workbench, useListRef, useWalk } from './shell';

@@ -3,10 +3,10 @@
 // words. The theme and the mode live in the ledger store (LedgerUi.cmp, L and M cycle them); everything else is local.
 // Only the shown pairs mount images; the change map of each is computed once per session by useChangeMap.
 import { memo, useMemo, useRef, useState } from 'react';
-import type { Comparison, ShotPair } from '@/lib/scan/compare';
-import type { Shot } from '@/lib/scan/types';
-import { shotSrc } from '@/lib/train/shots';
-import { pixWords } from '@/lib/train/pixels';
+import type { Comparison, ShotPair } from '@bp/core/scan/compare';
+import type { Shot } from '@bp/core/scan/types';
+import { shotSrc } from '@bp/core/train/shots';
+import { pixWords } from '@bp/core/train/pixels';
 import type { CompareMode, CompareTheme, CompareView } from '../../useLedger';
 import { Callout, Seg, type SegOption } from '../ui/Controls';
 import { ChangeMap } from './ChangeMap';

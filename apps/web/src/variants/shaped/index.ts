@@ -2,7 +2,7 @@
 // pill, brackets, checklist edge, artboard), brings its own icon vocabulary, its own words and one
 // accent for its marks; density follows the reader. General composes the six icons along each
 // fixture's top edge on the plain rectangle. See NOTES.md.
-import type { ViewId } from '@/lib/data';
+import type { ViewId } from '@bp/core/data';
 import { manifestChannel } from '../subtle/expression';
 import type { LensExpression, Rect, Variant } from '../types';
 import { CHANNELS, chipSide, homeRect } from './channels';

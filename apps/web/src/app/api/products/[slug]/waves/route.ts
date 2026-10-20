@@ -2,9 +2,9 @@
 // POST /api/products/[slug]/waves, body `{ name, packages: [{ name, model, effort, ids }] }`: a draft wave of named packages
 // (waves.ts checkWaveBody), its packages numbered pk-1... 201 `{ wave }`; 400 `{ error }` for a bad body; 409 `{ error, taken }`
 // when a finding is in another draft wave; 429 at 50 waves; 404 for an unknown product or a missing store. Localhost only.
-import { findProduct, hasStore } from '@/lib/scan/products.server';
-import { localHost, localOnly, jsonOnly } from '@/lib/scan/local-only';
-import { createWave, listWaves } from '@/lib/scan/waves.server';
+import { findProduct, hasStore } from '@bp/core/server/products.server';
+import { localHost, localOnly, jsonOnly } from '@bp/core/scan/local-only';
+import { createWave, listWaves } from '@bp/core/server/waves.server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

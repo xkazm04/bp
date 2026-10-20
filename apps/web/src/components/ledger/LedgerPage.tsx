@@ -40,7 +40,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { motion } from 'motion/react';
 import { LEDGER_VARIANTS, type LedgerVariant } from '@/engine/state';
 import { useProductName } from '@/lib/scan/projects';
-import { MAX_SELECTION } from '@/lib/scan/jobs';
+import { MAX_SELECTION } from '@bp/core/scan/jobs';
 import { shallowEqual, useBp, useEngine, useLive, useScanCtx } from '../hooks';
 import { setLedgerUi, useLedger, useLedgerSelection, useLedgerUi, type CompareMode, type CompareTheme, type Ledger, type LedgerUi, type LensCol, type SetUi } from './useLedger';
 import { LensGlyph } from './variants/bits';

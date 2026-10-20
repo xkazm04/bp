@@ -5,11 +5,11 @@
 // enabled lenses (the same glyph AND line is refused). 201 + the entry; 400 `{ error }` saying what failed; 404 for an
 // unknown product or a missing map; 409 when the id exists (any source) or the map does not parse (it is never
 // overwritten). The stream's `map` event then carries the change to every client. Localhost only.
-import { findProduct } from '@/lib/scan/products.server';
-import { localOnly, jsonOnly } from '@/lib/scan/local-only';
-import { checkLensManifest } from '@/lib/scan/manifest-check';
-import { addLens } from '@/lib/scan/lens-write.server';
-import type { LensManifest } from '@/lib/standard/types';
+import { findProduct } from '@bp/core/server/products.server';
+import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
+import { checkLensManifest } from '@bp/core/scan/manifest-check';
+import { addLens } from '@bp/core/server/lens-write.server';
+import type { LensManifest } from '@bp/core/standard/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
