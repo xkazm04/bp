@@ -42,7 +42,6 @@ const { emptyScan } = await impCore('src/scan/types.ts');
 let held = 0;
 const failures: string[] = [];
 const expect = (ok: boolean, what: string, detail = '') => { if (ok) held++; else failures.push(what + (detail ? ': ' + detail : '')); };
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // ------------------------------------------------------------------ a live product over the fake CLI
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-live-steer-'));
