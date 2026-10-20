@@ -22,7 +22,6 @@ register('./overlays-loader.mjs', { parentURL: import.meta.url, data: { src: SRC
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
-const imp = (p: string): Promise<Any> => import(pathToFileURL(path.join(SRC, p)).href);
 const impCore = (p: string): Promise<Any> => import(pathToFileURL(path.join(ROOT, 'packages/core', p)).href);
 const { buildModel } = await impCore('src/model/sample.ts');
 const MAP = (await impCore('data/kettle.app-structure.json')).default as { features: { id?: string; slug: string }[] };
