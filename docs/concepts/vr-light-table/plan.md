@@ -62,6 +62,36 @@ Stubs-first, as bp's last four sparks did: commit the workspace layout and compi
 the fan-out. Repo law applies: the Kettle-only tables move unchanged and are smoke-tested on a live
 product.
 
+### P1 closure measured 2026-10-20
+
+Back-measured on master at `bc7cdfb` (the P1 closure commits are `bfc8e66`, `5efb461`, `624d15e` and
+`bc7cdfb`), on Lynx (Windows ARM64) in a builder worktree whose `node_modules` is a junction to the
+main checkout's. Nothing was fixed while measuring.
+
+| Goal | Measure | Result | Evidence |
+|---|---|---|---|
+| 1 Check chain and perf | `npm run check` with 44 or more passed and 0 failed; `python scripts/perf.py` holds 60 fps at `?scale=4` | **not evaluated** (check chain red only in this worktree, perf not run) | `npm run check`: `43 passed, 1 failed, 0 skipped of 44`. The one failure is `typecheck`: `scripts/check-waves.ts(164,102): error TS2322: Type 'import(".../worktrees/bp/03dafca1/packages/core/src/model/scan-sim").ScanSim' is not assignable to type 'import("C:/Users/kazda/kiro/bp/packages/core/src/model/scan-sim").ScanSim'. Types have separate declarations of a private property 'now'.` The junction resolves `@bp/core` to the main checkout's copy, so two copies of one class meet. That is the worktree layout, not the code (`isolated-gate.mjs` exists for this case). Perf: `python scripts/perf.py` exits 1 with `ModuleNotFoundError: No module named 'playwright'`, and nothing listens on :3000. No perf number was taken. |
+| 2 `apps/server` serves Kettle | with no products file, GET `/api/products/kettle/structure` answers 200 with the wing count of `packages/core/data`, and a Kettle write answers 4xx | **pass** | `npm run check:server`: `ok GET /api/products/kettle/structure: 200 with no products file (13 wings)`, `ok kettle structure: wing count equals the data's 13`, `ok a Kettle write: 4xx`, `ok Kettle stays unlisted: GET /api/products still []`, `check-server: 14 passed, 0 failed` (`bfc8e66`) |
+| 3 TS types decided and enforced | a dated decision in `tech-stack.md` §3 and `packages/schema/README.md`; `check:schema` fails on its seeded control | **pass** | `tech-stack.md` §3: *Decided 2026-10-20 (WP1.5 follow-up).*, with **TS types.** `types.ts` stays the hand-written source. `packages/schema/README.md`: `### Decision (2026-10-20): hand-written TS types, generated TS as a parity artifact`. `npm run check:schema`: `ok types.ts agrees with the generated types on every field and its optionality (29 shapes ...)` and `ok control: Rule.reason made optional in the generated types fails the parity` (`bc7cdfb`) |
+| 4 The 5 unmapped fields carried | `check:schema` fails when a schema field is neither mapped in `BpSchema.h` nor carried by the generated fix-up, shown by its seeded control | **pass** | `npm run check:schema`: `ok every schema field is held in UE: 197 mapped, 5 renamed and 2 raw carried by FixUp` and `ok control: deleting Rule.short's fix-up fails the coverage`. The five fields are `short`, `default`, `$schema` (renamed) and `glyph`, `cross_refs` (raw JSON text, `BpSchemaFixups.h:101` for `cross_refs`). The read-through line: `FixUp carries AppStructure.Schema_ 2, LensManifest.Schema_ 23, LensManifest.Short_ 23, Rule.Short_ 132, Health.Default_ 23, Presentation.Glyph_ 23` (`624d15e`) |
+| 5 Kettle source path | `scripts/kettle-to-v3.ts` and the provenance in `packages/core/data/kettle.app-structure.json` name `packages/core/data/kettle.json`; `check:data` green | **pass** | `scripts/kettle-to-v3.ts:1` and `:62` read `packages/core/data/kettle.json`. The data's `provenance` is `{"source":"packages/core/data/kettle.json","converter":"scripts/kettle-to-v3.ts"}`. `npm run check:data`: `ok: packages/core/data/kettle.app-structure.json and packages/core/data/kettle.events.jsonl reproduce exactly (as of 2026-10-08T09:00:00Z)` (`5efb461`) |
+
+Milestone 1 is not closed yet. Goals 2 to 5 pass. Goal 1 has two gaps:
+
+- **Check chain green from a clean install.** In the junctioned worktree, `typecheck` is red only
+  because `@bp/core` resolves to two copies. To close it, run `npm run check` once on master in a
+  tree with its own install: the merge gate's `isolated-gate.mjs`, or the main checkout with no
+  uncommitted work. It needs `44 passed, 0 failed`. The builder did not replace the junction,
+  because the brief rules out reinstalling.
+- **Perf budget.** Not evaluated: `playwright` (listed in `requirements-tools.txt`) is not installed
+  on Lynx, and no web app is serving on :3000. To close it, the operator installs the Python tools
+  from `requirements-tools.txt` (a tool change, so it is the operator's decision), starts the web
+  app, and records the fps that `python scripts/perf.py` reports at `?scale=4` against the 60 fps
+  budget.
+- Observation, not a gate: none of the 15 sample documents carries `cross_refs`, so the FixUp read-through
+  never exercises its raw copy. Only the coverage check holds it. A sample or fixture containing
+  `cross_refs` would close that.
+
 ## P2 Look-dev
 
 Image work on the GPU box, judged by the owner.
