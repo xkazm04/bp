@@ -77,6 +77,9 @@ function expectedCost(quality, log) {
   return { cost: PROBE_ESTIMATE[quality], measured: false };
 }
 
+/** `text` with every copy of the key replaced: whatever goes to log.jsonl (committed) or stdout passes through here. */
+export const redact = (text, key) => (key ? String(text).replaceAll(key, '[redacted]') : String(text));
+
 function readKey() {
   const m = fs.readFileSync(ENV_FILE, 'utf8').match(/^\s*LEONARDO_API_KEY\s*=\s*(.+?)\s*$/m);
   if (!m) throw new Error(`LEONARDO_API_KEY not found in ${ENV_FILE}`);
@@ -183,7 +186,7 @@ async function gen() {
       entry.bytes = buf.length;
     }
   } catch (e) {
-    entry.error = String(e.message ?? e).slice(0, 500);
+    entry.error = redact(e.message ?? e, key).slice(0, 500);
   }
   const after = await balance(key);
   if (reported != null) { entry.credits = reported; entry.creditsSource = 'api'; }
