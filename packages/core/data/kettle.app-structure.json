@@ -5,7 +5,7 @@
   "generated_at": "2026-10-08T09:00:00Z",
   "declared": true,
   "provenance": {
-    "source": "src/data/kettle.json",
+    "source": "packages/core/data/kettle.json",
     "converter": "scripts/kettle-to-v3.ts"
   },
   "project": {

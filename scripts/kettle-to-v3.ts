@@ -1,7 +1,7 @@
-// Converts the Kettle sample (src/data/kettle.json) into the app-structure v3 standard (3.1 additions:
+// Converts the Kettle sample (packages/core/data/kettle.json) into the app-structure v3 standard (3.1 additions:
 // metric values on about 30 features, and the invoice-ocr feature with experience, core and variations):
-//   src/data/kettle.app-structure.json   the map (context-map.json v3)
-//   src/data/kettle.events.jsonl         its append-only events log
+//   packages/core/data/kettle.app-structure.json   the map (context-map.json v3)
+//   packages/core/data/kettle.events.jsonl         its append-only events log
 // Run: node scripts/kettle-to-v3.ts  (Node's type stripping; no build step). Deterministic: the only
 // "random" values come from a PRNG seeded by record slugs, so every run writes the same bytes.
 //
@@ -515,7 +515,7 @@ const map: AppStructure = {
   generator: 'kettle-sample',
   generated_at: AS_OF,
   declared: true,
-  provenance: { source: 'src/data/kettle.json', converter: 'scripts/kettle-to-v3.ts' },
+  provenance: { source: 'packages/core/data/kettle.json', converter: 'scripts/kettle-to-v3.ts' },
   project: { slug: 'kettle', name: kettle.product.name, description: kettle.product.tagline, kind: 'code' },
   taxonomy: {
     context_categories: ['ui', 'api', 'lib', 'data', 'test', 'config'],
