@@ -9,6 +9,7 @@ import { latestRun, latestReading, measuredFeatures, tierRank } from './derive.t
 import { scopeFeatures } from './scope.ts';
 import type { ScanJob, ScanScope } from './jobs.ts';
 import type { DispatchResult } from './actions.ts';
+import { WAVE_EFFORTS, WAVE_MODELS, type Wave, type WaveBody, type WaveDispatchResult, type WavePackage } from './waves.ts';
 import { fullScan as full, isEmptyScan as isEmpty, type Activity, type ActivityKind, type Coverage, type DecisionBody, type Measurement, type Proposal, type ProductInfo, type Run, type ScanDelta, type ScanSnapshot } from './types.ts';
 import type { CommitDiff, ReleaseCreated, TriageBody, TriageResult, VersionSuggestion } from './types.ts';
 import { errorText, parseCommitDiff, parseJson, parseReleaseCreated, parseScanJob, parseTriageResult, parseVersionSuggestion, type Parsed } from '../train/wire.ts';
@@ -263,7 +264,7 @@ export const executeLens = (slug: string, lens: string): Promise<LensExecuteResu
 // `status` and `body`: a non-2xx has the route's status and its body (the validated value when it is one, as triage's
 // 409 TriageResult; else the parsed JSON); an answer that fails its validator has status 0 and the field in the message.
 type Validate<T> = (x: unknown) => Parsed<T>;
-async function call<T>(url: string, method: 'GET' | 'POST', parse: Validate<T>, body?: unknown): Promise<T> {
+async function call<T>(url: string, method: 'GET' | 'POST' | 'PATCH' | 'DELETE', parse: Validate<T>, body?: unknown): Promise<T> {
   const r = await fetch(url, {
     method, cache: 'no-store',
     ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
@@ -293,6 +294,52 @@ export const postReleaseBuild = (slug: string, id: string): Promise<ScanJob> => 
 export const postReleaseFinish = (slug: string, id: string): Promise<ScanJob> => call(api(slug) + '/releases/' + encodeURIComponent(id) + '/finish', 'POST', parseScanJob, {});
 /** One item commit's diff (GET commits/[sha]). 400 = not a sha; 404 = not an item commit of this store. */
 export const getCommitDiff = (slug: string, sha: string): Promise<CommitDiff> => call(api(slug) + '/commits/' + encodeURIComponent(sha), 'GET', parseCommitDiff);
+
+// The ledger waves' routes (waves.ts), through the same door: a body that is not a wave is a status-0 rejection naming the field.
+const isRec = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x);
+const strs = (x: unknown): x is string[] => Array.isArray(x) && x.every((s) => typeof s === 'string');
+function parseWavePackage(x: unknown): Parsed<WavePackage> {
+  if (!isRec(x) || typeof x.id !== 'string' || typeof x.name !== 'string' || !strs(x.ids)) return { ok: false, error: 'package: id, name and ids expected' };
+  if (!WAVE_MODELS.includes(x.model as never) || !WAVE_EFFORTS.includes(x.effort as never)) return { ok: false, error: 'package ' + x.id + ': model or effort unknown' };
+  return { ok: true, value: { id: x.id, name: x.name, model: x.model as WavePackage['model'], effort: x.effort as WavePackage['effort'], ids: x.ids } };
+}
+function parseWave(x: unknown): Parsed<Wave> {
+  if (!isRec(x) || typeof x.id !== 'string' || typeof x.name !== 'string' || typeof x.created_at !== 'string' || (x.status !== 'draft' && x.status !== 'dispatched') || !Array.isArray(x.packages)) {
+    return { ok: false, error: 'wave: id, name, status, created_at and packages expected' };
+  }
+  const packages: WavePackage[] = [];
+  for (const p of x.packages) { const r = parseWavePackage(p); if (!r.ok) return r; packages.push(r.value); }
+  const jobs = Array.isArray(x.jobs) ? x.jobs.filter((j): j is { package: string; job: string } => isRec(j) && typeof j.package === 'string' && typeof j.job === 'string').map((j) => ({ package: j.package, job: j.job })) : undefined;
+  return { ok: true, value: { id: x.id, name: x.name, status: x.status, created_at: x.created_at, ...(typeof x.dispatched_at === 'string' ? { dispatched_at: x.dispatched_at } : {}), packages, ...(jobs?.length ? { jobs } : {}) } };
+}
+const inWave = (x: unknown): Parsed<Wave> => (isRec(x) ? parseWave(x.wave) : { ok: false, error: 'body: not an object' });
+function parseWaves(x: unknown): Parsed<Wave[]> {
+  if (!isRec(x) || !Array.isArray(x.waves)) return { ok: false, error: 'waves: a list expected' };
+  const out: Wave[] = [];
+  for (const w of x.waves) { const r = parseWave(w); if (!r.ok) return r; out.push(r.value); }
+  return { ok: true, value: out };
+}
+function parseWaveDispatch(x: unknown): Parsed<WaveDispatchResult> {
+  const w = inWave(x);
+  if (!w.ok) return w;
+  const o = x as Record<string, unknown>, jobs: ScanJob[] = [];
+  if (!Array.isArray(o.jobs) || !strs(o.approved) || !Array.isArray(o.skipped)) return { ok: false, error: 'jobs, approved and skipped expected' };
+  for (const j of o.jobs) { const r = parseScanJob(j); if (!r.ok) return r; jobs.push(r.value); }
+  const skipped = o.skipped.filter((s): s is { id: string; status: string } => isRec(s) && typeof s.id === 'string' && typeof s.status === 'string');
+  return { ok: true, value: { wave: w.value, jobs, approved: o.approved, skipped } };
+}
+/** The product's waves (GET waves). */
+export const getWaves = (slug: string): Promise<Wave[]> => call(api(slug) + '/waves', 'GET', parseWaves);
+/** A draft wave (POST waves, 201). 400 bad body; 409 a finding is in another draft wave (`body.taken`); 429 at 50 waves. */
+export const postWave = (slug: string, body: WaveBody): Promise<Wave> => call(api(slug) + '/waves', 'POST', inWave, body);
+/** Rename a draft wave and/or replace its packages (PATCH). 409 = not a draft, or taken. */
+export const patchWaveReq = (slug: string, id: string, patch: Partial<WaveBody>): Promise<Wave> => call(api(slug) + '/waves/' + encodeURIComponent(id), 'PATCH', inWave, patch);
+/** Delete a draft wave. 409 = not a draft. */
+export const deleteWaveReq = (slug: string, id: string): Promise<{ id: string }> => send(api(slug) + '/waves/' + encodeURIComponent(id), 'DELETE');
+/** Build a wave (202), or only the named packages. 409 = none could go (`body.skipped`); 429 = the queue cap stopped it (`body` = the result so far). */
+export const postWaveDispatch = (slug: string, id: string, packages?: string[]): Promise<WaveDispatchResult> =>
+  call(api(slug) + '/waves/' + encodeURIComponent(id) + '/dispatch', 'POST', parseWaveDispatch, packages === undefined ? {} : { packages });
+
 /** One turn of the lens onboarding chat: `product` is a slug or 'kettle'; `session` from the previous answer; `kind`
  *  asks for a permanent project lens (the default) or a temporary one. 504 after 3 minutes. */
 export const postLensDraft = (product: string, message: string, session?: string, kind: 'project' | 'temporary' = 'project'): Promise<LensDraftAnswer> =>

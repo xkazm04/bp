@@ -98,3 +98,75 @@ export function waveOfId(waves: readonly Wave[]): Map<string, { wave: string; pa
 
 /** What dispatching a wave answered. */
 export interface WaveDispatchResult { wave: Wave; jobs: ScanJob[]; approved: string[]; skipped: { id: string; status: string }[] }
+
+// ------------------------------------------------------------------------------------------- the rules both stores share
+// The live file (waves.server.ts) and the Kettle sim (lib/model/scan-sim.ts) keep the waves in different places and apply
+// the same rules through these pure steps, so a refusal reads the same on both.
+
+/** A refused wave step: the route's status and text (`taken`: the findings already in another draft wave). */
+export interface WaveRefusal { ok: false; status: 400 | 404 | 409 | 429; error: string; taken?: string[] }
+export type WaveStep = { ok: true; waves: Wave[]; wave: Wave } | WaveRefusal;
+const refuse = (status: WaveRefusal['status'], error: string, taken?: string[]): WaveRefusal => ({ ok: false, status, error, ...(taken ? { taken } : {}) });
+
+/** `w-<base36 ms>-<4 random>` */
+export function newWaveId(ms: number = Date.now(), rand: () => number = Math.random): string {
+  return 'w-' + ms.toString(36) + '-' + Math.floor(rand() * 36 ** 4).toString(36).padStart(4, '0');
+}
+/** The packages with their ids: `pk-1`.. in order. */
+export function withPackageIds(pkgs: readonly Omit<WavePackage, 'id'>[]): WavePackage[] {
+  return pkgs.map((p, i) => ({ id: 'pk-' + (i + 1), name: p.name, model: p.model, effort: p.effort, ids: [...p.ids] }));
+}
+/** The ids among `pkgs` that a draft wave other than `except` already holds. */
+export function takenIds(waves: readonly Wave[], pkgs: readonly Pick<WavePackage, 'ids'>[], except?: string): string[] {
+  const held = new Set<string>();
+  for (const w of waves) if (w.status === 'draft' && w.id !== except) for (const p of w.packages) for (const id of p.ids) held.add(id);
+  return [...new Set(pkgs.flatMap((p) => p.ids).filter((id) => held.has(id)))];
+}
+const takenText = (taken: string[]) => `${taken.length === 1 ? taken[0] + ' is' : taken.length + ' findings are'} already in another draft wave`;
+
+/** Create: a body checked by checkWaveBody, a free slot (MAX_WAVES), no finding of another draft wave. */
+export function createIn(waves: readonly Wave[], body: unknown, at: string, id: string = newWaveId()): WaveStep {
+  const b = checkWaveBody(body);
+  if (!b.ok) return refuse(400, b.error);
+  if (waves.length >= MAX_WAVES) return refuse(429, `a product keeps at most ${MAX_WAVES} waves; delete one first`);
+  const taken = takenIds(waves, b.packages);
+  if (taken.length) return refuse(409, takenText(taken), taken);
+  const wave: Wave = { id, name: b.name, status: 'draft', created_at: at, packages: withPackageIds(b.packages) };
+  return { ok: true, waves: [...waves, wave], wave };
+}
+/** Patch a draft wave: `name` and/or `packages` (the packages replace the old ones and are numbered again). */
+export function patchIn(waves: readonly Wave[], id: string, patch: unknown): WaveStep {
+  const p = patch as { name?: unknown; packages?: unknown } | null;
+  if (!p || typeof p !== 'object' || (p.name === undefined && p.packages === undefined)) return refuse(400, 'body must carry name and/or packages');
+  const name = p.name === undefined ? undefined : checkName(p.name);
+  if (name === null) return refuse(400, `name must be 1..${MAX_NAME} characters`);
+  const pkgs = p.packages === undefined ? undefined : checkPackages(p.packages);
+  if (typeof pkgs === 'string') return refuse(400, pkgs);
+  const cur = waves.find((w) => w.id === id);
+  if (!cur) return refuse(404, `no wave ${id}`);
+  if (cur.status !== 'draft') return refuse(409, `${cur.name} is not a draft: it was dispatched`);
+  const taken = pkgs ? takenIds(waves, pkgs, id) : [];
+  if (taken.length) return refuse(409, takenText(taken), taken);
+  const wave: Wave = { ...cur, ...(name !== undefined ? { name } : {}), ...(pkgs ? { packages: withPackageIds(pkgs) } : {}) };
+  return { ok: true, waves: waves.map((w) => (w.id === id ? wave : w)), wave };
+}
+/** Delete a draft wave. */
+export function removeIn(waves: readonly Wave[], id: string): { ok: true; waves: Wave[] } | WaveRefusal {
+  const cur = waves.find((w) => w.id === id);
+  if (!cur) return refuse(404, `no wave ${id}`);
+  if (cur.status !== 'draft') return refuse(409, `${cur.name} is not a draft: it was dispatched`);
+  return { ok: true, waves: waves.filter((w) => w.id !== id) };
+}
+/** The wave after a dispatch queued `jobs`: dispatched (first time stamped), the jobs appended. No jobs: the wave as it was. */
+export function recordJobs(w: Wave, jobs: readonly { package: string; job: string }[], at: string): Wave {
+  if (!jobs.length) return w;
+  return { ...w, status: 'dispatched', dispatched_at: w.dispatched_at ?? at, jobs: [...(w.jobs ?? []), ...jobs] };
+}
+/** The packages a dispatch means: all of them, or the named ones in the wave's order; a string = the refusal text. */
+export function packagesOf(w: Wave, names?: readonly string[]): WavePackage[] | string {
+  if (names === undefined) return w.packages;
+  if (!Array.isArray(names) || !names.length || names.some((n) => typeof n !== 'string')) return 'packages must be a list of package ids';
+  const unknown = names.find((n) => !w.packages.some((p) => p.id === n));
+  if (unknown !== undefined) return `${w.name} has no package ${unknown}`;
+  return w.packages.filter((p) => names.includes(p.id));
+}

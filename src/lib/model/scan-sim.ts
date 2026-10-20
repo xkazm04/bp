@@ -2,13 +2,15 @@
 // browser and emit the same store rows a real lens-scan run writes, so the model applies them on the
 // live path (applyScan) and every scan view is shared with live products.
 // A timer runs only while a job runs (never a rAF); every change notifies once per tick. Pure and free of
-// '@/' value imports, so Node can drive it (the scan-package probes). The sample release train (packs, triage, releases,
+// '@/' value imports, so Node can drive it (the scan-package probes). It also keeps the sample's ledger waves (waves.ts)
+// in this browser (localStorage `bp.waves.kettle`, memory when storage refuses), under the rules waves.server.ts applies. The sample release train (packs, triage, releases,
 // the release job's steps) is train-sim.ts, seeded at the first bind; its jobs run on this timer.
 import type { Activity, ActivityKind, CommitDiff, Measurement, Proposal, ReleaseCreated, Run, ScanSnapshot, TriageBody, TriageResult, VersionSuggestion } from '@/lib/scan/types';
 import type { ReleaseStep, ScanJob, ScanScope } from '@/lib/scan/jobs';
 import type { LensExecuteResult } from '@/lib/scan/client';
 import type { LensEntry, LensField, LensManifest } from '@/lib/standard/types';
-import { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, RUN_NOTE_PREFIX, TEMP_LENS_ID } from '../scan/jobs.ts';
+import { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, RUN_NOTE_PREFIX, SAFE_ID, TEMP_LENS_ID } from '../scan/jobs.ts';
+import { WAVE_EFFORTS, WAVE_MODELS, createIn, packagesOf, patchIn, recordJobs, removeIn, type Wave, type WaveBody, type WaveDispatchResult, type WaveEffort, type WaveModel } from '../scan/waves.ts';
 import { TrainSim, type TrainToggles } from './train-sim.ts';
 
 export type { TrainToggles };
@@ -34,6 +36,9 @@ const RELEASE_STEP_MS = 1000, LOG_LINES = 20;
 const NO_IMPACT = 0.4;
 const KINDS = new Set(['feature', 'bay', 'room', 'wing', 'all', 'selection']);
 const NUMERIC = new Set(['number', 'integer', 'percent', 'money']);
+export const WAVES_KEY = 'bp.waves.kettle';
+/** What a wave package runs its execute job with (jobs.server.ts ExecuteOpts). */
+interface ExecOpts { model?: WaveModel; effort?: WaveEffort; wave?: string; package?: string }
 
 /** FNV-1a then one mulberry32 step: a stable 0..1 per string (the fixture scripts' PRNG idea, inline). */
 function rand01(s: string): number {
@@ -134,8 +139,10 @@ export class ScanSim {
     return this.recOf(id)!.job;
   }
 
-  dispatch(ids: string[]): { job: ScanJob; approved: string[]; skipped: { id: string; status: string }[] } {
+  dispatch(ids: string[], opts: ExecOpts = {}): { job: ScanJob; approved: string[]; skipped: { id: string; status: string }[] } {
     if (!Array.isArray(ids) || !ids.length || ids.length > MAX_IDS || ids.some((x) => typeof x !== 'string')) throw refuse(400, 'bad-ids');
+    if ((opts.model !== undefined && !WAVE_MODELS.includes(opts.model)) || (opts.effort !== undefined && !WAVE_EFFORTS.includes(opts.effort))
+      || (opts.wave !== undefined && !SAFE_ID.test(opts.wave)) || (opts.package !== undefined && !SAFE_ID.test(opts.package))) throw refuse(400, 'bad-opts');
     const approved: string[] = [], go: string[] = [], skipped: { id: string; status: string }[] = [];
     const at = this.iso();
     for (const pid of [...new Set(ids)]) {
@@ -146,7 +153,7 @@ export class ScanSim {
       else skipped.push({ id: pid, status: p.status });
     }
     if (!go.length) throw refuse(409, 'Nothing to dispatch: none of them is proposed or approved', { skipped });
-    const id = this.queueExecute(go, at);
+    const id = this.queueExecute(go, at, opts);
     this.pump();
     this.changed();
     return { job: this.recOf(id)!.job, approved, skipped };
@@ -182,6 +189,93 @@ export class ScanSim {
     this.changed();
     if (full) throw refuse(429, 'queue-full', { jobs: jobs.map((j) => this.recOf(j.id)!.job), approved, skipped });
     return { jobs: jobs.map((j) => this.recOf(j.id)!.job), approved, skipped };
+  }
+
+  // ----------------------------------------------------------------------------------------- the sample waves
+  // Ledger waves (waves.ts) kept in this browser, under the rules and refusals of waves.server.ts: 400 bad body, 404, 409 taken /
+  // not a draft / none could go, 429 queue-full (its body carries the wave and the jobs queued before the cap).
+  private wavesMem: Wave[] | null = null;
+  private wavesLoaded = false;
+  private readWaves(): Wave[] {
+    let raw: string | null = null;
+    try { raw = globalThis.localStorage?.getItem(WAVES_KEY) ?? null; } catch { /* storage refuses: memory holds them */ }
+    let out = this.wavesMem ?? [];
+    if (raw !== null) {
+      try {
+        const j = JSON.parse(raw) as unknown;
+        if (Array.isArray(j)) out = j.filter((w): w is Wave => !!w && typeof w.id === 'string' && typeof w.name === 'string' && Array.isArray(w.packages) && (w.status === 'draft' || w.status === 'dispatched'));
+      } catch { /* a broken value reads as none */ }
+    }
+    if (!this.wavesLoaded) {
+      // a wave dispatched in an earlier visit points at jobs this sim no longer has (the sample starts afresh): it is a draft again
+      this.wavesLoaded = true;
+      out = out.map((w) => { if (w.status !== 'dispatched') return w; const { jobs: _jobs, dispatched_at: _at, ...rest } = w; return { ...rest, status: 'draft' as const }; });
+      this.writeWaves(out);
+    }
+    this.wavesMem = out;
+    return out;
+  }
+  private writeWaves(waves: Wave[]): void {
+    this.wavesMem = waves;
+    try { globalThis.localStorage?.setItem(WAVES_KEY, JSON.stringify(waves)); } catch { /* memory still holds them */ }
+  }
+  listWaves(): Wave[] { return this.readWaves(); }
+  createWave(body: WaveBody): Wave {
+    const r = createIn(this.readWaves(), body, this.iso());
+    if (!r.ok) throw refuse(r.status, r.error, r.taken ? { taken: r.taken } : undefined);
+    this.writeWaves(r.waves);
+    return r.wave;
+  }
+  updateWave(id: string, patch: Partial<WaveBody>): Wave {
+    const r = patchIn(this.readWaves(), id, patch);
+    if (!r.ok) throw refuse(r.status, r.error, r.taken ? { taken: r.taken } : undefined);
+    this.writeWaves(r.waves);
+    return r.wave;
+  }
+  deleteWave(id: string): { id: string } {
+    const r = removeIn(this.readWaves(), id);
+    if (!r.ok) throw refuse(r.status, r.error);
+    this.writeWaves(r.waves);
+    return { id };
+  }
+  /** Dispatch a wave (default: every package) or the named packages, as POST waves/[wave]/dispatch. */
+  dispatchWave(id: string, names?: string[]): WaveDispatchResult {
+    if (!this.prod) throw refuse(503, 'The sample is still loading');
+    const waves = this.readWaves(), wave = waves.find((w) => w.id === id);
+    if (!wave) throw refuse(404, `no wave ${id}`);
+    const pkgs = packagesOf(wave, names);
+    if (typeof pkgs === 'string') throw refuse(400, pkgs);
+    const busy = new Set<string>();
+    for (const r of this.recs) if (r.job.kind === 'execute' && (r.job.status === 'queued' || r.job.status === 'running')) for (const x of r.items) busy.add(x);
+    const approved: string[] = [], skipped: { id: string; status: string }[] = [], refs: { package: string; job: string }[] = [], at = this.iso();
+    let full = false, went = 0;
+    for (const pk of pkgs) {
+      if (full) break;
+      const go: string[] = [];
+      for (const pid of new Set(pk.ids)) {
+        const p = this.prop(pid);
+        if (!p) { skipped.push({ id: pid, status: 'unknown' }); continue; }
+        if (p.status !== 'proposed' && p.status !== 'approved') { skipped.push({ id: pid, status: p.status }); continue; }
+        if (busy.has(pid)) { skipped.push({ id: pid, status: 'in-job' }); continue; }
+        if (p.status === 'proposed') { this.setProp(pid, { status: 'approved', decided_by: 'blueprint', decided_at: at, updated_at: at }); approved.push(pid); }
+        go.push(pid);
+      }
+      went += go.length;
+      for (let i = 0; i < go.length; i += MAX_IDS) {
+        if (this.recs.filter((r) => r.job.status === 'queued').length >= MAX_QUEUED) { full = true; break; }
+        const chunk = go.slice(i, i + MAX_IDS), jid = this.queueExecute(chunk, at, { model: pk.model, effort: pk.effort, wave: wave.id, package: pk.id });
+        refs.push({ package: pk.id, job: jid });
+        for (const x of chunk) busy.add(x);
+        this.pump();
+      }
+    }
+    if (!refs.length && !full && !went) { this.changed(); throw refuse(409, 'none of these findings can be built (only proposed or approved ones that no job is building can)', { skipped }); }
+    const next = recordJobs(wave, refs, at);
+    if (refs.length) this.writeWaves(waves.map((w) => (w.id === id ? next : w)));
+    this.changed();
+    const jobs = refs.map((r) => this.recOf(r.job)!.job);
+    if (full) throw refuse(429, 'queue-full', { wave: next, jobs, approved, skipped });
+    return { wave: next, jobs, approved, skipped };
   }
 
   // ----------------------------------------------------------------------------------------- the sample train
@@ -240,9 +334,10 @@ export class ScanSim {
   private iso(t = this.now()): string { return new Date(t).toISOString(); }
   private recOf(id: string): Rec | undefined { return this.recs.find((r) => r.job.id === id); }
   /** Add a queued execute job over `ids`; answers its id (the caller pumps and notifies). */
-  private queueExecute(ids: string[], at: string): string {
-    const id = 'sim-' + ++this.nextId;
-    this.recs.push({ job: { id, kind: 'execute', proposals: ids, status: 'queued', queued_at: at }, items: ids, i: 0, stepAt: 0, step: Math.max(1500, EXEC_MS / ids.length), runId: 'run-' + id });
+  private queueExecute(ids: string[], at: string, opts: ExecOpts = {}): string {
+    const id = 'sim-' + ++this.nextId, { model, effort, wave, package: pkg } = opts;
+    const job: ScanJob = { id, kind: 'execute', proposals: ids, ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(wave ? { wave } : {}), ...(pkg ? { package: pkg } : {}), status: 'queued', queued_at: at };
+    this.recs.push({ job, items: ids, i: 0, stepAt: 0, step: Math.max(1500, EXEC_MS / ids.length), runId: 'run-' + id });
     return id;
   }
   /** Queue a release job as the build and finish routes do: 400/404/409 from the release's state, 409 when one runs, 412, 429. */

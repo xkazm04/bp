@@ -16,6 +16,7 @@
     "check:fixtures": "node scripts/check-fixtures.ts",
     "check:scan-wire": "node scripts/check-scan-wire.ts",
     "check:scan-jobs": "node scripts/check-scan-jobs.ts",
+    "check:waves": "node scripts/check-waves.ts",
     "check:live-steer": "node scripts/check-live-steer.ts",
     "check:live-tracks": "node scripts/check-live-tracks.ts",
     "check:release-train": "node scripts/check-release-train.ts",

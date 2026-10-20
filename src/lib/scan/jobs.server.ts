@@ -5,6 +5,8 @@
 // SAFE_ID here and to the map or store by the route. Each job logs to
 // `<root>/.ai/lens-scan/work/bp-jobs/<job>.log` and keeps its last lines as `log_tail`. The registry lives on
 // globalThis so a dev-server module reload keeps the running children. Server-only: route handlers import it.
+// An execute job a wave package queues (waves.server.ts) also runs with `--model <m> --effort <e>`: only values of the
+// WAVE_MODELS / WAVE_EFFORTS allow-lists reach the command line, and the job carries them with its wave and package.
 // A release job (`/lens-scan release --id <rel> [--finish]`) ends `done` by the release's status in the store, not by
 // a run alone: a cut must leave it pr-open (or later), a finish tagged; its run_id is the release-head measure run
 // the cut starts (note `bp-job:<id> · release <rel> at <sha>`), when it got that far.
@@ -13,6 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, RUN_NOTE_PREFIX, SAFE_ID, type ReleaseStep, type ScanJob, type ScanScope } from './jobs.ts';
 import { RELEASE_ID } from './release.ts';
+import { WAVE_EFFORTS, WAVE_MODELS, type WaveEffort, type WaveModel } from './waves.ts';
 import { close, openRead } from './store.server.ts';
 
 if (typeof window !== 'undefined') throw new Error('jobs.server.ts is server-only');
@@ -21,7 +24,7 @@ export { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING }; // defined in jobs.ts, where 
 export const KEEP_JOBS = 50;
 export const CLI_MISSING = 'Claude Code CLI not found (set BP_CLAUDE_BIN)';
 const TAIL_LINES = 20, TAIL_BYTES = 2048, NOTIFY_MS = 400;
-/** The flags of a job run; the prompt follows on stdin. */
+/** The flags of a job run (a wave package adds `--model` and `--effort`); the prompt follows on stdin. */
 const JOB_ARGS = ['-p', '--dangerously-skip-permissions', '--output-format', 'text'];
 
 // ------------------------------------------------------------------------------------- the CLI
@@ -155,11 +158,19 @@ export function enqueueMeasure(slug: string, root: string, lens: string, scope: 
   return enqueue(slug, root, { id: jobId(), kind: 'measure', lens, scope, status: 'queued', queued_at: now() }, prompt);
 }
 
-/** Queue an execute run over approved proposals (the route approved the proposed ones first). */
-export function enqueueExecute(slug: string, root: string, ids: string[]): Enqueued {
+/** What a wave package runs its execute job with. Absent = the CLI's default, exactly as a plain dispatch. */
+export interface ExecuteOpts { model?: WaveModel; effort?: WaveEffort; wave?: string; package?: string }
+
+/** Queue an execute run over approved proposals (the route approved the proposed ones first). `opts`: model and effort are
+ *  allow-listed (WAVE_MODELS / WAVE_EFFORTS) before they can reach the command line; wave and package are SAFE_ID; else 400 bad-opts. */
+export function enqueueExecute(slug: string, root: string, ids: string[], opts: ExecuteOpts = {}): Enqueued {
   if (!ids.length || ids.length > MAX_PROPOSALS || ids.some((i) => !SAFE_ID.test(i))) return { ok: false, status: 400, error: 'bad-ids' };
+  const { model, effort, wave, package: pkg } = opts;
+  if ((model !== undefined && !WAVE_MODELS.includes(model)) || (effort !== undefined && !WAVE_EFFORTS.includes(effort))
+    || (wave !== undefined && !SAFE_ID.test(wave)) || (pkg !== undefined && !SAFE_ID.test(pkg))) return { ok: false, status: 400, error: 'bad-opts' };
   const prompt = `/lens-scan execute --proposals ${ids.join(',')}`;
-  return enqueue(slug, root, { id: jobId(), kind: 'execute', proposals: [...ids], status: 'queued', queued_at: now() }, prompt);
+  const job: ScanJob = { id: jobId(), kind: 'execute', proposals: [...ids], ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(wave ? { wave } : {}), ...(pkg ? { package: pkg } : {}), status: 'queued', queued_at: now() };
+  return enqueue(slug, root, job, prompt);
 }
 
 /** Queue a release run: `build` cuts it (`/lens-scan release --id <rel>`), `finish` tags it (`--finish`). The route checked the
@@ -225,9 +236,11 @@ function start(slug: string, r: Rec): void {
     fs.mkdirSync(dir, { recursive: true });
     r.log = fs.createWriteStream(path.join(dir, r.job.id + '.log'), { flags: 'a' });
     r.log.on('error', () => { r.log = undefined; });
-    r.log.write(`# bp job ${r.job.id} started ${r.job.started_at}\n# prompt (stdin): ${r.prompt}\n`);
+    const opt = [r.job.model && `model ${r.job.model}`, r.job.effort && `effort ${r.job.effort}`, r.job.wave && `wave ${r.job.wave}`, r.job.package && `package ${r.job.package}`].filter(Boolean).join(' · ');
+    r.log.write(`# bp job ${r.job.id} started ${r.job.started_at}\n${opt ? `# ${opt}\n` : ''}# prompt (stdin): ${r.prompt}\n`);
   } catch { r.log = undefined; /* a read-only repo still runs; log_tail still fills */ }
-  const s = spawnCli(JOB_ARGS, r.root, { ...process.env, BP_JOB_ID: r.job.id });
+  const args = [...JOB_ARGS, ...(r.job.model ? ['--model', r.job.model] : []), ...(r.job.effort ? ['--effort', r.job.effort] : [])]; // allow-listed at enqueue
+  const s = spawnCli(args, r.root, { ...process.env, BP_JOB_ID: r.job.id });
   if (!s.ok) { finish(slug, r, 'failed', { error: s.error }); return; }
   const c = (r.child = s.child);
   c.stdout?.on('data', (d: Buffer) => onOutput(slug, r, d, false));
