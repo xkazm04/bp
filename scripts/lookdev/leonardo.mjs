@@ -80,6 +80,14 @@ function expectedCost(quality, log) {
 /** `text` with every copy of the key replaced: whatever goes to log.jsonl (committed) or stdout passes through here. */
 export const redact = (text, key) => (key ? String(text).replaceAll(key, '[redacted]') : String(text));
 
+/** Where `--out` writes: a path under lookdev/, or an error before any call is made. */
+export function outFile(name) {
+  const dest = path.resolve(DIR, name);
+  const rel = path.relative(DIR, dest);
+  if (!name || !rel || rel.startsWith('..') || path.isAbsolute(rel)) throw new Error(`--out must name a file under ${path.relative(ROOT, DIR)}: ${name}`);
+  return dest;
+}
+
 function readKey() {
   const m = fs.readFileSync(ENV_FILE, 'utf8').match(/^\s*LEONARDO_API_KEY\s*=\s*(.+?)\s*$/m);
   if (!m) throw new Error(`LEONARDO_API_KEY not found in ${ENV_FILE}`);
@@ -137,6 +145,7 @@ async function gen() {
   if (!['LOW', 'MEDIUM', 'HIGH'].includes(quality)) throw new Error(`quality must be LOW, MEDIUM or HIGH`);
   if (!Number.isInteger(seed)) throw new Error('seed must be an integer');
   const prompt = composePrompt(state, variant);
+  if (opt('out') !== undefined) outFile(opt('out')); // a bad --out stops here, before any credit is spent
 
   const log = readLog();
   const total = nightTotal(log);
@@ -178,7 +187,7 @@ async function gen() {
       const name = opt('out') ?? `explore/${state}-${variant}-s${seed}-${quality.toLowerCase()}${ext}`;
       const buf = Buffer.from(await (await fetch(url)).arrayBuffer());
       const explore = name.startsWith('explore/');
-      const dest = explore && buf.length > COMMIT_LIMIT ? path.join(OVERSIZE, path.basename(name)) : path.join(DIR, name);
+      const dest = explore && buf.length > COMMIT_LIMIT ? path.join(OVERSIZE, path.basename(name)) : outFile(name);
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.writeFileSync(dest, buf);
       entry.committed = dest.startsWith(DIR);
