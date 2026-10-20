@@ -7,7 +7,6 @@
 //     panel cannot read --lens (see the comment there).
 // Each copy is compared with its source; a copy or a source that cannot be found is a failure, not a skip.
 // Run: node src/variants/check-copies.ts  (Node's type stripping; no build step). Exit 1 on any disagreement.
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readStripped } from '../../../../scripts/lib/source.ts';
