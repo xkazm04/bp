@@ -43,7 +43,6 @@ let held = 0;
 const failures: string[] = [];
 const expect = (ok: boolean, what: string, detail = '') => { if (ok) held++; else failures.push(what + (detail ? ': ' + detail : '')); };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-async function until(pred: () => boolean, ms = 15000): Promise<boolean> { const t = Date.now() + ms; while (Date.now() < t) { if (pred()) return true; await sleep(50); } return pred(); }
 
 // ------------------------------------------------------------------ a live product over the fake CLI
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-live-steer-'));
