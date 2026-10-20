@@ -4,10 +4,16 @@ This folder will hold the Unreal Engine 5.8 project for bp's VR channel: a PC-te
 with Meta XR v207 and the Meta Interaction SDK, drawing the product at a backlit light table
 (`docs/concepts/vr-light-table/`).
 
-Nothing is here yet, on purpose. Unreal is not installed on the machine this was laid out on, and
+There is no Unreal project here yet, on purpose. Unreal is not installed on the machine this was laid out on, and
 the project is created in phase P3 (WP3.1) on the GPU workstation, after P0 has installed UE 5.8.2
 and the Meta plugins (mage-arena-vr's `apps/vr/tools/install-xr.ps1`, adapted to this folder). Do not
 add a `.uproject` by hand.
+
+What is here: the `BpLink` module source, `Source/BpLink/` (`BpLink.Build.cs`, `Public/`, `Private/`), and the ordered
+UE-host steps with their proofs, [`WP3.1.md`](WP3.1.md). **The module source has not been compiled against Unreal, and it
+has not been syntax-checked either: the machine it was written on has no clang.** WP3.1 is not run on any UE host. The
+module includes the generated headers by path from `packages/schema/generated/ue` (no copy), so `check:schema` stays the
+single source.
 
 What the client will consume, already in this repo:
 
