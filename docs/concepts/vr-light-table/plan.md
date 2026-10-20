@@ -129,6 +129,9 @@ Image work on the GPU box, judged by the owner.
   pose, no text on the object.
 - **Gate:** the owner approves one reference sheet: the target plus the state frames. It becomes
   the art bible for P3 to P6.
+  - 2026-10-20: gate met. The owner approved `reference-sheet.md` (82a0743), which is now the art
+    bible for P3 to P6. The prop concept sheets for P4 (the third bullet above) are still open and
+    were not part of this gate.
 
 ## P3 Greybox slice
 

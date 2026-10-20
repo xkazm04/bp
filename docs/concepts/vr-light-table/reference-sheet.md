@@ -245,4 +245,4 @@ The API reported the cost of every call itself (`creditsSource: "api"` in the lo
 was never probed, since the MEDIUM picks and retries used the budget down to the 390 guard. No state is
 left at LOW, and none is missing.
 
-Owner approval: pending
+Owner approval: approved 2026-10-20 by the owner (operator, terminal note 21:46Z), on the sheet as merged in 82a0743. From here on this sheet is the art bible for P3 to P6.
