@@ -6,6 +6,7 @@
 // `{ job, approved, skipped }` (`approved` = the ids this call approved; `job.proposals` = every id it builds);
 // 409 `{ error, skipped }` when none could go; 400 for a bad body; 404 for an unknown product or a missing store;
 // 429 when 16 jobs are queued (the approvals stand); 503 when the store stayed locked. Localhost only.
+import { unknownProduct } from '@bp/core/server/products.server';
 import { findProduct, hasStore, storeFile } from '@bp/core/server/products.server';
 import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
 import { SAFE_ID } from '@bp/core/scan/jobs';
@@ -19,7 +20,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   if (notJson) return Response.json({ error: notJson }, { status: 415 });
   const { slug } = await params;
   const p = findProduct(slug);
-  if (!p) return Response.json({ error: `unknown product ${slug}` }, { status: 404 });
+  if (!p) return unknownProduct(slug);
   let body: unknown;
   try { body = await req.json(); } catch { return Response.json({ error: 'body must be JSON' }, { status: 400 }); }
   const ids = (body as { ids?: unknown } | null)?.ids;

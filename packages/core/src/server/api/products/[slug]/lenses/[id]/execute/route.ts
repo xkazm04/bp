@@ -7,6 +7,7 @@
 // go; 400 `{ error: 'unknown-lens' }` for a lens the map lacks or has disabled; 404 for an unknown product, a missing
 // map or a missing store; 429 `{ error, jobs, approved, skipped }` when the queue cap stopped it (the approvals stand,
 // `jobs` holds the ones queued before the cap); 503 when the store stayed locked. Localhost only.
+import { unknownProduct } from '@bp/core/server/products.server';
 import { findProduct, hasStore, storeFile } from '@bp/core/server/products.server';
 import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
 import { SAFE_ID, type ScanJob } from '@bp/core/scan/jobs';
@@ -22,7 +23,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   const { slug, id: lens } = await params;
   try { await req.json(); } catch { return Response.json({ error: 'body must be JSON' }, { status: 400 }); }
   const p = findProduct(slug);
-  if (!p) return Response.json({ error: `unknown product ${slug}` }, { status: 404 });
+  if (!p) return unknownProduct(slug);
   const map = readLensesAndFeatures(p);
   if (!map) return Response.json({ error: `no readable structure for ${slug}` }, { status: 404 });
   if (!map.lenses.some((e) => e.id === lens && e.enabled)) return Response.json({ error: 'unknown-lens' }, { status: 400 });

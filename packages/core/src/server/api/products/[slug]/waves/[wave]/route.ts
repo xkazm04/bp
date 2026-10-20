@@ -2,6 +2,7 @@
 // are numbered pk-1... again). 200 `{ wave }`; 400 `{ error }` for a bad body or wave id; 404 for an unknown product, wave or
 // missing store; 409 `{ error }` when the wave was dispatched, `{ error, taken }` when a finding is in another draft wave.
 // DELETE /api/products/[slug]/waves/[wave]: delete a draft wave. 200 `{ id }`; 404; 409 when it was dispatched. Localhost only.
+import { unknownProduct } from '@bp/core/server/products.server';
 import { findProduct, hasStore } from '@bp/core/server/products.server';
 import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
 import { SAFE_ID } from '@bp/core/scan/jobs';
@@ -14,7 +15,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
   if (notJson) return Response.json({ error: notJson }, { status: 415 });
   const { slug, wave } = await params;
   const p = findProduct(slug);
-  if (!p) return Response.json({ error: `unknown product ${slug}` }, { status: 404 });
+  if (!p) return unknownProduct(slug);
   if (!SAFE_ID.test(wave)) return Response.json({ error: 'bad wave id' }, { status: 400 });
   let body: unknown;
   try { body = await req.json(); } catch { return Response.json({ error: 'body must be JSON' }, { status: 400 }); }
@@ -30,7 +31,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ slug:
   if (denied) return Response.json({ error: denied }, { status: 403 });
   const { slug, wave } = await params;
   const p = findProduct(slug);
-  if (!p) return Response.json({ error: `unknown product ${slug}` }, { status: 404 });
+  if (!p) return unknownProduct(slug);
   if (!SAFE_ID.test(wave)) return Response.json({ error: 'bad wave id' }, { status: 400 });
   if (!hasStore(p)) return Response.json({ error: `no scan store for ${slug}` }, { status: 404 });
   try {

@@ -13,6 +13,10 @@ What the client will consume, already in this repo:
 
 - `apps/server`: the product over HTTP and SSE (`npm run server`, `http://127.0.0.1:3100`), the same
   handlers apps/web mounts (`packages/core/src/server/api`).
+- Kettle, read-only, with no product registered: `GET /api/products/kettle/structure` answers
+  `{ structure, events, rev }` from `packages/core/data` (13 wings in `structure.domains`, rooms and fixtures in
+  `capabilities`/`features`, the 8 lens manifests in `structure.lenses`, the event log in `events`). Kettle is not in
+  `GET /api/products`, and every write route answers it 405.
 - `packages/schema`: the app-structure v3 JSON Schemas and the UE `USTRUCT` headers generated from
   them, so `FJsonObjectConverter` fills the structs with no hand-written parsing.
 

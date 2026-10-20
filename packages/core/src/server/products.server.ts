@@ -3,6 +3,7 @@
 // is built in and never listed. Server-only: route handlers import this, client components never do.
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { ProductEntry } from '../scan/types';
 
 if (typeof window !== 'undefined') throw new Error('products.server.ts is server-only');
@@ -52,3 +53,20 @@ export function findProduct(slug: string): ProductEntry | null {
 }
 
 export const hasStore = (p: ProductEntry): boolean => fs.existsSync(storeFile(p));
+
+/** The built-in Kettle sample: read-only, served only while no registered product is named `kettle`. */
+export const KETTLE_SLUG = 'kettle';
+const KETTLE_DATA = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../data');
+
+/** Kettle's map and events from packages/core/data, or null when `slug` is not the built-in sample (or a product shadows it). */
+export function kettleSample(slug: string): { structureFile: string; eventsFile: string } | null {
+  if (slug !== KETTLE_SLUG || findProduct(slug)) return null;
+  return { structureFile: path.join(KETTLE_DATA, 'kettle.app-structure.json'), eventsFile: path.join(KETTLE_DATA, 'kettle.events.jsonl') };
+}
+
+/** The 4xx for a product the route cannot resolve: Kettle is a read-only sample (405), anything else is unknown (404). */
+export function unknownProduct(slug: string): Response {
+  return slug === KETTLE_SLUG
+    ? Response.json({ error: 'kettle is the built-in read-only sample: only GET /api/products/kettle/structure answers it' }, { status: 405 })
+    : Response.json({ error: `unknown product ${slug}` }, { status: 404 });
+}

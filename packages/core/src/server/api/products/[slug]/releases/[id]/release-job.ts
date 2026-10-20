@@ -2,6 +2,7 @@
 // `rel-<version>`, after the route's localhost guards. 202 + the ScanJob; 400 for a bad release id; 404 for an unknown product, store or release; 409 when
 // the release is in no state for that step (build: draft or failed; finish: pr-open or merged) or already has a job
 // queued or running; 412 `{ error: 'gh not authenticated' }` when `gh auth status` fails; 429 when 16 jobs are queued.
+import { unknownProduct } from '@bp/core/server/products.server';
 import { findProduct, hasStore, storeFile } from '@bp/core/server/products.server';
 import type { ReleaseStep } from '@bp/core/scan/jobs';
 import { enqueueRelease, releaseBusy } from '@bp/core/server/jobs.server';
@@ -16,7 +17,7 @@ export async function startRelease(req: Request, params: Promise<{ slug: string;
   void req; // the route guarded it (localOnly, jsonOnly); a release job takes no body
   const { slug, id } = await params;
   const p = findProduct(slug);
-  if (!p) return Response.json({ error: `unknown product ${slug}` }, { status: 404 });
+  if (!p) return unknownProduct(slug);
   if (!RELEASE_ID.test(id)) return Response.json({ error: 'bad-release' }, { status: 400 });
   if (!hasStore(p)) return Response.json({ error: `no scan store for ${slug}` }, { status: 404 });
   let rel: Release | undefined;

@@ -3,6 +3,7 @@
 // (`shots/<run>/<feature>-<theme>-<size>.png`); its leading `shots/` may be kept or dropped in the URL.
 // Anything that would resolve outside `<store>/shots` is refused with 403: `..`, `.`, empty, absolute or
 // drive segments, separators smuggled in an encoded segment (`..%2F..`), NUL, and symlinks pointing out.
+import { unknownProduct } from '@bp/core/server/products.server';
 import fs from 'node:fs';
 import path from 'node:path';
 import { findProduct, storeDir } from '@bp/core/server/products.server';
@@ -25,7 +26,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   if (denied) return Response.json({ error: denied }, { status: 403 });
   const { slug, path: segs } = await params;
   const p = findProduct(slug);
-  if (!p) return Response.json({ error: `unknown product ${slug}` }, { status: 404 });
+  if (!p) return unknownProduct(slug);
   if (!segs?.length || segs.some((s) => !s || s === '.' || s === '..' || BAD_SEGMENT.test(s) || path.isAbsolute(s))) return forbidden();
   const root = path.join(storeDir(p), 'shots');
   // A full Shot.path (`shots/...`) is accepted too: try it as given, then without the leading `shots`.

@@ -9,6 +9,7 @@
 // 400 for a bad body (or one store.mjs calls bad input); 404 for an unknown product or a missing store; 503 when
 // lens-scan is not installed or the store stayed locked. The stream sees the write through the store's data_version.
 // Localhost only.
+import { unknownProduct } from '@bp/core/server/products.server';
 import { findProduct, hasStore, storeFile } from '@bp/core/server/products.server';
 import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
 import { SAFE_ID } from '@bp/core/scan/jobs';
@@ -37,7 +38,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   if (notJson) return Response.json({ error: notJson }, { status: 415 });
   const { slug } = await params;
   const p = findProduct(slug);
-  if (!p) return Response.json({ error: `unknown product ${slug}` }, { status: 404 });
+  if (!p) return unknownProduct(slug);
   let raw: unknown;
   try { raw = await req.json(); } catch { return Response.json({ error: 'body must be JSON' }, { status: 400 }); }
   const body = parse(raw);

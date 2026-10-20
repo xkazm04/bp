@@ -6,6 +6,7 @@
 // body or package; 404 for an unknown product, wave or missing store; 429 `{ error, wave, jobs, approved, skipped }` when the
 // queue cap stopped it (the jobs queued so far are recorded in the wave, the approvals stand); 503 when the store stayed locked.
 // Localhost only.
+import { unknownProduct } from '@bp/core/server/products.server';
 import { findProduct, hasStore } from '@bp/core/server/products.server';
 import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
 import { SAFE_ID } from '@bp/core/scan/jobs';
@@ -18,7 +19,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   if (notJson) return Response.json({ error: notJson }, { status: 415 });
   const { slug, wave } = await params;
   const p = findProduct(slug);
-  if (!p) return Response.json({ error: `unknown product ${slug}` }, { status: 404 });
+  if (!p) return unknownProduct(slug);
   if (!SAFE_ID.test(wave)) return Response.json({ error: 'bad wave id' }, { status: 400 });
   let body: unknown;
   try { body = await req.json(); } catch { return Response.json({ error: 'body must be JSON' }, { status: 400 }); }

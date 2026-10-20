@@ -5,6 +5,7 @@
 // only, never an arbitrary object of the repo. 200 with `cache-control: private, max-age=3600` (a commit never
 // changes); 400 for a bad or ambiguous sha; 404 for an unknown product, a missing store, a sha that is no item commit,
 // or one the repo does not have; 503 when the store cannot be read or git does not run. Localhost only.
+import { unknownProduct } from '@bp/core/server/products.server';
 import { findProduct, hasStore, storeFile } from '@bp/core/server/products.server';
 import { localHost } from '@bp/core/scan/local-only';
 import { close, openRead } from '@bp/core/server/store.server';
@@ -27,7 +28,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   if (denied) return Response.json({ error: denied }, { status: 403 });
   const { slug, sha } = await params;
   const p = findProduct(slug);
-  if (!p) return Response.json({ error: `unknown product ${slug}` }, { status: 404 });
+  if (!p) return unknownProduct(slug);
   if (!SHA.test(sha)) return Response.json({ error: 'sha must be 7-40 hex characters' }, { status: 400 });
   if (!hasStore(p)) return Response.json({ error: `no scan store for ${slug}` }, { status: 404 });
   let shas: string[];

@@ -14,6 +14,7 @@
 //                    sends a snapshot. An absent store is NOT an error: it gets the empty snapshot.
 // The change check is `PRAGMA data_version` on ONE long-lived read connection: it moves only when another
 // connection (the skill, or a decision) commits, so an idle store costs one pragma a second.
+import { unknownProduct } from '@bp/core/server/products.server';
 import fs from 'node:fs';
 import { findProduct, recovered, storeDir, storeFile, warnOnce } from '@bp/core/server/products.server';
 import { localHost } from '@bp/core/scan/local-only';
@@ -29,7 +30,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   if (denied) return Response.json({ error: denied }, { status: 403 });
   const { slug } = await params;
   const p = findProduct(slug);
-  if (!p) return Response.json({ error: `unknown product ${slug}` }, { status: 404 });
+  if (!p) return unknownProduct(slug);
   const file = storeFile(p), enc = new TextEncoder(), logKey = `stream ${slug} (${file})`;
   let db: ReturnType<typeof openRead> = null, dv = -1, cur: Cursor = newCursor();
   const dir = storeDir(p);

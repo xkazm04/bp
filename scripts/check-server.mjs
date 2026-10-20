@@ -3,6 +3,8 @@
 // working directory (so no product is registered), and checks:
 //   routes   the server's printed route table (`route <methods> <path>`) is exactly the web app's: one line per
 //            apps/web/src/app/api/**/route.ts, the same methods its thin mount re-exports
+//   kettle   with no products file GET /api/products/kettle/structure answers the built-in sample ({ structure, events, rev },
+//            wing count = packages/core/data's), and a Kettle write answers 4xx (Kettle stays unlisted)
 //   http     GET /api/products answers 200 [] (no products file), an unknown path 404, a method the route lacks 405
 //            with Allow, a foreign Host 403 and a non-JSON write 415: the guards run under this mount too
 // The live-product walk (structure, SSE stream, waves, shots) is scripts/smoke-live.mjs against `npm run server`.
@@ -58,6 +60,17 @@ try {
 
     const list = await req('GET', '/api/products');
     check('GET /api/products: 200 [] with no products file', list.status === 200 && list.body.trim() === '[]', `${list.status} ${list.body.slice(0, 80)}`);
+    const kdata = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.app-structure.json'), 'utf8'));
+    const wantWings = kdata.domains.length;
+    const ks = await req('GET', '/api/products/kettle/structure');
+    let kb = null; try { kb = JSON.parse(ks.body); } catch { /* reported below */ }
+    check(`GET /api/products/kettle/structure: 200 with no products file (${kb?.structure?.domains?.length ?? '?'} wings)`, ks.status === 200 && !!kb?.structure && typeof kb.events === 'string' && typeof kb.rev === 'string', `${ks.status} ${ks.body.slice(0, 80)}`);
+    check(`kettle structure: wing count equals the data's ${wantWings}`, kb?.structure?.domains?.length === wantWings, `${kb?.structure?.domains?.length}`);
+    check('kettle structure: lens manifests served', kb?.structure?.lenses?.length === kdata.lenses.length && kdata.lenses.length > 0, `${kb?.structure?.lenses?.length}`);
+    const kw = await req('POST', '/api/products/kettle/scan', { 'content-type': 'application/json' }, '{}');
+    check('a Kettle write: 4xx', kw.status >= 400 && kw.status < 500, `${kw.status}`);
+    const kl = await req('GET', '/api/products');
+    check('Kettle stays unlisted: GET /api/products still []', kl.status === 200 && kl.body.trim() === '[]', kl.body.slice(0, 80));
     const none = await req('GET', '/api/nothing-here');
     check('an unknown path: 404', none.status === 404, `${none.status}`);
     const nope = await req('DELETE', '/api/products');

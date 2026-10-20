@@ -4,6 +4,7 @@
 // else patch; with no tag, the manifest's version as it stands (package.json, Cargo.toml, tauri.conf.json at the root or
 // src-tauri/app/desktop), else 0.1.0. A version the store already has a release for is passed over. 404 for an unknown
 // product; 503 when the store cannot be read. Localhost only.
+import { unknownProduct } from '@bp/core/server/products.server';
 import { findProduct, storeFile } from '@bp/core/server/products.server';
 import { localHost } from '@bp/core/scan/local-only';
 import { unreleased } from '@bp/core/scan/compare';
@@ -17,7 +18,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   if (denied) return Response.json({ error: denied }, { status: 403 });
   const { slug } = await params;
   const p = findProduct(slug);
-  if (!p) return Response.json({ error: `unknown product ${slug}` }, { status: 404 });
+  if (!p) return unknownProduct(slug);
   let scan: ScanSnapshot;
   try { scan = snapshotOf(storeFile(p)); } catch (e) { return Response.json({ error: `cannot read the scan store: ${(e as Error).message}` }, { status: 503 }); }
   const tags = await versionTags(p.root);
