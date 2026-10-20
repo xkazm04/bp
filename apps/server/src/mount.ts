@@ -73,9 +73,14 @@ const json = (res: ServerResponse, status: number, body: unknown, headers: Recor
 /** The request listener: route, adapt, call, stream back. */
 export function listener(routes: Route[]) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
-    const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
-    let route: Route | undefined, params: Params | null = null;
-    for (const r of routes) if ((params = r.match(url.pathname))) { route = r; break; }
+    // A Host no URL can carry and a malformed percent-escape both throw here; uncaught, they would end the process.
+    let url: URL, route: Route | undefined, params: Params | null = null;
+    try {
+      url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+      for (const r of routes) if ((params = r.match(url.pathname))) { route = r; break; }
+    } catch {
+      return json(res, 400, { error: 'malformed request URL or Host' });
+    }
     if (!route || !params) return json(res, 404, { error: `no route ${url.pathname}` });
     const method = (req.method ?? 'GET').toUpperCase() as Method;
     const handler = route.handlers[method];
