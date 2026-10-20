@@ -1,5 +1,5 @@
 // The one fixture gate (check:standard-fixtures delegates here). Holds the validator and the evaluator to what docs/standard/app-structure-v3.md §12 says the fixtures in
-// docs/standard/schema/fixtures/ do: the valid ones pass, each invalid one fails FOR ITS STATED REASON, and
+// packages/schema/schema/fixtures/ do: the valid ones pass, each invalid one fails FOR ITS STATED REASON, and
 // valid-applies-when.json evaluates to the healths the spec lists. Without this, a validator change that
 // drops an error (or the evaluator changing precedence) passes every other gate.
 // Run: node scripts/check-fixtures.ts  (Node's type stripping; no build step). Exit 1 when any expectation fails.
@@ -12,7 +12,7 @@ import { loadStructure } from '../packages/core/src/standard/load.ts';
 import type { AppStructure, Health } from '../packages/core/src/standard/types.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const FIX = 'docs/standard/schema/fixtures';
+const FIX = 'packages/schema/schema/fixtures';
 // the default run validates every built-in and every custom lens manifest; count them rather than pin a number
 const LENS_FILES = ['docs/standard/lenses', 'docs/standard/lenses-custom']
   .reduce((n, d) => n + fs.readdirSync(path.join(ROOT, d)).filter((f) => f.endsWith('.json')).length, 0);

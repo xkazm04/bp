@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Validates app-structure v3 maps and lens manifests: the JSON Schemas in docs/standard/schema
+// Validates app-structure v3 maps and lens manifests: the JSON Schemas in packages/schema/schema
 // (draft 2020-12, via ajv), then the checks a schema cannot express (references resolve, keys are
 // unique, facet values fit their fields). Spec: docs/standard/app-structure-v3.md.
 //
@@ -18,7 +18,7 @@ import { NUMERIC } from '../packages/core/src/standard/present.ts';
 
 const Ajv2020 = Ajv2020Module.default ?? Ajv2020Module;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const SCHEMA_DIR = path.join(ROOT, 'docs/standard/schema');
+const SCHEMA_DIR = path.join(ROOT, 'packages/schema/schema');
 const LENS_DIR = path.join(ROOT, 'docs/standard/lenses');
 const CUSTOM_DIR = path.join(ROOT, 'docs/standard/lenses-custom');
 /** What a condition operand must be for a field type (spec 8.3: no coercion, so another type never matches). */

@@ -68,8 +68,10 @@ packages/core/src/data/        the data types, the map loader and the Kettle sam
 packages/core/src/server/      the Node-only half: store, products registry, job runner, git and release (*.server.ts)
 packages/core/data/            fixtures: kettle.app-structure.json + kettle.events.jsonl (the product, v3),
                                swarm.json (the simulated swarm), kettle.json (the original sample)
+packages/schema/               app-structure v3 JSON Schemas + generators: TypeScript types and Unreal USTRUCTs
+apps/vr/                       the Unreal 5.8 VR client (a placeholder until P3; see its README)
 docs/blueprint-ui.md           the UI contract: levels, 12 px text floor, performance rules, lenses as data
-docs/standard/                 app-structure v3: spec, analysis, JSON Schemas, lens manifests, Personas brief
+docs/standard/                 app-structure v3: spec, analysis, lens manifests, Personas brief
 docs/research/users.md         the user analysis: eight people, eleven moments of use
 docs/contest-history.md        how the design was chosen, with the owner's verbatim verdicts
 docs/fixtures/kettle-sample.md field reference for the original sample
@@ -104,6 +106,8 @@ exactly its core handler; known gaps are listed in the script and reported on ea
 `check:core-purity` fails when `packages/core` imports React, Next or Motion, the web app (`@/`, `apps/`), or (outside
 `src/server`) a Node built-in or a server file, when its pure half does not typecheck without the DOM lib, or when `apps/web` reaches
 core by a relative path instead of `@bp/core/*`; seeded controls prove each rule red on every run.
+`check:schema` fails when `packages/schema/generated/` (the TypeScript types and the Unreal header) is stale against the
+schemas; `npm run schema:generate` rewrites both. `check:server` starts apps/server and compares its routes with the web mounts.
 `check:python-deps` needs Python and is skipped (and reported as skipped) when `python` is not on PATH.
 The production build warns "Dynamic filesystem access causes tracing of the whole project" for the
 products shots route; that is expected and not a check failure.

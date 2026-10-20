@@ -22,7 +22,7 @@ const expect = (what: string, got: string | null, want: string | null) => {
   if (ok) held++; else failures.push(`${what}: got ${JSON.stringify(got)}, expected ${want === null ? 'accepted' : JSON.stringify(want)}`);
 };
 
-const steps = read('docs/standard/schema/fixtures/valid-steps-lens.json');
+const steps = read('packages/schema/schema/fixtures/valid-steps-lens.json');
 const base = () => structuredClone(steps);
 const withId = (id: string) => ({ ...base(), id });
 const proj = (m: unknown, taken?: TakenLook[]) => checkLensManifest(m, { mode: 'project', taken });

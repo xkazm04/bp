@@ -589,7 +589,7 @@ try {
   } finally { sim.dispose(); delete (globalThis as { localStorage?: unknown }).localStorage; }
 
   // ------------------------------------------------------------------ the standard accepts the entry
-  const valid = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/standard/schema/fixtures/valid-map.json'), 'utf8'));
+  const valid = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/schema/schema/fixtures/valid-map.json'), 'utf8'));
   const entry = { id: MANIFEST.id, version: '1.0.0', source: 'project', enabled: true, temporary: true, created_at: '2026-10-13T10:00:00.000Z', manifest: MANIFEST };
   const vf = path.join(dir, 'tmp-lens-map.json'), wf = path.join(dir, 'tmp-lens-wrong.json');
   fs.writeFileSync(vf, JSON.stringify({ ...valid, lenses: [...valid.lenses, entry] }));

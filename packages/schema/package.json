@@ -1,0 +1,11 @@
+{
+  "name": "@bp/schema",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "app-structure v3: the JSON Schemas (normative) and the generators that turn them into TypeScript types and Unreal USTRUCTs.",
+  "exports": {
+    "./schema/*": "./schema/*",
+    "./generated/ts": "./generated/ts/app-structure.ts"
+  }
+}

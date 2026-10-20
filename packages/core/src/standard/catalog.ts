@@ -1,6 +1,6 @@
 // The built-in lens catalog: the seven manifests that ship with the standard. A project's map holds its
 // own copy of each manifest it uses (catalog plus snapshot), so this is where copies come from, not
-// what the blueprint draws from. The JSON files are the source; docs/standard/schema validates them.
+// what the blueprint draws from. The JSON files are the source; packages/schema/schema validates them.
 // The JSON imports carry `with { type: 'json' }` so Node (type stripping) can load this module as the
 // bundler does, and a script reads the catalog from here instead of re-listing the seven files.
 import business from '../../../../docs/standard/lenses/business.json' with { type: 'json' };

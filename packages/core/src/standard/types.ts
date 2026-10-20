@@ -1,5 +1,5 @@
 // Types for the app-structure v3 standard (context-map.json v3) and lens manifests v1. They mirror
-// docs/standard/schema/*.schema.json, which are normative; the spec is docs/standard/app-structure-v3.md.
+// packages/schema/schema/*.schema.json, which are normative; the spec is docs/standard/app-structure-v3.md.
 // This file holds types and one constant only (the bound-field whitelist), so Node can load the
 // evaluator with type stripping. The built-in lens ids are not listed here: the catalog (catalog.ts)
 // is the list, and code never branches on a lens id.

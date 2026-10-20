@@ -35,7 +35,7 @@ written as JSON data, and how it should be drawn. Seven built-in lenses ship in 
 
 The key words MUST, MUST NOT, SHOULD, SHOULD NOT and MAY are used as in RFC 2119.
 
-The JSON Schemas (draft 2020-12) in `docs/standard/schema/` are normative for structure:
+The JSON Schemas (draft 2020-12) in `packages/schema/schema/` are normative for structure:
 
 | Schema | Validates |
 |---|---|
@@ -741,7 +741,7 @@ advisory, section 6.7) a feature with `variations` none of whose contexts' `file
 `customizations/` segment.
 Notes: orphaned facets, overrides expired on the map's as-of date (`generated_at`, else today).
 
-Fixtures in `docs/standard/schema/fixtures/`:
+Fixtures in `packages/schema/schema/fixtures/`:
 - `valid-map.json` with `valid-map.events.jsonl`: the example in section 14.
 - `valid-applies-when.json`: a custom lens with feature-bound `stage` and `tier` and an
   `applies_when`. Read on any date: `book-a-class` (live, major, 25 tickets) is `bad`;
@@ -800,7 +800,7 @@ every other feature reads unmeasured on it; the health check holds performance t
 
 ## 14. Example
 
-A complete, valid map (`docs/standard/schema/fixtures/valid-map.json`; its `com.kettle.cost` is a reduced draft at
+A complete, valid map (`packages/schema/schema/fixtures/valid-map.json`; its `com.kettle.cost` is a reduced draft at
 version 0.0.1, distinct from the Kettle sample's 0.1.0 in `docs/standard/lenses-custom/`): one group, two contexts,
 two features in one capability, a milestone, a KPI, one built-in lens (security, which binds the
 feature's `stage` and has an `applies_when`) and one custom lens bound to the KPI, facets with an
