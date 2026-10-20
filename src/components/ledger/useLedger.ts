@@ -10,6 +10,11 @@
 // optimistic: the proposed ones read approved until the next store or sim update, and a refusal rolls back with a toast.
 // Two scopes over the same findings: In packs (the built items of the lens packs, grouped by pack, oldest pack first:
 // `packs`, triaged through train/Decide.tsx) and Backlog (every finding, dispatched from here). The filters apply to both.
+// Waves (useWaves.ts, waves/*): `waves` is the product's wave model; `LedgerUi.wave` is the selected wave tab (the backlog's
+// `rows` keep only its findings) and `LedgerUi.composer` the open wave composer. `waveTag(id)` hands a row its wave chip as
+// primitives (a stable callback: the memoised rows never see an object), `waveReady` / `waveTaken` split the dispatchable
+// selection into what a new wave can take and what another draft wave already holds, and `dispatchWave` goes through the same
+// optimistic overlay as `dispatchIds`.
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { isView, lineSuffix } from '@/lib/model';
 import { emptyScan, type Measurement, type Pack, type Proposal, type ProposalSize, type ProposalStatus, type ScanSnapshot, type TriageDecision } from '@/lib/scan/types';
@@ -21,6 +26,8 @@ import type { LedgerVariant } from '@/engine/state';
 import type { GlyphSpec } from '@/engine/render/lens-glyph';
 import { metricMove } from '../Queue';
 import { useEngine, useLive, useScanCtx } from '../hooks';
+import { useWaves, type WavesModel } from './useWaves';
+import type { Wave, WaveDispatchResult } from '@/lib/scan/waves';
 import { byPackAge } from '@/lib/train/rules';
 
 /** Status order everywhere in the ledger: open first, then moving, then built and waiting, then a person's triage and
@@ -139,7 +146,13 @@ export interface LedgerUi {
   pending: ReadonlyMap<string, ProposalStatus>;
   /** A decision waiting for its note (the note editor shows in the decision bar, or in the compare footer). */
   note: NoteAsk | null;
+  /** The backlog's selected wave tab (a wave id): the table keeps only its findings. null = All. */
+  wave: string | null;
+  /** The wave composer: closed (null), or open for a new wave over `ids` / for editing wave `edit`. */
+  composer: ComposerAsk | null;
 }
+/** What the wave composer opened for: `edit` the draft wave being changed (absent: a new wave), `ids` the findings it starts with. */
+export interface ComposerAsk { edit?: string; ids: readonly string[] }
 /** A decision that needs a note before it is sent (src/lib/train/rules.ts noteRequired). */
 export interface NoteAsk { ids: readonly string[]; decision: Exclude<TriageDecision, 'reopen'>; at: 'bar' | 'compare' }
 export type LedgerScope = 'packs' | 'backlog';
@@ -148,7 +161,7 @@ export type CompareMode = 'side' | 'slider' | 'blink' | 'map';
 export interface CompareView { theme: CompareTheme; mode: CompareMode }
 export const EMPTY_UI: LedgerUi = {
   sel: new Set(), lens: new Set(), status: new Set(), feat: new Set(), q: '', focus: null,
-  scope: 'packs', open: null, cmp: { theme: 'light', mode: 'side' }, wide: false, pending: new Map(), note: null,
+  scope: 'packs', open: null, cmp: { theme: 'light', mode: 'side' }, wide: false, pending: new Map(), note: null, wave: null, composer: null,
 };
 export type SetUi = (f: (u: LedgerUi) => LedgerUi) => void;
 
@@ -223,6 +236,21 @@ export interface Ledger {
   move(p: Proposal): string | null;
   /** The keyboard order of the view shown in the current scope (J/K). Matrix rows are `feat:<slug>`. */
   order(lv: LedgerVariant): readonly string[];
+  /** The product's waves (useWaves.ts). */
+  waves: WavesModel;
+  /** A finding's wave chip as strings, or undefined when no wave holds it. Stable until the waves change. */
+  waveTag(id: string): { wave: string; pkg: string; model: string; effort: string } | undefined;
+  /** The selection's dispatchable findings a new wave can take (none of them sits in a draft wave). */
+  waveReady: readonly Finding[];
+  /** The selection's dispatchable findings that a draft wave already holds, with that wave. */
+  waveTaken: readonly { f: Finding; wave: Wave }[];
+  /** Open the composer: for a new wave over `waveReady`, or (with `edit`) for that draft wave. */
+  openComposer(edit?: string): void;
+  closeComposer(): void;
+  /** Select a wave's tab (null: All). */
+  showWave(id: string | null): void;
+  /** Dispatch a wave or some of its packages; the proposed ones read approved at once, a refusal rolls them back. */
+  dispatchWave(id: string, packages?: string[]): Promise<WaveDispatchResult | null>;
 }
 
 export function lensMeta(P: ReturnType<typeof useEngine>['M']['P'], id: string): Omit<LensCol, 'n'> {
@@ -237,6 +265,7 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
   // the optimistic overlay: cleared by the next store or sim update (the rows then say what really happened)
   const [over, setOver] = useState<ReadonlyMap<string, ProposalStatus>>(() => new Map());
   const [busy, setBusy] = useState(false);
+  const waves = useWaves(ctx, src.jobs);
   useEffect(() => { setOver((o) => (o.size ? new Map() : o)); }, [src.proposals]);
 
   // the plan's features by slug (line 0 at ?scale > 1), names and domains from the map
@@ -282,9 +311,14 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
   const keep = useCallback((f: Finding) => (!ui.lens.size || ui.lens.has(f.p.lens)) && (!ui.status.size || ui.status.has(f.status)) && (!ui.feat.size || ui.feat.has(f.p.feature)) && textOk(f),
     [ui.lens, ui.status, ui.feat, textOk]);
   const rank = useMemo(() => new Map(STATUSES.map((s, i) => [s, i])), []);
-  const rows = useMemo(() => all.filter(keep)
+  // the selected wave tab keeps its findings only (a wave the list does not have, yet or any more, filters nothing)
+  const waveIds = useMemo(() => {
+    const w = ui.wave ? waves.waves.find((x) => x.id === ui.wave) : undefined;
+    return w ? new Set(w.packages.flatMap((p) => p.ids)) : null;
+  }, [ui.wave, waves.waves]);
+  const rows = useMemo(() => all.filter((f) => keep(f) && (!waveIds || waveIds.has(f.p.id)))
     // tier first (untriaged after tier 3, contract v4), then status rank, then value per effort
-    .sort((a, b) => tierRank(a.p.tier) - tierRank(b.p.tier) || (rank.get(a.status) ?? STATUSES.length) - (rank.get(b.status) ?? STATUSES.length) || byRank(a, b)), [all, keep, rank]);
+    .sort((a, b) => tierRank(a.p.tier) - tierRank(b.p.tier) || (rank.get(a.status) ?? STATUSES.length) - (rank.get(b.status) ?? STATUSES.length) || byRank(a, b)), [all, keep, rank, waveIds]);
 
   // the packs, oldest first (rules.ts byPackAge); a pack's items in created order (store.mjs `proposals --pack`), the kept ones beside them
   const packList = src.scan?.packs;
@@ -301,6 +335,11 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
   const scoped = useMemo(() => (ui.scope === 'packs' ? packs.flatMap((k) => k.shown) : rows), [ui.scope, packs, rows]);
 
   const ready = useMemo(() => all.filter((f) => f.can && ui.sel.has(f.p.id)), [all, ui.sel]);
+  const { waveReady, waveTaken } = useMemo(() => {
+    const ok: Finding[] = [], taken: { f: Finding; wave: Wave }[] = [];
+    for (const f of ready) { const w = waves.draftOf.get(f.p.id); if (w) taken.push({ f, wave: w }); else ok.push(f); }
+    return { waveReady: ok, waveTaken: taken };
+  }, [ready, waves.draftOf]);
   const effort = ready.reduce((s, f) => s + sizeW(f.p), 0);
 
   // the before value: the scan's latest reading, else the map's facet value (Kettle has no store, a live map may hold a newer facet than any reading)
@@ -365,6 +404,42 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
     }
   }, [busy, ui.sel, byId, ctx, E, set]);
 
+  const waveTags = useMemo(() => {
+    const byWave = new Map(waves.waves.map((w) => [w.id, w]));
+    const m = new Map<string, { wave: string; pkg: string; model: string; effort: string }>();
+    for (const [id, at] of waves.waveOf) {
+      const w = byWave.get(at.wave), p = w?.packages.find((x) => x.id === at.package);
+      if (w && p) m.set(id, { wave: w.name, pkg: p.name, model: p.model, effort: p.effort });
+    }
+    return m;
+  }, [waves.waves, waves.waveOf]);
+  const waveTag = useCallback((id: string) => waveTags.get(id), [waveTags]);
+  const openComposer = useCallback((edit?: string) => {
+    const w = edit ? waves.waves.find((x) => x.id === edit) : undefined;
+    if (edit && !w) return;
+    const ids = w ? w.packages.flatMap((p) => p.ids) : waveReady.map((f) => f.p.id);
+    if (!ids.length) { E.toast('Nothing to add', 'select proposed or approved findings that no draft wave holds'); return; }
+    set((u) => ({ ...u, composer: w ? { edit: w.id, ids } : { ids } }));
+  }, [waves.waves, waveReady, E, set]);
+  const closeComposer = useCallback(() => set((u) => (u.composer ? { ...u, composer: null } : u)), [set]);
+  const showWave = useCallback((id: string | null) => set((u) => (u.wave === id ? u : { ...u, wave: id, focus: null })), [set]);
+
+  const dispatchWave = useCallback(async (id: string, packages?: string[]): Promise<WaveDispatchResult | null> => {
+    if (busy) return null;
+    const w = waves.waves.find((x) => x.id === id);
+    const go = (w?.packages ?? []).filter((p) => !packages || packages.includes(p.id)).flatMap((p) => p.ids).map((i) => byId.get(i)).filter((f): f is Finding => !!f && f.can);
+    if (!w || !go.length) { E.toast('Nothing to dispatch', 'every finding of ' + (packages ? 'that package' : 'this wave') + ' is built, building or no longer open'); return null; }
+    const mine = go.filter((f) => f.status === 'proposed').map((f) => f.p.id);
+    setOver((o) => { const n = new Map(o); for (const i of mine) n.set(i, 'approved'); return n; });
+    setBusy(true);
+    try {
+      const r = await waves.dispatch(id, packages);
+      if (!r) setOver((o) => { const n = new Map(o); for (const i of mine) n.delete(i); return n; });
+      else E.toast('Dispatched ' + w.name, r.jobs.length + (r.jobs.length === 1 ? ' execute job' : ' execute jobs') + (r.skipped.length ? ' · ' + r.skipped.length + ' skipped' : ''));
+      return r;
+    } finally { setBusy(false); }
+  }, [busy, waves, byId, E]);
+
   const showInTable = useCallback((slug: string) => {
     set((u) => ({ ...u, feat: new Set([slug]), focus: null }));
     E.setPage('ledger', 'triage');
@@ -386,9 +461,9 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
     return PACK_STATUSES.map((status) => ({ status, n: c.get(status) ?? 0 }));
   }, [ui.scope, counts, items]);
   // the scopes' status chips differ, so a status filter does not cross a scope switch; focus and compare start over
-  const setScope = useCallback((scope: LedgerScope) => set((u) => (u.scope === scope ? u : { ...u, scope, status: new Set(), focus: null, open: null, wide: false, note: null })), [set]);
+  const setScope = useCallback((scope: LedgerScope) => set((u) => (u.scope === scope ? u : { ...u, scope, status: new Set(), focus: null, open: null, wide: false, note: null, composer: null })), [set]);
 
-  return { ui, set, all, byId, rows, lenses, counts, ready, effort, busy, scan: moveScan, packs, items, chips, scoped, setScope, toggle, select, selectWhere, clear, setFocus, dispatchIds, showInTable, openFeature, move, order };
+  return { ui, set, all, byId, rows, lenses, counts, ready, effort, busy, scan: moveScan, packs, items, chips, scoped, setScope, toggle, select, selectWhere, clear, setFocus, dispatchIds, showInTable, openFeature, move, order, waves, waveTag, waveReady, waveTaken, openComposer, closeComposer, showWave, dispatchWave };
 }
 
 // ------------------------------------------------------------------------------------------- the matrix's rows

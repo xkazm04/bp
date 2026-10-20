@@ -30,6 +30,10 @@
 // Lenses panel; with a selection the top bar offers "Scan selected features" (a picker of scannable lenses, one
 // selection scan each). Both go through lens/lens-ops.ts, as the Lenses panel does.
 //
+// Waves: in the Backlog scope (the table and the matrix) `waves/WavesBar.tsx` tops the body: wave tabs that filter the
+// findings, the selected wave's packages with Dispatch wave / remaining / Edit / Delete, and the inline composer
+// (waves/WaveComposer.tsx) that "Add to wave" in the dispatch bar opens. Its controls keep their own keys (`.lg-waves`).
+//
 // Mount: through `LedgerPageLazy` (Phone.tsx: React.lazy, its own chunk), `<LedgerPageLazy lensButton={<LensesButton />} lensPanel={<LensesPanel />} />` in BlueprintApp's Chrome
 // (it renders nothing unless the store's `page` is 'ledger'); the slots take the Lenses button and panel.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -43,6 +47,7 @@ import { LensGlyph } from './variants/bits';
 import { EXEC_BATCH, executeAsk, executeBacklog, scanBlock, scanNow, scanSelection, useLensRows, useLensStats } from './lens/lens-ops';
 import { setLensesPanelOpen } from './lens/LensesPanel';
 import { DispatchBar, Triage } from './variants/Triage';
+import { WavesBar } from './waves/WavesBar';
 import { Matrix } from './variants/Matrix';
 import { PackTable } from './train/PackTable';
 import { DecisionBar } from './train/DecisionBar';
@@ -182,7 +187,7 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
       if (k === 'Escape') { e.preventDefault(); if (ui.q) set((u) => ({ ...u, q: '' })); else root.current?.focus(); }
       return;
     }
-    if (t.closest('.lg-side, .lg-pop')) return; // the Lenses panel and the lens menus keep their own keys
+    if (t.closest('.lg-side, .lg-pop, .lg-waves')) return; // the Lenses panel, the lens menus and the wave strip keep their own keys
     const ctl = isControl(t), a = keyAction(cmpOpen ? ['compare', scope] : [scope], k);
     if (!a || ((a === 'select' && k === ' ') || a === 'open') && ctl) return;
     if (phone && (a === 'view1' || a === 'view2' || a === 'view3')) return;
@@ -227,6 +232,8 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
   const view = lv === 'release' ? <ReleaseView phone={phone} />
     : lv === 'matrix' ? <Matrix L={L} />
       : packs ? <PackTable L={L} sample={!live} onLenses={() => setLensesPanelOpen(true)} /> : <Triage L={L} />;
+  // the wave strip tops the Backlog scope (the table or the matrix, whose rows the selected wave filters); In packs and Release have none
+  const waveStrip = lv !== 'release' && !packs ? <WavesBar L={L} /> : null;
   // the compare panel (WP4b) docks beside the table while a pack item is open; the release tab and the backlog have none
   const cmp = cmpOpen && lv !== 'release' ? (
     <ComparePanel id={ui.open!} view={ui.cmp} wide={ui.wide} phone={phone}
@@ -260,7 +267,7 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
       </header>
       {lv !== 'release' ? <Filters L={L} filter={filter} menus={!phone} /> : null}
       <div className="lg-main">
-        <div className="lg-body" role={phone ? undefined : 'tabpanel'} aria-label={NAMES[lv]}>{view}</div>
+        <div className="lg-body" role={phone ? undefined : 'tabpanel'} aria-label={NAMES[lv]}>{waveStrip}{view}</div>
         {cmp}
         {lensPanel ? <aside className="lg-side" aria-label="Lenses">{lensPanel}</aside> : null}
       </div>

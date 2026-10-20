@@ -756,6 +756,21 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
   and the Lenses panel and the plan's right-click read the selection (`useLedgerSelection()`). Status chips (state
   mark and count), lens chips (glyph, short, count in the scope), a feature chip from the matrix's **Table**
   (`feature <name> ×`), a text filter (`/`).
+- **Waves** (`useWaves.ts`, `waves/WavesBar.tsx`, `waves/WaveComposer.tsx`, `waves/waves.css`; contract `src/lib/scan/waves.ts`).
+  In the Backlog scope a strip tops the body: `All | one tab per wave | + New wave` (a tab is the wave's state mark, name and
+  finding count; the selected tab, `LedgerUi.wave`, keeps only its findings in `rows`). The dispatch bar's **Add to wave**
+  (beside Dispatch, which stays the direct path) opens the inline composer (`LedgerUi.composer`, not a modal) over the
+  dispatchable selection that no draft wave holds (the others are named and left out): one default package (Opus, high),
+  packages added, renamed, removed, each with a model Seg (Sonnet | Opus) and an effort Seg (low | medium | high | xhigh),
+  findings moved between packages or removed, a warning when two packages share a feature. Create clears the selection and
+  selects the new tab; the wave panel shows each package (model, effort, findings, job state) with Dispatch wave, Dispatch
+  remaining, a package's own Dispatch, Edit and Delete (draft only; Delete asks twice). Dispatch rows flip through the same
+  optimistic overlay as the direct path (`Ledger.dispatchWave`). A row in a wave shows a chip (`wave · package`, the title names
+  model and effort) passed to the memoised `Row` as four strings, so the J/K budget is unchanged. The wave list reloads after
+  every mutation and when a wave job changes status; a failing list reads as no waves. Text is 12 px or more, the buttons'
+  rules sit under `.lg-page`, and below 720 px of table width (a container query) the tabs fold into a select and the
+  composer stacks. Selectors to drive: `[data-wave="strip" | "new" | "add" | "composer" | "create" | "dispatch" | "remaining" |
+  "edit" | "delete" | "delete-yes"]`, `[data-wave-panel]`, `[data-wave-pkg]`, `[data-wave-state]`.
 - **Tier first** (store v4). The backlog orders by `tier` ascending first (untriaged after tier 3, `derive.ts tierRank`), then
   status rank, then value per effort; with no tier anywhere the order is exactly the v3 one. The review queue does the
   same ahead of its own order (`swarmFromScan` sorts open proposals tier then age; `sim.queueCmp` tier then score). A
