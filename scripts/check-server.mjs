@@ -1,0 +1,78 @@
+#!/usr/bin/env node
+// apps/server mounts what apps/web mounts (plan.md WP1.4). Starts the headless server on a free port in an empty temp
+// working directory (so no product is registered), and checks:
+//   routes   the server's printed route table (`route <methods> <path>`) is exactly the web app's: one line per
+//            apps/web/src/app/api/**/route.ts, the same methods its thin mount re-exports
+//   http     GET /api/products answers 200 [] (no products file), an unknown path 404, a method the route lacks 405
+//            with Allow, a foreign Host 403 and a non-JSON write 415: the guards run under this mount too
+// The live-product walk (structure, SSE stream, waves, shots) is scripts/smoke-live.mjs against `npm run server`.
+// Run: node scripts/check-server.mjs   Exit 1 on any failure.
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import http from 'node:http';
+import { spawn } from 'node:child_process';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const WEB_API = path.join(ROOT, 'apps/web/src/app/api');
+let failed = 0, passed = 0;
+const check = (name, ok, detail = '') => { ok ? passed++ : failed++; console.log(`${ok ? 'ok  ' : 'FAIL'}  ${name}${ok || !detail ? '' : `  (${detail})`}`); };
+
+const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : e.name === 'route.ts' ? [path.join(d, e.name)] : []));
+const want = new Map(walk(WEB_API).map((f) => {
+  const rel = path.relative(WEB_API, path.dirname(f)).split(path.sep).join('/');
+  const m = /export\s*\{\s*([A-Z,\s]+)\}\s*from/.exec(fs.readFileSync(f, 'utf8'));
+  return ['/api/' + rel, (m ? m[1].split(',').map((s) => s.trim()).filter(Boolean) : []).sort().join(',')];
+}));
+
+const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-server-'));
+const child = spawn(process.execPath, ['--import', pathToFileURL(path.join(ROOT, 'packages/core/register.mjs')).href, path.join(ROOT, 'apps/server/src/main.ts'), '--port', '0'], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+let out = '';
+child.stdout.on('data', (d) => (out += d));
+child.stderr.on('data', (d) => (out += d));
+const port = await new Promise((resolve) => {
+  const t = setTimeout(() => resolve(0), 20000);
+  const look = () => { const m = /listening on http:\/\/[^:]+:(\d+)/.exec(out); if (m) { clearTimeout(t); resolve(Number(m[1])); } };
+  child.stdout.on('data', look);
+  child.on('exit', () => { clearTimeout(t); resolve(0); });
+});
+
+const req = (method, p, headers = {}, body) => new Promise((resolve) => {
+  const r = http.request({ host: '127.0.0.1', port, path: p, method, headers: { host: `localhost:${port}`, ...headers } }, (res) => {
+    let s = ''; res.on('data', (d) => (s += d)); res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: s }));
+  });
+  r.on('error', (e) => resolve({ status: 0, headers: {}, body: e.message }));
+  if (body !== undefined) r.write(body);
+  r.end();
+});
+
+try {
+  check('the server starts and prints its port', port > 0, out.trim().split('\n').slice(-5).join(' | '));
+  if (port > 0) {
+    const got = new Map([...out.matchAll(/^route (\S+) (\S+)$/gm)].map((m) => [m[2], m[1].split(',').sort().join(',')]));
+    const missing = [...want.keys()].filter((p) => !got.has(p)), extra = [...got.keys()].filter((p) => !want.has(p));
+    const differ = [...want.keys()].filter((p) => got.has(p) && got.get(p) !== want.get(p));
+    check(`routes: the ${want.size} web mounts, no more, no fewer`, want.size > 0 && !missing.length && !extra.length, `missing ${missing.join(' ')} extra ${extra.join(' ')}`);
+    check('routes: the same methods per route', !differ.length, differ.map((p) => `${p} ${got.get(p)} vs ${want.get(p)}`).join('; '));
+
+    const list = await req('GET', '/api/products');
+    check('GET /api/products: 200 [] with no products file', list.status === 200 && list.body.trim() === '[]', `${list.status} ${list.body.slice(0, 80)}`);
+    const none = await req('GET', '/api/nothing-here');
+    check('an unknown path: 404', none.status === 404, `${none.status}`);
+    const nope = await req('DELETE', '/api/products');
+    check('a method the route lacks: 405 with Allow', nope.status === 405 && /GET/.test(String(nope.headers.allow)), `${nope.status} allow=${nope.headers.allow}`);
+    const foreign = await req('GET', '/api/products', { host: 'evil.example' });
+    check('guard: a foreign Host: 403', foreign.status === 403, `${foreign.status}`);
+    const plain = await req('POST', '/api/products', { 'content-type': 'text/plain', 'content-length': '3' }, 'x=1');
+    check('guard: a non-JSON write: 415', plain.status === 415, `${plain.status}`);
+    const fwd = await req('POST', '/api/products', { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.9' }, '{}');
+    check('guard: a forwarded non-local hop: 403', fwd.status === 403, `${fwd.status}`);
+  }
+} finally {
+  // the child holds its working directory until it has exited (Windows), so wait before removing it
+  if (child.exitCode === null) await new Promise((resolve) => { child.once('exit', resolve); child.kill(); });
+  fs.rmSync(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+}
+console.log(`\ncheck-server: ${passed} passed, ${failed} failed`);
+process.exit(failed ? 1 : 0);

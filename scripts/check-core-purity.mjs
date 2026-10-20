@@ -5,7 +5,8 @@
 //   imports   packages/core/src/**: no react, react-dom, next, motion or scheduler (or a subpath of one), no `@/` (the
 //             web app's alias), no @bp/web, nothing that resolves into apps/. The pure half (everything outside
 //             src/server) also imports no Node built-in (node:* or a bare built-in name) and no server file.
-//   web       apps/web/src/**: reaches core only as @bp/core/*, never by a relative path into packages/.
+//   web       apps/web/src/** and apps/server/src/**: reach core only as @bp/core/*, never by a relative path into
+//             packages/.
 //   dom       `tsc -p packages/core` (lib ES2023 + Node's types, no DOM lib, src/server excluded) is clean, so
 //             no window, document, localStorage, EventSource or HTMLElement in the pure half.
 // Every run also proves each rule red once on a seeded temp tree (the controls), so a rule that stops matching fails
@@ -91,7 +92,11 @@ function dom(project) {
   if (p.status !== 0 && !lines.length) r.violations.push(`tsc exited ${p.status} with no error line: ${(p.stdout + p.stderr).trim().slice(0, 300)}`);
   return r;
 }
-const runAll = (root, project) => [scan(root, CORE, refusedCore, 'imports'), scan(root, WEB, refusedWeb, 'web'), dom(project)];
+const runAll = (root, project) => {
+  const web = scan(root, WEB, refusedWeb, 'web'), server = scan(root, 'apps/server/src', refusedWeb, 'web');
+  web.walked += server.walked; web.checked += server.checked; web.violations.push(...server.violations);
+  return [scan(root, CORE, refusedCore, 'imports'), web, dom(project)];
+};
 
 // ---------------------------------------------------------------- controls: each rule red once on a seeded tree
 function controls() {

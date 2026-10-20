@@ -1,0 +1,10 @@
+{
+  "name": "@bp/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "bp's headless server: the same API handlers as apps/web (packages/core/src/server/api), on plain Node, JSON + SSE.",
+  "dependencies": {
+    "@bp/core": "*"
+  }
+}

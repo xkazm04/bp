@@ -22,6 +22,7 @@ simulation.
 npm install
 npm run dev            # http://localhost:3000
 npm run build && npm start
+npm run server         # the API alone, headless (apps/server): http://127.0.0.1:3100, JSON + SSE
 ```
 
 bp is an npm workspace (`apps/*`, `packages/*`). The Next app lives in `apps/web` and is always started from the
@@ -57,6 +58,7 @@ apps/web/src/components/       React UI around the canvas (header, dock, queue, 
 apps/web/src/variants/         lens expressions: subtle (adopted), shaped, bold
 apps/web/src/lib/              the web-only half of the logic: the live client and project store (React), scan
                                actions and temporary lenses (browser), scan views (engine) and live steering
+apps/server/                   the headless server (@bp/server): node:http mounting the same API handlers, no Next
 packages/core/                 the logic, once (npm workspace @bp/core; no React, DOM or Next: check:core-purity)
 packages/core/src/standard/    app-structure v3: types, loader, health-rule evaluator, built-in lens catalog
 packages/core/src/model/       derived model: layout, aggregates, search, swarm simulation
