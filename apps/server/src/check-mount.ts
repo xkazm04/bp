@@ -1,13 +1,14 @@
 // The request guards of mount.ts, through loadRoutes + listener over a throwaway handler tree (no @bp/core, no products):
 //   decode    a malformed percent-escape in a path segment answers 400, and the server keeps serving
 //   host      a Host header no URL can carry answers 400, and the server keeps serving
+//   body      a body past MAX_BODY answers 413 (declared by Content-Length, or streamed chunked); one under it reaches the handler
 // Run: node apps/server/src/check-mount.ts   Exit 1 on any failure.
 import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { listener, loadRoutes } from './mount.ts';
+import { MAX_BODY, listener, loadRoutes } from './mount.ts';
 
 let failed = 0, passed = 0;
 const check = (name: string, ok: boolean, detail = '') => { ok ? passed++ : failed++; console.log(`${ok ? 'ok  ' : 'FAIL'}  ${name}${ok || !detail ? '' : `  (${detail})`}`); };
@@ -15,6 +16,7 @@ const check = (name: string, ok: boolean, detail = '') => { ok ? passed++ : fail
 const api = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-mount-'));
 const handler = (dir: string, src: string) => { fs.mkdirSync(path.join(api, dir), { recursive: true }); fs.writeFileSync(path.join(api, dir, 'route.ts'), src); };
 handler('echo/[slug]', 'export const GET = async (_r, { params }) => Response.json(await params);\n');
+handler('body', 'export const POST = async (r) => Response.json({ bytes: (await r.arrayBuffer()).byteLength });\n');
 
 const crashes: unknown[] = [];
 process.on('unhandledRejection', (e) => crashes.push(e));
@@ -48,6 +50,19 @@ try {
   const host = await get('/api/echo/ok', 'a b');
   check('host: an unusable Host answers 400', host.status === 400, `${host.status}`);
   check('host: the server keeps serving after it', await alive(), `${crashes.length} uncaught`);
+
+  const post = (head: string, body: string) => raw(`POST /api/body HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nConnection: close\r\n${head}\r\n${body}`);
+  const small = await post('Content-Length: 2\r\n', '{}');
+  check('body: a small body reaches the handler', small.status === 200 && small.body.includes('"bytes":2'), `${small.status} ${small.body.slice(0, 60)}`);
+  const declared = await post(`Content-Length: ${MAX_BODY + 1}\r\n`, '{');
+  check('body: a declared Content-Length past the cap answers 413', declared.status === 413, `${declared.status}`);
+  const chunk = 'x'.repeat(256 * 1024), n = Math.ceil(MAX_BODY / chunk.length) + 1;
+  const chunked = Array.from({ length: n }, () => `${chunk.length.toString(16)}\r\n${chunk}\r\n`).join('') + '0\r\n\r\n';
+  const streamed = await post('Transfer-Encoding: chunked\r\n', chunked);
+  check('body: a chunked body past the cap answers 413', streamed.status === 413, `${streamed.status} ${streamed.body.slice(0, 60)}`);
+  check('body: the server keeps serving after it', await alive(), `${crashes.length} uncaught`);
+  await post('Content-Length: 100\r\n', '{"partial":'); // the client gives up (raw's timeout) before the body is whole
+  check('body: the server keeps serving after a client leaves mid-body', await alive(), `${crashes.length} uncaught`);
 } finally {
   server.close(); server.closeAllConnections();
   fs.rmSync(api, { recursive: true, force: true });

@@ -1,14 +1,16 @@
 // Mount bp's API handlers (packages/core/src/server/api/**/route.ts, the functions apps/web's route files re-export)
 // on a node:http server. The route table is the handler tree itself, read the way Next reads app/api: a directory per
 // segment, `[name]` one segment, `[...name]` the rest. Each request becomes a web Request (Host and headers as sent,
-// X-Forwarded-For set from the socket as Next does, a signal that aborts when the client goes away) and the handler's
-// Response streams back unbuffered, so the SSE stream behaves as it does under Next.
+// X-Forwarded-For set from the socket as Next does, the body read whole up to MAX_BODY, a signal that aborts when the
+// client goes away) and the handler's Response streams back unbuffered, so the SSE stream behaves as it does under Next.
 import fs from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
+/** The largest request body the server reads (bytes); a longer one answers 413. bp's writes are small JSON documents. */
+export const MAX_BODY = 4 * 1024 * 1024;
 export const METHODS = ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'] as const;
 type Method = (typeof METHODS)[number];
 type Params = Record<string, string | string[]>;
@@ -70,6 +72,31 @@ const json = (res: ServerResponse, status: number, body: unknown, headers: Recor
   res.end(JSON.stringify(body));
 };
 
+const TOO_LARGE = Symbol('too large');
+
+/** The whole request body; TOO_LARGE as soon as it (declared or as read so far) passes MAX_BODY; null when the client goes away mid-body. */
+function readBody(req: IncomingMessage): Promise<Buffer | typeof TOO_LARGE | null> {
+  if (Number(req.headers['content-length']) > MAX_BODY) return Promise.resolve(TOO_LARGE);
+  return new Promise((resolve) => {
+    const parts: Buffer[] = [];
+    let size = 0;
+    const onData = (b: Buffer) => {
+      size += b.length;
+      if (size > MAX_BODY) { req.off('data', onData); req.pause(); resolve(TOO_LARGE); } else parts.push(b);
+    };
+    req.on('data', onData);
+    req.on('end', () => resolve(Buffer.concat(parts)));
+    req.on('error', () => resolve(null));
+    req.on('close', () => { if (!req.complete) resolve(null); });
+  });
+}
+
+/** 413, then the connection closes: the rest of the body is never read. */
+function tooLarge(res: ServerResponse): void {
+  res.on('finish', () => res.socket?.destroySoon());
+  json(res, 413, { error: `request body over ${MAX_BODY} bytes` }, { connection: 'close' });
+}
+
 /** The request listener: route, adapt, call, stream back. */
 export function listener(routes: Route[]) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
@@ -93,10 +120,10 @@ export function listener(routes: Route[]) {
     const abort = new AbortController();
     res.on('close', () => { if (!res.writableFinished) abort.abort(); });
     const hasBody = method !== 'GET' && (req.headers['content-length'] !== undefined ? req.headers['content-length'] !== '0' : req.headers['transfer-encoding'] !== undefined);
-    const request = new Request(url, {
-      method, headers, signal: abort.signal,
-      ...(hasBody ? { body: Readable.toWeb(req) as ReadableStream<Uint8Array>, duplex: 'half' } : {}),
-    } as RequestInit);
+    const reqBody = hasBody ? await readBody(req) : null;
+    if (reqBody === TOO_LARGE) return tooLarge(res);
+    if (hasBody && !reqBody) { res.destroy(); return; }
+    const request = new Request(url, { method, headers, signal: abort.signal, ...(reqBody ? { body: new Uint8Array(reqBody) } : {}) });
 
     let response: Response;
     try { response = await handler(request, { params: Promise.resolve(params) }); } catch (e) {
