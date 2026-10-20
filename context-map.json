@@ -1,578 +1,1365 @@
 {
-  "version": 2,
-  "generator": "hand-partitioned (bp scan-sweep adoption; /perfect deltas 2026-10-12; spark scan-package 2026-10-13)",
-  "generated_at": "2026-10-13T18:06:11.000Z",
-  "project": {
-    "slug": "bp",
-    "name": "bp - the product blueprint"
-  },
-  "groups": [
-    {
-      "id": "chrome",
-      "name": "Blueprint chrome",
-      "domain": "feature",
-      "color": "#7fd1ff",
-      "context_count": 5
-    },
-    {
-      "id": "canvas",
-      "name": "Canvas plan",
-      "domain": "feature",
-      "color": "#5fe0b4",
-      "context_count": 2
-    },
-    {
-      "id": "variants",
-      "name": "Lens expressions",
-      "domain": "feature",
-      "color": "#ff9fd2",
-      "context_count": 1
-    },
-    {
-      "id": "standard",
-      "name": "App-structure standard",
-      "domain": "shared",
-      "color": "#ffd166",
-      "context_count": 1
-    },
-    {
-      "id": "data",
-      "name": "Data and live products",
-      "domain": "infrastructure",
-      "color": "#c3a6ff",
-      "context_count": 1
-    },
-    {
-      "id": "tooling",
-      "name": "Scripts and checks",
-      "domain": "infrastructure",
-      "color": "#9aa5b1",
-      "context_count": 1
-    }
-  ],
   "contexts": [
     {
-      "id": "app-shell",
-      "name": "App shell, header and legend",
-      "group": "Blueprint chrome",
-      "group_id": "chrome",
+      "api_surface": "Consumes /api/products",
+      "business_feature": "Blueprint Workspace",
       "category": "ui",
-      "description": "The app frame: header with the lens tab strip, status pill, theme toggle, legend, shared symbols, hooks and the base stylesheet with the design tokens.",
+      "cross_refs": [
+        "engine-core",
+        "feature-sheet",
+        "rail-workbench",
+        "timeline-scrubber",
+        "scan-menu-client",
+        "variant-framework"
+      ],
+      "db_tables": [],
+      "description": "Next.js app shell, page routes and the top-level blueprint workspace: header, dock, legend, overlays, project switching and theming. Mounts the engine and wires global styles. Uses the Next.js App Router and hooks into the engine store.",
+      "entry_points": [
+        "apps/web/src/components/BlueprintApp.tsx",
+        "apps/web/src/app/page.tsx"
+      ],
+      "file_paths": [
+        "apps/web/next.config.ts",
+        "apps/web/src/app/globals.css",
+        "apps/web/src/app/layout.tsx",
+        "apps/web/src/app/page.tsx",
+        "apps/web/src/app/v/[variant]/page.tsx",
+        "apps/web/src/app/variants/index.module.css",
+        "apps/web/src/app/variants/page.tsx",
+        "apps/web/src/components/BaseBar.tsx",
+        "apps/web/src/components/BlueprintApp.tsx",
+        "apps/web/src/components/Dock.tsx",
+        "apps/web/src/components/Header.tsx",
+        "apps/web/src/components/Legend.tsx",
+        "apps/web/src/components/Overlays.tsx",
+        "apps/web/src/components/Phone.tsx",
+        "apps/web/src/components/ProjectSwitcher.tsx",
+        "apps/web/src/components/ProjectsDialog.tsx",
+        "apps/web/src/components/Symbols.tsx",
+        "apps/web/src/components/ThemeToggle.tsx",
+        "apps/web/src/components/hooks.ts",
+        "apps/web/src/components/blueprint.css",
+        "apps/web/src/components/projects.css",
+        "apps/web/src/components/page-switch.css"
+      ],
+      "group": "Blueprint Workspace UI",
+      "group_id": "f14b235b-971a-4d71-bfd7-a167e7cd68bf",
+      "id": "cebe6dc8-8510-4936-a81a-8776f4ef99c2",
       "keywords": [
+        "next",
+        "app-router",
+        "dock",
         "header",
-        "tabs",
         "legend",
-        "theme",
-        "tokens",
-        "layout",
-        "style"
-      ],
-      "tech_stack": [
-        "react",
-        "typescript",
-        "nextjs",
-        "motion",
-        "canvas"
-      ],
-      "file_paths": [
-        "src/app/globals.css",
-        "src/app/layout.tsx",
-        "src/app/page.tsx",
-        "src/components/BlueprintApp.tsx",
-        "src/components/Header.tsx",
-        "src/components/Legend.tsx",
-        "src/components/Symbols.tsx",
-        "src/components/ThemeToggle.tsx",
-        "src/components/blueprint.css",
-        "src/components/hooks.ts",
-        "src/components/ProjectSwitcher.tsx",
-        "src/components/ProjectsDialog.tsx",
-        "src/components/projects.css",
-        "src/components/ledger/LedgerPage.tsx",
-        "src/components/ledger/ledger.css",
-        "src/components/ledger/useLedger.ts",
-        "src/components/ledger/variants/Matrix.tsx",
-        "src/components/ledger/variants/Triage.tsx",
-        "src/components/ledger/variants/bits.tsx",
-        "src/components/ledger/lens/DraftCard.tsx",
-        "src/components/ledger/lens/LensChat.tsx",
-        "src/components/ledger/lens/TempLensPanel.tsx",
-        "src/components/ledger/lens/lens.css"
-      ]
-    },
-    {
-      "id": "rail",
-      "name": "Rail and flyouts",
-      "group": "Blueprint chrome",
-      "group_id": "chrome",
-      "category": "ui",
-      "description": "The slim right-hand rail of counters (find, asks, agents, orders, steer, plan, view) and the flyout panel each opens, including the decisions queue and live proposal cards.",
-      "keywords": [
-        "rail",
-        "flyout",
-        "panel",
-        "queue",
-        "search",
-        "button",
-        "counter"
-      ],
-      "tech_stack": [
-        "react",
-        "typescript",
-        "nextjs",
-        "motion",
-        "canvas"
-      ],
-      "file_paths": [
-        "src/components/Dock.tsx",
-        "src/components/Queue.tsx",
-        "src/components/rail.css",
-        "src/components/rail/panels.tsx"
-      ]
-    },
-    {
-      "id": "timeline",
-      "name": "Timeline strip and panel",
-      "group": "Blueprint chrome",
-      "group_id": "chrome",
-      "category": "ui",
-      "description": "The collapsed timeline strip (time position, clock, travel hairline) and its expanded panel: key plan, sim clock and speeds, revisions chart, the hour ahead.",
-      "keywords": [
-        "timeline",
-        "time travel",
-        "clock",
-        "chart",
-        "strip",
-        "panel"
-      ],
-      "tech_stack": [
-        "react",
-        "typescript",
-        "nextjs",
-        "motion",
-        "canvas"
-      ],
-      "file_paths": [
-        "src/components/BaseBar.tsx",
-        "src/components/timeline.css",
-        "src/components/timeline/Strip.tsx",
-        "src/components/timeline/check-keys.ts",
-        "src/components/timeline/check-size.ts",
-        "src/components/timeline/keys.ts",
-        "src/components/timeline/check-run.ts",
-        "src/components/timeline/check-scrub.ts",
-        "src/components/timeline/run.ts",
-        "src/components/timeline/scrub.ts",
-        "src/components/timeline/shared.ts"
-      ]
-    },
-    {
-      "id": "feature-page",
-      "name": "Feature page (L4)",
-      "group": "Blueprint chrome",
-      "group_id": "chrome",
-      "category": "ui",
-      "description": "The L4 feature page: morph from the tile, General overview and per-lens tabs, stat tiles with count-up, metric rows, Business section, Screens strip, and the phone single-document body.",
-      "keywords": [
-        "page",
-        "tabs",
-        "lens",
-        "metrics",
-        "sparkline",
-        "business",
-        "screens",
-        "motion"
-      ],
-      "tech_stack": [
-        "react",
-        "typescript",
-        "nextjs",
-        "motion",
-        "canvas"
-      ],
-      "file_paths": [
-        "src/components/FeatureSheet.tsx",
-        "src/components/page.css",
-        "src/components/page/General.tsx",
-        "src/components/page/LensTab.tsx",
-        "src/components/page/bits.tsx",
-        "src/components/page/motion.tsx",
-        "src/components/sheet/Business.tsx",
-        "src/components/sheet/LensPanel.tsx",
-        "src/components/sheet/Screens.tsx",
-        "src/components/sheet/SheetBody.tsx",
-        "src/components/sheet/words.ts",
-        "src/components/page/CodeTree.tsx"
-      ]
-    },
-    {
-      "id": "overlays",
-      "name": "Canvas overlays and phone view",
-      "group": "Blueprint chrome",
-      "group_id": "chrome",
-      "category": "ui",
-      "description": "DOM overlays over the canvas: level ladder, scale bar, ticker, selection bar, callout, hover card, decision card, toast, morning watch; and the reduced phone view.",
-      "keywords": [
         "overlay",
-        "toast",
-        "card",
-        "hover",
-        "modal",
-        "mobile",
-        "phone",
-        "responsive",
-        "touch"
+        "project-switcher",
+        "theme"
       ],
+      "last_written_at": "2026-10-20T19:29:04.458501700+00:00",
+      "name": "app-shell",
+      "pinned": false,
       "tech_stack": [
-        "react",
-        "typescript",
-        "nextjs",
-        "motion",
-        "canvas"
-      ],
-      "file_paths": [
-        "src/components/Overlays.tsx",
-        "src/components/Phone.tsx",
-        "src/components/ScanMenu.tsx",
-        "src/components/scan.css"
+        "Next.js",
+        "React",
+        "TypeScript"
       ]
     },
     {
-      "id": "canvas-render",
-      "name": "Plan rendering",
-      "group": "Canvas plan",
-      "group_id": "canvas",
-      "category": "ui",
-      "description": "Canvas drawing of the plan: tiles, rooms, wings, marks and glyphs per level of detail, text rendering, theme colours and the lens mix.",
-      "keywords": [
-        "canvas",
-        "render",
-        "draw",
-        "theme",
-        "contrast",
-        "text",
-        "glyph",
-        "lens"
-      ],
-      "tech_stack": [
-        "react",
-        "typescript",
-        "nextjs",
-        "motion",
-        "canvas"
-      ],
-      "file_paths": [
-        "src/engine/lens/contract.ts",
-        "src/engine/lens/mix.ts",
-        "src/engine/render/dynamic.ts",
-        "src/engine/render/glyphs.ts",
-        "src/engine/render/illo.ts",
-        "src/engine/render/keyplan.ts",
-        "src/engine/render/plan.ts",
-        "src/engine/render/static-cache.ts",
-        "src/engine/render/view.ts",
-        "src/engine/text.ts",
-        "src/engine/theme.ts",
-        "src/engine/render/flags.ts",
-        "src/engine/render/lens-glyph.ts",
-        "src/engine/render/simwatch.ts",
-        "src/engine/render/patterns.ts",
-        "src/engine/render/scans.ts"
-      ]
-    },
-    {
-      "id": "engine-interaction",
-      "name": "Engine and interaction",
-      "group": "Canvas plan",
-      "group_id": "canvas",
-      "category": "ui",
-      "description": "The canvas engine: camera, frame loop, hit testing, keyboard and pointer handling, focus, UI state store, chrome safe area.",
-      "keywords": [
-        "engine",
-        "keyboard",
-        "pointer",
-        "focus",
-        "camera",
-        "state",
-        "accessibility"
-      ],
-      "tech_stack": [
-        "react",
-        "typescript",
-        "nextjs",
-        "motion",
-        "canvas"
-      ],
-      "file_paths": [
-        "src/engine/Engine.ts",
-        "src/engine/camera.ts",
-        "src/engine/chrome.ts",
-        "src/engine/state.ts",
-        "src/engine/store.ts"
-      ]
-    },
-    {
-      "id": "lens-variants",
-      "name": "Lens expression variants",
-      "group": "Lens expressions",
-      "group_id": "variants",
-      "category": "ui",
-      "description": "The three lens expressions (subtle adopted, shaped, bold): canvas channels, shapes, decor, palettes, words and their own panel and legend components.",
-      "keywords": [
-        "variant",
-        "design",
-        "style",
-        "palette",
-        "panel",
-        "legend",
-        "decor"
-      ],
-      "tech_stack": [
-        "react",
-        "typescript",
-        "nextjs",
-        "motion",
-        "canvas"
-      ],
-      "file_paths": [
-        "src/variants/README.md",
-        "src/variants/base/expression.ts",
-        "src/variants/base/index.ts",
-        "src/variants/base/legacy.ts",
-        "src/variants/bold/NOTES.md",
-        "src/variants/bold/README.md",
-        "src/variants/bold/channels.ts",
-        "src/variants/bold/decor.ts",
-        "src/variants/bold/index.ts",
-        "src/variants/bold/palette.ts",
-        "src/variants/bold/panels.tsx",
-        "src/variants/bold/perf.py",
-        "src/variants/bold/shots.py",
-        "src/variants/bold/styles.css",
-        "src/variants/bold/words.ts",
-        "src/variants/check-copies.ts",
-        "src/variants/registry.ts",
-        "src/variants/shaped/Legend.tsx",
-        "src/variants/shaped/NOTES.md",
-        "src/variants/shaped/Panel.tsx",
-        "src/variants/shaped/README.md",
-        "src/variants/shaped/channels.ts",
-        "src/variants/shaped/icons.ts",
-        "src/variants/shaped/index.ts",
-        "src/variants/shaped/perf_lens.py",
-        "src/variants/shaped/shapes.ts",
-        "src/variants/shaped/shots.py",
-        "src/variants/shaped/styles.css",
-        "src/variants/shotkit.py",
-        "src/variants/subtle/Legend.tsx",
-        "src/variants/subtle/NOTES.md",
-        "src/variants/subtle/README.md",
-        "src/variants/subtle/expression.ts",
-        "src/variants/subtle/index.ts",
-        "src/variants/subtle/marks.ts",
-        "src/variants/subtle/styles.css",
-        "src/variants/subtle/tools/crop.py",
-        "src/variants/subtle/tools/grid.py",
-        "src/variants/subtle/tools/perf_lens.py",
-        "src/variants/subtle/tools/shots.py",
-        "src/variants/types.ts",
-        "src/variants/base/util.ts"
-      ]
-    },
-    {
-      "id": "standard",
-      "name": "App-structure standard",
-      "group": "App-structure standard",
-      "group_id": "standard",
+      "api_surface": "",
+      "business_feature": "Lens Standard Catalog",
       "category": "lib",
-      "description": "The app-structure v3.1 types, loader, health evaluator, lens catalog, and the spec, schemas and lens manifests.",
+      "cross_refs": [
+        "model-simulation",
+        "schema-definitions"
+      ],
+      "db_tables": [],
+      "description": "Typed loaders for app-structure data and the standard lens catalog, health and presentation. Defines what a built-in lens is and how it is loaded and checked.",
+      "entry_points": [
+        "packages/core/src/standard/load.ts",
+        "packages/core/src/data/index.ts"
+      ],
+      "file_paths": [
+        "packages/core/src/data/index.ts",
+        "packages/core/src/data/jsonl.d.ts",
+        "packages/core/src/data/sample.ts",
+        "packages/core/src/data/types.ts",
+        "packages/core/src/standard/catalog.ts",
+        "packages/core/src/standard/health.ts",
+        "packages/core/src/standard/load.ts",
+        "packages/core/src/standard/present.ts",
+        "packages/core/src/standard/types.ts"
+      ],
+      "group": "Scan and Release Core",
+      "group_id": "64154a0e-2883-4e19-955e-ed7264ba7a3b",
+      "id": "bf78c868-a418-473c-acb2-eb9fb4e75fef",
       "keywords": [
         "standard",
-        "schema",
         "lens",
+        "catalog",
+        "loader",
         "health",
-        "loader"
+        "app-structure"
       ],
+      "last_written_at": "2026-10-20T19:29:04.461298600+00:00",
+      "name": "core-data-standard",
+      "pinned": false,
       "tech_stack": [
-        "react",
-        "typescript",
-        "nextjs",
-        "motion",
-        "canvas"
-      ],
-      "file_paths": [
-        "docs/standard/analysis.md",
-        "docs/standard/app-structure-v3.md",
-        "docs/standard/lens-scan-store.sql",
-        "docs/standard/lenses-custom/com.kettle.cost.json",
-        "docs/standard/lenses/business.json",
-        "docs/standard/lenses/design.json",
-        "docs/standard/lenses/development.json",
-        "docs/standard/lenses/operations.json",
-        "docs/standard/lenses/quality.json",
-        "docs/standard/lenses/security.json",
-        "docs/standard/personas-adoption.md",
-        "docs/standard/schema/app-structure-3.schema.json",
-        "docs/standard/schema/app-structure-event-3.schema.json",
-        "docs/standard/schema/fixtures/invalid-core-field.json",
-        "docs/standard/schema/fixtures/invalid-lens-id.json",
-        "docs/standard/schema/fixtures/invalid-stage.json",
-        "docs/standard/schema/fixtures/invalid-two-operators.json",
-        "docs/standard/schema/fixtures/valid-applies-when.json",
-        "docs/standard/schema/fixtures/valid-map.events.jsonl",
-        "docs/standard/schema/fixtures/valid-map.json",
-        "docs/standard/schema/lens-manifest-1.schema.json",
-        "src/lib/standard/catalog.ts",
-        "src/lib/standard/health.ts",
-        "src/lib/standard/load.ts",
-        "src/lib/standard/present.ts",
-        "src/lib/standard/types.ts"
+        "TypeScript"
       ]
     },
     {
-      "id": "model-and-data",
-      "name": "Model, data and live products",
-      "group": "Data and live products",
-      "group_id": "data",
+      "api_surface": "GET/POST /api/products, /api/products/[slug]/{scan,scans,waves,releases,lenses,triage,structure,stream,shots,dispatch,proposals,commits}, /api/lens-draft",
+      "business_feature": "Product REST API",
+      "category": "api",
+      "cross_refs": [
+        "release-api-services",
+        "web-api-mounts",
+        "node-server"
+      ],
+      "db_tables": [],
+      "description": "Framework-neutral route handlers for products, lenses, scans, waves, releases, proposals, triage, streams, structure and screenshots. Mounted by both the Next app and the node server.",
+      "entry_points": [
+        "packages/core/src/server/api/products/route.ts",
+        "packages/core/src/server/api/products/[slug]/scan/route.ts"
+      ],
+      "file_paths": [
+        "packages/core/src/server/api/lens-draft/route.ts",
+        "packages/core/src/server/api/products/route.ts",
+        "packages/core/src/server/api/products/[slug]/route.ts",
+        "packages/core/src/server/api/products/[slug]/commits/[sha]/route.ts",
+        "packages/core/src/server/api/products/[slug]/dispatch/route.ts",
+        "packages/core/src/server/api/products/[slug]/lenses/route.ts",
+        "packages/core/src/server/api/products/[slug]/lenses/[id]/route.ts",
+        "packages/core/src/server/api/products/[slug]/lenses/[id]/execute/route.ts",
+        "packages/core/src/server/api/products/[slug]/proposals/[id]/route.ts",
+        "packages/core/src/server/api/products/[slug]/releases/route.ts",
+        "packages/core/src/server/api/products/[slug]/releases/suggest/route.ts",
+        "packages/core/src/server/api/products/[slug]/releases/[id]/finish/route.ts",
+        "packages/core/src/server/api/products/[slug]/releases/[id]/release-job.ts",
+        "packages/core/src/server/api/products/[slug]/scan/route.ts",
+        "packages/core/src/server/api/products/[slug]/scans/route.ts",
+        "packages/core/src/server/api/products/[slug]/scans/[job]/route.ts",
+        "packages/core/src/server/api/products/[slug]/shots/[...path]/route.ts",
+        "packages/core/src/server/api/products/[slug]/stream/route.ts",
+        "packages/core/src/server/api/products/[slug]/structure/route.ts",
+        "packages/core/src/server/api/products/[slug]/triage/route.ts",
+        "packages/core/src/server/api/products/[slug]/waves/route.ts",
+        "packages/core/src/server/api/products/[slug]/waves/[wave]/route.ts",
+        "packages/core/src/server/api/products/[slug]/waves/[wave]/dispatch/route.ts"
+      ],
+      "group": "Server and API",
+      "group_id": "a1f14e8e-1fd3-416a-9060-71be952a1876",
+      "id": "c12b3ac9-8b8a-4923-9de9-cfd3641c7957",
+      "keywords": [
+        "route",
+        "handler",
+        "products",
+        "scan",
+        "waves",
+        "releases",
+        "stream",
+        "lenses"
+      ],
+      "last_written_at": "2026-10-20T19:29:04.461975400+00:00",
+      "name": "core-route-handlers",
+      "pinned": false,
+      "tech_stack": [
+        "TypeScript",
+        "Node.js"
+      ]
+    },
+    {
+      "api_surface": "",
+      "business_feature": "Canvas Engine",
       "category": "lib",
-      "description": "Derived model (layout, aggregates, search, swarm sim, live feed), the Kettle data loader, the lens-scan store client and server, and the product API routes.",
+      "cross_refs": [
+        "engine-render",
+        "model-simulation",
+        "app-shell"
+      ],
+      "db_tables": [],
+      "description": "Canvas engine that owns camera, state, store, theming and text measurement for the blueprint drawing. It exposes the lens contract and lens mixing so the renderers and UI can colour the plan by lens. Consumed by the render layer and React components.",
+      "entry_points": [
+        "apps/web/src/engine/Engine.ts",
+        "apps/web/src/engine/store.ts"
+      ],
+      "file_paths": [
+        "apps/web/src/engine/Engine.ts",
+        "apps/web/src/engine/camera.ts",
+        "apps/web/src/engine/chrome.ts",
+        "apps/web/src/engine/state.ts",
+        "apps/web/src/engine/store.ts",
+        "apps/web/src/engine/text.ts",
+        "apps/web/src/engine/theme.ts",
+        "apps/web/src/engine/lens/contract.ts",
+        "apps/web/src/engine/lens/mix.ts"
+      ],
+      "group": "Blueprint Canvas Engine",
+      "group_id": "64591f6d-b88f-4881-8b6e-9f3bf55c55b1",
+      "id": "f8d6467d-c49c-496b-95f3-b0a113b67f72",
+      "keywords": [
+        "engine",
+        "camera",
+        "canvas",
+        "lens",
+        "theme",
+        "store",
+        "chrome",
+        "zoom"
+      ],
+      "last_written_at": "2026-10-20T19:29:04.457761200+00:00",
+      "name": "engine-core",
+      "pinned": false,
+      "tech_stack": [
+        "TypeScript",
+        "Canvas 2D",
+        "React"
+      ]
+    },
+    {
+      "api_surface": "",
+      "business_feature": "Plan Rendering",
+      "category": "lib",
+      "cross_refs": [
+        "engine-core"
+      ],
+      "db_tables": [],
+      "description": "Drawing routines that paint the floor plan, glyphs, flags, scans, tracks, patterns and illustrations onto the canvas. Includes the static cache and the dynamic layer for live simulation overlays. Driven by Engine state and lens colouring.",
+      "entry_points": [
+        "apps/web/src/engine/render/plan.ts",
+        "apps/web/src/engine/render/view.ts"
+      ],
+      "file_paths": [
+        "apps/web/src/engine/render/dynamic.ts",
+        "apps/web/src/engine/render/flags.ts",
+        "apps/web/src/engine/render/glyphs.ts",
+        "apps/web/src/engine/render/illo.ts",
+        "apps/web/src/engine/render/keyplan.ts",
+        "apps/web/src/engine/render/lens-glyph.ts",
+        "apps/web/src/engine/render/patterns.ts",
+        "apps/web/src/engine/render/plan.ts",
+        "apps/web/src/engine/render/scans.ts",
+        "apps/web/src/engine/render/simwatch.ts",
+        "apps/web/src/engine/render/static-cache.ts",
+        "apps/web/src/engine/render/tracks.ts",
+        "apps/web/src/engine/render/view.ts"
+      ],
+      "group": "Blueprint Canvas Engine",
+      "group_id": "64591f6d-b88f-4881-8b6e-9f3bf55c55b1",
+      "id": "7397cdb0-e2f0-4355-8fc0-fe8c24fa951a",
+      "keywords": [
+        "render",
+        "plan",
+        "glyph",
+        "flags",
+        "keyplan",
+        "tracks",
+        "static-cache",
+        "patterns"
+      ],
+      "last_written_at": "2026-10-20T19:29:04.458271400+00:00",
+      "name": "engine-render",
+      "pinned": false,
+      "tech_stack": [
+        "TypeScript",
+        "Canvas 2D"
+      ]
+    },
+    {
+      "api_surface": "",
+      "business_feature": "Feature Detail Sheet",
+      "category": "ui",
+      "cross_refs": [
+        "app-shell",
+        "model-simulation"
+      ],
+      "db_tables": [],
+      "description": "Detail sheet and page views for a selected feature: business summary, screens, lens panel, code tree and general tab. Presents lens-specific findings in plain words with motion helpers.",
+      "entry_points": [
+        "apps/web/src/components/FeatureSheet.tsx",
+        "apps/web/src/components/sheet/SheetBody.tsx"
+      ],
+      "file_paths": [
+        "apps/web/src/components/FeatureSheet.tsx",
+        "apps/web/src/components/sheet/Business.tsx",
+        "apps/web/src/components/sheet/LensPanel.tsx",
+        "apps/web/src/components/sheet/Screens.tsx",
+        "apps/web/src/components/sheet/SheetBody.tsx",
+        "apps/web/src/components/sheet/words.ts",
+        "apps/web/src/components/page.css",
+        "apps/web/src/components/page/CodeTree.tsx",
+        "apps/web/src/components/page/General.tsx",
+        "apps/web/src/components/page/LensTab.tsx",
+        "apps/web/src/components/page/bits.tsx",
+        "apps/web/src/components/page/motion.tsx"
+      ],
+      "group": "Blueprint Workspace UI",
+      "group_id": "f14b235b-971a-4d71-bfd7-a167e7cd68bf",
+      "id": "125c3389-b85c-401d-95e9-3ed7f73e1048",
+      "keywords": [
+        "feature",
+        "sheet",
+        "business",
+        "screens",
+        "lens-panel",
+        "code-tree"
+      ],
+      "last_written_at": "2026-10-20T19:29:04.458702100+00:00",
+      "name": "feature-sheet",
+      "pinned": false,
+      "tech_stack": [
+        "React",
+        "TypeScript"
+      ]
+    },
+    {
+      "api_surface": "Consumes /api/products/[slug]/triage, /waves, /lenses, /api/lens-draft",
+      "business_feature": "Ledger Triage and Waves",
+      "category": "ui",
+      "cross_refs": [
+        "train-decision",
+        "web-api-mounts",
+        "scan-engine"
+      ],
+      "db_tables": [],
+      "description": "Ledger page with triage and matrix variants, waves composer/bar and lens authoring (chat, draft card, panel). Loads ledger and wave data through hooks and lets users compose waves and edit lenses.",
+      "entry_points": [
+        "apps/web/src/components/ledger/LedgerPage.tsx"
+      ],
+      "file_paths": [
+        "apps/web/src/components/ledger/LedgerPage.tsx",
+        "apps/web/src/components/ledger/ledger-theme.css",
+        "apps/web/src/components/ledger/ledger.css",
+        "apps/web/src/components/ledger/useLedger.ts",
+        "apps/web/src/components/ledger/useWaves.ts",
+        "apps/web/src/components/ledger/variants/Matrix.tsx",
+        "apps/web/src/components/ledger/variants/Triage.tsx",
+        "apps/web/src/components/ledger/variants/bits.tsx",
+        "apps/web/src/components/ledger/waves/WaveComposer.tsx",
+        "apps/web/src/components/ledger/waves/WavesBar.tsx",
+        "apps/web/src/components/ledger/waves/waves.css",
+        "apps/web/src/components/ledger/lens/DraftCard.tsx",
+        "apps/web/src/components/ledger/lens/LensChat.tsx",
+        "apps/web/src/components/ledger/lens/LensesPanel.tsx",
+        "apps/web/src/components/ledger/lens/lens-ops.ts",
+        "apps/web/src/components/ledger/lens/lens.css"
+      ],
+      "group": "Release Ledger",
+      "group_id": "c1d50cd7-43f6-4d82-b814-71a152671914",
+      "id": "b21c2852-da21-4507-add5-0228c6e23ff2",
+      "keywords": [
+        "ledger",
+        "triage",
+        "matrix",
+        "waves",
+        "lens-chat",
+        "draft"
+      ],
+      "last_written_at": "2026-10-20T19:29:04.459599600+00:00",
+      "name": "ledger-core",
+      "pinned": false,
+      "tech_stack": [
+        "React",
+        "TypeScript"
+      ]
+    },
+    {
+      "api_surface": "",
+      "business_feature": "Domain Model and Simulation",
+      "category": "lib",
+      "cross_refs": [
+        "core-data-standard",
+        "scan-engine"
+      ],
+      "db_tables": [],
+      "description": "Framework-free domain model: product, aggregates, layout, lenses, live feed/health/tracks, morning briefing, search, time view and the scan and train simulators. Powers the blueprint views and the checks.",
+      "entry_points": [
+        "packages/core/src/model/index.ts",
+        "packages/core/src/model/product.ts"
+      ],
+      "file_paths": [
+        "packages/core/src/model/aggregates.ts",
+        "packages/core/src/model/constants.ts",
+        "packages/core/src/model/index.ts",
+        "packages/core/src/model/layout.ts",
+        "packages/core/src/model/lens.ts",
+        "packages/core/src/model/live-feed.ts",
+        "packages/core/src/model/live-health.ts",
+        "packages/core/src/model/live-tracks.ts",
+        "packages/core/src/model/live.ts",
+        "packages/core/src/model/morning.ts",
+        "packages/core/src/model/product.ts",
+        "packages/core/src/model/sample.ts",
+        "packages/core/src/model/scan-sim.ts",
+        "packages/core/src/model/search.ts",
+        "packages/core/src/model/sim.ts",
+        "packages/core/src/model/timeview.ts",
+        "packages/core/src/model/train-sim.ts"
+      ],
+      "group": "Scan and Release Core",
+      "group_id": "64154a0e-2883-4e19-955e-ed7264ba7a3b",
+      "id": "4c778031-bdbe-440f-8377-63ee62538c61",
       "keywords": [
         "model",
+        "aggregates",
+        "layout",
+        "live",
         "sim",
-        "data",
-        "scan",
-        "api",
-        "sqlite",
-        "sse"
+        "morning",
+        "search",
+        "timeview"
       ],
+      "last_written_at": "2026-10-20T19:29:04.461099300+00:00",
+      "name": "model-simulation",
+      "pinned": false,
       "tech_stack": [
-        "react",
-        "typescript",
-        "nextjs",
-        "motion",
-        "canvas"
-      ],
-      "file_paths": [
-        "src/app/api/products/[slug]/proposals/[id]/route.ts",
-        "src/app/api/products/[slug]/scan/route.ts",
-        "src/app/api/products/[slug]/shots/[...path]/route.ts",
-        "src/app/api/products/[slug]/stream/route.ts",
-        "src/app/api/products/[slug]/structure/route.ts",
-        "src/app/api/products/route.ts",
-        "src/app/v/[variant]/page.tsx",
-        "src/app/variants/index.module.css",
-        "src/app/variants/page.tsx",
-        "src/lib/data/index.ts",
-        "src/lib/data/jsonl.d.ts",
-        "src/lib/data/types.ts",
-        "src/lib/model/aggregates.ts",
-        "src/lib/model/constants.ts",
-        "src/lib/model/index.ts",
-        "src/lib/model/layout.ts",
-        "src/lib/model/lens.ts",
-        "src/lib/model/live-feed.ts",
-        "src/lib/model/live.ts",
-        "src/lib/model/product.ts",
-        "src/lib/model/search.ts",
-        "src/lib/model/sim.ts",
-        "src/lib/scan/client.ts",
-        "src/lib/scan/products.server.ts",
-        "src/lib/scan/store.server.ts",
-        "src/lib/scan/types.ts",
-        "src/app/api/products/[slug]/route.ts",
-        "src/lib/scan/projects.ts",
-        "src/lib/scan/readiness.server.ts",
-        "src/lib/scan/readiness.ts",
-        "src/lib/scan/registry.server.ts",
-        "src/data/kettle.app-structure.json",
-        "src/data/kettle.events.jsonl",
-        "src/data/kettle.json",
-        "src/data/swarm.json",
-        "src/lib/data/sample.ts",
-        "src/lib/model/live-health.ts",
-        "src/lib/model/sample.ts",
-        "src/lib/model/timeview.ts",
-        "src/lib/scan/derive.ts",
-        "src/lib/scan/local-only.ts",
-        "src/lib/scan/scope.ts",
-        "src/app/api/lens-draft/route.ts",
-        "src/app/api/products/[slug]/dispatch/route.ts",
-        "src/app/api/products/[slug]/lenses/[id]/route.ts",
-        "src/app/api/products/[slug]/lenses/route.ts",
-        "src/app/api/products/[slug]/scans/[job]/route.ts",
-        "src/app/api/products/[slug]/scans/route.ts",
-        "src/data/kettle.findings.json",
-        "src/lib/model/scan-sim.ts",
-        "src/lib/scan/actions.ts",
-        "src/lib/scan/jobs.server.ts",
-        "src/lib/scan/jobs.ts",
-        "src/lib/scan/lens-draft.ts",
-        "src/lib/scan/lens-write.server.ts",
-        "src/lib/scan/manifest-check.ts",
-        "src/lib/scan/scan-views.ts",
-        "src/lib/scan/temp-lens.ts"
+        "TypeScript"
       ]
     },
     {
-      "id": "tooling",
-      "name": "Scripts and checks",
-      "group": "Scripts and checks",
-      "group_id": "tooling",
+      "api_surface": "Serves all /api routes",
+      "business_feature": "Standalone Server",
       "category": "config",
-      "description": "Fixture generators, v3 conversion, structure validator, lens health check, scan demo, perf and screenshot probes.",
-      "keywords": [
-        "scripts",
-        "fixtures",
-        "validator",
-        "perf",
-        "screenshots"
+      "cross_refs": [
+        "core-route-handlers"
       ],
-      "tech_stack": [
-        "react",
-        "typescript",
-        "nextjs",
-        "motion",
-        "canvas"
+      "db_tables": [],
+      "description": "Standalone node:http server that mounts the core handlers, plus the TS loader hooks and workspace build config used to run it.",
+      "entry_points": [
+        "apps/server/src/main.ts",
+        "apps/server/src/mount.ts"
       ],
       "file_paths": [
-        "scripts/check-builtin-health.ts",
+        "apps/server/src/main.ts",
+        "apps/server/src/mount.ts",
+        "packages/core/register.mjs",
+        "packages/core/register-hooks.mjs"
+      ],
+      "group": "Server and API",
+      "group_id": "a1f14e8e-1fd3-416a-9060-71be952a1876",
+      "id": "41eeb96a-6187-4b08-892e-7f6d65e9ae67",
+      "keywords": [
+        "server",
+        "node:http",
+        "mount",
+        "workspaces",
+        "loader",
+        "register"
+      ],
+      "last_written_at": "2026-10-20T19:29:04.462455100+00:00",
+      "name": "node-server",
+      "pinned": false,
+      "tech_stack": [
+        "Node.js",
+        "TypeScript",
+        "npm workspaces"
+      ]
+    },
+    {
+      "api_surface": "",
+      "business_feature": "Platform Checks",
+      "category": "test",
+      "cross_refs": [
+        "node-server",
+        "engine-core",
+        "model-simulation"
+      ],
+      "db_tables": [],
+      "description": "Cross-cutting guards: check-all runner, camera, chrome sizes, core purity, route guards, server, overlays, search, sim answers/orders/blockers/precedent, tokens, timeview and structure validation.",
+      "entry_points": [
+        "scripts/check-all.mjs"
+      ],
+      "file_paths": [
+        "scripts/check-all.mjs",
         "scripts/check-camera.ts",
-        "scripts/check-fixtures.ts",
-        "scripts/check-scan-wire.ts",
-        "scripts/fixtures/gen-kettle.mjs",
-        "scripts/fixtures/gen-swarm.mjs",
-        "scripts/kettle-to-v3.ts",
-        "scripts/perf.py",
-        "scripts/sample-facets.ts",
-        "scripts/scan-demo.mjs",
-        "scripts/shots.py",
-        "scripts/validate-structure.mjs",
         "scripts/check-chrome-sizes.mjs",
+        "scripts/check-core-purity.mjs",
         "scripts/check-legacy-unmeasured.mjs",
+        "scripts/check-morning-cursor.ts",
         "scripts/check-overlays.ts",
         "scripts/check-python-deps.mjs",
-        "scripts/check-standard-fixtures.mjs",
-        "scripts/check-stream-status.mjs",
-        "scripts/check-tokens.mjs",
-        "scripts/overlays-loader.mjs",
-        "scripts/check-all.mjs",
-        "scripts/check-live-health.ts",
-        "scripts/check-local-only.ts",
         "scripts/check-route-guards.mjs",
         "scripts/check-search.ts",
+        "scripts/check-server.mjs",
+        "scripts/check-sim-answers.ts",
+        "scripts/check-sim-blockers.ts",
+        "scripts/check-sim-orders.ts",
+        "scripts/check-sim-precedent.ts",
+        "scripts/check-stream-status.mjs",
         "scripts/check-timeview.ts",
+        "scripts/check-tokens.mjs",
+        "scripts/overlays-loader.mjs",
+        "scripts/smoke-live.mjs",
+        "scripts/validate-structure.mjs"
+      ],
+      "group": "Quality Checks and Fidelity",
+      "group_id": "db39408c-c4cf-4159-9b09-8db878bd14f2",
+      "id": "cf04bf2b-e34e-4cdd-9e44-a4ccc24ef71c",
+      "keywords": [
+        "check-all",
+        "guards",
+        "purity",
+        "tokens",
+        "route-guards",
+        "smoke"
+      ],
+      "last_written_at": "2026-10-20T19:29:04.463750300+00:00",
+      "name": "platform-checks",
+      "pinned": false,
+      "tech_stack": [
+        "Node.js",
+        "TypeScript"
+      ]
+    },
+    {
+      "api_surface": "POST /api/products/[slug]/dispatch",
+      "business_feature": "Agent Workbench and Steering",
+      "category": "ui",
+      "cross_refs": [
+        "app-shell",
+        "model-simulation",
+        "web-api-mounts"
+      ],
+      "db_tables": [],
+      "description": "Side rail and wide workbench with plan, orders, agents, review and steer panels, plus the live steer, queue and track record widgets. Lets users direct agent swarms and review their work.",
+      "entry_points": [
+        "apps/web/src/components/rail/wide/index.tsx",
+        "apps/web/src/components/LiveSteer.tsx"
+      ],
+      "file_paths": [
+        "apps/web/src/components/rail.css",
+        "apps/web/src/components/rail/panels.tsx",
+        "apps/web/src/components/rail/wide/agents.tsx",
+        "apps/web/src/components/rail/wide/index.tsx",
+        "apps/web/src/components/rail/wide/orders.tsx",
+        "apps/web/src/components/rail/wide/plan.tsx",
+        "apps/web/src/components/rail/wide/review.tsx",
+        "apps/web/src/components/rail/wide/shell.tsx",
+        "apps/web/src/components/rail/wide/steer.tsx",
+        "apps/web/src/components/rail/wide/view.tsx",
+        "apps/web/src/components/rail/wide/workbench.css",
+        "apps/web/src/components/Queue.tsx",
+        "apps/web/src/components/LiveSteer.tsx",
+        "apps/web/src/components/TrackRecord.tsx",
+        "apps/web/src/lib/model/live-steer.ts"
+      ],
+      "group": "Blueprint Workspace UI",
+      "group_id": "f14b235b-971a-4d71-bfd7-a167e7cd68bf",
+      "id": "c29b3468-91ca-48e7-b3b5-041b63555a31",
+      "keywords": [
+        "rail",
+        "workbench",
+        "orders",
+        "agents",
+        "steer",
+        "review",
+        "queue",
+        "swarm"
+      ],
+      "last_written_at": "2026-10-20T19:29:04.458930300+00:00",
+      "name": "rail-workbench",
+      "pinned": false,
+      "tech_stack": [
+        "React",
+        "TypeScript"
+      ]
+    },
+    {
+      "api_surface": "",
+      "business_feature": "Server Services",
+      "category": "lib",
+      "cross_refs": [
+        "core-route-handlers",
+        "scan-engine"
+      ],
+      "db_tables": [],
+      "description": "Server-only services behind the handlers: job runner, lens writing, product registry/store, readiness, release building and waves.",
+      "entry_points": [
+        "packages/core/src/server/products.server.ts",
+        "packages/core/src/server/jobs.server.ts"
+      ],
+      "file_paths": [
+        "packages/core/src/server/jobs.server.ts",
+        "packages/core/src/server/lens-write.server.ts",
+        "packages/core/src/server/products.server.ts",
+        "packages/core/src/server/readiness.server.ts",
+        "packages/core/src/server/registry.server.ts",
+        "packages/core/src/server/release.server.ts",
+        "packages/core/src/server/store.server.ts",
+        "packages/core/src/server/waves.server.ts"
+      ],
+      "group": "Server and API",
+      "group_id": "a1f14e8e-1fd3-416a-9060-71be952a1876",
+      "id": "9bc15f4e-b683-48b9-ac0c-f9d2befa58c2",
+      "keywords": [
+        "jobs",
+        "registry",
+        "store",
+        "release",
+        "readiness",
+        "waves",
+        "products"
+      ],
+      "last_written_at": "2026-10-20T19:29:04.462216100+00:00",
+      "name": "release-api-services",
+      "pinned": false,
+      "tech_stack": [
+        "TypeScript",
+        "Node.js"
+      ]
+    },
+    {
+      "api_surface": "",
+      "business_feature": "Sample Data",
+      "category": "data",
+      "cross_refs": [
+        "schema-definitions"
+      ],
+      "db_tables": [],
+      "description": "Kettle sample dataset (structure, events, findings, swarm) plus the generators, converters and fake agent used to produce and verify demo data and screenshots.",
+      "entry_points": [
+        "scripts/kettle-to-v3.ts",
+        "scripts/fixtures/gen-kettle.mjs"
+      ],
+      "file_paths": [
+        "scripts/fixtures/fake-claude.mjs",
+        "scripts/fixtures/gen-kettle.mjs",
+        "scripts/fixtures/gen-swarm.mjs",
+        "scripts/fixtures/kettle-findings.mjs",
+        "scripts/kettle-to-v3.ts",
+        "scripts/sample-facets.ts",
+        "scripts/gen-sample-shots.mjs",
         "scripts/lib/prng.ts",
         "scripts/lib/source.ts",
         "scripts/lib/src-hooks.mjs",
+        "scripts/scan-demo.mjs"
+      ],
+      "group": "Schema and Sample Data",
+      "group_id": "256ec986-b475-42dc-ba23-52563331ae37",
+      "id": "c14e1a3a-cfe0-45cf-abd9-ba7bcb8dc5c1",
+      "keywords": [
+        "kettle",
+        "sample",
+        "swarm",
+        "generator",
+        "fixtures",
+        "events"
+      ],
+      "last_written_at": "2026-10-20T19:29:04.463123400+00:00",
+      "name": "sample-data-generators",
+      "pinned": false,
+      "tech_stack": [
+        "Node.js",
+        "TypeScript"
+      ]
+    },
+    {
+      "api_surface": "",
+      "business_feature": "Scan Pipeline",
+      "category": "lib",
+      "cross_refs": [
+        "release-api-services",
+        "model-simulation"
+      ],
+      "db_tables": [],
+      "description": "Scan pipeline logic: jobs, scope, readiness, derivation, comparison, swarm orchestration, waves, lens drafting, local-only guard and release building. Pure code reused by the server handlers.",
+      "entry_points": [
+        "packages/core/src/scan/jobs.ts",
+        "packages/core/src/scan/swarm.ts"
+      ],
+      "file_paths": [
+        "packages/core/src/scan/compare.ts",
+        "packages/core/src/scan/derive.ts",
+        "packages/core/src/scan/jobs.ts",
+        "packages/core/src/scan/lens-draft.ts",
+        "packages/core/src/scan/local-only.ts",
+        "packages/core/src/scan/manifest-check.ts",
+        "packages/core/src/scan/readiness.ts",
+        "packages/core/src/scan/release.ts",
+        "packages/core/src/scan/scope.ts",
+        "packages/core/src/scan/swarm.ts",
+        "packages/core/src/scan/track.ts",
+        "packages/core/src/scan/types.ts",
+        "packages/core/src/scan/waves.ts"
+      ],
+      "group": "Scan and Release Core",
+      "group_id": "64154a0e-2883-4e19-955e-ed7264ba7a3b",
+      "id": "3e4502a1-bda7-474d-852a-9fb8b0a93af4",
+      "keywords": [
+        "scan",
+        "jobs",
+        "swarm",
+        "waves",
+        "readiness",
+        "scope",
+        "local-only",
+        "lens-draft"
+      ],
+      "last_written_at": "2026-10-20T19:29:04.461511900+00:00",
+      "name": "scan-engine",
+      "pinned": false,
+      "tech_stack": [
+        "TypeScript",
+        "Node.js"
+      ]
+    },
+    {
+      "api_surface": "Consumes /api/products/[slug]/scan, /scans",
+      "business_feature": "Scan Launching",
+      "category": "ui",
+      "cross_refs": [
+        "scan-engine",
+        "web-api-mounts"
+      ],
+      "db_tables": [],
+      "description": "Scan launcher menu and the browser-side client for starting scans, managing projects and building scan views and temporary lenses. Talks to the scan and products APIs.",
+      "entry_points": [
+        "apps/web/src/components/ScanMenu.tsx",
+        "apps/web/src/lib/scan/client.ts"
+      ],
+      "file_paths": [
+        "apps/web/src/components/ScanMenu.tsx",
+        "apps/web/src/components/scan.css",
+        "apps/web/src/lib/scan/actions.ts",
+        "apps/web/src/lib/scan/client.ts",
+        "apps/web/src/lib/scan/projects.ts",
+        "apps/web/src/lib/scan/scan-views.ts",
+        "apps/web/src/lib/scan/temp-lens.ts"
+      ],
+      "group": "Blueprint Workspace UI",
+      "group_id": "f14b235b-971a-4d71-bfd7-a167e7cd68bf",
+      "id": "dbb767ad-e6b6-4d24-820d-0776b76969a4",
+      "keywords": [
+        "scan",
+        "client",
+        "projects",
+        "temp-lens",
+        "actions"
+      ],
+      "last_written_at": "2026-10-20T19:29:04.459388300+00:00",
+      "name": "scan-menu-client",
+      "pinned": false,
+      "tech_stack": [
+        "React",
+        "TypeScript"
+      ]
+    },
+    {
+      "api_surface": "",
+      "business_feature": "Structure Schema",
+      "category": "data",
+      "cross_refs": [
+        "core-data-standard",
+        "sample-data-generators"
+      ],
+      "db_tables": [],
+      "description": "JSON schemas for app-structure, events and lens manifests, a generator that emits TS types and Unreal USTRUCTs, and valid/invalid fixtures for validation.",
+      "entry_points": [
+        "packages/schema/generate.mjs",
+        "packages/schema/schema/app-structure-3.schema.json"
+      ],
+      "file_paths": [
+        "packages/schema/generate.mjs",
+        "packages/schema/generated/ts/app-structure.ts",
+        "packages/schema/generated/ue/BpSchema.h"
+      ],
+      "group": "Schema and Sample Data",
+      "group_id": "256ec986-b475-42dc-ba23-52563331ae37",
+      "id": "f255557c-96b8-4b28-9c32-0a60fd9be05f",
+      "keywords": [
+        "schema",
+        "json-schema",
+        "codegen",
+        "ustruct",
+        "fixtures",
+        "lens-manifest"
+      ],
+      "last_written_at": "2026-10-20T19:29:04.462916900+00:00",
+      "name": "schema-definitions",
+      "pinned": false,
+      "tech_stack": [
+        "JSON Schema",
+        "TypeScript",
+        "Unreal Engine C++"
+      ]
+    },
+    {
+      "api_surface": "",
+      "business_feature": "Timeline Scrubbing",
+      "category": "ui",
+      "cross_refs": [
+        "app-shell",
+        "model-simulation"
+      ],
+      "db_tables": [],
+      "description": "Timeline strip that scrubs and replays a project's history with keyboard control and run playback. Includes check scripts for keys, run, scrub and size behaviour.",
+      "entry_points": [
+        "apps/web/src/components/timeline/Strip.tsx"
+      ],
+      "file_paths": [
+        "apps/web/src/components/timeline.css",
+        "apps/web/src/components/timeline/Strip.tsx",
+        "apps/web/src/components/timeline/check-keys.ts",
+        "apps/web/src/components/timeline/check-run.ts",
+        "apps/web/src/components/timeline/check-scrub.ts",
+        "apps/web/src/components/timeline/check-size.ts",
+        "apps/web/src/components/timeline/keys.ts",
+        "apps/web/src/components/timeline/run.ts",
+        "apps/web/src/components/timeline/scrub.ts",
+        "apps/web/src/components/timeline/shared.ts"
+      ],
+      "group": "Blueprint Workspace UI",
+      "group_id": "f14b235b-971a-4d71-bfd7-a167e7cd68bf",
+      "id": "e0b8782f-8ad8-46ba-a9cb-c282529acba7",
+      "keywords": [
+        "timeline",
+        "scrub",
+        "playback",
+        "keys",
+        "history"
+      ],
+      "last_written_at": "2026-10-20T19:29:04.459159300+00:00",
+      "name": "timeline-scrubber",
+      "pinned": false,
+      "tech_stack": [
+        "React",
+        "TypeScript"
+      ]
+    },
+    {
+      "api_surface": "Consumes /api/products/[slug]/commits/[sha], /shots/[...path]",
+      "business_feature": "Release Item Comparison",
+      "category": "ui",
+      "cross_refs": [
+        "train-decision",
+        "train-evidence"
+      ],
+      "db_tables": [],
+      "description": "Before/after comparison panel for release items: change map (worker computed), commit diff, screenshots, performance tables and metric strips.",
+      "entry_points": [
+        "apps/web/src/components/ledger/train/compare/ComparePanel.tsx"
+      ],
+      "file_paths": [
+        "apps/web/src/components/ledger/train/compare/ChangeMap.tsx",
+        "apps/web/src/components/ledger/train/compare/CommitDiff.css",
+        "apps/web/src/components/ledger/train/compare/CommitDiff.tsx",
+        "apps/web/src/components/ledger/train/compare/ComparePanel.css",
+        "apps/web/src/components/ledger/train/compare/ComparePanel.tsx",
+        "apps/web/src/components/ledger/train/compare/ItemText.css",
+        "apps/web/src/components/ledger/train/compare/ItemText.tsx",
+        "apps/web/src/components/ledger/train/compare/Measurement.tsx",
+        "apps/web/src/components/ledger/train/compare/MetricStrip.css",
+        "apps/web/src/components/ledger/train/compare/MetricStrip.tsx",
+        "apps/web/src/components/ledger/train/compare/PerfRange.tsx",
+        "apps/web/src/components/ledger/train/compare/PerfTable.css",
+        "apps/web/src/components/ledger/train/compare/PerfTable.tsx",
+        "apps/web/src/components/ledger/train/compare/Screens.css",
+        "apps/web/src/components/ledger/train/compare/Screens.tsx",
+        "apps/web/src/components/ledger/train/compare/ShotFigure.css",
+        "apps/web/src/components/ledger/train/compare/ShotFigure.tsx",
+        "apps/web/src/components/ledger/train/compare/changeMap.worker.ts",
+        "apps/web/src/components/ledger/train/compare/useChangeMap.ts"
+      ],
+      "group": "Release Ledger",
+      "group_id": "c1d50cd7-43f6-4d82-b814-71a152671914",
+      "id": "1797077c-6ddf-41da-b66c-0a9f086ff2f1",
+      "keywords": [
+        "compare",
+        "diff",
+        "screenshots",
+        "perf",
+        "change-map",
+        "worker",
+        "metrics"
+      ],
+      "last_written_at": "2026-10-20T19:29:04.460126200+00:00",
+      "name": "train-compare",
+      "pinned": false,
+      "tech_stack": [
+        "React",
+        "TypeScript",
+        "Web Workers"
+      ]
+    },
+    {
+      "api_surface": "Consumes /api/products/[slug]/proposals/[id]",
+      "business_feature": "Release Train Decisions",
+      "category": "ui",
+      "cross_refs": [
+        "train-compare",
+        "train-release",
+        "ledger-core"
+      ],
+      "db_tables": [],
+      "description": "Release-train decision UI: pack table, item rows, decision bar, notes and keyboard map for accepting or rejecting items. Shared controls and marks are in ui/.",
+      "entry_points": [
+        "apps/web/src/components/ledger/train/Decide.tsx"
+      ],
+      "file_paths": [
+        "apps/web/src/components/ledger/train/Decide.tsx",
+        "apps/web/src/components/ledger/train/DecisionBar.css",
+        "apps/web/src/components/ledger/train/DecisionBar.tsx",
+        "apps/web/src/components/ledger/train/ItemRow.tsx",
+        "apps/web/src/components/ledger/train/KeysSheet.tsx",
+        "apps/web/src/components/ledger/train/NoteEditor.tsx",
+        "apps/web/src/components/ledger/train/PackRow.tsx",
+        "apps/web/src/components/ledger/train/PackTable.css",
+        "apps/web/src/components/ledger/train/PackTable.tsx",
+        "apps/web/src/components/ledger/train/data.ts",
+        "apps/web/src/components/ledger/train/keymap.ts",
+        "apps/web/src/components/ledger/train/ui/Controls.tsx",
+        "apps/web/src/components/ledger/train/ui/Marks.tsx",
+        "apps/web/src/components/ledger/train/ui/tables.ts",
+        "apps/web/src/components/ledger/train/ui/ui.css"
+      ],
+      "group": "Release Ledger",
+      "group_id": "c1d50cd7-43f6-4d82-b814-71a152671914",
+      "id": "9c67402a-deb3-4bd1-949b-9b0e9629ce76",
+      "keywords": [
+        "train",
+        "decision",
+        "pack",
+        "keymap",
+        "notes",
+        "accept"
+      ],
+      "last_written_at": "2026-10-20T19:29:04.459810400+00:00",
+      "name": "train-decision",
+      "pinned": false,
+      "tech_stack": [
+        "React",
+        "TypeScript"
+      ]
+    },
+    {
+      "api_surface": "",
+      "business_feature": "Train Evidence Rules",
+      "category": "lib",
+      "cross_refs": [
+        "train-compare",
+        "scan-engine"
+      ],
+      "db_tables": [],
+      "description": "Release-train evidence rules: screenshots, pixel comparison, performance measurement, quality rules and the wire format.",
+      "entry_points": [
+        "packages/core/src/train/rules.ts",
+        "packages/core/src/train/wire.ts"
+      ],
+      "file_paths": [
+        "packages/core/src/train/perf.ts",
+        "packages/core/src/train/pixels.ts",
+        "packages/core/src/train/rules.ts",
+        "packages/core/src/train/shots.ts",
+        "packages/core/src/train/wire.ts"
+      ],
+      "group": "Scan and Release Core",
+      "group_id": "64154a0e-2883-4e19-955e-ed7264ba7a3b",
+      "id": "44461c1c-6c15-407a-a3e7-a5f009e4f509",
+      "keywords": [
+        "train",
+        "pixels",
+        "perf",
+        "shots",
+        "rules",
+        "wire"
+      ],
+      "last_written_at": "2026-10-20T19:29:04.461728800+00:00",
+      "name": "train-evidence",
+      "pinned": false,
+      "tech_stack": [
+        "TypeScript"
+      ]
+    },
+    {
+      "api_surface": "Consumes /api/products/[slug]/releases, /releases/[id]/build, /finish, /releases/suggest",
+      "business_feature": "Release Packaging",
+      "category": "ui",
+      "cross_refs": [
+        "train-decision",
+        "release-api-services"
+      ],
+      "db_tables": [],
+      "description": "Release flow UI: stepper, version box, packaging, notes preview, sample toggles, job log and release history, with state kept in releaseState.",
+      "entry_points": [
+        "apps/web/src/components/ledger/train/release/ReleaseView.tsx"
+      ],
+      "file_paths": [
+        "apps/web/src/components/ledger/train/release/History.tsx",
+        "apps/web/src/components/ledger/train/release/JobLog.tsx",
+        "apps/web/src/components/ledger/train/release/NotesPreview.tsx",
+        "apps/web/src/components/ledger/train/release/Package.tsx",
+        "apps/web/src/components/ledger/train/release/ReleaseView.tsx",
+        "apps/web/src/components/ledger/train/release/SampleToggles.tsx",
+        "apps/web/src/components/ledger/train/release/Stepper.tsx",
+        "apps/web/src/components/ledger/train/release/VersionBox.tsx",
+        "apps/web/src/components/ledger/train/release/release.css",
+        "apps/web/src/components/ledger/train/release/releaseState.ts"
+      ],
+      "group": "Release Ledger",
+      "group_id": "c1d50cd7-43f6-4d82-b814-71a152671914",
+      "id": "cab9d710-28b0-4a52-a9d5-e773e68f8be3",
+      "keywords": [
+        "release",
+        "version",
+        "stepper",
+        "package",
+        "notes",
+        "history",
+        "job-log"
+      ],
+      "last_written_at": "2026-10-20T19:29:04.460424100+00:00",
+      "name": "train-release",
+      "pinned": false,
+      "tech_stack": [
+        "React",
+        "TypeScript"
+      ]
+    },
+    {
+      "api_surface": "",
+      "business_feature": "Scan and Train Checks",
+      "category": "test",
+      "cross_refs": [
+        "scan-engine",
+        "train-evidence",
+        "model-simulation"
+      ],
+      "db_tables": [],
+      "description": "Executable checks for the scan, live, release-train, lens-manifest and fixture behaviour. Run via npm check scripts.",
+      "entry_points": [
+        "scripts/check-release-train.ts",
+        "scripts/check-scan-jobs.ts"
+      ],
+      "file_paths": [
+        "scripts/check-builtin-health.ts",
+        "scripts/check-fixtures.ts",
+        "scripts/check-lens-manifest.ts",
+        "scripts/check-live-health.ts",
+        "scripts/check-live-steer.ts",
+        "scripts/check-live-tracks.ts",
+        "scripts/check-local-only.ts",
+        "scripts/check-release-train.ts",
         "scripts/check-scan-jobs.ts",
-        "scripts/fixtures/fake-claude.mjs",
-        "scripts/fixtures/kettle-findings.mjs"
+        "scripts/check-scan-wire.ts",
+        "scripts/check-standard-fixtures.mjs",
+        "scripts/check-train-budget.ts",
+        "scripts/check-train-compare.ts",
+        "scripts/check-train-quality.mjs",
+        "scripts/check-train-sim.ts",
+        "scripts/check-train-wire.ts",
+        "scripts/check-waves.ts"
+      ],
+      "group": "Quality Checks and Fidelity",
+      "group_id": "db39408c-c4cf-4159-9b09-8db878bd14f2",
+      "id": "60aea191-2b0b-4a64-aeff-c81986f0f579",
+      "keywords": [
+        "check",
+        "train",
+        "scan",
+        "live",
+        "waves",
+        "lens-manifest"
+      ],
+      "last_written_at": "2026-10-20T19:29:04.463512100+00:00",
+      "name": "train-scan-checks",
+      "pinned": false,
+      "tech_stack": [
+        "Node.js",
+        "TypeScript"
+      ]
+    },
+    {
+      "api_surface": "",
+      "business_feature": "Legend Variant Framework",
+      "category": "ui",
+      "cross_refs": [
+        "app-shell",
+        "variants-bold-shaped"
+      ],
+      "db_tables": [],
+      "description": "Variant registry, shared types and the base and subtle legend variants (expression, marks, tooling for screenshots and grids). Lets the blueprint legend be rendered in alternate visual encodings.",
+      "entry_points": [
+        "apps/web/src/variants/registry.ts",
+        "apps/web/src/variants/types.ts"
+      ],
+      "file_paths": [
+        "apps/web/src/variants/registry.ts",
+        "apps/web/src/variants/types.ts",
+        "apps/web/src/variants/check-copies.ts",
+        "apps/web/src/variants/shotkit.py",
+        "apps/web/src/variants/base/expression.ts",
+        "apps/web/src/variants/base/index.ts",
+        "apps/web/src/variants/base/legacy.ts",
+        "apps/web/src/variants/base/util.ts",
+        "apps/web/src/variants/subtle/Legend.tsx",
+        "apps/web/src/variants/subtle/expression.ts",
+        "apps/web/src/variants/subtle/index.ts",
+        "apps/web/src/variants/subtle/marks.ts",
+        "apps/web/src/variants/subtle/styles.css",
+        "apps/web/src/variants/subtle/tools/crop.py",
+        "apps/web/src/variants/subtle/tools/grid.py",
+        "apps/web/src/variants/subtle/tools/perf_lens.py",
+        "apps/web/src/variants/subtle/tools/shots.py"
+      ],
+      "group": "Legend Variants",
+      "group_id": "30e8a2eb-fde2-4ad5-bf29-1bda6b12517e",
+      "id": "9ccb9a17-72fd-4d3e-afc6-940c8785714c",
+      "keywords": [
+        "variant",
+        "registry",
+        "legend",
+        "expression",
+        "marks",
+        "subtle",
+        "base"
+      ],
+      "last_written_at": "2026-10-20T19:29:04.460658500+00:00",
+      "name": "variant-framework",
+      "pinned": false,
+      "tech_stack": [
+        "React",
+        "TypeScript",
+        "Python"
+      ]
+    },
+    {
+      "api_surface": "",
+      "business_feature": "Bold and Shaped Legends",
+      "category": "ui",
+      "cross_refs": [
+        "variant-framework"
+      ],
+      "db_tables": [],
+      "description": "The bold (colour channels, palette, decor) and shaped (glyph shapes, icons) legend variants with their panels, styles, notes and screenshot/perf scripts.",
+      "entry_points": [
+        "apps/web/src/variants/bold/index.ts",
+        "apps/web/src/variants/shaped/index.ts"
+      ],
+      "file_paths": [
+        "apps/web/src/variants/bold/channels.ts",
+        "apps/web/src/variants/bold/decor.ts",
+        "apps/web/src/variants/bold/index.ts",
+        "apps/web/src/variants/bold/palette.ts",
+        "apps/web/src/variants/bold/panels.tsx",
+        "apps/web/src/variants/bold/perf.py",
+        "apps/web/src/variants/bold/shots.py",
+        "apps/web/src/variants/bold/styles.css",
+        "apps/web/src/variants/bold/words.ts",
+        "apps/web/src/variants/shaped/Legend.tsx",
+        "apps/web/src/variants/shaped/Panel.tsx",
+        "apps/web/src/variants/shaped/channels.ts",
+        "apps/web/src/variants/shaped/icons.ts",
+        "apps/web/src/variants/shaped/index.ts",
+        "apps/web/src/variants/shaped/perf_lens.py",
+        "apps/web/src/variants/shaped/shapes.ts",
+        "apps/web/src/variants/shaped/shots.py",
+        "apps/web/src/variants/shaped/styles.css"
+      ],
+      "group": "Legend Variants",
+      "group_id": "30e8a2eb-fde2-4ad5-bf29-1bda6b12517e",
+      "id": "aaaa23ec-b323-4c72-ae08-dbdae5772982",
+      "keywords": [
+        "bold",
+        "shaped",
+        "palette",
+        "channels",
+        "icons",
+        "shapes",
+        "decor"
+      ],
+      "last_written_at": "2026-10-20T19:29:04.460894+00:00",
+      "name": "variants-bold-shaped",
+      "pinned": false,
+      "tech_stack": [
+        "React",
+        "TypeScript",
+        "Python"
+      ]
+    },
+    {
+      "api_surface": "",
+      "business_feature": "Visual Fidelity",
+      "category": "test",
+      "cross_refs": [
+        "variant-framework",
+        "app-shell"
+      ],
+      "db_tables": [],
+      "description": "Python-driven fidelity contracts, role maps, screenshot and performance capture that verify the rendered UI against contracts.",
+      "entry_points": [
+        "scripts/fidelity/drive.py",
+        "scripts/fidelity/contract.py"
+      ],
+      "file_paths": [
+        "scripts/fidelity/contract.py",
+        "scripts/fidelity/drive.py",
+        "scripts/perf.py",
+        "scripts/shots.py"
+      ],
+      "group": "Quality Checks and Fidelity",
+      "group_id": "db39408c-c4cf-4159-9b09-8db878bd14f2",
+      "id": "ee5268c3-bac7-497e-8cb0-5cfc76ba0fb6",
+      "keywords": [
+        "fidelity",
+        "contract",
+        "screenshots",
+        "perf",
+        "playwright",
+        "roles"
+      ],
+      "last_written_at": "2026-10-20T19:29:04.463964200+00:00",
+      "name": "visual-fidelity",
+      "pinned": false,
+      "tech_stack": [
+        "Python"
+      ]
+    },
+    {
+      "api_surface": "Next.js mirror of /api/products/** and /api/lens-draft",
+      "business_feature": "Web API Mounts",
+      "category": "api",
+      "cross_refs": [
+        "core-route-handlers"
+      ],
+      "db_tables": [],
+      "description": "Next.js App Router API route files that mount the core handlers into the web app.",
+      "entry_points": [
+        "apps/web/src/app/api/products/route.ts"
+      ],
+      "file_paths": [
+        "apps/web/src/app/api/lens-draft/route.ts",
+        "apps/web/src/app/api/products/route.ts",
+        "apps/web/src/app/api/products/[slug]/route.ts",
+        "apps/web/src/app/api/products/[slug]/commits/[sha]/route.ts",
+        "apps/web/src/app/api/products/[slug]/dispatch/route.ts",
+        "apps/web/src/app/api/products/[slug]/lenses/route.ts",
+        "apps/web/src/app/api/products/[slug]/lenses/[id]/route.ts",
+        "apps/web/src/app/api/products/[slug]/lenses/[id]/execute/route.ts",
+        "apps/web/src/app/api/products/[slug]/proposals/[id]/route.ts",
+        "apps/web/src/app/api/products/[slug]/releases/route.ts",
+        "apps/web/src/app/api/products/[slug]/releases/suggest/route.ts",
+        "apps/web/src/app/api/products/[slug]/releases/[id]/finish/route.ts",
+        "apps/web/src/app/api/products/[slug]/scan/route.ts",
+        "apps/web/src/app/api/products/[slug]/scans/route.ts",
+        "apps/web/src/app/api/products/[slug]/scans/[job]/route.ts",
+        "apps/web/src/app/api/products/[slug]/shots/[...path]/route.ts",
+        "apps/web/src/app/api/products/[slug]/stream/route.ts",
+        "apps/web/src/app/api/products/[slug]/structure/route.ts",
+        "apps/web/src/app/api/products/[slug]/triage/route.ts",
+        "apps/web/src/app/api/products/[slug]/waves/route.ts",
+        "apps/web/src/app/api/products/[slug]/waves/[wave]/route.ts",
+        "apps/web/src/app/api/products/[slug]/waves/[wave]/dispatch/route.ts"
+      ],
+      "group": "Server and API",
+      "group_id": "a1f14e8e-1fd3-416a-9060-71be952a1876",
+      "id": "f853a7a5-14cf-4292-86ff-f40462853b1a",
+      "keywords": [
+        "next",
+        "route",
+        "api",
+        "mount"
+      ],
+      "last_written_at": "2026-10-20T19:29:04.462671700+00:00",
+      "name": "web-api-mounts",
+      "pinned": false,
+      "tech_stack": [
+        "Next.js",
+        "TypeScript"
       ]
     }
   ],
+  "generated_at": "2026-10-20T19:29:15.223595100+00:00",
+  "generator": "personas-context-scan",
+  "groups": [
+    {
+      "color": "blue",
+      "context_count": 2,
+      "domain": "feature",
+      "id": "64591f6d-b88f-4881-8b6e-9f3bf55c55b1",
+      "name": "Blueprint Canvas Engine"
+    },
+    {
+      "color": "indigo",
+      "context_count": 5,
+      "domain": "feature",
+      "id": "f14b235b-971a-4d71-bfd7-a167e7cd68bf",
+      "name": "Blueprint Workspace UI"
+    },
+    {
+      "color": "emerald",
+      "context_count": 4,
+      "domain": "feature",
+      "id": "c1d50cd7-43f6-4d82-b814-71a152671914",
+      "name": "Release Ledger"
+    },
+    {
+      "color": "violet",
+      "context_count": 2,
+      "domain": "feature",
+      "id": "30e8a2eb-fde2-4ad5-bf29-1bda6b12517e",
+      "name": "Legend Variants"
+    },
+    {
+      "color": "amber",
+      "context_count": 4,
+      "domain": "shared",
+      "id": "64154a0e-2883-4e19-955e-ed7264ba7a3b",
+      "name": "Scan and Release Core"
+    },
+    {
+      "color": "orange",
+      "context_count": 4,
+      "domain": "infrastructure",
+      "id": "a1f14e8e-1fd3-416a-9060-71be952a1876",
+      "name": "Server and API"
+    },
+    {
+      "color": "pink",
+      "context_count": 2,
+      "domain": "data",
+      "id": "256ec986-b475-42dc-ba23-52563331ae37",
+      "name": "Schema and Sample Data"
+    },
+    {
+      "color": "red",
+      "context_count": 3,
+      "domain": "infrastructure",
+      "id": "db39408c-c4cf-4159-9b09-8db878bd14f2",
+      "name": "Quality Checks and Fidelity"
+    }
+  ],
+  "project": {
+    "id": "a7597674-4152-43df-b41b-36ec16aaaeab",
+    "name": "bp",
+    "root": "C:\\Users\\kazda\\kiro\\bp"
+  },
+  "provenance": {
+    "git_commit": "9daf69280204e9ca66bb2b097314e8ab7c87acfe",
+    "git_commit_count": 330
+  },
   "stats": {
-    "contexts": 11,
-    "groups": 6,
-    "files": 235
-  }
+    "contexts": 26,
+    "files": 340,
+    "groups": 8,
+    "use_cases": 0
+  },
+  "taxonomy": {
+    "context_categories": [
+      "ui",
+      "api",
+      "lib",
+      "data",
+      "test",
+      "config"
+    ],
+    "group_domains": [
+      "feature",
+      "infrastructure",
+      "shared",
+      "integration",
+      "data"
+    ]
+  },
+  "use_cases": [],
+  "version": 2
 }
