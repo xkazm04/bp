@@ -43,7 +43,7 @@ the repo per lens and writes `<repo>/.ai/lens-scan/` (`app-structure.json`, `sca
 repo in `bp.products.local.json` (shape: `bp.products.example.json`) and open `/?product=<slug>`: the scan
 drives the swarm layer live, its proposals wait in the queue for Approve or Decline, and lens panels show
 metric history. `node scripts/scan-demo.mjs [--live]` seeds a demo product (`kettle-live`) without a real
-scan. Details: `docs/blueprint-ui.md` (Live products) and `docs/standard/app-structure-v3.md` §15.
+scan; `node scripts/smoke-live.mjs [base]` seeds it and walks every product route against a running server. Details: `docs/blueprint-ui.md` (Live products) and `docs/standard/app-structure-v3.md` §15.
 
 Keys: `/` search · `1`–`9` lenses (1 = General) · `+` `−` zoom · arrows walk rooms · Enter opens · Esc goes back.
 
@@ -96,8 +96,9 @@ node scripts/fixtures/gen-swarm.mjs <dir>    # regenerate the swarm over it
 
 `npm run check` runs typecheck, every `check:*` script in package.json (new ones join automatically)
 and `validate:structure`, prints one line each with time and pass/fail, and exits 1 on any failure.
-`check:route-guards` asserts every `apps/web/src/app/api/**/route.ts` handler opens with `localHost` (GET) or `localOnly`
-(+ `jsonOnly` before a body parse); known gaps are listed in the script and reported on each run.
+`check:route-guards` asserts every API handler (`packages/core/src/server/api/**/route.ts`) opens with `localHost` (GET) or
+`localOnly` (+ `jsonOnly` before a body parse), and that every `apps/web/src/app/api/**/route.ts` is a thin mount re-exporting
+exactly its core handler; known gaps are listed in the script and reported on each run.
 `check:core-purity` fails when `packages/core` imports React, Next or Motion, the web app (`@/`, `apps/`), or (outside
 `src/server`) a Node built-in or a server file, when its pure half does not typecheck without the DOM lib, or when `apps/web` reaches
 core by a relative path instead of `@bp/core/*`; seeded controls prove each rule red on every run.

@@ -1,17 +1,6 @@
-// POST /api/products/[slug]/releases/[id]/finish, body `{}`: finish release `id` once its PR is merged, with a release
-// job (`/lens-scan release --id <id> --finish`): tag, GitHub release, items released, packs closed. Status codes:
-// ../release-job.ts. Localhost only.
-import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
-import { startRelease } from '../release-job';
+// POST /api/products/[slug]/releases/[id]/finish: a thin mount. The handler, its localhost and JSON guards and its contract are in
+// packages/core/src/server/api/products/[slug]/releases/[id]/finish/route.ts; apps/server mounts the same functions.
+export { POST } from '@bp/core/server/api/products/[slug]/releases/[id]/finish/route';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-export async function POST(req: Request, { params }: { params: Promise<{ slug: string; id: string }> }): Promise<Response> {
-  const denied = localOnly(req);
-  if (denied) return Response.json({ error: denied }, { status: 403 });
-  const notJson = jsonOnly(req);
-  if (notJson) return Response.json({ error: notJson }, { status: 415 });
-  try { await req.json(); } catch { return Response.json({ error: 'body must be JSON' }, { status: 400 }); }
-  return startRelease(req, params, 'finish');
-}

@@ -1,8 +1,11 @@
 #!/usr/bin/env node
-// Gate: every exported handler in src/app/api/**/route.ts opens with its localhost guard. GET -> localHost (or
-// localOnly); POST/PATCH/PUT/DELETE -> localOnly, plus jsonOnly before any body parse. "Opens with" = the guard call
-// is the first statement and is followed by `if (x) return`. scripts/check-local-only.ts tests the guard functions;
-// this proves the routes call them. Exceptions below are known gaps (reported, and the check fails once one is fixed
+// Gate: every exported handler in packages/core/src/server/api/**/route.ts opens with its localhost guard. GET ->
+// localHost (or localOnly); POST/PATCH/PUT/DELETE -> localOnly, plus jsonOnly before any body parse. "Opens with" = the
+// guard call is the first statement and is followed by `if (x) return`. scripts/check-local-only.ts tests the guard
+// functions; this proves the handlers call them. The handlers live in core so every mount runs the same guarded code:
+// each apps/web/src/app/api/**/route.ts must be a thin mount (only `export { <methods> } from '@bp/core/server/api/
+// <same path>/route'` plus Next's `runtime` / `dynamic` config) re-exporting exactly the core module's methods, and
+// every core handler module must be mounted. Exceptions below are known gaps (reported, and the check fails once one is fixed
 // so the entry is removed). Exits 1 on any violation.
 // Control: BP_ROUTE_GUARDS_MUTATE='[["scan/route.ts","localHost(req)","null"]]' rewrites route source as it is read
 // ([path suffix, find, replace]); a built-in self-test also mutates every handler in memory and expects each to fail.
@@ -13,7 +16,8 @@ import { fileURLToPath } from 'node:url';
 import { stripComments as strip } from './lib/source.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const API = path.join(ROOT, 'apps/web/src/app/api');
+const API = path.join(ROOT, 'packages/core/src/server/api');
+const WEB_API = path.join(ROOT, 'apps/web/src/app/api');
 const METHODS = ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'];
 const mutations = JSON.parse(process.env.BP_ROUTE_GUARDS_MUTATE || '[]');
 
@@ -90,5 +94,39 @@ for (const file of files) {
   }
 }
 
-console.log(`${handlerCount} handlers in ${files.length} routes: ${ok} guarded, ${known} known gaps; ${controls} seeded-defect controls`);
+// Thin mounts: a web route re-exports the core module at the same path and nothing else.
+const MOUNT = /^\s*export\s*\{\s*([A-Z]+(?:\s*,\s*[A-Z]+)*)\s*\}\s*from\s*'([^']+)';?\s*((?:export\s+const\s+(?:runtime|dynamic)\s*=\s*'[\w-]+';?\s*)*)$/;
+/** Problems of one mount source (comments stripped by the caller), against the core module's methods. */
+function auditMount(code, rel, methods) {
+  const m = MOUNT.exec(code), want = `@bp/core/server/api/${rel.replace(/\.ts$/, '')}`;
+  if (!m) return ['is not a thin mount (only `export { METHODS } from \'' + want + '\'` and runtime/dynamic config)'];
+  const bad = [];
+  if (m[2] !== want) bad.push(`re-exports '${m[2]}', not '${want}'`);
+  const got = m[1].split(',').map((x) => x.trim()).sort().join(','), need = [...methods].sort().join(',');
+  if (got !== need) bad.push(`mounts ${got || 'nothing'} but the core handler exports ${need || 'nothing'}`);
+  return bad;
+}
+const webFiles = fs.existsSync(WEB_API) ? walk(WEB_API) : [];
+const coreMethods = new Map(files.map((f) => [path.relative(API, f).split(path.sep).join('/'), handlers(fs.readFileSync(f, 'utf8')).map((h) => h.method)]));
+let mounts = 0;
+for (const file of webFiles) {
+  const rel = path.relative(WEB_API, file).split(path.sep).join('/');
+  mounts++;
+  if (!coreMethods.has(rel)) { failures.push(`apps/web/src/app/api/${rel}: no core handler at packages/core/src/server/api/${rel}`); continue; }
+  for (const b of auditMount(strip(fs.readFileSync(file, 'utf8')), rel, coreMethods.get(rel))) failures.push(`apps/web/src/app/api/${rel}: ${b}`);
+}
+for (const rel of coreMethods.keys()) if (!webFiles.some((f) => path.relative(WEB_API, f).split(path.sep).join('/') === rel)) failures.push(`packages/core/src/server/api/${rel}: not mounted by apps/web`);
+// Mount controls: an inline handler, a wrong path and a missing method must each be caught.
+{
+  const rel = 'products/[slug]/scan/route.ts', spec = "'@bp/core/server/api/products/[slug]/scan/route'";
+  for (const [what, code, methods] of [
+    ['inline handler', `export async function GET(req: Request) { return new Response('x'); }\n`, ['GET']],
+    ['wrong path', `export { GET } from '@bp/core/server/api/products/[slug]/scans/route';\n`, ['GET']],
+    ['missing method', `export { GET } from ${spec};\nexport const runtime = 'nodejs';\n`, ['GET', 'POST']],
+    ['extra code', `export { GET } from ${spec};\nconsole.log('side effect');\n`, ['GET']],
+  ]) { controls++; if (!auditMount(code, rel, methods).length) failures.push(`control: mount "${what}" was not caught`); }
+  controls++; if (auditMount(`export { GET } from ${spec};\n\nexport const runtime = 'nodejs';\nexport const dynamic = 'force-dynamic';\n`, rel, ['GET']).length) failures.push('control: a clean mount was refused');
+}
+
+console.log(`${handlerCount} handlers in ${files.length} core routes: ${ok} guarded, ${known} known gaps; ${mounts} web mounts; ${controls} seeded-defect controls`);
 if (failures.length) { console.error(`\nFAIL (${failures.length}):\n  ${failures.join('\n  ')}`); process.exit(1); }
