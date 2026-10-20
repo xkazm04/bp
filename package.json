@@ -37,6 +37,7 @@
     "check:route-guards": "node scripts/check-route-guards.mjs",
     "check:core-purity": "node scripts/check-core-purity.mjs",
     "check:server": "node scripts/check-server.mjs",
+    "check:bplink": "node scripts/check-bplink.mjs",
     "check:schema": "node packages/schema/generate.mjs --check",
     "check:camera": "node scripts/check-camera.ts",
     "check:variant-copies": "node apps/web/src/variants/check-copies.ts",

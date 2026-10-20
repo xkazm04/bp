@@ -21,3 +21,15 @@ What the client will consume, already in this repo:
   them, so `FJsonObjectConverter` fills the structs with no hand-written parsing.
 
 It never computes a health rule or a layout rule; those stay in `packages/core`.
+
+## BpLink contract
+
+The requests the `BpLink` module will make for Kettle, against `apps/server` with no products file. `npm run check:bplink`
+(`scripts/check-bplink.mjs`) starts the server and guards each answer; the counts are read from `packages/core/data`.
+
+- `GET /api/products/kettle/structure`: 200 JSON `{ structure, events, rev }`, `structure.domains` = the wings,
+  `structure.lenses` = the lens manifests.
+- The events BpLink reads: the `events` string of that payload (JSONL, one valid JSON object per line, the same lines as
+  `kettle.events.jsonl`).
+- `GET /api/products/kettle/stream`: 405 with a JSON `error`, not an SSE stream. Kettle has no live stream, so BpLink's
+  fallback is to read `rev` once from the structure payload (it is stable across reads).
