@@ -128,7 +128,7 @@ export function listener(routes: Route[]) {
     let response: Response;
     try { response = await handler(request, { params: Promise.resolve(params) }); } catch (e) {
       console.error(`${method} ${url.pathname}:`, e);
-      return json(res, 500, { error: `handler failed: ${(e as Error).message}` });
+      return json(res, 500, { error: `handler failed (${method} ${route.path}); the server log has the detail` });
     }
     const out: Record<string, string | string[]> = {};
     response.headers.forEach((v, k) => { out[k] = k === 'set-cookie' ? response.headers.getSetCookie() : v; });
