@@ -14,7 +14,6 @@ const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'app
 register('./overlays-loader.mjs', { parentURL: import.meta.url, data: { src: SRC, root: ROOT, mutate: JSON.parse(process.env.BP_OVERLAYS_MUTATE || '[]') } });
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
-const imp = (p: string): Promise<Any> => import(pathToFileURL(path.join(SRC, p)).href);
 const impCore = (p: string): Promise<Any> => import(pathToFileURL(path.join(ROOT, 'packages/core', p)).href);
 const { buildLiveModel, applyScan, refreshLiveModel } = await impCore('src/model/live-feed.ts');
 const { lineSuffix } = await impCore('src/model/product.ts');
