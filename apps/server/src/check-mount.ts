@@ -3,6 +3,8 @@
 //   host      a Host header no URL can carry answers 400, and the server keeps serving
 //   body      a body past MAX_BODY answers 413 (declared by Content-Length, or streamed chunked); one under it reaches the handler
 //   errors    a handler that throws answers 500 without the exception's message (that goes to stderr only)
+//   peer      a request from a non-loopback socket answers 403 whatever its Host (sent through this machine's own LAN
+//             address, when it has one; the server listens on 0.0.0.0 here, as `--host 0.0.0.0` would)
 // Run: node apps/server/src/check-mount.ts   Exit 1 on any failure.
 import fs from 'node:fs';
 import http from 'node:http';
@@ -69,6 +71,12 @@ try {
   const boom = await get('/api/boom');
   check('errors: a throwing handler answers 500', boom.status === 500, `${boom.status}`);
   check('errors: the 500 body does not carry the exception message', !boom.body.includes('secret.json'), boom.body.slice(0, 80));
+
+  const lan = Object.values(os.networkInterfaces()).flat().find((i) => i && i.family === 'IPv4' && !i.internal)?.address;
+  if (lan) {
+    const far = await get('/api/echo/ok', 'localhost', lan);
+    check(`peer: a request from a non-loopback socket (${lan}) answers 403`, far.status === 403, `${far.status}`);
+  } else console.log('skip  peer: this machine has no non-loopback IPv4 address to connect from');
 } finally {
   server.close(); server.closeAllConnections();
   fs.rmSync(api, { recursive: true, force: true });

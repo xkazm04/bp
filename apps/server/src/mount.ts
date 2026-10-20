@@ -97,9 +97,14 @@ function tooLarge(res: ServerResponse): void {
   json(res, 413, { error: `request body over ${MAX_BODY} bytes` }, { connection: 'close' });
 }
 
+/** A socket peer on this machine. The handlers' read guard checks only the Host header, which any LAN client can set
+ *  to `localhost`; under `--host 0.0.0.0` this is what keeps the reads local. */
+const LOOPBACK_PEER = /^(127(?:\.\d{1,3}){3}|::1|::ffff:127(?:\.\d{1,3}){3})$/;
+
 /** The request listener: route, adapt, call, stream back. */
 export function listener(routes: Route[]) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    if (!LOOPBACK_PEER.test(req.socket.remoteAddress ?? '')) return json(res, 403, { error: 'only served to this machine' });
     // A Host no URL can carry and a malformed percent-escape both throw here; uncaught, they would end the process.
     let url: URL, route: Route | undefined, params: Params | null = null;
     try {

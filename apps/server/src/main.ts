@@ -1,5 +1,6 @@
 // bp's headless server: the API of apps/web without Next, for channels that do not draw in a browser (the VR client).
-// It mounts the same handler functions (packages/core/src/server/api), JSON + SSE, on 127.0.0.1 only.
+// It mounts the same handler functions (packages/core/src/server/api), JSON + SSE, on 127.0.0.1 only: whatever --host
+// binds, a request from a non-loopback peer answers 403 (mount.ts).
 //   npm run server [-- --port 3100 --host 127.0.0.1]     (env BP_SERVER_PORT / BP_SERVER_HOST)
 // Run it from the repo root, as Next is: the working directory is where bp.products.local.json is read.
 // Prints `bp server listening on http://<host>:<port>` and one `route <methods> <path>` line per mounted handler.
