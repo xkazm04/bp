@@ -333,3 +333,70 @@ export interface AppStructureEvent {
   source?: string;
   [key: string]: unknown;
 }
+
+/** GET /api/products/{slug}/plan: the product laid out by core's layout, flat, with every tile's health per enabled lens. Levels are wing, room, bay, tile (the web's words). A node names its parent by id, never by reference. Boxes are world units. Derived from the map, never stored. */
+export interface Plan {
+  /** The fingerprint the structure route answers for the same map and events. */
+  rev: string;
+  /** The enabled lens ids in registry order: the keys of every tile's health. */
+  lenses: string[];
+  wings: PlanWing[];
+  rooms: PlanRoom[];
+  bays: PlanBay[];
+  tiles: PlanTile[];
+}
+
+/** A wing: Kettle's five groups of domains; any other product has one wing per domain. */
+export interface PlanWing {
+  id: string;
+  name: string;
+  /** Position left to right, oldest work first. */
+  order: number;
+  box: PlanBox;
+  /** A, B, C in chronological order. */
+  letter: string;
+}
+
+export interface PlanBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** A room: a domain. */
+export interface PlanRoom {
+  id: string;
+  /** The wing's id. */
+  parentId: string;
+  name: string;
+  /** Position within the wing. */
+  order: number;
+  box: PlanBox;
+}
+
+/** A bay: a capability. */
+export interface PlanBay {
+  id: string;
+  /** The room's id. */
+  parentId: string;
+  name: string;
+  /** Position within the room. */
+  order: number;
+  box: PlanBox;
+}
+
+/** A tile: a feature. */
+export interface PlanTile {
+  id: string;
+  /** The bay's id. */
+  parentId: string;
+  name: string;
+  /** Position within the bay, oldest first. */
+  order: number;
+  box: PlanBox;
+  /** Each enabled lens's reading, by lens id. */
+  health: Record<string, 'good' | 'watch' | 'bad' | 'unmeasured' | 'na'>;
+  /** General health: the worst of the enabled lenses. */
+  general: 'good' | 'watch' | 'bad' | 'unmeasured' | 'na';
+}

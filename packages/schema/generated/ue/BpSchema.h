@@ -907,3 +907,172 @@ struct BPLINK_API FBpAppStructureEvent
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString source;
 };
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpPlanBox
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	double x = 0.0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	double y = 0.0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	double w = 0.0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	double h = 0.0;
+};
+
+/** A wing: Kettle's five groups of domains; any other product has one wing per domain. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpPlanWing
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString id;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString name;
+
+	/** Position left to right, oldest work first. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 order = 0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpPlanBox box;
+
+	/** A, B, C in chronological order. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString letter;
+};
+
+/** A room: a domain. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpPlanRoom
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString id;
+
+	/** The wing's id. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString parentId;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString name;
+
+	/** Position within the wing. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 order = 0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpPlanBox box;
+};
+
+/** A bay: a capability. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpPlanBay
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString id;
+
+	/** The room's id. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString parentId;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString name;
+
+	/** Position within the room. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 order = 0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpPlanBox box;
+};
+
+/** A tile: a feature. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpPlanTile
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString id;
+
+	/** The bay's id. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString parentId;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString name;
+
+	/** Position within the bay, oldest first. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 order = 0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpPlanBox box;
+
+	/** Each enabled lens's reading, by lens id. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TMap<FString, FString> health;
+
+	/** General health: the worst of the enabled lenses. one of: good, watch, bad, unmeasured, na. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString general;
+};
+
+/** GET /api/products/{slug}/plan: the product laid out by core's layout, flat, with every tile's health per enabled lens. Levels are wing, room, bay, tile (the web's words). A node names its parent by id, never by reference. Boxes are world units. Derived from the map, never stored. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpPlan
+{
+	GENERATED_BODY()
+
+	/** The fingerprint the structure route answers for the same map and events. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString rev;
+
+	/** The enabled lens ids in registry order: the keys of every tile's health. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FString> lenses;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpPlanWing> wings;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpPlanRoom> rooms;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpPlanBay> bays;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpPlanTile> tiles;
+};

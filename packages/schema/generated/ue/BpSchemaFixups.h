@@ -28,6 +28,7 @@ namespace BpSchema
 	inline bool FixUp(const FJsonObject& Json, FBpRule& Out);
 	inline bool FixUp(const FJsonObject& Json, FBpPresentation& Out);
 	inline bool FixUp(const FJsonObject& Json, FBpAppStructureEvent& Out);
+	inline bool FixUp(const FJsonObject& Json, FBpPlan& Out);
 
 	/** Json[Key] into the UPROPERTY Field of Out, as the converter would have read it. A missing key keeps the default. */
 	template <typename T>
@@ -142,6 +143,12 @@ namespace BpSchema
 	}
 
 	inline bool FixUp(const FJsonObject& Json, FBpAppStructureEvent& Out)
+	{
+		(void)Json; (void)Out;
+		return true; // nothing carried
+	}
+
+	inline bool FixUp(const FJsonObject& Json, FBpPlan& Out)
 	{
 		(void)Json; (void)Out;
 		return true; // nothing carried

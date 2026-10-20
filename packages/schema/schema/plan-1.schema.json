@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://app-structure.example/schema/plan-1.schema.json",
+  "title": "Derived plan v1",
+  "description": "GET /api/products/{slug}/plan: the product laid out by core's layout, flat, with every tile's health per enabled lens. Levels are wing, room, bay, tile (the web's words). A node names its parent by id, never by reference. Boxes are world units. Derived from the map, never stored.",
+  "type": "object",
+  "required": ["rev", "lenses", "wings", "rooms", "bays", "tiles"],
+  "additionalProperties": false,
+  "properties": {
+    "rev": { "type": "string", "minLength": 1, "description": "The fingerprint the structure route answers for the same map and events." },
+    "lenses": { "type": "array", "items": { "type": "string" }, "description": "The enabled lens ids in registry order: the keys of every tile's health." },
+    "wings": { "type": "array", "items": { "$ref": "#/$defs/planWing" } },
+    "rooms": { "type": "array", "items": { "$ref": "#/$defs/planRoom" } },
+    "bays": { "type": "array", "items": { "$ref": "#/$defs/planBay" } },
+    "tiles": { "type": "array", "items": { "$ref": "#/$defs/planTile" } }
+  },
+  "$defs": {
+    "planBox": {
+      "type": "object",
+      "required": ["x", "y", "w", "h"],
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "w": { "type": "number" },
+        "h": { "type": "number" }
+      }
+    },
+    "planWing": {
+      "description": "A wing: Kettle's five groups of domains; any other product has one wing per domain.",
+      "type": "object",
+      "required": ["id", "name", "order", "box", "letter"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "order": { "type": "integer", "description": "Position left to right, oldest work first." },
+        "box": { "$ref": "#/$defs/planBox" },
+        "letter": { "type": "string", "description": "A, B, C in chronological order." }
+      }
+    },
+    "planRoom": {
+      "description": "A room: a domain.",
+      "type": "object",
+      "required": ["id", "parentId", "name", "order", "box"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "parentId": { "type": "string", "description": "The wing's id." },
+        "name": { "type": "string" },
+        "order": { "type": "integer", "description": "Position within the wing." },
+        "box": { "$ref": "#/$defs/planBox" }
+      }
+    },
+    "planBay": {
+      "description": "A bay: a capability.",
+      "type": "object",
+      "required": ["id", "parentId", "name", "order", "box"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "parentId": { "type": "string", "description": "The room's id." },
+        "name": { "type": "string" },
+        "order": { "type": "integer", "description": "Position within the room." },
+        "box": { "$ref": "#/$defs/planBox" }
+      }
+    },
+    "planTile": {
+      "description": "A tile: a feature.",
+      "type": "object",
+      "required": ["id", "parentId", "name", "order", "box", "health", "general"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "parentId": { "type": "string", "description": "The bay's id." },
+        "name": { "type": "string" },
+        "order": { "type": "integer", "description": "Position within the bay, oldest first." },
+        "box": { "$ref": "#/$defs/planBox" },
+        "health": { "type": "object", "additionalProperties": { "enum": ["good", "watch", "bad", "unmeasured", "na"] }, "description": "Each enabled lens's reading, by lens id." },
+        "general": { "enum": ["good", "watch", "bad", "unmeasured", "na"], "description": "General health: the worst of the enabled lenses." }
+      }
+    }
+  }
+}
