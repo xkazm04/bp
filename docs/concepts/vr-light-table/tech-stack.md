@@ -86,6 +86,21 @@ emits the TypeScript types (as today) and a second emits UE `USTRUCT`s with `UPR
 `FJsonObjectConverter` fills them with no hand-written parsing. A field added to a schema reaches
 both channels in one change; a parity check fails the build when the generated C++ is stale.
 
+*Decided 2026-10-20 (WP1.5 follow-up).*
+- **TS types.** `packages/core/src/standard/types.ts` stays the hand-written source the code imports.
+  The generated `packages/schema/generated/ts/app-structure.ts` is a parity artifact that nothing
+  imports. `npm run check:schema` fails when the two disagree on a field's presence or optionality in
+  the structure, event and lens-manifest shapes and every object type they hold. Why: the hand-written
+  types carry what the schema-to-TS mapping cannot, such as the recursive condition grammar,
+  discriminated unions and the open event type, and presence and optionality are what drift.
+- **Fields a `USTRUCT` cannot hold.** `short`, `default` and `$schema` become renamed `UPROPERTY`s
+  (`Short_`, `Default_`, `Schema_`) of the mapped type. The string-or-object `glyph` and the untyped
+  `cross_refs` become an `FString` that holds the value as JSON text. The generated `BpSchemaFixups.h`
+  fills these after `FJsonObjectConverter`, and BpLink reads through `BpSchema::FromJson`. `taxonomy`
+  is an `FJsonObjectWrapper` under its own key. `check:schema` fails when a schema field is neither
+  mapped nor carried. The headers have only been parsed with `clang++ -fsyntax-only` against stand-in
+  Unreal declarations. They have not been through UHT or a UE build.
+
 **Tooling.** npm workspaces, because bp is already an npm project. Known trap: bp's repo law says
 Turbopack refuses the `node_modules` junction in a worktree, and a workspace layout changes how
 Next resolves packages, so P1 proves `next build` and the 60 fps perf budget from the new layout

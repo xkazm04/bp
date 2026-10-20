@@ -2,6 +2,8 @@
 // change a schema and run `npm run schema:generate`; `npm run check:schema` fails while this file is stale.
 // Polymorphic parts (conditions, scan blocks, a glyph) are typed loosely here; the schemas and
 // packages/core/src/standard/types.ts carry their exact shapes.
+// A parity artifact: code imports packages/core/src/standard/types.ts (hand-written), never this file, and
+// `npm run check:schema` fails when the two disagree on a field or its optionality (packages/schema/parity.mjs).
 
 /** One file per app project: the code tree (v2, unchanged), the product tree (3.1: feature tags, experience, core and variations), KPIs, lens plugins and per-feature lens values. Normative text: docs/standard/app-structure-v3.md. Unknown keys are allowed where readers ignore them (top level, features, facets, the v2 code tree and KPIs); the v3 grammar objects are closed. */
 export interface AppStructure {
