@@ -35,6 +35,7 @@ const FL = await load<typeof import('../apps/web/src/engine/render/flags.ts')>(R
 const TR = await load<typeof import('../apps/web/src/engine/render/tracks.ts')>(R + 'tracks.ts');
 const KP = await load<typeof import('../apps/web/src/engine/render/keyplan.ts')>(R + 'keyplan.ts');
 const PL = await load<typeof import('../apps/web/src/engine/render/plan.ts')>(R + 'plan.ts');
+const DY = await load<typeof import('../apps/web/src/engine/render/dynamic.ts')>(R + 'dynamic.ts');
 
 type View = import('../apps/web/src/engine/render/view.ts').View;
 type SRect = import('../apps/web/src/engine/render/view.ts').SRect;
@@ -529,6 +530,48 @@ function traced(fn: () => void): string[] {
   expect(refused.length === 2, `patterns: one report per motif createPattern refuses, however often it is asked (${refused.length}: ${refused.join(' | ')})`);
   const fine = traced(() => { stubDoc({ setTransform() { } }); const c = fresh(); PT.lineFill(c, theme(false), 'wave', 0, 0, 40, 20, 1, 1); expect(c.ops > 0, 'patterns: a pattern that builds is drawn'); });
   expect(fine.length === 0, `patterns: a motif that builds reports nothing (${fine.length})`);
+}
+
+// ---------------------------------------------------------------- labelRight: the order badge's dodge survives the zoom bucket
+// drawRoomLabels writes labelRight at the RASTER's camera; drawOrderZones reads it at the LIVE camera, up to
+// the static cache's BUCKET (x1.5) away. Like labelBox it has to be in world units, or the dodge is made
+// against a stale scale. The fixture rasters one room's label at camera A, then asks the badge at camera B.
+{
+  const th = theme(false), RH = 72;
+  const textEngine = new (await load<typeof import('../apps/web/src/engine/text.ts')>('apps/web/src/engine/text.ts')).Text('sans-serif', 'monospace', 1);
+  (globalThis as Record<string, unknown>).document = { createElement: () => ({ getContext: () => ({ font: '', measureText: (t: string) => ({ width: t.length * 9 }) }) }) };
+  const mk = (w: number) => {
+    const room = { kind: 'room', id: 'r1', x: 0, y: 0, w, h: 200, d: { id: 'dom', base: 'dom', name: 'Booking and attendance' }, feats: [] as never[], bays: [] } as never as import('../packages/core/src/model/layout.ts').RoomNode;
+    return room;
+  };
+  const eng = (room: ReturnType<typeof mk>) => ({
+    U: 1, th, tx: textEngine, art: {}, KB1: 0.2, SAFE: { t: 0 }, cam: { reduced: true }, dashT: 0, S: { ordHi: null },
+    M: { sim: { has: true, orders: [{ id: 'o1', scope: { domain: 'dom' } }] }, P: { scale: 1 }, L: { rooms: [room], blds: [] } },
+  }) as never;
+  const camAt = (k: number): View => ({ x: 300, y: 36, k, FW: 1280, FH: 800, c0x: -100, c0y: -100, c1x: 1380, c1y: 900 });
+  const badge = (E: never, v: View) => { const c = fresh(); DY.drawOrderZones(E, c, v, 1); return c.calls.includes('rotate'); };
+  let moved = 0, total = 0, bad: string[] = [];
+  for (let w = 160; w <= 1200; w += 8) {
+    const room = mk(w), E = eng(room), A = camAt(0.6), B = camAt(0.6 / 1.5);
+    PL.drawRoomLabels(E, fresh(), A, { wings: [{ w, rooms: [room] }] } as never);
+    const lb = room.labelBox;
+    if (!lb) continue;                                           // no header label at this width: nothing to dodge
+    total++;
+    // what the dodge must say at B: the label's right edge (its box, in world units) carried to B's screen
+    const rb = V.sxv(B, room.x + room.w), want = V.sxv(B, lb.x + lb.w) < rb - 80;
+    const atA = badge(E, A), got = badge(E, B);
+    if (rb - V.sxv(B, room.x) < 230 || 200 * B.k < 40) continue;    // the badge's own size gates, not the dodge
+    if (got !== want) bad.push(w + (atA ? '' : '/hidden-at-A'));
+    if (atA !== got) moved++;
+  }
+  expect(total > 20, `labelRight: the fixture drew a header label in ${total} room widths`);
+  expect(bad.length === 0, `labelRight: the order badge's dodge at a camera 1.5x away disagrees with the label's own box in ${bad.length} widths (${bad.slice(0, 6).join(' ')})`);
+  // the unit is pinned at both ends: the writer records world units, the one reader carries them to its camera
+  const writes = [...bare(R + 'plan.ts').matchAll(/labelRight\s*=\s*([^;]+);/g)].map((m) => m[1].trim()).filter((e) => e !== 'undefined');
+  expect(writes.length === 3 && writes.every((e) => e === 'R.x' || /\/\s*k\)?$/.test(e)), `labelRight: plan.ts writes it in world units at all 3 sites (${writes.join(' | ')})`);
+  expect(/sxv\(v,\s*R\.labelRight\)/.test(bare(R + 'dynamic.ts')), 'labelRight: dynamic.ts carries it to the live camera with sxv before comparing');
+  expect(moved > 0,`labelRight: the sweep crosses the badge's threshold between the two cameras (${moved} widths), so it is not vacuous`);
+  delete (globalThis as Record<string, unknown>).document;
 }
 
 // ---------------------------------------------------------------- source guard: text is measured, never counted

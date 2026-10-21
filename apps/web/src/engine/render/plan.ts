@@ -517,7 +517,7 @@ function drawBuildingLabel(E: Engine, ctx: CanvasRenderingContext2D, v: View, B:
   ctx.globalAlpha = 1;
 }
 
-function drawRoomLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: BldNode) {
+export function drawRoomLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: BldNode) {
   const k = v.k, u = E.U, th = E.th, tx = E.tx, hasSw = E.M.sim.has;
   for (const W of B.wings) {
     const a = clamp((W.w * k - 100 * u) / 8, 0, 1) * (E.M.P.scale > 1 ? smooth(E.KB1 * 0.62, E.KB1 * 0.8, k) : 1);
@@ -531,14 +531,14 @@ function drawRoomLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: Bl
       const hh = RH * k, nm = R.d.name.toUpperCase(), maxW = r.w - 28 * u - (hasSw ? 38 * u : 0);
       let fs = clamp((hh * 0.36) / u, 14, 26), ls = fs * 0.06, lines = tx.wrap(nm, maxW, tx.f(fs, 600), 2, ls);
       if (!lines && fs > 14) { fs = 14; ls = 0.8; lines = tx.wrap(nm, maxW, tx.f(14, 600), 2, ls); }
-      if (!lines) { ctx.globalAlpha = 1; R.labelRight = r.x; continue; }
+      if (!lines) { ctx.globalAlpha = 1; R.labelRight = R.x; continue; }
       // at the smallest size the label fades out over the last 24 px of width it needs (its fit limit found by bisection), instead of vanishing
       let fa = 1;
       if (fs <= 14 && !tx.wrap(nm, maxW - 24 * u, tx.f(fs, 600), 2, ls)) {
         let lo = maxW - 24 * u, hi = maxW;
         for (let i = 0; i < 4; i++) { const mid = (lo + hi) / 2; if (tx.wrap(nm, mid, tx.f(fs, 600), 2, ls)) hi = mid; else lo = mid; }
         fa = clamp((maxW - hi) / (24 * u), 0, 1);
-        if (fa <= 0.01) { ctx.globalAlpha = 1; R.labelRight = r.x; continue; }
+        if (fa <= 0.01) { ctx.globalAlpha = 1; R.labelRight = R.x; continue; }
       }
       const aa = a * fa; ctx.globalAlpha = aa;
       const lh = fs * 1.08 * u, blockH = lines.length * lh, inHeader = hh >= blockH + 14 * u;
@@ -548,10 +548,10 @@ function drawRoomLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: Bl
       if (y > r.y + 8 * u && !inHeader) y = r.y + 8 * u;
       const pw = Math.max(...lines.map((l) => tx.w(l, tx.f(fs, 600), ls)));
       if (!inHeader || y > r.y + 8 * u) { ctx.fillStyle = th.alpha(th.labelBg, 0.92); ctx.fillRect(x - 6 * u, y - 3 * u, pw + 12 * u, blockH + 8 * u); }
-      R.labelRight = x + pw + 6 * u;
-      // world units, so the flags (drawn at the live camera) can find it between rasters; only a label in
-      // its room's header (a label floating over the room's content lets flags pass over it)
+      // world units, so the layers drawn at the live camera (the flags, the order badges) can find them between
+      // rasters; labelBox only for a label in its room's header (a label floating over the room's content lets flags pass over it)
       const ox = v.FW / 2 - v.x * k, oy = v.FH / 2 - v.y * k;
+      R.labelRight = (x + pw + 6 * u - ox) / k;
       if (y === r.y + 8 * u) R.labelBox = { x: (x - 6 * u - ox) / k, y: (y - 3 * u - oy) / k, w: (pw + 12 * u) / k, h: (blockH + 8 * u) / k };
       lines.forEach((l, i) => drawText(ctx, l, x, y + lh * (i + 0.8), tx.f(fs, 600), th.inkHi, null, ls));
       if (inHeader && hh >= blockH + 34 * u && y === r.y + 8 * u) {

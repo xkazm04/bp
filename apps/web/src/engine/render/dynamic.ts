@@ -152,7 +152,7 @@ export function drawOrderZones(E: Engine, ctx: CanvasRenderingContext2D, v: View
         ctx.save(); ctx.strokeStyle = hi ? th.inkHi : th.alpha(th.amber, 0.8); ctx.lineWidth = hi ? 2.5 : 1.5; ctx.setLineDash(DASH_ZONE); ctx.lineDashOffset = dashOff(E, -0.5);
         ctx.strokeRect(r.x + 5 * u, r.y + 5 * u, r.w - 10 * u, r.h - 10 * u); ctx.restore();
         if (hi) { ctx.fillStyle = th.alpha(th.amber, 0.08); ctx.fillRect(r.x, r.y, r.w, r.h); }
-        if (r.w >= 230 * u && r.h >= 40 * u && (R.labelRight ?? 0) < r.x + r.w - 80 * u) {
+        if (r.w >= 230 * u && r.h >= 40 * u && (R.labelRight === undefined ? -Infinity : sxv(v, R.labelRight)) < r.x + r.w - 80 * u) {
           const sx = r.x + r.w - 62 * u, sy = r.y + 17 * u;
           ctx.save(); ctx.translate(sx, sy); ctx.rotate(-0.14); ctx.strokeStyle = th.amber; ctx.fillStyle = th.alpha(th.panel, 0.92); ctx.lineWidth = 1.6;
           ctx.beginPath(); ctx.arc(0, 0, 13 * u, 0, 6.2832); ctx.fill(); ctx.stroke();
