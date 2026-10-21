@@ -80,13 +80,3 @@
 #flyout #results li .r { grid-column: 2; font-size: 12px; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.04em; }
 #flyout #results li.on { background: color-mix(in srgb, var(--accent) 16%, transparent); }
 #flyout #results li.none { display: block; color: var(--ink-2); cursor: default; font-size: 14px; }
-
-
-#flyout .spend { padding: 10px 12px; border-bottom: 1px solid var(--ink-4); }
-#flyout .spend .k { display: flex; justify-content: space-between; font: 500 12px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); }
-#flyout .spend .bar { height: 6px; margin-top: 6px; border: 1px solid var(--ink-3); }
-#flyout .spend .bar i { display: block; height: 100%; background: var(--mint); }
-#flyout .spend .bar.hi i { background: var(--amber); } #flyout .spend .bar.over i { background: var(--red); }
-
-/* the Orders panel's breach links (base style: .ord in blueprint.css): a 24 px target, not the 19 px text line */
-#flyout .ord .vi button { padding: 3px 0 2px; }
