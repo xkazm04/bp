@@ -64,6 +64,7 @@
     "check:engine-copy": "node scripts/check-engine-copy.ts",
     "check:chrome": "node scripts/check-chrome-sizes.mjs",
     "check:legacy": "node scripts/check-legacy-unmeasured.mjs",
+    "check:art": "node scripts/check-art.mjs",
     "check:findings": "node scripts/fixtures/kettle-findings.mjs --check"
   },
   "devDependencies": {
