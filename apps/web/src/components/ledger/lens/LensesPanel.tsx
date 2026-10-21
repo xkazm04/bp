@@ -16,6 +16,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { deleteLens, patchLens } from '@/lib/scan/client';
 import { deleteTempLens, setTempLensEnabled } from '@/lib/scan/temp-lens';
 import { MAX_SELECTION } from '@bp/core/scan/jobs';
+import { ymdUTC } from '@bp/core/model';
 import { useBp, useEngine, useLive, useScanCtx } from '../../hooks';
 import { useLedgerSelection } from '../useLedger';
 import { LensGlyph, LineSample } from './DraftCard';
@@ -56,7 +57,8 @@ export function LensesButton() {
   );
 }
 
-const day = (iso: string | undefined) => (iso ? iso.slice(0, 10) : null);
+/** The UTC day a lens was created, through the one clock (packages/core/src/model/time.ts); null when unrecorded. */
+const day = (iso: string | undefined) => (iso ? ymdUTC(iso) : null);
 const KIND_TIP: Record<LensRow['kind'], string> = {
   'built-in': 'built-in lenses are set in the map',
   project: 'a permanent lens of this project (reverse-DNS id)',

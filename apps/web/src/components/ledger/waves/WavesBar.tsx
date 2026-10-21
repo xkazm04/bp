@@ -7,6 +7,7 @@
 // of table width the tabs fold into one select. Waves load through useWaves.ts; with none, the strip says how to make one.
 // Dispatching goes through Ledger.dispatchWave, the optimistic path the direct Dispatch uses.
 import { useState } from 'react';
+import { dayHhmmUTC } from '@bp/core/model';
 import type { Ledger } from '../useLedger';
 import type { Wave, WaveState } from '@bp/core/scan/waves';
 import { WaveComposer } from './WaveComposer';
@@ -66,7 +67,7 @@ function WavePanel({ L, w }: { L: Ledger; w: Wave }) {
     <div className="wv-panel" data-wave-panel={w.id}>
       <div className="wv-head">
         <b className="wv-name">{w.name}</b><WaveMark state={state} />
-        <span className="wv-meta">{size(w)} findings · {w.packages.length} {w.packages.length === 1 ? 'package' : 'packages'}{w.dispatched_at ? ' · dispatched ' + w.dispatched_at.slice(0, 16).replace('T', ' ') : ''}</span>
+        <span className="wv-meta">{size(w)} findings · {w.packages.length} {w.packages.length === 1 ? 'package' : 'packages'}{w.dispatched_at ? ' · dispatched ' + dayHhmmUTC(w.dispatched_at) : ''}</span>
         <span className="lg-sp" />
         {draft ? <button type="button" className="bt go" data-wave="dispatch" disabled={off || !left} onClick={() => void L.dispatchWave(w.id)}
           title={left ? 'Approve the proposed findings and queue one execute job per package, each with its own model and effort' : 'No finding of this wave can go: all are built, building or no longer open'}>{L.busy ? 'Dispatching…' : 'Dispatch wave ' + left}</button>
