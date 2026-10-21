@@ -13,7 +13,10 @@ Read by `/scan-sweep` (ai-registry `skills/scan-sweep/SKILL.md`, "Project overla
 
 ## Gates
 
-always:
+always (export `BP_LENS_SCAN_DIR=C:/Users/kazda/kiro/ai-registry/skills/lens-scan` first — without it
+`check-scan-jobs` silently skips ten release-train triage/release checks and `check-all.mjs` still
+prints `0 skipped`, because it discards a passing check's output):
+- `npm run check` (the aggregate: typecheck + every `check:*` + `validate:structure`, discovered automatically)
 - `npm run typecheck`
 - `npm run check:lens-health`
 - `npm run validate:structure` (no arguments: validates the lens manifests and the spec examples)
