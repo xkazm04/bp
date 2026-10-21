@@ -116,6 +116,12 @@ expect(q.cur.n === 2 && q.q.length === 1, 'the queue did not hand over in arriva
 expect(O.toastArrive({ cur: tt(5, 'Decided', { action: 'undo' }), q: [] }, tt(6, 'Decided', { action: 'undo' })).cur.n === 6, 'a newer undoable toast did not supersede an older one');
 const to = render(() => React.createElement(O.Toast), { toast: tt(7, 'Hello') }, () => ({ parts: [] }));
 expect(to.threw === null && /role="status"/.test(to.html) && !/display:\s*contents/.test(to.html), `Toast live region missing or display:contents (${to.threw ?? 'rendered'})`);
+// severity: the toast's <div> only mounts after an effect (no server render), so the renderer is read as source: it must paint the
+// model's tone as data-tone, and the chrome rule for each tone must exist (a failure must not arrive in mint)
+const ovSrc = fs.readFileSync(path.join(SRC, 'components/Overlays.tsx'), 'utf8');
+expect(/<motion\.div id="toast"[^>]*data-tone=\{cur\.tone\}/.test(ovSrc), '#toast does not paint the toast tone as data-tone');
+const toastCss = fs.readFileSync(path.join(SRC, 'components/blueprint.css'), 'utf8');
+expect(/#toast\[data-tone="bad"\]\s*\{[^}]*var\(--red\)/.test(toastCss) && /#toast\[data-tone="warn"\]\s*\{[^}]*var\(--amber\)/.test(toastCss), '#toast has no red/amber chrome rule for data-tone bad/warn');
 
 // The General legend's caption is prose, not a key row: `.lg div` is a flex box, so without a block
 // override the caption's two text runs and its <code> lay out as three narrow side-by-side columns (what

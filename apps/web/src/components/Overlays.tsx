@@ -439,7 +439,7 @@ export function Toast() {
     <div className="toast-live" role="status" aria-live="polite" aria-atomic="true" style={SR_ONLY}>{cur ? toastLine(cur) : ''}</div>
     <AnimatePresence>
       {cur && (
-        <motion.div id="toast" key={cur.n} onPointerEnter={() => setPaused(true)} onPointerLeave={() => setPaused(false)} onFocus={() => setPaused(true)} onBlur={() => setPaused(false)}
+        <motion.div id="toast" key={cur.n} data-tone={cur.tone} onPointerEnter={() => setPaused(true)} onPointerLeave={() => setPaused(false)} onFocus={() => setPaused(true)} onBlur={() => setPaused(false)}
           onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); end(); } }}
           initial={{ opacity: 0, y: -14, x: '-50%' }} animate={{ opacity: 1, y: 0, x: '-50%' }} exit={{ opacity: 0, y: -10, x: '-50%' }} transition={{ type: 'spring', stiffness: 420, damping: 32 }}>
           <span><b>{cur.strong}</b>{cur.text ? ' · ' + cur.text : ''}</span>
