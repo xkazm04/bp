@@ -1,0 +1,130 @@
+# Blender script; run with blender -b -P scripts/art/city-backdrop/build_backdrop.bpy -- <repo-root> <work-dir> <source-frame.jpg>
+"""Builds apps/vr/ArtSource/city-backdrop/ from the picked Leonardo frame (leonardo.mjs gen --prop city-backdrop, see lookdev/log.jsonl).
+  concept.png                          the picked frame, lossless re-encode of the downloaded JPEG (2048 x 768)
+  textures/city_backdrop_basecolor.png the matte strip: the last SEAM columns are cross-faded into the first ones so the left and right
+                                       edges continue into each other (tileable), then dimmed (every channel x DIM, in encoded sRGB)
+  final.glb                            one 180-degree curved panel, normals inward, one emissive-only material slot, one UV set
+Writes <work-dir>/score.json (measurements the manifest gates are derived from). Pure Blender and numpy; no network, no GPU job."""
+import bpy, bmesh, math, os, sys, json
+import numpy as np
+
+REPO, WORK, SRC = sys.argv[sys.argv.index('--') + 1:][:3]
+ART = os.path.join(REPO, 'apps', 'vr', 'ArtSource', 'city-backdrop')
+os.makedirs(os.path.join(ART, 'textures'), exist_ok=True)
+os.makedirs(WORK, exist_ok=True)
+
+SEAM = 256          # columns cross-faded; the strip is 256 px narrower than the frame
+DIM = 0.55          # encoded-sRGB multiplier, so the strip never outshines the table's edge strip (#F4FAFF, emission 25)
+RADIUS, ARC_DEG = 10.0, 180.0
+Z0, Z1 = -1.0, 5.0  # panel bottom and top (m); the horizon band lands near z = 1.4 m, a standing eye height
+V0, V1 = 0.05, 0.65 # the rows of the strip the panel shows (the sky above and the dark ground below are cut)
+SEGMENTS = 36
+
+
+def load(path):
+    img = bpy.data.images.load(path)
+    w, h = img.size
+    a = np.empty(w * h * 4, dtype=np.float32)
+    img.pixels.foreach_get(a)
+    return img, a.reshape(h, w, 4)
+
+
+def save(arr, path):
+    h, w, _ = arr.shape
+    img = bpy.data.images.new(os.path.basename(path), w, h)
+    img.pixels.foreach_set(np.ascontiguousarray(arr, dtype=np.float32).ravel())
+    img.filepath_raw = path
+    img.file_format = 'PNG'
+    img.save()
+    bpy.data.images.remove(img)
+
+
+src_img, src = load(SRC)
+src[:, :, 3] = 1.0
+save(src, os.path.join(ART, 'concept.png'))
+h, w, _ = src.shape
+
+# tileable: result[x] for x < SEAM fades from the frame's far-right continuation (column w - SEAM + x) into column x
+tw = w - SEAM
+strip = src[:, :tw].copy()
+ramp = (np.arange(SEAM, dtype=np.float32) / SEAM)[None, :, None]
+strip[:, :SEAM, :3] = src[:, tw:tw + SEAM, :3] * (1 - ramp) + src[:, :SEAM, :3] * ramp
+seam_jump = float(np.abs(strip[:, -1, :3] - strip[:, 0, :3]).mean())          # last column against first column
+raw_jump = float(np.abs(src[:, -1, :3] - src[:, 0, :3]).mean())               # the same on the uncorrected frame
+neighbour = float(np.abs(strip[:, 1:, :3] - strip[:, :-1, :3]).mean())        # typical column-to-column step
+strip[:, :, :3] *= DIM
+tex_path = os.path.join(ART, 'textures', 'city_backdrop_basecolor.png')
+save(strip, tex_path)
+
+lum = (0.2126 * strip[:, :, 0] + 0.7152 * strip[:, :, 1] + 0.0722 * strip[:, :, 2])
+bpy.data.images.remove(src_img)
+
+# the panel
+bpy.ops.wm.read_factory_settings(use_empty=True)
+mesh = bpy.data.meshes.new('city_backdrop')
+obj = bpy.data.objects.new('city_backdrop', mesh)
+bpy.context.scene.collection.objects.link(obj)
+bm = bmesh.new()
+uv = bm.loops.layers.uv.new('UVMap')
+cols = []
+for i in range(SEGMENTS + 1):
+    t = math.radians(-ARC_DEG / 2 + ARC_DEG * i / SEGMENTS)
+    x, y = RADIUS * math.sin(t), RADIUS * math.cos(t)       # the arc stands behind the table, on +Y
+    cols.append((bm.verts.new((x, y, Z0)), bm.verts.new((x, y, Z1))))
+for i in range(SEGMENTS):
+    (b0, t0), (b1, t1) = cols[i], cols[i + 1]
+    f = bm.faces.new((b0, b1, t1, t0))                       # winding makes the normal face the arc's centre
+    for loop, u, v in zip(f.loops, (i, i + 1, i + 1, i), (V0, V0, V1, V1)):
+        loop[uv].uv = (u / SEGMENTS, v)
+bmesh.ops.triangulate(bm, faces=bm.faces[:])
+bm.to_mesh(mesh)
+bm.free()
+for p in mesh.polygons:
+    p.use_smooth = True
+
+mat = bpy.data.materials.new('city_backdrop_emissive')
+mat.use_nodes = True
+nt = mat.node_tree
+bsdf = nt.nodes['Principled BSDF']
+bsdf.inputs['Base Color'].default_value = (0, 0, 0, 1)
+bsdf.inputs['Roughness'].default_value = 1.0
+bsdf.inputs['Metallic'].default_value = 0.0
+tex = nt.nodes.new('ShaderNodeTexImage')
+tex.image = bpy.data.images.load(tex_path)
+tex.image.colorspace_settings.name = 'sRGB'
+tex.extension = 'REPEAT'
+nt.links.new(tex.outputs['Color'], bsdf.inputs['Emission Color'])
+bsdf.inputs['Emission Strength'].default_value = 1.0
+obj.data.materials.append(mat)
+
+glb = os.path.join(ART, 'final.glb')
+bpy.ops.export_scene.gltf(filepath=glb, export_format='GLB', export_yup=True, export_apply=True)
+
+# score the file on disk
+bpy.ops.wm.read_factory_settings(use_empty=True)
+bpy.ops.import_scene.gltf(filepath=glb)
+objs = [o for o in bpy.context.scene.objects if o.type == 'MESH']
+o = objs[0]
+me = o.data
+me.calc_loop_triangles()
+vs = [o.matrix_world @ v.co for v in me.vertices]
+inward = sum(1 for p in me.polygons if (o.matrix_world.to_3x3() @ p.normal).dot(-(o.matrix_world @ p.center)) > 0)
+ang = [math.degrees(math.atan2(v.x, v.y)) for v in vs]
+rad = [math.hypot(v.x, v.y) for v in vs]
+S = {
+    'mesh_objects': len(objs), 'tris': len(me.loop_triangles), 'vertices': len(me.vertices),
+    'inward_faces': inward, 'faces': len(me.polygons),
+    'materials': [m.name for m in me.materials], 'uv_sets': len(me.uv_layers),
+    'bounds_m': {'min': [round(min(v[i] for v in vs), 3) for i in range(3)], 'max': [round(max(v[i] for v in vs), 3) for i in range(3)]},
+    'arc_deg': [round(min(ang), 2), round(max(ang), 2)], 'radius_m': [round(min(rad), 3), round(max(rad), 3)],
+    'emissive_only': all(
+        (lambda b: tuple(b.inputs['Base Color'].default_value)[:3] == (0.0, 0.0, 0.0) and b.inputs['Emission Strength'].default_value > 0
+         and bool(b.inputs['Emission Color'].is_linked))(m.node_tree.nodes['Principled BSDF']) for m in me.materials),
+    'texture': {'size': [tw, h], 'source_size': [w, h], 'seam_columns': SEAM, 'dim': DIM,
+                'seam_jump_after': round(seam_jump, 5), 'seam_jump_before': round(raw_jump, 5), 'neighbour_step': round(neighbour, 5),
+                'max_luminance_encoded': round(float(lum.max()), 4), 'p99_luminance_encoded': round(float(np.percentile(lum, 99)), 4),
+                'mean_luminance_encoded': round(float(lum.mean()), 4)},
+    'panel': {'radius_m': RADIUS, 'arc_deg': ARC_DEG, 'z_m': [Z0, Z1], 'v_range': [V0, V1]},
+}
+json.dump(S, open(os.path.join(WORK, 'score.json'), 'w'), indent=2)
+print('SCORE', json.dumps(S))

@@ -1,0 +1,102 @@
+# Blender script; run with blender -b -P scripts/art/city-backdrop/render_backdrop.bpy -- <repo-root> <work-dir>
+"""Evidence for city-backdrop: the panel behind the light table's position (light-table-frame/final.glb at the origin, the viewer at the
+near -Y edge at 1.55 m looking +Y, the backdrop arc behind the table), and vs-hero.jpg, that view beside lookdev/00-hero.jpg.
+Also panel-wide.jpg, the arc seen from its centre. Cycles on the CPU, no GPU job. Writes <work-dir>/evidence.json (pixel statistics
+used by the manifest: the backdrop's brightest region against the table's edge strip)."""
+import bpy, math, os, sys, json
+import numpy as np
+from mathutils import Vector
+
+REPO, WORK = sys.argv[sys.argv.index('--') + 1:][:2]
+ART = os.path.join(REPO, 'apps', 'vr', 'ArtSource', 'city-backdrop')
+EV = os.path.join(ART, 'evidence')
+HERO = os.path.join(REPO, 'docs', 'concepts', 'vr-light-table', 'lookdev', '00-hero.jpg')
+os.makedirs(EV, exist_ok=True)
+
+bpy.ops.wm.read_factory_settings(use_empty=True)
+bpy.ops.import_scene.gltf(filepath=os.path.join(ART, 'final.glb'))
+bpy.ops.import_scene.gltf(filepath=os.path.join(REPO, 'apps', 'vr', 'ArtSource', 'light-table-frame', 'final.glb'))
+S = bpy.context.scene
+S.render.engine = 'CYCLES'
+S.cycles.device = 'CPU'
+S.cycles.samples = 48
+S.cycles.use_denoising = False
+w = bpy.data.worlds.new('w')
+w.use_nodes = True
+w.node_tree.nodes['Background'].inputs['Color'].default_value = (0.0, 0.0, 0.0, 1)
+S.world = w
+S.render.image_settings.file_format = 'PNG'
+S.view_settings.view_transform = 'Standard'
+
+bpy.ops.mesh.primitive_plane_add(size=80, location=(0, 0, -1.001))   # a dark studio floor under the panel's foot
+fl = bpy.context.object
+fm = bpy.data.materials.new('floor')
+fm.use_nodes = True
+fm.node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value = (0.002, 0.003, 0.006, 1)
+fl.data.materials.append(fm)
+bpy.ops.object.light_add(type='AREA', location=(0.4, -1.4, 2.4))
+L = bpy.context.object
+L.data.energy, L.data.size = 120, 1.2
+L.rotation_euler = (Vector((0, 0, 0.95)) - L.location).to_track_quat('-Z', 'Y').to_euler()
+
+bpy.ops.object.camera_add()
+cam = bpy.context.object
+S.camera = cam
+cam.data.sensor_fit = 'HORIZONTAL'
+
+
+def shoot(name, loc, target, fov, res):
+    S.render.resolution_x, S.render.resolution_y = res
+    cam.location = Vector(loc)
+    cam.rotation_euler = (Vector(target) - cam.location).to_track_quat('-Z', 'Y').to_euler()
+    cam.data.angle = math.radians(fov)
+    S.render.filepath = os.path.join(WORK, name + '.png')
+    bpy.ops.render.render(write_still=True)
+    img = bpy.data.images.load(S.render.filepath)
+    a = np.empty(res[0] * res[1] * 4, dtype=np.float32)
+    img.pixels.foreach_get(a)
+    bpy.data.images.remove(img)
+    return a.reshape(res[1], res[0], 4)[::-1, :, :3]          # top row first
+
+
+def jpeg(arr, path):
+    h, wd, _ = arr.shape
+    img = bpy.data.images.new('o', wd, h)
+    rgba = np.ones((h, wd, 4), dtype=np.float32)
+    rgba[:, :, :3] = arr[::-1]
+    img.pixels.foreach_set(rgba.ravel())
+    img.filepath_raw = path
+    img.file_format = 'JPEG'
+    S.render.image_settings.file_format = 'JPEG'
+    S.render.image_settings.quality = 88
+    img.save()
+    bpy.data.images.remove(img)
+    S.render.image_settings.file_format = 'PNG'
+
+
+def lum(a):
+    return 0.2126 * a[..., 0] + 0.7152 * a[..., 1] + 0.0722 * a[..., 2]
+
+
+# the hero's pose: first person at the near edge, looking across the table at the room beyond
+view = shoot('table-view', (0.0, -0.9, 1.55), (0.0, 1.1, 1.01), 80, (1376, 768))
+jpeg(view, os.path.join(EV, 'table-view.jpg'))
+hero = bpy.data.images.load(HERO)
+hw, hh = hero.size
+ha = np.empty(hw * hh * 4, dtype=np.float32)
+hero.pixels.foreach_get(ha)
+bpy.data.images.remove(hero)
+ha = ha.reshape(hh, hw, 4)[::-1, :, :3]
+ha = ha[:768, :1376] if (hw, hh) == (1376, 768) else ha
+jpeg(np.hstack([ha, view]), os.path.join(EV, 'vs-hero.jpg'))
+wide = shoot('panel-wide', (0.0, 0.0, 1.5), (0.0, 10.0, 1.4), 120, (1600, 640))
+jpeg(wide, os.path.join(EV, 'panel-wide.jpg'))
+
+# the backdrop must stay dimmer than the table's edge strip: brightest 0.1% of the pixels in each region
+sky = lum(view[:int(768 * 0.38)])          # the rows above the table's far rim: backdrop only
+st = {'backdrop_p999_linear_display': round(float(np.percentile(sky, 99.9)), 4), 'backdrop_max_display': round(float(sky.max()), 4),
+      'table_view_max_display': round(float(lum(view).max()), 4), 'panel_wide_max_display': round(float(lum(wide).max()), 4),
+      'panel_wide_mean_display': round(float(lum(wide).mean()), 4), 'table_view_mean_display': round(float(lum(view).mean()), 4),
+      'hero_mean_display': round(float(lum(ha).mean()), 4)}
+json.dump(st, open(os.path.join(WORK, 'evidence.json'), 'w'), indent=2)
+print('EVIDENCE', json.dumps(st))
