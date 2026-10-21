@@ -5,6 +5,8 @@
 //   prop      prop prompts restate the style block's palette and materials, carry the TRELLIS sheet rules, and cover every variant
 //   cap       a call that would pass the stop or HARD_CAP is refused; a prop --out stays inside apps/vr/ArtSource
 //   out       --out stays inside lookdev/: a name that would resolve outside it is refused before any call
+//   source    a source guard over leonardo.mjs: it names no absolute machine path, so the .env it reads for
+//             LEONARDO_API_KEY is THIS checkout's and no other one's. Comments are stripped before the match.
 // Run: node scripts/lookdev/check-leonardo.mjs   Exit 1 on any failure.
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -73,6 +75,18 @@ check('window: 07:59Z counts in the previous window', nightTotal([e('2026-10-21T
 check('window: 08:00Z counts in the new window', nightTotal([e('2026-10-21T08:00:00Z', 6)], at('2026-10-21T08:00:01Z')) === 6 && nightTotal([e('2026-10-21T08:00:00Z', 6)], at('2026-10-21T07:59:59Z')) === 6);
 check('window: the cap refuses a call that would pass 400 inside one window', !withinCap(nightTotal([e('2026-10-21T09:00:00Z', 386)], at('2026-10-21T10:00:00Z')), 6) && withinCap(nightTotal([e('2026-10-21T09:00:00Z', 384)], at('2026-10-21T10:00:00Z')), 6));
 check('window: --stop-at still refuses inside the window', !withinCap(nightTotal([e('2026-10-21T09:00:00Z', 156)], at('2026-10-21T10:00:00Z')), 6, 160));
+
+// Source guard. leonardo.mjs reads the LEONARDO_API_KEY out of an untracked .env, so WHICH .env it opens is a
+// security property, not a convenience: an absolute path means a second checkout of this repo reads the first
+// checkout's secret instead of its own, and that a key is missing is the only signal the operator would get.
+// Comments go first - the header TALKS about .env, and a matcher over raw text would be satisfied by prose (SKILL 7.8).
+const LEO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'leonardo.mjs');
+const nocomment = fs.readFileSync(LEO, 'utf8')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .split('\n').map((l) => l.replace(/(^|[^:'"\w])\/\/.*$/, '$1')).join('\n');
+const abs = [...nocomment.matchAll(/['"`][A-Za-z]:[\\/][^'"`]*/g)].map((m) => m[0]);
+check('source: leonardo.mjs names no absolute machine path (the .env it reads is this checkout\'s)', abs.length === 0, abs.join(' , '));
+check('source: the key comes from an .env resolved against the module\'s own root', /ENV_FILE\s*=\s*path\.(join|resolve)\(ROOT,/.test(nocomment));
 
 console.log(`
 check-leonardo: ${passed} passed, ${failed} failed`);
