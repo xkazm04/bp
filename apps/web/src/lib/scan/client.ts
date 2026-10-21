@@ -7,10 +7,14 @@ import { refreshProjects } from './projects.ts';
 import { latestRun } from '@bp/core/scan/derive';
 import type { ScanJob, ScanScope } from '@bp/core/scan/jobs';
 import type { DispatchResult } from './actions.ts';
-import { WAVE_EFFORTS, WAVE_MODELS, type Wave, type WaveBody, type WaveDispatchResult, type WavePackage } from '@bp/core/scan/waves';
-import { fullScan as full, isEmptyScan as isEmpty, type Activity, type Coverage, type DecisionBody, type Measurement, type Proposal, type ProductInfo, type Run, type ScanDelta, type ScanSnapshot } from '@bp/core/scan/types';
+import type { Wave, WaveBody, WaveDispatchResult } from '@bp/core/scan/waves';
+import { fullScan as full, isEmptyScan as isEmpty, type DecisionBody, type Proposal, type ProductInfo, type ScanSnapshot } from '@bp/core/scan/types';
 import type { CommitDiff, ReleaseCreated, TriageBody, TriageResult, VersionSuggestion } from '@bp/core/scan/types';
-import { errorText, parseCommitDiff, parseJson, parseReleaseCreated, parseScanJob, parseTriageResult, parseVersionSuggestion, type Parsed } from '@bp/core/train/wire';
+import { errorText, parseCommitDiff, parseJson, parseReleaseCreated, parseScanJob, parseTriageResult, parseVersionSuggestion, parseWaveBody, parseWaveDispatch, parseWaves, type Parsed } from '@bp/core/train/wire';
+import { mergeScan } from '@bp/core/scan/merge';
+
+export { mergeScan, upsert } from '@bp/core/scan/merge';
+export { parseWave, parseWaveDispatch, parseWavePackage, parseWaves } from '@bp/core/train/wire';
 
 /** `loading` until the structure arrives; `missing` = no store or structure file; `offline` = reconnecting. */
 export type LiveStatus = 'loading' | 'live' | 'offline' | 'missing' | 'error';
@@ -32,34 +36,8 @@ export interface LiveProduct {
 
 const NO_JOBS: ScanJob[] = [];
 const MISSING: LiveProduct = { status: 'missing', events: '', jobs: NO_JOBS };
-const ACTIVITY_KEEP = 200;
 const BACKOFF_MS = 500, BACKOFF_CAP_MS = 10000;
 const api = (slug: string) => '/api/products/' + encodeURIComponent(slug);
-
-/** Rows of `ys` replace rows of `xs` with the same key, the rest are appended; `xs` is returned as is when nothing came. */
-function upsert<T>(xs: T[], ys: T[] | undefined, key: (t: T) => string | number): T[] {
-  if (!ys?.length) return xs;
-  const at = new Map<string | number, number>(), out = xs.slice();
-  out.forEach((x, i) => at.set(key(x), i));
-  for (const y of ys) { const k = key(y), i = at.get(k); if (i === undefined) { at.set(k, out.length); out.push(y); } else out[i] = y; }
-  return out;
-}
-const byId = (r: { id: string | number }) => r.id;
-/** Apply a delta; tables the delta does not touch keep their identity (cheap change checks downstream). */
-function mergeScan(s: ScanSnapshot, d: ScanDelta): ScanSnapshot {
-  let activity = upsert<Activity>(s.activity, d.activity, byId);
-  if (activity !== s.activity) { activity.sort((a, b) => a.id - b.id); if (activity.length > ACTIVITY_KEEP) activity = activity.slice(-ACTIVITY_KEEP); }
-  return {
-    runs: upsert<Run>(s.runs, d.runs, byId),
-    measurements: upsert<Measurement>(s.measurements, d.measurements, byId),
-    proposals: upsert<Proposal>(s.proposals, d.proposals, byId),
-    activity,
-    shots: upsert(s.shots, d.shots, byId),
-    coverage: upsert<Coverage>(s.coverage, d.coverage, (c) => c.feature + '\u0000' + c.standard),
-    packs: upsert(s.packs, d.packs, byId),
-    releases: upsert(s.releases, d.releases, byId),
-  };
-}
 
 // ------------------------------------------------------------------------------------------- jobs
 /** Every jobs event per slug, log lines included, for the views that show them (useLiveJobs). */
@@ -295,38 +273,7 @@ export const postReleaseFinish = (slug: string, id: string): Promise<ScanJob> =>
 export const getCommitDiff = (slug: string, sha: string): Promise<CommitDiff> => call(api(slug) + '/commits/' + encodeURIComponent(sha), 'GET', parseCommitDiff);
 
 // The ledger waves' routes (waves.ts), through the same door: a body that is not a wave is a status-0 rejection naming the field.
-const isRec = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x);
-const strs = (x: unknown): x is string[] => Array.isArray(x) && x.every((s) => typeof s === 'string');
-function parseWavePackage(x: unknown): Parsed<WavePackage> {
-  if (!isRec(x) || typeof x.id !== 'string' || typeof x.name !== 'string' || !strs(x.ids)) return { ok: false, error: 'package: id, name and ids expected' };
-  if (!WAVE_MODELS.includes(x.model as never) || !WAVE_EFFORTS.includes(x.effort as never)) return { ok: false, error: 'package ' + x.id + ': model or effort unknown' };
-  return { ok: true, value: { id: x.id, name: x.name, model: x.model as WavePackage['model'], effort: x.effort as WavePackage['effort'], ids: x.ids } };
-}
-function parseWave(x: unknown): Parsed<Wave> {
-  if (!isRec(x) || typeof x.id !== 'string' || typeof x.name !== 'string' || typeof x.created_at !== 'string' || (x.status !== 'draft' && x.status !== 'dispatched') || !Array.isArray(x.packages)) {
-    return { ok: false, error: 'wave: id, name, status, created_at and packages expected' };
-  }
-  const packages: WavePackage[] = [];
-  for (const p of x.packages) { const r = parseWavePackage(p); if (!r.ok) return r; packages.push(r.value); }
-  const jobs = Array.isArray(x.jobs) ? x.jobs.filter((j): j is { package: string; job: string } => isRec(j) && typeof j.package === 'string' && typeof j.job === 'string').map((j) => ({ package: j.package, job: j.job })) : undefined;
-  return { ok: true, value: { id: x.id, name: x.name, status: x.status, created_at: x.created_at, ...(typeof x.dispatched_at === 'string' ? { dispatched_at: x.dispatched_at } : {}), packages, ...(jobs?.length ? { jobs } : {}) } };
-}
-const inWave = (x: unknown): Parsed<Wave> => (isRec(x) ? parseWave(x.wave) : { ok: false, error: 'body: not an object' });
-function parseWaves(x: unknown): Parsed<Wave[]> {
-  if (!isRec(x) || !Array.isArray(x.waves)) return { ok: false, error: 'waves: a list expected' };
-  const out: Wave[] = [];
-  for (const w of x.waves) { const r = parseWave(w); if (!r.ok) return r; out.push(r.value); }
-  return { ok: true, value: out };
-}
-function parseWaveDispatch(x: unknown): Parsed<WaveDispatchResult> {
-  const w = inWave(x);
-  if (!w.ok) return w;
-  const o = x as Record<string, unknown>, jobs: ScanJob[] = [];
-  if (!Array.isArray(o.jobs) || !strs(o.approved) || !Array.isArray(o.skipped)) return { ok: false, error: 'jobs, approved and skipped expected' };
-  for (const j of o.jobs) { const r = parseScanJob(j); if (!r.ok) return r; jobs.push(r.value); }
-  const skipped = o.skipped.filter((s): s is { id: string; status: string } => isRec(s) && typeof s.id === 'string' && typeof s.status === 'string');
-  return { ok: true, value: { wave: w.value, jobs, approved: o.approved, skipped } };
-}
+const inWave = parseWaveBody;
 /** The product's waves (GET waves). */
 export const getWaves = (slug: string): Promise<Wave[]> => call(api(slug) + '/waves', 'GET', parseWaves);
 /** A draft wave (POST waves, 201). 400 bad body; 409 a finding is in another draft wave (`body.taken`); 429 at 50 waves. */

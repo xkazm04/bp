@@ -3,6 +3,7 @@
 // was wrong with it (`<field>: <what>`); the fetch helpers in client.ts turn a failure into an Error. A value carries
 // only the fields its type names (an unknown extra field stays out) and omits an absent one, never null.
 import type { CommitDiff, Proposal, ProposalKind, ProposalOrigin, ProposalSize, ProposalStatus, Release, ReleaseCreated, ReleaseStatus, RiskClass, Tier, TriageResult, VersionSuggestion } from '../scan/types.ts';
+import { WAVE_EFFORTS, WAVE_MODELS, type Wave, type WaveDispatchResult, type WavePackage } from '../scan/waves.ts';
 import type { JobKind, JobStatus, ReleaseStep, ScanJob, ScanScope, ScanScopeKind } from '../scan/jobs.ts';
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -215,4 +216,40 @@ export function parseScanJob(x: unknown): Parsed<ScanJob> {
 /** A route's `{ error }` text, if the body is one. */
 export function errorText(x: unknown): string | undefined {
   return isObj(x) && typeof x.error === 'string' && x.error ? x.error : undefined;
+}
+
+// ------------------------------------------------------------------------------------------- waves
+// The ledger waves' routes' bodies: a body that is not a wave is a status-0 rejection naming the field.
+const isRec = isObj;
+const strs = (x: unknown): x is string[] => Array.isArray(x) && x.every((s) => typeof s === 'string');
+export function parseWavePackage(x: unknown): Parsed<WavePackage> {
+  if (!isRec(x) || typeof x.id !== 'string' || typeof x.name !== 'string' || !strs(x.ids)) return { ok: false, error: 'package: id, name and ids expected' };
+  if (!WAVE_MODELS.includes(x.model as never) || !WAVE_EFFORTS.includes(x.effort as never)) return { ok: false, error: 'package ' + x.id + ': model or effort unknown' };
+  return { ok: true, value: { id: x.id, name: x.name, model: x.model as WavePackage['model'], effort: x.effort as WavePackage['effort'], ids: x.ids } };
+}
+export function parseWave(x: unknown): Parsed<Wave> {
+  if (!isRec(x) || typeof x.id !== 'string' || typeof x.name !== 'string' || typeof x.created_at !== 'string' || (x.status !== 'draft' && x.status !== 'dispatched') || !Array.isArray(x.packages)) {
+    return { ok: false, error: 'wave: id, name, status, created_at and packages expected' };
+  }
+  const packages: WavePackage[] = [];
+  for (const p of x.packages) { const r = parseWavePackage(p); if (!r.ok) return r; packages.push(r.value); }
+  const jobs = Array.isArray(x.jobs) ? x.jobs.filter((j): j is { package: string; job: string } => isRec(j) && typeof j.package === 'string' && typeof j.job === 'string').map((j) => ({ package: j.package, job: j.job })) : undefined;
+  return { ok: true, value: { id: x.id, name: x.name, status: x.status, created_at: x.created_at, ...(typeof x.dispatched_at === 'string' ? { dispatched_at: x.dispatched_at } : {}), packages, ...(jobs?.length ? { jobs } : {}) } };
+}
+/** A body that holds one wave (`{ wave }`). */
+export const parseWaveBody = (x: unknown): Parsed<Wave> => (isRec(x) ? parseWave(x.wave) : { ok: false, error: 'body: not an object' });
+export function parseWaves(x: unknown): Parsed<Wave[]> {
+  if (!isRec(x) || !Array.isArray(x.waves)) return { ok: false, error: 'waves: a list expected' };
+  const out: Wave[] = [];
+  for (const w of x.waves) { const r = parseWave(w); if (!r.ok) return r; out.push(r.value); }
+  return { ok: true, value: out };
+}
+export function parseWaveDispatch(x: unknown): Parsed<WaveDispatchResult> {
+  const w = parseWaveBody(x);
+  if (!w.ok) return w;
+  const o = x as Record<string, unknown>, jobs: ScanJob[] = [];
+  if (!Array.isArray(o.jobs) || !strs(o.approved) || !Array.isArray(o.skipped)) return { ok: false, error: 'jobs, approved and skipped expected' };
+  for (const j of o.jobs) { const r = parseScanJob(j); if (!r.ok) return r; jobs.push(r.value); }
+  const skipped = o.skipped.filter((s): s is { id: string; status: string } => isRec(s) && typeof s.id === 'string' && typeof s.status === 'string');
+  return { ok: true, value: { wave: w.value, jobs, approved: o.approved, skipped } };
 }
