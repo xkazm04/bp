@@ -218,6 +218,8 @@ const LENSES: LensFields[] = [
       many.status === 201 && (many.json.added?.length ?? 0) + (many.json.skipped?.length ?? 0) === 2600 && many.json.skipped?.length === 3 && new Set(many.adds.flat()).size === 2600, JSON.stringify([many.status, many.json.added?.length, many.json.skipped?.length, many.json.error]));
     const widest = Math.max(0, ...many.adds.map((x) => x.length));
     console.log('releases route: 2,600 free items reach store.mjs in ' + many.adds.length + ' release-add call(s), the widest ' + widest + ' ids (' + Math.max(0, ...many.adds.map((x) => x.join(',').length)) + ' characters of argv)');
+    // THE RULE: at most MAX_TRIAGE ids reach store.mjs in one call, on the default path as on the explicit one
+    check('releases route: no release-add call carries more than 200 ids (MAX_TRIAGE)', widest <= 200, widest + ' ids in one call');
   } finally {
     process.chdir(cwd0);
     for (const k of ['BP_LENS_SCAN_DIR', 'BP_FAKE_STORE_LOG', 'BP_GH_BIN']) { if (env0[k] === undefined) delete process.env[k]; else process.env[k] = env0[k]; }
