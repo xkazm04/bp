@@ -8,6 +8,7 @@ from shotkit import base, finish, floor_check
 OUT = 'docs/shots/bold'
 BASE = base()
 MODE = sys.argv[1] if len(sys.argv) > 1 else 'quick'
+if MODE not in ('quick', 'full', 'light'): sys.exit(f'unknown mode {MODE!r}: quick | full | light')
 problems = []
 LENS = {'2': 'business', '3': 'design', '4': 'development', '5': 'operations', '6': 'security', '7': 'quality'}
 
