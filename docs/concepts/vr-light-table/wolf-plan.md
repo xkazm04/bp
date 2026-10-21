@@ -291,6 +291,12 @@ FLUX.2 [klein] or Qwen-Image (tech-stack.md §5), unless the owner rules on Leon
       aluminium, `frame_edge_glow` emissive strip, `frame_glass_placeholder_REPLACE_IN_UE`). Reworked after the Director review of
       04fc311 (warm wood, no visible edge): rim, legs and rails are dark metal on the style block's studio near-black `#0A0F18`
       (slot renamed from `frame_wood`), and the edge strip is `#F4FAFF`, 2 cm wide and 8 mm tall at emission strength 25. Procedural Blender, `scripts/art/light-table-frame/`; `lynx_commit` is set at the merge.
+      Studio kit, 2026-10-21 (not ticked, the materials, backdrop and the other props are open; procedural Blender on Cycles CPU, `scripts/art/studio-kit/`, kit total 7,176 of 80,000 tris, `lynx_commit` set at the merge):
+      `studio-shelves` 2026-10-21: 1,092 of 24,000 tris, 88 x 30.8 x 126 cm, steel rack with navy-stained boards, books and a roll; all five gates `pass: true`.
+      `studio-desk-lamp` 2026-10-21: 1,296 of 16,000 tris, 23.7 x 18.4 x 39.1 cm, cone shade with an emissive inner slot; all five gates `pass: true`.
+      `studio-mug` 2026-10-21: 1,008 of 8,000 tris, 11.9 x 8.0 x 9.5 cm, cream glaze, pale blue inside, navy handle; all five gates `pass: true`.
+      `studio-drawing-tubes` 2026-10-21: 2,976 of 20,000 tris, 16.3 x 17.5 x 52.9 cm, round holder, five capped tubes and two rolls; all five gates `pass: true`.
+      `studio-pinned-drawings` 2026-10-21: 804 of 12,000 tris, 114 x 3.2 x 52 cm, three framed blueprint sheets on a mounting board (input gate set true because it is procedural, not TRELLIS input); all five gates `pass: true`.
 - [ ] **W4.1 Import (Wolf, half a day per asset).** Import each `final.*` through the editor MCP (pof's gap-fillers)
       into `apps/vr/Content/Bp/Art/<asset-id>/`. **Nothing is imported without its gate results** (the plan.md P4 gate).
       Proof: the manifest's `import` block; `stat rhi` and `stat scenerendering` with the asset in the greybox.
