@@ -58,10 +58,14 @@ export function ShapedPanel(props: SheetPanelProps) {
   if (!isBuiltinLens(lens)) return <DefaultLensPanel {...props} />;
   const id = iconFor(lens, f), rollout = model.sim.rolloutOf(f);
   const cls = ['shp', 'shp-' + lens, 'shp-' + density];
-  if (lens === 'business') cls.push('shp-v' + bl(f).business.value);
-  if (lens === 'security') cls.push('shp-' + bl(f).security.dataClass);
+  // the shape classes carry a measured value only: value 0 and data class '' are what bl() gives a feature
+  // with no facet, and styles.css has no rule for either, so --shp-n would fall back to its 8 px default
+  // (the depth of value 3) and .shp- would leave the security clip-path with --a/--b/--c unset
+  if (lens === 'business' && bl(f).business.value > 0) cls.push('shp-v' + bl(f).business.value);
+  if (lens === 'security' && bl(f).security.dataClass) cls.push('shp-' + bl(f).security.dataClass);
   const badge = <span className="shp-badge"><LensIcon id={id} size={expanded ? 20 : 17} /></span>;
-  if (expanded && lens === 'design') {
+  // a design status this reader has a sentence for; otherwise the default rows, which word the state
+  if (expanded && lens === 'design' && DWORD[bl(f).design.status]) {
     // the design reader gets one plain sentence and nothing to decode
     const de = bl(f).design, a11y = A11Y[de.a11y];
     return (
@@ -69,7 +73,7 @@ export function ShapedPanel(props: SheetPanelProps) {
         {badge}
         <Edges lens={lens} f={f} rollout={rollout} />
         <h5><span>{props.def.short} · Design</span><span className="h">{hmark(de.health)}</span></h5>
-        <div className="shp-fact">{DWORD[de.status] ?? de.status}</div>
+        <div className="shp-fact">{DWORD[de.status]}</div>
         {(a11y || de.specDrift) && <div className="shp-sub">{[a11y && a11y[0].toUpperCase() + a11y.slice(1), de.specDrift ? 'built off the design' : ''].filter(Boolean).join(' · ')}</div>}
       </div>
     );
