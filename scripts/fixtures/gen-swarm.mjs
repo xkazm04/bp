@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { mulberry32 } from '../lib/prng.ts';
-import { outDirFrom, writeOrCheck } from '../lib/fixture-bytes.mjs';
+import { outDirFrom, writeOrCheck } from '../lib/fixture-bytes.ts';
 
 const CHECK = process.argv.includes('--check');
 const DIR = outDirFrom(process.argv.slice(2));

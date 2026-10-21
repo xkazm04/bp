@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { seeded } from '../lib/prng.ts';
+import { writeOrCheck } from '../lib/fixture-bytes.ts';
 import { loadStructure } from '../../packages/core/src/standard/load.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -207,17 +208,9 @@ const rows = out.map((p) => Object.fromEntries(ORDER.filter((k) => p[k] !== unde
 const text = JSON.stringify(rows, null, 2) + '\n';
 
 // ------------------------------------------------------------------------------------------- write or check
-if (process.argv.includes('--check')) {
-  const have = fs.readFileSync(path.join(ROOT, OUT), 'utf8').replace(/\r\n/g, '\n');
-  if (have !== text) {
-    const a = have.split('\n'), b = text.split('\n'), i = a.findIndex((l, k) => l !== b[k]);
-    console.error(`DRIFT: ${OUT} is not what scripts/fixtures/kettle-findings.mjs generates (first difference at line ${i + 1}; regenerate with node scripts/fixtures/kettle-findings.mjs)`);
-    process.exit(1);
-  }
-  console.log(`ok: ${OUT} reproduces exactly (${rows.length} findings)`);
-  process.exit(0);
-}
-fs.writeFileSync(path.join(ROOT, OUT), text);
+// --check exits inside writeOrCheck (scripts/lib/fixture-bytes.ts, the one differ the four generators share):
+// it diffs and writes nothing, so the summary below is skipped with it.
+writeOrCheck([[path.join(ROOT, OUT), text]], process.argv.includes('--check'), 'scripts/fixtures/kettle-findings.mjs');
 const count = (k) => rows.reduce((a, p) => ((a[p[k]] = (a[p[k]] ?? 0) + 1), a), {});
 console.log(`wrote ${OUT}: ${rows.length} findings over ${new Set(rows.map((p) => p.feature)).size} features`);
 console.log(`  by lens ${JSON.stringify(count('lens'))}`);
