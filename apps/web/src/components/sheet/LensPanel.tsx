@@ -66,7 +66,9 @@ export function metricMove(r: MetricRow): { dir: 'up' | 'down' | null; cls: 'goo
 }
 /** The arrow before a moved metric's value (nothing when it did not move). */
 export function MoveArrow({ dir, cls }: { dir: 'up' | 'down' | null; cls: string }) {
-  return dir ? <i className={'ar ' + cls} aria-label={cls === 'good' ? 'better' : 'worse'}>{dir === 'up' ? '▲' : '▼'}</i> : null;
+  // role="img" or the name is dropped: aria-label does not apply to a generic element, so the arrow
+  // would read as its bare glyph. Every other labelled non-interactive element in the app says so too.
+  return dir ? <i className={'ar ' + cls} role="img" aria-label={cls === 'good' ? 'better' : 'worse'}>{dir === 'up' ? '▲' : '▼'}</i> : null;
 }
 
 /**
