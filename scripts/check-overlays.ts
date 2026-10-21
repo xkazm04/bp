@@ -54,11 +54,11 @@ const lensId = Object.keys(P.LENS).find((l) => lensOf(P, l)) as string;
 const text = (html: string) => html.replace(/<!--.*?-->/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
 
 // a fresh stub engine and state per render, with console.error captured (the card logs a failed aggregate once)
-function render(el: () => Any, patch: Record<string, unknown>, lensAgg: () => Any) {
+function render(el: () => Any, patch: Record<string, unknown>, lensAgg: () => Any, shared?: { E?: Any }) {
   const S = { ...initialState(1, P.asOf), ready: true, ...patch };
   const errors: string[] = [], origErr = console.error;
   console.error = (...a: unknown[]) => { errors.push(a.map(String).join(' ').slice(0, 160)); };
-  const E = {
+  const E = shared?.E ?? {
     M, S, U: 1, SAFE: { l: 0, t: 0, r: 1280, b: 800 }, FW: 1280, FH: 800,
     store: { get: () => S, subscribe: () => () => {} },
     setHoverEl() {}, placeHover() {}, dirty() {}, onFrame: () => () => {}, flyToFeature() {},
@@ -66,6 +66,7 @@ function render(el: () => Any, patch: Record<string, unknown>, lensAgg: () => An
     lensIds: Object.keys(P.LENS),
     lensAgg, channel: () => null,
   };
+  if (shared) { if (shared.E) { Object.assign(E.S, patch); E.lensAgg = lensAgg; } shared.E = E; }   // a reused engine takes the new state and aggregate
   try {
     const html: string = renderToString(React.createElement(VariantCtx.Provider, { value: V }, React.createElement(EngineCtx.Provider, { value: E }, el())));
     return { html, threw: null as string | null, errors };
@@ -82,6 +83,24 @@ expect(bad.threw === null && bad.html.length > 0, `HoverCard threw under a lens 
 expect(bad.errors.length === 1, `HoverCard logged ${bad.errors.length} errors for one throwing lens aggregate, expected 1`);
 const ok = render(() => React.createElement(O.HoverCard), hover, () => ({ parts: ['CHECK lens part'] }));
 expect(text(ok.html).includes('CHECK lens part'), 'HoverCard did not show the lens aggregate line it was given');
+
+// One engine, one failing lens, reported on the plan AND under the pointer: the canvas (plan.ts) and the hover card share
+// a single log-once set, so the pair prints one line. Each render above had its own stub engine, so it could not see two.
+// The failure arrives through plan.ts's drawDecor (a channel whose decor throws); the card's aggregate throws too.
+{
+  const { drawDecor } = await imp('engine/render/plan.ts');
+  const shared: { E?: Any } = {};
+  const first = render(() => React.createElement(O.HoverCard), { view: lensId }, () => ({ parts: [] }), shared);
+  const E = shared.E as Any;
+  E.channel = (l: string) => (l === lensId ? { decor() { throw new Error('check-overlays: decor threw'); } } : null);
+  E.mixS = { d: { [lensId]: 1 } }; E.th = {}; E.U = 1;
+  const errs: string[] = [], keep = console.error;
+  console.error = (...a: unknown[]) => { errs.push(String(a[0])); };
+  try { drawDecor(E, { save() {}, restore() {} }, { c0x: 0, c0y: 0, c1x: 1, c1y: 1, k: 1 }); } finally { console.error = keep; }
+  const card = render(() => React.createElement(O.HoverCard), hover, () => { throw new Error('check-overlays: aggregate threw'); }, shared);
+  expect(first.threw === null && errs.length === 1, `plan.ts drawDecor logged ${errs.length} errors for one throwing decor, expected 1 (the stub engine did not reach the failure)`);
+  expect(card.threw === null && card.errors.length === 0, `the same lens failing on the plan and under the pointer was logged ${errs.length + card.errors.length} times for one engine, expected 1`);
+}
 
 // Morning: the spend line reads SPEND_CAP and the away mark reads AWAY_SINCE
 const mo = render(() => React.createElement(O.Morning), { morning: true }, () => ({ parts: [] }));

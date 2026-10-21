@@ -10,6 +10,7 @@ import {
 import { overlayRight } from '@/engine/chrome';
 import type { ToastItem } from '@/engine/state';
 import { illoSVG } from '@/engine/render/illo';
+import { lensFailed } from '@/engine/render/plan';
 import { steerVerbs } from '@/lib/model/live-steer';
 import { optHover, shallowEqual, useAnswerNote, useBp, useEngine, useLive, useVariant } from './hooks';
 import { LiveSteerButtons } from './LiveSteer';
@@ -89,15 +90,11 @@ function SwarmLines({ fs }: { fs: readonly import('@bp/core/data').Feature[] }) 
 }
 /**
  * A lens whose aggregate throws costs that lens's line on the card, not the chrome: the card falls back to the
- * general counts and the failure is logged once per engine and lens, as the canvas labels do (plan.ts aggParts).
+ * general counts and the failure is logged once per engine and lens - through the same set the canvas labels use
+ * (plan.ts lensFailed), so a lens that fails on the plan and under the pointer is one line in the console, not two.
  */
-const aggFailed = new WeakMap<object, Set<string>>();
 function lensParts(E: ReturnType<typeof useEngine>, id: string, l: string, fs: readonly import('@bp/core/data').Feature[]): string[] | null {
-  try { return E.lensAgg(id, l, fs).parts; } catch (err) {
-    let seen = aggFailed.get(E); if (!seen) aggFailed.set(E, (seen = new Set()));
-    if (!seen.has(l)) { seen.add(l); console.error(`[lens ${l}] aggregate failed`, err); }
-    return null;
-  }
+  try { return E.lensAgg(id, l, fs).parts; } catch (err) { lensFailed(E, l, 'aggregate', err); return null; }
 }
 function HoverBody() {
   const E = useEngine(), M = E.M, sim = M.sim;
