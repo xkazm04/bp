@@ -1,4 +1,4 @@
-// The findings ledger's performance budgets, counted, never timed (port-quality Q4):
+// The findings ledger's performance budgets, counted, never timed (ai-registry/skills/contest/references/port-quality.md, Q4):
 //   1. the chunk: nothing `/` imports statically reaches the ledger page or the release train (src/components/ledger/
 //      LedgerPage.tsx, src/components/ledger/train/**); Phone.tsx's LedgerPageLazy is the one door, a dynamic import;
 //   2. the DOM at 10x: a synthetic snapshot of 1,000 backlog findings and 120 pack items in 10 packs (every item with

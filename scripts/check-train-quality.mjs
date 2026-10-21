@@ -1,4 +1,4 @@
-// The release train's own quality gate (port-quality.md Q2): new code starts at zero against these rules while the
+// The release train's own quality gate (ai-registry/skills/contest/references/port-quality.md, Q2): new code starts at zero against these rules while the
 // old tree stays untouched. It walks only the train's two roots, apps/web/src/components/ledger/train/** and packages/core/src/train/**,
 // and checks, per rule, printing `walked / checked / violations`:
 //   hygiene   .ts/.tsx: no `as unknown as`, no `any` type, JSON.parse only in packages/core/src/train/wire.ts (the parser door),
