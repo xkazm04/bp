@@ -95,8 +95,11 @@ function PixLine({ show, maps, stateLine }: { show: readonly ShotPair[]; maps: r
   );
 }
 
-const minText = (s: Shot | undefined): string => {
-  const v = s?.report?.minTextPx;
+/** The harness's own smallest-text reading for a capture, or nothing at all: a side with no capture has no reading to
+ *  report, and "min text – px" beside an empty frame reads as a measured screen that happens to have no text. */
+export const minText = (s: Shot | undefined): string | undefined => {
+  if (!s) return undefined;
+  const v = s.report?.minTextPx;
   return 'min text ' + (typeof v === 'number' ? v : '–') + ' px';
 };
 
