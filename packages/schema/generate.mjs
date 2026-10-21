@@ -561,6 +561,30 @@ if (isMain) {
     const enumWideCaught = enumWide !== fresh.ts && compare(enumWide, handTs, wireTs).problems.some((p) => p === 'Wave.status: the enum disagrees - in the schema, not in types.ts: zzParityProbe');
     console.log(`${enumWideCaught ? 'ok  ' : 'FAIL'}  control: a value added to the wave status enum fails the parity`);
     if (!enumWideCaught) failed++;
+    // The stand-in smoke (ue-standin/check.cpp) reads every root through BpSchema::FromJson. No gate here can run a
+    // C++ compiler, so what is asserted is its COVERAGE: a root added to ROOTS whose FromJson nobody instantiates
+    // is a FixUp body no compiler ever sees. Comments are stripped first, so the clang command line in its header -
+    // and any prose naming a root - cannot satisfy the match (a file that TALKS about the rule must not pass).
+    const smokeRel = 'packages/schema/ue-standin/check.cpp';
+    const smokeText = (text) => text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+    const smokeMisses = (text) => {
+      const body = smokeText(text);
+      const vars = new Map([...body.matchAll(/FBp(\w+)&\s+(\w+)/g)].map((m) => [m[1], m[2]]));
+      return ROOTS.map(([, name]) => name).filter((name) => {
+        const v = vars.get(name);
+        return !v || !body.includes(`FromJson(Json, ${v})`);
+      });
+    };
+    const smokeRaw = fs.readFileSync(path.join(ROOT, smokeRel), 'utf8');
+    const missed = smokeMisses(smokeRaw);
+    console.log(`${missed.length ? 'FAIL' : 'ok  '}  ${smokeRel} instantiates FromJson for all ${ROOTS.length} roots${missed.length ? ': not read: ' + missed.map(ueName).join(', ') : ''}`);
+    if (missed.length) failed++;
+    // control: a root dropped from the smoke is reported, and a root named only in a comment does not count
+    const dropped = smokeMisses(smokeRaw.replace(/&& BpSchema::FromJson\(Json, Wire\)/, ''));
+    const commented = smokeMisses(`// FromJson(Json, Wire) with FBpScanWire& Wire\n${smokeRaw.replace(/&& BpSchema::FromJson\(Json, Wire\)/, '')}`);
+    const smokeControl = dropped.join() === 'ScanWire' && commented.join() === 'ScanWire';
+    console.log(`${smokeControl ? 'ok  ' : 'FAIL'}  control: a root dropped from the smoke is reported, and one named only in a comment is not read`);
+    if (!smokeControl) failed++;
     // lens-manifest-1's builtinLensId enum against every other copy of that list in the tree. The enum is the
     // normative one; scripts/validate-structure.mjs reads it rather than copying it, but two files in
     // packages/core hand-write the same seven ids, and until 2026-10-21 nothing compared them with the schema:
