@@ -396,7 +396,7 @@ const PLACES: { id: string; feats: Any[] }[] = [...M.L.rooms, ...M.L.wings, ...M
   expect(t.calls === 3 && t.failing === 2 && t.bad.length === 1 && /x:2 /.test(t.bad[0]), `(l) the toast reader must see 3 calls (comment ignored), 2 failing, 1 untoned at line 2: ${JSON.stringify(t)}`);
   const eng = fs.readFileSync(path.join(ROOT, 'apps/web/src/engine/Engine.ts'), 'utf8');
   expect(/\n\s*toast\(strong: string, text: string, action\?: [^)]*fid\?: string, tone\?: ToastTone\)/.test(blankComments(eng)), '(l) Engine.toast has no tone parameter, so no caller can tone a failure');
-  const TONED_FILES: string[] = [];
+  const TONED_FILES: string[] = ['apps/web/src/components/ScanMenu.tsx'];
   let calls = 0, failing = 0;
   const bad: string[] = [];
   for (const f of TONED_FILES) { const r = judge(f, blankComments(fs.readFileSync(path.join(ROOT, f), 'utf8'))); calls += r.calls; failing += r.failing; bad.push(...r.bad); }
