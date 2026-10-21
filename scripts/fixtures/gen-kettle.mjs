@@ -671,7 +671,14 @@ for (const f of features) {
   if (age <= 14 && f.history.length > 1) activity.push({ at: last.date + 'T' + String(ri(6, 22)).padStart(2, '0') + ':' + String(ri(0, 59)).padStart(2, '0') + ':00Z', type: 'stage', feature: f.id, actor: last.stage === 'flagged' ? 'tender' : last.stage === 'specified' ? f.owner : pick(f.builtBy.length ? f.builtBy : [f.owner]), text: `Stage: ${f.history[f.history.length - 2].stage} -> ${last.stage}`, from: f.history[f.history.length - 2].stage, to: last.stage });
   if (s === 'idea' && chance(0.3)) ev(ri(0, 13), 'comment', f, pick(['sam', 'mara', 'dev']), pick(['Another studio asked for this today.', 'Worth a spike next month?', 'Competitor launched this; watching uptake.']));
 }
-for (const a of activity) if (a.at > product_asOf) a.at = a.at.slice(0, 11) + '0' + ri(6, 8) + a.at.slice(13);
+// Nothing may be dated after the product's as-of moment. This used to SILENTLY move such a row's hour to
+// 06-08 of the same day - a corrective write on generated data, leaving no trace that a timestamp had been
+// invented. Measured 2026-10-21 with a counter in this loop: it fired on 0 of 249 activity rows, and it cannot
+// fire as the rows are built (every one comes from ts(n)/day(n) with n >= 0, and ts(0) caps its hour at 8 while
+// as-of is 09:00). So it is an assertion now: if a generator change ever does date a row past as-of, the run
+// fails here naming the row rather than quietly rewriting it.
+const late = activity.filter((a) => a.at > product_asOf);
+if (late.length) throw new Error(`${late.length} activity rows are dated after the as-of moment ${product_asOf}, first ${late[0].type} on ${late[0].feature} at ${late[0].at}`);
 for (const a of activity) if (a.type === 'deploy') a.text = `Deployed to production (release ${a.at.slice(0, 10).replaceAll('-', '.')})`;
 activity.sort((a, b) => (a.at < b.at ? 1 : -1));
 
