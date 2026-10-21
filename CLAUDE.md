@@ -1,5 +1,13 @@
 # Project Guidance
 
+## Git
+
+Commit in small atomic commits. Push verified work to `origin master` on GitHub (owner, 2026-10-21): `npm run check`
+is green and the secret scan is clean (`.env` holds API keys and is git-ignored, so never commit it or print it). This is how
+Lynx and Wolf exchange work. Before pushing, `git fetch` and rebase onto `origin/master`, or merge it when a rebase
+would rewrite shared history. Resolve conflicts yourself, keeping both sides' intent, and ask the owner only when the
+two sides make incompatible design choices. Never force-push to `master`, rewrite pushed history or bypass hooks.
+
 <!-- personas:context-map:start -->
 ## Project Context Map
 

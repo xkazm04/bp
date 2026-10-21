@@ -50,11 +50,25 @@ Master tip when this was written: `4e2dfd1`. On that tip, as read on Lynx:
 - [ ] **Machine facts** (GPU, VRAM, RAM, CPU, UE version and changelist, MSVC, Windows SDK, Meta plugin BuildId,
       Link runtime version) go to `docs/concepts/vr-light-table/machine.md`. plan.md P0 and WP3.6 already name that
       file. It does not exist yet.
-- [ ] **Never push, never force.** Stage only the step's paths. Other sessions may share the checkout.
+- [ ] **Push verified work, never force.** After `npm run check` is green, `git fetch`, rebase onto (or merge) `origin/master` and push to `origin master` (owner, 2026-10-21; CLAUDE.md "Git"). Stage only the step's paths. Other sessions may share the checkout.
 
 ---
 
 ## (b) Wolf machine setup (P0 for this repo)
+
+### Step 0: register this app on Wolf (do this first)
+
+Wolf's tooling only sees a project that is registered. Before any other step:
+
+- [ ] **Fleet registry.** In Wolf's `kiro/ai-registry` checkout (clean tree, `git pull --rebase` first), run
+  `node scripts/register-project.mjs --slug bp --path <this checkout> --dry-run`, read it, then run it without
+  `--dry-run`. Commit `projects.json` with a `fleet:` subject and push to `origin main`. The script refuses when the
+  slug already points at a different checkout on Wolf; re-pointing is a decision, so ask the owner if it refuses. bp has no Wolf entry yet (risk R13 below); this step closes R13.
+- [ ] **Personas.** If the Personas app runs on Wolf, register the checkout as a dev project (Dev Tools, or
+  `POST /dev-tools/projects` with name and root path) and run a context scan. The headless App Masters for this
+  project run on Lynx: Wolf does not run a second master for it. It reports back through commits on `origin/master`.
+- [ ] Proof: `projects.json` lists the Wolf checkout for `bp`, and the registry commit is on `origin/main`.
+
 
 Owner and agent, about half a day if mage-arena-vr's toolchain is still on the box (`mage-arena-vr` on Wolf is at
 `kiro/mage-arena-vr`, per the ai-registry fleet file). Record each verify output in
@@ -62,7 +76,7 @@ Owner and agent, about half a day if mage-arena-vr's toolchain is still on the b
 
 | # | Item | Version | Verify command (PowerShell) | Expected | Machine |
 |---|---|---|---|---|---|
-| S1 | bp checkout | master, at or after this plan's commit | `git -C <bp> log -1 --format=%h; git -C <bp> status --short` | the SHA; empty status. bp is not in the ai-registry fleet file for Wolf yet. Clone with `git clone https://github.com/xkazm04/bp kiro/bp`, after the owner has pushed (this plan is committed locally on Lynx, not pushed). | Wolf |
+| S1 | bp checkout | master, at or after this plan's commit | `git -C <bp> log -1 --format=%h; git -C <bp> status --short` | the SHA; empty status. bp is not in the ai-registry fleet file for Wolf yet. Clone with `git clone https://github.com/xkazm04/bp kiro/bp`, (this plan is on `origin/master` since 2026-10-21). | Wolf |
 | S2 | Node | >= 22.18 (`package.json` `engines`) | `node --version` | `v22.18.0` or later (Lynx runs `v24.22.0`) | Wolf |
 | S3 | Root install | from `package-lock.json` | `npm ci` at the repo root, then `npm run check` | `npm ci` exit 0; `N passed, 0 failed, 0 skipped of N` (Lynx: 45 of 45; `check:python-deps` is skipped when Python is not on PATH, which still counts as green) | Wolf |
 | S4 | Unreal Engine | 5.8.x. plan.md names 5.8.2. mage-arena-vr's `docs/XR-TOOLCHAIN.md` records the box at **5.8.3** (Changelist 58210709, CompatibleChangelist 55116800) on 2026-10-07 | `Get-Content 'C:\Program Files\Epic Games\UE_5.8\Engine\Build\Build.version'` | `MajorVersion 5`, `MinorVersion 8`; record `PatchVersion`, `Changelist` and `CompatibleChangelist` **[verify on Wolf]** | Wolf |
