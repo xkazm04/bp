@@ -18,7 +18,7 @@ const ROOT = path.resolve(HERE, '../..');
 const load = (p) => import(pathToFileURL(path.join(HERE, p)).href);
 const { BUILTIN_LENSES } = await load('src/standard/catalog.ts');
 const { loadStructure } = await load('src/standard/load.ts');
-const { rollupHealth } = await load('src/standard/health.ts');
+const { rollupHealth, lensHealth } = await load('src/standard/health.ts');
 
 let held = 0;
 const failures = [];
@@ -269,6 +269,38 @@ const expect = (ok, what) => { if (ok) held++; else failures.push(what); };
   expect(loadStructure(map, withText(200)) === keep, 'bases: a base read between every new one was evicted');
   const weeks = loadStructure(map, events, { weeks: 3 });
   expect(loadStructure(map, events, { weeks: 3 }) === weeks && weeks.weeks.length === 3, 'bases: a weeks option is cached on its own');
+}
+
+// ------------------------------------------------------------------ a manifest edited in place is not served stale
+// health.ts compiles each manifest once, keyed on the manifest object. A temporary lens the session edits must read
+// as what it is now, not as what it was when first evaluated.
+{
+  const mk = () => ({ id: 'com.probe.m', name: 'M', reader: { density: 'standard' },
+    fields: [{ key: 'a', type: 'integer', label: 'A' }], presentation: { glyph: 'bars', line: 'solid' },
+    health: { default: 'good', rollup: { method: 'worst-of' }, rules: [{ when: { field: 'b', gt: 1 }, health: 'bad', reason: 'r' }] } });
+  const facet = { values: { a: 1, b: 5 } };
+  const edits = [
+    ['a field declared', (m) => m.fields.push({ key: 'b', type: 'integer', label: 'B' }), 'bad'],
+    ['a field removed', (m) => { m.fields.pop(); }, 'good', (m) => m.fields.push({ key: 'b', type: 'integer', label: 'B' })],
+    ['a rule added', (m) => m.health.rules.unshift({ when: { field: 'a', gt: 0 }, health: 'watch', reason: 'w' }), 'watch'],
+    ['a rule removed', (m) => { m.health.rules.pop(); }, 'good', (m) => m.health.rules.push({ when: { field: 'a', gt: 0 }, health: 'bad', reason: 'r' })],
+    ['applies_when added', (m) => { m.fields.push({ key: 'z', type: 'integer', label: 'Z' }); m.health.applies_when = { field: 'z', present: true }; }, 'na'],
+    ['applies_when set on a declared field', (m) => { m.health.applies_when = { field: 'a', missing: true }; }, 'na'],
+    ['a field renamed', (m) => { m.fields[0].key = 'b'; }, 'bad'],
+    ['a rule condition replaced', (m) => { m.health.rules[0].when = { field: 'a', gt: 0 }; }, 'bad'],
+    ['a field bound to the feature', (m) => { m.fields[0].source = { feature: 'owner' }; }, 'unmeasured',
+      (m) => { m.health.rules = [{ when: { field: 'a', eq: 'x' }, health: 'bad', reason: 'r' }]; }, { feature: { owner: 'x' } }],
+  ];
+  for (const [name, edit, want, setup, ctx] of edits) {
+    const m = mk();
+    if (setup) setup(m);
+    const H = () => lensHealth(m, ctx ? { values: { a: 'x' } } : facet, '2026-01-01', ctx);
+    const before = H(); // compiled here, then edited
+    expect(before !== want, `compile cache: ${name}: the unedited probe already read ${before}, so the edit proves nothing`);
+    edit(m);
+    expect(H() === want, `compile cache: ${name}: read ${H()} after an in-place edit, a fresh manifest reads ${want}`);
+  }
+  // the fingerprint is shallow (field keys and sources, the rule conditions by reference): it costs nothing a load can see
 }
 
 // ------------------------------------------------------------------ the control: valid input warns 0 times
