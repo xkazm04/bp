@@ -1,0 +1,62 @@
+{
+  "id": "studio-shelves",
+  "class": "set-dressing",
+  "budget_tris": 24000,
+  "budget_note": "plan.md P4 studio kit total 80k, split across 5 as 24000 shelves, 16000 desk lamp, 8000 mug, 20000 drawing tubes, 12000 pinned drawings",
+  "generator": [
+    {
+      "option": "A",
+      "file": "rejected/A.png",
+      "model": "openai/gpt-image-2.5-flare",
+      "seed": 21,
+      "quality": "LOW",
+      "size": "1024x1024",
+      "credits": 6,
+      "log": "docs/concepts/vr-light-table/lookdev/log.jsonl line 53",
+      "generationId": "1f1cd393-8015-6f40-8b23-689260dd9b82",
+      "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop studio-shelves --variant A"
+    },
+    {
+      "option": "B",
+      "file": "concept.png",
+      "model": "openai/gpt-image-2.5-flare",
+      "seed": 21,
+      "quality": "LOW",
+      "size": "1024x1024",
+      "credits": 6,
+      "log": "docs/concepts/vr-light-table/lookdev/log.jsonl line 54",
+      "generationId": "1f1cd394-06b9-6ba0-9682-099ad4c857a7",
+      "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop studio-shelves --variant B"
+    }
+  ],
+  "generator_note": "log.jsonl file fields name candidates/<A|B>.png, the place each image was written before grading; they were then moved to concept.png or rejected/.",
+  "kept_option": "B",
+  "gates": {
+    "input": {
+      "pass": true,
+      "note": "B kept: wide and simple, books and roll sit clear of the frame. A also passes but its roll hides behind a post and it is taller and busier.",
+      "date": "2026-10-21"
+    },
+    "mesh_acceptance": {
+      "pass": false,
+      "note": "not run"
+    },
+    "scale": {
+      "pass": false,
+      "note": "not run"
+    },
+    "finishing": {
+      "pass": false,
+      "note": "not run"
+    },
+    "poly_budget": {
+      "pass": false,
+      "note": "not run"
+    }
+  },
+  "licence": "Leonardo concept, TRELLIS input only; R8 open",
+  "sha256": {
+    "concept.png": "d9f4f8a906287895b64686650355f61155a8927992390326fe65558212211a0b",
+    "rejected/A.png": "244906f52cfd64fa6ed44f2da2f9b4d70de06d76973c3f325cb4bceb6b2c2012"
+  }
+}

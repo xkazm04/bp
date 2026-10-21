@@ -1,0 +1,63 @@
+{
+  "id": "studio-pinned-drawings",
+  "class": "set-dressing",
+  "budget_tris": 12000,
+  "budget_note": "plan.md P4 studio kit total 80k, split across 5 as 24000 shelves, 16000 desk lamp, 8000 mug, 20000 drawing tubes, 12000 pinned drawings",
+  "generator": [
+    {
+      "option": "A",
+      "file": "rejected/A.png",
+      "model": "openai/gpt-image-2.5-flare",
+      "seed": 21,
+      "quality": "LOW",
+      "size": "1024x1024",
+      "credits": 6,
+      "log": "docs/concepts/vr-light-table/lookdev/log.jsonl line 61",
+      "generationId": "1f1cd397-966d-6b90-bec5-46cc7847fc72",
+      "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop studio-pinned-drawings --variant A"
+    },
+    {
+      "option": "B",
+      "file": "concept.png",
+      "model": "openai/gpt-image-2.5-flare",
+      "seed": 21,
+      "quality": "LOW",
+      "size": "1024x1024",
+      "credits": 6,
+      "log": "docs/concepts/vr-light-table/lookdev/log.jsonl line 62",
+      "generationId": "1f1cd398-4a2d-6590-9692-6a4b4b5b15bf",
+      "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop studio-pinned-drawings --variant B"
+    }
+  ],
+  "generator_note": "log.jsonl file fields name candidates/<A|B>.png, the place each image was written before grading; they were then moved to concept.png or rejected/.",
+  "kept_option": "B",
+  "recommendation": "Build as a textured plane (three quads with the sheet art as base colour on a thin frame), not a TRELLIS mesh. The asset is flat linework on paper: a mesh would bake the lines into noisy geometry and spend triangles on nothing. Expected size: under 200 tris, so the 12000 budget is a ceiling. Crop the three sheets out of concept.png; the linework is abstract, with no readable text.",
+  "gates": {
+    "input": {
+      "pass": false,
+      "note": "Fails the grey-ground rule: both options are a blue wall panel, not a plain grey ground. B kept as the cleaner layout (three equal sheets in a row). The input gate is moot if this is built as a textured plane.",
+      "date": "2026-10-21"
+    },
+    "mesh_acceptance": {
+      "pass": false,
+      "note": "not run"
+    },
+    "scale": {
+      "pass": false,
+      "note": "not run"
+    },
+    "finishing": {
+      "pass": false,
+      "note": "not run"
+    },
+    "poly_budget": {
+      "pass": false,
+      "note": "not run"
+    }
+  },
+  "licence": "Leonardo concept, TRELLIS input only; R8 open",
+  "sha256": {
+    "concept.png": "8c31c9d13be7cff2ce16027cf52979c185d32201d0f77e6bd6c6423f689dfb80",
+    "rejected/A.png": "1ac378c15124ac370da8525786184ea4ebb406dc4b12f4947c72fd0ef7af43c1"
+  }
+}

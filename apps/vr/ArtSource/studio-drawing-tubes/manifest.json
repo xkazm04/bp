@@ -1,0 +1,62 @@
+{
+  "id": "studio-drawing-tubes",
+  "class": "set-dressing",
+  "budget_tris": 20000,
+  "budget_note": "plan.md P4 studio kit total 80k, split across 5 as 24000 shelves, 16000 desk lamp, 8000 mug, 20000 drawing tubes, 12000 pinned drawings",
+  "generator": [
+    {
+      "option": "A",
+      "file": "rejected/A.png",
+      "model": "openai/gpt-image-2.5-flare",
+      "seed": 21,
+      "quality": "LOW",
+      "size": "1024x1024",
+      "credits": 6,
+      "log": "docs/concepts/vr-light-table/lookdev/log.jsonl line 59",
+      "generationId": "1f1cd396-9235-6830-879e-e8db86ed8291",
+      "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop studio-drawing-tubes --variant A"
+    },
+    {
+      "option": "B",
+      "file": "concept.png",
+      "model": "openai/gpt-image-2.5-flare",
+      "seed": 21,
+      "quality": "LOW",
+      "size": "1024x1024",
+      "credits": 6,
+      "log": "docs/concepts/vr-light-table/lookdev/log.jsonl line 60",
+      "generationId": "1f1cd397-1471-65b0-8a7f-0fbd41e62668",
+      "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop studio-drawing-tubes --variant B"
+    }
+  ],
+  "generator_note": "log.jsonl file fields name candidates/<A|B>.png, the place each image was written before grading; they were then moved to concept.png or rejected/.",
+  "kept_option": "B",
+  "gates": {
+    "input": {
+      "pass": true,
+      "note": "B kept: plain grey ground, round holder, five tubes with two rolls. A fails: saturated blue ground, not plain grey, and a strapped holder with rivets.",
+      "date": "2026-10-21"
+    },
+    "mesh_acceptance": {
+      "pass": false,
+      "note": "not run"
+    },
+    "scale": {
+      "pass": false,
+      "note": "not run"
+    },
+    "finishing": {
+      "pass": false,
+      "note": "not run"
+    },
+    "poly_budget": {
+      "pass": false,
+      "note": "not run"
+    }
+  },
+  "licence": "Leonardo concept, TRELLIS input only; R8 open",
+  "sha256": {
+    "concept.png": "8736e7274e002663a46030369f94fe3bb24f97c26482697eb340ed156b42c93c",
+    "rejected/A.png": "b991f37f8f4d0cdafe23c6ad77ebaebec15194f569fbbd39ffa1dea17ab546fe"
+  }
+}

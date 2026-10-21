@@ -1,0 +1,62 @@
+{
+  "id": "studio-desk-lamp",
+  "class": "set-dressing",
+  "budget_tris": 16000,
+  "budget_note": "plan.md P4 studio kit total 80k, split across 5 as 24000 shelves, 16000 desk lamp, 8000 mug, 20000 drawing tubes, 12000 pinned drawings",
+  "generator": [
+    {
+      "option": "A",
+      "file": "concept.png",
+      "model": "openai/gpt-image-2.5-flare",
+      "seed": 21,
+      "quality": "LOW",
+      "size": "1024x1024",
+      "credits": 6,
+      "log": "docs/concepts/vr-light-table/lookdev/log.jsonl line 55",
+      "generationId": "1f1cd394-87b0-6dd0-bbf8-508777f013e8",
+      "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop studio-desk-lamp --variant A"
+    },
+    {
+      "option": "B",
+      "file": "rejected/B.png",
+      "model": "openai/gpt-image-2.5-flare",
+      "seed": 21,
+      "quality": "LOW",
+      "size": "1024x1024",
+      "credits": 6,
+      "log": "docs/concepts/vr-light-table/lookdev/log.jsonl line 56",
+      "generationId": "1f1cd395-093c-6ed0-8488-7d24e574a531",
+      "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop studio-desk-lamp --variant B"
+    }
+  ],
+  "generator_note": "log.jsonl file fields name candidates/<A|B>.png, the place each image was written before grading; they were then moved to concept.png or rejected/.",
+  "kept_option": "A",
+  "gates": {
+    "input": {
+      "pass": true,
+      "note": "A kept: one stem and a cone shade reads as set dressing and cannot be mistaken for the two-joint lamp agent. B passes the sheet rules but its two-joint arm is too close to the agent.",
+      "date": "2026-10-21"
+    },
+    "mesh_acceptance": {
+      "pass": false,
+      "note": "not run"
+    },
+    "scale": {
+      "pass": false,
+      "note": "not run"
+    },
+    "finishing": {
+      "pass": false,
+      "note": "not run"
+    },
+    "poly_budget": {
+      "pass": false,
+      "note": "not run"
+    }
+  },
+  "licence": "Leonardo concept, TRELLIS input only; R8 open",
+  "sha256": {
+    "concept.png": "cfd69619d78c683ba330b92e8e17f64559b3a37557f6c8fdb569398e06648dd0",
+    "rejected/B.png": "383a57bd3bdf85c831d8c4f08083efa7d7bbead87f36472c6685f6910a3adf86"
+  }
+}

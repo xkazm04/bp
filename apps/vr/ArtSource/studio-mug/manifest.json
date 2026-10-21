@@ -1,0 +1,62 @@
+{
+  "id": "studio-mug",
+  "class": "set-dressing",
+  "budget_tris": 8000,
+  "budget_note": "plan.md P4 studio kit total 80k, split across 5 as 24000 shelves, 16000 desk lamp, 8000 mug, 20000 drawing tubes, 12000 pinned drawings",
+  "generator": [
+    {
+      "option": "A",
+      "file": "concept.png",
+      "model": "openai/gpt-image-2.5-flare",
+      "seed": 21,
+      "quality": "LOW",
+      "size": "1024x1024",
+      "credits": 6,
+      "log": "docs/concepts/vr-light-table/lookdev/log.jsonl line 57",
+      "generationId": "1f1cd395-881f-6d60-a068-7bbb820bcdba",
+      "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop studio-mug --variant A"
+    },
+    {
+      "option": "B",
+      "file": "rejected/B.png",
+      "model": "openai/gpt-image-2.5-flare",
+      "seed": 21,
+      "quality": "LOW",
+      "size": "1024x1024",
+      "credits": 6,
+      "log": "docs/concepts/vr-light-table/lookdev/log.jsonl line 58",
+      "generationId": "1f1cd396-0d33-6380-af79-bdfa9c5ccb47",
+      "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop studio-mug --variant B"
+    }
+  ],
+  "generator_note": "log.jsonl file fields name candidates/<A|B>.png, the place each image was written before grading; they were then moved to concept.png or rejected/.",
+  "kept_option": "A",
+  "gates": {
+    "input": {
+      "pass": true,
+      "note": "A kept: straight-sided, plain, no print. B also passes.",
+      "date": "2026-10-21"
+    },
+    "mesh_acceptance": {
+      "pass": false,
+      "note": "not run"
+    },
+    "scale": {
+      "pass": false,
+      "note": "not run"
+    },
+    "finishing": {
+      "pass": false,
+      "note": "not run"
+    },
+    "poly_budget": {
+      "pass": false,
+      "note": "not run"
+    }
+  },
+  "licence": "Leonardo concept, TRELLIS input only; R8 open",
+  "sha256": {
+    "concept.png": "ccc55bd9f9dc59e01b259ae80fb4792825425eca3831080e5014eab03fb05ff4",
+    "rejected/B.png": "febc06ec8b0a747b94448976d6dc90ad797f1cb83bd444c229a46faab9de7519"
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "id": "lamp-agent",
+  "class": "character-prop",
+  "budget_tris": 30000,
+  "generator": [
+    {
+      "option": "A",
+      "file": "options/A.png",
+      "model": "openai/gpt-image-2.5-flare",
+      "seed": 11,
+      "quality": "LOW",
+      "size": "1024x1024",
+      "credits": 6,
+      "log": "docs/concepts/vr-light-table/lookdev/log.jsonl line 49",
+      "generationId": "1f1cd391-0b45-6640-81fd-1f9ee8ab365f",
+      "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop lamp-agent --variant A"
+    },
+    {
+      "option": "B",
+      "file": "options/B.png",
+      "model": "openai/gpt-image-2.5-flare",
+      "seed": 11,
+      "quality": "LOW",
+      "size": "1024x1024",
+      "credits": 6,
+      "log": "docs/concepts/vr-light-table/lookdev/log.jsonl line 50",
+      "generationId": "1f1cd391-9039-6090-8a56-8e54c4ce3518",
+      "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop lamp-agent --variant B"
+    },
+    {
+      "option": "C",
+      "file": "options/C.png",
+      "model": "openai/gpt-image-2.5-flare",
+      "seed": 11,
+      "quality": "LOW",
+      "size": "1024x1024",
+      "credits": 6,
+      "log": "docs/concepts/vr-light-table/lookdev/log.jsonl line 51",
+      "generationId": "1f1cd392-16cb-6b80-8716-ec177b39c6cc",
+      "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop lamp-agent --variant C"
+    },
+    {
+      "option": "D",
+      "file": "options/D.png",
+      "model": "openai/gpt-image-2.5-flare",
+      "seed": 11,
+      "quality": "LOW",
+      "size": "1024x1024",
+      "credits": 6,
+      "log": "docs/concepts/vr-light-table/lookdev/log.jsonl line 52",
+      "generationId": "1f1cd392-9b19-6590-99cb-317dc4e72582",
+      "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop lamp-agent --variant D"
+    }
+  ],
+  "contact_sheet": "options/contact.png, built by scripts/lookdev/contact-sheet.ps1 (labels in the margin only)",
+  "option_input_check": "All four first-seed images pass the sheet rules (one object, whole, plain grey ground, readable silhouette, no text, no claw, no legs, no face), so no second seed was made. A and C show a coil spring and a dome shade; B a pantograph disc; D a box shade with a counterweight.",
+  "gates": {
+    "input": {
+      "pass": false,
+      "note": "awaiting owner design pick among A-D"
+    },
+    "mesh_acceptance": {
+      "pass": false,
+      "note": "not run"
+    },
+    "scale": {
+      "pass": false,
+      "note": "not run"
+    },
+    "finishing": {
+      "pass": false,
+      "note": "not run"
+    },
+    "poly_budget": {
+      "pass": false,
+      "note": "not run"
+    }
+  },
+  "licence": "Leonardo concept, TRELLIS input only; R8 open",
+  "sha256": {
+    "options/A.png": "3563dbd70bfc8e4e6b92e4552a7f0a3484773971d5261485dd432ef7843af1fb",
+    "options/B.png": "e6b82dd4993b19bb0bb766e466327fb44cf36695899ff229eb60805ef09a45b4",
+    "options/C.png": "7caa1bb1204433fad475bc7bd08c8ba5a275777f39a711cba08d4b5af8685cee",
+    "options/D.png": "9a6f57f2bf81665c4415cd3143d7352104ca92e53bd0d010b270072dd438ca20",
+    "options/contact.png": "b94ff36ea7b13de3f9b62ba056f651c918fcf2c6b05fd71ff28865d099a74cec"
+  }
+}
