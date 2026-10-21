@@ -20,19 +20,17 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { routeMethods } from './lib/mounts.ts';
 import { WING_DEFS } from '../packages/core/src/model/constants.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const WEB_API = path.join(ROOT, 'apps/web/src/app/api');
+const CORE_API = path.join(ROOT, 'packages/core/src/server/api');
 let failed = 0, passed = 0;
 const check = (name, ok, detail = '') => { ok ? passed++ : failed++; console.log(`${ok ? 'ok  ' : 'FAIL'}  ${name}${ok || !detail ? '' : `  (${detail})`}`); };
 
-const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : e.name === 'route.ts' ? [path.join(d, e.name)] : []));
-const want = new Map(walk(WEB_API).map((f) => {
-  const rel = path.relative(WEB_API, path.dirname(f)).split(path.sep).join('/');
-  const m = /export\s*\{\s*([A-Z,\s]+)\}\s*from/.exec(fs.readFileSync(f, 'utf8'));
-  return ['/api/' + rel, (m ? m[1].split(',').map((s) => s.trim()).filter(Boolean) : []).sort().join(',')];
-}));
+// Expected table: derived from the CORE handlers' exported methods (scripts/lib/mounts.ts, the same read check-route-guards.mjs
+// uses), never from the web mounts' own re-export lists - check-route-guards.mjs proves each mount re-exports exactly these.
+const want = new Map([...routeMethods(CORE_API)].map(([rel, ms]) => ['/api/' + path.posix.dirname(rel).replace(/^\.$/, ''), [...ms].sort().join(',')]));
 
 const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-server-'));
 const child = spawn(process.execPath, ['--import', pathToFileURL(path.join(ROOT, 'packages/core/register.mjs')).href, path.join(ROOT, 'apps/server/src/main.ts'), '--port', '0'], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -61,7 +59,7 @@ try {
     const got = new Map([...out.matchAll(/^route (\S+) (\S+)$/gm)].map((m) => [m[2], m[1].split(',').sort().join(',')]));
     const missing = [...want.keys()].filter((p) => !got.has(p)), extra = [...got.keys()].filter((p) => !want.has(p));
     const differ = [...want.keys()].filter((p) => got.has(p) && got.get(p) !== want.get(p));
-    check(`routes: the ${want.size} web mounts, no more, no fewer`, want.size > 0 && !missing.length && !extra.length, `missing ${missing.join(' ')} extra ${extra.join(' ')}`);
+    check(`routes: the ${want.size} core handler routes, no more, no fewer`, want.size > 0 && !missing.length && !extra.length, `missing ${missing.join(' ')} extra ${extra.join(' ')}`);
     check('routes: the same methods per route', !differ.length, differ.map((p) => `${p} ${got.get(p)} vs ${want.get(p)}`).join('; '));
 
     const list = await req('GET', '/api/products');

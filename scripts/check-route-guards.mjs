@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stripComments as strip } from './lib/source.ts';
+import { exportedMethods } from './lib/mounts.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const API = path.join(ROOT, 'packages/core/src/server/api');
@@ -111,7 +112,7 @@ function auditMount(code, rel, methods) {
   return bad;
 }
 const webFiles = fs.existsSync(WEB_API) ? walk(WEB_API) : [];
-const coreMethods = new Map(files.map((f) => [path.relative(API, f).split(path.sep).join('/'), handlers(fs.readFileSync(f, 'utf8')).map((h) => h.method)]));
+const coreMethods = new Map(files.map((f) => [path.relative(API, f).split(path.sep).join('/'), exportedMethods(fs.readFileSync(f, 'utf8'))]));
 let mounts = 0;
 for (const file of webFiles) {
   const rel = path.relative(WEB_API, file).split(path.sep).join('/');
