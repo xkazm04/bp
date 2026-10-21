@@ -72,7 +72,7 @@ export function useDecide(own?: () => readonly string[]): DecideApi {
 
   const decide = useCallback(async (raw: readonly string[], decision: TriageDecision, note?: string, at: NoteAsk['at'] = 'bar') => {
     const ids = [...new Set(raw)].filter((id) => T.byId.has(id) && !pending.has(id));
-    if (!ids.length) { E.toast('Nothing to decide', raw.length ? 'a decision on these is on its way' : 'focus or select a pack item first'); return; }
+    if (!ids.length) { E.toast('Nothing to decide', raw.length ? 'a decision on these is on its way' : 'focus or select a pack item first', undefined, undefined, 'warn'); return; }
     const can = ids.map((id) => T.byId.get(id)!).filter((p) => canDecide(decision, p, releaseIn(T, p)));
     if (decision !== 'reopen' && note === undefined && can.some((p) => noteRequired(decision, p, verdictIn(T, p)))) {
       setLedgerUi((u) => ({ ...u, note: { ids, decision, at } }));
@@ -100,8 +100,8 @@ export function useDecide(own?: () => readonly string[]): DecideApi {
       drop(ids);
       const err = e as { status?: number; body?: unknown };
       const body = err.status === 409 ? parseTriageResult(err.body) : null;
-      if (body?.ok) E.toast('Nothing moved', skippedText(body.value.skipped));
-      else E.toast(err.status === 409 || err.status === 400 ? 'Refused' : 'Triage failed', refusalText(e));
+      if (body?.ok) E.toast('Nothing moved', skippedText(body.value.skipped), undefined, undefined, 'warn');
+      else E.toast(err.status === 409 || err.status === 400 ? 'Refused' : 'Triage failed', refusalText(e), undefined, undefined, 'bad');
     }
   }, [E, T, pending, order]);
 
