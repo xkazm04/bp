@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // Aggregate gate: typecheck + every check:* script in package.json + validate:structure, one line each.
 // New check:* scripts join automatically. check:python-deps runs only when Python is on PATH (else skipped).
-// Run: npm run check   (BP_CHECK_ONLY=a,b limits the run to scripts whose name contains one of the terms)
+// Run: npm run check   (BP_CHECK_ONLY=a,b limits the run to scripts whose name contains one of the terms;
+// a term that matches no check is a typo and fails the run before anything executes, rather than reporting
+// a green gate over 0 checks)
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
@@ -12,8 +14,18 @@ const scripts = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf
 const hasPython = ['python', 'python3', 'py'].some((c) => spawnSync(c, ['--version'], { stdio: 'ignore' }).status === 0);
 const only = (process.env.BP_CHECK_ONLY ?? '').split(',').filter(Boolean);
 
-const names = ['typecheck', ...Object.keys(scripts).filter((k) => k.startsWith('check:')), 'validate:structure']
-  .filter((n) => !only.length || only.some((o) => n.includes(o)));
+const all = ['typecheck', ...Object.keys(scripts).filter((k) => k.startsWith('check:')), 'validate:structure'];
+const names = all.filter((n) => !only.length || only.some((o) => n.includes(o)));
+// A narrowing term that matches nothing is a TYPO, and the run it produces reads exactly like success:
+// `BP_CHECK_ONLY=overlys` ran 0 checks and exited 0, and one dead term among several quietly left its
+// checks out of a run the caller believed covered them. Both are refused here, before anything runs.
+const dead = only.filter((o) => !all.some((n) => n.includes(o)));
+if (dead.length || !names.length) {
+  for (const o of dead) console.log(`FAIL  BP_CHECK_ONLY term '${o}' matches none of the ${all.length} checks`);
+  if (!names.length) console.log(`FAIL  BP_CHECK_ONLY='${only.join(',')}' selected 0 of ${all.length} checks: nothing was run`);
+  console.log(`\n0 passed, ${dead.length || 1} failed, 0 skipped of ${all.length}`);
+  process.exit(1);
+}
 const skipped = new Map();
 if (!hasPython && names.includes('check:python-deps')) skipped.set('check:python-deps', 'python not on PATH');
 
