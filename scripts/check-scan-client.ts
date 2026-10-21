@@ -71,7 +71,41 @@ for (const [code, words] of Object.entries(REFUSAL_SEED)) expect(refusalText(err
 expect(refusalText(err('that lens has no manifest scan block on disk', { status: 400 })) === 'that lens has no manifest scan block on disk', 'the route\'s own refusal text was discarded');
 expect(refusalText(err('Nothing to scan with: no live product and no sample sim', { status: 503 })).startsWith('Nothing to scan with'), 'actions.ts\' own 503 sentence was discarded');
 
-// --------------------------------------------- 2. no request waits for an answer forever
+// --------------------------------------------- 2. a job that ended still reports it on the plan
+// scanViews draws a finished job's outline for LINGER_MS after it ended - all ticks for `done`, the bad colour
+// for `failed`. The end came from `Date.parse(j.ended_at ?? '')`, which is NaN when the job carries no end, so
+// `end > now` was false and the view was dropped: a run whose process died before jobs.server.ts could write
+// ended_at drew NOTHING, exactly the state most in need of saying so. The anchor falls back to the start, which
+// is stable across recomputes (`now` would restart the window on every pass and the outline would never go).
+const { scanViews, LINGER_MS } = await import('../apps/web/src/lib/scan/scan-views.ts');
+const BLD = { id: 'b0', i: 0 };
+const TILE = (id: string) => ({ id, wing: { bld: BLD } });
+const GEO = {
+  P: { base: { features: [{ id: 'f1' }, { id: 'f2' }] }, scale: 1, buildings: [{ sf: '' }] },
+  L: { TILE: { f1: TILE('f1'), f2: TILE('f2') }, blds: [BLD], bays: [], rooms: [], wings: [] },
+} as never;
+const NOW = Date.parse('2026-10-21T12:00:00Z');
+const at = (ms: number) => new Date(NOW + ms).toISOString();
+const mkJob = (p: Record<string, unknown>) => ({ id: 'j', kind: 'measure', lens: 'l', scope: { kind: 'all', label: 'Everything', features: [] }, queued_at: at(-60000), started_at: at(-1000), ...p } as never);
+const draw = (j: unknown) => scanViews([j] as never, undefined, GEO, () => '#fff', NOW);
+const DRAWN: { name: string; job: Record<string, unknown>; views: number; expires?: number }[] = [
+  { name: 'done a second ago', job: { status: 'done', ended_at: at(-1000) }, views: 1, expires: NOW - 1000 + LINGER_MS.done! },
+  { name: 'failed with no ended_at, started a second ago', job: { status: 'failed', exit_code: 1, error: 'exit 1' }, views: 1, expires: NOW - 1000 + LINGER_MS.failed! },
+  { name: 'done with no ended_at, started a second ago', job: { status: 'done' }, views: 1, expires: NOW - 1000 + LINGER_MS.done! },
+  { name: 'done with an unparseable ended_at', job: { status: 'done', ended_at: 'just now' }, views: 1, expires: NOW - 1000 + LINGER_MS.done! },
+  { name: 'failed with no ended_at, started an hour ago', job: { status: 'failed', started_at: at(-3600000) }, views: 0 },
+  { name: 'cancelled', job: { status: 'cancelled', ended_at: at(-1000) }, views: 0 },
+  { name: 'running', job: { status: 'running' }, views: 1 },
+  { name: 'queued', job: { status: 'queued' }, views: 1 },
+];
+for (const c of DRAWN) {
+  const r = draw(mkJob(c.job));
+  expect(r.views.length === c.views, `a job ${c.name}: the plan draws ${r.views.length} outlines, not ${c.views}`);
+  if (c.expires !== undefined) expect(r.next === c.expires, `a job ${c.name}: its outline does not expire one linger after the time it is anchored to`, String(r.next));
+  if (c.views && r.views[0]) expect(r.views[0].status === c.job.status, `a job ${c.name}: its view does not carry the job's own status`, String(r.views[0].status));
+}
+
+// --------------------------------------------- 3. no request waits for an answer forever
 // A server that accepted the connection and never answers (it died mid-write, or it is wedged on a locked
 // store) used to leave every one of these promises pending for the life of the page. Each helper is driven
 // against a fetch that honours its signal and otherwise never settles; AbortSignal.timeout is stubbed short so

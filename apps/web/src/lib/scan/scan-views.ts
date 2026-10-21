@@ -28,7 +28,13 @@ export function scanViews(jobs: readonly ScanJob[], scan: ScanSnapshot | undefin
     const linger = LINGER_MS[j.status];
     if (j.status === 'cancelled') continue;
     if (linger !== undefined) {
-      const end = Date.parse(j.ended_at ?? '') + linger;
+      // A finished job keeps its outline for `linger` after it ended. One that has no usable `ended_at` has
+      // nothing to count from: jobs.server.ts writes it at the finish, so a process that died mid-run (or a
+      // row from an older store) reaches the stream `done` or `failed` with no end at all, and the outline
+      // that should report the failure was skipped entirely. Count from when it started instead - stable
+      // across recomputes, unlike `now`, which would restart the window on every pass and never expire.
+      const ended = Date.parse(j.ended_at ?? '');
+      const end = (Number.isFinite(ended) ? ended : Date.parse(j.started_at ?? j.queued_at)) + linger;
       if (!(end > now)) continue;
       next = Math.min(next, end);
     }
