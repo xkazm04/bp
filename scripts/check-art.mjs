@@ -19,7 +19,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ART = path.join(REPO, 'apps/vr/ArtSource');
@@ -78,57 +78,64 @@ export function validate(folder, m, opts = {}) {
   return errs;
 }
 
-const folders = fs.readdirSync(ART, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort();
-let fail = 0;
-const manifests = new Map();
-const unreadable = new Map();
-for (const f of folders) {
-  try { manifests.set(f, JSON.parse(fs.readFileSync(path.join(ART, f, 'manifest.json'), 'utf8'))); } catch (e) { unreadable.set(f, `manifest.json unreadable: ${e.message}`); }
-}
-for (const f of folders) {
-  let errs;
-  try { errs = unreadable.has(f) ? [unreadable.get(f)] : validate(f, manifests.get(f), { peers: [...manifests.values()] }); } catch (e) { errs = [`manifest.json unreadable: ${e.message}`]; }
-  for (const e of errs) console.log(`FAIL  ${f}: ${e}`);
-  fail += errs.length;
+/** True when this file was started directly (`node scripts/check-art.mjs`), false when another module imported it for validate(). */
+const isMain = !!process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
+
+function main() {
+  const folders = fs.readdirSync(ART, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort();
+  let fail = 0;
+  const manifests = new Map();
+  const unreadable = new Map();
+  for (const f of folders) {
+    try { manifests.set(f, JSON.parse(fs.readFileSync(path.join(ART, f, 'manifest.json'), 'utf8'))); } catch (e) { unreadable.set(f, `manifest.json unreadable: ${e.message}`); }
+  }
+  for (const f of folders) {
+    let errs;
+    try { errs = unreadable.has(f) ? [unreadable.get(f)] : validate(f, manifests.get(f), { peers: [...manifests.values()] }); } catch (e) { errs = [`manifest.json unreadable: ${e.message}`]; }
+    for (const e of errs) console.log(`FAIL  ${f}: ${e}`);
+    fail += errs.length;
+  }
+
+  let total = 0;
+  for (const rel of git('ls-files', '-z', '--', REL).split('\0').filter(Boolean)) {
+    const size = fs.statSync(path.join(REPO, rel)).size;
+    total += size;
+    if (size >= 50 * MB) { console.log(`FAIL  ${rel}: ${(size / MB).toFixed(1)} MB, 50 MB or larger`); fail++; }
+    else if (size > 10 * MB) console.log(`WARN  ${rel}: ${(size / MB).toFixed(1)} MB, over 10 MB`);
+  }
+
+  // Seeded control, in memory only: the first manifest with a gate flipped, then with a bad sha.
+  const seedFolder = [...manifests.keys()][0];
+  const seed = manifests.get(seedFolder);
+  const flipped = structuredClone(seed);
+  flipped.gates[Object.keys(flipped.gates)[0]].pass = false;
+  const badSha = structuredClone(seed);
+  const key = Object.keys(badSha.sha256)[0];
+  badSha.sha256[key] = '0'.repeat(64);
+  // the size control needs a manifest that records file_bytes (7 of 14 do), which is not always the first one
+  const sizeFolder = [...manifests.keys()].find((f) => Object.keys(manifests.get(f).file_bytes ?? {}).length > 0);
+  const badSize = structuredClone(manifests.get(sizeFolder) ?? seed);
+  if (sizeFolder) { const sk = Object.keys(badSize.file_bytes)[0]; badSize.file_bytes[sk] += 1; }
+  const controls = [['gate false', flipped, 'is not pass: true'], ['bad sha', badSha, 'sha256 does not match']];
+  if (sizeFolder) controls.push(['bad file_bytes', badSize, 'file_bytes']);
+  else { console.log('FAIL  no manifest records file_bytes, so the size control cannot run'); fail++; }
+  // a gate kind a sibling carries and this manifest lacks: a peer of the seed's class with a sixth gate the seed has never heard of
+  const sixth = structuredClone(seed);
+  sixth.gates.zz_new_gate = { pass: true };
+  controls.push(['gate a sibling carries', seed, 'gate zz_new_gate is missing', [sixth]]);
+  // a material by CLASS, in a folder that does not start with mat-: tiling is still required because its siblings carry it
+  const matFolder = [...manifests.keys()].find((f) => 'tiling' in (manifests.get(f).gates ?? {}));
+  if (matFolder) { const noTiling = structuredClone(manifests.get(matFolder)); delete noTiling.gates.tiling; controls.push(['tiling by class', noTiling, 'gate tiling is missing', [...manifests.values()], 'renamed-material']); }
+  else { console.log('FAIL  no manifest carries tiling, so the by-class control cannot run'); fail++; }
+  for (const [name, m, want, peers = [], asFolder] of controls) {
+    const errs = validate(asFolder ?? (m === badSize ? sizeFolder : seedFolder), m, { commit: false, peers });
+    const ok = errs.some((e) => e.includes(want));
+    console.log(`${ok ? 'ok  ' : 'FAIL'}  seeded control (${name}) ${ok ? 'fails as expected' : 'was NOT caught'}`);
+    if (!ok) fail++;
+  }
+
+  console.log(`${folders.length} asset folders, ${(total / MB).toFixed(1)} MB committed under ArtSource, ${fail} violation(s)`);
+  process.exit(fail ? 1 : 0);
 }
 
-let total = 0;
-for (const rel of git('ls-files', '-z', '--', REL).split('\0').filter(Boolean)) {
-  const size = fs.statSync(path.join(REPO, rel)).size;
-  total += size;
-  if (size >= 50 * MB) { console.log(`FAIL  ${rel}: ${(size / MB).toFixed(1)} MB, 50 MB or larger`); fail++; }
-  else if (size > 10 * MB) console.log(`WARN  ${rel}: ${(size / MB).toFixed(1)} MB, over 10 MB`);
-}
-
-// Seeded control, in memory only: the first manifest with a gate flipped, then with a bad sha.
-const seedFolder = [...manifests.keys()][0];
-const seed = manifests.get(seedFolder);
-const flipped = structuredClone(seed);
-flipped.gates[Object.keys(flipped.gates)[0]].pass = false;
-const badSha = structuredClone(seed);
-const key = Object.keys(badSha.sha256)[0];
-badSha.sha256[key] = '0'.repeat(64);
-// the size control needs a manifest that records file_bytes (7 of 14 do), which is not always the first one
-const sizeFolder = [...manifests.keys()].find((f) => Object.keys(manifests.get(f).file_bytes ?? {}).length > 0);
-const badSize = structuredClone(manifests.get(sizeFolder) ?? seed);
-if (sizeFolder) { const sk = Object.keys(badSize.file_bytes)[0]; badSize.file_bytes[sk] += 1; }
-const controls = [['gate false', flipped, 'is not pass: true'], ['bad sha', badSha, 'sha256 does not match']];
-if (sizeFolder) controls.push(['bad file_bytes', badSize, 'file_bytes']);
-else { console.log('FAIL  no manifest records file_bytes, so the size control cannot run'); fail++; }
-// a gate kind a sibling carries and this manifest lacks: a peer of the seed's class with a sixth gate the seed has never heard of
-const sixth = structuredClone(seed);
-sixth.gates.zz_new_gate = { pass: true };
-controls.push(['gate a sibling carries', seed, 'gate zz_new_gate is missing', [sixth]]);
-// a material by CLASS, in a folder that does not start with mat-: tiling is still required because its siblings carry it
-const matFolder = [...manifests.keys()].find((f) => 'tiling' in (manifests.get(f).gates ?? {}));
-if (matFolder) { const noTiling = structuredClone(manifests.get(matFolder)); delete noTiling.gates.tiling; controls.push(['tiling by class', noTiling, 'gate tiling is missing', [...manifests.values()], 'renamed-material']); }
-else { console.log('FAIL  no manifest carries tiling, so the by-class control cannot run'); fail++; }
-for (const [name, m, want, peers = [], asFolder] of controls) {
-  const errs = validate(asFolder ?? (m === badSize ? sizeFolder : seedFolder), m, { commit: false, peers });
-  const ok = errs.some((e) => e.includes(want));
-  console.log(`${ok ? 'ok  ' : 'FAIL'}  seeded control (${name}) ${ok ? 'fails as expected' : 'was NOT caught'}`);
-  if (!ok) fail++;
-}
-
-console.log(`${folders.length} asset folders, ${(total / MB).toFixed(1)} MB committed under ArtSource, ${fail} violation(s)`);
-process.exit(fail ? 1 : 0);
+if (isMain) main();
