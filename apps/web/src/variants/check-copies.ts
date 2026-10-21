@@ -12,13 +12,24 @@ import { fileURLToPath } from 'node:url';
 import { readStripped } from '../../../../scripts/lib/source.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const LENSES = ['business', 'design', 'development', 'operations', 'security', 'quality'];
 /** Source text with comments removed, so a rule described in a comment cannot stand in for the rule. */
 const read = (p: string) => readStripped(path.join(HERE, p));
 
 let agree = 0;
 const failures: string[] = [];
 const expect = (ok: boolean, what: string) => { if (ok) agree++; else failures.push(what); };
+
+// The ids to check are NOT a list of this file's own: they are read from base/legacy.ts's KNOWN, which is
+// `Record<BuiltinLens, true>` and therefore holds exactly the ids `LENS_ICON` and `ACCENT` are keyed by
+// (both are `Record<BuiltinLens, ...>`, so the compiler forces them to agree). A hand-kept copy here would
+// let a seventh built-in lens reach both sources and both stylesheets while this gate still reported
+// "18 of 18 agree": it would check the six it knew and never notice the one it did not.
+const legacy = read('base/legacy.ts');
+const LENSES = [...(/\bKNOWN\b[^=]*= \{([^}]*)\}/.exec(legacy)?.[1] ?? '').matchAll(/(\w+): true/g)].map((m) => m[1]);
+if (!LENSES.length) {
+  console.log('FAIL base/legacy.ts: could not read KNOWN (the BuiltinLens ids this gate checks)');
+  process.exit(1);
+}
 
 // ---------------------------------------------------------------- shaped: tab icons vs icons.ts
 const icons = read('shaped/icons.ts');
@@ -53,5 +64,5 @@ for (const l of LENSES) {
 
 const total = agree + failures.length;
 for (const f of failures) console.log('FAIL ' + f);
-console.log(`${agree} of ${total} variant CSS copies agree with their source (expected ${LENSES.length * 3})`);
+console.log(`${agree} of ${total} variant CSS copies agree with their source (expected ${LENSES.length * 3}, for the ${LENSES.length} BuiltinLens ids in base/legacy.ts)`);
 if (failures.length || total !== LENSES.length * 3) process.exit(1);
