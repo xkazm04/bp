@@ -183,6 +183,21 @@ for (const f of ['components/Overlays.tsx', 'components/Dock.tsx']) {
   expect(bad.length === 0, `${f}: ${bad.length} control(s) with the visible text "Esc" whose accessible name omits it (${bad.join('; ')}) - WCAG 2.5.3`);
 }
 
+// Screens viewer: the scan polls, so the run list it indexes is rebuilt under it. The reader's A/B choice is held as a run
+// id and resolved against the CURRENT list (pickRun): a pruned list must not index past its end (A undefined throws at
+// t.shot), and a newer run arriving must not turn the chosen run into another one. renderToString keeps no state across
+// renders, so the stale-choice cases are held on the resolver the Viewer reads, and the Viewer is rendered at 3 and 1 takes.
+const { Viewer, pickRun } = await imp('components/sheet/Screens.tsx');
+const take = (id: string) => ({ run: null, runId: id, shot: { id: 's-' + id, path: 'shots/' + id + '/a.png', size: 'phone', theme: 'dark', captured_at: '2026-10-01T10:00:00Z' } });
+const three = ['r3', 'r2', 'r1'].map(take), solo = [take('r3')];
+expect(pickRun(three, 'r1', 1) === 2 && pickRun(solo, 'r1', 1) === 0, `pickRun: a chosen run pruned from the list resolved to ${pickRun(solo, 'r1', 1)}, expected the clamped default 0`);
+expect(pickRun([take('r4'), ...three], 'r2', 0) === 2, 'pickRun: a newer run arriving changed which run the reader chose (r2 is now index 2)');
+expect(pickRun(three, null, 1) === 1 && pickRun(three, null, 0) === 0 && pickRun([], null, 1) === 0, 'pickRun: the unchosen default is not the second newest (A) and the newest (B)');
+for (const t of [three, solo]) {
+  const sv = render(() => React.createElement(Viewer, { slug: 'p', k: 'phone · dark', takes: t, name: 'F', close() {} }), {}, () => ({ parts: [] }));
+  expect(sv.threw === null && /class="shotv"/.test(sv.html), `Screens Viewer threw with ${t.length} take(s) (${sv.threw ?? 'rendered'})`);
+}
+
 // Flyout focus (WCAG 2.4.3): closing a panel hands focus back to its rail item, so opening one must hand it to the panel
 // body (.fb, tabIndex -1), or a keyboard reader Tabs past every remaining rail button to reach it. No DOM rig exists, so
 // Dock.tsx is read as source with comments blanked (a comment about the rule cannot stand in for it). The close path is

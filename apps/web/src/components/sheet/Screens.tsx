@@ -31,8 +31,17 @@ function Img({ slug, t, alt }: { slug: string; t: Take; alt: string }) {
   );
 }
 
-function Viewer({ slug, k, takes, name, close }: { slug: string; k: string; takes: Take[]; name: string; close: () => void }) {
-  const [a, setA] = useState(Math.min(1, takes.length - 1)), [b, setB] = useState(0);
+// The viewer holds the run the reader CHOSE (its id), not a position in the list: the list is rebuilt on every scan poll, so a
+// position would point past the end when runs are pruned and at a different run when a newer one arrives. A chosen run that
+// is gone, and a reader who has not chosen, fall back to the default position (A: the second newest, B: the newest).
+export function pickRun(takes: Take[], id: string | null, dflt: number): number {
+  const i = id === null ? -1 : takes.findIndex((t) => t.runId === id);
+  return i >= 0 ? i : Math.max(0, Math.min(dflt, takes.length - 1));
+}
+
+export function Viewer({ slug, k, takes, name, close }: { slug: string; k: string; takes: Take[]; name: string; close: () => void }) {
+  const [aId, setAId] = useState<string | null>(null), [bId, setBId] = useState<string | null>(null);
+  const a = pickRun(takes, aId, 1), b = pickRun(takes, bId, 0);
   const [mode, setMode] = useState<'side' | 'swipe'>('side'), [cut, setCut] = useState(50);
   const ref = useRef<HTMLDivElement>(null);
   // reduced motion: the viewer jumps into view instead of travelling (docs/blueprint-ui.md). Read at the
@@ -44,15 +53,15 @@ function Viewer({ slug, k, takes, name, close }: { slug: string; k: string; take
     ref.current?.scrollIntoView({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
   }, []);
   const A = takes[a], B = takes[b], two = takes.length > 1;
-  const pick = (v: number, set: (n: number) => void, label: string) => (
-    <label>{label}<select value={v} onChange={(e) => set(+e.target.value)}>{takes.map((t, i) => <option key={t.shot.id} value={i}>{runLabel(t)}</option>)}</select></label>
+  const pick = (v: number, set: (id: string) => void, label: string) => (
+    <label>{label}<select value={v} onChange={(e) => set(takes[+e.target.value].runId)}>{takes.map((t, i) => <option key={t.shot.id} value={i}>{runLabel(t)}</option>)}</select></label>
   );
   return (
     <div className="shotv" ref={ref} tabIndex={-1} data-keys="own" role="region" aria-label={'Screens of ' + name + ', ' + k}
       onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } }}>
       <div className="bar">
         <b>{k}</b>
-        {two ? <>{pick(a, setA, 'A')}{pick(b, setB, 'B')}
+        {two ? <>{pick(a, setAId, 'A')}{pick(b, setBId, 'B')}
           <span className="seg" role="group" aria-label="Compare">
             <button type="button" aria-pressed={mode === 'side'} onClick={() => setMode('side')}>Side by side</button>
             <button type="button" aria-pressed={mode === 'swipe'} onClick={() => setMode('swipe')}>Swipe</button>
