@@ -6,7 +6,7 @@
 // job (its `stalled` is the row at `building` with nothing running) and `standLine` owns the words for it.
 // Value-free of React, so it stays cheap to import from the header strip.
 import type { Measurement, Proposal, Release, ReleaseStatus } from '@bp/core/scan/types';
-import type { ScanJob } from '@bp/core/scan/jobs';
+import type { JobStatus, ScanJob } from '@bp/core/scan/jobs';
 import { verdictOf, type LensFields, type Verdict } from '@bp/core/scan/compare';
 import { isFlagged } from '@bp/core/train/rules';
 import { KEYMAP, type KeyAction } from '../keymap';
@@ -69,6 +69,13 @@ export const jobsOf = (jobs: readonly ScanJob[], relId: string | undefined): Sca
   relId === undefined ? [] : jobs.filter((j) => j.kind === 'release' && j.release === relId).sort((a, b) => (a.queued_at < b.queued_at ? -1 : a.queued_at > b.queued_at ? 1 : 0));
 
 export const isActive = (j: ScanJob | undefined): boolean => !!j && (j.status === 'queued' || j.status === 'running');
+
+/** The job log's class for a job's own header line, so its outcome is not told in the same dim grey as its start
+ *  (release.css .tr-rel-log: `ok` mint, `err` red, `warn` amber, `idle` dim). A job that failed is read on a terminal
+ *  surface where every other failure is red; before this it was `idle` for all five statuses. */
+export const JOB_TONE: Readonly<Record<JobStatus, string>> = {
+  queued: 'idle', running: 'idle', done: 'ok', failed: 'err', cancelled: 'warn',
+};
 
 /** The step a failed release failed at: Finish's step when its last job finished, else building. */
 export const failedStep = (last: ScanJob | undefined): number => STEPS.indexOf(last?.step === 'finish' ? 'tagged' : 'building');

@@ -1,11 +1,13 @@
 // The Release tab's job log: the open release's jobs, oldest first, each the activity of its store run (the run whose
 // note is `bp-job:<job id>`, as the Agents panel finds a job's run), else the job's own log tail (a finish writes no run).
 // Monospace on the terminal surface, newest at the bottom; it follows the end only while the reader is at the bottom.
+// A job header line carries its outcome in the log's own colours (releaseState.ts JOB_TONE), not in the dim grey of its start.
 // Lines are memoised and keyed by activity id, so a new line appends and nothing is rebuilt.
 import { memo, useLayoutEffect, useMemo, useRef } from 'react';
 import type { ActivityKind } from '@bp/core/scan/types';
 import { isJobNote, jobLabel, type ScanJob } from '@bp/core/scan/jobs';
 import { useFindings } from '../../useLedger';
+import { JOB_TONE } from './releaseState';
 
 interface Line { key: string; at?: string; text: string; tone: string }
 
@@ -20,7 +22,7 @@ export function JobLog({ jobs, version, n }: { jobs: readonly ScanJob[]; version
   const lines = useMemo(() => {
     const out: Line[] = [];
     for (const j of jobs) {
-      out.push({ key: 'h:' + j.id, at: j.queued_at, text: '— ' + jobLabel(j) + ' · ' + j.status, tone: 'idle' });
+      out.push({ key: 'h:' + j.id, at: j.queued_at, text: '— ' + jobLabel(j) + ' · ' + j.status, tone: JOB_TONE[j.status] });
       const run = runs?.find((r) => (j.run_id ? r.id === j.run_id : isJobNote(r.note, j.id)));
       const acts = run ? (activity ?? []).filter((a) => a.run_id === run.id).sort((a, b) => a.id - b.id) : [];
       if (acts.length) for (const a of acts) out.push({ key: 'a:' + a.id, at: a.at, text: a.text, tone: TONE[a.kind] });
