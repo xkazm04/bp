@@ -18,7 +18,7 @@ import { useTrain } from '../data';
 import { Callout } from '../ui/Controls';
 import {
   ACTION, RELEASE_STATE, evidenceOf, failedStep, historyOf, isActive, jobsOf, keysOf, openRelease, readingsBy, standLine,
-  standOf, STEPS, type ReleaseModel, type RelAction,
+  safeUrl, standOf, STEPS, type ReleaseModel, type RelAction,
 } from './releaseState';
 import { VersionBox, suggestKey, useSuggestion } from './VersionBox';
 import { Btn } from '../ui/Controls';
@@ -70,7 +70,7 @@ function useReleaseActions(m: ReleaseModel, phone: boolean): ReleaseActions {
   const busy = sending || (!!sent && sent.rel === rel?.id && !m.jobs.some((j) => j.id === sent.job)) || isActive(m.last);
   const st = rel ? RELEASE_STATE[rel.status] : undefined;
   const available: RelAction[] = phone || !rel || !st || busy ? [] : asking ? ['finish']
-    : st.actions.filter((a) => (a !== 'sampleMerge' || !!ctx.sim) && (a !== 'pr' || !!rel.pr_url));
+    : st.actions.filter((a) => (a !== 'sampleMerge' || !!ctx.sim) && (a !== 'pr' || !!safeUrl(rel.pr_url)));
   const go = async (id: string, start: () => Promise<ScanJob>) => {
     setErr(null); setSending(true);
     try { const j = await start(); setSent({ rel: id, job: j.id }); } catch (e) {
@@ -104,7 +104,7 @@ const ActionsRow = memo(function ActionsRow({ m, a }: { m: ReleaseModel; a: Rele
             <Btn onClick={a.cancelAsk}>Not yet</Btn>
           </span>
         ) : a.available.map((x) => x === 'pr'
-          ? <a key={x} className="tr-rel-pr" href={rel.pr_url} target="_blank" rel="noreferrer">⇱ {prName(rel.pr_url)}{m.T.ctx.sim ? ' · sample' : ''}</a>
+          ? <a key={x} className="tr-rel-pr" href={safeUrl(rel.pr_url) ?? undefined} target="_blank" rel="noopener noreferrer">⇱ {prName(rel.pr_url)}{m.T.ctx.sim ? ' · sample' : ''}</a>
           : <Btn key={x} tone={ACTION[x].go ? 'go' : undefined} kbd={keysOf(ACTION[x].key)} onClick={() => a.run(x)} disabled={x === 'build' && !m.items.length}>{ACTION[x].label(v)}</Btn>)}
       </div>
       <p className="tr-rel-hint">{a.busy && !isActive(m.last) ? 'Starting the release job…' : standLine(standOf(rel, m.last), rel, m.last, m.items.length)}</p>

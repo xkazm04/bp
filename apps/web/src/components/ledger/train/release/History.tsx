@@ -3,19 +3,20 @@
 import { memo, useMemo } from 'react';
 import type { Release } from '@bp/core/scan/types';
 import { SampleTag } from '../ui/Marks.tsx';
-import { evidenceOf, readingsBy, type PkgItem, type ReleaseModel } from './releaseState';
+import { evidenceOf, readingsBy, safeUrl, type PkgItem, type ReleaseModel } from './releaseState';
 
 const NONE: readonly PkgItem[] = [];
 const when = (iso: string) => iso.slice(0, 10) + ' ' + iso.slice(11, 16);
 
 const Entry = memo(function Entry({ r, items, sample }: { r: Release; items: readonly PkgItem[]; sample: boolean }) {
-  const pr = /\/pull\/(\d+)/.exec(r.pr_url ?? '')?.[1];
+  // the store's URL only when it is safe to hand to an href (releaseState.ts safeUrl: http(s))
+  const url = safeUrl(r.pr_url), pr = /\/pull\/(\d+)/.exec(url ?? '')?.[1];
   return (
     <li>
       <div className="hh">
         <b>v{r.version}</b>
         <span>{r.tag ?? r.status} · {when(r.updated_at)} · {items.length} item{items.length === 1 ? '' : 's'}</span>
-        {r.pr_url ? <a href={r.pr_url} target="_blank" rel="noreferrer">PR {pr ? '#' + pr : 'link'}</a> : null}
+        {url ? <a href={url} target="_blank" rel="noopener noreferrer">PR {pr ? '#' + pr : 'link'}</a> : null}
         {sample ? <SampleTag /> : null}
       </div>
       {r.status === 'failed' && r.error ? <p className="err">{r.error}</p> : null}

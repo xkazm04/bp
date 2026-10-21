@@ -54,6 +54,15 @@ export const ACTION: Readonly<Record<Exclude<RelAction, 'pr'>, { label: (v: stri
 /** The keys bound to a keymap action in the release scope (shown as the button's kbd). */
 export const keysOf = (a: KeyAction | undefined): string => (a ? KEYMAP.release.find((b) => b.action === a)?.keys[0]?.toUpperCase() ?? '' : '');
 
+/**
+ * A store-supplied URL safe to hand to an `href`: http(s) only, else null. The release rows' `pr_url` is written by a
+ * Claude Code run in the product repo, so an unchecked scheme there is reachable text - a `javascript:` row would
+ * become a link. The rail holds its own store URLs to the same rule through Queue.tsx's `httpUrl`
+ * (components/rail/check-keys.ts rule 5, which gates it); the train components' import allow-list
+ * (scripts/check-train-quality.mjs) does not reach components/Queue, so the rule is restated here rather than shared.
+ */
+export const safeUrl = (u: string | undefined): string | null => (u && /^https?:\/\//i.test(u) ? u : null);
+
 /** The release the tab works on: the newest one that is not tagged (a draft, a build, an open PR, a failure). */
 export const openRelease = (rels: readonly Release[]): Release | undefined => {
   for (let i = rels.length - 1; i >= 0; i--) if (rels[i].status !== 'tagged') return rels[i];
