@@ -244,6 +244,11 @@ export function rollupHealth(manifest: LensManifest, items: readonly RollupItem[
   const r = manifest.health.rollup;
   switch (r.method) {
     case 'share': {
+      // A share rollup needs both thresholds (lens-manifest-1.schema.json requires them), but a map carries its
+      // own copy of each manifest and nothing re-validates that at load: without them every comparison below is
+      // false and a group of `bad` features rolled up to `good`. Fall back to worst-of, as `weighted` already
+      // does when nothing it can weigh has a weight.
+      if (!Number.isFinite(r.bad) || !Number.isFinite(r.watch)) return worst();
       const bad = ms.filter((m) => m.h === 'bad').length / ms.length;
       const trouble = ms.filter((m) => m.h !== 'good').length / ms.length;
       return bad >= r.bad ? 'bad' : trouble >= r.watch ? 'watch' : 'good';

@@ -18,6 +18,7 @@ const ROOT = path.resolve(HERE, '../..');
 const load = (p) => import(pathToFileURL(path.join(HERE, p)).href);
 const { BUILTIN_LENSES } = await load('src/standard/catalog.ts');
 const { loadStructure } = await load('src/standard/load.ts');
+const { rollupHealth } = await load('src/standard/health.ts');
 
 let held = 0;
 const failures = [];
@@ -148,6 +149,23 @@ const expect = (ok, what) => { if (ok) held++; else failures.push(what); };
   // a dated stamp is still taken as given, and still warns about nothing
   const ok = loadStructure(map('2026-01-01T09:30:00Z'), null);
   expect(ok.asOf === '2026-01-01' && ok.asOfTime === '2026-01-01T09:30:00Z' && ok.warnings.length === 0, `as-of: a valid stamp read as ${ok.asOf} / ${JSON.stringify(ok.warnings)}`);
+}
+
+// ------------------------------------------------------------------ a rollup never reads better than its parts
+// The schema requires `watch` and `bad` on a share rollup (lens-manifest-1.schema.json $defs.rollup), but a map
+// carries its own copy of each manifest and nothing re-validates that at load. A rollup must never answer a
+// health better than the features under it because a threshold was missing.
+{
+  const m = (rollup) => ({ id: 'com.probe.r', version: '0.1.0', name: 'R', reader: { density: 'standard' },
+    fields: [{ key: 'w', type: 'integer', label: 'W' }], presentation: { glyph: 'bars', line: 'solid' },
+    health: { default: 'good', rollup, rules: [] } });
+  const all = ['bad', 'bad', 'bad'];
+  expect(rollupHealth(m({ method: 'share' }), all) === 'bad', `rollup: share with no thresholds read [bad,bad,bad] as ${rollupHealth(m({ method: 'share' }), all)}`);
+  expect(rollupHealth(m({ method: 'share', watch: 0.2 }), all) === 'bad', 'rollup: share with only a watch threshold');
+  expect(rollupHealth(m({ method: 'share', watch: 0.2, bad: 0.34 }), all) === 'bad', 'rollup: a complete share rollup still reads bad');
+  expect(rollupHealth(m({ method: 'share', watch: 0.2, bad: 0.34 }), ['good', 'good', 'watch']) === 'watch', 'rollup: a complete share rollup still reads its thresholds');
+  expect(rollupHealth(m({ method: 'weighted', by: 'nope' }), all) === 'bad', 'rollup: weighted by a field nothing carries falls back to worst-of');
+  expect(rollupHealth(m({ method: 'worst-of' }), ['good', 'watch']) === 'watch', 'rollup: worst-of unchanged');
 }
 
 // ------------------------------------------------------------------ the control: valid input warns 0 times
