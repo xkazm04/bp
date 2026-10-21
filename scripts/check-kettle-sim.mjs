@@ -3,7 +3,8 @@
 // Starts the headless server on a free port in an empty temp working directory (no products file) and checks:
 //   stream   GET /api/products/kettle/stream answers SSE: `snapshot` first (the sample's findings, no scan run), and after a
 //            scan POST a `jobs` and a `delta` carrying the scan's run, then its first measurements
-//   writes   POST /api/products/kettle/scans: 202 with the sim's job, a bad scope 400; GET scans and GET scan see it; a wave
+//   writes   POST /api/products/kettle/scans: 202 with the sim's job, a bad scope 400 (a label over 200 too; unknown scope keys
+//            are dropped, so a job keeps no stuffed body); GET scans and GET scan see it; a wave
 //            POST 201, listed by GET waves; POST dispatch 202 (the finding approved); DELETE scans/<job> cancels (200)
 //   disk     nothing was written: a listing (path, size, mtime, sha256) of packages/core/data and of the server's working
 //            directory is the same before the server starts and after it has exited
@@ -122,6 +123,14 @@ try {
 
     const bad = await req('POST', '/api/products/kettle/scans', { lens: LENS, scope: { kind: 'room', id: 'r', label: 'R', features: ['no-such-feature'] } });
     check('scans: a scope of an unknown feature: 400 bad-scope', bad.status === 400 && bad.json?.error === 'bad-scope', `${bad.status} ${bad.body.slice(0, 80)}`);
+    // the scope the sim keeps is the route's own parse, as for a live product: no unknown keys, a label of at most 200
+    const stuffed = await req('POST', '/api/products/kettle/scans', { lens: LENS, scope: { kind: 'all', label: 'Everything', features: [], junk: 'x'.repeat(100000) } });
+    check('scans: a scope\'s unknown keys are dropped before the sim keeps the job', stuffed.status === 202 && !!stuffed.json?.scope && !('junk' in stuffed.json.scope) && stuffed.body.length < 2000, `${stuffed.status} ${stuffed.body.length} bytes`);
+    if (stuffed.json?.id) await req('DELETE', `/api/products/kettle/scans/${stuffed.json.id}`);
+    const longLabel = await req('POST', '/api/products/kettle/scans', { lens: LENS, scope: { kind: 'all', label: 'x'.repeat(201), features: [] } });
+    check('scans: a scope label over 200 characters: 400 bad-scope', longLabel.status === 400 && longLabel.json?.error === 'bad-scope', `${longLabel.status} ${longLabel.body.slice(0, 80)}`);
+    const noLens = await req('POST', '/api/products/kettle/scans', { lens: 'no.such.lens', scope: { kind: 'all', label: 'x'.repeat(201), features: [] } });
+    check('scans: an unknown lens with a bad scope: still 400 unknown-lens (the lens is checked first)', noLens.status === 400 && noLens.json?.error === 'unknown-lens', `${noLens.status} ${noLens.body.slice(0, 80)}`);
     const scan = await req('POST', '/api/products/kettle/scans', { lens: LENS, scope: { kind: 'all', label: 'Everything', features: [] } });
     const job = scan.json;
     check(`scans: POST a ${LENS} scan of everything: 202 with the sim's measure job`, scan.status === 202 && job?.kind === 'measure' && job?.lens === LENS && typeof job?.id === 'string', `${scan.status} ${scan.body.slice(0, 120)}`);
