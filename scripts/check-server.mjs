@@ -4,7 +4,8 @@
 //   routes   the server's printed route table (`route <methods> <path>`) is exactly the web app's: one line per
 //            apps/web/src/app/api/**/route.ts, the same methods its thin mount re-exports
 //   kettle   with no products file GET /api/products/kettle/structure answers the built-in sample ({ structure, events, rev },
-//            wing count = packages/core/data's), and a Kettle write answers 4xx (Kettle stays unlisted)
+//            domain count = packages/core/data's), GET /api/products/kettle/plan answers the derived plan (wings, rooms, bays, tiles
+//            counted from WING_DEFS and the data), and a Kettle write answers 4xx (Kettle stays unlisted)
 //   http     GET /api/products answers 200 [] (no products file), an unknown path 404, a method the route lacks 405
 //            with Allow, a foreign Host 403 and a non-JSON write 415: the guards run under this mount too
 // The live-product walk (structure, SSE stream, waves, shots) is scripts/smoke-live.mjs against `npm run server`.
@@ -15,6 +16,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { WING_DEFS } from '../packages/core/src/model/constants.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WEB_API = path.join(ROOT, 'apps/web/src/app/api');
@@ -61,12 +63,28 @@ try {
     const list = await req('GET', '/api/products');
     check('GET /api/products: 200 [] with no products file', list.status === 200 && list.body.trim() === '[]', `${list.status} ${list.body.slice(0, 80)}`);
     const kdata = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.app-structure.json'), 'utf8'));
-    const wantWings = kdata.domains.length;
+    const wantDomains = kdata.domains.length;
     const ks = await req('GET', '/api/products/kettle/structure');
     let kb = null; try { kb = JSON.parse(ks.body); } catch { /* reported below */ }
-    check(`GET /api/products/kettle/structure: 200 with no products file (${kb?.structure?.domains?.length ?? '?'} wings)`, ks.status === 200 && !!kb?.structure && typeof kb.events === 'string' && typeof kb.rev === 'string', `${ks.status} ${ks.body.slice(0, 80)}`);
-    check(`kettle structure: wing count equals the data's ${wantWings}`, kb?.structure?.domains?.length === wantWings, `${kb?.structure?.domains?.length}`);
+    check(`GET /api/products/kettle/structure: 200 with no products file (${kb?.structure?.domains?.length ?? '?'} domains)`, ks.status === 200 && !!kb?.structure && typeof kb.events === 'string' && typeof kb.rev === 'string', `${ks.status} ${ks.body.slice(0, 80)}`);
+    check(`kettle structure: domain count equals the data's ${wantDomains}`, kb?.structure?.domains?.length === wantDomains, `${kb?.structure?.domains?.length}`);
     check('kettle structure: lens manifests served', kb?.structure?.lenses?.length === kdata.lenses.length && kdata.lenses.length > 0, `${kb?.structure?.lenses?.length}`);
+    // the derived plan: wings = the WING_DEFS groups that hold a domain of the data; rooms, bays and tiles are the data's
+    const wantPlan = {
+      wings: WING_DEFS.filter((w) => kdata.domains.some((d) => w.doms.includes(d.slug))).length, rooms: kdata.domains.length,
+      bays: kdata.capabilities.length, tiles: kdata.features.length,
+    };
+    const kp = await req('GET', '/api/products/kettle/plan');
+    let pb = null; try { pb = JSON.parse(kp.body); } catch { /* reported below */ }
+    const gotPlan = { wings: pb?.wings?.length, rooms: pb?.rooms?.length, bays: pb?.bays?.length, tiles: pb?.tiles?.length };
+    check(`GET /api/products/kettle/plan: 200 with ${wantPlan.wings} wings, ${wantPlan.rooms} rooms, ${wantPlan.bays} bays, ${wantPlan.tiles} tiles`,
+      kp.status === 200 && JSON.stringify(gotPlan) === JSON.stringify(wantPlan) && wantPlan.wings > 0, `${kp.status} ${JSON.stringify(gotPlan)} ${kp.body.slice(0, 80)}`);
+    check('kettle plan: rev equals the structure rev', !!pb?.rev && pb.rev === kb?.rev, `${pb?.rev} vs ${kb?.rev}`);
+    const ids = new Set([...(pb?.wings ?? []), ...(pb?.rooms ?? []), ...(pb?.bays ?? [])].map((n) => n.id));
+    check('kettle plan: every room, bay and tile names an existing parent by id', [...(pb?.rooms ?? []), ...(pb?.bays ?? []), ...(pb?.tiles ?? [])].every((n) => typeof n.parentId === 'string' && ids.has(n.parentId)), '');
+    check('kettle plan: every tile has a box and a health per enabled lens', !!pb?.tiles?.length && pb.tiles.every((t) => typeof t.box?.w === 'number' && pb.lenses.every((l) => typeof t.health?.[l] === 'string')), `${pb?.lenses?.length} lenses`);
+    const kpw = await req('POST', '/api/products/kettle/plan', { 'content-type': 'application/json' }, '{}');
+    check('a Kettle write to /plan: 4xx', kpw.status >= 400 && kpw.status < 500, `${kpw.status}`);
     const kw = await req('POST', '/api/products/kettle/scan', { 'content-type': 'application/json' }, '{}');
     check('a Kettle write: 4xx', kw.status >= 400 && kw.status < 500, `${kw.status}`);
     const kl = await req('GET', '/api/products');

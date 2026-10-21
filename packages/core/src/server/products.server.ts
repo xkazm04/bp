@@ -67,6 +67,6 @@ export function kettleSample(slug: string): { structureFile: string; eventsFile:
 /** The 4xx for a product the route cannot resolve: Kettle is a read-only sample (405), anything else is unknown (404). */
 export function unknownProduct(slug: string): Response {
   return slug === KETTLE_SLUG
-    ? Response.json({ error: 'kettle is the built-in read-only sample: only GET /api/products/kettle/structure answers it' }, { status: 405 })
+    ? Response.json({ error: 'kettle is the built-in read-only sample: only GET /api/products/kettle/structure and GET /api/products/kettle/plan answer it' }, { status: 405 })
     : Response.json({ error: `unknown product ${slug}` }, { status: 404 });
 }

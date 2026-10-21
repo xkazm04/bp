@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // The BpLink contract (plan.md WP3.1): the UE client in apps/vr reads Kettle from apps/server with exactly these requests.
 // Starts the headless server on a free port in an empty temp working directory (no products file) and makes them:
-//   structure  GET /api/products/kettle/structure: 200 { structure, events, rev }; wings = structure.domains and lens
+//   structure  GET /api/products/kettle/structure: 200 { structure, events, rev }; domains = structure.domains and lens
 //              manifests = structure.lenses, both counted against packages/core/data, never hard-coded
+//   plan       GET /api/products/kettle/plan: 200 { rev, lenses, wings, rooms, bays, tiles }, the levels VR draws (wing, room,
+//              bay, tile): 5 wings, 13 rooms, 29 bays, 133 tiles today, derived from WING_DEFS and the data, never hard-coded
 //   events     the event log BpLink reads is that payload's `events` string (JSONL), line for line the data file's
 //   stream     GET /api/products/kettle/stream answers 405 JSON today (Kettle has no SSE): BpLink's fallback is to read `rev` once
 // Pins the server's current answers; it changes no route. A gap BpLink must live with is asserted as it is, not papered over.
@@ -13,6 +15,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { WING_DEFS } from '../packages/core/src/model/constants.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA = path.join(ROOT, 'packages/core/data');
@@ -22,8 +25,12 @@ const check = (name, ok, detail = '') => { ok ? passed++ : failed++; console.log
 const kdata = JSON.parse(fs.readFileSync(path.join(DATA, 'kettle.app-structure.json'), 'utf8'));
 const lines = (s) => s.split('\n').filter((l) => l.trim());
 const wantEvents = lines(fs.readFileSync(path.join(DATA, 'kettle.events.jsonl'), 'utf8'));
-// BP_CHECK_BPLINK_WINGS seeds a wrong expectation, to show the smoke can fail
-const wantWings = Number(process.env.BP_CHECK_BPLINK_WINGS ?? kdata.domains.length);
+// BP_CHECK_BPLINK_WINGS seeds a wrong expectation (of the domain count), to show the smoke can fail
+const wantDomains = Number(process.env.BP_CHECK_BPLINK_WINGS ?? kdata.domains.length);
+const wantPlan = {
+  wings: WING_DEFS.filter((w) => kdata.domains.some((d) => w.doms.includes(d.slug))).length, rooms: kdata.domains.length,
+  bays: kdata.capabilities.length, tiles: kdata.features.length,
+};
 
 const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-bplink-'));
 const child = spawn(process.execPath, ['--import', pathToFileURL(path.join(ROOT, 'packages/core/register.mjs')).href, path.join(ROOT, 'apps/server/src/main.ts'), '--port', '0'], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -52,8 +59,16 @@ try {
     let kb = null; try { kb = JSON.parse(ks.body); } catch { /* reported below */ }
     check('structure: 200 JSON', ks.status === 200 && /json/.test(String(ks.headers['content-type'])), `${ks.status} ${ks.headers['content-type']}`);
     check('structure: { structure, events, rev }', !!kb?.structure && typeof kb.structure === 'object' && typeof kb.events === 'string' && typeof kb.rev === 'string' && kb.rev.length > 0, ks.body.slice(0, 80));
-    check(`structure: ${wantWings} wings in structure.domains (packages/core/data)`, kb?.structure?.domains?.length === wantWings && wantWings > 0, `${kb?.structure?.domains?.length}`);
+    check(`structure: ${wantDomains} domains in structure.domains (packages/core/data)`, kb?.structure?.domains?.length === wantDomains && wantDomains > 0, `${kb?.structure?.domains?.length}`);
     check(`structure: ${kdata.lenses.length} lens manifests in structure.lenses (packages/core/data)`, kb?.structure?.lenses?.length === kdata.lenses.length && kdata.lenses.length > 0, `${kb?.structure?.lenses?.length}`);
+
+    const kp = await get('/api/products/kettle/plan', { accept: 'application/json' });
+    let pb = null; try { pb = JSON.parse(kp.body); } catch { /* reported below */ }
+    check('plan: 200 JSON', kp.status === 200 && /json/.test(String(kp.headers['content-type'])), `${kp.status} ${kp.headers['content-type']}`);
+    const gotPlan = { wings: pb?.wings?.length, rooms: pb?.rooms?.length, bays: pb?.bays?.length, tiles: pb?.tiles?.length };
+    check(`plan: ${wantPlan.wings} wings, ${wantPlan.rooms} rooms, ${wantPlan.bays} bays, ${wantPlan.tiles} tiles (WING_DEFS and packages/core/data)`, JSON.stringify(gotPlan) === JSON.stringify(wantPlan) && wantPlan.wings > 0, JSON.stringify(gotPlan));
+    check('plan: rev equals the structure rev', typeof pb?.rev === 'string' && pb.rev === kb?.rev, `${pb?.rev} vs ${kb?.rev}`);
+    check('plan: every tile carries a box and a health for each of the plan lenses', !!pb?.tiles?.length && Array.isArray(pb.lenses) && pb.lenses.length > 0 && pb.tiles.every((t) => typeof t.box?.x === 'number' && pb.lenses.every((l) => typeof t.health?.[l] === 'string')), `${pb?.lenses?.length} lenses`);
 
     const evs = lines(kb?.events ?? '');
     let parsed = true; for (const l of evs) { try { JSON.parse(l); } catch { parsed = false; } }
