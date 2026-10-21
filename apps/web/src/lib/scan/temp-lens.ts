@@ -27,19 +27,29 @@ export function tempEntryProblem(x: unknown): string | null {
   return null;
 }
 
-/** The valid entries of a stored value, in stored order; malformed ones and repeated ids are dropped (first wins). */
+/**
+ * The valid entries of a stored value, in stored order; malformed ones and repeated ids are dropped (first
+ * wins). A drop is the only moment a lens someone added can leave this browser, and nothing else records it -
+ * the entry is simply absent from the panel afterwards, which reads exactly like never having added it - so
+ * each one says what it was and why on the console, where a reader can be pointed at it. `tempEntryProblem`
+ * already computes the reason; this used to throw it away.
+ */
 export function parseTempLenses(raw: string | null): LensEntry[] {
   if (!raw) return [];
   let j: unknown;
-  try { j = JSON.parse(raw); } catch { return []; }
-  if (!Array.isArray(j)) return [];
-  const seen = new Set<string>(), out: LensEntry[] = [];
+  try { j = JSON.parse(raw); } catch { console.warn(`${TEMP_LENS_KEY}: the stored lenses are not JSON and were ignored (${raw.length} characters)`); return []; }
+  if (!Array.isArray(j)) { console.warn(`${TEMP_LENS_KEY}: the stored lenses are ${j === null ? 'null' : typeof j}, not a list, and were ignored`); return []; }
+  const seen = new Set<string>(), out: LensEntry[] = [], dropped: string[] = [];
   for (const e of j) {
-    if (tempEntryProblem(e)) continue;
+    const id = (e as { id?: unknown } | null)?.id;
+    const at = typeof id === 'string' && id ? id : `entry ${j.indexOf(e) + 1}`;
+    const bad = tempEntryProblem(e);
+    if (bad) { dropped.push(`${at} (${bad})`); continue; }
     const en = e as LensEntry;
-    if (seen.has(en.id)) continue;
+    if (seen.has(en.id)) { dropped.push(`${at} (a second entry with this id)`); continue; }
     seen.add(en.id); out.push(en);
   }
+  if (dropped.length) console.warn(`${TEMP_LENS_KEY}: ${dropped.length} of ${j.length} stored lenses were dropped: ${dropped.join('; ')}`);
   return out;
 }
 

@@ -12,6 +12,7 @@
 //      extensions so Node loads it as-is, as client.ts and scan-views.ts already did)
 // Control: BP_SCAN_CLIENT_SEED=refusal restores the old one-line `REFUSAL[msg] ?? msg`, so assertion 1 is
 //      seen red on the exact strings the reader used to be shown.
+import fs from 'node:fs';
 import path from 'node:path';
 import { readStripped } from './lib/source.ts';
 import { DEV_WORDS } from '../apps/web/src/engine/copy.ts';
@@ -94,6 +95,39 @@ const projectsSrc = readStripped(path.join(SRC, 'lib/scan/projects.ts')).replace
 expect(/throw Object\.assign\(new Error\(j\?\.error \|\| 'HTTP ' \+ r\.status\), \{ status: r\.status \}\)/.test(projectsSrc), 'a project write rejects with no status, so its cause reads as a lost connection');
 expect(/'Could not read the project list: ' \+ causeWords\(e\)/.test(projectsSrc), 'the project list builds its alert from something other than causeWords');
 expect(!/\(e as Error\)\.message/.test(projectsSrc), 'projects.ts puts an Error.message in front of a reader again');
+
+// --------------------------------------------- 1c. a stored lens that is dropped leaves a trace
+// parseTempLenses is the only place a lens somebody added can leave this browser. Every invalid entry, every
+// repeated id and a whole stored value that is not a JSON list were dropped with `continue` and no record, so
+// the lens was simply absent from the panel afterwards - indistinguishable from never having added it. The
+// reason was already computed by tempEntryProblem and discarded.
+const { parseTempLenses, TEMP_LENS_KEY } = await import('../apps/web/src/lib/scan/temp-lens.ts');
+const warned: string[] = [];
+const realWarn = console.warn;
+console.warn = (...a: unknown[]) => { warned.push(a.map(String).join(' ')); };
+const manifest: Record<string, unknown> = { ...(JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/schema/schema/fixtures/valid-steps-lens.json'), 'utf8')) as Record<string, unknown>), id: 'tmp.one' };
+const good = { id: 'tmp.one', version: manifest.version as string, source: 'project', enabled: true, created_at: '2026-10-21T10:00:00Z', temporary: true, manifest };
+const DROPS: { name: string; raw: string; kept: number; says: RegExp }[] = [
+  { name: 'not JSON at all', raw: '{not json', kept: 0, says: /not JSON/ },
+  { name: 'JSON but not a list', raw: '{"id":"tmp.one"}', kept: 0, says: /not a list/ },
+  { name: 'an entry with no version', raw: JSON.stringify([{ ...good, version: '' }]), kept: 0, says: /tmp\.one.*no version/ },
+  { name: 'an entry that is not an object', raw: JSON.stringify(['tmp.one']), kept: 0, says: /entry 1.*not an object/ },
+  { name: 'two entries with one id', raw: JSON.stringify([good, { ...good, created_at: '2026-10-21T11:00:00Z' }]), kept: 1, says: /second entry with this id/ },
+];
+for (const d of DROPS) {
+  warned.length = 0;
+  const kept = parseTempLenses(d.raw);
+  expect(kept.length === d.kept, `a stored value that is ${d.name}: ${kept.length} entries were kept, not ${d.kept}`);
+  expect(warned.length === 1, `a stored value that is ${d.name} left ${warned.length} records of the drop, not 1`);
+  expect(d.says.test(warned.join(' ')), `a stored value that is ${d.name}: the record does not say which entry or why`, warned.join(' '));
+  expect(warned.join(' ').includes(TEMP_LENS_KEY), `a stored value that is ${d.name}: the record does not name the storage key it came from`, warned.join(' '));
+}
+warned.length = 0;
+const kept1 = parseTempLenses(JSON.stringify([good]));
+expect(kept1.length === 1 && warned.length === 0, 'a stored value with nothing wrong with it was dropped or warned about', kept1.length + ' kept, warned: ' + warned.join(' '));
+warned.length = 0;
+expect(parseTempLenses(null).length === 0 && warned.length === 0, 'empty storage warns', warned.join(' '));
+console.warn = realWarn;
 
 // --------------------------------------------- 2. a job that ended still reports it on the plan
 // scanViews draws a finished job's outline for LINGER_MS after it ended - all ticks for `done`, the bad colour
