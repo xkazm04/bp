@@ -9,7 +9,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
-const URL_ = 'http://127.0.0.1:8188';
+const URL_ = process.env.BP_COMFY_URL || 'http://127.0.0.1:8188'; // a test points this at a loopback stub, never at a live ComfyUI
 const WF = 'C:/Users/kazda/ai/lynx-bench/media/3d-trellis-api.json';
 const OUT = 'C:/Users/kazda/ai/lynx-bench/bp/lamp-agent';
 const COMFY_OUT = 'C:/Users/kazda/ai/ComfyUI/ComfyUI/output';
