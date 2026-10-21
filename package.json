@@ -41,6 +41,7 @@
     "check:kettle-sim": "node scripts/check-kettle-sim.mjs",
     "check:schema": "node packages/schema/generate.mjs --check",
     "check:camera": "node scripts/check-camera.ts",
+    "check:render-units": "node scripts/check-render-units.ts",
     "check:variant-copies": "node apps/web/src/variants/check-copies.ts",
     "check:timeline-keys": "node apps/web/src/components/timeline/check-keys.ts",
     "check:timeline-size": "node apps/web/src/components/timeline/check-size.ts",
