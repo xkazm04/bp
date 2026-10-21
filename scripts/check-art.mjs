@@ -3,7 +3,8 @@
 // manifests must be true. Per manifest.json it asserts
 //   (a) id equals the folder name;
 //   (b) every gate present is an object with pass === true, and input, mesh_acceptance, scale, finishing and poly_budget
-//       are all present (mat-* folders also carry tiling);
+//       are all present (mat-* folders also carry tiling), and so is every gate any manifest of the same `class` carries,
+//       so a gate kind the writers add cannot be missing from one folder while its siblings have it;
 //   (c) tris (a number, or an object of numbers that is summed; the largest one when budget_note says "per mesh") is at or
 //       under budget_tris where that is set;
 //   (d) every file listed in sha256 (and in files, where that maps paths to hashes) exists and its hash matches;
@@ -33,13 +34,16 @@ const sha256 = (file) => crypto.createHash('sha256').update(fs.readFileSync(file
 const sumTris = (t) => (typeof t === 'number' ? t : t && typeof t === 'object' && Object.values(t).every((v) => typeof v === 'number') ? Object.values(t).reduce((a, b) => a + b, 0) : NaN);
 
 // Violations for one manifest. `opts.commit` is false for the seeded control (the git half is the real tree's business).
+// `opts.peers` are the other manifests: any gate a peer of the same `class` carries is required here too (the typed GATES
+// and the mat- prefix stay as the floor, so a gate dropped from every manifest at once is still caught).
 export function validate(folder, m, opts = {}) {
   const errs = [];
   const dir = path.join(ART, folder);
   if (m.id !== folder) errs.push(`id "${m.id}" is not the folder name`);
 
   const gates = m.gates && typeof m.gates === 'object' ? m.gates : {};
-  const required = folder.startsWith('mat-') ? [...GATES, 'tiling'] : GATES;
+  const derived = (opts.peers ?? []).filter((p) => p && p.class === m.class).flatMap((p) => Object.keys(p.gates ?? {}));
+  const required = [...new Set([...GATES, ...(folder.startsWith('mat-') ? ['tiling'] : []), ...derived])];
   for (const g of required) if (!(g in gates)) errs.push(`gate ${g} is missing`);
   for (const [g, v] of Object.entries(gates)) if (!v || typeof v !== 'object' || v.pass !== true) errs.push(`gate ${g} is not pass: true`);
 
@@ -77,10 +81,13 @@ export function validate(folder, m, opts = {}) {
 const folders = fs.readdirSync(ART, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort();
 let fail = 0;
 const manifests = new Map();
+const unreadable = new Map();
 for (const f of folders) {
-  const file = path.join(ART, f, 'manifest.json');
+  try { manifests.set(f, JSON.parse(fs.readFileSync(path.join(ART, f, 'manifest.json'), 'utf8'))); } catch (e) { unreadable.set(f, `manifest.json unreadable: ${e.message}`); }
+}
+for (const f of folders) {
   let errs;
-  try { const m = JSON.parse(fs.readFileSync(file, 'utf8')); manifests.set(f, m); errs = validate(f, m); } catch (e) { errs = [`manifest.json unreadable: ${e.message}`]; }
+  try { errs = unreadable.has(f) ? [unreadable.get(f)] : validate(f, manifests.get(f), { peers: [...manifests.values()] }); } catch (e) { errs = [`manifest.json unreadable: ${e.message}`]; }
   for (const e of errs) console.log(`FAIL  ${f}: ${e}`);
   fail += errs.length;
 }
@@ -108,8 +115,16 @@ if (sizeFolder) { const sk = Object.keys(badSize.file_bytes)[0]; badSize.file_by
 const controls = [['gate false', flipped, 'is not pass: true'], ['bad sha', badSha, 'sha256 does not match']];
 if (sizeFolder) controls.push(['bad file_bytes', badSize, 'file_bytes']);
 else { console.log('FAIL  no manifest records file_bytes, so the size control cannot run'); fail++; }
-for (const [name, m, want] of controls) {
-  const errs = validate(m === badSize ? sizeFolder : seedFolder, m, { commit: false });
+// a gate kind a sibling carries and this manifest lacks: a peer of the seed's class with a sixth gate the seed has never heard of
+const sixth = structuredClone(seed);
+sixth.gates.zz_new_gate = { pass: true };
+controls.push(['gate a sibling carries', seed, 'gate zz_new_gate is missing', [sixth]]);
+// a material by CLASS, in a folder that does not start with mat-: tiling is still required because its siblings carry it
+const matFolder = [...manifests.keys()].find((f) => 'tiling' in (manifests.get(f).gates ?? {}));
+if (matFolder) { const noTiling = structuredClone(manifests.get(matFolder)); delete noTiling.gates.tiling; controls.push(['tiling by class', noTiling, 'gate tiling is missing', [...manifests.values()], 'renamed-material']); }
+else { console.log('FAIL  no manifest carries tiling, so the by-class control cannot run'); fail++; }
+for (const [name, m, want, peers = [], asFolder] of controls) {
+  const errs = validate(asFolder ?? (m === badSize ? sizeFolder : seedFolder), m, { commit: false, peers });
   const ok = errs.some((e) => e.includes(want));
   console.log(`${ok ? 'ok  ' : 'FAIL'}  seeded control (${name}) ${ok ? 'fails as expected' : 'was NOT caught'}`);
   if (!ok) fail++;
