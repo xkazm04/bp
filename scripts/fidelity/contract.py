@@ -83,6 +83,15 @@ def main():
     ap.add_argument('--port', type=int, default=3321)
     ap.add_argument('--scene', action='append', choices=list(SCENES), help='one scene (repeatable); default all')
     a = ap.parse_args()
+    # capture REPLACES contract*.json, and the instrument writes the file whatever it measured: against a
+    # winner that is not here it would write 61 null roles over the winner's measurements and exit 0. The
+    # winner is git-ignored (a local checkout of .contest/, see README.md), so refuse before measuring.
+    if a.mode == 'capture' and not WINNER.is_file():
+        print(f'no winner at {WINNER}\n'
+              'capture replaces the contract files, so it refuses to run without it. Check out the contest\n'
+              'entry under .contest/ (git-ignored; scripts/fidelity/README.md), or run `check` instead.',
+              file=sys.stderr)
+        sys.exit(2)
     sc, bad = instrument(), 0
     for name in a.scene or list(SCENES):
         roles, contract, hash_, wdrive, path, pdrive = SCENES[name]
