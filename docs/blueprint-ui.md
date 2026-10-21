@@ -76,7 +76,9 @@ Everything it does is in scope to keep:
   `before → expected` line, Approve / Decline with an optional note, "Show N more" past 12. The simulation keeps
   running on a light timer while no plan is drawn (a toast's Show opens the feature), the footer is the honest
   `LiveFoot`, the header carries the product name and the scan status, and the springs obey reduced motion.
-- **Back / forward.** The URL hash carries lens, place (`at=` or `open=`), time, modes and person. A place the user
+- **Back / forward.** The URL hash carries nine parameters (`Engine.hashOf`): lens, place (`at=` or `open=`),
+  time (`t=`), the comparison window (`d=`, only when it is not the 7-day default), the modes (`blast=`, `ga=1`),
+  person (`who=`) and the page with its ledger prototype (`page=ledger`, `lv=`). A place the user
   rests at for 600 ms, or opening or closing a feature, pushes a history entry; lens, time and toggles only replace
   the current one, so a fly-through spams nothing. Back, forward and a hash pasted into the tab restore lens, time,
   modes, place (fly) and the open feature; while the camera arrives the engine writes nothing, then adopts.
@@ -174,7 +176,10 @@ apps/web/src/variants/<id>/          one lens expression per variant (see below)
 - `data-theme="dark" | "light"` on `<html>`, set before paint (see `apps/web/src/app/layout.tsx`).
 - Tokens live in `apps/web/src/app/globals.css`. Light is the dark palette roughly inverted: white paper,
   navy ink, the same blues, with the status colours darkened for contrast.
-- The engine reads the tokens with `getComputedStyle` on mount and on theme change, then re-rasters.
+- The engine reads the tokens with `getComputedStyle` and re-rasters on four triggers (`Engine.readTheme`):
+  on mount, on a `data-theme` change (a `MutationObserver` on `<html>`), once the web fonts have loaded, and
+  on a device-resolution change - the last one because the hatch patterns are rastered at that resolution
+  (`theme.ts` `Patterns`), so a window moved to another monitor would otherwise keep the old one's patterns.
 - A toggle in the UI (and `?theme=light`) switches the theme and remembers it in `localStorage`
   (wrapped in try/catch).
 
