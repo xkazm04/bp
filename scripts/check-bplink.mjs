@@ -140,6 +140,26 @@ try {
     const label = /(\w+)=%d/.exec(/TEXT\("((?:[^"\\]|\\.)*)"\)/.exec(call?.[0] ?? '')?.[1] ?? '')?.[1];
     check(`source: the count BpLink logs from structure.domains is labelled "rooms" (${wantPlan.rooms}), not "wings" (${wantPlan.wings})`,
       label === 'rooms', `BpLink.cpp labels it "${label}"; domains=${wantDomains}, wings=${wantPlan.wings}, rooms=${wantPlan.rooms}`);
+
+    // BpLink.Build.cs reaches the generated USTRUCT headers through a hand-counted run of ".." from ModuleDirectory,
+    // and nothing in the repo has ever resolved it: a header moved, or one ".." too few, surfaces as an unresolved
+    // include in a UE build this repo cannot run. The path EXPRESSION is read out of the Build.cs rather than
+    // retyped here, so this check fails if the two ever disagree. The headers asserted are the ones BpLink actually
+    // includes, derived from its own #include lines, not a typed list.
+    const MOD = path.join(ROOT, 'apps/vr/Source/BpLink');
+    const build = fs.readFileSync(path.join(MOD, 'BpLink.Build.cs'), 'utf8');
+    const combine = /Path\.Combine\(ModuleDirectory\s*,\s*((?:"[^"]*"\s*,?\s*)+)\)/.exec(build);
+    const parts = [...(combine?.[1] ?? '').matchAll(/"([^"]*)"/g)].map((m) => m[1]);
+    const inc = path.resolve(MOD, ...parts);
+    check('build: BpLink.Build.cs names its include path as a Path.Combine off ModuleDirectory', parts.length > 0, build.slice(0, 0));
+    check(`build: that include path resolves inside the repo (${parts.join('/')})`, parts.length > 0 && !path.relative(ROOT, inc).startsWith('..'), inc);
+    check('build: the directory it adds to PublicIncludePaths exists', parts.length > 0 && fs.existsSync(inc), inc);
+    const includes = ['Public/BpLink.h', 'Private/BpLink.cpp']
+      .flatMap((f) => [...stripCxx(fs.readFileSync(path.join(MOD, f), 'utf8'), true).matchAll(/#include\s+"([^"]+)"/g)].map((m) => m[1]))
+      .filter((h) => /^Bp/.test(h) && !h.endsWith('.generated.h') && h !== 'BpLink.h');
+    const missing = includes.filter((h) => !fs.existsSync(path.join(inc, h)));
+    check(`build: every Bp* header BpLink includes is in that directory (${includes.join(', ')})`, includes.length > 0 && missing.length === 0,
+      missing.length ? `missing: ${missing.join(', ')}` : `0 of ${includes.length} missing`);
   }
 } finally {
   // the child holds its working directory until it has exited (Windows), so wait before removing it
