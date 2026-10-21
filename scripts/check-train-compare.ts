@@ -7,9 +7,10 @@
 //     a faint change -> moved but "visually identical"; a block -> its exact grid cells, bbox, shares and words;
 //   - the panel's own modules: the exported functions of apps/web/src/components/ledger/train/compare/** (the patch's
 //     rows, the item body's blocks, the shown pairs and their cache keys, the pack order, the latest reading, one
-//     performance row and the sentence under it). Nothing else in the repo reads them;
+//     performance row and the sentence under it) and the anchors their comments name. Nothing else reads them;
 //     scripts/overlays-loader.mjs transpiles the .tsx, as scripts/check-train-budget.ts does.
 // Run: node scripts/check-train-compare.ts  (Node's type stripping; no build step). Exit 1 on any failure.
+import fs from 'node:fs';
 import { register } from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -199,6 +200,17 @@ const { packOrder } = await imp('ComparePanel.tsx');
     proposals: [pr('p-3', 'k-b', '2026-10-16T00:00:00Z'), pr('p-2', 'k-a', '2026-10-16T00:00:00Z'), pr('p-1', 'k-a', '2026-10-15T00:00:00Z'), pr('p-loose', undefined, '2026-10-16T00:00:00Z')],
   };
   ok(packOrder(T).join() === 'p-1,p-2,p-3', 'pack order: packs oldest first, each pack\'s items by created_at then id, no loose item', packOrder(T));
+}
+
+{ // the comments' anchors: a path named under src/lib/ must be one this tree has
+  const files = fs.readdirSync(path.join(SRC, CMP));
+  const dead: string[] = [];
+  for (const f of files) {
+    for (const m of fs.readFileSync(path.join(SRC, CMP, f), 'utf8').matchAll(/\bsrc\/lib\/[\w./-]+\.(?:ts|tsx)\b/g)) {
+      if (!fs.existsSync(path.join(SRC, m[0].slice('src/'.length)))) dead.push(f + ': ' + m[0]);
+    }
+  }
+  ok(!dead.length, `anchors: every src/lib/ path the compare panel's comments name exists (${files.length} files read)`, dead);
 }
 
 console.log(bad ? `check-train-compare: ${bad} of ${n} failed` : `check-train-compare: ${n} checks passed`);

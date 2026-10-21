@@ -1,5 +1,5 @@
 // One performance row's range strip: the baseline median's noise band, a dot per baseline run, the after as a marker,
-// and the target and warn lines, on one 0..max scale (src/lib/train/perf.ts rangeScale). Positions are percentages
+// and the target and warn lines, on one 0..max scale (packages/core/src/train/perf.ts rangeScale). Positions are percentages
 // on absolutely placed spans: no layout read, no canvas.
 import { memo } from 'react';
 import { rangeScale, type PerfFigures } from '@bp/core/train/perf';

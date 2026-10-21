@@ -1,5 +1,5 @@
 // The change map's worker: decodes a before/after shot pair, draws both at the before's size on an OffscreenCanvas and
-// runs src/lib/train/pixels.ts diffPixels over them, so the main thread does no pixel work. A source is a URL (fetched
+// runs packages/core/src/train/pixels.ts diffPixels over them, so the main thread does no pixel work. A source is a URL (fetched
 // and decoded here) or an ImageBitmap the page decoded itself: Chrome cannot decode an SVG inside a worker, so a URL
 // that fails to decode answers `decode: true` and useChangeMap.ts sends bitmaps instead.
 import { diffPixels, type PixGrid } from '@bp/core/train/pixels';
