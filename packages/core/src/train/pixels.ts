@@ -26,8 +26,15 @@ export interface PixGrid {
   bbox?: [number, number, number, number];
 }
 
-/** Compare two RGBA buffers of one size (the before and the after, drawn at the same width and height). Sizes that
- *  differ compare over the smaller common area. */
+/**
+ * Compare two RGBA buffers of one size (the before and the after, drawn at the same width and height). `w` and `h`
+ * are the stride BOTH buffers are read with, so they must be the size both were drawn at; a sub-rectangle of a wider
+ * buffer cannot be read here at all. A pair whose images differ in size is therefore not compared over their common
+ * area: both callers take the BEFORE's dimensions (capped at MAX_W) and draw the after into that same box —
+ * ChangeMap's worker (changeMap.worker.ts, `drawImage(b, 0, 0, w, h)`) and the main-thread fallback
+ * (useChangeMap.ts onMain) — so the after is SCALED to the before's size and a resize reads as a change nearly
+ * everywhere. That is the honest reading of a resize, but it is not a common-area comparison.
+ */
 export function diffPixels(a: ArrayLike<number>, b: ArrayLike<number>, w: number, h: number): PixGrid {
   const cells = new Array<number>(GRID_W * GRID_H).fill(0);
   let moved = 0, vis = 0, maxd = 0, x0 = w, y0 = h, x1 = -1, y1 = -1;
