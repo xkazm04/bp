@@ -107,7 +107,7 @@ function seed() {
   for (const [i, r] of runs.entries()) {
     insert(db, 'runs', {
       id: r.id, started_at: iso(r.t), updated_at: iso(r.t + 40 * 60e3), ended_at: iso(r.t + 40 * 60e3), phase: 'propose', status: 'done',
-      lenses: LENSES, scope: { features: FEATURES.length, sample: 'kettle' }, skill_version: '0.1.0', model: 'demo', note: i ? 'Second pass, a week on' : 'Baseline pass',
+      lenses: LENSES, scope: { features: FEATURES, sample: 'kettle' }, skill_version: '0.1.0', model: 'demo', note: i ? 'Second pass, a week on' : 'Baseline pass',
     });
     let k = 0;
     for (const f of FEATURES) for (const lens of LENSES) {
@@ -196,7 +196,7 @@ function live() {
   const t = () => iso(Date.now());
   // A live run killed without Ctrl-C (a hard kill, a closed terminal) stays `running`: close it as aborted.
   db.prepare("UPDATE runs SET status = 'aborted', ended_at = ?, updated_at = ? WHERE status = 'running'").run(t(), t());
-  insert(db, 'runs', { id, started_at: t(), updated_at: t(), phase: 'measure', status: 'running', lenses: LENSES, scope: { features: FEATURES.length, sample: 'kettle' }, skill_version: '0.1.0', model: 'demo', note: 'scan-demo --live' });
+  insert(db, 'runs', { id, started_at: t(), updated_at: t(), phase: 'measure', status: 'running', lenses: LENSES, scope: { features: FEATURES, sample: 'kettle' }, skill_version: '0.1.0', model: 'demo', note: 'scan-demo --live' });
   const touch = () => db.prepare('UPDATE runs SET updated_at = ? WHERE id = ?').run(t(), id);
   let n = 0, m = 0, p = 0;
   const at = (k) => ({ f: FEATURES[Math.floor(k / LENSES.length) % FEATURES.length], lens: LENSES[k % LENSES.length] });

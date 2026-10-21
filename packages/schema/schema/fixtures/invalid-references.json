@@ -1,0 +1,545 @@
+{
+  "$schema": "app-structure/3",
+  "version": 3,
+  "generator": "hand",
+  "generated_at": "2026-10-08T09:00:00Z",
+  "declared": true,
+  "project": {
+    "slug": "broken",
+    "name": "Broken references",
+    "kind": "code"
+  },
+  "groups": [
+    {
+      "name": "G",
+      "domain": "feature"
+    },
+    {
+      "name": "G",
+      "domain": "feature"
+    }
+  ],
+  "contexts": [
+    {
+      "name": "ctx",
+      "group": "G",
+      "category": "lib"
+    },
+    {
+      "name": "ctx",
+      "group": "G",
+      "category": "lib"
+    }
+  ],
+  "domains": [
+    {
+      "slug": "dom",
+      "name": "Domain",
+      "order": 1,
+      "source": "declared"
+    },
+    {
+      "slug": "dom",
+      "name": "Domain",
+      "order": 2,
+      "source": "declared"
+    }
+  ],
+  "capabilities": [
+    {
+      "slug": "dom.cap",
+      "domain": "dom",
+      "name": "Cap",
+      "order": 1
+    },
+    {
+      "slug": "dom.cap",
+      "domain": "dom",
+      "name": "Cap",
+      "order": 2
+    },
+    {
+      "slug": "orphan.cap",
+      "domain": "no-such-domain",
+      "name": "Orphan",
+      "order": 3
+    }
+  ],
+  "features": [
+    {
+      "slug": "dup-feature",
+      "name": "Dup",
+      "status": "active",
+      "capability": "no.such.cap",
+      "contexts": [
+        "no-such-context"
+      ],
+      "primary_context": "no-such-primary",
+      "milestone": "no-such-milestone",
+      "depends_on": [
+        "dup-feature",
+        "no-such-dep"
+      ],
+      "blocked_by": [
+        "no-such-blocker"
+      ],
+      "variations": [
+        {
+          "slug": "v1",
+          "name": "V1",
+          "audience": "a",
+          "extends": [],
+          "params": []
+        },
+        {
+          "slug": "v1",
+          "name": "V1 again",
+          "audience": "a",
+          "extends": [],
+          "params": []
+        }
+      ]
+    },
+    {
+      "slug": "dup-feature",
+      "name": "Dup again",
+      "status": "active"
+    }
+  ],
+  "milestones": [
+    {
+      "slug": "ms",
+      "name": "M",
+      "status": "active"
+    },
+    {
+      "slug": "ms",
+      "name": "M",
+      "status": "active"
+    }
+  ],
+  "kpis": [
+    {
+      "slug": "k1",
+      "name": "K1",
+      "scope": {
+        "feature": "no-such-feature"
+      },
+      "category": "technical",
+      "unit": "n",
+      "direction": "up"
+    },
+    {
+      "slug": "k1",
+      "name": "K1 again",
+      "scope": {
+        "context": "no-such-ctx"
+      },
+      "category": "technical",
+      "unit": "n",
+      "direction": "up"
+    },
+    {
+      "slug": "k3",
+      "name": "K3",
+      "scope": {
+        "group": "no-such-group"
+      },
+      "category": "technical",
+      "unit": "n",
+      "direction": "up"
+    }
+  ],
+  "lenses": [
+    {
+      "id": "com.example.fields",
+      "version": "0.1.0",
+      "source": "project",
+      "enabled": true,
+      "manifest": {
+        "$schema": "lens-manifest/1",
+        "id": "com.example.fields",
+        "version": "0.1.0",
+        "name": "com.example.fields",
+        "reader": {
+          "role": "engineer",
+          "density": "standard"
+        },
+        "fields": [
+          {
+            "key": "dup",
+            "label": "Dup",
+            "type": "integer"
+          },
+          {
+            "key": "dup",
+            "label": "Dup again",
+            "type": "integer"
+          },
+          {
+            "key": "span",
+            "label": "Span",
+            "type": "integer",
+            "min": 5,
+            "max": 1
+          },
+          {
+            "key": "spend",
+            "label": "Spend",
+            "type": "money",
+            "currency": "USD",
+            "source": {
+              "kpi": "no-such-kpi"
+            }
+          },
+          {
+            "key": "stage",
+            "label": "Stage",
+            "type": "integer",
+            "source": {
+              "feature": "stage"
+            }
+          }
+        ],
+        "health": {
+          "rules": [],
+          "default": "good",
+          "rollup": {
+            "method": "worst-of"
+          },
+          "applies_when": {
+            "field": "ghost",
+            "eq": 1
+          }
+        },
+        "presentation": {
+          "glyph": "pulse",
+          "line": "solid",
+          "evidence": [
+            "ghost"
+          ],
+          "measures": "ghost"
+        }
+      }
+    },
+    {
+      "id": "com.example.weights",
+      "version": "0.1.0",
+      "source": "project",
+      "enabled": true,
+      "manifest": {
+        "$schema": "lens-manifest/1",
+        "id": "com.example.weights",
+        "version": "0.1.0",
+        "name": "com.example.weights",
+        "reader": {
+          "role": "engineer",
+          "density": "standard"
+        },
+        "fields": [
+          {
+            "key": "owner",
+            "label": "Owner",
+            "type": "string"
+          }
+        ],
+        "health": {
+          "rules": [],
+          "default": "good",
+          "rollup": {
+            "method": "weighted",
+            "by": "owner"
+          }
+        },
+        "presentation": {
+          "glyph": "pulse",
+          "line": "solid",
+          "measures": "owner"
+        },
+        "scan": {
+          "method": "steps",
+          "steps": [
+            {
+              "kind": "judgement",
+              "instructions": "Judge the owner field and report what you saw in the evidence column."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "com.example.judged",
+      "version": "0.1.0",
+      "source": "project",
+      "enabled": true,
+      "manifest": {
+        "$schema": "lens-manifest/1",
+        "id": "com.example.judged",
+        "version": "0.1.0",
+        "name": "com.example.judged",
+        "reader": {
+          "role": "engineer",
+          "density": "standard"
+        },
+        "fields": [
+          {
+            "key": "owner",
+            "label": "Owner",
+            "type": "string"
+          }
+        ],
+        "health": {
+          "rules": [],
+          "default": "good",
+          "rollup": {
+            "method": "weighted",
+            "by": "nowhere"
+          }
+        },
+        "presentation": {
+          "glyph": "pulse",
+          "line": "solid"
+        },
+        "scan": {
+          "method": "judgement",
+          "instructions": "Judge the owner field and report what you saw in the evidence column."
+        }
+      }
+    },
+    {
+      "id": "com.example.facts",
+      "version": "0.1.0",
+      "source": "project",
+      "enabled": true,
+      "manifest": {
+        "$schema": "lens-manifest/1",
+        "id": "com.example.facts",
+        "version": "0.1.0",
+        "name": "com.example.facts",
+        "reader": {
+          "role": "engineer",
+          "density": "standard"
+        },
+        "fields": [
+          {
+            "key": "count",
+            "label": "Count",
+            "type": "integer",
+            "min": 0
+          },
+          {
+            "key": "ratio",
+            "label": "Ratio",
+            "type": "percent"
+          },
+          {
+            "key": "flag",
+            "label": "Flag",
+            "type": "boolean"
+          },
+          {
+            "key": "mode",
+            "label": "Mode",
+            "type": "enum",
+            "values": [
+              "a",
+              "b"
+            ]
+          },
+          {
+            "key": "due",
+            "label": "Due",
+            "type": "date"
+          },
+          {
+            "key": "note",
+            "label": "Note",
+            "type": "string"
+          },
+          {
+            "key": "cap",
+            "label": "Cap",
+            "type": "integer",
+            "min": 0,
+            "max": 3
+          }
+        ],
+        "health": {
+          "rules": [],
+          "default": "good",
+          "rollup": {
+            "method": "worst-of"
+          }
+        },
+        "presentation": {
+          "glyph": "pulse",
+          "line": "solid"
+        }
+      }
+    },
+    {
+      "id": "com.example.facts",
+      "version": "0.1.0",
+      "source": "project",
+      "enabled": true,
+      "manifest": {
+        "$schema": "lens-manifest/1",
+        "id": "com.example.facts",
+        "version": "0.1.0",
+        "name": "com.example.facts",
+        "reader": {
+          "role": "engineer",
+          "density": "standard"
+        },
+        "fields": [
+          {
+            "key": "count",
+            "label": "Count",
+            "type": "integer",
+            "min": 0
+          },
+          {
+            "key": "ratio",
+            "label": "Ratio",
+            "type": "percent"
+          },
+          {
+            "key": "flag",
+            "label": "Flag",
+            "type": "boolean"
+          },
+          {
+            "key": "mode",
+            "label": "Mode",
+            "type": "enum",
+            "values": [
+              "a",
+              "b"
+            ]
+          },
+          {
+            "key": "due",
+            "label": "Due",
+            "type": "date"
+          },
+          {
+            "key": "note",
+            "label": "Note",
+            "type": "string"
+          },
+          {
+            "key": "cap",
+            "label": "Cap",
+            "type": "integer",
+            "min": 0,
+            "max": 3
+          }
+        ],
+        "health": {
+          "rules": [],
+          "default": "good",
+          "rollup": {
+            "method": "worst-of"
+          }
+        },
+        "presentation": {
+          "glyph": "pulse",
+          "line": "solid"
+        }
+      }
+    },
+    {
+      "id": "com.example.wrong-id",
+      "version": "0.1.0",
+      "source": "project",
+      "enabled": true,
+      "manifest": {
+        "$schema": "lens-manifest/1",
+        "id": "com.example.notmine",
+        "version": "0.1.0",
+        "name": "com.example.notmine",
+        "reader": {
+          "role": "engineer",
+          "density": "standard"
+        },
+        "fields": [
+          {
+            "key": "x",
+            "label": "X",
+            "type": "integer"
+          }
+        ],
+        "health": {
+          "rules": [],
+          "default": "good",
+          "rollup": {
+            "method": "worst-of"
+          },
+          "applies_when": {
+            "field": "x",
+            "gte": 0
+          }
+        },
+        "presentation": {
+          "glyph": "pulse",
+          "line": "solid"
+        }
+      }
+    },
+    {
+      "id": "com.example.notmine",
+      "version": "9.9.9",
+      "source": "project",
+      "enabled": true,
+      "manifest": {
+        "$schema": "lens-manifest/1",
+        "id": "com.example.notmine",
+        "version": "0.1.0",
+        "name": "com.example.notmine",
+        "reader": {
+          "role": "engineer",
+          "density": "standard"
+        },
+        "fields": [
+          {
+            "key": "x",
+            "label": "X",
+            "type": "integer"
+          }
+        ],
+        "health": {
+          "rules": [],
+          "default": "good",
+          "rollup": {
+            "method": "worst-of"
+          },
+          "applies_when": {
+            "field": "x",
+            "gte": 0
+          }
+        },
+        "presentation": {
+          "glyph": "pulse",
+          "line": "solid"
+        }
+      }
+    }
+  ],
+  "facets": {
+    "ghost-feature": {},
+    "dup-feature": {
+      "com.example.facts": {
+        "values": {
+          "count": "three",
+          "ratio": 120,
+          "flag": "yes",
+          "mode": "c",
+          "due": "tomorrow",
+          "note": 7,
+          "cap": 9,
+          "nope": 1
+        }
+      }
+    }
+  }
+}

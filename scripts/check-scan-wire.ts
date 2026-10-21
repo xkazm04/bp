@@ -22,6 +22,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { advance, close, newCursor, openRead, readDelta, readSnapshot, snapshotOf } from '../packages/core/src/server/store.server.ts';
 import { swarmFromScan } from '../apps/web/src/lib/scan/client.ts';
 import { latestReading } from '../packages/core/src/scan/derive.ts';
+import { scopeFeatures } from '../packages/core/src/scan/scope.ts';
+import { blankComments } from './lib/source.ts';
 import { parseReleaseCreated } from '../packages/core/src/train/wire.ts';
 import { PRODUCTS_FILE, listProducts } from '../packages/core/src/server/products.server.ts';
 import type { Measurement, Proposal, Run, ScanSnapshot } from '../packages/core/src/scan/types.ts';
@@ -117,6 +119,18 @@ try {
     check('a run naming one lens twice draws it once', dup.squads.length === 2 && dup.agents.length === 2
       && new Set(dup.agents.map((a) => a.id)).size === 2 && new Set(dup.squads.map((sq) => sq.id)).size === 2,
       JSON.stringify({ squads: dup.squads.map((sq) => sq.id), agents: dup.agents.map((a) => a.id) }));
+  }
+
+  // ---- scope.features is a list of ids: the reader drops anything else, so the demo writer must write a list
+  {
+    const ids = ['a', 'b', 'c', 'd'].map((id) => ({ id, domain: 'D', capability: 'c-' + id }));
+    check('scope.features as a list of ids names those features', scopeFeatures({ scope: { features: ['a', 'c'] } }, ids).map((f) => f.id).join() === 'a,c');
+    check('scope.features as a count is dropped: every feature (the shape scan-demo used to write)', scopeFeatures({ scope: { features: 2, sample: 'kettle' } }, ids).length === 4);
+    // every `scope: { ... }` literal scan-demo.mjs writes, enumerated from its source (comments blanked): none may carry a count
+    const demo = blankComments(fs.readFileSync(path.join(ROOT, 'scripts/scan-demo.mjs'), 'utf8'));
+    const scopes = [...demo.matchAll(/scope:\s*\{([^}]*)\}/g)].map((m) => m[1]);
+    check('scan-demo.mjs writes run scopes (the matcher still bites)', scopes.length >= 2, String(scopes.length));
+    for (const sc of scopes) check('scan-demo.mjs writes scope.features as the list of ids, not a count', /(^|\W)features:\s*FEATURES\s*(,|$)/.test(sc), sc.trim());
   }
 
   // ---- stream cursor
