@@ -135,6 +135,9 @@ export function listener(routes: Route[]) {
       console.error(`${method} ${url.pathname}:`, e);
       return json(res, 500, { error: `handler failed (${method} ${route.path}); the server log has the detail` });
     }
+    // The client left while the handler ran: res has closed already, so nothing below would ever cancel the body (an SSE
+    // stream would keep its timers and subscriptions for good).
+    if (abort.signal.aborted || res.destroyed) { void response.body?.cancel().catch(() => {}); return; }
     const out: Record<string, string | string[]> = {};
     response.headers.forEach((v, k) => { out[k] = k === 'set-cookie' ? response.headers.getSetCookie() : v; });
     res.writeHead(response.status, response.statusText, out);

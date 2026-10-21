@@ -3,6 +3,8 @@
 //   host      a Host header no URL can carry answers 400, and the server keeps serving
 //   body      a body past MAX_BODY answers 413 (declared by Content-Length, or streamed chunked); one under it reaches the handler
 //   errors    a handler that throws answers 500 without the exception's message (that goes to stderr only)
+//   late      a stream a handler answers after its client has gone is cancelled (its timer stopped), not piped to the
+//             closed socket and left running
 //   peer      a request from a non-loopback socket answers 403 whatever its Host (sent through this machine's own LAN
 //             address, when it has one; the server listens on 0.0.0.0 here, as `--host 0.0.0.0` would)
 // Run: node apps/server/src/check-mount.ts   Exit 1 on any failure.
@@ -20,6 +22,8 @@ const api = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-mount-'));
 const handler = (dir: string, src: string) => { fs.mkdirSync(path.join(api, dir), { recursive: true }); fs.writeFileSync(path.join(api, dir, 'route.ts'), src); };
 handler('echo/[slug]', 'export const GET = async (_r, { params }) => Response.json(await params);\n');
 handler('boom', "export const GET = () => { throw new Error('detail from C:/Users/someone/secret.json'); };\n");
+// answers after 300 ms with an endless stream; its cancel (or a timer that keeps going) is counted on globalThis
+handler('late', 'export const GET = async () => { await new Promise((r) => setTimeout(r, 300)); const g = globalThis; g.lateTicks = 0; let t; return new Response(new ReadableStream({ start(c) { t = setInterval(() => { g.lateTicks++; c.enqueue(new TextEncoder().encode("x")); }, 20); }, cancel() { clearInterval(t); g.lateCancelled = true; } })); };\n');
 handler('body', 'export const POST = async (r) => Response.json({ bytes: (await r.arrayBuffer()).byteLength });\n');
 
 const crashes: unknown[] = [];
@@ -67,6 +71,16 @@ try {
   check('body: the server keeps serving after it', await alive(), `${crashes.length} uncaught`);
   await post('Content-Length: 100\r\n', '{"partial":'); // the client gives up (raw's timeout) before the body is whole
   check('body: the server keeps serving after a client leaves mid-body', await alive(), `${crashes.length} uncaught`);
+
+  const lateG = globalThis as { lateTicks?: number; lateCancelled?: boolean };
+  // the client sends the request and leaves after 50 ms, while the handler still waits
+  await new Promise<void>((resolve) => { const s = net.connect(port, '127.0.0.1', () => { s.write('GET /api/late HTTP/1.1\r\nHost: localhost\r\n\r\n'); setTimeout(() => { s.destroy(); resolve(); }, 50); }); s.on('error', () => resolve()); });
+  await new Promise((r) => setTimeout(r, 700));
+  const ticks = lateG.lateTicks ?? -1;
+  await new Promise((r) => setTimeout(r, 200));
+  check('late: a stream answered after the client left is cancelled', lateG.lateCancelled === true, `cancelled=${lateG.lateCancelled}`);
+  check('late: and its timer stops', ticks >= 0 && lateG.lateTicks === ticks, `ticks ${ticks} then ${lateG.lateTicks}`);
+  check('late: the server keeps serving after it', await alive(), `${crashes.length} uncaught`);
 
   const boom = await get('/api/boom');
   check('errors: a throwing handler answers 500', boom.status === 500, `${boom.status}`);
