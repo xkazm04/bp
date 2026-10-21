@@ -207,5 +207,22 @@ const fnOf = (name: string) => { const i = appSrc.indexOf('function ' + name + '
   expect(appSrc.includes('kettle={!product}'), 'the Kettle build-failure call site does not pass `kettle` to LiveEmpty');
 }
 
+// ThemeToggle: a refused localStorage write is reported (setTheme returns false) and the toggle's name says the choice is for this
+// visit only; a kept write stays silent. The stub is a document and a localStorage that throw on demand.
+{
+  const T = await imp('components/ThemeToggle.tsx');
+  const g = globalThis as Any, held0 = { d: g.document, l: g.localStorage };
+  g.document = { documentElement: { dataset: {} as Record<string, string> } };
+  Object.defineProperty(g, 'localStorage', { configurable: true, value: { setItem() { throw new Error('blocked'); } } });
+  const refused = T.setTheme('light');
+  Object.defineProperty(g, 'localStorage', { configurable: true, value: { setItem() {} } });
+  const kept = T.setTheme('dark');
+  g.document = held0.d; if (held0.l === undefined) delete g.localStorage; else Object.defineProperty(g, 'localStorage', { configurable: true, value: held0.l });
+  expect(refused === false && kept === true, `setTheme reports a refused write as ${refused} and a kept one as ${kept}, expected false / true`);
+  expect(T.themeLabel('light', true) === 'Switch to light theme' && /visit only/.test(T.themeLabel('light', false)), 'themeLabel does not word the refused write only when it happened');
+  const html: string = renderToString(React.createElement(T.ThemeToggle));
+  expect(html.includes('Switch to') && !html.includes('visit only'), 'a fresh toggle (nothing refused yet) already carries the notice');
+}
+
 if (failures.length) { console.error(`check-overlays: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
 console.log(`check-overlays: ${held} expectations held`);

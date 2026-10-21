@@ -1,7 +1,7 @@
 'use client';
 // Dark / light switch. The theme lives on <html data-theme>, set before paint by the layout script
 // (`?theme=` wins, then localStorage). The canvas engine watches the attribute and re-rasters.
-import { useSyncExternalStore } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 
 export type ThemeMode = 'dark' | 'light';
 
@@ -15,16 +15,24 @@ const read = (): ThemeMode => (document.documentElement.dataset.theme === 'light
 export function useTheme(): ThemeMode {
   return useSyncExternalStore(subscribe, read, () => 'dark');
 }
-export function setTheme(t: ThemeMode) {
+/** Apply the theme and report whether the browser kept it: false when storage refuses the write (a private window,
+ *  site data blocked), so the choice lasts for this visit only. The attribute is set either way. */
+export function setTheme(t: ThemeMode): boolean {
   document.documentElement.dataset.theme = t;
-  try { localStorage.setItem('bp-theme', t); } catch { /* storage may be blocked */ }
+  try { localStorage.setItem('bp-theme', t); return true; } catch { return false; }
 }
+
+/** The toggle's name and tooltip. Once a write was refused it says so, in the morning watch's wording, and keeps saying it
+ *  (one standing sentence, not a message per click). */
+export const themeLabel = (next: ThemeMode, kept: boolean) => 'Switch to ' + next + ' theme' + (kept ? '' : '. This browser does not keep your choice, so it lasts for this visit only');
 
 export function ThemeToggle({ compact = false }: { compact?: boolean }) {
   const t = useTheme();
   const next: ThemeMode = t === 'dark' ? 'light' : 'dark';
+  const [kept, setKept] = useState(true);
+  const label = themeLabel(next, kept);
   return (
-    <button type="button" className="theme-toggle" onClick={() => setTheme(next)} aria-label={'Switch to ' + next + ' theme'} title={'Switch to ' + next + ' theme'} suppressHydrationWarning>
+    <button type="button" className="theme-toggle" onClick={() => setKept(setTheme(next))} aria-label={label} title={label} suppressHydrationWarning>
       {t === 'dark' ? (
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11.5 10.5A5.5 5.5 0 0 1 5.5 4.5a5.5 5.5 0 0 0 6 6z" fill="none" stroke="currentColor" strokeWidth="1.4" /></svg>
       ) : (
