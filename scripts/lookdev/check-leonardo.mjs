@@ -7,13 +7,15 @@
 //   cost      the figure the cap is fed is the WORST measured credit figure at that quality, never the first
 //   report    `total`'s byQuality breakdown plus priorSpend adds up to nightTotal, the figure the cap refuses on
 //   out       --out stays inside lookdev/: a name that would resolve outside it is refused before any call
+//   egress    redact() is applied at every place text leaves gen() for log.jsonl or stdout (source guard)
 //   source    a source guard over leonardo.mjs: it names no absolute machine path, so the .env it reads for
 //             LEONARDO_API_KEY is THIS checkout's and no other one's. Comments are stripped before the match.
 // Run: node scripts/lookdev/check-leonardo.mjs   Exit 1 on any failure.
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
-import { artFile, composePropPrompt, composePrompt, expectedCost, nightTotal, outFile, parseSize, redact, spendWindow, windowReport, withinCap } from './leonardo.mjs';
+import os from 'node:os';
+import { artFile, composePropPrompt, composePrompt, expectedCost, loggedFile, nightTotal, outFile, parseSize, redact, spendWindow, windowReport, withinCap } from './leonardo.mjs';
 
 let failed = 0, passed = 0;
 const check = (name, ok, detail = '') => { ok ? passed++ : failed++; console.log(`${ok ? 'ok  ' : 'FAIL'}  ${name}${ok || !detail ? '' : `  (${detail})`}`); };
@@ -136,6 +138,53 @@ check('report: a later window does not carry PRIOR_SPEND', windowReport(realLog,
 check('report: the breakdown counts the same calls nightTotal does',
   Object.values(prior.byQuality).reduce((n, q) => n + q.calls, 0) === realLog.filter((e) => e.time >= prior.window.from && e.time < prior.window.to).length);
 check('report: nightTotal is the figure the cap is asked about', prior.cap === 390 && !withinCap(prior.nightTotal, 1, prior.cap), `nightTotal ${prior.nightTotal} of ${prior.cap}`);
+
+// file: the committed log must not point at a machine path. Four city-backdrop lines (the first 66 entries) predate
+// loggedFile and carry an absolute temp path; the log is append-only, so they are grandfathered by line number and
+// no later line may join them. A committed entry's file is repo-relative (not asserted to still exist: 13 were moved or renamed after logging).
+const ISABS = (f) => /^[A-Za-z]:[\\/]|^\//.test(String(f ?? ''));
+const LEGACY_LINES = 66;
+const absLines = realLog.map((en, i) => (ISABS(en.file) ? i + 1 : 0)).filter(Boolean);
+check('file: no log entry after the first 66 lines records an absolute machine path', absLines.every((n) => n <= LEGACY_LINES), `lines ${absLines.join(',')}`);
+check('file: every committed entry names a repo-relative file', realLog.filter((en) => en.committed).every((en) => !ISABS(en.file)));
+const tmpDest = path.join(os.tmpdir(), 'bp-lookdev', 'x-A-s1-low.jpg');
+check('file: an uncommitted frame logs its basename and a note, never the temp path',
+  loggedFile(tmpDest, false).file === 'x-A-s1-low.jpg' && !ISABS(loggedFile(tmpDest, false).file) && /not committed/.test(loggedFile(tmpDest, false).fileNote ?? ''), JSON.stringify(loggedFile(tmpDest, false)));
+check('file: a committed frame logs a repo-relative path', loggedFile(path.join(DIR, 'explore', 'x.png'), true).file === 'docs/concepts/vr-light-table/lookdev/explore/x.png', loggedFile(path.join(DIR, 'explore', 'x.png'), true).file);
+
+check('file: gen() takes entry.file from loggedFile and assigns it nowhere else', /Object\.assign\(entry,\s*loggedFile\(dest,\s*entry\.committed\)\)/.test(nocomment) && !/entry\.file\s*=[^=]/.test(nocomment));
+
+// egress: redact() is correct (tested above) but only matters if every path that carries text out of gen() passes
+// through it. Egress = what reaches log.jsonl (the entry, which is JSON.stringify'd whole) or stdout/stderr (console.*).
+// The only attacker-shaped text is an exception message (it can embed an API error body) and the key itself.
+// Matched over the comment-stripped source, so prose in the header cannot satisfy any of it.
+const genStart = nocomment.indexOf('async function gen()');
+const genEnd = nocomment.indexOf("\nif (cmd === 'gen')");
+const genBody = genStart >= 0 && genEnd > genStart ? nocomment.slice(genStart, genEnd) : '';
+check('egress: gen() body was found in the stripped source', genBody.length > 500, `${genStart}..${genEnd}`);
+const msgUses = [...genBody.matchAll(/\be\.message\b/g)];
+check('egress: every use of the caught error message in gen() is the argument of redact(', msgUses.length > 0 && msgUses.every((m) => genBody.slice(Math.max(0, m.index - 7), m.index) === 'redact('), `${msgUses.length} use(s)`);
+const errAssigns = [...genBody.matchAll(/entry\.error\s*=[^=;]*;/g)].map((m) => m[0]);
+check('egress: every entry.error assignment passes through redact(..., key)', errAssigns.length > 0 && errAssigns.every((a) => /redact\([^;]*,\s*key\)/.test(a)), errAssigns.join(' | '));
+const consoleCalls = [...genBody.matchAll(/console\.(?:log|error|warn|info|debug)\([^;]*;/g)].map((m) => m[0]);
+const leaky = consoleCalls.filter((c) => /\b(?:e|err|created|g|res|json|body|key)\b(?!\w*\s*:)|\be\.message\b/.test(c.replace(/\$\{entry\.error\}/g, '')));
+check('egress: no console call in gen() prints an exception, a response object, the request body or the key', consoleCalls.length > 0 && leaky.length === 0, leaky.join(' | '));
+const keyTemplates = [...nocomment.matchAll(/`[^`]*\$\{key\}[^`]*`/g)].map((m) => m[0]);
+check('egress: the key is interpolated into exactly one string, the Bearer header', keyTemplates.length === 1 && /^`Bearer \$\{key\}`$/.test(keyTemplates[0]), keyTemplates.join(' | '));
+const appends = [...nocomment.matchAll(/appendFileSync\([^;]*;/g)].map((m) => m[0]);
+check('egress: the log is appended to once, with the entry alone', appends.length === 1 && /appendFileSync\(LOG,\s*JSON\.stringify\(entry\)\s*\+\s*'\\n'\)/.test(appends[0]), appends.join(' | '));
+
+// unverified: a TIMEOUT records the pre-call estimate as creditsSource 'fallback'. It counts inside nightTotal (the
+// cap's figure), so the report that explains nightTotal has to separate it from measured spend. gen() itself cannot
+// be driven here without reading the key from .env, so the rung is windowReport over a synthetic timed-out entry.
+const tNow = new Date('2026-10-21T12:00:00Z');
+const timedOut = { time: '2026-10-21T09:00:00Z', quality: 'LOW', status: 'TIMEOUT', credits: 8, creditsSource: 'fallback', generationId: 'x' };
+const measuredE = { time: '2026-10-21T09:05:00Z', quality: 'LOW', status: 'COMPLETE', credits: 6, creditsSource: 'api' };
+const tr = windowReport([timedOut, measuredE], tNow);
+check('unverified: a timed-out fallback entry still counts toward the figure the cap refuses on', tr.nightTotal === 14, `${tr.nightTotal}`);
+check('unverified: the report separates the guessed credits from the measured ones', tr.unverified?.credits === 8 && tr.unverified?.calls === 1, JSON.stringify(tr.unverified));
+check('unverified: a log with no fallback entry reports none', windowReport(realLog, tNow).unverified?.credits === 0 && windowReport([measuredE], tNow).unverified?.calls === 0);
+check('unverified: a fallback entry outside the window is not reported', windowReport([{ ...timedOut, time: '2026-10-20T09:00:00Z' }], tNow).unverified?.credits === 0);
 
 console.log(`
 check-leonardo: ${passed} passed, ${failed} failed`);

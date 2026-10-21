@@ -148,9 +148,13 @@ export function nightTotal(log = readLog(), now = new Date()) {
  */
 export function windowReport(log = readLog(), now = new Date()) {
   const byQuality = {};
+  // Spend the log did not measure (a TIMEOUT or a lost balance read records the pre-call estimate): it is inside
+  // nightTotal, which gates the next call, so the report must say how much of that figure is a guess.
+  const unverified = { calls: 0, credits: 0 };
+  for (const e of inWindow(log, now)) if (e.creditsSource === 'fallback') { unverified.calls++; unverified.credits += Number(e.credits) || 0; }
   for (const e of inWindow(log, now)) { const q = (byQuality[e.quality] ??= { calls: 0, credits: 0 }); q.calls++; q.credits += Number(e.credits) || 0; }
   return {
-    window: spendWindow(now), byQuality, priorSpend: priorSpend(now),
+    window: spendWindow(now), byQuality, unverified, priorSpend: priorSpend(now),
     allTimeLogCredits: log.reduce((n, e) => n + (Number(e.credits) || 0), 0),
     nightTotal: nightTotal(log, now), cap: HARD_CAP,
   };
@@ -167,6 +171,16 @@ export function expectedCost(quality, log) {
   if (measured.length) return { cost: Math.max(...measured.map((e) => Number(e.credits))), measured: true };
   if (quality === 'LOW') return { cost: LOW_FALLBACK, measured: true };
   return { cost: PROBE_ESTIMATE[quality], measured: false };
+}
+
+/**
+ * What the committed log records for a saved frame. A repo path is portable; an OVERSIZE frame lives under os.tmpdir(),
+ * which the OS clears and which exists on one machine, so it logs only its basename and a note (the generation id and
+ * urls in the same entry are how it is recovered). Older lines that carry the absolute path are append-only history.
+ */
+export function loggedFile(dest, committed) {
+  if (committed) return { file: path.relative(ROOT, dest).replaceAll('\\', '/') };
+  return { file: path.basename(dest), fileNote: 'not committed: written under the OS temp dir (bp-lookdev) and recoverable from urls' };
 }
 
 /** `text` with every copy of the key replaced: whatever goes to log.jsonl (committed) or stdout passes through here. */
@@ -285,7 +299,7 @@ async function gen() {
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.writeFileSync(dest, buf);
       entry.committed = dest.startsWith(DIR) || dest.startsWith(ART);
-      entry.file = entry.committed ? path.relative(ROOT, dest).replaceAll('\\', '/') : dest.replaceAll('\\', '/');
+      Object.assign(entry, loggedFile(dest, entry.committed));
       entry.bytes = buf.length;
     }
   } catch (e) {
