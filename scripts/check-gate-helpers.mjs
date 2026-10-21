@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 // status and none of the cases below run. So the exit is watched: unless the end of the file was reached, it is a failure.
 let finished = false;
 process.on('exit', () => { if (!finished) { console.log('FAIL  check-gate-helpers did not reach its end: an imported gate ran and exited the process'); process.exitCode = 1; } });
-const { stripCxx, braceSpan, readEventsReport, copiedCaptures, streamStateReport, includeParts } = await import('./check-bplink.mjs');
+const { stripCxx, braceSpan, readEventsReport, copiedCaptures, streamStateReport, includeParts, payloadErrors } = await import('./check-bplink.mjs');
 const { validate } = await import('./check-art.mjs');
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -71,6 +71,10 @@ check('streamStateReport: no branch on the no-connection value reads message nul
 // ---- includeParts
 check('includeParts: reads the segments of Path.Combine(ModuleDirectory, ...)', includeParts('PublicIncludePaths.Add(Path.Combine(ModuleDirectory, "..", "..", "gen", "ue"));').join('/') === '../../gen/ue');
 check('includeParts: [] when there is no such call', includeParts('PublicIncludePaths.Add("x");').length === 0 && includeParts('Path.Combine(Other, "a")').length === 0);
+
+// ---- payloadErrors (the schema validators check-bplink holds)
+check('payloadErrors: an empty body is refused by plan-1 and structure-envelope-1, a minimal pong passes scan-wire-1', payloadErrors('plan-1', {}) !== '' && payloadErrors('structure-envelope-1', {}) !== '' && payloadErrors('scan-wire-1', { ping: { at: '2026-10-21T00:00:00Z' } }) === '' && payloadErrors('scan-wire-1', { ping: {} }) !== '');
+check('payloadErrors: an unregistered schema name is reported, not accepted', /not registered/.test(payloadErrors('no-such-schema', {})));
 
 // ---- validate (check-art)
 const manifest = { id: 'x', gates: Object.fromEntries(['input', 'mesh_acceptance', 'scale', 'finishing', 'poly_budget'].map((g) => [g, { pass: true }])), sha256: {}, tris: 10, budget_tris: 100 };

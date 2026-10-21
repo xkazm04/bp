@@ -8,6 +8,8 @@
 //   events     the event log BpLink reads is that payload's `events` string (JSONL), line for line the data file's
 //   stream     GET /api/products/kettle/stream answers SSE (apps/server hosts Kettle's sims, L5.2): the first event is a `snapshot`
 //              of the sample (its findings as `proposals`); `delta` and `jobs` follow a scan (scripts/check-kettle-sim.mjs)
+//   schema     the structure, plan, first stream frame and waves bodies conform to structure-envelope-1, plan-1 and scan-wire-1
+//              (packages/schema/schema, via ajv), and each validator is shown to refuse one broken copy of the same body
 // Pins the server's current answers; it changes no route. A gap BpLink must live with is asserted as it is, not papered over.
 //
 // `npm run check` cannot compile BpLink (no Unreal toolchain here, apps/vr/WP3.1.md), so the last block derives what it can
@@ -20,6 +22,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import Ajv2020Module from 'ajv/dist/2020.js';
 import { WING_DEFS } from '../packages/core/src/model/constants.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -131,6 +134,30 @@ export function includeParts(build) {
   return [...(combine?.[1] ?? '').matchAll(/"([^"]*)"/g)].map((m) => m[1]);
 }
 
+// The payload schemas, all six registered under their $id so structure-envelope-1's relative $ref to app-structure-3 resolves.
+// Same ajv options as scripts/validate-structure.mjs and packages/schema/generate.mjs (strict, allowUnionTypes).
+const SCHEMA_DIR = path.join(ROOT, 'packages/schema/schema');
+const Ajv2020 = Ajv2020Module.default ?? Ajv2020Module;
+const ajv = new Ajv2020({ allErrors: true, strict: true, strictRequired: false, allowUnionTypes: true });
+for (const f of fs.readdirSync(SCHEMA_DIR).filter((n) => n.endsWith('.schema.json'))) ajv.addSchema(JSON.parse(fs.readFileSync(path.join(SCHEMA_DIR, f), 'utf8')));
+const PAYLOAD_SCHEMAS = { envelope: 'structure-envelope-1', plan: 'plan-1', snapshot: 'scan-wire-1', waves: 'scan-wire-1' };
+const PAYLOAD_LABEL = { envelope: '/structure body', plan: '/plan body', snapshot: '/stream snapshot frame', waves: '/waves body' };
+// One break per payload, applied to a copy of the live body. scan-wire-1's root takes one property per frame name, so a
+// stream frame is validated as { snapshot: <data> } and the waves answer as { waves }.
+const WRONG = {
+  envelope: (b) => { const c = structuredClone(b); delete c.events; return c; },
+  plan: (b) => { const c = structuredClone(b); const h = c.tiles?.[0]?.health; if (h) h[Object.keys(h)[0]] = 'purple'; else c.tiles = [{}]; return c; },
+  snapshot: (b) => { const c = structuredClone(b); c.snapshot = { ...(c.snapshot ?? {}), runs: 'not-an-array' }; return c; },
+  waves: (b) => ({ ...structuredClone(b), waves: [{}] }),
+};
+const WRONG_WHAT = { envelope: '`events` omitted', plan: 'a health value that is no status', snapshot: '`runs` that is not an array', waves: 'a wave with no fields' };
+/** '' when `body` conforms to the named schema, else ajv's first errors as one string. */
+export function payloadErrors(schema, body) {
+  const validate = ajv.getSchema(`https://app-structure.example/schema/${schema}.schema.json`);
+  if (!validate) return `schema ${schema} is not registered`;
+  return validate(body) ? '' : (validate.errors ?? []).slice(0, 3).map((e) => `${e.instancePath || '/'} ${e.message}`).join('; ');
+}
+
 /** True when this file was started directly (`node scripts/check-bplink.mjs`), false when another module imported it for its helpers. */
 const isMain = !!process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
 
@@ -139,7 +166,8 @@ async function main() {
   const lines = (s) => s.split('\n').filter((l) => l.trim());
   const wantEvents = lines(fs.readFileSync(path.join(DATA, 'kettle.events.jsonl'), 'utf8'));
   // BP_CHECK_BPLINK_WINGS seeds a wrong expectation (of the domain count), to show the smoke can fail.
-  // BP_CHECK_BPLINK_SEED=plan,lenses,events does the same for the other derived figures, one or several at once: each adds 1
+  // BP_CHECK_BPLINK_SEED=schema:envelope|schema:plan|schema:snapshot|schema:waves breaks the live body before it is validated against its schema.
+// BP_CHECK_BPLINK_SEED=plan,lenses,events does the same for the other derived figures, one or several at once: each adds 1
   // to that expectation, and the run must then FAIL on exactly that assertion (an expectation that survives its own seed is
   // not pinning anything). Unset, nothing changes.
   const seeded = new Set((process.env.BP_CHECK_BPLINK_SEED ?? '').split(',').filter(Boolean));
@@ -214,6 +242,21 @@ async function main() {
       const again = await get('/api/products/kettle/structure');
       let ab = null; try { ab = JSON.parse(again.body); } catch { /* reported below */ }
       check('rev: stable across reads (a fallback that reads it once can trust it)', !!ab?.rev && ab.rev === kb?.rev, `${kb?.rev} vs ${ab?.rev}`);
+
+      // The three payload schemas (structure-envelope-1, plan-1, scan-wire-1) describe exactly these bodies, and the VR client
+      // has no validator of its own, so the bodies held above are validated against them: a route that answers a shape its
+      // own schema forbids is red here, not a surprise in Unreal. The waves answer is scan-wire-1's `waves` property.
+      const waves = await get('/api/products/kettle/waves', { accept: 'application/json' });
+      let wb = null; try { wb = JSON.parse(waves.body); } catch { /* reported below */ }
+      const live = { envelope: kb ?? {}, plan: pb ?? {}, snapshot: { snapshot: sd }, waves: wb ?? {} };
+      for (const [key, schema] of Object.entries(PAYLOAD_SCHEMAS)) {
+        const body = seeded.has(`schema:${key}`) ? WRONG[key](live[key]) : live[key];
+        const bad = payloadErrors(schema, body);
+        check(`schema: the live ${PAYLOAD_LABEL[key]} conforms to ${schema}`, bad === '', bad);
+        // permanent control: a copy of the same live body, broken one way, must be refused (a validator that accepts
+        // everything would make the line above vacuous)
+        check(`schema: ${schema} refuses a ${PAYLOAD_LABEL[key]} with ${WRONG_WHAT[key]}`, payloadErrors(schema, WRONG[key](live[key])) !== '');
+      }
 
       // Derived over the C++ source, because no rung above it is reachable: this repo has no Unreal toolchain, so the
       // module cannot be compiled, let alone run against the server. Stripping comments and string literals first is what
