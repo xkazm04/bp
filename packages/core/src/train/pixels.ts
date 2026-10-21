@@ -44,7 +44,7 @@ export function diffPixels(a: ArrayLike<number>, b: ArrayLike<number>, w: number
       const i = (y * w + x) * 4;
       const d = Math.max(Math.abs(a[i] - b[i]), Math.abs(a[i + 1] - b[i + 1]), Math.abs(a[i + 2] - b[i + 2]), Math.abs(a[i + 3] - b[i + 3]));
       if (d > maxd) maxd = d;
-      if (d <= NOISE) continue;
+      if (!(d > NOISE)) continue; // also rejects NaN, which an out-of-range read of a short buffer produces
       moved++;
       if (d > VISIBLE) vis++;
       const c = gy + Math.min(GRID_W - 1, Math.floor((x * GRID_W) / w));

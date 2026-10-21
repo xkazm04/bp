@@ -18,6 +18,7 @@ const ROOT = path.resolve(HERE, '../..');
 const load = (p) => import(pathToFileURL(path.join(HERE, p)).href);
 const { BUILTIN_LENSES } = await load('src/standard/catalog.ts');
 const { loadStructure } = await load('src/standard/load.ts');
+const { diffPixels } = await load('src/train/pixels.ts');
 const { rollupHealth, lensHealth } = await load('src/standard/health.ts');
 
 let held = 0;
@@ -301,6 +302,24 @@ const expect = (ok, what) => { if (ok) held++; else failures.push(what); };
     expect(H() === want, `compile cache: ${name}: read ${H()} after an in-place edit, a fresh manifest reads ${want}`);
   }
   // the fingerprint is shallow (field keys and sources, the rule conditions by reference): it costs nothing a load can see
+}
+
+// ------------------------------------------------------------------ a short pixel buffer is not a moved pixel
+// train/pixels.ts diffPixels reads both buffers at w*h*4. An index past the end reads undefined, the difference is NaN,
+// and NaN is neither noise nor above it: it must be skipped like noise, not counted as a change with maxd 0.
+{
+  const W = 4, Hh = 4, full = W * Hh * 4;
+  const flat = (n, v = 10) => new Uint8Array(n).fill(v);
+  const one = diffPixels(flat(full - W * 4), flat(full - W * 4), W, Hh); // both one row short
+  expect(one.moved === 0 && one.bbox === undefined && one.maxd === 0, `pixels: two buffers one row short read moved ${one.moved}, bbox ${JSON.stringify(one.bbox)}`);
+  const either = diffPixels(flat(full), flat(8, 200), W, Hh); // one buffer holds two pixels: those two differ, the rest is unread
+  expect(either.moved === 12.5 && either.maxd === 190 && either.bbox?.join() === '0,0,1,0', `pixels: the in-range part of a short buffer read moved ${either.moved}, maxd ${either.maxd}, bbox ${JSON.stringify(either.bbox)}`);
+  const empty = diffPixels(new Uint8Array(0), new Uint8Array(0), W, Hh);
+  expect(empty.moved === 0 && empty.bbox === undefined, `pixels: empty buffers read moved ${empty.moved}`);
+  // exact-size buffers are unchanged: a changed block is counted and boxed
+  const b = flat(full); for (let i = 0; i < 4; i++) b[(1 * W + 1) * 4 + i] = 200;
+  const ok = diffPixels(flat(full), b, W, Hh);
+  expect(ok.bbox?.join() === '1,1,1,1' && Math.abs(ok.moved - 100 / 16) < 1e-9, `pixels: an exact-size pair read bbox ${JSON.stringify(ok.bbox)} moved ${ok.moved}`);
 }
 
 // ------------------------------------------------------------------ the control: valid input warns 0 times
