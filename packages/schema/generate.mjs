@@ -497,8 +497,18 @@ if (isMain) {
     const wireTs = wireSource(ROOT);
     const handTs = norm(fs.readFileSync(path.join(ROOT, HAND_TS), 'utf8'));
     const parity = compare(fresh.ts, handTs, wireTs);
-    console.log(`${parity.problems.length ? 'FAIL' : 'ok  '}  ${HAND_TS} agrees with the generated types on every field, its optionality and its string enum, and packages/core/src/scan/ on the scan wire types (${parity.shapes} shapes and ${parity.enums} enum fields from the structure, event, lens manifest, snapshot, job, proposal and wave)${parity.problems.length ? ': ' + parity.problems.slice(0, 8).join('; ') : ''}`);
-    if (parity.problems.length) failed++;
+    // Two known divergences, each an out-of-scope fix in packages/core/src/server/plan-projection.ts:16-18, which
+    // types a tile's health as `string` where plan-1.schema.json:79-80 says it is one of five values. They are
+    // listed rather than tolerated: an entry that is NO LONGER a divergence fails below, so the list cannot outlive
+    // its fix, and anything not on it fails as usual.
+    const KNOWN = ['Plan.tiles.health: an enum in the schema (good | watch | bad | unmeasured | na), string in types.ts',
+      'Plan.tiles.general: an enum in the schema (good | watch | bad | unmeasured | na), string in types.ts'];
+    const unexpected = parity.problems.filter((p) => !KNOWN.includes(p));
+    console.log(`${unexpected.length ? 'FAIL' : 'ok  '}  ${HAND_TS} agrees with the generated types on every field, its optionality and its string enum, and packages/core/src/scan/ on the scan wire types and the plan (${parity.shapes} shapes and ${parity.enums} enum fields from the structure, event, lens manifest, snapshot, job, proposal, wave and plan; ${KNOWN.length} known divergences allowed)${unexpected.length ? ': ' + unexpected.slice(0, 8).join('; ') : ''}`);
+    if (unexpected.length) failed++;
+    const stale = KNOWN.filter((p) => !parity.problems.includes(p));
+    console.log(`${stale.length ? 'FAIL' : 'ok  '}  every allowed divergence is still one (plan-projection.ts types a tile's health as string)${stale.length ? ': fixed, now delete from KNOWN: ' + stale.join('; ') : ''}`);
+    if (stale.length) failed++;
     // the enum comparison has a floor: a walk that stopped finding enum fields would report agreement on nothing
     const enumFloor = parity.enums >= 40;
     console.log(`${enumFloor ? 'ok  ' : 'FAIL'}  the parity walk still reaches the schema's enum fields (${parity.enums} >= 40)`);
