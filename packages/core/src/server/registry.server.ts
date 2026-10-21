@@ -1,11 +1,12 @@
 // Writes to `bp.products.local.json` (the read side is products.server.ts): add, rename or re-root, and
 // unregister a product. Unregistering only drops the line; nothing on disk is ever deleted. The file is
-// rewritten atomically (a temp file in the same directory, then a rename), created when absent, and keeps
+// rewritten atomically (products.server.ts's writeAtomic: a
+// temp file in the same directory, then a rename with the Windows retry), created when absent, and keeps
 // unknown keys and the order of entries. A file that exists but cannot be parsed is never overwritten.
 // Server-only: the route handlers under packages/core/src/server/api/products import it.
 import fs from 'node:fs';
 import path from 'node:path';
-import { PRODUCTS_FILE } from './products.server';
+import { PRODUCTS_FILE, writeAtomic } from './products.server';
 import { RESERVED_SLUGS, SLUG_RE } from '../scan/readiness';
 
 if (typeof window !== 'undefined') throw new Error('registry.server.ts is server-only');
@@ -33,16 +34,7 @@ function readDoc(): RegistryResult<Doc> {
 }
 
 function writeDoc(doc: Doc): void {
-  const f = file(), tmp = `${f}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(doc, null, 2) + '\n', 'utf8');
-  // Windows refuses a rename over a file another process holds for a moment (an editor, a virus scan): retry briefly.
-  for (let i = 0; ; i++) {
-    try { fs.renameSync(tmp, f); return; } catch (e) {
-      const code = (e as NodeJS.ErrnoException).code;
-      if (i >= 5 || (code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY')) { try { fs.unlinkSync(tmp); } catch { /* gone */ } throw e; }
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20 * (i + 1)); // a short synchronous sleep
-    }
-  }
+  writeAtomic(file(), JSON.stringify(doc, null, 2) + '\n');
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);

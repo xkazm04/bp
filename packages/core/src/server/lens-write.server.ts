@@ -1,14 +1,14 @@
 // Project-lens writes to a live product's map (`<root>/.ai/lens-scan/app-structure.json`, spec 8.1): add a
 // temporary or permanent project lens, retire or restore it (`enabled`), delete its entry. Only `source:
 // 'project'` entries are ever changed (built-ins never); facets are never touched (a deleted lens's facets
-// stay, orphaned, as the spec asks). The file is read, changed and rewritten atomically (a temp file in the
-// same directory, then a rename), keeping key order, unknown keys, its indentation and line endings; a file
+// stay, orphaned, as the spec asks). The file is read, changed and rewritten atomically (products.server.ts's
+// writeAtomic: a temp file in the same directory, then a rename with the Windows retry), keeping key order, unknown keys, its indentation and line endings; a file
 // that does not parse is never overwritten. The stream's `map` event then tells every client (the rename
 // moves the rev). Server-only: the lens routes import it.
 import fs from 'node:fs';
 import path from 'node:path';
 import type { LensEntry, LensManifest } from '@bp/core/standard/types';
-import { storeDir } from './products.server';
+import { storeDir, writeAtomic } from './products.server';
 import { takenLooks, type LensLook } from '../scan/jobs';
 import type { ProductEntry } from '../scan/types';
 
@@ -38,16 +38,7 @@ function readMap(file: string): LensWrite<Read> {
 function writeMap(file: string, r: Read): void {
   let out = JSON.stringify(r.doc, null, r.indent) + '\n';
   if (r.eol === '\r\n') out = out.replace(/\n/g, '\r\n');
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tmp, out, 'utf8');
-  // Windows refuses a rename over a file another process holds for a moment (the skill, a scan): retry briefly.
-  for (let i = 0; ; i++) {
-    try { fs.renameSync(tmp, file); return; } catch (e) {
-      const code = (e as NodeJS.ErrnoException).code;
-      if (i >= 5 || (code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY')) { try { fs.unlinkSync(tmp); } catch { /* gone */ } throw e; }
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20 * (i + 1)); // a short synchronous sleep
-    }
-  }
+  writeAtomic(file, out);
 }
 
 /** Read, change, write. `change` answers the result, or a failure that leaves the file untouched. */

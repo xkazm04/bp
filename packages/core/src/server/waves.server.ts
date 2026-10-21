@@ -1,5 +1,5 @@
 // The live waves of a product (waves.ts): `<root>/.ai/lens-scan/work/bp-waves.json` = { version: 1, waves }, read on every
-// call (the file is tiny and the server may restart under it), written through a tmp file and a rename. A file that cannot
+// call (the file is tiny and the server may restart under it), written through products.server.ts's writeAtomic (a tmp file in the same directory and a rename, with the Windows retry). A file that cannot
 // be read is said once (warnOnce) and read as no waves; a READ never writes, and the write that follows moves the broken
 // file to `bp-waves.corrupt.json` first, so nothing is lost. Also here: takeForBuild, the approve-and-take step /dispatch and
 // a wave dispatch share, and dispatchWave (one execute job per package, each with its own model and effort).
@@ -9,7 +9,7 @@ import path from 'node:path';
 import type { ProductEntry } from '../scan/types.ts';
 import { MAX_PROPOSALS, busyProposals, enqueueExecute } from './jobs.server.ts';
 import type { ScanJob } from '../scan/jobs.ts';
-import { recovered, storeFile, warnOnce } from './products.server.ts';
+import { recovered, storeFile, warnOnce, writeAtomic } from './products.server.ts';
 import { decide, snapshotOf } from './store.server.ts';
 import { WAVE_EFFORTS, WAVE_MODELS, createIn, packagesOf, patchIn, recordJobs, removeIn, type Wave, type WaveRefusal, type WaveStep } from '../scan/waves.ts';
 
@@ -51,9 +51,7 @@ function save(root: string, waves: Wave[]): void {
     // warnOnce is for a failure repeated per request or per stream tick; this happens once per corrupt file.
     console.warn(`[bp] ${file} could not be read as waves and was moved to ${aside}; a new file was written in its place`);
   }
-  const tmp = file + '.' + process.pid + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify({ version: 1, waves }, null, 2) + '\n');
-  fs.renameSync(tmp, file);
+  writeAtomic(file, JSON.stringify({ version: 1, waves }, null, 2) + '\n');
 }
 
 /** Create a draft wave from a create body. A refusal carries the route's status (400 body, 409 taken, 429 MAX_WAVES). */

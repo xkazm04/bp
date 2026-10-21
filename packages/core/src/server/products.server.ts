@@ -28,6 +28,26 @@ export function warnOnce(key: string, e: unknown): void {
 }
 export const recovered = (key: string): void => { warned.delete(key); };
 
+/**
+ * Write `text` over `file` atomically: a temp file in the SAME directory (so the rename cannot cross a volume),
+ * then a rename. Windows refuses a rename over a file another process holds for a moment (an editor, a virus scan,
+ * the lens-scan skill, a scan), so an EPERM/EACCES/EBUSY is retried briefly -- six tries, 20 ms longer each time --
+ * and any other error, or the last try, removes the temp file and throws. Every hand-edited file the server owns
+ * (the product registry, a product's map, a product's waves) is written through here, so none of them can be left
+ * half-written and all three get the same retry.
+ */
+export function writeAtomic(file: string, text: string): void {
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmp, text, 'utf8');
+  for (let i = 0; ; i++) {
+    try { fs.renameSync(tmp, file); return; } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (i >= 5 || (code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY')) { try { fs.unlinkSync(tmp); } catch { /* gone */ } throw e; }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20 * (i + 1)); // a short synchronous sleep
+    }
+  }
+}
+
 /** Read on every call (the file is tiny and edited by hand or by scripts/scan-demo.mjs while the server runs). */
 export function listProducts(): ProductEntry[] {
   let raw: unknown;
