@@ -73,7 +73,7 @@ export function View() {
               </Row>
             ))}
           </ul>
-          <p className="wb-tip"><kbd>J</kbd> <kbd>K</kbd> move between sections. <kbd>P</kbd> on the plan cycles whose desk.</p>
+          <p className="wb-tip"><kbd>J</kbd> <kbd>K</kbd> or <kbd>↑</kbd> <kbd>↓</kbd> move between sections, <kbd>Home</kbd> <kbd>End</kbd> jump. The same keys walk <b>Whose desk</b> once a reader there has focus. <kbd>P</kbd> on the plan cycles whose desk.</p>
         </div>
         <div className="wb-detail" ref={det} onScroll={onScroll} aria-label="View settings" role="region">
           <div className="wb-scroll">
