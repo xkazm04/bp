@@ -7,7 +7,7 @@ and brings its own icons, words and one accent for its marks and text only.
 in the top edge in tab order (the six built-ins: ticket, artboard, brackets, dial, padlock, checkbox; any
 other lens: its manifest glyph and rail, drawn by subtle's channel). Each is inked by that lens's
 health (ink, amber, red), so the row is the General reading; on small tiles the chips become health
-cells. On a lens switch the other five shrink and fade, the chosen chip slides to the head and
+cells. On a lens switch the others shrink and fade, the chosen chip slides to the head and
 widens into a tag with a small readout, and the outline morphs in by dominance. Lens to lens passes
 through the plain rectangle.
 

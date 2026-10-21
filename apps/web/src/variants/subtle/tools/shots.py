@@ -8,7 +8,7 @@ from shotkit import base, finish, floor_check
 OUT = 'docs/shots/subtle'
 BASE = base()
 QUICK = len(sys.argv) > 1 and sys.argv[1] == 'quick'
-LENS = ['business', 'design', 'development', 'operations', 'security', 'quality']
+KEYS = 8   # the keyboard reaches lenses 2..9; the ids themselves come from the engine (__bp.lensIds), so the map decides
 problems = []
 
 def watch(pg):
@@ -27,7 +27,7 @@ def run(b, theme, w, h, scale):
     pg = b.new_page(); logs = watch(pg)
     pg.set_viewport_size({'width': w, 'height': h})
     pg.goto(f'{BASE}/v/subtle?intro=0&theme={theme}&scale={scale}', wait_until='networkidle'); time.sleep(1.4)
-    shot(pg, tag + '-L0')
+    LENS = pg.evaluate('__bp.lensIds')[:KEYS]; shot(pg, tag + '-L0')
     pg.keyboard.press('6'); time.sleep(0.15); shot(pg, tag + '-L0-mid-security')
     time.sleep(1.0); shot(pg, tag + '-L0-security')
     if not QUICK:
@@ -66,6 +66,7 @@ with sync_playwright() as p:
         pg = b.new_page(viewport={'width': 390, 'height': 844}); logs = watch(pg)
         pg.goto(f'{BASE}/v/subtle?theme={theme}', wait_until='networkidle'); time.sleep(1.4)
         shot(pg, f'390x844-{theme}-phone')
+        pg.get_by_text(re.compile(r'^\s*plan\s*$', re.I)).first.click(); time.sleep(0.6); shot(pg, f'390x844-{theme}-phone-legend')
         floor_check(pg, f'390x844-{theme}-phone', logs, problems); pg.close()
     b.close()
 finish(problems)
