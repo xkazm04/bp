@@ -136,7 +136,7 @@ type Any = any;
 const imp = (f: string): Promise<Any> => import(pathToFileURL(path.join(SRC, CMP + f)).href);
 const { patchRows } = await imp('CommitDiff.tsx');
 const { blocksOf, inline } = await imp('ItemText.tsx');
-const { minText, pairKey, pairLabel, shownPairs } = await imp('Screens.tsx');
+const { minText, pairKey, pairLabel, pairReadings, shownPairs } = await imp('Screens.tsx');
 const { hasRuns, perfItem, perfReason, runsOf } = await imp('PerfTable.tsx');
 const { latestOf } = await imp('MetricStrip.tsx');
 const { packHeading, packOrder } = await imp('ComparePanel.tsx');
@@ -264,6 +264,22 @@ const { packHeading, packOrder } = await imp('ComparePanel.tsx');
 { // the empty Screens callout may say the shots are missing, never why: "cannot render" needs the scan's unscreenable: note
   const scr = stripComments(fs.readFileSync(path.join(SRC, CMP, 'Screens.tsx'), 'utf8'));
   ok(/No screens:/.test(scr) && !/cannot render|can't render|unscreenable/i.test(scr), 'no screens: the callout asserts no cause (TrainData carries no unscreenable: note)', /cannot render/i.exec(scr)?.[0]);
+}
+
+{ // the pixel line reads every shown pair on its own: one failed, still-computing or lone pair never speaks for the rest
+  const sh = (id: number): Any => ({ id, report: {} });
+  const prs = (theme: string, size?: string, lone = false): Any => ({ theme, size, before: sh(1), after: lone ? undefined : sh(2) });
+  const same: Any = { status: 'done', grid: { w: 64, h: 36, moved: 0, pct: 0, maxd: 0, bbox: null, cells: [] } };
+  const diff: Any = { status: 'done', grid: { w: 64, h: 36, moved: 40, pct: 5, maxd: 200, bbox: [1, 1, 3, 3], cells: [] } };
+  const A = pairReadings([prs('light'), prs('dark')], [same, { status: 'error', error: '404 on the dark shot' }]);
+  ok(A.map((r: Any) => r.state).join() === 'done,error' && A[0].same === true && A[1].text === '404 on the dark shot', 'pix line: one failed map of two leaves the other pair\'s verdict standing', A);
+  const B = pairReadings([prs('light'), prs('dark')], [diff, { status: 'computing' }]);
+  ok(B.map((r: Any) => r.state).join() === 'done,computing' && B[0].same === false, 'pix line: one pair still computing does not hold back the pair that is done', B);
+  const C = pairReadings([prs('light'), prs('dark', undefined, true)], [same, undefined]);
+  ok(C.map((r: Any) => r.state).join() === 'done,lone', 'pix line: one lone side does not suppress the complete pair\'s verdict', C);
+  const D = pairReadings([prs('light', '1280x800'), prs('light', '1920x1080')], [same, diff]);
+  ok(D.length === 2 && D[0].label !== D[1].label && D[0].same === true && D[1].same === false, 'pix line: two sizes of one theme are two readings, each with its own name and verdict', D);
+  ok(pairReadings([prs('light')], [undefined])[0].state === 'computing', 'pix line: no map state yet is computing, never a guess');
 }
 
 console.log(bad ? `check-train-compare: ${bad} of ${n} failed` : `check-train-compare: ${n} checks passed`);
