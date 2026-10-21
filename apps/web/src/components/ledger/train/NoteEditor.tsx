@@ -1,6 +1,6 @@
 'use client';
 // The note a decision asks for (contest A/1's `.note-ed`): rework (the note is the next attempt's brief), descope (why
-// it is dropped) and accepting a flagged item (why it ships anyway, src/lib/train/rules.ts). A text field with three
+// it is dropped) and accepting a flagged item (why it ships anyway, packages/core/src/train/rules.ts). A text field with three
 // quick notes per decision, Enter confirms, Esc cancels; an empty note is refused in place. It shows where it was asked:
 // in the decision bar, or in the compare footer (`compact`).
 import { useEffect, useRef, useState } from 'react';

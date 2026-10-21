@@ -1,6 +1,6 @@
 'use client';
 // The one decision control of the release train: Accept, Rework, Descope and Undo for a set of pack items, with the
-// note editor the rules ask for (src/lib/train/rules.ts noteRequired), the pending state per item until the store's
+// note editor the rules ask for (packages/core/src/train/rules.ts noteRequired), the pending state per item until the store's
 // change arrives, and a toast naming what was skipped and why. The decision bar and the compare panel's footer both
 // render this; nothing else decides.
 //
