@@ -23,7 +23,7 @@ import { register } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { readStripped, stripBlock } from './lib/source.ts';
+import { readBlanked, readStripped, stripBlock } from './lib/source.ts';
 import fs from 'node:fs';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
@@ -182,6 +182,15 @@ for (const f of ['components/Overlays.tsx', 'components/Dock.tsx']) {
   expect(seen > 0, `${f}: no button with the visible text "Esc" found - the label-in-name scan stopped matching`);
   expect(bad.length === 0, `${f}: ${bad.length} control(s) with the visible text "Esc" whose accessible name omits it (${bad.join('; ')}) - WCAG 2.5.3`);
 }
+
+// Flyout focus (WCAG 2.4.3): closing a panel hands focus back to its rail item, so opening one must hand it to the panel
+// body (.fb, tabIndex -1), or a keyboard reader Tabs past every remaining rail button to reach it. No DOM rig exists, so
+// Dock.tsx is read as source with comments blanked (a comment about the rule cannot stand in for it). The close path is
+// the guard that the matcher still bites: if it is not found, the pattern - not the Dock - is what broke.
+const dockSrc = readBlanked(path.join(SRC, 'components/Dock.tsx'));
+const focusCalls = (needle: string) => [...dockSrc.matchAll(/\.focus\(/g)].filter((m) => dockSrc.slice(Math.max(0, m.index - 220), m.index).includes(needle)).length;
+expect(focusCalls('[data-k=') > 0, 'Dock.tsx: the close-path focus call (rail item by data-k) was not found - the flyout focus scan stopped matching');
+expect(focusCalls("'.fb'") > 0, "Dock.tsx: opening a flyout never focuses its body (.fb) - focus stays on the rail and the panel is 7 Tab presses away");
 
 if (failures.length) { console.error(`check-overlays: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
 console.log(`check-overlays: ${held} expectations held`);
