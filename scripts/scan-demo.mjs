@@ -5,7 +5,7 @@
 //   node scripts/scan-demo.mjs [--dir .demo/kettle-live] [--reset] [--live]
 //
 // Writes, under <dir> (default .demo/kettle-live at the repo root, gitignored):
-//   .ai/lens-scan/app-structure.json   a copy of src/data/kettle.app-structure.json (as it is when run)
+//   .ai/lens-scan/app-structure.json   a copy of packages/core/data/kettle.app-structure.json (as it is when run)
 //   .ai/lens-scan/scan.db              created from docs/standard/lens-scan-store.sql and seeded with two
 //                                      finished runs a week apart (development/security/design metrics on
 //                                      20 features), 7 proposals (one baseline upgrade with 2 propagation

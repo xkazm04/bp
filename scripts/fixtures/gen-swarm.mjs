@@ -66,7 +66,7 @@ for (const s of squads) {
 // for BKG-08 "Front-desk check-in kiosk", D-09 typed STU for GRO-07 "Legacy landing page builder", D-20 typed
 // MEM for PAY-04 "Family plans"). The output was right only because this path overwrote the typed value; the
 // `later` path below trusted it, so the same mistake there would have shipped.
-// An option's optional third element is its effects (OptionEffect in src/lib/data/types.ts): only what the consequence
+// An option's optional third element is its effects (OptionEffect in packages/core/src/data/types.ts): only what the consequence
 // sentence states, on the decision's feature; every other option is narrative only. No rnd() here: effects are data.
 const decisionDefs = [
   ['PAY-09', 'business', 'mara', 'Raise dunning rollout from 25% to 100% before Payments GA?', [['Go to 100% now', 'Recovers about $3.1k MRR a month sooner; no human or security review yet.', [{ k: 'roll', pct: 100 }]], ['Hold at 25% until review', 'GA date holds only if the review lands this week.', [{ k: 'cap', max: 25 }]], ['Roll back to 0%', 'Stops the risk; failed payments go back to manual follow-up.', [{ k: 'roll', pct: 0 }]]], 1, 'high'],

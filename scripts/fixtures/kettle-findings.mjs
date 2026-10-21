@@ -1,9 +1,9 @@
 // Usage: node scripts/fixtures/kettle-findings.mjs [--check]
-//   writes src/data/kettle.findings.json: the Kettle sample's findings, store-shaped `Proposal` rows (src/lib/scan/types.ts)
+//   writes packages/core/data/kettle.findings.json: the Kettle sample's findings, store-shaped `Proposal` rows (packages/core/src/scan/types.ts)
 //   that a /lens-scan run over the sample map would have proposed. The app overlays them with the scan sim's states
-//   (src/lib/model/scan-sim.ts) and shows them in the findings ledger. --check regenerates in memory and diffs against
+//   (packages/core/src/model/scan-sim.ts) and shows them in the findings ledger. --check regenerates in memory and diffs against
 //   the committed file (npm run check:findings), writing nothing.
-// Read from the map, not from a list: every ENABLED lens of src/data/kettle.app-structure.json gets findings (a lens
+// Read from the map, not from a list: every ENABLED lens of packages/core/data/kettle.app-structure.json gets findings (a lens
 // with metric fields gets metric findings with a before value from the feature's facet and an expected delta in the
 // metric's `better` direction; any other lens gets findings with no metric). Features in trouble under a lens are
 // drawn first, so the ledger and the plan's flags tell one story. Seeded: the same map gives the same bytes.

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Draws Kettle's sample screenshots: public/sample-shots/<item>-<phase>-<theme>.svg, 1600x900, for every sample release
-// item that has a screen (src/lib/model/train-sim.ts SAMPLE_ITEMS). Each is a plain app screen of the Kettle feature (a
+// item that has a screen (packages/core/src/model/train-sim.ts SAMPLE_ITEMS). Each is a plain app screen of the Kettle feature (a
 // header, a nav, a few panels, text at 14-16 px) with a clear SAMPLE SCREEN stamp; an item's after differs from its
 // before only by the state the item designed (an error banner with its action, a disabled button with its reason), so
 // the compare panel's slider, blink and change map have a small, real, localised difference to show. An item whose change

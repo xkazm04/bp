@@ -1,4 +1,4 @@
-// The producer reference for the Kettle sample: how one sample lens object (src/data/kettle.json) becomes a
+// The producer reference for the Kettle sample: how one sample lens object (packages/core/data/kettle.json) becomes a
 // v3 facet. Shared by scripts/check-builtin-health.ts (rules vs the stored health) and
 // scripts/kettle-to-v3.ts (the converter), so the two can never flatten differently.
 //
