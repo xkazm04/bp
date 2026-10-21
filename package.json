@@ -75,7 +75,9 @@
     "check:chrome": "node scripts/check-chrome-sizes.mjs",
     "check:legacy": "node scripts/check-legacy-unmeasured.mjs",
     "check:art": "node scripts/check-art.mjs",
-    "check:findings": "node scripts/fixtures/kettle-findings.mjs --check"
+    "check:findings": "node scripts/fixtures/kettle-findings.mjs --check",
+    "check:kettle-data": "node scripts/fixtures/gen-kettle.mjs packages/core/data --check",
+    "check:swarm-data": "node scripts/fixtures/gen-swarm.mjs packages/core/data --check"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

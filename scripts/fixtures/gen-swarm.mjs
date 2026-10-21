@@ -1,11 +1,16 @@
-// Usage: node scripts/fixtures/gen-swarm.mjs <dir-with-kettle.json> [--js]  (src/data/swarm.json is this output)
+// Usage: node scripts/fixtures/gen-swarm.mjs <dir-with-kettle.json> [--js] [--check]
+//   (packages/core/data/swarm.json is this output)
 // Deterministic agent-swarm layer over kettle.json: who is working where right now, what waits on a human,
 // the standing orders humans gave, and one replayable hour of swarm events. Writes swarm.json + swarm.js.
+//   --check regenerates in memory and diffs against the committed swarm.json, writing nothing
+//   (npm run check:swarm-data): the gate that notices when the committed fixture stops being this file's output.
 import fs from 'node:fs';
 import path from 'node:path';
 import { mulberry32 } from '../lib/prng.ts';
+import { outDirFrom, writeOrCheck } from '../lib/fixture-bytes.mjs';
 
-const DIR = process.argv[2];
+const CHECK = process.argv.includes('--check');
+const DIR = outDirFrom(process.argv.slice(2));
 const K = JSON.parse(fs.readFileSync(path.join(DIR, 'kettle.json'), 'utf8'));
 const rnd = mulberry32(7310);
 const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
@@ -171,6 +176,8 @@ const swarm = {
   squads, agents, decisions, orders, replay,
   totals: { agents: agents.length, working: agents.filter((a) => a.status === 'working').length, waiting: agents.filter((a) => a.status === 'waiting').length, blocked: agents.filter((a) => a.status === 'blocked').length, idle: agents.filter((a) => a.status === 'idle').length, failed: agents.filter((a) => a.status === 'failed').length, openDecisions: decisions.filter((d) => !d.arrivesAt).length, spendUsdToday: +agents.reduce((s, a) => s + a.costUsdToday, 0).toFixed(0), replayEvents: replay.length },
 };
-fs.writeFileSync(path.join(DIR, 'swarm.json'), JSON.stringify(swarm, null, 1));
+// --check exits inside writeOrCheck: it diffs and writes nothing, so the --js file and the totals line below
+// are skipped with it.
+writeOrCheck([[path.join(DIR, 'swarm.json'), JSON.stringify(swarm, null, 1)]], CHECK, 'scripts/fixtures/gen-swarm.mjs');
 if (process.argv.includes('--js')) fs.writeFileSync(path.join(DIR, 'swarm.js'), '// Kettle agent swarm (simulated). Loads as a global: window.SWARM. Needs kettle.js for feature ids.\nwindow.SWARM = ' + JSON.stringify(swarm) + ';\n');
 console.log(swarm.totals);

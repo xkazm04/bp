@@ -1,13 +1,17 @@
 // Deterministic sample data: one fullstack product (Kettle), 132 features, seeded, no randomness across runs.
-// Usage: node scripts/fixtures/gen-kettle.mjs <out-dir> [--js]
-//   writes <out-dir>/kettle.json (src/data/kettle.json is this output); --js also writes kettle.js (window.KETTLE)
-//   for the static HTML prototypes. Schema: docs/fixtures/kettle-sample.md. The app reads the v3 map made
-//   from this file by scripts/kettle-to-v3.ts.
+// Usage: node scripts/fixtures/gen-kettle.mjs <out-dir> [--js] [--check]
+//   writes <out-dir>/kettle.json (packages/core/data/kettle.json is this output); --js also writes kettle.js
+//   (window.KETTLE) for the static HTML prototypes. Schema: docs/fixtures/kettle-sample.md. The app reads the
+//   v3 map made from this file by scripts/kettle-to-v3.ts.
+//   --check regenerates in memory and diffs against the committed kettle.json, writing nothing
+//   (npm run check:kettle-data): the gate that notices when the committed fixture stops being this file's output.
 import fs from 'node:fs';
 import path from 'node:path';
 import { mulberry32 } from '../lib/prng.ts';
+import { outDirFrom, writeOrCheck } from '../lib/fixture-bytes.mjs';
 
-const OUT = process.argv[2];
+const CHECK = process.argv.includes('--check');
+const OUT = outDirFrom(process.argv.slice(2));
 const TODAY = new Date('2026-10-08T09:00:00Z');
 const rnd = mulberry32(20261008);
 const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
@@ -702,8 +706,11 @@ const product = {
 };
 
 const data = { product, lenses: ['business', 'design', 'development', 'operations', 'security', 'quality'], stages: STAGES, people, milestones, domains, capabilities, features, activity, snapshots };
-fs.mkdirSync(OUT, { recursive: true });
-fs.writeFileSync(path.join(OUT, 'kettle.json'), JSON.stringify(data, null, 1));
+const JSON_OUT = path.join(OUT, 'kettle.json');
+if (!CHECK) fs.mkdirSync(OUT, { recursive: true });
+// --check exits inside writeOrCheck: it diffs and writes nothing, so the --js file and the summary below
+// (which stats the written file) are skipped with it.
+writeOrCheck([[JSON_OUT, JSON.stringify(data, null, 1)]], CHECK, 'scripts/fixtures/gen-kettle.mjs');
 if (process.argv.includes('--js')) fs.writeFileSync(path.join(OUT, 'kettle.js'), '// Kettle product blueprint data. Loads as a global: window.KETTLE\nwindow.KETTLE = ' + JSON.stringify(data) + ';\n');
 
 // summary
