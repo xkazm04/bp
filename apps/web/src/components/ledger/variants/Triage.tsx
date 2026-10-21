@@ -60,17 +60,17 @@ export function Triage({ L }: { L: Ledger }) {
       {proposedShown && !open && L.all.length ? <div className="lg-zero" role="status"><b>Inbox zero</b>Nothing proposed{narrowed ? ' under these filters' : ''}. New findings land here as scans propose them.</div> : null}
       {L.rows.length ? (
         <div role="table" className="lg-tbl" aria-label="Findings">
-          <div role="rowgroup" className="lg-th">
-            <div role="row" className="lg-tr hd">
-              <span role="columnheader" className="c-sel"><span className="vh">Selected</span></span>
-              <span role="columnheader" className="c-lens">Lens</span>
-              <span role="columnheader" className="c-feat">Feature</span>
-              <span role="columnheader" className="c-title">Finding</span>
-              <span role="columnheader" className="c-mv">Before → expected</span>
-              <span role="columnheader" className="c-risk">Risk</span>
-              <span role="columnheader" className="c-size">Size</span>
-              <span role="columnheader" className="c-st">Status</span>
-            </div>
+          {/* a direct child of the table, as train/PackTable.tsx's `.tr-thead` is: `.lg-tr.hd` is `position: sticky`,
+              and sticky is clamped to its CONTAINING BLOCK, so a rowgroup wrapper of its own height gave it no travel */}
+          <div role="row" className="lg-tr hd">
+            <span role="columnheader" className="c-sel"><span className="vh">Selected</span></span>
+            <span role="columnheader" className="c-lens">Lens</span>
+            <span role="columnheader" className="c-feat">Feature</span>
+            <span role="columnheader" className="c-title">Finding</span>
+            <span role="columnheader" className="c-mv">Before → expected</span>
+            <span role="columnheader" className="c-risk">Risk</span>
+            <span role="columnheader" className="c-size">Size</span>
+            <span role="columnheader" className="c-st">Status</span>
           </div>
           <div role="rowgroup">
             {L.rows.map((f) => {
