@@ -420,6 +420,19 @@ function bare(rel: string): string {
   for (const f of ['plan.ts', 'dynamic.ts']) expect(/chipsFit\(/.test(bare(R + f)), `render: ${f} asks glyphs.ts chipsFit rather than deciding for itself`);
 }
 
+// ---------------------------------------------------------------- source guard: the renderer's notes are cleared together
+// drawRoomLabels records two things for the layers that draw at the LIVE camera - labelBox (flags step aside
+// from it) and labelRight (the order badges dodge it). Both are read every frame and written once per raster,
+// so a room this raster draws no label for must clear BOTH, or the badges dodge the last raster's edge.
+{
+  const plan = bare(R + 'plan.ts');
+  const loops = [...plan.matchAll(/for \(const R of W\.rooms\)\s*(?:\{([^{}]*)\}|([^;{}]*;))/g)].map((m) => m[1] ?? m[2] ?? '').filter((b) => b.includes('labelBox'));
+  expect(loops.length === 1, `plan: drawRoomLabels has exactly one loop that resets its per-room notes before laying a wing out (got ${loops.length})`);
+  const body = loops[0] ?? '';
+  expect(/labelBox\s*=\s*null/.test(body) && /labelRight\s*=\s*undefined/.test(body),
+    `plan: that reset clears BOTH labelBox and labelRight (got "${body.trim()}")`);
+}
+
 // ---------------------------------------------------------------- report
 if (failures.length) {
   for (const f of failures) console.log('FAIL  ' + f);

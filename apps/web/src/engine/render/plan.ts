@@ -520,7 +520,10 @@ function drawRoomLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: Bl
   const k = v.k, u = E.U, th = E.th, tx = E.tx, hasSw = E.M.sim.has;
   for (const W of B.wings) {
     const a = clamp((W.w * k - 100 * u) / 8, 0, 1) * (E.M.P.scale > 1 ? smooth(E.KB1 * 0.62, E.KB1 * 0.8, k) : 1);
-    for (const R of W.rooms) R.labelBox = null;
+    // both of the renderer's notes to the live-camera layers are cleared together: a room whose label this
+    // raster does not draw (too narrow a wing, off view) must not leave the last raster's edge behind for
+    // the order badges to dodge (render/dynamic.ts drawOrderZones reads labelRight every frame)
+    for (const R of W.rooms) { R.labelBox = null; R.labelRight = undefined; }
     if (a <= 0) continue;
     for (const R of W.rooms) {
       const r = rs(v, R, scratch); if (!onView(v, r)) continue;
