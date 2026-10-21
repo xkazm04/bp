@@ -287,7 +287,7 @@ gated by `npm run check`. Wolf only draws, gestures, streams audio and calls rou
 
 **Lynx side (Node, before the matching Wolf step):**
 
-- [ ] **L5.1 Wire schema (review finding 3; 3 to 4 days).** Add a schema to `packages/schema/schema/` for the structure
+- [x] **L5.1 Wire schema (review finding 3; 3 to 4 days).** Add a schema to `packages/schema/schema/` for the structure
       envelope `{ structure, events, rev }`, the six SSE events (`snapshot | delta | map | ping | error | jobs`,
       `packages/core/src/scan/types.ts:299`), `ScanSnapshot`, `ScanDelta`, `ScanJob` (`scan/jobs.ts:25`), `Proposal`
       (`types.ts:70`) and `Wave` with its packages (`scan/waves.ts:22`). Extend `parity.mjs` to these core types
@@ -445,6 +445,7 @@ reading the source, most likely first. Each one is **[verify on Wolf]**.
 
 - [ ] **Finding 3, the wire schema** (blocks P5, not P3): L5.1, Lynx. Until it lands, W5.1 to W5.3 would need
       hand-written C++ structs, which the parity rule forbids. Do not start W5.1 before L5.1 is ticked.
+      L5.1 landed in `73d5dec`.
 - [ ] **Finding 5, the sim host** (blocks the P5 Kettle gate): decided 2026-10-21 (apps/server hosts SwarmSim and
       ScanSim in memory), not built. L5.2, Lynx. It changes the pinned 405 stream contract, so BpLink's fallback and
       `check-bplink` must change in the same window.
