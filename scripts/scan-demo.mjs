@@ -14,7 +14,8 @@
 // and registers slug `kettle-live` in bp.products.local.json (create or merge; idempotent). An existing
 // store is kept (a running blueprint stream may hold it open); --reset recreates it.
 // --live then starts a running run and appends an activity row every 1.5 s, a measurement every 3 s and
-// a proposal every 20 s until Ctrl-C, when the run is marked done.
+// a proposal every 20 s until Ctrl-C, when the run is marked done. A write that fails (a busy store, most
+// often) marks the run `aborted` and exits 1: the run row never stays `running` after the process is gone.
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
@@ -207,13 +208,27 @@ function live() {
     console.log(`${t()} proposal ${pid}`);
   }, 20000);
   const tick4 = setInterval(touch, 10000);
-  const stop = () => {
-    for (const x of [tick1, tick2, tick3, tick4]) clearInterval(x);
-    db.prepare("UPDATE runs SET status = 'done', ended_at = ?, updated_at = ? WHERE id = ?").run(t(), t(), id);
-    db.close();
-    console.log(`${t()} run ${id} marked done`);
-    process.exit(0);
+  const ticks = [tick1, tick2, tick3, tick4];
+  /**
+   * Stop ticking and mark the run `status`. A run row left `running` is read by every reader of the store as a scan
+   * still measuring (packages/core/src/scan/swarm.ts treats `running` as live agents), so the terminal record is
+   * retried against a busy store and, when it still cannot be written, said out loud rather than left to be guessed.
+   */
+  const close = (status, code) => {
+    for (const x of ticks) clearInterval(x);
+    let ok = false;
+    for (let k = 1; k <= 5 && !ok; k++) {
+      try { db.prepare('UPDATE runs SET status = ?, ended_at = ?, updated_at = ? WHERE id = ?').run(status, t(), t(), id); ok = true; }
+      catch (e) { console.error(`${t()} could not mark run ${id} ${status} (attempt ${k}/5): ${e.message}`); }
+    }
+    if (ok) console.log(`${t()} run ${id} marked ${status}`);
+    else console.error(`${t()} run ${id} is STILL marked running in ${DB}; close it by hand:\n  UPDATE runs SET status = 'aborted', ended_at = '${t()}', updated_at = '${t()}' WHERE id = '${id}';`);
+    try { db.close(); } catch { /* the handle may already be gone */ }
+    process.exit(ok ? code : 1);
   };
+  const stop = () => close('done', 0);
+  // A throw inside a tick (a busy store, most often) used to kill the process outright with the run still `running`.
+  process.on('uncaughtException', (e) => { console.error(`${t()} run ${id} hit ${e?.code ?? 'an error'}: ${e?.message ?? e}`); close('aborted', 1); });
   process.on('SIGINT', stop); process.on('SIGTERM', stop);
   console.log(`live run ${id}: Ctrl-C to stop`);
 }
