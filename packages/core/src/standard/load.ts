@@ -7,8 +7,8 @@
 // from the events log. Pure and dependency-free (types, the bound-field list and the evaluator only),
 // so Node's type stripping can run it: `node -e "import('./src/lib/standard/load.ts')"`.
 import type {
-  AppStructure, Density, Facet, FacetOverride, FacetValues, Feature as V3Feature, GlyphName, Health, Kpi, LensEntry, LensField,
-  LensManifest, LineName, Rollup, Scalar, Stage, StructureEvent, Variation,
+  AppStructure, ComputedHealth, Density, Facet, FacetOverride, FacetValues, Feature as V3Feature, GlyphName, Health, Kpi, LensEntry, LensField,
+  LensManifest, LineName, Milestone as V3Milestone, Rollup, Scalar, Stage, StructureEvent, Variation,
 } from './types.ts';
 import { FEATURE_BOUND_FIELDS } from './types.ts';
 import { conditionFields, evaluateLens, fillReason, type EvalContext } from './health.ts';
@@ -16,7 +16,18 @@ import { generalHealth, reasonOf, stageOn } from './present.ts';
 
 // ------------------------------------------------------------------------------------ the model
 export type { Stage, Health, Density, Scalar, LensField, LensManifest, FacetValues, FacetOverride, Kpi, StructureEvent, Variation };
-export const STAGES: readonly Stage[] = ['idea', 'specified', 'in-dev', 'in-review', 'flagged', 'live', 'deprecated'];
+/**
+ * Every member of a string union as a list, in the order written. The parameter type is what makes this
+ * worth the indirection: the type checker refuses a list that is missing a member of the union AND one that
+ * names something the union does not have, so none of the vocabularies below can fall behind ./types.ts.
+ * The same idiom as `Members<T>` in ../train/wire.ts. Insertion order is the list's order (the keys are not
+ * integer-like), which `STAGES` and `LINES` both depend on.
+ */
+const allOf = <T extends string>(set: Record<T, true>): readonly T[] => Object.keys(set) as T[];
+
+export const STAGES: readonly Stage[] = allOf<Stage>({
+  idea: true, specified: true, 'in-dev': true, 'in-review': true, flagged: true, live: true, deprecated: true,
+});
 export type Priority = 'P0' | 'P1' | 'P2' | 'P3';
 
 /** One enabled (or known) lens: its manifest plus what readers keep asking of it, resolved once. */
@@ -184,13 +195,17 @@ export interface LoadOptions {
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const str = (v: unknown, d = ''): string => (typeof v === 'string' ? v : d);
 const strs = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
-const PRIORITIES: readonly Priority[] = ['P0', 'P1', 'P2', 'P3'];
-const MILESTONE_STATUS = ['planned', 'active', 'shipped'] as const;
-const DENSITIES: readonly Density[] = ['simple', 'standard', 'dense'];
-const COMPUTED = ['good', 'watch', 'bad'];
+const PRIORITIES: readonly Priority[] = allOf<Priority>({ P0: true, P1: true, P2: true, P3: true });
+const MILESTONE_STATUS: readonly string[] = allOf<V3Milestone['status']>({ planned: true, active: true, shipped: true });
+const DENSITIES: readonly Density[] = allOf<Density>({ simple: true, standard: true, dense: true });
+const COMPUTED: readonly string[] = allOf<ComputedHealth>({ good: true, watch: true, bad: true });
 const isStage = (v: unknown): v is Stage => typeof v === 'string' && (STAGES as readonly string[]).includes(v);
-const GLYPHS: readonly GlyphName[] = ['bars', 'set-square', 'brackets', 'pulse', 'padlock', 'check', 'stopwatch'];
-const LINES: readonly LineName[] = ['solid', 'double', 'dotted', 'comb', 'chain', 'hatched', 'dimension', 'wave'];
+const GLYPHS: readonly GlyphName[] = allOf<GlyphName>({
+  bars: true, 'set-square': true, brackets: true, pulse: true, padlock: true, check: true, stopwatch: true,
+});
+const LINES: readonly LineName[] = allOf<LineName>({
+  solid: true, double: true, dotted: true, comb: true, chain: true, hatched: true, dimension: true, wave: true,
+});
 /**
  * A custom glyph is untrusted: path commands and numbers only, at most 2048 characters (spec 8.6).
  * The same rule as the schema's `presentation.glyph.path` (lens-manifest-1.schema.json): it opens with
@@ -561,8 +576,8 @@ function buildBase(raw: unknown, eventsText: string | null, opts: LoadOptions): 
 
   // milestones, people, activity
   const milestones: Milestone[] = (v3 ? records<AppStructure['milestones'] extends (infer M)[] | undefined ? M : never>('milestones') : []).map((m) => {
-    if (!(MILESTONE_STATUS as readonly string[]).includes(m.status)) warn(`milestone "${m.slug}": status ${JSON.stringify(m.status)} is not planned, active or shipped; read as planned`);
-    const st = (MILESTONE_STATUS as readonly string[]).includes(m.status) ? m.status : 'planned';
+    if (!MILESTONE_STATUS.includes(m.status)) warn(`milestone "${m.slug}": status ${JSON.stringify(m.status)} is not planned, active or shipped; read as planned`);
+    const st = MILESTONE_STATUS.includes(m.status) ? m.status : 'planned';
     return { id: m.slug, code: typeof m.id === 'string' && m.id.length <= 6 ? m.id : '', name: str(m.name, m.slug), date: str(m.target_date), state: st === 'shipped' ? 'done' as const : st as 'active' | 'planned', goal: str(m.goal) };
   });
   const people = ext.people.slice();
