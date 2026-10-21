@@ -230,6 +230,18 @@ function list(v: unknown, at: string, warn: Warn): string[] {
   return out;
 }
 
+/**
+ * A feature's links to other features, keeping only the slugs the map defines. A link to a feature that is not
+ * in the map is a dependency arrow the blueprint silently never draws, so the ones dropped are named.
+ */
+function links(v: unknown, at: string, key: string, slugs: ReadonlySet<string>, warn: Warn): string[] {
+  const all = list(v, `${at}: ${key}`, warn);
+  const kept = all.filter((s) => slugs.has(s));
+  const gone = all.filter((s) => !slugs.has(s));
+  if (gone.length) warn(`${at}: ${key} names unknown feature${gone.length > 1 ? 's' : ''} ${gone.map((s) => JSON.stringify(s)).join(', ')}; dropped`);
+  return kept;
+}
+
 /** The first problem that would crash a reader of this manifest, or null: the entry is dropped when there is one. */
 function manifestProblem(m: Record<string, unknown>): string | null {
   if (typeof m.name !== 'string') return 'name is not a string';
@@ -244,18 +256,26 @@ function manifestProblem(m: Record<string, unknown>): string | null {
   return null;
 }
 
-/** Parses an events log (JSON lines). Blank and malformed lines are skipped; so are lines without `at`/`type`. */
-export function parseEvents(text: string | null | undefined): StructureEvent[] {
+/**
+ * Parses an events log (JSON lines). Blank lines are skipped silently; a malformed line, and a line without
+ * `at`/`type`, is skipped with a count in `warn` — a dropped line is a hole in the replayed history, so the
+ * reader is told how many it did not get rather than being handed a shorter story.
+ */
+export function parseEvents(text: string | null | undefined, warn?: Warn): StructureEvent[] {
   const out: StructureEvent[] = [];
   if (!text) return out;
+  let notJson = 0, noKeys = 0;
   for (const line of text.split(/\r?\n/)) {
     const s = line.trim();
     if (!s) continue;
     try {
       const e = JSON.parse(s) as unknown;
       if (isObj(e) && typeof e.at === 'string' && typeof e.type === 'string') out.push(e as StructureEvent);
-    } catch { /* a malformed line is skipped, the log stays readable */ }
+      else noKeys++;
+    } catch { notJson++; /* a malformed line is skipped, the log stays readable */ }
   }
+  if (warn && notJson) warn(`events log: ${notJson} line${notJson > 1 ? 's are' : ' is'} not JSON; skipped`);
+  if (warn && noKeys) warn(`events log: ${noKeys} line${noKeys > 1 ? 's have' : ' has'} no at and type; skipped`);
   // the log SHOULD be in time order; a stable sort makes replay correct when it is not
   return out.map((e, i) => [e, i] as const).sort((a, b) => (a[0].at < b[0].at ? -1 : a[0].at > b[0].at ? 1 : a[1] - b[1])).map((x) => x[0]);
 }
@@ -273,14 +293,39 @@ export function parseLensToggle(raw: string | null | undefined): Map<string, boo
   return out;
 }
 
-function lensDef(e: LensEntry, i: number): LensDef {
+/**
+ * One lens entry resolved for the readers. Every fallback here warns: a manifest naming a field or a
+ * presentation name the standard does not have is the same defect the validator refuses outright
+ * (scripts/validate-structure.mjs presentation.evidence / presentation.measures), and a map carries its own
+ * copy of each manifest, which nothing re-validates at load — so this is the only place that can say so.
+ */
+function lensDef(e: LensEntry, i: number, warn: Warn): LensDef {
   const m = e.manifest;
+  const at = `lens "${e.id}"`;
   const F: Record<string, LensField> = {};
   for (const f of m.fields) F[f.key] = f;
-  const evidence = (Array.isArray(m.presentation.evidence) ? m.presentation.evidence : []).map((k) => F[k]).filter((f): f is LensField => !!f);
+  const keys = Array.isArray(m.presentation.evidence) ? m.presentation.evidence : [];
+  for (const k of keys) if (!F[k]) warn(`${at}: presentation.evidence names unknown field ${JSON.stringify(k)}; dropped`);
+  const evidence = keys.map((k) => F[k]).filter((f): f is LensField => !!f);
   const headline = m.fields.find((f) => f.headline) ?? evidence[0] ?? m.fields.find((f) => !f.source) ?? m.fields[0] ?? null;
   const g = m.presentation.glyph;
   const glyph = typeof g === 'string' ? (GLYPHS.includes(g) ? g : null) : isObj(g) && typeof g.path === 'string' && PATH_OK.test(g.path) ? { path: g.path } : null;
+  if (glyph === null && g !== undefined) {
+    warn(typeof g === 'string'
+      ? `${at}: presentation.glyph ${JSON.stringify(g)} is unknown; the lens draws without one`
+      : `${at}: presentation.glyph.path was rejected (path commands and numbers only, at most 2048 characters); the lens draws without one`);
+  }
+  if (!DENSITIES.includes(m.reader.density)) warn(`${at}: reader.density ${JSON.stringify(m.reader.density)} is unknown; read as standard`);
+  if (!LINES.includes(m.presentation.line)) warn(`${at}: presentation.line ${JSON.stringify(m.presentation.line)} is unknown; read as solid`);
+  if (m.presentation.measures && !F[m.presentation.measures]) warn(`${at}: presentation.measures names unknown field ${JSON.stringify(m.presentation.measures)}; the lens line is not measured`);
+  // health.ts compiles a rule naming an undeclared field out of the lens, so it can never match and the
+  // health silently falls back to the default: the same thing the validator warns about before it ships
+  m.health.rules.forEach((r, n) => {
+    for (const k of conditionFields(r.when)) if (!F[k]) warn(`${at}: rule ${n + 1} names unknown field ${JSON.stringify(k)}; it never matches`);
+  });
+  if (m.health.applies_when) {
+    for (const k of conditionFields(m.health.applies_when)) if (!F[k]) warn(`${at}: applies_when names unknown field ${JSON.stringify(k)}; it is ignored, so the lens always applies`);
+  }
   return {
     id: e.id, i, source: e.source, manifest: m, name: m.name, short: typeof m.short === 'string' ? m.short : m.name.replace(/[^A-Za-z0-9]/g, '').slice(0, 4).toUpperCase(),
     description: m.description ?? '', role: m.reader.role ?? '', density: DENSITIES.includes(m.reader.density) ? m.reader.density : 'standard', fields: m.fields, F, headline,
@@ -309,21 +354,23 @@ interface Base {
 const BASES = new WeakMap<object, { events: string | null; catalog: LoadOptions['catalog']; weeks: number | undefined; base: Base }[]>();
 
 /** Reads the map's extensions for sample sidecar data (people, activity, tagline) under any reverse-DNS key. */
-function fromExtensions(ext: unknown) {
+function fromExtensions(ext: unknown, warn: Warn) {
   const people: Person[] = [], activity: ActivityEvent[] = [];
-  let tagline = '';
+  let tagline = '', noId = 0, noAt = 0;
   if (isObj(ext)) for (const v of Object.values(ext)) {
     if (!isObj(v)) continue;
     if (!tagline && typeof v.tagline === 'string') tagline = v.tagline;
     if (Array.isArray(v.people)) for (const p of v.people) {
-      if (!isObj(p) || typeof p.id !== 'string') continue;
+      if (!isObj(p) || typeof p.id !== 'string') { noId++; continue; }
       people.push({ id: p.id, name: str(p.name, p.id), kind: p.kind === 'agent' ? 'agent' : 'human', field: str(p.field), title: str(p.title) });
     }
     if (Array.isArray(v.activity)) for (const a of v.activity) {
-      if (!isObj(a) || typeof a.at !== 'string') continue;
+      if (!isObj(a) || typeof a.at !== 'string') { noAt++; continue; }
       activity.push({ at: a.at, type: str(a.type), feature: str(a.feature), actor: str(a.actor), text: str(a.text), from: typeof a.from === 'string' ? a.from : undefined, to: typeof a.to === 'string' ? a.to : undefined, severity: typeof a.severity === 'string' ? a.severity : undefined });
     }
   }
+  if (noId) warn(`extensions: ${noId} person entr${noId > 1 ? 'ies have' : 'y has'} no id; dropped`);
+  if (noAt) warn(`extensions: ${noAt} activity entr${noAt > 1 ? 'ies have' : 'y has'} no at; dropped`);
   return { people, activity, tagline };
 }
 
@@ -361,7 +408,7 @@ function buildBase(raw: unknown, eventsText: string | null, opts: LoadOptions): 
   const map = raw as AppStructure & { use_cases?: unknown[] };
   const warnings: string[] = [];
   const warn: Warn = (m) => { warnings.push(m); };
-  const events = parseEvents(eventsText);
+  const events = parseEvents(eventsText, warn);
   // the as-of date drives addDays and the week replay, so a stamp that is not a date is repaired here rather
   // than left to throw RangeError out of the loader (spec: malformed parts degrade with a warning)
   const stamp = str(map.generated_at), logEnd = events.length ? events[events.length - 1].at : '';
@@ -371,7 +418,7 @@ function buildBase(raw: unknown, eventsText: string | null, opts: LoadOptions): 
     asOfTime = isDateStamp(logEnd) ? logEnd : new Date().toISOString();
   }
   const asOf = asOfTime.slice(0, 10);
-  const ext = fromExtensions(map.extensions);
+  const ext = fromExtensions(map.extensions, warn);
 
   // lenses: the map's entries (v3), or the catalog as available-but-unmeasured (v2)
   const entries: LensEntry[] = [];
@@ -386,7 +433,7 @@ function buildBase(raw: unknown, eventsText: string | null, opts: LoadOptions): 
     const en = e as unknown as LensEntry;
     entries.push(en.source === 'builtin' || en.source === 'project' ? en : { ...en, source: en.id.includes('.') ? 'project' : 'builtin' });
   });
-  const defs = entries.map((e) => lensDef(e, -1));
+  const defs = entries.map((e) => lensDef(e, -1, warn));
 
   // features (v3), or the v2 stand-in
   // a v3 table that is not the right shape reads as empty, with a warning
@@ -412,7 +459,12 @@ function buildBase(raw: unknown, eventsText: string | null, opts: LoadOptions): 
   const caps = v3 ? records<AppStructure['capabilities'] extends (infer C)[] | undefined ? C : never>('capabilities') : [];
   const doms = v3 ? records<AppStructure['domains'] extends (infer D)[] | undefined ? D : never>('domains') : [];
   const facets = (v3 && isObj(map.facets) ? map.facets : {}) as Record<string, Record<string, Facet> | undefined>;
-  const kpis = (v3 ? table('kpis').filter((k): k is Kpi => isObj(k) && typeof k.slug === 'string') : []) as Kpi[];
+  const kpis = (v3 ? table('kpis').filter((k, i): k is Kpi => {
+    if (isObj(k) && typeof k.slug === 'string') return true;
+    // a KPI the loader drops is a lens field with a `source: { kpi }` that silently reads as absent
+    warn(`kpis[${i}] has no slug; dropped`);
+    return false;
+  }) : []) as Kpi[];
 
   // product tree, in declared order; features without a known capability go to an "Unplaced" room
   const byOrder = <T extends { order?: number }>(xs: T[]) => xs.map((x, i) => [x, i] as const).sort((a, b) => (a[0].order ?? 1e9) - (b[0].order ?? 1e9) || a[1] - b[1]).map((x) => x[0]);
@@ -452,10 +504,18 @@ function buildBase(raw: unknown, eventsText: string | null, opts: LoadOptions): 
     if (f.priority !== undefined && !PRIORITIES.includes(f.priority)) warn(`${at}: priority ${JSON.stringify(f.priority)} is not P0..P3; ignored`);
     if (f.status !== undefined && f.status !== 'active' && f.status !== 'archived') warn(`${at}: status ${JSON.stringify(f.status)} is not active or archived; read as active`);
     if (f.milestone !== undefined && typeof f.milestone !== 'string') warn(`${at}: milestone is not a string; ignored`);
-    const parts = Array.isArray(f.parts) ? f.parts.filter((p) => isObj(p) && typeof p.name === 'string').map((p) => ({ name: p.name, done: p.done === true })) : null;
+    const parts = Array.isArray(f.parts) ? f.parts.filter((p, i) => {
+      if (isObj(p) && typeof p.name === 'string') return true;
+      warn(`${at}: parts[${i}] has no name; dropped`);
+      return false;
+    }).map((p) => ({ name: (p as { name: string }).name, done: (p as { done?: unknown }).done === true })) : null;
     if (f.parts !== undefined && !Array.isArray(f.parts)) warn(`${at}: parts is not an array; ignored`);
     if (f.notes !== undefined && !Array.isArray(f.notes)) warn(`${at}: notes is not an array; ignored`);
-    const notes = Array.isArray(f.notes) ? f.notes.filter(isObj).map((n) => ({ by: str(n.by), date: str(n.date), text: str(n.text) })) : [];
+    const notes = Array.isArray(f.notes) ? (f.notes as unknown[]).filter((n, i) => {
+      if (isObj(n)) return true;
+      warn(`${at}: notes[${i}] is not an object; dropped`);
+      return false;
+    }).map((n) => { const o = n as Record<string, unknown>; return { by: str(o.by), date: str(o.date), text: str(o.text) }; }) : [];
     const rv = revs.get(f.slug) ?? [];
     const code = typeof f.id === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,11}$/.test(f.id) ? f.id : '';
     const g: Feature = {
@@ -463,8 +523,8 @@ function buildBase(raw: unknown, eventsText: string | null, opts: LoadOptions): 
       stage: isStage(f.stage) ? f.stage : null, priority: PRIORITIES.includes(f.priority as Priority) ? f.priority as Priority : null, kind: str(f.kind), tier: str(f.tier),
       status: f.status === 'archived' ? 'archived' : 'active', milestone: typeof f.milestone === 'string' ? f.milestone : null,
       surfaces: list(f.surfaces, at + ': surfaces', warn), contexts: list(f.contexts, at + ': contexts', warn),
-      dependsOn: list(f.depends_on, at + ': depends_on', warn).filter((s) => slugs.has(s)), usedBy: [],
-      blockedBy: list(f.blocked_by, at + ': blocked_by', warn).filter((s) => slugs.has(s)),
+      dependsOn: links(f.depends_on, at, 'depends_on', slugs, warn), usedBy: [],
+      blockedBy: links(f.blocked_by, at, 'blocked_by', slugs, warn),
       revs: rv, stageSince: str(f.stage_since, rv.length ? rv[rv.length - 1].date : ''), created: str(f.created, rv.length ? rv[0].date : asOf),
       owner: str(f.owner), builtBy: list(f.built_by, at + ': built_by', warn), parts, notes,
       tags: strs(f.tags), experience: str(f.experience), core: isObj(f.core) ? { tech: strs(f.core.tech), schema: strs(f.core.schema) } : null,

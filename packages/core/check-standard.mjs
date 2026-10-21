@@ -47,6 +47,83 @@ const expect = (ok, what) => { if (ok) held++; else failures.push(what); };
   }
 }
 
+// ------------------------------------------------------------------ warnings: every repair or drop leaves one
+// The loader reports what it repaired or dropped in `warnings`. One map here walks every repair-or-drop path it
+// used to take in silence: a swallowed drop in a LOADER is how a product silently becomes wrong instead of
+// failing, so each one has to name itself. The control below is the Kettle map, which must warn 0 times — a rule
+// that fires on valid input is as wrong as one that never fires.
+{
+  const probeLens = {
+    id: 'com.probe.lens', version: '0.1.0', source: 'project', enabled: true,
+    manifest: {
+      $schema: 'lens-manifest/1', id: 'com.probe.lens', version: '0.1.0', name: 'Probe',
+      reader: { role: 'a probe', density: 'cosy' },
+      fields: [{ key: 'n', type: 'integer', label: 'N' }],
+      presentation: { evidence: ['n', 'nope'], measures: 'gone', glyph: 'not-a-glyph', line: 'squiggle' },
+      health: {
+        default: 'good', rollup: { method: 'worst-of' }, applies_when: { field: 'absent', present: true },
+        rules: [{ when: { field: 'ghost', gt: 1 }, health: 'bad', reason: 'r' }],
+      },
+    },
+  };
+  const probeMap = {
+    $schema: 'app-structure/3',
+    project: { slug: 'probe', name: 'Probe' },
+    generated_at: '2026-01-01T00:00:00Z',
+    lenses: [probeLens],
+    domains: [{ slug: 'd', name: 'D' }],
+    capabilities: [{ slug: 'c', domain: 'd', name: 'C' }],
+    features: [{
+      slug: 'f', name: 'F', capability: 'c',
+      depends_on: ['ghost-feature'], blocked_by: ['phantom-feature'],
+      parts: [{ done: true }], notes: ['a string, not a note'],
+    }],
+    kpis: [{ name: 'no slug' }, 'not an object'],
+    extensions: { 'com.probe': { people: [{ name: 'no id' }], activity: [{ type: 'commit' }] } },
+  };
+  const probeEvents = 'not json at all\n{"type":"stage","feature":"f","to":"live"}\n{"at":"2026-01-01T00:00:00Z","type":"stage","feature":"f","to":"live"}\n';
+  let st;
+  try { st = loadStructure(probeMap, probeEvents); } catch (e) {
+    failures.push(`warnings: the probe map threw instead of degrading: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  if (st) {
+    const has = (frag) => expect(st.warnings.some((w) => w.includes(frag)),
+      `warnings: none containing ${JSON.stringify(frag)}; got ${JSON.stringify(st.warnings)}`);
+    for (const frag of [
+      'events log: 1 line is not JSON',
+      'events log: 1 line has no at and type',
+      'feature "f": depends_on names unknown feature "ghost-feature"',
+      'feature "f": blocked_by names unknown feature "phantom-feature"',
+      'feature "f": parts[0] has no name',
+      'feature "f": notes[0] is not an object',
+      'kpis[0] has no slug',
+      'kpis[1] has no slug',
+      'extensions: 1 person entry has no id',
+      'extensions: 1 activity entry has no at',
+      'lens "com.probe.lens": reader.density "cosy" is unknown',
+      'lens "com.probe.lens": presentation.line "squiggle" is unknown',
+      'lens "com.probe.lens": presentation.glyph "not-a-glyph" is unknown',
+      'lens "com.probe.lens": presentation.evidence names unknown field "nope"',
+      'lens "com.probe.lens": presentation.measures names unknown field "gone"',
+      'lens "com.probe.lens": rule 1 names unknown field "ghost"',
+      'lens "com.probe.lens": applies_when names unknown field "absent"',
+    ]) has(frag);
+    // the degraded read still holds: the warning is added to the repair, never instead of it
+    expect(st.events.length === 1, `warnings: ${st.events.length} events parsed, expected 1 of 3 lines`);
+    expect(st.features[0].dependsOn.length === 0 && st.features[0].blockedBy.length === 0, 'warnings: unknown links are still dropped');
+    expect(st.features[0].parts.length === 0 && st.features[0].notes.length === 0, 'warnings: malformed parts and notes are still dropped');
+    expect(st.kpis.length === 0 && st.people.length === 0, 'warnings: KPIs without a slug and people without an id are still dropped');
+    const d = st.allLenses[0];
+    expect(st.allLenses.length === 1 && d.density === 'standard' && d.line === 'solid' && d.glyph === null && d.measures === null
+      && d.evidence.length === 1 && d.evidence[0].key === 'n', 'warnings: the lens still falls back to its defaults');
+    // a custom glyph path the validator would refuse is reported too, not only an unknown name
+    const bad = JSON.parse(JSON.stringify(probeLens));
+    bad.manifest.presentation.glyph = { path: 'drop table lenses' };
+    const st2 = loadStructure({ ...probeMap, lenses: [bad] }, null);
+    expect(st2.warnings.some((w) => w.includes('presentation.glyph.path was rejected')), `warnings: a rejected glyph path left ${JSON.stringify(st2.warnings)}`);
+  }
+}
+
 // ------------------------------------------------------------------ the as-of stamp: repaired, never thrown
 // The loader's contract (src/standard/load.ts loadStructure) is that only a map which is not an object or not
 // v2/v3 throws; everything else degrades with a warning. The as-of stamp feeds addDays and the week replay, so a
@@ -73,8 +150,17 @@ const expect = (ok, what) => { if (ok) held++; else failures.push(what); };
   expect(ok.asOf === '2026-01-01' && ok.asOfTime === '2026-01-01T09:30:00Z' && ok.warnings.length === 0, `as-of: a valid stamp read as ${ok.asOf} / ${JSON.stringify(ok.warnings)}`);
 }
 
+// ------------------------------------------------------------------ the control: valid input warns 0 times
+{
+  const map = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.app-structure.json'), 'utf8'));
+  const events = fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.events.jsonl'), 'utf8');
+  const st = loadStructure(map, events);
+  expect(st.warnings.length === 0, `control: the Kettle map warns ${st.warnings.length} times: ${JSON.stringify(st.warnings.slice(0, 6))}`);
+  expect(st.features.length > 100 && st.lenses.length > 1, 'control: the Kettle map did not load');
+}
+
 for (const f of failures) console.log('FAIL  ' + f);
 console.log(failures.length
   ? `check-standard: ${failures.length} failed, ${held} held`
-  : `check-standard: ${held} expectations held over ${BUILTIN_LENSES.length} built-in manifests`);
+  : `check-standard: ${held} expectations held (${BUILTIN_LENSES.length} built-in manifests; the loader names every repair it makes)`);
 process.exit(failures.length ? 1 : 0);
