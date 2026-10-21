@@ -36,6 +36,9 @@ def run(pg, name, url, w, h, steps):
             pg.keyboard.press(st[1]); time.sleep(st[3] if len(st) > 3 else 1.0)
         elif kind == 'js':
             pg.evaluate(st[1]); time.sleep(1.0)
+        elif kind == 'floor':
+            # the floor is a point-in-time DOM query and each lens's panel replaces the last: measure this one now (logs are reported once, at the end)
+            floor_check(pg, f'{name}-{st[1]}', [], problems)
         if len(st) > 2 and st[2]:
             pg.screenshot(path=f'{OUT}/{st[2]}.png')
     floor_check(pg, name, logs, problems)
@@ -64,8 +67,8 @@ with sync_playwright() as p:
         for theme in ('dark', 'light'):
             pg = b.new_page()
             SC = "document.querySelector('.ev6') && document.querySelector('.ev6').scrollIntoView({block: 'start'}); document.getElementById('dscroll').scrollBy(0, -90)"
-            st = [('js', SC, f'sheet-{theme}-general')]
-            for k, l in LENS.items(): st += [('key', k), ('js', SC, f'sheet-{theme}-{l}')]
+            st = [('js', SC, f'sheet-{theme}-general'), ('floor', 'general')]
+            for k, l in LENS.items(): st += [('key', k), ('js', SC, f'sheet-{theme}-{l}'), ('floor', l)]
             run(pg, f'sheet-{theme}', f'{BASE}/v/bold?intro=0&theme={theme}#open=failed-payment-dunning', 1920, 1080, st)
             pg.close()
             pg = b.new_page()

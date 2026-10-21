@@ -71,6 +71,8 @@ with sync_playwright() as p:
                     problems.append(f'shaped-1920x1080-{theme}-sheet-{l}: the feature sheet is not open (#open=failed-payment-dunning)')
                 time.sleep(0.5)
                 pg.screenshot(path=f'{OUT}/shaped-1920x1080-{theme}-sheet-{l}.png')
+                # each lens's panel replaces the last and the floor is a point-in-time DOM query: measure this panel now (logs are reported once, below)
+                floor_check(pg, f'shaped-1920x1080-{theme}-sheet-{l}', [], problems)
             floor_check(pg, f'shaped-1920x1080-{theme}-sheet', logs, problems); pg.close()
         pg = b.new_page(viewport={'width': 390, 'height': 844}); logs = watch(pg)
         pg.goto(f'{BASE}/v/shaped?theme={theme}', wait_until='networkidle'); time.sleep(1.5)
