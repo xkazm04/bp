@@ -1,0 +1,63 @@
+{
+  "id": "mat-blueprint-paper",
+  "class": "material",
+  "materials": [
+    "blueprint-paper: PBR set, textures/blueprint-paper_basecolor.png (sRGB), blueprint-paper_normal.png (OpenGL, +Y up, tangent space), blueprint-paper_orm.png (R occlusion, G roughness, B metal)"
+  ],
+  "look": "deep blue blueprint paper, base #0B2A6B to #123A8C (the style block ground), fibre and cloud variation, a faint cyan-white grid (16 cells per tile, every 4th line a little stronger, 10 to 20 percent line weight, blended 0.55 toward #BFE8FF). No wing outlines, compass rose, scale bar or text: those are drawn at runtime into a render target (art-breakdown.md element 2)",
+  "texture_size": 2048,
+  "tile_size_m": 0.5,
+  "tile_size_note": "one tile covers 0.5 m on a side at the intended scale; the repeat is the UE material's choice",
+  "generator": "procedural Blender",
+  "blender": "Blender 5.2.2 (CPU, Cycles for the evidence), scripts/art/materials/build_materials.bpy (bake and seam check), render_materials.bpy (evidence), write_manifests.mjs",
+  "licence": "own procedural work; no generated input, no Leonardo, ComfyUI or TRELLIS",
+  "lynx_commit": null,
+  "lynx_commit_note": "null until the merge sets it",
+  "regenerate": "blender -b -P scripts/art/materials/build_materials.bpy -- <repo-root> <work>; blender -b -P scripts/art/materials/render_materials.bpy -- <repo-root> <work>; node scripts/art/materials/write_manifests.mjs <work>",
+  "files": {
+    "evidence/swatch.jpg": "ce53e5b3ffa4a85d3e77153ff04c398ff69b5f3a2152bee3de372805e9217e23",
+    "evidence/tiled-2x2.jpg": "9935cd9786eacf230ca86a842895a8c81caccd49917b1b2d4419ce49ad5f6c89",
+    "textures/blueprint-paper_basecolor.png": "9b0bcc5903c968bb6b1d12019465ebdb751b4e98304aba6c35d2c6f37234f2e6",
+    "textures/blueprint-paper_normal.png": "cfccff4333b1d0c1dcf4d9633679ca20549a000a4335bbd89f5a3b6c90460d7b",
+    "textures/blueprint-paper_orm.png": "7efef863c32c7b771ac3ede96f188eac6f3078dbfa953f25b5cd00f3be4b69b3"
+  },
+  "sha256": {
+    "evidence/swatch.jpg": "ce53e5b3ffa4a85d3e77153ff04c398ff69b5f3a2152bee3de372805e9217e23",
+    "evidence/tiled-2x2.jpg": "9935cd9786eacf230ca86a842895a8c81caccd49917b1b2d4419ce49ad5f6c89",
+    "textures/blueprint-paper_basecolor.png": "9b0bcc5903c968bb6b1d12019465ebdb751b4e98304aba6c35d2c6f37234f2e6",
+    "textures/blueprint-paper_normal.png": "cfccff4333b1d0c1dcf4d9633679ca20549a000a4335bbd89f5a3b6c90460d7b",
+    "textures/blueprint-paper_orm.png": "7efef863c32c7b771ac3ede96f188eac6f3078dbfa953f25b5cd00f3be4b69b3"
+  },
+  "gates": {
+    "input": {
+      "pass": true,
+      "note": "procedural, no generated input. Reference: art-breakdown.md element 2 (deep blue blueprint paper with a faint grid) and lookdev/style-block.json palette ground.",
+      "date": "2026-10-21"
+    },
+    "tiling": {
+      "pass": true,
+      "note": "seam check on the stored PNGs, per file and per axis: wrap = mean abs difference between the first and last pixel row/column (the pair that touches when the tile repeats), inner = mean abs difference between neighbouring pixels over the tile; pass when wrap / inner <= 1.25. Worst ratio over 3 files and 2 axes: 1.0427. Per-file values: {\"blueprint-paper_basecolor.png\":{\"seam\":{\"horizontal\":{\"wrap_step\":0.1517,\"inner_step\":0.2847,\"ratio\":0.5328},\"vertical\":{\"wrap_step\":0.1628,\"inner_step\":0.2849,\"ratio\":0.5713}},\"pass\":true,\"bytes\":2368758},\"blueprint-paper_normal.png\":{\"seam\":{\"horizontal\":{\"wrap_step\":0.8472,\"inner_step\":0.8125,\"ratio\":1.0427},\"vertical\":{\"wrap_step\":0.8117,\"inner_step\":0.8122,\"ratio\":0.9994}},\"pass\":true,\"bytes\":3844322},\"blueprint-paper_orm.png\":{\"seam\":{\"horizontal\":{\"wrap_step\":0.1737,\"inner_step\":0.1702,\"ratio\":1.0205},\"vertical\":{\"wrap_step\":0.1654,\"inner_step\":0.1706,\"ratio\":0.969}},\"pass\":true,\"bytes\":2023357}}. Also evidence/tiled-2x2.jpg, a 2 x 2 repeat with the wrap seams through the middle of the image. Method: fields are periodic by construction (FFT-filtered noise, integer stripe counts, wrapped finite differences for the normal map).",
+      "date": "2026-10-21"
+    },
+    "mesh_acceptance": {
+      "pass": true,
+      "note": "n/a for a material",
+      "date": "2026-10-21"
+    },
+    "scale": {
+      "pass": true,
+      "note": "n/a for a material",
+      "date": "2026-10-21"
+    },
+    "finishing": {
+      "pass": true,
+      "note": "3 PNGs at 2048 x 2048 (base colour, normal, ORM), largest 3844322 bytes, every file under 10 MB (limit 10485760); evidence: evidence/swatch.jpg, evidence/tiled-2x2.jpg, rendered with Cycles on the CPU (no GPU, no EEVEE); the evidence folder has the 2 x 2 tiled render and the lit swatch on a plane. Not claimed: any UE import.",
+      "date": "2026-10-21"
+    },
+    "poly_budget": {
+      "pass": true,
+      "note": "n/a for a material",
+      "date": "2026-10-21"
+    }
+  }
+}

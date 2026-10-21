@@ -1,0 +1,63 @@
+{
+  "id": "mat-warm-wood",
+  "class": "material",
+  "materials": [
+    "warm-wood: PBR set, textures/warm-wood_basecolor.png (sRGB), warm-wood_normal.png (OpenGL, +Y up, tangent space), warm-wood_orm.png (R occlusion, G roughness, B metal)"
+  ],
+  "look": "warm wood, flat-sawn grain running along x, tones #C48B54 to #8A5A2B, 9 growth rings per tile, pores and fine streaks, roughness 0.55 to 0.72, no metal",
+  "texture_size": 2048,
+  "tile_size_m": 0.5,
+  "tile_size_note": "one tile covers 0.5 m on a side at the intended scale; the repeat is the UE material's choice",
+  "generator": "procedural Blender",
+  "blender": "Blender 5.2.2 (CPU, Cycles for the evidence), scripts/art/materials/build_materials.bpy (bake and seam check), render_materials.bpy (evidence), write_manifests.mjs",
+  "licence": "own procedural work; no generated input, no Leonardo, ComfyUI or TRELLIS",
+  "lynx_commit": null,
+  "lynx_commit_note": "null until the merge sets it",
+  "regenerate": "blender -b -P scripts/art/materials/build_materials.bpy -- <repo-root> <work>; blender -b -P scripts/art/materials/render_materials.bpy -- <repo-root> <work>; node scripts/art/materials/write_manifests.mjs <work>",
+  "files": {
+    "evidence/swatch.jpg": "29120d17ec0744eea6dfb79ec94f9eefbb5842531c6a9bc9a9d06274ae116176",
+    "evidence/tiled-2x2.jpg": "3f9648ac3a93528482f722e6b05dea0ed8556ce94c10c5e6638288413df142d8",
+    "textures/warm-wood_basecolor.png": "f4768536f80d780cfcf780a10635a5ad18ebdb52d5c18571aaadd5ecf07cb580",
+    "textures/warm-wood_normal.png": "96cd19d38c5192e72f4f9e668fd6f920b447d8be06d57fe3daf97a14603a6daf",
+    "textures/warm-wood_orm.png": "3aa66a1dc61aa52b3cb8c1991c4d018d20cc009891999606b2cd10b1dffe0e14"
+  },
+  "sha256": {
+    "evidence/swatch.jpg": "29120d17ec0744eea6dfb79ec94f9eefbb5842531c6a9bc9a9d06274ae116176",
+    "evidence/tiled-2x2.jpg": "3f9648ac3a93528482f722e6b05dea0ed8556ce94c10c5e6638288413df142d8",
+    "textures/warm-wood_basecolor.png": "f4768536f80d780cfcf780a10635a5ad18ebdb52d5c18571aaadd5ecf07cb580",
+    "textures/warm-wood_normal.png": "96cd19d38c5192e72f4f9e668fd6f920b447d8be06d57fe3daf97a14603a6daf",
+    "textures/warm-wood_orm.png": "3aa66a1dc61aa52b3cb8c1991c4d018d20cc009891999606b2cd10b1dffe0e14"
+  },
+  "gates": {
+    "input": {
+      "pass": true,
+      "note": "procedural, no generated input. Reference: plan.md P4 materials row (warm wood) and the earlier frame_wood #B07A45 of light-table-frame.",
+      "date": "2026-10-21"
+    },
+    "tiling": {
+      "pass": true,
+      "note": "seam check on the stored PNGs, per file and per axis: wrap = mean abs difference between the first and last pixel row/column (the pair that touches when the tile repeats), inner = mean abs difference between neighbouring pixels over the tile; pass when wrap / inner <= 1.25. Worst ratio over 3 files and 2 axes: 1.0076. Per-file values: {\"warm-wood_basecolor.png\":{\"seam\":{\"horizontal\":{\"wrap_step\":1.3501,\"inner_step\":1.3399,\"ratio\":1.0076},\"vertical\":{\"wrap_step\":0.8156,\"inner_step\":0.8154,\"ratio\":1.0002}},\"pass\":true,\"bytes\":4365548},\"warm-wood_normal.png\":{\"seam\":{\"horizontal\":{\"wrap_step\":2.3447,\"inner_step\":2.6768,\"ratio\":0.8759},\"vertical\":{\"wrap_step\":1.541,\"inner_step\":1.5295,\"ratio\":1.0076}},\"pass\":true,\"bytes\":5128054},\"warm-wood_orm.png\":{\"seam\":{\"horizontal\":{\"wrap_step\":0.7104,\"inner_step\":0.709,\"ratio\":1.002},\"vertical\":{\"wrap_step\":0.4749,\"inner_step\":0.4813,\"ratio\":0.9867}},\"pass\":true,\"bytes\":3591119}}. Also evidence/tiled-2x2.jpg, a 2 x 2 repeat with the wrap seams through the middle of the image. Method: fields are periodic by construction (FFT-filtered noise, integer stripe counts, wrapped finite differences for the normal map).",
+      "date": "2026-10-21"
+    },
+    "mesh_acceptance": {
+      "pass": true,
+      "note": "n/a for a material",
+      "date": "2026-10-21"
+    },
+    "scale": {
+      "pass": true,
+      "note": "n/a for a material",
+      "date": "2026-10-21"
+    },
+    "finishing": {
+      "pass": true,
+      "note": "3 PNGs at 2048 x 2048 (base colour, normal, ORM), largest 5128054 bytes, every file under 10 MB (limit 10485760); evidence: evidence/swatch.jpg, evidence/tiled-2x2.jpg, rendered with Cycles on the CPU (no GPU, no EEVEE); the evidence folder has the 2 x 2 tiled render and the lit swatch on a plane. Not claimed: any UE import.",
+      "date": "2026-10-21"
+    },
+    "poly_budget": {
+      "pass": true,
+      "note": "n/a for a material",
+      "date": "2026-10-21"
+    }
+  }
+}
