@@ -12,6 +12,7 @@ import { LiveSteerButtons } from '../../LiveSteer';
 import { ScanGlyph } from '../../ScanMenu';
 import { Mark, agentMark } from '../../Symbols';
 import { shallowEqual, useBp, useEngine, useLive, useScanCtx } from '../../hooks';
+import { httpUrl } from '../../Queue';
 import { PreviewBox, mmss, useScanJobs } from '../panels';
 import { Fig, Group, Row, Sec, Workbench, useListRef, useWalk } from './shell';
 
@@ -131,6 +132,8 @@ function JobDetail({ j, scan, total, now, live }: { j: ScanJob; scan: ScanSnapsh
   const d = j.lens ? M.P.LENS[j.lens] : undefined, x = jobFacts(j, scan, total, now);
   const cancel = () => { setBusy(true); cancelJob(ctx, j.id).catch((e) => E.toast('Not cancelled', refusalText(e))).finally(() => setBusy(false)); };
   const pct = x.m ? Math.round((100 * x.n) / x.m) : 0;
+  // the release's pull request, only when the store's URL is safe to hand to an href (Queue.tsx httpUrl)
+  const pr = httpUrl(x.rel?.pr_url);
   return (
     <>
       <div className="wb-kick"><span className={'st ' + j.status}>{j.status}</span><span>{x.measure ? 'Measure' : j.kind === 'release' ? 'Release' : 'Execute'}</span><span>{j.id}</span></div>
@@ -159,7 +162,7 @@ function JobDetail({ j, scan, total, now, live }: { j: ScanJob; scan: ScanSnapsh
       <div className="wb-inline">
         {x.open && <button type="button" className="bt" disabled={busy} onClick={cancel} aria-label={'Cancel ' + (d?.name ?? (x.release ? 'release' : 'execute')) + ' job ' + j.id}>Cancel job</button>}
         <span className="wb-meta">queued {j.queued_at.slice(11, 19)}{j.started_at ? ' · started ' + j.started_at.slice(11, 19) : ''}{j.ended_at ? ' · ended ' + j.ended_at.slice(11, 19) : ''}{j.run_id ? ' · run ' + j.run_id : ''}{j.release ? ' · ' + j.release : ''}</span>
-        {x.rel?.pr_url && <a className="wb-meta" href={x.rel.pr_url} target="_blank" rel="noreferrer">pull request</a>}
+        {pr && <a className="wb-meta" href={pr} target="_blank" rel="noopener noreferrer">pull request</a>}
       </div>
       {j.error && <div className="wb-err">{j.error}</div>}
       <Sec head="Log" aside={live ? 'last lines' : 'simulated'}>

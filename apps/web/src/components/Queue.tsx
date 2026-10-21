@@ -60,6 +60,13 @@ export function TierChip({ p }: { p: Proposal }) {
   const title = 'Tier ' + p.tier + ': ' + TIER_SAYS[p.tier] + (p.risk_class ? ' · ' + RISK_WORD[p.risk_class] : '') + (p.ranked_by ? ' · ranked by ' + p.ranked_by : '');
   return <span className={'tierchip t-' + p.tier} title={title}>T{p.tier}{p.risk_class && <small>{RISK_WORD[p.risk_class]}</small>}</span>;
 }
+/**
+ * A store-supplied URL, only when it is safe to hand to an href: http(s) only, else null. Every link in the app
+ * whose target comes from a product's scan store (an imported work item, a release's pull request) goes through
+ * this - those rows are written by a Claude Code run in the product repo, so a `javascript:` target is reachable
+ * text, not a hypothetical.
+ */
+export const httpUrl = (u: string | undefined): string | null => (u && /^https?:\/\//i.test(u) ? u : null);
 /** The work item number of an imported item (`ado:1234` -> `1234`). */
 const extNo = (p: Proposal): string => (p.external_ref ?? '').replace(/^[a-z]+:/i, '');
 /**
@@ -69,7 +76,7 @@ const extNo = (p: Proposal): string => (p.external_ref ?? '').replace(/^[a-z]+:/
 export function OriginChip({ p, link = true, act = true }: { p: Proposal; link?: boolean; act?: boolean }) {
   if (p.origin !== 'ado') return null;
   const n = extNo(p), label = n ? 'ADO #' + n : 'ADO';
-  const url = p.external_url && /^https?:\/\//i.test(p.external_url) ? p.external_url : null;
+  const url = httpUrl(p.external_url);
   return link && url
     ? <a className="extchip" href={url} target="_blank" rel="noopener noreferrer" tabIndex={act ? 0 : -1} title={'Open work item ' + (n || '') + ' in Azure DevOps'} onClick={(e) => e.stopPropagation()}>{label}</a>
     : <span className="extchip" title="Imported from Azure DevOps">{label}</span>;

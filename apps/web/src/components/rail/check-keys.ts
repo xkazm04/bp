@@ -12,6 +12,11 @@
 //   4. Focus is never dropped: a panel that moves focus to a row also has a fallback for "no row to move it to",
 //      and the pane that fallback focuses is itself focusable (a .focus() on a div with no tabindex is a no-op,
 //      which is the silent half of this bug).
+//   5. Every href in the rail is either a literal or a store-supplied URL passed through Queue.tsx's httpUrl,
+//      and every target="_blank" carries rel="noopener noreferrer". The scan store's rows are written by a
+//      Claude Code run in the product repo, so an unchecked scheme there is reachable text.
+// The file guards the rail's flyouts generally, not only its keys; the name is kept because the package.json
+// script (check:rail-keys) and check-all read it.
 // Run: node src/components/rail/check-keys.ts  (Node's type stripping; no build step). Exit 1 on any failure.
 // Control: BP_RAIL_MUTATE='[["view.tsx","tabIndex={on ? 0 : -1}","tabIndex={0}"]]' rewrites the source text as
 // it is read ([file suffix, find, replace] literals), so each assertion can be seen red on a seeded defect.
@@ -95,6 +100,20 @@ for (const [f, src] of SRC) {
   expect(/\.current\?\.focus\(/.test(src), `${f}: hands focus to a successor row with no fallback - when no row can take over (the last item decided, or a refused write that reopens it) focus falls to <body>`);
 }
 expect(movers >= 1, `the focus-handoff scan found ${movers} panels that hand focus to a successor row, expected at least 1 (review.tsx's decide) - the matcher has stopped biting`);
+
+// ---------------------------------------------------------------- 5. no unchecked store URL in an href
+let hrefs = 0;
+for (const [f, src] of SRC) {
+  for (const m of src.matchAll(/href=\{([^}]*)\}/g)) {
+    hrefs++;
+    const v = m[1].trim(), tag = tagAt(src, m.index);
+    // a literal, httpUrl() inline, or a binding this file assigned from httpUrl()
+    const bound = /^[A-Za-z_$][\w$]*$/.test(v) && new RegExp(`const\\s+${v}\\s*=\\s*httpUrl\\(`).test(src);
+    expect(/^'|^"|^`|httpUrl/.test(v) || bound, `${f}: href={${v}} - a URL from the scan store must go through Queue.tsx's httpUrl (http(s) only), or a 'javascript:' row in a product's store becomes a link`);
+    if (/target="_blank"/.test(tag)) expect(/rel="noopener noreferrer"/.test(tag), `${f}: a target="_blank" link without rel="noopener noreferrer"`);
+  }
+}
+expect(hrefs > 0, `the href scan found ${hrefs} links in the rail, expected at least 1 (agents.tsx's pull request) - the matcher has stopped biting`);
 
 if (failures.length) { console.error(`check-rail-keys: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
 console.log(`check-rail-keys: ${held} expectations held (${options} role="option" sites, ${scrolls} scroll-behavior sites)`);
