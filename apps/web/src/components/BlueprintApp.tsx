@@ -103,6 +103,23 @@ class ChromeBoundary extends Component<{ children: ReactNode }, { err: Error | n
   }
 }
 
+/** How long the Kettle sample's chunk may take before the loading panel stops promising it is about to arrive. */
+const SAMPLE_SLOW_MS = 12000;
+
+/** The Kettle sample's loading panel. A chunk that never settles is not an error (loadSample rejects only on failure), so
+ *  after SAMPLE_SLOW_MS the panel adds what is being fetched and a Reload, and a hung load reads differently from a fresh one. */
+function SampleLoading() {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setSlow(true), SAMPLE_SLOW_MS); return () => clearTimeout(t); }, []);
+  return (
+    <div className="bp-empty" role="status" data-slow={slow ? '' : undefined}>
+      <b>Loading the Kettle sample…</b>
+      {slow && <span>Still waiting on the sample (about 770 KB). The connection may be slow or stalled.</span>}
+      {slow && <a href={typeof location !== 'undefined' ? location.pathname + location.search : '/'}>Reload</a>}
+    </div>
+  );
+}
+
 /** The standard empty state of a live product that cannot be drawn (unknown slug, no structure, an error), or that is still connecting. */
 function LiveEmpty({ slug, live }: { slug: string; live: LiveProduct }) {
   if (live.status === 'loading' || (live.status === 'offline' && !live.structure)) {
@@ -279,7 +296,7 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
       <div className="bp-frame" />
       {!engine && buildErr && <LiveEmpty slug={product || 'kettle'} live={{ ...live, status: 'error', error: buildErr }} />}
       {product && !engine && !buildErr && <LiveEmpty slug={product} live={live} />}
-      {product === null && !engine && !buildErr && <div className="bp-empty" role="status"><b>Loading the Kettle sample…</b></div>}
+      {product === null && !engine && !buildErr && <SampleLoading />}
       {product && !engine && <div className="bp-hdr-lite"><ProjectSwitcher current={product} /></div>}
       <div className="bp-ui" ref={ui}>
         {engine && (

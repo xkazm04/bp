@@ -183,5 +183,16 @@ for (const f of ['components/Overlays.tsx', 'components/Dock.tsx']) {
   expect(bad.length === 0, `${f}: ${bad.length} control(s) with the visible text "Esc" whose accessible name omits it (${bad.join('; ')}) - WCAG 2.5.3`);
 }
 
+// BlueprintApp's loading panel: a sample chunk that never settles must not read like a fresh load. BlueprintApp pulls the whole
+// chrome and cannot be server-rendered here, so the rule is held on its comment-stripped source: one SampleLoading component
+// owning a timer that adds a Reload once it fires, and no second inline copy of the loading panel.
+const appSrc = readStripped(path.join(SRC, 'components/BlueprintApp.tsx'));
+const fnOf = (name: string) => { const i = appSrc.indexOf('function ' + name + '('); if (i < 0) return ''; const j = appSrc.indexOf('\nfunction ', i + 1); return appSrc.slice(i, j < 0 ? undefined : j); };
+{
+  const fn = fnOf('SampleLoading');
+  expect(fn.includes('setTimeout(') && fn.includes('SAMPLE_SLOW_MS') && fn.includes('clearTimeout(') && fn.includes('>Reload<'), 'BlueprintApp SampleLoading no longer times out into a Reload');
+  expect(appSrc.includes('<SampleLoading />') && appSrc.split('Loading the Kettle sample').length === 2, 'BlueprintApp renders the sample loading state outside SampleLoading');
+}
+
 if (failures.length) { console.error(`check-overlays: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
 console.log(`check-overlays: ${held} expectations held`);
