@@ -100,19 +100,25 @@ void FBpLinkClient::FetchProduct(const FString& Slug, TFunction<void(bool, const
 		ReadEvents(EventsJsonl, Snapshot.Events);
 		Payload->TryGetStringField(TEXT("rev"), Snapshot.Rev);
 
-		// Kettle has no live stream: /stream answers 405 JSON, and the rev read above is the one read BpLink keeps.
+		// /stream has two answers BpLink lives with: 200 text/event-stream, which Kettle gives since wolf-plan L5.2
+		// (apps/server hosts its scan sim), and 405 for a product with no live stream. WP3.1 consumes neither: the rev
+		// read above is the one read BpLink keeps either way. Both are pinned by scripts/check-bplink.mjs.
 		TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Stream = MakeGet(Root + TEXT("/stream"), TEXT("text/event-stream"));
 		Stream->OnProcessRequestComplete().BindLambda([Root, Slug, OnDone, Snapshot](FHttpRequestPtr, FHttpResponsePtr StreamResponse, bool bStreamConnected) mutable
 		{
 			Snapshot.StreamStatus = (bStreamConnected && StreamResponse.IsValid()) ? StreamResponse->GetResponseCode() : 0;
-			if (Snapshot.StreamStatus == 405)
+			if (Snapshot.StreamStatus == 200)
+			{
+				UE_LOG(LogBpLink, Log, TEXT("BpLink: %s streams (200); WP3.1 does not consume SSE, so rev %s read once from structure stands"), *Slug, *Snapshot.Rev);
+			}
+			else if (Snapshot.StreamStatus == 405)
 			{
 				UE_LOG(LogBpLink, Log, TEXT("BpLink: %s has no live stream (405); using rev %s read once from structure"), *Slug, *Snapshot.Rev);
 			}
 			else
 			{
-				// WP3.1 does not consume SSE. Any other answer is logged, and the one-time rev still stands.
-				UE_LOG(LogBpLink, Warning, TEXT("BpLink: GET %s/stream answered %d, not the pinned 405; SSE is not read in WP3.1"), *Root, Snapshot.StreamStatus);
+				// Neither pinned answer. Logged as a warning, and the one-time rev still stands.
+				UE_LOG(LogBpLink, Warning, TEXT("BpLink: GET %s/stream answered %d, neither the pinned 200 nor 405; SSE is not read in WP3.1"), *Root, Snapshot.StreamStatus);
 			}
 			OnDone(true, Snapshot);
 		});

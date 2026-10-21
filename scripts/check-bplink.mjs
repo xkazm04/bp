@@ -9,6 +9,10 @@
 //   stream     GET /api/products/kettle/stream answers SSE (apps/server hosts Kettle's sims, L5.2): the first event is a `snapshot`
 //              of the sample (its findings as `proposals`); `delta` and `jobs` follow a scan (scripts/check-kettle-sim.mjs)
 // Pins the server's current answers; it changes no route. A gap BpLink must live with is asserted as it is, not papered over.
+//
+// `npm run check` cannot compile BpLink (no Unreal toolchain here, apps/vr/WP3.1.md), so the last block derives what it can
+// from the C++ TEXT instead: the /stream status codes `BpLink.cpp` branches on must include the one the live server just
+// answered. Comments and string literals are stripped first, or a file that only TALKS about a status would pass.
 // Run: node scripts/check-bplink.mjs   Exit 1 on any failure.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -22,6 +26,27 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA = path.join(ROOT, 'packages/core/data');
 let failed = 0, passed = 0;
 const check = (name, ok, detail = '') => { ok ? passed++ : failed++; console.log(`${ok ? 'ok  ' : 'FAIL'}  ${name}${ok || !detail ? '' : `  (${detail})`}`); };
+
+/**
+ * C++ with its comments and string literals blanked out, so a matcher sees only code. A `//` inside a string
+ * (`TEXT("http://127.0.0.1:3100")`) is not a comment, so strings are consumed before comments are recognised.
+ * Newlines survive, so a line number taken from the result still points at the source.
+ */
+export function stripCxx(text) {
+  let out = '';
+  for (let i = 0; i < text.length; i++) {
+    const two = text.slice(i, i + 2);
+    if (two === '//') { while (i < text.length && text[i] !== '\n') i++; out += '\n'; continue; }
+    if (two === '/*') { const end = text.indexOf('*/', i + 2); const body = text.slice(i, end < 0 ? text.length : end + 2); out += body.replace(/[^\n]/g, ' '); i += body.length - 1; continue; }
+    if (text[i] === '"' || text[i] === "'") {
+      const q = text[i]; out += q; i++;
+      for (; i < text.length && text[i] !== q; i++) { out += text[i] === '\n' ? '\n' : ' '; if (text[i] === '\\') { i++; out += ' '; } }
+      out += q; continue;
+    }
+    out += text[i];
+  }
+  return out;
+}
 
 const kdata = JSON.parse(fs.readFileSync(path.join(DATA, 'kettle.app-structure.json'), 'utf8'));
 const lines = (s) => s.split('\n').filter((l) => l.trim());
@@ -95,6 +120,14 @@ try {
     const again = await get('/api/products/kettle/structure');
     let ab = null; try { ab = JSON.parse(again.body); } catch { /* reported below */ }
     check('rev: stable across reads (a fallback that reads it once can trust it)', !!ab?.rev && ab.rev === kb?.rev, `${kb?.rev} vs ${ab?.rev}`);
+
+    // Derived over the C++ source, because no rung above it is reachable: this repo has no Unreal toolchain, so the
+    // module cannot be compiled, let alone run against the server. Stripping comments and string literals first is what
+    // makes it a check on the CODE and not on the prose beside it.
+    const cpp = stripCxx(fs.readFileSync(path.join(ROOT, 'apps/vr/Source/BpLink/Private/BpLink.cpp'), 'utf8'));
+    const pinned = [...cpp.matchAll(/StreamStatus\s*==\s*(\d{3})/g)].map((m) => Number(m[1]));
+    check(`source: BpLink.cpp branches on the /stream status the server answers (${st.status})`, pinned.includes(st.status),
+      `BpLink.cpp accepts [${pinned.join(', ')}], the server answered ${st.status}`);
   }
 } finally {
   // the child holds its working directory until it has exited (Windows), so wait before removing it

@@ -13,7 +13,8 @@ struct BPLINK_API FBpLinkSnapshot
 	FBpAppStructure Structure;
 	TArray<FBpAppStructureEvent> Events;
 	FString Rev;
-	/** The /stream answer: 405 for Kettle (no live stream), so Rev was read once from the structure payload. */
+	/** The /stream answer: 200 for Kettle (apps/server hosts its sim, wolf-plan L5.2), 405 for a product with no live
+	 *  stream. WP3.1 consumes neither, so Rev was read once from the structure payload. */
 	int32 StreamStatus = 0;
 };
 
@@ -28,7 +29,8 @@ public:
 	void SetBaseUrl(const FString& InBaseUrl);
 
 	/**
-	 * GET /api/products/<Slug>/structure, then GET /api/products/<Slug>/stream (the 405 fallback keeps the rev read once).
+	 * GET /api/products/<Slug>/structure, then GET /api/products/<Slug>/stream (200 or 405; either way the rev stays the
+	 * one read once from the structure payload).
 	 * OnDone runs on the game thread; bOk is false with an error already logged.
 	 */
 	void FetchProduct(const FString& Slug, TFunction<void(bool bOk, const FBpLinkSnapshot& Snapshot)> OnDone);
