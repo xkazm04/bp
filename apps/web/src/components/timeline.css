@@ -8,6 +8,12 @@
 .bp .tl-exp { align-self: stretch; display: flex; align-items: center; gap: 7px; padding: 0 10px; background: transparent; border: 0; border-right: 1px solid var(--ink-4); font: 500 12px var(--mono); letter-spacing: 0.12em; color: var(--ink-2); }
 .bp .tl-exp:hover, .bp .tl-strip.open .tl-exp { color: var(--ink-hi); background: color-mix(in srgb, var(--ink) 8%, transparent); }
 .tl-exp kbd { font: 500 12px/1 var(--mono); padding: 1px 4px; border: 1px solid var(--ink-3); color: var(--ink-2); }
+/* The expand button is align-self: stretch, so its box edges sit on the strip's content box: the global focus ring
+   (2 px accent at offset 2 px, blueprint.css) lands outside the strip, right against the strip's own border - and
+   when travelled that border and its box-shadow are accent too, so the ring is accent on accent (1.00:1) and reads
+   as nothing but a slightly thicker edge. Drawn inside instead: clear of the strip edge, over the panel or the
+   travel fill, where the same accent is 5.2:1 / 4.3:1 in light and 12.2:1 / 8.9:1 in dark. */
+.bp .tl-exp:focus-visible { outline-offset: -2px; }
 .tl-chev { font-size: 12px; color: var(--ink); }
 .tl-pos { display: flex; align-items: center; gap: 8px; }
 .tl-pos b { font-weight: 500; color: var(--ink-hi); letter-spacing: 0.1em; }
