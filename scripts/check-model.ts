@@ -322,6 +322,36 @@ const PLACES: { id: string; feats: Any[] }[] = [...M.L.rooms, ...M.L.wings, ...M
   console.log(`watch words ${WATCH_KINDS.length} worded / ${replay.length} replay kinds / ${mapKinds.length} map kinds / ${watched.length} reaching the watch / 0 mute`);
 }
 
+// ---------------------------------------------------------------- (j) a shot nobody reported on is not a clean shot
+{
+  const { shotErrors, shotErrorsReported } = await impCore('src/model/live.ts');
+  const none = {}, noField = { report: {} }, zero = { report: { consoleErrors: 0 } }, listZero = { report: { consoleErrors: [] } };
+  const three = { report: { consoleErrors: 3 } }, list = { report: { consoleErrors: ['a', 'b'] } };
+  expect(shotErrorsReported(none) === null && shotErrorsReported(noField) === null, `(j) a shot with no report, or a report with no console field, must read null: ${shotErrorsReported(none)} / ${shotErrorsReported(noField)}`);
+  expect(shotErrorsReported(zero) === 0 && shotErrorsReported(listZero) === 0, `(j) a measured zero must read 0, not null: ${shotErrorsReported(zero)} / ${shotErrorsReported(listZero)}`);
+  expect(shotErrorsReported(three) === 3 && shotErrorsReported(list) === 2, `(j) a count and a list both read as their size: ${shotErrorsReported(three)} / ${shotErrorsReported(list)}`);
+  expect([none, noField, zero, listZero, three, list].every((s) => shotErrors(s) === (shotErrorsReported(s) ?? 0)), '(j) shotErrors stays the 0-fallback of shotErrorsReported');
+  console.log('shot errors: absent / measured-zero / measured told apart');
+}
+
+// ---------------------------------------------------------------- (k) a rollout nobody measured is not a rollout of 0 or 100
+{
+  const feats: Any[] = M.L.feats ?? PLACES.flatMap((pl) => pl.feats);
+  let measured = 0, absentLive = 0, absentOther = 0;
+  const bad: string[] = [];
+  for (const f of new Map<string, Any>(feats.map((x: Any) => [x.id, x])).values()) {
+    const m = M.sim.rolloutMeasured(f), o = M.sim.rolloutOf(f);
+    if (m != null) { measured++; if (o !== m) bad.push(`${f.id} measured ${m} but rolloutOf says ${o}`); }
+    else if (M.P.isLive?.(f) ?? ['live', 'flagged'].includes(f.stage)) { absentLive++; if (o !== 100) bad.push(`${f.id} absent+live reads ${o}`); }
+    else { absentOther++; if (o !== 0) bad.push(`${f.id} absent reads ${o}`); }
+  }
+  expect(measured > 50 && absentLive + absentOther > 20 && absentOther > 0, `(k) the sample must exercise measured and absent (absent-live is the stub below): ${measured} measured / ${absentLive} absent-live / ${absentOther} absent-other`);
+  expect(!bad.length, `(k) rolloutOf must stay the fallback-bearing form of rolloutMeasured: ` + bad.slice(0, 4).join(' | '));
+  const bare = { id: 'F-bare', stage: 'live', lens: {} };
+  expect(M.sim.rolloutMeasured(bare) === null && M.sim.rolloutOf(bare) === 100, `(k) a live feature with empty facets: measured ${M.sim.rolloutMeasured(bare)}, plain ${M.sim.rolloutOf(bare)}`);
+  console.log(`rollout     ${measured} measured / ${absentLive} absent on a live stage / ${absentOther} absent elsewhere, told apart`);
+}
+
 if (failures.length) {
   console.log(`\ncheck-model: ${failures.length} failed, ${held} held`);
   for (const f of failures) console.log('FAIL  ' + f);

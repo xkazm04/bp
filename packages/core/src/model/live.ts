@@ -47,8 +47,10 @@ export function shotUrl(slug: string, s: Shot): string {
   return '/api/products/' + encodeURIComponent(slug) + '/shots/' + s.path.replace(/^shots\//, '').split('/').map(encodeURIComponent).join('/');
 }
 
-/** Console errors a shot's harness report records (a count, or a list), 0 when it says nothing. */
-export function shotErrors(s: Shot): number {
+/** Console errors a shot's harness report records (a count, or a list), or null when no report says - "nobody measured" is not "measured none". */
+export function shotErrorsReported(s: Shot): number | null {
   const c = s.report?.consoleErrors;
-  return typeof c === 'number' ? c : Array.isArray(c) ? c.length : 0;
+  return typeof c === 'number' ? c : Array.isArray(c) ? c.length : null;
 }
+/** The same figure as a plain count: 0 when the report says nothing. Ask shotErrorsReported to tell that from a measured zero. */
+export function shotErrors(s: Shot): number { return shotErrorsReported(s) ?? 0; }
