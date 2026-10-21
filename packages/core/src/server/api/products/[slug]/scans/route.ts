@@ -1,5 +1,5 @@
 // POST /api/products/[slug]/scans, body `{ lens, scope: ScanScope }`: queue a lens scan, which runs the Claude Code
-// CLI headless in the product repo (`/lens-scan measure`, src/lib/scan/jobs.server.ts). 202 + the ScanJob; 400
+// CLI headless in the product repo (`/lens-scan measure`, packages/core/src/server/jobs.server.ts). 202 + the ScanJob; 400
 // `{ error: 'unknown-lens' }` (not an enabled lens of the map), `'no-scan-method'` (no built-in method and no manifest
 // `scan` block), `'bad-scope'` (kind, label, id or features wrong, or a feature the map lacks); 429 when 16 jobs are
 // queued already; 404 for an unknown product or a product without a map. A `selection` scope (the ledger's selected

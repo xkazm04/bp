@@ -1,7 +1,7 @@
 // POST /api/products/[slug]/triage, body `{ ids: string[], decision: 'accept' | 'rework' | 'descope' | 'reopen', note?: string }`
 // (1..200 proposal ids): a person's call on built items. It runs lens-scan's own `store.mjs triage` (the single owner of
 // the transition rules: which statuses each decision may move, the note a failed item needs to be accepted, leaving a
-// draft release, settling packs open -> triaged), `--by user:<gh login>` (src/lib/scan/release.server.ts triageBy).
+// draft release, settling packs open -> triaged), `--by user:<gh login>` (packages/core/src/server/release.server.ts triageBy).
 // `reopen` is the undo (lens-scan 1.6.0, store v3): each item back to the status it left, refused per item while its
 // release is past draft, its rework rebuilt, its pack closed or nothing was recorded (skipped reasons `in-release`,
 // `rebuilt`, `pack-closed`, `no-prior-status`); decision `reopened`.

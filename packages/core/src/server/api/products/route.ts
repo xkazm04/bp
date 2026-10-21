@@ -1,5 +1,5 @@
 // GET /api/products: the live products of bp.products.local.json (Kettle is built in and not listed), each
-// with `live` (= the repo has a lens-scan store) and `readiness` (src/lib/scan/readiness.ts).
+// with `live` (= the repo has a lens-scan store) and `readiness` (packages/core/src/server/readiness.server.ts).
 // POST /api/products: register one, body `{ slug, name, root }` (localhost only). 201 + the entry; 400 for a
 // bad body, a root that is not a directory or a reserved slug; 409 for a slug in use (or a registry file
 // that cannot be parsed, which is never overwritten); 403 off localhost; 415 for a non-JSON body.

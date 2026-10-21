@@ -5,7 +5,7 @@
 //                    by updated_at, coverage by judged_at), checked each 1000 ms
 //   event: map       { rev }: the fingerprint of the map files (app-structure.json, events.jsonl), sent once the map exists and
 //                    again whenever it changes (the skill writes metrics back into it): the client then refetches /structure
-//   event: jobs      ScanJob[]: the blueprint's scan jobs for this product (src/lib/scan/jobs.server.ts), after each
+//   event: jobs      ScanJob[]: the blueprint's scan jobs for this product (packages/core/src/server/jobs.server.ts), after each
 //                    snapshot when there are any, and on every change of the job registry (log lines at most every
 //                    400 ms). A run whose note is `bp-job:<id>` (in a snapshot or delta) is attached to that job.
 //   event: ping      every 15 s, so proxies and the client know the stream is alive

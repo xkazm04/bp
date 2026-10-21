@@ -1,5 +1,5 @@
 // GET /api/products/[slug]/commits/[sha]: one item commit for the ledger's compare panel, as CommitDiff `{ sha, message,
-// stat, files: [{ path, add, del }], patch, lines, truncated }` (src/lib/scan/release.server.ts commitDiff: three
+// stat, files: [{ path, add, del }], patch, lines, truncated }` (packages/core/src/server/release.server.ts commitDiff: three
 // `git show`s in the product root; the patch cut at 2000 lines, `lines` the full count). `sha` is 7-40 hex characters
 // and must be the `commit_sha` of a proposal in the product's store (or a prefix of it): the route shows item commits
 // only, never an arbitrary object of the repo. 200 with `cache-control: private, max-age=3600` (a commit never
