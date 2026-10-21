@@ -373,8 +373,19 @@ function unionMembers(rel: string, name: string): string[] {
       if (what === 'lens fill' || what === 'live fill') {
         expect(bare >= BAR, `contrast (${name}): the tile name over the ${what} is ${bare.toFixed(2)}:1 without a halo, the bar is ${BAR}:1`);
       }
+      if (what === 'in-dev hatch') {
+        // WHY the name must carry a halo: on these two the bare ink misses the bar, so dropping the halo
+        // from plan.ts is a regression this gate has to see. If a thinner hatch ever lifts the bare figure
+        // over the bar, flip this expectation deliberately - do not delete it.
+        expect(bare < BAR, `contrast (${name}): the ${what} still needs the name's halo (bare ${bare.toFixed(2)}:1 against the ${BAR}:1 bar)`);
+      }
     }
   }
+  // so the halo is not optional at either of the two places the tile name is drawn
+  // the two tile-name layouts of paintTile, by the font each wraps the name in (nf big, nf2 small)
+  const tileNames = [...bare('apps/web/src/engine/render/plan.ts').matchAll(/drawText\(ctx, l, [^;]*?, nf2?, th\.inkHi([^)]*)\)/g)].map((m) => m[1]);
+  expect(tileNames.length === 2, `contrast: both tile-name layouts were found in plan.ts (got ${tileNames.length})`);
+  expect(tileNames.every((t) => t.includes('th.halo')), 'contrast: both tile-name layouts pass th.halo to drawText (the name sits on the stage hatch)');
 }
 
 // ---------------------------------------------------------------- source guard: no dash literal in the frame loop

@@ -277,7 +277,8 @@ function paintTile(E: Engine, ctx: CanvasRenderingContext2D, v: View, T: TileNod
     let ns = Math.round(2 * clamp(13.5 + (w / u - 150) / 60, 14, 17) * (1 + l3)) / 2, lh = 0, nf = '', lines: string[] | null = null;
     for (; ns >= 14; ns -= 2) { lh = ns * 1.16 * u; nf = tx.f(ns, 500); lines = tx.wrap(f.name, w - 14 * u, nf, Math.max(1, Math.floor(roomH / lh))); if (lines) break; }
     if (!lines) { ns = 14; nf = tx.f(14, 500); lh = 16.2 * u; lines = tx.wrap(f.name, w - 14 * u, nf, Math.max(1, Math.floor(roomH / lh))); }
-    if (lines) lines.forEach((l, i) => drawText(ctx, l, x + 7 * u, hy + 6 * u + lh * (i + 0.82), nf, th.inkHi));
+    // the halo every other label on the plan carries: the name sits over the stage hatch, which is ink at 0.6
+    if (lines) lines.forEach((l, i) => drawText(ctx, l, x + 7 * u, hy + 6 * u + lh * (i + 0.82), nf, th.inkHi, th.halo));
     const sf = tx.f(12.5, 600), sy = y + h - 7 * u - (chips ? 22 * u : 0);
     if (gStamp && D < 0.999) { const s = fitStamp(E, gStamp.cands, gStamp.last, w - 14 * u, sf); if (s) { ctx.globalAlpha = a * (1 - D); drawText(ctx, s, x + 7 * u, sy, sf, th.red2, th.halo); } }
     if (lStamp && D > 0.001) { const s = fitStamp(E, [lStamp], null, w - 14 * u, sf); if (s) { ctx.globalAlpha = a * D; drawText(ctx, s, x + 7 * u, sy, sf, th.red2, th.halo); } }
@@ -287,7 +288,7 @@ function paintTile(E: Engine, ctx: CanvasRenderingContext2D, v: View, T: TileNod
     ctx.globalAlpha = a;
     const nf2 = tx.f(13, 500), l2 = 15 * u;
     const lines2 = tx.wrap(f.name, w - 12 * u, nf2, Math.max(1, Math.floor((h - 8 * u - (chips ? 22 * u : 0) - (hy - y - 12 * u)) / l2)));
-    if (lines2) { const top2 = hy - 12 * u + (h - (hy - y - 12 * u) - lines2.length * l2 - (chips ? 20 * u : 0)) / 2; lines2.forEach((l, i) => drawText(ctx, l, x + 6 * u, top2 + l2 * (i + 0.78), nf2, th.inkHi)); }
+    if (lines2) { const top2 = hy - 12 * u + (h - (hy - y - 12 * u) - lines2.length * l2 - (chips ? 20 * u : 0)) / 2; lines2.forEach((l, i) => drawText(ctx, l, x + 6 * u, top2 + l2 * (i + 0.78), nf2, th.inkHi, th.halo)); }
   }
   ctx.globalAlpha = 1;
 }
