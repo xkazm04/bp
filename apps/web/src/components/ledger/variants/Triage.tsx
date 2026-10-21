@@ -50,10 +50,14 @@ const Row = memo(function Row({ f, on, focus, onFocus, onToggle, onOpen, move, w
 export function Triage({ L }: { L: Ledger }) {
   const open = L.rows.filter((f) => f.status === 'proposed').length;
   const proposedShown = !L.ui.status.size || L.ui.status.has('proposed');
+  // every dimension that narrows `L.rows` and can therefore hide a proposed finding from `open`: the lens chips, the
+  // matrix's feature drill-down, the text filter and the selected wave tab (useLedger's `keep` and `waveIds`). The
+  // status chips are not one here: `proposedShown` already stands down when they exclude proposed.
+  const narrowed = !!(L.ui.lens.size || L.ui.feat.size || L.ui.q || L.ui.wave);
   const first = L.rows[0]?.p.id, foc = L.ui.focus && L.byId.has(L.ui.focus) ? L.ui.focus : first;
   return (
     <div className="lg-tri">
-      {proposedShown && !open && L.all.length ? <div className="lg-zero" role="status"><b>Inbox zero</b>Nothing proposed{L.ui.lens.size || L.ui.q ? ' under these filters' : ''}. New findings land here as scans propose them.</div> : null}
+      {proposedShown && !open && L.all.length ? <div className="lg-zero" role="status"><b>Inbox zero</b>Nothing proposed{narrowed ? ' under these filters' : ''}. New findings land here as scans propose them.</div> : null}
       {L.rows.length ? (
         <div role="table" className="lg-tbl" aria-label="Findings">
           <div role="rowgroup" className="lg-th">
