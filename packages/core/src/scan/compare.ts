@@ -54,7 +54,9 @@ export function runStats(values: readonly number[], unit?: string): RunStats {
  * The verdict on one item: its metric's `before` against its latest `after` reading (same lens and metric). One
  * `before` reading is compared as it is; several are baseline runs, and the after is compared with their median, a
  * change within their noise (runStats) reading `flat`. The direction is the lens field's `better` (manifest), else the
- * sign of the item's expected delta. No metric, a missing reading on either side or no direction: `unmeasured`.
+ * sign of the item's expected delta. No metric, or a missing reading on either side: `unmeasured`. A reading that did
+ * not move needs no direction and reads `flat`; one that MOVED without a direction is `unmeasured`, because nothing
+ * says which way is better.
  */
 export function verdictOf(p: Proposal, before: readonly Measurement[], after: readonly Measurement[], lenses?: readonly LensFields[]): { verdict: Verdict; from?: Measurement; to?: Measurement } {
   if (!p.metric) return { verdict: 'unmeasured' };
