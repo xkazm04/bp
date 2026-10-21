@@ -40,7 +40,9 @@ export class LiveFacets {
   private tbl: readonly Measurement[] | null = null;
   private seen = 0;
   private lastId = -1;
-  constructor(private P: Product, private agg: AggCache) { this.index(); }
+  private P: Product;
+  private agg: AggCache;
+  constructor(P: Product, agg: AggCache) { this.P = P; this.agg = agg; this.index(); }
   private index() { this.base = new Map(this.P.base.features.map((f) => [f.id, f])); }
 
   /** Forget every reading taken (the map was replaced: its facets are the new baseline). */

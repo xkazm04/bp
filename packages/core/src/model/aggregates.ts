@@ -32,7 +32,8 @@ export type HealthCounts = Record<Health, number>;
 /** Transitive "used by" closure: what breaks if this breaks. */
 export class Closure {
   private memo = new Map<string, string[]>();
-  constructor(private P: Product) {}
+  private P: Product;
+  constructor(P: Product) { this.P = P; }
   of(id: string): string[] {
     const hit = this.memo.get(id); if (hit) return hit;
     const seen = new Set<string>(), q = [id], out: string[] = [];
@@ -50,7 +51,8 @@ export class AggCache {
   private counts = new Map<string, Counts>();
   private health = new Map<string, HealthCounts>();
   private key = '';
-  constructor(private P: Product) {}
+  private P: Product;
+  constructor(P: Product) { this.P = P; }
   setTime(t: string, delta: number) {
     const k = t + '|' + delta;
     if (k !== this.key) { this.key = k; this.counts.clear(); }

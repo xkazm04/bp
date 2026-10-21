@@ -9,6 +9,8 @@
 //             packages/.
 //   dom       `tsc -p packages/core` (lib ES2023 + Node's types, no DOM lib, src/server excluded) is clean, so
 //             no window, document, localStorage, EventSource or HTMLElement in the pure half.
+//   strip     packages/core/src/**: no TypeScript syntax Node's strip-only mode rejects (apps/server loads core that way):
+//             constructor parameter properties, enum, namespace. Write the field and the assignment out.
 // Every run also proves each rule red once on a seeded temp tree (the controls), so a rule that stops matching fails
 // the check instead of passing it silently.
 // Exit 1 on any violation or a control that stayed green, 2 when no core file was walked, else 0.
@@ -67,6 +69,26 @@ function refusedWeb(spec, rel) {
   return under(t, 'packages') ? `'${spec}': reaches ${t} by path; import it as @bp/core/*` : null;
 }
 
+/** TS syntax that needs a transform, not just type stripping. */
+function unstrippable(src) {
+  const s = strip(src), out = [];
+  const add = (m, what) => out.push({ what, line: lineAt(s, m.index) });
+  for (const m of s.matchAll(/\bconstructor\s*\(([^)]*)\)/g)) {
+    if (/(^|[,(])\s*(?:@\w+\s+)*(?:public|private|protected|readonly|override)\s+[\w$]/.test(m[1])) add(m, 'a constructor parameter property');
+  }
+  for (const m of s.matchAll(/^\s*(?:export\s+)?(?:declare\s+)?(?:const\s+)?enum\s+[\w$]+/gm)) add(m, 'an enum');
+  for (const m of s.matchAll(/^\s*(?:export\s+)?(?:declare\s+)?namespace\s+[\w$.]+\s*\{/gm)) add(m, 'a namespace');
+  return out;
+}
+function stripOnly(root) {
+  const r = rule('strip');
+  for (const f of walk(path.join(root, CORE)).filter((f) => /\.(ts|tsx|mts)$/.test(f))) {
+    r.walked++; r.checked++;
+    const rel = posix(path.relative(root, f));
+    for (const { what, line } of unstrippable(fs.readFileSync(f, 'utf8'))) r.violations.push(`${rel}:${line}  ${what}: Node's strip-only mode rejects it`);
+  }
+  return r;
+}
 const rule = (name) => ({ name, walked: 0, checked: 0, violations: [] });
 function scan(root, dir, refuse, name) {
   const r = rule(name);
@@ -95,7 +117,7 @@ function dom(project) {
 const runAll = (root, project) => {
   const web = scan(root, WEB, refusedWeb, 'web'), server = scan(root, 'apps/server/src', refusedWeb, 'web');
   web.walked += server.walked; web.checked += server.checked; web.violations.push(...server.violations);
-  return [scan(root, CORE, refusedCore, 'imports'), web, dom(project)];
+  return [scan(root, CORE, refusedCore, 'imports'), stripOnly(root), web, dom(project)];
 };
 
 // ---------------------------------------------------------------- controls: each rule red once on a seeded tree
@@ -111,12 +133,16 @@ function controls() {
     ['imports', `${CORE}/s6.ts`, "import fs from 'node:fs';\nexport const a = fs;\n"],
     ['imports', `${CORE}/s7.ts`, "import { snapshotOf } from './server/store.server';\nexport const a = snapshotOf;\n"],
     ['imports', `${CORE}/s8.ts`, "export const a = () => import('react-dom');\n"],
+    ['strip', `${CORE}/t1.ts`, "export class A {\n  constructor(private p: number, readonly q = 1) {}\n}\n"],
+    ['strip', `${CORE}/t2.ts`, "export enum E { A, B }\n"],
+    ['strip', `${CORE}/t3.ts`, "export namespace N {\n  export const a = 1;\n}\n"],
     ['web', `${WEB}/w1.ts`, "import { x } from '../../../packages/core/src/model/index.ts';\nexport const a = x;\n"],
     ['dom', `${CORE}/d1.ts`, 'export const title = (): string => document.title;\n'],
   ];
   const clean = [
     [`${CORE}/ok.ts`, "import { b, type T } from './ok2.ts';\nexport const a = (t?: T): number => b + (t ? 1 : 0) + globalThis.setTimeout.length;\n"],
     [`${CORE}/ok2.ts`, "// import React from 'react' in a comment is not an import\nexport const b = 1;\nexport type T = { id: string };\n"],
+    [`${CORE}/ok3.ts`, "export class C {\n  private p: number;\n  constructor(p: number, opts: { readonly x?: number } = {}) { this.p = p + (opts.x ?? 0); }\n}\n"],
     [`${SERVER}/ok.server.ts`, "import fs from 'node:fs';\nimport path from 'node:path';\nexport const a = (p: string) => fs.existsSync(path.resolve(p));\n"],
     [`${WEB}/ok.ts`, "import { b } from '@bp/core/ok2';\nimport { c } from './c';\nexport const a = b + c;\n"],
   ];

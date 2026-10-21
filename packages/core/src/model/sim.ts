@@ -196,7 +196,11 @@ export class SwarmSim {
   private ordCache: Record<string, Record<string, 1>> | null = null;
   private listener: SimListener | null = null;
 
-  constructor(private P: Product, private S0: Swarm | null, private now: () => number, opts: SimOptions = {}) {
+  private P: Product;
+  private S0: Swarm | null;
+  private now: () => number;
+  constructor(P: Product, S0: Swarm | null, now: () => number, opts: SimOptions = {}) {
+    this.P = P; this.S0 = S0; this.now = now;
     this.has = !!(S0 && S0.agents);
     this.replayT = S0?.replay?.map((e) => e.t) ?? [];
     this.arrivals = S0?.decisions?.filter((d) => d.arrivesAt).map((d) => ({ id: d.id, t: d.arrivesAt! })) ?? [];
