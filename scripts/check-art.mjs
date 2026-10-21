@@ -7,6 +7,8 @@
 //   (c) tris (a number, or an object of numbers that is summed; the largest one when budget_note says "per mesh") is at or
 //       under budget_tris where that is set;
 //   (d) every file listed in sha256 (and in files, where that maps paths to hashes) exists and its hash matches;
+//   (d2) every entry of file_bytes (written by 7 of the 14 manifest writers) exists and is that many bytes: the gate notes
+//       quote it ("largest N bytes"), so a hand-edited size is a false statement, not decoration;
 //   (e) lynx_commit is a commit in git history (git cat-file -e) that touches the asset folder.
 // Across ArtSource: no committed file is 50 MB or larger; a file over 10 MB prints a warning line.
 // A seeded control runs in memory on a copy of one real manifest (a gate flipped to false, a bad sha) and must fail;
@@ -57,6 +59,12 @@ export function validate(folder, m, opts = {}) {
     else if (sha256(file) !== want) errs.push(`${rel} sha256 does not match`);
   }
 
+  for (const [rel, want] of Object.entries(m.file_bytes ?? {})) {
+    const file = path.join(dir, rel);
+    if (!fs.existsSync(file)) errs.push(`${rel} has a file_bytes entry but is missing`);
+    else if (fs.statSync(file).size !== want) errs.push(`${rel} file_bytes ${want} does not match its size ${fs.statSync(file).size}`);
+  }
+
   if (opts.commit !== false) {
     const c = m.lynx_commit;
     if (typeof c !== 'string' || !/^[0-9a-f]{7,40}$/.test(c)) errs.push(`lynx_commit is not a commit hash (${JSON.stringify(c)})`);
@@ -93,9 +101,15 @@ flipped.gates[Object.keys(flipped.gates)[0]].pass = false;
 const badSha = structuredClone(seed);
 const key = Object.keys(badSha.sha256)[0];
 badSha.sha256[key] = '0'.repeat(64);
+// the size control needs a manifest that records file_bytes (7 of 14 do), which is not always the first one
+const sizeFolder = [...manifests.keys()].find((f) => Object.keys(manifests.get(f).file_bytes ?? {}).length > 0);
+const badSize = structuredClone(manifests.get(sizeFolder) ?? seed);
+if (sizeFolder) { const sk = Object.keys(badSize.file_bytes)[0]; badSize.file_bytes[sk] += 1; }
 const controls = [['gate false', flipped, 'is not pass: true'], ['bad sha', badSha, 'sha256 does not match']];
+if (sizeFolder) controls.push(['bad file_bytes', badSize, 'file_bytes']);
+else { console.log('FAIL  no manifest records file_bytes, so the size control cannot run'); fail++; }
 for (const [name, m, want] of controls) {
-  const errs = validate(seedFolder, m, { commit: false });
+  const errs = validate(m === badSize ? sizeFolder : seedFolder, m, { commit: false });
   const ok = errs.some((e) => e.includes(want));
   console.log(`${ok ? 'ok  ' : 'FAIL'}  seeded control (${name}) ${ok ? 'fails as expected' : 'was NOT caught'}`);
   if (!ok) fail++;
