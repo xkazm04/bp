@@ -20,7 +20,12 @@ export function createStore<S extends object>(initial: S): Store<S> {
       for (const k in p) if (!Object.is((p as S)[k], state[k])) { changed = true; break; }
       if (!changed) return;
       state = { ...state, ...p };
-      for (const fn of subs) fn();
+      // Notify a SNAPSHOT, and only the listeners still subscribed when their turn comes. React subscribes
+      // and unsubscribes inside effects, which can be flushed while this loop runs, so iterating the live set
+      // calls a listener added during the notification (for a change it never subscribed to) while a snapshot
+      // alone would call one that has just unsubscribed (a component unmounted by this very change). Both
+      // halves are needed; scripts/check-engine-store.ts holds them.
+      for (const fn of [...subs]) if (subs.has(fn)) fn();
     },
     subscribe(fn) { subs.add(fn); return () => { subs.delete(fn); }; },
   };

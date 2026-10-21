@@ -487,7 +487,8 @@ export class Engine {
   }
   private tickSimTime() {
     const sec = Math.floor(this.M.sim.t);
-    if (sec !== this.lastSimSec) { this.lastSimSec = sec; for (const fn of this.simTimeListeners) fn(this.M.sim.t); }
+    // the snapshot is taken only on the frames that actually fire (once a displayed second), so the frame loop still allocates nothing
+    if (sec !== this.lastSimSec) { this.lastSimSec = sec; for (const fn of [...this.simTimeListeners]) if (this.simTimeListeners.has(fn)) fn(this.M.sim.t); }
   }
   /** The phone and the findings ledger draw no plan, so frame() never runs there: a light timer advances the simulation (waits, agents, new questions) and syncs the store. It stops when the plan is drawn again, and a hidden tab skips its ticks without banking the time. */
   private lightSim(on: boolean) {
