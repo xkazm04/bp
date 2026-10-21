@@ -42,6 +42,16 @@ const NOTES = {
   },
 };
 
+// NOTES is prose a human writes, so it stays typed - but it must cover exactly the assets score-assets.mjs knows, and a gap is named here,
+// before any file is hashed or written, rather than surfacing as a TypeError on n.pivot.
+{
+  const missing = Object.keys(ASSETS).filter((id) => !(id in NOTES)), stale = Object.keys(NOTES).filter((id) => !(id in ASSETS));
+  if (missing.length || stale.length) {
+    if (missing.length) console.error(`NOTES has no entry for: ${missing.join(', ')} (ASSETS in score-assets.mjs lists it; add its prose to NOTES in write-manifests.mjs)`);
+    if (stale.length) console.error(`NOTES has an entry for an asset ASSETS does not list: ${stale.join(', ')}`);
+    process.exit(2);
+  }
+}
 for (const id of Object.keys(ASSETS)) {
   const dir = path.join(ART, id), r = scoreAsset(id), c = r.checks, n = NOTES[id];
   const all = files(dir);
@@ -71,7 +81,9 @@ for (const id of Object.keys(ASSETS)) {
     lynx_commit: null,
     lynx_commit_note: 'set by the merge; branch autopilot/accepted-idea-delivery-69480049',
   };
-  if (bad) console.error(`WARNING ${id}: failed checks: ${bad}`);
+  // The manifest is still written (it records the failing gate), but the run reports it: score-assets.mjs exits 1 on the same
+  // information, and a && chain must not carry on over a manifest check:art will reject.
+  if (bad) { console.error(`WARNING ${id}: failed checks: ${bad}`); process.exitCode = 1; }
   fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
   console.log(`${id}: manifest written, ${all.length} files hashed`);
 }

@@ -35,6 +35,12 @@ if (!picked) {
   console.error(`  ${calls.length} city-backdrop call(s) in the log: ${calls.map((x) => `line ${x.n} ${x.e.variant} s${x.e.seed} ${x.e.quality}`).join('; ') || 'none'}`);
   process.exit(2);
 }
+// The input gate note's figures come from the log, not from typing: size from the picked call, the other trials grouped by quality.
+const pickedSize = `${picked.e.width}x${picked.e.height}`;
+const trialMix = [...new Set(calls.filter((x) => x !== picked).map((x) => x.e.quality))].map((q) => {
+  const t = calls.filter((x) => x !== picked && x.e.quality === q);
+  return `${t.length} ${q} ${t.length === 1 ? 'trial' : 'trials'} at ${[...new Set(t.map((x) => x.e.credits))].join('/')} credits`;
+}).join(', ');
 const T = S.texture;
 const tileOk = T.seam_jump_after <= 3 * T.neighbour_step && T.seam_jump_after < T.seam_jump_before;
 const dimOk = E.backdrop_max_display < 0.6 * E.table_view_max_display && T.max_luminance_encoded < 0.6;
@@ -86,7 +92,7 @@ const M = {
   file_bytes: sizes,
   sha256: sums,
   gates: {
-    input: gate(true, `Leonardo ${picked.e.model}, 2048x768 (the model accepts wide sizes; log line ${picked.n}), picked from ${calls.length} frames (3 LOW trials at 8 credits, 1 MEDIUM at ${picked.e.credits}). The prompt uses the backdrop rules (wide night skyline from a high studio window, low contrast, dim, no foreground, no window frame, no text or logos, seamless horizon band) and restates the style block palette and finish. The picked frame is a dim blueprint-blue night skyline with sparse amber window lights, no frame and no text, like the city seen through the windows in lookdev/00-hero.jpg.`),
+    input: gate(true, `Leonardo ${picked.e.model}, ${pickedSize} (the model accepts wide sizes; log line ${picked.n}), picked from ${calls.length} frames (${trialMix}, 1 ${picked.e.quality} at ${picked.e.credits}). The prompt uses the backdrop rules (wide night skyline from a high studio window, low contrast, dim, no foreground, no window frame, no text or logos, seamless horizon band) and restates the style block palette and finish. The picked frame is a dim blueprint-blue night skyline with sparse amber window lights, no frame and no text, like the city seen through the windows in lookdev/00-hero.jpg.`),
     mesh_acceptance: gate(meshOk, `trivial for a matte panel (no generated mesh): re-imported from final.glb, ${S.mesh_objects} mesh object, ${S.vertices} vertices, ${S.tris} tris, ${S.inward_faces} of ${S.faces} faces point at the arc centre, ${S.uv_sets} UV set, one emissive-only slot (${S.materials[0]}); no floaters or holes by construction (one strip of quads).`),
     scale: gate(arcOk, `fallback scale (no window size in wolf-plan.md or plan.md): a ${S.panel.arc_deg} degree arc (measured ${S.arc_deg[0]} to ${S.arc_deg[1]}), radius ${S.radius_m[0]} m, ${S.panel.z_m[1] - S.panel.z_m[0]} m tall, pivot at the arc centre on the floor. Wolf confirms against the real window layout.`),
     finishing: gate(tileOk && dimOk && oversize.length === 0, `strip ${T.size[0]} x ${T.size[1]} PNG, edge-matched (edge step ${T.seam_jump_after} against ${T.neighbour_step} typical, ${T.seam_jump_before} before the fade); dimmed x${T.dim} (strip max luminance ${T.max_luminance_encoded}); in the evidence render the backdrop's brightest pixel is ${E.backdrop_max_display} display luminance and the table's edge strip clips at ${E.table_view_max_display}, so the backdrop does not outshine the strip; every file under 10 MB (largest ${Math.max(...Object.values(sizes))} bytes); evidence rendered with Cycles on the CPU. Not claimed: any UE import.`),
