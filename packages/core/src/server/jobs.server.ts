@@ -16,6 +16,7 @@ import path from 'node:path';
 import { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, RUN_NOTE_PREFIX, SAFE_ID, type ReleaseStep, type ScanJob, type ScanScope } from '../scan/jobs.ts';
 import { RELEASE_ID } from '../scan/release.ts';
 import { WAVE_EFFORTS, WAVE_MODELS, type WaveEffort, type WaveModel } from '../scan/waves.ts';
+import { warnOnce } from './products.server.ts';
 import { close, openRead } from './store.server.ts';
 
 if (typeof window !== 'undefined') throw new Error('jobs.server.ts is server-only');
@@ -234,11 +235,19 @@ function start(slug: string, r: Rec): void {
   try {
     const dir = path.join(r.root, '.ai', 'lens-scan', 'work', 'bp-jobs');
     fs.mkdirSync(dir, { recursive: true });
-    r.log = fs.createWriteStream(path.join(dir, r.job.id + '.log'), { flags: 'a' });
-    r.log.on('error', () => { r.log = undefined; });
+    const logFile = path.join(dir, r.job.id + '.log');
+    r.log = fs.createWriteStream(logFile, { flags: 'a' });
+    // A write that fails mid-run (a full disk, a revoked share) ends the only durable record of a job that keeps
+    // running: log_tail lives in memory and KEEP_JOBS drops it. Say which file stopped taking lines.
+    r.log.on('error', (e) => { r.log = undefined; warnOnce('job log ' + logFile, e); });
     const opt = [r.job.model && `model ${r.job.model}`, r.job.effort && `effort ${r.job.effort}`, r.job.wave && `wave ${r.job.wave}`, r.job.package && `package ${r.job.package}`].filter(Boolean).join(' · ');
     r.log.write(`# bp job ${r.job.id} started ${r.job.started_at}\n${opt ? `# ${opt}\n` : ''}# prompt (stdin): ${r.prompt}\n`);
-  } catch { r.log = undefined; /* a read-only repo still runs; log_tail still fills */ }
+  } catch (e) {
+    r.log = undefined; // a read-only repo still runs; log_tail still fills
+    // ...but nothing on disk will say this job ran, so the one unattended record of a `--dangerously-skip-permissions`
+    // child is gone. The job's own answer cannot carry it (it reports the run, not the logging), so the server says it.
+    warnOnce('job log ' + path.join(r.root, '.ai', 'lens-scan', 'work', 'bp-jobs', r.job.id + '.log'), e);
+  }
   const args = [...JOB_ARGS, ...(r.job.model ? ['--model', r.job.model] : []), ...(r.job.effort ? ['--effort', r.job.effort] : [])]; // allow-listed at enqueue
   const s = spawnCli(args, r.root, { ...process.env, BP_JOB_ID: r.job.id });
   if (!s.ok) { finish(slug, r, 'failed', { error: s.error }); return; }
