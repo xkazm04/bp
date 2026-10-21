@@ -151,6 +151,14 @@ export const DIFF_LINES = 2000;
 export type DiffAnswer = { ok: true; data: CommitDiff } | { ok: false; kind: 'missing' | 'error'; error: string };
 
 /**
+ * git's own refusals that mean "this repository has no such object". Matched on the message, not the exit code: git
+ * exits 128 for a bad rev AND for `not a git repository`, a dubious-ownership refusal and a broken index, so the code
+ * alone cannot tell "no such commit" (the route's 404: stop looking) from "this root is not usable" (its 503: fix the
+ * product's root and retry). Anything git says that is not on this list is the second kind.
+ */
+const NO_SUCH_OBJECT = /\b(bad object|unknown revision or path not in the working tree|not a valid object name|bad revision|no such path)\b/i;
+
+/**
  * One commit of the repo at `root` as the ledger's compare panel shows it, by three `git show`s (no pager, colour,
  * external diff or textconv; paths unquoted): `--stat=200 --format=%H%n%B%x00` for the full sha, the message and the
  * stat; `--numstat --format=` for the files (a binary file's `-` counts read 0); `--format= --unified=3` for the
@@ -162,7 +170,8 @@ export async function commitDiff(root: string, sha: string): Promise<DiffAnswer>
   const bad = [head, num, diff].find((r) => r.code !== 0);
   if (bad) {
     const why = bad.stderr.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)[0] ?? `exit ${bad.code}`;
-    return { ok: false, kind: bad.missing || bad.code === -1 ? 'error' : 'missing', error: why };
+    const gone = !bad.missing && bad.code !== -1 && NO_SUCH_OBJECT.test(bad.stderr);
+    return { ok: false, kind: gone ? 'missing' : 'error', error: why };
   }
   // head: <full sha>\n<message>\0\n\n<stat>
   const cut = head.stdout.indexOf('\0');
