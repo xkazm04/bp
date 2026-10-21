@@ -561,6 +561,36 @@ if (isMain) {
     const enumWideCaught = enumWide !== fresh.ts && compare(enumWide, handTs, wireTs).problems.some((p) => p === 'Wave.status: the enum disagrees - in the schema, not in types.ts: zzParityProbe');
     console.log(`${enumWideCaught ? 'ok  ' : 'FAIL'}  control: a value added to the wave status enum fails the parity`);
     if (!enumWideCaught) failed++;
+    // lens-manifest-1's builtinLensId enum against every other copy of that list in the tree. The enum is the
+    // normative one; scripts/validate-structure.mjs reads it rather than copying it, but two files in
+    // packages/core hand-write the same seven ids, and until 2026-10-21 nothing compared them with the schema:
+    //   standard/catalog.ts   seven JSON imports, one per docs/standard/lenses/<id>.json
+    //   scan/manifest-check.ts  BUILTIN_IDS, the set a project lens id is refused for colliding with
+    // Each copy is extracted by its own matcher, and a matcher that finds nothing fails here: an empty set must
+    // never read as agreement (that is how a gate reports a clean tree in the voice of success).
+    const lensIds = (text, re) => { const out = new Set(); for (const m of text.matchAll(re)) out.add(m[1]); return out; };
+    const CATALOG_RE = /docs\/standard\/lenses\/([a-z0-9-]+)\.json/g;
+    const BUILTIN_SET_RE = /BUILTIN_IDS = new Set\(\[([^\]]*)\]\)/;
+    const builtinIdsOf = (text) => { const m = BUILTIN_SET_RE.exec(text); return m ? lensIds(m[1], /'([a-z0-9-]+)'/g) : new Set(); };
+    const wantIds = new Set(JSON.parse(fs.readFileSync(path.join(SCHEMA_DIR, 'lens-manifest-1.schema.json'), 'utf8')).$defs.builtinLensId.enum);
+    const copies = [['packages/core/src/standard/catalog.ts', lensIds(fs.readFileSync(path.join(ROOT, 'packages/core/src/standard/catalog.ts'), 'utf8'), CATALOG_RE)],
+      ['packages/core/src/scan/manifest-check.ts', builtinIdsOf(fs.readFileSync(path.join(ROOT, 'packages/core/src/scan/manifest-check.ts'), 'utf8'))]];
+    const idProblems = [];
+    for (const [rel, have] of copies) {
+      if (!have.size) { idProblems.push(`${rel}: the matcher found no built-in lens ids - it no longer reads this file`); continue; }
+      const missing = [...wantIds].filter((v) => !have.has(v)), extra = [...have].filter((v) => !wantIds.has(v));
+      if (missing.length) idProblems.push(`${rel}: in the schema's builtinLensId, not here: ${missing.join(', ')}`);
+      if (extra.length) idProblems.push(`${rel}: here, not in the schema's builtinLensId: ${extra.join(', ')}`);
+    }
+    console.log(`${idProblems.length ? 'FAIL' : 'ok  '}  lens-manifest-1's builtinLensId enum (${wantIds.size} ids) is the list ${copies.length} files in packages/core hand-write${idProblems.length ? ': ' + idProblems.join('; ') : ''}`);
+    if (idProblems.length) failed++;
+    // control: one id dropped from each copy's text must be reported, and a renamed symbol must not read as agreement
+    const holedCatalog = lensIds(`import x from '../../../../docs/standard/lenses/business.json';`, CATALOG_RE);
+    const holedSet = builtinIdsOf(`const BUILTIN_IDS = new Set(['business', 'design']);`);
+    const idControl = [...wantIds].filter((v) => !holedCatalog.has(v)).length === wantIds.size - 1
+      && [...wantIds].filter((v) => !holedSet.has(v)).length === wantIds.size - 2 && builtinIdsOf('const OTHER = new Set([]);').size === 0;
+    console.log(`${idControl ? 'ok  ' : 'FAIL'}  control: a built-in id missing from a copy is reported, and a renamed BUILTIN_IDS reads as empty, not as agreement`);
+    if (!idControl) failed++;
     // the mapping against real documents: Kettle's map and events, the built-in lens manifests, the valid fixtures
     const docs = [['AppStructure', 'packages/core/data/kettle.app-structure.json'], ['AppStructure', 'packages/schema/schema/fixtures/valid-map.json'], ['LensManifest', 'packages/schema/schema/fixtures/valid-steps-lens.json'],
       ...fs.readdirSync(path.join(ROOT, 'docs/standard/lenses')).filter((f) => f.endsWith('.json')).map((f) => ['LensManifest', 'docs/standard/lenses/' + f]),
