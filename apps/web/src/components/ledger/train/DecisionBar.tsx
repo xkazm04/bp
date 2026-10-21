@@ -59,13 +59,13 @@ export function DecisionBar({ L, targets, onRelease, hint, phone = false }: Deci
             <span className="lg-bar-l">
               {lenses.map((id) => <LensTag key={id} id={id} />)}
               {flagged ? <span className="tr-warn">⚑ {flagged} need{flagged === 1 ? 's' : ''} a note to accept</span> : null}
-              {locked ? <span>{locked} locked</span> : null}
+              {locked ? <span title="Their release has left draft: they cannot be reworked, descoped or undone">{locked} locked in a release</span> : null}
             </span>
           ) : hint ? <span className="lg-bar-l">{hint}</span> : null}
           <span className="lg-sp" />
           {!phone ? <Btn kbd="Esc" disabled={!n} onClick={L.clear} title="Clear the selection (Esc)">Clear</Btn> : null}
           <Decide ids={targets} />
-          <span className="tr-pkg" title="The release package: accepted items waiting for a release">
+          <span className="tr-pkg" title={rel ? 'The release package: every accepted item of ' + rel.id + ', plus the accepted items no release holds yet' : 'The release package: accepted items waiting for a release'}>
             <span>Package</span><b>{ver ? 'v' + ver + ' · ' : ''}{pkg}</b>
             <Btn onClick={onRelease} title="Open the release (3)">{rel && rel.status !== 'draft' ? rel.status : 'Release'} →</Btn>
           </span>
