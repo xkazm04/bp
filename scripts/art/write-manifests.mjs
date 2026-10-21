@@ -42,6 +42,16 @@ const NOTES = {
   },
 };
 
+// NOTES is prose a human writes, so it stays typed - but it must cover exactly the assets score-assets.mjs knows, and a gap is named here,
+// before any file is hashed or written, rather than surfacing as a TypeError on n.pivot.
+{
+  const missing = Object.keys(ASSETS).filter((id) => !(id in NOTES)), stale = Object.keys(NOTES).filter((id) => !(id in ASSETS));
+  if (missing.length || stale.length) {
+    if (missing.length) console.error(`NOTES has no entry for: ${missing.join(', ')} (ASSETS in score-assets.mjs lists it; add its prose to NOTES in write-manifests.mjs)`);
+    if (stale.length) console.error(`NOTES has an entry for an asset ASSETS does not list: ${stale.join(', ')}`);
+    process.exit(2);
+  }
+}
 for (const id of Object.keys(ASSETS)) {
   const dir = path.join(ART, id), r = scoreAsset(id), c = r.checks, n = NOTES[id];
   const all = files(dir);
