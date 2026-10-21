@@ -6,7 +6,7 @@ import { GA_MILESTONE, astat, hash01, type SimAgent, type SimDecision } from '@b
 import type { Engine } from '../Engine';
 import { drawText } from '../text';
 import { clamp } from '../camera';
-import { agentColor, glyphAgent, glyphPin } from './glyphs';
+import { CHIP_H, CHIP_STEP, CHIP_W, agentColor, chipsFit, glyphAgent, glyphPin } from './glyphs';
 import { featRect } from './plan';
 import { onView, rs, sxv, syv, type SRect, type View } from './view';
 
@@ -26,7 +26,7 @@ function posAt(E: Engine, v: View, fid: string, i: number, n: number, lod: numbe
   if (n > 1) { const an = (i / n) * 6.2832 + 0.6; rx += Math.cos(an) * 7 * u; ry += Math.sin(an) * 5.5 * u; }
   if (lod <= 0.001) { out.x = rx; out.y = ry; out.chip = false; return true; }
   rs(v, T, out.r);
-  const chips = out.r.w >= 100 * u && out.r.h >= 58 * u, step = (chips ? 62 : 15) * u;
+  const chips = chipsFit(out.r.w, out.r.h, u), step = (chips ? CHIP_STEP : 15) * u;
   const tx = out.r.x + (chips ? 20 : 12) * u + i * step, ty = out.r.y + out.r.h - (chips ? 14 : 10) * u;
   out.x = rx + (tx - rx) * lod; out.y = ry + (ty - ry) * lod; out.chip = chips && lod > 0.6;
   return true;
@@ -267,16 +267,16 @@ export function drawAgents(E: Engine, ctx: CanvasRenderingContext2D, v: View, lo
     }
     if (p.chip && !p.moving) {
       const nd = (sim.DOF[A.f] || []).length;
-      const cap = Math.max(1, Math.floor((p.r.w - 14 * u - nd * 18 * u) / (62 * u)));
+      const cap = Math.max(1, Math.floor((p.r.w - 14 * u - nd * 18 * u) / (CHIP_STEP * u)));
       if (p.n > cap && p.idx >= cap - 1) {
         if (p.idx === cap - 1) {
           const x0 = p.x - 13 * u, y0 = p.y - 10 * u;
-          ctx.fillStyle = th.chipBg; ctx.fillRect(x0, y0, 58 * u, 20 * u); ctx.strokeStyle = th.inkA(0.6); ctx.lineWidth = 1.3; ctx.strokeRect(x0 + 0.5, y0 + 0.5, 58 * u - 1, 20 * u - 1);
+          ctx.fillStyle = th.chipBg; ctx.fillRect(x0, y0, CHIP_W * u, CHIP_H * u); ctx.strokeStyle = th.inkA(0.6); ctx.lineWidth = 1.3; ctx.strokeRect(x0 + 0.5, y0 + 0.5, CHIP_W * u - 1, CHIP_H * u - 1);
           drawText(ctx, '+' + (p.n - cap + 1), x0 + 8 * u, y0 + 14.4 * u, chipFont, th.inkHi);
         }
         continue;
       }
-      const w = 58 * u, h = 20 * u, x0 = p.x - 13 * u, y0 = p.y - h / 2;
+      const w = CHIP_W * u, h = CHIP_H * u, x0 = p.x - 13 * u, y0 = p.y - h / 2;
       ctx.globalAlpha = al;
       ctx.fillStyle = th.chipBg; ctx.fillRect(x0, y0, w, h);
       ctx.strokeStyle = agentColor(th, st); ctx.lineWidth = 1.3; ctx.strokeRect(x0 + 0.5, y0 + 0.5, w - 1, h - 1);

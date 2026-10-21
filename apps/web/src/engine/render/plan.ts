@@ -9,7 +9,7 @@ import type { Engine } from '../Engine';
 import type { ChannelAggregate, MarkArgs, Rect, TileGeom } from '../lens/contract';
 import { clamp } from '../camera';
 import { drawText } from '../text';
-import { cloud, drawHealthBar, drawStageBar, glyphAgent, glyphPin, stageFill, stageStroke } from './glyphs';
+import { chipsFit, cloud, drawHealthBar, drawStageBar, glyphAgent, glyphPin, stageFill, stageStroke } from './glyphs';
 import { unknownFill } from './patterns';
 import { patchMiss } from './simwatch';
 import { onView, rs, smooth, sxv, syv, type SRect, type View } from './view';
@@ -241,7 +241,7 @@ function paintTile(E: Engine, ctx: CanvasRenderingContext2D, v: View, T: TileNod
   const bigA = bigR >= 0.5 ? 1 : 0, smallA = 1 - bigA;
   if (ta <= 0.004) { ctx.globalAlpha = 1; return; }
   const agentsHere = now && E.M.sim.has && E.M.sim.AGF[f.id] && E.M.sim.AGF[f.id].length;
-  const chips = !!agentsHere && w >= 100 * u && h >= 58 * u;
+  const chips = !!agentsHere && chipsFit(w, h, u);
   const tx = E.tx, D = E.mixS.topD, top = E.mixS.top;
   const hy = g.strip.y + g.strip.h + 12 * u;
   if (bigA > 0.002) {

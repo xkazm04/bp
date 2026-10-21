@@ -12,6 +12,16 @@ const DASH_NOT_DRAWN = [1, 3]; // a feature not yet drawn
 const DASH_SPECIFIED = [5, 3]; // specified: proposed, not built
 const DASH_IDEA = [1.5, 2.5];  // an idea
 
+// An agent chip's box and pitch, in px at UI scale 1: the dynamic layer lays chips along a tile's foot.
+export const CHIP_W = 58, CHIP_H = 20, CHIP_STEP = 62;
+/**
+ * Does a tile carry agent CHIPS (code in a box) rather than bare survey marks? The static layer reserves the
+ * room for them under the name (render/plan.ts paintTile) and the dynamic layer decides whether to draw them
+ * (render/dynamic.ts posAt). Both must answer the same question or the name is laid out for one case and the
+ * chips drawn for the other, so the rule lives here once. Pinned by `npm run check:render-units`.
+ */
+export const chipsFit = (w: number, h: number, u: number): boolean => w >= 100 * u && h >= 58 * u;
+
 export function cloud(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   ctx.beginPath(); ctx.moveTo(x, y);
   const edge = (x0: number, y0: number, x1: number, y1: number) => {

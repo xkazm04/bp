@@ -298,6 +298,12 @@ function unionMembers(rel: string, name: string): string[] {
     expect(cc.globalAlpha === 1, `glyphs: the "${st}" agent mark restores the caller's alpha`);
   }
   expect(new Set(states.map((s) => GL.agentColor(th, s))).size >= 4, 'glyphs: agentColor tells the agent states apart');
+  // the chip-fit rule: the static layer reserves the room, the dynamic layer draws the chips, one predicate
+  expect(GL.chipsFit(100, 58, 1) && GL.chipsFit(300, 120, 1), 'glyphs: chipsFit takes a tile at and above its floor');
+  expect(!GL.chipsFit(99.9, 58, 1) && !GL.chipsFit(100, 57.9, 1), 'glyphs: chipsFit refuses a tile a hair under either floor');
+  expect(GL.chipsFit(200, 116, 2) && !GL.chipsFit(199, 116, 2), 'glyphs: chipsFit scales both floors with the UI scale');
+  expect(GL.CHIP_STEP > GL.CHIP_W && GL.CHIP_H > 0, `glyphs: the chip pitch leaves a gap between chips (${GL.CHIP_W} wide, ${GL.CHIP_STEP} apart)`);
+  expect(GL.chipsFit(GL.CHIP_W * 2, 58, 1) === (GL.CHIP_W * 2 >= 100), 'glyphs: a tile that fits two chips side by side also fits chips at all');
   const c8 = fresh();
   GL.glyphPin(c8, th, 50, 50, 'high', true, 0.9, 3, 0, 1, '600 12px sans-serif');
   expect(c8.calls.includes('fillText') && c8.textAlign === 'left', 'glyphs: a pin with a count draws its bubble and restores textAlign');
@@ -401,6 +407,17 @@ function bare(rel: string): string {
   }
   expect(hits.length === 0,
     `render: setLineDash takes a module constant, never a fresh array literal - it copies its argument, and these functions run per frame or per tile (${hits.length} literal${hits.length === 1 ? '' : 's'}: ${hits.slice(0, 8).join(' ')})`);
+}
+
+// ---------------------------------------------------------------- source guard: the chip-fit rule has one home
+{
+  const inline: string[] = [];
+  for (const f of ['plan.ts', 'dynamic.ts']) {
+    bare(R + f).split(/\r?\n/).forEach((l, i) => { if (/>=\s*100\s*\*\s*u\s*&&[^;]*>=\s*58\s*\*\s*u/.test(l)) inline.push(R + f + ':' + (i + 1)); });
+  }
+  expect(inline.length === 0,
+    `render: the chip-fit rule is only in glyphs.ts chipsFit - the static layer reserving the room and the dynamic layer drawing the chips must not each spell it (${inline.join(' ')})`);
+  for (const f of ['plan.ts', 'dynamic.ts']) expect(/chipsFit\(/.test(bare(R + f)), `render: ${f} asks glyphs.ts chipsFit rather than deciding for itself`);
 }
 
 // ---------------------------------------------------------------- report
