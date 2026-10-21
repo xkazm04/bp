@@ -250,6 +250,27 @@ const expect = (ok, what) => { if (ok) held++; else failures.push(what); };
   expect(of('-nope300').warnings.length === 1 && of(null).warnings.length === 0, 'toggle cache: a cap changed what a toggle warns');
 }
 
+// ------------------------------------------------------------------ the bases kept per map object are bounded
+// One base is built per distinct (events text, catalog, weeks) triple and the lookup is a linear find, so a caller
+// that hands the same map a freshly read events string each time would keep every base for as long as the map lives.
+{
+  const map = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.app-structure.json'), 'utf8'));
+  const events = fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.events.jsonl'), 'utf8');
+  const withText = (i) => events + ' '.repeat(i + 1); // trailing blanks are trimmed: same content, a distinct string
+  const first = loadStructure(map, withText(0));
+  expect(loadStructure(map, withText(0)) === first, 'bases: the same events text was rebuilt');
+  for (let i = 1; i <= 100; i++) loadStructure(map, withText(i));
+  expect(loadStructure(map, withText(0)) !== first, 'bases: 100 distinct events texts are all still held (unbounded)');
+  const last = loadStructure(map, withText(100));
+  expect(loadStructure(map, withText(100)) === last, 'bases: the most recent base is not held');
+  // a base in use stays: reading the oldest kept entry again keeps it ahead of newer ones
+  const keep = loadStructure(map, withText(200));
+  for (let i = 201; i <= 220; i++) { loadStructure(map, withText(200)); loadStructure(map, withText(i)); }
+  expect(loadStructure(map, withText(200)) === keep, 'bases: a base read between every new one was evicted');
+  const weeks = loadStructure(map, events, { weeks: 3 });
+  expect(loadStructure(map, events, { weeks: 3 }) === weeks && weeks.weeks.length === 3, 'bases: a weeks option is cached on its own');
+}
+
 // ------------------------------------------------------------------ the control: valid input warns 0 times
 {
   const map = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.app-structure.json'), 'utf8'));

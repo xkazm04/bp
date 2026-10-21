@@ -374,6 +374,8 @@ interface Base {
   /** Built structures by what the toggle resolves to, at most TOGGLE_CACHE of them. */
   byToggle: Map<string, Structure>;
 }
+/** Bases kept per map object, least recently used first out. */
+const BASES_PER_MAP = 8;
 /** One cached base per map object, events text and the options that change the base (catalog, weeks). */
 const BASES = new WeakMap<object, { events: string | null; catalog: LoadOptions['catalog']; weeks: number | undefined; base: Base }[]>();
 
@@ -675,10 +677,15 @@ export function loadStructure(raw: unknown, eventsText: string | null, opts: Loa
   // a non-object map throws in buildBase and is never cached
   const k = isObj(raw) ? raw : null;
   const per = k ? BASES.get(k) ?? (BASES.set(k, []), BASES.get(k)!) : null;
-  let b = per?.find((e) => e.events === eventsText && e.catalog === opts.catalog && e.weeks === opts.weeks)?.base;
-  if (!b) {
+  const at = per ? per.findIndex((e) => e.events === eventsText && e.catalog === opts.catalog && e.weeks === opts.weeks) : -1;
+  let b: Base;
+  if (per && at >= 0) {
+    b = per[at].base;
+    if (at < per.length - 1) per.push(per.splice(at, 1)[0]); // most recently used last
+  } else {
     b = buildBase(raw, eventsText, opts);
-    per?.push({ events: eventsText, catalog: opts.catalog, weeks: opts.weeks, base: b });
+    // the map object lives as long as its module, so what hangs off it must not grow with the caller's inputs
+    if (per) { per.push({ events: eventsText, catalog: opts.catalog, weeks: opts.weeks, base: b }); if (per.length > BASES_PER_MAP) per.shift(); }
   }
   return withToggle(b, opts.lenses ?? null);
 }
