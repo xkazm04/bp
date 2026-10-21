@@ -120,9 +120,13 @@ export function useLiveProduct(slug: string | null): LiveProduct {
       if (dead) return;
       const src = new EventSource(base + '/stream');
       es = src;
+      // every listener parses inside a guard: an unreadable event is skipped, never thrown out of the
+      // listener, where it would leave the stream open and the page's readings frozen with no sign of it
       src.addEventListener('snapshot', (ev) => {
         attempt = 0;
-        scan = full(JSON.parse((ev as MessageEvent<string>).data) as Partial<ScanSnapshot>);
+        let sent: Partial<ScanSnapshot>;
+        try { sent = JSON.parse((ev as MessageEvent<string>).data) as Partial<ScanSnapshot>; } catch { return; }
+        scan = full(sent);
         if (!isEmpty(scan)) hasStore = true;
         const s = scan;
         // a (re)connect: the server follows the snapshot with its jobs when it has any, so until then there are none
@@ -146,8 +150,10 @@ export function useLiveProduct(slug: string | null): LiveProduct {
       });
       src.addEventListener('delta', (ev) => {
         if (!scan) return;
+        let sent: Partial<ScanSnapshot>;
+        try { sent = JSON.parse((ev as MessageEvent<string>).data) as Partial<ScanSnapshot>; } catch { return; }
         const was = latestRun(scan);
-        scan = mergeScan(scan, full(JSON.parse((ev as MessageEvent<string>).data) as Partial<ScanSnapshot>));
+        scan = mergeScan(scan, full(sent));
         hasStore = true;
         const now = latestRun(scan);
         if (was && now && was.id === now.id && was.status === 'running' && now.status !== 'running') refresh(); // a run ended: its metrics are in the map

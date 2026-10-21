@@ -129,6 +129,22 @@ warned.length = 0;
 expect(parseTempLenses(null).length === 0 && warned.length === 0, 'empty storage warns', warned.join(' '));
 console.warn = realWarn;
 
+// --------------------------------------------- 1d. every stream listener parses inside a guard
+// useLiveProduct has five SSE listeners and each parses the event's data. `jobs`, `map` and the server's named
+// `error` wrapped the parse and skipped an unreadable event; `snapshot` and `delta` did not, so one malformed
+// event threw out of the listener - the EventSource stays open, the status stays 'live', and the page's
+// readings freeze with nothing anywhere to say they have. One rule, five sites, three of them obeying it.
+const clientSrc = readStripped(path.join(SRC, 'lib/scan/client.ts')).replace(/\r\n/g, '\n');
+const listeners = [...clientSrc.matchAll(/src\.addEventListener\('(\w+)'[\s\S]*?\n {6}\}\);/g)];
+expect(listeners.length === 5, `useLiveProduct has ${listeners.length} stream listeners, not the 5 this check knows (update it)`);
+for (const m of listeners) {
+  const name = m[1], bodyText = m[0];
+  const parses = (bodyText.match(/JSON\.parse/g) ?? []).length;
+  const guarded = (bodyText.match(/try \{[^}]*JSON\.parse/g) ?? []).length;
+  expect(parses > 0, `the '${name}' listener no longer parses its event (update this check)`);
+  expect(guarded === parses, `the '${name}' listener parses ${parses} times and guards ${guarded}: one malformed event throws out of the listener and the stream freezes silently`);
+}
+
 // --------------------------------------------- 2. a job that ended still reports it on the plan
 // scanViews draws a finished job's outline for LINGER_MS after it ended - all ticks for `done`, the bad colour
 // for `failed`. The end came from `Date.parse(j.ended_at ?? '')`, which is NaN when the job carries no end, so
