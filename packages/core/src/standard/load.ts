@@ -199,6 +199,8 @@ const LINES: readonly LineName[] = ['solid', 'double', 'dotted', 'comb', 'chain'
 const PATH_OK = /^[Mm][MmZzLlHhVvCcSsQqTtAa0-9eE.,+\- ]{0,2047}$/;
 const DAY = 864e5;
 const addDays = (d: string, n: number) => new Date(Date.parse(d + 'T00:00:00Z') + n * DAY).toISOString().slice(0, 10);
+/** A stamp `addDays` and the week replay can do arithmetic on: an ISO date, optionally with a time after it. */
+const isDateStamp = (s: string): boolean => /^\d{4}-\d{2}-\d{2}(?:[T ]|$)/.test(s) && !Number.isNaN(Date.parse(s.slice(0, 10) + 'T00:00:00Z'));
 const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9.]+/g, '-').replace(/^-+|-+$/g, '') || 'feature';
 
 /** v3.1 variations, keeping well-formed entries only (slug, name and audience strings; bullets as strings; first slug wins). */
@@ -360,7 +362,14 @@ function buildBase(raw: unknown, eventsText: string | null, opts: LoadOptions): 
   const warnings: string[] = [];
   const warn: Warn = (m) => { warnings.push(m); };
   const events = parseEvents(eventsText);
-  const asOfTime = str(map.generated_at) || (events.length ? events[events.length - 1].at : new Date().toISOString());
+  // the as-of date drives addDays and the week replay, so a stamp that is not a date is repaired here rather
+  // than left to throw RangeError out of the loader (spec: malformed parts degrade with a warning)
+  const stamp = str(map.generated_at), logEnd = events.length ? events[events.length - 1].at : '';
+  let asOfTime = stamp || logEnd || new Date().toISOString();
+  if (!isDateStamp(asOfTime)) {
+    warn(`${stamp === asOfTime ? 'generated_at' : 'the events log\'s last at'} ${JSON.stringify(asOfTime)} is not a date (YYYY-MM-DD); ${isDateStamp(logEnd) ? 'the events log\'s last entry is read as the as-of time' : 'today is read as the as-of time'}`);
+    asOfTime = isDateStamp(logEnd) ? logEnd : new Date().toISOString();
+  }
   const asOf = asOfTime.slice(0, 10);
   const ext = fromExtensions(map.extensions);
 
@@ -513,7 +522,7 @@ function buildBase(raw: unknown, eventsText: string | null, opts: LoadOptions): 
   // weekly snapshots by replay: a feature's stage on a date is its last revision at or before it
   const nW = Math.max(1, opts.weeks ?? 27);
   let w0 = addDays(asOf, -7 * (nW - 1));
-  const first = events.length ? events[0].at.slice(0, 10) : asOf;
+  const first = events.find((e) => isDateStamp(e.at))?.at.slice(0, 10) ?? asOf;
   while (w0 < first && w0 < asOf) w0 = addDays(w0, 7);
   const weeks: string[] = [];
   for (let w = w0; w <= asOf; w = addDays(w, 7)) weeks.push(w);

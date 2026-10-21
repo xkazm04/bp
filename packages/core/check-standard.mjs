@@ -17,6 +17,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '../..');
 const load = (p) => import(pathToFileURL(path.join(HERE, p)).href);
 const { BUILTIN_LENSES } = await load('src/standard/catalog.ts');
+const { loadStructure } = await load('src/standard/load.ts');
 
 let held = 0;
 const failures = [];
@@ -44,6 +45,32 @@ const expect = (ok, what) => { if (ok) held++; else failures.push(what); };
   for (const m of BUILTIN_LENSES) {
     expect(fs.existsSync(path.join(ROOT, dir, m.id + '.json')), `catalog: "${m.id}" has no manifest in ${dir}`);
   }
+}
+
+// ------------------------------------------------------------------ the as-of stamp: repaired, never thrown
+// The loader's contract (src/standard/load.ts loadStructure) is that only a map which is not an object or not
+// v2/v3 throws; everything else degrades with a warning. The as-of stamp feeds addDays and the week replay, so a
+// stamp that is not a date used to leave the loader as a RangeError.
+{
+  const map = (generated_at, extra = {}) => ({
+    $schema: 'app-structure/3', project: { slug: 'p', name: 'P' }, generated_at,
+    domains: [{ slug: 'd', name: 'D' }], capabilities: [{ slug: 'c', domain: 'd', name: 'C' }],
+    features: [{ slug: 'f', name: 'F', capability: 'c' }], ...extra,
+  });
+  const dated = /^\d{4}-\d{2}-\d{2}$/;
+  for (const [stamp, events] of [['soon', null], ['2026-13-45', null], ['', 'not json\n'], ['tuesday', '{"at":"later","type":"noop"}\n']]) {
+    let st;
+    try { st = loadStructure(map(stamp), events); } catch (e) {
+      failures.push(`as-of: generated_at ${JSON.stringify(stamp)} threw ${e instanceof Error ? e.message : String(e)} instead of degrading`);
+      continue;
+    }
+    expect(dated.test(st.asOf), `as-of: generated_at ${JSON.stringify(stamp)} left asOf ${JSON.stringify(st.asOf)}`);
+    expect(st.weeks.length >= 1 && st.weeks.every((w) => dated.test(w)), `as-of: generated_at ${JSON.stringify(stamp)} left weeks ${JSON.stringify(st.weeks)}`);
+    if (stamp) expect(st.warnings.some((w) => w.includes('is not a date')), `as-of: generated_at ${JSON.stringify(stamp)} was repaired with no warning`);
+  }
+  // a dated stamp is still taken as given, and still warns about nothing
+  const ok = loadStructure(map('2026-01-01T09:30:00Z'), null);
+  expect(ok.asOf === '2026-01-01' && ok.asOfTime === '2026-01-01T09:30:00Z' && ok.warnings.length === 0, `as-of: a valid stamp read as ${ok.asOf} / ${JSON.stringify(ok.warnings)}`);
 }
 
 for (const f of failures) console.log('FAIL  ' + f);
