@@ -44,7 +44,10 @@ export function swarmFromScan(scan: ScanSnapshot, features: readonly (string | S
   const agentOf = (lens: string) => `scan-${lens}.1`;
 
   const squads: Squad[] = [], agents: Agent[] = [];
-  for (const lens of run.lenses) {
+  // `runs.lenses` is a store JSON column filtered to strings, so it can repeat one; one squad and one agent per
+  // DISTINCT lens, or two squads share an id and two agents share `scan-<lens>.1` (the canvas keys on both).
+  const lenses = [...new Set(run.lenses)];
+  for (const lens of lenses) {
     const sq = `scan-${lens}`, role = 'research' as const; // scanners are research crews whatever their lens (lenses are data: no branch on a lens id)
     squads.push({ id: sq, name: `${title(lens)} scan`, role, focus: `measures the ${lens} lens`, size: 1, lenses: [lens] });
     // This run's rows first; a lens the run has not reached yet sits where an earlier run left it.
@@ -64,7 +67,7 @@ export function swarmFromScan(scan: ScanSnapshot, features: readonly (string | S
     if (status === 'waiting' && wait) a.waitingOn = wait.id;
     agents.push(a);
   }
-  const agentIds = new Set(agents.map((a) => a.id)), byLens = new Map(run.lenses.map((l, i) => [l, agents[i]]));
+  const agentIds = new Set(agents.map((a) => a.id)), byLens = new Map(lenses.map((l, i) => [l, agents[i]]));
   const held = new Set(agents.map((a) => a.waitingOn).filter((w): w is string => !!w)); // the proposal each waiting lens agent stands on
 
   const decisions: Decision[] = open.map((p) => ({

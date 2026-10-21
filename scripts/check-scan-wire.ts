@@ -111,6 +111,12 @@ try {
     const readId = (ms: Measurement[]) => latestReading({ measurements: ms }, 'a', 'dev', 'cov')?.id;
     check('latestReading breaks a tie on measured_at by id', readId(tied) === 13, String(readId(tied)));
     check('latestReading answers the same on the same rows reversed', readId([...tied].reverse()) === 13, String(readId([...tied].reverse())));
+    // `runs.lenses` is a store JSON column filtered to strings, so it can repeat one: one squad and one agent
+    // per DISTINCT lens, or the canvas gets two rows keyed `scan-dev` and two agents keyed `scan-dev.1`.
+    const dup = swarmFromScan({ ...base, runs: [{ ...run(), lenses: ['dev', 'dev', 'sec'] }] }, feats);
+    check('a run naming one lens twice draws it once', dup.squads.length === 2 && dup.agents.length === 2
+      && new Set(dup.agents.map((a) => a.id)).size === 2 && new Set(dup.squads.map((sq) => sq.id)).size === 2,
+      JSON.stringify({ squads: dup.squads.map((sq) => sq.id), agents: dup.agents.map((a) => a.id) }));
   }
 
   // ---- stream cursor
