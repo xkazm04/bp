@@ -43,6 +43,7 @@
     "check:camera": "node scripts/check-camera.ts",
     "check:render-units": "node scripts/check-render-units.ts",
     "check:variant-copies": "node apps/web/src/variants/check-copies.ts",
+    "check:rail-keys": "node apps/web/src/components/rail/check-keys.ts",
     "check:timeline-keys": "node apps/web/src/components/timeline/check-keys.ts",
     "check:timeline-size": "node apps/web/src/components/timeline/check-size.ts",
     "check:timeline-scrub": "node apps/web/src/components/timeline/check-scrub.ts",
@@ -59,6 +60,7 @@
     "check:timeview": "node scripts/check-timeview.ts",
     "check:stream": "node scripts/check-stream-status.mjs",
     "check:tokens": "node scripts/check-tokens.mjs",
+    "check:theme-colors": "node scripts/check-theme-colors.ts",
     "check:chrome": "node scripts/check-chrome-sizes.mjs",
     "check:legacy": "node scripts/check-legacy-unmeasured.mjs",
     "check:findings": "node scripts/fixtures/kettle-findings.mjs --check"

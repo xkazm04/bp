@@ -34,6 +34,7 @@ export function View() {
     if (el && det.current) { jumping.current = performance.now(); det.current.scrollTo({ top: el.offsetTop - 4, behavior: 'smooth' }); }
   }, []);
   const onKey = useWalk(ids, sel, go, listRef);
+  const whoRef = useRef<HTMLUListElement>(null);
   // the nav follows the reader's own scroll (not the one a nav click started)
   const onScroll = () => {
     const box = det.current; if (!box || performance.now() - jumping.current < 700) return;
@@ -51,6 +52,11 @@ export function View() {
   const rows = [{ id: null as string | null, name: 'Everyone', sub: 'the whole product, all sheets', n: open.length }]
     .concat(persons.map((x) => ({ id: x.id, name: x.name, sub: x.title + ' · ' + sheetOf(M.P, personLens(M.P, x.id)).nm, n: open.filter((d) => d.decider === x.id).length })));
   const ga = M.P.MS[GA_MILESTONE];
+  // "Whose desk" is a listbox of its own: one tab stop (roving tabindex, as the workbench's Row has) and its own
+  // J/K, arrow and Home/End walk. The walk swallows the key, so it never reaches the section nav's walk above.
+  // the roving tab stop never vanishes: a reader the list does not hold (removed from the map) falls back to Everyone
+  const whoCur = rows.some((r) => (r.id || '') === (s.who || '')) ? s.who || null : null;
+  const onWhoKey = useWalk(rows.map((r) => r.id), whoCur, (id) => E.setWho(id), whoRef);
 
   return (
     <div className="wb wb-view" onKeyDown={onKey}>
@@ -96,12 +102,12 @@ export function View() {
             </Sec>
             {desk && (
               <Sec id="wbv-desk" head="Whose desk" aside="open questions">
-                <ul className="wb-who" role="listbox" aria-label="View as">
+                <ul className="wb-who" role="listbox" aria-label="View as" ref={whoRef} onKeyDown={onWhoKey}>
                   {rows.map((r) => {
-                    const on = (s.who || '') === (r.id || '');
+                    const on = (whoCur || '') === (r.id || '');
                     return (
-                      <li key={r.id ?? 'all'} role="option" tabIndex={0} aria-selected={on} className={on ? 'on' : ''}
-                        onClick={() => E.setWho(r.id)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { swallow(e); E.setWho(r.id); } }}>
+                      <li key={r.id ?? 'all'} role="option" tabIndex={on ? 0 : -1} data-row={r.id ?? ''} aria-selected={on} className={on ? 'on' : ''}
+                        onClick={() => E.setWho(r.id)} onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { swallow(e); E.setWho(r.id); } }}>
                         <span className="av" aria-hidden="true">{r.name.charAt(0)}</span><span className="nm">{r.name}<small>{r.sub}</small></span><b className="n">{r.n}</b>
                       </li>
                     );
