@@ -24,7 +24,14 @@ const expect = (ok: boolean, what: string) => { if (ok) held++; else failures.pu
 
 // ------------------------------------------------------------------ the validator (spec §12 "Fixtures")
 // [args, expected exit code, texts the output must contain (the stated reasons, not just any failure);
-// a text starting with "!" must be ABSENT]. Each new validator rule has a fixture here that trips it.
+// a text starting with "!" must be ABSENT].
+// NOT "every validator rule has a fixture here that trips it", which this comment claimed until 2026-10-21 and
+// nothing checked. Measured by instrumenting Ctx.error in a copy of the validator and running every fixture in
+// packages/schema/schema/fixtures/ (alone, and with its events file): 3 of the 36 `.error(` sites are reached, and
+// two of those three are the generic funnels that report an ajv error or a humanized one. So the runs below cover
+// the SCHEMA layer; the ~33 checks a schema cannot express - references resolve, keys are unique, facet values fit
+// their fields - have no fixture, and a change that drops one of them passes this gate. Fixtures live in another
+// context (packages/schema/), so the gap is a backlog item with the error-site probe as its instrument.
 const VALID = `${FIX}/valid-map.json`, GAPS = `${FIX}/warn-validator-gaps.json`;
 const RUNS: [string[], 0 | 1, ...string[]][] = [
   [[VALID, '--events', `${FIX}/valid-map.events.jsonl`], 0, '2 of 2 valid'],
