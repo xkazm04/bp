@@ -148,9 +148,13 @@ export function nightTotal(log = readLog(), now = new Date()) {
  */
 export function windowReport(log = readLog(), now = new Date()) {
   const byQuality = {};
+  // Spend the log did not measure (a TIMEOUT or a lost balance read records the pre-call estimate): it is inside
+  // nightTotal, which gates the next call, so the report must say how much of that figure is a guess.
+  const unverified = { calls: 0, credits: 0 };
+  for (const e of inWindow(log, now)) if (e.creditsSource === 'fallback') { unverified.calls++; unverified.credits += Number(e.credits) || 0; }
   for (const e of inWindow(log, now)) { const q = (byQuality[e.quality] ??= { calls: 0, credits: 0 }); q.calls++; q.credits += Number(e.credits) || 0; }
   return {
-    window: spendWindow(now), byQuality, priorSpend: priorSpend(now),
+    window: spendWindow(now), byQuality, unverified, priorSpend: priorSpend(now),
     allTimeLogCredits: log.reduce((n, e) => n + (Number(e.credits) || 0), 0),
     nightTotal: nightTotal(log, now), cap: HARD_CAP,
   };

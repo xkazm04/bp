@@ -174,6 +174,18 @@ check('egress: the key is interpolated into exactly one string, the Bearer heade
 const appends = [...nocomment.matchAll(/appendFileSync\([^;]*;/g)].map((m) => m[0]);
 check('egress: the log is appended to once, with the entry alone', appends.length === 1 && /appendFileSync\(LOG,\s*JSON\.stringify\(entry\)\s*\+\s*'\\n'\)/.test(appends[0]), appends.join(' | '));
 
+// unverified: a TIMEOUT records the pre-call estimate as creditsSource 'fallback'. It counts inside nightTotal (the
+// cap's figure), so the report that explains nightTotal has to separate it from measured spend. gen() itself cannot
+// be driven here without reading the key from .env, so the rung is windowReport over a synthetic timed-out entry.
+const tNow = new Date('2026-10-21T12:00:00Z');
+const timedOut = { time: '2026-10-21T09:00:00Z', quality: 'LOW', status: 'TIMEOUT', credits: 8, creditsSource: 'fallback', generationId: 'x' };
+const measuredE = { time: '2026-10-21T09:05:00Z', quality: 'LOW', status: 'COMPLETE', credits: 6, creditsSource: 'api' };
+const tr = windowReport([timedOut, measuredE], tNow);
+check('unverified: a timed-out fallback entry still counts toward the figure the cap refuses on', tr.nightTotal === 14, `${tr.nightTotal}`);
+check('unverified: the report separates the guessed credits from the measured ones', tr.unverified?.credits === 8 && tr.unverified?.calls === 1, JSON.stringify(tr.unverified));
+check('unverified: a log with no fallback entry reports none', windowReport(realLog, tNow).unverified?.credits === 0 && windowReport([measuredE], tNow).unverified?.calls === 0);
+check('unverified: a fallback entry outside the window is not reported', windowReport([{ ...timedOut, time: '2026-10-20T09:00:00Z' }], tNow).unverified?.credits === 0);
+
 console.log(`
 check-leonardo: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
