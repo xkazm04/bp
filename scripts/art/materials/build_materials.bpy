@@ -1,0 +1,156 @@
+# Blender script; run with blender -b -P scripts/art/materials/build_materials.bpy -- <repo-root> <work-dir>
+"""Bakes the four P4 tiling materials (vellum, blueprint paper, brushed aluminium, warm wood) as procedural PBR sets with numpy:
+textures/<id>_{basecolor,normal,orm}.png in apps/vr/ArtSource/mat-<id>/. Every field is periodic (FFT-filtered noise, integer
+stripe counts, wrapped finite differences), so the tile wraps by construction; the seam check below measures it on the PNGs read
+back from disk. Normal maps are OpenGL (+Y up, tangent-space). ORM = R occlusion, G roughness, B metal.
+Seam gate: for each PNG, wrap = mean |pixel(edge) - pixel(opposite edge)| (the pair that touches when the tile repeats) and
+inner = mean |pixel(i) - pixel(i+1)| over the whole tile, per axis. The tile passes when wrap <= 1.25 * inner (a seam would stand
+out as a step well above the texture's own pixel-to-pixel change). Writes <work-dir>/score.json. No GPU, no external service."""
+import bpy, os, sys, json
+import numpy as np
+
+REPO, WORK = sys.argv[sys.argv.index('--') + 1:][:2]
+os.makedirs(WORK, exist_ok=True)
+N = 2048
+RATIO_MAX = 1.25
+SEED = {'vellum': 11, 'blueprint-paper': 22, 'brushed-aluminium': 33, 'warm-wood': 44}
+
+
+def rgb(h):
+    return np.array([int(h[i:i + 2], 16) / 255 for i in (1, 3, 5)], dtype=np.float32)
+
+
+def noise(rng, beta, sx=1.0, sy=1.0, cutoff=None):
+    """Periodic noise in -1..1: white noise shaped by 1/f^beta in Fourier space (sx, sy scale the frequency axes: a small sx
+    stretches the grain along x)."""
+    fy = np.fft.fftfreq(N)[:, None] * N
+    fx = np.fft.fftfreq(N)[None, :] * N
+    f = np.sqrt((fx * sx) ** 2 + (fy * sy) ** 2)
+    f[0, 0] = 1
+    filt = 1.0 / f ** beta
+    filt[0, 0] = 0
+    if cutoff:
+        filt = filt * np.exp(-((np.sqrt(fx ** 2 + fy ** 2)) / cutoff) ** 2)
+    n = np.real(np.fft.ifft2(np.fft.fft2(rng.standard_normal((N, N))) * filt))
+    n -= n.mean()
+    return (n / (np.abs(n).max() + 1e-9)).astype(np.float32)
+
+
+def norm01(a):
+    return (a - a.min()) / (a.max() - a.min() + 1e-9)
+
+
+def normal_map(h, strength):
+    fy = np.fft.fftfreq(N)[:, None] * N
+    fx = np.fft.fftfreq(N)[None, :] * N
+    h = np.real(np.fft.ifft2(np.fft.fft2(h) * np.exp(-((fx ** 2 + fy ** 2) / 180.0 ** 2)))).astype(np.float32)  # periodic low-pass: keeps the PNG small
+    dx = (np.roll(h, -1, 1) - np.roll(h, 1, 1)) * 0.5 * strength * N / 150
+    dy = (np.roll(h, -1, 0) - np.roll(h, 1, 0)) * 0.5 * strength * N / 150
+    n = np.stack([-dx, dy, np.ones_like(h)], -1)  # array row 0 is the image top, so +dy of the rows is -Y up: sign already flipped
+    n /= np.linalg.norm(n, axis=-1, keepdims=True)
+    return n * 0.5 + 0.5
+
+
+def mix(t, a, b):
+    return a[None, None, :] * (1 - t[..., None]) + b[None, None, :] * t[..., None]
+
+
+def vellum(rng):
+    cloud = norm01(noise(rng, 2.2, cutoff=60))
+    fibre = noise(rng, 0.6, cutoff=500)
+    fibre2 = noise(rng, 1.4, 0.25, 1.0, cutoff=400)
+    h = 0.5 * cloud + 0.25 * fibre + 0.25 * fibre2
+    base = mix(cloud, rgb('#E8DFC8'), rgb('#F4ECD8')) * (1 + 0.025 * fibre)[..., None]
+    return base, h, 0.9 + 0.1 * norm01(h), 0.55 + 0.15 * cloud, np.zeros_like(h), 0.6
+
+
+def blueprint_paper(rng):
+    cloud = norm01(noise(rng, 2.0, cutoff=50))
+    fibre = noise(rng, 0.7, cutoff=500)
+    base = mix(cloud, rgb('#0B2A6B'), rgb('#123A8C')) * (1 + 0.04 * fibre)[..., None]
+    # faint grid: 16 cells per tile, every 4th line a little stronger; line centres sit on integer cell multiples (and on 0), so it wraps
+    u = np.arange(N, dtype=np.float32)
+    cell = N / 16
+    u = u + 0.5  # pixel centres, so pixel 0 and pixel N-1 sit symmetrically about the wrap
+    d = np.abs(((u + cell / 2) % cell) - cell / 2)
+    dm = np.abs(((u + 2 * cell) % (4 * cell)) - 2 * cell)
+    line = np.maximum(np.clip(1 - d / 1.6, 0, 1) * 0.10, np.clip(1 - dm / 2.4, 0, 1) * 0.20)
+    grid = np.maximum(line[None, :], line[:, None])
+    base = base + grid[..., None] * (rgb('#BFE8FF') - base) * 0.55
+    h = 0.6 * cloud + 0.3 * fibre - 0.05 * grid
+    return base, h, 0.9 + 0.1 * norm01(h), 0.72 + 0.1 * cloud, np.zeros_like(h), 0.5
+
+
+def brushed_aluminium(rng):
+    brush = noise(rng, 0.3, 0.04, 6.0, cutoff=700)
+    brush2 = noise(rng, 0.5, 0.08, 3.0, cutoff=500)
+    cloud = noise(rng, 2.0, cutoff=40)
+    h = 0.6 * brush + 0.4 * brush2
+    base = np.ones((N, N, 3), np.float32) * rgb('#C9CDD2') * (1 + 0.05 * brush + 0.015 * cloud)[..., None]
+    return base, h, 0.95 + 0.05 * norm01(h), 0.32 + 0.08 * brush2 + 0.03 * cloud, np.ones_like(h), 0.35
+
+
+def warm_wood(rng):
+    warp = noise(rng, 1.6, 0.5, 1.0, cutoff=40) * 0.45 + 0.1 * noise(rng, 1.0, cutoff=200)
+    yy = np.arange(N, dtype=np.float32)[:, None] / N
+    # annual rings of a flat-sawn board: an integer stripe count across y, warped by periodic noise
+    ring = (0.5 + 0.5 * np.sin(2 * np.pi * (9 * yy + 1.3 * warp))) ** 1.6
+    pores = noise(rng, 0.4, 0.05, 5.0, cutoff=900)
+    fine = noise(rng, 0.8, 0.12, 2.0, cutoff=600)
+    tone = np.clip(0.55 * ring + 0.25 * norm01(warp) + 0.2 * norm01(fine), 0, 1)
+    base = mix(tone, rgb('#C48B54'), rgb('#8A5A2B')) * (1 + 0.07 * pores)[..., None]
+    h = 0.5 * pores + 0.3 * fine - 0.25 * ring
+    return base, h, 0.8 + 0.2 * (1 - 0.5 * ring), 0.55 + 0.12 * ring + 0.05 * pores, np.zeros_like(h), 0.9
+
+
+GEN = {'vellum': vellum, 'blueprint-paper': blueprint_paper, 'brushed-aluminium': brushed_aluminium, 'warm-wood': warm_wood}
+
+
+def save_png(path, arr):
+    img = bpy.data.images.new(os.path.basename(path), N, N, alpha=False)
+    rgba = np.ones((N, N, 4), dtype=np.float32)
+    rgba[:, :, :3] = np.clip(arr, 0, 1)[::-1]  # Blender image row 0 is the bottom; array row 0 is the image top
+    img.pixels.foreach_set(rgba.ravel())
+    img.filepath_raw = path
+    img.file_format = 'PNG'
+    img.save()
+    bpy.data.images.remove(img)
+
+
+def load_png(path):
+    img = bpy.data.images.load(path)
+    img.colorspace_settings.name = 'sRGB'
+    a = np.array(img.pixels[:], dtype=np.float32).reshape(img.size[1], img.size[0], 4)[::-1, :, :3]
+    bpy.data.images.remove(img)
+    return a * 255
+
+
+def seam(a):
+    out = {}
+    for axis, name in ((1, 'horizontal'), (0, 'vertical')):
+        wrap = float(np.abs(np.take(a, 0, axis=axis) - np.take(a, a.shape[axis] - 1, axis=axis)).mean())
+        inner = float(np.abs(np.diff(a, axis=axis)).mean())
+        out[name] = {'wrap_step': round(wrap, 4), 'inner_step': round(inner, 4), 'ratio': round(wrap / max(inner, 1e-6), 4)}
+    return out
+
+
+score = {'size': N, 'ratio_max': RATIO_MAX, 'materials': {}}
+for mid, fn in GEN.items():
+    base, h, ao, rough, metal, nstr = fn(np.random.default_rng(SEED[mid]))
+    out = os.path.join(REPO, 'apps', 'vr', 'ArtSource', 'mat-' + mid, 'textures')
+    os.makedirs(out, exist_ok=True)
+    files = {
+        mid + '_basecolor.png': base,
+        mid + '_normal.png': normal_map(h, nstr),
+        mid + '_orm.png': np.stack([ao, np.clip(rough, 0, 1), metal], -1),
+    }
+    m = {}
+    for name, arr in files.items():
+        p = os.path.join(out, name)
+        save_png(p, arr)
+        s = seam(load_png(p))
+        m[name] = {'seam': s, 'pass': all(v['ratio'] <= RATIO_MAX for v in s.values()), 'bytes': os.path.getsize(p)}
+        print(mid, name, s, m[name]['pass'], m[name]['bytes'])
+    score['materials'][mid] = m
+json.dump(score, open(os.path.join(WORK, 'score.json'), 'w'), indent=2)
+sys.exit(0 if all(f['pass'] for m in score['materials'].values() for f in m.values()) else 1)
