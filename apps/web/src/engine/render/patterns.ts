@@ -76,7 +76,15 @@ function build(th: Theme, P: Per, no: number, sz: number): CanvasPattern | null 
   }
   const p = g.createPattern(c, 'repeat');
   if (p) p.setTransform?.(new DOMMatrix([cw / c.width, 0, 0, ch / c.height, 0, 0]));
+  else patternFailed(no, sz);
   return p;
+}
+
+/** Motifs createPattern refused, each reported once: without it the lens's measure fill is simply absent. */
+const failedPatterns = new Set<number>();
+function patternFailed(no: number, sz: number) {
+  const k = no * 1000 + sz;
+  if (!failedPatterns.has(k)) { failedPatterns.add(k); console.error(`[patterns] createPattern failed for motif ${no} at size ${sz}; its fill is not drawn`); }
 }
 
 function pattern(ctx: CanvasRenderingContext2D, th: Theme, no: number, sz: number): CanvasPattern | null {

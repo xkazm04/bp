@@ -15,6 +15,7 @@
 //
 // Run: node scripts/check-render-units.ts  (Node's type stripping; no build step). Exit 1 on any failure.
 import fs from 'node:fs';
+import { readBlanked } from './lib/source.ts';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -33,6 +34,8 @@ const GL = await load<typeof import('../apps/web/src/engine/render/glyphs.ts')>(
 const FL = await load<typeof import('../apps/web/src/engine/render/flags.ts')>(R + 'flags.ts');
 const TR = await load<typeof import('../apps/web/src/engine/render/tracks.ts')>(R + 'tracks.ts');
 const KP = await load<typeof import('../apps/web/src/engine/render/keyplan.ts')>(R + 'keyplan.ts');
+const PL = await load<typeof import('../apps/web/src/engine/render/plan.ts')>(R + 'plan.ts');
+const DY = await load<typeof import('../apps/web/src/engine/render/dynamic.ts')>(R + 'dynamic.ts');
 
 type View = import('../apps/web/src/engine/render/view.ts').View;
 type SRect = import('../apps/web/src/engine/render/view.ts').SRect;
@@ -179,6 +182,33 @@ const view = (o: Partial<View> = {}): View => ({ x: 1200, y: 900, k: 0.7, FW: 12
   expect(SC.deviceRes(1, 1, 2) === 2, 'static-cache: a tiny viewport still gets the capped dpr');
 }
 
+// ---------------------------------------------------------------- static-cache.ts: rasters per wheel gesture
+// Engine.draw re-rasters in the frame that check() says 'stale', so the bucket IS the raster budget of a
+// gesture. This drives a real StaticCache through a scripted wheel (the same loop as Engine.draw's, minus the
+// settle path) and counts. The count is the cost half of the 12 px floor trade: a baked 12 px label shows at
+// 12 / BUCKET px at the end of a bucket (8.0 at 1.5), and holding it at 12 would re-raster on every zoom-out
+// frame (one raster per frame) - priced in count here, in ms only by `python scripts/perf.py` (needs a server).
+{
+  const g = globalThis as Record<string, unknown>, keep = g.document;
+  g.document = { createElement: () => ({ width: 0, height: 0, getContext: () => fresh() }) };
+  const rasters = (factor: number, frames: number): number => {
+    const sc = new SC.StaticCache();
+    let c = { x: 0, y: 0, k: 1 };
+    const paint = () => { };
+    sc.render(c, 1, 1280, 800, 1, paint);
+    for (let i = 0; i < frames; i++) {
+      c = { x: 0, y: 0, k: c.k * factor };
+      if (sc.check(c, 1, 1280, 800) === 'stale') sc.render(c, 1, 1280, 800, 1, paint);
+    }
+    return sc.rasters - 1;
+  };
+  const out = rasters(0.93, 30), inn = rasters(1 / 0.93, 30);
+  g.document = keep;
+  expect(out >= 4 && out <= 6, `static-cache: a 30-frame wheel-out costs a handful of rasters under the x1.5 bucket (${out})`);
+  expect(inn >= 4 && inn <= 6, `static-cache: a 30-frame wheel-in costs the same under the x1.5 bucket (${inn})`);
+  expect(out < 30 / 4, `static-cache: the bucket spares at least three frames in four a raster during a wheel (${out} of 30)`);
+}
+
 // ---------------------------------------------------------------- simwatch.ts: the partial re-raster's culling
 {
   const { patch, patchMiss } = SW;
@@ -247,7 +277,7 @@ function unionMembers(rel: string, name: string): string[] {
   LG.glyph(c, null, 10, 20, 16, '#fff');
   expect(c.calls.includes('arc') && c.ops > 0, 'lens-glyph: a missing glyph falls back to a ring');
   const c2 = fresh();
-  LG.glyph(c2, { path: 'M'.repeat(2049) }, 10, 20, 16, '#fff');
+  traced(() => LG.glyph(c2, { path: 'M'.repeat(2049) }, 10, 20, 16, '#fff'));
   expect(c2.calls.includes('arc'), 'lens-glyph: a custom path over 2048 characters falls back to the ring');
   const c3 = fresh();
   LG.glyph(c3, 'check', 0, 0, 8, '#fff');
@@ -431,6 +461,154 @@ function bare(rel: string): string {
   const body = loops[0] ?? '';
   expect(/labelBox\s*=\s*null/.test(body) && /labelRight\s*=\s*undefined/.test(body),
     `plan: that reset clears BOTH labelBox and labelRight (got "${body.trim()}")`);
+}
+
+// ---------------------------------------------------------------- plan.ts: the outline cache keeps what it fetched
+// The cache is capped at 1500 entries. A raster that trips the cap must clear BEFORE it looks an entry up: clearing
+// between the lookup and the write-back orphaned the record it then updated, so the feature it had just built was
+// not in the map and the next ask built it again.
+{
+  const CAP = 1500;
+  let shapes = 0;
+  (globalThis as { Path2D?: unknown }).Path2D = class { };
+  const E = { mixS: { top: 'x', topD: 1 }, channel: () => ({ shape: () => { shapes++; } }) } as never;
+  const geom = (x: number) => ({ x, y: 0, w: 10, h: 10, u: 1, k: 1 }) as never;
+  const feat = (i: number) => ({ id: 'f' + i }) as never;
+  for (let i = 0; i <= CAP; i++) PL.outline(E, geom(0), feat(i));            // CAP + 1 entries: the next write trips the cap
+  expect(shapes === CAP + 1, `plan: one shape() call per feature on a first raster (${shapes} for ${CAP + 1})`);
+  shapes = 0;
+  PL.outline(E, geom(5), feat(0));                                           // geometry moved: the entry is stale, the cap trips
+  PL.outline(E, geom(5), feat(0));                                           // same geometry again: must be a cache hit
+  expect(shapes === 1, `plan: the outline built across a cap clear is kept - asked twice, shape() ran ${shapes} time(s), not 1`);
+  shapes = 0;
+  PL.outline(E, geom(5), feat(1));
+  PL.outline(E, geom(5), feat(1));
+  expect(shapes === 1, `plan: a feature fetched after the clear is cached once (shape() ran ${shapes} time(s))`);
+}
+
+// ---------------------------------------------------------------- lens-glyph.ts / patterns.ts: a failure leaves one trace
+// plan.ts reports a failed lens channel once (lensFailed). A manifest glyph path Path2D rejects, and a motif
+// createPattern refuses, fell back silently: the ring a lens with no glyph gets, and a fill that is just absent.
+/** Run `fn` with console.error recorded and Path2D / document stubbed; everything is restored after. */
+function traced(fn: () => void): string[] {
+  const g = globalThis as Record<string, unknown>, seen: string[] = [];
+  const keep = { err: console.error, P: g.Path2D, D: g.document, M: g.DOMMatrix };
+  console.error = (...a: unknown[]) => { seen.push(a.map(String).join(' ')); };
+  try { fn(); } finally { console.error = keep.err; g.Path2D = keep.P; g.document = keep.D; g.DOMMatrix = keep.M; }
+  return seen;
+}
+{
+  const withPath = (fn: () => void) => traced(() => {
+    (globalThis as Record<string, unknown>).Path2D = class { constructor(d: string) { if (!d.startsWith('M')) throw new SyntaxError('bad path'); } };
+    fn();
+  });
+  const bad = { path: 'not a path' }, long = { path: 'M' + '1'.repeat(2049) }, good = { path: 'M0 0L16 16' };
+  const rings: boolean[] = [];
+  const seen = withPath(() => {
+    for (const spec of [bad, bad, bad, long, long, good, good]) { const c = fresh(); LG.glyph(c, spec, 0, 0, 16, '#fff'); rings.push(c.calls.includes('arc')); }
+  });
+  expect(seen.length === 2, `lens-glyph: one report per distinct bad path, none for a good one (${seen.length}: ${seen.join(' | ')})`);
+  expect(seen.some((m) => m.includes('not a path')) && seen.some((m) => m.includes('2048')), 'lens-glyph: each report names its path or its cause');
+  expect(rings.join() === 'true,true,true,true,true,false,false', `lens-glyph: the ring is still drawn for a bad path and not for a good one (${rings.join()})`);
+  // without a Path2D at all (a Node run) a path is not "bad": nothing is reported
+  const quiet = traced(() => { (globalThis as Record<string, unknown>).Path2D = undefined; LG.glyph(fresh(), { path: 'M9 9' }, 0, 0, 16, '#fff'); });
+  expect(quiet.length === 0, `lens-glyph: no report where Path2D does not exist (${quiet.length})`);
+
+  const stubDoc = (made: unknown) => {
+    const g = globalThis as Record<string, unknown>;
+    g.DOMMatrix = class { };
+    g.document = { createElement: () => ({ width: 0, height: 0, getContext: () => Object.assign(fresh(), { createPattern: () => made }) }) };
+  };
+  const refused = traced(() => {
+    stubDoc(null);
+    const a = theme(false), b = theme(false);
+    PT.lineFill(fresh(), a, 'solid', 0, 0, 40, 20, 1, 1);
+    PT.lineFill(fresh(), a, 'solid', 0, 0, 40, 20, 1, 1);
+    PT.lineFill(fresh(), b, 'solid', 0, 0, 40, 20, 1, 1);
+    PT.lineFill(fresh(), a, 'dotted', 0, 0, 40, 20, 1, 1);
+  });
+  expect(refused.length === 2, `patterns: one report per motif createPattern refuses, however often it is asked (${refused.length}: ${refused.join(' | ')})`);
+  const fine = traced(() => { stubDoc({ setTransform() { } }); const c = fresh(); PT.lineFill(c, theme(false), 'wave', 0, 0, 40, 20, 1, 1); expect(c.ops > 0, 'patterns: a pattern that builds is drawn'); });
+  expect(fine.length === 0, `patterns: a motif that builds reports nothing (${fine.length})`);
+}
+
+// ---------------------------------------------------------------- labelRight: the order badge's dodge survives the zoom bucket
+// drawRoomLabels writes labelRight at the RASTER's camera; drawOrderZones reads it at the LIVE camera, up to
+// the static cache's BUCKET (x1.5) away. Like labelBox it has to be in world units, or the dodge is made
+// against a stale scale. The fixture rasters one room's label at camera A, then asks the badge at camera B.
+{
+  const th = theme(false), RH = 72;
+  const textEngine = new (await load<typeof import('../apps/web/src/engine/text.ts')>('apps/web/src/engine/text.ts')).Text('sans-serif', 'monospace', 1);
+  // a text metric that follows the font's size (0.6 em a character), so the second sizing pass is a different width from the first
+  (globalThis as Record<string, unknown>).document = { createElement: () => ({ getContext: () => { const c = { font: '', measureText: (t: string) => ({ width: t.length * parseFloat(String(c.font).split(' ')[1]) * 0.6 }) }; return c; } }) };
+  const mk = (w: number) => {
+    const room = { kind: 'room', id: 'r1', x: 0, y: 0, w, h: 200, d: { id: 'dom', base: 'dom', name: 'Booking and attendance' }, feats: [] as never[], bays: [] } as never as import('../packages/core/src/model/layout.ts').RoomNode;
+    return room;
+  };
+  const eng = (room: ReturnType<typeof mk>) => ({
+    U: 1, th, tx: textEngine, art: {}, KB1: 0.2, SAFE: { t: 0 }, cam: { reduced: true }, dashT: 0, S: { ordHi: null },
+    M: { sim: { has: true, orders: [{ id: 'o1', scope: { domain: 'dom' } }] }, P: { scale: 1 }, L: { rooms: [room], blds: [] } },
+  }) as never;
+  const camAt = (k: number): View => ({ x: 300, y: 36, k, FW: 1280, FH: 800, c0x: -100, c0y: -100, c1x: 1380, c1y: 900 });
+  const badge = (E: never, v: View) => { const c = fresh(); DY.drawOrderZones(E, c, v, 1); return c.calls.includes('rotate'); };
+  let moved = 0, total = 0, bad: string[] = [];
+  for (let w = 160; w <= 1200; w += 8) {
+    const room = mk(w), E = eng(room), A = camAt(0.6), B = camAt(0.6 / 1.5);
+    PL.drawRoomLabels(E, fresh(), A, { wings: [{ w, rooms: [room] }] } as never);
+    const lb = room.labelBox;
+    if (!lb) continue;                                           // no header label at this width: nothing to dodge
+    total++;
+    // what the dodge must say at B: the label's right edge (its box, in world units) carried to B's screen
+    const rb = V.sxv(B, room.x + room.w), want = V.sxv(B, lb.x + lb.w) < rb - 80;
+    const atA = badge(E, A), got = badge(E, B);
+    if (rb - V.sxv(B, room.x) < 230 || 200 * B.k < 40) continue;    // the badge's own size gates, not the dodge
+    if (got !== want) bad.push(w + (atA ? '' : '/hidden-at-A'));
+    if (atA !== got) moved++;
+  }
+  expect(total > 20, `labelRight: the fixture drew a header label in ${total} room widths`);
+  expect(bad.length === 0, `labelRight: the order badge's dodge at a camera 1.5x away disagrees with the label's own box in ${bad.length} widths (${bad.slice(0, 6).join(' ')})`);
+  // the unit is pinned at both ends: the writer records world units, the one reader carries them to its camera
+  const writes = [...bare(R + 'plan.ts').matchAll(/labelRight\s*=\s*([^;]+);/g)].map((m) => m[1].trim()).filter((e) => e !== 'undefined');
+  expect(writes.length === 2 && writes.every((e) => e === 'R.x' || /\/\s*k\)?$/.test(e)), `labelRight: plan.ts writes it in world units at every site (${writes.join(' | ')})`);
+  expect(/sxv\(v,\s*R\.labelRight\)/.test(bare(R + 'dynamic.ts')), 'labelRight: dynamic.ts carries it to the live camera with sxv before comparing');
+  expect(moved > 0,`labelRight: the sweep crosses the badge's threshold between the two cameras (${moved} widths), so it is not vacuous`);
+  // pinnedBox (flags) against drawRoomLabels (the raster): a label pinned to the top of the view, which of the
+  // two says is drawn, and where. Names long enough to need the 14 px fallback are the case it exists for.
+  const names = ['Booking and attendance', 'Reconciliation of regional settlement exceptions', 'Compliance', 'Customer identity verification'];
+  let pinned = 0, differ: string[] = [];
+  for (const nm of names) for (const k of [0.5, 0.6, 0.7, 0.8]) for (let w = 160; w <= 1100; w += 6) {
+    const room = mk(w); room.d = { ...room.d, name: nm }; room.h = 700;
+    const E = eng(room), v: View = { x: w / 2, y: 700 * 0.5 + 360 / k - 500 / k * 0 + 100, k, FW: 1280, FH: 800, c0x: -100, c0y: -100, c1x: 1380, c1y: 900 };
+    v.y = room.y + room.h / 2 + 200 / k;                          // the room's top edge is scrolled well above the view's
+    const c = fresh();
+    PL.drawRoomLabels(E, c, v, { wings: [{ w, rooms: [room] }] } as never);
+    const drawn = room.labelRight !== room.x && room.labelRight !== undefined && !room.labelBox;
+    const bg = c.rects[0], box = FL.pinnedBox(E, v, room, { x: 0, y: 0, w: 0, h: 0 });
+    if (!drawn && !box) continue;
+    pinned++;
+    const same = drawn === !!box && (!box || !bg || (Math.abs(bg[0] - box.x) <= 1 && Math.abs(bg[1] - box.y) <= 1 && Math.abs(bg[2] - box.w) <= 1 && Math.abs(bg[3] - box.h) <= 1));
+    if (!same) differ.push(`${nm.slice(0, 6)}@${k}/${w}`);
+  }
+  expect(pinned > 100, `pinnedBox: the fixture covered ${pinned} pinned-label cases`);
+  expect(differ.length === 0, `pinnedBox: the flag layer's box disagrees with drawRoomLabels in ${differ.length} cases of ${pinned} (${differ.slice(0, 5).join(' ')})`);
+  // one home for the sizing: neither layer may spell the 14 px / 0.8 tracking fallback for itself
+  const spell = (f: string) => /ls\s*=\s*0\.8/.test(bare(R + f));
+  expect(/roomLabelFit\(/.test(bare(R + 'flags.ts')) && /roomLabelFit\(/.test(bare(R + 'plan.ts')) && !spell('flags.ts'), 'pinnedBox: flags.ts asks plan.ts roomLabelFit for the label size rather than re-deriving it');
+  expect((bare(R + 'plan.ts').match(/ls\s*=\s*0\.8/g) ?? []).length === 1, 'pinnedBox: the 14 px room-label fallback is spelt once in plan.ts (roomLabelFit)');
+  delete (globalThis as Record<string, unknown>).document;
+}
+
+// ---------------------------------------------------------------- source guard: text is measured, never counted
+// Every measured box in render/ asks E.tx.w for the string's width in the font it is drawn in. A box sized by
+// `label.length * k` is right for one font at one UI scale (?scale=4 grows the glyphs, not the constant).
+{
+  const hits: string[] = [];
+  for (const f of fs.readdirSync(path.join(ROOT, R)).filter((n) => n.endsWith('.ts'))) {
+    readBlanked(path.join(ROOT, R + f)).split(/\r?\n/).forEach((l, i) => {
+      if (/\.length\s*\*/.test(l) && (/\b[a-z]*[wW](idth)?\s*=[^=]/.test(l) || /fillRect|strokeRect/.test(l))) hits.push(R + f + ':' + (i + 1));
+    });
+  }
+  expect(hits.length === 0, `render: a box is sized from E.tx.w, never from a character count (${hits.length}: ${hits.slice(0, 8).join(' ')})`);
 }
 
 // ---------------------------------------------------------------- report

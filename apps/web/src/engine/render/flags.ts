@@ -19,7 +19,7 @@ import { RH } from '@bp/core/model';
 import { clamp } from '../camera';
 import { drawText } from '../text';
 import { glyph } from './lens-glyph';
-import { featRect } from './plan';
+import { featRect, roomLabelFit } from './plan';
 import { sxv, syv, type SRect, type View } from './view';
 
 
@@ -68,16 +68,20 @@ function clear(x: number, y: number, w: number, s: number, bx: number, by: numbe
   return r - x <= x - l ? r : l;
 }
 /** The room's label pinned to the top of the view (not in its header): where plan.ts draws it, or null. */
-function pinnedBox(E: Engine, v: View, R: RoomNode, out: SRect): SRect | null {
+export function pinnedBox(E: Engine, v: View, R: RoomNode, out: SRect): SRect | null {
   const u = E.U, k = v.k, hh = RH * k, ry = syv(v, R.y), rh = R.h * k;
-  const fs = clamp((hh * 0.36) / u, 14, 26), ls = fs * 0.06, font = E.tx.f(fs, 600);
-  const maxW = R.w * k - 28 * u - (E.M.sim.has ? 38 * u : 0), tw = E.tx.w(upper(R.d.name), font, ls);
-  if (tw > maxW * 2 || maxW <= 0) return null;
-  const blockH = (tw > maxW ? 2 : 1) * fs * 1.08 * u;
+  const maxW = R.w * k - 28 * u - (E.M.sim.has ? 38 * u : 0);
+  if (maxW <= 0) return null;
+  // the same sizing passes plan.ts draws the label by (its 14 px fallback and its fade-out included)
+  const { fs, ls, lines } = roomLabelFit(E.tx, upper(R.d.name), maxW, hh, u);
+  if (!lines) return null;
+  const blockH = lines.length * fs * 1.08 * u;
   if (hh < blockH + 14 * u) return null;
   const y = Math.max(ry + 8 * u, Math.min(Math.max(v.c0y, E.SAFE.t) + 8 * u, ry + rh - blockH - 30 * u));
   if (y <= ry + 8 * u) return null;
-  out.x = sxv(v, R.x) + 8 * u; out.y = y - 3 * u; out.w = Math.min(tw, maxW) + 12 * u; out.h = blockH + 8 * u;
+  const font = E.tx.f(fs, 600);
+  let pw = 0; for (const l of lines) pw = Math.max(pw, E.tx.w(l, font, ls));
+  out.x = sxv(v, R.x) + 8 * u; out.y = y - 3 * u; out.w = pw + 12 * u; out.h = blockH + 8 * u;
   return out;
 }
 /** The wing's title stack above it (bubble, name; up to two lines), generously: null while the renderer draws none. */

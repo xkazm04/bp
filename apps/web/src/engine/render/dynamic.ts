@@ -152,7 +152,7 @@ export function drawOrderZones(E: Engine, ctx: CanvasRenderingContext2D, v: View
         ctx.save(); ctx.strokeStyle = hi ? th.inkHi : th.alpha(th.amber, 0.8); ctx.lineWidth = hi ? 2.5 : 1.5; ctx.setLineDash(DASH_ZONE); ctx.lineDashOffset = dashOff(E, -0.5);
         ctx.strokeRect(r.x + 5 * u, r.y + 5 * u, r.w - 10 * u, r.h - 10 * u); ctx.restore();
         if (hi) { ctx.fillStyle = th.alpha(th.amber, 0.08); ctx.fillRect(r.x, r.y, r.w, r.h); }
-        if (r.w >= 230 * u && r.h >= 40 * u && (R.labelRight ?? 0) < r.x + r.w - 80 * u) {
+        if (r.w >= 230 * u && r.h >= 40 * u && (R.labelRight === undefined ? -Infinity : sxv(v, R.labelRight)) < r.x + r.w - 80 * u) {
           const sx = r.x + r.w - 62 * u, sy = r.y + 17 * u;
           ctx.save(); ctx.translate(sx, sy); ctx.rotate(-0.14); ctx.strokeStyle = th.amber; ctx.fillStyle = th.alpha(th.panel, 0.92); ctx.lineWidth = 1.6;
           ctx.beginPath(); ctx.arc(0, 0, 13 * u, 0, 6.2832); ctx.fill(); ctx.stroke();
@@ -468,10 +468,10 @@ export function drawBlockers(E: Engine, ctx: CanvasRenderingContext2D, v: View, 
     const r = featRect(E, v, A.f, lod, sr4); if (r) route(E, ctx, r, B, th.red, false);
   }
   ctx.globalAlpha = 1; ctx.lineDashOffset = 0;
-  const n = held.length, label = 'holds ' + n, w = (label.length * 7.4 + 14) * u, h = 20 * u, x0 = B.x + B.w / 2 - w / 2, y0 = B.y - h - 6 * u;
+  const n = held.length, label = 'holds ' + n, font = E.tx.f(12, 600, true), h = 20 * u, w = Math.max(h, E.tx.w(label, font) + 14 * u), x0 = B.x + B.w / 2 - w / 2, y0 = B.y - h - 6 * u;
   ctx.fillStyle = th.alpha(th.panel, 0.94); ctx.fillRect(x0, y0, w, h);
   ctx.strokeStyle = th.red; ctx.lineWidth = 1.4; ctx.strokeRect(x0 + 0.5, y0 + 0.5, w - 1, h - 1);
-  ctx.textAlign = 'center'; drawText(ctx, label, x0 + w / 2, y0 + 14.2 * u, E.tx.f(12, 600, true), th.inkHi); ctx.textAlign = 'left';
+  ctx.textAlign = 'center'; drawText(ctx, label, x0 + w / 2, y0 + 14.2 * u, font, th.inkHi); ctx.textAlign = 'left';
   ctx.restore();
 }
 const sr4: SRect = { x: 0, y: 0, w: 0, h: 0 };
