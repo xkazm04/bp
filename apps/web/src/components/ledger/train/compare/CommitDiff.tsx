@@ -6,9 +6,12 @@
 import { memo, useEffect, useMemo, useState } from 'react';
 import type { CommitDiff as Diff } from '@bp/core/scan/types';
 import { commitDiff, refusalText, type ScanCtx } from '@/lib/scan/actions';
+import { boundedWait } from './useChangeMap';
 import './CommitDiff.css';
 
 const DEV = process.env.NODE_ENV !== 'production';
+/** How long the commits route may take before the section says it did not answer. */
+export const DIFF_WAIT_MS = 20_000;
 const cache = new Map<string, Promise<Diff>>();
 let fetches = 0;
 
@@ -17,7 +20,7 @@ function load(ctx: ScanCtx, product: string, sha: string): Promise<Diff> {
   let p = cache.get(key);
   if (!p) {
     if (DEV) console.debug(`[commit-diff] fetch #${++fetches} ${key}`);
-    p = commitDiff(ctx, sha);
+    p = boundedWait(commitDiff(ctx, sha), DIFF_WAIT_MS, 'The commits route');
     p.catch(() => cache.delete(key)); // a failed fetch is tried again the next time the item is shown
     cache.set(key, p);
   }
@@ -113,17 +116,18 @@ type Got = { sha: string; d: Diff } | { sha: string; error: string };
 export const CommitDiff = memo(function CommitDiff({ ctx, product, sha, initiallyOpen = false }: CommitDiffProps) {
   const [patch, setPatch] = useState(initiallyOpen);
   const [got, setGot] = useState<Got | null>(null);
+  const [tries, setTries] = useState(0);
   useEffect(() => {
     let live = true;
     load(ctx, product, sha).then((d) => { if (live) setGot({ sha, d }); }, (e: unknown) => { if (live) setGot({ sha, error: refusalText(e) }); });
     return () => { live = false; };
-  }, [ctx, product, sha]);
+  }, [ctx, product, sha, tries]);
   const cur = got && got.sha === sha ? got : null, d = cur && 'd' in cur ? cur.d : null;
   const add = d ? d.files.reduce((n, f) => n + f.add, 0) : 0, del = d ? d.files.reduce((n, f) => n + f.del, 0) : 0;
   return (
     <section className="tr-sec" data-role="tr-cmp-diff">
       <h4>Commit <code className="c">{sha.slice(0, 7)}</code>{d ? <span className="n">· {d.files.length} {d.files.length === 1 ? 'file' : 'files'} · +{add} −{del}</span> : null}</h4>
-      {!cur ? <p className="tr-dim">loading the commit…</p> : 'error' in cur ? <p className="tr-dim" role="alert">The commit did not load: {cur.error}</p> : (
+      {!cur ? <p className="tr-dim">loading the commit…</p> : 'error' in cur ? <p className="tr-dim" role="alert">The commit did not load: {cur.error}. <button type="button" className="tr-blink-t" onClick={() => { setGot(null); setTries(tries + 1); }}>Try again</button></p> : (
         <>
           <Files d={cur.d} />
           <details className="tr-det"><summary>Commit message</summary><Message text={cur.d.message} /></details>

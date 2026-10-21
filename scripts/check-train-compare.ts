@@ -282,5 +282,23 @@ const { packHeading, packOrder } = await imp('ComparePanel.tsx');
   ok(pairReadings([prs('light')], [undefined])[0].state === 'computing', 'pix line: no map state yet is computing, never a guess');
 }
 
+{ // a request that never returns ends in a stated state: the change map's wait and the commit diff's wait are bounded
+  const { boundedWait, MAP_WAIT_MS } = await imp('useChangeMap.ts');
+  const t0 = Date.now();
+  const never = new Promise(() => {});
+  const err = await boundedWait(never, 30, 'The comparison').then(() => null, (e: Error) => e.message);
+  ok(err === 'The comparison did not answer within 0.03 s' && Date.now() - t0 < 1000, 'bounded wait: a promise that never settles rejects with what did not answer and for how long', err);
+  ok(await boundedWait(Promise.resolve(7), 1000, 'x') === 7, 'bounded wait: an answer inside the bound passes through unchanged');
+  const e2 = await boundedWait(Promise.reject(new Error('HTTP 404')), 1000, 'x').then(() => null, (e: Error) => e.message);
+  ok(e2 === 'HTTP 404', 'bounded wait: a failure inside the bound keeps its own message', e2);
+  ok(typeof MAP_WAIT_MS === 'number' && MAP_WAIT_MS > 0 && MAP_WAIT_MS < 120_000, 'change map: the wait has a finite bound', MAP_WAIT_MS);
+  const um = stripComments(fs.readFileSync(path.join(SRC, CMP, 'useChangeMap.ts'), 'utf8'));
+  ok(/boundedWait\(compute\(/.test(um), 'change map: start() waits on compute() through the bound, not bare', um.includes('boundedWait'));
+  const { DIFF_WAIT_MS } = await imp('CommitDiff.tsx');
+  const cdf = stripComments(fs.readFileSync(path.join(SRC, CMP, 'CommitDiff.tsx'), 'utf8'));
+  ok(DIFF_WAIT_MS > 0 && DIFF_WAIT_MS < 120_000 && /boundedWait\(commitDiff\(/.test(cdf), 'commit diff: the commits request is bounded', DIFF_WAIT_MS);
+  ok(/Try again/.test(cdf) && /setTries/.test(cdf), 'commit diff: a failed or unanswered load offers the retry the cache already supports');
+}
+
 console.log(bad ? `check-train-compare: ${bad} of ${n} failed` : `check-train-compare: ${n} checks passed`);
 process.exit(bad ? 1 : 0);
