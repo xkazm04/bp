@@ -13,9 +13,12 @@ Read by `/scan-sweep` (ai-registry `skills/scan-sweep/SKILL.md`, "Project overla
 
 ## Gates
 
-always (export `BP_LENS_SCAN_DIR=C:/Users/kazda/kiro/ai-registry/skills/lens-scan` first — without it
-`check-scan-jobs` silently skips ten release-train triage/release checks and `check-all.mjs` still
-prints `0 skipped`, because it discards a passing check's output):
+always (no environment variable needed since 1efd669: `release.server.ts` now resolves lens-scan from
+the registry `.ai/manifest.yaml` declares, so `check-scan-jobs` runs all 143 of its checks — it was
+133 plus one silent skip, and `check-all.mjs` printed `0 skipped` over it until 6ef4f9b taught it to say
+"a green run here is NOT a full run". `BP_LENS_SCAN_DIR` still overrides and is still authoritative when
+set, so a typo in it fails visibly rather than falling back; set it only on a machine whose registry is
+somewhere else):
 - `npm run check` (the aggregate: typecheck + every `check:*` + `validate:structure`, discovered automatically)
 - `npm run typecheck`
 - `npm run check:lens-health`
