@@ -264,7 +264,7 @@ Lynx writes it and commits it; Wolf reads it from master. One folder per asset i
 Rules: no file larger than 50 MB is committed (GitHub warns at 50 MB and refuses at 100 MB). The raw TRELLIS.2 GLB
 stays on Lynx; its sha256 goes in the manifest. Look-dev frames stay in `docs/concepts/vr-light-table/lookdev/` as
 today. Leonardo and FLUX.2 [dev] output is look-dev only. Anything that ships (textures, decals, the backdrop) is
-FLUX.2 [klein] or Qwen-Image (tech-stack.md §5), unless the owner rules on Leonardo (section f).
+FLUX.2 [klein] or Qwen-Image (tech-stack.md §5), unless the owner rules on Leonardo (section f); the backdrop is ruled: Leonardo, 2026-10-21 (FLUX.2 [klein] is not installed and will not be).
 
 - [x] **L4.0 Lamp design lock (Lynx + owner, 1 to 2 days).** The reference sheet's weakest element. Make a lamp prop
       sheet with a **jointed arm**, hanging above the far edge (reference-sheet.md, "Across all frames" and the open
@@ -273,7 +273,7 @@ FLUX.2 [klein] or Qwen-Image (tech-stack.md §5), unless the owner rules on Leon
       `picked: "A"` in `ArtSource/lamp-agent/manifest.json`.
 - [ ] **L4.1 Props (Lynx, about 1 to 2 days per asset).** Lamp agent (30k triangles, rigged look-at and state poses,
       emissive head slot), light table frame (10k), survey pin (500, instanced), studio kit (80k total), city backdrop
-      (FLUX.2 [klein] panorama), and the materials vellum, blueprint paper, brushed aluminium and warm wood.
+      (a Leonardo panorama, ruling 2026-10-21: FLUX.2 [klein] is not installed and will not be), and the materials vellum, blueprint paper, brushed aluminium and warm wood.
       Proof per asset: a manifest with every gate `pass: true`, committed with `Host: Lynx`.
       Lamp agent, 2026-10-21 (not ticked, the other props are open): `ArtSource/lamp-agent/` has `final.fbx` (26,035 tris, 4 bones,
       5 pose actions), 3 PBR PNGs and evidence; all five gates `pass: true`, `lynx_commit` is set at the merge. Reworked the same day
@@ -485,7 +485,7 @@ reading the source, most likely first. Each one is **[verify on Wolf]**.
 | R5 | The 90 Hz measure. Is the p95 GPU and game thread at 11.1 ms the bar, or p50? (The web budget left the same question open; plan.md, "Milestone 1 idle re-measure".) | **owner** | p95 at 11.1 ms, with p50 and max recorded |
 | R6 | Scan line colour, cyan (art-breakdown #8, the target) versus amber (the style block's attention role). Open in reference-sheet.md. | **owner** | cyan, as the target and frame 03 show |
 | R7 | The lamp design (L4.0) before P4 props or more style frames. | **owner** | the jointed drafting arm from frames 06 and 08 |
-| R8 | Leonardo output in shipped assets. tech-stack.md §5 keeps shipped art to FLUX.2 [klein] or Qwen-Image; the reference sheet was made with Leonardo. | **owner** | Leonardo for look-dev only |
+| R8 | Leonardo output in shipped assets. tech-stack.md §5 keeps shipped art to FLUX.2 [klein] or Qwen-Image; the reference sheet was made with Leonardo. | **owner** | Leonardo for look-dev only; ruling 2026-10-21 (the Director, for the operator): the city backdrop ships from Leonardo (FLUX.2 [klein] is not installed and will not be) |
 | R9 | Large binaries. The ArtSource rule commits files of 50 MB or less and keeps raw meshes on Lynx; Git LFS is not set up in bp. | **owner** | no LFS; the sha256 is in the manifest |
 | R10 | Where the athena daemon runs for L5.3's smoke (Wolf has athena-portable; Lynx is not in its fleet entry). | owner | Wolf |
 | R11 | The L5.2 contract change (Kettle's `/stream` stops answering 405) lands on Lynx while Wolf's BpLink still expects 405. | agent | one window: land L5.2 and BpLink's SSE change back to back, and `check-bplink` pins the new answer |
