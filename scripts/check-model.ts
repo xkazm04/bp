@@ -334,6 +334,24 @@ const PLACES: { id: string; feats: Any[] }[] = [...M.L.rooms, ...M.L.wings, ...M
   console.log('shot errors: absent / measured-zero / measured told apart');
 }
 
+// ---------------------------------------------------------------- (k) a rollout nobody measured is not a rollout of 0 or 100
+{
+  const feats: Any[] = M.L.feats ?? PLACES.flatMap((pl) => pl.feats);
+  let measured = 0, absentLive = 0, absentOther = 0;
+  const bad: string[] = [];
+  for (const f of new Map<string, Any>(feats.map((x: Any) => [x.id, x])).values()) {
+    const m = M.sim.rolloutMeasured(f), o = M.sim.rolloutOf(f);
+    if (m != null) { measured++; if (o !== m) bad.push(`${f.id} measured ${m} but rolloutOf says ${o}`); }
+    else if (M.P.isLive?.(f) ?? ['live', 'flagged'].includes(f.stage)) { absentLive++; if (o !== 100) bad.push(`${f.id} absent+live reads ${o}`); }
+    else { absentOther++; if (o !== 0) bad.push(`${f.id} absent reads ${o}`); }
+  }
+  expect(measured > 50 && absentLive + absentOther > 20 && absentOther > 0, `(k) the sample must exercise measured and absent (absent-live is the stub below): ${measured} measured / ${absentLive} absent-live / ${absentOther} absent-other`);
+  expect(!bad.length, `(k) rolloutOf must stay the fallback-bearing form of rolloutMeasured: ` + bad.slice(0, 4).join(' | '));
+  const bare = { id: 'F-bare', stage: 'live', lens: {} };
+  expect(M.sim.rolloutMeasured(bare) === null && M.sim.rolloutOf(bare) === 100, `(k) a live feature with empty facets: measured ${M.sim.rolloutMeasured(bare)}, plain ${M.sim.rolloutOf(bare)}`);
+  console.log(`rollout     ${measured} measured / ${absentLive} absent on a live stage / ${absentOther} absent elsewhere, told apart`);
+}
+
 if (failures.length) {
   console.log(`\ncheck-model: ${failures.length} failed, ${held} held`);
   for (const f of failures) console.log('FAIL  ' + f);

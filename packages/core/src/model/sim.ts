@@ -291,11 +291,13 @@ export class SwarmSim {
   }
 
   // ---------------------------------------------------------------- reading
-  rolloutOf(f: Feature): number {
+  /** The rollout somebody measured (the simulated hour's, else the map's), or null when nobody did - never an invented figure. */
+  rolloutMeasured(f: Feature): number | null {
     const r = this.roll[f.id];
-    if (r != null) return r;
-    return num(f, ...SIM_FIELDS.rollout) ?? (isLiveSt(f.stage) ? 100 : 0);
+    return r != null ? r : num(f, ...SIM_FIELDS.rollout);
   }
+  /** Rollout as a plain number: the measured one, else 100 for a live or flagged feature and 0 for the rest. Ask rolloutMeasured to tell a reading from that fallback. */
+  rolloutOf(f: Feature): number { return this.rolloutMeasured(f) ?? (isLiveSt(f.stage) ? 100 : 0); }
   progOf(f: Feature): number { return Math.min(99, this.baseProgress(f) + (this.prog[f.id] || 0)); }
   /** Build progress as the map has it (before the simulated hour). */
   baseProgress(f: Feature): number { return num(f, ...SIM_FIELDS.progress) ?? 0; }
