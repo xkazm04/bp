@@ -192,7 +192,7 @@ export function SheetBody({ f }: { f: Feature }) {
         <div>
           <div className="illo"><Drawing f={f} /></div>
           <div className="mtb">
-            <div><span className="l">Drawn by</span><BuiltBy f={f} /></div>
+            <div><span className="l">Built by</span><BuiltBy f={f} /></div>
             <div><span className="l">Flagged by</span><FlaggedBy f={f} /></div>
             <div><span className="l">Owner</span>{pname(P, f.owner)}</div>
             <div><span className="l">Stage</span>{stageSince(f)}</div>
