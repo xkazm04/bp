@@ -5,6 +5,7 @@
 // foreign Host, a foreign Origin, a non-JSON write) and the 404s. Writes touch only .demo/kettle-live (gitignored).
 // Run: node scripts/smoke-live.mjs [base]   (base defaults to $BP_BASE, else http://localhost:3000)
 // Exit 1 on any failed step.
+import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import http from 'node:http';
 import path from 'node:path';
@@ -13,6 +14,11 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BASE = (process.argv[2] || process.env.BP_BASE || 'http://localhost:3000').replace(/\/$/, '');
 const SLUG = 'kettle-live', API = `${BASE}/api/products/${SLUG}`;
+// The feature count is READ from the map scan-demo.mjs copies into the store (its line 89), never written
+// out here: packages/core/data/kettle.json sits beside it with a different count (132 against 133), so a
+// hand-kept number is one edit from pinning the wrong map and reading as a route that answers the wrong one.
+const MAP = path.join(ROOT, 'packages/core/data/kettle.app-structure.json');
+const WANT_FEATURES = JSON.parse(fs.readFileSync(MAP, 'utf8')).features.length;
 
 const seed = spawnSync(process.execPath, [path.join(ROOT, 'scripts/scan-demo.mjs')], { cwd: ROOT, encoding: 'utf8' });
 if (seed.status !== 0) { console.error(`scan-demo failed:\n${seed.stderr}`); process.exit(1); }
@@ -33,7 +39,7 @@ try {
   const st = await get(`${API}/structure`);
   check('GET structure: the v3 map, its events and a rev', st.status === 200 && st.body?.structure?.version === 3 && typeof st.body?.rev === 'string' && Array.isArray(st.body?.structure?.features), `${st.status}`);
   const nFeatures = st.body?.structure?.features?.length ?? 0;
-  check('GET structure: 133 features (the Kettle map)', nFeatures === 133, `${nFeatures}`);
+  check(`GET structure: ${WANT_FEATURES} features (the Kettle map scan-demo seeded)`, nFeatures === WANT_FEATURES, `${nFeatures}`);
 
   const scan = await get(`${API}/scan`);
   const runs = scan.body?.runs ?? [], proposals = scan.body?.proposals ?? [];
