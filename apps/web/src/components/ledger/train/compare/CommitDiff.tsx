@@ -28,12 +28,22 @@ function load(ctx: ScanCtx, product: string, sha: string): Promise<Diff> {
 type Row = { k: 'file'; text: string } | { k: 'hunk' | 'add' | 'del' | 'ctx'; a: string; b: string; text: string };
 const CHUNK = 100;
 
+/** The file a `diff --git a/<old> b/<new>` header names, spaces and all: the NEW path, so a rename says where the file
+ *  landed. Both sides are the same path unless the commit renamed it, so the symmetric split decides first and the last
+ *  ` b/` is the fallback (git quotes a path only when it holds a quote or a control character). */
+function headerPath(line: string): string {
+  const rest = line.slice('diff --git '.length).trim(), mid = (rest.length - 1) / 2;
+  if (Number.isInteger(mid) && rest.slice(mid, mid + 3) === ' b/' && rest.slice(0, mid) === 'a/' + rest.slice(mid + 3)) return rest.slice(mid + 3);
+  const i = rest.lastIndexOf(' b/');
+  return (i > 0 ? rest.slice(i + 3) : rest.replace(/^a\//, '')).replace(/^"|"$/g, '');
+}
+
 /** The patch as rows: a header per file, its hunks, and each line with its old and new line numbers. */
 export function patchRows(patch: string): Row[] {
   const out: Row[] = [];
   let ln = 0, rn = 0;
   for (const l of patch.split('\n')) {
-    if (l.startsWith('diff --git')) { out.push({ k: 'file', text: l.replace(/^diff --git a\/(\S+).*/, '$1') }); continue; }
+    if (l.startsWith('diff --git')) { out.push({ k: 'file', text: headerPath(l) }); continue; }
     if (/^(index |--- |\+\+\+ |new file|deleted file|similarity|rename |old mode|new mode|\\ No newline)/.test(l)) continue;
     if (l.startsWith('@@')) {
       const m = /@@ -(\d+)(?:,\d+)? \+(\d+)/.exec(l);

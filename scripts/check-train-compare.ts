@@ -149,6 +149,11 @@ const { packOrder } = await imp('ComparePanel.tsx');
   ok(rows.filter((r: Any) => r.k === 'file').map((r: Any) => r.text).join() === 'apps/web/src/a.ts', 'patch rows: one header per file, the path as git prints it', rows[0]);
   ok(rows.map((r: Any) => r.k).join() === 'file,hunk,ctx,del,add,add', 'patch rows: the index and ---/+++ lines are dropped, the trailing blank trimmed', rows.map((r: Any) => r.k));
   ok(rows.filter((r: Any) => r.k !== 'file').map((r: Any) => `${r.a}/${r.b}`).join(' ') === '/ 10/10 11/ /11 /12', 'patch rows: old and new line numbers follow the hunk header', rows.map((r: Any) => r.k + ' ' + r.a + '/' + r.b));
+  // the file list beside the patch (git --numstat) keeps a space, so the patch's own header must keep it too
+  const spaced = patchRows('diff --git a/apps/web/stage and depths.tsx b/apps/web/stage and depths.tsx\n@@ -1 +1 @@\n+x');
+  ok(spaced[0].text === 'apps/web/stage and depths.tsx', 'patch rows: a path with spaces survives the file header', spaced[0]);
+  const moved = patchRows('diff --git a/old name.ts b/sub/new name.ts\n@@ -1 +1 @@\n+x');
+  ok(moved[0].text === 'sub/new name.ts', 'patch rows: a rename names where the file landed', moved[0]);
 }
 
 { // the item body's blocks
