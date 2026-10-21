@@ -21,6 +21,7 @@ import path from 'node:path';
 import { builtinModules, createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { blankComments as strip } from './lib/source.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CORE = 'packages/core/src', SERVER = 'packages/core/src/server', WEB = 'apps/web/src';
@@ -29,8 +30,6 @@ const TSC = createRequire(path.join(ROOT, 'package.json')).resolve('typescript/b
 const posix = (p) => p.replace(/\\/g, '/');
 const walk = (d) => (fs.existsSync(d) ? fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)])) : []);
 const lineAt = (s, i) => s.slice(0, i).split('\n').length;
-const blank = (s) => s.replace(/[^\n]/g, ' ');
-const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, blank).replace(/(^|[^:'"`\\])(\/\/.*)$/gm, (_, a, b) => a + blank(b));
 
 /** Every import of a module: static, side-effect, re-export, dynamic and require. */
 function importsOf(src) {

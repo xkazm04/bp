@@ -20,6 +20,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { blankComments as strip } from './lib/source.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const LENS_DIR = path.join(ROOT, 'docs/standard/lenses');
@@ -42,8 +43,6 @@ function enumsOf(dir) {
 const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]));
 // Comments are blanked, not deleted (scripts/lib/source.ts deletes them), so every offset and line number in
 // the stripped text is still the one in the file - the opt-out comment is then read back at the right line.
-const blank = (s) => s.replace(/[^\n]/g, ' ');
-const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, blank).replace(/(^|[^:'"`\\])(\/\/.*)$/gm, (_, a, b) => a + blank(b));
 const LITERAL = /\{([^{}]{10,2000})\}/g;
 const KEY = /(?:^|,)\s*(?:'([^']+)'|"([^"]+)"|([A-Za-z_][\w-]*))\s*:/g;
 

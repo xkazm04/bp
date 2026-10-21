@@ -14,7 +14,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { stripComments } from './lib/source.ts';
+import { stripComments, blankComments } from './lib/source.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = path.join(ROOT, 'apps/web/src');
@@ -95,14 +95,12 @@ for (const n of new Set(themeLiterals)) if (!definer.has(n) && !(dark.has(n) && 
 // stripComments() DELETES comments, so a multi-line one collapses and every line number after it is wrong
 // (measured: a declaration on line 312 was reported as 310). The floor rule reports anchors and reads an
 // opt-out comment back out of the file, so it blanks comments instead, keeping every offset and line.
-const blankC = (s) => s.replace(/[^\n]/g, ' ');
-const stripKeepLines = (s) => s.replace(/\/\*[\s\S]*?\*\//g, blankC).replace(/(^|[^:'"`\\])(\/\/.*)$/gm, (_, a, b) => a + blankC(b));
 const FLOOR = 12, MIN_DECLS = 300;
 const FONT_DECL = /\bfont(?:-size)?\s*:\s*([^;{}'"]+)/g;
 const FIRST_PX = /(?<![\w.])([0-9]+(?:\.[0-9]+)?)px/;   // the shorthand's size comes first in its value
 let declsSeen = 0, exempt = 0;
 for (const f of files) {
-  const raw = read(f), s = stripKeepLines(raw), lines = raw.split('\n');
+  const raw = read(f), s = blankComments(raw), lines = raw.split('\n');
   for (const m of s.matchAll(FONT_DECL)) {
     const px = FIRST_PX.exec(m[1]);
     if (!px) continue;
