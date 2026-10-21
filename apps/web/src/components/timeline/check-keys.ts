@@ -78,6 +78,20 @@ const engineKeys = new Set([...onKey.matchAll(/k === '((?:\\.|[^'\\])+)'/g)].map
 for (const m of onKey.matchAll(/\/\^\[(\d)-(\d)\]\$\//g)) for (let d = +m[1]; d <= +m[2]; d++) engineKeys.add(String(d));
 expect(engineKeys.size >= 20, `read ${engineKeys.size} keys from Engine.onKey; the reader no longer matches the handler`);
 const owned = new Set(OWNED.map(([e]) => e.key).concat(['PageUp']));
+
+// ---------------------------------------------------------------- OWNED is every key the map claims, read from keys.ts
+// The list above says what each claimed key DOES; it cannot say that it is all of them. So the set of claimed keys is
+// read from keys.ts itself (its `case` labels and its `e.key ===` comparisons, comments stripped) and compared with
+// OWNED: a key added to the map that the engine does not bind would otherwise land unpinned and this check would stay
+// green at the same count. The map is the ground truth; OWNED is the behaviour pinned against it.
+const mapSrc = read('keys.ts');
+const declared = new Set<string>([
+  ...[...mapSrc.matchAll(/case '((?:\\.|[^'\\])+)':/g)].map((m) => m[1].replace(/\\(.)/g, '$1')),
+  ...[...mapSrc.matchAll(/e\.key === '((?:\\.|[^'\\])+)'/g)].map((m) => m[1].replace(/\\(.)/g, '$1')),
+]);
+expect(declared.size >= 10, `read ${declared.size} claimed keys from keys.ts; the reader no longer matches the map`);
+for (const k of declared) expect(owned.has(k), `keys.ts claims ${JSON.stringify(k)} and no OWNED row pins what it does`);
+for (const k of owned) expect(declared.has(k), `OWNED pins ${JSON.stringify(k)} but keys.ts no longer claims it`);
 let passed = 0;
 for (const k of engineKeys) {
   if (owned.has(k)) continue;
