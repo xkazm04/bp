@@ -54,7 +54,7 @@ const lensId = Object.keys(P.LENS).find((l) => lensOf(P, l)) as string;
 const text = (html: string) => html.replace(/<!--.*?-->/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
 
 // a fresh stub engine and state per render, with console.error captured (the card logs a failed aggregate once)
-function render(el: () => Any, patch: Record<string, unknown>, lensAgg: () => Any) {
+function render(el: () => Any, patch: Record<string, unknown>, lensAgg: () => Any, pre?: (E: Any) => void) {
   const S = { ...initialState(1, P.asOf), ready: true, ...patch };
   const errors: string[] = [], origErr = console.error;
   console.error = (...a: unknown[]) => { errors.push(a.map(String).join(' ').slice(0, 160)); };
@@ -67,6 +67,7 @@ function render(el: () => Any, patch: Record<string, unknown>, lensAgg: () => An
     lensAgg, channel: () => null,
   };
   try {
+    pre?.(E);
     const html: string = renderToString(React.createElement(VariantCtx.Provider, { value: V }, React.createElement(EngineCtx.Provider, { value: E }, el())));
     return { html, threw: null as string | null, errors };
   } catch (e) {
@@ -80,6 +81,10 @@ const hover = { view: lensId, hover: { type: 'wing', id: wing.id } };
 const bad = render(() => React.createElement(O.HoverCard), hover, () => { throw new Error('check-overlays: aggregate threw'); });
 expect(bad.threw === null && bad.html.length > 0, `HoverCard threw under a lens whose aggregate throws (${bad.threw})`);
 expect(bad.errors.length === 1, `HoverCard logged ${bad.errors.length} errors for one throwing lens aggregate, expected 1`);
+// one set for the card and the plan raster: the plan has already logged this lens's failed aggregate on this engine, so the card adds nothing
+const { lensFailed: planLensFailed } = await imp('engine/render/plan.ts');
+const shared = render(() => React.createElement(O.HoverCard), hover, () => { throw new Error('check-overlays: aggregate threw'); }, (E) => planLensFailed(E, lensId, 'aggregate', new Error('plan')));
+expect(shared.threw === null && shared.errors.length === 1, `plan raster + hover card logged ${shared.errors.length} lines for one lens aggregate on one engine, expected 1 (${shared.threw ?? 'rendered'})`);
 const ok = render(() => React.createElement(O.HoverCard), hover, () => ({ parts: ['CHECK lens part'] }));
 expect(text(ok.html).includes('CHECK lens part'), 'HoverCard did not show the lens aggregate line it was given');
 
