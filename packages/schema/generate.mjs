@@ -615,17 +615,41 @@ if (isMain) {
       && [...wantIds].filter((v) => !holedSet.has(v)).length === wantIds.size - 2 && builtinIdsOf('const OTHER = new Set([]);').size === 0;
     console.log(`${idControl ? 'ok  ' : 'FAIL'}  control: a built-in id missing from a copy is reported, and a renamed BUILTIN_IDS reads as empty, not as agreement`);
     if (!idControl) failed++;
-    // the mapping against real documents: Kettle's map and events, the built-in lens manifests, the valid fixtures
-    const docs = [['AppStructure', 'packages/core/data/kettle.app-structure.json'], ['AppStructure', 'packages/schema/schema/fixtures/valid-map.json'], ['LensManifest', 'packages/schema/schema/fixtures/valid-steps-lens.json'],
+    // The mapping against real documents: Kettle's map and events, the built-in lens manifests, and every fixture
+    // the validator accepts. The fixture list is DERIVED, not named: the two fixtures the hand-written list used to
+    // name were valid-map.json and valid-steps-lens.json, which silently left valid-applies-when.json and
+    // warn-validator-gaps.json (both exit 0 under scripts/validate-structure.mjs, both maps) out of the UE mapping,
+    // and left valid-map.events.jsonl out of the event mapping. The root each document belongs to is derived too,
+    // from its `$schema` against the `const` the schemas declare for that key - no hand-written mapping either.
+    const byDollarSchema = new Map(ROOTS.map(([f, name]) => [schemas[f].properties?.$schema?.const, name]).filter(([c]) => c));
+    const FIXTURES = 'packages/schema/schema/fixtures';
+    const accepted = (f) => f.startsWith('valid-') || f.startsWith('warn-'); // the validator exits 0 on these (spec 12)
+    const fixtureFiles = fs.readdirSync(path.join(ROOT, FIXTURES)).filter(accepted).sort();
+    const docProblems = [];
+    const docs = [['AppStructure', 'packages/core/data/kettle.app-structure.json'],
+      ...fixtureFiles.filter((f) => f.endsWith('.json')).map((f) => {
+        const rel = `${FIXTURES}/${f}`, declared = JSON.parse(fs.readFileSync(path.join(ROOT, rel), 'utf8')).$schema;
+        const name = byDollarSchema.get(declared);
+        if (!name) docProblems.push(`${rel}: $schema ${JSON.stringify(declared)} matches no root's $schema const`);
+        return name ? [name, rel] : null;
+      }).filter(Boolean),
       ...fs.readdirSync(path.join(ROOT, 'docs/standard/lenses')).filter((f) => f.endsWith('.json')).map((f) => ['LensManifest', 'docs/standard/lenses/' + f]),
       ...fs.readdirSync(path.join(ROOT, 'docs/standard/lenses-custom')).filter((f) => f.endsWith('.json')).map((f) => ['LensManifest', 'docs/standard/lenses-custom/' + f])];
-    const problems = [];
+    const problems = docProblems;
     for (const [name, rel] of docs) conform(fresh.m, name, JSON.parse(fs.readFileSync(path.join(ROOT, rel), 'utf8')), rel, problems);
-    const events = fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.events.jsonl'), 'utf8').split(/\r?\n/).filter(Boolean);
-    events.forEach((l, i) => conform(fresh.m, 'AppStructureEvent', JSON.parse(l), `kettle.events.jsonl:${i + 1}`, problems));
+    const eventFiles = ['packages/core/data/kettle.events.jsonl', ...fixtureFiles.filter((f) => f.endsWith('.events.jsonl')).map((f) => `${FIXTURES}/${f}`)];
+    const events = eventFiles.flatMap((rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8').split(/\r?\n/).filter(Boolean).map((l, i) => [rel, i + 1, l]));
+    for (const [rel, line, l] of events) conform(fresh.m, 'AppStructureEvent', JSON.parse(l), `${rel}:${line}`, problems);
     const carried = Object.entries(problems.carried ?? {}).map(([f, n]) => `${f} ${n}`).join(', ');
     console.log(`${problems.length ? 'FAIL' : 'ok  '}  the UE mapping reads ${docs.length} documents and ${events.length} events as FJsonObjectConverter + FixUp would (FixUp carries ${carried || 'nothing'})${problems.length ? ': ' + problems.slice(0, 8).join('; ') : ''}`);
     if (problems.length) failed++;
+    // the derivation has a floor: every accepted fixture is in one of the two lists, so a readdir that stopped
+    // matching (a renamed directory, a changed prefix) fails rather than reading a shorter list in silence
+    const wantJson = fixtureFiles.filter((f) => f.endsWith('.json')).length, wantEvents = fixtureFiles.filter((f) => f.endsWith('.events.jsonl')).length;
+    const haveJson = docs.filter(([, rel]) => rel.startsWith(FIXTURES) && rel.endsWith('.json')).length;
+    const covered = wantJson >= 4 && wantEvents >= 2 && haveJson === wantJson && eventFiles.length === wantEvents + 1;
+    console.log(`${covered ? 'ok  ' : 'FAIL'}  every fixture the validator accepts is in the mapping (${haveJson} of ${wantJson} documents, ${wantEvents} event logs)`);
+    if (!covered) failed++;
     const bad = conform(fresh.m, 'AppStructure', { version: '3', features: [{ slug: 'x', parts: [{ done: 'yes' }] }], facets: { x: [1] } });
     const conformCaught = bad.length === 3;
     console.log(`${conformCaught ? 'ok  ' : 'FAIL'}  control: a string version, a string bool and an array facet are refused (${bad.length} of 3)`);
