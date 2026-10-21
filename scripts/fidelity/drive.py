@@ -23,6 +23,7 @@ from pathlib import Path
 sys.stdout.reconfigure(encoding='utf-8')
 SIZE = {'width': 1600, 'height': 800}
 FAILS = []
+BASE = 'http://localhost:3321'  # main() rebinds it from --port; the default lets kettle()/athena() be driven by import
 
 STATE_JS = """() => {
   const rows = [...document.querySelectorAll('[data-role=tr-row]')];
