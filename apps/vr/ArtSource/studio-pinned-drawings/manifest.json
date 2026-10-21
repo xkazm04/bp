@@ -3,7 +3,48 @@
   "class": "set-dressing",
   "budget_tris": 12000,
   "budget_note": "plan.md P4 studio kit total 80k, split across 5 as 24000 shelves, 16000 desk lamp, 8000 mug, 20000 drawing tubes, 12000 pinned drawings",
-  "generator": [
+  "tris": 804,
+  "tris_total": 804,
+  "materials": [
+    "draw_frame_navy (144 tris, PBR textures)",
+    "draw_paper_border (36 tris, PBR textures)",
+    "draw_sheet_perspective (12 tris, PBR textures)",
+    "draw_sheet_plan (12 tris, PBR textures)",
+    "draw_sheet_section (12 tris, PBR textures)",
+    "draw_pin_amber (576 tris, PBR textures)",
+    "draw_board_navy (12 tris, PBR textures)"
+  ],
+  "bounds_cm": {
+    "x": 114,
+    "y": 52,
+    "z": 3.2,
+    "note": "x,z ground plane, y up (glTF)"
+  },
+  "meshes": {
+    "studio-pinned-drawings": {
+      "tris": 804,
+      "vertices": 440,
+      "components": 22,
+      "floaters": 0,
+      "open_edges": 0,
+      "faces_per_slot": {
+        "draw_frame_navy": 144,
+        "draw_paper_border": 36,
+        "draw_sheet_perspective": 12,
+        "draw_sheet_plan": 12,
+        "draw_sheet_section": 12,
+        "draw_pin_amber": 576,
+        "draw_board_navy": 12
+      }
+    }
+  },
+  "uv_sets": 1,
+  "pivot": "base centre (x and y at the middle of the footprint, z = 0 at the floor); measured 0, 0 m; the prop stands +Y in the GLB (glTF Y-up), +Z in Blender",
+  "scale_reasoning": "three framed A3-ish sheets, 32 x 48 cm each, 6 cm apart, on a 1.1 x 0.5 m mounting board. Measured 114 x 52 x 3.2 cm (x, up, y); the planned envelope per axis is 100-120 cm, 2-5 cm, 45-55.00000000000001 cm (x, y, z up).",
+  "textures": "21 PNGs, 256 px seamless tiles (the printed sheets: 384 x 576, mapped once): base colour, normal, ORM (R occlusion, G roughness, B metal), authored with numpy in scripts/art/studio-kit/build_studio.bpy. One UV set, box-projected in world metres (printed sheets: planar 0..1). Flat colour plus grain, no baked light.",
+  "generator": "procedural Blender",
+  "blender": "Blender 5.2.2, scripts/art/studio-kit/build_studio.bpy (build and score), render_studio.bpy (evidence and framing check), write_manifest.mjs",
+  "concept_reference": [
     {
       "option": "A",
       "file": "rejected/A.png",
@@ -29,35 +70,180 @@
       "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop studio-pinned-drawings --variant B"
     }
   ],
-  "generator_note": "log.jsonl file fields name candidates/<A|B>.png, the place each image was written before grading; they were then moved to concept.png or rejected/.",
+  "concept_note": "log.jsonl file fields name candidates/<A|B>.png, the place each image was written before grading; they were then moved to concept.png or rejected/.",
   "kept_option": "B",
-  "recommendation": "Build as a textured plane (three quads with the sheet art as base colour on a thin frame), not a TRELLIS mesh. The asset is flat linework on paper: a mesh would bake the lines into noisy geometry and spend triangles on nothing. Expected size: under 200 tris, so the 12000 budget is a ceiling. Crop the three sheets out of concept.png; the linework is abstract, with no readable text.",
+  "licence": "own procedural work; concept.png is a Leonardo concept used as a shape reference only (R8 open); no ComfyUI or TRELLIS run, no GPU job, no Leonardo call",
+  "lynx_commit": null,
+  "lynx_commit_note": "null until the merge sets it",
+  "regenerate": "blender -b -P scripts/art/studio-kit/build_studio.bpy -- <repo-root> <work> studio-pinned-drawings; blender -b -P scripts/art/studio-kit/render_studio.bpy -- <repo-root> <work> studio-pinned-drawings; node scripts/art/studio-kit/write_manifest.mjs <work> studio-pinned-drawings",
+  "framing": {
+    "turn0": {
+      "resolution": [
+        480,
+        480
+      ],
+      "fov_deg": 24,
+      "azimuth_deg": 25,
+      "elevation_deg": 22,
+      "margins": {
+        "left": 0.1271,
+        "right": 0.0625,
+        "bottom": 0.2417,
+        "top": 0.2583
+      },
+      "min_margin": 0.0625,
+      "pass": true
+    },
+    "turn1": {
+      "resolution": [
+        480,
+        480
+      ],
+      "fov_deg": 20.8,
+      "azimuth_deg": 115,
+      "elevation_deg": 22,
+      "margins": {
+        "left": 0.2417,
+        "right": 0.3,
+        "bottom": 0.0646,
+        "top": 0.1625
+      },
+      "min_margin": 0.0646,
+      "pass": true
+    },
+    "turn2": {
+      "resolution": [
+        480,
+        480
+      ],
+      "fov_deg": 24,
+      "azimuth_deg": 205,
+      "elevation_deg": 22,
+      "margins": {
+        "left": 0.1187,
+        "right": 0.0687,
+        "bottom": 0.2354,
+        "top": 0.2583
+      },
+      "min_margin": 0.0687,
+      "pass": true
+    },
+    "turn3": {
+      "resolution": [
+        480,
+        480
+      ],
+      "fov_deg": 20.8,
+      "azimuth_deg": 295,
+      "elevation_deg": 22,
+      "margins": {
+        "left": 0.2271,
+        "right": 0.3083,
+        "bottom": 0.0688,
+        "top": 0.1604
+      },
+      "min_margin": 0.0688,
+      "pass": true
+    },
+    "table-view": {
+      "resolution": [
+        640,
+        480
+      ],
+      "fov_deg": 25,
+      "azimuth_deg": 0,
+      "elevation_deg": 45,
+      "margins": {
+        "left": 0.0641,
+        "right": 0.0641,
+        "bottom": 0.3312,
+        "top": 0.2979
+      },
+      "min_margin": 0.0641,
+      "pass": true
+    }
+  },
+  "file_bytes": {
+    "concept.png": 112168,
+    "evidence/table-view.jpg": 46657,
+    "evidence/turnaround.jpg": 114880,
+    "final.glb": 2341544,
+    "rejected/A.png": 139598,
+    "textures/draw_board_navy_basecolor.png": 69110,
+    "textures/draw_board_navy_normal.png": 99204,
+    "textures/draw_board_navy_orm.png": 81473,
+    "textures/draw_frame_navy_basecolor.png": 69308,
+    "textures/draw_frame_navy_normal.png": 99431,
+    "textures/draw_frame_navy_orm.png": 81563,
+    "textures/draw_paper_border_basecolor.png": 85654,
+    "textures/draw_paper_border_normal.png": 66744,
+    "textures/draw_paper_border_orm.png": 64966,
+    "textures/draw_pin_amber_basecolor.png": 77583,
+    "textures/draw_pin_amber_normal.png": 56400,
+    "textures/draw_pin_amber_orm.png": 56588,
+    "textures/draw_sheet_perspective_basecolor.png": 185355,
+    "textures/draw_sheet_perspective_normal.png": 271055,
+    "textures/draw_sheet_perspective_orm.png": 4230,
+    "textures/draw_sheet_plan_basecolor.png": 184285,
+    "textures/draw_sheet_plan_normal.png": 271218,
+    "textures/draw_sheet_plan_orm.png": 4230,
+    "textures/draw_sheet_section_basecolor.png": 183409,
+    "textures/draw_sheet_section_normal.png": 268281,
+    "textures/draw_sheet_section_orm.png": 4230
+  },
+  "sha256": {
+    "concept.png": "8c31c9d13be7cff2ce16027cf52979c185d32201d0f77e6bd6c6423f689dfb80",
+    "evidence/table-view.jpg": "5df558145f79193b17132b0e05188cb70a4492a4ed085b4d430fd04857742ef4",
+    "evidence/turnaround.jpg": "a7c21ba906aa670fec967534b3eeb8c58552641d3a516696f8e029590c02a98e",
+    "final.glb": "aae0d7aff9775b232a3da9d935360e2ed4a5faa6109b254a9852ed7ecde3970e",
+    "rejected/A.png": "1ac378c15124ac370da8525786184ea4ebb406dc4b12f4947c72fd0ef7af43c1",
+    "textures/draw_board_navy_basecolor.png": "ccc35dd7f88016ad19a1d91230ef0a5b1a607af4e6ec9e4956677de047a7e76c",
+    "textures/draw_board_navy_normal.png": "51d63526603a7177c415b45ac31b08daa4c58969fd17d9731bd89778b1c46fd1",
+    "textures/draw_board_navy_orm.png": "20dc9881159409dfc39d58f20e1234cdf6a7202f971290b0e9b3aa137adc097e",
+    "textures/draw_frame_navy_basecolor.png": "e50db7dad18b2f14efa9885772b7ee0c74eb638c69c2bd0701ae14c60e2232a3",
+    "textures/draw_frame_navy_normal.png": "be01ce2468b113ef4c15541e016e67932fcf0c45baa73fe5b3a4aa083abc260d",
+    "textures/draw_frame_navy_orm.png": "34d1c7fcc078438c18dde2b1fc1842905834150498e50ee83663d73993c4d012",
+    "textures/draw_paper_border_basecolor.png": "2b06e65bd3b040822e126e2a30916549250247c64efb47317ae35baf26a27e86",
+    "textures/draw_paper_border_normal.png": "981e4a151ac76551827579fc707c3430700540ae39b1140dcdd85eedc38e0818",
+    "textures/draw_paper_border_orm.png": "901e1fdc0a389f769b7a46db1e582432ce0538b854bec6af88d6ab99afdee59b",
+    "textures/draw_pin_amber_basecolor.png": "88605e5e9c91ade064dc70b12a3a1903dcecc7ae3d1b7efd0e5f10c2d2d78b7c",
+    "textures/draw_pin_amber_normal.png": "6f27d371951aea2e85dd899cabd9e2573633ac3c4339d2ba101d010363c7c7a4",
+    "textures/draw_pin_amber_orm.png": "483925598c43315db445ac96108fedecf2d65d501b81a5a56cb8952fa8e15009",
+    "textures/draw_sheet_perspective_basecolor.png": "dd2b48e3743450d2101ce279a8038a3bebc12226f228cbaa18b0e68636e13b68",
+    "textures/draw_sheet_perspective_normal.png": "72f4fb6fe9659710baa908980bf19e72678b57ad216f2757de25516d542dc843",
+    "textures/draw_sheet_perspective_orm.png": "cda4f5429ecd2c3316d56421e0465713c423a0fe3daecd70a4475f2d08505502",
+    "textures/draw_sheet_plan_basecolor.png": "a839795c7fbf243e000c406f2ca20a638a124cab509788e2d6cd8576fb275fc0",
+    "textures/draw_sheet_plan_normal.png": "85cd1f14d5a00956f3a7fd6b6053f10d544affb1a17cad51e55c162c9dcdaa63",
+    "textures/draw_sheet_plan_orm.png": "cda4f5429ecd2c3316d56421e0465713c423a0fe3daecd70a4475f2d08505502",
+    "textures/draw_sheet_section_basecolor.png": "9dd15aa768cefc68bedb902f9ac2b2be45850b006dbe83cca5666eec9a61346b",
+    "textures/draw_sheet_section_normal.png": "661e91f1fd59b8a07197f1878eec00c70d5c7b39a7b8c580abb51f6a0b20f0a1",
+    "textures/draw_sheet_section_orm.png": "cda4f5429ecd2c3316d56421e0465713c423a0fe3daecd70a4475f2d08505502"
+  },
   "gates": {
     "input": {
-      "pass": false,
-      "note": "Fails the grey-ground rule: both options are a blue wall panel, not a plain grey ground. B kept as the cleaner layout (three equal sheets in a row). The input gate is moot if this is built as a textured plane.",
+      "pass": true,
+      "note": "procedural, no generated input: the mesh is built in Blender (scripts/art/studio-kit/build_studio.bpy) and concept.png is a shape reference only, not a TRELLIS input. Earlier note, kept: \"Fails the grey-ground rule: both options are a blue wall panel, not a plain grey ground. B kept as the cleaner layout (three equal sheets in a row). The input gate is moot if this is built as a textured plane.\" The grey-ground rule applies to image-to-3D input, which this asset does not use.",
       "date": "2026-10-21"
     },
     "mesh_acceptance": {
-      "pass": false,
-      "note": "not run"
+      "pass": true,
+      "note": "re-imported from final.glb: 1 mesh object, 440 vertices, 804 tris, 22 connected components, 0 floaters (a floater is a component whose bounding box touches no other), 0 open edges, signed volume 0.013433 m3 (positive: normals face out)",
+      "date": "2026-10-21"
     },
     "scale": {
-      "pass": false,
-      "note": "not run"
+      "pass": true,
+      "note": "114 x 3.2 x 52 cm (x, y, z up) re-imported from final.glb, inside the planned envelope (three framed A3-ish sheets, 32 x 48 cm each, 6 cm apart, on a 1.1 x 0.5 m mounting board); pivot: base centre 0, 0 m, floor at z = 0 m. Assumption: the sizes are Lynx choices from the concept; the UE world scale is still to be confirmed on Wolf.",
+      "date": "2026-10-21"
     },
     "finishing": {
-      "pass": false,
-      "note": "not run"
+      "pass": true,
+      "note": "one UV set (1); 21 PBR PNGs (base colour, normal, ORM for 7 slots); every file under 10 MB (largest 2341544 bytes); 7 material slots (draw_frame_navy, draw_paper_border, draw_sheet_perspective, draw_sheet_plan, draw_sheet_section, draw_pin_amber, draw_board_navy); evidence turnaround.jpg and table-view.jpg rendered with Cycles on the CPU, framing check passes on 5 images (min silhouette margin 0.0625 of the image, rule 0.03). Not claimed: any UE import.",
+      "date": "2026-10-21"
     },
     "poly_budget": {
-      "pass": false,
-      "note": "not run"
+      "pass": true,
+      "note": "804 tris against 12000 (7%)",
+      "date": "2026-10-21"
     }
-  },
-  "licence": "Leonardo concept, TRELLIS input only; R8 open",
-  "sha256": {
-    "concept.png": "8c31c9d13be7cff2ce16027cf52979c185d32201d0f77e6bd6c6423f689dfb80",
-    "rejected/A.png": "1ac378c15124ac370da8525786184ea4ebb406dc4b12f4947c72fd0ef7af43c1"
   }
 }
