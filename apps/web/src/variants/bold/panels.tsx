@@ -9,6 +9,7 @@
 //   quality      the checklist of end-to-end tests and the bug counts
 import { DefaultLensPanel, hmark } from '@/components/sheet/LensPanel';
 import { useBp } from '@/components/hooks';
+import { isLiveSt } from '@bp/core/model';
 import type { SheetPanelProps } from '../types';
 import { LENS_NAME } from './palette';
 import { CHANNELS } from './channels';
@@ -88,7 +89,9 @@ function Ledger({ p }: { p: SheetPanelProps }) {
       <Head p={p} label="Ledger" />
       <div className="bd-big"><b>{asks}</b><span>{asks === 1 ? 'customer asked for this' : 'customers asked for this'} in the last 30 days</span></div>
       <p>{rev}</p>
-      <p>{b.adoptionPct != null ? b.adoptionPct + '% of the 412 studios use it.' : 'Nobody can use it yet.'}</p>
+      {/* the field is a share of customers, and the model carries no customer count: no absolute here.
+          It is "omitted until it is in use" (the manifest), so absent on a live feature means unmeasured. */}
+      <p>{b.adoptionPct != null ? b.adoptionPct + '% of customers use it.' : isLiveSt(p.f.stage) ? 'How many customers use it is not measured yet.' : 'Nobody can use it yet.'}</p>
       <div className="bd-pips">{[1, 2, 3, 4, 5].map((i) => <i key={i} aria-hidden="true" className={i <= b.value ? 'on' : ''} />)}<span>value {b.value} of 5 · {b.confidence}</span></div>
       {b.usageNote && <p className="bd-quiet">{b.usageNote}</p>}
     </div>
