@@ -127,9 +127,19 @@ try {
 }
 {
   const m = spawnSync(process.execPath, [path.join(ROOT, 'apps/server/src/check-mount.ts')], { cwd: ROOT, encoding: 'utf8', timeout: 60000 });
-  const tally = /check-mount: (\d+) passed, (\d+) failed/.exec(m.stdout ?? '');
-  const fails = (m.stdout ?? '').split('\n').filter((l) => l.startsWith('FAIL')).join(' | ');
-  check(`mount: apps/server/src/check-mount.ts passes (${tally?.[1] ?? '?'} checks)`, m.status === 0 && !!tally && Number(tally[1]) > 0 && tally[2] === '0', fails || `exit ${m.status} ${(m.stderr ?? '').slice(-200)}`);
+  const stdout = m.stdout ?? '';
+  const tally = /check-mount: (\d+) passed, (\d+) failed, (\d+) skipped/.exec(stdout);
+  const fails = stdout.split('\n').filter((l) => l.startsWith('FAIL')).join(' | ');
+  // Forward the child's own SKIP lines (check-all.mjs counts lines starting `SKIP`): the LAN leg is the only proof behind
+  // mount.ts's `--host 0.0.0.0` argument. Not fatal here - whether a skipped peer check should fail is the owner's call.
+  const skipLines = stdout.split(/\r?\n/).filter((l) => /^\s*SKIP\b/.test(l));
+  for (const l of skipLines) console.log(l.trim());
+  // The floor is on checks run PLUS checks skipped, so a LAN-less machine (one skip) stays green while a shrinking suite
+  // goes red. Raise it deliberately whenever check-mount grows. 31 = its checks today, the LAN leg included.
+  const MOUNT_FLOOR = 31;
+  const total = tally ? Number(tally[1]) + Number(tally[3]) : 0;
+  check(`mount: apps/server/src/check-mount.ts passes (${tally?.[1] ?? '?'} checks, ${tally?.[3] ?? '?'} skipped)`, m.status === 0 && !!tally && total >= MOUNT_FLOOR && tally[2] === '0' && Number(tally[3]) === skipLines.length,
+    fails || (tally && total < MOUNT_FLOOR ? `${total} checks accounted for, floor ${MOUNT_FLOOR}` : '') || `exit ${m.status} ${(m.stderr ?? '').slice(-200)}`);
 }
 console.log(`\ncheck-server: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
