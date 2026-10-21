@@ -3,6 +3,7 @@
 // project switcher and the manage dialog read it; nothing here touches the engine or the canvas.
 import { useSyncExternalStore } from 'react';
 import type { ProductInfo } from '@bp/core/scan/types';
+import { REQUEST_TIMEOUT_MS } from './client.ts';
 
 /** `stale`: the open product was removed or got a new root; the running page still shows the old one until it reloads. */
 export type Stale = 'removed' | 'root' | null;
@@ -28,7 +29,7 @@ export function refreshProjects(fresh = false): Promise<ProductInfo[] | null> {
   let p!: Promise<ProductInfo[] | null>;
   p = (async () => {
     try {
-      const r = await fetch('/api/products', { cache: 'no-store' });
+      const r = await fetch('/api/products', { cache: 'no-store', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const list = (await r.json()) as ProductInfo[];
       if (my === seq) put({ list, loading: false, error: null });
@@ -63,7 +64,7 @@ export function useProductName(slug: string | null, fallback: string): string {
 
 async function write(url: string, method: 'POST' | 'PATCH' | 'DELETE', body?: unknown): Promise<void> {
   const r = await fetch(url, {
-    method, cache: 'no-store',
+    method, cache: 'no-store', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
   });
   if (!r.ok) {

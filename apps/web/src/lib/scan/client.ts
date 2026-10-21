@@ -39,6 +39,21 @@ const MISSING: LiveProduct = { status: 'missing', events: '', jobs: NO_JOBS };
 const BACKOFF_MS = 500, BACKOFF_CAP_MS = 10000;
 const api = (slug: string) => '/api/products/' + encodeURIComponent(slug);
 
+/**
+ * How long a request to the blueprint server waits for an answer before the client gives up. Every route here
+ * answers at once - a scan route with 202 and the queued job, a store route from SQLite - so a request still
+ * open after this is a server that will not answer (it died mid-write, or it is wedged on a locked store), and
+ * without a bound the promise never settles: the toast never comes, the spinner never stops, and the structure
+ * fetch's `fetching` latch never clears, so every later map refresh is swallowed too. The lens-draft chat is
+ * the one slow route (its own 504 at 3 minutes) and passes its own bound.
+ */
+export const REQUEST_TIMEOUT_MS = 20000;
+/** `signal` (when the caller has one) and the request bound, as one signal: whichever fires first aborts the fetch. */
+const bound = (signal?: AbortSignal, ms: number = REQUEST_TIMEOUT_MS): AbortSignal => {
+  const t = AbortSignal.timeout(ms);
+  return signal ? AbortSignal.any([signal, t]) : t;
+};
+
 // ------------------------------------------------------------------------------------------- jobs
 /** Every jobs event per slug, log lines included, for the views that show them (useLiveJobs). */
 const jobStore = new Map<string, { jobs: ScanJob[]; subs: Set<() => void> }>();
@@ -83,7 +98,7 @@ export function useLiveProduct(slug: string | null): LiveProduct {
       if (fetching) { again = true; return true; }
       fetching = true;
       try {
-        const r = await fetch(base + '/structure', { signal: ac.signal, cache: 'no-store' });
+        const r = await fetch(base + '/structure', { signal: bound(ac.signal), cache: 'no-store' });
         if (!r.ok) return false;
         const text = await r.text();
         if (dead) return true;
@@ -161,7 +176,7 @@ export function useLiveProduct(slug: string | null): LiveProduct {
     (async () => {
       try {
         const [r, list] = await Promise.all([
-          fetch(base + '/structure', { signal: ac.signal, cache: 'no-store' }),
+          fetch(base + '/structure', { signal: bound(ac.signal), cache: 'no-store' }),
           refreshProjects().then((l) => l ?? ([] as ProductInfo[])), // the one request for the list: the header's store shares it
         ]);
         if (r.status === 404) {
@@ -193,7 +208,7 @@ export function useLiveProduct(slug: string | null): LiveProduct {
 /** Approve or decline a proposal; resolves to the updated row, rejects on any non-2xx (409 = already decided). */
 export async function decideProposal(slug: string, id: string, body: DecisionBody): Promise<Proposal> {
   const r = await fetch(api(slug) + '/proposals/' + encodeURIComponent(id), {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store',
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store', signal: bound(),
   });
   const j = (await r.json().catch(() => null)) as (Proposal & { error?: string }) | { error?: string } | null;
   if (!r.ok) {
@@ -203,13 +218,15 @@ export async function decideProposal(slug: string, id: string, body: DecisionBod
   return j as Proposal;
 }
 
+/** The lens-draft chat runs Claude Code and its route gives up at 3 minutes; the client waits a little longer. */
+export const LENS_DRAFT_TIMEOUT_MS = 200000;
 /** An answer of the lens-draft chat (POST /api/lens-draft). */
 export interface LensDraftAnswer { session?: string; reply: string; draft?: LensManifest; done: boolean; error?: string }
 
 /** One JSON request to a scan route; rejects on any non-2xx with an Error carrying `status` and the parsed `body`. */
-async function send<T>(url: string, method: 'POST' | 'PATCH' | 'DELETE', body?: unknown): Promise<T> {
+async function send<T>(url: string, method: 'POST' | 'PATCH' | 'DELETE', body?: unknown, timeoutMs?: number): Promise<T> {
   const r = await fetch(url, {
-    method, cache: 'no-store',
+    method, cache: 'no-store', signal: bound(undefined, timeoutMs),
     ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
   });
   const j = (await r.json().catch(() => null)) as unknown;
@@ -243,7 +260,7 @@ export const executeLens = (slug: string, lens: string): Promise<LensExecuteResu
 type Validate<T> = (x: unknown) => Parsed<T>;
 async function call<T>(url: string, method: 'GET' | 'POST' | 'PATCH' | 'DELETE', parse: Validate<T>, body?: unknown): Promise<T> {
   const r = await fetch(url, {
-    method, cache: 'no-store',
+    method, cache: 'no-store', signal: bound(),
     ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
   });
   const text = await r.text();
@@ -289,7 +306,7 @@ export const postWaveDispatch = (slug: string, id: string, packages?: string[]):
 /** One turn of the lens onboarding chat: `product` is a slug or 'kettle'; `session` from the previous answer; `kind`
  *  asks for a permanent project lens (the default) or a temporary one. 504 after 3 minutes. */
 export const postLensDraft = (product: string, message: string, session?: string, kind: 'project' | 'temporary' = 'project'): Promise<LensDraftAnswer> =>
-  send('/api/lens-draft', 'POST', { product, message, ...(session ? { session } : {}), kind });
+  send('/api/lens-draft', 'POST', { product, message, ...(session ? { session } : {}), kind }, LENS_DRAFT_TIMEOUT_MS);
 
 // ------------------------------------------------------------------------------------------- swarm
 // The scan as a swarm lives in core (pure); re-exported here for the web's importers.

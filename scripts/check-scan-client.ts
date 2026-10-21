@@ -13,6 +13,7 @@
 // Control: BP_SCAN_CLIENT_SEED=refusal restores the old one-line `REFUSAL[msg] ?? msg`, so assertion 1 is
 //      seen red on the exact strings the reader used to be shown.
 import { DEV_WORDS } from '../apps/web/src/engine/copy.ts';
+import type { ScanScope } from '../packages/core/src/scan/jobs.ts';
 import { refusalText as fixed } from '../apps/web/src/lib/scan/actions.ts';
 
 const SEED = process.env.BP_SCAN_CLIENT_SEED ?? '';
@@ -70,5 +71,58 @@ for (const [code, words] of Object.entries(REFUSAL_SEED)) expect(refusalText(err
 expect(refusalText(err('that lens has no manifest scan block on disk', { status: 400 })) === 'that lens has no manifest scan block on disk', 'the route\'s own refusal text was discarded');
 expect(refusalText(err('Nothing to scan with: no live product and no sample sim', { status: 503 })).startsWith('Nothing to scan with'), 'actions.ts\' own 503 sentence was discarded');
 
+// --------------------------------------------- 2. no request waits for an answer forever
+// A server that accepted the connection and never answers (it died mid-write, or it is wedged on a locked
+// store) used to leave every one of these promises pending for the life of the page. Each helper is driven
+// against a fetch that honours its signal and otherwise never settles; AbortSignal.timeout is stubbed short so
+// the bound can be observed in milliseconds, and the ms each helper ASKED for is checked against the constant.
+const realTimeout = AbortSignal.timeout.bind(AbortSignal);
+let asked: number[] = [];
+let honour = SEED !== 'timeout'; // =timeout gives the stub a fetch that ignores the signal, as an unbounded one did
+(AbortSignal as { timeout: (ms: number) => AbortSignal }).timeout = (ms: number) => { asked.push(ms); return realTimeout(30); };
+globalThis.fetch = ((_url: unknown, init?: { signal?: AbortSignal }) => new Promise((_res, rej) => {
+  const s = init?.signal;
+  if (honour && s) s.addEventListener('abort', () => rej(s.reason ?? new Error('aborted')));
+})) as typeof fetch;
+
+const client = await import('../apps/web/src/lib/scan/client.ts');
+const projects = await import('../apps/web/src/lib/scan/projects.ts');
+expect(client.REQUEST_TIMEOUT_MS >= 5000 && client.REQUEST_TIMEOUT_MS <= 60000, 'the request bound is not a sane number of ms', String(client.REQUEST_TIMEOUT_MS));
+expect(client.LENS_DRAFT_TIMEOUT_MS > 180000, 'the lens-draft bound is shorter than the route\'s own 3-minute limit', String(client.LENS_DRAFT_TIMEOUT_MS));
+
+const scope: ScanScope = { kind: 'all', label: 'Everything', features: [] };
+const HELPERS: { name: string; run: () => Promise<unknown>; ms: number; swallows?: true }[] = [
+  { name: 'postScan', run: () => client.postScan('p', 'l', scope), ms: client.REQUEST_TIMEOUT_MS },
+  { name: 'postDispatch', run: () => client.postDispatch('p', ['i']), ms: client.REQUEST_TIMEOUT_MS },
+  { name: 'deleteJob', run: () => client.deleteJob('p', 'j'), ms: client.REQUEST_TIMEOUT_MS },
+  { name: 'executeLens', run: () => client.executeLens('p', 'l'), ms: client.REQUEST_TIMEOUT_MS },
+  { name: 'decideProposal', run: () => client.decideProposal('p', 'i', { decision: 'approve' } as never), ms: client.REQUEST_TIMEOUT_MS },
+  { name: 'getWaves', run: () => client.getWaves('p'), ms: client.REQUEST_TIMEOUT_MS },
+  { name: 'postTriage', run: () => client.postTriage('p', { ids: ['a'], decision: 'accept' }), ms: client.REQUEST_TIMEOUT_MS },
+  { name: 'getReleaseSuggestion', run: () => client.getReleaseSuggestion('p'), ms: client.REQUEST_TIMEOUT_MS },
+  { name: 'postReleaseBuild', run: () => client.postReleaseBuild('p', 'r'), ms: client.REQUEST_TIMEOUT_MS },
+  { name: 'postLensDraft', run: () => client.postLensDraft('p', 'hello'), ms: client.LENS_DRAFT_TIMEOUT_MS },
+  { name: 'refreshProjects', run: () => projects.refreshProjects(true), ms: client.REQUEST_TIMEOUT_MS, swallows: true },
+  { name: 'addProject', run: () => projects.addProject({ slug: 's', name: 'n', root: 'r' }), ms: client.REQUEST_TIMEOUT_MS },
+];
+const PENDING = Symbol('pending');
+const settle = async (p: Promise<unknown>): Promise<unknown> => {
+  const idle = new Promise((r) => setTimeout(() => r(PENDING), 400));
+  return Promise.race([p.then((v) => v, (e: unknown) => e), idle]);
+};
+for (const h of HELPERS) {
+  asked = [];
+  const out = await settle(h.run());
+  expect(out !== PENDING, `${h.name} never gives up: a server that accepted the connection and never answers leaves its promise pending`);
+  expect(asked.includes(h.ms), `${h.name} did not bound its request at ${h.ms} ms`, asked.join(','));
+  if (out === PENDING) continue;
+  if (h.swallows) { expect(out === null, `${h.name} answers something other than "no list" when it gave up`, String(out)); continue; }
+  const name = (out as { name?: string }).name;
+  expect(name === 'TimeoutError' || name === 'AbortError', `${h.name} rejected with something other than the abort`, String(name));
+  // the whole point of the bound: the words the reader gets are a sentence, not the abort's own message
+  const text = refusalText(out);
+  expect(DEV_WORDS.every((d) => !text.includes(d)) && /in time/.test(text), `${h.name}'s timeout does not reach the reader as a sentence`, text);
+}
+
 if (failures.length) { console.log(failures.map((f) => 'FAIL ' + f).join('\n')); console.log(`check-scan-client: ${failures.length} failed, ${held} held`); process.exit(1); }
-console.log(`check-scan-client: ${held} expectations held (${SHAPES.length} rejection shapes, ${DEV_WORDS.length} developer strings forbidden)`);
+console.log(`check-scan-client: ${held} expectations held (${SHAPES.length} rejection shapes, ${DEV_WORDS.length} developer strings forbidden, ${HELPERS.length} request helpers bounded)`);
