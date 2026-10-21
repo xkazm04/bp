@@ -28,6 +28,13 @@ const lines = fs.readFileSync(LOG, 'utf8').split('\n').filter(Boolean);
 const srcSha = shaOf(fs.readFileSync(srcJpg));
 const calls = lines.map((l, i) => ({ n: i + 1, e: JSON.parse(l) })).filter((x) => x.e.prop === 'city-backdrop');
 const picked = calls.find((x) => x.e.quality === 'MEDIUM');
+if (!picked) {
+  // Without this the first use of `picked` is 30 lines below, after every file has been hashed, and it reads
+  // "Cannot read properties of undefined (reading 'model')" - which names neither the log nor the filter.
+  console.error(`no MEDIUM city-backdrop call in ${path.relative(ROOT, LOG)}: the manifest's generator block is the picked frame, so one is required.`);
+  console.error(`  ${calls.length} city-backdrop call(s) in the log: ${calls.map((x) => `line ${x.n} ${x.e.variant} s${x.e.seed} ${x.e.quality}`).join('; ') || 'none'}`);
+  process.exit(2);
+}
 const T = S.texture;
 const tileOk = T.seam_jump_after <= 3 * T.neighbour_step && T.seam_jump_after < T.seam_jump_before;
 const dimOk = E.backdrop_max_display < 0.6 * E.table_view_max_display && T.max_luminance_encoded < 0.6;
