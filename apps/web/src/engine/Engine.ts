@@ -4,7 +4,7 @@
 import type { Feature, LensDef, Scalar, ViewId } from '@bp/core/data';
 import {
   BLAST_DEFAULT, GA_MILESTONE, HOUR, LINES, SPEEDS, inside, isView, lensOf, lensPerson, personLens, revAt, views, type Box, type BldNode, type BayNode, type Counts, type Model,
-  type OrderTemplate, type PlaceNode, type Preview, type RoomNode, type SimDecision, type SimEvent, type Target, type TileNode, type WingNode,
+  type OrderTemplate, type PlaceNode, type Preview, type RoomNode, type SimDecision, type SimEvent, type Target, type ToastTone, type TileNode, type WingNode,
 } from '@bp/core/model';
 import { LIVE_VERB_LABEL, SAMPLE_REFUSED, commitSample, runLivePlan, type LivePlan } from '@/lib/model/live-steer';
 import type { ScanJob } from '@bp/core/scan/jobs';
@@ -576,7 +576,8 @@ export class Engine {
     this.setTime(W[clamp(i + dir, 0, W.length - 1)]);
   }
   setDelta(d: 1 | 7 | 14) { this.set({ delta: d }); this.writeHashSoon(); }
-  toast(strong: string, text: string, action?: 'undo' | 'undo2' | 'replay', fid?: string) { this.toastN++; this.store.set({ toast: { strong, text, action, fid, n: this.toastN } }); }
+  /** `tone` is the severity the model already speaks (sim.ts ToastTone): 'bad' a failure, 'warn' a refusal or a nothing-happened, absent a plain confirmation. */
+  toast(strong: string, text: string, action?: 'undo' | 'undo2' | 'replay', fid?: string, tone?: ToastTone) { this.toastN++; this.store.set({ toast: { strong, text, action, fid, tone, n: this.toastN } }); }
   dismissToast() { this.store.set({ toast: null }); }
 
   // ============================================================================ navigation
@@ -867,20 +868,20 @@ export class Engine {
     for (const id in this.S.tgt.ids) { const T = this.M.L.TILE[id]; if (!T) continue; x0 = Math.min(x0, T.x); y0 = Math.min(y0, T.y); x1 = Math.max(x1, T.x + T.w); y1 = Math.max(y1, T.y + T.h); }
     if (x1 > x0) this.cam.flyTo(this.fitCam({ x: x0 - 40, y: y0 - 40, w: x1 - x0 + 80, h: y1 - y0 + 80 }, { t: 40, r: 30, b: 60, l: 30 }, 1));
   }
-  private needTarget() { this.toast('Point at a place first:', 'shift-click a wing, room or fixture, or shift-drag a box.'); }
+  private needTarget() { this.toast('Point at a place first:', 'shift-click a wing, room or fixture, or shift-drag a box.', undefined, undefined, 'warn'); }
   /** A sample steer's preview. Refused on a live product (its verbs are measure, build and stop: `previewLive`). */
   preview(kind: 'ga' | 'research' | 'push' | 'pause' | 'resume' | 'order', tpl?: OrderTemplate, fid?: string) {
     const sim = this.M.sim;
-    if (sim.live) { this.toast(SAMPLE_REFUSED.strong, SAMPLE_REFUSED.text); return; }
+    if (sim.live) { this.toast(SAMPLE_REFUSED.strong, SAMPLE_REFUSED.text, undefined, undefined, 'bad'); return; }
     let tgt: Target = this.S.tgt;
     if (fid) { tgt = { ids: { [fid]: 1 }, n: 1, label: this.M.P.F[fid].name }; this.store.set({ tgt }); }
     let p: Preview | null = null;
-    if (kind === 'ga') { p = sim.previewGA(this.wingName); if (!p) this.toast('Nothing to pull:', 'no agent is on M3 or M4 work.'); }
-    else if (kind === 'research') { p = sim.previewResearch(); if (!p) this.toast('The research crew is already paused.', ''); }
+    if (kind === 'ga') { p = sim.previewGA(this.wingName); if (!p) this.toast('Nothing to pull:', 'no agent is on M3 or M4 work.', undefined, undefined, 'warn'); }
+    else if (kind === 'research') { p = sim.previewResearch(); if (!p) this.toast('The research crew is already paused.', '', undefined, undefined, 'warn'); }
     else {
       if (!tgt.n) { this.needTarget(); return; }
-      if (kind === 'push') { p = sim.previewPushHere(tgt, this.wingName); if (!p) this.toast('Nothing to move:', 'no free working agent, or the selection is already live.'); }
-      else if (kind === 'pause' || kind === 'resume') { p = sim.previewPause(tgt, kind === 'resume'); if (!p) this.toast(kind === 'resume' ? 'No paused agent' : 'No agent is working', 'inside the selection.'); }
+      if (kind === 'push') { p = sim.previewPushHere(tgt, this.wingName); if (!p) this.toast('Nothing to move:', 'no free working agent, or the selection is already live.', undefined, undefined, 'warn'); }
+      else if (kind === 'pause' || kind === 'resume') { p = sim.previewPause(tgt, kind === 'resume'); if (!p) this.toast(kind === 'resume' ? 'No paused agent' : 'No agent is working', 'inside the selection.', undefined, undefined, 'warn'); }
       else if (kind === 'order' && tpl) p = sim.previewOrder(tgt, tpl, this.signer());
     }
     this.set({ prev: p, lprev: null, ordMenu: false });
@@ -888,7 +889,7 @@ export class Engine {
   /** A live product's steer over the target (planned by `planLive`): shown under NOT ISSUED YET, or its reason toasted when it cannot run. */
   previewLive(p: LivePlan) {
     if (!this.M.sim.live || !this.M.live) return;
-    if (p.off) { this.toast(LIVE_VERB_LABEL[p.verb] + ':', p.off); return; }
+    if (p.off) { this.toast(LIVE_VERB_LABEL[p.verb] + ':', p.off, undefined, undefined, 'warn'); return; }
     this.set({ lprev: p, prev: null, ordMenu: false });
   }
   commitPreview() {
@@ -896,7 +897,7 @@ export class Engine {
     if (lp) { this.set({ lprev: null }); this.commitLive(lp); return; }
     const p = this.S.prev; if (!p) return;
     this.set({ prev: null });
-    if (!commitSample(this.M.sim, p, this.signer())) { this.toast(SAMPLE_REFUSED.strong, SAMPLE_REFUSED.text); return; }
+    if (!commitSample(this.M.sim, p, this.signer())) { this.toast(SAMPLE_REFUSED.strong, SAMPLE_REFUSED.text, undefined, undefined, 'bad'); return; }
     this.scheduleSimSync(true); this.forceStatic();
   }
   /** Run a live steer through the product's routes; the swarm answers through the jobs and the scan feed, and the toast says what started. */
