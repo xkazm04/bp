@@ -19,6 +19,7 @@ import { pathToFileURL } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import { stripComments } from './lib/source.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
 const arg = (k: string) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : undefined; };
@@ -34,17 +35,29 @@ function resolveSpec(from: string, spec: string): string | null {
   for (const e of EXT) { const p = base + e; if (fs.existsSync(p) && fs.statSync(p).isFile()) return p; }
   return null;
 }
-/** Static value imports and re-exports of a module (`import type` and `export type` erase; `import()` is a split point). */
-function staticDeps(file: string): { stat: string[]; dyn: string[] } {
-  const src = fs.readFileSync(file, 'utf8'), stat: string[] = [], dyn: string[] = [];
+/** Static value imports and re-exports (`import type` and `export type` erase); the regex is anchored per line. */
+function statIn(file: string, src: string): string[] {
+  const stat: string[] = [];
   for (const m of src.matchAll(/^\s*(import|export)\s+(type\s+)?([^'";]*?\sfrom\s+)?['"]([^'"]+)['"]/gm)) {
     if (m[2]) continue;
     if (m[1] === 'export' && !m[3]) continue;
     const r = resolveSpec(file, m[4]); if (r) stat.push(r);
   }
-  for (const m of src.matchAll(/\bimport\(\s*['"]([^'"]+)['"]\s*\)/g)) { const r = resolveSpec(file, m[1]); if (r) dyn.push(r); }
-  return { stat, dyn };
+  return stat;
 }
+/** The split points: every `import('./x')`. */
+const dynIn = (file: string, src: string): string[] => [...src.matchAll(/\bimport\(\s*['"]([^'"]+)['"]\s*\)/g)].flatMap((m) => resolveSpec(file, m[1]) ?? []);
+/**
+ * The two sides are read differently on purpose.
+ *   dyn  is an expectation that must MATCH (`doors.has(LEDGER)`), so it reads the source with its comments removed
+ *        (scripts/lib/source.ts): over raw text a commented-out `import('./ledger/LedgerPage')` is counted as the
+ *        door, and the check passes for a tree whose only door has been deleted. The control below proves that.
+ *   stat feeds an expectation that must NOT match (nothing reaches the ledger statically), where a comment can only
+ *        ADD a reach - strictly conservative - and the shared stripper drops the newlines inside a block comment,
+ *        which would unanchor the per-line regex and HIDE a real static import. So it reads the file as written.
+ */
+const staticDeps = (file: string, raw = fs.readFileSync(file, 'utf8')): { stat: string[]; dyn: string[] } =>
+  ({ stat: statIn(file, raw), dyn: dynIn(file, stripComments(raw)) });
 const entries = ['app/page.tsx', 'app/layout.tsx'].map((p) => path.join(SRC, p)).filter((p) => fs.existsSync(p));
 const reached = new Set<string>(), doors = new Map<string, string>();
 for (const todo = [...entries]; todo.length; ) {
@@ -61,6 +74,15 @@ const leaked = [...reached].filter((p) => p === LEDGER || p.startsWith(TRAIN)).m
 expect(!leaked.length, `\`/\` imports the ledger statically: ${leaked.slice(0, 6).join(', ')}${leaked.length > 6 ? ' …' : ''}`);
 expect(doors.has(LEDGER), 'nothing imports ledger/LedgerPage.tsx dynamically: the ledger page cannot load');
 console.log(`chunk   / reaches ${reached.size} modules statically, ${leaked.length ? leaked.length + ' of them the ledger page or train/**' : 'none of the ledger page or train/**'}; the ledger loads through ${doors.has(LEDGER) ? rel(doors.get(LEDGER)!) : '(nothing)'}`);
+// The matcher stopped biting? The door is an expectation that must MATCH, so comment out the real `import()` in the
+// file that holds it and leave the spelling in a comment: stripped, the door must be gone; raw, it survives (the blindness).
+{
+  const door = doors.get(LEDGER), raw = door ? fs.readFileSync(door, 'utf8') : '';
+  const seeded = raw.replace(/import\((\s*['"][^'"]*LedgerPage['"]\s*)\)/, '/* import($1) */ noDoor()');
+  // through staticDeps itself, so the control fails if the read ever stops stripping
+  expect(!!door && seeded !== raw && dynIn(door, seeded).includes(LEDGER) && !staticDeps(door, seeded).dyn.includes(LEDGER),
+    'control: a commented-out dynamic import of the ledger must not count as its door (the comments are stripped first)');
+}
 
 // ------------------------------------------------------------------------------------------- 3. the bundle (optional)
 interface FirstLoad { files: { name: string; raw: number; gz: number; marker: boolean }[]; js: number; jsGz: number; css: number; cssGz: number; ledger: { name: string; raw: number; gz: number }[] }
