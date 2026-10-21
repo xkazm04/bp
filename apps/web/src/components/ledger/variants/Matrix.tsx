@@ -16,9 +16,11 @@ const MARK: Record<RiskBand, string> = { high: '▲', medium: '◆', low: '▽' 
 function Cell({ items, lens, feat, L, act, packs }: { items: Finding[]; lens: LensCol; feat: string; L: Ledger; act: boolean; packs: boolean }) {
   if (!items.length) return <td className="lg-mc none"><span aria-hidden="true">·</span></td>;
   const ids = items.map((f) => f.p.id), all = ids.every((id) => L.ui.sel.has(id)), some = !all && ids.some((id) => L.ui.sel.has(id));
+  // the cell is a three-state toggle (the `.part` ring is the third): 'mixed' is what says so, not a false pressed
+  const pressed: boolean | 'mixed' = all ? true : some ? 'mixed' : false;
   if (packs) return (
     <td className={'lg-mc' + (all ? ' on' : some ? ' part' : '')}>
-      <button type="button" tabIndex={act ? 0 : -1} aria-pressed={all} aria-label={lens.name + ' on ' + feat + ': ' + items.map((f) => f.p.id + ' ' + f.status).join(', ')}
+      <button type="button" tabIndex={act ? 0 : -1} aria-pressed={pressed} aria-label={lens.name + ' on ' + feat + ': ' + items.map((f) => f.p.id + ' ' + f.status).join(', ')}
         title={items.map((f) => f.p.id + ' ' + f.p.title + ' (' + f.status + ')').join('\n')} onClick={() => L.select(ids)}>
         <span className="lg-pkm">{items.map((f) => <StateMark key={f.p.id} status={f.status} form="glyph" />)}</span>
       </button>
@@ -28,7 +30,7 @@ function Cell({ items, lens, feat, L, act, packs }: { items: Finding[]; lens: Le
   const said = BANDS.filter((b) => n[b]).map((b) => n[b] + ' ' + b).join(', ');
   return (
     <td className={'lg-mc' + (all ? ' on' : some ? ' part' : '')}>
-      <button type="button" tabIndex={act ? 0 : -1} aria-pressed={all} aria-label={lens.name + ' on ' + feat + ': ' + said + ' risk'} title={items.map((f) => f.p.id + ' ' + f.p.title + ' (' + f.status + ')').join('\n')}
+      <button type="button" tabIndex={act ? 0 : -1} aria-pressed={pressed} aria-label={lens.name + ' on ' + feat + ': ' + said + ' risk'} title={items.map((f) => f.p.id + ' ' + f.p.title + ' (' + f.status + ')').join('\n')}
         onClick={() => L.select(ids)}>
         {BANDS.map((b) => (n[b] ? <span key={b} className={'r-' + b}><b aria-hidden="true">{MARK[b]}</b>{n[b]}</span> : null))}
       </button>
@@ -55,12 +57,13 @@ export function Matrix({ L }: { L: Ledger }) {
         <tbody>
           {rows.map((r) => {
             const ids = r.items.map((f) => f.p.id), on = ids.every((id) => L.ui.sel.has(id)), open = r.items.filter((f) => f.can);
+            const rowPressed: boolean | 'mixed' = on ? true : ids.some((id) => L.ui.sel.has(id)) ? 'mixed' : false;
             // the row in focus lets Tab into its cells and its Dispatch; J/K jump rows
             const key = 'feat:' + r.slug, act = foc === key;
             return (
               <tr key={r.slug} className={on ? 'on' : ''} data-fid={key} tabIndex={act ? 0 : -1} onFocus={() => L.setFocus(key)}>
                 <th scope="row" className="lg-mf">
-                  <button type="button" tabIndex={act ? 0 : -1} aria-pressed={on} title={'Select every finding on ' + r.name + ' (Space)'} onClick={() => { L.setFocus(key); L.select(ids); }}>
+                  <button type="button" tabIndex={act ? 0 : -1} aria-pressed={rowPressed} title={'Select every finding on ' + r.name + ' (Space)'} onClick={() => { L.setFocus(key); L.select(ids); }}>
                     <b>{r.name}</b>{r.domain ? <span>{r.domain}</span> : null}
                   </button>
                 </th>
