@@ -157,6 +157,12 @@ const LENSES: LensFields[] = [
   check('suggest: nothing -> 0.1.0 from none', JSON.stringify(suggestVersion([], undefined, [])).includes('"version":"0.1.0","from":"none"'));
   const s3 = suggestVersion(['v1.4.0'], undefined, [fix], new Set(['1.4.1', '1.4.2']));
   check('suggest: a version that already has a release is passed over', s3.version === '1.4.3' && /already has a release/.test(s3.reason), JSON.stringify(s3));
+  // The cap: with 1.4.1 .. 1.4.101 all taken the loop gives up after 100 bumps. The answer must then not be a taken version
+  // presented as free; it says no free version was found instead.
+  const run101 = new Set(Array.from({ length: 101 }, (_, i) => '1.4.' + (i + 1)));
+  const s4 = suggestVersion(['v1.4.0'], undefined, [fix], run101);
+  check('suggest: 101 consecutive taken patches -> not a taken version passed off as free, the reason says none was found', !run101.has(s4.version) || (/no free version/.test(s4.reason) && !/already has a release, so/.test(s4.reason)), JSON.stringify(s4));
+  check('suggest: the cap leaves a free version just inside it alone (1.4.1 .. 1.4.100 taken -> 1.4.101)', suggestVersion(['v1.4.0'], undefined, [fix], new Set(Array.from({ length: 100 }, (_, i) => '1.4.' + (i + 1)))).version === '1.4.101');
   check('isVersion and RELEASE_ID', isVersion('1.4.1') && isVersion('1.0.0-rc.1') && !isVersion('v1.4.1') && !isVersion('1.4') && RELEASE_ID.test('rel-1.4.1') && !RELEASE_ID.test('rel-1.4.1;x') && !RELEASE_ID.test('1.4.1'));
 }
 
