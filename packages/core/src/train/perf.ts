@@ -16,8 +16,14 @@ export interface PerfFigures extends RunStats {
   pct?: number;
 }
 
-/** A run more than half the noise above the median: the lucky-or-unlucky run a person should see outlined. */
-export const isOutlier = (v: number, s: Pick<RunStats, 'median' | 'noise'>): boolean => s.noise > 0 && v - s.median > s.noise / 2;
+/**
+ * A run more than half the noise away from the median, either way: the lucky-or-unlucky run a person should see
+ * outlined. It is symmetric because the point is the run that DISTORTS the baseline, and a run that is far too
+ * fast drags the median down and makes the after look worse by exactly as much as a slow one flatters it. The
+ * table shows metrics in both directions (`atTarget` reads the field's `better`), so one side would be the wrong
+ * side for half of them.
+ */
+export const isOutlier = (v: number, s: Pick<RunStats, 'median' | 'noise'>): boolean => s.noise > 0 && Math.abs(v - s.median) > s.noise / 2;
 
 /** Baseline runs and an after reading as the table shows them. */
 export function perfFigures(values: readonly number[], after: number | undefined, unit?: string): PerfFigures {
