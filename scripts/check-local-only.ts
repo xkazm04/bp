@@ -1,5 +1,7 @@
 // Checks the localhost request guards (src/lib/scan/local-only.ts): Host allow/deny for reads and writes,
-// Origin / Sec-Fetch-Site / X-Forwarded-For for writes, Content-Type for JSON bodies.
+// Origin / Sec-Fetch-Site / X-Forwarded-For for writes, Content-Type for JSON bodies - including the branches
+// no obvious case reaches: an unparseable Origin, an IPv4-mapped loopback hop, a non-.1 loopback octet, a
+// same-site fetch, and the bare `::1` Host that hostOnly makes unreachable.
 // Run: node scripts/check-local-only.ts  (Node's type stripping). Exit 1 on any failure.
 import { jsonOnly, localHost, localOnly } from '../packages/core/src/scan/local-only.ts';
 
@@ -28,6 +30,17 @@ check('json allows charset suffix', jsonOnly(req({ 'content-type': 'Application/
 check('json denies text/plain', jsonOnly(req({ 'content-type': 'text/plain' })) !== null);
 check('json denies form type', jsonOnly(req({ 'content-type': 'application/x-www-form-urlencoded' })) !== null);
 check('json denies none', jsonOnly(req({})) !== null);
+// Branches of local-only.ts that no case above reaches: measured 2026-10-21, dropping the `::ffff:` alternative from
+// isLoopbackAddr, or accepting an unparseable Origin instead of refusing it, left every case above green.
+// A bare `::1` Host is REFUSED although LOOPBACK_HOST lists `::1`: hostOnly cuts at the first colon unless the host is
+// bracketed, so that alternative is unreachable. Pinned as it behaves, so a change to hostOnly says so here.
+check('read denies a bare ::1 host (hostOnly cuts at the first colon)', localHost(req({ host: '::1' })) !== null);
+check('write denies a bare ::1 host', localOnly(req({ host: '::1' })) !== null);
+check('read allows another loopback octet (127.1.2.3)', localHost(req({ host: '127.1.2.3:3000' })) === null);
+check('write denies an unparseable Origin', localOnly(req({ ...L, origin: 'not a url' })) !== null);
+check('write allows a bracketed IPv6 loopback Origin', localOnly(req({ ...L, origin: 'http://[::1]:3000' })) === null);
+check('write allows an IPv4-mapped loopback X-Forwarded-For hop', localOnly(req({ ...L, 'x-forwarded-for': '::ffff:127.0.0.1' })) === null);
+check('write allows a same-site fetch (only cross-site is refused)', localOnly(req({ ...L, 'sec-fetch-site': 'same-site' })) === null);
 
 console.log(`local-only: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
