@@ -7,12 +7,18 @@
 //             closed socket and left running
 //   peer      a request from a non-loopback socket answers 403 whatever its Host (sent through this machine's own LAN
 //             address, when it has one; the server listens on 0.0.0.0 here, as `--host 0.0.0.0` would)
+// And one source rule over the real mounted tree (no server needed):
+//   text      no handler source carries a raw NUL byte. One did (structure/route.ts held a literal 0x00 where `'\0'`
+//             was meant): ripgrep then skips the file, so a content search over the handler tree silently returns
+//             fewer matches than there are, and `git diff`/`git log -p` report "Binary files differ" for every
+//             change to it. A gate is the only thing that notices, because the file still compiles and still runs.
 // Run: node apps/server/src/check-mount.ts   Exit 1 on any failure.
 import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { MAX_BODY, listener, loadRoutes } from './mount.ts';
 
 let failed = 0, passed = 0;
@@ -95,5 +101,16 @@ try {
   server.close(); server.closeAllConnections();
   fs.rmSync(api, { recursive: true, force: true });
 }
+
+// text: the real sources, read as bytes. Both mounts' trees plus this server's own files.
+{
+  const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+  const srcDirs = ['packages/core/src/server/api', 'apps/web/src/app/api', 'apps/server/src'];
+  const sources = (d: string): string[] => (fs.existsSync(d) ? fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? sources(path.join(d, e.name)) : /\.(ts|tsx|mjs)$/.test(e.name) ? [path.join(d, e.name)] : [])) : []);
+  const files = srcDirs.flatMap((d) => sources(path.join(ROOT, d)));
+  const withNul = files.filter((f) => fs.readFileSync(f).includes(0)).map((f) => path.relative(ROOT, f).split(path.sep).join('/'));
+  check(`text: no NUL byte in the ${files.length} handler, mount and web-mount sources`, files.length > 0 && !withNul.length, withNul.join(' '));
+}
+
 console.log(`\ncheck-mount: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
