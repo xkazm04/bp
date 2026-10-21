@@ -247,7 +247,7 @@ export function DecisionCard() {
           <div ref={ref} style={{ position: 'absolute', left: 0, top: 0, zIndex: 8 }}>
             <motion.div id="dcard" key={d.id} className={'u-' + d.urg} role="dialog" aria-label="Decision" style={{ position: 'relative' }}
               initial={{ opacity: 0, y: 8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 6, transition: { duration: 0.15 } }} transition={{ type: 'spring', stiffness: 420, damping: 32 }}>
-              <div className="k"><span>RFI · {d.base} · {d.urg === 'high' ? 'urgent' : d.urg === 'medium' ? 'soon' : 'when you can'} · sheet {sheetOf(M.P, d.lens).no}</span><button type="button" className="x" aria-label="Close" onClick={() => E.closeDecision()}>Esc</button></div>
+              <div className="k"><span>RFI · {d.base} · {d.urg === 'high' ? 'urgent' : d.urg === 'medium' ? 'soon' : 'when you can'} · sheet {sheetOf(M.P, d.lens).no}</span><button type="button" className="x" aria-label="Close · Esc" onClick={() => E.closeDecision()}>Esc</button></div>
               <h3>{d.q}</h3>
               {(() => { const p = scan?.proposals.find((x) => x.id === d.base), sm = p ? proposalSummary(p) : null; return sm ? <div className="psum">{sm}</div> : null; })()}
               <div className="by"><b>{A ? A.base : d.by}</b> ({A ? sim.crewName(A.sq) : ''}) stopped at <b>{f.name}</b> and asks <b>{pname(M.P, d.decider)}</b>{d.ord ? <>, asked because of <b>{d.ord}</b></> : null}.</div>

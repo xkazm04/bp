@@ -11,7 +11,7 @@ import { register } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { stripBlock } from './lib/source.ts';
+import { readStripped, stripBlock } from './lib/source.ts';
 import fs from 'node:fs';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
@@ -121,6 +121,26 @@ const minPx = (sel: string) => {
 for (const sel of ['.bp-phone .theme-toggle', '.ph-who button', '.ph-dom button']) {
   const r = minPx(sel);
   expect(r.found && r.px >= 44, `blueprint.css ${sel}: touch target ${r.found ? (Number.isNaN(r.px) ? 'unset' : r.px + 'px') : 'rule not found'}, expected at least 44px`);
+}
+
+// 15-16. WCAG 2.5.3 label in name: a control whose visible text is a key cap ("Esc") must carry that text in
+// its accessible name, or voice control cannot address what the reader can see. Source-scanned with comments
+// stripped, so a comment about the rule cannot stand in for it.
+for (const f of ['components/Overlays.tsx', 'components/Dock.tsx']) {
+  const src = readStripped(path.join(SRC, f));
+  // scan backwards from the visible text to its own <button: an attribute list holds arrows (=>), so no
+  // character class over '>' can delimit the tag
+  const bad: string[] = [];
+  let seen = 0;
+  for (const m of src.matchAll(/>\s*Esc\s*</g)) {
+    const i = src.lastIndexOf('<button', m.index);
+    if (i < 0) continue;
+    seen++;
+    const al = /aria-label="([^"]*)"/.exec(src.slice(i, m.index));
+    if (al && !/\bEsc\b/.test(al[1])) bad.push(al[1]);
+  }
+  expect(seen > 0, `${f}: no button with the visible text "Esc" found - the label-in-name scan stopped matching`);
+  expect(bad.length === 0, `${f}: ${bad.length} control(s) with the visible text "Esc" whose accessible name omits it (${bad.join('; ')}) - WCAG 2.5.3`);
 }
 
 if (failures.length) { console.error(`check-overlays: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
