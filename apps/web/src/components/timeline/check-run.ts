@@ -1,6 +1,5 @@
 // Pins how the timeline words a scan run (timeline/run.ts): the guarded lens accessor, progress against the run's scope,
 // duration, and the age wording shared with the header pill. Run: node src/components/timeline/check-run.ts. Exit 1 on failure.
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readStripped } from '../../../../../scripts/lib/source.ts';
@@ -41,8 +40,15 @@ expect(threw === '', `runTitle throws on a row without started_at (${threw}); in
 const strip = readStripped(path.join(HERE, 'Strip.tsx'));
 expect(strip.includes('runTitle(') && !strip.includes('started_at'), 'Strip.tsx does not use runTitle, or still reads started_at inline');
 
-// the header pill words the age with the same `ago`
-expect(/\bago\b/.test(fs.readFileSync(path.join(HERE, '../Header.tsx'), 'utf8')) && /from '\.\.\/Header'/.test(fs.readFileSync(path.join(HERE, 'shared.ts'), 'utf8')), 'the timeline does not use the header\'s ago');
+// The header pill words the age with the same `ago`: Header.tsx must EXPORT it and still CALL it (a definition
+// nothing uses is not the pill's wording), and shared.ts must import that export by name. Comments are stripped
+// first - the previous form tested /\bago\b/ against the raw file, which the doc comment above the function
+// satisfies on its own, so it passed 1 of the 3 ways this rule can break instead of 3.
+const header = readStripped(path.join(HERE, '../Header.tsx'));
+const sharedSrc = readStripped(path.join(HERE, 'shared.ts'));
+expect(/export function ago\(/.test(header), 'Header.tsx no longer exports `ago`, which the timeline imports from it');
+expect((header.match(/\bago\(/g) ?? []).length >= 2, 'Header.tsx exports `ago` but no longer calls it: the pill has stopped wording the age with it');
+expect(/import \{[^}]*\bago\b[^}]*\} from '\.\.\/Header'/.test(sharedSrc), 'shared.ts does not import { ago } from \'../Header\'');
 
 if (failures.length) {
   console.error(`check-run: ${failures.length} failure(s), ${held} held`);
