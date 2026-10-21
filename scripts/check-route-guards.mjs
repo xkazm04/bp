@@ -120,6 +120,28 @@ for (const file of webFiles) {
   for (const b of auditMount(strip(fs.readFileSync(file, 'utf8')), rel, coreMethods.get(rel))) failures.push(`apps/web/src/app/api/${rel}: ${b}`);
 }
 for (const rel of coreMethods.keys()) if (!webFiles.some((f) => path.relative(WEB_API, f).split(path.sep).join('/') === rel)) failures.push(`packages/core/src/server/api/${rel}: not mounted by apps/web`);
+// The UI contract's API table (docs/blueprint-ui.md) is the third mirror of the route set: every `VERB /api/...` row must
+// name a live handler and every live handler must have a row. Path params are positional, so `[slug]` and `<slug>` both
+// normalise to `*`. Comments are blanked by the caller's source: only table rows (`| `VERB /api/...` |`) count.
+const routeKey = (verb, p) => `${verb} /api/${p.replace(/\[\.{0,3}[^\]]*\]|<[^>]*>/g, '*')}`;
+/** Problems of the doc's route rows against the live `rel path -> methods` map. */
+function auditDocRoutes(doc, live) {
+  const want = new Set(), got = new Set(), bad = [];
+  for (const [rel, ms] of live) for (const v of ms) want.add(routeKey(v, rel.replace(/\/?route\.ts$/, '')));
+  for (const m of doc.matchAll(/^\|\s*`(GET|POST|PATCH|PUT|DELETE) \/api\/?([^`\s]*)`/gm)) got.add(routeKey(m[1], m[2]));
+  for (const k of want) if (!got.has(k)) bad.push(`${k} is served but has no row in docs/blueprint-ui.md`);
+  for (const k of got) if (!want.has(k)) bad.push(`${k} has a row in docs/blueprint-ui.md but no live handler`);
+  return bad;
+}
+const DOC = path.join(ROOT, 'docs/blueprint-ui.md');
+const docText = fs.readFileSync(DOC, 'utf8');
+for (const b of auditDocRoutes(docText, coreMethods)) failures.push(b);
+{ // the doc gate must bite: a deleted row and an invented row are each caught, and a row count is asserted (not a vacuous empty set)
+  const rows = docText.split(/\r?\n/).filter((l) => /^\|\s*`(GET|POST|PATCH|PUT|DELETE) \/api/.test(l));
+  controls++; if (rows.length < 30) failures.push(`control: only ${rows.length} route rows parsed out of the doc`);
+  controls++; if (!auditDocRoutes(docText.replace(rows[0], ''), coreMethods).length) failures.push('control: a deleted doc row was not caught');
+  controls++; if (!auditDocRoutes(docText + '\n| `GET /api/nonesuch` | x |\n', coreMethods).length) failures.push('control: an invented doc row was not caught');
+}
 // Mount controls: an inline handler, a wrong path and a missing method must each be caught.
 {
   const rel = 'products/[slug]/scan/route.ts', spec = "'@bp/core/server/api/products/[slug]/scan/route'";
