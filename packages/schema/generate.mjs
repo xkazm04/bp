@@ -486,6 +486,19 @@ if (isMain) {
     const unlisted = onDisk.filter((f) => !listed.includes(f)), absent = listed.filter((f) => !onDisk.includes(f));
     console.log(`${unlisted.length || absent.length ? 'FAIL' : 'ok  '}  every schema in packages/schema/schema is a generator root (${onDisk.length} files, ${listed.length} roots)${unlisted.length ? ': not in ROOTS: ' + unlisted.join(', ') : ''}${absent.length ? ': in ROOTS, not on disk: ' + absent.join(', ') : ''}`);
     if (unlisted.length || absent.length) failed++;
+    // The README's decision: generated/ts/app-structure.ts is a parity artifact nothing imports. The package's
+    // exports map must not offer it (or anything under generated/), or the import the decision forbids typechecks.
+    const exportsOffering = (pkgText) => {
+      const ex = JSON.parse(pkgText).exports ?? {};
+      return Object.entries(ex).flatMap(([k, v]) => [k, ...(typeof v === 'string' ? [v] : Object.values(v ?? {}))]).filter((x) => typeof x === 'string' && /(^|\/)generated(\/|$)/.test(x));
+    };
+    const pkgRaw = fs.readFileSync(path.join(HERE, 'package.json'), 'utf8');
+    const offered = exportsOffering(pkgRaw);
+    console.log(`${offered.length ? 'FAIL' : 'ok  '}  @bp/schema's exports map offers nothing under generated/ (the generated TS is a parity artifact)${offered.length ? ': ' + offered.join(', ') : ''}`);
+    if (offered.length) failed++;
+    const reoffered = exportsOffering(pkgRaw.replace('"exports": {', '"exports": {\n    "./generated/ts": "./generated/ts/app-structure.ts",'));
+    console.log(`${reoffered.length ? 'ok  ' : 'FAIL'}  control: an exports entry pointing into generated/ is reported`);
+    if (!reoffered.length) failed++;
     // Every schema is a valid 2020-12 schema under ajv's strict mode, with its $refs resolving. scripts/validate-
     // structure.mjs compiles three of the six (app-structure-3, app-structure-event-3, lens-manifest-1) because it
     // validates documents against them; plan-1, structure-envelope-1 and scan-wire-1 had no ajv anywhere, so a
