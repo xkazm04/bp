@@ -436,6 +436,10 @@ try {
     const sg = await call(sug.GET, '/x', 'GET', { slug: 'rel' });
     show('GET /api/products/rel/releases/suggest -> ' + sg.status, sg.body);
     check('suggest with no v* tag -> the manifest version as it stands', sg.status === 200 && sg.body.version === '2.3.0' && sg.body.from === 'package.json', JSON.stringify(sg.body));
+    // the parser door on the REAL answer: check-train-wire.ts holds the same validators against samples hand-copied
+    // from these bodies, which cannot notice the route drifting away from the copy. Here the answer itself is parsed.
+    const pSug = W.parseVersionSuggestion(sg.body);
+    check('the parser door takes the suggest answer', pSug.ok && pSug.value.version === '2.3.0' && pSug.value.from === 'package.json', pSug.ok ? '' : pSug.error);
     check('POST releases bad version -> 400', (await call(rels.POST, '/x', 'POST', { slug: 'rel' }, { version: 'v2.3.0' })).status === 400);
     check('POST releases with no accepted item among the ids -> 409', (await call(rels.POST, '/x', 'POST', { slug: 'rel' }, { version: '2.3.0', ids: ['a3'] })).status === 409);
     if (hasStoreMjs) {
@@ -443,6 +447,8 @@ try {
       show('POST /api/products/rel/releases {"version":"2.3.0"} -> ' + c1.status, c1.body);
       check('POST releases -> 201, a draft with every accepted item', c1.status === 201 && c1.body.release.id === 'rel-2.3.0' && c1.body.release.status === 'draft' && c1.body.release.created_by === 'user:octocat'
         && c1.body.added.join() === 'a1,a2' && c1.body.release.items.map((p: Proposal) => p.id).join() === 'a1,a2', JSON.stringify(c1.body).slice(0, 400));
+      const pRel = W.parseReleaseCreated(c1.body);
+      check('the parser door takes the releases answer', pRel.ok && pRel.value.release.items.length === 2 && pRel.value.added.join() === 'a1,a2', pRel.ok ? '' : pRel.error);
       const c2 = await call(rels.POST, '/x', 'POST', { slug: 'rel' }, { version: '2.3.1', ids: ['a1'] });
       check('POST releases of items already in one -> 409', c2.status === 409, JSON.stringify(c2.body));
     } else {
@@ -468,6 +474,8 @@ try {
     show('POST /api/products/rel/releases/rel-2.3.0/build -> ' + b1.status, b1.body);
     check('build -> 202 release job (kind release, step build)', b1.status === 202 && b1.body.kind === 'release' && b1.body.release === 'rel-2.3.0' && b1.body.version === '2.3.0' && b1.body.step === 'build', JSON.stringify(b1.body));
     check('a release job reads "Release 2.3.0 · build"', jobLabel(b1.body) === 'Release 2.3.0 · build', jobLabel(b1.body));
+    const pJob = W.parseScanJob(b1.body);
+    check('the parser door takes the release-job answer', pJob.ok && pJob.value.kind === 'release' && pJob.value.step === 'build' && pJob.value.release === 'rel-2.3.0', pJob.ok ? '' : pJob.error);
     const again = await call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0' }, {});
     check('a second build while one is queued or running -> 409', again.status === 409, JSON.stringify(again));
     check('build: the job ends done once the release is pr-open', await until(() => job('rel', b1.body.id)?.status === 'done' || job('rel', b1.body.id)?.status === 'failed'), JSON.stringify(job('rel', b1.body.id)));
@@ -482,6 +490,8 @@ try {
     }
     const f1 = await call(fin.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0' }, {});
     check('finish -> 202 (step finish)', f1.status === 202 && f1.body.step === 'finish' && jobLabel(f1.body) === 'Release 2.3.0 · finish', JSON.stringify(f1.body));
+    const pFin = W.parseScanJob(f1.body);
+    check('the parser door takes the finish-job answer', pFin.ok && pFin.value.step === 'finish', pFin.ok ? '' : pFin.error);
     await until(() => job('rel', f1.body.id)?.status === 'done' || job('rel', f1.body.id)?.status === 'failed');
     const jf2 = job('rel', f1.body.id);
     check('finish: done with no run, the release tagged v2.3.0', jf2?.status === 'done' && jf2.run_id === undefined && relRow('rel-2.3.0')?.status === 'tagged' && relRow('rel-2.3.0')?.tag === 'v2.3.0', JSON.stringify(jf2));
