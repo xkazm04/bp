@@ -18,7 +18,9 @@
 //     out), and the commits route on a fixture git repo (200 with stat, numstat and the patch cut at 2000 lines; 404 for
 //     a sha that is no item commit, even one the repo has; 400 for a bad sha), each 200 body through the parser door;
 //   - Kettle parity: the scan sim's selection scans and lens execute, and addProjectLens over the browser's store.
-// Checks that need WP1's full checkLensManifest (project mode, taken looks) print SKIP while it is the S0 stub.
+// Triage and release-create need lens-scan's store.mjs: lensScanDirs() is pinned (set / unset order) and a missing install is a
+// FAILURE wherever the operator names one (BP_LENS_SCAN_DIR), BP_REQUIRE_LENS_SCAN=1 or CI says so, or the registry the manifest
+// declares is on this machine; only a checkout without its registry (a bare worktree) skips, and says so. BP_REQUIRE_LENS_SCAN=0 waives.
 // Run: node scripts/check-scan-jobs.ts  (Node's type stripping; no build step). Exit 1 on any failure. ~15 s.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -412,6 +414,29 @@ try {
     const sug = await route('products/[slug]/releases/suggest/route.ts');
     const build = await route('products/[slug]/releases/[id]/build/route.ts'), fin = await route('products/[slug]/releases/[id]/finish/route.ts');
     const hasStoreMjs = RS.storeScript() !== null;
+    // where lens-scan is looked for, and when not finding it is a FAILURE. The resolution order is derived HERE from the
+    // manifest (not through release.server.ts's own reader), so deleting the registry fallback there changes what
+    // lensScanDirs() answers and no longer equals what the manifest declares. The SKIP this replaces let ten
+    // release-train checks stop running while the gate read green (133 passed + 1 skipped, exit 0).
+    const manifestText = (() => { try { return fs.readFileSync(path.join(ROOT, '.ai', 'manifest.yaml'), 'utf8'); } catch { return ''; } })();
+    const declared = /^registry:[ \t]*\r?\n(?:[ \t]+[^\r\n]*\r?\n)*?[ \t]+local:[ \t]*(\S+)/m.exec(manifestText)?.[1].replace(/^['"]|['"]$/g, '');
+    const declaredDir = declared ? path.resolve(ROOT, declared) : null;
+    const homeLens = path.join(os.homedir(), '.claude', 'skills', 'lens-scan'), regLens = declaredDir ? path.join(declaredDir, 'skills', 'lens-scan') : null;
+    const named = process.env.BP_LENS_SCAN_DIR;
+    const dirsFor = (v: string | undefined): string[] => {
+      if (v === undefined) delete process.env.BP_LENS_SCAN_DIR; else process.env.BP_LENS_SCAN_DIR = v;
+      try { return RS.lensScanDirs().map((d) => path.resolve(d)); } finally { if (named === undefined) delete process.env.BP_LENS_SCAN_DIR; else process.env.BP_LENS_SCAN_DIR = named; }
+    };
+    const sentinel = path.join(dir, 'named-lens-scan');
+    check('the manifest declares a registry (the fallback lensScanDirs() must follow)', !!declaredDir, manifestText ? 'no registry.local in .ai/manifest.yaml' : '.ai/manifest.yaml unreadable');
+    check('lensScanDirs: BP_LENS_SCAN_DIR set -> exactly that one place, no fallthrough', dirsFor(sentinel).join('|') === path.resolve(sentinel), dirsFor(sentinel).join('|'));
+    check('lensScanDirs: unset -> ~/.claude/skills/lens-scan, then <registry.local>/skills/lens-scan, in that order',
+      dirsFor(undefined).join('|') === [homeLens, ...(regLens ? [regLens] : [])].map((d) => path.resolve(d)).join('|'), dirsFor(undefined).join('|') + ' vs ' + [homeLens, regLens].join('|'));
+    // required when the operator names a place, the environment says so, or the declared registry is on this machine
+    // (a checkout without its registry, such as a bare worktree, cannot be asked for what it cannot have); '0' waives
+    const required = process.env.BP_REQUIRE_LENS_SCAN !== '0' && (process.env.BP_REQUIRE_LENS_SCAN === '1' || !!process.env.CI || named !== undefined || (!!declaredDir && fs.existsSync(declaredDir)));
+    check('lens-scan is found for the triage and release checks (a missing install is a failure, not a skip)', hasStoreMjs || !required,
+      'searched ' + (named !== undefined ? 'BP_LENS_SCAN_DIR=' + named : [homeLens, regLens ?? '(no registry declared in .ai/manifest.yaml)'].join(' and ')) + ' - none holds scripts/store.mjs; BP_REQUIRE_LENS_SCAN=0 waives');
     const triBad = await Promise.all([
       call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a b'], decision: 'accept' }),
       call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a1'], decision: 'ship' }),
@@ -446,7 +471,7 @@ try {
       const t7 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a3'], decision: 'descope', note: 'not worth it' });
       check('triage after the undo: a1 accepted, a3 descoped, the pack triaged again', t6.status === 200 && t7.status === 200 && status('packs', 'k-dev-1') === 'triaged', JSON.stringify([t6.body, t7.body]));
     } else {
-      skipped++; console.log('SKIP triage and release-create through store.mjs (lens-scan not installed; set BP_LENS_SCAN_DIR)');
+      if (!required) { skipped++; console.log('SKIP triage and release-create through store.mjs (lens-scan not installed, and nothing here requires it; set BP_LENS_SCAN_DIR)'); } // required: the check above already failed; the SQL seed below keeps the rest of the block running
       const d = new DatabaseSync(rdb);
       d.exec("UPDATE proposals SET status = 'accepted' WHERE id IN ('a1', 'a2'); UPDATE proposals SET status = 'descoped' WHERE id = 'a3'; UPDATE packs SET status = 'triaged'");
       d.close();
