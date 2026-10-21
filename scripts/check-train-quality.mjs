@@ -19,9 +19,11 @@
 //   keymap    apps/web/src/components/ledger/train/keymap.ts exports KEYMAP (imported through Node's type stripping, so the
 //             module stays value-import free); no key is bound twice in a scope, case-insensitive, ' ' = Space, and
 //             compare's keys collide with neither packs nor backlog (it layers over both).
-// Exit 1 on any violation, 2 when no file was walked, else 0. `--self-test` builds a clean tree and a seeded one in a
-// temp dir laid out like the roots, asserts the clean one passes and every seeded violation is caught, then removes it.
-// Run: node scripts/check-train-quality.mjs [--self-test]   (plain node, no deps)
+// Exit 1 on any violation, 2 when no file was walked, else 0. The self-test builds a clean tree and a seeded one in a
+// temp dir laid out like the roots, asserts the clean one passes and every seeded violation is caught, then removes it;
+// it runs on EVERY run (quietly, ~0.15 s) and its failures fail the run, because a rule that stopped matching reports a
+// clean tree in a voice indistinguishable from success. `--self-test` runs only it, loudly; `--no-self-test` skips it.
+// Run: node scripts/check-train-quality.mjs [--self-test | --no-self-test]   (plain node, no deps)
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -252,16 +254,20 @@ const report = (rules) => {
 };
 
 if (process.argv.includes('--self-test')) process.exit(await selfTest());
+// The rules' own proof runs WITH the gate (quietly: only its failures and its last line), because a rule that
+// stopped matching reports a clean tree in a voice indistinguishable from success. ~0.15 s; --no-self-test skips it.
+const proof = process.argv.includes('--no-self-test') ? 0 : await selfTest(true);
 const res = await runAll(REPO);
 if (!res.files) { console.log(`check-train-quality: walked no file under ${UI} or ${LIB}`); process.exit(2); }
 report(res.rules);
 const bad = res.rules.flatMap((r) => r.violations.map((v) => `FAIL ${r.name}  ${v}`));
 for (const b of bad) console.log(b);
 console.log(bad.length ? `check-train-quality: ${bad.length} violations` : `check-train-quality: ${res.files} files, 0 violations`);
-process.exit(bad.length ? 1 : 0);
+process.exit(bad.length || proof ? 1 : 0);
 
 // ---------------------------------------------------------------- self-test: every rule proven red once
-async function selfTest() {
+// `quiet` prints only what failed and the closing line: it runs on every gate run, where 48 ok lines are noise.
+async function selfTest(quiet = false) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'train-quality-'));
   const put = (root, rel, text) => { const f = path.join(root, rel); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, text); };
   const KEYS = (extra) => `export const KEYMAP = {
@@ -322,7 +328,7 @@ async function selfTest() {
     ['keymap', `${UI}/keymap.ts`, KEYS({ packs: ", { keys: ['X'], action: 'accept', label: 'a' }", backlog: ", { keys: ['Space'], action: 'open', label: 'o' }", compare: ", { keys: ['J'], action: 'mode', label: 'm' }" })],
   ];
   let failed = 0;
-  const say = (ok, m) => { if (!ok) failed++; console.log(`${ok ? 'ok  ' : 'FAIL'}  ${m}`); };
+  const say = (ok, m) => { if (!ok) failed++; if (!ok || !quiet) console.log(`${ok ? 'ok  ' : 'FAIL'}  ${m}`); };
   try {
     // 0. no file at all -> exit 2
     const empty = path.join(base, 'empty');
@@ -332,14 +338,14 @@ async function selfTest() {
     const good = path.join(base, 'good');
     clean(good);
     const g = await runAll(good);
-    report(g.rules);
+    if (!quiet) report(g.rules);
     for (const r of g.rules) say(r.violations.length === 0 && r.checked > 0, `clean tree: ${r.name} passes (${r.checked} checked)${r.violations.length ? '\n      ' + r.violations.join('\n      ') : ''}`);
     // 2. the seeded tree: every seed is named by its rule
     const bad = path.join(base, 'bad');
     clean(bad);
     for (const [, rel, text] of seeds) put(bad, rel, text);
     const b = await runAll(bad);
-    report(b.rules);
+    if (!quiet) report(b.rules);
     const by = Object.fromEntries(b.rules.map((r) => [r.name, r.violations]));
     for (const [name, rel] of seeds) {
       const hits = (by[name] ?? []).filter((v) => v.includes(name === 'floor' ? GLOBALS_CSS : rel));
