@@ -275,9 +275,13 @@ FLUX.2 [klein] or Qwen-Image (tech-stack.md §5), unless the owner rules on Leon
       emissive head slot), light table frame (10k), survey pin (500, instanced), studio kit (80k total), city backdrop
       (FLUX.2 [klein] panorama), and the materials vellum, blueprint paper, brushed aluminium and warm wood.
       Proof per asset: a manifest with every gate `pass: true`, committed with `Host: Lynx`.
-      Lamp agent, 2026-10-21 (not ticked, the other props are open): `ArtSource/lamp-agent/` has `final.fbx` (27,663 tris, 4 bones,
-      5 pose actions), 3 PBR PNGs and evidence; all five gates `pass: true`, `lynx_commit` is set at the merge. Springs stay in the
-      textures, no coil mesh (manifest `finishing_note`).
+      Lamp agent, 2026-10-21 (not ticked, the other props are open): `ArtSource/lamp-agent/` has `final.fbx` (26,035 tris, 4 bones,
+      5 pose actions), 3 PBR PNGs and evidence; all five gates `pass: true`, `lynx_commit` is set at the merge. Reworked the same day
+      after the Director review of 11:21Z (no TRELLIS rerun, no GPU): the arm is flat navy PBR in six material slots (silver joints,
+      dark shade, `lamp_shade_glow` kept, amber cap, navy base) instead of the smudged TRELLIS bake; the C-clamp is modelled (the TRELLIS
+      stalk was not one) and reaches 11.2 cm below the table plane; the springs are 4 silver cylinders on the arms; all evidence is
+      fitted to the lamp's bounding box and checked by an alpha pass (manifest `framing`, `review_fixes`). The lamp is 45 cm above the
+      table plane, 56.2 cm with the clamp.
 - [ ] **W4.1 Import (Wolf, half a day per asset).** Import each `final.*` through the editor MCP (pof's gap-fillers)
       into `apps/vr/Content/Bp/Art/<asset-id>/`. **Nothing is imported without its gate results** (the plan.md P4 gate).
       Proof: the manifest's `import` block; `stat rhi` and `stat scenerendering` with the asset in the greybox.
