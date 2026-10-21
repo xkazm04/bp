@@ -6,6 +6,7 @@
   --hand: var(--font-hand), 'Segoe Print', cursive;
   --lens: var(--ink);
   --bb: 116px;
+  --hdr-top: 8px; --hdr-h: 58px;   /* the header box; #hdr and the ledger page (ledger.css .lg-page) both read it */
   position: fixed; inset: 0; overflow: hidden; color: var(--ink); font: 400 14px/1.35 var(--sans);
 }
 .bp button { font-family: inherit; color: inherit; font-size: inherit; cursor: pointer; }
@@ -24,7 +25,7 @@
 #base, #hdr, #ladder { transition: opacity 0.7s ease; }
 
 /* ---------- header */
-#hdr { position: absolute; left: 14px; top: 8px; right: 14px; height: 58px; display: flex; justify-content: space-between; align-items: flex-start; pointer-events: none; }
+#hdr { position: absolute; left: 14px; top: var(--hdr-top); right: 14px; height: var(--hdr-h); display: flex; justify-content: space-between; align-items: flex-start; pointer-events: none; }
 #hdr > * { pointer-events: auto; }
 #hdr:before { content: ''; position: absolute; left: -14px; right: -14px; top: -8px; height: 86px; background: linear-gradient(180deg, var(--scrim) 0, var(--scrim) 58px, transparent 86px); pointer-events: none; z-index: -1; }
 /* between the phone cut (760) and ~1000 px the tab strip would take the whole row and squeeze "where you are"
@@ -152,7 +153,7 @@ a.extchip:hover, a.extchip:focus-visible { text-decoration: underline; }
 .bp-compact #clock { flex-basis: 214px; padding: 5px 10px; justify-content: center; gap: 5px; }
 .bp-compact #clock .t { display: none; }
 .bp-compact #clock .hm { font-size: 22px; }
-.bp-compact #hdr { height: 54px; }
+.bp-compact { --hdr-h: 54px; }
 
 /* ---------- over the map */
 #ladder { position: absolute; left: 14px; bottom: var(--bb); display: flex; align-items: stretch; height: 30px; background: var(--card); border: 1px solid var(--ink-3); z-index: 3; }
@@ -313,7 +314,7 @@ a.extchip:hover, a.extchip:focus-visible { text-decoration: underline; }
 .swm .dq b { color: var(--ink-hi); font-weight: 500; }
 
 /* ---------- phone */
-.ph { position: relative; padding: 16px 14px 70px; min-height: 100vh; z-index: 3; overflow: auto; height: 100%; }
+.ph { position: relative; padding: 16px 14px calc(70px + env(safe-area-inset-bottom)); min-height: 100vh; z-index: 3; overflow: auto; height: 100%; }
 .ph-h .k { font: 500 12px var(--mono); letter-spacing: 0.1em; color: var(--ink-2); }
 .ph-h h1 { margin: 4px 0 2px; font-size: 32px; letter-spacing: 0.12em; color: var(--ink-hi); }
 .ph-h p { margin: 0 0 10px; color: var(--ink-2); font-size: 15px; }

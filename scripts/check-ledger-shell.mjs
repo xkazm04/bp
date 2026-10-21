@@ -134,6 +134,24 @@ for (const f of css) {
 }
 console.log(`colour      ${css.length - 1} shell stylesheets (${PALETTE} is the palette) / ${colourChecked} lines checked`);
 
+// ---------------------------------------------------------------------------------------------------- header
+// The page sits under the app header. blueprint.css owns the header's geometry as --hdr-top / --hdr-h (one density
+// override on .bp-compact); a literal `top: 74px` on .lg-page re-encodes it by hand and breaks silently when it moves.
+let pageRules = 0, pageTokenised = 0;
+for (const f of css) {
+  const src = stripBlock(fs.readFileSync(f, 'utf8'));
+  for (const m of src.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+    if (!m[1].split(',').some((s) => /(^|\s)\.lg-page\s*$/.test(s.trim()))) continue;
+    const top = /(^|[;\s])top\s*:\s*([^;]+)/.exec(m[2]);
+    if (!top) continue;
+    pageRules++;
+    if (/var\(\s*--hdr-h\b/.test(top[2])) pageTokenised++;
+    else fail(`${rel(f)}  ${m[1].trim()} { top: ${top[2].trim()} }\n       a hand-computed header height: read var(--hdr-top) + var(--hdr-h) (blueprint.css owns them)`);
+  }
+}
+if (!pageRules) fail('header: no top-placed .lg-page rule was found - the rule stopped matching');
+console.log(`header      ${pageRules} top-placed .lg-page rule(s) / ${pageTokenised} read the header token`);
+
 // ----------------------------------------------------------------------------------------------------
 if (!code.length || !css.length) { console.log(`FAIL walked no shell file under ${SHELL} (train/** is check-train-quality.mjs's)`); process.exit(2); }
 console.log(violations ? `\n${violations} violation(s)` : `\nledger shell clean: ${code.length} modules + ${css.length} stylesheets, ${TRAIN}/** excluded (check-train-quality.mjs)`);
