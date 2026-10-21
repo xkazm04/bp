@@ -5,6 +5,7 @@
 //   prop      prop prompts restate the style block's palette and materials, carry the TRELLIS sheet rules, and cover every variant
 //   cap       a call that would pass the stop or HARD_CAP is refused; a prop --out stays inside apps/vr/ArtSource
 //   cost      the figure the cap is fed is the WORST measured credit figure at that quality, never the first
+//   report    `total`'s byQuality breakdown plus priorSpend adds up to nightTotal, the figure the cap refuses on
 //   out       --out stays inside lookdev/: a name that would resolve outside it is refused before any call
 //   source    a source guard over leonardo.mjs: it names no absolute machine path, so the .env it reads for
 //             LEONARDO_API_KEY is THIS checkout's and no other one's. Comments are stripped before the match.
@@ -12,7 +13,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
-import { artFile, composePropPrompt, composePrompt, expectedCost, nightTotal, outFile, parseSize, redact, spendWindow, withinCap } from './leonardo.mjs';
+import { artFile, composePropPrompt, composePrompt, expectedCost, nightTotal, outFile, parseSize, redact, spendWindow, windowReport, withinCap } from './leonardo.mjs';
 
 let failed = 0, passed = 0;
 const check = (name, ok, detail = '') => { ok ? passed++ : failed++; console.log(`${ok ? 'ok  ' : 'FAIL'}  ${name}${ok || !detail ? '' : `  (${detail})`}`); };
@@ -108,6 +109,22 @@ const nocomment = fs.readFileSync(LEO, 'utf8')
 const abs = [...nocomment.matchAll(/['"`][A-Za-z]:[\\/][^'"`]*/g)].map((m) => m[0]);
 check('source: leonardo.mjs names no absolute machine path (the .env it reads is this checkout\'s)', abs.length === 0, abs.join(' , '));
 check('source: the key comes from an .env resolved against the module\'s own root', /ENV_FILE\s*=\s*path\.(join|resolve)\(ROOT,/.test(nocomment));
+
+// report: the breakdown `total` prints must add up to the figure the cap refuses on, in every window. The real
+// log is the subject, plus the two windows that matter: 2026-10-20, where PRIOR_SPEND counts, and 2026-10-21.
+const realLog = fs.readFileSync(path.join(DIR, 'log.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+const adds = (r) => Object.values(r.byQuality).reduce((n, q) => n + q.credits, 0) + r.priorSpend === r.nightTotal;
+for (const iso of ['2026-10-20T21:00:00Z', '2026-10-21T12:00:00Z', '2026-10-21T07:59:00Z', '2026-10-22T09:00:00Z']) {
+  const r = windowReport(realLog, new Date(iso));
+  check(`report: at ${iso} the byQuality breakdown plus priorSpend equals nightTotal`, adds(r),
+    `${Object.values(r.byQuality).reduce((n, q) => n + q.credits, 0)} + ${r.priorSpend} vs ${r.nightTotal}`);
+}
+const prior = windowReport(realLog, new Date('2026-10-20T21:00:00Z'));
+check('report: the 2026-10-20 window names PRIOR_SPEND as its own 6 credits', prior.priorSpend === 6, `${prior.priorSpend}`);
+check('report: a later window does not carry PRIOR_SPEND', windowReport(realLog, new Date('2026-10-21T12:00:00Z')).priorSpend === 0);
+check('report: the breakdown counts the same calls nightTotal does',
+  Object.values(prior.byQuality).reduce((n, q) => n + q.calls, 0) === realLog.filter((e) => e.time >= prior.window.from && e.time < prior.window.to).length);
+check('report: nightTotal is the figure the cap is asked about', prior.cap === 390 && !withinCap(prior.nightTotal, 1, prior.cap), `nightTotal ${prior.nightTotal} of ${prior.cap}`);
 
 console.log(`
 check-leonardo: ${passed} passed, ${failed} failed`);

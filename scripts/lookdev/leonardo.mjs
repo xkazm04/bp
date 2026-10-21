@@ -125,11 +125,35 @@ export function spendWindow(now = new Date()) {
   return { from: from.toISOString(), to: new Date(from.getTime() + 86400000).toISOString() };
 }
 
+/** The log entries timed inside the window holding `now`. The ONE definition of "inside": every report uses it. */
+export function inWindow(log, now = new Date()) {
+  const w = spendWindow(now);
+  const from = Date.parse(w.from), to = Date.parse(w.to);
+  return log.filter((e) => { const t = new Date(e.time).getTime(); return t >= from && t < to; });
+}
+
+/** The credits PRIOR_SPEND adds to the window holding `now` - its own window only. */
+export const priorSpend = (now = new Date()) => (spendWindow(now).from === PRIOR_WINDOW ? PRIOR_SPEND : 0);
+
 /** Credits in the window holding `now`: the log entries timed inside it, plus PRIOR_SPEND in its own window. */
 export function nightTotal(log = readLog(), now = new Date()) {
-  const w = spendWindow(now);
-  const inside = (e) => { const t = new Date(e.time).getTime(); return t >= Date.parse(w.from) && t < Date.parse(w.to); };
-  return (w.from === PRIOR_WINDOW ? PRIOR_SPEND : 0) + log.filter(inside).reduce((n, e) => n + (Number(e.credits) || 0), 0);
+  return priorSpend(now) + inWindow(log, now).reduce((n, e) => n + (Number(e.credits) || 0), 0);
+}
+
+/**
+ * What `total` prints. The breakdown has to add up to the figure the cap uses, or the report explains a number other
+ * than the one that refuses a call: `byQuality` once used a string comparison on `time` where nightTotal parsed it,
+ * and left PRIOR_SPEND out entirely, so in the 2026-10-20 window it summed to 384 against a nightTotal of 390 - which
+ * is HARD_CAP exactly, so the breakdown showed 6 credits of headroom that did not exist.
+ */
+export function windowReport(log = readLog(), now = new Date()) {
+  const byQuality = {};
+  for (const e of inWindow(log, now)) { const q = (byQuality[e.quality] ??= { calls: 0, credits: 0 }); q.calls++; q.credits += Number(e.credits) || 0; }
+  return {
+    window: spendWindow(now), byQuality, priorSpend: priorSpend(now),
+    allTimeLogCredits: log.reduce((n, e) => n + (Number(e.credits) || 0), 0),
+    nightTotal: nightTotal(log, now), cap: HARD_CAP,
+  };
 }
 
 /**
@@ -279,12 +303,7 @@ async function gen() {
 }
 
 if (cmd === 'gen') await gen();
-else if (cmd === 'total') {
-  const log = readLog();
-  const by = {};
-  for (const e of log.filter((x) => x.time >= spendWindow().from && x.time < spendWindow().to)) { const q = (by[e.quality] ??= { calls: 0, credits: 0 }); q.calls++; q.credits += Number(e.credits) || 0; }
-  const w = spendWindow();
-  console.log(JSON.stringify({ window: w, byQuality: by, allTimeLogCredits: log.reduce((n, e) => n + (Number(e.credits) || 0), 0), nightTotal: nightTotal(log), cap: HARD_CAP }, null, 2));
-} else if (cmd === 'prompt') console.log(opt('prop') ? composePropPrompt(opt('prop'), opt('variant', 'A')) : composePrompt(opt('state'), opt('variant', 'a')));
+else if (cmd === 'total') console.log(JSON.stringify(windowReport(), null, 2));
+else if (cmd === 'prompt') console.log(opt('prop') ? composePropPrompt(opt('prop'), opt('variant', 'A')) : composePrompt(opt('state'), opt('variant', 'a')));
 else if (cmd) { console.error(`unknown command ${cmd}`); process.exit(1); }
 else if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) { console.error('usage: gen | total | prompt (see the header)'); process.exit(1); }
