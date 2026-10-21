@@ -57,14 +57,14 @@ await new Promise<void>((r) => server.listen(0, '0.0.0.0', r));
 const port = (server.address() as net.AddressInfo).port;
 
 /** One raw HTTP/1.1 exchange (so a test can send what http.request refuses to): status, head and body. */
-const raw = (text: string, addr = '127.0.0.1'): Promise<{ status: number; head: string; body: string }> => new Promise((resolve) => {
-  let out = '';
-  const done = () => resolve({ status: Number(/^HTTP\/1\.1 (\d+)/.exec(out)?.[1] ?? 0), head: out.split('\r\n\r\n')[0], body: out.split('\r\n\r\n').slice(1).join('\r\n\r\n') });
+const raw = (text: string, addr = '127.0.0.1', giveUpMs = 3000): Promise<{ status: number; head: string; body: string }> => new Promise((resolve) => {
+  let out = '', timer: ReturnType<typeof setTimeout> | undefined;
+  const done = () => { clearTimeout(timer); resolve({ status: Number(/^HTTP\/1\.1 (\d+)/.exec(out)?.[1] ?? 0), head: out.split('\r\n\r\n')[0], body: out.split('\r\n\r\n').slice(1).join('\r\n\r\n') }); };
   const s = net.connect(port, addr, () => s.write(text));
   s.on('data', (d) => (out += d));
   s.on('error', done);
   s.on('close', done);
-  setTimeout(() => s.destroy(), 3000);
+  timer = setTimeout(() => s.destroy(), giveUpMs);
 });
 const get = (p: string, host = 'localhost', addr = '127.0.0.1') => raw(`GET ${p} HTTP/1.1\r\nHost: ${host}\r\nConnection: close\r\n\r\n`, addr);
 const verb = (m: string, p: string) => raw(`${m} ${p} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n`);
@@ -96,7 +96,7 @@ try {
   check('host: an unusable Host answers 400', host.status === 400, `${host.status}`);
   check('host: the server keeps serving after it', await alive(), `${crashes.length} uncaught`);
 
-  const post = (head: string, body: string) => raw(`POST /api/body HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nConnection: close\r\n${head}\r\n${body}`);
+  const post = (head: string, body: string, giveUpMs?: number) => raw(`POST /api/body HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nConnection: close\r\n${head}\r\n${body}`, '127.0.0.1', giveUpMs);
   const small = await post('Content-Length: 2\r\n', '{}');
   check('body: a small body reaches the handler', small.status === 200 && small.body.includes('"bytes":2'), `${small.status} ${small.body.slice(0, 60)}`);
   const declared = await post(`Content-Length: ${MAX_BODY + 1}\r\n`, '{');
@@ -106,15 +106,16 @@ try {
   const streamed = await post('Transfer-Encoding: chunked\r\n', chunked);
   check('body: a chunked body past the cap answers 413', streamed.status === 413, `${streamed.status} ${streamed.body.slice(0, 60)}`);
   check('body: the server keeps serving after it', await alive(), `${crashes.length} uncaught`);
-  await post('Content-Length: 100\r\n', '{"partial":'); // the client gives up (raw's timeout) before the body is whole
+  await post('Content-Length: 100\r\n', '{"partial":', 150); // the client gives up after 150 ms (not raw's 3 s), before the body is whole
   check('body: the server keeps serving after a client leaves mid-body', await alive(), `${crashes.length} uncaught`);
 
   const lateG = globalThis as { lateTicks?: number; lateCancelled?: boolean };
   // the client sends the request and leaves after 50 ms, while the handler still waits
   await new Promise<void>((resolve) => { const s = net.connect(port, '127.0.0.1', () => { s.write('GET /api/late HTTP/1.1\r\nHost: localhost\r\n\r\n'); setTimeout(() => { s.destroy(); resolve(); }, 50); }); s.on('error', () => resolve()); });
-  await new Promise((r) => setTimeout(r, 700));
+  // wait for the cancel itself (the handler answers after 300 ms), not a fixed 700 ms; then 100 ms for a leaked timer to show
+  for (let i = 0; i < 150 && lateG.lateCancelled !== true; i++) await new Promise((r) => setTimeout(r, 20));
   const ticks = lateG.lateTicks ?? -1;
-  await new Promise((r) => setTimeout(r, 200));
+  await new Promise((r) => setTimeout(r, 100));
   check('late: a stream answered after the client left is cancelled', lateG.lateCancelled === true, `cancelled=${lateG.lateCancelled}`);
   // `>= 5`, not `>= 0`: the timer must have RUN before it stopped, or an interval that never started would pass this
   // as readily as one that was cancelled. At 20 ms over the handler's 300 ms wait it ticks about fourteen times.
