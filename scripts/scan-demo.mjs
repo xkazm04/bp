@@ -158,14 +158,36 @@ function seed() {
   db.close();
 }
 
+// The second writer of bp.products.local.json; the first is packages/core/src/server/registry.server.ts, and
+// docs/blueprint-ui.md:401 states the contract both must keep: created when absent, unknown keys and entry order
+// kept, written atomically (temp file in the same directory, then a rename with the Windows retry), and "a file
+// that does not parse is never overwritten (409)". This function used to catch every read and parse failure as
+// `/* new file */` and then write the whole file from scratch: a truncated or half-written registry - the exact
+// state an interrupted write leaves - lost every product in it, silently, under a message saying "registered".
+// Measured 2026-10-21 with a seeded truncated file holding two live products and a defaultSlug: 2 of 2 products
+// and the defaultSlug gone, exit 0. The file is git-ignored machine state, so there is nothing to restore from.
 function register() {
   const file = path.join(ROOT, 'bp.products.local.json');
+  const refuse = (why) => { console.error(`bp.products.local.json ${why}; fix it by hand first - ${SLUG} was NOT registered`); process.exit(1); };
   let doc = { products: [] };
-  try { doc = JSON.parse(fs.readFileSync(file, 'utf8')); if (!Array.isArray(doc.products)) doc.products = []; } catch { /* new file */ }
+  let text = null;
+  try { text = fs.readFileSync(file, 'utf8'); }
+  catch (e) { if (e.code !== 'ENOENT') refuse(`cannot be read: ${e.message}`); }
+  if (text !== null) {
+    try { doc = JSON.parse(text); } catch (e) { refuse(`is not valid JSON (${e.message})`); }
+    if (!doc || typeof doc !== 'object' || Array.isArray(doc)) refuse('is not a JSON object');
+    if (doc.products === undefined) doc.products = [];
+    if (!Array.isArray(doc.products)) refuse(': "products" is not an array');
+  }
   const entry = { slug: SLUG, name: NAME, root: DIR };
   const i = doc.products.findIndex((p) => p && p.slug === SLUG);
   if (i >= 0) doc.products[i] = { ...doc.products[i], ...entry }; else doc.products.push(entry);
-  fs.writeFileSync(file, JSON.stringify(doc, null, 2) + '\n');
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(doc, null, 2) + '\n');
+  for (let k = 1; ; k++) {
+    try { fs.renameSync(tmp, file); break; } // Windows can answer EPERM/EBUSY while a reader holds the old file
+    catch (e) { if (k >= 20 || !['EPERM', 'EBUSY', 'EACCES'].includes(e.code)) { fs.rmSync(tmp, { force: true }); throw e; } }
+  }
 }
 
 function live() {
