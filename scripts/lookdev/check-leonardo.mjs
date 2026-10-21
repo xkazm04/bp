@@ -28,8 +28,7 @@ for (const bad of ['../../../package.json', '..\\..\\x.png', 'explore/../../x.pn
   check(`out: ${JSON.stringify(bad)} is refused`, throws(() => outFile(bad)));
 }
 
-console.log(`\ncheck-leonardo: ${passed} passed, ${failed} failed`);
-process.exit(failed ? 1 : 0);const style = JSON.parse(fs.readFileSync(path.join(DIR, 'style-block.json'), 'utf8'));
+const style = JSON.parse(fs.readFileSync(path.join(DIR, 'style-block.json'), 'utf8'));
 const props = JSON.parse(fs.readFileSync(path.join(DIR, 'props.json'), 'utf8'));
 const expected = { 'lamp-agent': ['A', 'B', 'C', 'D'], 'studio-shelves': ['A', 'B'], 'studio-desk-lamp': ['A', 'B'], 'studio-mug': ['A', 'B'], 'studio-drawing-tubes': ['A', 'B'], 'studio-pinned-drawings': ['A', 'B'] };
 for (const [id, variants] of Object.entries(expected)) {
@@ -54,3 +53,7 @@ check('cap: --stop-at cannot raise HARD_CAP', !withinCap(386, 6, 9999) && within
 check('cap: at the cap nothing more is allowed', !withinCap(390, 6));
 
 
+
+console.log(`
+check-leonardo: ${passed} passed, ${failed} failed`);
+process.exit(failed ? 1 : 0);
