@@ -3,7 +3,42 @@
   "class": "set-dressing",
   "budget_tris": 20000,
   "budget_note": "plan.md P4 studio kit total 80k, split across 5 as 24000 shelves, 16000 desk lamp, 8000 mug, 20000 drawing tubes, 12000 pinned drawings",
-  "generator": [
+  "tris": 2976,
+  "tris_total": 2976,
+  "materials": [
+    "tubes_holder_navy (672 tris, PBR textures)",
+    "tubes_tube_navy (640 tris, PBR textures)",
+    "tubes_cap_metal (1280 tris, PBR textures)",
+    "tubes_roll_kraft (384 tris, PBR textures)"
+  ],
+  "bounds_cm": {
+    "x": 16.26,
+    "y": 52.92,
+    "z": 17.49,
+    "note": "x,z ground plane, y up (glTF)"
+  },
+  "meshes": {
+    "studio-drawing-tubes": {
+      "tris": 2976,
+      "vertices": 1509,
+      "components": 8,
+      "floaters": 0,
+      "open_edges": 0,
+      "faces_per_slot": {
+        "tubes_holder_navy": 672,
+        "tubes_tube_navy": 640,
+        "tubes_cap_metal": 1280,
+        "tubes_roll_kraft": 384
+      }
+    }
+  },
+  "uv_sets": 1,
+  "pivot": "base centre (x and y at the middle of the footprint, z = 0 at the floor); measured 0, 0 m; the prop stands +Y in the GLB (glTF Y-up), +Z in Blender",
+  "scale_reasoning": "a 14 cm round holder 20 cm tall, five 4 cm tubes and two rolls leaning out of it, about 50 cm overall. Measured 16.26 x 52.92 x 17.49 cm (x, up, y); the planned envelope per axis is 15-30 cm, 15-30 cm, 42-60 cm (x, y, z up).",
+  "textures": "12 PNGs, 256 px seamless tiles (the printed sheets: 384 x 576, mapped once): base colour, normal, ORM (R occlusion, G roughness, B metal), authored with numpy in scripts/art/studio-kit/build_studio.bpy. One UV set, box-projected in world metres (printed sheets: planar 0..1). Flat colour plus grain, no baked light.",
+  "generator": "procedural Blender",
+  "blender": "Blender 5.2.2, scripts/art/studio-kit/build_studio.bpy (build and score), render_studio.bpy (evidence and framing check), write_manifest.mjs",
+  "concept_reference": [
     {
       "option": "A",
       "file": "rejected/A.png",
@@ -29,34 +64,162 @@
       "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop studio-drawing-tubes --variant B"
     }
   ],
-  "generator_note": "log.jsonl file fields name candidates/<A|B>.png, the place each image was written before grading; they were then moved to concept.png or rejected/.",
+  "concept_note": "log.jsonl file fields name candidates/<A|B>.png, the place each image was written before grading; they were then moved to concept.png or rejected/.",
   "kept_option": "B",
+  "licence": "own procedural work; concept.png is a Leonardo concept used as a shape reference only (R8 open); no ComfyUI or TRELLIS run, no GPU job, no Leonardo call",
+  "lynx_commit": null,
+  "lynx_commit_note": "null until the merge sets it",
+  "regenerate": "blender -b -P scripts/art/studio-kit/build_studio.bpy -- <repo-root> <work> studio-drawing-tubes; blender -b -P scripts/art/studio-kit/render_studio.bpy -- <repo-root> <work> studio-drawing-tubes; node scripts/art/studio-kit/write_manifest.mjs <work> studio-drawing-tubes",
+  "framing": {
+    "turn0": {
+      "resolution": [
+        480,
+        480
+      ],
+      "fov_deg": 25.8,
+      "azimuth_deg": 25,
+      "elevation_deg": 22,
+      "margins": {
+        "left": 0.3854,
+        "right": 0.3896,
+        "bottom": 0.0833,
+        "top": 0.1021
+      },
+      "min_margin": 0.0833,
+      "pass": true
+    },
+    "turn1": {
+      "resolution": [
+        480,
+        480
+      ],
+      "fov_deg": 25.5,
+      "azimuth_deg": 115,
+      "elevation_deg": 22,
+      "margins": {
+        "left": 0.3458,
+        "right": 0.3688,
+        "bottom": 0.0896,
+        "top": 0.0875
+      },
+      "min_margin": 0.0875,
+      "pass": true
+    },
+    "turn2": {
+      "resolution": [
+        480,
+        480
+      ],
+      "fov_deg": 25.8,
+      "azimuth_deg": 205,
+      "elevation_deg": 22,
+      "margins": {
+        "left": 0.3917,
+        "right": 0.3854,
+        "bottom": 0.1042,
+        "top": 0.0938
+      },
+      "min_margin": 0.0938,
+      "pass": true
+    },
+    "turn3": {
+      "resolution": [
+        480,
+        480
+      ],
+      "fov_deg": 25.5,
+      "azimuth_deg": 295,
+      "elevation_deg": 22,
+      "margins": {
+        "left": 0.375,
+        "right": 0.35,
+        "bottom": 0.0896,
+        "top": 0.1
+      },
+      "min_margin": 0.0896,
+      "pass": true
+    },
+    "table-view": {
+      "resolution": [
+        640,
+        480
+      ],
+      "fov_deg": 32,
+      "azimuth_deg": 0,
+      "elevation_deg": 45,
+      "margins": {
+        "left": 0.3937,
+        "right": 0.4094,
+        "bottom": 0.1313,
+        "top": 0.1271
+      },
+      "min_margin": 0.1271,
+      "pass": true
+    }
+  },
+  "file_bytes": {
+    "concept.png": 64425,
+    "evidence/table-view.jpg": 32450,
+    "evidence/turnaround.jpg": 95049,
+    "final.glb": 958116,
+    "rejected/A.png": 66799,
+    "textures/tubes_cap_metal_basecolor.png": 78548,
+    "textures/tubes_cap_metal_normal.png": 56400,
+    "textures/tubes_cap_metal_orm.png": 52816,
+    "textures/tubes_holder_navy_basecolor.png": 58486,
+    "textures/tubes_holder_navy_normal.png": 66578,
+    "textures/tubes_holder_navy_orm.png": 64458,
+    "textures/tubes_roll_kraft_basecolor.png": 84198,
+    "textures/tubes_roll_kraft_normal.png": 66736,
+    "textures/tubes_roll_kraft_orm.png": 64842,
+    "textures/tubes_tube_navy_basecolor.png": 55504,
+    "textures/tubes_tube_navy_normal.png": 66744,
+    "textures/tubes_tube_navy_orm.png": 64599
+  },
+  "sha256": {
+    "concept.png": "8736e7274e002663a46030369f94fe3bb24f97c26482697eb340ed156b42c93c",
+    "evidence/table-view.jpg": "7c0b42d5bebf0e6e040bb00c765a4d28ea5448e643acedf826f2de3b502d73cb",
+    "evidence/turnaround.jpg": "4517c02e4531078bf6cc3d6c96bcb18c7d958fd4503529097baaaae2166654c0",
+    "final.glb": "3c2df78bb3b372200517d57540f0bd52378532d8def4132db303683299c03723",
+    "rejected/A.png": "b991f37f8f4d0cdafe23c6ad77ebaebec15194f569fbbd39ffa1dea17ab546fe",
+    "textures/tubes_cap_metal_basecolor.png": "25d03eaf569ed526a6ebc1593c68792c1d58e2ba58dd192eb87e8cfaeb34029e",
+    "textures/tubes_cap_metal_normal.png": "6f27d371951aea2e85dd899cabd9e2573633ac3c4339d2ba101d010363c7c7a4",
+    "textures/tubes_cap_metal_orm.png": "d97838c613f75b567725e3854b6f444f3b4a5750f6d3462bdc634c7e438bab2b",
+    "textures/tubes_holder_navy_basecolor.png": "e25957f94981ca4782c0410109f210db3cb98b09f50778a6eb51e6df704d2562",
+    "textures/tubes_holder_navy_normal.png": "ae5e587095e32c79421f7af8e75b6a660c4b81bf1ddcc697e3d9fed7aed46b3d",
+    "textures/tubes_holder_navy_orm.png": "aaca838ebf0d1216a0f618719f62f016a1c0655f04962bb4af25f0928c7f3a64",
+    "textures/tubes_roll_kraft_basecolor.png": "42ef92771a579eeb7124ffb3fca4bc69f2d30b814216c375ba321e897d8cb123",
+    "textures/tubes_roll_kraft_normal.png": "f4bd05b5562b11323b84bf3f93c9023d060f98155ba92579255aa4f5bcc1f43c",
+    "textures/tubes_roll_kraft_orm.png": "cf28a18bd9b0f14939b960b09cf7e4b3287c862d2f43a5d8decf92dd7e4038de",
+    "textures/tubes_tube_navy_basecolor.png": "3b1c06437f47499170b33d6540b2d882b9387fa1ff19be824a971b917eb98fb4",
+    "textures/tubes_tube_navy_normal.png": "981e4a151ac76551827579fc707c3430700540ae39b1140dcdd85eedc38e0818",
+    "textures/tubes_tube_navy_orm.png": "e50700bac7d1517bee4aeff4b62f74eeef191b46ebbfc2353ebe23526d0ab9a6"
+  },
   "gates": {
     "input": {
       "pass": true,
-      "note": "B kept: plain grey ground, round holder, five tubes with two rolls. A fails: saturated blue ground, not plain grey, and a strapped holder with rivets.",
+      "note": "B kept: plain grey ground, round holder, five tubes with two rolls. A fails: saturated blue ground, not plain grey, and a strapped holder with rivets. Built procedurally instead of through TRELLIS (GPU held by the mage-arena run); concept.png is the shape reference.",
       "date": "2026-10-21"
     },
     "mesh_acceptance": {
-      "pass": false,
-      "note": "not run"
+      "pass": true,
+      "note": "re-imported from final.glb: 1 mesh object, 1509 vertices, 2976 tris, 8 connected components, 0 floaters (a floater is a component whose bounding box touches no other), 0 open edges, signed volume 0.00265 m3 (positive: normals face out)",
+      "date": "2026-10-21"
     },
     "scale": {
-      "pass": false,
-      "note": "not run"
+      "pass": true,
+      "note": "16.26 x 17.49 x 52.92 cm (x, y, z up) re-imported from final.glb, inside the planned envelope (a 14 cm round holder 20 cm tall, five 4 cm tubes and two rolls leaning out of it, about 50 cm overall); pivot: base centre 0, 0 m, floor at z = 0 m. Assumption: the sizes are Lynx choices from the concept; the UE world scale is still to be confirmed on Wolf.",
+      "date": "2026-10-21"
     },
     "finishing": {
-      "pass": false,
-      "note": "not run"
+      "pass": true,
+      "note": "one UV set (1); 12 PBR PNGs (base colour, normal, ORM for 4 slots); every file under 10 MB (largest 958116 bytes); 4 material slots (tubes_holder_navy, tubes_tube_navy, tubes_cap_metal, tubes_roll_kraft); evidence turnaround.jpg and table-view.jpg rendered with Cycles on the CPU, framing check passes on 5 images (min silhouette margin 0.0833 of the image, rule 0.03). Not claimed: any UE import.",
+      "date": "2026-10-21"
     },
     "poly_budget": {
-      "pass": false,
-      "note": "not run"
+      "pass": true,
+      "note": "2976 tris against 20000 (15%)",
+      "date": "2026-10-21"
     }
-  },
-  "licence": "Leonardo concept, TRELLIS input only; R8 open",
-  "sha256": {
-    "concept.png": "8736e7274e002663a46030369f94fe3bb24f97c26482697eb340ed156b42c93c",
-    "rejected/A.png": "b991f37f8f4d0cdafe23c6ad77ebaebec15194f569fbbd39ffa1dea17ab546fe"
   }
 }
