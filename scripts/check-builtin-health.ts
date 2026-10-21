@@ -27,6 +27,26 @@ interface SampleFeature { id: string; name: string; stage: string; priority: str
 const kettle = read('packages/core/data/kettle.json') as { product: { asOf: string }; lenses: string[]; features: SampleFeature[] };
 const manifests: readonly LensManifest[] = BUILTIN_LENSES;
 const sampled = manifests.filter((m) => kettle.lenses.includes(m.id));
+/**
+ * The agreement loop below only ever runs over `sampled`, and `worst` starts at 1 - so a sample whose `lenses`
+ * lost an entry (or a catalog whose ids were renamed) would report 100 % agreement over fewer lenses, or over
+ * none at all, in a voice indistinguishable from success. The ground truth is BUILTIN_LENSES (catalog.ts) and the
+ * sample's own `lenses`: every id the sample names must be a built-in, and every built-in must be sampled or named
+ * here. A built-in added to the catalog fails this until it is sampled or listed.
+ */
+const UNSAMPLED = ['performance']; // no lens object in the sample: held to the scanned-product readings below only
+{
+  const ids = manifests.map((m) => m.id);
+  const wrong = [
+    ...kettle.lenses.filter((id) => !ids.includes(id)).map((id) => `the sample names "${id}", which is no built-in lens`),
+    ...ids.filter((id) => !kettle.lenses.includes(id) && !UNSAMPLED.includes(id)).map((id) => `built-in "${id}" is neither in the sample's lenses[] nor in UNSAMPLED`),
+    ...UNSAMPLED.filter((id) => !ids.includes(id) || kettle.lenses.includes(id)).map((id) => `UNSAMPLED names "${id}", which is sampled or is no built-in`),
+    ...(sampled.length === kettle.lenses.length ? [] : [`${sampled.length} manifests for ${kettle.lenses.length} sampled lenses`]),
+    ...(kettle.features.length > 0 ? [] : ['the sample has no feature: every agreement would be 0/0']),
+  ];
+  if (wrong.length) { for (const w of wrong) console.error('FAIL: ' + w); process.exit(1); }
+  console.log(`${sampled.length} of ${ids.length} built-in lenses are sampled over ${kettle.features.length} features (${UNSAMPLED.join(', ')} held to the readings only)`);
+}
 
 /** The lowest per-lens agreement the run accepts; below it the run exits 1. */
 const TARGET = 1;
