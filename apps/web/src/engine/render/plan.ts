@@ -517,6 +517,28 @@ function drawBuildingLabel(E: Engine, ctx: CanvasRenderingContext2D, v: View, B:
   ctx.globalAlpha = 1;
 }
 
+/** What roomLabelFit hands back; one object, so the flag layer can ask it every frame without allocating. */
+const labelFit = { fs: 14, ls: 0.8, lines: null as string[] | null, fa: 1 };
+/**
+ * The room label's sizing, in the one place both layers take it from (the raster draws by it, the flags'
+ * pinnedBox steps clear by it): a size from the room header's height, then a second pass at 14 px with a
+ * wider tracking when the name will not fit, then (at 14 px) a fade over the last 24 px of width it needs,
+ * its fit limit found by bisection. `lines` is null when no label is drawn - it does not fit, or has faded out.
+ * The returned object is reused by the next call.
+ */
+export function roomLabelFit(tx: Engine['tx'], nm: string, maxW: number, hh: number, u: number) {
+  let fs = clamp((hh * 0.36) / u, 14, 26), ls = fs * 0.06, lines = tx.wrap(nm, maxW, tx.f(fs, 600), 2, ls), fa = 1;
+  if (!lines && fs > 14) { fs = 14; ls = 0.8; lines = tx.wrap(nm, maxW, tx.f(14, 600), 2, ls); }
+  if (lines && fs <= 14 && !tx.wrap(nm, maxW - 24 * u, tx.f(fs, 600), 2, ls)) {
+    let lo = maxW - 24 * u, hi = maxW;
+    for (let i = 0; i < 4; i++) { const mid = (lo + hi) / 2; if (tx.wrap(nm, mid, tx.f(fs, 600), 2, ls)) hi = mid; else lo = mid; }
+    fa = clamp((maxW - hi) / (24 * u), 0, 1);
+    if (fa <= 0.01) lines = null;
+  }
+  labelFit.fs = fs; labelFit.ls = ls; labelFit.lines = lines; labelFit.fa = fa;
+  return labelFit;
+}
+
 export function drawRoomLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: BldNode) {
   const k = v.k, u = E.U, th = E.th, tx = E.tx, hasSw = E.M.sim.has;
   for (const W of B.wings) {
@@ -529,17 +551,8 @@ export function drawRoomLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View
     for (const R of W.rooms) {
       const r = rs(v, R, scratch); if (!onView(v, r)) continue;
       const hh = RH * k, nm = R.d.name.toUpperCase(), maxW = r.w - 28 * u - (hasSw ? 38 * u : 0);
-      let fs = clamp((hh * 0.36) / u, 14, 26), ls = fs * 0.06, lines = tx.wrap(nm, maxW, tx.f(fs, 600), 2, ls);
-      if (!lines && fs > 14) { fs = 14; ls = 0.8; lines = tx.wrap(nm, maxW, tx.f(14, 600), 2, ls); }
+      const { fs, ls, lines, fa } = roomLabelFit(tx, nm, maxW, hh, u);
       if (!lines) { ctx.globalAlpha = 1; R.labelRight = R.x; continue; }
-      // at the smallest size the label fades out over the last 24 px of width it needs (its fit limit found by bisection), instead of vanishing
-      let fa = 1;
-      if (fs <= 14 && !tx.wrap(nm, maxW - 24 * u, tx.f(fs, 600), 2, ls)) {
-        let lo = maxW - 24 * u, hi = maxW;
-        for (let i = 0; i < 4; i++) { const mid = (lo + hi) / 2; if (tx.wrap(nm, mid, tx.f(fs, 600), 2, ls)) hi = mid; else lo = mid; }
-        fa = clamp((maxW - hi) / (24 * u), 0, 1);
-        if (fa <= 0.01) { ctx.globalAlpha = 1; R.labelRight = R.x; continue; }
-      }
       const aa = a * fa; ctx.globalAlpha = aa;
       const lh = fs * 1.08 * u, blockH = lines.length * lh, inHeader = hh >= blockH + 14 * u;
       const topLimit = Math.max(v.c0y, E.SAFE.t) + 8 * u;

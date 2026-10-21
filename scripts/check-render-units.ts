@@ -539,7 +539,8 @@ function traced(fn: () => void): string[] {
 {
   const th = theme(false), RH = 72;
   const textEngine = new (await load<typeof import('../apps/web/src/engine/text.ts')>('apps/web/src/engine/text.ts')).Text('sans-serif', 'monospace', 1);
-  (globalThis as Record<string, unknown>).document = { createElement: () => ({ getContext: () => ({ font: '', measureText: (t: string) => ({ width: t.length * 9 }) }) }) };
+  // a text metric that follows the font's size (0.6 em a character), so the second sizing pass is a different width from the first
+  (globalThis as Record<string, unknown>).document = { createElement: () => ({ getContext: () => { const c = { font: '', measureText: (t: string) => ({ width: t.length * parseFloat(String(c.font).split(' ')[1]) * 0.6 }) }; return c; } }) };
   const mk = (w: number) => {
     const room = { kind: 'room', id: 'r1', x: 0, y: 0, w, h: 200, d: { id: 'dom', base: 'dom', name: 'Booking and attendance' }, feats: [] as never[], bays: [] } as never as import('../packages/core/src/model/layout.ts').RoomNode;
     return room;
@@ -568,9 +569,32 @@ function traced(fn: () => void): string[] {
   expect(bad.length === 0, `labelRight: the order badge's dodge at a camera 1.5x away disagrees with the label's own box in ${bad.length} widths (${bad.slice(0, 6).join(' ')})`);
   // the unit is pinned at both ends: the writer records world units, the one reader carries them to its camera
   const writes = [...bare(R + 'plan.ts').matchAll(/labelRight\s*=\s*([^;]+);/g)].map((m) => m[1].trim()).filter((e) => e !== 'undefined');
-  expect(writes.length === 3 && writes.every((e) => e === 'R.x' || /\/\s*k\)?$/.test(e)), `labelRight: plan.ts writes it in world units at all 3 sites (${writes.join(' | ')})`);
+  expect(writes.length === 2 && writes.every((e) => e === 'R.x' || /\/\s*k\)?$/.test(e)), `labelRight: plan.ts writes it in world units at every site (${writes.join(' | ')})`);
   expect(/sxv\(v,\s*R\.labelRight\)/.test(bare(R + 'dynamic.ts')), 'labelRight: dynamic.ts carries it to the live camera with sxv before comparing');
   expect(moved > 0,`labelRight: the sweep crosses the badge's threshold between the two cameras (${moved} widths), so it is not vacuous`);
+  // pinnedBox (flags) against drawRoomLabels (the raster): a label pinned to the top of the view, which of the
+  // two says is drawn, and where. Names long enough to need the 14 px fallback are the case it exists for.
+  const names = ['Booking and attendance', 'Reconciliation of regional settlement exceptions', 'Compliance', 'Customer identity verification'];
+  let pinned = 0, differ: string[] = [];
+  for (const nm of names) for (const k of [0.5, 0.6, 0.7, 0.8]) for (let w = 160; w <= 1100; w += 6) {
+    const room = mk(w); room.d = { ...room.d, name: nm }; room.h = 700;
+    const E = eng(room), v: View = { x: w / 2, y: 700 * 0.5 + 360 / k - 500 / k * 0 + 100, k, FW: 1280, FH: 800, c0x: -100, c0y: -100, c1x: 1380, c1y: 900 };
+    v.y = room.y + room.h / 2 + 200 / k;                          // the room's top edge is scrolled well above the view's
+    const c = fresh();
+    PL.drawRoomLabels(E, c, v, { wings: [{ w, rooms: [room] }] } as never);
+    const drawn = room.labelRight !== room.x && room.labelRight !== undefined && !room.labelBox;
+    const bg = c.rects[0], box = FL.pinnedBox(E, v, room, { x: 0, y: 0, w: 0, h: 0 });
+    if (!drawn && !box) continue;
+    pinned++;
+    const same = drawn === !!box && (!box || !bg || (Math.abs(bg[0] - box.x) <= 1 && Math.abs(bg[1] - box.y) <= 1 && Math.abs(bg[2] - box.w) <= 1 && Math.abs(bg[3] - box.h) <= 1));
+    if (!same) differ.push(`${nm.slice(0, 6)}@${k}/${w}`);
+  }
+  expect(pinned > 100, `pinnedBox: the fixture covered ${pinned} pinned-label cases`);
+  expect(differ.length === 0, `pinnedBox: the flag layer's box disagrees with drawRoomLabels in ${differ.length} cases of ${pinned} (${differ.slice(0, 5).join(' ')})`);
+  // one home for the sizing: neither layer may spell the 14 px / 0.8 tracking fallback for itself
+  const spell = (f: string) => /ls\s*=\s*0\.8/.test(bare(R + f));
+  expect(/roomLabelFit\(/.test(bare(R + 'flags.ts')) && /roomLabelFit\(/.test(bare(R + 'plan.ts')) && !spell('flags.ts'), 'pinnedBox: flags.ts asks plan.ts roomLabelFit for the label size rather than re-deriving it');
+  expect((bare(R + 'plan.ts').match(/ls\s*=\s*0\.8/g) ?? []).length === 1, 'pinnedBox: the 14 px room-label fallback is spelt once in plan.ts (roomLabelFit)');
   delete (globalThis as Record<string, unknown>).document;
 }
 
