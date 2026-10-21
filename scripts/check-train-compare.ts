@@ -312,5 +312,27 @@ const { packHeading, packOrder } = await imp('ComparePanel.tsx');
   ok(/'cache-control': IMMUTABLE/.test(stripComments(fs.readFileSync(path.join(api, 'shots/[...path]/route.ts'), 'utf8'))), 'cache: the shot response sends that ceiling');
 }
 
+{ // the change map's overlay sits over the pixels it describes at any capture size: the svg is fitted into the frame
+  // the way the frame fits the image (contain / meet), over a viewBox with the capture's own aspect ratio
+  const { ChangeMap, mapView } = await imp('ChangeMap.tsx');
+  const React = (await import('react')).default, { renderToStaticMarkup } = await import('react-dom/server');
+  const css = stripComments(fs.readFileSync(path.join(SRC, CMP, 'ShotFigure.css'), 'utf8'));
+  const imgRule = /\.tr-scr img\s*\{[^}]*\}/.exec(css)?.[0] ?? '';
+  ok(/object-fit:\s*contain/.test(imgRule) && !/object-fit:\s*cover/.test(css), 'frame: every mode shows the whole capture (contain), none crops it (cover)', imgRule);
+  for (const [w, h] of [[1280, 800], [1600, 900], [2048, 768], [390, 844]]) {
+    const cells = new Array<number>(GRID_W * GRID_H).fill(0);
+    cells[2 * GRID_W + 5] = 100; // cell column 5, row 2
+    const grid = { w, h, cells, pct: 1, moved: 1, maxd: 100, bbox: [Math.floor(w * 0.25), Math.floor(h * 0.1), Math.floor(w * 0.5), Math.floor(h * 0.4)] };
+    const svg = renderToStaticMarkup(React.createElement(ChangeMap, { grid }));
+    const vb = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(svg), [vw, vh] = [Number(vb?.[1]), Number(vb?.[2])];
+    ok(Math.abs(vw / vh - w / h) < 1e-9 && /preserveAspectRatio="xMidYMid meet"/.test(svg), `change map ${w}x${h}: the viewBox has the capture's aspect ratio and is fitted with meet`, [vb?.[0], w / h]);
+    const rects = [...svg.matchAll(/<rect ([^>]*?)\/?>/g)].map((m) => Object.fromEntries([...m[1].matchAll(/(\w+)="([^"]*)"/g)].map((a) => [a[1], a[2]])));
+    const cell = rects.find((r) => !r.class), box = rects.find((r) => r.class === 'bb');
+    ok(!!cell && Math.abs(Number(cell.x) / vw - 5 / GRID_W) < 1e-9 && Math.abs(Number(cell.y) / vh - 2 / GRID_H) < 1e-9 && Math.abs(Number(cell.width) / vw - 1 / GRID_W) < 1e-9, `change map ${w}x${h}: a cell covers the same fraction of the frame as of the capture`, cell);
+    ok(!!box && Math.abs(Number(box.x) / vw - grid.bbox[0] / w) < 1e-9 && Math.abs(Number(box.y) / vh - grid.bbox[1] / h) < 0.03 / vh, `change map ${w}x${h}: the dashed box starts where the moved pixels start`, box);
+    ok(Math.abs(mapView(grid).vw - vw) < 1e-9, `change map ${w}x${h}: mapView agrees with what is drawn`);
+  }
+}
+
 console.log(bad ? `check-train-compare: ${bad} of ${n} failed` : `check-train-compare: ${n} checks passed`);
 process.exit(bad ? 1 : 0);
