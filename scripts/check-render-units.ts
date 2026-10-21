@@ -249,7 +249,7 @@ function unionMembers(rel: string, name: string): string[] {
   LG.glyph(c, null, 10, 20, 16, '#fff');
   expect(c.calls.includes('arc') && c.ops > 0, 'lens-glyph: a missing glyph falls back to a ring');
   const c2 = fresh();
-  LG.glyph(c2, { path: 'M'.repeat(2049) }, 10, 20, 16, '#fff');
+  traced(() => LG.glyph(c2, { path: 'M'.repeat(2049) }, 10, 20, 16, '#fff'));
   expect(c2.calls.includes('arc'), 'lens-glyph: a custom path over 2048 characters falls back to the ring');
   const c3 = fresh();
   LG.glyph(c3, 'check', 0, 0, 8, '#fff');
@@ -456,6 +456,52 @@ function bare(rel: string): string {
   PL.outline(E, geom(5), feat(1));
   PL.outline(E, geom(5), feat(1));
   expect(shapes === 1, `plan: a feature fetched after the clear is cached once (shape() ran ${shapes} time(s))`);
+}
+
+// ---------------------------------------------------------------- lens-glyph.ts / patterns.ts: a failure leaves one trace
+// plan.ts reports a failed lens channel once (lensFailed). A manifest glyph path Path2D rejects, and a motif
+// createPattern refuses, fell back silently: the ring a lens with no glyph gets, and a fill that is just absent.
+/** Run `fn` with console.error recorded and Path2D / document stubbed; everything is restored after. */
+function traced(fn: () => void): string[] {
+  const g = globalThis as Record<string, unknown>, seen: string[] = [];
+  const keep = { err: console.error, P: g.Path2D, D: g.document, M: g.DOMMatrix };
+  console.error = (...a: unknown[]) => { seen.push(a.map(String).join(' ')); };
+  try { fn(); } finally { console.error = keep.err; g.Path2D = keep.P; g.document = keep.D; g.DOMMatrix = keep.M; }
+  return seen;
+}
+{
+  const withPath = (fn: () => void) => traced(() => {
+    (globalThis as Record<string, unknown>).Path2D = class { constructor(d: string) { if (!d.startsWith('M')) throw new SyntaxError('bad path'); } };
+    fn();
+  });
+  const bad = { path: 'not a path' }, long = { path: 'M' + '1'.repeat(2049) }, good = { path: 'M0 0L16 16' };
+  const rings: boolean[] = [];
+  const seen = withPath(() => {
+    for (const spec of [bad, bad, bad, long, long, good, good]) { const c = fresh(); LG.glyph(c, spec, 0, 0, 16, '#fff'); rings.push(c.calls.includes('arc')); }
+  });
+  expect(seen.length === 2, `lens-glyph: one report per distinct bad path, none for a good one (${seen.length}: ${seen.join(' | ')})`);
+  expect(seen.some((m) => m.includes('not a path')) && seen.some((m) => m.includes('2048')), 'lens-glyph: each report names its path or its cause');
+  expect(rings.join() === 'true,true,true,true,true,false,false', `lens-glyph: the ring is still drawn for a bad path and not for a good one (${rings.join()})`);
+  // without a Path2D at all (a Node run) a path is not "bad": nothing is reported
+  const quiet = traced(() => { (globalThis as Record<string, unknown>).Path2D = undefined; LG.glyph(fresh(), { path: 'M9 9' }, 0, 0, 16, '#fff'); });
+  expect(quiet.length === 0, `lens-glyph: no report where Path2D does not exist (${quiet.length})`);
+
+  const stubDoc = (made: unknown) => {
+    const g = globalThis as Record<string, unknown>;
+    g.DOMMatrix = class { };
+    g.document = { createElement: () => ({ width: 0, height: 0, getContext: () => Object.assign(fresh(), { createPattern: () => made }) }) };
+  };
+  const refused = traced(() => {
+    stubDoc(null);
+    const a = theme(false), b = theme(false);
+    PT.lineFill(fresh(), a, 'solid', 0, 0, 40, 20, 1, 1);
+    PT.lineFill(fresh(), a, 'solid', 0, 0, 40, 20, 1, 1);
+    PT.lineFill(fresh(), b, 'solid', 0, 0, 40, 20, 1, 1);
+    PT.lineFill(fresh(), a, 'dotted', 0, 0, 40, 20, 1, 1);
+  });
+  expect(refused.length === 2, `patterns: one report per motif createPattern refuses, however often it is asked (${refused.length}: ${refused.join(' | ')})`);
+  const fine = traced(() => { stubDoc({ setTransform() { } }); const c = fresh(); PT.lineFill(c, theme(false), 'wave', 0, 0, 40, 20, 1, 1); expect(c.ops > 0, 'patterns: a pattern that builds is drawn'); });
+  expect(fine.length === 0, `patterns: a motif that builds reports nothing (${fine.length})`);
 }
 
 // ---------------------------------------------------------------- source guard: text is measured, never counted

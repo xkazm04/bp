@@ -9,7 +9,16 @@ const PATHS = new Map<string, Path2D | null>();
 function customPath(d: string): Path2D | null {
   let p = PATHS.get(d);
   if (p === undefined) {
-    try { p = d.length <= 2048 ? new Path2D(d) : null; } catch { p = null; }
+    // reported once per distinct path (the cache keeps the null): a malformed glyph is otherwise drawn as the
+    // ring a lens with no glyph gets, and its author's next guess is that the glyph name was wrong
+    let why = '';
+    p = null;
+    if (d.length > 2048) why = 'over 2048 characters';
+    else {
+      try { p = new Path2D(d); }
+      catch (err) { if (typeof Path2D !== 'undefined') why = 'Path2D rejected it (' + String(err) + ')'; }
+    }
+    if (why) console.error('[glyph] custom glyph path ignored, drawing the ring: ' + why + ': ' + d.slice(0, 40));
     PATHS.set(d, p);
   }
   return p;
