@@ -144,7 +144,8 @@ function humanize(errors, data) {
 // ------------------------------------------------------------------------------ semantic checks
 class Report {
   errors = []; warnings = []; notes = [];
-  error(m) { this.errors.push(m); }
+  // BP_VALIDATE_SITES=1 prints the source line of each error site reached, so scripts/check-fixtures.ts can count the rules its fixtures trip
+  error(m) { if (process.env.BP_VALIDATE_SITES) console.log(`@SITE ${/validate-structure\.mjs:(\d+):\d+/.exec((new Error().stack ?? '').split('\n')[2] ?? '')?.[1]}`); this.errors.push(m); }
   warn(m) { this.warnings.push(m); }
   note(m) { this.notes.push(m); }
 }
