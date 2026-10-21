@@ -87,6 +87,23 @@ export function readEventsReport(code, lit) {
   return { unguarded, summaries };
 }
 
+/**
+ * What each `BindLambda([...])` in BpLink.cpp captures BY COPY from the named variable: a bare `Name`, or a default `=`
+ * capture, which copies everything it mentions. `Name = MoveTemp(Name)` and `Name = Name` are init-captures and are read
+ * as what they are: only the MoveTemp form is a move. `code` is stripCxx(text).
+ */
+export function copiedCaptures(code, name) {
+  const out = [];
+  for (const m of code.matchAll(/BindLambda\s*\(\s*\[([^\]]*)\]/g)) {
+    for (const raw of m[1].split(',')) {
+      const c = raw.trim();
+      if (c === name || c === '=') out.push(c);
+      else if (c.startsWith(name) && /^\w+\s*=/.test(c) && c.replace(/\s+/g, '') !== `${name}=MoveTemp(${name})`) out.push(c);
+    }
+  }
+  return out;
+}
+
 const kdata = JSON.parse(fs.readFileSync(path.join(DATA, 'kettle.app-structure.json'), 'utf8'));
 const lines = (s) => s.split('\n').filter((l) => l.trim());
 const wantEvents = lines(fs.readFileSync(path.join(DATA, 'kettle.events.jsonl'), 'utf8'));
@@ -182,6 +199,12 @@ try {
     const rep = readEventsReport(stripCxx(cppText), stripCxx(cppText, true));
     check(`source: ReadEvents' per-line warning is capped (0 unguarded in the loop) and a "skipped N of M" summary follows it`,
       !!rep && rep.unguarded === 0 && rep.summaries >= 1, rep ? `${rep.unguarded} unguarded warnings in the loop, ${rep.summaries} summaries after it` : 'ReadEvents or its loop not found');
+
+    // The parsed snapshot carries the whole events array (566 entries here). The stream continuation must take it by MOVE:
+    // a by-value capture copies the array a second time per fetch. No UE build or profiler exists to time it, so the
+    // capture list is what is read, and it is the thing that decides the copy.
+    const copies = copiedCaptures(stripCxx(cppText), 'Snapshot');
+    check('source: no BindLambda in BpLink.cpp copies Snapshot into its capture list (it is moved in)', copies.length === 0, `copied captures: ${copies.join(' | ')}`);
 
     // The level names are the web's and the plan route's: structure.domains are ROOMS (13 here), and wings are the
     // WING_DEFS groups of domains (5 here). A log line that labels the domain count "wings" reports a number that is

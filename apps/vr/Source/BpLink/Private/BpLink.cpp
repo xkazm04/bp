@@ -115,8 +115,9 @@ void FBpLinkClient::FetchProduct(const FString& Slug, TFunction<void(bool, const
 		// /stream has two answers BpLink lives with: 200 text/event-stream, which Kettle gives since wolf-plan L5.2
 		// (apps/server hosts its scan sim), and 405 for a product with no live stream. WP3.1 consumes neither: the rev
 		// read above is the one read BpLink keeps either way. Both are pinned by scripts/check-bplink.mjs.
+		// Snapshot holds the whole parsed events array, so it is MOVED into the continuation (nothing below reads it here).
 		TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Stream = MakeGet(Root + TEXT("/stream"), TEXT("text/event-stream"));
-		Stream->OnProcessRequestComplete().BindLambda([Root, Slug, OnDone, Snapshot](FHttpRequestPtr, FHttpResponsePtr StreamResponse, bool bStreamConnected) mutable
+		Stream->OnProcessRequestComplete().BindLambda([Root, Slug, OnDone, Snapshot = MoveTemp(Snapshot)](FHttpRequestPtr, FHttpResponsePtr StreamResponse, bool bStreamConnected) mutable
 		{
 			Snapshot.StreamStatus = (bStreamConnected && StreamResponse.IsValid()) ? StreamResponse->GetResponseCode() : 0;
 			if (Snapshot.StreamStatus == 200)
