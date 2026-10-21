@@ -6,5 +6,5 @@
     "jsx": "preserve"
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["src/server/**"]
+  "exclude": ["src/server/**/*.server.ts", "src/server/api/**"]
 }
