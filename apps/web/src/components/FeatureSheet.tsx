@@ -16,6 +16,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion, type Variants } from 'motion/react';
 import type { Feature } from '@bp/core/data';
+import type { Health } from '@bp/core/standard/types';
 import { views, type BayNode, type BldNode, type RoomNode, type WingNode } from '@bp/core/model';
 import type { Crumb } from '@/engine/state';
 import { PatternDefs } from './Symbols';
@@ -23,7 +24,7 @@ import { shallowEqual, useBp, useEngine, useVariant } from './hooks';
 import { GeneralTab } from './page/General';
 import { LensTab } from './page/LensTab';
 import { LiveFoot } from './sheet/SheetBody';
-import { AsOfBar, StageLadder } from './page/bits';
+import { AsOfBar, HWORD, StageLadder } from './page/bits';
 import { CountMemo, EnterDelay } from './page/motion';
 import './page.css';
 
@@ -87,11 +88,16 @@ function Tabs({ f }: { f: Feature }) {
   return (
     <div className="pg-tabs" role="tablist" aria-label="Feature page tabs (the plan's lens follows)" onKeyDown={onKeys}>
       {ks.map((k, i) => {
-        const d = P.LENS[k], on = view === k, h = d ? f.lens[k]?.h ?? 'unmeasured' : '';
+        const d = P.LENS[k], on = view === k;
+        const h: Health = d ? f.lens[k]?.h ?? 'unmeasured' : 'unmeasured';
         const sub = d ? V.ui?.tabLabel?.(k) ?? d.name : 'Overview';
+        // the health dot is aria-hidden and a title is not an accessible name, so the word goes in the label;
+        // the word is HWORD, the one health vocabulary the tiles and the lens tab already read
+        const say = d ? d.short + ' · ' + sub + ' · ' + HWORD[h] : 'GEN · Overview';
+        const key = i < 9 ? ' (' + (i + 1) + ')' : '';
         return (
           <button key={k} type="button" role="tab" id={'pg-tab-' + k} aria-selected={on} aria-controls={on ? 'pg-panel' : undefined} tabIndex={on ? 0 : -1} className={on ? 'on' : ''} onClick={() => E.setView(k)}
-            title={(d ? d.name + ': ' + (h === 'na' ? 'does not apply' : h) : 'General: the overview') + (i < 9 ? ' (' + (i + 1) + ')' : '')}>
+            aria-label={say} title={(d ? d.name + ' · ' + HWORD[h] : 'General: the overview') + key}>
             <span className="sh">{d ? d.short : 'GEN'}{d ? <i className={'hd ' + h} aria-hidden="true" /> : null}</span>
             <span className="nm">{sub}</span>
             {on && <motion.span layoutId={reduce ? undefined : 'pg-tab-uline'} className="uline" transition={{ type: 'spring', stiffness: 420, damping: 36 }} />}
