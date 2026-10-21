@@ -21,6 +21,7 @@ import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { readStripped, stripComments } from './lib/source.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
 register('./overlays-loader.mjs', { parentURL: import.meta.url, data: { src: SRC, root: ROOT, mutate: JSON.parse(process.env.BP_OVERLAYS_MUTATE || '[]') } });
@@ -170,9 +171,20 @@ expect(refused.every((r) => r === false) && calls === 0, '(d) commitSample refus
 const sample = new SwarmSim(M.P, liveSwarm(M.P, scan), () => 0);
 spy(sample);
 expect(!sample.live && LS.commitSample(sample, pv('pause'), 'jonas') === true && calls === 1, '(d) control: on a sample sim commitSample does call sim.commit (the spy counts)', 'calls ' + calls);
-const eng = fs.readFileSync(path.join(SRC, 'engine/Engine.ts'), 'utf8').replace(/\r\n/g, '\n'); // a Windows checkout is CRLF
+// Read with the comments removed (scripts/lib/source.ts, as the other source-guard checks do): these two
+// expectations must MATCH, so over raw text a file that only TALKS about the rule in a comment satisfies them.
+const eng = readStripped(path.join(SRC, 'engine/Engine.ts')).replace(/\r\n/g, '\n'); // a Windows checkout is CRLF
+const COMMITS_THROUGH = /commitPreview\(\) \{[\s\S]{0,400}?commitSample\(this\.M\.sim/;
 expect(!/\.commit\(/.test(eng.replace(/commitSample\(|commitPreview\(|commitLive\(/g, '')), '(d) Engine.ts never calls sim.commit directly (only through commitSample)');
-expect(/preview\(kind[^\n]*\{\n\s*const sim = this\.M\.sim;\n\s*if \(sim\.live\) \{[^\n]*SAMPLE_REFUSED/.test(eng) && /commitPreview\(\) \{[\s\S]{0,400}?commitSample\(this\.M\.sim/.test(eng), '(d) Engine.preview refuses a sample steer on live first, and commitPreview commits through commitSample');
+expect(/preview\(kind[^\n]*\{\n\s*const sim = this\.M\.sim;\n\s*if \(sim\.live\) \{[^\n]*SAMPLE_REFUSED/.test(eng) && COMMITS_THROUGH.test(eng), '(d) Engine.preview refuses a sample steer on live first, and commitPreview commits through commitSample');
+// the matcher stopped biting? A bypass whose only trace of commitSample is a comment must fail the guard above.
+{
+  const real = 'if (!commitSample(this.M.sim, p, this.signer()))';
+  const seeded = eng.replace(real, 'if (!this.M.sim.commit(p)) /* ' + real + ' */');
+  expect(seeded !== eng && COMMITS_THROUGH.test(seeded) && !COMMITS_THROUGH.test(stripComments(seeded)),
+    '(d) control: a commitSample left only in a comment does not satisfy the guard (the comments are stripped first)');
+  expect(!/^\s*\/\//m.test(eng) && !eng.includes('/*'), '(d) control: the source the guards read carries no comment at all');
+}
 
 // ---------------------------------------------------------------- (e) deciders from the map's people
 const dec = (id: string) => sim.decisions.find((d: Any) => d.base === id);

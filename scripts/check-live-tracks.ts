@@ -20,6 +20,7 @@ import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { readStripped, stripComments } from './lib/source.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
 register('./overlays-loader.mjs', { parentURL: import.meta.url, data: { src: SRC, root: ROOT, mutate: JSON.parse(process.env.BP_OVERLAYS_MUTATE || '[]') } });
@@ -172,12 +173,23 @@ const lineA = FD + lineSuffix(2, 0);
 expect(!(MD.sim.DOF[lineA] ?? []).some((d: Any) => d.base === 'e1'), '(e) the tile\'s question pins carry no track');
 
 // ------------------------------------------------------------------ the engine and the canvas use them as described
-const eng = fs.readFileSync(path.join(SRC, 'engine/Engine.ts'), 'utf8').replace(/\r\n/g, '\n');
-expect(/tracks\.decide\(pid, body,/.test(eng), 'Engine.decide sends a live decision through LiveTracks.decide (saving, then the store\'s row)');
+// Read with the comments removed (scripts/lib/source.ts, as the other source-guard checks do): these
+// expectations must MATCH, so over raw text a comment naming the call stands in for the call.
+const eng = readStripped(path.join(SRC, 'engine/Engine.ts')).replace(/\r\n/g, '\n');
+const DECIDES = /tracks\.decide\(pid, body,/;
+expect(DECIDES.test(eng), 'Engine.decide sends a live decision through LiveTracks.decide (saving, then the store\'s row)');
 expect(/drawPins\(this, ctx, v, lod, now\); drawTracks\(this, ctx, v, lod\);/.test(eng), 'the track layer draws with the pins');
-const lay = fs.readFileSync(path.join(SRC, 'engine/render/tracks.ts'), 'utf8').replace(/\r\n/g, '\n');
+const lay = readStripped(path.join(SRC, 'engine/render/tracks.ts')).replace(/\r\n/g, '\n');
 expect(/onView\(v, r, 20\)/.test(lay) && /onView\(v, r, 30\)/.test(lay), 'the track layer is culled to the viewport like the pins (tiles and rooms)');
 expect(!/=>\s*\{/.test(lay.slice(lay.indexOf('export function drawTracks'))), 'drawTracks makes no closure per frame');
+// the matcher stopped biting? A decide that bypasses the tracks and only names them in a comment must fail the guard.
+{
+  const real = 'tracks.decide(pid, body,';
+  const seeded = eng.replace(real, '/* ' + real + ' */ noTracks(');
+  expect(seeded !== eng && DECIDES.test(seeded) && !DECIDES.test(stripComments(seeded)),
+    'control: a tracks.decide left only in a comment does not satisfy the guard (the comments are stripped first)');
+  expect([eng, lay].every((s) => !/^\s*\/\//m.test(s) && !s.includes('/*')), 'control: the two sources the guards read carry no comment at all');
+}
 
 try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a dying child still holds a file */ }
 if (failures.length) { console.log(failures.map((f) => 'FAIL ' + f).join('\n')); console.log(`check-live-tracks: ${failures.length} failed, ${held} held`); process.exit(1); }
