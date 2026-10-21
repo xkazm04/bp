@@ -60,6 +60,7 @@
   .tr-pk { top: 0; }
   .tr-pk .prog { margin-left: 0; }
 }
-/* the phone: a card's checkbox and the row itself are touch targets */
+/* the phone: a card's checkbox and the row itself are touch targets, and the pack row's select-every-shown-item
+   checkbox is the same target as the cards' (it was left at --box, 16 px, while its sibling grew) */
 .lg-page.phone .tr-row { min-height: calc(var(--h-touch) + var(--sp-4)); }
-.lg-page.phone .tr-row input { width: calc(var(--sp-20) + 2px); height: calc(var(--sp-20) + 2px); }
+.lg-page.phone .tr-row input, .lg-page.phone .tr-pk input { width: calc(var(--sp-20) + 2px); height: calc(var(--sp-20) + 2px); }
