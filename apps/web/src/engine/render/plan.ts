@@ -173,18 +173,19 @@ const outlines = new WeakMap<Engine, Map<string, Outline>>();
 export function resetOutlines(E: Engine) { outlines.get(E)?.clear(); }
 
 /** Outline path: the base rectangle, or the dominant lens's shape blended in by its dominance. */
-function outline(E: Engine, g: TileGeom, f: Feature): Path2D | null {
+export function outline(E: Engine, g: TileGeom, f: Feature): Path2D | null {
   const top = E.mixS.top, d = E.mixS.topD;
   if (!top || d <= 0.001) return null;
   const ch = E.channel(top);
   if (!ch || !ch.shape || failed(E, top)) return null;
   let m = outlines.get(E);
   if (!m) outlines.set(E, (m = new Map()));
-  let o = m.get(f.id);
+  // the cap is enforced before the lookup: clearing after it would orphan the record this call then updates
+  if (m.size > 1500) m.clear();
+  const o = m.get(f.id);
   if (o && o.top === top && o.d === d && o.x === g.x && o.y === g.y && o.w === g.w && o.h === g.h && o.u === g.u && o.k === g.k) return o.p;
   const p = new Path2D();
   try { ch.shape(p, g, f, d); } catch (err) { lensFailed(E, top, 'shape', err); return null; }
-  if (m.size > 1500) m.clear();
   if (o) { o.top = top; o.d = d; o.x = g.x; o.y = g.y; o.w = g.w; o.h = g.h; o.u = g.u; o.k = g.k; o.p = p; }
   else m.set(f.id, { top, d, x: g.x, y: g.y, w: g.w, h: g.h, u: g.u, k: g.k, p });
   return p;

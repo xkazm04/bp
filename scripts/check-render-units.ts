@@ -33,6 +33,7 @@ const GL = await load<typeof import('../apps/web/src/engine/render/glyphs.ts')>(
 const FL = await load<typeof import('../apps/web/src/engine/render/flags.ts')>(R + 'flags.ts');
 const TR = await load<typeof import('../apps/web/src/engine/render/tracks.ts')>(R + 'tracks.ts');
 const KP = await load<typeof import('../apps/web/src/engine/render/keyplan.ts')>(R + 'keyplan.ts');
+const PL = await load<typeof import('../apps/web/src/engine/render/plan.ts')>(R + 'plan.ts');
 
 type View = import('../apps/web/src/engine/render/view.ts').View;
 type SRect = import('../apps/web/src/engine/render/view.ts').SRect;
@@ -431,6 +432,29 @@ function bare(rel: string): string {
   const body = loops[0] ?? '';
   expect(/labelBox\s*=\s*null/.test(body) && /labelRight\s*=\s*undefined/.test(body),
     `plan: that reset clears BOTH labelBox and labelRight (got "${body.trim()}")`);
+}
+
+// ---------------------------------------------------------------- plan.ts: the outline cache keeps what it fetched
+// The cache is capped at 1500 entries. A raster that trips the cap must clear BEFORE it looks an entry up: clearing
+// between the lookup and the write-back orphaned the record it then updated, so the feature it had just built was
+// not in the map and the next ask built it again.
+{
+  const CAP = 1500;
+  let shapes = 0;
+  (globalThis as { Path2D?: unknown }).Path2D = class { };
+  const E = { mixS: { top: 'x', topD: 1 }, channel: () => ({ shape: () => { shapes++; } }) } as never;
+  const geom = (x: number) => ({ x, y: 0, w: 10, h: 10, u: 1, k: 1 }) as never;
+  const feat = (i: number) => ({ id: 'f' + i }) as never;
+  for (let i = 0; i <= CAP; i++) PL.outline(E, geom(0), feat(i));            // CAP + 1 entries: the next write trips the cap
+  expect(shapes === CAP + 1, `plan: one shape() call per feature on a first raster (${shapes} for ${CAP + 1})`);
+  shapes = 0;
+  PL.outline(E, geom(5), feat(0));                                           // geometry moved: the entry is stale, the cap trips
+  PL.outline(E, geom(5), feat(0));                                           // same geometry again: must be a cache hit
+  expect(shapes === 1, `plan: the outline built across a cap clear is kept - asked twice, shape() ran ${shapes} time(s), not 1`);
+  shapes = 0;
+  PL.outline(E, geom(5), feat(1));
+  PL.outline(E, geom(5), feat(1));
+  expect(shapes === 1, `plan: a feature fetched after the clear is cached once (shape() ran ${shapes} time(s))`);
 }
 
 // ---------------------------------------------------------------- report
