@@ -100,17 +100,23 @@ function offsetPath(pts: number[], d: number, into: CanvasPath) {
 }
 
 // ------------------------------------------------------------------------------------------ caches
-const aggCache = new Map<string, string[]>();
-function bldParts(B: BldNode, lens: BuiltinLens): string[] {
-  const key = B.id + '|' + B.feats.length + '|' + lens;
-  let v = aggCache.get(key);
-  if (!v) { v = CHANNELS[lens].aggregate(B.feats).parts; aggCache.set(key, v); }
+// Keyed on the node OBJECT, never on an id or a count: a rescan rebuilds the model and with it every node, and a key made
+// of B.id + feats.length survived a rebuild that changed a facet value (the title block then stated last scan's totals).
+// A WeakMap empties itself when the model it was computed from is dropped.
+const aggCache = new WeakMap<BldNode, Map<BuiltinLens, string[]>>();
+/** A building's lens totals (the title block's parts), computed once per model. Exported for scripts/check-bold-decor.ts. */
+export function bldParts(B: BldNode, lens: BuiltinLens): string[] {
+  let per = aggCache.get(B);
+  if (!per) { per = new Map(); aggCache.set(B, per); }
+  let v = per.get(lens);
+  if (!v) { v = CHANNELS[lens].aggregate(B.feats).parts; per.set(lens, v); }
   return v;
 }
-const roomSens = new Map<string, number>();
-function sensOf(R: RoomNode) {
-  let v = roomSens.get(R.id);
-  if (v == null) { v = 0; for (const f of R.feats) v = Math.max(v, SENS[bl(f).security.dataClass] ?? 0); roomSens.set(R.id, v); }
+const roomSens = new WeakMap<RoomNode, number>();
+/** The highest data-class sensitivity among a room's features, computed once per model. Exported for scripts/check-bold-decor.ts. */
+export function sensOf(R: RoomNode) {
+  let v = roomSens.get(R);
+  if (v == null) { v = 0; for (const f of R.feats) v = Math.max(v, SENS[bl(f).security.dataClass] ?? 0); roomSens.set(R, v); }
   return v;
 }
 

@@ -47,6 +47,7 @@
     "check:render-units": "node scripts/check-render-units.ts",
     "check:variant-copies": "node apps/web/src/variants/check-copies.ts",
     "check:variant-words": "node scripts/check-variant-words.mjs",
+    "check:bold-decor": "node scripts/check-bold-decor.ts",
     "check:rail-keys": "node apps/web/src/components/rail/check-keys.ts",
     "check:timeline-keys": "node apps/web/src/components/timeline/check-keys.ts",
     "check:timeline-size": "node apps/web/src/components/timeline/check-size.ts",

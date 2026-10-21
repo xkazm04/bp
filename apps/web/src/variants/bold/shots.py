@@ -8,8 +8,17 @@ from shotkit import base, finish, floor_check
 OUT = 'docs/shots/bold'
 BASE = base()
 MODE = sys.argv[1] if len(sys.argv) > 1 else 'quick'
+if MODE not in ('quick', 'full', 'light'): sys.exit(f'unknown mode {MODE!r}: quick | full | light')
 problems = []
-LENS = {'2': 'business', '3': 'design', '4': 'development', '5': 'operations', '6': 'security', '7': 'quality'}
+LENS = {}  # key -> lens id, read off the page's own tab strip by discover(): every enabled lens with a digit key, not a literal six
+TABS = "[...document.querySelectorAll('#tabs [role=tab][data-lens]')].map(b => [(b.querySelector('.kb') || {}).textContent || '', b.dataset.lens]).filter(([k, l]) => k && l !== 'general')"
+
+def discover(b):
+    pg = b.new_page(viewport={'width': 1920, 'height': 1080})
+    pg.goto(f'{BASE}/v/bold?intro=0', wait_until='networkidle'); time.sleep(1.4)
+    LENS.update({k: l for k, l in pg.evaluate(TABS)})
+    pg.close()
+    if not LENS: problems.append('no lens tabs found in #tabs: the matrix would photograph nothing')
 
 def run(pg, name, url, w, h, steps):
     logs = []
@@ -27,6 +36,9 @@ def run(pg, name, url, w, h, steps):
             pg.keyboard.press(st[1]); time.sleep(st[3] if len(st) > 3 else 1.0)
         elif kind == 'js':
             pg.evaluate(st[1]); time.sleep(1.0)
+        elif kind == 'floor':
+            # the floor is a point-in-time DOM query and each lens's panel replaces the last: measure this one now (logs are reported once, at the end)
+            floor_check(pg, f'{name}-{st[1]}', [], problems)
         if len(st) > 2 and st[2]:
             pg.screenshot(path=f'{OUT}/{st[2]}.png')
     floor_check(pg, name, logs, problems)
@@ -42,6 +54,8 @@ def lens_steps(tag, at=(0.4, 0.45)):
 
 with sync_playwright() as p:
     b = p.chromium.launch()
+    discover(b)
+    print('lenses:', ' '.join(f'{k}={l}' for k, l in LENS.items()))
     combos = [('dark', 1920, 1080, 1)] if MODE == 'quick' else [(t, w, h, s) for t in ('dark', 'light') for (w, h) in ((1920, 1080), (1280, 800)) for s in (1, 4)]
     if MODE == 'light': combos = [('light', 1920, 1080, 1)]
     for (theme, w, h, scale) in combos:
@@ -53,8 +67,8 @@ with sync_playwright() as p:
         for theme in ('dark', 'light'):
             pg = b.new_page()
             SC = "document.querySelector('.ev6') && document.querySelector('.ev6').scrollIntoView({block: 'start'}); document.getElementById('dscroll').scrollBy(0, -90)"
-            st = [('js', SC, f'sheet-{theme}-general')]
-            for k, l in LENS.items(): st += [('key', k), ('js', SC, f'sheet-{theme}-{l}')]
+            st = [('js', SC, f'sheet-{theme}-general'), ('floor', 'general')]
+            for k, l in LENS.items(): st += [('key', k), ('js', SC, f'sheet-{theme}-{l}'), ('floor', l)]
             run(pg, f'sheet-{theme}', f'{BASE}/v/bold?intro=0&theme={theme}#open=failed-payment-dunning', 1920, 1080, st)
             pg.close()
             pg = b.new_page()

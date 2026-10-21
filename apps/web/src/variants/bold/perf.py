@@ -29,6 +29,9 @@ with sync_playwright() as p:
             i += 1; pg.mouse.move(W * 0.45 - (i % 60) * 9 + (30 if (i // 60) % 2 else 0), H * 0.5 - (i % 40) * 4); time.sleep(0.016)
         pg.mouse.up()
         stats('zoom+drag view ' + lens_view, pg.evaluate(STOP))
+    # the original switch order, then every other digit-keyed lens the tab strip offers (performance, com.kettle.cost ...), back to general
+    tabs = pg.evaluate("[...document.querySelectorAll('#tabs [role=tab][data-lens] .kb')].map(e => e.textContent)")
+    SWITCHES = ['6', '3', '4', '1', '2', '5', '7'] + [k for k in tabs if k not in ('1', '2', '3', '4', '5', '6', '7')] + ['1']
     for where in ('L0', 'Z'):
         pg.keyboard.press('1'); time.sleep(0.5)
         pg.evaluate("__bp.goHome(0)"); time.sleep(0.8)
@@ -37,7 +40,7 @@ with sync_playwright() as p:
             for _ in range(4): pg.mouse.wheel(0, -240); time.sleep(0.08)
             time.sleep(1.2)
         pg.evaluate(START)
-        for k in ('6', '3', '4', '1', '2', '5', '7', '1'):
+        for k in SWITCHES:
             pg.keyboard.press(k); time.sleep(0.75)
         stats('lens switches at ' + where, pg.evaluate(STOP))
     b.close()
