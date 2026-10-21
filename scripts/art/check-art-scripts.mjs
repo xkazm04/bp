@@ -25,5 +25,10 @@ for (const args of [[], ['abc'], ['1.5'], ['']]) {
   check(`trellis-seed: argv ${JSON.stringify(args)} is refused by name`, r.status !== 0 && /seed must be an integer/.test(r.stderr ?? ''), `exit ${r.status}, stderr: ${(r.stderr ?? '').split('\n').find(Boolean) ?? ''}`);
 }
 
+{
+  const r = spawnSync(process.execPath, [TRELLIS, '303'], { encoding: 'utf8', timeout: 20000, env: { ...process.env, BP_COMFY_URL: DEAD } });
+  check('trellis-seed: a valid seed passes the guard (it gets as far as the unreachable ComfyUI)', r.status !== 0 && !/seed must be an integer/.test(r.stderr ?? ''), `exit ${r.status}`);
+}
+
 console.log(`\n${failed ? `${failed} failed` : 'all passed'}`);
 process.exit(failed ? 1 : 0);

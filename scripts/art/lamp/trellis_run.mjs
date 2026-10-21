@@ -14,6 +14,8 @@ const WF = 'C:/Users/kazda/ai/lynx-bench/media/3d-trellis-api.json';
 const OUT = 'C:/Users/kazda/ai/lynx-bench/bp/lamp-agent';
 const COMFY_OUT = 'C:/Users/kazda/ai/ComfyUI/ComfyUI/output';
 const seed = Number(process.argv[2]), faces = Number(process.argv[3] || 28000);
+// Same refusal as scripts/lookdev/leonardo.mjs: a NaN seed would reach four workflow nodes, the filename prefix and the output name of a 10-40 minute GPU job.
+if (!(process.argv[2] ?? '').trim() || !Number.isInteger(seed)) { console.error('seed must be an integer: node scripts/art/lamp/trellis_run.mjs <seed> [target_face_count]'); process.exit(2); }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const j = async (p, o) => (await fetch(URL_ + p, o)).json();
 
