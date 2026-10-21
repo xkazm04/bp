@@ -14,7 +14,8 @@ MODE = next((a for a in sys.argv[1:] if a in MODES), 'full')
 ARGS = [a for a in sys.argv[1:] if a not in MODES]
 BASE = base(ARGS[0] if len(ARGS) > 0 else '')
 OUT = ARGS[1] if len(ARGS) > 1 else 'docs/shots/shaped'
-LENS = [('2', 'business'), ('3', 'design'), ('4', 'development'), ('5', 'operations'), ('6', 'security'), ('7', 'quality')]
+LENS = []  # (key, lens id) read off the page's own tab strip by discover(): every enabled lens with a digit key, not a literal six
+TABS = "[...document.querySelectorAll('#tabs [role=tab][data-lens]')].map(b => [(b.querySelector('.kb') || {}).textContent || '', b.dataset.lens]).filter(([k, l]) => k && l !== 'general')"
 problems = []
 def watch(pg):
     logs = []
@@ -25,8 +26,17 @@ def wheel(pg, w, h, n=3, at=(0.4, 0.45)):
     pg.mouse.move(w * at[0], h * at[1])
     for _ in range(n): pg.mouse.wheel(0, -240); time.sleep(0.08)
     time.sleep(1.2)
+def discover(b):
+    pg = b.new_page(viewport={'width': 1920, 'height': 1080})
+    pg.goto(f'{BASE}/v/shaped?intro=0', wait_until='networkidle'); time.sleep(1.5)
+    LENS.extend((k, l) for k, l in pg.evaluate(TABS))
+    pg.close()
+    if not LENS: problems.append('no lens tabs found in #tabs: the matrix would photograph nothing')
+
 with sync_playwright() as p:
     b = p.chromium.launch()
+    discover(b)
+    print('lenses:', ' '.join(f'{k}={l}' for k, l in LENS))
     themes = ('dark',) if MODE == 'quick' else ('light',) if MODE == 'light' else ('dark', 'light')
     sizes = ((1920, 1080),) if MODE != 'full' else ((1920, 1080), (1280, 800))
     scales = (1,) if MODE != 'full' else (1, 4)
