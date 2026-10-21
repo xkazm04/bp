@@ -69,6 +69,7 @@
     "check:timeview": "node scripts/check-timeview.ts",
     "check:stream": "node scripts/check-stream-status.mjs",
     "check:source-strip": "node scripts/lib/source.ts",
+    "check:mounts": "node scripts/lib/mounts.ts",
     "check:tokens": "node scripts/check-tokens.mjs",
     "check:theme-colors": "node scripts/check-theme-colors.ts",
     "check:engine-copy": "node scripts/check-engine-copy.ts",

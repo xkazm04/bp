@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stripComments as strip } from './lib/source.ts';
+import { exportedMethods } from './lib/mounts.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const API = path.join(ROOT, 'packages/core/src/server/api');
@@ -104,10 +105,14 @@ function auditMount(code, rel, methods) {
   if (m[2] !== want) bad.push(`re-exports '${m[2]}', not '${want}'`);
   const got = m[1].split(',').map((x) => x.trim()).sort().join(','), need = [...methods].sort().join(',');
   if (got !== need) bad.push(`mounts ${got || 'nothing'} but the core handler exports ${need || 'nothing'}`);
+  // Next's route-segment config is the one hand-typed field of a mount: every handler reads the filesystem (node:fs) and
+  // the routes read live state, so each mount must say exactly these two, once each.
+  const cfg = [...m[3].matchAll(/export\s+const\s+(runtime|dynamic)\s*=\s*'([\w-]+)'/g)].map((x) => x[1] + '=' + x[2]).sort().join(',');
+  if (cfg !== 'dynamic=force-dynamic,runtime=nodejs') bad.push(`route config is ${cfg || 'absent'}, not runtime = 'nodejs' + dynamic = 'force-dynamic'`);
   return bad;
 }
 const webFiles = fs.existsSync(WEB_API) ? walk(WEB_API) : [];
-const coreMethods = new Map(files.map((f) => [path.relative(API, f).split(path.sep).join('/'), handlers(fs.readFileSync(f, 'utf8')).map((h) => h.method)]));
+const coreMethods = new Map(files.map((f) => [path.relative(API, f).split(path.sep).join('/'), exportedMethods(fs.readFileSync(f, 'utf8'))]));
 let mounts = 0;
 for (const file of webFiles) {
   const rel = path.relative(WEB_API, file).split(path.sep).join('/');
@@ -116,13 +121,39 @@ for (const file of webFiles) {
   for (const b of auditMount(strip(fs.readFileSync(file, 'utf8')), rel, coreMethods.get(rel))) failures.push(`apps/web/src/app/api/${rel}: ${b}`);
 }
 for (const rel of coreMethods.keys()) if (!webFiles.some((f) => path.relative(WEB_API, f).split(path.sep).join('/') === rel)) failures.push(`packages/core/src/server/api/${rel}: not mounted by apps/web`);
+// The UI contract's API table (docs/blueprint-ui.md) is the third mirror of the route set: every `VERB /api/...` row must
+// name a live handler and every live handler must have a row. Path params are positional, so `[slug]` and `<slug>` both
+// normalise to `*`. Comments are blanked by the caller's source: only table rows (`| `VERB /api/...` |`) count.
+const routeKey = (verb, p) => `${verb} /api/${p.replace(/\[\.{0,3}[^\]]*\]|<[^>]*>/g, '*')}`;
+/** Problems of the doc's route rows against the live `rel path -> methods` map. */
+function auditDocRoutes(doc, live) {
+  const want = new Set(), got = new Set(), bad = [];
+  for (const [rel, ms] of live) for (const v of ms) want.add(routeKey(v, rel.replace(/\/?route\.ts$/, '')));
+  for (const m of doc.matchAll(/^\|\s*`(GET|POST|PATCH|PUT|DELETE) \/api\/?([^`\s]*)`/gm)) got.add(routeKey(m[1], m[2]));
+  for (const k of want) if (!got.has(k)) bad.push(`${k} is served but has no row in docs/blueprint-ui.md`);
+  for (const k of got) if (!want.has(k)) bad.push(`${k} has a row in docs/blueprint-ui.md but no live handler`);
+  return bad;
+}
+const DOC = path.join(ROOT, 'docs/blueprint-ui.md');
+const docText = fs.readFileSync(DOC, 'utf8');
+for (const b of auditDocRoutes(docText, coreMethods)) failures.push(b);
+{ // the doc gate must bite: a deleted row and an invented row are each caught, and a row count is asserted (not a vacuous empty set)
+  const rows = docText.split(/\r?\n/).filter((l) => /^\|\s*`(GET|POST|PATCH|PUT|DELETE) \/api/.test(l));
+  controls++; if (rows.length < 30) failures.push(`control: only ${rows.length} route rows parsed out of the doc`);
+  controls++; if (!auditDocRoutes(docText.replace(rows[0], ''), coreMethods).length) failures.push('control: a deleted doc row was not caught');
+  controls++; if (!auditDocRoutes(docText + '\n| `GET /api/nonesuch` | x |\n', coreMethods).length) failures.push('control: an invented doc row was not caught');
+}
 // Mount controls: an inline handler, a wrong path and a missing method must each be caught.
 {
   const rel = 'products/[slug]/scan/route.ts', spec = "'@bp/core/server/api/products/[slug]/scan/route'";
   for (const [what, code, methods] of [
     ['inline handler', `export async function GET(req: Request) { return new Response('x'); }\n`, ['GET']],
     ['wrong path', `export { GET } from '@bp/core/server/api/products/[slug]/scans/route';\n`, ['GET']],
-    ['missing method', `export { GET } from ${spec};\nexport const runtime = 'nodejs';\n`, ['GET', 'POST']],
+    ['missing method', `export { GET } from ${spec};\nexport const runtime = 'nodejs';\nexport const dynamic = 'force-dynamic';\n`, ['GET', 'POST']],
+    ['no directives', `export { GET } from ${spec};\n`, ['GET']],
+    ['runtime edge', `export { GET } from ${spec};\nexport const runtime = 'edge';\nexport const dynamic = 'force-dynamic';\n`, ['GET']],
+    ['force-static', `export { GET } from ${spec};\nexport const runtime = 'nodejs';\nexport const dynamic = 'force-static';\n`, ['GET']],
+    ['one directive only', `export { GET } from ${spec};\nexport const runtime = 'nodejs';\n`, ['GET']],
     ['extra code', `export { GET } from ${spec};\nconsole.log('side effect');\n`, ['GET']],
   ]) { controls++; if (!auditMount(code, rel, methods).length) failures.push(`control: mount "${what}" was not caught`); }
   controls++; if (auditMount(`export { GET } from ${spec};\n\nexport const runtime = 'nodejs';\nexport const dynamic = 'force-dynamic';\n`, rel, ['GET']).length) failures.push('control: a clean mount was refused');
