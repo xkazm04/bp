@@ -165,7 +165,7 @@ export function ReleaseView({ phone }: ReleaseViewProps) {
         {m.T.ctx.sim && !phone ? <SampleToggles sim={m.T.ctx.sim} /> : null}
         <Failures m={m} a={a} />
         <ActionsRow m={m} a={a} />
-        <JobLog jobs={m.jobs} version={ver} n={n} />
+        <JobLog jobs={m.jobs} version={ver} n={n} status={m.rel?.status} />
         <NotesPreview m={m} version={ver} />
         <History m={m} />
       </section>

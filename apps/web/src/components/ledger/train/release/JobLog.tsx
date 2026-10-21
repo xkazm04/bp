@@ -2,9 +2,11 @@
 // note is `bp-job:<job id>`, as the Agents panel finds a job's run), else the job's own log tail (a finish writes no run).
 // Monospace on the terminal surface, newest at the bottom; it follows the end only while the reader is at the bottom.
 // A job header line carries its outcome in the log's own colours (releaseState.ts JOB_TONE), not in the dim grey of its start.
+// With no job in the list: a draft (or no release) gets what Build will do; a release past draft gets why its log is
+// absent — the job registry is in memory and holds the latest 50 per product, so a built release can outlive its job.
 // Lines are memoised and keyed by activity id, so a new line appends and nothing is rebuilt.
 import { memo, useLayoutEffect, useMemo, useRef } from 'react';
-import type { ActivityKind } from '@bp/core/scan/types';
+import type { ActivityKind, ReleaseStatus } from '@bp/core/scan/types';
 import { isJobNote, jobLabel, type ScanJob } from '@bp/core/scan/jobs';
 import { useFindings } from '../../useLedger';
 import { JOB_TONE } from './releaseState';
@@ -17,7 +19,7 @@ const LogLine = memo(function LogLine({ at, text, tone }: Omit<Line, 'key'>) {
   return <div className={tone || undefined}>{at ? <i>{at.slice(11, 19)}</i> : null}{text}</div>;
 });
 
-export function JobLog({ jobs, version, n }: { jobs: readonly ScanJob[]; version?: string; n: number }) {
+export function JobLog({ jobs, version, n, status }: { jobs: readonly ScanJob[]; version?: string; n: number; status?: ReleaseStatus }) {
   const scan = useFindings().scan, runs = scan?.runs, activity = scan?.activity;
   const lines = useMemo(() => {
     const out: Line[] = [];
@@ -36,9 +38,12 @@ export function JobLog({ jobs, version, n }: { jobs: readonly ScanJob[]; version
   const onScroll = () => { const el = box.current; if (el) atEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 4; };
   return (
     <div ref={box} className="tr-rel-log" data-role="tr-rel-log" role="log" aria-live="polite" aria-label="Job log" tabIndex={0} onScroll={onScroll}>
-      {lines.length ? lines.map((l) => <LogLine key={l.key} at={l.at} text={l.text} tone={l.tone} />) : (
-        <div className="idle">No job yet. Build creates release/{version ?? '<version>'}, cherry-picks the {n} accepted commit{n === 1 ? '' : 's'}, runs the gates, writes the notes and opens a pull request. A conflicting item goes back to rework with its files as the note.</div>
-      )}
+      {lines.length ? lines.map((l) => <LogLine key={l.key} at={l.at} text={l.text} tone={l.tone} />)
+        : status !== undefined && status !== 'draft' ? (
+          <div className="idle">No job log for v{version ?? '?'} ({status}). The blueprint keeps its jobs in memory and only its latest 50 per product, so the job that built this release is gone from a restarted or busy session; the release itself is what the store says.</div>
+        ) : (
+          <div className="idle">No job yet. Build creates release/{version ?? '<version>'}, cherry-picks the {n} accepted commit{n === 1 ? '' : 's'}, runs the gates, writes the notes and opens a pull request. A conflicting item goes back to rework with its files as the note.</div>
+        )}
     </div>
   );
 }
