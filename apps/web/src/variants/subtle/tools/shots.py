@@ -66,6 +66,7 @@ with sync_playwright() as p:
         pg = b.new_page(viewport={'width': 390, 'height': 844}); logs = watch(pg)
         pg.goto(f'{BASE}/v/subtle?theme={theme}', wait_until='networkidle'); time.sleep(1.4)
         shot(pg, f'390x844-{theme}-phone')
+        pg.get_by_text(re.compile(r'^\s*plan\s*$', re.I)).first.click(); time.sleep(0.6); shot(pg, f'390x844-{theme}-phone-legend')
         floor_check(pg, f'390x844-{theme}-phone', logs, problems); pg.close()
     b.close()
 finish(problems)
