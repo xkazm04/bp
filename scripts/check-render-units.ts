@@ -181,6 +181,33 @@ const view = (o: Partial<View> = {}): View => ({ x: 1200, y: 900, k: 0.7, FW: 12
   expect(SC.deviceRes(1, 1, 2) === 2, 'static-cache: a tiny viewport still gets the capped dpr');
 }
 
+// ---------------------------------------------------------------- static-cache.ts: rasters per wheel gesture
+// Engine.draw re-rasters in the frame that check() says 'stale', so the bucket IS the raster budget of a
+// gesture. This drives a real StaticCache through a scripted wheel (the same loop as Engine.draw's, minus the
+// settle path) and counts. The count is the cost half of the 12 px floor trade: a baked 12 px label shows at
+// 12 / BUCKET px at the end of a bucket (8.0 at 1.5), and holding it at 12 would re-raster on every zoom-out
+// frame (one raster per frame) - priced in count here, in ms only by `python scripts/perf.py` (needs a server).
+{
+  const g = globalThis as Record<string, unknown>, keep = g.document;
+  g.document = { createElement: () => ({ width: 0, height: 0, getContext: () => fresh() }) };
+  const rasters = (factor: number, frames: number): number => {
+    const sc = new SC.StaticCache();
+    let c = { x: 0, y: 0, k: 1 };
+    const paint = () => { };
+    sc.render(c, 1, 1280, 800, 1, paint);
+    for (let i = 0; i < frames; i++) {
+      c = { x: 0, y: 0, k: c.k * factor };
+      if (sc.check(c, 1, 1280, 800) === 'stale') sc.render(c, 1, 1280, 800, 1, paint);
+    }
+    return sc.rasters - 1;
+  };
+  const out = rasters(0.93, 30), inn = rasters(1 / 0.93, 30);
+  g.document = keep;
+  expect(out >= 4 && out <= 6, `static-cache: a 30-frame wheel-out costs a handful of rasters under the x1.5 bucket (${out})`);
+  expect(inn >= 4 && inn <= 6, `static-cache: a 30-frame wheel-in costs the same under the x1.5 bucket (${inn})`);
+  expect(out < 30 / 4, `static-cache: the bucket spares at least three frames in four a raster during a wheel (${out} of 30)`);
+}
+
 // ---------------------------------------------------------------- simwatch.ts: the partial re-raster's culling
 {
   const { patch, patchMiss } = SW;
