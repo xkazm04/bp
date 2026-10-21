@@ -4,6 +4,14 @@ import type { Stage } from '@bp/core/data';
 import type { AgentState } from '@bp/core/model';
 import type { Theme } from '../theme';
 
+// Dash patterns, shared. setLineDash COPIES the array it is given, and both functions below run once per
+// tile per raster (528 tiles at ?scale=4), so a literal at a call site is one array per tile.
+const NO_DASH: number[] = [];
+const DASH_ROLLOUT = [2, 2];   // the rollout edge of a flagged tile
+const DASH_NOT_DRAWN = [1, 3]; // a feature not yet drawn
+const DASH_SPECIFIED = [5, 3]; // specified: proposed, not built
+const DASH_IDEA = [1.5, 2.5];  // an idea
+
 export function cloud(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   ctx.beginPath(); ctx.moveTo(x, y);
   const edge = (x0: number, y0: number, x1: number, y1: number) => {
@@ -84,8 +92,8 @@ export function stageFill(ctx: CanvasRenderingContext2D, th: Theme, st: Stage | 
   else if (st === 'flagged') {
     const p = now ? rolloutPct : 50;
     ctx.fillStyle = th.inkA(0.3); ctx.fillRect(x, y, (w * p) / 100, h);
-    ctx.strokeStyle = th.ink; ctx.lineWidth = 1; ctx.setLineDash([2, 2]);
-    ctx.beginPath(); ctx.moveTo(x + (w * p) / 100, y); ctx.lineTo(x + (w * p) / 100, y + h); ctx.stroke(); ctx.setLineDash([]);
+    ctx.strokeStyle = th.ink; ctx.lineWidth = 1; ctx.setLineDash(DASH_ROLLOUT);
+    ctx.beginPath(); ctx.moveTo(x + (w * p) / 100, y); ctx.lineTo(x + (w * p) / 100, y + h); ctx.stroke(); ctx.setLineDash(NO_DASH);
   } else if (st === 'in-review') { const p = th.pattern({ kind: 'cross', size: 5, color: th.inkA(0.55), lw: 0.8 }); if (p) { ctx.fillStyle = p; ctx.fillRect(x, y, w, h); } }
   else if (st === 'in-dev') {
     const p = th.pattern({ kind: 'diag', size: 7, color: th.inkA(0.6), lw: 1 }); if (p) { ctx.fillStyle = p; ctx.fillRect(x, y, w, h); }
@@ -98,10 +106,10 @@ export function stageFill(ctx: CanvasRenderingContext2D, th: Theme, st: Stage | 
 /** The outline style of a stage: solid when real, dashed when proposed, dotted when only an idea. */
 export function stageStroke(ctx: CanvasRenderingContext2D, th: Theme, st: Stage | null, a: number, lw: number) {
   ctx.strokeStyle = th.ink; ctx.lineWidth = lw;
-  if (!st) { ctx.globalAlpha = a * 0.35; ctx.setLineDash([1, 3]); }
-  else if (st === 'specified') ctx.setLineDash([5, 3]);
-  else if (st === 'idea') { ctx.setLineDash([1.5, 2.5]); ctx.globalAlpha = a * 0.8; }
-  else ctx.setLineDash([]);
+  if (!st) { ctx.globalAlpha = a * 0.35; ctx.setLineDash(DASH_NOT_DRAWN); }
+  else if (st === 'specified') ctx.setLineDash(DASH_SPECIFIED);
+  else if (st === 'idea') { ctx.setLineDash(DASH_IDEA); ctx.globalAlpha = a * 0.8; }
+  else ctx.setLineDash(NO_DASH);
 }
 
 export interface BarCounts { live: number; flagged: number; build: number; paper: number; none: number; dep: number }

@@ -15,6 +15,8 @@ import { patchMiss } from './simwatch';
 import { onView, rs, smooth, sxv, syv, type SRect, type View } from './view';
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+/** setLineDash copies its argument; paintTile and ribSeg run once per tile per raster, so this is not a literal. */
+const NO_DASH: number[] = [];
 const scratch: SRect = { x: 0, y: 0, w: 0, h: 0 };
 
 export function drawGrid(E: Engine, ctx: CanvasRenderingContext2D, v: View) {
@@ -214,7 +216,7 @@ function paintTile(E: Engine, ctx: CanvasRenderingContext2D, v: View, T: TileNod
   if (shape) ctx.restore();
   stageStroke(ctx, th, st, a, w < 30 * u ? 1 : 1.5);
   if (shape) ctx.stroke(shape); else ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-  ctx.setLineDash([]); ctx.globalAlpha = a;
+  ctx.setLineDash(NO_DASH); ctx.globalAlpha = a;
   if (S.blast === f.id) { ctx.strokeStyle = th.red; ctx.lineWidth = 3; ctx.strokeRect(x, y, w, h); }
   // trouble marks: general health crossfades into the dominant lens's health
   if (st && now) {
@@ -301,7 +303,7 @@ function ribSeg(E: Engine, ctx: CanvasRenderingContext2D, f: Feature, x: number,
   if (S.blast && (S.blast === f.id || E.blastSet?.has(f.id))) { ctx.fillStyle = th.alpha(th.red, 0.5); ctx.fillRect(x, y, w, h); }
   const Lv = E.live(f);
   stageFill(ctx, th, st, x, y, w, h, Lv.rolloutPct, Lv.progressPct, E.isNow);
-  if (!st || st === 'specified' || st === 'idea') { stageStroke(ctx, th, st, aa, 1); ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1); ctx.setLineDash([]); ctx.globalAlpha = aa; }
+  if (!st || st === 'specified' || st === 'idea') { stageStroke(ctx, th, st, aa, 1); ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1); ctx.setLineDash(NO_DASH); ctx.globalAlpha = aa; }
   if (st && E.isNow) {
     const D = E.mixS.topD, top = E.mixS.top, hg = f.health, hl = top ? healthUnder(f, top) : hg;
     if (hg === hl || D <= 0.001) healthMarks(E, ctx, D > 0.999 ? hl : hg, x, y, w, h, true, 1);

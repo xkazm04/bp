@@ -67,8 +67,17 @@ function route(E: Engine, ctx: CanvasRenderingContext2D, A: SRect, B: SRect, col
   ctx.strokeStyle = col; ctx.lineWidth = 1.6; ctx.setLineDash(DASH_C); ctx.lineDashOffset = dashOff(E, rev ? 1 : -1); ctx.stroke(); ctx.setLineDash(NO_DASH);
   ctx.fillStyle = col; ctx.beginPath(); ctx.arc(rev ? ax : ex, rev ? ay : ey, 2.6, 0, 7); ctx.fill();
 }
-// dash patterns, shared (setLineDash copies them)
-const DASH_C = [6, 4], NO_DASH: number[] = [];
+// Dash patterns, shared. setLineDash COPIES the array it is given, so a literal at a call site allocates one
+// array per call - and every function in this file runs once per frame, where the rule is that a frame
+// allocates nothing. check:render-units refuses a setLineDash literal anywhere under render/.
+const NO_DASH: number[] = [];
+const DASH_C = [6, 4];       // conduits, steering and answer previews, a standing order over one feature, the lasso
+const DASH_ZONE = [9, 5];    // a standing order's domain scope
+const DASH_TGT = [7, 4];     // the target set
+const DASH_TRAIL = [3, 4];   // an agent's recent move, and the lines to the agents a question holds
+const DASH_ARROW = [8, 5];   // the curve to an agent's next tile
+const DASH_RING = [3, 3];    // the ring on an agent a preview or an answer would move or free
+const DASH_GHOST = [4, 3];   // the ghost breach rivet an answer would add or clear
 
 function conduits(E: Engine, ctx: CanvasRenderingContext2D, v: View, id: string) {
   const f = E.M.P.F[id], T = E.M.L.TILE[id]; if (!f || !T) return;
@@ -140,7 +149,7 @@ export function drawOrderZones(E: Engine, ctx: CanvasRenderingContext2D, v: View
       for (const R of L.rooms) {
         if (!(R.d.base === sc.domain || R.d.id === sc.domain)) continue;
         const r = rs(v, R, sr1); if (!onView(v, r)) continue;
-        ctx.save(); ctx.strokeStyle = hi ? th.inkHi : th.alpha(th.amber, 0.8); ctx.lineWidth = hi ? 2.5 : 1.5; ctx.setLineDash([9, 5]); ctx.lineDashOffset = dashOff(E, -0.5);
+        ctx.save(); ctx.strokeStyle = hi ? th.inkHi : th.alpha(th.amber, 0.8); ctx.lineWidth = hi ? 2.5 : 1.5; ctx.setLineDash(DASH_ZONE); ctx.lineDashOffset = dashOff(E, -0.5);
         ctx.strokeRect(r.x + 5 * u, r.y + 5 * u, r.w - 10 * u, r.h - 10 * u); ctx.restore();
         if (hi) { ctx.fillStyle = th.alpha(th.amber, 0.08); ctx.fillRect(r.x, r.y, r.w, r.h); }
         if (r.w >= 230 * u && r.h >= 40 * u && (R.labelRight ?? 0) < r.x + r.w - 80 * u) {
@@ -154,7 +163,7 @@ export function drawOrderZones(E: Engine, ctx: CanvasRenderingContext2D, v: View
       const ids = sim.ordMap()[o.id] || {};
       for (const id in ids) {
         const fr = featRect(E, v, id, lod, sr1); if (!fr || !onView(v, fr, 0)) continue;
-        ctx.save(); ctx.strokeStyle = hi ? th.inkHi : th.alpha(th.amber, 0.8); ctx.lineWidth = hi ? 2.4 : 1.5; ctx.setLineDash([6, 4]); ctx.lineDashOffset = dashOff(E, -0.5);
+        ctx.save(); ctx.strokeStyle = hi ? th.inkHi : th.alpha(th.amber, 0.8); ctx.lineWidth = hi ? 2.4 : 1.5; ctx.setLineDash(DASH_C); ctx.lineDashOffset = dashOff(E, -0.5);
         ctx.strokeRect(fr.x - 2, fr.y - 2, fr.w + 4, fr.h + 4); ctx.restore();
         if (o.user && lod > 0.5 && fr.w >= 60 * u) {
           ctx.fillStyle = th.alpha(th.panel, 0.92); ctx.strokeStyle = th.amber; ctx.lineWidth = 1.3;
@@ -169,7 +178,7 @@ export function drawOrderZones(E: Engine, ctx: CanvasRenderingContext2D, v: View
 export function drawTargets(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod: number) {
   const S = E.S; if (!S.tgt.n) return;
   const th = E.th, u = E.U;
-  ctx.save(); ctx.strokeStyle = th.accent; ctx.lineWidth = 2; ctx.setLineDash([7, 4]); ctx.lineDashOffset = dashOff(E, -1);
+  ctx.save(); ctx.strokeStyle = th.accent; ctx.lineWidth = 2; ctx.setLineDash(DASH_TGT); ctx.lineDashOffset = dashOff(E, -1);
   for (const R of E.M.L.rooms) {
     let c = 0; for (const f of R.feats) if (S.tgt.ids[f.id]) c++;
     if (!c) continue;
@@ -241,7 +250,7 @@ export function drawAgents(E: Engine, ctx: CanvasRenderingContext2D, v: View, lo
   for (let i = 0; i < sim.agents.length; i++) {
     const p = pos[i]; if (!p || !p.ok || !p.trail || p.trail.fade <= 0) continue;
     const t = p.trail;
-    ctx.save(); ctx.globalAlpha = clamp(t.fade, 0, 1) * 0.85; ctx.strokeStyle = th.mint; ctx.lineWidth = 1.6; ctx.setLineDash([3, 4]); ctx.lineDashOffset = dashOff(E, -1);
+    ctx.save(); ctx.globalAlpha = clamp(t.fade, 0, 1) * 0.85; ctx.strokeStyle = th.mint; ctx.lineWidth = 1.6; ctx.setLineDash(DASH_TRAIL); ctx.lineDashOffset = dashOff(E, -1);
     ctx.beginPath();
     for (let s = 0; s <= 16; s++) { const e = ease((t.u * s) / 16), x = (1 - e) * (1 - e) * t.qx + 2 * (1 - e) * e * t.mx + e * e * t.px, y = (1 - e) * (1 - e) * t.qy + 2 * (1 - e) * e * t.my + e * e * t.py; if (s) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
     ctx.stroke(); ctx.restore();
@@ -359,7 +368,7 @@ function curveArrow(ctx: CanvasRenderingContext2D, x0: number, y0: number, x1: n
   const mx = (x0 + x1) / 2, my = (y0 + y1) / 2 - Math.hypot(x1 - x0, y1 - y0) * 0.16 - 8 * u;
   ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.quadraticCurveTo(mx, my, x1, y1); ctx.stroke();
   const an = Math.atan2(y1 - my, x1 - mx), hs = 8 * u;
-  ctx.setLineDash([]); ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(x1, y1);
+  ctx.setLineDash(NO_DASH); ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(x1, y1);
   ctx.lineTo(x1 - Math.cos(an - 0.45) * hs, y1 - Math.sin(an - 0.45) * hs); ctx.lineTo(x1 - Math.cos(an + 0.45) * hs, y1 - Math.sin(an + 0.45) * hs); ctx.closePath(); ctx.fill();
 }
 const ap: APos = { x: 0, y: 0, chip: false, r: { x: 0, y: 0, w: 0, h: 0 }, idx: 0, n: 1, moving: false, trail: null, ok: false };
@@ -370,17 +379,17 @@ export function drawPreview(E: Engine, ctx: CanvasRenderingContext2D, v: View, l
   ctx.save();
   for (const id in p.targets) {
     const fr = featRect(E, v, id, lod, sr1); if (!fr || !onView(v, fr, 0)) continue;
-    ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.lineDashOffset = dashOff(E, -1);
+    ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.setLineDash(DASH_C); ctx.lineDashOffset = dashOff(E, -1);
     ctx.fillStyle = th.alpha(col, p.kind === 'pause' ? 0.08 : 0.12); ctx.fillRect(fr.x, fr.y, fr.w, fr.h); ctx.strokeRect(fr.x - 2, fr.y - 2, fr.w + 4, fr.h + 4);
   }
   for (const m of p.moves) {
     const q = agentPos(E, v, m.a, lod, now, ap), tr = featRect(E, v, m.to, lod, sr2); if (!q || !tr) continue;
     const qx = q.x, qy = q.y;
-    ctx.setLineDash([8, 5]); ctx.lineDashOffset = dashOff(E, -1.4);
+    ctx.setLineDash(DASH_ARROW); ctx.lineDashOffset = dashOff(E, -1.4);
     curveArrow(ctx, qx, qy, tr.x + tr.w / 2, tr.y + tr.h / 2, th.alpha(th.mint, 0.95), 2, u);
-    ctx.setLineDash([3, 3]); ctx.strokeStyle = th.mint; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(qx, qy, 11 * u, 0, 6.2832); ctx.stroke();
+    ctx.setLineDash(DASH_RING); ctx.strokeStyle = th.mint; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(qx, qy, 11 * u, 0, 6.2832); ctx.stroke();
   }
-  for (const a of p.paused) { const q = agentPos(E, v, a, lod, now, ap); if (!q) continue; ctx.setLineDash([3, 3]); ctx.strokeStyle = col; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.arc(q.x, q.y, 11 * u, 0, 6.2832); ctx.stroke(); }
+  for (const a of p.paused) { const q = agentPos(E, v, a, lod, now, ap); if (!q) continue; ctx.setLineDash(DASH_RING); ctx.strokeStyle = col; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.arc(q.x, q.y, 11 * u, 0, 6.2832); ctx.stroke(); }
   ctx.restore();
 }
 
@@ -395,24 +404,24 @@ export function drawAnswer(E: Engine, ctx: CanvasRenderingContext2D, v: View, lo
   ctx.save();
   for (const id in p.targets) {
     const fr = featRect(E, v, id, lod, sr1); if (!fr || !onView(v, fr, 0)) continue;
-    ctx.strokeStyle = th.accent; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.lineDashOffset = dashOff(E, -1); ctx.strokeRect(fr.x - 3, fr.y - 3, fr.w + 6, fr.h + 6);
+    ctx.strokeStyle = th.accent; ctx.lineWidth = 2; ctx.setLineDash(DASH_C); ctx.lineDashOffset = dashOff(E, -1); ctx.strokeRect(fr.x - 3, fr.y - 3, fr.w + 6, fr.h + 6);
   }
   for (const m of p.moves) {
     const q = agentPos(E, v, m.a, lod, now, ap), tr = featRect(E, v, m.to, lod, sr2); if (!q || !tr) continue;
     const qx = q.x, qy = q.y;
-    ctx.setLineDash([8, 5]); ctx.lineDashOffset = dashOff(E, -1.4);
+    ctx.setLineDash(DASH_ARROW); ctx.lineDashOffset = dashOff(E, -1.4);
     curveArrow(ctx, qx, qy, tr.x + tr.w / 2, tr.y + tr.h / 2, th.alpha(th.mint, 0.95), 2, u);
-    ctx.setLineDash([3, 3]); ctx.strokeStyle = th.mint; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(qx, qy, 11 * u, 0, 6.2832); ctx.stroke();
+    ctx.setLineDash(DASH_RING); ctx.strokeStyle = th.mint; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(qx, qy, 11 * u, 0, 6.2832); ctx.stroke();
   }
-  if (p.freed) for (const a of p.freed) { const q = agentPos(E, v, a, lod, now, ap); if (!q) continue; ctx.setLineDash([3, 3]); ctx.strokeStyle = th.mint; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.arc(q.x, q.y, 11 * u, 0, 6.2832); ctx.stroke(); }
-  ctx.setLineDash([]); ctx.textAlign = 'center';
+  if (p.freed) for (const a of p.freed) { const q = agentPos(E, v, a, lod, now, ap); if (!q) continue; ctx.setLineDash(DASH_RING); ctx.strokeStyle = th.mint; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.arc(q.x, q.y, 11 * u, 0, 6.2832); ctx.stroke(); }
+  ctx.setLineDash(NO_DASH); ctx.textAlign = 'center';
   for (const m of p.marks) {
     const fr = featRect(E, v, m.f, lod, sr1); if (!fr || !onView(v, fr, 40)) continue;
     const col = m.tone === 'bad' ? bad : m.tone === 'ok' ? th.mintText : th.inkHi;
     if (m.ring) {   // a ghost breach rivet where drawBreaches puts the real one: dashed red = would breach, mint = would clear
       const big = lod > 0.5 && fr.w >= 40 * u, cx = big ? fr.x : fr.x + fr.w / 2, cy = big ? fr.y : fr.y - 7 * u;
-      ctx.strokeStyle = m.ring === 'add' ? th.red : th.mint; ctx.lineWidth = 2; ctx.setLineDash([4, 3]); ctx.lineDashOffset = dashOff(E, -1);
-      ctx.beginPath(); ctx.arc(cx, cy, (big ? 12 : 8) * u, 0, 6.2832); ctx.stroke(); ctx.setLineDash([]);
+      ctx.strokeStyle = m.ring === 'add' ? th.red : th.mint; ctx.lineWidth = 2; ctx.setLineDash(DASH_GHOST); ctx.lineDashOffset = dashOff(E, -1);
+      ctx.beginPath(); ctx.arc(cx, cy, (big ? 12 : 8) * u, 0, 6.2832); ctx.stroke(); ctx.setLineDash(NO_DASH);
     }
     drawText(ctx, m.text, fr.x + fr.w / 2, fr.y - (9 + m.row * 17) * u, font, col, th.halo);
   }
@@ -427,13 +436,13 @@ export function drawFocus(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod
   const u = E.U, th = E.th, fr = featRect(E, v, d.f, lod, sr1); if (!fr) return;
   const cx = fr.x + fr.w / 2, cy = fr.y + fr.h / 2;
   ctx.save();
-  for (const id of d.affects) { const a = featRect(E, v, id, lod, sr2); if (!a) continue; ctx.strokeStyle = th.amber; ctx.lineWidth = 2; ctx.setLineDash([5, 4]); ctx.lineDashOffset = dashOff(E, -1); ctx.strokeRect(a.x - 2, a.y - 2, a.w + 4, a.h + 4); }
-  ctx.setLineDash([]);
+  for (const id of d.affects) { const a = featRect(E, v, id, lod, sr2); if (!a) continue; ctx.strokeStyle = th.amber; ctx.lineWidth = 2; ctx.setLineDash(DASH_S); ctx.lineDashOffset = dashOff(E, -1); ctx.strokeRect(a.x - 2, a.y - 2, a.w + 4, a.h + 4); }
+  ctx.setLineDash(NO_DASH);
   for (const A of sim.agents) {
     if (A.wait !== d.id) continue;
     const q = agentPos(E, v, A, lod, now, ap); if (!q) continue;
-    ctx.strokeStyle = th.alpha(th.amber, 0.9); ctx.lineWidth = 1.6; ctx.setLineDash([3, 4]); ctx.lineDashOffset = dashOff(E, -1);
-    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(q.x, q.y); ctx.stroke(); ctx.setLineDash([]); ctx.beginPath(); ctx.arc(q.x, q.y, 10 * u, 0, 6.2832); ctx.stroke();
+    ctx.strokeStyle = th.alpha(th.amber, 0.9); ctx.lineWidth = 1.6; ctx.setLineDash(DASH_TRAIL); ctx.lineDashOffset = dashOff(E, -1);
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(q.x, q.y); ctx.stroke(); ctx.setLineDash(NO_DASH); ctx.beginPath(); ctx.arc(q.x, q.y, 10 * u, 0, 6.2832); ctx.stroke();
   }
   const pu = phase(E, now / 1100); ctx.strokeStyle = th.amber; ctx.globalAlpha = 1 - pu; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(cx, cy, (12 + pu * 26) * u, 0, 6.2832); ctx.stroke();
   ctx.restore();
@@ -475,13 +484,13 @@ export function drawReleases(E: Engine, ctx: CanvasRenderingContext2D, v: View, 
     const age = (now - d.ans.at) / 3200; if (age >= 1) continue;
     const fr = featRect(E, v, d.f, lod, sr1); if (!fr) continue;
     const cx = fr.x + fr.w / 2, cy = fr.y + fr.h / 2;
-    ctx.save(); ctx.globalAlpha = 1 - age; ctx.strokeStyle = th.mint; ctx.fillStyle = th.mint; ctx.lineWidth = 2; ctx.setLineDash([5, 4]); ctx.lineDashOffset = dashOff(E, -1.6);
+    ctx.save(); ctx.globalAlpha = 1 - age; ctx.strokeStyle = th.mint; ctx.fillStyle = th.mint; ctx.lineWidth = 2; ctx.setLineDash(DASH_S); ctx.lineDashOffset = dashOff(E, -1.6);
     for (const id of d.freedIds) {
       const A = sim.AG[id]; if (!A) continue;
       const q = agentPos(E, v, A, lod, now, ap); if (!q) continue;
-      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(q.x, q.y); ctx.stroke(); ctx.setLineDash([]); ctx.beginPath(); ctx.arc(q.x, q.y, (9 + (E.cam.reduced ? 0.5 : age) * 14) * u, 0, 6.2832); ctx.stroke(); ctx.setLineDash([5, 4]);
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(q.x, q.y); ctx.stroke(); ctx.setLineDash(NO_DASH); ctx.beginPath(); ctx.arc(q.x, q.y, (9 + (E.cam.reduced ? 0.5 : age) * 14) * u, 0, 6.2832); ctx.stroke(); ctx.setLineDash(DASH_S);
     }
-    ctx.setLineDash([]); ctx.textAlign = 'center'; drawText(ctx, '+' + d.freedIds.length + ' back to work', cx, cy - (18 + age * 22) * u, E.tx.f(13, 600, true), th.mintText, th.halo); ctx.textAlign = 'left';
+    ctx.setLineDash(NO_DASH); ctx.textAlign = 'center'; drawText(ctx, '+' + d.freedIds.length + ' back to work', cx, cy - (18 + age * 22) * u, E.tx.f(13, 600, true), th.mintText, th.halo); ctx.textAlign = 'left';
     ctx.restore();
   }
 }
@@ -489,5 +498,5 @@ export function drawReleases(E: Engine, ctx: CanvasRenderingContext2D, v: View, 
 export function drawLasso(E: Engine, ctx: CanvasRenderingContext2D) {
   const l = E.lasso; if (!l) return;
   const x = Math.min(l.x0, l.x1), y = Math.min(l.y0, l.y1), w = Math.abs(l.x1 - l.x0), h = Math.abs(l.y1 - l.y0), th = E.th;
-  ctx.save(); ctx.fillStyle = th.alpha(th.accent, 0.1); ctx.fillRect(x, y, w, h); ctx.strokeStyle = th.accent; ctx.lineWidth = 1.6; ctx.setLineDash([6, 4]); ctx.lineDashOffset = dashOff(E, -1); ctx.strokeRect(x + 0.5, y + 0.5, w, h); ctx.restore();
+  ctx.save(); ctx.fillStyle = th.alpha(th.accent, 0.1); ctx.fillRect(x, y, w, h); ctx.strokeStyle = th.accent; ctx.lineWidth = 1.6; ctx.setLineDash(DASH_C); ctx.lineDashOffset = dashOff(E, -1); ctx.strokeRect(x + 0.5, y + 0.5, w, h); ctx.restore();
 }

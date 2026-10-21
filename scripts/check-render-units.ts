@@ -377,6 +377,21 @@ function unionMembers(rel: string, name: string): string[] {
   }
 }
 
+// ---------------------------------------------------------------- source guard: no dash literal in the frame loop
+/** A source file with its // and block comments removed, so a file that TALKS about a rule cannot satisfy it. */
+function bare(rel: string): string {
+  const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+  return src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/.*$/gm, '$1');
+}
+{
+  const hits: string[] = [];
+  for (const f of fs.readdirSync(path.join(ROOT, R)).filter((n) => n.endsWith('.ts'))) {
+    bare(R + f).split(/\r?\n/).forEach((l, i) => { if (/setLineDash\(\s*\[/.test(l)) hits.push(R + f + ':' + (i + 1)); });
+  }
+  expect(hits.length === 0,
+    `render: setLineDash takes a module constant, never a fresh array literal - it copies its argument, and these functions run per frame or per tile (${hits.length} literal${hits.length === 1 ? '' : 's'}: ${hits.slice(0, 8).join(' ')})`);
+}
+
 // ---------------------------------------------------------------- report
 if (failures.length) {
   for (const f of failures) console.log('FAIL  ' + f);
