@@ -68,7 +68,9 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
   const T = m.tile ? E.M.L.TILE[m.tile] : undefined, last = m.chain[m.chain.length - 1];
   const at = last ? E.placeById(last.t, last.id) : null;
   const what = T ? T.f.name : opts.find((o) => o.kind !== 'feature' && o.kind !== 'all' && o.kind !== 'selection')?.scope.label ?? (at ? 'this place' : 'the whole plan');
-  const root = ctx.slug ? list?.find((p) => p.slug === ctx.slug)?.root ?? ctx.slug : null;
+  // the product's checkout, when the project list has answered. Never the slug: the warning below names a
+  // directory a scan is about to be let loose in, and a slug is not one.
+  const root = ctx.slug ? list?.find((p) => p.slug === ctx.slug)?.root ?? null : null;
 
   const close = (refocus = true) => { E.patch({ menu: null }); if (refocus) focusPlan(); };
   const run = (ids: string[], scope: ScanScope) => {
@@ -149,7 +151,7 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
         </div>
       ))}
       {(lensView ? !lensView.ok : off.length > 0) && <div className="sm-f">No scan method: {(lensView ? [lensView] : off).map((l) => l.name).join(', ')}. Add a manifest <code>scan</code> block to scan it.</div>}
-      {root && <div className="sm-f warn">Runs Claude Code in <code>{root}</code> with permissions skipped</div>}
+      {ctx.slug && <div className="sm-f warn">Runs Claude Code {root ? <>in <code>{root}</code></> : 'in this product’s checkout'} with permissions skipped</div>}
     </div>
   );
 }

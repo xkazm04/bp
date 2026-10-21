@@ -12,10 +12,13 @@
 //      extensions so Node loads it as-is, as client.ts and scan-views.ts already did)
 // Control: BP_SCAN_CLIENT_SEED=refusal restores the old one-line `REFUSAL[msg] ?? msg`, so assertion 1 is
 //      seen red on the exact strings the reader used to be shown.
+import path from 'node:path';
+import { readStripped } from './lib/source.ts';
 import { DEV_WORDS } from '../apps/web/src/engine/copy.ts';
 import type { ScanScope } from '../packages/core/src/scan/jobs.ts';
 import { refusalText as fixed } from '../apps/web/src/lib/scan/actions.ts';
 
+const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
 const SEED = process.env.BP_SCAN_CLIENT_SEED ?? '';
 const REFUSAL_SEED: Record<string, string> = {
   'unknown-lens': 'that lens is not enabled in the map',
@@ -105,7 +108,21 @@ for (const c of DRAWN) {
   if (c.views && r.views[0]) expect(r.views[0].status === c.job.status, `a job ${c.name}: its view does not carry the job's own status`, String(r.views[0].status));
 }
 
-// --------------------------------------------- 3. no request waits for an answer forever
+// --------------------------------------------- 3. the menu's permissions warning names a path or no path
+// ScanMenu's last footer is the only place the plan tells a reader that choosing a scan runs Claude Code with
+// --dangerously-skip-permissions in a directory on their disk. Its root came from the project list with
+// `?? ctx.slug`, so while that list was still loading - or after it failed, which it now also does on a
+// timeout - the warning named the SLUG as the directory. Two pins, in opposite directions: the root may not
+// fall back to the slug, and the warning may not be conditioned on the root, or it would vanish exactly when
+// the list has not answered and the reader knows least.
+const menu = readStripped(path.join(SRC, 'components/ScanMenu.tsx')).replace(/\r\n/g, '\n');
+expect(/const root = ctx\.slug \?/.test(menu), 'ScanMenu no longer resolves a root for the permissions warning (update this check)');
+expect(!/\?\.root \?\? ctx\.slug/.test(menu), 'ScanMenu falls back to the slug for the repository path again: a slug is not a directory');
+expect(/\{ctx\.slug && <div className="sm-f warn">/.test(menu), 'the permissions warning is conditioned on something other than there being a live product, so it can disappear while the project list loads');
+expect(/with permissions skipped/.test(menu), 'the permissions warning lost its words');
+expect(/checkout/.test(menu), 'the permissions warning has nothing to say when the root is not known yet');
+
+// --------------------------------------------- 4. no request waits for an answer forever
 // A server that accepted the connection and never answers (it died mid-write, or it is wedged on a locked
 // store) used to leave every one of these promises pending for the life of the page. Each helper is driven
 // against a fetch that honours its signal and otherwise never settles; AbortSignal.timeout is stubbed short so
