@@ -63,6 +63,7 @@
     "check:theme-colors": "node scripts/check-theme-colors.ts",
     "check:engine-copy": "node scripts/check-engine-copy.ts",
     "check:engine-store": "node scripts/check-engine-store.ts",
+    "check:engine-lines": "node --import @bp/core/register scripts/check-engine-lines.ts",
     "check:chrome": "node scripts/check-chrome-sizes.mjs",
     "check:legacy": "node scripts/check-legacy-unmeasured.mjs",
     "check:art": "node scripts/check-art.mjs",

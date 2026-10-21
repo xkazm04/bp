@@ -18,6 +18,7 @@ import { CALLOUT_PAD, baseHeight, overlayRight, railWidth } from './chrome';
 import { LEDGER_VARIANTS, initialState, type Crumb, type DockTab, type HoverInfo, type LedgerVariant, type UIState } from './state';
 import { readTheme, type Theme } from './theme';
 import { saveFailWords } from './copy';
+import { lineSiblings } from './lines';
 import { Text } from './text';
 import { StaticCache, deviceRes } from './render/static-cache';
 import { buildWallPaths, drawBuildings, drawDecor, drawGrid, drawLabels, featRect, resetOutlines } from './render/plan';
@@ -773,10 +774,15 @@ export class Engine {
   }
   toggleSelMode() { const on = !this.S.selMode; this.set({ selMode: on }); this.toast(on ? 'Target mode.' : 'Target mode off.', on ? 'Click or drag to select places. Press S again to leave.' : ''); }
   toggleMorning(on?: boolean) { this.set({ morning: on == null ? !this.S.morning : on }); }
-  /** The morning watch's places (features of line 1) targeted on the plan, on every product line. */
+  /**
+   * The morning watch's places targeted on the plan, on every product line. The incoming ids come from the
+   * watch's own events, so at `?scale=N` they carry whichever line's suffix that event was stamped with -
+   * not line one's (lineSiblings strips the one that is actually there).
+   */
   morningShow(fids: readonly string[], label: string) {
-    const ids: Record<string, 1> = {}, sc = this.M.P.scale, sf0 = sc > 1 ? '-' + LINES[0][1] : '';
-    for (const f of fids) { const base = sf0 && f.endsWith(sf0) ? f.slice(0, -sf0.length) : f; for (let b = 0; b < sc; b++) { const id = base + (sc > 1 ? '-' + LINES[b][1] : ''); if (this.M.P.F[id]) ids[id] = 1; } }
+    const ids: Record<string, 1> = {}, sc = this.M.P.scale;
+    const sfx = sc > 1 ? LINES.slice(0, sc).map(([, s]) => '-' + s) : [];
+    for (const f of fids) for (const id of lineSiblings(f, sfx)) if (this.M.P.F[id]) ids[id] = 1;
     this.set({ morning: false });
     if (!Object.keys(ids).length) return;
     this.setTarget(ids, label);
