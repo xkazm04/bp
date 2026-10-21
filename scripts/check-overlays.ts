@@ -140,7 +140,7 @@ const minPx = (sel: string) => {
   const h = /(?:^|[;\s])(?:min-height|height)\s*:\s*(\d+)px/.exec(m[1]);
   return { sel, px: h ? Number(h[1]) : NaN, found: true };
 };
-for (const sel of ['.bp-phone .theme-toggle', '.ph-who button', '.ph-dom button']) {
+for (const sel of ['.bp-phone .theme-toggle', '.ph-who button', '.ph-dom button', '.ph-detail .btn', '.ph-detail .dl button']) {
   const r = minPx(sel);
   expect(r.found && r.px >= 44, `blueprint.css ${sel}: touch target ${r.found ? (Number.isNaN(r.px) ? 'unset' : r.px + 'px') : 'rule not found'}, expected at least 44px`);
 }

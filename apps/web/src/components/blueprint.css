@@ -344,6 +344,7 @@ a.extchip:hover, a.extchip:focus-visible { text-decoration: underline; }
 .ph-detail .dgrid, .ph-detail .ev6, .ph-detail .deps { grid-template-columns: 1fr; }
 .ph-detail .evp.cur { grid-column: auto; }
 .ph-detail .acts li { grid-template-columns: 90px 1fr; } .ph-detail .acts li .a { display: none; }
+.ph-detail .btn { min-height: 44px; } .ph-detail .dl button { min-height: 44px; } /* thumbed here; min-height also outranks the blocked-by chip's inline height */
 .ph .foot { margin-top: 24px; }
 .ph-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .ph-brand { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 14px var(--sans); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-hi); }
