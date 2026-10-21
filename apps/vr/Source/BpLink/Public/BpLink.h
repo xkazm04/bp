@@ -14,8 +14,10 @@ struct BPLINK_API FBpLinkSnapshot
 	TArray<FBpAppStructureEvent> Events;
 	FString Rev;
 	/** The /stream answer: 200 for Kettle (apps/server hosts its sim, wolf-plan L5.2), 405 for a product with no live
-	 *  stream. WP3.1 consumes neither, so Rev was read once from the structure payload. */
-	int32 StreamStatus = 0;
+	 *  stream. WP3.1 consumes neither, so Rev was read once from the structure payload.
+	 *  -1 = never asked (the default, and what a failed structure read hands back); 0 = asked, no connection or no
+	 *  response; anything else is the HTTP status the server answered. */
+	int32 StreamStatus = -1;
 };
 
 /** The three requests the BpLink contract pins (apps/vr/README.md, scripts/check-bplink.mjs), against apps/server. */

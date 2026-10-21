@@ -104,6 +104,24 @@ export function copiedCaptures(code, name) {
   return out;
 }
 
+/**
+ * What FBpLinkSnapshot::StreamStatus can say, read off the C++: the value a snapshot starts with (the "never asked" state,
+ * which the structure-failure early return also hands back), the value the stream callback assigns when the request did not
+ * connect (the `: N` arm of its ternary), and the text of the warning branch that handles that value. The two numbers must
+ * differ and the branch must not claim the server "answered". `header` and `code` are stripCxx(text); `lit` is
+ * stripCxx(cppText, true), the same length as `code`. Fields are null when not found.
+ */
+export function streamStateReport(header, code, lit) {
+  const initial = /\bint32\s+StreamStatus\s*=\s*(-?\d+)/.exec(header)?.[1];
+  const noConnect = /StreamStatus\s*=[^;]*\?[^;]*:\s*(-?\d+)\s*;/.exec(code)?.[1];
+  let message = null;
+  for (const m of code.matchAll(/StreamStatus\s*==\s*(-?\d+)\s*\)\s*\{?\s*UE_LOG/g)) {
+    if (m[1] !== noConnect) continue;
+    message = /TEXT\("((?:[^"\\]|\\.)*)"\)/.exec(lit.slice(m.index, m.index + 400))?.[1] ?? null;
+  }
+  return { initial: initial === undefined ? null : Number(initial), noConnect: noConnect === undefined ? null : Number(noConnect), message };
+}
+
 const kdata = JSON.parse(fs.readFileSync(path.join(DATA, 'kettle.app-structure.json'), 'utf8'));
 const lines = (s) => s.split('\n').filter((l) => l.trim());
 const wantEvents = lines(fs.readFileSync(path.join(DATA, 'kettle.events.jsonl'), 'utf8'));
@@ -205,6 +223,19 @@ try {
     // capture list is what is read, and it is the thing that decides the copy.
     const copies = copiedCaptures(stripCxx(cppText), 'Snapshot');
     check('source: no BindLambda in BpLink.cpp copies Snapshot into its capture list (it is moved in)', copies.length === 0, `copied captures: ${copies.join(' | ')}`);
+
+    // StreamStatus must tell "never asked" (default, and the structure-failure early return) from "asked and nothing
+    // answered" (the stream request did not connect); one value for both made the log say the server "answered 0".
+    // Five outcomes reach a caller: structure failed, stream unreachable, 200, 405, any other status. They are told apart
+    // by StreamStatus alone when the first two differ.
+    const headerText = stripCxx(fs.readFileSync(path.join(ROOT, 'apps/vr/Source/BpLink/Public/BpLink.h'), 'utf8'));
+    const ss = streamStateReport(headerText, stripCxx(cppText), stripCxx(cppText, true));
+    const outcomes = [ss.initial, ss.noConnect, 200, 405, 'another status'];
+    const told = new Set(outcomes.filter((v) => v !== null)).size;
+    check(`source: StreamStatus tells ${outcomes.length} outcomes apart (never asked ${ss.initial}, no connection ${ss.noConnect}), ${told} distinct`,
+      ss.initial !== null && ss.noConnect !== null && told === outcomes.length, `initial=${ss.initial} noConnect=${ss.noConnect}`);
+    check('source: the warning for a stream that did not connect does not say the server "answered"',
+      ss.message !== null && !/answered/i.test(ss.message), ss.message === null ? 'no branch on the no-connection value' : ss.message);
 
     // The level names are the web's and the plan route's: structure.domains are ROOMS (13 here), and wings are the
     // WING_DEFS groups of domains (5 here). A log line that labels the domain count "wings" reports a number that is

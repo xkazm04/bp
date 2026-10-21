@@ -128,6 +128,11 @@ void FBpLinkClient::FetchProduct(const FString& Slug, TFunction<void(bool, const
 			{
 				UE_LOG(LogBpLink, Log, TEXT("BpLink: %s has no live stream (405); using rev %s read once from structure"), *Slug, *Snapshot.Rev);
 			}
+			else if (Snapshot.StreamStatus == 0)
+			{
+				// Asked, and nothing answered (-1 would be "never asked", which cannot reach this callback).
+				UE_LOG(LogBpLink, Warning, TEXT("BpLink: GET %s/stream did not connect; SSE is not read in WP3.1 and the one-time rev stands"), *Root);
+			}
 			else
 			{
 				// Neither pinned answer. Logged as a warning, and the one-time rev still stands.
