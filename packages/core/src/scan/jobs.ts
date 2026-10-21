@@ -78,12 +78,18 @@ export const MAX_RUNNING = 3, MAX_QUEUED = 16, MAX_PROPOSALS = 50;
 /** A glyph+line pair, as checkLensManifest's `taken` lists it (src/lib/scan/manifest-check.ts TakenLook). */
 export interface LensLook { glyph: string | { path: string }; line: string }
 
-/** The looks of the enabled lenses other than `id`: what a new lens may not repeat. Entries without a presentation are skipped. */
+/** Whether a stored glyph can be compared with another: a name, or a `{ path }`. A hand-edited map can hold neither,
+ *  and a look nobody can draw cannot be taken. */
+const drawable = (g: unknown): g is string | { path: string } =>
+  typeof g === 'string' || (!!g && typeof g === 'object' && typeof (g as { path?: unknown }).path === 'string');
+
+/** The looks of the enabled lenses other than `id`: what a new lens may not repeat. Entries without a presentation,
+ *  or whose glyph is neither a name nor a `{ path }`, are skipped. */
 export function takenLooks(entries: readonly Pick<LensEntry, 'id' | 'enabled' | 'manifest'>[], id: string): LensLook[] {
   const out: LensLook[] = [];
   for (const e of entries) {
     const p = e.enabled && e.id !== id ? e.manifest?.presentation : undefined;
-    if (p && p.glyph !== undefined && typeof p.line === 'string') out.push({ glyph: p.glyph, line: p.line });
+    if (p && drawable(p.glyph) && typeof p.line === 'string') out.push({ glyph: p.glyph, line: p.line });
   }
   return out;
 }

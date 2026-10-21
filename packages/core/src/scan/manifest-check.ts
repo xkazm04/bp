@@ -92,9 +92,14 @@ function pathProblem(d: string): string | null {
 }
 
 /** A glyph's identity for the look-collision rule: the name, or the path with its whitespace normalised (runs
- *  collapse to one space, none around a command letter or comma, where it never separates two numbers). */
-const glyphKey = (g: string | { path: string }): string =>
-  typeof g === 'string' ? `name:${g}` : `path:${g.path.trim().replace(/\s*([A-Za-z,])\s*/g, '$1').replace(/\s+/g, ' ')}`;
+ *  collapse to one space, none around a command letter or comma, where it never separates two numbers). A glyph
+ *  that is neither (a hand-edited map's `taken` entry) gets no identity, so it collides with nothing and never
+ *  throws out of a check whose contract is null-or-one-sentence. */
+const glyphKey = (g: unknown): string | null =>
+  typeof g === 'string' ? `name:${g}`
+    : g && typeof g === 'object' && typeof (g as { path?: unknown }).path === 'string'
+      ? `path:${(g as { path: string }).path.trim().replace(/\s*([A-Za-z,])\s*/g, '$1').replace(/\s+/g, ' ')}`
+      : null;
 
 // ------------------------------------------------------------------------------- the check
 /** A glyph+line pair another enabled lens of the product already draws. */
@@ -174,8 +179,8 @@ export function checkLensManifest(x: unknown, opts: CheckLensOptions): string | 
   if (p.measures !== undefined && (typeof p.measures !== 'string' || !keys.has(p.measures))) return 'presentation.measures must name a field';
   if (p.evidence !== undefined && (!Array.isArray(p.evidence) || p.evidence.some((k) => typeof k !== 'string' || !keys.has(k)))) return 'presentation.evidence must list field keys';
   // lenses differ by glyph and line only (spec 8.6), so two lenses drawing the same pair cannot be told apart
-  const look = glyphKey(g as string | { path: string });
-  if (opts.taken?.some((t) => t.line === p.line && glyphKey(t.glyph) === look)) {
+  const look = glyphKey(g);
+  if (look !== null && opts.taken?.some((t) => t.line === p.line && glyphKey(t.glyph) === look)) {
     return `lens look ${typeof g === 'string' ? g : 'custom path'} + ${p.line} is already drawn by another lens; pick another glyph or line`;
   }
 
