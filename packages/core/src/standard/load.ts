@@ -229,7 +229,7 @@ function variationsOf(v: unknown, at: string, warn: Warn): Variation[] {
     if (!isObj(x) || typeof x.slug !== 'string' || typeof x.name !== 'string' || typeof x.audience !== 'string') { warn(`${at}: variations[${i}] needs a slug, name and audience (strings); dropped`); return; }
     if (seen.has(x.slug)) { warn(`${at}: duplicate variation slug "${x.slug}"; the first one wins`); return; }
     seen.add(x.slug);
-    const o: Variation = { slug: x.slug, name: x.name, audience: x.audience, extends: strs(x.extends), params: strs(x.params) };
+    const o: Variation = { slug: x.slug, name: x.name, audience: x.audience, extends: list(x.extends, `${at}: variation "${x.slug}" extends`, warn), params: list(x.params, `${at}: variation "${x.slug}" params`, warn) };
     if (isStage(x.stage)) o.stage = x.stage; else if (x.stage !== undefined) warn(`${at}: variation "${x.slug}" has an unknown stage ${JSON.stringify(x.stage)}; ignored`);
     out.push(o);
   });
