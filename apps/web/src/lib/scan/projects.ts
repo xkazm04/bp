@@ -4,6 +4,7 @@
 import { useSyncExternalStore } from 'react';
 import type { ProductInfo } from '@bp/core/scan/types';
 import { REQUEST_TIMEOUT_MS } from './client.ts';
+import { causeWords } from './refusal.ts';
 
 /** `stale`: the open product was removed or got a new root; the running page still shows the old one until it reloads. */
 export type Stale = 'removed' | 'root' | null;
@@ -35,7 +36,7 @@ export function refreshProjects(fresh = false): Promise<ProductInfo[] | null> {
       if (my === seq) put({ list, loading: false, error: null });
       return list;
     } catch (e) {
-      if (my === seq) put({ loading: false, error: 'Could not read the project list: ' + (e as Error).message });
+      if (my === seq) put({ loading: false, error: 'Could not read the project list: ' + causeWords(e) });
       return null;
     } finally {
       if (inflight === p) inflight = null;
@@ -69,7 +70,7 @@ async function write(url: string, method: 'POST' | 'PATCH' | 'DELETE', body?: un
   });
   if (!r.ok) {
     const j = (await r.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(j?.error || 'HTTP ' + r.status);
+    throw Object.assign(new Error(j?.error || 'HTTP ' + r.status), { status: r.status });
   }
   await refreshProjects(true);
 }

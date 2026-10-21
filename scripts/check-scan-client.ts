@@ -74,6 +74,27 @@ for (const [code, words] of Object.entries(REFUSAL_SEED)) expect(refusalText(err
 expect(refusalText(err('that lens has no manifest scan block on disk', { status: 400 })) === 'that lens has no manifest scan block on disk', 'the route\'s own refusal text was discarded');
 expect(refusalText(err('Nothing to scan with: no live product and no sample sim', { status: 503 })).startsWith('Nothing to scan with'), 'actions.ts\' own 503 sentence was discarded');
 
+// --------------------------------------------- 1b. the project list's alert says the same things
+// `refreshProjects` built its own sentence from `(e as Error).message`, so ProjectsDialog's role="alert" and
+// the switcher's title read "Could not read the project list: Failed to fetch" - a third implementation of
+// the rule refusalText and saveFailWords already carry, and the one on the surface a reader reaches when
+// nothing else works. Both now come from refusal.ts' causeWords.
+const { causeWords } = await import('../apps/web/src/lib/scan/refusal.ts');
+for (const s of SHAPES) {
+  const text = 'Could not read the project list: ' + causeWords(s.e);
+  const dev = DEV_WORDS.filter((d) => text.includes(d));
+  expect(dev.length === 0, `the project list's alert for "${s.name}" shows a developer string (${dev.join(', ')})`, text);
+  expect(!text.includes('/api/'), `the project list's alert for "${s.name}" leaks an internal route URL`, text);
+}
+expect(/did not answer in time/.test(causeWords(err('x', { name: 'TimeoutError' }))), 'a timed-out list read does not say so');
+expect(!/may still run the scan/.test(causeWords(err('x', { name: 'TimeoutError' }))), 'the cause carries a scan-only remedy into every other surface');
+expect(causeWords(err('that root is not a directory', { status: 400 })) === 'that root is not a directory', 'the route\'s own refusal text was discarded');
+// every rejection this context throws carries a status, or causeWords cannot tell a refusal from a lost connection
+const projectsSrc = readStripped(path.join(SRC, 'lib/scan/projects.ts')).replace(/\r\n/g, '\n');
+expect(/throw Object\.assign\(new Error\(j\?\.error \|\| 'HTTP ' \+ r\.status\), \{ status: r\.status \}\)/.test(projectsSrc), 'a project write rejects with no status, so its cause reads as a lost connection');
+expect(/'Could not read the project list: ' \+ causeWords\(e\)/.test(projectsSrc), 'the project list builds its alert from something other than causeWords');
+expect(!/\(e as Error\)\.message/.test(projectsSrc), 'projects.ts puts an Error.message in front of a reader again');
+
 // --------------------------------------------- 2. a job that ended still reports it on the plan
 // scanViews draws a finished job's outline for LINGER_MS after it ended - all ticks for `done`, the bad colour
 // for `failed`. The end came from `Date.parse(j.ended_at ?? '')`, which is NaN when the job carries no end, so

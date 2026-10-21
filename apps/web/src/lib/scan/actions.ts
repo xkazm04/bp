@@ -118,35 +118,9 @@ export async function cancelJob(ctx: ScanCtx, id: string): Promise<ScanJob> {
   throw nowhere();
 }
 
-const REFUSAL: Record<string, string> = {
-  'unknown-lens': 'that lens is not enabled in the map',
-  'no-scan-method': 'that lens has no scan method (no built-in and no manifest scan block)',
-  'bad-scope': 'the scope names a place or feature the map does not have',
-  'queue-full': '16 scans are already queued',
-};
-/** A message that is the fetch implementation's words, not a refusal anyone wrote for a reader. */
-const developerWords = (m: string): boolean => !m || /^HTTP \d+$/.test(m) || /Failed to fetch|Load failed|NetworkError|ERR_[A-Z_]+|^\[object |^undefined$|^null$|^NaN$/.test(m);
-/**
- * A refusal in words for a toast. Every shape the routes, the sim and `fetch` itself can reject with gets a
- * sentence; the reader is never shown the fetch implementation's own words. The branches mirror
- * `saveFailWords` (engine/copy.ts), which answers the same shapes for the canvas:
- *  - a known error code -> the explanation above;
- *  - a timed-out or aborted request -> said as a timeout, since the scan may still have been queued;
- *  - no status at all -> the request never left the browser, so the cause is the connection;
- *  - status 0 -> the product answered in a shape the client could not read (client.ts marks those 0);
- *  - any other status -> the route's own refusal text, which is the most useful sentence there is, or its
- *    HTTP status in words when it sent none.
- */
-export function refusalText(e: unknown): string {
-  const err = (e ?? {}) as { status?: unknown; message?: unknown; name?: unknown };
-  const msg = typeof err.message === 'string' ? err.message : '';
-  if (REFUSAL[msg]) return REFUSAL[msg];
-  if (err.name === 'TimeoutError' || err.name === 'AbortError') return 'the product did not answer in time (it may still run the scan); check the blueprint server, then look at the Agents list';
-  const status = typeof err.status === 'number' ? err.status : undefined;
-  if (status === undefined) return 'the request never reached the product: check that the blueprint server is running, then try again';
-  if (status === 0) return 'the product answered something the blueprint could not read';
-  return developerWords(msg) ? `the product refused it (HTTP ${status})` : msg;
-}
+/** A refusal in words for a toast, and the words of a failed request's cause: refusal.ts owns both, so the
+ *  project list's alert (projects.ts) says the same things about the same shapes. */
+export { causeWords, refusalText } from './refusal.ts';
 
 // ------------------------------------------------------------------------------------------- waves
 // Findings grouped into packages (each with a model and an effort) and dispatched as a whole (waves.ts). A live product
