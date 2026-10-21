@@ -1,0 +1,82 @@
+// Writes apps/vr/ArtSource/light-table-frame/manifest.json from the measured scores (build_frame.bpy -> score.json,
+// render_frame.bpy -> framing.json) and the files on disk. Gate results are derived from the measurements, never typed in.
+//   node scripts/art/light-table-frame/write_manifest.mjs <work-dir>
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+const DIR = path.join(ROOT, 'apps', 'vr', 'ArtSource', 'light-table-frame');
+const [work] = process.argv.slice(2);
+const S = JSON.parse(fs.readFileSync(path.join(work, 'score.json'), 'utf8'));
+const F = JSON.parse(fs.readFileSync(path.join(work, 'framing.json'), 'utf8'));
+const DATE = new Date().toISOString().slice(0, 10);
+const sha = (p) => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+const gate = (pass, note) => ({ pass, note, date: DATE });
+const files = (dir, base = dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+  const p = path.join(dir, e.name);
+  return e.isDirectory() ? files(p, base) : e.name === 'manifest.json' ? [] : [path.relative(base, p).split(path.sep).join('/')];
+}).sort();
+const all = files(DIR);
+const sums = Object.fromEntries(all.map((f) => [f, sha(path.join(DIR, f))]));
+const MB10 = 10 * 1024 * 1024;
+const oversize = all.filter((f) => fs.statSync(path.join(DIR, f)).size >= MB10);
+const sizes = Object.fromEntries(all.map((f) => [f, fs.statSync(path.join(DIR, f)).size]));
+const cm = (v) => Math.round(v * 1e4) / 100;
+const [sx, sy, sz] = S.bounds_m.size_xyz;
+const tex = all.filter((f) => f.startsWith('textures/'));
+const framingOk = Object.values(F).every((v) => v.pass);
+const minMargin = Math.min(...Object.values(F).map((v) => v.min_margin));
+const glowSlot = S.materials.find((m) => m.includes('glow'));
+const glassSlot = S.materials.find((m) => m.includes('glass'));
+
+const meshOk = S.mesh_objects === 1 && S.floaters === 0 && S.components >= 1 && S.glass_faces_up;
+const scaleOk = Math.abs(S.edge_thickness_m - 0.03) < 1e-4 && Math.abs(S.floor_z_m) < 1e-4 && Math.abs(S.pivot_xy_centre_m[0]) < 1e-4
+  && Math.abs(S.pivot_xy_centre_m[1]) < 1e-4 && Math.abs(S.top_surface_z_m - 0.95) < 1e-4;
+const finishOk = S.uv_sets === 1 && tex.length === 6 && oversize.length === 0 && Boolean(glowSlot) && Boolean(glassSlot)
+  && S.faces_per_slot[glowSlot] > 0 && framingOk;
+const budgetOk = S.tris <= S.budget_tris;
+
+const M = {
+  id: 'light-table-frame',
+  class: 'prop-hero',
+  budget_tris: S.budget_tris,
+  tris: S.tris,
+  tris_total: S.tris,
+  materials: [
+    'frame_wood (warm wood #B07A45, PBR textures)',
+    'frame_aluminium (brushed aluminium #C9CDD2, PBR textures)',
+    `${glowSlot} (emissive edge strip #F4FAFF, strength 1.0; UE drives the intensity)`,
+    `${glassSlot} (placeholder plane, base #BFD8F0, alpha 0.15: UE replaces it with the procedural glass and paper)`,
+  ],
+  bounds_cm: { x: cm(sx), y: cm(sz), z: cm(sy), note: 'x,z ground plane, y up (glTF); length 120, depth 80, height 95' },
+  meshes: {
+    'light-table-frame': {
+      tris: S.tris, vertices: S.vertices, components: S.components, floaters: S.floaters, open_edges: S.open_edges,
+      faces_per_slot: S.faces_per_slot,
+    },
+  },
+  uv_sets: S.uv_sets,
+  pivot: 'floor centre (x and y at the middle of the 1.20 x 0.80 m outline, z = 0 at the feet); the table stands +Y in the GLB (glTF Y-up), +Z in Blender',
+  scale_reasoning: 'Table top surface at 95 cm (wolf-plan W3.2 starts there; R4 lets the owner change it). Outline 1.20 x 0.80 m, a drafting light table. The top is 3 cm thick at the outer edge because lamp-agent\'s manifest says its C-clamp grips a 3 cm table edge; the apron under the top is inset 6 cm so the clamp finds a bare edge. The rim is 5 cm wide; the glass opening is 1.10 x 0.70 m with a 2 cm ledge, so the glass panel is 1.08 x 0.68 m, recessed 1.3 cm below the rim top, and a 1 cm emissive strip shows between the glass and the rim.',
+  textures: 'frame_wood_* and frame_aluminium_*: 512 x 512 seamless PNG base colour, normal and ORM (R occlusion, G roughness, B metal), authored with numpy in scripts/art/light-table-frame/build_frame.bpy. Box-projected UVs in world metres, 1 uv unit = 0.4 m, repeating. Flat colour and grain, no baked light. The glow and glass slots are flat colours with no texture.',
+  generator: 'procedural Blender',
+  blender: 'Blender 5.2.2, scripts/art/light-table-frame/build_frame.bpy (build and score), render_frame.bpy (evidence and framing check), write_manifest.mjs',
+  licence: 'own procedural work; no generated input, no Leonardo, ComfyUI or TRELLIS',
+  lynx_commit: null,
+  lynx_commit_note: 'null until the merge sets it',
+  regenerate: 'blender -b -P scripts/art/light-table-frame/build_frame.bpy -- <repo-root> <work>; blender -b -P scripts/art/light-table-frame/render_frame.bpy -- <repo-root> <work>; node scripts/art/light-table-frame/write_manifest.mjs <work>',
+  framing: F,
+  file_bytes: sizes,
+  sha256: sums,
+  gates: {
+    input: gate(true, 'procedural, no generated input (plan.md P4: the glass and paper stay procedural; operator pick: props parametric). Reference: art-breakdown.md row 1 (backlit glass table, bright white edge light, emissive frame strip, the glass blue comes from the paper material, not a tint), reference-sheet.md warm wood and brushed aluminium.'),
+    mesh_acceptance: gate(meshOk, `re-imported from final.glb: ${S.mesh_objects} mesh object, ${S.vertices} vertices, ${S.tris} tris, ${S.components} connected components (rim, ledge, strip, glass, apron, legs, feet, rails), ${S.floaters} floaters (a floater is a component whose bounding box touches no other), ${S.open_edges} open edges (the single-sided glass plane); glass plane faces up: ${S.glass_faces_up}, ${S.glass_size_m[0] * 100} x ${S.glass_size_m[1] * 100} cm at z ${S.glass_z_m} m; glass in its own slot ${glassSlot}`),
+    scale: gate(scaleOk, `${cm(sx)} x ${cm(sy)} x ${cm(sz)} cm (x, y, z up) re-imported from final.glb; top surface z = ${S.top_surface_z_m} m; edge thickness ${S.edge_thickness_m * 100} cm at the outer front edge (target 3.0, the lamp-agent C-clamp grip); pivot: floor centre, x,y centre ${S.pivot_xy_centre_m.join(', ')}, feet at z = ${S.floor_z_m} m. Assumption: 95 cm top and 1.20 x 0.80 m outline are Lynx choices; the UE world scale of the table (W3.2) is still to be confirmed on Wolf.`),
+    finishing: gate(finishOk, `one UV set (${S.uv_sets}); ${tex.length} PBR PNGs (wood and aluminium: base colour, normal, ORM, 512 px, the largest ${Math.max(...tex.map((f) => sizes[f]))} bytes), every file under 10 MB (largest ${Math.max(...Object.values(sizes))} bytes); ${S.materials.length} material slots (${S.materials.join(', ')}); emissive slot ${glowSlot} on ${S.faces_per_slot[glowSlot]} faces; evidence framing check passes on ${Object.keys(F).length} images (min silhouette margin ${minMargin} of the image, rule 0.03); evidence rendered with Cycles on the CPU. Not claimed: any UE import.`),
+    poly_budget: gate(budgetOk, `${S.tris} tris against ${S.budget_tris} (${Math.round((S.tris / S.budget_tris) * 100)}%)`),
+  },
+};
+fs.writeFileSync(path.join(DIR, 'manifest.json'), JSON.stringify(M, null, 2) + '\n');
+console.log('gates', Object.fromEntries(Object.entries(M.gates).map(([k, v]) => [k, v.pass])));

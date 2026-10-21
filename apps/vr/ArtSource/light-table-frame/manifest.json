@@ -1,0 +1,180 @@
+{
+  "id": "light-table-frame",
+  "class": "prop-hero",
+  "budget_tris": 10000,
+  "tris": 594,
+  "tris_total": 594,
+  "materials": [
+    "frame_wood (warm wood #B07A45, PBR textures)",
+    "frame_aluminium (brushed aluminium #C9CDD2, PBR textures)",
+    "frame_edge_glow (emissive edge strip #F4FAFF, strength 1.0; UE drives the intensity)",
+    "frame_glass_placeholder_REPLACE_IN_UE (placeholder plane, base #BFD8F0, alpha 0.15: UE replaces it with the procedural glass and paper)"
+  ],
+  "bounds_cm": {
+    "x": 120,
+    "y": 95,
+    "z": 80,
+    "note": "x,z ground plane, y up (glTF); length 120, depth 80, height 95"
+  },
+  "meshes": {
+    "light-table-frame": {
+      "tris": 594,
+      "vertices": 312,
+      "components": 14,
+      "floaters": 0,
+      "open_edges": 2,
+      "faces_per_slot": {
+        "frame_wood": 272,
+        "frame_aluminium": 272,
+        "frame_edge_glow": 48,
+        "frame_glass_placeholder_REPLACE_IN_UE": 2
+      }
+    }
+  },
+  "uv_sets": 1,
+  "pivot": "floor centre (x and y at the middle of the 1.20 x 0.80 m outline, z = 0 at the feet); the table stands +Y in the GLB (glTF Y-up), +Z in Blender",
+  "scale_reasoning": "Table top surface at 95 cm (wolf-plan W3.2 starts there; R4 lets the owner change it). Outline 1.20 x 0.80 m, a drafting light table. The top is 3 cm thick at the outer edge because lamp-agent's manifest says its C-clamp grips a 3 cm table edge; the apron under the top is inset 6 cm so the clamp finds a bare edge. The rim is 5 cm wide; the glass opening is 1.10 x 0.70 m with a 2 cm ledge, so the glass panel is 1.08 x 0.68 m, recessed 1.3 cm below the rim top, and a 1 cm emissive strip shows between the glass and the rim.",
+  "textures": "frame_wood_* and frame_aluminium_*: 512 x 512 seamless PNG base colour, normal and ORM (R occlusion, G roughness, B metal), authored with numpy in scripts/art/light-table-frame/build_frame.bpy. Box-projected UVs in world metres, 1 uv unit = 0.4 m, repeating. Flat colour and grain, no baked light. The glow and glass slots are flat colours with no texture.",
+  "generator": "procedural Blender",
+  "blender": "Blender 5.2.2, scripts/art/light-table-frame/build_frame.bpy (build and score), render_frame.bpy (evidence and framing check), write_manifest.mjs",
+  "licence": "own procedural work; no generated input, no Leonardo, ComfyUI or TRELLIS",
+  "lynx_commit": null,
+  "lynx_commit_note": "null until the merge sets it",
+  "regenerate": "blender -b -P scripts/art/light-table-frame/build_frame.bpy -- <repo-root> <work>; blender -b -P scripts/art/light-table-frame/render_frame.bpy -- <repo-root> <work>; node scripts/art/light-table-frame/write_manifest.mjs <work>",
+  "framing": {
+    "turn0": {
+      "resolution": [
+        480,
+        480
+      ],
+      "fov_deg": 33.5,
+      "azimuth_deg": 20,
+      "elevation_deg": 22,
+      "margins": {
+        "left": 0.0604,
+        "right": 0.1083,
+        "bottom": 0.1167,
+        "top": 0.1729
+      },
+      "min_margin": 0.0604,
+      "pass": true
+    },
+    "turn1": {
+      "resolution": [
+        480,
+        480
+      ],
+      "fov_deg": 35.5,
+      "azimuth_deg": 110,
+      "elevation_deg": 22,
+      "margins": {
+        "left": 0.125,
+        "right": 0.2167,
+        "bottom": 0.0958,
+        "top": 0.1833
+      },
+      "min_margin": 0.0958,
+      "pass": true
+    },
+    "turn2": {
+      "resolution": [
+        480,
+        480
+      ],
+      "fov_deg": 33.5,
+      "azimuth_deg": 200,
+      "elevation_deg": 22,
+      "margins": {
+        "left": 0.0604,
+        "right": 0.1083,
+        "bottom": 0.1167,
+        "top": 0.1729
+      },
+      "min_margin": 0.0604,
+      "pass": true
+    },
+    "turn3": {
+      "resolution": [
+        480,
+        480
+      ],
+      "fov_deg": 35.5,
+      "azimuth_deg": 290,
+      "elevation_deg": 22,
+      "margins": {
+        "left": 0.125,
+        "right": 0.2167,
+        "bottom": 0.0958,
+        "top": 0.1833
+      },
+      "min_margin": 0.0958,
+      "pass": true
+    },
+    "table-view": {
+      "resolution": [
+        640,
+        480
+      ],
+      "fov_deg": 35.5,
+      "azimuth_deg": 0,
+      "elevation_deg": 45,
+      "margins": {
+        "left": 0.1062,
+        "right": 0.1062,
+        "bottom": 0.1104,
+        "top": 0.0604
+      },
+      "min_margin": 0.0604,
+      "pass": true
+    }
+  },
+  "file_bytes": {
+    "evidence/table-view.jpg": 59478,
+    "evidence/turnaround.jpg": 160243,
+    "final.glb": 218876,
+    "textures/frame_aluminium_basecolor.png": 5962,
+    "textures/frame_aluminium_normal.png": 5441,
+    "textures/frame_aluminium_orm.png": 5330,
+    "textures/frame_wood_basecolor.png": 130559,
+    "textures/frame_wood_normal.png": 24855,
+    "textures/frame_wood_orm.png": 5246
+  },
+  "sha256": {
+    "evidence/table-view.jpg": "d5ac935f8d0c8968801e943bb1823b44063ff6efd9d034fd84f635bc5191627f",
+    "evidence/turnaround.jpg": "94500db2714ad5e28efc078890b35d6f3e17d9dcaffae343968bcf2b157facff",
+    "final.glb": "b03b553b938514e3c2c399cd6c7164309541ed922ec69d0f60ab7ed4a6e1d33b",
+    "textures/frame_aluminium_basecolor.png": "4059deaec36c1ae03d80d8eac14cf760119a95ea6c3d4953ca43f8e0e2b6184c",
+    "textures/frame_aluminium_normal.png": "ab7be2c9e5b03fe2de75bb1ef214da57c0b0eba16b989306cb640cc221c745bf",
+    "textures/frame_aluminium_orm.png": "37590fd1d865a38180bb550c5cf50bdd231f7ed04e6ae9555bd63a1380223412",
+    "textures/frame_wood_basecolor.png": "9dfec91b9ea8169af37a0bdb26abf3d3f7be3c0cd3da606dbad679867f9cff1b",
+    "textures/frame_wood_normal.png": "48f0ffb7794c95dd5088c9a1b4f6eacb83b527163c223726300b08d2e9c8a86c",
+    "textures/frame_wood_orm.png": "b500f9fe0f6d6d8e6163cfb26d6c3be7413cc2ecf532535ee9a9031faf460f08"
+  },
+  "gates": {
+    "input": {
+      "pass": true,
+      "note": "procedural, no generated input (plan.md P4: the glass and paper stay procedural; operator pick: props parametric). Reference: art-breakdown.md row 1 (backlit glass table, bright white edge light, emissive frame strip, the glass blue comes from the paper material, not a tint), reference-sheet.md warm wood and brushed aluminium.",
+      "date": "2026-10-21"
+    },
+    "mesh_acceptance": {
+      "pass": true,
+      "note": "re-imported from final.glb: 1 mesh object, 312 vertices, 594 tris, 14 connected components (rim, ledge, strip, glass, apron, legs, feet, rails), 0 floaters (a floater is a component whose bounding box touches no other), 2 open edges (the single-sided glass plane); glass plane faces up: true, 108 x 68 cm at z 0.937 m; glass in its own slot frame_glass_placeholder_REPLACE_IN_UE",
+      "date": "2026-10-21"
+    },
+    "scale": {
+      "pass": true,
+      "note": "120 x 80 x 95 cm (x, y, z up) re-imported from final.glb; top surface z = 0.95 m; edge thickness 3 cm at the outer front edge (target 3.0, the lamp-agent C-clamp grip); pivot: floor centre, x,y centre 0, 0, feet at z = 0 m. Assumption: 95 cm top and 1.20 x 0.80 m outline are Lynx choices; the UE world scale of the table (W3.2) is still to be confirmed on Wolf.",
+      "date": "2026-10-21"
+    },
+    "finishing": {
+      "pass": true,
+      "note": "one UV set (1); 6 PBR PNGs (wood and aluminium: base colour, normal, ORM, 512 px, the largest 130559 bytes), every file under 10 MB (largest 218876 bytes); 4 material slots (frame_wood, frame_aluminium, frame_edge_glow, frame_glass_placeholder_REPLACE_IN_UE); emissive slot frame_edge_glow on 48 faces; evidence framing check passes on 5 images (min silhouette margin 0.0604 of the image, rule 0.03); evidence rendered with Cycles on the CPU. Not claimed: any UE import.",
+      "date": "2026-10-21"
+    },
+    "poly_budget": {
+      "pass": true,
+      "note": "594 tris against 10000 (6%)",
+      "date": "2026-10-21"
+    }
+  }
+}
