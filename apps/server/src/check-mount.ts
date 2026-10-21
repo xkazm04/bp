@@ -5,6 +5,9 @@
 //   errors    a handler that throws answers 500 without the exception's message (that goes to stderr only)
 //   late      a stream a handler answers after its client has gone is cancelled (its timer stopped), not piped to the
 //             closed socket and left running
+//   verbs     HEAD runs the route's GET and sends no body; OPTIONS answers 204 with Allow; both name HEAD and OPTIONS
+//             in Allow, and a verb the route does not serve still answers 405 — this is the pair with the Next mount,
+//             which implements both verbs itself (apps/web/src/app/api/**, the thin re-exports)
 //   peer      a request from a non-loopback socket answers 403 whatever its Host (sent through this machine's own LAN
 //             address, when it has one; the server listens on 0.0.0.0 here, as `--host 0.0.0.0` would)
 // And one source rule over the real mounted tree (no server needed):
@@ -40,10 +43,10 @@ const server = http.createServer(listener(await loadRoutes(api)));
 await new Promise<void>((r) => server.listen(0, '0.0.0.0', r));
 const port = (server.address() as net.AddressInfo).port;
 
-/** One raw HTTP/1.1 exchange (so a test can send what http.request refuses to), status and body. */
-const raw = (text: string, addr = '127.0.0.1'): Promise<{ status: number; body: string }> => new Promise((resolve) => {
+/** One raw HTTP/1.1 exchange (so a test can send what http.request refuses to): status, head and body. */
+const raw = (text: string, addr = '127.0.0.1'): Promise<{ status: number; head: string; body: string }> => new Promise((resolve) => {
   let out = '';
-  const done = () => resolve({ status: Number(/^HTTP\/1\.1 (\d+)/.exec(out)?.[1] ?? 0), body: out.split('\r\n\r\n').slice(1).join('\r\n\r\n') });
+  const done = () => resolve({ status: Number(/^HTTP\/1\.1 (\d+)/.exec(out)?.[1] ?? 0), head: out.split('\r\n\r\n')[0], body: out.split('\r\n\r\n').slice(1).join('\r\n\r\n') });
   const s = net.connect(port, addr, () => s.write(text));
   s.on('data', (d) => (out += d));
   s.on('error', done);
@@ -51,6 +54,9 @@ const raw = (text: string, addr = '127.0.0.1'): Promise<{ status: number; body: 
   setTimeout(() => s.destroy(), 3000);
 });
 const get = (p: string, host = 'localhost', addr = '127.0.0.1') => raw(`GET ${p} HTTP/1.1\r\nHost: ${host}\r\nConnection: close\r\n\r\n`, addr);
+const verb = (m: string, p: string) => raw(`${m} ${p} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n`);
+/** One response header out of the head, '' when it was not sent. */
+const headerOf = (head: string, name: string): string => (new RegExp(`^${name}:(.*)$`, 'im').exec(head)?.[1] ?? '').trim();
 const alive = async () => (await get('/api/echo/ok')).status === 200 && !crashes.length;
 
 try {
@@ -91,6 +97,21 @@ try {
   const boom = await get('/api/boom');
   check('errors: a throwing handler answers 500', boom.status === 500, `${boom.status}`);
   check('errors: the 500 body does not carry the exception message', !boom.body.includes('secret.json'), boom.body.slice(0, 80));
+
+  // verbs: HEAD and OPTIONS, which no handler module exports and both mounts must answer the same way.
+  const head = await verb('HEAD', '/api/echo/ok');
+  check('verbs: HEAD runs the route GET and answers its status', head.status === 200, `${head.status}`);
+  check('verbs: HEAD sends no body', head.body === '', JSON.stringify(head.body.slice(0, 60)));
+  // a 405 also answers JSON, so the discriminator is that it would carry Allow and the GET response does not
+  check("verbs: HEAD sends the GET response's headers, not a refusal's", /application\/json/.test(headerOf(head.head, 'content-type')) && !headerOf(head.head, 'allow'), `content-type=${headerOf(head.head, 'content-type')} allow=${headerOf(head.head, 'allow') || 'none'}`);
+  const opts = await verb('OPTIONS', '/api/echo/ok');
+  check('verbs: OPTIONS answers 204', opts.status === 204, `${opts.status}`);
+  check('verbs: OPTIONS Allow carries GET, HEAD and OPTIONS', ['GET', 'HEAD', 'OPTIONS'].every((m) => headerOf(opts.head, 'allow').split(',').map((s) => s.trim()).includes(m)), headerOf(opts.head, 'allow') || 'no Allow header');
+  const put = await verb('PUT', '/api/echo/ok');
+  check('verbs: a verb the route does not serve still answers 405, Allow naming the three it does', put.status === 405 && headerOf(put.head, 'allow') === 'GET, HEAD, OPTIONS', `${put.status} allow=${headerOf(put.head, 'allow')}`);
+  const headBoom = await verb('HEAD', '/api/boom');
+  check('verbs: HEAD on a throwing handler answers 500 with no body', headBoom.status === 500 && headBoom.body === '', `${headBoom.status} ${JSON.stringify(headBoom.body.slice(0, 40))}`);
+  check('verbs: the server keeps serving after them', await alive(), `${crashes.length} uncaught`);
 
   const lan = Object.values(os.networkInterfaces()).flat().find((i) => i && i.family === 'IPv4' && !i.internal)?.address;
   if (lan) {

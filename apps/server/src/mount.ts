@@ -3,6 +3,8 @@
 // segment, `[name]` one segment, `[...name]` the rest. Each request becomes a web Request (Host and headers as sent,
 // X-Forwarded-For set from the socket as Next does, the body read whole up to MAX_BODY, a signal that aborts when the
 // client goes away) and the handler's Response streams back unbuffered, so the SSE stream behaves as it does under Next.
+// Two verbs no handler exports are answered here, as Next answers them, so a client sees the same API on either mount:
+// HEAD runs the route's GET and sends its status and headers with the body dropped, and OPTIONS answers 204 with Allow.
 import fs from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
@@ -13,6 +15,9 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 export const MAX_BODY = 4 * 1024 * 1024;
 export const METHODS = ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'] as const;
 type Method = (typeof METHODS)[number];
+/** What a request may ask for. HEAD and OPTIONS are never exported by a handler module: Next answers them from the
+ *  GET handler and from the route's verb list, and so does this mount, so the two agree. */
+type Verb = Method | 'HEAD' | 'OPTIONS';
 type Params = Record<string, string | string[]>;
 type Handler = (req: Request, ctx: { params: Promise<Params> }) => Response | Promise<Response>;
 
@@ -114,9 +119,15 @@ export function listener(routes: Route[]) {
       return json(res, 400, { error: 'malformed request URL or Host' });
     }
     if (!route || !params) return json(res, 404, { error: `no route ${url.pathname}` });
-    const method = (req.method ?? 'GET').toUpperCase() as Method;
-    const handler = route.handlers[method];
-    if (!handler) return json(res, 405, { error: `${method} not allowed on ${route.path}` }, { allow: route.methods.join(', ') });
+    const method = (req.method ?? 'GET').toUpperCase() as Verb;
+    // The verbs this route actually serves, as Next reports them: its exported ones, plus HEAD when it exports GET,
+    // plus OPTIONS. `route.methods` stays the exported set, so the printed route table and check:server do not move.
+    const allow = [...route.methods, ...(route.handlers.GET ? ['HEAD'] : []), 'OPTIONS'].join(', ');
+    // Next implements OPTIONS itself: 204 and the Allow header, no handler involved.
+    if (method === 'OPTIONS') { res.writeHead(204, { allow }); res.end(); return; }
+    // ...and HEAD from the GET handler, with the body dropped (below, where the body would be piped).
+    const handler = method === 'HEAD' ? route.handlers.GET : route.handlers[method];
+    if (!handler) return json(res, 405, { error: `${method} not allowed on ${route.path}` }, { allow });
 
     const headers = new Headers();
     for (const [k, v] of Object.entries(req.headers)) if (v !== undefined) for (const one of Array.isArray(v) ? v : [v]) headers.append(k, one);
@@ -124,7 +135,7 @@ export function listener(routes: Route[]) {
     headers.set('x-forwarded-for', headers.has('x-forwarded-for') ? `${headers.get('x-forwarded-for')}, ${remote}` : remote);
     const abort = new AbortController();
     res.on('close', () => { if (!res.writableFinished) abort.abort(); });
-    const hasBody = method !== 'GET' && (req.headers['content-length'] !== undefined ? req.headers['content-length'] !== '0' : req.headers['transfer-encoding'] !== undefined);
+    const hasBody = method !== 'GET' && method !== 'HEAD' && (req.headers['content-length'] !== undefined ? req.headers['content-length'] !== '0' : req.headers['transfer-encoding'] !== undefined);
     const reqBody = hasBody ? await readBody(req) : null;
     if (reqBody === TOO_LARGE) return tooLarge(res);
     if (hasBody && !reqBody) { res.destroy(); return; }
@@ -141,7 +152,7 @@ export function listener(routes: Route[]) {
     const out: Record<string, string | string[]> = {};
     response.headers.forEach((v, k) => { out[k] = k === 'set-cookie' ? response.headers.getSetCookie() : v; });
     res.writeHead(response.status, response.statusText, out);
-    if (!response.body || method === ('HEAD' as Method)) { res.end(); return; }
+    if (!response.body || method === 'HEAD') { void response.body?.cancel().catch(() => {}); res.end(); return; }
     res.flushHeaders();
     const body = Readable.fromWeb(response.body as import('node:stream/web').ReadableStream<Uint8Array>);
     res.on('close', () => body.destroy());
