@@ -527,12 +527,9 @@ if (isMain) {
     const wireTs = wireSource(ROOT);
     const handTs = norm(fs.readFileSync(path.join(ROOT, HAND_TS), 'utf8'));
     const parity = compare(fresh.ts, handTs, wireTs);
-    // Two known divergences, each an out-of-scope fix in packages/core/src/server/plan-projection.ts:16-18, which
-    // types a tile's health as `string` where plan-1.schema.json:79-80 says it is one of five values. They are
-    // listed rather than tolerated: an entry that is NO LONGER a divergence fails below, so the list cannot outlive
-    // its fix, and anything not on it fails as usual.
-    const KNOWN = ['Plan.tiles.health: an enum in the schema (good | watch | bad | unmeasured | na), string in types.ts',
-      'Plan.tiles.general: an enum in the schema (good | watch | bad | unmeasured | na), string in types.ts'];
+    // Allowed divergences: none. (plan-projection.ts now types a tile's health as Health, so the plan's two enum
+    // fields agree.) An entry listed here that stops being a divergence fails below, so the list cannot outlive its fix.
+    const KNOWN = [];
     const unexpected = parity.problems.filter((p) => !KNOWN.includes(p));
     console.log(`${unexpected.length ? 'FAIL' : 'ok  '}  ${HAND_TS} agrees with the generated types on every field, its optionality and its string enum, and packages/core/src/scan/ on the scan wire types and the plan (${parity.shapes} shapes and ${parity.enums} enum fields from the structure, event, lens manifest, snapshot, job, proposal, wave and plan; ${KNOWN.length} known divergences allowed)${unexpected.length ? ': ' + unexpected.slice(0, 8).join('; ') : ''}`);
     if (unexpected.length) failed++;
