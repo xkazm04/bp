@@ -4,7 +4,9 @@
 //   (a) lens.ts headlineSummary: a place's headline is computed over the features that carry the field, so it
 //       names that denominator whenever it is smaller than the place, and never when the place is whole;
 //   (b) aggregates.ts stageParts: the parts account for every feature of the place, so a feature being retired
-//       or one with no stage recorded on the date shown is visible instead of silently missing.
+//       or one with no stage recorded on the date shown is visible instead of silently missing;
+//   (c) sim.ts scopeWords: an order scoped to a place the map does not have reads as its slug, in every branch
+//       (the domain branch already did; its milestone sibling threw), and a known place still reads as its name.
 // Run: node scripts/check-model.ts   (Node's type stripping; scripts/overlays-loader.mjs transpiles src/** on the fly)
 // Control: BP_MODEL_MUTATE='[["lens.ts"," (\x27 + n + \x27 of \x27","(\x27 + n + \x27 OF \x27"]]' rewrites source text as
 // it loads ([file suffix, find, replace] literals), so an assertion can be seen red on a seeded defect.
@@ -79,6 +81,23 @@ const PLACES: { id: string; feats: Any[] }[] = [...M.L.rooms, ...M.L.wings, ...M
   expect(gaps > 20, `(b) the sample must exercise the arm: only ${gaps} place readings carry a retired or not-yet-drawn feature`);
   expect(!bad.length, `(b) ${bad.length} of ${seen} stage summaries leave a feature out:\n      ` + bad.slice(0, 4).join('\n      '));
   console.log(`stageParts  ${seen} place summaries / ${gaps} with a retired or not-yet-drawn feature / ${bad.length} unaccounted`);
+}
+
+// ---------------------------------------------------------------- (c) an order scoped to a place the map lacks
+{
+  const sim = M.sim;
+  const read = (scope: Any): string => {
+    try { return sim.scopeWords({ id: 'O-99', by: 'mara', lens: 'general', scope, text: '', since: '', n: 0, vf: [], user: true }); }
+    catch (e) { return 'THREW: ' + (e as Error).message; }
+  };
+  for (const key of ['milestone', 'domain'] as const) {
+    const slug = 'no-such-' + key, w = read({ [key]: slug });
+    expect(w === slug, `(c) an order scoped to an unknown ${key} must read as its slug, not ${JSON.stringify(w)}`);
+  }
+  const ms = P.MS[Object.keys(P.MS)[0]], dm = P.base.domains[0];
+  expect(read({ milestone: ms.id }) === ms.name + ' (' + ms.id + ')', `(c) a known milestone still reads as its name: ${JSON.stringify(read({ milestone: ms.id }))}`);
+  expect(read({ domain: dm.id }) === dm.name, `(c) a known domain still reads as its name: ${JSON.stringify(read({ domain: dm.id }))}`);
+  console.log(`scopeWords  unknown milestone -> ${JSON.stringify(read({ milestone: 'no-such-milestone' }))} / known -> ${JSON.stringify(read({ milestone: ms.id }))}`);
 }
 
 if (failures.length) {

@@ -432,7 +432,8 @@ export class SwarmSim {
     const sc = o.scope || {}, P = this.P;
     if (sc.all) return 'Whole product';
     if (sc.domain) { const d = P.base.domains.find((x) => x.id === sc.domain); return d ? d.name : sc.domain; }
-    if (sc.milestone) return P.MS[sc.milestone].name + ' (' + sc.milestone + ')';
+    // every branch reads as its own slug when the map does not have that place (the domain branch always did)
+    if (sc.milestone) { const m = P.MS[sc.milestone]; return m ? m.name + ' (' + sc.milestone + ')' : sc.milestone; }
     if (sc.surface) return 'Everything touching the ' + sc.surface;
     if (sc.feats) return sc.label || 'Targeted places';
     return '';
