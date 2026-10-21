@@ -322,6 +322,18 @@ const PLACES: { id: string; feats: Any[] }[] = [...M.L.rooms, ...M.L.wings, ...M
   console.log(`watch words ${WATCH_KINDS.length} worded / ${replay.length} replay kinds / ${mapKinds.length} map kinds / ${watched.length} reaching the watch / 0 mute`);
 }
 
+// ---------------------------------------------------------------- (j) a shot nobody reported on is not a clean shot
+{
+  const { shotErrors, shotErrorsReported } = await impCore('src/model/live.ts');
+  const none = {}, noField = { report: {} }, zero = { report: { consoleErrors: 0 } }, listZero = { report: { consoleErrors: [] } };
+  const three = { report: { consoleErrors: 3 } }, list = { report: { consoleErrors: ['a', 'b'] } };
+  expect(shotErrorsReported(none) === null && shotErrorsReported(noField) === null, `(j) a shot with no report, or a report with no console field, must read null: ${shotErrorsReported(none)} / ${shotErrorsReported(noField)}`);
+  expect(shotErrorsReported(zero) === 0 && shotErrorsReported(listZero) === 0, `(j) a measured zero must read 0, not null: ${shotErrorsReported(zero)} / ${shotErrorsReported(listZero)}`);
+  expect(shotErrorsReported(three) === 3 && shotErrorsReported(list) === 2, `(j) a count and a list both read as their size: ${shotErrorsReported(three)} / ${shotErrorsReported(list)}`);
+  expect([none, noField, zero, listZero, three, list].every((s) => shotErrors(s) === (shotErrorsReported(s) ?? 0)), '(j) shotErrors stays the 0-fallback of shotErrorsReported');
+  console.log('shot errors: absent / measured-zero / measured told apart');
+}
+
 if (failures.length) {
   console.log(`\ncheck-model: ${failures.length} failed, ${held} held`);
   for (const f of failures) console.log('FAIL  ' + f);
