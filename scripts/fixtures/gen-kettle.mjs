@@ -467,7 +467,12 @@ for (const f of features) {
   // ----- business lens
   const value = { P0: ri(4, 5), P1: ri(3, 5), P2: ri(2, 4), P3: ri(1, 3) }[f.priority];
   const requests = f.kind === 'customer' || f.kind === 'business' ? ri(0, live ? 6 : 11) : ri(0, 3);
-  const adoption = live ? Math.round((f.kind === 'platform' ? 100 : ri(18, 96))) : s === 'flagged' ? null : null;
+  // Only a live feature has an adoption figure. Everything else gets null - "not measured" - and the standard's
+  // producer rule omits a null rather than writing it (scripts/sample-facets.ts scalars()), so the facet simply
+  // has no adoptionPct. This USED to read `: s === 'flagged' ? null : null`, a conditional evaluated 74 times
+  // (12 flagged, 62 other) with one outcome; a flagged feature behind a partial rollout genuinely has no
+  // measured adoption, and the two that can say something about usage say it in `usageNote` from a story below.
+  const adoption = live ? (f.kind === 'platform' ? 100 : ri(18, 96)) : null;
   f.business = {
     value, // 1..5
     confidence: live ? 'measured' : pastStage(f, 'specified') ? pick(['validated', 'validated', 'hypothesis']) : 'hypothesis',
@@ -661,7 +666,8 @@ for (const f of features) {
   }
   if (s === 'in-review') ev(ri(0, 4), 'review', f, 'warden', pick(['Review agent: 2 comments, changes requested', 'Review agent: approved, awaiting human', 'Review agent: test gaps flagged']));
   if (s === 'flagged' || s === 'live') {
-    if (chance(s === 'flagged' ? 0.9 : 0.35)) ev(ri(0, 13), 'deploy', f, 'tender', 'Deployed to production');
+    // the release in the text is the row's own date, so it is written once, here, where `at` is chosen
+    if (chance(s === 'flagged' ? 0.9 : 0.35)) { const n = ri(0, 13); ev(n, 'deploy', f, 'tender', `Deployed to production (release ${day(n).replaceAll('-', '.')})`); }
     if (s === 'flagged') ev(ri(0, 13), 'flag', f, pick(['tender', 'dev', 'priya']), `Rollout set to ${f.operations.flag.rolloutPct}%`);
   }
   if (f.operations.incidents30d) ev(ri(3, 12), 'incident', f, 'priya', `Incident opened: ${pick(['elevated errors', 'latency spike', 'job backlog'])}`, { severity: f.operations.incidents30d > 1 ? 'SEV2' : 'SEV3' });
@@ -679,7 +685,6 @@ for (const f of features) {
 // fails here naming the row rather than quietly rewriting it.
 const late = activity.filter((a) => a.at > product_asOf);
 if (late.length) throw new Error(`${late.length} activity rows are dated after the as-of moment ${product_asOf}, first ${late[0].type} on ${late[0].feature} at ${late[0].at}`);
-for (const a of activity) if (a.type === 'deploy') a.text = `Deployed to production (release ${a.at.slice(0, 10).replaceAll('-', '.')})`;
 activity.sort((a, b) => (a.at < b.at ? 1 : -1));
 
 // ---------- weekly snapshots from history ----------
