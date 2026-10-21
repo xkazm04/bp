@@ -254,6 +254,14 @@ try {
   ]);
   check('selection refusals: empty, 201 features, an unknown slug, an id, no label -> 400 bad-scope',
     selBad.map((c) => c.status + ':' + c.body.error).join() === Array(5).fill('400:bad-scope').join(), selBad.map((c) => c.status + ':' + c.body.error).join());
+  // the cap judges the stored (deduped) list, the same one "is it empty" reads: duplicates never count toward 200
+  const dupA = await call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'development', scope: sel(Array(201).fill('a')) });
+  const dupB = await call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'development', scope: sel([...many.slice(0, 200), many[0], many[199]]) });
+  const dupC = await call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'development', scope: sel([...many.slice(0, 201), many[0]]) });
+  check('selection: 201 copies of one feature -> 202, stored as one feature (the cap reads the deduped list)', dupA.status === 202 && dupA.body.scope.features.join() === 'a', dupA.status + ' ' + JSON.stringify(dupA.body).slice(0, 200));
+  check('selection: 200 distinct features plus 2 duplicates (202 raw) -> 202, stored as 200', dupB.status === 202 && dupB.body.scope.features.length === 200, dupB.status + ' ' + JSON.stringify(dupB.body.scope?.features?.length));
+  check('selection: 201 DISTINCT features stay refused even with duplicates on top (the guard still bites)', dupC.status === 400 && dupC.body.error === 'bad-scope', dupC.status + ' ' + dupC.body.error);
+  for (const r of [dupA, dupB]) if (r.status === 202) J.cancel('prod', r.body.id);
   const g = await call(scans.GET, '/x', 'GET', { slug: 'prod' });
   check('GET scans lists the job', g.status === 200 && g.body.some((j: ScanJob) => j.id === s202.body.id));
   const del = await route('products/[slug]/scans/[job]/route.ts');

@@ -27,7 +27,7 @@ function parseScope(x: unknown, features: { has(f: string): boolean }): ScanScop
   if (!Array.isArray(x.features) || x.features.length > 2000 || x.features.some((f) => typeof f !== 'string' || !SAFE_ID.test(f) || !features.has(f))) return null;
   const feats = [...new Set(x.features as string[])];
   if (kind === 'all') return x.id === undefined && !feats.length ? { kind, label: x.label.trim(), features: [] } : null;
-  if (kind === 'selection') return x.id === undefined && feats.length && x.features.length <= MAX_SELECTION ? { kind, label: x.label.trim(), features: feats } : null;
+  if (kind === 'selection') return x.id === undefined && feats.length && feats.length <= MAX_SELECTION ? { kind, label: x.label.trim(), features: feats } : null;
   if (typeof x.id !== 'string' || !SAFE_ID.test(x.id) || !feats.length) return null;
   return { kind, id: x.id, label: x.label.trim(), features: feats };
 }
