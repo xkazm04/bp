@@ -213,7 +213,8 @@ const operations: LensChannel = {
     }, (m) => {
       // L0/L1: a gauge line along the segment's foot, as long as the rollout
       const { ctx, tile: t } = m, op = bl(m.f).operations;
-      if (op.environment === 'none') return;
+      // an environment this lens knows, as on the fixtures: 'none' and an unmeasured facet get no gauge
+      if (!ENVS[op.environment]) return;
       const pc = op.environment === 'production' ? (op.flag ? m.live.rolloutPct / 100 : 1) : 0.3, bh = Math.max(2, Math.min(3 * t.u, t.h * 0.16));
       ctx.fillStyle = m.accent;
       if (op.environment === 'production') ctx.fillRect(t.x + 1, t.y + t.h - bh - 1, (t.w - 2) * pc, bh);

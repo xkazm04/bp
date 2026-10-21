@@ -8,7 +8,8 @@ import type { Feature } from '@bp/core/data';
 import { bl, isBuiltinLens, type BuiltinLens } from '../base/legacy';
 import { DefaultLensPanel, hmark } from '@/components/sheet/LensPanel';
 import type { SheetPanelProps } from '../types';
-import { ICONS, iconFor, type IconId } from './icons';
+import { ICONS, dialNeedle, iconFor, type IconId } from './icons';
+import { CROP } from './shapes';
 
 export function LensIcon({ id, size = 18, title }: { id: IconId; size?: number; title?: string }) {
   const d: { s: string; f?: string } = ICONS[id];
@@ -30,7 +31,9 @@ function Edges({ lens, f, rollout }: { lens: BuiltinLens; f: Feature; rollout: n
   switch (lens) {
     case 'operations': {
       const op = bl(f).operations;
-      if (op.environment === 'none') return null;
+      // only an environment the canvas draws a needle for gets a gauge here: 'none', and an unmeasured or
+      // not-applicable facet (bl gives ''), have no rollout to report and must not read as a quarter of one
+      if (dialNeedle(f, rollout) == null) return null;
       const pc = op.environment === 'production' ? (op.flag ? rollout : 100) : op.environment === 'staging' ? 50 : 25;
       return <span className={'shp-gauge' + (op.environment === 'production' ? '' : ' dotted')} style={{ '--p': pc / 100 } as CSSProperties} />;
     }
@@ -40,8 +43,11 @@ function Edges({ lens, f, rollout }: { lens: BuiltinLens; f: Feature; rollout: n
       const q = bl(f).quality, n = Math.min(q.e2eTests, 12), pass = q.e2eTests ? Math.round((n * q.e2ePassing) / q.e2eTests) : 0;
       return <span className="shp-comb">{Array.from({ length: n }, (_, i) => <i key={i} className={i < pass ? 'on' : q.status === 'failing' ? 'bad' : ''} />)}</span>;
     }
-    case 'design':
-      return bl(f).design.status === 'none' || bl(f).design.status === 'n/a' ? null : <span className={'shp-crops' + (bl(f).design.status === 'sketch' || bl(f).design.status === 'wireframe' ? ' dashed' : '')}><i /><i /><i /><i /></span>;
+    case 'design': {
+      // the statuses shapes.ts draws crops for, read from that table: an unmeasured facet gets none here too
+      const st = bl(f).design.status;
+      return CROP[st] ? <span className={'shp-crops' + (st === 'sketch' || st === 'wireframe' ? ' dashed' : '')}><i /><i /><i /><i /></span> : null;
+    }
     default: return null;
   }
 }

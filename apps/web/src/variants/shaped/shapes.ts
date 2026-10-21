@@ -188,7 +188,9 @@ export function edgeComb(ctx: CanvasRenderingContext2D, t: TileGeom, f: Feature,
 }
 
 // ----------------------------------------------------------------------- design: artboard + crops
-const CROP: Record<string, number> = { sketch: 0.42, wireframe: 0.6, 'hi-fi': 0.8, implemented: 1, polished: 1 };
+/** Crop length by design status; a status that is not here ('none', 'n/a', an unmeasured facet) gets no
+ *  crop marks at all. Panel.tsx reads it too, so the sheet's crops and the tile's crops cannot drift. */
+export const CROP: Record<string, number> = { sketch: 0.42, wireframe: 0.6, 'hi-fi': 0.8, implemented: 1, polished: 1 };
 export function boardGeom(t: TileGeom, d: number) {
   const { X, Y, W, H } = box(t);
   return { X, Y, W, H, m: d * Math.min(H * 0.08, 4.6 * t.u) };
