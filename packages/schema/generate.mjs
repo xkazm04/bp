@@ -472,6 +472,30 @@ if (isMain) {
   const outputs = [[OUT_TS, fresh.ts], [OUT_UE, fresh.ue], [OUT_FIX, fresh.fix]];
   if (process.argv.includes('--check')) {
     let failed = 0;
+    // ROOTS is hand-written; the directory is the ground truth. A schema file added to schema/ and not listed there
+    // is generated into nothing and validated by nobody, and every other check still reads green - so the list is
+    // reconciled with the directory rather than trusted.
+    const onDisk = fs.readdirSync(SCHEMA_DIR).filter((f) => f.endsWith('.schema.json')).sort();
+    const listed = ROOTS.map(([f]) => f).sort();
+    const unlisted = onDisk.filter((f) => !listed.includes(f)), absent = listed.filter((f) => !onDisk.includes(f));
+    console.log(`${unlisted.length || absent.length ? 'FAIL' : 'ok  '}  every schema in packages/schema/schema is a generator root (${onDisk.length} files, ${listed.length} roots)${unlisted.length ? ': not in ROOTS: ' + unlisted.join(', ') : ''}${absent.length ? ': in ROOTS, not on disk: ' + absent.join(', ') : ''}`);
+    if (unlisted.length || absent.length) failed++;
+    // Every schema is a valid 2020-12 schema under ajv's strict mode, with its $refs resolving. scripts/validate-
+    // structure.mjs compiles three of the six (app-structure-3, app-structure-event-3, lens-manifest-1) because it
+    // validates documents against them; plan-1, structure-envelope-1 and scan-wire-1 had no ajv anywhere, so a
+    // misspelled keyword or a $ref to a $def that does not exist in them was only ever read by this generator,
+    // which ignores what it does not understand.
+    const ajvProblems = [];
+    {
+      const Ajv2020Module = await import('ajv/dist/2020.js');
+      const Ajv2020 = Ajv2020Module.default?.default ?? Ajv2020Module.default ?? Ajv2020Module;
+      // strictRequired off for the same reason the validator turns it off: if/then branches require keys declared one level up
+      const ajv = new Ajv2020({ allErrors: true, strict: true, strictRequired: false, allowUnionTypes: true });
+      for (const [f] of ROOTS) try { ajv.addSchema(schemas[f], f); } catch (e) { ajvProblems.push(`${f}: ${e.message}`); }
+      for (const [f] of ROOTS) if (!ajvProblems.some((p) => p.startsWith(`${f}:`))) try { if (!ajv.getSchema(f)) ajvProblems.push(`${f}: ajv did not compile it`); } catch (e) { ajvProblems.push(`${f}: ${e.message}`); }
+    }
+    console.log(`${ajvProblems.length ? 'FAIL' : 'ok  '}  all ${ROOTS.length} schemas compile under ajv strict mode, every $ref resolving${ajvProblems.length ? ': ' + ajvProblems.slice(0, 4).join('; ') : ''}`);
+    if (ajvProblems.length) failed++;
     const read = (f) => (fs.existsSync(f) ? norm(fs.readFileSync(f, 'utf8')) : null);
     for (const [f, text] of outputs) {
       const have = read(f), rel = path.relative(path.join(HERE, '../..'), f).split(path.sep).join('/');
