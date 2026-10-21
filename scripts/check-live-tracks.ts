@@ -20,6 +20,7 @@ import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { readStripped, stripComments } from './lib/source.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
@@ -192,6 +193,54 @@ expect(!/=>\s*\{/.test(lay.slice(lay.indexOf('export function drawTracks'))), 'd
 }
 
 try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a dying child still holds a file */ }
+// ------------------------------------------------------------------ tracksOf over a large store: the same answers, a bounded cost
+// trackOf reads one proposal's readings; tracksOf asks it for every decided proposal, so a store of N proposals and M readings
+// must not cost N x M row visits. The oracle below is the rule written plainly (baseline = the item's latest `before` reading,
+// else the latest current one at or before the decision; current = the latest current reading of the feature's metric; branch =
+// the latest `after` reading; every "latest" breaks a tie on measured_at by the higher id) and is compared with what tracksOf
+// answers, over times drawn from a small set so ties are common. The timing is the cold first call over a fresh table, the minimum of 3.
+{
+  const gen = (nProps: number, nMeas: number) => {
+    let sd = 11; const rnd = () => ((sd = (sd * 1103515245 + 12345) % 2147483648) / 2147483648);
+    const feats = ['f0', 'f1', 'f2', 'f3', 'f4', 'f5'], mets = ['m0', 'm1', 'm2'], lns = ['development', 'security'];
+    const t = (k: number) => new Date(Date.UTC(2026, 9, 1) + k * 3600000).toISOString();
+    const proposals = Array.from({ length: nProps }, (_, i) => ({ id: 'g' + i, run_id: 'r', feature: feats[i % feats.length], lens: lns[i % 2], metric: i % 11 === 0 ? undefined : mets[i % 3], title: 't', standard: 'none', kind: 'fix',
+      expected_delta: 5, status: (['done', 'accepted', 'approved', 'failed'] as const)[i % 4], decided_by: 'u', decided_at: t(40 + (i % 5)), created_at: t(0), updated_at: t(50) }));
+    const measurements = Array.from({ length: nMeas }, (_, i) => ({ id: i + 1, run_id: 'r', feature: feats[Math.floor(rnd() * 6)], lens: lns[Math.floor(rnd() * 2)], metric: mets[Math.floor(rnd() * 3)],
+      value: Math.floor(rnd() * 100), measured_at: t(Math.floor(rnd() * 90)), ...(rnd() < 0.5 ? { proposal_id: 'g' + Math.floor(rnd() * nProps), phase: rnd() < 0.5 ? 'before' : 'after' } : {}) }));
+    return { ...emptyScan(), proposals, measurements };
+  };
+  const late = (xs: Any[]) => xs.reduce((r: Any, m: Any) => (!r || m.measured_at > r.measured_at || (m.measured_at === r.measured_at && m.id > r.id) ? m : r), undefined);
+  const NOW = Date.UTC(2026, 9, 5), ms = (f: () => void) => { const a = performance.now(); f(); return performance.now() - a; };
+  const small = gen(60, 1500), tr = TR.tracksOf(small, NOW);
+  let bad = '';
+  for (const t of tr) {
+    const p = small.proposals.find((x: Any) => x.id === t.id)!;
+    if (!p.metric) { if (t.baseline !== undefined || t.current !== undefined || t.branch !== undefined) bad = bad || t.id + ' has numbers without a metric'; continue; }
+    const same = (m: Any) => m.lens === p.lens && m.metric === p.metric, mine = small.measurements.filter((m: Any) => same(m) && m.proposal_id === p.id);
+    const cur = small.measurements.filter((m: Any) => same(m) && m.feature === p.feature && m.phase !== 'after');
+    const before = late(mine.filter((m: Any) => m.phase === 'before')) ?? late(cur.filter((m: Any) => m.measured_at <= p.decided_at)), after = late(mine.filter((m: Any) => m.phase === 'after')), now = late(cur);
+    const want = JSON.stringify([before?.value, now?.value, now?.measured_at, after?.value]), got = JSON.stringify([t.baseline, t.current, t.currentAt, t.branch]);
+    if (want !== got) bad = bad || t.id + ': ' + got + ' is not ' + want;
+  }
+  expect(tr.length > 40 && !bad, 'tracksOf over a generated store (ties on the time) reads baseline, current and branch as the rule says', bad || String(tr.length));
+  // cold: each timing is the first call over a fresh table, so the index build is inside it; the minimum of 3
+  const run = (np: number, nm: number) => Math.min(...Array.from({ length: 3 }, () => { const sc = gen(np, nm); return ms(() => TR.tracksOf(sc, NOW)); }));
+  const t1 = run(20, 500), t2 = run(100, 5000), t3 = run(200, 20000);
+  console.log('tracksOf per call: 20 x 500 = ' + t1.toFixed(2) + ' ms, 100 x 5,000 = ' + t2.toFixed(2) + ' ms, 200 x 20,000 = ' + t3.toFixed(2) + ' ms');
+  expect(t3 < 30, 'tracksOf over 200 proposals x 20,000 readings stays under 30 ms (one pass over the readings, not one per proposal)', t3.toFixed(1) + ' ms');
+}
+
+// Self-proof, every run: seed a defect into the source this check transpiles (BP_OVERLAYS_MUTATE; the loader skips a mutation
+// whose text no longer exists, so a child that passes means the mutation stopped biting) and require the child to fail on the
+// rule that defect breaks: track.ts an approved track no longer offers Build.
+if (!process.env.BP_OVERLAYS_MUTATE) {
+  const seed = [["scan/track.ts", "t.next = 'build'; }", "t.next = 'measure'; }"]];
+  const child = spawnSync(process.execPath, [...process.execArgv, import.meta.filename], { env: { ...process.env, BP_OVERLAYS_MUTATE: JSON.stringify(seed) }, encoding: 'utf8', timeout: 120000 });
+  expect(child.status === 1 && child.stdout.includes('(b) an approved one offers Build in place'),
+    'self-proof: track.ts an approved track no longer offers Build: the check must fail on (b) an approved one offers Build in place (child exit ' + child.status + ')');
+}
+
 if (failures.length) { console.log(failures.map((f) => 'FAIL ' + f).join('\n')); console.log(`check-live-tracks: ${failures.length} failed, ${held} held`); process.exit(1); }
 console.log(`check-live-tracks: ${held} expectations held`);
 process.exit(0);

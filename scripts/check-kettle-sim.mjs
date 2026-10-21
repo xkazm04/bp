@@ -43,6 +43,17 @@ function listing(dir) {
 /** The lines one listing has and the other lacks. */
 const diff = (a, b) => { const x = new Set(a), y = new Set(b); return [...a.filter((l) => !y.has(l)).map((l) => '- ' + l), ...b.filter((l) => !x.has(l)).map((l) => '+ ' + l)]; };
 
+// Self-proof, every run: a second copy of this check, started now so the two overlap, with BP_CHECK_KETTLE_SIM_SEED=1 (a file
+// planted in the server's working directory mid-run). It must exit 1 on the disk rule, so a check that stopped seeing writes
+// cannot pass. The child does not start a grandchild: it has the seed set.
+let proof = null;
+if (process.env.BP_CHECK_KETTLE_SIM_SEED !== '1') {
+  const c = spawn(process.execPath, [fileURLToPath(import.meta.url)], { env: { ...process.env, BP_CHECK_KETTLE_SIM_SEED: '1' }, stdio: ['ignore', 'pipe', 'ignore'] });
+  let out = '';
+  c.stdout.on('data', (d) => { out += d; });
+  proof = new Promise((resolve) => { c.once('exit', (code) => resolve({ code, out })); c.once('error', () => resolve({ code: -1, out })); });
+}
+
 // ------------------------------------------------------------------------------------------------ the control
 {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-kettle-sim-ctl-'));
@@ -173,6 +184,10 @@ try {
   check(`disk: packages/core/data unchanged (${before.data.length} entries, hashes and mtimes)`, before.data.length > 0 && !dd.length, dd.slice(0, 4).join('; '));
   check('disk: the server\'s working directory unchanged (nothing written)', !dc.length, dc.slice(0, 4).join('; '));
   fs.rmSync(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+}
+if (proof) {
+  const r = await proof;
+  check('self-proof: with a write planted mid-run the check fails on the disk rule (child exit ' + r.code + ')', r.code === 1 && /FAIL {2}disk: the server's working directory unchanged/.test(r.out));
 }
 console.log(`\ncheck-kettle-sim: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

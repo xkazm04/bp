@@ -1,6 +1,6 @@
 // POST /api/products/[slug]/releases, body `{ version: string, ids?: string[] }`: a draft release of accepted items.
 // It runs lens-scan's store.mjs `release-create --version <v> --by user:<gh login>` and then `release-add --ids` (default:
-// every accepted item with no release; at most 200 ids), and answers 201 `{ release, added, skipped }` - `release` is
+// every accepted item with no release, sent in calls of at most 200 ids), and answers 201 `{ release, added, skipped }` - `release` is
 // store.mjs `release --id` (the row with its `items`), `skipped` what release-add left out (`{ id, status, reason? }`).
 // 400 for a bad body; 404 for an unknown product or a missing store; 409 when no named item is accepted and free, or
 // the version already has a release; 503 when lens-scan is not installed or the store stayed locked. Localhost only.
@@ -41,8 +41,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   if (!want.some((id) => free.has(id))) return Response.json({ error: 'no accepted item without a release to ship' + (ids === undefined ? '' : ' among these ids') }, { status: 409 });
   const made = await storeCall<Release>(file, ['release-create', '--version', version, '--by', await triageBy()]);
   if (!made.ok) return Response.json({ error: made.error }, { status: code(made.kind) });
-  const add = await storeCall<{ release: string; added: string[]; skipped: Skipped[] }>(file, ['release-add', '--release', made.data.id, '--ids', want.join(',')]);
-  if (!add.ok) return Response.json({ error: `${made.data.id} was created, but release-add failed: ${add.error}`, release: made.data }, { status: code(add.kind) });
+  // At most MAX_TRIAGE ids go to store.mjs in one call (they travel as one argv entry): the default path, which takes every free
+  // item, goes in chunks and merges what the calls answer, the way lenses/[id]/execute chunks its enqueues.
+  const added: string[] = [], skipped: Skipped[] = [];
+  for (let i = 0; i < want.length; i += MAX_TRIAGE) {
+    const add = await storeCall<{ release: string; added: string[]; skipped: Skipped[] }>(file, ['release-add', '--release', made.data.id, '--ids', want.slice(i, i + MAX_TRIAGE).join(',')]);
+    if (!add.ok) return Response.json({ error: `${made.data.id} was created, but release-add failed${i ? ` after ${added.length} added` : ''}: ${add.error}`, release: made.data }, { status: code(add.kind) });
+    added.push(...add.data.added); skipped.push(...add.data.skipped);
+  }
   const rel = await storeCall<Release & { items: Proposal[] }>(file, ['release', '--id', made.data.id]);
-  return Response.json({ release: rel.ok ? rel.data : { ...made.data, items: [] }, added: add.data.added, skipped: add.data.skipped }, { status: 201 });
+  return Response.json({ release: rel.ok ? rel.data : { ...made.data, items: [] }, added, skipped }, { status: 201 });
 }

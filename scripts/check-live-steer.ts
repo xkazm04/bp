@@ -21,6 +21,7 @@ import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { readStripped, stripComments } from './lib/source.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
@@ -219,6 +220,16 @@ expect(scanOk.length > 0 && scanOk.every((id: string) => ['development', 'securi
   '(a) on a live product only lenses with a scan method are measured', scanOk.join());
 
 try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a dying child still holds a file */ }
+// Self-proof, every run: seed a defect into the source this check transpiles (BP_OVERLAYS_MUTATE; the loader skips a mutation
+// whose text no longer exists, so a child that passes means the mutation stopped biting) and require the child to fail on the
+// rule that defect breaks: live-plan.ts build plans proposed items as well as approved ones.
+if (!process.env.BP_OVERLAYS_MUTATE) {
+  const seed = [["live-plan.ts", "p.status === 'approved' && !busy.has(p.id));", "(p.status === 'approved' || p.status === 'proposed') && !busy.has(p.id));"]];
+  const child = spawnSync(process.execPath, [...process.execArgv, import.meta.filename], { env: { ...process.env, BP_OVERLAYS_MUTATE: JSON.stringify(seed) }, encoding: 'utf8', timeout: 120000 });
+  expect(child.status === 1 && child.stdout.includes('(c) build plans exactly the 2 approved'),
+    'self-proof: live-plan.ts build plans proposed items as well as approved ones: the check must fail on (c) build plans exactly the 2 approved (child exit ' + child.status + ')');
+}
+
 if (failures.length) { console.log(failures.map((f) => 'FAIL ' + f).join('\n')); console.log(`check-live-steer: ${failures.length} failed, ${held} held`); process.exit(1); }
 console.log(`check-live-steer: ${held} expectations held`);
 process.exit(0);

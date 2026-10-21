@@ -32,6 +32,8 @@ export function suggestVersion(tags: readonly string[], manifest: { version: str
   const s = suggestRaw(tags, manifest, items);
   let v = s.version, n = 0;
   while (taken.has(v) && n++ < 100) v = bump(v, 'patch');
+  // The cap ran out with the version still taken: say so rather than name a taken version as the one that avoided it.
+  if (taken.has(v)) return { ...s, reason: `${s.reason}; no free version found: ${s.version} and the ${n - 1} patch versions after it already have a release, so the version needs a person` };
   return v === s.version ? s : { ...s, version: v, reason: `${s.reason}; ${s.version} already has a release, so ${v}` };
 }
 function suggestRaw(tags: readonly string[], manifest: { version: string; file: string } | undefined, items: readonly Pick<Proposal, 'kind' | 'body'>[]): VersionSuggestion {
