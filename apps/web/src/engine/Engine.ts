@@ -14,7 +14,7 @@ import { Camera, WheelIntent, clamp, type Cam, type Pad, type Region } from './c
 import type { ChannelAggregate, FeatureLive, LensChannel, LensExpression } from './lens/contract';
 import { MixDriver, type MixState } from './lens/mix';
 import { createStore, type Store } from './store';
-import { baseHeight, overlayRight, railWidth } from './chrome';
+import { CALLOUT_PAD, baseHeight, overlayRight, railWidth } from './chrome';
 import { LEDGER_VARIANTS, initialState, type Crumb, type DockTab, type HoverInfo, type LedgerVariant, type UIState } from './state';
 import { readTheme, type Theme } from './theme';
 import { Text } from './text';
@@ -701,7 +701,7 @@ export class Engine {
     if (ids && (m.blast || m.ga)) {
       let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
       for (const i of ids) { const T = this.M.L.TILE[i]; if (!T) continue; x0 = Math.min(x0, T.x); y0 = Math.min(y0, T.y); x1 = Math.max(x1, T.x + T.w); y1 = Math.max(y1, T.y + T.h); }
-      this.cam.flyTo(this.fitCam({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, { t: 40, r: 370, b: 56, l: 30 }));
+      this.cam.flyTo(this.fitCam({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, { t: 40, r: CALLOUT_PAD, b: 56, l: 30 }));
     }
     this.placeKey = ''; this.writeHashSoon();
   }
