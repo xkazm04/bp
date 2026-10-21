@@ -123,6 +123,25 @@ try {
   if (child.exitCode === null) await new Promise((resolve) => { child.once('exit', resolve); child.kill(); });
   fs.rmSync(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
+// argv: a bad --port is refused with exit 1 and a message naming the value (Number('abc') is NaN, and listen(NaN) binds a random
+// port), and a wildcard --host prints the dialable loopback URL, not the bind address. Spawned in parallel, own empty cwd.
+{
+  const spawnMain = (args, env = {}) => new Promise((resolve) => {
+    const c = spawn(process.execPath, ['--import', pathToFileURL(path.join(ROOT, 'packages/core/register.mjs')).href, path.join(ROOT, 'apps/server/src/main.ts'), ...args], { cwd: os.tmpdir(), env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
+    let o = '', killed = false;
+    const kill = () => { killed = true; c.kill(); };
+    const t = setTimeout(kill, 20000);
+    const done = (code) => { clearTimeout(t); resolve({ code: killed ? 'killed' : code, out: o }); };
+    c.stdout.on('data', (d) => { o += d; if (/listening on/.test(o)) kill(); });
+    c.stderr.on('data', (d) => (o += d));
+    c.on('exit', (code) => done(code));
+  });
+  const bad = [['--port', 'abc'], ['--port', '70000'], ['--port', '-1'], ['--port', '--host'], ['--port', '80x']];
+  const [wild, envBad, ...refused] = await Promise.all([spawnMain(['--host', '0.0.0.0', '--port', '0']), spawnMain([], { BP_SERVER_PORT: '8o80' }), ...bad.map((a) => spawnMain(a))]);
+  bad.forEach((a, i) => check(`argv: ${a.join(' ')} exits 1 with a message and binds nothing`, refused[i].code === 1 && /^bp server: /m.test(refused[i].out) && !/listening on/.test(refused[i].out), `${refused[i].code} ${refused[i].out.trim().slice(-120)}`));
+  check('argv: BP_SERVER_PORT=8o80 exits 1 naming the value', envBad.code === 1 && envBad.out.includes('8o80') && !/listening on/.test(envBad.out), `${envBad.code} ${envBad.out.trim().slice(-120)}`);
+  check('argv: --host 0.0.0.0 prints a dialable URL (127.0.0.1) and names the bind', /listening on http:\/\/127\.0\.0\.1:[1-9]\d*\b.*bound to 0\.0\.0\.0/.test(wild.out), wild.out.trim().split('\n').slice(-2).join(' | '));
+}
 {
   const m = spawnSync(process.execPath, [path.join(ROOT, 'apps/server/src/check-mount.ts')], { cwd: ROOT, encoding: 'utf8', timeout: 60000 });
   const stdout = m.stdout ?? '';
