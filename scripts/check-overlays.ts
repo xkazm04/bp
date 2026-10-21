@@ -127,6 +127,13 @@ for (const sel of ['.bp-phone .theme-toggle', '.ph-who button', '.ph-dom button'
   expect(r.found && r.px >= 44, `blueprint.css ${sel}: touch target ${r.found ? (Number.isNaN(r.px) ? 'unset' : r.px + 'px') : 'rule not found'}, expected at least 44px`);
 }
 
+// globals.css states the rule on the tokens themselves: --mint-2 / --amber-2 / --red-2 are the text-grade
+// status colours (>= 4.5:1 on paper and cards) and --mint / --amber / --red stay the marker and fill tones.
+// In light theme --red reads 4.36:1 on --paper, so a text colour taken from the marker set fails WCAG AA.
+// Borders and fills ('border-color', 'background') are untouched: this matches a bare `color:` only.
+const rawText = [...bpcss.matchAll(/(?:^|[;{\s])color\s*:\s*var\(\s*--(red|mint|amber)\s*\)/g)].map((m) => m[1]);
+expect(rawText.length === 0, `blueprint.css: ${rawText.length} text colour(s) taken from the marker tokens (--${rawText.join(', --')}) instead of their text-grade --*-2 siblings`);
+
 // The phone's reading list drops every level with no hit, so a search never prints a heading with nothing
 // under it (`q` is component state, so the rule is held on the exported pure function, not on a render).
 const wingsOf = (g: Any[]) => g.reduce((n: number, b: Any) => n + b.wings.length, 0);
