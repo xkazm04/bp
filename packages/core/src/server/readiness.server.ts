@@ -1,4 +1,4 @@
-// A product's readiness (src/lib/scan/readiness.ts), computed cheaply enough for `GET /api/products` to
+// A product's readiness (packages/core/src/scan/readiness.ts), computed cheaply enough for `GET /api/products` to
 // answer it for every registered product: a few stats, one JSON parse of the map (cached by mtime and
 // size, so an unchanged map is not parsed again), and one read-only query on the store. Every step is
 // guarded: a broken product reports what it lacks and never breaks the list. Server-only.

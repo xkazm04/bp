@@ -2,7 +2,7 @@
 // unregister a product. Unregistering only drops the line; nothing on disk is ever deleted. The file is
 // rewritten atomically (a temp file in the same directory, then a rename), created when absent, and keeps
 // unknown keys and the order of entries. A file that exists but cannot be parsed is never overwritten.
-// Server-only: the route handlers under src/app/api/products import it.
+// Server-only: the route handlers under packages/core/src/server/api/products import it.
 import fs from 'node:fs';
 import path from 'node:path';
 import { PRODUCTS_FILE } from './products.server';

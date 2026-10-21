@@ -1,11 +1,11 @@
 // The lens-scan store, read side (and the one write the blueprint makes itself: a proposal decision; triage and
-// releases go through lens-scan's own store.mjs, src/lib/scan/release.server.ts). The DDL is
+// releases go through lens-scan's own store.mjs, packages/core/src/server/release.server.ts). The DDL is
 // docs/standard/lens-scan-store.sql; the /lens-scan skill writes the file concurrently in WAL mode, so
 // reads go through a read-only connection and a decision opens its own short read-write connection with a
 // busy timeout. A v1 store (no packs or releases tables, no v2 columns) reads with those arrays empty. Rows
-// become wire objects (src/lib/scan/types.ts) here: JSON columns are parsed and NULL columns are omitted (absent-value convention, never null in JSON),
+// become wire objects (packages/core/src/scan/types.ts) here: JSON columns are parsed and NULL columns are omitted (absent-value convention, never null in JSON),
 // and so is a column at its wire default (v4 `origin` 'scan'); a v3 store (no v4 columns) reads with those keys absent. Server-only, imported by the route
-// handlers under src/app/api/products and nothing else; node:sqlite is a Node builtin (experimental on 24).
+// handlers under packages/core/src/server/api/products and nothing else; node:sqlite is a Node builtin (experimental on 24).
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
