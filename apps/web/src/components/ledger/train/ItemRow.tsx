@@ -91,14 +91,17 @@ export interface ItemRowProps {
   onOpen(id: string): void;
 }
 
-/** Evidence at a glance: screens (or a perf item's runs) and the commit; a missing one is dimmed and says why. */
+/** Evidence at a glance: screens (or a perf item's runs) and the commit; a missing one is dimmed and says it is missing.
+ *  Never WHY: "not screenable" needs the scan's `unscreenable:` activity note (docs/blueprint-ui.md "Not screenable",
+ *  page/LensTab.tsx Unscreenable), and TrainData carries no activity, so this row cannot tell an unrenderable feature
+ *  from a scan that has not captured yet. */
 function Evidence({ p, x }: { p: Proposal; x: ItemFacts | undefined }) {
   const shots = x?.shots ?? 0, runs = x?.runs ?? 0;
   return (
     <span className="tr-ev">
       {runs > 1
         ? <span title={runs + ' baseline runs and ' + (x?.afters ?? 0) + ' after'}>⧗ runs {runs}+{x?.afters ?? 0}</span>
-        : <span className={shots ? undefined : 'no'} title={shots ? shots + ' screens (before and after)' : 'no screens: the harness cannot render this feature'}>▣ {shots || '–'}</span>}
+        : <span className={shots ? undefined : 'no'} title={shots ? shots + ' screens (before and after)' : 'no screens captured for this item'}>▣ {shots || '–'}</span>}
       <span className={p.commit_sha ? undefined : 'no'} title={p.commit_sha ? '1 commit, ' + p.commit_sha.slice(0, 7) + ': its diff is in the compare panel' : 'no commit'}>± {p.commit_sha ? 1 : '–'}</span>
     </span>
   );
