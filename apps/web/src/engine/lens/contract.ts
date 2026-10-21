@@ -112,7 +112,10 @@ export interface LensExpression {
   /**
    * The channel for any lens the variant has no own channel for, built from the lens manifest alone
    * (glyph, line, measures, evidence). The subtle variant draws every lens this way; the shaped and bold
-   * variants use it for lenses other than the six built-ins. Called once per lens and cached.
+   * variants draw the lenses in their own `channels` record and fall back for the rest - which includes
+   * built-ins of the standard they have no channel for (the catalog, packages/core/src/standard/catalog.ts,
+   * ships more than their records hold) as well as every project lens. No count is stated here on purpose:
+   * the registry is whatever the map enables, and `Engine.lensIds` is the live list.
    */
   fallback?(lens: LensDef): LensChannel;
   /**
