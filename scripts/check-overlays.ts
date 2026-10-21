@@ -110,5 +110,18 @@ const bpcss = stripBlock(fs.readFileSync(path.join(SRC, 'components/blueprint.cs
 const capRule = /\.lg\s+\.lg-cap\s*\{([^}]*)\}/.exec(bpcss);
 expect(!!capRule && /display\s*:\s*block/.test(capRule[1]), 'blueprint.css: .lg .lg-cap does not set display: block, so the caption lays out as flex columns');
 
+// 12-14. Phone touch targets: the theme toggle, the "whose desk" chips and the feature rows are tapped with a
+// thumb, so each declares at least 44 px (the Back button above is the fourth). Read from the CSS, comments stripped.
+const minPx = (sel: string) => {
+  const m = new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{([^}]*)\\}').exec(bpcss);
+  if (!m) return { sel, px: NaN, found: false };
+  const h = /(?:^|[;\s])(?:min-height|height)\s*:\s*(\d+)px/.exec(m[1]);
+  return { sel, px: h ? Number(h[1]) : NaN, found: true };
+};
+for (const sel of ['.bp-phone .theme-toggle', '.ph-who button', '.ph-dom button']) {
+  const r = minPx(sel);
+  expect(r.found && r.px >= 44, `blueprint.css ${sel}: touch target ${r.found ? (Number.isNaN(r.px) ? 'unset' : r.px + 'px') : 'rule not found'}, expected at least 44px`);
+}
+
 if (failures.length) { console.error(`check-overlays: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
 console.log(`check-overlays: ${held} expectations held`);

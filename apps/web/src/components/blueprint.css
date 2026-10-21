@@ -343,7 +343,7 @@ a.extchip:hover, a.extchip:focus-visible { text-decoration: underline; }
 .ph-sum div.tr b { color: var(--red); } .ph-sum div.am b { color: var(--amber-2); }
 .ph-sec { font: 500 12px var(--mono); letter-spacing: 0.12em; color: var(--ink-2); margin: 16px 0 6px; text-transform: uppercase; display: flex; justify-content: space-between; }
 .ph-who { display: flex; gap: 6px; overflow: auto; padding-bottom: 8px; }
-.ph-who button { flex: 0 0 auto; height: 40px; padding: 0 12px; background: color-mix(in srgb, var(--ink) 7%, transparent); border: 1px solid var(--ink-3); font-size: 15px; white-space: nowrap; }
+.ph-who button { flex: 0 0 auto; height: 44px; padding: 0 12px; background: color-mix(in srgb, var(--ink) 7%, transparent); border: 1px solid var(--ink-3); font-size: 15px; white-space: nowrap; }
 .ph-who button[aria-pressed='true'] { background: var(--ink); color: var(--on-ink); border-color: var(--ink); }
 .ph-q { border: 1.5px solid var(--ink); margin-bottom: 10px; background: var(--panel); padding: 11px 12px; border-left: 5px solid var(--amber); }
 .ph-q.u-high { border-left-color: var(--red); }
@@ -358,7 +358,7 @@ a.extchip:hover, a.extchip:focus-visible { text-decoration: underline; }
 .ph-dom summary::-webkit-details-marker { display: none; }
 .ph-dom summary span { font: 400 12px var(--mono); color: var(--ink-2); text-transform: none; letter-spacing: 0; white-space: nowrap; }
 .ph-dom h3 { margin: 0; padding: 6px 10px 2px; font: 500 12px var(--mono); letter-spacing: 0.08em; color: var(--lens); text-transform: uppercase; }
-.ph-dom button { display: grid; grid-template-columns: 28px 1fr 16px; gap: 8px; align-items: center; width: 100%; background: none; border: 0; border-top: 1px solid var(--ink-4); padding: 10px; text-align: left; font-size: 15px; }
+.ph-dom button { display: grid; grid-template-columns: 28px 1fr 16px; gap: 8px; align-items: center; width: 100%; min-height: 44px; background: none; border: 0; border-top: 1px solid var(--ink-4); padding: 10px; text-align: left; font-size: 15px; }
 .ph-detail { position: fixed; inset: 0; overflow: auto; background: var(--sheet-b); z-index: 50; padding: 14px; }
 .ph-detail .dh { flex-direction: column; padding-right: 0; gap: 10px; } .ph-detail .dh h2 { font-size: 30px; }
 .ph-detail .dgrid, .ph-detail .ev6, .ph-detail .deps { grid-template-columns: 1fr; }
@@ -373,6 +373,8 @@ a.extchip:hover, a.extchip:focus-visible { text-decoration: underline; }
 .ph-q .row .bt, .ph-q .dn .bt { height: 44px; padding: 0 16px; font-size: 15px; }
 .ph-q .dn input { flex: 1 1 100%; min-width: 0; height: 44px; padding: 0 10px; background: var(--paper); border: 1px solid var(--ink-3); color: var(--ink); font: 16px var(--sans, inherit); }
 .ph-more { width: 100%; height: 44px; margin: 0 0 10px; background: color-mix(in srgb, var(--ink) 7%, transparent); border: 1px solid var(--ink-3); font-size: 15px; color: var(--ink); }
+/* every phone control is a thumb target: 44 px (check-overlays pins the three below and the detail's Back button) */
+.bp-phone .theme-toggle { height: 44px; }
 .bp-phone .bp-map, .bp-phone .bp-frame, .bp-phone .bp-vig { display: none; }
 /* No backdrop-filter anywhere over the map: blurring the moving canvas behind each panel halved the
    frame rate during pan and zoom (measured). Panels use near-opaque tokens instead. */
