@@ -15,7 +15,7 @@
 // the seam change that would remove it.
 import type { Engine } from '@/engine/Engine';
 import { drawText } from '@/engine/text';
-import { bl, type BuiltinLens } from '../base/legacy';
+import { bl, hof, type BuiltinLens } from '../base/legacy';
 import { BH, G, TH, TW, isLiveSt, type BayNode, type BldNode, type RoomNode } from '@bp/core/model';
 import type { Theme, Viewport } from '../types';
 import { CHANNELS, SENS, kUsd } from './channels';
@@ -392,8 +392,12 @@ function rail(ctx: CanvasRenderingContext2D, P: Ctx2, r: Rail) {
       const bx0 = r.x1 - bw, y0 = r.cy - s / 2, ok = new Path2D(), bad = new Path2D();
       for (let i = 0; i < n; i++) {
         const f = fs[i], x = bx0 + i * (s + gap), q = bl(f).quality;
-        ctx.strokeStyle = q.status === 'n/a' ? th.alpha(accent, 0.35) : accent; ctx.lineWidth = 1;
-        if (q.status === 'untested') ctx.setLineDash([2, 2]);
+        // nothing to inspect: the lens does not apply, or no facet has been measured. The facet's health
+        // is what says so - the quality status has no 'n/a' value (docs/standard/lenses/quality.json),
+        // so the old `q.status === 'n/a'` test never fired and both states drew a plain unticked box.
+        const h = hof(f, 'quality'), none = h === 'na' || h === 'unmeasured';
+        ctx.strokeStyle = none ? th.alpha(accent, 0.35) : accent; ctx.lineWidth = 1;
+        if (!none && q.status === 'untested') ctx.setLineDash([2, 2]);
         ctx.strokeRect(x + 0.5, y0 + 0.5, s - 1, s - 1); ctx.setLineDash([]);
         if (q.status === 'passed') { ok.moveTo(x + s * 0.2, y0 + s * 0.52); ok.lineTo(x + s * 0.42, y0 + s * 0.76); ok.lineTo(x + s * 0.82, y0 + s * 0.24); }
         else if (q.status === 'failing') { bad.moveTo(x + s * 0.22, y0 + s * 0.22); bad.lineTo(x + s * 0.78, y0 + s * 0.78); bad.moveTo(x + s * 0.78, y0 + s * 0.22); bad.lineTo(x + s * 0.22, y0 + s * 0.78); }
