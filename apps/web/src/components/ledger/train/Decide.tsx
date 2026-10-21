@@ -108,6 +108,11 @@ export function useDecide(own?: () => readonly string[]): DecideApi {
   return { decide, pending };
 }
 
+/** The items a decision can actually move now (rules.ts canDecide). EVERY count this surface shows is of these, not
+ *  of the selection: a selection of five holding two already-accepted items accepts three, and says three. */
+const decidableIn = (T: TrainData, ps: readonly Proposal[], d: TriageDecision): Proposal[] =>
+  ps.filter((p) => canDecide(d, p, releaseIn(T, p)));
+
 /** Why a decision cannot apply to any of the items (the disabled button's tooltip), or null when it can to some. */
 function whyNot(T: TrainData, ps: readonly Proposal[], d: TriageDecision): string | null {
   if (!ps.length) return 'Focus or select a pack item first';
@@ -124,8 +129,10 @@ export function Decide({ ids, compact = false }: DecideProps) {
   const ps = useMemo(() => ids.map((id) => T.byId.get(id)).filter((p): p is Proposal => !!p), [ids, T]);
   const at: NoteAsk['at'] = compact ? 'compare' : 'bar', ask = ui.note && ui.note.at === at ? ui.note : null;
   if (ask) {
-    const flagged = ask.ids.map((id) => T.byId.get(id)).filter((p): p is Proposal => !!p && isFlagged(p, verdictIn(T, p))).length;
-    return <NoteEditor ask={ask} flagged={flagged} compact={compact} onSend={(note) => void decide(ask.ids, ask.decision, note, ask.at)} />;
+    const asked = ask.ids.map((id) => T.byId.get(id)).filter((p): p is Proposal => !!p);
+    const can = decidableIn(T, asked, ask.decision);
+    const flagged = can.filter((p) => isFlagged(p, verdictIn(T, p))).length;
+    return <NoteEditor ask={ask} can={can.length} flagged={flagged} compact={compact} onSend={(note) => void decide(ask.ids, ask.decision, note, ask.at)} />;
   }
   const btn = (d: TriageDecision, tone: BtnTone | undefined, label: string, key: string, role?: string) => {
     const why = whyNot(T, ps, d);
@@ -137,10 +144,12 @@ export function Decide({ ids, compact = false }: DecideProps) {
   };
   // the compare footer shows the item's state itself; the strip marks only a decision on its way
   const busy = compact && ps.some((p) => pending.has(p.id));
+  // the Accept count is what Accept would move, not what is selected
+  const nAcc = decidableIn(T, ps, 'accept').length;
   return (
     <span className={'tr-decide' + (compact ? ' compact' : '')} role="group" aria-label="Decide" aria-busy={busy || undefined}>
       {compact && whyNot(T, ps, 'reopen') ? null : btn('reopen', undefined, 'Undo', 'U')}
-      {btn('accept', 'acc', '✓ Accept' + (!compact && ps.length ? ' ' + ps.length : ''), 'A', compact ? undefined : 'tr-btn-accept')}
+      {btn('accept', 'acc', '✓ Accept' + (!compact && nAcc ? ' ' + nAcc : ''), 'A', compact ? undefined : 'tr-btn-accept')}
       {btn('rework', 'rw', '↺ Rework', 'R')}
       {btn('descope', 'ds', '⊘ Descope', 'S')}
     </span>

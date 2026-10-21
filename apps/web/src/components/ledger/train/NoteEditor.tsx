@@ -17,19 +17,22 @@ const QUICK: Record<NoteAsk['decision'], readonly string[]> = {
 
 export interface NoteEditorProps {
   ask: NoteAsk;
-  /** How many of the items are flagged (failed, flat or unmeasured): accepting them is why the note is asked. */
+  /** How many of `ask.ids` the decision can actually move (rules.ts canDecide). Every count here is of THESE: the rest
+   *  of the selection comes back as `skipped` in the toast, so the editor must not count it in. */
+  can: number;
+  /** How many of those are flagged (failed, flat or unmeasured): accepting them is why the note is asked. */
   flagged: number;
   /** Send the decision with this note (Decide's `decide`). */
   onSend(note: string): void;
   compact?: boolean;
 }
 
-export function NoteEditor({ ask, flagged, onSend, compact = false }: NoteEditorProps) {
+export function NoteEditor({ ask, can, flagged, onSend, compact = false }: NoteEditorProps) {
   const [text, setText] = useState(''), [empty, setEmpty] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => { input.current?.focus({ preventScroll: true }); }, [ask]);
 
-  const n = ask.ids.length, d = ask.decision, verb = VERB[d];
+  const n = can, rest = ask.ids.length - can, d = ask.decision, verb = VERB[d];
   const why = d === 'accept'
     ? flagged + ' of ' + n + ' ' + (flagged === 1 ? 'is' : 'are') + ' failed, flat or unmeasured: a note is required, and ' + (flagged === 1 ? 'it ships' : 'they ship') + ' flagged ⚑.'
     : d === 'rework' ? 'The note is what the next execute builds the new attempt from.' : 'The note says why it is dropped.';
@@ -51,7 +54,7 @@ export function NoteEditor({ ask, flagged, onSend, compact = false }: NoteEditor
   const id = 'tr-note-' + ask.at;
   return (
     <div className={'tr-note' + (compact ? ' compact' : '')} role="group" aria-label={verb + ' · note'}>
-      <label htmlFor={id}>{verb} {n} item{n === 1 ? '' : 's'} · note</label>
+      <label htmlFor={id}>{verb} {rest > 0 ? n + ' of ' + ask.ids.length + ' selected' : n + ' item' + (n === 1 ? '' : 's')} · note</label>
       <input ref={input} id={id} autoComplete="off" value={text} onChange={(e) => { setText(e.target.value); setEmpty(false); }} onKeyDown={onKey}
         placeholder={empty ? 'A note is required' : 'Required. Enter to confirm, Esc to cancel'} aria-invalid={empty || undefined} />
       <span className="qk">
