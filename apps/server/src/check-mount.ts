@@ -1,4 +1,6 @@
 // The request guards of mount.ts, through loadRoutes + listener over a throwaway handler tree (no @bp/core, no products):
+//   routing   all three of the route table's mechanisms: `[one]` segment, `[...rest]` catch-all (one or more
+//             segments, never zero, each decoded) and the static-before-dynamic sort that decides a collision
 //   decode    a malformed percent-escape in a path segment answers 400, and the server keeps serving
 //   host      a Host header no URL can carry answers 400, and the server keeps serving
 //   body      a body past MAX_BODY answers 413 (declared by Content-Length, or streamed chunked); one under it reaches the handler
@@ -38,6 +40,12 @@ handler('boom', "export const GET = () => { throw new Error('detail from C:/User
 // returns: building it after the wait left lateTicks at 0, and "its timer stops" then compared 0 with 0.
 handler('late', 'export const GET = async () => { const g = globalThis; g.lateTicks = 0; let t; const res = new Response(new ReadableStream({ start(c) { t = setInterval(() => { g.lateTicks++; c.enqueue(new TextEncoder().encode("x")); }, 20); }, cancel() { clearInterval(t); g.lateCancelled = true; } })); await new Promise((r) => setTimeout(r, 300)); return res; };\n');
 handler('body', 'export const POST = async (r) => Response.json({ bytes: (await r.arrayBuffer()).byteLength });\n');
+// `[...rest]` and the static-before-dynamic sort are mount.ts's other two routing mechanisms (matcher's rest branch
+// and loadRoutes' rank). The real tree uses both — `shots/[...path]` is a catch-all, and `releases/suggest` sits
+// beside `releases/[id]` — but nothing here exercised either, so only `[slug]` was ever covered.
+handler('files/[...rest]', 'export const GET = async (_r, { params }) => Response.json(await params);\n');
+handler('pick/[id]', "export const GET = async (_r, { params }) => Response.json({ via: 'dynamic', ...(await params) });\n");
+handler('pick/exact', "export const GET = () => Response.json({ via: 'static' });\n");
 
 const crashes: unknown[] = [];
 process.on('unhandledRejection', (e) => crashes.push(e));
@@ -67,6 +75,18 @@ const alive = async () => (await get('/api/echo/ok')).status === 200 && !crashes
 try {
   const ok = await get('/api/echo/a%20b');
   check('a well-formed request reaches the handler', ok.status === 200 && ok.body.includes('"a b"'), `${ok.status} ${ok.body.slice(0, 60)}`);
+
+  // routing: the two mechanisms beyond a single `[slug]` segment.
+  const deep = await get('/api/files/one/two%20three/four.png');
+  check('routing: a catch-all captures every remaining segment, decoded', deep.status === 200 && deep.body.includes('["one","two three","four.png"]'), `${deep.status} ${deep.body.slice(0, 80)}`);
+  const one = await get('/api/files/solo');
+  check('routing: a catch-all matches one segment too', one.status === 200 && one.body.includes('["solo"]'), `${one.status} ${one.body.slice(0, 60)}`);
+  const none = await get('/api/files');
+  check('routing: a catch-all does NOT match zero segments', none.status === 404, `${none.status} ${none.body.slice(0, 60)}`);
+  const stat = await get('/api/pick/exact');
+  check('routing: a static segment wins over a dynamic sibling', stat.status === 200 && stat.body.includes('"static"'), `${stat.status} ${stat.body.slice(0, 60)}`);
+  const dyn = await get('/api/pick/other');
+  check('routing: and the dynamic sibling still takes everything else', dyn.status === 200 && dyn.body.includes('"dynamic"') && dyn.body.includes('"other"'), `${dyn.status} ${dyn.body.slice(0, 60)}`);
 
   const bad = await get('/api/echo/%E0%A4%A');
   check('decode: a malformed percent-escape answers 400', bad.status === 400, `${bad.status}`);
