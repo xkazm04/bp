@@ -53,6 +53,7 @@
     "check:standard-fixtures": "node scripts/check-standard-fixtures.mjs",
     "check:python-deps": "node scripts/check-python-deps.mjs",
     "check:python-syntax": "node scripts/check-python-syntax.mjs",
+    "check:fidelity-roles": "node scripts/check-fidelity-roles.mjs",
     "check:overlays": "node scripts/check-overlays.ts",
     "check:sim-blockers": "node scripts/check-sim-blockers.ts",
     "check:morning-cursor": "node scripts/check-morning-cursor.ts",
