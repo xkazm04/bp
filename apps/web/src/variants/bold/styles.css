@@ -61,8 +61,8 @@
 [data-variant='bold'] .bd-ladder li.on i { background: var(--bl); }
 
 /* ------------------------------------------------- development: the terminal, dense and mono */
-[data-variant='bold'] .bd-term { font: 500 13px/1.42 var(--mono); background: color-mix(in srgb, var(--paper-lo) 82%, #000 18%); border: 1px solid color-mix(in srgb, var(--bl) 45%, transparent); padding: 8px 12px; }
-:root[data-theme='light'] [data-variant='bold'] .bd-term { background: color-mix(in srgb, var(--paper-lo) 60%, #fff 40%); }
+[data-variant='bold'] .bd-term { font: 500 13px/1.42 var(--mono); background: var(--paper-lo); border: 1px solid color-mix(in srgb, var(--bl) 45%, transparent); padding: 8px 12px; }
+:root[data-theme='light'] [data-variant='bold'] .bd-term { background: var(--paper-mid); }
 [data-variant='bold'] .bd-term .pr { color: var(--bl); white-space: pre-wrap; }
 [data-variant='bold'] .bd-term .pr.dim { color: var(--ink-2); margin-top: 2px; }
 [data-variant='bold'] .bd-term .kv { display: grid; grid-template-columns: 15ch 1fr; gap: 10px; }
