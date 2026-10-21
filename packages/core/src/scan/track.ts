@@ -9,7 +9,7 @@
 // Honesty rules: a branch reading is never the product's state (derive.ts isCurrent); a current reading taken before
 // the release is an observation, not evidence (a later reading is not caused by the change); `confirmed` needs a
 // reading after the release that meets the expected value (baseline + expected_delta, in the delta's direction).
-import { isCurrent } from './derive.ts';
+import { isCurrent, metricKey } from './derive.ts';
 import type { ScanJob } from './jobs.ts';
 import type { Measurement, Proposal, ProposalStatus, ScanSnapshot } from './types.ts';
 
@@ -65,7 +65,23 @@ export const TRACK_DAYS = 14;
 
 const fmt = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100));
 const day = (iso?: string) => (iso ? iso.slice(0, 10) : '');
-const latest = (xs: Measurement[]): Measurement | undefined => { let r: Measurement | undefined; for (const m of xs) if (!r || m.measured_at > r.measured_at || (m.measured_at === r.measured_at && m.id > r.id)) r = m; return r; };
+/** The readings grouped once per table: by proposal, and (current readings only) by feature + lens + metric, each in table order so
+ *  the loops below see the rows exactly as a scan of the table would. Cached by the array's identity and length, as derive.ts's index is. */
+interface ReadingIndex { n: number; byProposal: Map<string, Measurement[]>; current: Map<string, Measurement[]> }
+const READINGS = new WeakMap<readonly Measurement[], ReadingIndex>();
+function readingsOf(ms: readonly Measurement[]): ReadingIndex {
+  let ix = READINGS.get(ms);
+  if (ix && ix.n === ms.length) return ix;
+  ix = { n: ms.length, byProposal: new Map(), current: new Map() };
+  const push = (m: Map<string, Measurement[]>, k: string, x: Measurement) => { const a = m.get(k); if (a) a.push(x); else m.set(k, [x]); };
+  for (const m of ms) {
+    if (m.proposal_id) push(ix.byProposal, m.proposal_id, m);
+    if (isCurrent(m)) push(ix.current, metricKey(m.feature, m.lens, m.metric), m);
+  }
+  READINGS.set(ms, ix);
+  return ix;
+}
+const latest = (xs: readonly Measurement[]): Measurement | undefined => { let r: Measurement | undefined; for (const m of xs) if (!r || m.measured_at > r.measured_at || (m.measured_at === r.measured_at && m.id > r.id)) r = m; return r; };
 
 /** Where proposal `id` stands; null when it is not decided (a `proposed` row is a question, not a track) or unknown. */
 export function trackOf(scan: Pick<ScanSnapshot, 'proposals' | 'measurements' | 'packs' | 'releases'>, id: string, opts: TrackOpts = {}): Track | null {
@@ -78,11 +94,11 @@ export function trackOf(scan: Pick<ScanSnapshot, 'proposals' | 'measurements' | 
 
   // the numbers: baseline (the item's `before` reading, else the latest current one before the decision), expected, branch, current
   const unit = (m?: Measurement) => (m?.unit ? ' ' + m.unit : '');
-  const mine: Measurement[] = [], cur: Measurement[] = [];
-  if (p.metric) for (const m of scan.measurements) {
-    if (m.lens !== p.lens || m.metric !== p.metric) continue;
-    if (m.proposal_id === p.id) mine.push(m);
-    if (m.feature === p.feature && isCurrent(m)) cur.push(m);
+  let mine: readonly Measurement[] = [], cur: readonly Measurement[] = [];
+  if (p.metric) {
+    const ix = readingsOf(scan.measurements);
+    mine = (ix.byProposal.get(p.id) ?? []).filter((m) => m.lens === p.lens && m.metric === p.metric);
+    cur = ix.current.get(metricKey(p.feature, p.lens, p.metric)) ?? [];
   }
   const decided = p.decided_at ?? (saving ? undefined : p.updated_at);
   const before = latest(mine.filter((m) => m.phase === 'before')) ?? latest(cur.filter((m) => !decided || m.measured_at <= decided));
