@@ -156,6 +156,15 @@ export function Dock() {
     }
   }, [open]);
 
+  // opening (or switching) a panel from the rail hands focus to the panel body, the mirror of the close above: without it a
+  // keyboard reader Tabs past every remaining rail button to reach what they just opened. A panel that takes its own focus
+  // (Find's autoFocus input) is left alone - focus is only moved when it is still on the rail.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const a = document.activeElement;
+    if (a && nav.current?.contains(a)) fly.current?.querySelector<HTMLElement>('.fb')?.focus({ preventScroll: true });
+  }, [open]);
+
   // plan overlays keep clear of the flyout by its real width (a wide one is up to three times the classic)
   useLayoutEffect(() => {
     const el = fly.current;

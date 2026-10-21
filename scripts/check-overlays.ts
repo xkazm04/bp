@@ -8,7 +8,8 @@
 //   Toast                 an undoable toast is not displaced, the queue drains in order, the live region is
 //                         mounted and not display:contents
 //   General legend        the caption is prose, not a key row (.lg-cap and the display:block rule that carries it)
-//   Phone touch targets   every phone-scoped control rule declares at least 44 px
+//   Phone touch targets   every phone-scoped rule for an interactive element, DERIVED from the CSS and the rendered
+//                         controls, declares at least 44 px (a touch-exempt comment opts one out)
 //   Marker tokens         no text colour is taken from --red / --mint / --amber (their *-2 siblings are the
 //                         text-grade ones; --red reads 4.36:1 on --paper in light theme)
 //   Phone reading list    a search never prints a heading with no rows under it
@@ -23,7 +24,7 @@ import { register } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { readStripped, stripBlock } from './lib/source.ts';
+import { blankBlock, readBlanked, readStripped, stripBlock } from './lib/source.ts';
 import fs from 'node:fs';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
@@ -54,11 +55,11 @@ const lensId = Object.keys(P.LENS).find((l) => lensOf(P, l)) as string;
 const text = (html: string) => html.replace(/<!--.*?-->/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
 
 // a fresh stub engine and state per render, with console.error captured (the card logs a failed aggregate once)
-function render(el: () => Any, patch: Record<string, unknown>, lensAgg: () => Any, pre?: (E: Any) => void) {
+function render(el: () => Any, patch: Record<string, unknown>, lensAgg: () => Any, shared?: { E?: Any }) {
   const S = { ...initialState(1, P.asOf), ready: true, ...patch };
   const errors: string[] = [], origErr = console.error;
   console.error = (...a: unknown[]) => { errors.push(a.map(String).join(' ').slice(0, 160)); };
-  const E = {
+  const E = shared?.E ?? {
     M, S, U: 1, SAFE: { l: 0, t: 0, r: 1280, b: 800 }, FW: 1280, FH: 800,
     store: { get: () => S, subscribe: () => () => {} },
     setHoverEl() {}, placeHover() {}, dirty() {}, onFrame: () => () => {}, flyToFeature() {},
@@ -66,8 +67,8 @@ function render(el: () => Any, patch: Record<string, unknown>, lensAgg: () => An
     lensIds: Object.keys(P.LENS),
     lensAgg, channel: () => null,
   };
+  if (shared) { if (shared.E) { Object.assign(E.S, patch); E.lensAgg = lensAgg; } shared.E = E; }   // a reused engine takes the new state and aggregate
   try {
-    pre?.(E);
     const html: string = renderToString(React.createElement(VariantCtx.Provider, { value: V }, React.createElement(EngineCtx.Provider, { value: E }, el())));
     return { html, threw: null as string | null, errors };
   } catch (e) {
@@ -87,6 +88,24 @@ const shared = render(() => React.createElement(O.HoverCard), hover, () => { thr
 expect(shared.threw === null && shared.errors.length === 1, `plan raster + hover card logged ${shared.errors.length} lines for one lens aggregate on one engine, expected 1 (${shared.threw ?? 'rendered'})`);
 const ok = render(() => React.createElement(O.HoverCard), hover, () => ({ parts: ['CHECK lens part'] }));
 expect(text(ok.html).includes('CHECK lens part'), 'HoverCard did not show the lens aggregate line it was given');
+
+// One engine, one failing lens, reported on the plan AND under the pointer: the canvas (plan.ts) and the hover card share
+// a single log-once set, so the pair prints one line. Each render above had its own stub engine, so it could not see two.
+// The failure arrives through plan.ts's drawDecor (a channel whose decor throws); the card's aggregate throws too.
+{
+  const { drawDecor } = await imp('engine/render/plan.ts');
+  const shared: { E?: Any } = {};
+  const first = render(() => React.createElement(O.HoverCard), { view: lensId }, () => ({ parts: [] }), shared);
+  const E = shared.E as Any;
+  E.channel = (l: string) => (l === lensId ? { decor() { throw new Error('check-overlays: decor threw'); } } : null);
+  E.mixS = { d: { [lensId]: 1 } }; E.th = {}; E.U = 1;
+  const errs: string[] = [], keep = console.error;
+  console.error = (...a: unknown[]) => { errs.push(String(a[0])); };
+  try { drawDecor(E, { save() {}, restore() {} }, { c0x: 0, c0y: 0, c1x: 1, c1y: 1, k: 1 }); } finally { console.error = keep; }
+  const card = render(() => React.createElement(O.HoverCard), hover, () => { throw new Error('check-overlays: aggregate threw'); }, shared);
+  expect(first.threw === null && errs.length === 1, `plan.ts drawDecor logged ${errs.length} errors for one throwing decor, expected 1 (the stub engine did not reach the failure)`);
+  expect(card.threw === null && card.errors.length === 0, `the same lens failing on the plan and under the pointer was logged ${errs.length + card.errors.length} times for one engine, expected 1`);
+}
 
 // Morning: the spend line reads SPEND_CAP and the away mark reads AWAY_SINCE
 const mo = render(() => React.createElement(O.Morning), { morning: true }, () => ({ parts: [] }));
@@ -137,18 +156,65 @@ const bpcss = stripBlock(fs.readFileSync(path.join(SRC, 'components/blueprint.cs
 const capRule = /\.lg\s+\.lg-cap\s*\{([^}]*)\}/.exec(bpcss);
 expect(!!capRule && /display\s*:\s*block/.test(capRule[1]), 'blueprint.css: .lg .lg-cap does not set display: block, so the caption lays out as flex columns');
 
-// Phone touch targets: the theme toggle, the "whose desk" chips and the feature rows are tapped with a
-// thumb, so each declares at least 44 px (the Back button above is the fourth). Read from the CSS, comments stripped.
-const minPx = (sel: string) => {
-  const m = new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{([^}]*)\\}').exec(bpcss);
-  if (!m) return { sel, px: NaN, found: false };
-  const h = /(?:^|[;\s])(?:min-height|height)\s*:\s*(\d+)px/.exec(m[1]);
-  return { sel, px: h ? Number(h[1]) : NaN, found: true };
-};
-for (const sel of ['.bp-phone .theme-toggle', '.ph-who button', '.ph-dom button']) {
-  const r = minPx(sel);
-  expect(r.found && r.px >= 44, `blueprint.css ${sel}: touch target ${r.found ? (Number.isNaN(r.px) ? 'unset' : r.px + 'px') : 'rule not found'}, expected at least 44px`);
+// General legends with every lens switched off (`?lenses=-a,-b,...` leaves P.lenses empty; parseLensToggle has no floor):
+// the plan draws no lens marks, so neither key may describe marks or count "all 0 enabled lenses". The populated case is
+// read first, as the guard that the phrases still bite - a reworded legend cannot pass the empty case by saying nothing.
+{
+  const { SubtleLegend } = await imp('variants/subtle/Legend.tsx');
+  const keys = (shared: { E?: Any }) => [
+    text(render(() => React.createElement(SubtleLegend, { view: 'general' }), {}, () => ({ parts: [] }), shared).html),
+    text(render(() => React.createElement(Legend, { view: 'general' }), {}, () => ({ parts: [] }), shared).html),
+  ];
+  const full: { E?: Any } = {};
+  const [subFull, capFull] = keys(full);
+  expect(/one mark per lens/.test(subFull) && new RegExp(`all ${P.lenses.length} enabled lenses`).test(capFull), 'the populated General legends no longer say "one mark per lens" / "all N enabled lenses" - the empty-lens scan stopped matching');
+  const none: { E?: Any } = {};
+  render(() => null, {}, () => ({ parts: [] }), none);
+  none.E.M = { ...M, P: { ...P, lenses: [] } }; none.E.lensIds = [];
+  const [subNone, capNone] = keys(none);
+  expect(!/one mark per lens/.test(subNone) && /No lenses are enabled/.test(subNone), `the subtle General legend with 0 lenses still describes marks or does not say so (${subNone.slice(0, 120)})`);
+  expect(!/all 0 enabled lenses/.test(capNone) && /No lenses are enabled/.test(capNone), `the shared General caption with 0 lenses still counts "all 0 enabled lenses" or does not say so`);
 }
+
+// Phone touch targets, DERIVED rather than listed: every phone-scoped rule in blueprint.css whose subject (the last
+// compound of its selector) is an interactive element must declare at least 44 px on the rule for that element. A subject is
+// interactive when it is a button / summary / input / select / textarea / a, or when it carries a class that a control the
+// Phone actually renders (list and detail) carries - so `.ph-q .op`, `.ph-more` and `.theme-toggle` are found without being
+// named here. State variants (`:hover`, `[aria-pressed]`, pseudo-elements) inherit from their base rule and are skipped. A
+// rule that styles a control that is not a thumb target opts out with a `touch-exempt` comment inside the rule.
+// Read from the CSS with comments BLANKED (offsets and line numbers stay the file's own), so a comment about the rule cannot
+// stand in for it and the reported anchor is the line the rule sits on.
+const rawCss = fs.readFileSync(path.join(SRC, 'components/blueprint.css'), 'utf8');
+const touchCss = blankBlock(rawCss);
+const phList = render(() => React.createElement(Phone), { phone: true, open: null }, () => ({ parts: [] }));
+const controlClasses = new Set<string>();
+for (const m of (ph.html + phList.html).matchAll(/<(?:button|summary|input|select|textarea|a)\b([^>]*)>/g)) {
+  for (const c of (/class="([^"]*)"/.exec(m[1]) || ['', ''])[1].split(/\s+/)) if (c) controlClasses.add(c);
+}
+const TAGS = ['button', 'summary', 'input', 'select', 'textarea', 'a'];
+const subjectOf = (sel: string) => sel.trim().split(/\s*[>+~]\s*|\s+/).pop() as string;
+const byTouch = new Map<string, { sel: string; line: number; px: number; exempt: boolean; kind: string }>();
+for (const m of touchCss.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+  const line = touchCss.slice(0, m.index + m[0].indexOf(m[1].trim())).split('\n').length;
+  const exempt = /touch-exempt/.test(rawCss.slice(m.index, m.index + m[0].length));
+  const px = Math.max(-Infinity, ...[...m[2].matchAll(/(?:^|[;\s])(?:min-height|height)\s*:\s*(\d+(?:\.\d+)?)px/g)].map((d) => Number(d[1])));
+  for (const sel of m[1].split(',').map((s) => s.trim())) {
+    if (!/\.ph-|\.bp-phone/.test(sel)) continue;
+    const subj = subjectOf(sel);
+    if (/[:[]/.test(subj)) continue;
+    const tag = (/^[a-z][a-z0-9-]*/.exec(subj) || [''])[0];
+    const classes = subj.match(/\.[\w-]+/g)?.map((c) => c.slice(1)) ?? [];
+    const kind = TAGS.includes(tag) ? tag : classes.find((c) => controlClasses.has(c)) ? 'class' : '';
+    if (!kind) continue;
+    const prev = byTouch.get(sel);
+    byTouch.set(sel, prev ? { ...prev, px: Math.max(prev.px, px), exempt: prev.exempt || exempt } : { sel, line, px, exempt, kind });
+  }
+}
+const touch = [...byTouch.values()];
+// the matcher guard: the derivation must still see each kind of control this file is known to style for a thumb
+for (const k of ['button', 'summary', 'input', 'class']) expect(touch.some((t) => t.kind === k), `blueprint.css: the touch-target derivation found no phone ${k === 'class' ? 'control reached through a rendered class' : k + ' rule'} - the matcher stopped biting`);
+expect(touch.length >= 9, `blueprint.css: the touch-target derivation found ${touch.length} phone control rules, 9 are known - the matcher stopped biting`);
+for (const t of touch) expect(t.exempt || t.px >= 44, `blueprint.css:${t.line} ${t.sel}: touch target ${Number.isFinite(t.px) ? t.px + 'px' : 'unset'}, expected at least 44px (or a touch-exempt comment)`);
 
 // globals.css states the rule on the tokens themselves: --mint-2 / --amber-2 / --red-2 are the text-grade
 // status colours (>= 4.5:1 on paper and cards) and --mint / --amber / --red stay the marker and fill tones.
@@ -223,6 +289,29 @@ const fnOf = (name: string) => { const i = appSrc.indexOf('function ' + name + '
   const html: string = renderToString(React.createElement(T.ThemeToggle));
   expect(html.includes('Switch to') && !html.includes('visit only'), 'a fresh toggle (nothing refused yet) already carries the notice');
 }
+// Screens viewer: the scan polls, so the run list it indexes is rebuilt under it. The reader's A/B choice is held as a run
+// id and resolved against the CURRENT list (pickRun): a pruned list must not index past its end (A undefined throws at
+// t.shot), and a newer run arriving must not turn the chosen run into another one. renderToString keeps no state across
+// renders, so the stale-choice cases are held on the resolver the Viewer reads, and the Viewer is rendered at 3 and 1 takes.
+const { Viewer, pickRun } = await imp('components/sheet/Screens.tsx');
+const take = (id: string) => ({ run: null, runId: id, shot: { id: 's-' + id, path: 'shots/' + id + '/a.png', size: 'phone', theme: 'dark', captured_at: '2026-10-01T10:00:00Z' } });
+const three = ['r3', 'r2', 'r1'].map(take), solo = [take('r3')];
+expect(pickRun(three, 'r1', 1) === 2 && pickRun(solo, 'r1', 1) === 0, `pickRun: a chosen run pruned from the list resolved to ${pickRun(solo, 'r1', 1)}, expected the clamped default 0`);
+expect(pickRun([take('r4'), ...three], 'r2', 0) === 2, 'pickRun: a newer run arriving changed which run the reader chose (r2 is now index 2)');
+expect(pickRun(three, null, 1) === 1 && pickRun(three, null, 0) === 0 && pickRun([], null, 1) === 0, 'pickRun: the unchosen default is not the second newest (A) and the newest (B)');
+for (const t of [three, solo]) {
+  const sv = render(() => React.createElement(Viewer, { slug: 'p', k: 'phone · dark', takes: t, name: 'F', close() {} }), {}, () => ({ parts: [] }));
+  expect(sv.threw === null && /class="shotv"/.test(sv.html), `Screens Viewer threw with ${t.length} take(s) (${sv.threw ?? 'rendered'})`);
+}
+
+// Flyout focus (WCAG 2.4.3): closing a panel hands focus back to its rail item, so opening one must hand it to the panel
+// body (.fb, tabIndex -1), or a keyboard reader Tabs past every remaining rail button to reach it. No DOM rig exists, so
+// Dock.tsx is read as source with comments blanked (a comment about the rule cannot stand in for it). The close path is
+// the guard that the matcher still bites: if it is not found, the pattern - not the Dock - is what broke.
+const dockSrc = readBlanked(path.join(SRC, 'components/Dock.tsx'));
+const focusCalls = (needle: string) => [...dockSrc.matchAll(/\.focus\(/g)].filter((m) => dockSrc.slice(Math.max(0, m.index - 220), m.index).includes(needle)).length;
+expect(focusCalls('[data-k=') > 0, 'Dock.tsx: the close-path focus call (rail item by data-k) was not found - the flyout focus scan stopped matching');
+expect(focusCalls("'.fb'") > 0, "Dock.tsx: opening a flyout never focuses its body (.fb) - focus stays on the rail and the panel is 7 Tab presses away");
 
 if (failures.length) { console.error(`check-overlays: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
 console.log(`check-overlays: ${held} expectations held`);

@@ -118,10 +118,14 @@ export function SubtleLegend({ view }: { view: ViewId }) {
     return (
       <>
         <div className="sl-key">
-          <p>Along each fixture&apos;s top edge, one mark per lens, always in this order. Its colour is that lens&apos;s health:</p>
-          <div className="sl-grid">
-            {P.lenses.map((l) => <div key={l.id}><Swatch d={l} w={48} h={16} measure={0.7} /><span>{l.name}</span></div>)}
-          </div>
+          {P.lenses.length === 0
+            ? <p>No lenses are enabled, so the fixtures carry no marks along their top edge. <code>?lenses=+business</code> (any lens id from the map) turns one back on for this session.</p>
+            : <>
+              <p>Along each fixture&apos;s top edge, one mark per lens, always in this order. Its colour is that lens&apos;s health:</p>
+              <div className="sl-grid">
+                {P.lenses.map((l) => <div key={l.id}><Swatch d={l} w={48} h={16} measure={0.7} /><span>{l.name}</span></div>)}
+              </div>
+            </>}
           {P.lenses.length > 0 && (
             <div className="sl-health">
               {HEALTH_KEY.map(({ h, word }) => <span key={h}><HealthSwatch d={P.lenses[0]} h={h} /><i>{word}</i></span>)}
