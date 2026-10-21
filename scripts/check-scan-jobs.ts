@@ -45,8 +45,17 @@ type Proposal = import('../packages/core/src/scan/types.ts').Proposal;
 
 let failed = 0, passed = 0, skipped = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) passed++; else { failed++; console.log('FAIL ' + name + (detail ? ': ' + detail : '')); } };
-/** A check that needs the full checkLensManifest (project mode, taken looks): skipped, said so, while it is the S0 stub. */
-const checkIf = (ready: boolean, name: string, ok: () => boolean, detail = () => '') => { if (ready) check(name, ok(), detail()); else { skipped++; console.log('SKIP ' + name + ' (checkLensManifest is still the stub)'); } };
+/**
+ * A check that needs the full checkLensManifest (project mode, taken looks). WP1 landed it, so a checker that
+ * cannot do this is a FAILURE, not a skip: while this skipped, seven expectations could vanish from the run and
+ * `check-scan-jobs: N checks passed` read exactly as it does now. The call stays lazy so a regressed checker is
+ * reported rather than thrown out of.
+ */
+const checkIf = (ready: boolean, name: string, ok: () => boolean, detail = () => '') => {
+  if (ready) { check(name, ok(), detail()); return; }
+  failed++;
+  console.log('FAIL ' + name + ': checkLensManifest cannot judge this (the S0 stub is back, or the mode was dropped)');
+};
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function until(pred: () => boolean, ms = 30000): Promise<boolean> { const t = Date.now() + ms; while (Date.now() < t) { if (pred()) return true; await sleep(50); } return pred(); }
 const job = (slug: string, id: string): ScanJob | undefined => J.list(slug).find((j) => j.id === id);
@@ -66,9 +75,11 @@ const MANIFEST = {
 };
 /** A permanent project lens: reverse-DNS id, a look of its own. */
 const PROJECT = { ...MANIFEST, id: 'com.example.money', presentation: { glyph: 'padlock', line: 'chain', measures: 'oldMoneySites' } };
-// feature tests on the checker (WP1 lands the full one; the S0 stub checks a temporary manifest only)
+// feature tests on the checker: WP1 landed the full one, and the run now says so out loud rather than
+// letting the seven checkIf expectations below quietly skip (scripts/check-lens-manifest.ts holds the checker itself)
 const projectReady = checkLensManifest(PROJECT, { mode: 'project' }) === null;
 const lookReady = checkLensManifest(MANIFEST, { mode: 'temporary', taken: [{ glyph: 'brackets', line: 'comb' }] }) !== null;
+check('checkLensManifest judges project mode and a taken look (else the 7 checks that need it would not run)', projectReady && lookReady, `project ${projectReady}, look ${lookReady}`);
 
 try {
   // ------------------------------------------------------------------ queue cap, done, stdin prompt, attach at exit
