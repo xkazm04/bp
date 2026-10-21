@@ -104,6 +104,10 @@ function auditMount(code, rel, methods) {
   if (m[2] !== want) bad.push(`re-exports '${m[2]}', not '${want}'`);
   const got = m[1].split(',').map((x) => x.trim()).sort().join(','), need = [...methods].sort().join(',');
   if (got !== need) bad.push(`mounts ${got || 'nothing'} but the core handler exports ${need || 'nothing'}`);
+  // Next's route-segment config is the one hand-typed field of a mount: every handler reads the filesystem (node:fs) and
+  // the routes read live state, so each mount must say exactly these two, once each.
+  const cfg = [...m[3].matchAll(/export\s+const\s+(runtime|dynamic)\s*=\s*'([\w-]+)'/g)].map((x) => x[1] + '=' + x[2]).sort().join(',');
+  if (cfg !== 'dynamic=force-dynamic,runtime=nodejs') bad.push(`route config is ${cfg || 'absent'}, not runtime = 'nodejs' + dynamic = 'force-dynamic'`);
   return bad;
 }
 const webFiles = fs.existsSync(WEB_API) ? walk(WEB_API) : [];
@@ -122,7 +126,11 @@ for (const rel of coreMethods.keys()) if (!webFiles.some((f) => path.relative(WE
   for (const [what, code, methods] of [
     ['inline handler', `export async function GET(req: Request) { return new Response('x'); }\n`, ['GET']],
     ['wrong path', `export { GET } from '@bp/core/server/api/products/[slug]/scans/route';\n`, ['GET']],
-    ['missing method', `export { GET } from ${spec};\nexport const runtime = 'nodejs';\n`, ['GET', 'POST']],
+    ['missing method', `export { GET } from ${spec};\nexport const runtime = 'nodejs';\nexport const dynamic = 'force-dynamic';\n`, ['GET', 'POST']],
+    ['no directives', `export { GET } from ${spec};\n`, ['GET']],
+    ['runtime edge', `export { GET } from ${spec};\nexport const runtime = 'edge';\nexport const dynamic = 'force-dynamic';\n`, ['GET']],
+    ['force-static', `export { GET } from ${spec};\nexport const runtime = 'nodejs';\nexport const dynamic = 'force-static';\n`, ['GET']],
+    ['one directive only', `export { GET } from ${spec};\nexport const runtime = 'nodejs';\n`, ['GET']],
     ['extra code', `export { GET } from ${spec};\nconsole.log('side effect');\n`, ['GET']],
   ]) { controls++; if (!auditMount(code, rel, methods).length) failures.push(`control: mount "${what}" was not caught`); }
   controls++; if (auditMount(`export { GET } from ${spec};\n\nexport const runtime = 'nodejs';\nexport const dynamic = 'force-dynamic';\n`, rel, ['GET']).length) failures.push('control: a clean mount was refused');
