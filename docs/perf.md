@@ -103,6 +103,10 @@ per-frame work is a few hundred cheap primitives.
   frame; DecisionCard gets its height from a ResizeObserver instead of `offsetHeight` per frame.
 - The settle wake-up is armed once per gesture (not clear+set per frame); `sim.expire` runs every 500 ms of wall time.
 
+## Budget
+
+- 2026-10-21 (operator ruling): the budget is p50 <= 16.7 ms at `?scale=4`, measured with `python scripts/perf.py` on Lynx while the machine is idle of builds. p95 is reported without a budget.
+
 ## Known costs
 
 - During a gesture the cached raster is scaled up to x1.5 before re-rastering, so text can look soft (and
