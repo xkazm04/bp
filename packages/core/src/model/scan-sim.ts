@@ -456,7 +456,9 @@ export class ScanSim {
       if (r.i >= r.items.length) {
         const at = this.iso(t), err = r.job.kind === 'release' ? this.train.end(r.job).error : undefined;
         this.setRun(r.runId, { status: err ? 'failed' : 'done', ended_at: at, updated_at: at });
-        this.setJob(r, { status: err ? 'failed' : 'done', ended_at: at, exit_code: 0, ...(err ? { error: err } : {}) });
+        // a failed job exits non-zero, as a real run does (jobs.server.ts passes the CLI's code through): the
+        // workbench paints the figure red only when it is non-zero, so exit 0 on a failure read as a clean run
+        this.setJob(r, { status: err ? 'failed' : 'done', ended_at: at, exit_code: err ? 1 : 0, ...(err ? { error: err } : {}) });
         stepped = true;
       } else if (stepped) this.setRun(r.runId, { updated_at: this.iso(t) });
       moved ||= stepped;

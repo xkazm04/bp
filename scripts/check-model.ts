@@ -11,7 +11,9 @@
 //       clears carries 'ok', a burst reads as the worst tone it held back, and no plain confirmation is 'bad';
 //   (e) time.ts: hhmmUTC / dayHhmmUTC / ymdUTC read the same whatever the host's zone, mark the zone unless the
 //       caller's surface captions it, and answer the absent mark for an instant nobody recorded - plus a source
-//       guard, so no file under packages/core/src/model hand-slices a clock time out of an ISO string again.
+//       guard, so no file under packages/core/src/model hand-slices a clock time out of an ISO string again;
+//   (f) scan-sim.ts: a sample job that ended 'failed' carries a non-zero exit code and its error, as a real run
+//       does through jobs.server.ts, and a clean one still ends done / exit 0.
 // Run: node scripts/check-model.ts   (Node's type stripping; scripts/overlays-loader.mjs transpiles src/** on the fly)
 // Control: BP_MODEL_MUTATE='[["lens.ts"," (\x27 + n + \x27 of \x27","(\x27 + n + \x27 OF \x27"]]' rewrites source text as
 // it loads ([file suffix, find, replace] literals), so an assertion can be seen red on a seeded defect.
@@ -198,6 +200,42 @@ const PLACES: { id: string; feats: Any[] }[] = [...M.L.rooms, ...M.L.wings, ...M
   expect(walked > 10, `(e) the guard walked ${walked} model files`);
   expect(!hits.length, `(e) ${hits.length} site(s) hand-format a clock time instead of calling hhmmUTC:\n      ` + hits.join('\n      '));
   console.log(`utc clock   ${walked} model files guarded / ${hits.length} hand-sliced clock times / hhmmUTC(ISO) = ${JSON.stringify(hhmmUTC(ISO))}`);
+}
+
+// ---------------------------------------------------------------- (f) a failed job exits non-zero, as a real one does
+{
+  const { ScanSim } = await impCore('src/model/scan-sim.ts');
+  const structure = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.app-structure.json'), 'utf8')) as Any;
+  const manifests = new Map<string, Any>(structure.lenses.map((l: Any) => [l.id, l.manifest]));
+  const mapValue = (f: string, l: string, k: string): number | undefined => { const v = structure.facets[f]?.[l]?.values?.[k]; return typeof v === 'number' ? v : undefined; };
+  let clock = Date.parse('2026-10-15T12:00:00.000Z');
+  const sim = new ScanSim({ now: () => clock, findings: [] });
+  sim.bind({ order: structure.features.map((f: Any) => f.slug), manifest: (l: string) => manifests.get(l), value: mapValue });
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const settle = async (id: string) => {
+    for (let i = 0; i < 40; i++) {
+      const j = sim.jobs().find((x: Any) => x.id === id);
+      if (j && j.status !== 'running' && j.status !== 'queued') return j;
+      clock += 1000; await sleep(260);
+    }
+    return sim.jobs().find((x: Any) => x.id === id);
+  };
+  const free = sim.snapshot().proposals.filter((p: Any) => p.status === 'done' || p.status === 'failed').map((p: Any) => p.id);
+  sim.triage({ ids: free, decision: 'accept', note: 'accepted for this check' });
+  sim.createRelease('0.1.0');
+
+  // the gate fails: the release and its job both fail
+  sim.setTrainToggles({ ghOff: false, conflict: false, gateFails: true });
+  const bad = await settle(sim.buildRelease('rel-0.1.0').id);
+  expect(bad?.status === 'failed', `(f) the gate-failing build must end 'failed', not ${JSON.stringify(bad?.status)}`);
+  expect(!!bad?.error, `(f) a failed job must carry its error: ${JSON.stringify(bad?.error)}`);
+  expect(typeof bad?.exit_code === 'number' && bad.exit_code !== 0, `(f) a failed job exits ${JSON.stringify(bad?.exit_code)}; the workbench paints the figure red only when it is non-zero, so 0 reads as a clean run`);
+
+  // and the clean path still exits 0 (check-scan-jobs pins the same shape on the real server)
+  sim.setTrainToggles({ ghOff: false, conflict: false, gateFails: false });
+  const ok = await settle(sim.buildRelease('rel-0.1.0').id);
+  expect(ok?.status === 'done' && ok.exit_code === 0 && !ok.error, `(f) a clean build must still end done / exit 0: ${JSON.stringify([ok?.status, ok?.exit_code, ok?.error])}`);
+  console.log(`job exits   gate fails -> ${bad?.status} exit ${bad?.exit_code} / clean -> ${ok?.status} exit ${ok?.exit_code}`);
 }
 
 if (failures.length) {
