@@ -20,6 +20,7 @@ import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { readStripped, stripComments } from './lib/source.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
@@ -192,6 +193,16 @@ expect(!/=>\s*\{/.test(lay.slice(lay.indexOf('export function drawTracks'))), 'd
 }
 
 try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a dying child still holds a file */ }
+// Self-proof, every run: seed a defect into the source this check transpiles (BP_OVERLAYS_MUTATE; the loader skips a mutation
+// whose text no longer exists, so a child that passes means the mutation stopped biting) and require the child to fail on the
+// rule that defect breaks: track.ts an approved track no longer offers Build.
+if (!process.env.BP_OVERLAYS_MUTATE) {
+  const seed = [["scan/track.ts", "t.next = 'build'; }", "t.next = 'measure'; }"]];
+  const child = spawnSync(process.execPath, [...process.execArgv, import.meta.filename], { env: { ...process.env, BP_OVERLAYS_MUTATE: JSON.stringify(seed) }, encoding: 'utf8', timeout: 120000 });
+  expect(child.status === 1 && child.stdout.includes('(b) an approved one offers Build in place'),
+    'self-proof: track.ts an approved track no longer offers Build: the check must fail on (b) an approved one offers Build in place (child exit ' + child.status + ')');
+}
+
 if (failures.length) { console.log(failures.map((f) => 'FAIL ' + f).join('\n')); console.log(`check-live-tracks: ${failures.length} failed, ${held} held`); process.exit(1); }
 console.log(`check-live-tracks: ${held} expectations held`);
 process.exit(0);

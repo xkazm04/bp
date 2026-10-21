@@ -9,6 +9,7 @@ import { register } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
 register('./overlays-loader.mjs', { parentURL: import.meta.url, data: { src: SRC, root: ROOT, mutate: JSON.parse(process.env.BP_OVERLAYS_MUTATE || '[]') } });
@@ -103,6 +104,16 @@ if (hit) {
   const map3: Any = JSON.parse(JSON.stringify(map));
   map3.features = map3.features.slice(1);
   expect(refreshLiveModel(M2, map3, events, emptyScan(), null).structural, 'a feature removed from the map is structural');
+}
+
+// Self-proof, every run: seed a defect into the source this check transpiles (BP_OVERLAYS_MUTATE; the loader skips a mutation
+// whose text no longer exists, so a child that passes means the mutation stopped biting) and require the child to fail on the
+// rule that defect breaks: live-health.ts take() no longer drops a reading older than the one it holds.
+if (!process.env.BP_OVERLAYS_MUTATE) {
+  const seed = [['live-health.ts', 'if (held && at(held.measured_at) > mm) return null;', 'if (false) return null;']];
+  const child = spawnSync(process.execPath, [...process.execArgv, import.meta.filename], { env: { ...process.env, BP_OVERLAYS_MUTATE: JSON.stringify(seed) }, encoding: 'utf8', timeout: 60000 });
+  expect(child.status === 1 && child.stdout.includes('an older reading changes nothing'),
+    'self-proof: with live-health.ts accepting an older reading, the check must fail on "an older reading changes nothing" (child exit ' + child.status + ')');
 }
 
 if (failures.length) { console.log('check-live-health FAILED:\n  ' + failures.join('\n  ')); process.exit(1); }
