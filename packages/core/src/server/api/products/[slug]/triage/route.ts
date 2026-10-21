@@ -5,7 +5,7 @@
 // `reopen` is the undo (lens-scan 1.6.0, store v3): each item back to the status it left, refused per item while its
 // release is past draft, its rework rebuilt, its pack closed or nothing was recorded (skipped reasons `in-release`,
 // `rebuilt`, `pack-closed`, `no-prior-status`); decision `reopened`.
-// 200 + store.mjs's JSON `{ decision, by, triaged, skipped, packs_triaged }`; 409 with the same JSON when nothing moved;
+// 200 + store.mjs's JSON `{ decision, by, triaged, skipped, packs_triaged }`; 409 with the same JSON plus `error: 'nothing moved'` when nothing moved, and 409 `{ error, triaged: [], skipped: [] }` when store.mjs refuses (every 409 has `error`, `triaged` and `skipped`);
 // 400 for a bad body (or one store.mjs calls bad input); 404 for an unknown product or a missing store; 503 when
 // lens-scan is not installed or the store stayed locked. The stream sees the write through the store's data_version.
 // Localhost only.
@@ -45,6 +45,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   if (!body) return Response.json({ error: `body must be { ids: string[] (1..${MAX_TRIAGE}), decision: 'accept' | 'rework' | 'descope' | 'reopen', note?: string }` }, { status: 400 });
   if (!hasStore(p)) return Response.json({ error: `no scan store for ${slug}` }, { status: 404 });
   const r = await triage(storeFile(p), body, await triageBy());
-  if (!r.ok) return Response.json({ error: r.error }, { status: r.kind === 'bad' ? 400 : r.kind === 'refused' ? 409 : 503 });
-  return Response.json(r.data, { status: r.data.triaged.length ? 200 : 409 });
+  // both 409s carry `error` and the result's lists, so a caller branches on a field, not on which shape arrived:
+  // a store refusal has empty lists (it moved and skipped nothing), a nothing-moved answer has its skipped reasons
+  if (!r.ok) return Response.json(r.kind === 'refused' ? { error: r.error, triaged: [], skipped: [] } : { error: r.error }, { status: r.kind === 'bad' ? 400 : r.kind === 'refused' ? 409 : 503 });
+  return Response.json(r.data.triaged.length ? r.data : { error: 'nothing moved', ...r.data }, { status: r.data.triaged.length ? 200 : 409 });
 }

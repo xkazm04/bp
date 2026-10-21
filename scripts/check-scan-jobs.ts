@@ -18,7 +18,9 @@
 //     out), and the commits route on a fixture git repo (200 with stat, numstat and the patch cut at 2000 lines; 404 for
 //     a sha that is no item commit, even one the repo has; 400 for a bad sha), each 200 body through the parser door;
 //   - Kettle parity: the scan sim's selection scans and lens execute, and addProjectLens over the browser's store.
-// Checks that need WP1's full checkLensManifest (project mode, taken looks) print SKIP while it is the S0 stub.
+// Triage and release-create need lens-scan's store.mjs: lensScanDirs() is pinned (set / unset order) and a missing install is a
+// FAILURE wherever the operator names one (BP_LENS_SCAN_DIR), BP_REQUIRE_LENS_SCAN=1 or CI says so, or the registry the manifest
+// declares is on this machine; only a checkout without its registry (a bare worktree) skips, and says so. BP_REQUIRE_LENS_SCAN=0 waives.
 // Run: node scripts/check-scan-jobs.ts  (Node's type stripping; no build step). Exit 1 on any failure. ~15 s.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -254,6 +256,14 @@ try {
   ]);
   check('selection refusals: empty, 201 features, an unknown slug, an id, no label -> 400 bad-scope',
     selBad.map((c) => c.status + ':' + c.body.error).join() === Array(5).fill('400:bad-scope').join(), selBad.map((c) => c.status + ':' + c.body.error).join());
+  // the cap judges the stored (deduped) list, the same one "is it empty" reads: duplicates never count toward 200
+  const dupA = await call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'development', scope: sel(Array(201).fill('a')) });
+  const dupB = await call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'development', scope: sel([...many.slice(0, 200), many[0], many[199]]) });
+  const dupC = await call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'development', scope: sel([...many.slice(0, 201), many[0]]) });
+  check('selection: 201 copies of one feature -> 202, stored as one feature (the cap reads the deduped list)', dupA.status === 202 && dupA.body.scope.features.join() === 'a', dupA.status + ' ' + JSON.stringify(dupA.body).slice(0, 200));
+  check('selection: 200 distinct features plus 2 duplicates (202 raw) -> 202, stored as 200', dupB.status === 202 && dupB.body.scope.features.length === 200, dupB.status + ' ' + JSON.stringify(dupB.body.scope?.features?.length));
+  check('selection: 201 DISTINCT features stay refused even with duplicates on top (the guard still bites)', dupC.status === 400 && dupC.body.error === 'bad-scope', dupC.status + ' ' + dupC.body.error);
+  for (const r of [dupA, dupB]) if (r.status === 202) J.cancel('prod', r.body.id);
   const g = await call(scans.GET, '/x', 'GET', { slug: 'prod' });
   check('GET scans lists the job', g.status === 200 && g.body.some((j: ScanJob) => j.id === s202.body.id));
   const del = await route('products/[slug]/scans/[job]/route.ts');
@@ -385,6 +395,10 @@ try {
     const rr = repo('rel'), rstore = path.join(rr, '.ai/lens-scan'), rdb = path.join(rstore, 'scan.db');
     fs.mkdirSync(rstore, { recursive: true });
     fs.writeFileSync(path.join(rr, 'package.json'), JSON.stringify({ name: 'rel', version: '2.3.0' }));
+    // a store written by a newer lens-scan than this one knows: store.mjs REFUSES it (exit 1), the triage route's other 409
+    const fr = repo('future'), fdb = path.join(fr, '.ai/lens-scan/scan.db');
+    fs.mkdirSync(path.dirname(fdb), { recursive: true });
+    { const fw = new DatabaseSync(fdb); fw.exec('PRAGMA user_version = 99'); fw.close(); }
     const sw = new DatabaseSync(rdb);
     sw.exec(fs.readFileSync(path.join(ROOT, 'docs/standard/lens-scan-store.sql'), 'utf8'));
     sw.prepare("INSERT INTO runs (id, started_at, updated_at, phase, status, lenses) VALUES ('r0', ?, ?, 'execute', 'done', '[\"development\"]')").run(T, T);
@@ -392,7 +406,7 @@ try {
     const ip = sw.prepare("INSERT INTO proposals (id, run_id, feature, lens, metric, title, kind, status, created_at, updated_at, pack_id, commit_sha) VALUES (?, 'r0', 'a', 'development', 'cov', ?, 'fix', ?, ?, ?, 'k-dev-1', ?)");
     for (const [id, st] of [['a1', 'done'], ['a2', 'done'], ['a3', 'failed']]) ip.run(id, 'item ' + id, st, at(Number(id[1])), at(Number(id[1])), id.repeat(20));
     sw.close();
-    fs.writeFileSync(path.join(dir, 'bp.products.local.json'), JSON.stringify({ products: [{ slug: 'prod', name: 'Prod', root: pr }, { slug: 'rel', name: 'Rel', root: rr }] }));
+    fs.writeFileSync(path.join(dir, 'bp.products.local.json'), JSON.stringify({ products: [{ slug: 'prod', name: 'Prod', root: pr }, { slug: 'rel', name: 'Rel', root: rr }, { slug: 'future', name: 'Future', root: fr }] }));
     const status = (table: string, id: string) => { const d = new DatabaseSync(rdb, { readOnly: true }); try { return (d.prepare(`SELECT status FROM ${table} WHERE id = ?`).get(id) as { status?: string } | undefined)?.status; } finally { d.close(); } };
     const relRow = (id: string) => { const d = new DatabaseSync(rdb, { readOnly: true }); try { return d.prepare('SELECT * FROM releases WHERE id = ?').get(id) as Record<string, string> | undefined; } finally { d.close(); } };
 
@@ -400,6 +414,29 @@ try {
     const sug = await route('products/[slug]/releases/suggest/route.ts');
     const build = await route('products/[slug]/releases/[id]/build/route.ts'), fin = await route('products/[slug]/releases/[id]/finish/route.ts');
     const hasStoreMjs = RS.storeScript() !== null;
+    // where lens-scan is looked for, and when not finding it is a FAILURE. The resolution order is derived HERE from the
+    // manifest (not through release.server.ts's own reader), so deleting the registry fallback there changes what
+    // lensScanDirs() answers and no longer equals what the manifest declares. The SKIP this replaces let ten
+    // release-train checks stop running while the gate read green (133 passed + 1 skipped, exit 0).
+    const manifestText = (() => { try { return fs.readFileSync(path.join(ROOT, '.ai', 'manifest.yaml'), 'utf8'); } catch { return ''; } })();
+    const declared = /^registry:[ \t]*\r?\n(?:[ \t]+[^\r\n]*\r?\n)*?[ \t]+local:[ \t]*(\S+)/m.exec(manifestText)?.[1].replace(/^['"]|['"]$/g, '');
+    const declaredDir = declared ? path.resolve(ROOT, declared) : null;
+    const homeLens = path.join(os.homedir(), '.claude', 'skills', 'lens-scan'), regLens = declaredDir ? path.join(declaredDir, 'skills', 'lens-scan') : null;
+    const named = process.env.BP_LENS_SCAN_DIR;
+    const dirsFor = (v: string | undefined): string[] => {
+      if (v === undefined) delete process.env.BP_LENS_SCAN_DIR; else process.env.BP_LENS_SCAN_DIR = v;
+      try { return RS.lensScanDirs().map((d) => path.resolve(d)); } finally { if (named === undefined) delete process.env.BP_LENS_SCAN_DIR; else process.env.BP_LENS_SCAN_DIR = named; }
+    };
+    const sentinel = path.join(dir, 'named-lens-scan');
+    check('the manifest declares a registry (the fallback lensScanDirs() must follow)', !!declaredDir, manifestText ? 'no registry.local in .ai/manifest.yaml' : '.ai/manifest.yaml unreadable');
+    check('lensScanDirs: BP_LENS_SCAN_DIR set -> exactly that one place, no fallthrough', dirsFor(sentinel).join('|') === path.resolve(sentinel), dirsFor(sentinel).join('|'));
+    check('lensScanDirs: unset -> ~/.claude/skills/lens-scan, then <registry.local>/skills/lens-scan, in that order',
+      dirsFor(undefined).join('|') === [homeLens, ...(regLens ? [regLens] : [])].map((d) => path.resolve(d)).join('|'), dirsFor(undefined).join('|') + ' vs ' + [homeLens, regLens].join('|'));
+    // required when the operator names a place, the environment says so, or the declared registry is on this machine
+    // (a checkout without its registry, such as a bare worktree, cannot be asked for what it cannot have); '0' waives
+    const required = process.env.BP_REQUIRE_LENS_SCAN !== '0' && (process.env.BP_REQUIRE_LENS_SCAN === '1' || !!process.env.CI || named !== undefined || (!!declaredDir && fs.existsSync(declaredDir)));
+    check('lens-scan is found for the triage and release checks (a missing install is a failure, not a skip)', hasStoreMjs || !required,
+      'searched ' + (named !== undefined ? 'BP_LENS_SCAN_DIR=' + named : [homeLens, regLens ?? '(no registry declared in .ai/manifest.yaml)'].join(' and ')) + ' - none holds scripts/store.mjs; BP_REQUIRE_LENS_SCAN=0 waives');
     const triBad = await Promise.all([
       call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a b'], decision: 'accept' }),
       call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a1'], decision: 'ship' }),
@@ -414,6 +451,12 @@ try {
       check('triage accept -> 200 through store.mjs, by user:<gh login>', t1.status === 200 && t1.body.triaged.join() === 'a1,a2' && t1.body.by === 'user:octocat' && t1.body.decision === 'accepted', JSON.stringify(t1.body));
       const t2 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a3'], decision: 'accept' });
       check('triage accept of a failed item without a note -> 409, skipped note-required', t2.status === 409 && t2.body.skipped[0]?.reason === 'note-required', JSON.stringify(t2.body));
+      // the two 409s (nothing moved / store.mjs refused) share `error`, `triaged` and `skipped`: a caller branches on a field
+      const tRef = await call(tri.POST, '/x', 'POST', { slug: 'future' }, { ids: ['a1'], decision: 'accept' });
+      const pNone = W.parseTriageResult(t2.body);
+      check('triage 409 nothing moved -> `error` names it, the skipped list stays, the parser door still takes it', t2.body.error === 'nothing moved' && Array.isArray(t2.body.triaged) && pNone.ok && pNone.value.skipped[0]?.reason === 'note-required', JSON.stringify(t2.body) + (pNone.ok ? '' : ' ' + pNone.error));
+      check('triage 409 store refused -> `error` carries the refusal, triaged and skipped are empty lists, and the parser door does not mistake it for a result',
+        tRef.status === 409 && /schema v99/.test(tRef.body.error ?? '') && Array.isArray(tRef.body.triaged) && tRef.body.triaged.length === 0 && Array.isArray(tRef.body.skipped) && tRef.body.skipped.length === 0 && !W.parseTriageResult(tRef.body).ok, JSON.stringify(tRef.status) + JSON.stringify(tRef.body));
       const t3 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a3'], decision: 'descope', note: 'not worth it' });
       check('triage descope -> 200, the pack settles open -> triaged', t3.status === 200 && t3.body.packs_triaged.join() === 'k-dev-1' && status('packs', 'k-dev-1') === 'triaged', JSON.stringify(t3.body));
       // the undo: each item back to the status it left, the pack open again; a second undo has nothing to go back to
@@ -428,7 +471,7 @@ try {
       const t7 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a3'], decision: 'descope', note: 'not worth it' });
       check('triage after the undo: a1 accepted, a3 descoped, the pack triaged again', t6.status === 200 && t7.status === 200 && status('packs', 'k-dev-1') === 'triaged', JSON.stringify([t6.body, t7.body]));
     } else {
-      skipped++; console.log('SKIP triage and release-create through store.mjs (lens-scan not installed; set BP_LENS_SCAN_DIR)');
+      if (!required) { skipped++; console.log('SKIP triage and release-create through store.mjs (lens-scan not installed, and nothing here requires it; set BP_LENS_SCAN_DIR)'); } // required: the check above already failed; the SQL seed below keeps the rest of the block running
       const d = new DatabaseSync(rdb);
       d.exec("UPDATE proposals SET status = 'accepted' WHERE id IN ('a1', 'a2'); UPDATE proposals SET status = 'descoped' WHERE id = 'a3'; UPDATE packs SET status = 'triaged'");
       d.close();
@@ -527,8 +570,13 @@ try {
     const g3 = git('rev-parse', 'HEAD');
     const gd = new DatabaseSync(rdb);
     const gi = gd.prepare("INSERT INTO proposals (id, run_id, feature, lens, title, kind, status, created_at, updated_at, commit_sha) VALUES (?, 'r0', 'a', 'development', 't', 'fix', 'declined', ?, ?, ?)");
-    gi.run('g1', T, T, g1); gi.run('g2', T, T, g2);
+    gi.run('g1', T, T, g1); gi.run('g2', T, T, g2); gi.run('g4', T, T, 'c'.repeat(40)); // g4: an item commit the repo does not have
     gd.close();
+    // the same store under a product whose root is no git repository (a root the repo-less fixture dir never had one for)
+    const ng = repo('nogit');
+    fs.mkdirSync(path.join(ng, '.ai/lens-scan'), { recursive: true });
+    fs.copyFileSync(rdb, path.join(ng, '.ai/lens-scan/scan.db'));
+    fs.writeFileSync(path.join(dir, 'bp.products.local.json'), JSON.stringify({ products: [{ slug: 'prod', name: 'Prod', root: pr }, { slug: 'rel', name: 'Rel', root: rr }, { slug: 'future', name: 'Future', root: fr }, { slug: 'nogit', name: 'No git', root: ng }] }));
     const commits = await route('products/[slug]/commits/[sha]/route.ts');
     const getCommit = (sha: string) => commits.GET(new Request('http://localhost:3000/x', { headers: { host: 'localhost:3000' } }), { params: Promise.resolve({ slug: 'rel', sha }) }) as Promise<Response>;
     const r1 = await getCommit(g1.slice(0, 7)), c1 = await r1.json(), d1 = W.parseCommitDiff(c1);
@@ -544,6 +592,13 @@ try {
       && d2.value.files.length === 1 && d2.value.files[0].add === 2100, d2.ok ? JSON.stringify({ lines: d2.value.lines, truncated: d2.value.truncated, files: d2.value.files }) : d2.error);
     const misses = await Promise.all([getCommit('deadbeef'), getCommit(g3), getCommit(g3.slice(0, 10))]);
     check('commits: a sha that is no item commit -> 404, even one the repo has', misses.map((r) => r.status).join() === '404,404,404', misses.map((r) => r.status).join());
+    // the pair that pins commitDiff's classification: git exits 128 for BOTH, so only its message tells them apart.
+    // 404 = the repo has no such object (stop looking); 503 = this root is not usable (fix the product's root and retry)
+    const gone = await getCommit('c'.repeat(40));
+    const noGit = await commits.GET(new Request('http://localhost:3000/x', { headers: { host: 'localhost:3000' } }), { params: Promise.resolve({ slug: 'nogit', sha: g1 }) }) as Response;
+    const noGitBody = await noGit.json() as { error?: string };
+    check('commits: an item commit the repo does not have -> 404 (git: bad object)', gone.status === 404 && /not a valid object|bad object|unknown revision/i.test(((await gone.json()) as { error?: string }).error ?? ''), String(gone.status));
+    check('commits: a product root that is not a git repository -> 503, not a missing commit', noGit.status === 503 && /not a git repository/i.test(noGitBody.error ?? ''), noGit.status + ' ' + JSON.stringify(noGitBody));
     const bads = await Promise.all([getCommit('abc123'), getCommit('xyz1234'), getCommit('a'.repeat(41)), getCommit(g1.slice(0, 7) + ';ls')]);
     check('commits: a bad sha -> 400 (short, not hex, too long, a shell char)', bads.map((r) => r.status).join() === '400,400,400,400', bads.map((r) => r.status).join());
     const unknown = await commits.GET(new Request('http://localhost:3000/x', { headers: { host: 'localhost:3000' } }), { params: Promise.resolve({ slug: 'nope', sha: g1 }) }) as Response;
@@ -551,6 +606,23 @@ try {
     check('commits: unknown product 404, a non-loopback Host 403', unknown.status === 404 && remote.status === 403, unknown.status + ',' + remote.status);
     delete process.env.BP_GH_BIN;
     delete (globalThis as { __bpGhBy?: unknown }).__bpGhBy;
+  }
+
+  // ------------------------------------------------------------------ jobProgress: `current` stays inside the job's scope
+  {
+    const { jobProgress } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/scan/views.ts')).href) as typeof import('../packages/core/src/scan/views.ts');
+    const row = (id: number, feature: string, kind: 'reading' | 'measured') => ({ id, run_id: 'pr1', at: T, feature, lens: 'development', kind, text: '' });
+    const snap = (rows: ReturnType<typeof row>[]) => ({ runs: [{ id: 'pr1', note: 'bp-job:j1' }], measurements: [], activity: rows }) as unknown as import('../packages/core/src/scan/types.ts').ScanSnapshot;
+    const pj = (scope: ScanScope) => ({ id: 'j1', kind: 'measure', lens: 'development', scope, run_id: 'pr1' }) as unknown as ScanJob;
+    const inOnly: ScanScope = { kind: 'selection', label: 'Selection (1)', features: ['inside'] };
+    const wide = [row(1, 'inside', 'reading'), row(2, 'OUTSIDE', 'reading')], outOnly = [row(1, 'OUTSIDE', 'reading')];
+    const pAll = jobProgress(pj(ALL), snap(wide), 2), pWide = jobProgress(pj(inOnly), snap(wide), 2), pOut = jobProgress(pj(inOnly), snap(outOnly), 2);
+    const pIn = jobProgress(pj(inOnly), snap([row(1, 'OUTSIDE', 'reading'), row(2, 'inside', 'reading')]), 2);
+    // the control: the same rows under an unscoped job DO name OUTSIDE, so a scoped job staying off it is the guard, not an empty fixture
+    check('jobProgress: an unscoped job names the latest reading (the fixture reads OUTSIDE)', pAll.current === 'OUTSIDE', String(pAll.current));
+    check('jobProgress: a scoped job whose run also read outside its scope names a feature inside it', pWide.current === 'inside' && pWide.m === 1, String(pWide.current));
+    check('jobProgress: a run that has only read outside the scope leaves `current` blank', pOut.current === undefined && pOut.n === 0, String(pOut.current));
+    check('jobProgress: the latest in-scope reading wins over an earlier outside one', pIn.current === 'inside', String(pIn.current));
   }
 
   // ------------------------------------------------------------------ Kettle parity: the scan sim and the browser's lens store

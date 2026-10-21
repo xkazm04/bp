@@ -40,7 +40,7 @@ export function scopesAt(M: Geo, chain: readonly { t: string; id: string }[], ti
 export interface JobProgress {
   /** Base slugs judged so far in this job's run (measured, or found out of scope), within the scope. */
   done: Set<string>;
-  /** The feature of the run's latest reading or measured row. */
+  /** The feature of the run's latest reading or measured row, within the scope: a run can read wider than its job was pointed at (a scope that matched nothing falls back to every feature), and a feature outside it is never named as the one being read. */
   current?: string;
   n: number;
   m: number;
@@ -58,7 +58,7 @@ export function jobProgress(job: ScanJob, scan: ScanSnapshot | undefined, total:
   for (const a of scan.activity) {
     if (a.run_id !== run.id || a.lens !== job.lens || !a.feature || (a.kind !== 'reading' && a.kind !== 'measured')) continue;
     if (a.kind === 'measured' && (!want || want.has(a.feature))) done.add(a.feature); // judged with nothing to measure (a temporary lens's "no impact")
-    current = a.feature;
+    if (!want || want.has(a.feature)) current = a.feature;
   }
   return { done, current, n: Math.min(done.size, m), m };
 }
