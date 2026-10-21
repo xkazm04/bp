@@ -22,7 +22,6 @@ export function LensIcon({ id, size = 18, title }: { id: IconId; size?: number; 
   );
 }
 
-const LENS_NAME: Record<BuiltinLens, string> = { business: 'Business', design: 'Design', development: 'Development', operations: 'Operations', security: 'Security', quality: 'Quality' };
 const DWORD: Record<string, string> = { none: 'No design yet', sketch: 'A sketch so far', wireframe: 'Wireframed', 'hi-fi': 'Hi-fi mock ready', implemented: 'Built to the design', polished: 'Built and polished', 'n/a': 'No interface to design' };
 const A11Y: Record<string, string> = { pass: 'passes accessibility', partial: 'partly accessible', fail: 'fails accessibility', unknown: 'accessibility not checked', 'n/a': '' };
 
@@ -79,7 +78,7 @@ export function ShapedPanel(props: SheetPanelProps) {
     );
   }
   return (
-    <div className={cls.join(' ')} role="group" aria-label={LENS_NAME[lens]}>
+    <div className={cls.join(' ')} role="group" aria-label={props.def.name}>
       {badge}
       {expanded && <Edges lens={lens} f={f} rollout={rollout} />}
       <DefaultLensPanel {...props} />
