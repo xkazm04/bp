@@ -7,6 +7,8 @@
 //      defect: it costs one Tab per row to pass (docs/blueprint-ui.md, "keyboard throughout").
 //   2. Every hand-rolled listbox in the rail (one that does not build its rows from shell.tsx's <Row>) owns a
 //      key handler of its own, so the arrows walk ITS options instead of reaching the panel's own walk.
+//   3. No scroll in the rail animates unconditionally: every `behavior:` is a function of the reduced-motion
+//      query, never the bare literal 'smooth' (docs/blueprint-ui.md, "reduced motion honoured").
 // Run: node src/components/rail/check-keys.ts  (Node's type stripping; no build step). Exit 1 on any failure.
 // Control: BP_RAIL_MUTATE='[["view.tsx","tabIndex={on ? 0 : -1}","tabIndex={0}"]]' rewrites the source text as
 // it is read ([file suffix, find, replace] literals), so each assertion can be seen red on a seeded defect.
@@ -63,5 +65,17 @@ expect(!!who, 'view.tsx: no <ul className="wb-who"> found - the "Whose desk" lis
 if (who) expect(/onKeyDown=\{/.test(who[0]), 'view.tsx: the "Whose desk" listbox has no onKeyDown of its own, so the arrows reach the section nav\'s walk instead of walking its own options');
 expect((view.match(/useWalk\(/g) ?? []).length >= 2, `view.tsx calls useWalk ${(view.match(/useWalk\(/g) ?? []).length} time(s); expected 2 - one walk for the section nav and one for the "Whose desk" listbox`);
 
+// ---------------------------------------------------------------- 3. no scroll travels under reduced motion
+let scrolls = 0;
+for (const [f, src] of SRC) {
+  for (const m of src.matchAll(/behavior:\s*([^,}]+)/g)) {
+    scrolls++;
+    const v = m[1].trim();
+    expect(v !== "'smooth'" && v !== '"smooth"', `${f}: a scroll with behavior: ${v} unconditionally - under prefers-reduced-motion it must not travel`);
+    expect(/reduce|matchMedia|prefers-reduced-motion/.test(src), `${f}: sets a scroll behavior but never reads the reduced-motion preference`);
+  }
+}
+expect(scrolls > 0, `the scroll-behavior scan found ${scrolls} sites in the rail, expected at least 1 (view.tsx's section jump) - the matcher has stopped biting`);
+
 if (failures.length) { console.error(`check-rail-keys: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
-console.log(`check-rail-keys: ${held} expectations held (${options} role="option" sites)`);
+console.log(`check-rail-keys: ${held} expectations held (${options} role="option" sites, ${scrolls} scroll-behavior sites)`);

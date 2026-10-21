@@ -31,7 +31,10 @@ export function View() {
     if (!id) return;
     setSel(id);
     const el = det.current?.querySelector<HTMLElement>('#wbv-' + id);
-    if (el && det.current) { jumping.current = performance.now(); det.current.scrollTo({ top: el.offsetTop - 4, behavior: 'smooth' }); }
+    // reduced motion: the detail jumps to the section instead of travelling (docs/blueprint-ui.md). Read at the
+    // moment of the scroll, as the engine does (engine/Engine.ts:153) and as sheet/Screens.tsx does.
+    const reduce = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (el && det.current) { jumping.current = performance.now(); det.current.scrollTo({ top: el.offsetTop - 4, behavior: reduce ? 'auto' : 'smooth' }); }
   }, []);
   const onKey = useWalk(ids, sel, go, listRef);
   const whoRef = useRef<HTMLUListElement>(null);
