@@ -188,6 +188,12 @@ export function BoldPanel(p: SheetPanelProps) {
   // a lens other than the six built-ins: the default, manifest-driven panel
   const lens = p.lens;
   if (!isBuiltinLens(lens)) return <DefaultLensPanel {...p} />;
+  // Nothing measured under this lens (no facet, or the lens does not apply): the shared panel is the one
+  // place that words both states, and the readers below would print bl()'s unknowns as measurements - an
+  // empty artboard fact, "It is not tied to revenue.", "value 0 of 5 · ", "on ", an empty review headline.
+  // Design keeps its own word for 'n/a' ("No screen to design"): bl() gives it the status, not a blank.
+  const h = hof(p.f, lens);
+  if (h === 'unmeasured' || (h === 'na' && lens !== 'design')) return <DefaultLensPanel {...p} />;
   if (!p.expanded) return p.view === 'general' ? <DefaultLensPanel {...p} /> : <Mini p={{ ...p, lens }} />;
   switch (lens) {
     case 'design': return <DesignBoard p={p} />;
