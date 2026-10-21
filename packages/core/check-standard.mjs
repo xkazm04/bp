@@ -168,6 +168,29 @@ const expect = (ok, what) => { if (ok) held++; else failures.push(what); };
   expect(rollupHealth(m({ method: 'worst-of' }), ['good', 'watch']) === 'watch', 'rollup: worst-of unchanged');
 }
 
+// ------------------------------------------------------------------ the lens toggle: an id nothing matches says so
+// `?lenses=-security,+com.kettle.cost` is user input. An id the map has no lens for does nothing, and a typo is
+// indistinguishable from a lens that would not turn off, so the ignored ids have to be named — per toggle, since
+// one base serves every toggle.
+{
+  const map = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.app-structure.json'), 'utf8'));
+  const events = fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.events.jsonl'), 'utf8');
+  const of = (toggle) => loadStructure(map, events, { lenses: toggle });
+  const typo = of('-securty');
+  expect(typo.warnings.some((w) => w.includes('the lens toggle names unknown lens "securty"')), `toggle: a typo left ${JSON.stringify(typo.warnings)}`);
+  const two = of('-securty,+com.kettle.cst');
+  expect(two.warnings.some((w) => w.includes('names unknown lenses "securty", "com.kettle.cst"')), `toggle: two typos left ${JSON.stringify(two.warnings)}`);
+  // and the real ids still work, still silently, and the base is not polluted for the next toggle
+  const real = of('-security');
+  expect(real.warnings.length === 0, `toggle: a real id warned ${JSON.stringify(real.warnings)}`);
+  expect(!real.LENS.security.manifest || real.lenses.every((d) => d.id !== 'security'), 'toggle: -security did not disable the lens');
+  expect(of(null).warnings.length === 0, 'toggle: the warning leaked into the untoggled load');
+  expect(of('-securty').warnings.length === 1, 'toggle: the warning is not appended twice on a cache hit');
+
+  // a toggle naming the lens it just dropped is reported as unknown too, and the drop is still reported
+  expect(typo.lenses.length === real.lenses.length + 1, 'toggle: a typo leaves every lens enabled');
+}
+
 // ------------------------------------------------------------------ the control: valid input warns 0 times
 {
   const map = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.app-structure.json'), 'utf8'));

@@ -628,6 +628,12 @@ function withToggle(b: Base, toggle: string | null): Structure {
   const hit = b.byToggle.get(key);
   if (hit) return hit;
   const t = parseLensToggle(toggle);
+  // a toggle id the map has no lens for does nothing, and a typo looks exactly like a lens that refused to
+  // move, so the ignored ids are named. Per toggle, hence a copy: b.warnings belongs to the base.
+  const unknown = [...t.keys()].filter((id) => !b.entries.some((e) => e.id === id));
+  const warnings = unknown.length
+    ? [...b.warnings, `the lens toggle names unknown lens${unknown.length > 1 ? 'es' : ''} ${unknown.map((id) => JSON.stringify(id)).join(', ')}; ignored`]
+    : b.warnings;
   // defs are per base; the registry indexes are per toggle, so each toggle gets its own copies
   const all = b.defs.map((d) => ({ ...d, i: -1 }));
   const lenses: LensDef[] = [];
@@ -638,7 +644,7 @@ function withToggle(b: Base, toggle: string | null): Structure {
   const s: Structure = {
     version: b.version, project: b.project, asOf: b.asOf, asOfTime: b.asOfTime, lenses, allLenses: all,
     LENS: Object.fromEntries(all.map((d) => [d.id, d])), features, domains: b.domains, capabilities: b.capabilities, milestones: b.milestones,
-    kpis: b.kpis, people: b.people, activity: b.activity, events: b.events, weeks: b.weeks, snapshots: b.snapshots, warnings: b.warnings,
+    kpis: b.kpis, people: b.people, activity: b.activity, events: b.events, weeks: b.weeks, snapshots: b.snapshots, warnings,
   };
   b.byToggle.set(key, s);
   return s;
