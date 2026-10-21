@@ -11,6 +11,18 @@ interface FeatLike { id: string; domain: string; capability: string }
 /** The one guarded read of a run's lenses (a row written by an older skill may lack them). */
 export const runLenses = (run: Pick<RunLike, 'lenses'> | null | undefined): string[] => (run && Array.isArray(run.lenses) ? run.lenses : []);
 
+/** The strip clock's tooltip for a run: its id, its lenses and when it started - each part only when the row has it.
+ *  Built here and not in the component because it is the same guard as `runLenses` and `runMs`: a row written by an
+ *  older skill may lack `lenses` or `started_at`, and this string is assembled during React render, where a throw
+ *  takes the whole chrome with it. No row gives an empty ` ·  · ` segment. */
+export function runTitle(run: RunLike | null | undefined): string {
+  if (!run) return 'Waiting for /lens-scan';
+  const parts = [run.id, ...runLenses(run)];
+  const at = typeof run.started_at === 'string' ? run.started_at.slice(0, 16).replace('T', ' ') : '';
+  if (at) parts.push('started ' + at + ' UTC');
+  return parts.join(' · ');
+}
+
 export { scopeFeatures };
 
 /** Features this run has measured so far (distinct, by run id) against its scope. `total` is never below `done`. */

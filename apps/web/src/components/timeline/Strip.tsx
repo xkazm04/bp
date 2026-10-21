@@ -8,7 +8,7 @@ import { dnum, fmtD, revAt } from '@bp/core/model';
 import { shallowEqual, useBp, useEngine } from '../hooks';
 import { timeSliderKey } from './keys';
 import { simClock, useHourText, useRunInfo, useScrub, useSize } from './shared';
-import { runLenses } from './run';
+import { runTitle } from './run';
 import { histX, hourX, valueText, type ScrubGeom } from './scrub';
 
 /** The sim clock (Kettle) or the latest run (live product), as one line of small text. */
@@ -21,7 +21,7 @@ function StripClock() {
   if (sim.live) {
     const run = ri?.run, f = ri?.facts, running = run?.status === 'running';
     return (
-      <span className="tl-clk" title={run ? run.id + ' · ' + runLenses(run).join(' · ') + ' · started ' + run.started_at.slice(0, 16).replace('T', ' ') + ' UTC' : 'Waiting for /lens-scan'}>
+      <span className="tl-clk" title={runTitle(run)}>
         <span className="tl-k">SCAN</span><span className={'tl-st ' + (ri?.tone ?? '')}>{ri?.label}</span>
         {f && ri?.p && <span className="tl-dim">{running ? ri.p.done + '/' + ri.p.total + ' · ' + f.time : f.time}</span>}
       </span>
