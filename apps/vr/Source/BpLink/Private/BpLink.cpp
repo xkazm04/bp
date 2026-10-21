@@ -25,24 +25,36 @@ namespace
 		return Request;
 	}
 
-	/** The events string is JSONL: one object per line. A bad line is logged and skipped, never fatal. */
+	/**
+	 * The events string is JSONL: one object per line. A bad line is skipped, never fatal. The first MaxSampled bad lines
+	 * are logged with a prefix, then ONE summary says how many of how many failed, so a wire change that breaks every
+	 * line reads "566 of 566" and not 566 near-identical warnings.
+	 */
 	void ReadEvents(const FString& Jsonl, TArray<FBpAppStructureEvent>& Out)
 	{
+		constexpr int32 MaxSampled = 3;
+		int32 Total = 0;
+		int32 Skipped = 0;
 		TArray<FString> Lines;
 		Jsonl.ParseIntoArrayLines(Lines);
 		for (const FString& Line : Lines)
 		{
 			if (Line.TrimStartAndEnd().IsEmpty()) continue;
+			++Total;
 			TSharedPtr<FJsonObject> Object;
 			FBpAppStructureEvent Event;
 			if (FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Line), Object) && Object.IsValid() && BpSchema::FromJson(Object.ToSharedRef(), Event))
 			{
 				Out.Add(MoveTemp(Event));
 			}
-			else
+			else if (++Skipped <= MaxSampled)
 			{
 				UE_LOG(LogBpLink, Warning, TEXT("BpLink: skipped an events line that did not parse: %.80s"), *Line);
 			}
+		}
+		if (Skipped > 0)
+		{
+			UE_LOG(LogBpLink, Warning, TEXT("BpLink: skipped %d of %d events lines that did not parse (the first %d are logged above)"), Skipped, Total, FMath::Min(Skipped, MaxSampled));
 		}
 	}
 }
@@ -103,8 +115,9 @@ void FBpLinkClient::FetchProduct(const FString& Slug, TFunction<void(bool, const
 		// /stream has two answers BpLink lives with: 200 text/event-stream, which Kettle gives since wolf-plan L5.2
 		// (apps/server hosts its scan sim), and 405 for a product with no live stream. WP3.1 consumes neither: the rev
 		// read above is the one read BpLink keeps either way. Both are pinned by scripts/check-bplink.mjs.
+		// Snapshot holds the whole parsed events array, so it is MOVED into the continuation (nothing below reads it here).
 		TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Stream = MakeGet(Root + TEXT("/stream"), TEXT("text/event-stream"));
-		Stream->OnProcessRequestComplete().BindLambda([Root, Slug, OnDone, Snapshot](FHttpRequestPtr, FHttpResponsePtr StreamResponse, bool bStreamConnected) mutable
+		Stream->OnProcessRequestComplete().BindLambda([Root, Slug, OnDone, Snapshot = MoveTemp(Snapshot)](FHttpRequestPtr, FHttpResponsePtr StreamResponse, bool bStreamConnected) mutable
 		{
 			Snapshot.StreamStatus = (bStreamConnected && StreamResponse.IsValid()) ? StreamResponse->GetResponseCode() : 0;
 			if (Snapshot.StreamStatus == 200)
@@ -114,6 +127,11 @@ void FBpLinkClient::FetchProduct(const FString& Slug, TFunction<void(bool, const
 			else if (Snapshot.StreamStatus == 405)
 			{
 				UE_LOG(LogBpLink, Log, TEXT("BpLink: %s has no live stream (405); using rev %s read once from structure"), *Slug, *Snapshot.Rev);
+			}
+			else if (Snapshot.StreamStatus == 0)
+			{
+				// Asked, and nothing answered (-1 would be "never asked", which cannot reach this callback).
+				UE_LOG(LogBpLink, Warning, TEXT("BpLink: GET %s/stream did not connect; SSE is not read in WP3.1 and the one-time rev stands"), *Root);
 			}
 			else
 			{
