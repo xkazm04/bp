@@ -93,69 +93,74 @@
     },
     "mesh_acceptance": {
       "pass": true,
-      "note": "seed 303 of 3 (101 had 14 components, 202 had 5 with the arm gone, both rejected). Raw 11964 vertices / 27707 tris with merge_vertices, components 11941+15+8; the two specks (15 and 8 vertices) were deleted. Final 11941 vertices, 1 component, 0 floaters, 19 open edges (small holes in the cap). Silhouette matches options/A.png: C-clamp base, jointed two-segment arm, cone shade.",
+      "note": "seed 303 of 3 (101 had 14 components, 202 had 5 with the arm gone, both rejected). Raw 11964 vertices / 27707 tris with merge_vertices, components 11941+15+8; the two specks (15 and 8 vertices) were deleted. Rework 2026-10-21: the TRELLIS stalk under the disc was a lumpy 4 cm post, not a C-clamp, so it was cut off below z = -4 mm and the hole closed; a modelled C-clamp replaces it (back bar, lower jaw, screw, pad and knob, 116 tris, all weighted 1.0 to the base bone, reaching 11.2 cm below the table plane) plus 4 spring cylinders. Final 11162 vertices, 10 connected components (the TRELLIS body, 5 clamp parts and 4 springs, each overlapping the body), 0 floaters (a floater is a component whose bounding box touches no other), 26 open edges (small holes in the cap and joints, left from TRELLIS). Silhouette matches options/A.png: jointed two-segment arm, cone shade, round base with a C-clamp.",
       "date": "2026-10-21"
     },
     "scale": {
       "pass": true,
-      "note": "13.0 x 35.5 x 57.0 cm (x, y, z up) re-imported from final.fbx; 45 cm above the table plane, rule 45 to 65 cm total for a desk architect lamp; pivot: disc underside z = 0 m, x centred. Assumption: the wolf-plan gives no lamp size, so the UE world scale of the table (W3.2) is still to be confirmed on Wolf.",
+      "note": "13.0 x 35.5 x 56.2 cm (x, y, z up) re-imported from final.fbx, clamp included; 45.0 cm above the table plane and 11.2 cm below it; rule 45 to 65 cm for a desk architect lamp (both the height above the table and the total pass); pivot: disc underside z = 0 m, x centred. Assumption: the wolf-plan gives no lamp size, so the UE world scale of the table (W3.2) is still to be confirmed on Wolf.",
       "date": "2026-10-21"
     },
     "finishing": {
       "pass": true,
-      "note": "one UV set; 3 PBR PNGs (base colour, ORM, normal, 2048 px, each under 5 MB); emissive slot lamp_shade_glow on 3034 faces; rig base > lower_arm > upper_arm > head, weights sum 1 to 1, 0 unweighted vertices, at most 2 influences; look-at constraint error 0 deg on three targets; 5 actions (asking, reading, resting, speaking, working) in final.fbx; springs: no spring mesh and no extra triangles; the springs stay as the baked pale strip in the base colour and normal textures.",
+      "note": "one UV set; 3 PBR PNGs (flat base colour, ORM, flat normal, 2048 px, each under 5 MB); 6 material slots (lamp_arm, lamp_metal, lamp_shade, lamp_shade_glow, lamp_cap, lamp_base), emissive slot lamp_shade_glow on 2484 faces; base colour measured per region from lamp_basecolor.png at every face (mean distance to target: arm 0, metal 0.0002, shade 0.0047, glow 0.0085, cap 0, base 0; arm std 0/0/0, 0 arm outliers over 0.04); ORM roughness and metal match the targets in every region; rig base > lower_arm > upper_arm > head, weights sum 1 to 1, 0 unweighted vertices, at most 2 influences; look-at constraint error 0 deg on three targets; 5 actions (asking, reading, resting, speaking, working) in final.fbx; evidence framing check passes on all 10 images (min silhouette margin 0.0667 of the image); springs: modelled: 4 thin brushed-silver cylinders (8 sides, radius 3.5 mm), two on each arm segment (one each side), 112 tris in total, weighted 1.0 to the arm bone they run along.",
       "date": "2026-10-21"
     },
     "poly_budget": {
       "pass": true,
-      "note": "27663 tris against 30000 (92%)",
+      "note": "26035 tris against 30000 (87%), clamp 116 and springs 112 included",
       "date": "2026-10-21"
     }
   },
   "licence": "TRELLIS.2 output from a Leonardo concept (look-dev input, R8 open); no MiniMax-H3 or FLUX.2 [dev] output used",
   "sha256": {
-    "evidence/pose-asking.jpg": "34bfadeb989644e9d887f26407e09c3db6cbe0c2edf4750fae864ebdb3a9af07",
-    "evidence/pose-reading.jpg": "c729796a80ac46dbe0378a796a4bd6517fe5118e3b4d64b262443e2c11c82bae",
-    "evidence/pose-resting.jpg": "d8be841a69bf72f395725d158dad6d76322ecfd1b236dc5433e2e79a1f71c3af",
-    "evidence/pose-speaking.jpg": "0faf5e6f784da0be9f7ac54fbb98736dace48b7ba927511684ddbaebe6bec374",
-    "evidence/pose-working.jpg": "2c9186ab5a47a30c8f37322cc70ea14f71112f780f2bc355ba45cdb61cd972e0",
-    "evidence/spring-closeup.jpg": "801a87d6290e69c850bdee05716c9abd82a700a6f0c082d0215f44d5cd83fd64",
-    "evidence/table-view.jpg": "c5e8143eba812dee6692a6cf174cb6d70475ed717b75683586796fe627590ae8",
-    "evidence/turnaround.jpg": "a7189e85be78178f91490c618b5a3b4d88f40d0606c4f9c4549bc70080d3e320",
-    "final.fbx": "328604c0802e2d1fe280737d75b79aea1293af01e1d017af157eb1d5ec9abd45",
+    "evidence/pose-asking.jpg": "a7e483e4bd432d585bde12864ceb945af7bad03e4080e38454cbfc36c9f9f6d7",
+    "evidence/pose-reading.jpg": "3664661f071e044416a308f7f23fa664cc60b9615b7bd5cc908969b2fb5c1e6d",
+    "evidence/pose-resting.jpg": "edb8aae3d9b065198fdea123e5fcc0260e0310e0293008b5a3da3f638a9ee50f",
+    "evidence/pose-speaking.jpg": "b79dcd9566783260774d67cca06538ca58bb5e30f41f64e979e4f0958ec59e90",
+    "evidence/pose-working.jpg": "f9d260b6eb618c1c0a006a1ad8592ab0dec97c136af42b145d67515310536838",
+    "evidence/table-view.jpg": "ce207556afc27966dcbe12c0e2eba8f94b5ba2ed2d3db2fae4a8555ce7b1479e",
+    "evidence/turnaround.jpg": "0a1bd4838a10fa20db5439baffee86bbeecea006d14eb6cb68826f928d379325",
+    "final.fbx": "0a1b6a0286b30fbf6177a39268374b59964ce764f96125b4f12a8c079d77a4a6",
     "options/A.png": "3563dbd70bfc8e4e6b92e4552a7f0a3484773971d5261485dd432ef7843af1fb",
     "options/B.png": "e6b82dd4993b19bb0bb766e466327fb44cf36695899ff229eb60805ef09a45b4",
     "options/C.png": "7caa1bb1204433fad475bc7bd08c8ba5a275777f39a711cba08d4b5af8685cee",
     "options/D.png": "9a6f57f2bf81665c4415cd3143d7352104ca92e53bd0d010b270072dd438ca20",
     "options/contact.png": "b94ff36ea7b13de3f9b62ba056f651c918fcf2c6b05fd71ff28865d099a74cec",
-    "textures/lamp_basecolor.png": "9e2cc18667c642b380a4af4042ff08a59b4c242f94eb36c78bfad9cb1f0b8054",
-    "textures/lamp_normal.png": "71531ea51f6ceb651ac36f4243239ee22cbb6d810c8074668a1c3807b5a3b5d4",
-    "textures/lamp_orm.png": "d05ca37ff5dc5b232ff3484eb51aa24ea2cc8e855ca278fe64d6275063ec84e6"
+    "textures/lamp_basecolor.png": "99d22915bf71f2aa9a5eb77afb2bdd2b7c257bafda4520adc1b1d6b3eaaa199f",
+    "textures/lamp_normal.png": "123eadc1c58faf317e13bbb0a6e11d0526740a2f4c733c6b41d7f952a9f1c704",
+    "textures/lamp_orm.png": "207debfb766e3bfcfd0c5cde665f9c406b64cc0c1d313726e7c1e453b88de1e0"
   },
-  "tris": 27663,
-  "tris_note": "27663 against 30000",
+  "tris": 26035,
+  "tris_note": "26035 against 30000",
   "materials": [
-    "lamp_body (base colour + ORM + normal, 2048 px PNG)",
-    "lamp_shade_glow (emissive warm #FF9E2E x6, 3034 faces on the shade interior; UE drives the strength per state)"
+    "lamp_arm: dark navy arm segments (lower_arm and upper_arm faces away from the joints); base colour #1B2B4C, roughness 0.55, metal 0",
+    "lamp_metal: brushed silver joint knuckles, springs, clamp screw; base colour #C4C9CF, roughness 0.35, metal 1",
+    "lamp_shade: dark shade exterior; base colour #131A2B, roughness 0.5, metal 0",
+    "lamp_shade_glow: warm shade interior, emissive #FF9E2E x6, UE drives the strength per state; base colour #F4C27C, roughness 0.6, metal 0, emissive #FF9E2E x6 on 2484 faces, UE drives the strength per state",
+    "lamp_cap: amber cap on top of the shade; base colour #E39A1C, roughness 0.4, metal 0",
+    "lamp_base: navy base disc, stem, C-clamp body and knob; base colour #18233F, roughness 0.55, metal 0"
   ],
   "bounds_cm": {
     "x": 13.04,
     "y": 35.5,
-    "z": 56.96,
-    "note": "x width, y depth (shade towards -y), z up (Blender, FBX Z-up); pivot at the base disc underside centre, so the clamp reaches to z = -12 cm"
+    "z": 56.2,
+    "height_above_table_cm": 45,
+    "clamp_below_table_plane_cm": 11.2,
+    "note": "x width, y depth (shade towards -y, clamp back bar towards +y), z up (Blender, FBX Z-up); pivot at the base disc underside centre (z = 0, the table plane); the shade top is 45 cm above it and the modelled C-clamp (knob bottom) reaches to z = -11.2 cm"
   },
   "meshes": {
     "lamp-agent": {
-      "tris": 27663,
-      "vertices": 11941,
-      "components": 1,
+      "tris": 26035,
+      "vertices": 11162,
+      "components": 10,
       "floaters": 0,
-      "open_edges": 19,
+      "open_edges": 26,
       "uv_sets": 1
     }
   },
   "uv_sets": 1,
-  "pivot": "centre of the base disc, on its underside (the table-top contact plane); the C-clamp hangs below the origin",
+  "pivot": "centre of the base disc, on its underside (the table-top contact plane, z = 0); the modelled C-clamp hangs below the origin, to z = -11.2 cm, and grips a 3 cm thick table whose edge is at y = +5.8 cm",
   "rig": {
     "bones": [
       "base",
@@ -188,7 +193,7 @@
       "bounds_size_m": [
         0.13,
         0.262,
-        0.698
+        0.691
       ],
       "max_displacement_m": 0.241,
       "head_z_m": 0.579,
@@ -202,7 +207,7 @@
       "bounds_size_m": [
         0.13,
         0.375,
-        0.5
+        0.492
       ],
       "max_displacement_m": 0.138,
       "head_z_m": 0.38,
@@ -216,7 +221,7 @@
       "bounds_size_m": [
         0.13,
         0.355,
-        0.343
+        0.336
       ],
       "max_displacement_m": 0.298,
       "head_z_m": 0.224,
@@ -229,8 +234,8 @@
     "speaking": {
       "bounds_size_m": [
         0.13,
-        0.354,
-        0.661
+        0.366,
+        0.654
       ],
       "max_displacement_m": 0.186,
       "head_z_m": 0.542,
@@ -243,8 +248,8 @@
     "working": {
       "bounds_size_m": [
         0.13,
-        0.449,
-        0.445
+        0.46,
+        0.437
       ],
       "max_displacement_m": 0.278,
       "head_z_m": 0.325,
@@ -255,9 +260,363 @@
       "note": "rotation of lower_arm, upper_arm, head about the armature X axis (scripts/art/lamp/poses.json, degrees, relative to the TRELLIS rest pose); keys on frames 1 and 12"
     }
   },
-  "textures": "lamp_basecolor.png, lamp_orm.png (R occlusion, G roughness, B metal), lamp_normal.png: the TRELLIS.2 bake (BakeTextureFromVoxel, normal and AO baked from the 768-voxel remesh onto the 28k mesh), downsized to 2048 px",
-  "regenerate": "node scripts/art/lamp/trellis_run.mjs 303; blender -b -P scripts/art/lamp/finish_lamp.bpy -- <repo> <raw.glb> <work>; blender -b -P scripts/art/lamp/score_lamp.bpy -- <repo> <work>; blender -b -P scripts/art/lamp/render_lamp.bpy -- <repo>; node scripts/art/lamp/write_manifest.mjs <work> <raw-dir>",
-  "finishing_note": "Springs: judged on evidence/table-view.jpg (1.63 m line of sight, 40 degree field, 16 px per degree) and evidence/spring-closeup.jpg (the same view at 3x). TRELLIS did not resolve the coils: they are lumpy relief, and at the far edge they read only as a pale strip along each arm segment, never as coils (a coil pitch of about 2 mm at lamp scale is under 1 px). Decision: no spring mesh and no extra triangles; the springs stay as the baked pale strip in the base colour and normal textures. UE can add a thin coil card or alpha-tested ribbon if a close-up needs it.",
+  "textures": "lamp_basecolor.png, lamp_orm.png (R occlusion, G roughness, B metal), lamp_normal.png (flat), 2048 px: flat region colours from scripts/art/lamp/materials.json rasterised into the existing TRELLIS UV set by rework_lamp.bpy (flat values need no Cycles bake, so no render engine and no GPU); the smudged TRELLIS bake and its relief normal map are gone. The same values sit on the Principled node of each material slot, so UE can use either",
+  "regenerate": "node scripts/art/lamp/trellis_run.mjs 303; blender -b -P scripts/art/lamp/finish_lamp.bpy -- <repo> <raw.glb> <work>; blender -b -P scripts/art/lamp/rework_lamp.bpy -- <repo> <work>; blender -b -P scripts/art/lamp/score_lamp.bpy -- <repo> <work>; blender -b -P scripts/art/lamp/render_lamp.bpy -- <repo> <work>; node scripts/art/lamp/write_manifest.mjs <work> <raw-dir>  (Blender takes Windows paths; Cycles runs on the CPU)",
+  "finishing_note": "Springs: modelled: 4 thin brushed-silver cylinders (8 sides, radius 3.5 mm), two on each arm segment (one each side), 112 tris in total, weighted 1.0 to the arm bone they run along. They are plain cylinders, not coils: a coil pitch of about 2 mm at lamp scale is under 1 px at the far edge (the first build judged this on a 1.63 m view), so a cylinder reads the same as the spring in concept A and costs 112 tris. The pale strip that was the smudge on the TRELLIS arm texture is gone (the arm is flat navy). Materials: one slot per region with flat values (arm navy, silver joints, springs and screw, dark shade, warm glow, amber cap, navy base and clamp), plus the same values baked flat into the three PNGs. The old lamp_body slot is replaced by six slots; lamp_shade_glow keeps its name.",
   "lynx_commit": null,
-  "lynx_commit_note": "set by the merge; branch autopilot/accepted-idea-delivery-cebdd60a"
+  "lynx_commit_note": "set by the merge; the branch it lands on",
+  "material_slots": [
+    "lamp_arm",
+    "lamp_metal",
+    "lamp_shade",
+    "lamp_shade_glow",
+    "lamp_cap",
+    "lamp_base"
+  ],
+  "framing": {
+    "pass": true,
+    "date": "2026-10-21",
+    "method": "render_lamp.bpy fits every camera to the world bounding box of the evaluated (posed) mesh with a 6 % margin per side; then a transparent-film alpha pass of the lamp alone is rendered with the same camera and the check asserts that no lamp pixel touches the border and that the silhouette keeps at least 5 % of the image on every side",
+    "table_view": {
+      "line_of_sight_m": 1.63,
+      "elevation_deg": 23,
+      "hfov_deg": 43.5,
+      "hfov_start_deg": 40,
+      "px_per_degree": 14.71,
+      "note": "camera position and aim unchanged; only the horizontal field of view was widened from 40 degrees to fit the whole lamp with the margin"
+    },
+    "turnaround": {
+      "bbox_world_m": {
+        "min": [
+          -0.0652,
+          -0.1181,
+          -0.112
+        ],
+        "max": [
+          0.0653,
+          0.1437,
+          0.5788
+        ]
+      },
+      "distance_m": 1.17,
+      "hfov_deg": 40,
+      "elevation_deg": 18
+    },
+    "images": {
+      "turnaround-az0": {
+        "pass": true,
+        "lamp_pixels": 14319,
+        "touches_border": false,
+        "silhouette_margin_fraction": {
+          "left": 0.4062,
+          "right": 0.4062,
+          "bottom": 0.1271,
+          "top": 0.0771
+        },
+        "min_margin_fraction": 0.0771
+      },
+      "turnaround-az90": {
+        "pass": true,
+        "lamp_pixels": 13268,
+        "touches_border": false,
+        "silhouette_margin_fraction": {
+          "left": 0.325,
+          "right": 0.3438,
+          "bottom": 0.1354,
+          "top": 0.075
+        },
+        "min_margin_fraction": 0.075
+      },
+      "turnaround-az180": {
+        "pass": true,
+        "lamp_pixels": 12911,
+        "touches_border": false,
+        "silhouette_margin_fraction": {
+          "left": 0.425,
+          "right": 0.4229,
+          "bottom": 0.1396,
+          "top": 0.0729
+        },
+        "min_margin_fraction": 0.0729
+      },
+      "turnaround-az270": {
+        "pass": true,
+        "lamp_pixels": 12956,
+        "touches_border": false,
+        "silhouette_margin_fraction": {
+          "left": 0.3417,
+          "right": 0.325,
+          "bottom": 0.1354,
+          "top": 0.075
+        },
+        "min_margin_fraction": 0.075
+      },
+      "table-view": {
+        "pass": true,
+        "lamp_pixels": 10026,
+        "touches_border": false,
+        "silhouette_margin_fraction": {
+          "left": 0.3312,
+          "right": 0.4437,
+          "bottom": 0.2146,
+          "top": 0.3583
+        },
+        "min_margin_fraction": 0.2146
+      },
+      "pose-resting": {
+        "pass": true,
+        "lamp_pixels": 48155,
+        "touches_border": false,
+        "silhouette_margin_fraction": {
+          "left": 0.1812,
+          "right": 0.1703,
+          "bottom": 0.1021,
+          "top": 0.0896
+        },
+        "min_margin_fraction": 0.0896,
+        "distance_m": 0.771
+      },
+      "pose-reading": {
+        "pass": true,
+        "lamp_pixels": 25978,
+        "touches_border": false,
+        "silhouette_margin_fraction": {
+          "left": 0.2562,
+          "right": 0.2547,
+          "bottom": 0.0896,
+          "top": 0.0729
+        },
+        "min_margin_fraction": 0.0729,
+        "distance_m": 1.083
+      },
+      "pose-working": {
+        "pass": true,
+        "lamp_pixels": 32431,
+        "touches_border": false,
+        "silhouette_margin_fraction": {
+          "left": 0.1703,
+          "right": 0.1719,
+          "bottom": 0.0938,
+          "top": 0.0771
+        },
+        "min_margin_fraction": 0.0771,
+        "distance_m": 0.973
+      },
+      "pose-asking": {
+        "pass": true,
+        "lamp_pixels": 13544,
+        "touches_border": false,
+        "silhouette_margin_fraction": {
+          "left": 0.3719,
+          "right": 0.3781,
+          "bottom": 0.0854,
+          "top": 0.0667
+        },
+        "min_margin_fraction": 0.0667,
+        "distance_m": 1.499
+      },
+      "pose-speaking": {
+        "pass": true,
+        "lamp_pixels": 15270,
+        "touches_border": false,
+        "silhouette_margin_fraction": {
+          "left": 0.3156,
+          "right": 0.3234,
+          "bottom": 0.0875,
+          "top": 0.0667
+        },
+        "min_margin_fraction": 0.0667,
+        "distance_m": 1.419
+      }
+    }
+  },
+  "base_colour_regions": {
+    "arm": {
+      "faces": 13424,
+      "samples": 13424,
+      "edge_tap_outliers": 17,
+      "edge_taps": 40272,
+      "mean_srgb": [
+        0.1059,
+        0.1686,
+        0.2981
+      ],
+      "std_srgb": [
+        0,
+        0,
+        0
+      ],
+      "target_srgb": [
+        0.1059,
+        0.1686,
+        0.298
+      ],
+      "distance_to_target": 0,
+      "outliers_over_tol": 0
+    },
+    "metal": {
+      "faces": 4538,
+      "samples": 4538,
+      "edge_tap_outliers": 29,
+      "edge_taps": 13614,
+      "mean_srgb": [
+        0.7685,
+        0.7881,
+        0.8117
+      ],
+      "std_srgb": [
+        0.0098,
+        0.0092,
+        0.0076
+      ],
+      "target_srgb": [
+        0.7686,
+        0.7882,
+        0.8118
+      ],
+      "distance_to_target": 0.0002,
+      "outliers_over_tol": 1
+    },
+    "shade": {
+      "faces": 3593,
+      "samples": 3593,
+      "edge_tap_outliers": 536,
+      "edge_taps": 10779,
+      "mean_srgb": [
+        0.0792,
+        0.1054,
+        0.1703
+      ],
+      "std_srgb": [
+        0.064,
+        0.0478,
+        0.023
+      ],
+      "target_srgb": [
+        0.0745,
+        0.102,
+        0.1686
+      ],
+      "distance_to_target": 0.0047,
+      "outliers_over_tol": 19
+    },
+    "glow": {
+      "faces": 2484,
+      "samples": 2484,
+      "edge_tap_outliers": 502,
+      "edge_taps": 7452,
+      "mean_srgb": [
+        0.9483,
+        0.7544,
+        0.4832
+      ],
+      "std_srgb": [
+        0.0863,
+        0.0644,
+        0.0311
+      ],
+      "target_srgb": [
+        0.9569,
+        0.7608,
+        0.4863
+      ],
+      "distance_to_target": 0.0085,
+      "outliers_over_tol": 24
+    },
+    "cap": {
+      "faces": 303,
+      "samples": 303,
+      "edge_tap_outliers": 0,
+      "edge_taps": 909,
+      "mean_srgb": [
+        0.8902,
+        0.6039,
+        0.1098
+      ],
+      "std_srgb": [
+        0,
+        0,
+        0
+      ],
+      "target_srgb": [
+        0.8902,
+        0.6039,
+        0.1098
+      ],
+      "distance_to_target": 0,
+      "outliers_over_tol": 0
+    },
+    "base": {
+      "faces": 1623,
+      "samples": 1623,
+      "edge_tap_outliers": 5,
+      "edge_taps": 4869,
+      "mean_srgb": [
+        0.0941,
+        0.1373,
+        0.2471
+      ],
+      "std_srgb": [
+        0,
+        0,
+        0
+      ],
+      "target_srgb": [
+        0.0941,
+        0.1373,
+        0.2471
+      ],
+      "distance_to_target": 0,
+      "outliers_over_tol": 0
+    }
+  },
+  "orm_regions": {
+    "arm": {
+      "roughness_mean": 0.549,
+      "metal_mean": 0,
+      "pass": true
+    },
+    "metal": {
+      "roughness_mean": 0.349,
+      "metal_mean": 1,
+      "pass": true
+    },
+    "shade": {
+      "roughness_mean": 0.502,
+      "metal_mean": 0,
+      "pass": true
+    },
+    "glow": {
+      "roughness_mean": 0.599,
+      "metal_mean": 0,
+      "pass": true
+    },
+    "cap": {
+      "roughness_mean": 0.4,
+      "metal_mean": 0,
+      "pass": true
+    },
+    "base": {
+      "roughness_mean": 0.549,
+      "metal_mean": 0,
+      "pass": true
+    }
+  },
+  "review_fixes": {
+    "review": "Director review of 2026-10-21 11:21Z of commit caa3231; reworked the same day without a TRELLIS rerun and without the GPU (Blender, Cycles on the CPU)",
+    "findings": [
+      {
+        "finding": "The evidence crops the shade (and other parts at the frame edge).",
+        "fix": "render_lamp.bpy fits each camera to the evaluated mesh's world bounding box (the posed mesh for each pose) with a 6 % margin, one common distance for the 4 turnaround views; table-view.jpg keeps its 1.63 m, 23 degree line of sight and only widens the horizontal field of view from 40 to 43.5 degrees; an alpha-pass check asserts that no lamp pixel touches the border in any of the 10 evidence images (see framing); spring-closeup.jpg is dropped because a 3x close-up cannot hold the whole lamp, and the springs are real geometry now"
+      },
+      {
+        "finding": "The arm bake is smudged (white and grey blotches).",
+        "fix": "the TRELLIS bake is replaced by flat region PBR from materials.json: dark navy arm #1B2B4C, brushed silver joints and springs (metal 1, roughness 0.35), dark shade #131A2B, warm emissive interior, amber cap, navy base; regions assigned per face by bone weights and distance to the joint pivots; flat PNGs rasterised onto the TRELLIS UVs plus one material slot per region; flat normal map; score_lamp.bpy measures the base colour per region (arm mean distance 0 from the navy target, std 0/0/0, 0 outliers)"
+      },
+      {
+        "finding": "The C-clamp is missing although mesh_acceptance claimed one.",
+        "fix": "the TRELLIS stalk (a lumpy 4 cm post that also sat under the render's floor plane, so it never showed) is replaced by a modelled low-poly C-clamp (116 tris, weight 1.0 to the base bone, base material, silver screw); the evidence table is now a 3 cm slab whose edge the clamp grips; mesh_acceptance, bounds_cm and pivot now describe this geometry; bounds and the scale gate are recomputed from final.fbx"
+      }
+    ]
+  }
 }
