@@ -135,6 +135,44 @@ with an isolated install (`isolated-gate.mjs`: the junction replaced by `npm ci`
   budget should also carry a p95 line, and whether it is to be measured on the reference machine, is left to the
   operator.
 
+### Milestone 1 re-measure after L5.2 (2026-10-21, later)
+
+Read-only re-measure on master `caa3231` (L5.2 is `61181b2`), Lynx (Windows ARM64), builder worktree with an isolated install
+(`isolated-gate.mjs` replaced the junction by `npm ci`). Nothing was fixed; this entry is the only file changed.
+
+- **Check chain.** Plain `npm run check` on the junction: `45 passed, 1 failed of 46`, the failure `typecheck` only (the junction's two
+  copies of `@bp/core`, the known artefact). `node .../isolated-gate.mjs npm run check`: **`46 passed, 0 failed, 0 skipped of 46`**
+  (the chain grew from 45 to 46 with `check:kettle-sim`, `PASS check:kettle-sim`). No FAIL by name.
+- **Goal status.**
+
+| Goal | Status | Evidence (this run) |
+|---|---|---|
+| 1 Check chain and perf | **done** (check chain 46/46, perf p50 16.7 ms in 5 of 6 runs, 4 of 4 clean) | see above and below |
+| 2 `apps/server` serves Kettle | **done**, and wider than the goal | `check:server` 22 passed: `GET /api/products/kettle/structure: 200 with no products file (13 domains)`, `a Kettle write to /plan: 4xx`, `a Kettle scan write: 202, the hosted sim queues it`, `Kettle stream: 200 SSE, a snapshot first`, `Kettle stays unlisted`. `check:kettle-sim` 21 passed (stream snapshot, deltas, scans, waves, dispatch, `packages/core/data unchanged`). Host: `apps/server/src/kettle-sim.ts:1`, `main.ts:20` |
+| 3 TS types decided and enforced | **done** | `tech-stack.md:89` `Decided 2026-10-20 (WP1.5 follow-up).`; `packages/schema/README.md:34` `Decision (2026-10-20): hand-written TS types, generated TS as a parity artifact`; `check:schema`: `ok ... types.ts agrees with the generated types ... (43 shapes ...)` and `ok control: Rule.reason made optional in the generated types fails the parity` (plus Proposal.title and ScanJob.exit_code controls) |
+| 4 The 5 unmapped fields carried | **done** | `check:schema`: `ok every schema field is held in UE: 394 mapped, 5 renamed and 2 raw carried by FixUp`, `ok control: deleting Rule.short's fix-up fails the coverage` (counts grew with the wire schemas; the five fields are mapped or carried) |
+| 5 Kettle source path | **done** | `scripts/kettle-to-v3.ts:1` and `:62` read `packages/core/data/kettle.json`; `:517` and `kettle.app-structure.json:8` provenance `source` is `packages/core/data/kettle.json`; `check:data`: `ok: ... reproduce exactly (as of 2026-10-08T09:00:00Z)` |
+
+- **Perf at `?scale=4`.** `npm run build` (isolated install, exit 0), `PORT=3217 npm start`, `BP_BASE=http://localhost:3217 RUNS=1
+  python scripts/perf.py`, default `/v/subtle?intro=0&scale=4`, 1920x1080 @1, headless Chromium. Before every run: ComfyUI
+  `GET /queue` read-only (`queue_running` and `queue_pending` empty) and no `blender.exe`; the same check after each run. CPU 8 to 12 %
+  before the first run. Output lines, verbatim:
+  - Run 1 (idle before and after): `{"n": 149, "p50": 16.7, "p95": 33.4, "p99": 66.7, "max": 100.1, "rasters": 6, "engineFrames": 149, "lastRasterMs": 49.9}`
+  - Run 2 (idle before; **not clean**, a ComfyUI TRELLIS job was found running at the next check, so it probably started during this run): `{"n": 86, "p50": 33.3, "p95": 66.8, "p99": 166.7, "max": 166.7, "rasters": 3, "engineFrames": 86, "lastRasterMs": 72.3}`
+  - Two further runs were skipped because the machine was busy. After waiting, four runs with idle checks before and after each:
+  - Run 3: `{"n": 151, "p50": 16.7, "p95": 33.4, "p99": 66.7, "max": 83.3, "rasters": 7, "engineFrames": 152, "lastRasterMs": 25}`
+  - Run 4: `{"n": 151, "p50": 16.7, "p95": 33.4, "p99": 66.7, "max": 83.4, "rasters": 6, "engineFrames": 151, "lastRasterMs": 34}`
+  - Run 5: `{"n": 149, "p50": 16.7, "p95": 33.4, "p99": 83.3, "max": 83.4, "rasters": 6, "engineFrames": 149, "lastRasterMs": 36.7}`
+  - Run 6: `{"n": 157, "p50": 16.7, "p95": 33.4, "p99": 66.7, "max": 83.3, "rasters": 7, "engineFrames": 157, "lastRasterMs": 19.6}`
+
+  Verdict: p50 16.7 ms in all 5 runs taken on a machine idle before and after (run 2, the only 33.3 ms, overlapped the start of
+  a ComfyUI job and is not counted). This confirms the 2026-10-21 idle reading. The tail is as before: p95 33.4 ms every run
+  against 16.7 ms in `docs/perf.md`; worst frame 83 to 100 ms. Caveat: the operator's own session (Chrome, claude, ComfyUI process
+  loaded) stays up, so the host is idle of builds, not exclusive.
+- **Still owed.** (1) The operator's call on whether the budget carries a p95 line and whether it is to be measured on the
+  reference machine (open since the earlier idle entry). (2) No sample carries `cross_refs`, so the FixUp read-through never
+  exercises its raw copy. (3) The junction makes plain `npm run check` fail `typecheck`; only the isolated gate is a true reading.
+
 ### P3-prep readings 2026-10-20
 
 Back-measure of the milestone 2 goals (`f8c79e6`, `9f58e0a`, `fb937a3`), on `82a0743`, on Lynx
