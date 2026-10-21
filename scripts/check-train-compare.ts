@@ -300,5 +300,17 @@ const { packHeading, packOrder } = await imp('ComparePanel.tsx');
   ok(/Try again/.test(cdf) && /setTries/.test(cdf), 'commit diff: a failed or unanswered load offers the retry the cache already supports');
 }
 
+{ // two responses whose URL names an immutable artefact (a commit sha, a run id's shot) give the same cache ceiling
+  const api = path.join(ROOT, 'packages/core/src/server/api/products/[slug]');
+  const age = (f: string): string | undefined => {
+    const t = stripComments(fs.readFileSync(path.join(api, f), 'utf8'));
+    const m = /(?:cache-control'?:\s*|IMMUTABLE\s*=\s*)'private, max-age=(\d+)'/.exec(t);
+    return m?.[1];
+  };
+  const shotAge = age('shots/[...path]/route.ts'), commitAge = age('commits/[sha]/route.ts');
+  ok(shotAge !== undefined && shotAge === commitAge, 'cache: a shot (run id in the path) and a commit (sha) are cached for the same time', [shotAge, commitAge]);
+  ok(/'cache-control': IMMUTABLE/.test(stripComments(fs.readFileSync(path.join(api, 'shots/[...path]/route.ts'), 'utf8'))), 'cache: the shot response sends that ceiling');
+}
+
 console.log(bad ? `check-train-compare: ${bad} of ${n} failed` : `check-train-compare: ${n} checks passed`);
 process.exit(bad ? 1 : 0);

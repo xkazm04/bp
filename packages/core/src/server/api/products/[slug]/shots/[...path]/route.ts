@@ -12,6 +12,11 @@ import { localHost } from '@bp/core/scan/local-only';
 const TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.webm': 'video/webm' };
 const BAD_SEGMENT = /[\\/:\u0000]/;
 
+// The run id in the path makes a shot as content-addressed as a commit sha (commits/[sha]/route.ts: "a commit never
+// changes", max-age=3600), so it takes the same ceiling: a compare panel reopened after a minute would otherwise refetch
+// every pair. A store that rewrote a file in place under the same run id would serve it stale for up to an hour.
+const IMMUTABLE = 'private, max-age=3600';
+
 const forbidden = () => Response.json({ error: 'path outside the shots directory' }, { status: 403 });
 
 /** The file under `root` that `segs` names, or null when it would leave `root` (checked again after symlinks). */
@@ -48,5 +53,5 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   try { st = fs.statSync(real); } catch { return Response.json({ error: 'no such shot' }, { status: 404 }); }
   if (!st.isFile()) return Response.json({ error: 'no such shot' }, { status: 404 });
   const bytes = fs.readFileSync(real);
-  return new Response(new Uint8Array(bytes), { headers: { 'content-type': type, 'content-length': String(bytes.length), 'cache-control': 'private, max-age=60' } });
+  return new Response(new Uint8Array(bytes), { headers: { 'content-type': type, 'content-length': String(bytes.length), 'cache-control': IMMUTABLE } });
 }
