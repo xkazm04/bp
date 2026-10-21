@@ -3,8 +3,8 @@
 // live product's store activity) plus a browser-local cursor per product and reader. The cursor is a convenience:
 // every storage access is guarded, and without it the view falls back to a default (the sample's AWAY_SINCE; a
 // live product shows everything it kept).
-import type { ViewId } from '@bp/core/data';
-import type { Activity } from '@bp/core/scan/types';
+import type { ReplayType, ViewId } from '@bp/core/data';
+import type { Activity, ActivityKind } from '@bp/core/scan/types';
 import { AWAY_SINCE } from './constants';
 import type { Model } from './index';
 import { lineSuffix } from './product';
@@ -68,16 +68,32 @@ export function morningView<Q extends WatchQuestion>(o: {
 }
 
 // ------------------------------------------------------------------------------------------- plain words
-const KIND: Record<string, [string, string]> = {
+/**
+ * Plain words for every event kind the watch can be handed, singular and plural. Split in two on purpose: the
+ * first table is typed over the two vocabularies the CODE defines, so tsc - not a reviewer - fails the build when
+ * a ReplayType or an ActivityKind is added and left unworded. The second is the map's own `activity[].type`, which
+ * the schema leaves a free string, so only the sample data can say what belongs there (check-model.ts section (i)
+ * reads the map and fails on a kind with no words). An unknown kind still reads as "3 events" rather than as its
+ * slug - kindWords' fallback - but nothing in either vocabulary may reach it.
+ */
+const KIND_CORE: Record<ActivityKind | ReplayType, [string, string]> = {
   commit: ['code change', 'code changes'], committed: ['code change', 'code changes'], 'tests-pass': ['check passed', 'checks passed'],
-  'tests-fail': ['check failed', 'checks failed'], 'pr-open': ['change sent for review', 'changes sent for review'], 'pr-opened': ['change sent for review', 'changes sent for review'],
+  'tests-fail': ['check failed', 'checks failed'], 'pr-open': ['change sent for review', 'changes sent for review'],
   'task-done': ['task finished', 'tasks finished'], 'review-pass': ['review passed', 'reviews passed'], 'review-changes': ['review asking for changes', 'reviews asking for changes'],
-  review: ['review', 'reviews'], deploy: ['release', 'releases'], 'flag-change': ['rollout change', 'rollout changes'], flag: ['rollout change', 'rollout changes'],
-  stage: ['stage move', 'stage moves'], alert: ['alert', 'alerts'], incident: ['incident', 'incidents'], 'spec-draft': ['plan drafted', 'plans drafted'],
-  note: ['note', 'notes'], comment: ['comment', 'comments'], finding: ['problem found', 'problems found'], 'scan-clean': ['clean check', 'clean checks'],
+  deploy: ['release', 'releases'], 'flag-change': ['rollout change', 'rollout changes'],
+  alert: ['alert', 'alerts'], 'spec-draft': ['plan drafted', 'plans drafted'],
+  note: ['note', 'notes'], finding: ['problem found', 'problems found'], 'scan-clean': ['clean check', 'clean checks'],
   move: ['agent moved here', 'agents moved here'], 'decision-asked': ['question asked', 'questions asked'], reading: ['reading', 'readings'],
   measured: ['measurement', 'measurements'], proposed: ['suggestion', 'suggestions'], executing: ['work started', 'work started'], error: ['error', 'errors'],
 };
+/** The map's own activity vocabulary (`activity[].type`, a free string in the schema). */
+const KIND_MAP: Record<string, [string, string]> = {
+  'pr-opened': ['change sent for review', 'changes sent for review'], review: ['review', 'reviews'], flag: ['rollout change', 'rollout changes'],
+  stage: ['stage move', 'stage moves'], incident: ['incident', 'incidents'], comment: ['comment', 'comments'],
+};
+const KIND: Record<string, [string, string]> = { ...KIND_CORE, ...KIND_MAP };
+/** Every kind either vocabulary names, so a gate can read the set the code itself declares. */
+export const WATCH_KINDS: readonly string[] = Object.keys(KIND);
 /** "3 code changes · 1 question asked": a place's events counted by kind, in plain words, most frequent first. */
 export function kindWords(events: readonly WatchEvent[], max = 3): string {
   const n = new Map<string, number>();

@@ -17,7 +17,10 @@
 //   (g) product.ts/constants.ts: `?scale=N` is clamped to the product lines that LINES actually declares, so the
 //       ceiling and the table cannot drift apart (they were two hand-written 8s);
 //   (h) every multi-segment source path a model comment names resolves from the REPO ROOT, as git ls-files
-//       prints it - a file anchor that points nowhere is worse than silence, because a reader follows it.
+//       prints it - a file anchor that points nowhere is worse than silence, because a reader follows it;
+//   (i) morning.ts kindWords: every event kind the watch can be handed has plain words, taken from the three
+//       vocabularies that produce them (PULSE_OF, the map's own activity types, the kinds the played hour
+//       emits) rather than from the KIND table itself, and the table words nothing no vocabulary declares.
 // Run: node scripts/check-model.ts   (Node's type stripping; scripts/overlays-loader.mjs transpiles src/** on the fly)
 // Control: BP_MODEL_MUTATE='[["lens.ts"," (\x27 + n + \x27 of \x27","(\x27 + n + \x27 OF \x27"]]' rewrites source text as
 // it loads ([file suffix, find, replace] literals), so an assertion can be seen red on a seeded defect.
@@ -284,6 +287,39 @@ const PLACES: { id: string; feats: Any[] }[] = [...M.L.rooms, ...M.L.wings, ...M
   expect(walked > 10 && anchors > 4, `(h) the guard walked ${walked} model files and found ${anchors} path anchors`);
   expect(!miss.length, `(h) ${miss.length} of ${anchors} paths named in a model comment do not resolve from the repo root:\n      ` + miss.join('\n      '));
   console.log(`doc anchors ${walked} model files / ${anchors} paths named in prose / ${miss.length} dangling`);
+}
+
+// ---------------------------------------------------------------- (i) every event kind the watch is handed has words
+{
+  const { kindWords, WATCH_KINDS, sampleWatchEvents } = await impCore('src/model/morning.ts');
+  const { PULSE_OF } = await impCore('src/model/constants.ts');
+  const ev = (type: string) => [{ k: 0, at: '', place: null, type, text: '' }];
+  /** Unworded: kindWords falls back to the generic noun, which is what a kind nobody worded looks like. */
+  const unworded = (type: string) => kindWords(ev(type)) === '1 event';
+  expect(unworded('a-kind-nobody-declared'), `(i) the fallback must still read generically: ${JSON.stringify(kindWords(ev('a-kind-nobody-declared')))}`);
+
+  // ground truth 1: every kind the replay can carry (PULSE_OF is Record<ReplayType, _>, so tsc keeps it complete)
+  const replay = Object.keys(PULSE_OF);
+  const mute1 = replay.filter(unworded);
+  expect(replay.length >= 16 && !mute1.length, `(i) ${mute1.length} of ${replay.length} ReplayType kinds have no plain words: ${JSON.stringify(mute1)}`);
+
+  // ground truth 2: every kind the loaded map's own activity rows carry (a free string in the schema)
+  const mapKinds = [...new Set(M.P.base.activity.map((a: Any) => a.type))] as string[];
+  const mute2 = mapKinds.filter(unworded);
+  expect(mapKinds.length > 4 && !mute2.length, `(i) ${mute2.length} of ${mapKinds.length} kinds in the map's activity have no plain words: ${JSON.stringify(mute2)}`);
+
+  // ground truth 3: every kind that actually reaches a WatchEvent in the sample, replayed hour included
+  M.sim.setSpeed(60);
+  for (let i = 0; i < 2000 && M.sim.t < 3600; i++) M.sim.advance(90);
+  const watched = [...new Set((sampleWatchEvents(M) as Any[]).map((e) => e.type))];
+  const mute3 = watched.filter(unworded);
+  expect(watched.length > 4 && !mute3.length, `(i) ${mute3.length} of ${watched.length} kinds the watch is handed have no plain words: ${JSON.stringify(mute3)}`);
+
+  // and the table the code declares is covered by the two vocabularies it claims to be about
+  const dead = WATCH_KINDS.filter((k: string) => !replay.includes(k) && !mapKinds.includes(k) && !['reading', 'measured', 'proposed', 'executing', 'committed', 'note', 'error'].includes(k));
+  expect(!dead.length, `(i) KIND words kinds no vocabulary in this tree declares: ${JSON.stringify(dead)}`);
+  expect(kindWords(ev('commit').concat(ev('commit'))) === '2 code changes', `(i) the plural form: ${JSON.stringify(kindWords(ev('commit').concat(ev('commit'))))}`);
+  console.log(`watch words ${WATCH_KINDS.length} worded / ${replay.length} replay kinds / ${mapKinds.length} map kinds / ${watched.length} reaching the watch / 0 mute`);
 }
 
 if (failures.length) {
