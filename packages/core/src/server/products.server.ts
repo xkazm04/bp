@@ -54,7 +54,8 @@ export function findProduct(slug: string): ProductEntry | null {
 
 export const hasStore = (p: ProductEntry): boolean => fs.existsSync(storeFile(p));
 
-/** The built-in Kettle sample: read-only, served only while no registered product is named `kettle`. */
+/** The built-in Kettle sample, served only while no registered product is named `kettle`. Its map is read-only; its scans,
+ *  waves and stream answer from the sims a process hosts in memory (kettle-sim.server.ts: apps/server does, apps/web does not). */
 export const KETTLE_SLUG = 'kettle';
 const KETTLE_DATA = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../data');
 
@@ -64,9 +65,10 @@ export function kettleSample(slug: string): { structureFile: string; eventsFile:
   return { structureFile: path.join(KETTLE_DATA, 'kettle.app-structure.json'), eventsFile: path.join(KETTLE_DATA, 'kettle.events.jsonl') };
 }
 
-/** The 4xx for a product the route cannot resolve: Kettle is a read-only sample (405), anything else is unknown (404). */
+/** The 4xx for a product the route cannot resolve: Kettle, on a route or in a process without its sim, is the read-only
+ *  sample (405), anything else is unknown (404). */
 export function unknownProduct(slug: string): Response {
   return slug === KETTLE_SLUG
-    ? Response.json({ error: 'kettle is the built-in read-only sample: only GET /api/products/kettle/structure and GET /api/products/kettle/plan answer it' }, { status: 405 })
+    ? Response.json({ error: 'kettle is the built-in sample: here only its structure and plan answer, and its scan, scans, waves, dispatch and stream where the process hosts its sim (apps/server)' }, { status: 405 })
     : Response.json({ error: `unknown product ${slug}` }, { status: 404 });
 }

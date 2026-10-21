@@ -5,12 +5,14 @@
 // queued already; 404 for an unknown product or a product without a map. A `selection` scope (the ledger's selected
 // features) carries no id and 1..MAX_SELECTION (200) features. Localhost only.
 // GET /api/products/[slug]/scans: the product's ScanJob[], oldest first.
+// Kettle, where this process hosts its sim (kettle-sim.server.ts): the sim queues and lists the jobs, with the same answers.
 import { unknownProduct } from '@bp/core/server/products.server';
 import { findProduct } from '@bp/core/server/products.server';
 import { localHost, localOnly, jsonOnly } from '@bp/core/scan/local-only';
 import { MAX_SELECTION, SAFE_ID, scannable, type ScanScope, type ScanScopeKind } from '@bp/core/scan/jobs';
 import { enqueueMeasure, list } from '@bp/core/server/jobs.server';
 import { readLensesAndFeatures } from '@bp/core/server/lens-write.server';
+import { kettleSim, simAnswer } from '@bp/core/server/kettle-sim.server';
 
 const KINDS: readonly ScanScopeKind[] = ['feature', 'bay', 'room', 'wing', 'all', 'selection'];
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -31,6 +33,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   const denied = localHost(req);
   if (denied) return Response.json({ error: denied }, { status: 403 });
   const { slug } = await params;
+  const k = kettleSim(slug);
+  if (k) return simAnswer(() => k.jobs());
   if (!findProduct(slug)) return unknownProduct(slug);
   return Response.json(list(slug));
 }
@@ -41,10 +45,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   const notJson = jsonOnly(req);
   if (notJson) return Response.json({ error: notJson }, { status: 415 });
   const { slug } = await params;
-  const p = findProduct(slug);
-  if (!p) return unknownProduct(slug);
+  const k = kettleSim(slug), p = findProduct(slug);
+  if (!p && !k) return unknownProduct(slug);
   let body: unknown;
   try { body = await req.json(); } catch { return Response.json({ error: 'body must be JSON' }, { status: 400 }); }
+  if (k) return isObj(body) ? simAnswer(() => k.startScan(body.lens as string, body.scope as ScanScope), 202) : Response.json({ error: 'unknown-lens' }, { status: 400 });
+  if (!p) return unknownProduct(slug);
   const map = readLensesAndFeatures(p);
   if (!map) return Response.json({ error: `no readable structure for ${slug}` }, { status: 404 });
   if (!isObj(body)) return Response.json({ error: 'unknown-lens' }, { status: 400 });

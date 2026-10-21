@@ -4,9 +4,11 @@
 //   npm run server [-- --port 3100 --host 127.0.0.1]     (env BP_SERVER_PORT / BP_SERVER_HOST)
 // Run it from the repo root, as Next is: the working directory is where bp.products.local.json is read.
 // Prints `bp server listening on http://<host>:<port>` and one `route <methods> <path>` line per mounted handler.
+// It hosts the Kettle sample's sims (kettle-sim.ts), in memory: Kettle's scan, scans, waves, dispatch and stream answer from them.
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { hostKettleSims } from './kettle-sim.ts';
 import { listener, loadRoutes } from './mount.ts';
 
 const arg = (k: string): string | undefined => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : undefined; };
@@ -15,6 +17,7 @@ const PORT = Number(arg('--port') ?? process.env.BP_SERVER_PORT ?? 3100);
 // the handler tree, found through the package (any module in it resolves; its directory's parent is api/)
 const API = path.resolve(path.dirname(fileURLToPath(import.meta.resolve('@bp/core/server/api/products/route'))), '..');
 
+hostKettleSims();
 const routes = await loadRoutes(API);
 for (const r of routes) console.log(`route ${r.methods.join(',')} ${r.path}`);
 const server = http.createServer(listener(routes));

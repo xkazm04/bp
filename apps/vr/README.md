@@ -23,7 +23,8 @@ What the client will consume, already in this repo:
   handlers apps/web mounts (`packages/core/src/server/api`).
 - Kettle, read-only, with no product registered: `GET /api/products/kettle/structure` answers
   `{ structure, events, rev }` from `packages/core/data` (13 domains in `structure.domains`, capabilities and features, the 8 lens manifests in `structure.lenses`, the event log in `events`). Kettle is not in
-  `GET /api/products`, and every write route answers it 405.
+  `GET /api/products`. Its map is read-only; its scans, waves, dispatch and stream answer from the sims `apps/server`
+  hosts in memory (below), and its other write routes answer it 405.
 - `packages/schema`: the app-structure v3 JSON Schemas and the UE `USTRUCT` headers generated from
   them, so `FJsonObjectConverter` fills the structs with no hand-written parsing.
 
@@ -49,5 +50,13 @@ The requests the `BpLink` module will make for Kettle, against `apps/server` wit
   `rev` equals the structure's.
 - The events BpLink reads: the `events` string of that payload (JSONL, one valid JSON object per line, the same lines as
   `kettle.events.jsonl`).
-- `GET /api/products/kettle/stream`: 405 with a JSON `error`, not an SSE stream. Kettle has no live stream, so BpLink's
-  fallback is to read `rev` once from the structure payload (it is stable across reads).
+- `GET /api/products/kettle/stream`: 200 `text/event-stream` (since wolf-plan L5.2: `apps/server` hosts Kettle's scan sim
+  in memory, nothing written to disk). The first event is a `snapshot` (`runs`, `measurements`, `proposals` = the sample's
+  findings, `activity`, ...); `jobs` and `delta` events follow a scan, `ping` every 15 s. Kettle's map never changes, so
+  there is no `map` event: `rev` is still read once from the structure payload (it is stable across reads). The old 405
+  fallback is gone; BpLink's reader changes in step (W5.1). `npm run check:kettle-sim` shows `snapshot` then `delta` after
+  a scan POST.
+- Kettle writes on the sim's routes answer as for a live product: `POST /api/products/kettle/scans` 202 (the scan job),
+  `GET .../scans`, `DELETE .../scans/<job>`, `GET .../scan`, `GET`/`POST .../waves`, `PATCH`/`DELETE .../waves/<wave>`,
+  `POST .../waves/<wave>/dispatch` and `POST .../dispatch`. The sim's state lasts as long as the server process. Other
+  Kettle writes (triage, releases, lenses) still answer 405.

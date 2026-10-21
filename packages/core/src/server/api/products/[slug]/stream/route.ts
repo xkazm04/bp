@@ -14,6 +14,7 @@
 //                    sends a snapshot. An absent store is NOT an error: it gets the empty snapshot.
 // The change check is `PRAGMA data_version` on ONE long-lived read connection: it moves only when another
 // connection (the skill, or a decision) commits, so an idle store costs one pragma a second.
+// Kettle, where this process hosts its sim (kettle-sim.server.ts): snapshot, jobs, delta and ping over the sim, in memory.
 import { unknownProduct } from '@bp/core/server/products.server';
 import fs from 'node:fs';
 import { findProduct, recovered, storeDir, storeFile, warnOnce } from '@bp/core/server/products.server';
@@ -22,6 +23,7 @@ import { advance, close, dataVersion, isEmptyScan, mapRev, newCursor, openRead, 
 import type { ScanSnapshot, StreamEvent } from '@bp/core/scan/types';
 import { RUN_NOTE_PREFIX } from '@bp/core/scan/jobs';
 import { attachRun, list as listJobs, subscribe as onJobs } from '@bp/core/server/jobs.server';
+import { kettleSim, kettleStream } from '@bp/core/server/kettle-sim.server';
 
 const TICK_MS = 1000, PING_MS = 15000;
 
@@ -29,6 +31,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   const denied = localHost(req);
   if (denied) return Response.json({ error: denied }, { status: 403 });
   const { slug } = await params;
+  const k = kettleSim(slug);
+  if (k) return kettleStream(k, req);
   const p = findProduct(slug);
   if (!p) return unknownProduct(slug);
   const file = storeFile(p), enc = new TextEncoder(), logKey = `stream ${slug} (${file})`;

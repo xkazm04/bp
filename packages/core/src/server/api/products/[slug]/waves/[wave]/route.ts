@@ -2,11 +2,14 @@
 // are numbered pk-1... again). 200 `{ wave }`; 400 `{ error }` for a bad body or wave id; 404 for an unknown product, wave or
 // missing store; 409 `{ error }` when the wave was dispatched, `{ error, taken }` when a finding is in another draft wave.
 // DELETE /api/products/[slug]/waves/[wave]: delete a draft wave. 200 `{ id }`; 404; 409 when it was dispatched. Localhost only.
+// Kettle, where this process hosts its sim (kettle-sim.server.ts): the sim's waves, in memory, under the same rules.
 import { unknownProduct } from '@bp/core/server/products.server';
 import { findProduct, hasStore } from '@bp/core/server/products.server';
 import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
 import { SAFE_ID } from '@bp/core/scan/jobs';
 import { patchWave, removeWave } from '@bp/core/server/waves.server';
+import type { WaveBody } from '@bp/core/scan/waves';
+import { kettleSim, simAnswer } from '@bp/core/server/kettle-sim.server';
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ slug: string; wave: string }> }): Promise<Response> {
   const denied = localOnly(req);
@@ -14,11 +17,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
   const notJson = jsonOnly(req);
   if (notJson) return Response.json({ error: notJson }, { status: 415 });
   const { slug, wave } = await params;
-  const p = findProduct(slug);
-  if (!p) return unknownProduct(slug);
+  const k = kettleSim(slug), p = findProduct(slug);
+  if (!p && !k) return unknownProduct(slug);
   if (!SAFE_ID.test(wave)) return Response.json({ error: 'bad wave id' }, { status: 400 });
   let body: unknown;
   try { body = await req.json(); } catch { return Response.json({ error: 'body must be JSON' }, { status: 400 }); }
+  if (k) return simAnswer(() => ({ wave: k.updateWave(wave, body as Partial<WaveBody>) }));
+  if (!p) return unknownProduct(slug);
   if (!hasStore(p)) return Response.json({ error: `no scan store for ${slug}` }, { status: 404 });
   try {
     const r = patchWave(p.root, wave, body);
@@ -30,9 +35,11 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ slug:
   const denied = localOnly(req);
   if (denied) return Response.json({ error: denied }, { status: 403 });
   const { slug, wave } = await params;
-  const p = findProduct(slug);
-  if (!p) return unknownProduct(slug);
+  const k = kettleSim(slug), p = findProduct(slug);
+  if (!p && !k) return unknownProduct(slug);
   if (!SAFE_ID.test(wave)) return Response.json({ error: 'bad wave id' }, { status: 400 });
+  if (k) return simAnswer(() => k.deleteWave(wave));
+  if (!p) return unknownProduct(slug);
   if (!hasStore(p)) return Response.json({ error: `no scan store for ${slug}` }, { status: 404 });
   try {
     const r = removeWave(p.root, wave);

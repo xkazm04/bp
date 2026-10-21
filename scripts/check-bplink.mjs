@@ -6,7 +6,8 @@
 //   plan       GET /api/products/kettle/plan: 200 { rev, lenses, wings, rooms, bays, tiles }, the levels VR draws (wing, room,
 //              bay, tile): 5 wings, 13 rooms, 29 bays, 133 tiles today, derived from WING_DEFS and the data, never hard-coded
 //   events     the event log BpLink reads is that payload's `events` string (JSONL), line for line the data file's
-//   stream     GET /api/products/kettle/stream answers 405 JSON today (Kettle has no SSE): BpLink's fallback is to read `rev` once
+//   stream     GET /api/products/kettle/stream answers SSE (apps/server hosts Kettle's sims, L5.2): the first event is a `snapshot`
+//              of the sample (its findings as `proposals`); `delta` and `jobs` follow a scan (scripts/check-kettle-sim.mjs)
 // Pins the server's current answers; it changes no route. A gap BpLink must live with is asserted as it is, not papered over.
 // Run: node scripts/check-bplink.mjs   Exit 1 on any failure.
 import fs from 'node:fs';
@@ -52,6 +53,18 @@ const get = (p, headers = {}) => new Promise((resolve) => {
   r.end();
 });
 
+/** A GET that ends at the first SSE event (or the body's end). */
+const firstEvent = (p) => new Promise((resolve) => {
+  const r = http.request({ host: '127.0.0.1', port, path: p, method: 'GET', headers: { host: `localhost:${port}`, accept: 'text/event-stream' } }, (res) => {
+    let s = ''; res.setEncoding('utf8');
+    const done = () => resolve({ status: res.statusCode, headers: res.headers, body: s });
+    res.on('data', (d) => { s += d; if (s.includes('\n\n')) { r.destroy(); done(); } });
+    res.on('end', done);
+  });
+  r.on('error', (e) => resolve({ status: 0, headers: {}, body: e.message }));
+  r.end();
+});
+
 try {
   check('the server starts and prints its port', port > 0, out.trim().split('\n').slice(-5).join(' | '));
   if (port > 0) {
@@ -74,9 +87,11 @@ try {
     let parsed = true; for (const l of evs) { try { JSON.parse(l); } catch { parsed = false; } }
     check(`events: the payload's JSONL has the data file's ${wantEvents.length} lines, each valid JSON`, evs.length === wantEvents.length && wantEvents.length > 0 && parsed, `${evs.length} lines, parsed=${parsed}`);
 
-    const st = await get('/api/products/kettle/stream', { accept: 'text/event-stream' });
-    let sb = null; try { sb = JSON.parse(st.body); } catch { /* reported below */ }
-    check('stream: Kettle has no SSE, 405 JSON error (BpLink reads rev once from structure)', st.status === 405 && !/event-stream/.test(String(st.headers['content-type'])) && typeof sb?.error === 'string', `${st.status} ${st.headers['content-type']} ${st.body.slice(0, 80)}`);
+    const st = await firstEvent('/api/products/kettle/stream');
+    const m = /^event: (\w+)\ndata: (.*)$/m.exec(st.body);
+    let sd = null; try { sd = JSON.parse(m?.[2] ?? ''); } catch { /* reported below */ }
+    check('stream: 200 text/event-stream', st.status === 200 && /text\/event-stream/.test(String(st.headers['content-type'])), `${st.status} ${st.headers['content-type']}`);
+    check('stream: the first event is a snapshot with the sample findings (proposals) and every scan table', m?.[1] === 'snapshot' && Array.isArray(sd?.proposals) && sd.proposals.length > 0 && ['runs', 'measurements', 'activity'].every((t) => Array.isArray(sd?.[t])), `${m?.[1]} ${st.body.slice(0, 80)}`);
     const again = await get('/api/products/kettle/structure');
     let ab = null; try { ab = JSON.parse(again.body); } catch { /* reported below */ }
     check('rev: stable across reads (a fallback that reads it once can trust it)', !!ab?.rev && ab.rev === kb?.rev, `${kb?.rev} vs ${ab?.rev}`);

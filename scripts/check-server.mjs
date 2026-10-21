@@ -5,7 +5,9 @@
 //            apps/web/src/app/api/**/route.ts, the same methods its thin mount re-exports
 //   kettle   with no products file GET /api/products/kettle/structure answers the built-in sample ({ structure, events, rev },
 //            domain count = packages/core/data's), GET /api/products/kettle/plan answers the derived plan (wings, rooms, bays, tiles
-//            counted from WING_DEFS and the data), and a Kettle write answers 4xx (Kettle stays unlisted)
+//            counted from WING_DEFS and the data); the server hosts Kettle's sims (L5.2): a Kettle scan POST answers 202 (a
+//            malformed one 400), its stream answers SSE, a write the sims do not cover (triage) still 405 (Kettle stays
+//            unlisted). scripts/check-kettle-sim.mjs walks the sims through the stream and proves nothing is written.
 //   http     GET /api/products answers 200 [] (no products file), an unknown path 404, a method the route lacks 405
 //            with Allow, a foreign Host 403 and a non-JSON write 415: the guards run under this mount too
 // The live-product walk (structure, SSE stream, waves, shots) is scripts/smoke-live.mjs against `npm run server`.
@@ -85,8 +87,24 @@ try {
     check('kettle plan: every tile has a box and a health per enabled lens', !!pb?.tiles?.length && pb.tiles.every((t) => typeof t.box?.w === 'number' && pb.lenses.every((l) => typeof t.health?.[l] === 'string')), `${pb?.lenses?.length} lenses`);
     const kpw = await req('POST', '/api/products/kettle/plan', { 'content-type': 'application/json' }, '{}');
     check('a Kettle write to /plan: 4xx', kpw.status >= 400 && kpw.status < 500, `${kpw.status}`);
-    const kw = await req('POST', '/api/products/kettle/scan', { 'content-type': 'application/json' }, '{}');
-    check('a Kettle write: 4xx', kw.status >= 400 && kw.status < 500, `${kw.status}`);
+    const kw = await req('POST', '/api/products/kettle/scans', { 'content-type': 'application/json' }, JSON.stringify({ lens: 'development', scope: { kind: 'all', label: 'Everything', features: [] } }));
+    let kj = null; try { kj = JSON.parse(kw.body); } catch { /* reported below */ }
+    check('a Kettle scan write: 202, the hosted sim queues it', kw.status === 202 && kj?.kind === 'measure', `${kw.status} ${kw.body.slice(0, 80)}`);
+    if (kj?.id) await req('DELETE', `/api/products/kettle/scans/${kj.id}`);
+    const kbad = await req('POST', '/api/products/kettle/scans', { 'content-type': 'application/json' }, '{}');
+    check('a malformed Kettle scan write: 400', kbad.status === 400, `${kbad.status}`);
+    const ktr = await req('POST', '/api/products/kettle/triage', { 'content-type': 'application/json' }, '{}');
+    check('a Kettle write the sims do not cover (triage): 405', ktr.status === 405, `${ktr.status}`);
+    const kst = await new Promise((resolve) => {
+      const r = http.request({ host: '127.0.0.1', port, path: '/api/products/kettle/stream', headers: { host: `localhost:${port}`, accept: 'text/event-stream' } }, (res) => {
+        let s = ''; res.setEncoding('utf8');
+        res.on('data', (d) => { s += d; if (s.includes('\n\n')) { r.destroy(); resolve({ status: res.statusCode, type: String(res.headers['content-type']), body: s }); } });
+        res.on('end', () => resolve({ status: res.statusCode, type: String(res.headers['content-type']), body: s }));
+      });
+      r.on('error', (e) => resolve({ status: 0, type: '', body: e.message }));
+      r.end();
+    });
+    check('Kettle stream: 200 SSE, a snapshot first', kst.status === 200 && /text\/event-stream/.test(kst.type) && kst.body.startsWith('event: snapshot\n'), `${kst.status} ${kst.type} ${kst.body.slice(0, 40)}`);
     const kl = await req('GET', '/api/products');
     check('Kettle stays unlisted: GET /api/products still []', kl.status === 200 && kl.body.trim() === '[]', kl.body.slice(0, 80));
     const none = await req('GET', '/api/nothing-here');
