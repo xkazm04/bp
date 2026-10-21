@@ -3,7 +3,7 @@ contextMap: context-map.json
 memoryOutbox: .claude/scan-history/findings.jsonl
 backlogDigest: .claude/scan-history/backlog-digest.json
 openBacklogs: .claude/scan-history/open-backlogs.jsonl
-depth: 5
+depth: 16
 neverSweep: []
 ---
 
