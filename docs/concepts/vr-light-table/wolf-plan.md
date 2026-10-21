@@ -271,12 +271,12 @@ FLUX.2 [klein] or Qwen-Image (tech-stack.md §5), unless the owner rules on Leon
       questions). Proof: the owner's approval line in `ArtSource/lamp-agent/manifest.json` `gates.input.note`.
       Done 2026-10-21: owner picked option A, the spring-arm cone; proof is `gates.input.note` (`pass: true`) and
       `picked: "A"` in `ArtSource/lamp-agent/manifest.json`.
-- [ ] **L4.1 Props (Lynx, about 1 to 2 days per asset).** Lamp agent (30k triangles, rigged look-at and state poses,
+- [x] **L4.1 Props (Lynx, about 1 to 2 days per asset).** Lamp agent (30k triangles, rigged look-at and state poses,
       emissive head slot), light table frame (10k), survey pin (500, instanced), studio kit (80k total), city backdrop
       (a Leonardo panorama, ruling 2026-10-21: FLUX.2 [klein] is not installed and will not be), and the materials vellum, blueprint paper, brushed aluminium and warm wood.
       Proof per asset: a manifest with every gate `pass: true`, committed with `Host: Lynx`.
-      Lamp agent, 2026-10-21 (not ticked, the other props are open): `ArtSource/lamp-agent/` has `final.fbx` (26,035 tris, 4 bones,
-      5 pose actions), 3 PBR PNGs and evidence; all five gates `pass: true`, `lynx_commit` is set at the merge. Reworked the same day
+      Lamp agent, 2026-10-21: `ArtSource/lamp-agent/` has `final.fbx` (26,035 tris against 30,000, 4 bones,
+      5 pose actions), 3 PBR PNGs and evidence; all five gates `pass: true`, `lynx_commit` is `2dad0ad`. Reworked the same day
       after the Director review of 11:21Z (no TRELLIS rerun, no GPU): the arm is flat navy PBR in six material slots (silver joints,
       dark shade, `lamp_shade_glow` kept, amber cap, navy base) instead of the smudged TRELLIS bake; the C-clamp is modelled (the TRELLIS
       stalk was not one) and reaches 11.2 cm below the table plane; the springs are 4 silver cylinders on the arms; all evidence is
@@ -284,19 +284,27 @@ FLUX.2 [klein] or Qwen-Image (tech-stack.md §5), unless the owner rules on Leon
       table plane, 56.2 cm with the clamp.
       Director review of the reworked lamp (2dad0ad), 2026-10-21: it reads correctly (whole lamp framed, clean navy and silver arm,
       clamp on the table edge).
-      Light table frame, 2026-10-21 (not ticked, the studio kit, backdrop and materials are open): `ArtSource/light-table-frame/` has
+      Light table frame, 2026-10-21: `ArtSource/light-table-frame/` has
       `final.glb` (586 tris against 10,000, 1.20 x 0.80 x 0.95 m, pivot at the floor centre, 3.0 cm top edge for the lamp clamp),
       6 PBR PNGs, evidence (turnaround, the 45-degree table view and `vs-hero.jpg`, the view beside `00-hero.jpg`; Cycles on the CPU)
       and a manifest with all five gates `pass: true` (14 components, 0 floaters, one UV set, 4 slots: `frame_dark_metal`,
       aluminium, `frame_edge_glow` emissive strip, `frame_glass_placeholder_REPLACE_IN_UE`). Reworked after the Director review of
       04fc311 (warm wood, no visible edge): rim, legs and rails are dark metal on the style block's studio near-black `#0A0F18`
-      (slot renamed from `frame_wood`), and the edge strip is `#F4FAFF`, 2 cm wide and 8 mm tall at emission strength 25. Procedural Blender, `scripts/art/light-table-frame/`; `lynx_commit` is set at the merge.
-      Studio kit, 2026-10-21 (not ticked, the materials, backdrop and the other props are open; procedural Blender on Cycles CPU, `scripts/art/studio-kit/`, kit total 7,176 of 80,000 tris, `lynx_commit` set at the merge):
+      (slot renamed from `frame_wood`), and the edge strip is `#F4FAFF`, 2 cm wide and 8 mm tall at emission strength 25. Procedural Blender, `scripts/art/light-table-frame/`; `lynx_commit` is `60db9b6`.
+      Studio kit, 2026-10-21 (procedural Blender on Cycles CPU, `scripts/art/studio-kit/`, kit total 7,176 of 80,000 tris; `lynx_commit` is `ca2fa38` shelves, `dea248c` desk lamp, `a74a648` mug, `13018a0` drawing tubes, `6d95122` pinned drawings):
       `studio-shelves` 2026-10-21: 1,092 of 24,000 tris, 88 x 30.8 x 126 cm, steel rack with navy-stained boards, books and a roll; all five gates `pass: true`.
       `studio-desk-lamp` 2026-10-21: 1,296 of 16,000 tris, 23.7 x 18.4 x 39.1 cm, cone shade with an emissive inner slot; all five gates `pass: true`.
       `studio-mug` 2026-10-21: 1,008 of 8,000 tris, 11.9 x 8.0 x 9.5 cm, cream glaze, pale blue inside, navy handle; all five gates `pass: true`.
       `studio-drawing-tubes` 2026-10-21: 2,976 of 20,000 tris, 16.3 x 17.5 x 52.9 cm, round holder, five capped tubes and two rolls; all five gates `pass: true`.
       `studio-pinned-drawings` 2026-10-21: 804 of 12,000 tris, 114 x 3.2 x 52 cm, three framed blueprint sheets on a mounting board (input gate set true because it is procedural, not TRELLIS input); all five gates `pass: true`.
+      Survey pin, 2026-10-21: `survey-pin` 420 of 500 tris (instanced), 3.7 x 5.45 x 1.3 cm, pivot at the needle tip, blank tag card for the UE text layer; procedural Blender 5.2.2, `scripts/art/build_art.bpy`; all gates pass: true; `lynx_commit` `474731d`.
+      Fixture kit, 2026-10-21: `fixture-kit` five tile meshes, 452 tris in all, the largest 164 (ops) against 300 per mesh, 5 x 3 x 5 cm largest extent; procedural Blender 5.2.2, `scripts/art/build_art.bpy`; all gates pass: true; `lynx_commit` `474731d`.
+      City backdrop, 2026-10-21: `city-backdrop` 72 of 200 tris (a curved panel), a 180 degree arc 2000 x 600 x 1000 cm; the panorama is Leonardo `openai/gpt-image-2.5-flare`, MEDIUM, 2048x768, seed 3 (ruling 2026-10-21); all gates pass: true; `lynx_commit` `47230b9`.
+      `mat-vellum` 2026-10-21: tiling pass, worst seam ratio 1.0644 (limit 1.25), 3 PNGs at 2048, one tile 0.5 m; procedural Blender 5.2.2 (`scripts/art/materials/`); all gates pass: true; `lynx_commit` `b31a649`.
+      `mat-blueprint-paper` 2026-10-21: tiling pass, worst seam ratio 1.0427 (limit 1.25), 3 PNGs at 2048, one tile 0.5 m; procedural Blender 5.2.2 (`scripts/art/materials/`); all gates pass: true; `lynx_commit` `b31a649`.
+      `mat-brushed-aluminium` 2026-10-21: tiling pass, worst seam ratio 1.0536 (limit 1.25), 3 PNGs at 2048, one tile 0.25 m; procedural Blender 5.2.2 (`scripts/art/materials/`); all gates pass: true; `lynx_commit` `b31a649`.
+      `mat-warm-wood` 2026-10-21: tiling pass, worst seam ratio 1.0076 (limit 1.25), 3 PNGs at 2048, one tile 0.5 m; procedural Blender 5.2.2 (`scripts/art/materials/`); all gates pass: true; `lynx_commit` `b31a649`.
+      Done 2026-10-21: all 14 hand-off folders have every gate `pass: true` and `lynx_commit` set to the last commit that changed the folder (the earlier art commits carry no Host: Lynx trailer and are not rewritten; the close-out commits do). `npm run check:art` passes (ids, gates, budgets, sha256, 50 MB cap, `lynx_commit` in history and touching its folder; its seeded control fails as expected) and is part of `npm run check`. ArtSource holds 59.6 MB committed, no file over 10 MB. Wolf work (W4.1, P4 gate) stays open.
 - [ ] **W4.1 Import (Wolf, half a day per asset).** Import each `final.*` through the editor MCP (pof's gap-fillers)
       into `apps/vr/Content/Bp/Art/<asset-id>/`. **Nothing is imported without its gate results** (the plan.md P4 gate).
       Proof: the manifest's `import` block; `stat rhi` and `stat scenerendering` with the asset in the greybox.
