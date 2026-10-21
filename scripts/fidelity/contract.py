@@ -74,7 +74,11 @@ def run(sc, argv):
         sc.main()
         return 0
     except SystemExit as e:
-        return int(e.code or 0)
+        # SystemExit.code is None, an int, or a message (sys.exit('text') means print it and exit 1)
+        if e.code is None or isinstance(e.code, int):
+            return int(e.code or 0)
+        print(e.code, file=sys.stderr)
+        return 1
 
 
 def main():
