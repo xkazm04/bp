@@ -4,6 +4,7 @@
 //   backdrop  an entry with `rules` (city-backdrop) swaps the sheet rules for its own and still restates the style block
 //   prop      prop prompts restate the style block's palette and materials, carry the TRELLIS sheet rules, and cover every variant
 //   cap       a call that would pass the stop or HARD_CAP is refused; a prop --out stays inside apps/vr/ArtSource
+//   cost      the figure the cap is fed is the WORST measured credit figure at that quality, never the first
 //   out       --out stays inside lookdev/: a name that would resolve outside it is refused before any call
 //   source    a source guard over leonardo.mjs: it names no absolute machine path, so the .env it reads for
 //             LEONARDO_API_KEY is THIS checkout's and no other one's. Comments are stripped before the match.
@@ -11,7 +12,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
-import { artFile, composePropPrompt, composePrompt, nightTotal, outFile, parseSize, redact, spendWindow, withinCap } from './leonardo.mjs';
+import { artFile, composePropPrompt, composePrompt, expectedCost, nightTotal, outFile, parseSize, redact, spendWindow, withinCap } from './leonardo.mjs';
 
 let failed = 0, passed = 0;
 const check = (name, ok, detail = '') => { ok ? passed++ : failed++; console.log(`${ok ? 'ok  ' : 'FAIL'}  ${name}${ok || !detail ? '' : `  (${detail})`}`); };
@@ -63,6 +64,26 @@ check('cap: a call within the stop goes ahead', withinCap(150, 6, 160));
 check('cap: a call over --stop-at is refused', !withinCap(155, 6, 160));
 check('cap: --stop-at cannot raise HARD_CAP', !withinCap(386, 6, 9999) && withinCap(384, 6, 9999));
 check('cap: at the cap nothing more is allowed', !withinCap(390, 6));
+
+// cost: the figure the cap is FED. withinCap is tested five ways above, but a cap given too small a cost refuses
+// nothing it should, so the worst measured credit figure per quality is the only safe input. Cost rises with size
+// (measured in log.jsonl: LOW 6 at 1376x768 and 1024x1024, 8 at 2048x768; MEDIUM 14 and 20), and expectedCost cannot
+// see --size, so it must take the maximum and not the first entry it finds.
+const lo = (credits, extra = {}) => ({ quality: 'LOW', credits, creditsSource: 'api', ...extra });
+const cheapFirst = [lo(6), lo(8), lo(6)];
+check('cost: the worst measured figure at a quality wins, not the first', expectedCost('LOW', cheapFirst).cost === 8, `${expectedCost('LOW', cheapFirst).cost}`);
+check('cost: order does not change it', expectedCost('LOW', [lo(8), lo(6)]).cost === 8 && expectedCost('LOW', [lo(6), lo(8)]).cost === 8);
+check('cost: a fallback entry is not a measurement', expectedCost('LOW', [lo(99, { creditsSource: 'fallback' }), lo(6)]).cost === 6);
+check('cost: a zero-credit entry is not a measurement', expectedCost('LOW', [lo(0), lo(6)]).cost === 6);
+check('cost: with nothing measured, LOW takes its worst measured constant (8)', expectedCost('LOW', []).cost === 8 && expectedCost('LOW', []).measured === true);
+check('cost: an unmeasured quality says so', expectedCost('MEDIUM', []).measured === false && expectedCost('HIGH', []).measured === false);
+check('cost: the 2048x768 MEDIUM figure is what gates a MEDIUM call', expectedCost('MEDIUM', [{ quality: 'MEDIUM', credits: 14, creditsSource: 'api' }, { quality: 'MEDIUM', credits: 20, creditsSource: 'api' }]).cost === 20);
+// The two together: the cap must refuse the call that the cheapest-first figure would have let through.
+// 383 + 8 = 391 passes HARD_CAP 390; 383 + 6 = 389 does not. So the cheapest-first figure would have spent over the cap.
+check('cost+cap: a wide LOW call 383 into the window is refused, where the 6-credit figure allowed it',
+  !withinCap(383, expectedCost('LOW', cheapFirst).cost) && withinCap(383, 6), `cost=${expectedCost('LOW', cheapFirst).cost}`);
+check('cost+cap: the real log gates a wide MEDIUM call at its own worst figure',
+  expectedCost('MEDIUM', fs.readFileSync(path.join(DIR, 'log.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l))).cost === 20);
 
 const at = (iso) => new Date(iso);
 const e = (time, credits) => ({ time, credits });

@@ -41,7 +41,7 @@ const HARD_CAP = 390; // of the operator's 400 per night
 const PRIOR_SPEND = 6; // the Director's LOW test call on 2026-10-20 about 20:58Z, made before this log existed
 const PRIOR_WINDOW = '2026-10-20T08:00:00.000Z'; // the window PRIOR_SPEND belongs to
 const WINDOW_START_HOUR = 8; // UTC
-const LOW_FALLBACK = 6; // the Director's measured LOW cost
+const LOW_FALLBACK = 8; // the worst measured LOW cost (6 at 1376x768 and 1024x1024, 8 at 2048x768); a cap takes the worst
 const PROBE_ESTIMATE = { MEDIUM: 40, HIGH: 120 }; // a deliberately high guess, used only to gate the first probe
 const COMMIT_LIMIT = 400 * 1024;
 const POLL_MS = 5000;
@@ -132,10 +132,15 @@ export function nightTotal(log = readLog(), now = new Date()) {
   return (w.from === PRIOR_WINDOW ? PRIOR_SPEND : 0) + log.filter(inside).reduce((n, e) => n + (Number(e.credits) || 0), 0);
 }
 
-/** What a call at this quality is expected to cost: LOW is known; MEDIUM and HIGH come from the first measured call. */
-function expectedCost(quality, log) {
-  const measured = log.find((e) => e.quality === quality && e.creditsSource !== 'fallback' && Number(e.credits) > 0);
-  if (measured) return { cost: Number(measured.credits), measured: true };
+/**
+ * What a call at this quality may cost: the WORST credit figure the log has measured at that quality, not the first
+ * one. A cap has to be fed the worst case or it is not a cap - cost also rises with size (measured at LOW: 6 credits
+ * at 1376x768 and 1024x1024, 8 at 2048x768; at MEDIUM: 14 and 20), and `--size` is not a field this function sees.
+ * LOW falls back to its worst measured figure; MEDIUM and HIGH to a deliberately high guess that gates the first probe.
+ */
+export function expectedCost(quality, log) {
+  const measured = log.filter((e) => e.quality === quality && e.creditsSource !== 'fallback' && Number(e.credits) > 0);
+  if (measured.length) return { cost: Math.max(...measured.map((e) => Number(e.credits))), measured: true };
   if (quality === 'LOW') return { cost: LOW_FALLBACK, measured: true };
   return { cost: PROBE_ESTIMATE[quality], measured: false };
 }
