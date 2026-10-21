@@ -136,7 +136,7 @@ type Any = any;
 const imp = (f: string): Promise<Any> => import(pathToFileURL(path.join(SRC, CMP + f)).href);
 const { patchRows } = await imp('CommitDiff.tsx');
 const { blocksOf, inline } = await imp('ItemText.tsx');
-const { minText, pairKey, pairLabel, shownPairs } = await imp('Screens.tsx');
+const { minText, pairKey, pairLabel, pairReadings, shownPairs } = await imp('Screens.tsx');
 const { hasRuns, perfItem, perfReason, runsOf } = await imp('PerfTable.tsx');
 const { latestOf } = await imp('MetricStrip.tsx');
 const { packHeading, packOrder } = await imp('ComparePanel.tsx');
@@ -259,6 +259,79 @@ const { packHeading, packOrder } = await imp('ComparePanel.tsx');
   ok(!!title && /away from the median/.test(title[1]) && !/above the median/.test(title[1]), 'outlier outline: the tooltip names both tails, not only the slow one', title?.[1]);
   const key = src.slice(src.indexOf('tr-pt-key'));
   ok(key.includes('k-out') && /outlier/.test(key), 'outlier outline: the legend explains it, so the only explanation is not a hover title', key.includes('k-out'));
+}
+
+{ // the empty Screens callout may say the shots are missing, never why: "cannot render" needs the scan's unscreenable: note
+  const scr = stripComments(fs.readFileSync(path.join(SRC, CMP, 'Screens.tsx'), 'utf8'));
+  ok(/No screens:/.test(scr) && !/cannot render|can't render|unscreenable/i.test(scr), 'no screens: the callout asserts no cause (TrainData carries no unscreenable: note)', /cannot render/i.exec(scr)?.[0]);
+}
+
+{ // the pixel line reads every shown pair on its own: one failed, still-computing or lone pair never speaks for the rest
+  const sh = (id: number): Any => ({ id, report: {} });
+  const prs = (theme: string, size?: string, lone = false): Any => ({ theme, size, before: sh(1), after: lone ? undefined : sh(2) });
+  const same: Any = { status: 'done', grid: { w: 64, h: 36, moved: 0, pct: 0, maxd: 0, bbox: null, cells: [] } };
+  const diff: Any = { status: 'done', grid: { w: 64, h: 36, moved: 40, pct: 5, maxd: 200, bbox: [1, 1, 3, 3], cells: [] } };
+  const A = pairReadings([prs('light'), prs('dark')], [same, { status: 'error', error: '404 on the dark shot' }]);
+  ok(A.map((r: Any) => r.state).join() === 'done,error' && A[0].same === true && A[1].text === '404 on the dark shot', 'pix line: one failed map of two leaves the other pair\'s verdict standing', A);
+  const B = pairReadings([prs('light'), prs('dark')], [diff, { status: 'computing' }]);
+  ok(B.map((r: Any) => r.state).join() === 'done,computing' && B[0].same === false, 'pix line: one pair still computing does not hold back the pair that is done', B);
+  const C = pairReadings([prs('light'), prs('dark', undefined, true)], [same, undefined]);
+  ok(C.map((r: Any) => r.state).join() === 'done,lone', 'pix line: one lone side does not suppress the complete pair\'s verdict', C);
+  const D = pairReadings([prs('light', '1280x800'), prs('light', '1920x1080')], [same, diff]);
+  ok(D.length === 2 && D[0].label !== D[1].label && D[0].same === true && D[1].same === false, 'pix line: two sizes of one theme are two readings, each with its own name and verdict', D);
+  ok(pairReadings([prs('light')], [undefined])[0].state === 'computing', 'pix line: no map state yet is computing, never a guess');
+}
+
+{ // a request that never returns ends in a stated state: the change map's wait and the commit diff's wait are bounded
+  const { boundedWait, MAP_WAIT_MS } = await imp('useChangeMap.ts');
+  const t0 = Date.now();
+  const never = new Promise(() => {});
+  const err = await boundedWait(never, 30, 'The comparison').then(() => null, (e: Error) => e.message);
+  ok(err === 'The comparison did not answer within 0.03 s' && Date.now() - t0 < 1000, 'bounded wait: a promise that never settles rejects with what did not answer and for how long', err);
+  ok(await boundedWait(Promise.resolve(7), 1000, 'x') === 7, 'bounded wait: an answer inside the bound passes through unchanged');
+  const e2 = await boundedWait(Promise.reject(new Error('HTTP 404')), 1000, 'x').then(() => null, (e: Error) => e.message);
+  ok(e2 === 'HTTP 404', 'bounded wait: a failure inside the bound keeps its own message', e2);
+  ok(typeof MAP_WAIT_MS === 'number' && MAP_WAIT_MS > 0 && MAP_WAIT_MS < 120_000, 'change map: the wait has a finite bound', MAP_WAIT_MS);
+  const um = stripComments(fs.readFileSync(path.join(SRC, CMP, 'useChangeMap.ts'), 'utf8'));
+  ok(/boundedWait\(compute\(/.test(um), 'change map: start() waits on compute() through the bound, not bare', um.includes('boundedWait'));
+  const { DIFF_WAIT_MS } = await imp('CommitDiff.tsx');
+  const cdf = stripComments(fs.readFileSync(path.join(SRC, CMP, 'CommitDiff.tsx'), 'utf8'));
+  ok(DIFF_WAIT_MS > 0 && DIFF_WAIT_MS < 120_000 && /boundedWait\(commitDiff\(/.test(cdf), 'commit diff: the commits request is bounded', DIFF_WAIT_MS);
+  ok(/Try again/.test(cdf) && /setTries/.test(cdf), 'commit diff: a failed or unanswered load offers the retry the cache already supports');
+}
+
+{ // two responses whose URL names an immutable artefact (a commit sha, a run id's shot) give the same cache ceiling
+  const api = path.join(ROOT, 'packages/core/src/server/api/products/[slug]');
+  const age = (f: string): string | undefined => {
+    const t = stripComments(fs.readFileSync(path.join(api, f), 'utf8'));
+    const m = /(?:cache-control'?:\s*|IMMUTABLE\s*=\s*)'private, max-age=(\d+)'/.exec(t);
+    return m?.[1];
+  };
+  const shotAge = age('shots/[...path]/route.ts'), commitAge = age('commits/[sha]/route.ts');
+  ok(shotAge !== undefined && shotAge === commitAge, 'cache: a shot (run id in the path) and a commit (sha) are cached for the same time', [shotAge, commitAge]);
+  ok(/'cache-control': IMMUTABLE/.test(stripComments(fs.readFileSync(path.join(api, 'shots/[...path]/route.ts'), 'utf8'))), 'cache: the shot response sends that ceiling');
+}
+
+{ // the change map's overlay sits over the pixels it describes at any capture size: the svg is fitted into the frame
+  // the way the frame fits the image (contain / meet), over a viewBox with the capture's own aspect ratio
+  const { ChangeMap, mapView } = await imp('ChangeMap.tsx');
+  const React = (await import('react')).default, { renderToStaticMarkup } = await import('react-dom/server');
+  const css = stripComments(fs.readFileSync(path.join(SRC, CMP, 'ShotFigure.css'), 'utf8'));
+  const imgRule = /\.tr-scr img\s*\{[^}]*\}/.exec(css)?.[0] ?? '';
+  ok(/object-fit:\s*contain/.test(imgRule) && !/object-fit:\s*cover/.test(css), 'frame: every mode shows the whole capture (contain), none crops it (cover)', imgRule);
+  for (const [w, h] of [[1280, 800], [1600, 900], [2048, 768], [390, 844]]) {
+    const cells = new Array<number>(GRID_W * GRID_H).fill(0);
+    cells[2 * GRID_W + 5] = 100; // cell column 5, row 2
+    const grid = { w, h, cells, pct: 1, moved: 1, maxd: 100, bbox: [Math.floor(w * 0.25), Math.floor(h * 0.1), Math.floor(w * 0.5), Math.floor(h * 0.4)] };
+    const svg = renderToStaticMarkup(React.createElement(ChangeMap, { grid }));
+    const vb = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(svg), [vw, vh] = [Number(vb?.[1]), Number(vb?.[2])];
+    ok(Math.abs(vw / vh - w / h) < 1e-9 && /preserveAspectRatio="xMidYMid meet"/.test(svg), `change map ${w}x${h}: the viewBox has the capture's aspect ratio and is fitted with meet`, [vb?.[0], w / h]);
+    const rects = [...svg.matchAll(/<rect ([^>]*?)\/?>/g)].map((m) => Object.fromEntries([...m[1].matchAll(/(\w+)="([^"]*)"/g)].map((a) => [a[1], a[2]])));
+    const cell = rects.find((r) => !r.class), box = rects.find((r) => r.class === 'bb');
+    ok(!!cell && Math.abs(Number(cell.x) / vw - 5 / GRID_W) < 1e-9 && Math.abs(Number(cell.y) / vh - 2 / GRID_H) < 1e-9 && Math.abs(Number(cell.width) / vw - 1 / GRID_W) < 1e-9, `change map ${w}x${h}: a cell covers the same fraction of the frame as of the capture`, cell);
+    ok(!!box && Math.abs(Number(box.x) / vw - grid.bbox[0] / w) < 1e-9 && Math.abs(Number(box.y) / vh - grid.bbox[1] / h) < 0.03 / vh, `change map ${w}x${h}: the dashed box starts where the moved pixels start`, box);
+    ok(Math.abs(mapView(grid).vw - vw) < 1e-9, `change map ${w}x${h}: mapView agrees with what is drawn`);
+  }
 }
 
 console.log(bad ? `check-train-compare: ${bad} of ${n} failed` : `check-train-compare: ${n} checks passed`);

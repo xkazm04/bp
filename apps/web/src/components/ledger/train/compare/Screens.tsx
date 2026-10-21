@@ -61,7 +61,7 @@ export const Screens = memo(function Screens({ c, slug, view, onView, fname, sta
         </span>
       </h4>
       {!c.shots.length ? (
-        <Callout tone="empty"><span><b>No screens:</b> the harness cannot render this feature ({fname}). Judge it by the metric, the evidence and the diff below.</span></Callout>
+        <Callout tone="empty"><span><b>No screens:</b> this scan has no shots of {fname}. The metric, the evidence and the diff below are what there is to read.</span></Callout>
       ) : (
         <>
           <PixLine show={show} maps={show.map(mapOf)} stateLine={stateLine} />
@@ -74,24 +74,51 @@ export const Screens = memo(function Screens({ c, slug, view, onView, fname, sta
   );
 });
 
-/** The pixel verdict in words, over every shown pair; "comparing…" until each is computed, never a guess. */
+/** One shown pair's own reading of its change map: what it can say, or why it cannot yet. */
+export interface PairReading {
+  label: string;
+  state: 'lone' | 'error' | 'computing' | 'done';
+  /** The pair's words (done), its error message (error), or what it is waiting on. */
+  text: string;
+  /** done only: the harness found nothing designed to differ. */
+  same?: boolean;
+}
+
+/** Every shown pair read on its own, in order: a side without a capture, a failed or still-running map, or the pixel
+ *  words. One pair's state never decides another's (a failed 404 on the dark shot leaves the light verdict standing). */
+export function pairReadings(show: readonly ShotPair[], maps: readonly (MapState | undefined)[]): PairReading[] {
+  return show.map((s, i): PairReading => {
+    const label = pairLabel(s), m = maps[i];
+    if (!s.before || !s.after) return { label, state: 'lone', text: 'A side has no capture. Only a pair with a before and an after can be compared.' };
+    if (m?.status === 'error') return { label, state: 'error', text: m.error };
+    if (m?.status === 'done') { const w = pixWords(m.grid); return { label, state: 'done', text: w.text, same: w.same }; }
+    return { label, state: 'computing', text: 'comparing…' };
+  });
+}
+
+/** The pixel verdict in words, one reading per shown pair; a pair that is not done says so itself and never holds back
+ *  or overrules the pairs that are, and with several pairs each line names its own. */
 function PixLine({ show, maps, stateLine }: { show: readonly ShotPair[]; maps: readonly (MapState | undefined)[]; stateLine: string }) {
-  const lone = show.some((s) => !s.before || !s.after);
-  if (lone) return <Callout tone="note"><span aria-hidden="true">?</span><span><b>A side has no capture.</b> Only a pair with a before and an after can be compared.</span></Callout>;
-  const err = maps.find((m) => m?.status === 'error');
-  if (err && err.status === 'error') return <Callout tone="error"><b>The change map failed.</b> {err.error}</Callout>;
-  const done = maps.every((m) => m?.status === 'done');
-  if (!done) return <Callout tone="note"><span aria-hidden="true">…</span><span>comparing…</span></Callout>;
-  const words = show.map((s, i) => { const m = maps[i]; return m?.status === 'done' ? { label: pairLabel(s), ...pixWords(m.grid) } : null; }).filter((w) => w !== null);
-  const same = words.every((w) => w.same), text = words.map((w) => w.label + ': ' + w.text).join(' ');
+  const rs = pairReadings(show, maps), many = rs.length > 1;
+  const done = rs.filter((r) => r.state === 'done'), same = done.every((r) => r.same), partial = done.length < rs.length;
   return (
-    <Callout tone={same ? 'note' : 'diff'}>
-      <span aria-hidden="true">{same ? '＝' : '≠'}</span>
-      <span>
-        <b>{same ? 'The screens show no designed difference.' : 'The screens differ.'}</b> {text}
-        {same ? ` The item designs a state the harness does not reach (${stateLine}): the change is in the metric and the diff.` : null}
-      </span>
-    </Callout>
+    <>
+      {rs.filter((r) => r.state !== 'done').map((r) => {
+        const who = many ? <b>{r.label}: </b> : null;
+        if (r.state === 'lone') return <Callout key={r.label} tone="note"><span aria-hidden="true">?</span><span>{who}<b>A side has no capture.</b> Only a pair with a before and an after can be compared.</span></Callout>;
+        if (r.state === 'error') return <Callout key={r.label} tone="error">{who}<b>The change map failed.</b> {r.text}</Callout>;
+        return <Callout key={r.label} tone="note"><span aria-hidden="true">…</span><span>{who}comparing…</span></Callout>;
+      })}
+      {done.length ? (
+        <Callout tone={same ? 'note' : 'diff'}>
+          <span aria-hidden="true">{same ? '＝' : '≠'}</span>
+          <span>
+            <b>{partial ? (same ? 'The pairs compared show no designed difference.' : 'The pairs compared differ.') : same ? 'The screens show no designed difference.' : 'The screens differ.'}</b> {done.map((r) => r.label + ': ' + r.text).join(' ')}
+            {same ? ` The item designs a state the harness does not reach (${stateLine}): the change is in the metric and the diff.` : null}
+          </span>
+        </Callout>
+      ) : null}
+    </>
   );
 }
 

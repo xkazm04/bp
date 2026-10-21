@@ -11,11 +11,25 @@ export interface PairRef { key: string; before: string; after: string }
 export type MapState = { status: 'computing' } | { status: 'done'; grid: PixGrid } | { status: 'error'; error: string };
 
 const DEV = process.env.NODE_ENV !== 'production';
+/** How long one pair's change map may take before the panel says it did not answer (a slow decode of two 1600 px shots
+ *  is seconds; a fetch that never settles has no end of its own). */
+export const MAP_WAIT_MS = 45_000;
 /** Wider screens are compared at this width (as the worker does). */
 const MAX_W = 1600;
 
+/** `p`, or a rejection that says what did not answer and for how long: a request that never returns must end in a
+ *  stated state, not in "loading" for as long as the panel is open. The timer is cleared when `p` settles first. */
+export function boundedWait<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  return new Promise<T>((res, rej) => {
+    const t = setTimeout(() => rej(new Error(`${what} did not answer within ${ms / 1000} s`)), ms);
+    p.then((v) => { clearTimeout(t); res(v); }, (e: unknown) => { clearTimeout(t); rej(e); });
+  });
+}
+
 // ------------------------------------------------------------------------------------------- the cache
 const cache = new Map<string, MapState>();
+/** Keys whose error is a timeout: those are tried again the next time the item is shown, a 404 or a decode error is not. */
+const timedOut = new Set<string>();
 const subs = new Set<() => void>();
 let version = 0, computed = 0;
 const sub = (f: () => void) => { subs.add(f); return () => { subs.delete(f); }; };
@@ -88,10 +102,15 @@ async function compute(p: PairRef): Promise<PixGrid> {
 }
 
 function start(p: PairRef) {
-  if (cache.has(p.key)) return;
+  if (cache.has(p.key) && !timedOut.has(p.key)) return;
+  timedOut.delete(p.key);
   put(p.key, { status: 'computing' });
   if (DEV) console.debug(`[change-map] compute #${++computed} ${p.key}`);
-  compute(p).then((grid) => put(p.key, { status: 'done', grid }), (e: unknown) => put(p.key, { status: 'error', error: e instanceof Error ? e.message : String(e) }));
+  boundedWait(compute(p), MAP_WAIT_MS, 'The comparison').then((grid) => put(p.key, { status: 'done', grid }), (e: unknown) => {
+    const msg = e instanceof Error ? e.message : String(e), late = /did not answer within/.test(msg);
+    if (late) timedOut.add(p.key);
+    put(p.key, { status: 'error', error: late ? msg + '. Reopen the item to try again.' : msg });
+  });
 }
 
 /** The change map of each pair, in order: undefined until its computation starts (the same commit), then computing,
