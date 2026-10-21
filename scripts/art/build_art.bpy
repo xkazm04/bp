@@ -1,0 +1,297 @@
+# Blender script (extension .bpy so scripts/check-python-deps.mjs does not read bpy/bmesh/mathutils as pip packages); run with blender -b -P
+"""Builds the survey pin (apps/vr/ArtSource/survey-pin) and the fixture primitive kit (apps/vr/ArtSource/fixture-kit).
+
+Run:  blender -b -P scripts/art/build_art.bpy -- <repo-root>
+Procedural only: no generated input, no GPU job. Units are metres, Blender is Z-up, the glTF exporter writes Y-up.
+Pivot of the pin is its tip (where it meets the sheet); the pivot of every fixture is its base centre.
+"""
+import bpy, bmesh, math, os, sys
+import numpy as np
+from mathutils import Vector, Matrix
+
+REPO = sys.argv[sys.argv.index('--') + 1] if '--' in sys.argv else os.getcwd()
+ART = os.path.join(REPO, 'apps', 'vr', 'ArtSource')
+CM = 0.01
+TEX_NAMES = {'base': 'basecolor', 'normal': 'normal', 'orm': 'orm'}
+
+
+# ---------------------------------------------------------------------------------------------- geometry helpers
+class Part:
+    """Accumulates primitives into one bmesh. Every face carries a material slot index."""
+    def __init__(self):
+        self.bm = bmesh.new()
+
+    def _tag(self, verts, mat):
+        vset = set(verts)
+        for f in self.bm.faces:
+            if all(v in vset for v in f.verts):
+                f.material_index = mat
+
+    def box(self, c, s, mat=0):
+        """Axis-aligned box centred on c with size s (metres)."""
+        vs = bmesh.ops.create_cube(self.bm, size=1.0)['verts']
+        bmesh.ops.scale(self.bm, vec=Vector(s), verts=vs)
+        bmesh.ops.translate(self.bm, vec=Vector(c), verts=vs)
+        self._tag(vs, mat)
+
+    def cyl(self, base, r1, r2, h, seg, mat=0, rot_z=0.0):
+        """Cone frustum standing on `base` (centre of the bottom cap), radius r1 at the bottom, r2 at the top."""
+        vs = bmesh.ops.create_cone(self.bm, cap_ends=True, cap_tris=False, segments=seg, radius1=r1, radius2=r2, depth=h)['verts']
+        bmesh.ops.rotate(self.bm, cent=(0, 0, 0), matrix=Matrix.Rotation(rot_z, 3, 'Z'), verts=vs)
+        bmesh.ops.translate(self.bm, vec=Vector((base[0], base[1], base[2] + h / 2)), verts=vs)
+        self._tag(vs, mat)
+
+    def sphere(self, c, r, seg, rings, mat=0):
+        vs = bmesh.ops.create_uvsphere(self.bm, u_segments=seg, v_segments=rings, radius=r)['verts']
+        bmesh.ops.translate(self.bm, vec=Vector(c), verts=vs)
+        self._tag(vs, mat)
+
+    def prism(self, pts, z0, h, mat=0):
+        """Extrude the polygon `pts` (XY, metres) from z0 up by h."""
+        vs = [self.bm.verts.new((x, y, z0)) for x, y in pts]
+        f = self.bm.faces.new(vs)
+        ext = bmesh.ops.extrude_face_region(self.bm, geom=[f])
+        nv = [g for g in ext['geom'] if isinstance(g, bmesh.types.BMVert)]
+        bmesh.ops.translate(self.bm, vec=Vector((0, 0, h)), verts=nv)
+        self._tag(vs + nv, mat)
+
+    def finish(self, name, materials):
+        bm = self.bm
+        bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-7)
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method='BEAUTY', ngon_method='EAR_CLIP')
+        uv_box(bm)
+        me = bpy.data.meshes.new(name)
+        bm.to_mesh(me)
+        bm.free()
+        for m in materials:
+            me.materials.append(m)
+        ob = bpy.data.objects.new(name, me)
+        bpy.context.scene.collection.objects.link(ob)
+        return ob
+
+
+def uv_box(bm, span=0.06):
+    """One UV set. Box projection by dominant normal axis; 1 uv unit = `span` metres around the pivot.
+    Faces overlap in UV space on purpose: the textures are flat colour plus grain, not baked light."""
+    uvl = bm.loops.layers.uv.new('UVMap')
+    for f in bm.faces:
+        n = f.normal
+        ax = max(range(3), key=lambda i: abs(n[i]))
+        a, b = [(1, 2), (0, 2), (0, 1)][ax]
+        for l in f.loops:
+            p = l.vert.co
+            l[uvl].uv = (min(1, max(0, 0.5 + p[a] / span)), min(1, max(0, 0.5 + p[b] / span)))
+
+
+def fit_uv(ob, mat_index):
+    """Planar-fits the faces of one material slot to 0..1 on their dominant plane (the blank tag card)."""
+    me = ob.data
+    uvl = me.uv_layers[0]
+    polys = [p for p in me.polygons if p.material_index == mat_index]
+    co = np.array([me.vertices[v].co for p in polys for v in p.vertices])
+    lo, hi = co.min(0), co.max(0)
+    for p in polys:
+        n = p.normal
+        ax = max(range(3), key=lambda i: abs(n[i]))
+        a, b = [(1, 2), (0, 2), (0, 1)][ax]
+        for li in p.loop_indices:
+            v = me.vertices[me.loops[li].vertex_index].co
+            uvl.data[li].uv = ((v[a] - lo[a]) / max(hi[a] - lo[a], 1e-9), (v[b] - lo[b]) / max(hi[b] - lo[b], 1e-9))
+
+
+def srgb_to_lin(c):
+    return tuple((x / 12.92 if x <= 0.04045 else ((x + 0.055) / 1.055) ** 2.4) for x in c)
+
+
+def hex_rgb(h):
+    return tuple(int(h[i:i + 2], 16) / 255 for i in (1, 3, 5))
+
+
+def png(path, arr):
+    """Writes an HxWx3 float array in 0..1 as an 8-bit PNG."""
+    h, w, ch = arr.shape
+    img = bpy.data.images.new(os.path.basename(path), w, h, alpha=False)
+    rgba = np.ones((h, w, 4), dtype=np.float32)
+    rgba[:, :, :ch] = arr
+    img.pixels.foreach_set(rgba.ravel())
+    img.filepath_raw = path
+    img.file_format = 'PNG'
+    img.save()
+    bpy.data.images.remove(img)
+
+
+def material(name, color_hex, rough, metal=0.0, tex=None, emit=None):
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    nt = m.node_tree
+    nt.nodes.clear()
+    out = nt.nodes.new('ShaderNodeOutputMaterial')
+    bsdf = nt.nodes.new('ShaderNodeBsdfPrincipled')
+    nt.links.new(bsdf.outputs['BSDF'], out.inputs['Surface'])
+    bsdf.inputs['Base Color'].default_value = (*srgb_to_lin(hex_rgb(color_hex)), 1)
+    bsdf.inputs['Roughness'].default_value = rough
+    bsdf.inputs['Metallic'].default_value = metal
+    if emit:
+        bsdf.inputs['Emission Color'].default_value = (*srgb_to_lin(hex_rgb(emit)), 1)
+        bsdf.inputs['Emission Strength'].default_value = 0.6
+    if tex:
+        def img(path, cs):
+            n = nt.nodes.new('ShaderNodeTexImage')
+            n.image = bpy.data.images.load(path)
+            n.image.colorspace_settings.name = cs
+            return n
+        base = img(tex['base'], 'sRGB')
+        nt.links.new(base.outputs['Color'], bsdf.inputs['Base Color'])
+        nrm = img(tex['normal'], 'Non-Color')
+        nm = nt.nodes.new('ShaderNodeNormalMap')
+        nt.links.new(nrm.outputs['Color'], nm.inputs['Color'])
+        nt.links.new(nm.outputs['Normal'], bsdf.inputs['Normal'])
+        orm = img(tex['orm'], 'Non-Color')
+        sp = nt.nodes.new('ShaderNodeSeparateColor')
+        nt.links.new(orm.outputs['Color'], sp.inputs['Color'])
+        nt.links.new(sp.outputs['Green'], bsdf.inputs['Roughness'])
+        nt.links.new(sp.outputs['Blue'], bsdf.inputs['Metallic'])
+    return m
+
+
+def export(path):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    bpy.ops.export_scene.gltf(filepath=path, export_format='GLB', export_yup=True, export_apply=True,
+                              export_texcoords=True, export_normals=True, export_materials='EXPORT',
+                              use_selection=False)
+
+
+# ---------------------------------------------------------------------------------------------- textures
+def pin_textures(folder):
+    """Authors simple 256x256 PNGs: base colour, normal, ORM (R occlusion, G roughness, B metal) for the body and the tag."""
+    os.makedirs(folder, exist_ok=True)
+    rng = np.random.default_rng(7)
+    N = 256
+    yy, xx = np.mgrid[0:N, 0:N] / (N - 1)
+
+    def height_normal(h, strength):
+        gx = np.roll(h, -1, 1) - np.roll(h, 1, 1)
+        gy = np.roll(h, -1, 0) - np.roll(h, 1, 0)
+        nx, ny, nz = -gx * strength, -gy * strength, np.ones_like(h)
+        ln = np.sqrt(nx * nx + ny * ny + nz * nz)
+        return np.dstack([nx / ln * 0.5 + 0.5, ny / ln * 0.5 + 0.5, nz / ln * 0.5 + 0.5])
+
+    def smooth_noise(cells):
+        g = rng.random((cells + 1, cells + 1))
+        t = np.kron(g, np.ones((N // cells + 1, N // cells + 1)))[:N, :N]
+        return (t + np.roll(t, 1, 0) + np.roll(t, 1, 1) + np.roll(np.roll(t, 1, 0), 1, 1)) / 4
+
+    amber = np.array(hex_rgb('#FFB547'))
+    grain = smooth_noise(32) - 0.5
+    body = amber[None, None, :] * (0.92 + 0.08 * yy[..., None] + 0.05 * grain[..., None])
+    paper = np.array(hex_rgb('#F3E9D2'))
+    fib = smooth_noise(64) - 0.5
+    edge = np.minimum.reduce([xx, 1 - xx, yy, 1 - yy])
+    tag = paper[None, None, :] * (0.97 + 0.04 * fib[..., None]) * np.where(edge < 0.03, 0.93, 1.0)[..., None]
+    sets = {
+        'body': dict(base=body, normal=height_normal(grain * 0.5, 0.6),
+                     orm=np.dstack([np.ones((N, N)), 0.42 + 0.06 * grain, np.zeros((N, N))])),
+        'tag': dict(base=tag, normal=height_normal(fib * 0.4, 0.5),
+                    orm=np.dstack([np.ones((N, N)), 0.85 + 0.05 * fib, np.zeros((N, N))])),
+    }
+    paths = {}
+    for k, d in sets.items():
+        paths[k] = {}
+        for ch, arr in d.items():
+            p = os.path.join(folder, 'pin_%s_%s.png' % (k, TEX_NAMES[ch]))
+            png(p, np.clip(arr, 0, 1).astype(np.float32))
+            paths[k][ch] = p
+    return paths
+
+
+# ---------------------------------------------------------------------------------------------- survey pin
+def build_pin():
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    folder = os.path.join(ART, 'survey-pin')
+    tex = pin_textures(os.path.join(folder, 'textures'))
+    m_body = material('pin_body', '#FFB547', 0.42, tex=tex['body'])
+    m_tag = material('pin_tag', '#F3E9D2', 0.85, tex=tex['tag'])
+    p = Part()
+    # pivot (0,0,0) = the needle tip on the sheet; the pin stands +Z. Sizes in cm, for a 95 cm table (see manifest)
+    p.cyl((0, 0, 0), 0.04 * CM, 0.13 * CM, 1.2 * CM, 8)                          # needle
+    p.cyl((0, 0, 1.2 * CM), 0.16 * CM, 0.16 * CM, 2.8 * CM, 10)                  # shaft
+    p.cyl((0, 0, 4.0 * CM), 0.34 * CM, 0.34 * CM, 0.25 * CM, 12)                 # collar under the head
+    p.sphere((0, 0, 4.25 * CM + 0.55 * CM), 0.65 * CM, 16, 10)                   # head, top at 5.45 cm
+    p.box((0.55 * CM, 0, 2.55 * CM), (1.0 * CM, 0.1 * CM, 0.1 * CM))             # wire from the shaft to the tag
+    p.box((1.95 * CM, 0, 2.55 * CM), (2.2 * CM, 0.12 * CM, 1.4 * CM), mat=1)     # blank paper tag
+    ob = p.finish('survey-pin', [m_body, m_tag])
+    fit_uv(ob, 1)
+    export(os.path.join(folder, 'final.glb'))
+
+
+# ---------------------------------------------------------------------------------------------- fixture kit
+PLINTH = 5.0 * CM
+PLINTH_H = 0.6 * CM
+
+
+def fixture_base(p):
+    p.box((0, 0, PLINTH_H / 2), (PLINTH, PLINTH, PLINTH_H))
+
+
+def fixture_mark(p):
+    """The stage mark: a flat 8-sided badge on the plinth's front-left corner, material slot 1 ('mark')."""
+    p.cyl((-1.6 * CM, -1.6 * CM, PLINTH_H), 0.65 * CM, 0.65 * CM, 0.15 * CM, 8, mat=1)
+
+
+def user_flow(p):        # a step with an arrow on it
+    fixture_base(p)
+    pts = [(-1.0, -0.5), (0.2, -0.5), (0.2, -1.0), (1.5, 0.0), (0.2, 1.0), (0.2, 0.5), (-1.0, 0.5)]
+    p.prism([(x * CM + 0.2 * CM, y * CM + 0.5 * CM) for x, y in pts], PLINTH_H, 1.0 * CM)
+    fixture_mark(p)
+
+
+def capability(p):       # a stepped stack of blocks
+    fixture_base(p)
+    p.box((0.4 * CM, 0.3 * CM, PLINTH_H + 0.6 * CM), (3.2 * CM, 3.2 * CM, 1.2 * CM))
+    p.box((0.4 * CM, 0.3 * CM, PLINTH_H + 1.8 * CM), (2.0 * CM, 2.0 * CM, 1.2 * CM))
+    fixture_mark(p)
+
+
+def ops(p):              # a cog
+    fixture_base(p)
+    cx = cy = 0.3 * CM
+    p.cyl((cx, cy, PLINTH_H), 1.1 * CM, 1.1 * CM, 1.0 * CM, 8)
+    for i in range(8):
+        a = i * math.pi / 4
+        p.box((cx + math.cos(a) * 1.3 * CM, cy + math.sin(a) * 1.3 * CM, PLINTH_H + 0.5 * CM), (0.6 * CM, 0.6 * CM, 1.0 * CM))
+    fixture_mark(p)
+
+
+def integration(p):      # two sockets joined by a bridge
+    fixture_base(p)
+    for sx in (-1.0, 1.0):
+        p.cyl((sx * 1.2 * CM + 0.3 * CM, 0.3 * CM, PLINTH_H), 0.85 * CM, 0.85 * CM, 1.6 * CM, 8)
+    p.box((0.3 * CM, 0.3 * CM, PLINTH_H + 1.0 * CM), (1.6 * CM, 0.5 * CM, 0.5 * CM))
+    fixture_mark(p)
+
+
+def generic(p):          # any other kind: a plinth with a low pyramid
+    fixture_base(p)
+    p.cyl((0.3 * CM, 0.3 * CM, PLINTH_H), 1.6 * CM, 0.5 * CM, 1.4 * CM, 4, rot_z=math.pi / 4)
+    fixture_mark(p)
+
+
+KINDS = {'user_flow': user_flow, 'capability': capability, 'ops': ops, 'integration': integration, 'generic': generic}
+
+
+def build_kit():
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    m_body = material('fixture_body', '#BFE8FF', 0.6)
+    m_mark = material('mark', '#FFB547', 0.5, emit='#FFB547')
+    for name, fn in KINDS.items():
+        p = Part()
+        fn(p)
+        p.finish(name, [m_body, m_mark])
+    export(os.path.join(ART, 'fixture-kit', 'final.glb'))
+
+
+if __name__ == '__main__':
+    build_pin()
+    build_kit()
+    print('BUILD OK')

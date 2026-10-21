@@ -1,0 +1,78 @@
+{
+  "id": "survey-pin",
+  "class": "prop-instanced",
+  "budget_tris": 500,
+  "budget_note": "instanced",
+  "tris": 420,
+  "tris_total": 420,
+  "materials": [
+    "pin_body (amber #FFB547)",
+    "pin_tag (blank paper #F3E9D2, UE text layer goes here)"
+  ],
+  "bounds_cm": {
+    "x": 3.7,
+    "y": 5.45,
+    "z": 1.3,
+    "note": "x,z ground plane, y up (glTF)"
+  },
+  "meshes": {
+    "survey-pin": {
+      "tris": 420,
+      "vertices": 222,
+      "components": 6,
+      "floaters": 0,
+      "bounds_cm": {
+        "x": 3.7,
+        "y": 5.45,
+        "z": 1.3
+      }
+    }
+  },
+  "uv_sets": 1,
+  "pivot": "the needle tip, where the pin meets the sheet; the pin stands +Y in the GLB (glTF Y-up), +Z in Blender",
+  "scale_reasoning": "Table top at 95 cm (wolf-plan W3.2). A fixture tile is 5 cm square in the kit and the sheet shows pins standing on fixtures, so the pin is 5.45 cm tall with a 1.3 cm head and a 2.2 x 1.4 cm tag: about one tile tall, so a pin never hides its neighbour. At a standing reach of 0.7 m the tag is about 1.8 degrees wide; UE scales the pin under the finger up (reference-sheet frame 04), so the resting size is the smallest case. Whether the resting tag text is legible is the P3 walk-through reading, not a Lynx claim.",
+  "textures": "pin_body_* and pin_tag_*: 256 x 256 PNG base colour, normal and ORM (R occlusion, G roughness, B metal), authored with numpy in scripts/art/build_art.bpy. No text is baked: the tag card is blank for the UE text layer. UVs are box-projected with overlap (flat colour and grain only, no baked light); the tag faces are fitted to 0..1.",
+  "generator": "procedural (Blender 5.2.2, scripts/art/build_art.bpy)",
+  "licence": "own procedural work",
+  "regenerate": "blender -b -P scripts/art/build_art.bpy -- <repo-root>; blender -b -P scripts/art/render_art.bpy -- <repo-root>; node scripts/art/write-manifests.mjs; node scripts/art/score-assets.mjs",
+  "sha256": {
+    "evidence/table-view.jpg": "1e2cc78fd1e3ea4f973fa559b895ede601ee23f19eef647efc17bd4181d684bf",
+    "evidence/turnaround.jpg": "f1336e5c7b839f7a924896a680559c9d441feaea2fffc9917c41753ed8bbb34f",
+    "final.glb": "dc44238f4ea78f83de46899e20ee222feaa9902037543980f977acf829f5e60b",
+    "textures/pin_body_basecolor.png": "3613d61dae9e037c2dd446992dd7e51dfe74fdd23e6395e011cb26fa0980b78f",
+    "textures/pin_body_normal.png": "c252aec6f818dfa77525e334ae1fbbe440cd29e87796d8c51fcc7982dd89a781",
+    "textures/pin_body_orm.png": "c8189f5b796bfefcd36d6e33240fbb8cd695c60029cf632e50848b5ad8619b15",
+    "textures/pin_tag_basecolor.png": "6389406a35bc83e0ff6415ace103bfd9e5382ff5622cb9e75d4e4c4c1cc9fcc5",
+    "textures/pin_tag_normal.png": "60bf2b27ae07c7a00ca18d0f3111d737ee3901b672847cf245333b9f26a6b968",
+    "textures/pin_tag_orm.png": "857b9f4cb97aaa18afd87fcaaebc57957d852319990f01643d5ca969d8060099"
+  },
+  "gates": {
+    "input": {
+      "pass": true,
+      "note": "procedural, no generated input",
+      "date": "2026-10-21"
+    },
+    "mesh_acceptance": {
+      "pass": true,
+      "note": "survey-pin: 6 components, 0 floaters; one UV set; pivot the needle tip, where the pin meets the sheet",
+      "date": "2026-10-21"
+    },
+    "scale": {
+      "pass": true,
+      "note": "bounds 3.7 x 5.45 x 1.3 cm (x, y up, z); Table top at 95 cm (wolf-plan W3.2)",
+      "date": "2026-10-21"
+    },
+    "finishing": {
+      "pass": true,
+      "note": "one UV set, 2 material slots (pin_body, pin_tag); 6 PNG textures",
+      "date": "2026-10-21"
+    },
+    "poly_budget": {
+      "pass": true,
+      "note": "420 tris against 500",
+      "date": "2026-10-21"
+    }
+  },
+  "lynx_commit": null,
+  "lynx_commit_note": "set by the merge; branch autopilot/accepted-idea-delivery-69480049"
+}

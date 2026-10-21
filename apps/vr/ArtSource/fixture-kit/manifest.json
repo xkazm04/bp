@@ -1,0 +1,151 @@
+{
+  "id": "fixture-kit",
+  "class": "prop-instanced-kit",
+  "budget_tris": 300,
+  "budget_note": "per mesh (300 each)",
+  "tris": {
+    "capability": 64,
+    "generic": 52,
+    "integration": 108,
+    "ops": 164,
+    "user_flow": 64
+  },
+  "tris_total": 452,
+  "materials": [
+    "fixture_body (cyan-white #BFE8FF)",
+    "mark (amber default, UE overrides per stage)"
+  ],
+  "bounds_cm": {
+    "note": "largest per-mesh extent; x,z ground plane, y up",
+    "x": 5,
+    "y": 3,
+    "z": 5,
+    "per_mesh": {
+      "capability": {
+        "x": 5,
+        "y": 3,
+        "z": 5
+      },
+      "generic": {
+        "x": 5,
+        "y": 2,
+        "z": 5
+      },
+      "integration": {
+        "x": 5,
+        "y": 2.2,
+        "z": 5
+      },
+      "ops": {
+        "x": 5,
+        "y": 1.6,
+        "z": 5
+      },
+      "user_flow": {
+        "x": 5,
+        "y": 1.6,
+        "z": 5
+      }
+    }
+  },
+  "meshes": {
+    "capability": {
+      "tris": 64,
+      "vertices": 40,
+      "components": 4,
+      "floaters": 0,
+      "bounds_cm": {
+        "x": 5,
+        "y": 3,
+        "z": 5
+      }
+    },
+    "generic": {
+      "tris": 52,
+      "vertices": 32,
+      "components": 3,
+      "floaters": 0,
+      "bounds_cm": {
+        "x": 5,
+        "y": 2,
+        "z": 5
+      }
+    },
+    "integration": {
+      "tris": 108,
+      "vertices": 64,
+      "components": 5,
+      "floaters": 0,
+      "bounds_cm": {
+        "x": 5,
+        "y": 2.2,
+        "z": 5
+      }
+    },
+    "ops": {
+      "tris": 164,
+      "vertices": 104,
+      "components": 11,
+      "floaters": 0,
+      "bounds_cm": {
+        "x": 5,
+        "y": 1.6,
+        "z": 5
+      }
+    },
+    "user_flow": {
+      "tris": 64,
+      "vertices": 38,
+      "components": 3,
+      "floaters": 0,
+      "bounds_cm": {
+        "x": 5,
+        "y": 1.6,
+        "z": 5
+      }
+    }
+  },
+  "uv_sets": 1,
+  "pivot": "the base centre of the plinth; all five meshes sit at the origin in the file (identity node transforms), so a UE importer that splits them keeps the pivots",
+  "scale_reasoning": "Each primitive stands on a 5.0 x 5.0 cm plinth (one tile on a 95 cm table; the plan-unit to cm constant is set in UE, wolf-plan W3.2) and is 1.6 to 3.0 cm tall.",
+  "kinds": "The web canvas does not branch its drawing on a feature kind (apps/web/src/engine/render/plan.ts and patterns.ts draw by lens and stage; checked 2026-10-21). The kinds in the data are free strings. The 133-tile plan (kettle.app-structure.json, v3) uses user_flow (68), capability (31), ops (24) and integration (10); each gets a primitive, and `generic` is the fallback for any other kind (the older v2 Kettle data uses customer, internal, business and platform).",
+  "mark": "Slot 1 is named `mark`: a flat 8-sided badge on the plinth corner. UE drives it as a material parameter from the stage, so the stage is not in the geometry. The body slot is `fixture_body`.",
+  "textures": "none: flat material factors. Both slots are parameter-driven in UE.",
+  "generator": "procedural (Blender 5.2.2, scripts/art/build_art.bpy)",
+  "licence": "own procedural work",
+  "regenerate": "blender -b -P scripts/art/build_art.bpy -- <repo-root>; blender -b -P scripts/art/render_art.bpy -- <repo-root>; node scripts/art/write-manifests.mjs; node scripts/art/score-assets.mjs",
+  "sha256": {
+    "evidence/table-view.jpg": "f1c9fb8514e3d4d1b214597efffd302e9862c414819ccaaf5f4dace28ac17506",
+    "evidence/turnaround.jpg": "b963dc014b858a87a68c030658a4ca482a8573c8255567cf40ddb67db76e170f",
+    "final.glb": "8933ee2b6dfafd36684d254480e0289067ec217eb90976515f3f4e41b8aa3e71"
+  },
+  "gates": {
+    "input": {
+      "pass": true,
+      "note": "procedural, no generated input",
+      "date": "2026-10-21"
+    },
+    "mesh_acceptance": {
+      "pass": true,
+      "note": "capability: 4 components, 0 floaters; generic: 3 components, 0 floaters; integration: 5 components, 0 floaters; ops: 11 components, 0 floaters; user_flow: 3 components, 0 floaters; one UV set; pivot the base centre of the plinth",
+      "date": "2026-10-21"
+    },
+    "scale": {
+      "pass": true,
+      "note": "bounds 5 x 3 x 5 cm (x, y up, z); Each primitive stands on a 5.0 x 5.0 cm plinth (one tile on a 95 cm table; the plan-unit to cm constant is set in UE, wolf-plan W3.2) and is 1.6 to 3.0 cm tall.",
+      "date": "2026-10-21"
+    },
+    "finishing": {
+      "pass": true,
+      "note": "one UV set, 2 material slots (fixture_body, mark); no textures by design",
+      "date": "2026-10-21"
+    },
+    "poly_budget": {
+      "pass": true,
+      "note": "max 164 per mesh against 300",
+      "date": "2026-10-21"
+    }
+  },
+  "lynx_commit": null,
+  "lynx_commit_note": "set by the merge; branch autopilot/accepted-idea-delivery-69480049"
+}
