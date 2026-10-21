@@ -1,8 +1,11 @@
 // The release train's server side: every triage and release write goes through lens-scan's own store.mjs (the single
 // owner of the transition rules; the blueprint never re-implements them), and the reads a release needs from git and
 // gh. Every child is started with execFile and an argument array, never a shell string:
-//   store.mjs   `node <lens-scan>/scripts/store.mjs --db <store> <command> ...`; <lens-scan> is BP_LENS_SCAN_DIR, else
-//               ~/.claude/skills/lens-scan, through realpath. It prints JSON on stdout; exit 2 = bad input, 1 = refused.
+//   store.mjs   `node <lens-scan>/scripts/store.mjs --db <store> <command> ...`; <lens-scan> is BP_LENS_SCAN_DIR when it
+//               is set (then it is the ONLY place looked: an explicit setting must fail visibly, not fall through to
+//               another install), else ~/.claude/skills/lens-scan and then `<registry.local>/skills/lens-scan` for the
+//               registry `.ai/manifest.yaml` declares — all through realpath. It prints JSON on stdout; exit 2 = bad
+//               input, 1 = refused.
 //   gh          `gh api user --jq .login` once per server process (who triages: `user:<login>`, else `user:blueprint`),
 //               and `gh auth status` before a release job starts. BP_GH_BIN overrides the binary (a .mjs runs on this
 //               Node: the checks' fake).
@@ -13,6 +16,7 @@ import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { CommitDiff, TriageBody, TriageResult } from '../scan/types';
 
 if (typeof window !== 'undefined') throw new Error('release.server.ts is server-only');
@@ -35,12 +39,64 @@ function run(file: string, args: string[], opts: { cwd?: string; timeout: number
 }
 
 // ------------------------------------------------------------------------------------- store.mjs
-/** lens-scan's store.mjs, or null when the skill is not installed where it is looked for. */
-export function storeScript(): string | null {
-  const dir = process.env.BP_LENS_SCAN_DIR || path.join(os.homedir(), '.claude', 'skills', 'lens-scan');
-  try { const f = path.join(fs.realpathSync(dir), 'scripts', 'store.mjs'); return fs.existsSync(f) ? f : null; } catch { return null; }
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * The blueprint's own root: the nearest ancestor of this module holding `.ai/manifest.yaml`. Found from the module,
+ * not from `process.cwd()`, because a check or a CLI may run with any working directory.
+ */
+function blueprintRoot(): string | null {
+  for (let d = HERE, prev = ''; d !== prev; prev = d, d = path.dirname(d)) {
+    if (fs.existsSync(path.join(d, '.ai', 'manifest.yaml'))) return d;
+  }
+  return null;
 }
-export const NO_LENS_SCAN = 'lens-scan not found (set BP_LENS_SCAN_DIR or install the skill at ~/.claude/skills/lens-scan)';
+
+/**
+ * The registry `.ai/manifest.yaml` declares (`registry:` / `  local: <path>`, resolved against the blueprint root),
+ * or null when the file is absent or declares none. Read line-wise: the declaration is two keys deep and the repo
+ * carries no YAML parser.
+ */
+function declaredRegistry(): string | null {
+  const root = blueprintRoot();
+  if (!root) return null;
+  let text: string;
+  try { text = fs.readFileSync(path.join(root, '.ai', 'manifest.yaml'), 'utf8'); } catch { return null; }
+  let inRegistry = false;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.replace(/\s+#.*$/, '');
+    if (/^\S/.test(line)) { inRegistry = /^registry:\s*$/.test(line); continue; }
+    if (!inRegistry) continue;
+    const m = /^\s+local:\s*(.+?)\s*$/.exec(line);
+    if (m) { const v = m[1].replace(/^['"]|['"]$/g, '').trim(); return v ? path.resolve(root, v) : null; }
+  }
+  return null;
+}
+
+/**
+ * Where a lens-scan install is looked for, in order. BP_LENS_SCAN_DIR, when it is set, is the ONLY place looked: an
+ * operator who names a directory must see that name fail, never fall through to a different install. Otherwise:
+ * `~/.claude/skills/lens-scan`, then `<registry.local>/skills/lens-scan` for the registry the manifest declares --
+ * a skill installed in the declared registry is installed, and a resolver that cannot see the declaration turns
+ * every triage and release write into "not installed".
+ */
+export function lensScanDirs(): string[] {
+  const set = process.env.BP_LENS_SCAN_DIR;
+  if (set) return [set];
+  const out = [path.join(os.homedir(), '.claude', 'skills', 'lens-scan')];
+  const reg = declaredRegistry();
+  if (reg) out.push(path.join(reg, 'skills', 'lens-scan'));
+  return out;
+}
+
+/** lens-scan's store.mjs, from the first of lensScanDirs() that holds one; null when none does. */
+export function storeScript(): string | null {
+  for (const dir of lensScanDirs()) {
+    try { const f = path.join(fs.realpathSync(dir), 'scripts', 'store.mjs'); if (fs.existsSync(f)) return f; } catch { /* not installed here */ }
+  }
+  return null;
+}
+export const NO_LENS_SCAN = 'lens-scan not found (set BP_LENS_SCAN_DIR, install the skill at ~/.claude/skills/lens-scan, or declare registry.local in .ai/manifest.yaml)';
 
 /** What a store.mjs call came to: its JSON, or why not (`bad` = exit 2, `refused` = exit 1, `error` = it did not run). */
 export type StoreAnswer<T> = { ok: true; data: T } | { ok: false; kind: 'bad' | 'refused' | 'error'; error: string };
