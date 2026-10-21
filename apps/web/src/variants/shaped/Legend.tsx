@@ -5,6 +5,8 @@
 import type { ViewId } from '@bp/core/data';
 import { isBuiltinLens, type BuiltinLens } from '../base/legacy';
 import { Legend, TroubleKey } from '@/components/Legend';
+import { useEngine } from '@/components/hooks';
+import { lensOf } from '@bp/core/model/lens';
 import { Mark, StageSym } from '@/components/Symbols';
 import { LensIcon } from './Panel';
 import { LENS_ICON, type IconId } from './icons';
@@ -63,10 +65,13 @@ const VOCAB: Record<BuiltinLens, [IconId, string][]> = {
   security: [['lockCard', 'Card data, reviewed'], ['lockCardOpen', 'Card data, not reviewed'], ['lock', 'Reviewed or not needed'], ['lockOpen', 'Review pending']],
   quality: [['check', 'Tests pass'], ['checkPart', 'Partly passing'], ['checkFail', 'Failing'], ['checkNone', 'Untested']],
 };
-const ICON_TITLE: Record<BuiltinLens, string> = { business: 'Business', design: 'Design', development: 'Development', operations: 'Operations', security: 'Security', quality: 'Quality' };
-
 export function ShapedLegend({ view }: { view: ViewId }) {
+  // the enabled lenses, in registry order: the same list composeGeneral lays chips out for, so the key
+  // follows `?lenses=` and a product with more (or fewer) lenses than the six built-ins
+  const P = useEngine().M.P;
+  const name = (id: string) => lensOf(P, id)?.name ?? id;
   if (view === 'general') {
+    const shown = P.lenses.filter((l) => isBuiltinLens(l.id)), rest = P.lenses.length - shown.length;
     return (
       <div className="lg shp-lg">
         <div><StageSym st="live" w={24} h={15} /><span>Built · live</span></div>
@@ -82,8 +87,8 @@ export function ShapedLegend({ view }: { view: ViewId }) {
         <div><Mark k="work" /><span>Agent working</span></div>
         <div><Mark k="wait" /><span>Waiting for a person</span></div>
         <div><Mark k="pin" /><span>A question (RFI)</span></div>
-        <div className="shp-row">{(Object.keys(ICON_TITLE) as BuiltinLens[]).map((l) => <span key={l} title={ICON_TITLE[l]}><LensIcon id={LENS_ICON[l]} size={18} title={ICON_TITLE[l]} /></span>)}</div>
-        <div className="shp-cap">Tile colour is always the stage. The icons on each fixture&apos;s top edge are the lenses, one each, in tab order; red or amber means that lens is in trouble. Pick a lens and only its icon stays, and the tile takes its shape.</div>
+        <div className="shp-row">{shown.map((l) => <span key={l.id} title={l.name}><LensIcon id={LENS_ICON[l.id as BuiltinLens]} size={18} title={l.name} /></span>)}</div>
+        <div className="shp-cap">Tile colour is always the stage. The icons on each fixture&apos;s top edge are the {P.lenses.length} enabled lenses, one each, in tab order; red or amber means that lens is in trouble. Pick a lens and only its icon stays, and the tile takes its shape.{rest > 0 ? ` The other ${rest} draw their manifest glyph instead of an icon of their own.` : ''}</div>
       </div>
     );
   }
@@ -95,7 +100,7 @@ export function ShapedLegend({ view }: { view: ViewId }) {
       <div><Outline lens={view} strong /><span>{s1}</span></div>
       <div><Outline lens={view} strong={false} /><span>{s2}</span></div>
       {VOCAB[view].map(([id, t]) => <div key={id}><span className="shp-lic"><LensIcon id={id} size={18} /></span><span>{t}</span></div>)}
-      <div><Mark k="cloud" /><span>{ICON_TITLE[view]} trouble</span></div>
+      <div><Mark k="cloud" /><span>{name(view)} trouble</span></div>
       <div><Mark k="tick" /><span>Watch</span></div>
     </div>
   );
