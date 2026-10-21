@@ -13,7 +13,9 @@
 //       caller's surface captions it, and answer the absent mark for an instant nobody recorded - plus a source
 //       guard, so no file under packages/core/src/model hand-slices a clock time out of an ISO string again;
 //   (f) scan-sim.ts: a sample job that ended 'failed' carries a non-zero exit code and its error, as a real run
-//       does through jobs.server.ts, and a clean one still ends done / exit 0.
+//       does through jobs.server.ts, and a clean one still ends done / exit 0;
+//   (g) product.ts/constants.ts: `?scale=N` is clamped to the product lines that LINES actually declares, so the
+//       ceiling and the table cannot drift apart (they were two hand-written 8s).
 // Run: node scripts/check-model.ts   (Node's type stripping; scripts/overlays-loader.mjs transpiles src/** on the fly)
 // Control: BP_MODEL_MUTATE='[["lens.ts"," (\x27 + n + \x27 of \x27","(\x27 + n + \x27 OF \x27"]]' rewrites source text as
 // it loads ([file suffix, find, replace] literals), so an assertion can be seen red on a seeded defect.
@@ -236,6 +238,23 @@ const PLACES: { id: string; feats: Any[] }[] = [...M.L.rooms, ...M.L.wings, ...M
   const ok = await settle(sim.buildRelease('rel-0.1.0').id);
   expect(ok?.status === 'done' && ok.exit_code === 0 && !ok.error, `(f) a clean build must still end done / exit 0: ${JSON.stringify([ok?.status, ok?.exit_code, ok?.error])}`);
   console.log(`job exits   gate fails -> ${bad?.status} exit ${bad?.exit_code} / clean -> ${ok?.status} exit ${ok?.exit_code}`);
+}
+
+// ---------------------------------------------------------------- (g) ?scale is clamped to the lines that exist
+{
+  const { clampScale, lineSuffix } = await impCore('src/model/product.ts');
+  const { LINES } = await impCore('src/model/constants.ts');
+  const n = LINES.length;
+  expect(clampScale(String(n)) === n && clampScale(String(n + 1)) === n && clampScale('999') === n,
+    `(g) ?scale must clamp to LINES.length (${n}): ${JSON.stringify([clampScale(String(n)), clampScale(String(n + 1)), clampScale('999')])}`);
+  expect(clampScale('0') === 1 && clampScale('-3') === 1 && clampScale(null) === 1 && clampScale('x') === 1,
+    `(g) ?scale must floor at one line: ${JSON.stringify([clampScale('0'), clampScale('-3'), clampScale(null), clampScale('x')])}`);
+  // the clamp and the table must agree: every line the clamp admits has a name and a suffix letter
+  const bad = Array.from({ length: clampScale('999') }, (_x, b) => b).filter((b) => !LINES[b] || !LINES[b][0] || !/^-[A-Z]$/.test(lineSuffix(2, b) === '' ? '-X' : lineSuffix(clampScale('999'), b)));
+  expect(!bad.length, `(g) lines the clamp admits with no entry in LINES: ${JSON.stringify(bad)}`);
+  const letters = new Set(LINES.map((l: Any) => l[1]));
+  expect(letters.size === n, `(g) LINES must carry ${n} distinct suffix letters, has ${letters.size}`);
+  console.log(`scale clamp LINES.length ${n} / clampScale('999') ${clampScale('999')} / distinct letters ${letters.size}`);
 }
 
 if (failures.length) {

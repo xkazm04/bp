@@ -35,9 +35,10 @@ export interface Product {
   FI: Record<string, number>;
 }
 
+/** `?scale=N` clamped to the product lines that exist: a ninth line added to LINES raises this by itself. */
 export function clampScale(raw: string | null | undefined): number {
   const n = parseInt(raw ?? '', 10);
-  return Math.max(1, Math.min(8, Number.isFinite(n) ? n : 1));
+  return Math.max(1, Math.min(LINES.length, Number.isFinite(n) ? n : 1));
 }
 
 export function lineSuffix(scale: number, b: number): string {
