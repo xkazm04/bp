@@ -19,7 +19,7 @@ tree: context groups, contexts, and features linked across contexts) and adds:
 
 An append-only events log beside the file holds history. Lenses are not built into the format: each
 one is a manifest that declares its fields, a health rule written as JSON data (no code), and how it
-should be drawn. Six built-in lenses ship in a catalog, and a project can add its own or switch any
+should be drawn. Seven built-in lenses ship in a catalog, and a project can add its own or switch any
 of them off.
 
 ## 2. What exists today
@@ -71,8 +71,8 @@ These conventions were decided directly, without a question, because the evidenc
 - **Absent values:** an unknown value is **omitted**, never written as `null` or `0` ("null is
   never zero", as in Personas KPIs). A feature with no facet for a lens reads as `unmeasured`. A
   facet with `"applicable": false` reads as `na`.
-- **Lens ids:** the six built-ins use short ids (`business`, `design`, `development`, `operations`,
-  `security`, `quality`). Custom lenses must use reverse-DNS ids (`com.kettle.cost`), so they can
+- **Lens ids:** the seven built-ins use short ids (`business`, `design`, `development`, `operations`,
+  `security`, `quality`, `performance`). Custom lenses must use reverse-DNS ids (`com.kettle.cost`), so they can
   never take a built-in's name. This is the connector rule, applied to ids.
 - **Switching a lens off is not deleting it.** `lenses[].enabled: false` hides the lens, and its
   facets are kept. Removing the entry orphans its facets, and any reader that rewrites the file
@@ -261,7 +261,7 @@ Weekly snapshots and "what changed" are worked out from this log. Readers ignore
 - A v3 file is still a valid v2 declaration for code-tree readers, because `groups[]` and
   `contexts[]` are unchanged and unknown keys are ignored.
 - A v3 reader that receives v2 (no `$schema`, `version: 2`) maps `use_cases[]` to `features[]` with
-  no stage (shown as stage unknown, never guessed). It also treats the six built-in lenses as
+  no stage (shown as stage unknown, never guessed). It also treats the seven built-in lenses as
   available but unmeasured.
 - Writers keep these intact: `extensions`, facets for lenses they don't know, and manifests with
   `source: "project"`. A Personas rescan may regenerate `groups[]`, `contexts[]` and `stats` only. It
