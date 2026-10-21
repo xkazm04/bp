@@ -4,12 +4,19 @@
 //     (within the one-frame floor, within the spread), the Kettle sample's 96/104/98 -> 72 moved; median, spread, noise,
 //     change, %, the outlier rule (more than noise/2 above the median), the frame flag, the range scale, signed figures;
 //   - pixels: on tiny synthetic RGBA images, identical -> nothing moved; noise under the threshold -> nothing moved;
-//     a faint change -> moved but "visually identical"; a block -> its exact grid cells, bbox, shares and words.
+//     a faint change -> moved but "visually identical"; a block -> its exact grid cells, bbox, shares and words;
+//   - the panel's own modules: the exported functions of apps/web/src/components/ledger/train/compare/** (the patch's
+//     rows, the item body's blocks, the shown pairs and their cache keys, the pack order, the latest reading, one
+//     performance row and the sentence under it). Nothing else in the repo reads them;
+//     scripts/overlays-loader.mjs transpiles the .tsx, as scripts/check-train-budget.ts does.
 // Run: node scripts/check-train-compare.ts  (Node's type stripping; no build step). Exit 1 on any failure.
-import { verdictOf, type LensFields } from '../packages/core/src/scan/compare.ts';
+import { register } from 'node:module';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { compareOf, verdictOf, type Comparison, type LensFields } from '../packages/core/src/scan/compare.ts';
 import { atTarget, beyondNoise, isOutlier, perfFigures, rangeScale, signed } from '../packages/core/src/train/perf.ts';
 import { GRID_H, GRID_W, NOISE, bboxCells, diffPixels, pixWords } from '../packages/core/src/train/pixels.ts';
-import type { Measurement, Proposal } from '../packages/core/src/scan/types.ts';
+import type { Measurement, Proposal, Shot } from '../packages/core/src/scan/types.ts';
 
 let n = 0, bad = 0;
 function ok(cond: boolean, what: string, got?: unknown) {
@@ -109,6 +116,84 @@ const base = img((x, y) => [(x * 3) % 256, (y * 5) % 256, 120]);
   const g = diffPixels(new Uint8ClampedArray(7 * 5 * 4), new Uint8ClampedArray(7 * 5 * 4).fill(200), 7, 5);
   ok(g.moved === 100 && g.cells.filter(Boolean).length <= GRID_W * GRID_H && g.bbox?.join() === '0,0,6,4', 'odd size: every pixel moved, bbox the whole image', g.bbox);
   ok(GRID_H === 18 && GRID_W === 32, 'the grid is 32 x 18');
+}
+
+// ------------------------------------------------------------------------------------------- the panel's own modules
+const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
+const CMP = 'components/ledger/train/compare/';
+register('./overlays-loader.mjs', { parentURL: import.meta.url, data: { src: SRC, root: ROOT, mutate: [] } });
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Any = any;
+const imp = (f: string): Promise<Any> => import(pathToFileURL(path.join(SRC, CMP + f)).href);
+const { patchRows } = await imp('CommitDiff.tsx');
+const { blocksOf, inline } = await imp('ItemText.tsx');
+const { pairKey, shownPairs } = await imp('Screens.tsx');
+const { hasRuns, perfItem, perfReason, runsOf } = await imp('PerfTable.tsx');
+const { latestOf } = await imp('MetricStrip.tsx');
+const { packOrder } = await imp('ComparePanel.tsx');
+
+{ // the patch's rows: one header per file, the hunk, and each line's old and new number
+  const PATCH = [
+    'diff --git a/apps/web/src/a.ts b/apps/web/src/a.ts',
+    'index 1111111..2222222 100644',
+    '--- a/apps/web/src/a.ts',
+    '+++ b/apps/web/src/a.ts',
+    '@@ -10,3 +10,4 @@ function f() {',
+    ' keep',
+    '-gone',
+    '+added',
+    '+also',
+    '',
+  ].join('\n');
+  const rows = patchRows(PATCH);
+  ok(rows.filter((r: Any) => r.k === 'file').map((r: Any) => r.text).join() === 'apps/web/src/a.ts', 'patch rows: one header per file, the path as git prints it', rows[0]);
+  ok(rows.map((r: Any) => r.k).join() === 'file,hunk,ctx,del,add,add', 'patch rows: the index and ---/+++ lines are dropped, the trailing blank trimmed', rows.map((r: Any) => r.k));
+  ok(rows.filter((r: Any) => r.k !== 'file').map((r: Any) => `${r.a}/${r.b}`).join(' ') === '/ 10/10 11/ /11 /12', 'patch rows: old and new line numbers follow the hunk header', rows.map((r: Any) => r.k + ' ' + r.a + '/' + r.b));
+}
+
+{ // the item body's blocks
+  const BODY = '## Summary\nOne line\nwrapped.\n\n- a item\n  continued\n- b item\n\n1. first\n\n> a note\n\n```ts\nconst x = 1;\n```\n';
+  const bs = blocksOf(BODY);
+  ok(bs.map((b: Any) => b.k).join() === 'h,p,ul,ol,q,code', 'item text: heading, paragraph, both lists, quote, fence', bs.map((b: Any) => b.k));
+  ok(bs[1].text === 'One line wrapped.' && bs[2].items.join('|') === 'a item continued|b item', 'item text: a paragraph and a list item join their wrapped lines', [bs[1].text, bs[2].items]);
+  ok(bs[5].lang === 'ts' && bs[5].text === 'const x = 1;', 'item text: the fence keeps its language and its exact lines', bs[5]);
+  const parts = inline('a `code` and **bold** end');
+  ok(parts.length === 5 && parts[1].type === 'code' && parts[3].type === 'b', 'item text: inline code and bold become elements, the text between stays text', parts.map((p: Any) => (typeof p === 'string' ? 'text' : p.type)));
+}
+
+{ // the shown pairs and their cache keys
+  const pair = (theme?: string, size?: string, both = true): Any => ({ ...(theme ? { theme } : {}), ...(size ? { size } : {}), before: { id: 1, path: 'shots/r/1.png' }, ...(both ? { after: { id: 2, path: 'shots/r/2.png' } } : {}) });
+  const pairs = [pair('light'), pair('dark')];
+  ok(shownPairs(pairs, 'light').length === 1 && shownPairs(pairs, 'both').length === 2, 'shown pairs: a theme shows its own, "both" shows both');
+  ok(shownPairs([pair(undefined, '1280x800')], 'light').length === 1, 'shown pairs: no pair carries the theme, so every pair is shown');
+  ok(pairKey('athena', pairs[0]) === 'athena:1:2' && pairKey(null, pairs[0]) === 'kettle:1:2', 'pair key: the product then the two shot ids', pairKey(null, pairs[0]));
+  ok(pairKey('athena', pair('light', undefined, false)) === null, 'pair key: null when a side has no capture');
+}
+
+{ // one performance row and the sentence under it
+  const read = (value: number, phase: 'before' | 'after', i: number, metric = 'interactionP95Ms'): Measurement =>
+    ({ id: ++mid, run_id: 'r', feature: 'booking', lens: 'performance', metric, value, unit: 'ms', method: 'probe', measured_at: `2026-10-15T00:${String(i).padStart(2, '0')}:00Z`, proposal_id: 'p-x', phase });
+  const ms = [read(96, 'before', 1), read(104, 'before', 2), read(98, 'before', 3), read(72, 'after', 4), read(40, 'before', 5, 'memMb')];
+  const scan = { proposals: [P], measurements: ms, shots: [] as Shot[] };
+  const c = compareOf(scan, 'p-x', LENSES) as Comparison;
+  const lens: Any = { F: { interactionP95Ms: { label: 'Interaction p95', unit: 'ms', metric: { better: 'down', target: 100 } }, memMb: { label: 'Memory', unit: 'MB', metric: { better: 'down', target: 50 } } } };
+  ok(runsOf(c).join() === '96,104,98' && hasRuns(c), 'runs: the item\'s own-metric before readings, in recorded order', runsOf(c));
+  ok(latestOf(c.before, 'performance', 'interactionP95Ms')?.value === 98, 'latest reading: the last matching row of the phase wins', latestOf(c.before, 'performance', 'interactionP95Ms'));
+  const it = perfItem(c, 'Booking', lens);
+  ok(it.label === 'Interaction p95' && it.unit === 'ms' && it.f.after === 72, 'perf item: the lens field names the row, the after is the latest reading', [it.label, it.unit, it.f.after]);
+  ok(it.context.length === 1 && it.context[0].key === 'memMb' && it.context[0].value === 40 && it.context[0].target === 50, 'perf item: the feature\'s other metrics of this lens are context rows', it.context);
+  ok(perfReason(it).includes('median of 3 baseline runs') && perfReason(it).includes('larger than the noise'), 'perf reason: the change, the number of runs behind the median, and the noise it beat', perfReason(it));
+  ok(perfReason({ ...it, f: { ...it.f, change: undefined } }).startsWith('No after reading yet'), 'perf reason: no after reading says so, and judges nothing');
+}
+
+{ // the pack order the panel's prev / next walks
+  const pk = (id: string, created_at: string): Any => ({ id, lens: 'performance', n: 1, branch: 'pack/' + id, base_ref: 'main', base_sha: 'abc1234', status: 'open', created_at, updated_at: created_at });
+  const pr = (id: string, pack_id: string | undefined, created_at: string): Any => ({ ...P, id, ...(pack_id ? { pack_id } : {}), created_at, updated_at: created_at });
+  const T: Any = {
+    packs: [pk('k-b', '2026-10-15T00:00:00Z'), pk('k-a', '2026-10-14T00:00:00Z')],
+    proposals: [pr('p-3', 'k-b', '2026-10-16T00:00:00Z'), pr('p-2', 'k-a', '2026-10-16T00:00:00Z'), pr('p-1', 'k-a', '2026-10-15T00:00:00Z'), pr('p-loose', undefined, '2026-10-16T00:00:00Z')],
+  };
+  ok(packOrder(T).join() === 'p-1,p-2,p-3', 'pack order: packs oldest first, each pack\'s items by created_at then id, no loose item', packOrder(T));
 }
 
 console.log(bad ? `check-train-compare: ${bad} of ${n} failed` : `check-train-compare: ${n} checks passed`);
