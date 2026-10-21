@@ -74,7 +74,14 @@ def run(sc, argv):
         sc.main()
         return 0
     except SystemExit as e:
-        return int(e.code or 0)
+        # SystemExit.code is None, an int, or a message (sys.exit('text') means print it and exit 1)
+        if e.code is None or isinstance(e.code, int):
+            return int(e.code or 0)
+        print(e.code, file=sys.stderr)
+        return 1
+    except Exception as e:  # a browser timeout, a page error, an unreadable roles file: this scene fails, the rest still run
+        print(f'scene failed: {type(e).__name__}: {e}', file=sys.stderr)
+        return 1
 
 
 def main():
@@ -92,7 +99,7 @@ def main():
               'entry under .contest/ (git-ignored; scripts/fidelity/README.md), or run `check` instead.',
               file=sys.stderr)
         sys.exit(2)
-    sc, bad = instrument(), 0
+    sc, bad, failed = instrument(), 0, []
     for name in a.scene or list(SCENES):
         roles, contract, hash_, wdrive, path, pdrive = SCENES[name]
         print(f'== {name} ({contract})', flush=True)
@@ -103,7 +110,12 @@ def main():
         argv = [a.mode, target, str(HERE / roles), str(HERE / contract), '--width', SIZE]
         for d in drive:
             argv += ['--drive', d]
-        bad |= run(sc, argv)
+        code = run(sc, argv)
+        if code:
+            failed.append(name)
+        bad |= code
+    if failed:
+        print('scenes that did not pass: ' + ', '.join(failed), file=sys.stderr)
     sys.exit(1 if bad else 0)
 
 
