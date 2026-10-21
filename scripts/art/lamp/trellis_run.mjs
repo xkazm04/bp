@@ -49,11 +49,16 @@ const r = await j('/prompt', { method: 'POST', headers: { 'content-type': 'appli
 if (r.error) { console.error(JSON.stringify(r).slice(0, 2000)); process.exit(1); }
 const pid = r.prompt_id;
 let h;
+// The job poll is bounded like the queue wait above: a ComfyUI that restarted or lost the prompt answers {} for ever.
+// 120 min is generous for a TRELLIS.2 job (10 to 40 min); both numbers can be shrunk for a test.
+const POLL_MS = Number(process.env.BP_TRELLIS_POLL_MS) || 10000, JOB_MS = Number(process.env.BP_TRELLIS_JOB_MS) || 120 * 60 * 1000;
+const tJob = Date.now();
 for (;;) {
-  await sleep(10000);
+  await sleep(POLL_MS);
   const all = await j('/history/' + pid);
   h = all[pid];
   if (h && h.status && (h.status.completed || h.status.status_str === 'error')) break;
+  if (Date.now() - tJob > JOB_MS) { console.error(`BLOCKED: prompt ${pid} neither completed nor failed in ${Math.round(JOB_MS / 60000)} min (ComfyUI restarted or the job was cancelled? /history/${pid} stays empty)`); process.exit(2); }
 }
 if (h.status.status_str === 'error') { console.error('ERROR', JSON.stringify(h.status.messages.slice(-2)).slice(0, 1500)); process.exit(1); }
 const files = Object.values(h.outputs).flatMap((o) => Object.values(o).flat()).filter((x) => x && x.filename && x.type === 'output' && /\.glb$/i.test(x.filename));
