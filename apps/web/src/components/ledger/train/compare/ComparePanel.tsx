@@ -52,6 +52,11 @@ export function packOrder(T: Pick<TrainData, 'packs' | 'proposals'>): string[] {
     .flatMap((k) => (by.get(k.id) ?? []).sort(byCreated).map((p) => p.id));
 }
 
+/** The second performance table's heading. Only the pack's items measured in two or more baseline runs can appear in
+ *  it, so the heading carries that denominator: without it a pack of twelve reads as three items long. */
+export const packHeading = (measured: number, total: number): string =>
+  `The whole pack · ${measured} of ${total} item${total === 1 ? '' : 's'} measured in runs`;
+
 type Scan = Parameters<typeof compareOf>[0];
 /** The scan tables compareOf reads, from the train's data (copied once per change: compareOf takes mutable arrays). */
 function useScan(T: TrainData): Scan {
@@ -141,7 +146,7 @@ const Body = memo(function Body({ c, T, scan, lens, nameOf, view, onView, wide }
     // the pack's other items measured in runs, below it, as the winner's "the whole pack"
     const all = p.pack_id ? T.proposals.filter((x) => x.pack_id === p.pack_id) : [];
     const mates = all.map((x) => (x.id === p.id ? c : compareOf(scan, x.id, T.lenses))).filter((x): x is Comparison => !!x && hasRuns(x));
-    return { me, all: mates.length > 1 ? mates.map((x) => (x === c ? me : perfItem(x, nameOf(x.p.feature), lens))) : [] };
+    return { me, total: all.length, all: mates.length > 1 ? mates.map((x) => (x === c ? me : perfItem(x, nameOf(x.p.feature), lens))) : [] };
   }, [runs, c, fname, lens, p.pack_id, p.id, T.proposals, T.lenses, scan, nameOf]);
 
   return (
@@ -154,7 +159,7 @@ const Body = memo(function Body({ c, T, scan, lens, nameOf, view, onView, wide }
           <p className="tr-pt-why">{perfReason(perf.me)}</p>
         </section>
       ) : <MetricStrip c={c} field={p.metric ? lens?.F[p.metric] : undefined} />}
-      {perf && perf.all.length ? <section className="tr-sec"><h4>The whole pack</h4><PerfTable items={perf.all} /></section> : null}
+      {perf && perf.all.length ? <section className="tr-sec"><h4>{packHeading(perf.all.length, perf.total)}</h4><PerfTable items={perf.all} /></section> : null}
       {p.status === 'failed' ? (
         <div className="tr-sec"><Callout tone="flag"><b>✕ Build failed.</b><span>This item did not build, broke a gate or did not move its metric. Accepting it is allowed only with a note, and it ships flagged.</span></Callout></div>
       ) : null}

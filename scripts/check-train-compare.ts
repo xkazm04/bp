@@ -139,7 +139,7 @@ const { blocksOf, inline } = await imp('ItemText.tsx');
 const { pairKey, shownPairs } = await imp('Screens.tsx');
 const { hasRuns, perfItem, perfReason, runsOf } = await imp('PerfTable.tsx');
 const { latestOf } = await imp('MetricStrip.tsx');
-const { packOrder } = await imp('ComparePanel.tsx');
+const { packHeading, packOrder } = await imp('ComparePanel.tsx');
 
 { // the patch's rows: one header per file, the hunk, and each line's old and new number
   const PATCH = [
@@ -208,6 +208,12 @@ const { packOrder } = await imp('ComparePanel.tsx');
     proposals: [pr('p-3', 'k-b', '2026-10-16T00:00:00Z'), pr('p-2', 'k-a', '2026-10-16T00:00:00Z'), pr('p-1', 'k-a', '2026-10-15T00:00:00Z'), pr('p-loose', undefined, '2026-10-16T00:00:00Z')],
   };
   ok(packOrder(T).join() === 'p-1,p-2,p-3', 'pack order: packs oldest first, each pack\'s items by created_at then id, no loose item', packOrder(T));
+}
+
+{ // the second table's heading: it holds only the pack's items measured in runs, so it may never say "the pack" alone
+  ok(typeof packHeading === 'function', 'pack heading: ComparePanel exports the heading, so it can be read here', typeof packHeading);
+  ok(packHeading(3, 12) === 'The whole pack · 3 of 12 items measured in runs', 'pack heading: 3 measured of 12 items says both numbers', packHeading(3, 12));
+  ok(packHeading(1, 1).includes('1 of 1 item ') && packHeading(2, 2).includes('2 of 2 items '), 'pack heading: one item is not "items"', [packHeading(1, 1), packHeading(2, 2)]);
 }
 
 { // the comments' anchors: a path named under src/lib/ must be one this tree has
