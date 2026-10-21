@@ -86,8 +86,16 @@ export class AggCache {
   }
 }
 
-/** Plain stage summary parts, e.g. ["32 features", "18 live", "8 building", "6 on paper"]. */
+/**
+ * Plain stage summary parts, e.g. ["32 features", "18 live", "8 building", "6 on paper"]. The parts account for
+ * every feature of the place: a feature being retired, or one the events log has no stage for on the date shown
+ * (time travel - it was not on the drawing yet), gets its own part instead of going missing. Without them a room
+ * read on an early date said "22 features, 0 live, 0 building, 0 on paper", which reads as a measured zero.
+ */
 export function stageParts(c: Counts, short: boolean): string[] {
-  return [c.n + (short ? '' : ' features'), c.live + c.flagged + ' live', c.build + ' building', c.paper + ' on paper'];
+  const out = [c.n + (short ? '' : ' features'), c.live + c.flagged + ' live', c.build + ' building', c.paper + ' on paper'];
+  if (c.dep) out.push(c.dep + ' retiring');
+  if (c.none) out.push(c.none + ' not drawn yet');
+  return out;
 }
 

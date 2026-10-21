@@ -2,7 +2,9 @@
 // and null for an absent value, so every word the model builds out of those values must stay distinguishable from
 // a real reading - the rule the A/B facet-reader fix left to its consumers.
 //   (a) lens.ts headlineSummary: a place's headline is computed over the features that carry the field, so it
-//       names that denominator whenever it is smaller than the place, and never when the place is whole.
+//       names that denominator whenever it is smaller than the place, and never when the place is whole;
+//   (b) aggregates.ts stageParts: the parts account for every feature of the place, so a feature being retired
+//       or one with no stage recorded on the date shown is visible instead of silently missing.
 // Run: node scripts/check-model.ts   (Node's type stripping; scripts/overlays-loader.mjs transpiles src/** on the fly)
 // Control: BP_MODEL_MUTATE='[["lens.ts"," (\x27 + n + \x27 of \x27","(\x27 + n + \x27 OF \x27"]]' rewrites source text as
 // it loads ([file suffix, find, replace] literals), so an assertion can be seen red on a seeded defect.
@@ -53,6 +55,30 @@ const PLACES: { id: string; feats: Any[] }[] = [...M.L.rooms, ...M.L.wings, ...M
   expect(n > 100 && partial > 50 && whole > 50, `(a) the sample must exercise both arms: ${n} place headlines, ${partial} partial, ${whole} whole`);
   expect(!bad.length, `(a) ${bad.length} of ${n} place headlines do not say what they measured:\n      ` + bad.slice(0, 4).join('\n      '));
   console.log(`headlines   ${n} place headlines / ${partial} over part of the place / ${whole} over all of it / ${bad.length} silent`);
+}
+
+// ---------------------------------------------------------------- (b) the stage parts account for every feature
+{
+  const { stageParts, AggCache } = await impCore('src/model/aggregates.ts');
+  const bad: string[] = [];
+  let seen = 0, gaps = 0;
+  for (const t of ['2024-01-01', '2025-07-01', P.asOf]) {
+    const agg = new AggCache(P);
+    for (const pl of PLACES) {
+      const c = agg.countsOf(t + '|' + pl.id, pl.feats, t, 14);
+      if (c.live + c.flagged + c.build + c.paper + c.dep + c.none !== c.n) bad.push(`${pl.id}@${t}: the counts themselves do not add up to ${c.n}`);
+      if (c.dep + c.none > 0) gaps++;
+      for (const short of [false, true]) {
+        seen++;
+        const parts: string[] = stageParts(c, short);
+        const nums = parts.slice(1).reduce((a: number, x: string) => a + (parseInt(x, 10) || 0), 0);
+        if (nums !== c.n) bad.push(`${pl.id}@${t}${short ? ' (short)' : ''}: ${JSON.stringify(parts)} accounts for ${nums} of ${c.n} (retiring ${c.dep}, not drawn ${c.none})`);
+      }
+    }
+  }
+  expect(gaps > 20, `(b) the sample must exercise the arm: only ${gaps} place readings carry a retired or not-yet-drawn feature`);
+  expect(!bad.length, `(b) ${bad.length} of ${seen} stage summaries leave a feature out:\n      ` + bad.slice(0, 4).join('\n      '));
+  console.log(`stageParts  ${seen} place summaries / ${gaps} with a retired or not-yet-drawn feature / ${bad.length} unaccounted`);
 }
 
 if (failures.length) {
