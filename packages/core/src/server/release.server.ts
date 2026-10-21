@@ -107,7 +107,13 @@ export async function storeCall<T>(dbFile: string, args: string[]): Promise<Stor
   if (!script) return { ok: false, kind: 'error', error: NO_LENS_SCAN };
   const r = await run(process.execPath, ['--no-warnings', script, '--db', dbFile, ...args], { cwd: path.dirname(dbFile), timeout: STORE_MS });
   if (r.code === 0) {
-    try { return { ok: true, data: JSON.parse(r.stdout) as T }; } catch { return { ok: false, kind: 'error', error: 'store.mjs answered no JSON' }; }
+    // An exit-0 answer that is not JSON is the one failure here with no other witness: store.mjs said nothing on
+    // stderr and the job wrote nothing, so without the text the operator has only 'no JSON' to go on. Carry the
+    // first line of what it did say (200 chars; a store answer is one JSON object, so a line is enough to name it).
+    try { return { ok: true, data: JSON.parse(r.stdout) as T }; } catch {
+      const said = r.stdout.split(/\r?\n/).map((l) => l.trim()).find(Boolean)?.slice(0, 200);
+      return { ok: false, kind: 'error', error: 'store.mjs answered no JSON' + (said ? `: ${said}` : ' and no output') };
+    }
   }
   const why = r.stderr.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).filter((l) => !/ExperimentalWarning|--trace-warnings/.test(l)).pop() ?? `exit ${r.code}`;
   return { ok: false, kind: r.code === 2 ? 'bad' : r.code === 1 ? 'refused' : 'error', error: why.replace(/^store: /, '') };
