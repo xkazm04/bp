@@ -9,7 +9,7 @@ import { LayoutGroup, motion, useReducedMotion } from 'motion/react';
 import type { Feature } from '@bp/core/data';
 import type { ScanSnapshot } from '@bp/core/scan/types';
 import { LIVE_DECIDER, REV_DESC, STAGE_WORD, astat, fmtWait, isAgentId, lensOf, pname, type Model, type SwarmSim } from '@bp/core/model';
-import { useSimSig } from '../page/bits';
+import { AsOfBar, useSimSig } from '../page/bits';
 import { illoSVG } from '@/engine/render/illo';
 import { DefaultLensPanel, MetricRows } from './LensPanel';
 import { BusinessSection } from './Business';
@@ -172,6 +172,7 @@ export function SheetBody({ f }: { f: Feature }) {
   return (
     <>
       <PatternDefs />
+      <AsOfBar />
       <div className="dh">
         {/* the tile can be gone while the sheet is open (a live map refresh rebuilds the layout under it):
             the place line drops to what the feature itself records, as the engine's own 12 guarded
