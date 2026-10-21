@@ -8,7 +8,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
-import { artFile, composePropPrompt, composePrompt, outFile, parseSize, redact, withinCap } from './leonardo.mjs';
+import { artFile, composePropPrompt, composePrompt, nightTotal, outFile, parseSize, redact, spendWindow, withinCap } from './leonardo.mjs';
 
 let failed = 0, passed = 0;
 const check = (name, ok, detail = '') => { ok ? passed++ : failed++; console.log(`${ok ? 'ok  ' : 'FAIL'}  ${name}${ok || !detail ? '' : `  (${detail})`}`); };
@@ -52,7 +52,17 @@ check('cap: a call over --stop-at is refused', !withinCap(155, 6, 160));
 check('cap: --stop-at cannot raise HARD_CAP', !withinCap(386, 6, 9999) && withinCap(384, 6, 9999));
 check('cap: at the cap nothing more is allowed', !withinCap(390, 6));
 
-
+const at = (iso) => new Date(iso);
+const e = (time, credits) => ({ time, credits });
+check('window: 07:59Z is still the previous window', spendWindow(at('2026-10-21T07:59:00Z')).from === '2026-10-20T08:00:00.000Z');
+check('window: 08:00Z opens the new window', spendWindow(at('2026-10-21T08:00:00Z')).from === '2026-10-21T08:00:00.000Z' && spendWindow(at('2026-10-21T08:00:00Z')).to === '2026-10-22T08:00:00.000Z');
+const prev = [e('2026-10-20T20:58:00Z', 390)];
+check('window: an entry from the previous window does not count', nightTotal(prev, at('2026-10-21T09:00:00Z')) === 0);
+check('window: PRIOR_SPEND counts only in the 2026-10-20 window', nightTotal([], at('2026-10-20T21:00:00Z')) === 6 && nightTotal([], at('2026-10-21T09:00:00Z')) === 0);
+check('window: 07:59Z counts in the previous window', nightTotal([e('2026-10-21T07:59:00Z', 6)], at('2026-10-21T07:59:30Z')) === 12 && nightTotal([e('2026-10-21T07:59:00Z', 6)], at('2026-10-21T08:00:00Z')) === 0);
+check('window: 08:00Z counts in the new window', nightTotal([e('2026-10-21T08:00:00Z', 6)], at('2026-10-21T08:00:01Z')) === 6 && nightTotal([e('2026-10-21T08:00:00Z', 6)], at('2026-10-21T07:59:59Z')) === 6);
+check('window: the cap refuses a call that would pass 400 inside one window', !withinCap(nightTotal([e('2026-10-21T09:00:00Z', 386)], at('2026-10-21T10:00:00Z')), 6) && withinCap(nightTotal([e('2026-10-21T09:00:00Z', 384)], at('2026-10-21T10:00:00Z')), 6));
+check('window: --stop-at still refuses inside the window', !withinCap(nightTotal([e('2026-10-21T09:00:00Z', 156)], at('2026-10-21T10:00:00Z')), 6, 160));
 
 console.log(`
 check-leonardo: ${passed} passed, ${failed} failed`);

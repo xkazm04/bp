@@ -12,9 +12,13 @@
 //   node scripts/lookdev/leonardo.mjs prompt --prop lamp-agent --variant A
 // The frame lands in the temp folder unless --out names a file under apps/vr/ArtSource/ (ArtSource has no 400 KB limit).
 //
+// Spend window (App Master decision 2026-10-21): the operator's 400 credits per night are counted per night, a night being
+// 08:00 UTC on day D to 08:00 UTC on day D+1. Only log.jsonl entries whose `time` falls in the window holding the current
+// time count toward `total`, HARD_CAP and --stop-at. PRIOR_SPEND belongs to the 2026-10-20 window alone.
+//
 // The key is LEONARDO_API_KEY, read at run time from the main checkout's untracked .env. It is never printed,
 // logged or written anywhere; neither is the authorization header. Every call is "public": false.
-// One JSON line per call goes to lookdev/log.jsonl. The night's total (log + PRIOR_SPEND) may never pass
+// One JSON line per call goes to lookdev/log.jsonl. The window's total may never pass
 // HARD_CAP; --stop-at only lowers it (the exploration stop).
 import fs from 'node:fs';
 import os from 'node:os';
@@ -34,7 +38,9 @@ const ART = path.join(ROOT, 'apps/vr/ArtSource');
 const WIDTH = 1376;
 const HEIGHT = 768;
 const HARD_CAP = 390; // of the operator's 400 per night
-const PRIOR_SPEND = 6; // the Director's LOW test call on 2026-10-20, made before this log existed
+const PRIOR_SPEND = 6; // the Director's LOW test call on 2026-10-20 about 20:58Z, made before this log existed
+const PRIOR_WINDOW = '2026-10-20T08:00:00.000Z'; // the window PRIOR_SPEND belongs to
+const WINDOW_START_HOUR = 8; // UTC
 const LOW_FALLBACK = 6; // the Director's measured LOW cost
 const PROBE_ESTIMATE = { MEDIUM: 40, HIGH: 120 }; // a deliberately high guess, used only to gate the first probe
 const COMMIT_LIMIT = 400 * 1024;
@@ -110,7 +116,21 @@ export function parseSize(text) {
 export const withinCap = (total, cost, stopAt = HARD_CAP) => total + cost <= Math.min(HARD_CAP, stopAt);
 
 const readLog = () => (fs.existsSync(LOG) ? fs.readFileSync(LOG, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
-export const nightTotal = (log = readLog()) => PRIOR_SPEND + log.reduce((n, e) => n + (Number(e.credits) || 0), 0);
+
+/** The spend window holding `now`: 08:00 UTC to 08:00 UTC the next day. */
+export function spendWindow(now = new Date()) {
+  const t = new Date(now);
+  const start = Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate(), WINDOW_START_HOUR);
+  const from = new Date(t.getTime() >= start ? start : start - 86400000);
+  return { from: from.toISOString(), to: new Date(from.getTime() + 86400000).toISOString() };
+}
+
+/** Credits in the window holding `now`: the log entries timed inside it, plus PRIOR_SPEND in its own window. */
+export function nightTotal(log = readLog(), now = new Date()) {
+  const w = spendWindow(now);
+  const inside = (e) => { const t = new Date(e.time).getTime(); return t >= Date.parse(w.from) && t < Date.parse(w.to); };
+  return (w.from === PRIOR_WINDOW ? PRIOR_SPEND : 0) + log.filter(inside).reduce((n, e) => n + (Number(e.credits) || 0), 0);
+}
 
 /** What a call at this quality is expected to cost: LOW is known; MEDIUM and HIGH come from the first measured call. */
 function expectedCost(quality, log) {
@@ -196,7 +216,7 @@ async function gen() {
   const total = nightTotal(log);
   const { cost, measured } = expectedCost(quality, log);
   if (!withinCap(total, cost, stopAt)) {
-    console.error(`REFUSED: night total ${total} + expected ${cost}${measured ? '' : ' (unmeasured guess)'} at ${quality} would pass ${stopAt}`);
+    console.error(`REFUSED: window total ${total} + expected ${cost}${measured ? '' : ' (unmeasured guess)'} at ${quality} would pass ${stopAt}`);
     process.exit(2);
   }
 
@@ -257,8 +277,9 @@ if (cmd === 'gen') await gen();
 else if (cmd === 'total') {
   const log = readLog();
   const by = {};
-  for (const e of log) { const q = (by[e.quality] ??= { calls: 0, credits: 0 }); q.calls++; q.credits += Number(e.credits) || 0; }
-  console.log(JSON.stringify({ priorSpend: PRIOR_SPEND, byQuality: by, logCredits: nightTotal(log) - PRIOR_SPEND, nightTotal: nightTotal(log), cap: HARD_CAP }, null, 2));
+  for (const e of log.filter((x) => x.time >= spendWindow().from && x.time < spendWindow().to)) { const q = (by[e.quality] ??= { calls: 0, credits: 0 }); q.calls++; q.credits += Number(e.credits) || 0; }
+  const w = spendWindow();
+  console.log(JSON.stringify({ window: w, byQuality: by, allTimeLogCredits: log.reduce((n, e) => n + (Number(e.credits) || 0), 0), nightTotal: nightTotal(log), cap: HARD_CAP }, null, 2));
 } else if (cmd === 'prompt') console.log(opt('prop') ? composePropPrompt(opt('prop'), opt('variant', 'A')) : composePrompt(opt('state'), opt('variant', 'a')));
 else if (cmd) { console.error(`unknown command ${cmd}`); process.exit(1); }
 else if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) { console.error('usage: gen | total | prompt (see the header)'); process.exit(1); }
