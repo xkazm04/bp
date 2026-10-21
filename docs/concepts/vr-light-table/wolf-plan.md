@@ -282,6 +282,13 @@ FLUX.2 [klein] or Qwen-Image (tech-stack.md §5), unless the owner rules on Leon
       stalk was not one) and reaches 11.2 cm below the table plane; the springs are 4 silver cylinders on the arms; all evidence is
       fitted to the lamp's bounding box and checked by an alpha pass (manifest `framing`, `review_fixes`). The lamp is 45 cm above the
       table plane, 56.2 cm with the clamp.
+      Director review of the reworked lamp (2dad0ad), 2026-10-21: it reads correctly (whole lamp framed, clean navy and silver arm,
+      clamp on the table edge).
+      Light table frame, 2026-10-21 (not ticked, the studio kit, backdrop and materials are open): `ArtSource/light-table-frame/` has
+      `final.glb` (594 tris against 10,000, 1.20 x 0.80 x 0.95 m, pivot at the floor centre, 3.0 cm top edge for the lamp clamp),
+      6 PBR PNGs, evidence (turnaround and the 45-degree table view, Cycles on the CPU) and a manifest with all five gates
+      `pass: true` (14 components, 0 floaters, one UV set, 4 slots: wood, aluminium, `frame_edge_glow` emissive strip,
+      `frame_glass_placeholder_REPLACE_IN_UE`). Procedural Blender, `scripts/art/light-table-frame/`; `lynx_commit` is set at the merge.
 - [ ] **W4.1 Import (Wolf, half a day per asset).** Import each `final.*` through the editor MCP (pof's gap-fillers)
       into `apps/vr/Content/Bp/Art/<asset-id>/`. **Nothing is imported without its gate results** (the plan.md P4 gate).
       Proof: the manifest's `import` block; `stat rhi` and `stat scenerendering` with the asset in the greybox.
@@ -302,7 +309,7 @@ gated by `npm run check`. Wolf only draws, gestures, streams audio and calls rou
       (`types.ts:70`) and `Wave` with its packages (`scan/waves.ts:22`). Extend `parity.mjs` to these core types
       (presence and optionality), and emit their USTRUCTs. Proof: `npm run check:schema` green with a new seeded
       control that fails; `BpSchema.h` holds the new structs. Blocks W5.1.
-- [ ] **L5.2 Kettle sim host in apps/server (finding 5, decided 2026-10-21; 4 to 5 days).** Host `SwarmSim`
+- [x] **L5.2 Kettle sim host in apps/server (finding 5, decided 2026-10-21; 4 to 5 days).** Host `SwarmSim`
       (`packages/core/src/model/sim.ts:158`) and `ScanSim` (`model/scan-sim.ts:65`) per server process, in memory,
       never written to disk, behind the same routes (`scan`, `scans`, `waves`, `dispatch`, `stream`). This **changes
       a pinned contract**: Kettle's `/stream` stops answering 405, and Kettle writes stop being 4xx. Update
@@ -311,6 +318,8 @@ gated by `npm run check`. Wolf only draws, gestures, streams audio and calls rou
       under `packages/core/data` or the working directory is written. Proof: `npm run check` green; a new check
       shows Kettle's `/stream` emitting `snapshot` then `delta` after a scan POST. W5.1 must change BpLink's 405
       fallback in step with this commit.
+      Done 2026-10-21 (61181b2). Proof, from plan.md 'Milestone 1 re-measure after L5.2' (1443c3b): `46 passed, 0 failed, 0 skipped of 46`,
+      `PASS check:kettle-sim`, `Kettle stream: 200 SSE, a snapshot first`.
 - [ ] **L5.3 Athena host (WP5.4 Node half; 3 days).** apps/server registers bp's tools (tech-stack.md §4 table) with
       athena's `POST /manifest` (`app_id: "bp"`, `page_origin: http://127.0.0.1:<port>`) and executes an approved
       action when a decision returns `execute`. Proof: a seam smoke script (for example `scripts/smoke-athena.mjs`)
