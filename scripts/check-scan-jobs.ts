@@ -553,6 +553,23 @@ try {
     delete (globalThis as { __bpGhBy?: unknown }).__bpGhBy;
   }
 
+  // ------------------------------------------------------------------ jobProgress: `current` stays inside the job's scope
+  {
+    const { jobProgress } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/scan/views.ts')).href) as typeof import('../packages/core/src/scan/views.ts');
+    const row = (id: number, feature: string, kind: 'reading' | 'measured') => ({ id, run_id: 'pr1', at: T, feature, lens: 'development', kind, text: '' });
+    const snap = (rows: ReturnType<typeof row>[]) => ({ runs: [{ id: 'pr1', note: 'bp-job:j1' }], measurements: [], activity: rows }) as unknown as import('../packages/core/src/scan/types.ts').ScanSnapshot;
+    const pj = (scope: ScanScope) => ({ id: 'j1', kind: 'measure', lens: 'development', scope, run_id: 'pr1' }) as unknown as ScanJob;
+    const inOnly: ScanScope = { kind: 'selection', label: 'Selection (1)', features: ['inside'] };
+    const wide = [row(1, 'inside', 'reading'), row(2, 'OUTSIDE', 'reading')], outOnly = [row(1, 'OUTSIDE', 'reading')];
+    const pAll = jobProgress(pj(ALL), snap(wide), 2), pWide = jobProgress(pj(inOnly), snap(wide), 2), pOut = jobProgress(pj(inOnly), snap(outOnly), 2);
+    const pIn = jobProgress(pj(inOnly), snap([row(1, 'OUTSIDE', 'reading'), row(2, 'inside', 'reading')]), 2);
+    // the control: the same rows under an unscoped job DO name OUTSIDE, so a scoped job staying off it is the guard, not an empty fixture
+    check('jobProgress: an unscoped job names the latest reading (the fixture reads OUTSIDE)', pAll.current === 'OUTSIDE', String(pAll.current));
+    check('jobProgress: a scoped job whose run also read outside its scope names a feature inside it', pWide.current === 'inside' && pWide.m === 1, String(pWide.current));
+    check('jobProgress: a run that has only read outside the scope leaves `current` blank', pOut.current === undefined && pOut.n === 0, String(pOut.current));
+    check('jobProgress: the latest in-scope reading wins over an earlier outside one', pIn.current === 'inside', String(pIn.current));
+  }
+
   // ------------------------------------------------------------------ Kettle parity: the scan sim and the browser's lens store
   const clock = Date.parse(T); // frozen: the sim's jobs start and never step, so what is queued or running stays put
   const fprop = (id: string, lens: string, status: Proposal['status'], i: number): Proposal => ({ id, run_id: 'r0', feature: 'a', lens, title: 't', standard: 'none', kind: 'fix', status, created_at: at(i), updated_at: at(i) });
