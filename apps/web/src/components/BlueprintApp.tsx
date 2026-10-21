@@ -22,7 +22,7 @@ import type { ScanSnapshot } from '@bp/core/scan/types';
 import type { ScanCtx } from '@/lib/scan/actions';
 import { scanViews } from '@/lib/scan/scan-views';
 import { readTempLenses, subscribeTempLenses } from '@/lib/scan/temp-lens';
-import { refreshProjects, useProductName } from '@/lib/scan/projects';
+import { projectHref, refreshProjects, useProductName } from '@/lib/scan/projects';
 import { getVariant } from '@/variants/registry';
 import type { VariantId } from '@/variants/types';
 import { EngineCtx, LiveCtx, ScanCtxCtx, VariantCtx, shallowEqual, useBp, type LiveInfo } from './hooks';
@@ -115,7 +115,8 @@ function LiveEmpty({ slug, live }: { slug: string; live: LiveProduct }) {
     <div className="bp-empty" role="alert">
       <b>{head}</b>
       <span>{store ? 'Run /lens-scan in that repo (phase 1 writes the structure), then reload.' : err || 'The structure request failed.'}</span>
-      <a href={typeof location !== 'undefined' ? location.pathname : '/'}>Open the Kettle sample instead</a>
+      {/* projectHref keeps the route and every other parameter (?theme, ?scale, ?lenses, ?intro) and drops only ?product */}
+      <a href={typeof location !== 'undefined' ? projectHref(null) : '/'}>Open the Kettle sample instead</a>
     </div>
   );
 }
