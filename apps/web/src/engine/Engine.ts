@@ -686,10 +686,16 @@ export class Engine {
     if (this.S.phone) return;
     this.placeKey = ''; this.writeHashSoon(true);
   }
-  /** Back to the plan: the page shrinks into the tile, so the camera does not move. */
+  /**
+   * Back to the plan: the page shrinks into the tile, so the camera does not move.
+   * On a phone it returns where openFeature does: the detail owns its own history entry (Phone.tsx pushes it
+   * and its Back consumes it), so an engine hash write would land on whatever entry Back had already reached,
+   * and there is no canvas on screen to take the focus back.
+   */
   closeFeature(focus = true) {
     if (!this.S.open) return;
     this.set({ open: null });
+    if (this.S.phone) return;
     this.placeKey = ''; this.writeHashSoon(true);
     if (focus) this.cv.focus({ preventScroll: true });
   }

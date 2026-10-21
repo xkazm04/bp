@@ -9,7 +9,7 @@
 //   2. Engine.decide's rollback takes its words from saveFailWords and no longer interpolates e.message.
 // Run: node scripts/check-engine-copy.ts   (Node's type stripping; copy.ts imports nothing)
 // Control: BP_ENGINE_COPY_SEED=message puts a developer string through assertion 1; =inline makes 2 read the
-// old inline form, so each half can be seen red.
+// old inline rollback; =phone drops closeFeature's phone guard for assertion 3, so each half can be seen red.
 import path from 'node:path';
 import { readStripped } from './lib/source.ts';
 import { DEV_WORDS, saveFailWords } from '../apps/web/src/engine/copy.ts';
@@ -58,5 +58,31 @@ expect(/sim\.settle\(pid, w\.text, w\.retry\)/.test(eng), 'Engine.decide\'s roll
 expect(!/'Not saved: '\s*\+/.test(eng), 'Engine.ts builds a "Not saved:" sentence inline again, where no gate can read it');
 expect(!/\+\s*e\.message/.test(eng), 'Engine.ts interpolates an Error.message into a sentence a reader sees');
 
+// ------------------------------------------- 3. the two doors of the feature page agree about the phone
+// On a phone the detail owns its own history entry (Phone.tsx pushes it, its Back consumes it) and there is no
+// canvas on screen to take focus. openFeature returned before writing the hash from the start; closeFeature
+// did not, so every phone close scheduled an engine hash write 250 ms behind Phone.tsx's history.back().
+// A pair assertion: whichever of the two is edited, the other has to keep up.
+const body = (name: string): string | null => {
+  const at = eng.indexOf(`\n  ${name}(`);
+  if (at < 0) return null;
+  const open = eng.indexOf('{', at);
+  let depth = 0;
+  for (let i = open; i < eng.length; i++) {
+    if (eng[i] === '{') depth++;
+    else if (eng[i] === '}' && --depth === 0) return eng.slice(open, i + 1);
+  }
+  return null;
+};
+for (const door of ['openFeature', 'closeFeature']) {
+  let b = body(door);
+  if (SEED === 'phone' && door === 'closeFeature' && b) b = b.replace(/\n\s*if \(this\.S\.phone\) return;/, '');
+  expect(b !== null, `Engine.${door} was reshaped: the pair check cannot find its body (update the check)`);
+  if (!b) continue;
+  const guard = b.indexOf('if (this.S.phone) return;'), write = b.indexOf('writeHashSoon');
+  expect(guard >= 0, `Engine.${door} no longer returns before touching history on a phone (Phone.tsx owns that entry)`);
+  expect(write < 0 || (guard >= 0 && guard < write), `Engine.${door} writes the hash before its phone guard`, `guard ${guard}, write ${write}`);
+}
+
 if (failures.length) { console.log(failures.map((f) => 'FAIL ' + f).join('\n')); console.log(`check-engine-copy: ${failures.length} failed, ${held} held`); process.exit(1); }
-console.log(`check-engine-copy: ${held} expectations held (${CASES.length} rejection shapes, ${DEV_WORDS.length} developer strings forbidden)`);
+console.log(`check-engine-copy: ${held} expectations held (${CASES.length} rejection shapes, ${DEV_WORDS.length} developer strings forbidden, both feature-page doors guarded on a phone)`);
