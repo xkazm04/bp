@@ -1,8 +1,20 @@
-// Server-renders the overlays that no other gate touches (HoverCard, Morning, Phone) against the real Kettle
-// model and a stub engine, and pins what an earlier overlay review fixed by hand: a lens whose aggregate throws
-// costs its card line and not the chrome (and logs once), the morning watch reads the model's spend cap and away
-// mark instead of copies of them, the phone's headline "live" is the header's live + flagged, and the phone's
-// Back button keeps a 44 px touch target. Without this, an overlay regression is caught only in a browser.
+// Server-renders the overlays that no other gate touches (HoverCard, Morning, Phone, Toast, Legend) against
+// the real Kettle model and a stub engine. Without this, an overlay regression is caught only in a browser.
+// Nine subjects, in file order - each section below names its own:
+//   HoverCard             a lens whose aggregate throws costs its card line and not the chrome, and logs once
+//   Morning               the watch reads the model's SPEND_CAP and AWAY_SINCE, not copies of them
+//   Phone headline/detail headline "live" = the header's live + flagged; Back keeps a 44 px target; the
+//                         detail is a focusable aria-modal dialog
+//   Toast                 an undoable toast is not displaced, the queue drains in order, the live region is
+//                         mounted and not display:contents
+//   General legend        the caption is prose, not a key row (.lg-cap and the display:block rule that carries it)
+//   Phone touch targets   every phone-scoped control rule declares at least 44 px
+//   Marker tokens         no text colour is taken from --red / --mint / --amber (their *-2 siblings are the
+//                         text-grade ones; --red reads 4.36:1 on --paper in light theme)
+//   Phone reading list    a search never prints a heading with no rows under it
+//   WCAG 2.5.3            a control whose visible text is a key cap carries that text in its accessible name
+// The count is PRINTED by the run ("N expectations held"), never written out here: the sections used to carry
+// hand-kept numbers that said 16 while the file held 25, and two sections carried no number at all.
 // Run: node scripts/check-overlays.ts  (Node's type stripping for this file; scripts/overlays-loader.mjs
 // transpiles src/**/*.tsx on the fly). Exit 1 when any expectation fails.
 // Control: BP_OVERLAYS_MUTATE='[["Phone.tsx","height: 44","height: 40"]]' rewrites source text as it loads
@@ -62,7 +74,7 @@ function render(el: () => Any, patch: Record<string, unknown>, lensAgg: () => An
   } finally { console.error = origErr; }
 }
 
-// 1-2. HoverCard: a throwing lens aggregate renders the card, logs once; a working one shows its line
+// HoverCard: a throwing lens aggregate renders the card, logs once; a working one shows its line
 const wing = M.L.blds[0].wings[0];
 const hover = { view: lensId, hover: { type: 'wing', id: wing.id } };
 const bad = render(() => React.createElement(O.HoverCard), hover, () => { throw new Error('check-overlays: aggregate threw'); });
@@ -71,7 +83,7 @@ expect(bad.errors.length === 1, `HoverCard logged ${bad.errors.length} errors fo
 const ok = render(() => React.createElement(O.HoverCard), hover, () => ({ parts: ['CHECK lens part'] }));
 expect(text(ok.html).includes('CHECK lens part'), 'HoverCard did not show the lens aggregate line it was given');
 
-// 3-4. Morning: the spend line reads SPEND_CAP and the away mark reads AWAY_SINCE
+// Morning: the spend line reads SPEND_CAP and the away mark reads AWAY_SINCE
 const mo = render(() => React.createElement(O.Morning), { morning: true }, () => ({ parts: [] }));
 const mt = text(mo.html);
 const cap = (mt.match(/spent today, cap \$ ?([\d,]+)/) || [])[1];
@@ -79,7 +91,7 @@ expect(mo.threw === null && cap === SPEND_CAP.toLocaleString('en-US'), `Morning 
 const since = [...mt.matchAll(/since (\d\d:\d\d)/g)].map((m) => m[1]);
 expect(since.length > 0 && since.every((s) => s === AWAY_SINCE.slice(11, 16)), `Morning away marks ${JSON.stringify(since)}, the model's AWAY_SINCE is ${AWAY_SINCE.slice(11, 16)}`);
 
-// 5-6. Phone: headline live = header live + flagged; the detail's Back keeps a 44 px target
+// Phone headline and detail: headline live = header live + flagged; the detail's Back keeps a 44 px target
 const ph = render(() => React.createElement(Phone), { phone: true, open: P.features[0].id }, () => ({ parts: [] }));
 const all = M.agg.countsOf('ALL', P.features, P.asOf, 7);
 const live = (ph.html.match(/<b>(\d+)<\/b>live</) || [])[1];
@@ -92,7 +104,7 @@ expect(h >= 44, `Phone Back button height ${Number.isNaN(h) ? 'unset' : h + 'px'
 const dlg = (ph.html.match(/<div[^>]*class="ph-detail"[^>]*>/) || [''])[0];
 expect(/tabindex="-1"/.test(dlg) && /aria-modal="true"/.test(dlg), `the phone feature detail is not a focusable modal dialog (${dlg.slice(0, 160) || 'not rendered'})`);
 
-// 7-9. Toast: an undoable toast is not displaced by an informational one (it queues), the queue drains in order,
+// Toast: an undoable toast is not displaced by an informational one (it queues), the queue drains in order,
 // a close button and a persistently mounted live region exist (not display:contents)
 const tt = (n: number, strong: string, extra: Record<string, unknown> = {}) => ({ n, strong, text: '', ...extra });
 let q = O.toastArrive({ cur: null, q: [] }, tt(1, 'Decided', { action: 'undo' }));
@@ -105,7 +117,7 @@ expect(O.toastArrive({ cur: tt(5, 'Decided', { action: 'undo' }), q: [] }, tt(6,
 const to = render(() => React.createElement(O.Toast), { toast: tt(7, 'Hello') }, () => ({ parts: [] }));
 expect(to.threw === null && /role="status"/.test(to.html) && !/display:\s*contents/.test(to.html), `Toast live region missing or display:contents (${to.threw ?? 'rendered'})`);
 
-// 10-11. The General legend's caption is prose, not a key row: `.lg div` is a flex box, so without a block
+// The General legend's caption is prose, not a key row: `.lg div` is a flex box, so without a block
 // override the caption's two text runs and its <code> lay out as three narrow side-by-side columns (what
 // shaped works around with .shp-cap). The class and the rule that carries it must both exist.
 const lg = render(() => React.createElement(Legend, { view: 'general' }), {}, () => ({ parts: [] }));
@@ -114,7 +126,7 @@ const bpcss = stripBlock(fs.readFileSync(path.join(SRC, 'components/blueprint.cs
 const capRule = /\.lg\s+\.lg-cap\s*\{([^}]*)\}/.exec(bpcss);
 expect(!!capRule && /display\s*:\s*block/.test(capRule[1]), 'blueprint.css: .lg .lg-cap does not set display: block, so the caption lays out as flex columns');
 
-// 12-14. Phone touch targets: the theme toggle, the "whose desk" chips and the feature rows are tapped with a
+// Phone touch targets: the theme toggle, the "whose desk" chips and the feature rows are tapped with a
 // thumb, so each declares at least 44 px (the Back button above is the fourth). Read from the CSS, comments stripped.
 const minPx = (sel: string) => {
   const m = new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{([^}]*)\\}').exec(bpcss);
@@ -145,7 +157,7 @@ expect(wingsOf(g1) >= 1 && wingsOf(g1) < allWings && hitsOf(g1) >= 1, `a query f
 const g0 = phoneFind(M.L.blds, 'zzz no such feature zzz');
 expect(g0.length === 0, `a query that matches nothing returned ${g0.length} buildings (${wingsOf(g0)} wings), so the list renders headings over no rows`);
 
-// 15-16. WCAG 2.5.3 label in name: a control whose visible text is a key cap ("Esc") must carry that text in
+// WCAG 2.5.3 label in name: a control whose visible text is a key cap ("Esc") must carry that text in
 // its accessible name, or voice control cannot address what the reader can see. Source-scanned with comments
 // stripped, so a comment about the rule cannot stand in for it.
 for (const f of ['components/Overlays.tsx', 'components/Dock.tsx']) {
