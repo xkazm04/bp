@@ -175,6 +175,40 @@ const expect = (ok, what) => { if (ok) held++; else failures.push(what); };
   expect(rollupHealth(m({ method: 'worst-of' }), ['good', 'watch']) === 'watch', 'rollup: worst-of unchanged');
 }
 
+// ------------------------------------------------------------------ the door: a rollup the schema refuses is not loaded
+// lens-manifest-1.schema.json $defs.rollup requires `watch` and `bad` (numbers) on share and `by` on weighted, and
+// allows three methods. The loader is the only reader of the manifest copy a map carries, so it enforces the same
+// rules at the door: a refused rollup drops the lens with its reason, like every other manifest problem. One row
+// per rule; the valid rows must keep loading.
+{
+  const base = (rollup) => ({
+    $schema: 'app-structure/3', project: { slug: 'r', name: 'R' }, generated_at: '2026-01-01T00:00:00Z',
+    lenses: [{ id: 'com.probe.r', version: '0.1.0', source: 'project', enabled: true, manifest: {
+      $schema: 'lens-manifest/1', id: 'com.probe.r', version: '0.1.0', name: 'R', reader: { density: 'standard' },
+      fields: [{ key: 'w', type: 'integer', label: 'W' }], presentation: { glyph: 'bars', line: 'solid' },
+      health: { default: 'good', rollup, rules: [] } } }],
+    domains: [{ slug: 'd', name: 'D' }], capabilities: [{ slug: 'c', domain: 'd', name: 'C' }],
+    features: [{ slug: 'f', name: 'F', capability: 'c' }],
+  });
+  const rows = [
+    ['share with no thresholds', { method: 'share' }, 'health.rollup share needs numeric watch and bad'],
+    ['share with only watch', { method: 'share', watch: 0.2 }, 'health.rollup share needs numeric watch and bad'],
+    ['share with a string threshold', { method: 'share', watch: '0.2', bad: 0.4 }, 'health.rollup share needs numeric watch and bad'],
+    ['weighted with no by', { method: 'weighted' }, 'health.rollup weighted needs a by field'],
+    ['weighted with a non-string by', { method: 'weighted', by: 3 }, 'health.rollup weighted needs a by field'],
+    ['an unknown method', { method: 'median' }, 'health.rollup.method "median" is not worst-of, share or weighted'],
+  ];
+  for (const [name, rollup, reason] of rows) {
+    const st = loadStructure(base(rollup), null);
+    expect(st.allLenses.length === 0, `rollup door: ${name} still loaded the lens`);
+    expect(st.warnings.some((w) => w.includes(`lens "com.probe.r": ${reason}; the lens is dropped`)), `rollup door: ${name} left ${JSON.stringify(st.warnings)}`);
+  }
+  for (const [name, rollup] of [['worst-of', { method: 'worst-of' }], ['a complete share', { method: 'share', watch: 0.2, bad: 0.4 }], ['weighted by a field', { method: 'weighted', by: 'w' }]]) {
+    const st = loadStructure(base(rollup), null);
+    expect(st.allLenses.length === 1 && st.warnings.length === 0, `rollup door: ${name} was refused: ${JSON.stringify(st.warnings)}`);
+  }
+}
+
 // ------------------------------------------------------------------ the lens toggle: an id nothing matches says so
 // `?lenses=-security,+com.kettle.cost` is user input. An id the map has no lens for does nothing, and a typo is
 // indistinguishable from a lens that would not turn off, so the ignored ids have to be named — per toggle, since

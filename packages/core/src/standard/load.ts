@@ -271,6 +271,11 @@ function manifestProblem(m: Record<string, unknown>): string | null {
   if (!isObj(h)) return 'health is missing';
   if (!COMPUTED.includes(h.default as string)) return 'health.default must be good, watch or bad';
   if (!isObj(h.rollup) || typeof h.rollup.method !== 'string') return 'health.rollup is missing';
+  // the schema's $defs.rollup, enforced where the map's own copy of the manifest comes in
+  const r = h.rollup;
+  if (r.method !== 'worst-of' && r.method !== 'share' && r.method !== 'weighted') return `health.rollup.method ${JSON.stringify(r.method)} is not worst-of, share or weighted`;
+  if (r.method === 'share' && (typeof r.watch !== 'number' || typeof r.bad !== 'number')) return 'health.rollup share needs numeric watch and bad';
+  if (r.method === 'weighted' && typeof r.by !== 'string') return 'health.rollup weighted needs a by field';
   if (!Array.isArray(h.rules) || !h.rules.every((r) => isObj(r) && isObj(r.when) && COMPUTED.includes(r.health as string) && typeof r.reason === 'string')) return 'health.rules must be an array of {when, health, reason}';
   return null;
 }
