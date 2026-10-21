@@ -4,14 +4,18 @@
 //   - a keyboard activation of the key plan never yields a point off the plan;
 //   - neither slider keeps its own pointer logic (setPointerCapture / the old per-slider apply) and both end a drag on cancel.
 // Run: node src/components/timeline/check-scrub.ts  (Node's type stripping; no build step). Exit 1 on any failure.
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readStripped } from '../../../../../scripts/lib/source.ts';
 import { HOUR } from '@bp/core/model/constants';
 import { HOUR_PAD, NOW_SNAP, histX, hourAt, hourX, inHour, keyPlanFrac, scrubAt, valueText, type ScrubGeom } from './scrub.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const read = (p: string) => fs.readFileSync(path.join(HERE, p), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"\\])\/\/.*$/gm, '$1');
+/** Source text with comments removed, so a rule described in a comment cannot stand in for the rule. The one shared
+ *  stripper (scripts/lib/source.ts), as the other source-guard checks use it: the private copy this file carried had
+ *  already drifted from it by one character (it did not spare a `//` after a backtick, so a template literal could be
+ *  cut short mid-string). */
+const read = (p: string) => readStripped(path.join(HERE, p));
 let held = 0;
 const failures: string[] = [];
 const expect = (ok: boolean, what: string) => { if (ok) held++; else failures.push(what); };
