@@ -72,8 +72,12 @@ export function GeneralTab({ f }: { f: Feature }) {
         <Sec className="mtb" label="Record">
           <div><span className="l">Owner</span>{pname(P, f.owner)}</div>
           <div><span className="l">Built by</span><BuiltBy f={f} /></div>
-          <div><span className="l">Flagged by</span><FlaggedBy f={f} /></div>
-          <div><span className="l">Stage</span>{stageSince(f)}</div>
+          {/* on a past date these two have a dated answer and a not-recorded one: health has no history
+              (so never the now-flags) and the stage replays, exactly as the ladder and the lede read it */}
+          <div><span className="l">Flagged by</span>{past ? NOT_RECORDED : <FlaggedBy f={f} />}</div>
+          <div><span className="l">Stage</span>{past
+            ? (sv.at === 'then' ? STAGE_WORD[sv.stage] : sv.at === 'before' ? 'Not on the drawing yet' : 'Stage unknown') + ' on ' + t
+            : stageSince(f)}</div>
           <div className="full"><span className="l">Lives in</span>{f.surfaces.length ? f.surfaces.map((s) => <span key={s} className="ag" style={{ margin: '0 4px 0 0' }}>{s}</span>) : '—'}</div>
         </Sec>
         <Sec label="Revisions">
