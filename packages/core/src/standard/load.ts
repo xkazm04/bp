@@ -250,8 +250,11 @@ function list(v: unknown, at: string, warn: Warn): string[] {
  * A feature's links to other features, keeping only the slugs the map defines. A link to a feature that is not
  * in the map is a dependency arrow the blueprint silently never draws, so the ones dropped are named.
  */
-function links(v: unknown, at: string, key: string, slugs: ReadonlySet<string>, warn: Warn): string[] {
-  const all = list(v, `${at}: ${key}`, warn);
+function links(v: unknown, at: string, key: string, slugs: ReadonlySet<string>, self: string, warn: Warn): string[] {
+  const listed = list(v, `${at}: ${key}`, warn);
+  // a feature naming itself is a cycle of one in the graph the blueprint draws from, and its own user
+  const all = listed.filter((s) => s !== self);
+  if (all.length !== listed.length) warn(`${at}: ${key} names itself; dropped`);
   const kept = all.filter((s) => slugs.has(s));
   const gone = all.filter((s) => !slugs.has(s));
   if (gone.length) warn(`${at}: ${key} names unknown feature${gone.length > 1 ? 's' : ''} ${gone.map((s) => JSON.stringify(s)).join(', ')}; dropped`);
@@ -539,8 +542,8 @@ function buildBase(raw: unknown, eventsText: string | null, opts: LoadOptions): 
       stage: isStage(f.stage) ? f.stage : null, priority: PRIORITIES.includes(f.priority as Priority) ? f.priority as Priority : null, kind: str(f.kind), tier: str(f.tier),
       status: f.status === 'archived' ? 'archived' : 'active', milestone: typeof f.milestone === 'string' ? f.milestone : null,
       surfaces: list(f.surfaces, at + ': surfaces', warn), contexts: list(f.contexts, at + ': contexts', warn),
-      dependsOn: links(f.depends_on, at, 'depends_on', slugs, warn), usedBy: [],
-      blockedBy: links(f.blocked_by, at, 'blocked_by', slugs, warn),
+      dependsOn: links(f.depends_on, at, 'depends_on', slugs, f.slug, warn), usedBy: [],
+      blockedBy: links(f.blocked_by, at, 'blocked_by', slugs, f.slug, warn),
       revs: rv, stageSince: str(f.stage_since, rv.length ? rv[rv.length - 1].date : ''), created: str(f.created, rv.length ? rv[0].date : asOf),
       owner: str(f.owner), builtBy: list(f.built_by, at + ': built_by', warn), parts, notes,
       tags: strs(f.tags), experience: str(f.experience), core: isObj(f.core) ? { tech: strs(f.core.tech), schema: strs(f.core.schema) } : null,

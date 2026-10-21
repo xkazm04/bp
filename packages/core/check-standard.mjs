@@ -79,7 +79,7 @@ const expect = (ok, what) => { if (ok) held++; else failures.push(what); };
       depends_on: ['ghost-feature'], blocked_by: ['phantom-feature'],
       parts: [{ done: true }], notes: ['a string, not a note'],
       variations: [{ slug: 'v', name: 'V', audience: 'a', extends: 'a string', params: [1, 2] }],
-    }],
+    }, { slug: 'g', name: 'G', capability: 'c', depends_on: ['g'], blocked_by: ['g'] }],
     kpis: [{ name: 'no slug' }, 'not an object'],
     extensions: { 'com.probe': { people: [{ name: 'no id' }], activity: [{ type: 'commit' }] } },
   };
@@ -100,6 +100,8 @@ const expect = (ok, what) => { if (ok) held++; else failures.push(what); };
       'feature "f": notes[0] is not an object',
       'feature "f": variation "v" extends is not an array; ignored',
       'feature "f": variation "v" params has entries that are not strings; dropped',
+      'feature "g": depends_on names itself; dropped',
+      'feature "g": blocked_by names itself; dropped',
       'kpis[0] has no slug',
       'kpis[1] has no slug',
       'extensions: 1 person entry has no id',
@@ -115,6 +117,8 @@ const expect = (ok, what) => { if (ok) held++; else failures.push(what); };
     // the degraded read still holds: the warning is added to the repair, never instead of it
     expect(st.events.length === 1, `warnings: ${st.events.length} events parsed, expected 1 of 3 lines`);
     expect(st.features[0].dependsOn.length === 0 && st.features[0].blockedBy.length === 0, 'warnings: unknown links are still dropped');
+    const g = st.features.find((f) => f.id === 'g');
+    expect(!!g && g.dependsOn.length === 0 && g.usedBy.length === 0 && g.blockedBy.length === 0, `warnings: a self-dependency left dependsOn ${JSON.stringify(g && g.dependsOn)} usedBy ${JSON.stringify(g && g.usedBy)} blockedBy ${JSON.stringify(g && g.blockedBy)}`);
     expect(st.features[0].parts.length === 0 && st.features[0].notes.length === 0, 'warnings: malformed parts and notes are still dropped');
     expect(st.kpis.length === 0 && st.people.length === 0, 'warnings: KPIs without a slug and people without an id are still dropped');
     const d = st.allLenses[0];
