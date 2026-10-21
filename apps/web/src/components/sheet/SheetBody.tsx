@@ -196,7 +196,7 @@ export function SheetBody({ f }: { f: Feature }) {
             <div><span className="l">Flagged by</span><FlaggedBy f={f} /></div>
             <div><span className="l">Owner</span>{pname(P, f.owner)}</div>
             <div><span className="l">Stage</span>{stageSince(f)}</div>
-            <div className="full"><span className="l">Lives in</span>{f.surfaces.map((s) => <span key={s} className="ag" style={{ margin: '0 4px 0 0' }}>{s}</span>)}</div>
+            <div className="full"><span className="l">Lives in</span>{f.surfaces.length ? f.surfaces.map((s) => <span key={s} className="ag" style={{ margin: '0 4px 0 0' }}>{s}</span>) : '—'}</div>
           </div>
           <table className="revt"><thead><tr><th>REV</th><th>DATE</th><th>DESCRIPTION</th></tr></thead><tbody>
             {f.revs.map((h, i) => <tr key={i} className={i === f.revs.length - 1 ? 'now' : ''}><td className="m">{revLabel(i)}</td><td className="m">{h.date}</td><td>{REV_DESC[h.stage]}</td></tr>)}
