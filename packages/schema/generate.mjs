@@ -486,6 +486,19 @@ if (isMain) {
     const unlisted = onDisk.filter((f) => !listed.includes(f)), absent = listed.filter((f) => !onDisk.includes(f));
     console.log(`${unlisted.length || absent.length ? 'FAIL' : 'ok  '}  every schema in packages/schema/schema is a generator root (${onDisk.length} files, ${listed.length} roots)${unlisted.length ? ': not in ROOTS: ' + unlisted.join(', ') : ''}${absent.length ? ': in ROOTS, not on disk: ' + absent.join(', ') : ''}`);
     if (unlisted.length || absent.length) failed++;
+    // The README's decision: generated/ts/app-structure.ts is a parity artifact nothing imports. The package's
+    // exports map must not offer it (or anything under generated/), or the import the decision forbids typechecks.
+    const exportsOffering = (pkgText) => {
+      const ex = JSON.parse(pkgText).exports ?? {};
+      return Object.entries(ex).flatMap(([k, v]) => [k, ...(typeof v === 'string' ? [v] : Object.values(v ?? {}))]).filter((x) => typeof x === 'string' && /(^|\/)generated(\/|$)/.test(x));
+    };
+    const pkgRaw = fs.readFileSync(path.join(HERE, 'package.json'), 'utf8');
+    const offered = exportsOffering(pkgRaw);
+    console.log(`${offered.length ? 'FAIL' : 'ok  '}  @bp/schema's exports map offers nothing under generated/ (the generated TS is a parity artifact)${offered.length ? ': ' + offered.join(', ') : ''}`);
+    if (offered.length) failed++;
+    const reoffered = exportsOffering(pkgRaw.replace('"exports": {', '"exports": {\n    "./generated/ts": "./generated/ts/app-structure.ts",'));
+    console.log(`${reoffered.length ? 'ok  ' : 'FAIL'}  control: an exports entry pointing into generated/ is reported`);
+    if (!reoffered.length) failed++;
     // Every schema is a valid 2020-12 schema under ajv's strict mode, with its $refs resolving. scripts/validate-
     // structure.mjs compiles three of the six (app-structure-3, app-structure-event-3, lens-manifest-1) because it
     // validates documents against them; plan-1, structure-envelope-1 and scan-wire-1 had no ajv anywhere, so a
@@ -527,12 +540,9 @@ if (isMain) {
     const wireTs = wireSource(ROOT);
     const handTs = norm(fs.readFileSync(path.join(ROOT, HAND_TS), 'utf8'));
     const parity = compare(fresh.ts, handTs, wireTs);
-    // Two known divergences, each an out-of-scope fix in packages/core/src/server/plan-projection.ts:16-18, which
-    // types a tile's health as `string` where plan-1.schema.json:79-80 says it is one of five values. They are
-    // listed rather than tolerated: an entry that is NO LONGER a divergence fails below, so the list cannot outlive
-    // its fix, and anything not on it fails as usual.
-    const KNOWN = ['Plan.tiles.health: an enum in the schema (good | watch | bad | unmeasured | na), string in types.ts',
-      'Plan.tiles.general: an enum in the schema (good | watch | bad | unmeasured | na), string in types.ts'];
+    // Allowed divergences: none. (plan-projection.ts now types a tile's health as Health, so the plan's two enum
+    // fields agree.) An entry listed here that stops being a divergence fails below, so the list cannot outlive its fix.
+    const KNOWN = [];
     const unexpected = parity.problems.filter((p) => !KNOWN.includes(p));
     console.log(`${unexpected.length ? 'FAIL' : 'ok  '}  ${HAND_TS} agrees with the generated types on every field, its optionality and its string enum, and packages/core/src/scan/ on the scan wire types and the plan (${parity.shapes} shapes and ${parity.enums} enum fields from the structure, event, lens manifest, snapshot, job, proposal, wave and plan; ${KNOWN.length} known divergences allowed)${unexpected.length ? ': ' + unexpected.slice(0, 8).join('; ') : ''}`);
     if (unexpected.length) failed++;

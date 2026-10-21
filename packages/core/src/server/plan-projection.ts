@@ -5,6 +5,7 @@
 import { loadStructure } from '@bp/core/standard/load';
 import { layoutProduct } from '@bp/core/model/layout';
 import { buildProduct } from '@bp/core/model/product';
+import type { Health } from '@bp/core/standard/types';
 
 export interface PlanBox { x: number; y: number; w: number; h: number }
 interface PlanNode { id: string; name: string; order: number; box: PlanBox }
@@ -14,9 +15,9 @@ export interface PlanBay extends PlanNode { parentId: string }
 export interface PlanTile extends PlanNode {
   parentId: string;
   /** Each enabled lens's reading, by lens id. */
-  health: Record<string, string>;
+  health: Record<string, Health>;
   /** General health: worst of the enabled lenses. */
-  general: string;
+  general: Health;
 }
 export interface Plan {
   rev: string;

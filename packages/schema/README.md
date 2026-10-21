@@ -29,6 +29,7 @@ npm run check:schema      # fails while a generated file is stale, when a schema
                           # as its key nor copied by FixUp, or when types.ts and the generated types disagree on a
                           # field, its optionality or its string enum; also:
                           #   every *.schema.json in schema/ is one of generate.mjs's ROOTS, and every root is on disk
+                          #   the package's exports map offers nothing under generated/ (the decision below)
                           #   all six schemas compile under ajv strict mode (three of them have no other ajv anywhere)
                           #   ue-standin/check.cpp instantiates FromJson for all six roots
                           #   lens-manifest-1's builtinLensId enum is the list catalog.ts and manifest-check.ts
