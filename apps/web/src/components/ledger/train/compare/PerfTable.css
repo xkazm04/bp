@@ -46,6 +46,7 @@
 .tr-pt-key { display: flex; flex-wrap: wrap; gap: var(--sp-6) var(--sp-16); margin: var(--sp-8) 0 0; font-size: var(--fs-13); color: var(--ink-2); }
 .tr-pt-key i { display: inline-block; vertical-align: -1px; margin-right: var(--sp-5); }
 .tr-pt-key .k-run { width: var(--mark); height: var(--mark); border-radius: 50%; border: var(--bw-mark) solid var(--ink-hi); }
+.tr-pt-key .k-out { width: var(--sp-10); height: var(--sp-12); border: 1px solid var(--amber); }
 .tr-pt-key .k-aft { width: 0; height: 0; border-left: var(--sp-5) solid transparent; border-right: var(--sp-5) solid transparent; border-top: var(--sp-10) solid var(--accent); }
 .tr-pt-key .k-band { width: var(--sp-16); height: var(--sp-10); background: color-mix(in srgb, var(--amber) 20%, transparent); border: 1px dashed var(--amber); border-width: 0 1px; }
 .tr-pt-key .k-t { width: 2px; height: var(--sp-12); background: var(--mint); }

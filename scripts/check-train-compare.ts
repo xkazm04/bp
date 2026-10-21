@@ -18,6 +18,7 @@ import { compareOf, verdictOf, type Comparison, type LensFields } from '../packa
 import { atTarget, beyondNoise, isOutlier, perfFigures, rangeScale, signed } from '../packages/core/src/train/perf.ts';
 import { GRID_H, GRID_W, NOISE, bboxCells, diffPixels, pixWords } from '../packages/core/src/train/pixels.ts';
 import type { Measurement, Proposal, Shot } from '../packages/core/src/scan/types.ts';
+import { stripComments } from './lib/source.ts';
 
 let n = 0, bad = 0;
 function ok(cond: boolean, what: string, got?: unknown) {
@@ -55,6 +56,13 @@ function judge(runs: number[], after: number) {
   ok(f.change === 8 && near(f.pct, 10), 'athena 80/184/80 -> 88: change +8, +10 %', [f.change, f.pct]);
   ok(isOutlier(184, f) && !isOutlier(80, f), 'athena 80/184/80: 184 is the outlier run');
   ok(f.outlier.join() === 'false,false,true', 'outlier flags follow the sorted runs', f.outlier);
+}
+{ // a run far too FAST distorts the baseline exactly as much: the rule is symmetric (perf.ts isOutlier) and the table's
+  // own words must be too, or the only marked run is the slow one
+  const { f } = judge([10, 80, 80, 140], 80);
+  ok(f.median === 80 && f.noise === 130, '10/80/80/140: median 80, noise = spread 130', f);
+  ok(isOutlier(10, f) && !isOutlier(140, f), '10/80/80/140: the FAST run is the outlier, the slow one is inside', [isOutlier(10, f), isOutlier(140, f)]);
+  ok(f.outlier.join() === 'true,false,false,false', 'outlier flags mark the fast tail too', f.outlier);
 }
 { // Kettle sample: 96/104/98 -> 72 moved
   const { v, f } = judge([96, 104, 98], 72);
@@ -211,6 +219,14 @@ const { packOrder } = await imp('ComparePanel.tsx');
     }
   }
   ok(!dead.length, `anchors: every src/lib/ path the compare panel's comments name exists (${files.length} files read)`, dead);
+}
+
+{ // the words beside the outline: the rule marks both tails (perf.ts isOutlier), so the panel's own words must too
+  const src = stripComments(fs.readFileSync(path.join(SRC, CMP, 'PerfTable.tsx'), 'utf8'));
+  const title = /title="outlier run: ([^"]*)"/.exec(src);
+  ok(!!title && /away from the median/.test(title[1]) && !/above the median/.test(title[1]), 'outlier outline: the tooltip names both tails, not only the slow one', title?.[1]);
+  const key = src.slice(src.indexOf('tr-pt-key'));
+  ok(key.includes('k-out') && /outlier/.test(key), 'outlier outline: the legend explains it, so the only explanation is not a hover title', key.includes('k-out'));
 }
 
 console.log(bad ? `check-train-compare: ${bad} of ${n} failed` : `check-train-compare: ${n} checks passed`);

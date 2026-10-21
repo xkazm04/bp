@@ -68,7 +68,7 @@ function Rows({ it }: { it: PerfItem }) {
           <em><VerdictChip verdict={v} label={v === 'flat' ? 'flat · within noise' : undefined} failed={it.c.p.status === 'failed'} /></em>
         </th>
         <td className="runs">{it.values.map((x, i) => isOutlier(x, f)
-          ? <span key={i} className="out" title="outlier run: more than half the noise above the median">{num(x)}</span>
+          ? <span key={i} className="out" title="outlier run: more than half the noise away from the median, fast or slow — it drags the median it is part of">{num(x)}</span>
           : <span key={i}>{num(x)}</span>)}</td>
         <td>{num(f.median)}<U u={unit} /></td>
         <td className="aft">{f.after !== undefined ? <>{num(f.after)}<U u={unit} /></> : '–'}</td>
@@ -101,7 +101,7 @@ function Rows({ it }: { it: PerfItem }) {
 export function PerfKey() {
   return (
     <div className="tr-pt-key">
-      <span><i className="k-run" />baseline run</span><span><i className="k-aft" />after</span>
+      <span><i className="k-run" />baseline run</span><span><i className="k-out" />outlier run: over half the noise from the median, either way</span><span><i className="k-aft" />after</span>
       <span><i className="k-band" />noise: the larger of the spread and one frame ({FRAME_MS} ms)</span><span><i className="k-t" />target</span>
     </div>
   );
