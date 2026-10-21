@@ -53,12 +53,19 @@ export function stripCxx(text, keepStrings = false) {
 const kdata = JSON.parse(fs.readFileSync(path.join(DATA, 'kettle.app-structure.json'), 'utf8'));
 const lines = (s) => s.split('\n').filter((l) => l.trim());
 const wantEvents = lines(fs.readFileSync(path.join(DATA, 'kettle.events.jsonl'), 'utf8'));
-// BP_CHECK_BPLINK_WINGS seeds a wrong expectation (of the domain count), to show the smoke can fail
+// BP_CHECK_BPLINK_WINGS seeds a wrong expectation (of the domain count), to show the smoke can fail.
+// BP_CHECK_BPLINK_SEED=plan,lenses,events does the same for the other derived figures, one or several at once: each adds 1
+// to that expectation, and the run must then FAIL on exactly that assertion (an expectation that survives its own seed is
+// not pinning anything). Unset, nothing changes.
+const seeded = new Set((process.env.BP_CHECK_BPLINK_SEED ?? '').split(',').filter(Boolean));
+const seedBy = (key) => (seeded.has(key) ? 1 : 0);
 const wantDomains = Number(process.env.BP_CHECK_BPLINK_WINGS ?? kdata.domains.length);
 const wantPlan = {
   wings: WING_DEFS.filter((w) => kdata.domains.some((d) => w.doms.includes(d.slug))).length, rooms: kdata.domains.length,
-  bays: kdata.capabilities.length, tiles: kdata.features.length,
+  bays: kdata.capabilities.length, tiles: kdata.features.length + seedBy('plan'),
 };
+const wantLenses = kdata.lenses.length + seedBy('lenses');
+const wantEventLines = wantEvents.length + seedBy('events');
 
 const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-bplink-'));
 const child = spawn(process.execPath, ['--import', pathToFileURL(path.join(ROOT, 'packages/core/register.mjs')).href, path.join(ROOT, 'apps/server/src/main.ts'), '--port', '0'], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -100,7 +107,7 @@ try {
     check('structure: 200 JSON', ks.status === 200 && /json/.test(String(ks.headers['content-type'])), `${ks.status} ${ks.headers['content-type']}`);
     check('structure: { structure, events, rev }', !!kb?.structure && typeof kb.structure === 'object' && typeof kb.events === 'string' && typeof kb.rev === 'string' && kb.rev.length > 0, ks.body.slice(0, 80));
     check(`structure: ${wantDomains} domains in structure.domains (packages/core/data)`, kb?.structure?.domains?.length === wantDomains && wantDomains > 0, `${kb?.structure?.domains?.length}`);
-    check(`structure: ${kdata.lenses.length} lens manifests in structure.lenses (packages/core/data)`, kb?.structure?.lenses?.length === kdata.lenses.length && kdata.lenses.length > 0, `${kb?.structure?.lenses?.length}`);
+    check(`structure: ${wantLenses} lens manifests in structure.lenses (packages/core/data)`, kb?.structure?.lenses?.length === wantLenses && wantLenses > 0, `${kb?.structure?.lenses?.length}`);
 
     const kp = await get('/api/products/kettle/plan', { accept: 'application/json' });
     let pb = null; try { pb = JSON.parse(kp.body); } catch { /* reported below */ }
@@ -112,7 +119,7 @@ try {
 
     const evs = lines(kb?.events ?? '');
     let parsed = true; for (const l of evs) { try { JSON.parse(l); } catch { parsed = false; } }
-    check(`events: the payload's JSONL has the data file's ${wantEvents.length} lines, each valid JSON`, evs.length === wantEvents.length && wantEvents.length > 0 && parsed, `${evs.length} lines, parsed=${parsed}`);
+    check(`events: the payload's JSONL has the data file's ${wantEventLines} lines, each valid JSON`, evs.length === wantEventLines && wantEventLines > 0 && parsed, `${evs.length} lines, parsed=${parsed}`);
 
     const st = await firstEvent('/api/products/kettle/stream');
     const m = /^event: (\w+)\ndata: (.*)$/m.exec(st.body);
