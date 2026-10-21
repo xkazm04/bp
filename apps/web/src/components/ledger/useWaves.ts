@@ -25,6 +25,9 @@ export interface WavesModel {
   draftOf: ReadonlyMap<string, Wave>;
   /** A mutation is in flight (one at a time). */
   busy: boolean;
+  /** The first list has come back (either way). Before it, an empty `waves` means "not asked yet", NOT "none": a
+   *  surface that cannot tell the two apart asserts a product has no waves while the request is still open. */
+  loaded: boolean;
   /** What one package reads as: the wave's state over that package's jobs alone ('draft' = not dispatched). */
   packageState(w: Wave, p: WavePackage): WaveState;
   create(body: WaveBody): Promise<Wave | null>;
@@ -48,6 +51,7 @@ export function useWaves(ctx: ScanCtx, jobs: readonly ScanJob[]): WavesModel {
   const E = useEngine();
   const [waves, setWaves] = useState<readonly Wave[]>(NO_WAVES);
   const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const ctxRef = useRef(ctx);
   ctxRef.current = ctx;
   const key = ctx.slug ?? 'kettle';
@@ -60,9 +64,11 @@ export function useWaves(ctx: ScanCtx, jobs: readonly ScanJob[]): WavesModel {
       if (live.on) setWaves(Array.isArray(w) && w.length ? w : NO_WAVES);
     } catch {
       if (live.on) setWaves(NO_WAVES); // 501 / no store / offline: no waves, the ledger carries on
+    } finally {
+      if (live.on) setLoaded(true); // asked and answered, however it answered
     }
   }, []);
-  useEffect(() => { setWaves(NO_WAVES); }, [key]);
+  useEffect(() => { setWaves(NO_WAVES); setLoaded(false); }, [key]);
   useEffect(() => {
     const live = { on: true };
     void load(live);
@@ -105,6 +111,6 @@ export function useWaves(ctx: ScanCtx, jobs: readonly ScanJob[]): WavesModel {
   }, [waves]);
   const packageState = useCallback((w: Wave, p: WavePackage): WaveState => waveState({ ...w, jobs: (w.jobs ?? []).filter((j) => j.package === p.id) }, jobs), [jobs]);
 
-  return useMemo(() => ({ waves, states, waveOf, draftOf, busy, packageState, create, update, remove, dispatch }),
-    [waves, states, waveOf, draftOf, busy, packageState, create, update, remove, dispatch]);
+  return useMemo(() => ({ waves, states, waveOf, draftOf, busy, loaded, packageState, create, update, remove, dispatch }),
+    [waves, states, waveOf, draftOf, busy, loaded, packageState, create, update, remove, dispatch]);
 }

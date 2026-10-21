@@ -34,7 +34,11 @@ export function WavesBar({ L }: { L: Ledger }) {
   return (
     <section className="lg-waves" aria-label="Waves" data-wave="strip">
       <div className="wv-row">
-        {none ? <span className="wv-none">No waves. Select findings, then Add to wave.</span> : (
+        {none ? (waves.loaded
+          // "none" and "not asked yet" are different states: before the first list comes back the strip must not
+          // assert the product has no waves (useWaves.ts `loaded`)
+          ? <span className="wv-none">No waves. Select findings, then Add to wave.</span>
+          : <span className="wv-none" role="status">Loading waves…</span>) : (
           <>
             <div className="wv-tabs" role="tablist" aria-label="Waves">
               <button type="button" role="tab" aria-selected={!sel} className={!sel ? 'on' : ''} onClick={() => L.showWave(null)} title="Every finding">All</button>
