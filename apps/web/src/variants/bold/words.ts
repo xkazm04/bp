@@ -4,6 +4,13 @@ import type { ViewId } from '@bp/core/data';
 import type { Model, SimDecision } from '@bp/core/model';
 import { bl, hof, NOT_MEASURED } from '../base/legacy';
 
+/** Every value of the design lens's status field (docs/standard/lenses/design.json) plus the 'n/a' bl()
+ *  gives a lens that does not apply, in the queue's short voice. */
+const DESIGN_WORD: Record<string, string> = {
+  none: 'No design yet', sketch: 'A sketch so far', wireframe: 'Wireframed', 'hi-fi': 'Hi-fi design ready',
+  implemented: 'Built to the design', polished: 'Designed and polished', 'n/a': 'No screen to design',
+};
+
 export function queueNote(d: SimDecision, view: ViewId, model: Model): string | null {
   if (view === 'general') return null;
   const f = model.P.F[d.f]; if (!f) return null;
@@ -15,7 +22,7 @@ export function queueNote(d: SimDecision, view: ViewId, model: Model): string | 
     }
     case 'design': {
       const de = bl(f).design;
-      return de.a11y === 'fail' ? 'Fails accessibility' : de.specDrift ? 'Built differently from the design' : de.status === 'none' ? 'No design yet' : 'Design: ' + de.status;
+      return de.a11y === 'fail' ? 'Fails accessibility' : de.specDrift ? 'Built differently from the design' : DESIGN_WORD[de.status] ?? 'Design: ' + de.status;
     }
     case 'development': {
       const dv = bl(f).development;
