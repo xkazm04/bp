@@ -1,6 +1,7 @@
 {
   "id": "lamp-agent",
   "class": "character-prop",
+  "picked": "A",
   "budget_tris": 30000,
   "generator": [
     {
@@ -56,8 +57,9 @@
   "option_input_check": "All four first-seed images pass the sheet rules (one object, whole, plain grey ground, readable silhouette, no text, no claw, no legs, no face), so no second seed was made. A and C show a coil spring and a dome shade; B a pantograph disc; D a box shade with a counterweight.",
   "gates": {
     "input": {
-      "pass": false,
-      "note": "awaiting owner design pick among A-D"
+      "pass": true,
+      "note": "Owner picked option A, the spring-arm cone (options/A.png): an architect's lamp with visible springs, a cone shade with a warm glow, a round base with a clamp. Approved 2026-10-21.",
+      "date": "2026-10-21"
     },
     "mesh_acceptance": {
       "pass": false,

@@ -266,9 +266,11 @@ stays on Lynx; its sha256 goes in the manifest. Look-dev frames stay in `docs/co
 today. Leonardo and FLUX.2 [dev] output is look-dev only. Anything that ships (textures, decals, the backdrop) is
 FLUX.2 [klein] or Qwen-Image (tech-stack.md §5), unless the owner rules on Leonardo (section f).
 
-- [ ] **L4.0 Lamp design lock (Lynx + owner, 1 to 2 days).** The reference sheet's weakest element. Make a lamp prop
+- [x] **L4.0 Lamp design lock (Lynx + owner, 1 to 2 days).** The reference sheet's weakest element. Make a lamp prop
       sheet with a **jointed arm**, hanging above the far edge (reference-sheet.md, "Across all frames" and the open
       questions). Proof: the owner's approval line in `ArtSource/lamp-agent/manifest.json` `gates.input.note`.
+      Done 2026-10-21: owner picked option A, the spring-arm cone; proof is `gates.input.note` (`pass: true`) and
+      `picked: "A"` in `ArtSource/lamp-agent/manifest.json`.
 - [ ] **L4.1 Props (Lynx, about 1 to 2 days per asset).** Lamp agent (30k triangles, rigged look-at and state poses,
       emissive head slot), light table frame (10k), survey pin (500, instanced), studio kit (80k total), city backdrop
       (FLUX.2 [klein] panorama), and the materials vellum, blueprint paper, brushed aluminium and warm wood.
