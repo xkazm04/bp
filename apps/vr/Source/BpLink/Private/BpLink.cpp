@@ -131,12 +131,17 @@ namespace
 {
 	TUniquePtr<FBpLinkClient> GClient;
 
-	/** WP3.1's acceptance: one line with the wing count and the wing names. */
+	/**
+	 * One line with what the structure payload actually carries. `structure.domains` are the plan's ROOMS (13 for
+	 * Kettle); a WING is a WING_DEFS group of domains (5 for Kettle) and exists only on GET .../plan, which WP3.1 does
+	 * not call - so WP3.1.md's acceptance line, the wing count, is still owed and the names below are room names.
+	 * Labels are pinned against the live plan route by scripts/check-bplink.mjs.
+	 */
 	void LogKettle(const FBpLinkSnapshot& Snapshot)
 	{
 		TArray<FString> Names;
-		for (const FBpDomain& Wing : Snapshot.Structure.domains) Names.Add(Wing.name);
-		UE_LOG(LogBpLink, Log, TEXT("BpLink: Kettle wings=%d [%s] lenses=%d events=%d rev=%s"),
+		for (const FBpDomain& Room : Snapshot.Structure.domains) Names.Add(Room.name);
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: Kettle rooms=%d [%s] lenses=%d events=%d rev=%s (wings come from /plan, not read in WP3.1)"),
 			Snapshot.Structure.domains.Num(), *FString::Join(Names, TEXT(", ")), Snapshot.Structure.lenses.Num(), Snapshot.Events.Num(), *Snapshot.Rev);
 	}
 
@@ -147,7 +152,7 @@ namespace
 		GClient->FetchProduct(TEXT("kettle"), [](bool bOk, const FBpLinkSnapshot& Snapshot) { if (bOk) LogKettle(Snapshot); });
 	}
 
-	FAutoConsoleCommand GFetchCommand(TEXT("BpLink.Fetch"), TEXT("Read Kettle from apps/server and log its wings."),
+	FAutoConsoleCommand GFetchCommand(TEXT("BpLink.Fetch"), TEXT("Read Kettle from apps/server and log its rooms."),
 		FConsoleCommandDelegate::CreateStatic(&FetchKettle));
 }
 

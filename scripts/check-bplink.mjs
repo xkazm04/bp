@@ -28,11 +28,13 @@ let failed = 0, passed = 0;
 const check = (name, ok, detail = '') => { ok ? passed++ : failed++; console.log(`${ok ? 'ok  ' : 'FAIL'}  ${name}${ok || !detail ? '' : `  (${detail})`}`); };
 
 /**
- * C++ with its comments and string literals blanked out, so a matcher sees only code. A `//` inside a string
- * (`TEXT("http://127.0.0.1:3100")`) is not a comment, so strings are consumed before comments are recognised.
- * Newlines survive, so a line number taken from the result still points at the source.
+ * C++ with its comments blanked out, and its string literals too unless `keepStrings` is set, so a matcher sees only
+ * code. A `//` inside a string (`TEXT("http://127.0.0.1:3100")`) is not a comment, so strings are consumed before
+ * comments are recognised either way. Newlines survive, so a line number taken from the result still points at the
+ * source. Keep the strings only when the assertion is ABOUT a literal (a log's format string); drop them otherwise, or
+ * a file that merely quotes the rule reads as compliant.
  */
-export function stripCxx(text) {
+export function stripCxx(text, keepStrings = false) {
   let out = '';
   for (let i = 0; i < text.length; i++) {
     const two = text.slice(i, i + 2);
@@ -40,7 +42,7 @@ export function stripCxx(text) {
     if (two === '/*') { const end = text.indexOf('*/', i + 2); const body = text.slice(i, end < 0 ? text.length : end + 2); out += body.replace(/[^\n]/g, ' '); i += body.length - 1; continue; }
     if (text[i] === '"' || text[i] === "'") {
       const q = text[i]; out += q; i++;
-      for (; i < text.length && text[i] !== q; i++) { out += text[i] === '\n' ? '\n' : ' '; if (text[i] === '\\') { i++; out += ' '; } }
+      for (; i < text.length && text[i] !== q; i++) { out += keepStrings ? text[i] : text[i] === '\n' ? '\n' : ' '; if (text[i] === '\\') { i++; out += keepStrings ? text[i] : ' '; } }
       out += q; continue;
     }
     out += text[i];
@@ -128,6 +130,16 @@ try {
     const pinned = [...cpp.matchAll(/StreamStatus\s*==\s*(\d{3})/g)].map((m) => Number(m[1]));
     check(`source: BpLink.cpp branches on the /stream status the server answers (${st.status})`, pinned.includes(st.status),
       `BpLink.cpp accepts [${pinned.join(', ')}], the server answered ${st.status}`);
+
+    // The level names are the web's and the plan route's: structure.domains are ROOMS (13 here), and wings are the
+    // WING_DEFS groups of domains (5 here). A log line that labels the domain count "wings" reports a number that is
+    // right for rooms and wrong for the level it names, and WP3.1.md's acceptance asks for the wing count. The format
+    // string is the subject of this assertion, so string literals are kept and only comments are stripped.
+    const lit = stripCxx(fs.readFileSync(path.join(ROOT, 'apps/vr/Source/BpLink/Private/BpLink.cpp'), 'utf8'), true);
+    const call = /UE_LOG\((?:(?!UE_LOG\()[\s\S])*?Structure\.domains\.Num\(\)[\s\S]*?\);/.exec(lit);
+    const label = /(\w+)=%d/.exec(/TEXT\("((?:[^"\\]|\\.)*)"\)/.exec(call?.[0] ?? '')?.[1] ?? '')?.[1];
+    check(`source: the count BpLink logs from structure.domains is labelled "rooms" (${wantPlan.rooms}), not "wings" (${wantPlan.wings})`,
+      label === 'rooms', `BpLink.cpp labels it "${label}"; domains=${wantDomains}, wings=${wantPlan.wings}, rooms=${wantPlan.rooms}`);
   }
 } finally {
   // the child holds its working directory until it has exited (Windows), so wait before removing it
