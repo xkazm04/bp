@@ -51,6 +51,36 @@
       "log": "docs/concepts/vr-light-table/lookdev/log.jsonl line 52",
       "generationId": "1f1cd392-9b19-6590-99cb-317dc4e72582",
       "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop lamp-agent --variant D"
+    },
+    {
+      "model": "TRELLIS.2",
+      "input": "options/A.png",
+      "seed": 303,
+      "seeds_run": [
+        101,
+        202,
+        303
+      ],
+      "workflow": "C:/Users/kazda/ai/lynx-bench/media/3d-trellis-api.json, run by scripts/art/lamp/trellis_run.mjs",
+      "changes": "LoadImage 122 = options/A.png; DecimateMesh 186 target_face_count 28000 (before UnwrapMesh 196 and BakeTextureFromVoxel 147); seed nodes 3, 12, 18, 23 = 303; texture size 4096 (PrimitiveInt 288)",
+      "raw_glb": {
+        "path": "C:/Users/kazda/ai/lynx-bench/bp/lamp-agent/raw_seed303.glb",
+        "bytes": 23611312,
+        "sha256": "3096a50acbe10604401e63be484caa261c2f26c1871cf7c7f31332628c2cdc70"
+      },
+      "rejected_seeds": {
+        "101": {
+          "sha256": "41a54471a7cf4a54b04bd61cd7be2b598ae0601537472cc027ab54e0e122e412",
+          "components": 14,
+          "note": "arm detached from the base: 14 connected components"
+        },
+        "202": {
+          "sha256": "3b524a49a84ea3268313731a5d3745b22bf8b08b0d3eea6a3d956c10fab931b7",
+          "components": 5,
+          "note": "arm missing, shade split from the head: 5 connected components"
+        }
+      },
+      "blender": "Blender 5.2.2, scripts/art/lamp/finish_lamp.bpy (import with merge_vertices)"
     }
   ],
   "contact_sheet": "options/contact.png, built by scripts/lookdev/contact-sheet.ps1 (labels in the margin only)",
@@ -62,28 +92,172 @@
       "date": "2026-10-21"
     },
     "mesh_acceptance": {
-      "pass": false,
-      "note": "not run"
+      "pass": true,
+      "note": "seed 303 of 3 (101 had 14 components, 202 had 5 with the arm gone, both rejected). Raw 11964 vertices / 27707 tris with merge_vertices, components 11941+15+8; the two specks (15 and 8 vertices) were deleted. Final 11941 vertices, 1 component, 0 floaters, 19 open edges (small holes in the cap). Silhouette matches options/A.png: C-clamp base, jointed two-segment arm, cone shade.",
+      "date": "2026-10-21"
     },
     "scale": {
-      "pass": false,
-      "note": "not run"
+      "pass": true,
+      "note": "13.0 x 35.5 x 57.0 cm (x, y, z up) re-imported from final.fbx; 45 cm above the table plane, rule 45 to 65 cm total for a desk architect lamp; pivot: disc underside z = 0 m, x centred. Assumption: the wolf-plan gives no lamp size, so the UE world scale of the table (W3.2) is still to be confirmed on Wolf.",
+      "date": "2026-10-21"
     },
     "finishing": {
-      "pass": false,
-      "note": "not run"
+      "pass": true,
+      "note": "one UV set; 3 PBR PNGs (base colour, ORM, normal, 2048 px, each under 5 MB); emissive slot lamp_shade_glow on 3034 faces; rig base > lower_arm > upper_arm > head, weights sum 1 to 1, 0 unweighted vertices, at most 2 influences; look-at constraint error 0 deg on three targets; 5 actions (asking, reading, resting, speaking, working) in final.fbx; springs: no spring mesh and no extra triangles; the springs stay as the baked pale strip in the base colour and normal textures.",
+      "date": "2026-10-21"
     },
     "poly_budget": {
-      "pass": false,
-      "note": "not run"
+      "pass": true,
+      "note": "27663 tris against 30000 (92%)",
+      "date": "2026-10-21"
     }
   },
-  "licence": "Leonardo concept, TRELLIS input only; R8 open",
+  "licence": "TRELLIS.2 output from a Leonardo concept (look-dev input, R8 open); no MiniMax-H3 or FLUX.2 [dev] output used",
   "sha256": {
+    "evidence/pose-asking.jpg": "34bfadeb989644e9d887f26407e09c3db6cbe0c2edf4750fae864ebdb3a9af07",
+    "evidence/pose-reading.jpg": "c729796a80ac46dbe0378a796a4bd6517fe5118e3b4d64b262443e2c11c82bae",
+    "evidence/pose-resting.jpg": "d8be841a69bf72f395725d158dad6d76322ecfd1b236dc5433e2e79a1f71c3af",
+    "evidence/pose-speaking.jpg": "0faf5e6f784da0be9f7ac54fbb98736dace48b7ba927511684ddbaebe6bec374",
+    "evidence/pose-working.jpg": "2c9186ab5a47a30c8f37322cc70ea14f71112f780f2bc355ba45cdb61cd972e0",
+    "evidence/spring-closeup.jpg": "801a87d6290e69c850bdee05716c9abd82a700a6f0c082d0215f44d5cd83fd64",
+    "evidence/table-view.jpg": "c5e8143eba812dee6692a6cf174cb6d70475ed717b75683586796fe627590ae8",
+    "evidence/turnaround.jpg": "a7189e85be78178f91490c618b5a3b4d88f40d0606c4f9c4549bc70080d3e320",
+    "final.fbx": "328604c0802e2d1fe280737d75b79aea1293af01e1d017af157eb1d5ec9abd45",
     "options/A.png": "3563dbd70bfc8e4e6b92e4552a7f0a3484773971d5261485dd432ef7843af1fb",
     "options/B.png": "e6b82dd4993b19bb0bb766e466327fb44cf36695899ff229eb60805ef09a45b4",
     "options/C.png": "7caa1bb1204433fad475bc7bd08c8ba5a275777f39a711cba08d4b5af8685cee",
     "options/D.png": "9a6f57f2bf81665c4415cd3143d7352104ca92e53bd0d010b270072dd438ca20",
-    "options/contact.png": "b94ff36ea7b13de3f9b62ba056f651c918fcf2c6b05fd71ff28865d099a74cec"
-  }
+    "options/contact.png": "b94ff36ea7b13de3f9b62ba056f651c918fcf2c6b05fd71ff28865d099a74cec",
+    "textures/lamp_basecolor.png": "9e2cc18667c642b380a4af4042ff08a59b4c242f94eb36c78bfad9cb1f0b8054",
+    "textures/lamp_normal.png": "71531ea51f6ceb651ac36f4243239ee22cbb6d810c8074668a1c3807b5a3b5d4",
+    "textures/lamp_orm.png": "d05ca37ff5dc5b232ff3484eb51aa24ea2cc8e855ca278fe64d6275063ec84e6"
+  },
+  "tris": 27663,
+  "tris_note": "27663 against 30000",
+  "materials": [
+    "lamp_body (base colour + ORM + normal, 2048 px PNG)",
+    "lamp_shade_glow (emissive warm #FF9E2E x6, 3034 faces on the shade interior; UE drives the strength per state)"
+  ],
+  "bounds_cm": {
+    "x": 13.04,
+    "y": 35.5,
+    "z": 56.96,
+    "note": "x width, y depth (shade towards -y), z up (Blender, FBX Z-up); pivot at the base disc underside centre, so the clamp reaches to z = -12 cm"
+  },
+  "meshes": {
+    "lamp-agent": {
+      "tris": 27663,
+      "vertices": 11941,
+      "components": 1,
+      "floaters": 0,
+      "open_edges": 19,
+      "uv_sets": 1
+    }
+  },
+  "uv_sets": 1,
+  "pivot": "centre of the base disc, on its underside (the table-top contact plane); the C-clamp hangs below the origin",
+  "rig": {
+    "bones": [
+      "base",
+      "lower_arm",
+      "upper_arm",
+      "head"
+    ],
+    "hierarchy": {
+      "base": null,
+      "lower_arm": "base",
+      "upper_arm": "lower_arm",
+      "head": "upper_arm"
+    },
+    "weights": "proxy heat (ARMATURE_AUTO on a 4 mm voxel proxy) transferred by nearest proxy vertex; then smooth x3, limit 4, normalize",
+    "weight_sum_range": [
+      1,
+      1
+    ],
+    "unweighted_verts": 0,
+    "max_influences_per_vertex": 2,
+    "look_at": "head bone constraint DAMPED_TRACK to empty look_at_target, influence 0 in every pose action (FBX does not carry constraints; UE aims the head bone in its AnimBP)",
+    "look_at_error_deg": {
+      "(0, -0.45, 0.1)": 0,
+      "(0.3, -0.35, 0.05)": 0,
+      "(-0.25, -0.5, 0.2)": 0
+    }
+  },
+  "actions": {
+    "asking": {
+      "bounds_size_m": [
+        0.13,
+        0.262,
+        0.698
+      ],
+      "max_displacement_m": 0.241,
+      "head_z_m": 0.579,
+      "frames": [
+        1,
+        12
+      ],
+      "note": "rotation of lower_arm, upper_arm, head about the armature X axis (scripts/art/lamp/poses.json, degrees, relative to the TRELLIS rest pose); keys on frames 1 and 12"
+    },
+    "reading": {
+      "bounds_size_m": [
+        0.13,
+        0.375,
+        0.5
+      ],
+      "max_displacement_m": 0.138,
+      "head_z_m": 0.38,
+      "frames": [
+        1,
+        12
+      ],
+      "note": "rotation of lower_arm, upper_arm, head about the armature X axis (scripts/art/lamp/poses.json, degrees, relative to the TRELLIS rest pose); keys on frames 1 and 12"
+    },
+    "resting": {
+      "bounds_size_m": [
+        0.13,
+        0.355,
+        0.343
+      ],
+      "max_displacement_m": 0.298,
+      "head_z_m": 0.224,
+      "frames": [
+        1,
+        12
+      ],
+      "note": "rotation of lower_arm, upper_arm, head about the armature X axis (scripts/art/lamp/poses.json, degrees, relative to the TRELLIS rest pose); keys on frames 1 and 12"
+    },
+    "speaking": {
+      "bounds_size_m": [
+        0.13,
+        0.354,
+        0.661
+      ],
+      "max_displacement_m": 0.186,
+      "head_z_m": 0.542,
+      "frames": [
+        1,
+        12
+      ],
+      "note": "rotation of lower_arm, upper_arm, head about the armature X axis (scripts/art/lamp/poses.json, degrees, relative to the TRELLIS rest pose); keys on frames 1 and 12"
+    },
+    "working": {
+      "bounds_size_m": [
+        0.13,
+        0.449,
+        0.445
+      ],
+      "max_displacement_m": 0.278,
+      "head_z_m": 0.325,
+      "frames": [
+        1,
+        12
+      ],
+      "note": "rotation of lower_arm, upper_arm, head about the armature X axis (scripts/art/lamp/poses.json, degrees, relative to the TRELLIS rest pose); keys on frames 1 and 12"
+    }
+  },
+  "textures": "lamp_basecolor.png, lamp_orm.png (R occlusion, G roughness, B metal), lamp_normal.png: the TRELLIS.2 bake (BakeTextureFromVoxel, normal and AO baked from the 768-voxel remesh onto the 28k mesh), downsized to 2048 px",
+  "regenerate": "node scripts/art/lamp/trellis_run.mjs 303; blender -b -P scripts/art/lamp/finish_lamp.bpy -- <repo> <raw.glb> <work>; blender -b -P scripts/art/lamp/score_lamp.bpy -- <repo> <work>; blender -b -P scripts/art/lamp/render_lamp.bpy -- <repo>; node scripts/art/lamp/write_manifest.mjs <work> <raw-dir>",
+  "finishing_note": "Springs: judged on evidence/table-view.jpg (1.63 m line of sight, 40 degree field, 16 px per degree) and evidence/spring-closeup.jpg (the same view at 3x). TRELLIS did not resolve the coils: they are lumpy relief, and at the far edge they read only as a pale strip along each arm segment, never as coils (a coil pitch of about 2 mm at lamp scale is under 1 px). Decision: no spring mesh and no extra triangles; the springs stay as the baked pale strip in the base colour and normal textures. UE can add a thin coil card or alpha-tested ribbon if a close-up needs it.",
+  "lynx_commit": null,
+  "lynx_commit_note": "set by the merge; branch autopilot/accepted-idea-delivery-cebdd60a"
 }
