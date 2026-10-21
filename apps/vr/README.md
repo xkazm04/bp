@@ -9,6 +9,8 @@ the project is created in phase P3 (WP3.1) on the GPU workstation, after P0 has 
 and the Meta plugins (mage-arena-vr's `apps/vr/tools/install-xr.ps1`, adapted to this folder). Do not
 add a `.uproject` by hand.
 
+On Wolf (the x64 box with UE 5.8), follow [`docs/concepts/vr-light-table/wolf-plan.md`](../../docs/concepts/vr-light-table/wolf-plan.md): setup, WP3.1 to P7 in order, the merge gates and the known compile risks.
+
 What is here: the `BpLink` module source, `Source/BpLink/` (`BpLink.Build.cs`, `Public/`, `Private/`), and the ordered
 UE-host steps with their proofs, [`WP3.1.md`](WP3.1.md). **The module source has not been compiled against Unreal, and it
 has not been syntax-checked either: the machine it was written on has no clang.** WP3.1 is not run on any UE host. The
