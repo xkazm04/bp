@@ -400,3 +400,289 @@ export interface PlanTile {
   /** General health: the worst of the enabled lenses. */
   general: 'good' | 'watch' | 'bad' | 'unmeasured' | 'na';
 }
+
+/** GET /api/products/{slug}/structure: the product's app-structure map, its events and their fingerprint. The same shape answers a live product and the built-in Kettle sample. */
+export interface StructureEnvelope {
+  /** The map, as app-structure v3. */
+  structure: AppStructure;
+  /** events.jsonl as text, one app-structure-event per line; '' when the product has none. */
+  events: string;
+  /** The fingerprint of the map and the events; the SSE `map` event carries the same value when either changes, and the plan route answers the same rev. */
+  rev: string;
+}
+
+/** What the scan side of apps/server sends. GET /api/products/{slug}/stream is Server-Sent Events: each frame is `event: <name>` and `data: <JSON>`, and the payload of each of the six names is one property here. A frame carries exactly the property named as its event; this root is never itself on the wire. `waves` is GET /api/products/{slug}/waves answering { waves }. Absent values are omitted, never null. */
+export interface ScanWire {
+  /** Event `snapshot`: every table, sent on connect and on reconnect. */
+  snapshot?: ScanSnapshot;
+  /** Event `delta`: new or changed rows since the last frame, same keys as the snapshot (core's ScanDelta is the same type). */
+  delta?: ScanSnapshot;
+  /** Event `map`: the map or the events changed; fetch the structure again. */
+  map?: MapEvent;
+  /** Event `ping`: keep-alive, sent when nothing else was. */
+  ping?: PingEvent;
+  /** Event `error`: the scan store exists and cannot be read. */
+  error?: ErrorEvent;
+  /** Event `jobs`: the product's whole job list, sent whenever it changes. */
+  jobs?: ScanJob[];
+  /** GET waves: the product's waves. */
+  waves?: Wave[];
+}
+
+/** Everything the UI needs, on connect; the lens-scan store's tables. `activity` is the latest 200 rows. */
+export interface ScanSnapshot {
+  runs: Run[];
+  measurements: Measurement[];
+  proposals: Proposal[];
+  activity: Activity[];
+  shots: Shot[];
+  coverage: Coverage[];
+  /** Empty on a v1 store. */
+  packs: Pack[];
+  /** Oldest first; empty on a v1 store. */
+  releases: Release[];
+}
+
+export interface Run {
+  id: string;
+  started_at: string;
+  updated_at: string;
+  ended_at?: string;
+  phase: 'measure' | 'propose' | 'execute' | 'propagate';
+  status: 'running' | 'done' | 'failed' | 'aborted';
+  /** Lens ids the run covers. */
+  lenses: string[];
+  /** What the run was pointed at, e.g. { group: "Agent Platform" }. */
+  scope?: Record<string, unknown>;
+  skill_version?: string;
+  model?: string;
+  note?: string;
+}
+
+/** Append-only: one row per reading. `metric` is the lens field key. */
+export interface Measurement {
+  id: number;
+  run_id: string;
+  feature: string;
+  lens: string;
+  metric: string;
+  value: number;
+  unit?: string;
+  method?: 'static' | 'probe' | 'harness' | 'judgement';
+  evidence?: string;
+  measured_at: string;
+  /** v2: the proposal this reading is before/after evidence for (with `phase`). */
+  proposal_id?: string;
+  phase?: 'before' | 'after';
+  /** v2: the commit the reading was taken on. */
+  commit_sha?: string;
+}
+
+/** A backlog item. `standard` is <subject>/<technique> (registry), house:<subject>/<technique>, or none. A propagation item has parent_id = the baseline upgrade that spawned it. */
+export interface Proposal {
+  id: string;
+  run_id: string;
+  feature: string;
+  lens: string;
+  metric?: string;
+  title: string;
+  /** Markdown: Summary / Description / Flow / Expected impact / Evaluation. */
+  body?: string;
+  standard: string;
+  expected_delta?: number;
+  size?: 'XS' | 'S' | 'M' | 'L' | 'XL';
+  /** 1-10. */
+  risk?: number;
+  kind: 'fix' | 'baseline-upgrade' | 'propagation' | 'work-item';
+  parent_id?: string;
+  status: 'proposed' | 'approved' | 'declined' | 'executing' | 'done' | 'failed' | 'accepted' | 'rework' | 'descoped' | 'released';
+  decided_by?: string;
+  decided_at?: string;
+  decision_note?: string;
+  after_value?: number;
+  result_sha?: string;
+  created_at: string;
+  updated_at: string;
+  /** v2: the pack that built it. */
+  pack_id?: string;
+  /** v2: the item's own squashed commit on its pack branch. */
+  commit_sha?: string;
+  /** v2: the previous attempt, when this row is a rework rebuild. */
+  attempt_of?: string;
+  /** v2: the release it ships in. */
+  release_id?: string;
+  triage_note?: string;
+  /** v3: the status the item had before its latest triage, so `reopen` can put it back. */
+  triaged_from?: 'proposed' | 'approved' | 'declined' | 'executing' | 'done' | 'failed' | 'accepted' | 'rework' | 'descoped' | 'released';
+  /** <kind>:<name>, e.g. user:octocat. */
+  triaged_by?: string;
+  triaged_at?: string;
+  /** v4: omitted = scan; only an imported item carries it. */
+  origin?: 'scan' | 'ado' | 'sweep';
+  /** v4: <origin>:<id> in the source system, e.g. ado:1234. */
+  external_ref?: string;
+  external_url?: string;
+  /** v4: severity, 0 stop-ship, 1 before production, 2 soon after, 3 backlog; omitted = untriaged. */
+  tier?: number;
+  risk_class?: 'secret' | 'authz' | 'money' | 'data' | 'llm' | 'perf' | 'reliability' | 'ux' | 'debt';
+  ranked_by?: string;
+  ranked_at?: string;
+}
+
+export interface Activity {
+  id: number;
+  run_id: string;
+  at: string;
+  feature?: string;
+  lens?: string;
+  kind: 'reading' | 'measured' | 'proposed' | 'executing' | 'committed' | 'note' | 'error';
+  text: string;
+}
+
+export interface Shot {
+  id: number;
+  run_id: string;
+  feature: string;
+  /** Relative to the store directory: shots/<run>/<feature>-<theme>-<size>.png. */
+  path: string;
+  size?: string;
+  theme?: string;
+  harness_module?: string;
+  captured_at: string;
+  /** The harness report for this shot (console errors, unknown IPC, text checks). */
+  report?: Record<string, unknown>;
+  proposal_id?: string;
+  phase?: 'before' | 'after';
+}
+
+export interface Coverage {
+  feature: string;
+  standard: string;
+  state: 'conformant' | 'deviation' | 'not-applicable' | 'unknown';
+  evidence?: string;
+  judged_at: string;
+  run_id?: string;
+}
+
+/** v2: one lens's built items on one branch, pack/<short>-<n>, cut from base_ref at base_sha. */
+export interface Pack {
+  /** k-<short>-<n>, e.g. k-des-3. */
+  id: string;
+  lens: string;
+  /** Per-lens counter, 1-based. */
+  n: number;
+  branch: string;
+  base_ref: string;
+  base_sha: string;
+  /** The execute run that built it. */
+  run_id?: string;
+  status: 'open' | 'triaged' | 'closed';
+  created_at: string;
+  updated_at: string;
+}
+
+/** v2: accepted items cherry-picked onto release/<version>, a PR, then the tag v<version>. */
+export interface Release {
+  /** rel-<version>. */
+  id: string;
+  /** Semver without the v. */
+  version: string;
+  branch: string;
+  base_sha?: string;
+  status: 'draft' | 'building' | 'pr-open' | 'merged' | 'tagged' | 'failed';
+  pr_url?: string;
+  tag?: string;
+  /** Markdown release notes. */
+  notes?: string;
+  error?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MapEvent {
+  /** The new fingerprint, as in the structure envelope. */
+  rev: string;
+}
+
+export interface PingEvent {
+  /** ISO time the server sent it. */
+  at: string;
+}
+
+export interface ErrorEvent {
+  message: string;
+}
+
+/** A lens scan, an execute run or a release run (cut or finish) the blueprint started. */
+export interface ScanJob {
+  id: string;
+  kind: 'measure' | 'execute' | 'release';
+  /** The lens a measure job scans. */
+  lens?: string;
+  scope?: ScanScope;
+  /** The proposals an execute job builds. */
+  proposals?: string[];
+  /** A release job's release id (rel-<version>). */
+  release?: string;
+  version?: string;
+  /** build cuts the release, finish tags it after the merge. */
+  step?: 'build' | 'finish';
+  /** The Claude Code CLI's own aliases: each always means the latest model of its family. */
+  model?: 'sonnet' | 'opus';
+  effort?: 'low' | 'medium' | 'high' | 'xhigh';
+  wave?: string;
+  package?: string;
+  status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
+  queued_at: string;
+  started_at?: string;
+  ended_at?: string;
+  /** The store run this job produced, once lens-scan wrote its run-start (run note bp-job:<id>). */
+  run_id?: string;
+  exit_code?: number;
+  error?: string;
+  /** The last lines of the job's log. */
+  log_tail?: string;
+}
+
+/** What a scan is pointed at. */
+export interface ScanScope {
+  /** selection: exactly the features behind the ledger's selected findings (1..200 slugs). */
+  kind: 'feature' | 'bay' | 'room' | 'wing' | 'all' | 'selection';
+  /** The place id: a feature slug, capability, domain or wing id. Absent for all. */
+  id?: string;
+  /** What the UI calls it: "Invoice OCR", "Payments room", "Everything". */
+  label: string;
+  /** Feature slugs; all carries none (every feature). */
+  features: string[];
+}
+
+/** Findings grouped into named packages, each built by its own execute job with its own model and effort. */
+export interface Wave {
+  /** w-<base36 ms>-<4 random>. */
+  id: string;
+  name: string;
+  /** draft: editable, nothing queued yet. dispatched: at least one job was queued. */
+  status: 'draft' | 'dispatched';
+  created_at: string;
+  dispatched_at?: string;
+  packages: WavePackage[];
+  /** Every execute job this wave queued, in order. */
+  jobs?: WaveJobsItem[];
+}
+
+export interface WavePackage {
+  /** pk-1, pk-2..: unique inside the wave. */
+  id: string;
+  name: string;
+  /** The Claude Code CLI's own aliases: each always means the latest model of its family. */
+  model: 'sonnet' | 'opus';
+  effort: 'low' | 'medium' | 'high' | 'xhigh';
+  /** Proposal ids, at least one. */
+  ids: string[];
+}
+
+export interface WaveJobsItem {
+  package: string;
+  job: string;
+}

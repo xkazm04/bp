@@ -46,6 +46,8 @@ const ROOTS = [
   ['app-structure-event-3.schema.json', 'AppStructureEvent'],
   ['lens-manifest-1.schema.json', 'LensManifest'],
   ['plan-1.schema.json', 'Plan'],
+  ['structure-envelope-1.schema.json', 'StructureEnvelope'],
+  ['scan-wire-1.schema.json', 'ScanWire'],
 ];
 const CPP_KEYWORDS = new Set(('alignas alignof and and_eq asm auto bitand bitor bool break case catch char char8_t char16_t char32_t class compl concept const consteval constexpr constinit const_cast continue co_await co_return co_yield decltype default delete do double dynamic_cast else enum explicit export extern false float for friend goto if inline int long mutable namespace new noexcept not not_eq nullptr operator or or_eq private protected public register reinterpret_cast requires return short signed sizeof static static_assert static_cast struct switch template this thread_local throw true try typedef typeid typename union unsigned using virtual void volatile wchar_t while xor xor_eq'
   + ' check verify ensure TEXT').split(' ')); // the last four are Unreal macros
@@ -491,16 +493,26 @@ if (isMain) {
     if (!holeCaught) failed++;
     // TS parity: the hand-written types the code uses name the generated fields, with the same optionality
     const ROOT = path.join(HERE, '../..');
-    const { compare } = await import('./parity.mjs');
+    const { compare, wireSource } = await import('./parity.mjs');
+    const wireTs = wireSource(ROOT);
     const handTs = norm(fs.readFileSync(path.join(ROOT, HAND_TS), 'utf8'));
-    const parity = compare(fresh.ts, handTs);
-    console.log(`${parity.problems.length ? 'FAIL' : 'ok  '}  ${HAND_TS} agrees with the generated types on every field and its optionality (${parity.shapes} shapes from the structure, event and lens manifest)${parity.problems.length ? ': ' + parity.problems.slice(0, 8).join('; ') : ''}`);
+    const parity = compare(fresh.ts, handTs, wireTs);
+    console.log(`${parity.problems.length ? 'FAIL' : 'ok  '}  ${HAND_TS} agrees with the generated types on every field and its optionality and packages/core/src/scan/ on the scan wire types (${parity.shapes} shapes from the structure, event, lens manifest, snapshot, job, proposal and wave)${parity.problems.length ? ': ' + parity.problems.slice(0, 8).join('; ') : ''}`);
     if (parity.problems.length) failed++;
     // control: Rule.reason made optional on the generated side must fail the parity
     const loose = fresh.ts.replace(/(\nexport interface Rule \{\n(?:  .*\n)*?)  reason: string;/, '$1  reason?: string;');
     const looseCaught = loose !== fresh.ts && compare(loose, handTs).problems.some((p) => p.endsWith('rules.reason: optional in the schema, required in types.ts'));
     console.log(`${looseCaught ? 'ok  ' : 'FAIL'}  control: Rule.reason made optional in the generated types fails the parity`);
     if (!looseCaught) failed++;
+    // controls on the scan wire: Proposal.title made optional, and ScanJob.exit_code dropped, on the generated side
+    const wireLoose = fresh.ts.replace(/(\nexport interface Proposal \{\n(?:  .*\n)*?)  title: string;/, '$1  title?: string;');
+    const wireLooseCaught = wireLoose !== fresh.ts && compare(wireLoose, handTs, wireTs).problems.some((p) => p === 'ScanSnapshot.proposals.title: optional in the schema, required in types.ts');
+    console.log(`${wireLooseCaught ? 'ok  ' : 'FAIL'}  control: Proposal.title made optional in the generated types fails the parity`);
+    if (!wireLooseCaught) failed++;
+    const wireDrop = fresh.ts.replace(/(\nexport interface ScanJob \{\n(?:  .*\n)*?)(?:  [/][*][*].*[*][/]\n)?  exit_code\?: number;\n/, '$1');
+    const wireDropCaught = wireDrop !== fresh.ts && compare(wireDrop, handTs, wireTs).problems.some((p) => p === 'ScanJob.exit_code: in types.ts, not in the schema');
+    console.log(`${wireDropCaught ? 'ok  ' : 'FAIL'}  control: ScanJob.exit_code dropped from the generated types fails the parity`);
+    if (!wireDropCaught) failed++;
     // the mapping against real documents: Kettle's map and events, the built-in lens manifests, the valid fixtures
     const docs = [['AppStructure', 'packages/core/data/kettle.app-structure.json'], ['AppStructure', 'packages/schema/schema/fixtures/valid-map.json'], ['LensManifest', 'packages/schema/schema/fixtures/valid-steps-lens.json'],
       ...fs.readdirSync(path.join(ROOT, 'docs/standard/lenses')).filter((f) => f.endsWith('.json')).map((f) => ['LensManifest', 'docs/standard/lenses/' + f]),

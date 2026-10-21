@@ -1076,3 +1076,746 @@ struct BPLINK_API FBpPlan
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	TArray<FBpPlanTile> tiles;
 };
+
+/** GET /api/products/{slug}/structure: the product's app-structure map, its events and their fingerprint. The same shape answers a live product and the built-in Kettle sample. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpStructureEnvelope
+{
+	GENERATED_BODY()
+
+	/** The map, as app-structure v3. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpAppStructure structure;
+
+	/** events.jsonl as text, one app-structure-event per line; '' when the product has none. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString events;
+
+	/** The fingerprint of the map and the events; the SSE `map` event carries the same value when either changes, and the plan route answers the same rev. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString rev;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpRun
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString id;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString started_at;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString updated_at;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString ended_at;
+
+	/** one of: measure, propose, execute, propagate. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString phase;
+
+	/** one of: running, done, failed, aborted. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString status;
+
+	/** Lens ids the run covers. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FString> lenses;
+
+	/** What the run was pointed at, e.g. { group: "Agent Platform" } */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FJsonObjectWrapper scope;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString skill_version;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString model;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString note;
+};
+
+/** Append-only: one row per reading. `metric` is the lens field key. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpMeasurement
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 id = 0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString run_id;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString feature;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString lens;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString metric;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	double value = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString unit;
+
+	/** one of: static, probe, harness, judgement */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString method;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString evidence;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString measured_at;
+
+	/** v2: the proposal this reading is before/after evidence for (with `phase`) */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString proposal_id;
+
+	/** one of: before, after */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString phase;
+
+	/** v2: the commit the reading was taken on */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString commit_sha;
+};
+
+/** A backlog item. `standard` is <subject>/<technique> (registry), house:<subject>/<technique>, or none. A propagation item has parent_id = the baseline upgrade that spawned it. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpProposal
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString id;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString run_id;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString feature;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString lens;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString metric;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString title;
+
+	/** Markdown: Summary / Description / Flow / Expected impact / Evaluation */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString body;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString standard;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	double expected_delta = 0.0;
+
+	/** one of: XS, S, M, L, XL */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString size;
+
+	/** 1-10 */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	double risk = 0.0;
+
+	/** one of: fix, baseline-upgrade, propagation, work-item. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString kind;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString parent_id;
+
+	/** one of: proposed, approved, declined, executing, done, failed, accepted, rework, descoped, released. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString status;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString decided_by;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString decided_at;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString decision_note;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	double after_value = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString result_sha;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString created_at;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString updated_at;
+
+	/** v2: the pack that built it */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString pack_id;
+
+	/** v2: the item's own squashed commit on its pack branch */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString commit_sha;
+
+	/** v2: the previous attempt, when this row is a rework rebuild */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString attempt_of;
+
+	/** v2: the release it ships in */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString release_id;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString triage_note;
+
+	/** v3: the status the item had before its latest triage, so `reopen` can put it back. one of: proposed, approved, declined, executing, done, failed, accepted, rework, descoped, released */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString triaged_from;
+
+	/** <kind>:<name>, e.g. user:octocat */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString triaged_by;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString triaged_at;
+
+	/** v4: omitted = scan; only an imported item carries it. one of: scan, ado, sweep */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString origin;
+
+	/** v4: <origin>:<id> in the source system, e.g. ado:1234 */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString external_ref;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString external_url;
+
+	/** v4: severity, 0 stop-ship, 1 before production, 2 soon after, 3 backlog; omitted = untriaged */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 tier = 0;
+
+	/** one of: secret, authz, money, data, llm, perf, reliability, ux, debt */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString risk_class;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString ranked_by;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString ranked_at;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpActivity
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 id = 0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString run_id;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString at;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString feature;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString lens;
+
+	/** one of: reading, measured, proposed, executing, committed, note, error. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString kind;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString text;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpShot
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 id = 0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString run_id;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString feature;
+
+	/** Relative to the store directory: shots/<run>/<feature>-<theme>-<size>.png. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString path;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString size;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString theme;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString harness_module;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString captured_at;
+
+	/** The harness report for this shot (console errors, unknown IPC, text checks) */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FJsonObjectWrapper report;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString proposal_id;
+
+	/** one of: before, after */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString phase;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpCoverage
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString feature;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString standard;
+
+	/** one of: conformant, deviation, not-applicable, unknown. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString state;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString evidence;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString judged_at;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString run_id;
+};
+
+/** v2: one lens's built items on one branch, pack/<short>-<n>, cut from base_ref at base_sha. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpPack
+{
+	GENERATED_BODY()
+
+	/** k-<short>-<n>, e.g. k-des-3. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString id;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString lens;
+
+	/** Per-lens counter, 1-based. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 n = 0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString branch;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString base_ref;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString base_sha;
+
+	/** The execute run that built it */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString run_id;
+
+	/** one of: open, triaged, closed. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString status;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString created_at;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString updated_at;
+};
+
+/** v2: accepted items cherry-picked onto release/<version>, a PR, then the tag v<version>. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpRelease
+{
+	GENERATED_BODY()
+
+	/** rel-<version>. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString id;
+
+	/** Semver without the v. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString version;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString branch;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString base_sha;
+
+	/** one of: draft, building, pr-open, merged, tagged, failed. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString status;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString pr_url;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString tag;
+
+	/** Markdown release notes */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString notes;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString error;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString created_by;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString created_at;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString updated_at;
+};
+
+/** Everything the UI needs, on connect; the lens-scan store's tables. `activity` is the latest 200 rows. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpScanSnapshot
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpRun> runs;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpMeasurement> measurements;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpProposal> proposals;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpActivity> activity;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpShot> shots;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpCoverage> coverage;
+
+	/** Empty on a v1 store. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpPack> packs;
+
+	/** Oldest first; empty on a v1 store. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpRelease> releases;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpMapEvent
+{
+	GENERATED_BODY()
+
+	/** The new fingerprint, as in the structure envelope. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString rev;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpPingEvent
+{
+	GENERATED_BODY()
+
+	/** ISO time the server sent it. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString at;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpErrorEvent
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString message;
+};
+
+/** What a scan is pointed at. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpScanScope
+{
+	GENERATED_BODY()
+
+	/** selection: exactly the features behind the ledger's selected findings (1..200 slugs). one of: feature, bay, room, wing, all, selection. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString kind;
+
+	/** The place id: a feature slug, capability, domain or wing id. Absent for all */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString id;
+
+	/** What the UI calls it: "Invoice OCR", "Payments room", "Everything". required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString label;
+
+	/** Feature slugs; all carries none (every feature). required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FString> features;
+};
+
+/** A lens scan, an execute run or a release run (cut or finish) the blueprint started. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpScanJob
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString id;
+
+	/** one of: measure, execute, release. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString kind;
+
+	/** The lens a measure job scans */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString lens;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpScanScope scope;
+
+	/** The proposals an execute job builds */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FString> proposals;
+
+	/** A release job's release id (rel-<version>) */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString release;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString version;
+
+	/** build cuts the release, finish tags it after the merge. one of: build, finish */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString step;
+
+	/** The Claude Code CLI's own aliases: each always means the latest model of its family. one of: sonnet, opus */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString model;
+
+	/** one of: low, medium, high, xhigh */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString effort;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString wave;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString package;
+
+	/** one of: queued, running, done, failed, cancelled. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString status;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString queued_at;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString started_at;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString ended_at;
+
+	/** The store run this job produced, once lens-scan wrote its run-start (run note bp-job:<id>) */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString run_id;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 exit_code = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString error;
+
+	/** The last lines of the job's log */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString log_tail;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpWavePackage
+{
+	GENERATED_BODY()
+
+	/** pk-1, pk-2..: unique inside the wave. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString id;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString name;
+
+	/** The Claude Code CLI's own aliases: each always means the latest model of its family. one of: sonnet, opus. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString model;
+
+	/** one of: low, medium, high, xhigh. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString effort;
+
+	/** Proposal ids, at least one. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FString> ids;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpWaveJobsItem
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString package;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString job;
+};
+
+/** Findings grouped into named packages, each built by its own execute job with its own model and effort. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpWave
+{
+	GENERATED_BODY()
+
+	/** w-<base36 ms>-<4 random>. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString id;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString name;
+
+	/** draft: editable, nothing queued yet. dispatched: at least one job was queued. one of: draft, dispatched. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString status;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString created_at;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString dispatched_at;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpWavePackage> packages;
+
+	/** Every execute job this wave queued, in order */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpWaveJobsItem> jobs;
+};
+
+/** What the scan side of apps/server sends. GET /api/products/{slug}/stream is Server-Sent Events: each frame is `event: <name>` and `data: <JSON>`, and the payload of each of the six names is one property here. A frame carries exactly the property named as its event; this root is never itself on the wire. `waves` is GET /api/products/{slug}/waves answering { waves }. Absent values are omitted, never null. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpScanWire
+{
+	GENERATED_BODY()
+
+	/** Event `snapshot`: every table, sent on connect and on reconnect */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpScanSnapshot snapshot;
+
+	/** Event `delta`: new or changed rows since the last frame, same keys as the snapshot (core's ScanDelta is the same type) */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpScanSnapshot delta;
+
+	/** Event `map`: the map or the events changed; fetch the structure again */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpMapEvent map;
+
+	/** Event `ping`: keep-alive, sent when nothing else was */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpPingEvent ping;
+
+	/** Event `error`: the scan store exists and cannot be read */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpErrorEvent error;
+
+	/** Event `jobs`: the product's whole job list, sent whenever it changes */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpScanJob> jobs;
+
+	/** GET waves: the product's waves */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpWave> waves;
+};

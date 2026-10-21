@@ -1,7 +1,9 @@
 # packages/schema: app-structure v3 for every channel
 
 - `schema/`: the JSON Schemas (draft 2020-12), normative for structure: `app-structure-3`,
-  `app-structure-event-3` and `lens-manifest-1`, with their fixtures. The spec is
+  `app-structure-event-3`, `lens-manifest-1`, `plan-1`, `structure-envelope-1` (`{ structure, events, rev }`) and
+  `scan-wire-1` (the six SSE payloads `snapshot | delta | map | ping | error | jobs`, plus `waves`: ScanSnapshot, ScanJob,
+  Proposal, Wave and what they hold), with their fixtures. The spec is
   `docs/standard/app-structure-v3.md`; `scripts/validate-structure.mjs` validates against these files.
 - `generate.mjs`: one model of the schemas, two outputs.
   - `generated/ts/app-structure.ts`: TypeScript interfaces, a parity artifact (see the decision below).
