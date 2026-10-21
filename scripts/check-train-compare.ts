@@ -220,6 +220,15 @@ const { packHeading, packOrder } = await imp('ComparePanel.tsx');
   ok(packHeading(1, 1).includes('1 of 1 item ') && packHeading(2, 2).includes('2 of 2 items '), 'pack heading: one item is not "items"', [packHeading(1, 1), packHeading(2, 2)]);
 }
 
+{ // reduced motion stops the blink: the rate may be claimed only by the element that media query hides
+  const scr = stripComments(fs.readFileSync(path.join(SRC, CMP, 'Screens.tsx'), 'utf8'));
+  const claims = scr.split('\n').filter((l) => l.includes('0.7 s'));
+  ok(claims.length > 0 && claims.every((l) => l.includes('tr-blink-a')), 'blink: every claim of the 0.7 s swap sits in the span reduced motion hides', claims);
+  const css = fs.readFileSync(path.join(SRC, CMP, 'Screens.css'), 'utf8');
+  const rm = css.slice(css.indexOf('prefers-reduced-motion'));
+  ok(/\.tr-blink-a\s*\{[^}]*display:\s*none/.test(rm), 'blink: that span is what the reduced-motion block hides', rm.slice(0, 120));
+}
+
 { // one module, one import statement: a second one hides what the file already has and drifts out of sight at the
   // bottom of the list (ComparePanel.tsx imported @bp/core/train/rules twice, the second line below the .css import)
   const twice: string[] = [];

@@ -142,17 +142,18 @@ function Slider({ label, before, after }: { label: string; before: string; after
   );
 }
 
-/** Before and after swapping every 0.7 s (CSS); with reduced motion, a toggle shows one or the other instead. */
+/** Before and after swapping every 0.7 s (CSS); with reduced motion, a toggle shows one or the other instead — so the
+ *  rate is claimed only inside .tr-blink-a, the one element that media query hides, and never in the caption. */
 function Blink({ label, before, after }: { label: string; before: string; after: string }) {
   const [on, setOn] = useState(false);
   const aside = (
     <>
-      <span className="tr-blink-a">anything that jumps changed</span>
+      <span className="tr-blink-a">before ⇄ after every 0.7 s: anything that jumps changed</span>
       <button type="button" className="tr-blink-t" aria-pressed={on} onClick={() => setOn(!on)}>{on ? 'showing after · show before' : 'showing before · show after'}</button>
     </>
   );
   return (
-    <ShotFigure cap={'Blink · ' + label + ' · before ⇄ after every 0.7 s'} aside={aside} frame={'blink' + (on ? ' after-on' : '')}>
+    <ShotFigure cap={'Blink · ' + label} aside={aside} frame={'blink' + (on ? ' after-on' : '')}>
       <ShotImg src={before} alt={'Before, ' + label} />
       <ShotImg src={after} alt={'After, ' + label} className="aft" />
     </ShotFigure>
