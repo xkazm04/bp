@@ -6,7 +6,9 @@
 //   (b) aggregates.ts stageParts: the parts account for every feature of the place, so a feature being retired
 //       or one with no stage recorded on the date shown is visible instead of silently missing;
 //   (c) sim.ts scopeWords: an order scoped to a place the map does not have reads as its slug, in every branch
-//       (the domain branch already did; its milestone sibling threw), and a known place still reads as its name.
+//       (the domain branch already did; its milestone sibling threw), and a known place still reads as its name;
+//   (d) sim.ts SimToast.tone: every path that reports a FAILURE carries tone 'bad' or 'warn', a breach that
+//       clears carries 'ok', a burst reads as the worst tone it held back, and no plain confirmation is 'bad'.
 // Run: node scripts/check-model.ts   (Node's type stripping; scripts/overlays-loader.mjs transpiles src/** on the fly)
 // Control: BP_MODEL_MUTATE='[["lens.ts"," (\x27 + n + \x27 of \x27","(\x27 + n + \x27 OF \x27"]]' rewrites source text as
 // it loads ([file suffix, find, replace] literals), so an assertion can be seen red on a seeded defect.
@@ -98,6 +100,60 @@ const PLACES: { id: string; feats: Any[] }[] = [...M.L.rooms, ...M.L.wings, ...M
   expect(read({ milestone: ms.id }) === ms.name + ' (' + ms.id + ')', `(c) a known milestone still reads as its name: ${JSON.stringify(read({ milestone: ms.id }))}`);
   expect(read({ domain: dm.id }) === dm.name, `(c) a known domain still reads as its name: ${JSON.stringify(read({ domain: dm.id }))}`);
   console.log(`scopeWords  unknown milestone -> ${JSON.stringify(read({ milestone: 'no-such-milestone' }))} / known -> ${JSON.stringify(read({ milestone: ms.id }))}`);
+}
+
+// ---------------------------------------------------------------- (d) a failure never arrives in success chrome
+{
+  const { SwarmSim } = await impCore('src/model/sim.ts');
+  const { SWARM } = await impCore('src/data/sample.ts');
+  const run = (live: boolean) => {
+    const m = buildModel(1, () => Date.parse('2026-10-08T09:00:00Z'), null) as Any;
+    const sim = live ? new SwarmSim(m.P, SWARM, () => Date.parse('2026-10-08T09:00:00Z'), { live: true, wall: () => Date.parse('2026-10-08T09:00:00Z') }) : m.sim;
+    const seen: Any[] = [];
+    sim.listen({ changed() {}, event() {}, toast(t: Any) { seen.push(t); } });
+    return { sim, seen, M: m };
+  };
+
+  // the two refusals a reader can provoke: nothing to sign the order with
+  {
+    const { sim, seen } = run(false);
+    const open = sim.openDecs()[0];
+    expect(sim.keepAnswer(open.id, 0, null) === false && seen.at(-1)?.tone === 'warn', `(d) "Not kept" (nobody to sign) carries tone ${JSON.stringify(seen.at(-1)?.tone)}`);
+    const p = sim.previewOrder({ ids: { [sim.P.features[0].id]: 1 }, n: 1, label: 'here' }, 'hold', null);
+    sim.commit(p, null);
+    expect(seen.at(-1)?.strong.startsWith('Order not written') && seen.at(-1)?.tone === 'warn', `(d) "Order not written" carries tone ${JSON.stringify(seen.at(-1)?.tone)}`);
+  }
+  // a live product's store refusing an answer made here
+  {
+    const { sim, seen } = run(true);
+    const d0 = sim.openDecs()[0];
+    sim.decide(d0.id, 0);
+    sim.settle(d0.base, 'The store refused it', true);
+    expect(seen.at(-1)?.strong === 'The store refused it' && seen.at(-1)?.tone === 'bad', `(d) a refused live answer carries tone ${JSON.stringify(seen.at(-1)?.tone)}`);
+  }
+  // the recorded hour: breaches opened and cleared, and every plain confirmation in between
+  {
+    const { sim, seen } = run(false);
+    sim.setSpeed(60);   // at or under 60x each event toasts on its own; above it they burst (asserted after)
+    for (let i = 0; i < 2000 && sim.t < 3600; i++) sim.advance(90);
+    const breach = seen.filter((t) => /breached$/.test(t.strong)), cleared = seen.filter((t) => t.strong === 'Breach cleared');
+    expect(breach.length > 0, '(d) the recorded hour must open at least one breach for this arm to mean anything');
+    expect(breach.every((t) => t.tone === 'bad'), `(d) ${breach.filter((t) => t.tone !== 'bad').length} of ${breach.length} breach toasts do not read 'bad'`);
+    expect(cleared.every((t) => t.tone === 'ok'), `(d) ${cleared.filter((t) => t.tone !== 'ok').length} of ${cleared.length} cleared-breach toasts do not read 'ok'`);
+    const wrong = seen.filter((t) => t.tone === 'bad' && !/breached$/.test(t.strong) && t.action);
+    expect(!wrong.length, `(d) a toast that offers an action reads as a failure: ${JSON.stringify(wrong.map((t) => t.strong))}`);
+    const tones = new Set(seen.map((t) => t.tone ?? 'neutral'));
+    console.log(`toast tones ${seen.length} toasts over the recorded hour / ${breach.length} breaches / tones ${[...tones].sort().join(', ')}`);
+  }
+  // held back and shown as one: the summary reads as the worst thing it covers
+  {
+    const { sim, seen } = run(false);
+    sim.setSpeed(240);
+    sim.seek(3600);
+    const burst = seen.filter((t) => / updates$/.test(t.strong));
+    expect(burst.length > 0 && burst.some((t) => t.tone === 'bad'), `(d) a burst of held-back toasts must read as the worst in it: ${JSON.stringify(burst.map((t) => [t.strong, t.tone]))}`);
+    console.log(`toast burst ${burst.length} summary toast(s) / tones ${JSON.stringify(burst.map((t) => t.tone ?? 'neutral'))}`);
+  }
 }
 
 if (failures.length) {

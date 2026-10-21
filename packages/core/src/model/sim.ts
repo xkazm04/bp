@@ -102,7 +102,14 @@ export const ORDER_TEMPLATES: Record<OrderTemplate, string> = {
   review: 'Needs a human review before it merges', ask: 'Agents ask me before any rollout above 10%',
   first: 'Agents here go first, other work waits', hold: 'Hold: no new work starts here until I say',
 };
-export interface SimToast { strong: string; text: string; action?: 'undo' | 'undo2' | 'replay'; fid?: string }
+/**
+ * How a toast reads. 'bad' = something failed or an order was breached, 'warn' = an action was refused,
+ * 'ok' = a failure cleared. ABSENT = neutral: a plain confirmation of what the reader just did. Every path
+ * that reports a failure must set one, so the UI half cannot paint it in the success chrome it defaults to;
+ * scripts/check-model.ts section (d) pins the failing paths' tones.
+ */
+export type ToastTone = 'ok' | 'warn' | 'bad';
+export interface SimToast { strong: string; text: string; action?: 'undo' | 'undo2' | 'replay'; fid?: string; tone?: ToastTone }
 export interface SimListener {
   /** Discrete change: the queue, agents or orders changed (React re-reads via versions). */
   changed(): void;
@@ -138,6 +145,14 @@ interface DecisionUndo {
 }
 const sfx = (e: OptionEffect, sf: string): OptionEffect => (e.k === 'staff' ? { ...e, feature: e.feature + sf, from: e.from.domain ? { ...e.from, domain: e.from.domain + sf } : e.from } : { ...e, feature: e.feature + sf });
 const liveKey = (e: ReplayEvent) => e.at + '|' + e.agent + '|' + e.feature + '|' + e.text;
+
+/** The graver of two toast tones (a burst of held-back toasts reads as the worst thing in it). */
+const TONE_RANK: Record<ToastTone, number> = { ok: 1, warn: 2, bad: 3 };
+function worseTone(a: ToastTone | undefined, b: ToastTone | undefined): ToastTone | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  return TONE_RANK[b] > TONE_RANK[a] ? b : a;
+}
 
 export function hash01(s: string): number {
   let h = 2166136261;
@@ -185,7 +200,7 @@ export class SwarmSim {
   /** Spend accrues per whole simulated second up to here (deterministic whatever the frame rate). */
   private paidT = 0;
   /** Per-event toasts above 60x and while seeking: counted, then shown as one. */
-  private burst: { n: number; last: SimToast; at: number } | null = null; private seeking = false;
+  private burst: { n: number; last: SimToast; at: number; tone?: ToastTone } | null = null; private seeking = false;
   undo: { list: DecisionUndo[]; order?: string } | null = null;
   undo2: { kind: PreviewKind; snap: ({ order: string } | { a: SimAgent; f: string; status: AgentStatus; task: string; wait: string | null; paused: boolean; synth: boolean })[] } | null = null;
   breaches = 0; tally: Partial<Record<ReplayType, number>> = {};
@@ -508,12 +523,12 @@ export class SwarmSim {
   }
   private evToast(t: SimToast) {
     if (this.speed <= 60 && !this.seeking) { this.toast(t); return; }
-    if (this.burst) { this.burst.n++; this.burst.last = t; } else this.burst = { n: 1, last: t, at: this.now() };
+    if (this.burst) { this.burst.n++; this.burst.last = t; this.burst.tone = worseTone(this.burst.tone, t.tone); } else this.burst = { n: 1, last: t, at: this.now(), tone: t.tone };
   }
   private flushBurst(force: boolean) {
     const b = this.burst; if (!b || (!force && this.now() - b.at < 2000)) return;
     this.burst = null;
-    this.toast(b.n === 1 ? b.last : { strong: b.n + ' updates', text: 'latest: ' + b.last.strong + ' · ' + b.last.text, fid: b.last.fid });
+    this.toast(b.n === 1 ? b.last : { strong: b.n + ' updates', text: 'latest: ' + b.last.strong + ' · ' + b.last.text, fid: b.last.fid, ...(b.tone ? { tone: b.tone } : {}) });
   }
   private apply(e: SimEvent, discrete: { v: boolean }) {
     const A = this.AG[e.agent], f = e.f, F = this.P.F[f];
@@ -576,7 +591,7 @@ export class SwarmSim {
       const F = this.P.F[f], i = o.vf.indexOf(f); if (!F || add === i >= 0) continue;
       if (add) { o.vf.push(f); o.n++; this.breaches++; this.pulse(f, 'bad'); }
       else { o.vf.splice(i, 1); o.n = Math.max(0, o.n - 1); this.pulse(f, 'ok'); }
-      if (toast) this.evToast(add ? { strong: 'Order ' + o.id + ' breached', text: 'at ' + F.name + ' · ' + RULES[o.id].why(F, this.rolloutOf(F), this.covOf(F)), fid: f } : { strong: 'Breach cleared', text: o.id + ' (' + pname(this.P, o.by) + ') holds again at ' + F.name, fid: f });
+      if (toast) this.evToast(add ? { strong: 'Order ' + o.id + ' breached', text: 'at ' + F.name + ' · ' + RULES[o.id].why(F, this.rolloutOf(F), this.covOf(F)), fid: f, tone: 'bad' } : { strong: 'Breach cleared', text: o.id + ' (' + pname(this.P, o.by) + ') holds again at ' + F.name, fid: f, tone: 'ok' });
     }
   }
   /** Advance the hour by wall time `dtMs` at the current speed. Returns true if anything discrete changed. */
@@ -767,7 +782,7 @@ export class SwarmSim {
    */
   keepAnswer(id: string, oi: number, who: string | null, tgt?: Target | null): boolean {
     const d = this.DEC[id]; if (this.live || !d || !d.open || !d.opts[oi]) return false;
-    if (!who) { this.toast({ strong: 'Not kept:', text: 'nobody to sign the order. Pick who you are (or a lens one person reads), then answer again.' }); return false; }
+    if (!who) { this.toast({ strong: 'Not kept:', text: 'nobody to sign the order. Pick who you are (or a lens one person reads), then answer again.', tone: 'warn' }); return false; }
     this.decide(id, oi);
     const o = d.opts[oi], no = this.nextOrderId(), fx = o.effects ?? [];
     const scope: OrderScope = tgt?.n ? { feats: tgt.ids, label: tgt.label } : { domain: d.dom };
@@ -867,7 +882,7 @@ export class SwarmSim {
       this.index();
     }
     const d = kept[0]?.d;
-    this.toast({ strong: err, text: (d ? d.q : base) + (reopen ? ' · the question is open again' : ''), fid: d?.f });
+    this.toast({ strong: err, text: (d ? d.q : base) + (reopen ? ' · the question is open again' : ''), fid: d?.f, tone: 'bad' });
     this.bump();
   }
   /**
@@ -1056,7 +1071,7 @@ export class SwarmSim {
       for (const a of p.paused) { snap.push({ a, f: a.f, status: a.status, task: a.task, wait: a.wait, paused: a.paused, synth: a.synth }); a.paused = p.kind === 'pause'; a.flash = now; }
     } else if (p.kind === 'order') {
       // signed by the reader; nobody to sign it = refused (never a default author)
-      if (!who) { this.toast({ strong: 'Order not written:', text: 'nobody to sign it. Pick who you are (or a lens one person reads), then write it again.' }); return; }
+      if (!who) { this.toast({ strong: 'Order not written:', text: 'nobody to sign it. Pick who you are (or a lens one person reads), then write it again.', tone: 'warn' }); return; }
       const no = this.nextOrderId(), by = who;
       this.orders.push({ id: no, by, lens: personLens(this.P, by) ?? 'general', scope: { feats: p.targets, label: p.label }, text: p.text || '', since: new Date(this.at0 + this.t * 1000).toISOString().slice(0, 10), n: 0, vf: [], user: true, tpl: p.tpl });
       this.ordCache = null; snap.push({ order: no });
