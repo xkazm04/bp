@@ -102,7 +102,7 @@ export function Legend({ view }: { view: ViewId }) {
         <div><Mark k="fail" /><span>Failed</span></div>
         <div><Mark k="pin" /><span>A question (RFI)</span></div>
         <div><Mark k="ord" /><span>Standing order</span></div>
-        <div style={{ gridColumn: '1/3', color: 'var(--ink-2)', fontSize: 13 }}>Tile colour is always the stage. Each lens adds its own marks; in General all {E.M.P.lenses.length} enabled lenses show at once. Lenses come from the map; <code>?lenses=-security,+com.kettle.cost</code> switches them off or on for this session.</div>
+        <div className="lg-cap">Tile colour is always the stage. Each lens adds its own marks; in General all {E.M.P.lenses.length} enabled lenses show at once. Lenses come from the map; <code>?lenses=-security,+com.kettle.cost</code> switches them off or on for this session.</div>
       </div>
     );
   }

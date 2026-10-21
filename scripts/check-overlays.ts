@@ -11,6 +11,8 @@ import { register } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import path from 'node:path';
+import { stripBlock } from './lib/source.ts';
+import fs from 'node:fs';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
 register('./overlays-loader.mjs', { parentURL: import.meta.url, data: { src: SRC, root: ROOT, mutate: JSON.parse(process.env.BP_OVERLAYS_MUTATE || '[]') } });
@@ -28,6 +30,7 @@ const { EngineCtx, VariantCtx } = await imp('components/hooks.ts');
 const { getVariant } = await imp('variants/registry.ts');
 const O = await imp('components/Overlays.tsx');
 const { Phone } = await imp('components/Phone.tsx');
+const { Legend } = await imp('components/Legend.tsx');
 
 let held = 0;
 const failures: string[] = [];
@@ -48,6 +51,7 @@ function render(el: () => Any, patch: Record<string, unknown>, lensAgg: () => An
     store: { get: () => S, subscribe: () => () => {} },
     setHoverEl() {}, placeHover() {}, dirty() {}, onFrame: () => () => {}, flyToFeature() {},
     placeById: (t: string, id: string) => (t === 'wing' ? M.L.WING[id] : t === 'room' ? M.L.ROOM[id] : null),
+    lensIds: Object.keys(P.LENS),
     lensAgg, channel: () => null,
   };
   try {
@@ -96,6 +100,15 @@ expect(q.cur.n === 2 && q.q.length === 1, 'the queue did not hand over in arriva
 expect(O.toastArrive({ cur: tt(5, 'Decided', { action: 'undo' }), q: [] }, tt(6, 'Decided', { action: 'undo' })).cur.n === 6, 'a newer undoable toast did not supersede an older one');
 const to = render(() => React.createElement(O.Toast), { toast: tt(7, 'Hello') }, () => ({ parts: [] }));
 expect(to.threw === null && /role="status"/.test(to.html) && !/display:\s*contents/.test(to.html), `Toast live region missing or display:contents (${to.threw ?? 'rendered'})`);
+
+// 10-11. The General legend's caption is prose, not a key row: `.lg div` is a flex box, so without a block
+// override the caption's two text runs and its <code> lay out as three narrow side-by-side columns (what
+// shaped works around with .shp-cap). The class and the rule that carries it must both exist.
+const lg = render(() => React.createElement(Legend, { view: 'general' }), {}, () => ({ parts: [] }));
+expect(lg.threw === null && /class="lg-cap"/.test(lg.html), `the General legend caption lost its .lg-cap class (${lg.threw ?? 'rendered'})`);
+const bpcss = stripBlock(fs.readFileSync(path.join(SRC, 'components/blueprint.css'), 'utf8'));
+const capRule = /\.lg\s+\.lg-cap\s*\{([^}]*)\}/.exec(bpcss);
+expect(!!capRule && /display\s*:\s*block/.test(capRule[1]), 'blueprint.css: .lg .lg-cap does not set display: block, so the caption lays out as flex columns');
 
 if (failures.length) { console.error(`check-overlays: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
 console.log(`check-overlays: ${held} expectations held`);
