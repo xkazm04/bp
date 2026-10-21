@@ -10,13 +10,15 @@
 //            unlisted). scripts/check-kettle-sim.mjs walks the sims through the stream and proves nothing is written.
 //   http     GET /api/products answers 200 [] (no products file), an unknown path 404, a method the route lacks 405
 //            with Allow, a foreign Host 403 and a non-JSON write 415: the guards run under this mount too
+//   mount    apps/server/src/check-mount.ts (the mount's own guards over a throwaway handler tree: 400 on a bad escape or
+//            Host, 413 past MAX_BODY, 500 without the message, 403 for a non-loopback peer) runs and passes
 // The live-product walk (structure, SSE stream, waves, shots) is scripts/smoke-live.mjs against `npm run server`.
 // Run: node scripts/check-server.mjs   Exit 1 on any failure.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WING_DEFS } from '../packages/core/src/model/constants.ts';
 
@@ -122,6 +124,12 @@ try {
   // the child holds its working directory until it has exited (Windows), so wait before removing it
   if (child.exitCode === null) await new Promise((resolve) => { child.once('exit', resolve); child.kill(); });
   fs.rmSync(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+}
+{
+  const m = spawnSync(process.execPath, [path.join(ROOT, 'apps/server/src/check-mount.ts')], { cwd: ROOT, encoding: 'utf8', timeout: 60000 });
+  const tally = /check-mount: (\d+) passed, (\d+) failed/.exec(m.stdout ?? '');
+  const fails = (m.stdout ?? '').split('\n').filter((l) => l.startsWith('FAIL')).join(' | ');
+  check(`mount: apps/server/src/check-mount.ts passes (${tally?.[1] ?? '?'} checks)`, m.status === 0 && !!tally && Number(tally[1]) > 0 && tally[2] === '0', fails || `exit ${m.status} ${(m.stderr ?? '').slice(-200)}`);
 }
 console.log(`\ncheck-server: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
