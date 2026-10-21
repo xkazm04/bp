@@ -121,19 +121,21 @@ function SampleLoading() {
 }
 
 /** The standard empty state of a live product that cannot be drawn (unknown slug, no structure, an error), or that is still connecting. */
-function LiveEmpty({ slug, live }: { slug: string; live: LiveProduct }) {
+function LiveEmpty({ slug, live, kettle = false }: { slug: string; live: LiveProduct; kettle?: boolean }) {
   if (live.status === 'loading' || (live.status === 'offline' && !live.structure)) {
     return <div className="bp-empty" role="status"><b>Connecting to {slug}…</b><span>Reading its structure and scan store.</span></div>;
   }
   const err = live.error ?? '';
   const store = /^no structure at (.+)[\\/]app-structure\.json$/.exec(err)?.[1];
-  const head = store ? 'No scan store at ' + store : /^unknown product/.test(err) ? 'No product “' + slug + '” in bp.products.local.json' : 'Cannot open ' + slug;
+  const head = kettle ? 'The Kettle sample failed to build' : store ? 'No scan store at ' + store : /^unknown product/.test(err) ? 'No product “' + slug + '” in bp.products.local.json' : 'Cannot open ' + slug;
   return (
     <div className="bp-empty" role="alert">
       <b>{head}</b>
       <span>{store ? 'Run /lens-scan in that repo (phase 1 writes the structure), then reload.' : err || 'The structure request failed.'}</span>
       {/* projectHref keeps the route and every other parameter (?theme, ?scale, ?lenses, ?intro) and drops only ?product */}
-      <a href={typeof location !== 'undefined' ? projectHref(null) : '/'}>Open the Kettle sample instead</a>
+      {kettle
+        ? <a href={typeof location !== 'undefined' ? location.pathname + location.search : '/'}>Reload</a>
+        : <a href={typeof location !== 'undefined' ? projectHref(null) : '/'}>Open the Kettle sample instead</a>}
     </div>
   );
 }
@@ -294,7 +296,7 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
         aria-label={'Zoomable floor plan of the product with the ' + (product ? 'live lens scan' : 'simulated agent swarm') + ' working over it. Scroll or pinch to zoom, drag to pan, click to go one level deeper. Plus and minus zoom, arrows walk rooms, Enter opens, Escape goes back. Shift-drag draws a selection.'} />
       <div className="bp-vig" />
       <div className="bp-frame" />
-      {!engine && buildErr && <LiveEmpty slug={product || 'kettle'} live={{ ...live, status: 'error', error: buildErr }} />}
+      {!engine && buildErr && <LiveEmpty slug={product || 'kettle'} kettle={!product} live={{ ...live, status: 'error', error: buildErr }} />}
       {product && !engine && !buildErr && <LiveEmpty slug={product} live={live} />}
       {product === null && !engine && !buildErr && <SampleLoading />}
       {product && !engine && <div className="bp-hdr-lite"><ProjectSwitcher current={product} /></div>}

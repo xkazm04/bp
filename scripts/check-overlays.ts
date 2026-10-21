@@ -194,5 +194,13 @@ const fnOf = (name: string) => { const i = appSrc.indexOf('function ' + name + '
   expect(appSrc.includes('<SampleLoading />') && appSrc.split('Loading the Kettle sample').length === 2, 'BlueprintApp renders the sample loading state outside SampleLoading');
 }
 
+// LiveEmpty on the Kettle sample's own build failure: the live-product copy ("Open the Kettle sample instead") links to the page
+// the reader is already on, so that branch is told apart (`kettle`) and offers Reload, as ChromeBoundary does.
+{
+  const fn = fnOf('LiveEmpty');
+  expect(fn.includes('kettle') && fn.includes('>Reload<'), 'LiveEmpty has no Reload branch for the Kettle sample build failure');
+  expect(appSrc.includes('kettle={!product}'), 'the Kettle build-failure call site does not pass `kettle` to LiveEmpty');
+}
+
 if (failures.length) { console.error(`check-overlays: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
 console.log(`check-overlays: ${held} expectations held`);
