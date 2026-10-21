@@ -18,7 +18,8 @@ const ROOT = path.resolve(HERE, '../..');
 const load = (p) => import(pathToFileURL(path.join(HERE, p)).href);
 const { BUILTIN_LENSES } = await load('src/standard/catalog.ts');
 const { loadStructure } = await load('src/standard/load.ts');
-const { rollupHealth } = await load('src/standard/health.ts');
+const { diffPixels } = await load('src/train/pixels.ts');
+const { rollupHealth, lensHealth } = await load('src/standard/health.ts');
 
 let held = 0;
 const failures = [];
@@ -78,7 +79,8 @@ const expect = (ok, what) => { if (ok) held++; else failures.push(what); };
       slug: 'f', name: 'F', capability: 'c',
       depends_on: ['ghost-feature'], blocked_by: ['phantom-feature'],
       parts: [{ done: true }], notes: ['a string, not a note'],
-    }],
+      variations: [{ slug: 'v', name: 'V', audience: 'a', extends: 'a string', params: [1, 2] }],
+    }, { slug: 'g', name: 'G', capability: 'c', depends_on: ['g'], blocked_by: ['g'] }],
     kpis: [{ name: 'no slug' }, 'not an object'],
     extensions: { 'com.probe': { people: [{ name: 'no id' }], activity: [{ type: 'commit' }] } },
   };
@@ -97,6 +99,10 @@ const expect = (ok, what) => { if (ok) held++; else failures.push(what); };
       'feature "f": blocked_by names unknown feature "phantom-feature"',
       'feature "f": parts[0] has no name',
       'feature "f": notes[0] is not an object',
+      'feature "f": variation "v" extends is not an array; ignored',
+      'feature "f": variation "v" params has entries that are not strings; dropped',
+      'feature "g": depends_on names itself; dropped',
+      'feature "g": blocked_by names itself; dropped',
       'kpis[0] has no slug',
       'kpis[1] has no slug',
       'extensions: 1 person entry has no id',
@@ -112,6 +118,8 @@ const expect = (ok, what) => { if (ok) held++; else failures.push(what); };
     // the degraded read still holds: the warning is added to the repair, never instead of it
     expect(st.events.length === 1, `warnings: ${st.events.length} events parsed, expected 1 of 3 lines`);
     expect(st.features[0].dependsOn.length === 0 && st.features[0].blockedBy.length === 0, 'warnings: unknown links are still dropped');
+    const g = st.features.find((f) => f.id === 'g');
+    expect(!!g && g.dependsOn.length === 0 && g.usedBy.length === 0 && g.blockedBy.length === 0, `warnings: a self-dependency left dependsOn ${JSON.stringify(g && g.dependsOn)} usedBy ${JSON.stringify(g && g.usedBy)} blockedBy ${JSON.stringify(g && g.blockedBy)}`);
     expect(st.features[0].parts.length === 0 && st.features[0].notes.length === 0, 'warnings: malformed parts and notes are still dropped');
     expect(st.kpis.length === 0 && st.people.length === 0, 'warnings: KPIs without a slug and people without an id are still dropped');
     const d = st.allLenses[0];
@@ -168,6 +176,40 @@ const expect = (ok, what) => { if (ok) held++; else failures.push(what); };
   expect(rollupHealth(m({ method: 'worst-of' }), ['good', 'watch']) === 'watch', 'rollup: worst-of unchanged');
 }
 
+// ------------------------------------------------------------------ the door: a rollup the schema refuses is not loaded
+// lens-manifest-1.schema.json $defs.rollup requires `watch` and `bad` (numbers) on share and `by` on weighted, and
+// allows three methods. The loader is the only reader of the manifest copy a map carries, so it enforces the same
+// rules at the door: a refused rollup drops the lens with its reason, like every other manifest problem. One row
+// per rule; the valid rows must keep loading.
+{
+  const base = (rollup) => ({
+    $schema: 'app-structure/3', project: { slug: 'r', name: 'R' }, generated_at: '2026-01-01T00:00:00Z',
+    lenses: [{ id: 'com.probe.r', version: '0.1.0', source: 'project', enabled: true, manifest: {
+      $schema: 'lens-manifest/1', id: 'com.probe.r', version: '0.1.0', name: 'R', reader: { density: 'standard' },
+      fields: [{ key: 'w', type: 'integer', label: 'W' }], presentation: { glyph: 'bars', line: 'solid' },
+      health: { default: 'good', rollup, rules: [] } } }],
+    domains: [{ slug: 'd', name: 'D' }], capabilities: [{ slug: 'c', domain: 'd', name: 'C' }],
+    features: [{ slug: 'f', name: 'F', capability: 'c' }],
+  });
+  const rows = [
+    ['share with no thresholds', { method: 'share' }, 'health.rollup share needs numeric watch and bad'],
+    ['share with only watch', { method: 'share', watch: 0.2 }, 'health.rollup share needs numeric watch and bad'],
+    ['share with a string threshold', { method: 'share', watch: '0.2', bad: 0.4 }, 'health.rollup share needs numeric watch and bad'],
+    ['weighted with no by', { method: 'weighted' }, 'health.rollup weighted needs a by field'],
+    ['weighted with a non-string by', { method: 'weighted', by: 3 }, 'health.rollup weighted needs a by field'],
+    ['an unknown method', { method: 'median' }, 'health.rollup.method "median" is not worst-of, share or weighted'],
+  ];
+  for (const [name, rollup, reason] of rows) {
+    const st = loadStructure(base(rollup), null);
+    expect(st.allLenses.length === 0, `rollup door: ${name} still loaded the lens`);
+    expect(st.warnings.some((w) => w.includes(`lens "com.probe.r": ${reason}; the lens is dropped`)), `rollup door: ${name} left ${JSON.stringify(st.warnings)}`);
+  }
+  for (const [name, rollup] of [['worst-of', { method: 'worst-of' }], ['a complete share', { method: 'share', watch: 0.2, bad: 0.4 }], ['weighted by a field', { method: 'weighted', by: 'w' }]]) {
+    const st = loadStructure(base(rollup), null);
+    expect(st.allLenses.length === 1 && st.warnings.length === 0, `rollup door: ${name} was refused: ${JSON.stringify(st.warnings)}`);
+  }
+}
+
 // ------------------------------------------------------------------ the lens toggle: an id nothing matches says so
 // `?lenses=-security,+com.kettle.cost` is user input. An id the map has no lens for does nothing, and a typo is
 // indistinguishable from a lens that would not turn off, so the ignored ids have to be named — per toggle, since
@@ -189,6 +231,95 @@ const expect = (ok, what) => { if (ok) held++; else failures.push(what); };
 
   // a toggle naming the lens it just dropped is reported as unknown too, and the drop is still reported
   expect(typo.lenses.length === real.lenses.length + 1, 'toggle: a typo leaves every lens enabled');
+}
+
+// ------------------------------------------------------------------ the toggle cache is bounded, and keyed on what a toggle MEANS
+// `?lenses=` comes from the URL. A cache keyed on the raw string grows by one full structure per distinct string
+// for the life of the process, and `-security,-quality` / `-quality,-security` are one registry in two entries.
+{
+  const map = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.app-structure.json'), 'utf8'));
+  const events = fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.events.jsonl'), 'utf8');
+  const of = (toggle) => loadStructure(map, events, { lenses: toggle });
+  expect(of('-security,-quality') === of('-quality,-security'), 'toggle cache: two spellings of one registry built two structures');
+  expect(of('+security') === of(null), 'toggle cache: re-enabling an already-enabled lens built a second structure');
+  expect(of('-security') !== of(null) && of('-security') === of('-security'), 'toggle cache: a real toggle is not cached by itself');
+  const first = of('-nope0');
+  for (let i = 1; i <= 300; i++) of('-nope' + i);
+  expect(of('-nope0') !== first, 'toggle cache: 300 distinct toggles are all still held (unbounded)');
+  const last = of('-nope300');
+  expect(of('-nope300') === last, 'toggle cache: the most recent toggle is not held');
+  expect(of('-nope300').warnings.length === 1 && of(null).warnings.length === 0, 'toggle cache: a cap changed what a toggle warns');
+}
+
+// ------------------------------------------------------------------ the bases kept per map object are bounded
+// One base is built per distinct (events text, catalog, weeks) triple and the lookup is a linear find, so a caller
+// that hands the same map a freshly read events string each time would keep every base for as long as the map lives.
+{
+  const map = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.app-structure.json'), 'utf8'));
+  const events = fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.events.jsonl'), 'utf8');
+  const withText = (i) => events + ' '.repeat(i + 1); // trailing blanks are trimmed: same content, a distinct string
+  const first = loadStructure(map, withText(0));
+  expect(loadStructure(map, withText(0)) === first, 'bases: the same events text was rebuilt');
+  for (let i = 1; i <= 100; i++) loadStructure(map, withText(i));
+  expect(loadStructure(map, withText(0)) !== first, 'bases: 100 distinct events texts are all still held (unbounded)');
+  const last = loadStructure(map, withText(100));
+  expect(loadStructure(map, withText(100)) === last, 'bases: the most recent base is not held');
+  // a base in use stays: reading the oldest kept entry again keeps it ahead of newer ones
+  const keep = loadStructure(map, withText(200));
+  for (let i = 201; i <= 220; i++) { loadStructure(map, withText(200)); loadStructure(map, withText(i)); }
+  expect(loadStructure(map, withText(200)) === keep, 'bases: a base read between every new one was evicted');
+  const weeks = loadStructure(map, events, { weeks: 3 });
+  expect(loadStructure(map, events, { weeks: 3 }) === weeks && weeks.weeks.length === 3, 'bases: a weeks option is cached on its own');
+}
+
+// ------------------------------------------------------------------ a manifest edited in place is not served stale
+// health.ts compiles each manifest once, keyed on the manifest object. A temporary lens the session edits must read
+// as what it is now, not as what it was when first evaluated.
+{
+  const mk = () => ({ id: 'com.probe.m', name: 'M', reader: { density: 'standard' },
+    fields: [{ key: 'a', type: 'integer', label: 'A' }], presentation: { glyph: 'bars', line: 'solid' },
+    health: { default: 'good', rollup: { method: 'worst-of' }, rules: [{ when: { field: 'b', gt: 1 }, health: 'bad', reason: 'r' }] } });
+  const facet = { values: { a: 1, b: 5 } };
+  const edits = [
+    ['a field declared', (m) => m.fields.push({ key: 'b', type: 'integer', label: 'B' }), 'bad'],
+    ['a field removed', (m) => { m.fields.pop(); }, 'good', (m) => m.fields.push({ key: 'b', type: 'integer', label: 'B' })],
+    ['a rule added', (m) => m.health.rules.unshift({ when: { field: 'a', gt: 0 }, health: 'watch', reason: 'w' }), 'watch'],
+    ['a rule removed', (m) => { m.health.rules.pop(); }, 'good', (m) => m.health.rules.push({ when: { field: 'a', gt: 0 }, health: 'bad', reason: 'r' })],
+    ['applies_when added', (m) => { m.fields.push({ key: 'z', type: 'integer', label: 'Z' }); m.health.applies_when = { field: 'z', present: true }; }, 'na'],
+    ['applies_when set on a declared field', (m) => { m.health.applies_when = { field: 'a', missing: true }; }, 'na'],
+    ['a field renamed', (m) => { m.fields[0].key = 'b'; }, 'bad'],
+    ['a rule condition replaced', (m) => { m.health.rules[0].when = { field: 'a', gt: 0 }; }, 'bad'],
+    ['a field bound to the feature', (m) => { m.fields[0].source = { feature: 'owner' }; }, 'unmeasured',
+      (m) => { m.health.rules = [{ when: { field: 'a', eq: 'x' }, health: 'bad', reason: 'r' }]; }, { feature: { owner: 'x' } }],
+  ];
+  for (const [name, edit, want, setup, ctx] of edits) {
+    const m = mk();
+    if (setup) setup(m);
+    const H = () => lensHealth(m, ctx ? { values: { a: 'x' } } : facet, '2026-01-01', ctx);
+    const before = H(); // compiled here, then edited
+    expect(before !== want, `compile cache: ${name}: the unedited probe already read ${before}, so the edit proves nothing`);
+    edit(m);
+    expect(H() === want, `compile cache: ${name}: read ${H()} after an in-place edit, a fresh manifest reads ${want}`);
+  }
+  // the fingerprint is shallow (field keys and sources, the rule conditions by reference): it costs nothing a load can see
+}
+
+// ------------------------------------------------------------------ a short pixel buffer is not a moved pixel
+// train/pixels.ts diffPixels reads both buffers at w*h*4. An index past the end reads undefined, the difference is NaN,
+// and NaN is neither noise nor above it: it must be skipped like noise, not counted as a change with maxd 0.
+{
+  const W = 4, Hh = 4, full = W * Hh * 4;
+  const flat = (n, v = 10) => new Uint8Array(n).fill(v);
+  const one = diffPixels(flat(full - W * 4), flat(full - W * 4), W, Hh); // both one row short
+  expect(one.moved === 0 && one.bbox === undefined && one.maxd === 0, `pixels: two buffers one row short read moved ${one.moved}, bbox ${JSON.stringify(one.bbox)}`);
+  const either = diffPixels(flat(full), flat(8, 200), W, Hh); // one buffer holds two pixels: those two differ, the rest is unread
+  expect(either.moved === 12.5 && either.maxd === 190 && either.bbox?.join() === '0,0,1,0', `pixels: the in-range part of a short buffer read moved ${either.moved}, maxd ${either.maxd}, bbox ${JSON.stringify(either.bbox)}`);
+  const empty = diffPixels(new Uint8Array(0), new Uint8Array(0), W, Hh);
+  expect(empty.moved === 0 && empty.bbox === undefined, `pixels: empty buffers read moved ${empty.moved}`);
+  // exact-size buffers are unchanged: a changed block is counted and boxed
+  const b = flat(full); for (let i = 0; i < 4; i++) b[(1 * W + 1) * 4 + i] = 200;
+  const ok = diffPixels(flat(full), b, W, Hh);
+  expect(ok.bbox?.join() === '1,1,1,1' && Math.abs(ok.moved - 100 / 16) < 1e-9, `pixels: an exact-size pair read bbox ${JSON.stringify(ok.bbox)} moved ${ok.moved}`);
 }
 
 // ------------------------------------------------------------------ the control: valid input warns 0 times

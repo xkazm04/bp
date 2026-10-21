@@ -97,11 +97,24 @@ interface Compiled {
   declared: Set<string>;
 }
 // Health is evaluated per feature and lens whenever data changes; compile each manifest once (which
-// rules are usable, which fields are bound) instead of walking its field list once per feature.
-const COMPILED = new WeakMap<LensManifest, Compiled>();
+// rules are usable, which fields are bound) instead of walking its field list once per feature. The cache
+// is keyed on the manifest OBJECT, so a manifest edited in place (a temporary lens's, say) must not keep
+// serving its old compilation: each hit re-checks a shallow fingerprint of what the compilation read.
+const COMPILED = new WeakMap<LensManifest, Compiled & { seen: Seen }>();
+interface Seen { keys: string[]; sources: unknown[]; whens: Condition[]; aw: Condition | undefined }
+function seenOf(m: LensManifest): Seen {
+  return { keys: m.fields.map((f) => f.key), sources: m.fields.map((f) => f.source), whens: m.health.rules.map((r) => r.when), aw: m.health.applies_when };
+}
+function fresh(m: LensManifest, s: Seen): boolean {
+  const fs = m.fields, rs = m.health.rules;
+  if (m.health.applies_when !== s.aw || fs.length !== s.keys.length || rs.length !== s.whens.length) return false;
+  for (let i = 0; i < fs.length; i++) if (fs[i].key !== s.keys[i] || fs[i].source !== s.sources[i]) return false;
+  for (let i = 0; i < rs.length; i++) if (rs[i].when !== s.whens[i]) return false;
+  return true;
+}
 function compile(m: LensManifest): Compiled {
   let c = COMPILED.get(m);
-  if (!c) {
+  if (!c || !fresh(m, c.seen)) {
     const known = new Set(m.fields.map((f) => f.key));
     const usable = (cond: Condition) => conditionFields(cond).every((k) => known.has(k));
     const aw = m.health.applies_when;
@@ -110,6 +123,7 @@ function compile(m: LensManifest): Compiled {
       applies: aw && usable(aw) ? aw : null,
       declared: known,
       featureBound: new Set(m.fields.filter((f) => f.source && 'feature' in f.source).map((f) => f.key)),
+      seen: seenOf(m),
     };
     COMPILED.set(m, c);
   }

@@ -229,7 +229,7 @@ function variationsOf(v: unknown, at: string, warn: Warn): Variation[] {
     if (!isObj(x) || typeof x.slug !== 'string' || typeof x.name !== 'string' || typeof x.audience !== 'string') { warn(`${at}: variations[${i}] needs a slug, name and audience (strings); dropped`); return; }
     if (seen.has(x.slug)) { warn(`${at}: duplicate variation slug "${x.slug}"; the first one wins`); return; }
     seen.add(x.slug);
-    const o: Variation = { slug: x.slug, name: x.name, audience: x.audience, extends: strs(x.extends), params: strs(x.params) };
+    const o: Variation = { slug: x.slug, name: x.name, audience: x.audience, extends: list(x.extends, `${at}: variation "${x.slug}" extends`, warn), params: list(x.params, `${at}: variation "${x.slug}" params`, warn) };
     if (isStage(x.stage)) o.stage = x.stage; else if (x.stage !== undefined) warn(`${at}: variation "${x.slug}" has an unknown stage ${JSON.stringify(x.stage)}; ignored`);
     out.push(o);
   });
@@ -250,8 +250,11 @@ function list(v: unknown, at: string, warn: Warn): string[] {
  * A feature's links to other features, keeping only the slugs the map defines. A link to a feature that is not
  * in the map is a dependency arrow the blueprint silently never draws, so the ones dropped are named.
  */
-function links(v: unknown, at: string, key: string, slugs: ReadonlySet<string>, warn: Warn): string[] {
-  const all = list(v, `${at}: ${key}`, warn);
+function links(v: unknown, at: string, key: string, slugs: ReadonlySet<string>, self: string, warn: Warn): string[] {
+  const listed = list(v, `${at}: ${key}`, warn);
+  // a feature naming itself is a cycle of one in the graph the blueprint draws from, and its own user
+  const all = listed.filter((s) => s !== self);
+  if (all.length !== listed.length) warn(`${at}: ${key} names itself; dropped`);
   const kept = all.filter((s) => slugs.has(s));
   const gone = all.filter((s) => !slugs.has(s));
   if (gone.length) warn(`${at}: ${key} names unknown feature${gone.length > 1 ? 's' : ''} ${gone.map((s) => JSON.stringify(s)).join(', ')}; dropped`);
@@ -268,6 +271,11 @@ function manifestProblem(m: Record<string, unknown>): string | null {
   if (!isObj(h)) return 'health is missing';
   if (!COMPUTED.includes(h.default as string)) return 'health.default must be good, watch or bad';
   if (!isObj(h.rollup) || typeof h.rollup.method !== 'string') return 'health.rollup is missing';
+  // the schema's $defs.rollup, enforced where the map's own copy of the manifest comes in
+  const r = h.rollup;
+  if (r.method !== 'worst-of' && r.method !== 'share' && r.method !== 'weighted') return `health.rollup.method ${JSON.stringify(r.method)} is not worst-of, share or weighted`;
+  if (r.method === 'share' && (typeof r.watch !== 'number' || typeof r.bad !== 'number')) return 'health.rollup share needs numeric watch and bad';
+  if (r.method === 'weighted' && typeof r.by !== 'string') return 'health.rollup weighted needs a by field';
   if (!Array.isArray(h.rules) || !h.rules.every((r) => isObj(r) && isObj(r.when) && COMPUTED.includes(r.health as string) && typeof r.reason === 'string')) return 'health.rules must be an array of {when, health, reason}';
   return null;
 }
@@ -363,9 +371,11 @@ interface Base {
   people: Person[]; activity: ActivityEvent[]; events: StructureEvent[];
   weeks: string[]; snapshots: Snapshot[];
   warnings: string[];
-  /** Built structures by toggle string. */
+  /** Built structures by what the toggle resolves to, at most TOGGLE_CACHE of them. */
   byToggle: Map<string, Structure>;
 }
+/** Bases kept per map object, least recently used first out. */
+const BASES_PER_MAP = 8;
 /** One cached base per map object, events text and the options that change the base (catalog, weeks). */
 const BASES = new WeakMap<object, { events: string | null; catalog: LoadOptions['catalog']; weeks: number | undefined; base: Base }[]>();
 
@@ -539,8 +549,8 @@ function buildBase(raw: unknown, eventsText: string | null, opts: LoadOptions): 
       stage: isStage(f.stage) ? f.stage : null, priority: PRIORITIES.includes(f.priority as Priority) ? f.priority as Priority : null, kind: str(f.kind), tier: str(f.tier),
       status: f.status === 'archived' ? 'archived' : 'active', milestone: typeof f.milestone === 'string' ? f.milestone : null,
       surfaces: list(f.surfaces, at + ': surfaces', warn), contexts: list(f.contexts, at + ': contexts', warn),
-      dependsOn: links(f.depends_on, at, 'depends_on', slugs, warn), usedBy: [],
-      blockedBy: links(f.blocked_by, at, 'blocked_by', slugs, warn),
+      dependsOn: links(f.depends_on, at, 'depends_on', slugs, f.slug, warn), usedBy: [],
+      blockedBy: links(f.blocked_by, at, 'blocked_by', slugs, f.slug, warn),
       revs: rv, stageSince: str(f.stage_since, rv.length ? rv[rv.length - 1].date : ''), created: str(f.created, rv.length ? rv[0].date : asOf),
       owner: str(f.owner), builtBy: list(f.built_by, at + ': built_by', warn), parts, notes,
       tags: strs(f.tags), experience: str(f.experience), core: isObj(f.core) ? { tech: strs(f.core.tech), schema: strs(f.core.schema) } : null,
@@ -622,15 +632,21 @@ function buildBase(raw: unknown, eventsText: string | null, opts: LoadOptions): 
   };
 }
 
+/** Structures kept per base, least recently used first out: the toggle string comes from the URL. */
+const TOGGLE_CACHE = 32;
+
 /** The registry for a toggle: enabled entries in file order, re-indexed; General health and trouble follow it. */
 function withToggle(b: Base, toggle: string | null): Structure {
-  const key = toggle ?? '';
-  const hit = b.byToggle.get(key);
-  if (hit) return hit;
   const t = parseLensToggle(toggle);
   // a toggle id the map has no lens for does nothing, and a typo looks exactly like a lens that refused to
   // move, so the ignored ids are named. Per toggle, hence a copy: b.warnings belongs to the base.
   const unknown = [...t.keys()].filter((id) => !b.entries.some((e) => e.id === id));
+  // keyed on what the toggle MEANS (the enabled registry plus the ignored ids it names), not on the URL's
+  // spelling: `-a,-b` and `-b,-a` are one structure. The map is also capped, because a typo is its own key.
+  const on = b.entries.filter((e) => t.get(e.id) ?? e.enabled).map((e) => e.id);
+  const key = on.join(',') + ' ' + unknown.join(' ');
+  const hit = b.byToggle.get(key);
+  if (hit) { b.byToggle.delete(key); b.byToggle.set(key, hit); return hit; } // most recently used last
   const warnings = unknown.length
     ? [...b.warnings, `the lens toggle names unknown lens${unknown.length > 1 ? 'es' : ''} ${unknown.map((id) => JSON.stringify(id)).join(', ')}; ignored`]
     : b.warnings;
@@ -647,6 +663,7 @@ function withToggle(b: Base, toggle: string | null): Structure {
     kpis: b.kpis, people: b.people, activity: b.activity, events: b.events, weeks: b.weeks, snapshots: b.snapshots, warnings,
   };
   b.byToggle.set(key, s);
+  if (b.byToggle.size > TOGGLE_CACHE) b.byToggle.delete(b.byToggle.keys().next().value as string);
   return s;
 }
 
@@ -660,10 +677,15 @@ export function loadStructure(raw: unknown, eventsText: string | null, opts: Loa
   // a non-object map throws in buildBase and is never cached
   const k = isObj(raw) ? raw : null;
   const per = k ? BASES.get(k) ?? (BASES.set(k, []), BASES.get(k)!) : null;
-  let b = per?.find((e) => e.events === eventsText && e.catalog === opts.catalog && e.weeks === opts.weeks)?.base;
-  if (!b) {
+  const at = per ? per.findIndex((e) => e.events === eventsText && e.catalog === opts.catalog && e.weeks === opts.weeks) : -1;
+  let b: Base;
+  if (per && at >= 0) {
+    b = per[at].base;
+    if (at < per.length - 1) per.push(per.splice(at, 1)[0]); // most recently used last
+  } else {
     b = buildBase(raw, eventsText, opts);
-    per?.push({ events: eventsText, catalog: opts.catalog, weeks: opts.weeks, base: b });
+    // the map object lives as long as its module, so what hangs off it must not grow with the caller's inputs
+    if (per) { per.push({ events: eventsText, catalog: opts.catalog, weeks: opts.weeks, base: b }); if (per.length > BASES_PER_MAP) per.shift(); }
   }
   return withToggle(b, opts.lenses ?? null);
 }
