@@ -44,7 +44,13 @@ function broken(root: string): boolean {
 function save(root: string, waves: Wave[]): void {
   const file = waveFile(root);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  if (broken(root)) fs.renameSync(file, file.replace(/\.json$/, '.corrupt.json'));
+  if (broken(root)) {
+    const aside = file.replace(/\.json$/, '.corrupt.json');
+    fs.renameSync(file, aside);
+    // The one act here that moves a file the operator can no longer find at its own path: say so unconditionally.
+    // warnOnce is for a failure repeated per request or per stream tick; this happens once per corrupt file.
+    console.warn(`[bp] ${file} could not be read as waves and was moved to ${aside}; a new file was written in its place`);
+  }
   const tmp = file + '.' + process.pid + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify({ version: 1, waves }, null, 2) + '\n');
   fs.renameSync(tmp, file);
