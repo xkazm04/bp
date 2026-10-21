@@ -1,0 +1,219 @@
+# Blender script (extension .bpy so scripts/check-python-deps.mjs does not read bpy as a pip package); run with blender -b -P
+"""Finishes the lamp-agent (apps/vr/ArtSource/lamp-agent) from the raw TRELLIS.2 GLB: merge vertices, drop floaters, real-world
+scale in metres, pivot at the base disc centre on its underside, emissive slot on the shade interior, PBR PNGs, a four bone
+rig (base > lower_arm > upper_arm > head) weighted through a voxel proxy, a look-at target, five pose actions, final.fbx.
+
+Run:  blender -b -P scripts/art/lamp/finish_lamp.bpy -- <repo-root> <raw.glb> <work-dir>
+Joint positions are in the raw TRELLIS frame (z up, shade towards -y), read off an orthographic side view of seed 303.
+"""
+import bpy, bmesh, sys, os, math, json
+import numpy as np
+from mathutils import Vector, Matrix, kdtree
+
+REPO, RAW, WORK = sys.argv[sys.argv.index('--') + 1:][:3]
+OUT = os.path.join(REPO, 'apps', 'vr', 'ArtSource', 'lamp-agent')
+TEXD = os.path.join(OUT, 'textures')
+os.makedirs(TEXD, exist_ok=True)
+os.makedirs(WORK, exist_ok=True)
+R = {}
+
+ABOVE_TABLE_M = 0.45          # shade top above the clamp's table plane; a desk architect lamp is 45 to 65 cm tall overall
+SHOULDER, ELBOW, HEADJ, OPEN = (0.05, -0.163), (0.29, 0.19), (-0.077, 0.431), (-0.19, 0.265)   # raw (y, z)
+NECK = (-0.115, 0.47)
+
+bpy.ops.wm.read_factory_settings(use_empty=True)
+bpy.ops.import_scene.gltf(filepath=RAW, merge_vertices=True)
+ob = [o for o in bpy.context.scene.objects if o.type == 'MESH'][0]
+ob.name = 'lamp-agent'
+bpy.context.view_layer.objects.active = ob
+ob.select_set(True)
+me = ob.data
+R['raw'] = {'vertices': len(me.vertices), 'tris': sum(len(p.vertices) - 2 for p in me.polygons)}
+
+# ---- floaters: keep the largest connected component, record what is dropped
+bm = bmesh.new(); bm.from_mesh(me)
+seen, comps = set(), []
+for v in bm.verts:
+    if v.index in seen: continue
+    st, grp = [v], []; seen.add(v.index)
+    while st:
+        x = st.pop(); grp.append(x.index)
+        for e in x.link_edges:
+            o = e.other_vert(x)
+            if o.index not in seen: seen.add(o.index); st.append(o)
+    comps.append(grp)
+comps.sort(key=len, reverse=True)
+R['components_before'] = [len(c) for c in comps]
+bm.verts.ensure_lookup_table()
+drop = [bm.verts[i] for c in comps[1:] for i in c]
+bmesh.ops.delete(bm, geom=drop, context='VERTS')
+bm.to_mesh(me); bm.free()
+bpy.ops.object.shade_smooth()
+R['floaters_removed'] = len(comps) - 1
+
+# ---- scale and pivot (raw -> metres); pivot = centre of the base disc underside, disc found as the rim of the z slab
+co = np.empty(len(me.vertices) * 3); me.vertices.foreach_get('co', co); co = co.reshape(-1, 3)
+slab = co[(co[:, 2] > -0.30) & (co[:, 2] < -0.24)]
+cy = (slab[:, 1].min() + slab[:, 1].max()) / 2
+rim = slab[np.hypot(slab[:, 0], slab[:, 1] - cy) > 0.09]
+zb = float(rim[:, 2].min())
+S = ABOVE_TABLE_M / (float(co[:, 2].max()) - zb)
+R['scale_factor'] = round(S, 5); R['pivot_raw'] = {'x': 0.0, 'y': round(float(cy), 4), 'z': round(zb, 4)}
+me.transform(Matrix.Scale(S, 4) @ Matrix.Translation((0, -cy, -zb)))
+me.update()
+J = lambda p: Vector((0, (p[0] - cy) * S, (p[1] - zb) * S))
+sh, el, hd, op, nk = J(SHOULDER), J(ELBOW), J(HEADJ), J(OPEN), J(NECK)
+
+# ---- textures: the TRELLIS bake is base colour, ORM (glTF order R occlusion, G roughness, B metal), tangent normal
+old = ob.data.materials[0]
+imgs = {}
+for n in old.node_tree.nodes:
+    if n.type == 'TEX_IMAGE': imgs[n.image.name] = n.image
+
+
+def save(img, name, size=2048):
+    img = img.copy(); img.scale(size, size)
+    p = os.path.join(TEXD, name)
+    img.filepath_raw = p; img.file_format = 'PNG'; img.save()
+    return p
+
+
+tex = {'base': save(imgs['Image_0'], 'lamp_basecolor.png'), 'orm': save(imgs['Image_1'], 'lamp_orm.png'), 'normal': save(imgs['Image_2'], 'lamp_normal.png')}
+
+
+def mat(name, emit=False):
+    m = bpy.data.materials.new(name); m.use_nodes = True
+    nt = m.node_tree; nt.nodes.clear()
+    out = nt.nodes.new('ShaderNodeOutputMaterial'); b = nt.nodes.new('ShaderNodeBsdfPrincipled')
+    nt.links.new(b.outputs['BSDF'], out.inputs['Surface'])
+
+    def ti(path, cs):
+        n = nt.nodes.new('ShaderNodeTexImage'); n.image = bpy.data.images.load(path); n.image.colorspace_settings.name = cs; return n
+    nt.links.new(ti(tex['base'], 'sRGB').outputs['Color'], b.inputs['Base Color'])
+    nm = nt.nodes.new('ShaderNodeNormalMap'); nt.links.new(ti(tex['normal'], 'Non-Color').outputs['Color'], nm.inputs['Color'])
+    nt.links.new(nm.outputs['Normal'], b.inputs['Normal'])
+    sp = nt.nodes.new('ShaderNodeSeparateColor'); nt.links.new(ti(tex['orm'], 'Non-Color').outputs['Color'], sp.inputs['Color'])
+    nt.links.new(sp.outputs['Green'], b.inputs['Roughness']); nt.links.new(sp.outputs['Blue'], b.inputs['Metallic'])
+    if emit:
+        b.inputs['Emission Color'].default_value = (1.0, 0.62, 0.18, 1); b.inputs['Emission Strength'].default_value = 6.0
+    return m
+
+
+me.materials.clear()
+me.materials.append(mat('lamp_body')); me.materials.append(mat('lamp_shade_glow', emit=True))
+
+# ---- emissive slot: faces inside the shade cone whose normal looks out of the opening
+d = (op - nk).normalized(); L = (op - nk).length
+n_glow = 0
+for p in me.polygons:
+    c = p.center; t = (c - nk).dot(d); rad = ((c - nk) - d * t).length
+    if 0.01 < t < L + 0.01 and rad < 0.085 and p.normal.dot(d) > 0.2:
+        p.material_index = 1; n_glow += 1
+R['glow_faces'] = n_glow
+
+# ---- armature: base > lower_arm > upper_arm > head; the head bone points along the shade axis (towards the opening)
+bpy.ops.object.mode_set(mode='OBJECT')
+arm = bpy.data.objects.new('lamp-agent_rig', bpy.data.armatures.new('lamp-agent_rig'))
+bpy.context.scene.collection.objects.link(arm)
+bpy.context.view_layer.objects.active = arm
+bpy.ops.object.mode_set(mode='EDIT'); EB = arm.data.edit_bones
+
+
+def bone(n, h, t, parent=None):
+    b = EB.new(n); b.head, b.tail = h, t
+    if parent: b.parent = EB[parent]; b.use_connect = True
+    b.roll = 0
+
+
+head_len = (op - hd).length
+bone('base', Vector((0, 0, 0)), sh)
+bone('lower_arm', sh, el, 'base'); bone('upper_arm', el, hd, 'lower_arm')
+bone('head', hd, hd + (op - hd).normalized() * head_len, 'upper_arm')
+bpy.ops.object.mode_set(mode='OBJECT')
+
+# ---- weights: heat on a watertight voxel proxy, transferred to the real mesh by nearest proxy vertex, then smoothed
+px = ob.copy(); px.data = ob.data.copy(); px.name = 'PROXY'; bpy.context.scene.collection.objects.link(px)
+px.data.materials.clear()
+bpy.ops.object.select_all(action='DESELECT'); px.select_set(True); bpy.context.view_layer.objects.active = px
+px.data.remesh_voxel_size = 0.004; px.data.remesh_voxel_adaptivity = 0.0; bpy.ops.object.voxel_remesh()
+R['proxy_tris'] = sum(len(p.vertices) - 2 for p in px.data.polygons)
+bpy.ops.object.select_all(action='DESELECT'); px.select_set(True); arm.select_set(True); bpy.context.view_layer.objects.active = arm
+method = 'proxy heat (ARMATURE_AUTO on a 4 mm voxel proxy) transferred by nearest proxy vertex'
+try: bpy.ops.object.parent_set(type='ARMATURE_AUTO')
+except Exception as e: method = 'ARMATURE_AUTO raised ' + str(e)[:100]
+names = [b.name for b in arm.data.bones]; ni = {n: i for i, n in enumerate(names)}
+pm = px.data; gi = {g.index: g.name for g in px.vertex_groups}
+W = np.zeros((len(pm.vertices), len(names)), dtype=np.float32)
+for v in pm.vertices:
+    for g in v.groups:
+        if gi[g.group] in ni: W[v.index, ni[gi[g.group]]] = g.weight
+R['proxy_zero_weight_verts'] = int((W.sum(1) < 1e-6).sum()); R['proxy_verts'] = len(pm.vertices)
+kd = kdtree.KDTree(len(pm.vertices))
+for v in pm.vertices: kd.insert(v.co, v.index)
+kd.balance()
+for n in names: ob.vertex_groups.new(name=n)
+segs = [(n, arm.data.bones[n].head_local, arm.data.bones[n].tail_local) for n in names]
+
+
+def nearest(p):
+    best, bd = None, 1e9
+    for n, h, t in segs:
+        dd = t - h; u = max(0, min(1, (p - h).dot(dd) / dd.length_squared)); dist = (p - (h + dd * u)).length
+        if dist < bd: bd, best = dist, n
+    return best
+
+
+fb = 0
+for v in me.vertices:
+    _, pi, _ = kd.find(v.co); w = W[pi]
+    if w.sum() > 1e-6:
+        for j in np.nonzero(w)[0]: ob.vertex_groups[names[j]].add([v.index], float(w[j]), 'REPLACE')
+    else:
+        fb += 1; ob.vertex_groups[nearest(v.co)].add([v.index], 1.0, 'REPLACE')
+R['nearest_bone_fallback_verts'] = fb
+bpy.data.objects.remove(px, do_unlink=True)
+bpy.ops.object.select_all(action='DESELECT'); ob.select_set(True); bpy.context.view_layer.objects.active = ob
+bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+bpy.ops.object.vertex_group_smooth(group_select_mode='ALL', factor=0.5, repeat=3, expand=0.0)
+bpy.ops.object.vertex_group_limit_total(group_select_mode='ALL', limit=4)
+bpy.ops.object.vertex_group_normalize_all(group_select_mode='ALL', lock_active=False)
+bpy.ops.object.mode_set(mode='OBJECT')
+ob.modifiers.new('Armature', 'ARMATURE').object = arm
+ob.parent = arm
+R['weights'] = method + '; then smooth x3, limit 4, normalize'
+
+# ---- look-at target: a non-deforming empty in front of and below the head, tracked by a head-bone constraint
+tgt = bpy.data.objects.new('look_at_target', None); tgt.empty_display_type = 'SPHERE'; tgt.empty_display_size = 0.02
+tgt.location = (0, -0.45, 0.10); bpy.context.scene.collection.objects.link(tgt)
+bpy.context.view_layer.objects.active = arm; bpy.ops.object.mode_set(mode='POSE')
+pb = arm.pose.bones
+c = pb['head'].constraints.new('DAMPED_TRACK'); c.name = 'look_at'; c.target = tgt; c.track_axis = 'TRACK_Y'; c.influence = 0.0
+R['look_at'] = 'head bone constraint DAMPED_TRACK to empty look_at_target, influence 0 in every pose action (FBX does not carry constraints; UE aims the head bone in its AnimBP)'
+
+
+# ---- five state poses as actions. Hinge axis is armature X; positive = lean towards -Y (the shade side).
+def rot(n, deg):
+    Rr = arm.data.bones[n].matrix_local.to_3x3()
+    pb[n].rotation_mode = 'QUATERNION'
+    pb[n].rotation_quaternion = (Rr.inverted() @ Matrix.Rotation(math.radians(deg), 3, 'X') @ Rr).to_quaternion()
+
+
+POSES = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'poses.json')))   # name -> [lower_arm, upper_arm, head] degrees about X
+arm.animation_data_create()
+for name, (a, b, h) in POSES.items():
+    act = bpy.data.actions.new(name); act.use_fake_user = True; arm.animation_data.action = act
+    for f in (1, 12):
+        for n, deg in (('base', 0), ('lower_arm', a), ('upper_arm', b), ('head', h)):
+            rot(n, deg); pb[n].keyframe_insert('rotation_quaternion', frame=f)
+bpy.ops.object.mode_set(mode='OBJECT')
+arm.animation_data.action = bpy.data.actions['resting']
+R['actions'] = list(POSES)
+
+# ---- save the working blend and export final.fbx
+bpy.ops.object.select_all(action='DESELECT'); ob.select_set(True); arm.select_set(True); tgt.select_set(True)
+bpy.ops.wm.save_as_mainfile(filepath=os.path.join(WORK, 'lamp_finish.blend'))
+bpy.ops.export_scene.fbx(filepath=os.path.join(OUT, 'final.fbx'), use_selection=True, object_types={'ARMATURE', 'MESH', 'EMPTY'},
+                         add_leaf_bones=False, bake_anim=True, bake_anim_use_all_actions=True, bake_anim_use_nla_strips=False,
+                         bake_anim_simplify_factor=0.0, path_mode='RELATIVE', embed_textures=False, use_armature_deform_only=True)
+json.dump(R, open(os.path.join(WORK, 'finish.json'), 'w'), indent=1)
+print('FINISH', json.dumps(R))

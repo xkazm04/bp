@@ -1,0 +1,56 @@
+// Runs the lamp TRELLIS.2 job on the local ComfyUI (one job at a time, waits for an empty queue first).
+//   node scripts/art/lamp/trellis_run.mjs <seed> [target_face_count]
+// Input: apps/vr/ArtSource/lamp-agent/options/A.png. Workflow: lynx-bench media/3d-trellis-api.json with the decimate
+// target lowered (DecimateMesh runs before UnwrapMesh and BakeTextureFromVoxel in that graph). Output GLB is copied to
+// lynx-bench/bp/lamp-agent/raw_seed<seed>.glb (outside the repo).
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+const URL_ = 'http://127.0.0.1:8188';
+const WF = 'C:/Users/kazda/ai/lynx-bench/media/3d-trellis-api.json';
+const OUT = 'C:/Users/kazda/ai/lynx-bench/bp/lamp-agent';
+const COMFY_OUT = 'C:/Users/kazda/ai/ComfyUI/ComfyUI/output';
+const seed = Number(process.argv[2]), faces = Number(process.argv[3] || 28000);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const j = async (p, o) => (await fetch(URL_ + p, o)).json();
+
+const t0 = Date.now();
+for (;;) {
+  const q = await j('/queue');
+  if (!q.queue_running.length && !q.queue_pending.length) break;
+  if (Date.now() - t0 > 90 * 60 * 1000) { console.error('BLOCKED: queue never emptied in 90 min'); process.exit(2); }
+  console.log('queue busy, waiting 60 s');
+  await sleep(60000);
+}
+fs.mkdirSync(OUT, { recursive: true });
+const img = fs.readFileSync(path.join(ROOT, 'apps/vr/ArtSource/lamp-agent/options/A.png'));
+const fd = new FormData();
+fd.append('image', new Blob([img], { type: 'image/png' }), 'bp_lamp_A.png');
+fd.append('overwrite', 'true');
+await j('/upload/image', { method: 'POST', body: fd });
+const p = JSON.parse(fs.readFileSync(WF, 'utf8'));
+p['122'].inputs.image = 'bp_lamp_A.png';
+p['186'].inputs.target_face_count = faces;
+for (const id of ['3', '12', '18', '23']) p[id].inputs.seed = seed;
+const prefix = `bp_lamp/seed${seed}`;
+p['322'].inputs.filename_prefix = prefix;
+const r = await j('/prompt', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt: p, client_id: 'bp-lamp' }) });
+if (r.error) { console.error(JSON.stringify(r).slice(0, 2000)); process.exit(1); }
+const pid = r.prompt_id;
+let h;
+for (;;) {
+  await sleep(10000);
+  const all = await j('/history/' + pid);
+  h = all[pid];
+  if (h && h.status && (h.status.completed || h.status.status_str === 'error')) break;
+}
+if (h.status.status_str === 'error') { console.error('ERROR', JSON.stringify(h.status.messages.slice(-2)).slice(0, 1500)); process.exit(1); }
+const files = Object.values(h.outputs).flatMap((o) => Object.values(o).flat()).filter((x) => x && x.filename && x.type === 'output' && /\.glb$/i.test(x.filename));
+console.log('outputs', JSON.stringify(files), 'secs', ((Date.now() - t0) / 1000) | 0);
+const f = files.at(-1);
+const src = path.join(COMFY_OUT, f.subfolder || '', f.filename), dst = path.join(OUT, `raw_seed${seed}.glb`);
+fs.copyFileSync(src, dst);
+console.log(dst, fs.statSync(dst).size, crypto.createHash('sha256').update(fs.readFileSync(dst)).digest('hex'));

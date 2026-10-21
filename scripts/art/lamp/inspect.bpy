@@ -1,0 +1,36 @@
+# Blender script; run with blender -b -P inspect.bpy -- <raw.glb> <out.png>
+"""Imports a raw TRELLIS lamp GLB (merge_vertices), prints vertex/tri/component counts and bounds, renders a 3-view check."""
+import bpy, sys, math, bmesh
+from mathutils import Vector
+a = sys.argv[sys.argv.index('--') + 1:]
+bpy.ops.wm.read_factory_settings(use_empty=True)
+bpy.ops.import_scene.gltf(filepath=a[0], merge_vertices=True)
+obs = [o for o in bpy.context.scene.objects if o.type == 'MESH']
+print('MESHES', [(o.name, len(o.data.vertices), len(o.data.polygons)) for o in obs])
+ob = obs[0]
+bm = bmesh.new(); bm.from_mesh(ob.data)
+seen, comps = set(), []
+for v in bm.verts:
+    if v.index in seen: continue
+    st, n, f = [v], 0, 0; seen.add(v.index)
+    while st:
+        x = st.pop(); n += 1
+        for e in x.link_edges:
+            o = e.other_vert(x)
+            if o.index not in seen: seen.add(o.index); st.append(o)
+    comps.append(n)
+comps.sort(reverse=True)
+print('COMPONENTS', len(comps), comps[:12])
+co = [ob.matrix_world @ v.co for v in ob.data.vertices]
+lo = Vector((min(c[i] for c in co) for i in range(3))); hi = Vector((max(c[i] for c in co) for i in range(3)))
+print('BOUNDS', tuple(round(x, 3) for x in lo), tuple(round(x, 3) for x in hi))
+print('MATS', [m.name for m in ob.data.materials], 'UV', [u.name for u in ob.data.uv_layers])
+s = bpy.context.scene; s.render.engine = 'BLENDER_EEVEE'; s.render.resolution_x = s.render.resolution_y = 512
+w = bpy.data.worlds.new('w'); s.world = w; w.use_nodes = True; w.node_tree.nodes['Background'].inputs[0].default_value = (.4, .4, .42, 1)
+l = bpy.data.objects.new('l', bpy.data.lights.new('l', 'SUN')); l.data.energy = 3; l.rotation_euler = (0.9, 0.2, 0.6); s.collection.objects.link(l)
+cam = bpy.data.objects.new('c', bpy.data.cameras.new('c')); s.collection.objects.link(cam); s.camera = cam
+c = (lo + hi) / 2; r = (hi - lo).length * 1.0
+for i, az in enumerate((0, 90)):
+    t = math.radians(az); cam.location = c + Vector((math.sin(t), -math.cos(t), 0.15)) * r * 1.2
+    cam.rotation_euler = (c - cam.location).to_track_quat('-Z', 'Y').to_euler()
+    s.render.filepath = a[1].replace('.png', '_%d.png' % i); bpy.ops.render.render(write_still=True)

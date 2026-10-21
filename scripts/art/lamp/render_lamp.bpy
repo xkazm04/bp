@@ -1,0 +1,99 @@
+# Blender script; run with blender -b -P scripts/art/lamp/render_lamp.bpy -- <repo-root> [only]
+"""Renders the lamp-agent evidence from the committed final.fbx (so the actions and weights are the shipped ones):
+evidence/turnaround.jpg (4 views, rest pose), evidence/table-view.jpg (640x480 from the far-edge viewing distance, reading pose),
+evidence/pose-<name>.jpg (640x480 each), and evidence/spring-closeup.jpg (the same far-edge view at 3x for the spring decision).
+
+Far-edge view (assumption, wolf-plan gives no depth): eyes 1.6 m high, table top 0.95 m, lamp base at the far edge 1.5 m away
+horizontally, so 1.63 m line of sight, 23 degrees down; a 40 degree horizontal field (16 px per degree at 640 px, close to a
+Quest 3 eye's pixel density). The sheet under the lamp is the blueprint blue of the reference sheet.
+Cycles on the CPU, 48 samples."""
+import bpy, math, os, sys, tempfile
+import numpy as np
+from mathutils import Vector
+
+REPO = sys.argv[sys.argv.index('--') + 1]
+ART = os.path.join(REPO, 'apps', 'vr', 'ArtSource', 'lamp-agent')
+EV = os.path.join(ART, 'evidence')
+os.makedirs(EV, exist_ok=True)
+
+
+def lin(h):
+    c = [int(h[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    return tuple((x / 12.92 if x <= 0.04045 else ((x + 0.055) / 1.055) ** 2.4) for x in c) + (1,)
+
+
+bpy.ops.wm.read_factory_settings(use_empty=True)
+bpy.ops.import_scene.fbx(filepath=os.path.join(ART, 'final.fbx'))
+arm = [o for o in bpy.context.scene.objects if o.type == 'ARMATURE'][0]
+for o in bpy.context.scene.objects:
+    if o.type == 'EMPTY': o.hide_render = True
+s = bpy.context.scene
+s.render.engine = 'CYCLES'; s.cycles.device = 'CPU'; s.cycles.samples = 48; s.cycles.use_denoising = False
+w = bpy.data.worlds.new('w'); w.use_nodes = True; s.world = w
+w.node_tree.nodes['Background'].inputs['Color'].default_value = lin('#0A0F18'); w.node_tree.nodes['Background'].inputs['Strength'].default_value = 0.35
+bpy.ops.mesh.primitive_plane_add(size=3.0, location=(0, 0, -0.001))
+sh = bpy.context.object
+m = bpy.data.materials.new('sheet'); m.use_nodes = True
+b = m.node_tree.nodes['Principled BSDF']; b.inputs['Base Color'].default_value = lin('#123A8C'); b.inputs['Roughness'].default_value = 0.8
+sh.data.materials.append(m)
+for loc, e, size in (((0.6, -0.9, 1.2), 90, 0.8), ((-1.0, -0.2, 0.8), 25, 0.9)):
+    bpy.ops.object.light_add(type='AREA', location=loc)
+    L = bpy.context.object; L.data.energy, L.data.size = e, size; L.data.color = (1.0, 0.95, 0.88)
+    L.rotation_euler = (Vector((0, 0, 0.25)) - Vector(loc)).to_track_quat('-Z', 'Y').to_euler()
+bpy.ops.object.camera_add(); cam = bpy.context.object; s.camera = cam
+acts = {a.name.split('|')[-1]: a for a in bpy.data.actions}
+arm.animation_data_create()
+
+
+def pose(name):
+    a = acts[name]; arm.animation_data.action = a
+    try: arm.animation_data.action_slot = a.slots[0]
+    except Exception: pass
+    s.frame_set(1)
+
+
+def aim(centre, az, el, dist, hfov):
+    a, e = math.radians(az), math.radians(el)
+    cam.location = centre + Vector((math.sin(a) * math.cos(e), -math.cos(a) * math.cos(e), math.sin(e))) * dist
+    cam.rotation_euler = (centre - cam.location).to_track_quat('-Z', 'Y').to_euler()
+    cam.data.sensor_width = 36
+    cam.data.lens = 18 / math.tan(math.radians(hfov) / 2)
+
+
+def shoot(path, w_, h_):
+    s.render.resolution_x, s.render.resolution_y, s.render.resolution_percentage = w_, h_, 100
+    s.render.image_settings.file_format = 'PNG'; s.render.filepath = path; bpy.ops.render.render(write_still=True)
+
+
+def load(path):
+    img = bpy.data.images.load(path); w_, h_ = img.size
+    a = np.empty(w_ * h_ * 4, dtype=np.float32); img.pixels.foreach_get(a); bpy.data.images.remove(img)
+    return a.reshape(h_, w_, 4)[:, :, :3]
+
+
+def jpeg(arr, path):
+    h_, w_, _ = arr.shape
+    img = bpy.data.images.new('o', w_, h_); rgba = np.ones((h_, w_, 4), dtype=np.float32); rgba[:, :, :3] = arr
+    img.pixels.foreach_set(rgba.ravel()); img.filepath_raw = path; img.file_format = 'JPEG'
+    s.render.image_settings.file_format = 'JPEG'; s.render.image_settings.quality = 85; img.save(); bpy.data.images.remove(img)
+
+
+tmp = tempfile.mkdtemp()
+centre = Vector((0, -0.03, 0.2))
+# turnaround: the finished rest pose (no action), as TRELLIS shaped it
+tiles = []
+for i, az in enumerate((0, 90, 180, 270)):
+    aim(centre, az, 18, 1.0, 40); p = os.path.join(tmp, 't%d.png' % i); shoot(p, 480, 480); tiles.append(load(p))
+jpeg(np.vstack([np.hstack(tiles[:2]), np.hstack(tiles[2:])]), os.path.join(EV, 'turnaround.jpg'))
+
+pose('reading')
+# far-edge table view (reading pose): base at the origin, camera 1.63 m away, 23 degrees above the horizon, 35 degrees off the lamp's axis
+aim(Vector((0, 0, 0.2)), 35, 23, 1.63, 40)
+p = os.path.join(tmp, 'table.png'); shoot(p, 640, 480); jpeg(load(p), os.path.join(EV, 'table-view.jpg'))
+# 3x view of the same line of sight, for the spring decision only
+aim(Vector((0, 0, 0.2)), 35, 23, 1.63, 14)
+p = os.path.join(tmp, 'zoom.png'); shoot(p, 640, 480); jpeg(load(p), os.path.join(EV, 'spring-closeup.jpg'))
+for name in ('resting', 'reading', 'working', 'asking', 'speaking'):
+    pose(name); aim(Vector((0, -0.03, 0.27)), 90, 8, 1.5, 40)
+    p = os.path.join(tmp, name + '.png'); shoot(p, 640, 480); jpeg(load(p), os.path.join(EV, 'pose-%s.jpg' % name))
+print('RENDER OK')
