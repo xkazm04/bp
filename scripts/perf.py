@@ -10,7 +10,7 @@
 # Env: BP_BASE (default http://localhost:3000, `npm start`/`npm run dev`), RUNS (gesture runs, default 3),
 #      N (rasters per LOD, default 30), TWEEN_RUNS (default 1), VW / VH / DPR (viewport, default 1920x1080 @1).
 # Measure a production build: `npm run build && npm start`.
-import os, time, json, statistics, sys
+import os, time, json, sys
 from playwright.sync_api import sync_playwright
 BASE = (os.environ.get('BP_BASE') or 'http://localhost:3000').rstrip('/')
 args = [a for a in sys.argv[1:] if not a.startswith('--')]
