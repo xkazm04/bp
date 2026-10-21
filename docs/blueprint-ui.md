@@ -253,17 +253,25 @@ unreadable when zoomed out, so flags are not part of any tile. They are an engin
   A flag that would collide with one already placed merges into it, which then shows a count badge
   (12 px text, the floor). The merge distance is 4 px over tiles and widens to 26 px on the site
   plan, so the site shows a few large flags per room and zooming in splits them.
-- **Room labels stay readable.** The room label renderer records its header label box in world units
-  (`RoomNode.labelBox`). A flag whose body would cover it steps to the label's right and draws a
-  leader line to a dot on its feature. A label floating over a room's content does not push flags.
+- **Titles stay readable.** Three title boxes push a flag aside, and a flag that steps far enough draws a
+  leader line to a dot on its feature. (a) A room label in its header: the room label renderer records it in
+  world units (`RoomNode.labelBox`), so the flags, drawn at the live camera, can find it between rasters.
+  (b) A room label pinned to the top of the view rather than sitting in its header: `flags.ts` `pinnedBox`
+  recomputes it from the layout and the live camera by the same rules `plan.ts` draws it with, since the
+  renderer records no box for that case. (c) The wing title stacked above its wing: `flags.ts` `wingBox`,
+  the same way. A flag steps to whichever side of the box is nearer, except for (a), which it only ever
+  steps right of.
 - **Act on it.** Hovering a flag grows it slightly and shows the feature's hover card. Clicking a flag
   (or a cluster of one feature) switches to the flag's lens and opens the feature on that lens's tab.
   Clicking a cluster of several features flies to them so it splits. When the camera cannot get
   meaningfully closer, the click opens the first feature. The engine hit-tests the flags of the last
   frame. No flag reacts while a feature page is open.
 - **Drawn on top, each frame**, after every dynamic layer, so they stay crisp at one size during a
-  gesture. On the Kettle sample about 100 candidates are laid out per frame. That breaks the rule of
-  allocating nothing in the frame loop (small per-frame arrays), so profile before `?scale=4` sign-off.
+  gesture. On the Kettle sample about 100 candidates are laid out per frame, and the layout holds the rule of
+  allocating nothing in the frame loop: the `Flag` records come from a pool reused frame to frame, each one's
+  `fids` and `lenses` arrays are truncated and refilled rather than replaced, the troubled-feature list and
+  the upper-cased names are cached, and the two recomputed title boxes are written into one shared record. A
+  plain pan allocates nothing. Still profile before `?scale=4` sign-off.
 - **The lens glyph set** (`glyph()`) lives in `apps/web/src/engine/render/lens-glyph.ts` so the engine can draw
   it. The subtle variant re-exports it from `marks.ts`, and its ribbon no longer draws its own glyph
   knockout while flags are on.
