@@ -17,6 +17,7 @@ import { createStore, type Store } from './store';
 import { CALLOUT_PAD, baseHeight, overlayRight, railWidth } from './chrome';
 import { LEDGER_VARIANTS, initialState, type Crumb, type DockTab, type HoverInfo, type LedgerVariant, type UIState } from './state';
 import { readTheme, type Theme } from './theme';
+import { saveFailWords } from './copy';
 import { Text } from './text';
 import { StaticCache, deviceRes } from './render/static-cache';
 import { buildWallPaths, drawBuildings, drawDecor, drawGrid, drawLabels, featRect, resetOutlines } from './render/plan';
@@ -820,7 +821,8 @@ export class Engine {
       () => { if (this.destroyed) return; sim.settle(pid, null, false); this.dirty(); },
       (e: Error & { status?: number }) => {
         if (this.destroyed) return;
-        sim.settle(pid, e.status === 409 ? 'Already decided elsewhere' : 'Not saved: ' + e.message, e.status !== 409);
+        const w = saveFailWords(e);
+        sim.settle(pid, w.text, w.retry);
         this.scheduleSimSync(true); this.forceStatic();
       },
     );

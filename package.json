@@ -61,6 +61,7 @@
     "check:stream": "node scripts/check-stream-status.mjs",
     "check:tokens": "node scripts/check-tokens.mjs",
     "check:theme-colors": "node scripts/check-theme-colors.ts",
+    "check:engine-copy": "node scripts/check-engine-copy.ts",
     "check:chrome": "node scripts/check-chrome-sizes.mjs",
     "check:legacy": "node scripts/check-legacy-unmeasured.mjs",
     "check:findings": "node scripts/fixtures/kettle-findings.mjs --check"
