@@ -146,7 +146,7 @@ function toastFailures(E: Engine, jobs: readonly ScanJob[], seen: { init: boolea
   for (const j of jobs) {
     const was = seen.st.get(j.id);
     if (seen.init && j.status === 'failed' && (was ? was !== 'failed' : now - Date.parse(j.queued_at) < 15000)) {
-      E.toast(j.kind === 'measure' ? 'Scan failed' : j.kind === 'release' ? 'Release ' + (j.version ?? '') + ' failed' : 'Execute run failed', (j.lens ? j.lens + ': ' : '') + (j.error ?? 'no reason given'));
+      E.toast(j.kind === 'measure' ? 'Scan failed' : j.kind === 'release' ? 'Release ' + (j.version ?? '') + ' failed' : 'Execute run failed', (j.lens ? j.lens + ': ' : '') + (j.error ?? 'no reason given'), undefined, undefined, 'bad');
     }
     seen.st.set(j.id, j.status);
   }
@@ -214,7 +214,7 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
       if (kept) e.cam.set(kept.cam); // the hash restored lens, place and page; the camera stands exactly where it was
       built = e;
       setEngine(e);
-      if (product && L.status === 'missing') e.toast('No scan store yet', 'every feature reads unmeasured until /lens-scan writes one');
+      if (product && L.status === 'missing') e.toast('No scan store yet', 'every feature reads unmeasured until /lens-scan writes one', undefined, undefined, 'warn');
     };
     const fail = (err: unknown) => { console.error(err); setBuildErr(err instanceof Error ? err.message : String(err)); };
     try {
@@ -251,7 +251,7 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
       else if (r.structural) engine.toast('The map has changed shape', 'features that moved or are new appear after a reload');
     } catch (err) {
       console.error(err);
-      engine.toast('Could not read the updated map', 'the page keeps the one it has; ' + (err instanceof Error ? err.message : String(err)));
+      engine.toast('Could not read the updated map', 'the page keeps the one it has; ' + (err instanceof Error ? err.message : String(err)), undefined, undefined, 'bad');
     }
   }, [engine, live.structureRev, live.structure, live.events, live.scan]);
   // Kettle: the scan sim's rows go over the model like a live scan's (readings, and `na` where a temporary lens found

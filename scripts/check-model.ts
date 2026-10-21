@@ -21,6 +21,7 @@
 //   (i) morning.ts kindWords: every event kind the watch can be handed has plain words, taken from the three
 //       vocabularies that produce them (PULSE_OF, the map's own activity types, the kinds the played hour
 //       emits) rather than from the KIND table itself, and the table words nothing no vocabulary declares.
+//   (l) the UI half of (d): every failure toast in the files that have been toned passes a 'bad' / 'warn' tone to Engine.toast.
 // Run: node scripts/check-model.ts   (Node's type stripping; scripts/overlays-loader.mjs transpiles src/** on the fly)
 // Control: BP_MODEL_MUTATE='[["lens.ts"," (\x27 + n + \x27 of \x27","(\x27 + n + \x27 OF \x27"]]' rewrites source text as
 // it loads ([file suffix, find, replace] literals), so an assertion can be seen red on a seeded defect.
@@ -350,6 +351,57 @@ const PLACES: { id: string; feats: Any[] }[] = [...M.L.rooms, ...M.L.wings, ...M
   const bare = { id: 'F-bare', stage: 'live', lens: {} };
   expect(M.sim.rolloutMeasured(bare) === null && M.sim.rolloutOf(bare) === 100, `(k) a live feature with empty facets: measured ${M.sim.rolloutMeasured(bare)}, plain ${M.sim.rolloutOf(bare)}`);
   console.log(`rollout     ${measured} measured / ${absentLive} absent on a live stage / ${absentOther} absent elsewhere, told apart`);
+}
+
+// ---------------------------------------------------------------- (l) a toast that reports a failure says so in its chrome
+// Engine.toast takes a tone since 088f3ad and #toast paints it; the model half is pinned in (d). This is the UI half: every
+// `.toast(` call in the files listed below whose headline names a failure or a refusal passes a 'bad' / 'warn' tone, and no
+// confirmation does. A file joins TONED_FILES in the commit that tones it, so the list is the figure.
+{
+  const { blankComments } = await import('./lib/source.ts');
+  /** The argument sources of every `.toast(...)` call in `src`, split at depth-0 commas (strings and nesting respected). */
+  const toastCalls = (src: string): { line: number; args: string[] }[] => {
+    const out: { line: number; args: string[] }[] = [];
+    for (const m of src.matchAll(/\.toast\(/g)) {
+      let i = m.index! + m[0].length, depth = 0, quote = '', cur = '';
+      const args: string[] = [];
+      for (; i < src.length; i++) {
+        const c = src[i];
+        if (quote) { cur += c; if (c === String.fromCharCode(92)) { cur += src[++i] ?? ''; } else if (c === quote) quote = ''; continue; }
+        if (c === "'" || c === '"' || c === '`') { quote = c; cur += c; continue; }
+        if (c === '(' || c === '[' || c === '{') depth++;
+        if (c === ')' || c === ']' || c === '}') { if (!depth) break; depth--; }
+        if (c === ',' && !depth) { args.push(cur.trim()); cur = ''; continue; }
+        cur += c;
+      }
+      if (cur.trim()) args.push(cur.trim());
+      out.push({ line: src.slice(0, m.index).split('\n').length, args });
+    }
+    return out;
+  };
+  const FAILS = /\b(failed|Refused|Could not|did not start|not start|Nothing moved|Nothing to decide|No scan store)/;
+  const judge = (file: string, src: string): { calls: number; failing: number; bad: string[] } => {
+    const bad: string[] = [];
+    const cs = toastCalls(src);
+    let failing = 0;
+    for (const c of cs) {
+      const fail = FAILS.test(c.args[0] ?? ''), tone = c.args[4] ?? '';
+      if (fail) { failing++; if (!/'(bad|warn)'/.test(tone) || /'ok'/.test(tone)) bad.push(`${file}:${c.line} ${c.args[0].slice(0, 60)} carries no bad/warn tone (${tone || 'none'})`); }
+      else if (/'bad'/.test(tone)) bad.push(`${file}:${c.line} ${(c.args[0] ?? '').slice(0, 60)} is no failure but reads bad`);
+    }
+    return { calls: cs.length, failing, bad };
+  };
+  // the instrument judged on constructed sources: a toned failure, an untoned one, a ternary headline, a confirmation, a comment
+  const t = judge('x', blankComments("E.toast('Refused', why(e), undefined, undefined, 'bad');\nE.toast(n ? 'Some scans did not start' : 'Scan not started', a.join(';'));\n// E.toast('Scan failed', 'x')\nE.toast('Scanning ' + n, 'x');"));
+  expect(t.calls === 3 && t.failing === 2 && t.bad.length === 1 && /x:2 /.test(t.bad[0]), `(l) the toast reader must see 3 calls (comment ignored), 2 failing, 1 untoned at line 2: ${JSON.stringify(t)}`);
+  const eng = fs.readFileSync(path.join(ROOT, 'apps/web/src/engine/Engine.ts'), 'utf8');
+  expect(/\n\s*toast\(strong: string, text: string, action\?: [^)]*fid\?: string, tone\?: ToastTone\)/.test(blankComments(eng)), '(l) Engine.toast has no tone parameter, so no caller can tone a failure');
+  const TONED_FILES: string[] = ['apps/web/src/components/ScanMenu.tsx', 'apps/web/src/components/ledger/train/Decide.tsx', 'apps/web/src/components/BlueprintApp.tsx'];
+  let calls = 0, failing = 0;
+  const bad: string[] = [];
+  for (const f of TONED_FILES) { const r = judge(f, blankComments(fs.readFileSync(path.join(ROOT, f), 'utf8'))); calls += r.calls; failing += r.failing; bad.push(...r.bad); }
+  expect(!bad.length, `(l) ${bad.length} of ${failing} failure toasts in ${TONED_FILES.length} files carry no tone:\n      ` + bad.join('\n      '));
+  console.log(`toast tone  ${failing} failure toasts of ${calls} in ${TONED_FILES.length} files / ${bad.length} untoned`);
 }
 
 if (failures.length) {

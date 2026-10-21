@@ -79,7 +79,7 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
     void Promise.allSettled(ids.map((id) => (scope.kind === 'selection' ? startSelectionScan(ctx, id, scope.features) : startScan(ctx, id, scope)))).then((rs) => {
       const bad = rs.map((r, i) => (r.status === 'rejected' ? name(ids[i]) + ': ' + refusalText(r.reason) : null)).filter((x): x is string => !!x);
       const n = rs.length - bad.length;
-      if (bad.length) E.toast(n ? 'Some scans did not start' : 'Scan not started', bad.join('; '));
+      if (bad.length) E.toast(n ? 'Some scans did not start' : 'Scan not started', bad.join('; '), undefined, undefined, n ? 'warn' : 'bad');
       else E.toast(n === 1 ? 'Scanning ' + name(ids[0]) : 'Scanning ' + n + ' lenses', scope.label + ' · ' + (scope.kind === 'all' ? P.base.features.length : scope.features.length) + ' features');
     });
   };
