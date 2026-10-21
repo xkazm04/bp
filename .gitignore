@@ -31,3 +31,30 @@ next-env.d.ts
 # /perfect loop vault (working memory, not version-controlled)
 .perfect/
 .personas/
+
+# secrets: API keys live in .env (LEONARDO_API_KEY); only an example file may be tracked
+.env
+.env.*
+!.env.example
+
+# Python tool caches (scripts/perf.py, shots.py)
+__pycache__/
+.venv/
+
+# VR client (apps/vr, UE 5.8 on Wolf): generated build and editor state
+apps/vr/**/Binaries/
+apps/vr/**/Intermediate/
+apps/vr/**/Saved/
+apps/vr/**/DerivedDataCache/
+apps/vr/**/Build/
+apps/vr/**/Plugins/*/Binaries/
+apps/vr/**/Plugins/*/Intermediate/
+# Meta XR v207 payloads are reinstalled by the install script, never committed
+apps/vr/**/Plugins/MetaXR/
+apps/vr/**/Plugins/MetaXRInteraction/
+apps/vr/.cache/
+*.sln
+*.suo
+*.VC.db
+*.VC.opendb
+.vs/
