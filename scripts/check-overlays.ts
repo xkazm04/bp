@@ -151,6 +151,26 @@ const bpcss = stripBlock(fs.readFileSync(path.join(SRC, 'components/blueprint.cs
 const capRule = /\.lg\s+\.lg-cap\s*\{([^}]*)\}/.exec(bpcss);
 expect(!!capRule && /display\s*:\s*block/.test(capRule[1]), 'blueprint.css: .lg .lg-cap does not set display: block, so the caption lays out as flex columns');
 
+// General legends with every lens switched off (`?lenses=-a,-b,...` leaves P.lenses empty; parseLensToggle has no floor):
+// the plan draws no lens marks, so neither key may describe marks or count "all 0 enabled lenses". The populated case is
+// read first, as the guard that the phrases still bite - a reworded legend cannot pass the empty case by saying nothing.
+{
+  const { SubtleLegend } = await imp('variants/subtle/Legend.tsx');
+  const keys = (shared: { E?: Any }) => [
+    text(render(() => React.createElement(SubtleLegend, { view: 'general' }), {}, () => ({ parts: [] }), shared).html),
+    text(render(() => React.createElement(Legend, { view: 'general' }), {}, () => ({ parts: [] }), shared).html),
+  ];
+  const full: { E?: Any } = {};
+  const [subFull, capFull] = keys(full);
+  expect(/one mark per lens/.test(subFull) && new RegExp(`all ${P.lenses.length} enabled lenses`).test(capFull), 'the populated General legends no longer say "one mark per lens" / "all N enabled lenses" - the empty-lens scan stopped matching');
+  const none: { E?: Any } = {};
+  render(() => null, {}, () => ({ parts: [] }), none);
+  none.E.M = { ...M, P: { ...P, lenses: [] } }; none.E.lensIds = [];
+  const [subNone, capNone] = keys(none);
+  expect(!/one mark per lens/.test(subNone) && /No lenses are enabled/.test(subNone), `the subtle General legend with 0 lenses still describes marks or does not say so (${subNone.slice(0, 120)})`);
+  expect(!/all 0 enabled lenses/.test(capNone) && /No lenses are enabled/.test(capNone), `the shared General caption with 0 lenses still counts "all 0 enabled lenses" or does not say so`);
+}
+
 // Phone touch targets: the theme toggle, the "whose desk" chips and the feature rows are tapped with a
 // thumb, so each declares at least 44 px (the Back button above is the fourth). Read from the CSS, comments stripped.
 const minPx = (sel: string) => {
