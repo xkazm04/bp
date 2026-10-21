@@ -1,6 +1,6 @@
 // Where the ledger's compare panel loads a screenshot from: a live product's shot through its shots route (the same URL
-// as src/lib/model/live.ts shotUrl, reimplemented so the train imports only scan types), Kettle's sample shots from
-// public/ (sample-shots/*.svg, scripts/gen-sample-shots.mjs). Pure: Node checks import it.
+// as packages/core/src/model/live.ts shotUrl, reimplemented so the train imports only scan types), Kettle's sample
+// shots from apps/web/public/sample-shots/*.svg (scripts/gen-sample-shots.mjs). Pure: Node checks import it.
 import type { Shot } from '../scan/types.ts';
 
 /** A shot's image URL: `/api/products/<slug>/shots/<path without shots/, each segment encoded>` for a live product,

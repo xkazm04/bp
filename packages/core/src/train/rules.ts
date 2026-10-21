@@ -1,7 +1,10 @@
 // The release train's triage rules, in one place for every surface (the ledger's table, the compare panel, the
-// decision bar, the phone cards). store.mjs owns the transitions and enforces its own subset (a failed item needs a
-// note to be accepted; nothing leaves a release that is no longer a draft); these tables only decide what the UI
-// offers and asks for, so a refused move is rare and always explained. Pure, type-only imports: Node checks import it.
+// decision bar, the phone cards). The transitions themselves are owned by lens-scan's store.mjs, which is OUTSIDE
+// this tree (ai-registry skills/lens-scan/scripts/store.mjs, run by packages/core/src/server/release.server.ts;
+// scan/compare.ts:4 names it the same way). It enforces its own subset there — a failed item needs a note to be
+// accepted, nothing leaves a release that is no longer a draft — so these tables are a MIRROR of rules this repo
+// cannot verify: they only decide what the UI offers and asks for, and a refused move is rare and always
+// explained. Pure, type-only imports: Node checks import it.
 import type { Pack, Proposal, ProposalStatus, Release, TriageDecision } from '../scan/types.ts';
 import type { Verdict } from '../scan/compare.ts';
 
