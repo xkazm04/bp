@@ -5,7 +5,8 @@
 // ledger page shows: `/`'s first-load JS carries none of it (scripts/check-train-budget.ts --bundle proves it).
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { LIVE_DECIDER, fmtWait, pname, sheetOf, type SimDecision } from '@bp/core/model';
+import { LIVE_DECIDER, fmtWait, pname, sheetOf, type BldNode, type RoomNode, type SimDecision, type WingNode } from '@bp/core/model';
+import type { Feature } from '@bp/core/data';
 import { useProductName } from '@/lib/scan/projects';
 import { SheetBody } from './FeatureSheet';
 import { Toast } from './Overlays';
@@ -28,6 +29,24 @@ export function LedgerPageLazy(props: LedgerPageProps) {
 }
 
 const SHOWN = 12;
+/**
+ * The reading list under the phone's search box, with every empty level dropped: a room with no hit, a wing whose
+ * rooms all have none, and a building whose wings all have none. Without this the headings rendered whatever the
+ * query was, so a search for one feature printed every wing of the plan with nothing under most of them.
+ * Exported pure so check-overlays can hold the rule (it is not reachable through a server render: `q` is state).
+ */
+export function phoneFind(blds: readonly BldNode[], q: string): { B: BldNode; wings: { W: WingNode; rooms: { R: RoomNode; hits: Feature[] }[] }[] }[] {
+  const v = q.trim().toLowerCase();
+  const hit = (x: Feature) => !v || (x.id + ' ' + x.name + ' ' + x.summary).toLowerCase().includes(v);
+  return blds
+    .map((B) => ({
+      B,
+      wings: B.wings
+        .map((W) => ({ W, rooms: W.rooms.map((R) => ({ R, hits: R.feats.filter(hit) })).filter((r) => r.hits.length > 0) }))
+        .filter((w) => w.rooms.length > 0),
+    }))
+    .filter((b) => b.wings.length > 0);
+}
 /** A decline note survives a refused write (the card remounts when the decision reopens). */
 const drafts = new Map<string, string>();
 
@@ -80,6 +99,7 @@ export function Phone() {
   const c = M.agg.countsOf('ALL', P.features, P.asOf, 7), qq = sim.queueFor(s.who, s.view);
   const once = (ds: SimDecision[]) => (sim.live ? oncePerProposal(ds) : ds);
   const list = once(s.who ? qq.mine : qq.all), v = q.trim().toLowerCase();
+  const found = phoneFind(M.L.blds, q);
   const persons = P.people.filter((p) => p.kind === 'human'), open = sim.openDecs();
   const f = s.open ? P.F[s.open] : null;
   const detailOpen = !!s.open;
@@ -133,15 +153,20 @@ export function Phone() {
       )}
       <div className="ph-sec"><span>Find a feature</span></div>
       <input className="ph-search" type="search" placeholder="Find a feature…" aria-label="Search features" value={q} onChange={(e) => setQ(e.target.value)} />
-      {M.L.blds.map((B) => (
+      {v && !found.length && (
+        <div className="qempty">
+          <b>No feature matches “{q.trim()}”.</b>
+          Nothing in {P.features.length} features has that in its name, summary or id.
+          <button type="button" className="bt" style={{ height: 44, marginTop: 10 }} onClick={() => setQ('')}>Clear the search</button>
+        </div>
+      )}
+      {found.map(({ B, wings }) => (
         <div key={B.id}>
           {P.scale > 1 && <div className="ph-wing" style={{ fontSize: 14, color: 'var(--ink-hi)' }}>{B.name}</div>}
-          {B.wings.map((W) => (
+          {wings.map(({ W, rooms }) => (
             <div key={W.id}>
               <div className="ph-wing">Wing {W.def.letter} · {W.def.name}</div>
-              {W.rooms.map((R) => {
-                const hits = R.feats.filter((x) => !v || (x.id + ' ' + x.name + ' ' + x.summary).toLowerCase().includes(v));
-                if (!hits.length) return null;
+              {rooms.map(({ R, hits }) => {
                 const rc = M.agg.countsOf(R.id, R.feats, P.asOf, 7), bad = M.agg.healthOf(R.id, R.feats, 'general').bad;
                 return (
                   <details key={R.id + (v ? '-q' : '')} className="ph-dom" open={!!v}>

@@ -29,7 +29,7 @@ const { initialState } = await imp('engine/state.ts');
 const { EngineCtx, VariantCtx } = await imp('components/hooks.ts');
 const { getVariant } = await imp('variants/registry.ts');
 const O = await imp('components/Overlays.tsx');
-const { Phone } = await imp('components/Phone.tsx');
+const { Phone, phoneFind } = await imp('components/Phone.tsx');
 const { Legend } = await imp('components/Legend.tsx');
 
 let held = 0;
@@ -126,6 +126,17 @@ for (const sel of ['.bp-phone .theme-toggle', '.ph-who button', '.ph-dom button'
   const r = minPx(sel);
   expect(r.found && r.px >= 44, `blueprint.css ${sel}: touch target ${r.found ? (Number.isNaN(r.px) ? 'unset' : r.px + 'px') : 'rule not found'}, expected at least 44px`);
 }
+
+// The phone's reading list drops every level with no hit, so a search never prints a heading with nothing
+// under it (`q` is component state, so the rule is held on the exported pure function, not on a render).
+const wingsOf = (g: Any[]) => g.reduce((n: number, b: Any) => n + b.wings.length, 0);
+const hitsOf = (g: Any[]) => g.reduce((n: number, b: Any) => n + b.wings.reduce((m: number, w: Any) => m + w.rooms.reduce((k: number, r: Any) => k + r.hits.length, 0), 0), 0);
+const allWings = wingsOf(phoneFind(M.L.blds, ''));
+expect(allWings > 1 && hitsOf(phoneFind(M.L.blds, '')) === P.features.length, `an empty query must list every wing and every feature (${allWings} wings, ${hitsOf(phoneFind(M.L.blds, ''))} of ${P.features.length} features)`);
+const one = P.features[0], g1 = phoneFind(M.L.blds, one.name);
+expect(wingsOf(g1) >= 1 && wingsOf(g1) < allWings && hitsOf(g1) >= 1, `a query for one feature listed ${wingsOf(g1)} of ${allWings} wings and ${hitsOf(g1)} hits: empty headings are still rendered`);
+const g0 = phoneFind(M.L.blds, 'zzz no such feature zzz');
+expect(g0.length === 0, `a query that matches nothing returned ${g0.length} buildings (${wingsOf(g0)} wings), so the list renders headings over no rows`);
 
 // 15-16. WCAG 2.5.3 label in name: a control whose visible text is a key cap ("Esc") must carry that text in
 // its accessible name, or voice control cannot address what the reader can see. Source-scanned with comments
