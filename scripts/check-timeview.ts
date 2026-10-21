@@ -1,9 +1,11 @@
 // Pins the feature page's as-of read model: the stage replays from the events log (reusing stageAt), a metric
 // reads its last reading on or before the date, and everything with no history is "none", never the now-value.
+// It also pins CONSUMPTION: every feature-detail root renders <AsOfBar /> (see the last section).
 // Run: node scripts/check-timeview.ts  (scripts/overlays-loader.mjs transpiles src on the fly).
 import { register } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
+import fs from 'node:fs';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
 register('./overlays-loader.mjs', { parentURL: import.meta.url, data: { src: SRC, root: ROOT, mutate: [] } });
@@ -37,6 +39,28 @@ expect(valueView(scan, 'f', 'l', field, '2026-02-01', '2026-10-12').at === 'none
 expect(valueView(scan, 'f', 'l', plain, '2026-04-15', '2026-10-12').at === 'none', 'a field with no metric has no history');
 expect(valueView(undefined, 'f', 'l', field, '2026-04-15', '2026-10-12').at === 'none', 'no scan: not recorded');
 expect(readingsUpTo(scan, 'f', 'l', 'cov', '2026-04-15').join() === '10,20', 'readings up to the date');
+
+// ------------------------------------------------------------------ consumption: who reads the as-of model
+// The functions above are pinned; this pins that the surfaces USE them. `t` is global engine state, written into the URL
+// (`#t=<date>`), so a travelled-back state is reachable on a phone by a link or a resize, and a surface that renders current
+// records without saying the plan is in the past presents now-values as the record of that date.
+// The surfaces are enumerated from the tree, not typed: every component file that defines a feature-detail root (a
+// `SheetBody` or a feature `Page`) must render <AsOfBar /> (comments blanked first, so a comment cannot stand in for it) or
+// carry `undated-by-design: <why>` in a comment.
+const { blankComments } = (await import(pathToFileURL(path.join(ROOT, 'scripts/lib/source.ts')).href)) as Any;
+const ROOT_DEF = /(?:^|\n)\s*(?:export\s+)?function\s+(SheetBody|Page)\s*\(/;
+const UNDATED = /undated-by-design:/;
+const surfaceOk = (raw: string) => UNDATED.test(raw) || /<AsOfBar\s*\/>/.test(blankComments(raw));
+const tsxIn = (d: string): string[] => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? tsxIn(path.join(d, e.name)) : /\.tsx$/.test(e.name) ? [path.join(d, e.name)] : []));
+const surfaces = tsxIn(path.join(SRC, 'components')).filter((p) => ROOT_DEF.test(blankComments(fs.readFileSync(p, 'utf8'))));
+const rel = (p: string) => path.relative(ROOT, p).replace(/\\/g, '/');
+expect(surfaces.length >= 2, 'the consumption scan found the feature-detail roots (' + surfaces.map(rel).join(', ') + '): it stopped matching if fewer than 2');
+for (const p of surfaces) expect(surfaceOk(fs.readFileSync(p, 'utf8')), rel(p) + ' renders a feature detail and neither renders <AsOfBar /> nor declares undated-by-design: a travelled-back plan would show now-values undated');
+// control: the rule bites on a root with no marker, on a marker that is only a comment, and passes on a real one
+expect(!surfaceOk('export function SheetBody() { return <div />; }'), 'control: a root with no AsOfBar is refused');
+expect(!surfaceOk('// <AsOfBar />\nexport function SheetBody() { return <div />; }'), 'control: a comment naming AsOfBar does not satisfy the rule');
+expect(!surfaceOk('/* <AsOfBar /> */ export function Page() { return null; }'), 'control: a block comment naming AsOfBar does not satisfy the rule');
+expect(surfaceOk('export function SheetBody() { return <><AsOfBar /></>; }') && surfaceOk('// undated-by-design: a fixture\nexport function Page() { return null; }'), 'control: a rendered AsOfBar and a declared opt-out both pass');
 
 if (failures.length) { console.error('FAIL check-timeview\n - ' + failures.join('\n - ')); process.exit(1); }
 console.log('check-timeview: ' + held + ' expectations held');

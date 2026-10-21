@@ -4,7 +4,9 @@
 // `walked / checked / violations`:
 //   imports   packages/core/src/**: no react, react-dom, next, motion or scheduler (or a subpath of one), no `@/` (the
 //             web app's alias), no @bp/web, nothing that resolves into apps/. The pure half (everything outside
-//             src/server) also imports no Node built-in (node:* or a bare built-in name) and no server file.
+//             src/server) also imports no Node built-in (node:* or a bare built-in name) and no server file. A src/server
+//             file whose header says `// Pure:` is held to the pure half too, and a file directly in src/server that is
+//             neither *.server.ts nor declares `// Pure:` is itself a violation (it would be checked as neither).
 //   web       apps/web/src/** and apps/server/src/**: reach core only as @bp/core/*, never by a relative path into
 //             packages/.
 //   dom       `tsc -p packages/core` (lib ES2023 + Node's types, no DOM lib, src/server excluded) is clean, so
@@ -46,9 +48,10 @@ const WEB_STACK = /^(react|react-dom|next|motion|scheduler)(\/|$)/;
 const BUILTIN = new Set(builtinModules.flatMap((b) => [b, b.split('/')[0]]));
 const under = (p, dir) => p === dir || p.startsWith(dir + '/');
 
-/** Why one import of a core file is refused, or null. `rel` is the file's repo path. */
-function refusedCore(spec, rel) {
-  const pure = !under(rel, SERVER);
+/** Why one import of a core file is refused, or null. `rel` is the file's repo path; `declaredPure` holds a file under
+ *  src/server to the pure half's rules (see `declaresPure`). */
+function refusedCore(spec, rel, declaredPure = false) {
+  const pure = !under(rel, SERVER) || declaredPure;
   if (WEB_STACK.test(spec)) return `'${spec}': React, Next or Motion in core`;
   if (spec.startsWith('@/')) return `'${spec}': the web app's alias in core`;
   if (spec === '@bp/web' || spec.startsWith('@bp/web/')) return `'${spec}': the web app in core`;
@@ -88,15 +91,22 @@ function stripOnly(root) {
   }
   return r;
 }
+/** A src/server file whose header says `// Pure: ...` is held to the pure half's rules: the declaration, read off the
+ *  RAW source (it is a comment), is the ground truth - not a list of names kept here. */
+const declaresPure = (raw) => /^\/\/\s*Pure\b/m.test(raw);
+/** A file directly in src/server is a server file (`*.server.ts`) or declares itself pure; neither is a hole. */
+const unclassified = (rel, raw) => path.posix.dirname(rel) === SERVER && !/\.server\.ts$/.test(rel) && !declaresPure(raw);
 const rule = (name) => ({ name, walked: 0, checked: 0, violations: [] });
 function scan(root, dir, refuse, name) {
   const r = rule(name);
   for (const f of walk(path.join(root, dir)).filter((f) => /\.(ts|tsx|mts|mjs|js)$/.test(f))) {
     r.walked++;
     const rel = posix(path.relative(root, f));
-    for (const { spec, line } of importsOf(fs.readFileSync(f, 'utf8'))) {
+    const raw = fs.readFileSync(f, 'utf8'), decl = under(rel, SERVER) && declaresPure(raw);
+    if (refuse === refusedCore && unclassified(rel, raw)) r.violations.push(`${rel}:1  a src/server file that is not *.server.ts and does not declare '// Pure:' is checked as neither half`);
+    for (const { spec, line } of importsOf(raw)) {
       r.checked++;
-      const why = refuse(spec, rel);
+      const why = refuse(spec, rel, decl);
       if (why) r.violations.push(`${rel}:${line}  ${why}`);
     }
   }
@@ -132,6 +142,8 @@ function controls() {
     ['imports', `${CORE}/s6.ts`, "import fs from 'node:fs';\nexport const a = fs;\n"],
     ['imports', `${CORE}/s7.ts`, "import { snapshotOf } from './server/store.server';\nexport const a = snapshotOf;\n"],
     ['imports', `${CORE}/s8.ts`, "export const a = () => import('react-dom');\n"],
+    ['imports', `${SERVER}/s9.ts`, "// Pure: no React, DOM or Next.\nimport fs from 'node:fs';\nexport const a = fs;\n"],
+    ['imports', `${SERVER}/s10.ts`, "export const a = 1;\n"],
     ['strip', `${CORE}/t1.ts`, "export class A {\n  constructor(private p: number, readonly q = 1) {}\n}\n"],
     ['strip', `${CORE}/t2.ts`, "export enum E { A, B }\n"],
     ['strip', `${CORE}/t3.ts`, "export namespace N {\n  export const a = 1;\n}\n"],
@@ -143,6 +155,7 @@ function controls() {
     [`${CORE}/ok2.ts`, "// import React from 'react' in a comment is not an import\nexport const b = 1;\nexport type T = { id: string };\n"],
     [`${CORE}/ok3.ts`, "export class C {\n  private p: number;\n  constructor(p: number, opts: { readonly x?: number } = {}) { this.p = p + (opts.x ?? 0); }\n}\n"],
     [`${SERVER}/ok.server.ts`, "import fs from 'node:fs';\nimport path from 'node:path';\nexport const a = (p: string) => fs.existsSync(path.resolve(p));\n"],
+    [`${SERVER}/ok-pure.ts`, "// Pure: no React, DOM or Next.\nimport { b } from '../model/ok2.ts';\nexport const a = b;\n"],
     [`${WEB}/ok.ts`, "import { b } from '@bp/core/ok2';\nimport { c } from './c';\nexport const a = b + c;\n"],
   ];
   let failed = 0;
