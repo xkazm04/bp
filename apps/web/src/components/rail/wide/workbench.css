@@ -1,7 +1,8 @@
 /* The rail's wide flyouts (Dock.tsx, rail/wide): Review, Agents, Orders, Steer, Plan and View as a workbench, three
    times the classic 340 px and never wider than the plan leaves (Find stays classic). Every panel is an optional strip
    over two panes (list | detail) that scroll on their own; the flyout body itself never scrolls.
-   Type: body 15-16 px, meta 13 px, labels 12 px mono uppercase, titles 20-24 px, figures 28-36 px mono. Tokens only.
+   Type: body 15-16 px, meta 13 px, labels 12 px mono uppercase, titles 20-24 px, strip counters 24 px mono,
+   detail figures 30-38 px mono (.wb-figs 30, .wb-figs.big 38, the metric move 36). Tokens only.
    Opaque: at this width the plan showing through the 0.96 card competes with the reading text. */
 #flyout.wide { width: min(1020px, calc(100vw - var(--rw) - 48px)); background: linear-gradient(var(--card), var(--card)), var(--paper); }
 #flyout.wide .fh { grid-template-columns: 26px 1fr auto; padding: 12px 14px 12px 16px; gap: 6px 14px; }
