@@ -19,7 +19,13 @@ const Entry = memo(function Entry({ r, items, sample }: { r: Release; items: rea
         {sample ? <SampleTag /> : null}
       </div>
       {r.status === 'failed' && r.error ? <p className="err">{r.error}</p> : null}
-      {items.length ? <ul>{items.map((x) => <li key={x.p.id} title={x.flagged ? 'shipped flagged' + (x.p.triage_note ? ': ' + x.p.triage_note : '') : undefined}>{x.p.title}{x.flagged ? ' ⚑' : ''}</li>)}</ul> : null}
+      {items.length ? (
+        <ul>{items.map((x) => (
+          <li key={x.p.id}>{x.p.title}
+            {x.flagged ? <small className="fl">⚑ shipped flagged{x.p.triage_note ? ': “' + x.p.triage_note + '”' : ''}</small> : null}
+          </li>
+        ))}</ul>
+      ) : null}
     </li>
   );
 });
