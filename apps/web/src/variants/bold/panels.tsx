@@ -22,6 +22,8 @@ const usd = (n: number) => '$' + n.toLocaleString('en-US');
 
 // ------------------------------------------------------------------------------------------ design
 const FID = ['sketch', 'wireframe', 'hi-fi', 'implemented', 'polished'];
+/** Every value of the design lens's a11y field (docs/standard/lenses/design.json), in words. */
+const A11Y_WORD: Record<string, string> = { unknown: 'not checked yet', fail: 'fails', partial: 'partly accessible', pass: 'passes' };
 const FID_WORD: Record<string, string> = { none: 'No design yet', sketch: 'A sketch', wireframe: 'Wireframed', 'hi-fi': 'Hi-fi design ready', implemented: 'Built to the design', polished: 'Polished', 'n/a': 'No screen to design' };
 function DesignBoard({ p }: { p: SheetPanelProps }) {
   const de = bl(p.f).design, lv = FID.indexOf(de.status);
@@ -39,7 +41,7 @@ function DesignBoard({ p }: { p: SheetPanelProps }) {
           </ol>
         )}
       </div>
-      <div className="bd-quiet">Accessibility: {de.a11y === 'unknown' ? 'not checked yet' : de.a11y === 'n/a' ? 'not applicable' : de.a11y === 'pass' ? 'passes' : de.a11y}</div>
+      <div className="bd-quiet">Accessibility: {A11Y_WORD[de.a11y] ?? de.a11y}</div>
     </div>
   );
 }
