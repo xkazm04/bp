@@ -4,16 +4,18 @@
 import { memo } from 'react';
 import type { Release } from '@bp/core/scan/types';
 import type { ScanJob } from '@bp/core/scan/jobs';
-import { RELEASE_STATE, STEPS, STEP_WORD, elapsed, failedStep, isActive } from './releaseState';
+import { RELEASE_STATE, STEPS, STEP_WORD, elapsed, failedStep, isActive, standOf } from './releaseState';
 
 export const Stepper = memo(function Stepper({ rel, last }: { rel?: Release; last?: ScanJob }) {
   const st = rel ? RELEASE_STATE[rel.status] : undefined, failed = st !== undefined && st.step < 0;
   const at = !rel || !st ? 0 : failed ? failedStep(last) : st.step, running = isActive(last);
+  // a stalled build (the row says building, nothing runs) is neither `now` nor `bad`: it is marked, and not spinning
+  const stalled = standOf(rel, last) === 'stalled';
   const cls = (i: number) => {
     if (!rel) return i === 0 ? 'now' : '';
     if (i < at || (i === at && rel.status === 'tagged')) return 'done';
     if (i > at) return '';
-    return failed ? 'bad' : 'now' + (running ? ' run' : '');
+    return failed ? 'bad' : stalled ? 'stall' : 'now' + (running ? ' run' : '');
   };
   return (
     <>

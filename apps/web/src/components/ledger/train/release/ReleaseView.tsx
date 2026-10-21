@@ -17,8 +17,8 @@ import { KEYMAP } from '../keymap';
 import { useTrain } from '../data';
 import { Callout } from '../ui/Controls';
 import {
-  ACTION, RELEASE_STATE, evidenceOf, failedStep, historyOf, isActive, jobsOf, keysOf, openRelease, readingsBy, STEPS,
-  type ReleaseModel, type RelAction,
+  ACTION, RELEASE_STATE, evidenceOf, failedStep, historyOf, isActive, jobsOf, keysOf, openRelease, readingsBy, standLine,
+  standOf, STEPS, type ReleaseModel, type RelAction,
 } from './releaseState';
 import { VersionBox, suggestKey, useSuggestion } from './VersionBox';
 import { Btn } from '../ui/Controls';
@@ -93,7 +93,7 @@ function useReleaseActions(m: ReleaseModel, phone: boolean): ReleaseActions {
 const ActionsRow = memo(function ActionsRow({ m, a }: { m: ReleaseModel; a: ReleaseActions }) {
   const rel = m.rel;
   if (!rel) return null;
-  const v = rel.version, st = RELEASE_STATE[rel.status];
+  const v = rel.version;
   return (
     <>
       <div className="tr-rel-acts">
@@ -107,24 +107,26 @@ const ActionsRow = memo(function ActionsRow({ m, a }: { m: ReleaseModel; a: Rele
           ? <a key={x} className="tr-rel-pr" href={rel.pr_url} target="_blank" rel="noreferrer">⇱ {prName(rel.pr_url)}{m.T.ctx.sim ? ' · sample' : ''}</a>
           : <Btn key={x} tone={ACTION[x].go ? 'go' : undefined} kbd={keysOf(ACTION[x].key)} onClick={() => a.run(x)} disabled={x === 'build' && !m.items.length}>{ACTION[x].label(v)}</Btn>)}
       </div>
-      <p className="tr-rel-hint">{a.busy && !isActive(m.last) ? 'Starting the release job…' : st.hint(v, m.items.length)}</p>
+      <p className="tr-rel-hint">{a.busy && !isActive(m.last) ? 'Starting the release job…' : standLine(standOf(rel, m.last), rel, m.last, m.items.length)}</p>
     </>
   );
 });
 
 const prName = (url: string | undefined) => { const n = /\/pull\/(\d+)/.exec(url ?? '')?.[1]; return n ? 'PR #' + n : 'Pull request'; };
 
-/** What went wrong, in words: a refused request (412: the fix), the release's failure at its step, a failed job. */
+/** What went wrong, in words: a refused request (412: the fix), the release's failure at its step, a failed job, and a
+ *  build that stopped with the row still `building` (standOf's `stalled`: nothing is running and nothing here moves it). */
 function Failures({ m, a }: { m: ReleaseModel; a: ReleaseActions }) {
   const rel = m.rel, last = m.last;
-  const failed = rel?.status === 'failed';
+  const failed = rel?.status === 'failed', stalled = standOf(rel, last) === 'stalled';
   return (
     <>
       {a.err?.status === 412 ? (
         <Callout tone="error" role="tr-rel-gh"><b>Refused · gh not authenticated. </b>Run <code>gh auth login</code> in a terminal, then Build again. Nothing was started.</Callout>
       ) : a.err ? <Callout tone="error"><b>Refused · </b>{a.err.text}</Callout> : null}
       {failed ? <Callout tone="error" role="tr-rel-failed"><b>Failed at {STEPS[failedStep(last)]} · </b>{rel.error ?? last?.error ?? 'the release job did not get through'}</Callout>
-        : last?.status === 'failed' && last.error ? <Callout tone="error"><b>The {last.step ?? 'release'} job failed · </b>{last.error}</Callout> : null}
+        : stalled ? <Callout tone="note" role="tr-rel-stalled"><b>Build stopped · </b>{last?.error ?? (last ? 'the release job is ' + last.status : 'no release job is left for this release')}</Callout>
+          : last?.status === 'failed' && last.error ? <Callout tone="error"><b>The {last.step ?? 'release'} job failed · </b>{last.error}</Callout> : null}
     </>
   );
 }

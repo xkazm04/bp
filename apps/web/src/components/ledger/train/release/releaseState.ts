@@ -2,7 +2,9 @@
 // the history, each package item's evidence (verdict, before -> after, flag), the failure step, a job's elapsed time
 // and the notes preview. One table (RELEASE_STATE) maps a release status to its step, its words, what a person can do
 // and whether its items are locked; the Stepper, the actions row and the Package read it, and nothing else branches
-// on a release status. Value-free of React, so it stays cheap to import from the header strip.
+// on a release status. A status alone cannot say whether work is in flight, so `standOf` reads the row WITH its latest
+// job (its `stalled` is the row at `building` with nothing running) and `standLine` owns the words for it.
+// Value-free of React, so it stays cheap to import from the header strip.
 import type { Measurement, Proposal, Release, ReleaseStatus } from '@bp/core/scan/types';
 import type { ScanJob } from '@bp/core/scan/jobs';
 import { verdictOf, type LensFields, type Verdict } from '@bp/core/scan/compare';
@@ -70,6 +72,34 @@ export const isActive = (j: ScanJob | undefined): boolean => !!j && (j.status ==
 
 /** The step a failed release failed at: Finish's step when its last job finished, else building. */
 export const failedStep = (last: ScanJob | undefined): number => STEPS.indexOf(last?.step === 'finish' ? 'tagged' : 'building');
+
+/**
+ * Where the release stands, from its row AND its latest job: the one place the tab decides whether work is in flight.
+ * `stalled` is the state no status alone can name - the row says `building` while nothing is running, because the job
+ * failed, was cancelled, ended without moving the row on, or is gone with the in-memory registry that held it.
+ * jobs.server.ts leaves the row at `building` in every one of those cases (Kettle's sim writes `failed` instead,
+ * train-sim.ts `cancelled()`), and release-job.ts starts a build only from `draft` or `failed`, so the tab says what
+ * happened instead of going on claiming a job is working.
+ */
+export type Stand = 'ok' | 'running' | 'stalled' | 'failed';
+
+export function standOf(rel: Pick<Release, 'status'> | undefined, last: ScanJob | undefined): Stand {
+  if (!rel) return 'ok';
+  if (isActive(last)) return 'running';
+  if (rel.status === 'failed') return 'failed';
+  return rel.status === 'building' ? 'stalled' : 'ok';
+}
+
+/** The line under the actions: RELEASE_STATE's words, except for a stall, which names what stopped and what is left. */
+export function standLine(stand: Stand, rel: Pick<Release, 'status' | 'version'> | undefined, last: ScanJob | undefined, n: number): string {
+  if (!rel) return '';
+  if (stand !== 'stalled') return RELEASE_STATE[rel.status].hint(rel.version, n);
+  const what = !last ? 'No build job is running'
+    : last.status === 'cancelled' ? 'The build job was cancelled'
+      : last.status === 'failed' ? 'The build job failed'
+        : 'The build job ended without moving the release on';
+  return `${what} and v${rel.version} is still marked building, so nothing is running. A build starts again from draft or failed.`;
+}
 
 /** `12 s`, `3 m 05 s`: a job's run time, to its end or to now. */
 export function elapsed(j: ScanJob, now: number): string | undefined {
