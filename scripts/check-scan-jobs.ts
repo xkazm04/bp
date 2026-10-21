@@ -393,6 +393,10 @@ try {
     const rr = repo('rel'), rstore = path.join(rr, '.ai/lens-scan'), rdb = path.join(rstore, 'scan.db');
     fs.mkdirSync(rstore, { recursive: true });
     fs.writeFileSync(path.join(rr, 'package.json'), JSON.stringify({ name: 'rel', version: '2.3.0' }));
+    // a store written by a newer lens-scan than this one knows: store.mjs REFUSES it (exit 1), the triage route's other 409
+    const fr = repo('future'), fdb = path.join(fr, '.ai/lens-scan/scan.db');
+    fs.mkdirSync(path.dirname(fdb), { recursive: true });
+    { const fw = new DatabaseSync(fdb); fw.exec('PRAGMA user_version = 99'); fw.close(); }
     const sw = new DatabaseSync(rdb);
     sw.exec(fs.readFileSync(path.join(ROOT, 'docs/standard/lens-scan-store.sql'), 'utf8'));
     sw.prepare("INSERT INTO runs (id, started_at, updated_at, phase, status, lenses) VALUES ('r0', ?, ?, 'execute', 'done', '[\"development\"]')").run(T, T);
@@ -400,7 +404,7 @@ try {
     const ip = sw.prepare("INSERT INTO proposals (id, run_id, feature, lens, metric, title, kind, status, created_at, updated_at, pack_id, commit_sha) VALUES (?, 'r0', 'a', 'development', 'cov', ?, 'fix', ?, ?, ?, 'k-dev-1', ?)");
     for (const [id, st] of [['a1', 'done'], ['a2', 'done'], ['a3', 'failed']]) ip.run(id, 'item ' + id, st, at(Number(id[1])), at(Number(id[1])), id.repeat(20));
     sw.close();
-    fs.writeFileSync(path.join(dir, 'bp.products.local.json'), JSON.stringify({ products: [{ slug: 'prod', name: 'Prod', root: pr }, { slug: 'rel', name: 'Rel', root: rr }] }));
+    fs.writeFileSync(path.join(dir, 'bp.products.local.json'), JSON.stringify({ products: [{ slug: 'prod', name: 'Prod', root: pr }, { slug: 'rel', name: 'Rel', root: rr }, { slug: 'future', name: 'Future', root: fr }] }));
     const status = (table: string, id: string) => { const d = new DatabaseSync(rdb, { readOnly: true }); try { return (d.prepare(`SELECT status FROM ${table} WHERE id = ?`).get(id) as { status?: string } | undefined)?.status; } finally { d.close(); } };
     const relRow = (id: string) => { const d = new DatabaseSync(rdb, { readOnly: true }); try { return d.prepare('SELECT * FROM releases WHERE id = ?').get(id) as Record<string, string> | undefined; } finally { d.close(); } };
 
@@ -422,6 +426,12 @@ try {
       check('triage accept -> 200 through store.mjs, by user:<gh login>', t1.status === 200 && t1.body.triaged.join() === 'a1,a2' && t1.body.by === 'user:octocat' && t1.body.decision === 'accepted', JSON.stringify(t1.body));
       const t2 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a3'], decision: 'accept' });
       check('triage accept of a failed item without a note -> 409, skipped note-required', t2.status === 409 && t2.body.skipped[0]?.reason === 'note-required', JSON.stringify(t2.body));
+      // the two 409s (nothing moved / store.mjs refused) share `error`, `triaged` and `skipped`: a caller branches on a field
+      const tRef = await call(tri.POST, '/x', 'POST', { slug: 'future' }, { ids: ['a1'], decision: 'accept' });
+      const pNone = W.parseTriageResult(t2.body);
+      check('triage 409 nothing moved -> `error` names it, the skipped list stays, the parser door still takes it', t2.body.error === 'nothing moved' && Array.isArray(t2.body.triaged) && pNone.ok && pNone.value.skipped[0]?.reason === 'note-required', JSON.stringify(t2.body) + (pNone.ok ? '' : ' ' + pNone.error));
+      check('triage 409 store refused -> `error` carries the refusal, triaged and skipped are empty lists, and the parser door does not mistake it for a result',
+        tRef.status === 409 && /schema v99/.test(tRef.body.error ?? '') && Array.isArray(tRef.body.triaged) && tRef.body.triaged.length === 0 && Array.isArray(tRef.body.skipped) && tRef.body.skipped.length === 0 && !W.parseTriageResult(tRef.body).ok, JSON.stringify(tRef.status) + JSON.stringify(tRef.body));
       const t3 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a3'], decision: 'descope', note: 'not worth it' });
       check('triage descope -> 200, the pack settles open -> triaged', t3.status === 200 && t3.body.packs_triaged.join() === 'k-dev-1' && status('packs', 'k-dev-1') === 'triaged', JSON.stringify(t3.body));
       // the undo: each item back to the status it left, the pack open again; a second undo has nothing to go back to
