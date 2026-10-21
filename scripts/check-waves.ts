@@ -63,6 +63,16 @@ try {
     ['401 findings', { name: 'w', packages: Array.from({ length: 9 }, (_, i) => pkg('P' + i, Array.from({ length: 50 }, (_, k) => `f${i}-${k}`))) }, /at most 400/],
   ];
   for (const [name, body, re] of refusals) { const r = W.checkWaveBody(body); check('checkWaveBody refuses ' + name, !r.ok && re.test(r.error), JSON.stringify(r)); }
+  // The allow-lists are the ground truth (packages/core/src/scan/waves.ts), so the accepted side is DERIVED from them
+  // rather than hand-listed: a model or effort added there is exercised the moment it is added, and the refusals above
+  // are checked to be outside the lists, so neither direction can go stale quietly.
+  {
+    const pairs = W.WAVE_MODELS.flatMap((m) => W.WAVE_EFFORTS.map((e) => [m, e] as const));
+    const nope = pairs.filter(([m, e]) => { const r = W.checkWaveBody({ name: 'w', packages: [pkg('A', ['p1'], m, e)] }); return !r.ok || r.packages[0].model !== m || r.packages[0].effort !== e; });
+    check(`checkWaveBody accepts every allow-listed model x effort (${pairs.length} pairs of ${W.WAVE_MODELS.length} x ${W.WAVE_EFFORTS.length})`, pairs.length > 0 && nope.length === 0, nope.map((p) => p.join('/')).join());
+    const inList = ['gpt', 'haiku', 'max'].filter((x) => (W.WAVE_MODELS as readonly string[]).includes(x) || (W.WAVE_EFFORTS as readonly string[]).includes(x));
+    check('the refused samples above are outside the allow-lists (gpt, haiku, max)', inList.length === 0, inList.join());
+  }
 
   // ------------------------------------------------------------------ waveState
   const mk = (statuses: (string | null)[], status: Wave['status'] = 'dispatched'): [Wave, ScanJob[]] => {
