@@ -261,5 +261,10 @@ const { packHeading, packOrder } = await imp('ComparePanel.tsx');
   ok(key.includes('k-out') && /outlier/.test(key), 'outlier outline: the legend explains it, so the only explanation is not a hover title', key.includes('k-out'));
 }
 
+{ // the empty Screens callout may say the shots are missing, never why: "cannot render" needs the scan's unscreenable: note
+  const scr = stripComments(fs.readFileSync(path.join(SRC, CMP, 'Screens.tsx'), 'utf8'));
+  ok(/No screens:/.test(scr) && !/cannot render|can't render|unscreenable/i.test(scr), 'no screens: the callout asserts no cause (TrainData carries no unscreenable: note)', /cannot render/i.exec(scr)?.[0]);
+}
+
 console.log(bad ? `check-train-compare: ${bad} of ${n} failed` : `check-train-compare: ${n} checks passed`);
 process.exit(bad ? 1 : 0);

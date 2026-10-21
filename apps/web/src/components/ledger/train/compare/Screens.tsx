@@ -61,7 +61,7 @@ export const Screens = memo(function Screens({ c, slug, view, onView, fname, sta
         </span>
       </h4>
       {!c.shots.length ? (
-        <Callout tone="empty"><span><b>No screens:</b> the harness cannot render this feature ({fname}). Judge it by the metric, the evidence and the diff below.</span></Callout>
+        <Callout tone="empty"><span><b>No screens:</b> this scan has no shots of {fname}. The metric, the evidence and the diff below are what there is to read.</span></Callout>
       ) : (
         <>
           <PixLine show={show} maps={show.map(mapOf)} stateLine={stateLine} />
