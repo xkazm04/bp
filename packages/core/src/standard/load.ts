@@ -371,7 +371,7 @@ interface Base {
   people: Person[]; activity: ActivityEvent[]; events: StructureEvent[];
   weeks: string[]; snapshots: Snapshot[];
   warnings: string[];
-  /** Built structures by toggle string. */
+  /** Built structures by what the toggle resolves to, at most TOGGLE_CACHE of them. */
   byToggle: Map<string, Structure>;
 }
 /** One cached base per map object, events text and the options that change the base (catalog, weeks). */
@@ -630,15 +630,21 @@ function buildBase(raw: unknown, eventsText: string | null, opts: LoadOptions): 
   };
 }
 
+/** Structures kept per base, least recently used first out: the toggle string comes from the URL. */
+const TOGGLE_CACHE = 32;
+
 /** The registry for a toggle: enabled entries in file order, re-indexed; General health and trouble follow it. */
 function withToggle(b: Base, toggle: string | null): Structure {
-  const key = toggle ?? '';
-  const hit = b.byToggle.get(key);
-  if (hit) return hit;
   const t = parseLensToggle(toggle);
   // a toggle id the map has no lens for does nothing, and a typo looks exactly like a lens that refused to
   // move, so the ignored ids are named. Per toggle, hence a copy: b.warnings belongs to the base.
   const unknown = [...t.keys()].filter((id) => !b.entries.some((e) => e.id === id));
+  // keyed on what the toggle MEANS (the enabled registry plus the ignored ids it names), not on the URL's
+  // spelling: `-a,-b` and `-b,-a` are one structure. The map is also capped, because a typo is its own key.
+  const on = b.entries.filter((e) => t.get(e.id) ?? e.enabled).map((e) => e.id);
+  const key = on.join(',') + ' ' + unknown.join(' ');
+  const hit = b.byToggle.get(key);
+  if (hit) { b.byToggle.delete(key); b.byToggle.set(key, hit); return hit; } // most recently used last
   const warnings = unknown.length
     ? [...b.warnings, `the lens toggle names unknown lens${unknown.length > 1 ? 'es' : ''} ${unknown.map((id) => JSON.stringify(id)).join(', ')}; ignored`]
     : b.warnings;
@@ -655,6 +661,7 @@ function withToggle(b: Base, toggle: string | null): Structure {
     kpis: b.kpis, people: b.people, activity: b.activity, events: b.events, weeks: b.weeks, snapshots: b.snapshots, warnings,
   };
   b.byToggle.set(key, s);
+  if (b.byToggle.size > TOGGLE_CACHE) b.byToggle.delete(b.byToggle.keys().next().value as string);
   return s;
 }
 

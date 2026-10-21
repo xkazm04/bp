@@ -232,6 +232,24 @@ const expect = (ok, what) => { if (ok) held++; else failures.push(what); };
   expect(typo.lenses.length === real.lenses.length + 1, 'toggle: a typo leaves every lens enabled');
 }
 
+// ------------------------------------------------------------------ the toggle cache is bounded, and keyed on what a toggle MEANS
+// `?lenses=` comes from the URL. A cache keyed on the raw string grows by one full structure per distinct string
+// for the life of the process, and `-security,-quality` / `-quality,-security` are one registry in two entries.
+{
+  const map = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.app-structure.json'), 'utf8'));
+  const events = fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.events.jsonl'), 'utf8');
+  const of = (toggle) => loadStructure(map, events, { lenses: toggle });
+  expect(of('-security,-quality') === of('-quality,-security'), 'toggle cache: two spellings of one registry built two structures');
+  expect(of('+security') === of(null), 'toggle cache: re-enabling an already-enabled lens built a second structure');
+  expect(of('-security') !== of(null) && of('-security') === of('-security'), 'toggle cache: a real toggle is not cached by itself');
+  const first = of('-nope0');
+  for (let i = 1; i <= 300; i++) of('-nope' + i);
+  expect(of('-nope0') !== first, 'toggle cache: 300 distinct toggles are all still held (unbounded)');
+  const last = of('-nope300');
+  expect(of('-nope300') === last, 'toggle cache: the most recent toggle is not held');
+  expect(of('-nope300').warnings.length === 1 && of(null).warnings.length === 0, 'toggle cache: a cap changed what a toggle warns');
+}
+
 // ------------------------------------------------------------------ the control: valid input warns 0 times
 {
   const map = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.app-structure.json'), 'utf8'));
