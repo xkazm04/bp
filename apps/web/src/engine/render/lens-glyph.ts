@@ -44,6 +44,7 @@ export function glyph(ctx: CanvasRenderingContext2D, g: GlyphSpec, x: number, y:
       ctx.rect(x + bw + g, y + s * 0.3, bw, s * 0.7);
       ctx.rect(x + 2 * (bw + g), y, bw, s);
       ctx.fill();
+      ctx.lineCap = 'butt';
       return;
     }
     case 'set-square':

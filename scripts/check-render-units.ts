@@ -241,6 +241,7 @@ function unionMembers(rel: string, name: string): string[] {
     const c = fresh();
     LG.glyph(c, n, 10, 20, 16, '#fff');
     expect(c.ops > 0, `lens-glyph: the shared glyph "${n}" puts ink on the canvas (a case added to the union but not to the switch draws nothing)`);
+    expect(c.lineCap === 'butt', `lens-glyph: glyph "${n}" puts lineCap back to butt before it returns (the round cap it sets would leak into whatever the caller draws next)`);
   }
   const c = fresh();
   LG.glyph(c, null, 10, 20, 16, '#fff');
