@@ -169,6 +169,16 @@ export function expectedCost(quality, log) {
   return { cost: PROBE_ESTIMATE[quality], measured: false };
 }
 
+/**
+ * What the committed log records for a saved frame. A repo path is portable; an OVERSIZE frame lives under os.tmpdir(),
+ * which the OS clears and which exists on one machine, so it logs only its basename and a note (the generation id and
+ * urls in the same entry are how it is recovered). Older lines that carry the absolute path are append-only history.
+ */
+export function loggedFile(dest, committed) {
+  if (committed) return { file: path.relative(ROOT, dest).replaceAll('\\', '/') };
+  return { file: path.basename(dest), fileNote: 'not committed: written under the OS temp dir (bp-lookdev) and recoverable from urls' };
+}
+
 /** `text` with every copy of the key replaced: whatever goes to log.jsonl (committed) or stdout passes through here. */
 export const redact = (text, key) => (key ? String(text).replaceAll(key, '[redacted]') : String(text));
 
@@ -285,7 +295,7 @@ async function gen() {
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.writeFileSync(dest, buf);
       entry.committed = dest.startsWith(DIR) || dest.startsWith(ART);
-      entry.file = entry.committed ? path.relative(ROOT, dest).replaceAll('\\', '/') : dest.replaceAll('\\', '/');
+      Object.assign(entry, loggedFile(dest, entry.committed));
       entry.bytes = buf.length;
     }
   } catch (e) {

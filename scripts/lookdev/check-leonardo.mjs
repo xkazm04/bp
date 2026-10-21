@@ -13,7 +13,8 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
-import { artFile, composePropPrompt, composePrompt, expectedCost, nightTotal, outFile, parseSize, redact, spendWindow, windowReport, withinCap } from './leonardo.mjs';
+import os from 'node:os';
+import { artFile, composePropPrompt, composePrompt, expectedCost, loggedFile, nightTotal, outFile, parseSize, redact, spendWindow, windowReport, withinCap } from './leonardo.mjs';
 
 let failed = 0, passed = 0;
 const check = (name, ok, detail = '') => { ok ? passed++ : failed++; console.log(`${ok ? 'ok  ' : 'FAIL'}  ${name}${ok || !detail ? '' : `  (${detail})`}`); };
@@ -136,6 +137,21 @@ check('report: a later window does not carry PRIOR_SPEND', windowReport(realLog,
 check('report: the breakdown counts the same calls nightTotal does',
   Object.values(prior.byQuality).reduce((n, q) => n + q.calls, 0) === realLog.filter((e) => e.time >= prior.window.from && e.time < prior.window.to).length);
 check('report: nightTotal is the figure the cap is asked about', prior.cap === 390 && !withinCap(prior.nightTotal, 1, prior.cap), `nightTotal ${prior.nightTotal} of ${prior.cap}`);
+
+// file: the committed log must not point at a machine path. Four city-backdrop lines (the first 66 entries) predate
+// loggedFile and carry an absolute temp path; the log is append-only, so they are grandfathered by line number and
+// no later line may join them. A committed entry's file is repo-relative (not asserted to still exist: 13 were moved or renamed after logging).
+const ISABS = (f) => /^[A-Za-z]:[\\/]|^\//.test(String(f ?? ''));
+const LEGACY_LINES = 66;
+const absLines = realLog.map((en, i) => (ISABS(en.file) ? i + 1 : 0)).filter(Boolean);
+check('file: no log entry after the first 66 lines records an absolute machine path', absLines.every((n) => n <= LEGACY_LINES), `lines ${absLines.join(',')}`);
+check('file: every committed entry names a repo-relative file', realLog.filter((en) => en.committed).every((en) => !ISABS(en.file)));
+const tmpDest = path.join(os.tmpdir(), 'bp-lookdev', 'x-A-s1-low.jpg');
+check('file: an uncommitted frame logs its basename and a note, never the temp path',
+  loggedFile(tmpDest, false).file === 'x-A-s1-low.jpg' && !ISABS(loggedFile(tmpDest, false).file) && /not committed/.test(loggedFile(tmpDest, false).fileNote ?? ''), JSON.stringify(loggedFile(tmpDest, false)));
+check('file: a committed frame logs a repo-relative path', loggedFile(path.join(DIR, 'explore', 'x.png'), true).file === 'docs/concepts/vr-light-table/lookdev/explore/x.png', loggedFile(path.join(DIR, 'explore', 'x.png'), true).file);
+
+check('file: gen() takes entry.file from loggedFile and assigns it nowhere else', /Object\.assign\(entry,\s*loggedFile\(dest,\s*entry\.committed\)\)/.test(nocomment) && !/entry\.file\s*=[^=]/.test(nocomment));
 
 console.log(`
 check-leonardo: ${passed} passed, ${failed} failed`);
