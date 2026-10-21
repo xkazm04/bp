@@ -50,6 +50,43 @@ export function stripCxx(text, keepStrings = false) {
   return out;
 }
 
+/** [start, end) of the first `{ ... }` at or after `from`, on text whose comments and strings are already blanked. */
+export function braceSpan(code, from = 0) {
+  const open = code.indexOf('{', from);
+  if (open < 0) return null;
+  for (let i = open, depth = 0; i < code.length; i++) {
+    if (code[i] === '{') depth++;
+    else if (code[i] === '}' && --depth === 0) return [open, i + 1];
+  }
+  return null;
+}
+
+/**
+ * The warnings in BpLink.cpp's ReadEvents: how many sit inside the per-line loop with no `if (counter < cap)` in front of
+ * them (each would fire once per bad line, so up to one per events line), and how many follow the loop and carry two or
+ * more %d (a "N of M" summary). `code` is stripCxx(text) and `lit` is stripCxx(text, true): same length, so an index
+ * into one is an index into the other. Null when the function or its loop is not found.
+ */
+export function readEventsReport(code, lit) {
+  const fn = /\bvoid\s+ReadEvents\s*\(/.exec(code);
+  const body = fn && braceSpan(code, fn.index + fn[0].length);
+  const loop = body && /\bfor\s*\(/.exec(code.slice(body[0], body[1]));
+  const loopBody = loop && braceSpan(code, body[0] + loop.index + loop[0].length);
+  if (!loopBody) return null;
+  let unguarded = 0, summaries = 0;
+  for (const m of code.matchAll(/UE_LOG\s*\(\s*LogBpLink\s*,\s*Warning\b/g)) {
+    if (m.index < body[0] || m.index >= body[1]) continue;
+    if (m.index >= loopBody[0] && m.index < loopBody[1]) {
+      const from = Math.max(code.lastIndexOf(';', m.index), code.lastIndexOf('}', m.index)) + 1;
+      if (!/\bif\s*\([^)]*<=?[^)]*\)\s*\{?\s*$/.test(code.slice(from, m.index))) unguarded++;
+    } else if (m.index >= loopBody[1]) {
+      const fmt = /TEXT\("((?:[^"\\]|\\.)*)"\)/.exec(lit.slice(m.index, m.index + 400))?.[1] ?? '';
+      if ((fmt.match(/%d/g) ?? []).length >= 2) summaries++;
+    }
+  }
+  return { unguarded, summaries };
+}
+
 const kdata = JSON.parse(fs.readFileSync(path.join(DATA, 'kettle.app-structure.json'), 'utf8'));
 const lines = (s) => s.split('\n').filter((l) => l.trim());
 const wantEvents = lines(fs.readFileSync(path.join(DATA, 'kettle.events.jsonl'), 'utf8'));
@@ -137,6 +174,14 @@ try {
     const pinned = [...cpp.matchAll(/StreamStatus\s*==\s*(\d{3})/g)].map((m) => Number(m[1]));
     check(`source: BpLink.cpp branches on the /stream status the server answers (${st.status})`, pinned.includes(st.status),
       `BpLink.cpp accepts [${pinned.join(', ')}], the server answered ${st.status}`);
+
+    // ReadEvents is forgiving by design (a bad line is skipped, never fatal), so the REPORT is what is pinned: a payload
+    // whose every line fails (a format change, a truncated body) must produce a count and a few samples, not one Warning
+    // per line (566 of them for Kettle) with no total. Derived over the text because there is no UE run to corrupt a payload.
+    const cppText = fs.readFileSync(path.join(ROOT, 'apps/vr/Source/BpLink/Private/BpLink.cpp'), 'utf8');
+    const rep = readEventsReport(stripCxx(cppText), stripCxx(cppText, true));
+    check(`source: ReadEvents' per-line warning is capped (0 unguarded in the loop) and a "skipped N of M" summary follows it`,
+      !!rep && rep.unguarded === 0 && rep.summaries >= 1, rep ? `${rep.unguarded} unguarded warnings in the loop, ${rep.summaries} summaries after it` : 'ReadEvents or its loop not found');
 
     // The level names are the web's and the plan route's: structure.domains are ROOMS (13 here), and wings are the
     // WING_DEFS groups of domains (5 here). A log line that labels the domain count "wings" reports a number that is

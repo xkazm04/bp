@@ -25,24 +25,36 @@ namespace
 		return Request;
 	}
 
-	/** The events string is JSONL: one object per line. A bad line is logged and skipped, never fatal. */
+	/**
+	 * The events string is JSONL: one object per line. A bad line is skipped, never fatal. The first MaxSampled bad lines
+	 * are logged with a prefix, then ONE summary says how many of how many failed, so a wire change that breaks every
+	 * line reads "566 of 566" and not 566 near-identical warnings.
+	 */
 	void ReadEvents(const FString& Jsonl, TArray<FBpAppStructureEvent>& Out)
 	{
+		constexpr int32 MaxSampled = 3;
+		int32 Total = 0;
+		int32 Skipped = 0;
 		TArray<FString> Lines;
 		Jsonl.ParseIntoArrayLines(Lines);
 		for (const FString& Line : Lines)
 		{
 			if (Line.TrimStartAndEnd().IsEmpty()) continue;
+			++Total;
 			TSharedPtr<FJsonObject> Object;
 			FBpAppStructureEvent Event;
 			if (FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Line), Object) && Object.IsValid() && BpSchema::FromJson(Object.ToSharedRef(), Event))
 			{
 				Out.Add(MoveTemp(Event));
 			}
-			else
+			else if (++Skipped <= MaxSampled)
 			{
 				UE_LOG(LogBpLink, Warning, TEXT("BpLink: skipped an events line that did not parse: %.80s"), *Line);
 			}
+		}
+		if (Skipped > 0)
+		{
+			UE_LOG(LogBpLink, Warning, TEXT("BpLink: skipped %d of %d events lines that did not parse (the first %d are logged above)"), Skipped, Total, FMath::Min(Skipped, MaxSampled));
 		}
 	}
 }
