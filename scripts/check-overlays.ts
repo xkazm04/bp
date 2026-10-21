@@ -8,7 +8,8 @@
 //   Toast                 an undoable toast is not displaced, the queue drains in order, the live region is
 //                         mounted and not display:contents
 //   General legend        the caption is prose, not a key row (.lg-cap and the display:block rule that carries it)
-//   Phone touch targets   every phone-scoped control rule declares at least 44 px
+//   Phone touch targets   every phone-scoped rule for an interactive element, DERIVED from the CSS and the rendered
+//                         controls, declares at least 44 px (a touch-exempt comment opts one out)
 //   Marker tokens         no text colour is taken from --red / --mint / --amber (their *-2 siblings are the
 //                         text-grade ones; --red reads 4.36:1 on --paper in light theme)
 //   Phone reading list    a search never prints a heading with no rows under it
@@ -23,7 +24,7 @@ import { register } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { readBlanked, readStripped, stripBlock } from './lib/source.ts';
+import { blankBlock, readBlanked, readStripped, stripBlock } from './lib/source.ts';
 import fs from 'node:fs';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
@@ -171,18 +172,45 @@ expect(!!capRule && /display\s*:\s*block/.test(capRule[1]), 'blueprint.css: .lg 
   expect(!/all 0 enabled lenses/.test(capNone) && /No lenses are enabled/.test(capNone), `the shared General caption with 0 lenses still counts "all 0 enabled lenses" or does not say so`);
 }
 
-// Phone touch targets: the theme toggle, the "whose desk" chips and the feature rows are tapped with a
-// thumb, so each declares at least 44 px (the Back button above is the fourth). Read from the CSS, comments stripped.
-const minPx = (sel: string) => {
-  const m = new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{([^}]*)\\}').exec(bpcss);
-  if (!m) return { sel, px: NaN, found: false };
-  const h = /(?:^|[;\s])(?:min-height|height)\s*:\s*(\d+)px/.exec(m[1]);
-  return { sel, px: h ? Number(h[1]) : NaN, found: true };
-};
-for (const sel of ['.bp-phone .theme-toggle', '.ph-who button', '.ph-dom button', '.ph-detail .btn', '.ph-detail .dl button']) {
-  const r = minPx(sel);
-  expect(r.found && r.px >= 44, `blueprint.css ${sel}: touch target ${r.found ? (Number.isNaN(r.px) ? 'unset' : r.px + 'px') : 'rule not found'}, expected at least 44px`);
+// Phone touch targets, DERIVED rather than listed: every phone-scoped rule in blueprint.css whose subject (the last
+// compound of its selector) is an interactive element must declare at least 44 px on the rule for that element. A subject is
+// interactive when it is a button / summary / input / select / textarea / a, or when it carries a class that a control the
+// Phone actually renders (list and detail) carries - so `.ph-q .op`, `.ph-more` and `.theme-toggle` are found without being
+// named here. State variants (`:hover`, `[aria-pressed]`, pseudo-elements) inherit from their base rule and are skipped. A
+// rule that styles a control that is not a thumb target opts out with a `touch-exempt` comment inside the rule.
+// Read from the CSS with comments BLANKED (offsets and line numbers stay the file's own), so a comment about the rule cannot
+// stand in for it and the reported anchor is the line the rule sits on.
+const rawCss = fs.readFileSync(path.join(SRC, 'components/blueprint.css'), 'utf8');
+const touchCss = blankBlock(rawCss);
+const phList = render(() => React.createElement(Phone), { phone: true, open: null }, () => ({ parts: [] }));
+const controlClasses = new Set<string>();
+for (const m of (ph.html + phList.html).matchAll(/<(?:button|summary|input|select|textarea|a)\b([^>]*)>/g)) {
+  for (const c of (/class="([^"]*)"/.exec(m[1]) || ['', ''])[1].split(/\s+/)) if (c) controlClasses.add(c);
 }
+const TAGS = ['button', 'summary', 'input', 'select', 'textarea', 'a'];
+const subjectOf = (sel: string) => sel.trim().split(/\s*[>+~]\s*|\s+/).pop() as string;
+const byTouch = new Map<string, { sel: string; line: number; px: number; exempt: boolean; kind: string }>();
+for (const m of touchCss.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+  const line = touchCss.slice(0, m.index + m[0].indexOf(m[1].trim())).split('\n').length;
+  const exempt = /touch-exempt/.test(rawCss.slice(m.index, m.index + m[0].length));
+  const px = Math.max(-Infinity, ...[...m[2].matchAll(/(?:^|[;\s])(?:min-height|height)\s*:\s*(\d+(?:\.\d+)?)px/g)].map((d) => Number(d[1])));
+  for (const sel of m[1].split(',').map((s) => s.trim())) {
+    if (!/\.ph-|\.bp-phone/.test(sel)) continue;
+    const subj = subjectOf(sel);
+    if (/[:[]/.test(subj)) continue;
+    const tag = (/^[a-z][a-z0-9-]*/.exec(subj) || [''])[0];
+    const classes = subj.match(/\.[\w-]+/g)?.map((c) => c.slice(1)) ?? [];
+    const kind = TAGS.includes(tag) ? tag : classes.find((c) => controlClasses.has(c)) ? 'class' : '';
+    if (!kind) continue;
+    const prev = byTouch.get(sel);
+    byTouch.set(sel, prev ? { ...prev, px: Math.max(prev.px, px), exempt: prev.exempt || exempt } : { sel, line, px, exempt, kind });
+  }
+}
+const touch = [...byTouch.values()];
+// the matcher guard: the derivation must still see each kind of control this file is known to style for a thumb
+for (const k of ['button', 'summary', 'input', 'class']) expect(touch.some((t) => t.kind === k), `blueprint.css: the touch-target derivation found no phone ${k === 'class' ? 'control reached through a rendered class' : k + ' rule'} - the matcher stopped biting`);
+expect(touch.length >= 9, `blueprint.css: the touch-target derivation found ${touch.length} phone control rules, 9 are known - the matcher stopped biting`);
+for (const t of touch) expect(t.exempt || t.px >= 44, `blueprint.css:${t.line} ${t.sel}: touch target ${Number.isFinite(t.px) ? t.px + 'px' : 'unset'}, expected at least 44px (or a touch-exempt comment)`);
 
 // globals.css states the rule on the tokens themselves: --mint-2 / --amber-2 / --red-2 are the text-grade
 // status colours (>= 4.5:1 on paper and cards) and --mint / --amber / --red stay the marker and fill tones.
