@@ -3,7 +3,7 @@
 // with an unknown extra field left out and an absent one still absent; and refuses a bad one, naming the field
 // (`<field>: <what>`). Plus parseJson (the train's only JSON.parse) and errorText.
 // Run: node scripts/check-train-wire.ts  (Node's type stripping; no build step). Exit 1 on any failure.
-import { errorText, parseCommitDiff, parseJson, parseReleaseCreated, parseScanJob, parseTriageResult, parseVersionSuggestion, type Parsed } from '../packages/core/src/train/wire.ts';
+import { errorText, parseCommitDiff, parseJson, parseReleaseCreated, parseScanJob, parseTriageResult, parseVersionSuggestion, parseWave, parseWaveBody, parseWaveDispatch, parseWavePackage, parseWaves, type Parsed } from '../packages/core/src/train/wire.ts';
 
 let failed = 0, passed = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) passed++; else { failed++; console.log('FAIL ' + name + (detail ? ': ' + detail : '')); } };
@@ -89,6 +89,41 @@ bad('parseVersionSuggestion (version)', parseVersionSuggestion({ ...SUGGEST, ver
   bad('parseCommitDiff (files[0].add)', parseCommitDiff(f), /^files\[0\]\.add: expected a finite number/);
   bad('parseCommitDiff (truncated)', parseCommitDiff({ ...DIFF, truncated: 'no' }), /^truncated: expected true or false/);
   bad('parseCommitDiff (patch)', parseCommitDiff({ ...DIFF, patch: undefined }), /^patch: missing/);
+}
+
+// ---- the five wave parsers (parseWavePackage, parseWave, parseWaveBody, parseWaves, parseWaveDispatch)
+// Frozen route answers (waves.server.ts: every wave carries its packages; a dispatched one its jobs). Each rejection row
+// names the field it breaks; `kept` rows are malformed entries a parser takes WITHOUT saying so, counted rather than assumed.
+{
+  const PKG = { id: 'pk-1', name: 'Core', model: 'sonnet', effort: 'high', ids: ['a1', 'a2'] };
+  const WAVE = { id: 'w-mv9rvv4u-00b1', name: 'Wave 1', status: 'dispatched', created_at: '2026-10-15T16:48:14.018Z', dispatched_at: '2026-10-15T16:50:00.000Z',
+    packages: [PKG], jobs: [{ package: 'pk-1', job: 'j-mv9rvv4u-00b1' }] };
+  const DISPATCH = { wave: WAVE, jobs: [{ ...JOB, kind: 'execute', step: undefined, release: undefined, version: undefined }], approved: ['a1'], skipped: [{ id: 'a2', status: 'failed' }] };
+  good('parseWavePackage', parseWavePackage({ ...PKG, extra: 1 }), (v) => v.id === 'pk-1' && v.ids.join() === 'a1,a2' && !('extra' in v));
+  good('parseWave', parseWave(WAVE), (v) => v.status === 'dispatched' && v.jobs?.[0].job === 'j-mv9rvv4u-00b1' && v.packages[0].model === 'sonnet');
+  good('parseWave (a draft has no jobs and no dispatched_at)', parseWave({ ...WAVE, status: 'draft', dispatched_at: undefined, jobs: undefined }), (v) => !('jobs' in v) && !('dispatched_at' in v));
+  good('parseWaveBody', parseWaveBody({ wave: WAVE }), (v) => v.id === WAVE.id);
+  good('parseWaves', parseWaves({ waves: [WAVE, { ...WAVE, id: 'w-2' }] }), (v) => v.length === 2 && v[1].id === 'w-2');
+  good('parseWaves (none)', parseWaves({ waves: [] }), (v) => v.length === 0);
+  good('parseWaveDispatch', parseWaveDispatch(DISPATCH), (v) => v.jobs.length === 1 && v.approved.join() === 'a1' && v.skipped[0].status === 'failed');
+  const without = (o: object, k: string) => { const c = clone(o) as Record<string, unknown>; delete c[k]; return c; };
+  bad('parseWavePackage (id)', parseWavePackage(without(PKG, 'id')), /^id: missing/);
+  bad('parseWavePackage (ids)', parseWavePackage({ ...PKG, ids: ['a1', 2] }), /^ids\[1\]: expected a string/);
+  bad('parseWavePackage (model)', parseWavePackage({ ...PKG, model: 'haiku' }), /^model: expected one of sonnet, opus/);
+  bad('parseWavePackage (effort)', parseWavePackage({ ...PKG, effort: 'max' }), /^effort: expected one of low, medium, high, xhigh/);
+  bad('parseWave (status)', parseWave({ ...WAVE, status: 'done' }), /^status: expected one of draft, dispatched/);
+  bad('parseWave (created_at)', parseWave(without(WAVE, 'created_at')), /^created_at: missing/);
+  bad('parseWave (a package)', parseWave({ ...WAVE, packages: [{ ...PKG, model: 'haiku' }] }), /^packages\[0\]\.model: expected one of/);
+  bad('parseWave (packages)', parseWave({ ...WAVE, packages: 'pk-1' }), /^packages: expected an array/);
+  bad('parseWave (a jobs entry)', parseWave({ ...WAVE, jobs: [{ package: 'pk-1', job: 7 }] }), /^jobs\[0\]\.job: expected a string/);
+  bad('parseWaveBody (wave)', parseWaveBody({ wave: null }), /^wave: expected an object/);
+  bad('parseWaveBody (an array)', parseWaveBody([WAVE]), /^body: expected an object/);
+  bad('parseWaves (waves)', parseWaves({ waves: 'none' }), /^waves: expected an array/);
+  bad('parseWaves (one wave)', parseWaves({ waves: [WAVE, { ...WAVE, status: 'done' }] }), /^waves\[1\]\.status: expected one of/);
+  bad('parseWaveDispatch (approved)', parseWaveDispatch({ ...DISPATCH, approved: [1] }), /^approved\[0\]: expected a string/);
+  bad('parseWaveDispatch (a skipped status)', parseWaveDispatch({ ...DISPATCH, skipped: [{ id: 'a2', status: 3 }] }), /^skipped\[0\]\.status: expected a string/);
+  bad('parseWaveDispatch (a job)', parseWaveDispatch({ ...DISPATCH, jobs: [{ id: 'j1' }] }), /^jobs\[0\]\.kind: missing/);
+  bad('parseWaveDispatch (jobs)', parseWaveDispatch(without(DISPATCH, 'jobs')), /^jobs: missing/);
 }
 
 console.log(failed ? `check-train-wire: ${failed} failed, ${passed} passed` : `check-train-wire: ${passed} checks passed`);

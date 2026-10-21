@@ -3,7 +3,7 @@
 // was wrong with it (`<field>: <what>`); the fetch helpers in client.ts turn a failure into an Error. A value carries
 // only the fields its type names (an unknown extra field stays out) and omits an absent one, never null.
 import type { CommitDiff, Proposal, ProposalKind, ProposalOrigin, ProposalSize, ProposalStatus, Release, ReleaseCreated, ReleaseStatus, RiskClass, Tier, TriageResult, VersionSuggestion } from '../scan/types.ts';
-import { WAVE_EFFORTS, WAVE_MODELS, type Wave, type WaveDispatchResult, type WavePackage } from '../scan/waves.ts';
+import type { Wave, WaveDispatchResult, WaveEffort, WaveModel, WavePackage } from '../scan/waves.ts';
 import type { JobKind, JobStatus, ReleaseStep, ScanJob, ScanScope, ScanScopeKind } from '../scan/jobs.ts';
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -200,18 +200,17 @@ export function parseCommitDiff(x: unknown): Parsed<CommitDiff> {
 }
 
 /** A job the release build and finish routes answer (202). */
-export function parseScanJob(x: unknown): Parsed<ScanJob> {
-  return door(() => {
-    const o = obj(x, '');
-    const j: ScanJob = { id: str(o, 'id', ''), kind: member(JOB_KIND, o, 'kind', ''), status: member(JOB_STATUS, o, 'status', ''), queued_at: str(o, 'queued_at', '') };
-    for (const k of ['lens', 'release', 'version', 'started_at', 'ended_at', 'run_id', 'error', 'log_tail'] as const) put(j, k, optStr(o, k, ''));
-    put(j, 'scope', o.scope === undefined ? undefined : scope(o.scope, 'scope'));
-    put(j, 'proposals', optList(o, 'proposals', '', aString));
-    put(j, 'step', optMember(RELEASE_STEP, o, 'step', ''));
-    put(j, 'exit_code', optNum(o, 'exit_code', ''));
-    return j;
-  });
+function scanJob(x: unknown, at: string): ScanJob {
+  const o = obj(x, at);
+  const j: ScanJob = { id: str(o, 'id', at), kind: member(JOB_KIND, o, 'kind', at), status: member(JOB_STATUS, o, 'status', at), queued_at: str(o, 'queued_at', at) };
+  for (const k of ['lens', 'release', 'version', 'started_at', 'ended_at', 'run_id', 'error', 'log_tail'] as const) put(j, k, optStr(o, k, at));
+  put(j, 'scope', o.scope === undefined ? undefined : scope(o.scope, join(at, 'scope')));
+  put(j, 'proposals', optList(o, 'proposals', at, aString));
+  put(j, 'step', optMember(RELEASE_STEP, o, 'step', at));
+  put(j, 'exit_code', optNum(o, 'exit_code', at));
+  return j;
 }
+export const parseScanJob = (x: unknown): Parsed<ScanJob> => door(() => scanJob(x, ''));
 
 /** A route's `{ error }` text, if the body is one. */
 export function errorText(x: unknown): string | undefined {
@@ -220,35 +219,29 @@ export function errorText(x: unknown): string | undefined {
 
 // ------------------------------------------------------------------------------------------- waves
 // The ledger waves' routes' bodies: a body that is not a wave is a status-0 rejection naming the field.
-const strs = (x: unknown): x is string[] => Array.isArray(x) && x.every((s) => typeof s === 'string');
-export function parseWavePackage(x: unknown): Parsed<WavePackage> {
-  if (!isObj(x) || typeof x.id !== 'string' || typeof x.name !== 'string' || !strs(x.ids)) return { ok: false, error: 'package: id, name and ids expected' };
-  if (!WAVE_MODELS.includes(x.model as never) || !WAVE_EFFORTS.includes(x.effort as never)) return { ok: false, error: 'package ' + x.id + ': model or effort unknown' };
-  return { ok: true, value: { id: x.id, name: x.name, model: x.model as WavePackage['model'], effort: x.effort as WavePackage['effort'], ids: x.ids } };
+const WAVE_MODEL: Members<WaveModel> = { sonnet: true, opus: true };
+const WAVE_EFFORT: Members<WaveEffort> = { low: true, medium: true, high: true, xhigh: true };
+const WAVE_STATUS: Members<Wave['status']> = { draft: true, dispatched: true };
+function wavePackage(x: unknown, at: string): WavePackage {
+  const o = obj(x, at);
+  return { id: str(o, 'id', at), name: str(o, 'name', at), model: member(WAVE_MODEL, o, 'model', at), effort: member(WAVE_EFFORT, o, 'effort', at), ids: list(o, 'ids', at, aString) };
 }
-export function parseWave(x: unknown): Parsed<Wave> {
-  if (!isObj(x) || typeof x.id !== 'string' || typeof x.name !== 'string' || typeof x.created_at !== 'string' || (x.status !== 'draft' && x.status !== 'dispatched') || !Array.isArray(x.packages)) {
-    return { ok: false, error: 'wave: id, name, status, created_at and packages expected' };
-  }
-  const packages: WavePackage[] = [];
-  for (const p of x.packages) { const r = parseWavePackage(p); if (!r.ok) return r; packages.push(r.value); }
-  const jobs = Array.isArray(x.jobs) ? x.jobs.filter((j): j is { package: string; job: string } => isObj(j) && typeof j.package === 'string' && typeof j.job === 'string').map((j) => ({ package: j.package, job: j.job })) : undefined;
-  return { ok: true, value: { id: x.id, name: x.name, status: x.status, created_at: x.created_at, ...(typeof x.dispatched_at === 'string' ? { dispatched_at: x.dispatched_at } : {}), packages, ...(jobs?.length ? { jobs } : {}) } };
+function wave(x: unknown, at: string): Wave {
+  const o = obj(x, at);
+  const w: Wave = { id: str(o, 'id', at), name: str(o, 'name', at), status: member(WAVE_STATUS, o, 'status', at), created_at: str(o, 'created_at', at), packages: list(o, 'packages', at, wavePackage) };
+  put(w, 'dispatched_at', optStr(o, 'dispatched_at', at));
+  const jobs = optList(o, 'jobs', at, (j, here) => { const jo = obj(j, here); return { package: str(jo, 'package', here), job: str(jo, 'job', here) }; });
+  put(w, 'jobs', jobs?.length ? jobs : undefined);
+  return w;
 }
+export const parseWavePackage = (x: unknown): Parsed<WavePackage> => door(() => wavePackage(x, ''));
+export const parseWave = (x: unknown): Parsed<Wave> => door(() => wave(x, ''));
 /** A body that holds one wave (`{ wave }`). */
-export const parseWaveBody = (x: unknown): Parsed<Wave> => (isObj(x) ? parseWave(x.wave) : { ok: false, error: 'body: not an object' });
-export function parseWaves(x: unknown): Parsed<Wave[]> {
-  if (!isObj(x) || !Array.isArray(x.waves)) return { ok: false, error: 'waves: a list expected' };
-  const out: Wave[] = [];
-  for (const w of x.waves) { const r = parseWave(w); if (!r.ok) return r; out.push(r.value); }
-  return { ok: true, value: out };
-}
+export const parseWaveBody = (x: unknown): Parsed<Wave> => door(() => wave(obj(x, '').wave, 'wave'));
+export const parseWaves = (x: unknown): Parsed<Wave[]> => door(() => list(obj(x, ''), 'waves', '', wave));
 export function parseWaveDispatch(x: unknown): Parsed<WaveDispatchResult> {
-  const w = parseWaveBody(x);
-  if (!w.ok) return w;
-  const o = x as Record<string, unknown>, jobs: ScanJob[] = [];
-  if (!Array.isArray(o.jobs) || !strs(o.approved) || !Array.isArray(o.skipped)) return { ok: false, error: 'jobs, approved and skipped expected' };
-  for (const j of o.jobs) { const r = parseScanJob(j); if (!r.ok) return r; jobs.push(r.value); }
-  const skipped = o.skipped.filter((s): s is { id: string; status: string } => isObj(s) && typeof s.id === 'string' && typeof s.status === 'string');
-  return { ok: true, value: { wave: w.value, jobs, approved: o.approved, skipped } };
+  return door(() => {
+    const o = obj(x, '');
+    return { wave: wave(o.wave, 'wave'), jobs: list(o, 'jobs', '', scanJob), approved: list(o, 'approved', '', aString), skipped: list(o, 'skipped', '', skipped) };
+  });
 }
