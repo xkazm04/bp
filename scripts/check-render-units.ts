@@ -15,6 +15,7 @@
 //
 // Run: node scripts/check-render-units.ts  (Node's type stripping; no build step). Exit 1 on any failure.
 import fs from 'node:fs';
+import { readBlanked } from './lib/source.ts';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -455,6 +456,19 @@ function bare(rel: string): string {
   PL.outline(E, geom(5), feat(1));
   PL.outline(E, geom(5), feat(1));
   expect(shapes === 1, `plan: a feature fetched after the clear is cached once (shape() ran ${shapes} time(s))`);
+}
+
+// ---------------------------------------------------------------- source guard: text is measured, never counted
+// Every measured box in render/ asks E.tx.w for the string's width in the font it is drawn in. A box sized by
+// `label.length * k` is right for one font at one UI scale (?scale=4 grows the glyphs, not the constant).
+{
+  const hits: string[] = [];
+  for (const f of fs.readdirSync(path.join(ROOT, R)).filter((n) => n.endsWith('.ts'))) {
+    readBlanked(path.join(ROOT, R + f)).split(/\r?\n/).forEach((l, i) => {
+      if (/\.length\s*\*/.test(l) && (/\b[a-z]*[wW](idth)?\s*=[^=]/.test(l) || /fillRect|strokeRect/.test(l))) hits.push(R + f + ':' + (i + 1));
+    });
+  }
+  expect(hits.length === 0, `render: a box is sized from E.tx.w, never from a character count (${hits.length}: ${hits.slice(0, 8).join(' ')})`);
 }
 
 // ---------------------------------------------------------------- report
