@@ -13,6 +13,7 @@ import { FIRST_MILESTONE, GA_MILESTONE, HOUR, LATER_MILESTONES, PULSE_OF, SPEND_
 import { isLiveSt } from './aggregates';
 import { personLens } from './lens';
 import { baseId, lineSuffix, pname, type Product } from './product';
+import { ymdUTC } from './time';
 import { tierRank } from '@bp/core/scan/derive';
 
 /**
@@ -787,7 +788,7 @@ export class SwarmSim {
     const o = d.opts[oi], no = this.nextOrderId(), fx = o.effects ?? [];
     const scope: OrderScope = tgt?.n ? { feats: tgt.ids, label: tgt.label } : { domain: d.dom };
     this.orders.push({
-      id: no, by: who, lens: d.lens, scope, text: 'Answer like ' + d.base + ': ' + o.label, since: new Date(this.at0 + this.t * 1000).toISOString().slice(0, 10),
+      id: no, by: who, lens: d.lens, scope, text: 'Answer like ' + d.base + ': ' + o.label, since: ymdUTC(this.at0 + this.t * 1000),
       n: 0, vf: [], user: true, keep: { dec: d.id, lens: d.lens, label: o.label, kinds: [...new Set(fx.map((e) => e.k))], fx },
     });
     this.ordCache = null;
@@ -1073,7 +1074,7 @@ export class SwarmSim {
       // signed by the reader; nobody to sign it = refused (never a default author)
       if (!who) { this.toast({ strong: 'Order not written:', text: 'nobody to sign it. Pick who you are (or a lens one person reads), then write it again.', tone: 'warn' }); return; }
       const no = this.nextOrderId(), by = who;
-      this.orders.push({ id: no, by, lens: personLens(this.P, by) ?? 'general', scope: { feats: p.targets, label: p.label }, text: p.text || '', since: new Date(this.at0 + this.t * 1000).toISOString().slice(0, 10), n: 0, vf: [], user: true, tpl: p.tpl });
+      this.orders.push({ id: no, by, lens: personLens(this.P, by) ?? 'general', scope: { feats: p.targets, label: p.label }, text: p.text || '', since: ymdUTC(this.at0 + this.t * 1000), n: 0, vf: [], user: true, tpl: p.tpl });
       this.ordCache = null; snap.push({ order: no });
     }
     this.undo2 = { snap, kind: p.kind };

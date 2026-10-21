@@ -8,13 +8,17 @@
 //   (c) sim.ts scopeWords: an order scoped to a place the map does not have reads as its slug, in every branch
 //       (the domain branch already did; its milestone sibling threw), and a known place still reads as its name;
 //   (d) sim.ts SimToast.tone: every path that reports a FAILURE carries tone 'bad' or 'warn', a breach that
-//       clears carries 'ok', a burst reads as the worst tone it held back, and no plain confirmation is 'bad'.
+//       clears carries 'ok', a burst reads as the worst tone it held back, and no plain confirmation is 'bad';
+//   (e) time.ts: hhmmUTC / dayHhmmUTC / ymdUTC read the same whatever the host's zone, mark the zone unless the
+//       caller's surface captions it, and answer the absent mark for an instant nobody recorded - plus a source
+//       guard, so no file under packages/core/src/model hand-slices a clock time out of an ISO string again.
 // Run: node scripts/check-model.ts   (Node's type stripping; scripts/overlays-loader.mjs transpiles src/** on the fly)
 // Control: BP_MODEL_MUTATE='[["lens.ts"," (\x27 + n + \x27 of \x27","(\x27 + n + \x27 OF \x27"]]' rewrites source text as
 // it loads ([file suffix, find, replace] literals), so an assertion can be seen red on a seeded defect.
 // Exit 1 on any failure.
 import { register } from 'node:module';
 import { pathToFileURL } from 'node:url';
+import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
@@ -154,6 +158,46 @@ const PLACES: { id: string; feats: Any[] }[] = [...M.L.rooms, ...M.L.wings, ...M
     expect(burst.length > 0 && burst.some((t) => t.tone === 'bad'), `(d) a burst of held-back toasts must read as the worst in it: ${JSON.stringify(burst.map((t) => [t.strong, t.tone]))}`);
     console.log(`toast burst ${burst.length} summary toast(s) / tones ${JSON.stringify(burst.map((t) => t.tone ?? 'neutral'))}`);
   }
+}
+
+// ---------------------------------------------------------------- (e) one UTC clock, and nothing hand-sliced
+{
+  const { hhmmUTC, dayHhmmUTC, ymdUTC, NO_TIME, msOfInstant } = await impCore('src/model/time.ts');
+  const ISO = '2026-10-08T14:05:09Z', MS = Date.parse(ISO);
+  for (const t of [ISO, MS, new Date(MS)]) {
+    expect(hhmmUTC(t) === '14:05 UTC', `(e) hhmmUTC(${typeof t}) = ${JSON.stringify(hhmmUTC(t))}`);
+    expect(dayHhmmUTC(t) === 'OCT 08 14:05 UTC', `(e) dayHhmmUTC(${typeof t}) = ${JSON.stringify(dayHhmmUTC(t))}`);
+    expect(ymdUTC(t) === '2026-10-08', `(e) ymdUTC(${typeof t}) = ${JSON.stringify(ymdUTC(t))}`);
+  }
+  expect(hhmmUTC(ISO, { zone: false }) === '14:05', `(e) a surface that captions the zone itself: ${JSON.stringify(hhmmUTC(ISO, { zone: false }))}`);
+  expect(hhmmUTC(ISO, { seconds: true }) === '14:05:09 UTC', `(e) with seconds: ${JSON.stringify(hhmmUTC(ISO, { seconds: true }))}`);
+  // a time nobody recorded must not come out looking like one that was
+  for (const bad of [undefined, null, '', 'not a time', NaN, Infinity]) {
+    const out = [hhmmUTC(bad), dayHhmmUTC(bad), ymdUTC(bad)];
+    expect(out.every((x) => x === NO_TIME), `(e) ${JSON.stringify(bad)} reads as ${JSON.stringify(out)}, not ${JSON.stringify(NO_TIME)}`);
+    expect(Number.isNaN(msOfInstant(bad)), `(e) msOfInstant(${JSON.stringify(bad)}) is not NaN`);
+  }
+  // one UTC midnight either side of a local-zone boundary: the words may not move with the host
+  expect(hhmmUTC('2026-01-01T00:30:00Z') === '00:30 UTC' && ymdUTC('2026-01-01T00:30:00Z') === '2026-01-01', '(e) a UTC instant near midnight must not read in the host zone');
+
+  // the guard: nothing under the model hand-formats a clock time any more
+  const dir = path.join(ROOT, 'packages/core/src/model');
+  // comments stripped first, or a file that TALKS about the rule and breaks it reads as compliant
+  const blank = (x: string) => x.replace(/[^\n]/g, ' ');
+  const strip = (x: string) => x.replace(/\/\*[\s\S]*?\*\//g, blank).replace(/(^|[^:'"`\\])(\/\/.*)$/gm, (_m, a, b) => a + blank(b));
+  const hits: string[] = [];
+  let walked = 0;
+  for (const name of fs.readdirSync(dir)) {
+    if (!/\.ts$/.test(name)) continue;
+    walked++;
+    const src = strip(fs.readFileSync(path.join(dir, name), 'utf8'));
+    src.split('\n').forEach((ln, i) => {
+      if (name !== 'time.ts' && (/\.slice\(\s*11\s*,/.test(ln) || /getUTCHours|getUTCMinutes/.test(ln))) hits.push(`packages/core/src/model/${name}:${i + 1}  ${ln.trim()}`);
+    });
+  }
+  expect(walked > 10, `(e) the guard walked ${walked} model files`);
+  expect(!hits.length, `(e) ${hits.length} site(s) hand-format a clock time instead of calling hhmmUTC:\n      ` + hits.join('\n      '));
+  console.log(`utc clock   ${walked} model files guarded / ${hits.length} hand-sliced clock times / hhmmUTC(ISO) = ${JSON.stringify(hhmmUTC(ISO))}`);
 }
 
 if (failures.length) {
