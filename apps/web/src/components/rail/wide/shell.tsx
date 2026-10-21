@@ -39,7 +39,11 @@ export function useWalk<T extends string | null>(ids: readonly T[], sel: T, pick
   }, [ids, sel, pick, list]);
 }
 
-/** The frame. `onKey` comes from useWalk; the detail pane's key resets its scroll when the selection changes. */
+/**
+ * The frame. `onKey` comes from useWalk; the detail pane's key resets its scroll when the selection changes.
+ * The list pane is focusable (tabIndex -1, never a tab stop): it is where a panel hands focus when the row that
+ * held it goes and no row can take over, so a write that empties the list cannot drop focus to <body>.
+ */
 export function Workbench({ strip, list, listLabel, detail, detailKey, detailLabel, onKey, listRef, cls }: {
   strip?: ReactNode; list: ReactNode; listLabel: string; detail: ReactNode; detailKey: string; detailLabel: string;
   onKey: (e: KeyboardEvent) => void; listRef: RefObject<HTMLDivElement | null>; cls?: string;
@@ -48,7 +52,7 @@ export function Workbench({ strip, list, listLabel, detail, detailKey, detailLab
     <div className={'wb' + (cls ? ' ' + cls : '')} onKeyDown={onKey}>
       {strip && <div className="wb-strip">{strip}</div>}
       <div className="wb-panes">
-        <div className="wb-list" ref={listRef} role="region" aria-label={listLabel}>{list}</div>
+        <div className="wb-list" ref={listRef} role="region" aria-label={listLabel} tabIndex={-1}>{list}</div>
         <section className="wb-detail" key={detailKey} aria-label={detailLabel}>{detail}</section>
       </div>
     </div>

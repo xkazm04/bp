@@ -72,7 +72,11 @@ export function Review() {
     if (keep) E.keepAnswer(d.id, oi); else E.decide(d.id, oi, note);
     requestAnimationFrame(() => {
       const row = next && listRef.current?.querySelector<HTMLElement>(`[data-row="${CSS.escape(next.id)}"]`);
-      if (row) { row.focus({ preventScroll: true }); row.scrollIntoView({ block: 'nearest' }); }
+      if (row) { row.focus({ preventScroll: true }); row.scrollIntoView({ block: 'nearest' }); return; }
+      // nothing left to take over: the list pane takes focus. Deciding the last open item unmounts the action bar
+      // the reader pressed, and a live write can be REFUSED (Engine.decide rolls it back and reopens the card) -
+      // without this, focus is on <body> when the card comes back and the keys reach nothing.
+      listRef.current?.focus({ preventScroll: true });
     });
   };
 

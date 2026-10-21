@@ -9,6 +9,9 @@
 //      key handler of its own, so the arrows walk ITS options instead of reaching the panel's own walk.
 //   3. No scroll in the rail animates unconditionally: every `behavior:` is a function of the reduced-motion
 //      query, never the bare literal 'smooth' (docs/blueprint-ui.md, "reduced motion honoured").
+//   4. Focus is never dropped: a panel that moves focus to a row also has a fallback for "no row to move it to",
+//      and the pane that fallback focuses is itself focusable (a .focus() on a div with no tabindex is a no-op,
+//      which is the silent half of this bug).
 // Run: node src/components/rail/check-keys.ts  (Node's type stripping; no build step). Exit 1 on any failure.
 // Control: BP_RAIL_MUTATE='[["view.tsx","tabIndex={on ? 0 : -1}","tabIndex={0}"]]' rewrites the source text as
 // it is read ([file suffix, find, replace] literals), so each assertion can be seen red on a seeded defect.
@@ -76,6 +79,22 @@ for (const [f, src] of SRC) {
   }
 }
 expect(scrolls > 0, `the scroll-behavior scan found ${scrolls} sites in the rail, expected at least 1 (view.tsx's section jump) - the matcher has stopped biting`);
+
+// ---------------------------------------------------------------- 4. no panel drops focus on <body>
+const shell = SRC.get('wide/shell.tsx') as string;
+const pane = /<div[^]*?className="wb-list"[\s\S]{0,300}?>/.exec(shell);
+expect(!!pane, 'shell.tsx: no <div className="wb-list"> found - the list-pane scan has stopped biting');
+if (pane) expect(/tabIndex=\{-1\}/.test(pane[0]), 'shell.tsx: the .wb-list pane is not focusable (tabIndex={-1}), so a panel handing it focus is a silent no-op and the reader lands on <body>');
+// A panel that hands focus to a SUCCESSOR row - `next && <ref>.current?.querySelector('[data-row=...]')`, the
+// shape that admits there may be no such row - owes a fallback for the render where there is none. shell.tsx's
+// useWalk is deliberately not in this set: it walks a row that exists and unmounts nothing.
+let movers = 0;
+for (const [f, src] of SRC) {
+  if (!/\w+\s*&&\s*\w+\.current\?\.querySelector[\s\S]{0,80}?\[data-row=/.test(src)) continue;
+  movers++;
+  expect(/\.current\?\.focus\(/.test(src), `${f}: hands focus to a successor row with no fallback - when no row can take over (the last item decided, or a refused write that reopens it) focus falls to <body>`);
+}
+expect(movers >= 1, `the focus-handoff scan found ${movers} panels that hand focus to a successor row, expected at least 1 (review.tsx's decide) - the matcher has stopped biting`);
 
 if (failures.length) { console.error(`check-rail-keys: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
 console.log(`check-rail-keys: ${held} expectations held (${options} role="option" sites, ${scrolls} scroll-behavior sites)`);

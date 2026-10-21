@@ -33,6 +33,8 @@
 /* ---------- panes */
 #flyout.wide .wb-panes { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); }
 #flyout.wide .wb-list { min-height: 0; overflow: auto; overscroll-behavior: contain; border-right: 1px solid var(--ink-3); scrollbar-width: thin; scrollbar-color: var(--ink-3) transparent; }
+/* the pane takes focus when no row can (shell.tsx), so the ring must say where the reader is */
+#flyout.wide .wb-list:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 #flyout.wide .wb-list ul { list-style: none; margin: 0; padding: 0; }
 #flyout.wide .wb-detail { position: relative; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
 #flyout.wide .wb-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 20px 26px 28px; scrollbar-width: thin; scrollbar-color: var(--ink-3) transparent; }
