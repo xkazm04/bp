@@ -83,6 +83,46 @@ if (!themeLiterals.length) fail("src/engine/theme.ts: no '--x' literals found: t
 for (const [n, where] of used) if (!defined.has(n)) fail(`${n} is used (${where}) and defined nowhere`);
 for (const n of new Set(themeLiterals)) if (!definer.has(n) && !(dark.has(n) && light.has(n))) fail(`${n} is read by src/engine/theme.ts and is not a token of both themes`);
 
+// ------------------------------------------------------------------------------------ the 12 px text floor
+// docs/blueprint-ui.md: "12 px text floor (body 14 px)". The only instrument that measured it was
+// `python scripts/shots.py`, which needs a running server, so offline nothing saw a raw `font-size: 11px`.
+// check-train-quality.mjs holds the floor on the `--fs-*` TOKENS in globals.css; this holds it on the raw px
+// sizes written directly into a font / font-size declaration anywhere in src - a disjoint set (a token
+// declaration is `--fs-x: 11px`, which is not a font declaration and is not matched here).
+// A declaration that must sit below the floor carries `text-floor-exempt: <why>` in a comment on its line or
+// the line above - no such site exists today. Comments are stripped before matching, and the scan fails loud
+// below a plausibility floor so a matcher that stopped biting cannot read as a clean tree.
+// stripComments() DELETES comments, so a multi-line one collapses and every line number after it is wrong
+// (measured: a declaration on line 312 was reported as 310). The floor rule reports anchors and reads an
+// opt-out comment back out of the file, so it blanks comments instead, keeping every offset and line.
+const blankC = (s) => s.replace(/[^\n]/g, ' ');
+const stripKeepLines = (s) => s.replace(/\/\*[\s\S]*?\*\//g, blankC).replace(/(^|[^:'"`\\])(\/\/.*)$/gm, (_, a, b) => a + blankC(b));
+const FLOOR = 12, MIN_DECLS = 300;
+const FONT_DECL = /\bfont(?:-size)?\s*:\s*([^;{}'"]+)/g;
+const FIRST_PX = /(?<![\w.])([0-9]+(?:\.[0-9]+)?)px/;   // the shorthand's size comes first in its value
+let declsSeen = 0, exempt = 0;
+for (const f of files) {
+  const raw = read(f), s = stripKeepLines(raw), lines = raw.split('\n');
+  for (const m of s.matchAll(FONT_DECL)) {
+    const px = FIRST_PX.exec(m[1]);
+    if (!px) continue;
+    declsSeen++;
+    if (Number(px[1]) >= FLOOR) continue;
+    const line = s.slice(0, m.index).split('\n').length;
+    if (lines.slice(Math.max(0, line - 2), line).some((l) => /text-floor-exempt:/.test(l))) { exempt++; continue; }
+    fail(`${rel(f)}:${line}  ${m[0].trim().slice(0, 60)} is below the ${FLOOR} px text floor (docs/blueprint-ui.md)`);
+  }
+}
+if (declsSeen < MIN_DECLS) fail(`only ${declsSeen} font declarations with a px size found, expected at least ${MIN_DECLS}: the text-floor scan stopped matching`);
+// control: the floor must bite on a seeded declaration and must not bite on a legal one or on an --fs token
+for (const [what, text, want] of [['font-size: 11px', 'a { font-size: 11px; }', true], ['font: 500 9px var(--mono)', 'a { font: 500 9px var(--mono); }', true], ['font-size: 12px', 'a { font-size: 12px; }', false], ['a --fs token declaration', 'a { --fs-11: 11px; }', false], ['font: 14px/1.4 sans', 'a { font: 14px/1.4 sans; }', false]]) {
+  const m = FONT_DECL.exec(text);
+  FONT_DECL.lastIndex = 0;
+  const px = m && FIRST_PX.exec(m[1]);
+  const bites = !!px && Number(px[1]) < FLOOR;
+  if (bites !== want) fail(`control: the text floor ${want ? 'should' : 'should not'} bite on "${what}" - the matcher is wrong`);
+}
+
 if (failed) { console.log(`check-tokens: ${failed} failed`); process.exit(1); }
 const outside = [...used.keys()].filter((n) => !dark.has(n) && !light.has(n));
-console.log(`check-tokens: dark ${dark.size} / light ${light.size} parity, ${used.size} names used, ${outside.length} resolved outside the themes (${outside.map((n) => n + ' ' + definer.get(n)).join('; ')}), 0 unresolved`);
+console.log(`check-tokens: dark ${dark.size} / light ${light.size} parity, ${used.size} names used, ${outside.length} resolved outside the themes (${outside.map((n) => n + ' ' + definer.get(n)).join('; ')}), 0 unresolved; ${declsSeen} px font declarations all at or above the ${FLOOR} px floor (${exempt} exempt)`);
