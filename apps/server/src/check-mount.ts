@@ -8,8 +8,10 @@
 //   verbs     HEAD runs the route's GET and sends no body; OPTIONS answers 204 with Allow; both name HEAD and OPTIONS
 //             in Allow, and a verb the route does not serve still answers 405 — this is the pair with the Next mount,
 //             which implements both verbs itself (apps/web/src/app/api/**, the thin re-exports)
-//   peer      a request from a non-loopback socket answers 403 whatever its Host (sent through this machine's own LAN
-//             address, when it has one; the server listens on 0.0.0.0 here, as `--host 0.0.0.0` would)
+//   peer      a request from a non-loopback socket answers 403 whatever its Host: always over a pipe / unix socket,
+//             whose peer has no address at all, and additionally through this machine's own LAN address when it has
+//             one (the server listens on 0.0.0.0 here, as `--host 0.0.0.0` would). The LAN leg is the only skippable
+//             check in this file and it prints `SKIP` so check-all.mjs's summary counts it.
 // And one source rule over the real mounted tree (no server needed):
 //   text      no handler source carries a raw NUL byte. One did (structure/route.ts held a literal 0x00 where `'\0'`
 //             was meant): ripgrep then skips the file, so a content search over the handler tree silently returns
@@ -24,7 +26,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MAX_BODY, listener, loadRoutes } from './mount.ts';
 
-let failed = 0, passed = 0;
+let failed = 0, passed = 0, skips = 0;
 const check = (name: string, ok: boolean, detail = '') => { ok ? passed++ : failed++; console.log(`${ok ? 'ok  ' : 'FAIL'}  ${name}${ok || !detail ? '' : `  (${detail})`}`); };
 
 const api = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-mount-'));
@@ -39,7 +41,8 @@ const crashes: unknown[] = [];
 process.on('unhandledRejection', (e) => crashes.push(e));
 process.on('uncaughtException', (e) => crashes.push(e));
 
-const server = http.createServer(listener(await loadRoutes(api)));
+const routes = await loadRoutes(api);
+const server = http.createServer(listener(routes));
 await new Promise<void>((r) => server.listen(0, '0.0.0.0', r));
 const port = (server.address() as net.AddressInfo).port;
 
@@ -113,11 +116,38 @@ try {
   check('verbs: HEAD on a throwing handler answers 500 with no body', headBoom.status === 500 && headBoom.body === '', `${headBoom.status} ${JSON.stringify(headBoom.body.slice(0, 40))}`);
   check('verbs: the server keeps serving after them', await alive(), `${crashes.length} uncaught`);
 
+  // peer, unconditionally: a socket the guard cannot place is not loopback either. A pipe (Windows) or unix socket
+  // leaves req.socket.remoteAddress undefined, which LOOPBACK_PEER must refuse — and unlike the LAN probe below this
+  // one needs no network interface, so the claim in mount.ts's LOOPBACK_PEER comment is proven on every machine.
+  {
+    const addr = process.platform === 'win32' ? `\\\\.\\pipe\\bp-mount-${process.pid}` : path.join(os.tmpdir(), `bp-mount-${process.pid}.sock`);
+    const piped = http.createServer(listener(routes));
+    await new Promise<void>((r) => piped.listen(addr, r));
+    const answer = await new Promise<string>((resolve) => {
+      let out = '';
+      const s = net.connect(addr, () => s.write('GET /api/echo/ok HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n'));
+      s.on('data', (d) => (out += d));
+      s.on('close', () => resolve(out));
+      s.on('error', () => resolve(out));
+      setTimeout(() => s.destroy(), 3000);
+    });
+    piped.close(); piped.closeAllConnections();
+    const status = Number(/^HTTP\/1\.1 (\d+)/.exec(answer)?.[1] ?? 0);
+    check('peer: a socket with no remote address (a pipe) answers 403', status === 403, `${status} ${answer.slice(0, 60)}`);
+  }
   const lan = Object.values(os.networkInterfaces()).flat().find((i) => i && i.family === 'IPv4' && !i.internal)?.address;
   if (lan) {
     const far = await get('/api/echo/ok', 'localhost', lan);
     check(`peer: a request from a non-loopback socket (${lan}) answers 403`, far.status === 403, `${far.status}`);
-  } else console.log('skip  peer: this machine has no non-loopback IPv4 address to connect from');
+  } else {
+    // `SKIP` at the start of the line, UPPERCASE, is check-all.mjs's convention for "this did not run" (matched
+    // anchored and case-sensitively at scripts/check-all.mjs:46). Lower case made this line invisible to the
+    // aggregate summary, so on a machine with no LAN address the only proof behind mount.ts's `--host 0.0.0.0`
+    // argument vanished while the tally still read `N passed, 0 failed`. The pipe check above now carries that
+    // proof unconditionally, so this one really is an extra - and it says so where it can be counted.
+    skips++;
+    console.log('SKIP  peer: this machine has no non-loopback IPv4 address to connect from (the pipe check above covers the guard)');
+  }
 } finally {
   server.close(); server.closeAllConnections();
   fs.rmSync(api, { recursive: true, force: true });
@@ -133,5 +163,5 @@ try {
   check(`text: no NUL byte in the ${files.length} handler, mount and web-mount sources`, files.length > 0 && !withNul.length, withNul.join(' '));
 }
 
-console.log(`\ncheck-mount: ${passed} passed, ${failed} failed`);
+console.log(`\ncheck-mount: ${passed} passed, ${failed} failed, ${skips} skipped`);
 process.exit(failed ? 1 : 0);
