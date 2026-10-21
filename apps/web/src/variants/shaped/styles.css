@@ -88,7 +88,6 @@
     linear-gradient(var(--shp-lens), var(--shp-lens)) left 0 bottom 10px / 8px 1.5px no-repeat, linear-gradient(var(--shp-lens), var(--shp-lens)) left 10px bottom 0 / 1.5px 8px no-repeat,
     linear-gradient(var(--shp-lens), var(--shp-lens)) right 0 bottom 10px / 8px 1.5px no-repeat, linear-gradient(var(--shp-lens), var(--shp-lens)) right 10px bottom 0 / 1.5px 8px no-repeat; }
 [data-variant='shaped'] .shp-crops.dashed { opacity: 0.5; }
-[data-variant='shaped'] .shp-crops i { display: none; }
 [data-variant='shaped'] .evp.cur:has(> .shp-design) { padding-top: 10px; padding-bottom: 12px; }
 
 /* ---- legend */

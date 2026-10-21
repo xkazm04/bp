@@ -45,7 +45,7 @@ function Edges({ lens, f, rollout }: { lens: BuiltinLens; f: Feature; rollout: n
     case 'design': {
       // the statuses shapes.ts draws crops for, read from that table: an unmeasured facet gets none here too
       const st = bl(f).design.status;
-      return CROP[st] ? <span className={'shp-crops' + (st === 'sketch' || st === 'wireframe' ? ' dashed' : '')}><i /><i /><i /><i /></span> : null;
+      return CROP[st] ? <span className={'shp-crops' + (st === 'sketch' || st === 'wireframe' ? ' dashed' : '')} /> : null;
     }
     default: return null;
   }
