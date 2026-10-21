@@ -212,25 +212,36 @@ const LivePill = memo(function LivePill() {
   const live = useLive();
   return live ? <LivePillOn L={live.product} /> : null;
 });
+/** Visually hidden, but in the live region: the announced phrase, without the relative age. */
+const PILL_SR: React.CSSProperties = { position: 'absolute', width: 1, height: 1, margin: -1, padding: 0, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0 };
 function LivePillOn({ L }: { L: LiveProduct }) {
   const [, tick] = useState(0);
   useEffect(() => { const t = window.setInterval(() => tick((n) => n + 1), 30000); return () => clearInterval(t); }, []);
   const run = latestRun(L.scan);
-  let cls = '', text: string, title: string;
-  if (L.status === 'error' && L.structure) { cls = 'off'; text = 'Scan store error'; title = L.error ?? 'The scan store cannot be read'; }
-  else if (L.status === 'offline') { cls = 'off'; text = 'Offline'; title = 'The scan stream dropped; reconnecting (backoff up to 10 s)'; }
-  else if (L.status === 'missing' || !run) { cls = 'idle'; text = L.status === 'missing' ? 'No scan store' : 'No scan yet'; title = 'Every feature reads unmeasured until /lens-scan writes a run'; }
+  // `text` is what the pill shows and may carry a relative age that moves on every tick; `say` is what the live
+  // region announces and changes only when the STATE does, so a screen reader is not told the clock every minute.
+  let cls = '', text: string, say: string, title: string;
+  if (L.status === 'error' && L.structure) { cls = 'off'; text = say = 'Scan store error'; title = L.error ?? 'The scan store cannot be read'; }
+  else if (L.status === 'offline') { cls = 'off'; text = say = 'Offline'; title = 'The scan stream dropped; reconnecting (backoff up to 10 s)'; }
+  else if (L.status === 'missing' || !run) { cls = 'idle'; text = say = L.status === 'missing' ? 'No scan store' : 'No scan yet'; title = 'Every feature reads unmeasured until /lens-scan writes a run'; }
   else if (run.status === 'running') {
     const age = Date.now() - lastSeen(L, run);
-    if (age > STALL_MS) { cls = 'off'; text = 'Stalled · last update ' + ago(age); title = 'Run ' + run.id + ' still says running (phase ' + run.phase + ') but nothing was written for ' + ago(age).replace(' ago', '') + ': the scan was probably stopped'; }
-    else { cls = 'on'; text = 'Live · ' + run.phase; title = 'Run ' + run.id + ' is running: phase ' + run.phase + ', lenses ' + run.lenses.join(', '); }
+    if (age > STALL_MS) { cls = 'off'; text = 'Stalled · last update ' + ago(age); say = 'Scan stalled'; title = 'Run ' + run.id + ' still says running (phase ' + run.phase + ') but nothing was written for ' + ago(age).replace(' ago', '') + ': the scan was probably stopped'; }
+    else { cls = 'on'; text = say = 'Live · ' + run.phase; title = 'Run ' + run.id + ' is running: phase ' + run.phase + ', lenses ' + run.lenses.join(', '); }
   } else {
     const bad = run.status === 'failed' || run.status === 'aborted';
     if (bad) cls = 'off';
     text = 'Last scan ' + (bad ? run.status + ' ' : '') + ago(Date.now() - Date.parse(run.ended_at ?? run.updated_at));
+    say = 'Last scan ' + (bad ? run.status : 'finished');
     title = 'Run ' + run.id + ' ' + run.status + (run.note ? ': ' + run.note : '');
   }
-  return <span className={'livepill ' + cls} role="status" title={title}><i />{text}</span>;
+  return (
+    <span className={'livepill ' + cls} role="status" title={title}>
+      <i />
+      <span aria-hidden="true">{text}</span>
+      <span style={PILL_SR}>{say}</span>
+    </span>
+  );
 }
 
 /** Show the drawing set or the findings ledger; the ledger covers the rail and the timeline, so their open panels close. */
