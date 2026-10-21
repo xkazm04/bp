@@ -15,7 +15,7 @@ function lines(scope: KeyScope): { keys: string; label: string }[] {
   for (let i = 0; i < bs.length; i++) {
     const b = bs[i], nx = bs[i + 1];
     if (b.action === 'next' && nx?.action === 'prev') { out.push({ keys: [b.keys[0], nx.keys[0], b.keys[1], nx.keys[1]].filter(Boolean).map(keyName).join(' '), label: 'move through items' }); i++; continue; }
-    if (b.action === 'view1' && bs[i + 2]?.action === 'view3') { out.push({ keys: '1 2 3', label: [b, nx, bs[i + 2]].map((x) => x.label).join(' · ') }); i += 2; continue; }
+    if (b.action === 'view1' && bs[i + 2]?.action === 'view3') { const v = [b, nx, bs[i + 2]]; out.push({ keys: v.map((x) => keyName(x.keys[0])).join(' '), label: v.map((x) => x.label).join(' · ') }); i += 2; continue; }
     out.push({ keys: keysOf(b), label: b.label });
   }
   return out;
@@ -53,7 +53,8 @@ export function KeyLine({ scope }: { scope: KeyScope }) {
       {SHORT[scope].map((a, i) => {
         const b = KEYMAP[scope].find((x) => x.action === a);
         if (!b) return null;
-        const k = a === 'next' ? 'J/K' : keyName(b.keys[0]);
+        const prev = a === 'next' ? KEYMAP[scope].find((x) => x.action === 'prev') : undefined;
+        const k = prev ? keyName(b.keys[0]) + '/' + keyName(prev.keys[0]) : keyName(b.keys[0]);
         const w = a === 'open' && scope === 'packs' ? 'compare' : WORD[a] ?? b.label;
         return <span key={a}>{i ? ' · ' : ''}<kbd>{k}</kbd>{w}</span>;
       })}
