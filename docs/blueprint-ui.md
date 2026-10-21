@@ -324,7 +324,10 @@ and the theme toggle). They share the engine, the UI and the data, and differ on
 
 1. **subtle: patterns.** Every tile keeps its rectangle. Lenses differ by line patterns, hairline
    marks and small icon sets in fixed slots. In General, one tiny indicator per enabled lens sits in
-   a strip, and a lens enlarges its own indicator into the tile's evidence line. Ink colours only.
+   a strip, and a lens enlarges its own indicator into the tile's evidence line. Ink colours, except that
+   a glyph takes its lens's health: amber to watch, red for trouble, faint when n/a or unmeasured
+   (`apps/web/src/variants/subtle/marks.ts` `healthInk`, the one place that decides it; the General key
+   shows the four).
    **It is drawn entirely from the manifests:** the glyph by `presentation.glyph` (the shared set, or a
    custom `{path}` parsed only by `Path2D`, at most 2048 characters), the line by `presentation.line`
    (the shared set, `solid` included), the line's length by `presentation.measures` (a number over its
