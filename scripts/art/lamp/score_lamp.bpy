@@ -1,7 +1,8 @@
 # Blender script; run with blender -b -P scripts/art/lamp/score_lamp.bpy -- <repo-root> <work-dir>
 """Scores the committed final.fbx by re-importing it: vertices, tris against budget, connected components, floaters, bounds in
 metres, pivot, UV sets, material slots, glow faces, rig weight sums, the five actions, and each pose's deformation sanity.
-Also runs the look-at test on the working blend (constraints do not travel in FBX). Writes <work-dir>/score.json."""
+Also checks the flat base colour and ORM textures per region (mean, std, distance to the materials.json target, outliers), the clamp's base-bone weight
+and runs the look-at test on the working blend lamp_rework.blend (constraints do not travel in FBX). Writes <work-dir>/score.json."""
 import bpy, bmesh, sys, os, json, math
 import numpy as np
 from mathutils import Vector
@@ -21,8 +22,12 @@ S['vertices'] = len(me.vertices)
 S['tris'] = sum(len(p.vertices) - 2 for p in me.polygons)
 S['budget_tris'] = BUDGET
 S['uv_sets'] = len(me.uv_layers)
-S['materials'] = [m.name for m in me.materials]
-S['glow_faces'] = sum(1 for p in me.polygons if p.material_index == 1)
+S['materials'] = [m.name.split('.')[0] for m in me.materials]
+MATS = json.load(open(os.path.join(REPO, 'scripts', 'art', 'lamp', 'materials.json')))
+REG = MATS['regions']
+slot_region = {r['slot']: n for n, r in REG.items()}
+slot_of = [slot_region.get(m.name.split('.')[0]) for m in me.materials]
+S['glow_faces'] = sum(1 for p in me.polygons if slot_of[p.material_index] == 'glow')
 
 # components by shared vertex, then floaters = components whose bounding box touches no other component's
 bm = bmesh.new(); bm.from_mesh(me); bm.verts.ensure_lookup_table()
@@ -49,11 +54,14 @@ bm.free()
 co = np.array([(ob.matrix_world @ v.co)[:] for v in me.vertices])
 S['bounds_m'] = {'min': [round(float(x), 4) for x in co.min(0)], 'max': [round(float(x), 4) for x in co.max(0)],
                  'size_xyz': [round(float(x), 4) for x in (co.max(0) - co.min(0))]}
-slab = co[(co[:, 2] > -0.01) & (co[:, 2] < 0.03)]
-rim = slab[np.hypot(slab[:, 0], slab[:, 1]) > 0.045]      # the disc rim; the stem and the clamp arm are narrower than that
+slab = co[(co[:, 2] > -0.006) & (co[:, 2] < 0.03)]
+slab = slab[~((slab[:, 1] > 0.057) & (np.abs(slab[:, 0]) < 0.021))]     # the clamp's back bar pokes into the disc rim; leave it out
+rim = slab[np.hypot(slab[:, 0], slab[:, 1]) > 0.045]      # the disc rim; the stem is narrower than that
 S['pivot'] = {'disc_underside_z_m': round(float(rim[:, 2].min()), 4),
               'disc_centre_xy_m': [round(float((rim[:, 0].min() + rim[:, 0].max()) / 2), 4), round(float((rim[:, 1].min() + rim[:, 1].max()) / 2), 4)],
               'disc_diameter_m': round(float(slab[:, 0].max() - slab[:, 0].min()), 4)}
+S['height_above_table_m'] = round(float(co[:, 2].max()), 4)
+S['clamp'] = {'depth_below_table_plane_m': round(float(-co[:, 2].min()), 4)}
 
 # rig weights
 names = [g.name for g in ob.vertex_groups]
@@ -62,9 +70,48 @@ for v in me.vertices:
     ws = [g.weight for g in v.groups]
     sums.append(sum(ws)); maxinf = max(maxinf, len(ws))
 sums = np.array(sums)
+bi = names.index('base')
+clamp_v = [v for v in me.vertices if v.co.z < -0.005 and ob.matrix_world.translation.z == ob.matrix_world.translation.z]
+S['clamp'].update({'verts_below_disc': len(clamp_v), 'base_weight_min': round(min(next((g.weight for g in v.groups if g.group == bi), 0.0) for v in clamp_v), 5),
+                   'max_influences': max(len(v.groups) for v in clamp_v)})
 S['rig'] = {'bones': [b.name for b in arm.data.bones], 'hierarchy': {b.name: (b.parent.name if b.parent else None) for b in arm.data.bones},
             'vertex_groups': names, 'weight_sum_min': round(float(sums.min()), 5), 'weight_sum_max': round(float(sums.max()), 5),
             'unweighted_verts': int((sums < 1e-6).sum()), 'max_influences': maxinf}
+
+# base colour per region: sample lamp_basecolor.png at each face's UV centroid (the clamp, spring and hole-fill faces point at flat swatch cells), then mean / std per region against the target in materials.json
+img = bpy.data.images.load(os.path.join(ART, 'textures', 'lamp_basecolor.png')); img.colorspace_settings.name = 'Non-Color'
+IW, IH = img.size; px = np.empty(IW * IH * 4, dtype=np.float32); img.pixels.foreach_get(px); px = px.reshape(IH, IW, 4)[:, :, :3]
+uvl = me.uv_layers[0]; uvd = uvl.uv if hasattr(uvl, 'uv') else uvl.data; ukey = 'vector' if hasattr(uvl, 'uv') else 'uv'
+uvs = np.empty(len(me.loops) * 2, dtype=np.float32); uvd.foreach_get(ukey, uvs); uvs = uvs.reshape(-1, 2)
+samples = {n: [] for n in REG}; edge = {n: [] for n in REG}
+for p in me.polygons:
+    r = slot_of[p.material_index]; lo = list(p.loop_indices); c = uvs[lo].mean(0)
+    samples[r].append(px[min(IH - 1, int(c[1] * IH)), min(IW - 1, int(c[0] * IW))])
+    for l in lo[:3]:      # half way to the corners: an edge-tap estimate of how much neighbouring charts bleed in (reported, not gated)
+        q = (c + uvs[l]) / 2; edge[r].append(px[min(IH - 1, int(q[1] * IH)), min(IW - 1, int(q[0] * IW))])
+tol = MATS['arm_target_srgb_tolerance']; otol = MATS['arm_outlier_tolerance']
+S['basecolor_regions'] = {}
+for n, arr in samples.items():
+    a = np.array(arr); tgt_c = np.array([int(REG[n]['color'][i:i + 2], 16) for i in (1, 3, 5)]) / 255.0
+    mean = a.mean(0); dev = np.abs(a - tgt_c).max(1)
+    S['basecolor_regions'][n] = {'faces': int(len(a)), 'samples': int(len(a)), 'edge_tap_outliers': int((np.abs(np.array(edge[n]) - tgt_c).max(1) > otol).sum()), 'edge_taps': len(edge[n]), 'mean_srgb': [round(float(x), 4) for x in mean], 'std_srgb': [round(float(x), 4) for x in a.std(0)],
+                                 'target_srgb': [round(float(x), 4) for x in tgt_c], 'distance_to_target': round(float(np.abs(mean - tgt_c).max()), 4),
+                                 'outliers_over_tol': int((dev > otol).sum())}
+# gate: every region's mean within tol of its target, the arm with no outlier at all, any other region under 1 % outliers (a few shade and glow faces
+# share a texel with the other side of the thin shell)
+S['basecolor_check'] = {'arm_distance_tol': tol, 'outlier_tol': otol, 'other_regions_max_outlier_fraction': 0.01,
+                        'pass': all(r['distance_to_target'] <= tol and r['outliers_over_tol'] <= (0 if n == 'arm' else 0.01 * r['faces']) for n, r in S['basecolor_regions'].items())}
+# ORM per region: roughness and metal against the targets (silver must read metal 1, roughness about 0.35)
+img2 = bpy.data.images.load(os.path.join(ART, 'textures', 'lamp_orm.png')); img2.colorspace_settings.name = 'Non-Color'
+o = np.empty(IW * IH * 4, dtype=np.float32); img2.pixels.foreach_get(o); o = o.reshape(IH, IW, 4)[:, :, :3]
+S['orm_regions'] = {}
+for n in REG:
+    ps = []
+    for p in me.polygons:
+        if slot_of[p.material_index] != n: continue
+        c = uvs[list(p.loop_indices)].mean(0); ps.append(o[min(IH - 1, int(c[1] * IH)), min(IW - 1, int(c[0] * IW))])
+    ps = np.array(ps); S['orm_regions'][n] = {'roughness_mean': round(float(ps[:, 1].mean()), 3), 'metal_mean': round(float(ps[:, 2].mean()), 3),
+                                              'pass': bool(abs(ps[:, 1].mean() - REG[n]['roughness']) < 0.01 and abs(ps[:, 2].mean() - REG[n]['metal']) < 0.01)}
 
 # actions and pose sanity: pose each action, compare deformed bounds to rest, check no vertex blows up
 acts = {a.name: a for a in bpy.data.actions}
@@ -94,7 +141,7 @@ for n, a in acts.items():
                          'head_z_m': round(float(p[:, 2].max()), 3), 'frames': [round(a.frame_range[0]), round(a.frame_range[1])]}
 
 # look-at test on the working blend: head bone Y axis should point at the target when the constraint is on
-bpy.ops.wm.open_mainfile(filepath=os.path.join(WORK, 'lamp_finish.blend'))
+bpy.ops.wm.open_mainfile(filepath=os.path.join(WORK, 'lamp_rework.blend'))
 rig = bpy.data.objects['lamp-agent_rig']; tgt = bpy.data.objects['look_at_target']
 rig.animation_data.action = bpy.data.actions['speaking']
 pbh = rig.pose.bones['head']

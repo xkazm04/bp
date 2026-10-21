@@ -1,4 +1,5 @@
 // Fills apps/vr/ArtSource/lamp-agent/manifest.json from the measured scores (score_lamp.bpy, finish_lamp.bpy) and the files on disk.
+// (rework_lamp.bpy and render_lamp.bpy results are read from <work>/rework.json and <work>/framing.json.)
 // Gate results are derived from the measurements, never typed in. Keeps the option and pick fields written in the look-dev step.
 //   node scripts/art/lamp/write_manifest.mjs <work-dir> <raw-glb-dir>
 import fs from 'node:fs';
@@ -11,6 +12,9 @@ const DIR = path.join(ROOT, 'apps', 'vr', 'ArtSource', 'lamp-agent');
 const [work, rawDir] = process.argv.slice(2);
 const S = JSON.parse(fs.readFileSync(path.join(work, 'score.json'), 'utf8'));
 const F = JSON.parse(fs.readFileSync(path.join(work, 'finish.json'), 'utf8'));
+const RW = JSON.parse(fs.readFileSync(path.join(work, 'rework.json'), 'utf8'));
+const FR = JSON.parse(fs.readFileSync(path.join(work, 'framing.json'), 'utf8'));
+const MATS = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'art', 'lamp', 'materials.json'), 'utf8'));
 const M = JSON.parse(fs.readFileSync(path.join(DIR, 'manifest.json'), 'utf8'));
 const DATE = new Date().toISOString().slice(0, 10);
 const sha = (p) => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
@@ -27,6 +31,11 @@ const oversize = all.filter((f) => fs.statSync(path.join(DIR, f)).size >= MB10);
 const seeds = { 101: 'raw_seed101.glb', 202: 'raw_seed202.glb', 303: 'raw_seed303.glb' };
 const rawSha = Object.fromEntries(Object.entries(seeds).map(([k, f]) => [k, sha(path.join(rawDir, f))]));
 const [sx, sy, sz] = S.bounds_m.size_xyz;
+const expectedComponents = 1 + RW.accessory_parts.clamp.length + RW.accessory_parts.springs;
+const allOrm = Object.values(S.orm_regions).every((r) => r.pass);
+const partTris = Object.values(RW.part_tris).reduce((a, b) => a + b, 0);
+const springTris = Object.entries(RW.part_tris).filter(([k]) => k.startsWith('spring')).reduce((a, [, v]) => a + v, 0);
+const clampTris = partTris - springTris;
 const tex = all.filter((f) => f.startsWith('textures/'));
 const w = S.rig, poses = Object.keys(S.poses);
 const lookMax = Math.max(...Object.values(S.look_at_error_deg));
@@ -51,37 +60,54 @@ M.generator = [
 ];
 M.tris = S.tris;
 M.tris_note = `${S.tris} against ${S.budget_tris}`;
-M.materials = [
-  'lamp_body (base colour + ORM + normal, 2048 px PNG)',
-  `lamp_shade_glow (emissive warm #FF9E2E x6, ${S.glow_faces} faces on the shade interior; UE drives the strength per state)`,
-];
-M.bounds_cm = { x: cm(sx), y: cm(sy), z: cm(sz), note: 'x width, y depth (shade towards -y), z up (Blender, FBX Z-up); pivot at the base disc underside centre, so the clamp reaches to z = ' + Math.round(S.bounds_m.min[2] * 100) + ' cm' };
+M.materials = Object.values(MATS.regions).map((r) => `${r.slot}: ${r.what}; base colour ${r.color}, roughness ${r.roughness}, metal ${r.metal}${r.emission ? `, emissive ${r.emission} x${r.emission_strength} on ${S.glow_faces} faces, UE drives the strength per state` : ''}`);
+M.material_slots = Object.values(MATS.regions).map((r) => r.slot);
+M.bounds_cm = { x: cm(sx), y: cm(sy), z: cm(sz), height_above_table_cm: cm(S.height_above_table_m), clamp_below_table_plane_cm: cm(S.clamp.depth_below_table_plane_m), note: `x width, y depth (shade towards -y, clamp back bar towards +y), z up (Blender, FBX Z-up); pivot at the base disc underside centre (z = 0, the table plane); the shade top is ${cm(S.height_above_table_m)} cm above it and the modelled C-clamp (knob bottom) reaches to z = ${-cm(S.clamp.depth_below_table_plane_m)} cm` };
 M.meshes = { 'lamp-agent': { tris: S.tris, vertices: S.vertices, components: S.components, floaters: S.floaters, open_edges: S.manifold_open_edges, uv_sets: S.uv_sets } };
 M.uv_sets = S.uv_sets;
-M.pivot = 'centre of the base disc, on its underside (the table-top contact plane); the C-clamp hangs below the origin';
+M.pivot = `centre of the base disc, on its underside (the table-top contact plane, z = 0); the modelled C-clamp hangs below the origin, to z = ${-cm(S.clamp.depth_below_table_plane_m)} cm, and grips a 3 cm thick table whose edge is at y = +5.8 cm`;
 M.rig = {
   bones: w.bones, hierarchy: w.hierarchy, weights: F.weights, weight_sum_range: [w.weight_sum_min, w.weight_sum_max], unweighted_verts: w.unweighted_verts,
   max_influences_per_vertex: w.max_influences, look_at: F.look_at, look_at_error_deg: S.look_at_error_deg,
 };
 M.actions = Object.fromEntries(poses.map((p) => [p, { ...S.poses[p], note: 'rotation of lower_arm, upper_arm, head about the armature X axis (scripts/art/lamp/poses.json, degrees, relative to the TRELLIS rest pose); keys on frames 1 and 12' }]));
-M.textures = 'lamp_basecolor.png, lamp_orm.png (R occlusion, G roughness, B metal), lamp_normal.png: the TRELLIS.2 bake (BakeTextureFromVoxel, normal and AO baked from the 768-voxel remesh onto the 28k mesh), downsized to 2048 px';
+M.textures = 'lamp_basecolor.png, lamp_orm.png (R occlusion, G roughness, B metal), lamp_normal.png (flat), 2048 px: flat region colours from scripts/art/lamp/materials.json rasterised into the existing TRELLIS UV set by rework_lamp.bpy (flat values need no Cycles bake, so no render engine and no GPU); the smudged TRELLIS bake and its relief normal map are gone. The same values sit on the Principled node of each material slot, so UE can use either';
 M.licence = 'TRELLIS.2 output from a Leonardo concept (look-dev input, R8 open); no MiniMax-H3 or FLUX.2 [dev] output used';
-M.regenerate = 'node scripts/art/lamp/trellis_run.mjs 303; blender -b -P scripts/art/lamp/finish_lamp.bpy -- <repo> <raw.glb> <work>; blender -b -P scripts/art/lamp/score_lamp.bpy -- <repo> <work>; blender -b -P scripts/art/lamp/render_lamp.bpy -- <repo>; node scripts/art/lamp/write_manifest.mjs <work> <raw-dir>';
-const SPRING = 'no spring mesh and no extra triangles; the springs stay as the baked pale strip in the base colour and normal textures';
-M.finishing_note = 'Springs: judged on evidence/table-view.jpg (1.63 m line of sight, 40 degree field, 16 px per degree) and evidence/spring-closeup.jpg (the same view at 3x). TRELLIS did not resolve the coils: they are lumpy relief, and at the far edge they read only as a pale strip along each arm segment, never as coils (a coil pitch of about 2 mm at lamp scale is under 1 px). Decision: ' + SPRING + '. UE can add a thin coil card or alpha-tested ribbon if a close-up needs it.';
+M.regenerate = 'node scripts/art/lamp/trellis_run.mjs 303; blender -b -P scripts/art/lamp/finish_lamp.bpy -- <repo> <raw.glb> <work>; blender -b -P scripts/art/lamp/rework_lamp.bpy -- <repo> <work>; blender -b -P scripts/art/lamp/score_lamp.bpy -- <repo> <work>; blender -b -P scripts/art/lamp/render_lamp.bpy -- <repo> <work>; node scripts/art/lamp/write_manifest.mjs <work> <raw-dir>  (Blender takes Windows paths; Cycles runs on the CPU)';
+const SPRING = `modelled: ${RW.accessory_parts.springs} thin brushed-silver cylinders (8 sides, radius 3.5 mm), two on each arm segment (one each side), ${springTris} tris in total, weighted 1.0 to the arm bone they run along`;
+M.finishing_note = `Springs: ${SPRING}. They are plain cylinders, not coils: a coil pitch of about 2 mm at lamp scale is under 1 px at the far edge (the first build judged this on a 1.63 m view), so a cylinder reads the same as the spring in concept A and costs ${springTris} tris. The pale strip that was the smudge on the TRELLIS arm texture is gone (the arm is flat navy). Materials: one slot per region with flat values (arm navy, silver joints, springs and screw, dark shade, warm glow, amber cap, navy base and clamp), plus the same values baked flat into the three PNGs. The old lamp_body slot is replaced by six slots; lamp_shade_glow keeps its name.`;
 M.sha256 = sums;
+const framingOk = FR.pass === true && Object.keys(FR.images).length === 10;
+M.framing = {
+  pass: framingOk,
+  date: DATE,
+  method: 'render_lamp.bpy fits every camera to the world bounding box of the evaluated (posed) mesh with a 6 % margin per side; then a transparent-film alpha pass of the lamp alone is rendered with the same camera and the check asserts that no lamp pixel touches the border and that the silhouette keeps at least 5 % of the image on every side',
+  table_view: FR.table_view,
+  turnaround: FR.turnaround,
+  images: FR.images,
+};
 M.gates = {
   input: M.gates.input,
-  mesh_acceptance: gate(S.components === 1 && S.floaters === 0 && wNorm,
-    `seed 303 of 3 (101 had 14 components, 202 had 5 with the arm gone, both rejected). Raw ${F.raw.vertices} vertices / ${F.raw.tris} tris with merge_vertices, components ${F.components_before.join('+')}; the two specks (${F.components_before.slice(1).join(' and ')} vertices) were deleted. Final ${S.vertices} vertices, ${S.components} component, ${S.floaters} floaters, ${S.manifold_open_edges} open edges (small holes in the cap). Silhouette matches options/A.png: C-clamp base, jointed two-segment arm, cone shade.`),
-  scale: gate(sz >= SCALE_RULE.totalHeightM[0] && sz <= SCALE_RULE.totalHeightM[1] && Math.abs(S.pivot.disc_underside_z_m) < 1e-3 && Math.abs(S.bounds_m.min[0] + S.bounds_m.max[0]) < 0.005,
-    `${(sx * 100).toFixed(1)} x ${(sy * 100).toFixed(1)} x ${(sz * 100).toFixed(1)} cm (x, y, z up) re-imported from final.fbx; ${(S.bounds_m.max[2] * 100).toFixed(0)} cm above the table plane, rule 45 to 65 cm total for a desk architect lamp; pivot: disc underside z = ${S.pivot.disc_underside_z_m} m, x centred. Assumption: the wolf-plan gives no lamp size, so the UE world scale of the table (W3.2) is still to be confirmed on Wolf.`),
-  finishing: gate(S.uv_sets === 1 && tex.length === 3 && S.materials.length === 2 && S.glow_faces > 0 && w.bones.length === 4 && wNorm && lookMax < 0.5 && poses.length === 5 && S.actions.length === 5 && oversize.length === 0,
-    `one UV set; ${tex.length} PBR PNGs (base colour, ORM, normal, 2048 px, each under 5 MB); emissive slot lamp_shade_glow on ${S.glow_faces} faces; rig ${w.bones.join(' > ')}, weights sum ${w.weight_sum_min} to ${w.weight_sum_max}, ${w.unweighted_verts} unweighted vertices, at most ${w.max_influences} influences; look-at constraint error ${lookMax} deg on three targets; ${poses.length} actions (${poses.join(', ')}) in final.fbx; springs: ${SPRING}.`),
-  poly_budget: gate(S.tris <= S.budget_tris, `${S.tris} tris against ${S.budget_tris} (${Math.round(S.tris / S.budget_tris * 100)}%)`),
+  mesh_acceptance: gate(S.components === expectedComponents && S.floaters === 0 && wNorm && S.clamp.base_weight_min === 1 && S.clamp.depth_below_table_plane_m > 0.05,
+    `seed 303 of 3 (101 had 14 components, 202 had 5 with the arm gone, both rejected). Raw ${F.raw.vertices} vertices / ${F.raw.tris} tris with merge_vertices, components ${F.components_before.join('+')}; the two specks (${F.components_before.slice(1).join(' and ')} vertices) were deleted. Rework 2026-10-21: the TRELLIS stalk under the disc was a lumpy 4 cm post, not a C-clamp, so it was cut off below z = -4 mm and the hole closed; a modelled C-clamp replaces it (back bar, lower jaw, screw, pad and knob, ${clampTris} tris, all weighted 1.0 to the base bone, reaching ${(S.clamp.depth_below_table_plane_m * 100).toFixed(1)} cm below the table plane) plus ${RW.accessory_parts.springs} spring cylinders. Final ${S.vertices} vertices, ${S.components} connected components (the TRELLIS body, ${RW.accessory_parts.clamp.length} clamp parts and ${RW.accessory_parts.springs} springs, each overlapping the body), ${S.floaters} floaters (a floater is a component whose bounding box touches no other), ${S.manifold_open_edges} open edges (small holes in the cap and joints, left from TRELLIS). Silhouette matches options/A.png: jointed two-segment arm, cone shade, round base with a C-clamp.`),
+  scale: gate(S.height_above_table_m >= SCALE_RULE.totalHeightM[0] && S.height_above_table_m <= SCALE_RULE.totalHeightM[1] && sz >= SCALE_RULE.totalHeightM[0] && sz <= SCALE_RULE.totalHeightM[1] && Math.abs(S.pivot.disc_underside_z_m) < 1e-3 && Math.abs(S.bounds_m.min[0] + S.bounds_m.max[0]) < 0.005,
+    `${(sx * 100).toFixed(1)} x ${(sy * 100).toFixed(1)} x ${(sz * 100).toFixed(1)} cm (x, y, z up) re-imported from final.fbx, clamp included; ${(S.height_above_table_m * 100).toFixed(1)} cm above the table plane and ${(S.clamp.depth_below_table_plane_m * 100).toFixed(1)} cm below it; rule 45 to 65 cm for a desk architect lamp (both the height above the table and the total pass); pivot: disc underside z = ${S.pivot.disc_underside_z_m} m, x centred. Assumption: the wolf-plan gives no lamp size, so the UE world scale of the table (W3.2) is still to be confirmed on Wolf.`),
+  finishing: gate(S.uv_sets === 1 && tex.length === 3 && S.materials.length === 6 && S.materials.includes('lamp_shade_glow') && S.glow_faces > 0 && w.bones.length === 4 && wNorm && lookMax < 0.5 && poses.length === 5 && S.actions.length === 5 && oversize.length === 0 && S.basecolor_check.pass && allOrm && framingOk,
+    `one UV set; ${tex.length} PBR PNGs (flat base colour, ORM, flat normal, 2048 px, each under 5 MB); ${S.materials.length} material slots (${S.materials.join(', ')}), emissive slot lamp_shade_glow on ${S.glow_faces} faces; base colour measured per region from lamp_basecolor.png at every face (mean distance to target: ${Object.entries(S.basecolor_regions).map(([n, r]) => `${n} ${r.distance_to_target}`).join(', ')}; arm std ${S.basecolor_regions.arm.std_srgb.join('/')}, ${S.basecolor_regions.arm.outliers_over_tol} arm outliers over ${S.basecolor_check.outlier_tol}); ORM roughness and metal match the targets in every region; rig ${w.bones.join(' > ')}, weights sum ${w.weight_sum_min} to ${w.weight_sum_max}, ${w.unweighted_verts} unweighted vertices, at most ${w.max_influences} influences; look-at constraint error ${lookMax} deg on three targets; ${poses.length} actions (${poses.join(', ')}) in final.fbx; evidence framing check passes on all ${Object.keys(FR.images).length} images (min silhouette margin ${Math.min(...Object.values(FR.images).map((i) => i.min_margin_fraction))} of the image); springs: ${SPRING}.`),
+  poly_budget: gate(S.tris <= S.budget_tris, `${S.tris} tris against ${S.budget_tris} (${Math.round(S.tris / S.budget_tris * 100)}%), clamp ${clampTris} and springs ${springTris} included`),
+};
+M.base_colour_regions = S.basecolor_regions;
+M.orm_regions = S.orm_regions;
+M.review_fixes = {
+  review: 'Director review of 2026-10-21 11:21Z of commit caa3231; reworked the same day without a TRELLIS rerun and without the GPU (Blender, Cycles on the CPU)',
+  findings: [
+    { finding: 'The evidence crops the shade (and other parts at the frame edge).', fix: `render_lamp.bpy fits each camera to the evaluated mesh's world bounding box (the posed mesh for each pose) with a 6 % margin, one common distance for the 4 turnaround views; table-view.jpg keeps its 1.63 m, 23 degree line of sight and only widens the horizontal field of view from 40 to ${FR.table_view.hfov_deg} degrees; an alpha-pass check asserts that no lamp pixel touches the border in any of the ${Object.keys(FR.images).length} evidence images (see framing); spring-closeup.jpg is dropped because a 3x close-up cannot hold the whole lamp, and the springs are real geometry now` },
+    { finding: 'The arm bake is smudged (white and grey blotches).', fix: `the TRELLIS bake is replaced by flat region PBR from materials.json: dark navy arm ${MATS.regions.arm.color}, brushed silver joints and springs (metal ${MATS.regions.metal.metal}, roughness ${MATS.regions.metal.roughness}), dark shade ${MATS.regions.shade.color}, warm emissive interior, amber cap, navy base; regions assigned per face by bone weights and distance to the joint pivots; flat PNGs rasterised onto the TRELLIS UVs plus one material slot per region; flat normal map; score_lamp.bpy measures the base colour per region (arm mean distance ${S.basecolor_regions.arm.distance_to_target} from the navy target, std ${S.basecolor_regions.arm.std_srgb.join('/')}, ${S.basecolor_regions.arm.outliers_over_tol} outliers)` },
+    { finding: 'The C-clamp is missing although mesh_acceptance claimed one.', fix: `the TRELLIS stalk (a lumpy 4 cm post that also sat under the render's floor plane, so it never showed) is replaced by a modelled low-poly C-clamp (${clampTris} tris, weight 1.0 to the base bone, base material, silver screw); the evidence table is now a 3 cm slab whose edge the clamp grips; mesh_acceptance, bounds_cm and pivot now describe this geometry; bounds and the scale gate are recomputed from final.fbx` },
+  ],
 };
 M.lynx_commit = null;
-M.lynx_commit_note = 'set by the merge; branch autopilot/accepted-idea-delivery-cebdd60a';
+M.lynx_commit_note = 'set by the merge; the branch it lands on';
 if (oversize.length) console.error('OVERSIZE files:', oversize.join(', '));
 fs.writeFileSync(path.join(DIR, 'manifest.json'), JSON.stringify(M, null, 2) + '\n');
 for (const [k, g] of Object.entries(M.gates)) console.log(g.pass ? 'PASS' : 'FAIL', k);

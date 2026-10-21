@@ -1,0 +1,13 @@
+{
+  "note": "Flat PBR values per lamp-agent region (concept options/A.png): colours are sRGB hex, roughness and metal are the ORM green and blue values. Read by rework_lamp.bpy (build), score_lamp.bpy (per-region base colour check) and render_lamp.bpy (evidence). Slot name = material name in final.fbx.",
+  "regions": {
+    "arm":    { "slot": "lamp_arm",        "color": "#1B2B4C", "roughness": 0.55, "metal": 0.0, "what": "dark navy arm segments (lower_arm and upper_arm faces away from the joints)" },
+    "metal":  { "slot": "lamp_metal",      "color": "#C4C9CF", "roughness": 0.35, "metal": 1.0, "what": "brushed silver joint knuckles, springs, clamp screw" },
+    "shade":  { "slot": "lamp_shade",      "color": "#131A2B", "roughness": 0.50, "metal": 0.0, "what": "dark shade exterior" },
+    "glow":   { "slot": "lamp_shade_glow", "color": "#F4C27C", "roughness": 0.60, "metal": 0.0, "what": "warm shade interior, emissive #FF9E2E x6, UE drives the strength per state", "emission": "#FF9E2E", "emission_strength": 6.0 },
+    "cap":    { "slot": "lamp_cap",        "color": "#E39A1C", "roughness": 0.40, "metal": 0.0, "what": "amber cap on top of the shade" },
+    "base":   { "slot": "lamp_base",       "color": "#18233F", "roughness": 0.55, "metal": 0.0, "what": "navy base disc, stem, C-clamp body and knob" }
+  },
+  "arm_target_srgb_tolerance": 0.02,
+  "arm_outlier_tolerance": 0.04
+}
