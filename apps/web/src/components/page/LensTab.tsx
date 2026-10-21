@@ -100,7 +100,9 @@ const Body = memo(function Body({ lens, f, M, density }: { lens: string; f: Feat
           {!past && fl?.ov ? <p className="ov"><b>Held at {fl.ov.health.toUpperCase()}</b> by {pname(M.P, fl.ov.by)} until {fl.ov.until}{fl.why ? '. The rules say: ' + fl.why : ''}</p> : null}
         </div>
       </Sec>
-      {past ? <Sec label="Not recorded"><p className="pg-nr">Evidence and the other fields are not kept by date. Measured metrics below show their readings up to {t}.</p></Sec> : null}
+      {/* the KPIs are named here because the KPI section is dropped on a past date (LensTab:165): without
+          the word, the one thing with no history that leaves no mark is the one that silently vanishes */}
+      {past ? <Sec label="Not recorded"><p className="pg-nr">Evidence, the other fields and the KPIs are not kept by date. Measured metrics below show their readings up to {t}.</p></Sec> : null}
       {evShown.length ? (
         <Sec label="Evidence">
           <div className="pg-ev">
