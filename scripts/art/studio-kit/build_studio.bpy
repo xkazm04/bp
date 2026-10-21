@@ -1,0 +1,546 @@
+# Blender script (extension .bpy so scripts/check-python-deps.mjs does not read bpy/bmesh/mathutils as pip packages)
+"""Builds one P4 studio kit prop (apps/vr/ArtSource/<asset-id>) and scores the exported file.
+
+Run:  blender -b -P scripts/art/studio-kit/build_studio.bpy -- <repo-root> <work-dir> <asset-id>
+asset-id: studio-shelves | studio-desk-lamp | studio-mug | studio-drawing-tubes | studio-pinned-drawings
+Procedural only: no generated input, no GPU job. Metres, Blender Z-up, the glTF exporter writes Y-up. Pivot is the centre of the
+base footprint at z = 0. Each concept.png in the folder is the reference the shapes follow; it is not read by this script.
+Helpers (Part, material, png, textures) follow scripts/art/light-table-frame/build_frame.bpy, which stays untouched.
+Writes <work-dir>/<asset-id>/score.json from a re-import of final.glb."""
+import bpy, bmesh, math, os, sys, json
+import numpy as np
+from mathutils import Vector, Matrix
+
+REPO, WORK, ASSET = sys.argv[sys.argv.index('--') + 1:][:3]
+OUT = os.path.join(REPO, 'apps', 'vr', 'ArtSource', ASSET)
+WORKA = os.path.join(WORK, ASSET)
+os.makedirs(WORKA, exist_ok=True)
+
+STUDIO = '#0A0F18'   # style-block.json palette role 'studio' (near-black blue)
+NAVY = '#14213D'     # the concept sheets' lifted navy (tubes, mug handle, frames), a step above the studio near-black
+KRAFT = '#CDB488'    # warm paper / kraft board
+TAN = '#B08A5A'
+PAPER = '#F3E9D2'    # style-block 'decision accents: warm paper'
+AMBER = '#FFB547'    # style-block 'attention' amber (pins)
+STEEL = '#5A5F66'
+BRASS = '#B89B62'
+NICKEL = '#BDB6A4'
+
+# asset: budget, UV span (metres per uv unit), expected bounding box (min, max per axis x, y, z up, metres) and the reason
+SPEC = {
+    'studio-shelves': dict(budget=24000, span=0.4, size=[(0.85, 0.95), (0.27, 0.34), (1.2, 1.3)],
+                           why='a three-shelf open steel rack, 90 x 30 cm footprint, 125 cm tall: shelf boards at 12, 55 and 98 cm, books 26 cm tall'),
+    'studio-desk-lamp': dict(budget=16000, span=0.2, size=[(0.2, 0.32), (0.17, 0.2), (0.34, 0.46)],
+                             why='a small desk lamp: 18.4 cm base disc, 34 cm stem, cone shade 15 cm long, about 38 cm tall'),
+    'studio-mug': dict(budget=8000, span=0.1, size=[(0.1, 0.14), (0.075, 0.085), (0.09, 0.1)],
+                       why='a straight-sided 8 cm mug, 9.5 cm tall, handle 3.8 cm proud of the wall (a 300 ml mug)'),
+    'studio-drawing-tubes': dict(budget=20000, span=0.2, size=[(0.15, 0.3), (0.15, 0.3), (0.42, 0.6)],
+                                 why='a 14 cm round holder 20 cm tall, five 4 cm tubes and two rolls leaning out of it, about 50 cm overall'),
+    'studio-pinned-drawings': dict(budget=12000, span=0.4, size=[(1.0, 1.2), (0.02, 0.05), (0.45, 0.55)],
+                                   why='three framed A3-ish sheets, 32 x 48 cm each, 6 cm apart, on a 1.1 x 0.5 m mounting board'),
+}[ASSET]
+BUDGET = SPEC['budget']
+
+
+def srgb_to_lin(c):
+    return tuple((x / 12.92 if x <= 0.04045 else ((x + 0.055) / 1.055) ** 2.4) for x in c)
+
+
+def hex_rgb(h):
+    return tuple(int(h[i:i + 2], 16) / 255 for i in (1, 3, 5))
+
+
+class Part:
+    """Accumulates primitives into one bmesh. Every face carries a material slot index (an index into `self.names`)."""
+    def __init__(self, names):
+        self.bm = bmesh.new()
+        self.names = names
+        self.rects = {}                      # slot index -> (x0, x1, z0, z1): planar 0..1 UVs on the -Y face (printed sheets)
+
+    def m(self, name):
+        return self.names.index(name)
+
+    def _tag(self, verts, mat):
+        vset = set(verts)
+        for f in self.bm.faces:
+            if all(v in vset for v in f.verts):
+                f.material_index = mat
+
+    def box(self, c, s, mat, rot=(0, 0, 0)):
+        vs = bmesh.ops.create_cube(self.bm, size=1.0)['verts']
+        bmesh.ops.scale(self.bm, vec=Vector(s), verts=vs)
+        bmesh.ops.transform(self.bm, matrix=Matrix.Translation(c) @ Matrix.Rotation(rot[2], 4, 'Z') @ Matrix.Rotation(rot[1], 4, 'Y')
+                            @ Matrix.Rotation(rot[0], 4, 'X'), verts=vs)
+        self._tag(vs, self.m(mat))
+
+    def lathe(self, prof, seg, base=(0, 0, 0), axis=(0, 0, 1), mat0=None):
+        """Revolves a closed profile [(r, z, material name)] around z. The segment arriving at a point takes that point's material;
+        the last point joins the first. A point with r = 0 becomes one vertex (a fan). Then the solid is turned to `axis` and moved."""
+        angs = [2 * math.pi * k / seg for k in range(seg)]
+        rings, allv = [], []
+        for r, z, _ in prof:
+            if r < 1e-9:
+                v = self.bm.verts.new((0, 0, z))
+                rings.append([v] * seg)
+                allv.append(v)
+            else:
+                rg = [self.bm.verts.new((r * math.cos(a), r * math.sin(a), z)) for a in angs]
+                rings.append(rg)
+                allv += rg
+        n = len(prof)
+        for i in range(n):
+            j = (i + 1) % n
+            mi = self.m(prof[j][2])
+            for k in range(seg):
+                k2 = (k + 1) % seg
+                q = [rings[i][k], rings[i][k2], rings[j][k2], rings[j][k]]
+                vs = [v for idx, v in enumerate(q) if v is not q[idx - 1]]
+                if len(set(vs)) < 3:
+                    continue
+                self.bm.faces.new(vs).material_index = mi
+        q = Vector((0, 0, 1)).rotation_difference(Vector(axis).normalized()).to_matrix().to_4x4()
+        bmesh.ops.transform(self.bm, matrix=Matrix.Translation(base) @ q, verts=allv)
+
+    def cyl(self, base, axis, r, h, seg, mat):
+        self.lathe([(0, 0, mat), (r, 0, mat), (r, h, mat), (0, h, mat)], seg, base, axis)
+
+    def sweep(self, path, a, b, seg, mat, up=(0, 1, 0)):
+        """An elliptical section (a along the path normal in the path plane, b along `up`) swept along `path`; both ends capped."""
+        up = Vector(up)
+        rings = []
+        for i, p in enumerate(path):
+            t = (path[min(i + 1, len(path) - 1)] - path[max(i - 1, 0)]).normalized()
+            n1 = t.cross(up).normalized()
+            rings.append([self.bm.verts.new(p + n1 * a * math.cos(2 * math.pi * k / seg) + up * b * math.sin(2 * math.pi * k / seg))
+                          for k in range(seg)])
+        mi = self.m(mat)
+        for i in range(len(rings) - 1):
+            for k in range(seg):
+                k2 = (k + 1) % seg
+                self.bm.faces.new([rings[i][k], rings[i][k2], rings[i + 1][k2], rings[i + 1][k]]).material_index = mi
+        for rg in (rings[0], rings[-1]):
+            self.bm.faces.new(rg).material_index = mi
+
+    def finish(self, name, materials, span):
+        bm = self.bm
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+        bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method='BEAUTY', ngon_method='EAR_CLIP')
+        bm.normal_update()
+        uvl = bm.loops.layers.uv.new('UVMap')
+        for f in bm.faces:
+            rc = self.rects.get(f.material_index)
+            n = f.normal
+            ax = max(range(3), key=lambda i: abs(n[i]))
+            a, b = [(1, 2), (0, 2), (0, 1)][ax]
+            for l in f.loops:
+                p = l.vert.co
+                if rc:
+                    l[uvl].uv = ((p.x - rc[0]) / (rc[1] - rc[0]), (p.z - rc[2]) / (rc[3] - rc[2]))
+                else:
+                    l[uvl].uv = (p[a] / span, p[b] / span)
+        me = bpy.data.meshes.new(name)
+        bm.to_mesh(me)
+        bm.free()
+        for m in materials:
+            me.materials.append(m)
+        ob = bpy.data.objects.new(name, me)
+        bpy.context.scene.collection.objects.link(ob)
+        return ob
+
+
+def png(path, arr):
+    """Writes an HxWx3 float array in 0..1 as an 8-bit PNG."""
+    h, w, ch = arr.shape
+    img = bpy.data.images.new(os.path.basename(path), w, h, alpha=False)
+    rgba = np.ones((h, w, 4), dtype=np.float32)
+    rgba[:, :, :ch] = arr
+    img.pixels.foreach_set(rgba.ravel())
+    img.filepath_raw = path
+    img.file_format = 'PNG'
+    img.save()
+    bpy.data.images.remove(img)
+
+
+def material(name, color_hex, rough, metal=0.0, tex=None, emit=None, emit_strength=1.0):
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    nt = m.node_tree
+    nt.nodes.clear()
+    out = nt.nodes.new('ShaderNodeOutputMaterial')
+    bsdf = nt.nodes.new('ShaderNodeBsdfPrincipled')
+    nt.links.new(bsdf.outputs['BSDF'], out.inputs['Surface'])
+    bsdf.inputs['Base Color'].default_value = (*srgb_to_lin(hex_rgb(color_hex)), 1)
+    bsdf.inputs['Roughness'].default_value = rough
+    bsdf.inputs['Metallic'].default_value = metal
+    if emit:
+        bsdf.inputs['Emission Color'].default_value = (*srgb_to_lin(hex_rgb(emit)), 1)
+        bsdf.inputs['Emission Strength'].default_value = emit_strength
+    if tex:
+        def img(path, cs):
+            n = nt.nodes.new('ShaderNodeTexImage')
+            n.image = bpy.data.images.load(path)
+            n.image.colorspace_settings.name = cs
+            return n
+        base = img(tex['base'], 'sRGB')
+        nt.links.new(base.outputs['Color'], bsdf.inputs['Base Color'])
+        nrm = img(tex['normal'], 'Non-Color')
+        nm = nt.nodes.new('ShaderNodeNormalMap')
+        nt.links.new(nrm.outputs['Color'], nm.inputs['Color'])
+        nt.links.new(nm.outputs['Normal'], bsdf.inputs['Normal'])
+        orm = img(tex['orm'], 'Non-Color')
+        sp = nt.nodes.new('ShaderNodeSeparateColor')
+        nt.links.new(orm.outputs['Color'], sp.inputs['Color'])
+        nt.links.new(sp.outputs['Green'], bsdf.inputs['Roughness'])
+        nt.links.new(sp.outputs['Blue'], bsdf.inputs['Metallic'])
+    return m
+
+
+# ---- textures: seamless numpy tiles, flat colour plus a little grain, no baked light -----------------------------------------
+def height_normal(h, strength):
+    gx = np.roll(h, -1, 1) - np.roll(h, 1, 1)
+    gy = np.roll(h, -1, 0) - np.roll(h, 1, 0)
+    nx, ny, nz = -gx * strength, -gy * strength, np.ones_like(h)
+    ln = np.sqrt(nx * nx + ny * ny + nz * nz)
+    return np.dstack([nx / ln * 0.5 + 0.5, ny / ln * 0.5 + 0.5, nz / ln * 0.5 + 0.5])
+
+
+def blur(a, k):
+    for ax in (0, 1):
+        a = sum(np.roll(a, s, ax) for s in range(-k, k + 1)) / (2 * k + 1)
+    return a
+
+
+def tile(kind, hexc, rough, metal, seed, N=256):
+    """Returns (base, normal, orm) float arrays for a grain kind: wood (long grain along x), brushed, paper, matte, ceramic."""
+    rng = np.random.default_rng(seed)
+    c = np.array(hex_rgb(hexc))
+    fine = rng.random((N, N)) - 0.5
+    rows = rng.random(N)
+    rows = (rows + np.roll(rows, 1) + np.roll(rows, -1)) / 3 - 0.5
+    stripes = np.repeat(rows[:, None], N, 1)
+    if kind == 'wood':
+        ring = np.sin((np.arange(N)[:, None] / N * 9 + blur(rng.random((N, N)), 6) * 3) * 2 * math.pi) * 0.5
+        h, amp = stripes * 0.5 + ring * 0.25 + fine * 0.1, 0.5
+    elif kind == 'brushed':
+        h, amp = stripes * 0.8 + fine * 0.15, 0.3
+    elif kind == 'paper':
+        h, amp = blur(fine, 1) * 1.6 + stripes * 0.1, 0.18
+    elif kind == 'ceramic':
+        h, amp = blur(fine, 2) * 2.0, 0.05
+    else:
+        h, amp = fine, 0.12
+    base = np.clip(c[None, None, :] * (1.0 + amp * h[..., None] * 0.7), 0, 1)
+    rg = np.clip(rough + 0.06 * h, 0.05, 1)
+    orm = np.dstack([np.clip(0.97 + 0.03 * h, 0, 1), rg, np.full((N, N), metal)])
+    return base, height_normal(h * 0.1, 0.6), orm
+
+
+def save_tiles(folder, specs):
+    """specs: {slot name: (kind, hex, rough, metal)} -> {slot: {'base','normal','orm'} paths}; writes textures/<slot>_<channel>.png."""
+    os.makedirs(folder, exist_ok=True)
+    paths = {}
+    for i, (name, (kind, hexc, rough, metal)) in enumerate(specs.items()):
+        paths[name] = {}
+        for ch, arr, fn in zip(('base', 'normal', 'orm'), tile(kind, hexc, rough, metal, 100 + i), ('basecolor', 'normal', 'orm')):
+            p = os.path.join(folder, '%s_%s.png' % (name, fn))
+            png(p, np.clip(arr, 0, 1).astype(np.float32))
+            paths[name][ch] = p
+    return paths
+
+
+def sheet_tile(seed, kind, W=384, H=576):
+    """A blueprint sheet: blueprint blue #123A8C, cyan-white #BFE8FF linework (perspective block, floor plan or section), faint grid.
+    Returns base, normal, orm arrays (not tiling: it is mapped once, 0..1, onto its sheet)."""
+    rng = np.random.default_rng(seed)
+    img = np.empty((H, W, 3), dtype=np.float32)
+    img[:] = np.array(hex_rgb('#123A8C'))
+    line_c = np.array(hex_rgb('#BFE8FF'))
+    mask = np.zeros((H, W), dtype=np.float32)
+
+    def line(x0, y0, x1, y1, w=1, v=1.0):
+        n = int(max(abs(x1 - x0), abs(y1 - y0))) * 2 + 2
+        for t in np.linspace(0, 1, n):
+            x, y = int(round(x0 + (x1 - x0) * t)), int(round(y0 + (y1 - y0) * t))
+            mask[max(y - w // 2, 0):y + w // 2 + 1, max(x - w // 2, 0):x + w // 2 + 1] = np.maximum(
+                mask[max(y - w // 2, 0):y + w // 2 + 1, max(x - w // 2, 0):x + w // 2 + 1], v)
+
+    def rect(x0, y0, x1, y1, w=2, v=1.0):
+        for a, b, c, d in ((x0, y0, x1, y0), (x1, y0, x1, y1), (x1, y1, x0, y1), (x0, y1, x0, y0)):
+            line(a, b, c, d, w, v)
+
+    def circle(cx, cy, r, w=1, v=1.0):
+        for t in np.linspace(0, 2 * math.pi, int(r * 8) + 8):
+            x, y = int(cx + r * math.cos(t)), int(cy + r * math.sin(t))
+            mask[max(y - w // 2, 0):y + w // 2 + 1, max(x - w // 2, 0):x + w // 2 + 1] = v
+    for gx in range(24, W, 48):
+        line(gx, 0, gx, H - 1, 1, 0.18)
+    for gy in range(24, H, 48):
+        line(0, gy, W - 1, gy, 1, 0.18)
+    if kind == 0:                                  # perspective block: three stacked slabs and ground lines
+        for k, (y, h) in enumerate(((330, 40), (260, 40), (190, 40))):
+            rect(90 + k * 12, y, 290 - k * 12, y + h, 2)
+            line(90 + k * 12, y, 60 + k * 12, y - 20, 1)
+            line(290 - k * 12, y, 330 - k * 12, y - 20, 1)
+        for k in range(6):
+            line(60, 400 + k * 12, 330, 400 + k * 6 + k * 12, 1, 0.5)
+    elif kind == 1:                                # plan: stepped outline, rooms, circle plantings
+        rect(100, 120, 230, 250, 2)
+        rect(160, 250, 290, 380, 2)
+        rect(230, 190, 290, 250, 2)
+        line(100, 185, 230, 185, 1)
+        line(160, 315, 290, 315, 1)
+        circle(300, 90, 28, 2)
+        circle(80, 430, 24, 1)
+        circle(100, 480, 28, 1)
+        for k in range(8):
+            line(160, 400 + k * 6, 230, 400 + k * 6, 1)
+    else:                                          # section: slabs, columns, stair run
+        rect(80, 150, 100, 420, 2)
+        for y in (200, 290, 380):
+            line(100, y, 310, y, 2)
+        for k in range(8):
+            line(140 + k * 14, 300 + k * 10, 154 + k * 14, 300 + k * 10, 1)
+            line(154 + k * 14, 300 + k * 10, 154 + k * 14, 310 + k * 10, 1)
+        rect(100, 450, 130, 490, 2)
+        rect(280, 450, 310, 490, 2)
+    mask = np.clip(blur(mask, 0) * 1.0, 0, 1)
+    img = img * (1 - mask[..., None] * 0.9) + line_c[None, None, :] * mask[..., None] * 0.9
+    img += (rng.random((H, W, 1)) - 0.5) * 0.02
+    h = mask * 0.2 + (rng.random((H, W)) - 0.5) * 0.05
+    return np.clip(img, 0, 1), height_normal(h, 0.5), np.dstack([np.ones((H, W)), np.full((H, W), 0.7), np.zeros((H, W))])
+
+
+# ---- the five props ----------------------------------------------------------------------------------------------------------
+def build_shelves(tex):
+    names = ['shelf_frame_steel', 'shelf_board_stained_wood', 'shelf_brass_bolt', 'shelf_book_kraft', 'shelf_book_tan', 'shelf_scroll_paper']
+    specs = {names[0]: ('brushed', STEEL, 0.45, 0.85), names[1]: ('wood', '#101A2C', 0.55, 0.0), names[2]: ('brushed', BRASS, 0.35, 1.0),
+             names[3]: ('paper', KRAFT, 0.8, 0.0), names[4]: ('paper', TAN, 0.8, 0.0), names[5]: ('paper', PAPER, 0.85, 0.0)}
+    return names, specs
+
+
+def make_shelves(p):
+    W, D, H, ps = 0.88, 0.30, 1.25, 0.025
+    px, py = W / 2 - ps / 2, D / 2 - ps / 2
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            p.box((sx * px, sy * py, H / 2), (ps, ps, H), 'shelf_frame_steel')
+        p.box((sx * px, 0, H - ps / 2), (ps, D - 2 * ps, ps), 'shelf_frame_steel')            # the ladder top on each side
+        for z in (0.10, 0.50):
+            p.box((sx * px, 0, z), (ps, D - 2 * ps, 0.02), 'shelf_frame_steel')              # side rails the boards sit on
+    for z in (0.12, 0.55, 0.98):
+        p.box((0, 0, z + 0.015), (W - 2 * ps - 0.004, D - 0.004, 0.03), 'shelf_board_stained_wood')
+        for sx in (-1, 1):
+            for sy in (-1, 1):
+                p.cyl((sx * px, sy * (D / 2), z + 0.015), (0, sy, 0), 0.006, 0.004, 12, 'shelf_brass_bolt')
+    # books on the lowest and highest shelf, leaning on the left post; a rolled drawing on the middle shelf at the right
+    for z, cols in ((0.135, ('shelf_book_kraft', 'shelf_book_tan', 'shelf_book_kraft')), (1.0, ('shelf_book_tan', 'shelf_book_kraft', 'shelf_book_tan'))):
+        for k, mt in enumerate(cols):
+            h, t = 0.25 + 0.01 * (k % 2), 0.04
+            lean = math.radians(4 + 3 * k)
+            x = -W / 2 + ps + 0.05 + k * 0.045
+            p.box((x + math.sin(lean) * h / 2, 0.0, z + math.cos(lean) * h / 2), (t, 0.19, h), mt, rot=(0, lean, 0))
+    p.cyl((0.38, 0.0, 0.58 + 0.03), (-1, 0, 0), 0.03, 0.40, 24, 'shelf_scroll_paper')
+    p.cyl((0.22, 0.0, 0.58 + 0.03), (-1, 0, 0), 0.0305, 0.012, 24, 'shelf_book_tan')          # the tie band
+    p.cyl((0.18, 0.0, 0.58 + 0.03), (-1, 0, 0), 0.0305, 0.012, 24, 'shelf_book_tan')
+
+
+def build_lamp(tex):
+    names = ['lamp_navy_shell', 'lamp_nickel_joint', 'lamp_shade_glow']
+    specs = {names[0]: ('matte', STUDIO, 0.5, 0.35), names[1]: ('brushed', NICKEL, 0.35, 1.0)}
+    return names, specs
+
+
+def make_lamp(p):
+    N, J, G = 'lamp_navy_shell', 'lamp_nickel_joint', 'lamp_shade_glow'
+    p.lathe([(0, 0, N), (0.086, 0, N), (0.092, 0.004, N), (0.092, 0.016, N), (0.086, 0.022, N), (0, 0.022, N)], 48)
+    p.cyl((-0.03, 0, 0.022), (0, 0, 1), 0.012, 0.008, 24, J)                                     # ferrule
+    p.cyl((-0.03, 0, 0.03), (0, 0, 1), 0.0075, 0.318, 20, N)                                     # stem
+    p.cyl((-0.03, -0.017, 0.355), (0, 1, 0), 0.0115, 0.034, 24, J)                               # hinge knob
+    d = Vector((math.sin(math.radians(55)), 0, -math.cos(math.radians(55))))
+    neck = Vector((-0.012, 0, 0.372))
+    p.cyl(Vector((-0.03, 0, 0.355)), (0.6, 0, 0.8), 0.009, 0.03, 16, J)                          # short arm to the shade
+    prof = [(0, 0, N), (0.020, 0, N), (0.022, 0.03, N), (0.067, 0.15, N), (0.064, 0.152, N), (0.0625, 0.1505, G), (0.019, 0.03, G), (0, 0.03, G)]
+    p.lathe(prof, 48, neck + d * -0.005, d)
+
+
+def build_mug(tex):
+    names = ['mug_glaze_cream', 'mug_glaze_inner_blue', 'mug_handle_navy']
+    specs = {names[0]: ('ceramic', '#E8D9B8', 0.6, 0.0), names[1]: ('ceramic', '#CFE6F2', 0.35, 0.0), names[2]: ('ceramic', NAVY, 0.55, 0.0)}
+    return names, specs
+
+
+def make_mug(p):
+    C, B, H = 'mug_glaze_cream', 'mug_glaze_inner_blue', 'mug_handle_navy'
+    R, h, Ri = 0.04, 0.095, 0.036
+    p.lathe([(0, 0, C), (R - 0.003, 0, C), (R, 0.003, C), (R, h - 0.003, C), (R - 0.0015, h, C), (Ri + 0.0015, h, B), (Ri, h - 0.002, B),
+             (Ri, 0.006, B), (0, 0.006, B)], 48)
+    zc = 0.052
+    path = [Vector((R - 0.003 + 0.036 * math.sin(t), 0, zc + 0.031 * math.cos(t))) for t in np.linspace(0, math.pi, 17)]
+    p.sweep(path, 0.0055, 0.0075, 10, H)
+
+
+def build_tubes(tex):
+    names = ['tubes_holder_navy', 'tubes_tube_navy', 'tubes_cap_metal', 'tubes_roll_kraft']
+    specs = {names[0]: ('paper', NAVY, 0.7, 0.0), names[1]: ('paper', '#101B35', 0.7, 0.0), names[2]: ('brushed', '#9A9482', 0.35, 1.0),
+             names[3]: ('paper', KRAFT, 0.85, 0.0)}
+    return names, specs
+
+
+def make_tubes(p):
+    H, T, M, K = 'tubes_holder_navy', 'tubes_tube_navy', 'tubes_cap_metal', 'tubes_roll_kraft'
+    R, h = 0.07, 0.20
+    p.lathe([(0, 0, H), (R + 0.006, 0, H), (R + 0.006, 0.012, H), (R, 0.012, H), (R, h - 0.002, H), (R - 0.002, h, H), (R - 0.006, h, H),
+             (R - 0.006, 0.014, H), (0, 0.014, H)], 48)
+    # Five tubes on a ring and two rolls near the middle. Each stands on the floor and leans out so that, at the rim (0.185 m up),
+    # it sits at its ring position (radius 4.2 cm for a tube, 1 cm for a roll), clear of the 6.4 cm inner wall. (x, y, lean x, lean y, length, radius, material)
+    rim_h = h - 0.015
+    items = []
+    for k, L in enumerate((0.46, 0.40, 0.32, 0.36, 0.27)):
+        a = math.radians(90 + 72 * k)
+        rx, ry = 0.042 * math.cos(a), 0.042 * math.sin(a)
+        items.append((rx * 0.35, ry * 0.35, rx * 0.65 / rim_h, ry * 0.65 / rim_h, L, 0.016, T))
+    for a, L in ((math.radians(200), 0.50), (math.radians(20), 0.43)):
+        rx, ry = 0.010 * math.cos(a), 0.010 * math.sin(a)
+        items.append((rx * 0.5, ry * 0.5, rx * 0.5 / rim_h, ry * 0.5 / rim_h, L, 0.013, K))
+    for x, y, lx, ly, L, r, mt in items:
+        ax = Vector((lx, ly, 1.0)).normalized()
+        base = Vector((x, y, 0.016 + r))
+        if mt == T:
+            body = L - 0.014
+            p.lathe([(0, 0, T), (r, 0, T), (r, body, T), (0, body, T)], 32, base, ax)
+            p.lathe([(0, body, M), (r + 0.0012, body, M), (r + 0.0012, L, M), (r - 0.003, L, M), (r - 0.003, L - 0.003, M), (0, L - 0.003, M)], 32, base, ax)
+        else:
+            p.lathe([(0, 0, K), (r, 0, K), (r, L, K), (r * 0.5, L, K), (r * 0.5, L - 0.004, K), (0, L - 0.004, K)], 24, base, ax)
+
+
+def build_pinned(tex):
+    names = ['draw_frame_navy', 'draw_paper_border', 'draw_sheet_perspective', 'draw_sheet_plan', 'draw_sheet_section', 'draw_pin_amber', 'draw_board_navy']
+    specs = {names[0]: ('matte', NAVY, 0.5, 0.0), names[1]: ('paper', PAPER, 0.85, 0.0), names[5]: ('brushed', AMBER, 0.3, 0.6),
+             names[6]: ('matte', '#0F1B38', 0.8, 0.0)}
+    return names, specs
+
+
+def make_pinned(p):
+    FR, PB, PIN, BD = 'draw_frame_navy', 'draw_paper_border', 'draw_pin_amber', 'draw_board_navy'
+    fw, fh, fd, gap = 0.32, 0.48, 0.02, 0.06
+    total = 3 * fw + 2 * gap
+    bw, bh = total + 0.06, fh + 0.04
+    p.box((0, 0, bh / 2), (bw, 0.012, bh), BD)                                                   # mounting board, front face at y = -6 mm
+    Y = -0.006
+    sheets = ['draw_sheet_perspective', 'draw_sheet_plan', 'draw_sheet_section']
+    for i, sn in enumerate(sheets):
+        cx = (i - 1) * (fw + gap)
+        cz = 0.02 + fh / 2
+        fb = 0.014
+        p.box((cx, Y - fd / 2, cz + fh / 2 - fb / 2), (fw, fd, fb), FR)
+        p.box((cx, Y - fd / 2, cz - fh / 2 + fb / 2), (fw, fd, fb), FR)
+        for s in (-1, 1):
+            p.box((cx + s * (fw / 2 - fb / 2), Y - fd / 2, cz), (fb, fd, fh - 2 * fb), FR)
+        iw, ih = fw - 2 * fb, fh - 2 * fb
+        p.box((cx, Y - 0.0065, cz), (iw, 0.011, ih), PB)                                     # paper border, recessed 1 cm
+        sw, sh = iw - 0.03, ih - 0.03
+        p.box((cx, Y - 0.012, cz), (sw, 0.002, sh), sn)                                              # the printed sheet, 2 mm proud
+        p.rects[p.m(sn)] = (cx - sw / 2, cx + sw / 2, cz - sh / 2, cz + sh / 2)
+        for sx in (-1, 1):
+            for sz in (-1, 1):
+                p.cyl((cx + sx * (sw / 2 + 0.007), Y - 0.0125, cz + sz * (sh / 2 + 0.007)), (0, -1, 0), 0.005, 0.004, 12, PIN)
+
+
+ASSETS = {'studio-shelves': (build_shelves, make_shelves), 'studio-desk-lamp': (build_lamp, make_lamp), 'studio-mug': (build_mug, make_mug),
+          'studio-drawing-tubes': (build_tubes, make_tubes), 'studio-pinned-drawings': (build_pinned, make_pinned)}
+
+
+def build():
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    namefn, makefn = ASSETS[ASSET]
+    names, specs = namefn(None)
+    folder = os.path.join(OUT, 'textures')
+    tex = save_tiles(folder, specs)
+    mats = []
+    for n in names:
+        if n in tex:
+            kind, hexc, rough, metal = specs[n]
+            mats.append(material(n, hexc, rough, metal, tex=tex[n]))
+        elif n == 'lamp_shade_glow':
+            mats.append(material(n, '#FFD9A0', 0.6, emit='#FFC27A', emit_strength=3.0))
+        elif n.startswith('draw_sheet_'):
+            i = ['draw_sheet_perspective', 'draw_sheet_plan', 'draw_sheet_section'].index(n)
+            paths = {}
+            for ch, arr, fn in zip(('base', 'normal', 'orm'), sheet_tile(7 + i, i), ('basecolor', 'normal', 'orm')):
+                pth = os.path.join(folder, '%s_%s.png' % (n, fn))
+                png(pth, np.clip(arr, 0, 1).astype(np.float32))
+                paths[ch] = pth
+            mats.append(material(n, '#123A8C', 0.7, 0.0, tex=paths))
+        else:
+            raise SystemExit('no material recipe for ' + n)
+    p = Part(names)
+    makefn(p)
+    p.finish(ASSET, mats, SPEC['span'])
+    bpy.ops.export_scene.gltf(filepath=os.path.join(OUT, 'final.glb'), export_format='GLB', export_yup=True, export_apply=True,
+                              export_texcoords=True, export_normals=True, export_materials='EXPORT', use_selection=False)
+
+
+def score():
+    """Re-imports final.glb and measures it. glTF is Y-up, the importer converts back to Z-up."""
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    bpy.ops.import_scene.gltf(filepath=os.path.join(OUT, 'final.glb'))
+    obs = [o for o in bpy.context.scene.objects if o.type == 'MESH']
+    S = {'objects': [o.name for o in obs], 'mesh_objects': len(obs)}
+    ob = obs[0]
+    me = ob.data
+    S['tris'] = sum(len(p.vertices) - 2 for p in me.polygons)
+    S['budget_tris'] = BUDGET
+    S['uv_sets'] = len(me.uv_layers)
+    S['materials'] = [m.name for m in me.materials]
+    S['faces_per_slot'] = {m.name: sum(1 for p in me.polygons if p.material_index == i) for i, m in enumerate(me.materials)}
+    S['material_has_textures'] = {m.name: sorted({n.image.name for n in m.node_tree.nodes if n.type == 'TEX_IMAGE'}) for m in me.materials}
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-6)       # the importer splits vertices at UV and normal seams
+    bm.verts.ensure_lookup_table()
+    S['vertices'] = len(bm.verts)
+    seen, comps = set(), []
+    for v in bm.verts:
+        if v.index in seen:
+            continue
+        st, grp = [v], []
+        seen.add(v.index)
+        while st:
+            x = st.pop()
+            grp.append(x.index)
+            for e in x.link_edges:
+                o = e.other_vert(x)
+                if o.index not in seen:
+                    seen.add(o.index)
+                    st.append(o)
+        comps.append(grp)
+    boxes = []
+    for g in comps:
+        q = np.array([bm.verts[i].co[:] for i in g])
+        boxes.append((q.min(0), q.max(0)))
+    touch = lambda a, b: all(a[0][i] <= b[1][i] + 1e-4 and b[0][i] <= a[1][i] + 1e-4 for i in range(3))
+    S['components'] = len(comps)
+    S['floaters'] = sum(1 for i, a in enumerate(boxes) if len(boxes) > 1 and not any(touch(a, b) for j, b in enumerate(boxes) if j != i))
+    S['open_edges'] = sum(1 for e in bm.edges if len(e.link_faces) == 1)
+    vol = 0.0
+    for f in bm.faces:
+        a, b, c = [v.co for v in f.verts][:3]
+        vol += a.dot(b.cross(c)) / 6
+    S['signed_volume_m3'] = round(vol, 6)
+    bm.free()
+    co = np.array([(ob.matrix_world @ v.co)[:] for v in me.vertices])
+    S['bounds_m'] = {'min': [round(float(x), 4) for x in co.min(0)], 'max': [round(float(x), 4) for x in co.max(0)],
+                     'size_xyz': [round(float(x), 4) for x in co.max(0) - co.min(0)]}
+    S['expected_size_m'] = SPEC['size']
+    S['expected_why'] = SPEC['why']
+    foot = co[co[:, 2] < 0.004]
+    S['floor_z_m'] = round(float(co[:, 2].min()), 4)
+    S['pivot_xy_base_centre_m'] = [round(float((foot[:, i].min() + foot[:, i].max()) / 2), 4) for i in (0, 1)]
+    json.dump(S, open(os.path.join(WORKA, 'score.json'), 'w'), indent=1)
+    print('SCORE', json.dumps(S))
+
+
+if __name__ == '__main__':
+    build()
+    score()
+    print('BUILD OK')

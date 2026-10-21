@@ -1,0 +1,162 @@
+# Blender script; run with blender -b -P scripts/art/studio-kit/render_studio.bpy -- <repo-root> <work-dir> <asset-id>
+"""Renders a studio kit prop's evidence from its final.glb: a 4-view turnaround (2x2, 960x960) and a 640x480 view from the
+table pose (45 degrees down, from the front), as JPEG into evidence/, beside concept.png in the asset folder.
+Each camera is fitted to the asset's bounding box (the horizontal field of view widens until all eight corners fit with a margin).
+A framing check then renders a transparent-film alpha pass of the same view without the floor and measures the silhouette's margin
+to the image border; writes <work-dir>/framing.json and exits non-zero if any image has less than 3% margin or touches the border.
+Cycles on the CPU (no GPU, no EEVEE), 48 samples; the alpha pass 4."""
+import bpy, math, os, sys, json
+import numpy as np
+from mathutils import Vector
+from bpy_extras.object_utils import world_to_camera_view
+
+REPO, WORK, ASSET = sys.argv[sys.argv.index('--') + 1:][:3]
+ART = os.path.join(REPO, 'apps', 'vr', 'ArtSource', ASSET)
+WORK = os.path.join(WORK, ASSET)
+os.makedirs(WORK, exist_ok=True)
+EV = os.path.join(ART, 'evidence')
+os.makedirs(EV, exist_ok=True)
+MIN_MARGIN = 0.03
+
+
+def lin(h):
+    c = [int(h[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    return tuple((x / 12.92 if x <= 0.04045 else ((x + 0.055) / 1.055) ** 2.4) for x in c) + (1,)
+
+
+bpy.ops.wm.read_factory_settings(use_empty=True)
+bpy.ops.import_scene.gltf(filepath=os.path.join(ART, 'final.glb'))
+S = bpy.context.scene
+S.render.engine = 'CYCLES'
+S.cycles.device = 'CPU'
+S.cycles.use_denoising = False
+S.render.resolution_percentage = 100
+w = bpy.data.worlds.new('w')
+w.use_nodes = True
+w.node_tree.nodes['Background'].inputs['Color'].default_value = lin('#0A0F18')
+w.node_tree.nodes['Background'].inputs['Strength'].default_value = 0.5
+S.world = w
+
+obj = [o for o in S.objects if o.type == 'MESH'][0]
+corners = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
+lo = Vector((min(c[i] for c in corners) for i in range(3)))
+hi = Vector((max(c[i] for c in corners) for i in range(3)))
+centre = (lo + hi) / 2
+
+DIAG = (hi - lo).length
+D = DIAG * 2.5                          # camera and light distance scale with the asset (the frame's 3 m is for a 1.5 m object)
+# the surface under the prop: a mid blue-grey so the near-black studio materials read against it
+bpy.ops.mesh.primitive_plane_add(size=D * 8, location=(0, 0, -0.0005 * DIAG))
+floor = bpy.context.object
+fm = bpy.data.materials.new('floor')
+fm.use_nodes = True
+fb = fm.node_tree.nodes['Principled BSDF']
+fb.inputs['Base Color'].default_value = lin('#47556B')
+fb.inputs['Roughness'].default_value = 0.8
+floor.data.materials.append(fm)
+
+K = D / 3.0                             # the frame's rig, scaled: positions by K, power by K squared, sizes by K
+for loc, energy, size in (((0.9, -1.6, 2.4), 260, 1.2), ((-1.8, 1.0, 1.8), 90, 1.5), ((0.0, 0.2, 1.6), 40, 0.9)):
+    loc = Vector(loc) * K
+    bpy.ops.object.light_add(type='AREA', location=loc)
+    L = bpy.context.object
+    L.data.energy, L.data.size = energy * K * K, size * K
+    L.data.color = (1.0, 0.95, 0.88)
+    L.rotation_euler = (centre - Vector(loc)).to_track_quat('-Z', 'Y').to_euler()
+
+bpy.ops.object.camera_add()
+cam = bpy.context.object
+S.camera = cam
+cam.data.sensor_fit = 'HORIZONTAL'
+
+
+def aim(az_deg, elev_deg, dist):
+    az, el = math.radians(az_deg), math.radians(elev_deg)
+    cam.location = centre + Vector((math.sin(az) * math.cos(el), -math.cos(az) * math.cos(el), math.sin(el))) * dist
+    cam.rotation_euler = (centre - cam.location).to_track_quat('-Z', 'Y').to_euler()
+    bpy.context.view_layer.update()
+
+
+def extent():
+    """Largest normalised |offset| of the eight bbox corners from the image centre, per axis (0 = centre, 0.5 = border)."""
+    pts = [world_to_camera_view(S, cam, c) for c in corners]
+    return max(abs(p.x - 0.5) for p in pts), max(abs(p.y - 0.5) for p in pts)
+
+
+def fit(az, elev, res, target=0.44):
+    """Widens the field of view from 8 degrees until the bbox corners sit within `target` of the centre on both axes."""
+    S.render.resolution_x, S.render.resolution_y = res
+    aim(az, elev, D)
+    for fov in np.arange(8, 100, 0.25):
+        cam.data.angle = math.radians(fov)
+        bpy.context.view_layer.update()
+        ex, ey = extent()
+        if ex <= target and ey <= target:
+            return float(fov)
+    raise SystemExit('no fov fits')
+
+
+def shoot(path, alpha=False):
+    S.render.film_transparent = alpha
+    S.cycles.samples = 4 if alpha else 48
+    S.render.image_settings.file_format = 'PNG'
+    S.render.image_settings.color_mode = 'RGBA' if alpha else 'RGB'
+    floor.hide_render = alpha
+    S.render.filepath = path
+    bpy.ops.render.render(write_still=True)
+
+
+def load(path, ch=4):
+    img = bpy.data.images.load(path)
+    wd, ht = img.size
+    a = np.empty(wd * ht * 4, dtype=np.float32)
+    img.pixels.foreach_get(a)
+    bpy.data.images.remove(img)
+    return a.reshape(ht, wd, 4)[:, :, :ch]
+
+
+def save_jpeg(arr, path):
+    h, wd, _ = arr.shape
+    img = bpy.data.images.new('out', wd, h)
+    rgba = np.ones((h, wd, 4), dtype=np.float32)
+    rgba[:, :, :3] = arr
+    img.pixels.foreach_set(rgba.ravel())
+    img.filepath_raw = path
+    img.file_format = 'JPEG'
+    S.render.image_settings.file_format = 'JPEG'
+    S.render.image_settings.quality = 85
+    img.save()
+    bpy.data.images.remove(img)
+    S.render.image_settings.file_format = 'PNG'
+
+
+FRAMING = {}
+
+
+def view(name, az, elev, res):
+    fov = fit(az, elev, res)
+    p = os.path.join(WORK, name + '.png')
+    shoot(p)
+    rgb = load(p, 3)
+    shoot(os.path.join(WORK, 'alpha_' + name + '.png'), alpha=True)
+    a = load(os.path.join(WORK, 'alpha_' + name + '.png'), 4)[:, :, 3] > 0.02
+    ys, xs = np.where(a)
+    h, wd = a.shape
+    m = {'left': xs.min() / wd, 'right': 1 - (xs.max() + 1) / wd, 'bottom': ys.min() / h, 'top': 1 - (ys.max() + 1) / h}
+    mm = min(m.values())
+    FRAMING[name] = {'resolution': list(res), 'fov_deg': round(fov, 1), 'azimuth_deg': az, 'elevation_deg': elev,
+                     'margins': {k: round(float(v), 4) for k, v in m.items()}, 'min_margin': round(float(mm), 4),
+                     'pass': bool(mm >= MIN_MARGIN)}
+    return rgb
+
+
+tiles = [view('turn%d' % i, az, 22, (480, 480)) for i, az in enumerate((25, 115, 205, 295))]
+save_jpeg(np.vstack([np.hstack(tiles[:2]), np.hstack(tiles[2:])]), os.path.join(EV, 'turnaround.jpg'))
+# the table pose: from the front (-Y), 45 degrees down
+table = view('table-view', 0, 45, (640, 480))
+save_jpeg(table, os.path.join(EV, 'table-view.jpg'))
+json.dump(FRAMING, open(os.path.join(WORK, 'framing.json'), 'w'), indent=1)
+print('FRAMING', json.dumps(FRAMING))
+if not all(v['pass'] for v in FRAMING.values()):
+    raise SystemExit(1)
+print('RENDER OK')
