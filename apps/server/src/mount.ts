@@ -106,16 +106,27 @@ function tooLarge(res: ServerResponse): void {
  *  to `localhost`; under `--host 0.0.0.0` this is what keeps the reads local. */
 const LOOPBACK_PEER = /^(127(?:\.\d{1,3}){3}|::1|::ffff:127(?:\.\d{1,3}){3})$/;
 
+/** One warn line per refusal the operator would want to know about: the status, why, the verb, the clipped and quoted
+ *  target (JSON.stringify, so a hostile URL cannot forge a log line) and the socket peer. 404 and 405 stay quiet: a
+ *  scanner probing paths would drown the 403s. */
+function refused(req: IncomingMessage, status: number | string, why: string): void {
+  console.warn(`refused ${status} (${why}) ${JSON.stringify(req.method ?? '?')} ${JSON.stringify((req.url ?? '').slice(0, 200))} from ${req.socket.remoteAddress ?? 'unknown peer'}`);
+}
+
 /** The request listener: route, adapt, call, stream back. */
 export function listener(routes: Route[]) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
-    if (!LOOPBACK_PEER.test(req.socket.remoteAddress ?? '')) return json(res, 403, { error: 'only served to this machine' });
+    if (!LOOPBACK_PEER.test(req.socket.remoteAddress ?? '')) {
+      refused(req, 403, 'peer is not this machine');
+      return json(res, 403, { error: 'only served to this machine' });
+    }
     // A Host no URL can carry and a malformed percent-escape both throw here; uncaught, they would end the process.
     let url: URL, route: Route | undefined, params: Params | null = null;
     try {
       url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
       for (const r of routes) if ((params = r.match(url.pathname))) { route = r; break; }
     } catch {
+      refused(req, 400, 'malformed URL or Host');
       return json(res, 400, { error: 'malformed request URL or Host' });
     }
     if (!route || !params) return json(res, 404, { error: `no route ${url.pathname}` });
@@ -137,8 +148,8 @@ export function listener(routes: Route[]) {
     res.on('close', () => { if (!res.writableFinished) abort.abort(); });
     const hasBody = method !== 'GET' && method !== 'HEAD' && (req.headers['content-length'] !== undefined ? req.headers['content-length'] !== '0' : req.headers['transfer-encoding'] !== undefined);
     const reqBody = hasBody ? await readBody(req) : null;
-    if (reqBody === TOO_LARGE) return tooLarge(res);
-    if (hasBody && !reqBody) { res.destroy(); return; }
+    if (reqBody === TOO_LARGE) { refused(req, 413, `body over ${MAX_BODY} bytes`); return tooLarge(res); }
+    if (hasBody && !reqBody) { refused(req, 'abort', 'client left mid-body'); res.destroy(); return; }
     const request = new Request(url, { method, headers, signal: abort.signal, ...(reqBody ? { body: new Uint8Array(reqBody) } : {}) });
 
     let response: Response;
