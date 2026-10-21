@@ -5,11 +5,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fmtWait, metricHistory, pname, sheetOf, type SimDecision } from '@bp/core/model';
 import type { Proposal, ScanSnapshot } from '@bp/core/scan/types';
-import { LiveEmpty, OriginChip, TierChip, URG, bodySections, declineDrafts, metricMove, oncePerProposal, proposalSummary } from '../../Queue';
+import { LiveEmpty, OriginChip, TierChip, URG, bodySections, declineDrafts, fmtN, metricMove, oncePerProposal, proposalSummary } from '../../Queue';
 import { optHover, shallowEqual, useAnswerNote, useBp, useEngine, useLive, useVariant } from '../../hooks';
 import { Group, Row, Sec, Workbench, useListRef, useWalk } from './shell';
 
-const fmtN = (n: number) => (Number.isInteger(n) ? n.toLocaleString('en-US') : (Math.round(n * 100) / 100).toLocaleString('en-US'));
 const URG_SHORT: Record<SimDecision['urg'], string> = { high: 'Urgent', medium: 'Soon', low: 'Later' };
 
 /** The metric move as parts for the big figure; null when the proposal names no metric. */

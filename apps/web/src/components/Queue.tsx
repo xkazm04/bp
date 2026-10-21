@@ -7,7 +7,9 @@ import { cursorFor, metricHistory, watchFor, type SimDecision } from '@bp/core/m
 import type { Proposal, RiskClass } from '@bp/core/scan/types';
 import { useBp, useEngine, useLive } from './hooks';
 
-const fmtN = (n: number) => (Number.isInteger(n) ? n.toLocaleString('en-US') : (Math.round(n * 100) / 100).toLocaleString('en-US'));
+/** A metric reading in words: integers plain, anything else to two decimals. Shared with the Review workbench
+ *  (rail/wide/review.tsx), whose big before -> after figure must read a value exactly as the queue's text does. */
+export const fmtN = (n: number) => (Number.isInteger(n) ? n.toLocaleString('en-US') : (Math.round(n * 100) / 100).toLocaleString('en-US'));
 
 /** `metric: before → expected unit`, from the latest reading of that feature, lens and metric; null when the proposal names no metric. */
 export function metricMove(p: Proposal, unitOf: (lens: string, key: string) => string | undefined, scan: Parameters<typeof metricHistory>[0]): string | null {
