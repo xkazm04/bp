@@ -95,6 +95,8 @@ const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e
 
 {
   const r = spawnSync(process.execPath, [TRELLIS, '303'], { encoding: 'utf8', timeout: 20000, env: { ...process.env, BP_COMFY_URL: DEAD } });
+  const w = spawnSync(process.execPath, [TRELLIS, '303'], { encoding: 'utf8', timeout: 20000, env: { ...process.env, BP_COMFY_URL: DEAD, BP_TRELLIS_WORKFLOW: path.join(os.tmpdir(), 'bp-no-such-workflow.json') } });
+  check('paths: a missing workflow is refused naming the setting that moves it', w.status === 2 && /BP_TRELLIS_WORKFLOW/.test(w.stderr ?? ''), `exit ${w.status}: ${(w.stderr ?? '').split('\n').find(Boolean) ?? ''}`);
   check('trellis-seed: a valid seed passes the guard (it gets as far as the unreachable ComfyUI)', r.status !== 0 && !/seed must be an integer/.test(r.stderr ?? ''), `exit ${r.status}`);
 }
 
