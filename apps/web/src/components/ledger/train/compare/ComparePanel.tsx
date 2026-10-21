@@ -14,7 +14,7 @@ import type { Proposal } from '@bp/core/scan/types';
 import { shotSrc } from '@bp/core/train/shots';
 import type { LensDef } from '@bp/core/standard/load';
 import { useEngine } from '../../../hooks';
-import { isFlagged } from '@bp/core/train/rules';
+import { byPackAge, isFlagged } from '@bp/core/train/rules';
 import { setLedgerUi, useLedgerUi, type CompareTheme, type CompareView } from '../../useLedger';
 import { useTrain, type TrainData } from '../data';
 import { Decide } from '../Decide';
@@ -28,7 +28,6 @@ import { MetricStrip } from './MetricStrip';
 import { PerfKey, PerfTable, hasRuns, perfItem, perfReason } from './PerfTable';
 import { Screens, shownPairs } from './Screens';
 import './ComparePanel.css';
-import { byPackAge } from '@bp/core/train/rules';
 
 export interface ComparePanelProps {
   /** The pack item shown. */

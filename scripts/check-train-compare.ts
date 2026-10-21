@@ -220,6 +220,17 @@ const { packHeading, packOrder } = await imp('ComparePanel.tsx');
   ok(packHeading(1, 1).includes('1 of 1 item ') && packHeading(2, 2).includes('2 of 2 items '), 'pack heading: one item is not "items"', [packHeading(1, 1), packHeading(2, 2)]);
 }
 
+{ // one module, one import statement: a second one hides what the file already has and drifts out of sight at the
+  // bottom of the list (ComparePanel.tsx imported @bp/core/train/rules twice, the second line below the .css import)
+  const twice: string[] = [];
+  for (const f of fs.readdirSync(path.join(SRC, CMP)).filter((f) => /\.tsx?$/.test(f))) {
+    const seen = new Map<string, number>();
+    for (const m of stripComments(fs.readFileSync(path.join(SRC, CMP, f), 'utf8')).matchAll(/^import\s[^;]*?from\s+['"]([^'"]+)['"]/gm)) seen.set(m[1], (seen.get(m[1]) ?? 0) + 1);
+    for (const [spec, k] of seen) if (k > 1) twice.push(`${f}: ${spec} x${k}`);
+  }
+  ok(!twice.length, 'imports: no module is imported twice in one file of the compare panel', twice);
+}
+
 { // the comments' anchors: a path named under src/lib/ must be one this tree has
   const files = fs.readdirSync(path.join(SRC, CMP));
   const dead: string[] = [];
