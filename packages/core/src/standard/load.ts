@@ -5,7 +5,8 @@
 // per data load with the reference evaluator (health.ts) and cached with its explanation; the frame
 // loop never evaluates a rule. History (a feature's stage revisions, the weekly snapshots) is replayed
 // from the events log. Pure and dependency-free (types, the bound-field list and the evaluator only),
-// so Node's type stripping can run it: `node -e "import('./src/lib/standard/load.ts')"`.
+// so Node's type stripping can run it: `node --input-type=module -e "await import('./packages/core/src/standard/load.ts')"`
+// from the repo root (packages/core/check-standard.mjs does exactly that).
 import type {
   AppStructure, ComputedHealth, Density, Facet, FacetOverride, FacetValues, Feature as V3Feature, GlyphName, Health, Kpi, LensEntry, LensField,
   LensManifest, LineName, Milestone as V3Milestone, Rollup, Scalar, Stage, StructureEvent, Variation,

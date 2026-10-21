@@ -1,6 +1,6 @@
 // Types for the app's data: the product read from the app-structure v3 map and its events log (the
-// model is built by src/lib/standard/load.ts and re-exported here), and the simulated swarm
-// (src/data/swarm.json, the runtime feed; not part of the standard). Lens ids are plain strings: the
+// model is built by packages/core/src/standard/load.ts and re-exported here), and the simulated swarm
+// (packages/core/data/swarm.json, the runtime feed; not part of the standard). Lens ids are plain strings: the
 // lenses are whatever the map's `lenses[]` enables.
 export type {
   ActivityEvent, Capability, Domain, Feature, FeatureLens, Health, LensDef, Milestone, Person, Priority, Scalar, Snapshot, Stage, Structure, Trouble,

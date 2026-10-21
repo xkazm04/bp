@@ -1,6 +1,6 @@
 // The Kettle sample: its app-structure v3 map + events log (the built-in product) and the simulated swarm
 // (swarm.json, the runtime feed). ~770 KB of JSON, so nothing on the live-product path may import this
-// module statically: the app loads it with `import('@bp/core/data/sample')` (via `@/lib/model/sample`) only
+// module statically: the app loads it with `import('@bp/core/data/sample')` (via `@bp/core/model/sample`) only
 // when the sample is shown. The standard's loader and the type exports stay in ./index.
 import mapJson from '../../data/kettle.app-structure.json';
 import eventsText from '../../data/kettle.events.jsonl' with { type: 'text' };

@@ -1,5 +1,5 @@
 // The app's data entry: the types and the loader for any product's map (the standard's, see
-// src/lib/standard/load.ts). A live product's map comes from its route and goes through `loadMap`. The
+// packages/core/src/standard/load.ts). A live product's map comes from its route and goes through `loadMap`. The
 // Kettle sample (map, events, swarm) is in ./sample and is never imported from here: this module is on
 // every page's path, the sample's JSON must not be.
 import { BUILTIN_LENSES } from '@bp/core/standard/catalog';
