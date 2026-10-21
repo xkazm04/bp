@@ -26,11 +26,12 @@ export { glyph, type GlyphSpec } from '@/engine/render/lens-glyph';
 
 // th.pattern() builds a key string per call; rails ask thousands of times per tween, so remember the
 // handful they use per theme object (the theme's own cache still anchors them to the world).
-let PT: Theme | null = null;
-const PC = new Map<string, Map<number, CanvasPattern | null>>();
+type PatCache = Map<string, Map<number, CanvasPattern | null>>;
+const PCS = new WeakMap<Theme, PatCache>();
 const KIND = { dots: 1, vlines: 2, back: 3 } as const;
 function pat(th: Theme, kind: keyof typeof KIND, size: number, col: string, lw: number): CanvasPattern | null {
-  if (th !== PT) { PT = th; PC.clear(); }
+  let PC = PCS.get(th);
+  if (!PC) PCS.set(th, (PC = new Map()));
   // keyed by the colour value (the theme caches its colour strings, so a lookup is one hash), then by kind, size and width
   let byCol = PC.get(col);
   if (!byCol) PC.set(col, (byCol = new Map()));
