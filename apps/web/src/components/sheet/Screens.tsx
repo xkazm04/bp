@@ -35,7 +35,14 @@ function Viewer({ slug, k, takes, name, close }: { slug: string; k: string; take
   const [a, setA] = useState(Math.min(1, takes.length - 1)), [b, setB] = useState(0);
   const [mode, setMode] = useState<'side' | 'swipe'>('side'), [cut, setCut] = useState(50);
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => { ref.current?.focus({ preventScroll: true }); ref.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, []);
+  // reduced motion: the viewer jumps into view instead of travelling (docs/blueprint-ui.md). Read at the
+  // moment of the scroll, as the engine does (Engine.ts:153): motion's useReducedMotion is false on the
+  // first render, which is exactly the render this effect runs after.
+  useEffect(() => {
+    ref.current?.focus({ preventScroll: true });
+    const reduce = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    ref.current?.scrollIntoView({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
+  }, []);
   const A = takes[a], B = takes[b], two = takes.length > 1;
   const pick = (v: number, set: (n: number) => void, label: string) => (
     <label>{label}<select value={v} onChange={(e) => set(+e.target.value)}>{takes.map((t, i) => <option key={t.shot.id} value={i}>{runLabel(t)}</option>)}</select></label>
