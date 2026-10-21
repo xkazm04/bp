@@ -36,6 +36,17 @@ for (const bad of ['../../../package.json', '..\\..\\x.png', 'explore/../../x.pn
 const style = JSON.parse(fs.readFileSync(path.join(DIR, 'style-block.json'), 'utf8'));
 const props = JSON.parse(fs.readFileSync(path.join(DIR, 'props.json'), 'utf8'));
 const expected = { 'lamp-agent': ['A', 'B', 'C', 'D'], 'studio-shelves': ['A', 'B'], 'studio-desk-lamp': ['A', 'B'], 'studio-mug': ['A', 'B'], 'studio-drawing-tubes': ['A', 'B'], 'studio-pinned-drawings': ['A', 'B'] };
+// `expected` is a hand-typed list and must stay one - a test that read props.json's variants to decide what props.json
+// should contain would assert nothing. What it may NOT do is quietly cover less than props.json holds, so the ground
+// truth (props.json's own keys) is reconciled against the two lists that have coverage: `expected`, and the
+// city-backdrop block further down, which is the only entry with its own `rules` and so needs its own assertions.
+const SHEET_PROPS = Object.keys(expected), RULES_PROPS = ['city-backdrop'];
+const uncovered = Object.keys(props.props).filter((id) => !SHEET_PROPS.includes(id) && !RULES_PROPS.includes(id));
+const vanished = [...SHEET_PROPS, ...RULES_PROPS].filter((id) => !(id in props.props));
+check(`prop: every one of the ${Object.keys(props.props).length} props.json entries has coverage here`, uncovered.length === 0, `no checks for: ${uncovered.join(', ')}`);
+check('prop: every prop this file claims to check is still in props.json', vanished.length === 0, `gone from props.json: ${vanished.join(', ')}`);
+check('prop: the rules-mode list is exactly the entries that carry a `rules` field', JSON.stringify(Object.keys(props.props).filter((id) => props.props[id].rules).sort()) === JSON.stringify([...RULES_PROPS].sort()),
+  `rules in props.json: ${Object.keys(props.props).filter((id) => props.props[id].rules).join(', ')}`);
 for (const [id, variants] of Object.entries(expected)) {
   check(`prop: ${id} has variants ${variants.join('')}`, JSON.stringify(Object.keys(props.props[id]?.variants ?? {})) === JSON.stringify(variants));
   for (const v of variants) {
