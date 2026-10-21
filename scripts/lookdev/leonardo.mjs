@@ -80,7 +80,7 @@ export function composePrompt(stateId, variant) {
   throw new Error(`unknown variant ${variant} (a or b)`);
 }
 
-/** A prop prompt: the TRELLIS sheet rules, the prop's variant text, and the style block's palette and materials (no scene framing). */
+/** A prop prompt: the TRELLIS sheet rules (or, for an entry with `rules`, its own scene-strip rules), the prop's variant text, and the style block's palette and materials (no scene framing). */
 export function composePropPrompt(propId, variant, p = props, s = style) {
   const prop = p.props[propId];
   if (!prop) throw new Error(`unknown prop ${propId}; known: ${Object.keys(p.props).join(', ')}`);
@@ -88,8 +88,8 @@ export function composePropPrompt(propId, variant, p = props, s = style) {
   if (!v) throw new Error(`unknown variant ${variant} for ${propId}; known: ${Object.keys(prop.variants).join(', ')}`);
   const palette = s.palette.map((x) => `${x.role}: ${x.name} ${x.hex.join(' to ')}`).join('; ');
   return [
-    `Concept sheet of one prop, ${prop.name}. ${v}`,
-    `Sheet rules: ${p.sheet}`,
+    prop.rules ? `${prop.name}. ${v}` : `Concept sheet of one prop, ${prop.name}. ${v}`,
+    prop.rules ? `Backdrop rules: ${prop.rules}` : `Sheet rules: ${p.sheet}`,
     `Materials: ${prop.materials}.`,
     `Palette with roles: ${palette}.`,
     `Finish: ${s.finish}.`,

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // leonardo.mjs's local guards, through its exports only: no generation, no network, no .env read.
 //   redact    the key never survives into text bound for log.jsonl or stdout (an API error that echoed it)
+//   backdrop  an entry with `rules` (city-backdrop) swaps the sheet rules for its own and still restates the style block
 //   prop      prop prompts restate the style block's palette and materials, carry the TRELLIS sheet rules, and cover every variant
 //   cap       a call that would pass the stop or HARD_CAP is refused; a prop --out stays inside apps/vr/ArtSource
 //   out       --out stays inside lookdev/: a name that would resolve outside it is refused before any call
@@ -40,6 +41,15 @@ for (const [id, variants] of Object.entries(expected)) {
     check(`prop: ${id} ${v} is a TRELLIS sheet (one object, grey ground, no text) without scene framing`, text.includes(props.sheet) && /mid-grey/.test(text) && /no text/.test(text) && !text.includes(style.technique) && !text.includes(style.subjectLock));
   }
 }
+for (const v of ['A', 'B']) {
+  const text = composePropPrompt('city-backdrop', v);
+  const rules = props.props['city-backdrop'].rules;
+  check(`backdrop: city-backdrop ${v} uses its own rules, not the one-object sheet rules`, text.includes(rules) && !text.includes(props.sheet) && !/mid-grey|Concept sheet|Sheet rules/.test(text));
+  check(`backdrop: city-backdrop ${v} asks for a wide dim skyline with no foreground, frame or text`, /wide/.test(rules) && /dim/.test(rules) && /no foreground/.test(rules) && /no window frame/.test(rules) && /no text/.test(rules) && /seamlessly/.test(rules));
+  check(`backdrop: city-backdrop ${v} restates the palette, finish and never list`, style.palette.every((x) => text.includes(x.name) && x.hex.every((h) => text.includes(h))) && text.includes(style.finish) && style.never.every((n) => text.includes(n)));
+}
+check('backdrop: a sheet prop is unchanged by the rules field', composePropPrompt('lamp-agent', 'A').includes(`Sheet rules: ${props.sheet}`));
+check('size: the 2048x768 backdrop size parses', parseSize('2048x768').join() === '2048,768');
 check('prop: an unknown prop is refused', throws(() => composePropPrompt('nope', 'A')));
 check('prop: an unknown variant is refused', throws(() => composePropPrompt('lamp-agent', 'Z')));
 check('prop: state composition is unchanged (still carries the scene framing)', composePrompt('00-hero', 'a').includes(style.technique));

@@ -1,5 +1,5 @@
 {
-  "$comment": "P4 prop prompts for scripts/lookdev/leonardo.mjs (gen --prop <id> --variant <x>). Each is a TRELLIS.2 input sheet: one object, whole, plain grey ground. The style block's palette and finish are restated by the script; the scene framing (first person, depth of field, site plan) is not used.",
+  "$comment": "P4 prop prompts for scripts/lookdev/leonardo.mjs (gen --prop <id> --variant <x>). Each is a TRELLIS.2 input sheet: one object, whole, plain grey ground. The style block's palette and finish are restated by the script; the scene framing (first person, depth of field, site plan) is not used. An entry with a `rules` field is a scene strip, not a sheet: its rules replace the sheet rules and the prompt does not open with 'Concept sheet' (city-backdrop).",
   "sheet": "a single object only, shown whole and uncropped and centred in frame, orthographic front three-quarter view, on a plain flat neutral mid-grey background, even soft diffuse light, no cast shadow clutter, no floor line, no props or hands or people, no text, no labels, no logos, no markings, clean readable silhouette.",
   "props": {
     "lamp-agent": {
@@ -50,6 +50,15 @@
       "variants": {
         "A": "Three flat rectangular drawing sheets of different sizes in thin frames, arranged together, each with abstract architectural linework and no readable text, held by small amber pins.",
         "B": "Three flat rectangular drawing sheets of the same size in a row, in thin frames, each with abstract architectural linework and no readable text, held by small amber pins."
+      }
+    },
+    "city-backdrop": {
+      "name": "a wide night city backdrop matte painting for the windows of a dark studio",
+      "rules": "one wide panoramic strip of a night city skyline seen from a high studio window, far away across the whole width, a low horizon band that continues seamlessly at the left and right edges, low contrast, dim, soft hazy depth, small distant warm and cool window lights, no foreground, no window frame, no mullions, no glass reflections, no room interior, no people, no sky objects, no text, no signs, no logos, no lettering.",
+      "materials": "distant towers as soft near-black blue silhouettes, sparse tiny amber and warm paper window lights, a faint cyan-white haze along the horizon, blueprint blue night haze in the sky, matte painted finish",
+      "variants": {
+        "A": "Dense low skyline of mixed mid-rise towers of even height along one level horizon, hazy and far, the sky a calm dark blueprint blue fading lighter at the horizon.",
+        "B": "Sparse skyline with a few taller towers among low blocks along one level horizon, a faint river of warm lights far below the towers, the sky a calm dark blueprint blue."
       }
     }
   }
