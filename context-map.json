@@ -117,7 +117,7 @@
         "node-server"
       ],
       "db_tables": [],
-      "description": "Framework-neutral route handlers for products, lenses, scans, waves, releases, proposals, triage, streams, structure and screenshots. Mounted by both the Next app and the node server.",
+      "description": "Framework-neutral route handlers for products, lenses, scans, waves, releases, proposals, triage, streams, structure, screenshots and the live plan. Mounted by both the Next app and the node server.",
       "entry_points": [
         "packages/core/src/server/api/products/route.ts",
         "packages/core/src/server/api/products/[slug]/scan/route.ts"
@@ -131,6 +131,7 @@
         "packages/core/src/server/api/products/[slug]/lenses/route.ts",
         "packages/core/src/server/api/products/[slug]/lenses/[id]/route.ts",
         "packages/core/src/server/api/products/[slug]/lenses/[id]/execute/route.ts",
+        "packages/core/src/server/api/products/[slug]/plan/route.ts",
         "packages/core/src/server/api/products/[slug]/proposals/[id]/route.ts",
         "packages/core/src/server/api/products/[slug]/releases/route.ts",
         "packages/core/src/server/api/products/[slug]/releases/suggest/route.ts",
@@ -151,16 +152,15 @@
       "group_id": "a1f14e8e-1fd3-416a-9060-71be952a1876",
       "id": "c12b3ac9-8b8a-4923-9de9-cfd3641c7957",
       "keywords": [
-        "route",
-        "handler",
+        "route handlers",
+        "plan",
         "products",
-        "scan",
+        "scans",
         "waves",
         "releases",
-        "stream",
-        "lenses"
+        "stream"
       ],
-      "last_written_at": "2026-10-20T19:29:04.461975400+00:00",
+      "last_written_at": "2026-10-21T12:42:01.922221+00:00",
       "name": "core-route-handlers",
       "pinned": false,
       "tech_stack": [
@@ -424,7 +424,7 @@
         "core-route-handlers"
       ],
       "db_tables": [],
-      "description": "Standalone node:http server that mounts the core handlers, plus the TS loader hooks and workspace build config used to run it.",
+      "description": "Standalone node:http server that mounts the core handlers, plus the TS loader hooks used to run it. It also holds a Kettle simulation driver and a mount check that verifies the handlers are wired up the same way as in the Next app.",
       "entry_points": [
         "apps/server/src/main.ts",
         "apps/server/src/mount.ts"
@@ -432,6 +432,8 @@
       "file_paths": [
         "apps/server/src/main.ts",
         "apps/server/src/mount.ts",
+        "apps/server/src/check-mount.ts",
+        "apps/server/src/kettle-sim.ts",
         "packages/core/register.mjs",
         "packages/core/register-hooks.mjs"
       ],
@@ -439,14 +441,14 @@
       "group_id": "a1f14e8e-1fd3-416a-9060-71be952a1876",
       "id": "41eeb96a-6187-4b08-892e-7f6d65e9ae67",
       "keywords": [
-        "server",
         "node:http",
         "mount",
-        "workspaces",
-        "loader",
-        "register"
+        "server",
+        "loader hooks",
+        "kettle-sim",
+        "check-mount"
       ],
-      "last_written_at": "2026-10-20T19:29:04.462455100+00:00",
+      "last_written_at": "2026-10-21T12:42:01.921740200+00:00",
       "name": "node-server",
       "pinned": false,
       "tech_stack": [
@@ -573,14 +575,16 @@
         "scan-engine"
       ],
       "db_tables": [],
-      "description": "Server-only services behind the handlers: job runner, lens writing, product registry/store, readiness, release building and waves.",
+      "description": "Server-only services behind the handlers: job runner, lens writing, product registry/store, readiness, release building, waves, plan projection and the Kettle simulator.",
       "entry_points": [
         "packages/core/src/server/products.server.ts",
         "packages/core/src/server/jobs.server.ts"
       ],
       "file_paths": [
         "packages/core/src/server/jobs.server.ts",
+        "packages/core/src/server/kettle-sim.server.ts",
         "packages/core/src/server/lens-write.server.ts",
+        "packages/core/src/server/plan-projection.ts",
         "packages/core/src/server/products.server.ts",
         "packages/core/src/server/readiness.server.ts",
         "packages/core/src/server/registry.server.ts",
@@ -595,12 +599,11 @@
         "jobs",
         "registry",
         "store",
-        "release",
-        "readiness",
-        "waves",
-        "products"
+        "plan projection",
+        "kettle-sim",
+        "release"
       ],
-      "last_written_at": "2026-10-20T19:29:04.462216100+00:00",
+      "last_written_at": "2026-10-21T12:42:01.922594200+00:00",
       "name": "release-api-services",
       "pinned": false,
       "tech_stack": [
@@ -662,7 +665,7 @@
         "model-simulation"
       ],
       "db_tables": [],
-      "description": "Scan pipeline logic: jobs, scope, readiness, derivation, comparison, swarm orchestration, waves, lens drafting, local-only guard and release building. Pure code reused by the server handlers.",
+      "description": "Scan pipeline logic: jobs, scope, readiness, derivation, comparison, merge, views, live plan, swarm orchestration, waves, lens drafting, local-only guard and release building. Pure code reused by the server handlers.",
       "entry_points": [
         "packages/core/src/scan/jobs.ts",
         "packages/core/src/scan/swarm.ts"
@@ -672,14 +675,17 @@
         "packages/core/src/scan/derive.ts",
         "packages/core/src/scan/jobs.ts",
         "packages/core/src/scan/lens-draft.ts",
+        "packages/core/src/scan/live-plan.ts",
         "packages/core/src/scan/local-only.ts",
         "packages/core/src/scan/manifest-check.ts",
+        "packages/core/src/scan/merge.ts",
         "packages/core/src/scan/readiness.ts",
         "packages/core/src/scan/release.ts",
         "packages/core/src/scan/scope.ts",
         "packages/core/src/scan/swarm.ts",
         "packages/core/src/scan/track.ts",
         "packages/core/src/scan/types.ts",
+        "packages/core/src/scan/views.ts",
         "packages/core/src/scan/waves.ts"
       ],
       "group": "Scan and Release Core",
@@ -687,15 +693,14 @@
       "id": "3e4502a1-bda7-474d-852a-9fb8b0a93af4",
       "keywords": [
         "scan",
-        "jobs",
+        "live plan",
+        "merge",
+        "views",
         "swarm",
         "waves",
-        "readiness",
-        "scope",
-        "local-only",
-        "lens-draft"
+        "release"
       ],
-      "last_written_at": "2026-10-20T19:29:04.461511900+00:00",
+      "last_written_at": "2026-10-21T12:42:01.922409200+00:00",
       "name": "scan-engine",
       "pinned": false,
       "tech_stack": [
@@ -753,28 +758,44 @@
         "sample-data-generators"
       ],
       "db_tables": [],
-      "description": "JSON schemas for app-structure, events and lens manifests, a generator that emits TS types and Unreal USTRUCTs, and valid/invalid fixtures for validation.",
+      "description": "JSON schemas for app-structure, events, lens manifests, plan, scan-wire and structure-envelope, with a generator that emits TS types and Unreal USTRUCTs. Includes a parity check and a stand-in Unreal header set that compiles the generated headers without the engine.",
       "entry_points": [
         "packages/schema/generate.mjs",
         "packages/schema/schema/app-structure-3.schema.json"
       ],
       "file_paths": [
         "packages/schema/generate.mjs",
+        "packages/schema/parity.mjs",
+        "packages/schema/README.md",
         "packages/schema/generated/ts/app-structure.ts",
-        "packages/schema/generated/ue/BpSchema.h"
+        "packages/schema/generated/ue/BpSchema.h",
+        "packages/schema/generated/ue/BpSchemaFixups.h",
+        "packages/schema/schema/plan-1.schema.json",
+        "packages/schema/schema/scan-wire-1.schema.json",
+        "packages/schema/schema/structure-envelope-1.schema.json",
+        "packages/schema/ue-standin/BpSchema.generated.h",
+        "packages/schema/ue-standin/CoreMinimal.h",
+        "packages/schema/ue-standin/Dom/JsonObject.h",
+        "packages/schema/ue-standin/JsonObjectConverter.h",
+        "packages/schema/ue-standin/JsonObjectWrapper.h",
+        "packages/schema/ue-standin/Policies/CondensedJsonPrintPolicy.h",
+        "packages/schema/ue-standin/Serialization/JsonSerializer.h",
+        "packages/schema/ue-standin/Serialization/JsonWriter.h",
+        "packages/schema/ue-standin/check.cpp"
       ],
       "group": "Schema and Sample Data",
       "group_id": "256ec986-b475-42dc-ba23-52563331ae37",
       "id": "f255557c-96b8-4b28-9c32-0a60fd9be05f",
       "keywords": [
-        "schema",
-        "json-schema",
-        "codegen",
+        "json schema",
         "ustruct",
-        "fixtures",
-        "lens-manifest"
+        "codegen",
+        "parity",
+        "plan",
+        "scan-wire",
+        "ue-standin"
       ],
-      "last_written_at": "2026-10-20T19:29:04.462916900+00:00",
+      "last_written_at": "2026-10-21T12:42:01.922798500+00:00",
       "name": "schema-definitions",
       "pinned": false,
       "tech_stack": [
@@ -1025,7 +1046,7 @@
         "model-simulation"
       ],
       "db_tables": [],
-      "description": "Executable checks for the scan, live, release-train, lens-manifest and fixture behaviour. Run via npm check scripts.",
+      "description": "Executable checks for the scan, live, release-train, lens-manifest, Kettle simulator and fixture behaviour. Run via npm check scripts.",
       "entry_points": [
         "scripts/check-release-train.ts",
         "scripts/check-scan-jobs.ts"
@@ -1033,6 +1054,7 @@
       "file_paths": [
         "scripts/check-builtin-health.ts",
         "scripts/check-fixtures.ts",
+        "scripts/check-kettle-sim.mjs",
         "scripts/check-lens-manifest.ts",
         "scripts/check-live-health.ts",
         "scripts/check-live-steer.ts",
@@ -1053,14 +1075,13 @@
       "group_id": "db39408c-c4cf-4159-9b09-8db878bd14f2",
       "id": "60aea191-2b0b-4a64-aeff-c81986f0f579",
       "keywords": [
-        "check",
-        "train",
-        "scan",
-        "live",
-        "waves",
-        "lens-manifest"
+        "checks",
+        "kettle-sim",
+        "release train",
+        "scan wire",
+        "waves"
       ],
-      "last_written_at": "2026-10-20T19:29:04.463512100+00:00",
+      "last_written_at": "2026-10-21T12:42:01.922977700+00:00",
       "name": "train-scan-checks",
       "pinned": false,
       "tech_stack": [
@@ -1215,6 +1236,124 @@
       ]
     },
     {
+      "api_surface": "",
+      "business_feature": "VR Art Pipeline",
+      "category": "data",
+      "cross_refs": [
+        "vr-lookdev-docs",
+        "vr-unreal-bridge"
+      ],
+      "db_tables": [],
+      "description": "Per-asset art manifests for the VR light table (city backdrop, lamp agent, frame, studio props, survey pin) and the scripts that generate and score them. Manifests record evidence and hand-off metadata, and the scripts write them from lookdev and Trellis runs.",
+      "entry_points": [
+        "scripts/art/write-manifests.mjs",
+        "scripts/art/score-assets.mjs"
+      ],
+      "file_paths": [
+        "scripts/art/city-backdrop/write_manifest.mjs",
+        "scripts/art/lamp/trellis_run.mjs",
+        "scripts/art/lamp/write_manifest.mjs",
+        "scripts/art/light-table-frame/write_manifest.mjs",
+        "scripts/art/score-assets.mjs",
+        "scripts/art/write-manifests.mjs"
+      ],
+      "group": "VR Light Table",
+      "group_id": "491c21eb-e3cb-4d8d-ac7b-2434ea322f8f",
+      "id": "b60ec438-8ff8-44ea-87f9-79d3afb58fdb",
+      "keywords": [
+        "art",
+        "manifest",
+        "trellis",
+        "lamp",
+        "backdrop",
+        "assets",
+        "score"
+      ],
+      "last_written_at": "2026-10-21T12:42:01.884729400+00:00",
+      "name": "vr-art-pipeline",
+      "pinned": false,
+      "tech_stack": [
+        "Node.js",
+        "Unreal Engine"
+      ]
+    },
+    {
+      "api_surface": "Leonardo image generation API",
+      "business_feature": "VR Lookdev and Plans",
+      "category": "config",
+      "cross_refs": [
+        "vr-art-pipeline"
+      ],
+      "db_tables": [],
+      "description": "Concept docs and look-development data for the VR light table: plan, tech stack, reference sheet, Wolf plan and prop/state/style/pick JSON. Leonardo-based scripts generate and check lookdev images and write prop manifests.",
+      "entry_points": [
+        "docs/concepts/vr-light-table/plan.md",
+        "scripts/lookdev/leonardo.mjs"
+      ],
+      "file_paths": [
+        "scripts/lookdev/check-leonardo.mjs",
+        "scripts/lookdev/leonardo.mjs",
+        "scripts/lookdev/write-prop-manifests.mjs"
+      ],
+      "group": "VR Light Table",
+      "group_id": "491c21eb-e3cb-4d8d-ac7b-2434ea322f8f",
+      "id": "ae545e00-7f2f-4368-bd19-08ce4221acaa",
+      "keywords": [
+        "lookdev",
+        "leonardo",
+        "concept",
+        "props",
+        "style block",
+        "reference sheet",
+        "architecture review"
+      ],
+      "last_written_at": "2026-10-21T12:42:01.884959+00:00",
+      "name": "vr-lookdev-docs",
+      "pinned": false,
+      "tech_stack": [
+        "Node.js",
+        "Leonardo API"
+      ]
+    },
+    {
+      "api_surface": "Consumes GET /api/products/[slug]/plan and stream",
+      "business_feature": "VR Blueprint Link",
+      "category": "lib",
+      "cross_refs": [
+        "schema-definitions",
+        "core-route-handlers"
+      ],
+      "db_tables": [],
+      "description": "Unreal-side BpLink module that connects the VR light table to the blueprint server, with the VR README, the WP3.1 work-package notes and a check script. It consumes the generated schema headers and the server's plan and scan wire formats.",
+      "entry_points": [
+        "apps/vr/README.md",
+        "apps/vr/Source/BpLink/Private/BpLink.cpp"
+      ],
+      "file_paths": [
+        "apps/vr/Source/BpLink/BpLink.Build.cs",
+        "apps/vr/Source/BpLink/Private/BpLink.cpp",
+        "apps/vr/Source/BpLink/Public/BpLink.h",
+        "scripts/check-bplink.mjs"
+      ],
+      "group": "VR Light Table",
+      "group_id": "491c21eb-e3cb-4d8d-ac7b-2434ea322f8f",
+      "id": "912ac3c9-4dd1-4477-b3f4-77c369489f0c",
+      "keywords": [
+        "unreal",
+        "bplink",
+        "vr",
+        "wp3.1",
+        "plan stream"
+      ],
+      "last_written_at": "2026-10-21T12:42:01.885056800+00:00",
+      "name": "vr-unreal-bridge",
+      "pinned": false,
+      "tech_stack": [
+        "Unreal Engine",
+        "C++"
+      ]
+    },
+    {
       "api_surface": "Next.js mirror of /api/products/** and /api/lens-draft",
       "business_feature": "Web API Mounts",
       "category": "api",
@@ -1222,7 +1361,7 @@
         "core-route-handlers"
       ],
       "db_tables": [],
-      "description": "Next.js App Router API route files that mount the core handlers into the web app.",
+      "description": "Next.js App Router API route files that mount the core handlers into the web app, now including the live plan route.",
       "entry_points": [
         "apps/web/src/app/api/products/route.ts"
       ],
@@ -1235,6 +1374,7 @@
         "apps/web/src/app/api/products/[slug]/lenses/route.ts",
         "apps/web/src/app/api/products/[slug]/lenses/[id]/route.ts",
         "apps/web/src/app/api/products/[slug]/lenses/[id]/execute/route.ts",
+        "apps/web/src/app/api/products/[slug]/plan/route.ts",
         "apps/web/src/app/api/products/[slug]/proposals/[id]/route.ts",
         "apps/web/src/app/api/products/[slug]/releases/route.ts",
         "apps/web/src/app/api/products/[slug]/releases/suggest/route.ts",
@@ -1254,12 +1394,12 @@
       "group_id": "a1f14e8e-1fd3-416a-9060-71be952a1876",
       "id": "f853a7a5-14cf-4292-86ff-f40462853b1a",
       "keywords": [
-        "next",
-        "route",
-        "api",
-        "mount"
+        "next.js",
+        "app router",
+        "api mounts",
+        "plan route"
       ],
-      "last_written_at": "2026-10-20T19:29:04.462671700+00:00",
+      "last_written_at": "2026-10-21T12:42:01.921999100+00:00",
       "name": "web-api-mounts",
       "pinned": false,
       "tech_stack": [
@@ -1268,7 +1408,7 @@
       ]
     }
   ],
-  "generated_at": "2026-10-20T19:29:15.223595100+00:00",
+  "generated_at": "2026-10-21T12:42:04.987561800+00:00",
   "generator": "personas-context-scan",
   "groups": [
     {
@@ -1326,6 +1466,13 @@
       "domain": "infrastructure",
       "id": "db39408c-c4cf-4159-9b09-8db878bd14f2",
       "name": "Quality Checks and Fidelity"
+    },
+    {
+      "color": "violet",
+      "context_count": 3,
+      "domain": "feature",
+      "id": "491c21eb-e3cb-4d8d-ac7b-2434ea322f8f",
+      "name": "VR Light Table"
     }
   ],
   "project": {
@@ -1334,13 +1481,13 @@
     "root": "C:\\Users\\kazda\\kiro\\bp"
   },
   "provenance": {
-    "git_commit": "9daf69280204e9ca66bb2b097314e8ab7c87acfe",
-    "git_commit_count": 330
+    "git_commit": "223a93dc48ce89fd83ca05a871b91cf65f67038c",
+    "git_commit_count": 419
   },
   "stats": {
-    "contexts": 26,
-    "files": 340,
-    "groups": 8,
+    "contexts": 29,
+    "files": 378,
+    "groups": 9,
     "use_cases": 0
   },
   "taxonomy": {
