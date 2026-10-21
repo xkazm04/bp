@@ -1,5 +1,6 @@
 # Frame times at ?scale=4 (docs/perf.md). Three modes:
-#   python scripts/perf.py [url]            zoom + drag gesture from home (default)
+#   python scripts/perf.py [url]            zoom + drag gesture from home (default). Exit 1 when the median
+#                                           p50 over the runs misses docs/perf.md's budget (p50 <= 16.7 ms).
 #   python scripts/perf.py --lod [url]      static raster at each of 6 fixed LODs: the engine's perf.lastRasterMs
 #                                           counter vs the full cost of an invalidated E.draw (the cost the frame
 #                                           pays; Chrome defers the 2D raster to the first drawImage). Exit 1 when
@@ -16,6 +17,18 @@ args = [a for a in sys.argv[1:] if not a.startswith('--')]
 mode = 'lod' if '--lod' in sys.argv else 'tween' if '--tween' in sys.argv else 'gesture'
 url = args[0] if args else BASE + '/v/subtle?intro=0&scale=4'
 W, H = int(os.environ.get('VW', 1920)), int(os.environ.get('VH', 1080))
+
+# docs/perf.md "Budget", 2026-10-21 operator ruling: p50 <= 16.7 ms at ?scale=4, measured with this script;
+# p95 is reported without a budget. 16.7 ms is also the rAF cadence of a 60 Hz display, so a run at exactly
+# the budget is a run with no dropped frame; TOL covers the rounding of a 16.666.. cadence, nothing more. One
+# dropped frame in a hundred shows as p50 33.3, which is 16 ms over - far outside TOL.
+BUDGET_P50_MS, TOL = 16.7, 0.4
+
+
+def over_budget(p50):
+    """True when a gesture run misses the ruling's budget. The whole predicate, so it can be read and
+    probed without a server (`python -c "import perf"` needs playwright, but this is what the gate is)."""
+    return p50 > BUDGET_P50_MS + TOL
 
 LOD_JS = r"""
 async (N) => {
@@ -101,5 +114,16 @@ with sync_playwright() as p:
             q = lambda f: ds[min(len(ds) - 1, int(len(ds) * f))]
             res[run] = {'n': len(ds), 'p50': round(q(0.5), 2), 'p95': round(q(0.95), 2), 'p99': round(q(0.99), 2), 'max': round(ds[-1], 2), 'rasters': d['rasters'], 'engineFrames': d['frames'], 'lastRasterMs': round(d['lastRasterMs'], 1)}
             print(json.dumps(res[run])); sys.stdout.flush()
+        # the ruling is on the median of the runs, not on the worst one: a single noisy run on a machine
+        # that was building something is not a regression, and three runs is the documented default.
+        p50s = sorted(r['p50'] for r in res.values())
+        if not p50s:
+            bad = True
+            print('gesture: no run produced a frame-time sample, so the budget was not checked: FAIL')
+        else:
+            med = p50s[len(p50s) // 2] if len(p50s) % 2 else (p50s[len(p50s) // 2 - 1] + p50s[len(p50s) // 2]) / 2
+            bad = over_budget(med)
+            print('gesture p50 %.2f ms over %d run(s) of %s, budget %.1f ms (docs/perf.md): %s'
+                  % (med, len(p50s), url, BUDGET_P50_MS, 'FAIL' if bad else 'ok'))
     b.close()
 sys.exit(1 if bad else 0)
