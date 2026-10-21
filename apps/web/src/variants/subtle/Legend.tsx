@@ -4,7 +4,7 @@
 // unscanned feature and the fade of one the lens has nothing to say about), then the shared legend
 // underneath. Everything here comes from the lens manifests; the swatches use the canvas's own fills.
 import { useEffect, useMemo, useRef } from 'react';
-import type { Feature, LensDef, ViewId } from '@bp/core/data';
+import type { Feature, Health, LensDef, ViewId } from '@bp/core/data';
 import type { LineName } from '@bp/core/standard/types';
 import { lensOf } from '@bp/core/model/lens';
 import { readTheme } from '@/engine/theme';
@@ -13,7 +13,7 @@ import { Legend as BaseLegend } from '@/components/Legend';
 import { useEngine } from '@/components/hooks';
 import { useTheme } from '@/components/ThemeToggle';
 import { countField } from './expression';
-import { glyph, lineType, railRest } from './marks';
+import { glyph, healthInk, lineType, railRest } from './marks';
 
 const LINE_WORD: Record<LineName, string> = {
   solid: 'Solid rule', double: 'Double rule', dotted: 'Dotted line', comb: 'Comb', chain: 'Chain line', hatched: 'Hatched band', dimension: 'Dimension line', wave: 'Square wave',
@@ -35,6 +35,31 @@ function Swatch({ d, w, h, measure }: { d: LensDef; w: number; h: number; measur
     lineType(ctx, th, d.line, x0, cy - rh / 2, len, rh, th.inkA(0.92), 1);
   }, [d, w, h, measure, mode]);
   return <canvas ref={ref} style={{ width: w, height: h, flex: '0 0 auto' }} aria-hidden="true" />;
+}
+
+/**
+ * The health colours the strip glyphs are drawn in, in `healthInk`'s own order and words (marks.ts:9).
+ * The General key says "its colour is that lens's health", so it has to show the colours it is naming:
+ * 'na' is left out because `healthInk` draws it at inkA(0.38) against 'unmeasured' at inkA(0.3), which no
+ * reader can tell apart at swatch size, so the one faint swatch speaks for both.
+ */
+const HEALTH_KEY: readonly { h: Health; word: string }[] = [
+  { h: 'good', word: 'fine' }, { h: 'watch', word: 'watch' }, { h: 'bad', word: 'trouble' }, { h: 'unmeasured', word: 'n/a or not measured' },
+];
+
+/** One lens's glyph in one health's ink, drawn by the canvas's own `healthInk` (not a CSS copy of it). */
+function HealthSwatch({ d, h }: { d: LensDef; h: Health }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const mode = useTheme();
+  useEffect(() => {
+    const cv = ref.current; if (!cv) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1), S = 14;
+    cv.width = S * dpr; cv.height = S * dpr;
+    const ctx = cv.getContext('2d')!, th = readTheme(dpr).theme;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, S, S);
+    glyph(ctx, d.glyph, 1, 1, S - 2, healthInk(th, h, true));
+  }, [d, h, mode]);
+  return <canvas ref={ref} style={{ width: 14, height: 14, flex: '0 0 auto' }} aria-hidden="true" />;
 }
 
 type TileKind = 'fill' | 'unknown' | 'faded';
@@ -93,10 +118,15 @@ export function SubtleLegend({ view }: { view: ViewId }) {
     return (
       <>
         <div className="sl-key">
-          <p>Along each fixture&apos;s top edge, one mark per lens, always in this order. Its colour is that lens&apos;s health.</p>
+          <p>Along each fixture&apos;s top edge, one mark per lens, always in this order. Its colour is that lens&apos;s health:</p>
           <div className="sl-grid">
             {P.lenses.map((l) => <div key={l.id}><Swatch d={l} w={48} h={16} measure={0.7} /><span>{l.name}</span></div>)}
           </div>
+          {P.lenses.length > 0 && (
+            <div className="sl-health">
+              {HEALTH_KEY.map(({ h, word }) => <span key={h}><HealthSwatch d={P.lenses[0]} h={h} /><i>{word}</i></span>)}
+            </div>
+          )}
           {unscanned && <div className="sl-one"><TileSwatch d={null} kind="unknown" /><span><b>?</b> = no lens has scanned it yet - run a scan</span></div>}
         </div>
         <BaseLegend view={view} />
