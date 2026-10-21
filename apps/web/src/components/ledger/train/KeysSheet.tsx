@@ -30,7 +30,10 @@ export function KeysSheet({ scopes, onClose }: { scopes: readonly KeyScope[]; on
   }, []);
   return (
     <div className="tr-keys" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div ref={box} role="dialog" aria-modal="true" aria-label="Keyboard" tabIndex={-1}>
+      {/* aria-modal says focus stays inside, and the sheet holds nothing focusable, so Tab would hand it straight to
+          the bar and the table behind (LedgerPage inerts the chrome AROUND the page, never the page). Esc or ? closes.
+          Add a focusable child here and this needs a real wrap-around trap instead. */}
+      <div ref={box} role="dialog" aria-modal="true" aria-label="Keyboard" tabIndex={-1} onKeyDown={(e) => { if (e.key === 'Tab') e.preventDefault(); }}>
         <h3>Keyboard · the ledger owns these keys</h3>
         {scopes.map((s, i) => (
           <section key={s}>
