@@ -13,7 +13,7 @@ import { GA_MILESTONE, SPEEDS, dnum, fmtD, revAt } from '@bp/core/model';
 import { shallowEqual, useBp, useEngine } from './hooks';
 import { Strip } from './timeline/Strip';
 import { simClock, useHourText, useRunInfo, useScrub, useSize } from './timeline/shared';
-import { runLenses } from './timeline/run';
+import { RUN_WAIT, runClock, runLenses } from './timeline/run';
 import { histX, hourX, keyPlanFrac, valueText, type ScrubGeom } from './timeline/scrub';
 import { timeSliderKey } from './timeline/keys';
 import './timeline.css';
@@ -44,8 +44,8 @@ function LiveClock() {
   return (
     <motion.div variants={useItem()} id="clock" className="live">
       <div className="t"><span>Lens scan</span><span className={'tl-st ' + tone}>{st}</span></div>
-      <div className="hm" title={run?.id}>{run ? (run.started_at.slice(5, 10) + ' ' + run.started_at.slice(11, 16)) : '—'}<small>{run ? 'UTC START' : ''}</small></div>
-      <div className="lv">{run ? (off ? 'RECONNECTING · ' : '') + runLenses(run).join(' · ') + ' · ' + sim.agents.length + ' agent' + (sim.agents.length === 1 ? '' : 's') : 'Waiting for /lens-scan'}</div>
+      <div className="hm" title={run?.id}>{run ? (runClock(run) || '—') : '—'}<small>{run ? 'UTC START' : ''}</small></div>
+      <div className="lv">{run ? (off ? 'RECONNECTING · ' : '') + runLenses(run).join(' · ') + ' · ' + sim.agents.length + ' agent' + (sim.agents.length === 1 ? '' : 's') : RUN_WAIT}</div>
     </motion.div>
   );
 }
