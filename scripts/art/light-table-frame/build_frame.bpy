@@ -16,14 +16,18 @@ OUT = os.path.join(REPO, 'apps', 'vr', 'ArtSource', 'light-table-frame')
 BUDGET = 10000
 os.makedirs(WORK, exist_ok=True)
 
-# slots: 0 wood, 1 aluminium, 2 emissive edge strip, 3 glass placeholder
-WOOD, ALU, GLOW, GLASS = 0, 1, 2, 3
+# slots: 0 dark metal, 1 aluminium, 2 emissive edge strip, 3 glass placeholder
+DARK, ALU, GLOW, GLASS = 0, 1, 2, 3
 L, W = 1.20, 0.80            # top outline, x by y
 TOP, T = 0.95, 0.03          # top surface height (wolf-plan W3.2 starts the table at 95 cm), edge thickness
 BOT = TOP - T
 R = 0.05                     # rim board width
 LIP_H, LIP_W = 0.014, 0.02   # ledge the glass rests on
-GLOW_H = 0.003
+GLOW_H = 0.008             # strip top sits 6 mm under the rim top, so the 45 degree camera sees it past the rim
+GLOW_W = LIP_W            # the strip covers the whole ledge
+GLOW_STRENGTH = 25.0      # emission strength (glTF KHR_materials_emissive_strength); UE drives the real intensity
+DARK_HEX = '#0A0F18'      # style-block.json palette role 'studio' (near-black blue); the block has no separate dark-metal value
+GLOW_HEX = '#F4FAFF'
 
 
 def srgb_to_lin(c):
@@ -103,7 +107,7 @@ def png(path, arr):
     bpy.data.images.remove(img)
 
 
-def material(name, color_hex, rough, metal=0.0, tex=None, emit=None, alpha=None):
+def material(name, color_hex, rough, metal=0.0, tex=None, emit=None, alpha=None, emit_strength=1.0):
     m = bpy.data.materials.new(name)
     m.use_nodes = True
     nt = m.node_tree
@@ -116,7 +120,7 @@ def material(name, color_hex, rough, metal=0.0, tex=None, emit=None, alpha=None)
     bsdf.inputs['Metallic'].default_value = metal
     if emit:
         bsdf.inputs['Emission Color'].default_value = (*srgb_to_lin(hex_rgb(emit)), 1)
-        bsdf.inputs['Emission Strength'].default_value = 1.0
+        bsdf.inputs['Emission Strength'].default_value = emit_strength
     if alpha is not None:
         bsdf.inputs['Alpha'].default_value = alpha
     if tex:
@@ -140,7 +144,7 @@ def material(name, color_hex, rough, metal=0.0, tex=None, emit=None, alpha=None)
 
 
 def textures(folder):
-    """512 px base colour, normal, ORM (R occlusion, G roughness, B metal) for the warm wood and the brushed aluminium. Seamless tiles."""
+    """512 px base colour, normal, ORM (R occlusion, G roughness, B metal) for the dark brushed metal and the brushed aluminium. Seamless tiles."""
     os.makedirs(folder, exist_ok=True)
     rng = np.random.default_rng(11)
     N = 512
@@ -161,16 +165,16 @@ def textures(folder):
         return np.repeat(g[:, None], N, 1)
 
     grain = stripes(3) - 0.5
-    ring = 0.5 + 0.5 * np.sin(2 * np.pi * (yy * 6 + 0.35 * np.sin(2 * np.pi * xx)))
-    wood_c = np.array(hex_rgb('#B07A45'))
-    wood = wood_c[None, None, :] * (0.82 + 0.18 * ring[..., None] + 0.16 * grain[..., None])
-    wood_h = ring * 0.5 + grain
+    fine = rng.random((N, N)) - 0.5
+    dark_c = np.array(hex_rgb(DARK_HEX))
+    dark = dark_c[None, None, :] * (1.0 + 0.35 * grain[..., None] + 0.10 * fine[..., None])
+    dark_h = grain * 0.6 + fine * 0.2
     alu_c = np.array(hex_rgb('#C9CDD2'))
     brush = stripes(2) - 0.5
     alu = alu_c[None, None, :] * (0.95 + 0.10 * brush[..., None])
     sets = {
-        'wood': dict(base=wood, normal=height_normal(wood_h * 0.3, 0.8),
-                     orm=np.dstack([np.ones((N, N)), 0.55 + 0.1 * grain, np.zeros((N, N))])),
+        'dark_metal': dict(base=dark, normal=height_normal(dark_h * 0.3, 0.8),
+                           orm=np.dstack([np.ones((N, N)), 0.42 + 0.1 * grain, np.full((N, N), 0.85)])),
         'aluminium': dict(base=alu, normal=height_normal(brush * 0.2, 0.7),
                           orm=np.dstack([np.ones((N, N)), 0.35 + 0.08 * brush, np.ones((N, N))])),
     }
@@ -188,43 +192,43 @@ def textures(folder):
 def build():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     tex = textures(os.path.join(OUT, 'textures'))
-    mats = [material('frame_wood', '#B07A45', 0.55, tex=tex['wood']),
+    mats = [material('frame_dark_metal', DARK_HEX, 0.42, 0.85, tex=tex['dark_metal']),
             material('frame_aluminium', '#C9CDD2', 0.35, 1.0, tex=tex['aluminium']),
-            material('frame_edge_glow', '#F4FAFF', 0.5, emit='#F4FAFF'),
+            material('frame_edge_glow', GLOW_HEX, 0.5, emit=GLOW_HEX, emit_strength=GLOW_STRENGTH),
             material('frame_glass_placeholder_REPLACE_IN_UE', '#BFD8F0', 0.05, alpha=0.15)]
     p = Part()
     zc = BOT + T / 2
     ix, iy = L - 2 * R, W - 2 * R                 # opening inside the rim: 1.10 x 0.70
-    # rim: four wood boards, 3 cm thick, 5 cm wide
+    # rim: four dark metal boards, 3 cm thick, 5 cm wide
     for s in (-1, 1):
-        p.box((0, s * (W / 2 - R / 2), zc), (L, R, T), WOOD)
-        p.box((s * (L / 2 - R / 2), 0, zc), (R, W - 2 * R, T), WOOD)
+        p.box((0, s * (W / 2 - R / 2), zc), (L, R, T), DARK)
+        p.box((s * (L / 2 - R / 2), 0, zc), (R, W - 2 * R, T), DARK)
     # ledge the glass rests on: aluminium, 2 cm wide inside the rim
     zl = BOT + LIP_H / 2
     for s in (-1, 1):
         p.box((0, s * (iy / 2 - LIP_W / 2), zl), (ix, LIP_W, LIP_H), ALU)
         p.box((s * (ix / 2 - LIP_W / 2), 0, zl), (LIP_W, iy - 2 * LIP_W, LIP_H), ALU)
-    # emissive edge strip: outer 1 cm of the ledge, between the rim wall and the glass
+    # emissive edge strip: the whole 2 cm ledge, 8 mm tall, between the rim wall and the glass
     zg = BOT + LIP_H + GLOW_H / 2
     for s in (-1, 1):
-        p.box((0, s * (iy / 2 - 0.005), zg), (ix, 0.01, GLOW_H), GLOW)
-        p.box((s * (ix / 2 - 0.005), 0, zg), (0.01, iy - 0.02, GLOW_H), GLOW)
-    # glass placeholder plane, inset 1 cm from the rim, at the top of the strip
-    p.plane_up((0, 0, BOT + LIP_H + GLOW_H), ix - 0.02, iy - 0.02, GLASS)
+        p.box((0, s * (iy / 2 - GLOW_W / 2), zg), (ix, GLOW_W, GLOW_H), GLOW)
+        p.box((s * (ix / 2 - GLOW_W / 2), 0, zg), (GLOW_W, iy - 2 * GLOW_W, GLOW_H), GLOW)
+    # glass placeholder plane, inside the strip, at the top of the strip
+    p.plane_up((0, 0, BOT + LIP_H + GLOW_H), ix - 2 * GLOW_W, iy - 2 * GLOW_W, GLASS)
     # apron under the top, inset 6 cm so a clamp grips the bare 3 cm edge
     ai = 0.06
     for s in (-1, 1):
         p.box((0, s * (W / 2 - ai - 0.01), BOT - 0.015), (L - 2 * ai, 0.02, 0.03), ALU)
         p.box((s * (L / 2 - ai - 0.01), 0, BOT - 0.015), (0.02, W - 2 * ai - 0.04, 0.03), ALU)
-    # trestle: four tapered wood legs with aluminium feet, a lower rail along each side and each end
+    # trestle: four tapered dark metal legs with aluminium feet, a lower rail along each side and each end
     lx, ly = L / 2 - 0.085, W / 2 - 0.085
     for sx in (-1, 1):
         for sy in (-1, 1):
-            p.cyl((sx * lx, sy * ly, 0.012), 0.022, 0.028, BOT - 0.012, 12, WOOD)
+            p.cyl((sx * lx, sy * ly, 0.012), 0.022, 0.028, BOT - 0.012, 12, DARK)
             p.cyl((sx * lx, sy * ly, 0.0), 0.026, 0.026, 0.012, 12, ALU)
     for s in (-1, 1):
-        p.box((0, s * ly, 0.22), (2 * lx, 0.03, 0.04), WOOD)
-        p.box((s * lx, 0, 0.22), (0.03, 2 * ly, 0.04), WOOD)
+        p.box((0, s * ly, 0.22), (2 * lx, 0.03, 0.04), DARK)
+        p.box((s * lx, 0, 0.22), (0.03, 2 * ly, 0.04), DARK)
     p.finish('light-table-frame', mats)
     os.makedirs(OUT, exist_ok=True)
     bpy.ops.export_scene.gltf(filepath=os.path.join(OUT, 'final.glb'), export_format='GLB', export_yup=True, export_apply=True,

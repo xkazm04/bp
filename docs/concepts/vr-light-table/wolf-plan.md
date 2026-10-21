@@ -285,10 +285,12 @@ FLUX.2 [klein] or Qwen-Image (tech-stack.md §5), unless the owner rules on Leon
       Director review of the reworked lamp (2dad0ad), 2026-10-21: it reads correctly (whole lamp framed, clean navy and silver arm,
       clamp on the table edge).
       Light table frame, 2026-10-21 (not ticked, the studio kit, backdrop and materials are open): `ArtSource/light-table-frame/` has
-      `final.glb` (594 tris against 10,000, 1.20 x 0.80 x 0.95 m, pivot at the floor centre, 3.0 cm top edge for the lamp clamp),
-      6 PBR PNGs, evidence (turnaround and the 45-degree table view, Cycles on the CPU) and a manifest with all five gates
-      `pass: true` (14 components, 0 floaters, one UV set, 4 slots: wood, aluminium, `frame_edge_glow` emissive strip,
-      `frame_glass_placeholder_REPLACE_IN_UE`). Procedural Blender, `scripts/art/light-table-frame/`; `lynx_commit` is set at the merge.
+      `final.glb` (586 tris against 10,000, 1.20 x 0.80 x 0.95 m, pivot at the floor centre, 3.0 cm top edge for the lamp clamp),
+      6 PBR PNGs, evidence (turnaround, the 45-degree table view and `vs-hero.jpg`, the view beside `00-hero.jpg`; Cycles on the CPU)
+      and a manifest with all five gates `pass: true` (14 components, 0 floaters, one UV set, 4 slots: `frame_dark_metal`,
+      aluminium, `frame_edge_glow` emissive strip, `frame_glass_placeholder_REPLACE_IN_UE`). Reworked after the Director review of
+      04fc311 (warm wood, no visible edge): rim, legs and rails are dark metal on the style block's studio near-black `#0A0F18`
+      (slot renamed from `frame_wood`), and the edge strip is `#F4FAFF`, 2 cm wide and 8 mm tall at emission strength 25. Procedural Blender, `scripts/art/light-table-frame/`; `lynx_commit` is set at the merge.
 - [ ] **W4.1 Import (Wolf, half a day per asset).** Import each `final.*` through the editor MCP (pof's gap-fillers)
       into `apps/vr/Content/Bp/Art/<asset-id>/`. **Nothing is imported without its gate results** (the plan.md P4 gate).
       Proof: the manifest's `import` block; `stat rhi` and `stat scenerendering` with the asset in the greybox.

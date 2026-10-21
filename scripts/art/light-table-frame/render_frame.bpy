@@ -1,6 +1,6 @@
 # Blender script; run with blender -b -P scripts/art/light-table-frame/render_frame.bpy -- <repo-root> <work-dir>
 """Renders the light table frame evidence from its final.glb: a 4-view turnaround (2x2, 960x960) and a 640x480 view from the
-target pose (about 45 degrees down at the near edge), as JPEG into evidence/.
+target pose (about 45 degrees down at the near edge), and vs-hero.jpg (that view beside lookdev/00-hero.jpg), as JPEG into evidence/.
 Each camera is fitted to the asset's bounding box (the horizontal field of view widens until all eight corners fit with a margin).
 A framing check then renders a transparent-film alpha pass of the same view without the floor and measures the silhouette's margin
 to the image border; writes <work-dir>/framing.json and exits non-zero if any image has less than 3% margin or touches the border.
@@ -147,7 +147,15 @@ def view(name, az, elev, res):
 tiles = [view('turn%d' % i, az, 22, (480, 480)) for i, az in enumerate((20, 110, 200, 290))]
 save_jpeg(np.vstack([np.hstack(tiles[:2]), np.hstack(tiles[2:])]), os.path.join(EV, 'turnaround.jpg'))
 # the target pose: standing at the near (front, -Y) edge, looking about 45 degrees down at the table
-save_jpeg(view('table-view', 0, 45, (640, 480)), os.path.join(EV, 'table-view.jpg'))
+table = view('table-view', 0, 45, (640, 480))
+save_jpeg(table, os.path.join(EV, 'table-view.jpg'))
+# side by side with the approved reference (the art bible's hero image), both 480 px tall
+hero = bpy.data.images.load(os.path.join(REPO, 'docs', 'concepts', 'vr-light-table', 'lookdev', '00-hero.jpg'))
+hw, hh = hero.size
+hero.scale(round(hw * 480 / hh), 480)
+hs = np.empty(hero.size[0] * 480 * 4, dtype=np.float32)
+hero.pixels.foreach_get(hs)
+save_jpeg(np.hstack([table, hs.reshape(480, hero.size[0], 4)[:, :, :3]]), os.path.join(EV, 'vs-hero.jpg'))
 json.dump(FRAMING, open(os.path.join(WORK, 'framing.json'), 'w'), indent=1)
 print('FRAMING', json.dumps(FRAMING))
 if not all(v['pass'] for v in FRAMING.values()):
