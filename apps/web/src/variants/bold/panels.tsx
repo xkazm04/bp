@@ -52,7 +52,9 @@ function bar(pct: number, n = 20) { const on = Math.round((pct / 100) * n); retu
 function Terminal({ p }: { p: SheetPanelProps }) {
   const f = p.f, dv = bl(f).development;
   useBp((s) => s.simV);
-  const prog = Math.round(p.model.sim.progOf(f));
+  // progOf caps in-flight progress at 99 (model/sim.ts:283); a feature the map already has at 100 is
+  // finished, which is how sim.liveValue reads it (sim.ts:292) and how both channels word it ('DONE')
+  const prog = dv.progressPct >= 100 ? 100 : Math.round(p.model.sim.progOf(f));
   const rows: [string, string, string?][] = [
     ['status', dv.status],
     ['progress', prog + '%'],
