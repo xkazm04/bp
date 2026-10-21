@@ -258,16 +258,18 @@
     },
     "waveModel": { "enum": ["sonnet", "opus"], "description": "The Claude Code CLI's own aliases: each always means the latest model of its family." },
     "waveEffort": { "enum": ["low", "medium", "high", "xhigh"] },
+    "waveName": { "type": "string", "minLength": 1, "maxLength": 60, "description": "Trimmed; MAX_NAME in packages/core/src/scan/waves.ts, which refuses anything else." },
+    "proposalId": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,80}$", "description": "SAFE_ID in packages/core/src/scan/jobs.ts." },
     "wavePackage": {
       "type": "object",
       "required": ["id", "name", "model", "effort", "ids"],
       "additionalProperties": false,
       "properties": {
         "id": { "type": "string", "description": "pk-1, pk-2..: unique inside the wave." },
-        "name": { "type": "string" },
+        "name": { "$ref": "#/$defs/waveName" },
         "model": { "$ref": "#/$defs/waveModel" },
         "effort": { "$ref": "#/$defs/waveEffort" },
-        "ids": { "type": "array", "items": { "type": "string" }, "minItems": 1, "description": "Proposal ids, at least one." }
+        "ids": { "type": "array", "items": { "$ref": "#/$defs/proposalId" }, "minItems": 1, "description": "Proposal ids, at least one. A wave holds at most 400 across its packages, which this cannot express." }
       }
     },
     "wave": {
@@ -277,11 +279,11 @@
       "additionalProperties": false,
       "properties": {
         "id": { "type": "string", "description": "w-<base36 ms>-<4 random>." },
-        "name": { "type": "string" },
+        "name": { "$ref": "#/$defs/waveName" },
         "status": { "enum": ["draft", "dispatched"], "description": "draft: editable, nothing queued yet. dispatched: at least one job was queued." },
         "created_at": { "type": "string" },
         "dispatched_at": { "type": "string" },
-        "packages": { "type": "array", "items": { "$ref": "#/$defs/wavePackage" } },
+        "packages": { "type": "array", "items": { "$ref": "#/$defs/wavePackage" }, "minItems": 1, "maxItems": 12, "description": "MAX_PACKAGES in packages/core/src/scan/waves.ts." },
         "jobs": {
           "type": "array",
           "description": "Every execute job this wave queued, in order.",

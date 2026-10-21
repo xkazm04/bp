@@ -661,11 +661,13 @@ export interface ScanScope {
 export interface Wave {
   /** w-<base36 ms>-<4 random>. */
   id: string;
+  /** Trimmed; MAX_NAME in packages/core/src/scan/waves.ts, which refuses anything else. */
   name: string;
   /** draft: editable, nothing queued yet. dispatched: at least one job was queued. */
   status: 'draft' | 'dispatched';
   created_at: string;
   dispatched_at?: string;
+  /** MAX_PACKAGES in packages/core/src/scan/waves.ts. */
   packages: WavePackage[];
   /** Every execute job this wave queued, in order. */
   jobs?: WaveJobsItem[];
@@ -674,11 +676,12 @@ export interface Wave {
 export interface WavePackage {
   /** pk-1, pk-2..: unique inside the wave. */
   id: string;
+  /** Trimmed; MAX_NAME in packages/core/src/scan/waves.ts, which refuses anything else. */
   name: string;
   /** The Claude Code CLI's own aliases: each always means the latest model of its family. */
   model: 'sonnet' | 'opus';
   effort: 'low' | 'medium' | 'high' | 'xhigh';
-  /** Proposal ids, at least one. */
+  /** Proposal ids, at least one. A wave holds at most 400 across its packages, which this cannot express. */
   ids: string[];
 }
 

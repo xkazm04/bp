@@ -561,6 +561,34 @@ if (isMain) {
     const enumWideCaught = enumWide !== fresh.ts && compare(enumWide, handTs, wireTs).problems.some((p) => p === 'Wave.status: the enum disagrees - in the schema, not in types.ts: zzParityProbe');
     console.log(`${enumWideCaught ? 'ok  ' : 'FAIL'}  control: a value added to the wave status enum fails the parity`);
     if (!enumWideCaught) failed++;
+    // scan-wire-1's declared bounds on a wave against the constants the server refuses by. The schema is normative
+    // for what apps/server sends, and it said `{ "type": "string" }` where packages/core/src/scan/waves.ts:11
+    // refuses a name over MAX_NAME and more than MAX_PACKAGES packages, and `{ "type": "string" }` for a proposal
+    // id where jobs.ts:100 refuses anything but SAFE_ID - four limits the implementation enforced and the contract
+    // did not state. Declared now, and compared here so the two cannot drift. Each constant is read out of its own
+    // source text, so a matcher that finds nothing fails rather than agreeing.
+    const constOf = (rel, name) => {
+      const m = new RegExp(`\\b${name} = (\\d+)`).exec(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
+      return m ? Number(m[1]) : null;
+    };
+    const reOf = (rel, name) => {
+      const m = new RegExp(`\\b${name} = /([^/]+)/`).exec(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
+      return m ? m[1] : null;
+    };
+    const wireDefs = schemas['scan-wire-1.schema.json'].$defs;
+    const boundRows = [
+      ['waveName.maxLength', wireDefs.waveName.maxLength, constOf('packages/core/src/scan/waves.ts', 'MAX_NAME')],
+      ['wave.packages.maxItems', wireDefs.wave.properties.packages.maxItems, constOf('packages/core/src/scan/waves.ts', 'MAX_PACKAGES')],
+      ['proposalId.pattern', wireDefs.proposalId.pattern, reOf('packages/core/src/scan/jobs.ts', 'SAFE_ID')?.replace('a-z0-9', 'a-zA-Z0-9').replace('a-z0-9._-', 'a-zA-Z0-9._-')],
+    ];
+    const boundProblems = boundRows.filter(([, a, b]) => a === undefined || a === null || b === null || a !== b)
+      .map(([what, a, b]) => `${what}: the schema says ${JSON.stringify(a)}, the code ${JSON.stringify(b)}`);
+    console.log(`${boundProblems.length ? 'FAIL' : 'ok  '}  scan-wire-1's declared wave bounds are the ones packages/core/src/scan refuses by (${boundRows.length} bounds)${boundProblems.length ? ': ' + boundProblems.join('; ') : ''}`);
+    if (boundProblems.length) failed++;
+    // control: the matchers read real values, so a name no source declares must come back null, not silently equal
+    const boundControl = constOf('packages/core/src/scan/waves.ts', 'MAX_ZZPROBE') === null && reOf('packages/core/src/scan/jobs.ts', 'ZZ_PROBE') === null;
+    console.log(`${boundControl ? 'ok  ' : 'FAIL'}  control: a constant no source declares reads as null, not as agreement`);
+    if (!boundControl) failed++;
     // The stand-in smoke (ue-standin/check.cpp) reads every root through BpSchema::FromJson. No gate here can run a
     // C++ compiler, so what is asserted is its COVERAGE: a root added to ROOTS whose FromJson nobody instantiates
     // is a FixUp body no compiler ever sees. Comments are stripped first, so the clang command line in its header -

@@ -1720,7 +1720,7 @@ struct BPLINK_API FBpWavePackage
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString id;
 
-	/** required */
+	/** Trimmed; MAX_NAME in packages/core/src/scan/waves.ts, which refuses anything else. required */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString name;
 
@@ -1732,7 +1732,7 @@ struct BPLINK_API FBpWavePackage
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString effort;
 
-	/** Proposal ids, at least one. required */
+	/** Proposal ids, at least one. A wave holds at most 400 across its packages, which this cannot express. required */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	TArray<FString> ids;
 };
@@ -1761,7 +1761,7 @@ struct BPLINK_API FBpWave
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString id;
 
-	/** required */
+	/** Trimmed; MAX_NAME in packages/core/src/scan/waves.ts, which refuses anything else. required */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString name;
 
@@ -1776,7 +1776,7 @@ struct BPLINK_API FBpWave
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString dispatched_at;
 
-	/** required */
+	/** MAX_PACKAGES in packages/core/src/scan/waves.ts. required */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	TArray<FBpWavePackage> packages;
 
