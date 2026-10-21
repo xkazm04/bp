@@ -81,7 +81,9 @@ for (const id of Object.keys(ASSETS)) {
     lynx_commit: null,
     lynx_commit_note: 'set by the merge; branch autopilot/accepted-idea-delivery-69480049',
   };
-  if (bad) console.error(`WARNING ${id}: failed checks: ${bad}`);
+  // The manifest is still written (it records the failing gate), but the run reports it: score-assets.mjs exits 1 on the same
+  // information, and a && chain must not carry on over a manifest check:art will reject.
+  if (bad) { console.error(`WARNING ${id}: failed checks: ${bad}`); process.exitCode = 1; }
   fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
   console.log(`${id}: manifest written, ${all.length} files hashed`);
 }
