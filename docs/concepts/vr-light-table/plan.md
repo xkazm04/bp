@@ -223,6 +223,8 @@ P3: 150 draw calls and 350k visible triangles or fewer.
 
 **Gate:** the full loop by voice alone and by hand alone, on Kettle and on a live product.
 
+2026-10-21, operator decision: `apps/server` hosts the Kettle swarm and scan simulations (SwarmSim, ScanSim) behind the same routes, in memory and never written to disk; the P5 gate above stays as written.
+
 ## P6 Beauty pass
 
 - Light: the table as the key light on hands and props; warm practicals against the cool table;
