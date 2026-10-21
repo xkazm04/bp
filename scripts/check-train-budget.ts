@@ -135,6 +135,7 @@ const { useLedger, setLedgerUi, EMPTY_UI } = await imp('components/ledger/useLed
 const { PackTable } = await imp('components/ledger/train/PackTable.tsx');
 const { Triage } = await imp('components/ledger/variants/Triage.tsx');
 const { ComparePanel } = await imp('components/ledger/train/compare/ComparePanel.tsx');
+const { DecisionBar } = await imp('components/ledger/train/DecisionBar.tsx');
 
 const M = buildModel(1, () => 0, null), P = M.P;
 const feats: string[] = P.base.features.map((f: Any) => f.slug), lenses: string[] = P.lenses.map((l: Any) => l.id);
@@ -167,8 +168,9 @@ const live = { slug: 'synthetic', product: { status: 'live', events: '', jobs: [
 const S = { ...initialState(1, P.asOf), ready: true, page: 'ledger', lv: 'triage' };
 const E = { M, S, U: 1, store: { get: () => S, subscribe: () => () => {} }, dirty() {}, onFrame: () => () => {}, setPage() {}, flyToFeature() {}, openFeature() {}, lensAgg: () => ({ parts: [] }), channel: () => null };
 
-function Host({ ui, what }: { ui: Any; what: 'packs' | 'backlog' }) {
+function Host({ ui, what, targets = [] }: { ui: Any; what: 'packs' | 'backlog' | 'bar'; targets?: string[] }) {
   const L = useLedger(ui, setLedgerUi);
+  if (what === 'bar') return h(DecisionBar, { L, targets, onRelease() {}, hint: null });
   return what === 'packs' ? h(PackTable, { L, sample: false, onLenses() {} }) : h(Triage, { L });
 }
 function render(el: Any): string {
@@ -187,6 +189,14 @@ const BUDGETS: [string, number, () => string, number][] = [
   ['Backlog table, 1,120 findings', 1120, () => render(h(Host, { ui: { ...EMPTY_UI, scope: 'backlog' }, what: 'backlog' })), 24600],
   ['compare panel, an item with screens, diff closed', 1, () => render(h(ComparePanel, { id: first, view: EMPTY_UI.cmp, wide: false, phone: false, onView: noop, onWide: noop, onClose: noop })), 110],
   ['compare panel, a perf item (runs table), diff closed', 1, () => render(h(ComparePanel, { id: perf, view: EMPTY_UI.cmp, wide: false, phone: false, onView: noop, onWide: noop, onClose: noop })), 270],
+  // the decision surface: the bar with a target (the Decide buttons and the package pill), and with its note editor open
+  ['decision bar, one target', 1, () => render(h(Host, { ui: { ...EMPTY_UI, scope: 'packs' }, what: 'bar', targets: [first] })), 24],
+  // Decide reads the note from the ledger's module store, not from L: a render first pins the store to this product, then the ask is set
+  ['decision bar, note editor open', 1, () => {
+    render(h(Host, { ui: { ...EMPTY_UI, scope: 'packs' }, what: 'bar', targets: [first] }));
+    setLedgerUi((u: Any) => ({ ...u, note: { at: 'bar', ids: [first], decision: 'rework' } }));
+    try { return render(h(Host, { ui: { ...EMPTY_UI, scope: 'packs', note: { at: 'bar', ids: [first], decision: 'rework' } }, what: 'bar', targets: [first] })); } finally { setLedgerUi((u: Any) => ({ ...u, note: null })); }
+  }, 14],
 ];
 for (const [what, rows, run, budget] of BUDGETS) {
   let n = -1, err = '';
