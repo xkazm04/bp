@@ -545,8 +545,13 @@ try {
     const g3 = git('rev-parse', 'HEAD');
     const gd = new DatabaseSync(rdb);
     const gi = gd.prepare("INSERT INTO proposals (id, run_id, feature, lens, title, kind, status, created_at, updated_at, commit_sha) VALUES (?, 'r0', 'a', 'development', 't', 'fix', 'declined', ?, ?, ?)");
-    gi.run('g1', T, T, g1); gi.run('g2', T, T, g2);
+    gi.run('g1', T, T, g1); gi.run('g2', T, T, g2); gi.run('g4', T, T, 'c'.repeat(40)); // g4: an item commit the repo does not have
     gd.close();
+    // the same store under a product whose root is no git repository (a root the repo-less fixture dir never had one for)
+    const ng = repo('nogit');
+    fs.mkdirSync(path.join(ng, '.ai/lens-scan'), { recursive: true });
+    fs.copyFileSync(rdb, path.join(ng, '.ai/lens-scan/scan.db'));
+    fs.writeFileSync(path.join(dir, 'bp.products.local.json'), JSON.stringify({ products: [{ slug: 'prod', name: 'Prod', root: pr }, { slug: 'rel', name: 'Rel', root: rr }, { slug: 'future', name: 'Future', root: fr }, { slug: 'nogit', name: 'No git', root: ng }] }));
     const commits = await route('products/[slug]/commits/[sha]/route.ts');
     const getCommit = (sha: string) => commits.GET(new Request('http://localhost:3000/x', { headers: { host: 'localhost:3000' } }), { params: Promise.resolve({ slug: 'rel', sha }) }) as Promise<Response>;
     const r1 = await getCommit(g1.slice(0, 7)), c1 = await r1.json(), d1 = W.parseCommitDiff(c1);
@@ -562,6 +567,13 @@ try {
       && d2.value.files.length === 1 && d2.value.files[0].add === 2100, d2.ok ? JSON.stringify({ lines: d2.value.lines, truncated: d2.value.truncated, files: d2.value.files }) : d2.error);
     const misses = await Promise.all([getCommit('deadbeef'), getCommit(g3), getCommit(g3.slice(0, 10))]);
     check('commits: a sha that is no item commit -> 404, even one the repo has', misses.map((r) => r.status).join() === '404,404,404', misses.map((r) => r.status).join());
+    // the pair that pins commitDiff's classification: git exits 128 for BOTH, so only its message tells them apart.
+    // 404 = the repo has no such object (stop looking); 503 = this root is not usable (fix the product's root and retry)
+    const gone = await getCommit('c'.repeat(40));
+    const noGit = await commits.GET(new Request('http://localhost:3000/x', { headers: { host: 'localhost:3000' } }), { params: Promise.resolve({ slug: 'nogit', sha: g1 }) }) as Response;
+    const noGitBody = await noGit.json() as { error?: string };
+    check('commits: an item commit the repo does not have -> 404 (git: bad object)', gone.status === 404 && /not a valid object|bad object|unknown revision/i.test(((await gone.json()) as { error?: string }).error ?? ''), String(gone.status));
+    check('commits: a product root that is not a git repository -> 503, not a missing commit', noGit.status === 503 && /not a git repository/i.test(noGitBody.error ?? ''), noGit.status + ' ' + JSON.stringify(noGitBody));
     const bads = await Promise.all([getCommit('abc123'), getCommit('xyz1234'), getCommit('a'.repeat(41)), getCommit(g1.slice(0, 7) + ';ls')]);
     check('commits: a bad sha -> 400 (short, not hex, too long, a shell char)', bads.map((r) => r.status).join() === '400,400,400,400', bads.map((r) => r.status).join());
     const unknown = await commits.GET(new Request('http://localhost:3000/x', { headers: { host: 'localhost:3000' } }), { params: Promise.resolve({ slug: 'nope', sha: g1 }) }) as Response;
