@@ -1,4 +1,4 @@
-// A live product's answer tracks on the plan (src/lib/scan/track.ts): the decided proposals the queue no longer
+// A live product's answer tracks on the plan (packages/core/src/scan/track.ts): the decided proposals the queue no longer
 // holds, each kept on its tile until the store has evidence for it. Separate from the sim's questions on purpose: the
 // queue, J/K and every count stay proposed-only. Fed by every scan and jobs change (`feed`), and by the decisions made
 // here (`saving` while the POST is out, `saved` with the store's answer or the row a 409 found), so the marker takes

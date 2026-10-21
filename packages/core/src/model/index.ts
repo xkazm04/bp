@@ -28,9 +28,9 @@ export interface Model {
   closure: Closure;
   /** Set for a live product (`?product=<slug>`); absent for Kettle. */
   live?: LiveRef;
-  /** Set for a live product: the scan's readings laid over the loaded map's facets (src/lib/model/live-health.ts). */
+  /** Set for a live product: the scan's readings laid over the loaded map's facets (packages/core/src/model/live-health.ts). */
   liveFacets?: LiveFacets;
-  /** Set for a live product: its decided proposals' tracks on the plan, apart from the questions (src/lib/model/live-tracks.ts). */
+  /** Set for a live product: its decided proposals' tracks on the plan, apart from the questions (packages/core/src/model/live-tracks.ts). */
   tracks?: LiveTracks;
   /** The Kettle sample map's contexts (name -> group); set by `buildModel` in ./sample, absent for a live product (its structure carries them). */
   kettleContexts?: readonly { name: string; group?: string }[];

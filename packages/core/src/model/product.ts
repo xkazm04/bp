@@ -1,4 +1,4 @@
-// The product as the app sees it: the loaded map (src/lib/standard/load.ts), optionally cloned into N
+// The product as the app sees it: the loaded map (packages/core/src/standard/load.ts), optionally cloned into N
 // product lines (`?scale=4` = four lines, 528 features), plus id indexes and the lens registry. Pure;
 // no DOM. Feature ids are slugs; clones get a product-line suffix (`failed-payment-dunning-S`).
 import type { ActivityEvent, Capability, Domain, Feature, LensDef, Milestone, Person, Snapshot, Structure } from '@bp/core/data';

@@ -15,7 +15,9 @@
 //   (f) scan-sim.ts: a sample job that ended 'failed' carries a non-zero exit code and its error, as a real run
 //       does through jobs.server.ts, and a clean one still ends done / exit 0;
 //   (g) product.ts/constants.ts: `?scale=N` is clamped to the product lines that LINES actually declares, so the
-//       ceiling and the table cannot drift apart (they were two hand-written 8s).
+//       ceiling and the table cannot drift apart (they were two hand-written 8s);
+//   (h) every multi-segment source path a model comment names resolves from the REPO ROOT, as git ls-files
+//       prints it - a file anchor that points nowhere is worse than silence, because a reader follows it.
 // Run: node scripts/check-model.ts   (Node's type stripping; scripts/overlays-loader.mjs transpiles src/** on the fly)
 // Control: BP_MODEL_MUTATE='[["lens.ts"," (\x27 + n + \x27 of \x27","(\x27 + n + \x27 OF \x27"]]' rewrites source text as
 // it loads ([file suffix, find, replace] literals), so an assertion can be seen red on a seeded defect.
@@ -255,6 +257,33 @@ const PLACES: { id: string; feats: Any[] }[] = [...M.L.rooms, ...M.L.wings, ...M
   const letters = new Set(LINES.map((l: Any) => l[1]));
   expect(letters.size === n, `(g) LINES must carry ${n} distinct suffix letters, has ${letters.size}`);
   console.log(`scale clamp LINES.length ${n} / clampScale('999') ${clampScale('999')} / distinct letters ${letters.size}`);
+}
+
+// ---------------------------------------------------------------- (h) every path a model comment names resolves
+{
+  const dir = path.join(ROOT, 'packages/core/src/model');
+  // a multi-segment path with a source extension, anywhere in the file's prose or its code
+  const PATHISH = /[A-Za-z0-9_@.[\]-]*[A-Za-z0-9_\]-]\/[A-Za-z0-9_@./[\]-]*\.(?:ts|tsx|mjs|json)/g;
+  const miss: string[] = [];
+  let walked = 0, anchors = 0;
+  for (const name of fs.readdirSync(dir)) {
+    if (!/\.ts$/.test(name)) continue;
+    walked++;
+    const lines = fs.readFileSync(path.join(dir, name), 'utf8').split('\n');
+    lines.forEach((ln, i) => {
+      const prose = /^\s*(\/\/|\*|\/\*)/.test(ln) || ln.includes('// ');
+      if (!prose) return;
+      for (const m of ln.match(PATHISH) ?? []) {
+        if (m.startsWith('.') || m.startsWith('@bp/')) continue;   // a real import specifier, resolved by tsc
+        anchors++;
+        // the repo's own anchor law: a path a comment names is repo-root relative, as git ls-files prints it
+        if (!fs.existsSync(path.join(ROOT, m))) miss.push(`packages/core/src/model/${name}:${i + 1}  ${m}`);
+      }
+    });
+  }
+  expect(walked > 10 && anchors > 4, `(h) the guard walked ${walked} model files and found ${anchors} path anchors`);
+  expect(!miss.length, `(h) ${miss.length} of ${anchors} paths named in a model comment do not resolve from the repo root:\n      ` + miss.join('\n      '));
+  console.log(`doc anchors ${walked} model files / ${anchors} paths named in prose / ${miss.length} dangling`);
 }
 
 if (failures.length) {
