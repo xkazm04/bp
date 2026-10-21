@@ -48,7 +48,12 @@ when rendering, the engine or chrome changes:
 ## Repo law
 
 - `docs/blueprint-ui.md` is the UI contract: 12 px text floor (body 14 px), spatial stability (expanded chrome overlays the plan), lenses are data (never branch on a lens id), keyboard throughout, reduced motion honoured.
-- Design tokens are the CSS variables in `apps/web/src/components/blueprint.css`; no raw colours in components or css.
+- Design tokens are the CSS variables in `apps/web/src/app/globals.css` — the dark block (`:root`,
+  `:root[data-theme='dark']`) and the light block, which is what `scripts/check-tokens.mjs` reads and
+  what `check:train-quality` holds the `--fs-*` floor on. No raw colours in components or css.
+  (Measured 2026-10-21: globals.css declares 162 custom properties, `components/blueprint.css` 5. This
+  line used to name blueprint.css and was wrong; the scan-menu-client round caught it when a correct
+  file header was flagged against it.)
 - Kettle `/`, the live product `?product=<slug>`, `?scale=4`, `?theme=light` and the three variants `/v/subtle|shaped|bold` must keep working.
 - Next allows one `next dev` per directory.
 - A worktree with a `node_modules` junction runs the node gates but not `next dev` (Turbopack panics on the junction); a worktree that needs a browser runs `npm ci`. `next dev` writes AGENTS.md and rewrites next-env.d.ts: never commit either.
