@@ -460,7 +460,13 @@ function conformNode(m, n, cpp, v, where, out) {
 }
 
 // ---------------------------------------------------------------- run
-const readSchemas = () => Object.fromEntries(ROOTS.map(([f]) => [f, JSON.parse(fs.readFileSync(path.join(SCHEMA_DIR, f), 'utf8'))]));
+// JSON.parse names no file, so a malformed schema used to report only "Expected ':' ... at position 9" under
+// "<anonymous_script>" - with six schemas, and three of them read by nothing but this generator, that is a guess.
+const readSchemas = () => Object.fromEntries(ROOTS.map(([f]) => {
+  const at = path.join(SCHEMA_DIR, f);
+  try { return [f, JSON.parse(fs.readFileSync(at, 'utf8'))]; }
+  catch (e) { throw new Error(`packages/schema/schema/${f} is not readable as JSON: ${e.message}`, { cause: e }); }
+}));
 const generate = (schemas) => { const m = model(schemas); return { ts: emitTs(m), ue: emitUe(m), fix: emitFixups(m), m }; };
 const norm = (s) => s.replace(/\r\n/g, '\n');
 
