@@ -95,7 +95,12 @@ export function lensContent(d: LensDef, fl: FeatureLens | undefined, src: ValueS
 export const HEALTH_WORD: Record<Health, string> = Object.fromEntries(Object.entries(HEALTH_TEXT).map(([h, t]) => [h, t.plain])) as Record<Health, string>;
 
 // -------------------------------------------------------------------------------- aggregates
-/** The headline field summed up over a place: total money, mean of a scale or rate, a count of the top enum value. */
+/**
+ * The headline field summed up over a place: total money, mean of a scale or rate, a count of the top enum value.
+ * Only the features that CARRY the field are in it (an absent facet value is not a zero), so the summary names that
+ * denominator - "$60 monthly cost (1 of 6)" - whenever it is smaller than the place; a place every feature of which
+ * was measured says nothing extra. Without it a total over one feature of six read as the whole room's.
+ */
 export function headlineSummary(d: LensDef, fs: readonly Feature[]): string {
   const f = d.headline; if (!f) return '';
   let n = 0, sum = 0, hits = 0;
@@ -109,14 +114,16 @@ export function headlineSummary(d: LensDef, fs: readonly Feature[]): string {
   }
   if (!n) return '';
   const label = shortLabel(f).toLowerCase();
-  if (f.type === 'money') return money(f, sum) + ' ' + label;
-  if (f.type === 'enum') return hits + ' ' + top;
-  if (f.type === 'boolean') return hits + ' ' + label;
+  /** What the figure was measured on, when that is not the whole place. */
+  const of = n < fs.length ? ' (' + n + ' of ' + fs.length + ')' : '';
+  if (f.type === 'money') return money(f, sum) + ' ' + label + of;
+  if (f.type === 'enum') return hits + ' ' + top + of;
+  if (f.type === 'boolean') return hits + ' ' + label + of;
   if (f.type === 'percent' || f.type === 'number' || (f.type === 'integer' && f.max !== undefined)) {
     const avg = sum / n;
-    return label + ' avg ' + (f.type === 'percent' ? Math.round(avg) + '%' : round(Math.round(avg * 10) / 10));
+    return label + ' avg ' + (f.type === 'percent' ? Math.round(avg) + '%' : round(Math.round(avg * 10) / 10)) + of;
   }
-  if (f.type === 'integer') return sum.toLocaleString('en-US') + ' ' + label;
+  if (f.type === 'integer') return sum.toLocaleString('en-US') + ' ' + label + of;
   return '';
 }
 
