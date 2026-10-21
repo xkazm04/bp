@@ -103,20 +103,39 @@ class ChromeBoundary extends Component<{ children: ReactNode }, { err: Error | n
   }
 }
 
+/** How long the Kettle sample's chunk may take before the loading panel stops promising it is about to arrive. */
+const SAMPLE_SLOW_MS = 12000;
+
+/** The Kettle sample's loading panel. A chunk that never settles is not an error (loadSample rejects only on failure), so
+ *  after SAMPLE_SLOW_MS the panel adds what is being fetched and a Reload, and a hung load reads differently from a fresh one. */
+function SampleLoading() {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setSlow(true), SAMPLE_SLOW_MS); return () => clearTimeout(t); }, []);
+  return (
+    <div className="bp-empty" role="status" data-slow={slow ? '' : undefined}>
+      <b>Loading the Kettle sample…</b>
+      {slow && <span>Still waiting on the sample (about 770 KB). The connection may be slow or stalled.</span>}
+      {slow && <a href={typeof location !== 'undefined' ? location.pathname + location.search : '/'}>Reload</a>}
+    </div>
+  );
+}
+
 /** The standard empty state of a live product that cannot be drawn (unknown slug, no structure, an error), or that is still connecting. */
-function LiveEmpty({ slug, live }: { slug: string; live: LiveProduct }) {
+function LiveEmpty({ slug, live, kettle = false }: { slug: string; live: LiveProduct; kettle?: boolean }) {
   if (live.status === 'loading' || (live.status === 'offline' && !live.structure)) {
     return <div className="bp-empty" role="status"><b>Connecting to {slug}…</b><span>Reading its structure and scan store.</span></div>;
   }
   const err = live.error ?? '';
   const store = /^no structure at (.+)[\\/]app-structure\.json$/.exec(err)?.[1];
-  const head = store ? 'No scan store at ' + store : /^unknown product/.test(err) ? 'No product “' + slug + '” in bp.products.local.json' : 'Cannot open ' + slug;
+  const head = kettle ? 'The Kettle sample failed to build' : store ? 'No scan store at ' + store : /^unknown product/.test(err) ? 'No product “' + slug + '” in bp.products.local.json' : 'Cannot open ' + slug;
   return (
     <div className="bp-empty" role="alert">
       <b>{head}</b>
       <span>{store ? 'Run /lens-scan in that repo (phase 1 writes the structure), then reload.' : err || 'The structure request failed.'}</span>
       {/* projectHref keeps the route and every other parameter (?theme, ?scale, ?lenses, ?intro) and drops only ?product */}
-      <a href={typeof location !== 'undefined' ? projectHref(null) : '/'}>Open the Kettle sample instead</a>
+      {kettle
+        ? <a href={typeof location !== 'undefined' ? location.pathname + location.search : '/'}>Reload</a>
+        : <a href={typeof location !== 'undefined' ? projectHref(null) : '/'}>Open the Kettle sample instead</a>}
     </div>
   );
 }
@@ -277,9 +296,9 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
         aria-label={'Zoomable floor plan of the product with the ' + (product ? 'live lens scan' : 'simulated agent swarm') + ' working over it. Scroll or pinch to zoom, drag to pan, click to go one level deeper. Plus and minus zoom, arrows walk rooms, Enter opens, Escape goes back. Shift-drag draws a selection.'} />
       <div className="bp-vig" />
       <div className="bp-frame" />
-      {!engine && buildErr && <LiveEmpty slug={product || 'kettle'} live={{ ...live, status: 'error', error: buildErr }} />}
+      {!engine && buildErr && <LiveEmpty slug={product || 'kettle'} kettle={!product} live={{ ...live, status: 'error', error: buildErr }} />}
       {product && !engine && !buildErr && <LiveEmpty slug={product} live={live} />}
-      {product === null && !engine && !buildErr && <div className="bp-empty" role="status"><b>Loading the Kettle sample…</b></div>}
+      {product === null && !engine && !buildErr && <SampleLoading />}
       {product && !engine && <div className="bp-hdr-lite"><ProjectSwitcher current={product} /></div>}
       <div className="bp-ui" ref={ui}>
         {engine && (

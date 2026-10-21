@@ -40,7 +40,9 @@ export function drawGrid(E: Engine, ctx: CanvasRenderingContext2D, v: View) {
  */
 const failedByEngine = new WeakMap<Engine, Set<string>>();
 const failed = (E: Engine, l: string) => failedByEngine.get(E)?.has(l) ?? false;
-function lensFailed(E: Engine, l: string, part: string, err: unknown) {
+/** Log a lens failure once per engine and lens and record it. The hover card (components/Overlays.tsx) calls this too, so
+ *  an aggregate that throws under the plan and under the card is one line in the console, not two. */
+export function lensFailed(E: Engine, l: string, part: string, err: unknown) {
   let s = failedByEngine.get(E);
   if (!s) failedByEngine.set(E, (s = new Set()));
   if (!s.has(l)) { s.add(l); console.error(`[lens ${l}] ${part} failed`, err); }

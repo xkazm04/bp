@@ -3,7 +3,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readStripped } from '../../../../../scripts/lib/source.ts';
-import { fmtDur, runAgeMs, runFacts, runLenses, runMs, runProgress, runTitle, scopeFeatures } from './run.ts';
+import { fmtDur, runAgeMs, runFacts, runLenses, runMs, runProgress, runTitle, runClock, RUN_WAIT, scopeFeatures } from './run.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 let held = 0;
@@ -39,6 +39,12 @@ expect(threw === '', `runTitle throws on a row without started_at (${threw}); in
 // and the strip takes it from here, so the guard cannot be bypassed by a second copy of the expression
 const strip = readStripped(path.join(HERE, 'Strip.tsx'));
 expect(strip.includes('runTitle(') && !strip.includes('started_at'), 'Strip.tsx does not use runTitle, or still reads started_at inline');
+
+// the panel (BaseBar) is the strip's sibling: same guard, same wait copy, no second inline copy
+expect(runClock(run) === '10-08 14:02' && runClock(null) === '' && runClock({} as never) === '', 'runClock: exact "MM-DD HH:MM", guarded');
+expect(RUN_WAIT === 'Waiting for /lens-scan', 'RUN_WAIT wording');
+const bar = readStripped(path.join(HERE, '../BaseBar.tsx'));
+expect(bar.includes('runClock(') && !bar.includes('started_at') && !bar.includes('Waiting for /lens-scan'), 'BaseBar.tsx reads started_at inline or restates the wait copy');
 
 // The header pill words the age with the same `ago`: Header.tsx must EXPORT it and still CALL it (a definition
 // nothing uses is not the pill's wording), and shared.ts must import that export by name. Comments are stripped

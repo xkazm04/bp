@@ -54,7 +54,7 @@ const lensId = Object.keys(P.LENS).find((l) => lensOf(P, l)) as string;
 const text = (html: string) => html.replace(/<!--.*?-->/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
 
 // a fresh stub engine and state per render, with console.error captured (the card logs a failed aggregate once)
-function render(el: () => Any, patch: Record<string, unknown>, lensAgg: () => Any) {
+function render(el: () => Any, patch: Record<string, unknown>, lensAgg: () => Any, pre?: (E: Any) => void) {
   const S = { ...initialState(1, P.asOf), ready: true, ...patch };
   const errors: string[] = [], origErr = console.error;
   console.error = (...a: unknown[]) => { errors.push(a.map(String).join(' ').slice(0, 160)); };
@@ -67,6 +67,7 @@ function render(el: () => Any, patch: Record<string, unknown>, lensAgg: () => An
     lensAgg, channel: () => null,
   };
   try {
+    pre?.(E);
     const html: string = renderToString(React.createElement(VariantCtx.Provider, { value: V }, React.createElement(EngineCtx.Provider, { value: E }, el())));
     return { html, threw: null as string | null, errors };
   } catch (e) {
@@ -80,6 +81,10 @@ const hover = { view: lensId, hover: { type: 'wing', id: wing.id } };
 const bad = render(() => React.createElement(O.HoverCard), hover, () => { throw new Error('check-overlays: aggregate threw'); });
 expect(bad.threw === null && bad.html.length > 0, `HoverCard threw under a lens whose aggregate throws (${bad.threw})`);
 expect(bad.errors.length === 1, `HoverCard logged ${bad.errors.length} errors for one throwing lens aggregate, expected 1`);
+// one set for the card and the plan raster: the plan has already logged this lens's failed aggregate on this engine, so the card adds nothing
+const { lensFailed: planLensFailed } = await imp('engine/render/plan.ts');
+const shared = render(() => React.createElement(O.HoverCard), hover, () => { throw new Error('check-overlays: aggregate threw'); }, (E) => planLensFailed(E, lensId, 'aggregate', new Error('plan')));
+expect(shared.threw === null && shared.errors.length === 1, `plan raster + hover card logged ${shared.errors.length} lines for one lens aggregate on one engine, expected 1 (${shared.threw ?? 'rendered'})`);
 const ok = render(() => React.createElement(O.HoverCard), hover, () => ({ parts: ['CHECK lens part'] }));
 expect(text(ok.html).includes('CHECK lens part'), 'HoverCard did not show the lens aggregate line it was given');
 
@@ -181,6 +186,42 @@ for (const f of ['components/Overlays.tsx', 'components/Dock.tsx']) {
   }
   expect(seen > 0, `${f}: no button with the visible text "Esc" found - the label-in-name scan stopped matching`);
   expect(bad.length === 0, `${f}: ${bad.length} control(s) with the visible text "Esc" whose accessible name omits it (${bad.join('; ')}) - WCAG 2.5.3`);
+}
+
+// BlueprintApp's loading panel: a sample chunk that never settles must not read like a fresh load. BlueprintApp pulls the whole
+// chrome and cannot be server-rendered here, so the rule is held on its comment-stripped source: one SampleLoading component
+// owning a timer that adds a Reload once it fires, and no second inline copy of the loading panel.
+const appSrc = readStripped(path.join(SRC, 'components/BlueprintApp.tsx'));
+const fnOf = (name: string) => { const i = appSrc.indexOf('function ' + name + '('); if (i < 0) return ''; const j = appSrc.indexOf('\nfunction ', i + 1); return appSrc.slice(i, j < 0 ? undefined : j); };
+{
+  const fn = fnOf('SampleLoading');
+  expect(fn.includes('setTimeout(') && fn.includes('SAMPLE_SLOW_MS') && fn.includes('clearTimeout(') && fn.includes('>Reload<'), 'BlueprintApp SampleLoading no longer times out into a Reload');
+  expect(appSrc.includes('<SampleLoading />') && appSrc.split('Loading the Kettle sample').length === 2, 'BlueprintApp renders the sample loading state outside SampleLoading');
+}
+
+// LiveEmpty on the Kettle sample's own build failure: the live-product copy ("Open the Kettle sample instead") links to the page
+// the reader is already on, so that branch is told apart (`kettle`) and offers Reload, as ChromeBoundary does.
+{
+  const fn = fnOf('LiveEmpty');
+  expect(fn.includes('kettle') && fn.includes('>Reload<'), 'LiveEmpty has no Reload branch for the Kettle sample build failure');
+  expect(appSrc.includes('kettle={!product}'), 'the Kettle build-failure call site does not pass `kettle` to LiveEmpty');
+}
+
+// ThemeToggle: a refused localStorage write is reported (setTheme returns false) and the toggle's name says the choice is for this
+// visit only; a kept write stays silent. The stub is a document and a localStorage that throw on demand.
+{
+  const T = await imp('components/ThemeToggle.tsx');
+  const g = globalThis as Any, held0 = { d: g.document, l: g.localStorage };
+  g.document = { documentElement: { dataset: {} as Record<string, string> } };
+  Object.defineProperty(g, 'localStorage', { configurable: true, value: { setItem() { throw new Error('blocked'); } } });
+  const refused = T.setTheme('light');
+  Object.defineProperty(g, 'localStorage', { configurable: true, value: { setItem() {} } });
+  const kept = T.setTheme('dark');
+  g.document = held0.d; if (held0.l === undefined) delete g.localStorage; else Object.defineProperty(g, 'localStorage', { configurable: true, value: held0.l });
+  expect(refused === false && kept === true, `setTheme reports a refused write as ${refused} and a kept one as ${kept}, expected false / true`);
+  expect(T.themeLabel('light', true) === 'Switch to light theme' && /visit only/.test(T.themeLabel('light', false)), 'themeLabel does not word the refused write only when it happened');
+  const html: string = renderToString(React.createElement(T.ThemeToggle));
+  expect(html.includes('Switch to') && !html.includes('visit only'), 'a fresh toggle (nothing refused yet) already carries the notice');
 }
 
 if (failures.length) { console.error(`check-overlays: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
