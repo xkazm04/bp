@@ -39,14 +39,17 @@ export function DecisionBar({ L, targets, onRelease, hint, phone = false }: Deci
   // the package: accepted items no release holds, plus those of the open release
   const rel = useMemo(() => [...T.releases].reverse().find((r) => OPEN_REL.has(r.status)), [T.releases]);
   const pkg = useMemo(() => T.proposals.filter((p) => p.status === 'accepted' && (!p.release_id || p.release_id === rel?.id)).length, [T.proposals, rel]);
-  const [suggested, setSuggested] = useState<string | null>(null);
+  // the version the package would take. A refused suggestion is NOT the same state as "not asked yet": it reads `v?`
+  // and says so, because the version is part of the decision this bar is for.
+  const [suggested, setSuggested] = useState<{ ver: string } | 'failed' | null>(null);
   useEffect(() => {
     if (rel) return;
     let live = true;
-    suggestRelease(T.ctx).then((s) => { if (live) setSuggested(s.version); }, () => { if (live) setSuggested(null); });
+    suggestRelease(T.ctx).then((s) => { if (live) setSuggested({ ver: s.version }); }, () => { if (live) setSuggested('failed'); });
     return () => { live = false; };
   }, [T.ctx, rel, pkg]);
-  const ver = rel?.version ?? suggested;
+  const ver = rel?.version ?? (suggested && suggested !== 'failed' ? suggested.ver : null);
+  const noVer = !ver && suggested === 'failed';
 
   // A/1's words: the focused item reads "focused" (open in compare or not); only an open item the focus left reads "open"
   const label = n ? n + ' selected' : targets.length ? '1 ' + (L.ui.focus === targets[0] || L.ui.open !== targets[0] ? 'focused' : 'open') + ' · ' + targets[0] : 'Nothing selected';
@@ -65,8 +68,10 @@ export function DecisionBar({ L, targets, onRelease, hint, phone = false }: Deci
           <span className="lg-sp" />
           {!phone ? <Btn kbd="Esc" disabled={!n} onClick={L.clear} title="Clear the selection (Esc)">Clear</Btn> : null}
           <Decide ids={targets} />
-          <span className="tr-pkg" title={rel ? 'The release package: every accepted item of ' + rel.id + ', plus the accepted items no release holds yet' : 'The release package: accepted items waiting for a release'}>
-            <span>Package</span><b>{ver ? 'v' + ver + ' · ' : ''}{pkg}</b>
+          <span className="tr-pkg" title={rel ? 'The release package: every accepted item of ' + rel.id + ', plus the accepted items no release holds yet'
+            : noVer ? 'The release package: accepted items waiting for a release. The next version could not be read from the store, so none is shown.'
+              : 'The release package: accepted items waiting for a release'}>
+            <span>Package</span><b>{ver ? 'v' + ver + ' · ' : noVer ? 'v? · ' : ''}{pkg}</b>
             <Btn onClick={onRelease} title="Open the release (3)">{rel && rel.status !== 'draft' ? rel.status : 'Release'} →</Btn>
           </span>
         </>
