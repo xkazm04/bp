@@ -25,6 +25,10 @@ export function shownPairs(pairs: readonly ShotPair[], theme: CompareTheme): Sho
   return pick.length ? pick : [...pairs];
 }
 
+/** What the panel calls a pair: its theme and its size. An item captured at two sizes in one theme is two pairs, and
+ *  without the size every caption, alt text and pixel line of the two reads identically. */
+export const pairLabel = (s: Pick<ShotPair, 'theme' | 'size'>): string => (s.theme ?? 'screen') + (s.size ? ' · ' + s.size : '');
+
 /** The change-map cache key of a pair (the product, then the two shot ids), or null when a side is missing. */
 export const pairKey = (slug: string | null, s: ShotPair): string | null => (s.before && s.after ? `${slug ?? 'kettle'}:${s.before.id}:${s.after.id}` : null);
 
@@ -78,8 +82,8 @@ function PixLine({ show, maps, stateLine }: { show: readonly ShotPair[]; maps: r
   if (err && err.status === 'error') return <Callout tone="error"><b>The change map failed.</b> {err.error}</Callout>;
   const done = maps.every((m) => m?.status === 'done');
   if (!done) return <Callout tone="note"><span aria-hidden="true">…</span><span>comparing…</span></Callout>;
-  const words = show.map((s, i) => { const m = maps[i]; return m?.status === 'done' ? { theme: s.theme ?? 'screen', ...pixWords(m.grid) } : null; }).filter((w) => w !== null);
-  const same = words.every((w) => w.same), text = words.map((w) => w.theme + ': ' + w.text).join(' ');
+  const words = show.map((s, i) => { const m = maps[i]; return m?.status === 'done' ? { label: pairLabel(s), ...pixWords(m.grid) } : null; }).filter((w) => w !== null);
+  const same = words.every((w) => w.same), text = words.map((w) => w.label + ': ' + w.text).join(' ');
   return (
     <Callout tone={same ? 'note' : 'diff'}>
       <span aria-hidden="true">{same ? '＝' : '≠'}</span>
@@ -97,26 +101,26 @@ const minText = (s: Shot | undefined): string => {
 };
 
 const PairView = memo(function PairView({ s, slug, mode, map }: { s: ShotPair; slug: string | null; mode: CompareMode; map: MapState | undefined }) {
-  const theme = s.theme ?? 'screen', b = s.before ? shotSrc(slug, s.before) : null, a = s.after ? shotSrc(slug, s.after) : null;
+  const label = pairLabel(s), b = s.before ? shotSrc(slug, s.before) : null, a = s.after ? shotSrc(slug, s.after) : null;
   if (mode === 'side' || !a || !b) {
     return (
       <div className="tr-pair">
-        <ShotFigure cap={'Before · ' + theme} aside={minText(s.before)} asideTitle="the harness’s own text check">
-          {b ? <ShotImg src={b} alt={'Before, ' + theme} /> : <NoCapture what="before" />}
+        <ShotFigure cap={'Before · ' + label} aside={minText(s.before)} asideTitle="the harness’s own text check">
+          {b ? <ShotImg src={b} alt={'Before, ' + label} /> : <NoCapture what="before" />}
         </ShotFigure>
-        <ShotFigure cap={'After · ' + theme} aside={minText(s.after)} asideTitle="the harness’s own text check">
-          {a ? <ShotImg src={a} alt={'After, ' + theme} /> : <NoCapture what="after" />}
+        <ShotFigure cap={'After · ' + label} aside={minText(s.after)} asideTitle="the harness’s own text check">
+          {a ? <ShotImg src={a} alt={'After, ' + label} /> : <NoCapture what="after" />}
         </ShotFigure>
       </div>
     );
   }
-  if (mode === 'slider') return <div className="tr-pair one"><Slider theme={theme} before={b} after={a} /></div>;
-  if (mode === 'blink') return <div className="tr-pair one"><Blink theme={theme} before={b} after={a} /></div>;
+  if (mode === 'slider') return <div className="tr-pair one"><Slider label={label} before={b} after={a} /></div>;
+  if (mode === 'blink') return <div className="tr-pair one"><Blink label={label} before={b} after={a} /></div>;
   const moved = map?.status === 'done' ? map.grid.moved.toFixed(2) + '% moved' : map?.status === 'error' ? 'failed' : 'computing…';
   return (
     <div className="tr-pair one">
-      <ShotFigure cap={'Change map · ' + theme + ' · after, with changed pixels marked'} aside={moved}>
-        <ShotImg src={a} alt={'After, ' + theme} className="dim" />
+      <ShotFigure cap={'Change map · ' + label + ' · after, with changed pixels marked'} aside={moved}>
+        <ShotImg src={a} alt={'After, ' + label} className="dim" />
         {map?.status === 'done' ? <ChangeMap grid={map.grid} /> : <span className="tr-computing">computing…</span>}
       </ShotFigure>
     </div>
@@ -124,12 +128,12 @@ const PairView = memo(function PairView({ s, slug, mode, map }: { s: ShotPair; s
 });
 
 /** The after clipped over the before at --cut; the range input sets the variable on the frame, React never re-renders. */
-function Slider({ theme, before, after }: { theme: string; before: string; after: string }) {
+function Slider({ label, before, after }: { label: string; before: string; after: string }) {
   const frame = useRef<HTMLDivElement>(null);
   return (
-    <ShotFigure cap={'Before ◀ ' + theme + ' ▶ after'} aside="drag, or ← → on the slider" frameRef={frame}>
-      <ShotImg src={before} alt={'Before, ' + theme} />
-      <ShotImg src={after} alt={'After, ' + theme} className="top" />
+    <ShotFigure cap={'Before ◀ ' + label + ' ▶ after'} aside="drag, or ← → on the slider" frameRef={frame}>
+      <ShotImg src={before} alt={'Before, ' + label} />
+      <ShotImg src={after} alt={'After, ' + label} className="top" />
       <span className="tr-tagb">Before</span><span className="tr-taga">After</span>
       <input type="range" min="0" max="100" defaultValue="50" aria-label="Slider: before on the left, after on the right"
         onInput={(e) => frame.current?.style.setProperty('--cut', e.currentTarget.value + '%')} />
@@ -139,7 +143,7 @@ function Slider({ theme, before, after }: { theme: string; before: string; after
 }
 
 /** Before and after swapping every 0.7 s (CSS); with reduced motion, a toggle shows one or the other instead. */
-function Blink({ theme, before, after }: { theme: string; before: string; after: string }) {
+function Blink({ label, before, after }: { label: string; before: string; after: string }) {
   const [on, setOn] = useState(false);
   const aside = (
     <>
@@ -148,9 +152,9 @@ function Blink({ theme, before, after }: { theme: string; before: string; after:
     </>
   );
   return (
-    <ShotFigure cap={'Blink · ' + theme + ' · before ⇄ after every 0.7 s'} aside={aside} frame={'blink' + (on ? ' after-on' : '')}>
-      <ShotImg src={before} alt={'Before, ' + theme} />
-      <ShotImg src={after} alt={'After, ' + theme} className="aft" />
+    <ShotFigure cap={'Blink · ' + label + ' · before ⇄ after every 0.7 s'} aside={aside} frame={'blink' + (on ? ' after-on' : '')}>
+      <ShotImg src={before} alt={'Before, ' + label} />
+      <ShotImg src={after} alt={'After, ' + label} className="aft" />
     </ShotFigure>
   );
 }

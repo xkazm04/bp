@@ -136,7 +136,7 @@ type Any = any;
 const imp = (f: string): Promise<Any> => import(pathToFileURL(path.join(SRC, CMP + f)).href);
 const { patchRows } = await imp('CommitDiff.tsx');
 const { blocksOf, inline } = await imp('ItemText.tsx');
-const { pairKey, shownPairs } = await imp('Screens.tsx');
+const { pairKey, pairLabel, shownPairs } = await imp('Screens.tsx');
 const { hasRuns, perfItem, perfReason, runsOf } = await imp('PerfTable.tsx');
 const { latestOf } = await imp('MetricStrip.tsx');
 const { packHeading, packOrder } = await imp('ComparePanel.tsx');
@@ -182,6 +182,10 @@ const { packHeading, packOrder } = await imp('ComparePanel.tsx');
   ok(shownPairs([pair(undefined, '1280x800')], 'light').length === 1, 'shown pairs: no pair carries the theme, so every pair is shown');
   ok(pairKey('athena', pairs[0]) === 'athena:1:2' && pairKey(null, pairs[0]) === 'kettle:1:2', 'pair key: the product then the two shot ids', pairKey(null, pairs[0]));
   ok(pairKey('athena', pair('light', undefined, false)) === null, 'pair key: null when a side has no capture');
+  ok(pairLabel({ theme: 'light', size: '1280x800' }) === 'light · 1280x800' && pairLabel({ theme: 'light', size: '1920x1080' }) !== pairLabel({ theme: 'light', size: '1280x800' }), 'pair label: two sizes of one theme are two different names', pairLabel({ theme: 'light', size: '1280x800' }));
+  ok(pairLabel({ theme: 'dark' }) === 'dark' && pairLabel({}) === 'screen', 'pair label: no size adds nothing, no theme reads "screen"', [pairLabel({ theme: 'dark' }), pairLabel({})]);
+  const scr = stripComments(fs.readFileSync(path.join(SRC, CMP, 'Screens.tsx'), 'utf8'));
+  ok(!/[·,] ' \+ theme\b/.test(scr) && (scr.match(/\+ label\b/g) ?? []).length >= 12, 'pair label: all 12 caption and alt sites name the pair through it, none builds its own name', (scr.match(/\+ label\b/g) ?? []).length);
 }
 
 { // one performance row and the sentence under it
