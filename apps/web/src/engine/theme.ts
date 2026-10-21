@@ -20,15 +20,69 @@ export interface Theme {
   sans: string; mono: string;
 }
 
+/** The dark theme's ink: what an unreadable colour falls back to, so the canvas draws *something*. */
+const PARSE_FALLBACK: [number, number, number, number] = [223, 240, 255, 1];
+/**
+ * Colour strings parseColor could not read, each kept once. A design token is a CSS *custom property*, so
+ * getPropertyValue hands back the authored text and never a normalised `rgb()`: a token written in a format
+ * this function does not know is drawn as the dark ink in both themes, which on paper is invisible. That used
+ * to be silent (and `#rgba` came back with a NaN channel, which canvas ignores outright, leaving the previous
+ * fill in place). It is reported once per distinct string now, and scripts/check-theme-colors.ts reads every
+ * token of both themes back through here so a new one in an unreadable format fails the gate instead.
+ */
+const unreadable = new Set<string>();
+/** The colour strings parseColor fell back on, in first-seen order (the gate and the console both read this). */
+export function unreadableColors(): readonly string[] { return [...unreadable]; }
+/** Only for tests and gates that want a clean slate between cases. */
+export function resetUnreadableColors() { unreadable.clear(); }
+
+const FN = /^(rgba?|hsla?)\(([^)]*)\)$/i;
+/** `1`, `0.5`, `50%` -> 0..1. */
+const alphaOf = (s: string | undefined) => (s === undefined ? 1 : s.endsWith('%') ? parseFloat(s) / 100 : parseFloat(s));
+/** `255`, `100%` -> 0..255. */
+const chanOf = (s: string) => (s.endsWith('%') ? (parseFloat(s) * 255) / 100 : parseFloat(s));
+
+/** Parse any colour a design token may legally be authored in, to [r, g, b, a] with r/g/b 0..255 and a 0..1. */
 export function parseColor(c: string): [number, number, number, number] {
   c = c.trim();
   if (c[0] === '#') {
-    const h = c.length === 4 ? c.slice(1).split('').map((x) => x + x).join('') : c.slice(1, 7);
-    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16), 1];
+    const n = c.length - 1;
+    // 3 and 4 nibbles double each one (#abc -> #aabbcc, #abcd -> #aabbccdd); 6 and 8 are already bytes
+    if (n === 3 || n === 4 || n === 6 || n === 8) {
+      const h = n <= 4 ? c.slice(1).split('').map((x) => x + x).join('') : c.slice(1);
+      const a = h.length === 8 ? parseInt(h.slice(6, 8), 16) / 255 : 1;
+      return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16), a];
+    }
   }
-  const m = /rgba?\(([^)]+)\)/.exec(c);
-  if (m) { const p = m[1].split(',').map((x) => parseFloat(x)); return [p[0], p[1], p[2], p[3] ?? 1]; }
-  return [223, 240, 255, 1];
+  const m = FN.exec(c);
+  if (m) {
+    // the legacy comma form and the modern space form (with `/ alpha`) are both one split
+    const p = m[2].trim().split(/\s*[,/]\s*|\s+/).filter((x) => x.length > 0);
+    if (p.length >= 3) {
+      const a = alphaOf(p[3]);
+      if (m[1].toLowerCase().startsWith('rgb')) {
+        const r = chanOf(p[0]), g = chanOf(p[1]), b = chanOf(p[2]);
+        if (Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b) && Number.isFinite(a)) return [r, g, b, a];
+      } else {
+        const rgb = hslToRgb(parseFloat(p[0]), parseFloat(p[1]) / 100, parseFloat(p[2]) / 100);
+        if (rgb && Number.isFinite(a)) return [rgb[0], rgb[1], rgb[2], a];
+      }
+    }
+  }
+  if (!unreadable.has(c)) {
+    unreadable.add(c);
+    console.error(`[theme] colour "${c}" is in a format the canvas reader does not know: drawn as the dark ink`);
+  }
+  return [...PARSE_FALLBACK] as [number, number, number, number];
+}
+
+/** h in degrees, s and l in 0..1 -> [r, g, b] 0..255; null when any part is not a number. */
+function hslToRgb(h: number, s: number, l: number): [number, number, number] | null {
+  if (!Number.isFinite(h) || !Number.isFinite(s) || !Number.isFinite(l)) return null;
+  const hh = ((h % 360) + 360) % 360, c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs(((hh / 60) % 2) - 1)), m = l - c / 2;
+  const i = Math.floor(hh / 60);
+  const [r, g, b] = i === 0 ? [c, x, 0] : i === 1 ? [x, c, 0] : i === 2 ? [0, c, x] : i === 3 ? [0, x, c] : i === 4 ? [x, 0, c] : [c, 0, x];
+  return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
 }
 
 /** Pattern bookkeeping shared by every pattern this theme hands out. */
