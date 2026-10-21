@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { advance, close, newCursor, openRead, readDelta, readSnapshot, snapshotOf } from '../packages/core/src/server/store.server.ts';
 import { swarmFromScan } from '../apps/web/src/lib/scan/client.ts';
+import { latestReading } from '../packages/core/src/scan/derive.ts';
 import { parseReleaseCreated } from '../packages/core/src/train/wire.ts';
 import { PRODUCTS_FILE, listProducts } from '../packages/core/src/server/products.server.ts';
 import type { Measurement, Proposal, Run, ScanSnapshot } from '../packages/core/src/scan/types.ts';
@@ -93,8 +94,9 @@ try {
     check('unscoped progress is against every feature (3 of 4 measured)', pct({ ...base, runs: [run()] }) === 75, String(pct({ ...base, runs: [run()] })));
     check('scoped progress is against the scope (1 of 2: group Pay measures a, b)', pct({ ...base, runs: [run({ group: 'pay' })], measurements: base.measurements.filter((m) => m.feature === 'a') }) === 50);
     check('a scope that names nothing falls back to every feature', pct({ ...base, runs: [run({ group: 'nope' })] }) === 75);
-    // brute force: the pre-index derivation, copied
-    const brute = (p: Proposal) => { let last: Measurement | undefined; for (const m of base.measurements) if (m.feature === p.feature && m.lens === p.lens && m.metric === p.metric && (!last || m.measured_at >= last.measured_at)) last = m; return last; };
+    // brute force: the pre-index derivation, copied - with the tie on measured_at broken by id, the rule
+    // track.ts's `latest` and compare.ts's byMeasure both use, so this cross-check cannot mirror a weaker one.
+    const brute = (p: Proposal) => { let last: Measurement | undefined; for (const m of base.measurements) if (m.feature === p.feature && m.lens === p.lens && m.metric === p.metric && (!last || m.measured_at > last.measured_at || (m.measured_at === last.measured_at && m.id > last.id))) last = m; return last; };
     const sw = swarmFromScan({ ...base, runs: [run()] }, feats);
     const f = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100));
     for (const p of base.proposals) {
@@ -102,6 +104,13 @@ try {
       check(`proposal ${p.id}: the indexed consequence equals the brute-force one`, sw.decisions.find((d) => d.id === p.id)?.options[0].consequence === want, want);
     }
     check('the agent counts the distinct features it measured', sw.agents[0].doneToday === new Set(base.measurements.filter((m) => m.run_id === 'rs' && m.lens === 'dev').map((m) => m.feature)).size);
+    // A tie on measured_at goes to the highest id - the rule track.ts's `latest` and compare.ts's byMeasure
+    // apply - so the answer does not depend on the order the caller happened to hold the rows in. Measured
+    // 2026-10-21 before this pair landed: the same three tied rows read 30 ascending and 10 reversed.
+    const tied: Measurement[] = [mk(11, 'a', 10, '2026-10-12T00:00:00Z'), mk(12, 'a', 20, '2026-10-12T00:00:00Z'), mk(13, 'a', 30, '2026-10-12T00:00:00Z')];
+    const readId = (ms: Measurement[]) => latestReading({ measurements: ms }, 'a', 'dev', 'cov')?.id;
+    check('latestReading breaks a tie on measured_at by id', readId(tied) === 13, String(readId(tied)));
+    check('latestReading answers the same on the same rows reversed', readId([...tied].reverse()) === 13, String(readId([...tied].reverse())));
   }
 
   // ---- stream cursor

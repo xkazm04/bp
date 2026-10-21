@@ -25,7 +25,7 @@ export function latestRun(scan: Pick<ScanSnapshot, 'runs'> | undefined): Run | n
 export const isCurrent = (m: Pick<Measurement, 'phase'>): boolean => m.phase !== 'after';
 
 export interface MeasureIndex {
-  /** feature + lens + metric -> its latest current reading (isCurrent; a tie on the time goes to the later row). */
+  /** feature + lens + metric -> its latest current reading (isCurrent; a tie on the time goes to the higher id). */
   latest: Map<string, Measurement>;
   /** run + lens -> the features that run has measured on that lens. */
   measured: Map<string, Set<string>>;
@@ -40,7 +40,9 @@ export function measureIndex(measurements: readonly Measurement[]): MeasureIndex
   ix = { latest: new Map(), measured: new Map() };
   for (const m of measurements) {
     const k = metricKey(m.feature, m.lens, m.metric), p = ix.latest.get(k);
-    if (isCurrent(m) && (!p || m.measured_at >= p.measured_at)) ix.latest.set(k, m);
+    // A tie on measured_at goes to the higher id, as track.ts's `latest` and compare.ts's byMeasure both do.
+    // `>=` alone made the answer the LAST row of whatever order the caller held, which the store does not promise.
+    if (isCurrent(m) && (!p || m.measured_at > p.measured_at || (m.measured_at === p.measured_at && m.id > p.id))) ix.latest.set(k, m);
     const rk = runLensKey(m.run_id, m.lens);
     let s = ix.measured.get(rk);
     if (!s) ix.measured.set(rk, (s = new Set()));
