@@ -1,0 +1,56 @@
+{
+  "$comment": "P4 prop prompts for scripts/lookdev/leonardo.mjs (gen --prop <id> --variant <x>). Each is a TRELLIS.2 input sheet: one object, whole, plain grey ground. The style block's palette and finish are restated by the script; the scene framing (first person, depth of field, site plan) is not used.",
+  "sheet": "a single object only, shown whole and uncropped and centred in frame, orthographic front three-quarter view, on a plain flat neutral mid-grey background, even soft diffuse light, no cast shadow clutter, no floor line, no props or hands or people, no text, no labels, no logos, no markings, clean readable silhouette.",
+  "props": {
+    "lamp-agent": {
+      "name": "the lamp agent, a calm architect's drafting lamp (not a robot, not a creature, no face, no claws, no legs)",
+      "materials": "matte dark powder-coated metal in near-black blue, brushed pale metal joints, a warm amber emissive lamp head glowing softly, warm paper-coloured inner shade",
+      "variants": {
+        "A": "Classic spring-balanced drafting lamp: a two-joint arm of two slim tubes with visible coil springs, a conical metal shade with a warm amber glowing opening, and a weighted round base that clamps onto a table edge.",
+        "B": "Parallel-link pantograph drafting lamp: a two-joint arm made of parallel pairs of thin rods, a flat round disc head that glows warm amber on its underside, and a low clamp base that grips a table edge.",
+        "C": "Slim tube drafting lamp: a two-joint arm of thin round tubes with one prominent hinge knuckle at the elbow, a smooth domed head glowing warm amber, and a small edge clamp base.",
+        "D": "Counterweighted drafting lamp: a two-joint arm with a small cylindrical counterweight at the back of the upper link, a rectangular box shade glowing warm amber on its underside, and a flat clamp base."
+      }
+    },
+    "studio-shelves": {
+      "name": "a dark studio wall shelf unit with three shelves, holding a few plain books and rolled drawings",
+      "materials": "near-black blue painted wood, thin brushed metal brackets, warm paper-coloured book spines and rolls without any lettering",
+      "variants": {
+        "A": "A tall narrow open shelf unit with three shelves on two slim side frames, a few unlabelled books and two rolled drawings resting on the shelves.",
+        "B": "A wide open shelf unit with three shelves on two slim side frames, a few unlabelled books leaning on the shelves and one rolled drawing."
+      }
+    },
+    "studio-desk-lamp": {
+      "name": "a small studio desk lamp with a warm glowing shade, an ordinary quiet lamp for the room set dressing",
+      "materials": "matte near-black blue metal, brushed pale metal hinge, warm amber glowing shade interior, warm paper-coloured glow",
+      "variants": {
+        "A": "A simple desk lamp with a round weighted base, one slim stem, and a conical shade with a warm amber glowing opening.",
+        "B": "A simple desk lamp with a rectangular weighted base, a short two-joint arm, and a rounded shade with a warm amber glowing opening."
+      }
+    },
+    "studio-mug": {
+      "name": "a plain ceramic coffee mug",
+      "materials": "matte ceramic in warm paper colour with a cyan-white inner glaze, near-black blue handle edge, no print",
+      "variants": {
+        "A": "A plain straight-sided mug with a simple loop handle, empty, with no pattern and no print.",
+        "B": "A plain slightly tapered mug with a thick loop handle, empty, with no pattern and no print."
+      }
+    },
+    "studio-drawing-tubes": {
+      "name": "a small bundle of drawing tubes and rolled drawings standing in a holder",
+      "materials": "matte near-black blue cardboard tubes with pale metal end caps, warm paper-coloured rolled drawings, thin cyan-white edge highlights",
+      "variants": {
+        "A": "Four cylindrical drawing tubes of different heights standing upright together, two with end caps on and one rolled drawing sticking out of the top.",
+        "B": "Five cylindrical drawing tubes of different heights leaning together in a round holder, caps on, with two rolled drawings poking out of the top."
+      }
+    },
+    "studio-pinned-drawings": {
+      "name": "a flat set of three framed drawing sheets hung together on a wall panel, shown flat and front-on",
+      "materials": "warm paper sheets with fine cyan-white linework on blueprint blue, thin near-black blue frames, small amber pins",
+      "variants": {
+        "A": "Three flat rectangular drawing sheets of different sizes in thin frames, arranged together, each with abstract architectural linework and no readable text, held by small amber pins.",
+        "B": "Three flat rectangular drawing sheets of the same size in a row, in thin frames, each with abstract architectural linework and no readable text, held by small amber pins."
+      }
+    }
+  }
+}

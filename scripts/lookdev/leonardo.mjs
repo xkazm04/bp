@@ -7,6 +7,11 @@
 //   node scripts/lookdev/leonardo.mjs total          the night's running credit total from log.jsonl
 //   node scripts/lookdev/leonardo.mjs prompt --state 00-hero --variant b    print the composed prompt, no call
 //
+// Prop mode (P4 concept sheets, TRELLIS input): prompts come from lookdev/props.json, one entry per asset id and variant.
+//   node scripts/lookdev/leonardo.mjs gen --prop lamp-agent --variant A --seed 11 --quality LOW --size 1024x1024 --stop-at 160
+//   node scripts/lookdev/leonardo.mjs prompt --prop lamp-agent --variant A
+// The frame lands in the temp folder unless --out names a file under apps/vr/ArtSource/ (ArtSource has no 400 KB limit).
+//
 // The key is LEONARDO_API_KEY, read at run time from the main checkout's untracked .env. It is never printed,
 // logged or written anywhere; neither is the authorization header. Every call is "public": false.
 // One JSON line per call goes to lookdev/log.jsonl. The night's total (log + PRIOR_SPEND) may never pass
@@ -25,6 +30,7 @@ const ENV_FILE = 'C:/Users/kazda/kiro/bp/.env';
 const API = 'https://cloud.leonardo.ai/api/rest';
 const MODEL = 'openai/gpt-image-2.5-flare';
 const STYLE_ID = '111dc692-d470-4eec-b791-3475abac4c46';
+const ART = path.join(ROOT, 'apps/vr/ArtSource');
 const WIDTH = 1376;
 const HEIGHT = 768;
 const HARD_CAP = 390; // of the operator's 400 per night
@@ -45,6 +51,8 @@ const opt = (name, dflt) => {
 const readJson = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
 const style = readJson(path.join(DIR, 'style-block.json'));
 const states = readJson(path.join(DIR, 'states.json'));
+const propsFile = path.join(DIR, 'props.json');
+const props = fs.existsSync(propsFile) ? readJson(propsFile) : { sheet: '', props: {} };
 
 export function styleText(s = style) {
   const palette = s.palette.map((p) => `${p.role}: ${p.name} ${p.hex.join(' to ')}`).join('; ');
@@ -65,6 +73,41 @@ export function composePrompt(stateId, variant) {
   if (variant === 'b') return `Style frame of one state: ${st.focus}. ${states.pose}. ${st.text} ${styleText()}`;
   throw new Error(`unknown variant ${variant} (a or b)`);
 }
+
+/** A prop prompt: the TRELLIS sheet rules, the prop's variant text, and the style block's palette and materials (no scene framing). */
+export function composePropPrompt(propId, variant, p = props, s = style) {
+  const prop = p.props[propId];
+  if (!prop) throw new Error(`unknown prop ${propId}; known: ${Object.keys(p.props).join(', ')}`);
+  const v = prop.variants[variant];
+  if (!v) throw new Error(`unknown variant ${variant} for ${propId}; known: ${Object.keys(prop.variants).join(', ')}`);
+  const palette = s.palette.map((x) => `${x.role}: ${x.name} ${x.hex.join(' to ')}`).join('; ');
+  return [
+    `Concept sheet of one prop, ${prop.name}. ${v}`,
+    `Sheet rules: ${p.sheet}`,
+    `Materials: ${prop.materials}.`,
+    `Palette with roles: ${palette}.`,
+    `Finish: ${s.finish}.`,
+    `Never: ${s.never.join(', ')}.`,
+  ].join(' ');
+}
+
+/** Where a prop `--out` writes: a file under apps/vr/ArtSource/, or an error before any call is made. */
+export function artFile(name) {
+  const dest = path.resolve(ART, name);
+  const rel = path.relative(ART, dest);
+  if (!name || !rel || rel.startsWith('..') || path.isAbsolute(rel)) throw new Error(`--out must name a file under ${path.relative(ROOT, ART)}: ${name}`);
+  return dest;
+}
+
+/** `--size 1024x1024` as [width, height]. */
+export function parseSize(text) {
+  const m = /^(\d{3,4})x(\d{3,4})$/.exec(text ?? '');
+  if (!m) throw new Error(`--size must look like 1024x1024: ${text}`);
+  return [Number(m[1]), Number(m[2])];
+}
+
+/** Whether a call may go ahead: refused when the night's total plus its expected cost would pass the stop. */
+export const withinCap = (total, cost, stopAt = HARD_CAP) => total + cost <= Math.min(HARD_CAP, stopAt);
 
 const readLog = () => (fs.existsSync(LOG) ? fs.readFileSync(LOG, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
 export const nightTotal = (log = readLog()) => PRIOR_SPEND + log.reduce((n, e) => n + (Number(e.credits) || 0), 0);
@@ -137,20 +180,22 @@ function reportedCost(obj, depth = 0) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function gen() {
-  const state = opt('state');
-  const variant = opt('variant', 'a');
+  const prop = opt('prop');
+  const state = prop ? null : opt('state');
+  const variant = opt('variant', prop ? 'A' : 'a');
+  const [width, height] = prop ? parseSize(opt('size', '1024x1024')) : [WIDTH, HEIGHT];
   const seed = Number(opt('seed', '1'));
   const quality = opt('quality', 'LOW').toUpperCase();
   const stopAt = Math.min(HARD_CAP, Number(opt('stop-at', HARD_CAP)));
   if (!['LOW', 'MEDIUM', 'HIGH'].includes(quality)) throw new Error(`quality must be LOW, MEDIUM or HIGH`);
   if (!Number.isInteger(seed)) throw new Error('seed must be an integer');
-  const prompt = composePrompt(state, variant);
-  if (opt('out') !== undefined) outFile(opt('out')); // a bad --out stops here, before any credit is spent
+  const prompt = prop ? composePropPrompt(prop, variant) : composePrompt(state, variant);
+  if (opt('out') !== undefined) (prop ? artFile : outFile)(opt('out')); // a bad --out stops here, before any credit is spent
 
   const log = readLog();
   const total = nightTotal(log);
   const { cost, measured } = expectedCost(quality, log);
-  if (total + cost > stopAt) {
+  if (!withinCap(total, cost, stopAt)) {
     console.error(`REFUSED: night total ${total} + expected ${cost}${measured ? '' : ' (unmeasured guess)'} at ${quality} would pass ${stopAt}`);
     process.exit(2);
   }
@@ -160,9 +205,9 @@ async function gen() {
   const body = {
     model: MODEL,
     public: false,
-    parameters: { width: WIDTH, height: HEIGHT, prompt_enhance: 'OFF', quality, quantity: 1, seed, style_ids: [STYLE_ID], prompt },
+    parameters: { width, height, prompt_enhance: 'OFF', quality, quantity: 1, seed, style_ids: [STYLE_ID], prompt },
   };
-  const entry = { time: new Date().toISOString(), state, variant, model: MODEL, prompt, seed, quality, width: WIDTH, height: HEIGHT, generationId: null, status: 'ERROR', credits: 0, creditsSource: null, file: null, urls: [], committed: false };
+  const entry = { time: new Date().toISOString(), ...(prop ? { prop } : { state }), variant, model: MODEL, prompt, seed, quality, width, height, generationId: null, status: 'ERROR', credits: 0, creditsSource: null, file: null, urls: [], committed: false };
   let created = null;
   let reported = null;
   try {
@@ -184,13 +229,13 @@ async function gen() {
     if (entry.status === 'COMPLETE' && entry.urls.length) {
       const url = entry.urls[0];
       const ext = (path.extname(new URL(url).pathname) || '.png').toLowerCase();
-      const name = opt('out') ?? `explore/${state}-${variant}-s${seed}-${quality.toLowerCase()}${ext}`;
+      const name = opt('out') ?? `explore/${prop ?? state}-${variant}-s${seed}-${quality.toLowerCase()}${ext}`;
       const buf = Buffer.from(await (await fetch(url)).arrayBuffer());
       const explore = name.startsWith('explore/');
-      const dest = explore && buf.length > COMMIT_LIMIT ? path.join(OVERSIZE, path.basename(name)) : outFile(name);
+      const dest = prop ? (opt('out') !== undefined ? artFile(name) : path.join(OVERSIZE, path.basename(name))) : explore && buf.length > COMMIT_LIMIT ? path.join(OVERSIZE, path.basename(name)) : outFile(name);
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.writeFileSync(dest, buf);
-      entry.committed = dest.startsWith(DIR);
+      entry.committed = dest.startsWith(DIR) || dest.startsWith(ART);
       entry.file = entry.committed ? path.relative(ROOT, dest).replaceAll('\\', '/') : dest.replaceAll('\\', '/');
       entry.bytes = buf.length;
     }
@@ -204,7 +249,7 @@ async function gen() {
   else { entry.credits = 0; entry.creditsSource = 'no-generation'; }
   fs.mkdirSync(DIR, { recursive: true });
   fs.appendFileSync(LOG, JSON.stringify(entry) + '\n');
-  console.log(`${entry.status} ${state} ${variant} s${seed} ${quality} credits=${entry.credits} (${entry.creditsSource}) total=${nightTotal()} file=${entry.file ?? '-'}${entry.error ? ` error=${entry.error}` : ''}`);
+  console.log(`${entry.status} ${prop ?? state} ${variant} s${seed} ${quality} credits=${entry.credits} (${entry.creditsSource}) total=${nightTotal()} file=${entry.file ?? '-'}${entry.error ? ` error=${entry.error}` : ''}`);
   if (entry.status !== 'COMPLETE') process.exit(1);
 }
 
@@ -214,6 +259,6 @@ else if (cmd === 'total') {
   const by = {};
   for (const e of log) { const q = (by[e.quality] ??= { calls: 0, credits: 0 }); q.calls++; q.credits += Number(e.credits) || 0; }
   console.log(JSON.stringify({ priorSpend: PRIOR_SPEND, byQuality: by, logCredits: nightTotal(log) - PRIOR_SPEND, nightTotal: nightTotal(log), cap: HARD_CAP }, null, 2));
-} else if (cmd === 'prompt') console.log(composePrompt(opt('state'), opt('variant', 'a')));
+} else if (cmd === 'prompt') console.log(opt('prop') ? composePropPrompt(opt('prop'), opt('variant', 'A')) : composePrompt(opt('state'), opt('variant', 'a')));
 else if (cmd) { console.error(`unknown command ${cmd}`); process.exit(1); }
 else if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) { console.error('usage: gen | total | prompt (see the header)'); process.exit(1); }
