@@ -73,7 +73,7 @@
   "concept_note": "log.jsonl file fields name candidates/<A|B>.png, the place each image was written before grading; they were then moved to concept.png or rejected/.",
   "kept_option": "B",
   "licence": "own procedural work; concept.png is a Leonardo concept used as a shape reference only (R8 open); no ComfyUI or TRELLIS run, no GPU job, no Leonardo call",
-  "lynx_commit": null,
+  "lynx_commit": "6d95122",
   "lynx_commit_note": "null until the merge sets it",
   "regenerate": "blender -b -P scripts/art/studio-kit/build_studio.bpy -- <repo-root> <work> studio-pinned-drawings; blender -b -P scripts/art/studio-kit/render_studio.bpy -- <repo-root> <work> studio-pinned-drawings; node scripts/art/studio-kit/write_manifest.mjs <work> studio-pinned-drawings",
   "framing": {

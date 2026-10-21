@@ -11,7 +11,7 @@
   "generator": "procedural Blender",
   "blender": "Blender 5.2.2 (CPU, Cycles for the evidence), scripts/art/materials/build_materials.bpy (bake and seam check), render_materials.bpy (evidence), write_manifests.mjs",
   "licence": "own procedural work; no generated input, no Leonardo, ComfyUI or TRELLIS",
-  "lynx_commit": null,
+  "lynx_commit": "b31a649",
   "lynx_commit_note": "null until the merge sets it",
   "regenerate": "blender -b -P scripts/art/materials/build_materials.bpy -- <repo-root> <work>; blender -b -P scripts/art/materials/render_materials.bpy -- <repo-root> <work>; node scripts/art/materials/write_manifests.mjs <work>",
   "files": {

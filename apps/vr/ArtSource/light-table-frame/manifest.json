@@ -38,7 +38,7 @@
   "generator": "procedural Blender",
   "blender": "Blender 5.2.2, scripts/art/light-table-frame/build_frame.bpy (build and score), render_frame.bpy (evidence and framing check), write_manifest.mjs",
   "licence": "own procedural work; no generated input, no Leonardo, ComfyUI or TRELLIS",
-  "lynx_commit": null,
+  "lynx_commit": "60db9b6",
   "lynx_commit_note": "null until the merge sets it",
   "regenerate": "blender -b -P scripts/art/light-table-frame/build_frame.bpy -- <repo-root> <work>; blender -b -P scripts/art/light-table-frame/render_frame.bpy -- <repo-root> <work>; node scripts/art/light-table-frame/write_manifest.mjs <work>",
   "review_fixes": {
