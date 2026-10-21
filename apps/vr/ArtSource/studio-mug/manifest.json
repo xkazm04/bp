@@ -3,7 +3,40 @@
   "class": "set-dressing",
   "budget_tris": 8000,
   "budget_note": "plan.md P4 studio kit total 80k, split across 5 as 24000 shelves, 16000 desk lamp, 8000 mug, 20000 drawing tubes, 12000 pinned drawings",
-  "generator": [
+  "tris": 1008,
+  "tris_total": 1008,
+  "materials": [
+    "mug_glaze_cream (336 tris, PBR textures)",
+    "mug_glaze_inner_blue (336 tris, PBR textures)",
+    "mug_handle_navy (336 tris, PBR textures)"
+  ],
+  "bounds_cm": {
+    "x": 11.85,
+    "y": 9.5,
+    "z": 8,
+    "note": "x,z ground plane, y up (glTF)"
+  },
+  "meshes": {
+    "studio-mug": {
+      "tris": 1008,
+      "vertices": 508,
+      "components": 2,
+      "floaters": 0,
+      "open_edges": 0,
+      "faces_per_slot": {
+        "mug_glaze_cream": 336,
+        "mug_glaze_inner_blue": 336,
+        "mug_handle_navy": 336
+      }
+    }
+  },
+  "uv_sets": 1,
+  "pivot": "base centre (x and y at the middle of the footprint, z = 0 at the floor); measured 0, 0 m; the prop stands +Y in the GLB (glTF Y-up), +Z in Blender",
+  "scale_reasoning": "a straight-sided 8 cm mug, 9.5 cm tall, handle 3.8 cm proud of the wall (a 300 ml mug). Measured 11.85 x 9.5 x 8 cm (x, up, y); the planned envelope per axis is 10-14.000000000000002 cm, 7.5-8.5 cm, 9-10 cm (x, y, z up).",
+  "textures": "9 PNGs, 256 px seamless tiles (the printed sheets: 384 x 576, mapped once): base colour, normal, ORM (R occlusion, G roughness, B metal), authored with numpy in scripts/art/studio-kit/build_studio.bpy. One UV set, box-projected in world metres (printed sheets: planar 0..1). Flat colour plus grain, no baked light.",
+  "generator": "procedural Blender",
+  "blender": "Blender 5.2.2, scripts/art/studio-kit/build_studio.bpy (build and score), render_studio.bpy (evidence and framing check), write_manifest.mjs",
+  "concept_reference": [
     {
       "option": "A",
       "file": "concept.png",
@@ -29,34 +62,156 @@
       "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop studio-mug --variant B"
     }
   ],
-  "generator_note": "log.jsonl file fields name candidates/<A|B>.png, the place each image was written before grading; they were then moved to concept.png or rejected/.",
+  "concept_note": "log.jsonl file fields name candidates/<A|B>.png, the place each image was written before grading; they were then moved to concept.png or rejected/.",
   "kept_option": "A",
+  "licence": "own procedural work; concept.png is a Leonardo concept used as a shape reference only (R8 open); no ComfyUI or TRELLIS run, no GPU job, no Leonardo call",
+  "lynx_commit": null,
+  "lynx_commit_note": "null until the merge sets it",
+  "regenerate": "blender -b -P scripts/art/studio-kit/build_studio.bpy -- <repo-root> <work> studio-mug; blender -b -P scripts/art/studio-kit/render_studio.bpy -- <repo-root> <work> studio-mug; node scripts/art/studio-kit/write_manifest.mjs <work> studio-mug",
+  "framing": {
+    "turn0": {
+      "resolution": [
+        480,
+        480
+      ],
+      "fov_deg": 22.8,
+      "azimuth_deg": 25,
+      "elevation_deg": 22,
+      "margins": {
+        "left": 0.1562,
+        "right": 0.1667,
+        "bottom": 0.1729,
+        "top": 0.1625
+      },
+      "min_margin": 0.1562,
+      "pass": true
+    },
+    "turn1": {
+      "resolution": [
+        480,
+        480
+      ],
+      "fov_deg": 23.8,
+      "azimuth_deg": 115,
+      "elevation_deg": 22,
+      "margins": {
+        "left": 0.3125,
+        "right": 0.2312,
+        "bottom": 0.2146,
+        "top": 0.1646
+      },
+      "min_margin": 0.1646,
+      "pass": true
+    },
+    "turn2": {
+      "resolution": [
+        480,
+        480
+      ],
+      "fov_deg": 22.8,
+      "azimuth_deg": 205,
+      "elevation_deg": 22,
+      "margins": {
+        "left": 0.1938,
+        "right": 0.1438,
+        "bottom": 0.1229,
+        "top": 0.1854
+      },
+      "min_margin": 0.1229,
+      "pass": true
+    },
+    "turn3": {
+      "resolution": [
+        480,
+        480
+      ],
+      "fov_deg": 23.8,
+      "azimuth_deg": 295,
+      "elevation_deg": 22,
+      "margins": {
+        "left": 0.2083,
+        "right": 0.3063,
+        "bottom": 0.1104,
+        "top": 0.2125
+      },
+      "min_margin": 0.1104,
+      "pass": true
+    },
+    "table-view": {
+      "resolution": [
+        640,
+        480
+      ],
+      "fov_deg": 25,
+      "azimuth_deg": 0,
+      "elevation_deg": 45,
+      "margins": {
+        "left": 0.1609,
+        "right": 0.1859,
+        "bottom": 0.0813,
+        "top": 0.0646
+      },
+      "min_margin": 0.0646,
+      "pass": true
+    }
+  },
+  "file_bytes": {
+    "concept.png": 59479,
+    "evidence/table-view.jpg": 36725,
+    "evidence/turnaround.jpg": 113129,
+    "final.glb": 486416,
+    "rejected/B.png": 56513,
+    "textures/mug_glaze_cream_basecolor.png": 47065,
+    "textures/mug_glaze_cream_normal.png": 50919,
+    "textures/mug_glaze_cream_orm.png": 53533,
+    "textures/mug_glaze_inner_blue_basecolor.png": 46535,
+    "textures/mug_glaze_inner_blue_normal.png": 50931,
+    "textures/mug_glaze_inner_blue_orm.png": 52156,
+    "textures/mug_handle_navy_basecolor.png": 9448,
+    "textures/mug_handle_navy_normal.png": 51018,
+    "textures/mug_handle_navy_orm.png": 51750
+  },
+  "sha256": {
+    "concept.png": "ccc55bd9f9dc59e01b259ae80fb4792825425eca3831080e5014eab03fb05ff4",
+    "evidence/table-view.jpg": "489d431079897675011ee6fb8d1986deeb6a5178abc28d08170dafec0ba0cb02",
+    "evidence/turnaround.jpg": "af6915bdf6a839dca57fe7ba3b0a51096328b6d29b623d686dced0a792e9786b",
+    "final.glb": "1dafbb9a62df590380ff6089df2ed5ec405304a9f34a60c4e4651c4d79fbcd4b",
+    "rejected/B.png": "febc06ec8b0a747b94448976d6dc90ad797f1cb83bd444c229a46faab9de7519",
+    "textures/mug_glaze_cream_basecolor.png": "f718f49cc0749a3a4c23413afa4b0ed04337511e87a790d0e06bff33f7b5b967",
+    "textures/mug_glaze_cream_normal.png": "99465ee9107f4d252954eb72dba03c6c9c702eae40653904c71104ed737b2ad6",
+    "textures/mug_glaze_cream_orm.png": "c1a6540055b90474675c6cf58c9186fcbbfcf143523a39c338c85bcb61efdcdb",
+    "textures/mug_glaze_inner_blue_basecolor.png": "0d82f96f18aa7ddd585a506ebf519b3f8eb5ffff5952e009abb8f77cea96ac24",
+    "textures/mug_glaze_inner_blue_normal.png": "84189cfe4861933f436e9055ced2d5415c2f978a2f4b7afcdeae1ceb34ab7b52",
+    "textures/mug_glaze_inner_blue_orm.png": "bc9a77e74279460b69feffe00784a17d3a7513443bf5050d83dbeee465d797c8",
+    "textures/mug_handle_navy_basecolor.png": "0d5850c5bf14b53c0c99eaf51b2b98cf012a3c7c577497080c8210018d8f2300",
+    "textures/mug_handle_navy_normal.png": "60957f49b52e8aaf705055644b4613df248544e06091c1535ddeb3a3d1ca7d2a",
+    "textures/mug_handle_navy_orm.png": "df2dac14de12219b5a0d9dad7573f508528fcd0edcb79c251ab919a5eb9e9bf0"
+  },
   "gates": {
     "input": {
       "pass": true,
-      "note": "A kept: straight-sided, plain, no print. B also passes.",
+      "note": "A kept: straight-sided, plain, no print. B also passes. Built procedurally instead of through TRELLIS (GPU held by the mage-arena run); concept.png is the shape reference.",
       "date": "2026-10-21"
     },
     "mesh_acceptance": {
-      "pass": false,
-      "note": "not run"
+      "pass": true,
+      "note": "re-imported from final.glb: 1 mesh object, 508 vertices, 1008 tris, 2 connected components, 0 floaters (a floater is a component whose bounding box touches no other), 0 open edges, signed volume 0.000126 m3 (positive: normals face out)",
+      "date": "2026-10-21"
     },
     "scale": {
-      "pass": false,
-      "note": "not run"
+      "pass": true,
+      "note": "11.85 x 8 x 9.5 cm (x, y, z up) re-imported from final.glb, inside the planned envelope (a straight-sided 8 cm mug, 9.5 cm tall, handle 3.8 cm proud of the wall (a 300 ml mug)); pivot: base centre 0, 0 m, floor at z = 0 m. Assumption: the sizes are Lynx choices from the concept; the UE world scale is still to be confirmed on Wolf.",
+      "date": "2026-10-21"
     },
     "finishing": {
-      "pass": false,
-      "note": "not run"
+      "pass": true,
+      "note": "one UV set (1); 9 PBR PNGs (base colour, normal, ORM for 3 slots); every file under 10 MB (largest 486416 bytes); 3 material slots (mug_glaze_cream, mug_glaze_inner_blue, mug_handle_navy); evidence turnaround.jpg and table-view.jpg rendered with Cycles on the CPU, framing check passes on 5 images (min silhouette margin 0.0646 of the image, rule 0.03). Not claimed: any UE import.",
+      "date": "2026-10-21"
     },
     "poly_budget": {
-      "pass": false,
-      "note": "not run"
+      "pass": true,
+      "note": "1008 tris against 8000 (13%)",
+      "date": "2026-10-21"
     }
-  },
-  "licence": "Leonardo concept, TRELLIS input only; R8 open",
-  "sha256": {
-    "concept.png": "ccc55bd9f9dc59e01b259ae80fb4792825425eca3831080e5014eab03fb05ff4",
-    "rejected/B.png": "febc06ec8b0a747b94448976d6dc90ad797f1cb83bd444c229a46faab9de7519"
   }
 }
