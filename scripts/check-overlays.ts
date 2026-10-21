@@ -87,6 +87,10 @@ expect(ph.threw === null && Number(live) === all.live + all.flagged, `Phone head
 const back = (ph.html.match(/<button[^>]*>‹ Back<\/button>/) || [''])[0];
 const h = Number((back.match(/height:\s*(\d+)px/) || [])[1]);
 expect(h >= 44, `Phone Back button height ${Number.isNaN(h) ? 'unset' : h + 'px'}, expected at least 44px`);
+// the detail covers the whole screen, so it is aria-modal and programmatically focusable (Phone.tsx moves the
+// reading position into it on open and back to the row on close - the attributes are what make that possible)
+const dlg = (ph.html.match(/<div[^>]*class="ph-detail"[^>]*>/) || [''])[0];
+expect(/tabindex="-1"/.test(dlg) && /aria-modal="true"/.test(dlg), `the phone feature detail is not a focusable modal dialog (${dlg.slice(0, 160) || 'not rendered'})`);
 
 // 7-9. Toast: an undoable toast is not displaced by an informational one (it queues), the queue drains in order,
 // a close button and a persistently mounted live region exist (not display:contents)

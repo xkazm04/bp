@@ -3,7 +3,7 @@
 // "drawing set | findings ledger" switch swaps both for the findings ledger, triage list only (ledger/LedgerPage.tsx).
 // The ledger is its own chunk (LedgerPageLazy, below; BlueprintApp mounts the same one), fetched the first time the
 // ledger page shows: `/`'s first-load JS carries none of it (scripts/check-train-budget.ts --bundle proves it).
-import { Suspense, lazy, useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { LIVE_DECIDER, fmtWait, pname, sheetOf, type SimDecision } from '@bp/core/model';
 import { useProductName } from '@/lib/scan/projects';
@@ -83,6 +83,7 @@ export function Phone() {
   const persons = P.people.filter((p) => p.kind === 'human'), open = sim.openDecs();
   const f = s.open ? P.F[s.open] : null;
   const detailOpen = !!s.open;
+  const detail = useRef<HTMLDivElement>(null);
   // The full-screen detail owns a history entry, so the platform Back gesture closes it instead of leaving the app.
   useEffect(() => {
     if (!detailOpen) return;
@@ -94,6 +95,14 @@ export function Phone() {
       if (history.state?.phDetail) history.back();   // closed some other way: consume the stranded entry
     };
   }, [E, detailOpen]);
+  // It covers the whole screen (aria-modal), so the reading position goes into it on open and back to the row
+  // that opened it on close - the morning watch's pattern (Overlays.tsx Morning).
+  useEffect(() => {
+    if (!detailOpen) return;
+    const was = document.activeElement as HTMLElement | null;
+    detail.current?.focus({ preventScroll: true });
+    return () => { if (was && was !== document.body && was.isConnected) was.focus({ preventScroll: true }); };
+  }, [detailOpen]);
   return (
     <>
     <div className="ph">
@@ -162,7 +171,7 @@ export function Phone() {
       <div className="foot">Open on a wider screen for the zoomable plan.</div>
       <AnimatePresence>
         {f && (
-          <motion.div className="ph-detail" role="dialog" aria-label="Feature detail" initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={rm ? { duration: 0 } : { type: 'spring', stiffness: 260, damping: 32 }}>
+          <motion.div ref={detail} tabIndex={-1} className="ph-detail" role="dialog" aria-modal="true" aria-label="Feature detail" initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={rm ? { duration: 0 } : { type: 'spring', stiffness: 260, damping: 32 }}>
             <button type="button" className="btn" style={{ marginBottom: 10, height: 44 }} onClick={() => { if (history.state?.phDetail) history.back(); else E.closeFeature(false); }}>‹ Back</button>
             <SheetBody key={f.id} f={f} />
           </motion.div>
