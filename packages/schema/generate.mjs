@@ -497,8 +497,12 @@ if (isMain) {
     const wireTs = wireSource(ROOT);
     const handTs = norm(fs.readFileSync(path.join(ROOT, HAND_TS), 'utf8'));
     const parity = compare(fresh.ts, handTs, wireTs);
-    console.log(`${parity.problems.length ? 'FAIL' : 'ok  '}  ${HAND_TS} agrees with the generated types on every field and its optionality and packages/core/src/scan/ on the scan wire types (${parity.shapes} shapes from the structure, event, lens manifest, snapshot, job, proposal and wave)${parity.problems.length ? ': ' + parity.problems.slice(0, 8).join('; ') : ''}`);
+    console.log(`${parity.problems.length ? 'FAIL' : 'ok  '}  ${HAND_TS} agrees with the generated types on every field, its optionality and its string enum, and packages/core/src/scan/ on the scan wire types (${parity.shapes} shapes and ${parity.enums} enum fields from the structure, event, lens manifest, snapshot, job, proposal and wave)${parity.problems.length ? ': ' + parity.problems.slice(0, 8).join('; ') : ''}`);
     if (parity.problems.length) failed++;
+    // the enum comparison has a floor: a walk that stopped finding enum fields would report agreement on nothing
+    const enumFloor = parity.enums >= 40;
+    console.log(`${enumFloor ? 'ok  ' : 'FAIL'}  the parity walk still reaches the schema's enum fields (${parity.enums} >= 40)`);
+    if (!enumFloor) failed++;
     // control: Rule.reason made optional on the generated side must fail the parity
     const loose = fresh.ts.replace(/(\nexport interface Rule \{\n(?:  .*\n)*?)  reason: string;/, '$1  reason?: string;');
     const looseCaught = loose !== fresh.ts && compare(loose, handTs).problems.some((p) => p.endsWith('rules.reason: optional in the schema, required in types.ts'));
@@ -513,6 +517,16 @@ if (isMain) {
     const wireDropCaught = wireDrop !== fresh.ts && compare(wireDrop, handTs, wireTs).problems.some((p) => p === 'ScanJob.exit_code: in types.ts, not in the schema');
     console.log(`${wireDropCaught ? 'ok  ' : 'FAIL'}  control: ScanJob.exit_code dropped from the generated types fails the parity`);
     if (!wireDropCaught) failed++;
+    // controls on the enum comparison: a value dropped from one of the schema's vocabularies, and one added to it.
+    // `xhigh` is waveEffort's, hand-written a second time as WAVE_EFFORTS in packages/core/src/scan/waves.ts.
+    const enumShort = fresh.ts.replaceAll(`'low' | 'medium' | 'high' | 'xhigh'`, `'low' | 'medium' | 'high'`);
+    const enumShortCaught = enumShort !== fresh.ts && compare(enumShort, handTs, wireTs).problems.some((p) => p === 'Wave.packages.effort: the enum disagrees - in types.ts, not in the schema: xhigh');
+    console.log(`${enumShortCaught ? 'ok  ' : 'FAIL'}  control: waveEffort losing "xhigh" in the generated types fails the parity`);
+    if (!enumShortCaught) failed++;
+    const enumWide = fresh.ts.replaceAll(`'draft' | 'dispatched'`, `'draft' | 'dispatched' | 'zzParityProbe'`);
+    const enumWideCaught = enumWide !== fresh.ts && compare(enumWide, handTs, wireTs).problems.some((p) => p === 'Wave.status: the enum disagrees - in the schema, not in types.ts: zzParityProbe');
+    console.log(`${enumWideCaught ? 'ok  ' : 'FAIL'}  control: a value added to the wave status enum fails the parity`);
+    if (!enumWideCaught) failed++;
     // the mapping against real documents: Kettle's map and events, the built-in lens manifests, the valid fixtures
     const docs = [['AppStructure', 'packages/core/data/kettle.app-structure.json'], ['AppStructure', 'packages/schema/schema/fixtures/valid-map.json'], ['LensManifest', 'packages/schema/schema/fixtures/valid-steps-lens.json'],
       ...fs.readdirSync(path.join(ROOT, 'docs/standard/lenses')).filter((f) => f.endsWith('.json')).map((f) => ['LensManifest', 'docs/standard/lenses/' + f]),
