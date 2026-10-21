@@ -55,13 +55,18 @@ export function FindPanel() {
       {q.trim() ? (
         <>
         <ul id="results" role="listbox" aria-label="Matching features">
-          {results.length ? results.map((f, i) => (
+          {results.length ? results.map((f, i) => {
+            // a feature can outlive its tile and its domain (refreshLiveModel copies a newer map onto the open
+            // page), so both are read the way the engine reads them: the hit still lists, without the prefix
+            const T = M.L.TILE[f.id];
+            return (
             <li key={f.id} id={'res-' + f.id} role="option" aria-selected={i === sel} className={i === sel ? 'on' : ''} onPointerEnter={() => preview(i)} onClick={() => open(f.id)}>
               <StageSym st={f.stage} w={18} h={12} />
               <span className="t">{f.name}</span>
-              <span className="r">{M.P.scale > 1 ? E.M.L.TILE[f.id].wing.bld.b.short + ' · ' : ''}{M.P.D[f.domain].name} · {f.stage ? STAGE_WORD[f.stage] : 'Stage unknown'}</span>
+              <span className="r">{M.P.scale > 1 && T ? T.wing.bld.b.short + ' · ' : ''}{M.P.D[f.domain]?.name ?? f.domain} · {f.stage ? STAGE_WORD[f.stage] : 'Stage unknown'}</span>
             </li>
-          )) : <li className="none">No feature matches “{q}”.{M.live ? '' : ' Try “gift”, “waitlist” or “tax”.'}</li>}
+            );
+          }) : <li className="none">No feature matches “{q}”.{M.live ? '' : ' Try “gift”, “waitlist” or “tax”.'}</li>}
         </ul>
         {total > results.length && <div className="fly-note">{total - results.length} more · refine the search to narrow it.</div>}
         </>
