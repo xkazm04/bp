@@ -126,7 +126,10 @@ function Head({ f, back, closeRef }: { f: Feature; back: (depth: number) => void
         </div>
       </div>
       <div className="pg-title">
-        <div className="bubble" title="Detail callout: detail number over feature code"><span className="a">{T.idx}</span><span className="b">{f.code || '—'}</span></div>
+        {/* the tile can be gone while the page is open: a live map refresh rebuilds the layout under it
+            (docs/blueprint-ui.md, "Readings and map refreshes in place"), and the engine guards every one
+            of its own 12 L.TILE reads for exactly this */}
+        <div className="bubble" title="Detail callout: detail number over feature code"><span className="a">{T ? T.idx : '—'}</span><span className="b">{f.code || '—'}</span></div>
         <div className="tt">
           <div className="k">{[f.priority, f.kind, ms ? (ms.code ? ms.code + ' ' : '') + ms.name : null].filter(Boolean).join(' · ') || 'Feature'}</div>
           <h2>{f.name}</h2>

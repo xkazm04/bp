@@ -129,7 +129,7 @@ export function Activity({ f }: { f: Feature }) {
 /** The stylised drawing of its domain, with the detail caption. */
 export function Drawing({ f }: { f: Feature }) {
   const M = useEngine().M, P = M.P, T = M.L.TILE[f.id];
-  return <><div dangerouslySetInnerHTML={{ __html: illoSVG(P.D[f.domain].base, 'currentColor') }} style={{ color: 'var(--ink)' }} /><span className="cap">DETAIL {T.idx} · {(P.D[f.domain].code || P.D[f.domain].name).toUpperCase()} · STYLISED</span></>;
+  return <><div dangerouslySetInnerHTML={{ __html: illoSVG(P.D[f.domain].base, 'currentColor') }} style={{ color: 'var(--ink)' }} /><span className="cap">{T ? 'DETAIL ' + T.idx + ' · ' : ''}{(P.D[f.domain].code || P.D[f.domain].name).toUpperCase()} · STYLISED</span></>;
 }
 /** Its parts, done or not (callers show this only when the feature has parts). */
 export function Parts({ parts }: { parts: NonNullable<Feature['parts']> }) {
@@ -173,9 +173,12 @@ export function SheetBody({ f }: { f: Feature }) {
     <>
       <PatternDefs />
       <div className="dh">
-        <div className="bubble" title="Detail callout: detail number over feature code"><span className="a">{T.idx}</span><span className="b">{f.code || '—'}</span></div>
+        {/* the tile can be gone while the sheet is open (a live map refresh rebuilds the layout under it):
+            the place line drops to what the feature itself records, as the engine's own 12 guarded
+            L.TILE reads do, rather than taking the document down with it */}
+        <div className="bubble" title="Detail callout: detail number over feature code"><span className="a">{T ? T.idx : '—'}</span><span className="b">{f.code || '—'}</span></div>
         <div>
-          <div className="k">{P.scale > 1 ? T.wing.bld.name + ' › ' : ''}Wing {T.wing.def.letter} {T.wing.def.name} › {P.D[f.domain].name} › {P.C[f.capability].name}<br />{[f.priority, f.kind, ms ? (ms.code ? ms.code + ' ' : '') + ms.name : null].filter(Boolean).join(' · ')}</div>
+          <div className="k">{T ? (P.scale > 1 ? T.wing.bld.name + ' › ' : '') + 'Wing ' + T.wing.def.letter + ' ' + T.wing.def.name + ' › ' : ''}{P.D[f.domain].name} › {P.C[f.capability].name}<br />{[f.priority, f.kind, ms ? (ms.code ? ms.code + ' ' : '') + ms.name : null].filter(Boolean).join(' · ')}</div>
           <h2>{f.name}</h2>
           <div className="sum">{f.summary}</div>
           <div className="plain"><b>{pl.strong}</b> {pl.rest.join(' ')} {pl.bad && <span className="bad">{pl.bad}</span>}</div>
