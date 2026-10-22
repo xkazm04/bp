@@ -19,6 +19,7 @@ import { atTarget, beyondNoise, isOutlier, perfFigures, rangeScale, signed } fro
 import { GRID_H, GRID_W, NOISE, bboxCells, diffPixels, pixWords } from '../packages/core/src/train/pixels.ts';
 import type { Measurement, Proposal, Shot } from '../packages/core/src/scan/types.ts';
 import { stripComments } from './lib/source.ts';
+import { canDecide } from '../packages/core/src/train/rules.ts';
 
 let n = 0, bad = 0;
 function ok(cond: boolean, what: string, got?: unknown) {
@@ -332,6 +333,15 @@ const { packHeading, packOrder } = await imp('ComparePanel.tsx');
     ok(!!box && Math.abs(Number(box.x) / vw - grid.bbox[0] / w) < 1e-9 && Math.abs(Number(box.y) / vh - grid.bbox[1] / h) < 0.03 / vh, `change map ${w}x${h}: the dashed box starts where the moved pixels start`, box);
     ok(Math.abs(mapView(grid).vw - vw) < 1e-9, `change map ${w}x${h}: mapView agrees with what is drawn`);
   }
+}
+
+// ------------------------------------------------------------------------------------------- canDecide, the release window
+{ // leaving a release: a draft allows it, a non-draft refuses it, an UNKNOWN release fails open (rules.ts says so; the server's 409 is the owner)
+  const inRel = { status: 'done' as const, release_id: 'rel-1' };
+  ok(canDecide('rework', inRel, { status: 'draft' }), 'canDecide: rework of an item in a draft release is offered');
+  ok(!canDecide('rework', inRel, { status: 'merged' as never }), 'canDecide: rework of an item in a non-draft release is not offered');
+  ok(canDecide('rework', inRel, undefined), 'canDecide: a release not loaded yet fails open, as the jsdoc states');
+  ok(canDecide('accept', inRel, { status: 'merged' as never }), 'canDecide: accept never leaves the release, so it is offered');
 }
 
 console.log(bad ? `check-train-compare: ${bad} of ${n} failed` : `check-train-compare: ${n} checks passed`);
