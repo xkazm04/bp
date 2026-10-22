@@ -36,6 +36,7 @@ const TR = await load<typeof import('../apps/web/src/engine/render/tracks.ts')>(
 const KP = await load<typeof import('../apps/web/src/engine/render/keyplan.ts')>(R + 'keyplan.ts');
 const PL = await load<typeof import('../apps/web/src/engine/render/plan.ts')>(R + 'plan.ts');
 const DY = await load<typeof import('../apps/web/src/engine/render/dynamic.ts')>(R + 'dynamic.ts');
+const SL = await load<typeof import('../apps/web/src/engine/render/scans.ts')>(R + 'scans.ts');
 
 type View = import('../apps/web/src/engine/render/view.ts').View;
 type SRect = import('../apps/web/src/engine/render/view.ts').SRect;
@@ -596,6 +597,31 @@ function traced(fn: () => void): string[] {
   expect(/roomLabelFit\(/.test(bare(R + 'flags.ts')) && /roomLabelFit\(/.test(bare(R + 'plan.ts')) && !spell('flags.ts'), 'pinnedBox: flags.ts asks plan.ts roomLabelFit for the label size rather than re-deriving it');
   expect((bare(R + 'plan.ts').match(/ls\s*=\s*0\.8/g) ?? []).length === 1, 'pinnedBox: the 14 px room-label fallback is spelt once in plan.ts (roomLabelFit)');
   delete (globalThis as Record<string, unknown>).document;
+}
+
+// ---------------------------------------------------------------- the scan layer: a stalled scan is a third appearance
+// A `stale` view (a running job with no sign of life, scan-views STALE_MS) is not live and not failed: its outline
+// takes the amber mark, stands still (the layer stops asking for frames) and its chip says it stalled.
+{
+  const th = theme(false), tx = { f: () => '12px sans-serif', w: (t: string) => t.length * 7 };
+  const box = { x: 0, y: 0, w: 400, h: 300 };
+  const accent = '#123456';
+  const outline = (status: string) => {
+    const layer = new SL.ScanLayer();
+    const E = {
+      U: 1, th, tx, SAFE: { l: 0, t: 0 }, cam: { reduced: false }, dashT: 7, isNow: true, lensAccent: () => accent,
+      M: { L: { TILE: {}, blds: [box] }, P: { LENS: {} } }, placeById: () => null,
+    } as never;
+    layer.set([{ id: 'j', lens: 'l', accent, place: null, features: [], done: new Set(), n: 1, m: 4, status } as never], E);
+    const c = fresh(), v: View = { x: 200, y: 150, k: 1, FW: 1280, FH: 800, c0x: -100, c0y: -100, c1x: 1380, c1y: 900 };
+    layer.draw(E, c, v, 1, 0);
+    return { animating: layer.animating, chip: (layer as unknown as { text: string[] }).text[0], col: c.strokes[0], dashed: c.dash.some((d) => d.length > 0), c };
+  };
+  const live = outline('running'), stale = outline('stale'), failed = outline('failed');
+  expect(live.animating && live.col === accent, 'scans: a running view animates in the lens accent');
+  expect(!stale.animating, 'scans: a stale view does not keep the engine loop animating');
+  expect(stale.col === th.amber && stale.col !== live.col && stale.col !== failed.col, 'scans: a stale outline is its own colour, neither the live accent nor the failed red');
+  expect(/stalled/.test(stale.chip) && !/stalled/.test(live.chip), `scans: a stale view's chip says it stalled (${stale.chip})`);
 }
 
 // ---------------------------------------------------------------- source guard: text is measured, never counted

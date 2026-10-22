@@ -158,7 +158,7 @@ expect(/console\.warn\(/.test(skippedFn) && /\$\{event\}/.test(skippedFn) && /n 
 // `end > now` was false and the view was dropped: a run whose process died before jobs.server.ts could write
 // ended_at drew NOTHING, exactly the state most in need of saying so. The anchor falls back to the start, which
 // is stable across recomputes (`now` would restart the window on every pass and the outline would never go).
-const { scanViews, LINGER_MS } = await import('../apps/web/src/lib/scan/scan-views.ts');
+const { scanViews, LINGER_MS, STALE_MS } = await import('../apps/web/src/lib/scan/scan-views.ts');
 const BLD = { id: 'b0', i: 0 };
 const TILE = (id: string) => ({ id, wing: { bld: BLD } });
 const GEO = {
@@ -185,6 +185,26 @@ for (const c of DRAWN) {
   if (c.expires !== undefined) expect(r.next === c.expires, `a job ${c.name}: its outline does not expire one linger after the time it is anchored to`, String(r.next));
   if (c.views && r.views[0]) expect(r.views[0].status === c.job.status, `a job ${c.name}: its view does not carry the job's own status`, String(r.views[0].status));
 }
+
+// A running job whose process is gone keeps its row `running` for ever (the shape scan-engine fixed server-side),
+// and drew exactly like a live one. The cutoff is read off the job's own activity - the newest activity row of
+// its run, else its start - so a slow scan that keeps writing rows is never caught, and a dead one is `stale`
+// (not `failed`: it is not known to have failed), with the recompute time handed back as `next`.
+const RUN = { id: 'r1', note: 'bp-job:j' };
+const ACT = (ms: number) => ({ id: 1, run_id: 'r1', at: at(ms), kind: 'reading', text: '' });
+const scanOf = (...acts: ReturnType<typeof ACT>[]) => ({ runs: [RUN], activity: acts, measurements: [], proposals: [], shots: [], coverage: [], packs: [], releases: [] }) as never;
+const STALE_CASES: { name: string; job: Record<string, unknown>; scan?: never; status: string; next: number }[] = [
+  { name: 'running, started a second ago', job: { status: 'running' }, status: 'running', next: NOW - 1000 + STALE_MS },
+  { name: 'running, started an hour ago, no activity', job: { status: 'running', started_at: at(-3600000) }, status: 'stale', next: Infinity },
+  { name: 'running, started an hour ago, last row a second ago', job: { status: 'running', started_at: at(-3600000) }, scan: scanOf(ACT(-3600000 + 5000), ACT(-1000)), status: 'running', next: NOW - 1000 + STALE_MS },
+  { name: 'running, started an hour ago, last row an hour ago', job: { status: 'running', started_at: at(-3600000) }, scan: scanOf(ACT(-3590000)), status: 'stale', next: Infinity },
+];
+for (const c of STALE_CASES) {
+  const r = scanViews([mkJob(c.job)] as never, c.scan, GEO, () => '#fff', NOW);
+  expect(r.views.length === 1 && r.views[0].status === c.status, `a job ${c.name}: the plan draws status ${r.views[0]?.status}, not ${c.status}`);
+  expect(r.next === c.next, `a job ${c.name}: the recompute time is ${r.next}, not ${c.next}`);
+}
+expect(STALE_MS >= 5 * 60 * 1000, 'STALE_MS is shorter than five minutes: a slow but live feature would be drawn as dead');
 
 // --------------------------------------------- 3. the menu's permissions warning names a path or no path
 // ScanMenu's last footer is the only place the plan tells a reader that choosing a scan runs Claude Code with
