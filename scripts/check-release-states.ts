@@ -8,10 +8,12 @@
 // Run: node scripts/check-release-states.ts   (Node type stripping; exit 1 on any failure)
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { registerSrcHooks } from './lib/src-hooks.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-registerSrcHooks(ROOT);
+// Loaded the way the other .ts checks load it (check-render-units.ts:23, check-scan-jobs.ts:34):
+// a static import of the .mjs has no declaration file, so typecheck fails TS7016.
+const HOOKS = './lib/src-hooks.mjs';
+((await import(HOOKS)) as { registerSrcHooks: (root: string) => void }).registerSrcHooks(ROOT);
 const M = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/components/ledger/train/release/releaseState.ts')).href);
 const { RELEASE_STATE, STEPS, STEP_WORD, ACTION, JOB_TONE, standOf, standLine, safeUrl, failedStep } = M;
 
