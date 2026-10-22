@@ -19,6 +19,7 @@ import { shallowEqual, useBp, useEngine, useScanCtx } from './hooks';
 import { useLedgerSelection } from './ledger/useLedger';
 import { useTheme } from './ThemeToggle';
 import './scan.css';
+import { GENERAL } from '@bp/core/data/types';
 
 const URLS = new Map<string, string>();
 /** A lens glyph drawn by the canvas's own `glyph()` into an image (cached by glyph, colour, size and resolution). */
@@ -63,7 +64,7 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
     return [...at, { kind: 'selection' as const, title: 'Ledger selection', scope: { kind: 'selection' as const, label: 'Selection (' + fs.length + ')', features: fs } }];
   }, [E, m, sel]);
   const lenses = useMemo(() => P.lenses.map((d) => ({ id: d.id, name: d.name, short: d.short, glyph: d.glyph, ok: scannable({ id: d.id, manifest: d.manifest }, !!ctx.sim) })), [P, ctx.sim]);
-  const lensView = view !== 'general' ? lenses.find((l) => l.id === view) : undefined;
+  const lensView = view !== GENERAL ? lenses.find((l) => l.id === view) : undefined;
   const scanOk = lenses.filter((l) => l.ok), off = lenses.filter((l) => !l.ok);
   const T = m.tile ? E.M.L.TILE[m.tile] : undefined, last = m.chain[m.chain.length - 1];
   const at = last ? E.placeById(last.t, last.id) : null;

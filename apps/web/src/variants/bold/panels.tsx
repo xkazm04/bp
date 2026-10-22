@@ -14,6 +14,7 @@ import type { SheetPanelProps } from '../types';
 import { LENS_NAME } from './palette';
 import { CHANNELS } from './channels';
 import { bl, hof, isBuiltinLens, type BuiltinLens } from '../base/legacy';
+import { GENERAL } from '@bp/core/data/types';
 
 function Head({ p, label }: { p: SheetPanelProps; label: string }) {
   const h = hof(p.f, p.lens), n = LENS_NAME[p.lens as BuiltinLens];
@@ -201,7 +202,7 @@ export function BoldPanel(p: SheetPanelProps) {
   // Design keeps its own word for 'n/a' ("No screen to design"): bl() gives it the status, not a blank.
   const h = hof(p.f, lens);
   if (h === 'unmeasured' || (h === 'na' && lens !== 'design')) return <DefaultLensPanel {...p} />;
-  if (!p.expanded) return p.view === 'general' ? <DefaultLensPanel {...p} /> : <Mini p={{ ...p, lens }} />;
+  if (!p.expanded) return p.view === GENERAL ? <DefaultLensPanel {...p} /> : <Mini p={{ ...p, lens }} />;
   switch (lens) {
     case 'design': return <DesignBoard p={p} />;
     case 'development': return <Terminal p={p} />;

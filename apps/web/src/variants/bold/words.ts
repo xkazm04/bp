@@ -3,6 +3,7 @@
 import type { ViewId } from '@bp/core/data';
 import type { Model, SimDecision } from '@bp/core/model';
 import { bl, hof, NOT_MEASURED } from '../base/legacy';
+import { GENERAL } from '@bp/core/data/types';
 
 /** Every value of the design lens's status field (docs/standard/lenses/design.json) plus the 'n/a' bl()
  *  gives a lens that does not apply, in the queue's short voice. */
@@ -12,7 +13,7 @@ const DESIGN_WORD: Record<string, string> = {
 };
 
 export function queueNote(d: SimDecision, view: ViewId, model: Model): string | null {
-  if (view === 'general') return null;
+  if (view === GENERAL) return null;
   const f = model.P.F[d.f]; if (!f) return null;
   if (hof(f, view) === 'unmeasured') return NOT_MEASURED.charAt(0) + NOT_MEASURED.slice(1).toLowerCase();
   switch (view) {

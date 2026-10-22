@@ -9,6 +9,7 @@ import { clamp } from '../camera';
 import { CHIP_H, CHIP_STEP, CHIP_W, agentColor, chipsFit, glyphAgent, glyphPin } from './glyphs';
 import { featRect } from './plan';
 import { onView, rs, sxv, syv, type SRect, type View } from './view';
+import { GENERAL } from '@bp/core/data/types';
 
 // Reduced motion (E.cam.reduced, the engine's one signal): dashes hold still, expanding rings hold at mid radius.
 const dashOff = (E: Engine, m: number) => (E.cam.reduced ? 0 : E.dashT * m);
@@ -109,7 +110,7 @@ function outlineIf(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod: numbe
 function selBox(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod: number, sid: string | null) {
   if (!sid || !E.M.L.TILE[sid]) return;
   const r = featRect(E, v, sid, lod, sr1)!, pad = clamp(r.w * 0.12, 5, 14);
-  ctx.strokeStyle = E.accentOf(E.S.view === 'general' ? null : E.S.view); ctx.lineWidth = 1.8; ctx.setLineDash(DASH_S); ctx.lineDashOffset = dashOff(E, -0.6);
+  ctx.strokeStyle = E.accentOf(E.S.view === GENERAL ? null : E.S.view); ctx.lineWidth = 1.8; ctx.setLineDash(DASH_S); ctx.lineDashOffset = dashOff(E, -0.6);
   ctx.strokeRect(r.x - pad, r.y - pad, r.w + pad * 2, r.h + pad * 2); ctx.setLineDash(NO_DASH); ctx.lineDashOffset = 0;
 }
 const DASH_S = [5, 4], DASH_B = [8, 4];

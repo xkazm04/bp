@@ -10,6 +10,7 @@ import { lensOf } from '@bp/core/model/lens';
 import { Mark, StageSym } from '@/components/Symbols';
 import { LensIcon } from './Panel';
 import { LENS_ICON, type IconId } from './icons';
+import { GENERAL } from '@bp/core/data/types';
 
 const W = 46, H = 28;
 const S = { fill: 'none', stroke: 'var(--ink)', strokeWidth: 1.3 } as const;
@@ -70,7 +71,7 @@ export function ShapedLegend({ view }: { view: ViewId }) {
   // follows `?lenses=` and a product with more (or fewer) lenses than the six built-ins
   const P = useEngine().M.P;
   const name = (id: string) => lensOf(P, id)?.name ?? id;
-  if (view === 'general') {
+  if (view === GENERAL) {
     const shown = P.lenses.filter((l) => isBuiltinLens(l.id)), rest = P.lenses.length - shown.length;
     return (
       <div className="lg shp-lg">

@@ -10,6 +10,7 @@ import type { ScanSnapshot } from '@bp/core/scan/types';
 import { Mark, StageSym } from '../Symbols';
 import { shallowEqual, useBp, useEngine, useLive } from '../hooks';
 import '../scan.css';
+import { GENERAL } from '@bp/core/data/types';
 
 // ------------------------------------------------------------------------------------------ find
 export function FindPanel() {
@@ -133,7 +134,7 @@ export function TitleBlock() {
   const E = useEngine(), M = E.M;
   const s = useBp((s) => ({ view: s.view, t: s.t, delta: s.delta }), shallowEqual);
   const sh = sheetOf(M.P, s.view), vs = views(M.P), now = s.t === M.P.asOf;
-  const { c, bad } = useMemo(() => ({ c: M.agg.countsOf('ALL', M.P.features, s.t, s.delta), bad: now ? M.agg.healthOf('ALL', M.P.features, 'general').bad : null }), [M.P, M.agg, s.t, s.delta, now]);
+  const { c, bad } = useMemo(() => ({ c: M.agg.countsOf('ALL', M.P.features, s.t, s.delta), bad: now ? M.agg.healthOf('ALL', M.P.features, GENERAL).bad : null }), [M.P, M.agg, s.t, s.delta, now]);
   return (
     <div className="tbk">
       <div className="proj"><div className="v">{M.P.name.toUpperCase()}</div><span className="lab">{M.P.scale > 1 ? 'Campus ×' + M.P.scale : 'Project'}</span></div>

@@ -13,6 +13,7 @@ import { useOpenCount } from './ledger/useLedger';
 import type { Engine } from '@/engine/Engine';
 import type { AppPage } from '@/engine/state';
 import './page-switch.css';
+import { GENERAL } from '@bp/core/data/types';
 
 function crumbLabel(E: ReturnType<typeof useEngine>, c: Crumb, short: boolean): string {
   const o = E.placeById(c.t, c.id);
@@ -36,7 +37,7 @@ const CrumbSum = memo(function CrumbSum({ navRef, pk }: { navRef: React.RefObjec
     const last = s.place[s.place.length - 1], cur = last ? E.placeById(last.t, last.id) : null, fs = cur ? cur.feats : M.P.features;
     const id = cur ? cur.id : 'ALL';
     const c = M.agg.countsOf(id, fs, s.t, s.delta), now = s.t === M.P.asOf;
-    const bad = now ? M.agg.healthOf(id, fs, 'general').bad : 0;
+    const bad = now ? M.agg.healthOf(id, fs, GENERAL).bad : 0;
     const asks = M.sim.has && now ? M.sim.stats(fs, s.who, s.view).asks : 0;
     return { n: fs.length, live: c.live + c.flagged, build: c.build, paper: c.paper, dep: c.dep, bad, asks };
     // simV is the sim's version: the asks change with it
@@ -167,7 +168,7 @@ function LensTabs() {
   }, [s.view]);
   const tab = (k: string) => {
     const i = vs.indexOf(k), sh = sheetOf(P, k);
-    const n = k === 'general' ? 0 : open.filter((d) => d.lens === k).length;
+    const n = k === GENERAL ? 0 : open.filter((d) => d.lens === k).length;
     const on = s.view === k;
     return (
       <button key={k} type="button" role="tab" data-lens={k} aria-selected={on} aria-label={sh.nm + (n ? ', ' + n + ' questions waiting' : '')} tabIndex={on ? 0 : -1}

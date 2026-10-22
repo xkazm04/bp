@@ -3,6 +3,7 @@
 import type { Engine } from '../Engine';
 import type { SimAgent } from '@bp/core/model';
 import type { Theme } from '../theme';
+import { GENERAL } from '@bp/core/data/types';
 
 /** A swarm dot's colour: working mint, waiting amber, paused a neutral ink (paused by a person, not a fault), blocked or failed red. */
 export function keyDotColor(th: Pick<Theme, 'mint' | 'amber' | 'red' | 'inkA'>, a: Pick<SimAgent, 'status' | 'paused'>): string {
@@ -29,7 +30,7 @@ export class KeyPlan {
     for (const R of E.M.L.rooms) {
       const cc = E.counts(R.id, R.feats), share = (cc.live + cc.flagged) / Math.max(1, cc.n);
       g.fillStyle = th.inkA(0.06 + share * 0.3); g.fillRect(R.x * m.s + m.ox, R.y * m.s + m.oy, R.w * m.s, R.h * m.s);
-      const bad = E.isNow ? E.M.agg.healthOf(R.id, R.feats, 'general').bad : 0;
+      const bad = E.isNow ? E.M.agg.healthOf(R.id, R.feats, GENERAL).bad : 0;
       if (bad) { g.fillStyle = th.alpha(th.red, Math.min(0.85, 0.35 + bad * 0.15)); g.fillRect(R.x * m.s + m.ox + R.w * m.s - 4, R.y * m.s + m.oy + 1, 3, 3); }
       g.strokeStyle = th.inkA(0.55); g.lineWidth = 0.6; g.strokeRect(R.x * m.s + m.ox, R.y * m.s + m.oy, R.w * m.s, R.h * m.s);
     }

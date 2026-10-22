@@ -105,5 +105,18 @@ const gSheet = /GENERAL_SHEET[^=]*=\s*\{\s*k:\s*'([^']+)'/.exec(sheetSrc);
 ok('general: core exports the GENERAL constant', !!gConst);
 ok('general: GENERAL_SHEET.k is the same word as GENERAL', !!gConst && !!gSheet && gConst[1] === gSheet[1], `${gConst?.[1]} vs ${gSheet?.[1]}`);
 
+// No bare 'general' in apps/web/src: it is GENERAL. Held back for the director (a sibling worker owns the phone sheet
+// surfaces this wave): Phone.tsx, sheet/SheetBody.tsx, sheet/LensPanel.tsx, one literal each. Remove an entry here
+// when its literal is replaced.
+const HELD = ['apps/web/src/components/Phone.tsx', 'apps/web/src/components/sheet/SheetBody.tsx', 'apps/web/src/components/sheet/LensPanel.tsx'];
+const bare: string[] = [];
+for (const f of src.filter((x) => /\.tsx?$/.test(x))) {
+  const text = blankComments(fs.readFileSync(f, 'utf8'));
+  for (const m of text.matchAll(/(['"`])general\1/g)) {
+    const at = `${f}:${text.slice(0, m.index).split('\n').length}`;
+    if (!HELD.includes(f)) bare.push(at);
+  }
+}
+ok('general: no bare General literal in apps/web/src outside the held files', bare.length === 0, bare.join('; '));
 if (failed) { console.log(`\n${failed} check(s) failed`); process.exit(1); }
 console.log('\nclaims ok');

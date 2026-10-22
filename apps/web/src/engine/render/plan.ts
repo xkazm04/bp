@@ -13,6 +13,7 @@ import { chipsFit, cloud, drawHealthBar, drawStageBar, glyphAgent, glyphPin, sta
 import { unknownFill } from './patterns';
 import { patchMiss } from './simwatch';
 import { onView, rs, smooth, sxv, syv, type SRect, type View } from './view';
+import { GENERAL } from '@bp/core/data/types';
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 /** setLineDash copies its argument; paintTile and ribSeg run once per tile per raster, so this is not a literal. */
@@ -400,7 +401,7 @@ function aggParts(E: Engine, id: string, fs: readonly Feature[], short: boolean)
   const c = E.counts(id, fs);
   const general = stageParts(c, short), generalShort = stageParts(c, true);
   const now = E.isNow;
-  const gTrouble = now ? E.M.agg.healthOf(id, fs, 'general').bad : 0;
+  const gTrouble = now ? E.M.agg.healthOf(id, fs, GENERAL).bad : 0;
   const top = E.mixS.top, D = now ? E.mixS.topD : 0;
   let lens: string[] | null = null, lensShort: string[] | null = null, lTrouble = 0;
   if (top && D > 0.001 && !failed(E, top)) {
@@ -470,7 +471,7 @@ function drawWingLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: Bl
     const sy = base - 32 * u, ss = sim.has && E.isNow ? E.statsOf(W.id, W.feats) : null;
     if (ss) E.watch.swarm(W.id, W.feats, ss, x - 4 * u, sy - 20 * u, wdt + 8 * u, 30 * u, r.x, base - 112 * u, r.w, 120 * u);
     if (ss && ss.n) {
-      const focus = E.S.who || E.S.view !== 'general', em = focus ? ss.mine : ss.asks, shown = em > 0 ? em : ss.asks;
+      const focus = E.S.who || E.S.view !== GENERAL, em = focus ? ss.mine : ss.asks, shown = em > 0 ? em : ss.asks;
       const askW = ss.asks ? tx.w(String(shown), tx.f(13, 600, true)) + 26 * u : 0;
       drawSwarmLine(E, ctx, x, sy, ss, wdt - askW);
       if (ss.asks) {

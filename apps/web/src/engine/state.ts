@@ -3,6 +3,7 @@
 import type { ViewId } from '@bp/core/data';
 import type { Preview, SimEvent, SimToast, Target } from '@bp/core/model';
 import type { LivePlan } from '@/lib/model/live-steer';
+import { GENERAL } from '@bp/core/data/types';
 
 /** The right-hand rail's items; each opens its own flyout over the plan. */
 export type DockTab = 'asks' | 'swarm' | 'orders' | 'plan' | 'find' | 'view' | 'steer';
@@ -88,7 +89,7 @@ export interface ScanMenuState {
 
 export function initialState(scale: number, asOf: string): UIState {
   return {
-    ready: false, scale, phone: false, compact: false, view: 'general', place: [], levelNames: [], level: 0,
+    ready: false, scale, phone: false, compact: false, view: GENERAL, place: [], levelNames: [], level: 0,
     open: null, dec: null, hover: null, sel: null, hl: null, hlDec: null, hlOpt: null, tgt: { ids: {}, n: 0, label: '' }, prev: null, lprev: null, track: null,
     t: asOf, delta: 7, who: null, ga: false, blast: null, key: null, dtab: null, selMode: false, dockHidden: false,
     morning: false, info: false, ordHi: null, crew: null, askAll: false, ordMenu: false, whoMenu: false, simV: 0,
