@@ -6,7 +6,7 @@
 import type { LensEntry } from '@bp/core/standard/types';
 import { checkLensManifest } from '@bp/core/scan/manifest-check';
 import { PROJECT_LENS_ID, TEMP_LENS_ID } from '@bp/core/scan/jobs';
-import { isObj } from '@bp/core/standard/guards';
+import { isObj } from '@bp/core/scan/guards';
 
 export const TEMP_LENS_KEY = 'bp.tmpLenses.kettle';
 

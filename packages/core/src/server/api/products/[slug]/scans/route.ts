@@ -14,7 +14,7 @@ import { MAX_SELECTION, SAFE_ID, scannable, type ScanScope, type ScanScopeKind }
 import { enqueueMeasure, list } from '@bp/core/server/jobs.server';
 import { readLensesAndFeatures } from '@bp/core/server/lens-write.server';
 import { kettleSim, simAnswer } from '@bp/core/server/kettle-sim.server';
-import { isObj } from '@bp/core/standard/guards';
+import { isObj } from '@bp/core/scan/guards';
 
 const KINDS: readonly ScanScopeKind[] = ['feature', 'bay', 'room', 'wing', 'all', 'selection'];
 /** Kettle's features are the sim's to check (against the sample's). */

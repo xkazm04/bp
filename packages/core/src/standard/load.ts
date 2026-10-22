@@ -14,7 +14,7 @@ import type {
 import { FEATURE_BOUND_FIELDS } from './types.ts';
 import { conditionFields, evaluateLens, fillReason, type EvalContext } from './health.ts';
 import { generalHealth, reasonOf, stageOn } from './present.ts';
-import { isObj } from '@bp/core/standard/guards';
+import { isObj } from '@bp/core/scan/guards';
 
 // ------------------------------------------------------------------------------------ the model
 export type { Stage, Health, Density, Scalar, LensField, LensManifest, FacetValues, FacetOverride, Kpi, StructureEvent, Variation };

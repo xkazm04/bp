@@ -5,7 +5,7 @@
 // Pure and import-free at runtime, so Node checks load it as-is.
 import type { ComputedHealth, Density, FieldType, GlyphName, LineName, MetricMethod } from '@bp/core/standard/types';
 import { PROJECT_LENS_ID, TEMP_LENS_ID } from './jobs.ts';
-import { isObj } from '@bp/core/standard/guards';
+import { isObj } from '@bp/core/scan/guards';
 
 // Records, not lists: a name added to the type without one here fails the typecheck.
 const GLYPHS: Record<GlyphName, 1> = { bars: 1, 'set-square': 1, brackets: 1, pulse: 1, padlock: 1, check: 1, stopwatch: 1 };

@@ -5,6 +5,7 @@
 import type { CommitDiff, Proposal, ProposalKind, ProposalOrigin, ProposalSize, ProposalStatus, Release, ReleaseCreated, ReleaseStatus, RiskClass, Tier, TriageResult, VersionSuggestion } from '../scan/types.ts';
 import type { Wave, WaveDispatchResult, WaveEffort, WaveModel, WavePackage } from '../scan/waves.ts';
 import type { JobKind, JobStatus, ReleaseStep, ScanJob, ScanScope, ScanScopeKind } from '../scan/jobs.ts';
+import { isObj } from '../scan/guards.ts';
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -13,7 +14,6 @@ type Obj = Record<string, unknown>;
 /** A field that is not what its type says; caught at the door and answered as `{ ok: false, error }`. */
 class WireError extends Error {}
 function fail(at: string, what: string): never { throw new WireError(at + ': ' + what); }
-const isObj = (x: unknown): x is Obj => typeof x === 'object' && x !== null && !Array.isArray(x);
 const join = (at: string, k: string): string => (at ? at + '.' + k : k);
 
 /** Runs a reader; a WireError becomes the failure, anything else is a bug and is rethrown. */

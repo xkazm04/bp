@@ -11,7 +11,7 @@ import type { LensEntry, LensManifest } from '@bp/core/standard/types';
 import { storeDir, writeAtomic } from './products.server';
 import { takenLooks, type LensLook } from '../scan/jobs';
 import type { ProductEntry } from '../scan/types';
-import { isObj } from '@bp/core/standard/guards';
+import { isObj } from '@bp/core/scan/guards';
 
 if (typeof window !== 'undefined') throw new Error('lens-write.server.ts is server-only');
 

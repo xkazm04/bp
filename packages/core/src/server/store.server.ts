@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { emptyScan, isEmptyScan, type Activity, type Coverage, type DecisionBody, type Measurement, type Pack, type Proposal, type Release, type Run, type ScanDelta, type ScanSnapshot, type Shot } from '../scan/types.ts';
-import { isObj } from '@bp/core/standard/guards';
+import { isObj } from '@bp/core/scan/guards';
 
 if (typeof window !== 'undefined') throw new Error('store.server.ts is server-only');
 

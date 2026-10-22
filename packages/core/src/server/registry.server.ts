@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { PRODUCTS_FILE, writeAtomic } from './products.server';
 import { RESERVED_SLUGS, SLUG_RE } from '../scan/readiness';
-import { isObj } from '@bp/core/standard/guards';
+import { isObj } from '@bp/core/scan/guards';
 
 if (typeof window !== 'undefined') throw new Error('registry.server.ts is server-only');
 

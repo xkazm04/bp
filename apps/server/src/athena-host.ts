@@ -13,7 +13,7 @@
 import fs from 'node:fs';
 import { jsonOnly, localHost, localOnly } from '@bp/core/scan/local-only';
 import type { Route } from './mount.ts';
-import { isObj } from '@bp/core/standard/guards';
+import { isObj } from '@bp/core/scan/guards';
 
 export type ToolClass = 'AUTO' | 'GATED';
 export type SideEffects = 'none' | 'internal' | 'external';
