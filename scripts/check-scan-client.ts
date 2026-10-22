@@ -303,5 +303,19 @@ const countSites = (menuSrc.match(/P\.base\.features\.length : /g) ?? []).length
 expect(countSites === 1, `ScanMenu.tsx computes the feature count at ${countSites} sites, not 1`);
 expect(/const count = \(sc: ScanScope\) => \(sc\.kind === 'all' \? P\.base\.features\.length : /.test(menuSrc), 'the one feature-count expression is no longer count()');
 
+// --------------------------------------------- 8. the UI contract's fetch-helper list describes the code
+// docs/blueprint-ui.md names the helpers of the scan-jobs paragraph and their request bounds. Every helper named
+// must be exported by client.ts and have a consumer, and both bounds must be stated with the values the code has.
+const uiDoc = fs.readFileSync(path.join(ROOT, 'docs/blueprint-ui.md'), 'utf8').replace(/\r\n/g, '\n');
+const listed = uiDoc.match(/Fetch helpers: ((?:`\w+`(?:, )?)+),? each rejecting/)?.[1];
+expect(!!listed, 'docs/blueprint-ui.md no longer has the "Fetch helpers: ..., each rejecting" list (update this check)');
+for (const h of (listed ?? '').match(/\w+/g) ?? []) {
+  expect(helperNames.includes(h), `docs/blueprint-ui.md lists ${h} among the fetch helpers and client.ts does not export it`);
+  expect(consumers(h) > 0, `docs/blueprint-ui.md lists ${h} among the fetch helpers and nothing calls it`);
+}
+const para = uiDoc.slice(uiDoc.indexOf('Fetch helpers:'), uiDoc.indexOf('Fetch helpers:') + 900);
+expect(para.includes(`\`REQUEST_TIMEOUT_MS\` (${client.REQUEST_TIMEOUT_MS / 1000} s)`), 'docs/blueprint-ui.md does not state REQUEST_TIMEOUT_MS with the code\'s value');
+expect(para.includes(`\`LENS_DRAFT_TIMEOUT_MS\` (${client.LENS_DRAFT_TIMEOUT_MS / 1000} s)`), 'docs/blueprint-ui.md does not state LENS_DRAFT_TIMEOUT_MS with the code\'s value');
+
 if (failures.length) { console.log(failures.map((f) => 'FAIL ' + f).join('\n')); console.log(`check-scan-client: ${failures.length} failed, ${held} held`); process.exit(1); }
 console.log(`check-scan-client: ${held} expectations held (${SHAPES.length} rejection shapes, ${DEV_WORDS.length} developer strings forbidden, ${HELPERS.length} request helpers bounded)`);
