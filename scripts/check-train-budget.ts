@@ -207,5 +207,25 @@ for (const [what, rows, run, budget] of BUDGETS) {
   console.log(`dom     ${what}: ${n} elements${rows > 1 ? ' (' + (n / rows).toFixed(1) + ' per row)' : ''}, budget ${budget}`);
 }
 
+// ------------------------------------------------------------------------------------------- 3. the verdict source
+// A decision surface asks for an item's verdict (train/Decide.tsx verdictIn: the bar's render, the decision, the note
+// editor). Counted in measurement visits through a counting array: a 12-item selection asked three times (bar render,
+// press A, the note editor) must read the snapshot once, not 12 x 2 scans per ask, and every answer must equal the
+// two-filter reference the table's facts agree with.
+{
+  const { verdictIn } = await imp('components/ledger/train/Decide.tsx');
+  const { verdictOf } = await impCore('src/scan/compare.ts');
+  let visits = 0;
+  const counted: Any = new Proxy(measurements, { get: (t, k, r) => { if (typeof k === 'string' && /^\d+$/.test(k)) visits++; return Reflect.get(t, k, r); } });
+  const T: Any = { measurements: counted, lenses: P.lenses };
+  const sel = proposals.filter((p) => p.pack_id).slice(0, 12);
+  const ref = (p: Any) => verdictOf(p, measurements.filter((m) => m.proposal_id === p.id && m.phase === 'before'), measurements.filter((m) => m.proposal_id === p.id && m.phase === 'after'), P.lenses).verdict;
+  let same = 0;
+  for (let ask = 0; ask < 3; ask++) for (const p of sel) if (verdictIn(T, p) === ref(p)) same++;
+  expect(same === 36, `verdictIn agrees with the per-item filters: ${same} of 36 answers`);
+  expect(visits <= measurements.length, `a 12-item selection asked three times visits ${visits} measurements, budget ${measurements.length} (one pass; 7,200 per ask before)`);
+  console.log(`verdict  12 items x 3 asks over ${measurements.length} measurements: ${visits} visits, ${same} of 36 answers equal the reference`);
+}
+
 if (failures.length) { for (const f of failures) console.log('FAIL ' + f); console.log(`check-train-budget: ${failures.length} failed, ${held} held`); process.exit(1); }
 console.log(`check-train-budget: ${held} held`);

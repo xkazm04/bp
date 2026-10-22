@@ -9,15 +9,16 @@
 // compare footer when asked from there). The sent items are pending (LedgerUi.pending) until useTrain() shows them in
 // another status: no optimistic flip, the row says "deciding" until the stream says what happened. A single decision on
 // the focused (or open) item moves the focus, and the open compare, to the next waiting item of the order DecideOrder
-// provides (LedgerPage: the table's visible rows).
+// provides (LedgerPage: the table's visible rows). A decision the store never answers is released after
+// PENDING_BOUND_MS with a toast saying it may still have landed (boundPending).
 import { createContext, useCallback, useContext, useEffect, useMemo } from 'react';
-import type { Proposal, Release, TriageDecision, TriageResult } from '@bp/core/scan/types';
+import type { Measurement, Proposal, ProposalStatus, Release, TriageDecision, TriageResult } from '@bp/core/scan/types';
 import { triageItems, refusalText } from '@/lib/scan/actions';
 import { verdictOf, type Verdict } from '@bp/core/scan/compare';
 import { TRIAGE_FROM, WAITING, canDecide, isFlagged, noteRequired } from '@bp/core/train/rules';
 import { parseTriageResult } from '@bp/core/train/wire';
 import { useEngine } from '../../hooks';
-import { setLedgerUi, useLedgerUi, type NoteAsk } from '../useLedger';
+import { setLedgerUi, useLedgerUi, type NoteAsk, type SetUi } from '../useLedger';
 import { useTrain, type TrainData } from './data';
 import { NoteEditor } from './NoteEditor';
 import { Btn, type BtnTone } from './ui/Controls';
@@ -38,14 +39,52 @@ export interface DecideApi {
   pending: ReadonlySet<string>;
 }
 
+/** How long a sent decision may stay pending with the store silent (a call that hangs, or a write that landed while the
+ *  snapshot stream is down). Generous on purpose: dropping it early reopens the double-send the pending set prevents. */
+export const PENDING_BOUND_MS = 60_000;
+
+/** After `ms`, release every item still pending at the status it was sent from, and say the decision may have landed.
+ *  `later` is the timer (injected so a check can run it at once); an item whose pending moved on is left alone. */
+export function boundPending(was: ReadonlyMap<string, ProposalStatus>, ms: number, io: { later(f: () => void, ms: number): unknown; set: SetUi; toast(title: string, body: string): void }): void {
+  io.later(() => {
+    let expired: string[] = [];
+    io.set((u) => {
+      expired = [...was].filter(([id, s]) => u.pending.get(id) === s).map(([id]) => id);
+      if (!expired.length) return u;
+      const m = new Map(u.pending); for (const id of expired) m.delete(id);
+      return { ...u, pending: m };
+    });
+    if (expired.length) io.toast('Still waiting on the store', expired.join(', ') + (expired.length > 1 ? ': those decisions' : ': that decision') + ' may still have landed. Check the row before sending again.');
+  }, ms);
+}
+
 /** The order "next waiting item" walks after a single decision (the table's visible rows), from LedgerPage. */
 export const DecideOrder = createContext<(() => readonly string[]) | null>(null);
 
-/** An item's verdict, from its own readings (only the items being decided: a click, not a render). */
+/** Every item's before and after readings, grouped in one pass and kept per measurements array (the store hands the same
+ *  array until it changes): the one source of an item's readings for the table's facts (ItemRow.tsx useItemFacts), the
+ *  decision bar and the decision path. */
+export interface Readings { before: Measurement[]; after: Measurement[] }
+const READINGS = new WeakMap<readonly Measurement[], ReadonlyMap<string, Readings>>();
+export function readingsOf(ms: readonly Measurement[]): ReadonlyMap<string, Readings> {
+  let out = READINGS.get(ms);
+  if (out) return out;
+  const by = new Map<string, Readings>();
+  for (const m of ms) {
+    if (!m.proposal_id || (m.phase !== 'before' && m.phase !== 'after')) continue;
+    let e = by.get(m.proposal_id);
+    if (!e) by.set(m.proposal_id, (e = { before: [], after: [] }));
+    e[m.phase].push(m);
+  }
+  READINGS.set(ms, out = by);
+  return out;
+}
+const NO_READINGS: readonly Measurement[] = [];
+
+/** An item's verdict, from its own readings (a lookup in the grouped readings, not a scan of every measurement). */
 export function verdictIn(T: TrainData, p: Proposal): Verdict {
-  const before = T.measurements.filter((m) => m.proposal_id === p.id && m.phase === 'before');
-  const after = T.measurements.filter((m) => m.proposal_id === p.id && m.phase === 'after');
-  return verdictOf(p, before, after, T.lenses).verdict;
+  const e = readingsOf(T.measurements).get(p.id);
+  return verdictOf(p, e?.before ?? NO_READINGS, e?.after ?? NO_READINGS, T.lenses).verdict;
 }
 export const releaseIn = (T: TrainData, p: Proposal): Release | undefined => (p.release_id ? T.releases.find((r) => r.id === p.release_id) : undefined);
 
@@ -80,6 +119,7 @@ export function useDecide(own?: () => readonly string[]): DecideApi {
     }
     const was = new Map(ids.map((id) => [id, T.byId.get(id)!.status]));
     setLedgerUi((u) => { const m = new Map(u.pending); for (const [id, s] of was) m.set(id, s); return { ...u, pending: m, note: null }; });
+    boundPending(was, PENDING_BOUND_MS, { later: (f, ms) => setTimeout(f, ms), set: setLedgerUi, toast: (t, b) => E.toast(t, b, undefined, undefined, 'warn') });
     const drop = (xs: readonly string[]) => setLedgerUi((u) => { const m = new Map(u.pending); for (const id of xs) m.delete(id); return { ...u, pending: m }; });
     try {
       const r = await triageItems(T.ctx, ids, decision, note);
@@ -137,7 +177,7 @@ export function Decide({ ids, compact = false }: DecideProps) {
   const btn = (d: TriageDecision, tone: BtnTone | undefined, label: string, key: string, role?: string) => {
     const why = whyNot(T, ps, d);
     return (
-      <Btn tone={tone} kbd={key} disabled={!!why} title={why ?? label + ' (' + key + ')'} role={role} onClick={() => void decide(ps.map((p) => p.id), d, undefined, at)}>
+      <Btn tone={tone} kbd={key} reason={why ?? undefined} title={label + ' (' + key + ')'} role={role} onClick={() => void decide(ps.map((p) => p.id), d, undefined, at)}>
         {label}
       </Btn>
     );

@@ -720,10 +720,10 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
   `packages/core/src/train/rules.ts` alone: which statuses a decision starts from; rework and descope always need a note; an
   accept needs one when the item failed or did not move (it then ships flagged). The note editor takes the bar's line
   (or the compare footer's), with quick notes. Sent items are pending (`LedgerUi.pending`) until the store or the sim
-  shows them in another status: no optimistic flip; a refusal toasts what was skipped and why (`skipped[].reason`). A
+  shows them in another status, or for 60 s (`PENDING_BOUND_MS`: then released with a toast that the decision may have landed): no optimistic flip; a refusal toasts what was skipped and why (`skipped[].reason`). A
   single decision on the focused item moves the focus, and the open compare, to the next waiting item. **Undo** is
   `reopen`: the item goes back to its `triaged_from` and out of a draft release, one step deep. The bar's package
-  pill reads `Package v<draft or suggested> · n accepted`, with Release →.
+  pill reads `Package v<draft or suggested> · n accepted`, with Release →. A decision that cannot apply keeps its button focusable (`Btn` `reason`: `aria-disabled`, click suppressed) and the why-not is its `aria-describedby` text, not a hover-only `title`.
 - **The compare panel** (`train/compare/ComparePanel.tsx`): one pack item's evidence, docked right at
   `clamp(--cmp-min, 52%, --cmp-max)` from 1100 px (a wide window opens the first item the first time the table shows),
   over the table below that; **W** (or Enter again) gives it the full width. The head names the lens, id, pack and
