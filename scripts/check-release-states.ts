@@ -53,5 +53,12 @@ for (const f of fs.readdirSync(DIR).filter((n) => n.endsWith('.tsx')).sort()) {
   expect(/sug\.err\b[^\n]*onClick=\{sug\.retry\}/.test(vb), 'VersionBox.tsx: the refusal line offers a retry');
 }
 
+// The sample toggles show the sim's switches, not a copy of them: read through the sim's subscription.
+{
+  const sw = blankComments(fs.readFileSync(path.join(DIR, 'SampleToggles.tsx'), 'utf8'));
+  expect(/useSyncExternalStore\(\s*sim\.subscribe\s*,\s*\(\)\s*=>\s*sim\.trainToggles/.test(sw), 'SampleToggles.tsx reads trainToggles through sim.subscribe');
+  expect(!/useState\b/.test(sw), 'SampleToggles.tsx keeps no React copy of the sim\'s switches');
+}
+
 console.log(`release-states: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
