@@ -24,7 +24,8 @@ export interface ScanView {
   current?: string;
   n: number;
   m: number;
-  status: JobStatus;
+  /** `stale`: a running job that has shown no sign of life for a while (scan-views STALE_MS); not known to have failed. */
+  status: JobStatus | 'stale';
 }
 
 /** The sweep's period across the feature being judged. */
@@ -67,7 +68,7 @@ export class ScanLayer {
       for (let j = 0; j < i; j++) if (keys[j] === key) { if (!d) lead = j; d++; }
       keys.push(key); this.depth.push(d); this.lead.push(lead);
       const short = E.M.P.LENS[V.lens]?.short ?? V.lens;
-      this.text.push(short + ' ' + (V.status === 'queued' ? 'queued' : V.status === 'failed' ? 'failed' : V.status === 'done' ? V.m + '/' + V.m + ' done' : V.n + '/' + V.m));
+      this.text.push(short + ' ' + (V.status === 'queued' ? 'queued' : V.status === 'failed' ? 'failed' : V.status === 'stale' ? 'stalled ' + V.n + '/' + V.m : V.status === 'done' ? V.m + '/' + V.m + ' done' : V.n + '/' + V.m));
       this.done.push([...V.done]);
       this.col.push(V.accent);
     }
@@ -97,7 +98,7 @@ export class ScanLayer {
     ctx.save();
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     for (let i = 0; i < n; i++) {
-      const V = this.views[i], col = V.status === 'failed' ? th.red : this.col[i], running = V.status === 'running';
+      const V = this.views[i], col = V.status === 'failed' ? th.red : V.status === 'stale' ? th.amber : this.col[i], running = V.status === 'running';
       const r = rs(v, this.box[i], r1);
       // the first outline stands just outside its place; each further one on the same place nests 6 px further in
       const off = -3 * u + 6 * u * this.depth[i];
