@@ -27,6 +27,7 @@
     "check:live-steer": "node scripts/check-live-steer.ts",
     "check:live-tracks": "node scripts/check-live-tracks.ts",
     "check:release-train": "node scripts/check-release-train.ts",
+    "check:release-states": "node scripts/check-release-states.ts",
     "check:train-quality": "node scripts/check-train-quality.mjs",
     "check:ledger-shell": "node scripts/check-ledger-shell.mjs",
     "check:train-wire": "node scripts/check-train-wire.ts",
