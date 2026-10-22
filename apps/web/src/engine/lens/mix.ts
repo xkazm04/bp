@@ -4,13 +4,14 @@
 // engine (it comes from the map and the session's `?lenses=` toggle).
 import { animate, motionValue, type MotionValue } from 'motion';
 import type { ViewId } from '@bp/core/data';
+import { GENERAL } from '@bp/core/data/types';
 
 /** `general` plus one weight per registry lens id, each 0..1. */
 export type LensMix = { general: number } & Record<string, number>;
 
 export function mixTarget(ids: readonly string[], v: ViewId): LensMix {
-  const m: LensMix = { general: v === 'general' ? 1 : 0 };
-  for (const l of ids) m[l] = v === 'general' || v === l ? 1 : 0;
+  const m: LensMix = { [GENERAL]: v === GENERAL ? 1 : 0 };
+  for (const l of ids) m[l] = v === GENERAL || v === l ? 1 : 0;
   return m;
 }
 
@@ -63,7 +64,7 @@ export class MixDriver {
   // Plain fields, not parameter properties: Node's type stripping (how scripts/*.ts run) cannot load those.
   constructor(ids: readonly string[], view: ViewId, onChange: () => void, spring = { stiffness: 170, damping: 26 }) {
     this.ids = ids; this.onChange = onChange; this.spring = spring;
-    this.keys = ['general', ...ids];
+    this.keys = [GENERAL, ...ids];
     const t = mixTarget(ids, view);
     this.mix = { ...t };
     const vals: Record<string, MotionValue<number>> = {};

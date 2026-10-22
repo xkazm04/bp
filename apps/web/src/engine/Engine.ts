@@ -32,6 +32,7 @@ import { drawFlags, flagAt, flagKey, layoutFlags, type Flag } from './render/fla
 import { ScanLayer, type ScanView } from './render/scans';
 import { loadArt } from './render/illo';
 import { rs, smooth, type SRect, type View } from './render/view';
+import { GENERAL } from '@bp/core/data/types';
 
 export interface EngineOptions {
   canvas: HTMLCanvasElement;
@@ -155,7 +156,7 @@ export class Engine {
     this.cam.reduced = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     this.tx = new Text('sans-serif', 'monospace');
     this.lensIds = this.M.P.lenses.map((l) => l.id);
-    this.mix = new MixDriver(this.lensIds, 'general', () => { this.mixV++; this.mixS = this.mix.state; this.dirty(); }, this.expr.spring);
+    this.mix = new MixDriver(this.lensIds, GENERAL, () => { this.mixV++; this.mixS = this.mix.state; this.dirty(); }, this.expr.spring);
     this.mixS = this.mix.state;
     this.cache = new StaticCache();
     this.wallPaths = buildWallPaths(this);
@@ -289,7 +290,7 @@ export class Engine {
     if (!this.root || !this.th) return;
     const v = this.S.view;
     this.root.dataset.view = v;
-    this.root.style.setProperty('--lens', this.accentOf(v === 'general' ? null : v));
+    this.root.style.setProperty('--lens', this.accentOf(v === GENERAL ? null : v));
   }
   fit() {
     if (this.destroyed) return;
@@ -1336,7 +1337,7 @@ export class Engine {
   }
   private hashOf(place: string): string {
     const S = this.S, p: string[] = [];
-    if (S.view !== 'general') p.push('lens=' + S.view);
+    if (S.view !== GENERAL) p.push('lens=' + S.view);
     if (place) p.push(place);
     if (!this.isNow) p.push('t=' + S.t);
     if (S.blast) p.push('blast=' + S.blast);
@@ -1387,7 +1388,7 @@ export class Engine {
     this.hashLock = true;
     try {
     this.endIntro();
-    if (h.lens && h.lens !== 'general' && lensOf(this.M.P, h.lens)) { this.store.set({ view: h.lens }); this.mix.to(h.lens, true); }
+    if (h.lens && h.lens !== GENERAL && lensOf(this.M.P, h.lens)) { this.store.set({ view: h.lens }); this.mix.to(h.lens, true); }
     if (h.d && ['1', '7', '14'].includes(h.d)) this.store.set({ delta: +h.d as 1 | 7 | 14 });
     if (h.t && /^\d{4}-\d\d-\d\d$/.test(h.t)) this.setTime(h.t);
     if (h.who && this.M.P.P[h.who]) this.store.set({ who: h.who });
@@ -1410,7 +1411,7 @@ export class Engine {
     this.hashLock = true;
     try {
       this.endIntro();
-      const view = h.lens && lensOf(this.M.P, h.lens) ? h.lens : 'general';
+      const view = h.lens && lensOf(this.M.P, h.lens) ? h.lens : GENERAL;
       if (view !== this.S.view && isView(this.M.P, view)) this.setView(view);
       this.setDelta(h.d && ['1', '7', '14'].includes(h.d) ? (+h.d as 1 | 7 | 14) : 7);
       this.setTime(h.t && /^\d{4}-\d\d-\d\d$/.test(h.t) ? h.t : this.M.P.asOf);

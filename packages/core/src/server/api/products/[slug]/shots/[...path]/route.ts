@@ -1,4 +1,4 @@
-// GET /api/products/[slug]/shots/[...path]: a screenshot (or recording) from the product's store, by
+// GET /api/products/[slug]/shots/[...path]: a screenshot from the product's store, by
 // its path under `<store>/shots`. A Shot row's `path` is relative to the store dir
 // (`shots/<run>/<feature>-<theme>-<size>.png`); its leading `shots/` may be kept or dropped in the URL.
 // Anything that would resolve outside `<store>/shots` is refused with 403: `..`, `.`, empty, absolute or
@@ -9,7 +9,7 @@ import path from 'node:path';
 import { findProduct, storeDir } from '@bp/core/server/products.server';
 import { localHost } from '@bp/core/scan/local-only';
 
-const TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.webm': 'video/webm' };
+const TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' };
 const BAD_SEGMENT = /[\\/:\u0000]/;
 
 // The run id in the path makes a shot as content-addressed as a commit sha (commits/[sha]/route.ts: "a commit never
@@ -48,7 +48,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   try { real = fs.realpathSync(file); const rel = path.relative(fs.realpathSync(root), real); if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return forbidden(); }
   catch { return Response.json({ error: 'no such shot' }, { status: 404 }); }
   const type = TYPES[path.extname(real).toLowerCase()];
-  if (!type) return Response.json({ error: 'not an image or video' }, { status: 415 });
+  if (!type) return Response.json({ error: 'not an image' }, { status: 415 });
   let st: fs.Stats;
   try { st = fs.statSync(real); } catch { return Response.json({ error: 'no such shot' }, { status: 404 }); }
   if (!st.isFile()) return Response.json({ error: 'no such shot' }, { status: 404 });

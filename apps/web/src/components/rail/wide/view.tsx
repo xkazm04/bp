@@ -6,6 +6,7 @@ import { GA_MILESTONE, personLens, sheetOf } from '@bp/core/model';
 import { Mark } from '../../Symbols';
 import { shallowEqual, useBp, useEngine } from '../../hooks';
 import { Fig, Row, Sec, Workbench, swallow, useListRef, useWalk } from './shell';
+import { GENERAL } from '@bp/core/data/types';
 
 const WIN = [
   { d: 1 as const, k: '24h', t: 'Last 24 hours', x: 'What moved since yesterday: the morning glance.' },
@@ -50,7 +51,7 @@ export function View() {
   const open = sim.has ? sim.openDecs() : [];
   const c = sim.has ? sim.tallyStatus() : null;
   const now = s.t === M.P.asOf;
-  const h = now ? M.agg.healthOf('ALL', M.P.features, 'general') : null;
+  const h = now ? M.agg.healthOf('ALL', M.P.features, GENERAL) : null;
   const chg = M.agg.countsOf('ALL', M.P.features, s.t, s.delta).chg;
   const rows = [{ id: null as string | null, name: 'Everyone', sub: 'the whole product, all sheets', n: open.length }]
     .concat(persons.map((x) => ({ id: x.id, name: x.name, sub: x.title + ' · ' + sheetOf(M.P, personLens(M.P, x.id)).nm, n: open.filter((d) => d.decider === x.id).length })));

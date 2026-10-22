@@ -9,7 +9,6 @@ import { LiveEmpty, OriginChip, TierChip, URG, bodySections, declineDrafts, fmtN
 import { optHover, shallowEqual, useAnswerNote, useBp, useEngine, useLive, useVariant } from '../../hooks';
 import { Group, Row, Sec, Workbench, useListRef, useWalk } from './shell';
 
-const URG_SHORT: Record<SimDecision['urg'], string> = { high: 'Urgent', medium: 'Soon', low: 'Later' };
 
 /** The metric move as parts for the big figure; null when the proposal names no metric. */
 function moveParts(p: Proposal, unit: string | undefined, label: string | undefined, scan: ScanSnapshot | undefined) {
@@ -87,7 +86,7 @@ export function Review() {
       <Row key={d.id} id={d.id} on={on} onPick={() => setSelId(d.id)} cls={'u-' + d.urg}
         onEnter={() => !E.S.dec && E.setHlDec(d.id)} onLeave={() => E.setHlDec(null)}>
         <i className="urg" aria-hidden="true" />
-        <span className="rk"><span>{URG_SHORT[d.urg]}</span><span className="lz">{short(d.lens)}</span>{d.isNew && <span className="nw">New</span>}{p && <TierChip p={p} />}{p && <OriginChip p={p} link={false} />}</span>
+        <span className="rk"><span>{URG[d.urg]}</span><span className="lz">{short(d.lens)}</span>{d.isNew && <span className="nw">New</span>}{p && <TierChip p={p} />}{p && <OriginChip p={p} link={false} />}</span>
         <span className="rt">{d.q}</span>
         <span className="rm"><span>{f?.name ?? d.f}</span><span>{fmtWait(sim.waitMin(d))}</span></span>
       </Row>

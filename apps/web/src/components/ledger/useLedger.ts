@@ -29,6 +29,7 @@ import { useEngine, useLive, useScanCtx } from '../hooks';
 import { useWaves, type WavesModel } from './useWaves';
 import type { Wave, WaveDispatchResult } from '@bp/core/scan/waves';
 import { byPackAge } from '@bp/core/train/rules';
+import { GENERAL } from '@bp/core/data/types';
 
 /** Status order everywhere in the ledger: open first, then moving, then built and waiting, then a person's triage and
  *  the release (v2), then declined. */
@@ -448,7 +449,7 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
   const openFeature = useCallback((f: Finding) => {
     if (!f.fid) { E.toast('Not on the plan', f.p.feature + ' is not a feature of this map'); return; }
     E.setPage('plan');
-    E.setView(isView(P, f.p.lens) ? f.p.lens : 'general');
+    E.setView(isView(P, f.p.lens) ? f.p.lens : GENERAL);
     E.openFeature(f.fid);
   }, [E, P]);
 

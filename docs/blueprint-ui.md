@@ -135,6 +135,18 @@ Data (since the app-structure v3 adoption, spark `blueprint-data-standard` WP3):
 - A decision or standing order in `swarm.json` names its lens by id; one whose lens is disabled or
   unknown is still listed, under General.
 
+## Supported browsers (2026-10-22)
+
+**Floor:** Chrome 116, Safari 17.4, Firefox 124 (current evergreen desktop and phone browsers; no polyfills, no
+legacy targets). The floor is set by the newest web API the app calls on purpose, `AbortSignal.any` in
+`apps/web/src/lib/scan/client.ts` (which composes a caller's signal with the request bound). An older browser fails
+the scan requests with a TypeError and is unsupported, not worked around.
+
+- Nothing in `apps/web/src` may use a web API (script or CSS) newer than this floor without raising it here first.
+  `npm run check:claims` holds the list of newer APIs it knows about, reads the floor from the line above, and
+  fails on a use past it. Add an API to its table when you reach for a recent one.
+- A feature the floor lacks (such as `requestIdleCallback` in Safari) is used only behind a `typeof` guard.
+
 ## Architecture
 
 ```
@@ -403,7 +415,7 @@ Registry writes (`packages/core/src/server/registry.server.ts`) rewrite `bp.prod
 | `GET /api/products/<slug>/scan` | `ScanSnapshot`: all runs, measurements, proposals, shots and coverage, plus the latest 200 activity rows in ascending id order. A missing store gives empty arrays. |
 | `GET /api/products/<slug>/stream` | Server-Sent Events, described below. |
 | `POST /api/products/<slug>/proposals/<id>` | Body `{ decision: 'approve' \| 'decline', note?: string }`. Sets `status`, `decided_by = 'blueprint'`, `decided_at`, `decision_note` and `updated_at`, but only while the status is `proposed`. Answers: **200** with the updated `Proposal`; **409** with the current row as the body (someone already decided, or the skill moved it on); **404** for an unknown id or a missing store; **400** for any other body (extra keys, a note that is not a string, a body that is not JSON); **503** when the store stayed locked past the busy timeout. |
-| `GET /api/products/<slug>/shots/<path>` | The file bytes as png, jpeg, webp or webm (by extension; anything else gets 415). `<path>` is relative to `<store>/shots`. A full `Shot.path` with its leading `shots/` is accepted too. **403** for anything that would resolve outside `shots/`: `.`, `..`, empty, absolute or drive segments, `\`, `/` or `:` encoded inside a segment (`..%2F..%2Fx`), NUL, and symlinks that point out. Plain `../` in a URL is collapsed by the HTTP layer before routing, so it never reaches the handler (Next answers 404). |
+| `GET /api/products/<slug>/shots/<path>` | The file bytes as png, jpeg or webp (by extension; no video type is advertised, nothing in the tree writes or plays one; anything else gets 415). `<path>` is relative to `<store>/shots`. A full `Shot.path` with its leading `shots/` is accepted too. **403** for anything that would resolve outside `shots/`: `.`, `..`, empty, absolute or drive segments, `\`, `/` or `:` encoded inside a segment (`..%2F..%2Fx`), NUL, and symlinks that point out. Plain `../` in a URL is collapsed by the HTTP layer before routing, so it never reaches the handler (Next answers 404). |
 | `POST /api/products/<slug>/scans` | Body `{ lens, scope: ScanScope }`: queue a lens scan (`/lens-scan measure`). **202** with the `ScanJob`; **400** `{ error: 'unknown-lens' }` (not an enabled lens of the map), `'no-scan-method'` (no built-in method and no manifest `scan` block), `'bad-scope'` (a kind outside feature/bay/room/wing/all/selection, an empty label, an `id` or feature failing `SAFE_ID`, a feature the map lacks, `all` with features or an id, another kind without them, more than 200 selection features). `selection` is the ledger's selected features: no `id`, 1..200 features, each in the map; the UI labels it `Selection (n)`; **429** when 16 jobs are queued; **404** for an unknown slug or a product without a map. |
 | `GET /api/products/<slug>/scans` | `ScanJob[]`, oldest first. |
 | `DELETE /api/products/<slug>/scans/<job>` | Cancel: a queued job leaves the queue, a running one is killed with its process tree. **200** with the `ScanJob` (a finished one as it is); **404**. |

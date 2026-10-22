@@ -12,6 +12,7 @@ import { BoldPanel } from './panels';
 import { queueNote } from './words';
 import { isBuiltinLens } from '../base/legacy';
 import './styles.css';
+import { GENERAL } from '@bp/core/data/types';
 
 // bold knows the six built-in lenses; any other lens falls back to the manifest-driven subtle channel
 const channels: Record<string, LensChannel> = Object.fromEntries((Object.keys(CHANNELS) as (keyof typeof CHANNELS)[]).map((l) => [l, { ...CHANNELS[l], decor: makeDecor(l) } satisfies LensChannel]));
@@ -36,7 +37,7 @@ export const bold: Variant = {
   expression: boldExpression,
   ui: {
     SheetPanel: BoldPanel,
-    tabLabel: (v) => (v === 'general' ? 'General' : isBuiltinLens(v) ? LENS_NAME[v].nm : null),
+    tabLabel: (v) => (v === GENERAL ? 'General' : isBuiltinLens(v) ? LENS_NAME[v].nm : null),
     queueNote,
   },
 };

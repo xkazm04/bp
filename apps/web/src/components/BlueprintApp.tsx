@@ -35,6 +35,7 @@ import { LedgerPageLazy, Phone } from './Phone';
 import { ProjectSwitcher } from './ProjectSwitcher';
 import { ScanMenu } from './ScanMenu';
 import { LensesButton, LensesPanel } from './ledger/lens/LensesPanel';
+import { GENERAL } from '@bp/core/data/types';
 import './blueprint.css';
 
 // The Kettle sample (~770 KB of map, events and swarm) is its own chunk, fetched only when the sample is shown.
@@ -290,7 +291,7 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
   const info = useMemo<LiveInfo | null>(() => (product ? { slug: product, product: live } : null), [product, live]);
   return (
     <MotionConfig reducedMotion="user">
-    <div className="bp" ref={root} data-variant={variant.id} data-view="general">
+    <div className="bp" ref={root} data-variant={variant.id} data-view={GENERAL}>
       <div className="bp-paper" />
       <canvas ref={cv} className="bp-map" tabIndex={0} role="application"
         aria-label={'Zoomable floor plan of the product with the ' + (product ? 'live lens scan' : 'simulated agent swarm') + ' working over it. Scroll or pinch to zoom, drag to pan, click to go one level deeper. Plus and minus zoom, arrows walk rooms, Enter opens, Escape goes back. Shift-drag draws a selection.'} />
