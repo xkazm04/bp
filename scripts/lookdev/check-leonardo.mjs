@@ -9,6 +9,8 @@
 //   report    `total`'s byQuality breakdown plus priorSpend adds up to nightTotal, the figure the cap refuses on
 //   out       --out stays inside lookdev/: a name that would resolve outside it is refused before any call
 //   egress    redact() is applied at every place text leaves gen() for log.jsonl or stdout (source guard)
+//   sinks     the key reaches only the Bearer header, and no file write, child process, console call or escaping Error
+//             can carry it; each guard is shown red on a seeded copy of its defect (seed); siblings never read it
 //   source    a source guard over leonardo.mjs: it names no absolute machine path, so the .env it reads for
 //             LEONARDO_API_KEY is THIS checkout's and no other one's. Comments are stripped before the match.
 // Run: node scripts/lookdev/check-leonardo.mjs   Exit 1 on any failure.
@@ -138,7 +140,7 @@ check('window: --stop-at still refuses inside the window', !withinCap(nightTotal
 // checkout's secret instead of its own, and that a key is missing is the only signal the operator would get.
 // Comments go first - the header TALKS about .env, and a matcher over raw text would be satisfied by prose (SKILL 7.8).
 const LEO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'leonardo.mjs');
-const nocomment = fs.readFileSync(LEO, 'utf8')
+const nocomment = fs.readFileSync(LEO, 'utf8').replace(/\r\n/g, '\n') // an autocrlf checkout is CRLF, and `.` stops at \r
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .split('\n').map((l) => l.replace(/(^|[^:'"\w])\/\/.*$/, '$1')).join('\n');
 const abs = [...nocomment.matchAll(/['"`][A-Za-z]:[\\/][^'"`]*/g)].map((m) => m[0]);
@@ -195,6 +197,70 @@ const keyTemplates = [...nocomment.matchAll(/`[^`]*\$\{key\}[^`]*`/g)].map((m) =
 check('egress: the key is interpolated into exactly one string, the Bearer header', keyTemplates.length === 1 && /^`Bearer \$\{key\}`$/.test(keyTemplates[0]), keyTemplates.join(' | '));
 const appends = [...nocomment.matchAll(/appendFileSync\([^;]*;/g)].map((m) => m[0]);
 check('egress: the log is appended to once, with the entry alone', appends.length === 1 && /appendFileSync\(LOG,\s*JSON\.stringify\(entry\)\s*\+\s*'\\n'\)/.test(appends[0]), appends.join(' | '));
+
+// sinks: the egress checks above look inside gen() and at three exits. These cover the rest of the module and the
+// exits they leave open: the bare key reaching any sink, a file write, a child process, a console call outside gen(),
+// the reply redaction in call(), and an authorized call whose Error would escape gen()'s catch and print unredacted.
+// Each guard is a function of the stripped source so that a seeded copy of its defect can be shown to turn it red.
+const KEY_USES = [/export const redact = \(text, key\) => [^\n]*/g, /`Bearer \$\{key\}`/g, /\bconst key = readKey\(\);/g,
+  /\bcall\(key,/g, /\bbalance\(key\)/g, /\bredact\((?:[^()]|\([^()]*\))*,\s*key\)/g];
+const WRITES = /\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|copyFileSync|copyFile|cpSync|renameSync|symlinkSync|linkSync)\(/g;
+const LEAKY = /\b(?:e|err|created|g|res|json|text|body|key)\b(?!\w*\s*:)|\be\.message\b/;
+function sinkGuards(text) {
+  const src = text.replace(/\r\n/g, '\n'); // the bodies below are cut at '\n}\n'
+  const rest = KEY_USES.reduce((s, re) => s.replace(re, ''), src);
+  const strayKey = [...rest.matchAll(/\bkey\b/g)].map((m) => rest.slice(Math.max(0, m.index - 30), m.index + 15).replace(/\s+/g, ' '));
+  const writes = [...src.matchAll(WRITES)].map((m) => src.slice(m.index, src.indexOf(';', m.index) + 1));
+  const okWrite = (w) => /^writeFileSync\(dest, buf\);$/.test(w) || /^appendFileSync\(LOG, JSON\.stringify\(entry\) \+ '\\n'\);$/.test(w);
+  const child = [...src.matchAll(/child_process|worker_threads|(?<![.\w])(?:spawn|spawnSync|exec|execSync|execFile|execFileSync|fork)\(|process\.env/g)].map((m) => m[0]);
+  const consoles = [...src.matchAll(/console\.(?:log|error|warn|info|debug|trace|dir)\([^;]*;/g)].map((m) => m[0]);
+  const callStart = src.indexOf('async function call(');
+  const callBody = callStart >= 0 ? src.slice(callStart, src.indexOf('\n}\n', callStart)) : '';
+  const s = src.indexOf('async function gen()'), gen = s >= 0 ? src.slice(s, src.indexOf("\nif (cmd === 'gen')", s)) : '';
+  const tryAt = gen.indexOf('try {'), catchAt = gen.indexOf('} catch (e)');
+  const outside = [...gen.matchAll(/\bcall\(key,/g)].filter((m) => !(m.index > tryAt && m.index < catchAt)).length;
+  const balStart = src.indexOf('async function balance(');
+  const balBody = balStart >= 0 ? src.slice(balStart, src.indexOf('\n}\n', balStart)) : '';
+  return {
+    key: [strayKey.length === 0, strayKey.join(' | ')],
+    write: [writes.length === 2 && writes.every(okWrite), writes.join(' | ')],
+    child: [child.length === 0, child.join(', ')],
+    console: [consoles.length > 0 && consoles.every((c) => !LEAKY.test(c.replace(/\$\{entry\.error\}/g, ''))), consoles.filter((c) => LEAKY.test(c.replace(/\$\{entry\.error\}/g, ''))).join(' | ')],
+    reply: [/const text = redact\(await res\.text\(\), key\);/.test(callBody) && (callBody.match(/\bres\.(?:text|json|arrayBuffer|blob|body)\b/g) ?? []).length === 1, callBody.length ? 'call() reads the reply without redacting it first' : 'call() not found'],
+    caught: [gen.length > 0 && tryAt > 0 && catchAt > tryAt && outside === 0 && /\bcall\(key,[\s\S]*\} catch \{\s*return null;\s*\}/.test(balBody), `${outside} authorized call(s) in gen() outside its try`],
+  };
+}
+const SINK_NAMES = {
+  key: 'the key reaches nothing but the Bearer header, call(), balance() and redact()',
+  write: 'the only file writes are the frame (dest, buf) and the one log append',
+  child: 'no child process, worker or process.env: nothing can hand the key to argv or env',
+  console: 'no console call anywhere in the module prints an exception, a reply, the body or the key',
+  reply: 'call() redacts the reply text before it is parsed, cut or thrown',
+  caught: 'every authorized call is inside gen()\'s try or balance()\'s catch, so no unredacted Error escapes',
+};
+const guards = sinkGuards(nocomment);
+for (const [id, name] of Object.entries(SINK_NAMES)) check(`sinks: ${name}`, guards[id][0], guards[id][1]);
+// The seeds: one copy of each defect, which its guard must catch (and which must really change the source).
+const SEEDS = {
+  key: (s) => s.replace('entry.bytes = buf.length;', 'entry.bytes = buf.length; entry.auth = key;'),
+  write: (s) => s.replace('fs.writeFileSync(dest, buf);', 'fs.writeFileSync(dest, buf); fs.copyFileSync(ENV_FILE, dest + \'.env\');'),
+  child: (s) => s.replace("import fs from 'node:fs';", "import fs from 'node:fs';\nimport { execFileSync } from 'node:child_process';"),
+  console: (s) => s.replace('  let json;', '  console.error(res.status, text);\n  let json;'),
+  reply: (s) => s.replace('const text = redact(await res.text(), key);', 'const text = await res.text();'),
+  caught: (s) => s.replace('const before = await balance(key);', 'const before = await balance(key);\n  await call(key, \'GET\', `${API}/v1/me`);'),
+};
+for (const [id, seed] of Object.entries(SEEDS)) {
+  const copy = seed(nocomment);
+  check(`seed: the ${id} guard goes red on a seeded copy of its defect`, copy !== nocomment && sinkGuards(copy)[id][0] === false, copy === nocomment ? 'seed no longer applies to the source' : 'guard stayed green');
+}
+// siblings: the other look-dev scripts never read the key or the environment it could be copied into.
+const SIBLINGS = /LEONARDO_API_KEY|\.env\b|\$env:|readKey|authorization/i;
+const siblingHits = (text) => [...text.matchAll(new RegExp(SIBLINGS, 'gi'))].length;
+const HERE = path.dirname(LEO);
+const sibs = fs.readdirSync(HERE).filter((f) => !['leonardo.mjs', 'check-leonardo.mjs'].includes(f) && /\.(mjs|js|ps1)$/.test(f));
+check(`siblings: none of ${sibs.join(', ')} reads the key, an .env or the environment`, sibs.length > 0 && sibs.every((f) => siblingHits(fs.readFileSync(path.join(HERE, f), 'utf8')) === 0),
+  sibs.filter((f) => siblingHits(fs.readFileSync(path.join(HERE, f), 'utf8'))).join(', '));
+check('seed: the siblings guard goes red on a script that reads the key', siblingHits("const k = process.env.LEONARDO_API_KEY;") > 0);
 
 // unverified: a TIMEOUT records the pre-call estimate as creditsSource 'fallback'. It counts inside nightTotal (the
 // cap's figure), so the report that explains nightTotal has to separate it from measured spend. gen() itself cannot
