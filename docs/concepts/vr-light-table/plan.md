@@ -324,6 +324,41 @@ not re-graded. This reading covers the three CI-only commits `146e6ee`, `1abd5f2
   from a tree with its own `node_modules` (the main checkout, or the isolated install via `isolated-gate.mjs`). Goal 1
   stays open until both arms print numbers inside their budgets there.
 
+### Milestone 1 goal 1 retaken 2026-10-22 at `087c8bb` (Lynx, isolated gate)
+
+Retake of the `989b4a5` reading above, whose two arms were both blocked by the worktree's `node_modules` junction. Taken on Lynx
+(Windows ARM64) in a builder worktree on master `087c8bbf309fbe2c7bae5af3f626087d7a159a65` (clean), with BOTH arms routed
+through `node C:/Users/kazda/kiro/personas/.claude/master/bp/isolated-gate.mjs` (the junction link replaced by `npm ci`; no
+package.json or lockfile touched). Nothing was fixed; this entry is the only file changed. Earlier entries are unchanged.
+
+| Goal | Result | Command, printed numbers, commit |
+|---|---|---|
+| M1 goal 1 check chain and perf hold after the P1 closure | **met** (arm 2 carries a load caveat, below) | Arm 1: `node .../isolated-gate.mjs npm run check` printed `85 passed, 0 failed, 0 skipped of 85`, exit code 0 (typecheck included; 85 PASS lines, no FAIL). Arm 2: `node .../isolated-gate.mjs npm run build` exit 0, `PORT=3217 npm start` answered 200 on `/v/subtle?intro=0`, then `BP_BASE=http://localhost:3217 python scripts/perf.py` (gesture mode, `/v/subtle?intro=0&scale=4`, 3 runs), printing `gesture p50 16.70 ms over 3 run(s) ... budget 16.7 ms (docs/perf.md): ok`. |
+
+- **Perf lines (verbatim, the final invocation).**
+  - `{"n": 143, "p50": 16.7, "p95": 33.4, "p99": 66.7, "max": 99.9, "rasters": 6, "engineFrames": 143, "lastRasterMs": 60.1}`
+  - `{"n": 170, "p50": 16.7, "p95": 33.3, "p99": 50, "max": 50.1, "rasters": 8, "engineFrames": 171, "lastRasterMs": 26.6}`
+  - `{"n": 173, "p50": 16.7, "p95": 33.3, "p99": 33.4, "max": 33.4, "rasters": 8, "engineFrames": 174, "lastRasterMs": 12.7}`
+
+  Three earlier invocations the same session (output cut to its last 3 lines, so one run line per invocation was not kept)
+  each ended `gesture p50 16.70 ms ... ok`; their 6 kept lines all read p50 16.7, p95 33.4 (one 50). p95 is reported, not a
+  budget line.
+- **Host state, not idle.** Before measuring, the host was at 100% CPU (three samples) with free memory 32.5 GB of 67.1 GB.
+  The load was other sessions' work, not builds of this repo: two `pytest` runs and about ten helper python processes from
+  another session's scratchpad venv, a `grinex-portal` uvicorn on :8000, ComfyUI resident, Chrome and Edge. No build was
+  running during the measurement (mine had finished). CPU sampled 28 to 30% right after the first three invocations and 13 to
+  20% after the last; the 100% reading was before them. The operator's ruling asks for a host idle of builds; this one was
+  idle of builds but not idle of other work. A p50 at the 60 fps floor under partial load is the harder case, and the
+  loaded 2026-10-20 failure sat at 30 fps, so I read it as holding; a reader who wants a strictly quiet host should retake.
+- **Skips inside passing checks.** The check output carries no 'not a full run' or skip text (grep of the whole log), and the
+  tally is 0 skipped; check:scan-jobs printed nothing of that kind this time.
+- **Claim versus reading.** `.github/workflows/gate.yml`'s commit message ('85 passed / 0 failed / 0 skipped verified
+  locally') was a claim when it was written and the last worktree attempt got 84/1. This entry is the first local reproduction
+  of 85/0/0, and it needed the isolated gate: plain `npm run check` in a worktree still hits the junction's two `@bp/core`.
+  CI was not used as evidence.
+- **What held it open before.** The 84/1 and the failed build were the junction (see the `989b4a5` entry), not the code;
+  the goals-table row for Milestone 1 already reads passed, so its verdict is unchanged.
+
 ## P2 Look-dev
 
 Image work on the GPU box, judged by the owner.
