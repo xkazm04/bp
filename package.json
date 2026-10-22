@@ -92,6 +92,7 @@
     "check:art": "node scripts/check-art.mjs",
     "check:art-scripts": "node scripts/art/check-art-scripts.mjs",
     "check:leonardo": "node scripts/lookdev/check-leonardo.mjs",
+    "check:claims": "node scripts/check-claims.ts",
     "check:findings": "node scripts/fixtures/kettle-findings.mjs --check",
     "check:kettle-data": "node scripts/fixtures/gen-kettle.mjs packages/core/data --check",
     "check:swarm-data": "node scripts/fixtures/gen-swarm.mjs packages/core/data --check"
