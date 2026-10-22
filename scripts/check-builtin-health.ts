@@ -15,7 +15,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { explain, lensHealth } from '../packages/core/src/standard/health.ts';
+import { decidingRule, explain, lensHealth } from '../packages/core/src/standard/health.ts';
 import { BUILTIN_LENSES } from '../packages/core/src/standard/catalog.ts';
 import type { Feature, LensManifest } from '../packages/core/src/standard/types.ts';
 import { FLATTEN, type LensObject } from './sample-facets.ts';
@@ -97,11 +97,43 @@ const SCANNED: [string, Record<string, number | string>, Partial<Feature>, strin
   ['performance', { bundleKb: 48 }, {}, 'good'],
 ];
 let scanMisses = 0;
+// Which of a manifest's health.rules decided at least one reading: the tie-back from the hand list to the rule set.
+const decided = new Map<string, Set<number>>();
 for (const [id, values, feature, want] of SCANNED) {
   const got = lensHealth(lens(id), { values }, today, { feature });
   if (got !== want) { scanMisses++; console.log(`    scanned ${id} ${JSON.stringify(values)}: ${got}, expected ${want}`); }
+  const d = decidingRule(lens(id), { values }, { feature });
+  if (d) (decided.get(id) ?? decided.set(id, new Set()).get(id)!).add(lens(id).health.rules.indexOf(d.rule));
 }
 console.log(`scanned-product readings: ${SCANNED.length - scanMisses} of ${SCANNED.length} healths as expected`);
+/**
+ * Rules a scan cannot reach (it fills only metric fields: no status, incident, adoption or environment), by the
+ * rule's `short` text. Every OTHER rule of a scanned lens must decide at least one SCANNED reading, so a rule
+ * added to (or reworded in) a manifest fails here until a reading covers it or it is listed with its reason.
+ */
+const UNREACHED: Record<string, string[]> = {
+  business: ['P0 not started', '{customerRequests30d} asks', 'Deprecated', '{adoptionPct}% adoption', 'Low value'],
+  operations: ['{incidents30d} incidents', 'Incident', 'No alerting'],
+  quality: ['E2E failing', '{openBugsP1} P1 bugs', 'Tests partly pass', '{e2ePassing}/{e2eTests} E2E', 'Few E2E tests'],
+  performance: ['{jankFrames} jank frames', 'Blocks {blockingMs} ms', '{idleWakeups} wakes/s idle', 'Over budget'],
+};
+let coverageMisses = 0;
+for (const id of [...new Set(SCANNED.map((r) => r[0]))]) {
+  const rules = lens(id).health.rules;
+  const hit = decided.get(id) ?? new Set<number>();
+  const listed = UNREACHED[id] ?? [];
+  console.log(`${id}: ${hit.size} of ${rules.length} rules exercised by the scanned readings`);
+  rules.forEach((r, i) => {
+    const name = r.short ?? r.reason;
+    if (!hit.has(i) && !listed.includes(name)) { coverageMisses++; console.log(`    rule ${i} "${name}" decides no scanned reading and is not in UNREACHED`); }
+    if (hit.has(i) && listed.includes(name)) { coverageMisses++; console.log(`    rule ${i} "${name}" is in UNREACHED but a reading decides it`); }
+  });
+  for (const name of listed) if (!rules.some((r) => (r.short ?? r.reason) === name)) { coverageMisses++; console.log(`    UNREACHED names "${name}", which is no ${id} rule`); }
+}
+if (coverageMisses) {
+  console.error('FAIL: the scanned readings and the manifests health.rules disagree on which rules the readings exercise');
+  process.exit(1);
+}
 if (scanMisses) {
   console.error('FAIL: a scanned product\'s readings do not evaluate as the built-in manifests intend');
   process.exit(1);
