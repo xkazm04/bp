@@ -19,8 +19,8 @@ Master tip when this was written: `4e2dfd1`. On that tip, as read on Lynx:
   `D Members & reach` and `E Frontier`, and the lens ids are `business, design, development, operations, security,
   quality, performance, com.kettle.cost`. `kettle.events.jsonl` has 566 lines.
 - `FBpPlan` and its parts are already generated in `packages/schema/generated/ue/BpSchema.h` (`ddac55e`).
-- `apps/vr/Source/BpLink/Private/BpLink.cpp` **does not call `/plan` yet.** It still logs the 13 `structure.domains`
-  as "wings" (`LogKettle`, `BpLink.cpp:129-135`). Step W3.1-6 below adds the call.
+- `apps/vr/Source/BpLink/Private/BpLink.cpp` **does not call `/plan` yet.** It logged the 13 `structure.domains`
+  as "wings" then; since `5e5544e` it labels them `rooms=` (`LogKettle`, `BpLink.cpp:158-164` on `37d4e18`). Step W3.1-6 below adds the call.
 - Review findings 1, 2 and 4 are closed (`421e340`, `ff8a73a`, `d031a1a`). Finding 3 (the wire schema) is open.
   Finding 5 has a decision (`326be3c`: apps/server hosts the Kettle sims) and no code yet.
 
@@ -113,8 +113,42 @@ To skip the 1.1 GB download, first copy the two zips from `kiro/mage-arena-vr/ap
 
 ## (c) Phased run order
 
-Effort is agent time, plus the owner's time where named. Order: S1 to S9, then WP3.1, W3.2 to W3.6, the P3 gate, P4,
+Effort is agent time, plus the owner's time where named. Order: S1 to S9, then WP3.1, W3.2 to W3.6, the P3 gate (row by row in the P3 run order just below), P4,
 P5 (Lynx Node work first), P6, P7. P4's Lynx asset work can run alongside P3 on Wolf.
+
+### P3 run order for a Wolf session: W3.1 to the P3 gate
+
+Written 2026-10-22 on Lynx. **Not one of these steps has been run, and none was measured on a UE host**: Lynx has no
+Unreal Engine. Every proof line is the output the step is expected to print, and only a Wolf run note can tick it.
+Start at row 1 and work down. A row may start once everything in its "Needs" cell is ticked. The "Ask" cell says which
+open section (f) ask touches the row: **none** means the row runs whatever the owner decides, **may start** means the
+default is enough to begin and the answer only changes a constant or a verdict, and **waits** means the row cannot be
+ticked until the ask is answered. Rows marked **UE host** need Wolf (UE 5.8, MSVC, and for some rows the headset).
+The detailed instructions for each row are in the step of the same name below; this table is the order and the bar.
+
+| # | Step | Needs | Command or editor action | Proof that it passed | Ask | Host |
+|---|---|---|---|---|---|---|
+| 0 | S1 to S5, Step 0 | a Wolf login | section (b) S1 to S5; Step 0's `register-project.mjs` | the S1 to S5 "Expected" lines in `runs/<date>-wolf-p0.md`; for Step 0, the `projects.json` entry for `bp` (R13 is decided; Step 0 can run beside the rows below) | none | UE host (S4, S5) |
+| 1 | W3.1-1 server and contract | S1 to S3 | `npm run check:bplink`; `npm run server` in its own shell; `curl.exe -s http://127.0.0.1:3100/api/products/kettle/plan` | `check-bplink: 31 passed, 0 failed` (or more passed, still 0 failed); `bp server listening on http://127.0.0.1:3100`; JSON with 5 `wings` | none | Wolf (Node only, but it has to be the UE box: the server refuses non-loopback peers) |
+| 2 | W3.1-2 create the project, then S6 | S4, S5 | editor: Games, Blank, C++, Desktop, Maximum, no Starter Content, in `%TEMP%\bp-ue`; the robocopy line; `apps/vr/tools/install-xr.ps1` | `EngineAssociation` `5.8` in `apps/vr/bp.uproject`; S6's `SHA256_OK=` (both zips), `UPROJECT_ENABLED=OculusXR`, `UPROJECT_ENABLED=OculusInteraction`, `PLUGIN_BUILD_ID=55116800` equal to `ENGINE_COMPATIBLE_CHANGELIST`; `git status --short` shows only the W3.1-2 paths | none (R2 closed: the installed 5.8.x) | **UE host** |
+| 3 | S9 engine sanity build | row 2, before BpLink is added | `Build.bat bpEditor Win64 Development "-Project=$PWD\apps\vr\bp.uproject" -WaitMutex` | exit 0, and UBT's `Using Visual Studio 2022 14.xx.xxxxx toolchain ... and Windows 10.0.xxxxx SDK` line | none | **UE host** |
+| 4 | W3.1-3 add BpLink | row 3 | the `Modules` entry and `ExtraModuleNames` in both `*.Target.cs`; `Build.bat -projectfiles ...` | the git-ignored `bp.sln` lists `BpLink` under `Games\bp\Source` | none | **UE host** |
+| 5 | W3.1-4 UHT and `BpSchema.h` | row 4 | one editor build as is; if it fails with `Cannot open include file: 'BpSchema.generated.h'`, E1's junction, then build again | the UHT step lists `BpSchema.h` and the build gets past UHT; the run note says which variant held | **R1 waits only if the junction fails too.** Then A or B need their Lynx commit first, and C stops here | **UE host** |
+| 6 | W3.1-5 both targets | row 5 | `Build.bat bpEditor ...` and `Build.bat bp ...` (Win64 Development) | both exit 0; each build's last `Total execution time` line in the run note | none | **UE host** |
+| 7 | W3.1-6 BpLink reads `/plan` | row 6 | edit `BpLink.cpp`/`BpLink.h`; rebuild both targets; `npm run check:bplink` | both builds exit 0; `check-bplink: N passed, 0 failed` (it reads `BpLink.cpp`'s format strings) | none | **UE host** |
+| 8 | W3.1-7 the log line | row 7, the server up | `UnrealEditor.exe "$PWD\apps\vr\bp.uproject" -log`, or `BpLink.Fetch` | `BpLink: Kettle wings=5 [Foundations, Studio operations, Money, Members & reach, Frontier] rooms=13 bays=29 tiles=133 lenses=8 events=566 rev=<rev>`, then `BpLink: kettle streams (200); WP3.1 does not consume SSE, so rev <rev> read once from structure stands`; `<rev>` equals the curl's `.rev`; no `skipped` warning | none | **UE host** |
+| 9 | W3.1-8 server down | row 8 | stop the server; `BpLink.Fetch` | ``BpLink: GET .../structure failed (connected=0, status=0). Is `npm run server` running?`` and no crash | none | **UE host** |
+| 10 | W3.1-9 simulator boot | row 8, S7 | `$env:XR_RUNTIME_JSON=...meta_openxr_simulator.json`; `UnrealEditor-Cmd.exe ... -game -unattended -nosplash -RenderOffScreen -log` | `LogHMD: Initialized OpenXR on Meta XR Simulator runtime version 207.0.0` and row 8's line in the same log | none | **UE host** |
+| 11 | W3.1-10 record | rows 1 to 10 | `machine.md`; `apps/vr/README.md` and `WP3.1.md` flipped to the dated reading; `npm run check` | `N passed, 0 failed, 0 skipped of N`; the commit body has `Host: Wolf (UE 5.8.x-<changelist>, ...)` | none | Wolf (the facts come from the UE host) |
+| 12 | W3.2 the table | row 11; S8 for the owner's height check | table mesh, paper material, wing render target, text layer | `BpTable: wings=5 order=A,B,C,D,E height_cm=<n>`; `captures/w32-<date>-wolf.jpg` | **R4 may start** at 95 cm (A). Option B puts one owner height reading at S8 first; option C waits for the owner's number before labels are sized | **UE host** + headset for the height |
+| 13 | W3.3 volumes | row 12 | instanced rooms, bays, tiles; edge-glow v0 | `BpTable: instances rooms=13 bays=29 tiles=133`; `stat scenerendering` numbers in the run note; a capture | none | **UE host** |
+| 14 | W3.4 hands and zoom | row 13, S8 | Interaction SDK hands; pinch-pull; breadcrumb | `BpLevel: L0 -> L1 wing=<id>`, `L1 -> L2 room=<id>` and the reverse; `BpHands: tracking lost -> held` / `tracking back`; the owner's note | none | **UE host** + headset + owner |
+| 15 | W3.5 lenses | row 13 | wrist lens switch; `BpLens.Cycle` | `BpLens: <id> moved=0` for all 8 lens ids; a two-lens capture | none | **UE host** |
+| 16 | W3.6 render spike | rows 13 to 15 | forward + MSAA against deferred + Lumen + TSR; `stat unit`, `stat gpu`; Insights `-trace=default,gpu`, 60 s look-around | both paths' GPU and Game/Draw times with **p50, p95 and max** in `machine.md` | **R5 may start:** record all three statistics. Choosing Lumen over forward waits for R5's statistic | **UE host** + headset |
+| 17 | P3 gate | rows 12 to 16, S8, the owner | Link at 90 Hz, ASW off; 60 s scripted walk; `stat rhi`/`stat scenerendering`; owner walk-through | `runs/<date>-wolf-p3-gate.md` with p50, p95 and max for GPU and game thread, at or under 11.1 ms at R5's statistic; draw calls and triangles; the smallest label's angle in degrees; the owner's verdict line | **R5 waits** (the frame-time verdict is written against R5's answer). **R4 waits** under option C only (pass/fail against the named floor) | **UE host** + headset + owner |
+
+R6 (scan line colour) and R8b (Leonardo as image-to-3D input) block no P3 row: the scan line is W5.1 and the lamp
+import is W4.1.
 
 ### P3 WP3.1: the `apps/vr` project and BpLink (Wolf, 1 to 2 days)
 
@@ -123,8 +157,9 @@ Depends on S1 to S5 and S9's toolchain. This expands `apps/vr/WP3.1.md`. Where t
 
 - [ ] **W3.1-1 Server up and contract green.** From the repo root: `npm run check:bplink`, then `npm run server` in its
       own shell, then `curl.exe -s http://127.0.0.1:3100/api/products/kettle/plan`.
-      Proof: `check-bplink: 12 passed, 0 failed` (the count on Lynx, `4e2dfd1`); the server prints
-      `listening on http://127.0.0.1:3100`; the curl answers JSON with 5 `wings`. Note: apps/server answers 403 to a
+      Proof: `check-bplink: 31 passed, 0 failed` (the count on Lynx on 2026-10-22, master `37d4e18`; it was 12 on
+      `4e2dfd1`, and a higher count with `0 failed` is still a pass); the server prints
+      `bp server listening on http://127.0.0.1:3100`; the curl answers JSON with 5 `wings`. Note: apps/server answers 403 to a
       non-loopback Host or peer (`packages/core/src/scan/local-only.ts:2-3`). UE and the server must run on the same
       box, and `-BpLinkUrl` stays `http://127.0.0.1:3100`.
 - [ ] **W3.1-2 Create the UE project, with the editor, never by hand.** The editor's New Project dialog always writes
@@ -172,7 +207,8 @@ Depends on S1 to S5 and S9's toolchain. This expands `apps/vr/WP3.1.md`. Where t
     `BpLink: Kettle wings=%d [%s] rooms=%d bays=%d tiles=%d lenses=%d events=%d rev=%s`, with the wing names joined
     in `order`;
   - a failed plan read logs `BpLink: GET %s/plan failed ...` and still logs the structure counts, labelled
-    `domains=` (review finding 2: domains are not wings);
+    `rooms=` as today's line does (review finding 2: domains are rooms, not wings; `check-bplink` fails any count
+    from `structure.domains` that is not labelled `rooms`, `scripts/check-bplink.mjs:300-304`);
   - update the `WP3.1.md` "requests BpLink makes" table (drop "(planned)").
   Rebuild both targets. Proof: exit 0 on both.
 - [ ] **W3.1-7 Acceptance: the log line.** With `npm run server` up, start
@@ -181,7 +217,8 @@ Depends on S1 to S5 and S9's toolchain. This expands `apps/vr/WP3.1.md`. Where t
       Wait for the line; do not pass `-ExecCmds=Quit`, which can quit before the HTTP answer. Or type `BpLink.Fetch`
       in the console. Expected, in `LogBpLink`:
       `BpLink: Kettle wings=5 [Foundations, Studio operations, Money, Members & reach, Frontier] rooms=13 bays=29 tiles=133 lenses=8 events=566 rev=<16 hex>`
-      then `BpLink: kettle has no live stream (405); using rev <same> read once from structure`.
+      then `BpLink: kettle streams (200); WP3.1 does not consume SSE, so rev <same> read once from structure stands`
+      (Kettle's `/stream` answers 200 since L5.2, `61181b2`; the 405 line is now only for a product with no live stream).
       The rev must equal `curl.exe -s http://127.0.0.1:3100/api/products/kettle/plan` `.rev`.
       Any `skipped an events line` warning means `events` is below 566: record it as a finding, not a pass.
       Proof: both lines copied verbatim into the run note and into the commit body (`WP3.1.md`: "Copy it into the
@@ -204,7 +241,7 @@ units; `parentId` links). VR never computes a layout or health rule (tech-stack.
 - [ ] **W3.2 The table (3 to 4 days).** Table mesh (greybox), a blueprint-paper material, and the wing footprints drawn
       into a runtime render target from `Plan.wings[*].box`, in `order` left to right, with the names as text (a
       high-resolution world-space widget or a Meta compositor layer, never text baked onto the mesh; tech-stack.md §2).
-      The table top is at a natural standing height: start at 95 cm and let the owner set it **[owner]**. Map plan
+      The table top is at a natural standing height: start at 95 cm and let the owner set it **[owner, R4]**. Map plan
       units to centimetres with one named constant.
       Proof: a capture `captures/w32-<date>-wolf.jpg` from the target pose (standing, about 45° down at the near edge)
       showing A to E left to right with readable names; a log line
@@ -234,13 +271,13 @@ units; `parentId` links). VR never computes a layout or health rule (tech-stack.
 - [ ] **P3 gate (Wolf + owner, half a day).** All of these, recorded in `runs/<date>-wolf-p3-gate.md`:
   - **90 Hz on the forward path with the full Kettle plan.** Link refresh at 90 Hz and ASW off (Oculus Debug Tool)
     while measuring. Over a 60 s scripted walk the app GPU time and the game thread are each **11.1 ms or less at
-    p95**, with dropped frames read from the Link Performance HUD or Oculus Debug Tool **[verify on Wolf]** the tool.
+    p95** (the statistic is R5, an open ask; p95 is the default until it is answered), with dropped frames read from the Link Performance HUD or Oculus Debug Tool **[verify on Wolf]** the tool.
     Record p50, p95 and max.
   - **Draw calls and triangles** from `stat rhi` / `stat scenerendering`, recorded as the baseline for P4's budget
     (150 draw calls, 350k visible triangles).
   - **Text legibility.** The owner reads every wing name and the smallest label at standing distance without leaning.
     Record that label's angular height in degrees (2·atan(h / 2d)). That number becomes the VR equivalent of bp's
-    12 px floor **[owner]**.
+    12 px floor **[owner, R4]**.
   - **Owner walk-through** in the headset: L0 to L2 and back, 8 lenses. Owner verdict line in the note.
 
 ### P4 Assets through the gated pipeline (Lynx makes, Wolf imports; 2 to 3 weeks, can start beside P3)
