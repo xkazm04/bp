@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { stripBlock } from '../../../../../scripts/lib/source.ts';
+import { stripBlock, readStripped } from '../../../../../scripts/lib/source.ts';
 import { baseHeight } from '../../engine/chrome.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -54,6 +54,14 @@ for (const [name, r, isCompact] of [['normal', normal, false], ['compact', compa
   const want = baseHeight({ compact: isCompact });
   expect(h + b + GAP === want, `${name}: strip ${h} px + bottom ${b} px + gap ${GAP} px = ${h + b + GAP}, chrome.ts baseHeight = ${want}`);
 }
+
+// Strip.tsx seeds the hairline viewBox with a literal (useSize's fallback) because the first render cannot call
+// anything; it is the strip's inner height, i.e. the CSS height minus the two borders. Pin it to the same CSS literal.
+const stripSrc = readStripped(path.join(HERE, 'Strip.tsx'));
+const fb = /useSize\(\s*wrap\s*,\s*\d+\s*,\s*(\d+)\s*\)/.exec(stripSrc);
+const border = px(normal?.get('border')?.split(/\s+/)[0]);
+expect(!!fb && !isNaN(border) && !isNaN(px(normal?.get('height'))) && Number(fb[1]) === px(normal?.get('height')) - 2 * border,
+  `Strip.tsx useSize fallback height ${fb ? fb[1] : 'missing'} px, expected the normal strip height ${normal?.get('height')} minus two ${normal?.get('border')?.split(/\s+/)[0]} borders`);
 
 if (failures.length) {
   console.error(`check-size: ${failures.length} failure(s), ${held} held`);
