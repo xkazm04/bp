@@ -150,14 +150,12 @@ expect(counts >= 2, `the strip-count scan found ${counts} .wb-count slots in the
 // WCAG 2.1.1. The stylesheet and the markup are read together, because the rule is about their pair: every class
 // workbench.css gives overflow:auto|scroll must be carried, in the rail's markup, by an element with a tabIndex
 // (0 where nothing hands it focus, -1 on the list pane, which holds focusable rows and is the focus hand-off).
-// A selector under `.wb-view`, and view.tsx's markup, are skipped: its hand-rolled frame is the one not built by shell.tsx.
 const CSS = read('wide/workbench.css');
 let scrollers = 0;
 const scrollClasses = new Set<string>();
 for (const m of CSS.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
   if (!/overflow(?:-y)?\s*:\s*(?:auto|scroll)/.test(m[2])) continue;
   for (const sel of m[1].split(',')) {
-    if (/\.wb-view\b/.test(sel)) continue;
     const last = sel.trim().split(/[\s>+~]+/).pop() as string;
     for (const c of last.matchAll(/\.([\w-]+)/g)) scrollClasses.add(c[1]);
   }
@@ -165,8 +163,7 @@ for (const m of CSS.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
 for (const cls of scrollClasses) {
   scrollers++;
   let seen = 0, tabbed = 0;
-  for (const [f, src] of SRC) {
-    if (f === 'wide/view.tsx') continue;   // hand-rolled frame, folded into shell.tsx by the next change
+  for (const src of SRC.values()) {
     for (const m of src.matchAll(/className=(?:"([^"]*)"|\{([^}]*)\})/g)) {
       if (!new RegExp(`(^|[\\s'"])${cls}([\\s'"]|$)`).test(m[1] ?? m[2])) continue;
       seen++;
@@ -198,6 +195,20 @@ for (const [f, src] of SRC) {
   expect(/streamNote\(/.test(src), `${f}: lists the scan's jobs and renders its own empty sentence without branching on the stream state (Queue.tsx streamNote) - an offline stream reads as "no scans"`);
 }
 expect(jobLists >= 1, `the empty-job-list scan found ${jobLists} panels, expected at least 1 (agents.tsx) - the matcher has stopped biting`);
+
+// ---------------------------------------------------------------- 10. one workbench frame
+// shell.tsx's <Workbench> is the only place that writes the frame (.wb-panes, its list pane and its detail), so a
+// frame-level rule (roving tabindex, focusable panes, the walk) is one edit. A panel that needs a different scroll
+// model asks the frame for it (bodyRef / onBodyScroll) rather than copying the markup.
+let frames = 0;
+for (const [f, src] of SRC) {
+  if (!/className="wb-panes"/.test(src)) continue;
+  frames++;
+  expect(f === 'wide/shell.tsx', `${f}: declares className="wb-panes", a second copy of the workbench frame - render through shell.tsx's <Workbench> (it takes bodyRef / onBodyScroll for a scroll-following panel)`);
+}
+expect(frames === 1, `the frame scan found ${frames} files declaring className="wb-panes", expected exactly 1 (shell.tsx) - the matcher has stopped biting`);
+for (const f of ['wide/agents.tsx', 'wide/orders.tsx', 'wide/plan.tsx', 'wide/review.tsx', 'wide/steer.tsx', 'wide/view.tsx'])
+  expect(/<Workbench\b/.test(SRC.get(f) as string), `${f}: does not render through <Workbench>, so a frame-level rule would miss it`);
 
 if (failures.length) { console.error(`check-rail-keys: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
 console.log(`check-rail-keys: ${held} expectations held (${options} role="option" sites, ${scrolls} scroll-behavior sites)`);

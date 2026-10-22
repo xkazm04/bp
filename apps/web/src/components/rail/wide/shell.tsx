@@ -54,9 +54,11 @@ export function useWalk<T extends string | null>(ids: readonly T[], sel: T, pick
  * nothing hands focus to the detail, so -1 would leave it unreachable. The cost is one extra Tab per panel, paid
  * once; the arrows, Home/End and Page keys then scroll it (useWalk yields those four to it).
  */
-export function Workbench({ strip, list, listLabel, detail, detailKey, detailLabel, onKey, listRef, cls }: {
+export function Workbench({ strip, list, listLabel, detail, detailKey, detailLabel, onKey, listRef, cls, bodyRef, onBodyScroll }: {
   strip?: ReactNode; list: ReactNode; listLabel: string; detail: ReactNode; detailKey: string; detailLabel: string;
   onKey: (e: KeyboardEvent) => void; listRef: RefObject<HTMLDivElement | null>; cls?: string;
+  /** The detail scroller and its scroll listener, for a panel that follows the reader's scroll (View's section nav). */
+  bodyRef?: RefObject<HTMLDivElement | null>; onBodyScroll?: () => void;
 }) {
   return (
     <div className={'wb' + (cls ? ' ' + cls : '')} onKeyDown={onKey}>
@@ -64,7 +66,7 @@ export function Workbench({ strip, list, listLabel, detail, detailKey, detailLab
       <div className="wb-panes">
         <div className="wb-list" ref={listRef} role="region" aria-label={listLabel} tabIndex={-1}>{list}</div>
         <section className="wb-detail" key={detailKey} aria-label={detailLabel}>
-          <div className="wb-body" tabIndex={0}>{detail}</div>
+          <div className="wb-body" tabIndex={0} ref={bodyRef} onScroll={onBodyScroll}>{detail}</div>
         </section>
       </div>
     </div>

@@ -5,7 +5,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { GA_MILESTONE, personLens, sheetOf } from '@bp/core/model';
 import { Mark } from '../../Symbols';
 import { shallowEqual, useBp, useEngine } from '../../hooks';
-import { Fig, Row, Sec, swallow, useListRef, useWalk } from './shell';
+import { Fig, Row, Sec, Workbench, swallow, useListRef, useWalk } from './shell';
 
 const WIN = [
   { d: 1 as const, k: '24h', t: 'Last 24 hours', x: 'What moved since yesterday: the morning glance.' },
@@ -62,9 +62,10 @@ export function View() {
   const onWhoKey = useWalk(rows.map((r) => r.id), whoCur, (id) => E.setWho(id), whoRef);
 
   return (
-    <div className="wb wb-view" onKeyDown={onKey}>
-      <div className="wb-panes">
-        <div className="wb-list" ref={listRef} role="region" aria-label="View sections">
+    <Workbench cls="wb-view" listLabel="View sections" listRef={listRef} onKey={onKey} detailKey="view" detailLabel="View settings"
+      bodyRef={det} onBodyScroll={onScroll}
+      list={(
+        <>
           <ul role="listbox" aria-label="Sections">
             {secs.map((x) => (
               <Row key={x.id} id={x.id} on={sel === x.id} onPick={() => go(x.id)} cls="nav">
@@ -74,67 +75,66 @@ export function View() {
             ))}
           </ul>
           <p className="wb-tip"><kbd>J</kbd> <kbd>K</kbd> or <kbd>↑</kbd> <kbd>↓</kbd> move between sections, <kbd>Home</kbd> <kbd>End</kbd> jump. The same keys walk <b>Whose desk</b> once a reader there has focus. <kbd>P</kbd> on the plan cycles whose desk.</p>
-        </div>
-        <div className="wb-detail" ref={det} onScroll={onScroll} aria-label="View settings" role="region">
-          <div className="wb-scroll">
-            <Sec id="wbv-win" head="Window · what changed" aside={chg + ' feature' + (chg === 1 ? '' : 's') + ' changed'}>
-              <div className="wb-seg" role="group" aria-label="What changed: window">
-                {WIN.map((w) => (
-                  <button key={w.d} type="button" aria-pressed={s.delta === w.d} onClick={() => E.setDelta(w.d)}>
-                    <b>{w.k}</b><span>{w.t}</span><small>{w.x}</small>
-                  </button>
-                ))}
-              </div>
-              <p className="wb-help">The window decides which tiles carry the <Mark k="delta" w={18} h={12} /> changed mark, the timeline’s span and the title block’s “changed” count.</p>
-            </Sec>
-            <Sec id="wbv-modes" head="Modes" aside="keys work on the plan">
-              <div className="wb-modes">
-                {E.hasGA && ga && (
-                  <button type="button" className="wb-mode" aria-pressed={s.ga} onClick={() => E.toggleGA()}>
-                    <span className="sw" aria-hidden="true"><i /></span>
-                    <b>{ga.name} readiness</b><kbd>G</kbd>
-                    <span className="x">Marks every feature {ga.name} needs and how far each is from done{ga.date ? ', against the ' + ga.date + ' date' : ''}. {ga.goal}</span>
-                  </button>
-                )}
-                <button type="button" className="wb-mode" aria-pressed={!!s.blast} onClick={() => E.toggleBlast()}>
-                  <span className="sw" aria-hidden="true"><i /></span>
-                  <b>Blast radius</b><kbd>B</kbd>
-                  <span className="x">Traces what depends on one feature (the open, selected or hovered one) and what it depends on, so a change’s reach is visible before it ships.{s.blast ? ' Showing: ' + (M.P.F[s.blast]?.name ?? s.blast) + '.' : ''}</span>
+        </>
+      )}
+      detail={(
+        <div className="wb-scroll">
+          <Sec id="wbv-win" head="Window · what changed" aside={chg + ' feature' + (chg === 1 ? '' : 's') + ' changed'}>
+            <div className="wb-seg" role="group" aria-label="What changed: window">
+              {WIN.map((w) => (
+                <button key={w.d} type="button" aria-pressed={s.delta === w.d} onClick={() => E.setDelta(w.d)}>
+                  <b>{w.k}</b><span>{w.t}</span><small>{w.x}</small>
                 </button>
-              </div>
+              ))}
+            </div>
+            <p className="wb-help">The window decides which tiles carry the <Mark k="delta" w={18} h={12} /> changed mark, the timeline’s span and the title block’s “changed” count.</p>
+          </Sec>
+          <Sec id="wbv-modes" head="Modes" aside="keys work on the plan">
+            <div className="wb-modes">
+              {E.hasGA && ga && (
+                <button type="button" className="wb-mode" aria-pressed={s.ga} onClick={() => E.toggleGA()}>
+                  <span className="sw" aria-hidden="true"><i /></span>
+                  <b>{ga.name} readiness</b><kbd>G</kbd>
+                  <span className="x">Marks every feature {ga.name} needs and how far each is from done{ga.date ? ', against the ' + ga.date + ' date' : ''}. {ga.goal}</span>
+                </button>
+              )}
+              <button type="button" className="wb-mode" aria-pressed={!!s.blast} onClick={() => E.toggleBlast()}>
+                <span className="sw" aria-hidden="true"><i /></span>
+                <b>Blast radius</b><kbd>B</kbd>
+                <span className="x">Traces what depends on one feature (the open, selected or hovered one) and what it depends on, so a change’s reach is visible before it ships.{s.blast ? ' Showing: ' + (M.P.F[s.blast]?.name ?? s.blast) + '.' : ''}</span>
+              </button>
+            </div>
+          </Sec>
+          {desk && (
+            <Sec id="wbv-desk" head="Whose desk" aside="open questions">
+              <ul className="wb-who" role="listbox" aria-label="View as" ref={whoRef} onKeyDown={onWhoKey}>
+                {rows.map((r) => {
+                  const on = (whoCur || '') === (r.id || '');
+                  return (
+                    <li key={r.id ?? 'all'} role="option" tabIndex={on ? 0 : -1} data-row={r.id ?? ''} aria-selected={on} className={on ? 'on' : ''}
+                      onClick={() => E.setWho(r.id)} onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { swallow(e); E.setWho(r.id); } }}>
+                      <span className="av" aria-hidden="true">{r.name.charAt(0)}</span><span className="nm">{r.name}<small>{r.sub}</small></span><b className="n">{r.n}</b>
+                    </li>
+                  );
+                })}
+              </ul>
             </Sec>
-            {desk && (
-              <Sec id="wbv-desk" head="Whose desk" aside="open questions">
-                <ul className="wb-who" role="listbox" aria-label="View as" ref={whoRef} onKeyDown={onWhoKey}>
-                  {rows.map((r) => {
-                    const on = (whoCur || '') === (r.id || '');
-                    return (
-                      <li key={r.id ?? 'all'} role="option" tabIndex={on ? 0 : -1} data-row={r.id ?? ''} aria-selected={on} className={on ? 'on' : ''}
-                        onClick={() => E.setWho(r.id)} onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { swallow(e); E.setWho(r.id); } }}>
-                        <span className="av" aria-hidden="true">{r.name.charAt(0)}</span><span className="nm">{r.name}<small>{r.sub}</small></span><b className="n">{r.n}</b>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </Sec>
-            )}
-            <Sec id="wbv-health" head="Health" aside={now ? 'now' : s.t}>
-              <div className="wb-figs big">
-                {c && <>
-                  <Fig n={c.working} label={<><Mark k="work" w={18} h={12} /> working</>} tone="mint" />
-                  <Fig n={c.waiting} label={<><Mark k="wait" w={18} h={12} /> waiting for a person</>} tone={c.waiting ? 'amber' : undefined} />
-                  <Fig n={c.blocked} label={<><Mark k="block" w={18} h={12} /> blocked</>} tone={c.blocked ? 'red' : undefined} />
-                  <Fig n={c.failed} label={<><Mark k="fail" w={18} h={12} /> failed</>} tone={c.failed ? 'red' : undefined} />
-                  {c.paused ? <Fig n={c.paused} label={<><Mark k="paused" w={18} h={12} /> paused by you</>} /> : null}
-                </>}
-                <Fig n={h ? h.bad : '—'} label={<><Mark k="cloud" w={18} h={12} /> features in trouble</>} tone={h?.bad ? 'red' : undefined} title="Features bad under any lens" />
-                <Fig n={chg} label={<><Mark k="delta" w={18} h={12} /> changed, {s.delta === 1 ? '24 h' : s.delta + ' days'}</>} />
-              </div>
-              {!c && <p className="none">No swarm data: agent figures are not available.</p>}
-            </Sec>
-          </div>
+          )}
+          <Sec id="wbv-health" head="Health" aside={now ? 'now' : s.t}>
+            <div className="wb-figs big">
+              {c && <>
+                <Fig n={c.working} label={<><Mark k="work" w={18} h={12} /> working</>} tone="mint" />
+                <Fig n={c.waiting} label={<><Mark k="wait" w={18} h={12} /> waiting for a person</>} tone={c.waiting ? 'amber' : undefined} />
+                <Fig n={c.blocked} label={<><Mark k="block" w={18} h={12} /> blocked</>} tone={c.blocked ? 'red' : undefined} />
+                <Fig n={c.failed} label={<><Mark k="fail" w={18} h={12} /> failed</>} tone={c.failed ? 'red' : undefined} />
+                {c.paused ? <Fig n={c.paused} label={<><Mark k="paused" w={18} h={12} /> paused by you</>} /> : null}
+              </>}
+              <Fig n={h ? h.bad : '—'} label={<><Mark k="cloud" w={18} h={12} /> features in trouble</>} tone={h?.bad ? 'red' : undefined} title="Features bad under any lens" />
+              <Fig n={chg} label={<><Mark k="delta" w={18} h={12} /> changed, {s.delta === 1 ? '24 h' : s.delta + ' days'}</>} />
+            </div>
+            {!c && <p className="none">No swarm data: agent figures are not available.</p>}
+          </Sec>
         </div>
-      </div>
-    </div>
+      )} />
   );
 }
