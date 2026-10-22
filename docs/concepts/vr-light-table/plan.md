@@ -224,6 +224,57 @@ below is of TypeScript, Node and C++ source text.
   goals 1 to 5 all passed (goal 1 by the 2026-10-21 ruling); any of those rows still reading open 0% is owed the same
   reconcile. The app's goal rows were not read in this run.
 
+### Milestone 3 measured 2026-10-22
+
+Milestone 3, 'P2 look-dev reference sheet approved', back-measured read-only on master `7f82b7b`
+(`7f82b7b62cd5d67db3e5ea9d75cf2e2786c4cfb8`), on Lynx (Windows ARM64), in a builder worktree with an isolated install
+(`isolated-gate.mjs`: the `node_modules` junction replaced by `npm ci`). Nothing was fixed and no image was generated;
+this entry is the only file changed. Log counts were taken with a throwaway node script over `lookdev/log.jsonl`
+(a slot counts as restated when the prompt contains its exact `style-block.json` text, every palette name and hex
+included).
+
+| Goal | Measure | Result | Evidence |
+|---|---|---|---|
+| 1 Style block as a pipeline-readable file | the `art-breakdown.md` style block exists as a file the image pipeline reads, and every recorded generation call restates it | **pass for every style-frame call; the 18 prop calls restate part of it, by design** | File: `lookdev/style-block.json`. Slot by slot against `art-breakdown.md:49-55` ('## The style block' table), string-compared: Technique, Subject treatment (`subject` in the json), Palette with roles (5 roles, every name and hex), Finish and Never all identical; **no slot differs**. The json adds one slot, `subjectLock`: `"the plan is the wings, rooms and fixtures of a software product, drawn as an architect's site plan; no buildings, no trees, no landscape, no readable text or labels"`, which the table does not carry (its `$comment`: added after the Director's 2026-10-20 test, where a generic prompt drew a campus). Read: `scripts/lookdev/leonardo.mjs:58` `const style = readJson(path.join(DIR, 'style-block.json'));`, and `composePrompt` (`:75-81`) appends `styleText()` (`:63-73`: technique, subject, subject lock, palette, finish, never) to every state prompt; `scripts/lookdev/check-leonardo.mjs:62` reads the same file. Log: **66 calls in `log.jsonl`; 48 restate the whole block (all 48 style-frame calls, `00-hero` to `08-lamp-speaking`); 18 do not**, each missing technique, subject and subjectLock and restating palette, finish and never: lines 49-52 `lamp-agent` A to D, 53-54 `studio-shelves` A, B, 55-56 `studio-desk-lamp` A, B, 57-58 `studio-mug` A, B, 59-60 `studio-drawing-tubes` A, B, 61-62 `studio-pinned-drawings` A, B, 63-66 `city-backdrop` A, B, A, A (MEDIUM). These are P4 prop calls through `composePropPrompt` (`leonardo.mjs:84-98`), which leaves the scene framing out on purpose (`art-breakdown.md:57` "Prop sheets for image-to-3D follow the registry's input gating, not the style block"; `check-leonardo.mjs:82` asserts `!text.includes(style.technique) && !text.includes(style.subjectLock)` for them). So "every recorded call restates it" holds for 48 of 66 as worded, and for every P2 call. Gate: reached by `npm run check`, not a hand-run: `package.json:99` `"check:leonardo": "node scripts/lookdev/check-leonardo.mjs"`, `scripts/check-all.mjs:26` takes every `check:*` key, and this run printed `PASS  check:leonardo              0.9s`. |
+| 2 Style frames for every listed state from a trial matrix | one graded frame per state listed in `art-breakdown.md` | **pass on the lists that exist; the lists disagree in shape** | The two lists are not the same list. `lookdev/states.json` lists 9 states: `00-hero, 01-l0-rest, 02-room-lifted, 03-scan-sweeping, 04-pins-risen, 05-wrist-composer, 06-wave-running, 07-decision-asking, 08-lamp-speaking`. **`art-breakdown.md` lists no P2 state frames**: its only state list is the lamp agent's, `art-breakdown.md:23` "states from athena's events: resting, reading, working, asking, speaking". The eight P2 states are listed in this file ('## P2 Look-dev', second bullet), and they are `states.json`'s `01` to `08`; `00-hero` is the target frame. The lamp's five states each appear in a `states.json` text: resting (`01` "resting, bowed low and still"), reading (`02` "as if reading it"), working (`03`, `06`), asking (`07`), speaking (`08`). Picks: `picks.json` holds one pick per `states.json` id, **no state without a pick**, each file present in `lookdev/` and each `generationId` found in `log.jsonl`. Grades (0 to 3): `00-hero` 3, `01-l0-rest` **2**, `02-room-lifted` 3, `03-scan-sweeping` 3, `04-pins-risen` 3, `05-wrist-composer` 3, `06-wave-running` 3, `07-decision-asking` 3, `08-lamp-speaking` 3; the three alternates grade 2. Matrix, from `log.jsonl`: every state ran variants a and b at seeds 1001 and 2002 at LOW, then 1 or 2 MEDIUM draws (48 calls). The model axis has one value: every call is `openai/gpt-image-2.5-flare`. |
+| 3 Owner approval of the reference sheet recorded | the sheet is delivered and the owner's approval is recorded with its date in `docs/concepts/vr-light-table` | **pass** | `reference-sheet.md:255` `Owner approval: approved 2026-10-20 by the owner (operator, terminal note 21:46Z), on the sheet as merged in 82a0743. From here on this sheet is the art bible for P3 to P6.`; mirrored in this file, '## P2 Look-dev', `2026-10-20: gate met.`. `git log 82a0743..HEAD -- docs/concepts/vr-light-table/reference-sheet.md`: `d2d3b0b docs(vr): close R7 with the lamp pick's proof, and stop listing the lamp design as open` and `49de2e7 docs(vr-light-table): record owner approval of the P2 reference sheet`, two commits, `13 insertions(+), 6 deletions(-)` in total. `49de2e7` changes one line, `Owner approval: pending` to the approval line. `d2d3b0b` rewrites the two bullets of '## Open questions for the owner' only: the lamp-design bullet becomes the owner's 2026-10-21 answer (option A, proof `apps/vr/ArtSource/lamp-agent/manifest.json`), and the scan-line-colour bullet stays open, reworded, with a pointer to risk R6 in `wolf-plan.md`. Since the approval, then, the sheet changed only by the approval record, the R7 lamp closure and a reworded, still-open scan-colour question, with no frame, pick, grade or spend line changed, so the approval still covers the sheet as it stands. `git diff --stat 82a0743 HEAD -- docs/concepts/vr-light-table/lookdev/` shows only `log.jsonl` (+18, the prop calls) and `props.json` (+65) changed, insertions only: no frame and no `picks.json` entry changed. |
+
+- **Standing lines (taken from the records above, not re-scored).** Milestone 1: goals 2 to 5 passed in the 2026-10-20
+  reading, and goal 1 passed by the operator's 2026-10-21 perf ruling; its check-chain half is now red for the inherited
+  reason below. Milestone 2: both recommended items landed, `132ea13` for the stale-header control and `b7eda8d` and
+  `7f82b7b` for the WP3.1 and `/plan` drift.
+- **Milestone 2 goal 3 not re-scored here.** A second builder is extending `check:schema`'s controls in parallel this
+  wake, so that reading belongs to the next wake.
+- **Check chain (base's inherited state, not fixed).** `node .../isolated-gate.mjs npm run check`, run once, on `7f82b7b`,
+  exit 1. Failure list, verbatim:
+
+  ```
+  FAIL  check:store-triage exited 0 but printed SKIP, which fails the suite (a skip is an unrun check):
+    SKIP TRIAGE_FROM against store.mjs (lens-scan not installed here and nothing requires it; set BP_LENS_SCAN_DIR)
+
+  FAIL  check:store-compare exited 0 but printed SKIP, which fails the suite (a skip is an unrun check):
+    SKIP compareOf and packItems against store.mjs (lens-scan not installed here and nothing requires it; set BP_LENS_SCAN_DIR)
+
+  FAIL  check:scan-jobs exited 0 but printed SKIP, which fails the suite (a skip is an unrun check):
+    SKIP triage and release-create through store.mjs (lens-scan not installed, and nothing here requires it; set BP_LENS_SCAN_DIR)
+
+  82 passed, 3 failed, 0 skipped of 85; 3 check(s) printed 3 SKIP line(s), 3 not opted out and failing: check:store-triage, check:store-compare, check:scan-jobs
+  ```
+
+  It matches the base's state in counts (82 passed, 3 failed of 85) and in the three names, and it holds no failure beyond
+  them. Whether it is character-identical can't be said: the base was handed over as names and a summarised
+  `SKIP ... (lens-scan not installed here; set BP_LENS_SCAN_DIR)`, not as a verbatim log, and the real SKIP texts differ
+  from that summary and from each other (`check:scan-jobs` reads "not installed, and nothing here requires it"). The rule is
+  `ed1e8d0`'s (a skip is an unrun check). `BP_LENS_SCAN_DIR` and `BP_REQUIRE_LENS_SCAN` were not set and nothing was
+  opted out; the decision is the operator's. `typecheck` passed in the same run.
+- **Perf not run.** The perf budget is p50 on a host idle of builds, and a second builder was running, so a loaded reading
+  would be worthless; `scripts/perf.py` was not run. No UE build and no 90 Hz measurement were made.
+- **Owed next.** Nothing here can write the app, so when it is up: milestone 3's three goal rows are owed done (goals 1 to 3
+  pass above; goal 1 with the prop-call note, goal 2 with the list note); milestone 1's goals 2 to 5 are owed done and goal 1
+  done by the ruling, with its check-chain half recorded red for the inherited lens-scan SKIPs; milestone 2's goals 1 and 2
+  are owed done, and goal 3 waits for the next wake's reading after the parallel `check:schema` work. The app's goal rows
+  were not read in this run.
+
 ## P2 Look-dev
 
 Image work on the GPU box, judged by the owner.
