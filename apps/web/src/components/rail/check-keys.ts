@@ -178,5 +178,26 @@ for (const cls of scrollClasses) {
 expect(scrollers >= 3, `the scroller scan found ${scrollers} scrollable classes in workbench.css, expected at least 3 (.wb-list, .wb-body, .wb-log) - the matcher has stopped biting`);
 expect(/className="wb-body"\s+tabIndex=\{0\}/.test(shell), 'shell.tsx: the detail scroller .wb-body is not a tab stop (tabIndex={0}); nothing hands focus to the detail, so tabIndex={-1} would leave a prose-only detail unscrollable');
 
+// ---------------------------------------------------------------- 9. an empty live list says what state the stream is in
+// A live product's zero rows are a fact only on a connected stream; on loading / missing / offline / error the scan
+// may be running unseen. Queue.tsx's streamNote is the one vocabulary for that (five states, four distinct heads
+// besides the panel's own live sentence); every rail panel that lists the scan's jobs and has an empty sentence of
+// its own must branch through it, and Review's LiveEmpty must read it too, so the two cannot drift again.
+const queue = read('../Queue.tsx');
+const note = /export function streamNote[\s\S]*?\r?\n}\r?\n/.exec(queue)?.[0] ?? '';
+expect(!!note, 'Queue.tsx: no `export function streamNote` found - the shared stream-state vocabulary is gone');
+const heads = ['Connecting', 'Product not found', 'Scan stream offline', 'Scan unreadable'];
+for (const h of heads) expect(note.includes(`'${h}'`), `Queue.tsx streamNote has no '${h}' head, so that stream state reads as another one`);
+for (const st of ['live', 'loading', 'missing', 'offline']) expect(note.includes(`'${st}'`), `Queue.tsx streamNote never tests status '${st}'`);
+const liveEmpty = /export function LiveEmpty[\s\S]*?\r?\n}\r?\n/.exec(queue)?.[0] ?? '';
+expect(/streamNote\(/.test(liveEmpty), 'Queue.tsx: LiveEmpty does not read streamNote, so Review and Agents would word the stream states twice');
+let jobLists = 0;
+for (const [f, src] of SRC) {
+  if (!/useScanJobs\(/.test(src) || !/className="wb-none"/.test(src)) continue;
+  jobLists++;
+  expect(/streamNote\(/.test(src), `${f}: lists the scan's jobs and renders its own empty sentence without branching on the stream state (Queue.tsx streamNote) - an offline stream reads as "no scans"`);
+}
+expect(jobLists >= 1, `the empty-job-list scan found ${jobLists} panels, expected at least 1 (agents.tsx) - the matcher has stopped biting`);
+
 if (failures.length) { console.error(`check-rail-keys: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
 console.log(`check-rail-keys: ${held} expectations held (${options} role="option" sites, ${scrolls} scroll-behavior sites)`);

@@ -12,7 +12,7 @@ import { LiveSteerButtons } from '../../LiveSteer';
 import { ScanGlyph } from '../../ScanMenu';
 import { Mark, agentMark } from '../../Symbols';
 import { shallowEqual, useBp, useEngine, useLive, useScanCtx } from '../../hooks';
-import { httpUrl } from '../../Queue';
+import { SCAN_NOUNS, httpUrl, streamNote } from '../../Queue';
 import { PreviewBox, mmss, useScanJobs } from '../panels';
 import { Fig, Group, Row, Sec, Workbench, useListRef, useWalk } from './shell';
 
@@ -63,6 +63,8 @@ export function Agents() {
   const t = sim.has ? sim.tallyStatus() : null;
   const nRun = jobs.filter((j) => j.status === 'running').length, nQ = jobs.filter((j) => j.status === 'queued').length;
 
+  // an empty list is only a fact on a connected stream; on any other state of it the scan may be running unseen
+  const note = streamNote(live?.product, SCAN_NOUNS);
   const list = (
     <>
       <ul role="listbox" aria-label="Overview" className="wb-solo">
@@ -84,7 +86,8 @@ export function Agents() {
               {!x.release && <span className="bar" aria-hidden="true"><i style={{ width: (x.m ? (100 * x.n) / x.m : 0) + '%' }} /></span>}
             </Row>
           );
-        }) : <li className="wb-none">No scans yet. Right-click a feature, bay, room or wing on the plan to scan it.</li>}
+        }) : note ? <li className="wb-none"><b>{note[0]}</b> {note[1]}</li>
+          : <li className="wb-none">No scans yet. Right-click a feature, bay, room or wing on the plan to scan it.</li>}
       </Group>
       {squads.length > 0 && (
         <Group head="Crews" n={squads.length} label="Crews">
