@@ -8,8 +8,10 @@
 //   3. --bundle <distDir> [--before <distDir>]: a production build's first-load assets of `/` (the scripts and styles
 //      server/app/index.html names) must not carry the ledger's code (the marker `tr-cmp`, the compare panel's class,
 //      which only the ledger has); prints their bytes (raw and gzip), the ledger's own chunks, and the change against
-//      a build of the commit before. Build with `NEXT_DIST_DIR=.next-wp5b npx next build` (then restore tsconfig.json,
-//      which the build edits).
+//      a build of the commit before. `npm run verify:train-bundle` runs it against apps/web/.next after `npm run build`
+//      (it is NOT a check:* script: it needs a production build, which check-all cannot assume, and a skipped check
+//      fails that suite). Or build into another dir with `NEXT_DIST_DIR=.next-wp5b npx next build` (then restore
+//      tsconfig.json, which the build edits). Its decision logic is held offline on every run by a synthetic dist below.
 // The J/K render count (a step re-renders the two rows involved, nothing else) needs a browser: docs/blueprint-ui.md
 // "Findings ledger" names how it was counted.
 // Run: node scripts/check-train-budget.ts [--bundle <distDir> [--before <distDir>]]  (Node's type stripping;
@@ -19,6 +21,7 @@ import { pathToFileURL } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import os from 'node:os';
 import { stripComments } from './lib/source.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
@@ -88,7 +91,9 @@ console.log(`chunk   / reaches ${reached.size} modules statically, ${leaked.leng
 interface FirstLoad { files: { name: string; raw: number; gz: number; marker: boolean }[]; js: number; jsGz: number; css: number; cssGz: number; ledger: { name: string; raw: number; gz: number }[] }
 const MARKER = 'tr-cmp';
 function firstLoad(dist: string): FirstLoad {
-  const html = fs.readFileSync(path.join(dist, 'server', 'app', 'index.html'), 'utf8');
+  const index = path.join(dist, 'server', 'app', 'index.html');
+  if (!fs.existsSync(index)) { console.log(`FAIL --bundle ${dist}: no server/app/index.html - run npm run build first (the arm never passes over a missing build)`); process.exit(1); }
+  const html = fs.readFileSync(index, 'utf8');
   const names = [...new Set([...html.matchAll(/\/_next\/(static\/[^"'\s)]+?\.(?:js|css))/g)].map((m) => m[1]))];
   const size = (p: string) => { const b = fs.readFileSync(p); return { raw: b.length, gz: zlib.gzipSync(b, { level: 9 }).length, marker: b.includes(MARKER) }; };
   const files = names.map((n) => ({ name: n, ...size(path.join(dist, n)) }));
@@ -97,13 +102,43 @@ function firstLoad(dist: string): FirstLoad {
   const ledger = fs.readdirSync(chunks).filter((n) => /\.(js|css)$/.test(n)).map((n) => ({ name: 'static/chunks/' + n, ...size(path.join(chunks, n)) })).filter((f) => f.marker).map(({ name, raw, gz }) => ({ name, raw, gz }));
   return { files, js: sum('.js', 'raw'), jsGz: sum('.js', 'gz'), css: sum('.css', 'raw'), cssGz: sum('.css', 'gz'), ledger };
 }
+/** The arm's two assertions over a first-load reading: a pure function so the offline control below can drive it. */
+const bundleFailures = (after: FirstLoad, label: string): string[] => {
+  const carry = after.files.filter((f) => f.marker).map((f) => f.name), out: string[] = [];
+  if (carry.length) out.push(`/'s first-load assets carry the ledger (${MARKER}): ${carry.join(', ')}`);
+  if (!after.ledger.length) out.push(`no chunk of ${label} carries ${MARKER}: is it a build of this repo?`);
+  return out;
+};
+// The offline control (runs every time, needs no build): a synthetic dist shaped like a production one. Clean, the arm
+// must hold; with the marker in a chunk that `/` names it must fail NAMING that chunk; with no chunk carrying the
+// marker at all it must fail as "not a build of this repo".
+{
+  const mk = (firstLoadBody: string, ledgerBody: string) => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-dist-'));
+    fs.mkdirSync(path.join(d, 'server', 'app'), { recursive: true }); fs.mkdirSync(path.join(d, 'static', 'chunks'), { recursive: true });
+    fs.writeFileSync(path.join(d, 'server', 'app', 'index.html'), '<script src="/_next/static/chunks/main-1.js"></script><link href="/_next/static/chunks/app.css">');
+    fs.writeFileSync(path.join(d, 'static', 'chunks', 'main-1.js'), firstLoadBody);
+    fs.writeFileSync(path.join(d, 'static', 'chunks', 'app.css'), '.a{}');
+    fs.writeFileSync(path.join(d, 'static', 'chunks', 'ledger-2.js'), ledgerBody);
+    return d;
+  };
+  const dirs = [mk('var a=1', 'x.className="' + MARKER + '"'), mk('var a="' + MARKER + '"', 'x.className="' + MARKER + '"'), mk('var a=1', 'var b=2')];
+  try {
+    const [clean, leaked, noLedger] = dirs.map((d) => bundleFailures(firstLoad(d), 'fixture'));
+    expect(clean.length === 0, 'control: a clean synthetic dist must satisfy the bundle arm: ' + clean.join('; '));
+    expect(leaked.length === 1 && leaked[0].includes('main-1.js'), 'control: a marker in a first-load chunk must fail the bundle arm naming the chunk: ' + JSON.stringify(leaked));
+    expect(noLedger.length === 1 && /is it a build of this repo/.test(noLedger[0]), 'control: a dist with no ledger chunk must fail the bundle arm: ' + JSON.stringify(noLedger));
+    const l = firstLoad(dirs[0]);
+    expect(l.js === 7 && l.css === 4 && l.ledger.length === 1, `control: first-load sizes are read from the files index.html names (JS ${l.js}, CSS ${l.css}, ledger chunks ${l.ledger.length})`);
+  } finally { for (const d of dirs) fs.rmSync(d, { recursive: true, force: true }); }
+}
 const kb = (n: number) => (n / 1024).toFixed(1) + ' KB';
 const bundle = arg('--bundle');
 if (bundle) {
   const after = firstLoad(path.resolve(bundle)), before = arg('--before') ? firstLoad(path.resolve(arg('--before')!)) : null;
-  const carry = after.files.filter((f) => f.marker).map((f) => f.name);
-  expect(!carry.length, `\`/\`'s first-load assets carry the ledger (${MARKER}): ${carry.join(', ')}`);
-  expect(after.ledger.length > 0, `no chunk of ${bundle} carries ${MARKER}: is it a build of this repo?`);
+  const bad = bundleFailures(after, bundle);
+  for (const m of bad) expect(false, m);
+  if (!bad.length) held += 2;
   const line = (k: string, x: FirstLoad) => console.log(`bundle  ${k.padEnd(6)} / first load: JS ${kb(x.js)} (gzip ${kb(x.jsGz)}) in ${x.files.filter((f) => f.name.endsWith('.js')).length} files, CSS ${kb(x.css)} (gzip ${kb(x.cssGz)}); ${x.files.filter((f) => f.marker).length} carry ${MARKER}`);
   if (before) line('before', before);
   line('after', after);

@@ -3,8 +3,9 @@
 // New check:* scripts join automatically. check:python-deps runs only when Python is on PATH (else skipped).
 // A CHILD reports that it did not run everything by printing a line starting with `SKIP` (the same shape
 // this runner prints); those lines are reprinted under the check that emitted them and counted in the
-// summary. They are NOT fatal - whether a skipped expectation should fail the suite is the owner's call -
-// but a passing check that skipped ten expectations must not read identically to one that ran them all.
+// summary. A SKIP inside a child FAILS the suite (owner ruling, 2026-10-22): a run printing "0 skipped" over ten
+// unrun expectations was an unrun check reporting success. The failure names the child and the skip's own text.
+// The only exemptions are in OPT_OUT below, each justified where it is declared.
 // A check that never exits used to hang the whole gate with no output and no verdict: the run() promise settled only on the
 // child's 'close' event. Each check now has a ceiling (BP_CHECK_TIMEOUT_MS, default 120000 - the slowest check in this tree is
 // about 16 s) after which its process tree is killed and it is reported as "FAIL <name> (timed out after Ns)"; a spawn that
@@ -44,6 +45,18 @@ const killTree = (p) => {
   if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(p.pid), '/t', '/f'], { stdio: 'ignore' });
   else { try { process.kill(-p.pid, 'SIGKILL'); } catch { p.kill('SIGKILL'); } }
 };
+// SKIP lines a child may print WITHOUT failing the suite. Keyed by check name; each entry is {when, why}: `when`
+// says whether the exemption applies in THIS environment (an exemption that held everywhere would let the skip
+// hide on a machine that has the dependency), `why` is the justification. Add nothing here without both.
+const OPT_OUT = {
+  // check-python-syntax parses the repo's .py files with a python binary; with no interpreter on PATH there is
+  // nothing to run it with. That is an environment fact the repo accepted (check:python-deps is skipped by this
+  // runner on the same condition). It is exempt ONLY when this runner also found no python: a skip on a machine
+  // that has python is a real hole and fails.
+  'check:python-syntax': { when: () => !hasPython, why: 'python not on PATH (accepted by design)' },
+};
+/** The SKIP lines of a result that the suite does not forgive. */
+const unforgiven = (name, skips, optOut = OPT_OUT) => (optOut[name]?.when() ? [] : skips);
 const skipped = new Map();
 if (!hasPython && names.includes('check:python-deps')) skipped.set('check:python-deps', 'python not on PATH');
 
@@ -84,6 +97,15 @@ if (ctlWhy) {
   process.exit(1);
 }
 
+// The control for the skip policy: a child that prints a SKIP line must come back as a failure naming the line, an
+// opted-out one must not, and an opt-out whose `when` is false must not forgive. Fixtures; runs every time.
+const skCtl = await run('control:skip', 'node -e "console.log(process.argv[1])" "SKIP  fixture: not run"');
+const skWhy = skCtl.code !== 0 || skCtl.skips.length !== 1 ? 'the fixture child did not report exactly one SKIP line'
+  : unforgiven('fixture', skCtl.skips, {}).length !== 1 ? 'a SKIP from a check with no opt-out was forgiven'
+  : unforgiven('fixture', skCtl.skips, { fixture: { when: () => true, why: 'control' } }).length !== 0 ? 'an opted-out SKIP was not forgiven'
+  : unforgiven('fixture', skCtl.skips, { fixture: { when: () => false, why: 'control' } }).length !== 1 ? 'an opt-out whose condition is false forgave a SKIP' : '';
+if (skWhy) { console.log(`FAIL  the skip control: ${skWhy}; a skipped check would read as a pass`); process.exit(1); }
+
 const todo = names.filter((n) => !skipped.has(n));
 const results = [];
 const queue = [...todo];
@@ -93,7 +115,7 @@ await Promise.all(Array.from({ length: Math.min(4, queue.length) }, async () => 
   for (let n; (n = queue.shift()); ) {
     const r = await run(n);
     results.push(r);
-    console.log(`${r.code === 0 ? 'PASS' : 'FAIL'}  ${r.name.padEnd(width)}  ${(r.ms / 1000).toFixed(1).padStart(5)}s`);
+    console.log(`${r.code === 0 && !unforgiven(r.name, r.skips).length ? 'PASS' : 'FAIL'}  ${r.name.padEnd(width)}  ${(r.ms / 1000).toFixed(1).padStart(5)}s`);
     // A child's own SKIP lines are the only sign that a passing check did not run everything, and this
     // runner used to discard the output of anything that exited 0. They are REPRINTED here, under the
     // check that reported them, and counted in the summary - a passing check that skipped ten expectations
@@ -102,10 +124,15 @@ await Promise.all(Array.from({ length: Math.min(4, queue.length) }, async () => 
   }
 }));
 for (const [n, why] of skipped) console.log(`SKIP  ${n.padEnd(width)}  ${why}`);
-const failed = results.filter((r) => r.code !== 0);
-for (const r of failed) console.log(`\n--- ${r.name} (exit ${r.code}) ---\n${r.out.trim().split('\n').slice(-25).join('\n')}`);
+for (const r of results) r.bad = unforgiven(r.name, r.skips);
+const failed = results.filter((r) => r.code !== 0 || r.bad.length);
+for (const r of failed) {
+  if (r.code === 0) console.log(`\nFAIL  ${r.name} exited 0 but printed SKIP, which fails the suite (a skip is an unrun check):\n${r.bad.map((l) => '  ' + l).join('\n')}`);
+  else console.log(`\n--- ${r.name} (exit ${r.code}) ---\n${r.out.trim().split('\n').slice(-25).join('\n')}`);
+}
 const partial = results.filter((r) => r.skips.length);
 const nSkips = partial.reduce((n, r) => n + r.skips.length, 0);
+const nBad = results.reduce((n, r) => n + r.bad.length, 0);
 console.log(`\n${results.length - failed.length} passed, ${failed.length} failed, ${skipped.size} skipped of ${names.length}`
-  + (partial.length ? `; ${partial.length} passing check(s) skipped ${nSkips} of their own: ${partial.map((r) => r.name).join(', ')} - a green run here is NOT a full run` : ''));
+  + (partial.length ? `; ${partial.length} check(s) printed ${nSkips} SKIP line(s), ${nBad} not opted out and failing: ${partial.map((r) => r.name).join(', ')}` : ''));
 process.exit(failed.length ? 1 : 0);

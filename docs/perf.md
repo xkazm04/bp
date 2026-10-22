@@ -106,6 +106,7 @@ per-frame work is a few hundred cheap primitives.
 ## Budget
 
 - 2026-10-21 (operator ruling): the budget is p50 <= 16.7 ms at `?scale=4`, measured with `python scripts/perf.py` on Lynx while the machine is idle of builds. p95 is reported without a budget.
+- Lens switch (`python scripts/perf.py --tween`), a per-level p50 ceiling that holds the recorded ~30 fps spring and nothing worse: home 33.3 ms, L-bld 33.3, L-tiles 33.3, L-room 50 (the 2-3 frame spring recorded under "Lens switch at x4"; +0.4 ms rounding tolerance). Derived from that table, not newly measured; the operator retunes `TWEEN_BUDGET_P50_MS` in `scripts/perf.py`. The median over `TWEEN_RUNS` runs is held per level and the script exits 1 on a miss. p95 is reported without a budget.
 
 ## Known costs
 
