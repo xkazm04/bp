@@ -3,8 +3,9 @@
 // gh. Every child is started with execFile and an argument array, never a shell string:
 //   store.mjs   `node <lens-scan>/scripts/store.mjs --db <store> <command> ...`; <lens-scan> is BP_LENS_SCAN_DIR when it
 //               is set (then it is the ONLY place looked: an explicit setting must fail visibly, not fall through to
-//               another install), else ~/.claude/skills/lens-scan and then `<registry.local>/skills/lens-scan` for the
-//               registry `.ai/manifest.yaml` declares — all through realpath. It prints JSON on stdout; exit 2 = bad
+//               another install), else ~/.claude/skills/lens-scan, then `<registry.local>/skills/lens-scan` for the
+//               registry `.ai/manifest.yaml` declares, then that registry as seen from the main git checkout when this
+//               is a linked worktree (lensScanDirs()) — all through realpath. It prints JSON on stdout; exit 2 = bad
 //               input, 1 = refused.
 //   gh          `gh api user --jq .login` once per server process (who triages: `user:<login>`, else `user:blueprint`),
 //               and `gh auth status` before a release job starts. BP_GH_BIN overrides the binary (a .mjs runs on this
@@ -12,7 +13,7 @@
 //   git         `git tag --list v* --sort=-v:refname` in the product root, for the version suggestion; `git show` of one
 //               item commit (message + stat, numstat, the patch cut at 2000 lines) for the commits route.
 // Server-only: route handlers import it.
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -54,13 +55,11 @@ function blueprintRoot(): string | null {
 }
 
 /**
- * The registry `.ai/manifest.yaml` declares (`registry:` / `  local: <path>`, resolved against the blueprint root),
- * or null when the file is absent or declares none. Read line-wise: the declaration is two keys deep and the repo
- * carries no YAML parser.
+ * The registry `.ai/manifest.yaml` declares (`registry:` / `  local: <path>`), as written: a path relative to the
+ * blueprint root (or absolute), or null when the file is absent or declares none. Read line-wise: the declaration is
+ * two keys deep and the repo carries no YAML parser.
  */
-function declaredRegistry(): string | null {
-  const root = blueprintRoot();
-  if (!root) return null;
+function declaredRegistry(root: string): string | null {
   let text: string;
   try { text = fs.readFileSync(path.join(root, '.ai', 'manifest.yaml'), 'utf8'); } catch { return null; }
   let inRegistry = false;
@@ -69,30 +68,83 @@ function declaredRegistry(): string | null {
     if (/^\S/.test(line)) { inRegistry = /^registry:\s*$/.test(line); continue; }
     if (!inRegistry) continue;
     const m = /^\s+local:\s*(.+?)\s*$/.exec(line);
-    if (m) { const v = m[1].replace(/^['"]|['"]$/g, '').trim(); return v ? path.resolve(root, v) : null; }
+    if (m) { const v = m[1].replace(/^['"]|['"]$/g, '').trim(); return v || null; }
   }
   return null;
 }
 
+const mainRoots = new Map<string, string | null>();
+/**
+ * The blueprint root as it sits in the repo's MAIN checkout, when `root` is in a linked git worktree; null in the
+ * main checkout itself, outside git, or when git cannot say. Taken from git's own answer, never guessed from the
+ * path: `--git-common-dir` is `<main>/.git` in every worktree of a repo (just `.git` in the main one), and the
+ * blueprint keeps its place below the top level. Asked once per root.
+ */
+export function mainCheckoutRoot(root: string): string | null {
+  if (mainRoots.has(root)) return mainRoots.get(root) ?? null;
+  let found: string | null = null;
+  try {
+    const [top, common] = execFileSync('git', ['rev-parse', '--show-toplevel', '--git-common-dir'], { cwd: root, encoding: 'utf8', timeout: GIT_MS, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] })
+      .split(/\r?\n/).map((l) => l.trim());
+    const commonDir = common ? path.resolve(root, common) : '';
+    if (top && commonDir && path.basename(commonDir) === '.git') {
+      const main = path.join(path.dirname(commonDir), path.relative(path.resolve(top), root));
+      if (!samePath(main, root)) found = main;
+    }
+  } catch { /* not a git checkout, or no git: there is no main checkout to look in */ }
+  mainRoots.set(root, found);
+  return found;
+}
+
+const samePath = (a: string, b: string) => process.platform === 'win32' ? path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase() : path.resolve(a) === path.resolve(b);
+
+/** What lensScanDirs() decides from; each field is what the live call reads from the environment, the home, the manifest and git. */
+export interface LensScanInputs { named: string | undefined; home: string; root: string | null; declared: string | null; mainRoot: string | null }
+
 /**
  * Where a lens-scan install is looked for, in order. BP_LENS_SCAN_DIR, when it is set, is the ONLY place looked: an
  * operator who names a directory must see that name fail, never fall through to a different install. Otherwise:
- * `~/.claude/skills/lens-scan`, then `<registry.local>/skills/lens-scan` for the registry the manifest declares --
- * a skill installed in the declared registry is installed, and a resolver that cannot see the declaration turns
- * every triage and release write into "not installed".
+ *   1. `~/.claude/skills/lens-scan`;
+ *   2. `<registry.local>/skills/lens-scan`, registry.local resolved against the blueprint root -- a skill installed in
+ *      the declared registry is installed, and a resolver that cannot see the declaration turns every triage and
+ *      release write into "not installed";
+ *   3. the same declaration resolved against the blueprint root in the repo's MAIN checkout, when this one is a linked
+ *      git worktree (mainCheckoutRoot()). A worktree of this repo is the same install as its main checkout, and the
+ *      registry is declared relative to that checkout: it sits beside the main checkout, not beside each worktree.
+ * Found 2026-10-22: every headless builder worktree (under ~/.personas/headless-masters/worktrees/bp/<id>) resolved
+ * `../ai-registry` beside itself, where nothing is installed, so check:store-triage, check:store-compare and
+ * check:scan-jobs SKIPped there -- and since a SKIP fails the suite (ed1e8d0) the gate read 3 FAIL on every branch for
+ * a reason no branch had, while the main checkout read green. The third candidate comes LAST so that nothing changes
+ * where 1 or 2 already finds an install, and it is dropped when it is the same place as 2 (the main checkout itself).
+ * A worktree whose main checkout has no registry still finds nothing, and the checks still SKIP and fail.
  */
-export function lensScanDirs(): string[] {
-  const set = process.env.BP_LENS_SCAN_DIR;
-  if (set) return [set];
-  const out = [path.join(os.homedir(), '.claude', 'skills', 'lens-scan')];
-  const reg = declaredRegistry();
-  if (reg) out.push(path.join(reg, 'skills', 'lens-scan'));
+export function lensScanDirsFor(i: LensScanInputs): string[] {
+  if (i.named) return [i.named];
+  const out = [path.join(i.home, '.claude', 'skills', 'lens-scan')];
+  if (i.root && i.declared) {
+    const here = path.join(path.resolve(i.root, i.declared), 'skills', 'lens-scan');
+    out.push(here);
+    if (i.mainRoot) {
+      const main = path.join(path.resolve(i.mainRoot, i.declared), 'skills', 'lens-scan');
+      if (!samePath(main, here)) out.push(main);
+    }
+  }
   return out;
 }
 
+/** lensScanDirsFor() on this process: BP_LENS_SCAN_DIR, the home, this blueprint's manifest and git's main checkout. */
+export function lensScanDirs(): string[] {
+  const named = process.env.BP_LENS_SCAN_DIR;
+  if (named) return [named];
+  const root = blueprintRoot(), declared = root ? declaredRegistry(root) : null;
+  return lensScanDirsFor({ named, home: os.homedir(), root, declared, mainRoot: root && declared ? mainCheckoutRoot(root) : null });
+}
+
 /** lens-scan's store.mjs, from the first of lensScanDirs() that holds one; null when none does. */
-export function storeScript(): string | null {
-  for (const dir of lensScanDirs()) {
+export function storeScript(): string | null { return storeScriptIn(lensScanDirs()); }
+/** store.mjs from the first of `dirs` that holds one (through realpath); null when none does. */
+export function storeScriptIn(dirs: string[]): string | null {
+  for (const dir of dirs) {
     try { const f = path.join(fs.realpathSync(dir), 'scripts', 'store.mjs'); if (fs.existsSync(f)) return f; } catch { /* not installed here */ }
   }
   return null;

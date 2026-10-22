@@ -20,7 +20,8 @@
 //   - Kettle parity: the scan sim's selection scans and lens execute, and addProjectLens over the browser's store.
 // Triage and release-create need lens-scan's store.mjs: lensScanDirs() is pinned (set / unset order) and a missing install is a
 // FAILURE wherever the operator names one (BP_LENS_SCAN_DIR), BP_REQUIRE_LENS_SCAN=1 or CI says so, or the registry the manifest
-// declares is on this machine; only a checkout without its registry (a bare worktree) skips, and says so. BP_REQUIRE_LENS_SCAN=0 waives.
+// declares is on this machine (beside this checkout or, for a linked worktree, beside its main checkout); only a checkout without
+// its registry skips, and says so. BP_REQUIRE_LENS_SCAN=0 waives.
 // Run: node scripts/check-scan-jobs.ts  (Node's type stripping; no build step). Exit 1 on any failure. ~15 s.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -443,6 +444,13 @@ try {
     const declared = /^registry:[ \t]*\r?\n(?:[ \t]+[^\r\n]*\r?\n)*?[ \t]+local:[ \t]*(\S+)/m.exec(manifestText)?.[1].replace(/^['"]|['"]$/g, '');
     const declaredDir = declared ? path.resolve(ROOT, declared) : null;
     const homeLens = path.join(os.homedir(), '.claude', 'skills', 'lens-scan'), regLens = declaredDir ? path.join(declaredDir, 'skills', 'lens-scan') : null;
+    // the main checkout, asked of git here (not through release.server.ts): in a linked worktree --git-common-dir is
+    // <main>/.git, so the declaration is also read beside the main checkout; in the main checkout that is the same place
+    const gitSays = spawnSync('git', ['rev-parse', '--show-toplevel', '--git-common-dir'], { cwd: ROOT, encoding: 'utf8' }).stdout?.split(/\r?\n/).map((l) => l.trim()) ?? [];
+    const commonDir = gitSays[1] ? path.resolve(ROOT, gitSays[1]) : null;
+    const mainRoot = gitSays[0] && commonDir && path.basename(commonDir) === '.git' ? path.join(path.dirname(commonDir), path.relative(path.resolve(gitSays[0]), ROOT)) : null;
+    const mainRegDir = mainRoot && declared ? path.resolve(mainRoot, declared) : null;
+    const mainLens = mainRegDir && regLens && path.join(mainRegDir, 'skills', 'lens-scan').toLowerCase() !== regLens.toLowerCase() ? path.join(mainRegDir, 'skills', 'lens-scan') : null;
     const named = process.env.BP_LENS_SCAN_DIR;
     const dirsFor = (v: string | undefined): string[] => {
       if (v === undefined) delete process.env.BP_LENS_SCAN_DIR; else process.env.BP_LENS_SCAN_DIR = v;
@@ -451,13 +459,33 @@ try {
     const sentinel = path.join(dir, 'named-lens-scan');
     check('the manifest declares a registry (the fallback lensScanDirs() must follow)', !!declaredDir, manifestText ? 'no registry.local in .ai/manifest.yaml' : '.ai/manifest.yaml unreadable');
     check('lensScanDirs: BP_LENS_SCAN_DIR set -> exactly that one place, no fallthrough', dirsFor(sentinel).join('|') === path.resolve(sentinel), dirsFor(sentinel).join('|'));
-    check('lensScanDirs: unset -> ~/.claude/skills/lens-scan, then <registry.local>/skills/lens-scan, in that order',
-      dirsFor(undefined).join('|') === [homeLens, ...(regLens ? [regLens] : [])].map((d) => path.resolve(d)).join('|'), dirsFor(undefined).join('|') + ' vs ' + [homeLens, regLens].join('|'));
+    check('lensScanDirs: unset -> ~/.claude/skills/lens-scan, then <registry.local>/skills/lens-scan, then the main checkout\'s <registry.local>/skills/lens-scan (a linked worktree only), in that order',
+      dirsFor(undefined).join('|') === [homeLens, ...(regLens ? [regLens] : []), ...(mainLens ? [mainLens] : [])].map((d) => path.resolve(d)).join('|'), dirsFor(undefined).join('|') + ' vs ' + [homeLens, regLens, mainLens].join('|'));
+    // the same four paths on a fixture, so they are proven on every run whether this is a main checkout or a worktree:
+    // <fx>/main is the main checkout, <fx>/wts/wt a worktree of it, both declaring ../ai-registry; <fx>/home has no install
+    {
+      const fx = path.join(dir, 'lens-resolve'), fxHome = path.join(fx, 'home'), fxMain = path.join(fx, 'main'), fxWt = path.join(fx, 'wts', 'wt');
+      const fxIn = { home: fxHome, root: fxWt, declared: '../ai-registry', mainRoot: fxMain };
+      const fxHomeLens = path.join(fxHome, '.claude', 'skills', 'lens-scan'), fxWtLens = path.join(fx, 'wts', 'ai-registry', 'skills', 'lens-scan'), fxMainLens = path.join(fx, 'ai-registry', 'skills', 'lens-scan');
+      const fxDirs = RS.lensScanDirsFor({ ...fxIn, named: undefined });
+      const install = (d: string) => { fs.mkdirSync(path.join(d, 'scripts'), { recursive: true }); fs.writeFileSync(path.join(d, 'scripts', 'store.mjs'), '// fixture\n'); return fs.realpathSync(path.join(d, 'scripts', 'store.mjs')); };
+      check('lens resolver fixture: BP_LENS_SCAN_DIR set -> exactly that one place, even beside a main checkout', RS.lensScanDirsFor({ ...fxIn, named: sentinel }).join('|') === sentinel);
+      check('lens resolver fixture: unset in a worktree -> home, then the declared registry beside the worktree, then the one beside the main checkout, in that order',
+        fxDirs.join('|') === [fxHomeLens, fxWtLens, fxMainLens].join('|'), fxDirs.join('|'));
+      check('lens resolver fixture: in the main checkout (git names no other) the main-checkout candidate is not added twice',
+        RS.lensScanDirsFor({ ...fxIn, named: undefined, root: fxMain, mainRoot: null }).join('|') === [fxHomeLens, fxMainLens].join('|'));
+      check('lens resolver fixture: a worktree whose main checkout has no registry -> no candidate holds store.mjs (the SKIP still happens)', RS.storeScriptIn(fxDirs) === null);
+      const fxMainStore = install(fxMainLens);
+      check('lens resolver fixture: store.mjs only beside the main checkout -> found there, and only through the main-checkout candidate (without it, nothing is found)',
+        RS.storeScriptIn(fxDirs) === fxMainStore && RS.storeScriptIn(fxDirs.filter((d) => d !== fxMainLens)) === null, String(RS.storeScriptIn(fxDirs)));
+      const fxHomeStore = install(fxHomeLens);
+      check('lens resolver fixture: home and the main checkout both hold store.mjs -> home wins (the new candidate is last)', RS.storeScriptIn(fxDirs) === fxHomeStore && RS.storeScriptIn([...fxDirs].reverse()) === fxMainStore);
+    }
     // required when the operator names a place, the environment says so, or the declared registry is on this machine
     // (a checkout without its registry, such as a bare worktree, cannot be asked for what it cannot have); '0' waives
-    const required = process.env.BP_REQUIRE_LENS_SCAN !== '0' && (process.env.BP_REQUIRE_LENS_SCAN === '1' || !!process.env.CI || named !== undefined || (!!declaredDir && fs.existsSync(declaredDir)));
+    const required = process.env.BP_REQUIRE_LENS_SCAN !== '0' && (process.env.BP_REQUIRE_LENS_SCAN === '1' || !!process.env.CI || named !== undefined || (!!declaredDir && fs.existsSync(declaredDir)) || (!!mainRegDir && fs.existsSync(mainRegDir)));
     check('lens-scan is found for the triage and release checks (a missing install is a failure, not a skip)', hasStoreMjs || !required,
-      'searched ' + (named !== undefined ? 'BP_LENS_SCAN_DIR=' + named : [homeLens, regLens ?? '(no registry declared in .ai/manifest.yaml)'].join(' and ')) + ' - none holds scripts/store.mjs; BP_REQUIRE_LENS_SCAN=0 waives');
+      'searched ' + (named !== undefined ? 'BP_LENS_SCAN_DIR=' + named : [homeLens, regLens ?? '(no registry declared in .ai/manifest.yaml)', ...(mainLens ? [mainLens] : [])].join(' and ')) + ' - none holds scripts/store.mjs; BP_REQUIRE_LENS_SCAN=0 waives');
     const triBad = await Promise.all([
       call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a b'], decision: 'accept' }),
       call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a1'], decision: 'ship' }),
