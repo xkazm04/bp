@@ -5,8 +5,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+
+// lynx_commit is the writer's field: the newest commit that touches this asset folder, so check:art can trace the
+// manifest to a real tree. It throws when nothing has committed the folder yet (there is no honest hash to stamp).
+function lynxCommit(folder) {
+  const r = spawnSync('git', ['log', '-1', '--format=%H', '--', 'apps/vr/ArtSource/' + folder], { cwd: ROOT, encoding: 'utf8' });
+  const h = (r.stdout ?? '').trim();
+  if (!/^[0-9a-f]{40}$/.test(h)) throw new Error('lynx_commit: no commit touches apps/vr/ArtSource/' + folder + ' yet; commit the folder first so the manifest can name it');
+  return h;
+}
 const DIR = path.join(ROOT, 'apps', 'vr', 'ArtSource', 'city-backdrop');
 const LOG = path.join(ROOT, 'docs', 'concepts', 'vr-light-table', 'lookdev', 'log.jsonl');
 const [work, srcJpg] = process.argv.slice(2);
@@ -85,8 +95,8 @@ const M = {
   },
   blender: 'Blender 5.2.2, scripts/art/city-backdrop/build_backdrop.bpy (concept, strip, panel and score), render_backdrop.bpy (evidence), write_manifest.mjs',
   licence: "Leonardo API output, generated 2026-10-21 on the owner's Leonardo account with public:false. Shipping it rests on the Director's ruling for the operator of 2026-10-21 (Leonardo for the backdrop, because FLUX.2 [klein] is not installed and will not be; wolf-plan.md R8, tech-stack.md section 5). The post-processing (seam fade, dim, mesh) is our own work. Check the Leonardo terms of service for commercial use before a public release.",
-  lynx_commit: null,
-  lynx_commit_note: 'null until the merge sets it',
+  lynx_commit: lynxCommit('city-backdrop'),
+  lynx_commit_note: 'stamped by the writer: the newest commit touching this folder when the manifest was written',
   regenerate: 'node scripts/lookdev/leonardo.mjs gen --prop city-backdrop --variant A --seed 3 --quality MEDIUM --size 2048x768 --stop-at 200 (spends credits); blender -b -P scripts/art/city-backdrop/build_backdrop.bpy -- <repo-root> <work> <frame.jpg>; blender -b -P scripts/art/city-backdrop/render_backdrop.bpy -- <repo-root> <work>; node scripts/art/city-backdrop/write_manifest.mjs <work> <frame.jpg>',
   evidence_stats: E,
   file_bytes: sizes,

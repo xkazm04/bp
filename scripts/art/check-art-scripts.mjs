@@ -14,7 +14,7 @@ import path from 'node:path';
 import net from 'node:net';
 import http from 'node:http';
 import { spawn, spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -43,24 +43,35 @@ export function scoreAsset(id) {
   return { id, class: 'stub', budget_tris: 100, tris_total: 20, meshes, materials: ['m1', 'm2'], checks, bytes: 1, pass: Object.values(checks).every(Boolean) };
 }
 `;
-function runWriter(env, ids = ['survey-pin', 'fixture-kit']) {
+function runWriter(env, ids = ['survey-pin', 'fixture-kit'], commit = true) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-art-writer-'));
   try {
     fs.mkdirSync(path.join(root, 'scripts', 'art'), { recursive: true });
     fs.copyFileSync(path.join(HERE, 'write-manifests.mjs'), path.join(root, 'scripts', 'art', 'write-manifests.mjs'));
     fs.writeFileSync(path.join(root, 'scripts', 'art', 'score-assets.mjs'), stub);
     for (const id of ids) { fs.mkdirSync(path.join(root, 'apps', 'vr', 'ArtSource', id), { recursive: true }); fs.writeFileSync(path.join(root, 'apps', 'vr', 'ArtSource', id, 'final.glb'), 'x'); }
+    // The writer stamps lynx_commit from git, so the scratch root is a real repo whose one commit touches the asset folders.
+    let head = null;
+    if (commit) {
+      const g = (...a) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...a], { cwd: root, encoding: 'utf8' });
+      g('init', '-q'); g('add', 'apps'); g('commit', '-q', '-m', 'scratch');
+      head = g('rev-parse', 'HEAD').stdout.trim();
+    }
     const r = spawnSync(process.execPath, [path.join(root, 'scripts', 'art', 'write-manifests.mjs')], { encoding: 'utf8', timeout: 30000, env: { ...process.env, ...env } });
     // read before the finally block deletes the scratch root
     const read = (id) => { try { return JSON.parse(fs.readFileSync(path.join(root, 'apps', 'vr', 'ArtSource', id, 'manifest.json'), 'utf8')); } catch { return null; } };
     const written = Object.fromEntries(ids.map((id) => [id, read(id)]));
     const manifest = (id) => written[id] ?? null;
-    return { r, manifest };
+    return { r, manifest, head };
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 }
 {
   const base = runWriter({});
   check('writer: the harness itself is sound (stub passes, exit 0, both manifests written)', base.r.status === 0 && base.manifest('survey-pin') && base.manifest('fixture-kit'), `exit ${base.r.status}: ${(base.r.stderr ?? '').split('\n').find(Boolean) ?? ''}`);
+
+  check('writer-provenance: lynx_commit is the real commit that touches the folder, not null', ['survey-pin', 'fixture-kit'].every((id) => base.head && base.manifest(id)?.lynx_commit === base.head), `got ${JSON.stringify(base.manifest('survey-pin')?.lynx_commit)} want ${base.head}`);
+  const uncommitted = runWriter({}, ['survey-pin', 'fixture-kit'], false);
+  check('writer-provenance: a folder no commit touches is refused by name, never stamped null', uncommitted.r.status !== 0 && /lynx_commit/.test(uncommitted.r.stderr ?? '') && !uncommitted.manifest('survey-pin'), `exit ${uncommitted.r.status}`);
 
   const third = runWriter({ STUB_IDS: 'survey-pin,fixture-kit,third-asset' }, ['survey-pin', 'fixture-kit', 'third-asset']);
   check('writer-notes: an asset with no NOTES entry is refused naming the id', third.r.status !== 0 && /third-asset/.test(third.r.stderr ?? '') && /NOTES/.test(third.r.stderr ?? ''), `exit ${third.r.status}: ${(third.r.stderr ?? '').split('\n').find((l) => /Error|third|NOTES/.test(l)) ?? ''}`);
@@ -93,6 +104,48 @@ const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e
   check('paths: no scripts/art script (but the provenance writer) names an absolute machine path', hits.length === 0, hits.join(' | '));
   const prov = blankComments(fs.readFileSync(path.join(HERE, 'lamp', 'write_manifest.mjs'), 'utf8'));
   check('paths: the allow-list is still needed (lamp/write_manifest.mjs still records its provenance paths)', /['"`][A-Za-z]:[\/]/.test(prov));
+}
+
+// ---- every manifest writer stamps lynx_commit (source guard) ---------------------------------------------------
+// Only write-manifests.mjs can run without Blender output, so the other writers are held to the same rule by source:
+// each one calls lynxCommit(...) in code (comments blanked) and none assigns null to lynx_commit.
+{
+  const writers = [...walk(HERE).filter((x) => /write[-_]manifests?\.mjs$/.test(x)), path.join(HERE, '..', 'lookdev', 'write-prop-manifests.mjs')];
+  const bad = [];
+  for (const f of writers) {
+    const code = blankComments(fs.readFileSync(f, 'utf8'));
+    if (!/lynx_commit\s*[:=]\s*lynxCommit\(/.test(code) && !/lynx_commit:\s*lynxCommit\(/.test(code)) bad.push(`${path.basename(f)} does not stamp lynx_commit`);
+    if (/lynx_commit\s*[:=]\s*null/.test(code)) bad.push(`${path.basename(f)} writes lynx_commit null`);
+  }
+  check(`writer-provenance: all ${writers.length} manifest writers stamp lynx_commit and none writes null`, writers.length === 7 && bad.length === 0, bad.join(' | ') || `found ${writers.length} writers`);
+}
+
+// ---- the declared entry points reach every ArtSource folder (entry-points) -----------------------------------------
+// score-assets.mjs ENTRY_POINTS must name every folder on disk, and for each folder the .mjs files its manifest's
+// `regenerate` field names must be exactly the declared scripts, each present on disk. Nothing here runs any of them:
+// the live ones (leonardo.mjs spends credits, trellis_run.mjs queues a GPU job) are only read as strings.
+{
+  const { ENTRY_POINTS } = await import(pathToFileURL(path.join(HERE, 'score-assets.mjs')).href);
+  const ROOT = path.resolve(HERE, '..', '..');
+  const ART = path.join(ROOT, 'apps', 'vr', 'ArtSource');
+  const folders = fs.readdirSync(ART, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort();
+  const declared = Object.keys(ENTRY_POINTS ?? {}).sort();
+  const bad = [];
+  for (const f of folders) {
+    const ep = ENTRY_POINTS?.[f];
+    if (!ep) { bad.push(`${f} is not declared`); continue; }
+    const regen = String(JSON.parse(fs.readFileSync(path.join(ART, f, 'manifest.json'), 'utf8')).regenerate ?? '');
+    const named = [...new Set([...regen.matchAll(/scripts\/[\w\/.-]+\.mjs/g)].map((m) => m[0]))].sort();
+    const decl = [...ep.scripts].sort();
+    if (JSON.stringify(named) !== JSON.stringify(decl)) bad.push(`${f}: manifest names [${named}] but declared [${decl}]`);
+    for (const s of ep.scripts) if (!fs.existsSync(path.join(ROOT, s))) bad.push(`${f}: ${s} is declared but missing`);
+    if (!ep.scripts.includes(ep.writer)) bad.push(`${f}: writer ${ep.writer} is not among its scripts`);
+    for (const s of Object.keys(ep.live ?? {})) if (!ep.scripts.includes(s)) bad.push(`${f}: live script ${s} is not among its scripts`);
+  }
+  for (const d of declared) if (!folders.includes(d)) bad.push(`${d} is declared but has no folder`);
+  check(`entry-points: ${folders.length} of ${folders.length} ArtSource folders are declared, and the declaration matches each manifest's regenerate field`, folders.length >= 14 && bad.length === 0, bad.join(' | ') || `${declared.length} declared`);
+  const live = Object.values(ENTRY_POINTS ?? {}).flatMap((e) => Object.keys(e.live ?? {}));
+  check('entry-points: the scripts that submit work or spend credits are flagged live (leonardo.mjs, trellis_run.mjs)', ['scripts/lookdev/leonardo.mjs', 'scripts/art/lamp/trellis_run.mjs'].every((s) => live.includes(s)), `live: ${live.join(', ')}`);
 }
 
 // ---- trellis_run.mjs against a stub ComfyUI on loopback -------------------------------------------------------------
