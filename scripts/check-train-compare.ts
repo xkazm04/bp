@@ -207,6 +207,22 @@ const { packHeading, packOrder } = await imp('ComparePanel.tsx');
   ok(perfReason({ ...it, f: { ...it.f, change: undefined } }).startsWith('No after reading yet'), 'perf reason: no after reading says so, and judges nothing');
 }
 
+{ // one figure, one unit: the strip and the table resolve it the same way (before, then after, then the lens field)
+  const bare = (value: number, phase: 'before' | 'after', i: number): Measurement => {
+    const m = { ...reading(value, phase, i) } as Any; delete m.unit; return m as Measurement;
+  };
+  const afterMs = { ...reading(72, 'after', 4), unit: 'ms' };
+  const scan = { proposals: [P], measurements: [bare(96, 'before', 1), bare(104, 'before', 2), afterMs], shots: [] as Shot[] };
+  const c = compareOf(scan, 'p-x', LENSES) as Comparison;
+  const noUnitLens: Any = { F: { interactionP95Ms: { label: 'Interaction p95', metric: { better: 'down' } } } };
+  const React = (await import('react')).default, { renderToStaticMarkup } = await import('react-dom/server');
+  const { MetricStrip } = await imp('MetricStrip.tsx');
+  const strip = renderToStaticMarkup(React.createElement(MetricStrip, { c, field: noUnitLens.F.interactionP95Ms }));
+  const it = perfItem(c, 'Booking', noUnitLens);
+  ok(strip.includes('<u>ms</u>') && it.unit === 'ms', 'unit: unitless before readings and an after in ms print ms in the strip and the table alike', [strip.includes('<u>ms</u>'), it.unit]);
+  ok(perfReason(it).includes(' ms'), 'unit: the perf reason carries the same unit', perfReason(it));
+}
+
 { // the pack order the panel's prev / next walks
   const pk = (id: string, created_at: string): Any => ({ id, lens: 'performance', n: 1, branch: 'pack/' + id, base_ref: 'main', base_sha: 'abc1234', status: 'open', created_at, updated_at: created_at });
   const pr = (id: string, pack_id: string | undefined, created_at: string): Any => ({ ...P, id, ...(pack_id ? { pack_id } : {}), created_at, updated_at: created_at });
