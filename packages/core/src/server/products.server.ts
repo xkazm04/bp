@@ -4,6 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 import type { ProductEntry } from '../scan/types';
 
 if (typeof window !== 'undefined') throw new Error('products.server.ts is server-only');
@@ -83,6 +84,17 @@ const KETTLE_DATA = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 export function kettleSample(slug: string): { structureFile: string; eventsFile: string } | null {
   if (slug !== KETTLE_SLUG || findProduct(slug)) return null;
   return { structureFile: path.join(KETTLE_DATA, 'kettle.app-structure.json'), eventsFile: path.join(KETTLE_DATA, 'kettle.events.jsonl') };
+}
+
+/** The sample's map and events as one read, with the `rev` both the structure and plan routes answer: sha1 of the map, a
+ *  NUL, then the events (none read as ''), 16 hex characters. The one site that fingerprints the sample. Throws when the
+ *  map cannot be read. */
+export function kettleRead(k: { structureFile: string; eventsFile: string }): { raw: string; events: string; rev: string } {
+  const raw = fs.readFileSync(k.structureFile, 'utf8');
+  let events = '';
+  try { events = fs.readFileSync(k.eventsFile, 'utf8'); } catch { /* no events log */ }
+  const rev = createHash('sha1').update(raw).update('\0').update(events).digest('hex').slice(0, 16);
+  return { raw, events, rev };
 }
 
 /** The 4xx for a product the route cannot resolve: Kettle, on a route or in a process without its sim, is the read-only

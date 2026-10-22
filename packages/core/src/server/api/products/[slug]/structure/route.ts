@@ -6,8 +6,7 @@
 // answers the built-in sample from packages/core/data, read-only, in the same shape (rev = hash of the two files).
 import fs from 'node:fs';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
-import { findProduct, kettleSample, storeDir, unknownProduct } from '@bp/core/server/products.server';
+import { findProduct, kettleRead, kettleSample, storeDir, unknownProduct } from '@bp/core/server/products.server';
 import { localHost } from '@bp/core/scan/local-only';
 import { mapRev } from '@bp/core/server/store.server';
 
@@ -33,10 +32,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
 
 function kettleStructure(k: { structureFile: string; eventsFile: string }): Response {
   try {
-    const raw = fs.readFileSync(k.structureFile, 'utf8');
-    let events = '';
-    try { events = fs.readFileSync(k.eventsFile, 'utf8'); } catch { /* no events log */ }
-    const rev = createHash('sha1').update(raw).update('\0').update(events).digest('hex').slice(0, 16);
+    const { raw, events, rev } = kettleRead(k);
     return Response.json({ structure: JSON.parse(raw), events, rev });
   } catch (e) {
     return Response.json({ error: `kettle sample unreadable: ${(e as Error).message}` }, { status: 500 });

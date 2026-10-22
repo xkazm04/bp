@@ -18,6 +18,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
+import { createHash } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { routeMethods } from './lib/mounts.ts';
@@ -82,6 +83,12 @@ try {
     check(`GET /api/products/kettle/plan: 200 with ${wantPlan.wings} wings, ${wantPlan.rooms} rooms, ${wantPlan.bays} bays, ${wantPlan.tiles} tiles`,
       kp.status === 200 && JSON.stringify(gotPlan) === JSON.stringify(wantPlan) && wantPlan.wings > 0, `${kp.status} ${JSON.stringify(gotPlan)} ${kp.body.slice(0, 80)}`);
     check('kettle plan: rev equals the structure rev', !!pb?.rev && pb.rev === kb?.rev, `${pb?.rev} vs ${kb?.rev}`);
+    // the two routes agreeing proves nothing about WHAT they hash (both would change together), so the rev is also
+    // recomputed here from the data files, and the routes are shown to hold no fingerprint code of their own
+    const wantRev = createHash('sha1').update(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.app-structure.json'), 'utf8')).update('\0').update(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.events.jsonl'), 'utf8')).digest('hex').slice(0, 16);
+    check('kettle structure: rev is sha1(map, NUL, events) cut to 16 hex', kb?.rev === wantRev, `${kb?.rev} vs ${wantRev}`);
+    const own = ['structure', 'plan'].filter((r) => /createHash/.test(fs.readFileSync(path.join(CORE_API, `products/[slug]/${r}/route.ts`), 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, '')));
+    check('kettle rev: one implementation (neither route hashes on its own)', own.length === 0, own.join(' '));
     const ids = new Set([...(pb?.wings ?? []), ...(pb?.rooms ?? []), ...(pb?.bays ?? [])].map((n) => n.id));
     check('kettle plan: every room, bay and tile names an existing parent by id', [...(pb?.rooms ?? []), ...(pb?.bays ?? []), ...(pb?.tiles ?? [])].every((n) => typeof n.parentId === 'string' && ids.has(n.parentId)), '');
     check('kettle plan: every tile has a box and a health per enabled lens', !!pb?.tiles?.length && pb.tiles.every((t) => typeof t.box?.w === 'number' && pb.lenses.every((l) => typeof t.health?.[l] === 'string')), `${pb?.lenses?.length} lenses`);
