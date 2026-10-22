@@ -2,6 +2,7 @@
 //   1. the shots route advertises exactly the image types the tree writes and renders (no video/*): a type
 //      nothing writes or plays is a promise with no implementation behind it (owner decision, 2026-10-22).
 //   2. the browser floor declared in docs/blueprint-ui.md is not exceeded by any web API in apps/web/src.
+//   3. the rail reads one urgency vocabulary (the shared URG map), not a second one of its own.
 // Source is read with comments stripped, so a comment that talks about the rule cannot satisfy it.
 import fs from 'node:fs';
 import { blankComments } from './lib/source.ts';
@@ -81,6 +82,17 @@ ok('browser floor: no web API in apps/web/src is newer than the declared floor',
 const probe = pastFloor(src, { ...FLOOR, chrome: 115 });
 ok('browser floor: self-proof, a floor under Chrome 116 flags AbortSignal.any', probe.some((h) => h.includes('lib/scan/client.ts') && h.includes('AbortSignal.any')), probe.join('; '));
 ok('browser floor: AbortSignal.any is still in use (the floor is real, not stale)', src.some((f) => /\bAbortSignal\.any\b/.test(blankComments(fs.readFileSync(f, 'utf8')))));
+
+// ------------------------------------------------------------------------------- one urgency vocabulary on the rail
+// The Review row and its detail kicker are on screen together: both read the shared URG map from Queue.tsx, and the
+// rail holds no urgency map of its own (a second one drifted once: "Later" beside "When you can").
+const REVIEW = 'apps/web/src/components/rail/wide/review.tsx';
+const rev = blankComments(fs.readFileSync(REVIEW, 'utf8'));
+ok('urgency: review.tsx imports the shared URG map', /import\s*\{[^}]*\bURG\b[^}]*\}\s*from\s*'\.\.\/\.\.\/Queue'/.test(rev));
+ok('urgency: review.tsx declares no urgency map of its own', !/\b(?:const|let|var)\s+URG\w*\s*[:=]/.test(rev) && !/\bURG_\w+/.test(rev));
+ok('urgency: the row and the kicker both read URG[d.urg]', (rev.match(/\bURG\[d\.urg\]/g) ?? []).length >= 2);
+const railUrg = walk('apps/web/src/components/rail').filter((f) => /\.tsx?$/.test(f)).filter((f) => /\bRecord<[^>]*\['urg'\][^>]*>\s*=\s*\{/.test(blankComments(fs.readFileSync(f, 'utf8'))));
+ok('urgency: no file under components/rail declares a Record keyed by urg', railUrg.length === 0, railUrg.join(', '));
 
 if (failed) { console.log(`\n${failed} check(s) failed`); process.exit(1); }
 console.log('\nclaims ok');
