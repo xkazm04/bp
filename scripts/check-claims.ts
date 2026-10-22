@@ -182,5 +182,29 @@ const before14 = 'Lynx (2026-10-22) both failed.** WP3.1 is not run on any UE ho
   + '> The headers are still not copied. Nothing has booted the editor or run the module.\n';
 const probe14 = staleClaims('probe', before14);
 ok('vr docs: self-proof, the pre-reading-14 README text is flagged twice and its quotation is not', probe14.length === 2, probe14.join('; '));
+// This is the probe that fails under "CITES_14 tested on the whole text" and "blocks never split on a blank line": every real VR doc
+// cites reading 14 somewhere, so either mutation lets one mention exempt the whole file and the rule would flag nothing.
+const twoBlocks = 'WP3.1 is not run on any UE host, as reading 14 corrected.\n\nWP3.1 is not run on any UE host.\n';
+const probeScope = staleClaims('scope', twoBlocks);
+ok('vr docs: self-proof, a stale block citing reading 14 is spared and the next block without it is flagged alone',
+  probeScope.length === 1 && probeScope[0].startsWith('scope:3 '), probeScope.join('; '));
+// Every STALE entry has to match its own sentence (STALE_SENTENCES[i] is the real wording STALE[i] was adopted for), so a
+// deleted or broken entry fails by name instead of silently narrowing the vocabulary.
+const STALE_SENTENCES: string[] = [
+  'WP3.1 is not yet run on any UE host.',
+  'WP3.1 is not run on any UE host.',
+  'WP3.1 itself not run.',
+  'The module has not built against Unreal.',
+  'It has not run.',
+  'Nothing has booted the editor or run the module.',
+  'Nothing is built or run.',
+  'Nothing in apps/vr has been compiled.',
+];
+const unmatched = STALE.filter((re, i) => !re.test(STALE_SENTENCES[i] ?? ''));
+ok('vr docs: self-proof, every STALE phrase matches its own sentence',
+  STALE.length === STALE_SENTENCES.length && unmatched.length === 0,
+  STALE.length !== STALE_SENTENCES.length
+    ? `${STALE.length} STALE entries but ${STALE_SENTENCES.length} sentences`
+    : `matched nothing: ${unmatched.map(String).join(', ')}`);
 if (failed) { console.log(`\n${failed} check(s) failed`); process.exit(1); }
 console.log('\nclaims ok');
