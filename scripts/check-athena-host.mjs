@@ -54,6 +54,7 @@ const daemon = http.createServer((req, res) => {
     let body = {};
     try { body = JSON.parse(s || '{}'); } catch { return sendJson(res, 400, { ok: false, reason: 'validator_failed', detail: 'json' }); }
     if (req.method === 'POST' && req.url === '/manifest') {
+      if (fake.mode === 'redirect') { res.writeHead(307, { location: `${CATCH}/manifest`, connection: 'close' }); return res.end(); }
       if (fake.mode === '403') return sendJson(res, 403, { ok: false, reason: 'foreign_origin', detail: 'Open the app this is about and focus its tab, then try again.' });
       if (fake.mode === 'not-ok') return sendJson(res, 200, { ok: false, reason: 'manifest_invalid', detail: "manifest 'bp' is refused whole" });
       const tools = (body.tools ?? []).map((t) => ({ name: `host.${body.app_id}.${t.name}`, class: t.reversible === true && t.side_effects !== 'external' ? 'AUTO' : 'GATED', origin: `host:${body.app_id}`, tier: 1 }));
@@ -72,6 +73,11 @@ const daemon = http.createServer((req, res) => {
 });
 await new Promise((r) => daemon.listen(0, '127.0.0.1', r));
 const URL_ = `http://127.0.0.1:${daemon.address().port}`;
+// whatever a redirect from the daemon's URL points at: it records every token that reaches it
+const caught = [];
+const catcher = http.createServer((req, res) => { caught.push(req.headers['x-athena-token'] ?? null); sendJson(res, 404, { ok: false }); });
+await new Promise((r) => catcher.listen(0, '127.0.0.1', r));
+const CATCH = `http://127.0.0.1:${catcher.address().port}`;
 /** File a card for one call; returns its id. */
 const card = (action, params) => { const id = `apr_${(++fake.n).toString(16).padStart(12, '0')}`; fake.cards.set(id, { id, call_id: `turn_check_${fake.n}_exec`, action, params }); return id; };
 
@@ -171,15 +177,22 @@ try {
   const deadUrl = `http://127.0.0.1:${dead.address().port}`;
   await new Promise((r) => dead.close(r));
   const rNone = await tryRegister(mkHost({ url: deadUrl }));
+  fake.mode = 'redirect';
+  const rRedirect = await tryRegister(mkHost());
   fake.mode = 'ok';
   const rOk = await tryRegister(mkHost());
   holds('refused', 'refused: a 403 manifest is a reported failure, not a throw', failure, r403, rOk, 'a daemon that accepts');
   check('refused: a 200 with a non-ok body is a reported failure, not a throw', failure(rBody) && rBody.status === 200, JSON.stringify(rBody));
   check('refused: no daemon listening is a reported failure, not a throw', failure(rNone) && rNone.reason === 'unreachable', JSON.stringify(rNone));
   check('refused: no failure detail carries the token', ![r403, rBody, rNone].some((r) => JSON.stringify(r).includes(TOKEN)));
+  // a redirect is not followed: fetch keeps a custom header across origins, so following one hands the token to its target
+  check('redirect: a 307 from the daemon is a reported failure and the token never reaches its target', failure(rRedirect) && rRedirect.status === 307 && caught.length === 0,
+    JSON.stringify({ rRedirect, caught: caught.map((t) => (t === TOKEN ? '<token>' : t)) }));
 } finally {
   daemon.close();
   daemon.closeAllConnections();
+  catcher.close();
+  catcher.closeAllConnections();
 }
 console.log(`\ncheck-athena-host: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

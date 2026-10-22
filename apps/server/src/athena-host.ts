@@ -124,6 +124,8 @@ export class AthenaHost {
         method,
         headers: { 'x-athena-token': this.token, ...(body !== undefined ? { 'content-type': 'application/json' } : {}) },
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+        // never followed: fetch keeps X-Athena-Token across origins, so a 3xx would hand the token to its Location
+        redirect: 'manual',
         signal: AbortSignal.timeout(30000),
       });
       const text = await r.text();
