@@ -15,7 +15,9 @@ export async function resolve(spec, ctx, next) {
 
 export async function load(url, ctx, next) {
   if (url.startsWith('file:') && (url.endsWith('.json') || url.endsWith('.jsonl'))) {
-    const text = fs.readFileSync(fileURLToPath(url), 'utf8');
+    const file = fileURLToPath(url), text = fs.readFileSync(file, 'utf8');
+    // Parse first: inlined as source, an empty or truncated .json fails as a SyntaxError about the generated module, with no file in it.
+    if (url.endsWith('.json')) { try { JSON.parse(text); } catch (e) { throw new Error(file + ': ' + e.message, { cause: e }); } }
     return { format: 'module', source: 'export default ' + (url.endsWith('.json') ? text : JSON.stringify(text)), shortCircuit: true };
   }
   return next(url, ctx);
