@@ -59,10 +59,11 @@ export async function POST(req: Request): Promise<Response> {
   if (!s.ok) return Response.json({ error: s.error }, { status: s.missing ? 503 : 500 });
   const child = s.child;
   const outcome = await new Promise<Outcome>((resolve) => {
+    const logKill = (why: string) => { if (!settled) console.warn(`lens-draft: stopping claude (pid ${child.pid ?? '?'}) for ${b.product}, session ${session ?? 'new'}: ${why}`); };
     let out = '', err = '', settled = false, truncated = false;
     const end = (o: Outcome) => { if (settled) return; settled = true; clearTimeout(timer); req.signal.removeEventListener('abort', onAbort); resolve(o); };
-    const timer = setTimeout(() => { killTree(child); end({ kind: 'timeout' }); }, TIMEOUT_MS);
-    const onAbort = () => { killTree(child); end({ kind: 'error', missing: false, message: 'the request was cancelled' }); };
+    const timer = setTimeout(() => { logKill('timed out'); killTree(child); end({ kind: 'timeout' }); }, Number(process.env.BP_LENS_DRAFT_TIMEOUT_MS) || TIMEOUT_MS);
+    const onAbort = () => { logKill('the request was cancelled'); killTree(child); end({ kind: 'error', missing: false, message: 'the request was cancelled' }); };
     req.signal.addEventListener('abort', onAbort);
     child.stdout?.on('data', (d: Buffer) => {
       if (out.length >= OUT_CAP) { truncated = true; return; }
@@ -70,7 +71,7 @@ export async function POST(req: Request): Promise<Response> {
       if (out.length > OUT_CAP) { out = out.slice(0, OUT_CAP); truncated = true; }
     });
     child.stderr?.on('data', (d: Buffer) => { err = (err + d.toString('utf8')).slice(-8192); });
-    child.on('error', (e: NodeJS.ErrnoException) => end({ kind: 'error', missing: e.code === 'ENOENT', message: e.message }));
+    child.on('error', (e: NodeJS.ErrnoException) => { logKill(`the CLI failed to run (${e.message})`); end({ kind: 'error', missing: e.code === 'ENOENT', message: e.message }); });
     child.on('close', (code) => end({ kind: 'exit', code, out, err, truncated }));
     child.stdin?.end(prompt);
   });

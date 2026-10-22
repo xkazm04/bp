@@ -376,6 +376,24 @@ try {
   // a reply past the route's stdout cap is reported as too long, not as "no JSON"
   const big = await call(draft.POST, '/x', 'POST', {}, { product: 'kettle', message: 'DRAFT-BIG' });
   check('lens-draft: a reply past the stdout cap -> 502 naming the cut, not "no JSON"', big.status === 502 && /too long|cut|truncat/i.test(big.body.error ?? '') && !/no JSON/.test(big.body.error ?? ''), JSON.stringify(big.body).slice(0, 300));
+  // every kill the route makes leaves one line naming the product, the session and the reason
+  {
+    const warns: string[] = [], realWarn = console.warn;
+    console.warn = (...a: unknown[]) => { warns.push(a.join(' ')); };
+    try {
+      const ac = new AbortController();
+      const pending = draft.POST(new Request('http://localhost:3000/x', { method: 'POST', headers: H, body: JSON.stringify({ product: 'prod', message: 'DRAFT-SLOW', session: 'abcdef12-3456-7890' }), signal: ac.signal }));
+      await new Promise((r) => setTimeout(r, 700));
+      ac.abort();
+      const ab = await pending;
+      check('lens-draft: an aborted request answers 502 cancelled', ab.status === 502, String(ab.status));
+      check('lens-draft: an abort logs one line naming product, session and reason', warns.length === 1 && /prod/.test(warns[0]) && /abcdef12-3456-7890/.test(warns[0]) && /cancel/.test(warns[0]), JSON.stringify(warns));
+      warns.length = 0;
+      process.env.BP_LENS_DRAFT_TIMEOUT_MS = '600';
+      const to = await call(draft.POST, '/x', 'POST', {}, { product: 'kettle', message: 'DRAFT-SLOW' });
+      check('lens-draft: a timeout answers 504 and logs one line naming product and reason', to.status === 504 && warns.length === 1 && /kettle/.test(warns[0]) && /timed out|timeout|longer/.test(warns[0]), JSON.stringify([to.status, warns]));
+    } finally { console.warn = realWarn; delete process.env.BP_LENS_DRAFT_TIMEOUT_MS; }
+  }
   process.env.BP_CLAUDE_BIN = 'bp-no-such-cli-' + process.pid;
   const t503 = await call(draft.POST, '/x', 'POST', {}, { product: 'kettle', message: 'hi' });
   check('lens-draft without the CLI -> 503', t503.status === 503 && t503.body.error === J.CLI_MISSING, JSON.stringify(t503));
