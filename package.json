@@ -37,6 +37,7 @@
     "check:triage-cap": "node scripts/check-triage-cap.ts",
     "check:train-compare": "node scripts/check-train-compare.ts",
     "check:train-budget": "node scripts/check-train-budget.ts",
+    "verify:train-bundle": "node scripts/check-train-budget.ts --bundle apps/web/.next",
     "check:train-pending": "node scripts/check-train-pending.ts",
     "check:train-reasons": "node scripts/check-train-reasons.ts",
     "check:release-words": "node scripts/check-release-words.ts",
