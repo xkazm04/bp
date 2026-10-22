@@ -54,6 +54,9 @@ if (flag('--output-format') === 'json') {
   let result = `Which features does the migration touch? (${tag})`;
   if (input.includes('DRAFT-VALID')) result = `Here is the lens. (${tag})\n\n\`\`\`lens-manifest\n${JSON.stringify(draft, null, 2)}\n\`\`\`\n`;
   if (input.includes('DRAFT-INVALID')) result = `Here is the lens. (${tag})\n\n\`\`\`lens-manifest\n${JSON.stringify({ ...VALID, id: 'money' })}\n\`\`\``;
+  // DRAFT-BIG: a valid JSON answer longer than the route's 4 MiB stdout cap; DRAFT-SLOW: never answers (abort / timeout)
+  if (input.includes('DRAFT-BIG')) result = 'x'.repeat(5 << 20);
+  if (input.includes('DRAFT-SLOW')) await sleep(120000);
   process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result, session_id: 'abcdef12-3456-7890' }));
   process.exit(0);
 }
