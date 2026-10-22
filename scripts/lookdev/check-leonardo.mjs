@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// leonardo.mjs's local guards, through its exports only: no generation, no network, no .env read.
+// leonardo.mjs's local guards, through its exports only: no generation, no network (fetch is stubbed), no .env read.
 //   redact    the key never survives into text bound for log.jsonl or stdout (an API error that echoed it)
+//   reply     call() (fetch stubbed) redacts a reply before any cut, and sends the key in the Bearer header only
 //   backdrop  an entry with `rules` (city-backdrop) swaps the sheet rules for its own and still restates the style block
 //   prop      prop prompts restate the style block's palette and materials, carry the TRELLIS sheet rules, and cover every variant
 //   cap       a call that would pass the stop or HARD_CAP is refused; a prop --out stays inside apps/vr/ArtSource
@@ -15,7 +16,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import os from 'node:os';
-import { artFile, composePropPrompt, composePrompt, expectedCost, loggedFile, nightTotal, outFile, parseSize, redact, spendWindow, windowReport, withinCap } from './leonardo.mjs';
+import { artFile, call, composePropPrompt, composePrompt, expectedCost, loggedFile, nightTotal, outFile, parseSize, redact, spendWindow, windowReport, withinCap } from './leonardo.mjs';
 
 let failed = 0, passed = 0;
 const check = (name, ok, detail = '') => { ok ? passed++ : failed++; console.log(`${ok ? 'ok  ' : 'FAIL'}  ${name}${ok || !detail ? '' : `  (${detail})`}`); };
@@ -28,6 +29,27 @@ const echoed = `POST https://cloud.leonardo.ai/api/rest/v2/generations -> HTTP 4
 check('redact: every copy of the key is gone', !redact(echoed, fake).includes(fake), redact(echoed, fake));
 check('redact: the rest of the message stays', redact(echoed, fake).includes('HTTP 401'));
 check('redact: no key, text unchanged', redact('plain', '') === 'plain' && redact('plain', undefined) === 'plain');
+
+// reply: everything call() hands back - the parsed reply, or the Error for a failed one - is text gen() may cut and log.
+// gen() cuts AFTER redact() for entry.error, but its own 'no generationId' message cuts the reply at 300 characters
+// first, and a cut through the key leaves a prefix that replaceAll cannot match. So call() must redact the reply body
+// before anything parses or cuts it: no piece of the key may be in what it returns or throws. fetch is stubbed here,
+// so no request leaves this process. Every cut position the key could straddle is tried, ok and failed, JSON and text.
+const seeded = 'K3yS33d-cut0-4b2a-9d8e-0123456789ab';
+const realFetch = globalThis.fetch;
+const sent = [], replyLeaks = [];
+try {
+  for (const status of [200, 401]) for (const json of [true, false]) for (let pad = 250; pad < 520; pad++) {
+    const echo = `${'x'.repeat(pad)} Bearer ${seeded}`;
+    globalThis.fetch = async (url, init) => { sent.push({ url: String(url), init }); return new Response(json ? JSON.stringify({ error: echo }) : echo, { status }); };
+    let out;
+    try { out = JSON.stringify(await call(seeded, 'POST', 'https://stub.invalid/v2/generations', { prompt: 'p' })); } catch (err) { out = String(err?.message ?? err); }
+    if (out.includes(seeded.slice(0, 6))) replyLeaks.push(`${status} ${json ? 'json' : 'text'} pad ${pad}`);
+  }
+} finally { globalThis.fetch = realFetch; }
+check('reply: no piece of the key is in anything call() returns or throws, however the reply is cut', replyLeaks.length === 0, `${replyLeaks.length} leak(s), first ${replyLeaks[0]}`);
+check('reply: the key went out in the authorization header only, never in the url or the body',
+  sent.length > 0 && sent.every((s) => s.init.headers.authorization === `Bearer ${seeded}` && !s.url.includes(seeded) && !String(s.init.body).includes(seeded)));
 
 check('out: an explore frame lands under lookdev/explore', outFile('explore/x-a-s1-low.png') === path.join(DIR, 'explore', 'x-a-s1-low.png'), outFile('explore/x-a-s1-low.png'));
 check('out: a pick name lands under lookdev/', outFile('00-hero.jpg') === path.join(DIR, '00-hero.jpg'));

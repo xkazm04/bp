@@ -200,13 +200,15 @@ function readKey() {
   return m[1].replace(/^['"]|['"]$/g, '');
 }
 
-async function call(key, method, url, body) {
+export async function call(key, method, url, body) {
   const res = await fetch(url, {
     method,
     headers: { accept: 'application/json', authorization: `Bearer ${key}`, ...(body ? { 'content-type': 'application/json' } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
-  const text = await res.text();
+  // Redacted before anything parses or cuts it: a reply that echoes the key, cut through the key, leaves a prefix
+  // that redact() can no longer match (gen()'s 'no generationId' message cuts the reply at 300 characters).
+  const text = redact(await res.text(), key);
   let json;
   try { json = JSON.parse(text); } catch { json = { raw: text.slice(0, 500) }; }
   if (!res.ok) throw new Error(`${method} ${url} -> HTTP ${res.status}: ${JSON.stringify(json).slice(0, 500)}`);
