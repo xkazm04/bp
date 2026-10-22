@@ -218,6 +218,8 @@ export class AthenaHost {
   /** One request to this server's own handler, in process, as the mount would make it. */
   private async self(method: 'POST', p: string, body: unknown): Promise<{ ok: boolean; status: number; output: unknown }> {
     const url = new URL(p, `http://${this.selfHost}`);
+    // a param `.` or `..` (the model's) survives encodeURIComponent and the parser folds it into another route's path
+    if (url.pathname !== p) return { ok: false, status: 400, output: `not a plain path: ${JSON.stringify(p)}` };
     let params: Record<string, string | string[]> | null = null;
     const route = this.routes.find((r) => (params = r.match(url.pathname)));
     const handler = route?.handlers[method];

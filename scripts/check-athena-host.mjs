@@ -12,6 +12,7 @@
 //   refused   a manifest refused 403, refused with a non-ok body, or sent to no daemon at all is a reported failure, not a throw
 //   redirect  a 3xx from the daemon URL is not followed, so the token never reaches its Location
 //   card-id   a card id that is a dot segment answers 400 and never reaches the daemon
+//   execute   an execute param that is a dot segment runs no handler (the in-process path is never folded into another route)
 //   status-host  GET /athena refuses a Host that is not a loopback name (the read guard every API GET runs)
 //   daemon-url  main.ts --athena with plain http off this machine, or a user:password, exits before it binds
 // Each assertion has a seeded control that must come out red: a wave.dispatch flagged reversible and internal (AUTO), a card
@@ -205,6 +206,17 @@ try {
   holds('card-id', 'card id: `..` answers 400 and reaches no daemon path', (x) => x.status === 400 && x.reached.length === 0,
     dotDot, await answerReaches('apr_000000000fff'), 'a well-formed card id');
   check('card id: `.` answers 400 and reaches no daemon path', dot.status === 400 && dot.reached.length === 0, JSON.stringify(dot));
+
+  // ---------------------------------------------------------------------------------------------- execute params
+  // an execute entry's params come from the model; a wave id `..` folds .../waves/../dispatch into the product's own
+  // /dispatch route, so an approved wave.dispatch card would run a handler it does not name. It must run none.
+  const pd = routes.find((r) => r.path === '/api/products/[slug]/dispatch');
+  const realPd = pd.handlers.POST;
+  let pdRuns = 0;
+  pd.handlers.POST = (req, ctx) => { pdRuns++; return realPd(req, ctx); };
+  const [folded] = await host.execute([{ call_id: 'turn_check_dotdot_exec', name: 'host.bp.wave_dispatch', params: { slug: 'kettle', wave: '..' }, origin: 'host:bp' }]);
+  pd.handlers.POST = realPd;
+  check('execute: a wave id `..` runs no handler (not the product\'s /dispatch) and answers 400', pdRuns === 0 && folded.status === 400, JSON.stringify({ pdRuns, folded }).slice(0, 300));
 
   // ---------------------------------------------------------------------------------------------- GET /athena
   // a DNS-rebound page reaches the server from a loopback peer with its own name in Host: the read guard every other GET
