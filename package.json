@@ -31,6 +31,7 @@
     "check:ledger-shell": "node scripts/check-ledger-shell.mjs",
     "check:train-wire": "node scripts/check-train-wire.ts",
     "check:train-sim": "node scripts/check-train-sim.ts",
+    "check:triage-cap": "node scripts/check-triage-cap.ts",
     "check:train-compare": "node scripts/check-train-compare.ts",
     "check:train-budget": "node scripts/check-train-budget.ts",
     "check:train-pending": "node scripts/check-train-pending.ts",

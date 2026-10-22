@@ -10,6 +10,7 @@ import type { Activity, ActivityKind, CommitDiff, Measurement, Pack, Proposal, P
 import type { ReleaseStep, ScanJob } from '@bp/core/scan/jobs';
 import type { LensField } from '@bp/core/standard/types';
 import { SAFE_ID } from '../scan/jobs.ts';
+import { MAX_TRIAGE } from '../scan/types.ts';
 import { RELEASE_ID, bump, bumpOf, isVersion } from '../scan/release.ts';
 import { verdictOf, type LensFields } from '../scan/compare.ts';
 import { isFlagged } from '../train/rules.ts';
@@ -175,7 +176,7 @@ const hexOf = (seed: string, n: number): string => { let s = ''; for (let i = 0;
 const sha40 = (seed: string) => hexOf('sha|' + seed, 40);
 const refuse = (status: number, error: string, extra?: Record<string, unknown>): Error => Object.assign(new Error(error), { status, body: { error, ...extra } });
 const runId = (t: number, seed: string) => 'r-' + new Date(t).toISOString().replace(/[-:T]/g, '').slice(0, 14) + '-' + hexOf(seed, 4);
-const BASE_SHA = sha40('kettle main'), MAIN_REF = 'main', BY = 'user:sample', SKILL = 'skill:lens-scan', MAX_IDS = 200;
+const BASE_SHA = sha40('kettle main'), MAIN_REF = 'main', BY = 'user:sample', SKILL = 'skill:lens-scan', MAX_IDS = MAX_TRIAGE;
 const MIN = 60000;
 const TO: Record<TriageDecision, TriageResult['decision']> = { accept: 'accepted', rework: 'rework', descope: 'descoped', reopen: 'reopened' };
 const FROM: Record<TriageDecision, readonly ProposalStatus[]> = { accept: ['done', 'failed'], rework: ['done', 'failed', 'accepted'], descope: ['done', 'failed', 'accepted', 'rework', 'proposed', 'approved'], reopen: ['accepted', 'rework', 'descoped'] };

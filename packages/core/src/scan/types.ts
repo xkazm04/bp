@@ -207,6 +207,13 @@ export type ScanDelta = ScanSnapshot;
 
 /** The snapshot's tables. A Record over `keyof ScanSnapshot`, so a table added above fails to compile until it is listed here. */
 const TABLE_SET: Record<keyof ScanSnapshot, true> = { runs: true, measurements: true, proposals: true, activity: true, shots: true, coverage: true, packs: true, releases: true };
+/** Most ids one triage (or release-add) body may name. One value: the route and the store call (release.server.ts), the sample
+ *  sim (train-sim.ts) and the ledger's decision path (Decide.tsx) all take it from here, so a client cannot build a body the
+ *  server refuses (scripts/check-triage-cap.ts). */
+export const MAX_TRIAGE = 200;
+/** The operator's sentence for a decision on more than MAX_TRIAGE items, or null when it fits. */
+export const triageCapText = (n: number): string | null => (n > MAX_TRIAGE ? `A decision takes at most ${MAX_TRIAGE} items at once (${n} selected)` : null);
+
 export const SCAN_TABLES = Object.keys(TABLE_SET) as readonly (keyof ScanSnapshot)[];
 /** Every table present and empty. */
 export function emptyScan(): ScanSnapshot {
