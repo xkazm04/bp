@@ -36,5 +36,14 @@ for (const f of fs.readdirSync(DIR).filter((n) => n.endsWith('.tsx')).sort()) {
   }
 }
 
+// The stepper's elapsed line: read once per render, and ticking while a job is active.
+{
+  const st = blankComments(fs.readFileSync(path.join(DIR, 'Stepper.tsx'), 'utf8'));
+  expect((st.match(/\belapsed\(/g) ?? []).length === 1, 'Stepper.tsx calls elapsed() once per render (it printed a second clock reading)');
+  expect(/setInterval\(.*,\s*1000\)/.test(st) && /clearInterval\(/.test(st), 'Stepper.tsx ticks every second and clears the interval');
+  expect(/if\s*\(!on\)\s*return;/.test(st) && /\[on\]\)/.test(st), 'Stepper.tsx ticks only while the job is active (effect gated on the flag)');
+  expect(/useNow\(running\)/.test(st), 'Stepper.tsx drives the tick from isActive(last)');
+}
+
 console.log(`release-states: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
