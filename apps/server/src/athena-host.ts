@@ -64,6 +64,17 @@ export function manifestBody(pageOrigin: string, tools: readonly BpTool[] = BP_T
   };
 }
 
+/** Why `url` may not carry the token, or null. Plain http only to a loopback host (the token would cross the network in
+ *  clear), and no user:password in it (the URL is printed and served by GET /athena). */
+export function daemonUrlProblem(url: string): string | null {
+  let u: URL;
+  try { u = new URL(url); } catch { return `--athena is not a URL: ${JSON.stringify(url)}`; }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return `--athena is not an http URL: ${JSON.stringify(url)}`;
+  if (u.username || u.password) return '--athena must not carry a user or password';
+  if (u.protocol === 'http:' && !/^(localhost|127(?:\.\d{1,3}){3}|\[::1\])$/i.test(u.hostname)) return `--athena over plain http must be a loopback host, not ${u.hostname} (the token would cross the network in clear)`;
+  return null;
+}
+
 /** The token in an athena token file (`daemon.json`, `{ token }`). Throws a message that never carries the token. */
 export function readToken(file: string): string {
   let j: unknown;
@@ -110,6 +121,8 @@ export class AthenaHost {
   registered: Registered | null = null;
 
   constructor(o: HostOptions) {
+    const bad = daemonUrlProblem(o.url);
+    if (bad) throw new Error(bad);
     this.url = o.url.replace(/\/+$/, '');
     this.token = o.token;
     this.pageOrigin = o.pageOrigin;

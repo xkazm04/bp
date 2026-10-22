@@ -31,9 +31,10 @@ if (!(PORT >= 0 && PORT <= 65535)) die(`not a port: ${JSON.stringify(portText)} 
 // the athena host, when asked for: its URL and token are read now, so a bad flag or token file fails before anything binds
 const ATHENA = arg('--athena') ?? process.env.BP_ATHENA_URL;
 const athenaTokenFile = ATHENA ? arg('--athena-token-file') ?? process.env.BP_ATHENA_TOKEN_FILE ?? (process.env.ATHENA_HOME ? path.join(process.env.ATHENA_HOME, 'daemon.json') : undefined) : undefined;
-if (ATHENA && !/^https?:\/\/[^/]+/.test(ATHENA)) die(`--athena is not an http URL: ${JSON.stringify(ATHENA)}`);
 if (ATHENA && !athenaTokenFile) die('--athena needs --athena-token-file <path> (or BP_ATHENA_TOKEN_FILE, or ATHENA_HOME)');
 const athena = ATHENA ? await import('./athena-host.ts') : null;
+const athenaUrlBad = ATHENA && athena ? athena.daemonUrlProblem(ATHENA) : null;
+if (athenaUrlBad) die(athenaUrlBad);
 let athenaToken = '';
 if (athena && athenaTokenFile) { try { athenaToken = athena.readToken(athenaTokenFile); } catch (e) { die((e as Error).message); } }
 // the handler tree, found through the package (any module in it resolves; its directory's parent is api/)

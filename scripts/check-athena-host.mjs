@@ -10,14 +10,19 @@
 //   replay    the same execute again (the card re-approved, and the entry re-sent) runs it zero more times
 //   decline   a decline runs nothing, even when the daemon's answer carries an execute
 //   refused   a manifest refused 403, refused with a non-ok body, or sent to no daemon at all is a reported failure, not a throw
+//   redirect  a 3xx from the daemon URL is not followed, so the token never reaches its Location
+//   daemon-url  main.ts --athena with plain http off this machine, or a user:password, exits before it binds
 // Each assertion has a seeded control that must come out red: a wave.dispatch flagged reversible and internal (AUTO), a card
 // naming a tool bp lacks (zero runs), a second host with no call_id record (a second run), approve in place of decline (a run),
-// and a daemon that accepts (not a failure). BP_CHECK_ATHENA_HOST_SEED=classes|approve|replay|decline|refused feeds that
+// a daemon that accepts (not a failure) and a loopback daemon URL (the server binds).
+// BP_CHECK_ATHENA_HOST_SEED=classes|approve|replay|decline|refused|daemon-url feeds that
 // control to the assertion itself, which must then FAIL and the check exit 1 (each shown red on Lynx, 2026-10-22).
 // Run: node --import @bp/core/register scripts/check-athena-host.mjs   (npm run check:athena-host)   Exit 1 on any failure.
 import fs from 'node:fs';
 import http from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { hostKettleSims } from '../apps/server/src/kettle-sim.ts';
 import { loadRoutes } from '../apps/server/src/mount.ts';
@@ -188,6 +193,33 @@ try {
   // a redirect is not followed: fetch keeps a custom header across origins, so following one hands the token to its target
   check('redirect: a 307 from the daemon is a reported failure and the token never reaches its target', failure(rRedirect) && rRedirect.status === 307 && caught.length === 0,
     JSON.stringify({ rRedirect, caught: caught.map((t) => (t === TOKEN ? '<token>' : t)) }));
+
+  // ---------------------------------------------------------------------------------------------- daemon URL
+  // main.ts with --athena: plain http to a host off this machine would send the token in clear, and a user:password in the
+  // URL would be printed and served by GET /athena. Either must stop the server before it binds; a loopback URL must not.
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-check-athena-host-'));
+  try {
+    const tokenFile = path.join(tmp, 'daemon.json');
+    fs.writeFileSync(tokenFile, JSON.stringify({ token: TOKEN }));
+    const startsFor = (url) => new Promise((resolve) => {
+      const child = spawn(process.execPath, ['--import', '@bp/core/register', path.join(ROOT, 'apps/server/src/main.ts'), '--port', '0', '--athena', url, '--athena-token-file', tokenFile], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+      let out = '';
+      const done = (r) => { clearTimeout(t); child.kill(); resolve({ ...r, out: out.split(TOKEN).join('<token>').trim().split('\n').slice(-2).join(' | ') }); };
+      const t = setTimeout(() => done({ exited: null, listened: false }), 30000);
+      child.stdout.on('data', (d) => { out += d; if (/bp server listening on/.test(out)) done({ exited: null, listened: true }); });
+      child.stderr.on('data', (d) => { out += d; });
+      child.on('exit', (code) => done({ exited: code, listened: false }));
+    });
+    const refusedBeforeBind = (r) => r.exited === 1 && !r.listened;
+    const offBox = await startsFor('http://192.0.2.1:9'), withUser = await startsFor(`http://me:pw@127.0.0.1:${daemon.address().port}`);
+    holds('daemon-url', 'daemon URL: plain http to a host off this machine stops the server before it binds', refusedBeforeBind, offBox, await startsFor(URL_), 'a loopback daemon URL');
+    check('daemon URL: a user:password in the URL stops the server before it binds', refusedBeforeBind(withUser), JSON.stringify(withUser));
+    let threw = '';
+    try { mkHost({ url: 'http://192.0.2.1:9' }); } catch (e) { threw = e.message; }
+    check('daemon URL: the host itself refuses a plain-http daemon off this machine', /loopback/.test(threw), threw || 'constructed');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 } finally {
   daemon.close();
   daemon.closeAllConnections();
