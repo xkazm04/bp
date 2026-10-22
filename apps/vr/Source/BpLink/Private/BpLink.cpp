@@ -8,7 +8,7 @@
 #include "Interfaces/IHttpResponse.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
-#include "Misc/PlatformMisc.h"
+#include "HAL/PlatformMisc.h"
 
 DEFINE_LOG_CATEGORY(LogBpLink);
 
