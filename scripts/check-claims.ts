@@ -3,6 +3,7 @@
 //      nothing writes or plays is a promise with no implementation behind it (owner decision, 2026-10-22).
 //   2. the browser floor declared in docs/blueprint-ui.md is not exceeded by any web API in apps/web/src.
 //   3. the rail reads one urgency vocabulary (the shared URG map), not a second one of its own.
+//   4. the General view id is spelled once (GENERAL), never as a bare literal in apps/web/src.
 // Source is read with comments stripped, so a comment that talks about the rule cannot satisfy it.
 import fs from 'node:fs';
 import { blankComments } from './lib/source.ts';
@@ -93,6 +94,16 @@ ok('urgency: review.tsx declares no urgency map of its own', !/\b(?:const|let|va
 ok('urgency: the row and the kicker both read URG[d.urg]', (rev.match(/\bURG\[d\.urg\]/g) ?? []).length >= 2);
 const railUrg = walk('apps/web/src/components/rail').filter((f) => /\.tsx?$/.test(f)).filter((f) => /\bRecord<[^>]*\['urg'\][^>]*>\s*=\s*\{/.test(blankComments(fs.readFileSync(f, 'utf8'))));
 ok('urgency: no file under components/rail declares a Record keyed by urg', railUrg.length === 0, railUrg.join(', '));
+
+// ------------------------------------------------------------------------- the General view id is declared once
+// 'general' is the one view id that is not a lens. core declares it once, as GENERAL (data/types.ts), and
+// GENERAL_SHEET.k (model/constants.ts) is the same word: if the two ever differ, one of them is the stale spelling.
+const typesSrc = blankComments(fs.readFileSync('packages/core/src/data/types.ts', 'utf8'));
+const sheetSrc = blankComments(fs.readFileSync('packages/core/src/model/constants.ts', 'utf8'));
+const gConst = /export const GENERAL\s*=\s*'([^']+)'/.exec(typesSrc);
+const gSheet = /GENERAL_SHEET[^=]*=\s*\{\s*k:\s*'([^']+)'/.exec(sheetSrc);
+ok('general: core exports the GENERAL constant', !!gConst);
+ok('general: GENERAL_SHEET.k is the same word as GENERAL', !!gConst && !!gSheet && gConst[1] === gSheet[1], `${gConst?.[1]} vs ${gSheet?.[1]}`);
 
 if (failed) { console.log(`\n${failed} check(s) failed`); process.exit(1); }
 console.log('\nclaims ok');
