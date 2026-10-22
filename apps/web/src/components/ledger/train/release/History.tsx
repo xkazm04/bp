@@ -3,7 +3,7 @@
 import { memo, useMemo } from 'react';
 import type { Release } from '@bp/core/scan/types';
 import { SampleTag } from '../ui/Marks.tsx';
-import { evidenceOf, readingsBy, safeUrl, type PkgItem, type ReleaseModel } from './releaseState';
+import { evidenceOf, readingsBy, safeUrl, STATUS_WORD, type PkgItem, type ReleaseModel } from './releaseState';
 
 const NONE: readonly PkgItem[] = [];
 const when = (iso: string) => iso.slice(0, 10) + ' ' + iso.slice(11, 16);
@@ -15,7 +15,7 @@ const Entry = memo(function Entry({ r, items, sample }: { r: Release; items: rea
     <li>
       <div className="hh">
         <b>v{r.version}</b>
-        <span>{r.tag ?? r.status} · {when(r.updated_at)} · {items.length} item{items.length === 1 ? '' : 's'}</span>
+        <span>{STATUS_WORD[r.status]}{r.tag ? ' · ' + r.tag : ''} · {when(r.updated_at)} · {items.length} item{items.length === 1 ? '' : 's'}</span>
         {url ? <a href={url} target="_blank" rel="noopener noreferrer">PR {pr ? '#' + pr : 'link'}</a> : null}
         {sample ? <SampleTag /> : null}
       </div>

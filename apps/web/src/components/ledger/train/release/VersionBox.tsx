@@ -7,7 +7,7 @@ import type { ReleaseCreated, VersionSuggestion } from '@bp/core/scan/types';
 import { createRelease, refusalText, suggestRelease, type ScanCtx } from '@/lib/scan/actions';
 import { isVersion } from '@bp/core/scan/release';
 import { Btn } from '../ui/Controls';
-import type { ReleaseModel } from './releaseState';
+import { STATUS_WORD, type ReleaseModel } from './releaseState';
 
 // ------------------------------------------------------------------------------------------- the suggestion
 // One request per (product, accepted set, releases): the strip and the version box share it rather than each asking.
@@ -69,7 +69,7 @@ export function VersionBox({ m, phone }: { m: ReleaseModel; phone: boolean }) {
           title={!m.items.length ? 'Accept items in triage first' : !valid ? 'A version is semver: 1.4.0' : 'A draft release of the accepted items'}>{creating ? 'Creating…' : 'Create draft'}</Btn> : null}
       </span>
       <span className="why" id="tr-rel-why">
-        {rel ? <>Release <code>{rel.id}</code> on <code>{rel.branch}</code> · {rel.status}{rel.created_by ? ' · by ' + rel.created_by : ''}.</>
+        {rel ? <>Release <code>{rel.id}</code> on <code>{rel.branch}</code> · {STATUS_WORD[rel.status]}{rel.created_by ? ' · by ' + rel.created_by : ''}.</>
           : sug.s ? <>Suggested <b>v{sug.s.version}</b> from {sug.s.from}: {sug.s.reason}.
             {edited !== null && version !== sug.s.version ? <> <button type="button" className="lnk" onClick={() => setEdited(null)}>Use v{sug.s.version}</button></> : null}</>
           : sug.err ? <>No suggestion: {sug.err}</> : 'Asking for the next version…'}

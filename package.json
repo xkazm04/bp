@@ -35,6 +35,7 @@
     "check:train-budget": "node scripts/check-train-budget.ts",
     "check:train-pending": "node scripts/check-train-pending.ts",
     "check:train-reasons": "node scripts/check-train-reasons.ts",
+    "check:release-states": "node scripts/check-release-states.ts",
     "check:lens-manifest": "node scripts/check-lens-manifest.ts",
     "check:live-health": "node scripts/check-live-health.ts",
     "check:local-only": "node scripts/check-local-only.ts",

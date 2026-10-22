@@ -18,7 +18,7 @@ import { useTrain } from '../data';
 import { Callout } from '../ui/Controls';
 import {
   ACTION, RELEASE_STATE, evidenceOf, failedStep, historyOf, isActive, jobsOf, keysOf, openRelease, readingsBy, standLine,
-  safeUrl, standOf, STEPS, type ReleaseModel, type RelAction,
+  safeUrl, standOf, STATUS_WORD, STEPS, type ReleaseModel, type RelAction,
 } from './releaseState';
 import { VersionBox, suggestKey, useSuggestion } from './VersionBox';
 import { Btn } from '../ui/Controls';
@@ -204,7 +204,7 @@ export function SummaryStrip() {
         <small>Waiting for you</small><strong>{c.waiting}<em>{c.failed} failed · {c.rework} in rework</em></strong>
       </button>
       <button type="button" className="s" onClick={() => E.setPage('ledger', 'release')} title="Open the release (3)">
-        <small>Will ship</small><strong>{v ? 'v' + v : '–'}<em>{n} item{n === 1 ? '' : 's'} · {m.rel?.status ?? 'no draft'}</em></strong>
+        <small>Will ship</small><strong>{v ? 'v' + v : '–'}<em>{n} item{n === 1 ? '' : 's'} · {m.rel ? STATUS_WORD[m.rel.status] : 'no draft'}</em></strong>
       </button>
     </div>
   );
@@ -214,6 +214,6 @@ export function SummaryStrip() {
 export function ReleaseStatusLine() {
   const rel = openRelease(useTrain().releases);
   if (!rel) return null;
-  return <p className="tr-rel-line" data-role="tr-rel-line">Release v{rel.version} · {rel.status}</p>;
+  return <p className="tr-rel-line" data-role="tr-rel-line">Release v{rel.version} · {STATUS_WORD[rel.status]}</p>;
 }
 
