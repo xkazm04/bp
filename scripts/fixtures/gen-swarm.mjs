@@ -123,6 +123,14 @@ for (const a of agents.filter((x) => x.status === 'working')) {
   else if (chance(0.06)) { a.status = 'idle'; a.task = 'idle: queue empty for this crew'; }
   else if (chance(0.04)) { a.status = 'failed'; a.task = `stopped: 3 failed attempts on ${f.name}`; }
 }
+// The seed decides how many agents land idle, and with this one it is none: no shipped sample row would ever reach the
+// idle word and chip (Overlays.tsx, rail/wide/agents.tsx, model/sim.ts counters). So when the pass left none, the last
+// BLOCKED agent is the idle one (a blocked agent is already out of the replay's `live` set, so the replay and every
+// order/precedent expectation that reads it stay put); the coverage assertion below says so when any status is still empty.
+if (!agents.some((x) => x.status === 'idle')) {
+  const spare = agents.filter((x) => x.status === 'blocked').at(-1);
+  if (spare) { spare.status = 'idle'; delete spare.blockedBy; spare.task = 'idle: queue empty for this crew'; }
+}
 
 // ---------- standing orders humans gave the swarm ----------
 const orders = [
@@ -177,6 +185,15 @@ later.forEach(([fid, lens, owner, question, opts, rec, urgency, t], i) => {
 replay.sort((x, y) => x.t - y.t);
 // the agents list is the state at NOW; the replay is what follows, so undo its moves
 for (const a of agents) { delete a._moved; a.feature = snapAt.get(a.id); }
+
+// every AgentStatus the type declares has at least one agent, read from the type so a sixth status is covered the day it is added
+{
+  const src = fs.readFileSync(new URL('../../packages/core/src/data/types.ts', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const declared = (src.match(/export type AgentStatus = ([^;]+);/)?.[1] ?? '').match(/'([a-z]+)'/g)?.map((q) => q.slice(1, -1)) ?? [];
+  if (declared.length < 5) { console.error('gen-swarm: could not read AgentStatus from packages/core/src/data/types.ts'); process.exit(1); }
+  const empty = declared.filter((st) => !agents.some((a) => a.status === st));
+  if (empty.length) { console.error('gen-swarm: no agent has status ' + empty.join(', ') + ' - the sample would never reach those consumers; adjust the status pass'); process.exit(1); }
+}
 
 const swarm = {
   asOf: NOW.toISOString().replace('.000', ''),
