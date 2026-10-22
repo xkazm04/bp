@@ -11,7 +11,7 @@
 // A decline runs nothing, whatever the daemon's answer carries. The token is read from the daemon's own file
 // ($ATHENA_HOME/daemon.json, named by the ready line) and is never printed or logged.
 import fs from 'node:fs';
-import { jsonOnly, localOnly } from '@bp/core/scan/local-only';
+import { jsonOnly, localHost, localOnly } from '@bp/core/scan/local-only';
 import type { Route } from './mount.ts';
 
 export type ToolClass = 'AUTO' | 'GATED';
@@ -235,7 +235,14 @@ export function hostRoutes(host: AthenaHost): Route[] {
   const file = import.meta.filename;
   const status: Route = {
     path: '/athena', file, methods: ['GET'],
-    handlers: { GET: () => Response.json({ app_id: APP_ID, url: host.url, page_origin: host.pageOrigin, registered: host.registered, manifest: manifestBody(host.pageOrigin, host.tools) }) },
+    handlers: {
+      // the read guard every API GET runs: a DNS-rebound page comes from a loopback peer, so only its Host gives it away
+      GET: (req) => {
+        const denied = localHost(req);
+        if (denied) return Response.json({ error: denied }, { status: 403 });
+        return Response.json({ app_id: APP_ID, url: host.url, page_origin: host.pageOrigin, registered: host.registered, manifest: manifestBody(host.pageOrigin, host.tools) });
+      },
+    },
     match: (p) => (p === '/athena' ? {} : null),
   };
   const answer: Route = {

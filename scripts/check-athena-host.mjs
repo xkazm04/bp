@@ -11,11 +11,12 @@
 //   decline   a decline runs nothing, even when the daemon's answer carries an execute
 //   refused   a manifest refused 403, refused with a non-ok body, or sent to no daemon at all is a reported failure, not a throw
 //   redirect  a 3xx from the daemon URL is not followed, so the token never reaches its Location
+//   status-host  GET /athena refuses a Host that is not a loopback name (the read guard every API GET runs)
 //   daemon-url  main.ts --athena with plain http off this machine, or a user:password, exits before it binds
 // Each assertion has a seeded control that must come out red: a wave.dispatch flagged reversible and internal (AUTO), a card
 // naming a tool bp lacks (zero runs), a second host with no call_id record (a second run), approve in place of decline (a run),
-// a daemon that accepts (not a failure) and a loopback daemon URL (the server binds).
-// BP_CHECK_ATHENA_HOST_SEED=classes|approve|replay|decline|refused|daemon-url feeds that
+// a daemon that accepts (not a failure), a loopback Host (200) and a loopback daemon URL (the server binds).
+// BP_CHECK_ATHENA_HOST_SEED=classes|approve|replay|decline|refused|status-host|daemon-url feeds that
 // control to the assertion itself, which must then FAIL and the check exit 1 (each shown red on Lynx, 2026-10-22).
 // Run: node --import @bp/core/register scripts/check-athena-host.mjs   (npm run check:athena-host)   Exit 1 on any failure.
 import fs from 'node:fs';
@@ -193,6 +194,14 @@ try {
   // a redirect is not followed: fetch keeps a custom header across origins, so following one hands the token to its target
   check('redirect: a 307 from the daemon is a reported failure and the token never reaches its target', failure(rRedirect) && rRedirect.status === 307 && caught.length === 0,
     JSON.stringify({ rRedirect, caught: caught.map((t) => (t === TOKEN ? '<token>' : t)) }));
+
+  // ---------------------------------------------------------------------------------------------- GET /athena
+  // a DNS-rebound page reaches the server from a loopback peer with its own name in Host: the read guard every other GET
+  // runs (localHost) must refuse it here too, or the page reads the daemon's URL and port and the registration detail
+  const [statusRoute] = hostRoutes(host);
+  const getStatus = async (h) => (await statusRoute.handlers.GET(new Request(`http://${SELF}/athena`, { headers: { host: h } }), { params: Promise.resolve({}) })).status;
+  holds('status-host', 'GET /athena: a Host that is not a loopback name (DNS rebinding) is refused 403', (s) => s === 403,
+    await getStatus('rebind.example:3100'), await getStatus(SELF), 'a loopback Host');
 
   // ---------------------------------------------------------------------------------------------- daemon URL
   // main.ts with --athena: plain http to a host off this machine would send the token in clear, and a user:password in the
