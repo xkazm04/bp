@@ -18,12 +18,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { CommitDiff, TriageBody, TriageResult } from '../scan/types';
+import { MAX_TRIAGE } from '../scan/types';
 
 if (typeof window !== 'undefined') throw new Error('release.server.ts is server-only');
 
 const STORE_MS = 30000, GH_MS = 5000, GIT_MS = 10000;
-/** Most ids one triage or release-add call may name. */
-export const MAX_TRIAGE = 200;
+/** Most ids one triage or release-add call may name (scan/types.ts owns the value; the routes import it from here). */
+export { MAX_TRIAGE };
 export const FALLBACK_BY = 'user:blueprint';
 
 interface Out { code: number; stdout: string; stderr: string; missing?: boolean }

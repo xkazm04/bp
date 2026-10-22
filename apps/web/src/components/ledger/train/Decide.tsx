@@ -13,6 +13,7 @@
 // PENDING_BOUND_MS with a toast saying it may still have landed (boundPending).
 import { createContext, useCallback, useContext, useEffect, useMemo } from 'react';
 import type { Measurement, Proposal, ProposalStatus, Release, TriageDecision, TriageResult } from '@bp/core/scan/types';
+import { triageCapText } from '@bp/core/scan/types';
 import { triageItems, refusalText } from '@/lib/scan/actions';
 import { verdictOf, type Verdict } from '@bp/core/scan/compare';
 import { TRIAGE_FROM, WAITING, canDecide, isFlagged, noteRequired } from '@bp/core/train/rules';
@@ -112,6 +113,8 @@ export function useDecide(own?: () => readonly string[]): DecideApi {
   const decide = useCallback(async (raw: readonly string[], decision: TriageDecision, note?: string, at: NoteAsk['at'] = 'bar') => {
     const ids = [...new Set(raw)].filter((id) => T.byId.has(id) && !pending.has(id));
     if (!ids.length) { E.toast('Nothing to decide', raw.length ? 'a decision on these is on its way' : 'focus or select a pack item first', undefined, undefined, 'warn'); return; }
+    const over = triageCapText(ids.length); // the route refuses a body past the cap; say so before sending one
+    if (over) { E.toast('Too many items', over + ': select fewer', undefined, undefined, 'warn'); return; }
     const can = ids.map((id) => T.byId.get(id)!).filter((p) => canDecide(decision, p, releaseIn(T, p)));
     if (decision !== 'reopen' && note === undefined && can.some((p) => noteRequired(decision, p, verdictIn(T, p)))) {
       setLedgerUi((u) => ({ ...u, note: { ids, decision, at } }));
