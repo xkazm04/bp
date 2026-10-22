@@ -49,16 +49,29 @@ export function writeAtomic(file: string, text: string): void {
   }
 }
 
+/** What reading the registry gave: the products it lists, and `problem` when the file is there but cannot be used (the
+ *  writer's own refusal, registry.server.ts, in the same words: 409 for a file that is not a registry, 500 for one that
+ *  cannot be read). A missing file is no problem: no live products. */
+export interface RegistryRead { products: ProductEntry[]; problem?: { status: 409 | 500; error: string } }
+
 /** Read on every call (the file is tiny and edited by hand or by scripts/scan-demo.mjs while the server runs). */
-export function listProducts(): ProductEntry[] {
+export function readRegistry(): RegistryRead {
   let raw: unknown;
   try { raw = JSON.parse(fs.readFileSync(path.join(process.cwd(), PRODUCTS_FILE), 'utf8')); } catch (e) {
-    // No file = no live products (quiet); a file that cannot be read or parsed is said.
-    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') warnOnce(PRODUCTS_FILE, e);
-    return [];
+    // No file = no live products (quiet); a file that cannot be read or parsed is said, on the log and in the answer.
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { products: [] };
+    warnOnce(PRODUCTS_FILE, e);
+    return { products: [], problem: e instanceof SyntaxError
+      ? { status: 409, error: `${PRODUCTS_FILE} is not valid JSON (${e.message}); fix it by hand first` }
+      : { status: 500, error: `${PRODUCTS_FILE} cannot be read: ${(e as Error).message}` } };
   }
   const xs = (raw as { products?: unknown })?.products;
-  if (!Array.isArray(xs)) { warnOnce(PRODUCTS_FILE, 'no "products" array'); return []; }
+  if (!Array.isArray(xs)) {
+    warnOnce(PRODUCTS_FILE, 'no "products" array');
+    const object = !!raw && typeof raw === 'object' && !Array.isArray(raw);
+    return { products: [], ...(!object ? { problem: { status: 409 as const, error: `${PRODUCTS_FILE} is not a JSON object; fix it by hand first` } }
+      : xs !== undefined ? { problem: { status: 409 as const, error: `${PRODUCTS_FILE}: "products" is not an array; fix it by hand first` } } : {}) };
+  }
   recovered(PRODUCTS_FILE);
   const out: ProductEntry[] = [], seen = new Set<string>();
   for (const x of xs as Record<string, unknown>[]) {
@@ -66,7 +79,13 @@ export function listProducts(): ProductEntry[] {
     seen.add(x.slug);
     out.push({ slug: x.slug, name: typeof x.name === 'string' && x.name ? x.name : x.slug, root: path.resolve(x.root) });
   }
-  return out;
+  return { products: out };
+}
+
+/** The registered products; total by design (an unusable registry lists none), so the lookups below never throw.
+ *  The list route asks `readRegistry` instead, to tell an empty registry from a broken one. */
+export function listProducts(): ProductEntry[] {
+  return readRegistry().products;
 }
 
 export function findProduct(slug: string): ProductEntry | null {

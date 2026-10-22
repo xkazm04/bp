@@ -407,8 +407,8 @@ try {
     for (const [id, st] of [['a1', 'done'], ['a2', 'done'], ['a3', 'failed']]) ip.run(id, 'item ' + id, st, at(Number(id[1])), at(Number(id[1])), id.repeat(20));
     sw.close();
     fs.writeFileSync(path.join(dir, 'bp.products.local.json'), JSON.stringify({ products: [{ slug: 'prod', name: 'Prod', root: pr }, { slug: 'rel', name: 'Rel', root: rr }, { slug: 'future', name: 'Future', root: fr }] }));
-    const status = (table: string, id: string) => { const d = new DatabaseSync(rdb, { readOnly: true }); try { return (d.prepare(`SELECT status FROM ${table} WHERE id = ?`).get(id) as { status?: string } | undefined)?.status; } finally { d.close(); } };
-    const relRow = (id: string) => { const d = new DatabaseSync(rdb, { readOnly: true }); try { return d.prepare('SELECT * FROM releases WHERE id = ?').get(id) as Record<string, string> | undefined; } finally { d.close(); } };
+    const status = (table: string, id: string) => { const d = new DatabaseSync(rdb, { readOnly: true, timeout: 5000 }); try { return (d.prepare(`SELECT status FROM ${table} WHERE id = ?`).get(id) as { status?: string } | undefined)?.status; } finally { d.close(); } };
+    const relRow = (id: string) => { const d = new DatabaseSync(rdb, { readOnly: true, timeout: 5000 }); try { return d.prepare('SELECT * FROM releases WHERE id = ?').get(id) as Record<string, string> | undefined; } finally { d.close(); } };
 
     const tri = await route('products/[slug]/triage/route.ts'), rels = await route('products/[slug]/releases/route.ts');
     const sug = await route('products/[slug]/releases/suggest/route.ts');
@@ -712,8 +712,32 @@ try {
     check('startSelectionScan over the sim -> a selection job labelled "Selection (1)"', ks.scope?.kind === 'selection' && ks.scope.label === 'Selection (1)', JSON.stringify(ks.scope));
   } finally { sim.dispose(); delete (globalThis as { localStorage?: unknown }).localStorage; }
 
+  // ------------------------------------------------------------------ a registry file that cannot be read says so
+  // Both verbs of /api/products read the same bp.products.local.json: the writer refuses a broken one with the reason (409),
+  // so the reader must not answer the same file with a successful empty list (the product list would render the onboarding
+  // empty state over registered products that merely have a typo in their file).
+  {
+    const pf = path.join(dir, 'bp.products.local.json'), keep = fs.readFileSync(pf, 'utf8');
+    const prods = await route('products/route.ts');
+    const warn = console.warn; console.warn = () => { /* listProducts says it on the server log, once */ };
+    try {
+      for (const [what, text, want] of [['unparseable JSON', '{ "products": [ { "slug": "live", "root": "x" }, OOPS', /not valid JSON \(.+\); fix it by hand first$/],
+        ['a products value that is no array', '{"products": 7}', /"products" is not an array; fix it by hand first$/]] as const) {
+        fs.writeFileSync(pf, text);
+        const g = await call(prods.GET, '/api/products', 'GET', {}), po = await call(prods.POST, '/api/products', 'POST', {}, { slug: 'late', name: 'Late', root: pr });
+        check(`corrupt registry (${what}): GET answers 409 with the reason, as POST does - not 200 []`, g.status === 409 && want.test(g.body.error ?? '') && po.status === 409 && g.body.error === po.body.error, JSON.stringify({ get: g, post: po }).slice(0, 400));
+      }
+      fs.writeFileSync(pf, keep);
+      const ok = await call(prods.GET, '/api/products', 'GET', {});
+      check('a registry that parses again lists its products (200)', ok.status === 200 && Array.isArray(ok.body) && ok.body.some((p: { slug: string }) => p.slug === 'prod'), JSON.stringify(ok).slice(0, 200));
+      fs.writeFileSync(pf, '{}');
+      const none = await call(prods.GET, '/api/products', 'GET', {});
+      check('a registry with no products key is an empty list, not an error (200 [])', none.status === 200 && Array.isArray(none.body) && none.body.length === 0, JSON.stringify(none));
+    } finally { console.warn = warn; fs.writeFileSync(pf, keep); }
+  }
+
   // ------------------------------------------------------------------ the standard accepts the entry
-  const valid = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/schema/schema/fixtures/valid-map.json'), 'utf8'));
+  const valid =JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/schema/schema/fixtures/valid-map.json'), 'utf8'));
   const entry = { id: MANIFEST.id, version: '1.0.0', source: 'project', enabled: true, temporary: true, created_at: '2026-10-13T10:00:00.000Z', manifest: MANIFEST };
   const vf = path.join(dir, 'tmp-lens-map.json'), wf = path.join(dir, 'tmp-lens-wrong.json');
   fs.writeFileSync(vf, JSON.stringify({ ...valid, lenses: [...valid.lenses, entry] }));
