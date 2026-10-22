@@ -12,6 +12,7 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "HAL/PlatformMisc.h"
+#include "Containers/Ticker.h"
 
 DEFINE_LOG_CATEGORY(LogBpLink);
 
@@ -132,6 +133,8 @@ void FBpLinkClient::FetchProduct(const FString& Slug, TFunction<void(bool, const
 		Payload->TryGetStringField(TEXT("events"), EventsJsonl);
 		ReadEvents(EventsJsonl, Snapshot.Events);
 		Payload->TryGetStringField(TEXT("rev"), Snapshot.Rev);
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: the %s/structure answer parsed: rooms=%d lenses=%d events=%d rev=%s; asking /plan"),
+			*Root, Snapshot.Structure.domains.Num(), Snapshot.Structure.lenses.Num(), Snapshot.Events.Num(), *Snapshot.Rev);
 
 		// /plan is the product at the web's levels (wing, room, bay, tile), parsed into FBpPlan the way /structure is parsed
 		// into FBpAppStructure. A failed or unparseable answer logs its own Error and the fetch goes on: structure, events
@@ -158,16 +161,32 @@ void FBpLinkClient::FetchProduct(const FString& Slug, TFunction<void(bool, const
 						: FString(TEXT("FJsonSerializer::Deserialize found no JSON object in it"));
 					UE_LOG(LogBpLink, Error, TEXT("BpLink: the %s/plan answer did not parse into FBpPlan: %s; structure, events and rev still stand"), *Root, *Refused);
 				}
+				else
+				{
+					UE_LOG(LogBpLink, Log, TEXT("BpLink: the %s/plan answer parsed into FBpPlan; asking /stream"), *Root);
+				}
 			}
 
 			// /stream has two answers BpLink lives with: 200 text/event-stream, which Kettle gives since wolf-plan L5.2
 			// (apps/server hosts its scan sim), and 405 for a product with no live stream. WP3.1 consumes neither: the rev
 			// read above is the one read BpLink keeps either way. Both are pinned by scripts/check-bplink.mjs.
+			// A live SSE body never ends, so a 200 never completes by itself (machine.md, reading 13): the status is kept
+			// when it arrives, a 200 is cancelled on the next tick, and the completion below reads the kept status.
 			// Snapshot holds the whole parsed events array, so it is MOVED into the continuation (nothing below reads it here).
 			TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Stream = MakeGet(Root + TEXT("/stream"), TEXT("text/event-stream"));
-			Stream->OnProcessRequestComplete().BindLambda([Root, Slug, OnDone, Snapshot = MoveTemp(Snapshot)](FHttpRequestPtr, FHttpResponsePtr StreamResponse, bool bStreamConnected) mutable
+			TSharedRef<int32, ESPMode::ThreadSafe> StreamCode = MakeShared<int32, ESPMode::ThreadSafe>(0);
+			Stream->OnStatusCodeReceived().BindLambda([Root, StreamCode](FHttpRequestPtr Request, int32 Code)
 			{
-				Snapshot.StreamStatus = (bStreamConnected && StreamResponse.IsValid()) ? StreamResponse->GetResponseCode() : 0;
+				*StreamCode = Code;
+				UE_LOG(LogBpLink, Log, TEXT("BpLink: GET %s/stream sent status %d"), *Root, Code);
+				if (Code == 200 && Request.IsValid())
+				{
+					FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([Request](float) { Request->CancelRequest(); return false; }));
+				}
+			});
+			Stream->OnProcessRequestComplete().BindLambda([Root, Slug, OnDone, StreamCode, Snapshot = MoveTemp(Snapshot)](FHttpRequestPtr, FHttpResponsePtr StreamResponse, bool bStreamConnected) mutable
+			{
+				Snapshot.StreamStatus = *StreamCode > 0 ? *StreamCode : (bStreamConnected && StreamResponse.IsValid()) ? StreamResponse->GetResponseCode() : 0;
 				if (Snapshot.StreamStatus == 200)
 				{
 					UE_LOG(LogBpLink, Log, TEXT("BpLink: %s streams (200); WP3.1 does not consume SSE, so rev %s read once from structure stands"), *Slug, *Snapshot.Rev);
