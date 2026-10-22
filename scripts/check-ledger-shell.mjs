@@ -21,6 +21,7 @@
 //           and each JSX element carrying one must sit directly under its table/scroll parent (`role="table"`,
 //           `<thead>`, `<table`, or the page root) - judged by indentation, which this tree formats consistently.
 //   theme-ink  no shell module reads a role ledger-theme.css redefines off the document root or readTheme().
+//   one-name  no two shell modules export a component of the same name.
 //   breakpoints  every `@container (max-width)` prelude in the shell's stylesheets names one width (.lg-body is the only container).
 //   colour  no raw colour literal in the shell's stylesheets except ledger-theme.css, which IS the palette file
 //           (docs/blueprint-ui.md: design tokens; the same rule check-train-quality holds for train/**'s CSS).
@@ -188,6 +189,20 @@ for (const f of code) {
 }
 if (!overridden.size) fail(`theme-ink: no .lg-page custom property was found in ${PALETTE} - the rule stopped matching`);
 console.log(`theme-ink   ${overridden.size} roles redefined on .lg-page / ${inkReads} root-token reads checked in ${code.length} shell modules`);
+
+// ---------------------------------------------------------------------------------------------------- one-name
+// Two exported components of one name in one context is two drawings of one thing: a change to how it draws (ink, size, the
+// aria-hidden contract) has to be made twice, and the two drift (the lens glyph's ink defect existed twice for this reason).
+// The exports are read off the files' own `export function` / `export const` lines, not a hand list.
+const exported = new Map();
+for (const f of code) {
+  for (const m of blankComments(fs.readFileSync(f, 'utf8')).matchAll(/^export (?:default )?(?:function|const|class)\s+([A-Z]\w*)/gm)) {
+    if (!exported.has(m[1])) exported.set(m[1], []);
+    exported.get(m[1]).push(rel(f));
+  }
+}
+for (const [name, at] of exported) if (at.length > 1) fail(`one-name: ${name} is exported by ${at.length} shell modules: ${at.join(', ')}\n       one concept, one component: give the second a form / prop on the first`);
+console.log(`one-name    ${exported.size} component names exported across ${code.length} shell modules`);
 
 // ---------------------------------------------------------------------------------------------------- breakpoints
 // `.lg-body` is the shell's one `container-type: inline-size`, so every `@container (max-width: N)` prelude in the shell's
