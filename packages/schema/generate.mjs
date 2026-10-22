@@ -29,7 +29,9 @@
 //      node packages/schema/generate.mjs --check   exit 1 when a committed file differs from a fresh generation
 //                                                  (stale), when a schema field is neither mapped nor copied by
 //                                                  FixUp, or when types.ts disagrees with the generated types; each
-//                                                  with a seeded control proving it would
+//                                                  with a seeded control proving it would (staleness: each committed
+//                                                  file with one line mutated, and with one deleted, is reported
+//                                                  stale by the same staleVerdict the real comparison calls)
 // npm: `npm run schema:generate`, `npm run check:schema`.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -470,6 +472,14 @@ const readSchemas = () => Object.fromEntries(ROOTS.map(([f]) => {
 const generate = (schemas) => { const m = model(schemas); return { ts: emitTs(m), ue: emitUe(m), fix: emitFixups(m), m }; };
 const norm = (s) => s.replace(/\r\n/g, '\n');
 
+// The committed-vs-fresh comparison, one function: the --check path and its control both call it, so the control
+// cannot drift from what it guards. `line` is the 1-based first differing line.
+const staleVerdict = (have, text) => {
+  if (have === text) return { stale: false };
+  const a = have.split('\n'), b = text.split('\n'); let i = 0; while (i < a.length && a[i] === b[i]) i++;
+  return { stale: true, line: i + 1, committed: (a[i] ?? '').trim(), fresh: (b[i] ?? '').trim() };
+};
+
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
   const schemas = readSchemas();
@@ -518,11 +528,11 @@ if (isMain) {
     const read = (f) => (fs.existsSync(f) ? norm(fs.readFileSync(f, 'utf8')) : null);
     for (const [f, text] of outputs) {
       const have = read(f), rel = path.relative(path.join(HERE, '../..'), f).split(path.sep).join('/');
-      if (have === text) { console.log(`ok    ${rel} is current (${counts})`); continue; }
+      const v = have === null ? null : staleVerdict(have, text);
+      if (v && !v.stale) { console.log(`ok    ${rel} is current (${counts})`); continue; }
       failed++;
       if (have === null) { console.log(`FAIL  ${rel} is missing: run npm run schema:generate`); continue; }
-      const a = have.split('\n'), b = text.split('\n'); let i = 0; while (i < a.length && a[i] === b[i]) i++;
-      console.log(`FAIL  ${rel} is stale: run npm run schema:generate (first difference at line ${i + 1}: committed "${(a[i] ?? '').trim()}", fresh "${(b[i] ?? '').trim()}")`);
+      console.log(`FAIL  ${rel} is stale: run npm run schema:generate (first difference at line ${v.line}: committed "${v.committed}", fresh "${v.fresh}")`);
     }
     // every schema field is held by the committed headers: mapped under its key, or a <Key>_ field FixUp fills
     const cov = coverage(fresh.m, read(OUT_UE) ?? '', read(OUT_FIX) ?? '');
@@ -705,6 +715,20 @@ if (isMain) {
     const caught = red.ts !== fresh.ts && red.ue !== fresh.ue && red.ue.includes('int32 zzParityProbe') && red.ts.includes('zzParityProbe?: number');
     console.log(`${caught ? 'ok  ' : 'FAIL'}  control: a field added to feature changes both outputs`);
     if (!caught) failed++;
+    // control: a committed file that differs from the fresh generation - one line mutated, one line deleted - is
+    // reported stale by the same staleVerdict the loop above calls, at the line the edit was made
+    for (const [f, text] of outputs) {
+      const rel = path.relative(ROOT, f).split(path.sep).join('/'), lines = text.split('\n');
+      const at = lines.findIndex((l, i) => i >= lines.length >> 1 && /[A-Za-z]/.test(l) && l !== lines[i + 1] && i + 1 < lines.length); // a meaningful line from the body, not repeated by the next
+      const mutated = lines.map((l, i) => (i === at ? l + ' zzStaleProbe' : l)).join('\n');
+      const deleted = lines.filter((_, i) => i !== at).join('\n');
+      for (const [what, committed] of [['one line mutated', mutated], ['one line deleted', deleted]]) {
+        const v = at >= 0 ? staleVerdict(committed, text) : { stale: false };
+        const ok = v.stale && v.line === at + 1;
+        console.log(`${ok ? 'ok  ' : 'FAIL'}  control: ${rel} with ${what} is reported stale at line ${at + 1}${ok ? '' : ` (got ${v.stale ? 'line ' + v.line : 'current'})`}`);
+        if (!ok) failed++;
+      }
+    }
     process.exit(failed ? 1 : 0);
   }
   for (const [f, text] of outputs) { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, text); }
