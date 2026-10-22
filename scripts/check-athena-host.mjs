@@ -11,12 +11,13 @@
 //   decline   a decline runs nothing, even when the daemon's answer carries an execute
 //   refused   a manifest refused 403, refused with a non-ok body, or sent to no daemon at all is a reported failure, not a throw
 //   redirect  a 3xx from the daemon URL is not followed, so the token never reaches its Location
+//   card-id   a card id that is a dot segment answers 400 and never reaches the daemon
 //   status-host  GET /athena refuses a Host that is not a loopback name (the read guard every API GET runs)
 //   daemon-url  main.ts --athena with plain http off this machine, or a user:password, exits before it binds
 // Each assertion has a seeded control that must come out red: a wave.dispatch flagged reversible and internal (AUTO), a card
 // naming a tool bp lacks (zero runs), a second host with no call_id record (a second run), approve in place of decline (a run),
-// a daemon that accepts (not a failure), a loopback Host (200) and a loopback daemon URL (the server binds).
-// BP_CHECK_ATHENA_HOST_SEED=classes|approve|replay|decline|refused|status-host|daemon-url feeds that
+// a daemon that accepts (not a failure), a well-formed card id (reaches the daemon), a loopback Host (200) and a loopback daemon URL (the server binds).
+// BP_CHECK_ATHENA_HOST_SEED=classes|approve|replay|decline|refused|card-id|status-host|daemon-url feeds that
 // control to the assertion itself, which must then FAIL and the check exit 1 (each shown red on Lynx, 2026-10-22).
 // Run: node --import @bp/core/register scripts/check-athena-host.mjs   (npm run check:athena-host)   Exit 1 on any failure.
 import fs from 'node:fs';
@@ -50,9 +51,10 @@ check(`tech-stack.md section 4 lists bp's tools (${TABLE.length} rows read)`, TA
 
 // ------------------------------------------------------------------------------------------------ the fake daemon
 const TOKEN = 'fake-token-for-check-athena-host';
-const fake = { mode: 'ok', seenToken: true, cards: new Map(), declineCarriesExecute: true, n: 0 };
+const fake = { mode: 'ok', seenToken: true, cards: new Map(), declineCarriesExecute: true, n: 0, urls: [] };
 const sendJson = (res, status, body) => { res.writeHead(status, { 'content-type': 'application/json', connection: 'close' }); res.end(JSON.stringify(body)); };
 const daemon = http.createServer((req, res) => {
+  fake.urls.push(`${req.method} ${req.url}`);
   let s = '';
   req.on('data', (d) => (s += d));
   req.on('end', () => {
@@ -194,6 +196,15 @@ try {
   // a redirect is not followed: fetch keeps a custom header across origins, so following one hands the token to its target
   check('redirect: a 307 from the daemon is a reported failure and the token never reaches its target', failure(rRedirect) && rRedirect.status === 307 && caught.length === 0,
     JSON.stringify({ rRedirect, caught: caught.map((t) => (t === TOKEN ? '<token>' : t)) }));
+
+  // ---------------------------------------------------------------------------------------------- card id
+  // the id is the caller's; `..` survives encodeURIComponent and the URL parser then folds /decisions/.. into /, so the
+  // token-bearing POST would land on another daemon path. A malformed id answers 400 and reaches no daemon at all.
+  const answerReaches = async (id) => { const n = fake.urls.length, r = await answer(id, 'decline'); return { status: r.status, reached: fake.urls.slice(n) }; };
+  const dotDot = await answerReaches('..'), dot = await answerReaches('.');
+  holds('card-id', 'card id: `..` answers 400 and reaches no daemon path', (x) => x.status === 400 && x.reached.length === 0,
+    dotDot, await answerReaches('apr_000000000fff'), 'a well-formed card id');
+  check('card id: `.` answers 400 and reaches no daemon path', dot.status === 400 && dot.reached.length === 0, JSON.stringify(dot));
 
   // ---------------------------------------------------------------------------------------------- GET /athena
   // a DNS-rebound page reaches the server from a loopback peer with its own name in Host: the read guard every other GET

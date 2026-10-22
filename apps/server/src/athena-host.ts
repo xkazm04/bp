@@ -106,6 +106,8 @@ export interface HostOptions {
 }
 
 const KNOWN_KEY = 1000;
+/** A card id as the daemon mints them (`apr_` and 12 hex digits), with room to spare; never a dot segment. */
+const CARD_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
 
@@ -162,6 +164,8 @@ export class AthenaHost {
 
   /** Answer card `id` (POST /decisions/<id>) and, on an approve the daemon granted, run its `execute`. */
   async answer(id: string, choice: 'approve' | 'decline'): Promise<Answered> {
+    // the id is the caller's: `.` and `..` survive encodeURIComponent and the URL parser folds them into another daemon path
+    if (!CARD_ID.test(id)) return { ok: false, status: 400, id, choice, daemon: { ok: false, reason: 'bad_id', detail: 'a card id is letters, digits, _ and -' }, ran: [] };
     const { status, json } = await this.call('POST', `/decisions/${encodeURIComponent(id)}`, { choice, origin: this.pageOrigin });
     const ok = status === 200 && json.ok === true;
     // a decline runs nothing, whatever the answer carries
