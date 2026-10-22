@@ -11,7 +11,7 @@
 // conversation nor cancels Claude (only Cancel does), and reopening shows the answer when it came.
 import { useEffect, useMemo, useReducer, useRef, useSyncExternalStore } from 'react';
 import type { LensManifest } from '@bp/core/standard/types';
-import type { LensDraftAnswer } from '@/lib/scan/client';
+import { postLensDraft } from '@/lib/scan/client';
 import { checkLensManifest, type TakenLook } from '@bp/core/scan/manifest-check';
 import { addProjectLens } from '@/lib/scan/actions';
 import { takenLooks } from '@bp/core/scan/jobs';
@@ -60,18 +60,6 @@ const isStarted = () => S.msgs.length > 0 || S.draft !== null;
 /** Whether the chat has a conversation (the panel then shows it open). */
 export function useChatStarted(): boolean { return useSyncExternalStore(subscribe, isStarted, () => false); }
 
-/** One turn, cancellable (client.ts's postLensDraft takes no signal). Rejects like it: an Error with `status` and `body`. */
-async function turn(product: string, kind: LensKind, message: string, session: string | undefined, signal: AbortSignal): Promise<LensDraftAnswer> {
-  const r = await fetch('/api/lens-draft', {
-    method: 'POST', cache: 'no-store', signal, headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(session ? { product, kind, message, session } : { product, kind, message }),
-  });
-  const j = (await r.json().catch(() => null)) as unknown;
-  if (!r.ok) throw Object.assign(new Error((j as { error?: string } | null)?.error ?? `HTTP ${r.status}`), { status: r.status, body: j });
-  if (!j || typeof j !== 'object' || typeof (j as LensDraftAnswer).reply !== 'string') throw Object.assign(new Error('the server answered no reply'), { status: 502 });
-  return j as LensDraftAnswer;
-}
-
 /** What a failed turn says, by status (the route: 503 no CLI, 504 after 3 minutes, 502 the CLI failed). */
 function failure(e: unknown): string {
   const st = (e as { status?: number }).status, m = (e as Error).message;
@@ -92,7 +80,7 @@ async function send(text: string) {
   put({ text: S.text.trim() === msg ? '' : S.text, retry: null, since: performance.now() });
   const ac = new AbortController(); ctl = ac;
   try {
-    const a = await turn(product, kind, msg, session, ac.signal);
+    const a = await postLensDraft(product, msg, session, kind, ac.signal);
     if (S.product !== product) return; // the chat was reset meanwhile
     // the route checked the draft; check its shape again here (the card adds the looks the product already draws)
     const bad = a.draft ? checkLensManifest(a.draft, { mode: kind }) : null;

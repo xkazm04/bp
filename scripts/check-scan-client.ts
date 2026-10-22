@@ -253,5 +253,34 @@ for (const h of HELPERS) {
   expect(DEV_WORDS.every((d) => !text.includes(d)) && /in time/.test(text), `${h.name}'s timeout does not reach the reader as a sentence`, text);
 }
 
+// --------------------------------------------- 5. one request per route, and every exported helper is used
+// postLensDraft had no caller because `send` took no signal and LensChat re-implemented the request; postLens
+// was superseded by postProjectLens. Every function helper client.ts exports must have a consumer in the web
+// app, and a caller's signal must cancel a lens-draft turn (not wait out the 200 s bound).
+const consumers = (name: string): number => {
+  let n = 0;
+  const walk = (dir: string) => {
+    for (const d of fs.readdirSync(dir, { withFileTypes: true })) {
+      const f = path.join(dir, d.name);
+      if (d.isDirectory()) walk(f);
+      else if (/\.tsx?$/.test(d.name) && f !== path.join(SRC, 'lib/scan/client.ts') && new RegExp(`\\b${name}\\b`).test(readStripped(f))) n++;
+    }
+  };
+  walk(SRC);
+  return n;
+};
+const helperNames = [...clientSrc.matchAll(/export (?:async )?(?:const|function) ((?:post|patch|delete|execute|get)[A-Z]\w*)/g)].map((m) => m[1]);
+expect(helperNames.length >= 10, `found ${helperNames.length} exported request helpers (update this check)`);
+for (const h of helperNames) expect(consumers(h) > 0, `client.ts exports ${h} and nothing in the web app calls it`);
+expect(!/fetch\(\s*'\/api\/lens-draft'/.test(readStripped(path.join(SRC, 'components/ledger/lens/LensChat.tsx'))), 'LensChat.tsx makes its own /api/lens-draft request instead of calling postLensDraft');
+{
+  const ac = new AbortController();
+  asked = [];
+  const p = settle(client.postLensDraft('p', 'hello', undefined, 'project', ac.signal));
+  setTimeout(() => ac.abort(), 5);
+  const out = await p;
+  expect(out !== PENDING && (out as { name?: string }).name === 'AbortError', 'aborting the signal passed to postLensDraft does not reject the turn with an AbortError', String((out as { name?: string })?.name ?? out));
+}
+
 if (failures.length) { console.log(failures.map((f) => 'FAIL ' + f).join('\n')); console.log(`check-scan-client: ${failures.length} failed, ${held} held`); process.exit(1); }
 console.log(`check-scan-client: ${held} expectations held (${SHAPES.length} rejection shapes, ${DEV_WORDS.length} developer strings forbidden, ${HELPERS.length} request helpers bounded)`);

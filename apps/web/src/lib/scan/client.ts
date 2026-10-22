@@ -238,9 +238,9 @@ export const LENS_DRAFT_TIMEOUT_MS = 200000;
 export interface LensDraftAnswer { session?: string; reply: string; draft?: LensManifest; done: boolean; error?: string }
 
 /** One JSON request to a scan route; rejects on any non-2xx with an Error carrying `status` and the parsed `body`. */
-async function send<T>(url: string, method: 'POST' | 'PATCH' | 'DELETE', body?: unknown, timeoutMs?: number): Promise<T> {
+async function send<T>(url: string, method: 'POST' | 'PATCH' | 'DELETE', body?: unknown, timeoutMs?: number, signal?: AbortSignal): Promise<T> {
   const r = await fetch(url, {
-    method, cache: 'no-store', signal: bound(undefined, timeoutMs),
+    method, cache: 'no-store', signal: bound(signal, timeoutMs),
     ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
   });
   const j = (await r.json().catch(() => null)) as unknown;
@@ -254,8 +254,6 @@ export const postScan = (slug: string, lens: string, scope: ScanScope): Promise<
 export const postDispatch = (slug: string, ids: string[]): Promise<DispatchResult> => send(api(slug) + '/dispatch', 'POST', { ids });
 /** Cancel a queued or running job. */
 export const deleteJob = (slug: string, id: string): Promise<ScanJob> => send(api(slug) + '/scans/' + encodeURIComponent(id), 'DELETE');
-/** Add a temporary lens to the product's map. 400 says what the manifest lacks; 409 = the id exists. */
-export const postLens = (slug: string, manifest: LensManifest): Promise<LensEntry> => send(api(slug) + '/lenses', 'POST', { manifest });
 /** Retire (false) or restore (true) a temporary lens. 403 = not temporary. */
 export const patchLens = (slug: string, id: string, enabled: boolean): Promise<LensEntry> => send(api(slug) + '/lenses/' + encodeURIComponent(id), 'PATCH', { enabled });
 /** Delete a temporary lens's entry (its facets stay). 403 = not temporary. */
@@ -318,9 +316,13 @@ export const postWaveDispatch = (slug: string, id: string, packages?: string[]):
   call(api(slug) + '/waves/' + encodeURIComponent(id) + '/dispatch', 'POST', parseWaveDispatch, packages === undefined ? {} : { packages });
 
 /** One turn of the lens onboarding chat: `product` is a slug or 'kettle'; `session` from the previous answer; `kind`
- *  asks for a permanent project lens (the default) or a temporary one. 504 after 3 minutes. */
-export const postLensDraft = (product: string, message: string, session?: string, kind: 'project' | 'temporary' = 'project'): Promise<LensDraftAnswer> =>
-  send('/api/lens-draft', 'POST', { product, message, ...(session ? { session } : {}), kind }, LENS_DRAFT_TIMEOUT_MS);
+ *  asks for a permanent project lens (the default) or a temporary one. 504 after 3 minutes. `signal` cancels the turn
+ *  (the request rejects with an AbortError); an answer with no `reply` rejects with status 502. */
+export const postLensDraft = async (product: string, message: string, session?: string, kind: 'project' | 'temporary' = 'project', signal?: AbortSignal): Promise<LensDraftAnswer> => {
+  const a = await send<LensDraftAnswer>('/api/lens-draft', 'POST', { product, message, ...(session ? { session } : {}), kind }, LENS_DRAFT_TIMEOUT_MS, signal);
+  if (!a || typeof a !== 'object' || typeof a.reply !== 'string') throw Object.assign(new Error('the server answered no reply'), { status: 502 });
+  return a;
+};
 
 // ------------------------------------------------------------------------------------------- swarm
 // The scan as a swarm lives in core (pure); re-exported here for the web's importers.
