@@ -76,6 +76,29 @@ export function openRead(file: string): DatabaseSync | null {
 }
 export function close(db: DatabaseSync | null): void { try { db?.close(); } catch { /* already closed */ } }
 
+/**
+ * One release's row as the store holds it, or WHY there is none - the four conditions a bare `undefined` used to blur:
+ * `no-store` (no scan.db yet), `no-table` (a v1 store, no `releases` table), `absent` (the store has no such release),
+ * `unreadable` (the file would not open or the read failed: a write lock past the busy timeout, a corrupt file, a
+ * permission). Only `unreadable` may be transient; the others are answers.
+ */
+export type ReleaseRead =
+  | { kind: 'row'; status: string; error?: string }
+  | { kind: 'no-store' } | { kind: 'no-table' } | { kind: 'absent' }
+  | { kind: 'unreadable'; error: string };
+export function readRelease(file: string, id: string): ReleaseRead {
+  if (!fs.existsSync(file)) return { kind: 'no-store' };
+  let db: DatabaseSync | null = null;
+  try {
+    db = new DatabaseSync(file, { readOnly: true, timeout: BUSY_MS });
+    const row = db.prepare('SELECT status, error FROM releases WHERE id = ?').get(id) as { status: string; error: string | null } | undefined;
+    return row ? { kind: 'row', status: row.status, ...(row.error ? { error: row.error } : {}) } : { kind: 'absent' };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return /no such table: releases/i.test(msg) ? { kind: 'no-table' } : { kind: 'unreadable', error: msg };
+  } finally { close(db); }
+}
+
 /** Changes only when another connection commits (the skill, or a decision's write connection). */
 export function dataVersion(db: DatabaseSync): number {
   return Number((db.prepare('PRAGMA data_version').get() as Row).data_version);

@@ -580,6 +580,62 @@ try {
     process.env.BP_CLAUDE_BIN = FAKE;
     const rebuilt = await call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-4.0.0-stall' }, {});
     check('the failed release can be built again (202), and that build reaches pr-open', rebuilt.status === 202 && await until(() => relRow('rel-4.0.0-stall')?.status === 'pr-open'), rebuilt.status + ' ' + relRow('rel-4.0.0-stall')?.status);
+    // a cut that SUCCEEDED (the release is pr-open in the store) whose job reads the store while another connection holds
+    // it locked past the busy timeout: the job ends by the release's status, so an unreadable store must not read as a
+    // release that failed - it is read again until it can be, and says what it could not read if it never can
+    const lockFake = path.join(dir, 'fake-claude-locked.mjs');
+    fs.writeFileSync(lockFake, [
+      "import fs from 'node:fs';",
+      "import { DatabaseSync } from 'node:sqlite';",
+      "let input = ''; process.stdin.setEncoding('utf8'); for await (const c of process.stdin) input += c;",
+      "const rid = /--id (\\S+)/.exec(input)?.[1] ?? '';",
+      "const db = new DatabaseSync(process.cwd() + '/.ai/lens-scan/scan.db', { timeout: 5000 });",
+      "db.prepare(\"UPDATE releases SET status = 'pr-open', pr_url = 'https://example.test/pull/5', updated_at = ? WHERE id = ?\").run(new Date().toISOString(), rid); db.close();",
+      "fs.writeFileSync(process.cwd() + '/cut-' + rid + '.done', rid);",
+      "await new Promise((r) => setTimeout(r, 1000));",
+    ].join('\n'));
+    const ld = new DatabaseSync(rdb);
+    ld.prepare("INSERT INTO releases (id, version, branch, status, created_at, updated_at) VALUES ('rel-5.0.0-lock', '5.0.0-lock', 'release/5.0.0-lock', 'draft', ?, ?)").run(T, T);
+    ld.close();
+    process.env.BP_CLAUDE_BIN = lockFake;
+    const l1 = J.enqueueRelease('rel', rr, 'rel-5.0.0-lock', '5.0.0-lock', 'build');
+    check('lock: the stand-in cut finished (release pr-open)', await until(() => fs.existsSync(path.join(rr, 'cut-rel-5.0.0-lock.done'))) && relRow('rel-5.0.0-lock')?.status === 'pr-open', relRow('rel-5.0.0-lock')?.status);
+    const hold = new DatabaseSync(rdb, { timeout: 5000 });
+    hold.exec('PRAGMA locking_mode = EXCLUSIVE'); hold.exec('BEGIN IMMEDIATE');
+    const unlock = setTimeout(() => { try { hold.exec('COMMIT'); hold.close(); } catch { /* closed */ } }, 3500);
+    const lj = l1.ok ? await until(() => ['done', 'failed'].includes(job('rel', l1.job.id)?.status ?? ''), 40000) : false;
+    clearTimeout(unlock); try { hold.exec('ROLLBACK'); } catch { /* committed */ } try { hold.close(); } catch { /* closed */ }
+    const ljob = l1.ok ? job('rel', l1.job.id) : undefined;
+    check('a locked store does not report a successful cut as failed (the job ends done once the store can be read)', lj && ljob?.status === 'done' && relRow('rel-5.0.0-lock')?.status === 'pr-open', JSON.stringify(ljob));
+    process.env.BP_CLAUDE_BIN = FAKE;
+    // the reader behind that decision tells its four "no row" conditions apart (a bare undefined used to blur them)
+    {
+      const SS = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/server/store.server.ts')).href) as typeof import('../packages/core/src/server/store.server.ts');
+      const v1 = path.join(dir, 'v1-store.db'), lk = path.join(dir, 'locked-store.db');
+      { const w = new DatabaseSync(v1); w.exec('CREATE TABLE runs (id TEXT)'); w.close(); }
+      { const w = new DatabaseSync(lk); w.exec('PRAGMA journal_mode = WAL; CREATE TABLE releases (id TEXT, status TEXT, error TEXT)'); w.close(); }
+      const rd = (f: string, id: string) => SS.readRelease(f, id).kind;
+      const lh = new DatabaseSync(lk, { timeout: 5000 });
+      lh.exec('PRAGMA locking_mode = EXCLUSIVE'); lh.exec('BEGIN IMMEDIATE');
+      const locked = SS.readRelease(lk, 'x');
+      try { lh.exec('COMMIT'); } catch { /* ignore */ } lh.close();
+      const kinds = [rd(path.join(dir, 'no-such.db'), 'x'), rd(v1, 'x'), rd(rdb, 'rel-no-such'), rd(rdb, 'rel-5.0.0-lock'), locked.kind, rd(lk, 'x')].join();
+      check('readRelease: no-store, no-table, absent, row, unreadable (a lock past the busy timeout), absent again once released',
+        kinds === 'no-store,no-table,absent,row,unreadable,absent' && locked.kind === 'unreadable' && /locked/i.test(locked.error), kinds + ' ' + JSON.stringify(locked));
+    }
+    // ...and a job whose CLI said nothing names the store condition that kept it from judging, not its last log line
+    const quietFake = path.join(dir, 'fake-claude-quiet.mjs');
+    fs.writeFileSync(quietFake, "process.stdin.resume(); process.stdin.on('end', () => process.exit(0));\n");
+    process.env.BP_CLAUDE_BIN = quietFake;
+    const nostore = repo('rel-nostore'), v1root = repo('rel-v1');
+    fs.mkdirSync(path.join(v1root, '.ai/lens-scan'), { recursive: true });
+    { const w = new DatabaseSync(path.join(v1root, '.ai/lens-scan/scan.db')); w.exec('CREATE TABLE runs (id TEXT)'); w.close(); }
+    const q1 = J.enqueueRelease('rel', nostore, 'rel-6.0.0', '6.0.0', 'build'), q2 = J.enqueueRelease('rel', v1root, 'rel-6.0.1', '6.0.1', 'build');
+    await until(() => [q1, q2].every((q) => q.ok && ['done', 'failed'].includes(job('rel', q.job.id)?.status ?? '')));
+    const jq1 = q1.ok ? job('rel', q1.job.id) : undefined, jq2 = q2.ok ? job('rel', q2.job.id) : undefined;
+    check('a release job over a missing store fails naming the store', jq1?.status === 'failed' && /^the release store is missing/.test(jq1.error ?? ''), JSON.stringify(jq1));
+    check('a release job over a v1 store (no releases table) fails naming the table', jq2?.status === 'failed' && /^the release store has no releases table/.test(jq2.error ?? ''), JSON.stringify(jq2));
+    process.env.BP_CLAUDE_BIN = FAKE;
     const e3 = J.enqueueRelease('rel', rr, 'rel-1.0.0', '1.0.1', 'build'), e4 = J.enqueueRelease('rel', rr, 'release-1', '1', 'finish');
     check('enqueueRelease refuses an id that is not rel-<version> -> 400', !e3.ok && e3.status === 400 && !e4.ok && e4.status === 400);
 
