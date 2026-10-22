@@ -9,7 +9,9 @@
 // Run: node apps/web/src/components/sheet/check-screens-strip.ts  (scripts/overlays-loader.mjs transpiles src on the fly).
 import { register } from 'node:module';
 import { pathToFileURL } from 'node:url';
+import fs from 'node:fs';
 import path from 'node:path';
+import { stripComments } from '../../../../../scripts/lib/source.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '../../../../..'), SRC = path.join(ROOT, 'apps/web/src');
 register(pathToFileURL(path.join(ROOT, 'scripts/overlays-loader.mjs')).href, { parentURL: import.meta.url, data: { src: SRC, root: ROOT, mutate: [] } });
@@ -46,6 +48,9 @@ for (const st of ['live', 'offline', 'error']) {
   const h = render(live(st, snap([shot])), true);
   expect(h.includes('class="thumb') && !/No screens/.test(h), `${st} with a shot: the thumbnail, no empty sentence`);
 }
+// the lens tab is what asks for the sentence: its strip must be mounted with `expected`
+const lensTab = stripComments(fs.readFileSync(path.join(SRC, 'components/page/LensTab.tsx'), 'utf8'));
+expect(/<ScreensStrip\s+f=\{f\}\s+expected\s*\/>/.test(lensTab), 'LensTab mounts <ScreensStrip expected />');
 expect(render(null, true).trim() === '', 'Kettle: no live product, nothing drawn');
 
 if (failures.length) { for (const m of failures) console.log('FAIL ' + m); console.log(`check-screens-strip: ${failures.length} failed, ${held} held`); process.exit(1); }
