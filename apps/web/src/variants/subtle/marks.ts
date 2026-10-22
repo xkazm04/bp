@@ -5,11 +5,25 @@
 import type { Health } from '@bp/core/data';
 import type { LineName } from '@bp/core/standard/types';
 import type { Theme } from '../types';
+import { glyph, type GlyphSpec } from '@/engine/render/lens-glyph';
 
-/** Glyph colour = that lens's health. Ink when fine, amber to watch, red for trouble, faint when n/a or unmeasured. */
+// Trouble's glyph ink is --red-glyph, not --red: amber and --red sit 1.77:1 apart in dark and 1.27:1 in light, so
+// watch and trouble read alike in greyscale or with a red-green deficiency. --red-glyph is 3:1 or more from
+// --amber in both themes. Read once per theme object (the engine builds a new one when the theme changes).
+const BAD_INK = new WeakMap<Theme, string>();
+function badInk(th: Theme): string {
+  let c = BAD_INK.get(th);
+  if (c === undefined) {
+    c = typeof document !== 'undefined' ? getComputedStyle(document.documentElement).getPropertyValue('--red-glyph').trim() : '';
+    BAD_INK.set(th, c || th.red);
+  }
+  return c;
+}
+
+/** Glyph colour = that lens's health. Ink when fine, amber to watch, dark red for trouble, faint when n/a or unmeasured. */
 export function healthInk(th: Theme, h: Health, now: boolean): string {
   if (!now) return th.inkA(0.5);
-  if (h === 'bad') return th.red;
+  if (h === 'bad') return badInk(th);
   if (h === 'watch') return th.amber;
   if (h === 'na') return th.inkA(0.38);
   if (h === 'unmeasured') return th.inkA(0.3);
@@ -17,7 +31,18 @@ export function healthInk(th: Theme, h: Health, now: boolean): string {
 }
 
 // The glyph set itself is drawn by the engine (its trouble flags use it too): src/engine/render/lens-glyph.ts.
-export { glyph, type GlyphSpec } from '@/engine/render/lens-glyph';
+export { glyph, type GlyphSpec };
+
+/**
+ * A strip glyph in its health's ink. Trouble is also drawn twice, the second copy a pixel-ish to the right
+ * (heavier strokes, a wider glyph), so the two unwell states differ by shape as well as by luminance and hue.
+ * Only trouble pays the second stroke set.
+ */
+export function healthGlyph(ctx: CanvasRenderingContext2D, th: Theme, g: GlyphSpec, h: Health, now: boolean, x: number, y: number, s: number) {
+  const col = healthInk(th, h, now);
+  glyph(ctx, g, x, y, s, col);
+  if (now && h === 'bad') glyph(ctx, g, x + Math.max(0.8, s * 0.1), y, s, col);
+}
 
 // -------------------------------------------------------------------------------------- line types
 // Rails run for every visible segment on every raster of a lens tween (528 at ?scale=4), so they are
