@@ -419,8 +419,15 @@ usage line now lists `[--run]`. After each reading below, `tasklist` showed no `
   failed, and on which field, is not measured**: the log says only this line, and finding out needs a change to BpLink or
   to the generated code, which this run may not make. Because the failure returns before `/plan` is requested
   (`OnDone(false, ...)`), **no `BpLink: Kettle wings=...` line was printed**, and neither was the `(no plan read, so no
-  wings)` fallback. The `wings=5 rooms=13 bays=29 tiles=133` line remains pinned from the C++ TEXT by `check:bplink`. It has
-  never been printed by Unreal.
+  wings)` fallback. [Corrected 2026-10-22: this sentence first said the `wings=5 rooms=13 bays=29 tiles=133` line "remains
+  pinned from the C++ TEXT by `check:bplink`", which is wrong about the numbers.] The four numbers are a Node-side
+  measurement of the live server: `scripts/check-bplink.mjs` starts apps/server on port 0 in an empty temp cwd, GETs
+  `/api/products/kettle/plan`, and compares the answer's array lengths with figures derived from `WING_DEFS` and
+  `packages/core/data/kettle.app-structure.json`. `BP_CHECK_BPLINK_SEED=plan` shows that comparison can fail. The C++ TEXT
+  rule pins no number. It asserts that `BpLink.cpp` requests `<Root> + TEXT("/plan")` in code (not in a comment), parses
+  the answer through `BpSchema::FromJson` into `Snapshot.Plan`, and logs each figure as `Snapshot.Plan.<that level>.Num()`.
+  That proves only that the code is shaped to print whatever the live answer counts. What Unreal had never executed is the
+  LOG LINE. At reading 10 it had never been printed by Unreal; reading 14 below is the first time it was.
 - Logs: `C:/Users/kazda/AppData/Local/Temp/bp-6f1b5327-editor-run/bp-uht-probe/run-bpEditor.log` (1,801 lines),
   `run-bpEditor-Saved.log`, `run-server-bpEditor.log`, beside the build's `uht-probe-junction.log`, `ubt-Log-junction.txt`
   and `uht-probe-junction.json`.
@@ -476,7 +483,8 @@ running, and UBT refused it: `Result: Failed (ConflictingInstance)`, exit 10 aft
   - the Win64 Game build does not boot in this project shape (reading 11);
   - the headset, Meta XR v207, the Interaction SDK, the Quest 3 over Link and 90 Hz are untouched.
 - Why `/structure` did not parse. Which call returned false, and on which field, is the next measurement. It needs a log
-  line or a test inside BpLink or the generated `FixUp`, and that is outside this run's two files.
+  line or a test inside BpLink or the generated `FixUp`, and that is outside this run's two files. [Measured later the same
+  night, reading 12 below: `CopyRaw` at `structure.lenses[0].manifest.presentation.glyph`.]
 - That `/plan` parses into `FBpPlan` in Unreal: it was never requested, because `/structure` failed first. The `/stream`
   handling and the `BpLink.Fetch` console command were not run either.
 - Whether a cooked or staged `bp.exe` boots, and whether the editor boots with a real `Content/`, a real map or a real game
@@ -497,3 +505,188 @@ Run them one after the other, not at once: two UBTs on the same host refuse each
 needs a fresh `<scratch>`, and the script never deletes in one. `--run` starts apps/server from this repo and needs
 `node_modules`. It leaves no process running: the target's tree is killed after the outcome line plus 5 s, or at 900 s,
 and the server is killed when the target is done.
+
+## Lynx, 2026-10-22 (night, last): why `/structure` did not parse, measured, fixed, and the Kettle line printed
+
+Same host, engine and toolchain as readings 10 and 11: Lynx, UE 5.8.4 (Changelist 58902052), every build's `compiler`
+line `C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64\cl.exe`,
+UBT printing `Running x64 binary on arm64 system. Use arm binaries instead` (emulated x64). Each reading is a **fresh**
+`--work` tree under `C:/Users/kazda/AppData/Local/Temp/`, `--variant junction`, target `bpEditor`, `--run`. Each tree's
+`packages` is a junction into this worktree (`C:/Users/kazda/.personas/headless-masters/worktrees/bp/70637178/packages`).
+The UBT runs were one at a time, and none was refused. **No frame time, fps or latency was measured, and none can be read
+from these runs:** `-nullrhi` renders nothing.
+
+What each tree built (SHA-256 from its `uht-probe-junction.json`, repo = probe for the copied files):
+
+| Reading | Repo at | `BpLink.cpp` | `BpSchemaFixups.h` | `BpSchema.h` |
+|---|---|---|---|---|
+| 12 | `47c49ea` | `387e8f86...` | `1ac7baf2...` | `c09afbb9...` |
+| 13 | `cd9dd65` | `387e8f86...` | `9ef91bb8...` | `c09afbb9...` |
+| 14 | `422d7fa` | `9c5c15ff...` | `9ef91bb8...` | `c09afbb9...` |
+
+`BpSchema.h`'s content did not change in these commits. `c09afbb9...` is the hash of its committed blob, with LF endings,
+because `npm run schema:generate` rewrites it with LF. Reading 8's `e2eb2802...` is the same blob with CRLF endings: I
+hashed both forms. `387e8f86...` is `47c49ea`'s `BpLink.cpp` with CRLF endings. `9c5c15ff...` is `422d7fa`'s `BpLink.cpp`
+with one line ending in CRLF and the rest LF (a stray from my edit). With the CR removed it hashes `e88892cc...`, the
+committed blob.
+
+### What changed so a log could say which step failed (the mechanism)
+
+- `packages/schema/generate.mjs` (and so the generated `BpSchemaFixups.h`, `6cc90c1`): `BpSchema::FromJson` now resets a
+  per-thread `BpSchema::LastFailure()`. When a step returns false, the first one records its call (`JsonObjectToUStruct`,
+  `CopyKey`, `CopyRaw`, `FixUpArray (length)`, `FixUpArray (not an object)`, `FixUpMap (not an object)`) and the key it
+  failed on. Each held struct on the way out puts its own key in front, so the path reads from the document root.
+- `BpLink.cpp` (`47c49ea`): the single condition reading 10 ran is split into three branches, each with its own reason:
+  `FJsonSerializer::Deserialize found no JSON object in it`, `it has no `structure` object field`, and `BpSchema::FromJson
+  failed in <call> at structure.<path> (<n> failed steps)`. A second Error line gives the answer's byte length, its
+  character length and its first 200 characters. The outcome line keeps `did not parse`, which `--run` watches for.
+
+### Reading 12: the call and the field (tree `bp-70637178-diag`)
+
+`node scripts/uht-probe.mjs --engine "C:/Program Files/Epic Games/UE_5.8" --work C:/Users/kazda/AppData/Local/Temp/bp-70637178-diag --variant junction --run`
+
+- **Exit 0** (the script grades nothing). Total wall clock **not recorded**: my shell timer called `bc`, which is not on
+  this host, so it printed `wall=` empty. The script's own clocks: build `exit 0 after 94.2s`, run 65.1 s.
+- **Build**: `bpEditor Win64 Development`, `Result: Succeeded`, `Total execution time: 93.44 seconds`, `[12/13] Link [x64]
+  UnrealEditor-BpLink.dll` (560,640 bytes). 0 `: warning` lines. UHT printed only `UHT compiled-in object format Default`.
+  There is no `UHT processed ...` line in this log, though readings 10 and 11 had one.
+- **Server**: `bp server listening on http://127.0.0.1:61471`; no `refused` line.
+- **Run**: the editor, as in reading 10, with `-BpLinkUrl=http://127.0.0.1:61471`. Stopped by `outcome line seen, then
+  5000 ms`, 65.1 s after start; exit code **1** is the one `taskkill /F` imposes. `LogInit: Display: Engine is initialized.
+  Leaving FEngineLoop::Init()` is stdout line 1730.
+- **The finding** (stdout lines 1660, 1771 and 1772, verbatim; Saved log lines 1647, 1758 and 1759):
+  ```
+  LogBpLink: BpLink: reading Kettle from http://127.0.0.1:61471
+  LogBpLink: Error: BpLink: the http://127.0.0.1:61471/api/products/kettle/structure answer did not parse into FBpAppStructure: BpSchema::FromJson failed in CopyRaw at structure.lenses[0].manifest.presentation.glyph (1 failed steps)
+  LogBpLink: Error: BpLink: that answer is 469146 bytes, 469144 characters, and begins: {"structure":{"$schema":"app-structure/3","version":3,"generator":"kettle-sample","generated_at":"2026-10-08T09:00:00Z","declared":true,"provenance":{"source":"packages/core/data/kettle.json","convert
+  ```
+  Measured: `Deserialize` succeeded, the `structure` field was found, and `FJsonObjectConverter::JsonObjectToUStruct`
+  succeeded. The failing step is `CopyRaw`, inside FixUp, on the first lens's `presentation.glyph`. The log has no
+  `LogJson` line at all (0 matches), consistent with the converter not having failed. `1 failed steps` is not a count of
+  bad glyphs: `FixUpArray` stops at the first lens that fails.
+- **Why `CopyRaw` returns false: a reading of UE 5.8.4's source, not a measurement.** `CopyRaw` serializes the value
+  through a `TJsonStringWriter`, whose `Close()` copies the text into the output string and then returns
+  `TJsonWriter::Close()` (`Engine/Source/Runtime/Json/Public/Serialization/JsonWriter.h:361`). That returns true only when
+  the last token written was nothing, `}` or `]`. A bare string glyph leaves a string token last, so `Serialize(..., true)`
+  returns false even though the text was written. In this worktree's `/structure` answer (fetched with `curl` from a
+  Node-only run, below; apps/server is unchanged by these commits), the glyph is a string on 7 of Kettle's 8 lenses (`lenses[0]` is `business`) and an object on one
+  (`com.kettle.cost`).
+- Logs: `C:/Users/kazda/AppData/Local/Temp/bp-70637178-diag/bp-uht-probe/run-bpEditor.log` (1,786 lines),
+  `run-bpEditor-Saved.log` (1,773 lines), `run-server-bpEditor.log`, beside `uht-probe-junction.log`,
+  `ubt-Log-junction.txt` and `uht-probe-junction.json`.
+
+**The fix** (`cd9dd65`, in the generator, regenerated): `CopyRaw` serializes with `bCloseWriter = false` and then calls
+`Writer->Close()` itself, because Close is what copies the text. A scalar is graded by the text it left in `Out`, an
+object or array by `Close()`.
+
+### Reading 13: `/structure` no longer refused, and BpLink goes silent (tree `bp-70637178-fixed`)
+
+`node scripts/uht-probe.mjs --engine "C:/Program Files/Epic Games/UE_5.8" --work C:/Users/kazda/AppData/Local/Temp/bp-70637178-fixed --variant junction --run`
+
+- **Exit 0**, wall clock **976.5 s** (shell timer, 976,474 ms). Build `exit 0 after 71s`.
+- **Build**: `Result: Succeeded`, `Total execution time: 70.22 seconds`, `[12/13] Link [x64] UnrealEditor-BpLink.dll`
+  (560,640 bytes). 0 `: warning` lines; again only `UHT compiled-in object format Default`.
+- **Server**: `bp server listening on http://127.0.0.1:55000`; no `refused` line. The server logs no requests, so it
+  cannot say which GET was outstanding.
+- **Run**: no outcome line came, so the probe's hard timeout stopped it: `timeout 900000 ms; exit 1 after 904.6s`.
+  `Engine is initialized` is stdout line 1730. The **only** `LogBpLink` line in either log is stdout line 1660 (Saved
+  line 1647), verbatim:
+  ```
+  LogBpLink: BpLink: reading Kettle from http://127.0.0.1:55000
+  ```
+  The editor kept logging until it was killed (its last line is a `LogEOSSDK` config update at `Time: 678.773560`).
+  While it ran, `tasklist` showed `CrashReportClientEditor.exe`. That is the companion the editor starts at boot
+  (stdout line 8, `LogWindows: Started CrashReportClient (pid=11156)`), not a crash. Nothing in the log asserts or
+  crashes, and after the kill `tasklist` showed none of `UnrealEditor*`, `CrashReportClient*`, `zenserver` or
+  `ShaderCompileWorker`.
+- **Reading of the log against `cd9dd65`'s `BpLink.cpp`, not measured:** with no `did not parse` and no `GET ... failed`
+  line, `/structure` parsed and BpLink went on. At that source, the `/structure` and `/plan` success paths print nothing,
+  and the Kettle line is printed only from `/stream`'s completion callback. So this log cannot say whether `/plan` or
+  `/stream` was outstanding. My hypothesis: Kettle's `/stream` is a live SSE response (200, `text/event-stream`), its
+  body never ends, and so `OnProcessRequestComplete` never fires. Reading 14 tests that.
+- Logs: `C:/Users/kazda/AppData/Local/Temp/bp-70637178-fixed/bp-uht-probe/run-bpEditor.log` (1,804 lines),
+  `run-bpEditor-Saved.log` (1,791 lines), `run-server-bpEditor.log`.
+
+**The change** (`422d7fa`, `BpLink.cpp`): `/stream` keeps the status from `OnStatusCodeReceived`, logs it, and cancels a
+200 on the next core tick (`FTSTicker`). The completion takes the kept status. `/structure` and `/plan` each log a line
+when they parse, so the next stall would be located.
+
+### Reading 14: the Kettle line, printed by Unreal (tree `bp-70637178-stream`)
+
+`node scripts/uht-probe.mjs --engine "C:/Program Files/Epic Games/UE_5.8" --work C:/Users/kazda/AppData/Local/Temp/bp-70637178-stream --variant junction --run`
+
+- **Exit 0**, wall clock **108.0 s** (shell timer, 107,989 ms). Build `exit 0 after 73.4s`.
+- **Build**: `Result: Succeeded`, `Total execution time: 72.53 seconds`, `[12/13] Link [x64] UnrealEditor-BpLink.dll`
+  (566,272 bytes). 0 `: warning` lines; again only `UHT compiled-in object format Default`.
+- **Server**: `bp server listening on http://127.0.0.1:58672`; no `refused` line.
+- **Run**: stopped by `outcome line seen, then 5000 ms`, 33.6 s after start; exit code **1** from `taskkill /F`.
+  `Engine is initialized` is stdout line 1730.
+- **Every `LogBpLink` line**, verbatim (stdout lines 1660, 1771, 1778, 1779, 1783 and 1784; Saved log lines 1647, 1758,
+  1765, 1766, 1770 and 1771):
+  ```
+  LogBpLink: BpLink: reading Kettle from http://127.0.0.1:58672
+  LogBpLink: BpLink: the http://127.0.0.1:58672/api/products/kettle/structure answer parsed: rooms=13 lenses=8 events=566 rev=80557561ddf0f4cd; asking /plan
+  LogBpLink: BpLink: the http://127.0.0.1:58672/api/products/kettle/plan answer parsed into FBpPlan; asking /stream
+  LogBpLink: BpLink: GET http://127.0.0.1:58672/api/products/kettle/stream sent status 200
+  LogBpLink: BpLink: kettle streams (200); WP3.1 does not consume SSE, so rev 80557561ddf0f4cd read once from structure stands
+  LogBpLink: BpLink: Kettle wings=5 [Foundations, Studio operations, Money, Members & reach, Frontier] rooms=13 bays=29 tiles=133 lenses=8 events=566 rev=80557561ddf0f4cd
+  ```
+  Measured in Unreal: `/structure` parsed into `FBpAppStructure` with all 8 lenses (7 string glyphs and 1 object glyph),
+  `/plan` parsed into `FBpPlan`, `/stream` sent 200, the fetch reached `OnDone(true, ...)`, and `LogKettle` printed
+  `wings=5 rooms=13 bays=29 tiles=133`. Those are the same four figures `check:bplink` measures from the live server in
+  Node. 0 `LogJson` lines.
+- **Reading of the log, not measured:** that the completion callback after `sent status 200` came from the cancel. BpLink
+  does not log `bConnected` on that path, and the status it reports (200) is the kept one.
+- Logs: `C:/Users/kazda/AppData/Local/Temp/bp-70637178-stream/bp-uht-probe/run-bpEditor.log` (1,788 lines),
+  `run-bpEditor-Saved.log` (1,775 lines), `run-server-bpEditor.log`, beside `uht-probe-junction.log`,
+  `ubt-Log-junction.txt` and `uht-probe-junction.json`.
+
+| File (under `C:/Users/kazda/AppData/Local/Temp/`) | SHA-256 |
+|---|---|
+| `bp-70637178-diag/bp-uht-probe/run-bpEditor.log` | `cc62169ce95953abcd89d11f2be4ca7c2f262b35e5c753c1ebe22b6427db3472` |
+| `bp-70637178-diag/bp-uht-probe/run-bpEditor-Saved.log` | `67df54ed07997d524c5677b9d3178ad63a54819ab4028aceaff012123c0f8ab4` |
+| `bp-70637178-diag/bp-uht-probe/apps/vr/Binaries/Win64/UnrealEditor-BpLink.dll` | `924ef91db457c3164776796826eca54986886659eb56985617c22e97a2e4180a` |
+| `bp-70637178-fixed/bp-uht-probe/run-bpEditor.log` | `0d31d1a1370c848a4216f3a3bcd5c508891d7f1e1ddc337d4b5c55b79ab1fbec` |
+| `bp-70637178-fixed/bp-uht-probe/run-bpEditor-Saved.log` | `af57458073684add8276e3bbce154ffb30f2801b92b332608e680a0aff0b084d` |
+| `bp-70637178-fixed/bp-uht-probe/apps/vr/Binaries/Win64/UnrealEditor-BpLink.dll` | `e26913800d6ba6f26c94cd57c53f536ab543e654baded1f2567051fcd25e4514` |
+| `bp-70637178-stream/bp-uht-probe/run-bpEditor.log` | `17d3fc3bad1c9e2d68d2d9f0f0c79cbd6e40c3e4b013dff8cdfa6bfadb002f53` |
+| `bp-70637178-stream/bp-uht-probe/run-bpEditor-Saved.log` | `9ed821a74dc43ef58abac8873f925e83382577b360a851abad04742042244238` |
+| `bp-70637178-stream/bp-uht-probe/apps/vr/Binaries/Win64/UnrealEditor-BpLink.dll` | `ac35877cbe7e2dba617974e89787067ff8341a3f642b36814c29bbee0c748149` |
+
+Two directories from this session are **not readings**. `bp-70637178-srv` holds a Node-only run of apps/server
+(`--port 0`), from which I fetched `/structure` and `/plan` with `curl` to read the glyph's JSON types; nothing of
+Unreal ran, and I stopped that server with `Stop-Process`. `bp-70637178-tools` holds my edit scripts and the probes'
+captured stdout.
+
+Gates beside the runs: `npm run check:schema` is green at each commit. `clang++ -std=c++20 -fsyntax-only -Wall -Wextra`
+(LLVM 23.1.4, aarch64-pc-windows-msvc) on `packages/schema/ue-standin/check.cpp` exits 0 against the regenerated header.
+`check:bplink` gains an assertion that the three `/structure` branches and the length-and-head line exist.
+`BP_CHECK_BPLINK_SEED=source:diag` makes that assertion FAIL, and a permanent control refuses reading 10's
+one-condition shape.
+
+### What this does NOT establish
+
+- **Milestone 4 goal 1 is not met as a whole.** WP3.1's acceptance is "the editor and a Win64 build boot, and a `BpLink`
+  log line prints Kettle's 5 wings". Reading 14 covers the editor half and the line. The Win64 Game build still does not
+  boot in this project shape (reading 11, not re-run here). The headset, Meta XR v207, the Interaction SDK and the Quest 3
+  over Link are untouched.
+- That the text `CopyRaw` leaves in `Glyph_` (or `CrossRefs_`) is the right text. BpLink logs neither, and Kettle's
+  answer has no `cross_refs`. Only the return value was measured, through the parse succeeding.
+- That `CopyKey` (`short`, `default`, `$schema`) copied the right values. It returned true; nothing logs what it wrote.
+- How the `/stream` 200 completed after the cancel (connected or not), and that cancelling is the right design for SSE.
+  WP3.1 consumes no SSE, and nothing here reads an event from the stream.
+- The `BpLink.Fetch` console command, a second fetch in one session, and the 405 branch (Kettle answered 200).
+- That the generated `LastFailure()` path is right for `FixUpMap` or for a `JsonObjectToUStruct` failure. Neither
+  happened. The stand-in smoke only parses them.
+- Any frame time. R5 is the operator's open question; `-nullrhi` measures nothing of the kind, and nothing here is
+  offered as one. Readings 12 to 14 do not touch R1 or R4.
+- These are Lynx readings on emulated x64 (MSVC 14.44.35207, UE 5.8.4 x64 binaries on ARM64).
+
+### How to reproduce
+
+```
+node scripts/uht-probe.mjs --engine "C:/Program Files/Epic Games/UE_5.8" --work <fresh scratch> --variant junction --run
+```
+
+At `47c49ea` this prints reading 12's `CopyRaw` line, at `cd9dd65` it runs to the 900 s timeout, and from `422d7fa` on
+it prints the Kettle line. One UBT at a time, and a fresh `--work` each run, as above.
