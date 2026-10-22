@@ -193,6 +193,37 @@ clang.** These readings cover the TypeScript and Node checks only.
 | `apps/vr` holds the BpLink Source and WP3.1.md says it is uncompiled | **pass** | `apps/vr/Source/BpLink/{BpLink.Build.cs,Private/BpLink.cpp,Public/BpLink.h}` exist. `apps/vr/WP3.1.md` line 3: `**Status: not yet run on any UE host.**`, and: `It has not been compiled against Unreal and has not been syntax-checked.` |
 | WP3.1 acceptance (editor and Win64 build boot, a `BpLink` log line prints 13 wings) | **not evaluated** | needs a UE-equipped host; none here |
 
+### Milestone 2 measured 2026-10-22
+
+Milestone 2, 'P3 prepared on Lynx: apps/vr and BpLink planned against real data', back-measured on master `947597c`
+(`947597cf56052c3d314873a0d123a87ea4353381`), on Lynx (Windows ARM64), in a builder worktree with an isolated install
+(`isolated-gate.mjs`: the `node_modules` junction replaced by `npm ci`; the checks below ran on that install). Nothing was
+fixed; this entry is the only file changed. **No Unreal Engine build was run: Lynx has no Unreal Engine.** Every reading
+below is of TypeScript, Node and C++ source text.
+
+| Goal | Measure | Result | Evidence |
+|---|---|---|---|
+| 1 BpLink contract smoke green against `apps/server` | a check run by `npm run check` makes BpLink's requests (structure, events, lens manifests, plan, stream) against a started `apps/server`, and fails on its seeds | **pass** | `node .../isolated-gate.mjs npm run check:bplink`: `check-bplink: 31 passed, 0 failed`, including `ok    structure: 8 lens manifests in structure.lenses (packages/core/data)`, `ok    plan: 5 wings, 13 rooms, 29 bays, 133 tiles (WING_DEFS and packages/core/data)`, `ok    events: the payload's JSONL has the data file's 566 lines, each valid JSON`, `ok    stream: 200 text/event-stream`. It starts `apps/server/src/main.ts --port 0` in an empty temp directory (`scripts/check-bplink.mjs:184`). Reached by `npm run check`: `package.json:49` `"check:bplink": "node scripts/check-bplink.mjs"`, and `scripts/check-all.mjs:25` takes every `check:*` key of `package.json`. Seeds (`scripts/check-bplink.mjs:169-170`), each exit 1: `BP_CHECK_BPLINK_SEED=schema:plan` → `FAIL  schema: the live /plan body conforms to plan-1  (/tiles/0/health/business must be equal to one of the allowed values)`, `check-bplink: 30 passed, 1 failed`; `BP_CHECK_BPLINK_SEED=plan` → `FAIL  plan: 5 wings, 13 rooms, 29 bays, 134 tiles (WING_DEFS and packages/core/data)  ({"wings":5,"rooms":13,"bays":29,"tiles":133})`, `check-bplink: 30 passed, 1 failed`; `BP_CHECK_BPLINK_SEED=events` → `FAIL  events: the payload's JSONL has the data file's 567 lines, each valid JSON  (566 lines, parsed=true)`, `check-bplink: 30 passed, 1 failed` |
+| 2 `apps/vr` WP3.1 written as plan items with BpLink source | `apps/vr` holds the BpLink module source (C++ against `BpSchema.h`) and a WP3.1 checklist naming the UE-host steps; the README states no UE build has been run | **pass** | Source: `apps/vr/Source/BpLink/BpLink.Build.cs`, `Public/BpLink.h`, `Private/BpLink.cpp`. `Public/BpLink.h:6` `#include "BpSchema.h"`, `Private/BpLink.cpp:4` `#include "BpSchemaFixups.h"`, `BpLink.Build.cs:17-18` adds `packages/schema/generated/ue` to `PublicIncludePaths` (no copy). Checklist: `apps/vr/WP3.1.md:3` `**Status: not yet run on any UE host.**`, `:5` `Every step below is for a UE-equipped host; none has been run.`; steps 1 to 8 (`:13-20`) each carry an "Observable proof" cell. README: `apps/vr/README.md:15-16` `**The module source has not been compiled against Unreal, and it has not been syntax-checked either: the machine it was written on has no clang.** WP3.1 is not run on any UE host.`, and `:38` `**Not compiled.** Nothing in apps/vr has been compiled on this machine: Lynx has no Unreal Engine.` As strong as WP3.1.md's status line. |
+| 3 `check:schema` parity stays green with BpLink in the tree | `npm run check:schema` green on master, and it fails on a seeded stale header | **fail** (green half passes; no carried control seeds a stale header) | `node .../isolated-gate.mjs`-installed tree, `npm run check:schema` exit 0: `ok    packages/schema/generated/ue/BpSchema.h is current (54 structs from 6 schemas)`, `ok    packages/schema/generated/ue/BpSchemaFixups.h is current (54 structs from 6 schemas)`, `ok    every schema field is held in UE: 394 mapped, 5 renamed and 2 raw carried by FixUp`, `ok    control: deleting Rule.short's fix-up fails the coverage`, `ok    control: Rule.reason made optional in the generated types fails the parity`, and every other line `ok`. **Gap in the measure:** none of the controls it carries seeds a stale committed header. The nearest, `ok    control: a field added to feature changes both outputs` (`packages/schema/generate.mjs:701-706`), proves the generator's output moves with the schema, not that the "is current" comparison (`generate.mjs:519-526`) reports a stale file. The only stale-header evidence is the manual seed of the 2026-10-20 P3-prep reading on `82a0743` (`FAIL  packages/schema/generated/ue/BpSchema.h is stale: ...`); it was not re-run here, because seeding means editing a repo file. |
+
+- **Smallest fix for goal 3 (plan item, not a patch).** `packages/schema/generate.mjs`: lift the "is current" comparison
+  (`:519-526`) into a function and add `control: a line appended to a fresh BpSchema.h is reported stale`, run in memory on
+  `fresh.ue + '\n// seeded stale'`, so `check:schema` carries the stale-header proof itself.
+- **Drift seen while reading goal 2 (recorded, not scored; the measure as written passes).** `apps/vr/WP3.1.md:32` still marks
+  the plan request "(planned)" and `:33` pins `/stream` as `405`, while `check:bplink` now pins `plan: 200 JSON` and
+  `stream: 200 text/event-stream`; step 7's proof (`:19`) expects `wings=5` and the `(405)` line, but `BpLink.cpp` makes no
+  `/plan` request (only `/structure` `:86` and `/stream` `:119`) and logs `rooms=` (`:162`) and, for Kettle, the `streams (200)`
+  line (`:125`). `apps/vr/README.md:38-39` says the structs "have only been syntax-checked with clang against stand-in
+  declarations" next to `:15-16` "not ... syntax-checked either ... no clang". The WP3.1 host is named once for all steps
+  ("a UE-equipped host", `:5`), not per step or as Wolf. Plan item: `apps/vr/WP3.1.md` rows `:19`, `:32`, `:33` brought to the
+  server's current answers, and a WP3.1 step that adds the `/plan` request to `BpLink.cpp`; `apps/vr/README.md:38-39` reconciled
+  with `:15-16`.
+- **Owed next.** When the app is up, reconcile: milestone 2's three goal rows, which read open 0% while goals 1 and 2 pass
+  here (and all three passed the 2026-10-20 P3-prep reading); goal 3 stays open on the stale-header control above. Milestone 1's
+  goals 1 to 5 all passed (goal 1 by the 2026-10-21 ruling); any of those rows still reading open 0% is owed the same
+  reconcile. The app's goal rows were not read in this run.
+
 ## P2 Look-dev
 
 Image work on the GPU box, judged by the owner.
