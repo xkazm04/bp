@@ -21,6 +21,27 @@ export const ASSETS = {
     scale: { heightCm: [1, 4], widthCm: [3, 6] }, pivot: 'base-centre', markSlot: 'mark',
   },
 };
+/**
+ * The entry points of the whole art pipeline, one row per apps/vr/ArtSource folder (ASSETS above is only the scoring
+ * table for the two Node-scored folders). `scripts` is every .mjs the folder's manifest names in `regenerate`;
+ * `writer` is the one that writes manifest.json. `live` names a script that submits work or spends money: it is
+ * DECLARED so the pipeline is complete, and no check, sweep or contributor-by-default ever runs it.
+ * check-art-scripts.mjs (entry-points) holds this table equal to what the manifests say and what is on disk.
+ */
+const W = (rel, ...rest) => ({ writer: `scripts/art/${rel}`, scripts: [`scripts/art/${rel}`, ...rest] });
+const STUDIO = W('studio-kit/write_manifest.mjs');
+const MATERIAL = W('materials/write_manifests.mjs');
+const KIT = W('write-manifests.mjs', 'scripts/art/score-assets.mjs');
+export const ENTRY_POINTS = {
+  'survey-pin': KIT,
+  'fixture-kit': KIT,
+  'city-backdrop': { ...W('city-backdrop/write_manifest.mjs', 'scripts/lookdev/leonardo.mjs'), live: { 'scripts/lookdev/leonardo.mjs': 'paid Leonardo API: spends credits' } },
+  'lamp-agent': { ...W('lamp/write_manifest.mjs', 'scripts/art/lamp/trellis_run.mjs'), live: { 'scripts/art/lamp/trellis_run.mjs': 'queues a job on the owner\'s ComfyUI (port 8188, GPU)' } },
+  'light-table-frame': W('light-table-frame/write_manifest.mjs'),
+  'mat-blueprint-paper': MATERIAL, 'mat-brushed-aluminium': MATERIAL, 'mat-vellum': MATERIAL, 'mat-warm-wood': MATERIAL,
+  'studio-desk-lamp': STUDIO, 'studio-drawing-tubes': STUDIO, 'studio-mug': STUDIO, 'studio-pinned-drawings': STUDIO, 'studio-shelves': STUDIO,
+};
+
 const EPS_M = 1e-4; // 0.1 mm
 
 function readGlb(file) {
