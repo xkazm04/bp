@@ -373,6 +373,9 @@ try {
     call(draft.POST, '/x', 'POST', {}, { product: 'nope', message: 'hi' }),
   ]);
   check('lens-draft refusals: empty, too long, bad session, bad kind, unknown product', bads.map((b) => b.status).join() === '400,400,400,400,404', bads.map((b) => b.status).join());
+  // a reply past the route's stdout cap is reported as too long, not as "no JSON"
+  const big = await call(draft.POST, '/x', 'POST', {}, { product: 'kettle', message: 'DRAFT-BIG' });
+  check('lens-draft: a reply past the stdout cap -> 502 naming the cut, not "no JSON"', big.status === 502 && /too long|cut|truncat/i.test(big.body.error ?? '') && !/no JSON/.test(big.body.error ?? ''), JSON.stringify(big.body).slice(0, 300));
   process.env.BP_CLAUDE_BIN = 'bp-no-such-cli-' + process.pid;
   const t503 = await call(draft.POST, '/x', 'POST', {}, { product: 'kettle', message: 'hi' });
   check('lens-draft without the CLI -> 503', t503.status === 503 && t503.body.error === J.CLI_MISSING, JSON.stringify(t503));

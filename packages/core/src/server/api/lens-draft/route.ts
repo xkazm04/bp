@@ -20,7 +20,7 @@ import { takenLooks } from '@bp/core/scan/jobs';
 const TIMEOUT_MS = 180_000, MAX_MESSAGE = 4000, OUT_CAP = 4 << 20;
 const SESSION = /^[0-9a-f-]{8,64}$/i;
 
-type Outcome = { kind: 'exit'; code: number | null; out: string; err: string } | { kind: 'timeout' } | { kind: 'error'; missing: boolean; message: string };
+type Outcome = { kind: 'exit'; code: number | null; out: string; err: string; truncated: boolean } | { kind: 'timeout' } | { kind: 'error'; missing: boolean; message: string };
 
 /** The CLI's `--output-format json` answer: `{ result, session_id, is_error }` (the last result object if it printed several). */
 function readResult(out: string): { result: string; session?: string; isError: boolean } | null {
@@ -59,15 +59,19 @@ export async function POST(req: Request): Promise<Response> {
   if (!s.ok) return Response.json({ error: s.error }, { status: s.missing ? 503 : 500 });
   const child = s.child;
   const outcome = await new Promise<Outcome>((resolve) => {
-    let out = '', err = '', settled = false;
+    let out = '', err = '', settled = false, truncated = false;
     const end = (o: Outcome) => { if (settled) return; settled = true; clearTimeout(timer); req.signal.removeEventListener('abort', onAbort); resolve(o); };
     const timer = setTimeout(() => { killTree(child); end({ kind: 'timeout' }); }, TIMEOUT_MS);
     const onAbort = () => { killTree(child); end({ kind: 'error', missing: false, message: 'the request was cancelled' }); };
     req.signal.addEventListener('abort', onAbort);
-    child.stdout?.on('data', (d: Buffer) => { if (out.length < OUT_CAP) out += d.toString('utf8'); });
+    child.stdout?.on('data', (d: Buffer) => {
+      if (out.length >= OUT_CAP) { truncated = true; return; }
+      out += d.toString('utf8');
+      if (out.length > OUT_CAP) { out = out.slice(0, OUT_CAP); truncated = true; }
+    });
     child.stderr?.on('data', (d: Buffer) => { err = (err + d.toString('utf8')).slice(-8192); });
     child.on('error', (e: NodeJS.ErrnoException) => end({ kind: 'error', missing: e.code === 'ENOENT', message: e.message }));
-    child.on('close', (code) => end({ kind: 'exit', code, out, err }));
+    child.on('close', (code) => end({ kind: 'exit', code, out, err, truncated }));
     child.stdin?.end(prompt);
   });
 
@@ -75,7 +79,7 @@ export async function POST(req: Request): Promise<Response> {
   if (outcome.kind === 'error') return Response.json({ error: outcome.missing ? 'Claude Code CLI not found (set BP_CLAUDE_BIN)' : outcome.message }, { status: outcome.missing ? 503 : 502 });
   const res = readResult(outcome.out);
   if (outcome.code !== 0 || !res || res.isError) {
-    const why = (res?.isError && res.result) || outcome.err.trim().split(/\r?\n/).pop() || (res ? '' : 'Claude answered no JSON') || `exit ${outcome.code}`;
+    const why = (res?.isError && res.result) || outcome.err.trim().split(/\r?\n/).pop() || (res ? '' : outcome.truncated ? `Claude's reply was longer than ${OUT_CAP >> 20} MiB and was cut off; ask for a shorter answer` : 'Claude answered no JSON') || `exit ${outcome.code}`;
     return Response.json({ error: `Claude Code failed: ${why}` }, { status: 502 });
   }
   const sess = res.session ?? session;
