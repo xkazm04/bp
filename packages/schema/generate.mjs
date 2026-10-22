@@ -600,13 +600,27 @@ if (isMain) {
     console.log(`${ajvProblems.length ? 'FAIL' : 'ok  '}  all ${ROOTS.length} schemas compile under ajv strict mode, every $ref resolving${ajvProblems.length ? ': ' + ajvProblems.slice(0, 4).join('; ') : ''}`);
     if (ajvProblems.length) failed++;
     const read = (f) => (fs.existsSync(f) ? norm(fs.readFileSync(f, 'utf8')) : null);
-    for (const [f, text] of outputs) {
+    // The stale loop takes what it reads as a parameter, so the self-proof below can hand it a stale committed text: a
+    // loop that compared the fresh text with itself printed 'is current' for all three files and every control stayed
+    // green (mutation A1 in plan.md, 2026-10-22), because the controls called staleVerdict, never this loop.
+    const staleReport = (read) => outputs.map(([f, text]) => {
       const have = read(f), rel = path.relative(path.join(HERE, '../..'), f).split(path.sep).join('/');
       const v = have === null ? null : staleVerdict(have, text);
-      if (v && !v.stale) { console.log(`ok    ${rel} is current (${counts})`); continue; }
-      failed++;
-      if (have === null) { console.log(`FAIL  ${rel} is missing: run npm run schema:generate`); continue; }
-      console.log(`FAIL  ${rel} is stale: run npm run schema:generate (first difference at line ${v.line}: committed "${v.committed}", fresh "${v.fresh}")`);
+      if (v && !v.stale) return { ok: true, line: `ok    ${rel} is current (${counts})` };
+      if (have === null) return { ok: false, line: `FAIL  ${rel} is missing: run npm run schema:generate` };
+      return { ok: false, line: `FAIL  ${rel} is stale: run npm run schema:generate (first difference at line ${v.line}: committed "${v.committed}", fresh "${v.fresh}")` };
+    });
+    for (const r of staleReport(read)) { console.log(r.line); if (!r.ok) failed++; }
+    // self-proof: handed a BpSchemaFixups.h that differs at one line and a missing BpSchema.h, the same loop reports the
+    // first stale at that line and the second missing, and the TS file (handed its fresh text) current
+    {
+      const fixLines = fresh.fix.split('\n'), at = fixLines.findIndex((l) => l.includes('CopyRaw(Json, TEXT("glyph")'));
+      const handed = (f) => (f === OUT_FIX ? fixLines.map((l, i) => (i === at ? l + ' zzStaleProbe' : l)).join('\n') : f === OUT_UE ? null : fresh.ts);
+      const got = staleReport(handed).map((r) => r.line);
+      const proved = at >= 0 && got[0].startsWith('ok  ') && got[1].startsWith('FAIL') && got[1].includes(' is missing')
+        && got[2].startsWith('FAIL') && got[2].includes(` is stale: run npm run schema:generate (first difference at line ${at + 1}:`);
+      console.log(`${proved ? 'ok  ' : 'FAIL'}  self-proof: the stale loop reads what it is handed (BpSchemaFixups.h differing at line ${at + 1} is stale there, BpSchema.h absent is missing, the TS current)${proved ? '' : ': got ' + got.map((l) => l.slice(0, 120)).join(' / ')}`);
+      if (!proved) failed++;
     }
     // every schema field is held by the committed headers: mapped under its key, or a <Key>_ field FixUp fills
     const cov = coverage(fresh.m, read(OUT_UE) ?? '', read(OUT_FIX) ?? '');
@@ -618,6 +632,28 @@ if (isMain) {
     const holeCaught = holed !== fresh.fix && coverage(fresh.m, fresh.ue, holed).problems.some((p) => p === 'Rule.short: neither mapped nor copied by FixUp');
     console.log(`${holeCaught ? 'ok  ' : 'FAIL'}  control: deleting Rule.short's fix-up fails the coverage`);
     if (!holeCaught) failed++;
+    // The control above deletes a renamed carry's CopyKey and nothing else, so it stayed green with the raw arm, the
+    // UPROPERTY scope and the recursion arm of coverage() each gutted (mutations B1 to B3 in plan.md, 2026-10-22). One
+    // self-proof per arm, each a single edit to the fresh headers that must come back as exactly its own problem:
+    const covProbes = [
+      // B1: the raw arm. Each CopyRaw removed must be reported under its own field.
+      ['a CopyRaw removed (cross_refs)', fresh.ue, fresh.fix.replace('\n\t\tbOk &= CopyRaw(Json, TEXT("cross_refs"), Out.CrossRefs_);', ''), 'Context.cross_refs: neither mapped nor copied by FixUp'],
+      ['a CopyRaw removed (glyph)', fresh.ue, fresh.fix.replace('\n\t\tbOk &= CopyRaw(Json, TEXT("glyph"), Out.Glyph_);', ''), 'Presentation.glyph: neither mapped nor copied by FixUp'],
+      // B2: the UPROPERTY is looked for in its own struct. FBpLensManifest declares `FString Short_;` too, so a
+      // search of the whole header would find it and pass FBpRule's missing field.
+      ['FBpRule.Short_ removed while FBpLensManifest.Short_ stays', (() => {
+        const s = fresh.ue.indexOf('struct BPLINK_API FBpRule\n'), i = fresh.ue.indexOf('\n\tFString Short_;', s);
+        return s < 0 || i < 0 ? fresh.ue : fresh.ue.slice(0, i) + fresh.ue.slice(i + '\n\tFString Short_;'.length);
+      })(), fresh.fix, 'Rule.short: no UPROPERTY FString Short_'],
+      // B3: the recursion arm. FBpHealth holds FBpRule, whose Short_ needs FixUp, so its FixUpArray is required.
+      ['FBpHealth\'s recursion into rules removed', fresh.ue, fresh.fix.replace('\n\t\tbOk &= FixUpArray(Json, TEXT("rules"), Out.rules);', ''), 'Health.rules: FixUp does not recurse into FBpRule'],
+    ];
+    for (const [what, ue, fix, want] of covProbes) {
+      const edited = ue !== fresh.ue || fix !== fresh.fix, got = coverage(fresh.m, ue, fix).problems;
+      const proved = edited && got.length === 1 && got[0] === want;
+      console.log(`${proved ? 'ok  ' : 'FAIL'}  self-proof: coverage reports ${what} as "${want}"${proved ? '' : `: ${edited ? `got ${got.length ? got.join('; ') : 'no problem'}` : 'the edit matched nothing in the fresh header'}`}`);
+      if (!proved) failed++;
+    }
     // TS parity: the hand-written types the code uses name the generated fields, with the same optionality
     const ROOT = path.join(HERE, '../..');
     const { compare, wireSource } = await import('./parity.mjs');
@@ -661,6 +697,23 @@ if (isMain) {
     const enumWideCaught = enumWide !== fresh.ts && compare(enumWide, handTs, wireTs).problems.some((p) => p === 'Wave.status: the enum disagrees - in the schema, not in types.ts: zzParityProbe');
     console.log(`${enumWideCaught ? 'ok  ' : 'FAIL'}  control: a value added to the wave status enum fails the parity`);
     if (!enumWideCaught) failed++;
+    // The controls above loosen a field or drop one from the generated side, so they stayed green with three parts of
+    // compare() gutted (mutations C2 to C4 in plan.md, 2026-10-22): a field only the schema names, a field the schema
+    // requires and types.ts makes optional, and a root pair (Plan) never walked. The roots are named HERE, not read from
+    // parity.mjs's PAIRS, so a pair dropped there cannot also drop its probe. One field per root, added on the generated
+    // side, must come back as "in the schema, not in types.ts" under that root (a root reached only nested, like
+    // Proposal under ScanSnapshot.proposals, counts: the property is that every root's fields are compared).
+    const PARITY_ROOTS = ['AppStructure', 'AppStructureEvent', 'LensManifest', 'ScanSnapshot', 'ScanJob', 'Proposal', 'Wave', 'Plan'];
+    const extraGen = PARITY_ROOTS.reduce((t, g) => t.replace(`\nexport interface ${g} {\n`, `\nexport interface ${g} {\n  zzPairProbe_${g}: string;\n`), fresh.ts);
+    const extraGot = compare(extraGen, handTs, wireTs).problems;
+    const unreached = PARITY_ROOTS.filter((g) => !extraGot.some((p) => p.endsWith(`.zzPairProbe_${g}: in the schema, not in types.ts`)));
+    console.log(`${unreached.length ? 'FAIL' : 'ok  '}  self-proof: a field added to each of the ${PARITY_ROOTS.length} generated roots is reported as in the schema, not in types.ts${unreached.length ? ': not reported for ' + unreached.join(', ') : ''}`);
+    if (unreached.length) failed++;
+    const strict = fresh.ts.replace(/(\nexport interface ScanJob \{\n(?:  .*\n)*?)  exit_code\?: number;/, '$1  exit_code: number;');
+    const strictGot = strict !== fresh.ts ? compare(strict, handTs, wireTs).problems : [];
+    const strictCaught = strictGot.length === 1 && strictGot[0] === 'ScanJob.exit_code: required in the schema, optional in types.ts';
+    console.log(`${strictCaught ? 'ok  ' : 'FAIL'}  self-proof: ScanJob.exit_code made required in the generated types (optional in jobs.ts) fails the parity${strictCaught ? '' : `: got ${strictGot.length ? strictGot.join('; ') : 'no problem'}`}`);
+    if (!strictCaught) failed++;
     // scan-wire-1's declared bounds on a wave against the constants the server refuses by. The schema is normative
     // for what apps/server sends, and it said `{ "type": "string" }` where packages/core/src/scan/waves.ts:11
     // refuses a name over MAX_NAME and more than MAX_PACKAGES packages, and `{ "type": "string" }` for a proposal
@@ -822,7 +875,10 @@ if (isMain) {
       const at = lines.findIndex((l, i) => i >= lines.length >> 1 && /[A-Za-z]/.test(l) && l !== lines[i + 1] && i + 1 < lines.length); // a meaningful line from the body, not repeated by the next
       const mutated = lines.map((l, i) => (i === at ? l + ' zzStaleProbe' : l)).join('\n');
       const deleted = lines.filter((_, i) => i !== at).join('\n');
-      for (const [what, committed] of [['one line mutated', mutated], ['one line deleted', deleted]]) {
+      // the tail cut after line `at` (the committed file a prefix of the fresh one, as when a struct is appended):
+      // a verdict that only looked for a differing line among the committed lines read this as current (mutation A2)
+      const truncated = lines.slice(0, at).join('\n');
+      for (const [what, committed] of [['one line mutated', mutated], ['one line deleted', deleted], ['its tail cut from line ' + (at + 1), truncated]]) {
         const v = at >= 0 ? staleVerdict(committed, text) : { stale: false };
         const ok = v.stale && v.line === at + 1;
         console.log(`${ok ? 'ok  ' : 'FAIL'}  control: ${rel} with ${what} is reported stale at line ${at + 1}${ok ? '' : ` (got ${v.stale ? 'line ' + v.line : 'current'})`}`);

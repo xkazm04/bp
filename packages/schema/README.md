@@ -37,7 +37,10 @@ npm run check:schema      # fails while a generated file is stale, when a schema
                           #   Kettle's map, its events, the fixtures and every lens manifest read the way FromJson
                           #     would, so a held field never fails a parse
                           # Every one of those has a seeded control beside it, so a matcher that stopped biting
-                          # fails rather than reporting a clean tree.
+                          # fails rather than reporting a clean tree. The three main rules (stale, coverage,
+                          # parity) also carry `self-proof:` lines, added 2026-10-22 after 8 of 11 checker
+                          # mutations survived every control (the table is in docs/concepts/vr-light-table/plan.md,
+                          # 'check:schema's controls mutation-tested').
 ```
 
 ### Decision (2026-10-20): hand-written TS types, generated TS as a parity artifact
