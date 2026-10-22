@@ -10,12 +10,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { emptyScan, isEmptyScan, type Activity, type Coverage, type DecisionBody, type Measurement, type Pack, type Proposal, type Release, type Run, type ScanDelta, type ScanSnapshot, type Shot } from '../scan/types.ts';
+import { isObj } from '@bp/core/standard/guards';
 
 if (typeof window !== 'undefined') throw new Error('store.server.ts is server-only');
 
 type Row = Record<string, unknown>;
 type Table = keyof ScanSnapshot;
-const isObject = (v: unknown): boolean => typeof v === 'object' && v !== null && !Array.isArray(v);
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
 /**
  * Columns that hold JSON text, per table, each with the shape the wire promises. The writer is another
@@ -23,8 +23,8 @@ const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is
  * the text is not one), an object column is an object or omitted. Never the raw text, never `null`.
  */
 const JSON_COLS: Partial<Record<Table, Record<string, (v: unknown) => unknown>>> = {
-  runs: { lenses: strings, scope: (v) => (isObject(v) ? v : undefined) },
-  shots: { report: (v) => (isObject(v) ? v : undefined) },
+  runs: { lenses: strings, scope: (v) => (isObj(v) ? v : undefined) },
+  shots: { report: (v) => (isObj(v) ? v : undefined) },
 };
 /**
  * Columns whose default is the absent value on the wire, per table: v4's `proposals.origin` is NOT NULL DEFAULT 'scan',

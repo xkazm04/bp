@@ -6,10 +6,10 @@
 import type { LensEntry } from '@bp/core/standard/types';
 import { checkLensManifest } from '@bp/core/scan/manifest-check';
 import { PROJECT_LENS_ID, TEMP_LENS_ID } from '@bp/core/scan/jobs';
+import { isObj } from '@bp/core/standard/guards';
 
 export const TEMP_LENS_KEY = 'bp.tmpLenses.kettle';
 
-const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
 /** null when `x` is a stored lens entry (temporary or project) the model can take; else why not (one phrase). */
 export function tempEntryProblem(x: unknown): string | null {

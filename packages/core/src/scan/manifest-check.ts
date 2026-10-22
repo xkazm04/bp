@@ -5,6 +5,7 @@
 // Pure and import-free at runtime, so Node checks load it as-is.
 import type { ComputedHealth, Density, FieldType, GlyphName, LineName, MetricMethod } from '@bp/core/standard/types';
 import { PROJECT_LENS_ID, TEMP_LENS_ID } from './jobs.ts';
+import { isObj } from '@bp/core/standard/guards';
 
 // Records, not lists: a name added to the type without one here fails the typecheck.
 const GLYPHS: Record<GlyphName, 1> = { bars: 1, 'set-square': 1, brackets: 1, pulse: 1, padlock: 1, check: 1, stopwatch: 1 };
@@ -22,7 +23,6 @@ const PATH_OK = /^[Mm][MmZzLlHhVvCcSsQqTtAa0-9eE.,+\- ]{0,2047}$/;
 /** The steps a composed scan may hold (spec 8.2), and the one skill lens-scan 1.3.0 runs. */
 const MAX_STEPS = 8, SKILLS = new Set(['conform']), MAX_BUDGET = 50;
 
-const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const has = (r: Record<string, 1> | Partial<Record<string, 1>>, v: unknown): boolean => typeof v === 'string' && Object.hasOwn(r, v);
 const text = (v: unknown): boolean => typeof v === 'string' && v.trim() !== '';
 const only = (o: Record<string, unknown>, keys: string[]): boolean => Object.keys(o).every((k) => keys.includes(k));

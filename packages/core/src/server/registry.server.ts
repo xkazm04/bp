@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { PRODUCTS_FILE, writeAtomic } from './products.server';
 import { RESERVED_SLUGS, SLUG_RE } from '../scan/readiness';
+import { isObj } from '@bp/core/standard/guards';
 
 if (typeof window !== 'undefined') throw new Error('registry.server.ts is server-only');
 
@@ -37,7 +38,6 @@ function writeDoc(doc: Doc): void {
   writeAtomic(file(), JSON.stringify(doc, null, 2) + '\n');
 }
 
-const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
 function checkName(v: unknown): string | null {
   return typeof v === 'string' && v.trim() ? null : 'name must be a non-empty string';

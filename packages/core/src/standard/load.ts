@@ -14,6 +14,7 @@ import type {
 import { FEATURE_BOUND_FIELDS } from './types.ts';
 import { conditionFields, evaluateLens, fillReason, type EvalContext } from './health.ts';
 import { generalHealth, reasonOf, stageOn } from './present.ts';
+import { isObj } from '@bp/core/standard/guards';
 
 // ------------------------------------------------------------------------------------ the model
 export type { Stage, Health, Density, Scalar, LensField, LensManifest, FacetValues, FacetOverride, Kpi, StructureEvent, Variation };
@@ -193,7 +194,6 @@ export interface LoadOptions {
 }
 
 // --------------------------------------------------------------------------------------- helpers
-const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const str = (v: unknown, d = ''): string => (typeof v === 'string' ? v : d);
 const strs = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
 const PRIORITIES: readonly Priority[] = allOf<Priority>({ P0: true, P1: true, P2: true, P3: true });

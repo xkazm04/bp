@@ -13,6 +13,7 @@
 import fs from 'node:fs';
 import { jsonOnly, localHost, localOnly } from '@bp/core/scan/local-only';
 import type { Route } from './mount.ts';
+import { isObj } from '@bp/core/standard/guards';
 
 export type ToolClass = 'AUTO' | 'GATED';
 export type SideEffects = 'none' | 'internal' | 'external';
@@ -108,7 +109,6 @@ export interface HostOptions {
 const KNOWN_KEY = 1000;
 /** A card id as the daemon mints them (`apr_` and 12 hex digits), with room to spare; never a dot segment. */
 const CARD_ID = /^[A-Za-z0-9_-]{1,128}$/;
-const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
 
 export class AthenaHost {

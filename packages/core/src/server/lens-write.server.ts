@@ -11,6 +11,7 @@ import type { LensEntry, LensManifest } from '@bp/core/standard/types';
 import { storeDir, writeAtomic } from './products.server';
 import { takenLooks, type LensLook } from '../scan/jobs';
 import type { ProductEntry } from '../scan/types';
+import { isObj } from '@bp/core/standard/guards';
 
 if (typeof window !== 'undefined') throw new Error('lens-write.server.ts is server-only');
 
@@ -20,7 +21,6 @@ interface Read { doc: Doc; indent: string; eol: string }
 
 const fail = (status: 400 | 403 | 404 | 409 | 500, error: string): { ok: false; status: typeof status; error: string } => ({ ok: false, status, error });
 const mapFile = (p: ProductEntry): string => path.join(storeDir(p), 'app-structure.json');
-const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
 function readMap(file: string): LensWrite<Read> {
   let text: string;
