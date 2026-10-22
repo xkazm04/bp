@@ -20,6 +20,7 @@
 //           hand: every selector in the shell's stylesheets carrying `position: sticky` yields the classes it names,
 //           and each JSX element carrying one must sit directly under its table/scroll parent (`role="table"`,
 //           `<thead>`, `<table`, or the page root) - judged by indentation, which this tree formats consistently.
+//   breakpoints  every `@container (max-width)` prelude in the shell's stylesheets names one width (.lg-body is the only container).
 //   colour  no raw colour literal in the shell's stylesheets except ledger-theme.css, which IS the palette file
 //           (docs/blueprint-ui.md: design tokens; the same rule check-train-quality holds for train/**'s CSS).
 //           Comments are stripped first, or a file that TALKS about the rule and breaks it passes.
@@ -30,7 +31,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { stripComments, stripBlock } from './lib/source.ts';
+import { stripComments, stripBlock, blankBlock } from './lib/source.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SHELL = 'apps/web/src/components/ledger';
@@ -151,6 +152,26 @@ for (const f of css) {
 }
 if (!pageRules) fail('header: no top-placed .lg-page rule was found - the rule stopped matching');
 console.log(`header      ${pageRules} top-placed .lg-page rule(s) / ${pageTokenised} read the header token`);
+
+// ---------------------------------------------------------------------------------------------------- breakpoints
+// `.lg-body` is the shell's one `container-type: inline-size`, so every `@container (max-width: N)` prelude in the shell's
+// stylesheets resolves against the same width. Two different N there leave a band where the rows have folded into cards
+// and the wave strip is still a tab row (760 vs 720 once). The set of widths is read off the preludes, not kept by hand.
+const containerWidths = new Map();
+let containerPreludes = 0;
+for (const f of css) {
+  const src = blankBlock(fs.readFileSync(f, 'utf8'));
+  src.split('\n').forEach((ln, i) => {
+    for (const m of ln.matchAll(/@container[^{]*\(\s*max-width\s*:\s*(\d+)px\s*\)/g)) {
+      containerPreludes++;
+      if (!containerWidths.has(m[1])) containerWidths.set(m[1], []);
+      containerWidths.get(m[1]).push(`${rel(f)}:${i + 1}`);
+    }
+  });
+}
+if (!containerPreludes) fail('breakpoints: no `@container (max-width: Npx)` prelude was found in the shell stylesheets - the rule stopped matching');
+if (containerWidths.size > 1) fail(`breakpoints: one container (.lg-body), ${containerWidths.size} fold widths: ${[...containerWidths].map(([w, at]) => `${w}px at ${at.join(', ')}`).join(' vs ')}\n       between them the rows are cards while the other fold is still unfolded: name one width`);
+console.log(`breakpoints ${containerPreludes} @container preludes in ${css.length} shell stylesheets -> ${[...containerWidths.keys()].map((w) => w + 'px').join(', ')}`);
 
 // ----------------------------------------------------------------------------------------------------
 if (!code.length || !css.length) { console.log(`FAIL walked no shell file under ${SHELL} (train/** is check-train-quality.mjs's)`); process.exit(2); }
