@@ -143,7 +143,14 @@ for (const m of listeners) {
   const guarded = (bodyText.match(/try \{[^}]*JSON\.parse/g) ?? []).length;
   expect(parses > 0, `the '${name}' listener no longer parses its event (update this check)`);
   expect(guarded === parses, `the '${name}' listener parses ${parses} times and guards ${guarded}: one malformed event throws out of the listener and the stream freezes silently`);
+  // ...and a skipped event leaves a record: every catch hands the event's own name to skipped()
+  const catches = (bodyText.match(/catch\b/g) ?? []).length;
+  const recorded = (bodyText.match(new RegExp(`catch \\(e\\) \\{ skipped\\('${name}', e\\)`, 'g')) ?? []).length;
+  expect(catches > 0 && recorded === catches, `the '${name}' listener has ${catches} catch blocks and ${recorded} record the skipped event: an unreadable event leaves no trace`);
 }
+// skipped() is the one place the record is made: a warning that names the event, rate-limited per name
+const skippedFn = clientSrc.match(/const skipped = [\s\S]*?\n\};/)?.[0] ?? '';
+expect(/console\.warn\(/.test(skippedFn) && /\$\{event\}/.test(skippedFn) && /n === 1 \|\| n % \d+ === 0/.test(skippedFn), 'skipped() no longer warns with the event name behind a per-name rate limit');
 
 // --------------------------------------------- 2. a job that ended still reports it on the plan
 // scanViews draws a finished job's outline for LINGER_MS after it ended - all ticks for `done`, the bad colour
@@ -245,6 +252,70 @@ for (const h of HELPERS) {
   const text = refusalText(out);
   expect(DEV_WORDS.every((d) => !text.includes(d)) && /in time/.test(text), `${h.name}'s timeout does not reach the reader as a sentence`, text);
 }
+
+// --------------------------------------------- 5. one request per route, and every exported helper is used
+// postLensDraft had no caller because `send` took no signal and LensChat re-implemented the request; postLens
+// was superseded by postProjectLens. Every function helper client.ts exports must have a consumer in the web
+// app, and a caller's signal must cancel a lens-draft turn (not wait out the 200 s bound).
+const consumers = (name: string): number => {
+  let n = 0;
+  const walk = (dir: string) => {
+    for (const d of fs.readdirSync(dir, { withFileTypes: true })) {
+      const f = path.join(dir, d.name);
+      if (d.isDirectory()) walk(f);
+      else if (/\.tsx?$/.test(d.name) && f !== path.join(SRC, 'lib/scan/client.ts') && new RegExp(`\\b${name}\\b`).test(readStripped(f))) n++;
+    }
+  };
+  walk(SRC);
+  return n;
+};
+const helperNames = [...clientSrc.matchAll(/export (?:async )?(?:const|function) ((?:post|patch|delete|execute|get)[A-Z]\w*)/g)].map((m) => m[1]);
+expect(helperNames.length >= 10, `found ${helperNames.length} exported request helpers (update this check)`);
+for (const h of helperNames) expect(consumers(h) > 0, `client.ts exports ${h} and nothing in the web app calls it`);
+expect(!/fetch\(\s*'\/api\/lens-draft'/.test(readStripped(path.join(SRC, 'components/ledger/lens/LensChat.tsx'))), 'LensChat.tsx makes its own /api/lens-draft request instead of calling postLensDraft');
+{
+  const ac = new AbortController();
+  asked = [];
+  const p = settle(client.postLensDraft('p', 'hello', undefined, 'project', ac.signal));
+  setTimeout(() => ac.abort(), 5);
+  const out = await p;
+  expect(out !== PENDING && (out as { name?: string }).name === 'AbortError', 'aborting the signal passed to postLensDraft does not reject the turn with an AbortError', String((out as { name?: string })?.name ?? out));
+}
+
+// --------------------------------------------- 6. a list that did not answer is not "no scan store"
+// useLiveProduct took `missing` from the project list's `live` flag, and a failed or timed-out list read became
+// `[]` before it got there, so a product with a perfectly good store read as having none. The list has three
+// outcomes (live, not live, no answer) and the status for each is pinned here; the stream settles the unknown.
+const mk = (slug: string, live: boolean) => ({ slug, name: slug, root: '/r', live, readiness: {} }) as never;
+const verdict = (list: unknown, slug = 'p') => projects.statusOfStore(projects.storeFromList(list as never, slug));
+expect(verdict([mk('p', true)]) === 'live', 'a list that says the product has a store does not read live', verdict([mk('p', true)]));
+expect(verdict([mk('p', false)]) === 'missing', 'a list that says the product has no store does not read missing (the genuine first-run state)', verdict([mk('p', false)]));
+expect(verdict([mk('other', true)]) === 'missing', 'a product absent from an answered list does not read missing', verdict([mk('other', true)]));
+expect(verdict(null) === 'loading', 'a list that did not answer does not leave the status loading (it must not claim there is no store)', verdict(null));
+expect(!/refreshProjects\(\)\.then\(\(l\) => l \?\? /.test(clientSrc), 'client.ts turns a failed project list into an empty one again');
+expect(/storeFromList\(/.test(clientSrc) && /statusOfStore\(/.test(clientSrc), 'useLiveProduct no longer takes its store verdict from projects.ts storeFromList / statusOfStore');
+
+// --------------------------------------------- 7. the feature count behind a scan has one site
+// The button shows count(scope) and the toast used to recompute the same expression inline: two sources for one
+// claim. The expression may appear once in ScanMenu.tsx, and that one is count()'s body.
+const menuSrc = readStripped(path.join(SRC, 'components/ScanMenu.tsx')).replace(/\r\n/g, '\n');
+const countSites = (menuSrc.match(/P\.base\.features\.length : /g) ?? []).length;
+expect(countSites === 1, `ScanMenu.tsx computes the feature count at ${countSites} sites, not 1`);
+expect(/const count = \(sc: ScanScope\) => \(sc\.kind === 'all' \? P\.base\.features\.length : /.test(menuSrc), 'the one feature-count expression is no longer count()');
+
+// --------------------------------------------- 8. the UI contract's fetch-helper list describes the code
+// docs/blueprint-ui.md names the helpers of the scan-jobs paragraph and their request bounds. Every helper named
+// must be exported by client.ts and have a consumer, and both bounds must be stated with the values the code has.
+const uiDoc = fs.readFileSync(path.join(ROOT, 'docs/blueprint-ui.md'), 'utf8').replace(/\r\n/g, '\n');
+const listed = uiDoc.match(/Fetch helpers: ((?:`\w+`(?:, )?)+),? each rejecting/)?.[1];
+expect(!!listed, 'docs/blueprint-ui.md no longer has the "Fetch helpers: ..., each rejecting" list (update this check)');
+for (const h of (listed ?? '').match(/\w+/g) ?? []) {
+  expect(helperNames.includes(h), `docs/blueprint-ui.md lists ${h} among the fetch helpers and client.ts does not export it`);
+  expect(consumers(h) > 0, `docs/blueprint-ui.md lists ${h} among the fetch helpers and nothing calls it`);
+}
+const para = uiDoc.slice(uiDoc.indexOf('Fetch helpers:'), uiDoc.indexOf('Fetch helpers:') + 900);
+expect(para.includes(`\`REQUEST_TIMEOUT_MS\` (${client.REQUEST_TIMEOUT_MS / 1000} s)`), 'docs/blueprint-ui.md does not state REQUEST_TIMEOUT_MS with the code\'s value');
+expect(para.includes(`\`LENS_DRAFT_TIMEOUT_MS\` (${client.LENS_DRAFT_TIMEOUT_MS / 1000} s)`), 'docs/blueprint-ui.md does not state LENS_DRAFT_TIMEOUT_MS with the code\'s value');
 
 if (failures.length) { console.log(failures.map((f) => 'FAIL ' + f).join('\n')); console.log(`check-scan-client: ${failures.length} failed, ${held} held`); process.exit(1); }
 console.log(`check-scan-client: ${held} expectations held (${SHAPES.length} rejection shapes, ${DEV_WORDS.length} developer strings forbidden, ${HELPERS.length} request helpers bounded)`);

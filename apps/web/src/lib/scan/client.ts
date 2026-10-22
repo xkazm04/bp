@@ -3,12 +3,12 @@
 // store.server.ts and the routes under src/app/api/products.
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { AppStructure, LensEntry, LensManifest } from '@bp/core/standard/types';
-import { refreshProjects } from './projects.ts';
+import { refreshProjects, statusOfStore, storeFromList } from './projects.ts';
 import { latestRun } from '@bp/core/scan/derive';
 import type { ScanJob, ScanScope } from '@bp/core/scan/jobs';
 import type { DispatchResult } from './actions.ts';
 import type { Wave, WaveBody, WaveDispatchResult } from '@bp/core/scan/waves';
-import { fullScan as full, isEmptyScan as isEmpty, type DecisionBody, type Proposal, type ProductInfo, type ScanSnapshot } from '@bp/core/scan/types';
+import { fullScan as full, isEmptyScan as isEmpty, type DecisionBody, type Proposal, type ScanSnapshot } from '@bp/core/scan/types';
 import type { CommitDiff, ReleaseCreated, TriageBody, TriageResult, VersionSuggestion } from '@bp/core/scan/types';
 import { errorText, parseCommitDiff, parseJson, parseReleaseCreated, parseScanJob, parseTriageResult, parseVersionSuggestion, parseWaveBody, parseWaveDispatch, parseWaves, type Parsed } from '@bp/core/train/wire';
 import { mergeScan } from '@bp/core/scan/merge';
@@ -54,6 +54,14 @@ const bound = (signal?: AbortSignal, ms: number = REQUEST_TIMEOUT_MS): AbortSign
   return signal ? AbortSignal.any([signal, t]) : t;
 };
 
+/** Unreadable stream events seen, per event name: the first of each is warned about, then every 100th, so a noisy server cannot flood the console. */
+const unreadable = new Map<string, number>();
+const skipped = (event: string, e: unknown) => {
+  const n = (unreadable.get(event) ?? 0) + 1;
+  unreadable.set(event, n);
+  if (n === 1 || n % 100 === 0) console.warn(`scan stream: skipped an unreadable '${event}' event (${n} so far): ${(e as Error)?.message ?? e}`);
+};
+
 // ------------------------------------------------------------------------------------------- jobs
 /** Every jobs event per slug, log lines included, for the views that show them (useLiveJobs). */
 const jobStore = new Map<string, { jobs: ScanJob[]; subs: Set<() => void> }>();
@@ -88,10 +96,10 @@ export function useLiveProduct(slug: string | null): LiveProduct {
     if (!slug) { setState({ slug, live: MISSING }); return; }
     let dead = false, es: EventSource | null = null, timer: ReturnType<typeof setTimeout> | undefined, attempt = 0;
     let jobs: ScanJob[] = NO_JOBS;
-    let scan: ScanSnapshot | undefined, hasStore = false, mapText = '', mapRev = '', rev = 0, fetching = false, again = false, retry: ReturnType<typeof setTimeout> | undefined;
+    let scan: ScanSnapshot | undefined, hasStore: boolean | undefined = undefined, listTimer: ReturnType<typeof setTimeout> | undefined, mapText = '', mapRev = '', rev = 0, fetching = false, again = false, retry: ReturnType<typeof setTimeout> | undefined;
     const ac = new AbortController(), base = api(slug);
     const put = (f: (l: LiveProduct) => LiveProduct) => { if (!dead) setState((s) => ({ slug, live: f(s.slug === slug ? s.live : { status: 'loading', events: '', jobs: NO_JOBS }) })); };
-    const shown = (): LiveProduct['status'] => (hasStore ? 'live' : 'missing');
+    const shown = (): LiveProduct['status'] => statusOfStore(hasStore);
 
     /** Fetch the map; a body equal to the one held changes nothing. Returns false on a failed fetch (the old map stays). */
     const refetch = async (): Promise<boolean> => {
@@ -125,7 +133,7 @@ export function useLiveProduct(slug: string | null): LiveProduct {
       src.addEventListener('snapshot', (ev) => {
         attempt = 0;
         let sent: Partial<ScanSnapshot>;
-        try { sent = JSON.parse((ev as MessageEvent<string>).data) as Partial<ScanSnapshot>; } catch { return; }
+        try { sent = JSON.parse((ev as MessageEvent<string>).data) as Partial<ScanSnapshot>; } catch (e) { skipped('snapshot', e); return; }
         scan = full(sent);
         if (!isEmpty(scan)) hasStore = true;
         const s = scan;
@@ -135,7 +143,7 @@ export function useLiveProduct(slug: string | null): LiveProduct {
       });
       src.addEventListener('jobs', (ev) => {
         let next: ScanJob[];
-        try { next = JSON.parse((ev as MessageEvent<string>).data) as ScanJob[]; } catch { return; }
+        try { next = JSON.parse((ev as MessageEvent<string>).data) as ScanJob[]; } catch (e) { skipped('jobs', e); return; }
         if (!Array.isArray(next)) return;
         setJobs(slug, next);
         const discrete = jobsKey(next) !== jobsKey(jobs);
@@ -145,13 +153,13 @@ export function useLiveProduct(slug: string | null): LiveProduct {
       // the map files changed under the page (the skill wrote its metrics back): take the new map
       src.addEventListener('map', (ev) => {
         let r = '';
-        try { r = String((JSON.parse((ev as MessageEvent<string>).data) as { rev?: unknown }).rev ?? ''); } catch { return; }
+        try { r = String((JSON.parse((ev as MessageEvent<string>).data) as { rev?: unknown }).rev ?? ''); } catch (e) { skipped('map', e); return; }
         if (r && r !== mapRev) refresh();
       });
       src.addEventListener('delta', (ev) => {
         if (!scan) return;
         let sent: Partial<ScanSnapshot>;
-        try { sent = JSON.parse((ev as MessageEvent<string>).data) as Partial<ScanSnapshot>; } catch { return; }
+        try { sent = JSON.parse((ev as MessageEvent<string>).data) as Partial<ScanSnapshot>; } catch (e) { skipped('delta', e); return; }
         const was = latestRun(scan);
         scan = mergeScan(scan, full(sent));
         hasStore = true;
@@ -165,7 +173,7 @@ export function useLiveProduct(slug: string | null): LiveProduct {
         const data = (ev as MessageEvent<unknown>).data;
         if (typeof data !== 'string') return; // a dropped connection: onerror below
         let message = 'The scan store cannot be read';
-        try { message = String((JSON.parse(data) as { message?: unknown }).message ?? message); } catch { /* keep the generic text */ }
+        try { message = String((JSON.parse(data) as { message?: unknown }).message ?? message); } catch (e) { skipped('error', e); /* keep the generic text */ }
         put((l) => ({ ...l, status: 'error', error: message }));
       });
       src.onerror = (ev) => {
@@ -183,7 +191,7 @@ export function useLiveProduct(slug: string | null): LiveProduct {
       try {
         const [r, list] = await Promise.all([
           fetch(base + '/structure', { signal: bound(ac.signal), cache: 'no-store' }),
-          refreshProjects().then((l) => l ?? ([] as ProductInfo[])), // the one request for the list: the header's store shares it
+          refreshProjects(), // the one request for the list: the header's store shares it. null = it did not answer
         ]);
         if (r.status === 404) {
           const j = (await r.json().catch(() => ({}))) as { error?: string };
@@ -194,7 +202,18 @@ export function useLiveProduct(slug: string | null): LiveProduct {
         mapText = await r.text();
         const j = JSON.parse(mapText) as { structure: AppStructure; events?: string; rev?: string };
         mapRev = j.rev ?? '';
-        hasStore = !!list.find((p) => p.slug === slug)?.live;
+        // a list that did not answer leaves the store unknown (status stays `loading`, never `missing`): a snapshot
+        // with rows or a delta settles it, else the list is asked again until it answers
+        hasStore = storeFromList(list, slug);
+        if (hasStore === undefined) {
+          const ask = () => { void refreshProjects(true).then((l) => {
+            if (dead || hasStore !== undefined) return;
+            hasStore = storeFromList(l, slug);
+            if (hasStore === undefined) { listTimer = setTimeout(ask, 3000); return; }
+            put((x) => (x.status === 'loading' ? { ...x, status: shown() } : x));
+          }); };
+          listTimer = setTimeout(ask, 3000);
+        }
         put((l) => ({ ...l, status: 'loading', structure: j.structure, structureRev: ++rev, events: j.events ?? '' }));
         open();
       } catch (e) {
@@ -203,7 +222,7 @@ export function useLiveProduct(slug: string | null): LiveProduct {
       }
     })();
 
-    return () => { dead = true; ac.abort(); clearTimeout(timer); clearTimeout(retry); es?.close(); es = null; };
+    return () => { dead = true; ac.abort(); clearTimeout(timer); clearTimeout(retry); clearTimeout(listTimer); es?.close(); es = null; };
   }, [slug]);
 
   // Until the effect for a new slug has run, do not hand out the previous product's data.
@@ -230,9 +249,9 @@ export const LENS_DRAFT_TIMEOUT_MS = 200000;
 export interface LensDraftAnswer { session?: string; reply: string; draft?: LensManifest; done: boolean; error?: string }
 
 /** One JSON request to a scan route; rejects on any non-2xx with an Error carrying `status` and the parsed `body`. */
-async function send<T>(url: string, method: 'POST' | 'PATCH' | 'DELETE', body?: unknown, timeoutMs?: number): Promise<T> {
+async function send<T>(url: string, method: 'POST' | 'PATCH' | 'DELETE', body?: unknown, timeoutMs?: number, signal?: AbortSignal): Promise<T> {
   const r = await fetch(url, {
-    method, cache: 'no-store', signal: bound(undefined, timeoutMs),
+    method, cache: 'no-store', signal: bound(signal, timeoutMs),
     ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
   });
   const j = (await r.json().catch(() => null)) as unknown;
@@ -246,8 +265,6 @@ export const postScan = (slug: string, lens: string, scope: ScanScope): Promise<
 export const postDispatch = (slug: string, ids: string[]): Promise<DispatchResult> => send(api(slug) + '/dispatch', 'POST', { ids });
 /** Cancel a queued or running job. */
 export const deleteJob = (slug: string, id: string): Promise<ScanJob> => send(api(slug) + '/scans/' + encodeURIComponent(id), 'DELETE');
-/** Add a temporary lens to the product's map. 400 says what the manifest lacks; 409 = the id exists. */
-export const postLens = (slug: string, manifest: LensManifest): Promise<LensEntry> => send(api(slug) + '/lenses', 'POST', { manifest });
 /** Retire (false) or restore (true) a temporary lens. 403 = not temporary. */
 export const patchLens = (slug: string, id: string, enabled: boolean): Promise<LensEntry> => send(api(slug) + '/lenses/' + encodeURIComponent(id), 'PATCH', { enabled });
 /** Delete a temporary lens's entry (its facets stay). 403 = not temporary. */
@@ -310,9 +327,13 @@ export const postWaveDispatch = (slug: string, id: string, packages?: string[]):
   call(api(slug) + '/waves/' + encodeURIComponent(id) + '/dispatch', 'POST', parseWaveDispatch, packages === undefined ? {} : { packages });
 
 /** One turn of the lens onboarding chat: `product` is a slug or 'kettle'; `session` from the previous answer; `kind`
- *  asks for a permanent project lens (the default) or a temporary one. 504 after 3 minutes. */
-export const postLensDraft = (product: string, message: string, session?: string, kind: 'project' | 'temporary' = 'project'): Promise<LensDraftAnswer> =>
-  send('/api/lens-draft', 'POST', { product, message, ...(session ? { session } : {}), kind }, LENS_DRAFT_TIMEOUT_MS);
+ *  asks for a permanent project lens (the default) or a temporary one. 504 after 3 minutes. `signal` cancels the turn
+ *  (the request rejects with an AbortError); an answer with no `reply` rejects with status 502. */
+export const postLensDraft = async (product: string, message: string, session?: string, kind: 'project' | 'temporary' = 'project', signal?: AbortSignal): Promise<LensDraftAnswer> => {
+  const a = await send<LensDraftAnswer>('/api/lens-draft', 'POST', { product, message, ...(session ? { session } : {}), kind }, LENS_DRAFT_TIMEOUT_MS, signal);
+  if (!a || typeof a !== 'object' || typeof a.reply !== 'string') throw Object.assign(new Error('the server answered no reply'), { status: 502 });
+  return a;
+};
 
 // ------------------------------------------------------------------------------------------- swarm
 // The scan as a swarm lives in core (pure); re-exported here for the web's importers.

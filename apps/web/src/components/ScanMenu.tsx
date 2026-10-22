@@ -72,6 +72,7 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
   // directory a scan is about to be let loose in, and a slug is not one.
   const root = ctx.slug ? list?.find((p) => p.slug === ctx.slug)?.root ?? null : null;
 
+  const count = (sc: ScanScope) => (sc.kind === 'all' ? P.base.features.length : sc.features.length);
   const close = (refocus = true) => { E.patch({ menu: null }); if (refocus) focusPlan(); };
   const run = (ids: string[], scope: ScanScope) => {
     close();
@@ -80,7 +81,7 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
       const bad = rs.map((r, i) => (r.status === 'rejected' ? name(ids[i]) + ': ' + refusalText(r.reason) : null)).filter((x): x is string => !!x);
       const n = rs.length - bad.length;
       if (bad.length) E.toast(n ? 'Some scans did not start' : 'Scan not started', bad.join('; '), undefined, undefined, n ? 'warn' : 'bad');
-      else E.toast(n === 1 ? 'Scanning ' + name(ids[0]) : 'Scanning ' + n + ' lenses', scope.label + ' · ' + (scope.kind === 'all' ? P.base.features.length : scope.features.length) + ' features');
+      else E.toast(n === 1 ? 'Scanning ' + name(ids[0]) : 'Scanning ' + n + ' lenses', scope.label + ' · ' + count(scope) + ' features');
     });
   };
 
@@ -119,7 +120,6 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
     e.preventDefault(); e.stopPropagation();
     els[j]?.focus();
   };
-  const count = (sc: ScanScope) => (sc.kind === 'all' ? P.base.features.length : sc.features.length);
 
   return (
     <div ref={ref} id="scanmenu" className="sm" role="menu" aria-label={'Scan ' + what} data-keys="own" onKeyDown={onKey} onContextMenu={(e) => e.preventDefault()} style={{ visibility: 'hidden' }}>
