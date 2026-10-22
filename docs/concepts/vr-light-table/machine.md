@@ -124,7 +124,7 @@ Same probe tree (incremental), the junction made inside the probe only. Exit cod
 ### What this does NOT establish
 
 Unmeasured on Lynx: that `bpEditor` builds to exit 0 (it does not yet; see reading 2), that the editor boots `bp.uproject`,
-that a Win64 Game target links, that PIE or automation runs, that Meta XR v207 or the Interaction SDK load, that the Quest 3
+that a Win64 Game target links (*Correction 2026-10-22 (night): it does, reading 8 below*), that PIE or automation runs, that Meta XR v207 or the Interaction SDK load, that the Quest 3
 over Link works, and any frame time (the 90 Hz budget). None of these readings say anything about Wolf.
 
 *Correction 2026-10-22 (evening): "that `bpEditor` builds to exit 0 (it does not yet; see reading 2)" is superseded:
@@ -247,8 +247,10 @@ control that refuses a `BpLink.h` saying `"BpSchema.h"`; seeded into the real `B
 - That the editor boots `bp.uproject` or loads `UnrealEditor-BpLink.dll`; that `StartupModule` runs, that `HTTP` is up at
   `PostEngineInit`, or that `BpLink.Fetch` prints WP3.1 step 7's line. Nothing here ran the module: it compiled and linked.
 - That a Win64 **Game** target (`bp Win64 Development`) builds; only `bpEditor` was built.
+  *Correction 2026-10-22 (night): measured, reading 8 below. It builds, exit 0, with the junction.*
 - The `asis` variant at the final source (not run). Without the junction, `"Schema/BpSchema.h"` has nowhere to resolve,
   so BpLink now **requires** WP3.1's junction; whether that settles R1 is the operator's call, as before.
+  *Correction 2026-10-22 (night): measured, reading 9 below. It fails with `C1083 ... 'Schema/BpSchema.h': No such file or directory`.*
 - The `spellings` variant at the final source (not re-run): its probe TUs include both spellings on purpose, so they
   measure MSVC, not BpLink.
 - That `#pragma once` behaves the same way on clang or on Wolf's MSVC; this is MSVC 14.44.35207 on Lynx, emulated x64.
@@ -263,3 +265,88 @@ The two commands above, plus, each in a `--work` of its own (the probe refuses t
 node scripts/uht-probe.mjs --engine "C:/Program Files/Epic Games/UE_5.8" --work <scratch-2> --variant spellings
 node scripts/uht-probe.mjs --engine "C:/Program Files/Epic Games/UE_5.8" --work <scratch-3> --variant unity
 ```
+
+## Lynx, 2026-10-22 (night): the Win64 Game target, and the `asis` variant at the final source
+
+Same host, engine and toolchain as above (`Hostx64` `cl.exe` 14.44.35207, emulated; both runs' `compiler` line printed
+`C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64\cl.exe`, and
+UBT printed `Running x64 binary on arm64 system. Use arm binaries instead`). Repo at `52f631c` plus `c3915bf`, which adds
+`--target <name>` to `scripts/uht-probe.mjs` (default `bpEditor`; it changes only the UBT argv, the variant markers are
+untouched). Each reading is a **fresh** `--work` tree under `C:/Users/kazda/AppData/Local/Temp/`; each tree's `packages` is
+a junction into this worktree (`C:/Users/kazda/.personas/headless-masters/worktrees/bp/c972b5c8/packages`); nothing was
+added to `apps/vr`. No frame time was measured.
+
+SHA-256, repo working copy = probe copy (both read from the Game-target tree; the `asis` tree's `copied` entries are
+checked by the script itself, which throws on a difference). The two `BpLink` headers/sources differ from reading 7's
+because `52f631c` (and `9888f95`) changed only comments in them; `BpLink.Build.cs` and the schema headers are unchanged.
+
+| File | SHA-256 |
+|---|---|
+| `apps/vr/Source/BpLink/BpLink.Build.cs` | `6ae491830e923946d867475f461600064a40d97a31e06606c6a5ebaea558ebba` |
+| `apps/vr/Source/BpLink/Public/BpLink.h` | `66f9496a650a0db6d63f583afdb434f1138af8558c7c8b4b15618669b6cf3402` |
+| `apps/vr/Source/BpLink/Private/BpLink.cpp` | `aeb936546ab817416cbd3d90bf134a402b5b79c342a55c08d81f996d13fb6535` |
+| `packages/schema/generated/ue/BpSchema.h` | `e2eb2802c61f96b776c6ca61a8edef1a66542d0779ce3b02d4e21a444396f0a5` |
+| `packages/schema/generated/ue/BpSchemaFixups.h` | `7b102f5e43dbb5d196f3660c95d4532e93fc2c740635319477077f673564a2ae` |
+
+### Reading 8: `bp Win64 Development` (the Game target), junction variant, tree `bp-c972b5c8-game`
+
+`node scripts/uht-probe.mjs --engine "C:/Program Files/Epic Games/UE_5.8" --work C:/Users/kazda/AppData/Local/Temp/bp-c972b5c8-game --variant junction --target bp`.
+The UBT command was `... UnrealBuildTool.dll "bp" "Win64" "Development" "-Project=...\bp-c972b5c8-game\bp-uht-probe\apps\vr\bp.uproject"`.
+
+- Exit code **0**, **119.3 s** wall clock (UBT: `Total execution time: 118.43 seconds`), `Result: Succeeded`. 0 `: warning`
+  lines in the log; the script's `errorLines` was empty.
+- `UHT processed bp in 4.6674691 seconds (4 generated files written)` (UBT's log). Written under
+  `apps/vr/Intermediate/Build/Win64/UnrealGame/Inc/BpLink/UHT/`: `BpSchema.generated.h` (39,679 bytes; the editor target's
+  was 39,404), `BpSchema.gen.cpp`, `BpLink.init.gen.cpp`, `BpLinkClasses.h`.
+- 13 actions: `[9/13] Compile [x64] bp.cpp`, `[10/13] Compile [x64] BpLink.cpp`, `[11/13] Compile [x64]
+  Module.BpLink.gen.cpp`, `[12/13] Link [x64] bp.exe`, `[13/13] WriteMetadata bp.target [NoUba]`. `Binaries/Win64/bp.exe`
+  is 331,998,720 bytes. There is **no** `UnrealEditor-BpLink.dll` here: a Game target without `-Modular` is monolithic, so
+  `BpLink` is compiled into `bp.exe` (that is the log's own action list; no per-module link line for BpLink appears).
+- The synthesized project already carried everything the Game target needed: the Game `bp.Target.cs` and
+  `Config/DefaultEngine.ini` (`GameDefaultMap=/Engine/Maps/Entry`) that the probe wrote for the editor reading. No
+  `Content/`, map or extra module was added, and no error about a missing map, config key or module was printed. The build
+  does not run the executable, so whether `bp.exe` starts is not measured.
+- Logs: `C:/Users/kazda/AppData/Local/Temp/bp-c972b5c8-game/bp-uht-probe/uht-probe-junction.log`, beside `ubt-Log-junction.txt`
+  and `uht-probe-junction.json`.
+
+### Reading 9: `--variant asis` at the final source, tree `bp-c972b5c8-asis` (no junction)
+
+`node scripts/uht-probe.mjs --engine "C:/Program Files/Epic Games/UE_5.8" --work C:/Users/kazda/AppData/Local/Temp/bp-c972b5c8-asis --variant asis`
+(target `bpEditor`, the default).
+
+- Exit code **6**, **94.4 s** wall clock (UBT: `Total execution time: 93.60 seconds`), `Result: Failed (OtherCompilationError)`.
+- `UHT processed bpEditor in 4.7879327 seconds (0 generated files written)`; no `BpSchema.generated.h` under `Intermediate/`.
+  The tree has no `Source/BpLink/Public/Schema` entry, so UHT again had no `BpSchema.h` in its input.
+- The error, verbatim (the only error line in the log):
+  `C:\Users\kazda\AppData\Local\Temp\bp-c972b5c8-asis\bp-uht-probe\apps\vr\Source\BpLink\Public\BpLink.h(7,1): fatal error C1083: Cannot open include file: 'Schema/BpSchema.h': No such file or directory`
+  with the source line `#include "Schema/BpSchema.h"` echoed under it, in `[4/12] Compile [x64] BpLink.cpp`. The `bp` module
+  still compiled and linked (`[8/12] Link [x64] UnrealEditor-bp.lib`, `[9/12] Link [x64] UnrealEditor-bp.dll`).
+- Mechanically: `PublicIncludePaths` holds `packages/schema/generated/ue`, so `"BpSchema.h"` would resolve there but
+  `"Schema/BpSchema.h"` looks for `<include path>/Schema/BpSchema.h`, which exists only through the junction. The prediction
+  in the 2026-10-22 evening "does NOT establish" list (that `asis` fails at the final source) is **measured**, with the
+  error above.
+- Logs: `C:/Users/kazda/AppData/Local/Temp/bp-c972b5c8-asis/bp-uht-probe/uht-probe-asis.log`, beside `ubt-Log-asis.txt` and
+  `uht-probe-asis.json`.
+
+### What this does NOT establish
+
+- That the Game executable runs: `bp.exe` was linked, never started; `StartupModule`, `HTTP` at `PostEngineInit` and
+  `BpLink.Fetch` are unmeasured, as are the editor boot and `UnrealEditor-BpLink.dll` loading.
+- Any other Game configuration: only `Development` was built (not `Shipping`, a `-Modular` build, or a cooked/staged
+  package), and only with the probe's synthesized `bp` module and one-line `DefaultEngine.ini`, not a real project's.
+- The `asis` reading is one MSVC front-end error, in the first translation unit that reached `BpLink.h`; whether further
+  errors would follow once that include resolved is not measured (the junction variant, readings 3 to 8, says what happens
+  when it does).
+- The Game target with the `asis` variant, and the `unity` / `spellings` variants on the Game target (not run).
+- This says nothing about R1 (how BpLink gets a header UHT will process), R4 or R5; that is the operator's. These are MSVC
+  14.44.35207 readings on Lynx, emulated x64; none say anything about Wolf.
+
+### How to reproduce
+
+```
+node scripts/uht-probe.mjs --engine "C:/Program Files/Epic Games/UE_5.8" --work <scratch-4> --variant junction --target bp
+node scripts/uht-probe.mjs --engine "C:/Program Files/Epic Games/UE_5.8" --work <scratch-5> --variant asis
+```
+
+`--target <name>` (default `bpEditor`) is the first UBT argument: `bp` is the synthesized Game target, `bpEditor` the editor
+one. Every earlier command keeps its meaning.
