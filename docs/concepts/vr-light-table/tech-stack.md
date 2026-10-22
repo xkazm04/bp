@@ -140,6 +140,22 @@ host model assumes a web page. `apps/server` registers with a `page_origin` such
 `http://127.0.0.1:<port>`; P5 confirms the daemon accepts a non-browser host and that `execute`
 reaches `apps/server`, with a smoke test across the real seam.
 
+Answered 2026-10-22 on Lynx (wolf-plan L5.3, `node scripts/smoke-athena.mjs`, athena-portable 9beaef31). The daemon
+accepts a non-browser host: it cannot tell what a page is and has no browser check. It does refuse two spellings, and
+both are fixed on bp's side, with nothing changed in athena:
+
+- `page_origin: http://127.0.0.1:<port>` is refused whole, `400 manifest_invalid`, with "page_origin must be https with a
+  host, or http on localhost". Plain http is admitted only on the host `localhost`, by exact name (athena's
+  `page_origin_admitted`, ADR 0119). `apps/server` registers as `http://localhost:<port>`, and that origin is the
+  session key `/run` uses.
+- A dotted tool name is refused: "tool name 'wave.dispatch' is not a slug; the catalog namespaces it as
+  <kind>.<id>.<name>". The tools travel as `navigate`, `lens_set`, `scan_place`, `wave_compose`, `wave_dispatch`,
+  `decision_answer` and `finding_decline`, and the catalog names them `host.bp.<name>`.
+
+The classes came back as the table states them. `execute` reaches `apps/server`: an approved `wave_dispatch` card ran
+Kettle's wave dispatch once (202, one execute job). A second approve of the same card is refused with
+`409 pending_approval` ("is approved, not pending"), and the host also runs each `call_id` at most once.
+
 ## 5. Local generation stack (production time, not run time)
 
 Generation is used to make the art, not while the person is in the headset. It runs on the GPU box,

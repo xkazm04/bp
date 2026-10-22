@@ -337,12 +337,25 @@ gated by `npm run check`. Wolf only draws, gestures, streams audio and calls rou
       fallback in step with this commit.
       Done 2026-10-21 (61181b2). Proof, from plan.md 'Milestone 1 re-measure after L5.2' (1443c3b): `46 passed, 0 failed, 0 skipped of 46`,
       `PASS check:kettle-sim`, `Kettle stream: 200 SSE, a snapshot first`.
-- [ ] **L5.3 Athena host (WP5.4 Node half; 3 days).** apps/server registers bp's tools (tech-stack.md §4 table) with
+- [x] **L5.3 Athena host (WP5.4 Node half; 3 days).** apps/server registers bp's tools (tech-stack.md §4 table) with
       athena's `POST /manifest` (`app_id: "bp"`, `page_origin: http://127.0.0.1:<port>`) and executes an approved
       action when a decision returns `execute`. Proof: a seam smoke script (for example `scripts/smoke-athena.mjs`)
       against a real daemon. A spoken or typed "dispatch the wave" files one GATED card, and "approve" runs exactly
       that wave once. The daemon runs on Wolf (S10), so the smoke's real run is a **Wolf** reading, unless Lynx gets an
       athena-portable checkout.
+      Done 2026-10-22 on Lynx, against athena-portable at HEAD 9beaef31 (operator 2026-10-22, R10).
+      `apps/server/src/athena-host.ts`, attached by `npm run server -- --athena <url> --athena-token-file <daemon.json>`.
+      `npm run check:athena-host` is offline and joins `npm run check`; each of its five assertions has a seeded control
+      shown red. `node scripts/smoke-athena.mjs` ran green, 22 passed and 0 failed. Its output: the manifest gave
+      `host.bp.navigate=AUTO, lens_set=AUTO, scan_place=AUTO, wave_compose=AUTO, wave_dispatch=GATED,
+      decision_answer=GATED, finding_decline=AUTO`. One live turn `dispatch the wave` (claude_code, 1 of at most 2,
+      cost_usd 0.136584) filed one GATED card `apr_944fc564ad95` (`apr_` + 12 hex). Approved through the host, its
+      execute ran wave.dispatch with a 202, and `one wave dispatched: job sim-1 (execute, model sonnet, effort low)`, jobs
+      0 -> 1. The replay was refused with `409 {"ok":false,"reason":"pending_approval","detail":"approval apr_944fc564ad95 is
+      approved, not pending"}`, and the job count stayed 1 -> 1. `GET /ledger` shows the turn (origin host:bp).
+      Afterwards netstat shows no LISTENING row on either port. Two spellings differ from the text above (tech-stack.md section 4,
+      "Open seam"): the page origin is `http://localhost:<port>`, because athena refuses `http://127.0.0.1:<port>`, and the
+      tools travel as `wave_dispatch` and so on.
 
 **Wolf side (UE):**
 
@@ -502,7 +515,7 @@ reading the source, most likely first. Each one is **[verify on Wolf]**.
 | R7 | The lamp design (L4.0) before P4 props or more style frames. | **owner** | the jointed drafting arm from frames 06 and 08 |
 | R8 | Leonardo output in shipped assets. tech-stack.md §5 keeps shipped art to FLUX.2 [klein] or Qwen-Image; the reference sheet was made with Leonardo. | **owner** | Leonardo for look-dev only; ruling 2026-10-21 (the Director, for the operator): the city backdrop ships from Leonardo (FLUX.2 [klein] is not installed and will not be) |
 | R9 | Large binaries. The ArtSource rule commits files of 50 MB or less and keeps raw meshes on Lynx; Git LFS is not set up in bp. | **owner** | no LFS; the sha256 is in the manifest |
-| R10 | Where the athena daemon runs for L5.3's smoke (Wolf has athena-portable; Lynx is not in its fleet entry). | owner | Wolf |
+| R10 | Where the athena daemon runs for L5.3's smoke (Wolf has athena-portable; Lynx is not in its fleet entry). | owner | Lynx (operator 2026-10-22), athena-portable checkout |
 | R11 | The L5.2 contract change (Kettle's `/stream` stops answering 405) lands on Lynx while Wolf's BpLink still expects 405. | agent | one window: land L5.2 and BpLink's SSE change back to back, and `check-bplink` pins the new answer |
 | R12 | GPU contention. With generation on Lynx, the "one at a time" rule on Wolf (plan.md risks) only applies if ComfyUI or TRELLIS.2 also run on Wolf. | agent | check that no UE VR session is running before any generation job on Wolf |
 | R13 | bp is not in the ai-registry fleet file for Wolf (`projects.json`). Hygiene and fleet tooling will not see the Wolf checkout. | owner | register `bp` with checkout `kiro/bp` on Wolf |
