@@ -44,6 +44,7 @@
     "check:bplink": "node scripts/check-bplink.mjs",
     "check:gate-helpers": "node scripts/check-gate-helpers.mjs",
     "check:kettle-sim": "node scripts/check-kettle-sim.mjs",
+    "check:kettle-host-reload": "node scripts/check-kettle-host-reload.mjs",
     "check:athena-host": "node --import @bp/core/register scripts/check-athena-host.mjs",
     "check:schema": "node packages/schema/generate.mjs --check",
     "check:camera": "node scripts/check-camera.ts",

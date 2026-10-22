@@ -12,13 +12,16 @@ if (typeof window !== 'undefined') throw new Error('kettle-sim.server.ts is serv
 
 export interface KettleHost { scan: ScanSim; swarm: SwarmSim }
 
-let host: KettleHost | null = null;
+// On globalThis, like the job registry (jobs.server.ts) and the cached gh login (release.server.ts): a dev-server module
+// reload re-evaluates this file, and a module-level `let` would forget the host and let Kettle fall back to the 405.
+const G = globalThis as typeof globalThis & { __bpKettleHost?: KettleHost };
 
 /** Install this process's Kettle sims (once, at start). */
-export function hostKettle(h: KettleHost): void { host = h; }
+export function hostKettle(h: KettleHost): void { G.__bpKettleHost = h; }
 
 /** The hosted Kettle scan sim when `slug` is the built-in sample (no product shadows it) and this process hosts one, else null. */
 export function kettleSim(slug: string): ScanSim | null {
+  const host = G.__bpKettleHost;
   return host && slug === KETTLE_SLUG && !findProduct(slug) ? host.scan : null;
 }
 

@@ -13,11 +13,12 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, RUN_NOTE_PREFIX, SAFE_ID, type ReleaseStep, type ScanJob, type ScanScope } from '../scan/jobs.ts';
 import { RELEASE_ID } from '../scan/release.ts';
 import { WAVE_EFFORTS, WAVE_MODELS, type WaveEffort, type WaveModel } from '../scan/waves.ts';
 import { warnOnce } from './products.server.ts';
-import { close, openRead } from './store.server.ts';
+import { close, openRead, readRelease, type ReleaseRead } from './store.server.ts';
 
 if (typeof window !== 'undefined') throw new Error('jobs.server.ts is server-only');
 
@@ -211,10 +212,33 @@ function finish(slug: string, r: Rec, status: 'done' | 'failed' | 'cancelled', e
   if (r.job.status !== 'cancelled') Object.assign(r.job, { status }, extra);
   else if (extra.exit_code !== undefined) r.job.exit_code = extra.exit_code;
   r.job.ended_at ??= now();
+  if (r.job.kind === 'release' && r.job.status !== 'done') failBuilding(r);
   r.log?.end(`\n# ${r.job.status}${r.job.exit_code !== undefined ? ` (exit ${r.job.exit_code})` : ''} at ${r.job.ended_at}\n`);
   r.log = undefined;
   pump(slug);
   notify(slug);
+}
+
+/**
+ * A release job that ends without `done` while its release row is still `building` leaves a row no route can move (a build
+ * starts only from draft or failed, a finish from pr-open or merged): the CLI was cancelled or died before it wrote an
+ * outcome. Fail the row with the job's reason so a build may start again, as the Kettle sim does (train-sim.ts: "its
+ * building release fails"). Compare-and-set on `building`: a row the CLI did move (failed with its own error, pr-open) is
+ * never touched. Best effort: a store that cannot be written leaves the row as it was, and the server says so.
+ */
+function failBuilding(r: Rec): void {
+  const id = r.job.release;
+  if (!id) return;
+  const file = path.join(r.root, '.ai', 'lens-scan', 'scan.db');
+  if (!fs.existsSync(file)) return;
+  let db: DatabaseSync | null = null;
+  try {
+    db = new DatabaseSync(file, { timeout: 2000 });
+    const why = r.job.status === 'cancelled' ? 'cancelled from the blueprint before the cut finished' : (r.job.error ?? failedLine(r) ?? 'the release job ended before the cut finished');
+    db.prepare("UPDATE releases SET status = 'failed', error = ?, updated_at = ? WHERE id = ? AND status = 'building'").run(why.slice(0, 500), now(), id);
+  } catch (e) {
+    if (!/no such table/i.test(e instanceof Error ? e.message : '')) warnOnce('release row ' + id, e); // a v1 store has no row to fail
+  } finally { close(db); }
 }
 
 function onOutput(slug: string, r: Rec, chunk: Buffer, err: boolean): void {
@@ -256,14 +280,8 @@ function start(slug: string, r: Rec): void {
   c.stderr?.on('data', (d: Buffer) => onOutput(slug, r, d, true));
   c.on('error', (e: NodeJS.ErrnoException) => finish(slug, r, 'failed', { error: e.code === 'ENOENT' ? CLI_MISSING : e.message }));
   c.on('close', (code, signal) => {
-    if (code === 0 && r.job.kind === 'release') {
-      // a release ends by its status: a finish starts no run, and a cut can fail after its measure run
-      const run = r.job.run_id ?? runOf(r.root, r.job.id), rel = releaseOf(r.root, r.job.release ?? '');
-      const ok = !!rel && (r.job.step === 'finish' ? rel.status === 'tagged' : ['pr-open', 'merged', 'tagged'].includes(rel.status));
-      const extra: Partial<ScanJob> = { exit_code: 0, ...(run ? { run_id: run } : {}) };
-      if (ok) finish(slug, r, 'done', extra);
-      else finish(slug, r, 'failed', { ...extra, error: failedLine(r) ?? (rel?.status === 'failed' && rel.error ? rel.error : refusal(r)) });
-    } else if (code === 0) {
+    if (code === 0 && r.job.kind === 'release') settleRelease(slug, r, 0);
+    else if (code === 0) {
       // lens-scan refuses a headless run before its run-start (an unknown slug, no map) and still exits 0: no run = failed
       const run = r.job.run_id ?? runOf(r.root, r.job.id);
       if (run) { r.job.run_id = run; finish(slug, r, 'done', { exit_code: 0 }); }
@@ -303,14 +321,37 @@ function runOf(root: string, id: string): string | undefined {
   } catch { return undefined; /* no runs table yet */ } finally { close(db); }
 }
 
-/** A release's status and error, read from the product's store at exit. */
-function releaseOf(root: string, id: string): { status: string; error?: string } | undefined {
-  const db = openRead(path.join(root, '.ai', 'lens-scan', 'scan.db'));
-  if (!db) return undefined;
-  try {
-    const row = db.prepare('SELECT status, error FROM releases WHERE id = ?').get(id) as { status: string; error: string | null } | undefined;
-    return row ? { status: row.status, ...(row.error ? { error: row.error } : {}) } : undefined;
-  } catch { return undefined; /* a v1 store: no releases table */ } finally { close(db); }
+/** An unreadable store (a write lock past the busy timeout, say) is read again this many times, this far apart, before the
+ *  job gives up and says what it could not read: the cut it is judging may well have succeeded. */
+const STORE_RETRIES = 3, STORE_RETRY_MS = 1000;
+
+/** What a release job says when the store would not give its release's row: the cause, not the CLI's last log line. */
+function storeCause(read: Exclude<ReleaseRead, { kind: 'row' }>, id: string): string {
+  switch (read.kind) {
+    case 'no-store': return `the release store is missing (no .ai/lens-scan/scan.db), so ${id} could not be checked`;
+    case 'no-table': return `the release store has no releases table (a v1 store), so ${id} could not be checked`;
+    case 'absent': return `the release store has no release ${id}`;
+    case 'unreadable': return `the release store could not be read (${read.error}), so the outcome of ${id} is unknown; check its status before building again`;
+  }
+}
+
+/**
+ * A release job that exited 0 ends by the release's status in the store (a finish starts no run, and a cut can fail after its
+ * measure run): `done` when the row is where the step leaves it, else `failed` with the most specific reason there is - the
+ * CLI's own `release failed`/`refused` line, the row's error, or the condition of the store that kept the row from being read.
+ */
+function settleRelease(slug: string, r: Rec, attempt: number): void {
+  const read = readRelease(path.join(r.root, '.ai', 'lens-scan', 'scan.db'), r.job.release ?? '');
+  if (read.kind === 'unreadable' && attempt < STORE_RETRIES) {
+    setTimeout(() => settleRelease(slug, r, attempt + 1), STORE_RETRY_MS);
+    return;
+  }
+  const run = r.job.run_id ?? runOf(r.root, r.job.id);
+  const ok = read.kind === 'row' && (r.job.step === 'finish' ? read.status === 'tagged' : ['pr-open', 'merged', 'tagged'].includes(read.status));
+  const extra: Partial<ScanJob> = { exit_code: 0, ...(run ? { run_id: run } : {}) };
+  if (ok) { finish(slug, r, 'done', extra); return; }
+  const why = read.kind === 'row' ? (read.status === 'failed' && read.error ? read.error : undefined) : storeCause(read, r.job.release ?? '');
+  finish(slug, r, 'failed', { ...extra, error: failedLine(r) ?? why ?? refusal(r) });
 }
 
 /** lens-scan's `lens-scan release failed: <what>` or `lens-scan refused: <why>` line, the latest one. */

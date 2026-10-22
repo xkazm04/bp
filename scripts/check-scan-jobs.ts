@@ -407,8 +407,8 @@ try {
     for (const [id, st] of [['a1', 'done'], ['a2', 'done'], ['a3', 'failed']]) ip.run(id, 'item ' + id, st, at(Number(id[1])), at(Number(id[1])), id.repeat(20));
     sw.close();
     fs.writeFileSync(path.join(dir, 'bp.products.local.json'), JSON.stringify({ products: [{ slug: 'prod', name: 'Prod', root: pr }, { slug: 'rel', name: 'Rel', root: rr }, { slug: 'future', name: 'Future', root: fr }] }));
-    const status = (table: string, id: string) => { const d = new DatabaseSync(rdb, { readOnly: true }); try { return (d.prepare(`SELECT status FROM ${table} WHERE id = ?`).get(id) as { status?: string } | undefined)?.status; } finally { d.close(); } };
-    const relRow = (id: string) => { const d = new DatabaseSync(rdb, { readOnly: true }); try { return d.prepare('SELECT * FROM releases WHERE id = ?').get(id) as Record<string, string> | undefined; } finally { d.close(); } };
+    const status = (table: string, id: string) => { const d = new DatabaseSync(rdb, { readOnly: true, timeout: 5000 }); try { return (d.prepare(`SELECT status FROM ${table} WHERE id = ?`).get(id) as { status?: string } | undefined)?.status; } finally { d.close(); } };
+    const relRow = (id: string) => { const d = new DatabaseSync(rdb, { readOnly: true, timeout: 5000 }); try { return d.prepare('SELECT * FROM releases WHERE id = ?').get(id) as Record<string, string> | undefined; } finally { d.close(); } };
 
     const tri = await route('products/[slug]/triage/route.ts'), rels = await route('products/[slug]/releases/route.ts');
     const sug = await route('products/[slug]/releases/suggest/route.ts');
@@ -549,6 +549,93 @@ try {
     const je1 = e1.ok ? job('rel', e1.job.id) : undefined, je2 = e2.ok ? job('rel', e2.job.id) : undefined;
     check('a cut whose gate fails -> failed with lens-scan\'s line, its measure run still attached', je1?.status === 'failed' && je1.error === 'lens-scan release failed: gate npm test: 1 failing' && je1.run_id === 'run-' + je1.id && relRow('rel-3.0.0-fail')?.status === 'failed', JSON.stringify(je1));
     check('an unknown release -> failed with the refusal', je2?.status === 'failed' && /^lens-scan refused:/.test(je2.error ?? ''), JSON.stringify(je2));
+    // a release row left `building` by a job that ends without the CLI moving it on - cancelled from the Agents panel, or the
+    // CLI dying mid-cut. The Kettle sim fails such a row (train-sim.ts: "its building release fails, so a build may start
+    // again"); the live registry must too, or every release route refuses every next step for that row for good
+    // (release-job.ts: a build starts only from draft or failed). The stand-in CLI moves the row to building as lens-scan
+    // does, then hangs (-stall) or exits 3 (-die).
+    const stallFake = path.join(dir, 'fake-claude-stall.mjs');
+    fs.writeFileSync(stallFake, [
+      "import { DatabaseSync } from 'node:sqlite';",
+      "let input = ''; process.stdin.setEncoding('utf8'); for await (const c of process.stdin) input += c;",
+      "const rid = /--id (\\S+)/.exec(input)?.[1] ?? '';",
+      "const db = new DatabaseSync(process.cwd() + '/.ai/lens-scan/scan.db', { timeout: 5000 });",
+      "db.prepare(\"UPDATE releases SET status = 'building', updated_at = ? WHERE id = ?\").run(new Date().toISOString(), rid); db.close();",
+      "console.log('building ' + rid);",
+      "if (rid.includes('-die')) { console.error('stall fake: the cut died'); process.exit(3); }",
+      "await new Promise((r) => setTimeout(r, 120000));",
+    ].join('\n'));
+    const sd = new DatabaseSync(rdb);
+    for (const v of ['4.0.0-stall', '4.0.1-die']) sd.prepare("INSERT INTO releases (id, version, branch, status, created_at, updated_at) VALUES (?, ?, ?, 'draft', ?, ?)").run('rel-' + v, v, 'release/' + v, T, T);
+    sd.close();
+    process.env.BP_CLAUDE_BIN = stallFake;
+    const s1 = J.enqueueRelease('rel', rr, 'rel-4.0.0-stall', '4.0.0-stall', 'build'), s2 = J.enqueueRelease('rel', rr, 'rel-4.0.1-die', '4.0.1-die', 'build');
+    check('stall: the cut moved the release to building', await until(() => relRow('rel-4.0.0-stall')?.status === 'building'), relRow('rel-4.0.0-stall')?.status);
+    if (s1.ok) J.cancel('rel', s1.job.id);
+    check('a cancelled build job leaves its building release failed, with a reason', await until(() => relRow('rel-4.0.0-stall')?.status === 'failed', 8000) && !!relRow('rel-4.0.0-stall')?.error,
+      JSON.stringify(relRow('rel-4.0.0-stall')));
+    await until(() => s2.ok && job('rel', s2.job.id)?.status === 'failed');
+    check('a build whose CLI died leaves its building release failed, with the job\'s error', await until(() => relRow('rel-4.0.1-die')?.status === 'failed', 8000) && relRow('rel-4.0.1-die')?.error === 'stall fake: the cut died',
+      JSON.stringify(relRow('rel-4.0.1-die')));
+    process.env.BP_CLAUDE_BIN = FAKE;
+    const rebuilt = await call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-4.0.0-stall' }, {});
+    check('the failed release can be built again (202), and that build reaches pr-open', rebuilt.status === 202 && await until(() => relRow('rel-4.0.0-stall')?.status === 'pr-open'), rebuilt.status + ' ' + relRow('rel-4.0.0-stall')?.status);
+    // a cut that SUCCEEDED (the release is pr-open in the store) whose job reads the store while another connection holds
+    // it locked past the busy timeout: the job ends by the release's status, so an unreadable store must not read as a
+    // release that failed - it is read again until it can be, and says what it could not read if it never can
+    const lockFake = path.join(dir, 'fake-claude-locked.mjs');
+    fs.writeFileSync(lockFake, [
+      "import fs from 'node:fs';",
+      "import { DatabaseSync } from 'node:sqlite';",
+      "let input = ''; process.stdin.setEncoding('utf8'); for await (const c of process.stdin) input += c;",
+      "const rid = /--id (\\S+)/.exec(input)?.[1] ?? '';",
+      "const db = new DatabaseSync(process.cwd() + '/.ai/lens-scan/scan.db', { timeout: 5000 });",
+      "db.prepare(\"UPDATE releases SET status = 'pr-open', pr_url = 'https://example.test/pull/5', updated_at = ? WHERE id = ?\").run(new Date().toISOString(), rid); db.close();",
+      "fs.writeFileSync(process.cwd() + '/cut-' + rid + '.done', rid);",
+      "await new Promise((r) => setTimeout(r, 1000));",
+    ].join('\n'));
+    const ld = new DatabaseSync(rdb);
+    ld.prepare("INSERT INTO releases (id, version, branch, status, created_at, updated_at) VALUES ('rel-5.0.0-lock', '5.0.0-lock', 'release/5.0.0-lock', 'draft', ?, ?)").run(T, T);
+    ld.close();
+    process.env.BP_CLAUDE_BIN = lockFake;
+    const l1 = J.enqueueRelease('rel', rr, 'rel-5.0.0-lock', '5.0.0-lock', 'build');
+    check('lock: the stand-in cut finished (release pr-open)', await until(() => fs.existsSync(path.join(rr, 'cut-rel-5.0.0-lock.done'))) && relRow('rel-5.0.0-lock')?.status === 'pr-open', relRow('rel-5.0.0-lock')?.status);
+    const hold = new DatabaseSync(rdb, { timeout: 5000 });
+    hold.exec('PRAGMA locking_mode = EXCLUSIVE'); hold.exec('BEGIN IMMEDIATE');
+    const unlock = setTimeout(() => { try { hold.exec('COMMIT'); hold.close(); } catch { /* closed */ } }, 3500);
+    const lj = l1.ok ? await until(() => ['done', 'failed'].includes(job('rel', l1.job.id)?.status ?? ''), 40000) : false;
+    clearTimeout(unlock); try { hold.exec('ROLLBACK'); } catch { /* committed */ } try { hold.close(); } catch { /* closed */ }
+    const ljob = l1.ok ? job('rel', l1.job.id) : undefined;
+    check('a locked store does not report a successful cut as failed (the job ends done once the store can be read)', lj && ljob?.status === 'done' && relRow('rel-5.0.0-lock')?.status === 'pr-open', JSON.stringify(ljob));
+    process.env.BP_CLAUDE_BIN = FAKE;
+    // the reader behind that decision tells its four "no row" conditions apart (a bare undefined used to blur them)
+    {
+      const SS = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/server/store.server.ts')).href) as typeof import('../packages/core/src/server/store.server.ts');
+      const v1 = path.join(dir, 'v1-store.db'), lk = path.join(dir, 'locked-store.db');
+      { const w = new DatabaseSync(v1); w.exec('CREATE TABLE runs (id TEXT)'); w.close(); }
+      { const w = new DatabaseSync(lk); w.exec('PRAGMA journal_mode = WAL; CREATE TABLE releases (id TEXT, status TEXT, error TEXT)'); w.close(); }
+      const rd = (f: string, id: string) => SS.readRelease(f, id).kind;
+      const lh = new DatabaseSync(lk, { timeout: 5000 });
+      lh.exec('PRAGMA locking_mode = EXCLUSIVE'); lh.exec('BEGIN IMMEDIATE');
+      const locked = SS.readRelease(lk, 'x');
+      try { lh.exec('COMMIT'); } catch { /* ignore */ } lh.close();
+      const kinds = [rd(path.join(dir, 'no-such.db'), 'x'), rd(v1, 'x'), rd(rdb, 'rel-no-such'), rd(rdb, 'rel-5.0.0-lock'), locked.kind, rd(lk, 'x')].join();
+      check('readRelease: no-store, no-table, absent, row, unreadable (a lock past the busy timeout), absent again once released',
+        kinds === 'no-store,no-table,absent,row,unreadable,absent' && locked.kind === 'unreadable' && /locked/i.test(locked.error), kinds + ' ' + JSON.stringify(locked));
+    }
+    // ...and a job whose CLI said nothing names the store condition that kept it from judging, not its last log line
+    const quietFake = path.join(dir, 'fake-claude-quiet.mjs');
+    fs.writeFileSync(quietFake, "process.stdin.resume(); process.stdin.on('end', () => process.exit(0));\n");
+    process.env.BP_CLAUDE_BIN = quietFake;
+    const nostore = repo('rel-nostore'), v1root = repo('rel-v1');
+    fs.mkdirSync(path.join(v1root, '.ai/lens-scan'), { recursive: true });
+    { const w = new DatabaseSync(path.join(v1root, '.ai/lens-scan/scan.db')); w.exec('CREATE TABLE runs (id TEXT)'); w.close(); }
+    const q1 = J.enqueueRelease('rel', nostore, 'rel-6.0.0', '6.0.0', 'build'), q2 = J.enqueueRelease('rel', v1root, 'rel-6.0.1', '6.0.1', 'build');
+    await until(() => [q1, q2].every((q) => q.ok && ['done', 'failed'].includes(job('rel', q.job.id)?.status ?? '')));
+    const jq1 = q1.ok ? job('rel', q1.job.id) : undefined, jq2 = q2.ok ? job('rel', q2.job.id) : undefined;
+    check('a release job over a missing store fails naming the store', jq1?.status === 'failed' && /^the release store is missing/.test(jq1.error ?? ''), JSON.stringify(jq1));
+    check('a release job over a v1 store (no releases table) fails naming the table', jq2?.status === 'failed' && /^the release store has no releases table/.test(jq2.error ?? ''), JSON.stringify(jq2));
+    process.env.BP_CLAUDE_BIN = FAKE;
     const e3 = J.enqueueRelease('rel', rr, 'rel-1.0.0', '1.0.1', 'build'), e4 = J.enqueueRelease('rel', rr, 'release-1', '1', 'finish');
     check('enqueueRelease refuses an id that is not rel-<version> -> 400', !e3.ok && e3.status === 400 && !e4.ok && e4.status === 400);
 
@@ -681,8 +768,32 @@ try {
     check('startSelectionScan over the sim -> a selection job labelled "Selection (1)"', ks.scope?.kind === 'selection' && ks.scope.label === 'Selection (1)', JSON.stringify(ks.scope));
   } finally { sim.dispose(); delete (globalThis as { localStorage?: unknown }).localStorage; }
 
+  // ------------------------------------------------------------------ a registry file that cannot be read says so
+  // Both verbs of /api/products read the same bp.products.local.json: the writer refuses a broken one with the reason (409),
+  // so the reader must not answer the same file with a successful empty list (the product list would render the onboarding
+  // empty state over registered products that merely have a typo in their file).
+  {
+    const pf = path.join(dir, 'bp.products.local.json'), keep = fs.readFileSync(pf, 'utf8');
+    const prods = await route('products/route.ts');
+    const warn = console.warn; console.warn = () => { /* listProducts says it on the server log, once */ };
+    try {
+      for (const [what, text, want] of [['unparseable JSON', '{ "products": [ { "slug": "live", "root": "x" }, OOPS', /not valid JSON \(.+\); fix it by hand first$/],
+        ['a products value that is no array', '{"products": 7}', /"products" is not an array; fix it by hand first$/]] as const) {
+        fs.writeFileSync(pf, text);
+        const g = await call(prods.GET, '/api/products', 'GET', {}), po = await call(prods.POST, '/api/products', 'POST', {}, { slug: 'late', name: 'Late', root: pr });
+        check(`corrupt registry (${what}): GET answers 409 with the reason, as POST does - not 200 []`, g.status === 409 && want.test(g.body.error ?? '') && po.status === 409 && g.body.error === po.body.error, JSON.stringify({ get: g, post: po }).slice(0, 400));
+      }
+      fs.writeFileSync(pf, keep);
+      const ok = await call(prods.GET, '/api/products', 'GET', {});
+      check('a registry that parses again lists its products (200)', ok.status === 200 && Array.isArray(ok.body) && ok.body.some((p: { slug: string }) => p.slug === 'prod'), JSON.stringify(ok).slice(0, 200));
+      fs.writeFileSync(pf, '{}');
+      const none = await call(prods.GET, '/api/products', 'GET', {});
+      check('a registry with no products key is an empty list, not an error (200 [])', none.status === 200 && Array.isArray(none.body) && none.body.length === 0, JSON.stringify(none));
+    } finally { console.warn = warn; fs.writeFileSync(pf, keep); }
+  }
+
   // ------------------------------------------------------------------ the standard accepts the entry
-  const valid = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/schema/schema/fixtures/valid-map.json'), 'utf8'));
+  const valid =JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/schema/schema/fixtures/valid-map.json'), 'utf8'));
   const entry = { id: MANIFEST.id, version: '1.0.0', source: 'project', enabled: true, temporary: true, created_at: '2026-10-13T10:00:00.000Z', manifest: MANIFEST };
   const vf = path.join(dir, 'tmp-lens-map.json'), wf = path.join(dir, 'tmp-lens-wrong.json');
   fs.writeFileSync(vf, JSON.stringify({ ...valid, lenses: [...valid.lenses, entry] }));
