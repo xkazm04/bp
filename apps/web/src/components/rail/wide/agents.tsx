@@ -118,7 +118,6 @@ export function Agents() {
         <>
           {t && STATES.map((st) => st === 'paused' && !t.paused ? null : <div key={st} className={'wb-count t-' + TONE[st]}><b>{t[st]}</b><span>{st}</span></div>)}
           <div className="wb-count"><b>{nRun}</b><span>scan{nRun === 1 ? '' : 's'} running</span></div>
-          {!sim.has && <div className="wb-count"><span>No swarm data</span></div>}
           <span className="wb-src">{sim.live ? 'live scan' : sim.has ? 'simulated swarm' : ''}</span>
         </>
       )}

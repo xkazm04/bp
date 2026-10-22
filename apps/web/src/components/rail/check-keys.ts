@@ -133,5 +133,18 @@ for (const [f, src] of SRC) {
 }
 expect(bars >= 2, `the progressbar scan found ${bars} bars in the rail, expected at least 2 (agents.tsx's job bar and steer.tsx's spend bar) - the matcher has stopped biting`);
 
+// ---------------------------------------------------------------- 7. a strip count is a figure and a label
+// .wb-count (workbench.css) is a baseline-aligned pair built to carry a big mono <b>. A slot with no <b> is a stray
+// sentence in a row of numbers; the strip's own way to say "does not apply" is to omit the slot.
+let counts = 0;
+for (const [f, src] of SRC) {
+  for (const m of src.matchAll(/className=(?:"wb-count[^"]*"|\{'wb-count[^']*'[^}]*\})/g)) {
+    counts++;
+    const end = src.indexOf('</div>', m.index);
+    expect(end > 0 && /<b[\s>]/.test(src.slice(m.index, end)), `${f}: a className="wb-count" slot holds no <b> figure - omit the slot instead of putting a sentence in the strip`);
+  }
+}
+expect(counts >= 2, `the strip-count scan found ${counts} .wb-count slots in the rail, expected at least 2 (agents.tsx's tally and running count) - the matcher has stopped biting`);
+
 if (failures.length) { console.error(`check-rail-keys: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
 console.log(`check-rail-keys: ${held} expectations held (${options} role="option" sites, ${scrolls} scroll-behavior sites)`);
