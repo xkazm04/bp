@@ -58,6 +58,7 @@
     "check:timeline-scrub": "node apps/web/src/components/timeline/check-scrub.ts",
     "check:timeline-run": "node apps/web/src/components/timeline/check-run.ts",
     "check:sheet-rows": "node apps/web/src/components/sheet/check-rows.ts",
+    "check:screens-strip": "node apps/web/src/components/sheet/check-screens-strip.ts",
     "check:standard": "node packages/core/check-standard.mjs",
     "check:standard-fixtures": "node scripts/check-standard-fixtures.mjs",
     "check:python-deps": "node scripts/check-python-deps.mjs",

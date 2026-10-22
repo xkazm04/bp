@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Feature } from '@bp/core/data';
 import { baseId, shotErrors, shotUrl, shotsByRun } from '@bp/core/model';
 import type { Run, Shot } from '@bp/core/scan/types';
-import { useLive } from '../hooks';
+import { useLive, type LiveInfo } from '../hooks';
 
 interface Take { run: Run | null; runId: string; shot: Shot }
 const keyOf = (s: Shot) => (s.size ?? 'any size') + ' · ' + (s.theme ?? 'any theme');
@@ -88,7 +88,20 @@ export function Viewer({ slug, k, takes, name, close }: { slug: string; k: strin
   );
 }
 
-export function ScreensStrip({ f }: { f: Feature }) {
+/** What stands where the screens would be when the lens expected shots and there are none: whether to wait, retry or
+ *  stop. null for Kettle, which has no store to ask. Only the status and the scan are read, never a lens id. */
+export function noScreensWhy(live: LiveInfo | null): string | null {
+  if (!live) return null;
+  const { status, error, scan } = live.product;
+  if (status === 'missing') return 'No scan store for this product, so there are no screens to show.';
+  if (status === 'error') return 'The scan could not be read' + (error ? ' (' + error + ')' : '') + ', so its screens are not available.';
+  if (status === 'loading') return 'Loading the live scan, screens will appear here if it has any.';
+  if (status === 'offline') return 'The live scan is offline and reconnecting; ' + (scan ? 'its data so far has no screens of this feature.' : 'its screens will appear once it is back.');
+  return scan ? 'No screens of this feature in this scan.' : 'The scan has not arrived yet.';
+}
+
+/** `expected`: the lens measures through the harness, so a missing strip would hide missing evidence: say why instead. */
+export function ScreensStrip({ f, expected = false }: { f: Feature; expected?: boolean }) {
   const live = useLive(), [open, setOpen] = useState<string | null>(null), scan = live?.product.scan, fid = baseId(f.id);
   // grouped by what it reads: the scan and the feature (a re-render for any other reason regroups nothing)
   const g = useMemo(() => {
@@ -100,7 +113,8 @@ export function ScreensStrip({ f }: { f: Feature }) {
     for (const g of groups) for (const s of g.shots) { const k = keyOf(s); let a = by.get(k); if (!a) by.set(k, (a = [])); if (!a.some((t) => t.runId === g.runId)) a.push({ run: g.run, runId: g.runId, shot: s }); }
     return { groups, by, keys: [...by.keys()].sort() };
   }, [scan, fid]);
-  if (!live || !g) return null;
+  if (!live) return null;
+  if (!g) { const why = expected ? noScreensWhy(live) : null; return why ? <p className="pg-unscr" role="status">{why}</p> : null; }
   const { groups, by, keys } = g;
   return (
     <div className="dsec scr">

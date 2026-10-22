@@ -25,7 +25,7 @@ export const hasRuns = (c: Comparison): boolean => runsOf(c).length > 1;
 
 export function perfItem(c: Comparison, fname: string, lens: LensDef | undefined): PerfItem {
   const p = c.p, values = runsOf(c), b = latestOf(c.before, p.lens, p.metric), a = latestOf(c.after, p.lens, p.metric);
-  const field = p.metric ? lens?.F[p.metric] : undefined, unit = b?.unit ?? field?.unit ?? '';
+  const field = p.metric ? lens?.F[p.metric] : undefined, unit = b?.unit ?? a?.unit ?? field?.unit ?? '';
   const seen = new Map<string, Context>();
   for (const m of c.before) {
     if (m.lens !== p.lens || m.metric === p.metric) continue;

@@ -166,7 +166,7 @@ export function LensTab({ lens, f }: { lens: string; f: Feature }) {
       <Sec label="Metrics"><Metrics lens={lens} f={f} M={M} scan={scan} all={density !== 'simple'} sig={sig} /></Sec>
       {past ? null : <Sec label="KPIs"><KpiRows M={M} f={f} lens={lens} /></Sec>}
       <Sec label="Questions and orders"><SwarmSection f={f} lens={lens} /></Sec>
-      {shots ? <Sec label="Screens"><ScreensStrip f={f} /><Unscreenable f={f} lens={lens} scan={scan} /></Sec> : null}
+      {shots ? <Sec label="Screens"><ScreensStrip f={f} expected /><Unscreenable f={f} lens={lens} scan={scan} /></Sec> : null}
       {biz ? <Sec label="Business"><BusinessSection f={f} /></Sec> : null}
     </Stagger>
   );
