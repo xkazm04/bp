@@ -549,6 +549,37 @@ try {
     const je1 = e1.ok ? job('rel', e1.job.id) : undefined, je2 = e2.ok ? job('rel', e2.job.id) : undefined;
     check('a cut whose gate fails -> failed with lens-scan\'s line, its measure run still attached', je1?.status === 'failed' && je1.error === 'lens-scan release failed: gate npm test: 1 failing' && je1.run_id === 'run-' + je1.id && relRow('rel-3.0.0-fail')?.status === 'failed', JSON.stringify(je1));
     check('an unknown release -> failed with the refusal', je2?.status === 'failed' && /^lens-scan refused:/.test(je2.error ?? ''), JSON.stringify(je2));
+    // a release row left `building` by a job that ends without the CLI moving it on - cancelled from the Agents panel, or the
+    // CLI dying mid-cut. The Kettle sim fails such a row (train-sim.ts: "its building release fails, so a build may start
+    // again"); the live registry must too, or every release route refuses every next step for that row for good
+    // (release-job.ts: a build starts only from draft or failed). The stand-in CLI moves the row to building as lens-scan
+    // does, then hangs (-stall) or exits 3 (-die).
+    const stallFake = path.join(dir, 'fake-claude-stall.mjs');
+    fs.writeFileSync(stallFake, [
+      "import { DatabaseSync } from 'node:sqlite';",
+      "let input = ''; process.stdin.setEncoding('utf8'); for await (const c of process.stdin) input += c;",
+      "const rid = /--id (\\S+)/.exec(input)?.[1] ?? '';",
+      "const db = new DatabaseSync(process.cwd() + '/.ai/lens-scan/scan.db', { timeout: 5000 });",
+      "db.prepare(\"UPDATE releases SET status = 'building', updated_at = ? WHERE id = ?\").run(new Date().toISOString(), rid); db.close();",
+      "console.log('building ' + rid);",
+      "if (rid.includes('-die')) { console.error('stall fake: the cut died'); process.exit(3); }",
+      "await new Promise((r) => setTimeout(r, 120000));",
+    ].join('\n'));
+    const sd = new DatabaseSync(rdb);
+    for (const v of ['4.0.0-stall', '4.0.1-die']) sd.prepare("INSERT INTO releases (id, version, branch, status, created_at, updated_at) VALUES (?, ?, ?, 'draft', ?, ?)").run('rel-' + v, v, 'release/' + v, T, T);
+    sd.close();
+    process.env.BP_CLAUDE_BIN = stallFake;
+    const s1 = J.enqueueRelease('rel', rr, 'rel-4.0.0-stall', '4.0.0-stall', 'build'), s2 = J.enqueueRelease('rel', rr, 'rel-4.0.1-die', '4.0.1-die', 'build');
+    check('stall: the cut moved the release to building', await until(() => relRow('rel-4.0.0-stall')?.status === 'building'), relRow('rel-4.0.0-stall')?.status);
+    if (s1.ok) J.cancel('rel', s1.job.id);
+    check('a cancelled build job leaves its building release failed, with a reason', await until(() => relRow('rel-4.0.0-stall')?.status === 'failed', 8000) && !!relRow('rel-4.0.0-stall')?.error,
+      JSON.stringify(relRow('rel-4.0.0-stall')));
+    await until(() => s2.ok && job('rel', s2.job.id)?.status === 'failed');
+    check('a build whose CLI died leaves its building release failed, with the job\'s error', await until(() => relRow('rel-4.0.1-die')?.status === 'failed', 8000) && relRow('rel-4.0.1-die')?.error === 'stall fake: the cut died',
+      JSON.stringify(relRow('rel-4.0.1-die')));
+    process.env.BP_CLAUDE_BIN = FAKE;
+    const rebuilt = await call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-4.0.0-stall' }, {});
+    check('the failed release can be built again (202), and that build reaches pr-open', rebuilt.status === 202 && await until(() => relRow('rel-4.0.0-stall')?.status === 'pr-open'), rebuilt.status + ' ' + relRow('rel-4.0.0-stall')?.status);
     const e3 = J.enqueueRelease('rel', rr, 'rel-1.0.0', '1.0.1', 'build'), e4 = J.enqueueRelease('rel', rr, 'release-1', '1', 'finish');
     check('enqueueRelease refuses an id that is not rel-<version> -> 400', !e3.ok && e3.status === 400 && !e4.ok && e4.status === 400);
 

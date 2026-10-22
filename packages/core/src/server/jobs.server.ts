@@ -13,6 +13,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, RUN_NOTE_PREFIX, SAFE_ID, type ReleaseStep, type ScanJob, type ScanScope } from '../scan/jobs.ts';
 import { RELEASE_ID } from '../scan/release.ts';
 import { WAVE_EFFORTS, WAVE_MODELS, type WaveEffort, type WaveModel } from '../scan/waves.ts';
@@ -211,10 +212,31 @@ function finish(slug: string, r: Rec, status: 'done' | 'failed' | 'cancelled', e
   if (r.job.status !== 'cancelled') Object.assign(r.job, { status }, extra);
   else if (extra.exit_code !== undefined) r.job.exit_code = extra.exit_code;
   r.job.ended_at ??= now();
+  if (r.job.kind === 'release' && r.job.status !== 'done') failBuilding(r);
   r.log?.end(`\n# ${r.job.status}${r.job.exit_code !== undefined ? ` (exit ${r.job.exit_code})` : ''} at ${r.job.ended_at}\n`);
   r.log = undefined;
   pump(slug);
   notify(slug);
+}
+
+/**
+ * A release job that ends without `done` while its release row is still `building` leaves a row no route can move (a build
+ * starts only from draft or failed, a finish from pr-open or merged): the CLI was cancelled or died before it wrote an
+ * outcome. Fail the row with the job's reason so a build may start again, as the Kettle sim does (train-sim.ts: "its
+ * building release fails"). Compare-and-set on `building`: a row the CLI did move (failed with its own error, pr-open) is
+ * never touched. Best effort: a store that cannot be written leaves the row as it was, and the server says so.
+ */
+function failBuilding(r: Rec): void {
+  const id = r.job.release;
+  if (!id) return;
+  const file = path.join(r.root, '.ai', 'lens-scan', 'scan.db');
+  if (!fs.existsSync(file)) return;
+  let db: DatabaseSync | null = null;
+  try {
+    db = new DatabaseSync(file, { timeout: 2000 });
+    const why = r.job.status === 'cancelled' ? 'cancelled from the blueprint before the cut finished' : (r.job.error ?? failedLine(r) ?? 'the release job ended before the cut finished');
+    db.prepare("UPDATE releases SET status = 'failed', error = ?, updated_at = ? WHERE id = ? AND status = 'building'").run(why.slice(0, 500), now(), id);
+  } catch (e) { warnOnce('release row ' + id, e); } finally { close(db); }
 }
 
 function onOutput(slug: string, r: Rec, chunk: Buffer, err: boolean): void {
