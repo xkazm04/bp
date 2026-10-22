@@ -228,6 +228,26 @@ export function planProblems(cppText, plan) {
   return out;
 }
 
+/**
+ * What is wrong with how BpLink.cpp reports a refused /structure answer ([] when nothing). Reading 10 (machine.md) got one
+ * line for four possible failures; the source must keep them apart: a reason set in its own branch for each of
+ * FJsonSerializer::Deserialize, the `structure` field and BpSchema::FromJson (which reads BpSchema::LastFailure() for the
+ * call and key), and Error lines that log that reason and the answer's length and first 200 characters. Read between
+ * the /structure and /plan requests, on code with comments stripped (string literals kept where the subject is one).
+ */
+export function structureDiagProblems(cppText) {
+  const code = stripCxx(cppText), lit = stripCxx(cppText, true);
+  const from = lit.indexOf('TEXT("/structure")'), to = lit.indexOf('TEXT("/plan")');
+  if (from < 0 || to < from) return ['no /structure request before the /plan one'];
+  const c = code.slice(from, to), l = lit.slice(from, to), out = [];
+  if (!/\bif\s*\(\s*!FJsonSerializer::Deserialize\([^;{]*\)\s*\{\s*Refused\s*=/.test(c)) out.push('no branch of its own for FJsonSerializer::Deserialize');
+  if (!/\belse\s+if\s*\(\s*!Payload->TryGetObjectField\(TEXT\("structure"\)[^;{]*\)\s*\{\s*Refused\s*=/.test(l)) out.push('no branch of its own for the `structure` field');
+  if (!/\belse\s+if\s*\(\s*!BpSchema::FromJson\([^;{]*\)\s*\{[^}]*BpSchema::LastFailure\(\)[^}]*Refused\s*=/.test(c)) out.push('no branch of its own for BpSchema::FromJson that reads BpSchema::LastFailure()');
+  if (!/UE_LOG\s*\(\s*LogBpLink\s*,\s*Error\s*,\s*TEXT\("[^"]*did not parse into FBpAppStructure: %s"\)\s*,\s*\*Root\s*,\s*\*Refused\s*\)/.test(l)) out.push('no Error line that logs the reason');
+  if (!/UE_LOG\s*\(\s*LogBpLink\s*,\s*Error\s*,[^;]*GetContent\(\)\.Num\(\)[^;]*\.Left\(200\)/.test(c)) out.push("no Error line with the answer's byte length and first 200 characters");
+  return out;
+}
+
 /** True when this file was started directly (`node scripts/check-bplink.mjs`), false when another module imported it for its helpers. */
 const isMain = !!process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
 
@@ -242,6 +262,8 @@ async function main() {
   // not pinning anything). Unset, nothing changes.
   // BP_CHECK_BPLINK_SEED=source:plan drifts an in-memory copy of BpLink.cpp before the /plan source assertion reads it (the
   // wings figure is fed from Plan.rooms), and that assertion must then FAIL. The file on disk is not touched.
+  // BP_CHECK_BPLINK_SEED=source:diag does the same for the /structure diagnosis assertion (its FromJson branch stops reading
+  // BpSchema::LastFailure()), which must then FAIL.
   const seeded = new Set((process.env.BP_CHECK_BPLINK_SEED ?? '').split(',').filter(Boolean));
   const seedBy = (key) => (seeded.has(key) ? 1 : 0);
   const wantDomains = Number(process.env.BP_CHECK_BPLINK_WINGS ?? kdata.domains.length);
@@ -404,6 +426,20 @@ async function main() {
         planProblems(noPlanGet, pb).length > 0
         && planProblems(`// MakeGet(Root + TEXT("/plan"), TEXT("application/json"))\n${noPlanGet}`, pb).length > 0
         && planProblems(cppText.replace('Snapshot.Plan.wings.Num()', 'Snapshot.Plan.rooms.Num()'), pb).length > 0);
+
+      // A refused /structure answer names the step that refused it (machine.md, reading 12 measured it as CopyRaw at
+      // structure.lenses[0].manifest.presentation.glyph). The seed drops the FromJson branch's LastFailure() read.
+      const diagText = seeded.has('source:diag') ? cppText.replace(/const BpSchema::FFromJsonFailure& Failure = BpSchema::LastFailure\(\);(\s*Refused)/, 'const BpSchema::FFromJsonFailure Failure;$1') : cppText;
+      const diagBad = structureDiagProblems(diagText);
+      check('source: a refused /structure answer is told apart as Deserialize, the `structure` field or FromJson (with its LastFailure() call and key), and logged with its length and head',
+        diagBad.length === 0, diagBad.join(' | '));
+      // permanent control: the one-condition shape reading 10 ran (ba4e759) is refused
+      const oneLine = '\tStructure->OnProcessRequestComplete().BindLambda([](FHttpRequestPtr, FHttpResponsePtr Response, bool) {\n'
+        + '\t\tif (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Response->GetContentAsString()), Payload) || !Payload.IsValid()\n'
+        + '\t\t\t|| !Payload->TryGetObjectField(TEXT("structure"), StructureJson) || !BpSchema::FromJson(StructureJson->ToSharedRef(), Snapshot.Structure))\n'
+        + '\t\t{ UE_LOG(LogBpLink, Error, TEXT("BpLink: the %s/structure answer did not parse into FBpAppStructure"), *Root); }\n';
+      check('source: the /structure diagnosis rule refuses the one-condition shape reading 10 ran',
+        structureDiagProblems(`MakeGet(Root + TEXT("/structure"), x);\n${oneLine}MakeGet(Root + TEXT("/plan"), y);`).length === 5);
 
       // BpLink.Build.cs reaches the generated USTRUCT headers through a hand-counted run of ".." from ModuleDirectory,
       // and nothing in the repo has ever resolved it: a header moved, or one ".." too few, surfaces as an unresolved
