@@ -33,6 +33,7 @@
     "check:train-sim": "node scripts/check-train-sim.ts",
     "check:train-compare": "node scripts/check-train-compare.ts",
     "check:train-budget": "node scripts/check-train-budget.ts",
+    "check:train-pending": "node scripts/check-train-pending.ts",
     "check:lens-manifest": "node scripts/check-lens-manifest.ts",
     "check:live-health": "node scripts/check-live-health.ts",
     "check:local-only": "node scripts/check-local-only.ts",
