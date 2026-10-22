@@ -254,6 +254,57 @@ P3: 150 draw calls and 350k visible triangles or fewer.
 
 **Gate:** every asset carries its gate results; nothing imported without them.
 
+### P4 Lynx-side back-measure (2026-10-22)
+
+Read-only run on master `a9bfe8f`; no code, script, asset or manifest changed. Every figure is read from the
+committed `manifest.json` files or from git, except the two check runs.
+
+**Checks.** Both through `isolated-gate.mjs`.
+
+- `npm run check`: 69 passed, 0 failed, 0 skipped of 69. One passing check, `check:scan-jobs`, skipped part of its own
+  work, so the gate's own words are "a green run here is NOT a full run".
+- `npm run check:art`: exit 0, 14 asset folders, 59.6 MB committed under ArtSource, 0 violations, all five seeded
+  controls failed as expected.
+
+**Hand-off folders.** "Gates" is the manifest's `gates.*.pass` values (materials carry a sixth gate, `tiling`).
+"Trailer" is `git log --format=%(trailers:key=Host)` on the `lynx_commit`; `git cat-file -e` resolved every commit.
+
+| Folder | Class | Tris | Budget (plan.md P4) | Gates | `lynx_commit` | Resolves | `Host: Lynx` trailer |
+|---|---|---|---|---|---|---|---|
+| lamp-agent | character-prop | 26,035 | 30,000 | 5 of 5 true | `2dad0ad` | yes | no |
+| light-table-frame | prop-hero | 586 | 10,000 | 5 of 5 true | `60db9b6` | yes | no |
+| survey-pin | prop-instanced | 420 | 500 | 5 of 5 true | `474731d` | yes | no (see gap 1) |
+| fixture-kit | prop-instanced-kit | 452 in five meshes, largest 164 | 300 per mesh (manifest `budget_tris`; not in the P4 table) | 5 of 5 true | `474731d` | yes | no (see gap 1) |
+| studio-shelves | set-dressing | 1,092 | 24,000 (manifest) of 80,000 kit | 5 of 5 true | `ca2fa38` | yes | no |
+| studio-desk-lamp | set-dressing | 1,296 | 16,000 (manifest) of 80,000 kit | 5 of 5 true | `dea248c` | yes | no |
+| studio-mug | set-dressing | 1,008 | 8,000 (manifest) of 80,000 kit | 5 of 5 true | `a74a648` | yes | no |
+| studio-drawing-tubes | set-dressing | 2,976 | 20,000 (manifest) of 80,000 kit | 5 of 5 true | `13018a0` | yes | no |
+| studio-pinned-drawings | set-dressing | 804 | 12,000 (manifest) of 80,000 kit | 5 of 5 true | `6d95122` | yes | no |
+| city-backdrop | backdrop-matte | 72 | n/a (manifest 200) | 5 of 5 true | `47230b9` | yes | no |
+| mat-vellum | material | n/a | n/a | 6 of 6 true | `b31a649` | yes | no |
+| mat-blueprint-paper | material | n/a | n/a | 6 of 6 true | `b31a649` | yes | no |
+| mat-brushed-aluminium | material | n/a | n/a | 6 of 6 true | `b31a649` | yes | no |
+| mat-warm-wood | material | n/a | n/a | 6 of 6 true | `b31a649` | yes | no |
+
+Studio kit total: 7,176 of 80,000 tris (1,092 + 1,296 + 1,008 + 2,976 + 804). Every measured count is inside its budget.
+
+**Scene total (Lynx side).** Summed triangles of the assets that have a count: 26,035 (lamp) + 586 (frame) + 420 (pin)
++ 452 (fixture kit) + 7,176 (studio kit) + 72 (backdrop) = **34,741**, against the 350k scene budget (about 9.9%).
+This is the sum of the source meshes with each counted once. Instancing, the number of pins or tiles placed, the
+in-scene triangle count and the draw calls (150 budget) are Wolf's import reading (`import` block, `stat rhi`) and are
+not measured here. No manifest carries an `import` block yet.
+
+**Gaps found** (recorded, not fixed):
+
+1. No `lynx_commit` carries a parsed `Host: Lynx` trailer. Across the 14 folders there are 10 distinct commits
+   (`2dad0ad`, `60db9b6`, `474731d`, `ca2fa38`, `dea248c`, `a74a648`, `13018a0`, `6d95122`, `47230b9`, `b31a649`);
+   `%(trailers:key=Host)` is empty for all ten. Only `474731d` has a `Host: Lynx` line at all, in its body, followed
+   by the `Co-Authored-By` line, so git does not read it as a trailer. The close-out commit `f7c6f1d` has the same shape
+   (body line, not a parsed trailer). The plan.md P4 proof "committed with `Host: Lynx`" is therefore met in the
+   strict sense by none of them. The wolf-plan L4.1 line that said the close-out commits do carry it is corrected there.
+2. No null `lynx_commit` and no failing gate: none found.
+3. Every one of the 14 assets has a dated line in wolf-plan.md L4.1: none missing.
+
 ## P5 The loop: scan, wave, voice
 
 | Package | Work | Acceptance |
