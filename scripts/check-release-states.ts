@@ -45,5 +45,13 @@ for (const f of fs.readdirSync(DIR).filter((n) => n.endsWith('.tsx')).sort()) {
   expect(/useNow\(running\)/.test(st), 'Stepper.tsx drives the tick from isActive(last)');
 }
 
+// The version suggestion's three outcomes are each recoverable: a retry that re-runs the request, and a deadline.
+{
+  const vb = blankComments(fs.readFileSync(path.join(DIR, 'VersionBox.tsx'), 'utf8'));
+  expect(/\[ctx,\s*key,\s*round\]/.test(vb) && /setRound\(/.test(vb), 'VersionBox.tsx: the suggestion effect re-runs on a retry round, not only on ctx/key');
+  expect(/setTimeout\([\s\S]*?\},\s*SUGGEST_DEADLINE_MS\)/.test(vb) && (vb.match(/clearTimeout\(late\)/g) ?? []).length >= 3, 'VersionBox.tsx: a pending suggestion has a deadline, cleared on settle and on cleanup');
+  expect(/sug\.err\b[^\n]*onClick=\{sug\.retry\}/.test(vb), 'VersionBox.tsx: the refusal line offers a retry');
+}
+
 console.log(`release-states: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
