@@ -784,8 +784,9 @@ export class Engine {
     const ids: Record<string, 1> = {}, sc = this.M.P.scale;
     const sfx = sc > 1 ? LINES.slice(0, sc).map(([, s]) => '-' + s) : [];
     for (const f of fids) for (const id of lineSiblings(f, sfx)) if (this.M.P.F[id]) ids[id] = 1;
+    // Nothing to show (a retained event can name a feature the loaded map dropped): keep the watch open and say so.
+    if (!Object.keys(ids).length) { this.toast('Nothing to show:', 'those places are not on this plan any more.', undefined, undefined, 'warn'); return; }
     this.set({ morning: false });
-    if (!Object.keys(ids).length) return;
     this.setTarget(ids, label);
     this.lookAtTarget();
   }

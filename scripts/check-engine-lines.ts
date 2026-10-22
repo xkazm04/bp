@@ -10,11 +10,14 @@
 // is against the ground truth and not against the implementation's own idea of what a line suffix looks like.
 // Run: node --import @bp/core/register scripts/check-engine-lines.ts     Exit 1 on any miss.
 // Control: BP_ENGINE_LINES_SEED=1 replays the line-one-only strip, so both halves can be seen red.
+import { register } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { lineSiblings } from '../apps/web/src/engine/lines.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
+// Half 3 runs the REAL Engine.morningShow, so Engine.ts has to load: the same loader the engine harness uses.
+register('./overlays-loader.mjs', { parentURL: import.meta.url, data: { src: path.join(ROOT, 'apps/web/src'), root: ROOT, mutate: JSON.parse(process.env.BP_ENGINE_MUTATE || '[]') } });
 const core = (p: string) => import(pathToFileURL(path.join(ROOT, 'packages/core', p)).href);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
@@ -74,6 +77,31 @@ const fan = SEED ? seededSiblings : lineSiblings;
     if (!Object.keys(ids).length) empties.push(sfx[b]);
   }
   expect(empties.length === 0, `"Show these places on the plan" targets nothing for ${empties.length} of ${sc} product lines (${empties.join(', ')})`);
+}
+
+// ------------------------- 3. the real Engine.morningShow: a watch whose places resolve to nothing stays open and says why
+// Engine.prototype.morningShow is called on a recording stand-in for `this`, so the method body under test is the
+// shipped one. Control: BP_ENGINE_MUTATE (the engine harness's source-rewrite hook) can put the old order back.
+{
+  const { Engine }: Any = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/engine/Engine.ts')).href);
+  const M: Any = buildModel(1, () => 0, null);
+  const run = (fids: string[]) => {
+    const log = { set: [] as Any[], toast: [] as string[], targets: [] as Any[], looked: 0 };
+    const self: Any = {
+      M, set: (p: Any) => log.set.push(p), toast: (strong: string, text: string) => log.toast.push(strong + ' ' + text),
+      setTarget: (ids: Any, label: string) => log.targets.push([Object.keys(ids), label]), lookAtTarget: () => { log.looked++; },
+    };
+    Engine.prototype.morningShow.call(self, fids, 'x');
+    return log;
+  };
+  const gone = run(['no-such-feature-S', 'also-gone']);
+  expect(!gone.set.some((p) => p.morning === false), 'a watch whose places resolve to nothing was closed anyway');
+  expect(gone.toast.length === 1 && gone.toast[0].length > 12, 'an empty watch result must toast once to say why', JSON.stringify(gone.toast));
+  expect(gone.targets.length === 0 && gone.looked === 0, 'an empty watch result must not target or move the camera');
+  const real = M.P.features[0].id;
+  const ok = run([real]);
+  expect(ok.set.some((p) => p.morning === false), 'a watch that found its places must still close');
+  expect(ok.targets.length === 1 && ok.looked === 1 && ok.toast.length === 0, 'a watch that found its places must target them, look, and not toast');
 }
 
 if (failures.length) { console.log(failures.map((f) => 'FAIL ' + f).join('\n')); console.log(`check-engine-lines: ${failures.length} failed, ${held} held${SEED ? ' [seeded]' : ''}`); process.exit(1); }
