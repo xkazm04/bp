@@ -3,7 +3,7 @@
 // when the module reaches it only through PublicIncludePaths? A PROBE, wired to no gate: it needs an Unreal Engine install,
 // takes minutes, and writes everything outside this repo.
 //
-//   node scripts/uht-probe.mjs --engine "C:/Program Files/Epic Games/UE_5.8" --work <scratch dir> [--variant asis|junction|spellings|unity] [--target bpEditor|bp]
+//   node scripts/uht-probe.mjs --engine "C:/Program Files/Epic Games/UE_5.8" --work <scratch dir> [--variant asis|junction|spellings|unity] [--target bpEditor|bp] [--run]
 //
 // It synthesizes a host project under <work>/bp-uht-probe/ (apps/vr says the real .uproject is made by the editor, never by
 // hand, so none is added to the repo), copies apps/vr/Source/BpLink in byte for byte, and builds bpEditor Win64 Development.
@@ -27,7 +27,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const arg = (name) => {
@@ -41,8 +41,10 @@ const VARIANTS = ['asis', 'junction', 'spellings', 'unity'];
 // --target picks the UBT target and changes only the argv: bpEditor (default) is every reading before 2026-10-22; bp is the
 // synthesized Game target, built as `bp Win64 Development`. Variant markers and trees are untouched by it.
 const target = arg('target') ?? 'bpEditor';
+// --run (no value) adds the RUN step at the end; without it the script does exactly what it did before.
+const run = process.argv.includes('--run');
 if (!engine || !work || !VARIANTS.includes(variant) || !/^\w+$/.test(target)) {
-  console.error(`usage: node scripts/uht-probe.mjs --engine <UE root> --work <scratch dir> [--variant ${VARIANTS.join('|')}] [--target <name>]`);
+  console.error(`usage: node scripts/uht-probe.mjs --engine <UE root> --work <scratch dir> [--variant ${VARIANTS.join('|')}] [--target <name>] [--run]`);
   process.exit(2);
 }
 
@@ -210,4 +212,95 @@ console.log(`compiler  ${compiler ?? '(no Compiler: line in UBT log)'}`);
 console.log(`generated ${found.length ? found.join(', ') : 'no BpSchema.generated.h under Intermediate'}`);
 for (const l of reading.errorLines.slice(0, 20)) console.log(`error     ${l.trim()}`);
 console.log(`log       ${log}`);
-process.exit(exitCode === 0 ? 0 : 1);
+if (!run || exitCode !== 0) process.exit(exitCode === 0 ? 0 : 1);
+
+// --run: after a build that exited 0, start what was built, headless, and record what it printed. It grades nothing.
+// apps/server is started first on an ephemeral port (`--port 0`, in an empty cwd under <base>, as check-bplink does) and
+// BpLink is pointed at it with -BpLinkUrl=. FetchKettle's HTTP is async, so the process is NOT asked to quit: it is watched
+// until a BpLink outcome line appears (the Kettle line, or one of BpLink's own Error lines), given RUN_GRACE_MS to flush,
+// then its whole tree is killed (taskkill /T /F); if no such line appears it is killed at RUN_TIMEOUT_MS. The server is
+// stopped the same way. Output: run-<target>.log (the process's stdout+stderr), run-server-<target>.log, and run-<target>-
+// Saved.log (a copy of the project's Saved/Logs/bp.log, when one was written); the reading goes into uht-probe-<variant>.json.
+const RUN_TIMEOUT_MS = 900_000;
+const RUN_GRACE_MS = 5_000;
+const killTree = (pid) => spawnSync('taskkill.exe', ['/PID', String(pid), '/T', '/F'], { encoding: 'utf8' });
+const serverCwd = path.join(base, 'run-server-cwd');
+fs.mkdirSync(serverCwd, { recursive: true });
+const serverLog = path.join(base, `run-server-${target}.log`);
+const serverArgv = ['--import', pathToFileURL(path.join(REPO, 'packages/core/register.mjs')).href, path.join(REPO, 'apps/server/src/main.ts'), '--port', '0'];
+const server = spawn(process.execPath, serverArgv, { cwd: serverCwd, stdio: ['ignore', 'pipe', 'pipe'] });
+let serverOut = '';
+server.stdout.on('data', (d) => (serverOut += d));
+server.stderr.on('data', (d) => (serverOut += d));
+const port = await new Promise((resolve) => {
+  const t = setTimeout(() => resolve(0), 20000);
+  const look = () => { const m = /listening on http:\/\/[^:]+:(\d+)/.exec(serverOut); if (m) { clearTimeout(t); resolve(Number(m[1])); } };
+  server.stdout.on('data', look);
+  server.on('exit', () => { clearTimeout(t); resolve(0); });
+});
+const stopServer = async () => {
+  if (server.exitCode === null && server.signalCode === null) { const gone = new Promise((r) => server.once('exit', r)); killTree(server.pid); await gone; }
+  fs.writeFileSync(serverLog, serverOut);
+};
+if (!port) {
+  await stopServer();
+  console.error(`REFUSED: apps/server did not print its port within 20 s; its output is in ${serverLog}`);
+  process.exit(1);
+}
+const url = `http://127.0.0.1:${port}`;
+const exe = target.endsWith('Editor')
+  ? path.join(E, 'Engine/Binaries/Win64/UnrealEditor-Cmd.exe')
+  : path.join(root, 'Binaries/Win64', `${target}.exe`);
+const runArgv = [
+  ...(target.endsWith('Editor') ? [uproject] : []),
+  '-nullrhi', '-unattended', '-nosplash', '-nosound', '-stdout', '-FullStdOutLogOutput', '-NoLogTimes', `-BpLinkUrl=${url}`,
+];
+const runLog = path.join(base, `run-${target}.log`);
+console.log(`server    ${url} (pid ${server.pid}, cwd ${serverCwd})`);
+console.log(`start     "${exe}" ${runArgv.map((a) => `"${a}"`).join(' ')}   (cwd ${path.dirname(exe)})`);
+const OUTCOME = /BpLink: Kettle |BpLink: GET .* failed|BpLink: the .* did not parse/;
+const runFd = fs.openSync(runLog, 'w');
+const runStarted = Date.now();
+const ran = await new Promise((resolve) => {
+  let child;
+  try {
+    child = spawn(exe, runArgv, { cwd: path.dirname(exe), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  } catch (e) { fs.writeSync(runFd, `\nspawn error: ${e.message}\n`); resolve({ exitCode: null, stoppedBy: 'spawn error', pid: null }); return; }
+  let text = '', stoppedBy = null, graceTimer = null;
+  const stop = (why) => { if (stoppedBy) return; stoppedBy = why; killTree(child.pid); };
+  const hard = setTimeout(() => stop(`timeout ${RUN_TIMEOUT_MS} ms`), RUN_TIMEOUT_MS);
+  const onData = (d) => {
+    fs.writeSync(runFd, d);
+    text += d;
+    if (!graceTimer && OUTCOME.test(text)) graceTimer = setTimeout(() => stop(`outcome line seen, then ${RUN_GRACE_MS} ms`), RUN_GRACE_MS);
+  };
+  child.stdout.on('data', onData);
+  child.stderr.on('data', onData);
+  child.on('error', (e) => { fs.writeSync(runFd, `\nspawn error: ${e.message}\n`); });
+  child.on('close', (code, signal) => {
+    clearTimeout(hard); clearTimeout(graceTimer);
+    resolve({ exitCode: code, signal, stoppedBy: stoppedBy ?? 'exited by itself', pid: child.pid });
+  });
+});
+const runSeconds = Number(((Date.now() - runStarted) / 1000).toFixed(1));
+fs.closeSync(runFd);
+await stopServer();
+
+const savedSrc = path.join(root, 'Saved/Logs/bp.log');
+const savedLog = path.join(base, `run-${target}-Saved.log`);
+if (fs.existsSync(savedSrc)) fs.copyFileSync(savedSrc, savedLog);
+const runText = fs.readFileSync(runLog, 'utf8');
+reading.run = {
+  at: new Date().toISOString(), target, command: [exe, ...runArgv], cwd: path.dirname(exe), timeoutMs: RUN_TIMEOUT_MS, graceMs: RUN_GRACE_MS,
+  server: { command: [process.execPath, ...serverArgv], cwd: serverCwd, url, log: serverLog },
+  ...ran, seconds: runSeconds, log: runLog, savedLog: fs.existsSync(savedLog) ? savedLog : null,
+  bpLinkLines: runText.split(/\r?\n/).filter((l) => /BpLink/.test(l)),
+  errorLines: runText.split(/\r?\n/).filter((l) => /\berror\b|fatal/i.test(l)).slice(0, 50),
+  serverRefusals: serverOut.split(/\r?\n/).filter((l) => /^refused /.test(l)),
+};
+fs.writeFileSync(path.join(base, `uht-probe-${variant}.json`), `${JSON.stringify(reading, null, 2)}\n`);
+console.log(`ran       ${ran.stoppedBy}; exit ${ran.exitCode} after ${runSeconds}s`);
+for (const l of reading.run.bpLinkLines.slice(0, 20)) console.log(`bplink    ${l.trim()}`);
+for (const l of reading.run.errorLines.slice(0, 20)) console.log(`error     ${l.trim()}`);
+console.log(`run log   ${runLog}`);
+process.exit(0);

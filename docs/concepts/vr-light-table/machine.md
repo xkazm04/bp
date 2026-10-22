@@ -350,3 +350,150 @@ node scripts/uht-probe.mjs --engine "C:/Program Files/Epic Games/UE_5.8" --work 
 
 `--target <name>` (default `bpEditor`) is the first UBT argument: `bp` is the synthesized Game target, `bpEditor` the editor
 one. Every earlier command keeps its meaning.
+
+## Lynx, 2026-10-22 (night, later): the first RUN, the editor and `bp.exe` started against apps/server
+
+Same host, engine and toolchain as above: Lynx, UE 5.8.4 (Changelist 58902052), and both builds' `compiler` line printed
+`C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64\cl.exe`, with UBT
+printing `Running x64 binary on arm64 system. Use arm binaries instead` (emulated x64). Repo at `2422c5d` plus this
+section's commit, which adds `--run` to `scripts/uht-probe.mjs`. The BpLink sources and schema headers hash exactly as in
+reading 8's table (`BpLink.cpp` `aeb93654...`, `BpLink.h` `66f9496a...`, `BpLink.Build.cs` `6ae49183...`, `BpSchema.h`
+`e2eb2802...`, `BpSchemaFixups.h` `7b102f5e...`, from each tree's `uht-probe-junction.json`, repo = probe). Each reading is
+a **fresh** `--work` tree under `C:/Users/kazda/AppData/Local/Temp/`, `--variant junction`. Each tree's `packages` is a
+junction into this worktree (`C:/Users/kazda/.personas/headless-masters/worktrees/bp/6f1b5327/packages`), and nothing
+was added to `apps/vr`. **No frame time, fps or latency was measured, and none can be read from these runs:** `-nullrhi`
+renders nothing.
+
+### What `--run` does (the mechanism)
+
+After a build that exited 0, and only with `--run`, the script:
+
+1. starts apps/server the way `check:bplink` does:
+   `node --import <repo>/packages/core/register.mjs <repo>/apps/server/src/main.ts --port 0`, in an empty cwd
+   `<tree>/bp-uht-probe/run-server-cwd`. It waits for `bp server listening on http://127.0.0.1:<port>` and points BpLink at
+   it with `-BpLinkUrl=http://127.0.0.1:<port>` (`BpLink.cpp:68` reads that before `BP_LINK_URL` and the 3100 default).
+   The port is ephemeral, so nothing has to be free on 3100.
+2. starts the built binary with
+   `-nullrhi -unattended -nosplash -nosound -stdout -FullStdOutLogOutput -NoLogTimes -BpLinkUrl=<url>`. For `bpEditor` that
+   is the engine's `Engine/Binaries/Win64/UnrealEditor-Cmd.exe <tree>/.../apps/vr/bp.uproject`; for `bp` it is
+   `<tree>/.../apps/vr/Binaries/Win64/bp.exe`, with no project argument.
+3. **does not ask the process to quit.** FetchKettle is async, so the script watches stdout for a BpLink outcome line
+   (`BpLink: Kettle `, `BpLink: GET ... failed` or `BpLink: the ... did not parse`). When one appears it waits 5,000 ms more,
+   then runs `taskkill /PID <pid> /T /F` on the whole tree. With no outcome line the same kill fires at a hard timeout of
+   900,000 ms. A process that exits by itself is recorded as such. The server is then stopped with the same `taskkill`.
+4. writes `run-<target>.log` (the process's stdout and stderr), `run-<target>-Saved.log` (a copy of the project's
+   `Saved/Logs/bp.log`) and `run-server-<target>.log`, and records it all under `run` in `uht-probe-junction.json`. It grades
+   nothing, and its exit code is 0 whatever the run printed.
+
+Without `--run`, the script's behaviour is unchanged (the code path ends with the same `process.exit` as before); the
+usage line now lists `[--run]`. After each reading below, `tasklist` showed no `UnrealEditor*`, `bp.exe`, `zenserver`,
+`ShaderCompileWorker` or `CrashReportClient` process.
+
+### Reading 10: the editor boots `bp.uproject`, BpLink loads and asks, and the answer does not parse (tree `bp-6f1b5327-editor-run`)
+
+`node scripts/uht-probe.mjs --engine "C:/Program Files/Epic Games/UE_5.8" --work C:/Users/kazda/AppData/Local/Temp/bp-6f1b5327-editor-run --variant junction --run`
+
+- **Build**: `bpEditor Win64 Development`, exit **0**, 170.8 s wall clock (UBT: `Total execution time: 169.60 seconds`),
+  `Result: Succeeded`, `UHT processed bpEditor in 7.7448759 seconds (4 generated files written)`, `[12/13] Link [x64]
+  UnrealEditor-BpLink.dll` (546,816 bytes). 0 `: warning` lines.
+- **Server**: `bp server listening on http://127.0.0.1:64183`; its log records no `refused` line.
+- **Run**: `"C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" "C:\Users\kazda\AppData\Local\Temp\bp-6f1b5327-editor-run\bp-uht-probe\apps\vr\bp.uproject" -nullrhi -unattended -nosplash -nosound -stdout -FullStdOutLogOutput -NoLogTimes -BpLinkUrl=http://127.0.0.1:64183`,
+  cwd `C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\Win64`. Stopped by `outcome line seen, then 5000 ms`, 68.3 s
+  after start. The recorded exit code **1** is the one `taskkill /F` imposes; the editor did not exit by itself.
+- **The editor booted** under the Null RHI (`LogCsvProfiler: Display: Metadata set : rhiname="Null"`), opened an empty
+  `Untitled` editor world, and printed `LogInit: Display: Engine is initialized. Leaving FEngineLoop::Init()` (stdout line
+  1733). There is no `Content/` and no map in the probe; neither stopped it.
+- **BpLink loaded, and StartupModule ran FetchKettle** (stdout lines 1662 and 1663, verbatim):
+  ```
+  LogModuleManager: InternalLoadLibrary: 'BpLink' ('C:/Users/kazda/AppData/Local/Temp/bp-6f1b5327-editor-run/bp-uht-probe/apps/vr/Binaries/Win64/UnrealEditor-BpLink.dll')
+  LogBpLink: BpLink: reading Kettle from http://127.0.0.1:64183
+  ```
+  `HTTP` was up: `LogInit: Creating http thread with maximum 251 concurrent requests` (line 398) came before it.
+- **The callback fired, and the first answer did not parse** (stdout line 1774, verbatim; in the Saved log, line 1761):
+  ```
+  LogBpLink: Error: BpLink: the http://127.0.0.1:64183/api/products/kettle/structure answer did not parse into FBpAppStructure
+  ```
+  `BpLink.cpp:94-112`: BpLink logs this line only after the request connected and answered **200**. So HTTP from Unreal to
+  apps/server worked end to end. Then `FJsonSerializer::Deserialize`, the `structure` field lookup or `BpSchema::FromJson`
+  (`FJsonObjectConverter::JsonObjectToUStruct` and then `FixUp`, `BpSchemaFixups.h:174`) returned false. **Which of these
+  failed, and on which field, is not measured**: the log says only this line, and finding out needs a change to BpLink or
+  to the generated code, which this run may not make. Because the failure returns before `/plan` is requested
+  (`OnDone(false, ...)`), **no `BpLink: Kettle wings=...` line was printed**, and neither was the `(no plan read, so no
+  wings)` fallback. The `wings=5 rooms=13 bays=29 tiles=133` line remains pinned from the C++ TEXT by `check:bplink`. It has
+  never been printed by Unreal.
+- Logs: `C:/Users/kazda/AppData/Local/Temp/bp-6f1b5327-editor-run/bp-uht-probe/run-bpEditor.log` (1,801 lines),
+  `run-bpEditor-Saved.log`, `run-server-bpEditor.log`, beside the build's `uht-probe-junction.log`, `ubt-Log-junction.txt`
+  and `uht-probe-junction.json`.
+
+### Reading 11: `bp.exe` (the Game target) starts and asserts before BpLink runs (tree `bp-6f1b5327-game`)
+
+`node scripts/uht-probe.mjs --engine "C:/Program Files/Epic Games/UE_5.8" --work C:/Users/kazda/AppData/Local/Temp/bp-6f1b5327-game --variant junction --target bp --run`
+
+- **Build**: `bp Win64 Development`, exit **0**, 163.8 s wall clock (UBT: `Total execution time: 162.49 seconds`),
+  `Result: Succeeded`, `UHT processed bp in 8.8779521 seconds (4 generated files written)`, `[12/13] Link [x64] bp.exe`.
+  `bp.exe` is 331,998,720 bytes, the same size as in reading 8. 0 `: warning` lines.
+- **Server**: `bp server listening on http://127.0.0.1:55124`; no `refused` line.
+- **Run**: `"C:\Users\kazda\AppData\Local\Temp\bp-6f1b5327-game\bp-uht-probe\apps\vr\Binaries\Win64\bp.exe" -nullrhi -unattended -nosplash -nosound -stdout -FullStdOutLogOutput -NoLogTimes -BpLinkUrl=http://127.0.0.1:55124`,
+  cwd `...\apps\vr\Binaries\Win64`. It **exited by itself** after 15.8 s with exit code **3**. Nothing was killed.
+- **It did not reach BpLink.** No `LogBpLink` line was printed. The first error, then the crash, verbatim (stdout lines
+  704 and 719 to 735):
+  ```
+  LogAssetRegistry: Error: Failed to load premade asset registry. LoadResult == 1.
+  ...
+  LogStreaming: Display: FlushAsyncLoading(8): 8 QueuedPackages, 0 AsyncPackages
+  LogPackageLocalizationCache: Processed 82 localized package path(s) for 1 prioritized culture(s) in 0.002347 seconds
+  LogWindows: Error: appError called: Assertion failed: ReaderPos + Num <= ReaderSize [File:D:\build\++UE5\Sync\Engine\Source\Runtime\Core\Public\Serialization\BufferReader.h] [Line: 52]
+  LogThreadingWindows: Error: Runnable thread IOThreadPool #2 crashed.
+  LogWindows: Error: === Critical error: ===
+  LogWindows: Error: Crash in runnable thread IOThreadPool #2
+  LogExit: Executing StaticShutdownAfterError
+  LogWindows: FPlatformMisc::RequestExitWithStatus(1, 3, FRunnableThreadWin::GuardedRun.ExceptionHandler)
+  LogCore: Engine exit requested (reason: Win RequestExit)
+  ```
+  This is a monolithic Development Game executable started with no cooked or staged content. The probe has no
+  `Content/` and was never cooked, and its only map setting is `GameDefaultMap=/Engine/Maps/Entry`. That the missing cook
+  is the cause is a reading of the log, **not measured**. Nothing was added to make it boot, as this run's rules require.
+- Logs: `C:/Users/kazda/AppData/Local/Temp/bp-6f1b5327-game/bp-uht-probe/run-bp.log` (735 lines), `run-bp-Saved.log`,
+  `run-server-bp.log`, beside `uht-probe-junction.log`, `ubt-Log-junction.txt` and `uht-probe-junction.json`.
+
+| File (under `C:/Users/kazda/AppData/Local/Temp/`) | SHA-256 |
+|---|---|
+| `bp-6f1b5327-editor-run/bp-uht-probe/run-bpEditor.log` | `e7be7bcdf6c57a70fb69ac43b739ee33779e472997d9e666fad9c4db58756998` |
+| `bp-6f1b5327-editor-run/bp-uht-probe/run-bpEditor-Saved.log` | `cabd59f3c333a2aaf26efa2ab7336c036906d7a6ce2c577e8ee02f7e2d5f014f` |
+| `bp-6f1b5327-game/bp-uht-probe/run-bp.log` | `8a45c6363971fb7ccdd919ad0a7579de102ef32d717d81fbb685752d1a70f78b` |
+| `bp-6f1b5327-game/bp-uht-probe/run-bp-Saved.log` | `6e2b890183fd2d99cdc80647debdae1f511fffadd1136b606de23c9f0cb28a61` |
+| `bp-6f1b5327-game/bp-uht-probe/apps/vr/Binaries/Win64/bp.exe` | `2fba23d337734b670a105522943ecee1009133937d6478d69f0411ed7c97f174` |
+
+One more tree from this session, `bp-6f1b5327-editor`, is **not a reading**. I started it while reading 10's UBT was still
+running, and UBT refused it: `Result: Failed (ConflictingInstance)`, exit 10 after 2.1 s. Nothing in it was built or run.
+
+### What this does NOT establish
+
+- **Milestone 4 goal 1 is not met.** Of its measure, this covers one part: the editor boots this synthesized project
+  headless on Lynx and loads BpLink, and BpLink's HTTP request reaches apps/server and gets a 200 back. Not covered, or
+  measured as failing:
+  - no BpLink line printed Kettle's wings: the structure answer did not parse (reading 10);
+  - the Win64 Game build does not boot in this project shape (reading 11);
+  - the headset, Meta XR v207, the Interaction SDK, the Quest 3 over Link and 90 Hz are untouched.
+- Why `/structure` did not parse. Which call returned false, and on which field, is the next measurement. It needs a log
+  line or a test inside BpLink or the generated `FixUp`, and that is outside this run's two files.
+- That `/plan` parses into `FBpPlan` in Unreal: it was never requested, because `/structure` failed first. The `/stream`
+  handling and the `BpLink.Fetch` console command were not run either.
+- Whether a cooked or staged `bp.exe` boots, and whether the editor boots with a real `Content/`, a real map or a real game
+  mode. Also unmeasured: PIE, `-game`, automation, `Shipping` and `-Modular`.
+- Any frame time. R5 (which statistic must be at or under 11.1 ms) is the operator's open question; `-nullrhi` measures
+  nothing of the kind, and nothing here is offered as one. Readings 10 and 11 likewise do not settle R1 or R4; that is the
+  owner's.
+- These are Lynx readings: MSVC 14.44.35207, UE 5.8.4 binaries running emulated x64 on ARM64. None say anything about Wolf.
+
+### How to reproduce
+
+```
+node scripts/uht-probe.mjs --engine "C:/Program Files/Epic Games/UE_5.8" --work <scratch-6> --variant junction --run
+node scripts/uht-probe.mjs --engine "C:/Program Files/Epic Games/UE_5.8" --work <scratch-7> --variant junction --target bp --run
+```
+
+Run them one after the other, not at once: two UBTs on the same host refuse each other (`ConflictingInstance`). Each run
+needs a fresh `<scratch>`, and the script never deletes in one. `--run` starts apps/server from this repo and needs
+`node_modules`. It leaves no process running: the target's tree is killed after the outcome line plus 5 s, or at 900 s,
+and the server is killed when the target is done.
