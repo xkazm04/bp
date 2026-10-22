@@ -100,13 +100,31 @@ void FBpLinkClient::FetchProduct(const FString& Slug, TFunction<void(bool, const
 		}
 
 		// { structure, events, rev }: structure goes through the generated structs, events is JSONL, rev is a string.
+		// Each of the three steps that can refuse the answer says which one it was, and the answer's size and head follow,
+		// so one run tells them apart (docs/concepts/vr-light-table/machine.md, reading 12).
+		const FString Body = Response->GetContentAsString();
 		TSharedPtr<FJsonObject> Payload;
 		const TSharedPtr<FJsonObject>* StructureJson = nullptr;
-		if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Response->GetContentAsString()), Payload) || !Payload.IsValid()
-			|| !Payload->TryGetObjectField(TEXT("structure"), StructureJson)
-			|| !BpSchema::FromJson(StructureJson->ToSharedRef(), Snapshot.Structure))
+		FString Refused;
+		if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), Payload) || !Payload.IsValid())
 		{
-			UE_LOG(LogBpLink, Error, TEXT("BpLink: the %s/structure answer did not parse into FBpAppStructure"), *Root);
+			Refused = TEXT("FJsonSerializer::Deserialize found no JSON object in it");
+		}
+		else if (!Payload->TryGetObjectField(TEXT("structure"), StructureJson))
+		{
+			Refused = TEXT("it has no `structure` object field");
+		}
+		else if (!BpSchema::FromJson(StructureJson->ToSharedRef(), Snapshot.Structure))
+		{
+			const BpSchema::FFromJsonFailure& Failure = BpSchema::LastFailure();
+			Refused = FString::Printf(TEXT("BpSchema::FromJson failed in %s at structure.%s (%d failed steps)"),
+				*Failure.Call, Failure.Path.IsEmpty() ? TEXT("(the converter's LogJson line names the property)") : *Failure.Path, Failure.Count);
+		}
+		if (!Refused.IsEmpty())
+		{
+			UE_LOG(LogBpLink, Error, TEXT("BpLink: the %s/structure answer did not parse into FBpAppStructure: %s"), *Root, *Refused);
+			UE_LOG(LogBpLink, Error, TEXT("BpLink: that answer is %d bytes, %d characters, and begins: %s"),
+				Response->GetContent().Num(), Body.Len(), *Body.Left(200));
 			OnDone(false, Snapshot);
 			return;
 		}
@@ -130,12 +148,15 @@ void FBpLinkClient::FetchProduct(const FString& Slug, TFunction<void(bool, const
 			else
 			{
 				TSharedPtr<FJsonObject> PlanJson;
-				Snapshot.bHasPlan = FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(PlanResponse->GetContentAsString()), PlanJson) && PlanJson.IsValid()
-					&& BpSchema::FromJson(PlanJson.ToSharedRef(), Snapshot.Plan);
+				const bool bPlanJson = FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(PlanResponse->GetContentAsString()), PlanJson) && PlanJson.IsValid();
+				Snapshot.bHasPlan = bPlanJson && BpSchema::FromJson(PlanJson.ToSharedRef(), Snapshot.Plan);
 				if (!Snapshot.bHasPlan)
 				{
 					Snapshot.Plan = FBpPlan();
-					UE_LOG(LogBpLink, Error, TEXT("BpLink: the %s/plan answer did not parse into FBpPlan; structure, events and rev still stand"), *Root);
+					const BpSchema::FFromJsonFailure& Failure = BpSchema::LastFailure();
+					const FString Refused = bPlanJson ? FString::Printf(TEXT("BpSchema::FromJson failed in %s at plan.%s"), *Failure.Call, *Failure.Path)
+						: FString(TEXT("FJsonSerializer::Deserialize found no JSON object in it"));
+					UE_LOG(LogBpLink, Error, TEXT("BpLink: the %s/plan answer did not parse into FBpPlan: %s; structure, events and rev still stand"), *Root, *Refused);
 				}
 			}
 
