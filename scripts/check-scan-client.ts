@@ -295,5 +295,13 @@ expect(verdict(null) === 'loading', 'a list that did not answer does not leave t
 expect(!/refreshProjects\(\)\.then\(\(l\) => l \?\? /.test(clientSrc), 'client.ts turns a failed project list into an empty one again');
 expect(/storeFromList\(/.test(clientSrc) && /statusOfStore\(/.test(clientSrc), 'useLiveProduct no longer takes its store verdict from projects.ts storeFromList / statusOfStore');
 
+// --------------------------------------------- 7. the feature count behind a scan has one site
+// The button shows count(scope) and the toast used to recompute the same expression inline: two sources for one
+// claim. The expression may appear once in ScanMenu.tsx, and that one is count()'s body.
+const menuSrc = readStripped(path.join(SRC, 'components/ScanMenu.tsx')).replace(/\r\n/g, '\n');
+const countSites = (menuSrc.match(/P\.base\.features\.length : /g) ?? []).length;
+expect(countSites === 1, `ScanMenu.tsx computes the feature count at ${countSites} sites, not 1`);
+expect(/const count = \(sc: ScanScope\) => \(sc\.kind === 'all' \? P\.base\.features\.length : /.test(menuSrc), 'the one feature-count expression is no longer count()');
+
 if (failures.length) { console.log(failures.map((f) => 'FAIL ' + f).join('\n')); console.log(`check-scan-client: ${failures.length} failed, ${held} held`); process.exit(1); }
 console.log(`check-scan-client: ${held} expectations held (${SHAPES.length} rejection shapes, ${DEV_WORDS.length} developer strings forbidden, ${HELPERS.length} request helpers bounded)`);
