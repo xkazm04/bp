@@ -6,7 +6,8 @@
 #                                           pays; Chrome defers the 2D raster to the first drawImage). Exit 1 when
 #                                           the counter reads under 80% of the full figure at any LOD.
 #   python scripts/perf.py --tween [url]    rAF deltas and raster counts during a lens switch (General -> lens ->
-#                                           General) at home and three zooms
+#                                           General) at home and three zooms. Exit 1 when the median p50 over the
+#                                           runs misses that level's ceiling (TWEEN_BUDGET_P50_MS, docs/perf.md).
 # Env: BP_BASE (default http://localhost:3000, `npm start`/`npm run dev`), RUNS (gesture runs, default 3),
 #      N (rasters per LOD, default 30), TWEEN_RUNS (default 1), VW / VH / DPR (viewport, default 1920x1080 @1).
 # Measure a production build: `npm run build && npm start`.
@@ -29,6 +30,25 @@ def over_budget(p50):
     """True when a gesture run misses the ruling's budget. The whole predicate, so it can be read and
     probed without a server (`python -c "import perf"` needs playwright, but this is what the gate is)."""
     return p50 > BUDGET_P50_MS + TOL
+
+# The lens switch is a ~30 fps spring BY DESIGN (docs/perf.md: 2 frames at 60 Hz = 33.3 ms, 3 frames at L-room, whose
+# raster covers the viewport plus the margin), so it is not held to the gesture's 16.7. Its ceilings are the recorded
+# p50 per zoom level, docs/perf.md "Lens switch at x4" (home 33.3, L-bld 33.3, L-tiles 33.3, L-room 50), with the
+# same TOL: the accepted spring passes, and a switch that slips a whole frame further (33.3 -> 50, 50 -> 66.7, i.e.
+# toward 15 fps) fails. Derived from the recorded table, not from a new measurement; the operator retunes them here.
+TWEEN_BUDGET_P50_MS = {'home': 33.3, 'L-bld': 33.3, 'L-tiles': 33.3, 'L-room': 50.0}
+
+
+def tween_over_budget(level, p50):
+    """True when a lens-switch run at this zoom level misses its ceiling. A level with no ceiling is over by
+    definition: a new level must be given a number, never pass for lack of one."""
+    ceiling = TWEEN_BUDGET_P50_MS.get(level)
+    return ceiling is None or p50 > ceiling + TOL
+
+
+def median(xs):
+    xs = sorted(xs)
+    return xs[len(xs) // 2] if len(xs) % 2 else (xs[len(xs) // 2 - 1] + xs[len(xs) // 2]) / 2
 
 LOD_JS = r"""
 async (N) => {
@@ -93,8 +113,23 @@ with sync_playwright() as p:
             if r['n'] == 0 or r['ratio'] < 0.8: bad = True
         print('LOD counter vs full raster: ' + ('FAIL (counter under 80% of the full figure)' if bad else 'ok'))
     elif mode == 'tween':
+        by_level = {}
         for run in range(int(os.environ.get('TWEEN_RUNS', 1))):
-            for r in pg.evaluate(TWEEN_JS): print(json.dumps({'run': run, **r})); sys.stdout.flush()
+            for r in pg.evaluate(TWEEN_JS):
+                print(json.dumps({'run': run, **r})); sys.stdout.flush()
+                by_level.setdefault(r['level'], []).append(r['p50'])
+        # the ruling is on the median of the runs per level, as the gesture's is; a level the ceilings name that
+        # produced no sample means the budget was not checked, which is a failure and never a pass
+        for level in TWEEN_BUDGET_P50_MS:
+            if level not in by_level:
+                bad = True
+                print('tween %s: no run produced a sample, so the budget was not checked: FAIL' % level)
+        for level, p50s in by_level.items():
+            med = median(p50s)
+            over = tween_over_budget(level, med)
+            bad = bad or over
+            print('tween %s p50 %.1f ms over %d run(s), ceiling %s ms (docs/perf.md): %s'
+                  % (level, med, len(p50s), TWEEN_BUDGET_P50_MS.get(level), 'FAIL' if over else 'ok'))
     else:
         for run in range(int(os.environ.get('RUNS', 3))):
             pg.evaluate("__bp.goHome(0)"); time.sleep(0.8)
