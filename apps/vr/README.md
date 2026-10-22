@@ -13,6 +13,11 @@ add a `.uproject` by hand.
 > 2026-10-22 Lynx has Unreal Engine 5.8.4-58902052, a complete installed build, at `C:/Program Files/Epic Games/UE_5.8`
 > ([`machine.md`](../../docs/concepts/vr-light-table/machine.md)). It has no `Engine/Templates`, so the editor's New
 > Project route still cannot make the project here, and the rule stands: no `.uproject` by hand, none in this folder.
+>
+> **Correction 2026-10-22 (night, Lynx).** "There is no Unreal project here yet" still holds for this folder, but not
+> for the work: the project is synthesized **outside the repo** by `scripts/uht-probe.mjs` (UE 5.8.4, not 5.8.2, and no
+> Meta plugins), built there, and from `machine.md` reading 10 booted there; reading 14 is the editor running BpLink to
+> the Kettle line. P0's install and WP3.1's project in `apps/vr` are still not done.
 
 On Wolf (the x64 box with UE 5.8), follow [`docs/concepts/vr-light-table/wolf-plan.md`](../../docs/concepts/vr-light-table/wolf-plan.md): setup, WP3.1 to P7 in order, the merge gates and the known compile risks.
 
@@ -32,6 +37,15 @@ single source.
 > as `"Schema/BpSchema.h"` and `"Schema/BpSchemaFixups.h"` (`ed94a65`), so it **needs** the junction
 > `Source/BpLink/Public/Schema`: reaching `BpSchema.h` by both spellings in one translation unit fails with `C1189`
 > (readings 4 and 5). The headers are still not copied. Nothing has booted the editor or run the module.
+>
+> **Correction 2026-10-22 (night, Lynx).** "WP3.1 is not run on any UE host" and "Nothing has booted the editor or run
+> the module" are out of date for the editor half. In the probe project outside the repo, `UnrealEditor-Cmd.exe` booted
+> `bp.uproject` headless under `-nullrhi` and loaded BpLink (`machine.md` reading 10), and after `cd9dd65` and `422d7fa`
+> BpLink parsed `/structure` into `FBpAppStructure` and `/plan` into `FBpPlan`, saw `/stream` answer 200, and printed
+> (reading 14, verbatim): `LogBpLink: BpLink: Kettle wings=5 [Foundations, Studio operations, Money, Members & reach,
+> Frontier] rooms=13 bays=29 tiles=133 lenses=8 events=566 rev=80557561ddf0f4cd`. The Win64 Game target links but `bp.exe`
+> asserts before BpLink runs (reading 11). WP3.1's acceptance is not met as a whole; no frame time of any kind was
+> measured. These are Lynx readings on emulated x64 (MSVC 14.44.35207, UE 5.8.4 x64 binaries on ARM64).
 
 What the client will consume, already in this repo:
 
@@ -60,7 +74,11 @@ Cannot open include file: 'BpSchema.generated.h'`; with WP3.1's junction `Source
 `BpSchema.generated.h` and `cl.exe` stops at `BpLink.cpp(11,1): fatal error C1083: Cannot open include file:
 'Misc/PlatformMisc.h'` (UE 5.8 has it as `HAL/PlatformMisc.h`). Unmeasured: a clean build, the editor booting the module,
 a Win64 Game target. *Correction 2026-10-22 (evening): the editor target now builds clean with the junction (exit 0,
-readings 3 to 7 in `machine.md`); the editor booting the module and a Win64 Game target are still unmeasured.* The other C++ front end in this repo's record is outside `apps/vr`: per `packages/schema/README.md`, the generated headers in
+readings 3 to 7 in `machine.md`); the editor booting the module and a Win64 Game target are still unmeasured.*
+*Correction 2026-10-22 (night): "Nothing in `apps/vr` has compiled" holds only for this folder in place (it has no
+`.uproject`); BpLink's sources compile, link and run in the probe project outside the repo. The Win64 Game target builds,
+exit 0 (`machine.md` readings 8 and 11), and `bp.exe` asserts before BpLink runs (reading 11); the editor boots the module
+and prints the Kettle line (readings 10 and 14).* The other C++ front end in this repo's record is outside `apps/vr`: per `packages/schema/README.md`, the generated headers in
 `packages/schema/generated/ue` were put through `clang++ -fsyntax-only` against stand-in Unreal declarations
 (`packages/schema/ue-standin/check.cpp`), when that smoke read 3 of the 6 roots, so `FBpPlan` (which BpLink parses),
 `FBpStructureEnvelope` and `FBpScanWire` have never been through it. No gate runs that command: `check:schema` asserts
