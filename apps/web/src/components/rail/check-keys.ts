@@ -115,5 +115,23 @@ for (const [f, src] of SRC) {
 }
 expect(hrefs > 0, `the href scan found ${hrefs} links in the rail, expected at least 1 (agents.tsx's pull request) - the matcher has stopped biting`);
 
+// ---------------------------------------------------------------- 6. no progressbar whose maximum can be 0
+// ARIA wants aria-valuemax > aria-valuemin; a bar with both at 0 announces nothing. A maximum is safe when it is a
+// positive literal, an UPPER_CASE constant, or the tag sits behind a guard on the same expression (`x.m > 0 && <div`).
+let bars = 0;
+for (const [f, src] of SRC) {
+  for (const m of src.matchAll(/role="progressbar"/g)) {
+    bars++;
+    const open = src.lastIndexOf('<', m.index), tag = tagAt(src, m.index);
+    const max = /aria-valuemax=\{([^}]*)\}/.exec(tag)?.[1].trim();
+    if (max === undefined) { expect(false, `${f}: a role="progressbar" with no aria-valuemax expression`); continue; }
+    const esc = max.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const constant = /^[1-9]\d*$/.test(max) || /^[A-Z][A-Z0-9_]*$/.test(max);
+    const guarded = new RegExp(`${esc}\\s*>\\s*0\\s*&&\\s*\\(?\\s*$`).test(src.slice(0, open));
+    expect(constant || guarded, `${f}: role="progressbar" takes aria-valuemax={${max}}, which can be 0 - render the bar only behind \`${max} > 0 &&\`, or take a constant`);
+  }
+}
+expect(bars >= 2, `the progressbar scan found ${bars} bars in the rail, expected at least 2 (agents.tsx's job bar and steer.tsx's spend bar) - the matcher has stopped biting`);
+
 if (failures.length) { console.error(`check-rail-keys: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
 console.log(`check-rail-keys: ${held} expectations held (${options} role="option" sites, ${scrolls} scroll-behavior sites)`);
