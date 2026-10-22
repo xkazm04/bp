@@ -356,6 +356,19 @@ gated by `npm run check`. Wolf only draws, gestures, streams audio and calls rou
       Afterwards netstat shows no LISTENING row on either port. Two spellings differ from the text above (tech-stack.md section 4,
       "Open seam"): the page origin is `http://localhost:<port>`, because athena refuses `http://127.0.0.1:<port>`, and the
       tools travel as `wave_dispatch` and so on.
+      **The smoke stays a hand-run (decided 2026-10-22, not to be re-opened).** `scripts/smoke-athena.mjs` (`40327a1`)
+      is not a `package.json` script and not in `npm run check`, on purpose. It starts a real athena daemon in a fresh
+      `ATHENA_HOME` under the OS temp dir and spends one live model turn, and an offline check chain can carry neither.
+      - Command, from the repo root: `node scripts/smoke-athena.mjs`. The offline subset, `node scripts/smoke-athena.mjs --no-turn`,
+        runs the daemon, the manifest, the seam probe and the draft wave, then tears down before the live turn, so it spends nothing.
+        It needs athena-portable and `uv` on the box (`BP_SMOKE_ATHENA_DIR`, `BP_SMOKE_UV`; the defaults are Lynx's paths).
+      - When: before and after any change to `apps/server/src/athena-host.ts` or the athena seam (the manifest, the tool
+        names and classes in tech-stack.md section 4, the decision and execute path, `--athena` in `npm run server`). Run the
+        full form at least once after such a change. `--no-turn` is the quick form while iterating.
+      - Green: the last line reads `smoke-athena: 22 passed, 0 failed` for the full run (the Lynx reading above), with exit 0.
+        `--no-turn` stops earlier with fewer checks and `0 failed`. Any `FAIL` line, or a port left LISTENING afterwards, is red.
+      - The offline gate in the chain is `npm run check:athena-host`, which is part of `npm run check` and runs on every
+        commit. The smoke does not replace it, and it does not replace the smoke.
 
 **Wolf side (UE):**
 
