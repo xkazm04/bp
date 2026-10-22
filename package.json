@@ -28,6 +28,8 @@
     "check:live-steer": "node scripts/check-live-steer.ts",
     "check:live-tracks": "node scripts/check-live-tracks.ts",
     "check:release-train": "node scripts/check-release-train.ts",
+    "check:store-triage": "node scripts/check-store-triage.ts",
+    "check:store-compare": "node scripts/check-store-compare.ts",
     "check:release-states": "node scripts/check-release-states.ts",
     "check:loader-json": "node scripts/check-loader-json.mjs",
     "check:fake-claude": "node scripts/check-fake-claude.mjs",

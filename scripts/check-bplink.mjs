@@ -158,6 +158,26 @@ export function payloadErrors(schema, body) {
   return validate(body) ? '' : (validate.errors ?? []).slice(0, 3).map((e) => `${e.instancePath || '/'} ${e.message}`).join('; ');
 }
 
+/**
+ * plan-1's cross-field rule, which a JSON Schema cannot state: `lenses` are "the keys of every tile's health". Returns the
+ * disagreements as strings ([] when it holds): the plan's lens list against the declared registry's ids (`registryIds`,
+ * read from the data file by the caller, never typed here), then each tile's health keys as a SET against that list, in
+ * both directions (a missing key reads as 'unmeasured' on the web, a default on the VR side; an extra one is read by nobody).
+ */
+export function planLensProblems(plan, registryIds) {
+  const out = [];
+  const lenses = Array.isArray(plan?.lenses) ? plan.lenses : null;
+  if (!lenses || !Array.isArray(plan?.tiles)) return ['plan has no lenses array or no tiles array'];
+  if (JSON.stringify(lenses) !== JSON.stringify(registryIds)) out.push(`plan.lenses [${lenses}] is not the registry's [${registryIds}]`);
+  const want = new Set(lenses);
+  for (const t of plan.tiles) {
+    const got = new Set(Object.keys(t?.health ?? {}));
+    const missing = [...want].filter((l) => !got.has(l)), extra = [...got].filter((l) => !want.has(l));
+    if (missing.length || extra.length) out.push(`tile ${t?.id}: health lacks [${missing}] and has unlisted [${extra}]`);
+  }
+  return out;
+}
+
 /** True when this file was started directly (`node scripts/check-bplink.mjs`), false when another module imported it for its helpers. */
 const isMain = !!process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
 
@@ -229,6 +249,20 @@ async function main() {
       check(`plan: ${wantPlan.wings} wings, ${wantPlan.rooms} rooms, ${wantPlan.bays} bays, ${wantPlan.tiles} tiles (WING_DEFS and packages/core/data)`, JSON.stringify(gotPlan) === JSON.stringify(wantPlan) && wantPlan.wings > 0, JSON.stringify(gotPlan));
       check('plan: rev equals the structure rev', typeof pb?.rev === 'string' && pb.rev === kb?.rev, `${pb?.rev} vs ${kb?.rev}`);
       check('plan: every tile carries a box and a health for each of the plan lenses', !!pb?.tiles?.length && Array.isArray(pb.lenses) && pb.lenses.length > 0 && pb.tiles.every((t) => typeof t.box?.x === 'number' && pb.lenses.every((l) => typeof t.health?.[l] === 'string')), `${pb?.lenses?.length} lenses`);
+
+      // plan-1's lenses/health rule, on the live answer, against the registry in the data file. BP_CHECK_BPLINK_SEED=
+      // lens:extra|lens:missing|lens:renamed breaks a copy of the body first, and the line must then FAIL.
+      const lensPlan = structuredClone(pb ?? {});
+      if (seeded.has('lens:extra') && lensPlan.tiles?.[0]?.health) lensPlan.tiles[0].health['not-a-lens'] = 'good';
+      if (seeded.has('lens:missing') && lensPlan.tiles?.[0]?.health) delete lensPlan.tiles[0].health[Object.keys(lensPlan.tiles[0].health)[0]];
+      if (seeded.has('lens:renamed') && Array.isArray(lensPlan.lenses)) lensPlan.lenses = lensPlan.lenses.map((l, i) => (i ? l : `${l}-renamed`));
+      const lensBad = planLensProblems(lensPlan, kdata.lenses.map((l) => l.id));
+      check('plan: plan.lenses is the registry lens ids and every tile health keys are exactly that set (plan-1 prose rule)', lensBad.length === 0, lensBad.slice(0, 2).join(' | '));
+      // permanent control: the helper refuses each of the three breaks on a copy of the live body
+      const ids = kdata.lenses.map((l) => l.id);
+      const brk = (fn) => { const c = structuredClone(pb ?? {}); fn(c); return planLensProblems(c, ids).length > 0; };
+      check('plan: the lens rule refuses an unlisted health key, a missing one, and a renamed plan lens',
+        brk((c) => { c.tiles[0].health['not-a-lens'] = 'good'; }) && brk((c) => { delete c.tiles[0].health[ids[0]]; }) && brk((c) => { c.lenses[0] += '-renamed'; }));
 
       const evs = lines(kb?.events ?? '');
       let parsed = true; for (const l of evs) { try { JSON.parse(l); } catch { parsed = false; } }
