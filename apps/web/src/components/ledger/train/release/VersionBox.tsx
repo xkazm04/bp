@@ -7,29 +7,40 @@ import type { ReleaseCreated, VersionSuggestion } from '@bp/core/scan/types';
 import { createRelease, refusalText, suggestRelease, type ScanCtx } from '@/lib/scan/actions';
 import { isVersion } from '@bp/core/scan/release';
 import { Btn } from '../ui/Controls';
-import type { ReleaseModel } from './releaseState';
+import { STATUS_WORD, type ReleaseModel } from './releaseState';
 
 // ------------------------------------------------------------------------------------------- the suggestion
 // One request per (product, accepted set, releases): the strip and the version box share it rather than each asking.
 // A request cache, not UI state; the version box asks afresh each time the tab opens (`fresh`).
 let SUG: { key: string; p: Promise<VersionSuggestion> } | null = null;
 
-/** The suggested next version while no release is open (`key` null: none is needed). */
-export function useSuggestion(ctx: ScanCtx, key: string | null, fresh = false): { s?: VersionSuggestion; err?: string } {
+/** How long the suggestion may stay pending before the box says so (and offers a retry) instead of asking forever. */
+export const SUGGEST_DEADLINE_MS = 20_000;
+
+/** The suggested next version while no release is open (`key` null: none is needed). `retry` asks again after a
+ *  refusal or a timeout: a request that failed is not cached, and one that never settled is given up on. */
+export function useSuggestion(ctx: ScanCtx, key: string | null, fresh = false): { s?: VersionSuggestion; err?: string; retry: () => void } {
   const [st, setSt] = useState<{ key: string; s?: VersionSuggestion; err?: string } | null>(null);
+  const [round, setRound] = useState(0);
   const first = useRef(fresh);
   useEffect(() => {
     if (key === null) return;
     if (first.current || !SUG || SUG.key !== key) { first.current = false; SUG = { key, p: suggestRelease(ctx) }; }
     const mine = SUG;
     let live = true;
-    mine.p.then((s) => { if (live) setSt({ key, s }); }, (e: unknown) => {
+    const late = setTimeout(() => {
+      if (SUG === mine) SUG = null;
+      if (live) setSt({ key, err: 'The server has not answered.' });
+    }, SUGGEST_DEADLINE_MS);
+    mine.p.then((s) => { clearTimeout(late); if (live) setSt({ key, s }); }, (e: unknown) => {
+      clearTimeout(late);
       if (SUG === mine) SUG = null;
       if (live) setSt({ key, err: refusalText(e) });
     });
-    return () => { live = false; };
-  }, [ctx, key]);
-  return key === null || !st ? {} : st;
+    return () => { live = false; clearTimeout(late); };
+  }, [ctx, key, round]);
+  const retry = () => { SUG = null; setSt(null); setRound((n) => n + 1); };
+  return key === null || !st ? { retry } : { ...st, retry };
 }
 
 /** The suggestion's key: the product, the accepted items a draft would take, and the versions already taken. */
@@ -69,10 +80,10 @@ export function VersionBox({ m, phone }: { m: ReleaseModel; phone: boolean }) {
           title={!m.items.length ? 'Accept items in triage first' : !valid ? 'A version is semver: 1.4.0' : 'A draft release of the accepted items'}>{creating ? 'Creating…' : 'Create draft'}</Btn> : null}
       </span>
       <span className="why" id="tr-rel-why">
-        {rel ? <>Release <code>{rel.id}</code> on <code>{rel.branch}</code> · {rel.status}{rel.created_by ? ' · by ' + rel.created_by : ''}.</>
+        {rel ? <>Release <code>{rel.id}</code> on <code>{rel.branch}</code> · {STATUS_WORD[rel.status]}{rel.created_by ? ' · by ' + rel.created_by : ''}.</>
           : sug.s ? <>Suggested <b>v{sug.s.version}</b> from {sug.s.from}: {sug.s.reason}.
             {edited !== null && version !== sug.s.version ? <> <button type="button" className="lnk" onClick={() => setEdited(null)}>Use v{sug.s.version}</button></> : null}</>
-          : sug.err ? <>No suggestion: {sug.err}</> : 'Asking for the next version…'}
+          : sug.err ? <>No suggestion: {sug.err} <button type="button" className="lnk" onClick={sug.retry}>Try again</button></> : 'Asking for the next version…'}
         {!rel && text && !valid ? <span className="bad"> Not a version: semver without the v, as 1.4.0.</span> : null}
       </span>
       {err ? <span className="why bad" role="alert">Refused · {err}</span> : null}

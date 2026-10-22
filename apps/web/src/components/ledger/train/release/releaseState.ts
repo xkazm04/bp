@@ -18,6 +18,12 @@ export const STEP_WORD: Readonly<Record<Exclude<ReleaseStatus, 'failed'>, string
   draft: 'Package', building: 'Cherry-pick, gates', 'pr-open': 'PR open', merged: 'Merged on GitHub', tagged: 'Tagged, published',
 };
 
+/** The reader's word for a release's status, wherever it is read out beside the stepper (STEP_WORD's own promise:
+ *  words, not enum values). scripts/check-release-states.ts holds every JSX read of `.status` in this context to it. */
+export const STATUS_WORD: Readonly<Record<ReleaseStatus, string>> = {
+  draft: 'Draft', building: 'Building', 'pr-open': 'PR open', merged: 'Merged', tagged: 'Tagged', failed: 'Failed',
+};
+
 /** What the actions row offers: build a draft, retry a failed one, the PR link, the sample merge (Kettle), finish with
  *  an inline confirm (from pr-open: the store only learns "merged" when Finish runs), finish outright (merged). */
 export type RelAction = 'build' | 'retry' | 'pr' | 'sampleMerge' | 'finishAsk' | 'finish';

@@ -11,7 +11,7 @@ import { setLedgerUi } from '../../useLedger';
 import { useDecide } from '../Decide';
 import { LensTag } from '../ui/Marks.tsx';
 import { Btn, Callout } from '../ui/Controls';
-import { byLens, isConflict, moveText, type PkgItem, type ReleaseModel } from './releaseState';
+import { byLens, isConflict, moveText, STATUS_WORD, type PkgItem, type ReleaseModel } from './releaseState';
 
 interface RowCtl {
   rel?: Release;
@@ -87,7 +87,7 @@ export function Package({ m, phone }: { m: ReleaseModel; phone: boolean }) {
           <button type="button" className="lnk" onClick={() => { setLedgerUi((u) => ({ ...u, scope: 'packs' })); E.setPage('ledger', 'triage'); }}>triage table</button> (A); they join this package.
         </Callout>
       )}
-      {m.rel && m.free ? <p className="tr-rel-hint">{m.free} accepted item{m.free === 1 ? '' : 's'} wait for the next release (v{m.rel.version} is {m.rel.status}).</p> : null}
+      {m.rel && m.free ? <p className="tr-rel-hint">{m.free} accepted item{m.free === 1 ? '' : 's'} wait for the next release (v{m.rel.version} · {STATUS_WORD[m.rel.status]}).</p> : null}
       <h3>Rework queue · {rework.length}</h3>
       {rework.length ? <ul className="tr-pl">{rework.map((p) => <NoteRow key={p.id} p={p} c={c} rebuilt={rebuiltBy.get(p.id)} />)}</ul>
         : <p className="tr-rel-none">Empty. Items sent back with R land here with their note.</p>}
