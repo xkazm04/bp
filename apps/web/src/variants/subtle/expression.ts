@@ -22,7 +22,7 @@ import { lensAggregate, lensContent } from '@bp/core/model/lens';
 import type { FeatureLive, LensChannel, LensExpression, MarkArgs, Rect, TileGeom } from '../types';
 import { flagsOn } from '@/engine/render/flags';
 import { lineFill } from '@/engine/render/patterns';
-import { glyph, healthInk, lineType, railNone, railRest } from './marks';
+import { glyph, healthGlyph, healthInk, lineType, railNone, railRest } from './marks';
 import { clamp } from '../base/util';
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
@@ -136,7 +136,7 @@ function drawTile(s: Spec, a: MarkArgs) {
     }
   }
   ctx.globalAlpha = ga;
-  glyph(ctx, d.glyph, rx, gy, gs, healthInk(th, h, a.now));
+  healthGlyph(ctx, th, d.glyph, h, a.now, rx, gy, gs);
   // on a large fixture the lone lens also leaves its glyph as a faint watermark in a fixed place
   // (right, below the middle): the quiet second echo that tells a glance which lens is up
   if (e > 0.01 && t.text && t.w >= 250 * u && t.h >= 120 * u) {
@@ -196,7 +196,7 @@ function drawRibbon(s: Spec, a: MarkArgs) {
   const gx = t.x + (t.w - gs) / 2, gy = t.body.y + (room - gs) / 2;
   ctx.fillStyle = th.alpha(th.paper, 0.82); ctx.fillRect(gx - 1.5, gy - 1.5, gs + 3, gs + 3);
   const g2 = gs * lerp(0.6, 1, e), o = (gs - g2) / 2;
-  glyph(ctx, d.glyph, gx + o, gy + o, g2, healthInk(th, h, true));
+  healthGlyph(ctx, th, d.glyph, h, true, gx + o, gy + o, g2);
 }
 
 /** The channel for any lens, from its manifest alone. Also the fallback of the shaped and bold variants. */

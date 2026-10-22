@@ -13,7 +13,7 @@ import { Legend as BaseLegend } from '@/components/Legend';
 import { useEngine } from '@/components/hooks';
 import { useTheme } from '@/components/ThemeToggle';
 import { countField } from './expression';
-import { glyph, healthInk, lineType, railRest } from './marks';
+import { glyph, healthGlyph, lineType, railRest } from './marks';
 
 const LINE_WORD: Record<LineName, string> = {
   solid: 'Solid rule', double: 'Double rule', dotted: 'Dotted line', comb: 'Comb', chain: 'Chain line', hatched: 'Hatched band', dimension: 'Dimension line', wave: 'Square wave',
@@ -57,7 +57,7 @@ function HealthSwatch({ d, h }: { d: LensDef; h: Health }) {
     cv.width = S * dpr; cv.height = S * dpr;
     const ctx = cv.getContext('2d')!, th = readTheme(dpr).theme;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, S, S);
-    glyph(ctx, d.glyph, 1, 1, S - 2, healthInk(th, h, true));
+    healthGlyph(ctx, th, d.glyph, h, true, 1, 1, S - 3);
   }, [d, h, mode]);
   return <canvas ref={ref} style={{ width: 14, height: 14, flex: '0 0 auto' }} aria-hidden="true" />;
 }
