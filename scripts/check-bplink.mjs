@@ -14,7 +14,9 @@
 //
 // `npm run check` cannot compile BpLink (no Unreal toolchain here, apps/vr/WP3.1.md), so the last block derives what it can
 // from the C++ TEXT instead: the /stream status codes `BpLink.cpp` branches on must include the one the live server just
-// answered. Comments and string literals are stripped first, or a file that only TALKS about a status would pass.
+// answered, and `BpLink.cpp` must request /plan, parse it into FBpPlan and log wings/rooms/bays/tiles from the plan's own
+// arrays, so the logged figures are the live /plan answer's counts. Comments (and, where the assertion is not about a
+// literal, string literals) are stripped first, or a file that only TALKS about a status or a request would pass.
 // Run: node scripts/check-bplink.mjs   Exit 1 on any failure.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -178,6 +180,51 @@ export function planLensProblems(plan, registryIds) {
   return out;
 }
 
+const PLAN_LEVELS = ['wings', 'rooms', 'bays', 'tiles'];
+
+/** The labelled figures of the first `UE_LOG(LogBpLink, ...)` whose format string carries `<label>=%`: { label: argument
+ * expression, whitespace removed }. `code` is stripCxx(text) and `lit` is stripCxx(text, true), the same length, so the
+ * arguments are split on `code`, where a comma inside a string literal is already blanked. Null when no such line. */
+export function loggedFigures(code, lit, label) {
+  for (const m of lit.matchAll(/UE_LOG\s*\(\s*LogBpLink\s*,\s*\w+\s*,\s*TEXT\("((?:[^"\\]|\\.)*)"\)/g)) {
+    if (!m[1].includes(`${label}=%`)) continue;
+    const args = [];
+    let depth = 0, cur = '';
+    for (let i = m.index + m[0].length; i < code.length; i++) {
+      const c = code[i];
+      if (c === '(') depth++;
+      else if (c === ')' && depth-- === 0) break;
+      if (c === ',' && depth === 0) { args.push(cur); cur = ''; } else cur += c;
+    }
+    args.push(cur);
+    const specs = [...m[1].matchAll(/(?:(\w+)=)?%(?!%)[-+ #0-9.]*[a-zA-Z]/g)].map((s) => s[1] ?? null);
+    const out = {};
+    specs.forEach((name, i) => { if (name) out[name] = (args[i + 1] ?? '').replace(/\s+/g, ''); });
+    return out;
+  }
+  return null;
+}
+
+/**
+ * What is wrong with BpLink.cpp's use of GET .../plan ([] when nothing): it must request `<Root> + TEXT("/plan")` with an
+ * application/json Accept in CODE (a comment naming it does not count), parse the answer into the snapshot's FBpPlan through
+ * BpSchema::FromJson, and log a line whose wings/rooms/bays/tiles are each `Snapshot.Plan.<that level>.Num()`, so each
+ * logged figure is the live answer's count for the level it names. `plan` is the live /plan body, for the counts.
+ */
+export function planProblems(cppText, plan) {
+  const code = stripCxx(cppText), lit = stripCxx(cppText, true);
+  const out = [];
+  if (!/MakeGet\s*\(\s*Root\s*\+\s*TEXT\("\/plan"\)\s*,\s*TEXT\("application\/json"\)\s*\)/.test(lit)) out.push('no GET <Root>/plan request with Accept: application/json');
+  if (!/BpSchema::FromJson\s*\([^;]*,\s*Snapshot\.Plan\s*\)/.test(code)) out.push('the /plan answer is not parsed into Snapshot.Plan (FBpPlan) through BpSchema::FromJson');
+  const figs = loggedFigures(code, lit, 'wings');
+  if (!figs) return [...out, 'no LogBpLink line logs wings='];
+  for (const level of PLAN_LEVELS) {
+    const src = /^Snapshot\.Plan\.(\w+)\.Num\(\)$/.exec(figs[level] ?? '')?.[1];
+    if (src !== level) out.push(`${level}= logs ${figs[level] ?? 'nothing'} (${src ? `${plan?.[src]?.length} live` : 'not a plan array'}), not the plan's ${level} (${plan?.[level]?.length} live)`);
+  }
+  return out;
+}
+
 /** True when this file was started directly (`node scripts/check-bplink.mjs`), false when another module imported it for its helpers. */
 const isMain = !!process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
 
@@ -190,6 +237,8 @@ async function main() {
 // BP_CHECK_BPLINK_SEED=plan,lenses,events does the same for the other derived figures, one or several at once: each adds 1
   // to that expectation, and the run must then FAIL on exactly that assertion (an expectation that survives its own seed is
   // not pinning anything). Unset, nothing changes.
+  // BP_CHECK_BPLINK_SEED=source:plan drifts an in-memory copy of BpLink.cpp before the /plan source assertion reads it (the
+  // wings figure is fed from Plan.rooms), and that assertion must then FAIL. The file on disk is not touched.
   const seeded = new Set((process.env.BP_CHECK_BPLINK_SEED ?? '').split(',').filter(Boolean));
   const seedBy = (key) => (seeded.has(key) ? 1 : 0);
   const wantDomains = Number(process.env.BP_CHECK_BPLINK_WINGS ?? kdata.domains.length);
@@ -336,6 +385,22 @@ async function main() {
       const label = /(\w+)=%d/.exec(/TEXT\("((?:[^"\\]|\\.)*)"\)/.exec(call?.[0] ?? '')?.[1] ?? '')?.[1];
       check(`source: the count BpLink logs from structure.domains is labelled "rooms" (${wantPlan.rooms}), not "wings" (${wantPlan.wings})`,
         label === 'rooms', `BpLink.cpp labels it "${label}"; domains=${wantDomains}, wings=${wantPlan.wings}, rooms=${wantPlan.rooms}`);
+
+      // WP3.1's acceptance is the WING count, which only GET .../plan carries. BpLink.cpp must make that request, parse it
+      // into FBpPlan, and feed each labelled level of its summary line from the plan's own array of that level, so the
+      // figures it logs are the live /plan answer's counts (read off pb, never typed here). The seed drifts a copy.
+      const planText = seeded.has('source:plan') ? cppText.replace('Snapshot.Plan.wings.Num()', 'Snapshot.Plan.rooms.Num()') : cppText;
+      const planBad = planProblems(planText, pb);
+      const liveCounts = PLAN_LEVELS.map((l) => `${l}=${pb?.[l]?.length}`).join(' ');
+      check(`source: BpLink.cpp requests GET .../plan, parses it into FBpPlan and logs its wings/rooms/bays/tiles from the plan (live /plan: ${liveCounts})`,
+        planBad.length === 0, planBad.join(' | '));
+      // permanent control: the helper refuses a copy with no /plan request, one whose request survives only in a comment,
+      // and one whose wings figure is fed from another level
+      const noPlanGet = cppText.replace('TEXT("/plan")', 'TEXT("/structure")');
+      check('source: the /plan rule refuses a BpLink.cpp with no /plan request, one that names it only in a comment, and a drifted wings figure',
+        planProblems(noPlanGet, pb).length > 0
+        && planProblems(`// MakeGet(Root + TEXT("/plan"), TEXT("application/json"))\n${noPlanGet}`, pb).length > 0
+        && planProblems(cppText.replace('Snapshot.Plan.wings.Num()', 'Snapshot.Plan.rooms.Num()'), pb).length > 0);
 
       // BpLink.Build.cs reaches the generated USTRUCT headers through a hand-counted run of ".." from ModuleDirectory,
       // and nothing in the repo has ever resolved it: a header moved, or one ".." too few, surfaces as an unresolved
