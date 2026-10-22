@@ -228,7 +228,31 @@ try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 
   const run = (np: number, nm: number) => Math.min(...Array.from({ length: 3 }, () => { const sc = gen(np, nm); return ms(() => TR.tracksOf(sc, NOW)); }));
   const t1 = run(20, 500), t2 = run(100, 5000), t3 = run(200, 20000);
   console.log('tracksOf per call: 20 x 500 = ' + t1.toFixed(2) + ' ms, 100 x 5,000 = ' + t2.toFixed(2) + ' ms, 200 x 20,000 = ' + t3.toFixed(2) + ' ms');
-  expect(t3 < 30, 'tracksOf over 200 proposals x 20,000 readings stays under 30 ms (one pass over the readings, not one per proposal)', t3.toFixed(1) + ' ms');
+  // A wall-clock budget is not an instrument on a machine someone else is working on. This read
+  // ~10 ms cold when it was written and 34-36 ms about one run in five once a sibling session
+  // started committing in this repo: it failed over contention it never examined, which is the
+  // same shape as a gate passing over what it never examined. What the sentence actually claims
+  // - ONE PASS over the readings, not one per proposal - is countable, so count it: wrap the
+  // readings in a Proxy and count index reads. One pass is O(nMeas); a filter per proposal is
+  // O(nProps x nMeas). The seeded control runs the same counter over a deliberately
+  // per-proposal pass and requires it to blow the bound, so the counter cannot go blind.
+  const visitsOf = (np: number, nm: number, f: (s: Any) => void): number => {
+    const sc = gen(np, nm) as Any;
+    let visits = 0;
+    const raw = sc.measurements as Any[];
+    sc.measurements = new Proxy(raw, { get(t: Any, k: Any) { if (typeof k === 'string' && /^[0-9]+$/.test(k)) visits++; return t[k]; } });
+    f(sc);
+    return visits;
+  };
+  const BOUND = 20000 * 10;
+  const visits = visitsOf(200, 20000, (sc: Any) => { TR.tracksOf(sc, NOW); });
+  const quad = visitsOf(200, 20000, (sc: Any) => { for (const p of sc.proposals) (sc.measurements as Any[]).filter((m: Any) => m.proposal_id === p.id); });
+  const quadPrint = (): string => quad.toLocaleString();
+  console.log('tracksOf reading visits: one pass = ' + visits.toLocaleString() + ', a per-proposal pass = ' + quadPrint() + ' (bound ' + BOUND.toLocaleString() + ')');
+  expect(visits < BOUND, 'tracksOf visits the readings a bounded number of times (one pass, not one per proposal)', visits.toLocaleString() + ' visits over 20,000 readings, bound ' + BOUND.toLocaleString());
+  expect(quad >= BOUND, 'SEEDED CONTROL: the visit counter catches a per-proposal pass over the readings', quad.toLocaleString() + ' visits');
+  // kept as a CEILING, not a budget: it catches a catastrophic regression without failing over load
+  expect(t3 < 250, 'tracksOf over 200 proposals x 20,000 readings is not catastrophically slow (the visit bound above is the real assertion)', t3.toFixed(1) + ' ms');
 }
 
 // Self-proof, every run: seed a defect into the source this check transpiles (BP_OVERLAYS_MUTATE; the loader skips a mutation
