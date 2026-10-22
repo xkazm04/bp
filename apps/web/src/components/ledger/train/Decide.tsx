@@ -158,7 +158,7 @@ export function Decide({ ids, compact = false }: DecideProps) {
   const btn = (d: TriageDecision, tone: BtnTone | undefined, label: string, key: string, role?: string) => {
     const why = whyNot(T, ps, d);
     return (
-      <Btn tone={tone} kbd={key} disabled={!!why} title={why ?? label + ' (' + key + ')'} role={role} onClick={() => void decide(ps.map((p) => p.id), d, undefined, at)}>
+      <Btn tone={tone} kbd={key} reason={why ?? undefined} title={label + ' (' + key + ')'} role={role} onClick={() => void decide(ps.map((p) => p.id), d, undefined, at)}>
         {label}
       </Btn>
     );

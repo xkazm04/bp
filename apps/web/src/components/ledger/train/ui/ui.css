@@ -70,8 +70,8 @@
 /* A/1's .bt (Btn): the ledger's one action button and its tones. Under `.lg-page` because blueprint.css's `.bp button`
    (one class and a type) would otherwise hand it the page's family and size, and ledger.css's disabled opacity. */
 .lg-page .tr-btn { display: inline-flex; align-items: center; gap: var(--sp-4); height: var(--h-ctl); padding: 0 var(--sp-12); background: var(--panel); border: 1px solid var(--ink-3); font: 500 var(--fs-13) var(--mono); letter-spacing: var(--ls-2); text-transform: uppercase; color: var(--ink-hi); white-space: nowrap; cursor: pointer; }
-.lg-page .tr-btn:hover:not(:disabled) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); }
-.lg-page .tr-btn:disabled { opacity: 0.45; cursor: default; }
+.lg-page .tr-btn:hover:not(:disabled):not([aria-disabled='true']) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); }
+.lg-page .tr-btn:disabled, .lg-page .tr-btn[aria-disabled='true'] { opacity: 0.45; cursor: default; }
 .lg-page .tr-btn.go { background: var(--mint); color: var(--on-mint); border-color: var(--mint); }
 .lg-page .tr-btn.go:hover:not(:disabled) { background: color-mix(in srgb, var(--mint) 85%, var(--lift)); }
 .lg-page .tr-btn.acc { border-color: var(--mint); color: var(--mint); }

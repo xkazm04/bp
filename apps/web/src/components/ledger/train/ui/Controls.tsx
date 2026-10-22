@@ -1,6 +1,6 @@
 // The release train's controls and callouts: a button, a segmented control and a callout box. One component each (the
 // contest winner styled the segmented idea four ways, the callout four ways and drew its `.bt` per surface).
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import './ui.css';
 
 export interface SegOption<T extends string> { value: T; label: string; title?: string }
@@ -19,6 +19,10 @@ export interface BtnProps {
    *  no fill, the case as written: A/1's `.pl li .x`). */
   size?: 'nav' | 'row';
   disabled?: boolean;
+  /** Why it cannot be used now: the button stays focusable (`aria-disabled`, click suppressed) and the reason is its
+   *  description, so a keyboard or screen-reader user hears it (a `disabled` button leaves the tab order and its
+   *  `title` is hover-only). Takes the place of `disabled` for a control whose unavailability is worth explaining. */
+  reason?: string;
   title?: string;
   /** The accessible name when the label is a glyph (↑, ✕). */
   label?: string;
@@ -30,11 +34,14 @@ export interface BtnProps {
 
 /** The ledger's one action button (A/1's `.bt`), every surface: the decision bar and strip, the note editor, the
  *  package pill, the compare header and the Release tab. */
-export function Btn({ children, onClick, tone, kbd, size, disabled = false, title, label, pressed, role }: BtnProps) {
+export function Btn({ children, onClick, tone, kbd, size, disabled = false, reason, title, label, pressed, role }: BtnProps) {
+  const rid = useId();
   return (
-    <button type="button" className={'tr-btn' + (tone ? ' ' + tone : '') + (size ? ' ' + size : '')} onClick={onClick} disabled={disabled}
-      title={title} aria-label={label} aria-pressed={pressed} data-role={role}>
+    <button type="button" className={'tr-btn' + (tone ? ' ' + tone : '') + (size ? ' ' + size : '')} onClick={reason ? undefined : onClick} disabled={disabled}
+      aria-disabled={reason ? true : undefined} aria-describedby={reason ? rid : undefined}
+      title={reason ?? title} aria-label={label} aria-pressed={pressed} data-role={role}>
       {children}{kbd ? <kbd>{kbd}</kbd> : null}
+      {reason ? <span id={rid} className="tr-vh">{reason}</span> : null}
     </button>
   );
 }
