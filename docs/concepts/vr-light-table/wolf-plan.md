@@ -264,7 +264,7 @@ Lynx writes it and commits it; Wolf reads it from master. One folder per asset i
 Rules: no file larger than 50 MB is committed (GitHub warns at 50 MB and refuses at 100 MB). The raw TRELLIS.2 GLB
 stays on Lynx; its sha256 goes in the manifest. Look-dev frames stay in `docs/concepts/vr-light-table/lookdev/` as
 today. Leonardo and FLUX.2 [dev] output is look-dev only. Anything that ships (textures, decals, the backdrop) is
-FLUX.2 [klein] or Qwen-Image (tech-stack.md §5), unless the owner rules on Leonardo (section f); the backdrop is ruled: Leonardo, 2026-10-21 (FLUX.2 [klein] is not installed and will not be).
+FLUX.2 [klein] or Qwen-Image (tech-stack.md §5), unless the owner rules on Leonardo (section f); the backdrop is ruled: Leonardo, 2026-10-21 (FLUX.2 [klein] is not installed and will not be; R8, closed). A Leonardo image as TRELLIS.2 input for a shipped mesh (`lamp-agent`) is R8b, still open.
 
 - [x] **L4.0 Lamp design lock (Lynx + owner, 1 to 2 days).** The reference sheet's weakest element. Make a lamp prop
       sheet with a **jointed arm**, hanging above the far edge (reference-sheet.md, "Across all frames" and the open
@@ -504,19 +504,118 @@ reading the source, most likely first. Each one is **[verify on Wolf]**.
 
 ## (f) Risks and owner decisions still open
 
-| # | Risk or decision | Owner? | Default if nobody decides |
+| # | Risk or decision | Owner? | State (2026-10-22), and the default if nobody decides |
 |---|---|---|---|
-| R1 | UHT refuses the junctioned header (E1). The only remaining route is a generated copy under `apps/vr`, which needs a new parity check (copy equals source). | **owner** | stop at W3.1-4 and ask; never hand-copy |
-| R2 | The UE patch version. plan.md says 5.8.2; the box read 5.8.3 on 2026-10-07. Meta v207's BuildId still matched (55116800), but plugin loading on 5.8.3 was "not re-proven" by mage-arena-vr. | owner | use the installed 5.8.x and record it; S6's BuildId line is the check |
+| R1 | UHT refuses the junctioned header (E1). The only remaining route is a generated copy under `apps/vr`, which needs a new parity check (copy equals source). | **owner** | **ASK, open** (below). Until answered: stop at W3.1-4 if the junction fails; never hand-copy |
+| R2 | The UE patch version. plan.md says 5.8.2; the box read 5.8.3 on 2026-10-07. Meta v207's BuildId still matched (55116800), but plugin loading on 5.8.3 was "not re-proven" by mage-arena-vr. | owner | **CLOSED 2026-10-22, default stands:** use the installed 5.8.x and record it. Proof on Wolf: S4's `Build.version` lines and S6's `PLUGIN_BUILD_ID=` equal to `ENGINE_COMPATIBLE_CHANGELIST` (below) |
 | R3 | Blank versus VR template (W3.1-2). | agent | Blank C++, plus the S6 plugins |
-| R4 | The table height, the text floor in degrees (P3 gate), and the comfort defaults. | **owner** | 95 cm; the floor is whatever the owner reads at the P3 walk |
-| R5 | The 90 Hz measure. Is the p95 GPU and game thread at 11.1 ms the bar, or p50? (The web budget left the same question open; plan.md, "Milestone 1 idle re-measure".) | **owner** | p95 at 11.1 ms, with p50 and max recorded |
-| R6 | Scan line colour, cyan (art-breakdown #8, the target) versus amber (the style block's attention role). Open in reference-sheet.md. | **owner** | cyan, as the target and frame 03 show |
+| R4 | The table height, the text floor in degrees (P3 gate), and the comfort defaults. | **owner** | **ASK, open** (below). Until answered: 95 cm; the floor is whatever the owner reads at the P3 walk |
+| R5 | The 90 Hz measure. Is the p95 GPU and game thread at 11.1 ms the bar, or p50? (The web budget left the same question open; plan.md, "Milestone 1 idle re-measure".) | **owner** | **ASK, open** (below). Until answered: measure p50, p95 and max; the P3 gate verdict waits |
+| R6 | Scan line colour, cyan (art-breakdown #8, the target) versus amber (the style block's attention role). Open in reference-sheet.md, which now points here. | **owner** | **ASK, open** (below). Until answered: cyan, as the target and frame 03 show. Blocks nothing in P3 |
 | R7 | The lamp design (L4.0) before P4 props or more style frames. | owner | **CLOSED 2026-10-21 by the owner:** option A, the spring-arm cone. Proof: `apps/vr/ArtSource/lamp-agent/manifest.json` `"picked": "A"` (line 4) and `gates.input` `"pass": true` with the approval note (lines 89-93), `fa7bfb1`; L4.0 ticked |
-| R8 | Leonardo output in shipped assets. tech-stack.md §5 keeps shipped art to FLUX.2 [klein] or Qwen-Image; the reference sheet was made with Leonardo. | **owner** | Leonardo for look-dev only; ruling 2026-10-21 (the Director, for the operator): the city backdrop ships from Leonardo (FLUX.2 [klein] is not installed and will not be) |
-| R9 | Large binaries. The ArtSource rule commits files of 50 MB or less and keeps raw meshes on Lynx; Git LFS is not set up in bp. | **owner** | no LFS; the sha256 is in the manifest |
+| R8 | Leonardo output in shipped assets. tech-stack.md §5 keeps shipped art to FLUX.2 [klein] or Qwen-Image; the reference sheet was made with Leonardo. | owner | **CLOSED 2026-10-21 for look-dev and the backdrop** (the Director, for the operator, `223a93d`): Leonardo for look-dev; the city backdrop ships from Leonardo (FLUX.2 [klein] is not installed and will not be). One remainder, not covered by that ruling, is split out as R8b |
+| R8b | A Leonardo image as image-to-3D input for a shipped mesh. `lamp-agent`'s mesh is TRELLIS.2 output made from `options/A.png`, a Leonardo `openai/gpt-image-2.5-flare` image (`ArtSource/lamp-agent/manifest.json` `generator`, lines 6-18). The R8 ruling names the backdrop only. | **owner** | **ASK, open** (below). Until answered: the lamp is not imported in W4.1. Blocks nothing in P3 |
+| R9 | Large binaries. The ArtSource rule commits files of 50 MB or less and keeps raw meshes on Lynx; Git LFS is not set up in bp. | owner | **CLOSED, no LFS, decided:** the 50 MB rule and the sha256-in-manifest rule (hand-off rules, this file, under the ArtSource table) are enforced by `npm run check:art` (`scripts/check-art.mjs:14`, `:103`), which is in `npm run check` |
 | R10 | Where the athena daemon runs for L5.3's smoke (Wolf has athena-portable; Lynx is not in its fleet entry). | owner | Lynx (operator 2026-10-22), athena-portable checkout |
 | R11 | The L5.2 contract change (Kettle's `/stream` stops answering 405) lands on Lynx while Wolf's BpLink still expects 405. | agent | one window: land L5.2 and BpLink's SSE change back to back, and `check-bplink` pins the new answer |
 | R12 | GPU contention. With generation on Lynx, the "one at a time" rule on Wolf (plan.md risks) only applies if ComfyUI or TRELLIS.2 also run on Wolf. | agent | check that no UE VR session is running before any generation job on Wolf |
-| R13 | bp is not in the ai-registry fleet file for Wolf (`projects.json`). Hygiene and fleet tooling will not see the Wolf checkout. | owner | register `bp` with checkout `kiro/bp` on Wolf |
+| R13 | bp is not in the ai-registry fleet file for Wolf (`projects.json`). Hygiene and fleet tooling will not see the Wolf checkout. | owner | **CLOSED 2026-10-22 as a decision, default stands:** register `bp` with checkout `kiro/bp` on Wolf. The action is still open: Step 0 does it. Proof: the `projects.json` entry on ai-registry `origin/main` |
 | R14 | The forward path cannot fake the concept's bounce light well enough for the fidelity score (plan.md risks). | owner, at P6 | rect lights and baked bounce first; Lumen only if the score needs it and the frame fits |
+
+How to read this table: a row is either **CLOSED** with the source that decided it, or an **ASK** below that the owner can
+answer in one sitting. R3, R11, R12 and R14 are agent or P6 rows and are not owner asks today; R10 was decided by the
+operator on 2026-10-22. Picking an option is enough: the agent that reads the answer makes the repo change listed under
+it, in one commit that also flips the row to CLOSED with the date.
+
+### Closed by the record
+
+- **R2, UE patch version: default stands (closed 2026-10-22).** No owner ruling exists and none is needed, because the
+  choice is checked by a machine rather than made by taste. The decision is the installed UE 5.8.x on Wolf, recorded,
+  not a re-install to 5.8.2. What proves it on Wolf: S4 prints `MajorVersion 5`, `MinorVersion 8` and the
+  `PatchVersion`/`Changelist`/`CompatibleChangelist` lines, and S6 prints `PLUGIN_BUILD_ID=55116800` equal to
+  `ENGINE_COMPATIBLE_CHANGELIST` with no `PLUGIN_BUILD_ID_MISMATCH`. If S6 prints the mismatch, that is a new blocker for
+  the owner (a plugin or engine reinstall), not this row. plan.md P0 now says 5.8.x.
+- **R7, lamp design: closed 2026-10-21 by the owner.** Option A, the spring-arm cone. Proof:
+  `apps/vr/ArtSource/lamp-agent/manifest.json` `"picked": "A"` (line 4) and `gates.input` `"pass": true` with the note
+  "Owner picked option A, the spring-arm cone ... Approved 2026-10-21." (lines 89-93), committed in `fa7bfb1`. L4.0 is
+  ticked. reference-sheet.md's open questions record the same answer.
+- **R8, Leonardo in shipped assets: closed 2026-10-21 for look-dev and the backdrop.** The Director's ruling for the
+  operator (`223a93d`): Leonardo is the look-dev generator, and the city backdrop ships from Leonardo because FLUX.2
+  [klein] is not installed and will not be. It is carried in this file (the ArtSource hand-off rules; L4.1;
+  `city-backdrop`, `47230b9`) and in tech-stack.md §5. What the ruling does not name is a Leonardo image used as
+  TRELLIS.2 input for a shipped mesh, which is how `lamp-agent` was made. That is R8b, an ask.
+- **R9, large binaries: closed, no LFS, decided.** The standing answer is the hand-off rule in this file (no committed
+  file of 50 MB or more; the raw TRELLIS.2 GLB stays on Lynx and its sha256 is in the manifest). `npm run check:art`
+  enforces it (`scripts/check-art.mjs:14` and `:103` refuse a 50 MB file; every manifest's sha256 is checked), and
+  `check:art` is part of `npm run check`. ArtSource holds 59.6 MB across 14 folders with no file over 10 MB (L4.1).
+  Git LFS is reopened only if a single asset needs a file of 50 MB or more, and none does.
+- **R13, Wolf fleet registration: decided 2026-10-22, default stands; the action is still open.** Register `bp` with
+  the Wolf checkout `kiro/bp`, by Step 0's `register-project.mjs` run. On Lynx's ai-registry checkout, read on
+  2026-10-22, `projects.json` has no `bp` entry. The row is done when the entry is on ai-registry `origin/main`.
+  If the script refuses because the slug points at another checkout, re-pointing goes to the owner (Step 0).
+
+### Asks for the owner
+
+**R1. If UHT will not process the junctioned `BpSchema.h`, how does BpLink get a header UHT will process?**
+This only comes up if W3.1-4's E1 junction fails on Wolf. Answering now means a Wolf session does not stop there.
+
+| Option | What happens | Effect on the P3 gate |
+|---|---|---|
+| **A (recommended).** A generated copy, with a check | `packages/schema/generate.mjs` writes the UE headers to `packages/schema/generated/ue/` as now **and** to `apps/vr/Source/BpLink/Public/Schema/`. A new parity step in `check:schema` fails when the two differ by a byte. Both copies are committed, and no one edits either by hand. | W3.1-4 goes on as soon as the Lynx commit lands. That is about half a day on Lynx; nothing on Wolf waits for the owner. |
+| B. Move the single source into `apps/vr` | The generator writes the UE headers only into `apps/vr/Source/BpLink/Public/Schema/`. `packages/schema/generated/ue/` goes away, and `check:schema`, `check:bplink` and `packages/schema/ue-standin` follow the new path. | It unblocks the same way, with no copy, but a larger Lynx change touches three checks. |
+| C. Stop at W3.1-4 and ask then | Nothing is decided now. | P3 waits at W3.1-4 for an owner sitting. W3.2 to the gate cannot start. |
+
+Repo change when picked: A or B means one Lynx commit to `generate.mjs` and `check:schema` (plus, for B, the checks
+above), the regenerated headers, and section (d)'s parity rule and E1 reworded to match. C changes nothing.
+
+**R4. Table height, the text floor and the comfort defaults.** What is decided: the starting table height, how the
+VR text floor in degrees is set, and which comfort defaults are on from the first build.
+
+| Option | What happens | Effect on the P3 gate |
+|---|---|---|
+| **A (recommended).** Measure, then fix | W3.2 starts the table top at 95 cm behind one named constant (and a console variable such as `bp.TableHeightCm`), and the owner tunes it in the headset. The floor is the angular height of the smallest label the owner reads without leaning at the P3 walk, and it becomes the floor from then on. W7.1's comfort list (no artificial locomotion, a seated mode that lowers the table, snap re-centre, reduced motion honoured) is the default set. | The text-legibility bullet stays a measurement. The gate records the number and the owner's height. |
+| B. Owner's height first | Before W3.2 the owner's standing elbow height is measured in the headset at S8, and the table top is set a fixed amount below it. The floor and comfort defaults are as in A. | As A, plus one owner step at S8. |
+| C. Fix the floor now | The owner names a floor in degrees today. W3.2 sizes every label to it, and the P3 gate checks it (pass or fail) instead of measuring it. Height and comfort are as in A. | The legibility bullet becomes pass/fail against the named number. |
+
+Repo change when picked: the W3.2 and P3-gate text in this file. For A or B, the P3-gate run note writes the measured
+floor into this file and plan.md P3. For C, the number goes into both now.
+
+**R5. The 90 Hz bar: p95 or p50 at 11.1 ms?** What is decided: which statistic of app GPU time and game-thread time over
+the 60 s scripted walk has to be at 11.1 ms or less for P3 (and again at P6) to pass. Precedent: for the web canvas the
+operator ruled p50 only, with p95 reported (plan.md, 'Ruling (operator, 2026-10-21): goal 1 passed'). That ruling is
+about the 60 fps canvas budget and does not decide the headset.
+
+| Option | What happens | Effect on the P3 gate |
+|---|---|---|
+| **A (recommended).** p95 at 11.1 ms | Both threads at p95 ≤ 11.1 ms, with p50 and max recorded. In a headset a missed frame is a visible judder or a reprojection, not just a slow frame. | The strictest bar: forward + MSAA probably has to hold with headroom. W3.6's Lumen check uses the same bar. |
+| B. p50 at 11.1 ms, p95 reported | It matches the web ruling. | Easiest to pass. A tail of dropped frames can pass the gate and then show up as judder at the P7 hour. |
+| C. p50 at P3, p95 at P6 | The greybox gate takes p50, and the P6 beauty-pass re-run (W6.3) takes p95. | P3 passes sooner. P6 carries the full bar, when it costs most to fix. |
+
+Repo change when picked: the P3-gate bullet and W3.6's last sentence in this file, W6.3's "(11.1 ms p95)", and plan.md
+P3's gate line.
+
+**R6. Scan line colour: cyan or amber?** What is decided: the colour of the scan band in W5.1, and which of two docs
+changes so that they agree. The pins stay amber either way (art-breakdown #7).
+
+| Option | What happens | Effect on the P3 gate |
+|---|---|---|
+| **A (recommended).** Cyan | It follows the target image, art-breakdown #8 and frame 03. The style block's palette (`art-breakdown.md:53`) moves "scan" out of the amber attention role, which keeps pins and the agent head. | None: the scan line is W5.1 (P5). It blocks nothing in P3. |
+| B. Amber | It follows the style block. Art-breakdown #8 (`art-breakdown.md:22`) becomes "the amber scan line", and frame 03 stops being the scan reference. | None in P3. W5.1's band and the P6 fidelity score take amber. |
+
+Repo change when picked: one line in `art-breakdown.md` (`:53` for A, `:22` for B), the reference-sheet bullet changed
+to "answered", and this row closed.
+
+**R8b. May a Leonardo image be the image-to-3D input for a shipped mesh?** What is decided: whether `lamp-agent` as built
+(TRELLIS.2 from Leonardo `options/A.png`, then flat PBR and modelled clamp and springs on Lynx) can ship. The owner's
+2026-10-21 pick approved the design. It did not rule on the generator. Leonardo's terms for the account in use were
+not read in this run.
+
+| Option | What happens | Effect on the P3 gate |
+|---|---|---|
+| **A (recommended).** Allowed | Leonardo images may be TRELLIS.2 input for shipped meshes. The image stays in ArtSource as provenance, and the shipped bytes are TRELLIS.2 output (MIT) plus Lynx's own finishing. | None. W4.1 imports the lamp as it stands. |
+| B. Backdrop only | The lamp's concept is redrawn on a local model (Qwen-Image, which has to be installed first), TRELLIS.2 is re-run, and the lamp's gates go back to `pass: false` until they pass again. | None in P3. W4.1 for the lamp waits on the Lynx rework, and the P4 gate moves. |
+| C. Model the lamp procedurally | The lamp is rebuilt in Blender like the studio kit, with option A as the reference only. | None in P3. The same wait as B, and the rig and pose work is redone. |
+
+Repo change when picked: for A, the hand-off rule under the ArtSource table and tech-stack.md §5 gain "Leonardo images
+may be image-to-3D input for shipped meshes", and this row closes. For B or C, a Lynx plan item under L4.1, with
+`lamp-agent`'s gates reset in its manifest.
