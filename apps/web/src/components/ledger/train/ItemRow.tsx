@@ -14,6 +14,7 @@ import type { Measurement, Proposal } from '@bp/core/scan/types';
 import { runStats, verdictOf, type Verdict } from '@bp/core/scan/compare';
 import { isFlagged } from '@bp/core/train/rules';
 import { useTrain } from './data';
+import { readingsOf } from './Decide';
 import { LensTag, MetricMove, StateMark, VerdictChip } from './ui/Marks.tsx';
 
 /** What a pack item's row and the decisions need to know about it. */
@@ -45,16 +46,14 @@ const same = (a: ItemFacts, b: ItemFacts) => (Object.keys(a) as (keyof ItemFacts
 export function useItemFacts(): ReadonlyMap<string, ItemFacts> {
   const T = useTrain(), prev = useRef<ReadonlyMap<string, ItemFacts>>(new Map());
   return useMemo(() => {
-    const ev = new Map<string, { before: Measurement[]; after: Measurement[]; shots: Set<string> }>();
-    const of = (id: string) => { let e = ev.get(id); if (!e) ev.set(id, (e = { before: [], after: [], shots: new Set() })); return e; };
-    for (const m of T.measurements) if (m.proposal_id && m.phase) of(m.proposal_id)[m.phase].push(m);
-    for (const s of T.shots) if (s.proposal_id && s.phase) of(s.proposal_id).shots.add(s.phase + '\u0000' + (s.theme ?? '') + '\u0000' + (s.size ?? ''));
+    const ev = readingsOf(T.measurements), shots = new Map<string, Set<string>>();
+    for (const s of T.shots) if (s.proposal_id && s.phase) { let k = shots.get(s.proposal_id); if (!k) shots.set(s.proposal_id, (k = new Set())); k.add(s.phase + '\u0000' + (s.theme ?? '') + '\u0000' + (s.size ?? '')); }
     const out = new Map<string, ItemFacts>(), old = prev.current;
     for (const p of T.proposals) {
       if (!p.pack_id) continue;
       const e = ev.get(p.id), v = verdictOf(p, e?.before ?? [], e?.after ?? [], T.lenses);
       const base = (e?.before ?? []).filter((m) => m.lens === p.lens && m.metric === p.metric);
-      const f: ItemFacts = { verdict: v.verdict, shots: e?.shots.size ?? 0, runs: base.length, afters: (e?.after ?? []).filter((m) => m.lens === p.lens && m.metric === p.metric).length, attempt: 1, failed: false, flagged: false };
+      const f: ItemFacts = { verdict: v.verdict, shots: shots.get(p.id)?.size ?? 0, runs: base.length, afters: (e?.after ?? []).filter((m) => m.lens === p.lens && m.metric === p.metric).length, attempt: 1, failed: false, flagged: false };
       const before = base.length > 1 ? runStats(base.map((m) => m.value), v.from?.unit).median : v.from?.value;
       if (before !== undefined) f.before = before;
       if (v.to) f.after = v.to.value;

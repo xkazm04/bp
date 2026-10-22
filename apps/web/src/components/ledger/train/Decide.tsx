@@ -12,7 +12,7 @@
 // provides (LedgerPage: the table's visible rows). A decision the store never answers is released after
 // PENDING_BOUND_MS with a toast saying it may still have landed (boundPending).
 import { createContext, useCallback, useContext, useEffect, useMemo } from 'react';
-import type { Proposal, ProposalStatus, Release, TriageDecision, TriageResult } from '@bp/core/scan/types';
+import type { Measurement, Proposal, ProposalStatus, Release, TriageDecision, TriageResult } from '@bp/core/scan/types';
 import { triageItems, refusalText } from '@/lib/scan/actions';
 import { verdictOf, type Verdict } from '@bp/core/scan/compare';
 import { TRIAGE_FROM, WAITING, canDecide, isFlagged, noteRequired } from '@bp/core/train/rules';
@@ -61,11 +61,30 @@ export function boundPending(was: ReadonlyMap<string, ProposalStatus>, ms: numbe
 /** The order "next waiting item" walks after a single decision (the table's visible rows), from LedgerPage. */
 export const DecideOrder = createContext<(() => readonly string[]) | null>(null);
 
-/** An item's verdict, from its own readings (only the items being decided: a click, not a render). */
+/** Every item's before and after readings, grouped in one pass and kept per measurements array (the store hands the same
+ *  array until it changes): the one source of an item's readings for the table's facts (ItemRow.tsx useItemFacts), the
+ *  decision bar and the decision path. */
+export interface Readings { before: Measurement[]; after: Measurement[] }
+const READINGS = new WeakMap<readonly Measurement[], ReadonlyMap<string, Readings>>();
+export function readingsOf(ms: readonly Measurement[]): ReadonlyMap<string, Readings> {
+  let out = READINGS.get(ms);
+  if (out) return out;
+  const by = new Map<string, Readings>();
+  for (const m of ms) {
+    if (!m.proposal_id || (m.phase !== 'before' && m.phase !== 'after')) continue;
+    let e = by.get(m.proposal_id);
+    if (!e) by.set(m.proposal_id, (e = { before: [], after: [] }));
+    e[m.phase].push(m);
+  }
+  READINGS.set(ms, out = by);
+  return out;
+}
+const NO_READINGS: readonly Measurement[] = [];
+
+/** An item's verdict, from its own readings (a lookup in the grouped readings, not a scan of every measurement). */
 export function verdictIn(T: TrainData, p: Proposal): Verdict {
-  const before = T.measurements.filter((m) => m.proposal_id === p.id && m.phase === 'before');
-  const after = T.measurements.filter((m) => m.proposal_id === p.id && m.phase === 'after');
-  return verdictOf(p, before, after, T.lenses).verdict;
+  const e = readingsOf(T.measurements).get(p.id);
+  return verdictOf(p, e?.before ?? NO_READINGS, e?.after ?? NO_READINGS, T.lenses).verdict;
 }
 export const releaseIn = (T: TrainData, p: Proposal): Release | undefined => (p.release_id ? T.releases.find((r) => r.id === p.release_id) : undefined);
 
