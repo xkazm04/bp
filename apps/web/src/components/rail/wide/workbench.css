@@ -38,12 +38,17 @@
 #flyout.wide .wb-list:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 #flyout.wide .wb-list ul { list-style: none; margin: 0; padding: 0; }
 #flyout.wide .wb-detail { position: relative; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
-#flyout.wide .wb-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 20px 26px 28px; scrollbar-width: thin; scrollbar-color: var(--ink-3) transparent; }
+/* the detail is read inside .wb-body, the one scroller (shell.tsx): a tab stop, so a prose-only detail scrolls from the keyboard */
+#flyout.wide .wb-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--ink-3) transparent; }
+#flyout.wide .wb-body:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+#flyout.wide .wb-body > .wb-scroll { flex: 1 0 auto; padding: 20px 26px 28px; }
+#flyout.wide .wb-body > .wb-act { position: sticky; bottom: 0; }
+#flyout.wide .wb-scroll { padding: 20px 26px 28px; }
 #flyout.wide .wb-view .wb-detail { display: block; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--ink-3) transparent; }
 #flyout.wide .wb-view .wb-scroll { overflow: visible; min-height: 100%; }
 @keyframes wb-in { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
-#flyout.wide .wb-detail > .wb-scroll { animation: wb-in 0.22s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
-@media (prefers-reduced-motion: reduce) { #flyout.wide .wb-detail > .wb-scroll { animation: none; } }
+#flyout.wide .wb-detail > .wb-scroll, #flyout.wide .wb-body { animation: wb-in 0.22s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+@media (prefers-reduced-motion: reduce) { #flyout.wide .wb-detail > .wb-scroll, #flyout.wide .wb-body { animation: none; } }
 
 /* ---------- list groups and rows */
 #flyout.wide .wb-gh { position: sticky; top: 0; z-index: 1; margin: 0; display: flex; justify-content: space-between; gap: 10px; padding: 12px 16px 7px; background: var(--card-hi); border-bottom: 1px solid var(--ink-4); font: 500 12px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }

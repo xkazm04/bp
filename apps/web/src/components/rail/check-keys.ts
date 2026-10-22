@@ -146,5 +146,37 @@ for (const [f, src] of SRC) {
 }
 expect(counts >= 2, `the strip-count scan found ${counts} .wb-count slots in the rail, expected at least 2 (agents.tsx's tally and running count) - the matcher has stopped biting`);
 
+// ---------------------------------------------------------------- 8. every scroller in the rail can be reached from the keyboard
+// WCAG 2.1.1. The stylesheet and the markup are read together, because the rule is about their pair: every class
+// workbench.css gives overflow:auto|scroll must be carried, in the rail's markup, by an element with a tabIndex
+// (0 where nothing hands it focus, -1 on the list pane, which holds focusable rows and is the focus hand-off).
+// A selector under `.wb-view`, and view.tsx's markup, are skipped: its hand-rolled frame is the one not built by shell.tsx.
+const CSS = read('wide/workbench.css');
+let scrollers = 0;
+const scrollClasses = new Set<string>();
+for (const m of CSS.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+  if (!/overflow(?:-y)?\s*:\s*(?:auto|scroll)/.test(m[2])) continue;
+  for (const sel of m[1].split(',')) {
+    if (/\.wb-view\b/.test(sel)) continue;
+    const last = sel.trim().split(/[\s>+~]+/).pop() as string;
+    for (const c of last.matchAll(/\.([\w-]+)/g)) scrollClasses.add(c[1]);
+  }
+}
+for (const cls of scrollClasses) {
+  scrollers++;
+  let seen = 0, tabbed = 0;
+  for (const [f, src] of SRC) {
+    if (f === 'wide/view.tsx') continue;   // hand-rolled frame, folded into shell.tsx by the next change
+    for (const m of src.matchAll(/className=(?:"([^"]*)"|\{([^}]*)\})/g)) {
+      if (!new RegExp(`(^|[\\s'"])${cls}([\\s'"]|$)`).test(m[1] ?? m[2])) continue;
+      seen++;
+      if (/tabIndex=/.test(tagAt(src, m.index))) tabbed++;
+    }
+  }
+  expect(seen > 0 && tabbed === seen, `.${cls} takes overflow:auto in workbench.css but ${seen ? `${seen - tabbed} of ${seen} element(s) carrying it have` : 'no element carries it, or none has'} a tabIndex - a reader with no pointer cannot scroll it`);
+}
+expect(scrollers >= 3, `the scroller scan found ${scrollers} scrollable classes in workbench.css, expected at least 3 (.wb-list, .wb-body, .wb-log) - the matcher has stopped biting`);
+expect(/className="wb-body"\s+tabIndex=\{0\}/.test(shell), 'shell.tsx: the detail scroller .wb-body is not a tab stop (tabIndex={0}); nothing hands focus to the detail, so tabIndex={-1} would leave a prose-only detail unscrollable');
+
 if (failures.length) { console.error(`check-rail-keys: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
 console.log(`check-rail-keys: ${held} expectations held (${options} role="option" sites, ${scrolls} scroll-behavior sites)`);

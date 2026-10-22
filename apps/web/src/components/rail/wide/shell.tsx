@@ -7,6 +7,9 @@ import { useCallback, useRef, type KeyboardEvent, type ReactNode, type RefObject
 /** Keys the workbench owns: J/K and up/down move, Home/End jump. */
 const MOVE: Record<string, number> = { j: 1, J: 1, ArrowDown: 1, k: -1, K: -1, ArrowUp: -1 };
 
+/** Keys a focused, scrollable detail pane keeps for itself (J/K still walk the list from there). */
+const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'Home', 'End']);
+
 export function isTyping(t: EventTarget | null): boolean {
   const el = t as HTMLElement | null;
   return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
@@ -21,6 +24,9 @@ export function swallow(e: KeyboardEvent) { e.preventDefault(); e.stopPropagatio
 export function useWalk<T extends string | null>(ids: readonly T[], sel: T, pick: (id: T) => void, list: RefObject<HTMLElement | null>) {
   return useCallback((e: KeyboardEvent) => {
     if (isTyping(e.target) || e.altKey || e.ctrlKey || e.metaKey) return;
+    // the detail scroller has focus: the keys that scroll a pane belong to it, not to the list walk. They are kept
+    // from the engine (which also listens on document) but not preventDefault-ed, so the browser still scrolls.
+    if (SCROLL_KEYS.has(e.key) && (e.target as HTMLElement).classList?.contains('wb-body')) { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); return; }
     const dir = MOVE[e.key], end = e.key === 'Home' ? 0 : e.key === 'End' ? ids.length - 1 : -1;
     if (!dir && end < 0) return;
     if (!ids.length) return;
@@ -43,6 +49,10 @@ export function useWalk<T extends string | null>(ids: readonly T[], sel: T, pick
  * The frame. `onKey` comes from useWalk; the detail pane's key resets its scroll when the selection changes.
  * The list pane is focusable (tabIndex -1, never a tab stop): it is where a panel hands focus when the row that
  * held it goes and no row can take over, so a write that empties the list cannot drop focus to <body>.
+ * The detail is read inside one scroller, .wb-body, which IS a tab stop (tabIndex 0): most details end in a control
+ * that focus-scrolling reaches, but a prose-only one (an order's lede, a preset's "What it does") has none, and
+ * nothing hands focus to the detail, so -1 would leave it unreachable. The cost is one extra Tab per panel, paid
+ * once; the arrows, Home/End and Page keys then scroll it (useWalk yields those four to it).
  */
 export function Workbench({ strip, list, listLabel, detail, detailKey, detailLabel, onKey, listRef, cls }: {
   strip?: ReactNode; list: ReactNode; listLabel: string; detail: ReactNode; detailKey: string; detailLabel: string;
@@ -53,7 +63,9 @@ export function Workbench({ strip, list, listLabel, detail, detailKey, detailLab
       {strip && <div className="wb-strip">{strip}</div>}
       <div className="wb-panes">
         <div className="wb-list" ref={listRef} role="region" aria-label={listLabel} tabIndex={-1}>{list}</div>
-        <section className="wb-detail" key={detailKey} aria-label={detailLabel}>{detail}</section>
+        <section className="wb-detail" key={detailKey} aria-label={detailLabel}>
+          <div className="wb-body" tabIndex={0}>{detail}</div>
+        </section>
       </div>
     </div>
   );
