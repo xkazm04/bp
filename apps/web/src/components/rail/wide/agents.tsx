@@ -12,7 +12,7 @@ import { LiveSteerButtons } from '../../LiveSteer';
 import { ScanGlyph } from '../../ScanMenu';
 import { Mark, agentMark } from '../../Symbols';
 import { shallowEqual, useBp, useEngine, useLive, useScanCtx } from '../../hooks';
-import { httpUrl } from '../../Queue';
+import { SCAN_NOUNS, httpUrl, streamNote } from '../../Queue';
 import { PreviewBox, mmss, useScanJobs } from '../panels';
 import { Fig, Group, Row, Sec, Workbench, useListRef, useWalk } from './shell';
 
@@ -63,6 +63,8 @@ export function Agents() {
   const t = sim.has ? sim.tallyStatus() : null;
   const nRun = jobs.filter((j) => j.status === 'running').length, nQ = jobs.filter((j) => j.status === 'queued').length;
 
+  // an empty list is only a fact on a connected stream; on any other state of it the scan may be running unseen
+  const note = streamNote(live?.product, SCAN_NOUNS);
   const list = (
     <>
       <ul role="listbox" aria-label="Overview" className="wb-solo">
@@ -84,7 +86,8 @@ export function Agents() {
               {!x.release && <span className="bar" aria-hidden="true"><i style={{ width: (x.m ? (100 * x.n) / x.m : 0) + '%' }} /></span>}
             </Row>
           );
-        }) : <li className="wb-none">No scans yet. Right-click a feature, bay, room or wing on the plan to scan it.</li>}
+        }) : note ? <li className="wb-none"><b>{note[0]}</b> {note[1]}</li>
+          : <li className="wb-none">No scans yet. Right-click a feature, bay, room or wing on the plan to scan it.</li>}
       </Group>
       {squads.length > 0 && (
         <Group head="Crews" n={squads.length} label="Crews">
@@ -118,7 +121,6 @@ export function Agents() {
         <>
           {t && STATES.map((st) => st === 'paused' && !t.paused ? null : <div key={st} className={'wb-count t-' + TONE[st]}><b>{t[st]}</b><span>{st}</span></div>)}
           <div className="wb-count"><b>{nRun}</b><span>scan{nRun === 1 ? '' : 's'} running</span></div>
-          {!sim.has && <div className="wb-count"><span>No swarm data</span></div>}
           <span className="wb-src">{sim.live ? 'live scan' : sim.has ? 'simulated swarm' : ''}</span>
         </>
       )}
@@ -156,7 +158,7 @@ function JobDetail({ j, scan, total, now, live }: { j: ScanJob; scan: ScanSnapsh
             <Fig n={x.clock} label={j.status === 'queued' ? 'waiting' : x.open ? 'elapsed' : 'took'} />
             {j.exit_code !== undefined && <Fig n={j.exit_code} label="exit code" tone={j.exit_code ? 'red' : undefined} />}
           </div>
-          <div className="wb-prog" role="progressbar" aria-valuemin={0} aria-valuemax={x.m} aria-valuenow={x.n} aria-label="Progress"><i style={{ width: pct + '%' }} /></div>
+          {x.m > 0 && <div className="wb-prog" role="progressbar" aria-valuemin={0} aria-valuemax={x.m} aria-valuenow={x.n} aria-label="Progress"><i style={{ width: pct + '%' }} /></div>}
         </>
       )}
       <div className="wb-inline">

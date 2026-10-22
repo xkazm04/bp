@@ -115,5 +115,100 @@ for (const [f, src] of SRC) {
 }
 expect(hrefs > 0, `the href scan found ${hrefs} links in the rail, expected at least 1 (agents.tsx's pull request) - the matcher has stopped biting`);
 
+// ---------------------------------------------------------------- 6. no progressbar whose maximum can be 0
+// ARIA wants aria-valuemax > aria-valuemin; a bar with both at 0 announces nothing. A maximum is safe when it is a
+// positive literal, an UPPER_CASE constant, or the tag sits behind a guard on the same expression (`x.m > 0 && <div`).
+let bars = 0;
+for (const [f, src] of SRC) {
+  for (const m of src.matchAll(/role="progressbar"/g)) {
+    bars++;
+    const open = src.lastIndexOf('<', m.index), tag = tagAt(src, m.index);
+    const max = /aria-valuemax=\{([^}]*)\}/.exec(tag)?.[1].trim();
+    if (max === undefined) { expect(false, `${f}: a role="progressbar" with no aria-valuemax expression`); continue; }
+    const esc = max.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const constant = /^[1-9]\d*$/.test(max) || /^[A-Z][A-Z0-9_]*$/.test(max);
+    const guarded = new RegExp(`${esc}\\s*>\\s*0\\s*&&\\s*\\(?\\s*$`).test(src.slice(0, open));
+    expect(constant || guarded, `${f}: role="progressbar" takes aria-valuemax={${max}}, which can be 0 - render the bar only behind \`${max} > 0 &&\`, or take a constant`);
+  }
+}
+expect(bars >= 2, `the progressbar scan found ${bars} bars in the rail, expected at least 2 (agents.tsx's job bar and steer.tsx's spend bar) - the matcher has stopped biting`);
+
+// ---------------------------------------------------------------- 7. a strip count is a figure and a label
+// .wb-count (workbench.css) is a baseline-aligned pair built to carry a big mono <b>. A slot with no <b> is a stray
+// sentence in a row of numbers; the strip's own way to say "does not apply" is to omit the slot.
+let counts = 0;
+for (const [f, src] of SRC) {
+  for (const m of src.matchAll(/className=(?:"wb-count[^"]*"|\{'wb-count[^']*'[^}]*\})/g)) {
+    counts++;
+    const end = src.indexOf('</div>', m.index);
+    expect(end > 0 && /<b[\s>]/.test(src.slice(m.index, end)), `${f}: a className="wb-count" slot holds no <b> figure - omit the slot instead of putting a sentence in the strip`);
+  }
+}
+expect(counts >= 2, `the strip-count scan found ${counts} .wb-count slots in the rail, expected at least 2 (agents.tsx's tally and running count) - the matcher has stopped biting`);
+
+// ---------------------------------------------------------------- 8. every scroller in the rail can be reached from the keyboard
+// WCAG 2.1.1. The stylesheet and the markup are read together, because the rule is about their pair: every class
+// workbench.css gives overflow:auto|scroll must be carried, in the rail's markup, by an element with a tabIndex
+// (0 where nothing hands it focus, -1 on the list pane, which holds focusable rows and is the focus hand-off).
+const CSS = read('wide/workbench.css');
+let scrollers = 0;
+const scrollClasses = new Set<string>();
+for (const m of CSS.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+  if (!/overflow(?:-y)?\s*:\s*(?:auto|scroll)/.test(m[2])) continue;
+  for (const sel of m[1].split(',')) {
+    const last = sel.trim().split(/[\s>+~]+/).pop() as string;
+    for (const c of last.matchAll(/\.([\w-]+)/g)) scrollClasses.add(c[1]);
+  }
+}
+for (const cls of scrollClasses) {
+  scrollers++;
+  let seen = 0, tabbed = 0;
+  for (const src of SRC.values()) {
+    for (const m of src.matchAll(/className=(?:"([^"]*)"|\{([^}]*)\})/g)) {
+      if (!new RegExp(`(^|[\\s'"])${cls}([\\s'"]|$)`).test(m[1] ?? m[2])) continue;
+      seen++;
+      if (/tabIndex=/.test(tagAt(src, m.index))) tabbed++;
+    }
+  }
+  expect(seen > 0 && tabbed === seen, `.${cls} takes overflow:auto in workbench.css but ${seen ? `${seen - tabbed} of ${seen} element(s) carrying it have` : 'no element carries it, or none has'} a tabIndex - a reader with no pointer cannot scroll it`);
+}
+expect(scrollers >= 3, `the scroller scan found ${scrollers} scrollable classes in workbench.css, expected at least 3 (.wb-list, .wb-body, .wb-log) - the matcher has stopped biting`);
+expect(/className="wb-body"\s+tabIndex=\{0\}/.test(shell), 'shell.tsx: the detail scroller .wb-body is not a tab stop (tabIndex={0}); nothing hands focus to the detail, so tabIndex={-1} would leave a prose-only detail unscrollable');
+
+// ---------------------------------------------------------------- 9. an empty live list says what state the stream is in
+// A live product's zero rows are a fact only on a connected stream; on loading / missing / offline / error the scan
+// may be running unseen. Queue.tsx's streamNote is the one vocabulary for that (five states, four distinct heads
+// besides the panel's own live sentence); every rail panel that lists the scan's jobs and has an empty sentence of
+// its own must branch through it, and Review's LiveEmpty must read it too, so the two cannot drift again.
+const queue = read('../Queue.tsx');
+const note = /export function streamNote[\s\S]*?\r?\n}\r?\n/.exec(queue)?.[0] ?? '';
+expect(!!note, 'Queue.tsx: no `export function streamNote` found - the shared stream-state vocabulary is gone');
+const heads = ['Connecting', 'Product not found', 'Scan stream offline', 'Scan unreadable'];
+for (const h of heads) expect(note.includes(`'${h}'`), `Queue.tsx streamNote has no '${h}' head, so that stream state reads as another one`);
+for (const st of ['live', 'loading', 'missing', 'offline']) expect(note.includes(`'${st}'`), `Queue.tsx streamNote never tests status '${st}'`);
+const liveEmpty = /export function LiveEmpty[\s\S]*?\r?\n}\r?\n/.exec(queue)?.[0] ?? '';
+expect(/streamNote\(/.test(liveEmpty), 'Queue.tsx: LiveEmpty does not read streamNote, so Review and Agents would word the stream states twice');
+let jobLists = 0;
+for (const [f, src] of SRC) {
+  if (!/useScanJobs\(/.test(src) || !/className="wb-none"/.test(src)) continue;
+  jobLists++;
+  expect(/streamNote\(/.test(src), `${f}: lists the scan's jobs and renders its own empty sentence without branching on the stream state (Queue.tsx streamNote) - an offline stream reads as "no scans"`);
+}
+expect(jobLists >= 1, `the empty-job-list scan found ${jobLists} panels, expected at least 1 (agents.tsx) - the matcher has stopped biting`);
+
+// ---------------------------------------------------------------- 10. one workbench frame
+// shell.tsx's <Workbench> is the only place that writes the frame (.wb-panes, its list pane and its detail), so a
+// frame-level rule (roving tabindex, focusable panes, the walk) is one edit. A panel that needs a different scroll
+// model asks the frame for it (bodyRef / onBodyScroll) rather than copying the markup.
+let frames = 0;
+for (const [f, src] of SRC) {
+  if (!/className="wb-panes"/.test(src)) continue;
+  frames++;
+  expect(f === 'wide/shell.tsx', `${f}: declares className="wb-panes", a second copy of the workbench frame - render through shell.tsx's <Workbench> (it takes bodyRef / onBodyScroll for a scroll-following panel)`);
+}
+expect(frames === 1, `the frame scan found ${frames} files declaring className="wb-panes", expected exactly 1 (shell.tsx) - the matcher has stopped biting`);
+for (const f of ['wide/agents.tsx', 'wide/orders.tsx', 'wide/plan.tsx', 'wide/review.tsx', 'wide/steer.tsx', 'wide/view.tsx'])
+  expect(/<Workbench\b/.test(SRC.get(f) as string), `${f}: does not render through <Workbench>, so a frame-level rule would miss it`);
+
 if (failures.length) { console.error(`check-rail-keys: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
 console.log(`check-rail-keys: ${held} expectations held (${options} role="option" sites, ${scrolls} scroll-behavior sites)`);

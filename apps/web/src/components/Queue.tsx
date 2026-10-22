@@ -101,13 +101,25 @@ export function MorningButton() {
   );
 }
 
-/** What the live review list says when it is empty: only a connected stream can say the scan has nothing open. */
+/** What each panel calls the thing a degraded stream hides, so one vocabulary serves every empty live list. */
+export type StreamNouns = { open: string; appear: string; nothing: string };
+export const REVIEW_NOUNS: StreamNouns = { open: 'Open proposals', appear: 'Proposals appear', nothing: 'nothing to review' };
+export const SCAN_NOUNS: StreamNouns = { open: 'Running scans', appear: 'Scans appear', nothing: 'nothing to show' };
+
+/**
+ * What an empty live list may honestly say, by the state of the stream: only a connected stream can say there is
+ * nothing to show. Returns null for a live (or absent) product, whose empty list is the panel's own sentence.
+ */
+export function streamNote(st: { status: string; error?: string | null } | null | undefined, n: StreamNouns): [string, string] | null {
+  if (!st || st.status === 'live') return null;
+  return st.status === 'loading' ? ['Connecting', `Waiting for the scan store. ${n.appear} here once it answers.`]
+    : st.status === 'missing' ? ['Product not found', `This product is not registered, so there is ${n.nothing}.`]
+    : st.status === 'offline' ? ['Scan stream offline', `Reconnecting. ${n.open} may exist; they cannot be shown until the stream is back.`]
+    : ['Scan unreadable', `${st.error ?? 'The scan store could not be read'}. ${n.open} may exist.`];
+}
+
+/** What the live review list says when it is empty. */
 export function LiveEmpty() {
-  const st = useLive()?.product;
-  const [head, text] = !st || st.status === 'live' ? ['Nothing to review', 'The scan has no open proposal. New ones appear here as it proposes them.']
-    : st.status === 'loading' ? ['Connecting', 'Waiting for the scan store. Proposals appear here once it answers.']
-    : st.status === 'missing' ? ['Product not found', 'This product is not registered, so there is nothing to review.']
-    : st.status === 'offline' ? ['Scan stream offline', 'Reconnecting. Open proposals may exist; they cannot be shown until the stream is back.']
-    : ['Scan unreadable', (st.error ?? 'The scan store could not be read') + '. Open proposals may exist.'];
+  const [head, text] = streamNote(useLive()?.product, REVIEW_NOUNS) ?? ['Nothing to review', 'The scan has no open proposal. New ones appear here as it proposes them.'];
   return <div className="qempty"><b>{head}</b>{text}</div>;
 }
