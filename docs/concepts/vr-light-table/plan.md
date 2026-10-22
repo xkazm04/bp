@@ -303,6 +303,27 @@ re-graded; this one adds what the tree demonstrates today, so a reader can tell 
   nothing validates this entry beyond reading it.
 - **Owed next.** The app's goal rows still read open for the goals marked met above; this run cannot write the app.
 
+### Milestone 1 goal 1 measured 2026-10-22 at `989b4a5` (Lynx)
+
+Run on Lynx (Windows ARM64) from a builder worktree on master `989b4a5` (HEAD there, clean), whose `node_modules` is a
+junction to the main checkout's. Nothing was fixed; this entry is the only file changed. Earlier entries are unchanged and
+not re-graded. This reading covers the three CI-only commits `146e6ee`, `1abd5f2` and `989b4a5`, because it was taken at
+`989b4a5`; gate.yml's CI run is not a substitute for this local reading.
+
+| Goal | Result | Command, printed numbers, commit |
+|---|---|---|
+| M1 goal 1 check chain and perf hold after the P1 closure | **open: arm 1 red, arm 2 not measured** | Arm 1: `npm run check` printed `84 passed, 1 failed, 0 skipped of 85`, exit code 1. The one FAIL is `FAIL  typecheck                  12.8s`: 7 `error TS` lines, all in `scripts/check-waves.ts` (159, 160, 167, 173, 174), all the same shape, e.g. `Type 'import("C:/Users/kazda/.personas/headless-masters/worktrees/bp/04d71af7/packages/core/src/model/scan-sim").ScanSim' is not assignable to type 'import("C:/Users/kazda/kiro/bp/packages/core/src/model/scan-sim").ScanSim'. Types have separate declarations of a private property 'now'.` No check SKIPPED (0 skipped), and `check:lens-health`, `check:data`, `check:scan-wire`, `check:waves` and the other 83 passed, so the lens-scan resolution that blocked the 13:14Z reading did not skip anything. Arm 2: **not measured**. `python scripts/perf.py` exited 1 with `playwright._impl._errors.Error: Page.goto: net::ERR_CONNECTION_REFUSED at http://localhost:3000/v/subtle?intro=0&scale=4` (no server on port 3000). docs/perf.md prescribes `npm run build && npm start` first; `npm run build` exited 1 with `FATAL: An unexpected Turbopack error occurred` / `Symlink node_modules could not be resolved: the symlink target leaves the filesystem root or its parent directory could not be resolved`. No frame-time number was printed, so none is recorded against the p50 <= 16.7 ms budget. |
+
+- **Why the red is a worktree reason, not graded as a code reading.** The typecheck errors name two different copies of
+  `packages/core` (this worktree's and `C:/Users/kazda/kiro/bp/`'s), which exist only because `node_modules` is a junction
+  into the main checkout (its workspace links resolve `packages/core` there). Both Turbopack's symlink error and the
+  typecheck split come from that junction. That is my reading of the printed errors; it was not confirmed by running the same
+  check in the main checkout, which this run does not touch. So the goal is not graded green and not graded as a code
+  failure either.
+- **Owed next.** Run `npm run check`, then `npm run build && npm start` and `python scripts/perf.py` (idle host, `?scale=4`),
+  from a tree with its own `node_modules` (the main checkout, or the isolated install via `isolated-gate.mjs`). Goal 1
+  stays open until both arms print numbers inside their budgets there.
+
 ## P2 Look-dev
 
 Image work on the GPU box, judged by the owner.
