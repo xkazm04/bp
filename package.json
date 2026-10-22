@@ -29,6 +29,7 @@
     "check:release-train": "node scripts/check-release-train.ts",
     "check:release-states": "node scripts/check-release-states.ts",
     "check:loader-json": "node scripts/check-loader-json.mjs",
+    "check:fake-claude": "node scripts/check-fake-claude.mjs",
     "check:train-quality": "node scripts/check-train-quality.mjs",
     "check:ledger-shell": "node scripts/check-ledger-shell.mjs",
     "check:train-wire": "node scripts/check-train-wire.ts",

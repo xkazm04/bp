@@ -40,8 +40,13 @@ const VALID = {
   scan: { method: 'judgement', instructions: 'Count the call sites that still use the old Money type; features without money are no impact.' },
 };
 
-if (argv.includes('json')) {
-  const resume = argv.includes('--resume') ? argv[argv.indexOf('--resume') + 1] : 'none';
+// Flags are read as flags, as the CLI does: `--output-format json` (or `=json`) takes the JSON branch, never the bare word `json`
+// (a lens named json beside `--output-format text` stays a run), and `--resume` needs a value or the call is refused.
+const flag = (name) => { const i = argv.findIndex((a) => a === name || a.startsWith(name + '=')); if (i < 0) return undefined; return argv[i].includes('=') ? argv[i].slice(name.length + 1) : argv[i + 1]; };
+if (flag('--output-format') === 'json') {
+  const ri = argv.indexOf('--resume');
+  if (ri >= 0 && (argv[ri + 1] === undefined || argv[ri + 1].startsWith('-'))) { console.error("error: option '--resume <session>' argument missing"); process.exit(2); }
+  const resume = ri >= 0 ? argv[ri + 1] : 'none';
   const onboard = /^\/lens-scan onboard --draft-only(?: --temporary)?\r?\n/.test(input);
   const temp = /^\/lens-scan onboard --draft-only --temporary\r?\n/.test(input) || input.includes('TEMPORARY');
   const draft = temp ? { ...VALID, id: 'tmp.money-migration' } : VALID;
