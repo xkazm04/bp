@@ -4,6 +4,7 @@
 // The ledger is its own chunk (LedgerPageLazy, below; BlueprintApp mounts the same one), fetched the first time the
 // ledger page shows: `/`'s first-load JS carries none of it (scripts/check-train-budget.ts --bundle proves it).
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { GENERAL } from '@bp/core/data/types';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { LIVE_DECIDER, fmtWait, pname, sheetOf, type BldNode, type RoomNode, type SimDecision, type WingNode } from '@bp/core/model';
 import type { Feature } from '@bp/core/data';
@@ -167,7 +168,7 @@ export function Phone() {
             <div key={W.id}>
               <div className="ph-wing">Wing {W.def.letter} · {W.def.name}</div>
               {rooms.map(({ R, hits }) => {
-                const rc = M.agg.countsOf(R.id, R.feats, P.asOf, 7), bad = M.agg.healthOf(R.id, R.feats, 'general').bad;
+                const rc = M.agg.countsOf(R.id, R.feats, P.asOf, 7), bad = M.agg.healthOf(R.id, R.feats, GENERAL).bad;
                 return (
                   <details key={R.id + (v ? '-q' : '')} className="ph-dom" open={!!v}>
                     <summary>{R.d.name}<span>{rc.n} · {rc.live + rc.flagged} live{bad ? ' · ' + bad + ' trouble' : ''}</span></summary>

@@ -5,6 +5,7 @@
 // its reader's density while the others collapse to their headline. Each panel ends with its metric
 // rows (MetricRows, from the manifest); the Business section and a live product's Screens strip follow.
 import { useMemo } from 'react';
+import { GENERAL } from '@bp/core/data/types';
 import { LayoutGroup, motion, useReducedMotion } from 'motion/react';
 import type { Feature } from '@bp/core/data';
 import type { ScanSnapshot } from '@bp/core/scan/types';
@@ -153,7 +154,7 @@ function LensPanels({ f, M }: { f: Feature; M: Model }) {
     <LayoutGroup>
       <div className="ev6">
         {order.map((l) => {
-          const cur = view === l, mini = view !== 'general' && !cur;
+          const cur = view === l, mini = view !== GENERAL && !cur;
           return (
             <motion.div key={l} layout={!reduce} transition={{ type: 'spring', stiffness: 260, damping: 30 }} className={'evp ' + (f.lens[l]?.h ?? 'unmeasured') + (cur ? ' cur' : '') + (mini ? ' mini' : '')}>
               <Panel lens={l} def={M.P.LENS[l]} f={f} model={M} density={dens(l)} expanded={cur} view={view} />

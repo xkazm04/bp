@@ -108,7 +108,11 @@ ok('general: GENERAL_SHEET.k is the same word as GENERAL', !!gConst && !!gSheet 
 // No bare 'general' in apps/web/src: it is GENERAL. Held back for the director (a sibling worker owns the phone sheet
 // surfaces this wave): Phone.tsx, sheet/SheetBody.tsx, sheet/LensPanel.tsx, one literal each. Remove an entry here
 // when its literal is replaced.
-const HELD = ['apps/web/src/components/Phone.tsx', 'apps/web/src/components/sheet/SheetBody.tsx', 'apps/web/src/components/sheet/LensPanel.tsx'];
+// The held list is EMPTY: the three sites it carried (Phone.tsx:170, SheetBody.tsx:156,
+// LensPanel.tsx:132) were finished by the director, because the fence that held them back -
+// a sibling worker owning the phone sheet surfaces - turned out wider than it needed to be.
+// Keep it empty. An entry here is a site the rule does not actually cover.
+const HELD: string[] = [];
 const bare: string[] = [];
 for (const f of src.filter((x) => /\.tsx?$/.test(x))) {
   const text = blankComments(fs.readFileSync(f, 'utf8'));
@@ -117,6 +121,6 @@ for (const f of src.filter((x) => /\.tsx?$/.test(x))) {
     if (!HELD.includes(f)) bare.push(at);
   }
 }
-ok('general: no bare General literal in apps/web/src outside the held files', bare.length === 0, bare.join('; '));
+ok('general: no bare General literal anywhere in apps/web/src', bare.length === 0, bare.join('; '));
 if (failed) { console.log(`\n${failed} check(s) failed`); process.exit(1); }
 console.log('\nclaims ok');

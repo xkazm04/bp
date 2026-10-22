@@ -11,6 +11,7 @@
 // Metric fields (v3.1, a field with `metric`) are not rows here: `MetricRows` draws them after the
 // panel's evidence, for every variant's panel (the sheet places it), from the manifest alone.
 import type { Feature, FeatureLens, LensDef, Scalar } from '@bp/core/data';
+import { GENERAL } from '@bp/core/data/types';
 import type { LensField } from '@bp/core/standard/types';
 import { DENSITY_COUNT, HEALTH_TEXT, hotHealth } from '@bp/core/standard/present';
 import type { ScanSnapshot } from '@bp/core/scan/types';
@@ -129,7 +130,7 @@ export const hmark = (h: string) => (HEALTH_TEXT[h as keyof typeof HEALTH_TEXT] 
 export function DefaultLensPanel({ lens, def, f, model, density, expanded, view }: SheetPanelProps) {
   const fl = f.lens[lens];
   const rows = lensRows(def, fl, (k) => model.sim.liveValue(f, lens, k));
-  const limit = expanded ? DENSITY_COUNT.drawer[density] : view === 'general' ? 3 : 1;
+  const limit = expanded ? DENSITY_COUNT.drawer[density] : view === GENERAL ? 3 : 1;
   const shown = rows.slice(0, limit), hidden = rows.length - shown.length;
   const h = fl?.h ?? 'unmeasured';
   return (
