@@ -32,6 +32,9 @@
 //                                                  with a seeded control proving it would (staleness: each committed
 //                                                  file with one line mutated, and with one deleted, is reported
 //                                                  stale by the same staleVerdict the real comparison calls)
+//                                                  The raw carries (cross_refs, both forms of glyph) have no real
+//                                                  document, so an in-memory one is read through conform + the
+//                                                  fix-up text (rawCarried); its control removes each copy / the key.
 // npm: `npm run schema:generate`, `npm run check:schema`.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -434,9 +437,24 @@ export function conform(m, structName, value, where = structName, out = []) {
     if (!(c.p.key in value)) continue;
     if (c.how !== 'mapped') { const k = `${structName}.${c.field}`; (out.carried ??= {})[k] = (out.carried[k] ?? 0) + 1; }
     // a raw field takes any JSON; a renamed one goes through JsonValueToUProperty, the converter's own rules
+    if (c.how === 'raw') (out.raw ??= []).push({ struct: structName, key: c.p.key, field: c.field, value: value[c.p.key] });
     if (c.how !== 'raw') conformNode(m, c.p.node, c.t.t, value[c.p.key], `${where}.${c.p.key}`, out);
   }
   return out;
+}
+/**
+ * What BpSchema::FixUp leaves in the raw-carried fields of `value`: conform walks the document the way the real
+ * corpus is walked, and each raw carry it meets counts only when the fix-up text holds its CopyRaw line. The text is
+ * the condensed JSON of the original value (a bare string keeps its quotes), as CopyRaw writes it.
+ */
+export function rawCarried(m, fix, structName, value) {
+  const out = [];
+  conform(m, structName, value, structName, out);
+  const block = (text, start, end) => { const i = text.indexOf(start); return i < 0 ? '' : text.slice(i, text.indexOf(end, i)); };
+  const held = (r) => block(fix, `inline bool FixUp(const FJsonObject& Json, ${ueName(r.struct)}& Out)\n\t{`, '\n\t}\n').includes(`CopyRaw(Json, TEXT("${r.key}"), Out.${r.field})`);
+  const carried = {};
+  for (const r of (out.raw ?? []).filter(held)) (carried[`${r.struct}.${r.field}`] ??= []).push(JSON.stringify(r.value));
+  return { problems: [...out], carried };
 }
 function conformNode(m, n, cpp, v, where, out) {
   const isObj = v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -708,6 +726,32 @@ if (isMain) {
     const conformCaught = bad.length === 3;
     console.log(`${conformCaught ? 'ok  ' : 'FAIL'}  control: a string version, a string bool and an array facet are refused (${bad.length} of 3)`);
     if (!conformCaught) failed++;
+    // The raw carries (cross_refs, glyph) reach FixUp as condensed JSON text. The corpus above has no cross_refs and
+    // no document with both forms of glyph, so one in-memory set goes through the SAME conform: an app structure whose
+    // context carries cross_refs (an object item and a string item), and two lens manifests, glyph a string and an object.
+    const rawDocs = [['AppStructure', { contexts: [{ cross_refs: [{ to: 'x', kind: 'uses' }, 'y'] }] }],
+      ['LensManifest', { presentation: { glyph: 'pulse' } }], ['LensManifest', { presentation: { glyph: { path: 'M2 3h12v10H2z' } } }]];
+    const rawWant = { 'Context.CrossRefs_': ['[{"to":"x","kind":"uses"},"y"]'], 'Presentation.Glyph_': ['"pulse"', '{"path":"M2 3h12v10H2z"}'] };
+    const rawRun = (fix, docs = rawDocs) => {
+      const got = { problems: [], carried: {} };
+      for (const [name, doc] of docs) {
+        const r = rawCarried(fresh.m, fix, name, doc);
+        got.problems.push(...r.problems);
+        for (const [k, t] of Object.entries(r.carried)) (got.carried[k] ??= []).push(...t);
+      }
+      return got;
+    };
+    const rawSame = (got) => got.problems.length === 0 && JSON.stringify(got.carried) === JSON.stringify(rawWant);
+    const rawRead = rawRun(fresh.fix);
+    console.log(`${rawSame(rawRead) ? 'ok  ' : 'FAIL'}  the UE mapping carries cross_refs and both forms of glyph as FixUp would (${Object.entries(rawRead.carried).map(([f, t]) => `${f} ${t.join(' | ')}`).join('; ') || 'nothing'}${rawRead.problems.length ? '; ' + rawRead.problems.join('; ') : ''})`);
+    if (!rawSame(rawRead)) failed++;
+    // control: with either copy removed from the fix-up text, or the raw key dropped from the document, the same read-through differs
+    const noCopy = rawRun(fresh.fix.replace('CopyRaw(Json, TEXT("cross_refs"), Out.CrossRefs_)', 'true'));
+    const noGlyph = rawRun(fresh.fix.replace('CopyRaw(Json, TEXT("glyph"), Out.Glyph_)', 'true'));
+    const noKey = rawRun(fresh.fix, [['AppStructure', { contexts: [{}] }], ...rawDocs.slice(1)]);
+    const rawControl = !rawSame(noCopy) && !rawSame(noGlyph) && !rawSame(noKey);
+    console.log(`${rawControl ? 'ok  ' : 'FAIL'}  control: with the cross_refs copy or the glyph copy removed from FixUp, or cross_refs dropped from the document, the raw read-through fails (3 of 3)`);
+    if (!rawControl) failed++;
     // control: a field added to a schema must change every output (so a stale file cannot pass)
     const seeded = structuredClone(schemas);
     seeded['app-structure-3.schema.json'].$defs.feature.properties.zzParityProbe = { type: 'integer' };
