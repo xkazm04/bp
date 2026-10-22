@@ -32,6 +32,44 @@ namespace BpSchema
 	inline bool FixUp(const FJsonObject& Json, FBpStructureEnvelope& Out);
 	inline bool FixUp(const FJsonObject& Json, FBpScanWire& Out);
 
+	/**
+	 * Why the last FromJson on this thread returned false, for a log line: the call that failed first, the path of its
+	 * key from the document root (`lenses[0].manifest.presentation.glyph`; empty for JsonObjectToUStruct, which logs its
+	 * own LogJson line naming the property) and how many steps failed (FixUpArray stops at its first failing item).
+	 * FromJson empties it before it reads.
+	 */
+	struct FFromJsonFailure
+	{
+		FString Call;
+		FString Path;
+		int32 Count = 0;
+	};
+	inline FFromJsonFailure& LastFailure()
+	{
+		thread_local FFromJsonFailure Failure;
+		return Failure;
+	}
+
+	/** Records a failed step; the first one keeps its call and key. Returns false. */
+	inline bool Failed(const TCHAR* Call, const FString& Key)
+	{
+		FFromJsonFailure& Failure = LastFailure();
+		if (Failure.Count++ == 0)
+		{
+			Failure.Call = Call;
+			Failure.Path = Key;
+		}
+		return false;
+	}
+
+	/** After the struct held at Key failed: prefixes the path with Key when the first failure was inside it. Returns false. */
+	inline bool Within(const int32 CountBefore, const FString& Key)
+	{
+		FFromJsonFailure& Failure = LastFailure();
+		if (CountBefore == 0 && Failure.Count > 0) Failure.Path = Failure.Path.IsEmpty() ? Key : Key + TEXT(".") + Failure.Path;
+		return false;
+	}
+
 	/** Json[Key] into the UPROPERTY Field of Out, as the converter would have read it. A missing key keeps the default. */
 	template <typename T>
 	bool CopyKey(const FJsonObject& Json, const TCHAR* Key, const FName Field, T& Out)
@@ -39,7 +77,7 @@ namespace BpSchema
 		const TSharedPtr<FJsonValue> Value = Json.TryGetField(Key);
 		if (!Value.IsValid()) return true;
 		FProperty* Property = T::StaticStruct()->FindPropertyByName(Field);
-		return Property && FJsonObjectConverter::JsonValueToUProperty(Value, Property, Property->ContainerPtrToValuePtr<void>(&Out), 0, 0);
+		return (Property && FJsonObjectConverter::JsonValueToUProperty(Value, Property, Property->ContainerPtrToValuePtr<void>(&Out), 0, 0)) || Failed(TEXT("CopyKey"), Key);
 	}
 
 	/** Json[Key] as condensed JSON text into Out (a bare string keeps its quotes). A missing key leaves Out empty. */
@@ -49,7 +87,7 @@ namespace BpSchema
 		if (!Value.IsValid()) return true;
 		Out.Reset();
 		const TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer = TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Out);
-		return FJsonSerializer::Serialize(Value, FString(), Writer);
+		return FJsonSerializer::Serialize(Value, FString(), Writer) || Failed(TEXT("CopyRaw"), Key);
 	}
 
 	/** FixUp on the struct held at Json[Key]. */
@@ -57,7 +95,9 @@ namespace BpSchema
 	bool FixUpOne(const FJsonObject& Json, const TCHAR* Key, T& Out)
 	{
 		const TSharedPtr<FJsonObject>* Object = nullptr;
-		return !Json.TryGetObjectField(Key, Object) || FixUp(**Object, Out);
+		if (!Json.TryGetObjectField(Key, Object)) return true;
+		const int32 Before = LastFailure().Count;
+		return FixUp(**Object, Out) || Within(Before, Key);
 	}
 
 	/** FixUp on each struct of the array at Json[Key]; the converter filled Out in the same order. */
@@ -66,11 +106,14 @@ namespace BpSchema
 	{
 		const TArray<TSharedPtr<FJsonValue>>* Items = nullptr;
 		if (!Json.TryGetArrayField(Key, Items)) return true;
-		if (Items->Num() != Out.Num()) return false;
+		if (Items->Num() != Out.Num()) return Failed(TEXT("FixUpArray (length)"), Key);
 		for (int32 I = 0; I < Items->Num(); ++I)
 		{
 			const TSharedPtr<FJsonObject>* Object = nullptr;
-			if (!(*Items)[I]->TryGetObject(Object) || !FixUp(**Object, Out[I])) return false;
+			const FString Item = FString::Printf(TEXT("%s[%d]"), Key, I);
+			if (!(*Items)[I]->TryGetObject(Object)) return Failed(TEXT("FixUpArray (not an object)"), Item);
+			const int32 Before = LastFailure().Count;
+			if (!FixUp(**Object, Out[I])) return Within(Before, Item);
 		}
 		return true;
 	}
@@ -84,7 +127,10 @@ namespace BpSchema
 		for (TPair<FString, T>& Entry : Out)
 		{
 			const TSharedPtr<FJsonObject>* Value = nullptr;
-			if (!(*Object)->TryGetObjectField(Entry.Key, Value) || !FixUp(**Value, Entry.Value)) return false;
+			const FString Item = FString(Key) + TEXT(".") + Entry.Key;
+			if (!(*Object)->TryGetObjectField(Entry.Key, Value)) return Failed(TEXT("FixUpMap (not an object)"), Item);
+			const int32 Before = LastFailure().Count;
+			if (!FixUp(**Value, Entry.Value)) return Within(Before, Item);
 		}
 		return true;
 	}
@@ -169,10 +215,12 @@ namespace BpSchema
 		return true; // nothing carried
 	}
 
-	/** The one way BpLink reads a document: FJsonObjectConverter for the mapped fields, then FixUp for the carried ones. */
+	/** The one way BpLink reads a document: FJsonObjectConverter for the mapped fields, then FixUp for the carried ones. On false, LastFailure() says where. */
 	template <typename T>
 	bool FromJson(const TSharedRef<FJsonObject>& Json, T& Out)
 	{
-		return FJsonObjectConverter::JsonObjectToUStruct(Json, &Out, 0, 0) && FixUp(*Json, Out);
+		LastFailure() = FFromJsonFailure();
+		if (!FJsonObjectConverter::JsonObjectToUStruct(Json, &Out, 0, 0)) return Failed(TEXT("JsonObjectToUStruct"), FString());
+		return FixUp(*Json, Out);
 	}
 }

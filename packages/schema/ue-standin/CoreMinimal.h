@@ -21,6 +21,10 @@ public:
 	FString() {}
 	FString(const TCHAR*) {}
 	void Reset() {}
+	bool IsEmpty() const;
+	template <typename... Types> static FString Printf(const TCHAR* Format, Types... Args);
+	friend FString operator+(const FString& Lhs, const TCHAR* Rhs);
+	friend FString operator+(const FString& Lhs, const FString& Rhs);
 };
 class FName { public: explicit FName(const TCHAR*) {} };
 template <typename T> class TSharedPtr { public: T* Get() const; T& operator*() const; T* operator->() const; bool IsValid() const; };
