@@ -3,12 +3,12 @@
 // store.server.ts and the routes under src/app/api/products.
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { AppStructure, LensEntry, LensManifest } from '@bp/core/standard/types';
-import { refreshProjects } from './projects.ts';
+import { refreshProjects, statusOfStore, storeFromList } from './projects.ts';
 import { latestRun } from '@bp/core/scan/derive';
 import type { ScanJob, ScanScope } from '@bp/core/scan/jobs';
 import type { DispatchResult } from './actions.ts';
 import type { Wave, WaveBody, WaveDispatchResult } from '@bp/core/scan/waves';
-import { fullScan as full, isEmptyScan as isEmpty, type DecisionBody, type Proposal, type ProductInfo, type ScanSnapshot } from '@bp/core/scan/types';
+import { fullScan as full, isEmptyScan as isEmpty, type DecisionBody, type Proposal, type ScanSnapshot } from '@bp/core/scan/types';
 import type { CommitDiff, ReleaseCreated, TriageBody, TriageResult, VersionSuggestion } from '@bp/core/scan/types';
 import { errorText, parseCommitDiff, parseJson, parseReleaseCreated, parseScanJob, parseTriageResult, parseVersionSuggestion, parseWaveBody, parseWaveDispatch, parseWaves, type Parsed } from '@bp/core/train/wire';
 import { mergeScan } from '@bp/core/scan/merge';
@@ -96,10 +96,10 @@ export function useLiveProduct(slug: string | null): LiveProduct {
     if (!slug) { setState({ slug, live: MISSING }); return; }
     let dead = false, es: EventSource | null = null, timer: ReturnType<typeof setTimeout> | undefined, attempt = 0;
     let jobs: ScanJob[] = NO_JOBS;
-    let scan: ScanSnapshot | undefined, hasStore = false, mapText = '', mapRev = '', rev = 0, fetching = false, again = false, retry: ReturnType<typeof setTimeout> | undefined;
+    let scan: ScanSnapshot | undefined, hasStore: boolean | undefined = undefined, listTimer: ReturnType<typeof setTimeout> | undefined, mapText = '', mapRev = '', rev = 0, fetching = false, again = false, retry: ReturnType<typeof setTimeout> | undefined;
     const ac = new AbortController(), base = api(slug);
     const put = (f: (l: LiveProduct) => LiveProduct) => { if (!dead) setState((s) => ({ slug, live: f(s.slug === slug ? s.live : { status: 'loading', events: '', jobs: NO_JOBS }) })); };
-    const shown = (): LiveProduct['status'] => (hasStore ? 'live' : 'missing');
+    const shown = (): LiveProduct['status'] => statusOfStore(hasStore);
 
     /** Fetch the map; a body equal to the one held changes nothing. Returns false on a failed fetch (the old map stays). */
     const refetch = async (): Promise<boolean> => {
@@ -191,7 +191,7 @@ export function useLiveProduct(slug: string | null): LiveProduct {
       try {
         const [r, list] = await Promise.all([
           fetch(base + '/structure', { signal: bound(ac.signal), cache: 'no-store' }),
-          refreshProjects().then((l) => l ?? ([] as ProductInfo[])), // the one request for the list: the header's store shares it
+          refreshProjects(), // the one request for the list: the header's store shares it. null = it did not answer
         ]);
         if (r.status === 404) {
           const j = (await r.json().catch(() => ({}))) as { error?: string };
@@ -202,7 +202,18 @@ export function useLiveProduct(slug: string | null): LiveProduct {
         mapText = await r.text();
         const j = JSON.parse(mapText) as { structure: AppStructure; events?: string; rev?: string };
         mapRev = j.rev ?? '';
-        hasStore = !!list.find((p) => p.slug === slug)?.live;
+        // a list that did not answer leaves the store unknown (status stays `loading`, never `missing`): a snapshot
+        // with rows or a delta settles it, else the list is asked again until it answers
+        hasStore = storeFromList(list, slug);
+        if (hasStore === undefined) {
+          const ask = () => { void refreshProjects(true).then((l) => {
+            if (dead || hasStore !== undefined) return;
+            hasStore = storeFromList(l, slug);
+            if (hasStore === undefined) { listTimer = setTimeout(ask, 3000); return; }
+            put((x) => (x.status === 'loading' ? { ...x, status: shown() } : x));
+          }); };
+          listTimer = setTimeout(ask, 3000);
+        }
         put((l) => ({ ...l, status: 'loading', structure: j.structure, structureRev: ++rev, events: j.events ?? '' }));
         open();
       } catch (e) {
@@ -211,7 +222,7 @@ export function useLiveProduct(slug: string | null): LiveProduct {
       }
     })();
 
-    return () => { dead = true; ac.abort(); clearTimeout(timer); clearTimeout(retry); es?.close(); es = null; };
+    return () => { dead = true; ac.abort(); clearTimeout(timer); clearTimeout(retry); clearTimeout(listTimer); es?.close(); es = null; };
   }, [slug]);
 
   // Until the effect for a new slug has run, do not hand out the previous product's data.

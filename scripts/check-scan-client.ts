@@ -282,5 +282,18 @@ expect(!/fetch\(\s*'\/api\/lens-draft'/.test(readStripped(path.join(SRC, 'compon
   expect(out !== PENDING && (out as { name?: string }).name === 'AbortError', 'aborting the signal passed to postLensDraft does not reject the turn with an AbortError', String((out as { name?: string })?.name ?? out));
 }
 
+// --------------------------------------------- 6. a list that did not answer is not "no scan store"
+// useLiveProduct took `missing` from the project list's `live` flag, and a failed or timed-out list read became
+// `[]` before it got there, so a product with a perfectly good store read as having none. The list has three
+// outcomes (live, not live, no answer) and the status for each is pinned here; the stream settles the unknown.
+const mk = (slug: string, live: boolean) => ({ slug, name: slug, root: '/r', live, readiness: {} }) as never;
+const verdict = (list: unknown, slug = 'p') => projects.statusOfStore(projects.storeFromList(list as never, slug));
+expect(verdict([mk('p', true)]) === 'live', 'a list that says the product has a store does not read live', verdict([mk('p', true)]));
+expect(verdict([mk('p', false)]) === 'missing', 'a list that says the product has no store does not read missing (the genuine first-run state)', verdict([mk('p', false)]));
+expect(verdict([mk('other', true)]) === 'missing', 'a product absent from an answered list does not read missing', verdict([mk('other', true)]));
+expect(verdict(null) === 'loading', 'a list that did not answer does not leave the status loading (it must not claim there is no store)', verdict(null));
+expect(!/refreshProjects\(\)\.then\(\(l\) => l \?\? /.test(clientSrc), 'client.ts turns a failed project list into an empty one again');
+expect(/storeFromList\(/.test(clientSrc) && /statusOfStore\(/.test(clientSrc), 'useLiveProduct no longer takes its store verdict from projects.ts storeFromList / statusOfStore');
+
 if (failures.length) { console.log(failures.map((f) => 'FAIL ' + f).join('\n')); console.log(`check-scan-client: ${failures.length} failed, ${held} held`); process.exit(1); }
 console.log(`check-scan-client: ${held} expectations held (${SHAPES.length} rejection shapes, ${DEV_WORDS.length} developer strings forbidden, ${HELPERS.length} request helpers bounded)`);

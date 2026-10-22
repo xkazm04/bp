@@ -46,6 +46,15 @@ export function refreshProjects(fresh = false): Promise<ProductInfo[] | null> {
   return p;
 }
 
+/**
+ * Whether the registry says `slug` has a scan store: true/false when the list answered, `undefined` when it did not
+ * (`refreshProjects` answers null on any failure, a timeout included). A list that failed to answer says nothing about
+ * the product, so it must never read as "no store".
+ */
+export const storeFromList = (list: ProductInfo[] | null, slug: string): boolean | undefined => (list === null ? undefined : !!list.find((p) => p.slug === slug)?.live);
+/** The header status for a store verdict: `loading` while it is unknown, `live` with a store, `missing` for a product that has none. */
+export const statusOfStore = (hasStore: boolean | undefined): 'loading' | 'live' | 'missing' => (hasStore === undefined ? 'loading' : hasStore ? 'live' : 'missing');
+
 /** Note that the open product's registry entry changed under the running page (shown with a Reload action). */
 export function markStale(s: Stale) { put({ stale: s }); }
 
