@@ -9,6 +9,7 @@ import type { Condition, GlyphName, HealthRule, LensField, LensManifest, LensSca
 import { readTheme } from '@/engine/theme';
 import { glyph, lineType } from '@/variants/subtle/marks';
 import { useTheme } from '../../ThemeToggle';
+import { inkAt } from '../variants/bits';
 
 /** A lens glyph drawn by the canvas's own glyph() (so the card shows exactly what the plan will). */
 export function LensGlyph({ g, size = 18 }: { g: GlyphName | { path: string } | null; size?: number }) {
@@ -21,7 +22,7 @@ export function LensGlyph({ g, size = 18 }: { g: GlyphName | { path: string } | 
     const ctx = cv.getContext('2d'); if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, size, size);
     const pad = Math.round(size * 0.12);
-    glyph(ctx, g, pad, pad, size - 2 * pad, th.ink);
+    glyph(ctx, g, pad, pad, size - 2 * pad, inkAt(cv));
     // `key` stands for `g` (a fresh object each render would redraw every time)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, size, mode]);
@@ -37,7 +38,7 @@ export function LineSample({ line, w = 56, h = 10 }: { line: LineName; w?: numbe
     cv.width = w * dpr; cv.height = h * dpr;
     const ctx = cv.getContext('2d'); if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
-    lineType(ctx, th, line, 1, 1, w - 2, h - 2, th.ink, 1.2);
+    lineType(ctx, th, line, 1, 1, w - 2, h - 2, inkAt(cv), 1.2);
   }, [line, w, h, mode]);
   return <canvas ref={ref} className="tl-ln" style={{ width: w, height: h }} aria-hidden="true" />;
 }

@@ -3,7 +3,7 @@
 // and resolution into an image), the kind tag, risk and size, the feature link and the before -> expected move. The
 // state mark and the lens tag are train/ui/Marks.tsx's (one component each); the dispatch bar is the backlog's
 // (Triage.tsx). Lenses differ by glyph and short name here, never by colour.
-import { useMemo } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { glyph, type GlyphSpec } from '@/engine/render/lens-glyph';
 import type { Proposal } from '@bp/core/scan/types';
 import { useTheme } from '../../ThemeToggle';
@@ -23,16 +23,21 @@ function glyphUrl(g: GlyphSpec, col: string, px: number): string {
   URLS.set(key, u);
   return u;
 }
-/** The lens's glyph at 14 px (decorative: its short name always stands next to it). */
+/** The ink a drawing on `el` should use: `--ink` as RESOLVED AT `el`, so ledger-theme.css's `.lg-page` override reaches it
+ *  (the document root still holds the drawing set's ink). The dark ink stands when the property is not set. */
+export function inkAt(el: Element): string {
+  return getComputedStyle(el).getPropertyValue('--ink').trim() || '#dff0ff';
+}
+/** The lens's glyph at 14 px (decorative: its short name always stands next to it). The ink is read off the glyph's own
+ *  element in a layout effect, because `.lg-page` does not exist yet when the first render resolves a `useMemo`. */
 export function LensGlyph({ g, px = 14 }: { g: GlyphSpec; px?: number }) {
-  const mode = useTheme();
-  const src = useMemo(() => {
-    const col = getComputedStyle(document.documentElement).getPropertyValue('--ink').trim() || '#dff0ff';
-    return glyphUrl(g, col, px);
+  const mode = useTheme(), ref = useRef<HTMLImageElement>(null), [src, setSrc] = useState('');
+  useLayoutEffect(() => {
+    if (ref.current) setSrc(glyphUrl(g, inkAt(ref.current), px));
     // the theme changes the ink
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [g, px, mode]);
-  return src ? <img className="lg-gl" src={src} width={px} height={px} alt="" aria-hidden="true" /> : null;
+  return <img ref={ref} className="lg-gl" src={src || undefined} width={px} height={px} alt="" aria-hidden="true" />;
 }
 // ------------------------------------------------------------------------------------------- kind, risk, size
 export function KindTag({ p }: { p: Proposal }) {
