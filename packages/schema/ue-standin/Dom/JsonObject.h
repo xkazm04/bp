@@ -2,9 +2,11 @@
 #pragma once
 #include "CoreMinimal.h"
 class FJsonObject;
+enum class EJson { None, Null, String, Number, Boolean, Array, Object };
 class FJsonValue
 {
 public:
+	EJson Type;
 	bool TryGetObject(const TSharedPtr<FJsonObject>*& Out) const;
 };
 class FJsonObject

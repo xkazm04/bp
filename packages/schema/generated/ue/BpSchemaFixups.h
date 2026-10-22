@@ -80,14 +80,22 @@ namespace BpSchema
 		return (Property && FJsonObjectConverter::JsonValueToUProperty(Value, Property, Property->ContainerPtrToValuePtr<void>(&Out), 0, 0)) || Failed(TEXT("CopyKey"), Key);
 	}
 
-	/** Json[Key] as condensed JSON text into Out (a bare string keeps its quotes). A missing key leaves Out empty. */
+	/**
+	 * Json[Key] as condensed JSON text into Out (a bare string keeps its quotes). A missing key leaves Out empty.
+	 * The writer copies its text into Out in Close(), and UE's TJsonWriter::Close() is true only after a closing } or ]
+	 * (Serialization/JsonWriter.h), so it is false after a bare scalar such as the glyph "pulse" although the text is
+	 * written: a scalar is graded by the text it left in Out, an object or array by Close() (reading 12, machine.md).
+	 */
 	inline bool CopyRaw(const FJsonObject& Json, const TCHAR* Key, FString& Out)
 	{
 		const TSharedPtr<FJsonValue> Value = Json.TryGetField(Key);
 		if (!Value.IsValid()) return true;
 		Out.Reset();
 		const TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer = TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Out);
-		return FJsonSerializer::Serialize(Value, FString(), Writer) || Failed(TEXT("CopyRaw"), Key);
+		const bool bWritten = FJsonSerializer::Serialize(Value, FString(), Writer, false);
+		const bool bClosed = Writer->Close();
+		const bool bScalar = Value->Type != EJson::Object && Value->Type != EJson::Array;
+		return (bWritten && (bScalar ? !Out.IsEmpty() : bClosed)) || Failed(TEXT("CopyRaw"), Key);
 	}
 
 	/** FixUp on the struct held at Json[Key]. */
