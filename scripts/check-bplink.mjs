@@ -414,12 +414,23 @@ async function main() {
       check('build: BpLink.Build.cs names its include path as a Path.Combine off ModuleDirectory', parts.length > 0, build.slice(0, 0));
       check(`build: that include path resolves inside the repo (${parts.join('/')})`, parts.length > 0 && !path.relative(ROOT, inc).startsWith('..'), inc);
       check('build: the directory it adds to PublicIncludePaths exists', parts.length > 0 && fs.existsSync(inc), inc);
-      const includes = ['Public/BpLink.h', 'Private/BpLink.cpp']
-        .flatMap((f) => [...stripCxx(fs.readFileSync(path.join(MOD, f), 'utf8'), true).matchAll(/#include\s+"([^"]+)"/g)].map((m) => m[1]))
-        .filter((h) => /^Bp/.test(h) && !h.endsWith('.generated.h') && h !== 'BpLink.h');
-      const missing = includes.filter((h) => !fs.existsSync(path.join(inc, h)));
+      // `Schema/` is WP3.1's junction Source/BpLink/Public/Schema -> that same directory, so `Schema/X` is read there as X.
+      const schemaIncludes = (text) => [...stripCxx(text, true).matchAll(/#include\s+"([^"]+)"/g)].map((m) => m[1])
+        .filter((h) => /^(Schema\/)?Bp/.test(h) && !h.endsWith('.generated.h') && h !== 'BpLink.h');
+      const sources = ['Public/BpLink.h', 'Private/BpLink.cpp'].map((f) => fs.readFileSync(path.join(MOD, f), 'utf8'));
+      const includes = sources.flatMap(schemaIncludes);
+      const missing = includes.filter((h) => !fs.existsSync(path.join(inc, h.replace(/^Schema\//, ''))));
       check(`build: every Bp* header BpLink includes is in that directory (${includes.join(', ')})`, includes.length > 0 && missing.length === 0,
         missing.length ? `missing: ${missing.join(', ')}` : `0 of ${includes.length} missing`);
+      // One spelling. UHT's BpSchema.gen.cpp includes "Schema/BpSchema.h"; a BpLink file that says "BpSchema.h" reaches
+      // the same file by another path, MSVC's #pragma once does not match the two, and a unity build that merges both
+      // stops at BpSchema.generated.h's `#error "... already included"` (machine.md, Lynx readings 4 and 5).
+      const otherSpelling = (list) => list.filter((h) => !h.startsWith('Schema/'));
+      check('build: BpLink spells every generated header Schema/<header>, the path UHT\'s generated code uses',
+        includes.length > 0 && otherSpelling(includes).length === 0, otherSpelling(includes).join(', '));
+      // permanent control: the rule refuses a BpLink.h that goes back to the PublicIncludePaths spelling
+      check('build: the one-spelling rule refuses a BpLink.h that includes "BpSchema.h"',
+        otherSpelling(schemaIncludes(sources[0].replace('"Schema/BpSchema.h"', '"BpSchema.h"'))).length > 0);
     }
   } finally {
     // the child holds its working directory until it has exited (Windows), so wait before removing it

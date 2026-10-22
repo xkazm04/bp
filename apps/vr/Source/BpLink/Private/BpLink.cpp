@@ -1,7 +1,7 @@
 // Not compiled against Unreal, not syntax-checked (no clang on the machine it was written on): apps/vr/WP3.1.md.
 #include "BpLink.h"
 
-#include "BpSchemaFixups.h"
+#include "Schema/BpSchemaFixups.h"
 #include "HAL/IConsoleManager.h"
 #include "HttpModule.h"
 #include "Interfaces/IHttpRequest.h"

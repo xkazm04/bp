@@ -3,7 +3,7 @@
 
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
-#include "BpSchema.h"
+#include "Schema/BpSchema.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogBpLink, Log, All);
 
