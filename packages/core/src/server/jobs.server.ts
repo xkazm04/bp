@@ -17,7 +17,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, RUN_NOTE_PREFIX, SAFE_ID, type ReleaseStep, type ScanJob, type ScanScope } from '../scan/jobs.ts';
 import { RELEASE_ID } from '../scan/release.ts';
 import { WAVE_EFFORTS, WAVE_MODELS, type WaveEffort, type WaveModel } from '../scan/waves.ts';
-import { warnOnce } from './products.server.ts';
+import { findProduct, recovered, warnOnce, writeAtomic } from './products.server.ts';
 import { close, openRead, readRelease, type ReleaseRead } from './store.server.ts';
 
 if (typeof window !== 'undefined') throw new Error('jobs.server.ts is server-only');
@@ -82,26 +82,36 @@ export function spawnCli(args: string[], cwd: string, env: NodeJS.ProcessEnv = p
 
 /** Kill a CLI and everything it started (the CLI runs tools as children). */
 export function killTree(child: ChildProcess): void {
-  const pid = child.pid;
-  if (pid === undefined) return;
+  if (child.pid === undefined) return;
+  killPid(child.pid, () => { try { child.kill('SIGKILL'); } catch { /* gone */ } });
+}
+
+/** The same by pid alone: a job adopted after a restart has no ChildProcess, only the pid its journal line recorded. */
+function killPid(pid: number, fallback: () => void = () => { /* gone */ }): void {
   if (process.platform === 'win32') {
-    try { spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }).on('error', () => child.kill()); } catch { child.kill(); }
+    try { spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }).on('error', fallback); } catch { fallback(); }
     return;
   }
-  try { process.kill(-pid, 'SIGKILL'); } catch { try { child.kill('SIGKILL'); } catch { /* gone */ } }
+  try { process.kill(-pid, 'SIGKILL'); } catch { fallback(); }
 }
+
+const pidAlive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch (e) { return (e as NodeJS.ErrnoException).code === 'EPERM'; } };
 
 // ------------------------------------------------------------------------------------ registry
 type Listener = (jobs: ScanJob[]) => void;
 interface Rec {
   job: ScanJob; root: string; prompt: string;
   child?: ChildProcess; live?: boolean; ended?: boolean;
+  /** The CLI's pid once it started (journalled), and whether this record was adopted after a restart (no child, only the pid). */
+  pid?: number; orphan?: boolean; watch?: ReturnType<typeof setInterval>;
   buf: string; lastErr: string; log?: fs.WriteStream;
 }
 interface Product { recs: Rec[]; subs: Set<Listener>; timer?: ReturnType<typeof setTimeout> }
 
-const G = globalThis as typeof globalThis & { __bpScanJobs?: Map<string, Product> };
+const G = globalThis as typeof globalThis & { __bpScanJobs?: Map<string, Product>; __bpScanJobsLoaded?: Set<string> };
 const registry: Map<string, Product> = (G.__bpScanJobs ??= new Map<string, Product>());
+/** `slug + root` pairs whose journal this process has already read (on globalThis too: a module reload must not adopt twice). */
+const loaded: Set<string> = (G.__bpScanJobsLoaded ??= new Set<string>());
 const prod = (slug: string): Product => {
   let p = registry.get(slug);
   if (!p) registry.set(slug, (p = { recs: [], subs: new Set() }));
@@ -112,13 +122,117 @@ const now = () => new Date().toISOString();
 const jobId = () => 'j-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6).padEnd(4, '0');
 
 /** The product's jobs, oldest first (queued and running ones always kept, finished ones down to the latest 50). */
-export function list(slug: string): ScanJob[] { return (registry.get(slug)?.recs ?? []).map(copy); }
+export function list(slug: string): ScanJob[] { ensure(slug); return (registry.get(slug)?.recs ?? []).map(copy); }
 
 /** Called with the whole list after each change (log lines coalesced to one call per 400 ms). Returns the unsubscribe. */
 export function subscribe(slug: string, fn: Listener): () => void {
   const p = prod(slug);
   p.subs.add(fn);
   return () => { p.subs.delete(fn); };
+}
+
+// ------------------------------------------------------------------------------------ the journal
+// The registry is memory, and a process exit used to take it: the detached CLI child kept running with nothing that knew
+// of it. Every state change of a job appends one line to `<root>/.ai/lens-scan/work/bp-jobs/journal.jsonl` (the job without
+// its log tail, and the CLI's pid once it started); the first time a product's root is known after a start, `reconcileJobs`
+// reads it back. globalThis still keeps the registry across a module reload; the journal is the next layer, for a process exit.
+const JOURNAL_KEEP = 200, ORPHAN_MAX_MS = 12 * 3600_000, ORPHAN_POLL_MS = 2000;
+export const journalFile = (root: string): string => path.join(root, '.ai', 'lens-scan', 'work', 'bp-jobs', 'journal.jsonl');
+interface JournalLine { at: string; slug: string; pid?: number; job: ScanJob }
+
+function journal(slug: string, r: Rec): void {
+  const file = journalFile(r.root);
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const { log_tail: _tail, ...job } = r.job;
+    const line: JournalLine = { at: now(), slug, ...(r.pid !== undefined ? { pid: r.pid } : {}), job };
+    fs.appendFileSync(file, JSON.stringify(line) + '\n');
+    recovered('job journal ' + file);
+  } catch (e) { warnOnce('job journal ' + file, e); } // the job still runs; a restart will not find it
+}
+
+function readJournal(root: string): JournalLine[] {
+  let text: string;
+  try { text = fs.readFileSync(journalFile(root), 'utf8'); } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') warnOnce('job journal ' + journalFile(root), e);
+    return [];
+  }
+  const out: JournalLine[] = [];
+  for (const l of text.split('\n')) {
+    if (!l.trim()) continue;
+    try {
+      const x = JSON.parse(l) as JournalLine;
+      if (typeof x?.slug === 'string' && typeof x.job?.id === 'string' && SAFE_ID.test(x.job.id) && typeof x.job.queued_at === 'string') out.push(x);
+    } catch { /* a torn last line */ }
+  }
+  return out;
+}
+
+/** Read the jobs of `root` back after a restart, once per process. A job the journal last saw queued never ran: failed. One it
+ *  saw running whose process is gone is failed, naming the restart; one whose process is still there is adopted as running (it
+ *  holds its slot, a cancel kills it by pid, and it ends, judged by the store, when the pid does). Finished ones come back as they were. */
+export function reconcileJobs(slug: string, root: string): void {
+  const key = slug + '\0' + root;
+  if (loaded.has(key)) return;
+  loaded.add(key);
+  const lines = readJournal(root);
+  if (!lines.length) return;
+  const last = new Map<string, JournalLine>();
+  for (const l of lines) if (l.slug === slug) last.set(l.job.id, l);
+  const p = prod(slug);
+  const known = new Set(p.recs.map((r) => r.job.id));
+  const back: Rec[] = [];
+  for (const l of last.values()) {
+    if (known.has(l.job.id)) continue; // a module reload: the live record is the truth
+    const r: Rec = { job: { ...l.job }, root, prompt: '', buf: '', lastErr: '', ended: true, ...(l.pid !== undefined ? { pid: l.pid } : {}) };
+    const st = r.job.status;
+    const gone = (why: string) => { Object.assign(r.job, { status: 'failed', error: why }); r.job.ended_at ??= now(); };
+    if (st === 'queued') gone('the server restarted while this job was queued; it never ran');
+    else if (st === 'running') {
+      const fresh = Date.now() - Date.parse(l.at) < ORPHAN_MAX_MS; // an old pid may belong to a stranger by now
+      if (r.pid !== undefined && fresh && pidAlive(r.pid)) { r.ended = false; r.live = true; r.orphan = true; }
+      else gone(`the server restarted and this job's process${r.pid !== undefined ? ` (pid ${r.pid})` : ''} was gone`);
+    }
+    if (r.job.status !== st) { if (r.job.kind === 'release') failBuilding(r); journal(slug, r); }
+    back.push(r);
+  }
+  p.recs = [...back, ...p.recs].sort((a, b) => a.job.queued_at.localeCompare(b.job.queued_at));
+  prune(p);
+  for (const r of back) if (r.orphan && p.recs.includes(r)) watchOrphan(slug, r);
+  compactJournal(root);
+  notify(slug);
+}
+
+/** An adopted job has no child to close: poll its pid, and judge it by the store when it goes, as a closed child is. */
+function watchOrphan(slug: string, r: Rec): void {
+  const timer = (r.watch = setInterval(() => {
+    if (r.ended) { clearInterval(timer); return; }
+    if (r.pid !== undefined && pidAlive(r.pid)) return;
+    clearInterval(timer);
+    if (r.job.kind === 'release') { settleRelease(slug, r, 0); return; }
+    const run = r.job.run_id ?? runOf(r.root, r.job.id);
+    if (run) { r.job.run_id = run; finish(slug, r, 'done', { exit_code: 0 }); }
+    else finish(slug, r, 'failed', { error: 'the server restarted while this job ran, and its process ended without a run in the store' });
+  }, ORPHAN_POLL_MS));
+  timer.unref?.();
+}
+
+/** Keep the journal from growing for ever: the last line per job, the newest JOURNAL_KEEP of them. */
+function compactJournal(root: string): void {
+  try {
+    const last = new Map<string, JournalLine>();
+    for (const l of readJournal(root)) { const k = l.slug + '\0' + l.job.id; last.delete(k); last.set(k, l); }
+    const keep = [...last.values()].slice(-JOURNAL_KEEP);
+    writeAtomic(journalFile(root), keep.map((l) => JSON.stringify(l)).join('\n') + (keep.length ? '\n' : ''));
+  } catch (e) { warnOnce('job journal ' + journalFile(root), e); }
+}
+
+/** Make sure the journal of the product's root has been read: with the root (an enqueue), else through the product registry. */
+function ensure(slug: string, root?: string): void {
+  try {
+    const at = root ?? findProduct(slug)?.root;
+    if (at) reconcileJobs(slug, at);
+  } catch (e) { warnOnce('job journal ' + slug, e); }
 }
 
 function notify(slug: string, soon = false): void {
@@ -140,10 +254,12 @@ function prune(p: Product): void {
 export type Enqueued = { ok: true; job: ScanJob } | { ok: false; status: 400 | 429; error: string };
 
 function enqueue(slug: string, root: string, job: ScanJob, prompt: string): Enqueued {
+  ensure(slug, root);
   const p = prod(slug);
   if (p.recs.filter((r) => r.job.status === 'queued').length >= MAX_QUEUED) return { ok: false, status: 429, error: `${MAX_QUEUED} jobs are already queued for ${slug}` };
   const rec: Rec = { job, root, prompt, buf: '', lastErr: '' };
   p.recs.push(rec);
+  journal(slug, rec);
   prune(p);
   pump(slug);
   notify(slug);
@@ -179,6 +295,7 @@ export function enqueueExecute(slug: string, root: string, ids: string[], opts: 
  *  release's status and `gh auth status`; one release has at most one queued or running job (409 otherwise). */
 export function enqueueRelease(slug: string, root: string, release: string, version: string, step: ReleaseStep): Enqueued | { ok: false; status: 409; error: string } {
   if (!RELEASE_ID.test(release) || release !== 'rel-' + version || (step !== 'build' && step !== 'finish')) return { ok: false, status: 400, error: 'bad-release' };
+  ensure(slug, root);
   if (releaseBusy(slug, release)) return { ok: false, status: 409, error: `a release job for ${release} is already queued or running` };
   const prompt = `/lens-scan release --id ${release}` + (step === 'finish' ? ' --finish' : '');
   return enqueue(slug, root, { id: jobId(), kind: 'release', release, version, step, status: 'queued', queued_at: now() }, prompt);
@@ -186,11 +303,13 @@ export function enqueueRelease(slug: string, root: string, release: string, vers
 
 /** Whether a release job of that release is queued or running. */
 export function releaseBusy(slug: string, release: string): boolean {
+  ensure(slug);
   return (registry.get(slug)?.recs ?? []).some((r) => r.job.kind === 'release' && r.job.release === release && (r.job.status === 'queued' || r.job.status === 'running'));
 }
 
 /** Proposal ids a queued or running execute job of the product is building: a lens execute leaves them alone. */
 export function busyProposals(slug: string): Set<string> {
+  ensure(slug);
   const out = new Set<string>();
   for (const r of registry.get(slug)?.recs ?? []) {
     if (r.job.kind === 'execute' && (r.job.status === 'queued' || r.job.status === 'running')) for (const id of r.job.proposals ?? []) out.add(id);
@@ -215,6 +334,8 @@ function finish(slug: string, r: Rec, status: 'done' | 'failed' | 'cancelled', e
   if (r.job.kind === 'release' && r.job.status !== 'done') failBuilding(r);
   r.log?.end(`\n# ${r.job.status}${r.job.exit_code !== undefined ? ` (exit ${r.job.exit_code})` : ''} at ${r.job.ended_at}\n`);
   r.log = undefined;
+  if (r.watch) clearInterval(r.watch);
+  journal(slug, r);
   pump(slug);
   notify(slug);
 }
@@ -276,6 +397,8 @@ function start(slug: string, r: Rec): void {
   const s = spawnCli(args, r.root, { ...process.env, BP_JOB_ID: r.job.id });
   if (!s.ok) { finish(slug, r, 'failed', { error: s.error }); return; }
   const c = (r.child = s.child);
+  r.pid = c.pid;
+  journal(slug, r);
   c.stdout?.on('data', (d: Buffer) => onOutput(slug, r, d, false));
   c.stderr?.on('data', (d: Buffer) => onOutput(slug, r, d, true));
   c.on('error', (e: NodeJS.ErrnoException) => finish(slug, r, 'failed', { error: e.code === 'ENOENT' ? CLI_MISSING : e.message }));
@@ -298,11 +421,14 @@ export function cancel(slug: string, id: string): ScanJob | null {
   if (r.job.status === 'queued') {
     r.job.status = 'cancelled'; r.job.ended_at = now();
     r.ended = true;
+    journal(slug, r);
     notify(slug);
   } else if (r.job.status === 'running') {
     r.job.status = 'cancelled'; r.job.ended_at = now();
     r.log?.write(`\n# cancelled from the blueprint at ${r.job.ended_at}\n`);
     if (r.child) killTree(r.child);
+    else if (r.orphan && r.pid !== undefined) killPid(r.pid);
+    journal(slug, r);
     notify(slug); // the slot frees when the process has gone (finish, on close)
   }
   return copy(r);
@@ -372,6 +498,7 @@ export function attachRun(slug: string, runId: string, note: string | undefined)
   const r = registry.get(slug)?.recs.find((x) => isNoteOf(note, x.job.id));
   if (!r || r.job.run_id === runId) return false;
   r.job.run_id = runId;
+  journal(slug, r);
   notify(slug);
   return true;
 }
