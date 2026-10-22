@@ -225,11 +225,18 @@ under 400 KB). ★ marks the pick re-rendered at MEDIUM.
 
 ## Open questions for the owner
 
-- **Scan line colour.** The element table (#8) and the target say cyan. The style block puts "scan" in the
-  amber attention role. Every LOW hero draw painted the scan amber, and 03 painted it cyan because its text
-  says cyan. One of the two docs should change; this sheet doesn't pick.
-- **The lamp design.** See "Across all frames". Lock it in a P4 prop sheet, or a second look-dev pass,
-  before P3 uses these frames as the art bible?
+- **Scan line colour.** Still open. The element table (#8) and the target say cyan. The style block puts "scan"
+  in the amber attention role. Every LOW hero draw painted the scan amber, and 03 painted it cyan because its
+  text says cyan. One of the two docs should change; this sheet doesn't pick. The question is answered in one
+  place only, risk **R6** in [`wolf-plan.md`](wolf-plan.md) section (f), which lists the options and what each
+  one changes. Answer it there, not here.
+- **The lamp design. Answered 2026-10-21 by the owner: option A, the spring-arm cone** (an architect's lamp
+  with visible springs, a two-segment jointed arm, a cone shade with a warm glow and a round base with a
+  clamp). It was locked in a P4 prop sheet (`apps/vr/ArtSource/lamp-agent/options/A.png`), not by a second
+  look-dev pass. Proof: `apps/vr/ArtSource/lamp-agent/manifest.json`, `"picked": "A"` (line 4) and
+  `gates.input` with `"pass": true` and the note "Owner picked option A, the spring-arm cone ... Approved
+  2026-10-21." (lines 89-93), committed in `fa7bfb1`; wolf-plan.md L4.0 is ticked and risk R7 is closed. Where
+  the frames above disagree with option A (pods, stick puppets, faces), option A wins.
 
 ## Spend
 
