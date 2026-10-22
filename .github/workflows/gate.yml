@@ -50,7 +50,7 @@ jobs:
           repository: xkazm04/ai-registry
           path: ai-registry
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 24.x
           cache: npm
@@ -70,9 +70,11 @@ jobs:
           set -uo pipefail
           pat='(sk-ant-api[0-9]{2}-|\b(ghp|gho|ghu|ghs)_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|\bAKIA[0-9A-Z]{16}\b|-----BEGIN [A-Z ]*PRIVATE KEY-----)'
           # SEEDED CONTROL: a scan that cannot find a planted token is not a scan, and its clean verdict
-          # would be worth nothing. This runs every time, before the real scan.
+          # would be worth nothing. This runs every time, before the real scan. The token is ASSEMBLED AT
+          # RUNTIME and never written out literally here, because this file is itself scanned below - the
+          # first CI run failed on exactly that: the scan caught its own control string in a tracked file.
           seed="$RUNNER_TEMP/secret-scan-control.txt"
-          printf 'ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n' > "$seed"
+          printf '%s\n' "ghp_$(printf 'A%.0s' {1..30})" > "$seed"
           grep -qE "$pat" "$seed" || { echo "FAIL  control: the secret scan did not match a planted token"; exit 1; }
           rm -f "$seed"
           if git ls-files --error-unmatch .env >/dev/null 2>&1; then echo "FAIL  .env is tracked"; exit 1; fi
