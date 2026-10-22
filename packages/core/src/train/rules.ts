@@ -37,7 +37,9 @@ export function noteRequired(d: TriageDecision, p: Pick<Proposal, 'status'>, ver
 }
 
 /** Whether the decision may apply to the item now: its status is one the decision starts from, and leaving a release
- *  (rework, descope or reopen of an item in one) is allowed only while that release is a draft. */
+ *  (rework, descope or reopen of an item in one) is allowed only while that release is a KNOWN draft: an unknown release
+ *  (`release` undefined, not loaded yet) fails OPEN, the move is offered and the server's 409 `in-release` is the one
+ *  owner of the refusal (see the header: a refused move is rare and always explained). */
 export function canDecide(d: TriageDecision, p: Pick<Proposal, 'status' | 'release_id'>, release?: Pick<Release, 'status'>): boolean {
   if (!TRIAGE_FROM[d].includes(p.status)) return false;
   if (d !== 'accept' && p.release_id !== undefined && release !== undefined && release.status !== 'draft') return false;
