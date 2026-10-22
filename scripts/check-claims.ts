@@ -4,6 +4,8 @@
 //   2. the browser floor declared in docs/blueprint-ui.md is not exceeded by any web API in apps/web/src.
 //   3. the rail reads one urgency vocabulary (the shared URG map), not a second one of its own.
 //   4. the General view id is spelled once (GENERAL), never as a bare literal in apps/web/src.
+//   5. while machine.md records BpLink built and run in Unreal (the Kettle line), apps/vr/README.md, apps/vr/WP3.1.md and
+//      plan.md do not say it is unbuilt or unrun, unless that block also carries a correction citing reading 14.
 // Source is read with comments stripped, so a comment that talks about the rule cannot satisfy it.
 import fs from 'node:fs';
 import { blankComments } from './lib/source.ts';
@@ -122,5 +124,63 @@ for (const f of src.filter((x) => /\.tsx?$/.test(x))) {
   }
 }
 ok('general: no bare General literal anywhere in apps/web/src', bare.length === 0, bare.join('; '));
+
+// ---------------------------------------------------------------------- BpLink is not called unbuilt or unrun
+// A reading that reaches machine.md and leaves the other VR docs asserting the world before it is the defect this
+// catches (reading 10's check:bplink sentence needed a correction a wake later). A block is a paragraph together with the
+// blockquotes right after it, or one table row. A stale phrase inside `code` or "quotes" is a quotation, not a claim; a
+// stale phrase in a block that also cites reading 14 is a sentence kept on the record beside its correction.
+// BP_CHECK_CLAIMS_SEED=vr-stale appends one stale sentence to an in-memory copy of apps/vr/README.md.
+const machine = fs.readFileSync('docs/concepts/vr-light-table/machine.md', 'utf8');
+const ranInUnreal = /LogBpLink: BpLink: Kettle wings=5 \[/.test(machine);
+ok('vr docs: machine.md records BpLink linked (UnrealEditor-BpLink.dll) and run (the Kettle line)',
+  ranInUnreal && /Link \[x64\] UnrealEditor-BpLink\.dll/.test(machine));
+const STALE: RegExp[] = [
+  /not yet run on any UE host/i,
+  /WP3\.1 is not run on any UE host/i,
+  /WP3\.1 itself not run/i,
+  /has not built against Unreal/i,
+  /\bit has not run\b/i,
+  /nothing has (?:booted the editor or )?run the module/i,
+  /nothing is built or run/i,
+  /nothing in\s+\S*\s*has (?:been )?compiled/i,
+];
+const CITES_14 = /\breadings? (?:\d+ (?:to|and) )?14\b/i;
+/** `<file>:<line> "<phrase>"` for each stale phrase standing as a claim in a block that does not cite reading 14. */
+function staleClaims(file: string, text: string): string[] {
+  const blocks: { at: number; text: string }[] = [];
+  let cur: { at: number; text: string } | null = null;
+  let gap = false;
+  text.split(/\r?\n/).forEach((l, i) => {
+    if (!l.trim()) { gap = true; return; }
+    if (/^\s*\|/.test(l)) { blocks.push({ at: i + 1, text: l }); cur = null; gap = false; return; }
+    if (!cur || (gap && !/^\s*>/.test(l))) { cur = { at: i + 1, text: '' }; blocks.push(cur); }
+    cur.text += `${l}\n`;
+    gap = false;
+  });
+  const hits: string[] = [];
+  for (const b of blocks) {
+    if (CITES_14.test(b.text)) continue;
+    const claim = b.text.replace(/`[^`]*`/g, '').replace(/"[^"]*"/g, '');
+    for (const re of STALE) {
+      const m = re.exec(claim);
+      if (m) hits.push(`${file}:${b.at} "${m[0]}"`);
+    }
+  }
+  return hits;
+}
+const VR_DOCS = ['apps/vr/README.md', 'apps/vr/WP3.1.md', 'docs/concepts/vr-light-table/plan.md'];
+const vrSeed = (process.env.BP_CHECK_CLAIMS_SEED ?? '').split(',').includes('vr-stale');
+const stale = VR_DOCS.flatMap((f) => {
+  const text = fs.readFileSync(f, 'utf8');
+  return staleClaims(f, vrSeed && f === VR_DOCS[0] ? `${text}\nWP3.1 is not run on any UE host.\n` : text);
+});
+ok('vr docs: no file says BpLink is unbuilt or unrun without a correction citing reading 14', !ranInUnreal || stale.length === 0, stale.join('; '));
+// The rule has to be able to fail: README.md's 2026-10-22 evening text, with no reading-14 correction after it, is flagged.
+const before14 = 'Lynx (2026-10-22) both failed.** WP3.1 is not run on any UE host. The\n\n'
+  + '> **Correction 2026-10-22 (evening, Lynx).** "The module has not built against Unreal" is out of date.\n'
+  + '> The headers are still not copied. Nothing has booted the editor or run the module.\n';
+const probe14 = staleClaims('probe', before14);
+ok('vr docs: self-proof, the pre-reading-14 README text is flagged twice and its quotation is not', probe14.length === 2, probe14.join('; '));
 if (failed) { console.log(`\n${failed} check(s) failed`); process.exit(1); }
 console.log('\nclaims ok');
