@@ -3,7 +3,7 @@
 // and resolution into an image), the kind tag, risk and size, the feature link and the before -> expected move. The
 // state mark and the lens tag are train/ui/Marks.tsx's (one component each); the dispatch bar is the backlog's
 // (Triage.tsx). Lenses differ by glyph and short name here, never by colour.
-import { useMemo } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { glyph, type GlyphSpec } from '@/engine/render/lens-glyph';
 import type { Proposal } from '@bp/core/scan/types';
 import { useTheme } from '../../ThemeToggle';
@@ -11,28 +11,37 @@ import { riskBand, type Finding } from '../useLedger';
 
 // ------------------------------------------------------------------------------------------- lens glyph
 const URLS = new Map<string, string>();
-/** The glyph as a data URL, cached by glyph, colour, size and device resolution (drawn by the canvas's own `glyph()`). */
-function glyphUrl(g: GlyphSpec, col: string, px: number): string {
-  const dpr = Math.min(2, window.devicePixelRatio || 1), key = JSON.stringify(g) + '|' + col + '|' + px + '|' + dpr;
+/** The glyph as a data URL, cached by glyph, colour, size, inset and device resolution (drawn by the canvas's own `glyph()`). */
+function glyphUrl(g: GlyphSpec, col: string, px: number, pad: number): string {
+  const dpr = Math.min(2, window.devicePixelRatio || 1), key = JSON.stringify(g) + '|' + col + '|' + px + '|' + pad + '|' + dpr;
   let u = URLS.get(key);
   if (u !== undefined) return u;
   const cv = document.createElement('canvas'), n = Math.ceil(px * dpr), ctx = cv.getContext('2d');
   cv.width = cv.height = n;
-  if (ctx) { ctx.scale(dpr, dpr); glyph(ctx, g, 1.5, 1.5, px - 3, col); }
+  if (ctx) { ctx.scale(dpr, dpr); glyph(ctx, g, pad, pad, px - 2 * pad, col); }
   u = ctx ? cv.toDataURL() : '';
   URLS.set(key, u);
   return u;
 }
-/** The lens's glyph at 14 px (decorative: its short name always stands next to it). */
-export function LensGlyph({ g, px = 14 }: { g: GlyphSpec; px?: number }) {
-  const mode = useTheme();
-  const src = useMemo(() => {
-    const col = getComputedStyle(document.documentElement).getPropertyValue('--ink').trim() || '#dff0ff';
-    return glyphUrl(g, col, px);
-    // the theme changes the ink
+/** The ink a drawing on `el` should use: `--ink` as RESOLVED AT `el`, so ledger-theme.css's `.lg-page` override reaches it
+ *  (the document root still holds the drawing set's ink). The dark ink stands when the property is not set. */
+export function inkAt(el: Element): string {
+  return getComputedStyle(el).getPropertyValue('--ink').trim() || '#dff0ff';
+}
+/** The lens's glyph (decorative: its short name always stands next to it). The one component for every glyph in the ledger:
+ *  `form` 'chip' is the 14 px glyph of chips, tabs and matrix heads (inline, a fixed 1.5 px inset); 'draft' is the glyph
+ *  the Lenses panel and the draft card show at the sizes the plan draws it (a block, inset 12% of its size). The ink is read
+ *  off the glyph's own element in a layout effect, because `.lg-page` does not exist yet when the first render resolves a
+ *  `useMemo`. */
+export function LensGlyph({ g, px = 14, form = 'chip' }: { g: GlyphSpec; px?: number; form?: 'chip' | 'draft' }) {
+  const mode = useTheme(), ref = useRef<HTMLImageElement>(null), [src, setSrc] = useState('');
+  const pad = form === 'draft' ? Math.round(px * 0.12) : 1.5, key = g === null ? '' : typeof g === 'string' ? g : g.path;
+  useLayoutEffect(() => {
+    if (ref.current) setSrc(glyphUrl(g, inkAt(ref.current), px, pad));
+    // `key` stands for `g` (a fresh object each render would redraw every time); the theme changes the ink
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [g, px, mode]);
-  return src ? <img className="lg-gl" src={src} width={px} height={px} alt="" aria-hidden="true" /> : null;
+  }, [key, px, pad, mode]);
+  return <img ref={ref} className={form === 'draft' ? 'tl-gl' : 'lg-gl'} src={src || undefined} width={px} height={px} alt="" aria-hidden="true" />;
 }
 // ------------------------------------------------------------------------------------------- kind, risk, size
 export function KindTag({ p }: { p: Proposal }) {

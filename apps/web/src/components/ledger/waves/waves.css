@@ -1,6 +1,6 @@
 /* The ledger's waves (src/components/ledger/waves/*, the chip in variants/Triage.tsx): the strip above the Backlog table,
    its wave panel, the inline composer and a row's wave chip. Tokens only, both themes; nothing under 12 px. Button and field
-   rules sit under .lg-page so they beat the app-wide button rules (docs/blueprint-ui.md). The strip folds below 720 px of
+   rules sit under .lg-page so they beat the app-wide button rules (docs/blueprint-ui.md). The strip folds below 760 px of
    table width (the table's container): the tabs become one select and the composer's rows stack. */
 
 .lg-waves { padding: var(--sp-8) 18px var(--sp-10); border-bottom: 1px solid var(--ink-4); background: color-mix(in srgb, var(--ink) 3%, transparent); }
@@ -56,7 +56,7 @@
 /* a row's wave chip, after the finding's title */
 .lg-wv { display: inline-block; margin-left: var(--sp-6); padding: 0 var(--sp-5); border: 1px solid var(--accent); font: 500 var(--fs-12) var(--mono); letter-spacing: var(--ls-1); color: var(--accent); white-space: nowrap; vertical-align: 1px; }
 
-@container (max-width: 720px) {
+@container (max-width: 760px) {
   .wv-tabs { display: none; }
   .lg-page .wv-sel { display: inline-block; flex: 1 1 160px; margin-right: auto; }
   .lg-waves { padding-left: 14px; padding-right: 14px; }

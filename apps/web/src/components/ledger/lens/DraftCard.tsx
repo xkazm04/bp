@@ -3,30 +3,13 @@
 // the plan draws it (7 px on a tile's rail, 14 px in chips and tabs) and the line, the fields, the health rules in
 // words and the scan (judgement instructions, or the composed steps in order). Everything from the manifest is
 // rendered as text (React escapes it); nothing is parsed as markup.
-// Also exports the small pieces the Lenses panel shares: the drawn glyph and line sample.
+// Also exports the line sample the Lenses panel shares (the glyph is variants/bits.tsx's one LensGlyph, form 'draft').
 import { useEffect, useRef } from 'react';
-import type { Condition, GlyphName, HealthRule, LensField, LensManifest, LensScan, LensScanStep, LineName, Rollup } from '@bp/core/standard/types';
+import type { Condition, HealthRule, LensField, LensManifest, LensScan, LensScanStep, LineName, Rollup } from '@bp/core/standard/types';
 import { readTheme } from '@/engine/theme';
-import { glyph, lineType } from '@/variants/subtle/marks';
+import { lineType } from '@/variants/subtle/marks';
 import { useTheme } from '../../ThemeToggle';
-
-/** A lens glyph drawn by the canvas's own glyph() (so the card shows exactly what the plan will). */
-export function LensGlyph({ g, size = 18 }: { g: GlyphName | { path: string } | null; size?: number }) {
-  const ref = useRef<HTMLCanvasElement>(null), mode = useTheme();
-  const key = g === null ? '' : typeof g === 'string' ? g : g.path;
-  useEffect(() => {
-    const cv = ref.current; if (!cv) return;
-    const dpr = Math.min(2, window.devicePixelRatio || 1), th = readTheme(dpr).theme;
-    cv.width = size * dpr; cv.height = size * dpr;
-    const ctx = cv.getContext('2d'); if (!ctx) return;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, size, size);
-    const pad = Math.round(size * 0.12);
-    glyph(ctx, g, pad, pad, size - 2 * pad, th.ink);
-    // `key` stands for `g` (a fresh object each render would redraw every time)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, size, mode]);
-  return <canvas ref={ref} className="tl-gl" style={{ width: size, height: size }} aria-hidden="true" />;
-}
+import { inkAt, LensGlyph } from '../variants/bits';
 
 /** A short run of the lens line type (the measured part of a tile's evidence rail). */
 export function LineSample({ line, w = 56, h = 10 }: { line: LineName; w?: number; h?: number }) {
@@ -37,7 +20,7 @@ export function LineSample({ line, w = 56, h = 10 }: { line: LineName; w?: numbe
     cv.width = w * dpr; cv.height = h * dpr;
     const ctx = cv.getContext('2d'); if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
-    lineType(ctx, th, line, 1, 1, w - 2, h - 2, th.ink, 1.2);
+    lineType(ctx, th, line, 1, 1, w - 2, h - 2, inkAt(cv), 1.2);
   }, [line, w, h, mode]);
   return <canvas ref={ref} className="tl-ln" style={{ width: w, height: h }} aria-hidden="true" />;
 }
@@ -123,7 +106,7 @@ export function DraftCard({ draft: m, kind, state, error, blocked, onAccept, onR
   return (
     <article className="tl-card" aria-label={'Drafted lens ' + m.name}>
       <header className="tl-card-h">
-        <LensGlyph g={p.glyph} size={22} />
+        <LensGlyph g={p.glyph} px={22} form="draft" />
         <div className="tl-card-t">
           <h4>{m.name}{m.short ? <span className="tl-short">{m.short}</span> : null}</h4>
           <code>{m.id} · v{m.version} · {kind === 'project' ? 'permanent' : 'temporary'}</code>
@@ -133,8 +116,8 @@ export function DraftCard({ draft: m, kind, state, error, blocked, onAccept, onR
       <dl className="tl-dl">
         <dt>Glyph</dt>
         <dd className="tl-sizes">
-          <span><LensGlyph g={p.glyph} size={7} /><small>7 px</small></span>
-          <span><LensGlyph g={p.glyph} size={14} /><small>14 px</small></span>
+          <span><LensGlyph g={p.glyph} px={7} form="draft" /><small>7 px</small></span>
+          <span><LensGlyph g={p.glyph} px={14} form="draft" /><small>14 px</small></span>
           <span className="tl-gk">{typeof p.glyph === 'string' ? p.glyph : 'own path'}</span>
         </dd>
         <dt>Line</dt><dd><LineSample line={p.line} /> <span>{p.line}</span></dd>

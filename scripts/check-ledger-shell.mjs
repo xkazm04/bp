@@ -20,6 +20,9 @@
 //           hand: every selector in the shell's stylesheets carrying `position: sticky` yields the classes it names,
 //           and each JSX element carrying one must sit directly under its table/scroll parent (`role="table"`,
 //           `<thead>`, `<table`, or the page root) - judged by indentation, which this tree formats consistently.
+//   theme-ink  no shell module reads a role ledger-theme.css redefines off the document root or readTheme().
+//   one-name  no two shell modules export a component of the same name.
+//   breakpoints  every `@container (max-width)` prelude in the shell's stylesheets names one width (.lg-body is the only container).
 //   colour  no raw colour literal in the shell's stylesheets except ledger-theme.css, which IS the palette file
 //           (docs/blueprint-ui.md: design tokens; the same rule check-train-quality holds for train/**'s CSS).
 //           Comments are stripped first, or a file that TALKS about the rule and breaks it passes.
@@ -30,7 +33,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { stripComments, stripBlock } from './lib/source.ts';
+import { stripComments, stripBlock, blankBlock, blankComments } from './lib/source.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SHELL = 'apps/web/src/components/ledger';
@@ -151,6 +154,75 @@ for (const f of css) {
 }
 if (!pageRules) fail('header: no top-placed .lg-page rule was found - the rule stopped matching');
 console.log(`header      ${pageRules} top-placed .lg-page rule(s) / ${pageTokenised} read the header token`);
+
+// ---------------------------------------------------------------------------------------------------- theme-ink
+// ledger-theme.css redefines bp's role tokens (--ink, --accent, ...) on `.lg-page` only. A shell module that reads such a
+// token off `document.documentElement`, or off the engine's readTheme() (which reads the root), gets the DRAWING SET's value,
+// not the ledger's: the lens glyphs were painted #dff0ff beside labels set in #cfe3fb. Read it off the drawing's own element
+// (variants/bits.tsx inkAt). The overridden set is read from the palette file's `.lg-page` blocks, not kept by hand.
+const overridden = new Set();
+for (const f of css) {
+  if (path.basename(f) !== PALETTE) continue;
+  for (const m of blankBlock(fs.readFileSync(f, 'utf8')).matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+    if (!m[1].split(',').some((s) => /(^|\s)\.lg-page\s*$/.test(s.trim()))) continue;
+    for (const d of m[2].matchAll(/(--[\w-]+)\s*:/g)) overridden.add(d[1]);
+  }
+}
+const camel = (tok) => tok.slice(2).replace(/-(\w)/g, (_, c) => c.toUpperCase());
+const overriddenFields = new Set([...overridden].map(camel));
+let inkReads = 0;
+for (const f of code) {
+  const src = blankComments(fs.readFileSync(f, 'utf8')), lines = src.split('\n');
+  const themes = [...new Set([...src.matchAll(/\b(\w+)\s*=\s*readTheme\([^)]*\)/g)].map((m) => m[1]))];
+  lines.forEach((ln, i) => {
+    for (const m of ln.matchAll(/getPropertyValue\(\s*['"](--[\w-]+)['"]/g)) {
+      inkReads++;
+      if (overridden.has(m[1]) && /document\.documentElement/.test(lines.slice(Math.max(0, i - 2), i + 1).join(' ')))
+        fail(`${rel(f)}:${i + 1}  ${ln.trim().slice(0, 110)}\n       ${m[1]} is redefined on .lg-page (${PALETTE}); the document root holds the drawing set's value - resolve it on the drawing's own element (inkAt)`);
+    }
+    for (const t of themes) for (const m of ln.matchAll(new RegExp('\\b' + t + '\\.(?:theme\\.)?(\\w+)', 'g'))) {
+      inkReads++;
+      if (overriddenFields.has(m[1]))
+        fail(`${rel(f)}:${i + 1}  ${ln.trim().slice(0, 110)}\n       readTheme() reads the document root, but ${PALETTE} redefines this role on .lg-page: take it from the drawing's own element (inkAt)`);
+    }
+  });
+}
+if (!overridden.size) fail(`theme-ink: no .lg-page custom property was found in ${PALETTE} - the rule stopped matching`);
+console.log(`theme-ink   ${overridden.size} roles redefined on .lg-page / ${inkReads} root-token reads checked in ${code.length} shell modules`);
+
+// ---------------------------------------------------------------------------------------------------- one-name
+// Two exported components of one name in one context is two drawings of one thing: a change to how it draws (ink, size, the
+// aria-hidden contract) has to be made twice, and the two drift (the lens glyph's ink defect existed twice for this reason).
+// The exports are read off the files' own `export function` / `export const` lines, not a hand list.
+const exported = new Map();
+for (const f of code) {
+  for (const m of blankComments(fs.readFileSync(f, 'utf8')).matchAll(/^export (?:default )?(?:function|const|class)\s+([A-Z]\w*)/gm)) {
+    if (!exported.has(m[1])) exported.set(m[1], []);
+    exported.get(m[1]).push(rel(f));
+  }
+}
+for (const [name, at] of exported) if (at.length > 1) fail(`one-name: ${name} is exported by ${at.length} shell modules: ${at.join(', ')}\n       one concept, one component: give the second a form / prop on the first`);
+console.log(`one-name    ${exported.size} component names exported across ${code.length} shell modules`);
+
+// ---------------------------------------------------------------------------------------------------- breakpoints
+// `.lg-body` is the shell's one `container-type: inline-size`, so every `@container (max-width: N)` prelude in the shell's
+// stylesheets resolves against the same width. Two different N there leave a band where the rows have folded into cards
+// and the wave strip is still a tab row (760 vs 720 once). The set of widths is read off the preludes, not kept by hand.
+const containerWidths = new Map();
+let containerPreludes = 0;
+for (const f of css) {
+  const src = blankBlock(fs.readFileSync(f, 'utf8'));
+  src.split('\n').forEach((ln, i) => {
+    for (const m of ln.matchAll(/@container[^{]*\(\s*max-width\s*:\s*(\d+)px\s*\)/g)) {
+      containerPreludes++;
+      if (!containerWidths.has(m[1])) containerWidths.set(m[1], []);
+      containerWidths.get(m[1]).push(`${rel(f)}:${i + 1}`);
+    }
+  });
+}
+if (!containerPreludes) fail('breakpoints: no `@container (max-width: Npx)` prelude was found in the shell stylesheets - the rule stopped matching');
+if (containerWidths.size > 1) fail(`breakpoints: one container (.lg-body), ${containerWidths.size} fold widths: ${[...containerWidths].map(([w, at]) => `${w}px at ${at.join(', ')}`).join(' vs ')}\n       between them the rows are cards while the other fold is still unfolded: name one width`);
+console.log(`breakpoints ${containerPreludes} @container preludes in ${css.length} shell stylesheets -> ${[...containerWidths.keys()].map((w) => w + 'px').join(', ')}`);
 
 // ----------------------------------------------------------------------------------------------------
 if (!code.length || !css.length) { console.log(`FAIL walked no shell file under ${SHELL} (train/** is check-train-quality.mjs's)`); process.exit(2); }

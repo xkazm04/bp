@@ -19,7 +19,8 @@ import { MAX_SELECTION } from '@bp/core/scan/jobs';
 import { ymdUTC } from '@bp/core/model';
 import { useBp, useEngine, useLive, useScanCtx } from '../../hooks';
 import { useLedgerSelection } from '../useLedger';
-import { LensGlyph, LineSample } from './DraftCard';
+import { LineSample } from './DraftCard';
+import { LensGlyph } from '../variants/bits';
 import { LensChat, useChatStarted } from './LensChat';
 import { executeAsk, executeBacklog, scanBlock, scanNow, scanSelection, useLensRows, useLensStats, type LensRow } from './lens-ops';
 import './lens.css';
@@ -107,7 +108,7 @@ function Row({ r, slug, sel }: { r: LensRow; slug: string | null; sel: readonly 
   return (
     <li className={'tl-row' + (enabled ? '' : ' off')} data-lens={r.id} tabIndex={-1} aria-label={name}>
       <div className="tl-row-h">
-        <span className="tl-look"><LensGlyph g={m.presentation.glyph} size={18} /><LineSample line={m.presentation.line} w={28} h={8} /></span>
+        <span className="tl-look"><LensGlyph g={m.presentation.glyph} px={18} form="draft" /><LineSample line={m.presentation.line} w={28} h={8} /></span>
         <div className="tl-row-t">
           <b>{name}</b>{m.short ? <span className="tl-short">{m.short}</span> : null}
           <span className={'tl-kind k-' + r.kind.replace('-', '')} title={KIND_TIP[r.kind]}>{r.kind}</span>
