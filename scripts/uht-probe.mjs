@@ -3,13 +3,21 @@
 // when the module reaches it only through PublicIncludePaths? A PROBE, wired to no gate: it needs an Unreal Engine install,
 // takes minutes, and writes everything outside this repo.
 //
-//   node scripts/uht-probe.mjs --engine "C:/Program Files/Epic Games/UE_5.8" --work <scratch dir> [--variant asis|junction]
+//   node scripts/uht-probe.mjs --engine "C:/Program Files/Epic Games/UE_5.8" --work <scratch dir> [--variant asis|junction|spellings|unity]
 //
 // It synthesizes a host project under <work>/bp-uht-probe/ (apps/vr says the real .uproject is made by the editor, never by
 // hand, so none is added to the repo), copies apps/vr/Source/BpLink in byte for byte, and builds bpEditor Win64 Development.
 // The layout reproduces the one relationship BpLink.Build.cs depends on: four up from <probe>/apps/vr/Source/BpLink is
 // <work>/bp-uht-probe/, which holds a directory junction `packages` -> this repo's packages/.
 // --variant junction adds E1's fix, a junction Source/BpLink/Public/Schema -> packages/schema/generated/ue, before building.
+// Two more put the include-spelling question to the compiler (MSVC keys `#pragma once` on the path, and BpSchema.h is now
+// reachable as "BpSchema.h" through PublicIncludePaths and as "Schema/BpSchema.h" through the junction). Both add the
+// junction, and each needs a --work of its own (a tree remembers its variant and refuses another of these):
+//   spellings  two probe-only TUs, Private/BpLinkSpellingAB.cpp and BpLinkSpellingBA.cpp, each including BOTH spellings
+//              (one order each); the repo's BpLink files are still copied byte for byte beside them
+//   unity      the bpEditor target with bForceUnityBuild and no adaptive unity (which would pull a writable BpLink.cpp
+//              back out of the unity file), so UBT merges BpLink.cpp ("BpSchema.h" via BpLink.h) and UHT's
+//              BpSchema.gen.cpp ("Schema/BpSchema.h") into one Module.BpLink.cpp translation unit
 // Output: <work>/bp-uht-probe/uht-probe-<variant>.log (UBT's combined stdout+stderr), ubt-Log-<variant>.txt (UBT's own log)
 // and uht-probe-<variant>.json (the reading). Nothing here grades a pass: it records what the build printed.
 //
@@ -29,8 +37,9 @@ const arg = (name) => {
 const engine = arg('engine');
 const work = arg('work');
 const variant = arg('variant') ?? 'asis';
-if (!engine || !work || !['asis', 'junction'].includes(variant)) {
-  console.error('usage: node scripts/uht-probe.mjs --engine <UE root> --work <scratch dir> [--variant asis|junction]');
+const VARIANTS = ['asis', 'junction', 'spellings', 'unity'];
+if (!engine || !work || !VARIANTS.includes(variant)) {
+  console.error(`usage: node scripts/uht-probe.mjs --engine <UE root> --work <scratch dir> [--variant ${VARIANTS.join('|')}]`);
   process.exit(2);
 }
 
@@ -69,6 +78,16 @@ if (variant === 'asis' && fs.existsSync(schemaLink)) {
   console.error(`REFUSED: ${schemaLink} exists (the junction variant ran here); use a fresh --work for the as-is reading`);
   process.exit(1);
 }
+// asis then junction may share a tree (that is how readings 1 and 2 ran); spellings and unity change what is built, so
+// each keeps a tree of its own, and asis/junction refuse a tree either of them touched.
+const marker = path.join(base, 'uht-probe-variant.txt');
+const own = (v) => (v === 'spellings' || v === 'unity' ? v : 'asis/junction');
+const prior = fs.existsSync(marker) ? fs.readFileSync(marker, 'utf8').trim() : null;
+if (prior && prior !== own(variant)) {
+  console.error(`REFUSED: ${base} was built for ${prior}; use a fresh --work for --variant ${variant}`);
+  process.exit(1);
+}
+fs.writeFileSync(marker, `${own(variant)}\n`);
 
 write('bp.uproject', `${JSON.stringify({
   FileVersion: 3,
@@ -90,7 +109,7 @@ public class ${cls}Target : TargetRules
 		Type = TargetType.${type};
 		DefaultBuildSettings = BuildSettingsVersion.Latest;
 		IncludeOrderVersion = EngineIncludeOrderVersion.Latest;
-		ExtraModuleNames.AddRange(new string[] { "bp", "BpLink" });
+		ExtraModuleNames.AddRange(new string[] { "bp", "BpLink" });${variant === 'unity' ? '\n\t\tbForceUnityBuild = true;\n\t\tbUseAdaptiveUnityBuild = false;' : ''}
 	}
 }
 `);
@@ -120,7 +139,20 @@ for (const rel of ['BpLink.Build.cs', 'Public/BpLink.h', 'Private/BpLink.cpp']) 
   copied[rel] = { repo: sha(from), probe: sha(to) };
   if (copied[rel].repo !== copied[rel].probe) throw new Error(`copy of ${rel} differs from the repo`);
 }
-if (variant === 'junction' && !fs.existsSync(schemaLink)) junction(schemaLink, path.join(REPO, 'packages/schema/generated/ue'));
+if (variant !== 'asis' && !fs.existsSync(schemaLink)) junction(schemaLink, path.join(REPO, 'packages/schema/generated/ue'));
+if (variant === 'spellings') {
+  // Probe-only sources, never in the repo. A second include that `#pragma once` does not recognise as the same file
+  // re-enters BpSchema.h: its BpSchema.generated.h then stops on its own `#error "BpSchema.generated.h already included"`,
+  // or the USTRUCTs redefine. The static_assert proves the struct definitions were actually seen in this TU.
+  for (const [name, first, second] of [['AB', 'BpSchema.h', 'Schema/BpSchema.h'], ['BA', 'Schema/BpSchema.h', 'BpSchema.h']]) {
+    write(`Source/BpLink/Private/BpLinkSpelling${name}.cpp`, `// Synthesized by scripts/uht-probe.mjs --variant spellings (probe only, not in the repo).
+#include "${first}"
+#include "${second}"
+
+static_assert(sizeof(FBpPlan) > 0, "FBpPlan is a complete type in this translation unit");
+`);
+  }
+}
 
 // The path BpLink.Build.cs computes, resolved the way it does (Path.GetFullPath over ModuleDirectory + four ..).
 const schemaUe = path.resolve(mod, '..', '..', '..', '..', 'packages', 'schema', 'generated', 'ue');
