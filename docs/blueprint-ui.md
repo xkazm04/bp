@@ -135,6 +135,18 @@ Data (since the app-structure v3 adoption, spark `blueprint-data-standard` WP3):
 - A decision or standing order in `swarm.json` names its lens by id; one whose lens is disabled or
   unknown is still listed, under General.
 
+## Supported browsers (2026-10-22)
+
+**Floor:** Chrome 116, Safari 17.4, Firefox 124 (current evergreen desktop and phone browsers; no polyfills, no
+legacy targets). The floor is set by the newest web API the app calls on purpose, `AbortSignal.any` in
+`apps/web/src/lib/scan/client.ts` (which composes a caller's signal with the request bound). An older browser fails
+the scan requests with a TypeError and is unsupported, not worked around.
+
+- Nothing in `apps/web/src` may use a web API (script or CSS) newer than this floor without raising it here first.
+  `npm run check:claims` holds the list of newer APIs it knows about, reads the floor from the line above, and
+  fails on a use past it. Add an API to its table when you reach for a recent one.
+- A feature the floor lacks (such as `requestIdleCallback` in Safari) is used only behind a `typeof` guard.
+
 ## Architecture
 
 ```
