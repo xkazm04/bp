@@ -5,8 +5,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+
+// lynx_commit is the writer's field: the newest commit that touches this asset folder, so check:art can trace the
+// manifest to a real tree. It throws when nothing has committed the folder yet (there is no honest hash to stamp).
+function lynxCommit(folder) {
+  const r = spawnSync('git', ['log', '-1', '--format=%H', '--', 'apps/vr/ArtSource/' + folder], { cwd: ROOT, encoding: 'utf8' });
+  const h = (r.stdout ?? '').trim();
+  if (!/^[0-9a-f]{40}$/.test(h)) throw new Error('lynx_commit: no commit touches apps/vr/ArtSource/' + folder + ' yet; commit the folder first so the manifest can name it');
+  return h;
+}
 const [work] = process.argv.slice(2);
 const S = JSON.parse(fs.readFileSync(path.join(work, 'score.json'), 'utf8'));
 const DATE = new Date().toISOString().slice(0, 10);
@@ -61,8 +71,8 @@ for (const [id, info] of Object.entries(INFO)) {
     generator: 'procedural Blender',
     blender: 'Blender 5.2.2 (CPU, Cycles for the evidence), scripts/art/materials/build_materials.bpy (bake and seam check), render_materials.bpy (evidence), write_manifests.mjs',
     licence: 'own procedural work; no generated input, no Leonardo, ComfyUI or TRELLIS',
-    lynx_commit: null,
-    lynx_commit_note: 'null until the merge sets it',
+    lynx_commit: lynxCommit('mat-' + id),
+    lynx_commit_note: 'stamped by the writer: the newest commit touching this folder when the manifest was written',
     regenerate: 'blender -b -P scripts/art/materials/build_materials.bpy -- <repo-root> <work>; blender -b -P scripts/art/materials/render_materials.bpy -- <repo-root> <work>; node scripts/art/materials/write_manifests.mjs <work>',
     files: sums,
     sha256: sums,

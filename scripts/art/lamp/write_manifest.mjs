@@ -6,8 +6,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+
+// lynx_commit is the writer's field: the newest commit that touches this asset folder, so check:art can trace the
+// manifest to a real tree. It throws when nothing has committed the folder yet (there is no honest hash to stamp).
+function lynxCommit(folder) {
+  const r = spawnSync('git', ['log', '-1', '--format=%H', '--', 'apps/vr/ArtSource/' + folder], { cwd: ROOT, encoding: 'utf8' });
+  const h = (r.stdout ?? '').trim();
+  if (!/^[0-9a-f]{40}$/.test(h)) throw new Error('lynx_commit: no commit touches apps/vr/ArtSource/' + folder + ' yet; commit the folder first so the manifest can name it');
+  return h;
+}
 const DIR = path.join(ROOT, 'apps', 'vr', 'ArtSource', 'lamp-agent');
 const [work, rawDir] = process.argv.slice(2);
 const S = JSON.parse(fs.readFileSync(path.join(work, 'score.json'), 'utf8'));
@@ -106,8 +116,8 @@ M.review_fixes = {
     { finding: 'The C-clamp is missing although mesh_acceptance claimed one.', fix: `the TRELLIS stalk (a lumpy 4 cm post that also sat under the render's floor plane, so it never showed) is replaced by a modelled low-poly C-clamp (${clampTris} tris, weight 1.0 to the base bone, base material, silver screw); the evidence table is now a 3 cm slab whose edge the clamp grips; mesh_acceptance, bounds_cm and pivot now describe this geometry; bounds and the scale gate are recomputed from final.fbx` },
   ],
 };
-M.lynx_commit = null;
-M.lynx_commit_note = 'set by the merge; the branch it lands on';
+M.lynx_commit = lynxCommit('lamp-agent');
+M.lynx_commit_note = 'stamped by the writer: the newest commit touching this folder when the manifest was written';
 if (oversize.length) console.error('OVERSIZE files:', oversize.join(', '));
 fs.writeFileSync(path.join(DIR, 'manifest.json'), JSON.stringify(M, null, 2) + '\n');
 for (const [k, g] of Object.entries(M.gates)) console.log(g.pass ? 'PASS' : 'FAIL', k);

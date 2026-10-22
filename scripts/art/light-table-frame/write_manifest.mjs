@@ -5,8 +5,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+
+// lynx_commit is the writer's field: the newest commit that touches this asset folder, so check:art can trace the
+// manifest to a real tree. It throws when nothing has committed the folder yet (there is no honest hash to stamp).
+function lynxCommit(folder) {
+  const r = spawnSync('git', ['log', '-1', '--format=%H', '--', 'apps/vr/ArtSource/' + folder], { cwd: ROOT, encoding: 'utf8' });
+  const h = (r.stdout ?? '').trim();
+  if (!/^[0-9a-f]{40}$/.test(h)) throw new Error('lynx_commit: no commit touches apps/vr/ArtSource/' + folder + ' yet; commit the folder first so the manifest can name it');
+  return h;
+}
 const DIR = path.join(ROOT, 'apps', 'vr', 'ArtSource', 'light-table-frame');
 const [work] = process.argv.slice(2);
 const S = JSON.parse(fs.readFileSync(path.join(work, 'score.json'), 'utf8'));
@@ -64,8 +74,8 @@ const M = {
   generator: 'procedural Blender',
   blender: 'Blender 5.2.2, scripts/art/light-table-frame/build_frame.bpy (build and score), render_frame.bpy (evidence and framing check), write_manifest.mjs',
   licence: 'own procedural work; no generated input, no Leonardo, ComfyUI or TRELLIS',
-  lynx_commit: null,
-  lynx_commit_note: 'null until the merge sets it',
+  lynx_commit: lynxCommit('light-table-frame'),
+  lynx_commit_note: 'stamped by the writer: the newest commit touching this folder when the manifest was written',
   regenerate: 'blender -b -P scripts/art/light-table-frame/build_frame.bpy -- <repo-root> <work>; blender -b -P scripts/art/light-table-frame/render_frame.bpy -- <repo-root> <work>; node scripts/art/light-table-frame/write_manifest.mjs <work>',
   review_fixes: {
     review: 'Director review of 04fc311 (evidence/turnaround.jpg), 2026-10-21: "the geometry is clean and cheap, but the look departs from the art bible. The table in docs/concepts/vr-light-table/lookdev/00-hero.jpg has a dark, near-black frame with a bright white emissive light strip along the glass edge. The build is warm wood and shows no visible emissive edge." Reworked the same day on the CPU only (Blender, Cycles on the CPU; no ComfyUI, TRELLIS, GPU job or external API).',

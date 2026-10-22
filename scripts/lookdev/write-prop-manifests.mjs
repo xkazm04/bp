@@ -5,8 +5,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+
+// lynx_commit is the writer's field: the newest commit that touches this asset folder, so check:art can trace the
+// manifest to a real tree. It throws when nothing has committed the folder yet (there is no honest hash to stamp).
+function lynxCommit(folder) {
+  const r = spawnSync('git', ['log', '-1', '--format=%H', '--', 'apps/vr/ArtSource/' + folder], { cwd: ROOT, encoding: 'utf8' });
+  const h = (r.stdout ?? '').trim();
+  if (!/^[0-9a-f]{40}$/.test(h)) throw new Error('lynx_commit: no commit touches apps/vr/ArtSource/' + folder + ' yet; commit the folder first so the manifest can name it');
+  return h;
+}
 const ART = path.join(ROOT, 'apps/vr/ArtSource');
 const log = fs.readFileSync(path.join(ROOT, 'docs/concepts/vr-light-table/lookdev/log.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
 const LICENCE = 'Leonardo concept, TRELLIS input only; R8 open';
@@ -24,7 +34,7 @@ const gen = (prop, variant, seed, file) => {
 };
 const files = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? files(path.join(dir, d.name)).map((f) => `${d.name}/${f}`) : d.name === 'manifest.json' ? [] : [d.name]));
 const sha = (id) => Object.fromEntries(files(path.join(ART, id)).sort().map((f) => [f, crypto.createHash('sha256').update(fs.readFileSync(path.join(ART, id, f))).digest('hex')]));
-const write = (id, m) => fs.writeFileSync(path.join(ART, id, 'manifest.json'), JSON.stringify({ ...m, licence: LICENCE, sha256: sha(id) }, null, 2) + '\n');
+const write = (id, m) => fs.writeFileSync(path.join(ART, id, 'manifest.json'), JSON.stringify({ ...m, licence: LICENCE, sha256: sha(id), lynx_commit: lynxCommit(id), lynx_commit_note: 'stamped by the writer: the newest commit touching this folder when the manifest was written' }, null, 2) + '\n');
 
 write('lamp-agent', {
   id: 'lamp-agent', class: 'character-prop', budget_tris: 30000,

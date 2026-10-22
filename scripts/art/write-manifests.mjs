@@ -5,9 +5,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 import { ASSETS, scoreAsset } from './score-assets.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+// lynx_commit is the writer's field: the newest commit that touches this asset folder, so check:art can trace the
+// manifest to a real tree. It throws when nothing has committed the folder yet (there is no honest hash to stamp).
+function lynxCommit(folder) {
+  const r = spawnSync('git', ['log', '-1', '--format=%H', '--', 'apps/vr/ArtSource/' + folder], { cwd: ROOT, encoding: 'utf8' });
+  const h = (r.stdout ?? '').trim();
+  if (!/^[0-9a-f]{40}$/.test(h)) throw new Error('lynx_commit: no commit touches apps/vr/ArtSource/' + folder + ' yet; commit the folder first so the manifest can name it');
+  return h;
+}
 const ART = path.join(ROOT, 'apps', 'vr', 'ArtSource');
 const DATE = new Date().toISOString().slice(0, 10);
 
@@ -78,8 +88,8 @@ for (const id of Object.keys(ASSETS)) {
       finishing: gate(c.one_uv_set && c.materials && (!needTex || tex.length === 6), `one UV set, ${r.materials.length} material slots (${r.materials.join(', ')}); ${needTex ? tex.length + ' PNG textures' : 'no textures by design'}`),
       poly_budget: gate(c.poly_budget, `${id === 'fixture-kit' ? 'max ' + Math.max(...r.meshes.map((m) => m.tris)) + ' per mesh' : r.tris_total + ' tris'} against ${r.budget_tris}`),
     },
-    lynx_commit: null,
-    lynx_commit_note: 'set by the merge; branch autopilot/accepted-idea-delivery-69480049',
+    lynx_commit: lynxCommit(id),
+    lynx_commit_note: 'stamped by the writer: the newest commit touching this folder when the manifest was written',
   };
   // The manifest is still written (it records the failing gate), but the run reports it: score-assets.mjs exits 1 on the same
   // information, and a && chain must not carry on over a manifest check:art will reject.

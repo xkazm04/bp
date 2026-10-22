@@ -6,8 +6,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+
+// lynx_commit is the writer's field: the newest commit that touches this asset folder, so check:art can trace the
+// manifest to a real tree. It throws when nothing has committed the folder yet (there is no honest hash to stamp).
+function lynxCommit(folder) {
+  const r = spawnSync('git', ['log', '-1', '--format=%H', '--', 'apps/vr/ArtSource/' + folder], { cwd: ROOT, encoding: 'utf8' });
+  const h = (r.stdout ?? '').trim();
+  if (!/^[0-9a-f]{40}$/.test(h)) throw new Error('lynx_commit: no commit touches apps/vr/ArtSource/' + folder + ' yet; commit the folder first so the manifest can name it');
+  return h;
+}
 const [work, id] = process.argv.slice(2);
 const DIR = path.join(ROOT, 'apps', 'vr', 'ArtSource', id);
 const S = JSON.parse(fs.readFileSync(path.join(work, id, 'score.json'), 'utf8'));
@@ -68,8 +78,8 @@ const M = {
   concept_note: old.generator_note ?? old.concept_note,
   kept_option: old.kept_option,
   licence: 'own procedural work; concept.png is a Leonardo concept used as a shape reference only (R8 open); no ComfyUI or TRELLIS run, no GPU job, no Leonardo call',
-  lynx_commit: null,
-  lynx_commit_note: 'null until the merge sets it',
+  lynx_commit: lynxCommit(id),
+  lynx_commit_note: 'stamped by the writer: the newest commit touching this folder when the manifest was written',
   regenerate: `blender -b -P scripts/art/studio-kit/build_studio.bpy -- <repo-root> <work> ${id}; blender -b -P scripts/art/studio-kit/render_studio.bpy -- <repo-root> <work> ${id}; node scripts/art/studio-kit/write_manifest.mjs <work> ${id}`,
   framing: F,
   file_bytes: sizes,
