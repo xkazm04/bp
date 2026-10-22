@@ -54,6 +54,14 @@ const bound = (signal?: AbortSignal, ms: number = REQUEST_TIMEOUT_MS): AbortSign
   return signal ? AbortSignal.any([signal, t]) : t;
 };
 
+/** Unreadable stream events seen, per event name: the first of each is warned about, then every 100th, so a noisy server cannot flood the console. */
+const unreadable = new Map<string, number>();
+const skipped = (event: string, e: unknown) => {
+  const n = (unreadable.get(event) ?? 0) + 1;
+  unreadable.set(event, n);
+  if (n === 1 || n % 100 === 0) console.warn(`scan stream: skipped an unreadable '${event}' event (${n} so far): ${(e as Error)?.message ?? e}`);
+};
+
 // ------------------------------------------------------------------------------------------- jobs
 /** Every jobs event per slug, log lines included, for the views that show them (useLiveJobs). */
 const jobStore = new Map<string, { jobs: ScanJob[]; subs: Set<() => void> }>();
@@ -125,7 +133,7 @@ export function useLiveProduct(slug: string | null): LiveProduct {
       src.addEventListener('snapshot', (ev) => {
         attempt = 0;
         let sent: Partial<ScanSnapshot>;
-        try { sent = JSON.parse((ev as MessageEvent<string>).data) as Partial<ScanSnapshot>; } catch { return; }
+        try { sent = JSON.parse((ev as MessageEvent<string>).data) as Partial<ScanSnapshot>; } catch (e) { skipped('snapshot', e); return; }
         scan = full(sent);
         if (!isEmpty(scan)) hasStore = true;
         const s = scan;
@@ -135,7 +143,7 @@ export function useLiveProduct(slug: string | null): LiveProduct {
       });
       src.addEventListener('jobs', (ev) => {
         let next: ScanJob[];
-        try { next = JSON.parse((ev as MessageEvent<string>).data) as ScanJob[]; } catch { return; }
+        try { next = JSON.parse((ev as MessageEvent<string>).data) as ScanJob[]; } catch (e) { skipped('jobs', e); return; }
         if (!Array.isArray(next)) return;
         setJobs(slug, next);
         const discrete = jobsKey(next) !== jobsKey(jobs);
@@ -145,13 +153,13 @@ export function useLiveProduct(slug: string | null): LiveProduct {
       // the map files changed under the page (the skill wrote its metrics back): take the new map
       src.addEventListener('map', (ev) => {
         let r = '';
-        try { r = String((JSON.parse((ev as MessageEvent<string>).data) as { rev?: unknown }).rev ?? ''); } catch { return; }
+        try { r = String((JSON.parse((ev as MessageEvent<string>).data) as { rev?: unknown }).rev ?? ''); } catch (e) { skipped('map', e); return; }
         if (r && r !== mapRev) refresh();
       });
       src.addEventListener('delta', (ev) => {
         if (!scan) return;
         let sent: Partial<ScanSnapshot>;
-        try { sent = JSON.parse((ev as MessageEvent<string>).data) as Partial<ScanSnapshot>; } catch { return; }
+        try { sent = JSON.parse((ev as MessageEvent<string>).data) as Partial<ScanSnapshot>; } catch (e) { skipped('delta', e); return; }
         const was = latestRun(scan);
         scan = mergeScan(scan, full(sent));
         hasStore = true;
@@ -165,7 +173,7 @@ export function useLiveProduct(slug: string | null): LiveProduct {
         const data = (ev as MessageEvent<unknown>).data;
         if (typeof data !== 'string') return; // a dropped connection: onerror below
         let message = 'The scan store cannot be read';
-        try { message = String((JSON.parse(data) as { message?: unknown }).message ?? message); } catch { /* keep the generic text */ }
+        try { message = String((JSON.parse(data) as { message?: unknown }).message ?? message); } catch (e) { skipped('error', e); /* keep the generic text */ }
         put((l) => ({ ...l, status: 'error', error: message }));
       });
       src.onerror = (ev) => {

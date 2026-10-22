@@ -143,7 +143,14 @@ for (const m of listeners) {
   const guarded = (bodyText.match(/try \{[^}]*JSON\.parse/g) ?? []).length;
   expect(parses > 0, `the '${name}' listener no longer parses its event (update this check)`);
   expect(guarded === parses, `the '${name}' listener parses ${parses} times and guards ${guarded}: one malformed event throws out of the listener and the stream freezes silently`);
+  // ...and a skipped event leaves a record: every catch hands the event's own name to skipped()
+  const catches = (bodyText.match(/catch\b/g) ?? []).length;
+  const recorded = (bodyText.match(new RegExp(`catch \\(e\\) \\{ skipped\\('${name}', e\\)`, 'g')) ?? []).length;
+  expect(catches > 0 && recorded === catches, `the '${name}' listener has ${catches} catch blocks and ${recorded} record the skipped event: an unreadable event leaves no trace`);
 }
+// skipped() is the one place the record is made: a warning that names the event, rate-limited per name
+const skippedFn = clientSrc.match(/const skipped = [\s\S]*?\n\};/)?.[0] ?? '';
+expect(/console\.warn\(/.test(skippedFn) && /\$\{event\}/.test(skippedFn) && /n === 1 \|\| n % \d+ === 0/.test(skippedFn), 'skipped() no longer warns with the event name behind a per-name rate limit');
 
 // --------------------------------------------- 2. a job that ended still reports it on the plan
 // scanViews draws a finished job's outline for LINGER_MS after it ended - all ticks for `done`, the bad colour
