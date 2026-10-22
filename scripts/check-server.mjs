@@ -124,6 +124,8 @@ try {
     check('guard: a non-JSON write: 415', plain.status === 415, `${plain.status}`);
     const fwd = await req('POST', '/api/products', { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.9' }, '{}');
     check('guard: a forwarded non-local hop: 403', fwd.status === 403, `${fwd.status}`);
+    const fwdRead = await req('GET', '/api/products', { 'x-forwarded-for': '203.0.113.9' });
+    check('guard: a forwarded non-local hop on a read: 403', fwdRead.status === 403, `${fwdRead.status}`);
   }
 } finally {
   // the child holds its working directory until it has exited (Windows), so wait before removing it

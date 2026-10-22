@@ -25,6 +25,9 @@ check('write denies cross-site fetch', localOnly(req({ ...L, 'sec-fetch-site': '
 check('write allows same-origin fetch', localOnly(req({ ...L, 'sec-fetch-site': 'same-origin' })) === null);
 check('write denies foreign X-Forwarded-For', localOnly(req({ ...L, 'x-forwarded-for': '8.8.8.8' })) !== null);
 check('write allows loopback X-Forwarded-For', localOnly(req({ ...L, 'x-forwarded-for': '127.0.0.1, ::1' })) === null);
+check('read denies foreign X-Forwarded-For', localHost(req({ ...L, 'x-forwarded-for': '203.0.113.9' })) !== null);
+check('read denies a foreign hop after a loopback one', localHost(req({ ...L, 'x-forwarded-for': '127.0.0.1, 8.8.8.8' })) !== null);
+check('read allows loopback X-Forwarded-For', localHost(req({ ...L, 'x-forwarded-for': '127.0.0.1, ::1' })) === null);
 check('json allows application/json', jsonOnly(req({ 'content-type': 'application/json' })) === null);
 check('json allows charset suffix', jsonOnly(req({ 'content-type': 'Application/JSON; charset=utf-8' })) === null);
 check('json denies text/plain', jsonOnly(req({ 'content-type': 'text/plain' })) !== null);
@@ -40,6 +43,7 @@ check('read allows another loopback octet (127.1.2.3)', localHost(req({ host: '1
 check('write denies an unparseable Origin', localOnly(req({ ...L, origin: 'not a url' })) !== null);
 check('write allows a bracketed IPv6 loopback Origin', localOnly(req({ ...L, origin: 'http://[::1]:3000' })) === null);
 check('write allows an IPv4-mapped loopback X-Forwarded-For hop', localOnly(req({ ...L, 'x-forwarded-for': '::ffff:127.0.0.1' })) === null);
+check('read allows an IPv4-mapped loopback X-Forwarded-For hop', localHost(req({ ...L, 'x-forwarded-for': '::ffff:127.0.0.1' })) === null);
 check('write allows a same-site fetch (only cross-site is refused)', localOnly(req({ ...L, 'sec-fetch-site': 'same-site' })) === null);
 
 console.log(`local-only: ${passed} passed, ${failed} failed`);
