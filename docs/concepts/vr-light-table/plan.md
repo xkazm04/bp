@@ -185,6 +185,15 @@ Back-measure of the milestone 2 goals (`f8c79e6`, `9f58e0a`, `fb937a3`), on `82a
 (Windows ARM64). **No Unreal Engine build was run on this machine; Lynx has no Unreal Engine and no
 clang.** These readings cover the TypeScript and Node checks only.
 
+> **Correction 2026-10-22 (Lynx).** "Lynx has no Unreal Engine" was true when this entry and the two below that repeat it
+> (Milestone 2 on `947597c`, Milestones 1 and 2 on `b45f11a`) were written, and it is wrong from 2026-10-22: Unreal Engine
+> **5.8.4-58902052** is installed, complete, at `C:/Program Files/Epic Games/UE_5.8` (`Engine/Build/Build.version`,
+> `InstalledBuild.txt` and `UnrealEditor-Cmd.exe` present, dated 2026-10-22 15:03 to 15:05), and MSVC 14.44.35207 has been
+> on the box since 2026-10-20. "No clang" still holds and is beside the point: a UE 5.8 editor build of BpLink ran on Lynx
+> on 2026-10-22, emulated Hostx64 `cl.exe`, in a project synthesized outside the repo, and failed (as is: the predicted
+> `BpSchema.generated.h` C1083; with E1's junction: past UHT, then `Misc/PlatformMisc.h` C1083). Evidence and the
+> reproduction: [`machine.md`](machine.md). The readings in these entries are not re-graded.
+
 | Goal | Result | Command and output line |
 |---|---|---|
 | `check:bplink` green on master | **pass** | `npm run check:bplink`: `check-bplink: 8 passed, 0 failed` |

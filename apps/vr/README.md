@@ -9,12 +9,19 @@ the project is created in phase P3 (WP3.1) on the GPU workstation, after P0 has 
 and the Meta plugins (mage-arena-vr's `apps/vr/tools/install-xr.ps1`, adapted to this folder). Do not
 add a `.uproject` by hand.
 
+> **Correction 2026-10-22 (Lynx).** "Unreal is not installed on the machine this was laid out on" is out of date: since
+> 2026-10-22 Lynx has Unreal Engine 5.8.4-58902052, a complete installed build, at `C:/Program Files/Epic Games/UE_5.8`
+> ([`machine.md`](../../docs/concepts/vr-light-table/machine.md)). It has no `Engine/Templates`, so the editor's New
+> Project route still cannot make the project here, and the rule stands: no `.uproject` by hand, none in this folder.
+
 On Wolf (the x64 box with UE 5.8), follow [`docs/concepts/vr-light-table/wolf-plan.md`](../../docs/concepts/vr-light-table/wolf-plan.md): setup, WP3.1 to P7 in order, the merge gates and the known compile risks.
 
 What is here: the `BpLink` module source, `Source/BpLink/` (`BpLink.Build.cs`, `Public/`, `Private/`), and the ordered
-UE-host steps with their proofs, [`WP3.1.md`](WP3.1.md). **The module source has not been compiled against Unreal, and it
-has not been syntax-checked either: no C++ compiler has read it (Lynx has no Unreal and no clang).** What has been through
-a C++ front end is narrower and lives outside this folder (**Not compiled**, below). WP3.1 is not run on any UE host. The
+UE-host steps with their proofs, [`WP3.1.md`](WP3.1.md). **The module has not built against Unreal: two editor builds on
+Lynx (2026-10-22) both failed.** *Correction 2026-10-22: this paragraph said "no C++ compiler has read it (Lynx has no
+Unreal and no clang)"; that was true when written and is now wrong.* UE 5.8.4's MSVC 14.44.35207 (`Hostx64` `cl.exe`,
+emulated on ARM64) read `BpLink.cpp`, `BpLink.h`, `BpSchema.h` and `BpSchemaFixups.h` in a host project synthesized
+outside the repo, and stopped at a fatal error each time (**Not compiled**, below). WP3.1 is not run on any UE host. The
 module includes the generated headers by path from `packages/schema/generated/ue` (no copy), so `check:schema` stays the
 single source.
 
@@ -36,8 +43,15 @@ What the client will consume, already in this repo:
 
 It never computes a health rule or a layout rule; those stay in `packages/core`.
 
-**Not compiled.** Nothing in `apps/vr` has been compiled or syntax-checked: Lynx has no Unreal Engine and no clang. The one
-C++ front end in this repo's record is outside it: per `packages/schema/README.md`, the generated headers in
+**Not compiled.** Nothing in `apps/vr` has compiled. *Correction 2026-10-22: this said "nothing ... has been compiled or
+syntax-checked: Lynx has no Unreal Engine and no clang"; Lynx has had UE 5.8.4 since 2026-10-22, and BpLink has been
+through a compiler there.* Two `bpEditor Win64 Development` builds on Lynx, in a probe project outside the repo
+(`scripts/uht-probe.mjs`, readings in [`machine.md`](../../docs/concepts/vr-light-table/machine.md)), both exit 6: as is,
+UHT never sees `BpSchema.h` (it is only on `PublicIncludePaths`) and `cl.exe` stops at `BpSchema.h(13,1): fatal error C1083:
+Cannot open include file: 'BpSchema.generated.h'`; with WP3.1's junction `Source/BpLink/Public/Schema`, UHT writes
+`BpSchema.generated.h` and `cl.exe` stops at `BpLink.cpp(11,1): fatal error C1083: Cannot open include file:
+'Misc/PlatformMisc.h'` (UE 5.8 has it as `HAL/PlatformMisc.h`). Unmeasured: a clean build, the editor booting the module,
+a Win64 Game target. The other C++ front end in this repo's record is outside `apps/vr`: per `packages/schema/README.md`, the generated headers in
 `packages/schema/generated/ue` were put through `clang++ -fsyntax-only` against stand-in Unreal declarations
 (`packages/schema/ue-standin/check.cpp`), when that smoke read 3 of the 6 roots, so `FBpPlan` (which BpLink parses),
 `FBpStructureEnvelope` and `FBpScanWire` have never been through it. No gate runs that command: `check:schema` asserts

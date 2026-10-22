@@ -1,8 +1,16 @@
 # WP3.1: the `apps/vr` project and the BpLink module
 
-**Status: not yet run on any UE host.** The module source in `Source/BpLink/` was written on Lynx (Windows ARM64), which has
-no Unreal Engine and no clang. It has not been compiled against Unreal and has not been syntax-checked. Every step below
-is for a UE-equipped host; none has been run.
+**Status: not yet run on any UE host.** The module source in `Source/BpLink/` was written on Lynx (Windows ARM64), which had
+no Unreal Engine and no clang. It has not built against Unreal. Every step below is for a UE-equipped host; none has been run
+as written.
+
+> **Correction 2026-10-22 (Lynx).** "Lynx has no Unreal Engine" and "has not been syntax-checked" are out of date. Lynx has
+> had Unreal Engine 5.8.4-58902052, complete, since 2026-10-22, and two `bpEditor Win64 Development` builds of this module
+> ran there in a host project synthesized **outside the repo** (`scripts/uht-probe.mjs`; this folder still has no
+> `.uproject`), on emulated `Hostx64` MSVC 14.44.35207. Both exit 6: the readings for step 5 are under Risks below and in
+> [`machine.md`](../../docs/concepts/vr-light-table/machine.md). Steps 1, 3, 4 and 6 to 8 are not run. Lynx cannot run
+> step 3 as written (its install has no `Engine/Templates`, so no New Project dialog), nor `Build.bat` (it needs a
+> win-arm64 .NET the install does not ship); the probe drives UnrealBuildTool directly.
 
 Acceptance (plan P3, WP3.1): the editor and a Win64 build boot, and a `BpLink` log line prints Kettle's 5 wings, which `BpLink.cpp` reads from `GET /api/products/kettle/plan` (that request and the line's figures are pinned against the live server by `npm run check:bplink`; the code is not compiled).
 
@@ -39,8 +47,18 @@ Every row is pinned by `scripts/check-bplink.mjs` against the live server (and, 
   `BpSchema.generated.h`. If so, the fix must keep `packages/schema` the single source (no copy): try a directory
   junction or symlink `Source/BpLink/Public/Schema` pointing at `packages/schema/generated/ue`, and record the result here.
   The headers' own README says UHT acceptance is unproven.
+  *Reading 2026-10-22, Lynx, probe project outside the repo (not this folder):* as is, UHT ran (`0 generated files
+  written`) with no `BpLink` module in its manifest, and the build failed `BpSchema.h(13,1): fatal error C1083: Cannot open
+  include file: 'BpSchema.generated.h'`. With the junction `Source/BpLink/Public/Schema` (made in the probe only), UHT listed
+  `Public\Schema\BpSchema.h`, wrote `BpSchema.generated.h` (`4 generated files written`), the generated
+  `Module.BpLink.gen.cpp` compiled, and the build stopped next at `BpLink.cpp(11,1): fatal error C1083: Cannot open include
+  file: 'Misc/PlatformMisc.h'` (in UE 5.8 it is `HAL/PlatformMisc.h`; not changed here). `#include "BpSchema.h"` did not
+  have to change to get that far. Whether this settles the risk is the operator's call (wolf-plan R1); nothing here is
+  ticked.
 - **`override` as a field name.** `FBpFacet` holds `FBpFacetOverride override;`. `override` is only a contextual keyword in C++, but
   UHT may still dislike it. If it does, the change is in `packages/schema` (the generator), not here.
+  *Reading 2026-10-22, Lynx (junction variant above):* UHT, run with `-WarningsAsErrors`, reflected it (`NewProp_override`
+  in `BpSchema.gen.cpp`) with no warning, and that file compiled. A use of the field from BpLink's own code is not measured.
 - **Startup read.** `StartupModule` fires the request at `PostEngineInit`; `HTTP` must be loaded by then. If the line does not appear
   on boot, `BpLink.Fetch` is the manual trigger.
 - **API names** (`FHttpModule`, `FJsonObjectConverter`, `FPlatformMisc::GetEnvironmentVariable`) are used as in UE 5.x; any 5.8

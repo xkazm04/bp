@@ -5,6 +5,10 @@ Windows box with Unreal Engine 5.8. It takes `apps/vr` from source to a running 
 [`plan.md`](plan.md). **Nothing in this file has been run on Wolf.** Every UE fact below comes from reading source and
 docs. Items marked **[verify on Wolf]** are things this plan could not check from Lynx.
 
+> **Correction 2026-10-22.** "Lynx (Windows ARM64, no Unreal Engine, no clang)" was true on 2026-10-21; from 2026-10-22
+> Lynx has Unreal Engine 5.8.4-58902052, a complete installed build, and BpLink has been through UHT and MSVC there in a
+> probe project outside the repo. See the correction above the P3 run order table and [`machine.md`](machine.md).
+
 Inputs this plan was written from: [`plan.md`](plan.md) (P0 to P7, the dated readings, the 2026-10-21 decisions),
 [`tech-stack.md`](tech-stack.md), [`art-breakdown.md`](art-breakdown.md), [`reference-sheet.md`](reference-sheet.md)
 (approved 2026-10-20, the art bible for P3 to P6), [`../../architecture-review-2026-10-21.md`](../../architecture-review-2026-10-21.md),
@@ -49,7 +53,7 @@ Master tip when this was written: `4e2dfd1`. On that tip, as read on Lynx:
       `docs/concepts/vr-light-table/captures/` as JPEG, 1 MB or less each.
 - [ ] **Machine facts** (GPU, VRAM, RAM, CPU, UE version and changelist, MSVC, Windows SDK, Meta plugin BuildId,
       Link runtime version) go to `docs/concepts/vr-light-table/machine.md`. plan.md P0 and WP3.6 already name that
-      file. It does not exist yet.
+      file. *Correction 2026-10-22: it exists now, with a Lynx section; add a Wolf section beside it.*
 - [ ] **Push verified work, never force.** After `npm run check` is green, `git fetch`, rebase onto (or merge) `origin/master` and push to `origin master` (owner, 2026-10-21; CLAUDE.md "Git"). Stage only the step's paths. Other sessions may share the checkout.
 
 ---
@@ -126,16 +130,35 @@ default is enough to begin and the answer only changes a constant or a verdict, 
 ticked until the ask is answered. Rows marked **UE host** need Wolf (UE 5.8, MSVC, and for some rows the headset).
 The detailed instructions for each row are in the step of the same name below; this table is the order and the bar.
 
+> **Correction 2026-10-22 (Lynx).** "Lynx has no Unreal Engine" was true when this paragraph was written (11:00) and is
+> wrong from the same afternoon: Lynx has Unreal Engine **5.8.4-58902052**, a complete installed build at
+> `C:/Program Files/Epic Games/UE_5.8`, and MSVC 14.44.35207. Measured there, in a project synthesized **outside the repo**
+> by `scripts/uht-probe.mjs` (readings, logs and the exact command in [`machine.md`](machine.md)):
+>
+> - Row 5's question was put to a real build. As is, UHT ran without `BpLink` in its manifest and the build failed with
+>   the predicted `fatal error C1083: Cannot open include file: 'BpSchema.generated.h'`. With E1's junction
+>   `Source/BpLink/Public/Schema` (probe only), UHT wrote `BpSchema.generated.h` and the build stopped at the next defect,
+>   `BpLink.cpp(11,1): fatal error C1083: Cannot open include file: 'Misc/PlatformMisc.h'`. Both builds exit 6. Row 5 and
+>   R1 are left as they are, for the owner: this is evidence, not a tick.
+> - What Lynx is: a UE host for **compiling** only. `Build.bat` cannot run (it wants a win-arm64 .NET the install does not
+>   ship), so UnrealBuildTool is driven directly on the bundled win-x64 dotnet, and every `cl.exe` is emulated `Hostx64`
+>   (`MicrosoftPlatformSDK.cs:1317`; `blake3_dotnet` has no win-arm64 build). Rows 3, 6 and 7 can therefore run on Lynx
+>   once row 2's project is on master, with that command in place of `Build.bat`; none has been run as written.
+> - What still needs Wolf: row 2 (Lynx's install has no `Engine/Templates`, so no New Project dialog, and the `.uproject`
+>   is made by the editor, never by hand), row 4's `-projectfiles` step (not tried on Lynx), and rows 8 to 17, which need
+>   the editor or a Win64 game booting `bp.uproject`, Meta XR v207, the simulator, the Quest 3 over Link or a 90 Hz frame
+>   budget. None of those is measured on Lynx; the Ask cells are unchanged.
+
 | # | Step | Needs | Command or editor action | Proof that it passed | Ask | Host |
 |---|---|---|---|---|---|---|
 | 0 | S1 to S5, Step 0 | a Wolf login | section (b) S1 to S5; Step 0's `register-project.mjs` | the S1 to S5 "Expected" lines in `runs/<date>-wolf-p0.md`; for Step 0, the `projects.json` entry for `bp` (R13 is decided; Step 0 can run beside the rows below) | none | UE host (S4, S5) |
 | 1 | W3.1-1 server and contract | S1 to S3 | `npm run check:bplink`; `npm run server` in its own shell; `curl.exe -s http://127.0.0.1:3100/api/products/kettle/plan` | `check-bplink: 31 passed, 0 failed` (or more passed, still 0 failed); `bp server listening on http://127.0.0.1:3100`; JSON with 5 `wings` | none | Wolf (Node only, but it has to be the UE box: the server refuses non-loopback peers) |
 | 2 | W3.1-2 create the project, then S6 | S4, S5 | editor: Games, Blank, C++, Desktop, Maximum, no Starter Content, in `%TEMP%\bp-ue`; the robocopy line; `apps/vr/tools/install-xr.ps1` | `EngineAssociation` `5.8` in `apps/vr/bp.uproject`; S6's `SHA256_OK=` (both zips), `UPROJECT_ENABLED=OculusXR`, `UPROJECT_ENABLED=OculusInteraction`, `PLUGIN_BUILD_ID=55116800` equal to `ENGINE_COMPATIBLE_CHANGELIST`; `git status --short` shows only the W3.1-2 paths | none (R2 closed: the installed 5.8.x) | **UE host** |
-| 3 | S9 engine sanity build | row 2, before BpLink is added | `Build.bat bpEditor Win64 Development "-Project=$PWD\apps\vr\bp.uproject" -WaitMutex` | exit 0, and UBT's `Using Visual Studio 2022 14.xx.xxxxx toolchain ... and Windows 10.0.xxxxx SDK` line | none | **UE host** |
+| 3 | S9 engine sanity build | row 2, before BpLink is added | `Build.bat bpEditor Win64 Development "-Project=$PWD\apps\vr\bp.uproject" -WaitMutex` | exit 0, and UBT's `Using Visual Studio 2022 14.xx.xxxxx toolchain ... and Windows 10.0.xxxxx SDK` line | none | **UE host**: Wolf, or Lynx after row 2 is on master (UBT direct, emulated Hostx64, not `Build.bat`; corrected 2026-10-22, `machine.md`) |
 | 4 | W3.1-3 add BpLink | row 3 | the `Modules` entry and `ExtraModuleNames` in both `*.Target.cs`; `Build.bat -projectfiles ...` | the git-ignored `bp.sln` lists `BpLink` under `Games\bp\Source` | none | **UE host** |
 | 5 | W3.1-4 UHT and `BpSchema.h` | row 4 | one editor build as is; if it fails with `Cannot open include file: 'BpSchema.generated.h'`, E1's junction, then build again | the UHT step lists `BpSchema.h` and the build gets past UHT; the run note says which variant held | **R1 waits only if the junction fails too.** Then A or B need their Lynx commit first, and C stops here | **UE host** |
-| 6 | W3.1-5 both targets | row 5 | `Build.bat bpEditor ...` and `Build.bat bp ...` (Win64 Development) | both exit 0; each build's last `Total execution time` line in the run note | none | **UE host** |
-| 7 | W3.1-6 BpLink reads `/plan` | row 6 | edit `BpLink.cpp`/`BpLink.h`; rebuild both targets; `npm run check:bplink` | both builds exit 0; `check-bplink: N passed, 0 failed` (it reads `BpLink.cpp`'s format strings) | none | **UE host** |
+| 6 | W3.1-5 both targets | row 5 | `Build.bat bpEditor ...` and `Build.bat bp ...` (Win64 Development) | both exit 0; each build's last `Total execution time` line in the run note | none | **UE host**: Wolf, or Lynx after row 2 is on master (UBT direct, emulated Hostx64, not `Build.bat`; corrected 2026-10-22, `machine.md`) |
+| 7 | W3.1-6 BpLink reads `/plan` | row 6 | edit `BpLink.cpp`/`BpLink.h`; rebuild both targets; `npm run check:bplink` | both builds exit 0; `check-bplink: N passed, 0 failed` (it reads `BpLink.cpp`'s format strings) | none | **UE host**: Wolf, or Lynx after row 2 is on master (UBT direct, emulated Hostx64, not `Build.bat`; corrected 2026-10-22, `machine.md`) |
 | 8 | W3.1-7 the log line | row 7, the server up | `UnrealEditor.exe "$PWD\apps\vr\bp.uproject" -log`, or `BpLink.Fetch` | `BpLink: Kettle wings=5 [Foundations, Studio operations, Money, Members & reach, Frontier] rooms=13 bays=29 tiles=133 lenses=8 events=566 rev=<rev>`, then `BpLink: kettle streams (200); WP3.1 does not consume SSE, so rev <rev> read once from structure stands`; `<rev>` equals the curl's `.rev`; no `skipped` warning | none | **UE host** |
 | 9 | W3.1-8 server down | row 8 | stop the server; `BpLink.Fetch` | ``BpLink: GET .../structure failed (connected=0, status=0). Is `npm run server` running?`` and no crash | none | **UE host** |
 | 10 | W3.1-9 simulator boot | row 8, S7 | `$env:XR_RUNTIME_JSON=...meta_openxr_simulator.json`; `UnrealEditor-Cmd.exe ... -game -unattended -nosplash -RenderOffScreen -log` | `LogHMD: Initialized OpenXR on Meta XR Simulator runtime version 207.0.0` and row 8's line in the same log | none | **UE host** |
