@@ -13,7 +13,8 @@ On Wolf (the x64 box with UE 5.8), follow [`docs/concepts/vr-light-table/wolf-pl
 
 What is here: the `BpLink` module source, `Source/BpLink/` (`BpLink.Build.cs`, `Public/`, `Private/`), and the ordered
 UE-host steps with their proofs, [`WP3.1.md`](WP3.1.md). **The module source has not been compiled against Unreal, and it
-has not been syntax-checked either: the machine it was written on has no clang.** WP3.1 is not run on any UE host. The
+has not been syntax-checked either: no C++ compiler has read it (Lynx has no Unreal and no clang).** What has been through
+a C++ front end is narrower and lives outside this folder (**Not compiled**, below). WP3.1 is not run on any UE host. The
 module includes the generated headers by path from `packages/schema/generated/ue` (no copy), so `check:schema` stays the
 single source.
 
@@ -28,15 +29,19 @@ What the client will consume, already in this repo:
 - `packages/schema`: the app-structure v3 JSON Schemas and the UE `USTRUCT` headers generated from
   them, so `FJsonObjectConverter` fills the structs with no hand-written parsing.
 
-- `GET /api/products/kettle/plan` (planned, WP3.1): the derived plan, `{ rev, lenses, wings, rooms, bays, tiles }`, schema
+- `GET /api/products/kettle/plan` (BpLink reads it, WP3.1): the derived plan, `{ rev, lenses, wings, rooms, bays, tiles }`, schema
   `packages/schema/schema/plan-1.schema.json`. VR uses the web's levels, wing, room, bay and tile (decision 2026-10-21,
   `docs/architecture-review-2026-10-21.md`): Kettle is 5 wings, 13 rooms, 29 bays and 133 tiles, read from this endpoint,
   not from `structure.domains`.
 
 It never computes a health rule or a layout rule; those stay in `packages/core`.
 
-**Not compiled.** Nothing in `apps/vr` has been compiled on this machine: Lynx has no Unreal Engine. The generated structs
-have only been syntax-checked with clang against stand-in declarations.
+**Not compiled.** Nothing in `apps/vr` has been compiled or syntax-checked: Lynx has no Unreal Engine and no clang. The one
+C++ front end in this repo's record is outside it: per `packages/schema/README.md`, the generated headers in
+`packages/schema/generated/ue` were put through `clang++ -fsyntax-only` against stand-in Unreal declarations
+(`packages/schema/ue-standin/check.cpp`), when that smoke read 3 of the 6 roots, so `FBpPlan` (which BpLink parses),
+`FBpStructureEnvelope` and `FBpScanWire` have never been through it. No gate runs that command: `check:schema` asserts
+only that `check.cpp` names all six roots.
 
 ## BpLink contract
 
@@ -45,7 +50,7 @@ The requests the `BpLink` module will make for Kettle, against `apps/server` wit
 
 - `GET /api/products/kettle/structure`: 200 JSON `{ structure, events, rev }`, `structure.domains` = the domains (not
   the wings), `structure.lenses` = the lens manifests.
-- `GET /api/products/kettle/plan` (planned call, pinned by `check:bplink` once the endpoint lands): 200 JSON
+- `GET /api/products/kettle/plan` (BpLink parses it into `FBpPlan` and logs its wing, room, bay and tile counts): 200 JSON
   `{ rev, lenses, wings, rooms, bays, tiles }`; 5 wings, 13 rooms, 29 bays, 133 tiles, derived from `WING_DEFS` and the data;
   `rev` equals the structure's.
 - The events BpLink reads: the `events` string of that payload (JSONL, one valid JSON object per line, the same lines as
@@ -53,9 +58,9 @@ The requests the `BpLink` module will make for Kettle, against `apps/server` wit
 - `GET /api/products/kettle/stream`: 200 `text/event-stream` (since wolf-plan L5.2: `apps/server` hosts Kettle's scan sim
   in memory, nothing written to disk). The first event is a `snapshot` (`runs`, `measurements`, `proposals` = the sample's
   findings, `activity`, ...); `jobs` and `delta` events follow a scan, `ping` every 15 s. Kettle's map never changes, so
-  there is no `map` event: `rev` is still read once from the structure payload (it is stable across reads). The old 405
-  fallback is gone; BpLink's reader changes in step (W5.1). `npm run check:kettle-sim` shows `snapshot` then `delta` after
-  a scan POST.
+  there is no `map` event: `rev` is still read once from the structure payload (it is stable across reads). Kettle no
+  longer answers 405; BpLink still lives with 405 for a product with no live stream, and reads SSE only from step (W5.1).
+  `npm run check:kettle-sim` shows `snapshot` then `delta` after a scan POST.
 - Kettle writes on the sim's routes answer as for a live product: `POST /api/products/kettle/scans` 202 (the scan job),
   `GET .../scans`, `DELETE .../scans/<job>`, `GET .../scan`, `GET`/`POST .../waves`, `PATCH`/`DELETE .../waves/<wave>`,
   `POST .../waves/<wave>/dispatch` and `POST .../dispatch`. The sim's state lasts as long as the server process. Other
