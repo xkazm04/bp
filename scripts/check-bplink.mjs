@@ -13,6 +13,9 @@
 // Pins the server's current answers; it changes no route. A gap BpLink must live with is asserted as it is, not papered over.
 //
 // `npm run check` cannot compile BpLink (no Unreal toolchain here, apps/vr/WP3.1.md), so the last block derives what it can
+// [Correction 2026-10-22: "no Unreal toolchain here" is out of date for Lynx, which has UE 5.8.4 and has built BpLink in
+// scripts/uht-probe.mjs's project outside the repo (docs/concepts/vr-light-table/machine.md). The reason stands in another
+// form: that build needs an engine install and minutes, and is wired to no gate, so `npm run check` still cannot compile it.]
 // from the C++ TEXT instead: the /stream status codes `BpLink.cpp` branches on must include the one the live server just
 // answered, and `BpLink.cpp` must request /plan, parse it into FBpPlan and log wings/rooms/bays/tiles from the plan's own
 // arrays, so the logged figures are the live /plan answer's counts. Comments (and, where the assertion is not about a

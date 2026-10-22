@@ -1,4 +1,7 @@
 // BpLink runtime module (plan WP3.1). NOT compiled against Unreal yet: see apps/vr/WP3.1.md.
+// Correction 2026-10-22 (Lynx): it has, in a bpEditor build outside the repo, with WP3.1's junction Public/Schema in place
+// (docs/concepts/vr-light-table/machine.md). BpLink includes the headers as "Schema/<header>", the spelling UHT's
+// generated code uses; the PublicIncludePaths entry below alone does not get UHT to read BpSchema.h.
 using System.IO;
 using UnrealBuildTool;
 

@@ -1,4 +1,7 @@
 // Not compiled against Unreal, not syntax-checked (no clang on the machine it was written on): apps/vr/WP3.1.md.
+// Correction 2026-10-22 (Lynx): out of date. UE 5.8.4's MSVC 14.44.35207 has compiled this file end to end and linked
+// UnrealEditor-BpLink.dll (bpEditor Win64 Development, exit 0) in a probe project outside the repo; nothing has run it.
+// Readings: docs/concepts/vr-light-table/machine.md.
 #include "BpLink.h"
 
 #include "Schema/BpSchemaFixups.h"
