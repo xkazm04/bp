@@ -11,8 +11,14 @@ as written.
 > [`machine.md`](../../docs/concepts/vr-light-table/machine.md). Steps 1, 3, 4 and 6 to 8 are not run. Lynx cannot run
 > step 3 as written (its install has no `Engine/Templates`, so no New Project dialog), nor `Build.bat` (it needs a
 > win-arm64 .NET the install does not ship); the probe drives UnrealBuildTool directly.
+>
+> **Correction 2026-10-22 (evening, Lynx).** "Both exit 6" is superseded for the junction variant: after `72e4fd4`
+> (`HAL/PlatformMisc.h`) and `ed94a65` (one include spelling, `Schema/<header>`), `bpEditor Win64 Development` exits **0**
+> in the probe, fresh tree and unity build alike (`machine.md` readings 3 to 7). That is step 5 and the editor half of
+> step 6 measured outside the repo, not this table run as written: steps 1 to 4 and 7 to 8, and the Win64 Game target,
+> are still not run.
 
-Acceptance (plan P3, WP3.1): the editor and a Win64 build boot, and a `BpLink` log line prints Kettle's 5 wings, which `BpLink.cpp` reads from `GET /api/products/kettle/plan` (that request and the line's figures are pinned against the live server by `npm run check:bplink`; the code is not compiled).
+Acceptance (plan P3, WP3.1): the editor and a Win64 build boot, and a `BpLink` log line prints Kettle's 5 wings, which `BpLink.cpp` reads from `GET /api/products/kettle/plan` (that request and the line's figures are pinned against the live server by `npm run check:bplink`; the code is not compiled). *Correction 2026-10-22 (evening): it compiles and links in a `bpEditor` build on Lynx, outside the repo (`machine.md`); it has not run.*
 
 ## Steps
 
@@ -55,6 +61,12 @@ Every row is pinned by `scripts/check-bplink.mjs` against the live server (and, 
   file: 'Misc/PlatformMisc.h'` (in UE 5.8 it is `HAL/PlatformMisc.h`; not changed here). `#include "BpSchema.h"` did not
   have to change to get that far. Whether this settles the risk is the operator's call (wolf-plan R1); nothing here is
   ticked.
+  *Reading 2026-10-22 (evening), Lynx:* `HAL/PlatformMisc.h` fixed (`72e4fd4`), and the junction build exits 0. But the
+  two spellings cannot share a translation unit: one that includes both, or a unity file merging UHT's `BpSchema.gen.cpp`
+  (`"Schema/BpSchema.h"`) with `BpLink.cpp` (`"BpSchema.h"`), stops at `BpSchema.generated.h(10,1): fatal error C1189`
+  (`machine.md` readings 4 and 5). So `#include "BpSchema.h"` **did** have to change: BpLink spells both headers
+  `Schema/<header>` (`ed94a65`), which makes the junction required. The `PublicIncludePaths` entry is left as it is
+  (wolf-plan E1 suggests repointing or dropping it; that is the R1 decision, not taken here).
 - **`override` as a field name.** `FBpFacet` holds `FBpFacetOverride override;`. `override` is only a contextual keyword in C++, but
   UHT may still dislike it. If it does, the change is in `packages/schema` (the generator), not here.
   *Reading 2026-10-22, Lynx (junction variant above):* UHT, run with `-WarningsAsErrors`, reflected it (`NewProp_override`
@@ -63,3 +75,5 @@ Every row is pinned by `scripts/check-bplink.mjs` against the live server (and, 
   on boot, `BpLink.Fetch` is the manual trigger.
 - **API names** (`FHttpModule`, `FJsonObjectConverter`, `FPlatformMisc::GetEnvironmentVariable`) are used as in UE 5.x; any 5.8
   rename shows up at step 6.
+  *Reading 2026-10-22 (evening), Lynx:* none did for the editor target; `BpLink.cpp` compiled with no error and no
+  warning against UE 5.8.4 once `Misc/PlatformMisc.h` was corrected to `HAL/PlatformMisc.h` (`machine.md` reading 3).

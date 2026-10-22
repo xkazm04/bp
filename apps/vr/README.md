@@ -25,6 +25,14 @@ outside the repo, and stopped at a fatal error each time (**Not compiled**, belo
 module includes the generated headers by path from `packages/schema/generated/ue` (no copy), so `check:schema` stays the
 single source.
 
+> **Correction 2026-10-22 (evening, Lynx).** "The module has not built against Unreal" is out of date: from `72e4fd4`
+> (`HAL/PlatformMisc.h`) the same probe's `bpEditor Win64 Development` build, with the junction, exits **0** and links
+> `UnrealEditor-BpLink.dll`; at `9888f95` a fresh tree reads `Result: Succeeded`, `Total execution time: 135.29 seconds`
+> ([`machine.md`](../../docs/concepts/vr-light-table/machine.md), readings 3 to 7). The module now includes the headers
+> as `"Schema/BpSchema.h"` and `"Schema/BpSchemaFixups.h"` (`ed94a65`), so it **needs** the junction
+> `Source/BpLink/Public/Schema`: reaching `BpSchema.h` by both spellings in one translation unit fails with `C1189`
+> (readings 4 and 5). The headers are still not copied. Nothing has booted the editor or run the module.
+
 What the client will consume, already in this repo:
 
 - `apps/server`: the product over HTTP and SSE (`npm run server`, `http://127.0.0.1:3100`), the same
@@ -51,7 +59,8 @@ UHT never sees `BpSchema.h` (it is only on `PublicIncludePaths`) and `cl.exe` st
 Cannot open include file: 'BpSchema.generated.h'`; with WP3.1's junction `Source/BpLink/Public/Schema`, UHT writes
 `BpSchema.generated.h` and `cl.exe` stops at `BpLink.cpp(11,1): fatal error C1083: Cannot open include file:
 'Misc/PlatformMisc.h'` (UE 5.8 has it as `HAL/PlatformMisc.h`). Unmeasured: a clean build, the editor booting the module,
-a Win64 Game target. The other C++ front end in this repo's record is outside `apps/vr`: per `packages/schema/README.md`, the generated headers in
+a Win64 Game target. *Correction 2026-10-22 (evening): the editor target now builds clean with the junction (exit 0,
+readings 3 to 7 in `machine.md`); the editor booting the module and a Win64 Game target are still unmeasured.* The other C++ front end in this repo's record is outside `apps/vr`: per `packages/schema/README.md`, the generated headers in
 `packages/schema/generated/ue` were put through `clang++ -fsyntax-only` against stand-in Unreal declarations
 (`packages/schema/ue-standin/check.cpp`), when that smoke read 3 of the 6 roots, so `FBpPlan` (which BpLink parses),
 `FBpStructureEnvelope` and `FBpScanWire` have never been through it. No gate runs that command: `check:schema` asserts

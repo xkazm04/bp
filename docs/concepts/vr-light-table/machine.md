@@ -109,7 +109,7 @@ Same probe tree (incremental), the junction made inside the probe only. Exit cod
   `C:\Users\kazda\AppData\Local\Temp\bp-6127dc79\bp-uht-probe\apps\vr\Source\BpLink\Private\BpLink.cpp(11,1): fatal error C1083: Cannot open include file: 'Misc/PlatformMisc.h': No such file or directory`.
   In UE 5.8 that header is `Engine/Source/Runtime/Core/Public/HAL/PlatformMisc.h`; there is no `Misc/PlatformMisc.h`.
   This is a **BpLink source defect, the next one after UHT**, and it is not fixed here (the three files are not this
-  run's to edit). Because the fatal error is at line 11, `cl.exe` read `BpLink.h`, all of `BpSchema.h` (with its
+  run's to edit). *Correction 2026-10-22 (evening): fixed in `72e4fd4`; the build then exits 0 (reading 3 below).* Because the fatal error is at line 11, `cl.exe` read `BpLink.h`, all of `BpSchema.h` (with its
   generated header) and `BpSchemaFixups.h` before it, with no error on them.
 - **Include spelling.** UHT's generated `BpSchema.gen.cpp` includes `"Schema/BpSchema.h"` (through the junction), while
   `BpLink.h` keeps `#include "BpSchema.h"` (through `PublicIncludePaths`); both resolved in this reading, so no spelling
@@ -117,12 +117,18 @@ Same probe tree (incremental), the junction made inside the probe only. Exit cod
   paths (a unity build, or an include of both spellings) trips `#pragma once`, which MSVC keys on the path. If it does,
   the change belongs in BpLink (`#include "Schema/BpSchema.h"`) and in `packages/schema/generate.mjs`, whose
   `BpSchemaFixups.h` line 19 is `#include "BpSchema.h"`, never in a copied header.
+  *Correction 2026-10-22 (evening): measured, readings 4 to 6 below. It does double-include (MSVC `C1189`), in a
+  constructed TU and in a unity build of the module's own files; `ed94a65` fixes it in BpLink's includes alone, and
+  reading 6 says why `generate.mjs` did not need to change.*
 
 ### What this does NOT establish
 
 Unmeasured on Lynx: that `bpEditor` builds to exit 0 (it does not yet; see reading 2), that the editor boots `bp.uproject`,
 that a Win64 Game target links, that PIE or automation runs, that Meta XR v207 or the Interaction SDK load, that the Quest 3
 over Link works, and any frame time (the 90 Hz budget). None of these readings say anything about Wolf.
+
+*Correction 2026-10-22 (evening): "that `bpEditor` builds to exit 0 (it does not yet; see reading 2)" is superseded:
+with the junction it does, from `72e4fd4` (reading 3 below). The rest of this list stands.*
 
 ### How to reproduce
 
@@ -138,4 +144,122 @@ runs, with the cwd `C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\DotNET\Un
 
 ```
 "C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\ThirdParty\DotNet\10.0\win-x64\dotnet.exe" "C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.dll" bpEditor Win64 Development "-Project=<scratch>\bp-uht-probe\apps\vr\bp.uproject"
+```
+
+## Lynx, 2026-10-22 (evening): BpLink builds, and the include-spelling question measured
+
+Same host, engine, toolchain and probe as above (`Hostx64` `cl.exe` 14.44.35207, emulated; every run's `compiler` line
+printed `...\MSVC\14.44.35207\bin\Hostx64\x64\cl.exe`). Each reading names its scratch tree under
+`C:/Users/kazda/AppData/Local/Temp/`; every tree's `packages` is a junction to this worktree
+(`C:/Users/kazda/.personas/headless-masters/worktrees/bp/c469c82e/packages`), and nothing was added to `apps/vr`.
+Each log path below is `<tree>/bp-uht-probe/uht-probe-<variant>.log`, beside `ubt-Log-<variant>.txt` and
+`uht-probe-<variant>.json`.
+
+### Reading 3: the line-11 fix, junction variant, fresh tree (`bp-c469c82e`, repo at `72e4fd4`)
+
+`72e4fd4` changed `BpLink.cpp:11` to `#include "HAL/PlatformMisc.h"`. Before it, `find .../Engine/Source/Runtime/Core/Public
+-iname PlatformMisc.h` printed one path, `.../Runtime/Core/Public/HAL/PlatformMisc.h`, and `Core/Public/Misc/` holds no
+`PlatformMisc.h` (its only `*Platform*` entry is `DataDrivenPlatformInfoRegistry.h`).
+
+- Exit code **0**, **72.8 s** wall clock (UBT: `Total execution time: 72.11 seconds`). `Result: Succeeded`.
+- `UHT processed bpEditor in 3.063006 seconds (4 generated files written)` (UBT's log, line 67).
+- 13 actions, among them `[9/13] Compile [x64] BpLink.cpp`, `[10/13] Compile [x64] Module.BpLink.gen.cpp`,
+  `[11/13] Link [x64] UnrealEditor-BpLink.lib` and `[12/13] Link [x64] UnrealEditor-BpLink.dll`. No line of the log holds
+  `error` or `: warning`.
+- `apps/vr/Binaries/Win64/UnrealEditor-BpLink.dll` (546,816 bytes) and `UnrealEditor-bp.dll` (50,688 bytes) were written
+  in the probe tree.
+- **Nothing behind line 11 failed**: no further compile error, no link error, no missing module in `BpLink.Build.cs`
+  (`Core`, `CoreUObject`, `Engine`, `Json`, `JsonUtilities`, `HTTP` sufficed), no API drift against UE 5.8 in this file.
+
+### Reading 4: one translation unit, both spellings (`--variant spellings`, tree `bp-c469c82e-spellings`)
+
+Sources at `72e4fd4`, probe as committed in `f5c16e0`: two probe-only files beside the byte-for-byte copy,
+`Private/BpLinkSpellingAB.cpp` (`#include "BpSchema.h"` then `#include "Schema/BpSchema.h"`) and `BpLinkSpellingBA.cpp`
+(the reverse order). Exit code **6**, **72.4 s** (UBT: `Total execution time: 71.77 seconds`). Both stop, verbatim:
+
+```
+[4/15] Compile [x64] BpLinkSpellingBA.cpp
+C:\Users\kazda\AppData\Local\Temp\bp-c469c82e-spellings\bp-uht-probe\apps\vr\Intermediate\Build\Win64\UnrealEditor\Inc\BpLink\UHT\BpSchema.generated.h(10,1): fatal error C1189: #error:  "BpSchema.generated.h already included, missing '#pragma once' in BpSchema.h"
+[5/15] Compile [x64] BpLinkSpellingAB.cpp
+...\BpSchema.generated.h(10,1): fatal error C1189: #error:  "BpSchema.generated.h already included, missing '#pragma once' in BpSchema.h"
+```
+
+**It does double-include.** `BpSchema.h` has `#pragma once` (line 9); MSVC does not treat
+`packages\schema\generated\ue\BpSchema.h` and `Source\BpLink\Public\Schema\BpSchema.h` (the junction) as one file, so the
+second spelling re-enters it and UHT's generated header trips its own guard. In the same run `[11/15] BpLink.cpp` and
+`[12/15] Module.BpLink.gen.cpp` printed no error: each of them reaches the header by one spelling only.
+
+### Reading 5: the module's own files in a unity build (`--variant unity`)
+
+- **5a, tree `bp-c469c82e-unity`, `bForceUnityBuild` alone**: exit **0**, **80 s** (`Total execution time: 79.24 seconds`),
+  but it did not test the merge. UBT's log: `[Adaptive Build] Excluded from BpLink unity file: BpLink.cpp`, and the
+  `Module.BpLink.cpp` it wrote includes only `BpLink.init.gen.cpp`, `BpSchema.gen.cpp` and `PerModuleInline.gen.cpp`.
+- **5b, tree `bp-c469c82e-unity-noadaptive`, `bForceUnityBuild` and `bUseAdaptiveUnityBuild = false`** (sources at `72e4fd4`):
+  `Module.BpLink.cpp` includes `BpLink.init.gen.cpp`, `BpSchema.gen.cpp`, `PerModuleInline.gen.cpp` **and**
+  `Source/BpLink/Private/BpLink.cpp`. Exit **6**, **78.8 s** (`Total execution time: 78.02 seconds`):
+  `[4/10] Compile [x64] Module.BpLink.cpp` -> `...\BpSchema.generated.h(10,1): fatal error C1189: #error:  "BpSchema.generated.h
+  already included, missing '#pragma once' in BpSchema.h"`. So the double include is not only a constructed case: UHT's
+  `BpSchema.gen.cpp` line 8 is `#include "Schema/BpSchema.h"`, `BpLink.h` said `#include "BpSchema.h"`, and any unity file
+  that merges the two fails. (A default editor build does not merge them here: a game module with fewer than
+  `MinGameModuleSourceFilesForUnityBuild` = 32 files is not unity-built, `UEBuildModuleCPP.cs:952` and `TargetRules.cs:1936`,
+  which is why reading 3 passed.)
+
+### Reading 6: the spelling fix (`ed94a65`), unity tree `bp-c469c82e-unity-noadaptive` again
+
+`ed94a65`: `BpLink.h` includes `"Schema/BpSchema.h"` and `BpLink.cpp` `"Schema/BpSchemaFixups.h"`. **`packages/schema/generate.mjs`
+is not changed**: `BpSchemaFixups.h`'s `#include "BpSchema.h"` (its line 19, from generate.mjs:316) resolves first in the
+directory of the file that includes it, so reached as `Public/Schema/BpSchemaFixups.h` it opens `Public/Schema/BpSchema.h`,
+the same path as UHT's spelling; and `packages/schema/ue-standin/check.cpp` includes `"BpSchemaFixups.h"` from
+`generated/ue` directly, which a `Schema/` spelling inside the generated header would break.
+
+- Exit **0**, **91.2 s** (`Total execution time: 90.15 seconds`); `[4/7] Compile [x64] Module.BpLink.cpp`, then the BpLink
+  `.lib` and `.dll` links.
+- `Module.BpLink.cpp.dep.json` lists exactly these `BpSchema*` paths: `...\uht\bpschema.gen.cpp`,
+  `...\uht\bpschema.generated.h`, `...\source\bplink\public\schema\bpschema.h` and
+  `...\source\bplink\public\schema\bpschemafixups.h`. No `packages\schema` path is in it.
+
+### Reading 7: the final source (`9888f95`), junction and unity
+
+`9888f95` adds only comments (dated corrections) to the three BpLink files. SHA-256, repo working copy = probe copy:
+`BpLink.Build.cs` `6ae491830e923946d867475f461600064a40d97a31e06606c6a5ebaea558ebba`, `Public/BpLink.h`
+`8dd73d58276543b81e50feeaeb2a4db6c9b1b20e05a772f79c0b9389c5d62524`, `Private/BpLink.cpp`
+`a381296b333738f64dba824ad4f22cb4f12961d431371f5e9f2ed7ce33dec43c`; `BpSchema.h` and `BpSchemaFixups.h` hash as in the
+table above (unchanged).
+
+- **Fresh tree `bp-c469c82e-final`, junction**: exit **0**, **136.5 s** (UBT: `Total execution time: 135.29 seconds`),
+  `Result: Succeeded`, `UHT processed bpEditor in 3.7846155 seconds (4 generated files written)`, 13 actions including
+  `[4/13] Compile [x64] BpLink.cpp`, `[5/13] Compile [x64] Module.BpLink.gen.cpp` and `[8/13] Link [x64]
+  UnrealEditor-BpLink.dll` (546,816 bytes). 0 `: warning` lines. Log:
+  `C:/Users/kazda/AppData/Local/Temp/bp-c469c82e-final/bp-uht-probe/uht-probe-junction.log`; UBT's log beside it,
+  `ubt-Log-junction.txt`.
+- **Incremental, tree `bp-c469c82e`, junction**: exit **0**, **25.3 s** (`Total execution time: 24.86 seconds`), `[4/7]
+  Compile [x64] BpLink.cpp`; its `BpLink.cpp.dep.json` lists `bpschema.generated.h`, `public\schema\bpschema.h` and
+  `public\schema\bpschemafixups.h`, and no `packages\schema` path. Log:
+  `C:/Users/kazda/AppData/Local/Temp/bp-c469c82e/bp-uht-probe/uht-probe-junction.log`.
+- **Incremental, unity tree `bp-c469c82e-unity-noadaptive`**: exit **0**, **22.5 s** (`Total execution time: 21.99
+  seconds`), `[4/7] Compile [x64] Module.BpLink.cpp`. 0 `: warning` lines.
+
+`npm run check:bplink` now pins the one spelling (`build: BpLink spells every generated header Schema/<header>...`, with a
+control that refuses a `BpLink.h` saying `"BpSchema.h"`; seeded into the real `BpLink.h` it read `36 passed, 1 failed`).
+
+### What this does NOT establish
+
+- That the editor boots `bp.uproject` or loads `UnrealEditor-BpLink.dll`; that `StartupModule` runs, that `HTTP` is up at
+  `PostEngineInit`, or that `BpLink.Fetch` prints WP3.1 step 7's line. Nothing here ran the module: it compiled and linked.
+- That a Win64 **Game** target (`bp Win64 Development`) builds; only `bpEditor` was built.
+- The `asis` variant at the final source (not run). Without the junction, `"Schema/BpSchema.h"` has nowhere to resolve,
+  so BpLink now **requires** WP3.1's junction; whether that settles R1 is the operator's call, as before.
+- The `spellings` variant at the final source (not re-run): its probe TUs include both spellings on purpose, so they
+  measure MSVC, not BpLink.
+- That `#pragma once` behaves the same way on clang or on Wolf's MSVC; this is MSVC 14.44.35207 on Lynx, emulated x64.
+- Meta XR v207, the Interaction SDK, the Quest 3 over Link, PIE, automation, and any frame time (the 90 Hz budget). None
+  of these readings say anything about Wolf.
+
+### How to reproduce
+
+The two commands above, plus, each in a `--work` of its own (the probe refuses to mix them):
+
+```
+node scripts/uht-probe.mjs --engine "C:/Program Files/Epic Games/UE_5.8" --work <scratch-2> --variant spellings
+node scripts/uht-probe.mjs --engine "C:/Program Files/Epic Games/UE_5.8" --work <scratch-3> --variant unity
 ```

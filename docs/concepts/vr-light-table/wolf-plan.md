@@ -148,6 +148,11 @@ The detailed instructions for each row are in the step of the same name below; t
 >   is made by the editor, never by hand), row 4's `-projectfiles` step (not tried on Lynx), and rows 8 to 17, which need
 >   the editor or a Win64 game booting `bp.uproject`, Meta XR v207, the simulator, the Quest 3 over Link or a 90 Hz frame
 >   budget. None of those is measured on Lynx; the Ask cells are unchanged.
+>
+> **Correction 2026-10-22 (evening, Lynx).** "Both builds exit 6" is superseded: after `72e4fd4` (`HAL/PlatformMisc.h`)
+> the junction build exits **0**, and `ed94a65` moved BpLink to one include spelling, `Schema/<header>`, because a
+> translation unit that reaches `BpSchema.h` by both paths fails with `C1189` (`machine.md` readings 3 to 7). That is
+> row 6's editor half measured in the probe, not row 6 ticked: the `bp` Game target is not built, and no row is ticked.
 
 | # | Step | Needs | Command or editor action | Proof that it passed | Ask | Host |
 |---|---|---|---|---|---|---|
@@ -505,7 +510,9 @@ Run before every Wolf commit that touches code (`apps/vr`, `packages/*`, `apps/s
 
 ## (e) Known gaps to resolve first on Wolf
 
-**The BpLink source has never been compiled or syntax-checked** (`apps/vr/README.md`, `WP3.1.md`). The generated
+**The BpLink source has never been compiled or syntax-checked** (`apps/vr/README.md`, `WP3.1.md`). *Correction 2026-10-22
+(evening): it has, on Lynx, in a `bpEditor` build outside the repo that exits 0 (`machine.md` readings 3 to 7); E1's
+"two paths to one file can defeat `#pragma once`" is measured true there (readings 4 and 5).* The generated
 headers were only parsed by `clang++ -fsyntax-only` against stand-ins (`packages/schema/ue-standin/`). Risks seen by
 reading the source, most likely first. Each one is **[verify on Wolf]**.
 

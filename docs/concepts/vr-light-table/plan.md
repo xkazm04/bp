@@ -193,6 +193,8 @@ clang.** These readings cover the TypeScript and Node checks only.
 > on 2026-10-22, emulated Hostx64 `cl.exe`, in a project synthesized outside the repo, and failed (as is: the predicted
 > `BpSchema.generated.h` C1083; with E1's junction: past UHT, then `Misc/PlatformMisc.h` C1083). Evidence and the
 > reproduction: [`machine.md`](machine.md). The readings in these entries are not re-graded.
+> *Correction 2026-10-22 (evening): "and failed" is superseded; from `72e4fd4` and `ed94a65` that editor build exits 0
+> (`machine.md` readings 3 to 7). Nothing has run the module.*
 
 | Goal | Result | Command and output line |
 |---|---|---|
