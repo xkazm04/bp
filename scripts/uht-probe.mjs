@@ -3,7 +3,7 @@
 // when the module reaches it only through PublicIncludePaths? A PROBE, wired to no gate: it needs an Unreal Engine install,
 // takes minutes, and writes everything outside this repo.
 //
-//   node scripts/uht-probe.mjs --engine "C:/Program Files/Epic Games/UE_5.8" --work <scratch dir> [--variant asis|junction|spellings|unity]
+//   node scripts/uht-probe.mjs --engine "C:/Program Files/Epic Games/UE_5.8" --work <scratch dir> [--variant asis|junction|spellings|unity] [--target bpEditor|bp]
 //
 // It synthesizes a host project under <work>/bp-uht-probe/ (apps/vr says the real .uproject is made by the editor, never by
 // hand, so none is added to the repo), copies apps/vr/Source/BpLink in byte for byte, and builds bpEditor Win64 Development.
@@ -38,8 +38,11 @@ const engine = arg('engine');
 const work = arg('work');
 const variant = arg('variant') ?? 'asis';
 const VARIANTS = ['asis', 'junction', 'spellings', 'unity'];
-if (!engine || !work || !VARIANTS.includes(variant)) {
-  console.error(`usage: node scripts/uht-probe.mjs --engine <UE root> --work <scratch dir> [--variant ${VARIANTS.join('|')}]`);
+// --target picks the UBT target and changes only the argv: bpEditor (default) is every reading before 2026-10-22; bp is the
+// synthesized Game target, built as `bp Win64 Development`. Variant markers and trees are untouched by it.
+const target = arg('target') ?? 'bpEditor';
+if (!engine || !work || !VARIANTS.includes(variant) || !/^\w+$/.test(target)) {
+  console.error(`usage: node scripts/uht-probe.mjs --engine <UE root> --work <scratch dir> [--variant ${VARIANTS.join('|')}] [--target <name>]`);
   process.exit(2);
 }
 
@@ -163,7 +166,7 @@ console.log(`Build.cs  SchemaUe = ${schemaUe} (BpSchema.h readable there)`);
 
 const log = path.join(base, `uht-probe-${variant}.log`);
 const uproject = path.join(root, 'bp.uproject');
-const argv = [ubtDll, 'bpEditor', 'Win64', 'Development', `-Project=${uproject}`];
+const argv = [ubtDll, target, 'Win64', 'Development', `-Project=${uproject}`];
 console.log(`run       "${dotnet}" ${argv.map((a) => `"${a}"`).join(' ')}   (cwd ${ubtDir})`);
 const fd = fs.openSync(log, 'w');
 const started = Date.now();
