@@ -26,6 +26,12 @@ when rendering or the engine changes:
 - `npm run build`
 - `python scripts/perf.py` (needs a running server and Playwright for Python; the budget is 60 fps at `?scale=4`)
 
+when apps/vr, BpLink, packages/schema or the server's Kettle routes change (Lynx; UE steps need start-editor.ps1's env):
+- the UBT `bpEditor Win64 Development` build of `apps/vr/bp.uproject`, exit 0
+- `node apps/vr/tools/run-bplink.mjs --mode editor` prints the Kettle line
+- before calling a Game-target change done: BuildCookRun, then `run-bplink.mjs --mode staged --exe <bp.exe>` (the
+  uncooked `-game` run passed while the staged exe crashed, 2026-10-23)
+
 builder:
 - `npm run typecheck`
 
@@ -51,6 +57,8 @@ None declared.
 - A contest port is held by `scripts/fidelity/` (style-contract roles + drive.py on the winner's own data): rerun it after any ledger CSS change; the arena's winner copy and its data must stay (do not `contest.mjs wrap --apply` release-manager while the contract is in use).
 - A custom lens manifest for real products (`docs/standard/lenses-custom/`) must also pass lens-scan's `structure.mjs lens-add`, whose glyph check is stricter than bp's (absolute path commands only): 3 of 4 takeover lenses passed bp's gates and were refused at the product (2026-10-18). Run lens-add on a scratch structure as a gate.
 
+- UE on Lynx (ARM64): start the editor only through `apps/vr/tools/start-editor.ps1`, and drive UBT/RunUAT with its environment (`UE_DOTNET_VERSION=10.0`, bundled win-x64 dotnet first on PATH): the engine picks an unshipped win-arm64 dotnet otherwise, and New Project rolls back. Meta plugins in `bp.uproject` are plain `Enabled`, never `Optional`: a monolithic Game build drops optional plugins and the staged bp.exe dies on InteractionSdk.dll (machine.md readings 20 to 21).
+
 ## Wave defaults
 
 ## Question taste
@@ -70,6 +78,8 @@ None declared.
 
 - For VR the operator overrode the Recommended WebXR with the native route a sibling repo already proved (Unreal 5.8 + Meta XR, mage-arena), and added a structural doctrine (monorepo, logic once) via "Other". When a sibling repo has verified a toolchain on the target machine, offer it first and pair it with the sharing architecture it implies.
 
+- Machine scope is the operator's doctrine, not an option: twice in wave 1 they answered through "Other" with "Lynx only, Wolf will not participate" and "no need to share anymore". When a plan spans machines, ask first which machines take part, before any question that assumes a split.
+
 ## Skill improvement log
 
 - 2026-10-09 measured-lens-scans: scouts traced the data path but missed the sample-specific tables in the model (WING_DEFS), and only the real-data smoke test found them. Promoted to Repo law above.
@@ -81,3 +91,4 @@ None declared.
 - 2026-10-20 ledger-waves: the design rested on whether `claude` itself takes --model/--effort; checking `claude --help` DURING the scout (not at build) kept a whole wave of questions honest - for any design that spawns a CLI, read that CLI's flags before wave 1. The knowledge-sync registry read was skipped and only noticed at wrap: do it in Phase 2 or say plainly it was not done. On this machine bash heredocs over ~40 lines fail ("unexpected EOF") and can write NOTHING silently - use Write/Edit for file content, and verify after any heredoc.
 - 2026-10-20 bp-vr-workspace: a spark whose deliverable is a contest routes to /contest and skips the build phases. When the brief REQUIRES a vendor or model word as UI content (the Sonnet/Opus wave picker), contest collect redacts it and breaks the blinded pages (model keys became "[redacted]"); with one-vendor seats, restore judging/entries from the originals, or keep model words out of the brief. Sonnet 5.5 xhigh hit the 90 min ceiling on 3 graphics-heavy variants; Opus finished in 84.
 - 2026-10-20 vr-light-table: "consult the registry's local LLM" meant its knowledge bundles (no model runner exists): route with research-map before wave 1 and say what the registry does NOT cover (WebXR/UE VR rendering, current model VRAM/licences), then fill that gap with web research. A docs-only spark skipped the go-gate and the worktree: the deliverable was the plan itself.
+- 2026-10-23 vr-ue-project-init: the scout read machine.md's "no Engine/Templates" as fact; Templates were at UE_5.8/Templates (a builder found it by reading the engine source). A presence claim about an install must name the path the CONSUMER reads, not the one a doc guessed. The editor's own UBT calls (New Project, -projectfiles) were never exercised by the probe, which drove UBT directly, so only the owner's first click found the win-arm64 dotnet failure. Uncooked -game passing proved nothing about the staged exe (Optional plugins dropped in monolithic builds): the cooked run was the only real proof, as decision 6 chose.
