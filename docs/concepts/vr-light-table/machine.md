@@ -6,6 +6,38 @@ file. Every line below is a command's own output or a file read on the named hos
 > **2026-10-23 (owner).** Lynx is now the only build host; Wolf is retired, and the live plan is
 > [`lynx-plan.md`](lynx-plan.md). The readings below are unchanged. New Lynx facts go in a new dated section.
 
+## Lynx, 2026-10-24: L3.3 the volumes
+
+Spark `vr-volumes`. `ABpTable` draws /plan's rooms, bays and tiles as three `UInstancedStaticMeshComponent`s (engine
+cube, per-instance custom data = the instance's size in cm) with `M_EdgeGlow` (unlit, additive, made through the editor
+MCP: `mcp-steps/l33-content.jsonl`, `py/edge_glow.py`, which must run outside PIE). Tile height is the active lens's
+reading (bad 2.4, watch 1.4, good 0.6, unmeasured/na 0.1 cm); rooms are 3 cm shells, bays 0.3 cm plates.
+
+- **Getting counters out of a Simulator run.** `stat scenerendering` is an overlay, and `stat dumpmax` logs cycle stats
+  only, no draw counts. The CSV profiler does: `-csvCaptureFrames=900` writes per-pass `DrawCall/<pass>` columns and
+  `GPUSceneInstanceCount` to `%LOCALAPPDATA%/UnrealEngine/5.8/Saved/Profiling/CSV/` (the uncooked `-game` run writes
+  there, not under `apps/vr/Saved`). `run-bplink.mjs` gained `--exec`, `--ue-args` and `--hold` for this.
+- **Instanced stereo is off** in `apps/vr/Config/DefaultEngine.ini` (`vr.InstancedStereo=False`; the log says
+  `XR: Instanced Stereo Rendering is Disabled`). L3.6 decides it.
+
+| # | What ran | Verbatim result |
+|---|---|---|
+| 27 | `node apps/vr/tools/run-bplink.mjs --mode game` (uncooked) | `LogBpTable: BpTable: wings=5 order=A,B,C,D,E height_cm=95`, `LogBpTable: BpTable: instances rooms=13 bays=29 tiles=133 lens=business` |
+| 28 | `BpTable.Lens performance` in PIE (`py/lens_check.py` compares every tile before and after) | `BpTable: lens=performance tiles=133 moved=0`; 122 tiles re-heighted, heights `{0.1: 114, 0.6: 12, 1.4: 7}` |
+| 29 | the capture from the target pose (PoF `capture_viewport`, PIE; `mcp-steps/l33-capture.jsonl`) | [`captures/l33-2026-10-24-lynx.jpg`](captures/l33-2026-10-24-lynx.jpg): shells, plates and blocks, watch/bad tiles visibly taller in B and D, A to E named (lifted wing labels inset 3.2 cm against the parallax) |
+| 30 | `run-bplink.mjs --mode game --xr-sim --ue-args "-csvCaptureFrames=900" --hold 60`, volumes shown | Meta XR Simulator 207.0.0; steady state (702 frames): `GPUSceneInstanceCount` 189; `DrawCall/Translucency` p50 11 (p95 11); Basepass 5, Prepass 5, ShadowDepths 20 |
+| 31 | the same with `--exec "ShowFlag.InstancedStaticMeshes 0"` | steady state (871 frames): `GPUSceneInstanceCount` 189; `DrawCall/Translucency` p50 8 (p95 8); Basepass 5, Prepass 5, ShadowDepths 20 |
+
+Readings 30 and 31 differ by **3 translucency draws, one per instance batch**, and nothing else in the mesh passes. The
+volumes add no base-pass, prepass or shadow draws (additive and `CastShadow` off). `DrawCall/SlateUI` read 52 against 2.
+The show flag should not touch widgets, and why it did is not explained.
+
+Not established: whether the CSV counter counts one eye view or both, with instanced stereo off (frames with 22 and 16
+appear as maxima); any frame-time judgement (`FrameTime` p50 10.8 ms was read with the CSV, but R5 is judged at L3.6
+on the forward path); the greybox fallback at runtime (the asset was present), which in a cooked build would draw an
+opaque default, since no engine translucent material is flagged for instanced meshes; the replay of
+`l33-content.jsonl` on an empty `Content/`; a cooked build of these volumes.
+
 ## Lynx, 2026-10-23 (later): L3.2 the table, made through the editor MCP
 
 Spark `vr-table`, commits `6e002e9` (ABpTable), `167dc92` (the MCP tooling), `88c849b` (two fixes the captures found),

@@ -192,7 +192,13 @@ headset (decision 5); "in the Simulator" means the Simulator's window on Lynx, n
       owner tunes it in the Simulator (R4 option A, owner 2026-10-23). Map plan units to centimetres with one named constant.
       Proof: a capture `captures/l32-<date>-lynx.jpg` from the target pose (standing, about 45° down at the near edge)
       showing A to E left to right with readable names; the log line `BpTable: wings=5 order=A,B,C,D,E height_cm=<n>`.
-- [ ] **L3.3 Volumes (2 to 3 days).** Instanced rooms (13), bays (29) and tiles (133), one
+- [x] **L3.3 Volumes (2 to 3 days).** *Done 2026-10-24 (Lynx, spark `vr-volumes`): `BpTable: instances rooms=13
+      bays=29 tiles=133 lens=business`. Rooms are 3 cm shells, bays 0.3 cm plates, and tiles are blocks whose height is
+      the active lens's reading (`BpTable.Lens <id>` re-heights them, `moved=0`). `M_EdgeGlow` is additive. The CSV
+      profiler in the Simulator reads +3 translucency draws for the three batches and no other pass changes. Instanced
+      stereo is off until L3.6, so per eye is not established. Capture:
+      [`captures/l33-2026-10-24-lynx.jpg`](captures/l33-2026-10-24-lynx.jpg) (`machine.md` readings 27 to 31). The CSV
+      profiler stands in for `stat scenerendering`, which is an overlay and logs no draw counts.* Instanced rooms (13), bays (29) and tiles (133), one
       `UInstancedStaticMeshComponent` (or HISM) per kind, and an edge-glow v0 material (fresnel plus edge mask, low
       face opacity). Heights carry stage or lens reading, never position.
       Proof: `BpTable: instances rooms=13 bays=29 tiles=133`; `stat scenerendering` (mesh draw calls) shows one draw
