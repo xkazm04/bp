@@ -4,8 +4,9 @@
 //   2. the browser floor declared in docs/blueprint-ui.md is not exceeded by any web API in apps/web/src.
 //   3. the rail reads one urgency vocabulary (the shared URG map), not a second one of its own.
 //   4. the General view id is spelled once (GENERAL), never as a bare literal in apps/web/src.
-//   5. while machine.md records BpLink built and run in Unreal (the Kettle line), apps/vr/README.md, apps/vr/WP3.1.md and
-//      plan.md do not say it is unbuilt or unrun, unless that block also carries a correction citing reading 14.
+//   5. while machine.md records BpLink built and run in Unreal (the Kettle line), apps/vr/README.md, apps/vr/WP3.1.md,
+//      plan.md and lynx-plan.md (the live plan, 2026-10-23) do not say it is unbuilt or unrun, unless that block also
+//      carries a correction citing reading 14.
 // Source is read with comments stripped, so a comment that talks about the rule cannot satisfy it.
 import fs from 'node:fs';
 import { blankComments } from './lib/source.ts';
@@ -130,7 +131,9 @@ ok('general: no bare General literal anywhere in apps/web/src', bare.length === 
 // catches (reading 10's check:bplink sentence needed a correction a wake later). A block is a paragraph together with the
 // blockquotes right after it, or one table row. A stale phrase inside `code` or "quotes" is a quotation, not a claim; a
 // stale phrase in a block that also cites reading 14 is a sentence kept on the record beside its correction.
-// BP_CHECK_CLAIMS_SEED=vr-stale appends one stale sentence to an in-memory copy of apps/vr/README.md.
+// BP_CHECK_CLAIMS_SEED=vr-stale appends one stale sentence to an in-memory copy of apps/vr/README.md, and
+// BP_CHECK_CLAIMS_SEED=vr-stale-lynx the same sentence to an in-memory copy of lynx-plan.md, so the live plan is proved
+// scanned, not only listed.
 const machine = fs.readFileSync('docs/concepts/vr-light-table/machine.md', 'utf8');
 const ranInUnreal = /LogBpLink: BpLink: Kettle wings=5 \[/.test(machine);
 ok('vr docs: machine.md records BpLink linked (UnrealEditor-BpLink.dll) and run (the Kettle line)',
@@ -169,11 +172,14 @@ function staleClaims(file: string, text: string): string[] {
   }
   return hits;
 }
-const VR_DOCS = ['apps/vr/README.md', 'apps/vr/WP3.1.md', 'docs/concepts/vr-light-table/plan.md'];
-const vrSeed = (process.env.BP_CHECK_CLAIMS_SEED ?? '').split(',').includes('vr-stale');
+const LYNX_PLAN = 'docs/concepts/vr-light-table/lynx-plan.md';
+const VR_DOCS = ['apps/vr/README.md', 'apps/vr/WP3.1.md', 'docs/concepts/vr-light-table/plan.md', LYNX_PLAN];
+const seeds = (process.env.BP_CHECK_CLAIMS_SEED ?? '').split(',');
+const SEEDED: Record<string, string> = { 'vr-stale': VR_DOCS[0], 'vr-stale-lynx': LYNX_PLAN };
+const seededFiles = new Set(Object.entries(SEEDED).filter(([seed]) => seeds.includes(seed)).map(([, f]) => f));
 const stale = VR_DOCS.flatMap((f) => {
   const text = fs.readFileSync(f, 'utf8');
-  return staleClaims(f, vrSeed && f === VR_DOCS[0] ? `${text}\nWP3.1 is not run on any UE host.\n` : text);
+  return staleClaims(f, seededFiles.has(f) ? `${text}\nWP3.1 is not run on any UE host.\n` : text);
 });
 ok('vr docs: no file says BpLink is unbuilt or unrun without a correction citing reading 14', !ranInUnreal || stale.length === 0, stale.join('; '));
 // The rule has to be able to fail: README.md's 2026-10-22 evening text, with no reading-14 correction after it, is flagged.

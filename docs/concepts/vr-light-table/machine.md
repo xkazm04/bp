@@ -3,6 +3,9 @@
 Facts about the machines that build `apps/vr`, as measured. plan.md P0 and WP3.6 and wolf-plan.md section (a) name this
 file. Every line below is a command's own output or a file read on the named host; anything not measured says so.
 
+> **2026-10-23 (owner).** Lynx is now the only build host; Wolf is retired, and the live plan is
+> [`lynx-plan.md`](lynx-plan.md). The readings below are unchanged. New Lynx facts go in a new dated section.
+
 ## Lynx, 2026-10-22: Unreal Engine is installed, and the first UHT reading for BpLink
 
 Host: Lynx (Windows 11 Pro 10.0.28000 on ARM64: `uname` reads `MINGW64_NT-10.0-28000-ARM64`, and UBT prints
@@ -20,6 +23,12 @@ Host: Lynx (Windows 11 Pro 10.0.28000 on ARM64: `uname` reads `MINGW64_NT-10.0-2
   and apps/vr/WP3.1.md).
 - `Engine/Templates` does **not** exist in this install (an optional launcher component), so the editor's New Project
   dialog route of wolf-plan W3.1-2 cannot run on Lynx.
+  *Correction 2026-10-23: this looked in the wrong folder. The New Project dialog reads `<root>/Templates`
+  (`Engine/Source/Editor/GameProjectGeneration/Private/GameProjectGenerationModule.cpp:186`,
+  `FPaths::RootDir() / TEXT("Templates")`), and `C:/Program Files/Epic Games/UE_5.8/Templates` exists, read on 2026-10-23:
+  35 entries, among them `TP_Blank` with `Source/`, `Config/` and `TP_Blank.uproject`, beside `UE_5.8/FeaturePacks`
+  (9 entries), both dated 2026-10-22 15:28. `Engine/Templates` is still absent. The dialog itself has not been opened
+  ([`lynx-plan.md`](lynx-plan.md) L4).*
 - `UnrealBuildTool.dll` is at `Engine/Binaries/DotNET/UnrealBuildTool/`. The bundled .NET is
   `Engine/Binaries/ThirdParty/DotNet/10.0/win-x64` **only**; there is no `win-arm64`.
 - MSVC: `C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.44.35207` (folder dated

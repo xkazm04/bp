@@ -1,5 +1,10 @@
 # VR Light Table: the Wolf execution plan
 
+> **Retired 2026-10-23 by the owner.** "Wolf will not participate in the implementation. We have UE and capable device
+> here." Lynx is the only build host, and the live plan is [`lynx-plan.md`](lynx-plan.md). This file is kept as the
+> record: its readings, its ticked L-steps (L4.0, L4.1, L5.1 to L5.3) and its dated history stay here, and nothing below
+> is rewritten. Its Wolf steps are not to be run. R1 and R5 are closed and R13 is moot (section f, dated 2026-10-23).
+
 Written 2026-10-21 on Lynx (Windows ARM64, no Unreal Engine, no clang) for a Claude Code session on **Wolf**, the x64
 Windows box with Unreal Engine 5.8. It takes `apps/vr` from source to a running greybox (P3), then through P4 to P7 of
 [`plan.md`](plan.md). **Nothing in this file has been run on Wolf.** Every UE fact below comes from reading source and
@@ -586,11 +591,11 @@ reading the source, most likely first. Each one is **[verify on Wolf]**.
 
 | # | Risk or decision | Owner? | State (2026-10-22), and the default if nobody decides |
 |---|---|---|---|
-| R1 | UHT refuses the junctioned header (E1). The only remaining route is a generated copy under `apps/vr`, which needs a new parity check (copy equals source). | **owner** | **ASK, open** (below). Until answered: stop at W3.1-4 if the junction fails; never hand-copy |
+| R1 | UHT refuses the junctioned header (E1). The only remaining route is a generated copy under `apps/vr`, which needs a new parity check (copy equals source). | **owner** | **ASK, open** (below). Until answered: stop at W3.1-4 if the junction fails; never hand-copy. **CLOSED 2026-10-23 by the owner:** the junction. "Adjust structure to Lynx only, no need to share anymore." BpLink reaches `packages/schema/generated/ue` only through the git-ignored junction `apps/vr/Source/BpLink/Public/Schema`, made by `apps/vr/tools/link-schema.ps1`; one include path. Evidence: `machine.md` readings 2 to 14. Options A to C below are not taken |
 | R2 | The UE patch version. plan.md says 5.8.2; the box read 5.8.3 on 2026-10-07. Meta v207's BuildId still matched (55116800), but plugin loading on 5.8.3 was "not re-proven" by mage-arena-vr. | owner | **CLOSED 2026-10-22, default stands:** use the installed 5.8.x and record it. Proof on Wolf: S4's `Build.version` lines and S6's `PLUGIN_BUILD_ID=` equal to `ENGINE_COMPATIBLE_CHANGELIST` (below) |
 | R3 | Blank versus VR template (W3.1-2). | agent | Blank C++, plus the S6 plugins |
 | R4 | The table height, the text floor in degrees (P3 gate), and the comfort defaults. | **owner** | **ASK, open** (below). Until answered: 95 cm; the floor is whatever the owner reads at the P3 walk |
-| R5 | The 90 Hz measure. Is the p95 GPU and game thread at 11.1 ms the bar, or p50? (The web budget left the same question open; plan.md, "Milestone 1 idle re-measure".) | **owner** | **ASK, open** (below). Until answered: measure p50, p95 and max; the P3 gate verdict waits |
+| R5 | The 90 Hz measure. Is the p95 GPU and game thread at 11.1 ms the bar, or p50? (The web budget left the same question open; plan.md, "Milestone 1 idle re-measure".) | **owner** | **ASK, open** (below). Until answered: measure p50, p95 and max; the P3 gate verdict waits. **CLOSED 2026-10-23 by the owner:** p50 at or under 11.1 ms for the GPU and the game thread; p95 and max reported, not budget lines (option B, matching the 2026-10-21 web ruling). Carried in lynx-plan.md's P3 gate |
 | R6 | Scan line colour, cyan (art-breakdown #8, the target) versus amber (the style block's attention role). Open in reference-sheet.md, which now points here. | **owner** | **ASK, open** (below). Until answered: cyan, as the target and frame 03 show. Blocks nothing in P3 |
 | R7 | The lamp design (L4.0) before P4 props or more style frames. | owner | **CLOSED 2026-10-21 by the owner:** option A, the spring-arm cone. Proof: `apps/vr/ArtSource/lamp-agent/manifest.json` `"picked": "A"` (line 4) and `gates.input` `"pass": true` with the approval note (lines 89-93), `fa7bfb1`; L4.0 ticked |
 | R8 | Leonardo output in shipped assets. tech-stack.md §5 keeps shipped art to FLUX.2 [klein] or Qwen-Image; the reference sheet was made with Leonardo. | owner | **CLOSED 2026-10-21 for look-dev and the backdrop** (the Director, for the operator, `223a93d`): Leonardo for look-dev; the city backdrop ships from Leonardo (FLUX.2 [klein] is not installed and will not be). One remainder, not covered by that ruling, is split out as R8b |
@@ -599,7 +604,7 @@ reading the source, most likely first. Each one is **[verify on Wolf]**.
 | R10 | Where the athena daemon runs for L5.3's smoke (Wolf has athena-portable; Lynx is not in its fleet entry). | owner | Lynx (operator 2026-10-22), athena-portable checkout |
 | R11 | The L5.2 contract change (Kettle's `/stream` stops answering 405) lands on Lynx while Wolf's BpLink still expects 405. | agent | one window: land L5.2 and BpLink's SSE change back to back, and `check-bplink` pins the new answer |
 | R12 | GPU contention. With generation on Lynx, the "one at a time" rule on Wolf (plan.md risks) only applies if ComfyUI or TRELLIS.2 also run on Wolf. | agent | check that no UE VR session is running before any generation job on Wolf |
-| R13 | bp is not in the ai-registry fleet file for Wolf (`projects.json`). Hygiene and fleet tooling will not see the Wolf checkout. | owner | **CLOSED 2026-10-22 as a decision, default stands:** register `bp` with checkout `kiro/bp` on Wolf. The action is still open: Step 0 does it. Proof: the `projects.json` entry on ai-registry `origin/main` |
+| R13 | bp is not in the ai-registry fleet file for Wolf (`projects.json`). Hygiene and fleet tooling will not see the Wolf checkout. | owner | **CLOSED 2026-10-22 as a decision, default stands:** register `bp` with checkout `kiro/bp` on Wolf. The action is still open: Step 0 does it. Proof: the `projects.json` entry on ai-registry `origin/main`. **Moot 2026-10-23:** Wolf is retired, and bp is registered for Lynx (`"bp": { "Lynx": "kiro/bp" }`, ai-registry `64d3dbda`, "fleet: register bp on Lynx"). Step 0 is not to be run |
 | R14 | The forward path cannot fake the concept's bounce light well enough for the fidelity score (plan.md risks). | owner, at P6 | rect lights and baked bounce first; Lumen only if the score needs it and the frame fits |
 
 How to read this table: a row is either **CLOSED** with the source that decided it, or an **ASK** below that the owner can
@@ -633,11 +638,13 @@ it, in one commit that also flips the row to CLOSED with the date.
   the Wolf checkout `kiro/bp`, by Step 0's `register-project.mjs` run. On Lynx's ai-registry checkout, read on
   2026-10-22, `projects.json` has no `bp` entry. The row is done when the entry is on ai-registry `origin/main`.
   If the script refuses because the slug points at another checkout, re-pointing goes to the owner (Step 0).
+  *Moot 2026-10-23: Wolf is retired; bp is registered for Lynx (ai-registry `64d3dbda`).*
 
 ### Asks for the owner
 
 **R1. If UHT will not process the junctioned `BpSchema.h`, how does BpLink get a header UHT will process?**
 This only comes up if W3.1-4's E1 junction fails on Wolf. Answering now means a Wolf session does not stop there.
+*Closed 2026-10-23 by the owner: the junction, none of A to C (table row R1 above).*
 
 | Option | What happens | Effect on the P3 gate |
 |---|---|---|
@@ -664,6 +671,7 @@ floor into this file and plan.md P3. For C, the number goes into both now.
 the 60 s scripted walk has to be at 11.1 ms or less for P3 (and again at P6) to pass. Precedent: for the web canvas the
 operator ruled p50 only, with p95 reported (plan.md, 'Ruling (operator, 2026-10-21): goal 1 passed'). That ruling is
 about the 60 fps canvas budget and does not decide the headset.
+*Closed 2026-10-23 by the owner: option B, p50 at or under 11.1 ms, with p95 and max reported (table row R5 above).*
 
 | Option | What happens | Effect on the P3 gate |
 |---|---|---|

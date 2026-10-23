@@ -9,6 +9,11 @@ Executed on the GPU workstation by agent sessions (Claude Code driving UE 5.8 th
 toolsets plus pof's gap-fillers, and ComfyUI / TRELLIS.2 as local services) under the owner's review.
 The owner is the only judge of look and comfort, in the headset.
 
+> **2026-10-23 (owner).** The GPU workstation is **Lynx** (Windows 11 Pro on ARM64, NVIDIA RTX Spark N1X, 64 GB,
+> UE 5.8.4 run as emulated x64), the only build host. Wolf is retired, and the live execution plan is
+> [`lynx-plan.md`](lynx-plan.md); [`wolf-plan.md`](wolf-plan.md) is kept as the record. Until a headset route on ARM64
+> is decided, the Meta XR Simulator v207 stands in for the headset, and "in the headset" below reads "in the Simulator".
+
 ## Phases at a glance
 
 | Phase | Outcome | Gate |
@@ -46,6 +51,11 @@ Owner and agent, about a day.
 **Tool check:** one FLUX.2 [klein] image, one TRELLIS.2 GLB, the UE editor booting the empty
 project with both Meta plugins loaded, the Meta XR Simulator or the headset showing a test level,
 Athena speaking one line through `/voice/preview`.
+
+*2026-10-23 (owner): P0 is Lynx's setup, [`lynx-plan.md`](lynx-plan.md) section (b), each item with its state today.
+Meta Quest Link is out of scope for now (Meta lists Intel and AMD CPUs only for Link); the Meta XR Simulator v207 is the
+headset stand-in, used per process through `XR_RUNTIME_JSON`. UE is 5.8.4-58902052, driven through UnrealBuildTool on
+the bundled win-x64 dotnet, not `Build.bat` (`machine.md`). The project is made by the editor on Lynx.*
 
 ## P1 The monorepo
 
@@ -486,6 +496,11 @@ The first VR session on real data, ugly on purpose.
 standing distance (an angular-size floor recorded as the VR equivalent of bp's 12 px); the owner
 walks it.
 
+*2026-10-23 (owner, R5 closed): "90 Hz" is measured as the app GPU time and the game thread each at or under
+11.1 ms at **p50** over a 60 s scripted walk; p95 and max are reported, not budget lines. Until the headset route is
+decided the gate runs in the Meta XR Simulator on Lynx, and the legibility floor read there is provisional
+([`lynx-plan.md`](lynx-plan.md), P3 gate).*
+
 ## P4 Assets through the gated pipeline
 
 Each asset passes the same chain, from the registry: concept sheet, then an input gate
@@ -614,3 +629,8 @@ the headset, and the P3 frame-time gate still held.
 - Sign in to Meta Quest Link and enable developer mode.
 - Accept model licences where a download asks for it.
 - Approve the P2 reference sheet, walk P3, judge P6, and do the P7 hour.
+
+*2026-10-23 (owner): the GPU workstation is Lynx, confirmed. The Quest 3, the Link cable, the Meta Quest Link sign-in
+and developer mode are deferred with the headset route (Link lists Intel and AMD CPUs only). New owner step on Lynx: the
+"Templates and Feature Packs" component for UE 5.8 in the Epic launcher ([`lynx-plan.md`](lynx-plan.md) L4; the folders
+read present on 2026-10-23). Walking P3 and judging P6 happen in the Simulator until a headset is decided.*

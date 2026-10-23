@@ -28,6 +28,10 @@ lenses, scans and waves, drawn for a headset.
 | Agent | **The Athena daemon itself**: its voice socket (local Kokoro TTS, Whisper), the AUTO/GATED gate, decision cards and ledger. bp registers its actions as tools | Re-implementing the gate in bp |
 | Generation | Local, on the GPU box: look-dev style frames, 3D props via image-to-3D, studio environment and materials, the agent's voice | Cloud generation by default |
 | Execution | Agent sessions on the GPU box drive UE through UE 5.8's editor MCP toolsets plus pof's gap-fillers; ComfyUI and TRELLIS.2 run as local services; the owner judges in the headset | An owner-only editor roadmap |
+| Build host (owner, 2026-10-23) | **Lynx only** (Windows 11 on ARM64, RTX Spark N1X, UE 5.8.4 run as emulated x64). Wolf is retired; the live plan is [`lynx-plan.md`](lynx-plan.md) | Wolf, the x64 box ([`wolf-plan.md`](wolf-plan.md), kept as the record) |
+| Headset, for now (owner, 2026-10-23) | **The Meta XR Simulator v207**; the headset route on ARM64 is a later decision | Quest Link in this phase (Meta lists Intel and AMD CPUs only) |
+| Schema headers in UE (owner, 2026-10-23, R1) | **The git-ignored junction** `apps/vr/Source/BpLink/Public/Schema` to `packages/schema/generated/ue`, one include path | A generated copy; moving the source into `apps/vr` |
+| The 90 Hz bar (owner, 2026-10-23, R5) | **p50 at or under 11.1 ms**, GPU and game thread; p95 and max reported | p95 as the bar |
 
 ## The documents
 
@@ -39,8 +43,18 @@ lenses, scans and waves, drawn for a headset.
   locks the look.
 - [`plan.md`](plan.md): seven phases with gates, work packages and acceptance, the fidelity
   method that measures a capture against the target, risks, and the steps only the owner can do.
+- [`lynx-plan.md`](lynx-plan.md): the live execution plan on Lynx (from 2026-10-23): setup, run order from WP3.1
+  to P7, the merge gates, the known gaps and the open asks.
+- [`machine.md`](machine.md): the build host's measured facts and readings 1 to 14.
+- [`wolf-plan.md`](wolf-plan.md): the retired Wolf plan (2026-10-23), kept for its readings and history.
 
 ## Status
 
 Planned, not started. Nothing in this folder is built. Execution happens on the GPU workstation;
 this checkout only holds the plan.
+
+> **2026-10-23 (owner).** Lynx is the only build host, and the GPU workstation this folder names; Wolf is retired. The
+> text above was written on 2026-10-20 and is out of date: milestone 1 is judged met (plan.md), P4's assets are
+> made (the import is deferred), L5.1 to L5.3 are done, and BpLink has built and printed the Kettle line in a probe
+> project outside the repo (`machine.md` reading 14). `apps/vr` still has no `.uproject`. What runs next, and in what
+> order, is [`lynx-plan.md`](lynx-plan.md).

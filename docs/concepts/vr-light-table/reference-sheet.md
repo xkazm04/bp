@@ -229,7 +229,9 @@ under 400 KB). ★ marks the pick re-rendered at MEDIUM.
   in the amber attention role. Every LOW hero draw painted the scan amber, and 03 painted it cyan because its
   text says cyan. One of the two docs should change; this sheet doesn't pick. The question is answered in one
   place only, risk **R6** in [`wolf-plan.md`](wolf-plan.md) section (f), which lists the options and what each
-  one changes. Answer it there, not here.
+  one changes. Answer it there, not here. *2026-10-23: wolf-plan.md is retired; the open ask now lives in
+  risk **R6** of [`lynx-plan.md`](lynx-plan.md) section (f). The options and what each one changes are still the ones
+  in wolf-plan.md section (f). Answer it in lynx-plan.md.*
 - **The lamp design. Answered 2026-10-21 by the owner: option A, the spring-arm cone** (an architect's lamp
   with visible springs, a two-segment jointed arm, a cone shade with a warm glow and a round base with a
   clamp). It was locked in a P4 prop sheet (`apps/vr/ArtSource/lamp-agent/options/A.png`), not by a second
