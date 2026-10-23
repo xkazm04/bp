@@ -1,4 +1,21 @@
-# apps/vr: the VR Light Table client (placeholder)
+# apps/vr: the VR Light Table client
+
+> **Current state, 2026-10-23 (Lynx, the only build host).** This folder **is** the UE 5.8 project now: `bp.uproject`,
+> `Config/`, `Source/bp` and both Targets, made by the editor's New Project (Blank, C++) and copied in (`8e191b5`), with
+> BpLink added and Meta XR v207 + the Interaction SDK enabled. WP3.1's acceptance is met: the editor (reading 16) and a
+> cooked, staged `bp.exe` (reading 21) print `LogBpLink: BpLink: Kettle wings=5 [Foundations, Studio operations, Money,
+> Members & reach, Frontier] rooms=13 bays=29 tiles=133 lenses=8 events=566 rev=80557561ddf0f4cd`, and the game boots on
+> the Meta XR Simulator v207 (reading 18). Readings: `docs/concepts/vr-light-table/machine.md`, 'Lynx, 2026-10-23'; plan:
+> `docs/concepts/vr-light-table/lynx-plan.md`. The text below this box is the history and is kept as written.
+>
+> **Run it** (Lynx, from the repo root; every UE step uses the bundled x64 dotnet, emulated on ARM64):
+>
+> 1. `powershell -File apps/vr/tools/link-schema.ps1` (the git-ignored junction `Source/BpLink/Public/Schema`).
+> 2. `powershell -File apps/vr/tools/install-xr.ps1` (Meta XR v207, Interaction SDK, Simulator; pinned SHA-256).
+> 3. `powershell -File apps/vr/tools/start-editor.ps1` opens the editor on `bp.uproject`. Never start the editor
+>    another way: its own UBT calls need this script's environment.
+> 4. `node apps/vr/tools/run-bplink.mjs --mode editor` starts apps/server and the editor headless and prints BpLink's
+>    lines (`--no-server`, `--mode game --xr-sim`, `--mode staged --exe <bp.exe>`).
 
 This folder will hold the Unreal Engine 5.8 project for bp's VR channel: a PC-tethered Quest 3 app
 with Meta XR v207 and the Meta Interaction SDK, drawing the product at a backlit light table

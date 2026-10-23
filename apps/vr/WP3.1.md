@@ -1,5 +1,12 @@
 # WP3.1: the `apps/vr` project and the BpLink module
 
+> **Met, 2026-10-23 (Lynx), in the repo's own project.** The editor made `apps/vr/bp.uproject` (`8e191b5`); both targets
+> build; the editor headless (reading 16) and a cooked, staged `bp.exe` (reading 21) print step 7's Kettle line; step 8's
+> error appears with the server down (reading 17); the game boots on the Meta XR Simulator v207 (reading 18). Readings 15
+> to 21 are in `docs/concepts/vr-light-table/machine.md`, 'Lynx, 2026-10-23', and the per-step verdict is in
+> `docs/concepts/vr-light-table/lynx-plan.md` (L3.1), which supersedes this table. Not run: `BpLink.Fetch`, the 405 branch,
+> any frame time. Everything below is the history, kept as written.
+
 **Status: not yet run on any UE host.** The module source in `Source/BpLink/` was written on Lynx (Windows ARM64), which had
 no Unreal Engine and no clang. It has not built against Unreal. Every step below is for a UE-equipped host; none has been run
 as written.

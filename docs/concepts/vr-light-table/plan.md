@@ -492,6 +492,10 @@ The first VR session on real data, ugly on purpose.
   two-line change in `packages/core/src/model/aggregates.ts` first (see the delivery report), because apps/server runs
   core under Node's type stripping.
 
+- 2026-10-23 (Lynx): **WP3.1 met as a whole**, in the editor-made project in `apps/vr` (not the probe): the editor
+  and a cooked, staged `bp.exe` print the Kettle line, and the game boots on the Meta XR Simulator v207 (`machine.md`,
+  'Lynx, 2026-10-23', readings 15 to 21; verdict per step in `lynx-plan.md` L3.1). Next is WP3.2.
+
 **Gate:** 90 Hz on the box on the forward path with the full Kettle plan; text legible at the
 standing distance (an angular-size floor recorded as the VR equivalent of bp's 12 px); the owner
 walks it.

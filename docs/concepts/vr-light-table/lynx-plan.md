@@ -159,6 +159,25 @@ differ, this file is newer.
 wings. Here that is L3.1-7 and L3.1-10 (or its fallback, recorded as such), in the editor-made project in `apps/vr`, with
 Meta XR v207 and the Interaction SDK installed (L3.1-5).
 
+**Verdict 2026-10-23 (late, Lynx): L3.1's acceptance is met as a whole** (`machine.md`, 'Lynx, 2026-10-23', readings 15 to
+21). The "State" column above is the morning's and is kept as written. Per step:
+
+- L3.1-1: apps/server ran with `--port 0` through `apps/vr/tools/run-bplink.mjs`, not `npm run server` on 3100.
+- L3.1-2: **done**, but not as written. New Project ran from an editor started by `apps/vr/tools/start-editor.ps1`
+  (without it, the dialog's `Build.bat -projectfiles` fails on the missing `win-arm64` dotnet and the editor rolls the
+  project back). It was made in `Documents/Unreal Projects/bp` and copied in. `EngineAssociation` is this machine's GUID,
+  not `5.8` (`machine.md`). The template's `GameDefaultMap` is now `/Engine/Maps/Entry` until L3.2.
+- L3.1-3, L3.1-4, L3.1-5: **done** (`8e191b5`). The Meta entries are plain `Enabled`, not `Optional` (reading 20, `955fac8`).
+- L3.1-6: **done.** `bpEditor` exits 0 (reading 15); the `bp` Game target exits 0 inside BuildCookRun (reading 19), not
+  alone through UBT.
+- L3.1-7: **done** (reading 16). L3.1-8: **done** (reading 17); `BpLink.Fetch` not run. L3.1-9: **done**, `-game
+  -RenderOffScreen` (reading 18).
+- L3.1-10: **done**, the primary proof, not the fallback: the cooked, staged `bp.exe` prints the Kettle line (reading 21)
+  after the plugin fix (reading 20).
+- L3.1-11: this entry, `machine.md`, `apps/vr/README.md` and `apps/vr/WP3.1.md`.
+
+Next: L3.2, the table.
+
 ### P3 L3.2 to L3.6 and the gate (Lynx, about 1.5 to 2 weeks)
 
 All of these need L3.1. The geometry always comes from `FBpPlan` (wing, room, bay and tile boxes in world units;

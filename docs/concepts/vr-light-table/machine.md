@@ -6,6 +6,72 @@ file. Every line below is a command's own output or a file read on the named hos
 > **2026-10-23 (owner).** Lynx is now the only build host; Wolf is retired, and the live plan is
 > [`lynx-plan.md`](lynx-plan.md). The readings below are unchanged. New Lynx facts go in a new dated section.
 
+## Lynx, 2026-10-23: the editor-made project in `apps/vr`, and WP3.1's acceptance met
+
+Host: Lynx, as below (UE 5.8.4-58902052, MSVC 14.44.35207 `Hostx64`, emulated x64 on ARM64; Node v24.22.0). Every run
+here is on the real `apps/vr/bp.uproject` in the repo, not the probe. Commits: `c92f9dc` (junction, install-xr.ps1),
+`64a9be3` (Simulator pinned), `8e191b5` (the project, readings 15 to 19), `955fac8` (reading 21's fix).
+
+### Facts, newly measured
+
+- **Templates are installed.** They live at `C:/Program Files/Epic Games/UE_5.8/Templates` (`TP_Blank` with `Source/`,
+  32 template folders), where the New Project dialog reads them; the 2026-10-22 bullet below looked under
+  `Engine/Templates`.
+- **The GUI editor runs** emulated x64 on D3D12: `LogD3D12RHI: Found D3D12 adapter 0: NVIDIA RTX Spark N1X (6144-core
+  Blackwell RTX GPU)`, `Max supported Feature Level 12_2, shader model 6.7`, `Adapter has 63986MB of dedicated video
+  memory ... UMA:true`, `Driver Version: 617.69`, `LogRHI: RHI D3D12 with Feature Level SM5 is supported and will be used`
+  (`%LOCALAPPDATA%/UnrealEngine/5.8/Saved/Logs/Unreal.log`).
+- **The editor's own UBT calls fail on ARM64 as shipped.** New Project copied `TP_Blank`, then `Build.bat -projectfiles`
+  printed `Using bundled DotNet SDK version: 10.0 win-arm64` and failed, and the editor rolled the project back
+  (`Documents/Unreal Projects` left empty). `Engine/Build/BatchFiles/GetDotnetPath.bat` picks `win-arm64` when
+  `PROCESSOR_ARCHITECTURE` is `ARM64`, and skips that choice when `UE_DOTNET_VERSION` is already `10.0`.
+  `apps/vr/tools/start-editor.ps1` sets it and puts the bundled `win-x64` dotnet first on PATH for the editor's process
+  tree only. With that environment, `Build.bat -projectfiles` on a probe project: `Result: Succeeded`, `Total execution
+  time: 27.43 seconds`; and New Project, rerun by the owner from that editor, kept the project.
+- **EngineAssociation** is `{93FBB54C-42B1-616F-D658-CBAA01C5B0A5}`, which `HKCU\Software\Epic Games\Unreal
+  Engine\Builds` maps to `C:/Program Files/Epic Games/UE_5.8` (the engine is registered as a custom build, not through the
+  launcher's `LauncherInstalled.dat`). Kept as the editor wrote it.
+- **Meta XR v207** (`install-xr.ps1`, `c92f9dc`/`64a9be3`): `SHA256_OK=UnrealMetaXRPlugin.207.0.zip` (472628598 bytes),
+  `SHA256_OK=MetaXRInteractionPackage.207.0.0.zip` (690834867 bytes), `PLUGIN_BUILD_ID=55116800`,
+  `ENGINE_COMPATIBLE_CHANGELIST=55116800`. **Meta XR Simulator v207.0**: `meta_xr_simulator_v207.0.msi`, 436768768 bytes,
+  `Get-AuthenticodeSignature` `Valid`, signer `CN="Meta Platforms, Inc."`, SHA-256 `6751289b...d525`; extracted with
+  `msiexec /a` to `%LOCALAPPDATA%/MetaXRSimulatorExtract/PFiles/MetaXRSimulator/v207.0` (no install, no HKLM write).
+
+### Readings 15 to 21
+
+| # | What ran | Verbatim result |
+|---|---|---|
+| 15 | `bpEditor Win64 Development`, UBT through the x64 dotnet, `apps/vr/bp.uproject` (the template's `bp` module, BpLink, MetaXR, MetaXRInteraction) | `Result: Succeeded`, `Total execution time: 1093.95 seconds`, 0 `: error` lines; `[414/527] Compile [x64] BpLink.cpp`, `[417/527] Link [x64] UnrealEditor-BpLink.dll`. Warnings: C4996 deprecations in the Meta plugins' own sources only |
+| 16 | `node apps/vr/tools/run-bplink.mjs --mode editor` (`UnrealEditor-Cmd.exe bp.uproject -nullrhi`, apps/server `--port 0`) | `LogBpLink: BpLink: kettle streams (200); WP3.1 does not consume SSE, so rev 80557561ddf0f4cd read once from structure stands`, then `LogBpLink: BpLink: Kettle wings=5 [Foundations, Studio operations, Money, Members & reach, Frontier] rooms=13 bays=29 tiles=133 lenses=8 events=566 rev=80557561ddf0f4cd` |
+| 17 | the same, `--no-server` (a closed port) | ``LogBpLink: Error: BpLink: GET http://127.0.0.1:62249/api/products/kettle/structure failed (connected=0, status=0). Is `npm run server` running?``; no crash |
+| 18 | `--mode game --xr-sim` (`-game -RenderOffScreen`, `XR_RUNTIME_JSON` = the Simulator json for this process only) | `LogHMD: Initialized OpenXR on Meta XR Simulator runtime version 207.0.0`, then reading 16's Kettle line |
+| 19 | BuildCookRun (`RunUAT.bat` with start-editor.ps1's environment), Win64 Development, `-build -cook -stage -pak -map=/Engine/Maps/Entry` | `BUILD SUCCESSFUL`, `AutomationTool exiting with ExitCode=0 (Success)`; `Took 637.23s to run dotnet.exe` (the `bp` Game build), `Took 183.13s to run UnrealEditor-Cmd.exe` (the cook) |
+| 20 | the staged `bp.exe -nullrhi` from reading 19 | the engine initialises and loads `/Engine/Maps/Entry` (reading 11's `ReaderPos + Num <= ReaderSize` assert is gone with cooked content), then `Unhandled Exception: 0xc06d007e`. The minidump's `DelayLoadInfo`: `szDll` `InteractionSdk.dll`, proc `isdk_ScaledTimeProvider_create`. With `-LogCmds="LogPluginManager Verbose"`: `Ignored optional reference to 'OculusInteraction' plugin; plugin was not built by target.` (and `'OculusXR'`) |
+| 21 | after `955fac8` (plain `Enabled` plugin entries), BuildCookRun again (`Took 28.75s to run UnrealEditor-Cmd.exe`, `BUILD SUCCESSFUL`), staged `bp.exe -nullrhi` | `Mounting Project plugin OculusInteraction`, `Mounting Project plugin OculusXR`, `FIsdkOculusXRModuleInstance initialized successfully`, no critical error, and reading 16's Kettle line |
+
+### What this does NOT establish
+
+- Any frame time, and the headset (decision 5: the Simulator only). Reading 18 ran `-RenderOffScreen`; nothing was drawn
+  to a window or a view.
+- `BpLink.Fetch` and the 405 branch (Kettle answers 200).
+- The `bp` Game target built alone through UBT: it was built only inside BuildCookRun (reading 19).
+- Side finding, not fixed: BpLink also starts its request inside the cook commandlet (`LogHttp: Warning: ... libcurl
+  error: 7 (Could not connect to server)` in reading 19's log). Harmless; a guard on `IsRunningCommandlet()` would stop it.
+
+### How to reproduce
+
+```
+powershell -File apps/vr/tools/link-schema.ps1
+powershell -File apps/vr/tools/install-xr.ps1
+<x64 dotnet> UnrealBuildTool.dll bpEditor Win64 Development -Project=<repo>/apps/vr/bp.uproject -WaitMutex
+node apps/vr/tools/run-bplink.mjs --mode editor          # readings 16; --no-server 17; --mode game --xr-sim 18
+RunUAT.bat BuildCookRun -project=<repo>/apps/vr/bp.uproject -platform=Win64 -clientconfig=Development -build -cook -stage -pak -map=/Engine/Maps/Entry -stagingdirectory=<dir> -unattended
+node apps/vr/tools/run-bplink.mjs --mode staged --exe <dir>/Windows/bp/Binaries/Win64/bp.exe   # reading 21
+```
+
+The UBT and RunUAT lines need start-editor.ps1's environment (`-EnvOnly` names the dotnet it puts on PATH): `UE_DOTNET_VERSION=10.0` and the
+bundled `win-x64` dotnet first on PATH.
+
 ## Lynx, 2026-10-22: Unreal Engine is installed, and the first UHT reading for BpLink
 
 Host: Lynx (Windows 11 Pro 10.0.28000 on ARM64: `uname` reads `MINGW64_NT-10.0-28000-ARM64`, and UBT prints
