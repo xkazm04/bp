@@ -4,7 +4,7 @@
 // apps/vr/bp.uproject, or a staged bp.exe. It grades nothing: it prints the BpLink lines and where the full log is.
 //
 //   node apps/vr/tools/run-bplink.mjs [--mode editor|game|staged] [--exe <staged bp.exe>] [--no-server] [--xr-sim]
-//                                     [--game-mode <class path>] [--timeout <s>] [--out <dir>]
+//                                     [--game-mode <class path>] [--exec <cmd,cmd>] [--ue-args "<a> <b>"] [--hold <s>] [--timeout <s>] [--out <dir>]
 //
 // editor  UnrealEditor-Cmd.exe bp.uproject (headless: -nullrhi, unless --xr-sim, which renders off screen instead)
 // game    UnrealEditor-Cmd.exe bp.uproject -game (uncooked)
@@ -14,6 +14,11 @@
 //               table when the level has none) on the default map, for runs before config names a game mode
 // --xr-sim      XR_RUNTIME_JSON = the Meta XR Simulator v207 json for this process only (install-xr.ps1 -SimulatorOnly);
 //               never activate_simulator.ps1, never HKLM. Watches for the OpenXR init line too.
+// --exec        console commands at startup (-ExecCmds), comma-separated, e.g. "stat scenerendering,stat dumpave -num=600 -ms=0"
+// --ue-args     more engine arguments, space-separated, e.g. "-csvCaptureFrames=1200 -csvGpuStats" (CSVs land in
+//               apps/vr/Saved/Profiling/CSV)
+// --hold        keep running this many seconds after the outcome line instead of 5 (a stat dump over many frames);
+//               LogStats lines are printed too
 //
 // apps/server starts with `--port 0` in an empty cwd (as check-bplink and the probe do). The process is not asked to quit
 // (BpLink's HTTP is async): it is watched until an outcome line, given 5 s to flush, then its tree is killed.
@@ -80,7 +85,10 @@ if (!port) { await stopServer(); refuse(`apps/server did not print its port with
 const url = `http://127.0.0.1:${port}`;
 
 const render = flag('--xr-sim') ? ['-RenderOffScreen'] : ['-nullrhi'];
-const argv = [...pre, ...render, '-unattended', '-nosplash', '-nosound', '-stdout', '-FullStdOutLogOutput', '-NoLogTimes', `-BpLinkUrl=${url}`];
+const exec = opt('--exec');
+const holdS = Number(opt('--hold', '5'));
+const argv = [...pre, ...render, '-unattended', '-nosplash', '-nosound', '-stdout', '-FullStdOutLogOutput', '-NoLogTimes', `-BpLinkUrl=${url}`,
+  ...(exec ? [`-ExecCmds=${exec}`] : []), ...(opt('--ue-args', '').split(' ').filter(Boolean))];
 const env = { ...process.env };
 if (flag('--xr-sim')) env.XR_RUNTIME_JSON = SIM_JSON;
 const runLog = path.join(out, `run-${mode}${flag('--xr-sim') ? '-xrsim' : ''}.log`);
@@ -95,7 +103,7 @@ const ran = await new Promise((resolve) => {
   let text = '', stoppedBy = null, grace = null;
   const stop = (why) => { if (!stoppedBy) { stoppedBy = why; killTree(child.pid); } };
   const hard = setTimeout(() => stop(`timeout ${timeoutMs / 1000} s`), timeoutMs);
-  const onData = (d) => { fs.writeSync(fd, d); text += d; if (!grace && OUTCOME.test(text)) grace = setTimeout(() => stop('outcome line seen, then 5 s'), 5000); };
+  const onData = (d) => { fs.writeSync(fd, d); text += d; if (!grace && OUTCOME.test(text)) grace = setTimeout(() => stop(`outcome line seen, then ${holdS} s`), holdS * 1000); };
   child.stdout.on('data', onData); child.stderr.on('data', onData);
   child.on('error', (e) => fs.writeSync(fd, `\nspawn error: ${e.message}\n`));
   child.on('close', (code) => { clearTimeout(hard); clearTimeout(grace); resolve({ code, stoppedBy: stoppedBy ?? 'exited by itself', text }); });
@@ -106,6 +114,6 @@ await stopServer();
 const lines = ran.text.split(/\r?\n/);
 const pick = (re) => lines.filter((l) => re.test(l)).map((l) => l.trim());
 console.log(`ran     ${((Date.now() - started) / 1000).toFixed(1)} s, exit ${ran.code}, ${ran.stoppedBy}`);
-for (const l of pick(/LogBpLink|LogBpTable|LogHMD: (Initialized OpenXR|.*no runtime)|Assertion failed|Critical error|appError/).slice(0, 40)) console.log(`line    ${l}`);
+for (const l of pick(new RegExp(`LogBpLink|LogBpTable|LogHMD: (Initialized OpenXR|.*no runtime)|${exec ? 'LogStats|' : ''}Assertion failed|Critical error|appError`)).slice(0, exec ? 400 : 40)) console.log(`line    ${l}`);
 console.log(`log     ${runLog}`);
 process.exit(OUTCOME.test(ran.text) ? 0 : 1);
