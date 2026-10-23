@@ -14,6 +14,7 @@
 #include "Misc/PackageName.h"
 #include "Styling/CoreStyle.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Widgets/Layout/SBox.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
 
@@ -48,6 +49,12 @@ namespace
 	constexpr float RobotoCapPerEm = 0.711f;
 	/** The title's lens line and the scale caption, relative to LabelCapHeightCm. */
 	constexpr float SmallTextRatio = 0.75f;
+	/** Wing labels: a bold letter over the name, wrapped to the wing's width. The first capture from the target pose
+	 *  (2026-10-23) showed one 1.6 cm line unreadable at the far edge and D's name running into E; the owner tunes these
+	 *  in the Simulator (R4). */
+	constexpr float WingNameCapCm = 2.0f;
+	constexpr float WingLetterCapCm = 2.6f;
+	constexpr float WingLabelInsetCm = 0.8f;
 
 	/** Heights above the paper, so nothing z-fights it. */
 	constexpr float OverlayLiftCm = 0.05f;
@@ -307,14 +314,18 @@ void ABpTable::PlaceForHeight(float HeightCm)
 	{
 		// The mesh's pivot is the floor centre and its top is its bounds' top (95 cm as modelled): the feet stay on the
 		// floor and Z scales to the height.
+		// The mesh is modelled with its 120 cm length along its +X; the table's width (left to right for the person at the
+		// near edge) is this actor's +Y, so the mesh turns 90 degrees (first capture, 2026-10-23: the long side faced away).
 		const float ModelTop = Frame->GetStaticMesh() ? Frame->GetStaticMesh()->GetBoundingBox().Max.Z : 0.f;
 		Frame->SetRelativeLocation(FVector::ZeroVector);
+		Frame->SetRelativeRotation(FRotator(0.0, 90.0, 0.0));
 		Frame->SetRelativeScale3D(FVector(1.0, 1.0, ModelTop > 1.f ? HeightCm / ModelTop : 1.0));
 	}
 	else
 	{
 		// The engine cube is 100 cm with its pivot at the centre: a block from the floor to the rim, then the rim.
 		const float BlockHeight = HeightCm - RimThicknessCm;
+		Frame->SetRelativeRotation(FRotator::ZeroRotator);
 		Frame->SetRelativeLocation(FVector(0.0, 0.0, BlockHeight * 0.5));
 		Frame->SetRelativeScale3D(FVector(FrameDepthCm, FrameWidthCm, BlockHeight) / 100.0);
 		const float RailZ = HeightCm - RimThicknessCm * 0.5f;
@@ -451,10 +462,27 @@ void ABpTable::ApplyPlan(const FBpPlan& Plan)
 	for (const FBpPlanWing* Wing : Wings)
 	{
 		Order.Add(Wing->letter);
-		const FVector2D Corner = PlanToPaperCm(FVector2D(Wing->box.x, Wing->box.y)) + FVector2D(0.6, 0.6);
-		WingLabels.Add(MakeLabel(SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("%s  %s"), *Wing->letter, *Wing->name)))
-				.Font(FCoreStyle::GetDefaultFontStyle("Regular", LabelFontSize)).ColorAndOpacity(FSlateColor(WarmPaper)),
-			Corner, FVector2D(0.0, 0.0), LabelCapHeightCm));
+		const FVector2D Corner = PlanToPaperCm(FVector2D(Wing->box.x, Wing->box.y)) + FVector2D(WingLabelInsetCm, WingLabelInsetCm);
+		const double WingWidthCm = PlanToPaperCm(FVector2D(Wing->box.x + Wing->box.w, 0.0)).X - PlanToPaperCm(FVector2D(Wing->box.x, 0.0)).X;
+		// The widget's world scale makes the name's cap WingNameCapCm; the wrap width is the wing's width in Slate units.
+		const double CmPerSlateUnit = WingNameCapCm / (LabelFontSize * SlatePxPerPoint * RobotoCapPerEm);
+		const float WrapSlate = static_cast<float>(FMath::Max(1.0, WingWidthCm - 2.0 * WingLabelInsetCm) / CmPerSlateUnit);
+		const int32 LetterSize = FMath::RoundToInt(LabelFontSize * WingLetterCapCm / WingNameCapCm);
+		WingLabels.Add(MakeLabel(SNew(SBox).WidthOverride(WrapSlate)
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					SNew(STextBlock).Text(FText::FromString(Wing->letter))
+						.Font(FCoreStyle::GetDefaultFontStyle("Bold", LetterSize)).ColorAndOpacity(FSlateColor(WarmPaper))
+				]
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					SNew(STextBlock).Text(FText::FromString(Wing->name)).AutoWrapText(true)
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", LabelFontSize)).ColorAndOpacity(FSlateColor(WarmPaper))
+				]
+			],
+			Corner, FVector2D(0.0, 0.0), WingNameCapCm));
 	}
 	PlaceLabels();
 
