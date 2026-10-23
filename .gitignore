@@ -18,8 +18,11 @@ bp.products.local.json
 # Links are machine state; the declarations live in .ai/manifest.yaml (`skills:` and `knowledge.domains`).
 /.claude/skills/spark
 /.claude/skills/scan-sweep
+/.claude/skills/adopt-bp
 /.claude/skills/perfect
 /.claude/skills/tiger
+/.claude/rules/ai-registry-access.md
+/.claude/rules/ai-registry-software-engineering.md
 /.ai/skill-runs.local.jsonl
 # END ai-registry linked skills
 .ai/consults.jsonl
