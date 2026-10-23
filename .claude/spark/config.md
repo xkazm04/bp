@@ -31,6 +31,10 @@ when apps/vr, BpLink, packages/schema or the server's Kettle routes change (Lynx
 - `node apps/vr/tools/run-bplink.mjs --mode editor` prints the Kettle line
 - before calling a Game-target change done: BuildCookRun, then `run-bplink.mjs --mode staged --exe <bp.exe>` (the
   uncooked `-game` run passed while the staged exe crashed, 2026-10-23)
+- draw counts in apps/vr come from the CSV profiler, not `stat scenerendering` (an overlay that logs nothing):
+  `run-bplink.mjs --mode game --xr-sim --ue-args "-csvCaptureFrames=900" --hold 60`, CSV under
+  `%LOCALAPPDATA%/UnrealEngine/5.8/Saved/Profiling/CSV`; a feature's draws are the delta against a run with it hidden
+  (a show flag via `--exec`), machine.md readings 30 to 31
 
 builder:
 - `npm run typecheck`
@@ -58,6 +62,8 @@ None declared.
 - A custom lens manifest for real products (`docs/standard/lenses-custom/`) must also pass lens-scan's `structure.mjs lens-add`, whose glyph check is stricter than bp's (absolute path commands only): 3 of 4 takeover lenses passed bp's gates and were refused at the product (2026-10-18). Run lens-add on a scratch structure as a gate.
 
 - UE on Lynx (ARM64): start the editor only through `apps/vr/tools/start-editor.ps1`, and drive UBT/RunUAT with its environment (`UE_DOTNET_VERSION=10.0`, bundled win-x64 dotnet first on PATH): the engine picks an unshipped win-arm64 dotnet otherwise, and New Project rolls back. Meta plugins in `bp.uproject` are plain `Enabled`, never `Optional`: a monolithic Game build drops optional plugins and the staged bp.exe dies on InteractionSdk.dll (machine.md readings 20 to 21).
+- apps/vr builds in the MAIN checkout, never a worktree: the Meta plugins, schema and PoF junctions, Binaries and DDC are git-ignored and absent there. One UBT and one editor at a time, so UE packages run sequentially.
+- A visual UE package's builder acceptance includes a rendered capture from the target pose (PoF capture_viewport in PIE over the editor MCP), looked at and iterated on by the builder, and a mesh brief names its axis mapping (vr-table 2026-10-23, vr-volumes 2026-10-24: the builder's own capture found the clipped wing label and the over-bright edges).
 
 ## Wave defaults
 
@@ -95,3 +101,4 @@ None declared.
 - 2026-10-20 vr-light-table: "consult the registry's local LLM" meant its knowledge bundles (no model runner exists): route with research-map before wave 1 and say what the registry does NOT cover (WebXR/UE VR rendering, current model VRAM/licences), then fill that gap with web research. A docs-only spark skipped the go-gate and the worktree: the deliverable was the plan itself.
 - 2026-10-23 vr-ue-project-init: the scout read machine.md's "no Engine/Templates" as fact; Templates were at UE_5.8/Templates (a builder found it by reading the engine source). A presence claim about an install must name the path the CONSUMER reads, not the one a doc guessed. The editor's own UBT calls (New Project, -projectfiles) were never exercised by the probe, which drove UBT directly, so only the owner's first click found the win-arm64 dotnet failure. Uncooked -game passing proved nothing about the staged exe (Optional plugins dropped in monolithic builds): the cooked run was the only real proof, as decision 6 chose.
 - 2026-10-23 vr-table: builders verified UE work headless (-nullrhi) and could not see it; the first rendered capture found three defects (frame axis, lit paper under auto exposure, label size). For visual UE packages, a rendered capture from the target pose is part of the builder acceptance (PoF capture_viewport in PIE via the editor MCP), and a mesh brief names its axis mapping, not only its pivot.
+- 2026-10-24 vr-volumes: memory said check 85/85, but check:python-deps was red on arrival (since 34a2156: the editor-MCP scripts import `unreal`); Phase 0's gate-on-arrival run caught it before a builder was blamed. The plan's proof named `stat scenerendering`, which cannot be logged: when a plan names an overlay-only stat as proof, scout how to read it headless before the brief (the CSV profiler, promoted to Gates). Builder-owned capture (promoted to Repo law) found and fixed two visual defects without a Director loop.
