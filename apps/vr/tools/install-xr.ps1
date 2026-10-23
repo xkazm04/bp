@@ -10,7 +10,7 @@
 #              pages, curl.exe into apps/vr/.cache/xr, SHA-256 checked against the table below, extracted into
 #              apps/vr/Plugins/MetaXR and apps/vr/Plugins/MetaXRInteraction (all git-ignored), then the plugin BuildId is
 #              compared with the engine's CompatibleChangelist
-#   project    adds OculusXR and OculusInteraction to bp.uproject's Plugins ("Enabled": true, "Optional": true), keeping
+#   project    adds OculusXR and OculusInteraction to bp.uproject's Plugins ("Enabled": true; never "Optional", see below), keeping
 #              the rest of the file as it is
 #   simulator  Meta XR Simulator v207, extracted (msiexec /a, an administrative image: no install, no registry) under
 #              %LOCALAPPDATA%\MetaXRSimulatorExtract, and its runtime json printed as SIMULATOR_JSON=. Point ONE process at it
@@ -252,6 +252,11 @@ function Write-BuildIdReport {
     }
 }
 
+# Required entries, not "Optional": true (mage-arena's fresh-clone hardening). Measured 2026-10-23 on Lynx: a monolithic
+# Game build ignores an optional plugin reference ("Ignored optional reference to 'OculusInteraction' plugin; plugin was
+# not built by target", LogPluginManager Verbose), so OculusInteraction's StartupModule never loads InteractionSdk.dll,
+# while the Interaction SDK code linked into bp.exe still runs, and the staged bp.exe dies on the delay load (0xc06d007e,
+# isdk_ScaledTimeProvider_create). Run this script before opening the project on a fresh checkout.
 function Enable-UprojectPlugins([string[]]$Names) {
     $bytes = [System.IO.File]::ReadAllBytes($script:Uproject)
     $hasBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
@@ -261,7 +266,8 @@ function Enable-UprojectPlugins([string[]]$Names) {
     foreach ($name in $Names) {
         $existing = @($json.Plugins | Where-Object { $_.Name -eq $name }) | Select-Object -First 1
         if ($null -eq $existing) { $todo += $name; continue }
-        if ($existing.Enabled -eq $true) { Write-Host "UPROJECT_ALREADY=$name" }
+        if ($existing.Enabled -eq $true -and $existing.Optional -eq $true) { Write-Host "UPROJECT_OPTIONAL=$name (remove `"Optional`": a monolithic Game build ignores an optional plugin it did not build, and bp.exe then crashes on InteractionSdk.dll)" }
+        elseif ($existing.Enabled -eq $true) { Write-Host "UPROJECT_ALREADY=$name" }
         else { Write-Host "UPROJECT_PLUGIN_DISABLED=$name (the project lists it with Enabled false; left as it is)" }
     }
     if ($todo.Count -eq 0) { return }
@@ -269,7 +275,7 @@ function Enable-UprojectPlugins([string[]]$Names) {
     # Text insertion, not a JSON round trip, so the editor's formatting and every other member stay byte for byte.
     $nl = "`n"
     if ($text.Contains("`r`n")) { $nl = "`r`n" }
-    $entries = @($todo | ForEach-Object { "`t`t{$nl`t`t`t`"Name`": `"$_`",$nl`t`t`t`"Enabled`": true,$nl`t`t`t`"Optional`": true$nl`t`t}" })
+    $entries = @($todo | ForEach-Object { "`t`t{$nl`t`t`t`"Name`": `"$_`",$nl`t`t`t`"Enabled`": true$nl`t`t}" })
     $block = $nl + ($entries -join ",$nl")
     $emptyArray = [regex]::Match($text, '"Plugins"\s*:\s*\[\s*\]')
     $openArray = [regex]::Match($text, '"Plugins"\s*:\s*\[')
@@ -290,12 +296,12 @@ function Enable-UprojectPlugins([string[]]$Names) {
     $check = $updated | ConvertFrom-Json
     foreach ($name in $todo) {
         $entry = @($check.Plugins | Where-Object { $_.Name -eq $name }) | Select-Object -First 1
-        if ($null -eq $entry -or $entry.Enabled -ne $true -or $entry.Optional -ne $true) {
-            throw "The edited bp.uproject does not list $name as Enabled and Optional; not writing it."
+        if ($null -eq $entry -or $entry.Enabled -ne $true -or $entry.Optional -eq $true) {
+            throw "The edited bp.uproject does not list $name as Enabled and required; not writing it."
         }
     }
     if ($script:IsDry) {
-        foreach ($name in $todo) { Write-Plan "add to $script:Uproject Plugins: { `"Name`": `"$name`", `"Enabled`": true, `"Optional`": true }" }
+        foreach ($name in $todo) { Write-Plan "add to $script:Uproject Plugins: { `"Name`": `"$name`", `"Enabled`": true }" }
         return
     }
     [System.IO.File]::WriteAllText($script:Uproject, $updated, (New-Object System.Text.UTF8Encoding($hasBom)))

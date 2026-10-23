@@ -18,13 +18,11 @@
 	"Plugins": [
 		{
 			"Name": "OculusXR",
-			"Enabled": true,
-			"Optional": true
+			"Enabled": true
 		},
 		{
 			"Name": "OculusInteraction",
-			"Enabled": true,
-			"Optional": true
+			"Enabled": true
 		},
 		{
 			"Name": "ModelingToolsEditorMode",
