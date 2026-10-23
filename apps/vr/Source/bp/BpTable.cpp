@@ -1,13 +1,16 @@
-// The light table (lynx-plan L3.2). See BpTable.h for the frame of reference and the named constants.
+// The light table (lynx-plan L3.2, L3.3). See BpTable.h for the frame of reference and the named constants.
 #include "BpTable.h"
 
 #include "BpLink.h"
 #include "CanvasItem.h"
+#include "Components/InstancedStaticMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/WidgetComponent.h"
 #include "Engine/Canvas.h"
 #include "Engine/CanvasRenderTarget2D.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/Texture2D.h"
+#include "EngineUtils.h"
 #include "GlobalRenderResources.h"
 #include "HAL/IConsoleManager.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -33,6 +36,17 @@ namespace
 	const FLinearColor CyanWhite(FColor(0xBF, 0xE8, 0xFF));
 	const FLinearColor WarmPaper(FColor(0xF3, 0xE9, 0xD2));
 
+	/** BpTable.Lens <id>: re-height the tiles of every table in the world by another of the plan's lenses (L3.5's switch
+	 *  calls SetActiveLens; this is the console's way in until then). */
+	FAutoConsoleCommandWithWorldAndArgs CmdTableLens(
+		TEXT("BpTable.Lens"),
+		TEXT("BpTable.Lens <lens id>: the tiles' heights read this lens (one of the plan's lenses); nothing moves in x or y."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			if (!World || Args.Num() == 0) return;
+			for (TActorIterator<ABpTable> It(World); It; ++It) It->SetActiveLens(Args[0]);
+		}));
+
 	const TCHAR* const GlassPlaceholderSlot = TEXT("frame_glass_placeholder_REPLACE_IN_UE");
 
 	/** The greybox rim's thickness and width (outer 120 x 80 cm around the 110 x 70 cm glass opening). */
@@ -55,10 +69,24 @@ namespace
 	constexpr float WingNameCapCm = 2.0f;
 	constexpr float WingLetterCapCm = 2.6f;
 	constexpr float WingLabelInsetCm = 0.8f;
+	/** The wing labels float RoomShellCm above the paper (L3.3), and from the target pose that parallax carries the far-left
+	 *  wing's label about 2.4 cm outward, onto the frame's inner glow (capture, 2026-10-24). So a lifted label starts that
+	 *  much further in, across the sheet only: inset down the sheet as well, the names sat on the first bay's top edge, and
+	 *  the letters cleared the far glow without it. The wrap width stays L3.2's (a narrower one cut "Foundations"). */
+	constexpr float LiftedWingLabelInsetCm = WingLabelInsetCm + 2.4f;
 
 	/** Heights above the paper, so nothing z-fights it. */
 	constexpr float OverlayLiftCm = 0.05f;
 	constexpr float LabelLiftCm = 0.1f;
+
+	/** The volumes: per-instance custom data is the instance's size in cm (X, Y, Z), so M_EdgeGlow draws its edges the
+	 *  same width on a 1 cm tile and a 20 cm room. Bays are plates drawn as edges only; rooms and tiles keep a faint face. */
+	constexpr int32 VolumeCustomFloats = 3;
+	constexpr float BayFaceOpacity = 0.f;
+	/** The greybox's volumes: faces only, on UWidgetComponent's translucent engine material. */
+	constexpr float GreyboxVolumeOpacity = 0.12f;
+	/** Labels draw after the volumes (translucent sort), so a glowing edge never lies over a wing's name. */
+	constexpr int32 LabelSortPriority = 1;
 
 	/** A widget lying on the paper, facing up, its top toward the far edge (+X) and its right toward +Y. A world-space
 	 *  widget faces its component's +X with its right along -Y: pitch 90 turns the face up, yaw 180 turns it to the viewer. */
@@ -133,14 +161,17 @@ ABpTable::ABpTable()
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> ShapeMaterialFinder(TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
 	// UWidgetComponent's own unlit material: it shows the Texture parameter `SlateUI` with its alpha, cooked or not.
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> SheetMaterialFinder(TEXT("/Engine/EngineMaterials/Widget3DPassThrough_Translucent.Widget3DPassThrough_Translucent"));
+	static ConstructorHelpers::FObjectFinder<UTexture2D> WhiteFinder(TEXT("/Engine/EngineResources/WhiteSquareTexture.WhiteSquareTexture"));
 	EngineCube = CubeFinder.Object;
 	EnginePlane = PlaneFinder.Object;
 	EngineShapeMaterial = ShapeMaterialFinder.Object;
 	EngineSheetMaterial = SheetMaterialFinder.Object;
+	EngineWhiteTexture = WhiteFinder.Object;
 
 	FrameMesh = TSoftObjectPtr<UStaticMesh>(FSoftObjectPath(TEXT("/Game/Bp/Art/LightTableFrame/SM_LightTableFrame.SM_LightTableFrame")));
 	PaperMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Bp/Materials/M_BlueprintPaper.M_BlueprintPaper")));
 	HiddenMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Bp/Materials/M_Hidden.M_Hidden")));
+	VolumeMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Bp/Materials/M_EdgeGlow.M_EdgeGlow")));
 
 	Frame = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Frame"));
 	Frame->SetupAttachment(Root);
@@ -166,6 +197,22 @@ ABpTable::ABpTable()
 	SheetOverlay->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	SheetOverlay->SetCastShadow(false);
 	SheetOverlay->SetVisibility(false);
+
+	// The engine cube (100 cm, pivot at its centre) scaled per instance; the instances come with the plan.
+	const auto MakeVolumes = [this](const TCHAR* Name)
+	{
+		UInstancedStaticMeshComponent* Volumes = CreateDefaultSubobject<UInstancedStaticMeshComponent>(Name);
+		Volumes->SetupAttachment(Root);
+		Volumes->SetMobility(EComponentMobility::Movable);
+		Volumes->SetStaticMesh(EngineCube);
+		Volumes->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Volumes->SetCastShadow(false);
+		Volumes->NumCustomDataFloats = VolumeCustomFloats;
+		return Volumes;
+	};
+	Rooms = MakeVolumes(TEXT("Rooms"));
+	Bays = MakeVolumes(TEXT("Bays"));
+	Tiles = MakeVolumes(TEXT("Tiles"));
 }
 
 float ABpTable::HeightCvarCm()
@@ -226,13 +273,13 @@ void ABpTable::BeginPlay()
 				.ColorAndOpacity(FSlateColor(WarmPaper))
 				.Justification(ETextJustify::Right)
 		];
-	TitleLabel = MakeLabel(Title, FVector2D(PaperWidthCm - 1.5, PaperDepthCm - 1.2), FVector2D(1.0, 1.0), LabelCapHeightCm);
+	TitleLabel = MakeLabel(Title, FVector2D(PaperWidthCm - 1.5, PaperDepthCm - 1.2), FVector2D(1.0, 1.0), LabelCapHeightCm, LabelLiftCm);
 	SetTitle(TEXT("waiting for the server"), FString());
 
 	const FString Caption = FString::Printf(TEXT("%d cm"), FMath::RoundToInt(ScaleBarCm));
 	ScaleLabel = MakeLabel(SNew(STextBlock).Text(FText::FromString(Caption))
 			.Font(FCoreStyle::GetDefaultFontStyle("Regular", LabelFontSize)).ColorAndOpacity(FSlateColor(WarmPaper)),
-		FVector2D(2.0, PaperDepthCm - 3.4), FVector2D(0.0, 1.0), LabelCapHeightCm * SmallTextRatio);
+		FVector2D(2.0, PaperDepthCm - 3.4), FVector2D(0.0, 1.0), LabelCapHeightCm * SmallTextRatio, LabelLiftCm);
 	PlaceLabels();
 
 	// BpLink fetched at startup (or is fetching): take its plan, now or when it lands; never ask the server again.
@@ -305,6 +352,29 @@ void ABpTable::LoadArt()
 	OverlayMid->SetScalarParameterValue(TEXT("OpacityFromTexture"), 1.f);
 	SheetOverlay->SetMaterial(0, OverlayMid);
 	SheetOverlay->SetVisibility(false);
+
+	// The volumes: M_EdgeGlow, one instance per kind (bays without a face); the greybox is a faint translucent face.
+	UInstancedStaticMeshComponent* const Kinds[3] = { Rooms, Bays, Tiles };
+	VolumeMids.Reset();
+	if (UMaterialInterface* Glow = LoadOrGreybox(VolumeMaterial, true))
+	{
+		for (UInstancedStaticMeshComponent* Kind : Kinds)
+		{
+			UMaterialInstanceDynamic* Mid = UMaterialInstanceDynamic::Create(Glow, this);
+			if (Kind == Bays) Mid->SetScalarParameterValue(TEXT("FaceOpacity"), BayFaceOpacity);
+			Kind->SetMaterial(0, Mid);
+			VolumeMids.Add(Mid);
+		}
+	}
+	else
+	{
+		UMaterialInstanceDynamic* Mid = UMaterialInstanceDynamic::Create(EngineSheetMaterial, this);
+		Mid->SetTextureParameterValue(TEXT("SlateUI"), EngineWhiteTexture);
+		Mid->SetVectorParameterValue(TEXT("TintColorAndOpacity"), CyanWhite.CopyWithNewOpacity(GreyboxVolumeOpacity));
+		Mid->SetScalarParameterValue(TEXT("OpacityFromTexture"), 1.f);
+		for (UInstancedStaticMeshComponent* Kind : Kinds) Kind->SetMaterial(0, Mid);
+		VolumeMids.Add(Mid);
+	}
 }
 
 void ABpTable::PlaceForHeight(float HeightCm)
@@ -354,19 +424,24 @@ void ABpTable::PlaceForHeight(float HeightCm)
 	Paper->SetRelativeScale3D(PaperScale);
 	SheetOverlay->SetRelativeLocationAndRotation(FVector(0.0, 0.0, PaperZ + OverlayLiftCm), PaperRotation);
 	SheetOverlay->SetRelativeScale3D(PaperScale);
+	// The volumes stand on the paper: their instances are placed relative to it, so only the batches move.
+	for (UInstancedStaticMeshComponent* Kind : { Rooms.Get(), Bays.Get(), Tiles.Get() })
+	{
+		Kind->SetRelativeLocation(FVector(0.0, 0.0, PaperZ));
+	}
 	PlaceLabels();
 }
 
 void ABpTable::PlaceLabels()
 {
-	const float LabelZ = PlacedHeightCm - GlassRecessCm + LabelLiftCm;
-	for (const TPair<TWeakObjectPtr<UWidgetComponent>, FVector2D>& Place : LabelPlaces)
+	const float PaperZ = PlacedHeightCm - GlassRecessCm;
+	for (const FLabelPlace& Place : LabelPlaces)
 	{
-		if (UWidgetComponent* Label = Place.Key.Get()) Label->SetRelativeLocation(PaperCmToLocal(Place.Value, LabelZ));
+		if (UWidgetComponent* Label = Place.Label.Get()) Label->SetRelativeLocation(PaperCmToLocal(Place.PaperCm, PaperZ + Place.LiftCm));
 	}
 }
 
-UWidgetComponent* ABpTable::MakeLabel(const TSharedRef<SWidget>& Content, const FVector2D& PaperCm, const FVector2D& Pivot, float CapHeightCm)
+UWidgetComponent* ABpTable::MakeLabel(const TSharedRef<SWidget>& Content, const FVector2D& PaperCm, const FVector2D& Pivot, float CapHeightCm, float LiftCm)
 {
 	UWidgetComponent* Label = NewObject<UWidgetComponent>(this);
 	Label->SetupAttachment(Root);
@@ -378,6 +453,7 @@ UWidgetComponent* ABpTable::MakeLabel(const TSharedRef<SWidget>& Content, const 
 	Label->SetBackgroundColor(FLinearColor::Transparent);
 	Label->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Label->SetCastShadow(false);
+	Label->SetTranslucentSortPriority(LabelSortPriority);
 	Label->SetWindowFocusable(false);
 	// The text is static: drawn when asked, not every frame.
 	Label->SetManuallyRedraw(true);
@@ -387,7 +463,7 @@ UWidgetComponent* ABpTable::MakeLabel(const TSharedRef<SWidget>& Content, const 
 	Label->RegisterComponent();
 	Label->SetSlateWidget(Content);
 	Label->RequestRedraw();
-	LabelPlaces.Add({ Label, PaperCm });
+	LabelPlaces.Add({ Label, PaperCm, LiftCm });
 	return Label;
 }
 
@@ -451,18 +527,18 @@ void ABpTable::ApplyPlan(const FBpPlan& Plan)
 		SheetOverlay->SetVisibility(true);
 	}
 
-	// The wing labels: letter and name, inside each wing's top-left corner.
+	// The wing labels: letter and name, inside each wing's top-left corner, lifted over the room shells.
 	for (UWidgetComponent* Old : WingLabels)
 	{
 		if (Old) Old->DestroyComponent();
 	}
 	WingLabels.Reset();
-	LabelPlaces.RemoveAll([](const TPair<TWeakObjectPtr<UWidgetComponent>, FVector2D>& Place) { return !Place.Key.IsValid(); });
+	LabelPlaces.RemoveAll([](const FLabelPlace& Place) { return !Place.Label.IsValid(); });
 	TArray<FString> Order;
 	for (const FBpPlanWing* Wing : Wings)
 	{
 		Order.Add(Wing->letter);
-		const FVector2D Corner = PlanToPaperCm(FVector2D(Wing->box.x, Wing->box.y)) + FVector2D(WingLabelInsetCm, WingLabelInsetCm);
+		const FVector2D Corner = PlanToPaperCm(FVector2D(Wing->box.x, Wing->box.y)) + FVector2D(LiftedWingLabelInsetCm, WingLabelInsetCm);
 		const double WingWidthCm = PlanToPaperCm(FVector2D(Wing->box.x + Wing->box.w, 0.0)).X - PlanToPaperCm(FVector2D(Wing->box.x, 0.0)).X;
 		// The widget's world scale makes the name's cap WingNameCapCm; the wrap width is the wing's width in Slate units.
 		const double CmPerSlateUnit = WingNameCapCm / (LabelFontSize * SlatePxPerPoint * RobotoCapPerEm);
@@ -482,21 +558,115 @@ void ABpTable::ApplyPlan(const FBpPlan& Plan)
 						.Font(FCoreStyle::GetDefaultFontStyle("Regular", LabelFontSize)).ColorAndOpacity(FSlateColor(WarmPaper))
 				]
 			],
-			Corner, FVector2D(0.0, 0.0), WingNameCapCm));
+			Corner, FVector2D(0.0, 0.0), WingNameCapCm, RoomShellCm + LabelLiftCm));
 	}
 	PlaceLabels();
 
+	ActiveLens = Plan.lenses.Num() > 0 ? Plan.lenses[0] : FString();
 	const FBpLinkModule& Link = FBpLinkModule::Get();
 	const FString Name = Link.GetProductName().IsEmpty() ? TitleCase(Link.GetProductSlug()) : Link.GetProductName();
-	SetTitle(Name, Plan.lenses.Num() > 0 ? FString::Printf(TEXT("lens: %s"), *Plan.lenses[0]) : FString());
+	SetTitle(Name, ActiveLens.IsEmpty() ? FString() : FString::Printf(TEXT("lens: %s"), *ActiveLens));
 
 	UE_LOG(LogBpTable, Log, TEXT("BpTable: wings=%d order=%s height_cm=%d"), Wings.Num(), *FString::Join(Order, TEXT(",")), FMath::RoundToInt(PlacedHeightCm));
+
+	BuildVolumes(*SheetPlan);
+	UE_LOG(LogBpTable, Log, TEXT("BpTable: instances rooms=%d bays=%d tiles=%d lens=%s"),
+		Rooms->GetInstanceCount(), Bays->GetInstanceCount(), Tiles->GetInstanceCount(), *ActiveLens);
+}
+
+float ABpTable::TileHeightCm(const FString& Reading)
+{
+	if (Reading == TEXT("bad")) return TileBadCm;
+	if (Reading == TEXT("watch")) return TileWatchCm;
+	if (Reading == TEXT("good")) return TileGoodCm;
+	return TileUnmeasuredCm;
+}
+
+void ABpTable::BuildVolumes(const FBpPlan& Plan)
+{
+	ClearVolumes();
+	// A plan box as one instance of the 100 cm cube: its footprint on the paper (X toward the far edge, Y to the right,
+	// as PaperCmToLocal maps it), its height above the paper, and its size in cm as the material's custom data.
+	TArray<FTransform> Transforms;
+	TArray<float> Sizes;
+	const auto Add = [&](const FBpPlanBox& Box, float HeightCm)
+	{
+		const FVector2D A = PlanToPaperCm(FVector2D(Box.x, Box.y)), B = PlanToPaperCm(FVector2D(Box.x + Box.w, Box.y + Box.h));
+		const FVector Size(B.Y - A.Y, B.X - A.X, HeightCm);
+		Transforms.Add(FTransform(FQuat::Identity, PaperCmToLocal((A + B) * 0.5, HeightCm * 0.5f), Size / 100.0));
+		Sizes.Append({ static_cast<float>(Size.X), static_cast<float>(Size.Y), static_cast<float>(Size.Z) });
+	};
+	const auto Fill = [&](UInstancedStaticMeshComponent* Kind)
+	{
+		if (Transforms.Num() > 0)
+		{
+			Kind->AddInstances(Transforms, false, false, false);
+			Kind->SetCustomData(0, Transforms.Num() - 1, Sizes, true);
+		}
+		Transforms.Reset();
+		Sizes.Reset();
+	};
+
+	for (const FBpPlanRoom& Room : Plan.rooms) Add(Room.box, RoomShellCm);
+	Fill(Rooms);
+	for (const FBpPlanBay& Bay : Plan.bays) Add(Bay.box, BayFloorCm);
+	Fill(Bays);
+	// Tile i is Plan.tiles[i], so SetActiveLens can re-height it from the plan alone.
+	for (const FBpPlanTile& Tile : Plan.tiles)
+	{
+		const FString* Reading = Tile.health.Find(ActiveLens);
+		Add(Tile.box, TileHeightCm(Reading ? *Reading : FString()));
+	}
+	Fill(Tiles);
+}
+
+void ABpTable::ClearVolumes()
+{
+	Rooms->ClearInstances();
+	Bays->ClearInstances();
+	Tiles->ClearInstances();
+}
+
+void ABpTable::SetActiveLens(const FString& Lens)
+{
+	if (!SheetPlan.IsValid() || !SheetPlan->lenses.Contains(Lens))
+	{
+		UE_LOG(LogBpTable, Warning, TEXT("BpTable: lens %s is not one of the plan's lenses"), *Lens);
+		return;
+	}
+	ActiveLens = Lens;
+	if (TitleLine2.IsValid())
+	{
+		TitleLine2->SetText(FText::FromString(FString::Printf(TEXT("lens: %s"), *ActiveLens)));
+		if (TitleLabel) TitleLabel->RequestRedraw();
+	}
+
+	// Only the height changes: the footprint (x, y and the scale across it) is kept from the instance as it stands.
+	const int32 Count = FMath::Min(Tiles->GetInstanceCount(), SheetPlan->tiles.Num());
+	TArray<FTransform> Transforms;
+	Transforms.SetNum(Count);
+	int32 Moved = 0;
+	for (int32 Index = 0; Index < Count; ++Index)
+	{
+		FTransform Before;
+		Tiles->GetInstanceTransform(Index, Before);
+		const FString* Reading = SheetPlan->tiles[Index].health.Find(ActiveLens);
+		const float HeightCm = TileHeightCm(Reading ? *Reading : FString());
+		const FVector Location = Before.GetLocation(), Scale = Before.GetScale3D();
+		Transforms[Index] = FTransform(FQuat::Identity, FVector(Location.X, Location.Y, HeightCm * 0.5f), FVector(Scale.X, Scale.Y, HeightCm / 100.0));
+		Tiles->SetCustomDataValue(Index, 2, HeightCm);
+		const FVector After = Transforms[Index].GetLocation();
+		if (After.X != Location.X || After.Y != Location.Y) ++Moved;
+	}
+	if (Count > 0) Tiles->BatchUpdateInstancesTransforms(0, Transforms, false, true);
+	UE_LOG(LogBpTable, Log, TEXT("BpTable: lens=%s tiles=%d moved=%d"), *ActiveLens, Count, Moved);
 }
 
 void ABpTable::ShowNoPlan()
 {
 	// A table that already shows a plan keeps it; one that never had one says what it waits for.
 	if (SheetPlan.IsValid()) return;
+	ClearVolumes();
 	SetTitle(TEXT("waiting for the server"), FString());
 	if (!bLoggedNoPlan)
 	{

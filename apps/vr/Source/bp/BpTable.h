@@ -1,5 +1,5 @@
-// The light table (lynx-plan L3.2): a frame, the blueprint paper at the glass, and the sheet drawn from the plan BpLink
-// read. The actor's origin is the floor under the table's centre. Its +X is away from the person at the near edge, +Y is
+// The light table (lynx-plan L3.2, L3.3): a frame, the blueprint paper at the glass, the sheet drawn from the plan BpLink
+// read, and the plan's rooms, bays and tiles standing on the paper as edge-glow volumes. The actor's origin is the floor under the table's centre. Its +X is away from the person at the near edge, +Y is
 // to their right, so plan +x (wing order, left to right) runs along +Y and plan +y ("down the sheet") runs toward them
 // (-X). The geometry always comes from FBpPlan; nothing here computes a layout (lynx-plan P3).
 #pragma once
@@ -12,10 +12,12 @@ DECLARE_LOG_CATEGORY_EXTERN(LogBpTable, Log, All);
 
 class UCanvas;
 class UCanvasRenderTarget2D;
+class UInstancedStaticMeshComponent;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
 class UStaticMesh;
 class UStaticMeshComponent;
+class UTexture2D;
 class UWidgetComponent;
 class SWidget;
 struct FBpPlan;
@@ -45,6 +47,15 @@ public:
 	static constexpr float ScaleBarCm = 10.f;
 	/** Grid pitch in plan units. */
 	static constexpr float GridPlanUnits = 100.f;
+	/** The volumes' heights above the paper (L3.3): a room is a shell, a bay a floor plate, a tile a block whose height is
+	 *  the active lens's reading (bad tallest). Their footprints are the plan's boxes, never computed here. */
+	static constexpr float RoomShellCm = 3.0f;
+	static constexpr float BayFloorCm = 0.3f;
+	static constexpr float TileBadCm = 2.4f;
+	static constexpr float TileWatchCm = 1.4f;
+	static constexpr float TileGoodCm = 0.6f;
+	/** unmeasured, na, and a lens missing from the tile's health. */
+	static constexpr float TileUnmeasuredCm = 0.1f;
 
 	ABpTable();
 
@@ -59,6 +70,17 @@ public:
 	/** Put on the frame mesh's slot `frame_glass_placeholder_REPLACE_IN_UE` (masked, opacity mask 0). */
 	UPROPERTY(EditAnywhere, Category = "Bp|Table")
 	TSoftObjectPtr<UMaterialInterface> HiddenMaterial;
+
+	/** Edge-glow material for the volumes (additive; Scalars `EdgeWidthCm`, `FaceOpacity`, `Intensity`; per-instance
+	 *  custom data 0 to 2 = the instance's size in cm along its X, Y, Z). Missing: a translucent engine material. */
+	UPROPERTY(EditAnywhere, Category = "Bp|Table")
+	TSoftObjectPtr<UMaterialInterface> VolumeMaterial;
+
+	/** Re-heights the tiles by `health[Lens]`; nothing moves in x or y. One of the plan's lenses; L3.5 calls this. */
+	void SetActiveLens(const FString& Lens);
+	const FString& GetActiveLens() const { return ActiveLens; }
+	/** A tile's height above the paper for a reading (good, watch, bad, unmeasured, na). */
+	static float TileHeightCm(const FString& Reading);
 
 	/** Plan coordinates to paper centimetres (origin the paper's far-left corner, u to the right, v toward the viewer). The
 	 *  sheet's pixels and the widgets' places both go through this, so a label sits on its wing. */
@@ -94,6 +116,14 @@ private:
 	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
 	TObjectPtr<UStaticMeshComponent> SheetOverlay;
 
+	/** The volumes, one instanced batch per kind, at the paper's level: an instance's Z is its height above the paper. */
+	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
+	TObjectPtr<UInstancedStaticMeshComponent> Rooms;
+	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
+	TObjectPtr<UInstancedStaticMeshComponent> Bays;
+	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
+	TObjectPtr<UInstancedStaticMeshComponent> Tiles;
+
 	/** Engine content for the greybox, held hard so a cook takes it along. */
 	UPROPERTY()
 	TObjectPtr<UStaticMesh> EngineCube;
@@ -103,6 +133,8 @@ private:
 	TObjectPtr<UMaterialInterface> EngineShapeMaterial;
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> EngineSheetMaterial;
+	UPROPERTY()
+	TObjectPtr<UTexture2D> EngineWhiteTexture;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UCanvasRenderTarget2D> Sheet;
@@ -110,6 +142,8 @@ private:
 	TObjectPtr<UMaterialInstanceDynamic> PaperMid;
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> OverlayMid;
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UMaterialInstanceDynamic>> VolumeMids;
 
 	/** The title block (product name and first lens, or "waiting for the server"), the scale caption, the wing labels. */
 	UPROPERTY(Transient)
@@ -128,8 +162,10 @@ private:
 	void ApplyPlan(const FBpPlan& Plan);
 	void ShowNoPlan();
 	void SetTitle(const FString& Line1, const FString& Line2);
-	UWidgetComponent* MakeLabel(const TSharedRef<SWidget>& Content, const FVector2D& PaperCm, const FVector2D& Pivot, float CapHeightCm);
+	UWidgetComponent* MakeLabel(const TSharedRef<SWidget>& Content, const FVector2D& PaperCm, const FVector2D& Pivot, float CapHeightCm, float LiftCm);
 	void PlaceLabels();
+	void BuildVolumes(const FBpPlan& Plan);
+	void ClearVolumes();
 	static float HeightCvarCm();
 
 	bool bRealFrame = false;
@@ -137,12 +173,20 @@ private:
 	bool bLoggedNoPlan = false;
 	float PlacedHeightCm = -1.f;
 	FString DrawnRev;
+	/** The lens the tiles' heights read; Plan.lenses[0] when a plan is applied. */
+	FString ActiveLens;
 	/** The plan the sheet is drawn from (a copy; the module may replace its own on BpLink.Fetch). */
 	TSharedPtr<FBpPlan> SheetPlan;
 	FVector2D PlanMin = FVector2D::ZeroVector;
 	FVector2D PlanSize = FVector2D::ZeroVector;
-	/** Where each label sits on the paper, kept so a height change only moves them. */
-	TArray<TPair<TWeakObjectPtr<UWidgetComponent>, FVector2D>> LabelPlaces;
+	/** Where each label sits on the paper and how far above it, kept so a height change only moves them. */
+	struct FLabelPlace
+	{
+		TWeakObjectPtr<UWidgetComponent> Label;
+		FVector2D PaperCm;
+		float LiftCm;
+	};
+	TArray<FLabelPlace> LabelPlaces;
 
 	TSharedPtr<class STextBlock> TitleLine1;
 	TSharedPtr<class STextBlock> TitleLine2;
