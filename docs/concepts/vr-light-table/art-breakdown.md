@@ -50,7 +50,7 @@ style frames, generated textures and the prop concept sheets fed to TRELLIS.2.
 |---|---|
 | Technique | photographic concept render, first-person, shallow depth of field at the far edge |
 | Subject treatment | architectural drafting: thin luminous linework, translucent paper-thin volumes, physical drafting objects |
-| Palette with roles | ground: blueprint blue `#0B2A6B` to `#123A8C`; linework and volumes: cyan-white `#BFE8FF`; attention (pins, scan, agent head): amber `#FFB547`; decision accents: warm paper `#F3E9D2`; studio: near-black blue `#0A0F18` |
+| Palette with roles | ground: blueprint blue `#0B2A6B` to `#123A8C`; linework, volumes and the scan band: cyan-white `#BFE8FF`; attention (pins, agent head): amber `#FFB547`; decision accents: warm paper `#F3E9D2`; studio: near-black blue `#0A0F18` |
 | Finish | soft bloom on edges, light haze, warm practical lights against a cool table, slight film grain |
 | Never | galaxy or star imagery, neon cyberpunk clutter, fisheye, readable fake text, purple gradients |
 

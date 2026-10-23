@@ -43,7 +43,7 @@ Inputs: [`wolf-plan.md`](wolf-plan.md) (all 701 lines), [`machine.md`](machine.m
    trailers. "We will resolve asset sharing once the project is successful as afterthought." The P4 import becomes a Lynx
    step, deferred.
 8. **R13 is moot.** bp is registered for Lynx in ai-registry `projects.json` (`"bp": { "Lynx": "kiro/bp" }`, ai-registry
-   `64d3dbda`, "fleet: register bp on Lynx", 2026-10-23). R4, R6 and R8b stay open owner asks.
+   `64d3dbda`, "fleet: register bp on Lynx", 2026-10-23). R4, R6 and R8b were answered by the owner later the same day (section (f), Closed).
 
 ---
 
@@ -188,8 +188,8 @@ headset (decision 5); "in the Simulator" means the Simulator's window on Lynx, n
 - [ ] **L3.2 The table (3 to 4 days).** Table mesh (greybox), a blueprint-paper material, and the wing footprints drawn
       into a runtime render target from `Plan.wings[*].box`, in `order` left to right, with the names as text (a
       high-resolution world-space widget or a Meta compositor layer, never text baked onto the mesh; tech-stack.md §2).
-      The table top starts at 95 cm behind one named constant and a console variable such as `bp.TableHeightCm`
-      **[owner, R4]**. Map plan units to centimetres with one named constant.
+      The table top starts at 95 cm behind one named constant and the console variable `bp.TableHeightCm`, and the
+      owner tunes it in the Simulator (R4 option A, owner 2026-10-23). Map plan units to centimetres with one named constant.
       Proof: a capture `captures/l32-<date>-lynx.jpg` from the target pose (standing, about 45° down at the near edge)
       showing A to E left to right with readable names; the log line `BpTable: wings=5 order=A,B,C,D,E height_cm=<n>`.
 - [ ] **L3.3 Volumes (2 to 3 days).** Instanced rooms (13), bays (29) and tiles (133), one
@@ -224,8 +224,9 @@ headset (decision 5); "in the Simulator" means the Simulator's window on Lynx, n
   - **Draw calls and triangles** from `stat rhi` / `stat scenerendering`, recorded as the baseline for P4's budget
     (150 draw calls, 350k visible triangles).
   - **Text legibility.** The owner reads every wing name and the smallest label at standing distance in the Simulator.
-    Record that label's angular height in degrees (2·atan(h / 2d)) from the scene geometry. It is the provisional VR
-    equivalent of bp's 12 px floor **[owner, R4]**; a headset reading waits for the headset route.
+    Record that label's angular height in degrees (2·atan(h / 2d)) from the scene geometry. It becomes the VR
+    equivalent of bp's 12 px floor from then on (R4 option A, owner 2026-10-23): written into this file and plan.md P3
+    with the owner's height; a headset reading waits for the headset route.
   - **Owner walk-through** in the Simulator: L0 to L2 and back, 8 lenses. The owner's verdict line in the note.
 
 ### P4 Assets (made on Lynx; the import is deferred)
@@ -239,7 +240,7 @@ Lynx-to-Wolf hand-off and its Host trailers are parked (decision 7).
       `npm run check` (wolf-plan L4.1, with every asset's dated line; plan.md 'P4 Lynx-side back-measure (2026-10-22)').
 - [ ] **L4.2 Import (Lynx, half a day per asset; deferred).** Import each `final.*` through the editor MCP into
       `apps/vr/Content/Bp/Art/<asset-id>/`. Nothing is imported without its gate results (the plan.md P4 gate). The
-      lamp waits for R8b. Deferred by the owner on 2026-10-23 until the project succeeds (decision 7).
+      lamp is imported as it stands (R8b allowed, owner 2026-10-23). Deferred by the owner on 2026-10-23 until the project succeeds (decision 7).
       Proof: the manifest's `import` block; `stat rhi` and `stat scenerendering` with the asset in the greybox.
 - [ ] **P4 gate (Lynx; deferred with L4.2).** Every asset carries its gate results, and the slice stays at **150 draw
       calls and 350k visible triangles or fewer** at the target pose, with the P3 frame time still held (p50, R5).
@@ -259,8 +260,8 @@ gated by `npm run check`. UE only draws, gestures, streams audio and calls route
       `scopesAt` gives the scope, via a route or the wire). The scan-line band is a material parameter collection. Pins
       rise from the SSE stream: a BpLink SSE reader over the UE HTTP module's streaming response **[verify on Lynx]** the
       5.8 API, parsed through the wire USTRUCTs. Proof: findings appear at their fixtures
-      (`BpScan: pin <finding> at tile <id>`); a sweep with no scope is a visible reject (`BpScan: reject ...`). The band's
-      colour is R6 (default cyan).
+      (`BpScan: pin <finding> at tile <id>`); a sweep with no scope is a visible reject (`BpScan: reject ...`). The band is
+      cyan (R6, owner 2026-10-23); pins and the agent head stay amber.
 - [ ] **L5.5 Packages (3 days; was W5.2).** Pinch a pin onto the wrist; set model (Sonnet 5.5 or Opus 5.5) and effort
       (low to xhigh). BpLink writes with `Content-Type: application/json` and a loopback Host (`local-only.ts`). Proof:
       the server's wave contract holds (`npm run check:waves` stays green; one finding in one draft wave at most, shown
@@ -354,9 +355,6 @@ Run before every commit that touches code (`apps/vr`, `packages/*`, `apps/server
 
 | # | Risk or ask | Owner? | State (2026-10-23), and the default if nobody decides |
 |---|---|---|---|
-| R4 | The table height, the text floor in degrees, and the comfort defaults. Options A, B and C are in wolf-plan section (f). Option B (the owner's height measured in a headset first) needs the headset route. | **owner** | **ASK, open.** Until answered: 95 cm behind one constant; the floor is whatever the owner reads at the P3 walk in the Simulator, recorded as provisional |
-| R6 | The scan line colour: cyan (art-breakdown #8, the target) or amber (the style block's attention role). Options in wolf-plan section (f); reference-sheet.md points here. | **owner** | **ASK, open.** Until answered: cyan. Blocks nothing in P3; the band is L5.4 |
-| R8b | A Leonardo image as image-to-3D input for a shipped mesh (`lamp-agent`). Options in wolf-plan section (f). | **owner** | **ASK, open.** Until answered: the lamp is not imported in L4.2, which is deferred anyway. Blocks nothing in P3 |
 | R14 | The forward path cannot fake the concept's bounce light well enough for the fidelity score (plan.md risks). | owner, at P6 | rect lights and baked bounce first; Lumen only if the score needs it and its p50 fits 11.1 ms |
 | H1 | **The headset route.** No headset in this phase (decision 5). Meta's Link requirements list Intel and AMD CPUs only, so Quest Link on Lynx's ARM64 CPU is not an option as published. What needs a headset: the P3 gate's legibility reading and walk-through as a headset reading, R4 option B, the P6 verdict "in the headset" (plan.md P6), the P7 hour, and any refresh-rate, ASW or dropped-frame measure. | **owner, later** | **Open, deferred.** Until decided: the Simulator stands in, and every such reading says "in the Simulator" |
 | H2 | **The emulated editor.** Epic documents the UE 5.8 editor as unsupported on Windows ARM64 (decision 1). Here it runs as emulated x64. Measured: UBT builds (readings 3 to 14) and a headless `-nullrhi` editor boot to the Kettle line (readings 10 and 14). Not measured: the editor with a real RHI, the New Project dialog, PIE, the Simulator, the editor MCP, cooking, and any frame time. The game thread's frame time includes emulation. | agent, then owner | **Open.** Each L3.1 step records what the emulated editor did. If a step fails for a reason that is the emulation, that is a finding for the owner, not a workaround |
@@ -366,6 +364,9 @@ Run before every commit that touches code (`apps/vr`, `packages/*`, `apps/server
 
 | # | Closed by | Record |
 |---|---|---|
+| R4 | owner, 2026-10-23: option A, measure then fix | L3.2 starts the table top at 95 cm behind one named constant and `bp.TableHeightCm`; the owner tunes it in the Simulator. The text floor is the angular height of the smallest label the owner reads without leaning at the P3 walk, and it is the floor from then on (L3.6 gate). Comfort defaults: L7.1's list (no artificial locomotion, a seated mode that lowers the table, snap re-centre, reduced motion honoured) |
+| R6 | owner, 2026-10-23: cyan | The scan band is cyan, as the target, art-breakdown #8 and frame 03 show. `art-breakdown.md`'s style-block palette moves "scan" out of the amber attention role, which keeps pins and the agent head (L5.4) |
+| R8b | owner, 2026-10-23: allowed | Leonardo images may be the image-to-3D input for shipped meshes. The image stays in ArtSource as provenance; the shipped bytes are TRELLIS.2 output (MIT) plus Lynx's own finishing. `lamp-agent` imports as it stands (L4.2); `tech-stack.md` §5 carries the rule |
 | R1 | owner, 2026-10-23 (decision 3): the junction | wolf-plan R1; `machine.md` readings 2 to 14 |
 | R2 | default, 2026-10-22: the installed 5.8.x, recorded | UE 5.8.4-58902052 (L3); `PLUGIN_BUILD_ID` against `ENGINE_COMPATIBLE_CHANGELIST` is L3.1-5's proof |
 | R3 | agent: Blank C++, plus the Meta plugins | L3.1-2 |

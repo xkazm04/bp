@@ -496,6 +496,10 @@ The first VR session on real data, ugly on purpose.
   and a cooked, staged `bp.exe` print the Kettle line, and the game boots on the Meta XR Simulator v207 (`machine.md`,
   'Lynx, 2026-10-23', readings 15 to 21; verdict per step in `lynx-plan.md` L3.1). Next is WP3.2.
 
+- 2026-10-23 (owner, R4 option A): the table top starts at 95 cm behind one named constant (`bp.TableHeightCm`) and
+  is tuned in the Simulator; the text floor is the angular height of the smallest label the owner reads without leaning
+  at the P3 walk, recorded here and in lynx-plan.md, and it is the floor from then on.
+
 **Gate:** 90 Hz on the box on the forward path with the full Kettle plan; text legible at the
 standing distance (an angular-size floor recorded as the VR equivalent of bp's 12 px); the owner
 walks it.

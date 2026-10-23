@@ -225,7 +225,9 @@ under 400 KB). ★ marks the pick re-rendered at MEDIUM.
 
 ## Open questions for the owner
 
-- **Scan line colour.** Still open. The element table (#8) and the target say cyan. The style block puts "scan"
+- **Scan line colour. Answered 2026-10-23 by the owner: cyan** (R6, lynx-plan.md section (f)); the style block's
+  palette in art-breakdown.md now gives "scan" the cyan role, and pins and the agent head keep amber. The text below
+  is the question as it stood. The element table (#8) and the target say cyan. The style block puts "scan"
   in the amber attention role. Every LOW hero draw painted the scan amber, and 03 painted it cyan because its
   text says cyan. One of the two docs should change; this sheet doesn't pick. The question is answered in one
   place only, risk **R6** in [`wolf-plan.md`](wolf-plan.md) section (f), which lists the options and what each

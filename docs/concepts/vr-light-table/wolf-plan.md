@@ -655,6 +655,9 @@ This only comes up if W3.1-4's E1 junction fails on Wolf. Answering now means a 
 Repo change when picked: A or B means one Lynx commit to `generate.mjs` and `check:schema` (plus, for B, the checks
 above), the regenerated headers, and section (d)'s parity rule and E1 reworded to match. C changes nothing.
 
+*2026-10-23: R4, R6 and R8b are answered by the owner (R4 option A, R6 cyan, R8b allowed); the record is lynx-plan.md
+section (f), Closed. The asks below are kept as they were put.*
+
 **R4. Table height, the text floor and the comfort defaults.** What is decided: the starting table height, how the
 VR text floor in degrees is set, and which comfort defaults are on from the first build.
 
