@@ -80,6 +80,8 @@ None declared.
 
 - Machine scope is the operator's doctrine, not an option: twice in wave 1 they answered through "Other" with "Lynx only, Wolf will not participate" and "no need to share anymore". When a plan spans machines, ask first which machines take part, before any question that assumes a split.
 
+- Content route for apps/vr: the operator chose the editor MCP (agent-driven) over the Recommended scripted Python commandlet - the route the VR plan names. Offer the plan's stated execution model first, with its setup cost written in.
+
 ## Skill improvement log
 
 - 2026-10-09 measured-lens-scans: scouts traced the data path but missed the sample-specific tables in the model (WING_DEFS), and only the real-data smoke test found them. Promoted to Repo law above.
@@ -92,3 +94,4 @@ None declared.
 - 2026-10-20 bp-vr-workspace: a spark whose deliverable is a contest routes to /contest and skips the build phases. When the brief REQUIRES a vendor or model word as UI content (the Sonnet/Opus wave picker), contest collect redacts it and breaks the blinded pages (model keys became "[redacted]"); with one-vendor seats, restore judging/entries from the originals, or keep model words out of the brief. Sonnet 5.5 xhigh hit the 90 min ceiling on 3 graphics-heavy variants; Opus finished in 84.
 - 2026-10-20 vr-light-table: "consult the registry's local LLM" meant its knowledge bundles (no model runner exists): route with research-map before wave 1 and say what the registry does NOT cover (WebXR/UE VR rendering, current model VRAM/licences), then fill that gap with web research. A docs-only spark skipped the go-gate and the worktree: the deliverable was the plan itself.
 - 2026-10-23 vr-ue-project-init: the scout read machine.md's "no Engine/Templates" as fact; Templates were at UE_5.8/Templates (a builder found it by reading the engine source). A presence claim about an install must name the path the CONSUMER reads, not the one a doc guessed. The editor's own UBT calls (New Project, -projectfiles) were never exercised by the probe, which drove UBT directly, so only the owner's first click found the win-arm64 dotnet failure. Uncooked -game passing proved nothing about the staged exe (Optional plugins dropped in monolithic builds): the cooked run was the only real proof, as decision 6 chose.
+- 2026-10-23 vr-table: builders verified UE work headless (-nullrhi) and could not see it; the first rendered capture found three defects (frame axis, lit paper under auto exposure, label size). For visual UE packages, a rendered capture from the target pose is part of the builder acceptance (PoF capture_viewport in PIE via the editor MCP), and a mesh brief names its axis mapping, not only its pivot.
