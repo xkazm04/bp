@@ -37,6 +37,9 @@ if (py) {
 }
 // import name -> requirements distribution name
 const DIST = { PIL: 'pillow', playwright: 'playwright' };
+// modules a host program embeds, not installable with pip: `unreal` is the UE editor's own Python
+// (apps/vr/tools/mcp-steps/py runs inside the editor through the MCP)
+const HOST_PROVIDED = new Set(['unreal']);
 
 const files = execFileSync('git', ['ls-files', '*.py'], { cwd: ROOT, encoding: 'utf8' }).split(/\r?\n/).filter(Boolean);
 const local = new Set(files.map((f) => path.basename(f, '.py')));
@@ -52,7 +55,7 @@ for (const f of files) {
   for (const m of src.matchAll(/^[ \t]*(?:from[ \t]+([A-Za-z_]\w*)[\w.]*[ \t]+import\b|import[ \t]+([^\n#]+))/gm)) {
     const names = m[1] ? [m[1]] : m[2].split(',').map((s) => s.trim().split(/[ .]/)[0]).filter(Boolean);
     for (const n of names) {
-      if (STDLIB.has(n) || local.has(n)) continue;
+      if (STDLIB.has(n) || local.has(n) || HOST_PROVIDED.has(n)) continue;
       (used.get(n) ?? used.set(n, []).get(n)).push(f);
     }
   }
