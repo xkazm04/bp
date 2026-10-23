@@ -49,9 +49,52 @@ private:
 	FString BaseUrl;
 };
 
-class FBpLinkModule : public IModuleInterface
+/** Fired on the game thread each time a fetch brings back a plan that parsed (lynx-plan L3.2). */
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnBpPlan, const FBpPlan&);
+/** Fired on the game thread when a fetch ends with no plan: the structure or the /plan read failed (its Error is logged). */
+DECLARE_MULTICAST_DELEGATE(FOnBpPlanFailed);
+
+/** Where the last fetch stands: Pending until the first one finishes, then Ready (a plan parsed) or Failed (none did). */
+enum class EBpPlanState : uint8
+{
+	Pending,
+	Ready,
+	Failed,
+};
+
+/**
+ * The module holds the product BpLink read, so a consumer (the table, ABpTable) never fetches a second time. The startup
+ * fetch (and every `BpLink.Fetch`) hands its snapshot here. A listener that subscribes after the plan arrived checks
+ * GetPlan() (or GetPlanState()) on subscribe; the delegates fire only for fetches that finish after it subscribed.
+ */
+class BPLINK_API FBpLinkModule : public IModuleInterface
 {
 public:
 	virtual void StartupModule() override;
 	virtual void ShutdownModule() override;
+
+	/** The loaded module (loads it if a caller runs before its PostEngineInit phase). Game thread. */
+	static FBpLinkModule& Get();
+
+	/** The last plan that parsed, or null while none has. A later failed fetch keeps it and sets GetPlanState() Failed. */
+	const FBpPlan* GetPlan() const { return bHasPlan ? &Plan : nullptr; }
+	EBpPlanState GetPlanState() const { return PlanState; }
+	/** The product BpLink reads ("kettle"). */
+	FString GetProductSlug() const;
+	/** structure.project.name from the last structure that parsed; empty while none has. */
+	const FString& GetProductName() const { return ProductName; }
+
+	FOnBpPlan& OnPlan() { return PlanDelegate; }
+	FOnBpPlanFailed& OnPlanFailed() { return PlanFailedDelegate; }
+
+	/** BpLink's own fetch calls this with each finished read (bOk as FBpLinkClient::FetchProduct hands it). */
+	void ReceiveSnapshot(bool bOk, const FBpLinkSnapshot& Snapshot);
+
+private:
+	FBpPlan Plan;
+	bool bHasPlan = false;
+	EBpPlanState PlanState = EBpPlanState::Pending;
+	FString ProductName;
+	FOnBpPlan PlanDelegate;
+	FOnBpPlanFailed PlanFailedDelegate;
 };

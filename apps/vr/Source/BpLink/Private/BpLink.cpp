@@ -241,23 +241,63 @@ namespace
 			Snapshot.Plan.tiles.Num(), Snapshot.Structure.lenses.Num(), Snapshot.Events.Num(), *Snapshot.Rev);
 	}
 
+	/** The one product WP3.1 and L3.2 read. */
+	const TCHAR* const KettleSlug = TEXT("kettle");
+
 	void FetchKettle()
 	{
 		if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
 		UE_LOG(LogBpLink, Log, TEXT("BpLink: reading Kettle from %s"), *GClient->GetBaseUrl());
-		GClient->FetchProduct(TEXT("kettle"), [](bool bOk, const FBpLinkSnapshot& Snapshot) { if (bOk) LogKettle(Snapshot); });
+		GClient->FetchProduct(KettleSlug, [](bool bOk, const FBpLinkSnapshot& Snapshot)
+		{
+			if (bOk) LogKettle(Snapshot);
+			// The module keeps what was read, so the table (ABpTable) never asks a second time.
+			if (FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"))) Module->ReceiveSnapshot(bOk, Snapshot);
+		});
 	}
 
 	FAutoConsoleCommand GFetchCommand(TEXT("BpLink.Fetch"), TEXT("Read Kettle from apps/server and log its wings."),
 		FConsoleCommandDelegate::CreateStatic(&FetchKettle));
 }
 
+FBpLinkModule& FBpLinkModule::Get()
+{
+	return FModuleManager::LoadModuleChecked<FBpLinkModule>(TEXT("BpLink"));
+}
+
+FString FBpLinkModule::GetProductSlug() const
+{
+	return KettleSlug;
+}
+
+void FBpLinkModule::ReceiveSnapshot(bool bOk, const FBpLinkSnapshot& Snapshot)
+{
+	if (bOk && !Snapshot.Structure.project.name.IsEmpty()) ProductName = Snapshot.Structure.project.name;
+	if (bOk && Snapshot.bHasPlan)
+	{
+		Plan = Snapshot.Plan;
+		bHasPlan = true;
+		PlanState = EBpPlanState::Ready;
+		PlanDelegate.Broadcast(Plan);
+	}
+	else
+	{
+		// No plan from this read: the structure or the /plan request failed, and its Error is already logged above.
+		PlanState = EBpPlanState::Failed;
+		PlanFailedDelegate.Broadcast();
+	}
+}
+
 void FBpLinkModule::StartupModule()
 {
-	FetchKettle();
+	// A commandlet (the cook in BuildCookRun) has no use for Kettle and no server to ask (machine.md, reading 19's side
+	// finding: libcurl error 7 in the cook log). BpLink.Fetch still asks on demand.
+	if (!IsRunningCommandlet()) FetchKettle();
 }
 
 void FBpLinkModule::ShutdownModule()
 {
 	GClient.Reset();
+	PlanDelegate.Clear();
+	PlanFailedDelegate.Clear();
 }

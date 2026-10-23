@@ -4,12 +4,14 @@
 // apps/vr/bp.uproject, or a staged bp.exe. It grades nothing: it prints the BpLink lines and where the full log is.
 //
 //   node apps/vr/tools/run-bplink.mjs [--mode editor|game|staged] [--exe <staged bp.exe>] [--no-server] [--xr-sim]
-//                                     [--timeout <s>] [--out <dir>]
+//                                     [--game-mode <class path>] [--timeout <s>] [--out <dir>]
 //
 // editor  UnrealEditor-Cmd.exe bp.uproject (headless: -nullrhi, unless --xr-sim, which renders off screen instead)
 // game    UnrealEditor-Cmd.exe bp.uproject -game (uncooked)
 // staged  a cooked, staged bp.exe (--exe)
 // --no-server   start nothing; BpLink is pointed at a closed port, so its "is npm run server running?" error is the outcome
+// --game-mode   game and staged: the URL option ?game=<class path> (e.g. /Script/bp.BpGameMode, which places the light
+//               table when the level has none) on the default map, for runs before config names a game mode
 // --xr-sim      XR_RUNTIME_JSON = the Meta XR Simulator v207 json for this process only (install-xr.ps1 -SimulatorOnly);
 //               never activate_simulator.ps1, never HKLM. Watches for the OpenXR init line too.
 //
@@ -47,6 +49,9 @@ if (mode === 'editor' || mode === 'game') {
 } else if (mode === 'staged') {
   exe = opt('--exe'); if (!exe || !fs.existsSync(exe)) refuse('--mode staged needs --exe <an existing staged bp.exe>');
 } else refuse(`unknown --mode ${mode}`);
+const gameMode = opt('--game-mode');
+if (gameMode && mode === 'editor') refuse('--game-mode needs --mode game or staged');
+if (gameMode) pre = [...pre, `?game=${gameMode}`];
 if (flag('--xr-sim') && !fs.existsSync(SIM_JSON)) refuse(`${SIM_JSON} is missing; run apps/vr/tools/install-xr.ps1 -SimulatorOnly`);
 fs.mkdirSync(out, { recursive: true });
 
@@ -101,6 +106,6 @@ await stopServer();
 const lines = ran.text.split(/\r?\n/);
 const pick = (re) => lines.filter((l) => re.test(l)).map((l) => l.trim());
 console.log(`ran     ${((Date.now() - started) / 1000).toFixed(1)} s, exit ${ran.code}, ${ran.stoppedBy}`);
-for (const l of pick(/LogBpLink|LogHMD: (Initialized OpenXR|.*no runtime)|Assertion failed|Critical error|appError/).slice(0, 40)) console.log(`line    ${l}`);
+for (const l of pick(/LogBpLink|LogBpTable|LogHMD: (Initialized OpenXR|.*no runtime)|Assertion failed|Critical error|appError/).slice(0, 40)) console.log(`line    ${l}`);
 console.log(`log     ${runLog}`);
 process.exit(OUTCOME.test(ran.text) ? 0 : 1);
