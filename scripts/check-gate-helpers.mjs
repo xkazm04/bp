@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // The derived-source helpers check-bplink.mjs exports (stripCxx, braceSpan, readEventsReport, copiedCaptures,
-// streamStateReport, includeParts) and the validate() check-art.mjs exports, imported WITHOUT running either gate, with the
+// streamStateReport, includePathAdds, junctionSpec) and the validate() check-art.mjs exports, imported WITHOUT running either gate, with the
 // seeded cases that proved them correct pinned here instead of living in a transcript. A helper a gate trusts to say
 // "this C++ is compliant" is only worth that if it can be shown to say "it is not": every helper gets a positive and a
 // negative case. Also runs each gate once as a child and requires its summary line, because a gate whose main-module guard
@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 // status and none of the cases below run. So the exit is watched: unless the end of the file was reached, it is a failure.
 let finished = false;
 process.on('exit', () => { if (!finished) { console.log('FAIL  check-gate-helpers did not reach its end: an imported gate ran and exited the process'); process.exitCode = 1; } });
-const { stripCxx, braceSpan, readEventsReport, copiedCaptures, streamStateReport, includeParts, payloadErrors } = await import('./check-bplink.mjs');
+const { stripCxx, braceSpan, readEventsReport, copiedCaptures, streamStateReport, includePathAdds, junctionSpec, payloadErrors } = await import('./check-bplink.mjs');
 const { validate } = await import('./check-art.mjs');
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -68,9 +68,14 @@ const same = ss(hdr(0), cppOf('(bConn) ? Resp->GetResponseCode() : 0', 'else if 
 check('streamStateReport: the old shape reads default 0, no-connection 0 and a message that says answered', same.initial === 0 && same.noConnect === 0 && /answered/.test(same.message), JSON.stringify(same));
 check('streamStateReport: no branch on the no-connection value reads message null', ss(hdr(-1), cppOf('(bConn) ? 1 : 0', '')).message === null);
 
-// ---- includeParts
-check('includeParts: reads the segments of Path.Combine(ModuleDirectory, ...)', includeParts('PublicIncludePaths.Add(Path.Combine(ModuleDirectory, "..", "..", "gen", "ue"));').join('/') === '../../gen/ue');
-check('includeParts: [] when there is no such call', includeParts('PublicIncludePaths.Add("x");').length === 0 && includeParts('Path.Combine(Other, "a")').length === 0);
+// ---- includePathAdds
+check('includePathAdds: finds PublicIncludePaths.Add, PrivateIncludePaths.AddRange and PublicSystemIncludePaths.Add in code', includePathAdds('PublicIncludePaths.Add(x); PrivateIncludePaths.AddRange(y); PublicSystemIncludePaths.Add(z);').length === 3);
+check('includePathAdds: [] for a comment or a string that only names one, and for other lists', includePathAdds('// PublicIncludePaths.Add(x)\n/* PrivateIncludePaths.Add(y) */ s = "PublicIncludePaths.Add(z)"; PublicDependencyModuleNames.AddRange(d);').length === 0);
+
+// ---- junctionSpec
+check('junctionSpec: reads $LinkRel and $TargetRel with / separators', JSON.stringify(junctionSpec("$x = 1\n$LinkRel = 'a\\b\\Schema'\n$TargetRel = 'p\\ue'\n")) === JSON.stringify({ link: 'a/b/Schema', target: 'p/ue' }));
+check('junctionSpec: null when either line is missing, commented out or not a single-quoted literal',
+  junctionSpec("$LinkRel = 'a'\n") === null && junctionSpec("$LinkRel = 'a'\n$TargetRel = \"b\"\n") === null && junctionSpec("# $LinkRel = 'a'\n# $TargetRel = 'b'\n") === null);
 
 // ---- payloadErrors (the schema validators check-bplink holds)
 check('payloadErrors: an empty body is refused by plan-1 and structure-envelope-1, a minimal pong passes scan-wire-1', payloadErrors('plan-1', {}) !== '' && payloadErrors('structure-envelope-1', {}) !== '' && payloadErrors('scan-wire-1', { ping: { at: '2026-10-21T00:00:00Z' } }) === '' && payloadErrors('scan-wire-1', { ping: {} }) !== '');

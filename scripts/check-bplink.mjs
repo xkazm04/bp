@@ -131,12 +131,23 @@ export function streamStateReport(header, code, lit) {
 }
 
 /**
- * The path segments BpLink.Build.cs hands to Path.Combine(ModuleDirectory, ...), read out of the file rather than retyped, so a
- * check that resolves them fails when the Build.cs and the check disagree. [] when there is no such call.
+ * Every include-path entry a Build.cs adds in CODE (Public/Private[System]IncludePaths.Add or .AddRange), comments
+ * stripped, as the matched call text. BpLink must add none: its one path to the generated headers is the Public/Schema
+ * junction, and a second path to the same file breaks #pragma once (machine.md, Lynx readings 4-5).
  */
-export function includeParts(build) {
-  const combine = /Path\.Combine\(ModuleDirectory\s*,\s*((?:"[^"]*"\s*,?\s*)+)\)/.exec(build);
-  return [...(combine?.[1] ?? '').matchAll(/"([^"]*)"/g)].map((m) => m[1]);
+export function includePathAdds(build) {
+  return [...stripCxx(build).matchAll(/\b(?:Public|Private)(?:System)?IncludePaths\s*\.\s*Add(?:Range)?\s*\(/g)].map((m) => m[0]);
+}
+
+/**
+ * The junction apps/vr/tools/link-schema.ps1 makes, read out of its `$LinkRel = '...'` and `$TargetRel = '...'` lines
+ * (repo-relative, returned with `/` separators) rather than retyped, so a check that resolves them fails when the script
+ * and the check disagree. null when either line is missing.
+ */
+export function junctionSpec(ps1) {
+  const read = (name) => new RegExp(`^\\s*\\$${name}\\s*=\\s*'([^']+)'`, 'm').exec(ps1)?.[1]?.replace(/\\/g, '/');
+  const link = read('LinkRel'), target = read('TargetRel');
+  return link && target ? { link, target } : null;
 }
 
 // The payload schemas, all six registered under their $id so structure-envelope-1's relative $ref to app-structure-3 resolves.
@@ -441,19 +452,36 @@ async function main() {
       check('source: the /structure diagnosis rule refuses the one-condition shape reading 10 ran',
         structureDiagProblems(`MakeGet(Root + TEXT("/structure"), x);\n${oneLine}MakeGet(Root + TEXT("/plan"), y);`).length === 5);
 
-      // BpLink.Build.cs reaches the generated USTRUCT headers through a hand-counted run of ".." from ModuleDirectory,
-      // and nothing in the repo has ever resolved it: a header moved, or one ".." too few, surfaces as an unresolved
-      // include in a UE build this repo cannot run. The path EXPRESSION is read out of the Build.cs rather than
-      // retyped here, so this check fails if the two ever disagree. The headers asserted are the ones BpLink actually
-      // includes, derived from its own #include lines, not a typed list.
+      // One path to the generated USTRUCT headers (2026-10-23, R1 closed): the junction Source/BpLink/Public/Schema ->
+      // packages/schema/generated/ue that apps/vr/tools/link-schema.ps1 makes; Public/ is on the module's include path,
+      // so BpLink.Build.cs adds none. The junction is git-ignored machine state, so a fresh checkout has none: the link
+      // and target are read out of link-schema.ps1 rather than retyped, and the headers are resolved in the target. The
+      // headers asserted are the ones BpLink actually includes, derived from its own #include lines, not a typed list.
       const MOD = path.join(ROOT, 'apps/vr/Source/BpLink');
       const build = fs.readFileSync(path.join(MOD, 'BpLink.Build.cs'), 'utf8');
-      const parts = includeParts(build);
-      const inc = path.resolve(MOD, ...parts);
-      check('build: BpLink.Build.cs names its include path as a Path.Combine off ModuleDirectory', parts.length > 0, build.slice(0, 0));
-      check(`build: that include path resolves inside the repo (${parts.join('/')})`, parts.length > 0 && !path.relative(ROOT, inc).startsWith('..'), inc);
-      check('build: the directory it adds to PublicIncludePaths exists', parts.length > 0 && fs.existsSync(inc), inc);
-      // `Schema/` is WP3.1's junction Source/BpLink/Public/Schema -> that same directory, so `Schema/X` is read there as X.
+      const adds = includePathAdds(build);
+      check('build: BpLink.Build.cs adds no include path (the Public/Schema junction is the one path to the headers)', adds.length === 0, adds.join(' | '));
+      // permanent control: the rule refuses the PublicIncludePaths entry into packages/schema that readings 4-5 broke on
+      check('build: the one-path rule refuses a Build.cs that adds PublicIncludePaths into packages/schema',
+        includePathAdds(`${build}\nPublicIncludePaths.Add(Path.Combine(ModuleDirectory, "..", "..", "..", "..", "packages", "schema", "generated", "ue"));`).length > 0
+        && includePathAdds(`// PublicIncludePaths.Add(SchemaUe);\n${build}`).length === 0);
+      const spec = junctionSpec(fs.readFileSync(path.join(ROOT, 'apps/vr/tools/link-schema.ps1'), 'utf8'));
+      const link = spec ? path.resolve(ROOT, spec.link) : '';
+      const inc = spec ? path.resolve(ROOT, spec.target) : '';
+      check('build: apps/vr/tools/link-schema.ps1 names the junction it makes ($LinkRel, $TargetRel)', spec !== null);
+      check(`build: that junction is BpLink's Public/Schema (${spec?.link})`, spec !== null && link === path.join(MOD, 'Public', 'Schema'), link);
+      check(`build: its target resolves inside the repo and exists (${spec?.target})`, spec !== null && !path.relative(ROOT, inc).startsWith('..') && fs.existsSync(inc), inc);
+      // Where the junction exists (a UE host that ran link-schema.ps1), it must be the junction to that target, not a copy.
+      let linkState = 'absent (apps/vr/tools/link-schema.ps1 makes it)';
+      let linkOk = true;
+      if (spec && fs.existsSync(link)) {
+        const isLink = fs.lstatSync(link).isSymbolicLink();
+        const real = fs.realpathSync(link);
+        linkOk = isLink && real.toLowerCase() === fs.realpathSync(inc).toLowerCase();
+        linkState = `${isLink ? 'link' : 'a real directory'} -> ${real}`;
+      }
+      check(`build: Public/Schema, where it exists, is a link to that target, not a copy (${linkState})`, linkOk, linkState);
+      // `Schema/` is the junction Source/BpLink/Public/Schema -> that target, so `Schema/X` is read there as X.
       const schemaIncludes = (text) => [...stripCxx(text, true).matchAll(/#include\s+"([^"]+)"/g)].map((m) => m[1])
         .filter((h) => /^(Schema\/)?Bp/.test(h) && !h.endsWith('.generated.h') && h !== 'BpLink.h');
       const sources = ['Public/BpLink.h', 'Private/BpLink.cpp'].map((f) => fs.readFileSync(path.join(MOD, f), 'utf8'));

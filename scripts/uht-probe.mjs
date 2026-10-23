@@ -2,12 +2,17 @@
 // UHT probe for BpLink (wolf-plan W3.1-4 / risk R1): does UnrealHeaderTool process packages/schema/generated/ue/BpSchema.h
 // when the module reaches it only through PublicIncludePaths? A PROBE, wired to no gate: it needs an Unreal Engine install,
 // takes minutes, and writes everything outside this repo.
+// 2026-10-23, R1 closed: BpLink.Build.cs no longer adds PublicIncludePaths; the module's ONE path to the headers is the
+// junction Source/BpLink/Public/Schema -> packages/schema/generated/ue (apps/vr/tools/link-schema.ps1). So `asis` (no
+// junction, PublicIncludePaths only) and `spellings` (needs "BpSchema.h" reachable through PublicIncludePaths) can no longer
+// be built from the repo's Build.cs: both are REFUSED with a line that says so, and their readings stay in machine.md.
+// `junction` (now the default) and `unity` still run against the repo's BpLink byte for byte.
 //
 //   node scripts/uht-probe.mjs --engine "C:/Program Files/Epic Games/UE_5.8" --work <scratch dir> [--variant asis|junction|spellings|unity] [--target bpEditor|bp] [--run]
 //
 // It synthesizes a host project under <work>/bp-uht-probe/ (apps/vr says the real .uproject is made by the editor, never by
 // hand, so none is added to the repo), copies apps/vr/Source/BpLink in byte for byte, and builds bpEditor Win64 Development.
-// The layout reproduces the one relationship BpLink.Build.cs depends on: four up from <probe>/apps/vr/Source/BpLink is
+// The layout reproduces the one relationship BpLink.Build.cs depended on before 2026-10-23: four up from <probe>/apps/vr/Source/BpLink is
 // <work>/bp-uht-probe/, which holds a directory junction `packages` -> this repo's packages/.
 // --variant junction adds E1's fix, a junction Source/BpLink/Public/Schema -> packages/schema/generated/ue, before building.
 // Two more put the include-spelling question to the compiler (MSVC keys `#pragma once` on the path, and BpSchema.h is now
@@ -36,7 +41,7 @@ const arg = (name) => {
 };
 const engine = arg('engine');
 const work = arg('work');
-const variant = arg('variant') ?? 'asis';
+const variant = arg('variant') ?? 'junction';
 const VARIANTS = ['asis', 'junction', 'spellings', 'unity'];
 // --target picks the UBT target and changes only the argv: bpEditor (default) is every reading before 2026-10-22; bp is the
 // synthesized Game target, built as `bp Win64 Development`. Variant markers and trees are untouched by it.
@@ -45,6 +50,16 @@ const target = arg('target') ?? 'bpEditor';
 const run = process.argv.includes('--run');
 if (!engine || !work || !VARIANTS.includes(variant) || !/^\w+$/.test(target)) {
   console.error(`usage: node scripts/uht-probe.mjs --engine <UE root> --work <scratch dir> [--variant ${VARIANTS.join('|')}] [--target <name>] [--run]`);
+  process.exit(2);
+}
+
+// The repo's BpLink.Build.cs adds no include path since 2026-10-23, so the two variants that read it are retired, loudly.
+const RETIRED = {
+  asis: 'the as-is reading needs BpLink.Build.cs to reach the headers through PublicIncludePaths alone, and since 2026-10-23 it adds no include path (R1 closed: the Public/Schema junction is the one path)',
+  spellings: 'its probe TUs include "BpSchema.h", which only PublicIncludePaths made reachable; since 2026-10-23 BpLink.Build.cs adds no include path, so that spelling no longer resolves at all (the one-path fix the reading argued for)',
+};
+if (RETIRED[variant]) {
+  console.error(`REFUSED: --variant ${variant} cannot run against this repo any more: ${RETIRED[variant]}. Its readings stay in docs/concepts/vr-light-table/machine.md; use --variant junction (or unity).`);
   process.exit(2);
 }
 
@@ -159,12 +174,13 @@ static_assert(sizeof(FBpPlan) > 0, "FBpPlan is a complete type in this translati
   }
 }
 
-// The path BpLink.Build.cs computes, resolved the way it does (Path.GetFullPath over ModuleDirectory + four ..).
+// The directory the Public/Schema junction points at, i.e. where "Schema/<header>" resolves (four up from the module is
+// <base>, whose `packages` junction leads into this repo; kept so a tree from an earlier reading still lines up).
 const schemaUe = path.resolve(mod, '..', '..', '..', '..', 'packages', 'schema', 'generated', 'ue');
 const headers = {};
 for (const h of ['BpSchema.h', 'BpSchemaFixups.h']) headers[h] = sha(path.join(schemaUe, h)); // throws if unreadable
 console.log(`probe     ${root}`);
-console.log(`Build.cs  SchemaUe = ${schemaUe} (BpSchema.h readable there)`);
+console.log(`schema    ${schemaLink} -> ${schemaUe} (BpSchema.h readable there)`);
 
 const log = path.join(base, `uht-probe-${variant}.log`);
 const uproject = path.join(root, 'bp.uproject');

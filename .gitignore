@@ -44,7 +44,7 @@ next-env.d.ts
 __pycache__/
 .venv/
 
-# VR client (apps/vr, UE 5.8 on Wolf): generated build and editor state
+# VR client (apps/vr, UE 5.8 on Lynx): generated build and editor state
 apps/vr/**/Binaries/
 apps/vr/**/Intermediate/
 apps/vr/**/Saved/
@@ -56,6 +56,8 @@ apps/vr/**/Plugins/*/Intermediate/
 apps/vr/**/Plugins/MetaXR/
 apps/vr/**/Plugins/MetaXRInteraction/
 apps/vr/.cache/
+# BpLink's junction to packages/schema/generated/ue (made by apps/vr/tools/link-schema.ps1); the headers live only there
+apps/vr/Source/BpLink/Public/Schema/
 *.sln
 *.suo
 *.VC.db
