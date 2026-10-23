@@ -48,12 +48,13 @@ $script:SimulatorPage = 'https://developers.meta.com/horizon/downloads/package/m
 # SHA-256 of the Meta v207 archives. The two plugin zips were downloaded and verified on 2026-10-03 (mage-arena route R-A,
 # docs/XR-TOOLCHAIN.md). An empty value is a name this script expects but has NOT pinned: it refuses with OWNER_ACTION
 # before downloading anything. meta_xr_simulator_v207.0.msi: on 2026-10-23 $script:SimulatorPage published it as an open
-# download (no login; 436768768 bytes), but no SHA-256 was ever recorded for it (mage-arena's copy was extracted by hand),
-# so pinning it is the owner's deliberate step. A new Meta release is a deliberate re-pin, never an automatic acceptance.
+# download (no login; 436768768 bytes). Pinned 2026-10-23 on Lynx after Get-AuthenticodeSignature read Valid, signer
+# CN="Meta Platforms, Inc.", issuer DigiCert Trusted G4 Code Signing RSA4096 SHA384 2021 CA1 (the page also lists
+# v207.1; v207.0 matches the v207.0 plugins). A new Meta release is a deliberate re-pin, never an automatic acceptance.
 $script:PinnedSha256 = @{
     'UnrealMetaXRPlugin.207.0.zip'         = 'f946093b66cc6682887ad2a5b0b12e2880b48d65a068f7dc84dc22a67aed43a8'
     'MetaXRInteractionPackage.207.0.0.zip' = '8a1dc65ca8ded1dcdc0efead8e6545f7ae19e201564332620a72258e325d6c9f'
-    'meta_xr_simulator_v207.0.msi'         = ''
+    'meta_xr_simulator_v207.0.msi'         = '6751289b290fb78c05a75eb9cfda316826c8eae57a6e29fe8c23089d3c81d525'
 }
 
 function Write-Plan([string]$Text) {
