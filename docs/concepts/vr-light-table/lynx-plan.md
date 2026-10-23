@@ -185,7 +185,7 @@ All of these need L3.1. The geometry always comes from `FBpPlan` (wing, room, ba
 it, that is a change to the plan handler and `plan-1.schema.json`, not C++ logic. The Meta XR Simulator stands in for the
 headset (decision 5); "in the Simulator" means the Simulator's window on Lynx, not a headset.
 
-- [ ] **L3.2 The table (3 to 4 days).** Table mesh (greybox), a blueprint-paper material, and the wing footprints drawn
+- [x] **L3.2 The table (3 to 4 days).** *Done 2026-10-23 (Lynx, spark `vr-table`): [`captures/l32-2026-10-23-lynx.jpg`](captures/l32-2026-10-23-lynx.jpg) from the target pose shows A to E left to right with readable names, the grid, the scale bar and the "Kettle · lens: business" title block (the compass rose is drawn, top right, too small to judge in this capture); `LogBpTable: BpTable: wings=5 order=A,B,C,D,E height_cm=95` in PIE and on the Meta XR Simulator (`machine.md` readings 22 to 26). The content was made through the editor MCP (`apps/vr/tools/mcp-steps/`).* Table mesh (greybox), a blueprint-paper material, and the wing footprints drawn
       into a runtime render target from `Plan.wings[*].box`, in `order` left to right, with the names as text (a
       high-resolution world-space widget or a Meta compositor layer, never text baked onto the mesh; tech-stack.md §2).
       The table top starts at 95 cm behind one named constant and the console variable `bp.TableHeightCm`, and the

@@ -6,6 +6,32 @@ file. Every line below is a command's own output or a file read on the named hos
 > **2026-10-23 (owner).** Lynx is now the only build host; Wolf is retired, and the live plan is
 > [`lynx-plan.md`](lynx-plan.md). The readings below are unchanged. New Lynx facts go in a new dated section.
 
+## Lynx, 2026-10-23 (later): L3.2 the table, made through the editor MCP
+
+Spark `vr-table`, commits `6e002e9` (ABpTable), `167dc92` (the MCP tooling), `88c849b` (two fixes the captures found),
+`34a2156` (the content). Host and toolchain as below.
+
+- **The editor MCP on Lynx.** `node apps/vr/tools/mcp-editor.mjs start`: `MCP_READY http://127.0.0.1:8770/mcp` (a headless
+  `UnrealEditor-Cmd`, `-RenderOffScreen -ModelContextProtocolStartServer -ModelContextProtocolPort=8770`). Port 8770
+  because a local uvicorn server held the plugin default 8000. `list_toolsets` shows EditorToolset's and PoF's toolsets;
+  PoFToolset needs GameplayAbilities enabled (its `gas.py` names `unreal.AbilitySystemComponent` at import).
+- **Tool facts.** `StaticMeshTools.import_file` refuses `.glb` (`FbxFactory does not support ".glb" files. Allowed:
+  ['fbx', 'obj']`); an `AssetImportTask` through Interchange imports it. `TextureTools.import_file` does not save
+  (the textures were gone after an editor restart). Material outputs are spelled `MP_BaseColor`, `MP_EmissiveColor`.
+  `CaptureViewport` renders the editor world, not PIE; PoF's `capture_viewport` (HighResShot of the active
+  viewport) captures the PIE view.
+
+| # | What ran | Verbatim result |
+|---|---|---|
+| 22 | `StaticMeshTools.get_bounds` on the imported frame | `{"min":{"x":-60.000003814697266,"y":-40,"z":0},"max":{"x":60.000003814697266,"y":40,"z":95}}`; 4 slots; `get_triangle_count` 464 |
+| 23 | the first capture (PoF `capture_viewport`, PIE, lit paper) | the frame's long side faced away and the paper washed out white under auto exposure (fixed: `88c849b` yaw 90; unlit paper, manual exposure) |
+| 24 | PIE after `BpLink.Fetch` | `LogBpTable: BpTable: wings=5 order=A,B,C,D,E height_cm=95`, no `missing, greybox` line |
+| 25 | the capture from the target pose (-80, 0, 165 cm, pitch -45) | [`captures/l32-2026-10-23-lynx.jpg`](captures/l32-2026-10-23-lynx.jpg): A to E left to right, names readable, D's wrapped |
+| 26 | `node apps/vr/tools/run-bplink.mjs --mode game --xr-sim` | `LogHMD: Initialized OpenXR on Meta XR Simulator runtime version 207.0.0`, `LogLoad: LoadMap: /Game/Maps/LightTable`, the Kettle line, `LogBpTable: BpTable: wings=5 order=A,B,C,D,E height_cm=95`, 0 greybox warnings |
+
+Not established: any frame time; the text floor in degrees (R4, measured at the P3 walk); a cooked build of this map;
+`bp.TableHeightCm` tuned by the owner; the replay of `mcp-steps/l32-content.jsonl` on an empty `Content/`.
+
 ## Lynx, 2026-10-23: the editor-made project in `apps/vr`, and WP3.1's acceptance met
 
 Host: Lynx, as below (UE 5.8.4-58902052, MSVC 14.44.35207 `Hostx64`, emulated x64 on ARM64; Node v24.22.0). Every run

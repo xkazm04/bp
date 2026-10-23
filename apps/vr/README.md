@@ -16,6 +16,10 @@
 >    another way: its own UBT calls need this script's environment.
 > 4. `node apps/vr/tools/run-bplink.mjs --mode editor` starts apps/server and the editor headless and prints BpLink's
 >    lines (`--no-server`, `--mode game --xr-sim`, `--mode staged --exe <bp.exe>`).
+> 5. Content is made through UE 5.8's editor MCP: `powershell -File apps/vr/tools/link-pof-toolset.ps1` once (pof's
+>    toolset, a junction to the pof checkout), then `node apps/vr/tools/mcp-editor.mjs start` (headless editor, MCP on
+>    `127.0.0.1:8770`) and `node apps/vr/tools/mcp-call.mjs toolsets | call | python | replay`. The calls that made
+>    `Content/` are logged in `tools/mcp-steps/`. The map is `/Game/Maps/LightTable` (L3.2, `machine.md` readings 22-26).
 
 This folder will hold the Unreal Engine 5.8 project for bp's VR channel: a PC-tethered Quest 3 app
 with Meta XR v207 and the Meta Interaction SDK, drawing the product at a backlit light table
