@@ -552,6 +552,14 @@ try {
     const sg2 = await call(sug.GET, '/x', 'GET', { slug: 'rel' });
     check('suggest passes over a version that has a release', sg2.body.version === '2.3.1', JSON.stringify(sg2.body));
 
+    // the pre-flight dry run (body {"dry":true}): every local guard, no job, and gh is never spawned (signed out here, and
+    // the answer is still ready with gh unchecked: a dry run reads local state only, the real build checks the login)
+    const jobsBefore = J.list('rel').length;
+    const dry = await call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0' }, { dry: true });
+    check('build dry on a draft -> 200 { ready: true }, no new job', dry.status === 200 && dry.body.ready === true && J.list('rel').length === jobsBefore, JSON.stringify(dry));
+    process.env.FAKE_GH_OUT = '1';
+    const dryOut = await call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0' }, { dry: true });
+    check('build dry spawns no gh: signed out still -> 200 ready, gh unchecked, no job', dryOut.status === 200 && dryOut.body.ready === true && dryOut.body.gh === 'unchecked' && J.list('rel').length === jobsBefore, JSON.stringify(dryOut));
     process.env.FAKE_GH_OUT = '1';
     const b412 = await call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0' }, {});
     check('build with gh signed out -> 412 gh not authenticated', b412.status === 412 && b412.body.error === 'gh not authenticated', JSON.stringify(b412));
@@ -575,6 +583,11 @@ try {
     check('build: done, the release pr-open with its url, run_id = the release-head measure run (bp-job note)', jb?.status === 'done' && relRow('rel-2.3.0')?.status === 'pr-open' && !!relRow('rel-2.3.0')?.pr_url && jb.run_id === 'run-' + jb.id, JSON.stringify(jb));
     check('build: the prompt is /lens-scan release --id rel-2.3.0 on stdin', /^stdin \/lens-scan release --id rel-2\.3\.0$/m.test(jb?.log_tail ?? ''), jb?.log_tail);
     check('build of a pr-open release -> 409', (await call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0' }, {})).status === 409);
+    {
+      const real = await call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0' }, {}), n0 = J.list('rel').length;
+      const d409 = await call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0' }, { dry: true });
+      check('build dry on a pr-open release -> 409 with the real build words, no job', d409.status === 409 && d409.body.error === real.body.error && J.list('rel').length === n0, JSON.stringify(d409));
+    }
     if (hasStoreMjs) {
       const t8 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a1'], decision: 'reopen' });
       show('POST /api/products/rel/triage {"ids":["a1"],"decision":"reopen"} (release pr-open) -> ' + t8.status, t8.body);

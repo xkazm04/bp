@@ -18,6 +18,11 @@ import { SCAN_SCOPE_KINDS } from '../standard/schema-vocab.ts';
 
 export type { TrainToggles };
 
+/** A build's pre-flight answer (POST build `{"dry":true}`, ScanSim.preflightRelease): every guard passed and nothing was
+ *  queued. `gh` is `unchecked` on a live product: a dry run reads local state only and never spawns gh, so the login is
+ *  still checked when the build starts; the sample's toggle is local state, so it says `signed-in`. */
+export interface ReleaseReady { ready: true; gh: 'signed-in' | 'unchecked' }
+
 /** What the sim needs of the product: bound once the model is built (`ScanSim.bind`). */
 export interface ScanSimProduct {
   /** Base feature slugs in layout order (left to right): what `all` walks, and the order a scope is walked in. */
@@ -268,6 +273,9 @@ export class ScanSim {
   buildRelease(id: string): ScanJob { return this.queueRelease(id, 'build'); }
   /** The sample job that finishes a merged release (tag, items released, settled packs closed). */
   finishRelease(id: string): ScanJob { return this.queueRelease(id, 'finish'); }
+  /** The build's pre-flight, as POST build `{"dry":true}`: every refusal the build would give (400, 404, 409, 412 when
+   *  the gh toggle is off, 429), then `{ ready: true }` with no job queued and nothing notified. */
+  preflightRelease(id: string): ReleaseReady { this.queueRelease(id, 'build', true); return { ready: true, gh: 'signed-in' }; }
   /** Kettle only: stands in for the person merging the PR on GitHub (pr-open -> merged). */
   sampleMerge(id: string): void { this.train.merge(id); }
   /** A sample item commit's diff. */
@@ -322,11 +330,14 @@ export class ScanSim {
     return id;
   }
   /** Queue a release job as the build and finish routes do: 400/404/409 from the release's state, 409 when one runs, 412, 429. */
-  private queueRelease(id: string, step: ReleaseStep): ScanJob {
+  private queueRelease(id: string, step: ReleaseStep, dry: true): null;
+  private queueRelease(id: string, step: ReleaseStep): ScanJob;
+  private queueRelease(id: string, step: ReleaseStep, dry = false): ScanJob | null {
     const rel = this.train.startable(id, step);
     if (this.recs.some((r) => r.job.kind === 'release' && r.job.release === id && (r.job.status === 'queued' || r.job.status === 'running'))) throw refuse(409, `a release job for ${id} is already queued or running`);
     if (this.toggles.ghOff) throw refuse(412, 'gh not authenticated');
     if (this.recs.filter((r) => r.job.status === 'queued').length >= MAX_QUEUED) throw refuse(429, 'queue-full');
+    if (dry) return null;
     const jid = 'sim-' + ++this.nextId;
     this.recs.push({ job: { id: jid, kind: 'release', release: id, version: rel.version, step, status: 'queued', queued_at: this.iso() }, items: [], i: 0, stepAt: 0, step: RELEASE_STEP_MS, runId: 'run-' + jid });
     this.pump();
