@@ -1,5 +1,6 @@
 #include "BpGameMode.h"
 
+#include "BpPawn.h"
 #include "BpTable.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/Engine.h"
@@ -69,6 +70,11 @@ namespace
 				UE_LOG(LogBpTable, Warning, TEXT("BpView: usage BpView.Pose target|play (needs a playing world with a player and a table)"));
 			}
 		}));
+}
+
+ABpGameMode::ABpGameMode()
+{
+	DefaultPawnClass = ABpPawn::StaticClass();
 }
 
 bool ABpGameMode::ApplyPose(UWorld* World, const FString& Name)

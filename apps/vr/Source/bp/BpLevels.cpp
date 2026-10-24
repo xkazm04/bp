@@ -579,3 +579,34 @@ bool ABpTable::HitTest(const FVector& WorldOrigin, const FVector& WorldDir, FStr
 	}
 	return false;
 }
+
+bool ABpTable::AimAt(const FString& Id, FVector& OutWorld) const
+{
+	if (!SheetPlan.IsValid()) return false;
+	// Paper centimetres on a group's plane (the paper, the lifted wing's or the lifted room's) to the world.
+	const auto OnGroup = [this, &OutWorld](const FTransform& Group, const FVector2D& PaperCm)
+	{
+		const FVector Local(PaperDepthCm * 0.5 - PaperCm.Y, PaperCm.X - PaperWidthCm * 0.5, 0.0);
+		OutWorld = GetActorTransform().TransformPosition(Group.TransformPosition(Local));
+		return true;
+	};
+	const auto Centre = [](const FBpPlanBox& Box) { return FVector2D(Box.x + Box.w * 0.5, Box.y + Box.h * 0.5); };
+	const FTransform AtRest = WingGroupTransform(0.f);
+	const FTransform WingT = WingGroupTransform(Ease(WingAlpha));
+	for (const FCrumb& Crumb : Crumbs)
+	{
+		if (Crumb.Id == Id) return OnGroup(AtRest, Crumb.PaperCm.GetCenter());
+	}
+	if (const FBpPlanRoom* Room = FindRoom(Id))
+	{
+		if (Room->parentId != AnimWing || WingAlpha <= 0.f) return OnGroup(AtRest, PlanToPaperCm(Centre(Room->box)));
+		FTransform Group = WingT;
+		if (Id == AnimRoom && RoomAlpha > 0.f) Group.AddToTranslation(FVector(0.0, 0.0, RoomLiftCm * Ease(RoomAlpha)));
+		return OnGroup(Group, PlanToPaperCm(Centre(Room->box)));
+	}
+	if (const FBpPlanWing* Wing = FindWing(Id))
+	{
+		return OnGroup(Id == AnimWing && WingAlpha > 0.f ? WingT : AtRest, PlanToPaperCm(Centre(Wing->box)));
+	}
+	return false;
+}

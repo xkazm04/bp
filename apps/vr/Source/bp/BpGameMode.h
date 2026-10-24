@@ -15,6 +15,9 @@ class BP_API ABpGameMode : public AGameModeBase
 	GENERATED_BODY()
 
 public:
+	/** ABpPawn (the camera, the hands and the controllers) is the default pawn. */
+	ABpGameMode();
+
 	/** The play pose: standing at the near edge (the table's -X side), eyes this high above the floor and this far behind
 	 *  the edge, looking down at the sheet. Used only when the level has no PlayerStart. */
 	static constexpr float PlayEyeHeightCm = 165.f;

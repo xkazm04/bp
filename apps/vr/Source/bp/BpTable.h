@@ -163,6 +163,10 @@ public:
 	 *  or "crumb" (OutId "home", "wing:<id>" or "room:<id>"). False when the ray meets none. */
 	UFUNCTION(BlueprintCallable, Category = "Bp|Levels")
 	bool HitTest(const FVector& WorldOrigin, const FVector& WorldDir, FString& OutKind, FString& OutId) const;
+	/** HitTest's inverse, for the synthetic hand (BpHands.Pinch): the world point at the centre of a wing, a room or a
+	 *  crumb ("home", "wing:<id>", "room:<id>") as it is drawn now, on the plane HitTest would meet it on. False for an
+	 *  unknown id or no plan. */
+	bool AimAt(const FString& Id, FVector& OutWorld) const;
 	/** Brightens one wing, room or crumb (HitTest's kinds and ids); an empty Id clears it. */
 	UFUNCTION(BlueprintCallable, Category = "Bp|Levels")
 	void SetHighlight(const FString& Kind, const FString& Id);
