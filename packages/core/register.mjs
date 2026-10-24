@@ -3,8 +3,10 @@
 // Node strips types itself; these hooks add what the bundler gave the web app: extensionless relative imports
 // (`./products.server` -> .ts, a directory -> index.ts) and .json / .jsonl files as default-export modules (the
 // .jsonl one as its text).
-// scripts/lib/src-hooks.mjs is the checks' near-twin of this file, and the two are deliberately NOT the same. It
-// does five things this one does not, so do not copy a change between them without reading both:
+// scripts/lib/src-hooks.mjs is the checks' one loader (scripts/overlays-loader.mjs is a shim over it) and this file's
+// near-twin; the two are deliberately NOT the same. Beyond its opt-in transpile mode (TSX, parameter properties,
+// .css stubs, seeded-source mutation), its strip mode does five things this one does not, so do not copy a change
+// between them without reading both:
 //   - resolves the web app's `@/` alias (this core runs without apps/web)
 //   - tries `.tsx` as well as `.ts` (core-purity forbids React in packages/core, so core has no .tsx to find)
 //   - has no "already has an extension" guard, so it runs tryFile on `./x.json` too
