@@ -117,7 +117,8 @@
     "check:train-undo": "node scripts/check-train-undo.ts",
     "check:timeline-changes": "node apps/web/src/components/timeline/check-changes.ts",
     "check:ledger-intents": "node scripts/check-ledger-intents.ts",
-    "check:release-steps": "node scripts/check-release-steps.ts"
+    "check:release-steps": "node scripts/check-release-steps.ts",
+    "check:aggregate-report": "node scripts/check-aggregate-report.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

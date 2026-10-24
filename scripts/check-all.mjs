@@ -13,10 +13,16 @@
 // Run: npm run check   (BP_CHECK_ONLY=a,b limits the run to scripts whose name contains one of the terms;
 // a term that matches no check is a typo and fails the run before anything executes, rather than reporting
 // a green gate over 0 checks)
+// A red run prints, per failing check, every FAIL line of its output above the 25-line tail and then the tail
+// (scripts/lib/check-report.mjs), plus the exact command that reruns it. Each run records the checks it left red
+// (os.tmpdir()/bp-check-<sha1(root)>.json, or BP_CHECK_RECORD), and `npm run check -- --failed` reruns exactly that set:
+// no record, an empty one or a name no longer in package.json fails before anything runs. --failed is the fix loop,
+// never the gate: the full npm run check still runs before a push, and the run's last line says so.
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { failReport, rerunFor, recordPath, parseRecord, mergeRecord, lastLine } from './lib/check-report.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const scripts = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).scripts;
@@ -24,12 +30,25 @@ const hasPython = ['python', 'python3', 'py'].some((c) => spawnSync(c, ['--versi
 const only = (process.env.BP_CHECK_ONLY ?? '').split(',').filter(Boolean);
 
 const all = ['typecheck', ...Object.keys(scripts).filter((k) => k.startsWith('check:')), 'validate:structure'];
-const names = all.filter((n) => !only.length || only.some((o) => n.includes(o)));
+const failedMode = process.argv.includes('--failed');
+const RECORD = recordPath(ROOT, process.env);
+const readRecord = () => { try { return parseRecord(fs.readFileSync(RECORD, 'utf8')); } catch { return parseRecord(null); } };
+const prevRecord = readRecord();
+if (failedMode) {
+  // Exact names from the record, never substrings: BP_CHECK_ONLY=check:standard also selects check:standard-fixtures.
+  const stale = prevRecord.names?.filter((n) => !all.includes(n)) ?? [];
+  const why = only.length ? `--failed and BP_CHECK_ONLY='${only.join(',')}' together are ambiguous; use one`
+    : prevRecord.error ? `--failed: ${prevRecord.error} (${RECORD}); run npm run check`
+    : stale.length ? `--failed: the record names ${stale.map((n) => `'${n}'`).join(', ')}, no longer a check in package.json; run npm run check` : '';
+  if (why) { console.log(`FAIL  ${why}`); console.log('\n0 passed, 1 failed, 0 skipped of 0'); process.exit(1); }
+}
+const names = failedMode ? all.filter((n) => prevRecord.names.includes(n))
+  : all.filter((n) => !only.length || only.some((o) => n.includes(o)));
 // A narrowing term that matches nothing is a TYPO, and the run it produces reads exactly like success:
 // `BP_CHECK_ONLY=overlys` ran 0 checks and exited 0, and one dead term among several quietly left its
 // checks out of a run the caller believed covered them. Both are refused here, before anything runs.
 const dead = only.filter((o) => !all.some((n) => n.includes(o)));
-if (dead.length || !names.length) {
+if (!failedMode && (dead.length || !names.length)) {
   for (const o of dead) console.log(`FAIL  BP_CHECK_ONLY term '${o}' matches none of the ${all.length} checks`);
   if (!names.length) console.log(`FAIL  BP_CHECK_ONLY='${only.join(',')}' selected 0 of ${all.length} checks: nothing was run`);
   console.log(`\n0 passed, ${dead.length || 1} failed, 0 skipped of ${all.length}`);
@@ -126,13 +145,20 @@ await Promise.all(Array.from({ length: Math.min(4, queue.length) }, async () => 
 for (const [n, why] of skipped) console.log(`SKIP  ${n.padEnd(width)}  ${why}`);
 for (const r of results) r.bad = unforgiven(r.name, r.skips);
 const failed = results.filter((r) => r.code !== 0 || r.bad.length);
+const rerun = (n) => { try { return `  rerun: ${rerunFor(n, scripts)}`; } catch (e) { return `  (no rerun: ${e.message})`; } };
 for (const r of failed) {
-  if (r.code === 0) console.log(`\nFAIL  ${r.name} exited 0 but printed SKIP, which fails the suite (a skip is an unrun check):\n${r.bad.map((l) => '  ' + l).join('\n')}`);
-  else console.log(`\n--- ${r.name} (exit ${r.code}) ---\n${r.out.trim().split('\n').slice(-25).join('\n')}`);
+  if (r.code === 0) console.log(`\nFAIL  ${r.name} exited 0 but printed SKIP, which fails the suite (a skip is an unrun check):\n${r.bad.map((l) => '  ' + l).join('\n')}\n${rerun(r.name)}`);
+  else console.log(`\n--- ${r.name} (exit ${r.code}) ---\n${failReport(r.name, r.out)}\n${rerun(r.name)}`);
 }
+// This checkout's red set; a narrowed run keeps the red checks it did not run. Losing the record costs only --failed.
+const red = names.filter((n) => failed.some((r) => r.name === n));
+try { fs.writeFileSync(RECORD, JSON.stringify(mergeRecord(prevRecord.names ?? [], todo, red))); }
+catch (e) { console.log(`note: could not write the record ${RECORD}: ${e.message}`); }
 const partial = results.filter((r) => r.skips.length);
 const nSkips = partial.reduce((n, r) => n + r.skips.length, 0);
 const nBad = results.reduce((n, r) => n + r.bad.length, 0);
 console.log(`\n${results.length - failed.length} passed, ${failed.length} failed, ${skipped.size} skipped of ${names.length}`
   + (partial.length ? `; ${partial.length} check(s) printed ${nSkips} SKIP line(s), ${nBad} not opted out and failing: ${partial.map((r) => r.name).join(', ')}` : ''));
+const tailLine = lastLine(red, failedMode ? names.length : null);
+if (tailLine) console.log(tailLine);
 process.exit(failed.length ? 1 : 0);
