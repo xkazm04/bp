@@ -28,6 +28,14 @@
 
 ```sh
 npm run schema:generate   # rewrite all four generated files after a schema change
+npm run schema:generate -- --since origin/master --dry-run
+                          # before writing: what the schema edits since a git ref do to each channel (compat.mjs),
+                          # grouped by schema file - added, removed, required-added/-dropped, enum-widened/-narrowed
+                          # (one change per field holding a $ref'd enum), ue-type, ts-type - each with who it breaks
+                          # (ue: an old BpLink build keeps a silent default for a removed key, but fails the whole
+                          # struct on a value that no longer converts; ts: parity with types.ts; documents: no longer
+                          # valid) and a call-out when a breaking file keeps its version suffix. A report, not a gate;
+                          # --dry-run writes nothing, and without it the write follows. check:schema-compat pins it.
 npm run check:schema      # fails while a generated file is stale, when a schema field is neither a UPROPERTY named
                           # as its key nor copied by FixUp, or when types.ts and the generated types disagree on a
                           # field, its optionality or its string enum; also:
