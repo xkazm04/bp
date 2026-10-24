@@ -5,14 +5,22 @@
 // selection that no draft wave holds; the ones a draft wave already holds are left out and named. Two packages on one feature
 // get a warning (they build in parallel in one repo and may collide). Create (Save, when editing a draft) goes through
 // useWaves; on success the selection clears and the wave's tab is selected, on a refusal the panel stays open with its
-// edits (the hook toasted the reason). The names and counts are checked with the contract's own checkWaveBody.
+// edits (the hook toasted the reason). The names and counts are checked with the contract's own checkWaveBody. Arrange
+// (One package | By feature | By lens, waves/arrange.ts) re-partitions the held findings in one press; it only replaces
+// the packages (each keeps the model and effort its first finding had), and a manual change afterwards reads as by hand.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { checkWaveBody, MAX_PACKAGES, WAVE_EFFORTS, WAVE_MODELS, type WaveBody, type WaveEffort, type WaveModel } from '@bp/core/scan/waves';
 import type { ComposerAsk, Ledger } from '../useLedger';
 import { Seg } from '../train/ui/Controls';
+import { arrange, sharedFeatures, type ArrangeBy } from './arrange';
 
 interface Pk { key: number; name: string; model: WaveModel; effort: WaveEffort; ids: string[] }
 const MODEL_LABEL: Record<WaveModel, string> = { sonnet: 'Sonnet', opus: 'Opus' };
+const ARRANGE: { value: ArrangeBy; label: string; title: string }[] = [
+  { value: 'one', label: 'One package', title: 'Every finding in one package' },
+  { value: 'feature', label: 'By feature', title: 'One package per feature, so no two packages build the same feature (at most ' + MAX_PACKAGES + ': the lightest merge into the lightest). Each package keeps the model and effort its first finding had' },
+  { value: 'lens', label: 'By lens', title: 'One package per lens. Each package keeps the model and effort its first finding had' },
+];
 
 export function WaveComposer({ L, ask }: { L: Ledger; ask: ComposerAsk }) {
   const { waves } = L, edit = ask.edit ? waves.waves.find((w) => w.id === ask.edit) : undefined;
@@ -21,6 +29,8 @@ export function WaveComposer({ L, ask }: { L: Ledger; ask: ComposerAsk }) {
   const [pks, setPks] = useState<Pk[]>(() => edit
     ? edit.packages.map((p) => ({ key: next.current++, name: p.name, model: p.model, effort: p.effort, ids: [...p.ids] }))
     : [{ key: next.current++, name: 'Package 1', model: 'opus', effort: 'high', ids: [...ask.ids] }]);
+  // the arrangement the packages are in; 'hand' once they were edited by hand (no Arrange button reads pressed)
+  const [by, setBy] = useState<ArrangeBy | 'hand'>(edit ? 'hand' : 'one');
   const field = useRef<HTMLInputElement>(null);
   useEffect(() => { field.current?.focus({ preventScroll: true }); field.current?.select(); }, []);
 
@@ -34,26 +44,29 @@ export function WaveComposer({ L, ask }: { L: Ledger; ask: ComposerAsk }) {
   const problem = empty ? 'Package "' + (empty.name || 'unnamed') + '" is empty: move findings into it or remove it' : !chk.ok ? chk.error : null;
 
   // packages that share a feature: the warning names the feature and the packages
-  const clash = useMemo(() => {
-    const by = new Map<string, { name: string; pk: Set<number> }>();
-    for (const p of pks) for (const id of p.ids) {
-      const f = L.byId.get(id); if (!f) continue;
-      let e = by.get(f.p.feature); if (!e) by.set(f.p.feature, (e = { name: f.fname, pk: new Set() }));
-      e.pk.add(p.key);
-    }
-    return [...by.values()].filter((e) => e.pk.size > 1);
-  }, [pks, L.byId]);
+  const clash = useMemo(() => sharedFeatures(pks, L.byId), [pks, L.byId]);
 
   const patch = (key: number, c: Partial<Pk>) => setPks((a) => a.map((p) => (p.key === key ? { ...p, ...c } : p)));
+  const rearrange = (to: ArrangeBy | 'hand') => {
+    if (to === 'hand') return;
+    const was = new Map(pks.flatMap((p) => p.ids.map((id) => [id, p] as const)));
+    const known = pks.flatMap((p) => p.ids).flatMap((id) => L.byId.get(id) ?? []);
+    const out = arrange(known, to, { lensName: (id) => L.lenses.find((l) => l.id === id)?.short ?? id, was: (id) => was.get(id) });
+    if (!out.length) return; // nothing held: keep what is there
+    const lost = pks.flatMap((p) => p.ids).filter((id) => !L.byId.has(id)); // ids the ledger no longer knows stay, in the first package
+    setPks(out.map((p, i) => ({ key: next.current++, ...p, ids: i ? p.ids : [...p.ids, ...lost] })));
+    setBy(to);
+  };
+  const hand = () => setBy('hand'); // a manual edit: the packages are arranged by hand now
   const move = (id: string, to: number) => setPks((a) => a.map((p) => ({ ...p, ids: p.key === to ? [...p.ids, id] : p.ids.filter((x) => x !== id) })));
   const drop = (id: string) => setPks((a) => a.map((p) => ({ ...p, ids: p.ids.filter((x) => x !== id) })));
-  const addPk = () => setPks((a) => [...a, { key: next.current++, name: 'Package ' + (a.length + 1), model: 'opus', effort: 'high', ids: [] }]);
-  const rmPk = (key: number) => setPks((a) => {
+  const addPk = () => { hand(); setPks((a) => [...a, { key: next.current++, name: 'Package ' + (a.length + 1), model: 'opus', effort: 'high', ids: [] }]); };
+  const rmPk = (key: number) => { hand(); setPks((a) => {
     if (a.length < 2) return a;
     const gone = a.find((p) => p.key === key), rest = a.filter((p) => p.key !== key);
     return gone ? rest.map((p, i) => (i === 0 ? { ...p, ids: [...p.ids, ...gone.ids] } : p)) : a; // its findings go to the first package left
-  });
-  const take = () => setPks((a) => a.map((p, i) => (i === 0 ? { ...p, ids: [...p.ids, ...extra.map((f) => f.p.id)] } : p)));
+  }); };
+  const take = () => { hand(); setPks((a) => a.map((p, i) => (i === 0 ? { ...p, ids: [...p.ids, ...extra.map((f) => f.p.id)] } : p))); };
 
   const save = async () => {
     if (problem) return;
@@ -68,6 +81,7 @@ export function WaveComposer({ L, ask }: { L: Ledger; ask: ComposerAsk }) {
       <div className="wv-head">
         <label className="wv-lab">Wave<input ref={field} className="wv-in" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} aria-label="Wave name" /></label>
         <span className="wv-meta">{held.size} {held.size === 1 ? 'finding' : 'findings'} in {pks.length} {pks.length === 1 ? 'package' : 'packages'}</span>
+        <Seg<ArrangeBy | 'hand'> label="Arrange" value={by} onChange={(v) => rearrange(v)} options={ARRANGE} />
         <span className="lg-sp" />
         {extra.length ? <button type="button" className="bt" onClick={take} title="Add the selected findings that are in no draft wave to the first package">Add {extra.length} selected</button> : null}
       </div>
@@ -95,7 +109,7 @@ export function WaveComposer({ L, ask }: { L: Ledger; ask: ComposerAsk }) {
                     <span className="wv-ft" title={f?.p.title ?? id}>{f?.p.title ?? id}</span>
                     <span className="wv-meta">{f?.fname ?? ''}</span>
                     {pks.length > 1 ? (
-                      <select className="wv-mv" aria-label={'Move ' + (f?.p.title ?? id) + ' to another package'} value="" onChange={(e) => { if (e.target.value) move(id, +e.target.value); }}>
+                      <select className="wv-mv" aria-label={'Move ' + (f?.p.title ?? id) + ' to another package'} value="" onChange={(e) => { if (e.target.value) { hand(); move(id, +e.target.value); } }}>
                         <option value="">Move to…</option>
                         {pks.filter((q) => q.key !== p.key).map((q) => <option key={q.key} value={q.key}>{q.name || 'unnamed'}</option>)}
                       </select>
