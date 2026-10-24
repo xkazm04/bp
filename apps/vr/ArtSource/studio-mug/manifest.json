@@ -213,5 +213,16 @@
       "note": "1008 tris against 8000 (13%)",
       "date": "2026-10-21"
     }
+  },
+  "import": {
+    "ue_path": "/Game/Bp/Art/StudioMug/final/StaticMeshes/SM_StudioMug",
+    "in_scene_tris": 1008,
+    "draw_calls": 3,
+    "nanite": false,
+    "placement": "StudioMug on the right side desk at (85, 115, 75) cm, yaw 200",
+    "step": "apps/vr/tools/mcp-steps/l34-studio.jsonl (py/import_studio.py, py/studio_level.py)",
+    "date": "2026-10-24",
+    "host": "Lynx",
+    "note": "draw_calls = mesh sections, one draw each in the base pass and in the prepass. The whole slice with the studio at the target pose (run-bplink.mjs --mode game --xr-sim --exec \"BpView.Pose target\", CSV profiler, Lynx 2026-10-24): RHI/DrawCalls p50 144 and RHI/PrimitivesDrawn p50 77829, under the P4 gate's 150 and 350k"
   }
 }

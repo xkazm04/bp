@@ -1,7 +1,12 @@
 # L3.2 content step (spark vr-table): the /Game/Maps/LightTable greybox level, through PoFScriptTools.run_python
 # (Epic's SceneTools can load a level but not create one). Replayable: an existing LightTable map is deleted first.
 # Run: node apps/vr/tools/mcp-call.mjs python <this file> --log apps/vr/tools/mcp-steps/l34-look.jsonl, then
-# level_gamemode.py (this step makes the map afresh, so its World Settings go with it).
+# level_gamemode.py (this step makes the map afresh, so its World Settings go with it), then studio_level.py (the room,
+# its props and lights; it moves LampPractical onto the studio's desk lamp).
+#
+# The light intensities are the ones WP2's look was tuned under: this step ran twice in one editor session on 2026-10-24
+# and the map held two of every light, so the look summed each pair. Since spark vr-hands-zoom WP5 one of each is
+# placed, at the pair's sum (2 x 60, 2 x 70 and 2 x 40 cd).
 #
 # What it places (art-breakdown #1, lynx-plan L3.2). The table's near edge is its -X side; ABpGameMode stands the player
 # there (no PlayerStart here on purpose), so the lights are laid out around that pose:
@@ -42,7 +47,7 @@ table = spawn(table_cls, (0.0, 0.0, 0.0), label="LightTable")
 # Rotator(roll, pitch, yaw): pitch 90 points the spot's +X straight up through the glass.
 under = spawn(unreal.SpotLight, (0.0, 0.0, 70.0), (0.0, 90.0, 0.0), "TableUnderLight")
 ul = under.get_component_by_class(unreal.SpotLightComponent)
-ul.set_editor_property("intensity", 60.0)
+ul.set_editor_property("intensity", 120.0)
 ul.set_editor_property("outer_cone_angle", 70.0)
 ul.set_editor_property("inner_cone_angle", 50.0)
 ul.set_editor_property("source_radius", 40.0)
@@ -53,7 +58,7 @@ ul.set_editor_property("light_color", unreal.Color(r=191, g=232, b=255, a=255))
 # Pitch -90: straight down onto the table from above the person's head.
 fill = spawn(unreal.SpotLight, (-20.0, 0.0, 260.0), (0.0, -90.0, 0.0), "FrameFill")
 fl = fill.get_component_by_class(unreal.SpotLightComponent)
-fl.set_editor_property("intensity", 70.0)
+fl.set_editor_property("intensity", 140.0)
 fl.set_editor_property("outer_cone_angle", 50.0)
 fl.set_editor_property("inner_cone_angle", 30.0)
 fl.set_editor_property("source_radius", 40.0)
@@ -62,7 +67,7 @@ fl.set_editor_property("light_color", unreal.Color(r=90, g=125, b=200, a=255))
 
 lamp = spawn(unreal.PointLight, (60.0, -110.0, 135.0), label="LampPractical")
 pl = lamp.get_component_by_class(unreal.PointLightComponent)
-pl.set_editor_property("intensity", 40.0)
+pl.set_editor_property("intensity", 80.0)
 pl.set_editor_property("attenuation_radius", 60.0)
 pl.set_editor_property("source_radius", 4.0)
 pl.set_editor_property("light_color", unreal.Color(r=255, g=181, b=71, a=255))

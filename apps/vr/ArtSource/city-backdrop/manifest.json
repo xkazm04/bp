@@ -138,5 +138,16 @@
       "note": "trivial: 72 tris for a curved panel against 200 (plan.md P4 gives no backdrop row; the figure is a sanity cap)",
       "date": "2026-10-21"
     }
+  },
+  "import": {
+    "ue_path": "/Game/Bp/Art/CityBackdrop/final/StaticMeshes/SM_CityBackdrop",
+    "in_scene_tris": 72,
+    "draw_calls": 1,
+    "nanite": false,
+    "placement": "CityBackdrop at the table pivot (0, 0, 0) cm, yaw 90: the arc stands behind the back wall's window",
+    "step": "apps/vr/tools/mcp-steps/l34-studio.jsonl (py/import_studio.py, py/studio_level.py)",
+    "date": "2026-10-24",
+    "host": "Lynx",
+    "note": "draw_calls = mesh sections, one draw each in the base pass and in the prepass. The whole slice with the studio at the target pose (run-bplink.mjs --mode game --xr-sim --exec \"BpView.Pose target\", CSV profiler, Lynx 2026-10-24): RHI/DrawCalls p50 144 and RHI/PrimitivesDrawn p50 77829, under the P4 gate's 150 and 350k"
   }
 }

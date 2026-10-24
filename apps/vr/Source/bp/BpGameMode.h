@@ -28,11 +28,13 @@ public:
 
 	/** The target pose (console `BpView.Pose target`, PIE and editor captures only): the framing of the concept
 	 *  docs/concepts/vr-light-table/target-light-table.jpg, found by comparing captures with it side by side. Its eye
-	 *  height is above the table top, so it follows bp.TableHeightCm. */
+	 *  height is above the table top, so it follows bp.TableHeightCm. The field of view is the one those captures were
+	 *  taken at: they rendered 90 degrees while this said 70, and since ABpPawn the 70 applies and crops the concept's
+	 *  framing (Lynx, 2026-10-24: only a 90 degree capture matches captures/l34-wp3-l0.jpg). */
 	static constexpr float TargetEyeAboveTopCm = 43.f;
 	static constexpr float TargetBehindNearEdgeCm = 30.f;
 	static constexpr float TargetPitchDeg = -31.f;
-	static constexpr float TargetHFovDeg = 70.f;
+	static constexpr float TargetHFovDeg = 90.f;
 
 	virtual void StartPlay() override;
 	virtual void RestartPlayer(AController* NewPlayer) override;

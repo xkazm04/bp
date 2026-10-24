@@ -237,5 +237,16 @@
       "note": "1092 tris against 24000 (5%)",
       "date": "2026-10-21"
     }
+  },
+  "import": {
+    "ue_path": "/Game/Bp/Art/StudioShelves/final/StaticMeshes/SM_StudioShelves",
+    "in_scene_tris": 2184,
+    "draw_calls": 6,
+    "nanite": false,
+    "placement": "StudioShelves and StudioShelves2 against the back wall at (234, -140, 0) and (234, -235, 0) cm, yaw -90; the two share their draws (dynamic instancing)",
+    "step": "apps/vr/tools/mcp-steps/l34-studio.jsonl (py/import_studio.py, py/studio_level.py)",
+    "date": "2026-10-24",
+    "host": "Lynx",
+    "note": "draw_calls = mesh sections, one draw each in the base pass and in the prepass. The whole slice with the studio at the target pose (run-bplink.mjs --mode game --xr-sim --exec \"BpView.Pose target\", CSV profiler, Lynx 2026-10-24): RHI/DrawCalls p50 144 and RHI/PrimitivesDrawn p50 77829, under the P4 gate's 150 and 350k"
   }
 }
