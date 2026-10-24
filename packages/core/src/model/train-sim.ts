@@ -12,6 +12,7 @@ import type { LensField } from '@bp/core/standard/types';
 import { SAFE_ID } from '../scan/jobs.ts';
 import { MAX_TRIAGE } from '../scan/types.ts';
 import { RELEASE_ID, bump, bumpOf, isVersion } from '../scan/release.ts';
+import { ABANDONED_TO, abandonable, canStart, reached, startRefusal } from '../scan/release-steps.ts';
 import { verdictOf, type LensFields } from '../scan/compare.ts';
 import { isFlagged } from '../train/rules.ts';
 
@@ -374,8 +375,7 @@ export class TrainSim {
     if (!RELEASE_ID.test(id)) throw refuse(400, 'bad-release');
     const r = this.rel(id);
     if (!r) throw refuse(404, `no release ${id}`);
-    const from = step === 'build' ? ['draft', 'failed'] : ['pr-open', 'merged'];
-    if (!from.includes(r.status)) throw refuse(409, `${id} is ${r.status}; ${step} starts from ${from.join(' or ')}`, { release: r });
+    if (!canStart(step, r.status)) throw refuse(409, startRefusal(id, r.status, step), { release: r });
     return r;
   }
 
@@ -393,8 +393,7 @@ export class TrainSim {
   begin(job: ScanJob, run: string, toggles: TrainToggles): string[] {
     const id = job.release ?? '', step = job.step ?? 'build', r = this.rel(id), plan: Plan = { rel: id, step, gateFails: toggles.gateFails };
     this.plans.set(job.id, plan);
-    const ok = step === 'build' ? r && (r.status === 'draft' || r.status === 'failed') : r?.status === 'pr-open' || r?.status === 'merged';
-    if (!r || !ok) { plan.error = r ? `${id} is ${r.status}; ${step} cannot start` : `no release ${id}`; return []; }
+    if (!r || !canStart(step, r.status)) { plan.error = r ? `${id} is ${r.status}; ${step} cannot start` : `no release ${id}`; return []; }
     if (step === 'finish') return ['fetch', 'tag', 'publish'];
     const items = this.items(id), at = this.iso();
     this.setRel(id, { status: 'building', base_sha: BASE_SHA }, ['error']);
@@ -463,14 +462,14 @@ export class TrainSim {
   end(job: ScanJob): { error?: string } {
     const plan = this.plans.get(job.id), r = this.rel(plan?.rel);
     if (plan?.error) return { error: plan.error };
-    const ok = !!r && (job.step === 'finish' ? r.status === 'tagged' : ['pr-open', 'merged', 'tagged'].includes(r.status));
+    const ok = !!r && reached(job.step ?? 'build', r.status);
     return ok ? {} : { error: r?.error ?? 'the release did not get through (sample)' };
   }
 
   /** A release job was cancelled while running: its building release fails, so a build may start again. */
   cancelled(job: ScanJob): void {
     const r = this.rel(job.release);
-    if (r?.status === 'building') this.setRel(r.id, { status: 'failed', error: 'the release job was cancelled (sample)' });
+    if (r && abandonable(r.status)) this.setRel(r.id, { status: ABANDONED_TO, error: 'the release job was cancelled (sample)' });
   }
 
   // ----------------------------------------------------------------------------------------- notes and commits
