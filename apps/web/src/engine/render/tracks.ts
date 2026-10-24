@@ -8,6 +8,7 @@ import type { Engine } from '../Engine';
 import type { Theme } from '../theme';
 import { drawText } from '../text';
 import { onView, rs, type SRect, type View } from './view';
+import { PRESENT } from './hits';
 
 const sr: SRect = { x: 0, y: 0, w: 0, h: 0 };
 const DASH = [3, 2.5], NONE: number[] = [];
@@ -93,7 +94,10 @@ export function drawTracks(E: Engine, ctx: CanvasRenderingContext2D, v: View, lo
       trackGlyph(ctx, th, t.stage, p.x, p.y, u);
       // the label only where it fits left of the tile's question pins (they stand at its bottom-right, 18 px apart)
       const room = r.w - 20 * u - ((E.M.sim.DOF[fid]?.length ?? 0) * 18 + 8) * u;
-      if (r.w >= TRACK_LABEL_W * u && lod > 0.5 && lw[fid] <= room) drawText(ctx, T.tileLabel[fid], p.x + 10 * u, p.y + 4 * u, f12, th.ink, th.halo);
+      const label = r.w >= TRACK_LABEL_W * u && lod > 0.5 && lw[fid] <= room;
+      if (label) drawText(ctx, T.tileLabel[fid], p.x + 10 * u, p.y + 4 * u, f12, th.ink, th.halo);
+      // the hit region: the glyph, and its label where one is drawn
+      if (lod >= PRESENT) E.hits.add('track', t.id, 0, null, p.x - 9 * u, p.y - 9 * u, (label ? 19 * u + lw[fid] : 18 * u), 18 * u);
     }
   }
   ctx.restore();

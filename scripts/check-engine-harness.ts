@@ -115,6 +115,7 @@ const imp = (p: string): Promise<Any> => import(pathToFileURL(path.join(SRC, p))
 const impCore = (p: string): Promise<Any> => import(pathToFileURL(path.join(ROOT, 'packages/core', p)).href);
 const { buildModel } = await impCore('src/model/sample.ts');
 const { Engine } = await imp('engine/Engine.ts');
+const DYN = await imp('engine/render/dynamic.ts');
 const { getVariant } = await imp('variants/registry.ts');
 const expression = getVariant('subtle').expression;
 
@@ -249,6 +250,89 @@ const measured: Record<string, string> = {};
     const cb = extent((x, y) => { const h = E.pinAt(x, y); return !!h && h.cluster && h.at === M.L.rooms[ri].d.name; }, 0, 0, E.FW, E.FH, 1);
     if (cb) { measured.cluster = cb.w + ' x ' + cb.h; expect(cb.w >= FLOOR.cluster[0] - 2 && cb.h >= FLOOR.cluster[1] - 2, 'a room cluster pin\'s hit box is at least 31 x 31 (measured ' + measured.cluster + ')'); }
     else expect(false, 'a room with open questions has a clickable cluster pin at the home zoom');
+  }
+  E.cam.set(E.HOME); reset();
+}
+
+// ---------------------------------------------------------------------------------------------- 3b. the hit list: what the frame drew, in draw order
+// Each dynamic layer registers the marks it DRAWS into one per-frame list (render/hits.ts); clickAt / hoverAt and the
+// pinAt / trackAt / agentAt readers walk it topmost first. Pinned here: an agent the overflow chip hides is not hit,
+// the "+N" chip stands for its tile, a moved drawing moves its box (a BP_ENGINE_MUTATE child run), one presence
+// threshold for the crossfade, the coarse-pointer 44 px floor, and a pooled list (a still frame allocates nothing).
+{
+  reset(); win.innerWidth = 1280; win.innerHeight = 800; E.fit();
+  const u = E.U;
+  /** The tile-level pin box (pointer scan) of the first tile with exactly one open question, after one real frame. */
+  const pinProbe = () => {
+    const fid = Object.keys(M.sim.DOF).find((f) => M.sim.DOF[f].length === 1 && M.L.TILE[f])!;
+    const T = M.L.TILE[fid]; E.cam.set({ x: T.x + T.w / 2, y: T.y + T.h / 2, k: E.KB1 * 2.5 }); E.dirty(); flush();
+    const r = E.featureRect(fid)!, dd = M.sim.DOF[fid][0];
+    const b = extent((x, y) => E.pinAt(x, y)?.d === dd, r.x - 60, r.y - 40, r.x + r.w + 40, r.y + r.h + 40);
+    return { fid, r, dd, b, cx: b ? (b.x0 + b.x1) / 2 : NaN, cy: b ? (b.y0 + b.y1) / 2 : NaN };
+  };
+  if (process.env.BP_HARNESS_PROBE === 'pin') { const p = pinProbe(); console.log('PROBE ' + JSON.stringify({ cx: p.cx, cy: p.cy })); process.exit(0); }
+
+  // case 1 / 2: at k = 1 on failed-payment-dunning the chip cap is 1 - one "+N" chip, agents idx 1..3 undrawn
+  const fid = 'failed-payment-dunning', T = M.L.TILE[fid], crew = M.sim.AGF[fid] ?? [];
+  expect(!!T && crew.length === 4, 'the sample has failed-payment-dunning with a crew of 4 (' + crew.length + ')');
+  if (T) {
+    E.cam.set({ x: T.x + T.w / 2, y: T.y + T.h / 2, k: 1 }); E.dirty(); flush();
+    const r = E.featureRect(fid)!, y = r.y + r.h - 14 * u;
+    expect(E.lod() > 0.6 && r.w < 200 * u, 'k = 1 is chip level with a narrow tile (lod ' + E.lod().toFixed(2) + ', w ' + r.w + ')');
+    const a3 = E.agentAt(r.x + 20 * u + 3 * 62 * u, y);
+    expect(a3 === null, 'an agent the overflow chip hides is not hit at its undrawn position (got ' + (a3 ? a3.id + ' of ' + a3.f : 'null') + ')');
+    const more = E.hitUnder?.(r.x + 20 * u, y);
+    expect(!!more && more.kind === 'more' && more.id === fid, 'the "+N" overflow chip resolves to its feature (got ' + (more ? more.kind + ':' + more.id : 'null') + ')');
+    expect(E.agentAt(r.x + 20 * u, y) === null, 'the "+N" chip is not the agent that happens to sit at its index');
+  }
+
+  // case 4: a moved drawing moves its box - a child run with the drawn tile pin 28 px left must measure the box 28 px left
+  {
+    const here = pinProbe();
+    const { spawnSync } = await import('node:child_process');
+    const mut = [['dynamic.ts', 'r.x + r.w - 12 * u - j * 18 * u', 'r.x + r.w - 40 * u - j * 18 * u']];
+    const out = spawnSync(process.execPath, [path.join(ROOT, 'scripts/check-engine-harness.ts')], { env: { ...process.env, BP_ENGINE_MUTATE: JSON.stringify(mut), BP_HARNESS_PROBE: 'pin' }, encoding: 'utf8' });
+    const line = (out.stdout || '').split('\n').find((l) => l.startsWith('PROBE ')), got = line ? JSON.parse(line.slice(6)) : null;
+    expect(!!got && Math.abs(got.cx - (here.cx - 28 * u)) <= 1 && Math.abs(got.cy - here.cy) <= 1, 'a tile pin drawn 28 px left has its hit box 28 px left (here ' + here.cx + ', mutated ' + (got ? got.cx : 'no probe: ' + (out.stderr || '').slice(0, 200)) + ')');
+  }
+
+  // case 5: one presence threshold - a mark is hit-testable when drawn at >= 0.5 of its presence
+  {
+    const kAt = (want: number) => { let lo = E.KB1 * 0.5, hi = E.KB1 * 3; for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; if (E.lod(m) < want) lo = m; else hi = m; } return (lo + hi) / 2; };
+    const tf = Object.keys(M.sim.DOF).find((f) => M.sim.DOF[f].length >= 1 && M.L.TILE[f])!;
+    const Tp = M.L.TILE[tf], ri = Tp.room.ri, R = M.L.rooms[ri];
+    const sweep = (want: boolean) => { let n = 0; for (let y = 0; y <= E.FH; y += 3) for (let x = 0; x <= E.FW; x += 3) { const h = E.pinAt(x, y); if (h && h.cluster === want) n++; } return n; };
+    E.cam.set({ x: R.x + R.w / 2, y: R.y + R.h / 2, k: kAt(0.45) }); E.dirty(); flush();
+    let pp: { x: number; y: number } | null = DYN.roomPinPos(E, E.view, ri);
+    const c45 = pp ? E.pinAt(pp.x, pp.y - 10) : null, t45 = sweep(false);
+    expect(!!c45 && c45.cluster && c45.at === R.d.name, 'at lod 0.45 a room cluster pin anchor resolves to its cluster');
+    expect(t45 === 0, 'at lod 0.45 no tile pin resolves anywhere (' + t45 + ' grid hits)');
+    E.cam.set({ x: R.x + R.w / 2, y: R.y + R.h / 2, k: kAt(0.55) }); E.dirty(); flush();
+    const rt = E.featureRect(tf)!, t55 = E.pinAt(rt.x + rt.w - 12 * u, rt.y + rt.h - 15 * u), c55 = sweep(true);
+    expect(!!t55 && !t55.cluster && t55.d === M.sim.DOF[tf][0], 'at lod 0.55 a tile pin anchor resolves to its question');
+    expect(c55 === 0, 'at lod 0.55 no room cluster pin resolves anywhere (' + c55 + ' grid hits)');
+    pp = null;
+  }
+
+  // case 7: a coarse pointer grows every region to the 44 px touch floor around its drawn centre; a mouse keeps case 3's boxes
+  {
+    const mouse = pinProbe();
+    coarse = true; E.dirty(); flush();
+    const H = E.hits, small: string[] = [];
+    if (H) for (let i = 0; i < H.n; i++) { const b = H.boxOf(H.pool[i], E.touchMin(), {}); const h = H.pool[i]; if (b.w < 44 - 1e-6 || b.h < 44 - 1e-6 || Math.abs(b.x + b.w / 2 - (h.x + h.w / 2)) > 1e-6 || Math.abs(b.y + b.h / 2 - (h.y + h.h / 2)) > 1e-6) small.push(h.kind + ':' + h.id); }
+    expect(!!H && H.n > 0 && small.length === 0, 'coarse pointer: every registered region is at least 44 x 44 around its drawn centre (' + (H ? H.n : 0) + ' regions, short: ' + small.slice(0, 5).join(' ') + ')');
+    const touch = pinProbe();
+    expect(!!touch.b && touch.b.w >= 43 && touch.b.h >= 43, 'coarse pointer: a tile pin measured by the pointer is >= 44 x 44 (' + (touch.b ? touch.b.w + ' x ' + touch.b.h : 'none') + ')');
+    coarse = false; const back = pinProbe();
+    expect(!!back.b && !!mouse.b && back.b.w === mouse.b.w && back.b.h === mouse.b.h && back.b.w >= FLOOR.pin[0] - 1, 'GUARD mouse pointer: the pin box is the mouse box again (' + (back.b ? back.b.w + ' x ' + back.b.h : 'none') + ')');
+  }
+
+  // case 8: the list is pooled - 20 still frames keep its record count and its pool size
+  {
+    pinProbe(); for (let i = 0; i < 3; i++) { E.dirty(); flush(); }
+    const H = E.hits, n0 = H?.n, p0 = H?.pool.length; let same = !!H;
+    for (let i = 0; i < 20 && H; i++) { E.dirty(); flush(); if (H.n !== n0 || H.pool.length !== p0) same = false; }
+    expect(same && n0 > 0, 'the hit list is pooled: 20 frames at an unchanged view keep ' + n0 + ' records and a pool of ' + p0);
   }
   E.cam.set(E.HOME); reset();
 }

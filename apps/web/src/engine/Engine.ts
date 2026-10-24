@@ -4,12 +4,12 @@
 import type { Feature, LensDef, Scalar, ViewId } from '@bp/core/data';
 import {
   BLAST_DEFAULT, GA_MILESTONE, HOUR, LINES, SPEEDS, inside, isView, lensOf, lensPerson, personLens, revAt, views, type Box, type BldNode, type BayNode, type Counts, type Model,
-  type OrderTemplate, type PlaceNode, type Preview, type RoomNode, type SimDecision, type SimEvent, type Target, type ToastTone, type TileNode, type WingNode,
+  type OrderTemplate, type PlaceNode, type Preview, type RoomNode, type SimAgent, type SimDecision, type SimEvent, type Target, type ToastTone, type TileNode, type WingNode,
 } from '@bp/core/model';
 import { LIVE_VERB_LABEL, SAMPLE_REFUSED, commitSample, runLivePlan, type LivePlan } from '@/lib/model/live-steer';
 import type { ScanJob } from '@bp/core/scan/jobs';
 import type { ScanSnapshot } from '@bp/core/scan/types';
-import { TRACK_LABEL_W, drawTracks, trackMarkPos } from './render/tracks';
+import { drawTracks } from './render/tracks';
 import { Camera, WheelIntent, clamp, type Cam, type Pad, type Region } from './camera';
 import type { ChannelAggregate, FeatureLive, LensChannel, LensExpression } from './lens/contract';
 import { MixDriver, type MixState } from './lens/mix';
@@ -23,12 +23,13 @@ import { Text } from './text';
 import { StaticCache, deviceRes } from './render/static-cache';
 import { buildWallPaths, drawBuildings, drawDecor, drawGrid, drawLabels, featRect, resetOutlines } from './render/plan';
 import {
-  agentPos, drawAgents, drawAnswer, drawBlockers, drawBreaches, drawFocus, drawHeat, drawLasso, drawOrderZones, drawOverlays, drawPins, drawPreview,
-  drawPulses, drawReleases, drawTargets, roomPinPos, type APos,
+  drawAgents, drawAnswer, drawBlockers, drawBreaches, drawFocus, drawHeat, drawLasso, drawOrderZones, drawOverlays, drawPins, drawPreview,
+  drawPulses, drawReleases, drawTargets, type APos,
 } from './render/dynamic';
 import { KeyPlan } from './render/keyplan';
 import { SimWatch } from './render/simwatch';
-import { drawFlags, flagAt, flagKey, layoutFlags, type Flag } from './render/flags';
+import { drawFlags, flagKey, layoutFlags, type Flag } from './render/flags';
+import { HitList, TOUCH, type Hit, type HitKind } from './render/hits';
 import { ScanLayer, type ScanView } from './render/scans';
 import { loadArt } from './render/illo';
 import { rs, smooth, type SRect, type View } from './render/view';
@@ -52,6 +53,13 @@ const PADS: Record<'site' | 'bld' | 'wing' | 'room' | 'bay', Pad> = {
 const OVER: Record<string, number> = { bld: 1, wing: 1.8, room: 1.3, bay: 1 };
 type Chain = { t: Crumb['t']; o: PlaceNode }[];
 const NO_FLAGS: Flag[] = [];
+const PIN_KINDS: readonly HitKind[] = ['pin', 'cluster'], TRACK_KINDS: readonly HitKind[] = ['track'], AGENT_KINDS: readonly HitKind[] = ['agent'];
+/** A 2D context that draws nothing: re-runs the target layers for their hit regions when the camera moved since the last frame. */
+let MUTE: CanvasRenderingContext2D | null = null;
+function muteCtx(): CanvasRenderingContext2D {
+  if (!MUTE) { const noop = () => undefined; MUTE = new Proxy({} as Record<string, unknown>, { get: (t, k: string) => (k in t ? t[k] : noop), set: (t, k: string, v) => { t[k] = v; return true; } }) as unknown as CanvasRenderingContext2D; }
+  return MUTE;
+}
 
 /** A feature's live values, reused for every call (the caller reads them at once; nothing keeps it). */
 class LiveView implements FeatureLive {
@@ -102,6 +110,10 @@ export class Engine {
   dimFn: ((f: Feature) => boolean) | null = null;
   /** This frame's trouble flags (render/flags.ts), kept for hit testing; the hovered one's key. */
   private flags: Flag[] = []; private flagHot: string | null = null;
+  /** This frame's hit regions (render/hits.ts), registered by the layers as they draw, in draw order. */
+  readonly hits = new HitList();
+  /** The camera and clock the hit list was registered at (a pointer test after the camera moved re-registers). */
+  private hitsAt = { x: NaN, y: NaN, k: NaN, FW: 0, FH: 0, U: 0, now: false };
   blastSet: Set<string> | null = null;
   /** Running scans drawn over the plan (render/scans.ts), fed on discrete changes by setScans. */
   readonly scans = new ScanLayer();
@@ -436,6 +448,7 @@ export class Engine {
     if (rastered) this.perf.lastRasterMs += performance.now() - td;
     // dynamic layers at the live camera (no dynamic layer draws a pattern: the patterns stay anchored to the last raster)
     const v = this.view, lod = this.lod();
+    this.hits.reset(); this.stampHits();
     drawOverlays(this, ctx, v, lod);
     if (this.introOn) { this.flags = NO_FLAGS; return; }
     drawOrderZones(this, ctx, v, lod); drawTargets(this, ctx, v, lod);
@@ -445,8 +458,25 @@ export class Engine {
     drawPreview(this, ctx, v, lod, now); drawFocus(this, ctx, v, lod, now); drawAnswer(this, ctx, v, lod, now); drawBlockers(this, ctx, v, lod); drawReleases(this, ctx, v, lod, now);
     this.scans.draw(this, ctx, v, lod, now);
     // trouble flags over everything: the first thing to find on the plan
-    this.flags = layoutFlags(this, v, lod); drawFlags(this, ctx, this.flags, this.flagHot);
+    this.flags = layoutFlags(this, v, lod); drawFlags(this, ctx, this.flags, this.flagHot); this.registerFlags();
     drawLasso(this, ctx);
+  }
+  private stampHits() { const c = this.cam, a = this.hitsAt; a.x = c.x; a.y = c.y; a.k = c.k; a.FW = this.FW; a.FH = this.FH; a.U = this.U; a.now = this.isNow; }
+  /** The flags register last, in their draw order (index 0 is drawn last, on top), each with a few px of slack. */
+  private registerFlags() {
+    const fl = this.flags, sl = 3 * this.U;
+    for (let i = fl.length - 1; i >= 0; i--) { const F = fl[i]; this.hits.add('flag', F.fid, 0, F, F.x - sl, F.y - sl, F.w + 2 * sl, F.tipY - F.y + 2 * sl); }
+  }
+  /** The hit list for the camera as it is now: the last frame's, or (the camera moved since) the target layers re-run mute. */
+  private freshHits(): HitList {
+    const c = this.cam, a = this.hitsAt;
+    if (a.x === c.x && a.y === c.y && a.k === c.k && a.FW === this.FW && a.FH === this.FH && a.U === this.U && a.now === this.isNow) return this.hits;
+    this.hits.reset(); this.stampHits();
+    if (this.introOn) return this.hits;
+    const g = muteCtx(), v = this.view, lod = this.lod(), now = performance.now();
+    drawAgents(this, g, v, lod, now); drawPins(this, g, v, lod, now); drawTracks(this, g, v, lod);
+    this.registerFlags();
+    return this.hits;
   }
   /** The whole static plan at raster view `v` (a full raster, or a clipped patch of it). */
   private paintPlan(g: CanvasRenderingContext2D, v: View) {
@@ -988,54 +1018,28 @@ export class Engine {
     if (h.t === 'tile') return pk ? { type: pk.t, id: pk.o.id } : { type: 'tile', id: h.o.id };
     return pk ? { type: pk.t, id: pk.o.id } : null;
   }
+  /** A coarse pointer's minimum target (the touch floor), 0 for a mouse. */
+  touchMin(): number { return typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches ? TOUCH : 0; }
+  /** The topmost drawn target at (px, py) - flag, track, pin, "+N" chip or agent - or, with `kinds`, the topmost of those. */
+  hitUnder(px: number, py: number, kinds?: readonly HitKind[]): Hit | null {
+    if (this.S.open) return null;
+    return this.freshHits().at(px, py, this.touchMin(), kinds);
+  }
+  private pinOf(h: Hit): { list: SimDecision[]; d: SimDecision; cluster: boolean; at: string } {
+    if (h.kind === 'pin') { const d = h.ref as SimDecision; return { list: [d], d, cluster: false, at: this.M.L.TILE[h.id]?.f.name ?? h.id }; }
+    const sim = this.M.sim, S = this.S;
+    const ds = this.roomDecs()[h.i].slice().sort((a, b) => Number(sim.emph(b, S.who, S.view)) - Number(sim.emph(a, S.who, S.view)) || sim.queueCmp(a, b));
+    return { list: ds, d: ds[0], cluster: true, at: h.id };
+  }
+  /** The question pin (a tile's, or a room's cluster) drawn under the pointer. */
   pinAt(px: number, py: number): { list: SimDecision[]; d: SimDecision; cluster: boolean; at: string } | null {
-    const sim = this.M.sim; if (!sim.has || !this.isNow || this.S.open) return null;
-    const lod = this.lod(), u = this.U, v = this.view, S = this.S;
-    if (lod < 0.6) {
-      const rd = this.roomDecs();
-      for (let i = 0; i < rd.length; i++) {
-        if (!rd[i].length) continue;
-        const R = this.M.L.rooms[i], pp = roomPinPos(this, v, i), bx = pp.x, by = pp.y;
-        if (px >= bx - 15 * u && px <= bx + 16 * u && py >= by - 27 * u && py <= by + 4 * u) {
-          const ds = rd[i].slice().sort((a, b) => Number(sim.emph(b, S.who, S.view)) - Number(sim.emph(a, S.who, S.view)) || sim.queueCmp(a, b));
-          return { list: ds, d: ds[0], cluster: true, at: R.d.name };
-        }
-      }
-    }
-    if (lod > 0.4) {
-      for (const fid in sim.DOF) {
-        const dd = sim.DOF[fid], T = this.M.L.TILE[fid]; if (!T || !dd.length) continue;
-        const rr = rs(v, T);
-        for (let j = 0; j < dd.length; j++) {
-          const qx = rr.x + rr.w - 12 * u - j * 18 * u, qy = rr.y + rr.h - 5 * u;
-          if (px >= qx - 9 * u && px <= qx + 14 * u && py >= qy - 24 * u && py <= qy + 3 * u) return { list: [dd[j]], d: dd[j], cluster: false, at: T.f.name };
-        }
-      }
-    }
-    return null;
+    const h = this.hitUnder(px, py, PIN_KINDS); return h ? this.pinOf(h) : null;
   }
   /** The answer track under the pointer: a tile's glyph, or its label where one is drawn (tile levels only). */
-  trackAt(px: number, py: number): string | null {
-    const T = this.M.tracks; if (!T || !T.list.length || !this.isNow || this.S.open || this.lod() <= 0.5) return null;
-    const u = this.U, v = this.view;
-    for (const fid in T.F) {
-      const Ti = this.M.L.TILE[fid]; if (!Ti) continue;
-      const r = rs(v, Ti), p = trackMarkPos(r, u), x1 = r.w >= TRACK_LABEL_W * u ? r.x + r.w * 0.6 : p.x + 9 * u;
-      if (px >= p.x - 9 * u && px <= x1 && py >= p.y - 9 * u && py <= p.y + 9 * u) return T.F[fid][0].id;
-    }
-    return null;
-  }
-  agentAt(px: number, py: number) {
-    const sim = this.M.sim; if (!sim.has || !this.isNow || this.S.open) return null;
-    const lod = this.lod(), now = performance.now(), u = this.U, v = this.view;
-    let best = null as null | (typeof sim.agents)[number], bd = 1e9;
-    const p: APos = { x: 0, y: 0, chip: false, r: { x: 0, y: 0, w: 0, h: 0 }, idx: 0, n: 1, moving: false, trail: null, ok: false };
-    for (const A of sim.agents) {
-      if (!agentPos(this, v, A, lod, now, p)) continue;
-      if (p.chip && !p.moving) { if (px >= p.x - 13 * u && px <= p.x + 45 * u && py >= p.y - 10 * u && py <= p.y + 10 * u) { const d0 = Math.abs(px - p.x); if (d0 < bd) { bd = d0; best = A; } } continue; }
-      const d = Math.hypot(px - p.x, py - p.y); if (d < 10 * u && d < bd) { bd = d; best = A; }
-    }
-    return best;
+  trackAt(px: number, py: number): string | null { return this.hitUnder(px, py, TRACK_KINDS)?.id ?? null; }
+  /** The agent drawn under the pointer (an agent the "+N" chip stands for is not drawn, so not hit). */
+  agentAt(px: number, py: number): SimAgent | null {
+    const h = this.hitUnder(px, py, AGENT_KINDS); return h ? (h.ref as SimAgent) : null;
   }
 
   // ============================================================================ pointer input
@@ -1073,8 +1077,6 @@ export class Engine {
     const label = t.type === 'wing' ? (o as WingNode).def.name + ' wing' : t.type === 'room' ? (o as RoomNode).d.name : t.type === 'bay' ? (o as BayNode).cap.name : (o as BldNode).name;
     return { ids, label };
   }
-  /** A trouble flag under the pointer (none while a feature page is open). */
-  private flagUnder(px: number, py: number): Flag | null { return this.S.open ? null : flagAt(this, this.flags, px, py); }
   /**
    * A click on a flag: one feature opens in the flag's lens; a cluster of several flies to them so they
    * split (and, when the camera cannot get meaningfully closer, opens the first).
@@ -1092,10 +1094,13 @@ export class Engine {
     this.openFeature(F.fid);
   }
   private clickAt(px: number, py: number) {
-    const fl = this.flagUnder(px, py); if (fl) { this.flagClick(fl); return; }
-    const pn = this.pinAt(px, py); if (pn) { this.openDecision(pn.d.id); return; }
-    const tk = this.trackAt(px, py); if (tk) { this.openTrack(tk); return; }
-    const ag = this.agentAt(px, py);
+    // the topmost drawn target first (hit order is draw order: render/hits.ts)
+    const hu = this.hitUnder(px, py);
+    if (hu?.kind === 'flag') { this.flagClick(hu.ref as Flag); return; }
+    if (hu?.kind === 'pin' || hu?.kind === 'cluster') { this.openDecision(this.pinOf(hu).d.id); return; }
+    if (hu?.kind === 'track') { this.openTrack(hu.id); return; }
+    if (hu?.kind === 'more') { if (this.lod() > 0.5) this.openFeature(hu.id); else this.flyToFeature(hu.id, false); return; }
+    const ag = hu?.kind === 'agent' ? (hu.ref as SimAgent) : null;
     if (ag) {
       const dq = ag.wait && this.M.sim.DEC[ag.wait]?.open ? this.M.sim.DEC[ag.wait] : null;
       if (dq) this.openDecision(dq.id); else if (ag.blk && ag.status === 'blocked' && this.M.P.F[ag.blk]) this.goToBlocker(ag.blk); else if (this.lod() > 0.5) this.openFeature(ag.f); else this.flyToFeature(ag.f, false);
@@ -1126,15 +1131,13 @@ export class Engine {
   private lastNav: { x: number; y: number; at: number } | null = null;
   /** What the pointer rests on: flag, pin, agent or place; sets the hover card and cursor. */
   private hoverAt(px: number, py: number) {
-    const fl = this.flagUnder(px, py), fk = fl ? flagKey(fl) : null;
+    const hu = this.hitUnder(px, py), fl = hu?.kind === 'flag' ? (hu.ref as Flag) : null, fk = fl ? flagKey(fl) : null;
     if (fk !== this.flagHot) { this.flagHot = fk; this.dirty(); }
     if (fl) { this.setHover(new Set(fl.fids).size === 1 ? { type: 'tile', id: fl.fid } : null, px, py); this.cv.dataset.cursor = 'pt'; return; }
-    const pn = this.pinAt(px, py);
-    if (pn) { this.setHover({ type: 'pin', id: pn.d.id, ids: pn.cluster ? pn.list.map((d) => d.id) : undefined }, px, py); return; }
-    const tk = this.trackAt(px, py);
-    if (tk) { this.setHover({ type: 'track', id: tk }, px, py); return; }
-    const ag = this.agentAt(px, py);
-    if (ag) { this.setHover({ type: 'agent', id: ag.id }, px, py); return; }
+    if (hu?.kind === 'pin' || hu?.kind === 'cluster') { const pn = this.pinOf(hu); this.setHover({ type: 'pin', id: pn.d.id, ids: pn.cluster ? pn.list.map((d) => d.id) : undefined }, px, py); return; }
+    if (hu?.kind === 'track') { this.setHover({ type: 'track', id: hu.id }, px, py); return; }
+    if (hu?.kind === 'more') { this.setHover({ type: 'tile', id: hu.id }, px, py); return; }
+    if (hu?.kind === 'agent') { this.setHover({ type: 'agent', id: hu.id }, px, py); return; }
     this.setHover(this.hitTarget(this.hitAt(px, py)), px, py);
   }
   /** Last mouse / pen position over the canvas (null once it left); the hover is re-tested there when the camera settles. */

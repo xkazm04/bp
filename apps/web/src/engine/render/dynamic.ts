@@ -8,6 +8,7 @@ import { drawText } from '../text';
 import { clamp } from '../camera';
 import { CHIP_H, CHIP_STEP, CHIP_W, agentColor, chipsFit, glyphAgent, glyphPin } from './glyphs';
 import { featRect } from './plan';
+import { PRESENT } from './hits';
 import { onView, rs, sxv, syv, type SRect, type View } from './view';
 import { GENERAL } from '@bp/core/data/types';
 
@@ -17,7 +18,7 @@ const phase = (E: Engine, x: number) => (E.cam.reduced ? 0.5 : x % 1);
 const ease = (u: number) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2);
 
 export interface Trail { qx: number; qy: number; px: number; py: number; mx: number; my: number; u: number; fade: number }
-export interface APos { x: number; y: number; chip: boolean; r: SRect; idx: number; n: number; moving: boolean; trail: null | Trail; ok: boolean; /** the record `trail` points at while moving (allocated once) */ tbuf?: Trail }
+export interface APos { x: number; y: number; chip: boolean; r: SRect; idx: number; n: number; moving: boolean; trail: null | Trail; ok: boolean; /** the record `trail` points at while moving (allocated once) */ tbuf?: Trail; /** chip overflow (set by drawAgents): 0 drawn, 1 drawn as the "+N" chip, 2 not drawn */ vis?: number; /** the tile's chip cap when vis is 1 */ cap?: number }
 const sr1: SRect = { x: 0, y: 0, w: 0, h: 0 }, sr2: SRect = { x: 0, y: 0, w: 0, h: 0 };
 
 function posAt(E: Engine, v: View, fid: string, i: number, n: number, lod: number, out: { x: number; y: number; chip: boolean; r: SRect }): boolean {
@@ -229,6 +230,14 @@ export function drawAgents(E: Engine, ctx: CanvasRenderingContext2D, v: View, lo
     const A = sim.agents[i], p = pos[i] || (pos[i] = { x: 0, y: 0, chip: false, r: { x: 0, y: 0, w: 0, h: 0 }, idx: 0, n: 1, moving: false, trail: null, ok: false });
     if (!agentPos(E, v, A, lod, now, p)) continue;
     if (p.x < -40 || p.x > v.FW + 40 || p.y < -40 || p.y > v.FH + 40) { p.ok = false; continue; }
+    // a parked chip past the tile's chip cap is not drawn (one "+N" chip stands for the rest): decided here, so the
+    // glow, the marks and the hit list all agree on which agents are on the plan
+    p.vis = 0;
+    if (p.chip && !p.moving) {
+      const nd = (sim.DOF[A.f] || []).length;
+      const cap = Math.max(1, Math.floor((p.r.w - 14 * u - nd * 18 * u) / (CHIP_STEP * u)));
+      if (p.n > cap && p.idx >= cap - 1) { p.vis = p.idx === cap - 1 ? 1 : 2; p.cap = cap; }
+    }
     if (A.status === 'working' && !A.paused && !p.moving && lod < 0.8 && sim.playing && !E.cam.reduced) {
       const orb = 3.2 * u * (1 - lod); p.x += Math.cos(now * 0.0011 + A.ph) * orb; p.y += Math.sin(now * 0.0013 + A.ph) * orb * 0.7;
     }
@@ -240,7 +249,7 @@ export function drawAgents(E: Engine, ctx: CanvasRenderingContext2D, v: View, lo
   if (glow) {
     ctx.save(); ctx.globalCompositeOperation = th.mode === 'dark' ? 'lighter' : 'source-over';
     for (let i = 0; i < sim.agents.length; i++) {
-      const p = pos[i], A = sim.agents[i]; if (!p || !p.ok || astat(A) !== 'working') continue;
+      const p = pos[i], A = sim.agents[i]; if (!p || !p.ok || p.vis || astat(A) !== 'working') continue;
       const ga = agentAlpha(A.sq, S.crew, sim.crewRelevant(A, S.view)), rad = (15 + lod * 10) * u * (ga === 1 ? 1 : 0.6);
       ctx.globalAlpha = ga === 1 ? 1 : ga * 0.95;
       ctx.drawImage(glow, p.x - rad, p.y - rad, rad * 2, rad * 2);
@@ -257,9 +266,9 @@ export function drawAgents(E: Engine, ctx: CanvasRenderingContext2D, v: View, lo
     ctx.stroke(); ctx.restore();
   }
   // marks and chips
-  const chipFont = E.tx.f(12, 500, true);
+  const chipFont = E.tx.f(12, 500, true), H = E.hits;
   for (let i = 0; i < sim.agents.length; i++) {
-    const p = pos[i], A = sim.agents[i]; if (!p || !p.ok) continue;
+    const p = pos[i], A = sim.agents[i]; if (!p || !p.ok || p.vis === 2) continue;
     const st = astat(A), al = agentAlpha(A.sq, S.crew, sim.crewRelevant(A, S.view)), rel = al === 1;
     if (S.crew && A.sq === S.crew) { ctx.strokeStyle = th.accent; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(p.x, p.y, (p.chip && !p.moving ? 15 : 9) * u, 0, 6.2832); ctx.stroke(); }
     if (A.flash && now - A.flash < 1100) {
@@ -267,17 +276,16 @@ export function drawAgents(E: Engine, ctx: CanvasRenderingContext2D, v: View, lo
       ctx.beginPath(); ctx.arc(p.x, p.y, (6 + fu * 22) * u, 0, 6.2832); ctx.stroke(); ctx.restore();
     }
     if (p.chip && !p.moving) {
-      const nd = (sim.DOF[A.f] || []).length;
-      const cap = Math.max(1, Math.floor((p.r.w - 14 * u - nd * 18 * u) / (CHIP_STEP * u)));
-      if (p.n > cap && p.idx >= cap - 1) {
-        if (p.idx === cap - 1) {
-          const x0 = p.x - 13 * u, y0 = p.y - 10 * u;
-          ctx.fillStyle = th.chipBg; ctx.fillRect(x0, y0, CHIP_W * u, CHIP_H * u); ctx.strokeStyle = th.inkA(0.6); ctx.lineWidth = 1.3; ctx.strokeRect(x0 + 0.5, y0 + 0.5, CHIP_W * u - 1, CHIP_H * u - 1);
-          drawText(ctx, '+' + (p.n - cap + 1), x0 + 8 * u, y0 + 14.4 * u, chipFont, th.inkHi);
-        }
+      if (p.vis === 1) {
+        // the "+N" chip stands for the tile's crew: it hits as the feature, not as the agent at its index
+        const x0 = p.x - 13 * u, y0 = p.y - 10 * u, cap = p.cap!;
+        ctx.fillStyle = th.chipBg; ctx.fillRect(x0, y0, CHIP_W * u, CHIP_H * u); ctx.strokeStyle = th.inkA(0.6); ctx.lineWidth = 1.3; ctx.strokeRect(x0 + 0.5, y0 + 0.5, CHIP_W * u - 1, CHIP_H * u - 1);
+        drawText(ctx, '+' + (p.n - cap + 1), x0 + 8 * u, y0 + 14.4 * u, chipFont, th.inkHi);
+        H.add('more', A.f, i, null, x0, y0, CHIP_W * u, CHIP_H * u);
         continue;
       }
       const w = CHIP_W * u, h = CHIP_H * u, x0 = p.x - 13 * u, y0 = p.y - h / 2;
+      H.add('agent', A.id, i, A, x0, y0, w, h);
       ctx.globalAlpha = al;
       ctx.fillStyle = th.chipBg; ctx.fillRect(x0, y0, w, h);
       ctx.strokeStyle = agentColor(th, st); ctx.lineWidth = 1.3; ctx.strokeRect(x0 + 0.5, y0 + 0.5, w - 1, h - 1);
@@ -287,6 +295,7 @@ export function drawAgents(E: Engine, ctx: CanvasRenderingContext2D, v: View, lo
     } else {
       const s = (p.chip ? 4.6 : 4.4) * u * (rel ? 1 : 0.8) * (p.moving ? 1.15 : 1);
       glyphAgent(ctx, th, p.x, p.y, st, s, al, sim.playing && !E.cam.reduced ? now / 900 + A.ph : A.ph, u);
+      H.add('agent', A.id, i, A, p.x - 10 * u, p.y - 10 * u, 20 * u, 20 * u);
     }
   }
 }
@@ -333,6 +342,7 @@ export function drawPins(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod:
       ctx.globalAlpha = ga;
       const pp = roomPinPos(E, v, ri);
       glyphPin(ctx, th, pp.x, pp.y, hi ? 'high' : em ? 'med' : 'low', em > 0, 0.9, ds.length, ring, u, pf);
+      if (ga >= PRESENT) E.hits.add('cluster', R.d.name, ri, null, pp.x - 15 * u, pp.y - 27 * u, 31 * u, 31 * u);
     }
     ctx.restore();
   }
@@ -344,7 +354,9 @@ export function drawPins(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod:
       const r = rs(v, T, sr1); if (!onView(v, r, 20)) continue;
       for (let j = 0; j < ds.length; j++) {
         const d = ds[j], ring = d.isNew ? phase(E, now / 1600) : S.dec === d.id ? phase(E, now / 1200) : 0;
-        glyphPin(ctx, th, r.x + r.w - 12 * u - j * 18 * u, r.y + r.h - 5 * u, d.urg, sim.emph(d, S.who, S.view), 0.85, 0, ring, u, pf);
+        const qx = r.x + r.w - 12 * u - j * 18 * u, qy = r.y + r.h - 5 * u;
+        glyphPin(ctx, th, qx, qy, d.urg, sim.emph(d, S.who, S.view), 0.85, 0, ring, u, pf);
+        if (lod >= PRESENT) E.hits.add('pin', fid, 0, d, qx - 9 * u, qy - 24 * u, 23 * u, 27 * u);
       }
     }
     ctx.restore();
