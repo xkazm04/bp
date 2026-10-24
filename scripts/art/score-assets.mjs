@@ -17,7 +17,7 @@ export const ASSETS = {
     scale: { heightCm: [4, 7], widthCm: [0.5, 6] }, pivot: 'tip',
   },
   'fixture-kit': {
-    class: 'prop-instanced-kit', budget_tris: 300, materials: 2, meshes: ['user_flow', 'capability', 'ops', 'integration', 'generic'],
+    class: 'prop-instanced-kit', budget_tris: 800, materials: 2, meshes: ['user_flow', 'capability', 'ops', 'integration', 'generic'],
     scale: { heightCm: [1, 4], widthCm: [3, 6] }, pivot: 'base-centre', markSlot: 'mark',
   },
 };
@@ -29,15 +29,17 @@ export const ASSETS = {
  * check-art-scripts.mjs (entry-points) holds this table equal to what the manifests say and what is on disk.
  */
 const W = (rel, ...rest) => ({ writer: `scripts/art/${rel}`, scripts: [`scripts/art/${rel}`, ...rest] });
-const STUDIO = W('studio-kit/write_manifest.mjs');
+const STUDIO = W('studio-kit/write_manifest.mjs', 'scripts/art/lib/polyhaven.mjs');
 const MATERIAL = W('materials/write_manifests.mjs');
 const KIT = W('write-manifests.mjs', 'scripts/art/score-assets.mjs');
 export const ENTRY_POINTS = {
   'survey-pin': KIT,
   'fixture-kit': KIT,
   'city-backdrop': { ...W('city-backdrop/write_manifest.mjs', 'scripts/lookdev/leonardo.mjs'), live: { 'scripts/lookdev/leonardo.mjs': 'paid Leonardo API: spends credits' } },
-  'lamp-agent': { ...W('lamp/write_manifest.mjs', 'scripts/art/lamp/trellis_run.mjs'), live: { 'scripts/art/lamp/trellis_run.mjs': 'queues a job on the owner\'s ComfyUI (port 8188, GPU)' } },
-  'light-table-frame': W('light-table-frame/write_manifest.mjs'),
+  // scripted since 2026-10-24 (lamp/build_agent.bpy); its concept views come from the paid Leonardo call. trellis_run.mjs
+  // stays as a tool (it queues a GPU job on the owner's ComfyUI), but no shipped folder is regenerated through it now.
+  'lamp-agent': { ...W('lamp/write_manifest.mjs', 'scripts/lookdev/leonardo.mjs'), live: { 'scripts/lookdev/leonardo.mjs': 'paid Leonardo API: spends credits' } },
+  'light-table-frame': W('light-table-frame/write_manifest.mjs', 'scripts/art/lib/polyhaven.mjs'),
   'mat-blueprint-paper': MATERIAL, 'mat-brushed-aluminium': MATERIAL, 'mat-vellum': MATERIAL, 'mat-warm-wood': MATERIAL,
   'studio-desk-lamp': STUDIO, 'studio-drawing-tubes': STUDIO, 'studio-mug': STUDIO, 'studio-pinned-drawings': STUDIO, 'studio-shelves': STUDIO,
 };

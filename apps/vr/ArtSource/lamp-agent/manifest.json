@@ -1,632 +1,351 @@
 {
-  "id": "lamp-agent",
-  "class": "character-prop",
-  "picked": "A",
-  "budget_tris": 30000,
-  "generator": [
-    {
-      "option": "A",
-      "file": "options/A.png",
-      "model": "openai/gpt-image-2.5-flare",
-      "seed": 11,
-      "quality": "LOW",
-      "size": "1024x1024",
-      "credits": 6,
-      "log": "docs/concepts/vr-light-table/lookdev/log.jsonl line 49",
-      "generationId": "1f1cd391-0b45-6640-81fd-1f9ee8ab365f",
-      "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop lamp-agent --variant A"
-    },
-    {
-      "option": "B",
-      "file": "options/B.png",
-      "model": "openai/gpt-image-2.5-flare",
-      "seed": 11,
-      "quality": "LOW",
-      "size": "1024x1024",
-      "credits": 6,
-      "log": "docs/concepts/vr-light-table/lookdev/log.jsonl line 50",
-      "generationId": "1f1cd391-9039-6090-8a56-8e54c4ce3518",
-      "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop lamp-agent --variant B"
-    },
-    {
-      "option": "C",
-      "file": "options/C.png",
-      "model": "openai/gpt-image-2.5-flare",
-      "seed": 11,
-      "quality": "LOW",
-      "size": "1024x1024",
-      "credits": 6,
-      "log": "docs/concepts/vr-light-table/lookdev/log.jsonl line 51",
-      "generationId": "1f1cd392-16cb-6b80-8716-ec177b39c6cc",
-      "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop lamp-agent --variant C"
-    },
-    {
-      "option": "D",
-      "file": "options/D.png",
-      "model": "openai/gpt-image-2.5-flare",
-      "seed": 11,
-      "quality": "LOW",
-      "size": "1024x1024",
-      "credits": 6,
-      "log": "docs/concepts/vr-light-table/lookdev/log.jsonl line 52",
-      "generationId": "1f1cd392-9b19-6590-99cb-317dc4e72582",
-      "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop lamp-agent --variant D"
-    },
-    {
-      "model": "TRELLIS.2",
-      "input": "options/A.png",
-      "seed": 303,
-      "seeds_run": [
-        101,
-        202,
-        303
-      ],
-      "workflow": "C:/Users/kazda/ai/lynx-bench/media/3d-trellis-api.json, run by scripts/art/lamp/trellis_run.mjs",
-      "changes": "LoadImage 122 = options/A.png; DecimateMesh 186 target_face_count 28000 (before UnwrapMesh 196 and BakeTextureFromVoxel 147); seed nodes 3, 12, 18, 23 = 303; texture size 4096 (PrimitiveInt 288)",
-      "raw_glb": {
-        "path": "C:/Users/kazda/ai/lynx-bench/bp/lamp-agent/raw_seed303.glb",
-        "bytes": 23611312,
-        "sha256": "3096a50acbe10604401e63be484caa261c2f26c1871cf7c7f31332628c2cdc70"
-      },
-      "rejected_seeds": {
-        "101": {
-          "sha256": "41a54471a7cf4a54b04bd61cd7be2b598ae0601537472cc027ab54e0e122e412",
-          "components": 14,
-          "note": "arm detached from the base: 14 connected components"
-        },
-        "202": {
-          "sha256": "3b524a49a84ea3268313731a5d3745b22bf8b08b0d3eea6a3d956c10fab931b7",
-          "components": 5,
-          "note": "arm missing, shade split from the head: 5 connected components"
-        }
-      },
-      "blender": "Blender 5.2.2, scripts/art/lamp/finish_lamp.bpy (import with merge_vertices)"
-    }
-  ],
-  "contact_sheet": "options/contact.png, built by scripts/lookdev/contact-sheet.ps1 (labels in the margin only)",
-  "option_input_check": "All four first-seed images pass the sheet rules (one object, whole, plain grey ground, readable silhouette, no text, no claw, no legs, no face), so no second seed was made. A and C show a coil spring and a dome shade; B a pantograph disc; D a box shade with a counterweight.",
   "gates": {
     "input": {
       "pass": true,
-      "note": "Owner picked option A, the spring-arm cone (options/A.png): an architect's lamp with visible springs, a cone shade with a warm glow, a round base with a clamp. Approved 2026-10-21.",
-      "date": "2026-10-21"
+      "note": "H-s41 picked by silhouette agreement with reference/target-crop.png: the only view drawn against the target crop, and it keeps the crop's pose (one arm reaching sideways, one hanging), the hood-over-cone proportions and the wire loops. The build follows it.",
+      "date": "2026-10-24",
+      "by": "builder FB (fidelity sprint 2026-10-24), per the brief's pick-by-silhouette rule; owner to confirm"
     },
     "mesh_acceptance": {
       "pass": true,
-      "note": "seed 303 of 3 (101 had 14 components, 202 had 5 with the arm gone, both rejected). Raw 11964 vertices / 27707 tris with merge_vertices, components 11941+15+8; the two specks (15 and 8 vertices) were deleted. Rework 2026-10-21: the TRELLIS stalk under the disc was a lumpy 4 cm post, not a C-clamp, so it was cut off below z = -4 mm and the hole closed; a modelled C-clamp replaces it (back bar, lower jaw, screw, pad and knob, 116 tris, all weighted 1.0 to the base bone, reaching 11.2 cm below the table plane) plus 4 spring cylinders. Final 11162 vertices, 10 connected components (the TRELLIS body, 5 clamp parts and 4 springs, each overlapping the body), 0 floaters (a floater is a component whose bounding box touches no other), 26 open edges (small holes in the cap and joints, left from TRELLIS). Silhouette matches options/A.png: jointed two-segment arm, cone shade, round base with a C-clamp.",
-      "date": "2026-10-21"
+      "note": "scripted, so acceptance is the build's own structure: 19 loose parts (18 rigid parts, each closed, plus the 1-quad glow card), 4 open edges (the card's border, nothing else), the same 8086 triangles in final_working.glb and final.fbx; silhouette against the target in evidence/target-compare.jpg (hood head with a glowing orb, tapered cone body with slit and pin, two jointed arms ending in loops, one reaching sideways, one hanging)",
+      "date": "2026-10-24"
     },
     "scale": {
       "pass": true,
-      "note": "13.0 x 35.5 x 56.2 cm (x, y, z up) re-imported from final.fbx, clamp included; 45.0 cm above the table plane and 11.2 cm below it; rule 45 to 65 cm for a desk architect lamp (both the height above the table and the total pass); pivot: disc underside z = 0 m, x centred. Assumption: the wolf-plan gives no lamp size, so the UE world scale of the table (W3.2) is still to be confirmed on Wolf.",
-      "date": "2026-10-21"
+      "note": "rest height (pin tip to hood top, body and head) 25.39 cm, pin tip z 0 m (the pivot), hood 13.6 cm across, body cone 8.8 cm wide at the top (rule: 20 to 32 cm tall, hood 11 to 15 cm); working-pose box 44.27 x 15.9 x 28.55 cm. Sized from the target: the hood is about 105 px of the 1376 px frame where the far edge of a table about 1.2 m wide spans about 1200 px, so about 11 to 14 cm; the decision card beside it is about 28 cm. The UE builder may scale uniformly (the rig is rigid).",
+      "date": "2026-10-24"
     },
     "finishing": {
       "pass": true,
-      "note": "one UV set; 3 PBR PNGs (flat base colour, ORM, flat normal, 2048 px, each under 5 MB); 6 material slots (lamp_arm, lamp_metal, lamp_shade, lamp_shade_glow, lamp_cap, lamp_base), emissive slot lamp_shade_glow on 2484 faces; base colour measured per region from lamp_basecolor.png at every face (mean distance to target: arm 0, metal 0.0002, shade 0.0047, glow 0.0085, cap 0, base 0; arm std 0/0/0, 0 arm outliers over 0.04); ORM roughness and metal match the targets in every region; rig base > lower_arm > upper_arm > head, weights sum 1 to 1, 0 unweighted vertices, at most 2 influences; look-at constraint error 0 deg on three targets; 5 actions (asking, reading, resting, speaking, working) in final.fbx; evidence framing check passes on all 10 images (min silhouette margin 0.0667 of the image); springs: modelled: 4 thin brushed-silver cylinders (8 sides, radius 3.5 mm), two on each arm segment (one each side), 112 tris in total, weighted 1.0 to the arm bone they run along.",
-      "date": "2026-10-21"
+      "note": "one UV set (smart project over every part, the card on its own 0-1); 3 PNGs (AO, roughness and metal in ORM, a diffuse-colour base, the glow card); 5 slots (agent_shell, agent_glow, agent_joint, agent_hood_inner, agent_glow_card): the orb is its own sphere with a clean edge (no texture mask), the glow card has its own slot; bevels on the collar, slit and hood rim, smooth shading with weighted normals on the joints; rig body, head, arm_l_upper, arm_l_lower, arm_r_upper, arm_r_lower rigid, 4 actions (asking, resting, speaking, working); evidence rendered with EEVEE under a dark studio rig (cool table light from below, warm point light inside the hood, warm practical, cool rim) with a bloom pass and no depth of field; every file under 10 MB",
+      "date": "2026-10-24"
     },
     "poly_budget": {
       "pass": true,
-      "note": "26035 tris against 30000 (87%), clamp 116 and springs 112 included",
-      "date": "2026-10-21"
+      "note": "8086 tris against 15000 (54 %): hood 2240, orb 840, body 560, each arm 1964",
+      "date": "2026-10-24"
     }
   },
-  "licence": "TRELLIS.2 output from a Leonardo concept (look-dev input, R8 open); no MiniMax-H3 or FLUX.2 [dev] output used",
   "sha256": {
-    "evidence/pose-asking.jpg": "a7e483e4bd432d585bde12864ceb945af7bad03e4080e38454cbfc36c9f9f6d7",
-    "evidence/pose-reading.jpg": "3664661f071e044416a308f7f23fa664cc60b9615b7bd5cc908969b2fb5c1e6d",
-    "evidence/pose-resting.jpg": "edb8aae3d9b065198fdea123e5fcc0260e0310e0293008b5a3da3f638a9ee50f",
-    "evidence/pose-speaking.jpg": "b79dcd9566783260774d67cca06538ca58bb5e30f41f64e979e4f0958ec59e90",
-    "evidence/pose-working.jpg": "f9d260b6eb618c1c0a006a1ad8592ab0dec97c136af42b145d67515310536838",
-    "evidence/table-view.jpg": "ce207556afc27966dcbe12c0e2eba8f94b5ba2ed2d3db2fae4a8555ce7b1479e",
-    "evidence/turnaround.jpg": "0a1bd4838a10fa20db5439baffee86bbeecea006d14eb6cb68826f928d379325",
-    "final.fbx": "0a1b6a0286b30fbf6177a39268374b59964ce764f96125b4f12a8c079d77a4a6",
-    "options/A.png": "3563dbd70bfc8e4e6b92e4552a7f0a3484773971d5261485dd432ef7843af1fb",
-    "options/B.png": "e6b82dd4993b19bb0bb766e466327fb44cf36695899ff229eb60805ef09a45b4",
-    "options/C.png": "7caa1bb1204433fad475bc7bd08c8ba5a275777f39a711cba08d4b5af8685cee",
-    "options/D.png": "9a6f57f2bf81665c4415cd3143d7352104ca92e53bd0d010b270072dd438ca20",
-    "options/contact.png": "b94ff36ea7b13de3f9b62ba056f651c918fcf2c6b05fd71ff28865d099a74cec",
-    "textures/lamp_basecolor.png": "99d22915bf71f2aa9a5eb77afb2bdd2b7c257bafda4520adc1b1d6b3eaaa199f",
-    "textures/lamp_normal.png": "123eadc1c58faf317e13bbb0a6e11d0526740a2f4c733c6b41d7f952a9f1c704",
-    "textures/lamp_orm.png": "207debfb766e3bfcfd0c5cde665f9c406b64cc0c1d313726e7c1e453b88de1e0"
+    "evidence/poses.jpg": "3b27283b4e82d2186068fd0930057a1bbbed89862993b23295695f269b968f58",
+    "evidence/target-compare.jpg": "762bf2fac75e40e4c4226561fb59f49d34266030e55ac608703e5f23c4325294",
+    "evidence/turnaround.jpg": "6ca1657b22db6482e0c158dcc4e938c3c98f7fdad2163dca9c31e1ff93796872",
+    "final.fbx": "1f0a0be60eab41e9dbaa0d317571cd95feb0d9014827b1955f7ccffe880eae82",
+    "final_working.glb": "142592113468fec056cc17f22e8ddbd3bdd53eedb5793e1ca44669c1e8f16f63",
+    "options/E-s41.png": "77010584acf521bc084300576582788dd2bb58d3aea10334880103c2069ecf2a",
+    "options/F-s42.png": "e8a5d707766e4ad22759d00c854e11215aa933860913917abb307b1a50728f4e",
+    "options/G-s41.png": "33ff447c7d1985273b8c2c5dac6d3b188e4ac956a9c8e0fa5d426e91159fce08",
+    "options/G-s42.png": "04dedbefdb17a50e7827cfbb70b3a94b1feeb107cacd1380b06ace4d58c778d3",
+    "options/H-s41.png": "1c74efdcfca139eb79fa24e5e4ccd62f85cf644e7db1bc553ea7e2a32892700c",
+    "reference/target-crop.png": "ef9b9744b4b6c0171a2a44c402998e0264fcf6ede55b4932c43b492ee0fb2e2d",
+    "textures/agent_basecolor.png": "351c01b1979fedc16a6278344a2b2acc85b0b2e400925eac3b6a36a5ba121f63",
+    "textures/agent_glow_card.png": "33006bff51655815d69e3f4797d957bd59a6b9e6f61697707bbf38d16823313d",
+    "textures/agent_orm.png": "f810682cacb79a238b9b50b3fd375935b416ad1ec9ed29db8571e2905666784c"
   },
-  "tris": 26035,
-  "tris_note": "26035 against 30000",
-  "materials": [
-    "lamp_arm: dark navy arm segments (lower_arm and upper_arm faces away from the joints); base colour #1B2B4C, roughness 0.55, metal 0",
-    "lamp_metal: brushed silver joint knuckles, springs, clamp screw; base colour #C4C9CF, roughness 0.35, metal 1",
-    "lamp_shade: dark shade exterior; base colour #131A2B, roughness 0.5, metal 0",
-    "lamp_shade_glow: warm shade interior, emissive #FF9E2E x6, UE drives the strength per state; base colour #F4C27C, roughness 0.6, metal 0, emissive #FF9E2E x6 on 2484 faces, UE drives the strength per state",
-    "lamp_cap: amber cap on top of the shade; base colour #E39A1C, roughness 0.4, metal 0",
-    "lamp_base: navy base disc, stem, C-clamp body and knob; base colour #18233F, roughness 0.55, metal 0"
+  "lynx_commit": "85dec86092ef0be17a55c7c2cb8d717f3695cdef",
+  "lynx_commit_note": "stamped by the writer: the newest commit touching this folder when the manifest was written",
+  "id": "lamp-agent",
+  "class": "character-prop",
+  "budget_tris": 15000,
+  "budget_note": "fidelity sprint brief (2026-10-24): the lamp agent at no more than 15k tris; plan.md P4 gave 30000",
+  "generator_options": [
+    {
+      "option": "H-s41",
+      "file": "options/H-s41.png",
+      "model": "openai/gpt-image-2.5-flare",
+      "seed": 41,
+      "quality": "MEDIUM",
+      "size": "1024x1024",
+      "credits": 16,
+      "log": "docs/concepts/vr-light-table/lookdev/log.jsonl line 67",
+      "generationId": "1f1cfe12-a50d-6dd0-a263-fd1b08683cdd",
+      "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop lamp-agent --variant H",
+      "reference": "apps/vr/ArtSource/lamp-agent/reference/target-crop.png"
+    },
+    {
+      "option": "E-s41",
+      "file": "options/E-s41.png",
+      "model": "openai/gpt-image-2.5-flare",
+      "seed": 41,
+      "quality": "MEDIUM",
+      "size": "1024x1024",
+      "credits": 16,
+      "log": "docs/concepts/vr-light-table/lookdev/log.jsonl line 68",
+      "generationId": "1f1cfe14-0a19-6ac0-8ecf-cc02110852bb",
+      "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop lamp-agent --variant E",
+      "reference": "apps/vr/ArtSource/lamp-agent/options/H-s41.png"
+    },
+    {
+      "option": "F-s42",
+      "file": "options/F-s42.png",
+      "model": "openai/gpt-image-2.5-flare",
+      "seed": 42,
+      "quality": "MEDIUM",
+      "size": "1024x1024",
+      "credits": 16,
+      "log": "docs/concepts/vr-light-table/lookdev/log.jsonl line 71",
+      "generationId": "1f1cfe17-b29b-6c40-bae2-c9ec813e06a1",
+      "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop lamp-agent --variant F",
+      "reference": "apps/vr/ArtSource/lamp-agent/options/H-s41.png"
+    },
+    {
+      "option": "G-s41",
+      "file": "options/G-s41.png",
+      "model": "openai/gpt-image-2.5-flare",
+      "seed": 41,
+      "quality": "MEDIUM",
+      "size": "1024x1024",
+      "credits": 16,
+      "log": "docs/concepts/vr-light-table/lookdev/log.jsonl line 70",
+      "generationId": "1f1cfe16-593c-63d0-adff-383eca78d842",
+      "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop lamp-agent --variant G",
+      "reference": "apps/vr/ArtSource/lamp-agent/options/H-s41.png"
+    },
+    {
+      "option": "G-s42",
+      "file": "options/G-s42.png",
+      "model": "openai/gpt-image-2.5-flare",
+      "seed": 42,
+      "quality": "MEDIUM",
+      "size": "1024x1024",
+      "credits": 16,
+      "log": "docs/concepts/vr-light-table/lookdev/log.jsonl line 72",
+      "generationId": "1f1cfe18-666a-60a0-93ba-dab8bd1dd32d",
+      "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop lamp-agent --variant G",
+      "reference": "apps/vr/ArtSource/lamp-agent/options/E-s41.png"
+    }
   ],
+  "contact_sheet": "none: evidence/target-compare.jpg sets the target crop beside the build, which is the comparison that decides",
+  "option_input_check": "H-s41 (front three-quarter, referenced on reference/target-crop.png) matches the target figure: hood head with a glowing orb, tapered cone body with the amber slit and pin, two jointed capsule arms ending in wire loops, one arm reaching sideways and one hanging. E-s41 is the clean front view. F-s42 and G-s41 came back as multi-view sheets on a blue ground (they break the grey-ground rule but give the side and back silhouettes); G-s42 is the profile. F-s41 (log) was paid for but its download failed, so it has no file. The figure is about 15 rounded primitives, so the views are modelling reference for a scripted build, not image-to-3D input.",
+  "concept_licence": "Leonardo API output (rights assigned to the account holder, public:false); modelling reference only, no generated pixels or geometry are shipped; the target crop is cut from docs/concepts/vr-light-table/target-light-table.jpg",
+  "file_bytes": {
+    "evidence/poses.jpg": 32169,
+    "evidence/target-compare.jpg": 42162,
+    "evidence/turnaround.jpg": 38804,
+    "final.fbx": 415468,
+    "final_working.glb": 243112,
+    "options/E-s41.png": 62550,
+    "options/F-s42.png": 96873,
+    "options/G-s41.png": 111473,
+    "options/G-s42.png": 52976,
+    "options/H-s41.png": 61902,
+    "reference/target-crop.png": 59039,
+    "textures/agent_basecolor.png": 77831,
+    "textures/agent_glow_card.png": 17630,
+    "textures/agent_orm.png": 595822
+  },
+  "picked": "H-s41",
+  "generator": [
+    {
+      "method": "scripted Blender build, no image-to-3D: scripts/art/lamp/build_agent.bpy (Blender 5.2.2 arm64, bpy, headless)",
+      "reference": "the picked concept option H-s41 and the turnaround in options/, matched by eye in evidence/target-compare.jpg against reference/target-crop.png",
+      "why_not_trellis": "The figure is about 15 rounded primitives (a hood cup, an orb, a cone, capsules, balls, wire loops). The 2026-10-21 TRELLIS.2 run of the old lamp needed 3 seeds (two lost or split the arm), left 26 open edges and a ragged per-face glow edge, and its texture was thrown away; thin arms and a 1 mm wire loop are what image-to-3D fuses or drops. A script gives exact rigid parts per bone, a clean separate emissive orb and a unique UV for the AO bake. TRELLIS.2 was therefore not run for this build (research r1, r2 and r5 of 2026-10-24 expect the same)."
+    }
+  ],
+  "tris": 8086,
+  "tris_note": "8086 against 15000 (static working pose; the rigged final.fbx carries the same 8086)",
+  "materials": [
+    "agent_shell: white clear-coat plastic (head hood outside, body cone, arm capsules); base colour 0.80/0.79/0.77 linear, roughness 0.35, clear coat 1.0 at roughness 0.08 (r4: albedo about 0.8, a second specular lobe)",
+    "agent_hood_inner: the inside of the hood; the shell white at roughness 0.45 plus a faint warm self-glow (#FFC48A x0.5) standing in for the orb bounce; UE: GlowStrength x 0.15 so it follows the agent state",
+    "agent_joint: dark metal shoulder, elbow and wrist balls, neck collar and wire loops; #3A3D42, roughness 0.38, metal 1",
+    "agent_glow: amber emissive orb in the hood, the front slit and the pin; #FFA94D x3 (UE drives GlowStrength per state)",
+    "agent_glow_card: the additive card in the hood opening, textures/agent_glow_card.png (radial falloff, white on black) tinted by the glow colour; UE: unlit additive, two-sided, no depth write"
+  ],
+  "material_slots": [
+    "agent_shell",
+    "agent_glow",
+    "agent_joint",
+    "agent_hood_inner",
+    "agent_glow_card"
+  ],
+  "slot_tris": {
+    "agent_shell": 3736,
+    "agent_glow": 976,
+    "agent_joint": 2292,
+    "agent_hood_inner": 1080,
+    "agent_glow_card": 2
+  },
+  "textures": "textures/agent_basecolor.png, textures/agent_glow_card.png, textures/agent_orm.png: agent_basecolor.png (diffuse colour bake, sRGB) and agent_orm.png (R ambient occlusion, G roughness, B metal; linear), 1024 px, baked with Cycles on the CPU at 64 samples in 21.5 s (AO mean 0.451, self-occlusion only: hood over orb and collar, joints into capsules). No normal map: the shapes are real geometry with smooth shading. agent_glow_card.png 256 px. UE: BaseColor x lerp(1, AO, 0.6), because the forward path's SSAO is weak and there is no reflection capture (r4); the Blender materials of final.fbx are wired that way.",
   "bounds_cm": {
-    "x": 13.04,
-    "y": 35.5,
-    "z": 56.2,
-    "height_above_table_cm": 45,
-    "clamp_below_table_plane_cm": 11.2,
-    "note": "x width, y depth (shade towards -y, clamp back bar towards +y), z up (Blender, FBX Z-up); pivot at the base disc underside centre (z = 0, the table plane); the shade top is 45 cm above it and the modelled C-clamp (knob bottom) reaches to z = -11.2 cm"
+    "x": 44.27,
+    "y": 15.9,
+    "z": 28.55,
+    "note": "final_working.glb in Blender axes (x width, y depth with the figure facing -y, z up), WORKING pose: the right arm hangs below the pin tip and the left arm reaches 26 cm out to +x, so the box is not centred; rest pose height pin tip to hood top 25.39 cm"
   },
   "meshes": {
     "lamp-agent": {
-      "tris": 26035,
-      "vertices": 11162,
-      "components": 10,
-      "floaters": 0,
-      "open_edges": 26,
-      "uv_sets": 1
+      "tris": 8086,
+      "vertices": 4078,
+      "loose_parts": 19,
+      "open_edges": 4,
+      "uv_sets": 1,
+      "note": "18 rigid parts plus the glow card (a single quad, whose 4 boundary edges are the open edges)"
     }
   },
   "uv_sets": 1,
-  "pivot": "centre of the base disc, on its underside (the table-top contact plane, z = 0); the modelled C-clamp hangs below the origin, to z = -11.2 cm, and grips a 3 cm thick table whose edge is at y = +5.8 cm",
+  "pivot": "the tip of the pin under the body (rest pose z = 0), on the body axis (x = y = 0); the figure hovers, so placement sets the pivot height above the table",
+  "axes": "Blender Z up, the figure faces -Y (the hood opening looks -Y and 30 degrees down). glTF (final_working.glb) is Y-up with the figure facing +Z; UE Interchange turns either into Z-up with the figure facing UE +Y (as the old lamp-agent FBX landed: Blender -Y onto UE +Y). Yaw it 90 degrees less than \"facing +X\" needs; check one frame.",
   "rig": {
     "bones": [
-      "base",
-      "lower_arm",
-      "upper_arm",
-      "head"
+      "body",
+      "head",
+      "arm_l_upper",
+      "arm_l_lower",
+      "arm_r_upper",
+      "arm_r_lower"
     ],
     "hierarchy": {
-      "base": null,
-      "lower_arm": "base",
-      "upper_arm": "lower_arm",
-      "head": "upper_arm"
+      "body": null,
+      "head": "body",
+      "arm_l_upper": "body",
+      "arm_l_lower": "arm_l_upper",
+      "arm_r_upper": "body",
+      "arm_r_lower": "arm_r_upper"
     },
-    "weights": "proxy heat (ARMATURE_AUTO on a 4 mm voxel proxy) transferred by nearest proxy vertex; then smooth x3, limit 4, normalize",
-    "weight_sum_range": [
-      1,
-      1
-    ],
+    "weights": "rigid: every vertex weight 1.0 to the one bone of its part (one rigid part per bone)",
+    "max_influences_per_vertex": 1,
     "unweighted_verts": 0,
-    "max_influences_per_vertex": 2,
-    "look_at": "head bone constraint DAMPED_TRACK to empty look_at_target, influence 0 in every pose action (FBX does not carry constraints; UE aims the head bone in its AnimBP)",
-    "look_at_error_deg": {
-      "(0, -0.45, 0.1)": 0,
-      "(0.3, -0.35, 0.05)": 0,
-      "(-0.25, -0.5, 0.2)": 0
-    }
+    "contract_change": "The 2026-10-21 contract was base > lower_arm > upper_arm > head (one arm, a desk lamp). The target character has two arms, so the contract is now body > head, body > arm_l_upper > arm_l_lower, body > arm_r_upper > arm_r_lower; arm_l is the figure's left (+X, the viewer's right). The UE AnimBP aims the head bone, as before."
   },
   "actions": {
     "asking": {
-      "bounds_size_m": [
-        0.13,
-        0.262,
-        0.691
-      ],
-      "max_displacement_m": 0.241,
-      "head_z_m": 0.579,
-      "frames": [
-        1,
-        12
-      ],
-      "note": "rotation of lower_arm, upper_arm, head about the armature X axis (scripts/art/lamp/poses.json, degrees, relative to the TRELLIS rest pose); keys on frames 1 and 12"
-    },
-    "reading": {
-      "bounds_size_m": [
-        0.13,
-        0.375,
-        0.492
-      ],
-      "max_displacement_m": 0.138,
-      "head_z_m": 0.38,
-      "frames": [
-        1,
-        12
-      ],
-      "note": "rotation of lower_arm, upper_arm, head about the armature X axis (scripts/art/lamp/poses.json, degrees, relative to the TRELLIS rest pose); keys on frames 1 and 12"
-    },
-    "resting": {
-      "bounds_size_m": [
-        0.13,
-        0.355,
-        0.336
-      ],
-      "max_displacement_m": 0.298,
-      "head_z_m": 0.224,
-      "frames": [
-        1,
-        12
-      ],
-      "note": "rotation of lower_arm, upper_arm, head about the armature X axis (scripts/art/lamp/poses.json, degrees, relative to the TRELLIS rest pose); keys on frames 1 and 12"
-    },
-    "speaking": {
-      "bounds_size_m": [
-        0.13,
-        0.366,
-        0.654
-      ],
-      "max_displacement_m": 0.186,
-      "head_z_m": 0.542,
-      "frames": [
-        1,
-        12
-      ],
-      "note": "rotation of lower_arm, upper_arm, head about the armature X axis (scripts/art/lamp/poses.json, degrees, relative to the TRELLIS rest pose); keys on frames 1 and 12"
-    },
-    "working": {
-      "bounds_size_m": [
-        0.13,
-        0.46,
-        0.437
-      ],
-      "max_displacement_m": 0.278,
-      "head_z_m": 0.325,
-      "frames": [
-        1,
-        12
-      ],
-      "note": "rotation of lower_arm, upper_arm, head about the armature X axis (scripts/art/lamp/poses.json, degrees, relative to the TRELLIS rest pose); keys on frames 1 and 12"
-    }
-  },
-  "textures": "lamp_basecolor.png, lamp_orm.png (R occlusion, G roughness, B metal), lamp_normal.png (flat), 2048 px: flat region colours from scripts/art/lamp/materials.json rasterised into the existing TRELLIS UV set by rework_lamp.bpy (flat values need no Cycles bake, so no render engine and no GPU); the smudged TRELLIS bake and its relief normal map are gone. The same values sit on the Principled node of each material slot, so UE can use either",
-  "regenerate": "node scripts/art/lamp/trellis_run.mjs 303; blender -b -P scripts/art/lamp/finish_lamp.bpy -- <repo> <raw.glb> <work>; blender -b -P scripts/art/lamp/rework_lamp.bpy -- <repo> <work>; blender -b -P scripts/art/lamp/score_lamp.bpy -- <repo> <work>; blender -b -P scripts/art/lamp/render_lamp.bpy -- <repo> <work>; node scripts/art/lamp/write_manifest.mjs <work> <raw-dir>  (Blender takes Windows paths; Cycles runs on the CPU)",
-  "finishing_note": "Springs: modelled: 4 thin brushed-silver cylinders (8 sides, radius 3.5 mm), two on each arm segment (one each side), 112 tris in total, weighted 1.0 to the arm bone they run along. They are plain cylinders, not coils: a coil pitch of about 2 mm at lamp scale is under 1 px at the far edge (the first build judged this on a 1.63 m view), so a cylinder reads the same as the spring in concept A and costs 112 tris. The pale strip that was the smudge on the TRELLIS arm texture is gone (the arm is flat navy). Materials: one slot per region with flat values (arm navy, silver joints, springs and screw, dark shade, warm glow, amber cap, navy base and clamp), plus the same values baked flat into the three PNGs. The old lamp_body slot is replaced by six slots; lamp_shade_glow keeps its name.",
-  "lynx_commit": "2dad0ad",
-  "lynx_commit_note": "set by the merge; the branch it lands on",
-  "material_slots": [
-    "lamp_arm",
-    "lamp_metal",
-    "lamp_shade",
-    "lamp_shade_glow",
-    "lamp_cap",
-    "lamp_base"
-  ],
-  "framing": {
-    "pass": true,
-    "date": "2026-10-21",
-    "method": "render_lamp.bpy fits every camera to the world bounding box of the evaluated (posed) mesh with a 6 % margin per side; then a transparent-film alpha pass of the lamp alone is rendered with the same camera and the check asserts that no lamp pixel touches the border and that the silhouette keeps at least 5 % of the image on every side",
-    "table_view": {
-      "line_of_sight_m": 1.63,
-      "elevation_deg": 23,
-      "hfov_deg": 43.5,
-      "hfov_start_deg": 40,
-      "px_per_degree": 14.71,
-      "note": "camera position and aim unchanged; only the horizontal field of view was widened from 40 degrees to fit the whole lamp with the margin"
-    },
-    "turnaround": {
-      "bbox_world_m": {
-        "min": [
-          -0.0652,
-          -0.1181,
-          -0.112
+      "degrees": {
+        "arm_l_upper": [
+          -20,
+          -95,
+          0
         ],
-        "max": [
-          0.0653,
-          0.1437,
-          0.5788
+        "arm_l_lower": [
+          0,
+          -25,
+          0
+        ],
+        "arm_r_upper": [
+          0,
+          -4,
+          0
+        ],
+        "arm_r_lower": [
+          0,
+          0,
+          0
+        ],
+        "head": [
+          14,
+          0,
+          10
         ]
       },
-      "distance_m": 1.17,
-      "hfov_deg": 40,
-      "elevation_deg": 18
+      "note": "rotations about the armature axes at each bone head (scripts/art/lamp/agent_poses.json), keys on frames 1 and 12"
     },
-    "images": {
-      "turnaround-az0": {
-        "pass": true,
-        "lamp_pixels": 14319,
-        "touches_border": false,
-        "silhouette_margin_fraction": {
-          "left": 0.4062,
-          "right": 0.4062,
-          "bottom": 0.1271,
-          "top": 0.0771
-        },
-        "min_margin_fraction": 0.0771
+    "resting": {
+      "degrees": {
+        "arm_l_upper": [
+          0,
+          12,
+          0
+        ],
+        "arm_l_lower": [
+          0,
+          8,
+          0
+        ],
+        "arm_r_upper": [
+          0,
+          -12,
+          0
+        ],
+        "arm_r_lower": [
+          0,
+          -8,
+          0
+        ],
+        "head": [
+          -6,
+          0,
+          0
+        ]
       },
-      "turnaround-az90": {
-        "pass": true,
-        "lamp_pixels": 13268,
-        "touches_border": false,
-        "silhouette_margin_fraction": {
-          "left": 0.325,
-          "right": 0.3438,
-          "bottom": 0.1354,
-          "top": 0.075
-        },
-        "min_margin_fraction": 0.075
+      "note": "rotations about the armature axes at each bone head (scripts/art/lamp/agent_poses.json), keys on frames 1 and 12"
+    },
+    "speaking": {
+      "degrees": {
+        "arm_l_upper": [
+          -12,
+          -40,
+          0
+        ],
+        "arm_l_lower": [
+          -10,
+          -30,
+          0
+        ],
+        "arm_r_upper": [
+          -12,
+          40,
+          0
+        ],
+        "arm_r_lower": [
+          -10,
+          30,
+          0
+        ],
+        "head": [
+          16,
+          0,
+          0
+        ]
       },
-      "turnaround-az180": {
-        "pass": true,
-        "lamp_pixels": 12911,
-        "touches_border": false,
-        "silhouette_margin_fraction": {
-          "left": 0.425,
-          "right": 0.4229,
-          "bottom": 0.1396,
-          "top": 0.0729
-        },
-        "min_margin_fraction": 0.0729
+      "note": "rotations about the armature axes at each bone head (scripts/art/lamp/agent_poses.json), keys on frames 1 and 12"
+    },
+    "working": {
+      "degrees": {
+        "arm_l_upper": [
+          -8,
+          -62,
+          0
+        ],
+        "arm_l_lower": [
+          0,
+          -4,
+          0
+        ],
+        "arm_r_upper": [
+          -8,
+          6,
+          0
+        ],
+        "arm_r_lower": [
+          0,
+          6,
+          0
+        ],
+        "head": [
+          0,
+          -8,
+          8
+        ]
       },
-      "turnaround-az270": {
-        "pass": true,
-        "lamp_pixels": 12956,
-        "touches_border": false,
-        "silhouette_margin_fraction": {
-          "left": 0.3417,
-          "right": 0.325,
-          "bottom": 0.1354,
-          "top": 0.075
-        },
-        "min_margin_fraction": 0.075
-      },
-      "table-view": {
-        "pass": true,
-        "lamp_pixels": 10026,
-        "touches_border": false,
-        "silhouette_margin_fraction": {
-          "left": 0.3312,
-          "right": 0.4437,
-          "bottom": 0.2146,
-          "top": 0.3583
-        },
-        "min_margin_fraction": 0.2146
-      },
-      "pose-resting": {
-        "pass": true,
-        "lamp_pixels": 48155,
-        "touches_border": false,
-        "silhouette_margin_fraction": {
-          "left": 0.1812,
-          "right": 0.1703,
-          "bottom": 0.1021,
-          "top": 0.0896
-        },
-        "min_margin_fraction": 0.0896,
-        "distance_m": 0.771
-      },
-      "pose-reading": {
-        "pass": true,
-        "lamp_pixels": 25978,
-        "touches_border": false,
-        "silhouette_margin_fraction": {
-          "left": 0.2562,
-          "right": 0.2547,
-          "bottom": 0.0896,
-          "top": 0.0729
-        },
-        "min_margin_fraction": 0.0729,
-        "distance_m": 1.083
-      },
-      "pose-working": {
-        "pass": true,
-        "lamp_pixels": 32431,
-        "touches_border": false,
-        "silhouette_margin_fraction": {
-          "left": 0.1703,
-          "right": 0.1719,
-          "bottom": 0.0938,
-          "top": 0.0771
-        },
-        "min_margin_fraction": 0.0771,
-        "distance_m": 0.973
-      },
-      "pose-asking": {
-        "pass": true,
-        "lamp_pixels": 13544,
-        "touches_border": false,
-        "silhouette_margin_fraction": {
-          "left": 0.3719,
-          "right": 0.3781,
-          "bottom": 0.0854,
-          "top": 0.0667
-        },
-        "min_margin_fraction": 0.0667,
-        "distance_m": 1.499
-      },
-      "pose-speaking": {
-        "pass": true,
-        "lamp_pixels": 15270,
-        "touches_border": false,
-        "silhouette_margin_fraction": {
-          "left": 0.3156,
-          "right": 0.3234,
-          "bottom": 0.0875,
-          "top": 0.0667
-        },
-        "min_margin_fraction": 0.0667,
-        "distance_m": 1.419
-      }
+      "note": "rotations about the armature axes at each bone head (scripts/art/lamp/agent_poses.json), keys on frames 1 and 12"
     }
   },
-  "base_colour_regions": {
-    "arm": {
-      "faces": 13424,
-      "samples": 13424,
-      "edge_tap_outliers": 17,
-      "edge_taps": 40272,
-      "mean_srgb": [
-        0.1059,
-        0.1686,
-        0.2981
-      ],
-      "std_srgb": [
-        0,
-        0,
-        0
-      ],
-      "target_srgb": [
-        0.1059,
-        0.1686,
-        0.298
-      ],
-      "distance_to_target": 0,
-      "outliers_over_tol": 0
-    },
-    "metal": {
-      "faces": 4538,
-      "samples": 4538,
-      "edge_tap_outliers": 29,
-      "edge_taps": 13614,
-      "mean_srgb": [
-        0.7685,
-        0.7881,
-        0.8117
-      ],
-      "std_srgb": [
-        0.0098,
-        0.0092,
-        0.0076
-      ],
-      "target_srgb": [
-        0.7686,
-        0.7882,
-        0.8118
-      ],
-      "distance_to_target": 0.0002,
-      "outliers_over_tol": 1
-    },
-    "shade": {
-      "faces": 3593,
-      "samples": 3593,
-      "edge_tap_outliers": 536,
-      "edge_taps": 10779,
-      "mean_srgb": [
-        0.0792,
-        0.1054,
-        0.1703
-      ],
-      "std_srgb": [
-        0.064,
-        0.0478,
-        0.023
-      ],
-      "target_srgb": [
-        0.0745,
-        0.102,
-        0.1686
-      ],
-      "distance_to_target": 0.0047,
-      "outliers_over_tol": 19
-    },
-    "glow": {
-      "faces": 2484,
-      "samples": 2484,
-      "edge_tap_outliers": 502,
-      "edge_taps": 7452,
-      "mean_srgb": [
-        0.9483,
-        0.7544,
-        0.4832
-      ],
-      "std_srgb": [
-        0.0863,
-        0.0644,
-        0.0311
-      ],
-      "target_srgb": [
-        0.9569,
-        0.7608,
-        0.4863
-      ],
-      "distance_to_target": 0.0085,
-      "outliers_over_tol": 24
-    },
-    "cap": {
-      "faces": 303,
-      "samples": 303,
-      "edge_tap_outliers": 0,
-      "edge_taps": 909,
-      "mean_srgb": [
-        0.8902,
-        0.6039,
-        0.1098
-      ],
-      "std_srgb": [
-        0,
-        0,
-        0
-      ],
-      "target_srgb": [
-        0.8902,
-        0.6039,
-        0.1098
-      ],
-      "distance_to_target": 0,
-      "outliers_over_tol": 0
-    },
-    "base": {
-      "faces": 1623,
-      "samples": 1623,
-      "edge_tap_outliers": 5,
-      "edge_taps": 4869,
-      "mean_srgb": [
-        0.0941,
-        0.1373,
-        0.2471
-      ],
-      "std_srgb": [
-        0,
-        0,
-        0
-      ],
-      "target_srgb": [
-        0.0941,
-        0.1373,
-        0.2471
-      ],
-      "distance_to_target": 0,
-      "outliers_over_tol": 0
-    }
-  },
-  "orm_regions": {
-    "arm": {
-      "roughness_mean": 0.549,
-      "metal_mean": 0,
-      "pass": true
-    },
-    "metal": {
-      "roughness_mean": 0.349,
-      "metal_mean": 1,
-      "pass": true
-    },
-    "shade": {
-      "roughness_mean": 0.502,
-      "metal_mean": 0,
-      "pass": true
-    },
-    "glow": {
-      "roughness_mean": 0.599,
-      "metal_mean": 0,
-      "pass": true
-    },
-    "cap": {
-      "roughness_mean": 0.4,
-      "metal_mean": 0,
-      "pass": true
-    },
-    "base": {
-      "roughness_mean": 0.549,
-      "metal_mean": 0,
-      "pass": true
-    }
-  },
-  "review_fixes": {
-    "review": "Director review of 2026-10-21 11:21Z of commit caa3231; reworked the same day without a TRELLIS rerun and without the GPU (Blender, Cycles on the CPU)",
-    "findings": [
-      {
-        "finding": "The evidence crops the shade (and other parts at the frame edge).",
-        "fix": "render_lamp.bpy fits each camera to the evaluated mesh's world bounding box (the posed mesh for each pose) with a 6 % margin, one common distance for the 4 turnaround views; table-view.jpg keeps its 1.63 m, 23 degree line of sight and only widens the horizontal field of view from 40 to 43.5 degrees; an alpha-pass check asserts that no lamp pixel touches the border in any of the 10 evidence images (see framing); spring-closeup.jpg is dropped because a 3x close-up cannot hold the whole lamp, and the springs are real geometry now"
-      },
-      {
-        "finding": "The arm bake is smudged (white and grey blotches).",
-        "fix": "the TRELLIS bake is replaced by flat region PBR from materials.json: dark navy arm #1B2B4C, brushed silver joints and springs (metal 1, roughness 0.35), dark shade #131A2B, warm emissive interior, amber cap, navy base; regions assigned per face by bone weights and distance to the joint pivots; flat PNGs rasterised onto the TRELLIS UVs plus one material slot per region; flat normal map; score_lamp.bpy measures the base colour per region (arm mean distance 0 from the navy target, std 0/0/0, 0 outliers)"
-      },
-      {
-        "finding": "The C-clamp is missing although mesh_acceptance claimed one.",
-        "fix": "the TRELLIS stalk (a lumpy 4 cm post that also sat under the render's floor plane, so it never showed) is replaced by a modelled low-poly C-clamp (116 tris, weight 1.0 to the base bone, base material, silver screw); the evidence table is now a 3 cm slab whose edge the clamp grips; mesh_acceptance, bounds_cm and pivot now describe this geometry; bounds and the scale gate are recomputed from final.fbx"
-      }
+  "static_pose": "working",
+  "regenerate": "blender -b --factory-startup -P scripts/art/lamp/build_agent.bpy -- <repo> <work>; blender -b --factory-startup -P scripts/art/lamp/render_agent.bpy -- <repo> <work>; blender -b --factory-startup -P scripts/art/lamp/score_agent.bpy -- <repo> <work>; node scripts/art/lamp/write_manifest.mjs <work>  (Blender takes Windows paths; the bakes run on the CPU, the renders on the GPU with EEVEE). The concept views came from node scripts/lookdev/leonardo.mjs gen --prop lamp-agent --variant <E|F|G|H> (spends credits; see generator_options)",
+  "licence": "Our own scripted geometry, materials and bakes (Blender is a GPL tool; its output is ours). No generated pixels or geometry are shipped: the Leonardo turnaround is modelling reference only.",
+  "placement": {
+    "ue_choice": "place final_working.glb as a STATIC mesh (5 sections = 5 draws, no skinning) for the capture; keep final.fbx (skeletal, 6 bones, 4 actions) for L5.7 states. The old SK_LampAgent placement drew 6 sections.",
+    "where": "hovering above the far edge of the table, centred a little left of the table centre, the pivot (pin tip) about 18 to 25 cm above the table plane, the hood facing the player (a yaw so the figure's -Y looks at the camera); in the 1600 x 900 target capture the head sits in the upper third, at about 46 % of the width, the hood about 8 % of the frame width across (the target crop: 1376 x 768 frame, hood centre at x = 645, y = 55, hood about 105 px wide)",
+    "light": "a warm point light inside the hood, just in front of the orb (build.json orb_centre_rest_m + 4.5 cm along open_axis, carried by the head bone), about #FFA85A, small source radius, short attenuation (about 40 cm) so it lights the hood inside, the body top and the arms, plus the card; and a faint cool rim from behind so the white silhouette separates from the dark room (r5: the old lamp dissolved into the background)",
+    "orb_centre_rest_m": [
+      0,
+      -0.0152,
+      0.183
+    ],
+    "open_axis": [
+      0,
+      -0.866,
+      -0.5
     ]
-  },
-  "import": {
-    "ue_path": "/Game/Bp/Art/LampAgent/SK_LampAgent",
-    "in_scene_tris": 26035,
-    "draw_calls": 6,
-    "placement": "LampAgent (skeletal) clamped on the far rim at (39.2, 5, 95) cm, yaw 70, static pose A_LampAgent_TablePose (lower_arm 44, upper_arm -1, head -75 degrees from rest); materials M_LampAgent instances, GlowStrength 1.0 resting",
-    "step": "apps/vr/tools/mcp-steps/l34-studio.jsonl (py/import_studio.py, py/studio_level.py)",
-    "date": "2026-10-24",
-    "host": "Lynx",
-    "note": "draw_calls = mesh sections, one draw each in the base pass and in the prepass. The whole slice with the studio at the target pose (run-bplink.mjs --mode game --xr-sim --exec \"BpView.Pose target\", CSV profiler, Lynx 2026-10-24): RHI/DrawCalls p50 144 and RHI/PrimitivesDrawn p50 77829, under the P4 gate's 150 and 350k"
   }
 }

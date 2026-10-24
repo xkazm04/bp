@@ -1,107 +1,23 @@
 # Blender script (extension .bpy so scripts/check-python-deps.mjs does not read bpy/bmesh/mathutils as pip packages); run with blender -b -P
-"""Builds the survey pin (apps/vr/ArtSource/survey-pin) and the fixture primitive kit (apps/vr/ArtSource/fixture-kit).
+"""Builds the survey pin (apps/vr/ArtSource/survey-pin) and the fixture glyph kit (apps/vr/ArtSource/fixture-kit).
 
 Run:  blender -b -P scripts/art/build_art.bpy -- <repo-root>
 Procedural only: no generated input, no GPU job. Units are metres, Blender is Z-up, the glTF exporter writes Y-up.
 Pivot of the pin is its tip (where it meets the sheet); the pivot of every fixture is its base centre.
+Spark vr-fidelity-40: both go through scripts/art/lib/finish.bpy (hard edges bevelled, hardened and weighted normals,
+smooth shading, unique UVs). The fixtures are furniture glyphs at room scale, one per feature kind (art-breakdown row 5:
+"instanced primitives per feature kind"); they are judged by silhouette at about 5 cm from the target pose, so they carry
+flat material factors only: UE draws them as the concept's cyan-white linework glass and drives the amber `mark` per stage.
 """
-import bpy, bmesh, math, os, sys
+import bpy, bmesh, math, os, sys, importlib.machinery
 import numpy as np
-from mathutils import Vector, Matrix
+from mathutils import Vector
 
 REPO = sys.argv[sys.argv.index('--') + 1] if '--' in sys.argv else os.getcwd()
 ART = os.path.join(REPO, 'apps', 'vr', 'ArtSource')
 CM = 0.01
 TEX_NAMES = {'base': 'basecolor', 'normal': 'normal', 'orm': 'orm'}
-
-
-# ---------------------------------------------------------------------------------------------- geometry helpers
-class Part:
-    """Accumulates primitives into one bmesh. Every face carries a material slot index."""
-    def __init__(self):
-        self.bm = bmesh.new()
-
-    def _tag(self, verts, mat):
-        vset = set(verts)
-        for f in self.bm.faces:
-            if all(v in vset for v in f.verts):
-                f.material_index = mat
-
-    def box(self, c, s, mat=0):
-        """Axis-aligned box centred on c with size s (metres)."""
-        vs = bmesh.ops.create_cube(self.bm, size=1.0)['verts']
-        bmesh.ops.scale(self.bm, vec=Vector(s), verts=vs)
-        bmesh.ops.translate(self.bm, vec=Vector(c), verts=vs)
-        self._tag(vs, mat)
-
-    def cyl(self, base, r1, r2, h, seg, mat=0, rot_z=0.0):
-        """Cone frustum standing on `base` (centre of the bottom cap), radius r1 at the bottom, r2 at the top."""
-        vs = bmesh.ops.create_cone(self.bm, cap_ends=True, cap_tris=False, segments=seg, radius1=r1, radius2=r2, depth=h)['verts']
-        bmesh.ops.rotate(self.bm, cent=(0, 0, 0), matrix=Matrix.Rotation(rot_z, 3, 'Z'), verts=vs)
-        bmesh.ops.translate(self.bm, vec=Vector((base[0], base[1], base[2] + h / 2)), verts=vs)
-        self._tag(vs, mat)
-
-    def sphere(self, c, r, seg, rings, mat=0):
-        vs = bmesh.ops.create_uvsphere(self.bm, u_segments=seg, v_segments=rings, radius=r)['verts']
-        bmesh.ops.translate(self.bm, vec=Vector(c), verts=vs)
-        self._tag(vs, mat)
-
-    def prism(self, pts, z0, h, mat=0):
-        """Extrude the polygon `pts` (XY, metres) from z0 up by h."""
-        vs = [self.bm.verts.new((x, y, z0)) for x, y in pts]
-        f = self.bm.faces.new(vs)
-        ext = bmesh.ops.extrude_face_region(self.bm, geom=[f])
-        nv = [g for g in ext['geom'] if isinstance(g, bmesh.types.BMVert)]
-        bmesh.ops.translate(self.bm, vec=Vector((0, 0, h)), verts=nv)
-        self._tag(vs + nv, mat)
-
-    def finish(self, name, materials):
-        bm = self.bm
-        bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-7)
-        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-        bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method='BEAUTY', ngon_method='EAR_CLIP')
-        uv_box(bm)
-        me = bpy.data.meshes.new(name)
-        bm.to_mesh(me)
-        bm.free()
-        for m in materials:
-            me.materials.append(m)
-        ob = bpy.data.objects.new(name, me)
-        bpy.context.scene.collection.objects.link(ob)
-        return ob
-
-
-def uv_box(bm, span=0.06):
-    """One UV set. Box projection by dominant normal axis; 1 uv unit = `span` metres around the pivot.
-    Faces overlap in UV space on purpose: the textures are flat colour plus grain, not baked light."""
-    uvl = bm.loops.layers.uv.new('UVMap')
-    for f in bm.faces:
-        n = f.normal
-        ax = max(range(3), key=lambda i: abs(n[i]))
-        a, b = [(1, 2), (0, 2), (0, 1)][ax]
-        for l in f.loops:
-            p = l.vert.co
-            l[uvl].uv = (min(1, max(0, 0.5 + p[a] / span)), min(1, max(0, 0.5 + p[b] / span)))
-
-
-def fit_uv(ob, mat_index):
-    """Planar-fits the faces of one material slot to 0..1 on their dominant plane (the blank tag card)."""
-    me = ob.data
-    uvl = me.uv_layers[0]
-    polys = [p for p in me.polygons if p.material_index == mat_index]
-    co = np.array([me.vertices[v].co for p in polys for v in p.vertices])
-    lo, hi = co.min(0), co.max(0)
-    for p in polys:
-        n = p.normal
-        ax = max(range(3), key=lambda i: abs(n[i]))
-        a, b = [(1, 2), (0, 2), (0, 1)][ax]
-        for li in p.loop_indices:
-            v = me.vertices[me.loops[li].vertex_index].co
-            uvl.data[li].uv = ((v[a] - lo[a]) / max(hi[a] - lo[a], 1e-9), (v[b] - lo[b]) / max(hi[b] - lo[b], 1e-9))
-
-
-def srgb_to_lin(c):
-    return tuple((x / 12.92 if x <= 0.04045 else ((x + 0.055) / 1.055) ** 2.4) for x in c)
+lib = importlib.machinery.SourceFileLoader('finish', os.path.join(REPO, 'scripts', 'art', 'lib', 'finish.bpy')).load_module()
 
 
 def hex_rgb(h):
@@ -121,50 +37,9 @@ def png(path, arr):
     bpy.data.images.remove(img)
 
 
-def material(name, color_hex, rough, metal=0.0, tex=None, emit=None):
-    m = bpy.data.materials.new(name)
-    m.use_nodes = True
-    nt = m.node_tree
-    nt.nodes.clear()
-    out = nt.nodes.new('ShaderNodeOutputMaterial')
-    bsdf = nt.nodes.new('ShaderNodeBsdfPrincipled')
-    nt.links.new(bsdf.outputs['BSDF'], out.inputs['Surface'])
-    bsdf.inputs['Base Color'].default_value = (*srgb_to_lin(hex_rgb(color_hex)), 1)
-    bsdf.inputs['Roughness'].default_value = rough
-    bsdf.inputs['Metallic'].default_value = metal
-    if emit:
-        bsdf.inputs['Emission Color'].default_value = (*srgb_to_lin(hex_rgb(emit)), 1)
-        bsdf.inputs['Emission Strength'].default_value = 0.6
-    if tex:
-        def img(path, cs):
-            n = nt.nodes.new('ShaderNodeTexImage')
-            n.image = bpy.data.images.load(path)
-            n.image.colorspace_settings.name = cs
-            return n
-        base = img(tex['base'], 'sRGB')
-        nt.links.new(base.outputs['Color'], bsdf.inputs['Base Color'])
-        nrm = img(tex['normal'], 'Non-Color')
-        nm = nt.nodes.new('ShaderNodeNormalMap')
-        nt.links.new(nrm.outputs['Color'], nm.inputs['Color'])
-        nt.links.new(nm.outputs['Normal'], bsdf.inputs['Normal'])
-        orm = img(tex['orm'], 'Non-Color')
-        sp = nt.nodes.new('ShaderNodeSeparateColor')
-        nt.links.new(orm.outputs['Color'], sp.inputs['Color'])
-        nt.links.new(sp.outputs['Green'], bsdf.inputs['Roughness'])
-        nt.links.new(sp.outputs['Blue'], bsdf.inputs['Metallic'])
-    return m
-
-
-def export(path):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    bpy.ops.export_scene.gltf(filepath=path, export_format='GLB', export_yup=True, export_apply=True,
-                              export_texcoords=True, export_normals=True, export_materials='EXPORT',
-                              use_selection=False)
-
-
 # ---------------------------------------------------------------------------------------------- textures
 def pin_textures(folder):
-    """Authors simple 256x256 PNGs: base colour, normal, ORM (R occlusion, G roughness, B metal) for the body and the tag."""
+    """Authors 256x256 PNGs: base colour, normal, ORM (R occlusion, G roughness, B metal) for the body and the tag."""
     os.makedirs(folder, exist_ok=True)
     rng = np.random.default_rng(7)
     N = 256
@@ -205,76 +80,116 @@ def pin_textures(folder):
     return paths
 
 
+def finished(kit, name, slots, mats):
+    """The Kit through the finish stack (bevel, hardened and weighted normals, smooth shading) with unique UVs."""
+    src = kit.to_object(name)
+    for m in mats:
+        src.data.materials.append(m)
+    ob, fin = lib.finish(src, name, segments=1)       # one-segment chamfers: at a few cm a second segment is invisible
+    lib.unwrap(ob, 512, list(range(len(slots))))
+    fin['hard_edges_bevelled'] = kit.hard_edges
+    return ob, fin
+
+
 # ---------------------------------------------------------------------------------------------- survey pin
 def build_pin():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     folder = os.path.join(ART, 'survey-pin')
     tex = pin_textures(os.path.join(folder, 'textures'))
-    m_body = material('pin_body', '#FFB547', 0.42, tex=tex['body'])
-    m_tag = material('pin_tag', '#F3E9D2', 0.85, tex=tex['tag'])
-    p = Part()
-    # pivot (0,0,0) = the needle tip on the sheet; the pin stands +Z. Sizes in cm, for a 95 cm table (see manifest)
-    p.cyl((0, 0, 0), 0.04 * CM, 0.13 * CM, 1.2 * CM, 8)                          # needle
-    p.cyl((0, 0, 1.2 * CM), 0.16 * CM, 0.16 * CM, 2.8 * CM, 10)                  # shaft
-    p.cyl((0, 0, 4.0 * CM), 0.34 * CM, 0.34 * CM, 0.25 * CM, 12)                 # collar under the head
-    p.sphere((0, 0, 4.25 * CM + 0.55 * CM), 0.65 * CM, 16, 10)                   # head, top at 5.45 cm
-    p.box((0.55 * CM, 0, 2.55 * CM), (1.0 * CM, 0.1 * CM, 0.1 * CM))             # wire from the shaft to the tag
-    p.box((1.95 * CM, 0, 2.55 * CM), (2.2 * CM, 0.12 * CM, 1.4 * CM), mat=1)     # blank paper tag
-    ob = p.finish('survey-pin', [m_body, m_tag])
-    fit_uv(ob, 1)
-    export(os.path.join(folder, 'final.glb'))
+    m_body = lib.export_material('pin_body', tex=tex['body'])
+    m_tag = lib.export_material('pin_tag', tex=tex['tag'])
+    k = lib.Kit(['pin_body', 'pin_tag'])
+    # pivot (0,0,0) = where the pin meets the sheet; it stands +Z. Sizes in cm, for a 95 cm table (see manifest). The concept
+    # (target-light-table.jpg, R-11 and R-12) draws a finding as an amber bead on the plan, a thin amber stem rising from it
+    # and a paper tag at the top: one lathe for the bead, the stem and a collar, then the tag card centred on the stem.
+    br = 0.38 * CM
+    prof = [(0, 0)]
+    for i in range(1, 8):                                                                 # the bead, resting on the sheet
+        a = -math.pi / 2 + math.pi * i / 8
+        prof.append((br * math.cos(a), br + br * math.sin(a)))
+    prof += [(0.06 * CM, 2 * br - 0.02 * CM), (0.06 * CM, 4.75 * CM), (0.14 * CM, 4.8 * CM), (0.14 * CM, 4.95 * CM), (0, 5.0 * CM)]
+    k.lathe(prof, 12, mat='pin_body', bevel=0.0002)
+    k.box((0, 0, 5.0 * CM + 0.7 * CM - 0.02 * CM), (2.2 * CM, 0.06 * CM, 1.4 * CM), 'pin_tag', bevel=0.0002)
+    ob, fin = finished(k, 'survey-pin', ['pin_body', 'pin_tag'], [m_body, m_tag])
+    lib.fit_uv(ob, 1, axes=(0, 2))
+    lib.export_glb(os.path.join(folder, 'final.glb'))
+    print('PIN', fin)
 
 
 # ---------------------------------------------------------------------------------------------- fixture kit
-PLINTH = 5.0 * CM
-PLINTH_H = 0.6 * CM
+def mark(k, c, r=0.32 * CM):
+    """The stage mark: a flat 8-sided amber badge lying on a top surface (slot 'mark'); UE drives its colour per stage."""
+    k.lathe([(0, 0), (r, 0), (r, 0.06 * CM), (0, 0.06 * CM)], 8, base=c, mat='mark', bevel=0.0)
 
 
-def fixture_base(p):
-    p.box((0, 0, PLINTH_H / 2), (PLINTH, PLINTH, PLINTH_H))
+def chair(k, x, y, yaw, seat=0.62 * CM):
+    """A chair facing +Y before `yaw`: seat, tilted back, one pedestal."""
+    rot = lambda dx, dy: Vector((x + dx * math.cos(yaw) - dy * math.sin(yaw), y + dx * math.sin(yaw) + dy * math.cos(yaw), 0))
+    k.box(rot(0, 0) + Vector((0, 0, seat)), (0.95 * CM, 0.9 * CM, 0.14 * CM), 'fixture_body', rot=(0, 0, yaw), bevel=0.0003)
+    k.box(rot(0, -0.42 * CM) + Vector((0, 0, seat + 0.5 * CM)), (0.95 * CM, 0.12 * CM, 0.95 * CM), 'fixture_body', rot=(0.12, 0, yaw), bevel=0.0003)
+    k.box(rot(0, 0) + Vector((0, 0, seat / 2)), (0.12 * CM, 0.12 * CM, seat), 'fixture_body', rot=(0, 0, yaw), bevel=0.0)        # pedestal
 
 
-def fixture_mark(p):
-    """The stage mark: a flat 8-sided badge on the plinth's front-left corner, material slot 1 ('mark')."""
-    p.cyl((-1.6 * CM, -1.6 * CM, PLINTH_H), 0.65 * CM, 0.65 * CM, 0.15 * CM, 8, mat=1)
+def user_flow(k):        # a desk with a monitor and a chair pulled up to it (a workstation)
+    top = 1.25 * CM
+    k.box((0, 0.4 * CM, top - 0.07 * CM), (3.6 * CM, 1.7 * CM, 0.14 * CM), 'fixture_body', bevel=0.0004)
+    for sx in (-1, 1):
+        k.box((sx * 1.65 * CM, 0.4 * CM, (top - 0.14 * CM) / 2), (0.14 * CM, 1.5 * CM, top - 0.14 * CM), 'fixture_body', bevel=0.0003)
+    k.box((0, 0.95 * CM, top + 0.5 * CM), (1.5 * CM, 0.1 * CM, 0.9 * CM), 'fixture_body', rot=(-0.1, 0, 0), bevel=0.0003)      # monitor
+    k.box((0, 1.05 * CM, top + 0.06 * CM), (0.5 * CM, 0.35 * CM, 0.12 * CM), 'fixture_body', bevel=0.0002)
+    chair(k, 0.2 * CM, -0.75 * CM, 0.15)
+    mark(k, (1.2 * CM, 0.2 * CM, top))
 
 
-def user_flow(p):        # a step with an arrow on it
-    fixture_base(p)
-    pts = [(-1.0, -0.5), (0.2, -0.5), (0.2, -1.0), (1.5, 0.0), (0.2, 1.0), (0.2, 0.5), (-1.0, 0.5)]
-    p.prism([(x * CM + 0.2 * CM, y * CM + 0.5 * CM) for x, y in pts], PLINTH_H, 1.0 * CM)
-    fixture_mark(p)
+def capability(k):       # a round meeting table with four chairs
+    top, r = 1.15 * CM, 1.25 * CM
+    k.lathe([(0, top - 0.14 * CM), (r, top - 0.14 * CM), (r, top), (0, top)], 16, mat='fixture_body', bevel=0.0004)
+    k.lathe([(0, 0), (0.6 * CM, 0), (0.6 * CM, 0.1 * CM), (0.12 * CM, 0.2 * CM), (0.12 * CM, top - 0.14 * CM), (0, top - 0.14 * CM)], 8,
+            mat='fixture_body', bevel=0.0003)
+    for i in range(4):
+        a = math.pi / 4 + i * math.pi / 2
+        chair(k, math.cos(a) * 1.45 * CM, math.sin(a) * 1.45 * CM, a + math.pi / 2)
+    mark(k, (0.0, 0.0, top))
 
 
-def capability(p):       # a stepped stack of blocks
-    fixture_base(p)
-    p.box((0.4 * CM, 0.3 * CM, PLINTH_H + 0.6 * CM), (3.2 * CM, 3.2 * CM, 1.2 * CM))
-    p.box((0.4 * CM, 0.3 * CM, PLINTH_H + 1.8 * CM), (2.0 * CM, 2.0 * CM, 1.2 * CM))
-    fixture_mark(p)
+def ops(k):              # a filled shelving unit (storage, plant room, the back of house)
+    W, D, H = 3.4 * CM, 1.1 * CM, 3.0 * CM
+    for sx in (-1, 1):
+        k.box((sx * (W / 2 - 0.07 * CM), 0, H / 2), (0.14 * CM, D, H), 'fixture_body', bevel=0.0003)
+    for i, z in enumerate((0.1, 0.9, 1.7, 2.5, 2.93)):
+        k.box((0, 0, z * CM), (W - 0.28 * CM, D, 0.12 * CM), 'fixture_body', bevel=0.0003)
+    k.box((0, D / 2 - 0.04 * CM, H / 2), (W - 0.28 * CM, 0.08 * CM, H), 'fixture_body', bevel=0.0)                              # back panel
+    rng = np.random.default_rng(5)
+    for z in (0.16, 0.96, 1.76):                                                                                              # boxes and files
+        x = -W / 2 + 0.25 * CM
+        while x < W / 2 - 0.8 * CM:
+            w = float(rng.uniform(0.5, 1.0)) * CM
+            h = float(rng.uniform(0.45, 0.7)) * CM
+            k.box((x + w / 2, -0.05 * CM, z * CM + h / 2), (w - 0.06 * CM, D - 0.25 * CM, h), 'fixture_body', bevel=0.0)
+            x += w + 0.08 * CM
+    mark(k, (0.0, 0.0, 2.99 * CM))
 
 
-def ops(p):              # a cog
-    fixture_base(p)
-    cx = cy = 0.3 * CM
-    p.cyl((cx, cy, PLINTH_H), 1.1 * CM, 1.1 * CM, 1.0 * CM, 8)
-    for i in range(8):
-        a = i * math.pi / 4
-        p.box((cx + math.cos(a) * 1.3 * CM, cy + math.sin(a) * 1.3 * CM, PLINTH_H + 0.5 * CM), (0.6 * CM, 0.6 * CM, 1.0 * CM))
-    fixture_mark(p)
+def integration(k):      # a sofa (a lounge: where two sides meet)
+    k.box((0, 0.1 * CM, 0.3 * CM), (3.6 * CM, 1.5 * CM, 0.6 * CM), 'fixture_body', bevel=0.0005)
+    k.box((0, 0.68 * CM, 0.95 * CM), (3.6 * CM, 0.34 * CM, 1.0 * CM), 'fixture_body', rot=(-0.12, 0, 0), bevel=0.0006)
+    for sx in (-1, 1):
+        k.box((sx * 1.6 * CM, 0.1 * CM, 0.5 * CM), (0.4 * CM, 1.5 * CM, 1.0 * CM), 'fixture_body', bevel=0.0006)
+    for i in (-1, 0, 1):
+        k.box((i * 0.93 * CM, -0.05 * CM, 0.7 * CM), (0.9 * CM, 1.05 * CM, 0.22 * CM), 'fixture_body', bevel=0.0007)
+    mark(k, (1.6 * CM, 0.1 * CM, 1.0 * CM), r=0.15 * CM)
 
 
-def integration(p):      # two sockets joined by a bridge
-    fixture_base(p)
-    for sx in (-1.0, 1.0):
-        p.cyl((sx * 1.2 * CM + 0.3 * CM, 0.3 * CM, PLINTH_H), 0.85 * CM, 0.85 * CM, 1.6 * CM, 8)
-    p.box((0.3 * CM, 0.3 * CM, PLINTH_H + 1.0 * CM), (1.6 * CM, 0.5 * CM, 0.5 * CM))
-    fixture_mark(p)
-
-
-def generic(p):          # any other kind: a plinth with a low pyramid
-    fixture_base(p)
-    p.cyl((0.3 * CM, 0.3 * CM, PLINTH_H), 1.6 * CM, 0.5 * CM, 1.4 * CM, 4, rot_z=math.pi / 4)
-    fixture_mark(p)
+def generic(k):          # a potted plant: a tapered pot and a fan of long leaves
+    k.lathe([(0, 0), (0.5 * CM, 0), (0.68 * CM, 1.1 * CM), (0.72 * CM, 1.2 * CM), (0.62 * CM, 1.2 * CM), (0.62 * CM, 1.05 * CM), (0, 1.05 * CM)],
+            16, mat='fixture_body', bevel=0.0003)
+    leaf = [(0, 0), (0.18, 0.5), (0.22, 1.2), (0.12, 1.9), (0, 2.3), (-0.12, 1.9), (-0.22, 1.2), (-0.18, 0.5)]
+    for i in range(7):
+        a = i * 2 * math.pi / 7
+        tilt = 0.45 + 0.25 * (i % 3) / 2
+        k.prism([(x * CM, y * CM) for x, y in leaf], -0.03 * CM, 0.06 * CM, 'fixture_body', bevel=0.0,
+                c=(0.15 * CM * math.cos(a), 0.15 * CM * math.sin(a), 1.0 * CM), rot=(math.pi / 2 - tilt, 0, a - math.pi / 2))
+    mark(k, (0.0, 0.0, 1.05 * CM), r=0.2 * CM)
 
 
 KINDS = {'user_flow': user_flow, 'capability': capability, 'ops': ops, 'integration': integration, 'generic': generic}
@@ -282,13 +197,14 @@ KINDS = {'user_flow': user_flow, 'capability': capability, 'ops': ops, 'integrat
 
 def build_kit():
     bpy.ops.wm.read_factory_settings(use_empty=True)
-    m_body = material('fixture_body', '#BFE8FF', 0.6)
-    m_mark = material('mark', '#FFB547', 0.5, emit='#FFB547')
+    m_body = lib.export_material('fixture_body', color='#BFE8FF', rough=0.6)
+    m_mark = lib.export_material('mark', color='#FFB547', rough=0.5, emit='#FFB547', emit_strength=0.6)
     for name, fn in KINDS.items():
-        p = Part()
-        fn(p)
-        p.finish(name, [m_body, m_mark])
-    export(os.path.join(ART, 'fixture-kit', 'final.glb'))
+        k = lib.Kit(['fixture_body', 'mark'])
+        fn(k)
+        ob, fin = finished(k, name, ['fixture_body', 'mark'], [m_body, m_mark])
+        print('KIT', name, fin)
+    lib.export_glb(os.path.join(ART, 'fixture-kit', 'final.glb'))
 
 
 if __name__ == '__main__':

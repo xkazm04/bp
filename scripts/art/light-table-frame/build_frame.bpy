@@ -1,14 +1,18 @@
 # Blender script (extension .bpy so scripts/check-python-deps.mjs does not read bpy/bmesh/mathutils as pip packages)
 """Builds the light table frame (apps/vr/ArtSource/light-table-frame) and scores the exported file.
 
-Run:  blender -b -P scripts/art/light-table-frame/build_frame.bpy -- <repo-root> <work-dir> [<length-m> <depth-m> [<glow-strength>]]
+Run:  blender -b -P scripts/art/light-table-frame/build_frame.bpy -- <repo-root> <work-dir> [<length-m> <depth-m> [<glow-strength> [<scans-dir>]]]
 The defaults (1.20 x 0.80 m, glow 25) rebuild the first frame; spark vr-hands-zoom builds 1.80 x 0.90 with a dimmer strip.
 Procedural only: no generated input, no GPU job. Metres, Blender Z-up, the glTF exporter writes Y-up.
 Pivot is the floor centre. The top is 3 cm thick at the outer edge (lamp-agent's C-clamp grips a 3 cm edge). The glass is a
 placeholder plane in its own slot for UE to replace; the glass and paper are procedural in UE (plan.md P4).
-Helpers (Part, material, png) are copied from scripts/art/build_art.bpy, which stays untouched.
+Spark vr-fidelity-40 finish (scripts/art/lib/finish.bpy): the rim is an aluminium extrusion (a grooved profile swept round
+the outline, mitred), with corner caps and screw heads; square extrusion legs; every hard edge bevelled with hardened
+normals; unique UVs and one 2048 px atlas baked on the CPU from Poly Haven CC0 scans (dark anodised aluminium worn bright
+on its edges, so the edge light has something to catch). The glow strip and the glass keep their own flat slots.
+<scans-dir> is the Poly Haven cache of scripts/art/lib/polyhaven.mjs (default <work-dir>/polyhaven).
 Writes <work-dir>/score.json from a re-import of final.glb."""
-import bpy, bmesh, math, os, sys, json
+import bpy, bmesh, math, os, sys, json, importlib.machinery
 import numpy as np
 from mathutils import Vector
 
@@ -16,10 +20,14 @@ ARGV = sys.argv[sys.argv.index('--') + 1:]
 REPO, WORK = ARGV[:2]
 OUT = os.path.join(REPO, 'apps', 'vr', 'ArtSource', 'light-table-frame')
 BUDGET = 10000
+RES = 2048
+SCANS_DIR = ARGV[5] if len(ARGV) >= 6 else os.path.join(WORK, 'polyhaven')
 os.makedirs(WORK, exist_ok=True)
+lib = importlib.machinery.SourceFileLoader('finish', os.path.join(REPO, 'scripts', 'art', 'lib', 'finish.bpy')).load_module()
 
-# slots: 0 dark metal, 1 aluminium, 2 emissive edge strip, 3 glass placeholder
-DARK, ALU, GLOW, GLASS = 0, 1, 2, 3
+# bake slots; the shipped mesh has three: frame_atlas, frame_edge_glow, frame_glass_placeholder_REPLACE_IN_UE
+SLOTS = ['rim', 'alu', 'steel', 'frame_edge_glow', 'frame_glass_placeholder_REPLACE_IN_UE']
+GLOW_SLOT, GLASS_SLOT = SLOTS[3], SLOTS[4]
 L, W = (float(ARGV[2]), float(ARGV[3])) if len(ARGV) >= 4 else (1.20, 0.80)   # top outline, x by y
 TOP, T = 0.95, 0.03          # top surface height (wolf-plan W3.2 starts the table at 95 cm), edge thickness
 BOT = TOP - T
@@ -42,203 +50,75 @@ def hex_rgb(h):
     return tuple(int(h[i:i + 2], 16) / 255 for i in (1, 3, 5))
 
 
-class Part:
-    """Accumulates primitives into one bmesh. Every face carries a material slot index."""
-    def __init__(self):
-        self.bm = bmesh.new()
-
-    def _tag(self, verts, mat):
-        vset = set(verts)
-        for f in self.bm.faces:
-            if all(v in vset for v in f.verts):
-                f.material_index = mat
-
-    def box(self, c, s, mat=0):
-        vs = bmesh.ops.create_cube(self.bm, size=1.0)['verts']
-        bmesh.ops.scale(self.bm, vec=Vector(s), verts=vs)
-        bmesh.ops.translate(self.bm, vec=Vector(c), verts=vs)
-        self._tag(vs, mat)
-
-    def cyl(self, base, r1, r2, h, seg, mat=0):
-        vs = bmesh.ops.create_cone(self.bm, cap_ends=True, cap_tris=False, segments=seg, radius1=r1, radius2=r2, depth=h)['verts']
-        bmesh.ops.translate(self.bm, vec=Vector((base[0], base[1], base[2] + h / 2)), verts=vs)
-        self._tag(vs, mat)
-
-    def plane_up(self, c, sx, sy, mat):
-        """One quad facing +Z (winding set by hand; normals are not recalculated for the glass)."""
-        x0, x1, y0, y1 = c[0] - sx / 2, c[0] + sx / 2, c[1] - sy / 2, c[1] + sy / 2
-        vs = [self.bm.verts.new((x0, y0, c[2])), self.bm.verts.new((x1, y0, c[2])), self.bm.verts.new((x1, y1, c[2])), self.bm.verts.new((x0, y1, c[2]))]
-        self.bm.faces.new(vs).material_index = mat
-
-    def finish(self, name, materials):
-        bm = self.bm
-        bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-7)
-        bmesh.ops.recalc_face_normals(bm, faces=[f for f in bm.faces if f.material_index != GLASS])
-        bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method='BEAUTY', ngon_method='EAR_CLIP')
-        uv_world(bm)
-        me = bpy.data.meshes.new(name)
-        bm.to_mesh(me)
-        bm.free()
-        for m in materials:
-            me.materials.append(m)
-        ob = bpy.data.objects.new(name, me)
-        bpy.context.scene.collection.objects.link(ob)
-        return ob
-
-
-def uv_world(bm, span=0.4):
-    """One UV set. Box projection by dominant normal axis in world metres; 1 uv unit = `span` m, repeating (tiling wood and metal)."""
-    uvl = bm.loops.layers.uv.new('UVMap')
-    for f in bm.faces:
-        n = f.normal
-        ax = max(range(3), key=lambda i: abs(n[i]))
-        a, b = [(1, 2), (0, 2), (0, 1)][ax]
-        for l in f.loops:
-            p = l.vert.co
-            l[uvl].uv = (p[a] / span, p[b] / span)
-
-
-def png(path, arr):
-    """Writes an HxWx3 float array in 0..1 as an 8-bit PNG."""
-    h, w, ch = arr.shape
-    img = bpy.data.images.new(os.path.basename(path), w, h, alpha=False)
-    rgba = np.ones((h, w, 4), dtype=np.float32)
-    rgba[:, :, :ch] = arr
-    img.pixels.foreach_set(rgba.ravel())
-    img.filepath_raw = path
-    img.file_format = 'PNG'
-    img.save()
-    bpy.data.images.remove(img)
-
-
-def material(name, color_hex, rough, metal=0.0, tex=None, emit=None, alpha=None, emit_strength=1.0):
-    m = bpy.data.materials.new(name)
-    m.use_nodes = True
-    nt = m.node_tree
-    nt.nodes.clear()
-    out = nt.nodes.new('ShaderNodeOutputMaterial')
-    bsdf = nt.nodes.new('ShaderNodeBsdfPrincipled')
-    nt.links.new(bsdf.outputs['BSDF'], out.inputs['Surface'])
-    bsdf.inputs['Base Color'].default_value = (*srgb_to_lin(hex_rgb(color_hex)), 1)
-    bsdf.inputs['Roughness'].default_value = rough
-    bsdf.inputs['Metallic'].default_value = metal
-    if emit:
-        bsdf.inputs['Emission Color'].default_value = (*srgb_to_lin(hex_rgb(emit)), 1)
-        bsdf.inputs['Emission Strength'].default_value = emit_strength
-    if alpha is not None:
-        bsdf.inputs['Alpha'].default_value = alpha
-    if tex:
-        def img(path, cs):
-            n = nt.nodes.new('ShaderNodeTexImage')
-            n.image = bpy.data.images.load(path)
-            n.image.colorspace_settings.name = cs
-            return n
-        base = img(tex['base'], 'sRGB')
-        nt.links.new(base.outputs['Color'], bsdf.inputs['Base Color'])
-        nrm = img(tex['normal'], 'Non-Color')
-        nm = nt.nodes.new('ShaderNodeNormalMap')
-        nt.links.new(nrm.outputs['Color'], nm.inputs['Color'])
-        nt.links.new(nm.outputs['Normal'], bsdf.inputs['Normal'])
-        orm = img(tex['orm'], 'Non-Color')
-        sp = nt.nodes.new('ShaderNodeSeparateColor')
-        nt.links.new(orm.outputs['Color'], sp.inputs['Color'])
-        nt.links.new(sp.outputs['Green'], bsdf.inputs['Roughness'])
-        nt.links.new(sp.outputs['Blue'], bsdf.inputs['Metallic'])
-    return m
-
-
-def textures(folder):
-    """512 px base colour, normal, ORM (R occlusion, G roughness, B metal) for the dark brushed metal and the brushed aluminium. Seamless tiles."""
-    os.makedirs(folder, exist_ok=True)
-    rng = np.random.default_rng(11)
-    N = 512
-    yy, xx = np.mgrid[0:N, 0:N] / N
-
-    def height_normal(h, strength):
-        gx = np.roll(h, -1, 1) - np.roll(h, 1, 1)
-        gy = np.roll(h, -1, 0) - np.roll(h, 1, 0)
-        nx, ny, nz = -gx * strength, -gy * strength, np.ones_like(h)
-        ln = np.sqrt(nx * nx + ny * ny + nz * nz)
-        return np.dstack([nx / ln * 0.5 + 0.5, ny / ln * 0.5 + 0.5, nz / ln * 0.5 + 0.5])
-
-    def stripes(smooth):
-        """Per-row noise (grain / brushing along x), seamless in both axes."""
-        g = rng.random(N)
-        k = np.ones(smooth) / smooth
-        g = np.convolve(np.concatenate([g[-smooth:], g, g[:smooth]]), k, 'same')[smooth:-smooth]
-        return np.repeat(g[:, None], N, 1)
-
-    grain = stripes(3) - 0.5
-    fine = rng.random((N, N)) - 0.5
-    dark_c = np.array(hex_rgb(DARK_HEX))
-    dark = dark_c[None, None, :] * (1.0 + 0.35 * grain[..., None] + 0.10 * fine[..., None])
-    dark_h = grain * 0.6 + fine * 0.2
-    alu_c = np.array(hex_rgb('#C9CDD2'))
-    brush = stripes(2) - 0.5
-    alu = alu_c[None, None, :] * (0.95 + 0.10 * brush[..., None])
-    sets = {
-        'dark_metal': dict(base=dark, normal=height_normal(dark_h * 0.3, 0.8),
-                           orm=np.dstack([np.ones((N, N)), 0.42 + 0.1 * grain, np.full((N, N), 0.85)])),
-        'aluminium': dict(base=alu, normal=height_normal(brush * 0.2, 0.7),
-                          orm=np.dstack([np.ones((N, N)), 0.35 + 0.08 * brush, np.ones((N, N))])),
-    }
-    names = {'base': 'basecolor', 'normal': 'normal', 'orm': 'orm'}
-    paths = {}
-    for k, d in sets.items():
-        paths[k] = {}
-        for ch, arr in d.items():
-            p = os.path.join(folder, 'frame_%s_%s.png' % (k, names[ch]))
-            png(p, np.clip(arr, 0, 1).astype(np.float32))
-            paths[k][ch] = p
-    return paths
-
-
 def build():
     bpy.ops.wm.read_factory_settings(use_empty=True)
-    tex = textures(os.path.join(OUT, 'textures'))
-    mats = [material('frame_dark_metal', DARK_HEX, 0.42, 0.85, tex=tex['dark_metal']),
-            material('frame_aluminium', '#C9CDD2', 0.35, 1.0, tex=tex['aluminium']),
-            material('frame_edge_glow', GLOW_HEX, 0.5, emit=GLOW_HEX, emit_strength=GLOW_STRENGTH),
-            material('frame_glass_placeholder_REPLACE_IN_UE', '#BFD8F0', 0.05, alpha=0.15)]
-    p = Part()
-    zc = BOT + T / 2
-    ix, iy = L - 2 * R, W - 2 * R                 # opening inside the rim: 1.10 x 0.70 on the default outline
-    # rim: four dark metal boards, 3 cm thick, 5 cm wide
-    for s in (-1, 1):
-        p.box((0, s * (W / 2 - R / 2), zc), (L, R, T), DARK)
-        p.box((s * (L / 2 - R / 2), 0, zc), (R, W - 2 * R, T), DARK)
-    # ledge the glass rests on: aluminium, 2 cm wide inside the rim
-    zl = BOT + LIP_H / 2
-    for s in (-1, 1):
-        p.box((0, s * (iy / 2 - LIP_W / 2), zl), (ix, LIP_W, LIP_H), ALU)
-        p.box((s * (ix / 2 - LIP_W / 2), 0, zl), (LIP_W, iy - 2 * LIP_W, LIP_H), ALU)
-    # emissive edge strip: the whole 2 cm ledge, 8 mm tall, between the rim wall and the glass
-    zg = BOT + LIP_H + GLOW_H / 2
-    for s in (-1, 1):
-        p.box((0, s * (iy / 2 - GLOW_W / 2), zg), (ix, GLOW_W, GLOW_H), GLOW)
-        p.box((s * (ix / 2 - GLOW_W / 2), 0, zg), (GLOW_W, iy - 2 * GLOW_W, GLOW_H), GLOW)
-    # glass placeholder plane, inside the strip, at the top of the strip
-    p.plane_up((0, 0, BOT + LIP_H + GLOW_H), ix - 2 * GLOW_W, iy - 2 * GLOW_W, GLASS)
+    sc = lib.Scans(SCANS_DIR)
+    mats = [lib.surface('rim_bake', sc, tint='#262B33', scan='blue_metal_plate', var=0.25, rough=(0.5, 0.66), metal=1.0, nstr=0.2,
+                        wear=dict(color='#9EA5AE', rough=0.3, metal=1.0, amount=0.4), grunge=0.05),
+            lib.surface('alu_bake', sc, tint='#C9CDD2', scan='blue_metal_plate', var=0.15, rough=(0.26, 0.4), metal=1.0, nstr=0.15, grunge=0.06),
+            lib.surface('steel_bake', sc, tint='#5A5F66', scan='blue_metal_plate', var=0.2, rough=(0.3, 0.45), metal=1.0, nstr=0.2, grunge=0.05),
+            lib.placeholder(GLOW_SLOT + '_bake'), lib.placeholder(GLASS_SLOT + '_bake')]
+    k = lib.Kit(SLOTS)
+    # the rim: an extrusion profile (d inward from the outer edge, z up from the underside), 5 cm wide, 3 cm tall, with a
+    # 6 mm groove on the outer face (the T-slot of an aluminium extrusion), swept round the outline with mitred corners
+    rim = [(0, 0), (0, 0.012), (0.0035, 0.0125), (0.0035, 0.0175), (0, 0.018), (0, T), (R, T), (R, 0)]
+    k.ring_frame(rim, L, W, BOT, 'rim', bevel=0.0015)
+    k.ring_frame([(R - 0.001, 0), (R - 0.001, LIP_H), (R + LIP_W, LIP_H), (R + LIP_W, 0)], L, W, BOT, 'alu', bevel=0.001)       # ledge
+    k.ring_frame([(R - 0.001, LIP_H), (R - 0.001, LIP_H + GLOW_H), (R + GLOW_W, LIP_H + GLOW_H), (R + GLOW_W, LIP_H)], L, W, BOT,
+                 GLOW_SLOT, bevel=0.0)                                                                                          # strip
+    # glass placeholder plane, inside the strip, at the top of the strip (one quad facing +Z, its own slot)
+    gx, gy, gz = L / 2 - R - GLOW_W, W / 2 - R - GLOW_W, BOT + LIP_H + GLOW_H
+    vs = [k.bm.verts.new(p) for p in ((-gx, -gy, gz), (gx, -gy, gz), (gx, gy, gz), (-gx, gy, gz))]
+    f = k.bm.faces.new(vs)
+    f.material_index = k.m(GLASS_SLOT)
+    # corner caps: 2.5 mm L-plates over the rim's mitred corners, two screw heads on each arm
+    cap, arm = 0.0025, 0.06
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            pts = [(0, 0), (arm, 0), (arm, cap), (cap, cap), (cap, arm), (0, arm)]
+            pts = [(sx * (L / 2 + cap - x), sy * (W / 2 + cap - y)) for x, y in pts]
+            k.prism(pts, BOT + 0.002, T - 0.004, 'steel', bevel=0.0008)
+            for a in (0.02, 0.045):
+                for c, ax in ((Vector((sx * (L / 2 - a), sy * (W / 2 + cap), BOT + T / 2)), (0, sy, 0)),
+                              (Vector((sx * (L / 2 + cap), sy * (W / 2 - a), BOT + T / 2)), (sx, 0, 0))):
+                    k.lathe([(0, -0.001), (0.0032, -0.001), (0.0032, 0.0006), (0.0022, 0.0016), (0, 0.0019)], 12, base=c, axis=ax,
+                            mat='steel', bevel=0.0)
     # apron under the top, inset 6 cm so a clamp grips the bare 3 cm edge
     ai = 0.06
     for s in (-1, 1):
-        p.box((0, s * (W / 2 - ai - 0.01), BOT - 0.015), (L - 2 * ai, 0.02, 0.03), ALU)
-        p.box((s * (L / 2 - ai - 0.01), 0, BOT - 0.015), (0.02, W - 2 * ai - 0.04, 0.03), ALU)
-    # trestle: four tapered dark metal legs with aluminium feet, a lower rail along each side and each end. The legs stand
-    # 8.5 cm in from the sides; along the length they move in as it grows (8.5 cm at 1.20 m, 15 cm at 1.80 m), so the
-    # span between them stays under 1.5 m and the long top does not overhang a bare end
+        k.box((0, s * (W / 2 - ai - 0.01), BOT - 0.015), (L - 2 * ai, 0.02, 0.03), 'alu', bevel=0.0015)
+        k.box((s * (L / 2 - ai - 0.01), 0, BOT - 0.015), (0.02, W - 2 * ai - 0.04, 0.03), 'alu', bevel=0.0015)
+    # trestle: four 4 cm square extrusion legs, levelling feet, a lower rail on each side and end.
+    # The legs stand 8.5 cm in from the sides; along the length they move in as it grows (8.5 cm at 1.20 m, 15 cm at 1.80 m)
     lx, ly = L / 2 - (0.085 + max(0.0, L - 1.20) * 0.108), W / 2 - 0.085
     for sx in (-1, 1):
         for sy in (-1, 1):
-            p.cyl((sx * lx, sy * ly, 0.012), 0.022, 0.028, BOT - 0.012, 12, DARK)
-            p.cyl((sx * lx, sy * ly, 0.0), 0.026, 0.026, 0.012, 12, ALU)
+            k.box((sx * lx, sy * ly, (0.014 + BOT - 0.03) / 2), (0.04, 0.04, BOT - 0.03 - 0.014), 'rim', bevel=0.002)
+            k.lathe([(0, 0), (0.024, 0), (0.026, 0.003), (0.026, 0.008), (0.01, 0.011), (0.008, 0.016), (0, 0.016)], 24,
+                    base=(sx * lx, sy * ly, 0), mat='alu', bevel=0.001)
     for s in (-1, 1):
-        p.box((0, s * ly, 0.22), (2 * lx, 0.03, 0.04), DARK)
-        p.box((s * lx, 0, 0.22), (0.03, 2 * ly, 0.04), DARK)
-    p.finish('light-table-frame', mats)
+        k.box((0, s * ly, 0.22), (2 * lx - 0.04, 0.03, 0.04), 'rim', bevel=0.0015)
+        k.box((s * lx, 0, 0.22), (0.03, 2 * ly - 0.04, 0.04), 'rim', bevel=0.0015)
+    src = k.to_object('light-table-frame')
+    for m in mats:
+        src.data.materials.append(m)
+    ob, fin = lib.finish(src, 'light-table-frame')
+    fin['hard_edges_bevelled'] = k.hard_edges
+    fin['hard_edges_sharp_by_design'] = k.sharp_edges
+    td = lib.unwrap(ob, RES, [0, 1, 2], view=lib.VIEW_FREE)
+    lib.fit_uv(ob, SLOTS.index(GLASS_SLOT), axes=(0, 1))
+    folder = os.path.join(OUT, 'textures')
+    for f_ in os.listdir(folder) if os.path.isdir(folder) else []:
+        os.remove(os.path.join(folder, f_))                       # the 512 px tiles of the first build go; the atlas replaces them
+    paths, bk = lib.bake(ob, RES, folder, 'frame_atlas', ao_distance=0.08)
+    final = [lib.export_material('frame_atlas', tex=paths),
+             lib.export_material(GLOW_SLOT, color=GLOW_HEX, rough=0.5, emit=GLOW_HEX, emit_strength=GLOW_STRENGTH),
+             lib.export_material(GLASS_SLOT, color='#BFD8F0', rough=0.05, alpha=0.15)]
+    lib.collapse_slots(ob, {0: 0, 1: 0, 2: 0, 3: 1, 4: 2}, final)
     os.makedirs(OUT, exist_ok=True)
-    bpy.ops.export_scene.gltf(filepath=os.path.join(OUT, 'final.glb'), export_format='GLB', export_yup=True, export_apply=True,
-                              export_texcoords=True, export_normals=True, export_materials='EXPORT', use_selection=False)
+    lib.export_glb(os.path.join(OUT, 'final.glb'), 'JPEG')
+    json.dump({'finish': fin, 'texel': td, 'bake': bk, 'atlas_res': RES, 'scans': sc.provenance()}, open(os.path.join(WORK, 'finish.json'), 'w'), indent=1)
+    print('FINISH', json.dumps(fin), json.dumps(td), json.dumps(bk))
 
 
 def score():
@@ -289,8 +169,10 @@ def score():
     S['pivot_xy_centre_m'] = [round(float((co[:, 0].min() + co[:, 0].max()) / 2), 4), round(float((co[:, 1].min() + co[:, 1].max()) / 2), 4)]
     S['floor_z_m'] = round(float(co[:, 2].min()), 4)
     S['top_surface_z_m'] = round(float(co[:, 2].max()), 4)
-    # the 3 cm edge: vertices on the outer front face of the rim (above the lower rails)
-    edge = co[(np.abs(co[:, 1] - co[:, 1].min()) < 1e-4) & (co[:, 2] > 0.5)]
+    # the 3 cm edge: the vertices within 6 mm of the outer front (above the lower rails: the rim's front behind the 2.5 mm
+    # corner caps); the bevels round the front
+    # face's own corners, so the edge is measured over the rim's front, not on its one flat face
+    edge = co[(np.abs(co[:, 1] - co[:, 1].min()) < 0.006) & (co[:, 2] > 0.5)]
     S['edge_thickness_m'] = round(float(edge[:, 2].max() - edge[:, 2].min()), 4)
     gi = [i for i, m in enumerate(me.materials) if 'glass' in m.name][0]
     gp = [p for p in me.polygons if p.material_index == gi]
@@ -298,6 +180,9 @@ def score():
     gco = np.array([(ob.matrix_world @ me.vertices[v].co)[:] for p in gp for v in p.vertices])
     S['glass_size_m'] = [round(float(x), 4) for x in gco.max(0) - gco.min(0)]
     S['glass_z_m'] = round(float(gco[:, 2].mean()), 4)
+    S['material_has_textures'] = {m.name: sorted({n.image.name for n in m.node_tree.nodes if n.type == 'TEX_IMAGE'}) for m in me.materials}
+    S['smooth_faces'] = round(sum(1 for p in me.polygons if p.use_smooth) / max(1, len(me.polygons)), 4)
+    S.update(json.load(open(os.path.join(WORK, 'finish.json'))))
     json.dump(S, open(os.path.join(WORK, 'score.json'), 'w'), indent=1)
     print('SCORE', json.dumps(S))
 

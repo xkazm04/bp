@@ -11,6 +11,9 @@
 //   node scripts/lookdev/leonardo.mjs gen --prop lamp-agent --variant A --seed 11 --quality LOW --size 1024x1024 --stop-at 160
 //   node scripts/lookdev/leonardo.mjs prompt --prop lamp-agent --variant A
 // The frame lands in the temp folder unless --out names a file under apps/vr/ArtSource/ (ArtSource has no 400 KB limit).
+//   --ref <repo-relative image>  uploads it as an init image and sends it as guidances.image_reference (gpt-image takes no
+//                                strength); the log records the path. --model picks one of MODELS (default the first).
+// A prop entry may carry its own `sheet` (the view rules), which replaces the shared sheet rules for that prop only.
 //
 // Spend window (App Master decision 2026-10-21): the operator's 400 credits per night are counted per night, a night being
 // 08:00 UTC on day D to 08:00 UTC on day D+1. Only log.jsonl entries whose `time` falls in the window holding the current
@@ -32,7 +35,8 @@ const EXPLORE = path.join(DIR, 'explore');
 const OVERSIZE = path.join(os.tmpdir(), 'bp-lookdev'); // exploration frames too big to commit: URL and id stay in the log
 const ENV_FILE = path.join(ROOT, '.env'); // THIS checkout's untracked .env, never another one's (check-leonardo guards it)
 const API = 'https://cloud.leonardo.ai/api/rest';
-const MODEL = 'openai/gpt-image-2.5-flare';
+const MODELS = ['openai/gpt-image-2.5-flare', 'nano-banana-2'];
+const MODEL = MODELS[0];
 const STYLE_ID = '111dc692-d470-4eec-b791-3475abac4c46';
 const ART = path.join(ROOT, 'apps/vr/ArtSource');
 const WIDTH = 1376;
@@ -89,7 +93,7 @@ export function composePropPrompt(propId, variant, p = props, s = style) {
   const palette = s.palette.map((x) => `${x.role}: ${x.name} ${x.hex.join(' to ')}`).join('; ');
   return [
     prop.rules ? `${prop.name}. ${v}` : `Concept sheet of one prop, ${prop.name}. ${v}`,
-    prop.rules ? `Backdrop rules: ${prop.rules}` : `Sheet rules: ${p.sheet}`,
+    prop.rules ? `Backdrop rules: ${prop.rules}` : `Sheet rules: ${prop.sheet ?? p.sheet}`,
     `Materials: ${prop.materials}.`,
     `Palette with roles: ${palette}.`,
     `Finish: ${s.finish}.`,
@@ -103,6 +107,14 @@ export function artFile(name) {
   const rel = path.relative(ART, dest);
   if (!name || !rel || rel.startsWith('..') || path.isAbsolute(rel)) throw new Error(`--out must name a file under ${path.relative(ROOT, ART)}: ${name}`);
   return dest;
+}
+
+/** A `--ref` image: a png or jpg inside this checkout, given repo-relative. */
+export function refFile_(rel) {
+  const file = path.resolve(ROOT, rel ?? '');
+  const r = path.relative(ROOT, file);
+  if (!rel || !r || r.startsWith('..') || path.isAbsolute(rel) || !/\.(png|jpe?g)$/i.test(rel) || !fs.existsSync(file)) throw new Error(`--ref must name an existing png or jpg inside the checkout, repo-relative: ${rel}`);
+  return file;
 }
 
 /** `--size 1024x1024` as [width, height]. */
@@ -256,6 +268,10 @@ async function gen() {
   if (!Number.isInteger(seed)) throw new Error('seed must be an integer');
   const prompt = prop ? composePropPrompt(prop, variant) : composePrompt(state, variant);
   if (opt('out') !== undefined) (prop ? artFile : outFile)(opt('out')); // a bad --out stops here, before any credit is spent
+  const model = opt('model', MODEL);
+  if (!MODELS.includes(model)) throw new Error(`--model must be one of ${MODELS.join(', ')}`);
+  const refRel = opt('ref');
+  const refFile = refRel === undefined ? null : refFile_(refRel); // a bad --ref stops here too
 
   const log = readLog();
   const total = nightTotal(log);
@@ -268,14 +284,24 @@ async function gen() {
   const key = readKey();
   const before = await balance(key);
   const body = {
-    model: MODEL,
+    model,
     public: false,
     parameters: { width, height, prompt_enhance: 'OFF', quality, quantity: 1, seed, style_ids: [STYLE_ID], prompt },
   };
-  const entry = { time: new Date().toISOString(), ...(prop ? { prop } : { state }), variant, model: MODEL, prompt, seed, quality, width, height, generationId: null, status: 'ERROR', credits: 0, creditsSource: null, file: null, urls: [], committed: false };
+  const entry = { time: new Date().toISOString(), ...(prop ? { prop } : { state }), variant, model, prompt, seed, quality, width, height, ...(refFile ? { reference: path.relative(ROOT, refFile).split(path.sep).join('/') } : {}), generationId: null, status: 'ERROR', credits: 0, creditsSource: null, file: null, urls: [], committed: false };
   let created = null;
   let reported = null;
   try {
+    if (refFile) {
+      const init = (await call(key, 'POST', `${API}/v1/init-image`, { extension: path.extname(refFile).slice(1).toLowerCase() })).uploadInitImage;
+      const form = new FormData();
+      for (const [k, v] of Object.entries(typeof init.fields === 'string' ? JSON.parse(init.fields) : init.fields)) form.append(k, v);
+      form.append('file', new Blob([fs.readFileSync(refFile)]));
+      const up = await fetch(init.url, { method: 'POST', body: form });
+      if (!up.ok) throw new Error(`reference upload -> HTTP ${up.status}`);
+      body.parameters.guidances = { image_reference: [{ image: { id: init.id, type: 'UPLOADED' } }] };
+      entry.referenceId = init.id;
+    }
     created = await call(key, 'POST', `${API}/v2/generations`, body);
     entry.generationId = created.generate?.generationId ?? created.generationId ?? null;
     reported = reportedCost(created);

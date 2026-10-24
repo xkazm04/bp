@@ -3,13 +3,15 @@
   "sheet": "a single object only, shown whole and uncropped and centred in frame, orthographic front three-quarter view, on a plain flat neutral mid-grey background, even soft diffuse light, no cast shadow clutter, no floor line, no props or hands or people, no text, no labels, no logos, no markings, clean readable silhouette.",
   "props": {
     "lamp-agent": {
-      "name": "the lamp agent, a calm architect's drafting lamp (not a robot, not a creature, no face, no claws, no legs)",
-      "materials": "matte dark powder-coated metal in near-black blue, brushed pale metal joints, a warm amber emissive lamp head glowing softly, warm paper-coloured inner shade",
+      "name": "the lamp agent, a small friendly white robotic lamp character that hovers above a drafting table",
+      "brief_note": "Rewritten 2026-10-24 (fidelity sprint, builder FB) from the target crop (target-light-table.jpg, the figure above the far edge). The 2026-10-21 brief was negative (\"a calm architect's drafting lamp (not a robot, not a creature, no face, no claws, no legs)\"), so all four options A-D came back as desk lamps, while the target shows a white rounded robot lamp character. The old name, materials and variants A-D stay verbatim in log.jsonl lines 49-52 (each line carries the whole prompt); the shipped lamp-agent options A-D were the desk lamps.",
+      "sheet": "a single figure only, shown whole and uncropped and centred in frame, the view named above, on a plain flat neutral mid-grey background, soft studio 3D product render look, even soft diffuse light, no cast shadow clutter, no floor line, no props or hands or people, no text, no labels, no logos, no markings, clean readable silhouette.",
+      "materials": "glossy white clear-coat plastic shell (head hood, body cone, arm capsules), small dark gunmetal hinge joints, a warm amber emissive sphere inside the head glowing softly, a thin amber light slit",
       "variants": {
-        "A": "Classic spring-balanced drafting lamp: a two-joint arm of two slim tubes with visible coil springs, a conical metal shade with a warm amber glowing opening, and a weighted round base that clamps onto a table edge.",
-        "B": "Parallel-link pantograph drafting lamp: a two-joint arm made of parallel pairs of thin rods, a flat round disc head that glows warm amber on its underside, and a low clamp base that grips a table edge.",
-        "C": "Slim tube drafting lamp: a two-joint arm of thin round tubes with one prominent hinge knuckle at the elbow, a smooth domed head glowing warm amber, and a small edge clamp base.",
-        "D": "Counterweighted drafting lamp: a two-joint arm with a small cylindrical counterweight at the back of the upper link, a rectangular box shade glowing warm amber on its underside, and a flat clamp base."
+        "E": "Front view, the head facing the viewer straight on, both arms held out a little from the body. The figure: a hood-shaped dome head like a deep rounded lamp shade, open at the front, with a warm amber glowing sphere inside it facing the viewer; under the head a smooth tapered cone body, wide at the top and narrowing to a rounded point at the bottom, with one thin short vertical amber light slit on its front and a tiny thin pin under the tip; two thin jointed arms from the shoulders at the top of the body, each an upper and a lower capsule segment joined by small dark metal hinge joints, ending in a small open wire loop. It hovers in the air, no legs, no stand, no base.",
+        "F": "Front three-quarter view from the left, the head turned towards the viewer, one arm reaching sideways and the other hanging down. The figure: a hood-shaped dome head like a deep rounded lamp shade, open at the front, with a warm amber glowing sphere inside it facing the viewer; under the head a smooth tapered cone body, wide at the top and narrowing to a rounded point at the bottom, with one thin short vertical amber light slit on its front and a tiny thin pin under the tip; two thin jointed arms from the shoulders at the top of the body, each an upper and a lower capsule segment joined by small dark metal hinge joints, ending in a small open wire loop. It hovers in the air, no legs, no stand, no base.",
+        "G": "Side view in exact profile, the head hood tilted slightly up and forward, arms at rest. The figure: a hood-shaped dome head like a deep rounded lamp shade, open at the front, with a warm amber glowing sphere inside it facing the viewer; under the head a smooth tapered cone body, wide at the top and narrowing to a rounded point at the bottom, with one thin short vertical amber light slit on its front and a tiny thin pin under the tip; two thin jointed arms from the shoulders at the top of the body, each an upper and a lower capsule segment joined by small dark metal hinge joints, ending in a small open wire loop. It hovers in the air, no legs, no stand, no base.",
+        "H": "The same figure as in the reference image, redrawn whole and clean in a front three-quarter view, the head facing the viewer, one arm reaching sideways and the other hanging down. The figure: a hood-shaped dome head like a deep rounded lamp shade, open at the front, with a warm amber glowing sphere inside it facing the viewer; under the head a smooth tapered cone body, wide at the top and narrowing to a rounded point at the bottom, with one thin short vertical amber light slit on its front and a tiny thin pin under the tip; two thin jointed arms from the shoulders at the top of the body, each an upper and a lower capsule segment joined by small dark metal hinge joints, ending in a small open wire loop. It hovers in the air, no legs, no stand, no base."
       }
     },
     "studio-shelves": {
@@ -59,6 +61,37 @@
       "variants": {
         "A": "Dense low skyline of mixed mid-rise towers of even height along one level horizon, hazy and far, the sky a calm dark blueprint blue fading lighter at the horizon.",
         "B": "Sparse skyline with a few taller towers among low blocks along one level horizon, a faint river of warm lights far below the towers, the sky a calm dark blueprint blue."
+      }
+    },
+    "city-night": {
+      "name": "a wide night city panorama seen from a high studio through tall windows, for the matte behind the studio windows",
+      "brief_note": "Added 2026-10-24 (fidelity sprint, builder FB): the city-backdrop entry asked for low contrast and sparse lights, and its matte reads too dim and too sharp (r5, element 14). This one asks for a brighter, denser city whose small lights bloom, still with no frame or mullions (the room provides them).",
+      "rules": "one wide panoramic strip of a night city seen from a high-rise studio, towers at middle and far distance across the whole width, a skyline band that continues seamlessly at the left and right edges, a dim deep blue night sky with soft haze glowing over the city, many small bright window lights, no foreground, no window frame, no mullions, no glass reflections, no room interior, no people, no moon, no stars, no text, no signs, no logos, no lettering, no billboards.",
+      "materials": "towers as near-black blue silhouettes filled with many small lit windows in warm amber and cool white, a few red rooftop lights, streets far below as fine strands of warm light, haze in cyan-white and blueprint blue, photographic night look with soft light glow",
+      "variants": {
+        "A": "Dense cluster of tall towers of varied heights in the middle distance, rows of lit office windows, lower blocks and street lights receding into haze behind them.",
+        "B": "A broad city of mid-rise and tall towers along a wide river of light, the nearest towers taller and brighter, the far city a soft glittering haze."
+      }
+    },
+    "wall-drawings": {
+      "name": "one architectural drawing sheet for the framed drawings on a dark studio wall",
+      "brief_note": "Added 2026-10-24 (fidelity sprint, builder FB) for element 13: sheet art for the pinned and framed drawings. Linework only; the style block forbids readable fake text, so the rules ask for none at all.",
+      "rules": "one flat drawing sheet seen straight on and filling the frame edge to edge, orthographic, even flat light, no frame, no wall, no perspective of the sheet, no shadow, no hands, no tools, abstract architectural linework only, no text, no letters, no numbers, no labels, no title block lettering, no logos.",
+      "materials": "fine ink linework, light paper or blueprint ground, faint construction lines and hatching",
+      "variants": {
+        "A": "A blueprint floor plan of a small office wing: rooms, doors as arcs, furniture outlines, dimension lines without numbers, white lines on blueprint blue.",
+        "B": "A building section and elevation drawing in dark grey ink on warm cream paper, with hatching on cut walls and thin construction lines.",
+        "C": "An axonometric drawing of a cluster of rooms with furniture, cyan-white lines on deep blueprint blue, light hatching on the floors.",
+        "D": "A site plan of several connected building wings with a north arrow symbol and a scale bar without numbers, graphite lines on pale paper."
+      }
+    },
+    "paper-albedo": {
+      "name": "a seamless blueprint paper albedo texture",
+      "brief_note": "Added 2026-10-24 (fidelity sprint, builder FB) for element 2: a base colour to compare with mat-blueprint-paper. Tiling is done afterwards (offset and cross-fade), not by the prompt.",
+      "rules": "a flat top-down orthographic scan of one sheet of blueprint paper filling the whole frame, even flat light, no shading, no vignette, no bloom, no objects, no drawing, no grid lines, only the paper's subtle fibres, slight mottling and faint ink tone variation, no text.",
+      "materials": "blueprint-dyed paper in deep blueprint blue with subtle lighter fibres",
+      "variants": {
+        "A": "Uniform deep blueprint blue paper with fine fibres and a very slight cloudy variation."
       }
     }
   }

@@ -1,0 +1,195 @@
+# The capture hands (fidelity sprint 2026-10-24, element 12, visual only): a posed pair of forearms and hands for the
+# 1600 x 900 target capture, lit by the scene. No tracking, no rig shipped: two static meshes in the concept's pose.
+#   blender -b -P scripts/art/hands/build_hands.bpy -- <repo> <work> <skin-albedo.png>
+# (NOT --factory-startup: the MPFB extension must be enabled; install it once with
+#  blender -b --command extension install-file -r user_default -e <add-on-mpfb-v2.0.18.zip>)
+# Source: the MakeHuman base mesh and default rig through MPFB 2.0.18 (core assets CC0 per the MPFB FAQ; the add-on code
+# is GPL and is a tool here, not shipped), and a CC0 MakeHuman system-assets skin albedo. Steps:
+#   1. MPFB creates the default human (metres) and its default rig;
+#   2. the fingers, thumb and wrist are posed with the rig (degrees in POSES), the armature applied;
+#   3. each side keeps the hand and the lower forearm (vertices weighted to lowerarm02, wrist, metacarpals, fingers);
+#   4. a dark knit sleeve (a tapered tube with a rolled cuff) covers the forearm from the cuff edge up;
+#   5. each side is moved rigidly into the capture frame (X right, Y forward across the table, Z up, the table plane z = 0,
+#      the near paper edge at y = 0) from its wrist, forearm direction and palm normal, as PLACE says;
+#   6. hands_capture.glb (two meshes, slots hands_skin and hands_sleeve); <work>/hands.json, <work>/hands.blend.
+import bmesh
+import bpy
+import importlib
+import json
+import math
+import os
+import sys
+from mathutils import Matrix, Vector
+
+argv = sys.argv[sys.argv.index('--') + 1:]
+REPO, WORK, SKIN = argv[0], argv[1], argv[2]
+OUT = os.path.join(REPO, 'apps', 'vr', 'ArtSource', 'hands-capture')
+os.makedirs(WORK, exist_ok=True)
+R = {}
+
+# finger joints: degrees of curl for joints 1, 2, 3 (finger1 is the thumb, scaled by 0.6); wrist: [flex, deviation]
+POSES = {
+    'L': {'fingers': {1: [5, 10, 8], 2: [8, 16, 12], 3: [10, 18, 14], 4: [12, 20, 15], 5: [14, 22, 16]}, 'wrist': [-6, 0]},
+    'R': {'fingers': {1: [25, 35, 25], 2: [0, 4, 4], 3: [75, 95, 55], 4: [80, 100, 60], 5: [80, 100, 60]}, 'wrist': [-10, 0]},
+}
+# capture frame placement: wrist position, forearm direction (elbow to wrist), the palm's facing, in metres
+PLACE = {
+    'L': {'wrist': (-0.19, -0.06, 0.05), 'forearm': (0.40, 0.88, -0.18), 'palm': (0.0, 0.1, -1.0)},
+    'R': {'wrist': (0.13, -0.03, 0.095), 'forearm': (-0.35, 0.88, -0.30), 'palm': (0.2, 0.15, -1.0)},
+}
+CUFF = 0.035   # the cuff edge, this far up the forearm from the wrist joint
+KEEP = 0.17    # forearm kept above the wrist (the rest is under the sleeve and out of shot)
+
+bpy.ops.wm.read_homefile(use_empty=True)
+HS = importlib.import_module('bl_ext.user_default.mpfb.services.humanservice').HumanService
+body = HS.create_human()
+HS.add_builtin_rig(body, 'default')
+rig = body.parent
+R['source'] = {'basemesh_vertices': len(body.data.vertices), 'rig': 'default (MPFB 2.0.18 data/rigs/standard/rig.default.json)'}
+
+# ---- pose fingers and wrists ---------------------------------------------------------------------------------------
+bpy.context.view_layer.objects.active = rig
+bpy.ops.object.mode_set(mode='POSE')
+def bend(name, deg, axis='X'):
+    pb = rig.pose.bones[name]
+    pb.rotation_mode = 'XYZ'
+    r = list(pb.rotation_euler); r['XYZ'.index(axis)] += math.radians(deg); pb.rotation_euler = r
+for side, spec in POSES.items():
+    for f, joints in spec['fingers'].items():
+        for j, deg in enumerate(joints, 1):
+            bend(f'finger{f}-{j}.{side}', deg if f != 1 else deg * 0.6)
+    bend(f'wrist.{side}', spec['wrist'][0])
+bpy.ops.object.mode_set(mode='OBJECT')
+bpy.context.view_layer.update()
+
+def bone_world(n, tail=False):
+    pb = rig.pose.bones[n]
+    return rig.matrix_world @ (pb.tail if tail else pb.head)
+
+frames = {}
+for side in 'LR':
+    w = bone_world(f'wrist.{side}')
+    fa = (w - bone_world(f'lowerarm02.{side}')).normalized()
+    # palm normal: across the knuckles (index to little) crossed with the hand's length
+    k2, k5 = bone_world(f'finger2-1.{side}'), bone_world(f'finger5-1.{side}')
+    hand_len = ((k2 + k5) / 2 - w).normalized()
+    n = (k5 - k2).normalized().cross(hand_len).normalized()
+    if side == 'R':
+        n = -n
+    frames[side] = (w, fa, n)
+
+# ---- apply the pose, keep the hands and the lower forearms -----------------------------------------------------------
+bpy.context.view_layer.objects.active = body
+if body.data.shape_keys:   # MPFB keeps the body targets as shape keys: bake their mix before the armature
+    bpy.ops.object.shape_key_remove(all=True, apply_mix=True)
+# the armature, then MPFB's 'Hide helpers' mask: the helper meshes and the joint cubes (small boxes at every finger joint,
+# weighted to the finger bones) must go, or they ride on the knuckles
+for kind in ('ARMATURE', 'MASK'):
+    for m in [m for m in body.modifiers if m.type == kind]:
+        bpy.ops.object.modifier_apply(modifier=m.name)
+keep_bones = ('lowerarm02', 'wrist', 'metacarpal', 'finger')
+pieces = {}
+for side in 'LR':
+    ob = body.copy(); ob.data = body.data.copy(); bpy.context.scene.collection.objects.link(ob)
+    ob.name = ob.data.name = f'hand_{side}'
+    idx = {g.index: g.name for g in ob.vertex_groups}
+    w, fa, n = frames[side]
+    bm = bmesh.new(); bm.from_mesh(ob.data)
+    drop = []
+    for v in bm.verts:
+        dv = ob.data.vertices[v.index]
+        wt = sum(g.weight for g in dv.groups if idx.get(g.group, '').endswith('.' + side) and idx[g.group].startswith(keep_bones))
+        above = (ob.matrix_world @ v.co - w).dot(-fa)       # distance up the forearm from the wrist
+        if wt < 0.5 or above > KEEP:
+            drop.append(v)
+    bmesh.ops.delete(bm, geom=drop, context='VERTS')
+    bm.to_mesh(ob.data); bm.free()
+    ob.vertex_groups.clear()
+    for m in list(ob.modifiers):
+        ob.modifiers.remove(m)
+    ob.parent = None
+    pieces[side] = ob
+bpy.data.objects.remove(body)
+bpy.data.objects.remove(rig)
+
+# ---- sleeves: a tapered tube with a rolled cuff, along the forearm ---------------------------------------------------
+def sleeve(side, ob):
+    w, fa, n = frames[side]
+    pts = [ob.matrix_world @ v.co for v in ob.data.vertices]
+    ring = [p for p in pts if abs((p - w).dot(-fa) - CUFF) < 0.01]
+    rad = max(((p - w) - fa * (p - w).dot(fa)).length for p in ring) if ring else 0.03
+    seg, L = 20, KEEP - CUFF + 0.02
+    bm = bmesh.new()
+    q = Vector((0, 0, 1)).rotation_difference(-fa).to_matrix()
+    def ringv(r, t):
+        return [bm.verts.new(w + q @ Vector((r * math.cos(2 * math.pi * i / seg), r * math.sin(2 * math.pi * i / seg), CUFF + t))) for i in range(seg)]
+    prof = [(rad + 0.004, 0.006), (rad + 0.010, 0.0), (rad + 0.014, 0.004), (rad + 0.015, 0.012), (rad + 0.012, 0.018), (rad + 0.013, 0.03), (rad + 0.020, L)]
+    rings = [ringv(r, t) for r, t in prof]
+    for a, b in zip(rings, rings[1:]):
+        for i in range(seg):
+            bm.faces.new((a[i], a[(i + 1) % seg], b[(i + 1) % seg], b[i]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    me = bpy.data.meshes.new(f'sleeve_{side}'); bm.to_mesh(me); bm.free()
+    s = bpy.data.objects.new(f'sleeve_{side}', me); bpy.context.scene.collection.objects.link(s)
+    for p in me.polygons:
+        p.use_smooth = True
+    R.setdefault('forearm_radius_m', {})[side] = round(rad, 4)
+    return s
+
+skin = bpy.data.materials.new('hands_skin'); skin.use_nodes = True
+b = skin.node_tree.nodes['Principled BSDF']
+tex = skin.node_tree.nodes.new('ShaderNodeTexImage'); tex.image = bpy.data.images.load(SKIN)
+skin.node_tree.links.new(tex.outputs['Color'], b.inputs['Base Color'])
+b.inputs['Roughness'].default_value = 0.5
+b.inputs['Subsurface Weight'].default_value = 0.25
+b.inputs['Subsurface Radius'].default_value = (1.0, 0.35, 0.2)
+b.inputs['Subsurface Scale'].default_value = 0.01
+cloth = bpy.data.materials.new('hands_sleeve'); cloth.use_nodes = True
+c = cloth.node_tree.nodes['Principled BSDF']
+c.inputs['Base Color'].default_value = (0.012, 0.013, 0.016, 1); c.inputs['Roughness'].default_value = 0.92
+c.inputs['Sheen Weight'].default_value = 0.4
+
+def basis(f, nn):
+    f = Vector(f).normalized(); nn = Vector(nn); nn = (nn - f * nn.dot(f)).normalized()
+    return Matrix((f, nn, f.cross(nn))).transposed()
+
+final = []
+for side in 'LR':
+    ob = pieces[side]
+    ob.data.materials.clear(); ob.data.materials.append(skin)
+    for p in ob.data.polygons:
+        p.material_index = 0; p.use_smooth = True
+    s = sleeve(side, ob)
+    s.data.materials.append(cloth)
+    bpy.ops.object.select_all(action='DESELECT')
+    s.select_set(True); ob.select_set(True); bpy.context.view_layer.objects.active = ob
+    bpy.ops.object.join()
+    # rigid move into the capture frame: source (wrist, forearm, palm) onto PLACE
+    w, fa, n = frames[side]
+    P = PLACE[side]
+    rot = basis(P['forearm'], P['palm']) @ basis(fa, n).inverted()
+    M = Matrix.Translation(Vector(P['wrist'])) @ rot.to_4x4() @ Matrix.Translation(-w)
+    ob.data.transform(M); ob.matrix_world = Matrix.Identity(4)
+    ob.name = ob.data.name = f'hand_{side.lower()}'
+    skin_v = {i for p in ob.data.polygons if ob.data.materials[p.material_index].name == 'hands_skin' for i in p.vertices}
+    ahead = [ob.data.vertices[i].co - Vector(P['wrist']) for i in skin_v]
+    R.setdefault('hand_length_m', {})[side] = round(max(d.length for d in ahead if d.dot(Vector(P['forearm']).normalized()) > 0), 4)   # wrist to the farthest fingertip
+    final.append(ob)
+
+R['tris'] = {o.name: sum(len(p.vertices) - 2 for p in o.data.polygons) for o in final}
+R['slots'] = sorted({m.name for o in final for m in o.data.materials})
+R['uv_sets'] = {o.name: len(o.data.uv_layers) for o in final}
+lo = [min(v.co[i] for o in final for v in o.data.vertices) for i in range(3)]
+hi = [max(v.co[i] for o in final for v in o.data.vertices) for i in range(3)]
+R['bounds_m'] = {'min': [round(x, 4) for x in lo], 'max': [round(x, 4) for x in hi]}
+skin_z = [v.co.z for o in final for v in o.data.vertices]
+R['min_z_m'] = round(min(skin_z), 4)
+R['poses'] = POSES; R['place'] = PLACE
+bpy.ops.object.select_all(action='DESELECT')
+for o in final:
+    o.select_set(True)
+bpy.ops.export_scene.gltf(filepath=os.path.join(OUT, 'hands_capture.glb'), use_selection=True, export_format='GLB', export_yup=True,
+                          export_apply=True, export_materials='EXPORT', export_image_format='NONE')
+bpy.ops.wm.save_as_mainfile(filepath=os.path.join(WORK, 'hands.blend'))
+json.dump(R, open(os.path.join(WORK, 'hands.json'), 'w'), indent=1)
+print('HANDS', json.dumps({k: R[k] for k in ('tris', 'slots', 'bounds_m', 'min_z_m', 'hand_length_m', 'forearm_radius_m')}))

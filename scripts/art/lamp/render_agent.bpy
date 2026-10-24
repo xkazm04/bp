@@ -1,0 +1,151 @@
+# Evidence for the scripted lamp agent (build_agent.bpy): EEVEE on the GPU under a dark studio rig that stands in for the
+# scene (near-black blue room, the light table's cool glow from below, a warm point light inside the hood as UE will have
+# it, a faint rim from behind), then a bloom pass in numpy (threshold 1.0, a blurred halo added back) - the post the
+# headset shows, no depth of field.
+#   blender -b --factory-startup -P scripts/art/lamp/render_agent.bpy -- <repo> <work>
+# Writes evidence/target-compare.jpg (the target crop beside the render at the crop's own pixel size and framing),
+# evidence/turnaround.jpg (front, three-quarter, side, back; working pose), evidence/poses.jpg (the four actions), and
+# <work>/render.json (the silhouette box of each render, for the framing check).
+import bpy
+import json
+import math
+import os
+import sys
+import numpy as np
+from mathutils import Vector
+
+argv = sys.argv[sys.argv.index('--') + 1:]
+REPO, WORK = argv[0], argv[1]
+OUT = os.path.join(REPO, 'apps', 'vr', 'ArtSource', 'lamp-agent')
+EV = os.path.join(OUT, 'evidence')
+os.makedirs(EV, exist_ok=True)
+bpy.ops.wm.open_mainfile(filepath=os.path.join(WORK, 'agent.blend'))
+scene = bpy.context.scene
+rig = bpy.data.objects['lamp-agent_rig']
+skinned = bpy.data.objects['lamp-agent_skinned']
+R = {}
+BUILD = json.load(open(os.path.join(WORK, 'build.json')))
+
+scene.render.engine = 'BLENDER_EEVEE'
+scene.eevee.taa_render_samples = 128
+scene.view_settings.view_transform = 'AgX'
+scene.view_settings.look = 'AgX - Medium High Contrast'
+scene.render.film_transparent = False
+w = bpy.data.worlds.new('studio'); scene.world = w; w.use_nodes = True
+w.node_tree.nodes['Background'].inputs['Color'].default_value = (0.006, 0.008, 0.014, 1)
+w.node_tree.nodes['Background'].inputs['Strength'].default_value = 1.0
+
+def light(name, kind, loc, energy, color, size=0.3, rot=None):
+    d = bpy.data.lights.new(name, kind); d.energy = energy; d.color = color
+    if kind == 'AREA': d.size = size
+    if kind == 'POINT': d.shadow_soft_size = size
+    o = bpy.data.objects.new(name, d); scene.collection.objects.link(o); o.location = loc
+    if rot: o.rotation_euler = rot
+    return o
+
+head_world = rig.matrix_world @ rig.pose.bones['head'].head
+# the table: a broad cool area light below and in front (the light box under the paper)
+light('table', 'AREA', (0, -0.5, -0.35), 60.0, (0.55, 0.72, 1.0), size=1.4, rot=(math.radians(-35), 0, 0))
+# warm light inside the hood, as UE places it (a point light at the orb)
+inner = light('inner', 'POINT', (0, 0, 0), 3.0, (1.0, 0.66, 0.32), size=0.03)
+# the room's warm practical, high left, and a cool rim from behind
+light('practical', 'AREA', (-1.2, -0.6, 1.0), 45.0, (1.0, 0.78, 0.55), size=0.5, rot=(math.radians(50), 0, math.radians(-60)))
+light('rim', 'AREA', (0.4, 1.0, 0.5), 12.0, (0.6, 0.75, 1.0), size=0.6, rot=(math.radians(-60), 0, math.radians(160)))
+
+cam_d = bpy.data.cameras.new('cam'); cam = bpy.data.objects.new('cam', cam_d); scene.collection.objects.link(cam); scene.camera = cam
+
+def set_pose(name):
+    rig.animation_data.action = bpy.data.actions[name]
+    scene.frame_set(1)
+    bpy.context.view_layer.update()
+    # the warm light sits just in front of the orb, inside the hood (BUILD's orb centre and opening axis, carried by the head bone)
+    hb = rig.pose.bones['head']
+    m = rig.matrix_world @ hb.matrix @ rig.data.bones['head'].matrix_local.inverted()
+    inner.location = m @ (Vector(BUILD['orb_centre_rest_m']) + Vector(BUILD['open_axis']) * 0.045)
+
+def bbox_world():
+    dg = bpy.context.evaluated_depsgraph_get()
+    ev = skinned.evaluated_get(dg)
+    pts = [ev.matrix_world @ v.co for v in ev.to_mesh().vertices]
+    ev.to_mesh_clear()
+    lo = Vector([min(p[i] for p in pts) for i in range(3)]); hi = Vector([max(p[i] for p in pts) for i in range(3)])
+    return lo, hi
+
+def aim(cam_loc, target, lens_mm):
+    cam.location = cam_loc
+    cam.rotation_euler = (Vector(target) - Vector(cam_loc)).to_track_quat('-Z', 'Y').to_euler()
+    cam_d.lens = lens_mm
+
+def bloom(path_in, path_out, threshold=1.0, strength=0.6):
+    img = bpy.data.images.load(path_in)
+    wpx, hpx = img.size
+    a = np.array(img.pixels[:], dtype=np.float32).reshape(hpx, wpx, 4)[:, :, :3]
+    hi = np.clip(a - threshold * 0.55, 0, None)
+    blur = hi.copy()
+    for rad in (2, 5, 11, 23):
+        k = np.ones(2 * rad + 1, dtype=np.float32) / (2 * rad + 1)
+        b = np.apply_along_axis(lambda r: np.convolve(r, k, mode='same'), 1, hi)
+        b = np.apply_along_axis(lambda c: np.convolve(c, k, mode='same'), 0, b)
+        blur += b
+    out = np.clip(a + strength * blur / 4.0, 0, 1)
+    rgba = np.concatenate([out, np.ones((hpx, wpx, 1), np.float32)], axis=2)
+    o = bpy.data.images.new('b', wpx, hpx); o.pixels.foreach_set(rgba.ravel()); o.filepath_raw = path_out; o.file_format = 'PNG'; o.save()
+    bpy.data.images.remove(img); bpy.data.images.remove(o)
+
+def render(path, w_px, h_px):
+    scene.render.resolution_x, scene.render.resolution_y = w_px, h_px
+    scene.render.image_settings.file_format = 'PNG'
+    raw = path + '.raw.png'
+    scene.render.filepath = raw
+    bpy.ops.render.render(write_still=True)
+    bloom(raw, path)
+    os.remove(raw)
+
+shots = {}
+# 1) the target framing: the crop is 280 x 210 px of the 1376 x 768 target, the figure about 0.74 of its height. The
+# camera looks along the hood's opening (slightly from below), working pose.
+set_pose('working')
+lo, hi = bbox_world()
+c = (lo + hi) / 2
+size = max(hi.x - lo.x, hi.z - lo.z)
+dist = 1.4
+aim(c + Vector((0.01, -dist, -0.05)), c + Vector((0.0, 0, -0.004)), 36 * dist / (size * 1.12))
+render(os.path.join(WORK, 'cmp.png'), 560, 420)
+shots['target'] = 'cmp.png'
+# 2) turnaround, working pose
+views = {'front': 0, 'three-quarter': 40, 'side': 90, 'back': 180}
+for name, yaw in views.items():
+    a = math.radians(yaw)
+    aim(c + Vector((dist * math.sin(a), -dist * math.cos(a), 0.12)), c, 36 * dist / (size * 1.3))
+    render(os.path.join(WORK, f'turn_{name}.png'), 480, 480)
+# 3) the four actions, three-quarter
+for p in bpy.data.actions.keys():
+    set_pose(p)
+    lo2, hi2 = bbox_world(); c2 = (lo2 + hi2) / 2
+    aim(c2 + Vector((0.6, -1.3, 0.1)), c2, 36 * 1.43 / (size * 1.4))
+    render(os.path.join(WORK, f'pose_{p}.png'), 400, 400)
+# ---- sheets: numpy over the PNGs; the target crop is read from the repo's concept, scaled 2x to the render's size
+def load(path):
+    im = bpy.data.images.load(path); wpx, hpx = im.size
+    a = np.array(im.pixels[:], dtype=np.float32).reshape(hpx, wpx, 4)[::-1, :, :3]   # top row first
+    bpy.data.images.remove(im); return a
+def save_jpg(a, path):
+    hpx, wpx, _ = a.shape
+    rgba = np.concatenate([a[::-1], np.ones((hpx, wpx, 1), np.float32)], axis=2)
+    o = bpy.data.images.new('s', wpx, hpx); o.pixels.foreach_set(rgba.ravel()); o.filepath_raw = path; o.file_format = 'JPEG'
+    o.save(); bpy.data.images.remove(o)
+def gap(h, w=8): return np.full((h, w, 3), 0.02, np.float32)
+tgt = bpy.data.images.load(os.path.join(REPO, 'docs', 'concepts', 'vr-light-table', 'target-light-table.jpg'))
+tw, th = tgt.size
+T = np.array(tgt.pixels[:], dtype=np.float32).reshape(th, tw, 4)[::-1, :, :3]
+bpy.data.images.remove(tgt)
+crop = T[0:210, 500:780]
+crop2 = np.repeat(np.repeat(crop, 2, axis=0), 2, axis=1)            # 560 x 420, nearest
+cmp_ = load(os.path.join(WORK, 'cmp.png'))
+save_jpg(np.concatenate([crop2, gap(420), cmp_], axis=1), os.path.join(EV, 'target-compare.jpg'))
+tr = [load(os.path.join(WORK, f'turn_{v}.png')) for v in views]
+save_jpg(np.concatenate(sum([[t, gap(480)] for t in tr], [])[:-1], axis=1), os.path.join(EV, 'turnaround.jpg'))
+ps = [load(os.path.join(WORK, f'pose_{p}.png')) for p in bpy.data.actions.keys()]
+save_jpg(np.concatenate(sum([[t, gap(400)] for t in ps], [])[:-1], axis=1), os.path.join(EV, 'poses.jpg'))
+json.dump({'views': list(views), 'poses': list(bpy.data.actions.keys())}, open(os.path.join(WORK, 'render.json'), 'w'))
+print('RENDER done')

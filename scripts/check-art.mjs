@@ -109,6 +109,9 @@ function main() {
 
   let total = 0;
   for (const rel of git('ls-files', '-z', '--', REL).split('\0').filter(Boolean)) {
+    // a tracked file deleted in the working tree (an asset rebuilt before the commit) has no size here; validate() above
+    // already reports it if a manifest still lists it
+    if (!fs.existsSync(path.join(REPO, rel))) continue;
     const size = fs.statSync(path.join(REPO, rel)).size;
     total += size;
     if (size >= 50 * MB) { console.log(`FAIL  ${rel}: ${(size / MB).toFixed(1)} MB, 50 MB or larger`); fail++; }

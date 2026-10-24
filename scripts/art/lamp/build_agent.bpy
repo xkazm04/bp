@@ -1,0 +1,476 @@
+# The lamp agent, scripted (fidelity sprint 2026-10-24): the white robotic lamp character of target-light-table.jpg, built
+# from primitives with bevels and smooth shading instead of image-to-3D, from the concept turnaround in
+# apps/vr/ArtSource/lamp-agent/options/ (H-s41 is the target-referenced view the proportions follow).
+#   blender -b --factory-startup -P scripts/art/lamp/build_agent.bpy -- <repo> <work>
+# Parts, one rigid part per bone (no blended weights):
+#   body         the tapered cone shell, its amber front slit, the pin under the tip, the dark neck collar
+#   head         the hood (a deep cup, white outside, open to the front), the emissive orb inside it, the glow card
+#   arm_?_upper  shoulder ball + upper capsule;   arm_?_lower  elbow ball + forearm capsule + wrist ball + wire loop
+# Slots (5, so the static mesh is 5 draws): agent_shell (white clear-coat plastic), agent_hood_inner (the inside of the
+# hood: white with a faint warm self-glow), agent_joint (dark metal),
+# agent_glow (amber emissive: orb, slit, pin; UE drives its strength), agent_glow_card (the additive card in the hood
+# opening; textures/agent_glow_card.png). Axes: Blender Z up, the figure faces -Y; pivot = the pin tip (z = 0), x/y centred
+# on the body axis. Writes into ArtSource/lamp-agent: final.fbx (rig + 4 actions), final_working.glb (static, working pose),
+# textures/*.png (AO, roughness and metal baked with Cycles on the CPU); and <work>/build.json, <work>/agent.blend.
+import bmesh
+import bpy
+import json
+import math
+import os
+import sys
+from mathutils import Matrix, Vector
+
+argv = sys.argv[sys.argv.index('--') + 1:]
+REPO, WORK = argv[0], argv[1]
+OUT = os.path.join(REPO, 'apps', 'vr', 'ArtSource', 'lamp-agent')
+TEX = os.path.join(OUT, 'textures')
+os.makedirs(TEX, exist_ok=True)
+os.makedirs(WORK, exist_ok=True)
+POSES = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'agent_poses.json')))
+BAKE_PX = 1024
+R = {}
+
+bpy.ops.wm.read_factory_settings(use_empty=True)
+scene = bpy.context.scene
+scene.unit_settings.scale_length = 1.0
+
+# ---- dimensions (metres) -------------------------------------------------------------------------------------------
+PIN = (0.0, 0.014, 0.0016)                  # z from, z to, radius
+BODY = [(0.0, 0.012), (0.0075, 0.0138), (0.0130, 0.019), (0.0160, 0.028), (0.044, 0.135), (0.0445, 0.1375),
+        (0.043, 0.1405), (0.033, 0.1430), (0.0, 0.1445)]            # lathe profile (r, z), tip to top cap
+COLLAR = (0.137, 0.156, 0.019)              # z from, z to, radius
+HEAD_C = Vector((0.0, -0.010, 0.186))       # hood sphere centre
+HOOD_R, HOOD_T, HOOD_CUT = 0.068, 0.0030, 0.18   # outer radius, wall, cut plane at +0.18 R along the opening axis
+OPEN_TILT = -30.0                            # the opening looks forward (-Y) and this many degrees up (negative: down, as in the target)
+ORB_R, ORB_IN = 0.037, 0.006                 # orb radius; its centre sits this far towards the opening from HEAD_C
+SHOULDER = Vector((0.0505, 0.0, 0.130))      # +X side; mirrored for the right arm
+UPPER_L, LOWER_L = 0.078, 0.060             # capsule lengths
+BALL = (0.0098, 0.0072, 0.0055)              # shoulder, elbow, wrist ball radius
+LOOP = (0.0135, 0.0010)                      # wire loop major / minor radius
+REST_DEG = POSES['rest_arm_deg_from_vertical']
+OPEN_AXIS = Vector((0.0, -math.cos(math.radians(OPEN_TILT)), math.sin(math.radians(OPEN_TILT))))
+
+# ---- materials -------------------------------------------------------------------------------------------------------
+def principled(name, color, rough, metal=0.0, coat=0.0, coat_rough=0.05, emit=None, emit_strength=0.0):
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    b = m.node_tree.nodes['Principled BSDF']
+    b.inputs['Base Color'].default_value = (*color, 1.0)
+    b.inputs['Roughness'].default_value = rough
+    b.inputs['Metallic'].default_value = metal
+    b.inputs['Coat Weight'].default_value = coat
+    b.inputs['Coat Roughness'].default_value = coat_rough
+    if emit:
+        b.inputs['Emission Color'].default_value = (*emit, 1.0)
+        b.inputs['Emission Strength'].default_value = emit_strength
+    return m
+
+def srgb(h):
+    c = [int(h[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    return tuple(x / 12.92 if x <= 0.04045 else ((x + 0.055) / 1.055) ** 2.4 for x in c)
+
+MATS = {
+    # r4: white plastic at base albedo about 0.8, roughness 0.35, a second specular lobe (UE: clear coat)
+    'agent_shell': dict(color=(0.80, 0.79, 0.77), rough=0.35, coat=1.0, coat_rough=0.08),
+    'agent_joint': dict(color=srgb('#3A3D42'), rough=0.38, metal=1.0),
+    'agent_glow': dict(color=srgb('#FFD9A0'), rough=0.5, emit=srgb('#FFA94D'), emit_strength=3.0),
+    # the hood's inside: the same white, plus a faint warm self-glow standing in for the orb's bounce (UE: GlowStrength x 0.15)
+    'agent_hood_inner': dict(color=(0.80, 0.79, 0.77), rough=0.45, emit=srgb('#FFC48A'), emit_strength=0.5),
+    'agent_glow_card': dict(color=(0, 0, 0), rough=1.0, emit=srgb('#FFB547'), emit_strength=1.0),
+}
+mat = {k: principled(k, **v) for k, v in MATS.items()}
+R['materials'] = {k: {kk: (list(vv) if isinstance(vv, tuple) else vv) for kk, vv in v.items()} for k, v in MATS.items()}
+
+# ---- part builders ----------------------------------------------------------------------------------------------------
+parts = []   # (object, bone)
+
+def finish(ob, slot, bone, smooth=True):
+    ob.data.materials.append(mat[slot])
+    if smooth:
+        for p in ob.data.polygons:
+            p.use_smooth = True
+    parts.append((ob, bone))
+    return ob
+
+def new_obj(name, bm):
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    ob = bpy.data.objects.new(name, me)
+    scene.collection.objects.link(ob)
+    return ob
+
+def lathe(name, profile, segs, axis_from=Vector((0, 0, 0)), axis_dir=Vector((0, 0, 1))):
+    """A surface of revolution: profile (r, t) along axis_dir from axis_from; r = 0 ends close to a pole."""
+    bm = bmesh.new()
+    q = Vector((0, 0, 1)).rotation_difference(axis_dir.normalized()).to_matrix()
+    rings = []
+    for r, t in profile:
+        if r < 1e-6:
+            rings.append([bm.verts.new(axis_from + q @ Vector((0, 0, t)))])
+        else:
+            rings.append([bm.verts.new(axis_from + q @ Vector((r * math.cos(a), r * math.sin(a), t)))
+                          for a in (2 * math.pi * i / segs for i in range(segs))])
+    for a, b in zip(rings, rings[1:]):
+        if len(a) == 1:
+            for i in range(segs):
+                bm.faces.new((a[0], b[(i + 1) % segs], b[i]))
+        elif len(b) == 1:
+            for i in range(segs):
+                bm.faces.new((a[i], a[(i + 1) % segs], b[0]))
+        else:
+            for i in range(segs):
+                bm.faces.new((a[i], a[(i + 1) % segs], b[(i + 1) % segs], b[i]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return new_obj(name, bm)
+
+def capsule(name, start, end, r_mid, r_end, segs=14, rings=7):
+    """A spindle: rounded ends, widest in the middle (the arm segments of the concept)."""
+    d = end - start
+    L = d.length
+    prof = [(0.0, 0.0)]
+    for i in range(1, rings + 1):            # end cap, a quarter ellipse up to r_end
+        a = math.pi / 2 * i / rings
+        prof.append((r_end * math.sin(a), r_end * (1 - math.cos(a))))
+    for i in range(1, 6):                    # swell to r_mid and back
+        t = i / 6
+        prof.append((r_end + (r_mid - r_end) * math.sin(math.pi * t), r_end + (L - 2 * r_end) * t))
+    for i in range(rings - 1, -1, -1):
+        a = math.pi / 2 * i / rings
+        prof.append((r_end * math.sin(a), L - r_end * (1 - math.cos(a))))
+    prof[-1] = (0.0, L)
+    return lathe(name, prof, segs, start, d)
+
+def sphere(name, centre, r, segs=16, rings=10):
+    prof = [(r * math.sin(math.pi * i / rings), -r * math.cos(math.pi * i / rings)) for i in range(rings + 1)]
+    prof[0], prof[-1] = (0.0, -r), (0.0, r)
+    return lathe(name, prof, segs, centre)
+
+def cylinder(name, z0, z1, r, segs, centre=Vector((0, 0, 0))):
+    bm = bmesh.new()
+    bmesh.ops.create_cone(bm, cap_ends=True, segments=segs, radius1=r, radius2=r, depth=z1 - z0,
+                          matrix=Matrix.Translation(centre + Vector((0, 0, (z0 + z1) / 2))))
+    return new_obj(name, bm)
+
+def add_mods(ob, bevel=None, weighted=False):
+    if bevel:
+        m = ob.modifiers.new('bevel', 'BEVEL')
+        m.width, m.segments, m.limit_method, m.angle_limit = bevel, 2, 'ANGLE', math.radians(30)
+        m.harden_normals = True
+        m.miter_outer = 'MITER_ARC'
+    if weighted:
+        w = ob.modifiers.new('wn', 'WEIGHTED_NORMAL')
+        w.keep_sharp = True
+        w.weight = 50
+
+# ---- body ---------------------------------------------------------------------------------------------------------------
+finish(lathe('body', BODY, 40), 'agent_shell', 'body')
+pin = cylinder('pin', PIN[0], PIN[1], PIN[2], 8)
+finish(pin, 'agent_glow', 'body')
+collar = cylinder('collar', COLLAR[0], COLLAR[1], COLLAR[2], 32)
+add_mods(collar, bevel=0.0012, weighted=True)
+finish(collar, 'agent_joint', 'body')
+# the slit: a thin proud strip on the body front, following the cone's lean
+z_mid = 0.088
+r_at = 0.016 + (z_mid - 0.028) / (0.135 - 0.028) * (0.044 - 0.016)
+lean = math.atan2(0.044 - 0.016, 0.135 - 0.028)
+bm = bmesh.new()
+bmesh.ops.create_cube(bm, size=1.0)
+bmesh.ops.scale(bm, vec=(0.0024, 0.0016, 0.034), verts=bm.verts)
+bmesh.ops.rotate(bm, verts=bm.verts, cent=(0, 0, 0), matrix=Matrix.Rotation(-lean, 3, 'X'))
+bmesh.ops.translate(bm, vec=(0, -(r_at - 0.0004), z_mid), verts=bm.verts)
+slit = new_obj('slit', bm)
+add_mods(slit, bevel=0.0005)
+finish(slit, 'agent_glow', 'body')
+
+# ---- head: hood shell, orb, glow card -------------------------------------------------------------------------------------
+hood_q = Vector((0, 0, 1)).rotation_difference(OPEN_AXIS).to_matrix().to_4x4()
+bm = bmesh.new()
+bmesh.ops.create_uvsphere(bm, u_segments=40, v_segments=22, radius=HOOD_R)
+cut = [v for v in bm.verts if v.co.z > HOOD_CUT * HOOD_R]
+bmesh.ops.delete(bm, geom=cut, context='VERTS')
+bmesh.ops.transform(bm, matrix=Matrix.Translation(HEAD_C) @ hood_q, verts=bm.verts)
+hood = new_obj('hood', bm)
+s = hood.modifiers.new('wall', 'SOLIDIFY')
+s.thickness, s.offset, s.use_rim, s.use_even_offset = HOOD_T, -1.0, True, True
+add_mods(hood, bevel=0.0011)
+finish(hood, 'agent_shell', 'head')
+for m in list(hood.modifiers):              # applied here so the inside faces can take their own slot
+    with bpy.context.temp_override(object=hood, active_object=hood):
+        bpy.ops.object.modifier_apply(modifier=m.name)
+hood.data.materials.append(mat['agent_hood_inner'])
+for p in hood.data.polygons:
+    if (p.center - HEAD_C).dot(p.normal) < 0:
+        p.material_index = 1
+orb_c = HEAD_C + OPEN_AXIS * ORB_IN
+finish(sphere('orb', orb_c, ORB_R, segs=28, rings=16), 'agent_glow', 'head')
+
+# ---- arms --------------------------------------------------------------------------------------------------------------
+def arm(side):
+    sx = 1 if side == 'l' else -1
+    sh = Vector((SHOULDER.x * sx, SHOULDER.y, SHOULDER.z))
+    d = Vector((sx * math.sin(math.radians(REST_DEG)), 0, -math.cos(math.radians(REST_DEG))))
+    elbow = sh + d * (BALL[0] + UPPER_L + BALL[1] * 0.6)
+    wrist = elbow + d * (BALL[1] * 0.6 + LOWER_L + BALL[2] * 0.6)
+    up, lo = f'arm_{side}_upper', f'arm_{side}_lower'
+    b = sphere(f'shoulder_{side}', sh, BALL[0], 18, 10); add_mods(b, weighted=True); finish(b, 'agent_joint', up)
+    finish(capsule(f'upper_{side}', sh + d * (BALL[0] * 0.55), elbow - d * (BALL[1] * 0.45), 0.0086, 0.0058), 'agent_shell', up)
+    finish(sphere(f'elbow_{side}', elbow, BALL[1], 16, 8), 'agent_joint', lo)
+    finish(capsule(f'lower_{side}', elbow + d * (BALL[1] * 0.45), wrist - d * (BALL[2] * 0.4), 0.0076, 0.0050), 'agent_shell', lo)
+    finish(sphere(f'wrist_{side}', wrist, BALL[2], 12, 6), 'agent_joint', lo)
+    bm = bmesh.new()
+    # a torus in the arm's plane (XZ), its near edge at the wrist ball
+    for i in range(24):
+        a = 2 * math.pi * i / 24
+        c = Vector((LOOP[0] * math.cos(a), 0, LOOP[0] * math.sin(a)))
+        n = c.normalized()
+        for j in range(6):
+            b2 = 2 * math.pi * j / 6
+            bm.verts.new(c + n * LOOP[1] * math.cos(b2) + Vector((0, LOOP[1] * math.sin(b2), 0)))
+    bm.verts.ensure_lookup_table()
+    for i in range(24):
+        for j in range(6):
+            a0, a1 = i * 6 + j, i * 6 + (j + 1) % 6
+            b0, b1 = ((i + 1) % 24) * 6 + j, ((i + 1) % 24) * 6 + (j + 1) % 6
+            bm.faces.new((bm.verts[a0], bm.verts[b0], bm.verts[b1], bm.verts[a1]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bmesh.ops.scale(bm, vec=(1.0, 1.0, 1.6), verts=bm.verts)
+    rot = Vector((0, 0, -1)).rotation_difference(d).to_matrix().to_4x4()
+    bmesh.ops.transform(bm, matrix=Matrix.Translation(wrist + d * (BALL[2] + LOOP[0] * 1.6 - 0.0014)) @ rot @ Matrix.Translation((0, 0, 0)), verts=bm.verts)
+    finish(new_obj(f'loop_{side}', bm), 'agent_joint', lo)
+    return sh, elbow, wrist
+
+joints = {s: arm(s) for s in ('l', 'r')}
+
+# ---- apply modifiers, join into one mesh with one vertex group per bone (weight 1.0) ------------------------------------
+bones = ['body', 'head', 'arm_l_upper', 'arm_l_lower', 'arm_r_upper', 'arm_r_lower']
+for ob, bone in parts:
+    for o in bpy.context.selected_objects:
+        o.select_set(False)
+    ob.select_set(True)
+    bpy.context.view_layer.objects.active = ob
+    for m in list(ob.modifiers):
+        bpy.ops.object.modifier_apply(modifier=m.name)
+    vg = ob.vertex_groups.new(name=bone)
+    vg.add(range(len(ob.data.vertices)), 1.0, 'REPLACE')
+part_tris = {}
+for ob, bone in parts:
+    part_tris[ob.name] = sum(len(p.vertices) - 2 for p in ob.data.polygons)
+R['part_tris'] = part_tris
+for o in bpy.context.selected_objects:
+    o.select_set(False)
+for ob, _ in parts:
+    ob.select_set(True)
+body = parts[0][0]
+bpy.context.view_layer.objects.active = body
+bpy.ops.object.join()
+agent = body
+agent.name = agent.data.name = 'lamp-agent'
+# the figure's own height: body and head parts only (in the rest pose the hanging arms reach below the pin tip)
+core = {agent.vertex_groups[n].index for n in ('body', 'head')}
+zs = [v.co.z for v in agent.data.vertices if any(g.group in core for g in v.groups)]
+R['rest'] = {'height_m': round(max(zs) - min(zs), 4), 'min_z_m': round(min(zs), 4), 'hood_width_m': round(2 * HOOD_R, 4),
+             'body_top_width_m': round(2 * BODY[4][0], 4)}
+
+# ---- one UV set, packed; the card is added after the bakes with its own 0-1 UVs ---------------------------------------
+bpy.ops.object.mode_set(mode='EDIT')
+bpy.ops.mesh.select_all(action='SELECT')
+bpy.ops.uv.smart_project(angle_limit=math.radians(55), island_margin=0.004, area_weight=0.0, scale_to_bounds=True)
+bpy.ops.object.mode_set(mode='OBJECT')
+agent.data.uv_layers[0].name = 'UVMap'
+
+# ---- bakes on the CPU: AO, roughness, metal (emit trick), base colour (diffuse colour) ----------------------------------
+scene.render.engine = 'CYCLES'
+scene.cycles.device = 'CPU'
+scene.cycles.samples = 64
+scene.render.bake.margin = 6
+# a floor-less, world-less scene: AO sees only the agent itself (contact between hood, collar, body and the arm joints)
+scene.world = bpy.data.worlds.new('bake') if scene.world is None else scene.world
+scene.world.use_nodes = True
+scene.world.node_tree.nodes['Background'].inputs['Color'].default_value = (1, 1, 1, 1)
+
+def bake_into(name, btype, colorspace='Non-Color', **kw):
+    img = bpy.data.images.new(name, BAKE_PX, BAKE_PX, alpha=False, float_buffer=False)
+    img.colorspace_settings.name = colorspace
+    for m in agent.data.materials:
+        nt = m.node_tree
+        n = nt.nodes.get('bake') or nt.nodes.new('ShaderNodeTexImage')
+        n.name = 'bake'
+        n.image = img
+        nt.nodes.active = n
+    bpy.ops.object.select_all(action='DESELECT')
+    agent.select_set(True)
+    bpy.context.view_layer.objects.active = agent
+    bpy.ops.object.bake(type=btype, use_clear=True, margin=6, **kw)
+    return img
+
+import time
+t0 = time.time()
+ao = bake_into('agent_ao', 'AO')
+rough = bake_into('agent_roughness', 'ROUGHNESS')
+saved = {}
+for m in agent.data.materials:            # metal as emission, read back by an EMIT bake
+    b = m.node_tree.nodes['Principled BSDF']
+    saved[m.name] = (tuple(b.inputs['Emission Color'].default_value), b.inputs['Emission Strength'].default_value)
+    v = b.inputs['Metallic'].default_value
+    b.inputs['Emission Color'].default_value = (v, v, v, 1)
+    b.inputs['Emission Strength'].default_value = 1.0
+metal = bake_into('agent_metal', 'EMIT')
+for m in agent.data.materials:
+    b = m.node_tree.nodes['Principled BSDF']
+    b.inputs['Emission Color'].default_value, b.inputs['Emission Strength'].default_value = saved[m.name][0], saved[m.name][1]
+base = bake_into('agent_basecolor', 'DIFFUSE', colorspace='sRGB', pass_filter={'COLOR'})
+R['bake_seconds'] = round(time.time() - t0, 1)
+
+def pixels(img):
+    import array
+    a = array.array('f', [0.0]) * (img.size[0] * img.size[1] * 4)
+    img.pixels.foreach_get(a)
+    return a
+
+def save(img, fname):
+    img.filepath_raw = os.path.join(TEX, fname)
+    img.file_format = 'PNG'
+    img.save()
+
+# ORM: R occlusion, G roughness, B metal
+orm = bpy.data.images.new('agent_orm', BAKE_PX, BAKE_PX, alpha=False)
+orm.colorspace_settings.name = 'Non-Color'
+pa, pr, pm = pixels(ao), pixels(rough), pixels(metal)
+po = pa[:]
+for i in range(0, len(po), 4):
+    po[i + 1], po[i + 2], po[i + 3] = pr[i], pm[i], 1.0
+orm.pixels.foreach_set(po)
+save(orm, 'agent_orm.png')
+save(base, 'agent_basecolor.png')
+ao_vals = [pa[i] for i in range(0, len(pa), 4)]
+R['ao'] = {'min': round(min(ao_vals), 3), 'mean': round(sum(ao_vals) / len(ao_vals), 3), 'px': BAKE_PX, 'samples': scene.cycles.samples}
+
+# glow card texture: a soft radial falloff, white on black (UE: additive, tinted by the glow colour)
+CARD_PX = 256
+card_img = bpy.data.images.new('agent_glow_card', CARD_PX, CARD_PX, alpha=False)
+cp = [0.0] * (CARD_PX * CARD_PX * 4)
+for y in range(CARD_PX):
+    for x in range(CARD_PX):
+        d = math.hypot((x + 0.5) / CARD_PX - 0.5, (y + 0.5) / CARD_PX - 0.5) * 2
+        v = max(0.0, 1 - d) ** 2.2
+        i = (y * CARD_PX + x) * 4
+        cp[i:i + 4] = [v, v, v, 1.0]
+card_img.pixels.foreach_set(cp)
+save(card_img, 'agent_glow_card.png')
+
+# ---- the glow card: a quad in the hood opening, facing out, twice the orb's diameter --------------------------------------
+bm = bmesh.new()
+half = ORB_R * 2.2
+vs = [bm.verts.new((x, y, 0)) for x, y in ((-half, -half), (half, -half), (half, half), (-half, half))]
+f = bm.faces.new(vs)
+uv = bm.loops.layers.uv.new('UVMap')
+for loop, c in zip(f.loops, ((0, 0), (1, 0), (1, 1), (0, 1))):
+    loop[uv].uv = c
+card_rot = Vector((0, 0, 1)).rotation_difference(OPEN_AXIS).to_matrix().to_4x4()
+bmesh.ops.transform(bm, matrix=Matrix.Translation(orb_c + OPEN_AXIS * (ORB_R + 0.002)) @ card_rot, verts=bm.verts)
+card = new_obj('card', bm)
+card.data.materials.append(mat['agent_glow_card'])
+card.vertex_groups.new(name='head').add(range(4), 1.0, 'REPLACE')
+bpy.ops.object.select_all(action='DESELECT')
+card.select_set(True); agent.select_set(True)
+bpy.context.view_layer.objects.active = agent
+bpy.ops.object.join()
+
+# the shipped materials: Principled with the baked maps wired in (base colour x AO at 0.6, as UE should do it)
+for m in agent.data.materials:
+    nt = m.node_tree
+    if 'bake' in nt.nodes:
+        nt.nodes.remove(nt.nodes['bake'])
+    b = nt.nodes['Principled BSDF']
+    if m.name in ('agent_shell', 'agent_joint', 'agent_hood_inner'):
+        tb = nt.nodes.new('ShaderNodeTexImage'); tb.image = base
+        to = nt.nodes.new('ShaderNodeTexImage'); to.image = orm
+        sp = nt.nodes.new('ShaderNodeSeparateColor')
+        mix = nt.nodes.new('ShaderNodeMix'); mix.data_type = 'RGBA'; mix.blend_type = 'MULTIPLY'
+        mix.inputs['Factor'].default_value = 0.6
+        nt.links.new(to.outputs['Color'], sp.inputs['Color'])
+        nt.links.new(tb.outputs['Color'], mix.inputs['A'])
+        nt.links.new(sp.outputs['Red'], mix.inputs['B'])
+        nt.links.new(mix.outputs['Result'], b.inputs['Base Color'])
+        nt.links.new(sp.outputs['Green'], b.inputs['Roughness'])
+        nt.links.new(sp.outputs['Blue'], b.inputs['Metallic'])
+    if m.name == 'agent_glow_card':
+        tc = nt.nodes.new('ShaderNodeTexImage'); tc.image = card_img
+        nt.links.new(tc.outputs['Color'], b.inputs['Alpha'])
+        m.blend_method = 'BLEND' if hasattr(m, 'blend_method') else None
+        m.surface_render_method = 'BLENDED'
+
+# ---- armature: six bones, rigid -------------------------------------------------------------------------------------------
+arm_data = bpy.data.armatures.new('lamp-agent_rig')
+rig = bpy.data.objects.new('lamp-agent_rig', arm_data)
+scene.collection.objects.link(rig)
+bpy.context.view_layer.objects.active = rig
+bpy.ops.object.mode_set(mode='EDIT')
+eb = arm_data.edit_bones
+def bone(name, head, tail, parent=None):
+    b = eb.new(name); b.head, b.tail = head, tail
+    if parent: b.parent = eb[parent]
+    return b
+bone('body', Vector((0, 0, 0)), Vector((0, 0, COLLAR[0])))
+bone('head', Vector((0, 0, COLLAR[1] - 0.004)), HEAD_C + Vector((0, 0, HOOD_R)), 'body')
+for s in ('l', 'r'):
+    sh, el, wr = joints[s]
+    bone(f'arm_{s}_upper', sh, el, 'body')
+    bone(f'arm_{s}_lower', el, wr, f'arm_{s}_upper')
+for b in eb:
+    b.roll = 0.0
+bpy.ops.object.mode_set(mode='OBJECT')
+agent.parent = rig
+mod = agent.modifiers.new('rig', 'ARMATURE'); mod.object = rig
+
+# ---- poses as actions (two keys each), rotations about the armature axes at each bone head ------------------------------
+rig.animation_data_create()
+bpy.context.view_layer.objects.active = rig
+bpy.ops.object.mode_set(mode='POSE')
+pb = rig.pose.bones
+def pose_bone(n, deg):
+    rr = rig.data.bones[n].matrix_local.to_3x3()
+    world = (Matrix.Rotation(math.radians(deg[2]), 3, 'Z') @ Matrix.Rotation(math.radians(deg[1]), 3, 'Y')
+             @ Matrix.Rotation(math.radians(deg[0]), 3, 'X'))
+    pb[n].rotation_mode = 'QUATERNION'
+    pb[n].rotation_quaternion = (rr.inverted() @ world @ rr).to_quaternion()
+for name, spec in POSES['poses'].items():
+    act = bpy.data.actions.new(name); act.use_fake_user = True
+    rig.animation_data.action = act
+    for f in (1, 12):
+        for n in bones:
+            pose_bone(n, spec.get(n, [0, 0, 0]))
+            pb[n].keyframe_insert('rotation_quaternion', frame=f)
+bpy.ops.object.mode_set(mode='OBJECT')
+R['actions'] = list(POSES['poses'])
+R['bones'] = bones
+R['hierarchy'] = {b.name: (b.parent.name if b.parent else None) for b in rig.data.bones}
+
+# ---- exports ----------------------------------------------------------------------------------------------------------------
+rig.animation_data.action = bpy.data.actions[POSES['static_pose']]
+scene.frame_set(1)
+bpy.ops.object.select_all(action='DESELECT')
+agent.select_set(True); rig.select_set(True)
+bpy.ops.export_scene.fbx(filepath=os.path.join(OUT, 'final.fbx'), use_selection=True, object_types={'ARMATURE', 'MESH'},
+                         add_leaf_bones=False, bake_anim=True, bake_anim_use_all_actions=True, bake_anim_use_nla_strips=False,
+                         bake_anim_simplify_factor=0.0, path_mode='STRIP', embed_textures=False, use_armature_deform_only=True)
+# the static working pose: a copy with the armature applied, no rig (4 slots = 4 draws, no skinning)
+st = agent.copy(); st.data = agent.data.copy(); scene.collection.objects.link(st)
+agent.name = 'lamp-agent_skinned'
+st.name = st.data.name = 'lamp-agent'
+bpy.ops.object.select_all(action='DESELECT')
+st.select_set(True); bpy.context.view_layer.objects.active = st
+st.parent = None
+bpy.ops.object.modifier_apply(modifier='rig')
+st.vertex_groups.clear()
+bpy.ops.export_scene.gltf(filepath=os.path.join(OUT, 'final_working.glb'), use_selection=True, export_format='GLB',
+                          export_yup=True, export_apply=True,
+                          export_materials='EXPORT', export_image_format='NONE', export_animations=False, export_skins=False)
+st.hide_render = True; st.hide_set(True)
+R['static_object'] = st.name
+R['orb_centre_rest_m'] = [round(v, 4) for v in orb_c]
+R['open_axis'] = [round(v, 4) for v in OPEN_AXIS]
+bpy.ops.wm.save_as_mainfile(filepath=os.path.join(WORK, 'agent.blend'))
+json.dump(R, open(os.path.join(WORK, 'build.json'), 'w'), indent=1)
+print('BUILD', json.dumps({k: R[k] for k in ('part_tris', 'bake_seconds', 'ao')}))

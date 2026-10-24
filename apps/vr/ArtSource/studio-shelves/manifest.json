@@ -3,43 +3,158 @@
   "class": "set-dressing",
   "budget_tris": 24000,
   "budget_note": "plan.md P4 studio kit total 80k, split across 5 as 24000 shelves, 16000 desk lamp, 8000 mug, 20000 drawing tubes, 12000 pinned drawings",
-  "tris": 1092,
-  "tris_total": 1092,
+  "kept_option": "B",
+  "lynx_commit": "85dec86092ef0be17a55c7c2cb8d717f3695cdef",
+  "lynx_commit_note": "stamped by the writer: the newest commit touching this folder when the manifest was written",
+  "file_bytes": {
+    "concept.png": 77661,
+    "evidence/table-view.jpg": 61364,
+    "evidence/turnaround.jpg": 178045,
+    "final.glb": 3445124,
+    "rejected/A.png": 72592,
+    "textures/shelves_atlas_basecolor.png": 4544085,
+    "textures/shelves_atlas_normal.png": 3736900,
+    "textures/shelves_atlas_orm.png": 4653306
+  },
+  "sha256": {
+    "concept.png": "d9f4f8a906287895b64686650355f61155a8927992390326fe65558212211a0b",
+    "evidence/table-view.jpg": "a82f38106e024ff44ac3e98bd487a54980b39c3b4b42ca85f2335130e5c09b65",
+    "evidence/turnaround.jpg": "fcecc9c6a1da8549a66b1f63fba8a15e74db0867a38f7fb2b2abf488f86e936a",
+    "final.glb": "e25b1d9500101d5dd1f17b0f6d241b61c09dbf3408092420a28095510e4f43a2",
+    "rejected/A.png": "244906f52cfd64fa6ed44f2da2f9b4d70de06d76973c3f325cb4bceb6b2c2012",
+    "textures/shelves_atlas_basecolor.png": "e2eb2054801a4d1950c0999c69b4bf2cb5791b3d93369499852e4e6c974a86c8",
+    "textures/shelves_atlas_normal.png": "e8b76dad00b366ccf3be6a33f84152e4f699c659b44f7068ba8212790a77b7f1",
+    "textures/shelves_atlas_orm.png": "5863137d18d9243c2da8838b4d381427b57f61facdad5d1ff7e5e1367ebd2e23"
+  },
+  "gates": {
+    "input": {
+      "pass": true,
+      "note": "B kept: wide and simple, books and roll sit clear of the frame. A also passes but its roll hides behind a post and it is taller and busier. Built procedurally instead of through TRELLIS (GPU held by the mage-arena run); concept.png is the shape reference.",
+      "date": "2026-10-21"
+    },
+    "mesh_acceptance": {
+      "pass": true,
+      "note": "re-imported from final.glb: 1 mesh object, 8892 vertices, 17144 tris, 160 connected components, 0 floaters (a floater is a component whose bounding box touches no other), 0 open edges, signed volume 0.106015 m3 (positive: normals face out)",
+      "date": "2026-10-24"
+    },
+    "scale": {
+      "pass": true,
+      "note": "88 x 30 x 128 cm (x, y, z up) re-imported from final.glb, inside the planned envelope (a four-board open steel rack, 90 x 30 cm footprint, 125 cm tall, filled: about forty cloth books, paper stacks, box files and rolled drawings); pivot: base centre 0, 0 m, floor at z = 0 m. Assumption: the sizes are Lynx choices from the concept; the UE world scale is still to be confirmed on Wolf.",
+      "date": "2026-10-24"
+    },
+    "finishing": {
+      "pass": true,
+      "note": "finish: 2012 bevelled hard edges, custom (hardened) normals true, 82% of faces smooth-shaded, baked atlas at 771.6 px/m from 3 CC0 scans; one UV set (1); 3 PBR PNGs (base colour, normal, ORM for 1 slots); every file under 10 MB (largest 4653306 bytes); 1 material slots (shelves_atlas); evidence turnaround.jpg and table-view.jpg rendered with Cycles on the CPU (in-context EEVEE renders: scripts/art/studio-kit/render_context.bpy), framing check passes on 5 images (min silhouette margin 0.0646 of the image, rule 0.03). Not claimed: any UE import.",
+      "date": "2026-10-24"
+    },
+    "poly_budget": {
+      "pass": true,
+      "note": "17144 tris against 24000 (71%)",
+      "date": "2026-10-24"
+    }
+  },
+  "tris": 17144,
+  "tris_total": 17144,
   "materials": [
-    "shelf_frame_steel (120 tris, PBR textures)",
-    "shelf_board_stained_wood (36 tris, PBR textures)",
-    "shelf_brass_bolt (576 tris, PBR textures)",
-    "shelf_book_kraft (36 tris, PBR textures)",
-    "shelf_book_tan (228 tris, PBR textures)",
-    "shelf_scroll_paper (96 tris, PBR textures)"
+    "shelves_atlas (17144 tris, PBR textures)"
   ],
   "bounds_cm": {
     "x": 88,
-    "y": 126.05,
-    "z": 30.8,
+    "y": 128,
+    "z": 30,
     "note": "x,z ground plane, y up (glTF)"
   },
   "meshes": {
     "studio-shelves": {
-      "tris": 1092,
-      "vertices": 606,
-      "components": 30,
+      "tris": 17144,
+      "vertices": 8892,
+      "components": 160,
       "floaters": 0,
       "open_edges": 0,
       "faces_per_slot": {
-        "shelf_frame_steel": 120,
-        "shelf_board_stained_wood": 36,
-        "shelf_brass_bolt": 576,
-        "shelf_book_kraft": 36,
-        "shelf_book_tan": 228,
-        "shelf_scroll_paper": 96
+        "shelves_atlas": 17144
       }
     }
   },
   "uv_sets": 1,
   "pivot": "base centre (x and y at the middle of the footprint, z = 0 at the floor); measured 0, 0 m; the prop stands +Y in the GLB (glTF Y-up), +Z in Blender",
-  "scale_reasoning": "a three-shelf open steel rack, 90 x 30 cm footprint, 125 cm tall: shelf boards at 12, 55 and 98 cm, books 26 cm tall. Measured 88 x 126.05 x 30.8 cm (x, up, y); the planned envelope per axis is 85-95 cm, 27-34 cm, 120-130 cm (x, y, z up).",
-  "textures": "18 PNGs, 256 px seamless tiles (the printed sheets: 384 x 576, mapped once): base colour, normal, ORM (R occlusion, G roughness, B metal), authored with numpy in scripts/art/studio-kit/build_studio.bpy. One UV set, box-projected in world metres (printed sheets: planar 0..1). Flat colour plus grain, no baked light.",
+  "scale_reasoning": "a four-board open steel rack, 90 x 30 cm footprint, 125 cm tall, filled: about forty cloth books, paper stacks, box files and rolled drawings. Measured 88 x 128 x 30 cm (x, up, y); the planned envelope per axis is 85-95 cm, 27-34 cm, 120-130 cm (x, y, z up).",
+  "textures": "3 PNGs: one 2048 px atlas (shelves_atlas_basecolor, _orm with R occlusion, G roughness, B metal, and a tangent-space OpenGL _normal), baked with Cycles on the CPU in scripts/art/studio-kit/build_studio.bpy from layered bake-source materials (scripts/art/lib/finish.bpy): Poly Haven CC0 scans tinted to the palette, curvature edge wear, room-scale grunge, AO (also multiplied into basecolor at 0.55, as the forward-shaded UE scene has no runtime AO). One unique UV set: smart projection, islands at one texel density, hidden faces (book sides inside a row, undersides) shrunk to 0.12, 771.6 px/m on the visible surface (3.1725 m2 visible, 83% of the surface hidden). Bake seconds: {\"base\":11.44,\"rough\":9.5,\"metal\":5.05,\"normal\":14.53,\"ao\":76.7}. GLB embeds the atlas as quality-92 JPEG (the PNG set would put the GLB over 10 MB).",
+  "finish": {
+    "bevel": "angle-limited (30 degrees) bevel on every primitive's hard edges, width per part (0.5 to 3 mm), 2 segments, arc miter, clamped, hardened normals, then a weighted normal (face area, keep sharp) and smooth shading; 2012 hard edges bevelled, 1476 kept sharp by design (paper edges, spiral roll ends, small screws), 16 convex edges of 60 degrees or more left unrounded (inside other parts or at acute corners)",
+    "smooth_faces": 0.8236,
+    "custom_normals": true,
+    "texel": {
+      "px_per_m": 771.6,
+      "uv_coverage": 0.45,
+      "surface_m2": 3.1725,
+      "hidden_share": 0.827
+    },
+    "bake": {
+      "seconds": {
+        "base": 11.44,
+        "rough": 9.5,
+        "metal": 5.05,
+        "normal": 14.53,
+        "ao": 76.7
+      },
+      "ao_mean": 0.528,
+      "rough_range": [
+        0,
+        0.853
+      ]
+    },
+    "cc0_sources": {
+      "blue_metal_plate": {
+        "page": "https://polyhaven.com/a/blue_metal_plate",
+        "licence": "CC0 1.0 (Poly Haven, https://polyhaven.com/license)",
+        "size_mm": [
+          2500,
+          2500
+        ],
+        "authors": {
+          "Rob Tuytel": "All"
+        },
+        "files": {
+          "diff": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/blue_metal_plate/blue_metal_plate_diff_2k.jpg",
+          "rough": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/blue_metal_plate/blue_metal_plate_rough_2k.jpg",
+          "nor_gl": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/blue_metal_plate/blue_metal_plate_nor_gl_2k.jpg"
+        }
+      },
+      "fabric_leather_02": {
+        "page": "https://polyhaven.com/a/fabric_leather_02",
+        "licence": "CC0 1.0 (Poly Haven, https://polyhaven.com/license)",
+        "size_mm": [
+          500,
+          499.9999403953552
+        ],
+        "authors": {
+          "Rob Tuytel": "All"
+        },
+        "files": {
+          "diff": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/fabric_leather_02/fabric_leather_02_diff_2k.jpg",
+          "rough": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/fabric_leather_02/fabric_leather_02_rough_2k.jpg",
+          "nor_gl": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/fabric_leather_02/fabric_leather_02_nor_gl_2k.jpg"
+        }
+      },
+      "fine_grained_wood": {
+        "page": "https://polyhaven.com/a/fine_grained_wood",
+        "licence": "CC0 1.0 (Poly Haven, https://polyhaven.com/license)",
+        "size_mm": [
+          600.0000238418579,
+          600.0000238418579
+        ],
+        "authors": {
+          "Rob Tuytel": "All"
+        },
+        "files": {
+          "diff": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/fine_grained_wood/fine_grained_wood_col_2k.jpg",
+          "rough": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/fine_grained_wood/fine_grained_wood_rough_2k.jpg",
+          "nor_gl": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/fine_grained_wood/fine_grained_wood_nor_gl_2k.jpg"
+        }
+      }
+    }
+  },
   "generator": "procedural Blender",
   "blender": "Blender 5.2.2, scripts/art/studio-kit/build_studio.bpy (build and score), render_studio.bpy (evidence and framing check), write_manifest.mjs",
   "concept_reference": [
@@ -69,11 +184,8 @@
     }
   ],
   "concept_note": "log.jsonl file fields name candidates/<A|B>.png, the place each image was written before grading; they were then moved to concept.png or rejected/.",
-  "kept_option": "B",
-  "licence": "own procedural work; concept.png is a Leonardo concept used as a shape reference only (R8 open); no ComfyUI or TRELLIS run, no GPU job, no Leonardo call",
-  "lynx_commit": "ca2fa38",
-  "lynx_commit_note": "null until the merge sets it",
-  "regenerate": "blender -b -P scripts/art/studio-kit/build_studio.bpy -- <repo-root> <work> studio-shelves; blender -b -P scripts/art/studio-kit/render_studio.bpy -- <repo-root> <work> studio-shelves; node scripts/art/studio-kit/write_manifest.mjs <work> studio-shelves",
+  "licence": "own procedural work; concept.png is a Leonardo concept used as a shape reference only (R8 open); bake inputs are Poly Haven CC0 scans (blue_metal_plate (https://polyhaven.com/a/blue_metal_plate, CC0 1.0 (Poly Haven, https://polyhaven.com/license), 2.5 m tile); fabric_leather_02 (https://polyhaven.com/a/fabric_leather_02, CC0 1.0 (Poly Haven, https://polyhaven.com/license), 0.5 m tile); fine_grained_wood (https://polyhaven.com/a/fine_grained_wood, CC0 1.0 (Poly Haven, https://polyhaven.com/license), 0.6000000238418579 m tile)), never shipped as files; no ComfyUI or TRELLIS run, no GPU job, no Leonardo call",
+  "regenerate": "node scripts/art/lib/polyhaven.mjs <work>/polyhaven; blender -b -P scripts/art/studio-kit/build_studio.bpy -- <repo-root> <work> studio-shelves; blender -b -P scripts/art/studio-kit/render_studio.bpy -- <repo-root> <work> studio-shelves; node scripts/art/studio-kit/write_manifest.mjs <work> studio-shelves",
   "framing": {
     "turn0": {
       "resolution": [
@@ -84,12 +196,12 @@
       "azimuth_deg": 25,
       "elevation_deg": 22,
       "margins": {
-        "left": 0.2042,
-        "right": 0.1979,
-        "bottom": 0.0646,
-        "top": 0.0833
+        "left": 0.2083,
+        "right": 0.2,
+        "bottom": 0.0667,
+        "top": 0.0938
       },
-      "min_margin": 0.0646,
+      "min_margin": 0.0667,
       "pass": true
     },
     "turn1": {
@@ -101,12 +213,12 @@
       "azimuth_deg": 115,
       "elevation_deg": 22,
       "margins": {
-        "left": 0.2938,
+        "left": 0.2979,
         "right": 0.3271,
-        "bottom": 0.0625,
-        "top": 0.1104
+        "bottom": 0.0646,
+        "top": 0.1167
       },
-      "min_margin": 0.0625,
+      "min_margin": 0.0646,
       "pass": true
     },
     "turn2": {
@@ -118,12 +230,12 @@
       "azimuth_deg": 205,
       "elevation_deg": 22,
       "margins": {
-        "left": 0.2042,
-        "right": 0.1979,
-        "bottom": 0.0646,
-        "top": 0.0833
+        "left": 0.2083,
+        "right": 0.2,
+        "bottom": 0.0667,
+        "top": 0.0938
       },
-      "min_margin": 0.0646,
+      "min_margin": 0.0667,
       "pass": true
     },
     "turn3": {
@@ -135,12 +247,12 @@
       "azimuth_deg": 295,
       "elevation_deg": 22,
       "margins": {
-        "left": 0.2938,
+        "left": 0.2979,
         "right": 0.3271,
-        "bottom": 0.0625,
-        "top": 0.1104
+        "bottom": 0.0646,
+        "top": 0.1188
       },
-      "min_margin": 0.0625,
+      "min_margin": 0.0646,
       "pass": true
     },
     "table-view": {
@@ -152,101 +264,13 @@
       "azimuth_deg": 0,
       "elevation_deg": 45,
       "margins": {
-        "left": 0.2219,
-        "right": 0.2219,
-        "bottom": 0.1313,
-        "top": 0.0687
+        "left": 0.225,
+        "right": 0.2266,
+        "bottom": 0.1333,
+        "top": 0.0792
       },
-      "min_margin": 0.0687,
+      "min_margin": 0.0792,
       "pass": true
     }
-  },
-  "file_bytes": {
-    "concept.png": 77661,
-    "evidence/table-view.jpg": 50904,
-    "evidence/turnaround.jpg": 137099,
-    "final.glb": 1239268,
-    "rejected/A.png": 72592,
-    "textures/shelf_board_stained_wood_basecolor.png": 53168,
-    "textures/shelf_board_stained_wood_normal.png": 50466,
-    "textures/shelf_board_stained_wood_orm.png": 47669,
-    "textures/shelf_book_kraft_basecolor.png": 84198,
-    "textures/shelf_book_kraft_normal.png": 66736,
-    "textures/shelf_book_kraft_orm.png": 64143,
-    "textures/shelf_book_tan_basecolor.png": 80765,
-    "textures/shelf_book_tan_normal.png": 66680,
-    "textures/shelf_book_tan_orm.png": 64105,
-    "textures/shelf_brass_bolt_basecolor.png": 79221,
-    "textures/shelf_brass_bolt_normal.png": 56400,
-    "textures/shelf_brass_bolt_orm.png": 52816,
-    "textures/shelf_frame_steel_basecolor.png": 70231,
-    "textures/shelf_frame_steel_normal.png": 56391,
-    "textures/shelf_frame_steel_orm.png": 56960,
-    "textures/shelf_scroll_paper_basecolor.png": 85306,
-    "textures/shelf_scroll_paper_normal.png": 66403,
-    "textures/shelf_scroll_paper_orm.png": 64776
-  },
-  "sha256": {
-    "concept.png": "d9f4f8a906287895b64686650355f61155a8927992390326fe65558212211a0b",
-    "evidence/table-view.jpg": "35ac8ea88649e0e641dd3702df41c2f133cfb7c0ae565c5f424623888affbdc4",
-    "evidence/turnaround.jpg": "de48760365c42add8c7877ea80bc0019924f40c81b741ee5367f6f990cf8c228",
-    "final.glb": "262a372a2046e48dd4d5be5b2ea3cf094b815329b48fedba29507441fa077db2",
-    "rejected/A.png": "244906f52cfd64fa6ed44f2da2f9b4d70de06d76973c3f325cb4bceb6b2c2012",
-    "textures/shelf_board_stained_wood_basecolor.png": "4a9b8abd4884ad0a4296c45aee677ce76ec9eade254a61b828daa73177b51f4c",
-    "textures/shelf_board_stained_wood_normal.png": "b424d6e1732f03adfb5d6cb6c0be2d00a92a013fb86ab13321178d8605758a72",
-    "textures/shelf_board_stained_wood_orm.png": "835a3e7f0801b982a53e36aed5ef9c2291bb3d2681bf56058e18d29728136e9c",
-    "textures/shelf_book_kraft_basecolor.png": "42ef92771a579eeb7124ffb3fca4bc69f2d30b814216c375ba321e897d8cb123",
-    "textures/shelf_book_kraft_normal.png": "f4bd05b5562b11323b84bf3f93c9023d060f98155ba92579255aa4f5bcc1f43c",
-    "textures/shelf_book_kraft_orm.png": "7c48a48db4d20381565d887c6fc737705474e03099af7b2a72281c68810b5c68",
-    "textures/shelf_book_tan_basecolor.png": "f8c60afa02ae810c27a6d55175029df3236fcce046c73e42b6960899e748f5f1",
-    "textures/shelf_book_tan_normal.png": "e5367dcfdde567e4d9f0037e36d15aa35610f697989896b36414f8b603bf9aad",
-    "textures/shelf_book_tan_orm.png": "abe63e3c180b3277a9c8bcc9e9444af8dabfcfba7c63a0bb5c79e8f72cdb7b08",
-    "textures/shelf_brass_bolt_basecolor.png": "5b938727367967675bebd53bc0d2c7b1cafe936661baa3932c433879f7c3823e",
-    "textures/shelf_brass_bolt_normal.png": "6f27d371951aea2e85dd899cabd9e2573633ac3c4339d2ba101d010363c7c7a4",
-    "textures/shelf_brass_bolt_orm.png": "d97838c613f75b567725e3854b6f444f3b4a5750f6d3462bdc634c7e438bab2b",
-    "textures/shelf_frame_steel_basecolor.png": "60088bb5be914d5ad11d0d93f8be808c536b5b5e2a48db313ec10b79e9bd5b96",
-    "textures/shelf_frame_steel_normal.png": "40bd1a73cf36cfcab7dc085e97a647169f24e6cb79ca82e60131ca05df229baa",
-    "textures/shelf_frame_steel_orm.png": "a9abb54e90efd1c0c38f139857d9bae89b628de924a3e3278edbc96838529314",
-    "textures/shelf_scroll_paper_basecolor.png": "68d58d61417987a907c9a56d202d6dd38cc301945273de99eb0fc9e53d29c4b3",
-    "textures/shelf_scroll_paper_normal.png": "967af57a2fb7342b972fbb766460f82c91e162d968bf8b0ccb2f2dc4181b2ee3",
-    "textures/shelf_scroll_paper_orm.png": "7db785170e5bba0ed7f8c385b112b47053ca09bb7b250162b390e1905b63ce2f"
-  },
-  "gates": {
-    "input": {
-      "pass": true,
-      "note": "B kept: wide and simple, books and roll sit clear of the frame. A also passes but its roll hides behind a post and it is taller and busier. Built procedurally instead of through TRELLIS (GPU held by the mage-arena run); concept.png is the shape reference.",
-      "date": "2026-10-21"
-    },
-    "mesh_acceptance": {
-      "pass": true,
-      "note": "re-imported from final.glb: 1 mesh object, 606 vertices, 1092 tris, 30 connected components, 0 floaters (a floater is a component whose bounding box touches no other), 0 open edges, signed volume 0.038687 m3 (positive: normals face out)",
-      "date": "2026-10-21"
-    },
-    "scale": {
-      "pass": true,
-      "note": "88 x 30.8 x 126.05 cm (x, y, z up) re-imported from final.glb, inside the planned envelope (a three-shelf open steel rack, 90 x 30 cm footprint, 125 cm tall: shelf boards at 12, 55 and 98 cm, books 26 cm tall); pivot: base centre 0, 0 m, floor at z = 0 m. Assumption: the sizes are Lynx choices from the concept; the UE world scale is still to be confirmed on Wolf.",
-      "date": "2026-10-21"
-    },
-    "finishing": {
-      "pass": true,
-      "note": "one UV set (1); 18 PBR PNGs (base colour, normal, ORM for 6 slots); every file under 10 MB (largest 1239268 bytes); 6 material slots (shelf_frame_steel, shelf_board_stained_wood, shelf_brass_bolt, shelf_book_kraft, shelf_book_tan, shelf_scroll_paper); evidence turnaround.jpg and table-view.jpg rendered with Cycles on the CPU, framing check passes on 5 images (min silhouette margin 0.0625 of the image, rule 0.03). Not claimed: any UE import.",
-      "date": "2026-10-21"
-    },
-    "poly_budget": {
-      "pass": true,
-      "note": "1092 tris against 24000 (5%)",
-      "date": "2026-10-21"
-    }
-  },
-  "import": {
-    "ue_path": "/Game/Bp/Art/StudioShelves/final/StaticMeshes/SM_StudioShelves",
-    "in_scene_tris": 2184,
-    "draw_calls": 6,
-    "nanite": false,
-    "placement": "StudioShelves and StudioShelves2 against the back wall at (234, -140, 0) and (234, -235, 0) cm, yaw -90; the two share their draws (dynamic instancing)",
-    "step": "apps/vr/tools/mcp-steps/l34-studio.jsonl (py/import_studio.py, py/studio_level.py)",
-    "date": "2026-10-24",
-    "host": "Lynx",
-    "note": "draw_calls = mesh sections, one draw each in the base pass and in the prepass. The whole slice with the studio at the target pose (run-bplink.mjs --mode game --xr-sim --exec \"BpView.Pose target\", CSV profiler, Lynx 2026-10-24): RHI/DrawCalls p50 144 and RHI/PrimitivesDrawn p50 77829, under the P4 gate's 150 and 350k"
   }
 }

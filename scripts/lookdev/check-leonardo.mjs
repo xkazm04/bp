@@ -18,7 +18,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import os from 'node:os';
-import { artFile, call, composePropPrompt, composePrompt, expectedCost, loggedFile, nightTotal, outFile, parseSize, redact, spendWindow, windowReport, withinCap } from './leonardo.mjs';
+import { artFile, call, composePropPrompt, composePrompt, expectedCost, loggedFile, nightTotal, outFile, parseSize, redact, refFile_, spendWindow, windowReport, withinCap } from './leonardo.mjs';
 
 let failed = 0, passed = 0;
 const check = (name, ok, detail = '') => { ok ? passed++ : failed++; console.log(`${ok ? 'ok  ' : 'FAIL'}  ${name}${ok || !detail ? '' : `  (${detail})`}`); };
@@ -61,12 +61,15 @@ for (const bad of ['../../../package.json', '..\\..\\x.png', 'explore/../../x.pn
 
 const style = JSON.parse(fs.readFileSync(path.join(DIR, 'style-block.json'), 'utf8'));
 const props = JSON.parse(fs.readFileSync(path.join(DIR, 'props.json'), 'utf8'));
-const expected = { 'lamp-agent': ['A', 'B', 'C', 'D'], 'studio-shelves': ['A', 'B'], 'studio-desk-lamp': ['A', 'B'], 'studio-mug': ['A', 'B'], 'studio-drawing-tubes': ['A', 'B'], 'studio-pinned-drawings': ['A', 'B'] };
+const expected = { 'lamp-agent': ['E', 'F', 'G', 'H'], 'studio-shelves': ['A', 'B'], 'studio-desk-lamp': ['A', 'B'], 'studio-mug': ['A', 'B'], 'studio-drawing-tubes': ['A', 'B'], 'studio-pinned-drawings': ['A', 'B'] };
 // `expected` is a hand-typed list and must stay one - a test that read props.json's variants to decide what props.json
 // should contain would assert nothing. What it may NOT do is quietly cover less than props.json holds, so the ground
-// truth (props.json's own keys) is reconciled against the two lists that have coverage: `expected`, and the
-// city-backdrop block further down, which is the only entry with its own `rules` and so needs its own assertions.
-const SHEET_PROPS = Object.keys(expected), RULES_PROPS = ['city-backdrop'];
+// truth (props.json's own keys) is reconciled against the lists that have coverage: `expected`, the city-backdrop
+// block further down, and SCENE_STRIPS below (the entries with their own `rules`, which need their own assertions).
+// The other rules-mode entries (2026-10-24 fidelity sprint images), each with its hand-typed variants: a scene strip or a
+// flat sheet whose own rules forbid any text, restating the palette, finish and never list like every prompt.
+const SCENE_STRIPS = { 'city-night': ['A', 'B'], 'wall-drawings': ['A', 'B', 'C', 'D'], 'paper-albedo': ['A'] };
+const SHEET_PROPS = Object.keys(expected), RULES_PROPS = ['city-backdrop', ...Object.keys(SCENE_STRIPS)];
 const uncovered = Object.keys(props.props).filter((id) => !SHEET_PROPS.includes(id) && !RULES_PROPS.includes(id));
 const vanished = [...SHEET_PROPS, ...RULES_PROPS].filter((id) => !(id in props.props));
 check(`prop: every one of the ${Object.keys(props.props).length} props.json entries has coverage here`, uncovered.length === 0, `no checks for: ${uncovered.join(', ')}`);
@@ -79,7 +82,7 @@ for (const [id, variants] of Object.entries(expected)) {
     const text = composePropPrompt(id, v);
     check(`prop: ${id} ${v} restates every palette colour`, style.palette.every((p) => text.includes(p.name) && p.hex.every((h) => text.includes(h))));
     check(`prop: ${id} ${v} restates finish, never list and materials`, text.includes(style.finish) && style.never.every((n) => text.includes(n)) && text.includes(props.props[id].materials));
-    check(`prop: ${id} ${v} is a TRELLIS sheet (one object, grey ground, no text) without scene framing`, text.includes(props.sheet) && /mid-grey/.test(text) && /no text/.test(text) && !text.includes(style.technique) && !text.includes(style.subjectLock));
+    check(`prop: ${id} ${v} is a TRELLIS sheet (one object, grey ground, no text) without scene framing`, text.includes(props.props[id].sheet ?? props.sheet) && /mid-grey/.test(text) && /no text/.test(text) && !text.includes(style.technique) && !text.includes(style.subjectLock));
   }
 }
 for (const v of ['A', 'B']) {
@@ -89,10 +92,22 @@ for (const v of ['A', 'B']) {
   check(`backdrop: city-backdrop ${v} asks for a wide dim skyline with no foreground, frame or text`, /wide/.test(rules) && /dim/.test(rules) && /no foreground/.test(rules) && /no window frame/.test(rules) && /no text/.test(rules) && /seamlessly/.test(rules));
   check(`backdrop: city-backdrop ${v} restates the palette, finish and never list`, style.palette.every((x) => text.includes(x.name) && x.hex.every((h) => text.includes(h))) && text.includes(style.finish) && style.never.every((n) => text.includes(n)));
 }
-check('backdrop: a sheet prop is unchanged by the rules field', composePropPrompt('lamp-agent', 'A').includes(`Sheet rules: ${props.sheet}`));
+for (const [id, variants] of Object.entries(SCENE_STRIPS)) {
+  check(`strip: ${id} has variants ${variants.join('')}`, JSON.stringify(Object.keys(props.props[id]?.variants ?? {})) === JSON.stringify(variants));
+  for (const v of variants) {
+    const text = composePropPrompt(id, v), rules = props.props[id].rules;
+    check(`strip: ${id} ${v} uses its own rules, no sheet rules, and forbids text`, text.includes(rules) && !text.includes(props.sheet) && !/Concept sheet|Sheet rules/.test(text) && /no text/.test(rules));
+    check(`strip: ${id} ${v} restates the palette, finish and never list`, style.palette.every((x) => text.includes(x.name) && x.hex.every((h) => text.includes(h))) && text.includes(style.finish) && style.never.every((n) => text.includes(n)));
+  }
+}
+check('backdrop: a sheet prop is unchanged by the rules field', composePropPrompt('studio-mug', 'A').includes(`Sheet rules: ${props.sheet}`));
+check('prop: a prop with its own sheet uses it in place of the shared one', composePropPrompt('lamp-agent', 'E').includes(`Sheet rules: ${props.props['lamp-agent'].sheet}`) && !composePropPrompt('lamp-agent', 'E').includes(props.sheet));
 check('size: the 2048x768 backdrop size parses', parseSize('2048x768').join() === '2048,768');
 check('prop: an unknown prop is refused', throws(() => composePropPrompt('nope', 'A')));
 check('prop: an unknown variant is refused', throws(() => composePropPrompt('lamp-agent', 'Z')));
+// --ref: a reference image is a png or jpg inside this checkout, named repo-relative; anything else stops before a call
+check('ref: the target concept (repo-relative jpg) is accepted', refFile_('docs/concepts/vr-light-table/target-light-table.jpg').replaceAll(path.sep, '/').endsWith('docs/concepts/vr-light-table/target-light-table.jpg'));
+for (const bad of ['../x.png', 'C:/Windows/x.png', 'package.json', 'docs/nope.png', '']) check(`ref: ${JSON.stringify(bad)} is refused`, throws(() => refFile_(bad)));
 check('prop: state composition is unchanged (still carries the scene framing)', composePrompt('00-hero', 'a').includes(style.technique));
 check('prop: --out lands under apps/vr/ArtSource', artFile('lamp-agent/options/A.png').replaceAll(path.sep, '/').endsWith('apps/vr/ArtSource/lamp-agent/options/A.png'));
 for (const bad of ['../x.png', '..\\x.png', 'C:/Windows/x.png', '']) check(`prop: --out ${JSON.stringify(bad)} is refused`, throws(() => artFile(bad)));

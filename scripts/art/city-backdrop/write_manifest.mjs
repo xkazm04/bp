@@ -1,6 +1,7 @@
 // Writes apps/vr/ArtSource/city-backdrop/manifest.json from the measured scores (build_backdrop.bpy -> score.json,
 // render_backdrop.bpy -> evidence.json), lookdev/log.jsonl and the files on disk. Gate results are derived from the measurements.
 //   node scripts/art/city-backdrop/write_manifest.mjs <work-dir> <source-frame.jpg>
+// The picked frame is the newest MEDIUM call of the backdrop props (city-backdrop, and city-night since 2026-10-24) in the log.
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -17,8 +18,9 @@ const { file_bytes: sizes, oversize } = inventory(folderDir(ROOT, 'city-backdrop
 
 const lines = fs.readFileSync(LOG, 'utf8').split('\n').filter(Boolean);
 const srcSha = shaOf(fs.readFileSync(srcJpg));
-const calls = lines.map((l, i) => ({ n: i + 1, e: JSON.parse(l) })).filter((x) => x.e.prop === 'city-backdrop');
-const picked = calls.find((x) => x.e.quality === 'MEDIUM');
+const PROPS = ['city-backdrop', 'city-night'];
+const calls = lines.map((l, i) => ({ n: i + 1, e: JSON.parse(l) })).filter((x) => PROPS.includes(x.e.prop) && x.e.status === 'COMPLETE');
+const picked = calls.filter((x) => x.e.quality === 'MEDIUM').at(-1);
 if (!picked) {
   // Without this the first use of `picked` is 30 lines below, after every file has been hashed, and it reads
   // "Cannot read properties of undefined (reading 'model')" - which names neither the log nor the filter.
@@ -56,7 +58,7 @@ const M = {
   meshes: { city_backdrop: { tris: S.tris, vertices: S.vertices, faces: S.faces, inward_faces: S.inward_faces } },
   uv_sets: S.uv_sets,
   pivot: 'the arc centre on the floor plane (the centre of the half circle, height 0). The arc lies on +Y in Blender (+Z in the GLB), behind a viewer at the near edge of the table. Put the pivot at the light table pivot; the panel bottom is 1.0 m below it so the horizon band sits near 1.4 m.',
-  scale_reasoning: 'No plan gives a window size (wolf-plan.md and plan.md only say "a matte panorama behind the windows"), so the panel is the fallback: a 180 degree arc. Radius 10 m (far enough that head motion has little parallax against a table of 1.2 x 0.8 m), 6 m tall. The strip shows rows 0.05 to 0.65 of the picture (the sky above and the dark ground below are cut), about 1.75 x 1.3 cm per texel. Wolf may rescale to the real windows.',
+  scale_reasoning: `No plan gives a window size (wolf-plan.md and plan.md only say "a matte panorama behind the windows"), so the panel is the fallback: a 180 degree arc. Radius 10 m (far enough that head motion has little parallax against a table of 1.2 x 0.8 m), 6 m tall. The panel shows rows ${S.panel.v_range[0]} to ${S.panel.v_range[1]} of the picture (UV v, bottom up; the empty sky above is cut), so the visible strip is ${T.size[0]} x ${Math.round(T.size[1] * (S.panel.v_range[1] - S.panel.v_range[0]))} px on an arc of 31.4 x 6 m. Wolf may rescale to the real windows.`,
   textures: `textures/city_backdrop_basecolor.png: ${T.size[0]} x ${T.size[1]} PNG, the wide matte strip. The picked frame's last ${T.seam_columns} columns are cross-faded into its first ${T.seam_columns}, so the right edge continues into the left (tileable horizontally; edge step ${T.seam_jump_after} against ${T.neighbour_step} for a typical neighbouring column pair, ${T.seam_jump_before} before the fade). Dimmed by a factor ${T.dim} in encoded sRGB (max luminance ${T.max_luminance_encoded}, 99th percentile ${T.p99_luminance_encoded}, mean ${T.mean_luminance_encoded}). Wire it as the emissive colour; no normal or ORM map (a matte painting has no surface).`,
   generator: {
     tool: 'Leonardo API',
@@ -65,7 +67,7 @@ const M = {
     size: `${picked.e.width}x${picked.e.height}`,
     seed: picked.e.seed,
     variant: picked.e.variant,
-    prop: 'city-backdrop (docs/concepts/vr-light-table/lookdev/props.json, "rules" mode)',
+    prop: `${picked.e.prop} (docs/concepts/vr-light-table/lookdev/props.json, "rules" mode)`,
     prompt: picked.e.prompt,
     log_line: `docs/concepts/vr-light-table/lookdev/log.jsonl line ${picked.n}`,
     generation_id: picked.e.generationId,
@@ -75,11 +77,11 @@ const M = {
     trial_calls: calls.map((x) => ({ log_line: x.n, variant: x.e.variant, seed: x.e.seed, quality: x.e.quality, size: `${x.e.width}x${x.e.height}`, credits: x.e.credits, status: x.e.status, picked: x === picked })),
   },
   blender: 'Blender 5.2.2, scripts/art/city-backdrop/build_backdrop.bpy (concept, strip, panel and score), render_backdrop.bpy (evidence), write_manifest.mjs',
-  licence: "Leonardo API output, generated 2026-10-21 on the owner's Leonardo account with public:false. Shipping it rests on the Director's ruling for the operator of 2026-10-21 (Leonardo for the backdrop, because FLUX.2 [klein] is not installed and will not be; wolf-plan.md R8, tech-stack.md section 5). The post-processing (seam fade, dim, mesh) is our own work. Check the Leonardo terms of service for commercial use before a public release.",
-  regenerate: 'node scripts/lookdev/leonardo.mjs gen --prop city-backdrop --variant A --seed 3 --quality MEDIUM --size 2048x768 --stop-at 200 (spends credits); blender -b -P scripts/art/city-backdrop/build_backdrop.bpy -- <repo-root> <work> <frame.jpg>; blender -b -P scripts/art/city-backdrop/render_backdrop.bpy -- <repo-root> <work>; node scripts/art/city-backdrop/write_manifest.mjs <work> <frame.jpg>',
+  licence: `Leonardo API output, generated ${picked.e.time.slice(0, 10)} on the owner's Leonardo account with public:false. Shipping it rests on the Director's ruling for the operator of 2026-10-21 (Leonardo for the backdrop, because FLUX.2 [klein] is not installed and will not be; wolf-plan.md R8, tech-stack.md section 5). The post-processing (seam fade, dim, mesh) is our own work. Check the Leonardo terms of service for commercial use before a public release.`,
+  regenerate: `node scripts/lookdev/leonardo.mjs gen --prop ${picked.e.prop} --variant ${picked.e.variant} --seed ${picked.e.seed} --quality ${picked.e.quality} --size ${picked.e.width}x${picked.e.height} (spends credits); blender -b -P scripts/art/city-backdrop/build_backdrop.bpy -- <repo-root> <work> <frame.jpg> ${T.dim} ${S.panel.v_range[0]} ${S.panel.v_range[1]}; blender -b -P scripts/art/city-backdrop/render_backdrop.bpy -- <repo-root> <work>; node scripts/art/city-backdrop/write_manifest.mjs <work> <frame.jpg>`,
   evidence_stats: E,
   gates: {
-    input: gate(true, `Leonardo ${picked.e.model}, ${pickedSize} (the model accepts wide sizes; log line ${picked.n}), picked from ${calls.length} frames (${trialMix}, 1 ${picked.e.quality} at ${picked.e.credits}). The prompt uses the backdrop rules (wide night skyline from a high studio window, low contrast, dim, no foreground, no window frame, no text or logos, seamless horizon band) and restates the style block palette and finish. The picked frame is a dim blueprint-blue night skyline with sparse amber window lights, no frame and no text, like the city seen through the windows in lookdev/00-hero.jpg.`),
+    input: gate(true, `Leonardo ${picked.e.model}, ${pickedSize} (the model accepts wide sizes; log line ${picked.n}), picked from ${calls.length} frames (${trialMix}, 1 ${picked.e.quality} at ${picked.e.credits}). The prompt uses the ${picked.e.prop} rules (props.json: a wide night city from a high studio, no foreground, no window frame or mullions, no text, signs or logos, a skyline band that continues at both edges) and restates the style block palette and finish. ${picked.e.prop === 'city-night' ? 'The picked frame (2026-10-24, fidelity sprint) is a dense blue night city of towers with many small warm and cool window lights, no frame and no readable text; it replaces the dim, sparse 2026-10-21 frame that read too dark (r5, element 14).' : 'The picked frame is a dim blueprint-blue night skyline with sparse amber window lights, no frame and no text, like the city seen through the windows in lookdev/00-hero.jpg.'}`),
     mesh_acceptance: gate(meshOk, `trivial for a matte panel (no generated mesh): re-imported from final.glb, ${S.mesh_objects} mesh object, ${S.vertices} vertices, ${S.tris} tris, ${S.inward_faces} of ${S.faces} faces point at the arc centre, ${S.uv_sets} UV set, one emissive-only slot (${S.materials[0]}); no floaters or holes by construction (one strip of quads).`),
     scale: gate(arcOk, `fallback scale (no window size in wolf-plan.md or plan.md): a ${S.panel.arc_deg} degree arc (measured ${S.arc_deg[0]} to ${S.arc_deg[1]}), radius ${S.radius_m[0]} m, ${S.panel.z_m[1] - S.panel.z_m[0]} m tall, pivot at the arc centre on the floor. Wolf confirms against the real window layout.`),
     finishing: gate(tileOk && dimOk && oversize.length === 0, `strip ${T.size[0]} x ${T.size[1]} PNG, edge-matched (edge step ${T.seam_jump_after} against ${T.neighbour_step} typical, ${T.seam_jump_before} before the fade); dimmed x${T.dim} (strip max luminance ${T.max_luminance_encoded}); in the evidence render the backdrop's brightest pixel is ${E.backdrop_max_display} display luminance and the table's edge strip clips at ${E.table_view_max_display}, so the backdrop does not outshine the strip; every file under 10 MB (largest ${Math.max(...Object.values(sizes))} bytes); evidence rendered with Cycles on the CPU. Not claimed: any UE import.`),

@@ -1,6 +1,7 @@
 // Runs the lamp TRELLIS.2 job on the local ComfyUI (one job at a time, waits for an empty queue first).
-//   node scripts/art/lamp/trellis_run.mjs <seed> [target_face_count]
-// Input: apps/vr/ArtSource/lamp-agent/options/A.png. Workflow: lynx-bench media/3d-trellis-api.json with the decimate
+//   node scripts/art/lamp/trellis_run.mjs <seed> [target_face_count] [input image, repo-relative]
+// Input: the image named, or else the lamp-agent manifest's picked concept option (options/<picked>.png; it was options/A.png
+// for the 2026-10-21 desk lamp). Since 2026-10-24 the shipped lamp agent is a scripted build; this stays as the image-to-3D tool. Workflow: lynx-bench media/3d-trellis-api.json with the decimate
 // target lowered (DecimateMesh runs before UnwrapMesh and BakeTextureFromVoxel in that graph). Output GLB is copied to
 // lynx-bench/bp/lamp-agent/raw_seed<seed>.glb (outside the repo).
 import fs from 'node:fs';
@@ -34,7 +35,11 @@ for (;;) {
   await sleep(60000);
 }
 fs.mkdirSync(OUT, { recursive: true });
-const img = fs.readFileSync(path.join(ROOT, 'apps/vr/ArtSource/lamp-agent/options/A.png'));
+const LAMP = path.join(ROOT, 'apps', 'vr', 'ArtSource', 'lamp-agent');
+const picked = (() => { try { const m = JSON.parse(fs.readFileSync(path.join(LAMP, 'manifest.json'), 'utf8')); return (m.generator_options ?? []).find((g) => g.option === m.picked)?.file; } catch { return null; } })();
+const input = process.argv[4] ? path.join(ROOT, process.argv[4]) : picked ? path.join(LAMP, picked) : null;
+if (!input || !fs.existsSync(input)) { console.error(`input image not found: ${input ?? '(no picked option in the lamp-agent manifest)'}; pass one, repo-relative, as the third argument`); process.exit(2); }
+const img = fs.readFileSync(input);
 const fd = new FormData();
 fd.append('image', new Blob([img], { type: 'image/png' }), 'bp_lamp_A.png');
 fd.append('overwrite', 'true');

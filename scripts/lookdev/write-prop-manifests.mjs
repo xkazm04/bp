@@ -27,13 +27,17 @@ const gen = (prop, variant, seed, file) => {
 const ifOwned = (input) => ({ gates: { input } });
 const defaults = { gates: { mesh_acceptance: notRun, scale: notRun, finishing: notRun, poly_budget: notRun } };
 
+// The lamp agent's concept was redone on 2026-10-24 (props.json lamp-agent.brief_note): a turnaround of the target's white
+// robot lamp character, H against the target crop and the other views against H (or E). Options are named <variant>-s<seed>.
+const LAMP_OPTIONS = [['H', 41], ['E', 41], ['F', 42], ['G', 41], ['G', 42]];
 const lamp = () => writeStage(ROOT, 'lamp-agent', 'concept', {
-  id: 'lamp-agent', class: 'character-prop', budget_tris: 30000,
-  generator_options: ['A', 'B', 'C', 'D'].map((v) => gen('lamp-agent', v, 11, `options/${v}.png`)),
-  contact_sheet: 'options/contact.png, built by scripts/lookdev/contact-sheet.ps1 (labels in the margin only)',
-  option_input_check: 'All four first-seed images pass the sheet rules (one object, whole, plain grey ground, readable silhouette, no text, no claw, no legs, no face), so no second seed was made. A and C show a coil spring and a dome shade; B a pantograph disc; D a box shade with a counterweight.',
-  concept_licence: LICENCE,
-}, { ifOwned: ifOwned({ pass: false, note: 'awaiting owner design pick among A-D' }), defaults });
+  id: 'lamp-agent', class: 'character-prop', budget_tris: 15000,
+  budget_note: 'fidelity sprint brief (2026-10-24): the lamp agent at no more than 15k tris; plan.md P4 gave 30000',
+  generator_options: LAMP_OPTIONS.map(([v, seed]) => ({ ...gen('lamp-agent', v, seed, `options/${v}-s${seed}.png`), option: `${v}-s${seed}`, reference: lineOf('lamp-agent', v, seed).e.reference })),
+  contact_sheet: 'none: evidence/target-compare.jpg sets the target crop beside the build, which is the comparison that decides',
+  option_input_check: 'H-s41 (front three-quarter, referenced on reference/target-crop.png) matches the target figure: hood head with a glowing orb, tapered cone body with the amber slit and pin, two jointed capsule arms ending in wire loops, one arm reaching sideways and one hanging. E-s41 is the clean front view. F-s42 and G-s41 came back as multi-view sheets on a blue ground (they break the grey-ground rule but give the side and back silhouettes); G-s42 is the profile. F-s41 (log) was paid for but its download failed, so it has no file. The figure is about 15 rounded primitives, so the views are modelling reference for a scripted build, not image-to-3D input.',
+  concept_licence: 'Leonardo API output (rights assigned to the account holder, public:false); modelling reference only, no generated pixels or geometry are shipped; the target crop is cut from docs/concepts/vr-light-table/target-light-table.jpg',
+}, { ifOwned: ifOwned({ pass: false, note: 'awaiting a pick among the 2026-10-24 turnaround' }), defaults });
 
 // plan.md P4: studio kit 80k total, split 24k + 16k + 8k + 20k + 12k.
 const kit = {

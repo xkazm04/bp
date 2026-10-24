@@ -1,0 +1,249 @@
+# Blender script; run with blender -b -P scripts/art/studio-kit/render_context.bpy -- <repo-root> <out-dir> <asset-id | set> [<concept.jpg>]
+"""Judges finished props IN CONTEXT (spark vr-fidelity-40; r2 rule 3: a grey studio flatters nothing). EEVEE on the GPU,
+under a rig that matches the UE studio (apps/vr/tools/mcp-steps/py/level_lighttable.py and studio_level.py): near-black
+blue walls (#0A0F18), a cool white-cyan light from the table (#BFE8FF), a warm practical (#FFB547), a grey-blue room fill
+and a sky at near zero. Like the UE scene, no light casts a shadow and there is no screen-space AO: what grounds a prop
+is what its own bake carries.
+  <asset-id>  one prop from apps/vr/ArtSource/<asset-id>/final.glb, three-quarter front view: <out-dir>/<asset-id>-ctx.png,
+              and <asset-id>-vs.png, the render beside its crop of the concept when <concept.jpg> is given
+  set         every studio prop, the table frame and the city backdrop placed as studio_level.py places them, from the
+              target pose (BpView.Pose target: eye 75 cm behind the table centre, 43 cm above the top, pitch -31, 90 degree
+              horizontal FOV, 1600 x 900): <out-dir>/set.png and set-vs.png beside the concept.
+UE to Blender: a UE point (x, y, z) cm is Blender (x, -y, z) / 100 m; an imported GLB placed with UE yaw `a` turns by
+180 - a degrees about Blender Z (the GLB's Blender -Y lands on UE -Y through Interchange, studio_level.py)."""
+import bpy, math, os, sys
+import numpy as np
+from mathutils import Vector, Euler
+
+ARGS = sys.argv[sys.argv.index('--') + 1:]
+REPO, OUT, WHAT = ARGS[:3]
+CONCEPT = ARGS[3] if len(ARGS) > 3 else None
+ART = os.path.join(REPO, 'apps', 'vr', 'ArtSource')
+os.makedirs(OUT, exist_ok=True)
+
+# Concept crops (x0, y0, x1, y1 in target-light-table.jpg, 1376 x 768) that show each element.
+CROPS = {
+    'studio-shelves': (0, 0, 470, 250), 'studio-pinned-drawings': (0, 0, 280, 160), 'studio-desk-lamp': (0, 60, 160, 200),
+    'studio-mug': (1210, 160, 1376, 290), 'studio-drawing-tubes': (1250, 230, 1376, 360), 'light-table-frame': (0, 200, 520, 768),
+    'fixture-kit': (600, 300, 960, 520), 'survey-pin': (980, 280, 1230, 450), 'set': (0, 0, 1376, 768),
+}
+
+
+def lin(h):
+    c = [int(h[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    return tuple((x / 12.92 if x <= 0.04045 else ((x + 0.055) / 1.055) ** 2.4) for x in c)
+
+
+def flat(name, hexc, rough=0.7, emit=None, strength=1.0):
+    m = bpy.data.materials.new(name)
+    b = m.node_tree.nodes['Principled BSDF']
+    b.inputs['Base Color'].default_value = (*lin(hexc), 1)
+    b.inputs['Roughness'].default_value = rough
+    if emit:
+        b.inputs['Emission Color'].default_value = (*lin(emit), 1)
+        b.inputs['Emission Strength'].default_value = strength
+    return m
+
+
+def box(x0, x1, y0, y1, z0, z1, mat):
+    bpy.ops.mesh.primitive_cube_add(size=1, location=((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2))
+    o = bpy.context.object
+    o.scale = (x1 - x0, y1 - y0, z1 - z0)
+    o.data.materials.append(mat)
+    return o
+
+
+def light(kind, loc, watts, hexc, size=0.1, aim=None, spot_deg=None):
+    bpy.ops.object.light_add(type=kind, location=loc)
+    L = bpy.context.object
+    L.data.energy = watts
+    L.data.color = lin(hexc)
+    L.data.use_shadow = False
+    if kind == 'AREA':
+        L.data.size = size
+    elif kind in ('POINT', 'SPOT'):
+        L.data.shadow_soft_size = size
+    if spot_deg:
+        L.data.spot_size = math.radians(spot_deg)
+        L.data.spot_blend = 0.5
+    if aim is not None:
+        L.rotation_euler = (Vector(aim) - Vector(loc)).to_track_quat('-Z', 'Y').to_euler()
+    return L
+
+
+def glb(asset, loc=(0, 0, 0), ue_yaw=None, rot_z=0.0):
+    before = set(bpy.data.objects)
+    bpy.ops.import_scene.gltf(filepath=os.path.join(ART, asset, 'final.glb'))
+    new = [o for o in bpy.data.objects if o not in before]
+    roots = [o for o in new if o.parent is None]
+    for o in roots:
+        o.rotation_mode = 'XYZ'                              # the glTF importer leaves quaternion mode on
+        o.location = loc
+        o.rotation_euler = (0, 0, math.radians(180 - ue_yaw) if ue_yaw is not None else rot_z)
+    return new
+
+
+def scene_setup(res):
+    S = bpy.context.scene
+    S.render.engine = 'BLENDER_EEVEE'
+    S.eevee.taa_render_samples = 64
+    S.render.resolution_x, S.render.resolution_y = res
+    S.render.resolution_percentage = 100
+    S.view_settings.view_transform = 'AgX'
+    S.view_settings.look = 'AgX - Medium High Contrast'
+    w = bpy.data.worlds.new('w')
+    w.use_nodes = True
+    w.node_tree.nodes['Background'].inputs['Color'].default_value = (*lin('#0A0F18'), 1)
+    w.node_tree.nodes['Background'].inputs['Strength'].default_value = 0.15
+    S.world = w
+    return S
+
+
+def camera(loc, rot, hfov_deg=None, lens=None):
+    bpy.ops.object.camera_add(location=loc, rotation=rot)
+    cam = bpy.context.object
+    cam.data.sensor_fit = 'HORIZONTAL'
+    if hfov_deg:
+        cam.data.angle = math.radians(hfov_deg)
+    if lens:
+        cam.data.lens = lens
+    bpy.context.scene.camera = cam
+    return cam
+
+
+def render(path):
+    S = bpy.context.scene
+    S.render.image_settings.file_format = 'PNG'
+    S.render.filepath = path
+    bpy.ops.render.render(write_still=True)
+
+
+def pixels(path):
+    img = bpy.data.images.load(path)
+    w, h = img.size
+    a = np.empty(w * h * 4, dtype=np.float32)
+    img.pixels.foreach_get(a)
+    bpy.data.images.remove(img)
+    return a.reshape(h, w, 4)[:, :, :3]
+
+
+def resize(a, h):
+    """Nearest-neighbour resample to height h (aspect kept)."""
+    ys = (np.arange(h) * a.shape[0] / h).astype(int)
+    w = int(round(a.shape[1] * h / a.shape[0]))
+    xs = (np.arange(w) * a.shape[1] / w).astype(int)
+    return a[ys][:, xs]
+
+
+def side_by_side(render_png, crop, out_png):
+    """The render (left) beside the concept crop (right), both at the render's height. Concept pixels arrive sRGB-encoded
+    and so does the PNG render, so both are compared as stored."""
+    r = pixels(render_png)
+    c = pixels(CONCEPT)
+    H = c.shape[0]
+    x0, y0, x1, y1 = crop
+    c = c[H - y1:H - y0, x0:x1]                 # Blender rows are bottom-up
+    c = resize(c, r.shape[0])
+    gap = np.full((r.shape[0], 8, 3), 0.5, dtype=np.float32)
+    s = np.hstack([r, gap, c])
+    img = bpy.data.images.new('sbs', s.shape[1], s.shape[0])
+    rgba = np.ones((s.shape[0], s.shape[1], 4), dtype=np.float32)
+    rgba[:, :, :3] = s
+    img.pixels.foreach_set(rgba.ravel())
+    img.filepath_raw = out_png
+    img.file_format = 'PNG'
+    img.save()
+
+
+bpy.ops.wm.read_factory_settings(use_empty=True)
+WALL = flat('studio_shell', '#0A0F18', 0.7)
+DESK = flat('studio_desk', '#14110F', 0.5)
+
+if WHAT == 'set':
+    S = scene_setup((1600, 900))
+    X0, X1, Y0, Y1, H, T = -2.5, 2.5, -3.0, 3.0, 3.0, 0.1
+    box(X0 - T, X1 + T, Y0 - T, Y1 + T, -T, 0, WALL)
+    box(X0 - T, X1 + T, Y0 - T, Y1 + T, H, H + T, WALL)
+    box(X0 - T, X0, Y0, Y1, 0, H, WALL)
+    box(X0 - T, X1 + T, Y0 - T, Y0, 0, H, WALL)
+    box(X0 - T, X1 + T, Y1, Y1 + T, 0, H, WALL)
+    wy0, wy1, wz0, wz1 = -1.9, -0.4, 0.2, 2.8             # the window: UE y 40..190 cm is Blender -1.9..-0.4 m
+    box(X1, X1 + T, Y0, wy0, 0, H, WALL)
+    box(X1, X1 + T, wy1, Y1, 0, H, WALL)
+    box(X1, X1 + T, wy0, wy1, 0, wz0, WALL)
+    box(X1, X1 + T, wy0, wy1, wz1, H, WALL)
+    box(X1, X1 + 0.05, -1.175, -1.125, wz0, wz1, WALL)
+    box(X1, X1 + 0.05, wy0, wy1, 1.975, 2.025, WALL)
+    for cx, cy, sx, sy, top in ((0.95, -1.5, 0.6, 1.1, 0.75), (1.0, 1.5, 0.6, 1.1, 0.75)):     # side desks, UE y flipped
+        y = -cy
+        box(cx - sx / 2, cx + sx / 2, y - sy / 2, y + sy / 2, top - 0.04, top, DESK)
+        for e in (y - sy / 2, y + sy / 2 - 0.04):
+            box(cx - sx / 2 + 0.03, cx + sx / 2 - 0.03, e, e + 0.04, 0, top - 0.04, DESK)
+    # the table: the frame (its 1.80 m length on Blender X, turned to UE Y) and the lit paper in its opening
+    glb('light-table-frame', (0, 0, 0), rot_z=math.radians(90))
+    clear = bpy.data.materials.new('glass_clear')               # UE replaces the placeholder slot with its own glass and paper
+    clear.node_tree.nodes.clear()
+    out = clear.node_tree.nodes.new('ShaderNodeOutputMaterial')
+    clear.node_tree.links.new(clear.node_tree.nodes.new('ShaderNodeBsdfTransparent').outputs[0], out.inputs['Surface'])
+    for o in bpy.data.objects:
+        if o.type == 'MESH':
+            for i, m in enumerate(o.data.materials):
+                if m and m.name.startswith('frame_glass_placeholder'):
+                    o.data.materials[i] = clear
+    paper = flat('paper_glow', '#000000', 0.9, emit='#163C9A', strength=0.9)      # lit from inside only, as the UE sheet is
+    bpy.ops.mesh.primitive_plane_add(size=1, location=(0, 0, 0.941))
+    p = bpy.context.object
+    p.scale = (0.76, 1.66, 1)
+    p.data.materials.append(paper)
+    glb('city-backdrop', (0, 0, 0), ue_yaw=90.0)
+    # props: (asset, UE location cm, UE yaw), as studio_level.py PROPS
+    for asset, (x, y, z), yaw in (('studio-shelves', (234.0, -140.0, 0.0), -90.0), ('studio-shelves', (234.0, -235.0, 0.0), -90.0),
+                                  ('studio-pinned-drawings', (247.0, -40.0, 80.0), 90.0), ('studio-desk-lamp', (105.0, -115.0, 75.0), 150.0),
+                                  ('studio-drawing-tubes', (115.0, 180.0, 75.0), 0.0), ('studio-mug', (85.0, 115.0, 75.0), 200.0)):
+        glb(asset, (x / 100, -y / 100, z / 100), ue_yaw=yaw)
+    # lights (UE cd -> Blender W at 0.25 W per cd, tuned once against captures/l34-wp5-target.jpg)
+    K = 0.25
+    light('AREA', (0, 0, 0.90), 120 * K * 6, '#BFE8FF', size=1.6, aim=(0, 0, 3))                      # TableUnderLight through the glass
+    light('SPOT', (-0.2, 0, 2.6), 140 * K * 4, '#F4FAFF', size=0.2, aim=(-0.2, 0, 0), spot_deg=70)       # FrameFill
+    light('POINT', (1.23, 1.10, 1.05), 20 * K * 4, '#FFB547', size=0.03)                                 # LampPractical on the desk lamp
+    light('POINT', (1.3, 0.0, 2.1), 40 * K * 4, '#96A5BE', size=0.3)                                    # RoomFill
+    light('SPOT', (3.1, 1.15, 2.6), 40 * K * 4, '#5A7DC8', size=0.3, aim=(1.5, 1.15, 0.5), spot_deg=90)  # WindowSpill
+    # BpView.Pose target: eye (-75, 0, 138) cm, pitch -31, yaw 0 (towards +X), hfov 90
+    camera((-0.75, 0, 1.38), (math.radians(90 - 31), 0, math.radians(-90)), hfov_deg=90)
+    out = os.path.join(OUT, 'set.png')
+    render(out)
+    if CONCEPT:
+        side_by_side(out, CROPS['set'], os.path.join(OUT, 'set-vs.png'))
+else:
+    S = scene_setup((960, 720))
+    objs = [o for o in glb(WHAT) if o.type == 'MESH']
+    if WHAT == 'fixture-kit':                              # the five glyphs sit at the origin in the file: lay them out in a row
+        for i, o in enumerate(sorted(objs, key=lambda o: o.name)):
+            o.location = ((i - 2) * 0.05, 0, 0)
+        bpy.context.view_layer.update()
+    lo = Vector((min((o.matrix_world @ Vector(c))[i] for o in objs for c in o.bound_box) for i in range(3)))
+    hi = Vector((max((o.matrix_world @ Vector(c))[i] for o in objs for c in o.bound_box) for i in range(3)))
+    size = hi - lo
+    D = max(size.x, size.z, 0.08)
+    wall_y = hi.y + 0.002
+    on_wall = WHAT == 'studio-pinned-drawings'
+    floor_m = DESK if WHAT in ('studio-desk-lamp', 'studio-mug', 'studio-drawing-tubes') else WALL
+    if WHAT in ('fixture-kit', 'survey-pin'):                # they stand on the lit blueprint sheet
+        floor_m = flat('sheet', '#123A8C', 0.6, emit='#1C46A8', strength=0.6)
+    box(-20, 20, -20, 20, -0.05, 0, floor_m)
+    box(-20, 20, wall_y, wall_y + 0.05, -1, 20, WALL)
+    c = (lo + hi) / 2
+    # the table is in front and below: a broad cool panel facing the prop; a warm practical to one side; a dim fill
+    light('AREA', (c.x, lo.y - 1.6 * D - 0.4, max(0.1, c.z - 0.25 * D)), 60 * D * D + 4, '#BFE8FF', size=1.2 * D + 0.3, aim=(c.x, c.y, c.z))
+    light('POINT', (lo.x - 0.6 * D, lo.y - 0.4 * D, c.z + 0.5 * D), 8 * D * D + 0.6, '#FFB547', size=0.03)
+    light('POINT', (c.x + D, lo.y - D, hi.z + D), 6 * D * D + 0.4, '#96A5BE', size=0.3)
+    az, el = math.radians(-28), math.radians(12 if not on_wall else 4)
+    dist = D * 2.3 + 0.05
+    loc = c + Vector((math.sin(az) * math.cos(el), -math.cos(az) * math.cos(el), math.sin(el))) * dist
+    cam = camera(loc, (0, 0, 0), lens=50)
+    cam.rotation_euler = (c - loc).to_track_quat('-Z', 'Y').to_euler()
+    out = os.path.join(OUT, WHAT + '-ctx.png')
+    render(out)
+    if CONCEPT:
+        side_by_side(out, CROPS.get(WHAT, CROPS['set']), os.path.join(OUT, WHAT + '-vs.png'))
+print('CONTEXT OK', WHAT)

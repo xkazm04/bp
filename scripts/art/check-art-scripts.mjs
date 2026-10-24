@@ -95,7 +95,8 @@ function runWriter(env, ids = ['survey-pin', 'fixture-kit'], commit = true) {
 // A literal drive path runs on one machine only. Comments are blanked to spaces first (line numbers stay true, and a
 // header that merely TALKS about a path cannot satisfy or trip the match). The one allowed use is provenance: the lamp
 // manifest records where its raw TRELLIS output lived, as a string it writes into the manifest, not a path it opens.
-const PROVENANCE_ONLY = new Set(['lamp/write_manifest.mjs']);
+// (The lamp writer that needed it recorded raw TRELLIS paths; the scripted build of 2026-10-24 records none, so it is empty.)
+const PROVENANCE_ONLY = new Set([]);
 const blankComments = (src) => src
   .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\r\n]/g, ' '))
   .split('\n').map((l) => l.replace(/(^|[^:'"\w])(\/\/.*)$/, (_, a, c) => a + ' '.repeat(c.length))).join('\n');
@@ -110,8 +111,7 @@ const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e
     });
   }
   check('paths: no scripts/art script (but the provenance writer) names an absolute machine path', hits.length === 0, hits.join(' | '));
-  const prov = blankComments(fs.readFileSync(path.join(HERE, 'lamp', 'write_manifest.mjs'), 'utf8'));
-  check('paths: the allow-list is still needed (lamp/write_manifest.mjs still records its provenance paths)', /['"`][A-Za-z]:[\/]/.test(prov));
+  check('paths: the allow-list is empty (no writer records a machine path any more)', PROVENANCE_ONLY.size === 0);
 }
 
 // ---- the staged record: scripts/art/lib/manifest-kit.mjs (stage-*, kit-*, usage, census) ---------------------------
@@ -143,7 +143,9 @@ const { validate } = await import(pathToFileURL(path.join(REPO, 'scripts', 'chec
 const OPTIONS = ['A', 'B', 'C', 'D'];
 const LAMP = `${ART_REL}/lamp-agent/manifest.json`;
 const lampFiles = Object.fromEntries([...OPTIONS.map((v) => `options/${v}.png`), 'options/contact.png', 'final.fbx'].map((f) => [`${ART_REL}/lamp-agent/${f}`, `stub ${f}`]));
-const logFixture = OPTIONS.map((v) => JSON.stringify({ prop: 'lamp-agent', variant: v, seed: 11, model: 'stub-model', quality: 'MEDIUM', width: 1024, height: 1024, credits: 10, generationId: `gen-${v}` })).join('\n') + '\n';
+// the concept writer's lamp options since the 2026-10-24 turnaround: <variant>-s<seed>, as LAMP_OPTIONS in write-prop-manifests.mjs
+const CONCEPT_OPTIONS = [['H', 41], ['E', 41], ['F', 42], ['G', 41], ['G', 42]];
+const logFixture = CONCEPT_OPTIONS.map(([v, seed]) => JSON.stringify({ prop: 'lamp-agent', variant: v, seed, model: 'stub-model', quality: 'MEDIUM', width: 1024, height: 1024, credits: 16, generationId: `gen-${v}-s${seed}`, reference: 'stub/ref.png' })).join('\n') + '\n';
 const passed = (note) => ({ pass: true, note, date: '2026-10-21' });
 const notRun = { pass: false, note: 'not run' };
 {
@@ -163,8 +165,8 @@ const notRun = { pass: false, note: 'not run' };
     check('stage-concept: rig, picked and all five gates are deep-equal to before (the decision and build stages survive)',
       m && isDeepStrictEqual(m.rig, builtLamp.rig) && m.picked === 'A' && isDeepStrictEqual(m.gates, builtLamp.gates),
       m ? `picked ${m.picked}, input ${JSON.stringify(m.gates?.input)}, rig ${m.rig ? 'kept' : 'gone'}` : 'no manifest');
-    check('stage-concept: the concept fields are refreshed (generator_options A-D from the log, contact_sheet rewritten)',
-      m && Array.isArray(m.generator_options) && m.generator_options.map((g) => g.option).join('') === 'ABCD' && m.generator_options.every((g) => g.generationId === `gen-${g.option}`) && m.contact_sheet !== 'old sheet',
+    check('stage-concept: the concept fields are refreshed (generator_options H-s41 to G-s42 from the log, contact_sheet rewritten)',
+      m && Array.isArray(m.generator_options) && m.generator_options.map((g) => g.option).join(',') === CONCEPT_OPTIONS.map(([v, seed]) => `${v}-s${seed}`).join(',') && m.generator_options.every((g) => g.generationId === `gen-${g.option}`) && m.contact_sheet !== 'old sheet',
       m ? `generator_options ${JSON.stringify(m.generator_options?.map?.((g) => g.option))}, contact_sheet ${JSON.stringify(m.contact_sheet)}` : 'no manifest');
   } finally { s.done(); }
 }
@@ -284,7 +286,10 @@ const notRun = { pass: false, note: 'not run' };
   for (const d of declared) if (!folders.includes(d)) bad.push(`${d} is declared but has no folder`);
   check(`entry-points: ${folders.length} of ${folders.length} ArtSource folders are declared, and the declaration matches each manifest's regenerate field`, folders.length >= 14 && bad.length === 0, bad.join(' | ') || `${declared.length} declared`);
   const live = Object.values(ENTRY_POINTS ?? {}).flatMap((e) => Object.keys(e.live ?? {}));
-  check('entry-points: the scripts that submit work or spend credits are flagged live (leonardo.mjs, trellis_run.mjs)', ['scripts/lookdev/leonardo.mjs', 'scripts/art/lamp/trellis_run.mjs'].every((s) => live.includes(s)), `live: ${live.join(', ')}`);
+  // trellis_run.mjs (a GPU job) is no folder's entry point since the lamp agent became a scripted build (2026-10-24);
+  // wherever a folder declares it again, it must be flagged live like leonardo.mjs.
+  const declaredAll = Object.values(ENTRY_POINTS ?? {}).flatMap((e) => e.scripts);
+  check('entry-points: the scripts that submit work or spend credits are flagged live wherever declared (leonardo.mjs, trellis_run.mjs)', live.includes('scripts/lookdev/leonardo.mjs') && ['scripts/lookdev/leonardo.mjs', 'scripts/art/lamp/trellis_run.mjs'].every((s) => !declaredAll.includes(s) || live.includes(s)), `live: ${live.join(', ')}`);
 }
 
 // ---- trellis_run.mjs against a stub ComfyUI on loopback -------------------------------------------------------------

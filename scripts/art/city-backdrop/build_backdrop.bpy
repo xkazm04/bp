@@ -1,4 +1,5 @@
-# Blender script; run with blender -b -P scripts/art/city-backdrop/build_backdrop.bpy -- <repo-root> <work-dir> <source-frame.jpg>
+# Blender script; run with blender -b -P scripts/art/city-backdrop/build_backdrop.bpy -- <repo-root> <work-dir> <source-frame.jpg> [dim v0 v1]
+# (dim, v0 and v1 override DIM, V0 and V1 below for a frame whose skyline sits elsewhere: the 2026-10-24 city-night frame)
 """Builds apps/vr/ArtSource/city-backdrop/ from the picked Leonardo frame (leonardo.mjs gen --prop city-backdrop, see lookdev/log.jsonl).
   concept.png                          the picked frame, lossless re-encode of the downloaded JPEG (2048 x 768)
   textures/city_backdrop_basecolor.png the matte strip: the last SEAM columns are cross-faded into the first ones so the left and right
@@ -14,10 +15,11 @@ os.makedirs(os.path.join(ART, 'textures'), exist_ok=True)
 os.makedirs(WORK, exist_ok=True)
 
 SEAM = 256          # columns cross-faded; the strip is 256 px narrower than the frame
-DIM = 0.55          # encoded-sRGB multiplier, so the strip never outshines the table's edge strip (#F4FAFF, emission 25)
+ARGS = sys.argv[sys.argv.index('--') + 1:]
+DIM = float(ARGS[3]) if len(ARGS) > 3 else 0.55   # encoded-sRGB multiplier, so the strip never outshines the table's edge strip (#F4FAFF, emission 25)
 RADIUS, ARC_DEG = 10.0, 180.0
 Z0, Z1 = -1.0, 5.0  # panel bottom and top (m); the horizon band lands near z = 1.4 m, a standing eye height
-V0, V1 = 0.05, 0.65 # the rows of the strip the panel shows (the sky above and the dark ground below are cut)
+V0, V1 = (float(ARGS[4]), float(ARGS[5])) if len(ARGS) > 5 else (0.05, 0.65)  # the rows the panel shows (sky above and ground below cut)
 SEGMENTS = 36
 
 
