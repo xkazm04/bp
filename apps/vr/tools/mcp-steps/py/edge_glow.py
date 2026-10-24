@@ -6,7 +6,8 @@
 # node apps/vr/tools/mcp-call.mjs python <this file> --log apps/vr/tools/mcp-steps/l34-look.jsonl
 #
 # Wire contract with ABpTable: per-instance custom data 0 to 2 = the instance's size in cm along its X, Y, Z (the engine
-# cube, 100 cm, scaled per instance). Scalars `EdgeWidthCm` (how far in from an edge the glow reaches, cm), `FaceOpacity`
+# cube, 100 cm, scaled per instance), 3 = Show (spark vr-hands-zoom WP3: 0 hidden, ABpTable::LevelDim dimmed, 1 lit, above
+# 1 brighter; it scales the opacity up to 1 and the emissive above 1). Scalars `EdgeWidthCm` (how far in from an edge the glow reaches, cm), `FaceOpacity`
 # (the faces' opacity; ABpTable sets 0 on the bays), `Intensity` (the colour's emissive scale).
 # Unlit, translucent, one-sided, used with instanced static meshes. Translucent, not additive (spark vr-hands-zoom WP2):
 # additive summed the edges that overlap from the eye (room shell, bay plate, tile, front and back) into white blobs
@@ -18,7 +19,8 @@
 #   mid  = d.x + d.y + d.z - min(d) - max(d)               (on a face, the smallest is ~0; the middle one is cm to an edge)
 #   edge = saturate(1 - mid / EdgeWidthCm)
 #   face = FaceOpacity * lerp(1, 3, fresnel)               (faces ~6 %, a little brighter at grazing angles)
-#   emissive = #BFE8FF * Intensity,  opacity = max(edge, face)
+#   emissive = #BFE8FF * Intensity * max(show, 1),  opacity = saturate(max(edge, face)) * saturate(show)
+#   world position offset = -local position (in world space) where show is 0: the instance folds onto its pivot
 import unreal
 
 PATH = "/Game/Bp/Materials/M_EdgeGlow"
@@ -59,10 +61,19 @@ def param(name, value, x, y):
 pos = add(unreal.MaterialExpressionPreSkinnedPosition, -2000, -200)
 pos_vi = add(unreal.MaterialExpressionVertexInterpolator, -1800, -200)
 wire(pos, pos_vi, "VS")
-size = add(unreal.MaterialExpressionPerInstanceCustomData3Vector, -2000, 100, data_index=0,
+size = add(unreal.MaterialExpressionPerInstanceCustomData3Vector, -2200, 100, data_index=0,
            const_default_value=unreal.LinearColor(100.0, 100.0, 100.0, 0.0))
-size_vi = add(unreal.MaterialExpressionVertexInterpolator, -1800, 100)
-wire(size, size_vi, "VS")
+show = add(unreal.MaterialExpressionPerInstanceCustomData, -2200, 300, data_index=3, const_default_value=1.0)
+# Size and Show share one interpolator (xyz, w).
+size_show = add(unreal.MaterialExpressionAppendVector, -2000, 200)
+wire(size, size_show, "A")
+wire(show, size_show, "B")
+size_show_vi = add(unreal.MaterialExpressionVertexInterpolator, -1850, 200)
+wire(size_show, size_show_vi, "VS")
+size_vi = add(unreal.MaterialExpressionComponentMask, -1700, 100, r=True, g=True, b=True, a=False)
+wire(size_show_vi, size_vi, "")
+show_vi = add(unreal.MaterialExpressionComponentMask, -1700, 400, r=False, g=False, b=False, a=True)
+wire(size_show_vi, show_vi, "")
 
 unit = add(unreal.MaterialExpressionMultiply, -1600, -200, const_b=0.01)
 wire(pos_vi, unit, "A")
@@ -134,10 +145,40 @@ intensity = param("Intensity", 1.4, 400, -150)
 lit = add(unreal.MaterialExpressionMultiply, 600, -250)
 wire(color, lit, "A")
 wire(intensity, lit, "B")
-mel.connect_material_property(lit, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
-opacity = add(unreal.MaterialExpressionSaturate, 600, 0)
-wire(glow, opacity, "")
+boost = add(unreal.MaterialExpressionMax, 600, 500, const_b=1.0)
+wire(show_vi, boost, "A")
+shown = add(unreal.MaterialExpressionMultiply, 800, -250)
+wire(lit, shown, "A")
+wire(boost, shown, "B")
+mel.connect_material_property(shown, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+glow_sat = add(unreal.MaterialExpressionSaturate, 600, 0)
+wire(glow, glow_sat, "")
+show_sat = add(unreal.MaterialExpressionSaturate, 600, 350)
+wire(show_vi, show_sat, "")
+opacity = add(unreal.MaterialExpressionMultiply, 800, 0)
+wire(glow_sat, opacity, "A")
+wire(show_sat, opacity, "B")
 mel.connect_material_property(opacity, "", unreal.MaterialProperty.MP_OPACITY)
+
+# Show 0 hides an instance without hiding its batch: the vertex shader folds it onto its own pivot (no pixels). The
+# batches stay visible because a batch hidden and shown again lost its custom data on the GPU in UE 5.8 (Lynx,
+# 2026-10-24: every instance then read size 0 and Show 0).
+fold = add(unreal.MaterialExpressionMultiply, -1600, 700, const_b=-1.0)
+wire(pos, fold, "A")
+fold_ws = add(unreal.MaterialExpressionTransform, -1400, 700,
+              transform_source_type=unreal.MaterialVectorCoordTransformSource.TRANSFORMSOURCE_LOCAL,
+              transform_type=unreal.MaterialVectorCoordTransform.TRANSFORM_WORLD)
+wire(fold, fold_ws, "")
+shown_any = add(unreal.MaterialExpressionMultiply, -1600, 900, const_b=10000.0)
+wire(show, shown_any, "A")
+shown_sat = add(unreal.MaterialExpressionSaturate, -1450, 900)
+wire(shown_any, shown_sat, "")
+hidden = add(unreal.MaterialExpressionOneMinus, -1300, 900)
+wire(shown_sat, hidden, "")
+folded = add(unreal.MaterialExpressionMultiply, -1150, 750)
+wire(fold_ws, folded, "A")
+wire(hidden, folded, "B")
+mel.connect_material_property(folded, "", unreal.MaterialProperty.MP_WORLD_POSITION_OFFSET)
 
 mel.recompile_material(m)
 saved = unreal.EditorAssetLibrary.save_asset(PATH, only_if_is_dirty=False)
