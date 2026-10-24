@@ -94,6 +94,10 @@ const MAIN: Row[] = [
   { name: 'buildRelease bad id', call: (A, c) => A.buildRelease(c, 'rel-x;calc'), see: (o) => refusal(o), want: () => ({ status: 400, error: true }) },
   { name: 'buildRelease unknown release', call: (A, c) => A.buildRelease(c, 'rel-9.9.9'), see: (o) => refusal(o), want: () => ({ status: 404, error: true }) },
   { name: 'finishRelease of a draft', needs: () => ({ releases: ['rel-0.1.0'] }), call: (A, c) => A.finishRelease(c, 'rel-0.1.0'), see: (o) => refusal(o), want: () => ({ status: 409, error: true }) },
+  // the build's pre-flight: ready with nothing queued on both planes (the live dry run never asks gh, so no ghOut row)
+  { name: 'preflightRelease of a draft', needs: () => ({ releases: ['rel-0.1.0'] }), call: (A, c) => A.preflightRelease(c, 'rel-0.1.0'),
+    see: (o) => (o.ok ? { ok: true, ready: o.value.ready } : refusal(o)), want: () => ({ ok: true, ready: true }) },
+  { name: 'preflightRelease bad id', call: (A, c) => A.preflightRelease(c, 'rel-x;calc'), see: (o) => refusal(o), want: () => ({ status: 400, error: true }) },
   { name: 'buildRelease with gh signed out', ghOut: true, needs: () => ({ releases: ['rel-0.1.0'] }), call: (A, c) => A.buildRelease(c, 'rel-0.1.0'),
     see: (o) => (o.ok ? { ok: true } : { status: o.status, error: o.message }), want: () => ({ status: 412, error: 'gh not authenticated' }) },
   { name: 'commitDiff bad sha', call: (A, c) => A.commitDiff(c, 'xyz'), see: (o) => refusal(o), want: () => ({ status: 400, error: true }) },

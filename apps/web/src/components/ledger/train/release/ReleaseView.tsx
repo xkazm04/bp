@@ -108,7 +108,7 @@ const useToggles = (ctx: ScanCtx) => useSyncExternalStore(ctx.sim?.subscribe ?? 
 /** The build's dry run, asked once per change of what it reads (the release, its package, its jobs, the sample switches). */
 function useProbe(m: ReleaseModel, off: boolean): Probe {
   const ctx = m.T.ctx, rel = m.rel, relId = rel?.id, toggles = useToggles(ctx);
-  const key = off || !rel || !preflighted(rel) ? '' : [rel.id, rel.status, m.items.map((x) => x.p.id + ':' + (x.p.commit_sha ?? '')).join(), m.jobs.map((j) => j.id + ':' + j.status).join(), JSON.stringify(toggles)].join('|');
+  const key = off || !rel || !preflighted(rel) ? '' : [rel.id, STATUS_WORD[rel.status], m.items.map((x) => x.p.id + ':' + (x.p.commit_sha ?? '')).join(), m.jobs.map((j) => j.id + ':' + j.status).join(), JSON.stringify(toggles)].join('|');
   const [probe, setProbe] = useState<{ key: string; v: Probe }>({ key: '', v: null });
   useEffect(() => {
     if (!key || !relId) return;
