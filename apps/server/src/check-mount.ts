@@ -11,8 +11,10 @@
 //             in Allow, and a verb the route does not serve still answers 405 — this is the pair with the Next mount,
 //             which implements both verbs itself (apps/web/src/app/api/**, the thin re-exports)
 //   log       each refusal an operator would want to know about (403, 400, 413, a client leaving mid-body) writes exactly one
-//             console.warn line naming the status, the verb, the target and the peer; a 404 stays quiet (a path scanner would
-//             drown the 403s). The mount runs in this process, so console.warn is captured here.
+//             console.warn line through core's refusal record (packages/core/src/scan/refusals.ts, the formatter the
+//             handler guards use): status, a reason from the closed vocabulary, the verb, the path and a peer-is-loopback
+//             flag - never the peer's address or the query; a 404 stays quiet (a path scanner would drown the 403s). The
+//             mount runs in this process, so console.warn is captured here.
 //   peer      a request from a non-loopback socket answers 403 whatever its Host: always over a pipe / unix socket,
 //             whose peer has no address at all, and additionally through this machine's own LAN address when it has
 //             one (the server listens on 0.0.0.0 here, as `--host 0.0.0.0` would). The LAN leg is the only skippable
@@ -30,13 +32,18 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MAX_BODY, listener, loadRoutes } from './mount.ts';
+import { REFUSAL_REASONS } from '@bp/core/scan/refusals';
 
 let failed = 0, passed = 0, skips = 0;
 const check = (name: string, ok: boolean, detail = '') => { ok ? passed++ : failed++; console.log(`${ok ? 'ok  ' : 'FAIL'}  ${name}${ok || !detail ? '' : `  (${detail})`}`); };
 
 const warned: string[] = [];
 console.warn = (...a: unknown[]) => { warned.push(a.join(' ')); };
-const drain = () => warned.splice(0);
+const logged: string[] = [];
+const drain = () => { const w = warned.splice(0); logged.push(...w); return w; };
+/** One refusal line: `refused <status> (<reason>) "<verb>" "<path>" peer=<flag>`, the reason from the closed vocabulary. */
+const LINE = /^refused (\d{3}|abort) \(([a-z-]+)\) "[A-Z]+" "[^"]*" peer=(loopback|foreign|unknown)$/;
+const shaped = (l: string) => { const m = LINE.exec(l); return !!m && (REFUSAL_REASONS as readonly string[]).includes(m[2]); };
 
 const api = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-mount-'));
 const handler = (dir: string, src: string) => { fs.mkdirSync(path.join(api, dir), { recursive: true }); fs.writeFileSync(path.join(api, dir, 'route.ts'), src); };
@@ -100,7 +107,7 @@ try {
   const bad = await get('/api/echo/%E0%A4%A');
   check('decode: a malformed percent-escape answers 400', bad.status === 400, `${bad.status}`);
   const w400 = drain();
-  check('log: a 400 writes one line naming the verb, the target and the peer', w400.length === 1 && /refused 400/.test(w400[0]) && w400[0].includes('"GET"') && w400[0].includes('%E0%A4%A') && w400[0].includes('127.0.0.1'), JSON.stringify(w400));
+  check('log: a 400 writes one malformed-url line naming the verb, the path and a loopback peer (not its address)', w400.length === 1 && /^refused 400 \(malformed-url\) "GET" "\/api\/echo\/%E0%A4%A" peer=loopback$/.test(w400[0]) && !w400[0].includes('127.0.0.1'), JSON.stringify(w400));
   check('decode: the server keeps serving after it', await alive(), `${crashes.length} uncaught`);
 
   const host = await get('/api/echo/ok', 'a b');
@@ -114,7 +121,7 @@ try {
   const declared = await post(`Content-Length: ${MAX_BODY + 1}\r\n`, '{');
   check('body: a declared Content-Length past the cap answers 413', declared.status === 413, `${declared.status}`);
   const w413 = drain();
-  check('log: a 413 writes one line naming the verb, the target and the peer', w413.length === 1 && /refused 413/.test(w413[0]) && w413[0].includes('"POST"') && w413[0].includes('/api/body') && w413[0].includes('127.0.0.1'), JSON.stringify(w413));
+  check('log: a 413 writes one body-too-large line naming the verb, the path and a loopback peer', w413.length === 1 && /^refused 413 \(body-too-large\) "POST" "\/api\/body" peer=loopback$/.test(w413[0]), JSON.stringify(w413));
   const chunk = 'x'.repeat(256 * 1024), n = Math.ceil(MAX_BODY / chunk.length) + 1;
   const chunked = Array.from({ length: n }, () => `${chunk.length.toString(16)}\r\n${chunk}\r\n`).join('') + '0\r\n\r\n';
   const streamed = await post('Transfer-Encoding: chunked\r\n', chunked);
@@ -123,7 +130,7 @@ try {
   await post('Content-Length: 100\r\n', '{"partial":', 150); // the client gives up after 150 ms (not raw's 3 s), before the body is whole
   check('body: the server keeps serving after a client leaves mid-body', await alive(), `${crashes.length} uncaught`);
   const wAbort = drain().filter((l) => /abort/.test(l));
-  check('log: a client leaving mid-body writes one line', wAbort.length === 1 && wAbort[0].includes('/api/body'), JSON.stringify(wAbort));
+  check('log: a client leaving mid-body writes one client-left line', wAbort.length === 1 && /^refused abort \(client-left\) "POST" "\/api\/body" peer=loopback$/.test(wAbort[0]), JSON.stringify(wAbort));
 
   const lateG = globalThis as { lateTicks?: number; lateCancelled?: boolean };
   // the client sends the request and leaves after 50 ms, while the handler still waits
@@ -176,14 +183,14 @@ try {
     const status = Number(/^HTTP\/1\.1 (\d+)/.exec(answer)?.[1] ?? 0);
     check('peer: a socket with no remote address (a pipe) answers 403', status === 403, `${status} ${answer.slice(0, 60)}`);
     const w403 = drain();
-    check('log: a 403 writes one line naming the verb, the target and the peer (unknown for a pipe)', w403.length === 1 && /refused 403/.test(w403[0]) && w403[0].includes('"GET"') && w403[0].includes('/api/echo/ok') && w403[0].includes('unknown peer'), JSON.stringify(w403));
+    check('log: a 403 writes one foreign-peer line naming the verb, the path and peer=unknown (a pipe has no address)', w403.length === 1 && /^refused 403 \(foreign-peer\) "GET" "\/api\/echo\/ok" peer=unknown$/.test(w403[0]), JSON.stringify(w403));
   }
   const lan = Object.values(os.networkInterfaces()).flat().find((i) => i && i.family === 'IPv4' && !i.internal)?.address;
   if (lan) {
     const far = await get('/api/echo/ok', 'localhost', lan);
     check(`peer: a request from a non-loopback socket (${lan}) answers 403`, far.status === 403, `${far.status}`);
     const wLan = drain();
-    check('log: the LAN 403 line names the peer address', wLan.length === 1 && /refused 403/.test(wLan[0]) && wLan[0].includes(`from ${lan}`), JSON.stringify(wLan));
+    check('log: the LAN 403 line flags a foreign peer and does not store its address', wLan.length === 1 && /^refused 403 \(foreign-peer\) "GET" "\/api\/echo\/ok" peer=foreign$/.test(wLan[0]) && !wLan[0].includes(lan), JSON.stringify(wLan));
   } else {
     // `SKIP` at the start of the line, UPPERCASE, is check-all.mjs's convention for "this did not run" (matched
     // anchored and case-sensitively at scripts/check-all.mjs:46). Lower case made this line invisible to the
@@ -193,6 +200,9 @@ try {
     skips++;
     console.log('SKIP  peer: this machine has no non-loopback IPv4 address to connect from (the pipe check above covers the guard)');
   }
+  // Every refusal line this mount wrote went through the one core formatter: one shape, one closed vocabulary.
+  drain();
+  check(`log: all ${logged.length} refusal lines share the core shape and vocabulary`, logged.length >= 5 && logged.every(shaped), JSON.stringify(logged.filter((l) => !shaped(l))));
 } finally {
   server.close(); server.closeAllConnections();
   fs.rmSync(api, { recursive: true, force: true });

@@ -126,6 +126,14 @@ try {
     check('guard: a forwarded non-local hop: 403', fwd.status === 403, `${fwd.status}`);
     const fwdRead = await req('GET', '/api/products', { 'x-forwarded-for': '203.0.113.9' });
     check('guard: a forwarded non-local hop on a read: 403', fwdRead.status === 403, `${fwdRead.status}`);
+    // log: a handler guard's refusal is recorded once by the guard itself (packages/core/src/scan/refusals.ts), on this
+    // mount as under Next; mount.ts appends the loopback socket as the nearest hop, so the flag reads peer=loopback.
+    const lineOf = (re) => [...out.matchAll(new RegExp(re.source, 'gm'))].length;
+    const HOP = /^refused 403 \(foreign-hop\) "POST" "\/api\/products" peer=loopback$/;
+    for (let i = 0; i < 50 && !lineOf(HOP); i++) await new Promise((r) => setTimeout(r, 20));
+    check('log: the forwarded-hop write leaves exactly one foreign-hop line in the server output', lineOf(HOP) === 1, out.split('\n').filter((l) => /^refused/.test(l)).join(' | '));
+    check('log: the foreign Host read leaves one foreign-host line, without the Host value', lineOf(/^refused 403 \(foreign-host\) "GET" "\/api\/products" peer=loopback$/) === 1 && !/^refused.*evil\.example/m.test(out), out.split('\n').filter((l) => /^refused/.test(l)).join(' | '));
+    check('log: the non-JSON write leaves one not-json line', lineOf(/^refused 415 \(not-json\) "POST" "\/api\/products" peer=loopback$/) === 1);
   }
 } finally {
   // the child holds its working directory until it has exited (Windows), so wait before removing it
@@ -161,8 +169,9 @@ try {
   const skipLines = stdout.split(/\r?\n/).filter((l) => /^\s*SKIP\b/.test(l));
   for (const l of skipLines) console.log(l.trim());
   // The floor is on checks run PLUS checks skipped, so a LAN-less machine (one skip) stays green while a shrinking suite
-  // goes red. Raise it deliberately whenever check-mount grows. 31 = its checks today, the LAN leg included.
-  const MOUNT_FLOOR = 31;
+  // goes red. Raise it deliberately whenever check-mount grows. 38 checks today with the LAN leg; its two checks become
+  // one SKIP on a LAN-less machine, so the floor is 37 (raised from 31 with the refusal-record cases, 2026-10-24).
+  const MOUNT_FLOOR = 37;
   const total = tally ? Number(tally[1]) + Number(tally[3]) : 0;
   check(`mount: apps/server/src/check-mount.ts passes (${tally?.[1] ?? '?'} checks, ${tally?.[3] ?? '?'} skipped)`, m.status === 0 && !!tally && total >= MOUNT_FLOOR && tally[2] === '0' && Number(tally[3]) === skipLines.length,
     fails || (tally && total < MOUNT_FLOOR ? `${total} checks accounted for, floor ${MOUNT_FLOOR}` : '') || `exit ${m.status} ${(m.stderr ?? '').slice(-200)}`);
