@@ -13,13 +13,14 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, RUN_NOTE_PREFIX, SAFE_ID, type ReleaseStep, type ScanJob, type ScanScope } from '../scan/jobs.ts';
 import { RELEASE_ID } from '../scan/release.ts';
+import { ABANDONED_FROM, ABANDONED_TO, reached } from '../scan/release-steps.ts';
 import { busyIds } from '../scan/admit.ts';
 import { WAVE_EFFORTS, WAVE_MODELS, type WaveEffort, type WaveModel } from '../scan/waves.ts';
 import { findProduct, recovered, warnOnce, writeAtomic } from './products.server.ts';
 import { close, openRead, readRelease, type ReleaseRead } from './store.server.ts';
+import { storeCall } from './release.server.ts';
 
 if (typeof window !== 'undefined') throw new Error('jobs.server.ts is server-only');
 
@@ -338,25 +339,26 @@ function finish(slug: string, r: Rec, status: 'done' | 'failed' | 'cancelled', e
 }
 
 /**
- * A release job that ends without `done` while its release row is still `building` leaves a row no route can move (a build
- * starts only from draft or failed, a finish from pr-open or merged): the CLI was cancelled or died before it wrote an
- * outcome. Fail the row with the job's reason so a build may start again, as the Kettle sim does (train-sim.ts: "its
- * building release fails"). Compare-and-set on `building`: a row the CLI did move (failed with its own error, pr-open) is
- * never touched. Best effort: a store that cannot be written leaves the row as it was, and the server says so.
+ * A release job that ends without `done` while its release row is still `building` leaves a row no route can move (no step
+ * starts from building, scan/release-steps.ts STEP_FROM): the CLI was cancelled or died before it wrote an outcome. Fail the
+ * row with the job's reason so a build may start again, as the Kettle sim does (train-sim.ts: "its building release fails").
+ * The write is lens-scan's own: store.mjs `release-update --status failed --from building`, its compare-and-set, so the
+ * blueprint never writes a release transition itself (release.server.ts). A row the CLI did move (failed with its own error,
+ * pr-open) is refused (exit 1, "it moved on"), the expected no-op, and left as it is. Fire and forget, best effort: a store
+ * that cannot be written leaves the row as it was, and the server says so once. A v1 store (no releases table) has no row to
+ * fail, and is not handed to store.mjs, which would migrate it in place.
  */
 function failBuilding(r: Rec): void {
   const id = r.job.release;
   if (!id) return;
   const file = path.join(r.root, '.ai', 'lens-scan', 'scan.db');
-  if (!fs.existsSync(file)) return;
-  let db: DatabaseSync | null = null;
-  try {
-    db = new DatabaseSync(file, { timeout: 2000 });
-    const why = r.job.status === 'cancelled' ? 'cancelled from the blueprint before the cut finished' : (r.job.error ?? failedLine(r) ?? 'the release job ended before the cut finished');
-    db.prepare("UPDATE releases SET status = 'failed', error = ?, updated_at = ? WHERE id = ? AND status = 'building'").run(why.slice(0, 500), now(), id);
-  } catch (e) {
-    if (!/no such table/i.test(e instanceof Error ? e.message : '')) warnOnce('release row ' + id, e); // a v1 store has no row to fail
-  } finally { close(db); }
+  const read = readRelease(file, id);
+  if (read.kind === 'no-store' || read.kind === 'no-table' || read.kind === 'absent') return;
+  const why = r.job.status === 'cancelled' ? 'cancelled from the blueprint before the cut finished' : (r.job.error ?? failedLine(r) ?? 'the release job ended before the cut finished');
+  void storeCall(file, ['release-update', '--release', id, '--status', ABANDONED_TO, '--from', ABANDONED_FROM, '--error', why.slice(0, 500)]).then((a) => {
+    if (a.ok || a.kind === 'refused') { recovered('release row ' + id); return; }
+    warnOnce('release row ' + id, a.error);
+  });
 }
 
 function onOutput(slug: string, r: Rec, chunk: Buffer, err: boolean): void {
@@ -470,7 +472,7 @@ function settleRelease(slug: string, r: Rec, attempt: number): void {
     return;
   }
   const run = r.job.run_id ?? runOf(r.root, r.job.id);
-  const ok = read.kind === 'row' && (r.job.step === 'finish' ? read.status === 'tagged' : ['pr-open', 'merged', 'tagged'].includes(read.status));
+  const ok = read.kind === 'row' && reached(r.job.step ?? 'build', read.status);
   const extra: Partial<ScanJob> = { exit_code: 0, ...(run ? { run_id: run } : {}) };
   if (ok) { finish(slug, r, 'done', extra); return; }
   const why = read.kind === 'row' ? (read.status === 'failed' && read.error ? read.error : undefined) : storeCause(read, r.job.release ?? '');
