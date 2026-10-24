@@ -107,7 +107,8 @@
     "check:build-admit": "node scripts/check-build-admit.ts",
     "check:train-parity": "node scripts/check-train-parity.ts",
     "check:sim-undo": "node scripts/check-sim-undo.ts",
-    "check:clear-path": "node scripts/check-clear-path.ts"
+    "check:clear-path": "node scripts/check-clear-path.ts",
+    "check:scan-demo": "node scripts/check-scan-demo.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
