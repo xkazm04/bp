@@ -1,7 +1,8 @@
 # Blender script (extension .bpy so scripts/check-python-deps.mjs does not read bpy/bmesh/mathutils as pip packages)
 """Builds the light table frame (apps/vr/ArtSource/light-table-frame) and scores the exported file.
 
-Run:  blender -b -P scripts/art/light-table-frame/build_frame.bpy -- <repo-root> <work-dir>
+Run:  blender -b -P scripts/art/light-table-frame/build_frame.bpy -- <repo-root> <work-dir> [<length-m> <depth-m> [<glow-strength>]]
+The defaults (1.20 x 0.80 m, glow 25) rebuild the first frame; spark vr-hands-zoom builds 1.80 x 0.90 with a dimmer strip.
 Procedural only: no generated input, no GPU job. Metres, Blender Z-up, the glTF exporter writes Y-up.
 Pivot is the floor centre. The top is 3 cm thick at the outer edge (lamp-agent's C-clamp grips a 3 cm edge). The glass is a
 placeholder plane in its own slot for UE to replace; the glass and paper are procedural in UE (plan.md P4).
@@ -11,21 +12,24 @@ import bpy, bmesh, math, os, sys, json
 import numpy as np
 from mathutils import Vector
 
-REPO, WORK = sys.argv[sys.argv.index('--') + 1:][:2]
+ARGV = sys.argv[sys.argv.index('--') + 1:]
+REPO, WORK = ARGV[:2]
 OUT = os.path.join(REPO, 'apps', 'vr', 'ArtSource', 'light-table-frame')
 BUDGET = 10000
 os.makedirs(WORK, exist_ok=True)
 
 # slots: 0 dark metal, 1 aluminium, 2 emissive edge strip, 3 glass placeholder
 DARK, ALU, GLOW, GLASS = 0, 1, 2, 3
-L, W = 1.20, 0.80            # top outline, x by y
+L, W = (float(ARGV[2]), float(ARGV[3])) if len(ARGV) >= 4 else (1.20, 0.80)   # top outline, x by y
 TOP, T = 0.95, 0.03          # top surface height (wolf-plan W3.2 starts the table at 95 cm), edge thickness
 BOT = TOP - T
 R = 0.05                     # rim board width
 LIP_H, LIP_W = 0.014, 0.02   # ledge the glass rests on
 GLOW_H = 0.008             # strip top sits 6 mm under the rim top, so the 45 degree camera sees it past the rim
 GLOW_W = LIP_W            # the strip covers the whole ledge
-GLOW_STRENGTH = 25.0      # emission strength (glTF KHR_materials_emissive_strength); UE drives the real intensity
+# emission strength (glTF KHR_materials_emissive_strength). The first frame's 25 bloomed into a white band under UE's fixed
+# exposure (capture, 2026-10-24); the long frame passes a lower one, found by capture, as the fifth argument
+GLOW_STRENGTH = float(ARGV[4]) if len(ARGV) >= 5 else 25.0
 DARK_HEX = '#0A0F18'      # style-block.json palette role 'studio' (near-black blue); the block has no separate dark-metal value
 GLOW_HEX = '#F4FAFF'
 
@@ -198,7 +202,7 @@ def build():
             material('frame_glass_placeholder_REPLACE_IN_UE', '#BFD8F0', 0.05, alpha=0.15)]
     p = Part()
     zc = BOT + T / 2
-    ix, iy = L - 2 * R, W - 2 * R                 # opening inside the rim: 1.10 x 0.70
+    ix, iy = L - 2 * R, W - 2 * R                 # opening inside the rim: 1.10 x 0.70 on the default outline
     # rim: four dark metal boards, 3 cm thick, 5 cm wide
     for s in (-1, 1):
         p.box((0, s * (W / 2 - R / 2), zc), (L, R, T), DARK)
@@ -220,8 +224,10 @@ def build():
     for s in (-1, 1):
         p.box((0, s * (W / 2 - ai - 0.01), BOT - 0.015), (L - 2 * ai, 0.02, 0.03), ALU)
         p.box((s * (L / 2 - ai - 0.01), 0, BOT - 0.015), (0.02, W - 2 * ai - 0.04, 0.03), ALU)
-    # trestle: four tapered dark metal legs with aluminium feet, a lower rail along each side and each end
-    lx, ly = L / 2 - 0.085, W / 2 - 0.085
+    # trestle: four tapered dark metal legs with aluminium feet, a lower rail along each side and each end. The legs stand
+    # 8.5 cm in from the sides; along the length they move in as it grows (8.5 cm at 1.20 m, 15 cm at 1.80 m), so the
+    # span between them stays under 1.5 m and the long top does not overhang a bare end
+    lx, ly = L / 2 - (0.085 + max(0.0, L - 1.20) * 0.108), W / 2 - 0.085
     for sx in (-1, 1):
         for sy in (-1, 1):
             p.cyl((sx * lx, sy * ly, 0.012), 0.022, 0.028, BOT - 0.012, 12, DARK)
@@ -240,7 +246,7 @@ def score():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.import_scene.gltf(filepath=os.path.join(OUT, 'final.glb'))
     obs = [o for o in bpy.context.scene.objects if o.type == 'MESH']
-    S = {'objects': [o.name for o in obs], 'mesh_objects': len(obs)}
+    S = {'objects': [o.name for o in obs], 'mesh_objects': len(obs), 'outline_m': [L, W], 'glow_strength': GLOW_STRENGTH}
     ob = obs[0]
     me = ob.data
     S['tris'] = sum(len(p.vertices) - 2 for p in me.polygons)

@@ -1,21 +1,24 @@
-# L3.3 content step (spark vr-volumes): M_EdgeGlow, the volumes' additive edge-glow material, through
+# L3.3 content step (spark vr-volumes): M_EdgeGlow, the volumes' edge-glow material, through
 # PoFScriptTools.run_python (MaterialEditingLibrary: PreSkinnedLocalPosition, the vertex interpolator and per-instance
 # custom data are not in EditorToolset's MaterialTools vocabulary). Replayable: an existing M_EdgeGlow is emptied of its
 # expressions and rebuilt in place (deleting it fails while the editor holds it loaded).
 # Run outside PIE (during PIE the library hands back None for new expressions, Lynx 2026-10-24):
-# node apps/vr/tools/mcp-call.mjs python <this file> --log apps/vr/tools/mcp-steps/l33-content.jsonl
+# node apps/vr/tools/mcp-call.mjs python <this file> --log apps/vr/tools/mcp-steps/l34-look.jsonl
 #
 # Wire contract with ABpTable: per-instance custom data 0 to 2 = the instance's size in cm along its X, Y, Z (the engine
 # cube, 100 cm, scaled per instance). Scalars `EdgeWidthCm` (how far in from an edge the glow reaches, cm), `FaceOpacity`
-# (the faces' share of the edge brightness; ABpTable sets 0 on the bays), `Intensity` (the edge's emissive).
-# Unlit, additive (sort-independent, decision Wave 1), one-sided, used with instanced static meshes.
+# (the faces' opacity; ABpTable sets 0 on the bays), `Intensity` (the colour's emissive scale).
+# Unlit, translucent, one-sided, used with instanced static meshes. Translucent, not additive (spark vr-hands-zoom WP2):
+# additive summed the edges that overlap from the eye (room shell, bay plate, tile, front and back) into white blobs
+# (capture l33-2026-10-24-lynx.jpg). Every pixel blends toward one colour with an opacity, so overlaps converge on that
+# colour instead of adding up, and the result does not depend on the draw order (still one draw per ISM batch).
 #
 #   p    = local position / 100 + 0.5                      (0..1 across the cube, per axis; vertex shader, interpolated)
 #   d    = min(p, 1 - p) * size                            (cm to the nearest face along each axis)
 #   mid  = d.x + d.y + d.z - min(d) - max(d)               (on a face, the smallest is ~0; the middle one is cm to an edge)
 #   edge = saturate(1 - mid / EdgeWidthCm)
 #   face = FaceOpacity * lerp(1, 3, fresnel)               (faces ~6 %, a little brighter at grazing angles)
-#   emissive = #BFE8FF * Intensity * max(edge, face)
+#   emissive = #BFE8FF * Intensity,  opacity = max(edge, face)
 import unreal
 
 PATH = "/Game/Bp/Materials/M_EdgeGlow"
@@ -32,7 +35,7 @@ else:
     m = unreal.AssetToolsHelpers.get_asset_tools().create_asset(
         "M_EdgeGlow", "/Game/Bp/Materials", unreal.Material, unreal.MaterialFactoryNew())
 m.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
-m.set_editor_property("blend_mode", unreal.BlendMode.BLEND_ADDITIVE)
+m.set_editor_property("blend_mode", unreal.BlendMode.BLEND_TRANSLUCENT)
 m.set_editor_property("two_sided", False)
 m.set_editor_property("used_with_instanced_static_meshes", True)
 
@@ -104,7 +107,7 @@ mid = add(unreal.MaterialExpressionSubtract, -250, -200)
 wire(less_min, mid, "A")
 wire(mx, mid, "B")
 
-width = param("EdgeWidthCm", 0.25, -400, 50)
+width = param("EdgeWidthCm", 0.2, -400, 50)
 ratio = add(unreal.MaterialExpressionDivide, -100, -150)
 wire(mid, ratio, "A")
 wire(width, ratio, "B")
@@ -125,15 +128,16 @@ glow = add(unreal.MaterialExpressionMax, 400, 0)
 wire(edge, glow, "A")
 wire(face, glow, "B")
 color = add(unreal.MaterialExpressionConstant3Vector, 400, -300, constant=CYAN_WHITE)
-# 1.0, not 1.5: at 1.5 the edges outshone the wing labels from the target pose (captures, 2026-10-24).
-intensity = param("Intensity", 1.0, 400, -150)
+# Above the bloom threshold (1.0, level_lighttable.py) so an edge glows a little; additive at 1.5 outshone the wing
+# labels (captures, 2026-10-24), blended it cannot exceed this.
+intensity = param("Intensity", 1.4, 400, -150)
 lit = add(unreal.MaterialExpressionMultiply, 600, -250)
 wire(color, lit, "A")
 wire(intensity, lit, "B")
-emissive = add(unreal.MaterialExpressionMultiply, 800, -100)
-wire(lit, emissive, "A")
-wire(glow, emissive, "B")
-mel.connect_material_property(emissive, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+mel.connect_material_property(lit, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+opacity = add(unreal.MaterialExpressionSaturate, 600, 0)
+wire(glow, opacity, "")
+mel.connect_material_property(opacity, "", unreal.MaterialProperty.MP_OPACITY)
 
 mel.recompile_material(m)
 saved = unreal.EditorAssetLibrary.save_asset(PATH, only_if_is_dirty=False)

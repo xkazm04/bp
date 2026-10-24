@@ -29,24 +29,36 @@ class BP_API ABpTable : public AActor
 
 public:
 	// ---- The named constants, in one place ----------------------------------------------------------------------------
-	/** Plan units to centimetres on the paper: Kettle's 3170 x 1582 u extent becomes 104.6 x 52.2 cm. */
-	static constexpr float BpPlanUnitCm = 0.033f;
+	/** Plan units to centimetres on the paper: Kettle's islands extent, 3810 x 1678 u (spark vr-hands-zoom WP1), becomes
+	 *  141.0 x 62.1 cm, which leaves 12.5 cm left and right for the scale bar, the compass and the title block, and 7 cm
+	 *  above and below. */
+	static constexpr float BpPlanUnitCm = 0.037f;
 	/** The table top's height above the floor, the default of the console variable bp.TableHeightCm (R4 option A). */
 	static constexpr float DefaultTableHeightCm = 95.f;
-	/** The glass panel the paper fills (the frame's glass opening is 110 x 70 cm). Width runs along +Y, depth along X. */
-	static constexpr float PaperWidthCm = 106.f;
-	static constexpr float PaperDepthCm = 66.f;
+	/** The frame's outline (the owner's long table, 2026-10-24): width along +Y, depth along X. Its rim is 5 cm wide, so
+	 *  the glass opening is 170 x 80 cm, and a 2 cm ledge carries the glow strip inside it. */
+	static constexpr float TableWidthCm = 180.f;
+	static constexpr float TableDepthCm = 90.f;
+	/** The glass panel the paper fills, inside the strip. */
+	static constexpr float PaperWidthCm = 166.f;
+	static constexpr float PaperDepthCm = 76.f;
 	/** The paper sits this far below the frame's top. */
 	static constexpr float GlassRecessCm = 0.8f;
-	/** The sheet render target; it covers the whole paper, so the paper samples it at its own UVs. */
+	/** The sheet render target; it covers the whole paper, so the paper samples it at its own UVs. Its aspect is the
+	 *  paper's, so a pixel is square (0.41 mm). */
 	static constexpr int32 SheetWidthPx = 4096;
-	static constexpr int32 SheetHeightPx = 2048;
+	static constexpr int32 SheetHeightPx = static_cast<int32>(SheetWidthPx * PaperDepthCm / PaperWidthCm + 0.5f);
+	/** The paper texture's tile (ArtSource/mat-blueprint-paper/manifest.json: 0.5 m, 16 cells, every 4th line stronger). */
+	static constexpr float PaperTileCm = 50.f;
+	/** The sheet's grid on the paper, from its far-left corner: a fine line every GridFineCm and a stronger one every
+	 *  GridMajorEvery fine lines. Half the texture's cell, so every second fine line and every second major one lie on the
+	 *  texture's own lines. */
+	static constexpr float GridFineCm = PaperTileCm / 32.f;
+	static constexpr int32 GridMajorEvery = 4;
 	/** Cap height of the wing labels on the paper, sized for reading at about 1 m. The other text scales from it. */
 	static constexpr float LabelCapHeightCm = 1.6f;
 	/** The scale bar's length on the paper. */
 	static constexpr float ScaleBarCm = 10.f;
-	/** Grid pitch in plan units. */
-	static constexpr float GridPlanUnits = 100.f;
 	/** The volumes' heights above the paper (L3.3): a room is a shell, a bay a floor plate, a tile a block whose height is
 	 *  the active lens's reading (bad tallest). Their footprints are the plan's boxes, never computed here. */
 	static constexpr float RoomShellCm = 3.0f;
@@ -59,11 +71,13 @@ public:
 
 	ABpTable();
 
-	/** Frame mesh (pivot at the floor centre, bounds 120 x 80 x 95 cm). Missing: the greybox (a block and a rim). */
+	/** Frame mesh (pivot at the floor centre, bounds 180 x 90 x 95 cm, its length along its +X). Missing: the greybox (a
+	 *  block and a rim). */
 	UPROPERTY(EditAnywhere, Category = "Bp|Table")
 	TSoftObjectPtr<UStaticMesh> FrameMesh;
 
-	/** Paper material, with a Texture parameter `Sheet` and a Scalar `SheetStrength`. Missing: the greybox paper. */
+	/** Paper material, with a Texture parameter `Sheet`, Scalars `SheetStrength`, `TilesU` and `TilesV` (the paper texture's
+	 *  repeats across the paper). Missing: the greybox paper. */
 	UPROPERTY(EditAnywhere, Category = "Bp|Table")
 	TSoftObjectPtr<UMaterialInterface> PaperMaterial;
 
@@ -71,7 +85,7 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Bp|Table")
 	TSoftObjectPtr<UMaterialInterface> HiddenMaterial;
 
-	/** Edge-glow material for the volumes (additive; Scalars `EdgeWidthCm`, `FaceOpacity`, `Intensity`; per-instance
+	/** Edge-glow material for the volumes (translucent; Scalars `EdgeWidthCm`, `FaceOpacity`, `Intensity`; per-instance
 	 *  custom data 0 to 2 = the instance's size in cm along its X, Y, Z). Missing: a translucent engine material. */
 	UPROPERTY(EditAnywhere, Category = "Bp|Table")
 	TSoftObjectPtr<UMaterialInterface> VolumeMaterial;

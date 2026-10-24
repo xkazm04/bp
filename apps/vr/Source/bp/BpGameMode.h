@@ -15,14 +15,28 @@ class BP_API ABpGameMode : public AGameModeBase
 	GENERATED_BODY()
 
 public:
-	/** Standing at the near edge, eyes this high, looking down at the table (lynx-plan L3.2's capture pose). Used only
-	 *  when the level has no PlayerStart. */
-	static constexpr float ViewEyeHeightCm = 165.f;
-	static constexpr float ViewBackFromCentreCm = 80.f;
-	static constexpr float ViewPitchDeg = -45.f;
+	/** The play pose: standing at the near edge (the table's -X side), eyes this high above the floor and this far behind
+	 *  the edge, looking down at the sheet. Used only when the level has no PlayerStart. */
+	static constexpr float PlayEyeHeightCm = 165.f;
+	static constexpr float PlayBehindNearEdgeCm = 20.f;
+	static constexpr float PlayPitchDeg = -50.f;
+	/** The engine's default horizontal field of view; the headset sets its own. */
+	static constexpr float PlayHFovDeg = 90.f;
+
+	/** The target pose (console `BpView.Pose target`, PIE and editor captures only): the framing of the concept
+	 *  docs/concepts/vr-light-table/target-light-table.jpg, found by comparing captures with it side by side. Its eye
+	 *  height is above the table top, so it follows bp.TableHeightCm. */
+	static constexpr float TargetEyeAboveTopCm = 43.f;
+	static constexpr float TargetBehindNearEdgeCm = 30.f;
+	static constexpr float TargetPitchDeg = -31.f;
+	static constexpr float TargetHFovDeg = 70.f;
 
 	virtual void StartPlay() override;
 	virtual void RestartPlayer(AController* NewPlayer) override;
+
+	/** Puts the first player's view in a named pose ("play" or "target") at the world's first table and logs
+	 *  `BpView: pose=<name> eye_cm=(x,y,z) pitch=<deg> hfov=<deg>`. False for an unknown name or no player. */
+	static bool ApplyPose(UWorld* World, const FString& Name);
 
 private:
 	/** The level's first ABpTable, or one spawned at the origin. */

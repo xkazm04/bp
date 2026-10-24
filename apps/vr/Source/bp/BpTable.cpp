@@ -49,12 +49,12 @@ namespace
 
 	const TCHAR* const GlassPlaceholderSlot = TEXT("frame_glass_placeholder_REPLACE_IN_UE");
 
-	/** The greybox rim's thickness and width (outer 120 x 80 cm around the 110 x 70 cm glass opening). */
+	/** The greybox rim's thickness and width (the frame's outline around its glass opening, 5 cm in). */
 	constexpr float RimThicknessCm = 3.f;
-	constexpr float FrameWidthCm = 120.f;
-	constexpr float FrameDepthCm = 80.f;
-	constexpr float OpeningWidthCm = 110.f;
-	constexpr float OpeningDepthCm = 70.f;
+	constexpr float FrameWidthCm = ABpTable::TableWidthCm;
+	constexpr float FrameDepthCm = ABpTable::TableDepthCm;
+	constexpr float OpeningWidthCm = FrameWidthCm - 10.f;
+	constexpr float OpeningDepthCm = FrameDepthCm - 10.f;
 
 	/** Text. Slate sizes fonts in points at 96 DPI (FreeType pixel size = size * 96/72); Roboto's cap height is 0.711 em.
 	 *  A label's world scale is chosen so its cap height on the paper is the cap height asked for. */
@@ -74,6 +74,12 @@ namespace
 	 *  much further in, across the sheet only: inset down the sheet as well, the names sat on the first bay's top edge, and
 	 *  the letters cleared the far glow without it. The wrap width stays L3.2's (a narrower one cut "Foundations"). */
 	constexpr float LiftedWingLabelInsetCm = WingLabelInsetCm + 2.4f;
+
+	/** The sheet's grid strokes (sheet pixels, 0.41 mm each) and their opacity over the paper. */
+	constexpr float GridFinePx = 2.f;
+	constexpr float GridMajorPx = 3.f;
+	constexpr float GridFineOpacity = 0.10f;
+	constexpr float GridMajorOpacity = 0.22f;
 
 	/** Heights above the paper, so nothing z-fights it. */
 	constexpr float OverlayLiftCm = 0.05f;
@@ -339,6 +345,9 @@ void ABpTable::LoadArt()
 	if (bRealPaper)
 	{
 		PaperMid->SetScalarParameterValue(TEXT("SheetStrength"), 0.f);
+		// The paper texture at its own scale: one tile is PaperTileCm on the table.
+		PaperMid->SetScalarParameterValue(TEXT("TilesU"), PaperWidthCm / PaperTileCm);
+		PaperMid->SetScalarParameterValue(TEXT("TilesV"), PaperDepthCm / PaperTileCm);
 	}
 	else
 	{
@@ -384,7 +393,7 @@ void ABpTable::PlaceForHeight(float HeightCm)
 	{
 		// The mesh's pivot is the floor centre and its top is its bounds' top (95 cm as modelled): the feet stay on the
 		// floor and Z scales to the height.
-		// The mesh is modelled with its 120 cm length along its +X; the table's width (left to right for the person at the
+		// The mesh is modelled with its length (TableWidthCm) along its +X; the table's width (left to right for the person at the
 		// near edge) is this actor's +Y, so the mesh turns 90 degrees (first capture, 2026-10-23: the long side faced away).
 		const float ModelTop = Frame->GetStaticMesh() ? Frame->GetStaticMesh()->GetBoundingBox().Max.Z : 0.f;
 		Frame->SetRelativeLocation(FVector::ZeroVector);
@@ -508,6 +517,10 @@ void ABpTable::ApplyPlan(const FBpPlan& Plan)
 		Sheet = NewObject<UCanvasRenderTarget2D>(this);
 		Sheet->ClearColor = FLinearColor::Transparent;
 		Sheet->RenderTargetFormat = RTF_RGBA8;
+		// Mips, so the fine grid and thin outlines minify instead of shimmering at the far edge.
+		Sheet->bAutoGenerateMips = true;
+		Sheet->MipsSamplerFilter = TF_Trilinear;
+		Sheet->Filter = TF_Trilinear;
 		Sheet->OnCanvasRenderTargetUpdate.AddDynamic(this, &ABpTable::DrawSheet);
 		Sheet->InitAutoFormat(SheetWidthPx, SheetHeightPx);
 	}
@@ -681,12 +694,26 @@ void ABpTable::DrawSheet(UCanvas* Canvas, int32 Width, int32 Height)
 	FSheetPen Pen;
 	const auto Px = [this](double X, double Y) { return PaperCmToSheetPx(PlanToPaperCm(FVector2D(X, Y))); };
 	const auto PaperPx = [](double U, double V) { return PaperCmToSheetPx(FVector2D(U, V)); };
-	const FVector2D Max = PlanMin + PlanSize;
 
-	// A faint grid every GridPlanUnits over the plan's extent.
-	const FLinearColor Grid = CyanWhite.CopyWithNewOpacity(0.12f);
-	for (double X = PlanMin.X; X <= Max.X + 0.5; X += GridPlanUnits) Pen.Line(Px(X, PlanMin.Y), Px(X, Max.Y), 2.f, Grid);
-	for (double Y = PlanMin.Y; Y <= Max.Y + 0.5; Y += GridPlanUnits) Pen.Line(Px(PlanMin.X, Y), Px(Max.X, Y), 2.f, Grid);
+	// The paper's grid over the whole sheet: quiet fine lines, a stronger line every GridMajorEvery. Butt ends (the pen's
+	// square caps would overlap at every crossing and dot the grid).
+	const auto GridLine = [&Pen](const FVector2D& From, const FVector2D& To, float WidthPx, const FLinearColor& Color)
+	{
+		const FVector2D Across = FVector2D(From.Y - To.Y, To.X - From.X).GetSafeNormal() * (WidthPx * 0.5f);
+		Pen.Quad(From - Across, To - Across, To + Across, From + Across, Color);
+	};
+	const FLinearColor GridFine = CyanWhite.CopyWithNewOpacity(GridFineOpacity);
+	const FLinearColor GridMajor = CyanWhite.CopyWithNewOpacity(GridMajorOpacity);
+	for (int32 Line = 1; Line * GridFineCm < PaperWidthCm; ++Line)
+	{
+		const bool bMajor = Line % GridMajorEvery == 0;
+		GridLine(PaperPx(Line * GridFineCm, 0.0), PaperPx(Line * GridFineCm, PaperDepthCm), bMajor ? GridMajorPx : GridFinePx, bMajor ? GridMajor : GridFine);
+	}
+	for (int32 Line = 1; Line * GridFineCm < PaperDepthCm; ++Line)
+	{
+		const bool bMajor = Line % GridMajorEvery == 0;
+		GridLine(PaperPx(0.0, Line * GridFineCm), PaperPx(PaperWidthCm, Line * GridFineCm), bMajor ? GridMajorPx : GridFinePx, bMajor ? GridMajor : GridFine);
+	}
 
 	// Each wing: a soft fill, then its outline.
 	for (const FBpPlanWing& Wing : SheetPlan->wings)
