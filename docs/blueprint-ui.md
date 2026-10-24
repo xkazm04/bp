@@ -563,6 +563,13 @@ gets out of the plan's way, and L4 is a page. Earlier sections that say "dock", 
     - The flyout reports its measured width to the engine (`setFlyoutWidth`), so the hover card, the decision card
       and the selection bar keep to the plan left of it. With Agents, Orders or Steer open the selection bar steps
       aside: those panels carry the same controls and preview.
+    - A pending steer preview (NOT ISSUED YET, Commit / Cancel) always has exactly one visible seat, decided once by
+      `previewSeat` (`apps/web/src/lib/model/preview-seat.ts`): the selection bar, unless Agents, Orders or Steer is
+      open with the rail shown; then the panel row that owns it (a Steer preset's own row, Steer's selection row,
+      Orders' writer, the Agents overview), selected once when the preview arrives, else - no row owns it, or the
+      reader moved off that row - the workbench's own pending bar over the detail's foot. So Enter never commits a
+      preview the reader cannot see. No panel reads the preview's kind or order itself. Checked by
+      `npm run check:preview-seat` and `check:rail-keys` rule 11.
   - Esc, the same counter, or a click on the plan closes it. Only one flyout is open at a time.
   - A changed count counts up or down and pulses once, at most every 3 s.
   - Keys: `/` opens Find, `\` hides the rail, `P` opens View.
