@@ -22,5 +22,13 @@ through the plain rectangle.
 At L0 and L1, ribbon segments carry each lens's motif as a small mark (bite, cut, spine, gauge,
 ticks, crops). Labels, sheet panels, tabs and the legend also change per lens.
 
+**The legend is a finder.** Under a lens each icon row counts the features on this plan in that state
+(`legend-model.ts`, every feature in exactly one row, with "Not measured" and, where any, "Not applicable"),
+and pressing it (click, Enter, Space) flies to the next one with the highlight; again, the one after. A row
+with none is aria-disabled. A feature the lens has not measured gets no icon (`iconFor` is null): its chip is
+the health cell and its sheet badge the lens's name icon, never "reviewed", "designed" or "untested".
+`check:shaped-legend` gates the model; the browser walk (security tab, Plan flyout, Tab to a row, Enter twice:
+`__bp.S.hl` steps through the row, `__bp.S.open` stays null) is a manual pass against a dev server.
+
 **Known limits.** `marks` gets dominance through a hand-off from `shape` (the seam doesn't pass it).
 The chip row needs fixtures about 100 px wide or more for six chips (wider for more lenses).
