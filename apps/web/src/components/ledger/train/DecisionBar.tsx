@@ -7,10 +7,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Proposal } from '@bp/core/scan/types';
 import { suggestRelease } from '@/lib/scan/actions';
-import { isFlagged, isWaiting } from '@bp/core/train/rules';
 import type { Ledger } from '../useLedger';
 import { useTrain } from './data';
-import { Decide, releaseIn, verdictIn } from './Decide';
+import { Decide } from './Decide';
+import { decisionCounts } from './plan';
 import { LensTag } from './ui/Marks.tsx';
 import { Btn } from './ui/Controls';
 import './DecisionBar.css';
@@ -33,8 +33,8 @@ export function DecisionBar({ L, targets, onRelease, hint, phone = false }: Deci
   const T = useTrain(), n = L.ui.sel.size;
   const ps = useMemo(() => targets.map((id) => T.byId.get(id)).filter((p): p is Proposal => !!p), [targets, T]);
   const lenses = useMemo(() => [...new Set(ps.map((p) => p.lens))], [ps]);
-  const flagged = useMemo(() => ps.filter((p) => isWaiting(p) && isFlagged(p, verdictIn(T, p))).length, [ps, T]);
-  const locked = ps.filter((p) => { const r = releaseIn(T, p); return !!r && r.status !== 'draft'; }).length;
+  // the planner's numbers (plan.ts), the same ones the buttons and the note editor read
+  const { flagged, locked } = useMemo(() => decisionCounts(T, targets), [T, targets]);
 
   // the package: accepted items no release holds, plus those of the open release
   const rel = useMemo(() => [...T.releases].reverse().find((r) => OPEN_REL.has(r.status)), [T.releases]);

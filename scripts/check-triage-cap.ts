@@ -2,7 +2,7 @@
 //   - one value, scan/types.ts, that the server (release.server.ts) and the sample sim (train-sim.ts) take from there
 //     instead of each keeping its own 200;
 //   - the sample sim refuses MAX_TRIAGE + 1 ids with a 400 and accepts MAX_TRIAGE (the route's behaviour on Kettle);
-//   - the ledger's decision path (Decide.tsx) asks triageCapText before it calls triageItems, so a pack larger than the
+//   - the ledger's decision path (train/plan.ts, read by Decide.tsx) asks triageCapText before it plans a send, so a pack larger than the
 //     cap gets a sentence in the operator's words, not the route's developer sentence in a toast.
 // Run: node scripts/check-triage-cap.ts  (Node's type stripping). Exit 1 on any failure.
 import fs from 'node:fs';
@@ -40,9 +40,13 @@ check('release.server.ts takes MAX_TRIAGE from scan/types (no literal of its own
 check('train-sim.ts takes its cap from scan/types (no literal 200)', !/MAX_IDS\s*=\s*\d/.test(sim2) && /MAX_TRIAGE[^;]*scan\/types/.test(sim2));
 
 // the client: the decision path asks before it sends
+// (the cap is the decision planner's, train/plan.ts: it asks before it plans a send, and Decide.tsx sends only a plan)
+const plan0 = src('apps/web/src/components/ledger/train/plan.ts'), plan = plan0.slice(Math.max(0, plan0.indexOf('function planDecision')));
+const ask = plan.search(/triageCapText\s*\(/), planned = plan.search(/kind:\s*'send'/);
+check('plan.ts asks triageCapText before it plans a send', ask >= 0 && planned >= 0 && ask < planned, `ask@${ask} send@${planned}`);
 const decide = src('apps/web/src/components/ledger/train/Decide.tsx');
-const ask = decide.search(/triageCapText\s*\(/), send = decide.search(/\btriageItems\s*\(/);
-check('Decide.tsx asks triageCapText before it calls triageItems', ask >= 0 && send >= 0 && ask < send, `ask@${ask} send@${send}`);
+const plans = decide.search(/\bplanDecision\s*\(/), send = decide.search(/\.triage\s*\(/);
+check('Decide.tsx plans the decision before it sends one', plans >= 0 && send >= 0 && plans < send, `plan@${plans} send@${send}`);
 
 console.log(`triage-cap: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

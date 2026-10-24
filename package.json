@@ -109,7 +109,8 @@
     "check:sim-undo": "node scripts/check-sim-undo.ts",
     "check:clear-path": "node scripts/check-clear-path.ts",
     "check:scan-demo": "node scripts/check-scan-demo.mjs",
-    "check:preview-seat": "node scripts/check-preview-seat.ts"
+    "check:preview-seat": "node scripts/check-preview-seat.ts",
+    "check:train-plan": "node scripts/check-train-plan.ts"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

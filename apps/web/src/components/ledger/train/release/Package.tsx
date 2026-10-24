@@ -1,20 +1,21 @@
 // The Release tab's package: the accepted items with no release (before a draft) or the open release's items, grouped
 // by lens, each its commit, title, feature and before -> after; a flagged item (rules.ts isFlagged) carries its triage
 // note. Then the rework queue (a cherry-pick conflict's note marked) and the descoped items with their notes. Undo is
-// the reopen decision through the one decision path (Decide.tsx), offered while rules.ts canDecide allows it (the
-// release is still a draft); Compare opens the item's evidence in the triage table's compare panel.
+// the reopen decision through the one decision path (Decide.tsx), offered while the planner (plan.ts planDecision)
+// says it applies: not pending, the release still a draft, the item not rebuilt by a newer attempt; otherwise it stays
+// focusable with its why (Btn reason); Compare opens the item's evidence in the triage table's compare panel.
 import { memo, useMemo } from 'react';
-import type { Proposal, Release } from '@bp/core/scan/types';
-import { canDecide } from '@bp/core/train/rules';
+import type { Proposal } from '@bp/core/scan/types';
 import { useEngine } from '../../../hooks';
 import { setLedgerUi } from '../../useLedger';
 import { useDecide } from '../Decide';
+import { planDecision, type PlanData } from '../plan';
 import { LensTag } from '../ui/Marks.tsx';
 import { Btn, Callout } from '../ui/Controls';
 import { byLens, isConflict, moveText, STATUS_WORD, type PkgItem, type ReleaseModel } from './releaseState';
 
 interface RowCtl {
-  rel?: Release;
+  T: PlanData;
   phone: boolean;
   pending: ReadonlySet<string>;
   undo(id: string): void;
@@ -23,10 +24,10 @@ interface RowCtl {
 
 const short = (sha: string | undefined) => (sha ? sha.slice(0, 7) : 'no sha');
 
-const UndoBtn = ({ p, c, why }: { p: Proposal; c: RowCtl; why?: string }) => {
-  const off = c.phone || c.pending.has(p.id) || !canDecide('reopen', p, c.rel) || !!why;
-  const title = why ?? (c.pending.has(p.id) ? 'Undoing…' : !canDecide('reopen', p, c.rel) ? 'Locked: the release left draft' : 'Undo the decision (back to waiting)');
-  return <Btn size="row" disabled={off} title={title} onClick={() => c.undo(p.id)}>{c.pending.has(p.id) ? 'Undoing' : 'Undo'}</Btn>;
+const UndoBtn = ({ p, c }: { p: Proposal; c: RowCtl }) => {
+  const busy = c.pending.has(p.id), plan = busy ? null : planDecision(c.T, [p.id], 'reopen');
+  const why = plan && 'why' in plan ? plan.why : undefined;
+  return <Btn size="row" disabled={c.phone || busy} reason={c.phone ? undefined : why} title={busy ? 'Undoing…' : 'Undo the decision (back to waiting)'} onClick={() => c.undo(p.id)}>{busy ? 'Undoing' : 'Undo'}</Btn>;
 };
 
 const PkgRow = memo(function PkgRow({ x, c }: { x: PkgItem; c: RowCtl }) {
@@ -43,7 +44,7 @@ const PkgRow = memo(function PkgRow({ x, c }: { x: PkgItem; c: RowCtl }) {
   );
 });
 
-const NoteRow = memo(function NoteRow({ p, c, struck, rebuilt }: { p: Proposal; c: RowCtl; struck?: boolean; rebuilt?: string }) {
+const NoteRow = memo(function NoteRow({ p, c, struck }: { p: Proposal; c: RowCtl; struck?: boolean }) {
   const note = p.triage_note ?? '';
   return (
     <li data-fid={p.id}>
@@ -52,26 +53,22 @@ const NoteRow = memo(function NoteRow({ p, c, struck, rebuilt }: { p: Proposal; 
         <small className={isConflict(p) ? 'warn' : undefined}>{isConflict(p) ? '⚠ ' : ''}{struck ? '“' + note + '”' : note || 'no note'}</small>
       </span>
       <span />
-      <UndoBtn p={p} c={c} why={rebuilt ? 'Rebuilt as ' + rebuilt + ': undo that one instead' : undefined} />
+      <UndoBtn p={p} c={c} />
     </li>
   );
 });
 
 export function Package({ m, phone }: { m: ReleaseModel; phone: boolean }) {
-  const E = useEngine(), d = useDecide(), rel = m.rel, { pending, decide } = d;
+  const E = useEngine(), d = useDecide(), { pending, decide } = d;
   const c = useMemo<RowCtl>(() => {
-    const o: RowCtl = {
-      phone, pending,
+    return {
+      T: m.T, phone, pending,
       undo: (id) => void decide([id], 'reopen'),
       compare: (id) => { setLedgerUi((u) => ({ ...u, open: id, scope: 'packs' })); E.setPage('ledger', 'triage'); },
     };
-    if (rel) o.rel = rel;
-    return o;
-  }, [phone, pending, decide, rel, E]);
+  }, [m.T, phone, pending, decide, E]);
   const props = m.T.proposals;
   const rework = props.filter((p) => p.status === 'rework'), descoped = props.filter((p) => p.status === 'descoped' && p.pack_id);
-  const rebuiltBy = new Map<string, string>();
-  for (const p of props) if (p.attempt_of) rebuiltBy.set(p.attempt_of, p.id);
   return (
     <div className="tr-rel-pkg" data-role="tr-rel-pkg">
       {m.items.length ? (
@@ -89,7 +86,7 @@ export function Package({ m, phone }: { m: ReleaseModel; phone: boolean }) {
       )}
       {m.rel && m.free ? <p className="tr-rel-hint">{m.free} accepted item{m.free === 1 ? '' : 's'} wait for the next release (v{m.rel.version} · {STATUS_WORD[m.rel.status]}).</p> : null}
       <h3>Rework queue · {rework.length}</h3>
-      {rework.length ? <ul className="tr-pl">{rework.map((p) => <NoteRow key={p.id} p={p} c={c} rebuilt={rebuiltBy.get(p.id)} />)}</ul>
+      {rework.length ? <ul className="tr-pl">{rework.map((p) => <NoteRow key={p.id} p={p} c={c} />)}</ul>
         : <p className="tr-rel-none">Empty. Items sent back with R land here with their note.</p>}
       <h3>Descoped · {descoped.length}</h3>
       {descoped.length ? <ul className="tr-pl">{descoped.map((p) => <NoteRow key={p.id} p={p} c={c} struck />)}</ul>
