@@ -3,37 +3,14 @@
 //   node scripts/art/light-table-frame/write_manifest.mjs <work-dir>
 import fs from 'node:fs';
 import path from 'node:path';
-import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
+import { argsOrUsage, cm, folderDir, gate, inventory, writeStage } from '../lib/manifest-kit.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
-
-// lynx_commit is the writer's field: the newest commit that touches this asset folder, so check:art can trace the
-// manifest to a real tree. It throws when nothing has committed the folder yet (there is no honest hash to stamp).
-function lynxCommit(folder) {
-  const r = spawnSync('git', ['log', '-1', '--format=%H', '--', 'apps/vr/ArtSource/' + folder], { cwd: ROOT, encoding: 'utf8' });
-  const h = (r.stdout ?? '').trim();
-  if (!/^[0-9a-f]{40}$/.test(h)) throw new Error('lynx_commit: no commit touches apps/vr/ArtSource/' + folder + ' yet; commit the folder first so the manifest can name it');
-  return h;
-}
-const DIR = path.join(ROOT, 'apps', 'vr', 'ArtSource', 'light-table-frame');
-const [work] = process.argv.slice(2);
+const [work] = argsOrUsage(1, 'node scripts/art/light-table-frame/write_manifest.mjs <work-dir>');
 const S = JSON.parse(fs.readFileSync(path.join(work, 'score.json'), 'utf8'));
 const F = JSON.parse(fs.readFileSync(path.join(work, 'framing.json'), 'utf8'));
-const DATE = new Date().toISOString().slice(0, 10);
-const sha = (p) => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
-const gate = (pass, note) => ({ pass, note, date: DATE });
-const files = (dir, base = dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
-  const p = path.join(dir, e.name);
-  return e.isDirectory() ? files(p, base) : e.name === 'manifest.json' ? [] : [path.relative(base, p).split(path.sep).join('/')];
-}).sort();
-const all = files(DIR);
-const sums = Object.fromEntries(all.map((f) => [f, sha(path.join(DIR, f))]));
-const MB10 = 10 * 1024 * 1024;
-const oversize = all.filter((f) => fs.statSync(path.join(DIR, f)).size >= MB10);
-const sizes = Object.fromEntries(all.map((f) => [f, fs.statSync(path.join(DIR, f)).size]));
-const cm = (v) => Math.round(v * 1e4) / 100;
+const { files: all, file_bytes: sizes, oversize } = inventory(folderDir(ROOT, 'light-table-frame'));
 const [sx, sy, sz] = S.bounds_m.size_xyz;
 const tex = all.filter((f) => f.startsWith('textures/'));
 const framingOk = Object.values(F).every((v) => v.pass);
@@ -74,8 +51,6 @@ const M = {
   generator: 'procedural Blender',
   blender: 'Blender 5.2.2, scripts/art/light-table-frame/build_frame.bpy (build and score), render_frame.bpy (evidence and framing check), write_manifest.mjs',
   licence: 'own procedural work; no generated input, no Leonardo, ComfyUI or TRELLIS',
-  lynx_commit: lynxCommit('light-table-frame'),
-  lynx_commit_note: 'stamped by the writer: the newest commit touching this folder when the manifest was written',
   regenerate: 'blender -b -P scripts/art/light-table-frame/build_frame.bpy -- <repo-root> <work>; blender -b -P scripts/art/light-table-frame/render_frame.bpy -- <repo-root> <work>; node scripts/art/light-table-frame/write_manifest.mjs <work>',
   review_fixes: {
     review: 'Director review of 04fc311 (evidence/turnaround.jpg), 2026-10-21: "the geometry is clean and cheap, but the look departs from the art bible. The table in docs/concepts/vr-light-table/lookdev/00-hero.jpg has a dark, near-black frame with a bright white emissive light strip along the glass edge. The build is warm wood and shows no visible emissive edge." Reworked the same day on the CPU only (Blender, Cycles on the CPU; no ComfyUI, TRELLIS, GPU job or external API).',
@@ -95,8 +70,6 @@ const M = {
     ],
   },
   framing: F,
-  file_bytes: sizes,
-  sha256: sums,
   gates: {
     input: gate(true, 'procedural, no generated input (plan.md P4: the glass and paper stay procedural; operator pick: props parametric). Reference: art-breakdown.md row 1 (backlit glass table, bright white edge light, emissive frame strip, the glass blue comes from the paper material, not a tint), the Director review of 04fc311 (rim, legs and rails near-black as in lookdev/00-hero.jpg; style-block.json studio #0A0F18 is the only dark value in the block, so it is the dark metal base) and brushed aluminium feet and ledge.'),
     mesh_acceptance: gate(meshOk, `re-imported from final.glb: ${S.mesh_objects} mesh object, ${S.vertices} vertices, ${S.tris} tris, ${S.components} connected components (rim, ledge, strip, glass, apron, legs, feet, rails), ${S.floaters} floaters (a floater is a component whose bounding box touches no other), ${S.open_edges} open edges (the single-sided glass plane); glass plane faces up: ${S.glass_faces_up}, ${S.glass_size_m[0] * 100} x ${S.glass_size_m[1] * 100} cm at z ${S.glass_z_m} m; glass in its own slot ${glassSlot}`),
@@ -105,5 +78,6 @@ const M = {
     poly_budget: gate(budgetOk, `${S.tris} tris against ${S.budget_tris} (${Math.round((S.tris / S.budget_tris) * 100)}%)`),
   },
 };
-fs.writeFileSync(path.join(DIR, 'manifest.json'), JSON.stringify(M, null, 2) + '\n');
+// the build stage through the kit, which stamps sha256, file_bytes and lynx_commit
+writeStage(ROOT, 'light-table-frame', 'build', M);
 console.log('gates', Object.fromEntries(Object.entries(M.gates).map(([k, v]) => [k, v.pass])));

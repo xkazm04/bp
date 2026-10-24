@@ -3,30 +3,12 @@
 //   node scripts/art/materials/write_manifests.mjs <work-dir>
 import fs from 'node:fs';
 import path from 'node:path';
-import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
+import { MB10, argsOrUsage, folderDir, gate, inventory, writeStage } from '../lib/manifest-kit.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
-
-// lynx_commit is the writer's field: the newest commit that touches this asset folder, so check:art can trace the
-// manifest to a real tree. It throws when nothing has committed the folder yet (there is no honest hash to stamp).
-function lynxCommit(folder) {
-  const r = spawnSync('git', ['log', '-1', '--format=%H', '--', 'apps/vr/ArtSource/' + folder], { cwd: ROOT, encoding: 'utf8' });
-  const h = (r.stdout ?? '').trim();
-  if (!/^[0-9a-f]{40}$/.test(h)) throw new Error('lynx_commit: no commit touches apps/vr/ArtSource/' + folder + ' yet; commit the folder first so the manifest can name it');
-  return h;
-}
-const [work] = process.argv.slice(2);
+const [work] = argsOrUsage(1, 'node scripts/art/materials/write_manifests.mjs <work-dir>');
 const S = JSON.parse(fs.readFileSync(path.join(work, 'score.json'), 'utf8'));
-const DATE = new Date().toISOString().slice(0, 10);
-const MB10 = 10 * 1024 * 1024;
-const sha = (p) => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
-const gate = (pass, note) => ({ pass, note, date: DATE });
-const files = (dir, base = dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
-  const p = path.join(dir, e.name);
-  return e.isDirectory() ? files(p, base) : e.name === 'manifest.json' ? [] : [path.relative(base, p).split(path.sep).join('/')];
-}).sort();
 
 const INFO = {
   vellum: {
@@ -48,14 +30,11 @@ const INFO = {
 };
 
 for (const [id, info] of Object.entries(INFO)) {
-  const dir = path.join(ROOT, 'apps', 'vr', 'ArtSource', 'mat-' + id);
+  const inv = inventory(folderDir(ROOT, 'mat-' + id));
   const M = S.materials[id];
-  const all = files(dir);
-  const sums = Object.fromEntries(all.map((f) => [f, sha(path.join(dir, f))]));
-  const sizes = Object.fromEntries(all.map((f) => [f, fs.statSync(path.join(dir, f)).size]));
+  const { files: all, sha256: sums, file_bytes: sizes, oversize } = inv;
   const tex = all.filter((f) => f.startsWith('textures/'));
   const ev = all.filter((f) => f.startsWith('evidence/'));
-  const oversize = all.filter((f) => sizes[f] >= MB10);
   const seamOk = Object.values(M).every((m) => m.pass) && tex.length === 3;
   const worst = Math.max(...Object.values(M).flatMap((m) => Object.values(m.seam).map((s) => s.ratio)));
   const largest = Math.max(...tex.map((f) => sizes[f]));
@@ -71,11 +50,8 @@ for (const [id, info] of Object.entries(INFO)) {
     generator: 'procedural Blender',
     blender: 'Blender 5.2.2 (CPU, Cycles for the evidence), scripts/art/materials/build_materials.bpy (bake and seam check), render_materials.bpy (evidence), write_manifests.mjs',
     licence: 'own procedural work; no generated input, no Leonardo, ComfyUI or TRELLIS',
-    lynx_commit: lynxCommit('mat-' + id),
-    lynx_commit_note: 'stamped by the writer: the newest commit touching this folder when the manifest was written',
     regenerate: 'blender -b -P scripts/art/materials/build_materials.bpy -- <repo-root> <work>; blender -b -P scripts/art/materials/render_materials.bpy -- <repo-root> <work>; node scripts/art/materials/write_manifests.mjs <work>',
     files: sums,
-    sha256: sums,
     gates: {
       input: gate(true, info.input),
       tiling: gate(seamOk, `seam check on the stored PNGs, per file and per axis: wrap = mean abs difference between the first and last pixel row/column (the pair that touches when the tile repeats), inner = mean abs difference between neighbouring pixels over the tile; pass when wrap / inner <= ${S.ratio_max}. Worst ratio over ${tex.length} files and 2 axes: ${worst}. Per-file values: ${JSON.stringify(M)}. Also evidence/tiled-2x2.jpg, a 2 x 2 repeat with the wrap seams through the middle of the image. Method: fields are periodic by construction (FFT-filtered noise, integer stripe counts, wrapped finite differences for the normal map).`),
@@ -85,6 +61,7 @@ for (const [id, info] of Object.entries(INFO)) {
       poly_budget: gate(true, n),
     },
   };
-  fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(out, null, 2) + '\n');
+  // the build stage through the kit, which stamps sha256, file_bytes and lynx_commit (files stays this writer's own map)
+  writeStage(ROOT, 'mat-' + id, 'build', out);
   console.log(id, seamOk, 'worst', worst);
 }

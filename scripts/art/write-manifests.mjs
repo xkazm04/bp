@@ -1,37 +1,12 @@
 // Writes apps/vr/ArtSource/{survey-pin,fixture-kit}/manifest.json from the scored final.glb and the files on disk.
 // Gate results are derived from score-assets.mjs, never typed in. Run after build_art.bpy and render_art.bpy:
 //   node scripts/art/write-manifests.mjs
-import fs from 'node:fs';
 import path from 'node:path';
-import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
 import { ASSETS, scoreAsset } from './score-assets.mjs';
+import { folderDir, gate, inventory, writeStage } from './lib/manifest-kit.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-
-// lynx_commit is the writer's field: the newest commit that touches this asset folder, so check:art can trace the
-// manifest to a real tree. It throws when nothing has committed the folder yet (there is no honest hash to stamp).
-function lynxCommit(folder) {
-  const r = spawnSync('git', ['log', '-1', '--format=%H', '--', 'apps/vr/ArtSource/' + folder], { cwd: ROOT, encoding: 'utf8' });
-  const h = (r.stdout ?? '').trim();
-  if (!/^[0-9a-f]{40}$/.test(h)) throw new Error('lynx_commit: no commit touches apps/vr/ArtSource/' + folder + ' yet; commit the folder first so the manifest can name it');
-  return h;
-}
-const ART = path.join(ROOT, 'apps', 'vr', 'ArtSource');
-const DATE = new Date().toISOString().slice(0, 10);
-
-function files(dir, base = dir) {
-  const out = [];
-  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    const p = path.join(dir, e.name);
-    if (e.isDirectory()) out.push(...files(p, base));
-    else if (e.name !== 'manifest.json') out.push(path.relative(base, p).split(path.sep).join('/'));
-  }
-  return out.sort();
-}
-const sha = (p) => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
-const gate = (pass, note) => ({ pass, note, date: DATE });
 
 const NOTES = {
   'survey-pin': {
@@ -63,15 +38,14 @@ const NOTES = {
   }
 }
 for (const id of Object.keys(ASSETS)) {
-  const dir = path.join(ART, id), r = scoreAsset(id), c = r.checks, n = NOTES[id];
-  const all = files(dir);
-  const sums = Object.fromEntries(all.map((f) => [f, sha(path.join(dir, f))]));
+  const r = scoreAsset(id), c = r.checks, n = NOTES[id];
+  const all = inventory(folderDir(ROOT, id)).files;
   const tex = all.filter((f) => f.startsWith('textures/'));
   const per = Object.fromEntries(r.meshes.map((m) => [m.name, { tris: m.tris, vertices: m.vertices, components: m.components, floaters: m.floaters, bounds_cm: m.bounds_cm }]));
   const overall = r.meshes.reduce((a, m) => ({ x: Math.max(a.x, m.bounds_cm.x), y: Math.max(a.y, m.bounds_cm.y), z: Math.max(a.z, m.bounds_cm.z) }), { x: 0, y: 0, z: 0 });
   const bad = Object.entries(c).filter(([, v]) => !v).map(([k]) => k).join(', ');
   const needTex = id === 'survey-pin';
-  const manifest = {
+  const fields = {
     id, class: r.class, budget_tris: r.budget_tris, budget_note: id === 'fixture-kit' ? 'per mesh (300 each)' : 'instanced',
     tris: id === 'fixture-kit' ? Object.fromEntries(r.meshes.map((m) => [m.name, m.tris])) : r.tris_total,
     tris_total: r.tris_total,
@@ -80,7 +54,6 @@ for (const id of Object.keys(ASSETS)) {
     ...(n.kinds ? { kinds: n.kinds } : {}), ...(n.mark ? { mark: n.mark } : {}), textures: n.textures,
     generator: n.generator, licence: 'own procedural work',
     regenerate: 'blender -b -P scripts/art/build_art.bpy -- <repo-root>; blender -b -P scripts/art/render_art.bpy -- <repo-root>; node scripts/art/write-manifests.mjs; node scripts/art/score-assets.mjs',
-    sha256: sums,
     gates: {
       input: gate(true, 'procedural, no generated input'),
       mesh_acceptance: gate(c.meshes_present && c.no_floaters && c.one_uv_set && c.pivot, `${r.meshes.map((m) => `${m.name}: ${m.components} components, ${m.floaters} floaters`).join('; ')}; one UV set; pivot ${n.pivot.split(';')[0]}`),
@@ -88,12 +61,11 @@ for (const id of Object.keys(ASSETS)) {
       finishing: gate(c.one_uv_set && c.materials && (!needTex || tex.length === 6), `one UV set, ${r.materials.length} material slots (${r.materials.join(', ')}); ${needTex ? tex.length + ' PNG textures' : 'no textures by design'}`),
       poly_budget: gate(c.poly_budget, `${id === 'fixture-kit' ? 'max ' + Math.max(...r.meshes.map((m) => m.tris)) + ' per mesh' : r.tris_total + ' tris'} against ${r.budget_tris}`),
     },
-    lynx_commit: lynxCommit(id),
-    lynx_commit_note: 'stamped by the writer: the newest commit touching this folder when the manifest was written',
   };
   // The manifest is still written (it records the failing gate), but the run reports it: score-assets.mjs exits 1 on the same
   // information, and a && chain must not carry on over a manifest check:art will reject.
   if (bad) { console.error(`WARNING ${id}: failed checks: ${bad}`); process.exitCode = 1; }
-  fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
+  // the build stage through the kit: it stamps sha256, file_bytes and lynx_commit, and refuses before writing if no commit names the folder
+  writeStage(ROOT, id, 'build', fields);
   console.log(`${id}: manifest written, ${all.length} files hashed`);
 }

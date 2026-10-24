@@ -5,34 +5,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
+import { argsOrUsage, folderDir, gate, inventory, writeStage } from '../lib/manifest-kit.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
-
-// lynx_commit is the writer's field: the newest commit that touches this asset folder, so check:art can trace the
-// manifest to a real tree. It throws when nothing has committed the folder yet (there is no honest hash to stamp).
-function lynxCommit(folder) {
-  const r = spawnSync('git', ['log', '-1', '--format=%H', '--', 'apps/vr/ArtSource/' + folder], { cwd: ROOT, encoding: 'utf8' });
-  const h = (r.stdout ?? '').trim();
-  if (!/^[0-9a-f]{40}$/.test(h)) throw new Error('lynx_commit: no commit touches apps/vr/ArtSource/' + folder + ' yet; commit the folder first so the manifest can name it');
-  return h;
-}
-const DIR = path.join(ROOT, 'apps', 'vr', 'ArtSource', 'city-backdrop');
+const [work, srcJpg] = argsOrUsage(2, 'node scripts/art/city-backdrop/write_manifest.mjs <work-dir> <source-frame.jpg>');
 const LOG = path.join(ROOT, 'docs', 'concepts', 'vr-light-table', 'lookdev', 'log.jsonl');
-const [work, srcJpg] = process.argv.slice(2);
 const S = JSON.parse(fs.readFileSync(path.join(work, 'score.json'), 'utf8'));
 const E = JSON.parse(fs.readFileSync(path.join(work, 'evidence.json'), 'utf8'));
-const DATE = new Date().toISOString().slice(0, 10);
 const shaOf = (b) => crypto.createHash('sha256').update(b).digest('hex');
-const gate = (pass, note) => ({ pass, note, date: DATE });
-const files = (dir, base = dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
-  const p = path.join(dir, e.name);
-  return e.isDirectory() ? files(p, base) : e.name === 'manifest.json' ? [] : [path.relative(base, p).split(path.sep).join('/')];
-}).sort();
-const all = files(DIR);
-const sums = Object.fromEntries(all.map((f) => [f, shaOf(fs.readFileSync(path.join(DIR, f)))]));
-const sizes = Object.fromEntries(all.map((f) => [f, fs.statSync(path.join(DIR, f)).size]));
-const oversize = all.filter((f) => sizes[f] >= 10 * 1024 * 1024);
+const { file_bytes: sizes, oversize } = inventory(folderDir(ROOT, 'city-backdrop'));
 
 const lines = fs.readFileSync(LOG, 'utf8').split('\n').filter(Boolean);
 const srcSha = shaOf(fs.readFileSync(srcJpg));
@@ -95,12 +76,8 @@ const M = {
   },
   blender: 'Blender 5.2.2, scripts/art/city-backdrop/build_backdrop.bpy (concept, strip, panel and score), render_backdrop.bpy (evidence), write_manifest.mjs',
   licence: "Leonardo API output, generated 2026-10-21 on the owner's Leonardo account with public:false. Shipping it rests on the Director's ruling for the operator of 2026-10-21 (Leonardo for the backdrop, because FLUX.2 [klein] is not installed and will not be; wolf-plan.md R8, tech-stack.md section 5). The post-processing (seam fade, dim, mesh) is our own work. Check the Leonardo terms of service for commercial use before a public release.",
-  lynx_commit: lynxCommit('city-backdrop'),
-  lynx_commit_note: 'stamped by the writer: the newest commit touching this folder when the manifest was written',
   regenerate: 'node scripts/lookdev/leonardo.mjs gen --prop city-backdrop --variant A --seed 3 --quality MEDIUM --size 2048x768 --stop-at 200 (spends credits); blender -b -P scripts/art/city-backdrop/build_backdrop.bpy -- <repo-root> <work> <frame.jpg>; blender -b -P scripts/art/city-backdrop/render_backdrop.bpy -- <repo-root> <work>; node scripts/art/city-backdrop/write_manifest.mjs <work> <frame.jpg>',
   evidence_stats: E,
-  file_bytes: sizes,
-  sha256: sums,
   gates: {
     input: gate(true, `Leonardo ${picked.e.model}, ${pickedSize} (the model accepts wide sizes; log line ${picked.n}), picked from ${calls.length} frames (${trialMix}, 1 ${picked.e.quality} at ${picked.e.credits}). The prompt uses the backdrop rules (wide night skyline from a high studio window, low contrast, dim, no foreground, no window frame, no text or logos, seamless horizon band) and restates the style block palette and finish. The picked frame is a dim blueprint-blue night skyline with sparse amber window lights, no frame and no text, like the city seen through the windows in lookdev/00-hero.jpg.`),
     mesh_acceptance: gate(meshOk, `trivial for a matte panel (no generated mesh): re-imported from final.glb, ${S.mesh_objects} mesh object, ${S.vertices} vertices, ${S.tris} tris, ${S.inward_faces} of ${S.faces} faces point at the arc centre, ${S.uv_sets} UV set, one emissive-only slot (${S.materials[0]}); no floaters or holes by construction (one strip of quads).`),
@@ -109,5 +86,6 @@ const M = {
     poly_budget: gate(S.tris <= BUDGET, `trivial: ${S.tris} tris for a curved panel against ${BUDGET} (plan.md P4 gives no backdrop row; the figure is a sanity cap)`),
   },
 };
-fs.writeFileSync(path.join(DIR, 'manifest.json'), JSON.stringify(M, null, 2) + '\n');
+// the build stage through the kit, which stamps sha256, file_bytes and lynx_commit
+writeStage(ROOT, 'city-backdrop', 'build', M);
 console.log('gates', Object.fromEntries(Object.entries(M.gates).map(([k, v]) => [k, v.pass])));
