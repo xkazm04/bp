@@ -23,8 +23,8 @@ import type { ScanCtx } from '@/lib/scan/actions';
 import { scanViews } from '@/lib/scan/scan-views';
 import { readTempLenses, subscribeTempLenses } from '@/lib/scan/temp-lens';
 import { projectHref, refreshProjects, useProductName } from '@/lib/scan/projects';
-import { getVariant } from '@/variants/registry';
-import type { VariantId } from '@/variants/types';
+import { getVariant, loadVariant } from '@/variants/registry';
+import type { Variant, VariantId } from '@/variants/types';
 import { EngineCtx, LiveCtx, ScanCtxCtx, VariantCtx, shallowEqual, useBp, type LiveInfo } from './hooks';
 import { Header } from './Header';
 import { Dock } from './Dock';
@@ -173,11 +173,21 @@ function bindSim(sim: ScanSim, M: Model) {
 }
 
 export function BlueprintApp({ variantId }: { variantId: VariantId }) {
-  const variant = getVariant(variantId)!;
+  // subtle (the `/` expression) is in memory at once; a prototype (shaped, bold) is a chunk of its own, loaded here,
+  // and the engine mounts once it is in (variants/registry.ts). data-variant reads the prop, so it never waits.
+  const [fetched, setFetched] = useState<Variant | null>(null);
+  const variant = getVariant(variantId) ?? (fetched?.id === variantId ? fetched : null);
   const root = useRef<HTMLDivElement>(null), cv = useRef<HTMLCanvasElement>(null), ui = useRef<HTMLDivElement>(null);
   const [engine, setEngine] = useState<Engine | null>(null);
   // a model or engine build that threw (a stale or malformed structure): shown through the same panel as a fetch error
   const [buildErr, setBuildErr] = useState<string | null>(null);
+  useEffect(() => {
+    if (variant) return;
+    let dead = false;
+    loadVariant(variantId).then((v) => { if (!dead) { if (v) setFetched(v); else setBuildErr('no variant named ' + variantId); } },
+      (err) => { console.error(err); if (!dead) setBuildErr('could not load the ' + variantId + ' variant: ' + (err instanceof Error ? err.message : String(err))); });
+    return () => { dead = true; };
+  }, [variant, variantId]);
   // undefined until mounted (the server render cannot read the query); null = Kettle
   const [product, setProduct] = useState<string | null | undefined>(undefined);
   useEffect(() => { setProduct(new URLSearchParams(location.search).get('product') || null); }, []);
@@ -200,7 +210,7 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
   // Kettle's temporary lenses live in this browser (src/lib/scan/temp-lens.ts): a change rebuilds the model with them
   useEffect(() => (product === null ? subscribeTempLenses(rebuildNow) : undefined), [product]);
   useEffect(() => {
-    if (product === undefined || (product && !settled)) return;
+    if (!variant || product === undefined || (product && !settled)) return;
     let dead = false, built: Engine | null = null;
     const qs = new URLSearchParams(location.search), scale = clampScale(qs.get('scale')), now = () => performance.now();
     // ?lenses=-security,+com.kettle.cost switches lenses off or on for the session, on top of the map's `enabled`
@@ -291,7 +301,7 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
   const info = useMemo<LiveInfo | null>(() => (product ? { slug: product, product: live } : null), [product, live]);
   return (
     <MotionConfig reducedMotion="user">
-    <div className="bp" ref={root} data-variant={variant.id} data-view={GENERAL}>
+    <div className="bp" ref={root} data-variant={variantId} data-view={GENERAL}>
       <div className="bp-paper" />
       <canvas ref={cv} className="bp-map" tabIndex={0} role="application"
         aria-label={'Zoomable floor plan of the product with the ' + (product ? 'live lens scan' : 'simulated agent swarm') + ' working over it. Scroll or pinch to zoom, drag to pan, click to go one level deeper. Plus and minus zoom, arrows walk rooms, Enter opens, Escape goes back. Shift-drag draws a selection.'} />
@@ -302,7 +312,7 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
       {product === null && !engine && !buildErr && <SampleLoading />}
       {product && !engine && <div className="bp-hdr-lite"><ProjectSwitcher current={product} /></div>}
       <div className="bp-ui" ref={ui}>
-        {engine && (
+        {engine && variant && (
           <EngineCtx.Provider value={engine}>
             <VariantCtx.Provider value={variant}>
               <LiveCtx.Provider value={info}>
@@ -314,7 +324,7 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
           </EngineCtx.Provider>
         )}
       </div>
-      {engine && root.current && (
+      {engine && variant && root.current && (
         <EngineCtx.Provider value={engine}>
           <VariantCtx.Provider value={variant}>
             <LiveCtx.Provider value={info}>

@@ -5,7 +5,8 @@ Three routes share one engine, one UI and one data model, and differ only by wha
 ```
 src/variants/
   types.ts        Variant, VariantUI, SheetPanelProps (+ re-exports of the lens contract types)
-  registry.ts     imports the three folders; the foundation owns it
+  registry.ts     the meta list (id, name, description) and the loaders: subtle static, shaped and bold one
+                  dynamic import() each (their own chunks); the foundation owns it
   base/           shared pieces: General's compact layout, legacy lens objects, clamp/count (no channels of its own)
   subtle/         variant 1 — owned by its author
   shaped/         variant 2 — owned by its author
@@ -19,6 +20,10 @@ the six built-in lens ids (`shaped/channels.ts`, `bold/channels.ts`, reading the
 and fall back to `manifestChannel` for any other lens. `base/` holds only what is shared: `baseExpression`
 (General's compact layout, which bold spreads, and the spring), `reviewDiamond`, `legacy.ts` and `util.ts`
 (`clamp`, `count`: import them, do not copy).
+
+`/` draws with subtle, so nothing it imports statically may reach `shaped/`, `bold/` or `base/legacy.ts`
+(`npm run check:variant-chunk`). A new variant adds its entry to `VARIANT_META` in registry.ts with the same
+`name` and `description` as its `index.ts` (the check compares them) and a door in `DOORS`.
 
 ## What a variant provides
 
@@ -84,8 +89,8 @@ React components in a variant folder must be client components (`'use client'` a
 
 The app root carries `data-variant="<id>"` and `data-view="general|business|…"`, and the CSS variable
 `--lens` is the current lens accent. Put variant CSS in your folder (e.g. `styles.css`) and import it
-from your `index.ts`; **scope every rule** under `[data-variant='<id>']`, because the registry loads
-all three folders on every page:
+from your `index.ts`; **scope every rule** under `[data-variant='<id>']`, because a stylesheet stays in the
+page once loaded (a client navigation from `/v/bold` to `/` keeps bold's CSS):
 
 ```css
 [data-variant='bold'][data-view='development'] .evp.cur { font-family: var(--mono); }

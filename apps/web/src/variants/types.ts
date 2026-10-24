@@ -38,12 +38,16 @@ export interface VariantUI {
   tabLabel?(view: ViewId): string | null;
 }
 
-export interface Variant {
+/** What the index page and a route's metadata need of a variant, without loading it (variants/registry.ts VARIANT_META). */
+export interface VariantMeta {
   id: VariantId;
   /** Shown on the index page. */
   name: string;
   /** One line for the index page. */
   description: string;
+}
+
+export interface Variant extends VariantMeta {
   expression: LensExpression;
   ui?: VariantUI;
 }

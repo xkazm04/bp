@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { SWARM, loadProduct } from '@bp/core/data/sample';
-import { VARIANTS } from '@/variants/registry';
+import { VARIANT_META } from '@/variants/registry';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import styles from './index.module.css';
 
@@ -21,7 +21,7 @@ export default function Home() {
         <ThemeToggle />
       </header>
       <ol className={styles.cards}>
-        {VARIANTS.map((v, i) => (
+        {VARIANT_META.map((v, i) => (
           <li key={v.id} className={styles.card}>
             <Link href={'/v/' + v.id} className={styles.link}>
               <span className={styles.no}>{'V-' + String(i + 1).padStart(2, '0')}</span>

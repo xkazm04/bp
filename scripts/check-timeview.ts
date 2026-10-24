@@ -77,7 +77,9 @@ const ep = P.F['email-password-sign-in'], T0 = '2026-04-27';
   const imp = (p: string): Promise<Any> => import(pathToFileURL(path.join(SRC, p)).href);
   const { initialState } = await imp('engine/state.ts');
   const { EngineCtx, VariantCtx } = await imp('components/hooks.ts');
-  const { getVariant } = await imp('variants/registry.ts');
+  // bold is a lazy chunk (variants/registry.ts): load it once, then getVariant reads it synchronously
+  const { getVariant, loadVariant } = await imp('variants/registry.ts');
+  await loadVariant('bold');
   const { Phone } = await imp('components/Phone.tsx');
   const { LensTab } = await imp('components/page/LensTab.tsx');
   const { MetricRows } = await imp('components/sheet/LensPanel.tsx');
