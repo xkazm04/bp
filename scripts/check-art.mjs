@@ -8,11 +8,14 @@
 //   (c) tris (a number, or an object of numbers that is summed; the largest one when budget_note says "per mesh") is at or
 //       under budget_tris where that is set;
 //   (d) every file listed in sha256 (and in files, where that maps paths to hashes) exists and its hash matches;
-//   (d2) every entry of file_bytes (written by 7 of the 14 manifest writers) exists and is that many bytes: the gate notes
-//       quote it ("largest N bytes"), so a hand-edited size is a false statement, not decoration;
+//   (d2) every entry of file_bytes (stamped by scripts/art/lib/manifest-kit.mjs on every write; 7 of the 14 committed
+//       manifests carried it on 2026-10-24) exists and is that many bytes: the gate notes quote it ("largest N bytes"), so a
+//       hand-edited size is a false statement, not decoration;
+//   (d3) every file on disk in the folder (manifest.json aside) is listed in sha256 or files: an unlisted file is one
+//       Wolf would import with no hash to trust;
 //   (e) lynx_commit is a commit in git history (git cat-file -e) that touches the asset folder.
 // Across ArtSource: no committed file is 50 MB or larger; a file over 10 MB prints a warning line.
-// A seeded control runs in memory on a copy of one real manifest (a gate flipped to false, a bad sha) and must fail;
+// A seeded control runs in memory on a copy of one real manifest (a gate flipped to false, a bad sha, a file left out) and must fail;
 // nothing is written to disk. Exit 1 on any violation or if the control passes.
 // Run: node scripts/check-art.mjs   (plain node, no deps)
 import fs from 'node:fs';
@@ -27,18 +30,25 @@ const REL = 'apps/vr/ArtSource';
 const MB = 1024 * 1024;
 const GATES = ['input', 'mesh_acceptance', 'scale', 'finishing', 'poly_budget'];
 
-const git = (...args) => execFileSync('git', args, { cwd: REPO, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-const gitOk = (...args) => { try { git(...args); return true; } catch { return false; } };
+const gitAt = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+const git = (...args) => gitAt(REPO, ...args);
+const gitOk = (cwd, ...args) => { try { gitAt(cwd, ...args); return true; } catch { return false; } };
+const filesIn = (dir, base = dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+  const p = path.join(dir, e.name);
+  return e.isDirectory() ? filesIn(p, base) : p === path.join(base, 'manifest.json') ? [] : [path.relative(base, p).split(path.sep).join('/')];
+});
 const sha256 = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 
 const sumTris = (t) => (typeof t === 'number' ? t : t && typeof t === 'object' && Object.values(t).every((v) => typeof v === 'number') ? Object.values(t).reduce((a, b) => a + b, 0) : NaN);
 
 // Violations for one manifest. `opts.commit` is false for the seeded control (the git half is the real tree's business).
+// `opts.root` is the repository root the folder sits under (default this repo; the art-script tests pass a scratch root).
 // `opts.peers` are the other manifests: any gate a peer of the same `class` carries is required here too (the typed GATES
 // and the mat- prefix stay as the floor, so a gate dropped from every manifest at once is still caught).
 export function validate(folder, m, opts = {}) {
   const errs = [];
-  const dir = path.join(ART, folder);
+  const root = opts.root ?? REPO;
+  const dir = path.join(root, REL, folder);
   if (m.id !== folder) errs.push(`id "${m.id}" is not the folder name`);
 
   const gates = m.gates && typeof m.gates === 'object' ? m.gates : {};
@@ -62,6 +72,7 @@ export function validate(folder, m, opts = {}) {
     if (!fs.existsSync(file)) errs.push(`${rel} is listed but missing`);
     else if (sha256(file) !== want) errs.push(`${rel} sha256 does not match`);
   }
+  if (fs.existsSync(dir)) for (const rel of filesIn(dir).sort()) if (!(rel in listed)) errs.push(`${rel} is in the folder but not in the manifest`);
 
   for (const [rel, want] of Object.entries(m.file_bytes ?? {})) {
     const file = path.join(dir, rel);
@@ -72,8 +83,8 @@ export function validate(folder, m, opts = {}) {
   if (opts.commit !== false) {
     const c = m.lynx_commit;
     if (typeof c !== 'string' || !/^[0-9a-f]{7,40}$/.test(c)) errs.push(`lynx_commit is not a commit hash (${JSON.stringify(c)})`);
-    else if (!gitOk('cat-file', '-e', `${c}^{commit}`)) errs.push(`lynx_commit ${c} is not in git history`);
-    else if (!git('diff-tree', '--root', '--no-commit-id', '--name-only', '-r', c, '--', `${REL}/${folder}`).trim()) errs.push(`lynx_commit ${c} does not touch ${REL}/${folder}`);
+    else if (!gitOk(root, 'cat-file', '-e', `${c}^{commit}`)) errs.push(`lynx_commit ${c} is not in git history`);
+    else if (!gitAt(root, 'diff-tree', '--root', '--no-commit-id', '--name-only', '-r', c, '--', `${REL}/${folder}`).trim()) errs.push(`lynx_commit ${c} does not touch ${REL}/${folder}`);
   }
   return errs;
 }
@@ -116,7 +127,11 @@ function main() {
   const sizeFolder = [...manifests.keys()].find((f) => Object.keys(manifests.get(f).file_bytes ?? {}).length > 0);
   const badSize = structuredClone(manifests.get(sizeFolder) ?? seed);
   if (sizeFolder) { const sk = Object.keys(badSize.file_bytes)[0]; badSize.file_bytes[sk] += 1; }
-  const controls = [['gate false', flipped, 'is not pass: true'], ['bad sha', badSha, 'sha256 does not match']];
+  // a file on disk the manifest leaves out: the seed with its first listed file dropped from sha256 (and files)
+  const unlisted = structuredClone(seed);
+  delete unlisted.sha256[key];
+  if (unlisted.files && typeof unlisted.files === 'object') delete unlisted.files[key];
+  const controls = [['gate false', flipped, 'is not pass: true'], ['bad sha', badSha, 'sha256 does not match'], ['unlisted file', unlisted, `${key} is in the folder but not in the manifest`]];
   if (sizeFolder) controls.push(['bad file_bytes', badSize, 'file_bytes']);
   else { console.log('FAIL  no manifest records file_bytes, so the size control cannot run'); fail++; }
   // a gate kind a sibling carries and this manifest lacks: a peer of the seed's class with a sixth gate the seed has never heard of
