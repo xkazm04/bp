@@ -39,6 +39,8 @@ export const ENTRY_POINTS = {
   // scripted since 2026-10-24 (lamp/build_agent.bpy); its concept views come from the paid Leonardo call. trellis_run.mjs
   // stays as a tool (it queues a GPU job on the owner's ComfyUI), but no shipped folder is regenerated through it now.
   'lamp-agent': { ...W('lamp/write_manifest.mjs', 'scripts/lookdev/leonardo.mjs'), live: { 'scripts/lookdev/leonardo.mjs': 'paid Leonardo API: spends credits' } },
+  // the capture pose's forearms and hands (fidelity sprint): MakeHuman CC0 mesh and skin posed by script, no tracking
+  'hands-capture': W('hands/write_manifest.mjs'),
   'light-table-frame': W('light-table-frame/write_manifest.mjs', 'scripts/art/lib/polyhaven.mjs'),
   'mat-blueprint-paper': MATERIAL, 'mat-brushed-aluminium': MATERIAL, 'mat-vellum': MATERIAL, 'mat-warm-wood': MATERIAL,
   'studio-desk-lamp': STUDIO, 'studio-drawing-tubes': STUDIO, 'studio-mug': STUDIO, 'studio-pinned-drawings': STUDIO, 'studio-shelves': STUDIO,
