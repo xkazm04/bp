@@ -624,6 +624,25 @@ function traced(fn: () => void): string[] {
   expect(/stalled/.test(stale.chip) && !/stalled/.test(live.chip), `scans: a stale view's chip says it stalled (${stale.chip})`);
 }
 
+// ---------------------------------------------------------------- hits.ts: hit order IS draw order
+// The per-frame hit list (Engine.clickAt / hoverAt read it): a region registered later was drawn later, on top, and wins
+// where two overlap; a coarse pointer grows each box to the touch floor around its own centre; reset reuses the records.
+{
+  const HT = await load<typeof import('../apps/web/src/engine/render/hits.ts')>(R + 'hits.ts');
+  const H = new HT.HitList();
+  H.reset();
+  H.add('agent', 'a1', 0, null, 100, 100, 58, 20);
+  H.add('pin', 'f1', 0, null, 120, 90, 23, 27);
+  expect(H.at(125, 105, 0)?.kind === 'pin', 'hits: where an agent chip and a later-drawn pin overlap, the pin wins');
+  expect(H.at(105, 105, 0)?.kind === 'agent', 'hits: the chip outside the pin still resolves to the agent');
+  expect(H.at(99, 105, 0) === null, 'hits: a point outside every region resolves to nothing');
+  expect(H.at(102, 90, 0) === null && H.at(102, 90, HT.TOUCH)?.kind === 'agent', 'hits: a coarse pointer grows a 58 x 20 chip to 44 tall around its centre');
+  const b = H.boxOf(H.pool[1], HT.TOUCH, { x: 0, y: 0, w: 0, h: 0 });
+  expect(b.w === 44 && b.h === 44 && b.x + 22 === 131.5 && b.y + 22 === 103.5, `hits: a 23 x 27 box grows to 44 x 44 about its centre (${b.x},${b.y} ${b.w}x${b.h})`);
+  const before = H.pool.length; H.reset(); H.add('track', 't', 0, null, 0, 0, 10, 10); H.add('pin', 'p', 0, null, 0, 0, 10, 10);
+  expect(H.pool.length === before && H.n === 2, 'hits: reset reuses the pooled records (no record allocated for a frame that fits the pool)');
+}
+
 // ---------------------------------------------------------------- source guard: text is measured, never counted
 // Every measured box in render/ asks E.tx.w for the string's width in the font it is drawn in. A box sized by
 // `label.length * k` is right for one font at one UI scale (?scale=4 grows the glyphs, not the constant).
