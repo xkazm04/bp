@@ -345,5 +345,99 @@ expect(focusCalls("'.fb'") > 0, "Dock.tsx: opening a flyout never focuses its bo
   expect(a0.threw === null && !a0t.includes('Cancel job') && (a0t.includes('Latest from the swarm') || a0t.includes('No swarm data')), `GUARD Agents with S.scanJob null is not the Overview as before (${a0.threw ?? a0t.slice(0, 200)})`);
 }
 
+// The legend's "?" row (variant-framework/B): the plan's "?" rule lives once, in engine/lens/unknown.ts, and both the
+// plan (lensVerdict's "?" weight) and the subtle legend read it. The row counts the unscanned features, Mark selects them
+// (E.setTarget) and Scan these starts one selection scan of exactly those (lens-ops scanSelection), capped at MAX_SELECTION.
+// The Kettle sample has no unscanned feature in General, so the cases patch a few features' lens healths: some unmeasured
+// under every lens, some `na` under every lens, some unmeasured under one lens only. Lens ids and names are read as data.
+{
+  const CASES = ['1 unscanned() General', '2 unscanned() lens view', '3 lensVerdict reads the same rule', '4 unscannedAct + row with 3',
+    '5 row with 0', '6 Mark / Scan these', '7 Scan these blocked', '8 cap 200 / time travel'];
+  try {
+    const U = await imp('engine/lens/unknown.ts');
+    const plan = await imp('engine/render/plan.ts');
+    const SL = await imp('variants/subtle/Legend.tsx');
+    const { ScanCtxCtx } = await imp('components/hooks.ts');
+    const { MAX_SELECTION, scannable } = await impCore('src/scan/jobs.ts');
+    const ids: string[] = P.lenses.map((l: Any) => l.id), L0 = ids[0], L1 = ids[1] ?? ids[0];
+    const withH = (f: Any, h: (l: string) => string | null) => ({ ...f, lens: Object.fromEntries(ids.map((l) => [l, h(l)]).filter(([, x]) => x).map(([l, x]) => [l, { ...(f.lens[l as string] ?? { v: {} }), h: x }])) });
+    const fs0 = P.features;
+    // 0-2: unmeasured everywhere (one by absent facets); 3-4: na everywhere; 5-6: unmeasured under L0 only, measured elsewhere
+    const patched = fs0.map((f: Any, i: number) => i === 0 ? withH(f, () => null) : i <= 2 ? withH(f, () => 'unmeasured') : i <= 4 ? withH(f, () => 'na')
+      : i <= 6 ? withH(f, (l) => (l === L0 ? 'unmeasured' : 'good')) : f);
+    const idsOf = (xs: Any[]) => xs.map((f) => f.id).sort().join(',');
+    const expectG = patched.filter((f: Any) => { let m = false, u = false; for (const l of ids) { const h = f.lens[l]?.h ?? 'unmeasured'; if (h === 'unmeasured') u = true; else if (h !== 'na') m = true; } return u && !m; });
+    const expectL = patched.filter((f: Any) => (f.lens[L0]?.h ?? 'unmeasured') === 'unmeasured');
+    const g = U.unscanned(patched, ids, null), l = U.unscanned(patched, ids, L0);
+    expect(idsOf(g) === idsOf(expectG) && g.length >= 3 && !g.some((f: Any) => [3, 4, 5, 6].includes(patched.indexOf(f))), `${CASES[0]}: General unscanned is not exactly the features with no measured lens and one unmeasured (${g.length} vs ${expectG.length})`);
+    expect(idsOf(l) === idsOf(expectL) && l.length >= 5 && !l.some((f: Any) => [3, 4].includes(patched.indexOf(f))), `${CASES[1]}: unscanned under ${L0} is not exactly its unmeasured features, na out (${l.length} vs ${expectL.length})`);
+    // 3: the plan's own verdict at dominance 0 (General) and 1 (the lens), over the patched Kettle model
+    const verdict = (D: number) => { const E = { lensIds: ids, mixS: { top: D ? L0 : null, topD: D } }; return patched.filter((f: Any) => plan.lensUnknown(E, f) > 0); };
+    expect(idsOf(verdict(0)) === idsOf(g) && idsOf(verdict(1)) === idsOf(l), `${CASES[2]}: lensVerdict's "?" weight disagrees with unscanned() (General ${verdict(0).length} vs ${g.length}, lens ${verdict(1).length} vs ${l.length})`);
+    const legSrc = readStripped(path.join(SRC, 'variants/subtle/Legend.tsx')), planSrc = readStripped(path.join(SRC, 'engine/render/plan.ts'));
+    expect(!/anyUnscanned/.test(legSrc) && !/h === 'unmeasured'/.test(legSrc) && !/h === 'unmeasured'\) unknown = true/.test(planSrc), `${CASES[2]}: Legend.tsx or plan.ts still carries its own copy of the "?" rule`);
+
+    // 4-8: the row's model and its render. Three features unscanned under L1 only (no other feature is), or 250 (synthetic copies).
+    const only = (n: number, lens: string) => { const out = fs0.map((f: Any) => withH(f, () => 'good')); for (let i = 0; i < n; i++) out[i] = withH(i < out.length ? out[i] : out[0], (x) => (x === lens ? 'unmeasured' : 'good')); return out; };
+    const many = (n: number) => { const base = only(fs0.length, ids[0]); const out = [...base]; for (let i = fs0.length; i < n; i++) out.push({ ...base[0], id: base[0].id + '-x' + i }); return out; };
+    const engine = (features: Any[], o: Record<string, unknown> = {}) => {
+      const shared: { E?: Any } = {};
+      render(() => null, {}, () => ({ parts: [] }), shared);
+      const E = shared.E; E.M = { ...M, P: { ...P, features } }; Object.defineProperty(E, 'isNow', { value: o.isNow ?? true, configurable: true });
+      E.targets = [] as Any[]; E.setTarget = (t: Any, label: string) => E.targets.push({ t, label }); E.toasts = [] as Any[]; E.toast = (...a: Any[]) => E.toasts.push(a);
+      return { shared, E };
+    };
+    const sim = () => { const calls: Any[] = []; return { calls, ctx: { slug: null, sim: { startScan: (lens: string, scope: Any) => { calls.push({ lens, scope }); return Promise.resolve({ id: 'j' + calls.length }); } } } }; };
+    const L1d = P.LENS[L1];
+    const rowOf = (shared: Any, view: string, ctx: Any) => {
+      const r = render(() => React.createElement(ScanCtxCtx.Provider, { value: ctx }, React.createElement(SL.SubtleLegend, { view })), {}, () => ({ parts: [] }), shared);
+      const i = r.html.indexOf('sl-unk'); const seg = i < 0 ? '' : r.html.slice(i, (r.html.indexOf('sl-one', i + 6) + 1 || r.html.length + 1) - 1);
+      return { threw: r.threw, seg, t: text('<' + seg) };
+    };
+    const s3 = sim(), e3 = engine(only(3, L1)), a3 = SL.unscannedAct(e3.E, s3.ctx, L1);
+    const want3 = only(3, L1).slice(0, 3).map((f: Any) => f.id).sort().join(',');
+    const r3 = rowOf(e3.shared, L1, s3.ctx);
+    expect(!!a3 && a3.n === 3 && a3.label === '3 not scanned · ' + L1d.name && a3.lenses.length === 1 && a3.lenses[0].id === L1 && a3.lenses[0].name === L1d.name
+      && [...a3.ids].sort().join(',') === want3 && r3.threw === null && r3.t.includes('3 not scanned') && (r3.seg.match(/<button/g) || []).length === 2
+      && r3.t.includes('Mark') && r3.t.includes('Scan these'), `${CASES[3]}: unscannedAct / the lens row for 3 unscanned is off (${JSON.stringify(a3 && { n: a3.n, label: a3.label })}; ${r3.threw ?? r3.t.slice(0, 120)})`);
+    const s0 = sim(), e0 = engine(only(0, L1)), a0 = SL.unscannedAct(e0.E, s0.ctx, L1), r0 = rowOf(e0.shared, L1, s0.ctx);
+    expect(!!a0 && a0.n === 0 && r0.threw === null && /none/i.test(r0.t) && !/run a scan/.test(r0.t) && !/<button/.test(r0.seg), `${CASES[4]}: the lens row with 0 unscanned still tells the reader to scan or renders a button (${r0.threw ?? r0.t.slice(0, 120)})`);
+
+    // 6: Mark selects exactly the ids once; Scan these starts one selection scan per lens over them, disarmed synchronously
+    SL.markUnscanned(e3.E, a3);
+    const tg = e3.E.targets;
+    expect(tg.length === 1 && Object.keys(tg[0].t).sort().join(',') === want3 && tg[0].label === a3.label, `${CASES[5]}: Mark did not call E.setTarget once with exactly the unscanned ids (${tg.length} calls)`);
+    const busy = { current: false }, sets: boolean[] = [];
+    const p1 = SL.armScan(busy, (b: boolean) => sets.push(b), () => SL.scanUnscanned(e3.E, s3.ctx, a3));
+    const p2 = SL.armScan(busy, (b: boolean) => sets.push(b), () => SL.scanUnscanned(e3.E, s3.ctx, a3));
+    const syncSets = sets.join(',');
+    await p1; await p2;
+    const busyRow = text(renderToString(React.createElement(SL.UnscannedView, { act: a3, busy: true, onMark() {}, onScan() {} })));
+    expect(syncSets === 'true' && sets.join(',') === 'true,false' && s3.calls.length === 1 && s3.calls[0].lens === L1 && s3.calls[0].scope.kind === 'selection'
+      && [...s3.calls[0].scope.features].sort().join(',') === want3 && busyRow.includes('Starting…'), `${CASES[5]}: Scan these did not start one selection scan of exactly those features, disarmed synchronously (${s3.calls.length} scans, sets ${sets.join(',')}, busy row ${busyRow.slice(0, 80)})`);
+    const sg = sim(), eg = engine(only(3, L1).map((f: Any, i: number) => (i < 3 ? withH(f, () => 'unmeasured') : f))), ag = SL.unscannedAct(eg.E, sg.ctx, 'general');
+    await SL.scanUnscanned(eg.E, sg.ctx, ag);
+    expect(!!ag && ag.n === 3 && ag.lenses.map((x: Any) => x.id).join(',') === ids.join(',') && sg.calls.length === ids.length, `${CASES[5]}: in General Scan these does not scan with every enabled scannable lens (${ag && ag.lenses.length} of ${ids.length}, ${sg.calls.length} scans)`);
+
+    // 7: a live product whose lens has no scan method: Scan these is aria-disabled, titled with the reason, still a Tab stop
+    const blocked = P.lenses.find((d: Any) => !scannable({ id: d.id, manifest: d.manifest }, false));
+    const BL = blocked ? blocked.id : L1, live = { slug: 'p', sim: null };
+    const eb = engine(only(3, BL)), ab = SL.unscannedAct(eb.E, live, BL), rb = rowOf(eb.shared, BL, live);
+    const scanBtn = (rb.seg.match(/<button[^>]*>(?:(?!<\/button>).)*Scan(?:(?!<\/button>).)*<\/button>/) || [''])[0];
+    expect(!!blocked && !!ab && typeof ab.block === 'string' && ab.block.length > 0 && /aria-disabled="true"/.test(scanBtn) && scanBtn.includes('title="' + ab.block.replace(/"/g, '&quot;') + '"')
+      && !/\sdisabled=""/.test(scanBtn) && !/tabindex="-1"/i.test(scanBtn) && (rb.seg.match(/<button/g) || []).length === 2, `${CASES[6]}: a lens with no scan method does not give an aria-disabled, titled Scan these (${blocked ? scanBtn.slice(0, 160) : 'no unscannable Kettle lens'})`);
+    if (ab) { SL.markUnscanned(eb.E, ab); }
+    expect(eb.E.targets.length === 1, `${CASES[6]}: Mark stopped working for a lens with no scan method`);
+
+    // 8: 250 unscanned caps the scan at MAX_SELECTION; a past date draws no "?", so no count and no buttons
+    const e250 = engine(many(250)), a250 = SL.unscannedAct(e250.E, sim().ctx, ids[0]), r250 = rowOf(e250.shared, ids[0], sim().ctx);
+    expect(!!a250 && a250.n === 250 && r250.t.includes('Scan the first ' + MAX_SELECTION + ' of 250'), `${CASES[7]}: 250 unscanned does not read "Scan the first ${MAX_SELECTION} of 250" (${r250.t.slice(0, 120)})`);
+    const ep = engine(only(3, L1), { isNow: false }), ap = SL.unscannedAct(ep.E, sim().ctx, L1), rp = rowOf(ep.shared, L1, sim().ctx);
+    expect(ap === null && rp.threw === null && !/not scanned ·|\d+ not scanned/.test(rp.t) && !/<button/.test(rp.seg), `${CASES[7]}: on a past date the row still counts or offers buttons (${rp.threw ?? rp.t.slice(0, 120)})`);
+  } catch (e) {
+    for (const c of CASES) expect(false, `${c}: the "?" row section could not run (${(e as Error).message.slice(0, 140)})`);
+  }
+}
+
 if (failures.length) { console.error(`check-overlays: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
 console.log(`check-overlays: ${held} expectations held`);

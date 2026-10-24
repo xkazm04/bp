@@ -3,14 +3,22 @@
 // first (General: the registry order of the strip; a lens: what its fill measures, then the "?" of an
 // unscanned feature and the fade of one the lens has nothing to say about), then the shared legend
 // underneath. Everything here comes from the lens manifests; the swatches use the canvas's own fills.
-import { useEffect, useMemo, useRef } from 'react';
-import type { Feature, Health, LensDef, ViewId } from '@bp/core/data';
+// The "?" row is where the reader acts on it: how many features the plan draws a "?" over (the rule is
+// engine/lens/unknown.ts, the plan's own), Mark to select them, Scan these to measure just those.
+import { useEffect, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
+import type { Health, LensDef, ViewId } from '@bp/core/data';
 import type { LineName } from '@bp/core/standard/types';
 import { lensOf } from '@bp/core/model/lens';
 import { readTheme } from '@/engine/theme';
 import { lineFill, unknownFill } from '@/engine/render/patterns';
 import { Legend as BaseLegend } from '@/components/Legend';
-import { useEngine } from '@/components/hooks';
+import { MAX_SELECTION } from '@bp/core/scan/jobs';
+import type { Engine } from '@/engine/Engine';
+import { unscanned } from '@/engine/lens/unknown';
+import type { ScanCtx } from '@/lib/scan/actions';
+import { scanBlock, scanSelection } from '@/components/ledger/lens/lens-ops';
+import { useBp, useEngine, useScanCtx } from '@/components/hooks';
 import { useTheme } from '@/components/ThemeToggle';
 import { countField } from './expression';
 import { glyph, healthGlyph, lineType, railRest } from './marks';
@@ -88,13 +96,72 @@ function TileSwatch({ d, kind }: { d: LensDef | null; kind: TileKind }) {
   return <canvas ref={ref} style={{ width: TW, height: TH, flex: '0 0 auto' }} aria-hidden="true" />;
 }
 
-/** True when some feature has no measured lens among `ids`: General lays the "?" over it. */
-function anyUnscanned(fs: readonly Feature[], ids: readonly string[]): boolean {
-  return fs.some((f) => {
-    let unknown = false;
-    for (const l of ids) { const h = f.lens[l]?.h ?? 'unmeasured'; if (h === 'unmeasured') unknown = true; else if (h !== 'na') return false; }
-    return unknown;
-  });
+/** The "?" row's model: the features the plan draws a "?" over now (General, or under the view's lens), the selection
+ *  label Mark gives them, the lenses Scan these measures them with (General: every enabled lens scanBlock passes), and why
+ *  it cannot (the scanBlock reason), or null. Null on a past date: the plan draws no "?" there. */
+export interface UnscannedAct { n: number; ids: string[]; label: string; lenses: { id: string; name: string }[]; block: string | null; scan: string }
+export function unscannedAct(E: Pick<Engine, 'M' | 'lensIds' | 'isNow'>, ctx: ScanCtx, view: ViewId): UnscannedAct | null {
+  if (E.isNow !== true) return null;
+  const P = E.M.P, d = lensOf(P, view), sim = !!ctx.sim;
+  const ids = unscanned(P.features, E.lensIds, d ? d.id : null).map((f) => f.id), n = ids.length;
+  const blockOf = (l: LensDef) => scanBlock({ id: l.id, manifest: l.manifest, enabled: l.i >= 0, def: l }, sim);
+  const ok = d ? [d] : P.lenses.filter((l) => !blockOf(l));
+  const block = d ? blockOf(d) : ok.length ? null : P.lenses.length ? blockOf(P.lenses[0]) : 'No lenses are enabled';
+  return {
+    n, ids, label: n + ' not scanned · ' + (d ? d.name : 'every lens'), lenses: ok.map((l) => ({ id: l.id, name: l.name })), block,
+    scan: n > MAX_SELECTION ? 'Scan the first ' + MAX_SELECTION + ' of ' + n : 'Scan these',
+  };
+}
+/** Mark: the plan selection (the selection bar acts on it) becomes exactly the unscanned features. */
+export function markUnscanned(E: Pick<Engine, 'setTarget'>, a: UnscannedAct): void {
+  const t: Record<string, 1> = {};
+  for (const id of a.ids) t[id] = 1;
+  E.setTarget(t, a.label);
+}
+/** Scan these: one selection scan per lens over the unscanned features (lens-ops caps them at MAX_SELECTION, one toast). */
+export function scanUnscanned(E: Engine, ctx: ScanCtx, a: UnscannedAct): Promise<void> {
+  return a.block || !a.n ? Promise.resolve() : scanSelection(E, ctx, a.lenses, a.ids);
+}
+/** A press that starts work: disarmed synchronously (a second press before it settles does nothing), re-armed when it settles. */
+export function armScan(busy: { current: boolean }, set: (on: boolean) => void, run: () => Promise<void>): Promise<void> {
+  if (busy.current) return Promise.resolve();
+  busy.current = true; set(true);
+  return run().finally(() => { busy.current = false; set(false); });
+}
+
+/** Enter / Space on a legend control: act, and keep the engine's document key handler from acting on it too. */
+const press = (go: (() => void) | null) => (e: ReactKeyboardEvent) => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  e.preventDefault(); e.stopPropagation(); e.nativeEvent.stopImmediatePropagation();
+  go?.();
+};
+
+/** The "?" row as drawn: the count in words, then Mark and Scan these (aria-disabled, titled with why, while it cannot). */
+export function UnscannedView({ act, d, busy, onMark, onScan }: { act: UnscannedAct | null; d?: LensDef | null; busy: boolean; onMark: () => void; onScan: () => void }) {
+  const what = d ? 'not scanned yet' : 'no lens has scanned it yet';
+  const off = !!act?.block || busy, scan = off ? null : onScan;
+  return (
+    <div className="sl-one sl-unk">
+      <TileSwatch d={d ?? null} kind="unknown" />
+      <span>
+        <b>?</b> = {what}
+        {act && (act.n ? <> · {act.n} not scanned</> : <> · none are unscanned{d ? ' under ' + d.name : ''}</>)}
+        {act && act.n > 0 && (
+          <span className="sl-acts">
+            <button type="button" className="sl-bt" title="Select them on the plan" onClick={onMark} onKeyDown={press(onMark)}>Mark</button>
+            <button type="button" className="sl-bt" aria-disabled={off || undefined} title={act.block ?? undefined} onClick={scan ?? undefined} onKeyDown={press(scan)}>
+              {busy ? 'Starting…' : act.scan}
+            </button>
+          </span>
+        )}
+      </span>
+    </div>
+  );
+}
+function UnscannedRow({ act, d }: { act: UnscannedAct | null; d: LensDef | null }) {
+  const E = useEngine(), ctx = useScanCtx(), busy = useRef(false), [on, setOn] = useState(false);
+  const scan = () => { if (act) void armScan(busy, setOn, () => scanUnscanned(E, ctx, act)); };
+  return <UnscannedView act={act} d={d} busy={on} onMark={() => { if (act) markUnscanned(E, act); }} onScan={scan} />;
 }
 
 /** What a lens's fill measures, in words, from its manifest. */
@@ -111,9 +178,10 @@ function fillWords(d: LensDef): string {
 }
 
 export function SubtleLegend({ view }: { view: ViewId }) {
-  const E = useEngine(), P = E.M.P;
+  const E = useEngine(), P = E.M.P, ctx = useScanCtx();
   const d = lensOf(P, view);
-  const unscanned = useMemo(() => anyUnscanned(P.features, E.lensIds), [P, E]);
+  useBp((s) => s.t);   // the row speaks of now: a date change re-reads it
+  const act = unscannedAct(E, ctx, view);
   if (!d) {
     return (
       <>
@@ -131,7 +199,7 @@ export function SubtleLegend({ view }: { view: ViewId }) {
               {HEALTH_KEY.map(({ h, word }) => <span key={h}><HealthSwatch d={P.lenses[0]} h={h} /><i>{word}</i></span>)}
             </div>
           )}
-          {unscanned && <div className="sl-one"><TileSwatch d={null} kind="unknown" /><span><b>?</b> = no lens has scanned it yet - run a scan</span></div>}
+          {!!act?.n && <UnscannedRow act={act} d={null} />}
         </div>
         <BaseLegend view={view} />
       </>
@@ -141,7 +209,7 @@ export function SubtleLegend({ view }: { view: ViewId }) {
     <>
       <div className="sl-key">
         <div className="sl-one"><TileSwatch d={d} kind="fill" /><span><b>Fill</b> = {fillWords(d)}. A broken line on the top edge means not measured.</span></div>
-        <div className="sl-one"><TileSwatch d={d} kind="unknown" /><span><b>?</b> = not scanned yet - run a scan</span></div>
+        <UnscannedRow act={act} d={d} />
         <div className="sl-one"><TileSwatch d={d} kind="faded" /><span><b>Faded</b> = this lens has nothing here</span></div>
       </div>
       <BaseLegend view={view} />

@@ -30,6 +30,8 @@ share the strip (see the N-slot rule in `expression.ts` and `docs/blueprint-ui.m
 
 Aggregates: the manifest's rollup verdict, bad and watch counts, a headline summary. The legend keys
 the registry's glyphs and rails.
+Its "?" row counts the features the plan draws a "?" over now (`engine/lens/unknown.ts`, the plan's own rule), with
+Mark (select them) and Scan these (one selection scan of just those, capped at 200); a past date shows no count.
 
 **Performance.** Rails are `fillRect`s plus three cached theme patterns; glyphs are one or two paths;
 rects are reused; nothing is measured. `?scale=4` 1920x1080: zoom+drag p50 16.7 / p95 16.8 ms; lens
