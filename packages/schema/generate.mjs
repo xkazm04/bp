@@ -6,6 +6,11 @@
 //   generated/ue/BpSchema.h         Unreal USTRUCTs with UPROPERTY fields, named as the JSON keys, so the VR client's
 //                                   FJsonObjectConverter::JsonObjectToUStruct fills them with no hand-written parsing
 //   generated/ue/BpSchemaFixups.h   BpSchema::FixUp and FromJson: fill the <Key>_ fields the converter cannot
+//   packages/core/src/standard/schema-vocab.ts
+//                                   the vocabularies as consts: every named string enum, the scope kinds, the lens
+//                                   manifest's keys, the wave bounds and the proposal id pattern. Unlike the TS types,
+//                                   core IMPORTS it: its allow-lists are these values, not a copy (one authority per
+//                                   vocabulary; scripts/check-schema-vocab.mjs)
 // All come from one model of the schemas (`model()`), so a field added to a schema reaches every output in one run.
 //
 // The mapping, per schema node (UE side; TS is the same shape, closer to the schema):
@@ -25,7 +30,7 @@
 //   string-or-object, untyped items   FString <Key>_: the value's JSON text, by FixUp  the precise type
 // Optional and required fields look the same in C++ (a missing key keeps the default); the TS side marks optional.
 //
-// Run: node packages/schema/generate.mjs           write the three files
+// Run: node packages/schema/generate.mjs           write the four files
 //      node packages/schema/generate.mjs --check   exit 1 when a committed file differs from a fresh generation
 //                                                  (stale), when a schema field is neither mapped nor copied by
 //                                                  FixUp, or when types.ts disagrees with the generated types; each
@@ -45,6 +50,7 @@ const SCHEMA_DIR = path.join(HERE, 'schema');
 const OUT_TS = path.join(HERE, 'generated/ts/app-structure.ts');
 const OUT_UE = path.join(HERE, 'generated/ue/BpSchema.h');
 const OUT_FIX = path.join(HERE, 'generated/ue/BpSchemaFixups.h');
+const OUT_VOCAB = path.join(HERE, '../core/src/standard/schema-vocab.ts');
 const HAND_TS = 'packages/core/src/standard/types.ts'; // the hand-written types the code uses; parity.mjs compares
 const ROOTS = [
   ['app-structure-3.schema.json', 'AppStructure'],
@@ -136,7 +142,7 @@ export function model(schemas) {
     buildStruct(schemas[file], file, name);
     roots.push(name);
   }
-  return { structs, roots };
+  return { structs, roots, schemas };
 }
 
 // ---------------------------------------------------------------- TypeScript
@@ -173,6 +179,48 @@ export function emitTs(m) {
     if (st.open) out.push('  [key: string]: unknown;');
     out.push('}', '');
   }
+  return out.join('\n');
+}
+
+// ---------------------------------------------------------------- the vocabulary consts core imports
+// Every named string enum ($defs.<name>.enum) becomes <NAME>S; the rows below are the other values a refusal path in
+// packages/core reads. A pointer that stops resolving throws, so a schema reshaped under a row fails generation.
+const VOCAB_ROWS = [
+  ['SCAN_SCOPE_KINDS', 'scan-wire-1.schema.json', '/$defs/scanScope/properties/kind/enum', 'list'],
+  ['LENS_MANIFEST_KEYS', 'lens-manifest-1.schema.json', '/properties', 'keys'],
+  ['WAVE_NAME_MAX_LENGTH', 'scan-wire-1.schema.json', '/$defs/waveName/maxLength', 'number'],
+  ['WAVE_PACKAGES_MAX_ITEMS', 'scan-wire-1.schema.json', '/$defs/wave/properties/packages/maxItems', 'number'],
+  ['PROPOSAL_ID_PATTERN', 'scan-wire-1.schema.json', '/$defs/proposalId/pattern', 'pattern'],
+];
+const constCase = (s) => s.replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/[^A-Za-z0-9]+/g, '_').toUpperCase();
+const plural = (s) => (/(S|X|SH|CH)$/.test(s) ? s + 'ES' : /[^AEIOU]Y$/.test(s) ? s.slice(0, -1) + 'IES' : s + 'S');
+const quote = (v) => (/['\\\n]/.test(v) ? JSON.stringify(v) : `'${v}'`);
+const strings = (vs) => `[${vs.map(quote).join(', ')}] as const`;
+/** packages/core/src/standard/schema-vocab.ts: pure, import-free and strip-only safe (check:core-purity). */
+export function emitVocab(m) {
+  const { schemas } = m, rows = [], seen = new Map();
+  for (const [file] of ROOTS) for (const [def, node] of Object.entries(schemas[file].$defs ?? {})) {
+    if (!Array.isArray(node.enum) || !node.enum.every((v) => typeof v === 'string')) continue;
+    const name = plural(constCase(def));
+    if (seen.has(name)) throw new Error(`${file}: $defs.${def} and ${seen.get(name)} both make ${name}`);
+    seen.set(name, `${file} $defs.${def}`);
+    rows.push({ name, from: `${file.replace('.schema.json', '')} $defs.${def}.enum`, description: node.description, text: strings(node.enum) });
+  }
+  for (const [name, file, ptr, form] of VOCAB_ROWS) {
+    let node = schemas[file];
+    for (const k of ptr.split('/').filter(Boolean)) node = node?.[k];
+    const ok = form === 'list' ? Array.isArray(node) && node.every((v) => typeof v === 'string') : form === 'keys' ? !!node && typeof node === 'object'
+      : form === 'number' ? Number.isInteger(node) : typeof node === 'string';
+    if (!ok) throw new Error(`${file}#${ptr}: no ${form} for ${name}`);
+    const text = form === 'list' ? strings(node) : form === 'keys' ? strings(Object.keys(node)) : form === 'number' ? String(node) : `new RegExp(${JSON.stringify(node)})`;
+    rows.push({ name, from: `${file.replace('.schema.json', '')} ${ptr.slice(1).replaceAll('/', '.')}${form === 'keys' ? ' (its keys)' : ''}`, text });
+  }
+  const out = ['// GENERATED by packages/schema/generate.mjs from packages/schema/schema/*.schema.json. Do not edit:',
+    '// change a schema and run `npm run schema:generate`; `npm run check:schema` fails while this file is stale.',
+    "// The schemas' vocabularies, once: the allow-lists packages/core refuses by import these values instead of a",
+    '// hand-typed second copy (scripts/check-schema-vocab.mjs). Pure and import-free.', ''];
+  for (const r of rows) out.push(`/** ${r.from}${r.description ? ': ' + oneLine(r.description) : ''} */`, `export const ${r.name} = ${r.text};`);
+  out.push('');
   return out.join('\n');
 }
 
@@ -538,12 +586,14 @@ function conformNode(m, n, cpp, v, where, out) {
 // ---------------------------------------------------------------- run
 // JSON.parse names no file, so a malformed schema used to report only "Expected ':' ... at position 9" under
 // "<anonymous_script>" - with six schemas, and three of them read by nothing but this generator, that is a guess.
-const readSchemas = () => Object.fromEntries(ROOTS.map(([f]) => {
+export const readSchemas = () => Object.fromEntries(ROOTS.map(([f]) => {
   const at = path.join(SCHEMA_DIR, f);
   try { return [f, JSON.parse(fs.readFileSync(at, 'utf8'))]; }
   catch (e) { throw new Error(`packages/schema/schema/${f} is not readable as JSON: ${e.message}`, { cause: e }); }
 }));
-const generate = (schemas) => { const m = model(schemas); return { ts: emitTs(m), ue: emitUe(m), fix: emitFixups(m), m }; };
+export const generate = (schemas) => { const m = model(schemas); return { ts: emitTs(m), ue: emitUe(m), fix: emitFixups(m), vocab: emitVocab(m), m }; };
+/** [path, fresh text] per output, in the order they are written and checked. */
+export const outputsOf = (fresh) => [[OUT_TS, fresh.ts], [OUT_UE, fresh.ue], [OUT_FIX, fresh.fix], [OUT_VOCAB, fresh.vocab]];
 const norm = (s) => s.replace(/\r\n/g, '\n');
 
 // The committed-vs-fresh comparison, one function: the --check path and its control both call it, so the control
@@ -553,13 +603,24 @@ const staleVerdict = (have, text) => {
   const a = have.split('\n'), b = text.split('\n'); let i = 0; while (i < a.length && a[i] === b[i]) i++;
   return { stale: true, line: i + 1, committed: (a[i] ?? '').trim(), fresh: (b[i] ?? '').trim() };
 };
+// The stale loop takes what it reads as a parameter, so the self-proof below can hand it a stale committed text: a
+// loop that compared the fresh text with itself printed 'is current' for all three files and every control stayed
+// green (mutation A1 in plan.md, 2026-10-22), because the controls called staleVerdict, never this loop.
+// Exported for scripts/check-schema-vocab.mjs, which hands it schema-vocab.ts missing.
+export const staleReport = (outputs, read, counts) => outputs.map(([f, text]) => {
+  const have = read(f), rel = path.relative(path.join(HERE, '../..'), f).split(path.sep).join('/');
+  const v = have === null ? null : staleVerdict(have, text);
+  if (v && !v.stale) return { ok: true, line: `ok    ${rel} is current (${counts})` };
+  if (have === null) return { ok: false, line: `FAIL  ${rel} is missing: run npm run schema:generate` };
+  return { ok: false, line: `FAIL  ${rel} is stale: run npm run schema:generate (first difference at line ${v.line}: committed "${v.committed}", fresh "${v.fresh}")` };
+});
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
   const schemas = readSchemas();
   const fresh = generate(schemas);
   const counts = `${fresh.m.structs.size} structs from ${ROOTS.length} schemas`;
-  const outputs = [[OUT_TS, fresh.ts], [OUT_UE, fresh.ue], [OUT_FIX, fresh.fix]];
+  const outputs = outputsOf(fresh);
   if (process.argv.includes('--check')) {
     let failed = 0;
     // ROOTS is hand-written; the directory is the ground truth. A schema file added to schema/ and not listed there
@@ -600,26 +661,17 @@ if (isMain) {
     console.log(`${ajvProblems.length ? 'FAIL' : 'ok  '}  all ${ROOTS.length} schemas compile under ajv strict mode, every $ref resolving${ajvProblems.length ? ': ' + ajvProblems.slice(0, 4).join('; ') : ''}`);
     if (ajvProblems.length) failed++;
     const read = (f) => (fs.existsSync(f) ? norm(fs.readFileSync(f, 'utf8')) : null);
-    // The stale loop takes what it reads as a parameter, so the self-proof below can hand it a stale committed text: a
-    // loop that compared the fresh text with itself printed 'is current' for all three files and every control stayed
-    // green (mutation A1 in plan.md, 2026-10-22), because the controls called staleVerdict, never this loop.
-    const staleReport = (read) => outputs.map(([f, text]) => {
-      const have = read(f), rel = path.relative(path.join(HERE, '../..'), f).split(path.sep).join('/');
-      const v = have === null ? null : staleVerdict(have, text);
-      if (v && !v.stale) return { ok: true, line: `ok    ${rel} is current (${counts})` };
-      if (have === null) return { ok: false, line: `FAIL  ${rel} is missing: run npm run schema:generate` };
-      return { ok: false, line: `FAIL  ${rel} is stale: run npm run schema:generate (first difference at line ${v.line}: committed "${v.committed}", fresh "${v.fresh}")` };
-    });
-    for (const r of staleReport(read)) { console.log(r.line); if (!r.ok) failed++; }
-    // self-proof: handed a BpSchemaFixups.h that differs at one line and a missing BpSchema.h, the same loop reports the
-    // first stale at that line and the second missing, and the TS file (handed its fresh text) current
+    for (const r of staleReport(outputs, read, counts)) { console.log(r.line); if (!r.ok) failed++; }
+    // self-proof: handed a BpSchemaFixups.h that differs at one line and a missing BpSchema.h and schema-vocab.ts, the
+    // same loop reports the first stale at that line and the other two missing, and the TS file (handed its fresh text) current
     {
       const fixLines = fresh.fix.split('\n'), at = fixLines.findIndex((l) => l.includes('CopyRaw(Json, TEXT("glyph")'));
-      const handed = (f) => (f === OUT_FIX ? fixLines.map((l, i) => (i === at ? l + ' zzStaleProbe' : l)).join('\n') : f === OUT_UE ? null : fresh.ts);
-      const got = staleReport(handed).map((r) => r.line);
-      const proved = at >= 0 && got[0].startsWith('ok  ') && got[1].startsWith('FAIL') && got[1].includes(' is missing')
-        && got[2].startsWith('FAIL') && got[2].includes(` is stale: run npm run schema:generate (first difference at line ${at + 1}:`);
-      console.log(`${proved ? 'ok  ' : 'FAIL'}  self-proof: the stale loop reads what it is handed (BpSchemaFixups.h differing at line ${at + 1} is stale there, BpSchema.h absent is missing, the TS current)${proved ? '' : ': got ' + got.map((l) => l.slice(0, 120)).join(' / ')}`);
+      const handed = (f) => (f === OUT_FIX ? fixLines.map((l, i) => (i === at ? l + ' zzStaleProbe' : l)).join('\n') : f === OUT_UE || f === OUT_VOCAB ? null : fresh.ts);
+      const got = staleReport(outputs, handed, counts).map((r) => r.line);
+      const proved = at >= 0 && got.length === 4 && got[0].startsWith('ok  ') && got[1].startsWith('FAIL') && got[1].includes(' is missing')
+        && got[2].startsWith('FAIL') && got[2].includes(` is stale: run npm run schema:generate (first difference at line ${at + 1}:`)
+        && got[3] === 'FAIL  packages/core/src/standard/schema-vocab.ts is missing: run npm run schema:generate';
+      console.log(`${proved ? 'ok  ' : 'FAIL'}  self-proof: the stale loop reads what it is handed (BpSchemaFixups.h differing at line ${at + 1} is stale there, BpSchema.h and schema-vocab.ts absent are missing, the TS current)${proved ? '' : ': got ' + got.map((l) => l.slice(0, 120)).join(' / ')}`);
       if (!proved) failed++;
     }
     // every schema field is held by the committed headers: mapped under its key, or a <Key>_ field FixUp fills
@@ -714,34 +766,10 @@ if (isMain) {
     const strictCaught = strictGot.length === 1 && strictGot[0] === 'ScanJob.exit_code: required in the schema, optional in types.ts';
     console.log(`${strictCaught ? 'ok  ' : 'FAIL'}  self-proof: ScanJob.exit_code made required in the generated types (optional in jobs.ts) fails the parity${strictCaught ? '' : `: got ${strictGot.length ? strictGot.join('; ') : 'no problem'}`}`);
     if (!strictCaught) failed++;
-    // scan-wire-1's declared bounds on a wave against the constants the server refuses by. The schema is normative
-    // for what apps/server sends, and it said `{ "type": "string" }` where packages/core/src/scan/waves.ts:11
-    // refuses a name over MAX_NAME and more than MAX_PACKAGES packages, and `{ "type": "string" }` for a proposal
-    // id where jobs.ts:100 refuses anything but SAFE_ID - four limits the implementation enforced and the contract
-    // did not state. Declared now, and compared here so the two cannot drift. Each constant is read out of its own
-    // source text, so a matcher that finds nothing fails rather than agreeing.
-    const constOf = (rel, name) => {
-      const m = new RegExp(`\\b${name} = (\\d+)`).exec(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
-      return m ? Number(m[1]) : null;
-    };
-    const reOf = (rel, name) => {
-      const m = new RegExp(`\\b${name} = /([^/]+)/`).exec(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
-      return m ? m[1] : null;
-    };
-    const wireDefs = schemas['scan-wire-1.schema.json'].$defs;
-    const boundRows = [
-      ['waveName.maxLength', wireDefs.waveName.maxLength, constOf('packages/core/src/scan/waves.ts', 'MAX_NAME')],
-      ['wave.packages.maxItems', wireDefs.wave.properties.packages.maxItems, constOf('packages/core/src/scan/waves.ts', 'MAX_PACKAGES')],
-      ['proposalId.pattern', wireDefs.proposalId.pattern, reOf('packages/core/src/scan/jobs.ts', 'SAFE_ID')?.replace('a-z0-9', 'a-zA-Z0-9').replace('a-z0-9._-', 'a-zA-Z0-9._-')],
-    ];
-    const boundProblems = boundRows.filter(([, a, b]) => a === undefined || a === null || b === null || a !== b)
-      .map(([what, a, b]) => `${what}: the schema says ${JSON.stringify(a)}, the code ${JSON.stringify(b)}`);
-    console.log(`${boundProblems.length ? 'FAIL' : 'ok  '}  scan-wire-1's declared wave bounds are the ones packages/core/src/scan refuses by (${boundRows.length} bounds)${boundProblems.length ? ': ' + boundProblems.join('; ') : ''}`);
-    if (boundProblems.length) failed++;
-    // control: the matchers read real values, so a name no source declares must come back null, not silently equal
-    const boundControl = constOf('packages/core/src/scan/waves.ts', 'MAX_ZZPROBE') === null && reOf('packages/core/src/scan/jobs.ts', 'ZZ_PROBE') === null;
-    console.log(`${boundControl ? 'ok  ' : 'FAIL'}  control: a constant no source declares reads as null, not as agreement`);
-    if (!boundControl) failed++;
+    // scan-wire-1's wave bounds (waveName.maxLength, wave.packages.maxItems), proposalId.pattern and lens-manifest-1's
+    // builtinLensId and root keys are no longer compared with copies read out of source text: waves.ts, jobs.ts and
+    // manifest-check.ts import them from schema-vocab.ts, the fourth output above, whose staleness this check owns.
+    // scripts/check-schema-vocab.mjs asserts the identity and refuses a literal copy of a schema enum in packages/core.
     // The stand-in smoke (ue-standin/check.cpp) reads every root through BpSchema::FromJson. No gate here can run a
     // C++ compiler, so what is asserted is its COVERAGE: a root added to ROOTS whose FromJson nobody instantiates
     // is a FixUp body no compiler ever sees. Comments are stripped first, so the clang command line in its header -
@@ -766,20 +794,15 @@ if (isMain) {
     const smokeControl = dropped.join() === 'ScanWire' && commented.join() === 'ScanWire';
     console.log(`${smokeControl ? 'ok  ' : 'FAIL'}  control: a root dropped from the smoke is reported, and one named only in a comment is not read`);
     if (!smokeControl) failed++;
-    // lens-manifest-1's builtinLensId enum against every other copy of that list in the tree. The enum is the
-    // normative one; scripts/validate-structure.mjs reads it rather than copying it, but two files in
-    // packages/core hand-write the same seven ids, and until 2026-10-21 nothing compared them with the schema:
-    //   standard/catalog.ts   seven JSON imports, one per docs/standard/lenses/<id>.json
-    //   scan/manifest-check.ts  BUILTIN_IDS, the set a project lens id is refused for colliding with
-    // Each copy is extracted by its own matcher, and a matcher that finds nothing fails here: an empty set must
-    // never read as agreement (that is how a gate reports a clean tree in the voice of success).
+    // lens-manifest-1's builtinLensId enum against standard/catalog.ts, which loads the built-in manifests as seven
+    // JSON imports, one per docs/standard/lenses/<id>.json (those are the manifests, not a copy of the list, so they
+    // stay imports and are compared here). scan/manifest-check.ts's BUILTIN_IDS is the generated BUILTIN_LENS_IDS.
+    // The matcher that finds nothing fails here: an empty set must never read as agreement (that is how a gate
+    // reports a clean tree in the voice of success).
     const lensIds = (text, re) => { const out = new Set(); for (const m of text.matchAll(re)) out.add(m[1]); return out; };
     const CATALOG_RE = /docs\/standard\/lenses\/([a-z0-9-]+)\.json/g;
-    const BUILTIN_SET_RE = /BUILTIN_IDS = new Set\(\[([^\]]*)\]\)/;
-    const builtinIdsOf = (text) => { const m = BUILTIN_SET_RE.exec(text); return m ? lensIds(m[1], /'([a-z0-9-]+)'/g) : new Set(); };
     const wantIds = new Set(JSON.parse(fs.readFileSync(path.join(SCHEMA_DIR, 'lens-manifest-1.schema.json'), 'utf8')).$defs.builtinLensId.enum);
-    const copies = [['packages/core/src/standard/catalog.ts', lensIds(fs.readFileSync(path.join(ROOT, 'packages/core/src/standard/catalog.ts'), 'utf8'), CATALOG_RE)],
-      ['packages/core/src/scan/manifest-check.ts', builtinIdsOf(fs.readFileSync(path.join(ROOT, 'packages/core/src/scan/manifest-check.ts'), 'utf8'))]];
+    const copies = [['packages/core/src/standard/catalog.ts', lensIds(fs.readFileSync(path.join(ROOT, 'packages/core/src/standard/catalog.ts'), 'utf8'), CATALOG_RE)]];
     const idProblems = [];
     for (const [rel, have] of copies) {
       if (!have.size) { idProblems.push(`${rel}: the matcher found no built-in lens ids - it no longer reads this file`); continue; }
@@ -787,14 +810,12 @@ if (isMain) {
       if (missing.length) idProblems.push(`${rel}: in the schema's builtinLensId, not here: ${missing.join(', ')}`);
       if (extra.length) idProblems.push(`${rel}: here, not in the schema's builtinLensId: ${extra.join(', ')}`);
     }
-    console.log(`${idProblems.length ? 'FAIL' : 'ok  '}  lens-manifest-1's builtinLensId enum (${wantIds.size} ids) is the list ${copies.length} files in packages/core hand-write${idProblems.length ? ': ' + idProblems.join('; ') : ''}`);
+    console.log(`${idProblems.length ? 'FAIL' : 'ok  '}  lens-manifest-1's builtinLensId enum (${wantIds.size} ids) is the set of built-in manifests standard/catalog.ts imports${idProblems.length ? ': ' + idProblems.join('; ') : ''}`);
     if (idProblems.length) failed++;
-    // control: one id dropped from each copy's text must be reported, and a renamed symbol must not read as agreement
+    // control: an id dropped from the catalog's text must be reported, and a text with no lens import reads as empty
     const holedCatalog = lensIds(`import x from '../../../../docs/standard/lenses/business.json';`, CATALOG_RE);
-    const holedSet = builtinIdsOf(`const BUILTIN_IDS = new Set(['business', 'design']);`);
-    const idControl = [...wantIds].filter((v) => !holedCatalog.has(v)).length === wantIds.size - 1
-      && [...wantIds].filter((v) => !holedSet.has(v)).length === wantIds.size - 2 && builtinIdsOf('const OTHER = new Set([]);').size === 0;
-    console.log(`${idControl ? 'ok  ' : 'FAIL'}  control: a built-in id missing from a copy is reported, and a renamed BUILTIN_IDS reads as empty, not as agreement`);
+    const idControl = [...wantIds].filter((v) => !holedCatalog.has(v)).length === wantIds.size - 1 && lensIds('import x from "./other.json";', CATALOG_RE).size === 0;
+    console.log(`${idControl ? 'ok  ' : 'FAIL'}  control: a built-in id missing from the catalog is reported, and a text with no lens import reads as empty, not as agreement`);
     if (!idControl) failed++;
     // The mapping against real documents: Kettle's map and events, the built-in lens manifests, and every fixture
     // the validator accepts. The fixture list is DERIVED, not named: the two fixtures the hand-written list used to
