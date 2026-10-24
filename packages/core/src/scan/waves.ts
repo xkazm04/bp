@@ -2,13 +2,15 @@
 // prepared as a draft and dispatched as a whole later. Client-safe types and rules; the live file is waves.server.ts,
 // the Kettle stand-in is lib/model/scan-sim.ts. Absent values are omitted, never null (the store's wire convention).
 import { SAFE_ID, type ScanJob } from './jobs.ts';
+import { WAVE_EFFORTS as SCHEMA_WAVE_EFFORTS, WAVE_MODELS as SCHEMA_WAVE_MODELS, WAVE_NAME_MAX_LENGTH, WAVE_PACKAGES_MAX_ITEMS } from '../standard/schema-vocab.ts';
 
 /** The Claude Code CLI's own aliases: each always means the latest model of its family. */
 export type WaveModel = 'sonnet' | 'opus';
 export type WaveEffort = 'low' | 'medium' | 'high' | 'xhigh';
-export const WAVE_MODELS: readonly WaveModel[] = ['sonnet', 'opus'];
-export const WAVE_EFFORTS: readonly WaveEffort[] = ['low', 'medium', 'high', 'xhigh'];
-export const MAX_WAVES = 50, MAX_PACKAGES = 12, MAX_WAVE_IDS = 400, MAX_NAME = 60;
+// The allow-lists and the two bounds scan-wire-1 declares are the schema's own values (schema-vocab.ts, generated).
+export const WAVE_MODELS: readonly WaveModel[] = SCHEMA_WAVE_MODELS;
+export const WAVE_EFFORTS: readonly WaveEffort[] = SCHEMA_WAVE_EFFORTS;
+export const MAX_WAVES = 50, MAX_PACKAGES = WAVE_PACKAGES_MAX_ITEMS, MAX_WAVE_IDS = 400, MAX_NAME = WAVE_NAME_MAX_LENGTH;
 
 export interface WavePackage {
   /** `pk-1`, `pk-2`..: unique inside the wave, assigned by whoever stores the wave. */

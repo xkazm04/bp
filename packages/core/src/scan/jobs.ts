@@ -3,6 +3,7 @@
 // lib/model/scan-sim.ts. Absent values are omitted, never null (the store's wire convention).
 import type { LensEntry } from '@bp/core/standard/types';
 import type { WaveEffort, WaveModel } from './waves.ts';
+import { PROPOSAL_ID_PATTERN } from '../standard/schema-vocab.ts';
 
 /** `selection`: exactly the features behind the ledger's selected findings or matrix rows (1..200 slugs). */
 export type ScanScopeKind = 'feature' | 'bay' | 'room' | 'wing' | 'all' | 'selection';
@@ -96,8 +97,8 @@ export function takenLooks(entries: readonly Pick<LensEntry, 'id' | 'enabled' | 
 
 /** A temporary lens id: `tmp.<kebab>`. */
 export const TEMP_LENS_ID = /^tmp\.[a-z0-9][a-z0-9-]{1,40}$/;
-/** Lens ids, feature slugs and place ids that may reach a spawned command line. */
-export const SAFE_ID = /^[a-z0-9][a-z0-9._-]{0,80}$/i;
+/** Lens ids, feature slugs and place ids that may reach a spawned command line: scan-wire-1's proposalId.pattern. */
+export const SAFE_ID = PROPOSAL_ID_PATTERN;
 
 /** lens-scan writes `bp-job:<id>` into a run's note when started with BP_JOB_ID set. */
 export const RUN_NOTE_PREFIX = 'bp-job:';

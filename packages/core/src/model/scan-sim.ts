@@ -12,6 +12,8 @@ import type { LensEntry, LensField, LensManifest } from '@bp/core/standard/types
 import { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, RUN_NOTE_PREFIX, SAFE_ID, TEMP_LENS_ID } from '../scan/jobs.ts';
 import { WAVE_EFFORTS, WAVE_MODELS, createIn, packagesOf, patchIn, recordJobs, removeIn, type Wave, type WaveBody, type WaveDispatchResult, type WaveEffort, type WaveModel } from '../scan/waves.ts';
 import { TrainSim, type TrainToggles } from './train-sim.ts';
+import { NUMERIC } from '../standard/present.ts';
+import { SCAN_SCOPE_KINDS } from '../standard/schema-vocab.ts';
 
 export type { TrainToggles };
 
@@ -34,8 +36,7 @@ const STEP_MS = 1200, EXEC_MS = 15000, TICK_MS = 200, MAX_IDS = MAX_PROPOSALS; /
 const RELEASE_STEP_MS = 1000, LOG_LINES = 20;
 /** Share of features a temporary lens finds nothing to say about (deterministic per feature and lens). */
 const NO_IMPACT = 0.4;
-const KINDS = new Set(['feature', 'bay', 'room', 'wing', 'all', 'selection']);
-const NUMERIC = new Set(['number', 'integer', 'percent', 'money']);
+const KINDS = new Set<string>(SCAN_SCOPE_KINDS);
 export const WAVES_KEY = 'bp.waves.kettle';
 /** What a wave package runs its execute job with (jobs.server.ts ExecuteOpts). */
 interface ExecOpts { model?: WaveModel; effort?: WaveEffort; wave?: string; package?: string }

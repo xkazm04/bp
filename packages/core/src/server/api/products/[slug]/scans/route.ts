@@ -15,8 +15,9 @@ import { enqueueMeasure, list } from '@bp/core/server/jobs.server';
 import { readLensesAndFeatures } from '@bp/core/server/lens-write.server';
 import { kettleSim, simAnswer } from '@bp/core/server/kettle-sim.server';
 import { isObj } from '@bp/core/scan/guards';
+import { SCAN_SCOPE_KINDS } from '@bp/core/standard/schema-vocab';
 
-const KINDS: readonly ScanScopeKind[] = ['feature', 'bay', 'room', 'wing', 'all', 'selection'];
+const KINDS: readonly ScanScopeKind[] = SCAN_SCOPE_KINDS;
 /** Kettle's features are the sim's to check (against the sample's). */
 const ANY_FEATURE = { has: () => true };
 

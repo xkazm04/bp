@@ -6,6 +6,7 @@
 import type { ComputedHealth, Density, FieldType, GlyphName, LineName, MetricMethod } from '@bp/core/standard/types';
 import { PROJECT_LENS_ID, TEMP_LENS_ID } from './jobs.ts';
 import { isObj } from '@bp/core/scan/guards';
+import { BUILTIN_LENS_IDS, LENS_MANIFEST_KEYS } from '../standard/schema-vocab.ts';
 
 // Records, not lists: a name added to the type without one here fails the typecheck.
 const GLYPHS: Record<GlyphName, 1> = { bars: 1, 'set-square': 1, brackets: 1, pulse: 1, padlock: 1, check: 1, stopwatch: 1 };
@@ -15,9 +16,10 @@ const TYPES: Record<FieldType, 1> = { number: 1, integer: 1, percent: 1, money: 
 const NUMERIC: Partial<Record<FieldType, 1>> = { number: 1, integer: 1, percent: 1, money: 1 };
 const HEALTH: Record<ComputedHealth, 1> = { good: 1, watch: 1, bad: 1 };
 const METHODS: Record<MetricMethod, 1> = { static: 1, probe: 1, harness: 1, judgement: 1 };
-/** The seven built-in ids (the schema's builtinLensId): a project lens never takes one. */
-const BUILTIN_IDS = new Set(['business', 'design', 'development', 'operations', 'security', 'quality', 'performance']);
-const TOP = new Set(['$schema', 'id', 'version', 'name', 'short', 'description', 'reader', 'fields', 'health', 'presentation', 'scan']);
+/** The seven built-in ids (the schema's builtinLensId, generated): a project lens never takes one. */
+export const BUILTIN_IDS: ReadonlySet<string> = new Set<string>(BUILTIN_LENS_IDS);
+/** The keys a manifest may hold: lens-manifest-1's root properties, generated. */
+export const TOP: ReadonlySet<string> = new Set<string>(LENS_MANIFEST_KEYS);
 const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, KEY = /^[a-z][A-Za-z0-9]*$/, SHORT = /^[A-Z0-9]{2,4}$/;
 const PATH_OK = /^[Mm][MmZzLlHhVvCcSsQqTtAa0-9eE.,+\- ]{0,2047}$/;
 /** The steps a composed scan may hold (spec 8.2), and the one skill lens-scan 1.3.0 runs. */
