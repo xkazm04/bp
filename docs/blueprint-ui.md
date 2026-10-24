@@ -649,6 +649,17 @@ Rejected: a looping radar sweep (fake progress, perpetual frames) and a per-tile
   (n features)" offers the same items over exactly the features behind the selected findings: a `selection` scope
   (`{ kind: 'selection', label: 'Selection (n)', features }`, at most `MAX_SELECTION` = 200 slugs in map order),
   started with `startSelectionScan`.
+  Before the click every item states what the scan would repeat (`scopeFacts` and `factsWords` in
+  `packages/core/src/scan/views.ts`, over `useScanJobs(false, true)`: the stream's jobs and rows live, the scan sim's
+  in Kettle). `busy` is a queued or running measure job of that lens whose scope overlaps (running, then stalled by
+  `jobLiveness`, then queued), `read` the features with a current reading of the lens and the oldest of their latest
+  `measured_at`, `queue` the registry's room (`MAX_RUNNING` / `MAX_QUEUED`, every job kind). A lens-view item's count
+  column reads "running 4/12", "queued 4/12", "read 9/12 · 2 d" or the feature count; in General a lens button
+  carries the same sentence in its name and title and a busy one a visible " · running" / " · queued" /
+  " · stalled" suffix (text, never colour). Under the header one line "2 of 3 running · 5 queued" while any job
+  waits or runs. A duplicate is shown, never refused (parallel scans of one lens are the owner's call); a full queue
+  (16 queued) is the one refusal: every item turns `aria-disabled`, stays focusable, and is described by that line,
+  which then reads the server's words "16 jobs are already queued". Pinned by `check:scan-client` section 9.
 - **Actions** (`apps/web/src/lib/scan/actions.ts`): `startScan`, `dispatch`, `cancelJob` go to the live routes
   (`postScan`, `postDispatch`, `deleteJob`) or to the Kettle scan sim. `ScanCtxCtx` (BlueprintApp) says which.
   `startSelectionScan(ctx, lens, features)`, `executeLensBacklog(ctx, lens)` (`{ jobs, approved, skipped }`) and
