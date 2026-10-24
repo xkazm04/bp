@@ -276,6 +276,15 @@ FString FBpLinkModule::GetProductSlug() const
 void FBpLinkModule::ReceiveSnapshot(bool bOk, const FBpLinkSnapshot& Snapshot)
 {
 	if (bOk && !Snapshot.Structure.project.name.IsEmpty()) ProductName = Snapshot.Structure.project.name;
+	if (bOk)
+	{
+		// Kept before the plan is announced, so a listener drawing the plan finds each tile's kind.
+		FeatureKinds.Reset();
+		for (const FBpFeature& Feature : Snapshot.Structure.features)
+		{
+			if (!Feature.slug.IsEmpty() && !Feature.kind.IsEmpty()) FeatureKinds.Add(Feature.slug, Feature.kind);
+		}
+	}
 	if (bOk && Snapshot.bHasPlan)
 	{
 		Plan = Snapshot.Plan;

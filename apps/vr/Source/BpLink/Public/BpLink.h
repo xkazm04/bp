@@ -102,6 +102,9 @@ public:
 	FString GetProductSlug() const;
 	/** structure.project.name from the last structure that parsed; empty while none has. */
 	const FString& GetProductName() const { return ProductName; }
+	/** A feature's kind (structure.features[].kind: user_flow, capability, integration, ops) by its slug, which is the
+	 *  plan tile's id; null when the last structure that parsed has no such feature or names no kind. */
+	const FString* FindFeatureKind(const FString& Slug) const { return FeatureKinds.Find(Slug); }
 
 	FOnBpPlan& OnPlan() { return PlanDelegate; }
 	FOnBpPlanFailed& OnPlanFailed() { return PlanFailedDelegate; }
@@ -139,6 +142,7 @@ private:
 	bool bHasPlan = false;
 	EBpPlanState PlanState = EBpPlanState::Pending;
 	FString ProductName;
+	TMap<FString, FString> FeatureKinds;
 	FOnBpPlan PlanDelegate;
 	FOnBpPlanFailed PlanFailedDelegate;
 };

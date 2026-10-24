@@ -101,12 +101,27 @@ public:
 	 *  partitions inside it at BayPartitionRatio of it. A lifted wing leaves its rest extrusions behind, hidden. */
 	static constexpr float RestRoomCm = 0.8f;
 	static constexpr float BayPartitionRatio = 0.6f;
+	/** The line-weight hierarchy at rest (FC3): the rooms' glass edges at RestRoomShow, the partitions' at
+	 *  RestPartitionShow (the edge glow's Show scales its opacity), under the wing outlines the sheet draws strongest. */
+	static constexpr float RestRoomShow = 0.8f;
+	static constexpr float RestPartitionShow = 0.45f;
+
+	/** The fixture glyphs (FC3, element 5; ArtSource/fixture-kit): each tile at rest holds the glyph of its feature's kind,
+	 *  centred on its box, its footprint at most GlyphFill of the box and its height at most GlyphMaxCm (the shorter side
+	 *  of the box scales it; the height is capped on its own, so a tall shelf reads as a low cabinet). */
+	static constexpr float GlyphFill = 0.8f;
+	static constexpr float GlyphMaxCm = 1.1f;
 
 	/** Pins (FC1, element 7): survey-pin stands on each feature that has an open (`proposed`) finding: an amber bead on the
 	 *  plan, a stem and a paper tag on top (ArtSource/survey-pin: 6.38 cm tall, a 2.2 x 1.4 cm tag centred on the stem,
 	 *  facing the mesh's +-Y, its faces UV'd 0..1). The tag shows its finding from the tag atlas. It stands PinScale times
 	 *  its modelled size so the tag's text reads from the table's edge. */
-	static constexpr float PinScale = 1.6f;
+	static constexpr float PinScale = 2.0f;
+	/** Tags that would overlap from the target eye merge into the first one's (FC3): within TagClearUCm across, and along
+	 *  the paper within the depth the tag's height covers seen from the target eye (BpType's floor sets the tag's size). */
+	static constexpr float TagClearUCm = 5.6f;
+	/** Pins whose tag merged into another's stand at this fraction of PinScale, their tags blank. */
+	static constexpr float MergedPinRatio = 0.45f;
 	/** The mesh's tag faces its +-Y; this turns it to the viewer at the near edge. */
 	static constexpr float PinYawDeg = 90.f;
 	/** The tag atlas: TagAtlasCols x TagAtlasRows cells of TagCellWidthPx x TagCellHeightPx (the tag's 2.2 : 1.4). */
@@ -116,8 +131,11 @@ public:
 	static constexpr int32 TagAtlasRows = 8;
 
 	/** The scan line (FC1, element 8): a band across the scanned place at the row of the feature being read, eased toward
-	 *  it at ScanEaseCmPerS (paper cm), ScanHalfWidthCm half wide; it fades over ScanFadeS when the job ends. */
-	static constexpr float ScanHalfWidthCm = 1.4f;
+	 *  it at ScanEaseCmPerS (paper cm); it fades over ScanFadeS when the job ends. Its bright core is ScanHalfWidthCm half
+	 *  wide, its soft glow fourteen times that (FC3, lookdev 03; the profile is fc1_marks.py's), and it runs ScanOverrunCm past
+	 *  the scanned place's ends. */
+	static constexpr float ScanHalfWidthCm = 0.3f;
+	static constexpr float ScanOverrunCm = 2.f;
 	static constexpr float ScanEaseCmPerS = 12.f;
 	static constexpr float ScanFadeS = 1.2f;
 
@@ -170,6 +188,20 @@ public:
 	/** The scan line's parameters (vectors ScanCentre, ScanAxis, ScanSide), read by the paper and the edge glow. */
 	UPROPERTY(EditAnywhere, Category = "Bp|Table")
 	TSoftObjectPtr<class UMaterialParameterCollection> ScanCollection;
+
+	/** The sheet's type faces (BpType.h): Barlow Semi Condensed Medium ("Regular") and SemiBold ("Bold"). Missing: Roboto. */
+	UPROPERTY(EditAnywhere, Category = "Bp|Table")
+	TSoftObjectPtr<class UFontFace> TypeRegularFace;
+	UPROPERTY(EditAnywhere, Category = "Bp|Table")
+	TSoftObjectPtr<class UFontFace> TypeBoldFace;
+
+	/** The fixture glyphs (ArtSource/fixture-kit, imported; pivot the base centre, standing +Z), by feature kind; `generic`
+	 *  stands for a kind the kit has no glyph for. Missing: no glyphs. */
+	UPROPERTY(EditAnywhere, Category = "Bp|Table")
+	TMap<FString, TSoftObjectPtr<UStaticMesh>> GlyphMeshes;
+	/** The glyphs' material (unlit, additive; Scalar `GlyphGlow`; per-instance custom data 0 = Show). */
+	UPROPERTY(EditAnywhere, Category = "Bp|Table")
+	TSoftObjectPtr<UMaterialInterface> GlyphMaterial;
 
 	/** Re-heights the tiles by `health[Lens]`; nothing moves in x or y. One of the plan's lenses; L3.5 calls this. */
 	void SetActiveLens(const FString& Lens);
@@ -297,6 +329,19 @@ private:
 	 *  FCanvasTextItem draws nothing without one). */
 	UPROPERTY()
 	TObjectPtr<class UFont> EngineFont;
+	/** The sheet's font (BpType.h), built from the type faces at BeginPlay: a runtime-cached UFont whose typefaces are
+	 *  named "Regular" and "Bold". */
+	UPROPERTY(Transient)
+	TObjectPtr<class UFont> TypeFont;
+
+	/** The fixture glyphs at rest, one instanced batch per kind (FC3), and their material. */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UInstancedStaticMeshComponent>> Glyphs;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> GlyphMid;
+	/** Per glyph batch: each instance's room (plan index) and the Show last written to it. */
+	TArray<TArray<int32>> GlyphRoom;
+	TArray<TArray<float>> ShownGlyph;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UCanvasRenderTarget2D> Sheet;
@@ -333,6 +378,17 @@ private:
 	void DrawTags(UCanvas* Canvas, int32 Width, int32 Height);
 
 	void LoadArt();
+	/** TypeFont from the type faces, or Roboto (with one warning) when they are missing. */
+	void BuildTypeFont();
+	/** The glyph batches from the plan's tiles and the kinds BpLink read (FC3). */
+	void BuildGlyphs(const FBpPlan& Plan);
+	/** The glyphs' Show per instance for the levels: as their room's rest extrusion. */
+	void ApplyGlyphs(float WingEase);
+	/** BpType's floor: the smallest cap height (paper cm) a text whose baseline stands at PaperCm may have, so its cap
+	 *  subtends BpType::FloorPx in the target capture and BpType::FloorArcmin from the play eye. */
+	double TextFloorCm(const FVector2D& PaperCm) const;
+	/** How deep a wall of HeightCm standing at paper v hides the paper behind it, seen from the target eye (cm, along v). */
+	double CoverCm(double V, double HeightCm) const;
 	void PlaceForHeight(float HeightCm);
 	void ApplyPlan(const FBpPlan& Plan);
 	void ShowNoPlan();
@@ -358,13 +414,15 @@ private:
 	/** bp.L0Volumes. */
 	static int32 CVarL0VolumesValue();
 public:
-	/** The font canvas text is drawn with (Roboto, the engine's runtime-cached UFont). */
+	/** The font canvas text is drawn with: the sheet's (BpType.h), Roboto until it is built. */
 	static const UObject* TextFontObject();
 private:
 	/** A label on the paper, or, with a Parent, on a volume batch: then its place is in the batch's space and it rides
 	 *  the batch's lift. */
 	UWidgetComponent* MakeLabel(const TSharedRef<SWidget>& Content, const FVector2D& PaperCm, const FVector2D& Pivot, float CapHeightCm, float LiftCm, USceneComponent* Parent = nullptr);
 	void PlaceLabels();
+	/** A component's relative location set exactly (no round trip through world space), its world transform after it. */
+	static void PlaceExactly(USceneComponent* Component, const FVector& Relative);
 	void BuildVolumes(const FBpPlan& Plan);
 	void ClearVolumes();
 	static float HeightCvarCm();
@@ -398,6 +456,8 @@ private:
 	bool bRealFrame = false;
 	bool bRealPaper = false;
 	bool bLoggedNoPlan = false;
+	/** The next sheet draw logs each text's cap against its floor (BpType.h), once per plan. */
+	bool bReportType = false;
 	float PlacedHeightCm = -1.f;
 	FString DrawnRev;
 	/** The lens the tiles' heights read; Plan.lenses[0] when a plan is applied. */
@@ -418,7 +478,7 @@ private:
 	/** The title block (FC1: drawn into the sheet): the waiting line before a plan, and the lens. */
 	FString TitleWaitLine;
 	FString TitleLensLine;
-	/** Each wing's aggregate line (rooms, features, bad under the active lens), by wing id. */
+	/** Each wing's aggregate line (rooms, features, bad under the active lens), by wing id: logged, not drawn (FC3). */
 	TMap<FString, FString> WingCounts;
 	/** Each bay's header strip (plan box top to its first tile), local cm, where its name goes if it fits. */
 	TArray<float> BayHeaderCm;
@@ -475,8 +535,9 @@ private:
 	int32 AppliedL0Volumes = -1;
 	/** Rest extrusions' last Show per instance. */
 	TArray<float> ShownRest;
-	/** Each rest instance's room (plan index). */
+	/** Each rest instance's room (plan index), and its ink (RestRoomShow or RestPartitionShow). */
 	TArray<int32> RestRoom;
+	TArray<float> RestInk;
 
 	// ---- Marks state (BpMarks.cpp) ------------------------------------------------------------------------------------
 	struct FPin
@@ -485,6 +546,10 @@ private:
 		int32 Room = INDEX_NONE;
 		FString Line1;
 		FString Line2;
+		/** The open findings on this feature. */
+		int32 Findings = 0;
+		/** False when its tag merged into a nearer pin's (FC3): it stands lower, its tag blank. */
+		bool bTagged = true;
 	};
 	TArray<FPin> PinList;
 	FString PinsKey;

@@ -444,7 +444,7 @@ void ABpTable::ApplyLevelVisuals()
 	if (LiftedRoom != INDEX_NONE && LiftedRoom != WantLifted)
 	{
 		LiftedShell->ClearInstances();
-		if (RoomLabels.IsValidIndex(LiftedRoom)) RoomLabels[LiftedRoom]->SetRelativeLocation(LiftedRoomLabelRest);
+		if (RoomLabels.IsValidIndex(LiftedRoom)) PlaceExactly(RoomLabels[LiftedRoom], LiftedRoomLabelRest);
 		LiftedRoom = INDEX_NONE;
 	}
 	if (WantLifted != INDEX_NONE)
@@ -461,7 +461,7 @@ void ABpTable::ApplyLevelVisuals()
 		}
 		LiftedShell->SetRelativeTransform(RoomT);
 		const FVector Rise(-LiftedRoomSlideCm * Er / WingT.GetScale3D().X, 0.0, RoomLiftCm * Er / WingT.GetScale3D().Z);
-		if (RoomLabels.IsValidIndex(LiftedRoom)) RoomLabels[LiftedRoom]->SetRelativeLocation(LiftedRoomLabelRest + Rise);
+		if (RoomLabels.IsValidIndex(LiftedRoom)) PlaceExactly(RoomLabels[LiftedRoom], LiftedRoomLabelRest + Rise);
 	}
 
 	// Show per instance: the lifted wing's shells fade in as it rises, the lifted room's siblings dim as it rises, and
@@ -560,6 +560,8 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 		const FString Wing = RoomWing.IsValidIndex(Room) ? RoomWing[Room] : FString();
 		float Show = 0.f;
 		if (bOn) Show = AnimWing.IsEmpty() ? 1.f : (Wing == AnimWing ? 1.f - WingEase : FMath::Lerp(1.f, LevelDim, WingEase));
+		// The line-weight hierarchy (FC3): rooms medium, partitions fine.
+		if (RestInk.IsValidIndex(Index)) Show *= RestInk[Index];
 		if (ShownRest[Index] == Show) continue;
 		ShownRest[Index] = Show;
 		RestVolumes->SetCustomDataValue(Index, 3, Show, false);
@@ -567,6 +569,7 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 	}
 	RestVolumes->SetRelativeTransform(WingGroupTransform(0.f));
 	if (bDirty) RestVolumes->MarkRenderStateDirty();
+	ApplyGlyphs(WingEase);
 }
 
 void ABpTable::RedrawSheet()

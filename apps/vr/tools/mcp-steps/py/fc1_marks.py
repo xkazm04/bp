@@ -12,9 +12,10 @@
 #     ScanCentre = the band's centre (xyz), its half width in cm (w)
 #     ScanAxis   = the direction it travels (xyz, unit), its strength (w, 0 off)
 #     ScanSide   = the direction along it (xyz, unit), its half length in cm (w)
-#   band(P) = (core + 0.35 trail) * inside * strength, with d = (P - centre).axis, s = (P - centre).side,
-#   core = saturate(1 - |d| / w)^2, trail = saturate(1 + d / 6w) for d < 0 (behind the line), inside = saturate(len - |s|).
-# - M_BlueprintPaper: emissive += band * cyan * PAPER_BAND_GLOW. M_EdgeGlow: emissive += band * cyan * EDGE_BAND_GLOW and
+#   band(P) = (core + GLOW_K glow + 0.35 trail) * inside * strength, with d = (P - centre).axis, s = (P - centre).side,
+#   core = saturate(1 - |d| / w)^2, glow = saturate(1 - |d| / (GLOW_SPREAD w))^2 (FC3: lookdev 03's soft wide halo
+#   around a bright thin core), trail = saturate(1 + d / 6w) for d < 0 (behind the line), inside = saturate(len - |s|).
+# - M_BlueprintPaper: emissive += band * SCAN_CYAN * PAPER_BAND_GLOW. M_EdgeGlow: emissive += band * SCAN_CYAN * EDGE_BAND_GLOW and
 #   opacity = max(opacity, band * EDGE_BAND_OPACITY), so the line crosses the glass volumes too.
 # - M_PinTag: unlit, translucent, for instanced static meshes: the tag atlas (Texture `Atlas`, ABpTable's canvas render
 #   target) at the instance's cell (custom data 0, 1 = the cell's UV offset, 2, 3 = its UV size), emissive rgb * `TagGlow`,
@@ -42,8 +43,13 @@ EDGE = "/Game/Bp/Materials/M_EdgeGlow"
 TAG = "/Game/Bp/Materials/M_PinTag"
 # #BFE8FF (sRGB) as linear, the style block's cyan-white; the band is brighter than the ink so it blooms.
 CYAN = unreal.LinearColor(0.5209956, 0.8069523, 1.0, 1.0)
-PAPER_BAND_GLOW = 6.0
-EDGE_BAND_GLOW = 5.0
+# The band's own cyan (FC3): lookdev 03's sweep is a saturated cyan that blooms, where the ink's cyan-white burns to white
+# at the band's strength. #38C8FF as linear.
+SCAN_CYAN = unreal.LinearColor(0.0395462, 0.5775804, 1.0, 1.0)
+PAPER_BAND_GLOW = 12.0
+EDGE_BAND_GLOW = 7.0
+GLOW_SPREAD = 14.0
+GLOW_K = 0.35
 EDGE_BAND_OPACITY = 0.55
 TAG_GLOW = 1.1
 MARK = "fc1-scan"
@@ -189,9 +195,27 @@ def band_nodes(m, x0, y0):
     wire(behind, trail, "B")
     trail_k = add(unreal.MaterialExpressionMultiply, 1450, 120, const_b=0.35)
     wire(trail, trail_k, "A")
-    profile = add(unreal.MaterialExpressionAdd, 1600, 50)
-    wire(core, profile, "A")
-    wire(trail_k, profile, "B")
+    core_trail = add(unreal.MaterialExpressionAdd, 1600, 50)
+    wire(core, core_trail, "A")
+    wire(trail_k, core_trail, "B")
+    # glow = saturate(1 - |d| / (GLOW_SPREAD w))^2 * GLOW_K
+    w_glow = add(unreal.MaterialExpressionMultiply, 700, 420, const_b=GLOW_SPREAD)
+    wire(w, w_glow, "A")
+    g_ratio = add(unreal.MaterialExpressionDivide, 850, 420)
+    wire(ad, g_ratio, "A")
+    wire(w_glow, g_ratio, "B")
+    g_inv = add(unreal.MaterialExpressionOneMinus, 1000, 420)
+    wire(g_ratio, g_inv, "")
+    g_sat = add(unreal.MaterialExpressionSaturate, 1150, 420)
+    wire(g_inv, g_sat, "")
+    g_sq = add(unreal.MaterialExpressionMultiply, 1300, 420)
+    wire(g_sat, g_sq, "A")
+    wire(g_sat, g_sq, "B")
+    g_k = add(unreal.MaterialExpressionMultiply, 1450, 420, const_b=GLOW_K)
+    wire(g_sq, g_k, "A")
+    profile = add(unreal.MaterialExpressionAdd, 1600, 200)
+    wire(core_trail, profile, "A")
+    wire(g_k, profile, "B")
     # inside = saturate(halflength - |s|)
     abs_s = add(unreal.MaterialExpressionAbs, 700, 250)
     wire(s, abs_s, "")
@@ -229,7 +253,7 @@ def patch(path, glow, opacity_k):
     emissive = mel.get_material_property_input_node(m, unreal.MaterialProperty.MP_EMISSIVE_COLOR)
     emissive_out = mel.get_material_property_input_node_output_name(m, unreal.MaterialProperty.MP_EMISSIVE_COLOR)
     band, add, wire = band_nodes(m, -2600, 1200)
-    tint = add(unreal.MaterialExpressionConstant3Vector, 2000, 0, constant=CYAN)
+    tint = add(unreal.MaterialExpressionConstant3Vector, 2000, 0, constant=SCAN_CYAN)
     lit = add(unreal.MaterialExpressionMultiply, 2150, 50)
     wire(tint, lit, "A")
     wire(band, lit, "B")

@@ -6,6 +6,7 @@
 
 #include "BpGameMode.h"
 #include "BpLink.h"
+#include "BpType.h"
 #include "CanvasItem.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/WidgetComponent.h"
@@ -75,11 +76,15 @@ namespace
 		return FCoreStyle::GetDefaultFontStyle(Style, CapPx / (0.711f * 96.f / 72.f));
 	}
 
-	/** The same for canvas text, which needs a font object (ABpTable::TextFontObject). */
+	/** Canvas text in the sheet's family, which needs a font object (ABpTable::TextFontObject; BpType's metrics). */
 	FSlateFontInfo CanvasFont(const TCHAR* Style, float CapPx)
 	{
-		return FSlateFontInfo(ABpTable::TextFontObject(), CapPx / (0.711f * 96.f / 72.f), FName(Style));
+		return FSlateFontInfo(ABpTable::TextFontObject(), CapPx / (static_cast<float>(BpType::CapPerEm) * 96.f / 72.f), FName(Style));
 	}
+
+	/** The survey pin as modelled (ArtSource/survey-pin): its height, and its tag's height (the tag sits at the top). */
+	constexpr double PinModelCm = 6.38;
+	constexpr double PinTagModelCm = 1.4;
 
 	/** The first paragraph under a markdown heading of the finding's body ("## Impact"), one line, or empty. */
 	FString Section(const FString& Body, const FString& Heading)
@@ -340,12 +345,7 @@ void ABpTable::BuildPins(const FBpScanState& State)
 		if (!Tile) continue;
 		if (const int32* Pin = PinOfTile.Find(*Tile))
 		{
-			FPin& Existing = Next[*Pin];
-			int32 More = 0;
-			FString Lens, Count;
-			if (Existing.Line2.Split(TEXT(" +"), &Lens, &Count)) More = FCString::Atoi(*Count);
-			else Lens = Existing.Line2;
-			Existing.Line2 = FString::Printf(TEXT("%s +%d"), *Lens, More + 1);
+			++Next[*Pin].Findings;
 			continue;
 		}
 		if (Next.Num() >= TagAtlasCols * TagAtlasRows) continue;
@@ -353,11 +353,45 @@ void ABpTable::BuildPins(const FBpScanState& State)
 		Pin.Tile = *Tile;
 		Pin.Room = TileRoom.IsValidIndex(*Tile) ? TileRoom[*Tile] : INDEX_NONE;
 		Pin.Line1 = Proposal.id.ToUpper();
-		Pin.Line2 = Proposal.lens.ToUpper();
+		Pin.Findings = 1;
 		PinOfTile.Add(*Tile, Next.Num());
 		Next.Add(Pin);
 	}
+	// Tags that would overlap from the target eye merge (FC3): in store order, a pin within TagClearUCm across of a tagged
+	// pin, and nearer or farther than it by less than the paper its tag hides from the target eye, gives its tag up to
+	// that pin, whose second line counts the findings it then carries. Every pin still stands on its own feature.
+	const double TagTopCm = PinModelCm * PinScale, TagCm = PinTagModelCm * PinScale;
+	const double EyeAbove = ABpGameMode::TargetEyeAboveTopCm + GlassRecessCm;
+	const auto PaperOf = [this](const FPin& Pin)
+	{
+		const FBpPlanBox& Box = SheetPlan->tiles[Pin.Tile].box;
+		return PlanToPaperCm(FVector2D(Box.x + Box.w * 0.5, Box.y + Box.h * 0.5));
+	};
+	int32 Merged = 0;
+	for (int32 Index = 0; Index < Next.Num(); ++Index)
+	{
+		const FVector2D Here = PaperOf(Next[Index]);
+		for (int32 Earlier = 0; Earlier < Index; ++Earlier)
+		{
+			if (!Next[Earlier].bTagged) continue;
+			const FVector2D There = PaperOf(Next[Earlier]);
+			const double Along = (PaperDepthCm * 0.5 - FMath::Min(Here.Y, There.Y)) + (TableDepthCm * 0.5 + ABpGameMode::TargetBehindNearEdgeCm);
+			// More than the tag's own cover: a tag nearer the centre line also climbs the screen, and the tags kept need a gap.
+			const double Hidden = 1.6 * TagCm * Along / FMath::Max(EyeAbove - TagTopCm, 1.0);
+			if (FMath::Abs(Here.X - There.X) >= TagClearUCm || FMath::Abs(Here.Y - There.Y) >= Hidden) continue;
+			Next[Index].bTagged = false;
+			Next[Earlier].Findings += Next[Index].Findings;
+			++Merged;
+			break;
+		}
+	}
+	for (FPin& Pin : Next)
+	{
+		// The second line only counts: a lens name at the tag's floor does not fit the tag (BpType.h).
+		Pin.Line2 = Pin.bTagged && Pin.Findings > 1 ? FString::Printf(TEXT("+%d"), Pin.Findings - 1) : FString();
+	}
 	if (Key == PinsKey && PinList.Num() == Next.Num()) return;
+	UE_LOG(LogBpTable, Log, TEXT("BpTable: pin tags merged=%d of %d (tags that would overlap from the target eye)"), Merged, Next.Num());
 	PinsKey = Key;
 	PinList = MoveTemp(Next);
 	Pins->ClearInstances();
@@ -396,7 +430,7 @@ void ABpTable::PlacePins()
 		const float StandCm = Rise * TileHeightCm(Reading ? *Reading : FString());
 		const FVector2D Centre = PlanToPaperCm(FVector2D(Tile.box.x + Tile.box.w * 0.5, Tile.box.y + Tile.box.h * 0.5));
 		const FVector Foot = Group.TransformPosition(PaperCmToLocal(Centre, StandCm));
-		PinPlaces.Add(FTransform(FRotator(0.f, PinYawDeg, 0.f), Foot, FVector(PinScale)));
+		PinPlaces.Add(FTransform(FRotator(0.f, PinYawDeg, 0.f), Foot, FVector(Pin.bTagged ? PinScale : PinScale * MergedPinRatio)));
 	}
 	if (Pins->GetInstanceCount() == PinPlaces.Num()) Pins->BatchUpdateInstancesTransforms(0, PinPlaces, false, true);
 }
@@ -417,25 +451,30 @@ void ABpTable::DrawTags(UCanvas* Canvas, int32 Width, int32 Height)
 		T.V0_Pos = Min; T.V1_Pos = Max; T.V2_Pos = FVector2D(Min.X, Max.Y);
 		Tris.Add(T);
 	};
-	struct FTagText { FString Text; FVector2D Px; FSlateFontInfo Font; FLinearColor Color; };
+	struct FTagText { FString Text; FVector2D Px; FSlateFontInfo Font; FLinearColor Color; float Tracking; };
 	TArray<FTagText> Texts;
-	const float Pad = 14.f;
+	const float Pad = 10.f;
+	// One cap for both lines: BpType::PinTag's, which at PinScale meets the floor at the farthest pin (the fc3 legibility
+	// table); a line that does not fit at it is dropped, never set smaller.
+	const float Cap = static_cast<float>(BpType::PinTag.CapCm);
+	const float Track = static_cast<float>(BpType::PinTag.TrackEm / BpType::CapPerEm) * Cap;
+	// A line box's top is (ascender - cap) above the cap's top.
+	const auto Top = [Cap](float CapTop) { return CapTop - static_cast<float>((BpType::AscPerEm - BpType::CapPerEm) / BpType::CapPerEm) * Cap; };
+	const FLinearColor CountInk = AmberInk * 0.55f + Navy * 0.45f;
 	for (int32 Index = 0; Index < PinList.Num(); ++Index)
 	{
+		// A merged pin's tag stays blank (transparent): its findings are counted on the tag it merged into.
+		if (!PinList[Index].bTagged) continue;
 		const FVector2D Cell(Index % TagAtlasCols * TagCellWidthPx, Index / TagAtlasCols * TagCellHeightPx);
 		// A pixel of margin so the mips never bleed one card into the next.
 		const FVector2D Min = Cell + FVector2D(4.0, 4.0), Max = Cell + FVector2D(TagCellWidthPx - 4.0, TagCellHeightPx - 4.0);
 		Fill(Min, Max, CardPaper);
-		Fill(Min, FVector2D(Max.X, Min.Y + 9.0), AmberInk);
+		Fill(Min, FVector2D(Max.X, Min.Y + 8.0), AmberInk);
 		const float Room = TagCellWidthPx - 8.f - 2.f * Pad;
-		float Cap1 = 46.f;
-		while (Cap1 > 22.f && Measure(PinList[Index].Line1, CanvasFont(TEXT("Bold"), Cap1)).X > Room) Cap1 -= 2.f;
-		float Cap2 = 30.f;
-		while (Cap2 > 16.f && Measure(PinList[Index].Line2, CanvasFont(TEXT("Regular"), Cap2)).X > Room) Cap2 -= 2.f;
-		// A line box's top is (ascender - cap) above the cap's top: Roboto 0.928 - 0.711 em.
-		const auto Top = [](float CapTop, float Cap) { return CapTop - (0.928f - 0.711f) * Cap / 0.711f; };
-		Texts.Add({ PinList[Index].Line1, FVector2D(Min.X + Pad, Top(Min.Y + 34.f, Cap1)), CanvasFont(TEXT("Bold"), Cap1), Navy });
-		Texts.Add({ PinList[Index].Line2, FVector2D(Min.X + Pad, Top(Min.Y + 34.f + Cap1 + 26.f, Cap2)), CanvasFont(TEXT("Regular"), Cap2), Navy.CopyWithNewOpacity(0.85f) });
+		const FSlateFontInfo Bold = CanvasFont(TEXT("Bold"), Cap);
+		const auto Fits = [&](const FString& Text) { return !Text.IsEmpty() && Measure(Text, Bold).X + Track * Text.Len() <= Room; };
+		if (Fits(PinList[Index].Line1)) Texts.Add({ PinList[Index].Line1, FVector2D(Min.X + Pad, Top(Min.Y + 26.f)), Bold, Navy, Track });
+		if (Fits(PinList[Index].Line2)) Texts.Add({ PinList[Index].Line2, FVector2D(Min.X + Pad, Top(Min.Y + 26.f + Cap + 20.f)), Bold, CountInk, Track });
 	}
 	if (Tris.Num() > 0)
 	{
@@ -446,6 +485,7 @@ void ABpTable::DrawTags(UCanvas* Canvas, int32 Width, int32 Height)
 	for (const FTagText& Text : Texts)
 	{
 		FCanvasTextItem Item(Text.Px, FText::FromString(Text.Text), Text.Font, Text.Color);
+		Item.HorizSpacingAdjust = Text.Tracking;
 		Canvas->DrawItem(Item);
 	}
 }
@@ -479,7 +519,7 @@ void ABpTable::WriteScanParams(float Strength)
 		// Plan y runs toward the viewer (local -X), plan x to the right (local +Y).
 		Axis = Actor.TransformVectorNoScale(FVector(-1.0, 0.0, 0.0));
 		Side = Actor.TransformVectorNoScale(FVector(0.0, 1.0, 0.0));
-		HalfLength = (ScanPlanBox.GetSize().X * 0.5 * BpPlanUnitCm + 0.5) * Group.GetScale3D().Y;
+		HalfLength = (ScanPlanBox.GetSize().X * 0.5 * BpPlanUnitCm + ScanOverrunCm) * Group.GetScale3D().Y;
 		HalfWidth = ScanHalfWidthCm * Group.GetScale3D().X;
 	}
 	UKismetMaterialLibrary::SetVectorParameterValue(World, ScanParams, TEXT("ScanCentre"), FLinearColor(Centre.X, Centre.Y, Centre.Z, HalfWidth));
