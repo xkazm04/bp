@@ -19,7 +19,11 @@ Subtle draws every lens from its manifest (`manifestChannel`). Shaped and bold e
 the six built-in lens ids (`shaped/channels.ts`, `bold/channels.ts`, reading the lens values through `base/legacy.ts`)
 and fall back to `manifestChannel` for any other lens. `base/` holds only what is shared: `baseExpression`
 (General's compact layout, which bold spreads, and the spring), `reviewDiamond`, `legacy.ts` and `util.ts`
-(`clamp`, `count`: import them, do not copy).
+(`clamp`, `count`: import them, do not copy). `legacy.ts` also owns what both prototypes must agree on: `measured`
+(every built-in channel is exported through it: a facet nobody measured says NOT MEASURED on its tile, and a place's
+aggregate counts measured features only and ends with `N not measured`, as subtle's `lensAggregate` skips them),
+`measuredOf` (the same filter, for bold's bay rails), the `sensitivity` and `designStep` ordinals and the one
+`sensitiveUnreviewed` predicate (`npm run check:legacy`).
 
 `/` draws with subtle, so nothing it imports statically may reach `shaped/`, `bold/` or `base/legacy.ts`
 (`npm run check:variant-chunk`). A new variant adds its entry to `VARIANT_META` in registry.ts with the same
