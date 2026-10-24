@@ -8,10 +8,9 @@
 // 200 + store.mjs's JSON `{ decision, by, triaged, skipped, packs_triaged }`; 409 with the same JSON plus `error: 'nothing moved'` when nothing moved, and 409 `{ error, triaged: [], skipped: [] }` when store.mjs refuses (every 409 has `error`, `triaged` and `skipped`);
 // 400 for a bad body (or one store.mjs calls bad input); 404 for an unknown product or a missing store; 503 when
 // lens-scan is not installed or the store stayed locked. The stream sees the write through the store's data_version.
-// Localhost only.
-import { unknownProduct } from '@bp/core/server/products.server';
-import { findProduct, hasStore, storeFile } from '@bp/core/server/products.server';
-import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
+// Localhost only. Admission (guards, product, JSON body and its shape, store): the route door (route-door.server.ts).
+import { door } from '@bp/core/server/route-door.server';
+import { storeFile } from '@bp/core/server/products.server';
 import { SAFE_ID } from '@bp/core/scan/jobs';
 import { MAX_TRIAGE, triage, triageBy } from '@bp/core/server/release.server';
 import type { TriageBody } from '@bp/core/scan/types';
@@ -31,22 +30,20 @@ function parse(x: unknown): TriageBody | null {
   return body;
 }
 
-export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }): Promise<Response> {
-  const denied = localOnly(req);
-  if (denied) return Response.json({ error: denied }, { status: 403 });
-  const notJson = jsonOnly(req);
-  if (notJson) return Response.json({ error: notJson }, { status: 415 });
-  const { slug } = await params;
-  const p = findProduct(slug);
-  if (!p) return unknownProduct(slug);
-  let raw: unknown;
-  try { raw = await req.json(); } catch { return Response.json({ error: 'body must be JSON' }, { status: 400 }); }
-  const body = parse(raw);
-  if (!body) return Response.json({ error: `body must be { ids: string[] (1..${MAX_TRIAGE}), decision: 'accept' | 'rework' | 'descope' | 'reopen', note?: string }` }, { status: 400 });
-  if (!hasStore(p)) return Response.json({ error: `no scan store for ${slug}` }, { status: 404 });
-  const r = await triage(storeFile(p), body, await triageBy());
-  // both 409s carry `error` and the result's lists, so a caller branches on a field, not on which shape arrived:
-  // a store refusal has empty lists (it moved and skipped nothing), a nothing-moved answer has its skipped reasons
-  if (!r.ok) return Response.json(r.kind === 'refused' ? { error: r.error, triaged: [], skipped: [] } : { error: r.error }, { status: r.kind === 'bad' ? 400 : r.kind === 'refused' ? 409 : 503 });
-  return Response.json(r.data.triaged.length ? r.data : { error: 'nothing moved', ...r.data }, { status: r.data.triaged.length ? 200 : 409 });
+const triageDoor = door('products/[slug]/triage', {
+  POST: {
+    body: (raw) => parse(raw) ?? Response.json({ error: `body must be { ids: string[] (1..${MAX_TRIAGE}), decision: 'accept' | 'rework' | 'descope' | 'reopen', note?: string }` }, { status: 400 }),
+    store: 'required',
+    live: async ({ product: p, body }) => {
+      const r = await triage(storeFile(p), body as TriageBody, await triageBy());
+      // both 409s carry `error` and the result's lists, so a caller branches on a field, not on which shape arrived:
+      // a store refusal has empty lists (it moved and skipped nothing), a nothing-moved answer has its skipped reasons
+      if (!r.ok) return Response.json(r.kind === 'refused' ? { error: r.error, triaged: [], skipped: [] } : { error: r.error }, { status: r.kind === 'bad' ? 400 : r.kind === 'refused' ? 409 : 503 });
+      return Response.json(r.data.triaged.length ? r.data : { error: 'nothing moved', ...r.data }, { status: r.data.triaged.length ? 200 : 409 });
+    },
+  },
+});
+
+export async function POST(req: Request, ctx: { params: Promise<{ slug: string }> }): Promise<Response> {
+  return triageDoor.POST(req, ctx);
 }
