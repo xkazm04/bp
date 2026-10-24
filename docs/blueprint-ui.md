@@ -334,6 +334,12 @@ lens has nothing to add to goes transparent.
   a feature with no measured lens at all gets the texture (Kettle has none; a live product before its
   first scan shows it everywhere). The engine draws it (`apps/web/src/engine/render/plan.ts`), so every variant
   shows it.
+  The rule is one module, `apps/web/src/engine/lens/unknown.ts`, which the plan and the subtle legend both read.
+  The legend's "?" row says how many features carry it now ("3 not scanned", or "none are unscanned under
+  <lens>"), then **Mark** (the plan selection becomes exactly those) and **Scan these** (one selection scan per
+  lens over them: the view's lens, or in General every enabled lens with a scan method; capped at 200, "Scan the
+  first 200 of 250"; it reads "Starting…" until the request settles, and is aria-disabled with the reason as its
+  title when the lens cannot be scanned). A past date draws no "?", so the row shows no count and no buttons.
 - **Faded = this lens has nothing here.** When the dominant lens's health is `na` (`applicable: false`
   or an `applies_when` miss) the whole tile or segment fades to 0.35, in that lens's view only. `na` is
   never trouble, so a faded feature carries no flag for that lens.
