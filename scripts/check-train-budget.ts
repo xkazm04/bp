@@ -22,7 +22,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import os from 'node:os';
-import { stripComments } from './lib/source.ts';
+import { dynIn, rel, staticDeps, walk } from './lib/import-graph.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
 const arg = (k: string) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : undefined; };
@@ -31,47 +31,10 @@ const failures: string[] = [];
 const expect = (ok: boolean, what: string) => { if (ok) held++; else failures.push(what); };
 
 // ------------------------------------------------------------------------------------------- 1. the static import graph
-const EXT = ['', '.ts', '.tsx', '/index.ts', '/index.tsx'];
-function resolveSpec(from: string, spec: string): string | null {
-  const base = spec.startsWith('@/') ? path.join(SRC, spec.slice(2)) : spec.startsWith('.') ? path.resolve(path.dirname(from), spec) : null;
-  if (!base) return null;   // a package
-  for (const e of EXT) { const p = base + e; if (fs.existsSync(p) && fs.statSync(p).isFile()) return p; }
-  return null;
-}
-/** Static value imports and re-exports (`import type` and `export type` erase); the regex is anchored per line. */
-function statIn(file: string, src: string): string[] {
-  const stat: string[] = [];
-  for (const m of src.matchAll(/^\s*(import|export)\s+(type\s+)?([^'";]*?\sfrom\s+)?['"]([^'"]+)['"]/gm)) {
-    if (m[2]) continue;
-    if (m[1] === 'export' && !m[3]) continue;
-    const r = resolveSpec(file, m[4]); if (r) stat.push(r);
-  }
-  return stat;
-}
-/** The split points: every `import('./x')`. */
-const dynIn = (file: string, src: string): string[] => [...src.matchAll(/\bimport\(\s*['"]([^'"]+)['"]\s*\)/g)].flatMap((m) => resolveSpec(file, m[1]) ?? []);
-/**
- * The two sides are read differently on purpose.
- *   dyn  is an expectation that must MATCH (`doors.has(LEDGER)`), so it reads the source with its comments removed
- *        (scripts/lib/source.ts): over raw text a commented-out `import('./ledger/LedgerPage')` is counted as the
- *        door, and the check passes for a tree whose only door has been deleted. The control below proves that.
- *   stat feeds an expectation that must NOT match (nothing reaches the ledger statically), where a comment can only
- *        ADD a reach - strictly conservative - and the shared stripper drops the newlines inside a block comment,
- *        which would unanchor the per-line regex and HIDE a real static import. So it reads the file as written.
- */
-const staticDeps = (file: string, raw = fs.readFileSync(file, 'utf8')): { stat: string[]; dyn: string[] } =>
-  ({ stat: statIn(file, raw), dyn: dynIn(file, stripComments(raw)) });
-const entries = ['app/page.tsx', 'app/layout.tsx'].map((p) => path.join(SRC, p)).filter((p) => fs.existsSync(p));
-const reached = new Set<string>(), doors = new Map<string, string>();
-for (const todo = [...entries]; todo.length; ) {
-  const f = todo.pop()!;
-  if (reached.has(f)) continue;
-  reached.add(f);
-  const d = staticDeps(f);
-  todo.push(...d.stat);
-  for (const x of d.dyn) if (!doors.has(x)) doors.set(x, f);
-}
-const rel = (p: string) => path.relative(ROOT, p).split(path.sep).join('/');
+// the walker is scripts/lib/import-graph.ts (shared with check-variant-chunk.ts); its header says why the static side
+// reads the raw text and the dynamic side the comment-stripped one
+const entries = ['app/page.tsx', 'app/layout.tsx'].map((p) => path.join(SRC, p));
+const { reached, doors } = walk(entries);
 const LEDGER = path.join(SRC, 'components', 'ledger', 'LedgerPage.tsx'), TRAIN = path.join(SRC, 'components', 'ledger', 'train') + path.sep;
 const leaked = [...reached].filter((p) => p === LEDGER || p.startsWith(TRAIN)).map(rel);
 expect(!leaked.length, `\`/\` imports the ledger statically: ${leaked.slice(0, 6).join(', ')}${leaked.length > 6 ? ' …' : ''}`);
