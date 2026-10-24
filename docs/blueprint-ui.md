@@ -785,7 +785,11 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
   (or the compare footer's), with quick notes. Sent items are pending (`LedgerUi.pending`) until the store or the sim
   shows them in another status, or for 60 s (`PENDING_BOUND_MS`: then released with a toast that the decision may have landed): no optimistic flip; a refusal toasts what was skipped and why (`skipped[].reason`). A
   single decision on the focused item moves the focus, and the open compare, to the next waiting item. **Undo** is
-  `reopen`: the item goes back to its `triaged_from` and out of a draft release, one step deep. The bar's package
+  `reopen`: the item goes back to its `triaged_from` and out of a draft release, one step deep. It reverses what the person
+  said, not where the focus went: the store's answer records the last decision (`LedgerUi.last`, the `triaged` ids only),
+  and Undo and U act on the targets when one of them can be undone, else on that last decision (`plan.ts`
+  `undoTargets`), naming it on the button (`Undo accept · p-12`, also in the compare strip); a reopen that lands, a
+  scope switch or another product clears it. The bar's package
   pill reads `Package v<draft or suggested> · n accepted`, with Release →. A decision that cannot apply keeps its button focusable (`Btn` `reason`: `aria-disabled`, click suppressed) and the why-not is its `aria-describedby` text, not a hover-only `title`. What a decision does is planned once (`train/plan.ts`: `planDecision` sends, asks a note, or refuses with why: nothing targeted, all pending, past the cap, none can move, or Undo on an item a newer attempt rebuilt; `decisionCounts` gives the bar's Accept n, needs-a-note and locked counts and every button's why-not); the buttons, the A/R/S/U keys, the note editor and the Release tab's Undo all read it, so a refused decision is a sentence, never a round trip.
 - **The compare panel** (`train/compare/ComparePanel.tsx`): one pack item's evidence, docked right at
   `clamp(--cmp-min, 52%, --cmp-max)` from 1100 px (a wide window opens the first item the first time the table shows),
