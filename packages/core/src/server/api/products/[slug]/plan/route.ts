@@ -2,6 +2,8 @@
 // the structure route's map laid out by core's layout, with every tile's health per enabled lens. Boxes are world units,
 // ids and parent ids are strings, and `rev` is the structure route's. 404 for an unknown slug or a missing structure file.
 // With no registered product named `kettle`, that slug answers the built-in sample, read-only, in the same shape.
+// `?layout=islands` (the VR client's) answers the islands view: the same shape, wings and rooms spaced apart
+// (plan-projection's WING_GAP, ROOM_GAP). No `layout`, or any other value, answers the layout's own boxes.
 import fs from 'node:fs';
 import path from 'node:path';
 import { findProduct, kettleRead, kettleSample, storeDir, unknownProduct } from '@bp/core/server/products.server';
@@ -13,11 +15,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   const denied = localHost(req);
   if (denied) return Response.json({ error: denied }, { status: 403 });
   const { slug } = await params;
+  const opts = { islands: new URL(req.url).searchParams.get('layout') === 'islands' };
   const k = kettleSample(slug);
   if (k) {
     try {
       const { raw, events, rev } = kettleRead(k);
-      return Response.json(projectPlan(JSON.parse(raw), events, rev));
+      return Response.json(projectPlan(JSON.parse(raw), events, rev, opts));
     } catch (e) {
       return Response.json({ error: `kettle sample unreadable: ${(e as Error).message}` }, { status: 500 });
     }
@@ -33,7 +36,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   }
   let events = '';
   try { events = fs.readFileSync(path.join(dir, 'events.jsonl'), 'utf8'); } catch { /* no events log */ }
-  try { return Response.json(projectPlan(structure, events, rev)); } catch (e) {
+  try { return Response.json(projectPlan(structure, events, rev, opts)); } catch (e) {
     return Response.json({ error: `no plan for ${file}: ${(e as Error).message}` }, { status: 500 });
   }
 }

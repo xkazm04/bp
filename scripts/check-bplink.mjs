@@ -4,7 +4,9 @@
 //   structure  GET /api/products/kettle/structure: 200 { structure, events, rev }; domains = structure.domains and lens
 //              manifests = structure.lenses, both counted against packages/core/data, never hard-coded
 //   plan       GET /api/products/kettle/plan: 200 { rev, lenses, wings, rooms, bays, tiles }, the levels VR draws (wing, room,
-//              bay, tile): 5 wings, 13 rooms, 29 bays, 133 tiles today, derived from WING_DEFS and the data, never hard-coded
+//              bay, tile): 5 wings, 13 rooms, 29 bays, 133 tiles today, derived from WING_DEFS and the data, never hard-coded.
+//              BpLink asks for ?layout=islands (wings and rooms spaced apart; the geometry is scripts/check-plan-islands.mjs's):
+//              the same plan but for its boxes, and any other `layout` answers the default body byte for byte
 //   events     the event log BpLink reads is that payload's `events` string (JSONL), line for line the data file's
 //   stream     GET /api/products/kettle/stream answers SSE (apps/server hosts Kettle's sims, L5.2): the first event is a `snapshot`
 //              of the sample (its findings as `proposals`); `delta` and `jobs` follow a scan (scripts/check-kettle-sim.mjs)
@@ -156,17 +158,18 @@ const SCHEMA_DIR = path.join(ROOT, 'packages/schema/schema');
 const Ajv2020 = Ajv2020Module.default ?? Ajv2020Module;
 const ajv = new Ajv2020({ allErrors: true, strict: true, strictRequired: false, allowUnionTypes: true });
 for (const f of fs.readdirSync(SCHEMA_DIR).filter((n) => n.endsWith('.schema.json'))) ajv.addSchema(JSON.parse(fs.readFileSync(path.join(SCHEMA_DIR, f), 'utf8')));
-const PAYLOAD_SCHEMAS = { envelope: 'structure-envelope-1', plan: 'plan-1', snapshot: 'scan-wire-1', waves: 'scan-wire-1' };
-const PAYLOAD_LABEL = { envelope: '/structure body', plan: '/plan body', snapshot: '/stream snapshot frame', waves: '/waves body' };
+const PAYLOAD_SCHEMAS = { envelope: 'structure-envelope-1', plan: 'plan-1', islands: 'plan-1', snapshot: 'scan-wire-1', waves: 'scan-wire-1' };
+const PAYLOAD_LABEL = { envelope: '/structure body', plan: '/plan body', islands: '/plan?layout=islands body', snapshot: '/stream snapshot frame', waves: '/waves body' };
 // One break per payload, applied to a copy of the live body. scan-wire-1's root takes one property per frame name, so a
 // stream frame is validated as { snapshot: <data> } and the waves answer as { waves }.
 const WRONG = {
   envelope: (b) => { const c = structuredClone(b); delete c.events; return c; },
   plan: (b) => { const c = structuredClone(b); const h = c.tiles?.[0]?.health; if (h) h[Object.keys(h)[0]] = 'purple'; else c.tiles = [{}]; return c; },
+  islands: (b) => { const c = structuredClone(b); if (c.wings?.[0]?.box) delete c.wings[0].box.h; else c.wings = [{}]; return c; },
   snapshot: (b) => { const c = structuredClone(b); c.snapshot = { ...(c.snapshot ?? {}), runs: 'not-an-array' }; return c; },
   waves: (b) => ({ ...structuredClone(b), waves: [{}] }),
 };
-const WRONG_WHAT = { envelope: '`events` omitted', plan: 'a health value that is no status', snapshot: '`runs` that is not an array', waves: 'a wave with no fields' };
+const WRONG_WHAT = { envelope: '`events` omitted', plan: 'a health value that is no status', islands: 'a wing box with no height', snapshot: '`runs` that is not an array', waves: 'a wave with no fields' };
 /** '' when `body` conforms to the named schema, else ajv's first errors as one string. */
 export function payloadErrors(schema, body) {
   const validate = ajv.getSchema(`https://app-structure.example/schema/${schema}.schema.json`);
@@ -195,6 +198,8 @@ export function planLensProblems(plan, registryIds) {
 }
 
 const PLAN_LEVELS = ['wings', 'rooms', 'bays', 'tiles'];
+/** The /plan request BpLink makes: the islands view, the table's layout (plan-projection's WING_GAP, ROOM_GAP). */
+const PLAN_ASK = '/plan?layout=islands';
 
 /** The labelled figures of the first `UE_LOG(LogBpLink, ...)` whose format string carries `<label>=%`: { label: argument
  * expression, whitespace removed }. `code` is stripCxx(text) and `lit` is stripCxx(text, true), the same length, so the
@@ -220,7 +225,7 @@ export function loggedFigures(code, lit, label) {
 }
 
 /**
- * What is wrong with BpLink.cpp's use of GET .../plan ([] when nothing): it must request `<Root> + TEXT("/plan")` with an
+ * What is wrong with BpLink.cpp's use of GET .../plan ([] when nothing): it must request `<Root> + TEXT("/plan?layout=islands")` with an
  * application/json Accept in CODE (a comment naming it does not count), parse the answer into the snapshot's FBpPlan through
  * BpSchema::FromJson, and log a line whose wings/rooms/bays/tiles are each `Snapshot.Plan.<that level>.Num()`, so each
  * logged figure is the live answer's count for the level it names. `plan` is the live /plan body, for the counts.
@@ -228,7 +233,7 @@ export function loggedFigures(code, lit, label) {
 export function planProblems(cppText, plan) {
   const code = stripCxx(cppText), lit = stripCxx(cppText, true);
   const out = [];
-  if (!/MakeGet\s*\(\s*Root\s*\+\s*TEXT\("\/plan"\)\s*,\s*TEXT\("application\/json"\)\s*\)/.test(lit)) out.push('no GET <Root>/plan request with Accept: application/json');
+  if (!/MakeGet\s*\(\s*Root\s*\+\s*TEXT\("\/plan\?layout=islands"\)\s*,\s*TEXT\("application\/json"\)\s*\)/.test(lit)) out.push(`no GET <Root>${PLAN_ASK} request with Accept: application/json`);
   if (!/BpSchema::FromJson\s*\([^;]*,\s*Snapshot\.Plan\s*\)/.test(code)) out.push('the /plan answer is not parsed into Snapshot.Plan (FBpPlan) through BpSchema::FromJson');
   const figs = loggedFigures(code, lit, 'wings');
   if (!figs) return [...out, 'no LogBpLink line logs wings='];
@@ -248,7 +253,7 @@ export function planProblems(cppText, plan) {
  */
 export function structureDiagProblems(cppText) {
   const code = stripCxx(cppText), lit = stripCxx(cppText, true);
-  const from = lit.indexOf('TEXT("/structure")'), to = lit.indexOf('TEXT("/plan")');
+  const from = lit.indexOf('TEXT("/structure")'), to = lit.indexOf('TEXT("/plan');
   if (from < 0 || to < from) return ['no /structure request before the /plan one'];
   const c = code.slice(from, to), l = lit.slice(from, to), out = [];
   if (!/\bif\s*\(\s*!FJsonSerializer::Deserialize\([^;{]*\)\s*\{\s*Refused\s*=/.test(c)) out.push('no branch of its own for FJsonSerializer::Deserialize');
@@ -267,7 +272,7 @@ async function main() {
   const lines = (s) => s.split('\n').filter((l) => l.trim());
   const wantEvents = lines(fs.readFileSync(path.join(DATA, 'kettle.events.jsonl'), 'utf8'));
   // BP_CHECK_BPLINK_WINGS seeds a wrong expectation (of the domain count), to show the smoke can fail.
-  // BP_CHECK_BPLINK_SEED=schema:envelope|schema:plan|schema:snapshot|schema:waves breaks the live body before it is validated against its schema.
+  // BP_CHECK_BPLINK_SEED=schema:envelope|schema:plan|schema:islands|schema:snapshot|schema:waves breaks the live body before it is validated against its schema.
 // BP_CHECK_BPLINK_SEED=plan,lenses,events does the same for the other derived figures, one or several at once: each adds 1
   // to that expectation, and the run must then FAIL on exactly that assertion (an expectation that survives its own seed is
   // not pinning anything). Unset, nothing changes.
@@ -333,6 +338,14 @@ async function main() {
       const gotPlan = { wings: pb?.wings?.length, rooms: pb?.rooms?.length, bays: pb?.bays?.length, tiles: pb?.tiles?.length };
       check(`plan: ${wantPlan.wings} wings, ${wantPlan.rooms} rooms, ${wantPlan.bays} bays, ${wantPlan.tiles} tiles (WING_DEFS and packages/core/data)`, JSON.stringify(gotPlan) === JSON.stringify(wantPlan) && wantPlan.wings > 0, JSON.stringify(gotPlan));
       check('plan: rev equals the structure rev', typeof pb?.rev === 'string' && pb.rev === kb?.rev, `${pb?.rev} vs ${kb?.rev}`);
+      // The islands view BpLink asks for: the same plan-1 body but for its boxes, and only `layout=islands` asks for it.
+      const ki = await get(`/api/products/kettle${PLAN_ASK}`, { accept: 'application/json' });
+      let ib = null; try { ib = JSON.parse(ki.body); } catch { /* reported below */ }
+      const unboxed = (b) => JSON.stringify(b, (k, v) => (k === 'box' ? undefined : v));
+      check(`plan: ${PLAN_ASK} answers 200 JSON, the default plan but for its boxes, and moves boxes`,
+        ki.status === 200 && !!ib && unboxed(ib) === unboxed(pb) && JSON.stringify(ib) !== JSON.stringify(pb), `${ki.status} ${ki.body.slice(0, 80)}`);
+      const kg = await get('/api/products/kettle/plan?layout=grid', { accept: 'application/json' });
+      check('plan: any other layout value answers the default body byte for byte', kg.status === 200 && kg.body === kp.body, `${kg.status} ${kg.body.length} vs ${kp.body.length} bytes`);
       check('plan: every tile carries a box and a health for each of the plan lenses', !!pb?.tiles?.length && Array.isArray(pb.lenses) && pb.lenses.length > 0 && pb.tiles.every((t) => typeof t.box?.x === 'number' && pb.lenses.every((l) => typeof t.health?.[l] === 'string')), `${pb?.lenses?.length} lenses`);
 
       // plan-1's lenses/health rule, on the live answer, against the registry in the data file. BP_CHECK_BPLINK_SEED=
@@ -367,7 +380,7 @@ async function main() {
       // own schema forbids is red here, not a surprise in Unreal. The waves answer is scan-wire-1's `waves` property.
       const waves = await get('/api/products/kettle/waves', { accept: 'application/json' });
       let wb = null; try { wb = JSON.parse(waves.body); } catch { /* reported below */ }
-      const live = { envelope: kb ?? {}, plan: pb ?? {}, snapshot: { snapshot: sd }, waves: wb ?? {} };
+      const live = { envelope: kb ?? {}, plan: pb ?? {}, islands: ib ?? {}, snapshot: { snapshot: sd }, waves: wb ?? {} };
       for (const [key, schema] of Object.entries(PAYLOAD_SCHEMAS)) {
         const body = seeded.has(`schema:${key}`) ? WRONG[key](live[key]) : live[key];
         const bad = payloadErrors(schema, body);
@@ -432,10 +445,11 @@ async function main() {
         planBad.length === 0, planBad.join(' | '));
       // permanent control: the helper refuses a copy with no /plan request, one whose request survives only in a comment,
       // and one whose wings figure is fed from another level
-      const noPlanGet = cppText.replace('TEXT("/plan")', 'TEXT("/structure")');
-      check('source: the /plan rule refuses a BpLink.cpp with no /plan request, one that names it only in a comment, and a drifted wings figure',
+      const noPlanGet = cppText.replace(`TEXT("${PLAN_ASK}")`, 'TEXT("/structure")');
+      check('source: the /plan rule refuses a BpLink.cpp with no /plan request, one that names it only in a comment, one that asks the default (not islands) plan, and a drifted wings figure',
         planProblems(noPlanGet, pb).length > 0
-        && planProblems(`// MakeGet(Root + TEXT("/plan"), TEXT("application/json"))\n${noPlanGet}`, pb).length > 0
+        && planProblems(`// MakeGet(Root + TEXT("${PLAN_ASK}"), TEXT("application/json"))\n${noPlanGet}`, pb).length > 0
+        && planProblems(cppText.replace(`TEXT("${PLAN_ASK}")`, 'TEXT("/plan")'), pb).length > 0
         && planProblems(cppText.replace('Snapshot.Plan.wings.Num()', 'Snapshot.Plan.rooms.Num()'), pb).length > 0);
 
       // A refused /structure answer names the step that refused it (machine.md, reading 12 measured it as CopyRaw at

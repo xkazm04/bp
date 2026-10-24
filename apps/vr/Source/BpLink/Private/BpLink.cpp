@@ -140,7 +140,8 @@ void FBpLinkClient::FetchProduct(const FString& Slug, TFunction<void(bool, const
 		// /plan is the product at the web's levels (wing, room, bay, tile), parsed into FBpPlan the way /structure is parsed
 		// into FBpAppStructure. A failed or unparseable answer logs its own Error and the fetch goes on: structure, events
 		// and rev still stand, and bHasPlan stays false. Snapshot is MOVED into this continuation as into the /stream one.
-		TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Plan = MakeGet(Root + TEXT("/plan"), TEXT("application/json"));
+		// The islands view: the server spaces wings and rooms apart for the table (VR computes no layout of its own).
+		TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Plan = MakeGet(Root + TEXT("/plan?layout=islands"), TEXT("application/json"));
 		Plan->OnProcessRequestComplete().BindLambda([Root, Slug, OnDone, Snapshot = MoveTemp(Snapshot)](FHttpRequestPtr, FHttpResponsePtr PlanResponse, bool bPlanConnected) mutable
 		{
 			const int32 PlanCode = (bPlanConnected && PlanResponse.IsValid()) ? PlanResponse->GetResponseCode() : 0;
