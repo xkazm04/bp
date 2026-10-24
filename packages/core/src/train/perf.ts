@@ -1,7 +1,9 @@
 // The performance comparison table's figures on top of compare.ts runStats (median, spread, noise): the after's change
 // against the baseline median and its %, the outlier rule, and the range strip's scale. No second median: the verdict
-// comes from compare.ts verdictOf, so the table and the item row always agree. Pure: Node checks import it.
-import { FRAME_MS, runStats, type RunStats } from '../scan/compare.ts';
+// comes from compare.ts verdictOf, so the table and the item row always agree, and the change's tone and the sentence
+// under the table are worded from that verdict (toneOf, reasonOf), never from a direction or noise test of their own.
+// Pure: Node checks import it.
+import { FRAME_MS, runStats, type RunStats, type Verdict } from '../scan/compare.ts';
 
 export interface PerfFigures extends RunStats {
   lo: number;
@@ -39,6 +41,24 @@ export function perfFigures(values: readonly number[], after: number | undefined
 
 /** Whether a change beyond the noise: the words under the table say why a verdict is what it is. */
 export const beyondNoise = (f: Pick<PerfFigures, 'change' | 'noise'>): boolean => f.change !== undefined && Math.abs(f.change) > f.noise;
+
+/** A figure as the table prints it (ui/tables num): whole, else one decimal. */
+const num1 = (n: number): string => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+
+/** The change cell's tone, from the verdict alone: a green figure is a move, a red one is worse, anything else is plain. */
+export const toneOf = (v: Verdict): '' | 'good' | 'bad' => (v === 'moved' ? 'good' : v === 'worse' ? 'bad' : '');
+
+/** Why the verdict is what it is, in one sentence over the item's figures: the noise phrase from beyondNoise, the verb
+ *  from the verdict, so the sentence never says "moved" beside a chip that does not. */
+export function reasonOf(v: Verdict, f: Pick<PerfFigures, 'change' | 'noise' | 'runs'>, unit?: string): string {
+  const u = unit ? ' ' + unit : '';
+  if (f.change === undefined) return 'No after reading yet: the item cannot be judged.';
+  const ch = `The change (${signed(f.change)}${u}) against the median of ${f.runs.length} baseline runs`;
+  const noise = `the noise (±${num1(f.noise)}${u})`;
+  if (!beyondNoise(f)) return `${ch} is not larger than ${noise}, so this is flat: a lucky run looks like this.`;
+  if (v === 'unmeasured') return `${ch} is larger than ${noise}, but nothing states which way is better (the lens field gives no direction and the item no expected delta), so it is unmeasured.`;
+  return `${ch} is larger than ${noise}, so this ${v === 'worse' ? 'got worse' : 'moved'}.`;
+}
 
 /** The range strip's scale: 0 at the left, the largest of the runs, the after, the target and the warn line, plus 8 %,
  *  at the right. `x` answers a CSS percentage (two decimals). */

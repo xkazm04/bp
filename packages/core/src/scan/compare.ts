@@ -22,6 +22,8 @@ export interface Comparison {
   /** The readings the verdict compares (the latest of each phase for the item's own lens and metric), when there are both. */
   from?: Measurement;
   to?: Measurement;
+  /** The direction the verdict was judged in (verdictOf): the lens field's `better`, else the expected delta's sign. */
+  dir?: 'up' | 'down';
 }
 
 /** The lens entries a product carries (its map's `lenses[]`): only what a direction lookup needs. */
@@ -50,27 +52,48 @@ export function runStats(values: readonly number[], unit?: string): RunStats {
   return { runs, median, spread, noise: Math.max(spread, unit === 'ms' && n > 1 ? FRAME_MS : 0) };
 }
 
+/** The verdict with what it was judged from: one judgement every cell renders (the chip, the change's tone, the sentence,
+ *  the row's before figure), so none of them re-derives the direction, the baseline or the noise test. */
+export interface Judgement {
+  verdict: Verdict;
+  /** The readings compared (the latest of each phase), when there are both and a verdict could be reached on them. */
+  from?: Measurement;
+  to?: Measurement;
+  /** The direction better is in: the lens field's `better`, else the sign of the expected delta; absent when neither says. */
+  dir?: 'up' | 'down';
+  /** The baseline: the median of several `before` readings, else the one reading. Set whenever there is a `before`. */
+  base?: number;
+  /** to - base, when there is an after. */
+  delta?: number;
+  /** The baseline runs' statistics, when there are several. */
+  stats?: RunStats;
+}
+
 /**
  * The verdict on one item: its metric's `before` against its latest `after` reading (same lens and metric). One
  * `before` reading is compared as it is; several are baseline runs, and the after is compared with their median, a
  * change within their noise (runStats) reading `flat`. The direction is the lens field's `better` (manifest), else the
  * sign of the item's expected delta. No metric, or a missing reading on either side: `unmeasured`. A reading that did
  * not move needs no direction and reads `flat`; one that MOVED without a direction is `unmeasured`, because nothing
- * says which way is better.
+ * says which way is better. The judgement's figures (dir, base, delta, stats) are returned beside the verdict.
  */
-export function verdictOf(p: Proposal, before: readonly Measurement[], after: readonly Measurement[], lenses?: readonly LensFields[]): { verdict: Verdict; from?: Measurement; to?: Measurement } {
+export function verdictOf(p: Proposal, before: readonly Measurement[], after: readonly Measurement[], lenses?: readonly LensFields[]): Judgement {
   if (!p.metric) return { verdict: 'unmeasured' };
   const mine = (m: Measurement) => m.lens === p.lens && m.metric === p.metric;
   const last = (xs: readonly Measurement[]) => { let r: Measurement | undefined; for (const m of xs) if (mine(m) && (!r || byMeasure(r, m) <= 0)) r = m; return r; };
   const from = last(before), to = last(after);
-  if (!from || !to) return { verdict: 'unmeasured' };
+  if (!from) return { verdict: 'unmeasured' };
   const dir = betterOf(lenses, p.lens, p.metric) ?? (p.expected_delta ? (p.expected_delta > 0 ? 'up' : 'down') : undefined);
-  const base = before.filter(mine);
-  const s = base.length > 1 ? runStats(base.map((m) => m.value), from.unit) : undefined;
-  const d = to.value - (s ? s.median : from.value);
-  if (d === 0 || (s && Math.abs(d) <= s.noise)) return { verdict: 'flat', from, to };
-  if (!dir) return { verdict: 'unmeasured' };
-  return { verdict: (d > 0) === (dir === 'up') ? 'moved' : 'worse', from, to };
+  const runs = before.filter(mine);
+  const s = runs.length > 1 ? runStats(runs.map((m) => m.value), from.unit) : undefined;
+  const j: Omit<Judgement, 'verdict'> = { base: s ? s.median : from.value };
+  if (dir) j.dir = dir;
+  if (s) j.stats = s;
+  if (!to) return { verdict: 'unmeasured', ...j };
+  const d = (j.delta = to.value - j.base!);
+  if (d === 0 || (s && Math.abs(d) <= s.noise)) return { verdict: 'flat', from, to, ...j };
+  if (!dir) return { verdict: 'unmeasured', ...j };
+  return { verdict: (d > 0) === (dir === 'up') ? 'moved' : 'worse', from, to, ...j };
 }
 
 /** One item's before/after evidence and verdict; null for an id the scan does not hold. */
@@ -91,6 +114,7 @@ export function compareOf(scan: Pick<ScanSnapshot, 'proposals' | 'measurements' 
   const out: Comparison = { p, before, after, shots: [...pairs.values()], verdict: v.verdict };
   if (v.from) out.from = v.from;
   if (v.to) out.to = v.to;
+  if (v.dir) out.dir = v.dir;
   return out;
 }
 
