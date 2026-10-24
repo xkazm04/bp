@@ -586,6 +586,11 @@ gets out of the plan's way, and L4 is a page. Earlier sections that say "dock", 
     hour only moves forward: dragging left of the head leaves it clamped and shows not-allowed.
     With one week of history the slider is inert and says why. A keyboard-activated key plan flies
     to its centre, never off the plan.
+  - Strip and panel are one slider (`timeline/slider.ts` + `shared.ts` `useTimeSlider`,
+    `check:timeline-slider`): one geometry builder, inert rule, ARIA and still title, one key map, and
+    Escape declared per slider (strip: collapse, else back to now, else leave; panel: collapse). The sim
+    transport is worded once: `HISTORY` / `● ×4` on the strip, `HISTORY · PAUSED` / `● LIVE · ×4` in the
+    panel, and the play button names what Space does (back to now, replay the hour, play or pause).
   - A live product has no replay hour. The area right of "now" shows its latest run (status, features
     measured against the run's scope, elapsed time or "<age> · <duration>", worded like the header's
     "Last scan <age>"); with no run the history takes the full width. `timeline/run.ts`,
