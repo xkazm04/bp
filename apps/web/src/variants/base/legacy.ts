@@ -76,12 +76,52 @@ export const NOT_MEASURED = 'NOT MEASURED';
 
 /**
  * A built-in channel that says NOT MEASURED, and nothing else, for a feature whose facet for this lens is absent
- * (health 'unmeasured'): no stamp, no default-driven words. Marks and aggregates are the channel's own.
+ * (health 'unmeasured'): no stamp, no default-driven words. Marks are the channel's own.
  */
 export function measuredContent<C extends { content(f: Feature, live: never): { parts: string[]; stamp?: string } }>(lens: BuiltinLens, ch: C): C {
   const own = ch.content.bind(ch) as (f: Feature, live: never) => { parts: string[]; stamp?: string };
   return { ...ch, content: (f: Feature, live: never) => (hof(f, lens) === 'unmeasured' ? { parts: [NOT_MEASURED] } : own(f, live)) };
 }
+
+/** A place's features split by whether this lens's facet was measured (health not 'unmeasured'): the one filter
+ *  the aggregates and bold's bay rails share, as the manifest path's lensAggregate skips a facet-less feature. */
+export function measuredOf(fs: readonly Feature[], lens: string): { measured: Feature[]; missing: number } {
+  const measured = fs.filter((f) => hof(f, lens) !== 'unmeasured');
+  return { measured, missing: fs.length - measured.length };
+}
+
+/**
+ * The aggregate's sibling of measuredContent: the channel's own aggregate sees only the measured features, an
+ * all-unmeasured place says NOT MEASURED, and a mixed one ends with 'N not measured' (the lowest-priority part:
+ * parts drop from the end to fit). Without that last part a mixed place reads exactly as its measured features do.
+ */
+export function measuredAggregate<C extends { aggregate(fs: readonly Feature[]): { parts: string[]; trouble?: number } }>(lens: BuiltinLens, ch: C): C {
+  const own = ch.aggregate.bind(ch) as C['aggregate'];
+  return {
+    ...ch,
+    aggregate: (fs: readonly Feature[]) => {
+      const { measured, missing } = measuredOf(fs, lens);
+      if (!measured.length) return { parts: [NOT_MEASURED] };
+      const a = own(measured);
+      return missing ? { ...a, parts: [...a.parts, missing + ' not measured'] } : a;
+    },
+  };
+}
+
+/** Both: the form CHANNELS exports every built-in channel in. */
+export const measured = <C extends { content(f: Feature, live: never): { parts: string[]; stamp?: string }; aggregate(fs: readonly Feature[]): { parts: string[]; trouble?: number } }>(lens: BuiltinLens, ch: C): C =>
+  measuredAggregate(lens, measuredContent(lens, ch));
+
+/** Data-class sensitivity, 0 (public, or not measured) to 3 (card data): one ordinal for shields, fences and pips. */
+export const DATA_CLASS_STEP: Readonly<Record<string, number>> = { public: 0, internal: 1, personal: 2, payment: 3 };
+export const sensitivity = (f: Feature): number => DATA_CLASS_STEP[bl(f).security.dataClass] ?? 0;
+/** The design fidelity ladder, 0 (none) to 5 (polished); null off the ladder ('n/a', or not measured). */
+export const DESIGN_STEP: Readonly<Record<string, number>> = { none: 0, sketch: 1, wireframe: 2, 'hi-fi': 3, implemented: 4, polished: 5 };
+export const designStep = (f: Feature): number | null => DESIGN_STEP[bl(f).design.status] ?? null;
+/** A review that has not happened yet (as opposed to passed, findings or not required). */
+export const reviewOpen = (f: Feature): boolean => { const r = bl(f).security.review; return r === 'pending' || r === 'not-started'; };
+/** Card or personal data that nobody has reviewed: the one predicate behind every stamp, count, rail and panel that says so. */
+export const sensitiveUnreviewed = (f: Feature): boolean => sensitivity(f) >= 2 && reviewOpen(f);
 
 /** A feature's health under a lens (any id). */
 export function hof(f: Feature, l: string): Health { return f.lens[l]?.h ?? 'unmeasured'; }

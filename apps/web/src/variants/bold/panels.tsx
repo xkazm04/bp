@@ -13,8 +13,9 @@ import { isLiveSt } from '@bp/core/model';
 import type { SheetPanelProps } from '../types';
 import { LENS_NAME } from './palette';
 import { CHANNELS } from './channels';
-import { bl, hof, isBuiltinLens, type BuiltinLens } from '../base/legacy';
+import { bl, hof, isBuiltinLens, sensitiveUnreviewed, type BuiltinLens } from '../base/legacy';
 import { GENERAL } from '@bp/core/data/types';
+import type { Feature } from '@bp/core/data';
 
 function Head({ p, label }: { p: SheetPanelProps; label: string }) {
   const h = hof(p.f, p.lens), n = LENS_NAME[p.lens as BuiltinLens];
@@ -143,15 +144,19 @@ function Control({ p }: { p: SheetPanelProps }) {
 const CLASSES = ['public', 'internal', 'personal', 'payment'];
 const CLASS_WORD: Record<string, string> = { public: 'Public', internal: 'Internal', personal: 'Personal data', payment: 'Card data' };
 const REV_WORD: Record<string, string> = { 'not-required': 'No review needed', 'not-started': 'Not reviewed', pending: 'Review pending', passed: 'Review passed', findings: 'Open findings' };
+/** The Perimeter's line under the seal: its findings, and the sensitive data it handles unreviewed (base sensitiveUnreviewed). Exported for scripts/check-legacy-unmeasured.mjs. */
+export function perimeterNote(f: Feature): string {
+  const se = bl(f).security;
+  return (se.openFindings ? se.openFindings + ' open finding' + (se.openFindings === 1 ? '' : 's') : 'no open findings') + (sensitiveUnreviewed(f) ? ' · handles ' + CLASS_WORD[se.dataClass].toLowerCase() + ' without a review' : '');
+}
 function Perimeter({ p }: { p: SheetPanelProps }) {
   const se = bl(p.f).security, ci = CLASSES.indexOf(se.dataClass);
-  const sensitive = ci >= 2, open = se.review === 'pending' || se.review === 'not-started';
   return (
     <div className="bd-panel bd-sec">
       <Head p={p} label="Perimeter" />
       <div className="bd-seal-row">
         <div className={'bd-seal ' + se.review}><span>{se.review === 'findings' ? se.openFindings : se.review === 'passed' ? '✓' : se.review === 'not-required' ? '—' : '?'}</span></div>
-        <div><b>{REV_WORD[se.review] ?? se.review}</b><span>{se.openFindings ? se.openFindings + ' open finding' + (se.openFindings === 1 ? '' : 's') : 'no open findings'}{sensitive && open ? ' · handles ' + CLASS_WORD[se.dataClass].toLowerCase() + ' without a review' : ''}</span></div>
+        <div><b>{REV_WORD[se.review] ?? se.review}</b><span>{perimeterNote(p.f)}</span></div>
       </div>
       <ol className="bd-classes" aria-label="Data class">
         {CLASSES.map((c, i) => <li key={c} className={(i === ci ? 'on' : '') + (i <= ci ? ' in' : '')} aria-current={i === ci ? 'step' : undefined}>{CLASS_WORD[c]}</li>)}

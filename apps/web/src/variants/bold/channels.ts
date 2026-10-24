@@ -4,7 +4,7 @@
 // glyphs in the lens accent: they never fill the tile, so the stage fill stays the tile's colour.
 // Budget: a handful of primitives per tile; no measureText; fonts are cached strings.
 import type { Health } from '@bp/core/data';
-import { bl, measuredContent, ruled, type BuiltinLens } from '../base/legacy';
+import { bl, designStep, measured, ruled, sensitiveUnreviewed, sensitivity, type BuiltinLens } from '../base/legacy';
 import { isLiveSt } from '@bp/core/model';
 import type { ChannelAggregate, LensChannel, MarkArgs, Rect, TileGeom, Theme } from '../types';
 import { ACCENT } from './palette';
@@ -139,14 +139,13 @@ const business: LensChannel = {
 };
 
 // ------------------------------------------------------------------------------------------ design
-const FIDELITY: Record<string, number> = { none: 0, sketch: 1, wireframe: 2, 'hi-fi': 3, implemented: 4, polished: 5 };
 const design: LensChannel = {
   density: 'simple',
   accent: ACCENT.design,
   shape(p, t, _f, w) { if (plain(p, t)) return; rounded(p, t, Math.min(12 * t.u, t.h / 5) * w); },
   marks(a) {
     forms(a, bl(a.f).design.health, (m) => {
-      const de = bl(m.f).design, lv = FIDELITY[de.status];
+      const de = bl(m.f).design, lv = designStep(m.f);
       if (lv == null) return; // n/a
       if (small(m)) { footLine(m, lv / 5, lv === 0); return; }
       const { ctx, r, th } = m, u = m.tile.u;
@@ -281,20 +280,18 @@ const operations: LensChannel = {
 };
 
 // ---------------------------------------------------------------------------------------- security
-/** Data-class sensitivity, 0 (public) to 3 (card data): shields, fences, room fences. */
-export const SENS: Record<string, number> = { payment: 3, personal: 2, internal: 1, public: 0 };
 const security: LensChannel = {
   density: 'standard',
   accent: ACCENT.security,
   shape(p, t, f, w) {
     if (plain(p, t)) return;
     // a shield: the top corners are cut, deeper for more sensitive data
-    const c = Math.min(4 * (SENS[bl(f).security.dataClass] ?? 0) * t.u, t.h / 5) * w;
+    const c = Math.min(4 * sensitivity(f) * t.u, t.h / 5) * w;
     chamfer(p, t, c, c, 0, 0);
   },
   marks(a) {
     forms(a, bl(a.f).security.health, (m) => {
-      const se = bl(m.f).security, lvl = SENS[se.dataClass] ?? 0;
+      const se = bl(m.f).security, lvl = sensitivity(m.f);
       const { ctx, r, th } = m, u = m.tile.u;
       if (small(m)) {
         if (!lvl) return;
@@ -322,7 +319,7 @@ const security: LensChannel = {
       }
     }, (m) => {
       // the perimeter: a fence just inside the tile, double for card data, dashed for personal data
-      const lvl = SENS[bl(m.f).security.dataClass] ?? 0; if (!lvl) return;
+      const lvl = sensitivity(m.f); if (!lvl) return;
       const { ctx } = m, t = m.tile, u = t.u, i = 4 * u, c = Math.min(4 * lvl * u, t.h / 5) + i * 0.4;
       const x = t.x + i, y = t.y + i, w = t.w - 2 * i, h = t.h - 2 * i;
       if (w < 20 || h < 14) return;
@@ -339,15 +336,14 @@ const security: LensChannel = {
     const se = bl(f).security;
     const cls: Record<string, string> = { payment: 'CARD DATA', personal: 'PERSONAL DATA', internal: 'INTERNAL', public: 'PUBLIC' };
     const rev: Record<string, string> = { 'not-required': 'NO REVIEW NEEDED', 'not-started': 'NOT REVIEWED', pending: 'REVIEW PENDING', passed: 'REVIEWED', findings: se.openFindings + ' FINDINGS' };
-    const sensitive = se.dataClass === 'payment' || se.dataClass === 'personal';
     const liveNow = isLiveSt(f.stage) && live.rolloutPct > 0;
     return {
       parts: [cls[se.dataClass] ?? se.dataClass.toUpperCase(), rev[se.review] ?? se.review.toUpperCase()],
-      stamp: se.review === 'findings' ? 'Open security findings' : sensitive && liveNow && (se.review === 'not-started' || se.review === 'pending') ? 'Live, unreviewed' : undefined,
+      stamp: se.review === 'findings' ? 'Open security findings' : sensitiveUnreviewed(f) && liveNow ? 'Live, unreviewed' : undefined,
     };
   },
   aggregate(fs) {
-    return { parts: [count(fs, (f) => bl(f).security.dataClass === 'payment') + ' card data', count(fs, (f) => bl(f).security.dataClass === 'personal') + ' personal data', count(fs, (f) => (bl(f).security.dataClass === 'payment' || bl(f).security.dataClass === 'personal') && (bl(f).security.review === 'pending' || bl(f).security.review === 'not-started')) + ' unreviewed', fs.reduce((s, f) => s + bl(f).security.openFindings, 0) + ' findings'] };
+    return { parts: [count(fs, (f) => bl(f).security.dataClass === 'payment') + ' card data', count(fs, (f) => bl(f).security.dataClass === 'personal') + ' personal data', count(fs, sensitiveUnreviewed) + ' unreviewed', fs.reduce((s, f) => s + bl(f).security.openFindings, 0) + ' findings'] };
   },
 };
 
@@ -397,9 +393,10 @@ const quality: LensChannel = {
   },
 };
 
+/** Every built-in channel counts and speaks for measured facets only (base `measured`: content and aggregate). */
 export const CHANNELS: Record<BuiltinLens, LensChannel> = {
-  business: measuredContent('business', business), design: measuredContent('design', design), development: measuredContent('development', development),
-  operations: measuredContent('operations', operations), security: measuredContent('security', security), quality: measuredContent('quality', quality),
+  business: measured('business', business), design: measured('design', design), development: measured('development', development),
+  operations: measured('operations', operations), security: measured('security', security), quality: measured('quality', quality),
 };
 
 /** The rect a lone lens's instrument grows into: the tile's lower-right corner (the band on ribbons). */

@@ -15,10 +15,11 @@
 // the seam change that would remove it.
 import type { Engine } from '@/engine/Engine';
 import { drawText } from '@/engine/text';
-import { bl, hof, type BuiltinLens } from '../base/legacy';
+import { NOT_MEASURED, bl, hof, measuredOf, sensitiveUnreviewed, sensitivity, type BuiltinLens } from '../base/legacy';
 import { BH, G, TH, TW, isLiveSt, type BayNode, type BldNode, type RoomNode } from '@bp/core/model';
+import type { Feature } from '@bp/core/data';
 import type { Theme, Viewport } from '../types';
-import { CHANNELS, SENS, kUsd } from './channels';
+import { CHANNELS, kUsd } from './channels';
 import { LENS_NAME } from './palette';
 import { clamp } from '../base/util';
 
@@ -116,7 +117,7 @@ const roomSens = new WeakMap<RoomNode, number>();
 /** The highest data-class sensitivity among a room's features, computed once per model. Exported for scripts/check-bold-decor.ts. */
 export function sensOf(R: RoomNode) {
   let v = roomSens.get(R);
-  if (v == null) { v = 0; for (const f of R.feats) v = Math.max(v, SENS[bl(f).security.dataClass] ?? 0); roomSens.set(R, v); }
+  if (v == null) { v = 0; for (const f of R.feats) v = Math.max(v, sensitivity(f)); roomSens.set(R, v); }
   return v;
 }
 
@@ -326,15 +327,53 @@ function railText(ctx: CanvasRenderingContext2D, P: Ctx2, r: Rail, parts: string
   return x - 5 * P.u;
 }
 
+/**
+ * A bay rail's words under a lens, over the bay's MEASURED features only (base measuredOf, the filter the channel
+ * aggregates use, so the rail and the title block reconcile): an all-unmeasured bay says NOT MEASURED, a mixed one
+ * ends with 'N NOT MEASURED'. Design draws no words (crop marks only). Pure; exported for scripts/check-bold-decor.ts.
+ */
+export function railParts(lens: BuiltinLens, feats: readonly Feature[], sim: { rolloutOf(f: Feature): number }): string[] {
+  if (lens === 'design') return [];
+  const { measured: fs, missing } = measuredOf(feats, lens);
+  if (!fs.length) return [NOT_MEASURED];
+  const tail = missing ? [missing + ' NOT MEASURED'] : [];
+  switch (lens) {
+    case 'business': {
+      const asks = fs.reduce((s, f) => s + (bl(f).business.customerRequests30d || 0), 0);
+      const mrr = fs.reduce((s, f) => s + (bl(f).business.revenueLink === 'direct' ? bl(f).business.mrrImpactUsd || 0 : 0), 0);
+      return [asks + (asks === 1 ? ' customer ask' : ' customer asks'), ...(mrr ? [kUsd(mrr) + ' a month'] : []), ...(missing ? [missing + ' not measured'] : [])];
+    }
+    case 'development': {
+      const pr = fs.reduce((s, f) => s + (bl(f).development.openPRs || 0), 0), ur = fs.reduce((s, f) => s + (bl(f).development.humanReviewed === false ? 1 : 0), 0);
+      const ai = Math.round(fs.reduce((s, f) => s + bl(f).development.aiAuthoredPct, 0) / fs.length);
+      return [feats.length + ' FEAT', pr + ' PR', 'AI ' + ai + '%', ...(ur ? [ur + ' UNREVIEWED'] : []), ...tail];
+    }
+    case 'operations': {
+      const live = fs.filter((f) => bl(f).operations.environment === 'production').length;
+      let roll = 0, nf = 0; for (const f of fs) if (bl(f).operations.flag && isLiveSt(f.stage)) { roll += sim.rolloutOf(f); nf++; }
+      const inc = fs.reduce((s, f) => s + (bl(f).operations.incidents30d || 0), 0);
+      return [live + '/' + fs.length + ' LIVE', ...(nf ? [Math.round(roll / nf) + '% OUT'] : []), ...(inc ? [inc + ' INC'] : []), ...tail];
+    }
+    case 'security': {
+      const card = fs.filter((f) => bl(f).security.dataClass === 'payment').length, pers = fs.filter((f) => bl(f).security.dataClass === 'personal').length;
+      const un = fs.filter(sensitiveUnreviewed).length;
+      if (!card && !pers) return ['NO SENSITIVE DATA', ...tail];
+      return [...(card ? [card + ' CARD'] : []), ...(pers ? [pers + ' PERSONAL'] : []), ...(un ? [un + ' UNREVIEWED'] : []), ...tail];
+    }
+    case 'quality': {
+      const t = fs.reduce((a, f) => a + bl(f).quality.e2eTests, 0), pp = fs.reduce((a, f) => a + bl(f).quality.e2ePassing, 0), p1 = fs.reduce((a, f) => a + bl(f).quality.openBugs.p1, 0);
+      return [pp + '/' + t + ' E2E', ...(p1 ? [p1 + ' P1'] : []), ...tail];
+    }
+  }
+  return [];
+}
+
 function rail(ctx: CanvasRenderingContext2D, P: Ctx2, r: Rail) {
   const { th, u, k, accent } = P, fs = r.bay.feats;
   ctx.strokeStyle = accent; ctx.fillStyle = accent; ctx.lineWidth = 1;
   switch (P.lens) {
     case 'business': {
-      const asks = fs.reduce((s, f) => s + (bl(f).business.customerRequests30d || 0), 0);
-      const mrr = fs.reduce((s, f) => s + (bl(f).business.revenueLink === 'direct' ? bl(f).business.mrrImpactUsd || 0 : 0), 0);
-      const parts = [asks + (asks === 1 ? ' customer ask' : ' customer asks'), ...(mrr ? [kUsd(mrr) + ' a month'] : [])];
-      const end = railText(ctx, P, r, parts, false);
+      const end = railText(ctx, P, r, railParts('business', fs, P.E.M.sim), false);
       if (end - r.x0 > 20 * u) { ctx.strokeStyle = th.alpha(accent, 0.75); ctx.lineWidth = 1.5; ctx.setLineDash([1.5, 4 * u]); ctx.beginPath(); ctx.moveTo(r.x0, r.cy + 3 * u); ctx.lineTo(end - 4 * u, r.cy + 3 * u); ctx.stroke(); ctx.setLineDash([]); }
       break;
     }
@@ -352,8 +391,6 @@ function rail(ctx: CanvasRenderingContext2D, P: Ctx2, r: Rail) {
     }
     case 'development': { // a dimension string over the bay's columns, with extension lines to the tiles
       const c = r.bay.room.wing.cols, n = Math.min(c, r.bay.tiles.length), ty = r.by + BH * k - 2 * u, dy = r.cy + 9 * u;
-      const pr = fs.reduce((s, f) => s + (bl(f).development.openPRs || 0), 0), ur = fs.reduce((s, f) => s + (bl(f).development.humanReviewed === false ? 1 : 0), 0);
-      const ai = Math.round(fs.reduce((s, f) => s + bl(f).development.aiAuthoredPct, 0) / Math.max(1, fs.length));
       const p = new Path2D();
       const xa = r.bx, xb = r.bx + (n * TW + (n - 1) * G) * k;
       if (dy < ty - 2) {
@@ -365,25 +402,21 @@ function rail(ctx: CanvasRenderingContext2D, P: Ctx2, r: Rail) {
         }
         ctx.strokeStyle = th.alpha(accent, 0.9); ctx.lineWidth = 1.2; ctx.stroke(p);
       }
-      railText(ctx, P, r, [fs.length + ' FEAT', pr + ' PR', 'AI ' + ai + '%', ...(ur ? [ur + ' UNREVIEWED'] : [])], true);
+      railText(ctx, P, r, railParts('development', fs, P.E.M.sim), true);
       break;
     }
     case 'operations': { // a flow line of chevrons to a live count
-      const live = fs.filter((f) => bl(f).operations.environment === 'production').length;
-      let roll = 0, nf = 0; for (const f of fs) if (bl(f).operations.flag && isLiveSt(f.stage)) { roll += P.E.M.sim.rolloutOf(f); nf++; }
-      const inc = fs.reduce((s, f) => s + (bl(f).operations.incidents30d || 0), 0);
-      const parts = [live + '/' + fs.length + ' LIVE', ...(nf ? [Math.round(roll / nf) + '% OUT'] : []), ...(inc ? [inc + ' INC'] : [])];
-      const end = railText(ctx, P, r, parts, true);
+      const end = railText(ctx, P, r, railParts('operations', fs, P.E.M.sim), true);
       const step = 16 * u, c = 3.5 * u, p = new Path2D();
       for (let x = r.x0 + c; x < end - 6 * u; x += step) { p.moveTo(x - c, r.cy - c); p.lineTo(x, r.cy); p.lineTo(x - c, r.cy + c); }
       ctx.strokeStyle = th.alpha(accent, 0.85); ctx.lineWidth = 1.4; ctx.stroke(p);
       break;
     }
     case 'security': { // a fence with a padlock, then what it guards
-      const card = fs.filter((f) => bl(f).security.dataClass === 'payment').length, pers = fs.filter((f) => bl(f).security.dataClass === 'personal').length;
-      const un = fs.filter((f) => (bl(f).security.dataClass === 'payment' || bl(f).security.dataClass === 'personal') && (bl(f).security.review === 'pending' || bl(f).security.review === 'not-started')).length;
-      if (!card && !pers) { railText(ctx, P, r, ['NO SENSITIVE DATA'], true); break; }
-      const end = railText(ctx, P, r, [...(card ? [card + ' CARD'] : []), ...(pers ? [pers + ' PERSONAL'] : []), ...(un ? [un + ' UNREVIEWED'] : [])], true);
+      const parts = railParts('security', fs, P.E.M.sim);
+      // the fence and padlock only when the bay holds sensitive data somebody measured
+      if (parts[0] === NOT_MEASURED || parts[0] === 'NO SENSITIVE DATA') { railText(ctx, P, r, parts, true); break; }
+      const end = railText(ctx, P, r, parts, true);
       const lx = end - 9 * u, ly = r.cy;
       if (lx - r.x0 > 24 * u) {
         ctx.strokeStyle = th.alpha(accent, 0.8); ctx.lineWidth = 1.2; ctx.setLineDash([6 * u, 3 * u]); ctx.beginPath(); ctx.moveTo(r.x0, ly); ctx.lineTo(lx - 9 * u, ly); ctx.stroke(); ctx.setLineDash([]);
@@ -410,8 +443,7 @@ function rail(ctx: CanvasRenderingContext2D, P: Ctx2, r: Rail) {
         else if (q.status === 'partial' || q.status === 'testing') { ok.moveTo(x + s * 0.25, y0 + s / 2); ok.lineTo(x + s * 0.75, y0 + s / 2); }
       }
       ctx.lineWidth = 1.6; ctx.strokeStyle = accent; ctx.stroke(ok); ctx.strokeStyle = th.red; ctx.stroke(bad);
-      const t = fs.reduce((a, f) => a + bl(f).quality.e2eTests, 0), pp = fs.reduce((a, f) => a + bl(f).quality.e2ePassing, 0), p1 = fs.reduce((a, f) => a + bl(f).quality.openBugs.p1, 0);
-      railText(ctx, P, r, [pp + '/' + t + ' E2E', ...(p1 ? [p1 + ' P1'] : [])], true, bw + 6 * u);
+      railText(ctx, P, r, railParts('quality', fs, P.E.M.sim), true, bw + 6 * u);
       break;
     }
   }

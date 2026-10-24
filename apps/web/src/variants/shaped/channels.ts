@@ -3,7 +3,7 @@
 // edge: six side by side in General, one that widens into a tag with a small readout when the lens
 // stands alone), and one ACCENT colour used only for its marks and words. Nothing here fills a tile.
 import type { Health } from '@bp/core/data';
-import { bl, hof, measuredContent, ruled, type BuiltinLens } from '../base/legacy';
+import { bl, designStep, hof, measured, ruled, sensitiveUnreviewed, sensitivity, type BuiltinLens } from '../base/legacy';
 import { isLiveSt } from '@bp/core/model';
 import type { ChannelAggregate, ChannelContent, LensChannel, MarkArgs, Rect, Theme, TileGeom } from '../types';
 import { dialNeedle, drawIcon, iconFor } from './icons';
@@ -128,7 +128,6 @@ const business: LensChannel = {
 };
 
 // ------------------------------------------------------------------------------------ design
-const DSTEP: Record<string, number> = { none: 0, sketch: 1, wireframe: 2, 'hi-fi': 3, implemented: 4, polished: 5 };
 const DWORD: Record<string, string> = { none: 'No design yet', sketch: 'Sketch', wireframe: 'Wireframe', 'hi-fi': 'Hi-fi mock', implemented: 'Built to design', polished: 'Polished', 'n/a': 'No interface' };
 const design: LensChannel = {
   density: 'simple',
@@ -137,10 +136,10 @@ const design: LensChannel = {
   marks(a) {
     paint('design', a, (m, d) => edgeCrops(m.ctx, m.tile, m.f, d, m.accent, m.th), (m, r) => {
       if (bl(m.f).design.status === 'n/a') return;
-      pips(m.ctx, r, 5, DSTEP[bl(m.f).design.status] ?? 0, m.accent, 'sq');
+      pips(m.ctx, r, 5, designStep(m.f) ?? 0, m.accent, 'sq');
     }, (m) => {
       // L0/L1: crop marks at the segment's corners, longer the further the design got
-      const { ctx, tile: t } = m, k = (DSTEP[bl(m.f).design.status] ?? 0) / 5;
+      const { ctx, tile: t } = m, k = (designStep(m.f) ?? 0) / 5;
       if (!k) return;
       const L = Math.min(t.w, t.h) * 0.42 * k + 1.5, g = 1.5;
       ctx.strokeStyle = bl(m.f).design.a11y === 'fail' ? m.th.red : m.accent; ctx.lineWidth = 1.3; ctx.beginPath();
@@ -158,7 +157,7 @@ const design: LensChannel = {
   },
   aggregate(fs) {
     const ui = fs.filter((f) => bl(f).design.status !== 'n/a');
-    return agg([count(ui, (f) => (DSTEP[bl(f).design.status] ?? 0) >= 3) + ' of ' + ui.length + ' designed', count(ui, (f) => bl(f).design.status === 'none') + ' no design']);
+    return agg([count(ui, (f) => (designStep(f) ?? 0) >= 3) + ' of ' + ui.length + ' designed', count(ui, (f) => bl(f).design.status === 'none') + ' no design']);
   },
 };
 
@@ -236,7 +235,6 @@ const operations: LensChannel = {
 };
 
 // ---------------------------------------------------------------------------------- security
-const CLASSN: Record<string, number> = { public: 0, internal: 1, personal: 2, payment: 3 };
 const CLASSW: Record<string, string> = { public: 'PUBLIC', internal: 'INTERNAL', personal: 'PERSONAL DATA', payment: 'CARD DATA' };
 const REVW: Record<string, string> = { 'not-required': 'NO REVIEW NEEDED', 'not-started': 'NOT REVIEWED', pending: 'REVIEW PENDING', passed: 'REVIEWED', findings: 'FINDINGS' };
 const security: LensChannel = {
@@ -246,12 +244,12 @@ const security: LensChannel = {
   marks(a) {
     paint('security', a, (m, d) => edgeCut(m.ctx, m.tile, m.f, d, m.accent), (m, r) => {
       // how sensitive: three steps, internal / personal / card data
-      pips(m.ctx, { x: r.x, y: r.y, w: Math.min(r.w, r.h * 4.8), h: r.h }, 3, CLASSN[bl(m.f).security.dataClass] ?? 0, m.accent, 'dia');
+      pips(m.ctx, { x: r.x, y: r.y, w: Math.min(r.w, r.h * 4.8), h: r.h }, 3, sensitivity(m.f), m.accent, 'dia');
     }, (m) => {
       // L0/L1: the segment's corner is cut, deeper for card data; unreviewed sensitive data loses two
-      const { ctx, tile: t } = m, se = bl(m.f).security, n = CLASSN[se.dataClass] ?? 0;
+      const { ctx, tile: t } = m, n = sensitivity(m.f);
       if (!n) return;
-      const c = Math.min(t.w * 0.5, t.h * 0.6) * (n / 3), open = (n >= 2) && (se.review === 'pending' || se.review === 'not-started');
+      const c = Math.min(t.w * 0.5, t.h * 0.6) * (n / 3), open = sensitiveUnreviewed(m.f);
       ctx.fillStyle = m.th.paper; ctx.strokeStyle = m.accent; ctx.lineWidth = 1.3;
       ctx.beginPath(); ctx.moveTo(t.x + t.w - c, t.y - 0.5); ctx.lineTo(t.x + t.w + 0.5, t.y - 0.5); ctx.lineTo(t.x + t.w + 0.5, t.y + c); ctx.closePath(); ctx.fill();
       if (open) { ctx.beginPath(); ctx.moveTo(t.x - 0.5, t.y + t.h - c); ctx.lineTo(t.x - 0.5, t.y + t.h + 0.5); ctx.lineTo(t.x + c, t.y + t.h + 0.5); ctx.closePath(); ctx.fill(); }
@@ -261,15 +259,15 @@ const security: LensChannel = {
     });
   },
   content(f, live) {
-    const se = bl(f).security, sensitive = se.dataClass === 'payment' || se.dataClass === 'personal';
+    const se = bl(f).security;
     const isLive = isLiveSt(f.stage) && live.rolloutPct > 0;
     return {
       parts: [CLASSW[se.dataClass] ?? se.dataClass.toUpperCase(), se.review === 'findings' ? se.openFindings + ' FINDINGS' : REVW[se.review] ?? se.review.toUpperCase()],
-      stamp: se.review === 'findings' ? 'Open security findings' : sensitive && isLive && (se.review === 'not-started' || se.review === 'pending') ? 'Live, not reviewed' : undefined,
+      stamp: se.review === 'findings' ? 'Open security findings' : sensitiveUnreviewed(f) && isLive ? 'Live, not reviewed' : undefined,
     };
   },
   aggregate(fs) {
-    const open = count(fs, (f) => (bl(f).security.dataClass === 'payment' || bl(f).security.dataClass === 'personal') && (bl(f).security.review === 'pending' || bl(f).security.review === 'not-started'));
+    const open = count(fs, sensitiveUnreviewed);
     return agg([open + ' sensitive unreviewed', count(fs, (f) => bl(f).security.dataClass === 'payment') + ' card data', count(fs, (f) => bl(f).security.dataClass === 'personal') + ' personal']);
   },
 };
@@ -308,7 +306,8 @@ const quality: LensChannel = {
   },
 };
 
+/** Every built-in channel counts and speaks for measured facets only (base `measured`: content and aggregate). */
 export const CHANNELS: Record<BuiltinLens, LensChannel> = {
-  business: measuredContent('business', business), design: measuredContent('design', design), development: measuredContent('development', development),
-  operations: measuredContent('operations', operations), security: measuredContent('security', security), quality: measuredContent('quality', quality),
+  business: measured('business', business), design: measured('design', design), development: measured('development', development),
+  operations: measured('operations', operations), security: measured('security', security), quality: measured('quality', quality),
 };
