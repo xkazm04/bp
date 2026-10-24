@@ -7,6 +7,10 @@
 // <same path>/route'` plus Next's `runtime` / `dynamic` config) re-exporting exactly the core module's methods, and
 // every core handler module must be mounted. Exceptions below are known gaps (reported, and the check fails once one is fixed
 // so the entry is removed). Exits 1 on any violation.
+// A door handler (packages/core/src/server/route-door.server.ts owns the order and derives the guard from the verb) passes
+// in exactly one form: its whole body is `return <door>.<SAME VERB>(<its req>, <its ctx>);` where `<door>` is a
+// `const <door> = door(...)` of the same file and `door` is imported from route-door.server. scripts/check-route-door.ts
+// tests the door's own order; this proves the handler cannot do work around it or borrow another verb's guard.
 // Control: BP_ROUTE_GUARDS_MUTATE='[["scan/route.ts","localHost(req)","null"]]' rewrites route source as it is read
 // ([path suffix, find, replace]); a built-in self-test also mutates every handler in memory and expects each to fail.
 // Run: node scripts/check-route-guards.mjs
@@ -31,19 +35,36 @@ const matchClose = (s, i, open, close) => { // index of the bracket closing the 
   return -1;
 };
 
-/** Exported handlers of a route source: [{ method, body }]. */
+/** Exported handlers of a route source: [{ method, args, body, src }] (args = the parameter names, src = the whole file). */
 function handlers(src) {
   const out = [];
   for (const m of strip(src).matchAll(/export\s+(?:async\s+)?function\s+(GET|POST|PATCH|PUT|DELETE|HEAD|OPTIONS)\b/g)) {
     const code = strip(src), p = code.indexOf('(', m.index + m[0].length), pe = matchClose(code, p, '(', ')'), b = code.indexOf('{', pe);
-    out.push({ method: m[1], body: code.slice(b + 1, matchClose(code, b, '{', '}')) });
+    const args = [...code.slice(p + 1, pe).matchAll(/(?:^|,)\s*(\w+)\s*[:?,]/g)].map((a) => a[1]);
+    out.push({ method: m[1], args, body: code.slice(b + 1, matchClose(code, b, '{', '}')), src: code });
   }
   return out;
 }
 const PARSE = /\b(?:req|request)\.(?:json|text|formData|arrayBuffer|blob)\s*\(/;
 
+const DOOR_CALL = /^\s*return\s+(\w+)\.(GET|POST|PATCH|PUT|DELETE)\(\s*(\w+)\s*,\s*(\w+)\s*\)\s*;?\s*$/;
+const DOOR_IMPORT = /import\s*\{[^}]*\bdoor\b[^}]*\}\s*from\s*'@bp\/core\/server\/route-door\.server'/;
+/** A door-form handler's violations ([rule]), or null when the body is not a door call. */
+function auditDoor({ method, args, body, src }) {
+  const m = DOOR_CALL.exec(body);
+  if (!m) return null;
+  const bad = [];
+  if (m[2] !== method) bad.push(`door verb (${m[2]} answers ${method})`);
+  if (m[3] !== args[0] || m[4] !== args[1]) bad.push('door args (not the handler req and ctx)');
+  if (!DOOR_IMPORT.test(src) || !new RegExp(String.raw`\bconst\s+${m[1]}\s*=\s*door\s*\(`).test(src)) bad.push(`door (${m[1]} is no door() of this file)`);
+  return bad;
+}
+
 /** Violations of one handler: [rule]. */
-function audit({ method, body }) {
+function audit(h) {
+  const door = auditDoor(h);
+  if (door) return door;
+  const { method, body } = h;
   const bad = [];
   const need = method === 'GET' ? '(localHost|localOnly)' : '(localOnly)';
   const open = body.match(new RegExp(String.raw`^\s*const\s+(\w+)\s*=\s*${need}\(\s*\w+\s*\);?\s*if\s*\(\s*(\w+)\s*\)\s*return(?!\w)`));
@@ -56,7 +77,7 @@ function audit({ method, body }) {
 }
 
 const files = walk(API);
-let handlerCount = 0, ok = 0, known = 0, failures = [];
+let handlerCount = 0, ok = 0, known = 0, doorCount = 0, failures = [];
 const seen = new Set();
 for (const file of files) {
   const rel = path.relative(API, file).split(path.sep).join('/');
@@ -69,6 +90,7 @@ for (const file of files) {
     if (!METHODS.includes(h.method)) { failures.push(`${rel}: ${h.method} is not a method this check knows; add its rule`); continue; }
     const bad = audit(h);
     if (!bad.length) ok++;
+    if (DOOR_CALL.test(h.body)) doorCount++;
     for (const rule of bad) {
       const key = `${rel} ${h.method} ${rule}`;
       if (KNOWN[key]) { known++; seen.add(key); console.log(`  KNOWN  ${key}\n         ${KNOWN[key]}`); } else failures.push(`${key}: handler must call ${rule} before any other work`);
@@ -82,6 +104,18 @@ let controls = 0;
 for (const file of files) {
   const src = strip(fs.readFileSync(file, 'utf8'));
   for (const h of handlers(src)) {
+    const d = DOOR_CALL.exec(h.body);
+    if (d && !audit(h).length) { // a passing door handler: work around the call, another verb, a stranger's door or args each fail
+      const other = h.method === 'GET' ? 'POST' : 'GET';
+      for (const [what, m] of [
+        ['work before the door', { ...h, body: `const t0 = Date.now();
+${h.body}` }],
+        ['another verb of the door', { ...h, body: h.body.replace(`.${h.method}(`, `.${other}(`) }],
+        ['not a door', { ...h, src: h.src.replace(new RegExp(String.raw`\bconst\s+${d[1]}\s*=\s*door\s*\(`), `const ${d[1]} = notADoor(`) }],
+        ['swapped args', { ...h, body: h.body.replace(/\(\s*(\w+)\s*,\s*(\w+)\s*\)/, '($2, $1)') }],
+      ]) { controls++; if (!audit(m).length) failures.push(`control: ${path.relative(API, file)} ${h.method} "${what}" was not caught`); }
+      continue;
+    }
     const g = h.body.match(/(localHost|localOnly)\(/);
     if (!g || audit(h).length) continue; // only handlers that pass today
     const dropped = { ...h, body: h.body.replace(/(localHost|localOnly)\(\s*\w+\s*\)/, 'null') };
@@ -159,5 +193,5 @@ for (const b of auditDocRoutes(docText, coreMethods)) failures.push(b);
   controls++; if (auditMount(`export { GET } from ${spec};\n\nexport const runtime = 'nodejs';\nexport const dynamic = 'force-dynamic';\n`, rel, ['GET']).length) failures.push('control: a clean mount was refused');
 }
 
-console.log(`${handlerCount} handlers in ${files.length} core routes: ${ok} guarded, ${known} known gaps; ${mounts} web mounts; ${controls} seeded-defect controls`);
+console.log(`${handlerCount} handlers in ${files.length} core routes: ${ok} guarded (${doorCount} door handlers), ${known} known gaps; ${mounts} web mounts; ${controls} seeded-defect controls`);
 if (failures.length) { console.error(`\nFAIL (${failures.length}):\n  ${failures.join('\n  ')}`); process.exit(1); }
