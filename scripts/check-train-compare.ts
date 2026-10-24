@@ -351,6 +351,63 @@ const { packHeading, packOrder } = await imp('ComparePanel.tsx');
   }
 }
 
+// ------------------------------------------------------------------------------------------- one judgement, every cell
+// The verdict chip, the change cell's colour, the sentence under the table and the row's before figure publish one
+// judgement (compare.ts verdictOf): none of them re-derives the direction, the baseline or the noise test.
+{
+  const React = (await import('react')).default, { renderToStaticMarkup } = await import('react-dom/server');
+  const { PerfTable } = await imp('PerfTable.tsx');
+  const KEY = 'interactionP95Ms';
+  const read = (value: number, phase: 'before' | 'after', i: number): Measurement =>
+    ({ id: ++mid, run_id: 'r', feature: 'booking', lens: 'performance', metric: KEY, value, unit: 'ms', method: 'probe', measured_at: `2026-10-15T01:${String(i).padStart(2, '0')}:00Z`, proposal_id: 'p-x', phase });
+  /** One item through compareOf, perfItem and the rendered table: its verdict, its change cell's class and its reason. */
+  const cellOf = (runs: number[], after: number, better?: 'up' | 'down', ed?: number) => {
+    const p: Proposal = { ...P, ...(ed !== undefined ? { expected_delta: ed } : {}) };
+    const lenses: LensFields[] = [{ id: 'performance', manifest: { fields: [better ? { key: KEY, metric: { better } } : { key: KEY }] } }];
+    const lensDef: Any = { F: { [KEY]: { label: 'Interaction p95', unit: 'ms', ...(better ? { metric: { better } } : {}) } } };
+    const ms = [...runs.map((v, i) => read(v, 'before', i + 1)), read(after, 'after', 9)];
+    const c = compareOf({ proposals: [p], measurements: ms, shots: [] as Shot[] }, 'p-x', lenses) as Comparison;
+    const it = perfItem(c, 'Booking', lensDef);
+    const html = renderToStaticMarkup(React.createElement(PerfTable, { items: [it] }));
+    return { c, v: c.verdict, cls: /<td class="(chg[^"]*)"/.exec(html)?.[1], why: perfReason(it) as string };
+  };
+  const a = cellOf([80, 88, 80], 64, 'down');
+  ok(a.v === 'flat' && a.cls === 'chg', 'one judgement: athena 80/88/80 -> 64 (flat) paints no green beside "flat · within noise"', [a.v, a.cls]);
+  const e = cellOf([50, 52, 51], 90, undefined, 5);
+  ok(e.v === 'moved' && e.cls === 'chg good', 'one judgement: no manifest direction, expected +5, 50/52/51 -> 90 (moved) is a good change, not the "down" default', [e.v, e.cls]);
+  const u = cellOf([50, 52, 51], 90);
+  ok(u.v === 'unmeasured' && u.cls === 'chg' && /nothing states which way is better/.test(u.why) && !u.why.includes('so this moved'), 'one judgement: no direction at all reads unmeasured in the cell and the sentence alike', [u.v, u.cls, u.why]);
+  // GUARD: the Kettle sample passes today and must keep passing
+  const k = cellOf([96, 104, 98], 72, 'down');
+  ok(k.v === 'moved' && k.cls === 'chg good' && k.why.includes('larger than the noise') && k.why.includes('moved'), 'one judgement (guard): the sample 96/104/98 -> 72 moved, a good change beyond the noise', [k.v, k.cls, k.why]);
+  // the sweep: every combination reconciles the cell's tone and the sentence's verb with the verdict
+  const VERB: Record<string, RegExp> = { moved: /so this moved\./, worse: /so this got worse\./, flat: /so this is flat/, unmeasured: /unmeasured/ };
+  const off: string[] = [];
+  let total = 0;
+  for (const runs of [[80, 88, 80], [50, 52, 51], [96, 104, 98]]) for (const after of [64, 90, 72, 51])
+    for (const better of ['up', 'down', undefined] as const) for (const ed of [5, -5, undefined]) {
+      total++;
+      const r = cellOf(runs, after, better, ed);
+      const tone = r.v === 'moved' ? 'chg good' : r.v === 'worse' ? 'chg bad' : 'chg';
+      const verbs = Object.entries(VERB).filter(([, re]) => re.test(r.why)).map(([w]) => w);
+      if (r.cls !== tone || verbs.join() !== r.v) off.push(`${runs.join('/')}->${after} ${better ?? '-'} ${ed ?? '-'}: ${r.v} ${r.cls} [${verbs.join()}]`);
+    }
+  ok(total === 108 && !off.length, `one judgement: the 108-case sweep reconciles tone and reason with the verdict (${off.length} contradict)`, off.slice(0, 4));
+  // verdictOf returns its judgement additively; the existing fields keep their meaning
+  const runs = [96, 104, 98].map((v, i) => read(v, 'before', i + 1)), j = verdictOf(P, runs, [read(72, 'after', 9)], LENSES) as Any;
+  ok(j.verdict === 'moved' && j.from?.value === 98 && j.to?.value === 72 && j.dir === 'down' && j.base === 98 && j.delta === -26, 'verdictOf: the judgement carries its direction, baseline median and delta', { dir: j.dir, base: j.base, delta: j.delta });
+  const one = verdictOf(P, [read(40, 'before', 1)], [read(30, 'after', 9)], LENSES) as Any;
+  ok(one.base === 40 && one.delta === -10, 'verdictOf: one before reading is its own baseline', { base: one.base, delta: one.delta });
+  // the source guard: no cell under the train ledger re-derives the rule by hand
+  const TRAIN = path.join(SRC, 'components/ledger/train'), hits: string[] = [];
+  const walk = (d: string): string[] => fs.readdirSync(d, { withFileTypes: true }).flatMap((x) => (x.isDirectory() ? walk(path.join(d, x.name)) : /\.tsx?$/.test(x.name) ? [path.join(d, x.name)] : []));
+  for (const f of walk(TRAIN)) {
+    const lines = stripComments(fs.readFileSync(f, 'utf8')).split('\n');
+    lines.forEach((l, i) => { if (/\?\? 'down'|\brunStats\(|Math\.abs\(f\.change\) <= f\.noise|expected_delta > 0/.test(l)) hits.push(`${path.relative(TRAIN, f)}:${i + 1}`); });
+  }
+  ok(!hits.length, 'one judgement: no train ledger file defaults the direction, re-takes the median or re-tests the noise', hits);
+}
+
 // ------------------------------------------------------------------------------------------- canDecide, the release window
 { // leaving a release: a draft allows it, a non-draft refuses it, an UNKNOWN release fails open (rules.ts says so; the server's 409 is the owner)
   const inRel = { status: 'done' as const, release_id: 'rel-1' };

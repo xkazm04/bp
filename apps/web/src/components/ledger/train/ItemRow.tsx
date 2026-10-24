@@ -11,7 +11,7 @@
 // the attempt chain.
 import { memo, useMemo, useRef } from 'react';
 import type { Measurement, Proposal } from '@bp/core/scan/types';
-import { runStats, verdictOf, type Verdict } from '@bp/core/scan/compare';
+import { verdictOf, type Verdict } from '@bp/core/scan/compare';
 import { isFlagged } from '@bp/core/train/rules';
 import { useTrain } from './data';
 import { readingsOf } from './Decide';
@@ -54,8 +54,7 @@ export function useItemFacts(): ReadonlyMap<string, ItemFacts> {
       const e = ev.get(p.id), v = verdictOf(p, e?.before ?? [], e?.after ?? [], T.lenses);
       const base = (e?.before ?? []).filter((m) => m.lens === p.lens && m.metric === p.metric);
       const f: ItemFacts = { verdict: v.verdict, shots: shots.get(p.id)?.size ?? 0, runs: base.length, afters: (e?.after ?? []).filter((m) => m.lens === p.lens && m.metric === p.metric).length, attempt: 1, failed: false, flagged: false };
-      const before = base.length > 1 ? runStats(base.map((m) => m.value), v.from?.unit).median : v.from?.value;
-      if (before !== undefined) f.before = before;
+      if (v.base !== undefined) f.before = v.base; // the verdict's own baseline: the runs' median, else the one reading
       if (v.to) f.after = v.to.value;
       const unit = v.from?.unit ?? v.to?.unit;
       if (unit) f.unit = unit;

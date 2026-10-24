@@ -2,19 +2,21 @@
 // (and its %), the noise a change must beat (compare.ts runStats: the spread, at least one frame for a timing), the
 // target and the verdict, the range strip under them (compare.ts verdictOf, so it agrees with the item's row), then context rows:
 // the feature's other metrics of the same lens from their latest `before` reading, against their targets. Which metrics
-// and targets come from the lens manifest's fields: no lens or metric is named here.
+// and targets come from the lens manifest's fields: no lens or metric is named here. The change's tone, the target's
+// comparator and the sentence under the table come from the verdict's judgement (its verdict and `dir`), never a default.
+// A context row shows a direction only when its field gives one.
 import { memo } from 'react';
 import { FRAME_MS, type Comparison } from '@bp/core/scan/compare';
 import type { LensDef } from '@bp/core/standard/load';
 import type { LensField } from '@bp/core/standard/types';
-import { atTarget, isOutlier, perfFigures, shortUnit, signed, type PerfFigures } from '@bp/core/train/perf';
+import { atTarget, isOutlier, perfFigures, reasonOf, shortUnit, signed, toneOf, type PerfFigures } from '@bp/core/train/perf';
 import { VerdictChip } from '../ui/Marks.tsx';
 import { num } from '../ui/tables';
 import { latestOf } from './MetricStrip';
 import { PerfRange } from './PerfRange';
 import './PerfTable.css';
 
-interface Context { key: string; label: string; unit: string; value: number; target?: number; better: 'up' | 'down'; evidence?: string }
+interface Context { key: string; label: string; unit: string; value: number; target?: number; better?: 'up' | 'down'; evidence?: string }
 /** One item as a table row: its runs in recorded order, their figures, its field and its context rows. */
 export interface PerfItem { c: Comparison; fname: string; label: string; unit: string; values: number[]; f: PerfFigures; field?: LensField; context: Context[] }
 
@@ -29,7 +31,8 @@ export function perfItem(c: Comparison, fname: string, lens: LensDef | undefined
   const seen = new Map<string, Context>();
   for (const m of c.before) {
     if (m.lens !== p.lens || m.metric === p.metric) continue;
-    const fd = lens?.F[m.metric], ctx: Context = { key: m.metric, label: fd?.label ?? m.metric, unit: m.unit ?? fd?.unit ?? '', value: m.value, better: fd?.metric?.better ?? 'down' };
+    const fd = lens?.F[m.metric], ctx: Context = { key: m.metric, label: fd?.label ?? m.metric, unit: m.unit ?? fd?.unit ?? '', value: m.value };
+    if (fd?.metric?.better) ctx.better = fd.metric.better;
     if (fd?.metric?.target !== undefined) ctx.target = fd.metric.target;
     if (m.evidence) ctx.evidence = m.evidence;
     seen.set(m.metric, ctx); // rows come oldest first: the latest reading of each metric wins
@@ -40,7 +43,7 @@ export function perfItem(c: Comparison, fname: string, lens: LensDef | undefined
 /** The table's column count (the range strip's row spans it). */
 const COLS = 7;
 const U = ({ u }: { u: string }) => (u ? <u>{shortUnit(u)}</u> : null);
-const cmpWord = (better: 'up' | 'down') => (better === 'up' ? '≥ ' : '≤ ');
+const cmpWord = (better: 'up' | 'down' | undefined) => (better === 'up' ? '≥ ' : better === 'down' ? '≤ ' : '');
 
 export const PerfTable = memo(function PerfTable({ items }: { items: readonly PerfItem[] }) {
   return (
@@ -58,8 +61,8 @@ export const PerfTable = memo(function PerfTable({ items }: { items: readonly Pe
 });
 
 function Rows({ it }: { it: PerfItem }) {
-  const { f, unit, field } = it, better = field?.metric?.better ?? 'down', target = field?.metric?.target, v = it.c.verdict;
-  const tone = f.change === undefined || f.change === 0 ? '' : (f.change < 0) === (better === 'down') ? ' good' : ' bad';
+  const { f, unit, field } = it, better = it.c.dir, target = field?.metric?.target, v = it.c.verdict, t = toneOf(v);
+  const tone = t ? ' ' + t : '';
   return (
     <>
       <tr className="main">
@@ -79,7 +82,7 @@ function Rows({ it }: { it: PerfItem }) {
       {/* the range strip spans the figures' width under them: spread, after and target on one scale, legible at any panel width */}
       <tr className="strip"><td colSpan={COLS - 1} className="l rng"><PerfRange f={f} unit={unit} target={target} warn={field?.metric?.warn_at} /></td></tr>
       {it.context.map((o) => {
-        const ok = o.target === undefined ? undefined : atTarget(o.value, o.target, o.better);
+        const ok = o.target === undefined || !o.better ? undefined : atTarget(o.value, o.target, o.better);
         return (
           <tr key={o.key} className="ctx">
             <th className="l" scope="row"><span>{o.label}{o.unit ? ' · ' + o.unit : ''}</span></th>
@@ -108,10 +111,4 @@ export function PerfKey() {
 }
 
 /** Why the verdict is what it is, in one sentence over the item's figures. */
-export function perfReason(it: PerfItem): string {
-  const { f, unit } = it, u = unit ? ' ' + unit : '';
-  if (f.change === undefined) return 'No after reading yet: the item cannot be judged.';
-  const ch = `The change (${signed(f.change)}${u}) against the median of ${f.runs.length} baseline runs`;
-  if (Math.abs(f.change) <= f.noise) return `${ch} is not larger than the noise (±${num(f.noise)}${u}), so this is flat: a lucky run looks like this.`;
-  return `${ch} is larger than the noise (±${num(f.noise)}${u}), so this ${it.c.verdict === 'worse' ? 'got worse' : 'moved'}.`;
-}
+export const perfReason = (it: PerfItem): string => reasonOf(it.c.verdict, it.f, it.unit);

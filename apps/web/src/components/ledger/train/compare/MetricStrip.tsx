@@ -1,6 +1,7 @@
 // The compare panel's metric line: the item's metric `before → after unit` in the big figures the contest winner draws,
 // the metric key with the verdict (compare.ts verdictOf: moved, flat, worse, unmeasured; a failed build says so), and
-// how to read it: the better direction, the target and the method. The readings are the item's own phased ones.
+// how to read it: the better direction (the verdict's own, Comparison.dir), the target and the method. The readings are
+// the item's own phased ones.
 import { memo } from 'react';
 import type { Comparison } from '@bp/core/scan/compare';
 import type { Measurement } from '@bp/core/scan/types';
@@ -21,7 +22,7 @@ const METHOD_NOTE: Readonly<Record<string, string>> = { judgement: ' (a model re
 export const MetricStrip = memo(function MetricStrip({ c, field }: { c: Comparison; field?: LensField }) {
   const p = c.p, b = latestOf(c.before, p.lens, p.metric), a = latestOf(c.after, p.lens, p.metric);
   const unit = b?.unit ?? a?.unit ?? field?.unit ?? '';
-  const better = field?.metric?.better ?? (p.expected_delta ? (p.expected_delta > 0 ? 'up' : 'down') : undefined);
+  const better = c.dir;
   const method = a?.method ?? b?.method ?? field?.metric?.method;
   const how = [
     better ? (better === 'down' ? 'lower is better' : 'higher is better') : null,
