@@ -95,3 +95,10 @@
 [data-variant='shaped'] .shp-lg .shp-cap { grid-column: 1 / 3; color: var(--ink-2); font-size: 13px; line-height: 1.3; display: block; }
 [data-variant='shaped'] .shp-lens .shp-lic { width: 50px; display: inline-flex; justify-content: center; color: var(--shp-lens); }
 [data-variant='shaped'] .shp-lens { grid-template-columns: 1fr; }
+/* the lens key as a finder: each row is a button (count at the right edge) that flies to its next feature */
+[data-variant='shaped'] .shp-lens .shp-fd { display: flex; align-items: center; gap: 7px; width: 100%; min-height: 23px; padding: 0; background: none; border: 0; color: var(--ink); font: inherit; font-size: 14px; line-height: 1.1; text-align: left; cursor: pointer; }
+[data-variant='shaped'] .shp-lens .shp-fd:hover:not([aria-disabled]) { background: color-mix(in srgb, var(--shp-lens) 10%, transparent); }
+[data-variant='shaped'] .shp-lens .shp-fd:focus-visible { outline: 2px solid var(--shp-lens); outline-offset: 1px; }
+[data-variant='shaped'] .shp-lens .shp-fd[aria-disabled] { cursor: default; color: var(--ink-2); }
+[data-variant='shaped'] .shp-lens .shp-n { margin-left: auto; padding-right: 4px; font: 500 12px var(--mono); color: var(--ink-2); }
+[data-variant='shaped'] .shp-lens .shp-q { font: 600 14px var(--mono); color: var(--shp-lens); }

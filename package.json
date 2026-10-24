@@ -121,7 +121,8 @@
     "check:aggregate-report": "node scripts/check-aggregate-report.mjs",
     "check:variant-chunk": "node scripts/check-variant-chunk.ts",
     "check:release-notes": "node scripts/check-release-notes.ts",
-    "check:route-door": "node scripts/check-route-door.ts"
+    "check:route-door": "node scripts/check-route-door.ts",
+    "check:shaped-legend": "node scripts/check-shaped-legend.ts"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

@@ -1,15 +1,18 @@
 'use client';
 // The Plan-tab legend, shaped variant. General explains the stage swatches and the lens icons set into
 // each fixture's top edge. A lens explains its outline (drawn here with the same proportions as on the
-// plan) and its icon vocabulary, all in that lens's accent.
+// plan) and its icon vocabulary, all in that lens's accent; each icon row counts its state on the plan and finds it.
 import type { ViewId } from '@bp/core/data';
 import { isBuiltinLens, type BuiltinLens } from '../base/legacy';
 import { Legend, TroubleKey } from '@/components/Legend';
-import { useEngine } from '@/components/hooks';
+import { useRef } from 'react';
+import { useBp, useEngine } from '@/components/hooks';
+import { swallow } from '@/components/rail/wide/shell';
 import { lensOf } from '@bp/core/model/lens';
 import { Mark, StageSym } from '@/components/Symbols';
 import { LensIcon } from './Panel';
-import { LENS_ICON, type IconId } from './icons';
+import { LENS_ICON } from './icons';
+import { goNext, legendRows } from './legend-model';
 import { GENERAL } from '@bp/core/data/types';
 
 const W = 46, H = 28;
@@ -58,14 +61,31 @@ const SHAPE_WORDS: Record<BuiltinLens, [string, string]> = {
   security: ['Three cuts: card data', 'Two dashed cuts: personal, unreviewed'],
   quality: ['Checklist edge: tests passing', 'Hollow boxes: tests not passing'],
 };
-const VOCAB: Record<BuiltinLens, [IconId, string][]> = {
-  business: [['ticketHi', 'High value (4 or 5)'], ['ticket', 'Value 1 to 3']],
-  design: [['board', 'Has a design'], ['boardNone', 'No design yet']],
-  development: [['code', 'Code reviewed by a person'], ['codeUnrev', 'No human review']],
-  operations: [['dial', 'Needle: how far it is rolled out'], ['dialOff', 'Live without alerting']],
-  security: [['lockCard', 'Card data, reviewed'], ['lockCardOpen', 'Card data, not reviewed'], ['lock', 'Reviewed or not needed'], ['lockOpen', 'Review pending']],
-  quality: [['check', 'Tests pass'], ['checkPart', 'Partly passing'], ['checkFail', 'Failing'], ['checkNone', 'Untested']],
-};
+/**
+ * The lens's icon key as a finder: each row counts the features on this plan in that state and, pressed (click, Enter,
+ * Space), flies to the next one with the highlight; pressed again, the one after. A row with none is aria-disabled.
+ * Keyed by the view, so the cursor starts over on a lens switch.
+ */
+function Finder({ lens }: { lens: BuiltinLens }) {
+  const E = useEngine(), M = E.M;
+  useBp((s) => s.t);   // the counts speak of the plan as drawn now: a date change re-reads them
+  const rows = legendRows(lens, M.P.features.filter((f) => M.L.TILE[f.id]));
+  const cur = useRef<string | null>(null);
+  return (
+    <>
+      {rows.map((r) => {
+        const n = r.ids.length, go = () => { cur.current = goNext(E, r.ids, cur.current); };
+        return (
+          <button key={r.key} type="button" className="shp-fd" aria-disabled={n ? undefined : true} aria-label={`${r.words}: ${n} on this plan${n ? ', go to next' : ''}`}
+            onClick={go} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { swallow(e); go(); } }}>
+            <span className="shp-lic">{r.icon ? <LensIcon id={r.icon} size={18} /> : <b className="shp-q" aria-hidden="true">{r.key === 'na' ? '–' : '?'}</b>}</span>
+            <span>{r.words}</span><span className="shp-n">{n}</span>
+          </button>
+        );
+      })}
+    </>
+  );
+}
 export function ShapedLegend({ view }: { view: ViewId }) {
   // the enabled lenses, in registry order: the same list composeGeneral lays chips out for, so the key
   // follows `?lenses=` and a product with more (or fewer) lenses than the six built-ins
@@ -100,7 +120,7 @@ export function ShapedLegend({ view }: { view: ViewId }) {
     <div className="lg shp-lg shp-lens">
       <div><Outline lens={view} strong /><span>{s1}</span></div>
       <div><Outline lens={view} strong={false} /><span>{s2}</span></div>
-      {VOCAB[view].map(([id, t]) => <div key={id}><span className="shp-lic"><LensIcon id={id} size={18} /></span><span>{t}</span></div>)}
+      <Finder key={view} lens={view} />
       <div><Mark k="cloud" /><span>{name(view)} trouble</span></div>
       <div><Mark k="tick" /><span>Watch</span></div>
     </div>

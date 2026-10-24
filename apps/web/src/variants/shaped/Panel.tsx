@@ -8,7 +8,7 @@ import type { Feature } from '@bp/core/data';
 import { bl, isBuiltinLens, type BuiltinLens } from '../base/legacy';
 import { DefaultLensPanel, hmark } from '@/components/sheet/LensPanel';
 import type { SheetPanelProps } from '../types';
-import { ICONS, dialNeedle, iconFor, type IconId } from './icons';
+import { ICONS, LENS_ICON, dialNeedle, iconFor, type IconId } from './icons';
 import { CROP } from './shapes';
 
 export function LensIcon({ id, size = 18, title }: { id: IconId; size?: number; title?: string }) {
@@ -55,7 +55,8 @@ export function ShapedPanel(props: SheetPanelProps) {
   const { lens, f, expanded, density, model } = props;
   // a lens other than the six built-ins: the default, manifest-driven panel
   if (!isBuiltinLens(lens)) return <DefaultLensPanel {...props} />;
-  const id = iconFor(lens, f), rollout = model.sim.rolloutOf(f);
+  // nothing measured (or not applicable): the badge names the lens rather than claiming a state
+  const id = iconFor(lens, f) ?? LENS_ICON[lens], rollout = model.sim.rolloutOf(f);
   const cls = ['shp', 'shp-' + lens, 'shp-' + density];
   // the shape classes carry a measured value only: value 0 and data class '' are what bl() gives a feature
   // with no facet, and styles.css has no rule for either, so --shp-n would fall back to its 8 px default

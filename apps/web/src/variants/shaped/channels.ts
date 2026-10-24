@@ -52,9 +52,9 @@ function paint(l: BuiltinLens, a: MarkArgs, edge: Edge, readout: Readout, ribbon
   // 2. the chip / tag on the top edge (presence and expansion)
   const r = a.r, u = t.u;
   if (r.h < 6.5 * u || a.w < 0.01) return;
-  const x = a.x, w = a.w, s = r.h, cy = r.y + s / 2;
-  if (s < 10 * u) {
-    // too small for a picture: the chip degrades to a plain health cell (General at mid zoom)
+  const x = a.x, w = a.w, s = r.h, cy = r.y + s / 2, id = iconFor(l, f);
+  if (s < 10 * u || !id) {
+    // too small for a picture, or nothing measured to picture: the chip degrades to a plain health cell
     if (x < 0.99) { ctx.globalAlpha = ga * w * (1 - x); ctx.fillStyle = healthCol(th, hof(f, l)); ctx.fillRect(r.x, r.y + s * 0.25, r.w, s * 0.5); }
     if (x > 0.01) { ctx.globalAlpha = ga * w * x; ctx.fillStyle = a.accent; ctx.fillRect(r.x, r.y + s * 0.25, r.w, s * 0.5); }
     ctx.globalAlpha = ga; return;
@@ -67,7 +67,7 @@ function paint(l: BuiltinLens, a: MarkArgs, edge: Edge, readout: Readout, ribbon
     ctx.globalAlpha = ga * w * x; ctx.strokeStyle = a.accent; ctx.lineWidth = 1;
     ctx.strokeRect(Math.round(r.x - 1.5 * u) + 0.5, Math.round(r.y) + 0.5, Math.round(tagW + 3 * u) - 1, Math.round(s) - 1);
   }
-  const is = s * (0.86 - 0.3 * (1 - w)), lw = clamp(is * 0.1, 1.1, 1.8), icx = r.x + s / 2, id = iconFor(l, f);
+  const is = s * (0.86 - 0.3 * (1 - w)), lw = clamp(is * 0.1, 1.1, 1.8), icx = r.x + s / 2;
   const needle = l === 'operations' ? dialNeedle(f, a.live.rolloutPct) : null;
   if (x < 0.99) { ctx.globalAlpha = ga * w * (1 - x); drawIcon(ctx, id, icx, cy, is, healthCol(th, hof(f, l)), lw, needle); }
   if (x > 0.01) { ctx.globalAlpha = ga * w * x; drawIcon(ctx, id, icx, cy, is, a.accent, lw, needle); }

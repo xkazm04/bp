@@ -2,7 +2,7 @@
 // used as <path d> in the DOM (sheet, legend) and as cached Path2D objects on the canvas. Each lens has
 // a base icon that names it plus a few state variants, so a General tile reads as six small pictures.
 import type { Feature } from '@bp/core/data';
-import { bl, type BuiltinLens } from '../base/legacy';
+import { bl, hof, type BuiltinLens } from '../base/legacy';
 
 export interface IconDef { s: string; f?: string }
 
@@ -32,8 +32,14 @@ export const ICONS = {
 } satisfies Record<string, IconDef>;
 export type IconId = keyof typeof ICONS;
 
-/** The icon a lens shows for a feature. */
-export function iconFor(l: BuiltinLens, f: Feature): IconId {
+/**
+ * The icon a lens shows for a feature, or null when the lens has nothing to say about it: a facet nobody measured
+ * (bl() blanks would otherwise read as "reviewed", "designed", "untested") or one marked not applicable. The canvas
+ * chip then degrades to its health cell, the sheet badge to the lens's name icon, and the legend counts it apart.
+ */
+export function iconFor(l: BuiltinLens, f: Feature): IconId | null {
+  const h = hof(f, l);
+  if (h === 'unmeasured' || h === 'na') return null;
   switch (l) {
     case 'business': return bl(f).business.value >= 4 ? 'ticketHi' : 'ticket';
     case 'design': return bl(f).design.status === 'none' ? 'boardNone' : 'board';
