@@ -3,7 +3,7 @@ shows (contest references/promotion.md step 6; the release-ledger spark's WP5a).
 
     python scripts/fidelity/drive.py [--port 3321] [--shots <dir>]
 
-Needs `npx next dev -p <port>` running from the bp root. Two products:
+Needs `npx next dev -p <port> -H 127.0.0.1` running from the bp root. Two products:
   Kettle  (http://localhost:<port>/#page=ledger)  the sample train in the scan sim: every interaction, decisions included
           (the sim's store is the page's own, so a decision changes nothing on disk).
   Athena  (?product=athena)  a live product: read-only navigation only (J/K, Enter, L, M, Esc), and the drive fails if the

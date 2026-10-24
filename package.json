@@ -8,9 +8,9 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "next dev apps/web",
+    "dev": "next dev apps/web -H 127.0.0.1",
     "build": "next build apps/web",
-    "start": "next start apps/web",
+    "start": "next start apps/web -H 127.0.0.1",
     "server": "node --import @bp/core/register apps/server/src/main.ts",
     "typecheck": "tsc --noEmit",
     "check": "node scripts/check-all.mjs",
@@ -100,7 +100,8 @@
     "check:claims": "node scripts/check-claims.ts",
     "check:findings": "node scripts/fixtures/kettle-findings.mjs --check",
     "check:kettle-data": "node scripts/fixtures/gen-kettle.mjs packages/core/data --check",
-    "check:swarm-data": "node scripts/fixtures/gen-swarm.mjs packages/core/data --check"
+    "check:swarm-data": "node scripts/fixtures/gen-swarm.mjs packages/core/data --check",
+    "check:web-bind": "node scripts/check-web-bind.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

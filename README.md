@@ -26,7 +26,7 @@ npm run server         # the API alone, headless (apps/server): http://127.0.0.1
 ```
 
 bp is an npm workspace (`apps/*`, `packages/*`). The Next app lives in `apps/web` and is always started from the
-repo root (`next dev apps/web`), so the server's working directory is the root, where `bp.products.local.json` lives.
+repo root (`next dev apps/web -H 127.0.0.1`, loopback only), so the server's working directory is the root, where `bp.products.local.json` lives.
 
 | Route | What |
 |---|---|

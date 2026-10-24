@@ -26,7 +26,7 @@ Context ids for commit scopes are the `id` fields in `context-map.json` (e.g. `a
 - when a variant CSS source changed: `npm run check:variant-copies` must stay green (copies are generated, see Class C).
 - when `apps/web/src/app/globals.css` or a theme token changed: `npm run check:tokens`.
 - when `apps/web/src/engine/chrome.ts`, `rail.css` or `timeline.css` changed: `npm run check:chrome` and `npm run check:timeline-size`.
-- visual (any wave touching `apps/web/src/engine/**`, `apps/web/src/components/**`, variant or global CSS): `npm run build && npx next start -p 3123`, then `python scripts/shots.py http://localhost:3123 <scratch-outdir>` (both themes, three widths, page errors, 12 px floor) plus a short Playwright probe of each interaction the wave changed. Read the builders' "needs a browser" lists as the probe agenda.
+- visual (any wave touching `apps/web/src/engine/**`, `apps/web/src/components/**`, variant or global CSS): `npm run build && npx next start -p 3123 -H 127.0.0.1`, then `python scripts/shots.py http://localhost:3123 <scratch-outdir>` (both themes, three widths, page errors, 12 px floor) plus a short Playwright probe of each interaction the wave changed. Read the builders' "needs a browser" lists as the probe agenda.
 - slow: `python scripts/perf.py` (needs a running server) - not part of the nightly gate.
 - builder: `npm run typecheck` plus the `check:*` scripts that cover files in the write set. Never `npm run build` and never `npm run dev` (one tree, one `.next/`).
 
