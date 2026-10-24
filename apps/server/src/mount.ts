@@ -10,6 +10,7 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { isLoopbackAddr } from '@bp/core/scan/local-only';
 
 /** The largest request body the server reads (bytes); a longer one answers 413. bp's writes are small JSON documents. */
 export const MAX_BODY = 4 * 1024 * 1024;
@@ -102,10 +103,6 @@ function tooLarge(res: ServerResponse): void {
   json(res, 413, { error: `request body over ${MAX_BODY} bytes` }, { connection: 'close' });
 }
 
-/** A socket peer on this machine. The handlers' read guard checks only the Host header, which any LAN client can set
- *  to `localhost`; under `--host 0.0.0.0` this is what keeps the reads local. */
-const LOOPBACK_PEER = /^(127(?:\.\d{1,3}){3}|::1|::ffff:127(?:\.\d{1,3}){3})$/;
-
 /** One warn line per refusal the operator would want to know about: the status, why, the verb, the clipped and quoted
  *  target (JSON.stringify, so a hostile URL cannot forge a log line) and the socket peer. 404 and 405 stay quiet: a
  *  scanner probing paths would drown the 403s. */
@@ -116,7 +113,10 @@ function refused(req: IncomingMessage, status: number | string, why: string): vo
 /** The request listener: route, adapt, call, stream back. */
 export function listener(routes: Route[]) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
-    if (!LOOPBACK_PEER.test(req.socket.remoteAddress ?? '')) {
+    // The socket peer must be this machine (LOOPBACK_PEER was this mount's own copy of the rule; it is now the shared
+    // isLoopbackAddr the X-Forwarded-For hop check uses). The handlers' guards check only headers, which any LAN client
+    // sets (`Host: localhost`); under `--host 0.0.0.0` this is what keeps the reads local. An undefined address refuses.
+    if (!isLoopbackAddr(req.socket.remoteAddress ?? '')) {
       refused(req, 403, 'peer is not this machine');
       return json(res, 403, { error: 'only served to this machine' });
     }

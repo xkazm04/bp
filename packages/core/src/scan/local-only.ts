@@ -1,6 +1,7 @@
 // Request guards for the localhost-only API routes. Pure (no fs), so scripts/check-local-only.ts imports it.
 const LOOPBACK_HOST = /^(localhost|127(?:\.\d{1,3}){3}|\[::1\]|::1)$/i;
-const isLoopbackAddr = (a: string): boolean => /^(127(?:\.\d{1,3}){3}|::1|::ffff:127(?:\.\d{1,3}){3}|localhost)$/i.test(a.trim());
+/** A loopback address (an X-Forwarded-For hop, a socket peer): 127.x.x.x, ::1, IPv4-mapped 127.x.x.x, or the name localhost. */
+export const isLoopbackAddr = (a: string): boolean => /^(127(?:\.\d{1,3}){3}|::1|::ffff:127(?:\.\d{1,3}){3}|localhost)$/i.test(a.trim());
 const hostOnly = (h: string): string => (h.startsWith('[') ? h.slice(0, h.indexOf(']') + 1) : h.split(':')[0]);
 
 /** Reads: the Host must be a loopback name (stops DNS rebinding) and every `X-Forwarded-For` hop must be loopback, the
@@ -17,9 +18,11 @@ export function localHost(req: Request): string | null {
 /**
  * Writes come from this machine only (bp runs locally). The Host must be a loopback name (this
  * also stops DNS rebinding); a browser's Origin, when sent, must be loopback too, and `Sec-Fetch-Site`
- * must not be cross-site (no other page can post here); every `X-Forwarded-For` hop (localHost checks it; Next sets it from
- * the socket) must be loopback. Next does not expose the socket address to route handlers, so this is
- * the strongest check available at this layer.
+ * must not be cross-site (no other page can post here); every `X-Forwarded-For` hop (localHost checks it) must be loopback.
+ * These are all headers, and a client on the LAN sets every one: Next fills X-Forwarded-For from the socket only when
+ * the client sent none (`??=`), and does not expose the socket address to route handlers. So under Next the boundary is
+ * the socket: the web mount binds loopback (`-H 127.0.0.1`, gated by scripts/check-web-bind.mjs), and apps/server refuses
+ * a non-loopback socket peer with isLoopbackAddr before routing. These guards stop browsers (rebinding, cross-site).
  */
 export function localOnly(req: Request): string | null {
   const h = req.headers, bad = localHost(req);
