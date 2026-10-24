@@ -103,6 +103,15 @@ per-frame work is a few hundred cheap primitives.
   frame; DecisionCard gets its height from a ResizeObserver instead of `offsetHeight` per frame.
 - The settle wake-up is armed once per gesture (not clear+set per frame); `sim.expire` runs every 500 ms of wall time.
 
+## The variant chunk (/ ships subtle only)
+
+`variants/registry.ts` imports subtle statically and shaped and bold through one `import()` each, so `/` no longer
+carries the two prototypes' channels, panels, decor and CSS (`npm run check:variant-chunk` holds it: `/` reaches 102
+modules statically, 119 before, none under shaped/**, bold/** or base/legacy.ts). Measured 2026-10-24 with
+`node scripts/check-train-budget.ts --bundle apps/web/.next --before <the 12:11 build of the commit before>`, n = 1
+build each (the before build predates two sibling commits of the same wave, so the delta is approximate): `/`'s
+first load JS 1,377.2 -> 1,307.4 KB (gzip 444.1 -> 421.3 KB), CSS 140.0 -> 120.9 KB (gzip 27.5 -> 24.0 KB).
+
 ## Budget
 
 - 2026-10-21 (operator ruling): the budget is p50 <= 16.7 ms at `?scale=4`, measured with `python scripts/perf.py` on Lynx while the machine is idle of builds. p95 is reported without a budget.
