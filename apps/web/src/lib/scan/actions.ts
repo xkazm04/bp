@@ -1,10 +1,10 @@
 // The one way the UI starts, dispatches and cancels scan work. A live product goes to its localhost
 // routes (the server spawns the Claude Code CLI); the Kettle sample goes to the scan sim. Callers never
 // branch on which.
-import type { ScanSim } from '@bp/core/model/scan-sim';
+import type { ReleaseReady, ScanSim } from '@bp/core/model/scan-sim';
 import { takenLooks, type ScanJob, type ScanScope } from '@bp/core/scan/jobs';
 import type { LensEntry, LensManifest } from '@bp/core/standard/types';
-import { deleteJob, deleteWaveReq, executeLens, getCommitDiff, getReleaseSuggestion, getWaves, patchWaveReq, postDispatch, postProjectLens, postRelease, postReleaseBuild, postReleaseFinish, postScan, postTriage, postWave, postWaveDispatch, type LensExecuteResult } from './client.ts';
+import { deleteJob, deleteWaveReq, executeLens, getCommitDiff, getReleaseSuggestion, getWaves, patchWaveReq, postDispatch, postProjectLens, postRelease, postReleaseBuild, postReleaseBuildDry, postReleaseFinish, postScan, postTriage, postWave, postWaveDispatch, type LensExecuteResult } from './client.ts';
 import type { CommitDiff, ReleaseCreated, TriageBody, TriageDecision, TriageResult, VersionSuggestion } from '@bp/core/scan/types';
 import type { Wave, WaveBody, WaveDispatchResult } from '@bp/core/scan/waves';
 import { checkLensManifest } from '@bp/core/scan/manifest-check';
@@ -97,6 +97,14 @@ export async function createRelease(ctx: ScanCtx, version: string, ids?: string[
 export async function buildRelease(ctx: ScanCtx, id: string): Promise<ScanJob> {
   if (ctx.slug) return postReleaseBuild(ctx.slug, id);
   if (ctx.sim) return ctx.sim.buildRelease(id);
+  throw nowhere();
+}
+export type { ReleaseReady };
+/** The build's pre-flight: every refusal the build would give, with nothing started (live: the route's dry run, which
+ *  never spawns gh; Kettle: the sim's, which reads its gh toggle). Rejects as buildRelease does. */
+export async function preflightRelease(ctx: ScanCtx, id: string): Promise<ReleaseReady> {
+  if (ctx.slug) return postReleaseBuildDry(ctx.slug, id);
+  if (ctx.sim) return ctx.sim.preflightRelease(id);
   throw nowhere();
 }
 /** Start the job that finishes a release after its PR merged (tag, GitHub release). Rejects 412 as build. */

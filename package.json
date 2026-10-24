@@ -123,7 +123,8 @@
     "check:release-notes": "node scripts/check-release-notes.ts",
     "check:route-door": "node scripts/check-route-door.ts",
     "check:shaped-legend": "node scripts/check-shaped-legend.ts",
-    "check:wave-arrange": "node scripts/check-wave-arrange.ts"
+    "check:wave-arrange": "node scripts/check-wave-arrange.ts",
+    "check:release-preflight": "node scripts/check-release-preflight.ts"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

@@ -10,6 +10,7 @@ import type { DispatchResult } from './actions.ts';
 import type { Wave, WaveBody, WaveDispatchResult } from '@bp/core/scan/waves';
 import { fullScan as full, isEmptyScan as isEmpty, type DecisionBody, type Proposal, type ScanSnapshot } from '@bp/core/scan/types';
 import type { CommitDiff, ReleaseCreated, TriageBody, TriageResult, VersionSuggestion } from '@bp/core/scan/types';
+import type { ReleaseReady } from '@bp/core/model/scan-sim';
 import { errorText, parseCommitDiff, parseJson, parseReleaseCreated, parseScanJob, parseTriageResult, parseVersionSuggestion, parseWaveBody, parseWaveDispatch, parseWaves, type Parsed } from '@bp/core/train/wire';
 import { mergeScan } from '@bp/core/scan/merge';
 
@@ -307,6 +308,13 @@ export const postRelease = (slug: string, version: string, ids?: string[]): Prom
   call(api(slug) + '/releases', 'POST', parseReleaseCreated, ids === undefined ? { version } : { version, ids });
 /** Start the release job that builds `id` (202 = the job). 412 = gh not authenticated; 409 = wrong status or busy. */
 export const postReleaseBuild = (slug: string, id: string): Promise<ScanJob> => call(api(slug) + '/releases/' + encodeURIComponent(id) + '/build', 'POST', parseScanJob, {});
+/** The build's pre-flight (POST build `{"dry":true}`): 200 `{ ready: true }` with nothing queued, else the refusal the
+ *  build would give (409 state or busy, 429 queue full). It never checks gh: the dry run reads local state only. */
+export const postReleaseBuildDry = (slug: string, id: string): Promise<ReleaseReady> => call(api(slug) + '/releases/' + encodeURIComponent(id) + '/build', 'POST', parseReady, { dry: true });
+const parseReady = (x: unknown): Parsed<ReleaseReady> => {
+  const o = (x ?? {}) as { ready?: unknown; gh?: unknown };
+  return o.ready === true && (o.gh === 'signed-in' || o.gh === 'unchecked') ? { ok: true, value: { ready: true, gh: o.gh } } : { ok: false, error: 'ready: not true, or gh: not signed-in | unchecked' };
+};
 /** Start the release job that finishes `id` after its PR merged (202 = the job). 412 / 409 as build. */
 export const postReleaseFinish = (slug: string, id: string): Promise<ScanJob> => call(api(slug) + '/releases/' + encodeURIComponent(id) + '/finish', 'POST', parseScanJob, {});
 /** One item commit's diff (GET commits/[sha]). 400 = not a sha; 404 = not an item commit of this store. */

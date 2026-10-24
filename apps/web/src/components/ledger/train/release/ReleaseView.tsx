@@ -4,11 +4,13 @@
 // releases. Build and Finish start the Claude Code job (a live product: the CLI with the user's gh login; Kettle: the
 // scan sim's sample job through the same actions); nothing here simulates a step. On the phone the tab is read-only.
 // Also the header's summary strip and the phone's one-line release status. What a status allows is releaseState.ts's
-// table; the progress comes only from the stream (the release rows and the jobs list), never from polling.
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+// table; the progress comes only from the stream (the release rows and the jobs list), never from polling. Before Build,
+// the pre-flight (preflight.ts) lists what will refuse or fail; the probe behind it is asked when the tab opens on a
+// release that offers a build, when its package, jobs or sample switches change - never on a timer.
+import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { Proposal } from '@bp/core/scan/types';
 import type { ScanJob } from '@bp/core/scan/jobs';
-import { buildRelease, finishRelease, refusalText } from '@/lib/scan/actions';
+import { buildRelease, finishRelease, preflightRelease, refusalText, type ScanCtx } from '@/lib/scan/actions';
 import { releaseItems, unreleased, verdictOf } from '@bp/core/scan/compare';
 import { isWaiting } from '@bp/core/train/rules';
 import { useEngine } from '../../../hooks';
@@ -28,6 +30,7 @@ import { JobLog } from './JobLog';
 import { NotesPreview } from './NotesPreview';
 import { History } from './History';
 import { SampleToggles } from './SampleToggles';
+import { firstBlock, gated, preflightOf, preflighted, type PreCheck, type Probe } from './preflight';
 import './release.css';
 
 export interface ReleaseViewProps {
@@ -50,8 +53,13 @@ export function useReleaseModel(): ReleaseModel {
 
 // ------------------------------------------------------------------------------------------- actions
 export interface ReleaseActions {
-  /** What can be done now (none while a job runs or a request is on its way). */
+  /** The actions the row shows (none while a job runs or a request is on its way). */
+  shown: readonly RelAction[];
+  /** What can be done now: `shown` with Build and Retry gated out while a pre-flight check blocks (the B key reads it). */
   available: readonly RelAction[];
+  /** The pre-flight checks, and the first blocker's words (Build's title while it is held). */
+  checks: readonly PreCheck[];
+  blocked?: string;
   /** The Finish confirm from pr-open is showing. */
   asking: boolean;
   busy: boolean;
@@ -69,8 +77,11 @@ function useReleaseActions(m: ReleaseModel, phone: boolean): ReleaseActions {
   const [err, setErr] = useState<{ status?: number; text: string } | null>(null);
   const busy = sending || (!!sent && sent.rel === rel?.id && !m.jobs.some((j) => j.id === sent.job)) || isActive(m.last);
   const st = rel ? RELEASE_STATE[rel.status] : undefined;
-  const available: RelAction[] = phone || !rel || !st || busy ? [] : asking ? ['finish']
+  const shown: RelAction[] = phone || !rel || !st || busy ? [] : asking ? ['finish']
     : st.actions.filter((a) => (a !== 'sampleMerge' || !!ctx.sim) && (a !== 'pr' || !!safeUrl(rel.pr_url)));
+  const probe = useProbe(m, phone || busy);
+  const checks = useMemo(() => (phone ? [] : preflightOf(rel, m.items, probe)), [phone, rel, m.items, probe]);
+  const available = gated(shown, checks), blocked = firstBlock(checks);
   const go = async (id: string, start: () => Promise<ScanJob>) => {
     setErr(null); setSending(true);
     try { const j = await start(); setSent({ rel: id, job: j.id }); } catch (e) {
@@ -87,7 +98,39 @@ function useReleaseActions(m: ReleaseModel, phone: boolean): ReleaseActions {
       try { ctx.sim?.sampleMerge(rel.id); setErr(null); } catch (e) { setErr({ text: refusalText(e) }); }
     }
   };
-  return { available, asking, busy, err, run, cancelAsk: () => setAsking(false) };
+  return { shown, available, checks, ...(blocked ? { blocked } : {}), asking, busy, err, run, cancelAsk: () => setAsking(false) };
+}
+
+const noSub = () => () => {};
+/** The sample's switches as the sim holds them (null live), so a toggle re-asks the probe. */
+const useToggles = (ctx: ScanCtx) => useSyncExternalStore(ctx.sim?.subscribe ?? noSub, () => ctx.sim?.trainToggles ?? null, () => ctx.sim?.trainToggles ?? null);
+
+/** The build's dry run, asked once per change of what it reads (the release, its package, its jobs, the sample switches). */
+function useProbe(m: ReleaseModel, off: boolean): Probe {
+  const ctx = m.T.ctx, rel = m.rel, relId = rel?.id, toggles = useToggles(ctx);
+  const key = off || !rel || !preflighted(rel) ? '' : [rel.id, rel.status, m.items.map((x) => x.p.id + ':' + (x.p.commit_sha ?? '')).join(), m.jobs.map((j) => j.id + ':' + j.status).join(), JSON.stringify(toggles)].join('|');
+  const [probe, setProbe] = useState<{ key: string; v: Probe }>({ key: '', v: null });
+  useEffect(() => {
+    if (!key || !relId) return;
+    let on = true;
+    preflightRelease(ctx, relId).then((v) => { if (on) setProbe({ key, v }); }, (e: unknown) => {
+      const s = (e as { status?: number }).status;
+      if (on) setProbe({ key, v: s === undefined ? { text: refusalText(e) } : { status: s, text: refusalText(e) } });
+    });
+    return () => { on = false; };
+  }, [key, ctx, relId]);
+  return probe.key === key ? probe.v : null;
+}
+
+/** The pre-flight list above the actions: every check in words, its verdict as a word too (never colour alone). */
+const VERDICT_WORD: Readonly<Record<PreCheck['verdict'], string>> = { block: 'Blocks', warn: 'Note', ok: 'Ready' };
+function Preflight({ checks }: { checks: readonly PreCheck[] }) {
+  if (!checks.length) return null;
+  return (
+    <ul className="tr-rel-pre" data-role="tr-rel-pre" aria-label="Before you build">
+      {checks.map((c) => <li key={c.id} className={c.verdict}><b>{VERDICT_WORD[c.verdict]} · </b>{c.words}</li>)}
+    </ul>
+  );
 }
 
 const ActionsRow = memo(function ActionsRow({ m, a }: { m: ReleaseModel; a: ReleaseActions }) {
@@ -103,9 +146,9 @@ const ActionsRow = memo(function ActionsRow({ m, a }: { m: ReleaseModel; a: Rele
             <Btn tone="go" kbd={keysOf('finish')} onClick={() => a.run('finish')} disabled={!a.available.includes('finish')}>Finish</Btn>
             <Btn onClick={a.cancelAsk}>Not yet</Btn>
           </span>
-        ) : a.available.map((x) => x === 'pr'
+        ) : a.shown.map((x) => x === 'pr'
           ? <a key={x} className="tr-rel-pr" href={safeUrl(rel.pr_url) ?? undefined} target="_blank" rel="noopener noreferrer">⇱ {prName(rel.pr_url)}{m.T.ctx.sim ? ' · sample' : ''}</a>
-          : <Btn key={x} tone={ACTION[x].go ? 'go' : undefined} kbd={keysOf(ACTION[x].key)} onClick={() => a.run(x)} disabled={x === 'build' && !m.items.length}>{ACTION[x].label(v)}</Btn>)}
+          : <Btn key={x} tone={ACTION[x].go ? 'go' : undefined} kbd={keysOf(ACTION[x].key)} onClick={() => a.run(x)} reason={a.available.includes(x) ? undefined : a.blocked}>{ACTION[x].label(v)}</Btn>)}
       </div>
       <p className="tr-rel-hint">{a.busy && !isActive(m.last) ? 'Starting the release job…' : standLine(standOf(rel, m.last), rel, m.last, m.items.length)}</p>
     </>
@@ -164,6 +207,7 @@ export function ReleaseView({ phone }: ReleaseViewProps) {
         <Stepper rel={m.rel} last={m.last} />
         {m.T.ctx.sim && !phone ? <SampleToggles sim={m.T.ctx.sim} /> : null}
         <Failures m={m} a={a} />
+        <Preflight checks={a.checks} />
         <ActionsRow m={m} a={a} />
         <JobLog jobs={m.jobs} version={ver} n={n} status={m.rel?.status} />
         <NotesPreview m={m} version={ver} />
