@@ -872,7 +872,12 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
   (beside Dispatch, which stays the direct path) opens the inline composer (`LedgerUi.composer`, not a modal) over the
   dispatchable selection that no draft wave holds (the others are named and left out): one default package (Opus, high),
   packages added, renamed, removed, each with a model Seg (Sonnet | Opus) and an effort Seg (low | medium | high | xhigh),
-  findings moved between packages or removed, a warning when two packages share a feature. Create clears the selection and
+  findings moved between packages or removed, a warning when two packages share a feature. An **Arrange** Seg in the composer's head
+  (`waves/arrange.ts`: One package | By feature | By lens) re-partitions the held findings in one press: by feature no two
+  packages share a feature (over 12 the lightest groups, by size weight, merge into the lightest packages, a feature is never
+  split), by lens one package per lens named by its short name, all in map order. It only re-partitions: each package keeps
+  the model and effort its first finding's package had (else Opus, high), the wave name and the left-out note stay, and a
+  manual edit afterwards reads as by hand (no mode pressed). Create clears the selection and
   selects the new tab; the wave panel shows each package (model, effort, findings, job state) with Dispatch wave, Dispatch
   remaining, a package's own Dispatch, Edit and Delete (draft only; Delete asks twice). Dispatch rows flip through the same
   intent store as the direct path (`Ledger.dispatchWave`, one send helper). A row in a wave shows a chip (`wave · package`, the title names
