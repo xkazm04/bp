@@ -79,12 +79,14 @@ try {
   const badKeys = [...new Set(bad)];
   check('case 1: every reading is a manifest metric field with its unit and method (0 mismatches)', rows.length > 0 && badKeys.length === 0, rows.length ? short(badKeys) : 'no readings');
 
+  // cases 2-3 read the scan's readings: a phased row is a release-train item's evidence, not the feature's state
+  const scan = rows.filter((r) => r.phase === null);
   // case 2
-  const gotLenses = [...new Set(rows.map((r) => r.lens))].sort();
+  const gotLenses = [...new Set(scan.map((r) => r.lens))].sort();
   check('case 2: the lenses with readings are the map lenses with metric facet values', gotLenses.join() === wantLenses.join(), `got ${gotLenses} want ${wantLenses}`);
 
   // case 3
-  const gotKeys = rows.map((r) => `${r.feature}|${r.lens}|${r.metric}`);
+  const gotKeys = scan.map((r) => `${r.feature}|${r.lens}|${r.metric}`);
   const miss3 = wantLenses.filter((l) => featuresOf(gotKeys, l).join() !== featuresOf([...want.keys()], l).join())
     .map((l) => `${l}: got ${featuresOf(gotKeys, l).length} want ${featuresOf([...want.keys()], l).length}`);
   check('case 3: per lens, the measured features are those whose facet carries a metric value', miss3.length === 0, short(miss3));
@@ -103,7 +105,7 @@ try {
   check('case 5: two seeds with the same --now dump byte-identical', d1 === d2, `${d1.length} vs ${d2.length} chars`);
 
   // case 6 (GUARD)
-  const props = db.prepare('SELECT * FROM proposals').all();
+  const props = db.prepare('SELECT * FROM proposals WHERE pack_id IS NULL').all(); // the scan's; the train's are check-scan-demo-train's
   const last = db.prepare('SELECT value FROM measurements WHERE feature = ? AND lens = ? AND metric = ? ORDER BY measured_at DESC, id DESC LIMIT 1');
   const bad6 = [];
   for (const p of props) {

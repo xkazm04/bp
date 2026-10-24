@@ -17,7 +17,12 @@
 //                                      earlier one a seeded drift from them, scripts/lib/prng.ts `seeded`),
 //                                      7 proposals anchored to the worst readings (one baseline upgrade with 2
 //                                      propagation children), coverage rows and two PNG shots per run
-//   .ai/lens-scan/shots/...            the placeholder PNGs
+//                                      and Kettle's sample release train (packages/core/src/model/train-sim.ts, the
+//                                      same packs and numbers Kettle `/` shows): packs k-des-1, k-des-2, k-perf-1 with
+//                                      their execute runs, built items (done, failed, a rework and its rebuild), phased
+//                                      readings whose baselines end on the map's facet values, two items accepted
+//                                      and a draft release of them (`train`)
+//   .ai/lens-scan/shots/...            the placeholder PNGs (the train's item shots as PNGs under shots/<run>/)
 // and registers slug `kettle-live` in bp.products.local.json (create or merge; idempotent). An existing
 // store is kept (a running blueprint stream may hold it open); --reset recreates it.
 // --now <iso> is the reference instant the seeded runs hang off (default: the clock), so two seeds with the same
@@ -31,6 +36,7 @@ import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { seeded } from './lib/prng.ts';
+import { SAMPLE_ITEMS, TrainSim } from '../packages/core/src/model/train-sim.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
@@ -202,8 +208,41 @@ function seed() {
       cover(x.f, 'house:design/text-floor', 'deviation', `captions at ${x.v} px`);
     }
   }
+  train(db, now);
   db.exec('COMMIT');
   db.close();
+}
+
+/**
+ * Kettle's sample release train, projected into the store: TrainSim drives arrays over the copied map's manifests and
+ * facet values (seed's value hook), two done items are triaged accepted and the suggested release is created; the rows
+ * then go in FK order. Its SVG shot paths (public/sample-shots) are not files the store's shots route serves, so each
+ * becomes a PNG under shots/<run>/, the after tinted where the item's screen changes.
+ */
+function train(db, now) {
+  const host = { runs: [], ms: [], act: [], props: [], pAt: new Map(), now: () => now, nextMeasurement: () => 0, nextActivity: () => 0, changed: () => {},
+    field: (lens, key) => map.lenses.find((l) => l.id === lens)?.manifest?.fields?.find((f) => f.key === key) };
+  const sim = new TrainSim(host);
+  sim.seed(map.features.map((f) => f.slug), facet);
+  const idOf = (key) => host.props[SAMPLE_ITEMS.findIndex((i) => i.key === key)].id;
+  // two done items accepted (SAMPLE_ITEMS keys; check-scan-demo-train.mjs pins the same two), so the release has items
+  sim.triage({ ids: ['des1-booking', 'perf1-timetable'].map(idOf), decision: 'accept' });
+  sim.create(sim.suggest().version);
+  const noId = ({ id, ...row }) => row;
+  for (const r of host.runs) insert(db, 'runs', r);
+  for (const k of sim.packs) insert(db, 'packs', k);
+  for (const r of sim.releases) insert(db, 'releases', r);
+  for (const p of host.props) insert(db, 'proposals', p);
+  for (const m of host.ms) insert(db, 'measurements', noId(m));
+  for (const a of host.act) insert(db, 'activity', noId(a));
+  for (const s of sim.shots) {
+    const it = SAMPLE_ITEMS[host.props.findIndex((p) => p.id === s.proposal_id)];
+    const rel = `shots/${s.run_id}/${it.key}-${s.phase}-${s.theme}.png`;
+    const base = s.theme === 'light' ? [226, 232, 240] : [30, 41, 59];
+    fs.mkdirSync(path.join(STORE, 'shots', s.run_id), { recursive: true });
+    fs.writeFileSync(path.join(STORE, rel), png(64, 36, s.phase === 'after' && it.screen?.change ? base.map((c, n) => (n === 1 ? Math.min(255, c + 25) : c)) : base));
+    insert(db, 'shots', { ...noId(s), path: rel });
+  }
 }
 
 // The second writer of bp.products.local.json; the first is packages/core/src/server/registry.server.ts, and
