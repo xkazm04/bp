@@ -283,6 +283,15 @@ unreadable when zoomed out, so flags are not part of any tile. They are an engin
   Clicking a cluster of several features flies to them so it splits. When the camera cannot get
   meaningfully closer, the click opens the first feature. The engine hit-tests the flags of the last
   frame. No flag reacts while a feature page is open.
+- **The hit list** (`apps/web/src/engine/render/hits.ts`). What the pointer can hit is what the frame
+  drew: each target layer registers a region as it draws a mark (agent chips and discs, the "+N"
+  overflow chip, which hits as its feature, tile question pins, room cluster pins, track marks, then the
+  flags), and `clickAt` / `hoverAt` and the `pinAt` / `trackAt` / `agentAt` readers walk it topmost first,
+  so hit order is draw order and an agent the overflow chip hides is not clickable. A crossfading mark is
+  hit-testable when drawn at >= 0.5 of its presence (`PRESENT`); a coarse pointer grows every region to a
+  44 px square around its centre (`TOUCH`). A pointer test after the camera moved re-runs the target
+  layers into a context that draws nothing. Records are pooled. Checked by `npm run check:engine-harness`
+  (section 3b) and `check:render-units`.
 - **Drawn on top, each frame**, after every dynamic layer, so they stay crisp at one size during a
   gesture. On the Kettle sample about 100 candidates are laid out per frame, and the layout holds the rule of
   allocating nothing in the frame loop: the `Flag` records come from a pool reused frame to frame, each one's
