@@ -6,8 +6,8 @@ import type { Feature, Scalar } from '@bp/core/data';
 import type { Health, Kpi, LensField } from '@bp/core/standard/types';
 import { STAGES } from '@bp/core/standard/load';
 import { HEALTH_TEXT } from '@bp/core/standard/present';
-import { STAGE_WORD, fmtValue, baseId, type Model } from '@bp/core/model';
-import { NOT_RECORDED, stageView, valueView, type ValueAsOf } from '@bp/core/model/timeview';
+import { STAGE_WORD, fmtValue, type Model } from '@bp/core/model';
+import { NOT_RECORDED, lensAsOf, stageView, type LensAsOf } from '@bp/core/model/timeview';
 import type { LensDef } from '@bp/core/data';
 import type { SwarmSim } from '@bp/core/model';
 import { useBp, useEngine, useLive } from '../hooks';
@@ -29,10 +29,11 @@ export function useAsOf(): { t: string; now: string; past: boolean } {
   return { t, now, past: t < now };
 }
 
-/** A lens's headline on the page's date: what the history records, else "not recorded" (never the now-value). */
-export function useHeadlineAt(f: Feature, d: LensDef): ValueAsOf {
+/** A lens on the page's date (timeview's presenter): its health and reason now; on a past date unmeasured, with the
+ *  headline's reading by then when the history records one, else "not recorded" (never the now-value). */
+export function useLensAt(f: Feature, d: LensDef): LensAsOf {
   const { t, now } = useAsOf(), scan = useLive()?.product.scan;
-  return d.headline ? valueView(scan, baseId(f.id), d.id, d.headline, t, now) : { at: 'none' };
+  return lensAsOf(f, d, scan, t, now);
 }
 
 /** The marker over a page that shows a past date: what date, what is dated and what is not, and the way back. */

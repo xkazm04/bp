@@ -4,15 +4,18 @@
 // lens mix: in General they all sit side by side; in a lens, its panel moves to the top and grows to
 // its reader's density while the others collapse to their headline. Each panel ends with its metric
 // rows (MetricRows, from the manifest); the Business section and a live product's Screens strip follow.
+// On a travelled-back date the record reads timeview's presenter (recordAsOf, lensAsOf) as the desktop page does:
+// the dated stage and lede, flags not recorded, no now-trouble line, and every lens panel (a variant's too) dated.
 import { useMemo } from 'react';
 import { GENERAL } from '@bp/core/data/types';
 import { LayoutGroup, motion, useReducedMotion } from 'motion/react';
 import type { Feature } from '@bp/core/data';
 import type { ScanSnapshot } from '@bp/core/scan/types';
 import { LIVE_DECIDER, REV_DESC, STAGE_WORD, astat, fmtWait, isAgentId, lensOf, pname, type Model, type SwarmSim } from '@bp/core/model';
-import { AsOfBar, useSimSig } from '../page/bits';
+import { lensAsOf, recordAsOf } from '@bp/core/model/timeview';
+import { AsOfBar, useAsOf, useSimSig } from '../page/bits';
 import { illoSVG } from '@/engine/render/illo';
-import { DefaultLensPanel, MetricRows } from './LensPanel';
+import { DatedLensPanel, DefaultLensPanel, MetricRows } from './LensPanel';
 import { BusinessSection } from './Business';
 import { ScreensStrip } from './Screens';
 import { plainLine, revLabel } from './words';
@@ -113,7 +116,6 @@ export function FlaggedBy({ f }: { f: Feature }) {
   const bad = f.trouble.filter((t) => t.h === 'bad').map((t) => P.LENS[t.lens]?.name ?? t.lens), watch = f.trouble.length - bad.length;
   return <>{bad.length ? <span className="nc">{bad.join(', ')}</span> : watch ? watch + ' lens' + (watch > 1 ? 'es' : '') + ' to watch' : f.health === 'good' ? 'No lens ✓' : 'Not measured yet'}</>;
 }
-export const stageSince = (f: Feature) => (f.stage ? STAGE_WORD[f.stage] + ' · since ' + f.stageSince : 'Unknown');
 /** A list of features, each a button that opens it; `empty` when there are none. */
 export function FeatureLinks({ ids, empty }: { ids: readonly string[]; empty: string }) {
   const E = useEngine(), P = E.M.P;
@@ -145,7 +147,7 @@ export function Notes({ f }: { f: Feature }) {
 function LensPanels({ f, M }: { f: Feature; M: Model }) {
   const V = useVariant(), dens = useDensity();
   const view = useBp((s) => s.view);
-  const Panel = V.ui?.SheetPanel ?? DefaultLensPanel, scan = useLive()?.product.scan;
+  const Panel = V.ui?.SheetPanel ?? DefaultLensPanel, scan = useLive()?.product.scan, { t, now, past } = useAsOf();
   // under reduced motion the panels re-order in place instead of travelling
   const reduce = useReducedMotion();
   const ids = M.P.lenses.map((l) => l.id);
@@ -154,11 +156,12 @@ function LensPanels({ f, M }: { f: Feature; M: Model }) {
     <LayoutGroup>
       <div className="ev6">
         {order.map((l) => {
-          const cur = view === l, mini = view !== GENERAL && !cur;
+          const cur = view === l, mini = view !== GENERAL && !cur, la = lensAsOf(f, M.P.LENS[l], scan, t, now);
+          // a past date: the dated panel stands in for every variant's (they read now-values and get no date)
           return (
-            <motion.div key={l} layout={!reduce} transition={{ type: 'spring', stiffness: 260, damping: 30 }} className={'evp ' + (f.lens[l]?.h ?? 'unmeasured') + (cur ? ' cur' : '') + (mini ? ' mini' : '')}>
-              <Panel lens={l} def={M.P.LENS[l]} f={f} model={M} density={dens(l)} expanded={cur} view={view} />
-              {!mini && <MetricRows def={M.P.LENS[l]} f={f} model={M} scan={scan} all={cur} fl={f.lens[l]} />}
+            <motion.div key={l} layout={!reduce} transition={{ type: 'spring', stiffness: 260, damping: 30 }} className={'evp ' + la.health + (cur ? ' cur' : '') + (mini ? ' mini' : '')}>
+              {past ? <DatedLensPanel def={M.P.LENS[l]} la={la} /> : <Panel lens={l} def={M.P.LENS[l]} f={f} model={M} density={dens(l)} expanded={cur} view={view} />}
+              {!mini && <MetricRows def={M.P.LENS[l]} f={f} model={M} scan={scan} all={cur} fl={past ? undefined : f.lens[l]} on={{ t, now }} />}
             </motion.div>
           );
         })}
@@ -168,8 +171,9 @@ function LensPanels({ f, M }: { f: Feature; M: Model }) {
 }
 
 export function SheetBody({ f }: { f: Feature }) {
-  const E = useEngine(), M = E.M, P = M.P, T = M.L.TILE[f.id];
-  const pl = plainLine(P, f, M.sim), ms = f.milestone ? P.MS[f.milestone] : null;
+  const E = useEngine(), M = E.M, P = M.P, T = M.L.TILE[f.id], { t, now } = useAsOf();
+  const rec = recordAsOf(f, t, now), pl = rec.at === 'now' ? plainLine(P, f, M.sim) : null, ms = f.milestone ? P.MS[f.milestone] : null;
+  const trouble = rec.at === 'now' && f.trouble.length > 0;
   return (
     <>
       <PatternDefs />
@@ -183,10 +187,12 @@ export function SheetBody({ f }: { f: Feature }) {
           <div className="k">{T ? (P.scale > 1 ? T.wing.bld.name + ' › ' : '') + 'Wing ' + T.wing.def.letter + ' ' + T.wing.def.name + ' › ' : ''}{P.D[f.domain].name} › {P.C[f.capability].name}<br />{[f.priority, f.kind, ms ? (ms.code ? ms.code + ' ' : '') + ms.name : null].filter(Boolean).join(' · ')}</div>
           <h2>{f.name}</h2>
           <div className="sum">{f.summary}</div>
-          <div className="plain"><b>{pl.strong}</b> {pl.rest.join(' ')} {pl.bad && <span className="bad">{pl.bad}</span>}</div>
-          {(f.trouble.length || f.blockedBy.length) ? (
+          {rec.lede
+            ? <div className="plain"><b>{rec.lede.strong}</b> {rec.lede.rest}</div>
+            : pl && <div className="plain"><b>{pl.strong}</b> {pl.rest.join(' ')} {pl.bad && <span className="bad">{pl.bad}</span>}</div>}
+          {(trouble || f.blockedBy.length) ? (
             <div className="tens">
-              {f.trouble.filter((t) => t.h === 'bad').map((t) => <span key={t.lens}><i />{P.LENS[t.lens].name}: {t.why}</span>)}
+              {rec.at === 'now' && f.trouble.filter((x) => x.h === 'bad').map((x) => <span key={x.lens}><i />{P.LENS[x.lens].name}: {x.why}</span>)}
               {f.blockedBy.length ? <span><i />Blocked by {f.blockedBy.map((x) => <button key={x} type="button" className="btn" style={{ height: 24, marginLeft: 4, textTransform: 'none', fontSize: 14 }} onClick={() => E.openFeature(x)}>{P.F[x].name}</button>)}</span> : null}
             </div>
           ) : null}
@@ -198,9 +204,9 @@ export function SheetBody({ f }: { f: Feature }) {
           <div className="illo"><Drawing f={f} /></div>
           <div className="mtb">
             <div><span className="l">Built by</span><BuiltBy f={f} /></div>
-            <div><span className="l">Flagged by</span><FlaggedBy f={f} /></div>
+            <div><span className="l">Flagged by</span>{rec.at === 'now' ? <FlaggedBy f={f} /> : rec.flagged}</div>
             <div><span className="l">Owner</span>{pname(P, f.owner)}</div>
-            <div><span className="l">Stage</span>{stageSince(f)}</div>
+            <div><span className="l">Stage</span>{rec.stage}</div>
             <div className="full"><span className="l">Lives in</span>{f.surfaces.length ? f.surfaces.map((s) => <span key={s} className="ag" style={{ margin: '0 4px 0 0' }}>{s}</span>) : '—'}</div>
           </div>
           <table className="revt"><thead><tr><th>REV</th><th>DATE</th><th>DESCRIPTION</th></tr></thead><tbody>

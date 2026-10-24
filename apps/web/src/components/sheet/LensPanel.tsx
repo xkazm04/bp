@@ -16,6 +16,7 @@ import type { LensField } from '@bp/core/standard/types';
 import { DENSITY_COUNT, HEALTH_TEXT, hotHealth } from '@bp/core/standard/present';
 import type { ScanSnapshot } from '@bp/core/scan/types';
 import { baseId, fmtValue, metricHistory, pname, type Model } from '@bp/core/model';
+import type { LensAsOf } from '@bp/core/model/timeview';
 import type { SheetPanelProps } from '@/variants/types';
 
 export interface Row { k: string; v: string; c?: 'bad' | 'watch' | ''; tier: 0 | 1 | 2 }
@@ -96,10 +97,11 @@ export function metricRows(d: LensDef, f: Feature, model: Model, scan: ScanSnaps
  * The metric rows under a lens panel: value and unit, an arrow against the previous reading coloured
  * by the manifest's `better` (good or bad), the target, the method, and the sparkline (two readings or
  * more; one shows the value only). `all` (the lens stands alone): every metric field, unmeasured ones
- * as '—'; otherwise (General) the measured ones, at most three.
+ * as '—'; otherwise (General) the measured ones, at most three. `on`: the page's date, so a past date reads only
+ * the readings taken by then (metricRows).
  */
-export function MetricRows({ def, f, model, scan, all, fl }: { def: LensDef; f: Feature; model: Model; scan: ScanSnapshot | undefined; all: boolean; fl: FeatureLens | undefined }) {
-  const rows = metricRows(def, f, model, scan);
+export function MetricRows({ def, f, model, scan, all, fl, on }: { def: LensDef; f: Feature; model: Model; scan: ScanSnapshot | undefined; all: boolean; fl: FeatureLens | undefined; on?: { t: string; now: string } }) {
+  const rows = metricRows(def, f, model, scan, on);
   if (!rows.length) return null;
   const measured = rows.filter((r) => r.value !== undefined), shown = all ? rows : measured.slice(0, 3), more = (all ? 0 : measured.length - shown.length);
   if (!shown.length) return null;
@@ -126,6 +128,19 @@ export function MetricRows({ def, f, model, scan, all, fl }: { def: LensDef; f: 
 }
 
 export const hmark = (h: string) => (HEALTH_TEXT[h as keyof typeof HEALTH_TEXT] ?? HEALTH_TEXT.unmeasured).mark;
+
+/** A lens panel on a past date, from timeview's presenter: no now-health, no live field values; the headline's
+ *  reading by then when the scan recorded one, and the dated line. Every variant gets this one on a past date. */
+export function DatedLensPanel({ def, la }: { def: LensDef; la: LensAsOf }) {
+  const hf = def.headline;
+  return (
+    <>
+      <h5><span>{def.short} · {def.name}</span><span className="h">{hmark(la.health)}</span></h5>
+      {la.at === 'then' && hf ? <div className="r key"><span>{hf.label}</span><b>{fmtValue(hf, la.value)}</b></div> : null}
+      <div className="note">{la.why}</div>
+    </>
+  );
+}
 
 export function DefaultLensPanel({ lens, def, f, model, density, expanded, view }: SheetPanelProps) {
   const fl = f.lens[lens];

@@ -5,30 +5,29 @@
 // what depends on it, and the recent activity. The side column keeps the record: the stylised
 // drawing, who owns and built it, the revisions (each one a time-travel link), parts and notes.
 import type { Feature, LensDef } from '@bp/core/data';
-import { NOT_RECORDED, stageView } from '@bp/core/model/timeview';
-import { reasonOf } from '@bp/core/standard/present';
-import { REV_DESC, STAGE_WORD, pname, type Model } from '@bp/core/model';
+import { recordAsOf } from '@bp/core/model/timeview';
+import { REV_DESC, pname, type Model } from '@bp/core/model';
 import { BusinessSection } from '../sheet/Business';
-import { Activity, BuiltBy, Drawing, FeatureLinks, FlaggedBy, Notes, Parts, SwarmSection, stageSince } from '../sheet/SheetBody';
+import { Activity, BuiltBy, Drawing, FeatureLinks, FlaggedBy, Notes, Parts, SwarmSection } from '../sheet/SheetBody';
 import { plainLine, revLabel } from '../sheet/words';
 import { useEngine } from '../hooks';
-import { HWORD, Val, useAsOf, useHeadlineAt, useSimSig } from './bits';
+import { HWORD, Val, useAsOf, useLensAt, useSimSig } from './bits';
 import { CodeTree } from './CodeTree';
 import { Sec, Stagger } from './motion';
 
 function Tile({ f, M, d }: { f: Feature; M: Model; d: LensDef }) {
-  const E = useEngine(), at = useHeadlineAt(f, d), past = at.at !== 'now';
-  const fl = f.lens[d.id], hf = d.headline, v = hf ? M.sim.liveValue(f, d.id, hf.key) : undefined;
-  // on a past date health has no history: the tile says so and shows only a reading the scan recorded then
-  const h = past ? 'unmeasured' : fl?.h ?? 'unmeasured', why = fl && reasonOf(fl);
-  const then = at.at === 'then' ? at : null;
+  const E = useEngine(), la = useLensAt(f, d), past = la.at !== 'now';
+  const hf = d.headline, v = hf ? M.sim.liveValue(f, d.id, hf.key) : undefined;
+  // on a past date health has no history (the presenter's): the tile says so and shows only a reading the scan recorded then
+  const h = la.health, why = la.why;
+  const then = la.at === 'then' ? la : null;
   return (
     <Sec as="div" className={'pg-tile ' + h}>
       <button type="button" onClick={() => E.setView(d.id)} title={'Open the ' + d.name + ' tab'}>
         <span className="top"><span className="sh">{d.short}</span><span className="nm">{d.name}</span><span className="hw">{past ? 'Not recorded' : h === 'na' ? 'N/A' : HWORD[h]}</span></span>
         <span className="lab">{hf ? hf.label : 'No headline field'}</span>
         <b className="big">{hf && (past ? then : h !== 'na') ? <Val k={f.id + ':' + d.id + ':' + hf.key} field={hf} v={then ? then.value : v} /> : '—'}</b>
-        <span className="why">{past ? (then ? 'Read on ' + then.measured + '. Health is not recorded for that date.' : NOT_RECORDED + '.') : h === 'na' ? 'This lens does not apply here.' : why ?? (h === 'unmeasured' ? 'Nothing measured yet.' : 'No rule raised anything.')}</span>
+        <span className="why">{past ? (then ? la.why : la.why + '.') : h === 'na' ? 'This lens does not apply here.' : why ?? (h === 'unmeasured' ? 'Nothing measured yet.' : 'No rule raised anything.')}</span>
       </button>
     </Sec>
   );
@@ -43,14 +42,14 @@ function StatTiles({ f, M }: { f: Feature; M: Model }) {
 export function GeneralTab({ f }: { f: Feature }) {
   const E = useEngine(), M = E.M, P = M.P;
   const blast = M.closure.of(f.id).length;
-  const pl = plainLine(P, f, M.sim), { t, now, past } = useAsOf(), sv = stageView(f, t, now);
+  const { t, now } = useAsOf(), rec = recordAsOf(f, t, now), pl = rec.at === 'now' ? plainLine(P, f, M.sim) : null;
   return (
     <>
     <div className="pg-lede">
       <p className="sum">{f.summary}</p>
-      {past
-        ? <p className="plain"><b>{sv.at === 'then' ? STAGE_WORD[sv.stage] : sv.at === 'before' ? 'Not on the drawing yet' : 'Stage unknown'}</b> on {t}. How it was doing then is not recorded.</p>
-        : <p className="plain"><b>{pl.strong}</b> {pl.rest.join(' ')} {pl.bad && <span className="bad">{pl.bad}</span>}</p>}
+      {rec.lede
+        ? <p className="plain"><b>{rec.lede.strong}</b> {rec.lede.rest}</p>
+        : pl && <p className="plain"><b>{pl.strong}</b> {pl.rest.join(' ')} {pl.bad && <span className="bad">{pl.bad}</span>}</p>}
       {f.blockedBy.length ? <p className="blk">Blocked by {f.blockedBy.map((x) => <button key={x} type="button" className="btn" onClick={() => E.openFeature(x)}>{P.F[x].name}</button>)}</p> : null}
     </div>
     <div className="pg-cols">
@@ -72,12 +71,10 @@ export function GeneralTab({ f }: { f: Feature }) {
         <Sec className="mtb" label="Record">
           <div><span className="l">Owner</span>{pname(P, f.owner)}</div>
           <div><span className="l">Built by</span><BuiltBy f={f} /></div>
-          {/* on a past date these two have a dated answer and a not-recorded one: health has no history
-              (so never the now-flags) and the stage replays, exactly as the ladder and the lede read it */}
-          <div><span className="l">Flagged by</span>{past ? NOT_RECORDED : <FlaggedBy f={f} />}</div>
-          <div><span className="l">Stage</span>{past
-            ? (sv.at === 'then' ? STAGE_WORD[sv.stage] : sv.at === 'before' ? 'Not on the drawing yet' : 'Stage unknown') + ' on ' + t
-            : stageSince(f)}</div>
+          {/* on a past date these two have a dated answer and a not-recorded one (the presenter's): health has
+              no history (so never the now-flags) and the stage replays, exactly as the ladder and the lede read it */}
+          <div><span className="l">Flagged by</span>{rec.at === 'now' ? <FlaggedBy f={f} /> : rec.flagged}</div>
+          <div><span className="l">Stage</span>{rec.stage}</div>
           <div className="full"><span className="l">Lives in</span>{f.surfaces.length ? f.surfaces.map((s) => <span key={s} className="ag" style={{ margin: '0 4px 0 0' }}>{s}</span>) : '—'}</div>
         </Sec>
         <Sec label="Revisions">

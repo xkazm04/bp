@@ -9,11 +9,12 @@
 // harness-measured metrics, when the scan has shots; a feature the harness could not render says why,
 // from the scan's "unscreenable: <why>" note), the Business
 // section (a lens whose reader role is business). Blocks are chosen by data, never by lens id. A
-// variant's `ui.SheetPanel` replaces the body (headline to the rest) as it replaced the sheet panel.
+// variant's `ui.SheetPanel` replaces the body (headline to the rest) as it replaced the sheet panel, at now only:
+// on a past date the body reads timeview's presenter (lensAsOf) and the variant panel is not mounted.
 import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Feature } from '@bp/core/data';
 import type { Density } from '@/engine/lens/contract';
-import { DENSITY_COUNT, hotHealth, reasonOf } from '@bp/core/standard/present';
+import { DENSITY_COUNT, hotHealth } from '@bp/core/standard/present';
 import { baseId, fmtValue, metricHistory, pname, shotsByRun, type Model } from '@bp/core/model';
 import type { ScanSnapshot } from '@bp/core/scan/types';
 import { BusinessSection } from '../sheet/Business';
@@ -21,8 +22,7 @@ import { ScreensStrip } from '../sheet/Screens';
 import { SwarmSection } from '../sheet/SheetBody';
 import { MoveArrow, Spark, metricMove, metricRows, nfmt } from '../sheet/LensPanel';
 import { useDensity, useEngine, useLive, useVariant } from '../hooks';
-import { NOT_RECORDED } from '@bp/core/model/timeview';
-import { HWORD, KpiRows, Val, useAsOf, useHeadlineAt, useSimSig } from './bits';
+import { HWORD, KpiRows, Val, useAsOf, useLensAt, useSimSig } from './bits';
 import { Sec, Stagger } from './motion';
 
 /** A reading's evidence text: two lines, and "more" when it runs longer (the toggle shows only then). */
@@ -49,7 +49,7 @@ function evidenceOf(scan: ScanSnapshot | undefined, f: Feature, lens: string, ke
  *  and the latest reading's evidence text. */
 const Metrics = memo(function Metrics({ lens, f, M, scan, all, sig }: { lens: string; f: Feature; M: Model; scan: ScanSnapshot | undefined; all: boolean; sig: string }) {
   // rows depend on the scan, the feature and the sim's live values (sig): nothing else moves them
-  const d = M.P.LENS[lens], { t, now } = useAsOf(), rows = useMemo(() => metricRows(d, f, M, scan, { t, now }), [d, f, M, scan, sig, t, now]), fl = f.lens[lens];  // eslint-disable-line react-hooks/exhaustive-deps
+  const d = M.P.LENS[lens], { t, now } = useAsOf(), rows = useMemo(() => metricRows(d, f, M, scan, { t, now }), [d, f, M, scan, sig, t, now]), fl = t < now ? undefined : f.lens[lens];  // eslint-disable-line react-hooks/exhaustive-deps
   const shown = all || t < now ? rows : rows.filter((r) => r.value !== undefined);
   if (!shown.length) return null;
   const measured = shown.filter((r) => r.value !== undefined).length;
@@ -74,9 +74,9 @@ const Metrics = memo(function Metrics({ lens, f, M, scan, all, sig }: { lens: st
 });
 
 const Body = memo(function Body({ lens, f, M, density }: { lens: string; f: Feature; M: Model; density: Density; sig: string }) {
-  const d = M.P.LENS[lens], fl = f.lens[lens], sim = M.sim, { t, past } = useAsOf(), at = useHeadlineAt(f, d);
-  // on a past date health has no history; the headline is the scan's reading by then, else nothing
-  const h = past ? 'unmeasured' : fl?.h ?? 'unmeasured', then = at.at === 'then' ? at : null;
+  const d = M.P.LENS[lens], fl = f.lens[lens], sim = M.sim, { t, past } = useAsOf(), la = useLensAt(f, d);
+  // on a past date health has no history (the presenter's); the headline is the scan's reading by then, else nothing
+  const h = la.health, then = la.at === 'then' ? la : null;
   const val = (k: string) => sim.liveValue(f, lens, k);
   // core feature-bound fields (stage, priority) live in the page header, not here
   const own = (x: (typeof d.fields)[number]) => !(x.source && 'feature' in x.source);
@@ -96,7 +96,7 @@ const Body = memo(function Body({ lens, f, M, density }: { lens: string; f: Feat
         </div>
         <div className="hh">
           <span className="hw">{past ? 'Not recorded' : HWORD[h]}</span>
-          <p className="why">{past ? (then ? 'Read on ' + then.measured + '. Health is not recorded for that date.' : NOT_RECORDED + ' (' + t + ').') : h === 'na' ? 'This lens does not apply to this feature.' : h === 'unmeasured' && !fl?.facet ? 'No ' + d.name.toLowerCase() + ' reading for this feature yet.' : (fl && reasonOf(fl)) ?? 'No rule raised anything: it reads ' + HWORD[h].toLowerCase() + '.'}</p>
+          <p className="why">{past ? (then ? la.why : la.why + ' (' + t + ').') : h === 'na' ? 'This lens does not apply to this feature.' : h === 'unmeasured' && !fl?.facet ? 'No ' + d.name.toLowerCase() + ' reading for this feature yet.' : la.why ?? 'No rule raised anything: it reads ' + HWORD[h].toLowerCase() + '.'}</p>
           {!past && fl?.ov ? <p className="ov"><b>Held at {fl.ov.health.toUpperCase()}</b> by {pname(M.P, fl.ov.by)} until {fl.ov.until}{fl.why ? '. The rules say: ' + fl.why : ''}</p> : null}
         </div>
       </Sec>
@@ -154,7 +154,8 @@ export function LensTab({ lens, f }: { lens: string; f: Feature }) {
   const sig = useSimSig((sm) => (d ? d.fields.map((x) => String(sm.liveValue(f, lens, x.key))).join('|') : ''));
   if (!d) return null;
   const density = dens(lens), scan = live?.product.scan, fl = f.lens[lens];
-  const Panel = V.ui?.SheetPanel;
+  // a variant panel reads now-values and is handed no date: on a past date the dated body stands in for it
+  const Panel = past ? undefined : V.ui?.SheetPanel;
   // attachments, by data: screens belong to a lens that measures through the harness; Business to a business reader
   const shots = d.fields.some((x) => x.metric?.method === 'harness');
   const biz = d.role === 'business';
