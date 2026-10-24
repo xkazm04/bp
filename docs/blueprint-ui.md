@@ -602,6 +602,15 @@ gets out of the plan's way, and L4 is a page. Earlier sections that say "dock", 
     rows when the lens has metric fields; the Screens strip when it has harness metrics and
     shots; Business when its reader role is `business`; and its KPIs, decisions and orders.
     Density follows `reader.density`.
+  - **What clears it** (`standard/clear.ts`, `check:clear-path`). Rules are first-match, so the
+    reason names one rule. Under it the lens tab lists every matching rule worse than the default as
+    one step (field: now → target, and the health it clears): a number flips at its bound, an enum
+    takes the last declared value no unwell rule matches, a boolean its other value, an `all` clears
+    through a leaf that is not feature-bound (the stage is never the advice). The steps are verified
+    (every target applied, the rules re-run); without a verified list it says why instead. For a
+    watch or good reading it adds the margin to the next worse bound. Under an override the list is
+    headed "The rules alone ask for"; on a past date it is absent. The General tile adds "· N steps
+    to clear" when N > 1; the phone's expanded panel carries the list, cut by density.
   - **Time travel on the page** (`lib/model/timeview.ts`, `check:timeview`). When the plan is travelled
     back, the header carries an "As of <date> / Back to now" marker. The stage ladder and the lede
     show the stage on that date (`stageAt`, replayed from the events log); a headline or metric shows
