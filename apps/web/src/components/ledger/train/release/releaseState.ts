@@ -7,8 +7,8 @@
 // Value-free of React, so it stays cheap to import from the header strip.
 import type { Measurement, Proposal, Release, ReleaseStatus } from '@bp/core/scan/types';
 import type { JobStatus, ScanJob } from '@bp/core/scan/jobs';
-import { verdictOf, type LensFields, type Verdict } from '@bp/core/scan/compare';
-import { isFlagged } from '@bp/core/train/rules';
+import type { LensFields } from '@bp/core/scan/compare';
+import { conflictsIn, fmtValue, isConflict, noteItem, releaseNotes, type NoteItem } from '@bp/core/train/notes';
 import { KEYMAP, type KeyAction } from '../keymap';
 import type { TrainData } from '../data';
 
@@ -132,13 +132,7 @@ export function elapsed(j: ScanJob, now: number): string | undefined {
 
 // ------------------------------------------------------------------------------------------- package evidence
 /** One package item with its evidence: the verdict and the readings it compares, and whether it ships flagged. */
-export interface PkgItem {
-  p: Proposal;
-  verdict: Verdict;
-  from?: Measurement;
-  to?: Measurement;
-  flagged: boolean;
-}
+export type PkgItem = NoteItem;
 
 /** Readings by proposal id and phase, one pass over the measurements. */
 export function readingsBy(ms: readonly Measurement[]): Map<string, { before: Measurement[]; after: Measurement[] }> {
@@ -154,13 +148,10 @@ export function readingsBy(ms: readonly Measurement[]): Map<string, { before: Me
 
 const NONE = { before: [] as Measurement[], after: [] as Measurement[] };
 
-/** An item's evidence. Accepted from failed is still flagged: its build did not pass its gates. */
+/** An item's evidence (notes.ts noteItem: the verdict and the flag rule live there). */
 export function evidenceOf(p: Proposal, by: ReadonlyMap<string, { before: Measurement[]; after: Measurement[] }>, lenses: readonly LensFields[]): PkgItem {
-  const e = by.get(p.id) ?? NONE, v = verdictOf(p, e.before, e.after, lenses);
-  const out: PkgItem = { p, verdict: v.verdict, flagged: isFlagged({ status: p.triaged_from === 'failed' ? 'failed' : p.status }, v.verdict) };
-  if (v.from) out.from = v.from;
-  if (v.to) out.to = v.to;
-  return out;
+  const e = by.get(p.id) ?? NONE;
+  return noteItem(p, e.before, e.after, lenses);
 }
 
 /** Items grouped by lens, first seen first. */
@@ -170,37 +161,19 @@ export function byLens<T extends { p: Proposal }>(xs: readonly T[]): [string, T[
   return [...m];
 }
 
-/** A rework item sent back by a release's cherry-pick conflict (its note says so). */
-export const isConflict = (p: Pick<Proposal, 'triage_note'>): boolean => /^conflict on release\//.test(p.triage_note ?? '');
-
-const short = (sha: string | undefined) => (sha ? sha.slice(0, 7) : 'none');
-const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+export { isConflict };
 
 /**
- * The notes the release run will write, as a preview from the package: per item the title, lens, feature, the metric's
- * before -> after with its unit and verdict, the commit, and a flagged item's triage note; then the items a conflict
- * sent back to rework, and the gates (the run writes their results).
+ * The notes the release run will write, as a preview from the package: notes.ts releaseNotes in mode "preview", the
+ * one writer Kettle's sample run also calls, so the stored notes repeat these lines (scripts/check-release-notes.ts).
  */
-export function notesPreview(product: string, version: string, items: readonly PkgItem[], conflicts: readonly Proposal[]): string {
-  const out = [`## ${product} ${version} (preview)`, '', `${items.length} change${items.length === 1 ? '' : 's'} from the lens release train, each measured before and after.`, ''];
-  for (const x of items) {
-    const p = x.p, u = x.from?.unit ? ' ' + x.from.unit : '';
-    const move = x.from && x.to ? `${p.metric} ${fmt(x.from.value)} -> ${fmt(x.to.value)}${u} (${x.verdict})` : 'unmeasured';
-    out.push(`- **${p.title}** · ${p.lens} · ${p.feature}: ${move} · commit ${short(p.commit_sha)}`);
-    if (x.flagged && p.triage_note) out.push(`  - Shipped flagged: ${p.triage_note}`);
-  }
-  if (conflicts.length) {
-    out.push('', '### Back to rework (cherry-pick conflict)');
-    for (const p of conflicts) out.push(`- ${p.title}: ${p.triage_note ?? ''}`);
-  }
-  out.push('', '### Gates', `The release job runs the product's gates on release/${version} and lists them here.`);
-  return out.join('\n') + '\n';
-}
+export const notesPreview = (product: string, version: string, items: readonly PkgItem[], conflicts: readonly Proposal[]): string =>
+  releaseNotes({ product, version, mode: 'preview', items, conflicts });
 
 /** `before → after unit` for a package line ("unmeasured" when a side is missing). */
 export function moveText(x: Pick<PkgItem, 'from' | 'to'>): string {
   if (!x.from || !x.to) return 'unmeasured';
-  return `${fmt(x.from.value)} → ${fmt(x.to.value)}${x.from.unit ? ' ' + x.from.unit : ''}`;
+  return `${fmtValue(x.from.value)} → ${fmtValue(x.to.value)}${x.from.unit ? ' ' + x.from.unit : ''}`;
 }
 
 // ------------------------------------------------------------------------------------------- the tab's model
@@ -221,4 +194,4 @@ export interface ReleaseModel {
 
 /** Rework items a release's cherry-pick conflict sent back (all of them with no open release). */
 export const conflictsOf = (m: Pick<ReleaseModel, 'T' | 'rel'>): Proposal[] =>
-  m.T.proposals.filter((p) => p.status === 'rework' && isConflict(p) && (!m.rel || (p.triage_note ?? '').startsWith('conflict on ' + m.rel.branch)));
+  conflictsIn(m.T.proposals, m.rel?.branch);

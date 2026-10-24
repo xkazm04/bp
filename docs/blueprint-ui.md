@@ -824,8 +824,10 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
   accepted items with no release, then what release-add left out), the package by lens (flagged items with their
   notes; Compare and Undo per item while the release is a draft), the rework queue and the descoped, the stepper
   **draft → building → pr-open → merged → tagged** (failed shows at the step it failed on, with Retry), the job log,
-  the notes it will publish, and the history of past releases. **Build** (B) and **Finish** (F) run Claude Code on the
-  person's machine with their own `gh` login (the build and finish routes; 412 while gh is not logged in): Build
+  the notes it will publish (one writer, `@bp/core/train/notes` `releaseNotes`: the preview and the notes Kettle's
+  sample run stores share every line after the header, each item naming its commit and pack, then the conflict's
+  rework items and the gates; `check:release-notes`), and the history of past releases. **Build** (B) and
+  **Finish** (F) run Claude Code on the person's machine with their own `gh` login (the build and finish routes; 412 while gh is not logged in): Build
   cherry-picks the accepted commits onto `release/<version>`, runs the gates, writes the notes and opens the PR; Finish,
   after the merge on GitHub, tags, publishes and marks the items released. Progress comes only from the stream (the
   release rows and the jobs event), never from polling. Esc goes back to triage.
