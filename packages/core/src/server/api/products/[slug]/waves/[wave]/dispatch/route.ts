@@ -6,33 +6,36 @@
 // body or package; 404 for an unknown product, wave or missing store; 429 `{ error, wave, jobs, approved, skipped }` when the
 // queue cap stopped it (the jobs queued so far are recorded in the wave, the approvals stand); 503 when the store stayed locked.
 // Localhost only. Kettle, where this process hosts its sim (kettle-sim.server.ts): the sim dispatches it, with the same answers.
-import { unknownProduct } from '@bp/core/server/products.server';
-import { findProduct, hasStore } from '@bp/core/server/products.server';
-import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
+// Admission (guards, product, wave id, Kettle, JSON body, store): the route door (route-door.server.ts).
+import { door } from '@bp/core/server/route-door.server';
 import { SAFE_ID } from '@bp/core/scan/jobs';
 import { dispatchWave } from '@bp/core/server/waves.server';
-import { kettleSim, simAnswer } from '@bp/core/server/kettle-sim.server';
 
-export async function POST(req: Request, { params }: { params: Promise<{ slug: string; wave: string }> }): Promise<Response> {
-  const denied = localOnly(req);
-  if (denied) return Response.json({ error: denied }, { status: 403 });
-  const notJson = jsonOnly(req);
-  if (notJson) return Response.json({ error: notJson }, { status: 415 });
-  const { slug, wave } = await params;
-  const k = kettleSim(slug), p = findProduct(slug);
-  if (!p && !k) return unknownProduct(slug);
-  if (!SAFE_ID.test(wave)) return Response.json({ error: 'bad wave id' }, { status: 400 });
-  let body: unknown;
-  try { body = await req.json(); } catch { return Response.json({ error: 'body must be JSON' }, { status: 400 }); }
+/** The package ids asked for (undefined = every package), or the 400. */
+function packagesOf(body: unknown): string[] | undefined | Response {
   const names = (body as { packages?: unknown } | null)?.packages;
   if (names !== undefined && (!Array.isArray(names) || !names.length || names.some((n) => typeof n !== 'string' || !SAFE_ID.test(n)))) {
     return Response.json({ error: 'packages must be a list of package ids' }, { status: 400 });
   }
-  if (k) return simAnswer(() => k.dispatchWave(wave, names as string[] | undefined), 202);
-  if (!p) return unknownProduct(slug);
-  if (!hasStore(p)) return Response.json({ error: `no scan store for ${slug}` }, { status: 404 });
-  try {
-    const r = dispatchWave(slug, p, wave, names as string[] | undefined);
-    return Response.json(r.body, { status: r.status });
-  } catch (e) { return Response.json({ error: `dispatch failed: ${(e as Error).message}` }, { status: 503 }); }
+  return names as string[] | undefined;
+}
+
+const dispatch = door('products/[slug]/waves/[wave]/dispatch', {
+  POST: {
+    params: ({ wave }) => (SAFE_ID.test(wave ?? '') ? null : Response.json({ error: 'bad wave id' }, { status: 400 })),
+    body: packagesOf,
+    store: 'required',
+    kettle: (k, { params, body }) => k.dispatchWave(params.wave, body as string[] | undefined),
+    kettleStatus: 202,
+    live: ({ slug, product: p, params, body }) => {
+      try {
+        const r = dispatchWave(slug, p, params.wave, body as string[] | undefined);
+        return Response.json(r.body, { status: r.status });
+      } catch (e) { return Response.json({ error: `dispatch failed: ${(e as Error).message}` }, { status: 503 }); }
+    },
+  },
+});
+
+export async function POST(req: Request, ctx: { params: Promise<{ slug: string; wave: string }> }): Promise<Response> {
+  return dispatch.POST(req, ctx);
 }
