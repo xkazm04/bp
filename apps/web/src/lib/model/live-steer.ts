@@ -2,7 +2,8 @@
 // steers (push, pause, resume, an order) move the simulated swarm; on a live product they would move local state the
 // next feed puts back, so they are refused there (`commitSample`) and not offered (`steerVerbs`). Instead three verbs
 // move real work through the same calls the right-click menu and the ledger use (src/lib/scan/actions.ts):
-//   - measure: one selection scan per scannable lens over the target's features (at most MAX_SELECTION);
+//   - measure: one selection scan per scannable lens over the target's features (at most MAX_SELECTION), leaving out
+//              per lens what was read in the last FRESH_MS or an open scan of that lens covers ("Measure all" undoes it);
 //   - build:   ONE execute job over the proposals already approved in the target. dispatch() approves what it is
 //              given, so only approved ids are ever passed: the Review queue stays the one place anything is approved;
 //   - stop:    cancel the queued or running jobs whose features meet the target.
@@ -15,7 +16,7 @@ import { scannable, type ScanJob } from '@bp/core/scan/jobs';
 import { LIVE_VERB_LABEL, planLive, plural as s, slots, type LivePlan, type LiveVerb, type SteerFacts } from '@bp/core/scan/live-plan';
 export { LIVE_VERB_LABEL, planLive, slots, type LiveLens, type LivePlan, type LiveVerb, type SteerFacts } from '@bp/core/scan/live-plan';
 import type { Track, TrackNext } from '@bp/core/scan/track';
-import type { Proposal } from '@bp/core/scan/types';
+import type { Measurement, Proposal } from '@bp/core/scan/types';
 import { baseId, type Product } from '@bp/core/model/product';
 import type { Preview, SwarmSim } from '@bp/core/model/sim';
 
@@ -39,10 +40,12 @@ export function targetFeatures(P: Product, ids: Readonly<Record<string, 1>>): st
   const want = new Set(Object.keys(ids).map(baseId));
   return P.base.features.filter((f) => want.has(f.id)).map((f) => f.id);
 }
-/** The facts for a plan over the target, from the model and the live product's jobs and scan. */
-export function steerFacts(P: Product, tgt: { ids: Readonly<Record<string, 1>>; label: string }, jobs: readonly ScanJob[], proposals: readonly Proposal[]): SteerFacts {
+/** The facts for a plan over the target, from the model and the live product's jobs and scan; `read` (the scan's readings
+ *  and the time now) lets Measure here leave out what is fresh. A track's confirming measure passes none: it re-reads. */
+export function steerFacts(P: Product, tgt: { ids: Readonly<Record<string, 1>>; label: string }, jobs: readonly ScanJob[], proposals: readonly Proposal[],
+  read?: { measurements: readonly Measurement[]; nowMs: number }): SteerFacts {
   const lenses = P.lenses.map((d) => ({ id: d.id, name: d.name, ok: scannable({ id: d.id, manifest: d.manifest }, false) }));
-  return { label: tgt.label || 'the selection', features: targetFeatures(P, tgt.ids), lenses, jobs, proposals };
+  return { label: tgt.label || 'the selection', features: targetFeatures(P, tgt.ids), lenses, jobs, proposals, ...read };
 }
 
 /** Run a committed plan through the scan actions. Answers the toast: what started, or each refusal in words. */
@@ -50,7 +53,7 @@ export async function runLivePlan(ctx: ScanCtx, p: LivePlan, lensName: (id: stri
   if (p.verb === 'measure') {
     const rs = await Promise.allSettled(p.scans.map((x) => startSelectionScan(ctx, x.lens, x.features)));
     const bad = rs.map((r, i) => (r.status === 'rejected' ? lensName(p.scans[i].lens) + ': ' + refusalText(r.reason) : null)).filter((x): x is string => !!x);
-    const n = rs.length - bad.length, nf = p.scans[0]?.features.length ?? 0;
+    const n = rs.length - bad.length, nf = new Set(p.scans.flatMap((x) => x.features)).size;
     if (bad.length) return { strong: n ? 'Some scans did not start' : 'Scan not started', text: bad.join('; ') };
     return { strong: 'Measuring ' + s(n, 'lens', 'lenses'), text: p.label + ' · ' + s(nf, 'feature') };
   }

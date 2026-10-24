@@ -3,9 +3,9 @@
 // repeat (`scopeFacts`: the job already on it, the last read, the queue room). Pure.
 import type { Layout } from '../model/layout.ts';
 import type { Product } from '../model/product.ts';
-import type { Measurement, ScanSnapshot } from './types.ts';
+import type { ScanSnapshot } from './types.ts';
 import { isJobNote, MAX_QUEUED, type ScanJob, type ScanScope, type ScanScopeKind } from './jobs.ts';
-import { isCurrent, measuredFeatures } from './derive.ts';
+import { lastRead, measuredFeatures } from './derive.ts';
 import { ago, jobLiveness } from './liveness.ts';
 
 export interface ScopeOption { kind: ScanScopeKind; /** "Feature", "Bay", "Room", "Wing", "Everything". */ title: string; scope: ScanScope }
@@ -81,24 +81,6 @@ export interface ScopeFacts {
   /** Features with a current (isCurrent) reading of this lens, of the asked, and the oldest and newest of their latest readings. */
   read: { measured: number; of: number; oldestMs?: number; newestMs?: number };
   queue: QueueRoom;
-}
-
-/** lens -> feature -> its newest current reading's time; cached by the measurements table's identity, as measureIndex is. */
-const LAST_READ = new WeakMap<readonly Measurement[], Map<string, Map<string, number>>>();
-function lastRead(measurements: readonly Measurement[]): Map<string, Map<string, number>> {
-  let ix = LAST_READ.get(measurements);
-  if (ix) return ix;
-  ix = new Map();
-  for (const m of measurements) {
-    if (!isCurrent(m)) continue;
-    const t = Date.parse(m.measured_at);
-    if (!Number.isFinite(t)) continue;
-    let by = ix.get(m.lens);
-    if (!by) ix.set(m.lens, (by = new Map()));
-    if (!(by.get(m.feature)! >= t)) by.set(m.feature, t);
-  }
-  LAST_READ.set(measurements, ix);
-  return ix;
 }
 
 const RANK = { running: 0, stale: 1, queued: 2 } as const;

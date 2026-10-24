@@ -12,6 +12,7 @@ import type { ToastItem } from '@/engine/state';
 import { illoSVG } from '@/engine/render/illo';
 import { lensFailed } from '@/engine/render/plan';
 import { steerVerbs } from '@/lib/model/live-steer';
+import { altLabel } from '@bp/core/scan/live-plan';
 import { selbarStepsAside } from '@/lib/model/preview-seat';
 import { optHover, shallowEqual, useAnswerNote, useBp, useEngine, useLive, useVariant } from './hooks';
 import { LiveSteerButtons } from './LiveSteer';
@@ -296,6 +297,7 @@ export function SelBar() {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button type="button" className="bt go" onClick={() => E.commitPreview()}>Commit · Enter</button>
           <button type="button" className="bt" onClick={() => E.cancelPreview()}>Cancel · Esc</button>
+          {s.lprev?.alt ? <button type="button" className="bt" onClick={() => E.previewLive(s.lprev!.alt!)}>{altLabel(s.lprev)}</button> : null}
           <span style={{ alignSelf: 'center', fontSize: 13, color: 'var(--ink-2)' }}>{s.lprev ? 'Nothing has started yet. Commit starts it on the product.' : 'Nothing has moved yet. The plan shows what would.'}</span>
         </div>
       </motion.div>

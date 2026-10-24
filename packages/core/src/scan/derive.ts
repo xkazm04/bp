@@ -52,6 +52,25 @@ export function measureIndex(measurements: readonly Measurement[]): MeasureIndex
   return ix;
 }
 
+/** lens -> feature -> its newest current reading's time (isCurrent: a branch reading never counts); cached by the
+ *  measurements table's identity, as measureIndex is. What "read recently" means to a scan scope's facts and a Measure plan. */
+const LAST_READ = new WeakMap<readonly Measurement[], Map<string, Map<string, number>>>();
+export function lastRead(measurements: readonly Measurement[]): Map<string, Map<string, number>> {
+  let ix = LAST_READ.get(measurements);
+  if (ix) return ix;
+  ix = new Map();
+  for (const m of measurements) {
+    if (!isCurrent(m)) continue;
+    const t = Date.parse(m.measured_at);
+    if (!Number.isFinite(t)) continue;
+    let by = ix.get(m.lens);
+    if (!by) ix.set(m.lens, (by = new Map()));
+    if (!(by.get(m.feature)! >= t)) by.set(m.feature, t);
+  }
+  LAST_READ.set(measurements, ix);
+  return ix;
+}
+
 /** The latest reading of one metric of one feature on one lens. */
 export const latestReading = (scan: Pick<ScanSnapshot, 'measurements'> | undefined, feature: string, lens: string, metric: string): Measurement | undefined =>
   scan ? measureIndex(scan.measurements).latest.get(metricKey(feature, lens, metric)) : undefined;

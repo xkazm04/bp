@@ -10,7 +10,10 @@
 //       preview on live;
 //   (e) liveSwarm over Kettle's map routes a security proposal to jonas (queueFor('jonas').mine), a lens no person
 //       reads to the feature's owner, and a map that names nobody to LIVE_DECIDER;
-//   (f) after a feed no live agent is left paused, and the proposal its lens agent waits on holds 1 (others 0).
+//   (f) after a feed no live agent is left paused, and the proposal its lens agent waits on holds 1 (others 0);
+//   (g) Measure skips, per lens, the features read in the last 24 h (a current reading) or covered by an open measure
+//       job of that lens, says so, and carries the whole plan as `alt` (committing it scans all 5 per lens); with
+//       nothing to skip the plan is today's, and with everything skipped it is the whole plan with no alt.
 // (a)-(c) run the real routes and job registry over the fake Claude Code CLI (scripts/fixtures/fake-claude.mjs, as
 // check-scan-jobs does), reached through the same scan actions the UI calls (a fetch stub hands the client's requests
 // to the route handlers). Run: node scripts/check-live-steer.ts (scripts/overlays-loader.mjs transpiles src;
@@ -137,6 +140,18 @@ try {
   expect(!!again.off && /Review queue/.test(again.off) && !again.build.length, '(c) while that build holds them, build is unavailable: only proposed ones are left, and approving is the Review queue\'s', String(again.off));
   const onlyProposed = LS.planLive('build', facts(['f3', 'f4']));
   expect(!!onlyProposed.off && onlyProposed.off.startsWith('nothing here is approved yet: 2 proposals'), '(c) a target with nothing approved: unavailable with a reason', String(onlyProposed.off));
+
+  // ---------------------------------------------------------------- (g) committing the Measure-all alternative
+  for (const j of J.list('prod')) J.cancel('prod', j.id);
+  const seen = new Set(J.list('prod').map((j: Any) => j.id)), nowG = Date.now();
+  const freshG = ['f1', 'f2'].map((f, i) => ({ id: 900 + i, run_id: 'r0', feature: f, lens: 'slow.a', metric: 'score', value: 1, measured_at: new Date(nowG - 2 * 3600000).toISOString() }));
+  const pg = LS.planLive('measure', { ...facts(TARGET), measurements: freshG, nowMs: nowG });
+  const sa = pg.scans.find((x: Any) => x.lens === 'slow.a');
+  expect(!!sa && sa.features.join() === 'f3,f4,f5' && !!pg.alt, '(g) the plan leaves f1, f2 out of slow.a and carries the whole plan as alt', JSON.stringify([pg.scans, !!pg.alt]));
+  const tg = pg.alt ? await LS.runLivePlan(ctx, pg.alt) : null;
+  const gj = J.list('prod').filter((j: Any) => j.kind === 'measure' && !seen.has(j.id));
+  expect(!!tg && gj.length === 4 && gj.map((j: Any) => j.lens).sort().join() === SLOW.join() && gj.every((j: Any) => j.scope.kind === 'selection' && j.scope.features.join() === TARGET.join()),
+    '(g) committing plan.alt starts one selection scan per lens over all 5 slugs', JSON.stringify([tg, gj.map((j: Any) => [j.lens, j.scope.features])]));
 } finally {
   for (const j of J.list('prod')) J.cancel('prod', j.id);
   globalThis.fetch = fetch0;
@@ -218,6 +233,37 @@ const kfacts = LS.steerFacts(M.P, { ids: { [f0]: 1 }, label: '' }, [], scan.prop
 const scanOk = kfacts.lenses.filter((l: Any) => l.ok).map((l: Any) => l.id);
 expect(scanOk.length > 0 && scanOk.every((id: string) => ['development', 'security', 'design', 'performance'].includes(id) || !!M.P.LENS[id].manifest.scan) && kfacts.label === 'the selection',
   '(a) on a live product only lenses with a scan method are measured', scanOk.join());
+
+// ---------------------------------------------------------------- (g) Measure skips what is fresh or in flight, per lens
+{
+  const NOW = Date.parse('2026-10-20T12:00:00Z'), ago = (h: number) => new Date(NOW - h * 3600000).toISOString();
+  const F5 = ['f1', 'f2', 'f3', 'f4', 'f5'], LZ = [{ id: 'design', name: 'Design', ok: true }, { id: 'security', name: 'Security', ok: true }];
+  let mid = 0;
+  const R = (feature: string, lens: string, h: number, x: Any = {}) => ({ id: ++mid, run_id: 'r0', feature, lens, metric: 'score', value: 1, measured_at: ago(h), ...x });
+  const G = (x: Any = {}) => ({ label: 'Room 1', features: F5, lenses: LZ, jobs: [], proposals: [], nowMs: NOW, ...x });
+  const scanOf = (p: Any, lens: string) => p.scans.find((x: Any) => x.lens === lens)?.features.join() ?? null;
+  const p1 = LS.planLive('measure', G({ measurements: [R('f1', 'design', 2), R('f2', 'design', 2), R('f3', 'design', 30)] }));
+  expect(!p1.off && scanOf(p1, 'design') === 'f3,f4,f5', '(g) Design fresh on f1, f2 (2 h) and stale on f3 (30 h) -> the Design scan is f3, f4, f5', JSON.stringify(p1.scans));
+  expect(p1.lines.includes('2 of 5 features were measured on Design in the last 24 h and are left out'), '(g) a line says 2 of 5 were measured on Design in the last 24 h', p1.lines.join(' | '));
+  expect(!!p1.alt && scanOf(p1.alt, 'design') === F5.join() && scanOf(p1.alt, 'security') === F5.join() && !p1.alt.alt, '(g) plan.alt is the whole plan: all 5 on every lens', JSON.stringify(p1.alt && p1.alt.scans));
+  expect(scanOf(p1, 'security') === F5.join() && !!p1.alt, '(g) freshness is per lens: f1 fresh on Design, never read on Security -> Security still holds f1', JSON.stringify(p1.scans));
+  const jq = { id: 'mj-q', kind: 'measure', lens: 'design', status: 'queued', queued_at: ago(0.1), scope: { kind: 'feature', id: 'f4', label: 'F4', features: ['f4'] } };
+  const p3 = LS.planLive('measure', G({ measurements: [], jobs: [jq] }));
+  expect(scanOf(p3, 'design') === 'f1,f2,f3,f5' && scanOf(p3, 'security') === F5.join() && p3.lines.some((l: string) => l.includes('mj-q') && /Design/.test(l)), '(g) a queued Design job over f4 -> f4 left out of Design, with a line naming that job', JSON.stringify([p3.scans, p3.lines]));
+  const ja = { id: 'mj-all', kind: 'measure', lens: 'design', status: 'running', queued_at: ago(0.2), started_at: ago(0.2), scope: { kind: 'all', label: 'Everything', features: [] } };
+  const p3b = LS.planLive('measure', G({ measurements: [], jobs: [ja] }));
+  expect(!p3b.off && scanOf(p3b, 'design') === null && scanOf(p3b, 'security') === F5.join() && p3b.lines.some((l: string) => l.includes('mj-all') && /no Design scan/.test(l)), '(g) a running whole-product Design job -> no Design scan, and the line says so', JSON.stringify([p3b.scans, p3b.lines]));
+  const all = [...F5.map((f) => R(f, 'design', 1)), ...F5.slice(0, 4).map((f) => R(f, 'security', 3))];
+  const jf5 = { ...jq, id: 'mj-f5', lens: 'security', scope: { kind: 'feature', id: 'f5', label: 'F5', features: ['f5'] } };
+  const p4 = LS.planLive('measure', G({ measurements: all, jobs: [jf5] }));
+  expect(!p4.off && scanOf(p4, 'design') === F5.join() && scanOf(p4, 'security') === F5.join() && !p4.alt && /^Everything here was measured in the last 24 h/.test(p4.lines[0] ?? ''),
+    '(g) everything fresh or in flight -> the measure-everything plan, saying so first, with no alt', JSON.stringify([p4.scans, p4.lines[0], !!p4.alt]));
+  const today = LS.planLive('measure', G({ measurements: undefined, nowMs: undefined }));
+  const p5 = LS.planLive('measure', G({ measurements: [R('f1', 'design', 25), R('f2', 'security', 48)] }));
+  expect(JSON.stringify(p5) === JSON.stringify(today) && !p5.alt, '(g) GUARD: no reading inside the window and no open job -> the plan is exactly today\'s, no alt', JSON.stringify([p5, today]));
+  const p6 = LS.planLive('measure', G({ measurements: [R('f1', 'design', 1, { phase: 'after', proposal_id: 'x' })] }));
+  expect(scanOf(p6, 'design') === F5.join() && !p6.alt, '(g) GUARD: an after reading (pack branch) 1 h old does not make the feature fresh', JSON.stringify(p6.scans));
+}
 
 try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a dying child still holds a file */ }
 // Self-proof, every run: seed a defect into the source this check transpiles (BP_OVERLAYS_MUTATE; the loader skips a mutation

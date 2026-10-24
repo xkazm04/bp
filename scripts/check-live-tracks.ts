@@ -145,6 +145,13 @@ const obs = TR.trackOf({ ...base, releases: [rel], proposals: [released], measur
 expect(obs?.stage === 'unknown' && obs.evidence === false && obs.lines.some((l: string) => /observation from before the release/.test(l)), '(c) a reading between the decision and the release is an observation: unknown, not confirmed', JSON.stringify([obs?.stage, obs?.label]));
 const short = TR.trackOf({ ...base, releases: [rel], proposals: [released], measurements: [...base.measurements, M_(50, h(6))] }, 'c1');
 expect(short?.stage === 'not-confirmed' && short.label === 'measured 50, expected 52' && short.next === 'measure', '(c) a current 50 after the release: "measured 50, expected 52", not confirmed', JSON.stringify([short?.stage, short?.label]));
+{ // GUARD: confirming ignores freshness (live-plan.ts skips what was read in the last 24 h only for the selection's Measure here)
+  const read1h = { ...base, releases: [rel], proposals: [released], measurements: [...base.measurements, M_(50, new Date(Date.now() - 3600000).toISOString())] };
+  const MC = buildLiveModel(map, events, read1h, live, 1, () => 0), tc = TR.trackOf(read1h, 'c1');
+  const pc = LS.trackPlan(MC.P, tc, [], read1h.proposals);
+  expect(tc?.next === 'measure' && !!pc && !pc.off && !pc.alt && JSON.stringify(pc.scans) === JSON.stringify([{ lens: 'development', features: [FC] }]),
+    '(c) GUARD: a released, not-confirmed track read 1 h ago still plans its feature on its lens (confirming ignores freshness)', JSON.stringify(pc && [pc.scans, pc.off, tc?.next]));
+}
 const good = TR.trackOf({ ...base, releases: [rel], proposals: [released], measurements: [...base.measurements, M_(53, h(6))] }, 'c1');
 expect(good?.stage === 'confirmed' && good.next === null && good.evidence === true, '(c) 53 after the release meets 52: confirmed', JSON.stringify([good?.stage, good?.label]));
 const noMetric = TR.trackOf({ ...base, releases: [rel], proposals: [{ ...released, metric: undefined }] }, 'c1');

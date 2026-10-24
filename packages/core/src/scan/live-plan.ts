@@ -1,16 +1,24 @@
 // What a verb would do on a live product's selection, in words: the pure half of the selection bar's measure, build and
 // stop (apps/web/src/lib/model/live-steer.ts runs a committed plan). Pure: from the target's features, the product's
-// lenses, its jobs and proposals.
+// lenses, its jobs and proposals (and, for Measure here, the product's readings: what was read recently is left out).
 import { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, jobLabel, type ScanJob } from './jobs.ts';
-import type { Proposal } from './types.ts';
+import type { Measurement, Proposal } from './types.ts';
 import { admitForBuild, busyIds } from './admit.ts';
+import { lastRead } from './derive.ts';
 
 export type LiveVerb = 'measure' | 'build' | 'stop';
 export const LIVE_VERB_LABEL: Record<LiveVerb, string> = { measure: 'Measure here', build: 'Build what is approved here', stop: 'Stop work here' };
 
 export interface LiveLens { id: string; name: string; ok: boolean }
-/** What a plan is computed from: the target's base feature slugs (map order), the product's lenses, its jobs and proposals. */
-export interface SteerFacts { label: string; features: readonly string[]; lenses: readonly LiveLens[]; jobs: readonly ScanJob[]; proposals: readonly Proposal[] }
+/** What a plan is computed from: the target's base feature slugs (map order), the product's lenses, its jobs and proposals.
+ *  With `measurements`, Measure here leaves out, per lens, what an open measure job of that lens covers and (with `nowMs`)
+ *  what a current reading of that lens is younger than FRESH_MS for; without them it plans every feature on every lens. */
+export interface SteerFacts {
+  label: string; features: readonly string[]; lenses: readonly LiveLens[]; jobs: readonly ScanJob[]; proposals: readonly Proposal[];
+  measurements?: readonly Measurement[]; nowMs?: number;
+}
+/** How recent a current reading of a lens is for Measure here to leave that feature out of that lens's scan. */
+export const FRESH_MS = 24 * 3600000;
 export interface LivePlan {
   verb: LiveVerb;
   label: string;
@@ -24,6 +32,8 @@ export interface LivePlan {
   build: string[];
   /** stop: the job ids to cancel. */
   stop: string[];
+  /** measure: the whole plan (every feature on every lens) when this one leaves something out; the preview offers it. */
+  alt?: LivePlan;
 }
 
 
@@ -47,6 +57,27 @@ function jobFeatures(j: ScanJob, byId: ReadonlyMap<string, Proposal>): readonly 
   return [];
 }
 
+/** The preview's button for a plan's `alt` ("Measure all 5 instead"), or null when the plan has none. */
+export const altLabel = (p: Pick<LivePlan, 'alt'>): string | null => (p.alt ? `Measure all ${new Set(p.alt.scans.flatMap((x) => x.features)).size} instead` : null);
+const byIdOf = (F: SteerFacts) => new Map(F.proposals.map((p) => [p.id, p]));
+/** A Measure here plan over `scans` (one per lens), in words: `notes` say what was left out and why. */
+function measurePlan(base: LivePlan, F: SteerFacts, ok: readonly LiveLens[], skip: readonly LiveLens[], scans: LivePlan['scans'], notes: readonly string[]): LivePlan {
+  const sl = slots(F.jobs, scans.length), name = (id: string) => ok.find((l) => l.id === id)?.name ?? id;
+  const even = new Set(scans.map((x) => x.features.length)).size === 1;
+  const lines = [
+    s(scans.length, 'measure job') + ', one per lens (' + (even ? scans.map((x) => name(x.lens)).join(', ') + '), over ' + s(scans[0].features.length, 'feature')
+      : scans.map((x) => name(x.lens) + ': ' + s(x.features.length, 'feature')).join(', ') + ')')
+      + (F.features.length > MAX_SELECTION ? ` (the first ${MAX_SELECTION} of ${F.features.length})` : ''),
+    ...notes,
+    slotLine(sl),
+  ];
+  if (sl.refused) lines.push(`${sl.refused} would be refused: the queue holds ${MAX_QUEUED}`);
+  if (skip.length) lines.push(s(skip.length, 'lens', 'lenses') + (skip.length === 1 ? ' cannot be measured and is left out: ' : ' cannot be measured and are left out: ') + skip.map((l) => l.name).join(', '));
+  lines.push('Each scan shows on these features while it runs; its readings land on the tiles');
+  const plan = { ...base, lines, scans };
+  return sl.now + sl.wait ? plan : { ...plan, off: `the scan queue is full (${MAX_QUEUED} waiting)` };
+}
+
 /** A verb's plan over the target: what it would start, build or stop, in words for the preview. Pure. */
 export function planLive(verb: LiveVerb, F: SteerFacts): LivePlan {
   const base: LivePlan = { verb, label: F.label, title: LIVE_VERB_LABEL[verb] + ': ' + F.label, lines: [], scans: [], build: [], stop: [] };
@@ -55,19 +86,33 @@ export function planLive(verb: LiveVerb, F: SteerFacts): LivePlan {
   if (verb === 'measure') {
     const ok = F.lenses.filter((l) => l.ok), skip = F.lenses.filter((l) => !l.ok);
     if (!ok.length) return { ...base, off: 'no lens of this product can be measured (none has a built-in method or a scan block)' };
-    const fs = F.features.slice(0, MAX_SELECTION), sl = slots(F.jobs, ok.length);
-    const lines = [
-      s(ok.length, 'measure job') + ', one per lens (' + ok.map((l) => l.name).join(', ') + '), over ' + s(fs.length, 'feature')
-        + (F.features.length > fs.length ? ` (the first ${MAX_SELECTION} of ${F.features.length})` : ''),
-      slotLine(sl),
-    ];
-    if (sl.refused) lines.push(`${sl.refused} would be refused: the queue holds ${MAX_QUEUED}`);
-    if (skip.length) lines.push(s(skip.length, 'lens', 'lenses') + (skip.length === 1 ? ' cannot be measured and is left out: ' : ' cannot be measured and are left out: ') + skip.map((l) => l.name).join(', '));
-    lines.push('Each scan shows on these features while it runs; its readings land on the tiles');
-    const plan = { ...base, lines, scans: ok.map((l) => ({ lens: l.id, features: fs })) };
-    return sl.now + sl.wait ? plan : { ...plan, off: `the scan queue is full (${MAX_QUEUED} waiting)` };
+    const fs = F.features.slice(0, MAX_SELECTION);
+    const whole = measurePlan(base, F, ok, skip, ok.map((l) => ({ lens: l.id, features: fs })), []);
+    if (!F.measurements) return whole;
+    const read = lastRead(F.measurements), since = F.nowMs === undefined ? Infinity : F.nowMs - FRESH_MS, hrs = FRESH_MS / 3600000;
+    const scans: LivePlan['scans'] = [], notes: string[] = [], byId = byIdOf(F);
+    for (const l of ok) { // per lens id as a key: a lens is data, never a branch
+      let wide: ScanJob | undefined;
+      const flight = new Map<string, ScanJob>();
+      for (const j of F.jobs) {
+        if (j.kind !== 'measure' || j.lens !== l.id || !open(j)) continue;
+        const jf = jobFeatures(j, byId);
+        if (jf === 'all') wide ??= j;
+        else for (const f of jf) if (!flight.has(f)) flight.set(f, j);
+      }
+      if (wide) { notes.push(`${l.name} is already being measured everywhere (job ${wide.id}, ${wide.status}): no ${l.name} scan`); continue; }
+      const by = read.get(l.id), busy = fs.filter((f) => flight.has(f));
+      const fresh = fs.filter((f) => !flight.has(f) && (by?.get(f) ?? -Infinity) >= since);
+      const keep = fs.filter((f) => !flight.has(f) && !fresh.includes(f));
+      if (fresh.length) notes.push(`${fresh.length} of ${s(fs.length, 'feature')} ${fresh.length === 1 ? 'was' : 'were'} measured on ${l.name} in the last ${hrs} h and ${fresh.length === 1 ? 'is' : 'are'} left out`);
+      if (busy.length) notes.push(`${s(busy.length, 'feature')} ${busy.length === 1 ? 'is' : 'are'} already being measured on ${l.name} (job ${[...new Set(busy.map((f) => flight.get(f)!.id))].join(', ')}) and ${busy.length === 1 ? 'is' : 'are'} left out`);
+      if (keep.length) scans.push({ lens: l.id, features: keep });
+    }
+    if (!notes.length) return whole;
+    if (!scans.length) return { ...whole, lines: [`Everything here was measured in the last ${hrs} h or is being measured now; this measures all of it again`, ...whole.lines] };
+    return { ...measurePlan(base, F, ok, skip, scans, notes), alt: whole };
   }
-  const byId = new Map(F.proposals.map((p) => [p.id, p]));
+  const byId = byIdOf(F);
   if (verb === 'build') {
     const busy = busyIds(F.jobs);
     const mine = F.proposals.filter((p) => here.has(p.feature)).sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0));

@@ -11,11 +11,11 @@ import { shallowEqual, useBp, useEngine, useLive } from './hooks';
 export function LiveSteerButtons({ cls }: { cls: string }) {
   const E = useEngine(), live = useLive();
   const tgt = useBp((s) => s.tgt, shallowEqual);
-  const jobs = live?.product.jobs, proposals = live?.product.scan?.proposals;
+  const jobs = live?.product.jobs, proposals = live?.product.scan?.proposals, measurements = live?.product.scan?.measurements;
   const plans = useMemo(() => {
-    const F = steerFacts(E.M.P, tgt, jobs ?? [], proposals ?? []);
+    const F = steerFacts(E.M.P, tgt, jobs ?? [], proposals ?? [], { measurements: measurements ?? [], nowMs: Date.now() });
     return LIVE_VERBS.map((v) => planLive(v, F));
-  }, [E, tgt, jobs, proposals]);
+  }, [E, tgt, jobs, proposals, measurements]);
   if (!live) return null;
   return (
     <>

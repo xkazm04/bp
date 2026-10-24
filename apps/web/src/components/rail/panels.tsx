@@ -7,6 +7,7 @@ import { useLiveJobs } from '@/lib/scan/client';
 import { latestRun } from '@bp/core/scan/derive';
 import type { ScanJob } from '@bp/core/scan/jobs';
 import { runningScans } from '@bp/core/scan/liveness';
+import { altLabel } from '@bp/core/scan/live-plan';
 import type { ScanSnapshot } from '@bp/core/scan/types';
 import { Mark, StageSym } from '../Symbols';
 import { shallowEqual, useBp, useEngine, useLive } from '../hooks';
@@ -112,12 +113,13 @@ export const mmss = (ms: number) => { const s = Math.max(0, Math.round(ms / 1000
 export function PreviewBox() {
   const E = useEngine();
   const p = useBp((s) => s.lprev ?? s.prev); // a live steer's plan, else the sample's (never both)
+  const alt = useBp((s) => s.lprev?.alt); // Measure here's whole plan, when the shown one leaves fresh or in-flight features out
   if (!p) return null;
   return (
     <div className="prev">
       <div className="big">{p.title}</div>
       <ul>{p.lines.map((l) => <li key={l}>{l}</li>)}</ul>
-      <div className="row"><button type="button" className="bt go" onClick={() => E.commitPreview()}>Commit · Enter</button><button type="button" className="bt" onClick={() => E.cancelPreview()}>Cancel · Esc</button></div>
+      <div className="row"><button type="button" className="bt go" onClick={() => E.commitPreview()}>Commit · Enter</button><button type="button" className="bt" onClick={() => E.cancelPreview()}>Cancel · Esc</button>{alt ? <button type="button" className="bt" onClick={() => E.previewLive(alt)}>{altLabel({ alt })}</button> : null}</div>
     </div>
   );
 }
