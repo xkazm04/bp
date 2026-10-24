@@ -4,7 +4,9 @@
 // lenses" and a compact row of lens buttons (glyph + short). A lens without a scan method (live products: no
 // built-in and no manifest `scan` block) is shown disabled. When the findings ledger holds a selection, a last group,
 // "Ledger selection (n features)", offers the same items over exactly the features behind it (a `selection` scope,
-// capped at MAX_SELECTION). The engine opens it (`contextmenu` -> `S.menu`, canvas
+// capped at MAX_SELECTION). Before the click each item states what the scan would repeat (scopeFacts over
+// useScanJobs, live and Kettle alike): the job of that lens already on the place, the last read, the queue room; a
+// full queue disables every item with the server's words as its description, a duplicate is only shown. The engine opens it (`contextmenu` -> `S.menu`, canvas
 // CSS px); it closes on a choice, Esc, Tab, a click elsewhere, a pan or a wheel. Keys are its own (data-keys="own"):
 // arrows / Home / End move through the items (ProjectSwitcher's roving focus), Enter or Space chooses.
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
@@ -12,10 +14,12 @@ import { overlayRight } from '@/engine/chrome';
 import type { ScanMenuState } from '@/engine/state';
 import { glyph, type GlyphSpec } from '@/engine/render/lens-glyph';
 import { refusalText, startScan, startSelectionScan } from '@/lib/scan/actions';
-import { MAX_SELECTION, scannable, type ScanScope } from '@bp/core/scan/jobs';
+import { MAX_RUNNING, MAX_SELECTION, scannable, type ScanScope } from '@bp/core/scan/jobs';
+import { factsWords, queueRoom, scopeFacts } from '@bp/core/scan/views';
 import { useProjects } from '@/lib/scan/projects';
 import { scopesAt } from '@/lib/scan/scan-views';
 import { shallowEqual, useBp, useEngine, useScanCtx } from './hooks';
+import { useScanJobs } from './rail/panels';
 import { useLedgerSelection } from './ledger/useLedger';
 import { useTheme } from './ThemeToggle';
 import './scan.css';
@@ -74,6 +78,16 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
   const root = ctx.slug ? list?.find((p) => p.slug === ctx.slug)?.root ?? null : null;
 
   const count = (sc: ScanScope) => (sc.kind === 'all' ? P.base.features.length : sc.features.length);
+  // what each (lens, scope) scan would repeat, read once per jobs / rows change
+  const { jobs, scan } = useScanJobs(false, true);
+  const queue = useMemo(() => queueRoom(jobs), [jobs]);
+  const facts = useMemo(() => {
+    const now = Date.now(), all = P.base.features.map((f) => f.id), out = new Map<string, ReturnType<typeof factsWords>>();
+    for (const o of opts) for (const l of lenses) out.set(l.id + '|' + o.kind, factsWords(scopeFacts({ jobs, scan, lens: l.id, features: o.scope.kind === 'all' ? all : o.scope.features, now }), now));
+    return out;
+  }, [jobs, scan, opts, lenses, P]);
+  const fact = (lens: string, kind: string) => facts.get(lens + '|' + kind)!;
+  const qd = queue.full ? 'sm-q' : undefined;
   const close = (refocus = true) => { E.patch({ menu: null }); if (refocus) focusPlan(); };
   const run = (ids: string[], scope: ScanScope) => {
     close();
@@ -125,29 +139,33 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
   return (
     <div ref={ref} id="scanmenu" className="sm" role="menu" aria-label={'Scan ' + what} data-keys="own" onKeyDown={onKey} onContextMenu={(e) => e.preventDefault()} style={{ visibility: 'hidden' }}>
       <div className="sm-h"><span>Scan</span><b title={what}>{what}</b></div>
+      {queue.running + queue.queued > 0 && <div id="sm-q" className={'sm-q' + (queue.full ? ' warn' : '')}>{queue.full ? queue.why : queue.running + ' of ' + MAX_RUNNING + ' running · ' + queue.queued + ' queued'}</div>}
       {opts.map((o) => lensView ? (
-        <button key={o.kind} type="button" role="menuitem" tabIndex={-1} className={'sm-it' + (lensView.ok ? '' : ' off')} aria-disabled={lensView.ok ? undefined : true}
-          onClick={() => lensView.ok && run([lensView.id], o.scope)}>
+        <button key={o.kind} type="button" role="menuitem" tabIndex={-1} className={'sm-it' + (lensView.ok && !queue.full ? '' : ' off')} aria-disabled={lensView.ok && !queue.full ? undefined : true} aria-describedby={qd}
+          title={lensView.ok ? fact(lensView.id, o.kind).say : undefined} onClick={() => lensView.ok && !queue.full && run([lensView.id], o.scope)}>
           <ScanGlyph g={lensView.glyph} />
           <span className="t">Scan {lensView.name} · <i>{o.title}</i> {o.kind === 'all' || o.kind === 'selection' ? '' : o.scope.label}</span>
-          <span className="n">{lensView.ok ? count(o.scope) : 'no scan method'}</span>
+          <span className="n">{lensView.ok ? fact(lensView.id, o.kind).n : 'no scan method'}</span>
         </button>
       ) : (
         <div key={o.kind} className="sm-g" role="group" aria-label={o.kind === 'selection' ? 'Ledger selection (' + count(o.scope) + ' features)' : o.title + ': ' + o.scope.label}>
           {o.kind === 'selection' ? <div className="sm-h"><span>Ledger selection</span><b>{count(o.scope)} features{sel.length > MAX_SELECTION ? ' of ' + sel.length + ' selected' : ''}</b></div> : null}
-          <button type="button" role="menuitem" tabIndex={-1} className={'sm-it' + (scanOk.length ? '' : ' off')} aria-disabled={scanOk.length ? undefined : true}
-            onClick={() => scanOk.length && run(scanOk.map((l) => l.id), o.scope)}>
+          <button type="button" role="menuitem" tabIndex={-1} className={'sm-it' + (scanOk.length && !queue.full ? '' : ' off')} aria-disabled={scanOk.length && !queue.full ? undefined : true} aria-describedby={qd}
+            onClick={() => scanOk.length && !queue.full && run(scanOk.map((l) => l.id), o.scope)}>
             <span className="t">Scan all lenses · <i>{o.title}</i> {o.kind === 'all' || o.kind === 'selection' ? '' : o.scope.label}</span>
             <span className="n">{count(o.scope)}</span>
           </button>
           <div className="sm-ls">
-            {lenses.map((l) => (
-              <button key={l.id} type="button" role="menuitem" tabIndex={-1} className={'sm-l' + (l.ok ? '' : ' off')} aria-disabled={l.ok ? undefined : true}
-                aria-label={'Scan ' + l.name + ', ' + o.title.toLowerCase() + (l.ok ? '' : ': no scan method')} title={l.name + (l.ok ? '' : ': no scan method')}
-                onClick={() => l.ok && run([l.id], o.scope)}>
-                <ScanGlyph g={l.glyph} px={12} />{l.short}
-              </button>
-            ))}
+            {lenses.map((l) => {
+              const f = l.ok ? fact(l.id, o.kind) : null, why = f ? ': ' + f.say : ': no scan method';
+              return (
+                <button key={l.id} type="button" role="menuitem" tabIndex={-1} className={'sm-l' + (l.ok && !queue.full ? '' : ' off')} aria-disabled={l.ok && !queue.full ? undefined : true} aria-describedby={qd}
+                  aria-label={'Scan ' + l.name + ', ' + o.title.toLowerCase() + why} title={l.name + why}
+                  onClick={() => l.ok && !queue.full && run([l.id], o.scope)}>
+                  <ScanGlyph g={l.glyph} px={12} />{l.short}{f?.tag ? <span className="bz"> · {f.tag}</span> : null}
+                </button>
+              );
+            })}
           </div>
         </div>
       ))}

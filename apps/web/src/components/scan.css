@@ -4,6 +4,9 @@
 .sm-h { display: flex; align-items: baseline; gap: 8px; padding: 8px 12px 6px; border-bottom: 1px solid var(--ink-4); }
 .sm-h span { flex: 0 0 auto; font: 500 12px var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-2); }
 .sm-h b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--ink-hi); }
+.sm-q { padding: 4px 12px; border-bottom: 1px solid var(--ink-4); font: 500 12px var(--mono); color: var(--ink-2); }
+.sm-q.warn { color: var(--amber-2); }
+.sm-l .bz { color: var(--ink-2); }
 .sm-g { border-bottom: 1px solid var(--ink-4); padding-bottom: 4px; }
 .sm-g:last-of-type { border-bottom: 0; }
 .sm-it { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 5px 12px; border: 0; border-left: 3px solid transparent; background: none; text-align: left; font: inherit; color: var(--ink); }

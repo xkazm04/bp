@@ -337,5 +337,56 @@ const para = uiDoc.slice(uiDoc.indexOf('Fetch helpers:'), uiDoc.indexOf('Fetch h
 expect(para.includes(`\`REQUEST_TIMEOUT_MS\` (${client.REQUEST_TIMEOUT_MS / 1000} s)`), 'docs/blueprint-ui.md does not state REQUEST_TIMEOUT_MS with the code\'s value');
 expect(para.includes(`\`LENS_DRAFT_TIMEOUT_MS\` (${client.LENS_DRAFT_TIMEOUT_MS / 1000} s)`), 'docs/blueprint-ui.md does not state LENS_DRAFT_TIMEOUT_MS with the code\'s value');
 
+// --------------------------------------------- 9. the scan menu says what a scan would repeat, before the click
+// A right-click scan on a live product starts Claude Code with permissions skipped, and the menu used to show a
+// feature count and nothing else: a lens already scanning the place, when it last read it, and a full queue (the
+// click refused 429, learned from a toast after the menu closed) were all held by the app and never shown.
+// scopeFacts (packages/core/src/scan/views.ts) is that one read; the menu renders it. A duplicate is shown, never
+// refused (the owner asked for parallel scans of one lens): only the queue cap disables.
+{
+  const V = await import('../packages/core/src/scan/views.ts') as Record<string, unknown>;
+  type Facts = { busy?: { status: string; jobId: string; overlap: number; of: number }; read: { measured: number; of: number; oldestMs?: number; newestMs?: number }; queue: { running: number; queued: number; full: boolean; why?: string } };
+  const scopeFacts = (typeof V.scopeFacts === 'function' ? V.scopeFacts : () => undefined) as (a: unknown) => Facts | undefined;
+  const now = Date.parse('2026-10-24T12:00:00Z'), iso = (ms: number) => new Date(ms).toISOString(), H = 3600_000, D = 24 * H;
+  const job = (id: string, o: Record<string, unknown>) => ({ id, kind: 'measure', queued_at: iso(now - 60_000), started_at: o.status === 'running' ? iso(now - 30_000) : undefined, ...o });
+  const room = (features: string[]) => ({ kind: 'room', id: 'r', label: 'R room', features });
+  const EMPTY = { runs: [], measurements: [], proposals: [], activity: [], shots: [], coverage: [], packs: [], releases: [] };
+  const f1 = scopeFacts({ jobs: [job('j1', { lens: 'security', status: 'running', scope: room(['a', 'b', 'c']) })], scan: EMPTY, lens: 'security', features: ['a', 'b'], now });
+  expect(f1?.busy?.status === 'running' && f1.busy.jobId === 'j1' && f1.busy.overlap === 2 && f1.busy.of === 2, 'scopeFacts: a running security job over the room does not read busy 2 of 2 for two of its features', JSON.stringify(f1?.busy));
+  const f2 = scopeFacts({ jobs: [job('q', { lens: 'security', status: 'queued', scope: { kind: 'all', label: 'Everything', features: [] } }), job('d', { lens: 'design', status: 'running', scope: room(['a']) })], scan: EMPTY, lens: 'security', features: ['x', 'y', 'z'], now });
+  const f2d = scopeFacts({ jobs: [job('d', { lens: 'design', status: 'running', scope: room(['a']) })], scan: EMPTY, lens: 'security', features: ['a'], now });
+  expect(f2?.busy?.status === 'queued' && f2.busy.jobId === 'q' && f2.busy.overlap === 3 && f2.busy.of === 3 && !!f2d && f2d.busy === undefined, 'scopeFacts: an all-scope queued job does not cover every feature, or another lens\'s job reads busy', JSON.stringify([f2?.busy, f2d?.busy]));
+  const ended = ['done', 'failed', 'cancelled'].map((status) => job('e-' + status, { lens: 'security', status, scope: room(['a']) }));
+  const other = [job('x', { kind: 'execute', status: 'running', proposals: ['p'] }), job('r', { kind: 'release', status: 'queued', release: 'rel-1', step: 'build' })];
+  const f3 = scopeFacts({ jobs: [...ended, ...other], scan: EMPTY, lens: 'security', features: ['a'], now });
+  expect(!!f3 && f3.busy === undefined && f3.queue.running === 1 && f3.queue.queued === 1, 'scopeFacts: an ended, execute or release job reads busy (or the queue does not count every kind)', JSON.stringify(f3));
+  const ms = (id: number, feature: string, at: number, phase?: string) => ({ id, run_id: 'r1', feature, lens: 'security', metric: 'score', value: 1, measured_at: iso(at), ...(phase ? { phase, proposal_id: 'p' } : {}) });
+  const scan4 = { ...EMPTY, measurements: [ms(1, 'a', now - 3 * D), ms(2, 'a', now - 2 * D), ms(3, 'b', now - H), ms(4, 'c', now - 60_000, 'after'), { ...ms(5, 'c', now - 1000), lens: 'design' }] };
+  const f4 = scopeFacts({ jobs: [], scan: scan4, lens: 'security', features: ['a', 'b', 'c'], now });
+  expect(f4?.read.measured === 2 && f4.read.of === 3 && f4.read.oldestMs === now - 2 * D && f4.read.newestMs === now - H, 'scopeFacts: the last read is not 2 of 3, oldest 2 d, newest 1 h (an after-phase reading or another lens counted)', JSON.stringify(f4?.read));
+  const queued = (n: number) => Array.from({ length: n }, (_, i) => job('q' + i, { lens: 'design', status: 'queued', scope: room(['a']) }));
+  const f5 = scopeFacts({ jobs: [job('run', { lens: 'design', status: 'running', scope: room(['a']) }), ...queued(16)], scan: EMPTY, lens: 'security', features: ['a'], now });
+  const f5b = scopeFacts({ jobs: queued(15), scan: EMPTY, lens: 'security', features: ['a'], now });
+  expect(f5?.queue.running === 1 && f5.queue.queued === 16 && f5.queue.full === true && f5.queue.why === '16 jobs are already queued' && f5b?.queue.full === false && f5b.queue.why === undefined,
+    'scopeFacts: 16 queued jobs do not read a full queue with the server\'s words (or 15 does)', JSON.stringify([f5?.queue, f5b?.queue]));
+  // the menu renders the facts: one source, the queue cap on every scan item, no lens id branched on
+  const sm = readStripped(path.join(SRC, 'components/ScanMenu.tsx')).replace(/\r\n/g, '\n');
+  const items = sm.match(/role="menuitem" tabIndex=[^>]*/g) ?? []; // the JSX items, not the selectors that find them
+  expect(/\bscopeFacts\(/.test(sm) && /useScanJobs\(false, true\)/.test(sm) && items.length === 3 && items.every((t) => /aria-disabled=\{[^}]*queue\.full/.test(t) && /aria-describedby=/.test(t))
+    && !/(['"])(security|design|development|performance)\1/.test(sm), 'ScanMenu.tsx does not read scopeFacts over useScanJobs, put queue.full and its reason on every scan item, or branches on a lens id', String(items.length));
+  // Kettle: the sim's own jobs and snapshot feed the same facts, and its refusal agrees with queue.full
+  const { ScanSim } = await import('../packages/core/src/model/scan-sim.ts');
+  const sim = new ScanSim({ now: () => now, findings: [] });
+  try {
+    const man = { id: 'x', fields: [], presentation: { glyph: 'bars', line: 'solid' } };
+    sim.bind({ order: ['a', 'b', 'c'], manifest: () => man as never, value: () => undefined });
+    for (let i = 0; i < 3 + 16; i++) sim.startScan('security', room(['a', 'b']) as ScanScope);
+    const k = scopeFacts({ jobs: sim.jobs(), scan: sim.snapshot(), lens: 'security', features: ['b', 'c'], now });
+    let refused = 0; try { sim.startScan('security', room(['a']) as ScanScope); } catch (e) { refused = (e as { status?: number }).status ?? -1; }
+    expect(k?.busy?.status === 'running' && k.busy.overlap === 1 && k.busy.of === 2 && k.queue.running === 3 && k.queue.full === true && refused === 429,
+      'Kettle: the scan sim\'s jobs do not read the same facts (running 1 of 2, 3 running, queue full) or its 17th refusal disagrees', JSON.stringify([k?.busy, k?.queue, refused]));
+  } finally { sim.dispose(); }
+}
+
 if (failures.length) { console.log(failures.map((f) => 'FAIL ' + f).join('\n')); console.log(`check-scan-client: ${failures.length} failed, ${held} held`); process.exit(1); }
 console.log(`check-scan-client: ${held} expectations held (${SHAPES.length} rejection shapes, ${DEV_WORDS.length} developer strings forbidden, ${HELPERS.length} request helpers bounded)`);
