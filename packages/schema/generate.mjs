@@ -40,9 +40,14 @@
 //                                                  The raw carries (cross_refs, both forms of glyph) have no real
 //                                                  document, so an in-memory one is read through conform + the
 //                                                  fix-up text (rawCarried); its control removes each copy / the key.
+//      node packages/schema/generate.mjs --since <ref> [--dry-run]
+//                                                  first print what the schema edits since a git ref do to each
+//                                                  channel (compat.mjs: added, removed, required, enum, ue-type,
+//                                                  ts-type; breaking for whom), then write; --dry-run writes nothing
 // npm: `npm run schema:generate`, `npm run check:schema`.
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -127,7 +132,7 @@ export function model(schemas) {
 
   function buildStruct(s, file, name) {
     if (structs.has(name)) return;
-    const st = { name, description: s.description ?? s.title, props: [], open: s.additionalProperties !== false };
+    const st = { name, file, description: s.description ?? s.title, props: [], open: s.additionalProperties !== false };
     structs.set(name, st); // before the fields: a self-reference resolves to the name
     const req = new Set(s.required ?? []);
     for (const [key, sub] of Object.entries(s.properties)) {
@@ -146,7 +151,7 @@ export function model(schemas) {
 }
 
 // ---------------------------------------------------------------- TypeScript
-function tsType(n) {
+export function tsType(n) {
   switch (n.k) {
     case 'string': return n.enum ? n.enum.map((v) => `'${v}'`).join(' | ') : 'string';
     case 'int': case 'number': return n.const !== undefined ? String(n.const) : 'number';
@@ -908,6 +913,27 @@ if (isMain) {
     }
     process.exit(failed ? 1 : 0);
   }
-  for (const [f, text] of outputs) { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, text); }
-  console.log(`wrote ${outputs.map(([f]) => path.relative(process.cwd(), f)).join(', ')} (${counts})`);
+  const write = () => {
+    if (process.argv.includes('--dry-run')) { console.log(`dry run: wrote nothing (${counts})`); return; }
+    for (const [f, text] of outputs) { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, text); }
+    console.log(`wrote ${outputs.map(([f]) => path.relative(process.cwd(), f)).join(', ')} (${counts})`);
+  };
+  // --since <ref>: what this edit does to each channel, against the schemas as of a git ref (compat.mjs), printed
+  // before the write. compat.mjs imports this module, so it is loaded once this body has finished evaluating (an
+  // awaited import here would wait on itself).
+  const sinceAt = process.argv.indexOf('--since');
+  if (sinceAt < 0) write();
+  else {
+    const ref = process.argv[sinceAt + 1];
+    if (!ref || ref.startsWith('-')) { console.error('--since needs a git ref, e.g. --since HEAD or --since origin/master'); process.exit(2); }
+    const before = Object.fromEntries(ROOTS.map(([f]) => {
+      const r = spawnSync('git', ['show', `${ref}:packages/schema/schema/${f}`], { cwd: path.join(HERE, '../..'), encoding: 'utf8' });
+      if (r.status !== 0) throw new Error(`packages/schema/schema/${f} is not readable at ${ref}: ${(r.stderr || '').trim()}`);
+      try { return [f, JSON.parse(r.stdout)]; } catch (e) { throw new Error(`packages/schema/schema/${f} at ${ref} is not readable as JSON: ${e.message}`, { cause: e }); }
+    }));
+    import('./compat.mjs').then(({ diff, report }) => {
+      for (const l of report(diff(model(before), fresh.m), { since: ref })) console.log(l);
+      write();
+    });
+  }
 }

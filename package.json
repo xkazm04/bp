@@ -124,7 +124,8 @@
     "check:route-door": "node scripts/check-route-door.ts",
     "check:shaped-legend": "node scripts/check-shaped-legend.ts",
     "check:wave-arrange": "node scripts/check-wave-arrange.ts",
-    "check:release-preflight": "node scripts/check-release-preflight.ts"
+    "check:release-preflight": "node scripts/check-release-preflight.ts",
+    "check:schema-compat": "node scripts/check-schema-compat.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
