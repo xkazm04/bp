@@ -10,6 +10,7 @@
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "Camera/CameraComponent.h"
 #include "Components/WidgetComponent.h"
+#include "EngineUtils.h"
 #include "MotionControllerComponent.h"
 #include "Rendering/DrawElements.h"
 #include "Styling/CoreStyle.h"
@@ -134,7 +135,23 @@ void ABpPawn::MakeWristPanel()
 	{
 		const float Pitch = FMath::DegreesToRadians(-ABpGameMode::TargetPitchDeg);
 		const FVector ViewUp(FMath::Sin(Pitch), 0.0, FMath::Cos(Pitch));
-		SetWristParent(Origin.Get(), NAME_None, FTransform(FRotationMatrix::MakeFromXZ(-Offset, ViewUp).Rotator(), Offset, FVector(1.0 / WristPanelPxPerCm)));
+		AActor* Wrist = nullptr;
+		for (TActorIterator<AActor> It(GetWorld()); It && !Wrist; ++It) if (It->ActorHasTag(CaptureWristTag)) Wrist = *It;
+		TActorIterator<ABpTable> Table(GetWorld());
+		if (Wrist && Table)
+		{
+			// On the posed left hand: at the wrist point, turned to the target pose's eye (the pose the capture is judged from).
+			const FTransform T = Table->GetActorTransform();
+			const FVector Eye = T.TransformPosition(FVector(-(ABpTable::TableDepthCm * 0.5 + ABpGameMode::TargetBehindNearEdgeCm), 0.0,
+				ABpTable::DefaultTableHeightCm + ABpGameMode::TargetEyeAboveTopCm));
+			const FVector At = Wrist->GetActorLocation();
+			SetWristParent(Wrist->GetRootComponent(), NAME_None, FTransform::Identity);
+			WristPanel->SetWorldTransform(FTransform(FRotationMatrix::MakeFromXZ(Eye - At, T.TransformVector(ViewUp)).Rotator(), At, FVector(1.0 / WristPanelPxPerCm)));
+		}
+		else
+		{
+			SetWristParent(Origin.Get(), NAME_None, FTransform(FRotationMatrix::MakeFromXZ(-Offset, ViewUp).Rotator(), Offset, FVector(1.0 / WristPanelPxPerCm)));
+		}
 	}
 	WristPanel->RegisterComponent();
 	FBpLinkModule& Link = FBpLinkModule::Get();

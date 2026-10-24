@@ -46,6 +46,12 @@ public:
 	/** True when a headset is rendering: the camera follows it and the pawn's origin is the floor under the play eye. */
 	static bool IsHeadsetOn();
 
+	/** The posed capture hands (spark vr-fidelity-40 FC2, element 12): static meshes the level places at the near edge,
+	 *  tagged CaptureHandsTag, with a CaptureWristTag point on the left wrist. The flat view shows them instead of the rest
+	 *  hands and hangs the wrist panel on that point; a headset removes them (they are visual only, no tracking). */
+	static const FName CaptureHandsTag;
+	static const FName CaptureWristTag;
+
 	/** The wrist panel (spark vr-fidelity-40 FC1, element 11): the concept's "Packages", the latest wave's packages with
 	 *  their progress rings, read from GET .../waves and the findings' statuses (BpLink's scan state). With no posed hand
 	 *  it hangs above the left rest hand, at WristPanel*Cm from the eye, turned to face it; SetWristParent moves it onto a
@@ -103,6 +109,8 @@ private:
 	TObjectPtr<USkeletalMeshComponent> RestHandLeft;
 	UPROPERTY(VisibleAnywhere, Category = "Bp|Pawn")
 	TObjectPtr<USkeletalMeshComponent> RestHandRight;
+	/** The level has the posed capture hands: the rest hands stay hidden. */
+	bool bCaptureHands = false;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UWidgetComponent> WristPanel;

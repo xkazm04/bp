@@ -7,6 +7,7 @@
 #include "Camera/CameraComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
+#include "EngineUtils.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Engine/Engine.h"
 #include "IXRTrackingSystem.h"
@@ -76,8 +77,12 @@ ABpPawn::ABpPawn()
 	RestHandRight->SetRelativeRotation(FRotator(0.f, RestHandYawDeg, 0.f));
 }
 
+const FName ABpPawn::CaptureHandsTag(TEXT("BpCaptureHands"));
+const FName ABpPawn::CaptureWristTag(TEXT("BpCaptureWrist"));
+
 void ABpPawn::SetRestHandsVisible(bool bVisible)
 {
+	bVisible = bVisible && !bCaptureHands;
 	for (USkeletalMeshComponent* Rest : { RestHandLeft.Get(), RestHandRight.Get() })
 	{
 		if (Rest) Rest->SetVisibility(bVisible);
@@ -113,11 +118,17 @@ void ABpPawn::BeginPlay()
 		Camera->bUsePawnControlRotation = false;
 		RestHandLeft->DestroyComponent();
 		RestHandRight->DestroyComponent();
+		for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+		{
+			if (It->ActorHasTag(CaptureHandsTag) || It->ActorHasTag(CaptureWristTag)) It->Destroy();
+		}
 	}
 	else
 	{
 		// The flat view: the controller's rotation is the view (BpGameMode and BpView.Pose set it).
 		Camera->bUsePawnControlRotation = true;
+		for (TActorIterator<AActor> It(GetWorld()); It && !bCaptureHands; ++It) bCaptureHands = It->ActorHasTag(CaptureHandsTag);
+		if (bCaptureHands) SetRestHandsVisible(false);
 	}
 	MakeWristPanel();
 }

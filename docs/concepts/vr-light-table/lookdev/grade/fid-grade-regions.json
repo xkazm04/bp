@@ -1,0 +1,7 @@
+[
+ {"name": "paper open, mid", "capture": [744, 505, 837, 550], "target": [560, 560, 640, 600], "weight": 3},
+ {"name": "paper open, near", "capture": [780, 565, 870, 600], "target": [690, 580, 780, 610], "weight": 3},
+ {"name": "room, dark right", "capture": [1300, 180, 1400, 240], "target": [1100, 110, 1160, 170]},
+ {"name": "shelves, left", "capture": [100, 40, 200, 120], "target": [20, 60, 80, 120]},
+ {"name": "city", "capture": [950, 30, 1050, 90], "target": [1300, 60, 1360, 140]}
+]

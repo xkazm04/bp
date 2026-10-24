@@ -7,13 +7,10 @@
 # - The six GLBs (glTF Y-up; Interchange turns them Z-up, so a prop stands on its pivot with UE +Z up) land in
 #   /Game/Bp/Art/<Folder>/final/ with M_GLTF material instances. A re-import keeps the instances it made the first time
 #   (Lynx, 2026-10-24, the frame's EmissiveStrength), so each glTF material's factors are copied onto its instance here.
-# - lamp-agent's final.fbx (Blender Z-up, shade towards Blender -Y, which lands on UE +Y) comes in as SK_LampAgent with
-#   its skeleton (base, lower_arm, upper_arm, head) and its five pose actions. Interchange gives it FBX legacy Phong
-#   instances; they are replaced by M_LampAgent instances that carry the flat PBR values of scripts/art/lamp/materials.json
-#   (the same values the FBX's slots and PNGs hold). The shade interior's emission is `GlowStrength` on
-#   MI_LampAgent_shade_glow, the one parameter UE drives per state from L5.7 on: the source's x6 is the bright end, the
-#   resting glow is set below. The interior is brightest at the bulb under the cap and fades to the lip, so the head reads
-#   as a lit bulb in a shade, not a flat disc (target capture, Lynx 2026-10-24).
+# - lamp-agent (spark vr-fidelity-40): final_working.glb comes in as the static SM_LampAgent under
+#   /Game/Bp/Art/LampAgentStatic with its baked textures and M_LampAgentFid / M_LampAgentGlowCard instances (below). The
+#   old skeletal lamp (/Game/Bp/Art/LampAgent/SK_LampAgent, scripts/art/lamp/materials.json) is superseded and left
+#   unreferenced; final.fbx (the new rig) waits for L5.7.
 # - Nanite off on every static mesh: under forward shading the frame's Nanite render was unlit black (WP2).
 import json
 import os
@@ -34,18 +31,21 @@ GLBS = [  # ArtSource id, /Game/Bp/Art folder, mesh name
     ("studio-shelves", "StudioShelves", "SM_StudioShelves"),
     ("city-backdrop", "CityBackdrop", "SM_CityBackdrop"),
 ]
-LAMP = "/Game/Bp/Art/LampAgent"
-LAMP_MATERIAL = "/Game/Bp/Materials/M_LampAgent"
-# The resting state's glow (x of the emission colour #FF9E2E, linear); the source's 6.0 is the bright end.
-LAMP_RESTING_GLOW = 1.0
-# At the bulb the interior glows HOTSPOT x, at the shade's lip EDGE x (the falloff's exponent is FALLOFF).
-LAMP_GLOW_HOTSPOT = 5.0
-LAMP_GLOW_EDGE = 0.4
-LAMP_GLOW_FALLOFF = 2.0
-# The bulb: the head bone's rest position in the mesh (UE axes, cm); the glow fades out over the shade's depth.
-LAMP_BULB_REST_CM = (0.0, 6.2, 41.2)
-LAMP_SHADE_DEPTH_CM = 24.0
-
+# The rebuilt city (FB) is authored at emission 1.0; under the filmic curve and a 0.7 bloom threshold its window lights
+# stayed under the bloom, so its strength is raised here until they cross it (spark vr-fidelity-40 FC2).
+EMISSIVE_OVERRIDE = {"city_backdrop_emissive": 3.0}
+LAMP = "/Game/Bp/Art/LampAgentStatic"
+LAMP_SOURCE = "final_working.glb"
+LAMP_MATERIAL = "/Game/Bp/Materials/M_LampAgentFid"
+LAMP_CARD_MATERIAL = "/Game/Bp/Materials/M_LampAgentGlowCard"
+# The resting state's glow: the orb, the slit and the pin glow GlowColor x GlowStrength; the hood inside x HOOD_SCALE of it
+# (FB's hand-over, spark vr-fidelity-40). L5.7 drives GlowStrength per state on the instances that carry it.
+LAMP_GLOW = 5.0
+LAMP_GLOW_COLOUR = "#FFA94D"
+LAMP_HOOD_SCALE = 0.15
+LAMP_CARD_GLOW = 1.5
+# Shell: base colour texture x lerp(1, AO, AO_MIX) from the ORM's R (the forward path's SSAO is weak).
+LAMP_AO_MIX = 0.6
 
 def import_one(source, dest, name):
     task = unreal.AssetImportTask()
@@ -106,6 +106,8 @@ for art_id, folder, name in GLBS:
             scalars["RoughnessFactor"] = pbr["roughnessFactor"]
         if "emissiveFactor" in m:
             scalars["EmissiveStrength"] = m.get("extensions", {}).get("KHR_materials_emissive_strength", {}).get("emissiveStrength", 1.0)
+        if m["name"] in EMISSIVE_OVERRIDE:
+            scalars["EmissiveStrength"] = EMISSIVE_OVERRIDE[m["name"]]
         for key, value in scalars.items():
             mel.set_material_instance_scalar_parameter_value(mi, key, value)
         unreal.EditorAssetLibrary.save_loaded_asset(mi, only_if_is_dirty=False)
@@ -118,102 +120,197 @@ for art_id, folder, name in GLBS:
         "copied": copied,
     }
 
-# M_LampAgent: lit, flat PBR per slot, plus the shade interior's emission (GlowColor x GlowStrength, 0 on other slots).
-if unreal.EditorAssetLibrary.does_asset_exist(LAMP_MATERIAL):
-    lm = unreal.load_asset(LAMP_MATERIAL)
-    for old in list(mel.get_material_expressions(lm)):
-        mel.delete_material_expression(lm, old)
-else:
-    lm = tools.create_asset("M_LampAgent", "/Game/Bp/Materials", unreal.Material, unreal.MaterialFactoryNew())
-lm.set_editor_property("used_with_skeletal_mesh", True)
+# The lamp agent (spark vr-fidelity-40): FB's rebuilt figure, final_working.glb, placed as a STATIC mesh in its working
+# pose (5 sections, no skinning; final.fbx keeps the rig for L5.7). The GLB carries flat factors and no images, so its
+# three textures come in from textures/ and the five slots get M_LampAgentFid instances (lit, clear coat) and one
+# M_LampAgentGlowCard instance (unlit, additive, two-sided), every value set here.
 
 
-def expr(cls, x, y, **props):
-    e = mel.create_material_expression(lm, cls, x, y)
+def import_texture(source, dest, name, srgb):
+    task = unreal.AssetImportTask()
+    task.filename = source
+    task.destination_path = dest
+    task.destination_name = name
+    task.automated = True
+    task.replace_existing = True
+    task.save = True
+    tools.import_asset_tasks([task])
+    tex = unreal.load_asset(dest + "/" + name)
+    tex.set_editor_property("srgb", srgb)
+    if not srgb:
+        tex.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_MASKS)
+    unreal.EditorAssetLibrary.save_loaded_asset(tex, only_if_is_dirty=False)
+    return tex
+
+
+def fresh_material(path):
+    if unreal.EditorAssetLibrary.does_asset_exist(path):
+        m = unreal.load_asset(path)
+        for old in list(mel.get_material_expressions(m)):
+            mel.delete_material_expression(m, old)
+        return m
+    folder, name = path.rsplit("/", 1)
+    return tools.create_asset(name, folder, unreal.Material, unreal.MaterialFactoryNew())
+
+
+def instance(path, parent):
+    mi = unreal.load_asset(path) if unreal.EditorAssetLibrary.does_asset_exist(path) else tools.create_asset(
+        path.rsplit("/", 1)[1], path.rsplit("/", 1)[0], unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())
+    mel.set_material_instance_parent(mi, parent)
+    return mi
+
+
+lamp_src = os.path.join(ART, "lamp-agent")
+imported = import_one(os.path.join(lamp_src, LAMP_SOURCE), LAMP, "SM_LampAgent")
+lamp_mesh = unreal.load_asset(LAMP + "/final_working/StaticMeshes/SM_LampAgent")
+nanite = lamp_mesh.get_editor_property("nanite_settings")
+nanite.set_editor_property("enabled", False)
+lamp_mesh.set_editor_property("nanite_settings", nanite)
+# The figure's one UV set overlaps (mirrored parts share the atlas): Lightmass read it as a lightmap at 33 % overlap
+# (Lynx, 2026-10-24), so the build makes a lightmap UV in channel 1.
+sme = unreal.get_editor_subsystem(unreal.StaticMeshEditorSubsystem)
+build = sme.get_lod_build_settings(lamp_mesh, 0)
+build.set_editor_property("generate_lightmap_u_vs", True)
+build.set_editor_property("src_lightmap_index", 0)
+build.set_editor_property("dst_lightmap_index", 1)
+sme.set_lod_build_settings(lamp_mesh, 0, build)
+lamp_mesh.set_editor_property("light_map_coordinate_index", 1)
+tex = {
+    "base": import_texture(os.path.join(lamp_src, "textures", "agent_basecolor.png"), LAMP + "/Textures", "T_Agent_BaseColor", True),
+    "orm": import_texture(os.path.join(lamp_src, "textures", "agent_orm.png"), LAMP + "/Textures", "T_Agent_ORM", False),
+    "card": import_texture(os.path.join(lamp_src, "textures", "agent_glow_card.png"), LAMP + "/Textures", "T_Agent_GlowCard", True),
+}
+
+# M_LampAgentFid: base = lerp(BaseColor, BaseTex x lerp(1, AO, AOMix), UseTexture); a hazy second lobe for the clear
+# coat; emissive GlowColor x GlowStrength x GlowScale.
+lm = fresh_material(LAMP_MATERIAL)
+lm.set_editor_property("two_sided", True)
+
+
+def expr(m, cls, x, y, **props):
+    e = mel.create_material_expression(m, cls, x, y)
     for k, v in props.items():
         e.set_editor_property(k, v)
     return e
 
 
-base = expr(unreal.MaterialExpressionVectorParameter, -600, -200, parameter_name="BaseColor",
-            default_value=unreal.LinearColor(0.5, 0.5, 0.5, 1.0))
-rough = expr(unreal.MaterialExpressionScalarParameter, -600, 0, parameter_name="Roughness", default_value=0.5)
-metal = expr(unreal.MaterialExpressionScalarParameter, -600, 100, parameter_name="Metallic", default_value=0.0)
-glow_colour = expr(unreal.MaterialExpressionVectorParameter, -600, 250, parameter_name="GlowColor",
-                   default_value=unreal.LinearColor(0.0, 0.0, 0.0, 1.0))
-glow = expr(unreal.MaterialExpressionScalarParameter, -600, 450, parameter_name="GlowStrength", default_value=0.0)
-# facing = (1 - |rest-pose position - bulb| / SHADE_DEPTH)^FALLOFF: 1 at the bulb under the cap, 0 at the shade's lip
-# (the TRELLIS shade is one shell whose normals point outwards on the inside too, so a view-angle hotspot lit the lip);
-# shape = lerp(EDGE, HOTSPOT, facing). The pre-skinned position is the rest pose, where the bulb sits at the head bone.
-rest = expr(unreal.MaterialExpressionPreSkinnedPosition, -1400, 600)
-local = expr(unreal.MaterialExpressionVertexInterpolator, -1250, 600)  # read in the vertex shader, as M_EdgeGlow does
-mel.connect_material_expressions(rest, "", local, "VS")
-bulb = expr(unreal.MaterialExpressionConstant3Vector, -1200, 700, constant=unreal.LinearColor(*LAMP_BULB_REST_CM, 1.0))
-dist = expr(unreal.MaterialExpressionDistance, -1050, 650)
-mel.connect_material_expressions(local, "", dist, "A")
-mel.connect_material_expressions(bulb, "", dist, "B")
-depth = expr(unreal.MaterialExpressionDivide, -900, 650, const_b=LAMP_SHADE_DEPTH_CM)
-mel.connect_material_expressions(dist, "", depth, "A")
-near = expr(unreal.MaterialExpressionOneMinus, -800, 650)
-mel.connect_material_expressions(depth, "", near, "")
-facing = expr(unreal.MaterialExpressionSaturate, -700, 650)
-mel.connect_material_expressions(near, "", facing, "")
-power = expr(unreal.MaterialExpressionPower, -600, 650, const_exponent=LAMP_GLOW_FALLOFF)
-mel.connect_material_expressions(facing, "", power, "Base")
-shape = expr(unreal.MaterialExpressionLinearInterpolate, -450, 650, const_a=LAMP_GLOW_EDGE, const_b=LAMP_GLOW_HOTSPOT)
-mel.connect_material_expressions(power, "", shape, "Alpha")
-strength = expr(unreal.MaterialExpressionMultiply, -300, 500)
-mel.connect_material_expressions(glow, "", strength, "A")
-mel.connect_material_expressions(shape, "", strength, "B")
-emissive = expr(unreal.MaterialExpressionMultiply, -150, 300)
+def param(m, name, value, x, y):
+    if isinstance(value, unreal.LinearColor):
+        return expr(m, unreal.MaterialExpressionVectorParameter, x, y, parameter_name=name, default_value=value)
+    return expr(m, unreal.MaterialExpressionScalarParameter, x, y, parameter_name=name, default_value=value)
+
+
+base_tex = expr(lm, unreal.MaterialExpressionTextureSampleParameter2D, -1200, -300, parameter_name="BaseTex", texture=tex["base"])
+orm_tex = expr(lm, unreal.MaterialExpressionTextureSampleParameter2D, -1200, 0, parameter_name="ORMTex", texture=tex["orm"],
+               sampler_type=unreal.MaterialSamplerType.SAMPLERTYPE_MASKS)
+ao_mix = param(lm, "AOMix", LAMP_AO_MIX, -1000, 150)
+ao = expr(lm, unreal.MaterialExpressionLinearInterpolate, -850, 50, const_a=1.0)
+mel.connect_material_expressions(ao_mix, "", ao, "Alpha")
+mel.connect_material_expressions(orm_tex, "R", ao, "B")
+textured = expr(lm, unreal.MaterialExpressionMultiply, -700, -250)
+mel.connect_material_expressions(base_tex, "RGB", textured, "A")
+mel.connect_material_expressions(ao, "", textured, "B")
+flat = param(lm, "BaseColor", unreal.LinearColor(0.8, 0.79, 0.77, 1.0), -700, -450)
+use_tex = param(lm, "UseTexture", 1.0, -700, -100)
+base = expr(lm, unreal.MaterialExpressionLinearInterpolate, -500, -300)
+mel.connect_material_expressions(flat, "", base, "A")
+mel.connect_material_expressions(textured, "", base, "B")
+mel.connect_material_expressions(use_tex, "", base, "Alpha")
+glow_colour = param(lm, "GlowColor", unreal.LinearColor(0.0, 0.0, 0.0, 1.0), -700, 300)
+glow = param(lm, "GlowStrength", 0.0, -700, 450)
+glow_scale = param(lm, "GlowScale", 1.0, -700, 550)
+g1 = expr(lm, unreal.MaterialExpressionMultiply, -500, 400)
+mel.connect_material_expressions(glow, "", g1, "A")
+mel.connect_material_expressions(glow_scale, "", g1, "B")
+emissive = expr(lm, unreal.MaterialExpressionMultiply, -350, 350)
 mel.connect_material_expressions(glow_colour, "", emissive, "A")
-mel.connect_material_expressions(strength, "", emissive, "B")
-mel.connect_material_property(base, "", unreal.MaterialProperty.MP_BASE_COLOR)
-mel.connect_material_property(rough, "", unreal.MaterialProperty.MP_ROUGHNESS)
-mel.connect_material_property(metal, "", unreal.MaterialProperty.MP_METALLIC)
-mel.connect_material_property(emissive, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+mel.connect_material_expressions(g1, "", emissive, "B")
+# Substrate (r.Substrate=True): one Slab whose second specular lobe (Second Roughness at Haze weight) is the clear coat;
+# ProjectGBufferFormat=0 allows one closure, so no vertical layering (r4).
+metal = expr(lm, unreal.MaterialExpressionSubstrateMetalnessToDiffuseAlbedoF0, -200, -100)
+mel.connect_material_expressions(base, "", metal, "BaseColor")
+mel.connect_material_expressions(param(lm, "Metallic", 0.0, -350, 100), "", metal, "Metallic")
+slab = expr(lm, unreal.MaterialExpressionSubstrateSlabBSDF, 0, 0)
+mel.connect_material_expressions(metal, "DiffuseAlbedo", slab, "Diffuse Albedo")
+mel.connect_material_expressions(metal, "F0", slab, "F0")
+mel.connect_material_expressions(param(lm, "Roughness", 0.35, -350, 0), "", slab, "Roughness")
+mel.connect_material_expressions(param(lm, "ClearCoatRoughness", 0.08, -350, 700), "", slab, "Second Roughness")
+mel.connect_material_expressions(param(lm, "Haze", 0.5, -350, 600), "", slab, "Second Roughness Weight")
+mel.connect_material_expressions(emissive, "", slab, "Emissive Color")
+mel.connect_material_property(slab, "", unreal.MaterialProperty.MP_FRONT_MATERIAL)
 mel.recompile_material(lm)
 unreal.EditorAssetLibrary.save_loaded_asset(lm, only_if_is_dirty=False)
 
-imported = import_one(os.path.join(ART, "lamp-agent", "final.fbx"), LAMP, "SK_LampAgent")
-with open(os.path.join(REPO, "scripts", "art", "lamp", "materials.json"), encoding="utf-8") as f:
-    regions = json.load(f)["regions"]
-by_slot = {}
-for region, spec in regions.items():
-    mi_path = LAMP + "/Materials/MI_LampAgent_" + spec["slot"].replace("lamp_", "")
-    if unreal.EditorAssetLibrary.does_asset_exist(mi_path):
-        mi = unreal.load_asset(mi_path)
-    else:
-        mi = tools.create_asset(mi_path.rsplit("/", 1)[1], LAMP + "/Materials", unreal.MaterialInstanceConstant,
-                                unreal.MaterialInstanceConstantFactoryNew())
-    mel.set_material_instance_parent(mi, lm)
-    mel.set_material_instance_vector_parameter_value(mi, "BaseColor", linear(srgb_hex(spec["color"])))
-    mel.set_material_instance_scalar_parameter_value(mi, "Roughness", spec["roughness"])
-    mel.set_material_instance_scalar_parameter_value(mi, "Metallic", spec["metal"])
-    if "emission" in spec:
-        mel.set_material_instance_vector_parameter_value(mi, "GlowColor", linear(srgb_hex(spec["emission"])))
-        mel.set_material_instance_scalar_parameter_value(mi, "GlowStrength", LAMP_RESTING_GLOW)
-    unreal.EditorAssetLibrary.save_loaded_asset(mi, only_if_is_dirty=False)
-    by_slot[spec["slot"]] = mi
+# M_LampAgentGlowCard: unlit, additive, two-sided, no depth write: card texture x GlowColor x GlowStrength.
+cm = fresh_material(LAMP_CARD_MATERIAL)
+cm.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
+cm.set_editor_property("blend_mode", unreal.BlendMode.BLEND_ADDITIVE)
+cm.set_editor_property("two_sided", True)
+card_tex = expr(cm, unreal.MaterialExpressionTextureSampleParameter2D, -700, -100, parameter_name="CardTex", texture=tex["card"])
+cc = param(cm, "GlowColor", unreal.LinearColor(1.0, 0.46, 0.06, 1.0), -700, 150)
+cs = param(cm, "GlowStrength", 1.0, -700, 300)
+c1 = expr(cm, unreal.MaterialExpressionMultiply, -450, 0)
+mel.connect_material_expressions(card_tex, "RGB", c1, "A")
+mel.connect_material_expressions(cc, "", c1, "B")
+c2 = expr(cm, unreal.MaterialExpressionMultiply, -300, 100)
+mel.connect_material_expressions(c1, "", c2, "A")
+mel.connect_material_expressions(cs, "", c2, "B")
+mel.connect_material_property(c2, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+mel.recompile_material(cm)
+unreal.EditorAssetLibrary.save_loaded_asset(cm, only_if_is_dirty=False)
 
-sk = unreal.load_asset(LAMP + "/SK_LampAgent")
-slots = []
-for sm in sk.get_editor_property("materials"):
-    # Interchange may suffix a slot name (lamp_shade_glow_001 on Lynx, 2026-10-24); match on the source's name.
-    name = str(sm.get_editor_property("material_slot_name"))
-    key = next((s for s in sorted(by_slot, key=len, reverse=True) if name == s or name.startswith(s + "_")), None)
-    if key:
-        sm.set_editor_property("material_interface", by_slot[key])
-    slots.append(sm)
-    result.setdefault("lamp_slots", {})[name] = by_slot[key].get_name() if key else None
-sk.set_editor_property("materials", slots)
-unreal.EditorAssetLibrary.save_loaded_asset(sk, only_if_is_dirty=False)
-
-b = sk.get_bounds()
-result["lamp"] = {
-    "mesh": sk.get_path_name(), "imported": len(imported),
-    "bounds_origin_cm": [round(b.origin.x, 2), round(b.origin.y, 2), round(b.origin.z, 2)],
-    "bounds_extent_cm": [round(b.box_extent.x, 2), round(b.box_extent.y, 2), round(b.box_extent.z, 2)],
-    "glow": mel.get_material_instance_scalar_parameter_value(by_slot["lamp_shade_glow"], "GlowStrength"),
-    "folder": [str(p) for p in unreal.EditorAssetLibrary.list_assets(LAMP, recursive=True)],
+glow_lin = linear(srgb_hex(LAMP_GLOW_COLOUR))
+V = unreal.LinearColor
+SLOTS = {  # slot: (parent, vectors, scalars), from the GLB's factors and FB's hand-over
+    "agent_shell": (lm, {"BaseColor": V(0.8, 0.79, 0.77, 1.0)},
+                    {"UseTexture": 1.0, "AOMix": LAMP_AO_MIX, "Roughness": 0.35, "Metallic": 0.0, "Haze": 0.5,
+                     "ClearCoatRoughness": 0.08, "GlowStrength": 0.0}),
+    "agent_hood_inner": (lm, {"BaseColor": V(0.8, 0.79, 0.77, 1.0), "GlowColor": glow_lin},
+                         {"UseTexture": 1.0, "AOMix": LAMP_AO_MIX, "Roughness": 0.45, "Metallic": 0.0, "Haze": 0.3,
+                          "ClearCoatRoughness": 0.05, "GlowStrength": LAMP_GLOW, "GlowScale": LAMP_HOOD_SCALE}),
+    "agent_joint": (lm, {"BaseColor": V(0.0423, 0.0467, 0.0545, 1.0)},
+                    {"UseTexture": 0.0, "Roughness": 0.38, "Metallic": 1.0, "Haze": 0.0, "GlowStrength": 0.0}),
+    "agent_glow": (lm, {"BaseColor": V(1.0, 0.694, 0.352, 1.0), "GlowColor": glow_lin},
+                   {"UseTexture": 0.0, "Roughness": 0.5, "Metallic": 0.0, "Haze": 0.0, "GlowStrength": LAMP_GLOW,
+                    "GlowScale": 1.0}),
+    "agent_glow_card": (cm, {"GlowColor": glow_lin}, {"GlowStrength": LAMP_CARD_GLOW}),
 }
+lamp_mis = {}
+for slot, (parent, vectors, scalars) in SLOTS.items():
+    mi = instance(LAMP + "/final_working/Materials/MI_" + slot, parent)
+    for k, v in vectors.items():
+        mel.set_material_instance_vector_parameter_value(mi, k, v)
+    for k, v in scalars.items():
+        mel.set_material_instance_scalar_parameter_value(mi, k, v)
+    unreal.EditorAssetLibrary.save_loaded_asset(mi, only_if_is_dirty=False)
+    lamp_mis[slot] = mi
+slots = []
+for sm in lamp_mesh.get_editor_property("static_materials"):
+    name = str(sm.get_editor_property("material_slot_name"))
+    key = next((s for s in sorted(lamp_mis, key=len, reverse=True) if name == s or name.startswith(s + "_")), None)
+    if key:
+        sm.set_editor_property("material_interface", lamp_mis[key])
+    slots.append(sm)
+    result.setdefault("lamp_slots", {})[name] = lamp_mis[key].get_name() if key else None
+lamp_mesh.set_editor_property("static_materials", slots)
+unreal.EditorAssetLibrary.save_loaded_asset(lamp_mesh, only_if_is_dirty=False)
+
+box = lamp_mesh.get_bounding_box()
+result["lamp"] = {
+    "mesh": lamp_mesh.get_path_name(), "imported": len(imported), "tris": lamp_mesh.get_num_triangles(0),
+    "sections": lamp_mesh.get_num_sections(0), "nanite": lamp_mesh.get_editor_property("nanite_settings").get_editor_property("enabled"),
+    "bounds_cm": [round(v, 2) for v in (box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z)],
+}
+
+# The wall drawings (spark vr-fidelity-40 FB/FC2): three of FB's four Leonardo sheets with no text go into the pinned
+# drawings' draw_sheets slot, whose UV thirds are the left frame, the pinned middle sheet and the right frame (FA's
+# hand-over). docs/concepts/vr-light-table/lookdev/wall-drawings/draw_sheets_atlas.jpg is made from
+# wall-drawings-A (floor plan, turned upright), -B (section and elevation on cream) and -D (site plan, turned upright),
+# docs/concepts/vr-light-table/lookdev/log.jsonl lines 80, 83 and 82 (openai/gpt-image-2.5-flare, MEDIUM, seed 61,
+# public:false; the account holder's rights). Sheet C (log line 81) is not shipped.
+DRAWINGS = os.path.join(REPO, "docs", "concepts", "vr-light-table", "lookdev", "wall-drawings", "draw_sheets_atlas.jpg")
+sheets = import_texture(DRAWINGS, "/Game/Bp/Art/StudioPinnedDrawings/Textures", "T_WallDrawings_Atlas", True)
+draw_mi = unreal.load_asset("/Game/Bp/Art/StudioPinnedDrawings/final/Materials/draw_sheets")
+mel.set_material_instance_texture_parameter_value(draw_mi, "BaseColorTexture", sheets)
+unreal.EditorAssetLibrary.save_loaded_asset(draw_mi, only_if_is_dirty=False)
+result["drawings"] = mel.get_material_instance_texture_parameter_value(draw_mi, "BaseColorTexture").get_path_name()

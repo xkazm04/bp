@@ -10,9 +10,16 @@
 #   back wall towards the room (-X); studio-pinned-drawings is the exception, its sheets face Blender +Y, so it takes
 #   yaw 90 (seen from the room on Lynx, 2026-10-24: at -90 only the navy board showed);
 # - city-backdrop's arc lies on UE -Y about its pivot, so yaw 90 puts it behind the back wall (+X), pivot at the table's;
-# - lamp-agent's shade reaches along UE +Y and its clamp bar sits at Y = -5.8 cm, so yaw 90 would point the shade
-#   straight at the player with the clamp on the far edge; yaw 70 turns it 20 degrees to the player's right, so the arm
-#   reads in profile as the concept's does (the clamp bar lands 0.35 cm inside the edge line).
+# - lamp-agent (spark vr-fidelity-40, FB's static SM_LampAgent) faces UE +Y (Blender -Y), so yaw 90 turns its hood to
+#   the player (-X); its pivot is the pin tip, which hovers LAMP_HOVER_CM above the table;
+# - hands-capture's meshes are in the capture frame with UE +X the player's right and UE -Y across the table, so yaw 90
+#   puts -Y on the table's +X; their origin is the centre of the near paper edge.
+#
+# spark vr-fidelity-40 FC2 also makes the room bakeable (lightmap UVs on the shell, every prop static and casting into
+# the bake, the room's lights static), dresses it denser (FA's hand-over: more pinned drawings, a second tier of shelves,
+# the mug by the table's far right corner), swaps the skeletal lamp agent for FB's static figure with its own warm light
+# and a cool rim, and places FB's posed capture hands with the wrist panel's point (BpPawn::CaptureHandsTag,
+# CaptureWristTag).
 #
 # It also takes out the doubled lights: level_lighttable.py ran twice in one editor session on 2026-10-24 and the map held
 # two of every light, fog, sky light and exposure volume (WP3 removed only the second table). One of each stays. Two
@@ -38,7 +45,7 @@ MULLION = 5.0
 STUDIO = "#0A0F18"  # style block 'studio'
 STUDIO_ROUGHNESS = 0.7
 DESK = "#14110F"  # the side desks: a dark stained top a step above the walls
-DESK_ROUGHNESS = 0.5
+DESK_ROUGHNESS = 0.8  # at 0.5 the tops mirrored the bright table capture white at grazing angles (FC2)
 # Side desks behind the table's far corners (centre x, centre y, size x, size y, top height).
 LEFT_DESK = (95.0, -150.0, 60.0, 110.0, 75.0)
 RIGHT_DESK = (100.0, 150.0, 60.0, 110.0, 75.0)
@@ -49,8 +56,6 @@ FILL_CD = 140.0
 WARM = unreal.Color(r=255, g=181, b=71, a=255)  # amber #FFB547, the attention colour
 DESK_LAMP_CD = 20.0
 DESK_LAMP_RADIUS = 120.0
-AGENT_GLOW_CD = 12.0
-AGENT_GLOW_RADIUS = 70.0
 WINDOW_CD = 40.0
 WINDOW_RADIUS = 700.0
 COOL_SPILL = unreal.Color(r=90, g=125, b=200, a=255)  # FrameFill's blue: city glow through the window
@@ -62,18 +67,48 @@ ROOM_GREY = unreal.Color(r=150, g=165, b=190, a=255)  # a grey-blue night, not t
 # on the room's channel only: on 0, TableUnderLight (the spot under the glass) lit it from below cyan-white and FrameFill
 # from above, and its navy arm read silver (Lynx, 2026-10-24); its head glows by its own emission.
 TABLE, ROOM = (True, False, False), (False, False, True)
+KEY = (False, True, False)  # channel 1: the table's rect key, for the capture hands only (spark vr-fidelity-40)
 
 # lamp-agent: clamped on the far rim (its pivot is the base disc underside, the clamp grips 5.8 cm behind it). Its static
 # pose is A_LampAgent_TablePose, made here from the bones: the rotation of lower_arm, upper_arm and head about the
 # armature X axis, in degrees from the rest pose, as scripts/art/lamp/poses.json writes its actions. 'working' (44, -1,
 # -24) hangs the shade over the far part of the paper (head bone 28 cm in, 27 cm up); the head turned a further 51 degrees
 # shows the warm interior to the person at the near edge, as the concept's head does.
-LAMP_CLAMP_CM = 5.8
-LAMP_Y = 5.0
-LAMP_YAW = 70.0
-LAMP_POSE_DEG = {"lower_arm": 44.0, "upper_arm": -1.0, "head": -75.0}
-LAMP_POSE = "/Game/Bp/Art/LampAgent/A_LampAgent_TablePose"
-LAMP_POSE_FROM = "/Game/Bp/Art/LampAgent/SK_LampAgentlamp-agent_rig_working"
+# lamp-agent (FB, spark vr-fidelity-40): hovering over the far edge, a little left of centre, the pin tip LAMP_HOVER_CM
+# above the table; its warm light sits at the orb centre + 4.5 cm along the hood's opening axis (manifest placement:
+# Blender orb (0, -1.52, 18.3) cm and axis (0, -0.866, -0.5), in UE mesh axes with Y negated), a faint cool rim behind.
+LAMP_MESH = "/Game/Bp/Art/LampAgentStatic/final_working/StaticMeshes/SM_LampAgent"
+# From the target pose (eye 75 cm behind the table's centre, 43 cm over the top, pitch -31, hfov 90) the hood's centre
+# lands at about 46 % of the width and 7 % from the top, and the hood about 7 % of the width across, only with the figure
+# a little closer than the far rim, scaled 1.2 and its pin tip 12 cm above the table (FB asked 18 to 25 cm: at that
+# height the head leaves the frame's top; FC2 report).
+LAMP_AT = (28.0, -9.0)
+LAMP_HOVER_CM = 12.0
+LAMP_SCALE = 1.2
+LAMP_YAW = 90.0
+LAMP_LIGHT_LOCAL = (0.0, 1.52 + 4.5 * 0.866, 18.3 - 4.5 * 0.5)
+LAMP_LIGHT_CD = 0.2
+LAMP_LIGHT_RADIUS = 40.0
+LAMP_LIGHT = unreal.Color(r=255, g=168, b=90, a=255)  # #FFA85A
+RIM_CD = 0.4
+RIM_RADIUS = 120.0
+RIM = unreal.Color(r=150, g=180, b=255, a=255)
+# A soft cool-white front fill from above the table, so the white shell reads white as the concept's does (its own warm
+# light alone made it amber-brown, Lynx 2026-10-24).
+FRONT_CD = 1.2
+FRONT_RADIUS = 150.0
+FRONT = unreal.Color(r=225, g=232, b=255, a=255)
+# hands-capture: the capture frame's origin at the centre of the near paper edge (ABpTable: paper 76 cm deep, 0.8 cm
+# under the top); HANDS_IN moves the pair onto the paper, so the left fingertips rest on it and not over the rim (FB).
+HANDS_MESHES = ("/Game/Bp/Art/HandsCapture/hands_capture/StaticMeshes/hand_l",
+                "/Game/Bp/Art/HandsCapture/hands_capture/StaticMeshes/hand_r")
+PAPER_NEAR_X = -38.0
+PAPER_Z = TABLE_TOP - 0.8
+HANDS_IN = 4.0
+HANDS_YAW = 90.0
+# The wrist panel's point on the left hand, in the hand mesh's axes (cm): the manifest's left wrist is (-19, -6, 5) cm in
+# Blender; the point sits over the sleeve's cuff, lifted, as the concept's panel floats over the wrist.
+WRIST_LOCAL = (-29.0, 13.0, 9.0)
 
 ART = "/Game/Bp/Art/"
 MESHES = {
@@ -89,10 +124,18 @@ MESHES = {
 PROPS = [
     ("StudioShelves", "shelves", (ROOM_X[1] - 16.0, -140.0, 0.0), -90.0),
     ("StudioShelves2", "shelves", (ROOM_X[1] - 16.0, -235.0, 0.0), -90.0),
+    # FA's hand-over: the concept's shelving reaches the ceiling, so a second tier stands on the first one's tops.
+    ("StudioShelves3", "shelves", (ROOM_X[1] - 16.0, -140.0, 128.0), -90.0),
+    ("StudioShelves4", "shelves", (ROOM_X[1] - 16.0, -235.0, 128.0), -90.0),
     ("StudioPinnedDrawings", "drawings", (ROOM_X[1] - 3.0, -40.0, 80.0), 90.0),
+    # The concept's top-left wall of drawings: more on the back wall and on the left wall, facing the room (+Y).
+    ("StudioPinnedDrawings2", "drawings", (60.0, ROOM_Y[0] + 3.0, 140.0), 180.0),
+    ("StudioPinnedDrawings3", "drawings", (-70.0, ROOM_Y[0] + 3.0, 140.0), 180.0),
+    ("StudioPinnedDrawings4", "drawings", (ROOM_X[1] - 3.0, -40.0, 150.0), 90.0),
     ("StudioDeskLamp", "desk_lamp", (LEFT_DESK[0] + 10.0, LEFT_DESK[1] + 35.0, LEFT_DESK[4]), 150.0),
     ("StudioDrawingTubes", "tubes", (RIGHT_DESK[0] + 15.0, RIGHT_DESK[1] + 30.0, RIGHT_DESK[4]), 0.0),
-    ("StudioMug", "mug", (RIGHT_DESK[0] - 15.0, RIGHT_DESK[1] - 35.0, RIGHT_DESK[4]), 200.0),
+    # FA's hand-over: the concept's mug stands by the table's far right corner, so on the right desk's near corner.
+    ("StudioMug", "mug", (RIGHT_DESK[0] - 22.0, RIGHT_DESK[1] - 48.0, RIGHT_DESK[4]), 200.0),
     ("CityBackdrop", "backdrop", (0.0, 0.0, 0.0), 90.0),
 ]
 
@@ -133,8 +176,9 @@ def light(label):
     return actor, actor.get_component_by_class(unreal.LightComponent)
 
 
-_, under = light("TableUnderLight")
-under.set_editor_property("intensity", UNDER_CD)
+if "TableUnderLight" in by_label:  # fid_look.py replaced it with the rect key (spark vr-fidelity-40)
+    _, under = light("TableUnderLight")
+    under.set_editor_property("intensity", UNDER_CD)
 _, fill = light("FrameFill")
 fill.set_editor_property("intensity", FILL_CD)
 
@@ -233,7 +277,7 @@ opts.set_editor_property("spawn_merged_actor", True)
 opts.set_editor_property("new_actor_label", "StudioShell")
 settings = opts.get_editor_property("mesh_merging_settings")
 settings.set_editor_property("merge_materials", False)
-settings.set_editor_property("generate_light_map_uv", False)
+settings.set_editor_property("generate_light_map_uv", True)  # the bake (FC2)
 opts.set_editor_property("mesh_merging_settings", settings)
 for old in ("/Game/Bp/Studio/SM_StudioShell", "/Game/Bp/Studio/SM_SM_StudioShell"):
     if unreal.EditorAssetLibrary.does_asset_exist(old):
@@ -241,71 +285,83 @@ for old in ("/Game/Bp/Studio/SM_StudioShell", "/Game/Bp/Studio/SM_SM_StudioShell
 shell = unreal.get_editor_subsystem(unreal.StaticMeshEditorSubsystem).merge_static_mesh_actors(boxes, opts)
 unreal.EditorAssetLibrary.save_asset("/Game/Bp/Studio/SM_StudioShell", only_if_is_dirty=False)
 shell = tagged(shell, "StudioShell")
-shell.static_mesh_component.set_editor_property("cast_shadow", False)
+shell.static_mesh_component.set_editor_property("cast_shadow", True)
 shell.static_mesh_component.set_editor_property("lighting_channels", channels(TABLE, ROOM))
 result["shell"] = {"mesh": shell.static_mesh_component.static_mesh.get_path_name(),
                    "sections": shell.static_mesh_component.static_mesh.get_num_sections(0),
                    "loc": str(shell.get_actor_location())}
 
-# 5. The props: static, no shadows (the studio never competes with the table, and each caster would add shadow draws).
+# 5. The props: static, casting into the bake only (the room's lights are static; the table's stationary lights reach
+# only channel 0, which the props are not on).
 placed = {}
 for label, key, loc, yaw in PROPS:
     a = eas.spawn_actor_from_object(unreal.load_asset(MESHES[key]), unreal.Vector(*loc), unreal.Rotator(0.0, 0.0, yaw))
     tagged(a, label)
     c = a.static_mesh_component
     c.set_editor_property("mobility", unreal.ComponentMobility.STATIC)
-    c.set_editor_property("cast_shadow", False)
-    c.set_editor_property("lighting_channels", channels(TABLE, ROOM))
+    c.set_editor_property("cast_shadow", True)
+    c.set_editor_property("lighting_channels", channels(ROOM))
     placed[label] = {"mesh": MESHES[key], "loc": list(loc), "yaw": yaw}
 
-# 6. The lamp agent at the far edge, statically posed: no states and no animation until L5.7. The pose is a two-key
-# sequence of the bone rotations above, held at its first frame and never played.
-if unreal.EditorAssetLibrary.does_asset_exist(LAMP_POSE):
-    pose = unreal.load_asset(LAMP_POSE)
-else:
-    pose = unreal.EditorAssetLibrary.duplicate_asset(LAMP_POSE_FROM, LAMP_POSE)
-rest = unreal.AnimPoseExtensions.get_reference_pose(pose.get_editor_property("skeleton"))
-keys = pose.get_editor_property("data_model_interface").get_number_of_keys()
-for bone, deg in LAMP_POSE_DEG.items():
-    t = unreal.AnimPoseExtensions.get_bone_pose(rest, bone, unreal.AnimPoseSpaces.LOCAL)
-    r = t.rotation.rotator()  # every lamp bone bends about X only, so a bend adds to its roll
-    q = unreal.Rotator(roll=r.roll + deg, pitch=r.pitch, yaw=r.yaw).quaternion()
-    pose.get_editor_property("controller").set_bone_track_keys(bone, [t.translation] * keys, [q] * keys, [t.scale3d] * keys)
-unreal.EditorAssetLibrary.save_loaded_asset(pose, only_if_is_dirty=False)
-
-agent_loc = (FAR_EDGE_X - LAMP_CLAMP_CM, LAMP_Y, TABLE_TOP)
-agent = eas.spawn_actor_from_class(unreal.SkeletalMeshActor, unreal.Vector(*agent_loc), unreal.Rotator(0.0, 0.0, LAMP_YAW))
+# 6. The lamp agent (FB's static figure in its working pose) and the posed capture hands with the wrist point.
+agent_loc = (LAMP_AT[0], LAMP_AT[1], TABLE_TOP + LAMP_HOVER_CM)
+agent = eas.spawn_actor_from_object(unreal.load_asset(LAMP_MESH), unreal.Vector(*agent_loc), unreal.Rotator(0.0, 0.0, LAMP_YAW))
 tagged(agent, "LampAgent")
-skc = agent.skeletal_mesh_component
-skc.set_skeletal_mesh_asset(unreal.load_asset("/Game/Bp/Art/LampAgent/SK_LampAgent"))
-skc.set_editor_property("animation_mode", unreal.AnimationMode.ANIMATION_SINGLE_NODE)
-skc.override_animation_data(pose, False, False, 0.0, 0.0)
-skc.set_editor_property("cast_shadow", False)
-skc.set_editor_property("lighting_channels", channels(ROOM))
-posed = unreal.AnimPoseExtensions.get_anim_pose_at_time(pose, 0.0, unreal.AnimPoseEvaluationOptions())
-head = agent.get_actor_transform().transform_location(
-    unreal.AnimPoseExtensions.get_bone_pose(posed, "head", unreal.AnimPoseSpaces.WORLD).translation)
-placed["LampAgent"] = {"mesh": "/Game/Bp/Art/LampAgent/SK_LampAgent", "loc": list(agent_loc), "yaw": LAMP_YAW, "pose": LAMP_POSE,
-                       "pose_deg": LAMP_POSE_DEG, "head_bone_world": [round(head.x, 1), round(head.y, 1), round(head.z, 1)]}
+agent.set_actor_scale3d(unreal.Vector(LAMP_SCALE, LAMP_SCALE, LAMP_SCALE))
+ac = agent.static_mesh_component
+ac.set_editor_property("mobility", unreal.ComponentMobility.STATIC)
+ac.set_editor_property("cast_shadow", False)
+# Its orb and slit light the room in the bake (r4: the lamp head is one of the three emissive-for-static sources).
+lm_settings = ac.get_editor_property("lightmass_settings")
+lm_settings.set_editor_property("use_emissive_for_static_lighting", True)
+ac.set_editor_property("lightmass_settings", lm_settings)
+ac.set_editor_property("lighting_channels", channels(ROOM))
+head = agent.get_actor_transform().transform_location(unreal.Vector(*LAMP_LIGHT_LOCAL))
+placed["LampAgent"] = {"mesh": LAMP_MESH, "loc": list(agent_loc), "yaw": LAMP_YAW, "scale": LAMP_SCALE,
+                       "light_world": [round(head.x, 1), round(head.y, 1), round(head.z, 1)]}
+
+hands = []
+for mesh in HANDS_MESHES:
+    side = mesh.rsplit("_", 1)[1].upper()
+    h = eas.spawn_actor_from_object(unreal.load_asset(mesh), unreal.Vector(PAPER_NEAR_X + HANDS_IN, 0.0, PAPER_Z),
+                                    unreal.Rotator(0.0, 0.0, HANDS_YAW))
+    h.set_actor_label("CaptureHand" + side)
+    h.set_editor_property("tags", [unreal.Name(TAG), unreal.Name("BpCaptureHands")])
+    hc = h.static_mesh_component
+    hc.set_editor_property("mobility", unreal.ComponentMobility.MOVABLE)
+    hc.set_editor_property("cast_shadow", True)
+    hc.set_editor_property("lighting_channels", channels(KEY, ROOM))  # KEY: fid_look.py's rect key under the glass
+    hands.append(h)
+    placed[h.get_actor_label()] = {"mesh": mesh, "loc": [PAPER_NEAR_X + HANDS_IN, 0.0, PAPER_Z], "yaw": HANDS_YAW}
+# The wrist point: an empty actor (a scene root only) attached to the left hand.
+wrist_at = hands[0].get_actor_transform().transform_location(unreal.Vector(*WRIST_LOCAL))
+wrist = eas.spawn_actor_from_class(unreal.TargetPoint, wrist_at)
+wrist.set_actor_label("CaptureWrist")
+wrist.set_editor_property("tags", [unreal.Name(TAG), unreal.Name("BpCaptureWrist")])
+wrist.attach_to_actor(hands[0], "", unreal.AttachmentRule.KEEP_WORLD, unreal.AttachmentRule.KEEP_WORLD,
+                      unreal.AttachmentRule.KEEP_WORLD, False)
+placed["CaptureWrist"] = [round(wrist_at.x, 1), round(wrist_at.y, 1), round(wrist_at.z, 1)]
 result["placed"] = placed
 
-# 7. Lights, all without shadows (only the two table spots cast): the desk lamp owns LampPractical, the agent's head a
-# small warm glow, the window a cool wash, and RoomFill makes the walls read dimly on the room's channel.
+# 7. Lights: the desk lamp owns LampPractical, the agent's head a small warm light and a cool rim, the window a cool
+# wash, and RoomFill makes the walls read dimly on the room's channel. The room's lights are static (FC2): they exist
+# in the bake only, with its soft shadows; the agent's two stay movable, as its state will drive them (L5.7).
 lamp_actor, lamp_light = light("LampPractical")
 dl = next(loc for label, _, loc, _ in PROPS if label == "StudioDeskLamp")
 lamp_actor.set_actor_location(unreal.Vector(dl[0] + 8.0, dl[1] + 5.0, dl[2] + 30.0), False, False)
 lamp_light.set_editor_property("intensity", DESK_LAMP_CD)
 lamp_light.set_editor_property("attenuation_radius", DESK_LAMP_RADIUS)
-lamp_light.set_editor_property("cast_shadows", False)
+lamp_light.set_editor_property("cast_shadows", True)
+lamp_light.set_editor_property("mobility", unreal.ComponentMobility.STATIC)
 lamp_light.set_editor_property("lighting_channels", channels(TABLE, ROOM))
 _, fill = light("FrameFill")
 fill.set_editor_property("lighting_channels", channels(TABLE))
 
 
-def point(label, loc, cd, radius, colour, chans):
+def point(label, loc, cd, radius, colour, chans, mobility=unreal.ComponentMobility.STATIC):
     a = tagged(eas.spawn_actor_from_class(unreal.PointLight, unreal.Vector(*loc)), label)
     pl = a.get_component_by_class(unreal.PointLightComponent)
-    pl.set_editor_property("mobility", unreal.ComponentMobility.STATIONARY)
+    pl.set_editor_property("mobility", mobility)
     pl.set_editor_property("intensity", cd)
     pl.set_editor_property("attenuation_radius", radius)
     pl.set_editor_property("source_radius", 3.0)
@@ -315,13 +371,21 @@ def point(label, loc, cd, radius, colour, chans):
     return a
 
 
-# In the shade's mouth: it warms the rim and the hands (channel 0), never the agent's own arm.
-point("AgentGlow", (head.x - 8.0, head.y, head.z - 4.0), AGENT_GLOW_CD, AGENT_GLOW_RADIUS, WARM, channels(TABLE))
-point("RoomFill", (ROOM_X[1] - 120.0, 0.0, ROOM_H - 90.0), ROOM_FILL_CD, ROOM_FILL_RADIUS, ROOM_GREY, channels(ROOM))
+# In the hood, in front of the orb: the hood inside, the body top, the arms and the hands (both channels).
+point("AgentGlow", (head.x, head.y, head.z), LAMP_LIGHT_CD, LAMP_LIGHT_RADIUS, LAMP_LIGHT, channels(TABLE, ROOM),
+      unreal.ComponentMobility.MOVABLE)
+point("AgentRim", (agent_loc[0] + 25.0, agent_loc[1], agent_loc[2] + 22.0), RIM_CD, RIM_RADIUS, RIM, channels(ROOM),
+      unreal.ComponentMobility.MOVABLE)
+front = point("AgentFront", (agent_loc[0] - 60.0, agent_loc[1] - 10.0, agent_loc[2] + 50.0), FRONT_CD, FRONT_RADIUS, FRONT,
+              channels(ROOM), unreal.ComponentMobility.MOVABLE)
+front.get_component_by_class(unreal.PointLightComponent).set_editor_property("specular_scale", 0.0)  # no disc in the glass
+# Under the ceiling over the table (FC2): at (130, 0, 210) its baked hotspot on the back wall mirrored in the table's glass
+# as a white disc mid-sheet.
+point("RoomFill", (40.0, 0.0, ROOM_H - 15.0), ROOM_FILL_CD, ROOM_FILL_RADIUS, ROOM_GREY, channels(ROOM))
 win = tagged(eas.spawn_actor_from_class(unreal.SpotLight, unreal.Vector(ROOM_X[1] + 60.0, mid, 260.0),
                                         unreal.Rotator(0.0, -35.0, 180.0)), "WindowSpill")
 wl = win.get_component_by_class(unreal.SpotLightComponent)
-wl.set_editor_property("mobility", unreal.ComponentMobility.STATIONARY)
+wl.set_editor_property("mobility", unreal.ComponentMobility.STATIC)
 wl.set_editor_property("intensity", WINDOW_CD)
 wl.set_editor_property("attenuation_radius", WINDOW_RADIUS)
 wl.set_editor_property("outer_cone_angle", 45.0)
