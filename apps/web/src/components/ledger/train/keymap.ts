@@ -42,7 +42,7 @@ export const KEYMAP: Readonly<Record<KeyScope, readonly KeyBinding[]>> = {
     { keys: ['a'], action: 'accept', label: 'accept' },
     { keys: ['r'], action: 'rework', label: 'send back to rework' },
     { keys: ['s'], action: 'descope', label: 'descope' },
-    { keys: ['u'], action: 'undo', label: 'undo the decision' },
+    { keys: ['u'], action: 'undo', label: 'undo the last decision' },
     filter,
     ...views,
     help,

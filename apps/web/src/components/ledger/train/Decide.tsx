@@ -19,9 +19,9 @@ import { triageItems, refusalText } from '@/lib/scan/actions';
 import { WAITING } from '@bp/core/train/rules';
 import { parseTriageResult } from '@bp/core/train/wire';
 import { useEngine } from '../../hooks';
-import { setLedgerUi, useLedgerUi, type NoteAsk, type SetUi } from '../useLedger';
+import { setLedgerUi, useLedgerUi, type LastDecision, type NoteAsk, type SetUi } from '../useLedger';
 import { useTrain } from './data';
-import { decidable, decisionCounts, planDecision, type PlanData } from './plan';
+import { decidable, decisionCounts, planDecision, undoPlan, type PlanData } from './plan';
 import { NoteEditor } from './NoteEditor';
 import { Btn, type BtnTone } from './ui/Controls';
 import './DecisionBar.css';
@@ -90,8 +90,8 @@ export function useDecide(own?: () => readonly string[]): DecideApi {
   const decide = useCallback((raw: readonly string[], decision: TriageDecision, note?: string, at: NoteAsk['at'] = 'bar') => runDecision(T, pending, raw, decision, note, at, {
     triage: (ids, d, n) => triageItems(T.ctx, ids, d, n),
     toast: (t, b, _a, _f, tone) => E.toast(t, b, undefined, undefined, tone),
-    set: setLedgerUi, later: (f, ms) => setTimeout(f, ms), order: order ?? undefined,
-  }), [E, T, pending, order]);
+    set: setLedgerUi, later: (f, ms) => setTimeout(f, ms), order: order ?? undefined, last: ui.last,
+  }), [E, T, pending, order, ui.last]);
 
   return { decide, pending };
 }
@@ -105,11 +105,16 @@ export interface DecideIo {
   set: SetUi;
   later(f: () => void, ms: number): unknown;
   order?: () => readonly string[];
+  /** The last decision (LedgerUi.last): given, a reopen resolves through it (plan.ts undoTargets), so U after the focus
+   *  advanced undoes what was just decided; absent, a reopen acts on what was asked. */
+  last?: LastDecision | null;
 }
 
 /** The decision path: the planner says what the decision does (planDecision), this carries it out. Only a `send`
  *  reaches the store; every other plan is a sentence and no call (U on a waiting item, Undo on a rebuilt one). */
 export async function runDecision(T: PlanData, pending: ReadonlySet<string>, raw: readonly string[], decision: TriageDecision, note: string | undefined, at: NoteAsk['at'], io: DecideIo): Promise<void> {
+  // Undo reverses what the person said, not where the focus went after it
+  if (decision === 'reopen' && io.last !== undefined) raw = undoPlan(T, io.last, raw).ids;
   const plan = planDecision(T, raw, decision, note === undefined ? { pending } : { pending, note });
   switch (plan.kind) {
     case 'empty': case 'pending': io.toast('Nothing to decide', plan.why, undefined, undefined, 'warn'); return;
@@ -134,6 +139,12 @@ export async function runDecision(T: PlanData, pending: ReadonlySet<string>, raw
     const next = i < 0 ? undefined : ord.slice(i + 1).find((id) => WAITING.has(T.byId.get(id)?.status ?? 'proposed'));
     io.set((u) => {
       let n = u;
+      // the last decision is what moved (one step deep: a reopen that lands takes its items off it)
+      if (r.triaged.length) {
+        const left = u.last && r.decision === 'reopened' ? u.last.ids.filter((id) => !moved.has(id)) : [];
+        const last: LastDecision | null = r.decision !== 'reopened' ? { ids: r.triaged, decision: r.decision } : u.last && left.length ? { ...u.last, ids: left } : null;
+        n = { ...n, last };
+      }
       if (decision !== 'reopen' && [...u.sel].some((id) => moved.has(id))) { const s = new Set(u.sel); for (const id of moved) s.delete(id); n = { ...n, sel: s }; }
       if (next && one && (u.focus === one || u.open === one)) n = { ...n, focus: next, open: u.open === one ? next : u.open };
       return n;
@@ -156,6 +167,8 @@ export function Decide({ ids, compact = false }: DecideProps) {
   const T = useTrain(), ui = useLedgerUi(T.slug ?? 'kettle'), { decide, pending } = useDecide();
   const ps = useMemo(() => ids.map((id) => T.byId.get(id)).filter((p): p is Proposal => !!p), [ids, T]);
   const n = useMemo(() => decisionCounts(T, ids), [T, ids]);
+  // Undo names the decision it reverses when that is the last one, not the targets (plan.ts undoPlan)
+  const undo = useMemo(() => undoPlan(T, ui.last, ids), [T, ui.last, ids]);
   const at: NoteAsk['at'] = compact ? 'compare' : 'bar', ask = ui.note && ui.note.at === at ? ui.note : null;
   if (ask) {
     const asked = ask.ids.map((id) => T.byId.get(id)).filter((p): p is Proposal => !!p);
@@ -163,7 +176,7 @@ export function Decide({ ids, compact = false }: DecideProps) {
     return <NoteEditor ask={ask} can={can.length} flagged={flagged} compact={compact} onSend={(note) => void decide(ask.ids, ask.decision, note, ask.at)} />;
   }
   const btn = (d: TriageDecision, tone: BtnTone | undefined, label: string, key: string, role?: string) => {
-    const why = n.why[d];
+    const why = d === 'reopen' ? undo.why : n.why[d];
     return (
       <Btn tone={tone} kbd={key} reason={why ?? undefined} title={label + ' (' + key + ')'} role={role} onClick={() => void decide(ps.map((p) => p.id), d, undefined, at)}>
         {label}
@@ -176,7 +189,7 @@ export function Decide({ ids, compact = false }: DecideProps) {
   const nAcc = n.accept;
   return (
     <span className={'tr-decide' + (compact ? ' compact' : '')} role="group" aria-label="Decide" aria-busy={busy || undefined}>
-      {compact && n.why.reopen ? null : btn('reopen', undefined, 'Undo', 'U')}
+      {compact && undo.why ? null : btn('reopen', undefined, undo.label, 'U')}
       {btn('accept', 'acc', '✓ Accept' + (!compact && nAcc ? ' ' + nAcc : ''), 'A', compact ? undefined : 'tr-btn-accept')}
       {btn('rework', 'rw', '↺ Rework', 'R')}
       {btn('descope', 'ds', '⊘ Descope', 'S')}

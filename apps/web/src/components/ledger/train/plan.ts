@@ -12,6 +12,7 @@ import { triageCapText } from '@bp/core/scan/types';
 import { verdictOf, type Verdict } from '@bp/core/scan/compare';
 import { TRIAGE_FROM, canDecide, isFlagged, noteRequired } from '@bp/core/train/rules';
 import type { TrainData } from './data';
+import type { LastDecision } from '../useLedger';
 
 /** What the planner reads of the train data. */
 export type PlanData = Pick<TrainData, 'proposals' | 'byId' | 'releases' | 'measurements' | 'lenses'>;
@@ -132,4 +133,31 @@ export function decisionCounts(T: PlanData, targets: readonly string[]): Decisio
   const locked = ps.filter((p) => { const r = releaseIn(T, p); return !!r && r.status !== 'draft'; }).length;
   const why = { accept: whyNone(T, ps, 'accept'), rework: whyNone(T, ps, 'rework'), descope: whyNone(T, ps, 'descope'), reopen: whyNone(T, ps, 'reopen') };
   return { accept: acc.can.length, flagged: acc.flagged, locked, why };
+}
+
+const UNDO_WORD: Record<LastDecision['decision'], string> = { accepted: 'accept', rework: 'rework', descoped: 'descope' };
+
+/** What Undo (the button and U) reverses: the explicit targets when any of them can be undone (the person moved back
+ *  onto a decided item), else the last decision's items that still can (`last`: LedgerUi.last, the store's `triaged`),
+ *  else none. Undo follows what the person said, not where the focus advanced to after it. */
+export function undoTargets(T: PlanData, last: LastDecision | null | undefined, targets: readonly string[]): string[] {
+  const can = (ids: readonly string[]) => ids.filter((id) => { const p = T.byId.get(id); return !!p && refusalOf(T, p, 'reopen') === null; });
+  const own = can(targets);
+  if (own.length) return [...targets];
+  return last ? can(last.ids) : [];
+}
+
+/** The Undo control over the targets: the ids a reopen is planned over (the resolved undo targets, else what was asked,
+ *  so a refusal says why in the planner's words), its why-not, and its label ("Undo accept · p-12" while it reverses
+ *  the last decision rather than the targets). */
+export function undoPlan(T: PlanData, last: LastDecision | null | undefined, targets: readonly string[]): { ids: string[]; why: string | null; label: string } {
+  const ids = undoTargets(T, last, targets);
+  if (ids.length) {
+    const viaLast = !!last && ids.every((id) => last.ids.includes(id)) && !targets.some((id) => ids.includes(id));
+    const label = viaLast ? 'Undo ' + UNDO_WORD[last.decision] + ' · ' + (ids.length === 1 ? ids[0] : ids.length + ' items') : 'Undo';
+    return { ids, why: null, label };
+  }
+  const asked = last ? [...last.ids] : [...targets];
+  const ps = asked.map((id) => T.byId.get(id)).filter((p): p is Proposal => !!p);
+  return { ids: asked, why: whyNone(T, ps, 'reopen') ?? EMPTY_WHY, label: 'Undo' };
 }

@@ -17,7 +17,7 @@
 // optimistic overlay as `dispatchIds`.
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { isView, lineSuffix } from '@bp/core/model';
-import { emptyScan, type Measurement, type Pack, type Proposal, type ProposalSize, type ProposalStatus, type ScanSnapshot, type TriageDecision } from '@bp/core/scan/types';
+import { emptyScan, type Measurement, type Pack, type Proposal, type ProposalSize, type ProposalStatus, type ScanSnapshot, type TriageDecision, type TriageResult } from '@bp/core/scan/types';
 import { isCurrent, tierRank } from '@bp/core/scan/derive';
 import type { ScanJob } from '@bp/core/scan/jobs';
 import { buildChunks, canBuild, holdsBuild } from '@bp/core/scan/admit';
@@ -147,6 +147,9 @@ export interface LedgerUi {
   pending: ReadonlyMap<string, ProposalStatus>;
   /** A decision waiting for its note (the note editor shows in the decision bar, or in the compare footer). */
   note: NoteAsk | null;
+  /** The last triage decision that moved items (the store's `triaged`, so only what moved): what Undo and U reverse
+   *  after the focus advanced (train/plan.ts undoTargets). One step deep, as the store's reopen; null = nothing. */
+  last: LastDecision | null;
   /** The backlog's selected wave tab (a wave id): the table keeps only its findings. null = All. */
   wave: string | null;
   /** The wave composer: closed (null), or open for a new wave over `ids` / for editing wave `edit`. */
@@ -156,15 +159,21 @@ export interface LedgerUi {
 export interface ComposerAsk { edit?: string; ids: readonly string[] }
 /** A decision that needs a note before it is sent (src/lib/train/rules.ts noteRequired). */
 export interface NoteAsk { ids: readonly string[]; decision: Exclude<TriageDecision, 'reopen'>; at: 'bar' | 'compare' }
+/** A triage decision the store answered: the items it moved and how (a reopen is not one: it clears `last`). */
+export interface LastDecision { ids: readonly string[]; decision: Exclude<TriageResult['decision'], 'reopened'> }
 export type LedgerScope = 'packs' | 'backlog';
 export type CompareTheme = 'light' | 'dark' | 'both';
 export type CompareMode = 'side' | 'slider' | 'blink' | 'map';
 export interface CompareView { theme: CompareTheme; mode: CompareMode }
 export const EMPTY_UI: LedgerUi = {
   sel: new Set(), lens: new Set(), status: new Set(), feat: new Set(), q: '', focus: null,
-  scope: 'packs', open: null, cmp: { theme: 'light', mode: 'side' }, wide: false, pending: new Map(), note: null, wave: null, composer: null,
+  scope: 'packs', open: null, cmp: { theme: 'light', mode: 'side' }, wide: false, pending: new Map(), note: null, last: null, wave: null, composer: null,
 };
 export type SetUi = (f: (u: LedgerUi) => LedgerUi) => void;
+/** The page state in another scope: its per-scope fields start over (the last decision too: Undo never reaches into a
+ *  scope the person left). The same object when the scope is already that one. */
+export const switchScope = (u: LedgerUi, scope: LedgerScope): LedgerUi =>
+  u.scope === scope ? u : { ...u, scope, status: new Set(), focus: null, open: null, wide: false, note: null, last: null, composer: null };
 
 // The page state, one per tab: a module store, so the ledger (desktop or phone), the Lenses panel and the plan's
 // right-click menu read the same selection. `product` resets it when another product is shown.
@@ -461,7 +470,7 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
     return PACK_STATUSES.map((status) => ({ status, n: c.get(status) ?? 0 }));
   }, [ui.scope, counts, items]);
   // the scopes' status chips differ, so a status filter does not cross a scope switch; focus and compare start over
-  const setScope = useCallback((scope: LedgerScope) => set((u) => (u.scope === scope ? u : { ...u, scope, status: new Set(), focus: null, open: null, wide: false, note: null, composer: null })), [set]);
+  const setScope = useCallback((scope: LedgerScope) => set((u) => switchScope(u, scope)), [set]);
 
   return { ui, set, all, byId, rows, lenses, counts, ready, effort, busy, scan: moveScan, packs, items, chips, scoped, setScope, toggle, select, selectWhere, clear, setFocus, dispatchIds, showInTable, openFeature, move, order, waves, waveTag, waveReady, waveTaken, openComposer, closeComposer, showWave, dispatchWave };
 }
