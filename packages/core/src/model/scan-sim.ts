@@ -10,6 +10,7 @@ import type { ReleaseStep, ScanJob, ScanScope } from '@bp/core/scan/jobs';
 import type { LensExecuteResult } from '@bp/core/scan/jobs';
 import type { LensEntry, LensField, LensManifest } from '@bp/core/standard/types';
 import { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, RUN_NOTE_PREFIX, SAFE_ID, TEMP_LENS_ID } from '../scan/jobs.ts';
+import { NOTHING_TO_BUILD, admitForBuild, buildChunks, busyIds } from '../scan/admit.ts';
 import { WAVE_EFFORTS, WAVE_MODELS, createIn, packagesOf, patchIn, recordJobs, removeIn, type Wave, type WaveBody, type WaveDispatchResult, type WaveEffort, type WaveModel } from '../scan/waves.ts';
 import { TrainSim, type TrainToggles } from './train-sim.ts';
 import { NUMERIC } from '../standard/present.ts';
@@ -144,16 +145,8 @@ export class ScanSim {
     if (!Array.isArray(ids) || !ids.length || ids.length > MAX_IDS || ids.some((x) => typeof x !== 'string')) throw refuse(400, 'bad-ids');
     if ((opts.model !== undefined && !WAVE_MODELS.includes(opts.model)) || (opts.effort !== undefined && !WAVE_EFFORTS.includes(opts.effort))
       || (opts.wave !== undefined && !SAFE_ID.test(opts.wave)) || (opts.package !== undefined && !SAFE_ID.test(opts.package))) throw refuse(400, 'bad-opts');
-    const approved: string[] = [], go: string[] = [], skipped: { id: string; status: string }[] = [];
-    const at = this.iso();
-    for (const pid of [...new Set(ids)]) {
-      const p = this.prop(pid);
-      if (!p) { skipped.push({ id: pid, status: 'unknown' }); continue; }
-      if (p.status === 'proposed') { this.setProp(pid, { status: 'approved', decided_by: 'blueprint', decided_at: at, updated_at: at }); approved.push(pid); go.push(pid); }
-      else if (p.status === 'approved') go.push(pid);
-      else skipped.push({ id: pid, status: p.status });
-    }
-    if (!go.length) throw refuse(409, 'Nothing to dispatch: none of them is proposed or approved', { skipped });
+    const at = this.iso(), { approved, go, skipped } = this.admit(ids, at);
+    if (!go.length) throw refuse(409, NOTHING_TO_BUILD, { skipped });
     const id = this.queueExecute(go, at, opts);
     this.pump();
     this.changed();
@@ -169,22 +162,15 @@ export class ScanSim {
     const P = this.prod;
     if (!P) throw refuse(503, 'The sample is still loading');
     if (!P.manifest(lens)) throw refuse(400, 'unknown-lens');
-    const busy = new Set<string>();
-    for (const r of this.recs) if (r.job.kind === 'execute' && (r.job.status === 'queued' || r.job.status === 'running')) for (const x of r.items) busy.add(x);
-    const approved: string[] = [], go: string[] = [], skipped: { id: string; status: string }[] = [];
     const at = this.iso();
-    for (const p of this.props.filter((x) => x.lens === lens).sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : a.id < b.id ? -1 : 1))) {
-      if (p.status !== 'proposed' && p.status !== 'approved') { skipped.push({ id: p.id, status: p.status }); continue; }
-      if (busy.has(p.id)) { skipped.push({ id: p.id, status: 'in-job' }); continue; }
-      if (p.status === 'proposed') { this.setProp(p.id, { status: 'approved', decided_by: 'blueprint', decided_at: at, updated_at: at }); approved.push(p.id); }
-      go.push(p.id);
-    }
+    const mine = this.props.filter((x) => x.lens === lens).sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : a.id < b.id ? -1 : 1));
+    const { approved, go, skipped } = this.admit(mine.map((p) => p.id), at);
     if (!go.length) throw refuse(409, 'nothing to execute', { skipped });
     const jobs: ScanJob[] = [];
     let full = false;
-    for (let i = 0; i < go.length; i += MAX_IDS) {
+    for (const chunk of buildChunks(go)) {
       if (this.recs.filter((r) => r.job.status === 'queued').length >= MAX_QUEUED) { full = true; break; }
-      jobs.push(this.recOf(this.queueExecute(go.slice(i, i + MAX_IDS), at))!.job);
+      jobs.push(this.recOf(this.queueExecute(chunk, at))!.job);
       this.pump();
     }
     this.changed();
@@ -246,27 +232,15 @@ export class ScanSim {
     if (!wave) throw refuse(404, `no wave ${id}`);
     const pkgs = packagesOf(wave, names);
     if (typeof pkgs === 'string') throw refuse(400, pkgs);
-    const busy = new Set<string>();
-    for (const r of this.recs) if (r.job.kind === 'execute' && (r.job.status === 'queued' || r.job.status === 'running')) for (const x of r.items) busy.add(x);
     const approved: string[] = [], skipped: { id: string; status: string }[] = [], refs: { package: string; job: string }[] = [], at = this.iso();
     let full = false, went = 0;
     for (const pk of pkgs) {
       if (full) break;
-      const go: string[] = [];
-      for (const pid of new Set(pk.ids)) {
-        const p = this.prop(pid);
-        if (!p) { skipped.push({ id: pid, status: 'unknown' }); continue; }
-        if (p.status !== 'proposed' && p.status !== 'approved') { skipped.push({ id: pid, status: p.status }); continue; }
-        if (busy.has(pid)) { skipped.push({ id: pid, status: 'in-job' }); continue; }
-        if (p.status === 'proposed') { this.setProp(pid, { status: 'approved', decided_by: 'blueprint', decided_at: at, updated_at: at }); approved.push(pid); }
-        go.push(pid);
-      }
-      went += go.length;
-      for (let i = 0; i < go.length; i += MAX_IDS) {
+      const t = this.admit(pk.ids, at); // the jobs queued for an earlier package are in this.recs: they hold their findings
+      approved.push(...t.approved); skipped.push(...t.skipped); went += t.go.length;
+      for (const chunk of buildChunks(t.go)) {
         if (this.recs.filter((r) => r.job.status === 'queued').length >= MAX_QUEUED) { full = true; break; }
-        const chunk = go.slice(i, i + MAX_IDS), jid = this.queueExecute(chunk, at, { model: pk.model, effort: pk.effort, wave: wave.id, package: pk.id });
-        refs.push({ package: pk.id, job: jid });
-        for (const x of chunk) busy.add(x);
+        refs.push({ package: pk.id, job: this.queueExecute(chunk, at, { model: pk.model, effort: pk.effort, wave: wave.id, package: pk.id }) });
         this.pump();
       }
     }
@@ -335,6 +309,12 @@ export class ScanSim {
   private iso(t = this.now()): string { return new Date(t).toISOString(); }
   private recOf(id: string): Rec | undefined { return this.recs.find((r) => r.job.id === id); }
   /** Add a queued execute job over `ids`; answers its id (the caller pumps and notifies). */
+  /** packages/core/src/scan/admit.ts's rule over the sim's findings and jobs: the proposed ones approved here (decided_by 'blueprint'). */
+  private admit(ids: Iterable<string>, at: string): { approved: string[]; go: string[]; skipped: { id: string; status: string }[] } {
+    const a = admitForBuild(ids, (id) => this.prop(id)?.status, busyIds(this.recs.map((r) => r.job)));
+    for (const id of a.approve) this.setProp(id, { status: 'approved', decided_by: 'blueprint', decided_at: at, updated_at: at });
+    return { approved: a.approve, go: a.take, skipped: a.skipped };
+  }
   private queueExecute(ids: string[], at: string, opts: ExecOpts = {}): string {
     const id = 'sim-' + ++this.nextId, { model, effort, wave, package: pkg } = opts;
     const job: ScanJob = { id, kind: 'execute', proposals: ids, ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(wave ? { wave } : {}), ...(pkg ? { package: pkg } : {}), status: 'queued', queued_at: at };

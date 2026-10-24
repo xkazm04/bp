@@ -1,8 +1,9 @@
 // POST /api/products/[slug]/dispatch, body `{ ids: string[] }` (1..50 proposal ids): build findings. Each
 // `proposed` one is approved through the store's decision write (decided_by 'blueprint'), an `approved` one is
-// taken as it is, anything else is skipped with its status ('unknown' for an id the store lacks). Then ONE
-// execute job runs over all that were approved or taken (`/lens-scan execute --proposals ...`). The
-// approve-and-take step is waves.server.ts takeForBuild, shared with the wave dispatch. 202
+// taken as it is, anything else is skipped with its status ('unknown' for an id the store lacks; 'in-job' for one a
+// queued or running execute job already builds, so a finding is never queued twice). Then ONE execute job runs over
+// all that were approved or taken (`/lens-scan execute --proposals ...`). The approve-and-take step is
+// waves.server.ts takeForBuild over scan/admit.ts, shared with the wave dispatch and the lens execute. 202
 // `{ job, approved, skipped }` (`approved` = the ids this call approved; `job.proposals` = every id it builds);
 // 409 `{ error, skipped }` when none could go; 400 for a bad body; 404 for an unknown product or a missing store;
 // 429 when 16 jobs are queued (the approvals stand); 503 when the store stayed locked. Localhost only.
@@ -11,7 +12,8 @@ import { unknownProduct } from '@bp/core/server/products.server';
 import { findProduct, hasStore, storeFile } from '@bp/core/server/products.server';
 import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
 import { SAFE_ID } from '@bp/core/scan/jobs';
-import { MAX_PROPOSALS, enqueueExecute } from '@bp/core/server/jobs.server';
+import { MAX_PROPOSALS, busyProposals, enqueueExecute } from '@bp/core/server/jobs.server';
+import { NOTHING_TO_BUILD } from '@bp/core/scan/admit';
 import { takeForBuild } from '@bp/core/server/waves.server';
 import { kettleSim, simAnswer } from '@bp/core/server/kettle-sim.server';
 
@@ -33,9 +35,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   if (!p) return unknownProduct(slug);
   if (!hasStore(p)) return Response.json({ error: `no scan store for ${slug}` }, { status: 404 });
   const file = storeFile(p);
-  const { approved, go, skipped, error } = takeForBuild(file, ids as string[]);
+  const { approved, go, skipped, error } = takeForBuild(file, ids as string[], busyProposals(slug));
   if (error) return Response.json({ error: `dispatch failed: ${error}`, approved, skipped }, { status: 503 });
-  if (!go.length) return Response.json({ error: 'none of these proposals can be built (only proposed or approved ones can)', skipped }, { status: 409 });
+  if (!go.length) return Response.json({ error: NOTHING_TO_BUILD, skipped }, { status: 409 });
   const r = enqueueExecute(slug, p.root, go);
   return r.ok ? Response.json({ job: r.job, approved, skipped }, { status: 202 }) : Response.json({ error: r.error, approved, skipped }, { status: r.status });
 }

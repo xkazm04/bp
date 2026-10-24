@@ -7,7 +7,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ProductEntry } from '../scan/types.ts';
-import { MAX_PROPOSALS, busyProposals, enqueueExecute } from './jobs.server.ts';
+import { busyProposals, enqueueExecute } from './jobs.server.ts';
+import { admitForBuild, buildChunks } from '../scan/admit.ts';
 import type { ScanJob } from '../scan/jobs.ts';
 import { recovered, storeFile, warnOnce, writeAtomic } from './products.server.ts';
 import { decide, snapshotOf } from './store.server.ts';
@@ -84,17 +85,17 @@ export interface Taken { approved: string[]; go: string[]; skipped: { id: string
 /**
  * The step /dispatch and a wave dispatch share: each `proposed` id is approved through the store's decision write (decided_by
  * 'blueprint'), an `approved` one is taken as it is, anything else is skipped with its status ('unknown' for an id the store
- * lacks; 'in-job' for one in `busy`, a queued or running execute job already builds it). Each id once.
+ * lacks; 'in-job' for one in `busy`, a queued or running execute job already builds it; 'unsafe-id'). Each id once. The rule
+ * is scan/admit.ts admitForBuild; only the decision write is here.
  */
 export function takeForBuild(file: string, ids: readonly string[], busy?: ReadonlySet<string>): Taken {
   const approved: string[] = [], go: string[] = [], skipped: { id: string; status: string }[] = [];
   try {
     const status = new Map(snapshotOf(file).proposals.map((x) => [x.id, x.status]));
-    for (const id of new Set(ids)) {
-      const s = status.get(id);
-      if (s !== 'proposed' && s !== 'approved') { skipped.push({ id, status: s ?? 'unknown' }); continue; }
-      if (busy?.has(id)) { skipped.push({ id, status: 'in-job' }); continue; }
-      if (s === 'approved') { go.push(id); continue; }
+    const a = admitForBuild(ids, (id) => status.get(id), busy), approve = new Set(a.approve);
+    skipped.push(...a.skipped);
+    for (const id of a.take) {
+      if (!approve.has(id)) { go.push(id); continue; }
       const r = decide(file, id, { decision: 'approve' });
       if (r.ok) { approved.push(id); go.push(id); }
       else if (r.status === 409 && r.proposal.status === 'approved') go.push(id); // approved elsewhere a moment ago
@@ -128,8 +129,8 @@ export function dispatchWave(slug: string, product: ProductEntry, waveId: string
     const t = takeForBuild(file, pk.ids, busy);
     approved.push(...t.approved); skipped.push(...t.skipped); went += t.go.length;
     if (t.error) stop = { status: 503, error: `dispatch failed: ${t.error}` };
-    for (let i = 0; i < t.go.length; i += MAX_PROPOSALS) {
-      const r = enqueueExecute(slug, product.root, t.go.slice(i, i + MAX_PROPOSALS), { model: pk.model, effort: pk.effort, wave: wave.id, package: pk.id });
+    for (const chunk of buildChunks(t.go)) {
+      const r = enqueueExecute(slug, product.root, chunk, { model: pk.model, effort: pk.effort, wave: wave.id, package: pk.id });
       if (!r.ok) { stop = { status: r.status, error: `${r.error}; ${jobs.length} execute job${jobs.length === 1 ? '' : 's'} queued` }; break; }
       jobs.push(r.job); refs.push({ package: pk.id, job: r.job.id });
       for (const id of r.job.proposals ?? []) busy.add(id);

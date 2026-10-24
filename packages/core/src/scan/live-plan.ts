@@ -3,6 +3,7 @@
 // lenses, its jobs and proposals.
 import { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, jobLabel, type ScanJob } from './jobs.ts';
 import type { Proposal } from './types.ts';
+import { admitForBuild, busyIds } from './admit.ts';
 
 export type LiveVerb = 'measure' | 'build' | 'stop';
 export const LIVE_VERB_LABEL: Record<LiveVerb, string> = { measure: 'Measure here', build: 'Build what is approved here', stop: 'Stop work here' };
@@ -68,9 +69,12 @@ export function planLive(verb: LiveVerb, F: SteerFacts): LivePlan {
   }
   const byId = new Map(F.proposals.map((p) => [p.id, p]));
   if (verb === 'build') {
-    const busy = new Set(F.jobs.filter((j) => j.kind === 'execute' && open(j)).flatMap((j) => j.proposals ?? []));
+    const busy = busyIds(F.jobs);
     const mine = F.proposals.filter((p) => here.has(p.feature)).sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0));
-    const ready = mine.filter((p) => p.status === 'approved' && !busy.has(p.id));
+    // admit.ts's rule, restricted to what is approved already: this verb never approves (the Review queue does). The busy
+    // test repeats what admit already said, in the words check-live-steer's self-proof seeds its defect into.
+    const take = new Set(admitForBuild(mine.map((p) => p.id), (id) => byId.get(id)?.status, busy).take);
+    const ready = mine.filter((p) => take.has(p.id) && p.status === 'approved' && !busy.has(p.id));
     const proposed = mine.filter((p) => p.status === 'proposed').length;
     const building = mine.filter((p) => p.status === 'executing' || (p.status === 'approved' && busy.has(p.id))).length;
     if (!ready.length) {

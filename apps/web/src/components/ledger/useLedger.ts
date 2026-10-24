@@ -20,6 +20,7 @@ import { isView, lineSuffix } from '@bp/core/model';
 import { emptyScan, type Measurement, type Pack, type Proposal, type ProposalSize, type ProposalStatus, type ScanSnapshot, type TriageDecision } from '@bp/core/scan/types';
 import { isCurrent, tierRank } from '@bp/core/scan/derive';
 import type { ScanJob } from '@bp/core/scan/jobs';
+import { buildChunks, canBuild, holdsBuild } from '@bp/core/scan/admit';
 import { dispatch } from '@/lib/scan/actions';
 import type { ScanSim } from '@bp/core/model/scan-sim';
 import type { LedgerVariant } from '@/engine/state';
@@ -38,7 +39,6 @@ export const STATUSES: readonly ProposalStatus[] = ['proposed', 'approved', 'exe
 export const PACK_STATUSES: readonly ProposalStatus[] = ['done', 'failed', 'accepted', 'rework', 'descoped', 'released'];
 /** The backlog's status chips: v1's six always; a v2 status only while some finding has it. */
 const V1: ReadonlySet<ProposalStatus> = new Set(['proposed', 'approved', 'executing', 'done', 'failed', 'declined']);
-const OPEN: ReadonlySet<ProposalStatus> = new Set(['proposed', 'approved']);
 /** Effort per size (the rank's denominator and the dispatch bar's effort). */
 export const SIZE_W: Record<ProposalSize, number> = { XS: 1, S: 2, M: 3, L: 5, XL: 8 };
 export const sizeW = (p: Proposal): number => SIZE_W[p.size ?? 'M'] ?? SIZE_W.M;
@@ -280,7 +280,7 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
   // the jobs on each proposal (queued or running execute jobs)
   const jobOf = useMemo(() => {
     const m = new Map<string, ScanJob>();
-    for (const j of src.jobs) if (j.kind === 'execute' && (j.status === 'queued' || j.status === 'running')) for (const id of j.proposals ?? []) m.set(id, j);
+    for (const j of src.jobs) if (holdsBuild(j)) for (const id of j.proposals ?? []) m.set(id, j);
     return m;
   }, [src.jobs]);
 
@@ -288,7 +288,7 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
     const ev = rankValue(src.proposals);
     return src.proposals.map((p) => {
       const f = feats.get(p.feature), status = over.get(p.id) ?? p.status, job = jobOf.get(p.id) ?? null;
-      return { p, status, fid: f?.fid ?? null, fname: f?.name ?? p.feature, domain: f?.domain ?? '', fi: f?.i ?? 1e6, job, ev: ev.get(p.id) ?? 0, can: OPEN.has(status) && !job };
+      return { p, status, fid: f?.fid ?? null, fname: f?.name ?? p.feature, domain: f?.domain ?? '', fi: f?.i ?? 1e6, job, ev: ev.get(p.id) ?? 0, can: canBuild(status, !!job) };
     });
   }, [src.proposals, feats, over, jobOf]);
   const byId = useMemo(() => new Map(all.map((f) => [f.p.id, f])), [all]);
@@ -379,15 +379,14 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
     const mine = go.filter((id) => byId.get(id)!.status === 'proposed');
     setOver((o) => { const n = new Map(o); for (const id of mine) n.set(id, 'approved'); return n; });
     setBusy(true);
-    // /dispatch takes at most 50 ids (MAX_PROPOSALS): one execute job per 50, sent in order; the first refusal stops the
-    // rest, and the toast says what went before it
-    const CHUNK = 50, jobs: string[] = [], sent = new Set<string>(), skipped: { id: string; status: string }[] = [];
+    // /dispatch takes at most MAX_PROPOSALS (50) ids: one execute job per chunk (buildChunks), sent in order; the first
+    // refusal stops the rest, and the toast says what went before it
+    const jobs: string[] = [], sent = new Set<string>(), skipped: { id: string; status: string }[] = [];
     let built = 0;
     const line = () => 'execute job' + (jobs.length === 1 ? ' ' : 's ') + jobs.join(', ')
       + (skipped.length ? ' · ' + skipped.length + ' skipped (' + skipped.map((s) => s.id + ' ' + s.status).join(', ') + ')' : '');
     try {
-      for (let i = 0; i < go.length; i += CHUNK) {
-        const part = go.slice(i, i + CHUNK);
+      for (const part of buildChunks(go)) {
         const r = await dispatch(ctx, part);
         jobs.push(r.job.id); skipped.push(...r.skipped); built += r.job.proposals?.length ?? part.length;
         for (const id of part) sent.add(id);

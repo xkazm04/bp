@@ -16,6 +16,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, RUN_NOTE_PREFIX, SAFE_ID, type ReleaseStep, type ScanJob, type ScanScope } from '../scan/jobs.ts';
 import { RELEASE_ID } from '../scan/release.ts';
+import { busyIds } from '../scan/admit.ts';
 import { WAVE_EFFORTS, WAVE_MODELS, type WaveEffort, type WaveModel } from '../scan/waves.ts';
 import { findProduct, recovered, warnOnce, writeAtomic } from './products.server.ts';
 import { close, openRead, readRelease, type ReleaseRead } from './store.server.ts';
@@ -310,11 +311,7 @@ export function releaseBusy(slug: string, release: string): boolean {
 /** Proposal ids a queued or running execute job of the product is building: a lens execute leaves them alone. */
 export function busyProposals(slug: string): Set<string> {
   ensure(slug);
-  const out = new Set<string>();
-  for (const r of registry.get(slug)?.recs ?? []) {
-    if (r.job.kind === 'execute' && (r.job.status === 'queued' || r.job.status === 'running')) for (const id of r.job.proposals ?? []) out.add(id);
-  }
-  return out;
+  return busyIds((registry.get(slug)?.recs ?? []).map((r) => r.job));
 }
 
 function pump(slug: string): void {
