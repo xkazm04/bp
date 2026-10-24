@@ -4,7 +4,9 @@
 // sticky action bar. Deciding selects the next row. Hovering a row marks its feature on the plan.
 import { useEffect, useMemo, useState } from 'react';
 import { fmtWait, metricHistory, pname, sheetOf, type SimDecision } from '@bp/core/model';
+import { priorRecord, recordWords } from '@bp/core/scan/record';
 import type { Proposal, ScanSnapshot } from '@bp/core/scan/types';
+import { STAGE_WORDS } from '../../TrackRecord';
 import { LiveEmpty, OriginChip, TierChip, URG, bodySections, declineDrafts, fmtN, metricMove, oncePerProposal, proposalSummary } from '../../Queue';
 import { optHover, shallowEqual, useAnswerNote, useBp, useEngine, useLive, useVariant } from '../../hooks';
 import { Group, Row, Sec, Workbench, useListRef, useWalk } from './shell';
@@ -56,6 +58,9 @@ export function Review() {
   const ids = useMemo(() => items.map((d) => d.id), [items]);
   // a live row's proposal, for its tier and origin chips (Kettle's questions have none)
   const propOf = useMemo(() => new Map((proposals ?? []).map((p) => [p.id, p])), [proposals]);
+  // the open proposals whose idea (same feature + lens, or an attempt they follow) was declined before: a row mark
+  const scan = live?.product.scan;
+  const declinedBefore = useMemo(() => new Set(scan ? scan.proposals.filter((p) => p.status === 'proposed' && priorRecord(scan, p).same.some((e) => e.stage === 'declined')).map((p) => p.id) : []), [scan]);
   const cur = items.find((d) => d.id === selId) ?? items[0] ?? null;
   const onKey = useWalk(ids, cur?.id ?? null, setSelId as (id: string | null) => void, listRef);
 
@@ -86,7 +91,7 @@ export function Review() {
       <Row key={d.id} id={d.id} on={on} onPick={() => setSelId(d.id)} cls={'u-' + d.urg}
         onEnter={() => !E.S.dec && E.setHlDec(d.id)} onLeave={() => E.setHlDec(null)}>
         <i className="urg" aria-hidden="true" />
-        <span className="rk"><span>{URG[d.urg]}</span><span className="lz">{short(d.lens)}</span>{d.isNew && <span className="nw">New</span>}{p && <TierChip p={p} />}{p && <OriginChip p={p} link={false} />}</span>
+        <span className="rk"><span>{URG[d.urg]}</span><span className="lz">{short(d.lens)}</span>{d.isNew && <span className="nw">New</span>}{p && <TierChip p={p} />}{p && <OriginChip p={p} link={false} />}{p && declinedBefore.has(p.id) && <span className="db" title="This idea was declined before: see Before you decide">declined before</span>}</span>
         <span className="rt">{d.q}</span>
         <span className="rm"><span>{f?.name ?? d.f}</span><span>{fmtWait(sim.waitMin(d))}</span></span>
       </Row>
@@ -176,6 +181,9 @@ function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi
   const ev = last ? [last.evidence, last.method && 'measured by ' + last.method, last.measured_at && 'on ' + last.measured_at.slice(0, 10), h.length > 1 ? h.length + ' readings' : ''].filter(Boolean) : [];
   const meta = p ? [p.parent_id && 'follows ' + p.parent_id, p.after_value !== undefined && 'after the change: ' + fmtN(p.after_value), 'proposed ' + p.created_at.slice(0, 10)].filter(Boolean) : [];
   const cancel = () => { declineDrafts.delete(d.base); setNote(''); setDeclining(false); };
+  // what earlier decisions on this feature + lens (and the attempts this one follows) came to; live only
+  const rec = useMemo(() => (scan && p ? priorRecord(scan, p) : null), [scan, p]);
+  const rw = rec && p ? recordWords(rec, M.P.LENS[p.lens]?.name ?? p.lens, (st) => STAGE_WORDS[st]) : null;
   return (
     <>
       <div className="wb-scroll">
@@ -197,6 +205,20 @@ function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi
           </div>
         )}
         {mvText && <div className="wb-movetx">{mvText}</div>}
+        {rec && rw && (
+          <Sec head="Before you decide" aside={rec.same.length ? rec.same.length + ' earlier decision' + (rec.same.length === 1 ? '' : 's') : undefined}>
+            {rec.same.length > 0 && (
+              <ul className="wb-prior">
+                {rec.same.map((e, i) => (
+                  <li key={e.id} className={'s-' + e.stage}>{M.tracks?.T[e.id]
+                    ? <button type="button" onClick={() => E.openTrack(e.id)} title={'Open the track record of ' + e.id}>{rw.same[i]}</button>
+                    : <span>{rw.same[i]}</span>}<small>{e.id}</small></li>
+                ))}
+              </ul>
+            )}
+            <p className={rec.lens.n ? 'wb-help' : 'none'}>{rw.lens}</p>
+          </Sec>
+        )}
         {p && (
           <div className="wb-chips">
             <span title="The standard this item rests on"><small>Standard</small>{p.standard === 'none' ? 'none' : p.standard}</span>

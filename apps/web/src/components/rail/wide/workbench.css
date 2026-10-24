@@ -85,6 +85,7 @@
 #flyout.wide .lz { display: inline-flex; align-items: center; gap: 6px; }
 #flyout.wide .lz i { width: 9px; height: 9px; background: var(--lens); }
 #flyout.wide .nw { padding: 0 5px; border: 1px solid var(--accent); color: var(--accent); }
+#flyout.wide .db { padding: 0 5px; border: 1px solid var(--amber); color: var(--amber-2); }
 
 /* ---------- detail: kicker, title, lede */
 #flyout.wide .wb-kick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font: 500 12px var(--mono); letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-2); }
@@ -128,6 +129,13 @@
 #flyout.wide .wb-sec p.li::before { content: ''; position: absolute; left: 3px; top: 0.7em; width: 6px; height: 2px; background: var(--ink-2); }
 #flyout.wide .wb-sec p.wb-help { margin-top: 12px; font-size: 14px; color: var(--ink-2); }
 #flyout.wide .wb-help svg { vertical-align: -1px; }
+/* Before you decide: the earlier decisions on this idea, one per line; a decline leads with the amber rule */
+#flyout.wide .wb-prior { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+#flyout.wide .wb-prior li { display: flex; align-items: baseline; gap: 10px; padding-left: 10px; border-left: 3px solid var(--ink-4); font-size: 14px; line-height: 1.45; color: var(--ink); overflow-wrap: anywhere; }
+#flyout.wide .wb-prior li.s-declined, #flyout.wide .wb-prior li.s-rework, #flyout.wide .wb-prior li.s-failed { border-left-color: var(--amber); }
+#flyout.wide .wb-prior li button { padding: 0; background: none; border: 0; font: inherit; color: inherit; text-align: left; text-decoration: underline; text-decoration-color: var(--ink-3); text-underline-offset: 3px; }
+#flyout.wide .wb-prior li button:hover { color: var(--ink-hi); }
+#flyout.wide .wb-prior small { font: 500 12px var(--mono); color: var(--ink-2); }
 #flyout.wide .wb-note { margin: 14px 0 0; padding: 10px 14px; border-left: 3px solid var(--amber); font-size: 15px; line-height: 1.45; color: var(--ink); background: color-mix(in srgb, var(--amber) 6%, transparent); }
 #flyout.wide .wb-err { margin: 12px 0 0; padding: 10px 14px; border-left: 3px solid var(--red); font-size: 15px; color: var(--red-2); background: color-mix(in srgb, var(--red) 7%, transparent); }
 
