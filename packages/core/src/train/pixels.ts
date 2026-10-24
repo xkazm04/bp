@@ -1,6 +1,6 @@
 // The change map's pixel maths: two same-size RGBA buffers -> a 32x18 grid of the largest channel change per cell, the
 // share of pixels that moved and that visibly differ, the largest change and the box around every moved pixel; and the
-// words the compare panel says about it. Pure and dependency free, so the worker (changeMap.worker.ts), the main-thread
+// words the compare panel says about it, and the crop its changed-area mode zooms to (focusCrop). Pure and dependency free, so the worker (changeMap.worker.ts), the main-thread
 // fallback and scripts/check-train-compare.ts run the same code. The thresholds are the contest winner's (pix.js): a
 // change of more than 3 of 255 levels "moved" (encoder and antialiasing noise stays under it), more than 24 is visible.
 
@@ -75,3 +75,33 @@ export function bboxCells(g: PixGrid): { x: number; y: number; w: number; h: num
   const [x0, y0, x1, y1] = g.bbox, sx = GRID_W / g.w, sy = GRID_H / g.h;
   return { x: x0 * sx, y: y0 * sy, w: (x1 - x0 + 1) * sx, h: (y1 - y0 + 1) * sy };
 }
+
+/** A crop of the capture, in image fractions (0..1), and how much it enlarges the capture to fill the frame. */
+export interface FocusCrop { x: number; y: number; w: number; h: number; zoom: number }
+/** The changed-area mode's most a crop enlarges the capture: one image pixel is at most this many frame pixels wide. */
+export const MAX_ZOOM = 8;
+
+/**
+ * The changed-area crop of a pair: the moved pixels' box, padded by half its larger side (at least 8 px), widened to
+ * the frame's `aspect` in image pixels (16:9, ShotFigure.css .tr-scr) and to at least 1 / MAX_ZOOM of the capture,
+ * centred on the box and slid inside the image at the edges. null when nothing moved. The one exception to the aspect:
+ * a box no `aspect` crop inside the image can hold (a change across the whole capture, or most of a 16:10 one's height)
+ * is the full capture { 0, 0, 1, 1 } at zoom 1, letterboxed in the frame as every other mode draws it.
+ */
+export function focusCrop(g: Pick<PixGrid, 'w' | 'h' | 'bbox'>, aspect = 16 / 9): FocusCrop | null {
+  if (!g.bbox || !(g.w > 0 && g.h > 0)) return null;
+  const [x0, y0, x1, y1] = g.bbox, bw = x1 - x0 + 1, bh = y1 - y0 + 1, pad = Math.max(8, Math.max(bw, bh) / 2);
+  const cw = Math.max(bw + 2 * pad, (bh + 2 * pad) * aspect, g.w / MAX_ZOOM), ch = cw / aspect;
+  if (cw > g.w || ch > g.h) {
+    // no padded aspect crop fits: the unpadded box at the aspect, else the whole capture
+    const tw = Math.max(bw, bh * aspect, g.w / MAX_ZOOM), th = tw / aspect;
+    if (tw > g.w || th > g.h) return { x: 0, y: 0, w: 1, h: 1, zoom: 1 };
+    return place(g, x0 + bw / 2, y0 + bh / 2, tw, th);
+  }
+  return place(g, x0 + bw / 2, y0 + bh / 2, cw, ch);
+}
+
+const place = (g: Pick<PixGrid, 'w' | 'h'>, cx: number, cy: number, cw: number, ch: number): FocusCrop => {
+  const x = Math.min(Math.max(0, cx - cw / 2), g.w - cw), y = Math.min(Math.max(0, cy - ch / 2), g.h - ch);
+  return { x: x / g.w, y: y / g.h, w: cw / g.w, h: ch / g.h, zoom: g.w / cw };
+};

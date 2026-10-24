@@ -26,6 +26,7 @@ import { buildChunks, canBuild, holdsBuild } from '@bp/core/scan/admit';
 import { dispatch } from '@/lib/scan/actions';
 import type { ScanSim } from '@bp/core/model/scan-sim';
 import type { LedgerVariant } from '@/engine/state';
+import type { COMPARE_MODES } from './train/keymap';
 import type { GlyphSpec } from '@/engine/render/lens-glyph';
 import { metricMove } from '../Queue';
 import { useEngine, useLive, useScanCtx } from '../hooks';
@@ -171,7 +172,8 @@ export interface NoteAsk { ids: readonly string[]; decision: Exclude<TriageDecis
 export interface LastDecision { ids: readonly string[]; decision: Exclude<TriageResult['decision'], 'reopened'> }
 export type LedgerScope = 'packs' | 'backlog';
 export type CompareTheme = 'light' | 'dark' | 'both';
-export type CompareMode = 'side' | 'slider' | 'blink' | 'map';
+/** A compare screen mode: one of train/keymap.ts COMPARE_MODES (side, slider, blink, change map, changed area). */
+export type CompareMode = (typeof COMPARE_MODES)[number]['value'];
 export interface CompareView { theme: CompareTheme; mode: CompareMode }
 export const EMPTY_UI: LedgerUi = {
   sel: new Set(), lens: new Set(), status: new Set(), feat: new Set(), q: '', focus: null,

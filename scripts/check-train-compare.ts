@@ -408,6 +408,69 @@ const { packHeading, packOrder } = await imp('ComparePanel.tsx');
   ok(!hits.length, 'one judgement: no train ledger file defaults the direction, re-takes the median or re-tests the noise', hits);
 }
 
+// ------------------------------------------------------------------------------------------- changed area (focus)
+// The fifth compare mode: before and after cropped to the change map's box (padded, the frame's 16:9, zoom capped at
+// 8x), side by side. The one exception to the 16:9 rule is a box no 16:9 crop inside the image can hold: that reads
+// the whole capture (zoom 1, letterboxed as every other mode draws it). The mode list is written once (COMPARE_MODES).
+{
+  const px: Any = await import('../packages/core/src/train/pixels.ts'), focusCrop = px.focusCrop as Any;
+  const has = typeof focusCrop === 'function';
+  const crop = (w: number, h: number, bbox: number[]) => (has ? focusCrop({ w, h, cells: [], pct: 1, moved: 1, maxd: 100, bbox }) : null);
+  const EPS = 1e-9, inside = (c: Any) => !!c && c.x >= -EPS && c.y >= -EPS && c.x + c.w <= 1 + EPS && c.y + c.h <= 1 + EPS;
+  const holds = (c: Any, w: number, h: number, b: number[], pad = 0) => !!c && c.x * w <= b[0] - pad + EPS && c.y * h <= b[1] - pad + EPS && (c.x + c.w) * w >= b[2] + 1 + pad - EPS && (c.y + c.h) * h >= b[3] + 1 + pad - EPS;
+  // 1. a central box: contained with padding on every side, 16:9 in pixels, inside the image
+  const c1 = crop(1600, 900, [800, 450, 879, 494]);
+  ok(inside(c1) && holds(c1, 1600, 900, [800, 450, 879, 494], 1) && !!c1 && Math.abs((c1.w * 1600) / (c1.h * 900) - 16 / 9) < 1e-6, 'focus crop: a central box is padded on every side, 16:9 in pixels, inside the image', c1);
+  // 2. a corner box: clamped to the image, still containing the box
+  const c2 = crop(1600, 900, [1590, 890, 1599, 899]);
+  ok(inside(c2) && holds(c2, 1600, 900, [1590, 890, 1599, 899]), 'focus crop: a corner box is clamped to the image and still contained', c2);
+  // 3. a one-pixel box: zoom capped at 8x, centred on the pixel
+  const c3 = crop(1600, 900, [700, 300, 700, 300]);
+  ok(!!c3 && c3.w >= 1 / 8 - EPS && c3.zoom <= 8 + EPS && Math.abs((c3.x + c3.w / 2) * 1600 - 700.5) < 1e-6 && Math.abs((c3.y + c3.h / 2) * 900 - 300.5) < 1e-6 && inside(c3), 'focus crop: a 1-pixel box is zoomed at most 8x, centred on the pixel', c3);
+  // 4. the stated exception to case 1: a box spanning the whole 1280x800 (16:10) capture -> the full image, zoom 1
+  const c4 = crop(1280, 800, [0, 0, 1279, 799]);
+  ok(!!c4 && c4.x === 0 && c4.y === 0 && c4.w === 1 && c4.h === 1 && c4.zoom === 1, 'focus crop: a whole-capture box on 1280x800 is the full image at zoom 1 (the exception to 16:9)', c4);
+  ok(has && focusCrop({ w: 10, h: 10, cells: [], pct: 0, moved: 0, maxd: 0 }) === null, 'focus crop: no box, no crop');
+
+  const scr: Any = await imp('Screens.tsx'), FocusPair = scr.FocusPair;
+  const React = (await import('react')).default, { renderToStaticMarkup } = await import('react-dom/server');
+  const fp = (map: Any) => (FocusPair ? renderToStaticMarkup(React.createElement(FocusPair, { label: 'light · 1600x900', before: '/b.png', after: '/a.png', map })) : '');
+  const grid = (w: number, h: number, bbox?: number[]) => ({ w, h, cells: new Array<number>(GRID_W * GRID_H).fill(0), pct: bbox ? 1 : 0, moved: bbox ? 1 : 0, maxd: bbox ? 100 : 0, ...(bbox ? { bbox } : {}) });
+  const vars = (html: string) => [...html.matchAll(/<img [^>]*style="([^"]*)"/g)].map((m) => m[1]);
+  const frames = (html: string) => (html.match(/class="tr-fig"/g) ?? []).length;
+  const emptyFrame = (html: string) => [...html.matchAll(/<div class="tr-scr[^"]*">(.*?)<\/div>/g)].some((m) => !/<img /.test(m[1]));
+  // 5. a done map with a box: two frames, the same crop on both images, the caption names the box and the zoom
+  const h5 = fp({ status: 'done', grid: grid(1600, 900, [800, 450, 879, 494]) }), v5 = vars(h5);
+  ok(frames(h5) === 2 && v5.length === 2 && v5[0] === v5[1] && /--fx:/.test(v5[0]) && /--fy:/.test(v5[0]) && /--fw:/.test(v5[0]) && /--fh:/.test(v5[0]), 'focus pair: two frames, before and after, both images carrying the same --fx/--fy/--fw/--fh crop', v5);
+  ok(/Before/.test(h5) && /After/.test(h5) && h5.includes('x 800–879, y 450–494') && /\d(\.\d)?× zoom/.test(h5), 'focus pair: the caption names the box and the zoom', h5.slice(0, 400));
+  ok(/class="tr-heat"/.test(h5), 'focus pair: the change map is registered over the after crop');
+  const h4 = fp({ status: 'done', grid: grid(1280, 800, [0, 0, 1279, 799]) });
+  ok(/spans the whole screen/.test(h4), 'focus pair: a whole-capture box says the change spans the whole screen', h4.slice(0, 400));
+  // 6. nothing moved, computing, error: the two full frames and a note, never an empty frame
+  const h6 = fp({ status: 'done', grid: grid(1600, 900) }), hc = fp({ status: 'computing' }), he = fp({ status: 'error', error: 'decode failed: 404' });
+  ok(frames(h6) === 2 && /Nothing moved/.test(h6) && !emptyFrame(h6) && !/--fx/.test(h6), 'focus pair: no box -> the two full frames side by side and "Nothing moved"', h6.slice(0, 400));
+  ok(!!FocusPair && /computing…/.test(hc) && /decode failed: 404/.test(he) && !emptyFrame(hc) && !emptyFrame(he) && frames(hc) === 2 && frames(he) === 2, 'focus pair: computing says so, an error says its text, never an empty frame', [hc.slice(0, 200), he.slice(0, 200)]);
+
+  // 7. M cycles one exported list; no other copy of it under components/ledger
+  const km: Any = await import(pathToFileURL(path.join(SRC, 'components/ledger/train/keymap.ts')).href), CM = km.COMPARE_MODES as Any;
+  ok(Array.isArray(CM) && CM.map((m: Any) => m.value).join() === 'side,slider,blink,map,focus', 'compare modes: side -> slider -> blink -> map -> focus, one exported list', CM);
+  const mKey = km.KEYMAP?.compare?.find((b: Any) => b.action === 'mode');
+  ok(Array.isArray(CM) && mKey?.label === CM.map((m: Any) => m.label.toLowerCase()).join(' · '), "compare modes: M's key label is the list's labels", mKey?.label);
+  const LEDGER = path.join(SRC, 'components/ledger'), copies: string[] = [], readers: string[] = [];
+  const walkL = (d: string): string[] => fs.readdirSync(d, { withFileTypes: true }).flatMap((x) => (x.isDirectory() ? walkL(path.join(d, x.name)) : /\.tsx?$/.test(x.name) ? [path.join(d, x.name)] : []));
+  for (const f of walkL(LEDGER)) {
+    const s = stripComments(fs.readFileSync(f, 'utf8')), r = path.relative(LEDGER, f).replace(/\\/g, '/');
+    if (/'side'[^\n]{0,40}'slider'/.test(s) && r !== 'train/keymap.ts') copies.push(r);
+    if (/\bCOMPARE_MODES\b/.test(s)) readers.push(r);
+  }
+  ok(!copies.length && ['LedgerPage.tsx', 'train/compare/Screens.tsx', 'train/keymap.ts'].every((r) => readers.includes(r)), 'compare modes: LedgerPage, Screens and keymap read COMPARE_MODES; no other side/slider list', { copies, readers });
+
+  // 8. the new CSS: tokens only, the 12 px floor, no animation or transition (reduced motion has nothing to stop)
+  const sf = stripComments(fs.readFileSync(path.join(SRC, CMP, 'ShotFigure.css'), 'utf8')) + stripComments(fs.readFileSync(path.join(SRC, CMP, 'Screens.css'), 'utf8'));
+  const focusRules = [...sf.matchAll(/([^{}]*\.focus[^{}]*)\{([^}]*)\}/g)].map((m) => m[2]);
+  ok(focusRules.length > 0 && focusRules.every((b) => !/animation|transition|#[0-9a-f]{3,8}\b|rgb|hsl/i.test(b) && [...b.matchAll(/--fs-(\d+)/g)].every((m) => Number(m[1]) >= 12)), 'focus css: tokens only, --fs-* >= 12, no animation or transition', focusRules);
+}
+
 // ------------------------------------------------------------------------------------------- canDecide, the release window
 { // leaving a release: a draft allows it, a non-draft refuses it, an UNKNOWN release fails open (rules.ts says so; the server's 409 is the owner)
   const inRel = { status: 'done' as const, release_id: 'rel-1' };

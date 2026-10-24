@@ -53,7 +53,7 @@ import { PackTable } from './train/PackTable';
 import { DecisionBar } from './train/DecisionBar';
 import { DecideOrder, useDecide } from './train/Decide';
 import { KeyLine, KeysSheet } from './train/KeysSheet';
-import { keyAction, type KeyScope } from './train/keymap';
+import { COMPARE_MODES, keyAction, type KeyScope } from './train/keymap';
 import { Seg } from './train/ui/Controls';
 import { StateMark } from './train/ui/Marks.tsx';
 import { ComparePanel } from './train/compare/ComparePanel';
@@ -72,7 +72,7 @@ export interface LedgerPageProps {
 
 const NAMES: Record<LedgerVariant, string> = { triage: 'Triage table', matrix: 'Feature × lens matrix', release: 'Release' };
 const THEMES: readonly CompareTheme[] = ['light', 'dark', 'both'];
-const MODES: readonly CompareMode[] = ['side', 'slider', 'blink', 'map'];
+const MODES: readonly CompareMode[] = COMPARE_MODES.map((m) => m.value);
 const cycle = <T,>(xs: readonly T[], x: T): T => xs[(xs.indexOf(x) + 1) % xs.length];
 
 /** Mounted always (cheap: one store slice); the page state is useLedger.ts's store, so the selection and filters outlive a close. */

@@ -31,6 +31,13 @@ const views: readonly KeyBinding[] = [
   { keys: ['2'], action: 'view2', label: 'feature × lens matrix' },
   { keys: ['3'], action: 'view3', label: 'release' },
 ];
+/** The compare panel's screen modes, in the order M cycles them: the one list LedgerPage's M, the Screens segment and
+ *  this label read (useLedger.ts CompareMode derives from it). Here because this module is value-free. */
+export const COMPARE_MODES = [
+  { value: 'side', label: 'Side by side' }, { value: 'slider', label: 'Slider' }, { value: 'blink', label: 'Blink' },
+  { value: 'map', label: 'Change map' }, { value: 'focus', label: 'Changed area' },
+] as const;
+
 const help: KeyBinding = { keys: ['?'], action: 'help', label: 'keys' };
 const filter: KeyBinding = { keys: ['/'], action: 'filter', label: 'filter' };
 
@@ -60,7 +67,7 @@ export const KEYMAP: Readonly<Record<KeyScope, readonly KeyBinding[]>> = {
   ],
   compare: [
     { keys: ['l'], action: 'theme', label: 'light · dark · both' },
-    { keys: ['m'], action: 'mode', label: 'side by side · slider · blink · change map' },
+    { keys: ['m'], action: 'mode', label: COMPARE_MODES.map((m) => m.label.toLowerCase()).join(' · ') },
     { keys: ['w'], action: 'wide', label: 'full width' },
   ],
   release: [

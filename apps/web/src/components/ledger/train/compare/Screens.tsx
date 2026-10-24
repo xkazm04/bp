@@ -1,13 +1,14 @@
 // The compare panel's screens: the item's before/after shot pairs (compare.ts compareOf, paired by theme and size) in
-// light, dark or both, side by side, as a slider, blinking or as a change map, with the pixel verdict above them in
+// light, dark or both, side by side, as a slider, blinking, as a change map or cropped to the changed area, with the pixel verdict above them in
 // words. The theme and the mode live in the ledger store (LedgerUi.cmp, L and M cycle them); everything else is local.
 // Only the shown pairs mount images; the change map of each is computed once per session by useChangeMap.
-import { memo, useMemo, useRef, useState } from 'react';
+import { memo, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { Comparison, ShotPair } from '@bp/core/scan/compare';
 import type { Shot } from '@bp/core/scan/types';
 import { shotSrc } from '@bp/core/train/shots';
-import { pixWords } from '@bp/core/train/pixels';
+import { focusCrop, pixWords } from '@bp/core/train/pixels';
 import type { CompareMode, CompareTheme, CompareView } from '../../useLedger';
+import { COMPARE_MODES } from '../keymap';
 import { Callout, Seg, type SegOption } from '../ui/Controls';
 import { ChangeMap } from './ChangeMap';
 import { NoCapture, ShotFigure, ShotImg } from './ShotFigure';
@@ -15,9 +16,7 @@ import { useChangeMap, type MapState, type PairRef } from './useChangeMap';
 import './Screens.css';
 
 const THEMES: readonly SegOption<CompareTheme>[] = [{ value: 'light', label: 'light' }, { value: 'dark', label: 'dark' }, { value: 'both', label: 'both' }];
-const MODES: readonly SegOption<CompareMode>[] = [
-  { value: 'side', label: 'Side by side' }, { value: 'slider', label: 'Slider' }, { value: 'blink', label: 'Blink' }, { value: 'map', label: 'Change map' },
-];
+const MODES: readonly SegOption<CompareMode>[] = COMPARE_MODES;
 
 /** The pairs a theme choice shows: that theme's, every pair for `both`, and every pair when none has the theme. */
 export function shownPairs(pairs: readonly ShotPair[], theme: CompareTheme): ShotPair[] {
@@ -146,6 +145,7 @@ const PairView = memo(function PairView({ s, slug, mode, map }: { s: ShotPair; s
   }
   if (mode === 'slider') return <div className="tr-pair one"><Slider label={label} before={b} after={a} /></div>;
   if (mode === 'blink') return <div className="tr-pair one"><Blink label={label} before={b} after={a} /></div>;
+  if (mode === 'focus') return <FocusPair label={label} before={b} after={a} map={map} />;
   const moved = map?.status === 'done' ? map.grid.moved.toFixed(2) + '% moved' : map?.status === 'error' ? 'failed' : 'computing…';
   return (
     <div className="tr-pair one">
@@ -156,6 +156,48 @@ const PairView = memo(function PairView({ s, slug, mode, map }: { s: ShotPair; s
     </div>
   );
 });
+
+/** A box in image pixels as the pixel words print it. */
+const boxText = (b: readonly number[]): string => `x ${b[0]}–${b[2]}, y ${b[1]}–${b[3]}`;
+
+/** Changed area: before and after side by side, both cropped to focusCrop's rect of the map's box (the frame places
+ *  each image through --fx/--fy/--fw/--fh, ShotFigure.css .tr-scr.focus), the heat cells registered over the after.
+ *  Nothing moved, a map still computing or a failed one: the two whole frames and what the map says. No animation:
+ *  the crop is a still layout, so reduced motion has nothing to stop. */
+export function FocusPair({ label, before, after, map }: { label: string; before: string; after: string; map: MapState | undefined }) {
+  const grid = map?.status === 'done' ? map.grid : undefined, crop = grid ? focusCrop(grid) : null;
+  if (!grid || !crop || !grid.bbox) {
+    return (
+      <div className="tr-focus-wrap">
+        <div className="tr-pair">
+          <ShotFigure cap={'Before · ' + label}><ShotImg src={before} alt={'Before, ' + label} /></ShotFigure>
+          <ShotFigure cap={'After · ' + label} aside={map?.status === 'error' ? 'failed' : grid ? 'whole screen' : 'computing…'}>
+            <ShotImg src={after} alt={'After, ' + label} />
+            {!map || map.status === 'computing' ? <span className="tr-computing">computing…</span> : null}
+          </ShotFigure>
+        </div>
+        {map?.status === 'error' ? <Callout tone="error"><b>No changed area: the change map failed.</b> {map.error}</Callout>
+          : grid ? <Callout tone="note"><span aria-hidden="true">＝</span><span><b>Nothing moved</b> in {label}: both frames show the whole capture.</span></Callout> : null}
+      </div>
+    );
+  }
+  const whole = crop.w === 1 && crop.h === 1, box = boxText(grid.bbox);
+  const zoom = whole ? 'whole screen' : `${+crop.zoom.toFixed(1)}× zoom`;
+  const style = { '--fx': crop.x, '--fy': crop.y, '--fw': crop.w, '--fh': crop.h } as CSSProperties;
+  const img = (src: string, alt: string) => <img src={src} alt={alt} className="crop" style={style} decoding="async" draggable={false} />;
+  return (
+    <div className="tr-focus-wrap">
+      <div className="tr-pair focus">
+        <ShotFigure cap={'Before · ' + label + ' · ' + box} aside={zoom} frame="focus">{img(before, 'Before, ' + label + ', the changed area')}</ShotFigure>
+        <ShotFigure cap={'After · ' + label + ' · changed pixels marked'} aside={zoom} frame="focus">
+          {img(after, 'After, ' + label + ', the changed area')}
+          <ChangeMap grid={grid} crop={crop} />
+        </ShotFigure>
+      </div>
+      {whole ? <Callout tone="diff"><span aria-hidden="true">≠</span><span>In {label} the change spans the whole screen ({box}): the frames show all of it.</span></Callout> : null}
+    </div>
+  );
+}
 
 /** The after clipped over the before at --cut; the range input sets the variable on the frame, React never re-renders. */
 function Slider({ label, before, after }: { label: string; before: string; after: string }) {

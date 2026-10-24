@@ -10,6 +10,12 @@
 .tr-scr img.dim { opacity: 0.55; }
 .tr-scr-none { position: absolute; inset: 0; display: grid; place-items: center; font: 500 var(--fs-12) var(--mono); letter-spacing: var(--ls-2); text-transform: uppercase; color: var(--ink-2); background: var(--panel); }
 
+/* changed area: the frame shows only focusCrop's rect of the capture. Each image is sized 1 / --fw by 1 / --fh of the
+   frame and shifted by the crop's origin, so the rect fills the 16:9 frame (it has the frame's aspect in pixels; the
+   whole-capture exception is 0 0 1 1, the plain contained frame). A still layout: no animation, no transition. */
+.tr-scr.focus img.crop { inset: auto; left: calc(-100% * var(--fx) / var(--fw)); top: calc(-100% * var(--fy) / var(--fh)); width: calc(100% / var(--fw)); height: calc(100% / var(--fh)); }
+.tr-focus-wrap > .tr-call { margin-top: var(--sp-8); }
+
 /* slider: the after clipped over the before; the knob follows --cut; a transparent range input takes the drag and keys */
 .tr-scr img.top { clip-path: inset(0 0 0 var(--cut, 50%)); }
 .tr-knob { position: absolute; top: 0; bottom: 0; left: var(--cut, 50%); width: 2px; margin-left: -1px; background: var(--accent); box-shadow: 0 0 0 1px var(--knob-ring); pointer-events: none; }
