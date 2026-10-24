@@ -277,7 +277,7 @@ export class TrainSim {
   }
 
   // ----------------------------------------------------------------------------------------- triage
-  /** Triage built items, as POST triage: 400 bad body; 409 with the result as `body` when none moved. */
+  /** Triage built items, as POST triage: 400 bad body; 409 'nothing moved' with the route's body (`error` and the result) when none moved. */
   triage(body: TriageBody): TriageResult {
     const b = body as Partial<TriageBody> | null;
     if (!b || !Array.isArray(b.ids) || !b.ids.length || b.ids.length > MAX_IDS || b.ids.some((i) => typeof i !== 'string' || !SAFE_ID.test(i))
@@ -292,7 +292,7 @@ export class TrainSim {
       if (p.pack_id) touched.push(p.pack_id);
     }
     const result: TriageResult = { decision: TO[b.decision], by: BY, triaged, skipped, packs_triaged: this.settle(touched, at) };
-    if (!triaged.length) throw Object.assign(new Error('nothing moved: ' + skipped.map((s) => s.id + ' ' + (s.reason ?? s.status)).join(', ')), { status: 409, body: result });
+    if (!triaged.length) throw Object.assign(new Error('nothing moved'), { status: 409, body: { error: 'nothing moved', ...result } });
     this.h.changed();
     return result;
   }
@@ -306,6 +306,7 @@ export class TrainSim {
     if (leaves && !mayLeave) return { id: p.id, status: p.status, reason: 'in-release' };
     if (d === 'reopen' && !p.triaged_from) return { id: p.id, status: p.status, reason: 'no-prior-status' };
     if (d === 'reopen' && p.status === 'rework' && this.h.props.some((x) => x.attempt_of === p.id)) return { id: p.id, status: p.status, reason: 'rebuilt' };
+    if (d === 'reopen' && p.pack_id && this.packs.find((k) => k.id === p.pack_id)?.status === 'closed') return { id: p.id, status: p.status, reason: 'pack-closed' };
     const next: Proposal = { ...p, status: d === 'reopen' ? p.triaged_from! : (TO[d] as ProposalStatus), triaged_from: p.status, triaged_by: by, triaged_at: at, updated_at: at };
     if (text) next.triage_note = text; else delete next.triage_note;
     if (leaves) delete next.release_id;
