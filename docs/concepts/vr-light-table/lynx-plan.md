@@ -203,7 +203,11 @@ headset (decision 5); "in the Simulator" means the Simulator's window on Lynx, n
       face opacity). Heights carry stage or lens reading, never position.
       Proof: `BpTable: instances rooms=13 bays=29 tiles=133`; `stat scenerendering` (mesh draw calls) shows one draw
       per instance batch per eye pass, numbers in the run note; a capture.
-- [ ] **L3.4 Hands and zoom (3 to 5 days).** Meta Interaction SDK hand poses, driven by the Simulator's synthetic hands
+- [ ] **L3.4 Hands and zoom (3 to 5 days).** *Built 2026-10-24 (Lynx, spark `vr-hands-zoom`, `a9ff220` levels, `c5fad9e` hands); open until the owner's
+      Simulator note. The levels and tracking-loss lines print from console and synthetic hands in `-game` and the staged
+      `bp.exe`. Live hands do not reach the app: the Simulator's XR session stops at READY on Lynx (`machine.md`, the L3.4
+      section, reading 33). Run note with the scorecard: [`runs/2026-10-24-lynx-l34.md`](runs/2026-10-24-lynx-l34.md).*
+      Meta Interaction SDK hand poses, driven by the Simulator's synthetic hands
       **[verify on Lynx]** what v207's Simulator offers. Point to highlight; pinch-pull lifts a room (L0 to L2); a
       breadcrumb and a way back. Tracking loss is a state (registry `hand-tracked-timing-windows`): pinch is judged from
       motion onset, and controllers are the fallback.
@@ -214,7 +218,10 @@ headset (decision 5); "in the Simulator" means the Simulator's window on Lynx, n
       say (tile `health[<lens>]`, `general`), never where they are.
       Proof: an automation test or console command `BpLens.Cycle` that switches all 8 and logs `BpLens: <id> moved=0`
       for each (wing, room, bay and tile transforms compared before and after); a capture of two lenses side by side.
-- [ ] **L3.6 Render spike (2 days).** Forward + MSAA (`r.ForwardShading=1`, `r.AntiAliasingMethod=3`, `r.MSAACount=4`,
+- [ ] **L3.6 Render spike (2 days).** *Partly pulled forward 2026-10-24 (spark `vr-hands-zoom`, `7fefb8a`): the forward + MSAA + instanced-stereo
+      settings are in and verified (`machine.md` L3.4 section). The deferred comparison and the frame-time readings are
+      still open.*
+      Forward + MSAA (`r.ForwardShading=1`, `r.AntiAliasingMethod=3`, `r.MSAACount=4`,
       `vr.InstancedStereo=1` in `apps/vr/Config/DefaultEngine.ini`, **[verify on Lynx]** the 5.8 names) against
       deferred + Lumen + TSR, at Quest 3 resolution (2064x2208 per eye; **[verify on Lynx]** that the Simulator's device
       is set to Quest 3), on the full Kettle plan, in the Simulator.
@@ -244,7 +251,10 @@ Lynx-to-Wolf hand-off and its Host trailers are parked (decision 7).
 - [x] **L4.0 Lamp design lock.** Done 2026-10-21: option A, the spring-arm cone (wolf-plan L4.0, R7 closed).
 - [x] **L4.1 Props.** Done 2026-10-21: 14 ArtSource folders, every gate `pass: true`, `npm run check:art` green and in
       `npm run check` (wolf-plan L4.1, with every asset's dated line; plan.md 'P4 Lynx-side back-measure (2026-10-22)').
-- [ ] **L4.2 Import (Lynx, half a day per asset; deferred).** Import each `final.*` through the editor MCP into
+- [ ] **L4.2 Import (Lynx, half a day per asset; deferred).** *Studio part done 2026-10-24 (owner lifted the deferral for spark `vr-hands-zoom`, `85dec86`): city-backdrop,
+      lamp-agent (static), studio-desk-lamp, -drawing-tubes, -mug, -pinned-drawings and -shelves carry their `import`
+      blocks; draws p50 144 at the target pose (`machine.md` reading 36). fixture-kit and survey-pin are not imported.*
+      Import each `final.*` through the editor MCP into
       `apps/vr/Content/Bp/Art/<asset-id>/`. Nothing is imported without its gate results (the plan.md P4 gate). The
       lamp is imported as it stands (R8b allowed, owner 2026-10-23). Deferred by the owner on 2026-10-23 until the project succeeds (decision 7).
       Proof: the manifest's `import` block; `stat rhi` and `stat scenerendering` with the asset in the greybox.

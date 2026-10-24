@@ -6,6 +6,69 @@ file. Every line below is a command's own output or a file read on the named hos
 > **2026-10-23 (owner).** Lynx is now the only build host; Wolf is retired, and the live plan is
 > [`lynx-plan.md`](lynx-plan.md). The readings below are unchanged. New Lynx facts go in a new dated section.
 
+## Lynx, 2026-10-24 (later): L3.4 hands and zoom, the forward look, the studio
+
+Spark `vr-hands-zoom`, commits `2db0c68` (islands) to `85dec86` (studio). Run note:
+[`runs/2026-10-24-lynx-l34.md`](runs/2026-10-24-lynx-l34.md).
+
+- **Renderer.** `DefaultEngine.ini` now sets forward shading, `r.AntiAliasingMethod=3` (MSAA), `r.MSAACount=4`,
+  `vr.InstancedStereo=True`, GI and reflections 0, and VSM, ray tracing, path tracing and Lumen hardware RT off.
+  Substrate stays on and works under forward. Each name was checked in the 5.8 engine source:
+  - `r.AntiAliasingMethod` 3 = MSAA, in `SceneView.cpp`;
+  - `r.ForwardShading`, in `RenderUtils.cpp`;
+  - GI and reflection method 0 = None, in `IndirectLightRendering.cpp`;
+  - `r.MSAACount`, in `SceneTextures.cpp`;
+  - `vr.InstancedStereo` (ReadOnly), in `SceneRendering.cpp`.
+
+  The editor read back: forward 1, AA 3, MSAA 4, ISS 1, GI 0, refl 0, VSM 0, RT 0, PT 0, Substrate 1. The full shader
+  recompile took about 4 minutes in the emulated x64 editor.
+- **Forward-path traps:**
+  - A Nanite mesh renders black, so Nanite is off on the frame and every studio mesh.
+  - A RectLight lights nothing, so the table lights are spots.
+  - A tone curve crushed the paper blue, so the post volume sets it to 0.
+- **Interchange re-import keeps the old material-instance parameters.** The import steps copy the source values onto each
+  MI explicitly (`import_frame.py`, `import_studio.py`).
+- **A hidden-then-shown ISM loses its per-instance data in 5.8.** Every instance then reads size 0 and draws nothing. So
+  levels never toggle batch visibility: a vertex-shader fold on custom data index 3 hides instances.
+- **The level script is not idempotent in one session.** `level_lighttable.py` run twice left two of every light. It now
+  places one of each at the pair's sum, and a re-run needs `save_map`.
+- **Blender** for the art scripts is `C:\Users\kazda\ai\tools\blender-5.2.2-windows-arm64\blender.exe`.
+- **Meta XR Simulator v207, live hands: not working on Lynx.**
+  - The Simulator's window needs Windows App Runtime 1.5. `install-xr.ps1` extracts the MSI but skips its
+    `WindowsAppRuntime/install.bat`. WP4 installed the bundled msix files with `Add-AppxPackage`:
+    `MicrosoftCorporationII.WinAppRuntime.Main.1.5` and `Microsoft.WinAppRuntime.DDLM.5001.214.1843.0-x6`, x64,
+    5001.214.1843.0. That is a change to the machine; `Remove-AppxPackage` undoes it.
+  - The window then opens and connects.
+  - Hand poses switch on Num1 to Num4 (default, poke, pinch, grab); `[` and `]` cycle the input.
+  - The inputs follow the head. Moving a hand needs focus in the Simulator window, and its controls take no automation.
+  - The runtime offers `XR_EXT_hand_tracking` v4. With `-vr` the session goes IDLE, then READY, and stays there (1,304
+    `beginFrame() discarded`). The Welcome modal was still open, which may hold it. No joints reached the app.
+- **The Game target with the Isdk.** A BuildCookRun with `OculusInteraction` and `OculusInteractionPrebuilts`:
+  - the game build took 35 s and the cook 1,398 s (about 23 minutes, mostly shaders);
+  - the staged `bp.exe` printed the Kettle line;
+  - without an XR runtime, the Isdk rigs' `BeginPlay` ensure-fails and crashed `bp.exe` once, so `ABpPawn` makes them only
+    when a tracking-data subsystem exists.
+- **The target pose's field of view.** Before `ABpPawn`, `BpView.Pose target`'s 70 degrees never applied; the
+  approved WP2 and WP3 captures rendered at 90. With the pawn's camera the 70 applied and cropped the framing, so it is
+  now 90 (`BpGameMode.h`).
+
+| # | What ran | Verbatim result |
+|---|---|---|
+| 32 | `node scripts/check-plan-islands.mjs` | 8/8; Kettle's islands extent 3810 x 1678 plan units (default `/plan` 3170 x 1582, byte-identical to before) |
+| 33 | `run-bplink.mjs --mode game --exec "BpHands.Pinch 0:OPS,BpHands.Pinch scheduling,BpHands.Simulate lost,BpHands.Pinch scheduling,BpHands.Simulate back,BpHands.Push,BpHands.Pinch home"` (also in the staged `bp.exe`) | `BpHands: pinch-pull -> enter wing=0:OPS`, `BpLevel: L0 -> L1 wing=0:OPS`, `BpHands: pinch-pull -> enter room=scheduling`, `BpLevel: L1 -> L2 room=scheduling`, `BpHands: tracking lost -> held level=L2 hand=synthetic`, `BpHands: refused pinch-pull on scheduling: tracking lost, level held at L2`, `BpHands: tracking back hand=synthetic`, `BpHands: pinch-push -> back`, `BpLevel: L2 -> L1 room=scheduling`, `BpLevel: L1 -> L0 wing=0:OPS`, `BpHands: pinch on crumb home -> L0` |
+| 34 | `py/level_check.py` in PIE (L0 snapshot, enter wing, enter room, lens, back, back, lens) | `done: True`, `back_at_l0_equal: True` in WP3, WP4 and 3 of 4 WP5 runs. The 4th: `False`, the rooms batch at (0, 8.98e-05, 94.20007) against (0, 0, 94.2). Not diagnosed |
+| 35 | `run-bplink.mjs --mode game --xr-sim --ue-args "-csvCaptureFrames=900" --hold 60`, studio in, play pose | `GPUSceneInstanceCount` 199; `DrawCall/*` p50: Basepass 30, Prepass 30, ShadowDepths 8, Translucency 13, occlusion tests 14, SlateUI 2; RHI total 132 |
+| 36 | the same with `--exec "BpView.Pose target"` | Basepass 37, Prepass 37, ShadowDepths 8, Translucency 12, occlusion tests 13, SlateUI 2; RHI total **144** (P4 budget 150) |
+
+Reading 30 is not comparable with 35 and 36. It was taken before the 180 cm frame, the studio, the pawn and the light
+dedupe. The studio is the base-pass and prepass rise. ShadowDepths fell from 20 to 8: two shadowed lights instead of six.
+
+Not established:
+- live hands in the Simulator (the owner tries them);
+- whether the CSV counts one eye or both, now that instanced stereo is on;
+- any frame time (L3.6);
+- why `level_check.py` failed once (row 34).
+
 ## Lynx, 2026-10-24: L3.3 the volumes
 
 Spark `vr-volumes`. `ABpTable` draws /plan's rooms, bays and tiles as three `UInstancedStaticMeshComponent`s (engine
