@@ -712,6 +712,13 @@ Rejected: a looping radar sweep (fake progress, perpetual frames) and a per-tile
   small check at the tile's top-left when the tile is at least 24 px. Reduced motion: still dashes, no sweep, ticks
   stay. Boxes, nesting, chip text and widths and the done lists are worked out in `set()`; a frame reads arrays,
   reuses two rect records and allocates nothing; ticks are culled to the viewport (528 tiles at `?scale=4`).
+- **The chip is a target** (2026-10-24). Each drawn chip registers into the frame's hit list (`render/hits.ts`, kind
+  `scan`, id = the job: `ScanView.job`, so every `?scale` line's `j1@b` chip names job `j1`), under the flags. Hover
+  sets `{ type: 'scan', id: job }` and the pointing cursor; the card (`Overlays.tsx`) reads `E.scans.viewOf(job)`:
+  status word (`stalled` for a silent run), lens name, `n/m`, "no sign of life for N min" from `ScanView.seen`, a
+  failed run's `ScanView.error`, "Click for the job". A click sets `{ dtab: 'swarm', scanJob: job }` and never moves
+  the camera (the flyout overlays the plan); the Agents panel takes `S.scanJob` once (selects the job, clears it) and
+  focuses its Cancel. Off the chip, the place under the outline is hit as before; at a past date no chip, no target.
 - **The loop sleeps** unless a view is running: `scans.animating` joins the keep-alive (at most ~30 fps, 33 ms
   when only scans move); queued, done and failed views are static and draw once.
 - **Kettle scan sim** (`packages/core/src/model/scan-sim.ts`). `bind()` gives it the base slugs in layout order, the enabled
