@@ -860,7 +860,7 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
   findings moved between packages or removed, a warning when two packages share a feature. Create clears the selection and
   selects the new tab; the wave panel shows each package (model, effort, findings, job state) with Dispatch wave, Dispatch
   remaining, a package's own Dispatch, Edit and Delete (draft only; Delete asks twice). Dispatch rows flip through the same
-  optimistic overlay as the direct path (`Ledger.dispatchWave`). A row in a wave shows a chip (`wave · package`, the title names
+  intent store as the direct path (`Ledger.dispatchWave`, one send helper). A row in a wave shows a chip (`wave · package`, the title names
   model and effort) passed to the memoised `Row` as four strings, so the J/K budget is unchanged. The wave list reloads after
   every mutation and when a wave job changes status; a failing list reads as no waves. Text is 12 px or more, the buttons'
   rules sit under `.lg-page`, and below 720 px of table width (a container query) the tabs fold into a select and the
@@ -874,8 +874,11 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
   tab (`rel="noopener noreferrer"`, http(s) only) on a ledger row and the review detail, plain text on a review list row
   (a listbox option holds no control). `kind` `work-item` reads "work item".
 - **Dispatch** (the backlog) is `dispatch(useScanCtx(), ids)` (`apps/web/src/lib/scan/actions.ts`): proposed or approved
-  findings with no job go as one execute run across lenses; optimistic until the next store or sim update, a refusal
-  rolls back with a toast.
+  findings with no job go as one execute run across lenses. A sent finding is an intent in the ledger's module store
+  (`LedgerUi.intents`, `components/ledger/intents.ts`, the same settle rule as triage's pending set): it reads approved
+  and cannot be dispatched again until the store or sim shows it in another status, an unrelated update leaves it alone,
+  closing the ledger keeps it, and a store silent for 60 s (`INTENT_BOUND_MS`) releases it with a toast that it may have
+  landed. A refusal withdraws only that send's unsent or skipped findings still at their sent-from status, with a toast.
 - **Value per effort** (`rankValue`, the backlog's order within a status and the order `/lens-scan execute` builds a
   batch in): `ev = gain × confidence ÷ effort`. Gain = 0.25 + 0.75 × |expected_delta| ÷ the largest |expected_delta|
   among the findings of the same lens and metric; 0.5 when a finding names no metric or delta. Confidence =
