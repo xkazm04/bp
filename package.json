@@ -101,7 +101,8 @@
     "check:findings": "node scripts/fixtures/kettle-findings.mjs --check",
     "check:kettle-data": "node scripts/fixtures/gen-kettle.mjs packages/core/data --check",
     "check:swarm-data": "node scripts/fixtures/gen-swarm.mjs packages/core/data --check",
-    "check:web-bind": "node scripts/check-web-bind.mjs"
+    "check:web-bind": "node scripts/check-web-bind.mjs",
+    "check:scan-liveness": "node scripts/check-scan-liveness.ts"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

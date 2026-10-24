@@ -5,7 +5,8 @@
 import type { Layout, Product } from '@bp/core/model';
 import type { ScanView } from '@/engine/render/scans';
 import type { ScanSnapshot } from '@bp/core/scan/types';
-import { isJobNote, type ScanJob, type ScanScope } from '@bp/core/scan/jobs';
+import type { ScanJob, ScanScope } from '@bp/core/scan/jobs';
+import { SILENT_MS, jobSignOfLife } from '@bp/core/scan/liveness';
 
 import { scopesAt, jobProgress, type JobProgress, type ScopeOption } from '@bp/core/scan/views';
 export { scopesAt, jobProgress, type JobProgress, type ScopeOption } from '@bp/core/scan/views';
@@ -15,19 +16,10 @@ type Geo = { P: Product; L: Layout };
 export const LINGER_MS: Partial<Record<ScanJob['status'], number>> = { done: 3000, failed: 6000 };
 
 /**
- * How long a running job may go without a sign of life before the plan stops drawing it as live. A sign of
- * life is the newest activity row of the job's own run (a reading or a measured feature lands every few
- * seconds on a healthy scan), else the job's start. Generous on purpose: a slow feature is not a dead one.
+ * How long a running job may go without a sign of life before the plan stops drawing it as live: the one liveness
+ * threshold (@bp/core/scan/liveness SILENT_MS), which the header pill, the timeline and the Agents figure read too.
  */
-export const STALE_MS = 10 * 60 * 1000;
-
-/** The newest sign of life of a running job, in ms: its run's last activity row, else its start; NaN if neither parses. */
-function lastSeen(j: ScanJob, scan: ScanSnapshot | undefined): number {
-  let last = Date.parse(j.started_at ?? j.queued_at);
-  const run = scan && (scan.runs.find((r) => r.id === j.run_id) ?? scan.runs.find((r) => isJobNote(r.note, j.id)));
-  if (run && scan) for (const a of scan.activity) if (a.run_id === run.id) { const t = Date.parse(a.at); if (t > last || !Number.isFinite(last)) last = t; }
-  return last;
-}
+export const STALE_MS = SILENT_MS;
 
 /**
  * The views of the measure jobs worth drawing at `now`: queued and running ones (a running one with no sign of life for STALE_MS as `stale`), and finished ones while they
@@ -57,7 +49,7 @@ export function scanViews(jobs: readonly ScanJob[], scan: ScanSnapshot | undefin
     // then the view expires at that cutoff, so the caller recomputes and the outline stops marching on time.
     let status: ScanView['status'] = j.status;
     if (j.status === 'running') {
-      const seen = lastSeen(j, scan);
+      const seen = jobSignOfLife(j, scan);
       if (Number.isFinite(seen)) { if (seen + STALE_MS <= now) status = 'stale'; else next = Math.min(next, seen + STALE_MS); }
     }
     const sc = j.scope!, all = sc.kind === 'all', pr = jobProgress(j, scan, baseAll.length);

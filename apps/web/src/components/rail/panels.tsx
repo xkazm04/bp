@@ -6,6 +6,7 @@ import { STAGE_WORD, revAt, searchPage, sheetOf, views, type BldNode } from '@bp
 import { useLiveJobs } from '@/lib/scan/client';
 import { latestRun } from '@bp/core/scan/derive';
 import type { ScanJob } from '@bp/core/scan/jobs';
+import { runningScans } from '@bp/core/scan/liveness';
 import type { ScanSnapshot } from '@bp/core/scan/types';
 import { Mark, StageSym } from '../Symbols';
 import { shallowEqual, useBp, useEngine, useLive } from '../hooks';
@@ -95,16 +96,15 @@ export function useScanJobs(log: boolean, rows: boolean): { jobs: readonly ScanJ
   return { jobs: simJobs, scan: simScan };
 }
 /**
- * Scans that run and are not already on the plan as agents. Kettle: every running job (the sim's swarm has no scan
+ * Scans that run (alive: not stale) and are not already on the plan as agents. Kettle: every running job (the sim's swarm has no scan
  * agents). Live: the latest run's lenses already stand as working agents (swarmFromScan), so a running job counts
  * unless it is that run.
  */
 export function useRunningScans(): number {
-  const live = useLive(), { jobs } = useScanJobs(false, false);
+  const live = useLive(), { jobs, scan } = useScanJobs(false, true);
   const latest = live ? latestRun(live.product.scan) : null, own = latest?.status === 'running' ? latest.id : null;
-  let n = 0;
-  for (const j of jobs) if (j.status === 'running' && (!own || j.run_id !== own)) n++;
-  return n;
+  // a job silent past SILENT_MS is stale, not a working agent: the plan draws it so and the figure does not count it
+  return runningScans(jobs, scan, Date.now(), own);
 }
 export const mmss = (ms: number) => { const s = Math.max(0, Math.round(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
 

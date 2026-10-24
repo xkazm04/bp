@@ -7,7 +7,8 @@
 //   types.ts   StreamEvent names 'error'
 //   client.ts  listens for a named 'error' event and sets status 'error' from it; its onerror ignores that
 //              server event (a MessageEvent) so it does not reconnect over it
-//   Header.tsx the pill has an 'error' branch (otherwise the text would read 'No scan yet')
+//   liveness.ts the one scan verdict has an 'error' branch (otherwise the pill would read 'No scan yet'), and
+//              Header.tsx's pill words that verdict
 // Run: node scripts/check-stream-status.mjs   (Node type stripping; exit 1 on any failure)
 import fs from 'node:fs';
 import os from 'node:os';
@@ -82,7 +83,9 @@ try {
   check('types.ts: StreamEvent names error', /type StreamEvent\s*=[^;]*'error'/.test(types));
   check("client.ts: addEventListener('error') sets status 'error'", /addEventListener\(\s*'error'[\s\S]{0,400}status:\s*'error'/.test(client));
   check('client.ts: onerror ignores the server error event', /onerror\s*=\s*\(\s*\w+[^)]*\)\s*=>\s*\{[^}]*instanceof MessageEvent/.test(client));
-  check("Header.tsx: pill has an 'error' branch", /L\.status === 'error'/.test(header));
+  const liveness = code('packages/core/src/scan/liveness.ts');
+  check("liveness.ts: the scan verdict has an 'error' branch", /=== 'error'[^\n]{0,80}'store-error'/.test(liveness));
+  check('Header.tsx: the pill words the scan verdict', /livenessWords\(\s*scanLiveness\(/.test(header));
 } finally {
   process.chdir(os.tmpdir());
   fs.rmSync(dir, { recursive: true, force: true });

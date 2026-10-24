@@ -46,15 +46,17 @@ expect(RUN_WAIT === 'Waiting for /lens-scan', 'RUN_WAIT wording');
 const bar = readStripped(path.join(HERE, '../BaseBar.tsx'));
 expect(bar.includes('runClock(') && !bar.includes('started_at') && !bar.includes('Waiting for /lens-scan'), 'BaseBar.tsx reads started_at inline or restates the wait copy');
 
-// The header pill words the age with the same `ago`: Header.tsx must EXPORT it and still CALL it (a definition
-// nothing uses is not the pill's wording), and shared.ts must import that export by name. Comments are stripped
-// first - the previous form tested /\bago\b/ against the raw file, which the doc comment above the function
-// satisfies on its own, so it passed 1 of the 3 ways this rule can break instead of 3.
+// The header pill words the age with the same `ago`: it lives in the one liveness verdict (@bp/core/scan/liveness),
+// which must EXPORT it and still CALL it (a definition nothing uses is not the pill's wording), the header must word
+// its pill through that verdict, and shared.ts must import `ago` from it by name. Comments are stripped first, so a
+// doc comment naming `ago` cannot satisfy the rule on its own.
+const liveness = readStripped(path.join(HERE, '../../../../../packages/core/src/scan/liveness.ts'));
 const header = readStripped(path.join(HERE, '../Header.tsx'));
 const sharedSrc = readStripped(path.join(HERE, 'shared.ts'));
-expect(/export function ago\(/.test(header), 'Header.tsx no longer exports `ago`, which the timeline imports from it');
-expect((header.match(/\bago\(/g) ?? []).length >= 2, 'Header.tsx exports `ago` but no longer calls it: the pill has stopped wording the age with it');
-expect(/import \{[^}]*\bago\b[^}]*\} from '\.\.\/Header'/.test(sharedSrc), 'shared.ts does not import { ago } from \'../Header\'');
+expect(/export function ago\(/.test(liveness), 'liveness.ts no longer exports `ago`, which the timeline imports from it');
+expect((liveness.match(/\bago\(/g) ?? []).length >= 2, 'liveness.ts exports `ago` but no longer calls it: the pill has stopped wording the age with it');
+expect(/livenessWords\(/.test(header) && !/function ago\(/.test(header), 'Header.tsx does not word its pill through livenessWords, or keeps its own `ago`');
+expect(/import \{[^}]*\bago\b[^}]*\} from '@bp\/core\/scan\/liveness'/.test(sharedSrc), 'shared.ts does not import { ago } from @bp/core/scan/liveness');
 
 if (failures.length) {
   console.error(`check-run: ${failures.length} failure(s), ${held} held`);

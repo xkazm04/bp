@@ -8,6 +8,7 @@ import { cancelJob, refusalText } from '@/lib/scan/actions';
 import { jobLabel, type ScanJob } from '@bp/core/scan/jobs';
 import { jobProgress } from '@/lib/scan/scan-views';
 import type { ScanSnapshot } from '@bp/core/scan/types';
+import { jobLiveness } from '@bp/core/scan/liveness';
 import { LiveSteerButtons } from '../../LiveSteer';
 import { ScanGlyph } from '../../ScanMenu';
 import { Mark, agentMark } from '../../Symbols';
@@ -61,7 +62,7 @@ export function Agents() {
 
   const now = Date.now(), total = M.P.base.features.length;
   const t = sim.has ? sim.tallyStatus() : null;
-  const nRun = jobs.filter((j) => j.status === 'running').length, nQ = jobs.filter((j) => j.status === 'queued').length;
+  const lv = jobs.map((j) => jobLiveness(j, scan, now)), nRun = lv.filter((x) => x === 'running').length, nStale = lv.filter((x) => x === 'stale').length, nQ = jobs.filter((j) => j.status === 'queued').length;
 
   // an empty list is only a fact on a connected stream; on any other state of it the scan may be running unseen
   const note = streamNote(live?.product, SCAN_NOUNS);
@@ -73,7 +74,7 @@ export function Agents() {
           <span className="rm"><span>{sim.has ? 'steering · latest from the swarm' : 'scans only'}</span>{t && <span>{t.working} working</span>}</span>
         </Row>
       </ul>
-      <Group head="Scans" n={jobs.length ? nRun + ' running · ' + nQ + ' queued' : live ? 'Claude Code' : 'simulated'} label="Scan jobs, newest first">
+      <Group head="Scans" n={jobs.length ? nRun + ' running · ' + (nStale ? nStale + ' stale · ' : '') + nQ + ' queued' : live ? 'Claude Code' : 'simulated'} label="Scan jobs, newest first">
         {rev.length ? rev.map((j) => {
           const d = j.lens ? M.P.LENS[j.lens] : undefined, x = jobFacts(j, scan, total, now), k = key('job', j.id);
           return (

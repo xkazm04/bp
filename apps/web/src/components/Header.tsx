@@ -1,13 +1,14 @@
 'use client';
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { latestRun, sheetOf, views, type BayNode, type BldNode, type RoomNode, type WingNode } from '@bp/core/model';
+import { sheetOf, views, type BayNode, type BldNode, type RoomNode, type WingNode } from '@bp/core/model';
 import { shallowEqual, useBp, useEngine, useLive } from './hooks';
 import { ThemeToggle } from './ThemeToggle';
 import { ProjectSwitcher } from './ProjectSwitcher';
 import type { Crumb } from '@/engine/state';
 import type { LiveProduct } from '@/lib/scan/client';
 import { useProductName } from '@/lib/scan/projects';
+import { livenessWords, scanLiveness } from '@bp/core/scan/liveness';
 import { Mark } from './Symbols';
 import { useOpenCount } from './ledger/useLedger';
 import type { Engine } from '@/engine/Engine';
@@ -187,27 +188,11 @@ function LensTabs() {
   );
 }
 
-/** "3 min ago", "2 h ago", "4 d ago". */
-export function ago(ms: number): string {
-  const m = Math.max(0, Math.round(ms / 60000));
-  return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 48 * 60 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago';
-}
-
-/** A run still `running` with no sign of life this long shows as stalled. Scans bump the run row per phase and write activity rows per feature; one LLM batch can stay quiet for a couple of minutes, so 5 min of silence from both means the scanner is gone (a hard kill leaves `running` forever). */
-export const STALL_MS = 5 * 60000;
-/** Last sign of life of a run: its row's updated_at or its newest activity row. */
-export function lastSeen(L: LiveProduct, run: { id: string; updated_at: string }): number {
-  let t = Date.parse(run.updated_at) || 0;
-  const a = L.scan?.activity;
-  if (a) for (let i = a.length - 1; i >= 0; i--) if (a[i].run_id === run.id) { t = Math.max(t, Date.parse(a[i].at) || 0); break; }
-  return t;
-}
-
 /**
- * A live product's scan status: `Live · <phase>` while its latest run is running, `Stalled · last update
- * <age>` when it is `running` but silent past STALL_MS, `Last scan failed/aborted <age>` for a bad end,
- * `Last scan <age>` otherwise, `Offline` while the stream reconnects, `No scan store` before the skill
- * wrote one. Kettle (no live product) shows nothing.
+ * A live product's scan status, as the one liveness verdict words it (@bp/core/scan/liveness): `Live · <phase>` while
+ * its latest run is running, `Stalled · last update <age>` when it is `running` but silent past SILENT_MS, `Last scan
+ * failed/aborted <age>` for a bad end, `Last scan <age>` otherwise, `Offline` while the stream reconnects, `Scan store
+ * error` when the store cannot be read, `No scan store` before the skill wrote one. Kettle (no live product) shows nothing.
  */
 const LivePill = memo(function LivePill() {
   const live = useLive();
@@ -218,24 +203,9 @@ const PILL_SR: React.CSSProperties = { position: 'absolute', width: 1, height: 1
 function LivePillOn({ L }: { L: LiveProduct }) {
   const [, tick] = useState(0);
   useEffect(() => { const t = window.setInterval(() => tick((n) => n + 1), 30000); return () => clearInterval(t); }, []);
-  const run = latestRun(L.scan);
   // `text` is what the pill shows and may carry a relative age that moves on every tick; `say` is what the live
   // region announces and changes only when the STATE does, so a screen reader is not told the clock every minute.
-  let cls = '', text: string, say: string, title: string;
-  if (L.status === 'error' && L.structure) { cls = 'off'; text = say = 'Scan store error'; title = L.error ?? 'The scan store cannot be read'; }
-  else if (L.status === 'offline') { cls = 'off'; text = say = 'Offline'; title = 'The scan stream dropped; reconnecting (backoff up to 10 s)'; }
-  else if (L.status === 'missing' || !run) { cls = 'idle'; text = say = L.status === 'missing' ? 'No scan store' : 'No scan yet'; title = 'Every feature reads unmeasured until /lens-scan writes a run'; }
-  else if (run.status === 'running') {
-    const age = Date.now() - lastSeen(L, run);
-    if (age > STALL_MS) { cls = 'off'; text = 'Stalled · last update ' + ago(age); say = 'Scan stalled'; title = 'Run ' + run.id + ' still says running (phase ' + run.phase + ') but nothing was written for ' + ago(age).replace(' ago', '') + ': the scan was probably stopped'; }
-    else { cls = 'on'; text = say = 'Live · ' + run.phase; title = 'Run ' + run.id + ' is running: phase ' + run.phase + ', lenses ' + run.lenses.join(', '); }
-  } else {
-    const bad = run.status === 'failed' || run.status === 'aborted';
-    if (bad) cls = 'off';
-    text = 'Last scan ' + (bad ? run.status + ' ' : '') + ago(Date.now() - Date.parse(run.ended_at ?? run.updated_at));
-    say = 'Last scan ' + (bad ? run.status : 'finished');
-    title = 'Run ' + run.id + ' ' + run.status + (run.note ? ': ' + run.note : '');
-  }
+  const { cls, text, say, title } = livenessWords(scanLiveness(L, Date.now()));
   return (
     <span className={'livepill ' + cls} role="status" title={title}>
       <i />

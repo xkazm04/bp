@@ -9,6 +9,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { LIVE_DECIDER, fmtWait, pname, sheetOf, type BldNode, type RoomNode, type SimDecision, type WingNode } from '@bp/core/model';
 import type { Feature } from '@bp/core/data';
 import { useProductName } from '@/lib/scan/projects';
+import { livenessWords, scanLiveness } from '@bp/core/scan/liveness';
 import { SheetBody } from './FeatureSheet';
 import { Toast } from './Overlays';
 import { URG, metricMove, oncePerProposal, proposalSummary } from './Queue';
@@ -51,12 +52,12 @@ export function phoneFind(blds: readonly BldNode[], q: string): { B: BldNode; wi
 /** A decline note survives a refused write (the card remounts when the decision reopens). */
 const drafts = new Map<string, string>();
 
-/** The scan's state as a compact pill in the header (the desktop header's LivePill is module-private and sits in the desktop layout). */
+/** The scan's state as a compact pill in the header: the desktop pill's verdict (@bp/core/scan/liveness) in its short form. */
 function PhoneStatus() {
   const L = useLive()?.product;
   if (!L) return null;
-  const [cls, text] = L.status === 'live' ? ['on', 'Live scan'] : L.status === 'offline' ? ['off', 'Offline'] : L.status === 'error' ? ['off', 'Scan error'] : L.status === 'loading' ? ['idle', 'Connecting'] : ['idle', 'No scan store'];
-  return <span className={'livepill ' + cls} role="status"><i />{text}</span>;
+  const { cls, text, title } = livenessWords(scanLiveness(L, Date.now()), 'short');
+  return <span className={'livepill ' + cls} role="status" title={title}><i />{text}</span>;
 }
 
 function Question({ d, rm }: { d: SimDecision; rm: boolean }) {

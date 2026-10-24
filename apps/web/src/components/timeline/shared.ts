@@ -4,7 +4,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { latestRun } from '@bp/core/model';
 import { useEngine, useLive } from '../hooks';
-import { ago } from '../Header';
+import { ago, scanLiveness, scanStatus } from '@bp/core/scan/liveness';
 import { runFacts, runProgress } from './run';
 import { scrubAt, type ScrubGeom } from './scrub';
 
@@ -22,13 +22,9 @@ export function useSize(ref: React.RefObject<HTMLElement | null>, w0: number, h0
   return [W, H];
 }
 
-/** The one status ladder for a live product's scan, shared by the strip and the panel clock. A dropped stream keeps the
- *  last-known run state and adds a reconnecting marker (`base` is the state alone, `label` carries the marker). */
-export function scanStatus(run: ReturnType<typeof latestRun>, off: boolean): { label: string; base: string; tone: 'on' | 'warn' | '' } {
-  if (!run) return { label: off ? 'OFFLINE' : 'NO RUN', base: off ? 'OFFLINE' : 'NO RUN', tone: off ? 'warn' : '' };
-  const base = run.status === 'running' ? '● LIVE' + (run.phase ? ' · ' + run.phase.toUpperCase() : '') : String(run.status || '').toUpperCase();
-  return { label: off ? base + ' · RECONNECTING' : base, base, tone: off ? 'warn' : run.status === 'running' ? 'on' : '' };
-}
+/** The one status ladder for a live product's scan, shared by the strip and the panel clock: the liveness verdict's
+ *  timeline form (@bp/core/scan/liveness). A dropped stream keeps the last-known run state and adds a reconnecting marker. */
+export { scanStatus };
 
 /** Keeps a slider's aria-valuetext in step with the simulated clock (whole minutes only, so a screen reader is not flooded). */
 export function useHourText(E: ReturnType<typeof useEngine>, svg: React.RefObject<SVGSVGElement | null>, base: string, hour: boolean) {
@@ -83,5 +79,5 @@ export function useRunInfo() {
   const p = useMemo(() => (run && scan ? runProgress(run, scan.measurements, E.M.P.features) : null), [run, scan?.measurements, E]);
   if (!live) return null;
   const off = live.product.status === 'offline';
-  return { run, off, ...scanStatus(run, off), p, facts: run && p ? runFacts(run, p, Math.max(now, Date.parse(run.started_at) || 0), ago) : null };
+  return { run, off, ...scanStatus(scanLiveness(live.product, now)), p, facts: run && p ? runFacts(run, p, Math.max(now, Date.parse(run.started_at) || 0), ago) : null };
 }
