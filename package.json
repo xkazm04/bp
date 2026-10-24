@@ -103,7 +103,8 @@
     "check:swarm-data": "node scripts/fixtures/gen-swarm.mjs packages/core/data --check",
     "check:web-bind": "node scripts/check-web-bind.mjs",
     "check:scan-liveness": "node scripts/check-scan-liveness.ts",
-    "check:schema-vocab": "node scripts/check-schema-vocab.mjs"
+    "check:schema-vocab": "node scripts/check-schema-vocab.mjs",
+    "check:build-admit": "node scripts/check-build-admit.ts"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
