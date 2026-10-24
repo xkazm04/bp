@@ -11,22 +11,14 @@
 // The built-in lens list is DERIVED from bl()'s own shape (Object.keys), never hand-kept: a 7th lens joins
 // every assertion here at once. Only the measured arm's sample VALUES must be named by hand, and a lens with
 // no entry there is reported by name.
-// Run: node scripts/check-legacy-unmeasured.mjs   (Node type stripping; exit 1 on any failure)
+// Run: node scripts/check-legacy-unmeasured.mjs   (src-hooks transpile mode; exit 1 on any failure)
 import fs from 'node:fs';
 import path from 'node:path';
 import { registerSrcHooks } from './lib/src-hooks.mjs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { spawnSync } from 'node:child_process';
-
-// The variants import src/lib/model, which uses TypeScript parameter properties: strip-only mode cannot load
-// them, so this check re-runs itself under --experimental-transform-types.
-if (!process.execArgv.includes('--experimental-transform-types')) {
-  const r = spawnSync(process.execPath, ['--experimental-transform-types', '--no-warnings', fileURLToPath(import.meta.url)], { stdio: 'inherit' });
-  process.exit(r.status ?? 1);
-}
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-registerSrcHooks(ROOT);
+registerSrcHooks(ROOT, { transpile: true }); // the variants' import graph reaches .tsx: the checks' loader transpiles it
 const imp = (rel) => import(pathToFileURL(path.join(ROOT, rel)).href);
 const { bl } = await imp('apps/web/src/variants/base/legacy.ts');
 const shaped = (await imp('apps/web/src/variants/shaped/channels.ts')).CHANNELS;
