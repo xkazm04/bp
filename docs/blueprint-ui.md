@@ -818,7 +818,10 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
   a range strip, then the pack's other run items). **The noise rule** (`compare.ts runStats`): a change must beat the
   larger of the runs' spread (max − min) and, for a timing in ms with several runs, one frame (16.7 ms); within it,
   the item reads flat. Then the **screens**: before/after pairs by theme and size; **L** cycles light · dark · both,
-  **M** side by side · slider · blink · change map, with the pixel verdict in words. The **change map** is a 32 × 18
+  **M** side by side · slider · blink · change map · changed area (one list, `keymap.ts COMPARE_MODES`), with the pixel
+  verdict in words. **Changed area** crops before and after to the change map's box (`pixels.ts focusCrop`: padded,
+  the frame's 16:9, zoom capped at 8x; a box no 16:9 crop can hold reads the whole capture at zoom 1), side by side
+  with the cells over the after, and no animation. The **change map** is a 32 × 18
   grid of the largest channel change per cell, computed once per pair per session in a worker (`changeMap.worker.ts`,
   with a main-thread fallback); more than 3 of 255 levels moved, more than 24 is visible (`packages/core/src/train/pixels.ts`,
   A/1's thresholds). Then what the measurement says, the commit (its files with add/del bars at once; the message and
