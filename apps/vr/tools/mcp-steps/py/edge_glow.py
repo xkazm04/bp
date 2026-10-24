@@ -7,7 +7,8 @@
 #
 # Wire contract with ABpTable: per-instance custom data 0 to 2 = the instance's size in cm along its X, Y, Z (the engine
 # cube, 100 cm, scaled per instance), 3 = Show (spark vr-hands-zoom WP3: 0 hidden, ABpTable::LevelDim dimmed, 1 lit, above
-# 1 brighter; it scales the opacity up to 1 and the emissive above 1). Scalars `EdgeWidthCm` (how far in from an edge the glow reaches, cm), `FaceOpacity`
+# 1 brighter; it scales the opacity up to 1 and the emissive above 1), 4 = the face factor where a batch has five floats
+# (spark vr-fidelity-40 FC1; default 1). Scalars `EdgeWidthCm` (how far in from an edge the glow reaches, cm), `FaceOpacity`
 # (the faces' opacity; ABpTable sets 0 on the bays), `Intensity` (the colour's emissive scale).
 # Unlit, translucent, one-sided, used with instanced static meshes. Translucent, not additive (spark vr-hands-zoom WP2):
 # additive summed the edges that overlap from the eye (room shell, bay plate, tile, front and back) into white blobs
@@ -18,7 +19,8 @@
 #   d    = min(p, 1 - p) * size                            (cm to the nearest face along each axis)
 #   mid  = d.x + d.y + d.z - min(d) - max(d)               (on a face, the smallest is ~0; the middle one is cm to an edge)
 #   edge = saturate(1 - mid / EdgeWidthCm)
-#   face = FaceOpacity * lerp(1, 3, fresnel)               (faces ~6 %, a little brighter at grazing angles)
+#   face = FaceOpacity * lerp(1, 3, fresnel) * facefactor  (faces ~6 %, a little brighter at grazing angles)
+# fc1_marks.py patches the scan line's band onto the result (run it after this step).
 #   emissive = #BFE8FF * Intensity * max(show, 1),  opacity = saturate(max(edge, face)) * saturate(show)
 #   world position offset = -local position (in world space) where show is 0: the instance folds onto its pivot
 import unreal
@@ -131,9 +133,17 @@ fresnel = add(unreal.MaterialExpressionFresnel, -250, 250, exponent=3.0, base_re
 lift = add(unreal.MaterialExpressionLinearInterpolate, -50, 250, const_a=1.0, const_b=3.0)
 wire(fresnel, lift, "Alpha")
 face_opacity = param("FaceOpacity", 0.06, -50, 400)
-face = add(unreal.MaterialExpressionMultiply, 150, 300)
-wire(lift, face, "A")
-wire(face_opacity, face, "B")
+face_raw = add(unreal.MaterialExpressionMultiply, 150, 300)
+wire(lift, face_raw, "A")
+wire(face_opacity, face_raw, "B")
+# Custom data 4 (spark vr-fidelity-40 FC1): the face factor of a batch with five floats (ABpTable's rest extrusions: 1 a
+# room's glass, 0 a bay's partition, edges only); a batch with four reads the default, 1.
+face_factor = add(unreal.MaterialExpressionPerInstanceCustomData, -2200, 500, data_index=4, const_default_value=1.0)
+face_factor_vi = add(unreal.MaterialExpressionVertexInterpolator, -1850, 500)
+wire(face_factor, face_factor_vi, "VS")
+face = add(unreal.MaterialExpressionMultiply, 300, 350)
+wire(face_raw, face, "A")
+wire(face_factor_vi, face, "B")
 
 glow = add(unreal.MaterialExpressionMax, 400, 0)
 wire(edge, glow, "A")

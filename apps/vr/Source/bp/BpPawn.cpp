@@ -2,6 +2,7 @@
 
 #include "BpGameMode.h"
 #include "BpHands.h"
+#include "BpLink.h"
 #include "BpTable.h"
 #include "Camera/CameraComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -118,6 +119,13 @@ void ABpPawn::BeginPlay()
 		// The flat view: the controller's rotation is the view (BpGameMode and BpView.Pose set it).
 		Camera->bUsePawnControlRotation = true;
 	}
+	MakeWristPanel();
+}
+
+void ABpPawn::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (FBpLinkModule* Link = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"))) Link->OnScanState().Remove(ScanHandle);
+	Super::EndPlay(EndPlayReason);
 }
 
 FVector ABpPawn::GetPawnViewLocation() const

@@ -7,11 +7,13 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/WidgetComponent.h"
 #include "Engine/Canvas.h"
+#include "Engine/Font.h"
 #include "Engine/CanvasRenderTarget2D.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/Texture2D.h"
 #include "EngineUtils.h"
 #include "Fonts/FontMeasure.h"
+#include "Materials/MaterialParameterCollection.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GlobalRenderResources.h"
 #include "HAL/IConsoleManager.h"
@@ -34,10 +36,18 @@ namespace
 		TEXT("Height of the light table's top above the floor, in cm (lynx-plan L3.2, R4 option A). The table re-places itself; the sheet is not redrawn."),
 		ECVF_Default);
 
+	TAutoConsoleVariable<int32> CVarL0Volumes(
+		TEXT("bp.L0Volumes"),
+		1,
+		TEXT("1: at L0 every room stands as a low glass extrusion with its bays as partitions (FC1, the concept's rest state); 0: the flat linework of lookdev 01 only."),
+		ECVF_Default);
+
 	// The palette (art-breakdown.md, style block).
 	const FLinearColor BlueprintBlue(FColor(0x0B, 0x2A, 0x6B));
 	const FLinearColor CyanWhite(FColor(0xBF, 0xE8, 0xFF));
 	const FLinearColor WarmPaper(FColor(0xF3, 0xE9, 0xD2));
+	/** The concept's amber (pins, the scan line's lead, highlights): ArtSource/survey-pin's pin_body. */
+	const FLinearColor Amber(FColor(0xFF, 0xB5, 0x47));
 
 	/** BpTable.Lens <id>: re-height the tiles of every table in the world by another of the plan's lenses (L3.5's switch
 	 *  calls SetActiveLens; this is the console's way in until then). */
@@ -68,22 +78,13 @@ namespace
 	 *  baseline of g, p and y, both per em. A name fits a strip when its cap height and that descent do. */
 	constexpr float RobotoAscPerEm = 0.928f;
 	constexpr float RobotoInkDescPerEm = 0.21f;
-	/** The title's lens line and the scale caption, relative to LabelCapHeightCm. */
-	constexpr float SmallTextRatio = 0.75f;
-	/** Wing labels: a bold letter over the name, wrapped to the wing's width. The first capture from the target pose
-	 *  (2026-10-23) showed one 1.6 cm line unreadable at the far edge and D's name running into E; the owner tunes these
-	 *  in the Simulator (R4). They lie on the paper: no volume stands at L0 any more (WP3), so the 3 cm float and its
-	 *  parallax inset of L3.3 are gone. */
-	constexpr float WingNameCapCm = 2.0f;
-	constexpr float WingLetterCapCm = 2.6f;
-	constexpr float WingLabelInsetCm = 0.8f;
 	/** Room names sit in the room's header strip (the plan leaves 72 u above the first bay), bay names in the bay's
 	 *  (46 u above the first tile): this far in from the box's left edge and below its top edge, to the cap's top. */
 	constexpr float LevelLabelInsetCm = 0.6f;
 	constexpr float LevelLabelGapCm = 0.25f;
 	/** The breadcrumb's separator, and the anchor of the title block (its bottom-right corner) on the paper. */
 	const TCHAR* const CrumbSeparator = TEXT("  ›  ");
-	const FVector2D TitleAnchorCm(ABpTable::PaperWidthCm - 1.5, ABpTable::PaperDepthCm - 1.2);
+	const FVector2D TitleAnchorCm(ABpTable::PaperWidthCm - 30.0, ABpTable::PaperDepthCm - 1.2);
 
 	/** A text's size in Slate units, from the renderer's font measure, or Roboto's average advance when there is none
 	 *  (a null-RHI run): only a hit region's width rests on it. */
@@ -100,7 +101,54 @@ namespace
 		return FVector2D(Text.Len() * 0.55f * EmPx, 1.17f * EmPx);
 	}
 
-	/** The sheet's grid strokes (sheet pixels, 0.41 mm each) and their opacity over the paper. */
+	/** Sheet pixels per paper centimetre (the render target covers the paper; its pixels are square). */
+	constexpr double SheetPxPerCm = ABpTable::SheetWidthPx / ABpTable::PaperWidthCm;
+
+	/** A font for the sheet whose cap height is CapCm on the paper (its size is in sheet pixels, so Slate's measure of a
+	 *  text is its width in sheet pixels). */
+	FSlateFontInfo SheetFont(const TCHAR* Style, double CapCm)
+	{
+		return FSlateFontInfo(ABpTable::TextFontObject(), static_cast<float>(CapCm * SheetPxPerCm / (RobotoCapPerEm * SlatePxPerPoint)), FName(Style));
+	}
+
+	/** Set by the table's constructor (the class default object's runs at startup). */
+	TWeakObjectPtr<UObject> GTextFont;
+
+	/** The sheet's text sizes (cap heights on the paper, cm; FC1). The wing titles stand above their wings as the concept's
+	 *  small uppercase "WING 03" (lookdev 00): the wing's letter, its name, its counts. The title block sits near-left
+	 *  ("SITE PLAN — LEVEL 0" in the concept), the breadcrumb near-right (the hands' way back, WP3), the compass in the left
+	 *  margin and the scale bar in the right one. */
+	constexpr double WingTagCapCm = 0.8;
+	constexpr double WingNameCapCm = 1.25;
+	constexpr double WingNameFloorCm = 0.9;
+	constexpr double WingCountsCapCm = 0.75;
+	constexpr double WingCountsFloorCm = 0.55;
+	constexpr double TitleCapCm = 1.3;
+	constexpr double TitleSubCapCm = 0.8;
+	constexpr double CaptionCapCm = 0.6;
+	constexpr double FigureCapCm = 0.6;
+	/** Letter spacing of the small uppercase lines, in sheet pixels per character. */
+	constexpr float TrackingPx = 4.f;
+	/** The breadcrumb's line box: its bottom on the paper (it is right-aligned to TitleAnchorCm.X). The title block, the
+	 *  breadcrumb and the scale bar sit where the target framing sees the paper's near margin (the paper's near corners
+	 *  fall outside it). */
+	constexpr double CrumbBottomCm = 74.6;
+	/** The title block's place: its left edge and its last line's baseline. */
+	constexpr double TitleLeftCm = 58.0;
+	constexpr double TitleBaseCm = 75.3;
+	/** The compass (left margin) and the scale bar (right margin). */
+	const FVector2D CompassCm(6.25, 36.0);
+	constexpr double CompassRadiusCm = 3.6;
+	constexpr double ScaleBarLeftCm = 117.0;
+	constexpr double ScaleBarVCm = 67.0;
+	/** Annotation: the dimension lines' offset from a wing's box, their ticks, and their ink. */
+	constexpr double DimOffsetCm = 0.6;
+	constexpr double DimTickCm = 0.35;
+	constexpr float DimOpacity = 0.38f;
+
+	/** The tags' paper and ink. */
+	const FLinearColor TagInk(FColor(0x0B, 0x2A, 0x6B));
+
 	constexpr float GridFinePx = 2.f;
 	constexpr float GridMajorPx = 3.f;
 	constexpr float GridFineOpacity = 0.10f;
@@ -132,6 +180,9 @@ namespace
 	/** A lifted wing's room shells are glass (lookdev 02): their faces a third of M_EdgeGlow's default, so four stacked
 	 *  shells seen at a grazing angle read as glass over the paper, not a grey wash (WP2's leftover). */
 	constexpr float RoomFaceOpacity = 0.02f;
+	/** The rest extrusions' glass (FC1): fainter than a lifted shell's faces, so thirteen low rooms read as glass on the
+	 *  paper, not a wash; their edges carry them. */
+	constexpr float RestFaceOpacity = 0.03f;
 	/** The greybox's volumes: faces only, on UWidgetComponent's translucent engine material. */
 	constexpr float GreyboxVolumeOpacity = 0.12f;
 	/** Labels draw after the volumes (translucent sort), so a glowing edge never lies over a wing's name. */
@@ -211,6 +262,9 @@ ABpTable::ABpTable()
 	// UWidgetComponent's own unlit material: it shows the Texture parameter `SlateUI` with its alpha, cooked or not.
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> SheetMaterialFinder(TEXT("/Engine/EngineMaterials/Widget3DPassThrough_Translucent.Widget3DPassThrough_Translucent"));
 	static ConstructorHelpers::FObjectFinder<UTexture2D> WhiteFinder(TEXT("/Engine/EngineResources/WhiteSquareTexture.WhiteSquareTexture"));
+	static ConstructorHelpers::FObjectFinder<UFont> FontFinder(TEXT("/Engine/EngineFonts/Roboto.Roboto"));
+	EngineFont = FontFinder.Object;
+	if (EngineFont) GTextFont = EngineFont;
 	EngineCube = CubeFinder.Object;
 	EnginePlane = PlaneFinder.Object;
 	EngineShapeMaterial = ShapeMaterialFinder.Object;
@@ -221,6 +275,10 @@ ABpTable::ABpTable()
 	PaperMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Bp/Materials/M_BlueprintPaper.M_BlueprintPaper")));
 	HiddenMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Bp/Materials/M_Hidden.M_Hidden")));
 	VolumeMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Bp/Materials/M_EdgeGlow.M_EdgeGlow")));
+	PinMesh = TSoftObjectPtr<UStaticMesh>(FSoftObjectPath(TEXT("/Game/Bp/Art/SurveyPin/final/StaticMeshes/SM_SurveyPin.SM_SurveyPin")));
+	PinBodyMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Bp/Materials/M_PinBody.M_PinBody")));
+	TagMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Bp/Materials/M_PinTag.M_PinTag")));
+	ScanCollection = TSoftObjectPtr<UMaterialParameterCollection>(FSoftObjectPath(TEXT("/Game/Bp/Materials/MPC_BpScan.MPC_BpScan")));
 
 	Frame = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Frame"));
 	Frame->SetupAttachment(Root);
@@ -262,6 +320,16 @@ ABpTable::ABpTable()
 	Rooms = MakeVolumes(TEXT("Rooms"));
 	Bays = MakeVolumes(TEXT("Bays"));
 	Tiles = MakeVolumes(TEXT("Tiles"));
+	// The lifted room's shell while it is up (FC1): a copy of its Rooms instance under the room's lift.
+	LiftedShell = MakeVolumes(TEXT("LiftedRoom"));
+	// The rest extrusions carry a fifth float: the face factor (1 a room's faint glass, 0 a bay's partition, edges only).
+	RestVolumes = MakeVolumes(TEXT("RestVolumes"));
+	RestVolumes->NumCustomDataFloats = VolumeCustomFloats + 1;
+	// The pins, tags included: placed in the actor's space (they follow a lifted wing or room by their transforms); custom
+	// data 0 to 3 is the tag's atlas cell.
+	Pins = MakeVolumes(TEXT("Pins"));
+	Pins->NumCustomDataFloats = 4;
+	Pins->SetStaticMesh(nullptr);
 }
 
 float ABpTable::HeightCvarCm()
@@ -306,33 +374,17 @@ void ABpTable::BeginPlay()
 	LoadArt();
 	PlaceForHeight(HeightCvarCm());
 
-	// The title block and the scale caption exist from the start; the wing labels come with the plan. The title's first
-	// line is the breadcrumb (WP3), filled by SetCrumbs.
-	TSharedRef<SVerticalBox> Title = SNew(SVerticalBox)
-		+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)
-		[
-			SAssignNew(TitleLine1, SHorizontalBox)
-		]
-		+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)
-		[
-			SAssignNew(TitleLine2, STextBlock)
-				.Font(FCoreStyle::GetDefaultFontStyle("Regular", FMath::RoundToInt(LabelFontSize * SmallTextRatio)))
-				.ColorAndOpacity(FSlateColor(WarmPaper))
-				.Justification(ETextJustify::Right)
-		];
-	TitleLabel = MakeLabel(Title, TitleAnchorCm, FVector2D(1.0, 1.0), LabelCapHeightCm, LabelLiftCm);
+	// The title block, the wing titles and the breadcrumb are drawn into the sheet (FC1: mipped and anisotropically sampled,
+	// where the widgets they replace were un-mipped render targets seen at a grazing angle). Before a plan there is no
+	// sheet, so the wait is logged and said by the breadcrumb's line once a plan's sheet exists.
 	SetTitle(TEXT("waiting for the server"), FString());
-
-	const FString Caption = FString::Printf(TEXT("%d cm"), FMath::RoundToInt(ScaleBarCm));
-	ScaleLabel = MakeLabel(SNew(STextBlock).Text(FText::FromString(Caption))
-			.Font(FCoreStyle::GetDefaultFontStyle("Regular", LabelFontSize)).ColorAndOpacity(FSlateColor(WarmPaper)),
-		FVector2D(2.0, PaperDepthCm - 3.4), FVector2D(0.0, 1.0), LabelCapHeightCm * SmallTextRatio, LabelLiftCm);
-	PlaceLabels();
+	LoadMarks();
 
 	// BpLink fetched at startup (or is fetching): take its plan, now or when it lands; never ask the server again.
 	FBpLinkModule& Link = FBpLinkModule::Get();
 	PlanHandle = Link.OnPlan().AddUObject(this, &ABpTable::ApplyPlan);
 	FailedHandle = Link.OnPlanFailed().AddUObject(this, &ABpTable::ShowNoPlan);
+	ScanHandle = Link.OnScanState().AddUObject(this, &ABpTable::ReceiveScanState);
 	if (const FBpPlan* Plan = Link.GetPlan())
 	{
 		ApplyPlan(*Plan);
@@ -349,6 +401,7 @@ void ABpTable::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		Link->OnPlan().Remove(PlanHandle);
 		Link->OnPlanFailed().Remove(FailedHandle);
+		Link->OnScanState().Remove(ScanHandle);
 	}
 	Super::EndPlay(EndPlayReason);
 }
@@ -362,13 +415,23 @@ void ABpTable::Tick(float DeltaSeconds)
 		PlaceForHeight(Height);
 		UE_LOG(LogBpTable, Log, TEXT("BpTable: height_cm=%d"), FMath::RoundToInt(Height));
 	}
+	// bp.L0Volumes switched: every rest extrusion's Show is written again.
+	if (AppliedL0Volumes != CVarL0VolumesValue() && SheetPlan.IsValid())
+	{
+		AppliedL0Volumes = CVarL0VolumesValue();
+		for (float& Shown : ShownRest) Shown = -1.f;
+		ApplyLevelVisuals();
+		UE_LOG(LogBpTable, Log, TEXT("BpTable: l0_volumes=%d rest_instances=%d"), AppliedL0Volumes, RestVolumes->GetInstanceCount());
+	}
 	// A level change eases at the frame rate, then the tick drops back to the cvar's rate (KickLevels starts it).
 	if (IsLevelMoving())
 	{
 		AdvanceLevels(FMath::Min(DeltaSeconds, 0.05f));
 		ApplyLevelVisuals();
-		if (!IsLevelMoving()) SetActorTickInterval(0.25f);
+		if (!IsLevelMoving() && !bScanLive && ScanStrength <= 0.f) SetActorTickInterval(0.25f);
 	}
+	// The scan line eases at the frame rate while a scan runs or fades (UpdateScan drops the tick back when it is done).
+	if (bScanLive || ScanStrength > 0.f) UpdateScan(FMath::Min(DeltaSeconds, 0.1f));
 }
 
 void ABpTable::LoadArt()
@@ -411,7 +474,7 @@ void ABpTable::LoadArt()
 	SheetOverlay->SetVisibility(false);
 
 	// The volumes: M_EdgeGlow, one instance per kind (bays without a face); the greybox is a faint translucent face.
-	UInstancedStaticMeshComponent* const Kinds[3] = { Rooms, Bays, Tiles };
+	UInstancedStaticMeshComponent* const Kinds[5] = { Rooms, Bays, Tiles, RestVolumes, LiftedShell };
 	VolumeMids.Reset();
 	if (UMaterialInterface* Glow = LoadOrGreybox(VolumeMaterial, true))
 	{
@@ -419,7 +482,8 @@ void ABpTable::LoadArt()
 		{
 			UMaterialInstanceDynamic* Mid = UMaterialInstanceDynamic::Create(Glow, this);
 			if (Kind == Bays) Mid->SetScalarParameterValue(TEXT("FaceOpacity"), BayFaceOpacity);
-			if (Kind == Rooms) Mid->SetScalarParameterValue(TEXT("FaceOpacity"), RoomFaceOpacity);
+			if (Kind == Rooms || Kind == LiftedShell) Mid->SetScalarParameterValue(TEXT("FaceOpacity"), RoomFaceOpacity);
+			if (Kind == RestVolumes) Mid->SetScalarParameterValue(TEXT("FaceOpacity"), RestFaceOpacity);
 			Kind->SetMaterial(0, Mid);
 			VolumeMids.Add(Mid);
 		}
@@ -533,65 +597,50 @@ UWidgetComponent* ABpTable::MakeLabel(const TSharedRef<SWidget>& Content, const 
 
 void ABpTable::SetCrumbs(const TArray<TPair<FString, FString>>& Items)
 {
-	if (!TitleLine1.IsValid()) return;
-	// The last crumb is where you are (bold); the ones before it are the way back.
-	const FSlateFontInfo Here = FCoreStyle::GetDefaultFontStyle("Bold", LabelFontSize);
-	const FSlateFontInfo Way = FCoreStyle::GetDefaultFontStyle("Regular", LabelFontSize);
-	TitleLine1->ClearChildren();
+	// The breadcrumb (WP3) lies in the sheet, right-aligned to TitleAnchorCm.X, its line box's bottom at CrumbBottomCm.
+	// The last crumb is where you are (bold); the ones before it are the way back. Each crumb's box on the paper is its
+	// hit region (HitTest, AimAt), measured with the font the sheet draws it in.
+	const FSlateFontInfo Here = SheetFont(TEXT("Bold"), LabelCapHeightCm);
+	const FSlateFontInfo Way = SheetFont(TEXT("Regular"), LabelCapHeightCm);
+	TMap<FString, bool> WasLit;
+	for (const FCrumb& Crumb : Crumbs) WasLit.Add(Crumb.Id, Crumb.bLit);
 	Crumbs.Reset();
+	const double SeparatorCm = MeasureText(CrumbSeparator, Way).X / SheetPxPerCm;
+	double Total = 0.0, LineCm = 0.0;
 	TArray<double> Widths;
-	double Total = 0.0, LineHeight = 0.0;
-	const double SeparatorWidth = MeasureText(CrumbSeparator, Way).X;
 	for (int32 Index = 0; Index < Items.Num(); ++Index)
 	{
 		const bool bHere = Index == Items.Num() - 1;
-		if (Index > 0)
-		{
-			TitleLine1->AddSlot().AutoWidth()
-			[
-				SNew(STextBlock).Text(FText::FromString(CrumbSeparator)).Font(Way).ColorAndOpacity(FSlateColor(WarmPaper))
-			];
-			Total += SeparatorWidth;
-		}
-		TSharedPtr<STextBlock> Text;
-		TitleLine1->AddSlot().AutoWidth()
-		[
-			SAssignNew(Text, STextBlock).Text(FText::FromString(Items[Index].Value)).Font(bHere ? Here : Way)
-				.ColorAndOpacity(FSlateColor(WarmPaper))
-		];
-		const FVector2D Size = MeasureText(Items[Index].Value, bHere ? Here : Way);
+		const FVector2D Size = MeasureText(Items[Index].Value, bHere ? Here : Way) / SheetPxPerCm;
 		Widths.Add(Size.X);
-		LineHeight = FMath::Max(LineHeight, Size.Y);
-		Crumbs.Add({ Items[Index].Key, Text, FBox2D(ForceInit) });
-		Total += Size.X;
+		LineCm = FMath::Max(LineCm, Size.Y);
+		Total += Size.X + (Index > 0 ? SeparatorCm : 0.0);
+		FCrumb Crumb;
+		Crumb.Id = Items[Index].Key;
+		Crumb.Text = Items[Index].Value;
+		Crumb.bHere = bHere;
+		Crumbs.Add(Crumb);
 	}
-
-	// The hit regions: the title block hangs from its bottom-right corner, right-aligned, the lens line under the crumbs.
-	const double CmPerUnit = LabelCapHeightCm / (LabelFontSize * SlatePxPerPoint * RobotoCapPerEm);
-	const bool bLensLine = TitleLine2.IsValid() && TitleLine2->GetVisibility() != EVisibility::Collapsed;
-	const double LensHeight = bLensLine
-		? MeasureText(TEXT("lens"), FCoreStyle::GetDefaultFontStyle("Regular", FMath::RoundToInt(LabelFontSize * SmallTextRatio))).Y : 0.0;
-	const double Bottom = TitleAnchorCm.Y - LensHeight * CmPerUnit, Top = Bottom - LineHeight * CmPerUnit;
-	double Left = TitleAnchorCm.X - Total * CmPerUnit;
+	const double Bottom = CrumbBottomCm, Top = Bottom - LineCm;
+	double Left = TitleAnchorCm.X - Total;
 	for (int32 Index = 0; Index < Crumbs.Num(); ++Index)
 	{
-		const double Width = Widths[Index] * CmPerUnit;
-		Crumbs[Index].PaperCm = FBox2D(FVector2D(Left, Top), FVector2D(Left + Width, Bottom));
-		Left += Width + SeparatorWidth * CmPerUnit;
+		Crumbs[Index].PaperCm = FBox2D(FVector2D(Left, Top), FVector2D(Left + Widths[Index], Bottom));
+		Left += Widths[Index] + SeparatorCm;
 	}
-	if (TitleLabel) TitleLabel->RequestRedraw();
+	RedrawSheet();
 }
 
 void ABpTable::SetTitle(const FString& Line1, const FString& Line2)
 {
-	if (TitleLine2.IsValid())
-	{
-		TitleLine2->SetText(FText::FromString(Line2));
-		TitleLine2->SetVisibility(Line2.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible);
-	}
-	// A plan's title is the breadcrumb; without one, a single line that is no way back.
+	TitleLensLine = Line2;
+	// A plan's breadcrumb starts at the product; without one, a single line that is no way back.
 	if (SheetPlan.IsValid()) UpdateBreadcrumb();
-	else SetCrumbs({ TPair<FString, FString>(FString(), Line1) });
+	else
+	{
+		TitleWaitLine = Line1;
+		SetCrumbs({ TPair<FString, FString>(FString(), Line1) });
+	}
 }
 
 void ABpTable::UpdateBreadcrumb()
@@ -609,20 +658,13 @@ void ABpTable::UpdateBreadcrumb()
 	}
 	SetCrumbs(Items);
 	// A highlighted crumb reads in the sheet's cyan.
-	for (const FCrumb& Crumb : Crumbs)
-	{
-		const bool bLit = HighlightKind == TEXT("crumb") && !Crumb.Id.IsEmpty() && Crumb.Id == HighlightId;
-		if (Crumb.Text.IsValid()) Crumb.Text->SetColorAndOpacity(FSlateColor(bLit ? CyanWhite : WarmPaper));
-	}
+	for (FCrumb& Crumb : Crumbs) Crumb.bLit = HighlightKind == TEXT("crumb") && !Crumb.Id.IsEmpty() && Crumb.Id == HighlightId;
 }
 
 FString ABpTable::GetBreadcrumb() const
 {
 	TArray<FString> Texts;
-	for (const FCrumb& Crumb : Crumbs)
-	{
-		if (Crumb.Text.IsValid()) Texts.Add(Crumb.Text->GetText().ToString());
-	}
+	for (const FCrumb& Crumb : Crumbs) Texts.Add(Crumb.Text);
 	return FString::Join(Texts, TEXT(" › "));
 }
 
@@ -658,8 +700,10 @@ void ABpTable::ApplyPlan(const FBpPlan& Plan)
 		Sheet->RenderTargetFormat = RTF_RGBA8;
 		// Mips, so the fine grid and thin outlines minify instead of shimmering at the far edge.
 		Sheet->bAutoGenerateMips = true;
+		// TF_Default takes the render-target group's filter, anisotropic (BaseDeviceProfiles.ini): the sheet is seen at
+		// a grazing angle toward the far edge, where trilinear blurred the far wings' text (r4 section 2).
 		Sheet->MipsSamplerFilter = TF_Trilinear;
-		Sheet->Filter = TF_Trilinear;
+		Sheet->Filter = TF_Default;
 		Sheet->OnCanvasRenderTargetUpdate.AddDynamic(this, &ABpTable::DrawSheet);
 		Sheet->InitAutoFormat(SheetWidthPx, SheetHeightPx);
 	}
@@ -679,52 +723,10 @@ void ABpTable::ApplyPlan(const FBpPlan& Plan)
 		SheetOverlay->SetVisibility(true);
 	}
 
-	// The wing labels: letter, name and the wing's counts, inside each wing's top-left corner, on the paper.
-	for (UWidgetComponent* Old : WingLabels)
-	{
-		if (Old) Old->DestroyComponent();
-	}
-	WingLabels.Reset();
-	WingCounts.Reset();
-	WingLabelIds.Reset();
-	LabelPlaces.RemoveAll([](const FLabelPlace& Place) { return !Place.Label.IsValid(); });
+	// The wing titles are drawn in the sheet (DrawSheetText), from the plan and RefreshWingCounts.
 	TArray<FString> Order;
-	for (const FBpPlanWing* Wing : Wings)
-	{
-		Order.Add(Wing->letter);
-		const FVector2D Corner = PlanToPaperCm(FVector2D(Wing->box.x, Wing->box.y)) + FVector2D(WingLabelInsetCm, WingLabelInsetCm);
-		const double WingWidthCm = PlanToPaperCm(FVector2D(Wing->box.x + Wing->box.w, 0.0)).X - PlanToPaperCm(FVector2D(Wing->box.x, 0.0)).X;
-		// The widget's world scale makes the name's cap WingNameCapCm; the wrap width is the wing's width in Slate units.
-		const double CmPerSlateUnit = WingNameCapCm / (LabelFontSize * SlatePxPerPoint * RobotoCapPerEm);
-		const float WrapSlate = static_cast<float>(FMath::Max(1.0, WingWidthCm - 2.0 * WingLabelInsetCm) / CmPerSlateUnit);
-		const int32 LetterSize = FMath::RoundToInt(LabelFontSize * WingLetterCapCm / WingNameCapCm);
-		// The counts line at the label floor (rounded up, never under it).
-		const int32 CountsSize = FMath::CeilToInt(LabelFontSize * LabelCapHeightCm / WingNameCapCm);
-		TSharedPtr<STextBlock> Counts;
-		WingLabels.Add(MakeLabel(SNew(SBox).WidthOverride(WrapSlate)
-			[
-				SNew(SVerticalBox)
-				+ SVerticalBox::Slot().AutoHeight()
-				[
-					SNew(STextBlock).Text(FText::FromString(Wing->letter))
-						.Font(FCoreStyle::GetDefaultFontStyle("Bold", LetterSize)).ColorAndOpacity(FSlateColor(WarmPaper))
-				]
-				+ SVerticalBox::Slot().AutoHeight()
-				[
-					SNew(STextBlock).Text(FText::FromString(Wing->name)).AutoWrapText(true)
-						.Font(FCoreStyle::GetDefaultFontStyle("Regular", LabelFontSize)).ColorAndOpacity(FSlateColor(WarmPaper))
-				]
-				+ SVerticalBox::Slot().AutoHeight().Padding(0.f, LabelFontSize * 0.15f, 0.f, 0.f)
-				[
-					SAssignNew(Counts, STextBlock).AutoWrapText(true)
-						.Font(FCoreStyle::GetDefaultFontStyle("Regular", CountsSize)).ColorAndOpacity(FSlateColor(CyanWhite))
-				]
-			],
-			Corner, FVector2D(0.0, 0.0), WingNameCapCm, LabelLiftCm));
-		WingCounts.Add(Counts);
-		WingLabelIds.Add(Wing->id);
-	}
-	PlaceLabels();
+	for (const FBpPlanWing* Wing : Wings) Order.Add(Wing->letter);
+	LabelPlaces.RemoveAll([](const FLabelPlace& Place) { return !Place.Label.IsValid(); });
 
 	ActiveLens = Plan.lenses.Num() > 0 ? Plan.lenses[0] : FString();
 	UE_LOG(LogBpTable, Log, TEXT("BpTable: wings=%d order=%s height_cm=%d"), Wings.Num(), *FString::Join(Order, TEXT(",")), FMath::RoundToInt(PlacedHeightCm));
@@ -737,7 +739,8 @@ void ABpTable::ApplyPlan(const FBpPlan& Plan)
 	BuildLevelLabels(*SheetPlan);
 	ResetLevels();
 	RefreshWingCounts();
-	SetTitle(FString(), ActiveLens.IsEmpty() ? FString() : FString::Printf(TEXT("lens: %s"), *ActiveLens));
+	SetTitle(FString(), ActiveLens);
+	BuildPins(FBpLinkModule::Get().GetScanState());
 
 	// BpLevel.* commands that came before the plan (-ExecCmds at startup) run now, in order.
 	TArray<FString> Pending = MoveTemp(PendingLevelCommands());
@@ -861,9 +864,10 @@ void ABpTable::FitBayLabels()
 void ABpTable::RefreshWingCounts()
 {
 	if (!SheetPlan.IsValid()) return;
-	for (int32 Index = 0; Index < WingCounts.Num() && Index < WingLabelIds.Num(); ++Index)
+	WingCounts.Reset();
+	for (const FBpPlanWing& WingNode : SheetPlan->wings)
 	{
-		const FString& Wing = WingLabelIds[Index];
+		const FString& Wing = WingNode.id;
 		int32 RoomCount = 0, Features = 0, Bad = 0;
 		for (int32 Room = 0; Room < RoomWing.Num(); ++Room) RoomCount += RoomWing[Room] == Wing ? 1 : 0;
 		for (int32 Tile = 0; Tile < SheetPlan->tiles.Num() && Tile < TileRoom.Num(); ++Tile)
@@ -876,9 +880,9 @@ void ABpTable::RefreshWingCounts()
 		FString Line = FString::Printf(TEXT("%d %s · %d %s"), RoomCount, RoomCount == 1 ? TEXT("room") : TEXT("rooms"),
 			Features, Features == 1 ? TEXT("feature") : TEXT("features"));
 		if (Bad > 0) Line += FString::Printf(TEXT(" · %d bad"), Bad);
-		if (WingCounts[Index].IsValid()) WingCounts[Index]->SetText(FText::FromString(Line));
-		if (WingLabels.IsValidIndex(Index) && WingLabels[Index]) WingLabels[Index]->RequestRedraw();
+		WingCounts.Add(Wing, Line.ToUpper());
 	}
+	RedrawSheet();
 }
 
 float ABpTable::TileHeightCm(const FString& Reading)
@@ -927,10 +931,50 @@ void ABpTable::BuildVolumes(const FBpPlan& Plan)
 		Add(Tile.box, TileHeightCm(Reading ? *Reading : FString()));
 	}
 	Fill(Tiles);
+
+	// The rooms at rest (FC1, element 4): each room a low extrusion, each bay a lower partition inside it, all on the
+	// paper; custom data 4 is the face factor (1 a room's faint glass, 0 a partition's edges only).
+	TMap<FString, int32> RoomOf;
+	for (int32 Index = 0; Index < Plan.rooms.Num(); ++Index) RoomOf.Add(Plan.rooms[Index].id, Index);
+	RestRoom.Reset();
+	TArray<float> Rest;
+	const auto AddRest = [&](const FBpPlanBox& Box, float HeightCm, float Face, int32 Room)
+	{
+		const FVector2D A = PlanToPaperCm(FVector2D(Box.x, Box.y)), B = PlanToPaperCm(FVector2D(Box.x + Box.w, Box.y + Box.h));
+		const FVector Size(B.Y - A.Y, B.X - A.X, HeightCm);
+		Transforms.Add(FTransform(FQuat::Identity, PaperCmToLocal((A + B) * 0.5, HeightCm * 0.5f), Size / 100.0));
+		Rest.Append({ static_cast<float>(Size.X), static_cast<float>(Size.Y), static_cast<float>(Size.Z), 0.f, Face });
+		RestRoom.Add(Room);
+	};
+	for (int32 Index = 0; Index < Plan.rooms.Num(); ++Index) AddRest(Plan.rooms[Index].box, RestRoomCm, 1.f, Index);
+	for (const FBpPlanBay& Bay : Plan.bays)
+	{
+		const int32* Room = RoomOf.Find(Bay.parentId);
+		AddRest(Bay.box, RestRoomCm * BayPartitionRatio, 0.f, Room ? *Room : INDEX_NONE);
+	}
+	RestVolumes->SetNumCustomDataFloats(VolumeCustomFloats + 1);
+	if (Transforms.Num() > 0)
+	{
+		RestVolumes->AddInstances(Transforms, false, false, false);
+		RestVolumes->SetCustomData(0, Transforms.Num() - 1, Rest, true);
+	}
+	Transforms.Reset();
+}
+
+const UObject* ABpTable::TextFontObject()
+{
+	return GTextFont.Get();
+}
+
+int32 ABpTable::CVarL0VolumesValue()
+{
+	return CVarL0Volumes.GetValueOnGameThread();
 }
 
 void ABpTable::ClearVolumes()
 {
+	RestVolumes->ClearInstances();
+	LiftedShell->ClearInstances();
 	Rooms->ClearInstances();
 	Bays->ClearInstances();
 	Tiles->ClearInstances();
@@ -944,11 +988,7 @@ void ABpTable::SetActiveLens(const FString& Lens)
 		return;
 	}
 	ActiveLens = Lens;
-	if (TitleLine2.IsValid())
-	{
-		TitleLine2->SetText(FText::FromString(FString::Printf(TEXT("lens: %s"), *ActiveLens)));
-		if (TitleLabel) TitleLabel->RequestRedraw();
-	}
+	TitleLensLine = ActiveLens;
 	// The wings' "bad" counts read the lens too; their text changes, never their place.
 	RefreshWingCounts();
 
@@ -1053,34 +1093,197 @@ void ABpTable::DrawSheet(UCanvas* Canvas, int32 Width, int32 Height)
 		Outline(Wing.box, bLit ? HighlightEdgePx : WingEdgePx, CyanWhite.CopyWithNewOpacity(bLit ? 1.f : WingEdgeOpacity * SheetInkFactor(Wing.id)));
 	}
 
-	// The scale bar, near-left: ScaleBarCm on the table, which is ScaleBarCm / BpPlanUnitCm plan units. Its caption is a
-	// widget (ScaleLabel).
-	const FLinearColor Ink = CyanWhite.CopyWithNewOpacity(0.85f);
-	const double BarU = 2.0, BarV = PaperDepthCm - 2.6;
-	const double BarCm = (ScaleBarCm / BpPlanUnitCm) * BpPlanUnitCm;
-	Pen.Line(PaperPx(BarU, BarV), PaperPx(BarU + BarCm, BarV), 4.f, Ink);
-	for (int32 Cm = 0; Cm <= FMath::RoundToInt(BarCm); ++Cm)
+	// The ornament and the text (FC1): its lines join the same triangle batch, its text is drawn after them.
+	DrawSheetText(Canvas, Pen.Tris);
+}
+
+void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
+{
+	// The paper reads the sheet's alpha as ink, and text writes alpha only when the canvas is told to.
+	if (Canvas->Canvas) Canvas->Canvas->SetWriteDestinationAlpha(true);
+	FSheetPen Pen;
+	Pen.Tris = MoveTemp(Tris);
+	const auto PaperPx = [](double U, double V) { return PaperCmToSheetPx(FVector2D(U, V)); };
+	const auto LineCm = [&Pen, &PaperPx](double U0, double V0, double U1, double V1, float WidthPx, const FLinearColor& Color)
 	{
-		const double Tick = (Cm % 5 == 0) ? 0.8 : 0.4;
-		Pen.Line(PaperPx(BarU + Cm, BarV), PaperPx(BarU + Cm, BarV - Tick), 3.f, Ink);
+		Pen.Line(PaperPx(U0, V0), PaperPx(U1, V1), WidthPx, Color);
+	};
+
+	// Text is laid out in paper cm by its cap's top edge, and drawn after the lines. Slate measures it in sheet pixels.
+	struct FSheetText
+	{
+		FString Text;
+		FVector2D Px;
+		FSlateFontInfo Font;
+		FLinearColor Color;
+		float Tracking;
+	};
+	TArray<FSheetText> Texts;
+	const auto Width = [](const FString& Text, const FSlateFontInfo& Font, float Tracking)
+	{
+		return (MeasureText(Text, Font).X + Tracking * Text.Len()) / SheetPxPerCm;
+	};
+	const auto Put = [&Texts, &Width](const FString& Text, double U, double CapTopV, double CapCm, const TCHAR* Style, const FLinearColor& Color, double Align, float Tracking)
+	{
+		const FSlateFontInfo Font = SheetFont(Style, CapCm);
+		const double W = Width(Text, Font, Tracking);
+		// A line box starts the ascender above the baseline, which is the cap height below the cap's top.
+		const double Top = CapTopV - (RobotoAscPerEm - RobotoCapPerEm) * (CapCm / RobotoCapPerEm);
+		Texts.Add({ Text, PaperCmToSheetPx(FVector2D(U - W * Align, Top)), Font, Color, Tracking });
+		return W;
+	};
+	/** The cap height at which Text fits MaxCm, from CapCm down to FloorCm in 0.05 cm steps (never under the floor). */
+	const auto Fit = [&Width](const FString& Text, const TCHAR* Style, double CapCm, double FloorCm, double MaxCm, float TrackPerCap)
+	{
+		for (double Cap = CapCm; Cap > FloorCm; Cap -= 0.05)
+		{
+			if (Width(Text, SheetFont(Style, Cap), static_cast<float>(TrackPerCap * Cap)) <= MaxCm) return Cap;
+		}
+		return FloorCm;
+	};
+	const auto Ink = [](const FLinearColor& Color, float Opacity) { return Color.CopyWithNewOpacity(Opacity); };
+	const bool bDimmed = !SheetDimWing.IsEmpty();
+	const float TextInk = bDimmed ? LevelDim : 1.f;
+
+	// ---- The wing titles, above each wing (lookdev 00's "WING 03"): the letter, the name, the counts --------------------
+	for (const FBpPlanWing& Wing : SheetPlan->wings)
+	{
+		const FVector2D A = PlanToPaperCm(FVector2D(Wing.box.x, Wing.box.y));
+		const FVector2D B = PlanToPaperCm(FVector2D(Wing.box.x + Wing.box.w, Wing.box.y + Wing.box.h));
+		const double MaxCm = B.X - A.X - 0.2;
+		const float Track = TrackingPx;
+		double Base = A.Y - 0.45;
+		const FString Counts = WingCounts.FindRef(Wing.id);
+		const double CountsCap = Fit(Counts, TEXT("Regular"), WingCountsCapCm, WingCountsFloorCm, MaxCm, Track);
+		Put(Counts, A.X, Base - CountsCap, CountsCap, TEXT("Regular"), Ink(CyanWhite, 0.8f * TextInk), 0.0, static_cast<float>(Track * CountsCap));
+		Base -= CountsCap + 0.5;
+		const FString Name = Wing.name.ToUpper();
+		const double NameCap = Fit(Name, TEXT("Bold"), WingNameCapCm, WingNameFloorCm, MaxCm, Track);
+		Put(Name, A.X, Base - NameCap, NameCap, TEXT("Bold"), Ink(WarmPaper, TextInk), 0.0, static_cast<float>(Track * NameCap));
+		Base -= NameCap + 0.45;
+		Put(FString::Printf(TEXT("WING %s"), *Wing.letter), A.X, Base - WingTagCapCm, WingTagCapCm, TEXT("Regular"),
+			Ink(CyanWhite, 0.75f * TextInk), 0.0, static_cast<float>(2.0 * Track * WingTagCapCm));
+
+		// Dimensions, from the plan's boxes only: the wing's width under it (its figure in plan units), and a chain down
+		// its left side ticked at every room's edge.
+		const FLinearColor Dim = Ink(CyanWhite, DimOpacity * TextInk);
+		const double Dv = B.Y + DimOffsetCm;
+		LineCm(A.X, B.Y + 0.2, A.X, Dv + 0.35, 2.f, Dim);
+		LineCm(B.X, B.Y + 0.2, B.X, Dv + 0.35, 2.f, Dim);
+		LineCm(A.X, Dv, B.X, Dv, 2.f, Dim);
+		for (const double U : { A.X, B.X }) LineCm(U - DimTickCm, Dv + DimTickCm, U + DimTickCm, Dv - DimTickCm, 3.f, Dim);
+		Put(FString::Printf(TEXT("%d"), FMath::RoundToInt(Wing.box.w)), (A.X + B.X) * 0.5, Dv + 0.3, FigureCapCm, TEXT("Regular"), Dim, 0.5, 0.f);
+		const double Du = A.X - DimOffsetCm;
+		LineCm(Du, A.Y, Du, B.Y, 2.f, Dim);
+		TSet<int32> Edges;
+		for (const FBpPlanRoom& Room : SheetPlan->rooms)
+		{
+			if (Room.parentId != Wing.id) continue;
+			Edges.Add(FMath::RoundToInt(Room.box.y));
+			Edges.Add(FMath::RoundToInt(Room.box.y + Room.box.h));
+		}
+		Edges.Add(FMath::RoundToInt(Wing.box.y));
+		Edges.Add(FMath::RoundToInt(Wing.box.y + Wing.box.h));
+		for (const int32 Y : Edges)
+		{
+			const double V = PlanToPaperCm(FVector2D(Wing.box.x, Y)).Y;
+			LineCm(Du - DimTickCm, V + DimTickCm, Du + DimTickCm, V - DimTickCm, 3.f, Dim);
+		}
 	}
 
-	// The compass rose, far-right, lines only: a ring, the cross, and a north chevron toward the far edge.
-	const FVector2D C(PaperWidthCm - 4.0, 3.6);
-	const double R = 2.2;
-	constexpr int32 Sides = 64;
-	for (int32 Side = 0; Side < Sides; ++Side)
+	// ---- The title block, near-left: the level's plan, the product, the scale and the lens --------------------------
 	{
-		const double A0 = 2.0 * UE_DOUBLE_PI * Side / Sides, A1 = 2.0 * UE_DOUBLE_PI * (Side + 1) / Sides;
-		Pen.Line(PaperPx(C.X + R * FMath::Cos(A0), C.Y + R * FMath::Sin(A0)), PaperPx(C.X + R * FMath::Cos(A1), C.Y + R * FMath::Sin(A1)), 2.f, Ink);
+		const TCHAR* Names[] = { TEXT("SITE PLAN — LEVEL 0"), TEXT("WING PLAN — LEVEL 1"), TEXT("ROOM PLAN — LEVEL 2") };
+		const FBpLinkModule& Link = FBpLinkModule::Get();
+		const FString Product = (Link.GetProductName().IsEmpty() ? Link.GetProductSlug() : Link.GetProductName()).ToUpper();
+		const FString Caption = FString::Printf(TEXT("SCALE 1 CM = %d PLAN UNITS%s%s"), FMath::RoundToInt(1.0 / BpPlanUnitCm),
+			TitleLensLine.IsEmpty() ? TEXT("") : TEXT("  ·  LENS "), *TitleLensLine.ToUpper());
+		const double Base3 = TitleBaseCm, Top3 = Base3 - CaptionCapCm;
+		const double Top2 = Top3 - 0.55 - TitleSubCapCm;
+		const double Top1 = Top2 - 0.75 - TitleCapCm;
+		double W = Put(Names[static_cast<int32>(Level)], TitleLeftCm, Top1, TitleCapCm, TEXT("Bold"), Ink(WarmPaper, 1.f), 0.0, static_cast<float>(TrackingPx * TitleCapCm));
+		W = FMath::Max(W, Put(Product, TitleLeftCm, Top2, TitleSubCapCm, TEXT("Regular"), Ink(CyanWhite, 0.9f), 0.0, static_cast<float>(2.0 * TrackingPx * TitleSubCapCm)));
+		W = FMath::Max(W, Put(Caption, TitleLeftCm, Top3, CaptionCapCm, TEXT("Regular"), Ink(CyanWhite, 0.75f), 0.0, static_cast<float>(TrackingPx * CaptionCapCm)));
+		// The block's frame and the rule under its first line, as a drawing's title block.
+		const FLinearColor FrameInk = Ink(CyanWhite, 0.55f);
+		const double L = TitleLeftCm - 0.7, R = TitleLeftCm + W + 0.7, T = Top1 - 0.7, Bm = Base3 + 0.55, Rule = Top2 - 0.4;
+		LineCm(L, T, R, T, 3.f, FrameInk);
+		LineCm(R, T, R, Bm, 3.f, FrameInk);
+		LineCm(R, Bm, L, Bm, 3.f, FrameInk);
+		LineCm(L, Bm, L, T, 3.f, FrameInk);
+		LineCm(L, Rule, R, Rule, 2.f, FrameInk);
 	}
-	Pen.Line(PaperPx(C.X, C.Y + R * 1.2), PaperPx(C.X, C.Y - R * 1.3), 3.f, Ink);
-	Pen.Line(PaperPx(C.X - R * 1.2, C.Y), PaperPx(C.X + R * 1.2, C.Y), 3.f, Ink);
-	Pen.Line(PaperPx(C.X - R * 0.35, C.Y - R * 0.85), PaperPx(C.X, C.Y - R * 1.3), 3.f, Ink);
-	Pen.Line(PaperPx(C.X + R * 0.35, C.Y - R * 0.85), PaperPx(C.X, C.Y - R * 1.3), 3.f, Ink);
 
-	if (Pen.Tris.Num() == 0) return;
-	FCanvasTriangleItem Item(Pen.Tris, GWhiteTexture);
-	Item.BlendMode = SE_BLEND_AlphaBlend;
-	Canvas->DrawItem(Item);
+	// ---- The compass rose, in the left margin: two rings, the cross and its ticks, a north arrow toward the far edge ----
+	{
+		const FLinearColor Rose = Ink(CyanWhite, 0.8f);
+		const FVector2D C = CompassCm;
+		const double R = CompassRadiusCm;
+		constexpr int32 Sides = 96;
+		for (int32 Side = 0; Side < Sides; ++Side)
+		{
+			const double A0 = 2.0 * UE_DOUBLE_PI * Side / Sides, A1 = 2.0 * UE_DOUBLE_PI * (Side + 1) / Sides;
+			LineCm(C.X + R * FMath::Cos(A0), C.Y + R * FMath::Sin(A0), C.X + R * FMath::Cos(A1), C.Y + R * FMath::Sin(A1), 3.f, Rose);
+			LineCm(C.X + 0.72 * R * FMath::Cos(A0), C.Y + 0.72 * R * FMath::Sin(A0), C.X + 0.72 * R * FMath::Cos(A1), C.Y + 0.72 * R * FMath::Sin(A1), 2.f, Ink(CyanWhite, 0.5f));
+		}
+		for (int32 Tick = 0; Tick < 32; ++Tick)
+		{
+			const double A = 2.0 * UE_DOUBLE_PI * Tick / 32, In = (Tick % 8 == 0) ? 0.8 : (Tick % 4 == 0 ? 0.88 : 0.93);
+			LineCm(C.X + R * In * FMath::Cos(A), C.Y + R * In * FMath::Sin(A), C.X + R * FMath::Cos(A), C.Y + R * FMath::Sin(A), 2.f, Rose);
+		}
+		LineCm(C.X, C.Y + R * 1.15, C.X, C.Y - R * 1.15, 2.f, Rose);
+		LineCm(C.X - R * 1.15, C.Y, C.X + R * 1.15, C.Y, 2.f, Rose);
+		// The north arrow: one half filled, one half outlined (paper v runs toward the viewer, so north is -v).
+		const FVector2D N = PaperPx(C.X, C.Y - R * 0.95), S = PaperPx(C.X, C.Y + R * 0.35);
+		const FVector2D Lf = PaperPx(C.X - R * 0.22, C.Y), Rt = PaperPx(C.X + R * 0.22, C.Y);
+		Pen.Quad(N, Rt, S, S, Ink(CyanWhite, 0.85f));
+		Pen.Line(N, Lf, 3.f, Rose);
+		Pen.Line(Lf, S, 3.f, Rose);
+		Put(TEXT("N"), C.X, C.Y - R * 1.15 - 0.35 - 1.0, 1.0, TEXT("Bold"), Ink(WarmPaper, 1.f), 0.5, 0.f);
+	}
+
+	// ---- The scale bar, near-right under the last wings: ScaleBarCm on the table, alternate centimetres filled ---------
+	{
+		const FLinearColor Bar = Ink(CyanWhite, 0.85f);
+		const double U0 = ScaleBarLeftCm, V = ScaleBarVCm, H = 0.35;
+		const int32 Cms = FMath::RoundToInt(ScaleBarCm);
+		LineCm(U0, V, U0 + Cms, V, 2.f, Bar);
+		LineCm(U0, V + H, U0 + Cms, V + H, 2.f, Bar);
+		for (int32 Cm = 0; Cm <= Cms; ++Cm)
+		{
+			LineCm(U0 + Cm, V - (Cm == 0 || Cm == 5 || Cm == 10 || Cm == Cms ? 0.4 : 0.0), U0 + Cm, V + H, 2.f, Bar);
+			if (Cm < Cms && Cm % 2 == 0) Pen.Fill(PaperPx(U0 + Cm, V), PaperPx(U0 + Cm + 1, V + H), Ink(CyanWhite, 0.6f));
+			if (Cm == 0 || Cm == 5 || Cm == 10 || Cm == Cms) Put(FString::Printf(TEXT("%d"), Cm), U0 + Cm, V - 0.55 - FigureCapCm, FigureCapCm, TEXT("Regular"), Bar, 0.5, 0.f);
+		}
+		Put(TEXT("CM"), U0 + Cms * 0.5, V + H + 0.4, FigureCapCm, TEXT("Regular"), Ink(CyanWhite, 0.7f), 0.5, static_cast<float>(TrackingPx * FigureCapCm));
+	}
+
+	if (Pen.Tris.Num() > 0)
+	{
+		FCanvasTriangleItem Item(Pen.Tris, GWhiteTexture);
+		Item.BlendMode = SE_BLEND_AlphaBlend;
+		Canvas->DrawItem(Item);
+	}
+
+	// ---- The breadcrumb, near-right (WP3's way back; its boxes are SetCrumbs' hit regions) ----------------------------
+	{
+		const FSlateFontInfo Way = SheetFont(TEXT("Regular"), LabelCapHeightCm);
+		for (int32 Index = 0; Index < Crumbs.Num(); ++Index)
+		{
+			const FCrumb& Crumb = Crumbs[Index];
+			const FLinearColor Color = Crumb.bLit ? CyanWhite : WarmPaper;
+			Texts.Add({ Crumb.Text, PaperCmToSheetPx(Crumb.PaperCm.Min), SheetFont(Crumb.bHere ? TEXT("Bold") : TEXT("Regular"), LabelCapHeightCm), Color, 0.f });
+			if (Index + 1 < Crumbs.Num())
+			{
+				Texts.Add({ CrumbSeparator, PaperCmToSheetPx(FVector2D(Crumb.PaperCm.Max.X, Crumb.PaperCm.Min.Y)), Way, WarmPaper, 0.f });
+			}
+		}
+	}
+
+	for (const FSheetText& Text : Texts)
+	{
+		FCanvasTextItem Item(Text.Px, FText::FromString(Text.Text), Text.Font, Text.Color);
+		Item.HorizSpacingAdjust = Text.Tracking;
+		Canvas->DrawItem(Item);
+	}
 }

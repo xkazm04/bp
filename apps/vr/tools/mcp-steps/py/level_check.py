@@ -80,8 +80,9 @@ def observe():
         "labels_shown": sum(1 for c in labels if c.is_visible()),
         "rooms_batch": tf(batches["Rooms"].get_relative_transform()),
         "tiles_batch": tf(batches["Tiles"].get_relative_transform()),
-        # rays straight down: the booking room's and the scheduling room's centres, and the title's right end
-        "hit_booking": hit(1213, 708), "hit_scheduling": hit(1213, 245), "hit_title_end": hit_paper(PAPER_W - 2.5, PAPER_D - 4.5),
+        # rays straight down: the booking room's and the scheduling room's centres, and the breadcrumb's right end (FC1: it is
+        # drawn in the sheet, right-aligned 30 cm in from the paper's right edge, its line box's bottom 1.4 cm above the near edge)
+        "hit_booking": hit(1213, 708), "hit_scheduling": hit(1213, 245), "hit_title_end": hit_paper(PAPER_W - 31.0, PAPER_D - 3.0),
     }
 
 

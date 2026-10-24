@@ -5,6 +5,7 @@
 // What shows is per-instance custom data 3 (Show) on M_EdgeGlow, and each label's opacity.
 #include "BpTable.h"
 
+#include "BpGameMode.h"
 #include "BpLink.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/WidgetComponent.h"
@@ -255,12 +256,15 @@ void ABpTable::ResetLevels()
 	AnimWingScale = 1.f;
 	AnimWingCentre = AnimWingSlide = FVector::ZeroVector;
 	LiftedRoom = INDEX_NONE;
+	LiftedRoomSlideCm = 0.f;
+	LiftedShell->ClearInstances();
 	HighlightKind.Reset();
 	HighlightId.Reset();
 	// Unknown, so the first ApplyLevelVisuals writes every instance's Show and redraws the sheet.
 	ShownRooms.Init(-1.f, Rooms->GetInstanceCount());
 	ShownBays.Init(-1.f, Bays->GetInstanceCount());
 	ShownTiles.Init(-1.f, Tiles->GetInstanceCount());
+	ShownRest.Init(-1.f, RestVolumes->GetInstanceCount());
 	SheetDimWing = TEXT("-");
 	ApplyLevelVisuals();
 	SetActorTickInterval(0.25f);
@@ -325,6 +329,7 @@ bool ABpTable::AdvanceLevels(float DeltaSeconds)
 		{
 			AnimRoom = WantRoom;
 			RoomAlpha = 0.f;
+			LiftedRoomSlideCm = RoomSlideCm(AnimRoom);
 			continue;
 		}
 		if (!AnimRoom.IsEmpty() && RoomAlpha < 1.f)
@@ -336,6 +341,43 @@ bool ABpTable::AdvanceLevels(float DeltaSeconds)
 		break;
 	}
 	return IsLevelMoving();
+}
+
+float ABpTable::RoomSlideCm(const FString& Room) const
+{
+	// The far-rim clamp (FC1): at full lift, the room's top far edge, seen from the target eye and from the play eye
+	// (ABpGameMode's poses), must land on the table RoomLiftRimMarginCm inside the frame's far rim. Where it would not, the
+	// room's lift slides it toward the viewer by just enough as it rises (its copy in LiftedShell, and its bays and
+	// tiles). Nothing moves in plan space: the instance in Rooms stays where it is.
+	const FBpPlanRoom* Node = FindRoom(Room);
+	if (!Node || AnimWing.IsEmpty()) return 0.f;
+	const FTransform WingT = WingGroupTransform(1.f);
+	const FVector2D A = PlanToPaperCm(FVector2D(Node->box.x, Node->box.y));
+	const FVector2D B = PlanToPaperCm(FVector2D(Node->box.x + Node->box.w, Node->box.y + Node->box.h));
+	const FVector Lift(0.0, 0.0, RoomLiftCm);
+	// Paper v is smallest at the far edge, so the box's far edge is its top (A.Y).
+	const FVector Far[2] = {
+		WingT.TransformPosition(PaperCmToLocal(FVector2D(A.X, A.Y), RoomShellCm)) + Lift,
+		WingT.TransformPosition(PaperCmToLocal(FVector2D(B.X, A.Y), RoomShellCm)) + Lift };
+	const double PaperZ = PlacedHeightCm - GlassRecessCm;
+	const double LimitX = TableDepthCm * 0.5 - RoomLiftRimMarginCm;
+	const FVector Eyes[2] = {
+		FVector(-(TableDepthCm * 0.5 + ABpGameMode::TargetBehindNearEdgeCm), 0.0, PlacedHeightCm + ABpGameMode::TargetEyeAboveTopCm),
+		FVector(-(TableDepthCm * 0.5 + ABpGameMode::PlayBehindNearEdgeCm), 0.0, ABpGameMode::PlayEyeHeightCm) };
+	double Slide = 0.0;
+	for (const FVector& Eye : Eyes)
+	{
+		for (const FVector& P : Far)
+		{
+			if (Eye.Z <= P.Z + 1.0) continue;
+			// Through the eye and the edge onto the paper's plane: x = eye + (p - eye) * k.
+			const double K = (Eye.Z - PaperZ) / (Eye.Z - P.Z);
+			const double Projected = Eye.X + (P.X - Eye.X) * K;
+			if (Projected > LimitX) Slide = FMath::Max(Slide, (P.X - Eye.X) - (LimitX - Eye.X) / K);
+		}
+	}
+	UE_LOG(LogBpTable, Log, TEXT("BpLevel: room %s lift slide_cm=%.1f (far-rim clamp)"), *Room, Slide);
+	return static_cast<float>(Slide);
 }
 
 void ABpTable::WingLift(const FBpPlanWing& Wing, float& OutScale, FVector& OutCentre, FVector& OutSlide) const
@@ -385,7 +427,7 @@ void ABpTable::ApplyLevelVisuals()
 	const float Ew = Ease(WingAlpha), Er = Ease(RoomAlpha);
 	const FTransform WingT = WingGroupTransform(Ew);
 	FTransform RoomT = WingT;
-	RoomT.AddToTranslation(FVector(0.0, 0.0, RoomLiftCm * Er));
+	RoomT.AddToTranslation(FVector(-LiftedRoomSlideCm * Er, 0.0, RoomLiftCm * Er));
 	Rooms->SetRelativeTransform(WingT);
 	Bays->SetRelativeTransform(RoomT);
 	Tiles->SetRelativeTransform(RoomT);
@@ -394,13 +436,14 @@ void ABpTable::ApplyLevelVisuals()
 	// instance then read size 0 and Show 0 and nothing drew; Lynx, 2026-10-24), so visibility is never toggled.
 	if (!SheetPlan.IsValid()) return;
 
-	// The lifted room rises out of its wing's batch by its own instance's height, its name with it, both put back exactly
-	// when it settles.
+	// The lifted room: its instance in Rooms never moves (FC1); a copy of it in LiftedShell rides the room's lift, the rise
+	// and the far-rim slide toward the viewer (RoomSlideCm), its name with it, and the instance shows 0 meanwhile. The name
+	// is put back exactly when the room settles.
 	const int32 Lifted = AnimRoom.IsEmpty() ? INDEX_NONE : SheetPlan->rooms.IndexOfByPredicate([this](const FBpPlanRoom& Room) { return Room.id == AnimRoom; });
 	const int32 WantLifted = RoomAlpha > 0.f ? Lifted : INDEX_NONE;
 	if (LiftedRoom != INDEX_NONE && LiftedRoom != WantLifted)
 	{
-		Rooms->UpdateInstanceTransform(LiftedRoom, LiftedRoomRest, false, true);
+		LiftedShell->ClearInstances();
 		if (RoomLabels.IsValidIndex(LiftedRoom)) RoomLabels[LiftedRoom]->SetRelativeLocation(LiftedRoomLabelRest);
 		LiftedRoom = INDEX_NONE;
 	}
@@ -411,11 +454,13 @@ void ABpTable::ApplyLevelVisuals()
 			Rooms->GetInstanceTransform(WantLifted, LiftedRoomRest, false);
 			if (RoomLabels.IsValidIndex(WantLifted)) LiftedRoomLabelRest = RoomLabels[WantLifted]->GetRelativeLocation();
 			LiftedRoom = WantLifted;
+			const FVector Size = LiftedRoomRest.GetScale3D() * 100.0;
+			LiftedShell->ClearInstances();
+			LiftedShell->AddInstance(LiftedRoomRest, false);
+			LiftedShell->SetCustomData(0, { static_cast<float>(Size.X), static_cast<float>(Size.Y), static_cast<float>(Size.Z), 0.f }, true);
 		}
-		const FVector Rise(0.0, 0.0, RoomLiftCm * Er / WingT.GetScale3D().Z);
-		FTransform Raised = LiftedRoomRest;
-		Raised.AddToTranslation(Rise);
-		Rooms->UpdateInstanceTransform(LiftedRoom, Raised, false, true);
+		LiftedShell->SetRelativeTransform(RoomT);
+		const FVector Rise(-LiftedRoomSlideCm * Er / WingT.GetScale3D().X, 0.0, RoomLiftCm * Er / WingT.GetScale3D().Z);
 		if (RoomLabels.IsValidIndex(LiftedRoom)) RoomLabels[LiftedRoom]->SetRelativeLocation(LiftedRoomLabelRest + Rise);
 	}
 
@@ -435,6 +480,11 @@ void ABpTable::ApplyLevelVisuals()
 		const bool bInWing = !AnimWing.IsEmpty() && RoomWing.IsValidIndex(Index) && RoomWing[Index] == AnimWing;
 		float Show = bInWing ? Ew * (Index == Lifted ? 1.f : FMath::Lerp(1.f, LevelDim, Er)) : 0.f;
 		if (bRoomLit && SheetPlan->rooms[Index].id == HighlightId) Show *= HighlightShow;
+		if (Index == LiftedRoom && LiftedShell->GetInstanceCount() > 0)
+		{
+			LiftedShell->SetCustomDataValue(0, 3, Show, true);
+			Show = 0.f;
+		}
 		Write(Rooms, ShownRooms, Index, Show, bRoomsDirty);
 		if (RoomLabels.IsValidIndex(Index))
 		{
@@ -460,23 +510,63 @@ void ABpTable::ApplyLevelVisuals()
 	if (bBaysDirty) Bays->MarkRenderStateDirty();
 	if (bTilesDirty) Tiles->MarkRenderStateDirty();
 
-	// The wings' labels on the paper: the others dim with the sheet, the lifted wing's own gives way to its rooms' names.
-	for (int32 Index = 0; Index < WingLabels.Num() && Index < WingLabelIds.Num(); ++Index)
-	{
-		const float Alpha = AnimWing.IsEmpty() ? 1.f : FMath::Lerp(1.f, WingLabelIds[Index] == AnimWing ? 0.f : LevelDim, Ew);
-		SetLabelAlpha(WingLabels[Index], Alpha);
-	}
+	// The rooms at rest stay on the paper; the lifted wing's leave with it. The pins and tags follow the lifts.
+	ApplyRestVolumes(Ew);
+	PlacePins();
 
 	// The sheet is redrawn only when what it dims around or highlights changes: as a wing starts to rise and once it
 	// has settled back, never per frame.
 	const FString DimWing = AnimWing;
 	const FString LitWing = HighlightKind == TEXT("wing") ? HighlightId : FString();
-	if (DimWing != SheetDimWing || LitWing != SheetHighlightWing)
+	if (DimWing != SheetDimWing || LitWing != SheetHighlightWing || Level != SheetLevel)
 	{
+		SheetLevel = Level;
 		SheetDimWing = DimWing;
 		SheetHighlightWing = LitWing;
 		RedrawSheet();
 	}
+}
+
+FTransform ABpTable::GroupTransformForRoom(int32 Room) const
+{
+	const FString Wing = RoomWing.IsValidIndex(Room) ? RoomWing[Room] : FString();
+	if (Wing.IsEmpty() || Wing != AnimWing || WingAlpha <= 0.f) return WingGroupTransform(0.f);
+	FTransform Group = WingGroupTransform(Ease(WingAlpha));
+	if (SheetPlan.IsValid() && SheetPlan->rooms.IsValidIndex(Room) && SheetPlan->rooms[Room].id == AnimRoom && RoomAlpha > 0.f)
+	{
+		const float Er = Ease(RoomAlpha);
+		Group.AddToTranslation(FVector(-LiftedRoomSlideCm * Er, 0.0, RoomLiftCm * Er));
+	}
+	return Group;
+}
+
+FTransform ABpTable::LiftedWingTransform() const
+{
+	return WingGroupTransform(Ease(WingAlpha));
+}
+
+float ABpTable::RoomRiseEase(int32 Room) const
+{
+	return SheetPlan.IsValid() && SheetPlan->rooms.IsValidIndex(Room) && SheetPlan->rooms[Room].id == AnimRoom ? Ease(RoomAlpha) : 0.f;
+}
+
+void ABpTable::ApplyRestVolumes(float WingEase)
+{
+	const bool bOn = CVarL0VolumesValue() != 0;
+	bool bDirty = false;
+	for (int32 Index = 0; Index < RestRoom.Num() && Index < ShownRest.Num(); ++Index)
+	{
+		const int32 Room = RestRoom[Index];
+		const FString Wing = RoomWing.IsValidIndex(Room) ? RoomWing[Room] : FString();
+		float Show = 0.f;
+		if (bOn) Show = AnimWing.IsEmpty() ? 1.f : (Wing == AnimWing ? 1.f - WingEase : FMath::Lerp(1.f, LevelDim, WingEase));
+		if (ShownRest[Index] == Show) continue;
+		ShownRest[Index] = Show;
+		RestVolumes->SetCustomDataValue(Index, 3, Show, false);
+		bDirty = true;
+	}
+	RestVolumes->SetRelativeTransform(WingGroupTransform(0.f));
+	if (bDirty) RestVolumes->MarkRenderStateDirty();
 }
 
 void ABpTable::RedrawSheet()
@@ -523,7 +613,7 @@ bool ABpTable::HitTest(const FVector& WorldOrigin, const FVector& WorldDir, FStr
 	if (!AnimRoom.IsEmpty() && RoomAlpha > 0.f)
 	{
 		FTransform RoomT = WingT;
-		RoomT.AddToTranslation(FVector(0.0, 0.0, RoomLiftCm * Er));
+		RoomT.AddToTranslation(FVector(-LiftedRoomSlideCm * Er, 0.0, RoomLiftCm * Er));
 		const FBpPlanRoom* Room = FindRoom(AnimRoom);
 		if (Room && OnPlane(RoomT.GetTranslation().Z, Point) && Inside(Room->box, ToPlan(RoomT, Point)))
 		{
@@ -601,7 +691,7 @@ bool ABpTable::AimAt(const FString& Id, FVector& OutWorld) const
 	{
 		if (Room->parentId != AnimWing || WingAlpha <= 0.f) return OnGroup(AtRest, PlanToPaperCm(Centre(Room->box)));
 		FTransform Group = WingT;
-		if (Id == AnimRoom && RoomAlpha > 0.f) Group.AddToTranslation(FVector(0.0, 0.0, RoomLiftCm * Ease(RoomAlpha)));
+		if (Id == AnimRoom && RoomAlpha > 0.f) Group.AddToTranslation(FVector(-LiftedRoomSlideCm * Ease(RoomAlpha), 0.0, RoomLiftCm * Ease(RoomAlpha)));
 		return OnGroup(Group, PlanToPaperCm(Centre(Room->box)));
 	}
 	if (const FBpPlanWing* Wing = FindWing(Id))

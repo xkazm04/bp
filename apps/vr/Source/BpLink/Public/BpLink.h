@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Containers/Ticker.h"
 #include "Modules/ModuleManager.h"
 #include "Schema/BpSchema.h"
 
@@ -54,6 +55,24 @@ DECLARE_MULTICAST_DELEGATE_OneParam(FOnBpPlan, const FBpPlan&);
 /** Fired on the game thread when a fetch ends with no plan: the structure or the /plan read failed (its Error is logged). */
 DECLARE_MULTICAST_DELEGATE(FOnBpPlanFailed);
 
+/** What the scan side of apps/server says about the product, polled (spark vr-fidelity-40 FC1): GET .../scans (the job
+ *  list), GET .../scan (the store's tables: runs, proposals, activity...) and GET .../waves. Each part keeps its last good
+ *  read; bHas* says whether it has ever been read. */
+struct BPLINK_API FBpScanState
+{
+	TArray<FBpScanJob> Jobs;
+	FBpScanSnapshot Scan;
+	TArray<FBpWave> Waves;
+	bool bHasJobs = false;
+	bool bHasScan = false;
+	bool bHasWaves = false;
+	/** Bumped on every read that changed something, so a consumer can skip a state it has seen. */
+	int32 Serial = 0;
+};
+
+/** Fired on the game thread when a poll brought back something new. */
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnBpScanState, const FBpScanState&);
+
 /** Where the last fetch stands: Pending until the first one finishes, then Ready (a plan parsed) or Failed (none did). */
 enum class EBpPlanState : uint8
 {
@@ -90,7 +109,32 @@ public:
 	/** BpLink's own fetch calls this with each finished read (bOk as FBpLinkClient::FetchProduct hands it). */
 	void ReceiveSnapshot(bool bOk, const FBpLinkSnapshot& Snapshot);
 
+	/** The scan side as last polled; OnScanState fires when a poll changed it. The poll runs every ScanPollBusyS while a
+	 *  job is queued or running, else every ScanPollIdleS. */
+	const FBpScanState& GetScanState() const { return ScanState; }
+	FOnBpScanState& OnScanState() { return ScanStateDelegate; }
+	static constexpr float ScanPollBusyS = 0.5f;
+	static constexpr float ScanPollIdleS = 4.f;
+
+	/** POST .../scans { lens, scope }: the web's way to start a lens scan (blueprint-ui.md, "POST /api/products/<slug>/scans").
+	 *  OnDone gets the HTTP status (202 when queued) and the body. */
+	void PostScan(const FString& Lens, const FString& Kind, const FString& Id, const FString& Label, const TArray<FString>& Features,
+		TFunction<void(int32 Status, const FString& Body)> OnDone);
+
 private:
+	void PollScan();
+	bool TickScanPoll(float DeltaSeconds);
+	void ReceiveScanPart(int32 Part, TSharedPtr<struct FBpScanWire> Wire);
+
+	FBpScanState ScanState;
+	FOnBpScanState ScanStateDelegate;
+	FTSTicker::FDelegateHandle ScanTicker;
+	double NextScanPollS = 0.0;
+	/** Requests of the current poll still out; a new poll waits for them. */
+	int32 ScanPartsOut = 0;
+	/** The bodies last read, so an unchanged answer is not parsed again. */
+	uint32 ScanBodyHash[3] = { 0, 0, 0 };
+
 	FBpPlan Plan;
 	bool bHasPlan = false;
 	EBpPlanState PlanState = EBpPlanState::Pending;

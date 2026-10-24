@@ -8,6 +8,8 @@
 #include "BpPawn.generated.h"
 
 class UBpHands;
+class UWidgetComponent;
+struct FBpScanState;
 class UCameraComponent;
 class UIsdkControllerRigComponent;
 class UIsdkHandRigComponent;
@@ -44,8 +46,22 @@ public:
 	/** True when a headset is rendering: the camera follows it and the pawn's origin is the floor under the play eye. */
 	static bool IsHeadsetOn();
 
+	/** The wrist panel (spark vr-fidelity-40 FC1, element 11): the concept's "Packages", the latest wave's packages with
+	 *  their progress rings, read from GET .../waves and the findings' statuses (BpLink's scan state). With no posed hand
+	 *  it hangs above the left rest hand, at WristPanel*Cm from the eye, turned to face it; SetWristParent moves it onto a
+	 *  hand (the posed capture pair, or a tracked wrist). Its size on the arm and its pixel density: */
+	static constexpr float WristPanelWidthCm = 11.f;
+	static constexpr float WristPanelHeightCm = 9.5f;
+	static constexpr float WristPanelPxPerCm = 50.f;
+	static constexpr float WristPanelForwardCm = 26.f;
+	static constexpr float WristPanelSideCm = -23.f;
+	static constexpr float WristPanelDownCm = -31.f;
+	/** The panel's up leans with the target pose's view (ABpGameMode::TargetPitchDeg), so it reads square to the eye. */
+	void SetWristParent(USceneComponent* Parent, FName Socket, const FTransform& Relative);
+
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
 	UPROPERTY(VisibleAnywhere, Category = "Bp|Pawn")
@@ -87,4 +103,12 @@ private:
 	TObjectPtr<USkeletalMeshComponent> RestHandLeft;
 	UPROPERTY(VisibleAnywhere, Category = "Bp|Pawn")
 	TObjectPtr<USkeletalMeshComponent> RestHandRight;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UWidgetComponent> WristPanel;
+	/** BpWrist.cpp: builds the panel's content from the scan state when what it shows changed. */
+	void MakeWristPanel();
+	void ReceiveScanState(const FBpScanState& State);
+	FString WristKey;
+	FDelegateHandle ScanHandle;
 };

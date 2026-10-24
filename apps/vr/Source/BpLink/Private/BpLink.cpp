@@ -14,6 +14,8 @@
 #include "Misc/Parse.h"
 #include "HAL/PlatformMisc.h"
 #include "Containers/Ticker.h"
+#include "Async/Async.h"
+#include "Serialization/JsonWriter.h"
 
 DEFINE_LOG_CATEGORY(LogBpLink);
 
@@ -293,12 +295,148 @@ void FBpLinkModule::StartupModule()
 {
 	// A commandlet (the cook in BuildCookRun) has no use for Kettle and no server to ask (machine.md, reading 19's side
 	// finding: libcurl error 7 in the cook log). BpLink.Fetch still asks on demand.
-	if (!IsRunningCommandlet()) FetchKettle();
+	if (!IsRunningCommandlet())
+	{
+		FetchKettle();
+		ScanTicker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateRaw(this, &FBpLinkModule::TickScanPoll), 0.1f);
+	}
 }
 
 void FBpLinkModule::ShutdownModule()
 {
+	FTSTicker::GetCoreTicker().RemoveTicker(ScanTicker);
 	GClient.Reset();
 	PlanDelegate.Clear();
 	PlanFailedDelegate.Clear();
+	ScanStateDelegate.Clear();
+}
+
+// ---- The scan side (spark vr-fidelity-40 FC1): the jobs, the store's tables and the waves, polled ----------------------
+// What the table's pins, scan line, decision card and the wrist panel show. Read the way the web's Kettle reads it (the
+// same routes); SSE is not consumed (machine.md, reading 13: a live body never completes in UE's HTTP), so the job list
+// is polled fast while a job runs and slowly otherwise. An answer whose body did not change is not parsed again, and the
+// parse runs off the game thread (the /scan body is about 80 KB).
+
+namespace
+{
+	/** The three parts of a poll, in the order they are asked. */
+	const TCHAR* const ScanParts[3] = { TEXT("/scans"), TEXT("/scan"), TEXT("/waves") };
+}
+
+bool FBpLinkModule::TickScanPoll(float)
+{
+	const double Now = FPlatformTime::Seconds();
+	if (ScanPartsOut == 0 && Now >= NextScanPollS)
+	{
+		const bool bBusy = ScanState.Jobs.ContainsByPredicate([](const FBpScanJob& Job) { return Job.status == TEXT("running") || Job.status == TEXT("queued"); });
+		NextScanPollS = Now + (bBusy ? ScanPollBusyS : ScanPollIdleS);
+		PollScan();
+	}
+	return true;
+}
+
+void FBpLinkModule::PollScan()
+{
+	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
+	const FString Root = GClient->GetBaseUrl() + TEXT("/api/products/") + GetProductSlug();
+	for (int32 Part = 0; Part < 3; ++Part)
+	{
+		++ScanPartsOut;
+		TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeGet(Root + ScanParts[Part], TEXT("application/json"));
+		Request->OnProcessRequestComplete().BindLambda([Part](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+		{
+			FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"));
+			if (!Module) return;
+			if (!bConnected || !Response.IsValid() || Response->GetResponseCode() != 200)
+			{
+				--Module->ScanPartsOut;
+				return;
+			}
+			FString Body = Response->GetContentAsString();
+			const uint32 Hash = GetTypeHash(Body);
+			if (Hash == Module->ScanBodyHash[Part])
+			{
+				--Module->ScanPartsOut;
+				return;
+			}
+			Module->ScanBodyHash[Part] = Hash;
+			// /scans is a bare array and /scan a bare snapshot: both are wrapped as FBpScanWire's own keys (jobs,
+			// snapshot) so one generated reader takes all three; /waves already answers { waves }.
+			if (Part == 0) Body = TEXT("{\"jobs\":") + Body + TEXT("}");
+			else if (Part == 1) Body = TEXT("{\"snapshot\":") + Body + TEXT("}");
+			Async(EAsyncExecution::ThreadPool, [Part, Body = MoveTemp(Body)]()
+			{
+				TSharedPtr<FBpScanWire> Wire = MakeShared<FBpScanWire>();
+				TSharedPtr<FJsonObject> Json;
+				const bool bOk = FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), Json) && Json.IsValid() && BpSchema::FromJson(Json.ToSharedRef(), *Wire);
+				FString Failed;
+				if (!bOk)
+				{
+					const BpSchema::FFromJsonFailure& Failure = BpSchema::LastFailure();
+					Failed = FString::Printf(TEXT("%s at %s"), *Failure.Call, *Failure.Path);
+				}
+				AsyncTask(ENamedThreads::GameThread, [Part, Wire, bOk, Failed]()
+				{
+					FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"));
+					if (!Module) return;
+					--Module->ScanPartsOut;
+					if (!bOk)
+					{
+						UE_LOG(LogBpLink, Warning, TEXT("BpLink: GET %s did not parse into FBpScanWire (%s)"), ScanParts[Part], *Failed);
+						Module->ScanBodyHash[Part] = 0;
+						return;
+					}
+					Module->ReceiveScanPart(Part, Wire);
+				});
+			});
+		});
+		Request->ProcessRequest();
+	}
+}
+
+void FBpLinkModule::ReceiveScanPart(int32 Part, TSharedPtr<FBpScanWire> Wire)
+{
+	const bool bFirst = Part == 0 ? !ScanState.bHasJobs : Part == 1 ? !ScanState.bHasScan : !ScanState.bHasWaves;
+	if (Part == 0) { ScanState.Jobs = MoveTemp(Wire->jobs); ScanState.bHasJobs = true; }
+	else if (Part == 1) { ScanState.Scan = MoveTemp(Wire->snapshot); ScanState.bHasScan = true; }
+	else { ScanState.Waves = MoveTemp(Wire->waves); ScanState.bHasWaves = true; }
+	++ScanState.Serial;
+	if (bFirst)
+	{
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: %s %s read: jobs=%d proposals=%d activity=%d waves=%d"), *GetProductSlug(), ScanParts[Part],
+			ScanState.Jobs.Num(), ScanState.Scan.proposals.Num(), ScanState.Scan.activity.Num(), ScanState.Waves.Num());
+	}
+	ScanStateDelegate.Broadcast(ScanState);
+}
+
+void FBpLinkModule::PostScan(const FString& Lens, const FString& Kind, const FString& Id, const FString& Label, const TArray<FString>& Features,
+	TFunction<void(int32, const FString&)> OnDone)
+{
+	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
+	TSharedRef<FJsonObject> Scope = MakeShared<FJsonObject>();
+	Scope->SetStringField(TEXT("kind"), Kind);
+	if (!Id.IsEmpty()) Scope->SetStringField(TEXT("id"), Id);
+	Scope->SetStringField(TEXT("label"), Label);
+	TArray<TSharedPtr<FJsonValue>> List;
+	for (const FString& Feature : Features) List.Add(MakeShared<FJsonValueString>(Feature));
+	Scope->SetArrayField(TEXT("features"), List);
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("lens"), Lens);
+	Body->SetObjectField(TEXT("scope"), Scope);
+	FString Text;
+	FJsonSerializer::Serialize(Body, TJsonWriterFactory<>::Create(&Text));
+
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+	Request->SetVerb(TEXT("POST"));
+	Request->SetURL(GClient->GetBaseUrl() + TEXT("/api/products/") + GetProductSlug() + TEXT("/scans"));
+	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+	Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
+	Request->SetContentAsString(Text);
+	Request->OnProcessRequestComplete().BindLambda([OnDone](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		if (FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"))) Module->NextScanPollS = 0.0;
+		if (OnDone) OnDone(Status, Response.IsValid() ? Response->GetContentAsString() : FString());
+	});
+	Request->ProcessRequest();
 }

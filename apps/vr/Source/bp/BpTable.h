@@ -1,5 +1,6 @@
 // The light table (lynx-plan L3.2 to L3.4): a frame, the blueprint paper at the glass, the sheet drawn from the plan BpLink
-// read, and the plan's rooms, bays and tiles as edge-glow volumes that rise off the paper level by level (BpLevels.cpp). The actor's origin is the floor under the table's centre. Its +X is away from the person at the near edge, +Y is
+// read, and the plan's rooms, bays and tiles as edge-glow volumes that rise off the paper level by level (BpLevels.cpp),
+// with the marks on top (BpMarks.cpp: pins, the scan line, the decision card). The actor's origin is the floor under the table's centre. Its +X is away from the person at the near edge, +Y is
 // to their right, so plan +x (wing order, left to right) runs along +Y and plan +y ("down the sheet") runs toward them
 // (-X). The geometry always comes from FBpPlan; nothing here computes a layout (lynx-plan P3).
 #pragma once
@@ -65,10 +66,11 @@ public:
 	 *  texture's own lines. */
 	static constexpr float GridFineCm = PaperTileCm / 32.f;
 	static constexpr int32 GridMajorEvery = 4;
-	/** Cap height of the wing labels on the paper, sized for reading at about 1 m. The other text scales from it. */
+	/** Cap height of the breadcrumb and the room and bay names, sized for reading at about 1 m (the wing titles and the
+	 *  title block have their own, BpTable.cpp). */
 	static constexpr float LabelCapHeightCm = 1.6f;
 	/** The scale bar's length on the paper. */
-	static constexpr float ScaleBarCm = 10.f;
+	static constexpr float ScaleBarCm = 20.f;
 	/** The volumes' heights above the paper (L3.3): a room is a shell, a bay a floor plate, a tile a block whose height is
 	 *  the active lens's reading (bad tallest). Their footprints are the plan's boxes, never computed here. */
 	static constexpr float RoomShellCm = 3.0f;
@@ -89,6 +91,46 @@ public:
 	/** The fit-to-paper clamp: a lifted wing keeps this much paper around it. Its scale is the lesser of WingLiftScale
 	 *  and what fits the paper less this margin, and its centre slides inward until it does. */
 	static constexpr float WingLiftMarginCm = 1.f;
+	/** The lifted room's clamp (spark vr-fidelity-40 FC1): from the target and play eyes (ABpGameMode), the lifted room's top
+	 *  far edge must project onto the table at least this far inside the frame's far rim, so a far room never floats past
+	 *  it. When it would not, the room's lift slides it toward the viewer as it rises (the lift's transform only: its
+	 *  instance in Rooms stays in its place in plan space, a copy rides the lift). */
+	static constexpr float RoomLiftRimMarginCm = 2.f;
+
+	/** The rooms at rest (FC1, element 4, bp.L0Volumes 1): every room a low glass extrusion of this height, its bays the
+	 *  partitions inside it at BayPartitionRatio of it. A lifted wing leaves its rest extrusions behind, hidden. */
+	static constexpr float RestRoomCm = 0.8f;
+	static constexpr float BayPartitionRatio = 0.6f;
+
+	/** Pins (FC1, element 7): survey-pin stands on each feature that has an open (`proposed`) finding: an amber bead on the
+	 *  plan, a stem and a paper tag on top (ArtSource/survey-pin: 6.38 cm tall, a 2.2 x 1.4 cm tag centred on the stem,
+	 *  facing the mesh's +-Y, its faces UV'd 0..1). The tag shows its finding from the tag atlas. It stands PinScale times
+	 *  its modelled size so the tag's text reads from the table's edge. */
+	static constexpr float PinScale = 1.6f;
+	/** The mesh's tag faces its +-Y; this turns it to the viewer at the near edge. */
+	static constexpr float PinYawDeg = 90.f;
+	/** The tag atlas: TagAtlasCols x TagAtlasRows cells of TagCellWidthPx x TagCellHeightPx (the tag's 2.2 : 1.4). */
+	static constexpr int32 TagCellWidthPx = 256;
+	static constexpr int32 TagCellHeightPx = 162;
+	static constexpr int32 TagAtlasCols = 8;
+	static constexpr int32 TagAtlasRows = 8;
+
+	/** The scan line (FC1, element 8): a band across the scanned place at the row of the feature being read, eased toward
+	 *  it at ScanEaseCmPerS (paper cm), ScanHalfWidthCm half wide; it fades over ScanFadeS when the job ends. */
+	static constexpr float ScanHalfWidthCm = 1.4f;
+	static constexpr float ScanEaseCmPerS = 12.f;
+	static constexpr float ScanFadeS = 1.2f;
+
+	/** The decision card (FC1, element 10): a world-space panel near the lamp agent, drawn at CardPxPerCm (about twice what
+	 *  the eye resolves at its distance). */
+	static constexpr float CardWidthCm = 33.f;
+	static constexpr float CardHeightCm = 18.f;
+	static constexpr float CardPxPerCm = 40.f;
+	/** Where it floats, in the actor's space: x and y, and z above the table top (the target framing puts it upper right,
+	 *  as the concept's card). */
+	static constexpr float CardPlaceXCm = 34.f;
+	static constexpr float CardPlaceYCm = 56.f;
+	static constexpr float CardAboveTopCm = 27.f;
 
 	ABpTable();
 
@@ -111,6 +153,23 @@ public:
 	 *  brightens it). Missing: a translucent engine material, which ignores Show. */
 	UPROPERTY(EditAnywhere, Category = "Bp|Table")
 	TSoftObjectPtr<UMaterialInterface> VolumeMaterial;
+
+	/** The pin (ArtSource/survey-pin, imported; pivot the needle tip, standing +Z). Missing: no pins. */
+	UPROPERTY(EditAnywhere, Category = "Bp|Table")
+	TSoftObjectPtr<UStaticMesh> PinMesh;
+
+	/** The pin body's material on the instanced batch (unlit amber, fc1_marks.py). */
+	UPROPERTY(EditAnywhere, Category = "Bp|Table")
+	TSoftObjectPtr<UMaterialInterface> PinBodyMaterial;
+
+	/** The tags' material (Texture parameter `Atlas`, Scalar `TagGlow`; per-instance custom data 0, 1 = the cell's UV
+	 *  offset, 2, 3 = its UV size). Missing: no tags. */
+	UPROPERTY(EditAnywhere, Category = "Bp|Table")
+	TSoftObjectPtr<UMaterialInterface> TagMaterial;
+
+	/** The scan line's parameters (vectors ScanCentre, ScanAxis, ScanSide), read by the paper and the edge glow. */
+	UPROPERTY(EditAnywhere, Category = "Bp|Table")
+	TSoftObjectPtr<class UMaterialParameterCollection> ScanCollection;
 
 	/** Re-heights the tiles by `health[Lens]`; nothing moves in x or y. One of the plan's lenses; L3.5 calls this. */
 	void SetActiveLens(const FString& Lens);
@@ -167,6 +226,12 @@ public:
 	 *  crumb ("home", "wing:<id>", "room:<id>") as it is drawn now, on the plane HitTest would meet it on. False for an
 	 *  unknown id or no plan. */
 	bool AimAt(const FString& Id, FVector& OutWorld) const;
+	/** The decision card: shows the open finding it asks about (the lifted room's first, else the first in store order),
+	 *  or hides. */
+	void ShowCard(bool bShow);
+	/** POST a lens scan of a wing, room or feature (by its plan id) the way the web does; the scan line follows it. */
+	void StartScan(const FString& Id, const FString& Lens);
+
 	/** Brightens one wing, room or crumb (HitTest's kinds and ids); an empty Id clears it. */
 	UFUNCTION(BlueprintCallable, Category = "Bp|Levels")
 	void SetHighlight(const FString& Kind, const FString& Id);
@@ -207,6 +272,15 @@ private:
 	TObjectPtr<UInstancedStaticMeshComponent> Bays;
 	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
 	TObjectPtr<UInstancedStaticMeshComponent> Tiles;
+	/** The lifted room's shell while it is up: a copy of its Rooms instance under the room's lift (FC1). */
+	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
+	TObjectPtr<UInstancedStaticMeshComponent> LiftedShell;
+	/** The rooms and their bays at rest, low (RestRoomCm), on the paper; they never lift. */
+	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
+	TObjectPtr<UInstancedStaticMeshComponent> RestVolumes;
+	/** The pins, their tags included: one batch. */
+	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
+	TObjectPtr<UInstancedStaticMeshComponent> Pins;
 
 	/** Engine content for the greybox, held hard so a cook takes it along. */
 	UPROPERTY()
@@ -219,6 +293,10 @@ private:
 	TObjectPtr<UMaterialInterface> EngineSheetMaterial;
 	UPROPERTY()
 	TObjectPtr<UTexture2D> EngineWhiteTexture;
+	/** The sheet's and the tags' font: canvas text needs a UFont (a Slate style font has no font object, and
+	 *  FCanvasTextItem draws nothing without one). */
+	UPROPERTY()
+	TObjectPtr<class UFont> EngineFont;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UCanvasRenderTarget2D> Sheet;
@@ -229,13 +307,16 @@ private:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UMaterialInstanceDynamic>> VolumeMids;
 
-	/** The title block (product name and first lens, or "waiting for the server"), the scale caption, the wing labels. */
+	/** The tag atlas: every tag's text, drawn once per change of the pins. */
 	UPROPERTY(Transient)
-	TObjectPtr<UWidgetComponent> TitleLabel;
+	TObjectPtr<UCanvasRenderTarget2D> TagAtlas;
 	UPROPERTY(Transient)
-	TObjectPtr<UWidgetComponent> ScaleLabel;
+	TObjectPtr<UMaterialInstanceDynamic> TagMid;
 	UPROPERTY(Transient)
-	TArray<TObjectPtr<UWidgetComponent>> WingLabels;
+	TObjectPtr<class UMaterialParameterCollection> ScanParams;
+	/** The decision card. */
+	UPROPERTY(Transient)
+	TObjectPtr<UWidgetComponent> Card;
 	/** Room names (on the room shells, under Rooms) and bay names (on the bay plates, under Bays): they ride the lift. */
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UWidgetComponent>> RoomLabels;
@@ -245,12 +326,41 @@ private:
 	/** Draws the sheet; bound to the render target's update, which runs once per plan rev. */
 	UFUNCTION()
 	void DrawSheet(UCanvas* Canvas, int32 Width, int32 Height);
+	/** The sheet's text (FC1): title block, wing titles, the scale bar's figures, the breadcrumb. Lines go in Tris. */
+	void DrawSheetText(UCanvas* Canvas, TArray<struct FCanvasUVTri>& Tris);
+	/** Draws the tags' text into the atlas. */
+	UFUNCTION()
+	void DrawTags(UCanvas* Canvas, int32 Width, int32 Height);
 
 	void LoadArt();
 	void PlaceForHeight(float HeightCm);
 	void ApplyPlan(const FBpPlan& Plan);
 	void ShowNoPlan();
 	void SetTitle(const FString& Line1, const FString& Line2);
+	// The marks (BpMarks.cpp): pins, the scan line and the decision card, from the scan side BpLink polls.
+	void LoadMarks();
+	void ReceiveScanState(const struct FBpScanState& State);
+	void BuildPins(const struct FBpScanState& State);
+	void PlacePins();
+	void UpdateScan(float DeltaSeconds);
+	void WriteScanParams(float Strength);
+	void RefreshCard();
+	/** Where a room's contents are drawn now, relative to the actor: the paper, or its lifted wing's or room's group. */
+	FTransform GroupTransformForRoom(int32 Room) const;
+	/** The rest extrusions' Show per instance, for the levels. */
+	void ApplyRestVolumes(float WingEase);
+	/** The lifted room's slide toward the viewer at full lift (RoomLiftRimMarginCm's clamp), actor cm. */
+	float RoomSlideCm(const FString& Room) const;
+	/** The lifted wing's group transform now (the paper's when none is lifted). */
+	FTransform LiftedWingTransform() const;
+	/** How far a room has risen (0 at rest, 1 lifted), eased. */
+	float RoomRiseEase(int32 Room) const;
+	/** bp.L0Volumes. */
+	static int32 CVarL0VolumesValue();
+public:
+	/** The font canvas text is drawn with (Roboto, the engine's runtime-cached UFont). */
+	static const UObject* TextFontObject();
+private:
 	/** A label on the paper, or, with a Parent, on a volume batch: then its place is in the batch's space and it rides
 	 *  the batch's lift. */
 	UWidgetComponent* MakeLabel(const TSharedRef<SWidget>& Content, const FVector2D& PaperCm, const FVector2D& Pivot, float CapHeightCm, float LiftCm, USceneComponent* Parent = nullptr);
@@ -305,12 +415,11 @@ private:
 	};
 	TArray<FLabelPlace> LabelPlaces;
 
-	/** The title block's first line is the breadcrumb (one text per crumb, separators between), its second the lens. */
-	TSharedPtr<class SHorizontalBox> TitleLine1;
-	TSharedPtr<class STextBlock> TitleLine2;
-	/** Each wing's aggregate line (rooms, features, bad under the active lens), in WingLabels' order. */
-	TArray<TSharedPtr<class STextBlock>> WingCounts;
-	TArray<FString> WingLabelIds;
+	/** The title block (FC1: drawn into the sheet): the waiting line before a plan, and the lens. */
+	FString TitleWaitLine;
+	FString TitleLensLine;
+	/** Each wing's aggregate line (rooms, features, bad under the active lens), by wing id. */
+	TMap<FString, FString> WingCounts;
 	/** Each bay's header strip (plan box top to its first tile), local cm, where its name goes if it fits. */
 	TArray<float> BayHeaderCm;
 	/** The opacity each level-driven label was last given. */
@@ -352,11 +461,47 @@ private:
 	struct FCrumb
 	{
 		FString Id;
-		TSharedPtr<class STextBlock> Text;
+		FString Text;
+		bool bHere = false;
+		bool bLit = false;
 		FBox2D PaperCm;
 	};
 	TArray<FCrumb> Crumbs;
 
+	/** The lifted room's slide toward the viewer (actor cm, along -X) at full lift: RoomLiftRimMarginCm's clamp. */
+	float LiftedRoomSlideCm = 0.f;
+	/** The level the sheet's title block was last drawn for, and the bp.L0Volumes value last applied. */
+	EBpLevel SheetLevel = EBpLevel::L0;
+	int32 AppliedL0Volumes = -1;
+	/** Rest extrusions' last Show per instance. */
+	TArray<float> ShownRest;
+	/** Each rest instance's room (plan index). */
+	TArray<int32> RestRoom;
+
+	// ---- Marks state (BpMarks.cpp) ------------------------------------------------------------------------------------
+	struct FPin
+	{
+		int32 Tile = INDEX_NONE;
+		int32 Room = INDEX_NONE;
+		FString Line1;
+		FString Line2;
+	};
+	TArray<FPin> PinList;
+	FString PinsKey;
+	/** The running measure job the scan line follows, the plan box its scope covers, and the line's place (plan y) now
+	 *  and where it heads. */
+	FString ScanJob;
+	FString ScanRun;
+	FBox2D ScanPlanBox = FBox2D(ForceInit);
+	FString ScanWing;
+	double ScanY = 0.0;
+	double ScanTargetY = 0.0;
+	float ScanStrength = 0.f;
+	bool bScanLive = false;
+	bool bCardShown = false;
+	FString CardProposal;
+
 	FDelegateHandle PlanHandle;
 	FDelegateHandle FailedHandle;
+	FDelegateHandle ScanHandle;
 };
