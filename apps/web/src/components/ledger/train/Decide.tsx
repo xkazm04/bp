@@ -20,6 +20,7 @@ import { WAITING } from '@bp/core/train/rules';
 import { parseTriageResult } from '@bp/core/train/wire';
 import { useEngine } from '../../hooks';
 import { setLedgerUi, useLedgerUi, type LastDecision, type NoteAsk, type SetUi } from '../useLedger';
+import { settle } from '../intents';
 import { useTrain } from './data';
 import { decidable, decisionCounts, planDecision, undoPlan, type PlanData } from './plan';
 import { NoteEditor } from './NoteEditor';
@@ -79,11 +80,12 @@ export const skippedText = (s: TriageResult['skipped']): string =>
 export function useDecide(own?: () => readonly string[]): DecideApi {
   const E = useEngine(), T = useTrain(), ui = useLedgerUi(T.slug ?? 'kettle'), ctx = useContext(DecideOrder), order = own ?? ctx;
 
-  // pending until the item shows another status (or leaves the data); prunes are idempotent across instances
+  // pending until the item shows another status (or leaves the data): the ledger's one settle rule (intents.ts settle,
+  // the same as dispatch's); prunes are idempotent across instances
   useEffect(() => {
     if (!ui.pending.size) return;
-    const gone = [...ui.pending].filter(([id, s]) => T.byId.get(id)?.status !== s).map(([id]) => id);
-    if (gone.length) setLedgerUi((u) => { const m = new Map(u.pending); for (const id of gone) m.delete(id); return m.size === u.pending.size ? u : { ...u, pending: m }; });
+    const of = (id: string) => T.byId.get(id)?.status;
+    if (settle(ui.pending, of) !== ui.pending) setLedgerUi((u) => { const m = settle(u.pending, of); return m === u.pending ? u : { ...u, pending: m }; });
   }, [T, ui.pending]);
   const pending = useMemo(() => new Set([...ui.pending].filter(([id, s]) => T.byId.get(id)?.status === s).map(([id]) => id)), [T, ui.pending]);
 

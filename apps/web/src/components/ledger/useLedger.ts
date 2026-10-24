@@ -7,15 +7,17 @@
 // The selection, the filters and the focused row live in a module store here (`useLedgerUi`): they survive a view
 // switch and closing the ledger, and the Lenses panel and the plan's right-click read the selection (`useLedgerSelection`:
 // the features behind the selected findings) to offer a selection scan. This hook derives the rest. Dispatch goes through `dispatch(useScanCtx(), ids)` (src/lib/scan/actions.ts),
-// optimistic: the proposed ones read approved until the next store or sim update, and a refusal rolls back with a toast.
+// optimistic through the ledger's intent store (intents.ts, `LedgerUi.intents`): a sent finding reads approved and is not
+// dispatchable again until the store or sim shows it in another status (or the bound releases it with a toast); a refusal
+// withdraws only that send's entries still at their sent-from status, with a toast. Closing the ledger keeps them.
 // Two scopes over the same findings: In packs (the built items of the lens packs, grouped by pack, oldest pack first:
 // `packs`, triaged through train/Decide.tsx) and Backlog (every finding, dispatched from here). The filters apply to both.
 // Waves (useWaves.ts, waves/*): `waves` is the product's wave model; `LedgerUi.wave` is the selected wave tab (the backlog's
 // `rows` keep only its findings) and `LedgerUi.composer` the open wave composer. `waveTag(id)` hands a row its wave chip as
 // primitives (a stable callback: the memoised rows never see an object), `waveReady` / `waveTaken` split the dispatchable
 // selection into what a new wave can take and what another draft wave already holds, and `dispatchWave` goes through the same
-// optimistic overlay as `dispatchIds`.
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+// send helper (`sendIntent`) as `dispatchIds`.
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { isView, lineSuffix } from '@bp/core/model';
 import { emptyScan, type Measurement, type Pack, type Proposal, type ProposalSize, type ProposalStatus, type ScanSnapshot, type TriageDecision, type TriageResult } from '@bp/core/scan/types';
 import { isCurrent, tierRank } from '@bp/core/scan/derive';
@@ -31,6 +33,7 @@ import { useWaves, type WavesModel } from './useWaves';
 import type { Wave, WaveDispatchResult } from '@bp/core/scan/waves';
 import { byPackAge } from '@bp/core/train/rules';
 import { GENERAL } from '@bp/core/data/types';
+import { INTENT_BOUND_MS, expire, inFlight, nextAttempt, overlay, paint, revert, settle, type Intents, type StatusOf } from './intents';
 
 /** Status order everywhere in the ledger: open first, then moving, then built and waiting, then a person's triage and
  *  the release (v2), then declined. */
@@ -61,7 +64,7 @@ export interface Finding {
   job: ScanJob | null;
   /** Expected value per effort (the triage order within a status): see `rankValue`. */
   ev: number;
-  /** Whether it can be dispatched now: proposed or approved, and no job is on it. */
+  /** Whether it can be dispatched now: proposed or approved, no job is on it, and no dispatch of it is in flight. */
   can: boolean;
 }
 
@@ -145,6 +148,9 @@ export interface LedgerUi {
   /** Triage decisions on their way: item id -> its status when the decision was sent. An item is pending while its
    *  status is still that one (train/Decide.tsx prunes the rest). */
   pending: ReadonlyMap<string, ProposalStatus>;
+  /** Dispatches on their way (intents.ts): finding id -> the status it was sent from, what it shows meanwhile, the send
+   *  that painted it. Settled by the store's status (useLedger), never by an unrelated change. */
+  intents: Intents;
   /** A decision waiting for its note (the note editor shows in the decision bar, or in the compare footer). */
   note: NoteAsk | null;
   /** The last triage decision that moved items (the store's `triaged`, so only what moved): what Undo and U reverse
@@ -167,7 +173,7 @@ export type CompareMode = 'side' | 'slider' | 'blink' | 'map';
 export interface CompareView { theme: CompareTheme; mode: CompareMode }
 export const EMPTY_UI: LedgerUi = {
   sel: new Set(), lens: new Set(), status: new Set(), feat: new Set(), q: '', focus: null,
-  scope: 'packs', open: null, cmp: { theme: 'light', mode: 'side' }, wide: false, pending: new Map(), note: null, last: null, wave: null, composer: null,
+  scope: 'packs', open: null, cmp: { theme: 'light', mode: 'side' }, wide: false, pending: new Map(), intents: new Map(), note: null, last: null, wave: null, composer: null,
 };
 export type SetUi = (f: (u: LedgerUi) => LedgerUi) => void;
 /** The page state in another scope: its per-scope fields start over (the last decision too: Undo never reaches into a
@@ -181,6 +187,7 @@ let UI: { product: string; ui: LedgerUi } = { product: '', ui: EMPTY_UI };
 const uiSubs = new Set<() => void>();
 const subUi = (f: () => void) => { uiSubs.add(f); return () => { uiSubs.delete(f); }; };
 const getUi = () => UI.ui;
+const getIntents = () => UI.ui.intents;
 /** Change the ledger's page state (a no-op when `f` returns the same object). */
 export const setLedgerUi: SetUi = (f) => { const n = f(UI.ui); if (n === UI.ui) return; UI = { ...UI, ui: n }; for (const s of [...uiSubs]) s(); };
 /** The ledger's page state for `product` (a live slug, or 'kettle'): another product starts from an empty one. */
@@ -272,11 +279,18 @@ const tidy = (s: string) => s.toLowerCase();
 export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
   const E = useEngine(), M = E.M, P = M.P, ctx = useScanCtx();
   const src = useFindings();
-  // the optimistic overlay: cleared by the next store or sim update (the rows then say what really happened)
-  const [over, setOver] = useState<ReadonlyMap<string, ProposalStatus>>(() => new Map());
-  const [busy, setBusy] = useState(false);
+  // the dispatches in flight live in the module store (they outlive this component); `busy` only labels the buttons
+  const intents = useSyncExternalStore(subUi, getIntents, getIntents);
+  const [sending, setSending] = useState(0), busy = sending > 0;
   const waves = useWaves(ctx, src.jobs);
-  useEffect(() => { setOver((o) => (o.size ? new Map() : o)); }, [src.proposals]);
+  // the store's own status per finding: the authority every intent is settled by
+  const storeStatus = useMemo(() => new Map(src.proposals.map((p) => [p.id, p.status])), [src.proposals]);
+  const statusRef = useRef<StatusOf>((id) => storeStatus.get(id));
+  useEffect(() => {
+    const of: StatusOf = (id) => storeStatus.get(id);
+    statusRef.current = of;
+    setLedgerUi((u) => { const n = settle(u.intents, of); return n === u.intents ? u : { ...u, intents: n }; });
+  }, [storeStatus]);
 
   // the plan's features by slug (line 0 at ?scale > 1), names and domains from the map
   const feats = useMemo(() => {
@@ -296,10 +310,10 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
   const all = useMemo<Finding[]>(() => {
     const ev = rankValue(src.proposals);
     return src.proposals.map((p) => {
-      const f = feats.get(p.feature), status = over.get(p.id) ?? p.status, job = jobOf.get(p.id) ?? null;
-      return { p, status, fid: f?.fid ?? null, fname: f?.name ?? p.feature, domain: f?.domain ?? '', fi: f?.i ?? 1e6, job, ev: ev.get(p.id) ?? 0, can: canBuild(status, !!job) };
+      const f = feats.get(p.feature), it = intents.get(p.id), status = overlay(p.status, it), job = jobOf.get(p.id) ?? null;
+      return { p, status, fid: f?.fid ?? null, fname: f?.name ?? p.feature, domain: f?.domain ?? '', fi: f?.i ?? 1e6, job, ev: ev.get(p.id) ?? 0, can: canBuild(status, !!job) && !inFlight(p.status, it) };
     });
-  }, [src.proposals, feats, over, jobOf]);
+  }, [src.proposals, feats, intents, jobOf]);
   const byId = useMemo(() => new Map(all.map((f) => [f.p.id, f])), [all]);
 
   const lenses = useMemo<LensCol[]>(() => {
@@ -381,13 +395,28 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
   const clear = useCallback(() => set((u) => (u.sel.size ? { ...u, sel: new Set() } : u)), [set]);
   const setFocus = useCallback((id: string | null) => set((u) => (u.focus === id ? u : { ...u, focus: id })), [set]);
 
+  // one send over the intent store: paint `ids` (each reads approved and cannot be sent again while in flight), arm the
+  // bound, and hand back the withdrawal (compare-and-swap: only this send's entries the store has not moved, or `only`)
+  const sendIntent = useCallback((ids: readonly string[]) => {
+    const attempt = nextAttempt();
+    setLedgerUi((u) => ({ ...u, intents: paint(u.intents, ids, statusRef.current, { attempt, at: Date.now(), shows: 'approved' }) }));
+    setTimeout(() => {
+      let expired: string[] = [];
+      setLedgerUi((u) => {
+        const e = expire(settle(u.intents, statusRef.current), Date.now(), INTENT_BOUND_MS);
+        expired = e.expired.filter((id) => u.intents.get(id)?.attempt === attempt);
+        return e.intents === u.intents ? u : { ...u, intents: e.intents };
+      });
+      if (expired.length) E.toast('Still waiting on the store', expired.join(', ') + (expired.length > 1 ? ': those dispatches' : ': that dispatch') + ' may still have landed. Check the row before dispatching again.', undefined, undefined, 'warn');
+    }, INTENT_BOUND_MS);
+    return (only?: Iterable<string>) => setLedgerUi((u) => { const n = revert(u.intents, attempt, statusRef.current, only); return n === u.intents ? u : { ...u, intents: n }; });
+  }, [E]);
+
   const dispatchIds = useCallback(async (ids?: readonly string[]) => {
-    if (busy) return; // one dispatch at a time: the next one would race the optimistic overlay
     const go = (ids ?? [...ui.sel]).map((id) => byId.get(id)).filter((f): f is Finding => !!f && f.can).map((f) => f.p.id);
     if (!go.length) { E.toast('Nothing to dispatch', 'select proposed or approved findings that no job is building'); return; }
-    const mine = go.filter((id) => byId.get(id)!.status === 'proposed');
-    setOver((o) => { const n = new Map(o); for (const id of mine) n.set(id, 'approved'); return n; });
-    setBusy(true);
+    const withdraw = sendIntent(go);
+    setSending((n) => n + 1);
     // /dispatch takes at most MAX_PROPOSALS (50) ids: one execute job per chunk (buildChunks), sent in order; the first
     // refusal stops the rest, and the toast says what went before it
     const jobs: string[] = [], sent = new Set<string>(), skipped: { id: string; status: string }[] = [];
@@ -400,18 +429,19 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
         jobs.push(r.job.id); skipped.push(...r.skipped); built += r.job.proposals?.length ?? part.length;
         for (const id of part) sent.add(id);
       }
+      if (skipped.length) withdraw(skipped.map((s) => s.id));
       E.toast('Dispatched ' + built + (built === 1 ? ' finding' : ' findings'), line());
     } catch (err) {
-      // the overlay keeps what was sent; the unsent ids go back to what the store says
-      setOver((o) => { const n = new Map(o); for (const id of mine) if (!sent.has(id)) n.delete(id); return n; });
+      // what was sent stays in flight; the unsent ids (and the skipped ones) go back to what the store says
+      withdraw([...go.filter((id) => !sent.has(id)), ...skipped.map((s) => s.id)]);
       const why = err instanceof Error ? err.message : String(err);
       if (jobs.length) E.toast('Dispatch stopped after ' + built + ' of ' + go.length, line() + ' · then: ' + why);
       else E.toast('Dispatch failed', why);
     } finally {
       if (sent.size) set((u) => { const s = new Set(u.sel); for (const id of sent) s.delete(id); return { ...u, sel: s }; });
-      setBusy(false);
+      setSending((n) => n - 1);
     }
-  }, [busy, ui.sel, byId, ctx, E, set]);
+  }, [ui.sel, byId, ctx, E, set, sendIntent]);
 
   const waveTags = useMemo(() => {
     const byWave = new Map(waves.waves.map((w) => [w.id, w]));
@@ -434,20 +464,19 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
   const showWave = useCallback((id: string | null) => set((u) => (u.wave === id ? u : { ...u, wave: id, focus: null })), [set]);
 
   const dispatchWave = useCallback(async (id: string, packages?: string[]): Promise<WaveDispatchResult | null> => {
-    if (busy) return null;
     const w = waves.waves.find((x) => x.id === id);
     const go = (w?.packages ?? []).filter((p) => !packages || packages.includes(p.id)).flatMap((p) => p.ids).map((i) => byId.get(i)).filter((f): f is Finding => !!f && f.can);
     if (!w || !go.length) { E.toast('Nothing to dispatch', 'every finding of ' + (packages ? 'that package' : 'this wave') + ' is built, building or no longer open'); return null; }
-    const mine = go.filter((f) => f.status === 'proposed').map((f) => f.p.id);
-    setOver((o) => { const n = new Map(o); for (const i of mine) n.set(i, 'approved'); return n; });
-    setBusy(true);
+    const withdraw = sendIntent(go.map((f) => f.p.id));
+    setSending((n) => n + 1);
     try {
       const r = await waves.dispatch(id, packages);
-      if (!r) setOver((o) => { const n = new Map(o); for (const i of mine) n.delete(i); return n; });
-      else E.toast('Dispatched ' + w.name, r.jobs.length + (r.jobs.length === 1 ? ' execute job' : ' execute jobs') + (r.skipped.length ? ' · ' + r.skipped.length + ' skipped' : ''));
+      if (!r) { withdraw(); return r; }
+      if (r.skipped.length) withdraw(r.skipped.map((s) => s.id));
+      E.toast('Dispatched ' + w.name, r.jobs.length + (r.jobs.length === 1 ? ' execute job' : ' execute jobs') + (r.skipped.length ? ' · ' + r.skipped.length + ' skipped' : ''));
       return r;
-    } finally { setBusy(false); }
-  }, [busy, waves, byId, E]);
+    } catch (err) { withdraw(); throw err; } finally { setSending((n) => n - 1); }
+  }, [waves, byId, E, sendIntent]);
 
   const showInTable = useCallback((slug: string) => {
     set((u) => ({ ...u, feat: new Set([slug]), focus: null }));
