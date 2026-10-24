@@ -34,6 +34,8 @@ import type { Wave, WaveDispatchResult } from '@bp/core/scan/waves';
 import { byPackAge } from '@bp/core/train/rules';
 import { GENERAL } from '@bp/core/data/types';
 import { INTENT_BOUND_MS, expire, inFlight, nextAttempt, overlay, paint, revert, settle, type Intents, type StatusOf } from './intents';
+// the one settle rule, for train/Decide.tsx's pending set (the train components import the ledger through this module)
+export { settle } from './intents';
 
 /** Status order everywhere in the ledger: open first, then moving, then built and waiting, then a person's triage and
  *  the release (v2), then declined. */

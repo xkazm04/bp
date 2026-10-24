@@ -124,7 +124,8 @@ const p1 = has('paint') ? I.paint(new Map(), ['a', 'b'], of({ a: 'proposed', b: 
   caseOk(7, /\bsendIntent\(/.test(body('dispatchIds', 'const waveTags')), 'dispatchIds goes through the send helper');
   caseOk(7, /\bsendIntent\(/.test(body('dispatchWave', 'const showInTable')), 'dispatchWave goes through the send helper');
   const D = blankComments(fs.readFileSync(path.join(LEDGER, 'train/Decide.tsx'), 'utf8'));
-  caseOk(7, /from '\.\.\/intents'/.test(D) && /\bsettle\(\s*(?:u|ui)\.pending/.test(D) && !/\.filter\(\(\[id, s\]\) => T\.byId\.get\(id\)\?\.status !== s\)/.test(D), 'Decide.tsx prunes pending with the shared settle()');
+  // the train components reach the ledger through ../useLedger (check:train-quality's allowlist), which re-exports it
+  caseOk(7, /^import \{[^}]*\bsettle\b[^}]*\} from '\.\.\/useLedger';$/m.test(D) && /^export \{ settle \} from '\.\/intents';$/m.test(raw) &&/\bsettle\(\s*(?:u|ui)\.pending/.test(D) && !/\.filter\(\(\[id, s\]\) => T\.byId\.get\(id\)\?\.status !== s\)/.test(D), 'Decide.tsx prunes pending with the shared settle()');
 }
 
 const red = [...cases].filter(([, v]) => !v).map(([k]) => k);
