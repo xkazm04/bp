@@ -28,7 +28,10 @@ import { blankBlock, readBlanked, readStripped, stripBlock } from './lib/source.
 import fs from 'node:fs';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
-register('./overlays-loader.mjs', { parentURL: import.meta.url, data: { src: SRC, root: ROOT, mutate: JSON.parse(process.env.BP_OVERLAYS_MUTATE || '[]') } });
+// One fixed seam: the server render hands the Kettle scan sim's jobs to useScanJobs (its server snapshot is empty, which a
+// client never sees), so the Agents flyout can be rendered with a job in it (the scan chip section near the end).
+const SSR_JOBS = ['rail/panels.tsx', '() => (sim ? sim.jobs() : NO_JOBS), () => NO_JOBS)', '() => (sim ? sim.jobs() : NO_JOBS), () => (sim ? sim.jobs() : NO_JOBS))'];
+register('./overlays-loader.mjs', { parentURL: import.meta.url, data: { src: SRC, root: ROOT, mutate: [...JSON.parse(process.env.BP_OVERLAYS_MUTATE || '[]'), SSR_JOBS] } });
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
@@ -308,6 +311,39 @@ const dockSrc = readBlanked(path.join(SRC, 'components/Dock.tsx'));
 const focusCalls = (needle: string) => [...dockSrc.matchAll(/\.focus\(/g)].filter((m) => dockSrc.slice(Math.max(0, m.index - 220), m.index).includes(needle)).length;
 expect(focusCalls('[data-k=') > 0, 'Dock.tsx: the close-path focus call (rail item by data-k) was not found - the flyout focus scan stopped matching');
 expect(focusCalls("'.fb'") > 0, "Dock.tsx: opening a flyout never focuses its body (.fb) - focus stays on the rail and the panel is 7 Tab presses away");
+
+// Scan chip (engine-render/B): the chip on the plan hovers to its job's card and clicks into the Agents flyout on that job.
+// HoverCard with S.hover { type: 'scan' } reads the engine's drawn view (E.scans.viewOf): lens name, status word, n/m, how long
+// a stale run has been silent, a failed run's error. Agents seeds its selection from S.scanJob: the job's detail with Cancel.
+{
+  const lid = Object.keys(P.LENS)[0], lname = P.LENS[lid].name;
+  const sv = (o: Record<string, unknown>) => ({ id: 'j1', job: 'j1', lens: lid, accent: '', place: null, features: [], done: new Set(), n: 3, m: 12, status: 'stale', seen: Date.now() - 12 * 60000, ...o });
+  const card = (V: Any) => {
+    const shared: { E?: Any } = {};
+    render(() => null, {}, () => ({ parts: [] }), shared);
+    shared.E.scans = { viewOf: (id: string) => (id === 'j1' ? V : null) };
+    return render(() => React.createElement(O.HoverCard), { hover: { type: 'scan', id: 'j1' } }, () => ({ parts: [] }), shared);
+  };
+  const st = card(sv({})), stt = text(st.html);
+  expect(st.threw === null && [lname, 'stalled', '3/12', 'no sign of life for 12 min', 'Click for the job'].every((w) => stt.includes(w)), `HoverCard for a stale scan chip lacks the lens name / stalled / 3/12 / silence / click hint (${st.threw ?? stt.slice(0, 160)})`);
+  const fl = card(sv({ status: 'failed', error: 'exit 1: gate red', seen: undefined })), flt = text(fl.html);
+  expect(fl.threw === null && flt.includes('exit 1: gate red') && flt.includes('failed'), `HoverCard for a failed scan chip does not show its error (${fl.threw ?? flt.slice(0, 160)})`);
+
+  const { Agents } = await imp('components/rail/wide/agents.tsx');
+  const now = Date.now(), j1 = { id: 'j1', kind: 'measure', lens: lid, scope: { kind: 'all', label: 'Everything' }, status: 'running', queued_at: new Date(now - 60000).toISOString(), started_at: new Date(now - 60000).toISOString() };
+  const agents = (scanJob: string | null) => {
+    const shared: { E?: Any } = {};
+    render(() => null, {}, () => ({ parts: [] }), shared);
+    shared.E.M = Object.assign(Object.create(M), { scanSim: { subscribe: () => () => {}, jobs: () => [j1], snapshot: () => undefined } });
+    shared.E.patch = () => {};
+    return render(() => React.createElement(Agents), { scanJob, dtab: 'swarm' }, () => ({ parts: [] }), shared);
+  };
+  const a1 = agents('j1'), a1t = text(a1.html);
+  expect(a1.threw === null && a1t.includes('Cancel job') && /wb-kick[^>]*>.*j1/.test(a1.html) && !a1t.includes('Latest from the swarm'), `Agents with S.scanJob = j1 does not open j1's detail with Cancel (${a1.threw ?? a1t.slice(0, 200)})`);
+  const a0 = agents(null), a0t = text(a0.html);
+  expect(a0.threw === null && !a0t.includes('No scans yet'), `GUARD the server render reached the scan sim's jobs (the SSR_JOBS seam in rail/panels.tsx no longer matches) (${a0.threw ?? a0t.slice(0, 200)})`);
+  expect(a0.threw === null && !a0t.includes('Cancel job') && (a0t.includes('Latest from the swarm') || a0t.includes('No swarm data')), `GUARD Agents with S.scanJob null is not the Overview as before (${a0.threw ?? a0t.slice(0, 200)})`);
+}
 
 if (failures.length) { console.error(`check-overlays: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
 console.log(`check-overlays: ${held} expectations held`);

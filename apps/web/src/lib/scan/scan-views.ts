@@ -47,10 +47,10 @@ export function scanViews(jobs: readonly ScanJob[], scan: ScanSnapshot | undefin
     }
     // A running job with no sign of life for STALE_MS is drawn `stale` (it is not known to have failed); until
     // then the view expires at that cutoff, so the caller recomputes and the outline stops marching on time.
-    let status: ScanView['status'] = j.status;
+    let status: ScanView['status'] = j.status, seen: number | undefined;
     if (j.status === 'running') {
-      const seen = jobSignOfLife(j, scan);
-      if (Number.isFinite(seen)) { if (seen + STALE_MS <= now) status = 'stale'; else next = Math.min(next, seen + STALE_MS); }
+      const s = jobSignOfLife(j, scan);
+      if (Number.isFinite(s)) { seen = s; if (s + STALE_MS <= now) status = 'stale'; else next = Math.min(next, s + STALE_MS); }
     }
     const sc = j.scope!, all = sc.kind === 'all', pr = jobProgress(j, scan, baseAll.length);
     const full = j.status === 'done' ? new Set(all ? baseAll : sc.features) : pr.done;
@@ -63,6 +63,8 @@ export function scanViews(jobs: readonly ScanJob[], scan: ScanSnapshot | undefin
         done: new Set([...full].map((f) => f + sf).filter((id) => L.TILE[id]?.wing.bld === B)),
         current: status === 'running' && pr.current ? pr.current + sf : undefined,
         n: j.status === 'done' ? pr.m : pr.n, m: pr.m, status,
+        // the chip is a target: it names its job (one per line at ?scale > 1), when it was last heard from, and why it failed
+        job: j.id, seen, error: j.status === 'failed' ? j.error : undefined,
       });
     }
   }

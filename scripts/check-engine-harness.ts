@@ -48,6 +48,7 @@ function advance(ms: number) {
 }
 
 const calls: string[] = [];                        // every method the 2d context was asked to run
+let spy: { k: string; a: unknown[] }[] | null = null; // while set, each call's arguments too (section 3c reads the drawn chip)
 const grad = () => ({ addColorStop() {} });
 const ctx2d: Any = new Proxy({}, {
   get(t: Any, k: string) {
@@ -56,7 +57,7 @@ const ctx2d: Any = new Proxy({}, {
     if (k === 'createRadialGradient' || k === 'createLinearGradient') return grad;
     if (k === 'createPattern') return () => ({ setTransform() {} });
     if (k === 'getTransform') return () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
-    return (...a: unknown[]) => { calls.push(k); void a; };
+    return (...a: unknown[]) => { calls.push(k); if (spy) spy.push({ k, a }); };
   },
   set(t: Any, k: string, v: unknown) { t[k] = v; return true; },
 });
@@ -119,9 +120,9 @@ const DYN = await imp('engine/render/dynamic.ts');
 const { getVariant } = await imp('variants/registry.ts');
 const expression = getVariant('subtle').expression;
 
-function mount(w = 1280, h = 800): Any {
+function mount(w = 1280, h = 800, scale = 1): Any {
   win.innerWidth = w; win.innerHeight = h; loc.hash = ''; hist.length = 0; rafQ = [];
-  const M = buildModel(1, () => clock, null);
+  const M = buildModel(scale, () => clock, null);
   return new Engine({ canvas, ui, root, model: M, expression, intro: false });
 }
 /** Run the frames the engine asked for (each callback clears its own pending flag, as a real frame does). */
@@ -333,6 +334,80 @@ const measured: Record<string, string> = {};
     const H = E.hits, n0 = H?.n, p0 = H?.pool.length; let same = !!H;
     for (let i = 0; i < 20 && H; i++) { E.dirty(); flush(); if (H.n !== n0 || H.pool.length !== p0) same = false; }
     expect(same && n0 > 0, 'the hit list is pooled: 20 frames at an unchanged view keep ' + n0 + ' records and a pool of ' + p0);
+  }
+  E.cam.set(E.HOME); reset();
+}
+
+// ---------------------------------------------------------------------------------------------- 3c. the scan chip: act where the plan shows it
+// A scan's chip (render/scans.ts) registers into the hit list as it is drawn: hover gives the job card, a click opens the
+// Agents flyout on that job without moving the camera. The chip box is read from the frame's own fillRect (the spy), never
+// from a copy of the layout arithmetic. Guards: off the chip the place under it is hit as before; at a past date no chip.
+{
+  reset(); win.innerWidth = 1280; win.innerHeight = 800; E.fit();
+  const { scanViews } = await imp('lib/scan/scan-views.ts');
+  /** The drawn chip of the view whose chip text starts with `lead`: the last 20u-tall fillRect before its fillText. */
+  const chipOf = (EE: Any, lead: string) => {
+    spy = []; EE.dirty(); flush();
+    const s = spy; spy = null;
+    const ti = s.findIndex((c) => c.k === 'fillText' && String(c.a[0]).startsWith(lead));
+    for (let i = ti - 1; i >= 0; i--) { const c = s[i]; if (c.k === 'fillRect' && Math.abs((c.a[3] as number) - 20 * EE.U) < 1e-6) { const [x, y, w, h] = c.a as number[]; return { x, y, w, h, cx: x + w / 2, cy: y + h / 2 }; } }
+    return null;
+  };
+  const room = M.L.rooms.find((r: Any) => r.w > 200) ?? M.L.rooms[0], lens = Object.keys(M.P.LENS)[0], short = M.P.LENS[lens]?.short ?? lens;
+  const view = (o: Record<string, unknown>) => ({ id: 'j1', job: 'j1', lens, accent: '#6ff2c8', place: { t: 'room', id: room.id }, features: [], done: new Set(), n: 3, m: 12, status: 'stale', seen: Date.now() - 12 * 60000, error: undefined, ...o });
+  E.setScans([view({})]);
+  E.cam.set({ x: room.x + room.w / 2, y: room.y + room.h / 2, k: Math.min(E.FW / (room.w * 1.6), E.FH / (room.h * 1.6)) }); E.cam.stopFly?.();
+  const c = chipOf(E, short + ' stalled 3/12');
+  expect(!!c, 'the stale scan chip "' + short + ' stalled 3/12" is drawn on the room');
+  if (c) {
+    // case 1: hover at the chip centre
+    E.hoverAt(c.cx, c.cy);
+    expect(E.S.hover?.type === 'scan' && E.S.hover?.id === 'j1', 'hover on the scan chip sets { type: scan, id: j1 } (got ' + JSON.stringify(E.S.hover) + ')');
+    expect(canvas.dataset.cursor === 'pt', 'the scan chip shows the pointing cursor (got ' + canvas.dataset.cursor + ')');
+    // case 2: click at the chip centre opens the Agents flyout on the job; the camera does not move
+    const k0 = E.cam.k, x0 = E.cam.x, y0 = E.cam.y;
+    E.clickAt(c.cx, c.cy);
+    expect(E.S.dtab === 'swarm' && E.S.scanJob === 'j1', 'a click on the scan chip opens Agents on job j1 (dtab ' + E.S.dtab + ', scanJob ' + E.S.scanJob + ')');
+    expect(!E.cam.flying && E.cam.k === k0 && E.cam.x === x0 && E.cam.y === y0, 'a click on the scan chip does not move the camera');
+    reset({ scanJob: null });
+    // case 6 (GUARD): inside the outline, off the chip, the place under the pointer is hit as before
+    const sp = { x: E.FW / 2, y: E.FH / 2 };
+    E.hoverAt(sp.x, sp.y);
+    const want = E.hitTarget(E.hitAt(sp.x, sp.y));
+    expect(E.S.hover?.type !== 'scan' && JSON.stringify(E.S.hover) === JSON.stringify(want), 'GUARD off the chip, inside the outline, the hover is the place under it (' + JSON.stringify(E.S.hover) + ')');
+    // case 6 (GUARD): at a past date no chip is drawn, and the chip's position resolves to what lies under it
+    const past = new Date(Date.parse(M.P.asOf) - 14 * 864e5).toISOString().slice(0, 10);
+    E.patch({ t: past }); E.dirty(); flush();
+    E.hoverAt(c.cx, c.cy);
+    expect(!E.isNow && E.S.hover?.type !== 'scan', 'GUARD at a past date the chip position is not a scan target (' + JSON.stringify(E.S.hover) + ')');
+    reset({ t: M.P.asOf }); E.dirty(); flush();
+    // case 7: the chip is a target while drawn; once setScans drops the view, its old position is nothing scan-shaped
+    E.hoverAt(c.cx, c.cy); const before = E.S.hover?.type;
+    E.setScans([]); flush();
+    E.hoverAt(c.cx, c.cy); const after = E.S.hover?.type;
+    expect(before === 'scan' && after !== 'scan', 'a removed view\'s chip stops resolving on the next frame (before ' + before + ', after ' + after + ')');
+  }
+  // case 3: at ?scale=4 a job draws one view per line ("j1@b"); every line's chip resolves to the one job j1
+  {
+    const E4 = mount(1280, 800, 4), M4 = E4.M, base = room.d.base;
+    const now = Date.now(), job = { id: 'j1', kind: 'measure', lens, scope: { kind: 'room', id: base, label: room.d.name, features: room.feats.map((f: Any) => f.id) }, status: 'running', queued_at: new Date(now - 1000).toISOString(), started_at: new Date(now - 1000).toISOString() };
+    const { views } = scanViews([job], undefined, M4, () => '#6ff2c8', now);
+    const v2 = views.find((v: Any) => v.id === 'j1@2');
+    expect(!!v2, 'at ?scale=4 the job has a view j1@2 (' + views.map((v: Any) => v.id).join(' ') + ')');
+    if (v2) {
+      E4.setScans(views);
+      const R = E4.placeById('room', v2.place.id);
+      E4.cam.set({ x: R.x + R.w / 2, y: R.y + R.h / 2, k: Math.min(E4.FW / (R.w * 1.6), E4.FH / (R.h * 1.6)) }); E4.cam.stopFly?.();
+      const c4 = chipOf(E4, short + ' ');
+      expect(!!c4, 'the j1@2 chip is drawn on line 3\'s room');
+      if (c4) {
+        E4.hoverAt(c4.cx, c4.cy);
+        expect(E4.S.hover?.type === 'scan' && E4.S.hover?.id === 'j1', '?scale=4: hover on line 3\'s chip resolves to job j1 (got ' + JSON.stringify(E4.S.hover) + ')');
+        E4.clickAt(c4.cx, c4.cy);
+        expect(E4.S.dtab === 'swarm' && E4.S.scanJob === 'j1', '?scale=4: a click on line 3\'s chip opens job j1 (scanJob ' + E4.S.scanJob + ')');
+      }
+    }
+    E4.destroy(); rafQ = [];
   }
   E.cam.set(E.HOME); reset();
 }

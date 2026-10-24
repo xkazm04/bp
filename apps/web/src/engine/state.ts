@@ -8,8 +8,8 @@ import { GENERAL } from '@bp/core/data/types';
 /** The right-hand rail's items; each opens its own flyout over the plan. */
 export type DockTab = 'asks' | 'swarm' | 'orders' | 'plan' | 'find' | 'view' | 'steer';
 export interface Crumb { t: 'bld' | 'wing' | 'room' | 'bay'; id: string }
-/** `track`: a live answer's marker on its tile (`id` = the proposal id). */
-export interface HoverInfo { type: 'tile' | 'bld' | 'wing' | 'room' | 'bay' | 'agent' | 'pin' | 'track'; id: string; ids?: string[] }
+/** `track`: a live answer's marker on its tile (`id` = the proposal id). `scan`: a scan's chip on the plan (`id` = the job id). */
+export interface HoverInfo { type: 'tile' | 'bld' | 'wing' | 'room' | 'bay' | 'agent' | 'pin' | 'track' | 'scan'; id: string; ids?: string[] }
 export interface ToastItem extends SimToast { n: number }
 
 export interface UIState {
@@ -48,6 +48,8 @@ export interface UIState {
   key: string | null;
   /** The rail flyout that is open (one at a time); null = none. */
   dtab: DockTab | null;
+  /** A scan job the Agents flyout opens on (a click on its chip on the plan); the panel takes it once and clears it. */
+  scanJob: string | null;
   selMode: boolean;
   dockHidden: boolean;
   morning: boolean;
@@ -91,7 +93,7 @@ export function initialState(scale: number, asOf: string): UIState {
   return {
     ready: false, scale, phone: false, compact: false, view: GENERAL, place: [], levelNames: [], level: 0,
     open: null, dec: null, hover: null, sel: null, hl: null, hlDec: null, hlOpt: null, tgt: { ids: {}, n: 0, label: '' }, prev: null, lprev: null, track: null,
-    t: asOf, delta: 7, who: null, ga: false, blast: null, key: null, dtab: null, selMode: false, dockHidden: false,
+    t: asOf, delta: 7, who: null, ga: false, blast: null, key: null, dtab: null, scanJob: null, selMode: false, dockHidden: false,
     morning: false, info: false, ordHi: null, crew: null, askAll: false, ordMenu: false, whoMenu: false, simV: 0,
     playing: true, speed: 8, over: false, toast: null, ticker: null, intro: false, tl: false,
     page: 'plan', lv: 'triage', menu: null,

@@ -1,6 +1,6 @@
 // The per-frame hit list: what the pointer can hit is what the frame drew. Each dynamic layer, as it draws a
 // target mark, registers its hit region here (agents and the "+N" overflow chip, question pins, room cluster pins,
-// track marks, then the trouble flags last); Engine.clickAt / hoverAt and its pinAt / trackAt / agentAt readers walk
+// track marks, scan chips, then the trouble flags last); Engine.clickAt / hoverAt and its pinAt / trackAt / agentAt readers walk
 // the list topmost first. Registration order IS draw order, so a later-drawn mark wins where two overlap and a new
 // target layer is hit-testable the moment it registers - no second geometry formula, no second z-order list.
 //
@@ -11,14 +11,14 @@
 // Records are pooled like flags.ts: a frame that fits the pool allocates nothing. No parameter properties (a node
 // check imports this file through type stripping).
 
-export type HitKind = 'agent' | 'more' | 'pin' | 'cluster' | 'track' | 'flag';
+export type HitKind = 'agent' | 'more' | 'pin' | 'cluster' | 'track' | 'scan' | 'flag';
 export interface Hit {
   kind: HitKind;
-  /** agent: agent id; more / pin: feature id; cluster: room name; track: track id; flag: feature id. */
+  /** agent: agent id; more / pin: feature id; cluster: room name; track: track id; scan: job id; flag: feature id. */
   id: string;
-  /** agent: index in sim.agents; cluster: room index; otherwise 0. */
+  /** agent: index in sim.agents; cluster: room index; scan: view index; otherwise 0. */
   i: number;
-  /** agent: the SimAgent; pin: the SimDecision; flag: the Flag record; otherwise null. */
+  /** agent: the SimAgent; pin: the SimDecision; scan: the ScanView; flag: the Flag record; otherwise null. */
   ref: unknown;
   /** The hit region, screen px. */
   x: number; y: number; w: number; h: number;

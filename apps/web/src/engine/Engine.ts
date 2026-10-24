@@ -223,7 +223,7 @@ export class Engine {
     return a ? a[this.th.mode] : this.accentOf(l);
   }
   /** The scans to draw (a discrete change: a job moved, a reading came in). The loop runs while one of them runs. */
-  setScans(views: readonly ScanView[]) { if (this.destroyed) return; this.scans.set(views, this); this.dirty(); }
+  setScans(views: readonly ScanView[]) { if (this.destroyed) return; this.scans.set(views, this); this.hitsAt.k = NaN; this.dirty(); }
   counts(id: string, fs: readonly Feature[]): Counts { return this.M.agg.countsOf(id, fs, this.S.t, this.S.delta); }
   lensAgg(id: string, l: string, fs: readonly Feature[]): ChannelAggregate {
     const k = id + '|' + l; let a = this.aggLensCache.get(k);
@@ -474,7 +474,7 @@ export class Engine {
     this.hits.reset(); this.stampHits();
     if (this.introOn) return this.hits;
     const g = muteCtx(), v = this.view, lod = this.lod(), now = performance.now();
-    drawAgents(this, g, v, lod, now); drawPins(this, g, v, lod, now); drawTracks(this, g, v, lod);
+    drawAgents(this, g, v, lod, now); drawPins(this, g, v, lod, now); drawTracks(this, g, v, lod); this.scans.draw(this, g, v, lod, now);
     this.registerFlags();
     return this.hits;
   }
@@ -1054,7 +1054,7 @@ export class Engine {
     const same = (!cur && !h) || (cur && h && cur.type === h.type && cur.id === h.id);
     this.hoverPt = { x: px, y: py };
     if (!same) this.set({ hover: h });
-    this.cv.dataset.cursor = this.S.selMode ? 'sel' : !h ? '' : h.type === 'tile' || h.type === 'agent' || h.type === 'pin' || h.type === 'track' ? 'pt' : 'zin';
+    this.cv.dataset.cursor = this.S.selMode ? 'sel' : !h ? '' : h.type === 'tile' || h.type === 'agent' || h.type === 'pin' || h.type === 'track' || h.type === 'scan' ? 'pt' : 'zin';
     this.placeHover();
   }
   /** Position the hover card next to its target (called on pointer move and after React renders it). */
@@ -1102,6 +1102,8 @@ export class Engine {
     if (hu?.kind === 'flag') { this.flagClick(hu.ref as Flag); return; }
     if (hu?.kind === 'pin' || hu?.kind === 'cluster') { this.openDecision(this.pinOf(hu).d.id); return; }
     if (hu?.kind === 'track') { this.openTrack(hu.id); return; }
+    // a scan's chip: the Agents flyout opens on its job (Cancel at hand); the flyout overlays the plan, the camera stays
+    if (hu?.kind === 'scan') { this.set({ dtab: 'swarm', tl: false, scanJob: hu.id }); return; }
     if (hu?.kind === 'more') { if (this.lod() > 0.5) this.openFeature(hu.id); else this.flyToFeature(hu.id, false); return; }
     const ag = hu?.kind === 'agent' ? (hu.ref as SimAgent) : null;
     if (ag) {
@@ -1139,6 +1141,7 @@ export class Engine {
     if (fl) { this.setHover(new Set(fl.fids).size === 1 ? { type: 'tile', id: fl.fid } : null, px, py); this.cv.dataset.cursor = 'pt'; return; }
     if (hu?.kind === 'pin' || hu?.kind === 'cluster') { const pn = this.pinOf(hu); this.setHover({ type: 'pin', id: pn.d.id, ids: pn.cluster ? pn.list.map((d) => d.id) : undefined }, px, py); return; }
     if (hu?.kind === 'track') { this.setHover({ type: 'track', id: hu.id }, px, py); return; }
+    if (hu?.kind === 'scan') { this.setHover({ type: 'scan', id: hu.id }, px, py); return; }
     if (hu?.kind === 'more') { this.setHover({ type: 'tile', id: hu.id }, px, py); return; }
     if (hu?.kind === 'agent') { this.setHover({ type: 'agent', id: hu.id }, px, py); return; }
     this.setHover(this.hitTarget(this.hitAt(px, py)), px, py);

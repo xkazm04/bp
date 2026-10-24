@@ -126,6 +126,21 @@ function HoverBody() {
       </>
     );
   }
+  if (h.type === 'scan') {
+    // a scan's chip: the job as the plan draws it (lens, status, n/m), how long a stalled one has been silent, a failure's reason
+    const V = E.scans.viewOf(h.id); if (!V) return null;
+    const word = V.status === 'stale' ? 'stalled' : V.status, mins = V.status === 'stale' && V.seen !== undefined ? Math.max(1, Math.round((Date.now() - V.seen) / 60000)) : 0;
+    return (
+      <>
+        <div className="k">Scan · {word} · {h.id}</div>
+        <div className="n">{M.P.LENS[V.lens]?.name ?? V.lens}</div>
+        <div className="s">{V.status === 'queued' ? 'Waiting for a free runner' : V.n + '/' + V.m + ' features measured'}</div>
+        {mins > 0 && <div className="sw">Silent: no sign of life for {mins} min</div>}
+        {V.status === 'failed' && V.error && <div className="t">{V.error}</div>}
+        <div className="h">Click for the job{V.status === 'running' || V.status === 'stale' || V.status === 'queued' ? ' and Cancel' : ''}</div>
+      </>
+    );
+  }
   if (h.type === 'agent') {
     const A = sim.AG[h.id]; if (!A) return null;
     const f = M.P.F[A.f], st = astat(A), dq = A.wait && sim.DEC[A.wait]?.open ? sim.DEC[A.wait] : null;

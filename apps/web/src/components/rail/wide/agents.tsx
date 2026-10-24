@@ -2,7 +2,7 @@
 // A · Agents: the list holds an overview row, the scan jobs (newest first) and, when the simulated swarm has them,
 // the crews. The detail reads the selection in full: a job's progress, clock, Cancel and log; a crew's agents and
 // tasks; or the overview, which keeps the steering of the current selection and the swarm's latest lines.
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { TICK_CLASS, astat, type SimAgent } from '@bp/core/model';
 import { cancelJob, refusalText } from '@/lib/scan/actions';
 import { jobLabel, type ScanJob } from '@bp/core/scan/jobs';
@@ -42,9 +42,16 @@ function jobFacts(j: ScanJob, scan: ScanSnapshot | undefined, total: number, now
 
 export function Agents() {
   const E = useEngine(), M = E.M, sim = M.sim, live = useLive();
-  const s = useBp((s) => ({ simV: s.simV, crew: s.crew }), shallowEqual);
+  const s = useBp((s) => ({ simV: s.simV, crew: s.crew, scanJob: s.scanJob }), shallowEqual);
   const { jobs, scan } = useScanJobs(true, true);
-  const [sel, setSel] = useState<string | null>(null);
+  // a click on a scan's chip on the plan opens the panel on that job (S.scanJob): taken once, then cleared, Cancel focused
+  const [sel, setSel] = useState<string | null>(() => (s.scanJob ? key('job', s.scanJob) : null));
+  const focusCancel = useRef(false);
+  useEffect(() => {
+    if (!s.scanJob) return;
+    setSel(key('job', s.scanJob)); focusCancel.current = true;
+    E.patch({ scanJob: null });
+  }, [E, s.scanJob]);
   const listRef = useListRef();
   // a pending steer the overview holds brings the overview back when it arrives (a preset's goes to the frame's bar)
   const seat = usePreviewSeat(setSel);
@@ -113,7 +120,7 @@ export function Agents() {
   let detail;
   if (cur?.startsWith('job:')) {
     const j = rev.find((x) => key('job', x.id) === cur)!;
-    detail = <JobDetail j={j} scan={scan} total={total} now={now} live={!!live} />;
+    detail = <JobDetail j={j} scan={scan} total={total} now={now} live={!!live} focusCancel={focusCancel} />;
   } else if (crewSel) {
     detail = <CrewDetail id={crewSel} />;
   } else {
@@ -132,9 +139,12 @@ export function Agents() {
   );
 }
 
-function JobDetail({ j, scan, total, now, live }: { j: ScanJob; scan: ScanSnapshot | undefined; total: number; now: number; live: boolean }) {
+function JobDetail({ j, scan, total, now, live, focusCancel }: { j: ScanJob; scan: ScanSnapshot | undefined; total: number; now: number; live: boolean; focusCancel: { current: boolean } }) {
   const E = useEngine(), M = E.M, ctx = useScanCtx();
   const [busy, setBusy] = useState(false);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  // opened from the plan's chip: Cancel takes focus (Enter cancels); a job picked in the list keeps focus on the list
+  useEffect(() => { if (focusCancel.current) { focusCancel.current = false; cancelRef.current?.focus(); } });
   const d = j.lens ? M.P.LENS[j.lens] : undefined, x = jobFacts(j, scan, total, now);
   const cancel = () => { setBusy(true); cancelJob(ctx, j.id).catch((e) => E.toast('Not cancelled', refusalText(e))).finally(() => setBusy(false)); };
   const pct = x.m ? Math.round((100 * x.n) / x.m) : 0;
@@ -166,7 +176,7 @@ function JobDetail({ j, scan, total, now, live }: { j: ScanJob; scan: ScanSnapsh
         </>
       )}
       <div className="wb-inline">
-        {x.open && <button type="button" className="bt" disabled={busy} onClick={cancel} aria-label={'Cancel ' + (d?.name ?? (x.release ? 'release' : 'execute')) + ' job ' + j.id}>Cancel job</button>}
+        {x.open && <button ref={cancelRef} type="button" className="bt" disabled={busy} onClick={cancel} aria-label={'Cancel ' + (d?.name ?? (x.release ? 'release' : 'execute')) + ' job ' + j.id}>Cancel job</button>}
         <span className="wb-meta">queued {j.queued_at.slice(11, 19)}{j.started_at ? ' · started ' + j.started_at.slice(11, 19) : ''}{j.ended_at ? ' · ended ' + j.ended_at.slice(11, 19) : ''}{j.run_id ? ' · run ' + j.run_id : ''}{j.release ? ' · ' + j.release : ''}</span>
         {pr && <a className="wb-meta" href={pr} target="_blank" rel="noopener noreferrer">pull request</a>}
       </div>

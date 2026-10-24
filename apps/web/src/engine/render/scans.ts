@@ -26,7 +26,16 @@ export interface ScanView {
   m: number;
   /** `stale`: a running job that has shown no sign of life for a while (scan-views STALE_MS); not known to have failed. */
   status: JobStatus | 'stale';
+  /** The job this view draws (at `?scale` > 1 every product line's view names the one job); absent: `id` less its `@b`. */
+  job?: string;
+  /** A running job's last sign of life (ms since the epoch), when known: the chip's card says how long it has been silent. */
+  seen?: number;
+  /** A failed job's error line, for the chip's card. */
+  error?: string;
 }
+
+/** The job a view stands for: `job`, else its id without the product-line suffix (`j1@2` -> `j1`). */
+export const viewJob = (V: Pick<ScanView, 'id' | 'job'>): string => V.job ?? V.id.replace(/@\d+$/, '');
 
 /** The sweep's period across the feature being judged. */
 const BEAM_MS = 1200;
@@ -44,17 +53,20 @@ export class ScanLayer {
   private done: string[][] = [];
   private col: string[] = [];
   private chipW: number[] = []; private chipX: number[] = [];
+  private jobs: string[] = [];
   private font = ''; private th: unknown = null;
   /** True while any view runs: the engine keeps its loop alive for the marching dashes and the sweep. */
   animating = false;
 
   get size(): number { return this.views.length; }
+  /** The first view of job `job` (the chip's hover card reads it), or null. */
+  viewOf(job: string): ScanView | null { const i = this.jobs.indexOf(job); return i < 0 ? null : this.views[i]; }
 
   /** Take a new set of views (a discrete change): resolve boxes and nesting once, here, not per frame. */
   set(views: readonly ScanView[], E: Engine): void {
     const L = E.M.L, n = views.length;
     this.views = views.slice();
-    this.box.length = this.depth.length = this.lead.length = this.text.length = this.done.length = this.col.length = 0;
+    this.box.length = this.depth.length = this.lead.length = this.text.length = this.done.length = this.col.length = this.jobs.length = 0;
     const keys: string[] = [];
     for (let i = 0; i < n; i++) {
       const V = views[i];
@@ -71,6 +83,7 @@ export class ScanLayer {
       this.text.push(short + ' ' + (V.status === 'queued' ? 'queued' : V.status === 'failed' ? 'failed' : V.status === 'stale' ? 'stalled ' + V.n + '/' + V.m : V.status === 'done' ? V.m + '/' + V.m + ' done' : V.n + '/' + V.m));
       this.done.push([...V.done]);
       this.col.push(V.accent);
+      this.jobs.push(viewJob(V));
     }
     this.animating = views.some((V) => V.status === 'running');
     this.font = ''; this.th = E.th;
@@ -88,7 +101,8 @@ export class ScanLayer {
     }
   }
 
-  /** Draw every live view at the live camera (after the swarm layers, before the trouble flags). */
+  /** Draw every live view at the live camera (after the swarm layers, before the trouble flags); each drawn chip registers
+   *  into the frame's hit list (render/hits.ts) as a `scan` target for its job. */
   draw(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod: number, now: number): void {
     const n = this.views.length;
     if (!n || !E.isNow) return;
@@ -136,6 +150,7 @@ export class ScanLayer {
       ctx.strokeStyle = col; ctx.lineWidth = 1.5 * u; ctx.strokeRect(cx + 0.75 * u, cy + 0.75 * u, cw - 1.5 * u, ch - 1.5 * u);
       glyph(ctx, E.M.P.LENS[V.lens]?.glyph ?? null, cx + 6 * u, cy + 4 * u, 12 * u, col);
       drawText(ctx, this.text[i], cx + 6 * u + 12 * u + 5 * u, cy + 14.2 * u, font, th.inkHi);
+      E.hits.add('scan', this.jobs[i], i, V, cx, cy, cw, ch);
     }
     ctx.restore();
   }

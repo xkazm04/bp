@@ -610,7 +610,7 @@ function traced(fn: () => void): string[] {
     const layer = new SL.ScanLayer();
     const E = {
       U: 1, th, tx, SAFE: { l: 0, t: 0 }, cam: { reduced: false }, dashT: 7, isNow: true, lensAccent: () => accent,
-      M: { L: { TILE: {}, blds: [box] }, P: { LENS: {} } }, placeById: () => null,
+      M: { L: { TILE: {}, blds: [box] }, P: { LENS: {} } }, placeById: () => null, hits: { add() {} },
     } as never;
     layer.set([{ id: 'j', lens: 'l', accent, place: null, features: [], done: new Set(), n: 1, m: 4, status } as never], E);
     const c = fresh(), v: View = { x: 200, y: 150, k: 1, FW: 1280, FH: 800, c0x: -100, c0y: -100, c1x: 1380, c1y: 900 };
