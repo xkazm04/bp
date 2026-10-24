@@ -144,6 +144,12 @@ interface DecisionUndo {
   roll: [string, number | undefined, number | undefined, string | undefined][]; cov: [string, number | undefined][];
   ords: { o: SimOrder; vf: string[]; n: number }[]; breaches: number; asks: string[];
 }
+/** One step of the reader's undo history: an answer (one question, a batch of them, or a kept answer with its order) or a command. */
+type UndoEntry =
+  | { kind: 'answer' | 'batch' | 'keep'; list: DecisionUndo[]; order?: string }
+  | { kind: 'command'; cmd: PreviewKind; snap: ({ order: string } | AgentFull)[]; freed: string[] };
+/** How many gestures U can walk back; the oldest is evicted past it. */
+export const UNDO_DEPTH = 20;
 const sfx = (e: OptionEffect, sf: string): OptionEffect => (e.k === 'staff' ? { ...e, feature: e.feature + sf, from: e.from.domain ? { ...e.from, domain: e.from.domain + sf } : e.from } : { ...e, feature: e.feature + sf });
 const liveKey = (e: ReplayEvent) => e.at + '|' + e.agent + '|' + e.feature + '|' + e.text;
 
@@ -202,8 +208,8 @@ export class SwarmSim {
   private paidT = 0;
   /** Per-event toasts above 60x and while seeking: counted, then shown as one. */
   private burst: { n: number; last: SimToast; at: number; tone?: ToastTone } | null = null; private seeking = false;
-  undo: { list: DecisionUndo[]; order?: string } | null = null;
-  undo2: { kind: PreviewKind; snap: ({ order: string } | { a: SimAgent; f: string; status: AgentStatus; task: string; wait: string | null; paused: boolean; synth: boolean })[] } | null = null;
+  /** The reader's gestures, newest last (bounded by UNDO_DEPTH, in memory only; a live sim keeps none). */
+  private history: UndoEntry[] = [];
   breaches = 0; tally: Partial<Record<ReplayType, number>> = {};
   /** Bumped on every discrete change (status, queue, orders): cheap change detection for caches. */
   version = 0;
@@ -637,7 +643,7 @@ export class SwarmSim {
     if (this.live) return;
     const sp = this.speed;
     this.t = 0; this.playing = true; this.speed = sp; this.i = 0; this.log = []; this.pulses = []; this.heat = {}; this.roll = {};
-    this.prog = {}; this.cap = {}; this.cov = {}; this.capBy = {}; this.paidT = 0; this.burst = null; this.undo = null; this.undo2 = null; this.over = false; this.breaches = 0; this.tally = {}; this.ordCache = null;
+    this.prog = {}; this.cap = {}; this.cov = {}; this.capBy = {}; this.paidT = 0; this.burst = null; this.history = []; this.over = false; this.breaches = 0; this.tally = {}; this.ordCache = null;
     this.build(); this.bump();
   }
   setSpeed(n: number) { if (this.live) return; this.speed = n; if (!this.over) this.playing = true; this.bump(); }
@@ -737,7 +743,7 @@ export class SwarmSim {
     const d = this.DEC[id]; if (!d || !d.open) return;
     if (this.live) { this.decideLive(d, oi); return; }
     const pl = this.planAnswer(d, oi), pv = this.describe(pl);
-    this.undo = { list: [this.applyAnswer(pl)] };
+    this.remember({ kind: 'answer', list: [this.applyAnswer(pl)] });
     const n = pl.freed.length, fx = pv.marks!.map((m) => m.text);
     const cleared = pl.breaks.filter((b) => !b.add).map((b) => b.o.id);
     this.toast({ strong: cleared.length ? 'Decided · breach cleared' : 'Decided', text: d.opts[oi].label + (n ? ' · ' + n + ' agent' + (n > 1 ? 's' : '') + ' back to work' : ' · nobody was blocked') + (fx.length ? ' · ' + fx.join(' · ') : ' · ' + d.affects.length + ' feature' + (d.affects.length > 1 ? 's' : '') + ' touched'), action: 'undo' });
@@ -794,7 +800,8 @@ export class SwarmSim {
       n: 0, vf: [], user: true, keep: { dec: d.id, lens: d.lens, label: o.label, kinds: [...new Set(fx.map((e) => e.k))], fx },
     });
     this.ordCache = null;
-    if (this.undo) this.undo.order = no;
+    const top = this.history[this.history.length - 1];
+    if (top && top.kind === 'answer') { top.kind = 'keep'; top.order = no; }
     this.toast({ strong: 'Decided and kept as ' + no, text: o.label + ' · ' + this.scopeWords(this.orders[this.orders.length - 1]), action: 'undo' });
     this.bump();
     return true;
@@ -841,7 +848,7 @@ export class SwarmSim {
     const grp = this.batchGroups().find((x) => x.key === key); if (!grp) return 0;
     const list: DecisionUndo[] = [];
     for (const id of grp.ids) { const d = this.DEC[id]; if (d?.open && d.urg !== 'high') list.push(this.applyAnswer(this.planAnswer(d, d.rec))); }
-    this.undo = { list };
+    this.remember({ kind: 'batch', list });
     this.toast({ strong: 'Decided ' + list.length + ' together', text: grp.label + ' · one undo takes all of them back', action: 'undo' });
     this.bump();
     return list.length;
@@ -952,15 +959,39 @@ export class SwarmSim {
     if (this.seen.size > 2000) this.seen = new Set(S.replay.map(liveKey));
     this.index(); this.bump();
   }
-  /** Take the last answer back: every field `decide` wrote is put back from what it kept (the same plan). */
-  undoDecision() {
-    const U = this.undo; if (!U) return;
+  private remember(u: UndoEntry) { if (this.live) return; this.history.push(u); if (this.history.length > UNDO_DEPTH) this.history.shift(); }
+  /** How many gestures U can still take back. */
+  undoDepth(): number { return this.history.length; }
+  /** What U would take back now (for the button's title and the toast), or null when nothing is left. */
+  undoLabel(): string | null {
+    const u = this.history[this.history.length - 1]; if (!u) return null;
+    if (u.kind === 'command') return u.cmd === 'order' ? 'the order you wrote' : u.cmd === 'push' ? 'the push' : 'the ' + u.cmd;
+    if (u.kind === 'batch') return u.list.length + ' decisions (' + u.list.map((x) => x.d.base).join(', ') + ')';
+    return 'your answer to ' + u.list[0].d.base + (u.order ? ' and order ' + u.order : '');
+  }
+  /**
+   * Take the reader's last gesture back, whatever it was (U on the plan, and the toast's UNDO): strict LIFO across
+   * answers and commands, so no record is ever applied against a state a later gesture made. False when nothing is left.
+   */
+  undoLast(): boolean {
+    if (this.live) return false;
+    const u = this.history.pop();
+    if (!u) { this.toast({ strong: 'Nothing to undo', text: 'U takes back your last ' + UNDO_DEPTH + ' answers and commands, newest first.', tone: 'warn' }); return false; }
+    if (u.kind === 'command') this.revertCommand(u); else this.revertAnswers(u);
+    return true;
+  }
+  /** The last gesture, when it is an answer (kept for the older callers; undoLast is the one undo). */
+  undoDecision() { const u = this.history[this.history.length - 1]; if (u && u.kind !== 'command') this.undoLast(); }
+  /** The last gesture, when it is a command (kept for the older callers). */
+  undoCommand() { const u = this.history[this.history.length - 1]; if (u && u.kind === 'command') this.undoLast(); }
+  /** Take an answer step back: every field `decide` wrote is put back from what it kept (the same plan). */
+  private revertAnswers(U: Extract<UndoEntry, { list: DecisionUndo[] }>) {
     for (let i = U.list.length - 1; i >= 0; i--) this.revertAnswer(U.list[i]);
     if (U.order) {   // a kept answer: its order goes, and the recommendations it set go back to the agents'
       this.orders = this.orders.filter((o) => o.id !== U.order); this.ordCache = null;
       for (const d of this.decisions) if (d.recBy === U.order) { d.rec = d.rec0 ?? d.rec; delete d.recBy; delete d.rec0; }
     }
-    this.undo = null; this.index();
+    this.index();
     this.toast({ strong: U.list.length > 1 ? U.list.length + ' decisions taken back' : U.order ? 'Decision and order ' + U.order + ' taken back' : 'Decision taken back', text: U.list.length > 1 ? 'the questions are open again' : 'the question is open again' });
     this.bump();
   }
@@ -1060,18 +1091,18 @@ export class SwarmSim {
   }
   commit(p: Preview, who: string | null) {
     if (p.kind === 'answer') return;   // an answer preview is applied by decide, never as a command
-    const snap: NonNullable<SwarmSim['undo2']>['snap'] = [];
+    const snap: Extract<UndoEntry, { kind: 'command' }>['snap'] = [], freed: string[] = [];
     if (p.kind === 'push') {
       for (const m of p.moves) {
         const a = m.a;
-        snap.push({ a, f: a.f, status: a.status, task: a.task, wait: a.wait, paused: a.paused, synth: a.synth });
-        if (a.wait && this.DEC[a.wait]) this.DEC[a.wait].freed++;
+        snap.push(full(a));
+        if (a.wait && this.DEC[a.wait]) { this.DEC[a.wait].freed++; freed.push(a.wait); }
         a.status = 'working'; a.wait = null; a.paused = false; a.synth = true; a.nextSynth = this.t + 4 + hash01(a.id) * 14; a.task = 'joined the push: ' + this.P.F[m.to].name;
         this.travel(a, m.to);
       }
     } else if (p.kind === 'pause' || p.kind === 'resume') {
       const now = this.now();
-      for (const a of p.paused) { snap.push({ a, f: a.f, status: a.status, task: a.task, wait: a.wait, paused: a.paused, synth: a.synth }); a.paused = p.kind === 'pause'; a.flash = now; }
+      for (const a of p.paused) { snap.push(full(a)); a.paused = p.kind === 'pause'; a.flash = now; }
     } else if (p.kind === 'order') {
       // signed by the reader; nobody to sign it = refused (never a default author)
       if (!who) { this.toast({ strong: 'Order not written:', text: 'nobody to sign it. Pick who you are (or a lens one person reads), then write it again.', tone: 'warn' }); return; }
@@ -1079,19 +1110,19 @@ export class SwarmSim {
       this.orders.push({ id: no, by, lens: personLens(this.P, by) ?? 'general', scope: { feats: p.targets, label: p.label }, text: p.text || '', since: ymdUTC(this.at0 + this.t * 1000), n: 0, vf: [], user: true, tpl: p.tpl });
       this.ordCache = null; snap.push({ order: no });
     }
-    this.undo2 = { snap, kind: p.kind };
+    this.remember({ kind: 'command', cmd: p.kind, snap, freed });
     this.index();
     this.toast(p.kind === 'push' ? { strong: 'Addendum issued · ' + p.n + ' agents are moving', text: p.title, action: 'undo2' } : p.kind === 'order' ? { strong: 'Order written', text: p.text || '', action: 'undo2' } : { strong: p.title, text: '', action: 'undo2' });
     this.bump();
   }
-  undoCommand() {
-    const u = this.undo2; if (!u) return;
+  private revertCommand(u: Extract<UndoEntry, { kind: 'command' }>) {
     for (const s of u.snap) {
       if ('order' in s) { const o = this.orders.find((x) => x.id === s.order); this.orders = this.orders.filter((x) => x.id !== s.order); this.ordCache = null; if (o?.held) this.unhold(o.held); continue; }
-      const a = s.a; a.status = s.status; a.task = s.task; a.wait = s.wait; a.paused = s.paused; a.synth = s.synth;
+      const a = s.a; a.status = s.status; a.task = s.task; a.wait = s.wait; a.pct = s.pct; a.paused = s.paused; a.synth = s.synth; a.nextSynth = s.nextSynth;
       if (a.f !== s.f) this.travel(a, s.f);
     }
-    this.undo2 = null; this.index();
+    for (const id of u.freed) if (this.DEC[id]) this.DEC[id].freed--;
+    this.index();
     this.toast({ strong: 'Command taken back', text: '' });
     this.bump();
   }

@@ -395,6 +395,18 @@ const measured: Record<string, string> = {};
   reset(); { const d0 = E.S.delta; void d0; const t0 = E.S.t; key('['); expect(E.S.t !== t0, '[ steps the viewed week back'); key(']'); }
   reset({ page: 'plan', morning: true }); { const b = E.S.tl; key('t'); expect(E.S.tl === b, 'with the morning card up, only Enter and Esc act: t is swallowed'); }
   reset({ info: false, tl: true }); { key('Escape'); expect(E.S.tl === false, 'Esc through the key handler runs the ladder (timeline closes)'); }
+  // U walks the plan's undo history back (Enter decides at the recommendation; U takes it back), never from an input,
+  // never with Ctrl held, and never on the ledger page (where U is the ledger's own)
+  {
+    const sim = E.M.sim, q = sim.openDecs()[0];
+    reset({ dec: q.id }); key('Enter');
+    expect(!q.open, 'U: Enter on an open decision decides it at the recommendation');
+    reset(); key('u', { target: inp }); expect(!q.open, 'U: "u" typed in the search input does nothing');
+    reset(); key('u', { ctrl: true }); expect(!q.open, 'U: Ctrl+u does nothing');
+    reset({ page: 'ledger' }); key('u'); expect(!q.open, 'U: on the ledger page U stays the ledger\'s own');
+    reset(); key('u'); expect(q.open && !q.ans, 'U: "u" on the plan reopens the question');
+    reset({ dec: q.id }); key('Enter'); reset(); key('U'); expect(q.open, 'U: Shift+U works the same');
+  }
   reset();
 }
 

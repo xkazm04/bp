@@ -889,7 +889,11 @@ export class Engine {
     if (this.S.hlOpt) this.store.set({ hlOpt: null });
     this.scheduleSimSync(true); this.forceStatic();
   }
-  undoDecision() { this.M.sim.undoDecision(); this.store.set({ toast: null }); this.scheduleSimSync(true); this.forceStatic(); }
+  /** U on the plan and the toast's UNDO: the reader's last gesture (answer, batch, kept answer or command) taken back, newest first. */
+  undoLast() {
+    if (!this.M.sim.undoLast()) return;   // nothing left (the sim toasts why) or a live sim (no history)
+    this.store.set({ toast: null }); this.scheduleSimSync(true); this.forceStatic();
+  }
   private forceStatic() { this.simSeenV = this.M.sim.version; this.simStaticV++; this.simStaticAt = performance.now(); this.simPatch = true; this.dirty(); }
 
   // ============================================================================ targeting + steering
@@ -940,7 +944,6 @@ export class Engine {
   /** Who signs a written order: the reader, else the one person who reads the current lens; null = nobody (refused). */
   signer(): string | null { return this.S.who ?? lensPerson(this.M.P, this.S.view); }
   cancelPreview() { this.set({ prev: null, lprev: null }); }
-  undoCommand() { this.M.sim.undoCommand(); this.scheduleSimSync(true); this.forceStatic(); }
 
   // ============================================================================ places, crumbs, levels
   private visShare(o: Box): number {
@@ -1288,6 +1291,7 @@ export class Engine {
     }
     // 1 = General, 2.. = the enabled lenses in order (up to 9; the tab strip reaches the rest)
     if (/^[1-9]$/.test(k)) { const vs = views(this.M.P); if (+k <= vs.length) this.setView(vs[+k - 1]); return; }
+    if (k === 'u' || k === 'U') { this.undoLast(); return; }
     if (k === 'j' || k === 'J') { this.stepDecision(1); return; }
     if (k === 'k' || k === 'K') { this.stepDecision(-1); return; }
     if (k === 'm' || k === 'M') { this.toggleMorning(); return; }

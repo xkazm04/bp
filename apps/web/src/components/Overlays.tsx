@@ -439,8 +439,7 @@ export function Toast() {
           onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); end(); } }}
           initial={{ opacity: 0, y: -14, x: '-50%' }} animate={{ opacity: 1, y: 0, x: '-50%' }} exit={{ opacity: 0, y: -10, x: '-50%' }} transition={{ type: 'spring', stiffness: 420, damping: 32 }}>
           <span><b>{cur.strong}</b>{cur.text ? ' · ' + cur.text : ''}</span>
-          {cur.action === 'undo' && <button type="button" onClick={() => E.undoDecision()}>UNDO</button>}
-          {cur.action === 'undo2' && <button type="button" onClick={() => { E.undoCommand(); E.dismissToast(); }}>UNDO</button>}
+          {(cur.action === 'undo' || cur.action === 'undo2') && <button type="button" title="Undo (U)" onClick={() => E.undoLast()}>UNDO</button>}
           {cur.action === 'replay' && <button type="button" onClick={() => { E.restart(); E.dismissToast(); }}>↺ REPLAY</button>}
           {cur.fid && <button type="button" onClick={() => E.flyToFeature(cur.fid!)}>SHOW</button>}
           {st.q.length > 0 && <span className="more" title={st.q.map(toastLine).join(', ')}>+{st.q.length} more</span>}
