@@ -1,0 +1,125 @@
+{
+  "id": "hands-capture",
+  "class": "capture-hands",
+  "budget_tris": 30000,
+  "budget_note": "fidelity sprint brief (2026-10-24): about 30k tris for the pair; visual only, for the target capture (no tracking)",
+  "generator": [
+    {
+      "method": "MakeHuman base mesh and default rig through the MPFB 2.0.18 Blender extension (scripts/art/hands/build_hands.bpy): fingers and wrists posed with the rig, armature and helper mask applied, the hand and lower forearm kept per side, a scripted knit sleeve added, then each side moved rigidly into the capture frame",
+      "mpfb": {
+        "version": "2.0.18",
+        "zip": "https://extensions.blender.org/download/sha256:c075b3e9b94b8e5556a5f03f4653602d02ea306de08126e8f55ed6dee28a2dad/add-on-mpfb-v2.0.18.zip",
+        "sha256": "c075b3e9b94b8e5556a5f03f4653602d02ea306de08126e8f55ed6dee28a2dad"
+      },
+      "skin": {
+        "pack": "https://files2.makehumancommunity.org/asset_packs/makehuman_system_assets/makehuman_system_assets_cc0.zip",
+        "pack_sha256": "b542127a8e25547c7c29c19f2d1d2adb9a664c80396ecd694095dbc8028a0107",
+        "file": "skins/young_caucasian_male/young_lightskinned_male_diffuse.png (2048 px), shipped as textures/hands_skin_albedo.png"
+      }
+    }
+  ],
+  "licence": "CC0. The MakeHuman base mesh, rig and targets: \"All core assets (the base mesh, targets, skins...) are shared under CC0\" (MPFB FAQ, https://static.makehumancommunity.org/mpfb/faq/can_i_sell_models.html, read 2026-10-24). The skin: the asset pack page lists it CC0 (https://static.makehumancommunity.org/assets/assetpacks/makehuman_system_assets.html) and its .mhmat says \"This asset was explicitly released as CC0 in september 2020\". The MPFB add-on code is GPL-3.0-or-later; it is a tool here, none of its code is shipped. The sleeve and the posing are our own.",
+  "tris": {
+    "hand_l": 3596,
+    "hand_r": 3596
+  },
+  "tris_note": "7192 for the pair against 30000",
+  "materials": [
+    "hands_skin: textures/hands_skin_albedo.png as base colour (MakeHuman UVs, one set), roughness 0.5. UE: subsurface profile or the two-sided foliage-free \"wrap\" SSS the forward path allows (Subsurface shading model, subsurface colour about #C8584A, opacity 0.6), roughness 0.45 to 0.55, specular 0.35; no normal map shipped (the base mesh carries the knuckle and tendon forms at this size)",
+    "hands_sleeve: dark charcoal knit, #030304 linear about 0.013, roughness 0.92, sheen 0.4 (UE: Cloth shading model with fuzz colour #2A2D33, or Default Lit at roughness 0.95)"
+  ],
+  "material_slots": [
+    "hands_skin",
+    "hands_sleeve"
+  ],
+  "uv_sets": 1,
+  "bounds_cm": {
+    "x": 54.87,
+    "y": 35.46,
+    "z": 24.36,
+    "note": "the pair together in the capture frame: X right, Y forward across the table, Z up (Blender); glTF is Y-up"
+  },
+  "placement": {
+    "frame": "capture frame: origin on the table plane at the centre of the near paper edge, X to the player's right, Y forward across the table, Z up; the meshes are already in it (no per-mesh transform needed beyond moving the frame onto the table)",
+    "pose": "the left hand rests with relaxed fingers on the near edge of the paper, palm down; the right hand points forward and down at a room with the index finger, the other fingers curled; both forearms leave the frame at the bottom corners under dark sleeves",
+    "place": {
+      "L": {
+        "wrist": [
+          -0.19,
+          -0.06,
+          0.05
+        ],
+        "forearm": [
+          0.4,
+          0.88,
+          -0.18
+        ],
+        "palm": [
+          0,
+          0.1,
+          -1
+        ]
+      },
+      "R": {
+        "wrist": [
+          0.13,
+          -0.03,
+          0.095
+        ],
+        "forearm": [
+          -0.35,
+          0.88,
+          -0.3
+        ],
+        "palm": [
+          0.2,
+          0.15,
+          -1
+        ]
+      }
+    },
+    "ue": "import hands_capture.glb as two static meshes (hand_l, hand_r; 2 sections each, 4 draws), attach both to the capture pawn's table frame (not to the camera) at the near edge centre, yaw so +Y runs across the table; hide the SDK hands in the capture. Light them with the scene: they sit in the table's cool glow from below and the lamp agent's warm light from the far side"
+  },
+  "regenerate": "blender -b --command extension install-file -r user_default -e <add-on-mpfb-v2.0.18.zip> (once); blender -b -P scripts/art/hands/build_hands.bpy -- <repo> <work> <young_lightskinned_male_diffuse.png>; blender -b -P scripts/art/hands/render_hands.bpy -- <repo> <work>; node scripts/art/hands/write_manifest.mjs <work>  (no --factory-startup: MPFB must load)",
+  "gates": {
+    "input": {
+      "pass": true,
+      "note": "licence evidence recorded (licence field): MakeHuman core assets and the system-assets skin are CC0; MPFB is a GPL tool, not shipped",
+      "date": "2026-10-24"
+    },
+    "mesh_acceptance": {
+      "pass": true,
+      "note": "two meshes (hand_l 3596, hand_r 3596 tris), each the MakeHuman hand and lower forearm (helpers and joint cubes removed by MPFB's own mask) joined with its sleeve; slots hands_skin, hands_sleeve",
+      "date": "2026-10-24"
+    },
+    "scale": {
+      "pass": true,
+      "note": "wrist joint to farthest fingertip 16.95 and 17.58 cm (adult hand about 17 to 20 cm), forearm radius at the cuff 2.6 and 2.59 cm; the MakeHuman default adult at metre scale",
+      "date": "2026-10-24"
+    },
+    "finishing": {
+      "pass": true,
+      "note": "skin albedo 2048 px, sleeves with a rolled cuff, smooth shading; evidence: the EEVEE check render beside the target (evidence/target-compare.jpg) and a close look (evidence/closeup.png); every file under 10 MB",
+      "date": "2026-10-24"
+    },
+    "poly_budget": {
+      "pass": true,
+      "note": "7192 tris for the pair against 30000",
+      "date": "2026-10-24"
+    }
+  },
+  "sha256": {
+    "evidence/closeup.png": "19293ceabff99c420cc27338e46fc702aaeb8ed403056b7e33e995beaacbfb89",
+    "evidence/target-compare.jpg": "3be87e101f5ec6671595958b8b4377ed90f842d40434b5f73268ede53f305ad0",
+    "hands_capture.glb": "4bb2b4f5078289f12ba34e690eca9222120d4eab1baa6b6cae20d04fd6867602",
+    "textures/hands_skin_albedo.png": "862a26e335e958b70534cb5f0d7c47ef30ab148a56c42b3e9da969cf76f12963"
+  },
+  "file_bytes": {
+    "evidence/closeup.png": 872788,
+    "evidence/target-compare.jpg": 243827,
+    "hands_capture.glb": 177432,
+    "textures/hands_skin_albedo.png": 3693828
+  },
+  "lynx_commit": "8d87ec422d4a879d172d74c1fe0555633c472581",
+  "lynx_commit_note": "stamped by the writer: the newest commit touching this folder when the manifest was written"
+}
