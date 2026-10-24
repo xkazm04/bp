@@ -1,12 +1,15 @@
 'use client';
 // What the strip (Strip.tsx) and the panel (BaseBar.tsx) share: the sim clock text, the scan status ladder, the size
-// observer and the one pointer handler both time sliders use (the x <-> time mapping itself is scrub.ts).
+// observer, the one pointer handler and the one time-slider hook both render from (the x <-> time mapping is scrub.ts,
+// the slider's rules - geometry, inert rule, ARIA, transport, Escape - are slider.ts).
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { latestRun } from '@bp/core/model';
 import { useEngine, useLive } from '../hooks';
 import { ago, scanLiveness, scanStatus } from '@bp/core/scan/liveness';
 import { runFacts, runProgress } from './run';
-import { scrubAt, type ScrubGeom } from './scrub';
+import { hourX, scrubAt, type ScrubGeom } from './scrub';
+import { timeSliderKey } from './keys';
+import { SLIDERS, escapeAction, sliderModel, sliderStill, type SliderKind } from './slider';
 
 /** The simulated wall clock at sim second `t`: HH:MM:SS, or HH:MM with `secs` false. */
 export function simClock(at0: number, t: number, secs = true): string { return new Date(at0 + t * 1000).toISOString().slice(11, secs ? 19 : 16); }
@@ -62,12 +65,41 @@ export function useScrub(E: ReturnType<typeof useEngine>, svg: React.RefObject<S
     onPointerDown: (e: React.PointerEvent) => {
       if (stop) e.stopPropagation();
       lock.current = null;
-      if (gr.current.weeks.length < 2 && !gr.current.hour) return;
+      if (sliderStill(gr.current.weeks, gr.current.hour)) return;
       (e.currentTarget as Element).setPointerCapture(e.pointerId); apply(e);
     },
     onPointerMove: (e: React.PointerEvent) => { if (lock.current) apply(e); },
     onPointerUp: end, onPointerCancel: end, onLostPointerCapture: end,
   };
+}
+
+/** The one time slider, composed once for the strip's hairline and the panel's revisions chart: the model (slider.ts),
+ *  the pointer scrub, the hour's aria-valuetext, the sim-head painter and the key map with the kind's Escape. The head
+ *  (line `head`, elapsed rect `el`, optional marker `tri` drawn by `triD`) is a DOM write from the sim clock, never a
+ *  React render per sim second. `W`/`H` are the svg's size (each component keeps its own useSize fallback). */
+export function useTimeSlider(E: ReturnType<typeof useEngine>, o: { kind: SliderKind; g: ScrubGeom; W: number; H: number; t: string; ariaLabel: string; triD?: (x: number) => string }) {
+  const { kind, g, W, H } = o, spec = SLIDERS[kind];
+  const svg = useRef<SVGSVGElement>(null), head = useRef<SVGLineElement>(null), el = useRef<SVGRectElement>(null), tri = useRef<SVGPathElement>(null);
+  const model = sliderModel({ weeks: g.weeks, asOf: g.asOf, t: o.t, hour: g.hour });
+  const scrub = useScrub(E, svg, W, g, spec.stop);
+  useHourText(E, svg, model.valueText, g.hour);
+  useEffect(() => (g.hour ? E.onSimTime((s) => {
+    const x = hourX(g, s);
+    head.current?.setAttribute('x1', String(x)); head.current?.setAttribute('x2', String(x));
+    el.current?.setAttribute('width', String(Math.max(0, x - g.o0)));
+    if (o.triD) tri.current?.setAttribute('d', o.triD(x));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }) : undefined), [E, W, H, g.hour]);
+  const onKeyDown = (e: React.KeyboardEvent<SVGSVGElement>) => {
+    const cur = e.currentTarget, st = E.store.get();
+    const esc = () => {
+      const a = escapeAction(kind, { tl: !!st.tl, now: st.t === g.asOf });
+      if (a === 'collapse') E.setTimeline(false); else if (a === 'back-to-now') E.setTime(g.asOf); else cur.blur();
+    };
+    if (timeSliderKey(e, E, g.hour, esc)) { e.preventDefault(); e.nativeEvent.stopImmediatePropagation(); }
+  };
+  const svgProps = { ref: svg, ...model.aria, 'aria-label': o.ariaLabel, ...scrub, onKeyDown, ...(spec.stop ? { onClick: (e: React.MouseEvent) => e.stopPropagation() } : {}) };
+  return { svgProps, refs: { head, el, tri }, model };
 }
 
 /** A live product's latest run with what the timeline says about it: status ladder, features measured against the scope, and

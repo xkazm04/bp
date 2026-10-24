@@ -110,7 +110,8 @@
     "check:clear-path": "node scripts/check-clear-path.ts",
     "check:scan-demo": "node scripts/check-scan-demo.mjs",
     "check:preview-seat": "node scripts/check-preview-seat.ts",
-    "check:train-plan": "node scripts/check-train-plan.ts"
+    "check:train-plan": "node scripts/check-train-plan.ts",
+    "check:timeline-slider": "node apps/web/src/components/timeline/check-slider.ts"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

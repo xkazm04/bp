@@ -6,10 +6,10 @@
 import { forwardRef, useEffect, useRef } from 'react';
 import { dnum, fmtD, revAt } from '@bp/core/model';
 import { shallowEqual, useBp, useEngine } from '../hooks';
-import { timeSliderKey } from './keys';
-import { simClock, useHourText, useRunInfo, useScrub, useSize } from './shared';
+import { simClock, useRunInfo, useSize, useTimeSlider } from './shared';
 import { runTitle } from './run';
-import { histX, hourX, valueText, type ScrubGeom } from './scrub';
+import { histX, hourX } from './scrub';
+import { sliderGeom, transport } from './slider';
 
 /** The sim clock (Kettle) or the latest run (live product), as one line of small text. */
 function StripClock() {
@@ -27,11 +27,10 @@ function StripClock() {
       </span>
     );
   }
-  const st = !s.now ? 'HISTORY' : s.over ? 'ENDED' : s.playing ? '● ×' + s.speed : 'PAUSED';
-  const tone = !s.now ? 'warn' : s.playing && !s.over ? 'on' : '';
+  const tr = transport({ has: sim.has, live: sim.live, ...s });
   return (
     <span className="tl-clk" title="The simulated hour (expand the timeline for speed controls)">
-      <span className="tl-hm" ref={tref}>09:00:00</span><span className="tl-dim">UTC</span><span className={'tl-st ' + tone}>{st}</span>
+      <span className="tl-hm" ref={tref}>09:00:00</span><span className="tl-dim">UTC</span><span className={'tl-st ' + tr.tone}>{tr.short}</span>
     </span>
   );
 }
@@ -40,41 +39,25 @@ function StripClock() {
 function Hairline() {
   const E = useEngine(), M = E.M, sim = M.sim;
   const t = useBp((s) => s.t);
-  const wrap = useRef<HTMLDivElement>(null), svg = useRef<SVGSVGElement>(null);
-  const head = useRef<SVGLineElement>(null), el = useRef<SVGRectElement>(null);
+  const wrap = useRef<HTMLDivElement>(null);
   const [W, H] = useSize(wrap, 600, 26);
-  const hour = sim.has && !sim.live, asOf = M.P.asOf, weeks = M.P.weeks, RD0 = weeks[0], now = t === asOf;
+  const hour = sim.has && !sim.live, asOf = M.P.asOf, weeks = M.P.weeks, RD0 = weeks[0];
   const L = 4, R = W - 4, gap = hour ? 14 : 0, hourW = hour ? Math.round((R - L) * 0.24) : 0;
   const h0 = L, h1 = R - hourW - gap, o0 = h1 + gap, o1 = R, top = 4, bot = H - 6;
-  const dn = weeks.map(dnum), g: ScrubGeom = { h0, h1, o0, o1, hour, d0: dnum(RD0), d1: dnum(asOf), weeks, dn, asOf };
+  const g = sliderGeom(weeks, asOf, hour, { h0, h1, o0, o1 });
   const hx = (d: string) => histX(g, dnum(d)), ox = (v: number) => hourX(g, v);
-  useEffect(() => (hour ? E.onSimTime((s) => {
-    const x = ox(s);
-    head.current?.setAttribute('x1', String(x)); head.current?.setAttribute('x2', String(x));
-    el.current?.setAttribute('width', String(Math.max(0, x - o0)));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }) : undefined), [E, W, H, hour]);
+  const { svgProps, refs, model } = useTimeSlider(E, { kind: 'strip', g, W, H, t, ariaLabel: 'Time: drag along the revision history to travel; the right end is now' });
+  const now = model.now;
   const snaps = M.P.snapshots, max = Math.max(...snaps.map((x) => x.total)) || 1;
   const pts = snaps.map((sn) => hx(sn.week).toFixed(1) + ',' + (bot - (sn.total / max) * (bot - top)).toFixed(1));
   const line = pts.length > 1 ? 'M' + pts.join(' L') : '';
   const area = line ? line + ` L${hx(snaps[snaps.length - 1].week).toFixed(1)},${bot} L${hx(snaps[0].week).toFixed(1)},${bot}Z` : '';
   const m1 = M.P.milestones.find((m) => m.state === 'done'), xt = Math.min(hx(t), h1);
-  const scrub = useScrub(E, svg, W, g, true), still = weeks.length < 2 && !hour;
-  const rev = revAt(weeks, t);
-  const vtext = valueText(now, rev, t, weeks.length, hour);
-  useHourText(E, svg, vtext, hour);
   return (
     <div className="tl-line" ref={wrap}>
-      <svg ref={svg} viewBox={`0 0 ${W} ${H}`} tabIndex={0} role="slider" data-still={still ? '' : undefined} aria-disabled={still || undefined}
-        aria-label="Time: drag along the revision history to travel; the right end is now" aria-valuemin={1} aria-valuemax={weeks.length} aria-valuenow={rev} aria-valuetext={vtext}
-        onClick={(e) => e.stopPropagation()}
-        {...scrub}
-        onKeyDown={(e) => {
-          // Esc here collapses the panel, else returns to now, else leaves the hairline
-          const esc = () => { if (E.store.get().tl) E.setTimeline(false); else if (!now) E.setTime(asOf); else (e.currentTarget as SVGSVGElement).blur(); };
-          if (timeSliderKey(e, E, hour, esc)) { e.preventDefault(); e.nativeEvent.stopImmediatePropagation(); }
-        }}>
-        {still && <title>One week of history: nothing earlier to travel to yet</title>}
+      {/* Esc here collapses the panel, else returns to now, else leaves the hairline (slider.ts SLIDERS.strip) */}
+      <svg viewBox={`0 0 ${W} ${H}`} {...svgProps}>
+        {model.stillTitle && <title>{model.stillTitle}</title>}
         <rect className="tl-hit" x={0} y={0} width={W} height={H} />
         {area && <path className="tl-area" d={area} />}
         {line && <path className="tl-spark" d={line} />}
@@ -84,9 +67,9 @@ function Hairline() {
         {hour && (
           <g className="tl-hour">
             <line className="tl-hbase" x1={o0} y1={bot} x2={o1} y2={bot} />
-            <rect ref={el} className="tl-hel" x={o0} y={top} width={0} height={bot - top} />
+            <rect ref={refs.el} className="tl-hel" x={o0} y={top} width={0} height={bot - top} />
             {sim.arrivals.map((a) => <line key={a.id} className="tl-arr" x1={ox(a.t)} y1={bot - 7} x2={ox(a.t)} y2={bot} />)}
-            <line ref={head} className="tl-hhead" x1={o0} x2={o0} y1={top - 2} y2={bot + 3} />
+            <line ref={refs.head} className="tl-hhead" x1={o0} x2={o0} y1={top - 2} y2={bot + 3} />
           </g>
         )}
         <g className={'tl-handle' + (now ? ' now' : '')}>

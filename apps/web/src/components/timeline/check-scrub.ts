@@ -67,11 +67,12 @@ expect(keyPlanFrac(150, 90, { left: 0, top: 0, width: 0, height: 0 }, 1).join() 
 // both sliders use the shared handler and mapping
 for (const [file, mine] of [['Strip.tsx', 'Strip.tsx'], ['../BaseBar.tsx', 'BaseBar.tsx']] as const) {
   const src = read(file);
-  expect(src.includes('useScrub('), `${mine} does not use useScrub`);
+  expect(src.includes('useTimeSlider(') && !src.includes('useScrub('), `${mine} does not take its scrub from useTimeSlider (or wires useScrub itself)`);
   expect(src.includes('histX(') && src.includes('hourX('), `${mine} does not use the shared axis mapping`);
   expect(!src.includes('setPointerCapture') && !src.includes('E.seek(') && !src.includes('dnum(asOf) - dnum(RD0)'), `${mine} restates the scrub logic`);
 }
-const sh = read('shared.ts');
+const sh = read('shared.ts'), hookAt = sh.indexOf('export function useTimeSlider(');
+expect(hookAt >= 0 && (sh.slice(hookAt).match(/useScrub\(/g) ?? []).length === 1, 'shared.ts useTimeSlider does not wire useScrub exactly once');
 for (const ev of ['onPointerUp', 'onPointerCancel', 'onLostPointerCapture']) expect(sh.includes(ev), `useScrub does not handle ${ev}`);
 
 if (failures.length) {

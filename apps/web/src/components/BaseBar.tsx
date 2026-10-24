@@ -9,13 +9,13 @@
 import { useEffect, useRef } from 'react';
 import { AnimatePresence, motion, useReducedMotion, type Variants } from 'motion/react';
 import type { Stage } from '@bp/core/data';
-import { GA_MILESTONE, SPEEDS, dnum, fmtD, revAt } from '@bp/core/model';
+import { GA_MILESTONE, SPEEDS, dnum, fmtD } from '@bp/core/model';
 import { shallowEqual, useBp, useEngine } from './hooks';
 import { Strip } from './timeline/Strip';
-import { simClock, useHourText, useRunInfo, useScrub, useSize } from './timeline/shared';
+import { simClock, useRunInfo, useSize, useTimeSlider } from './timeline/shared';
 import { RUN_WAIT, runClock, runLenses } from './timeline/run';
-import { histX, hourX, keyPlanFrac, valueText, type ScrubGeom } from './timeline/scrub';
-import { timeSliderKey } from './timeline/keys';
+import { histX, hourX, keyPlanFrac } from './timeline/scrub';
+import { sliderGeom, transport } from './timeline/slider';
 import './timeline.css';
 
 /** One staggered item of the panel (the panel's variants drive it). */
@@ -57,14 +57,13 @@ function Clock() {
   useEffect(() => E.onSimTime((t) => { if (tref.current) tref.current.textContent = simClock(sim.at0, t); }), [E, sim]);
   if (!sim.has) return null;
   if (sim.live) return <LiveClock />;
-  const hist = s.t !== E.M.P.asOf;
-  const status = hist ? 'HISTORY · PAUSED' : s.over ? 'ENDED' : s.playing ? '● LIVE · ×' + s.speed : 'PAUSED';
+  const tr = transport({ has: sim.has, live: sim.live, now: s.t === E.M.P.asOf, playing: s.playing, over: s.over, speed: s.speed });
   return (
     <motion.div variants={item} id="clock">
-      <div className="t"><span>Sim hour</span><span className={'tl-st ' + (hist ? 'warn' : s.playing && !s.over ? 'on' : '')}>{status}</span></div>
+      <div className="t"><span>Sim hour</span><span className={'tl-st ' + tr.tone}>{tr.long}</span></div>
       <div className="hm"><span ref={tref}>09:00:00</span><small>UTC</small></div>
       <div className="ctl">
-        <button type="button" className="pp" aria-label="Play or pause the swarm (Space)" onClick={() => E.togglePlay()}>{s.playing && !hist ? '❚❚' : '▶'}</button>
+        <button type="button" className="pp" aria-label={tr.play.label} onClick={() => E.togglePlay()}>{tr.play.glyph}</button>
         {SPEEDS.map((n) => <button key={n} type="button" aria-pressed={s.speed === n} title={'Run at ' + n + '× speed'} onClick={() => E.setSpeed(n)}>{n}×</button>)}
         <button type="button" title="Replay the hour from the start" aria-label="Replay the hour" onClick={() => E.restart()}>↺</button>
       </div>
@@ -84,25 +83,20 @@ const CW = 7.2; // advance of the 12 px mono label face, for placing chart label
 function Revisions() {
   const E = useEngine(), M = E.M, sim = M.sim;
   const s = useBp((s) => ({ t: s.t, compact: s.compact }), shallowEqual);
-  const wrap = useRef<HTMLDivElement>(null), svg = useRef<SVGSVGElement>(null);
-  const head = useRef<SVGLineElement>(null), tri = useRef<SVGPathElement>(null), el = useRef<SVGRectElement>(null);
+  const wrap = useRef<HTMLDivElement>(null);
   const [W, H] = useSize(wrap, 640, 92);
   // a live product with no run has nothing to put right of "now": the history takes the whole width (no axis around nothing)
   const ri = useRunInfo(), liveRun = sim.has && sim.live && !!ri?.run, area = (sim.has && !sim.live) || liveRun;
   const L = 76, R = W - 6, avail = R - L, g1 = area ? 26 : 0, hourW = area ? Math.round(avail * 0.38) : 0;
   const hist = area ? Math.round(avail * 0.46) : avail - Math.max(0, Math.round(avail * 0.16) - 26);
   const tl = { h0: L, h1: L + hist, o0: L + hist + g1, o1: L + hist + g1 + hourW, R, top: H < 80 ? 21 : 34, bot: H < 80 ? H - 28 : Math.min(H - 28, 66) };
-  const asOf = M.P.asOf, now = s.t === asOf, top = tl.top, bot = tl.bot, RD0 = M.P.weeks[0], NW = M.P.weeks.length;
-  // the one mapping (timeline/scrub.ts): a map without an events log has one week of history (a live product often), no span
-  const hour = sim.has && !sim.live, g: ScrubGeom = { h0: tl.h0, h1: tl.h1, o0: tl.o0, o1: tl.o1, hour, d0: dnum(RD0), d1: dnum(asOf), weeks: M.P.weeks, dn: M.P.weeks.map(dnum), asOf };
+  const asOf = M.P.asOf, top = tl.top, bot = tl.bot, RD0 = M.P.weeks[0], NW = M.P.weeks.length;
+  // the one mapping (timeline/scrub.ts) and slider (timeline/slider.ts): a map without an events log has one week of history (a live product often), no span
+  const hour = sim.has && !sim.live, g = sliderGeom(M.P.weeks, asOf, hour, tl);
   const hx = (d: string) => histX(g, dnum(d)), ox = (v: number) => hourX(g, v);
-  useEffect(() => E.onSimTime((t) => {
-    const x = ox(t);
-    head.current?.setAttribute('x1', String(x)); head.current?.setAttribute('x2', String(x));
-    tri.current?.setAttribute('d', 'M' + x + ' ' + (bot + 3) + ' l-5 7 h10z');
-    el.current?.setAttribute('width', String(Math.max(0, x - tl.o0)));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [E, W, H]);
+  // the sliders' one key map and Escape (slider.ts SLIDERS.panel: Esc collapses the panel)
+  const { svgProps, refs, model } = useTimeSlider(E, { kind: 'panel', g, W, H, t: s.t, ariaLabel: 'Time: revision history, now, and the simulated hour ahead', triD: (x) => 'M' + x + ' ' + (bot + 3) + ' l-5 7 h10z' });
+  const now = model.now;
   const snaps = M.P.snapshots, max = Math.max(...snaps.map((x) => x.total)) * 1.05 || 1; // a product with no stages has all-zero totals
   const cum = snaps.map(() => 0);
   // one snapshot has no span for the stacked areas to cover (zero-width polygons): the same counts as one stacked bar at "now"
@@ -128,7 +122,7 @@ function Revisions() {
   const bins = new Array(60).fill(0);
   if (hour) for (const t of sim.replayT) bins[Math.min(59, Math.floor(t / 60))]++;
   const bw = (tl.o1 - tl.o0) / 60, hxn = hx(s.t), hl = Math.min(hxn, tl.h1);
-  const lab = now ? 'NOW · REV ' + NW : 'REV ' + revAt(M.P.weeks, s.t) + ' · ' + fmtD(s.t), pw = Math.max(108, Math.ceil(lab.length * CW) + 16), px0 = Math.max(tl.h0 - 6, Math.min(hl - pw / 2, tl.h1 - pw + 12));
+  const lab = now ? 'NOW · REV ' + NW : 'REV ' + model.rev + ' · ' + fmtD(s.t), pw = Math.max(108, Math.ceil(lab.length * CW) + 16), px0 = Math.max(tl.h0 - 6, Math.min(hl - pw / 2, tl.h1 - pw + 12));
   const m1 = M.P.milestones.find((m) => m.state === 'done'), m2 = M.P.MS[GA_MILESTONE];
   // Labels are placed by priority and culled where they would collide or leave the chart, so a narrow panel shows fewer
   // labels instead of overprinted ones. Priority: handle plate > section heads > milestones > end ticks > week dates > quarter ticks.
@@ -173,18 +167,10 @@ function Revisions() {
     const l = cand.find((c) => c.k === k);
     return l && shown.has(k) ? <text key={k} className={extra?.className} x={l.x} y={l.y} textAnchor={l.a === 'start' ? undefined : l.a} style={extra?.style}>{l.s}</text> : null;
   };
-  const scrub = useScrub(E, svg, W, g, false), still = NW < 2 && !hour;
-  const vtext = valueText(now, revAt(M.P.weeks, s.t), s.t, NW, hour);
-  useHourText(E, svg, vtext, hour);
   return (
     <motion.div variants={useItem()} id="revs" ref={wrap}>
-      <svg id="revsvg" ref={svg} tabIndex={0} role="slider" aria-label="Time: revision history, now, and the simulated hour ahead" aria-valuemin={1} aria-valuemax={NW} aria-valuenow={revAt(M.P.weeks, s.t)} aria-valuetext={vtext}
-        data-still={still ? '' : undefined} aria-disabled={still || undefined} viewBox={`0 0 ${W} ${H}`} {...scrub}
-        onKeyDown={(e) => {
-          // the sliders' one key map (timeline/keys.ts); Esc here collapses the panel
-          if (timeSliderKey(e, E, hour, () => E.setTimeline(false))) { e.preventDefault(); e.nativeEvent.stopImmediatePropagation(); }
-        }}>
-        {still && <title>One week of history: nothing earlier to travel to yet</title>}
+      <svg id="revsvg" viewBox={`0 0 ${W} ${H}`} {...svgProps}>
+        {model.stillTitle && <title>{model.stillTitle}</title>}
         {txt('rev', { className: 'lbl' })}{txt('nw')}{txt('sc')}{txt('step')}
         {polys}
         {bandLabs.filter((l) => shown.has(l.k)).map((l) => { const b = boxOf(l); return <g key={l.k}><rect x={b.x0 - 3} y={b.y0 + 1} width={b.x1 - b.x0 + 6} height={b.y1 - b.y0 - 1} fill="var(--label-bg)" fillOpacity={0.85} />{txt(l.k)}</g>; })}
@@ -209,9 +195,9 @@ function Revisions() {
             <line className="ax" x1={tl.o0} y1={bot} x2={tl.o1} y2={bot} />
             {[0, 15, 30, 45, 60].map((m) => { const xx = tl.o0 + (m / 60) * (tl.o1 - tl.o0); return <g key={m}><line className="ax" x1={xx} y1={bot} x2={xx} y2={bot + 4} />{txt('h' + m)}</g>; })}
             {sim.arrivals.map((d) => { const xa = ox(d.t); return <g key={d.id}><path d={`M${xa} ${bot} v-14`} stroke="var(--amber)" strokeWidth={1.6} /><path d={`M${xa} ${bot - 14} l8 3 l-8 3z`} fill="var(--amber)"><title>{'A new question arrives: ' + d.id}</title></path></g>; })}
-            <rect ref={el} x={tl.o0} y={top - 6} width={0} height={bot - top + 6} fill="var(--mint)" fillOpacity={0.14} />
-            <line ref={head} x1={tl.o0} x2={tl.o0} y1={top - 10} y2={bot + 3} stroke="var(--mint)" strokeWidth={2} />
-            <path ref={tri} d={`M${tl.o0} ${bot + 3} l-5 7 h10z`} fill="var(--mint)" />
+            <rect ref={refs.el} x={tl.o0} y={top - 6} width={0} height={bot - top + 6} fill="var(--mint)" fillOpacity={0.14} />
+            <line ref={refs.head} x1={tl.o0} x2={tl.o0} y1={top - 10} y2={bot + 3} stroke="var(--mint)" strokeWidth={2} />
+            <path ref={refs.tri} d={`M${tl.o0} ${bot + 3} l-5 7 h10z`} fill="var(--mint)" />
           </g>
         )}
         {area && tl.R > tl.o1 && <line x1={tl.o1} y1={bot} x2={tl.R} y2={bot} stroke="var(--ink)" strokeOpacity={0.4} strokeDasharray="2 4" />}

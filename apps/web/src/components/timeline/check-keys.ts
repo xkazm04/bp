@@ -101,11 +101,15 @@ for (const k of engineKeys) {
 }
 
 // ---------------------------------------------------------------- both sliders use the map, neither restates it
-for (const [file, n] of [['Strip.tsx', 1], ['../BaseBar.tsx', 1]] as const) {
+// The map is wired once, in the one slider hook (shared.ts useTimeSlider) both sliders render from; check-slider.ts pins
+// that each slider calls the hook. Neither slider may restate the map inline.
+const hook = read('shared.ts'), hookAt = hook.indexOf('export function useTimeSlider(');
+const hookUses = hookAt < 0 ? 0 : (hook.slice(hookAt).match(/timeSliderKey\(/g) ?? []).length;
+expect(hookUses === 1, `shared.ts useTimeSlider: ${hookUses} timeSliderKey( call(s), want 1`);
+for (const file of ['Strip.tsx', '../BaseBar.tsx']) {
   const src = read(file);
-  const uses = (src.match(/timeSliderKey\(/g) ?? []).length;
-  expect(uses === n, `${file}: ${uses} timeSliderKey( call(s), want ${n}`);
-  for (const inline of ['E.stepWeek(', "'ArrowLeft'", 'hourSeekKey(']) expect(!src.includes(inline), `${file} restates the slider key map (${inline})`);
+  expect(src.includes('useTimeSlider('), `${file} does not render its slider from useTimeSlider (which wires the key map)`);
+  for (const inline of ['E.stepWeek(', "'ArrowLeft'", 'hourSeekKey(', 'timeSliderKey(']) expect(!src.includes(inline), `${file} restates the slider key map (${inline})`);
 }
 
 if (failures.length) {
