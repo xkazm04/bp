@@ -11,6 +11,7 @@ import { clamp } from '../camera';
 import { drawText } from '../text';
 import { chipsFit, cloud, drawHealthBar, drawStageBar, glyphAgent, glyphPin, stageFill, stageStroke } from './glyphs';
 import { unknownFill } from './patterns';
+import { unscannedGeneral } from '../lens/unknown';
 import { patchMiss } from './simwatch';
 import { onView, rs, smooth, sxv, syv, type SRect, type View } from './view';
 import { GENERAL } from '@bp/core/data/types';
@@ -152,22 +153,19 @@ function lensMarks(E: Engine, ctx: CanvasRenderingContext2D, g: TileGeom, f: Fea
  * What the lenses in view say about a feature as a whole, on the same weights the trouble marks crossfade
  * on (General's health into the dominant lens's by its dominance): a lens with nothing to say here (`na`)
  * fades the tile to 0.35, and one no scan has measured (`unmeasured`) lays the "?" texture over it. In
- * General only a feature with no measured lens at all gets the "?". Returns the alpha factor and leaves the
- * "?" weight in `unknownW` (scalars, no record: this runs per tile per raster). Draws nothing itself.
+ * General only a feature with no measured lens at all gets the "?" (the rule is engine/lens/unknown.ts, which the
+ * legend's "?" row counts by too). Returns the alpha factor and leaves the "?" weight in `unknownW` (scalars, no
+ * record: this runs per tile per raster). Draws nothing itself.
  */
 let unknownW = 0;
 function lensVerdict(E: Engine, f: Feature): number {
   const D = E.mixS.topD, top = E.mixS.top;
-  let measured = false, unknown = false;
-  const ids = E.lensIds;
-  for (let i = 0; i < ids.length && !measured; i++) {
-    const h = f.lens[ids[i]]?.h ?? 'unmeasured';
-    if (h === 'unmeasured') unknown = true; else if (h !== 'na') measured = true;
-  }
   const hl = top && D > 0.001 ? f.lens[top]?.h ?? 'unmeasured' : null;
-  unknownW = (!measured && unknown ? 1 - D : 0) + (hl === 'unmeasured' ? D : 0);
+  unknownW = (unscannedGeneral(f, E.lensIds) ? 1 - D : 0) + (hl === 'unmeasured' ? D : 0);
   return hl === 'na' ? 1 - 0.65 * D : 1;
 }
+/** The "?" weight lensVerdict leaves for `f` (checks read it; the raster reads `unknownW` directly). */
+export function lensUnknown(E: Pick<Engine, 'mixS' | 'lensIds'>, f: Feature): number { lensVerdict(E as Engine, f); return unknownW; }
 
 /** A built outline and what it was built from: a tile repainted with the same geometry, lens and dominance (a patch, a neighbour's repaint) reuses it. */
 interface Outline { top: string; d: number; x: number; y: number; w: number; h: number; u: number; k: number; p: Path2D }
