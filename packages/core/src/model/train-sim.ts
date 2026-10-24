@@ -13,8 +13,11 @@ import { SAFE_ID } from '../scan/jobs.ts';
 import { MAX_TRIAGE } from '../scan/types.ts';
 import { RELEASE_ID, bump, bumpOf, isVersion } from '../scan/release.ts';
 import { ABANDONED_TO, abandonable, canStart, reached, startRefusal } from '../scan/release-steps.ts';
-import { verdictOf, type LensFields } from '../scan/compare.ts';
-import { isFlagged } from '../train/rules.ts';
+import type { LensFields } from '../scan/compare.ts';
+import { conflictsIn, noteItem, releaseNotes } from '../train/notes.ts';
+
+/** The gates the sample release job runs, in its log and its notes. */
+const GATES = ['tsc', 'vitest'] as const;
 
 /** Kettle only: what the sample release job runs into. */
 export interface TrainToggles { ghOff: boolean; conflict: boolean; gateFails: boolean }
@@ -416,7 +419,7 @@ export class TrainSim {
       return line('error', `conflict cherry-picking ${p.commit_sha?.slice(0, 7)} ${p.title}: ${files}; sent back to rework (sample)`, p);
     }
     if (s === 'gate') {
-      if (!plan.gateFails) return line('note', 'gates passed: tsc, vitest (sample)');
+      if (!plan.gateFails) return line('note', `gates passed: ${GATES.join(', ')} (sample)`);
       this.setRel(r.id, { status: 'failed', error: 'gate failed: vitest (sample)' });
       return line('error', 'gate failed: vitest (sample)');
     }
@@ -473,19 +476,16 @@ export class TrainSim {
   }
 
   // ----------------------------------------------------------------------------------------- notes and commits
+  /** The stored notes: notes.ts releaseNotes in mode "sample", the writer the tab's preview calls too, with the items
+   *  this run's conflict sent back and the gates it logged (the notes step runs only after they passed). */
   private notes(r: Release, items: Proposal[]): string {
     const lenses = (lens: string): LensFields[] => [{ id: lens, manifest: { fields: [this.h.field(lens, items.find((p) => p.lens === lens)?.metric ?? '')].filter((f): f is LensField => !!f) } }];
-    const out = [`## Kettle ${r.version} (sample)`, '', 'Sample release notes: Kettle is the sample product, and nothing here shipped.', ''];
-    for (const p of items) {
+    const evidence = items.map((p) => {
       const before: Measurement[] = [], after: Measurement[] = [];
       for (const m of this.h.ms) if (m.proposal_id === p.id) (m.phase === 'after' ? after : before).push(m);
-      const v = verdictOf(p, before, after, lenses(p.lens)), u = v.from?.unit ? ' ' + v.from.unit : '';
-      const move = v.from && v.to ? `${p.metric} ${v.from.value} -> ${v.to.value}${u} (${v.verdict})` : 'unmeasured';
-      out.push(`- **${p.title}** · ${p.lens} · ${p.feature}: ${move} · commit ${p.commit_sha?.slice(0, 7) ?? 'none'}`);
-      // accepted from failed is still flagged: the build did not pass its gates
-      if (isFlagged({ status: p.triaged_from === 'failed' ? 'failed' : p.status }, v.verdict) && p.triage_note) out.push(`  - Shipped flagged: ${p.triage_note}`);
-    }
-    return out.join('\n') + '\n';
+      return noteItem(p, before, after, lenses(p.lens));
+    });
+    return releaseNotes({ product: 'Kettle', version: r.version, mode: 'sample', items: evidence, conflicts: conflictsIn(this.h.props, r.branch), gates: GATES.map((name) => ({ name, passed: true })) });
   }
 
   private files(p: Proposal): CommitDiff['files'] { const it = this.spec.get(p.id); return it ? it.files.map((f, i) => ({ path: f, ...counts(hunk(it, f, i)) })) : []; }

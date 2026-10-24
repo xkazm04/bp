@@ -187,8 +187,8 @@ try {
   const back = snap().proposals.find((p) => p.id === most.id)!;
   check('build: the accepted item with the most files went back to rework by skill:lens-scan, out of the release', back.status === 'rework' && back.triaged_by === 'skill:lens-scan' && back.release_id === undefined
     && /^conflict on release\/0\.1\.0: src\//.test(back.triage_note ?? ''), JSON.stringify({ id: back.id, s: back.status, n: back.triage_note }));
-  check('build: notes name each item (title, lens, feature, before -> after with unit, commit) and a flagged item\'s note', !!r1.notes && /Kettle 0\.1\.0 \(sample\)/.test(r1.notes)
-    && snap().proposals.filter((p) => p.release_id === 'rel-0.1.0').every((p) => r1.notes!.includes(p.title) && r1.notes!.includes(p.commit_sha!.slice(0, 7)))
+  check('build: notes name each item (title, lens, feature, before -> after with unit, commit and pack) and a flagged item\'s note', !!r1.notes && /Kettle 0\.1\.0 \(sample\)/.test(r1.notes)
+    && snap().proposals.filter((p) => p.release_id === 'rel-0.1.0').every((p) => r1.notes!.includes(p.title) && r1.notes!.includes(`commit ${p.commit_sha!.slice(0, 7)} from pack ${p.pack_id}`))
     && r1.notes.includes('undesignedStates 2 -> 1 states') && r1.notes.includes('Shipped flagged: Ships with the gate fixed by hand'), r1.notes);
   // the first sample also holds buildRelease's own notify (its microtask lands inside the first wait)
   check('build: one notify per tick, never more', br.ticks.slice(1).every((n) => n === 1), br.ticks.join());
