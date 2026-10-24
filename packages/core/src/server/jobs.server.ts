@@ -102,16 +102,44 @@ const pidAlive = (pid: number): boolean => { try { process.kill(pid, 0); return 
 // ------------------------------------------------------------------------------------ registry
 type Listener = (jobs: ScanJob[]) => void;
 interface Rec {
-  job: ScanJob; root: string; prompt: string;
-  child?: ChildProcess; live?: boolean; ended?: boolean;
+  job: ScanJob; root: string; prompt: string; phase: Phase;
+  child?: ChildProcess;
   /** The CLI's pid once it started (journalled), and whether this record was adopted after a restart (no child, only the pid). */
   pid?: number; orphan?: boolean; watch?: ReturnType<typeof setInterval>;
   buf: string; lastErr: string; log?: fs.WriteStream;
 }
 interface Product { recs: Rec[]; subs: Set<Listener>; timer?: ReturnType<typeof setTimeout> }
 
+// ------------------------------------------------------------------------------------ phases
+/**
+ * Where a job is in its life, which the wire status alone cannot say: a cancel is a REQUEST. The job reads `cancelled` from the
+ * cancel call on (the UI is unchanged), but it stays `cancelling` - holding its slot, its release busy, its pid supervised and
+ * journalled - until its process has gone; only then is it `ended` (and a release row it left building failed). Every move
+ * goes through one table, and an event the table lacks (a cancel of an ended job, a second exit) changes nothing and journals
+ * nothing. start: its CLI is spawned. cancel: the operator asked. exit: its process ended, or a job that never ran was ended.
+ */
+export type Phase = 'queued' | 'running' | 'cancelling' | 'ended';
+export type PhaseEvent = 'start' | 'cancel' | 'exit';
+const PHASES: Record<Phase, Partial<Record<PhaseEvent, Phase>>> = {
+  queued: { start: 'running', cancel: 'ended', exit: 'ended' },
+  running: { cancel: 'cancelling', exit: 'ended' },
+  cancelling: { exit: 'ended' },
+  ended: {},
+};
+const isPhase = (p: unknown): p is Phase => typeof p === 'string' && Object.hasOwn(PHASES, p);
+/** The phase `e` moves `p` to; null = the table has no such move. */
+export const nextPhase = (p: Phase, e: PhaseEvent): Phase | null => (isPhase(p) ? PHASES[p][e] : undefined) ?? null;
+/** Move `r` by `e`; false, and nothing changed, when the table refuses it. */
+function step(r: Rec, e: PhaseEvent): boolean { const n = nextPhase(r.phase, e); if (n) r.phase = n; return n !== null; }
+/** A job whose process may still be there holds one of the MAX_RUNNING slots. */
+const holdsSlot = (r: Rec): boolean => r.phase === 'running' || r.phase === 'cancelling';
+
 const G = globalThis as typeof globalThis & { __bpScanJobs?: Map<string, Product>; __bpScanJobsLoaded?: Set<string> };
 const registry: Map<string, Product> = (G.__bpScanJobs ??= new Map<string, Product>());
+// A module reload may hand this module records the booleans-era runner made (live / ended, no phase): read them once.
+for (const p of registry.values()) for (const r of p.recs as (Rec & { live?: boolean; ended?: boolean })[]) {
+  r.phase ??= r.live ? (r.job.status === 'cancelled' ? 'cancelling' : 'running') : r.ended ? 'ended' : 'queued';
+}
 /** `slug + root` pairs whose journal this process has already read (on globalThis too: a module reload must not adopt twice). */
 const loaded: Set<string> = (G.__bpScanJobsLoaded ??= new Set<string>());
 const prod = (slug: string): Product => {
@@ -140,14 +168,23 @@ export function subscribe(slug: string, fn: Listener): () => void {
 // reads it back. globalThis still keeps the registry across a module reload; the journal is the next layer, for a process exit.
 const JOURNAL_KEEP = 200, ORPHAN_MAX_MS = 12 * 3600_000, ORPHAN_POLL_MS = 2000;
 export const journalFile = (root: string): string => path.join(root, '.ai', 'lens-scan', 'work', 'bp-jobs', 'journal.jsonl');
-interface JournalLine { at: string; slug: string; pid?: number; job: ScanJob }
+interface JournalLine { at: string; slug: string; pid?: number; phase?: Phase; job: ScanJob }
+
+/** A line's phase. A line written before phases has none: its status says, and `cancelled` with a pid and no exit code was a
+ *  cancel whose process had not been reaped yet (a cancel journals at request time; the reaping line carries the exit). */
+function phaseOf(l: JournalLine): Phase {
+  if (isPhase(l.phase)) return l.phase;
+  const st = l.job.status;
+  if (st === 'queued' || st === 'running') return st;
+  return st === 'cancelled' && l.pid !== undefined && l.job.exit_code === undefined ? 'cancelling' : 'ended';
+}
 
 function journal(slug: string, r: Rec): void {
   const file = journalFile(r.root);
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const { log_tail: _tail, ...job } = r.job;
-    const line: JournalLine = { at: now(), slug, ...(r.pid !== undefined ? { pid: r.pid } : {}), job };
+    const line: JournalLine = { at: now(), slug, ...(r.pid !== undefined ? { pid: r.pid } : {}), phase: r.phase, job };
     fs.appendFileSync(file, JSON.stringify(line) + '\n');
     recovered('job journal ' + file);
   } catch (e) { warnOnce('job journal ' + file, e); } // the job still runs; a restart will not find it
@@ -172,7 +209,10 @@ function readJournal(root: string): JournalLine[] {
 
 /** Read the jobs of `root` back after a restart, once per process. A job the journal last saw queued never ran: failed. One it
  *  saw running whose process is gone is failed, naming the restart; one whose process is still there is adopted as running (it
- *  holds its slot, a cancel kills it by pid, and it ends, judged by the store, when the pid does). Finished ones come back as they were. */
+ *  holds its slot, a cancel kills it by pid, and it ends, judged by the store, when the pid does). One it saw cancelling is a
+ *  cancel the restart cut short: a live fresh pid is adopted as cancelling and killed again, and ends when it goes; a gone pid
+ *  (or a 12 h old one, never killed) ends it at once. Either way a release row it left building is then failed. Ended ones
+ *  come back as they were. */
 export function reconcileJobs(slug: string, root: string): void {
   const key = slug + '\0' + root;
   if (loaded.has(key)) return;
@@ -186,16 +226,20 @@ export function reconcileJobs(slug: string, root: string): void {
   const back: Rec[] = [];
   for (const l of last.values()) {
     if (known.has(l.job.id)) continue; // a module reload: the live record is the truth
-    const r: Rec = { job: { ...l.job }, root, prompt: '', buf: '', lastErr: '', ended: true, ...(l.pid !== undefined ? { pid: l.pid } : {}) };
-    const st = r.job.status;
-    const gone = (why: string) => { Object.assign(r.job, { status: 'failed', error: why }); r.job.ended_at ??= now(); };
-    if (st === 'queued') gone('the server restarted while this job was queued; it never ran');
-    else if (st === 'running') {
-      const fresh = Date.now() - Date.parse(l.at) < ORPHAN_MAX_MS; // an old pid may belong to a stranger by now
-      if (r.pid !== undefined && fresh && pidAlive(r.pid)) { r.ended = false; r.live = true; r.orphan = true; }
+    const ph = phaseOf(l);
+    const r: Rec = { job: { ...l.job }, root, prompt: '', buf: '', lastErr: '', phase: ph, ...(l.pid !== undefined ? { pid: l.pid } : {}) };
+    const gone = (why: string) => { Object.assign(r.job, { status: 'failed', error: why }); r.job.ended_at ??= now(); step(r, 'exit'); };
+    // an old pid may belong to a stranger by now: never adopted, never killed
+    const adoptable = (pid: number | undefined): pid is number => pid !== undefined && Date.now() - Date.parse(l.at) < ORPHAN_MAX_MS && pidAlive(pid);
+    if (ph === 'queued') gone('the server restarted while this job was queued; it never ran');
+    else if (ph === 'running') {
+      if (adoptable(r.pid)) r.orphan = true;
       else gone(`the server restarted and this job's process${r.pid !== undefined ? ` (pid ${r.pid})` : ''} was gone`);
+    } else if (ph === 'cancelling') {
+      if (adoptable(r.pid)) { r.orphan = true; killPid(r.pid); } // the kill the restart may have cut short
+      else { r.job.ended_at ??= now(); step(r, 'exit'); }
     }
-    if (r.job.status !== st) { if (r.job.kind === 'release') failBuilding(r); journal(slug, r); }
+    if (r.phase !== ph) { if (r.job.kind === 'release' && r.job.status !== 'done') failBuilding(r); journal(slug, r); }
     back.push(r);
   }
   p.recs = [...back, ...p.recs].sort((a, b) => a.job.queued_at.localeCompare(b.job.queued_at));
@@ -208,9 +252,10 @@ export function reconcileJobs(slug: string, root: string): void {
 /** An adopted job has no child to close: poll its pid, and judge it by the store when it goes, as a closed child is. */
 function watchOrphan(slug: string, r: Rec): void {
   const timer = (r.watch = setInterval(() => {
-    if (r.ended) { clearInterval(timer); return; }
+    if (r.phase === 'ended') { clearInterval(timer); return; }
     if (r.pid !== undefined && pidAlive(r.pid)) return;
     clearInterval(timer);
+    if (r.phase === 'cancelling') { finish(slug, r, 'cancelled'); return; } // reaped: no run to judge
     if (r.job.kind === 'release') { settleRelease(slug, r, 0); return; }
     const run = r.job.run_id ?? runOf(r.root, r.job.id);
     if (run) { r.job.run_id = run; finish(slug, r, 'done', { exit_code: 0 }); }
@@ -249,7 +294,7 @@ function notify(slug: string, soon = false): void {
 function prune(p: Product): void {
   const extra = p.recs.length - KEEP_JOBS;
   if (extra <= 0) return;
-  const drop = new Set(p.recs.filter((r) => r.ended && !r.live).slice(0, extra)); // the oldest finished ones
+  const drop = new Set(p.recs.filter((r) => r.phase === 'ended').slice(0, extra)); // the oldest ended ones, never a cancelling one
   p.recs = p.recs.filter((r) => !drop.has(r));
 }
 
@@ -259,7 +304,7 @@ function enqueue(slug: string, root: string, job: ScanJob, prompt: string): Enqu
   ensure(slug, root);
   const p = prod(slug);
   if (p.recs.filter((r) => r.job.status === 'queued').length >= MAX_QUEUED) return { ok: false, status: 429, error: `${MAX_QUEUED} jobs are already queued for ${slug}` };
-  const rec: Rec = { job, root, prompt, buf: '', lastErr: '' };
+  const rec: Rec = { job, root, prompt, phase: 'queued', buf: '', lastErr: '' };
   p.recs.push(rec);
   journal(slug, rec);
   prune(p);
@@ -303,10 +348,10 @@ export function enqueueRelease(slug: string, root: string, release: string, vers
   return enqueue(slug, root, { id: jobId(), kind: 'release', release, version, step, status: 'queued', queued_at: now() }, prompt);
 }
 
-/** Whether a release job of that release is queued or running. */
+/** Whether a release job of that release is queued, running, or cancelled with its process not yet gone. */
 export function releaseBusy(slug: string, release: string): boolean {
   ensure(slug);
-  return (registry.get(slug)?.recs ?? []).some((r) => r.job.kind === 'release' && r.job.release === release && (r.job.status === 'queued' || r.job.status === 'running'));
+  return (registry.get(slug)?.recs ?? []).some((r) => r.job.kind === 'release' && r.job.release === release && r.phase !== 'ended');
 }
 
 /** Proposal ids a queued or running execute job of the product is building: a lens execute leaves them alone. */
@@ -318,14 +363,13 @@ export function busyProposals(slug: string): Set<string> {
 function pump(slug: string): void {
   const p = prod(slug);
   for (const r of p.recs) {
-    if (p.recs.filter((x) => x.live).length >= MAX_RUNNING) return;
-    if (r.job.status === 'queued') start(slug, r);
+    if (p.recs.filter(holdsSlot).length >= MAX_RUNNING) return;
+    if (r.phase === 'queued') start(slug, r);
   }
 }
 
 function finish(slug: string, r: Rec, status: 'done' | 'failed' | 'cancelled', extra: Partial<ScanJob> = {}): void {
-  if (r.ended) return;
-  r.ended = true; r.live = false;
+  if (!step(r, 'exit')) return; // a second close or error after the first
   if (r.job.status !== 'cancelled') Object.assign(r.job, { status }, extra);
   else if (extra.exit_code !== undefined) r.job.exit_code = extra.exit_code;
   r.job.ended_at ??= now();
@@ -373,9 +417,9 @@ function onOutput(slug: string, r: Rec, chunk: Buffer, err: boolean): void {
 }
 
 function start(slug: string, r: Rec): void {
+  if (!step(r, 'start')) return;
   r.job.status = 'running';
   r.job.started_at = now();
-  r.live = true;
   try {
     const dir = path.join(r.root, '.ai', 'lens-scan', 'work', 'bp-jobs');
     fs.mkdirSync(dir, { recursive: true });
@@ -413,23 +457,21 @@ function start(slug: string, r: Rec): void {
   c.stdin?.end(r.prompt + '\n');
 }
 
-/** Cancel a job: a queued one leaves the queue, a running one is killed with its process tree. null = no such job. */
+/** Cancel a job: a queued one leaves the queue (ended), a running one is killed with its process tree and stays `cancelling`
+ *  until the process has gone (finish, on close or the orphan watch). Either reads `cancelled` at once. null = no such job. */
 export function cancel(slug: string, id: string): ScanJob | null {
   const r = registry.get(slug)?.recs.find((x) => x.job.id === id);
   if (!r) return null;
-  if (r.job.status === 'queued') {
-    r.job.status = 'cancelled'; r.job.ended_at = now();
-    r.ended = true;
-    journal(slug, r);
-    notify(slug);
-  } else if (r.job.status === 'running') {
-    r.job.status = 'cancelled'; r.job.ended_at = now();
+  const was = r.phase;
+  if (!step(r, 'cancel')) return copy(r); // ended, or already cancelling: nothing to do, nothing to journal
+  r.job.status = 'cancelled'; r.job.ended_at = now();
+  if (was === 'running') {
     r.log?.write(`\n# cancelled from the blueprint at ${r.job.ended_at}\n`);
     if (r.child) killTree(r.child);
     else if (r.orphan && r.pid !== undefined) killPid(r.pid);
-    journal(slug, r);
-    notify(slug); // the slot frees when the process has gone (finish, on close)
   }
+  journal(slug, r);
+  notify(slug); // a cancelling job keeps its slot until the process has gone
   return copy(r);
 }
 

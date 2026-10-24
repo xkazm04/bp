@@ -13,6 +13,10 @@
 //   - a finished job comes back as it was; a torn last line is skipped;
 //   - an adopted release job makes enqueueRelease refuse a second one (409) instead of cutting the release twice;
 //   - a second reconcile in one process, and a module reload that keeps globalThis, adopt nothing twice.
+//   PHASES (queued -> running -> cancelling -> ended, journalled as `phase`): a cancel is a request until the process is
+//   reaped - a restart over a live cancel adopts it as cancelling (release busy, pid killed again), one whose pid is gone
+//   ends it and fails the release row it left building; the table refuses a move it lacks and journals nothing; a legacy
+//   line (no phase) reads cancelled-with-pid-and-no-exit as cancelling; prune never drops a cancelling job.
 // The restart is reproduced as check-kettle-host-reload does a reload: the module is evaluated under distinct specifiers
 // (?gen=N); the wipe of globalThis.__bpScanJobs / __bpScanJobsLoaded is what a process exit does. The children are real
 // (the fake CLI sleeps until killed), the CLI is never the real one.
@@ -22,11 +26,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { DatabaseSync } from 'node:sqlite';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HOOKS = './lib/src-hooks.mjs';
 ((await import(HOOKS)) as { registerSrcHooks: (root: string) => void }).registerSrcHooks(ROOT);
 process.env.BP_CLAUDE_BIN = path.join(ROOT, 'scripts/fixtures/fake-claude.mjs');
+const RS = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/server/release.server.ts')).href) as typeof import('../packages/core/src/server/release.server.ts');
 
 type Mod = typeof import('../packages/core/src/server/jobs.server.ts');
 type ScanJob = import('../packages/core/src/scan/jobs.ts').ScanJob;
@@ -149,7 +155,114 @@ try {
   const other = M5.enqueueRelease('p4', Rl, 'rel-2.0.0', '2.0.0', 'build');
   check('another release is still accepted', other.ok);
   M5.cancel('p4', 'j-rel-0005');
-  check('cancelling the adopted release job frees the release', await until(() => !alive(rel.pid!)) && !M5.releaseBusy('p4', 'rel-1.0.0'));
+  // a cancel is a request: the release stays busy until the pid has gone and the watcher has reaped it (one poll later)
+  check('cancelling the adopted release job frees the release', await until(() => !alive(rel.pid!)) && await until(() => !M5.releaseBusy('p4', 'rel-1.0.0')));
+
+  // ------------------------------------------- the phase model: a cancel is a request until the process is reaped
+  // Phases queued -> running -> cancelling -> ended, journalled on every line as `phase`; one table says which event moves
+  // which phase, and an event the table lacks changes nothing and journals nothing.
+  const relJob = (id: string, release: string, t: string) => ({ id, kind: 'release', release, version: release.slice(4), step: 'build', queued_at: t, started_at: t });
+  // 1. a restart over a cancel line whose child is still alive: adopted as cancelling, killed again, reaped when it goes
+  const K = root('cancel-live');
+  const kc = sleeper(); const kcPid = kc.pid!;
+  const tk = new Date().toISOString();
+  fs.mkdirSync(path.dirname(jfile(K)), { recursive: true });
+  fs.writeFileSync(jfile(K), JSON.stringify({ at: tk, slug: 'p7', pid: kcPid, phase: 'cancelling', job: { ...relJob('j-can-0007', 'rel-7.0.0', tk), status: 'cancelled', ended_at: tk } }) + '\n');
+  const M7 = await restart();
+  M7.reconcileJobs('p7', K);
+  check('restart over a live cancel: the job reads cancelled', get(M7, 'p7', 'j-can-0007')?.status === 'cancelled', JSON.stringify(get(M7, 'p7', 'j-can-0007')));
+  check('restart over a live cancel: the release stays busy while the pid lives', alive(kcPid) && M7.releaseBusy('p7', 'rel-7.0.0'));
+  check('restart over a live cancel: the pid is killed again', await until(() => !alive(kcPid)), String(kcPid));
+  check('restart over a live cancel: the release is free once the pid has gone', await until(() => !M7.releaseBusy('p7', 'rel-7.0.0')));
+  check('...and the reaping is journalled as ended', await until(() => (lastOf(K, 'j-can-0007') as { phase?: string } | undefined)?.phase === 'ended'), JSON.stringify(lastOf(K, 'j-can-0007')));
+
+  // 2. the same line with the pid already gone and the release row still building: the row is failed, with a reason
+  const B = root('cancel-gone');
+  const bstore = path.join(B, '.ai', 'lens-scan'); fs.mkdirSync(bstore, { recursive: true });
+  const bdb = path.join(bstore, 'scan.db');
+  { const w = new DatabaseSync(bdb); w.exec(fs.readFileSync(path.join(ROOT, 'docs/standard/lens-scan-store.sql'), 'utf8'));
+    w.prepare("INSERT INTO releases (id, version, branch, status, created_at, updated_at) VALUES ('rel-8.0.0', '8.0.0', 'release/8.0.0', 'building', ?, ?)").run(now, now); w.close(); }
+  const bg = sleeper(); const bgPid = bg.pid!; kill(bgPid);
+  check('control process is gone (2)', await until(() => !alive(bgPid)));
+  fs.mkdirSync(path.dirname(jfile(B)), { recursive: true });
+  fs.writeFileSync(jfile(B), JSON.stringify({ at: now, slug: 'p8', pid: bgPid, phase: 'cancelling', job: { ...relJob('j-can-0008', 'rel-8.0.0', now), status: 'cancelled', ended_at: now } }) + '\n');
+  const relRow = () => { const d = new DatabaseSync(bdb, { readOnly: true, timeout: 5000 }); try { return d.prepare("SELECT status, error FROM releases WHERE id = 'rel-8.0.0'").get() as { status: string; error: string | null } | undefined; } finally { d.close(); } };
+  const M8 = await restart();
+  M8.reconcileJobs('p8', B);
+  check('restart over a cancel whose pid is gone: the job is ended, not busy', get(M8, 'p8', 'j-can-0008')?.status === 'cancelled' && !M8.releaseBusy('p8', 'rel-8.0.0'));
+  if (!RS.storeScript()) { console.log('SKIP the stranded-row case (failBuilding writes through store.mjs; lens-scan is not installed here)'); } else {
+    check('restart over a cancel whose pid is gone: the building row is failed with a cancellation reason', await until(() => relRow()?.status === 'failed', 10000) && /cancel/.test(relRow()?.error ?? ''), JSON.stringify(relRow()));
+  }
+
+  // 3. an in-process cancel of a running job: phases queued, running, cancelling, ended; the wire reads cancelled at once
+  const P = root('phases');
+  const M9 = await restart();
+  const pj = M9.enqueueMeasure('p9', P, 'slow', SCOPE);
+  check('phases: the job starts', pj.ok && await until(() => (lastOf(P, pj.job.id)?.pid ?? 0) > 0));
+  const ppid = pj.ok ? lastOf(P, pj.job.id)?.pid ?? 0 : 0; if (ppid) spawned.push(ppid);
+  const pc = pj.ok ? M9.cancel('p9', pj.job.id) : null;
+  check('phases: the cancel call answers cancelled, and the list reads cancelled from then on', pc?.status === 'cancelled' && pj.ok && get(M9, 'p9', pj.job.id)?.status === 'cancelled');
+  check('phases: the process goes', await until(() => !alive(ppid)), String(ppid));
+  const phases = () => pj.ok ? lines(P).filter((l) => l.job.id === pj.job.id).map((l) => (l as { phase?: string }).phase).join() : '';
+  check('phases: the journal reads queued,running,cancelling,ended', await until(() => phases() === 'queued,running,cancelling,ended'), phases());
+  check('phases: the ended line still reads cancelled on the wire', pj.ok && lastOf(P, pj.job.id)?.job.status === 'cancelled' && get(M9, 'p9', pj.job.id)?.status === 'cancelled');
+
+  // 4. a transition the table does not allow changes nothing and journals nothing
+  const T = (M9 as unknown as { nextPhase?: (p: string, e: string) => string | null }).nextPhase;
+  check('the transition table is exported', typeof T === 'function');
+  check('table: queued -start-> running, running -cancel-> cancelling, cancelling -exit-> ended, queued -cancel-> ended',
+    !!T && T('queued', 'start') === 'running' && T('running', 'cancel') === 'cancelling' && T('cancelling', 'exit') === 'ended' && T('queued', 'cancel') === 'ended');
+  check('table: refuses cancel of an ended job, a second exit, a start after a cancel', !!T && T('ended', 'cancel') === null && T('ended', 'exit') === null && T('cancelling', 'start') === null && T('cancelling', 'cancel') === null);
+  // GUARD (holds today): cancel of an ended job, and a second cancel of a cancelling one, change nothing and append no line
+  if (pj.ok) {
+    const n0 = lines(P).length, before = JSON.stringify(get(M9, 'p9', pj.job.id));
+    const again = M9.cancel('p9', pj.job.id);
+    check('GUARD cancel of an ended job: returned unchanged, no journal line', JSON.stringify(again) === before && lines(P).length === n0, `${lines(P).length} vs ${n0}`);
+  }
+  const pj2 = M9.enqueueMeasure('p9', P, 'slow', SCOPE);
+  if (pj2.ok && await until(() => (lastOf(P, pj2.job.id)?.pid ?? 0) > 0)) {
+    spawned.push(lastOf(P, pj2.job.id)!.pid!);
+    const first = M9.cancel('p9', pj2.job.id);
+    const n1 = lines(P).length;
+    const second = M9.cancel('p9', pj2.job.id);
+    check('GUARD a second cancel while cancelling: same answer, no journal line', JSON.stringify(first) === JSON.stringify(second) && lines(P).length === n1, `${lines(P).length} vs ${n1}`);
+  } else check('GUARD a second cancel while cancelling: the job starts', false);
+
+  // 5. a legacy line (no phase): cancelled with a pid and no exit_code was a cancel in flight - read as cancelling
+  const L = root('legacy');
+  const lc = sleeper(); const lcPid = lc.pid!;
+  const ls = sleeper(); const lsPid = ls.pid!;
+  const tl = new Date().toISOString();
+  fs.mkdirSync(path.dirname(jfile(L)), { recursive: true });
+  fs.writeFileSync(jfile(L), [
+    { at: tl, slug: 'pa', pid: lcPid, job: { ...relJob('j-leg-0010', 'rel-10.0.0', tl), status: 'cancelled', ended_at: tl } },
+    { at: old, slug: 'pa', pid: lsPid, job: { ...relJob('j-leg-0011', 'rel-11.0.0', old), status: 'cancelled', ended_at: old } },
+  ].map((l) => JSON.stringify(l)).join('\n') + '\n');
+  const MA = await restart();
+  MA.reconcileJobs('pa', L);
+  check('legacy cancel line, fresh, live pid: adopted as cancelling (the release busy)', MA.releaseBusy('pa', 'rel-10.0.0') && get(MA, 'pa', 'j-leg-0010')?.status === 'cancelled');
+  check('legacy cancel line, fresh, live pid: killed and reaped', await until(() => !alive(lcPid)) && await until(() => !MA.releaseBusy('pa', 'rel-10.0.0')));
+  check('legacy cancel line, 13 h old: not adopted', !MA.releaseBusy('pa', 'rel-11.0.0') && get(MA, 'pa', 'j-leg-0011')?.status === 'cancelled');
+  await sleep(600);
+  check('legacy cancel line, 13 h old: its pid (a stranger by now) is never killed', alive(lsPid));
+
+  // 6. prune keeps a cancelling job, and it still holds its slot
+  const Q = root('prune');
+  const qc = sleeper(), q1 = sleeper(), q2 = sleeper();
+  const tq = Date.now();
+  const iso = (i: number) => new Date(tq - 100_000 + i).toISOString();
+  const qlines: object[] = [{ at: iso(0), slug: 'pb', pid: qc.pid, phase: 'cancelling', job: { ...base, id: 'j-q-cancel', status: 'cancelled', queued_at: iso(0), started_at: iso(0), ended_at: iso(0) } }];
+  for (let i = 1; i <= 55; i++) qlines.push({ at: iso(i), slug: 'pb', pid: 1, phase: 'ended', job: { ...base, id: 'j-q-' + String(i).padStart(4, '0'), status: 'done', queued_at: iso(i), ended_at: iso(i), exit_code: 0, run_id: 'run-' + i } });
+  for (const [n, c] of [[60, q1], [61, q2]] as const) qlines.push({ at: iso(n), slug: 'pb', pid: c.pid, phase: 'running', job: { ...base, id: 'j-q-run-' + n, status: 'running', queued_at: iso(n), started_at: iso(n) } });
+  fs.mkdirSync(path.dirname(jfile(Q)), { recursive: true });
+  fs.writeFileSync(jfile(Q), qlines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+  const MB = await restart();
+  MB.reconcileJobs('pb', Q);
+  check('prune: the cancelling job (the oldest) is kept over 55 finished ones', !!get(MB, 'pb', 'j-q-cancel') && MB.list('pb').length === MB.KEEP_JOBS, String(MB.list('pb').length));
+  const fourth = MB.enqueueMeasure('pb', Q, 'slow', SCOPE);
+  check('prune: the cancelling job still holds its slot (with two running, a 4th enqueue queues)', fourth.ok && fourth.job.status === 'queued', JSON.stringify(fourth));
+  if (fourth.ok) MB.cancel('pb', fourth.job.id);
+  MB.cancel('pb', 'j-q-run-60'); MB.cancel('pb', 'j-q-run-61');
 
   // ------------------------------------------------------------------ the journal does not grow for ever
   const C = root('compact');
