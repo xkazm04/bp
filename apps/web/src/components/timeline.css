@@ -56,6 +56,10 @@
 .tl-strip.travel .tl-handle line { stroke: var(--accent); stroke-width: 2; }
 .tl-strip.travel .tl-handle path { fill: var(--accent); }
 .tl-flag { position: absolute; bottom: calc(100% + 7px); padding: 2px 6px; background: var(--label-bg); border: 1px solid var(--accent); color: var(--accent); font: 500 12px/1.2 var(--mono); pointer-events: none; }
+/* a week's stage changes, under the sparkline: the churn a flat total hides (timeline/changes.ts) */
+.tl-chg { stroke: var(--accent); stroke-opacity: 0.55; stroke-width: 2; }
+/* the flag as a hover preview (the week under the pointer, not the one shown): no travel happened, so not accent */
+.tl-flag.peek { border-color: var(--ink-2); border-style: dashed; color: var(--ink-hi); }
 
 /* ---------- the panel (expanded): slides up over the plan; it never moves the plan */
 #tlpanel { position: absolute; left: 14px; right: var(--rw, 14px); bottom: var(--bb); height: 96px; display: flex; gap: 12px; align-items: stretch; z-index: 8; pointer-events: none; filter: drop-shadow(0 14px 30px var(--shadow)); }

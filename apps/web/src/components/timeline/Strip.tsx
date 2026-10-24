@@ -3,12 +3,13 @@
 // where in time the plan is ("now" or the travelled date), a hairline of the revision history (click or
 // drag it to travel), and the sim clock (Kettle) or the scan's run status (a live product). Clicking the
 // strip anywhere but the hairline expands the full panel; the strip never expands on hover.
-import { forwardRef, useEffect, useRef } from 'react';
+import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
 import { dnum, fmtD, revAt } from '@bp/core/model';
 import { shallowEqual, useBp, useEngine } from '../hooks';
 import { simClock, useRunInfo, useSize, useTimeSlider } from './shared';
 import { runTitle } from './run';
-import { histX, hourX } from './scrub';
+import { histX, hoverAt, hourX } from './scrub';
+import { changeMarks, changeOn, changeWords, weekChanges } from './changes';
 import { sliderGeom, transport } from './slider';
 
 /** The sim clock (Kettle) or the latest run (live product), as one line of small text. */
@@ -35,7 +36,8 @@ function StripClock() {
   );
 }
 
-/** The hairline: revision history (a sparkline of feature counts, a tick per week) and, for Kettle, the hour ahead. */
+/** The hairline: revision history (a sparkline of feature counts, a tick per week, a mark per week weighted by its
+ *  stage changes) and, for Kettle, the hour ahead. Hover or focus previews a week's changes in the flag before travel. */
 function Hairline() {
   const E = useEngine(), M = E.M, sim = M.sim;
   const t = useBp((s) => s.t);
@@ -46,20 +48,32 @@ function Hairline() {
   const h0 = L, h1 = R - hourW - gap, o0 = h1 + gap, o1 = R, top = 4, bot = H - 6;
   const g = sliderGeom(weeks, asOf, hour, { h0, h1, o0, o1 });
   const hx = (d: string) => histX(g, dnum(d)), ox = (v: number) => hourX(g, v);
-  const { svgProps, refs, model } = useTimeSlider(E, { kind: 'strip', g, W, H, t, ariaLabel: 'Time: drag along the revision history to travel; the right end is now' });
+  // the week digest, once per product (changes.ts); hovering re-renders only when the hovered week changes
+  const changes = useMemo(() => weekChanges(M.P.features, weeks, asOf), [M, weeks, asOf]);
+  const [hov, setHov] = useState<string | null>(null), [foc, setFoc] = useState(false);
+  const { svgProps, refs, model } = useTimeSlider(E, {
+    kind: 'strip', g, W, H, t, changes, ariaLabel: 'Time: drag along the revision history to travel; the right end is now',
+    onHover: (x) => setHov(x === null ? null : hoverAt(g, x)),
+  });
   const now = model.now;
   const snaps = M.P.snapshots, max = Math.max(...snaps.map((x) => x.total)) || 1;
   const pts = snaps.map((sn) => hx(sn.week).toFixed(1) + ',' + (bot - (sn.total / max) * (bot - top)).toFixed(1));
   const line = pts.length > 1 ? 'M' + pts.join(' L') : '';
   const area = line ? line + ` L${hx(snaps[snaps.length - 1].week).toFixed(1)},${bot} L${hx(snaps[0].week).toFixed(1)},${bot}Z` : '';
   const m1 = M.P.milestones.find((m) => m.state === 'done'), xt = Math.min(hx(t), h1);
+  const cbot = bot - 1, chH = Math.max(3, (bot - top) * 0.45), marks = changeMarks(changes);
+  // the flag: the hovered week, else (travelled or focused) the shown week - date, revision and what changed there
+  const fw = hov ?? (!now || foc ? t : null), fc = fw ? changeOn(changes, fw) : undefined;
+  const flag = fw ? (fw === asOf ? 'NOW' : fmtD(fw)) + ' · REV ' + revAt(weeks, fw) + (fc ? ' · ' + changeWords(fc).toUpperCase() : '') : '';
+  const fx = fw ? Math.min(hx(fw), h1) : 0, fW = flag.length * 8 + 14;
   return (
     <div className="tl-line" ref={wrap}>
       {/* Esc here collapses the panel, else returns to now, else leaves the hairline (slider.ts SLIDERS.strip) */}
-      <svg viewBox={`0 0 ${W} ${H}`} {...svgProps}>
+      <svg viewBox={`0 0 ${W} ${H}`} {...svgProps} onFocus={() => setFoc(true)} onBlur={() => setFoc(false)}>
         {model.stillTitle && <title>{model.stillTitle}</title>}
         <rect className="tl-hit" x={0} y={0} width={W} height={H} />
         {area && <path className="tl-area" d={area} />}
+        {marks.map((c) => { const x = hx(c.week); return <line key={c.week} className="tl-chg" x1={x} y1={cbot} x2={x} y2={cbot - Math.max(2, c.w * chH)} />; })}
         {line && <path className="tl-spark" d={line} />}
         <line className="tl-base" x1={h0} y1={bot} x2={h1} y2={bot} />
         {weeks.map((w) => { const x = hx(w); return <line key={w} className="tl-tick" x1={x} y1={bot} x2={x} y2={bot + 3} />; })}
@@ -77,7 +91,7 @@ function Hairline() {
           <path d={`M${xt - 4} ${H} l4 -5 l4 5z`} />
         </g>
       </svg>
-      {!now && <span className="tl-flag" style={{ left: Math.max(0, Math.min(xt - 40, W - 84)) }}>{fmtD(t)}</span>}
+      {flag && <span className={'tl-flag' + (hov && hov !== t ? ' peek' : '')} style={{ left: Math.min(Math.max(0, fx - 40), W - fW) }}>{flag}</span>}
     </div>
   );
 }

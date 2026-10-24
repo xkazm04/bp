@@ -25,9 +25,9 @@ export interface SliderAria {
 export interface SliderModel { now: boolean; rev: number; still: boolean; valueText: string; aria: SliderAria; stillTitle?: string }
 
 /** Where a slider stands at time `t`, and what it announces. */
-export function sliderModel(s: { weeks: readonly string[]; asOf: string; t: string; hour: boolean }): SliderModel {
+export function sliderModel(s: { weeks: readonly string[]; asOf: string; t: string; hour: boolean; summary?: string }): SliderModel {
   const now = s.t === s.asOf, rev = revAt(s.weeks as string[], s.t), still = sliderStill(s.weeks, s.hour);
-  const vt = valueText(now, rev, s.t, s.weeks.length, s.hour);
+  const vt = valueText(now, rev, s.t, s.weeks.length, s.hour, s.summary);
   const aria: SliderAria = { role: 'slider', tabIndex: 0, 'aria-valuemin': 1, 'aria-valuemax': s.weeks.length, 'aria-valuenow': rev, 'aria-valuetext': vt };
   if (still) { aria['data-still'] = ''; aria['aria-disabled'] = true; }
   return still ? { now, rev, still, valueText: vt, aria, stillTitle: STILL_TITLE } : { now, rev, still, valueText: vt, aria };

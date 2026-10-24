@@ -10,6 +10,7 @@ import { runFacts, runProgress } from './run';
 import { hourX, scrubAt, type ScrubGeom } from './scrub';
 import { timeSliderKey } from './keys';
 import { SLIDERS, escapeAction, sliderModel, sliderStill, type SliderKind } from './slider';
+import { changeSummary, type WeekChange } from './changes';
 
 /** The simulated wall clock at sim second `t`: HH:MM:SS, or HH:MM with `secs` false. */
 export function simClock(at0: number, t: number, secs = true): string { return new Date(at0 + t * 1000).toISOString().slice(11, secs ? 19 : 16); }
@@ -44,16 +45,17 @@ export function useHourText(E: ReturnType<typeof useEngine>, svg: React.RefObjec
 /** The pointer handlers of a time slider, the same for strip and panel: down/move scrub through scrubAt (a drag keeps the
  *  zone it began in), up / cancel / lost capture all end the drag, and a drag left of the sim head flags `data-back` on the
  *  svg (the css shows not-allowed: the sim only replays forward). A slider with nowhere to go (one week, no hour) ignores
- *  the pointer. `stop` keeps the press from reaching the strip's expand click. */
-export function useScrub(E: ReturnType<typeof useEngine>, svg: React.RefObject<SVGSVGElement | null>, W: number, g: ScrubGeom, stop: boolean) {
+ *  the pointer. `stop` keeps the press from reaching the strip's expand click. A pointer moving with no drag reports its
+ *  x to `onHover` (null when it leaves) and nothing else: hovering previews a week, it never moves time. */
+export function useScrub(E: ReturnType<typeof useEngine>, svg: React.RefObject<SVGSVGElement | null>, W: number, g: ScrubGeom, stop: boolean, onHover?: (x: number | null) => void) {
   const lock = useRef<'h' | 'o' | null>(null), gr = useRef(g), wr = useRef(W);
   useLayoutEffect(() => { gr.current = g; wr.current = W; });
   const end = () => { lock.current = null; svg.current?.removeAttribute('data-back'); };
+  const xOf = (e: React.PointerEvent) => { const r = svg.current?.getBoundingClientRect(); return r && r.width > 0 ? ((e.clientX - r.left) / r.width) * wr.current : 0; };
+  const hover = (e: React.PointerEvent) => { if (onHover && e.pointerType !== 'touch') onHover(xOf(e)); };
   const apply = (e: React.PointerEvent) => {
     const el = svg.current; if (!el) return;
-    const r = el.getBoundingClientRect(), G = gr.current;
-    const x = r.width > 0 ? ((e.clientX - r.left) / r.width) * wr.current : 0;
-    const s = scrubAt(G, x, lock.current, E.M.sim.t);
+    const G = gr.current, s = scrubAt(G, xOf(e), lock.current, E.M.sim.t);
     if (!s) return;
     lock.current = s.lock;
     if (s.hourT !== undefined) {
@@ -68,7 +70,8 @@ export function useScrub(E: ReturnType<typeof useEngine>, svg: React.RefObject<S
       if (sliderStill(gr.current.weeks, gr.current.hour)) return;
       (e.currentTarget as Element).setPointerCapture(e.pointerId); apply(e);
     },
-    onPointerMove: (e: React.PointerEvent) => { if (lock.current) apply(e); },
+    onPointerMove: (e: React.PointerEvent) => { if (lock.current) apply(e); else hover(e); },
+    onPointerLeave: () => onHover?.(null),
     onPointerUp: end, onPointerCancel: end, onLostPointerCapture: end,
   };
 }
@@ -77,11 +80,11 @@ export function useScrub(E: ReturnType<typeof useEngine>, svg: React.RefObject<S
  *  the pointer scrub, the hour's aria-valuetext, the sim-head painter and the key map with the kind's Escape. The head
  *  (line `head`, elapsed rect `el`, optional marker `tri` drawn by `triD`) is a DOM write from the sim clock, never a
  *  React render per sim second. `W`/`H` are the svg's size (each component keeps its own useSize fallback). */
-export function useTimeSlider(E: ReturnType<typeof useEngine>, o: { kind: SliderKind; g: ScrubGeom; W: number; H: number; t: string; ariaLabel: string; triD?: (x: number) => string }) {
+export function useTimeSlider(E: ReturnType<typeof useEngine>, o: { kind: SliderKind; g: ScrubGeom; W: number; H: number; t: string; ariaLabel: string; triD?: (x: number) => string; changes?: readonly WeekChange[]; onHover?: (x: number | null) => void }) {
   const { kind, g, W, H } = o, spec = SLIDERS[kind];
   const svg = useRef<SVGSVGElement>(null), head = useRef<SVGLineElement>(null), el = useRef<SVGRectElement>(null), tri = useRef<SVGPathElement>(null);
-  const model = sliderModel({ weeks: g.weeks, asOf: g.asOf, t: o.t, hour: g.hour });
-  const scrub = useScrub(E, svg, W, g, spec.stop);
+  const model = sliderModel({ weeks: g.weeks, asOf: g.asOf, t: o.t, hour: g.hour, summary: changeSummary(o.changes, o.t) });
+  const scrub = useScrub(E, svg, W, g, spec.stop, o.onHover);
   useHourText(E, svg, model.valueText, g.hour);
   useEffect(() => (g.hour ? E.onSimTime((s) => {
     const x = hourX(g, s);

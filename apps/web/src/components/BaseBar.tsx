@@ -6,7 +6,7 @@
 // engine's sim-time callback; React only re-renders on discrete changes (speed, play, time travel).
 // A live product has no recorded hour: the clock box shows the scan instead, and the strip drops the
 // hour ahead (no replay to scrub, no arrivals).
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { AnimatePresence, motion, useReducedMotion, type Variants } from 'motion/react';
 import type { Stage } from '@bp/core/data';
 import { GA_MILESTONE, SPEEDS, dnum, fmtD } from '@bp/core/model';
@@ -16,6 +16,7 @@ import { simClock, useRunInfo, useSize, useTimeSlider } from './timeline/shared'
 import { RUN_WAIT, runClock, runLenses } from './timeline/run';
 import { histX, hourX, keyPlanFrac } from './timeline/scrub';
 import { sliderGeom, transport } from './timeline/slider';
+import { weekChanges } from './timeline/changes';
 import './timeline.css';
 
 /** One staggered item of the panel (the panel's variants drive it). */
@@ -94,8 +95,9 @@ function Revisions() {
   // the one mapping (timeline/scrub.ts) and slider (timeline/slider.ts): a map without an events log has one week of history (a live product often), no span
   const hour = sim.has && !sim.live, g = sliderGeom(M.P.weeks, asOf, hour, tl);
   const hx = (d: string) => histX(g, dnum(d)), ox = (v: number) => hourX(g, v);
-  // the sliders' one key map and Escape (slider.ts SLIDERS.panel: Esc collapses the panel)
-  const { svgProps, refs, model } = useTimeSlider(E, { kind: 'panel', g, W, H, t: s.t, ariaLabel: 'Time: revision history, now, and the simulated hour ahead', triD: (x) => 'M' + x + ' ' + (bot + 3) + ' l-5 7 h10z' });
+  // the sliders' one key map and Escape (slider.ts SLIDERS.panel: Esc collapses the panel); the week's stage changes join its value text
+  const changes = useMemo(() => weekChanges(M.P.features, M.P.weeks, asOf), [M, asOf]);
+  const { svgProps, refs, model } = useTimeSlider(E, { kind: 'panel', g, W, H, t: s.t, changes, ariaLabel: 'Time: revision history, now, and the simulated hour ahead', triD: (x) => 'M' + x + ' ' + (bot + 3) + ' l-5 7 h10z' });
   const now = model.now;
   const snaps = M.P.snapshots, max = Math.max(...snaps.map((x) => x.total)) * 1.05 || 1; // a product with no stages has all-zero totals
   const cum = snaps.map(() => 0);
