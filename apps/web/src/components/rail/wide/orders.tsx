@@ -8,16 +8,19 @@ import { useEffect, useMemo, useState } from 'react';
 import { ORDER_TEMPLATES, STAGE_WORD, pname, sheetOf, stageAt, type OrderTemplate, type SimOrder } from '@bp/core/model';
 import { StageSym } from '../../Symbols';
 import { shallowEqual, useBp, useEngine } from '../../hooks';
+import { ORDERS_WRITE, seatHere, type PreviewSeat } from '@/lib/model/preview-seat';
 import { PreviewBox } from '../panels';
-import { Fig, Group, Row, Sec, Workbench, useListRef, useWalk } from './shell';
+import { Fig, Group, Row, Sec, Workbench, useListRef, usePreviewSeat, useWalk } from './shell';
 
-const WRITE = 'write';
+const WRITE = ORDERS_WRITE;
 
 export function Orders() {
   const E = useEngine(), M = E.M, sim = M.sim;
   const s = useBp((s) => ({ simV: s.simV }), shallowEqual);
   const [sel, setSel] = useState<string | null>(null);
   const listRef = useListRef();
+  // an order draft selects the writer when it arrives, over the breached order the panel otherwise opens on
+  const seat = usePreviewSeat(setSel);
   // breached first, then the newest; the order of the file otherwise
   const orders = useMemo(() => sim.has ? sim.orders.slice().sort((a, b) => (b.vf.length ? 1 : 0) - (a.vf.length ? 1 : 0)) : [], [sim, s.simV]);
   const ids = useMemo(() => [WRITE, ...orders.map((o) => o.id)], [orders]);
@@ -53,7 +56,7 @@ export function Orders() {
   );
   const o = orders.find((x) => x.id === cur);
   return (
-    <Workbench cls="wb-orders" list={list} listLabel="Standing orders" listRef={listRef} onKey={onKey} detailKey={cur} detailLabel="Selected order"
+    <Workbench cls="wb-orders" list={list} listLabel="Standing orders" listRef={listRef} onKey={onKey} detailKey={cur} detailLabel="Selected order" seat={seat} row={cur}
       strip={(
         <>
           <div className="wb-count"><b>{orders.length}</b><span>standing orders</span></div>
@@ -63,7 +66,7 @@ export function Orders() {
           <span className="wb-src">{sim.live ? 'live scan' : 'simulated swarm'}</span>
         </>
       )}
-      detail={<div className="wb-scroll">{o ? <OrderDetail o={o} /> : <Writer />}</div>} />
+      detail={<div className="wb-scroll">{o ? <OrderDetail o={o} /> : <Writer seat={seat} />}</div>} />
   );
 }
 
@@ -112,10 +115,9 @@ function OrderDetail({ o }: { o: SimOrder }) {
 }
 
 /** The writer: the current selection as a new order, from the four templates (preview, then commit). */
-function Writer() {
+function Writer({ seat }: { seat: PreviewSeat }) {
   const E = useEngine();
-  const s = useBp((s) => ({ tgt: s.tgt, prev: s.prev }), shallowEqual);
-  const drafting = s.prev?.kind === 'order';
+  const s = useBp((s) => ({ tgt: s.tgt }), shallowEqual);
   return (
     <>
       <div className="wb-kick"><span>New order</span><span>{s.tgt.n ? s.tgt.n + ' features selected' : 'no selection'}</span></div>
@@ -132,7 +134,7 @@ function Writer() {
             <div className="wb-inline"><button type="button" className="bt" onClick={() => E.lookAtTarget()}>Look at it</button><button type="button" className="bt" onClick={() => E.clearTarget()}>Clear the selection</button></div>
           </Sec>
           <Sec head="Rule" aside="preview before it applies">
-            {drafting ? <PreviewBox /> : (
+            {seatHere(seat, WRITE) ? <PreviewBox /> : (
               <ul className="wb-tpl" aria-label="Order templates">
                 {(Object.keys(ORDER_TEMPLATES) as OrderTemplate[]).map((k) => (
                   <li key={k}><button type="button" onClick={() => E.preview('order', k)}>{ORDER_TEMPLATES[k]}</button></li>

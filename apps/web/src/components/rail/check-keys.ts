@@ -210,5 +210,27 @@ expect(frames === 1, `the frame scan found ${frames} files declaring className="
 for (const f of ['wide/agents.tsx', 'wide/orders.tsx', 'wide/plan.tsx', 'wide/review.tsx', 'wide/steer.tsx', 'wide/view.tsx'])
   expect(/<Workbench\b/.test(SRC.get(f) as string), `${f}: does not render through <Workbench>, so a frame-level rule would miss it`);
 
+// ---------------------------------------------------------------- 11. one preview seat
+// A pending steer preview is a consent gate that Enter commits, so it must have exactly one visible home. Where that
+// is, is decided once (lib/model/preview-seat.ts: previewSeat); a panel or the selection bar that reads the preview's
+// kind or order to decide whether to show it is a sixth predicate, which is how a preview went unseen before.
+let seats = 0;
+const selbar = /export function SelBar[\s\S]*?\r?\n}\r?\n/.exec(read('../Overlays.tsx'))?.[0] ?? '';
+expect(!!selbar, 'Overlays.tsx: no `export function SelBar` found - the preview seat scan has stopped biting');
+expect(/selbarStepsAside\(/.test(selbar), 'Overlays.tsx: SelBar does not decide its step-aside through selbarStepsAside (preview-seat.ts), so the bar and the panels can disagree on the preview seat');
+expect(!/dtab\s*===/.test(selbar), 'Overlays.tsx: SelBar names dock tabs itself to decide when it steps aside - the preview seat (preview-seat.ts) owns that list');
+for (const [f, src] of [...SRC, ['Overlays.tsx SelBar', selbar] as [string, string]]) {
+  if (!f.startsWith('wide/') && f !== 'Overlays.tsx SelBar') continue;
+  for (const m of src.matchAll(/\bprev\??\.(order|kind)\b/g)) expect(false, `${f}: reads prev.${m[1]} (at ${m.index}) - the preview seat (previewSeat) decides where a preview shows, not a per-panel predicate`);
+  for (const m of src.matchAll(/<PreviewBox\b/g)) {
+    seats++;
+    const before = src.slice(Math.max(0, m.index - 240), m.index);
+    expect(/seat(Here|Bar)\(/.test(before), `${f}: renders <PreviewBox /> without asking the preview seat (seatHere / seatBar) - its own predicate can leave a preview with no home`);
+  }
+}
+for (const f of ['wide/agents.tsx', 'wide/orders.tsx', 'wide/steer.tsx'])
+  expect(/usePreviewSeat\(/.test(SRC.get(f) as string), `${f}: does not read the preview seat (usePreviewSeat), so its rows cannot follow a pending preview`);
+expect(seats >= 5, `the preview seat scan found ${seats} <PreviewBox /> sites in the rail, expected at least 5 (the Workbench bar, Agents, Orders, two in Steer) - the matcher has stopped biting`);
+
 if (failures.length) { console.error(`check-rail-keys: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
-console.log(`check-rail-keys: ${held} expectations held (${options} role="option" sites, ${scrolls} scroll-behavior sites)`);
+console.log(`check-rail-keys: ${held} expectations held (${options} role="option" sites, ${scrolls} scroll-behavior sites, ${seats} preview seat sites)`);

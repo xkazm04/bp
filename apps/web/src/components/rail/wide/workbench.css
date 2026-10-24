@@ -43,6 +43,12 @@
 #flyout.wide .wb-body:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 #flyout.wide .wb-body > .wb-scroll { flex: 1 0 auto; padding: 20px 26px 28px; }
 #flyout.wide .wb-body > .wb-act { position: sticky; bottom: 0; }
+/* the pending preview this panel holds but the row on screen does not own (lib/model/preview-seat.ts): it overlays the
+   detail's foot, so nothing in the panel moves; the detail gains scroll room under it so no line is left unreachable */
+#flyout.wide .wb-pend { position: absolute; left: 16px; right: 16px; bottom: 14px; z-index: 2; padding: 10px 14px 12px; background: var(--card); border: 1px solid var(--ink); border-bottom: 3px solid var(--mint); box-shadow: 0 14px 40px var(--shadow); }
+#flyout.wide .wb-pend .kk { font: 500 12px var(--mono); letter-spacing: 0.1em; color: var(--mint-2); }
+#flyout.wide .wb-pend .prev { margin-top: 6px; }
+#flyout.wide .wb-detail.has-pend .wb-body > .wb-scroll { padding-bottom: 240px; }
 #flyout.wide .wb-scroll { padding: 20px 26px 28px; }
 @keyframes wb-in { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
 #flyout.wide .wb-detail > .wb-scroll, #flyout.wide .wb-body { animation: wb-in 0.22s cubic-bezier(0.2, 0.7, 0.2, 1) both; }

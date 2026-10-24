@@ -2,7 +2,10 @@
 // The wide flyouts' frame: an optional strip over two panes (a list on the left, the selected item read in full on the
 // right). Both panes scroll on their own; the flyout body never scrolls. J/K and the arrows walk the list while
 // focus is anywhere in the panel (except a text field), and never reach the engine's document keys.
-import { useCallback, useRef, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import { previewSeat, seatBar, type PreviewSeat } from '@/lib/model/preview-seat';
+import { shallowEqual, useBp } from '../../hooks';
+import { PreviewBox } from '../panels';
 
 /** Keys the workbench owns: J/K and up/down move, Home/End jump. */
 const MOVE: Record<string, number> = { j: 1, J: 1, ArrowDown: 1, k: -1, K: -1, ArrowUp: -1 };
@@ -46,6 +49,19 @@ export function useWalk<T extends string | null>(ids: readonly T[], sel: T, pick
 }
 
 /**
+ * The pending preview's seat (lib/model/preview-seat.ts) for the open panel. When a new preview arrives that a row of
+ * this panel owns, `pick` selects that row, once: the reader may move off it, and the Workbench's bar then holds it.
+ */
+export function usePreviewSeat(pick: (row: string | null) => void): PreviewSeat {
+  const s = useBp((s) => ({ prev: s.prev, lprev: s.lprev, dtab: s.dtab, hidden: s.dockHidden, tgtN: s.tgt.n }), shallowEqual);
+  const seat = previewSeat(s);
+  const p = s.prev ?? s.lprev, row = seat.row;
+  const pickRef = useRef(pick); pickRef.current = pick;
+  useEffect(() => { if (p && row !== undefined) pickRef.current(row); }, [p]); // eslint-disable-line react-hooks/exhaustive-deps
+  return seat;
+}
+
+/**
  * The frame. `onKey` comes from useWalk; the detail pane's key resets its scroll when the selection changes.
  * The list pane is focusable (tabIndex -1, never a tab stop): it is where a panel hands focus when the row that
  * held it goes and no row can take over, so a write that empties the list cannot drop focus to <body>.
@@ -54,19 +70,23 @@ export function useWalk<T extends string | null>(ids: readonly T[], sel: T, pick
  * nothing hands focus to the detail, so -1 would leave it unreachable. The cost is one extra Tab per panel, paid
  * once; the arrows, Home/End and Page keys then scroll it (useWalk yields those four to it).
  */
-export function Workbench({ strip, list, listLabel, detail, detailKey, detailLabel, onKey, listRef, cls, bodyRef, onBodyScroll }: {
+export function Workbench({ strip, list, listLabel, detail, detailKey, detailLabel, onKey, listRef, cls, bodyRef, onBodyScroll, seat, row = null }: {
   strip?: ReactNode; list: ReactNode; listLabel: string; detail: ReactNode; detailKey: string; detailLabel: string;
   onKey: (e: KeyboardEvent) => void; listRef: RefObject<HTMLDivElement | null>; cls?: string;
   /** The detail scroller and its scroll listener, for a panel that follows the reader's scroll (View's section nav). */
   bodyRef?: RefObject<HTMLDivElement | null>; onBodyScroll?: () => void;
+  /** The pending preview's seat (usePreviewSeat) and the row on screen: the frame's bar shows a preview this panel holds but that row does not. */
+  seat?: PreviewSeat; row?: string | null;
 }) {
+  const pend = !!seat && seatBar(seat, row);
   return (
     <div className={'wb' + (cls ? ' ' + cls : '')} onKeyDown={onKey}>
       {strip && <div className="wb-strip">{strip}</div>}
       <div className="wb-panes">
         <div className="wb-list" ref={listRef} role="region" aria-label={listLabel} tabIndex={-1}>{list}</div>
-        <section className="wb-detail" key={detailKey} aria-label={detailLabel}>
+        <section className={'wb-detail' + (pend ? ' has-pend' : '')} key={detailKey} aria-label={detailLabel}>
           <div className="wb-body" tabIndex={0} ref={bodyRef} onScroll={onBodyScroll}>{detail}</div>
+          {seat && seatBar(seat, row) && <div className="wb-pend" role="region" aria-label="Pending preview"><div className="kk">ADDENDUM · NOT ISSUED YET</div><PreviewBox /></div>}
         </section>
       </div>
     </div>

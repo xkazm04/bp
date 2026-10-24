@@ -14,8 +14,9 @@ import { ScanGlyph } from '../../ScanMenu';
 import { Mark, agentMark } from '../../Symbols';
 import { shallowEqual, useBp, useEngine, useLive, useScanCtx } from '../../hooks';
 import { SCAN_NOUNS, httpUrl, streamNote } from '../../Queue';
+import { seatHere, type PreviewSeat } from '@/lib/model/preview-seat';
 import { PreviewBox, mmss, useScanJobs } from '../panels';
-import { Fig, Group, Row, Sec, Workbench, useListRef, useWalk } from './shell';
+import { Fig, Group, Row, Sec, Workbench, useListRef, usePreviewSeat, useWalk } from './shell';
 
 type Kind = 'job' | 'crew';
 const key = (k: Kind, id: string) => k + ':' + id;
@@ -45,6 +46,8 @@ export function Agents() {
   const { jobs, scan } = useScanJobs(true, true);
   const [sel, setSel] = useState<string | null>(null);
   const listRef = useListRef();
+  // a pending steer the overview holds brings the overview back when it arrives (a preset's goes to the frame's bar)
+  const seat = usePreviewSeat(setSel);
   const running = jobs.some((j) => j.status === 'running' || j.status === 'queued');
   // the elapsed clocks: one 1 s interval, only while something runs
   const [, setTick] = useState(0);
@@ -114,10 +117,10 @@ export function Agents() {
   } else if (crewSel) {
     detail = <CrewDetail id={crewSel} />;
   } else {
-    detail = <Overview />;
+    detail = <Overview seat={seat} />;
   }
   return (
-    <Workbench cls="wb-agents" list={list} listLabel="Scans and crews" listRef={listRef} onKey={onKey} detailKey={cur ?? 'overview'} detailLabel="Selected scan, crew or overview"
+    <Workbench cls="wb-agents" list={list} listLabel="Scans and crews" listRef={listRef} onKey={onKey} detailKey={cur ?? 'overview'} detailLabel="Selected scan, crew or overview" seat={seat} row={cur}
       strip={(
         <>
           {t && STATES.map((st) => st === 'paused' && !t.paused ? null : <div key={st} className={'wb-count t-' + TONE[st]}><b>{t[st]}</b><span>{st}</span></div>)}
@@ -213,19 +216,24 @@ function CrewDetail({ id }: { id: string }) {
   );
 }
 
-function Overview() {
+function Overview({ seat }: { seat: PreviewSeat }) {
   const E = useEngine(), M = E.M, sim = M.sim;
-  const s = useBp((s) => ({ simV: s.simV, prev: s.prev, lprev: s.lprev, tgt: s.tgt }), shallowEqual);
+  const s = useBp((s) => ({ simV: s.simV, tgt: s.tgt }), shallowEqual);
   if (!sim.has) return <div className="wb-empty"><b>No swarm data</b>The swarm file did not load. Scans still run from the plan’s right-click menu.</div>;
   const tm = (t: number) => new Date(sim.at0 + t * 1000).toISOString().slice(11, 16);
   const log = sim.log.filter((e) => !(sim.speed > 60 && e.syn)).slice(0, 40);
   return (
     <>
       <Sec head={s.tgt.n ? 'On your selection' : 'Point at a place'} aside={s.tgt.n ? s.tgt.n + ' features' : 'steer'}>
-        {s.tgt.n ? (
+        {seatHere(seat, null) ? (
+          <div className="wb-steer">
+            {s.tgt.n > 0 && <p>{s.tgt.label} · {s.tgt.n} features</p>}
+            <PreviewBox />
+          </div>
+        ) : s.tgt.n ? (
           <div className="wb-steer">
             <p>{s.tgt.label} · {s.tgt.n} features</p>
-            {(s.prev && !s.prev.order) || s.lprev ? <PreviewBox /> : sim.live ? (
+            {sim.live ? (
               <div className="wb-inline"><LiveSteerButtons cls="bt" /></div>
             ) : (
               <div className="wb-inline">

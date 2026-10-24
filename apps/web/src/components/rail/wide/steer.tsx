@@ -6,21 +6,24 @@
 import { useMemo, useState } from 'react';
 import { SPEND_CAP, astat } from '@bp/core/model';
 import { shallowEqual, useBp, useEngine } from '../../hooks';
+import { STEER_HERE, STEER_PRESET_ORDER, seatHere, type PreviewSeat } from '@/lib/model/preview-seat';
 import { PreviewBox } from '../panels';
-import { Fig, Group, Row, Sec, Workbench, useListRef, useWalk } from './shell';
+import { Fig, Group, Row, Sec, Workbench, useListRef, usePreviewSeat, useWalk } from './shell';
 
 type Preset = { id: 'ga' | 'research'; order: string; title: string; why: string; what: string };
 const PRESETS: readonly Preset[] = [
-  { id: 'ga', order: 'O-4', title: 'Payments GA first', why: 'Payments GA is the next milestone and its unfinished features are short of hands.', what: 'Pulls the agents working on M3 and M4 onto the unfinished Payments GA features. M3 and M4 slow down until you send the agents back.' },
-  { id: 'research', order: 'O-7', title: 'Pause the research crew', why: 'The daily spend cap order says research stops first when spend runs high.', what: 'Pauses every research agent where it stands. Their features keep their progress; Resume picks them up again.' },
+  { id: 'ga', order: STEER_PRESET_ORDER.ga, title: 'Payments GA first', why: 'Payments GA is the next milestone and its unfinished features are short of hands.', what: 'Pulls the agents working on M3 and M4 onto the unfinished Payments GA features. M3 and M4 slow down until you send the agents back.' },
+  { id: 'research', order: STEER_PRESET_ORDER.research, title: 'Pause the research crew', why: 'The daily spend cap order says research stops first when spend runs high.', what: 'Pauses every research agent where it stands. Their features keep their progress; Resume picks them up again.' },
 ];
-const OVER = 'overview', HERE = 'here';
+const OVER = 'overview', HERE = STEER_HERE;
 const usd = (n: number) => '$' + Math.round(n).toLocaleString('en-US');
 
 export function Steer() {
   const E = useEngine(), sim = E.M.sim;
-  const s = useBp((s) => ({ simV: s.simV, tgt: s.tgt, prev: s.prev }), shallowEqual);
+  const s = useBp((s) => ({ simV: s.simV, tgt: s.tgt }), shallowEqual);
   const [sel, setSel] = useState<string>(OVER);
+  // a pending preview a row here owns (a preset's, or a steer of the selection) selects that row when it arrives
+  const seat = usePreviewSeat((r) => setSel(r ?? OVER));
   const listRef = useListRef();
   const ids = useMemo(() => [OVER, ...PRESETS.map((p) => p.id), ...(s.tgt.n ? [HERE] : [])], [s.tgt.n]);
   const cur = ids.includes(sel) ? sel : OVER;
@@ -40,7 +43,7 @@ export function Steer() {
       <Group head="Presets" n={PRESETS.length} label="Steering presets">
         {PRESETS.map((p) => (
           <Row key={p.id} id={p.id} on={cur === p.id} onPick={() => setSel(p.id)} label={p.title}>
-            <span className="rk"><span>order {p.order}</span>{s.prev?.order === p.order && <span>previewing</span>}</span>
+            <span className="rk"><span>order {p.order}</span>{seat.row === p.id && <span>previewing</span>}</span>
             <span className="rt">{p.title}</span>
             <span className="rm"><span>{p.why}</span></span>
           </Row>
@@ -58,7 +61,7 @@ export function Steer() {
   );
   const preset = PRESETS.find((p) => p.id === cur);
   return (
-    <Workbench cls="wb-steerp" list={list} listLabel="Steering" listRef={listRef} onKey={onKey} detailKey={cur} detailLabel="Selected steering"
+    <Workbench cls="wb-steerp" list={list} listLabel="Steering" listRef={listRef} onKey={onKey} detailKey={cur} detailLabel="Selected steering" seat={seat} row={cur}
       strip={(
         <>
           <div className={'wb-count' + (tone ? ' t-' + tone : '')}><b>{pct}%</b><span>of today’s spend cap</span></div>
@@ -67,7 +70,7 @@ export function Steer() {
           <span className="wb-src">{sim.playing ? 'Space pauses the whole swarm' : 'swarm paused · Space resumes'}</span>
         </>
       )}
-      detail={<div className="wb-scroll">{preset ? <PresetDetail p={preset} /> : cur === HERE ? <HereDetail /> : <SpendDetail />}</div>} />
+      detail={<div className="wb-scroll">{preset ? <PresetDetail p={preset} seat={seat} /> : cur === HERE ? <HereDetail seat={seat} /> : <SpendDetail />}</div>} />
   );
 }
 
@@ -106,9 +109,8 @@ function SpendDetail() {
   );
 }
 
-function PresetDetail({ p }: { p: Preset }) {
+function PresetDetail({ p, seat }: { p: Preset; seat: PreviewSeat }) {
   const E = useEngine(), M = E.M, sim = M.sim;
-  const prev = useBp((s) => s.prev);
   const o = sim.orders.find((x) => x.id === p.order), by = o ? M.P.P[o.by] : null;
   return (
     <>
@@ -123,15 +125,15 @@ function PresetDetail({ p }: { p: Preset }) {
         </Sec>
       )}
       <Sec head="Preview" aside="nothing moves until you commit">
-        {prev && prev.order === p.order ? <PreviewBox /> : <div className="wb-inline"><button type="button" className="bt go" onClick={() => E.preview(p.id)}>Preview what it moves</button></div>}
+        {seatHere(seat, p.id) ? <PreviewBox /> : <div className="wb-inline"><button type="button" className="bt go" onClick={() => E.preview(p.id)}>Preview what it moves</button></div>}
       </Sec>
     </>
   );
 }
 
-function HereDetail() {
+function HereDetail({ seat }: { seat: PreviewSeat }) {
   const E = useEngine(), sim = E.M.sim;
-  const s = useBp((s) => ({ tgt: s.tgt, prev: s.prev, simV: s.simV }), shallowEqual);
+  const s = useBp((s) => ({ tgt: s.tgt, simV: s.simV }), shallowEqual);
   const inside = sim.agents.filter((a) => s.tgt.ids[a.f]);
   const working = inside.filter((a) => astat(a) === 'working').length, paused = inside.filter((a) => a.paused).length;
   return (
@@ -144,7 +146,7 @@ function HereDetail() {
         <Fig n={paused} label="paused here" />
       </div>
       <Sec head="Steer this place" aside="preview, then commit">
-        {s.prev && !s.prev.order && s.prev.kind !== 'order' ? <PreviewBox /> : (
+        {seatHere(seat, HERE) ? <PreviewBox /> : (
           <div className="wb-inline">
             <button type="button" className="bt" onClick={() => E.preview('push')}>Put the swarm here</button>
             <button type="button" className="bt" onClick={() => E.preview('pause')}>Pause</button>

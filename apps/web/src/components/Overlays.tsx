@@ -12,6 +12,7 @@ import type { ToastItem } from '@/engine/state';
 import { illoSVG } from '@/engine/render/illo';
 import { lensFailed } from '@/engine/render/plan';
 import { steerVerbs } from '@/lib/model/live-steer';
+import { selbarStepsAside } from '@/lib/model/preview-seat';
 import { optHover, shallowEqual, useAnswerNote, useBp, useEngine, useLive, useVariant } from './hooks';
 import { LiveSteerButtons } from './LiveSteer';
 import { STAGE_WORDS, TrackRecord } from './TrackRecord';
@@ -269,8 +270,9 @@ export function SelBar() {
   const E = useEngine(), sim = E.M.sim;
   const s = useBp((s) => ({ tgt: s.tgt, prev: s.prev, lprev: s.lprev, ordMenu: s.ordMenu, simV: s.simV, dtab: s.dtab, hidden: s.dockHidden }), shallowEqual);
   const p = s.prev ?? s.lprev, ref = useRef<HTMLDivElement>(null);
-  // a wide flyout covers most of the plan: Agents, Orders and Steer carry the same selection controls and preview, so
-  // the bar steps aside; with another flyout open it centres in the plan left of it (the flyout reports its width)
+  // a wide flyout covers most of the plan: Agents, Orders and Steer carry the same selection controls and hold a pending
+  // preview (lib/model/preview-seat.ts decides where), so the bar steps aside exactly then; with another flyout open it
+  // centres in the plan left of it (the flyout reports its width)
   const fly = s.dtab && s.dtab !== 'find' && !s.hidden;
   const at: React.CSSProperties | undefined = fly ? { left: `calc((${E.SAFE.l / E.U}px + 100% - ${overlayRight(E.S)}px) / 2)`, maxWidth: `calc(100% - ${overlayRight(E.S) + E.SAFE.l / E.U + 24}px)` } : undefined;
   // sits above the level ladder when the two would meet; measured on content / viewport change, never per frame
@@ -317,7 +319,7 @@ export function SelBar() {
       </motion.div>
     );
   }
-  if (fly && (s.dtab === 'swarm' || s.dtab === 'steer' || s.dtab === 'orders')) body = null;
+  if (selbarStepsAside({ prev: s.prev, lprev: s.lprev, dtab: s.dtab, hidden: s.hidden, tgtN: s.tgt.n })) body = null;
   return <AnimatePresence mode="wait">{body}</AnimatePresence>;
 }
 
