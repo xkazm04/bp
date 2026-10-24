@@ -7,13 +7,11 @@
 // GET /api/products/[slug]/scans: the product's ScanJob[], oldest first.
 // Kettle, where this process hosts its sim (kettle-sim.server.ts): the sim queues and lists the jobs, with the same answers.
 // Its scope goes through this route's parseScope first, so a Kettle job keeps no unknown keys and a label of at most 200.
-import { unknownProduct } from '@bp/core/server/products.server';
-import { findProduct } from '@bp/core/server/products.server';
-import { localHost, localOnly, jsonOnly } from '@bp/core/scan/local-only';
+// Admission (guards, product, Kettle, JSON body): the route door (route-door.server.ts).
+import { door } from '@bp/core/server/route-door.server';
 import { MAX_SELECTION, SAFE_ID, scannable, type ScanScope, type ScanScopeKind } from '@bp/core/scan/jobs';
 import { enqueueMeasure, list } from '@bp/core/server/jobs.server';
 import { readLensesAndFeatures } from '@bp/core/server/lens-write.server';
-import { kettleSim, simAnswer } from '@bp/core/server/kettle-sim.server';
 import { isObj } from '@bp/core/scan/guards';
 import { SCAN_SCOPE_KINDS } from '@bp/core/standard/schema-vocab';
 
@@ -33,37 +31,32 @@ function parseScope(x: unknown, features: { has(f: string): boolean }): ScanScop
   return { kind, id: x.id, label: x.label.trim(), features: feats };
 }
 
-export async function GET(req: Request, { params }: { params: Promise<{ slug: string }> }): Promise<Response> {
-  const denied = localHost(req);
-  if (denied) return Response.json({ error: denied }, { status: 403 });
-  const { slug } = await params;
-  const k = kettleSim(slug);
-  if (k) return simAnswer(() => k.jobs());
-  if (!findProduct(slug)) return unknownProduct(slug);
-  return Response.json(list(slug));
+const scans = door('products/[slug]/scans', {
+  GET: { kettle: (k) => k.jobs(), live: (c) => Response.json(list(c.slug)) },
+  POST: {
+    body: true,
+    // a bad scope reaches the sim as null, so an unknown lens still answers first, as it does below
+    kettle: (k, { body }) => (isObj(body) ? k.startScan(body.lens as string, parseScope(body.scope, ANY_FEATURE) as ScanScope) : Response.json({ error: 'unknown-lens' }, { status: 400 })),
+    kettleStatus: 202,
+    live: ({ slug, product: p, body }) => {
+      const map = readLensesAndFeatures(p);
+      if (!map) return Response.json({ error: `no readable structure for ${slug}` }, { status: 404 });
+      if (!isObj(body)) return Response.json({ error: 'unknown-lens' }, { status: 400 });
+      const lens = body.lens, entry = typeof lens === 'string' && SAFE_ID.test(lens) ? map.lenses.find((e) => e.id === lens && e.enabled) : undefined;
+      if (!entry) return Response.json({ error: 'unknown-lens' }, { status: 400 });
+      if (!scannable(entry, false)) return Response.json({ error: 'no-scan-method' }, { status: 400 });
+      const scope = parseScope(body.scope, map.features);
+      if (!scope) return Response.json({ error: 'bad-scope' }, { status: 400 });
+      const r = enqueueMeasure(slug, p.root, entry.id, scope);
+      return r.ok ? Response.json(r.job, { status: 202 }) : Response.json({ error: r.error }, { status: r.status });
+    },
+  },
+});
+
+export async function GET(req: Request, ctx: { params: Promise<{ slug: string }> }): Promise<Response> {
+  return scans.GET(req, ctx);
 }
 
-export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }): Promise<Response> {
-  const denied = localOnly(req);
-  if (denied) return Response.json({ error: denied }, { status: 403 });
-  const notJson = jsonOnly(req);
-  if (notJson) return Response.json({ error: notJson }, { status: 415 });
-  const { slug } = await params;
-  const k = kettleSim(slug), p = findProduct(slug);
-  if (!p && !k) return unknownProduct(slug);
-  let body: unknown;
-  try { body = await req.json(); } catch { return Response.json({ error: 'body must be JSON' }, { status: 400 }); }
-  // a bad scope reaches the sim as null, so an unknown lens still answers first, as it does below
-  if (k) return isObj(body) ? simAnswer(() => k.startScan(body.lens as string, parseScope(body.scope, ANY_FEATURE) as ScanScope), 202) : Response.json({ error: 'unknown-lens' }, { status: 400 });
-  if (!p) return unknownProduct(slug);
-  const map = readLensesAndFeatures(p);
-  if (!map) return Response.json({ error: `no readable structure for ${slug}` }, { status: 404 });
-  if (!isObj(body)) return Response.json({ error: 'unknown-lens' }, { status: 400 });
-  const lens = body.lens, entry = typeof lens === 'string' && SAFE_ID.test(lens) ? map.lenses.find((e) => e.id === lens && e.enabled) : undefined;
-  if (!entry) return Response.json({ error: 'unknown-lens' }, { status: 400 });
-  if (!scannable(entry, false)) return Response.json({ error: 'no-scan-method' }, { status: 400 });
-  const scope = parseScope(body.scope, map.features);
-  if (!scope) return Response.json({ error: 'bad-scope' }, { status: 400 });
-  const r = enqueueMeasure(slug, p.root, entry.id, scope);
-  return r.ok ? Response.json(r.job, { status: 202 }) : Response.json({ error: r.error }, { status: r.status });
+export async function POST(req: Request, ctx: { params: Promise<{ slug: string }> }): Promise<Response> {
+  return scans.POST(req, ctx);
 }
