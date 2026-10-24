@@ -120,7 +120,8 @@
     "check:release-steps": "node scripts/check-release-steps.ts",
     "check:aggregate-report": "node scripts/check-aggregate-report.mjs",
     "check:variant-chunk": "node scripts/check-variant-chunk.ts",
-    "check:release-notes": "node scripts/check-release-notes.ts"
+    "check:release-notes": "node scripts/check-release-notes.ts",
+    "check:route-door": "node scripts/check-route-door.ts"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

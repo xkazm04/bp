@@ -5,9 +5,8 @@
 // only, never an arbitrary object of the repo. 200 with `cache-control: private, max-age=3600` (a commit never
 // changes); 400 for a bad or ambiguous sha; 404 for an unknown product, a missing store, a sha that is no item commit,
 // or one the repo does not have; 503 when the store cannot be read or git does not run. Localhost only.
-import { unknownProduct } from '@bp/core/server/products.server';
-import { findProduct, hasStore, storeFile } from '@bp/core/server/products.server';
-import { localHost } from '@bp/core/scan/local-only';
+// Admission (guard, product, sha shape, store, the 503): the route door (route-door.server.ts).
+import { door } from '@bp/core/server/route-door.server';
 import { close, openRead } from '@bp/core/server/store.server';
 import { commitDiff } from '@bp/core/server/release.server';
 
@@ -23,22 +22,24 @@ function itemCommits(file: string): string[] {
   } finally { close(db); }
 }
 
-export async function GET(req: Request, { params }: { params: Promise<{ slug: string; sha: string }> }): Promise<Response> {
-  const denied = localHost(req);
-  if (denied) return Response.json({ error: denied }, { status: 403 });
-  const { slug, sha } = await params;
-  const p = findProduct(slug);
-  if (!p) return unknownProduct(slug);
-  if (!SHA.test(sha)) return Response.json({ error: 'sha must be 7-40 hex characters' }, { status: 400 });
-  if (!hasStore(p)) return Response.json({ error: `no scan store for ${slug}` }, { status: 404 });
-  let shas: string[];
-  try { shas = itemCommits(storeFile(p)); } catch (e) { return Response.json({ error: `cannot read the scan store: ${(e as Error).message}` }, { status: 503 }); }
-  // the asked sha is a prefix of an item's commit, or (a store that kept a short sha) that commit is a prefix of it
-  const want = sha.toLowerCase();
-  const hits = [...new Set(shas.filter((s) => s.length >= 7 && (s.startsWith(want) || want.startsWith(s))))];
-  if (!hits.length) return Response.json({ error: `${sha} is not an item commit of ${slug}` }, { status: 404 });
-  if (hits.length > 1) return Response.json({ error: `${sha} is ambiguous: ${hits.length} item commits start with it` }, { status: 400 });
-  const d = await commitDiff(p.root, hits[0].length >= want.length ? hits[0] : want);
-  if (!d.ok) return Response.json({ error: d.error }, { status: d.kind === 'missing' ? 404 : 503 });
-  return Response.json(d.data, { headers: { 'cache-control': 'private, max-age=3600' } });
+const commit = door('products/[slug]/commits/[sha]', {
+  GET: {
+    params: ({ sha }) => (SHA.test(sha ?? '') ? null : Response.json({ error: 'sha must be 7-40 hex characters' }, { status: 400 })),
+    store: 'required',
+    live: async ({ slug, product: p, params: { sha }, read }) => {
+      const shas = read(itemCommits);
+      // the asked sha is a prefix of an item's commit, or (a store that kept a short sha) that commit is a prefix of it
+      const want = sha.toLowerCase();
+      const hits = [...new Set(shas.filter((s) => s.length >= 7 && (s.startsWith(want) || want.startsWith(s))))];
+      if (!hits.length) return Response.json({ error: `${sha} is not an item commit of ${slug}` }, { status: 404 });
+      if (hits.length > 1) return Response.json({ error: `${sha} is ambiguous: ${hits.length} item commits start with it` }, { status: 400 });
+      const d = await commitDiff(p.root, hits[0].length >= want.length ? hits[0] : want);
+      if (!d.ok) return Response.json({ error: d.error }, { status: d.kind === 'missing' ? 404 : 503 });
+      return Response.json(d.data, { headers: { 'cache-control': 'private, max-age=3600' } });
+    },
+  },
+});
+
+export async function GET(req: Request, ctx: { params: Promise<{ slug: string; sha: string }> }): Promise<Response> {
+  return commit.GET(req, ctx);
 }
