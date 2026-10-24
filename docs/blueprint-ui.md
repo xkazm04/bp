@@ -62,7 +62,10 @@ Everything it does is in scope to keep:
   - The simulated swarm: agents as survey marks, RFI pennants for decisions, standing orders as
     dashed zones with stamps, and breaches as red rivets.
   - The replayable hour at 1x to 240x, and "while you were away".
-  - The per-person queue with one-click answers and undo.
+  - The per-person queue with one-click answers and undo: U on the plan (and the toast's UNDO, the same method)
+    takes back the reader's last 20 gestures newest first (answers, batches, kept answers, push / pause / order
+    commands; `SwarmSim.undoLast`, in memory, emptied by a restart; a live product keeps none). Checked by
+    `npm run check:sim-undo`.
   - Targeting (click, shift-drag lasso), and steering commands that preview before commit (Payments
     GA push, pause, orders).
 - **Keyboard and phone.** Keyboard throughout. On a phone, a reduced view: the queue and a list.
