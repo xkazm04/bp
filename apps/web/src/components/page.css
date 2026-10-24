@@ -103,6 +103,14 @@
 .pg-hero .why { margin: 10px 0 0; font-size: 19px; line-height: 1.38; color: var(--ink); }
 .pg-hero .ov { margin: 10px 0 0; font-size: 14px; line-height: 1.4; color: var(--ink); border-left: 2px solid var(--amber); padding-left: 8px; }
 .pg-hero .ov b { color: var(--amber-2); font-weight: 600; }
+/* what clears it (ClearSteps): every matching rule as a step, under the health; the phone's expanded panel reuses it */
+.pg-clrs { margin: 12px 0 0; }
+.pg-clrs h4 { margin: 0 0 4px; font: 500 var(--fs-12) var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-2); }
+.pg-clr { margin: 0; padding-left: 20px; display: grid; gap: 3px; }
+.pg-clr li { font-size: var(--fs-14); line-height: 1.4; color: var(--ink); overflow-wrap: anywhere; }
+.pg-clr em { margin-left: 8px; font: 500 var(--fs-12) var(--mono); font-style: normal; text-transform: uppercase; color: var(--ink-2); }
+.pg-clr em.bad { color: var(--red-2); } .pg-clr em.watch { color: var(--amber-2); }
+.pg-clrs .blk, .pg-clrs .wrs, .pg-clrs .more { margin: 4px 0 0; font-size: var(--fs-13); line-height: 1.4; color: var(--ink-2); }
 .d-simple .pg-hero .big { font-size: 64px; }
 .d-simple .pg-hero .why { font-size: 21px; }
 .d-dense .pg-hero { padding: 14px 20px; } .d-dense .pg-hero .big { font-size: 42px; } .d-dense .pg-hero .why { font-size: 17px; }

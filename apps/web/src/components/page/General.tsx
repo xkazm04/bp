@@ -6,6 +6,7 @@
 // drawing, who owns and built it, the revisions (each one a time-travel link), parts and notes.
 import type { Feature, LensDef } from '@bp/core/data';
 import { recordAsOf } from '@bp/core/model/timeview';
+import { clearPath } from '@bp/core/standard/clear';
 import { REV_DESC, pname, type Model } from '@bp/core/model';
 import { BusinessSection } from '../sheet/Business';
 import { Activity, BuiltBy, Drawing, FeatureLinks, FlaggedBy, Notes, Parts, SwarmSection } from '../sheet/SheetBody';
@@ -21,13 +22,15 @@ function Tile({ f, M, d }: { f: Feature; M: Model; d: LensDef }) {
   // on a past date health has no history (the presenter's): the tile says so and shows only a reading the scan recorded then
   const h = la.health, why = la.why;
   const then = la.at === 'then' ? la : null;
+  // more than one rule to clear: the reason names the first, the lens tab lists them all
+  const fl = f.lens[d.id], n = !past && fl && (h === 'watch' || h === 'bad') ? clearPath(d.manifest, fl.v).steps.length : 0;
   return (
     <Sec as="div" className={'pg-tile ' + h}>
       <button type="button" onClick={() => E.setView(d.id)} title={'Open the ' + d.name + ' tab'}>
         <span className="top"><span className="sh">{d.short}</span><span className="nm">{d.name}</span><span className="hw">{past ? 'Not recorded' : h === 'na' ? 'N/A' : HWORD[h]}</span></span>
         <span className="lab">{hf ? hf.label : 'No headline field'}</span>
         <b className="big">{hf && (past ? then : h !== 'na') ? <Val k={f.id + ':' + d.id + ':' + hf.key} field={hf} v={then ? then.value : v} /> : '—'}</b>
-        <span className="why">{past ? (then ? la.why : la.why + '.') : h === 'na' ? 'This lens does not apply here.' : why ?? (h === 'unmeasured' ? 'Nothing measured yet.' : 'No rule raised anything.')}</span>
+        <span className="why">{past ? (then ? la.why : la.why + '.') : h === 'na' ? 'This lens does not apply here.' : (why ?? (h === 'unmeasured' ? 'Nothing measured yet.' : 'No rule raised anything.')) + (n > 1 ? ' · ' + n + ' steps to clear' : '')}</span>
       </button>
     </Sec>
   );

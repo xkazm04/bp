@@ -4,7 +4,7 @@
 // tier (0 = headline, 1 = evidence, 2 = the rest); how many show follows the reader's density
 // (`reader.density`): a lone lens shows 3 rows (simple), 5 (standard) or all (dense); in General every
 // panel shows 3; when another lens is chosen, panels collapse to the headline. Under the rows: the
-// matched rule's reason, and an override with who, why and until. Feature-bound fields (stage,
+// matched rule's reason, what clears it (expanded), and an override with who, why and until. Feature-bound fields (stage,
 // priority...) are core fields shown elsewhere in the sheet, so they are not repeated here. Variants
 // can replace this through `ui.SheetPanel` (and may wrap this one).
 //
@@ -14,6 +14,7 @@ import type { Feature, FeatureLens, LensDef, Scalar } from '@bp/core/data';
 import { GENERAL } from '@bp/core/data/types';
 import type { LensField } from '@bp/core/standard/types';
 import { DENSITY_COUNT, HEALTH_TEXT, hotHealth } from '@bp/core/standard/present';
+import { clearPath } from '@bp/core/standard/clear';
 import type { ScanSnapshot } from '@bp/core/scan/types';
 import { baseId, fmtValue, metricHistory, pname, type Model } from '@bp/core/model';
 import type { LensAsOf } from '@bp/core/model/timeview';
@@ -127,6 +128,38 @@ export function MetricRows({ def, f, model, scan, all, fl, on }: { def: LensDef;
   );
 }
 
+// ------------------------------------------------------------------------------------ what clears it
+/**
+ * Every matching rule worse than the default as one step (field: now -> target, and the health it clears), from the
+ * manifest's own rules (clearPath, verified there), and the margin to the next worse health when the reading is not
+ * already the worst. Under an override it is what the rules alone ask for. At now only: health has no history.
+ * `limit` cuts the list (the phone, by density). Nothing here names a lens.
+ */
+export function ClearSteps({ def, fl, limit }: { def: LensDef; fl: FeatureLens | undefined; limit?: number }) {
+  if (!fl || !(fl.h === 'good' || fl.h === 'watch' || fl.h === 'bad')) return null;
+  const cp = clearPath(def.manifest, fl.v);
+  const steps = limit === undefined ? cp.steps : cp.steps.slice(0, limit), cut = cp.steps.length - steps.length;
+  const wf = !fl.ov && fl.h !== 'bad' && cp.worse ? def.F[cp.worse.field] : undefined;
+  if (!steps.length && !cp.blocked && !wf) return null;
+  return (
+    <div className="pg-clrs">
+      {steps.length || cp.blocked ? <h4>{fl.ov ? 'The rules alone ask for' : 'What clears it'}</h4> : null}
+      {steps.length ? (
+        <ol className="pg-clr">
+          {steps.map((s, i) => {
+            const x = def.F[s.field];
+            return <li key={i}>{x.label}: {fmtValue(x, s.now)} → {s.op === 'set to' ? '' : s.op + ' '}{fmtValue(x, s.target)}<em className={s.rule}>clears {HEALTH_TEXT[s.rule].label}</em></li>;
+          })}
+        </ol>
+      ) : null}
+      {cut > 0 ? <p className="more">{cut} more on the lens tab</p> : null}
+      {cp.blocked ? <p className="blk">{cp.blocked}</p> : null}
+      {wf && cp.worse ? <p className="wrs">{wf.label} is {fmtValue(wf, cp.worse.margin)} from {HEALTH_TEXT[cp.worse.health].label} (past {fmtValue(wf, cp.worse.bound)})</p> : null}
+    </div>
+  );
+}
+// ------------------------------------------------------------------------------------ end what clears it
+
 export const hmark = (h: string) => (HEALTH_TEXT[h as keyof typeof HEALTH_TEXT] ?? HEALTH_TEXT.unmeasured).mark;
 
 /** A lens panel on a past date, from timeview's presenter: no now-health, no live field values; the headline's
@@ -156,6 +189,7 @@ export function DefaultLensPanel({ lens, def, f, model, density, expanded, view 
       {shown.map((r) => <div key={r.k} className={r.tier === 0 ? 'r key' : 'r'}><span>{r.k}</span><b className={r.c || ''}>{r.v}</b></div>)}
       {limit > 1 && fl?.ov ? <div className="note ov"><b>Held at {fl.ov.health.toUpperCase()}</b> by {pname(model.P, fl.ov.by)} until {fl.ov.until}: {fl.ov.why}</div> : null}
       {limit > 1 && fl?.why ? <div className="note">{fl.ov ? 'The rules say: ' : 'Why: '}{fl.why}</div> : null}
+      {expanded ? <ClearSteps def={def} fl={fl} limit={DENSITY_COUNT.drawer[density]} /> : null}
       {hidden > 0 && expanded && <div className="more">{hidden} more in the dense reading</div>}
     </>
   );

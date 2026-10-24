@@ -1,7 +1,7 @@
 'use client';
 // One lens's tab on the feature page: that lens only, laid out for its reader, from the manifest.
 // The headline first and big, the health and the matched rule's reason big beside it, then the
-// evidence fields, then the rest (how many follows the reader's density: a simple reader gets a few
+// evidence fields (under the health: what clears it, every matching rule as a step), then the rest (how many follows the reader's density: a simple reader gets a few
 // and the rest folded away, a dense one gets everything open), then the metric rows with sparklines,
 // each with the latest reading's evidence text under it (the bottleneck behind a capacity estimate,
 // the cases behind a count; two lines, "more" opens the rest), then what already exists for this lens
@@ -20,7 +20,7 @@ import type { ScanSnapshot } from '@bp/core/scan/types';
 import { BusinessSection } from '../sheet/Business';
 import { ScreensStrip } from '../sheet/Screens';
 import { SwarmSection } from '../sheet/SheetBody';
-import { MoveArrow, Spark, metricMove, metricRows, nfmt } from '../sheet/LensPanel';
+import { ClearSteps, MoveArrow, Spark, metricMove, metricRows, nfmt } from '../sheet/LensPanel';
 import { useDensity, useEngine, useLive, useVariant } from '../hooks';
 import { HWORD, KpiRows, Val, useAsOf, useLensAt, useSimSig } from './bits';
 import { Sec, Stagger } from './motion';
@@ -98,6 +98,8 @@ const Body = memo(function Body({ lens, f, M, density }: { lens: string; f: Feat
           <span className="hw">{past ? 'Not recorded' : HWORD[h]}</span>
           <p className="why">{past ? (then ? la.why : la.why + ' (' + t + ').') : h === 'na' ? 'This lens does not apply to this feature.' : h === 'unmeasured' && !fl?.facet ? 'No ' + d.name.toLowerCase() + ' reading for this feature yet.' : la.why ?? 'No rule raised anything: it reads ' + HWORD[h].toLowerCase() + '.'}</p>
           {!past && fl?.ov ? <p className="ov"><b>Held at {fl.ov.health.toUpperCase()}</b> by {pname(M.P, fl.ov.by)} until {fl.ov.until}{fl.why ? '. The rules say: ' + fl.why : ''}</p> : null}
+          {/* what clears it: every matching rule as a step, at now only (on a past date health is not recorded) */}
+          {past ? null : <ClearSteps def={d} fl={fl} />}
         </div>
       </Sec>
       {/* the KPIs are named here because the KPI section is dropped on a past date (LensTab:165): without
