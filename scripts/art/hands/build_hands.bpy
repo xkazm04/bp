@@ -1,23 +1,27 @@
 # The capture hands (fidelity sprint 2026-10-24, element 12, visual only): a posed pair of forearms and hands for the
 # 1600 x 900 target capture, lit by the scene. No tracking, no rig shipped: two static meshes in the concept's pose.
 #   blender -b -P scripts/art/hands/build_hands.bpy -- <repo> <work> <skin-albedo.png>
+#   (tuning: HANDS_POSE=<json with poses and place> replaces POSES and PLACE; HANDS_FAST=1 stops before the bake)
 # (NOT --factory-startup: the MPFB extension must be enabled; install it once with
 #  blender -b --command extension install-file -r user_default -e <add-on-mpfb-v2.0.18.zip>)
 # Source: the MakeHuman base mesh and default rig through MPFB 2.0.18 (core assets CC0 per the MPFB FAQ; the add-on code
 # is GPL and is a tool here, not shipped), and a CC0 MakeHuman system-assets skin albedo. Steps:
 #   1. MPFB creates the default human (metres) and its default rig;
-#   2. the fingers, thumb and wrist are posed with the rig (degrees in POSES), the armature applied;
+#   2. the fingers, thumb and wrist are posed with the rig (degrees in POSES: the left resting, the right pointing), the
+#      armature applied;
 #   3. each side keeps the hand and the lower forearm (vertices weighted to lowerarm02, wrist, metacarpals, fingers);
 #   4. a high-poly copy of each hand (subdivided 3 times) is displaced by script from the posed finger bones: wrinkle lines
 #      over every finger joint and knuckle, a raised nail plate with its groove on each fingertip, veins on the back of
-#      the hand; the same fields tint the albedo (pinker nails with a pale free edge, darker creases, warmer knuckles) and
-#      set roughness (glossy nails, drier creases). It is baked onto the low mesh's own atlas (both hands, one 2048 set):
+#      the hand; the same fields, a back-versus-palm mask and a fingertip mask tint the albedo (blotchy redness, a tanner
+#      back and a paler palm, redder knuckles and fingertips, pinker nails with a pale free edge, darker creases) and set
+#      roughness (matte backs, oilier knuckles and tips, glossy nails, drier creases); a light skin-line bump on the backs.
+#      It is baked onto the low mesh's own atlas (both hands, one 2048 set):
 #      albedo, normal (tangent, OpenGL) and ORM, with Cycles on the CPU, selected to active;
 #   5. a dark knit sleeve per arm: a closed rolled cuff with ribbing, diagonal compression folds above it, running past the
 #      eye so no cut end shows, capped; on the left wrist a dark smartwatch (band, case, face) below the cuff, as the concept;
 #   6. each side is moved rigidly into the capture frame (X right, Y forward across the table, Z up, the table plane z = 0,
-#      the near paper edge at y = 0) from its wrist, forearm direction and palm normal (PLACE), then dropped until its
-#      lowest fingertip rests on the paper (REST_Z);
+#      the near paper edge at y = 0): one fingertip onto its point, the forearm along its direction and the back of the
+#      hand turned to its facing (PLACE), then dropped until its lowest skin point rests on the paper (REST_Z);
 #   7. hands_capture.glb (two meshes; slots hands_skin, hands_sleeve, and hands_watch on the left), textures/*.png,
 #      <work>/hands.json, <work>/hands.blend.
 import bmesh
@@ -40,25 +44,37 @@ os.makedirs(TEX, exist_ok=True)
 R = {}
 
 # finger joints: degrees of curl for joints 1, 2, 3 (finger1 is the thumb, scaled by 0.6); wrist: [flex, deviation]
+# (flex: the hand towards the palm; deviation: negative towards the thumb); extra: further [x, y, z] degrees on named
+# bones. The left rests relaxed, fingers curved and their tips on the paper; the right points: the index straight, the
+# other three curled into the palm, the thumb tucked alongside them (finger1-1 turned 30 about Z, across the palm)
 POSES = {
-    'L': {'fingers': {1: [5, 8, 6], 2: [6, 12, 9], 3: [8, 14, 10], 4: [9, 15, 11], 5: [10, 16, 12]}, 'wrist': [0, 0]},
-    'R': {'fingers': {1: [30, 40, 30], 2: [-4, 4, 4], 3: [80, 100, 60], 4: [85, 105, 65], 5: [85, 105, 65]}, 'wrist': [0, 0]},
+    'L': {'fingers': {1: [45, 30, 15], 2: [16, 32, 14], 3: [18, 34, 15], 4: [20, 36, 16], 5: [22, 38, 18]}, 'wrist': [28, 0], 'extra': {}},
+    'R': {'fingers': {1: [70, 50, 30], 2: [0, 3, 2], 3: [78, 92, 35], 4: [82, 92, 32], 5: [85, 90, 30]}, 'wrist': [12, -12],
+          'extra': {'finger1-1': [0, 0, 30]}},
 }
-# capture frame placement: wrist position, forearm direction (elbow to wrist), the palm's facing, in metres. Read off the
+POSE_FILE = os.environ.get('HANDS_POSE')   # tuning: a JSON file that replaces POSES and PLACE
+# capture frame placement, aimed by one fingertip: the tip of finger `finger` lands at `tip` (then the drop below), the
+# forearm (elbow to wrist) runs along `forearm` and the back of the hand faces `back` (made square to it), in metres; the
+# hand's own slope is the pose's (wrist and finger flexion), so the forearm stays a forearm. Read off the
 # concept through the target pose's eye (hand frame: eye at y -0.41, z 0.438, pitch -31, hfov 90): the right index tip
-# lands about 13 cm in on the paper right of centre, its forearm comes in from the bottom right; the left hand rests by
-# the near edge with its forearm in from the left, the watch towards the frame's left edge.
+# touches the paper 12 cm in, right of centre; the left hand's middle fingertip rests by the near edge, its forearm
+# in from the left with the watch towards the frame's left edge.
 PLACE = {
-    'L': {'wrist': (-0.20, 0.005, 0.04), 'forearm': (0.68, 0.70, -0.12), 'palm': (0.05, 0.1, -1.0)},
-    'R': {'wrist': (0.17, 0.005, 0.07), 'forearm': (-0.25, 0.93, -0.22), 'palm': (0.0, 0.0, -1.0)},
+    'L': {'finger': 3, 'tip': (-0.12, 0.04, 0.0), 'forearm': (0.50, 0.75, 0.40), 'back': (0.1, -0.5, 1.0)},
+    'R': {'finger': 2, 'tip': (0.17, 0.12, 0.0), 'forearm': (-0.40, 0.85, 0.20), 'back': (-0.2, -0.6, 1.0)},
 }
+if POSE_FILE:
+    _p = json.load(open(POSE_FILE))
+    POSES = {s: {**v, 'fingers': {int(k): j for k, j in v['fingers'].items()}} for s, v in _p['poses'].items()}
+    PLACE = _p['place']
+FAST = os.environ.get('HANDS_FAST') == '1'   # tuning: pose and place only, no detail bake (the blend has a flat skin)
 REST_Z = 0.0015   # the lowest skin point of each hand after the drop: fingertips on the paper, not through it
 CUFF = {'L': 0.052, 'R': 0.036}   # the cuff edge, this far up the forearm from the wrist joint (the left clears the watch)
 KEEP = 0.17       # forearm kept above the wrist (the rest is under the sleeve)
 SLEEVE_LEN = 0.42 # the sleeve runs this far up the forearm from the wrist: past the eye, so no end is in frame
 WATCH_AT = 0.028  # the watch band's centre, this far up the left forearm from the wrist joint
 ATLAS = 2048
-HAND_SCALE = 1.1  # the MakeHuman default adult's hand is 17 cm; a large adult's 19: the concept's hands read big
+HAND_SCALE = 1.15 # the MakeHuman default adult's hand is 17 cm; a large adult's 19 to 20: the concept's hands read big
 HI_LEVELS = 3
 
 bpy.ops.wm.read_homefile(use_empty=True)
@@ -79,7 +95,13 @@ for side, spec in POSES.items():
     for f, joints in spec['fingers'].items():
         for j, deg in enumerate(joints, 1):
             bend(f'finger{f}-{j}.{side}', deg if f != 1 else deg * 0.6)
-    bend(f'wrist.{side}', spec['wrist'][0])
+    # the wrist bone's X is the palm's normal and its Z runs across the wrist: flexion (the hand towards the palm) is about
+    # Z, positive on the right, negative on the left; deviation (towards the thumb or the little finger) is about X
+    bend(f'wrist.{side}', spec['wrist'][0] * (1 if side == 'R' else -1), 'Z')
+    bend(f'wrist.{side}', spec['wrist'][1], 'X')
+    for name, xyz in spec.get('extra', {}).items():
+        for ax, deg in zip('XYZ', xyz):
+            bend(f'{name}.{side}', deg, ax)
 bpy.ops.object.mode_set(mode='OBJECT')
 bpy.context.view_layer.update()
 
@@ -177,8 +199,9 @@ def detail_fields(side, P, Nrm):
         ends = [hs[1], hs[2], tip]
         # wrinkles: fine lines across the finger over each joint (knuckle MCP: two loose lines on the back only;
         # PIP: three; DIP: two), fading round the sides
-        for j, (lines, depth, back_only) in enumerate((((-0.0032, 0.0022), 0.00016, True), ((-0.0022, 0.0, 0.0022), 0.00020, False),
-                                                       ((-0.0015, 0.0015), 0.00016, False))):
+        # (FL: about twice FD's depths and a little wider, so the lines survive the bake and read at arm's length)
+        for j, (lines, depth, back_only) in enumerate((((-0.0034, -0.0012, 0.0022), 0.00032, True), ((-0.0024, -0.0008, 0.0008, 0.0024), 0.00040, False),
+                                                       ((-0.0016, 0.0, 0.0016), 0.00032, False))):
             if f == 1 and j == 0:
                 continue
             J = hs[j]
@@ -191,11 +214,11 @@ def detail_fields(side, P, Nrm):
             side_w = np.clip(((rv @ dz) / np.maximum(dist, 1e-9) + (0.2 if back_only else 1.2)) / 1.2, 0, 1)
             near = (dist < (0.016 if j == 0 else 0.012)) * gauss(along, 0.004)
             for o in lines:
-                g = gauss(along - o, 0.00055) * near * side_w
+                g = gauss(along - o, 0.0007) * near * side_w
                 H -= depth * g
                 crease = np.maximum(crease, g)
             # a warmer, slightly raised pad of skin over the back of each joint
-            kb = gauss(along, 0.006) * (dist < 0.016) * np.clip((rv @ dz) / np.maximum(dist, 1e-9), 0, 1)
+            kb = gauss(along, 0.006) * gauss(dist, 0.009) * np.clip((rv @ dz) / np.maximum(dist, 1e-9), 0, 1)   # soft edged (FL)
             knuck = np.maximum(knuck, kb)
         # the nail: a raised plate on the back of the distal segment, a groove round its sides and base, a pale free edge
         s, u, rv, dist, L = seg(hs[2], tip)
@@ -234,10 +257,28 @@ def detail_fields(side, P, Nrm):
             a = p0 - np.dot(p0, dors_hand) * dors_hand; b = p1 - np.dot(p1, dors_hand) * dors_hand
             ab = b - a; t = np.clip(((Pp - a) @ ab) / max(ab @ ab, 1e-12), 0, 1)
             dmin = np.minimum(dmin, np.linalg.norm(Pp - (a + np.outer(t, ab)), axis=1))
-        g = np.exp(-0.5 * (dmin / 0.0011) ** 2) * facing
-        H += 0.00035 * g
+        g = np.exp(-0.5 * (dmin / 0.0017) ** 2) * facing
+        H += 0.00038 * g
         vein = np.maximum(vein, g)
-    return H, {'crease': crease, 'nail': nail, 'nail_edge': nail_edge, 'knuck': knuck, 'vein': vein}
+    # back versus palm (FL): each point takes the back-of-hand direction of its nearest bone (a finger bone, or the hand
+    # from the wrist to the knuckles) and is 1 where its normal faces it, 0 on the palm side; and the fingertips: the outer
+    # half of each distal segment, all round, where the skin flushes redder
+    # (each finger bone pulls a point's back-of-hand direction towards its own, by a soft weight of its distance from the
+    # bone inside the segment: a hard nearest-bone switch left sharp-edged patches where a curled finger's bone lay close)
+    acc = np.tile(dors_hand * 0.35, (len(P), 1))
+    tipred = np.zeros(len(P))
+    for f, F in fingers[side].items():
+        pts = F['heads'] + [F['tip']]
+        for j in range(3):
+            s, u, rv, dist, L = seg(pts[j], pts[j + 1])
+            inside = np.clip((s + 0.004) / 0.004, 0, 1) * np.clip((L + 0.004 - s) / 0.004, 0, 1)
+            acc += np.outer(gauss(dist, 0.0065) * inside, F['dorsal'][j])
+    dz_near = acc / np.maximum(np.linalg.norm(acc, axis=1), 1e-9)[:, None]
+    for f, F in fingers[side].items():
+        s, u, rv, dist, L = seg(F['heads'][2], F['tip'])
+        tipred = np.maximum(tipred, smooth(np.clip((s / L - 0.35) / 0.5, 0, 1)) * (dist < 0.016))
+    back = smooth(np.clip(((Nrm * dz_near).sum(axis=1) + 0.3) / 0.6, 0, 1))
+    return H, {'crease': crease, 'nail': nail, 'nail_edge': nail_edge, 'knuck': knuck, 'vein': vein, 'back': back, 'tipred': tipred}
 
 highs = {}
 t0 = time.time()
@@ -406,18 +447,32 @@ for side in 'LR':
         parts.append(watch(ob))
     w, fa, n = frames[side]
     P = PLACE[side]
-    rot = basis(P['forearm'], P['palm']) @ basis(fa, n).inverted()
-    M = Matrix.Translation(Vector(P['wrist'])) @ rot.to_4x4() @ Matrix.Scale(HAND_SCALE, 4) @ Matrix.Translation(-w)
+    tip_src = Vector(fingers[side][P['finger']]['tip'])
+    rot = basis(P['forearm'], P['back']) @ basis(fa, -n).inverted()
+    M = Matrix.Translation(Vector(P['tip'])) @ rot.to_4x4() @ Matrix.Scale(HAND_SCALE, 4) @ Matrix.Translation(-tip_src)
     for o in [ob, highs[side]] + parts:
         o.data.transform(M); o.matrix_world = Matrix.Identity(4)
     dz = REST_Z - min(v.co.z for v in ob.data.vertices)          # drop (or lift) until the lowest fingertip rests on the paper
     for o in [ob, highs[side]] + parts:
         o.data.transform(Matrix.Translation((0, 0, dz)))
     R.setdefault('rest_drop_m', {})[side] = round(dz, 4)
-    R.setdefault('wrist_m', {})[side] = [round(x, 4) for x in (Vector(P['wrist']) + Vector((0, 0, dz)))]
+    R.setdefault('wrist_m', {})[side] = [round(x, 4) for x in (M @ w + Vector((0, 0, dz)))]
+    R.setdefault('forearm_dir', {})[side] = [round(x, 3) for x in (rot @ fa).normalized()]   # elbow to wrist
+    R.setdefault('tip_m', {})[side] = {'finger': P['finger'], 'bone_tail': [round(x, 4) for x in (Vector(P['tip']) + Vector((0, 0, dz)))]}
     if side == 'L':
         R['watch']['centre_m'] = [round(x, 4) for x in (M @ Vector(R['watch']['centre_src']) + Vector((0, 0, dz)))]
     lows[side], extras[side] = ob, parts
+
+if FAST:
+    for side in 'LR':
+        bpy.data.objects.remove(highs[side])
+        for o, m in zip(extras[side], (cloth, wmat)):
+            o.data.materials.append(m)
+    skin.node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value = (0.55, 0.36, 0.27, 1)
+    bpy.ops.wm.save_as_mainfile(filepath=os.path.join(WORK, 'hands.blend'))
+    json.dump(R, open(os.path.join(WORK, 'hands.json'), 'w'), indent=1)
+    print('HANDS-FAST', json.dumps({k: R[k] for k in ('wrist_m', 'forearm_dir', 'tip_m', 'rest_drop_m')}))
+    sys.exit(0)
 
 # ---- one atlas for both hands' skin, baked from the high copies --------------------------------------------------------
 for side in 'LR':
@@ -468,20 +523,45 @@ def mathn(op, a, b):
         else: L(x, m.inputs[i])
     return m.outputs[0]
 col = ti.outputs['Color']
-col = mix_rgb(mathn('MULTIPLY', attr('knuck'), 0.55), col, (0.62, 0.36, 0.30), 'MULTIPLY')        # warmer knuckles
-col = mix_rgb(mathn('MULTIPLY', attr('vein'), 0.35), col, (0.55, 0.62, 0.78), 'MULTIPLY')         # bluish veins
-col = mix_rgb(mathn('MULTIPLY', attr('crease'), 0.45), col, (0.45, 0.33, 0.30), 'MULTIPLY')       # darker creases
+# FL (the judge: "the skin looks like a mannequin"): more variation, all ours and procedural over the CC0 base. Blotchy
+# redness about 1 cm across, a tanner, darker back of the hand and a paler, pinker palm, redder knuckles and fingertips,
+# bluish veins and clearly darker creases
+tco = N('ShaderNodeTexCoord')
+mottle = N('ShaderNodeTexNoise'); mottle.inputs['Scale'].default_value = 90.0; mottle.inputs['Detail'].default_value = 2.0
+L(tco.outputs['Object'], mottle.inputs['Vector'])
+blotch = mathn('MULTIPLY', mathn('SUBTRACT', mottle.outputs['Fac'], 0.42), 1.6)
+col = mix_rgb(blotch, col, (0.93, 0.76, 0.74), 'MULTIPLY')                                          # blotchy redness
+col = mix_rgb(mathn('MULTIPLY', attr('back'), 0.55), col, (0.86, 0.77, 0.70), 'MULTIPLY')          # tanner back
+col = mix_rgb(mathn('MULTIPLY', mathn('SUBTRACT', 1.0, attr('back')), 0.20), col, (0.92, 0.70, 0.62))   # paler, pinker palm
+col = mix_rgb(mathn('MULTIPLY', attr('knuck'), 0.65), col, (0.78, 0.50, 0.45), 'MULTIPLY')         # redder knuckles
+col = mix_rgb(mathn('MULTIPLY', attr('tipred'), 0.65), col, (0.86, 0.56, 0.50), 'MULTIPLY')        # flushed fingertips
+col = mix_rgb(mathn('MULTIPLY', attr('vein'), 0.22), col, (0.66, 0.72, 0.84), 'MULTIPLY')          # bluish veins
+col = mix_rgb(mathn('MULTIPLY', attr('crease'), 0.75), col, (0.42, 0.30, 0.28), 'MULTIPLY')        # darker creases
 col = mix_rgb(mathn('MULTIPLY', attr('nail'), 0.8), col, (0.80, 0.56, 0.52))                       # pink nail bed
 col = mix_rgb(mathn('MULTIPLY', attr('nail_edge'), 0.85), col, (0.86, 0.80, 0.74))                 # pale free edge
 pores = N('ShaderNodeTexNoise'); pores.inputs['Scale'].default_value = 2600.0; pores.inputs['Detail'].default_value = 3.0
-tco = N('ShaderNodeTexCoord'); L(tco.outputs['Object'], pores.inputs['Vector'])
-rough = mathn('ADD', 0.46, mathn('MULTIPLY', pores.outputs['Fac'], 0.08))
-rough = mathn('ADD', rough, mathn('MULTIPLY', attr('crease'), 0.10))
+L(tco.outputs['Object'], pores.inputs['Vector'])
+# roughness (every node clamps to 0..1, so the terms are added and subtracted as positives): matte, dry backs, oilier
+# knuckles and fingertips, glossy nails, drier creases, and a broad blotch so no two patches match
+rough = mathn('ADD', 0.42, mathn('MULTIPLY', pores.outputs['Fac'], 0.08))
+rough = mathn('ADD', rough, mathn('MULTIPLY', mottle.outputs['Fac'], 0.10))
+rough = mathn('ADD', rough, mathn('MULTIPLY', attr('back'), 0.12))
+rough = mathn('ADD', rough, mathn('MULTIPLY', attr('crease'), 0.08))
+rough = mathn('SUBTRACT', rough, mathn('MULTIPLY', attr('knuck'), 0.18))
+rough = mathn('SUBTRACT', rough, mathn('MULTIPLY', attr('tipred'), 0.08))
 rough = mathn('SUBTRACT', rough, mathn('MULTIPLY', attr('nail'), 0.30))
-rough = mathn('SUBTRACT', rough, mathn('MULTIPLY', attr('knuck'), -0.04))
-bump = N('ShaderNodeBump'); bump.inputs['Strength'].default_value = 0.35; bump.inputs['Distance'].default_value = 0.00012
+# the normal: the displaced surface, a pore bump, and on the back of the hand the fine diamond pattern of skin lines (the
+# edges of 1.4 mm Voronoi cells, lightly pressed in)
+bump = N('ShaderNodeBump'); bump.inputs['Strength'].default_value = 0.5; bump.inputs['Distance'].default_value = 0.00012
 L(pores.outputs['Fac'], bump.inputs['Height'])
-emit = N('ShaderNodeEmission'); diff = N('ShaderNodeBsdfDiffuse'); L(bump.outputs['Normal'], diff.inputs['Normal'])
+cells = N('ShaderNodeTexVoronoi'); cells.feature = 'DISTANCE_TO_EDGE'; cells.inputs['Scale'].default_value = 700.0
+L(tco.outputs['Object'], cells.inputs['Vector'])
+lines = N('ShaderNodeMapRange'); lines.inputs['From Min'].default_value = 0.0; lines.inputs['From Max'].default_value = 0.09
+L(cells.outputs['Distance'], lines.inputs['Value'])
+bump2 = N('ShaderNodeBump'); bump2.inputs['Distance'].default_value = 0.00009
+L(lines.outputs['Result'], bump2.inputs['Height']); L(mathn('MULTIPLY', attr('back'), 0.22), bump2.inputs['Strength'])
+L(bump.outputs['Normal'], bump2.inputs['Normal'])
+emit = N('ShaderNodeEmission'); diff = N('ShaderNodeBsdfDiffuse'); L(bump2.outputs['Normal'], diff.inputs['Normal'])
 CH = {'albedo': col, 'rough': rough}
 for side in 'LR':
     highs[side].data.materials.clear(); highs[side].data.materials.append(hm)
@@ -568,7 +648,7 @@ for side in 'LR':
     skin_v = {i for p in ob.data.polygons if ob.data.materials[p.material_index].name == 'hands_skin' for i in p.vertices}
     wr = Vector(R['wrist_m'][side])
     ahead = [ob.data.vertices[i].co - wr for i in skin_v]
-    R.setdefault('hand_length_m', {})[side] = round(max(d.length for d in ahead if d.dot(Vector(PLACE[side]['forearm']).normalized()) > 0), 4)
+    R.setdefault('hand_length_m', {})[side] = round(max(d.length for d in ahead if d.dot(Vector(R['forearm_dir'][side])) > 0), 4)
     final.append(ob)
     highs[side].hide_render = True; highs[side].hide_set(True)
 

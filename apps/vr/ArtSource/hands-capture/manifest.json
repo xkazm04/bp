@@ -3,48 +3,48 @@
     "input": {
       "pass": true,
       "note": "licence evidence recorded (licence field): MakeHuman core assets and the system-assets skin are CC0; MPFB is a GPL tool, not shipped",
-      "date": "2026-10-24"
+      "date": "2026-10-25"
     },
     "mesh_acceptance": {
       "pass": true,
       "note": "two meshes (hand_l 11184, hand_r 10664 tris), each the MakeHuman hand and lower forearm (helpers and joint cubes removed by MPFB's own mask) joined with its closed-cuff sleeve, the left with its watch; slots hands_skin, hands_sleeve, hands_watch; lowest skin point 0.15 cm over the paper (fingertips rest on it)",
-      "date": "2026-10-24"
+      "date": "2026-10-25"
     },
     "scale": {
       "pass": true,
-      "note": "wrist joint to farthest fingertip 19.14 and 19.48 cm (adult hand about 17 to 20 cm; the MakeHuman default adult scaled 1.1, a large adult), forearm radius at the cuff 3.3 and 2.89 cm",
-      "date": "2026-10-24"
+      "note": "wrist joint to farthest fingertip 17.55 and 20.29 cm (adult hand about 17 to 20 cm; the MakeHuman default adult scaled 1.15, a large adult), forearm radius at the cuff 3.45 and 3.06 cm",
+      "date": "2026-10-25"
     },
     "finishing": {
       "pass": true,
-      "note": "skin albedo, normal and ORM at 2048 px baked from the displaced high poly (4969.4 px/m), sleeves with a closed rolled cuff and folds, smooth shading; evidence: the EEVEE check render beside the target (evidence/target-compare.jpg) and a close look (evidence/closeup.png); every file under 10 MB",
-      "date": "2026-10-24"
+      "note": "skin albedo, normal and ORM at 2048 px baked from the displaced high poly (4676.8 px/m), sleeves with a closed rolled cuff and folds, smooth shading; evidence: the EEVEE check render beside the target (evidence/target-compare.jpg) and a close look (evidence/closeup.png); every file under 10 MB",
+      "date": "2026-10-25"
     },
     "poly_budget": {
       "pass": true,
       "note": "21848 tris for the pair against 30000",
-      "date": "2026-10-24"
+      "date": "2026-10-25"
     }
   },
   "sha256": {
-    "evidence/closeup.png": "af63659f3f19e2094502b9cba680e862c4e14da9205f88d0911a2279474e63b4",
-    "evidence/target-compare.jpg": "69a10a1ca1b6ab463706051d06dacb46a00c393c080caf737cada8ef02b2ab85",
-    "evidence/target-eye-compare.jpg": "d80a29b3e8e04fea058d55b3806e3085e2f589c6bc45546cb35c26b21be876d2",
-    "hands_capture.glb": "2bdc509562a616e429268c9ec8889428e89ca8fcaef1a637e37ba023ca5d7cd0",
-    "textures/hands_skin_albedo.png": "a11129d7019c978dd66cebb8bff1267a90ed37a5a93e8c8c499142b8751fcfed",
-    "textures/hands_skin_normal.png": "5ffa017f689d618a6782a79739803ad7eb8f2645a2cf4035055f6a6c43fb27f5",
-    "textures/hands_skin_orm.png": "9ba5c37f09abe943d4160c0e5f96a5838230ccbe63ad14993811f665d073c767"
+    "evidence/closeup.png": "44602331c5773c83423048f425ef867b70781d89901dc339587c3e3c95885899",
+    "evidence/target-compare.jpg": "32157a251ec33b5d998a223a1cbc4fb385a9570a536baae1f5255022ede463d6",
+    "evidence/target-eye-compare.jpg": "13435a6365b08ed0d724fe563eb307da70badf9841919dd36e54d6ce1e83cb3f",
+    "hands_capture.glb": "905d332fe2be086f4b0fb27b952c84059dfce1578bef3f14bc2fe7dd32b9f821",
+    "textures/hands_skin_albedo.png": "1597981cff96894766ecce7bbc76efec6e63bbd76c068a7821fdbd182751b34f",
+    "textures/hands_skin_normal.png": "599186b1358a3337f9cf1653821c646fbb82fbca5aa218e6c4df5e66d0cfe330",
+    "textures/hands_skin_orm.png": "767a5f6a238b8771e1750ca9abd0c005e6a8b9559d2d2375f294e6ab5765e871"
   },
   "file_bytes": {
-    "evidence/closeup.png": 871900,
-    "evidence/target-compare.jpg": 256521,
-    "evidence/target-eye-compare.jpg": 250893,
-    "hands_capture.glb": 752528,
-    "textures/hands_skin_albedo.png": 2962070,
-    "textures/hands_skin_normal.png": 4887933,
-    "textures/hands_skin_orm.png": 2502364
+    "evidence/closeup.png": 898550,
+    "evidence/target-compare.jpg": 252402,
+    "evidence/target-eye-compare.jpg": 324080,
+    "hands_capture.glb": 764860,
+    "textures/hands_skin_albedo.png": 3090621,
+    "textures/hands_skin_normal.png": 5623625,
+    "textures/hands_skin_orm.png": 2578072
   },
-  "lynx_commit": "b885603f8efd858dee51f5d4b907a76e931ce1c4",
+  "lynx_commit": "313c67fac56323a372dae8872060f2ca488de66e",
   "lynx_commit_note": "stamped by the writer: the newest commit touching this folder when the manifest was written",
   "id": "hands-capture",
   "class": "capture-hands",
@@ -52,7 +52,7 @@
   "budget_note": "fidelity sprint brief (2026-10-24): about 30k tris for the pair; visual only, for the target capture (no tracking)",
   "generator": [
     {
-      "method": "MakeHuman base mesh and default rig through the MPFB 2.0.18 Blender extension (scripts/art/hands/build_hands.bpy): fingers and wrists posed with the rig, armature and helper mask applied, the hand and lower forearm kept per side; a high-poly copy (subdivided 107392 faces per hand) displaced by script from the posed finger bones (joint and knuckle wrinkle lines, raised nail plates with their grooves, veins on the back of the hand: -0.22 to 0.702 mm) and baked onto the low mesh's own 2048 px atlas (albedo, normal, ORM); a scripted knit sleeve with a closed rolled cuff, ribbing and compression folds, running 42 cm up the arm so no end is in frame; a smartwatch on the left wrist; each side scaled 1.1, moved rigidly into the capture frame and dropped until its lowest fingertip rests on the paper",
+      "method": "MakeHuman base mesh and default rig through the MPFB 2.0.18 Blender extension (scripts/art/hands/build_hands.bpy): fingers and wrists posed with the rig, armature and helper mask applied, the hand and lower forearm kept per side; a high-poly copy (subdivided 107392 faces per hand) displaced by script from the posed finger bones (joint and knuckle wrinkle lines, raised nail plates with their grooves, veins on the back of the hand: -0.45 to 0.846 mm) and baked onto the low mesh's own 2048 px atlas (albedo, normal, ORM); a scripted knit sleeve with a closed rolled cuff, ribbing and compression folds, running 42 cm up the arm so no end is in frame; a smartwatch on the left wrist; each side scaled 1.15, moved rigidly into the capture frame and dropped until its lowest fingertip rests on the paper",
       "mpfb": {
         "version": "2.0.18",
         "zip": "https://extensions.blender.org/download/sha256:c075b3e9b94b8e5556a5f03f4653602d02ea306de08126e8f55ed6dee28a2dad/add-on-mpfb-v2.0.18.zip",
@@ -73,7 +73,7 @@
   },
   "tris_note": "21848 for the pair against 30000",
   "materials": [
-    "hands_skin: textures/hands_skin_albedo.png (sRGB), hands_skin_normal.png (tangent, OpenGL/glTF: UE flips green on import or set the texture's flip green) and hands_skin_orm.png (R 1, G roughness 0.489 / 0.501 / 0.53 at the 5th/50th/95th percentile: glossy nails, drier creases; B 0) on the new atlas (one UV set, 4969.4 px/m). UE: Preintegrated Skin or the Substrate wrap SSS (import_hands.py), roughness from ORM.G, specular 0.35",
+    "hands_skin: textures/hands_skin_albedo.png (sRGB), hands_skin_normal.png (tangent, OpenGL/glTF: UE flips green on import or set the texture's flip green) and hands_skin_orm.png (R 1, G roughness 0.439 / 0.563 / 0.644 at the 5th/50th/95th percentile: glossy nails, drier creases; B 0) on the new atlas (one UV set, 4676.8 px/m). UE: Preintegrated Skin or the Substrate wrap SSS (import_hands.py), roughness from ORM.G, specular 0.35",
     "hands_sleeve: dark charcoal knit, #030304 linear about 0.013, roughness 0.92, sheen 0.4 (UE: Cloth shading model with fuzz colour #2A2D33, or Default Lit at roughness 0.95); folds, ribbing and the rolled cuff are geometry",
     "hands_watch (left mesh only): near-black glossy, linear 0.010/0.011/0.013, roughness 0.22, metallic 0.3, clear coat 0.6: band, case and glass face in one slot (UE: a new M_HandsWatch, see import_hands.py)"
   ],
@@ -90,29 +90,29 @@
   },
   "atlas": {
     "px": 2048,
-    "px_per_m": 4969.4,
-    "uv_coverage": 0.609
+    "px_per_m": 4676.8,
+    "uv_coverage": 0.582
   },
   "detail": {
     "L": {
       "hi_faces": 107392,
       "height_mm": [
-        -0.22,
-        0.702
+        -0.45,
+        0.846
       ],
-      "nail_verts": 7082,
-      "vein_verts": 418,
-      "crease_verts": 4423
+      "nail_verts": 7076,
+      "vein_verts": 574,
+      "crease_verts": 8275
     },
     "R": {
       "hi_faces": 107392,
       "height_mm": [
-        -0.332,
-        0.685
+        -0.954,
+        0.955
       ],
-      "nail_verts": 8520,
-      "vein_verts": 591,
-      "crease_verts": 8423
+      "nail_verts": 9779,
+      "vein_verts": 2180,
+      "crease_verts": 14726
     }
   },
   "watch": {
@@ -127,20 +127,20 @@
       3
     ],
     "centre_src": [
-      0.4576,
-      -0.1631,
-      1.0476
+      0.4569,
+      -0.165,
+      1.0495
     ],
     "centre_m": [
-      -0.2182,
-      -0.0151,
-      0.1295
+      -0.1736,
+      -0.1368,
+      0.1135
     ]
   },
   "bounds_cm": {
-    "x": 92.68,
-    "y": 60.62,
-    "z": 26.89,
+    "x": 96.84,
+    "y": 64.73,
+    "z": 29.77,
     "note": "the pair together in the capture frame: X right, Y forward across the table, Z up (Blender); glTF is Y-up"
   },
   "placement": {
@@ -148,37 +148,39 @@
     "pose": "the left hand rests with relaxed fingers on the near edge of the paper, palm down; the right hand points forward and down at a room with the index finger, the other fingers curled; both forearms leave the frame at the bottom corners under dark sleeves",
     "place": {
       "L": {
-        "wrist": [
-          -0.2,
-          0.005,
-          0.04
+        "finger": 3,
+        "tip": [
+          -0.12,
+          0.04,
+          0
         ],
         "forearm": [
-          0.68,
-          0.7,
-          -0.12
+          0.5,
+          0.75,
+          0.4
         ],
-        "palm": [
-          0.05,
+        "back": [
           0.1,
-          -1
+          -0.5,
+          1
         ]
       },
       "R": {
-        "wrist": [
+        "finger": 2,
+        "tip": [
           0.17,
-          0.005,
-          0.07
+          0.12,
+          0
         ],
         "forearm": [
-          -0.25,
-          0.93,
-          -0.22
+          -0.4,
+          0.85,
+          0.2
         ],
-        "palm": [
-          0,
-          0,
-          -1
+        "back": [
+          -0.2,
+          -0.6,
+          1
         ]
       }
     },
