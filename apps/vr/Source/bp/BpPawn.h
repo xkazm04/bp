@@ -56,8 +56,8 @@ public:
 	 *  their progress rings, read from GET .../waves and the findings' statuses (BpLink's scan state). With no posed hand
 	 *  it hangs above the left rest hand, at WristPanel*Cm from the eye, turned to face it; SetWristParent moves it onto a
 	 *  hand (the posed capture pair, or a tracked wrist). Its size on the arm and its pixel density: */
-	static constexpr float WristPanelWidthCm = 11.f;
-	static constexpr float WristPanelHeightCm = 9.5f;
+	static constexpr float WristPanelWidthCm = 13.f;  // FO: 13 x 10.5 (from 11 x 9.5), room for readable sub-lines (element 11)
+	static constexpr float WristPanelHeightCm = 10.5f;
 	static constexpr float WristPanelPxPerCm = 50.f;
 	static constexpr float WristPanelForwardCm = 26.f;
 	static constexpr float WristPanelSideCm = -23.f;
@@ -66,10 +66,15 @@ public:
 	 *  off it by this offset (cm, the table's axes: X away from the person, Y to their right, Z up) at WristCaptureScale
 	 *  of its size, so it lies over the forearm left of the watch, its rows over the paper (over the white rail its light
 	 *  text washed out), in front of the sleeve and wholly inside the target frame, as the concept's (placed by capture). */
-	static constexpr float WristCaptureOffsetXCm = -2.f;  // FM: docked beside the watch, not floating off it (element 11), by capture
+	static constexpr float WristCaptureOffsetXCm = -5.f;  // FO: lower right corner at the watch, rows over the paper (FM -2, -5, 7)
 	static constexpr float WristCaptureOffsetYCm = -5.f;
-	static constexpr float WristCaptureOffsetZCm = 7.f;
-	static constexpr float WristCaptureScale = 0.8f;
+	static constexpr float WristCaptureOffsetZCm = 10.f;
+	static constexpr float WristCaptureScale = 0.78f;
+	/** FO (element 11, the concept's panel "angled along the forearm"): from square to the eye, the panel rolls this far
+	 *  about the view axis so its bottom edge follows the forearm, then tilts back this far about its own horizontal axis,
+	 *  lying toward the forearm's top. By capture. */
+	static constexpr float WristCaptureRollDeg = 10.f;
+	static constexpr float WristCaptureTiltDeg = 20.f;
 	/** The panel's up leans with the target pose's view (ABpGameMode::TargetPitchDeg), so it reads square to the eye. */
 	void SetWristParent(USceneComponent* Parent, FName Socket, const FTransform& Relative);
 

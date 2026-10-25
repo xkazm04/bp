@@ -149,7 +149,11 @@ void ABpPawn::MakeWristPanel()
 				ABpTable::DefaultTableHeightCm + ABpGameMode::TargetEyeAboveTopCm));
 			const FVector At = Wrist->GetActorLocation() + T.TransformVectorNoScale(FVector(WristCaptureOffsetXCm, WristCaptureOffsetYCm, WristCaptureOffsetZCm));
 			SetWristParent(Wrist->GetRootComponent(), NAME_None, FTransform::Identity);
-			WristPanel->SetWorldTransform(FTransform(FRotationMatrix::MakeFromXZ(Eye - At, T.TransformVector(ViewUp)).Rotator(), At, FVector(WristCaptureScale / WristPanelPxPerCm)));
+			// Then rolled about the view axis and tilted back about its own horizontal axis (FO), along the forearm.
+			FQuat Facing = FRotationMatrix::MakeFromXZ(Eye - At, T.TransformVector(ViewUp)).ToQuat();
+			Facing = FQuat(Facing.GetAxisX(), FMath::DegreesToRadians(WristCaptureRollDeg)) * Facing;
+			Facing = FQuat(Facing.GetAxisY(), FMath::DegreesToRadians(WristCaptureTiltDeg)) * Facing;
+			WristPanel->SetWorldTransform(FTransform(Facing, At, FVector(WristCaptureScale / WristPanelPxPerCm)));
 		}
 		else
 		{
@@ -226,11 +230,11 @@ void ABpPawn::ReceiveScanState(const FBpScanState& State)
 					SNew(SVerticalBox)
 					+ SVerticalBox::Slot().AutoHeight()
 					[
-						SNew(STextBlock).Text(FText::FromString(R.Name)).Font(CapFont(TEXT("Bold"), 22.f)).ColorAndOpacity(FSlateColor(FLinearColor::White))
+						SNew(STextBlock).Text(FText::FromString(R.Name)).Font(CapFont(TEXT("Bold"), 24.f)).ColorAndOpacity(FSlateColor(FLinearColor::White))
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 6.f, 0.f, 0.f)
 					[
-						SNew(STextBlock).Text(FText::FromString(R.Meta)).Font(CapFont(TEXT("Regular"), 14.f)).ColorAndOpacity(FSlateColor(Cyan.CopyWithNewOpacity(0.8f)))
+						SNew(STextBlock).Text(FText::FromString(R.Meta)).Font(CapFont(TEXT("Regular"), 18.f)).ColorAndOpacity(FSlateColor(Cyan.CopyWithNewOpacity(0.95f)))
 					]
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
@@ -263,15 +267,12 @@ void ABpPawn::ReceiveScanState(const FBpScanState& State)
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight()
 			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().FillWidth(1.f)
-				[
-					SNew(STextBlock).Text(FText::FromString(TEXT("PACKAGES"))).Font(CapFont(TEXT("Bold"), 20.f)).ColorAndOpacity(FSlateColor(FLinearColor::White))
-				]
-				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Bottom)
-				[
-					SNew(STextBlock).Text(FText::FromString(Sub)).Font(CapFont(TEXT("Regular"), 13.f)).ColorAndOpacity(FSlateColor(Cyan.CopyWithNewOpacity(0.7f)))
-				]
+				SNew(STextBlock).Text(FText::FromString(TEXT("PACKAGES"))).Font(CapFont(TEXT("Bold"), 20.f)).ColorAndOpacity(FSlateColor(FLinearColor::White))
+			]
+			// The wave's name and status on a line of its own (FO: beside the title it was cut and unreadable).
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 6.f, 0.f, 0.f)
+			[
+				SNew(STextBlock).Text(FText::FromString(Sub)).Font(CapFont(TEXT("Regular"), 16.f)).ColorAndOpacity(FSlateColor(Cyan.CopyWithNewOpacity(0.9f)))
 			]
 			+ SVerticalBox::Slot().AutoHeight()
 			[

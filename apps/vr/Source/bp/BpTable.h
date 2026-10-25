@@ -105,23 +105,33 @@ public:
 	 *  the top, and each bay's far boundary inside it is a partition wall at BayPartitionRatio of that height, PartitionCm
 	 *  thick, across the bay's width (FM: the judge's "thin, taller cyan-edged walls with internal partitions"; a bay box
 	 *  drawn whole made a second tray inside each room). A lifted wing leaves its rest walls behind, hidden. */
-	static constexpr float RestRoomCm = 6.5f;  // FM: 6.5 (FK 2.2, FE 1.5): rooms, not trays, from the target pose (by capture)
+	static constexpr float RestRoomCm = 3.5f;  // FO: 3.5 (FM 6.5, FK 2.2, FE 1.5): low enough that the pointed room stands out (by capture)
 	static constexpr float BayPartitionRatio = 0.85f;
 	static constexpr float PartitionCm = 0.08f;
 	/** A partition's glass face (M_EdgeGlow's custom data 4; a room's walls are 1). */
 	static constexpr float PartitionFace = 0.6f;
 	/** The line-weight hierarchy at rest (FC3): the rooms' glass edges at RestRoomShow, the partitions' at
-	 *  RestPartitionShow (the edge glow's Show scales its opacity), under the wing outlines the sheet draws strongest. */
+	 *  RestPartitionShow, the tile cells' at TileCellShow (the edge glow's Show scales its opacity), under the wing outlines
+	 *  the sheet draws strongest. */
 	static constexpr float RestRoomShow = 0.8f;
 	static constexpr float RestPartitionShow = 0.7f;  // FM: 0.7 (from 0.45), a wall now, not a nested tray
+	/** The finer grid (FO, element 4: the concept's "crisp grid of rooms"): each tile's box, grown by TileCellGrowU on every
+	 *  side (half the plan's 10 u gutter between tiles, so neighbouring cells share one wall), stands as a low open cell
+	 *  TileCellCm high, edges only. The plan's boxes place every cell; nothing is laid out here. */
+	static constexpr float TileCellCm = 1.2f;
+	static constexpr float TileCellGrowU = 5.f;
+	static constexpr float TileCellShow = 0.45f;
 	/** The lifted room's shell glows this much over a lit shell (M_EdgeGlow's Show above 1 scales its emissive; FE). */
 	static constexpr float LiftedRoomShow = 1.8f;
 	/** The pointed room at L0 (FK, element 6: the concept's raised room under the fingertip). A room highlight
 	 *  (SetHighlight("room", id): the hands' point, or BpLevel.Highlight) is a display state over the plan: the room's rest
 	 *  extrusions are hidden and a copy of them stands HighlightRiseCm taller on the same footprint, at HighlightRestShow,
 	 *  with the lifted room's glass. No instance moves in plan space; clearing it restores every Show exactly. */
-	static constexpr float HighlightRiseCm = 5.5f;  // FM: 5.5 (FK 2.5), one room extruded upward
+	static constexpr float HighlightRiseCm = 10.5f;  // FO: 10.5 (FM 5.5, FK 2.5): four times the rest walls, the scene's focal point
 	static constexpr float HighlightRestShow = 1.8f;
+	/** While a room is pointed at rest, every other room's walls, cells and furniture dim to this (FO, element 6: the
+	 *  concept's neighbours recede around the raised room). Clearing the highlight restores them. */
+	static constexpr float PointedDim = 0.5f;
 
 	/** The fixture glyphs (FC3, element 5; ArtSource/fixture-kit): each tile at rest holds the glyph of its feature's kind,
 	 *  centred on its box, its footprint at most GlyphFill of the box and its height at most GlyphMaxCm (the shorter side
@@ -605,9 +615,11 @@ private:
 	int32 AppliedL0Volumes = -1;
 	/** Rest extrusions' last Show per instance. */
 	TArray<float> ShownRest;
-	/** Each rest instance's room (plan index), and its ink (RestRoomShow or RestPartitionShow). */
+	/** Each rest instance's room (plan index), its ink (RestRoomShow, RestPartitionShow or TileCellShow) and its face
+	 *  factor (custom data 4). */
 	TArray<int32> RestRoom;
 	TArray<float> RestInk;
+	TArray<float> RestFace;
 	/** The room (plan index) HighlightShell stands for, or none. */
 	int32 HighlightRestRoom = INDEX_NONE;
 

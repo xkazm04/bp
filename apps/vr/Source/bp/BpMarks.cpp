@@ -277,8 +277,9 @@ void ABpTable::LoadMarks()
 	Card->SetWindowFocusable(false);
 	Card->SetManuallyRedraw(true);
 	Card->SetTranslucentSortPriority(2);
-	// A little over 1, so the card's paper sits above the bloom threshold as the concept's card glows.
-	Card->SetTintColorAndOpacity(FLinearColor(1.15f, 1.15f, 1.15f, 1.f));
+	// FO (element 10, the judge's "washed out" panel): under 1, so the paper sits about at the bloom threshold and bloom no
+	// longer smears its text (FK's 1.15 bloomed the whole card); its warm glow comes from the glow brushes round it.
+	Card->SetTintColorAndOpacity(FLinearColor(0.82f, 0.82f, 0.82f, 1.f));
 	Card->SetRelativeScale3D(FVector(1.0 / CardPxPerCm));
 	Card->RegisterComponent();
 	Card->SetVisibility(false);
@@ -808,11 +809,12 @@ void ABpTable::RefreshCard()
 
 	// The concept's card (FE, element 10): a white glass panel with a soft cyan-white edge, set in the sheet's family
 	// (BpType.h), laid out at CardLayoutPxPerCm and drawn at CardPxPerCm (about twice what the target eye resolves there).
-	static const FSlateRoundedBoxBrush Panel(CardGlass.CopyWithNewOpacity(0.88f), 22.f, CardEdge.CopyWithNewOpacity(0.95f), 5.f);
+	static const FSlateRoundedBoxBrush Panel(CardGlass.CopyWithNewOpacity(0.95f), 22.f, CardEdge.CopyWithNewOpacity(0.95f), 5.f);
 	static const FSlateRoundedBoxBrush GlowOuter(CardGlow.CopyWithNewOpacity(0.06f), 50.f);
 	static const FSlateRoundedBoxBrush GlowInner(CardGlow.CopyWithNewOpacity(0.16f), 36.f);
 	static const FSlateRoundedBoxBrush Approve(AmberInk, 12.f);
-	static const FSlateRoundedBoxBrush Decline(FLinearColor::Transparent, 12.f, CardInk.CopyWithNewOpacity(0.7f), 2.5f);
+	// FO: Decline an outlined button (the judge: it "does not read as a button"), a full-ink rule and a faint fill.
+	static const FSlateRoundedBoxBrush Decline(CardInk.CopyWithNewOpacity(0.06f), 12.f, CardInk.CopyWithNewOpacity(0.9f), 4.5f);
 	// A button: its mark in Slate's default face (Barlow has no check or cross), its word in the sheet's family.
 	const auto Button = [](const FSlateBrush* Brush, const FString& Mark, const FString& Text)
 	{
@@ -859,15 +861,15 @@ void ABpTable::RefreshCard()
 					SNew(SVerticalBox)
 					+ SVerticalBox::Slot().AutoHeight()
 					[
-						SNew(STextBlock).Text(FText::FromString(Target)).AutoWrapText(true).Font(CanvasFont(TEXT("Bold"), 56.f)).ColorAndOpacity(FSlateColor(CardInk))
+						SNew(STextBlock).Text(FText::FromString(Target)).AutoWrapText(true).Font(CanvasFont(TEXT("Bold"), 60.f)).ColorAndOpacity(FSlateColor(CardInk))
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 16.f, 0.f, 0.f)
 					[
-						SNew(STextBlock).Text(FText::FromString(Ask->title)).AutoWrapText(true).Font(CanvasFont(TEXT("Regular"), 48.f)).ColorAndOpacity(FSlateColor(CardInk))
+						SNew(STextBlock).Text(FText::FromString(Ask->title)).AutoWrapText(true).Font(CanvasFont(TEXT("Regular"), 54.f)).ColorAndOpacity(FSlateColor(CardInk))
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 10.f, 0.f, 0.f)
 					[
-						SNew(STextBlock).Text(FText::FromString(Impact)).AutoWrapText(true).Font(CanvasFont(TEXT("Regular"), 40.f)).ColorAndOpacity(FSlateColor(CardInk.CopyWithNewOpacity(0.85f)))
+						SNew(STextBlock).Text(FText::FromString(Impact)).AutoWrapText(true).Font(CanvasFont(TEXT("Regular"), 46.f)).ColorAndOpacity(FSlateColor(CardInk.CopyWithNewOpacity(0.92f)))
 					]
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top)

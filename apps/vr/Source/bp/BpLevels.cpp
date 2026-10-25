@@ -577,12 +577,14 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 				RestVolumes->GetInstanceTransform(Index, T, false);
 				const FVector Size = T.GetScale3D() * 100.0;
 				const double Base = T.GetLocation().Z - Size.Z * 0.5;
-				const FVector Grown(Size.X, Size.Y, Size.Z * Grow);
+				// The tile cells keep their height (FO): the room's walls rise round its furniture, its cells stay on its floor.
+				const bool bCell = RestFace.IsValidIndex(Index) && RestFace[Index] <= 0.f;
+				const FVector Grown(Size.X, Size.Y, bCell ? Size.Z : Size.Z * Grow);
 				T.SetLocation(FVector(T.GetLocation().X, T.GetLocation().Y, Base + Grown.Z * 0.5));
 				T.SetScale3D(Grown / 100.0);
 				Raised.Add(T);
 				const float Ink = RestInk.IsValidIndex(Index) ? RestInk[Index] : RestRoomShow;
-				Data.Append({ static_cast<float>(Grown.X), static_cast<float>(Grown.Y), static_cast<float>(Grown.Z), Ink * HighlightRestShow, Ink == RestRoomShow ? 1.f : PartitionFace });
+				Data.Append({ static_cast<float>(Grown.X), static_cast<float>(Grown.Y), static_cast<float>(Grown.Z), Ink * HighlightRestShow, RestFace.IsValidIndex(Index) ? RestFace[Index] : 1.f });
 			}
 			HighlightShell->SetNumCustomDataFloats(5);  // as RestVolumes: size, Show, face
 			if (Raised.Num() > 0)
@@ -603,8 +605,9 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 		if (bOn) Show = AnimWing.IsEmpty() ? 1.f : (Wing == AnimWing ? 1.f - WingEase : FMath::Lerp(1.f, LevelDim, WingEase));
 		// The line-weight hierarchy (FC3): rooms medium, partitions fine.
 		if (RestInk.IsValidIndex(Index)) Show *= RestInk[Index];
-		// The pointed room shows in HighlightShell instead.
+		// The pointed room shows in HighlightShell instead, and every other room recedes around it (FO).
 		if (Room != INDEX_NONE && Room == Pointed) Show = 0.f;
+		else if (Pointed != INDEX_NONE) Show *= PointedDim;
 		if (ShownRest[Index] == Show) continue;
 		ShownRest[Index] = Show;
 		RestVolumes->SetCustomDataValue(Index, 3, Show, false);

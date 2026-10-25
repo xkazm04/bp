@@ -137,6 +137,11 @@ namespace
 	/** The wing labels sit on a slight dark backing (FK, element 3), so no glowing edge behind them reads through. */
 	constexpr double LabelBackPadCm = 0.3;
 	const FLinearColor LabelBacking(0.003f, 0.01f, 0.045f, 0.55f);
+	/** The floating wing labels (FO, element 3: "small, dim"): their backing nearly opaque, as they are seen over the frame's
+	 *  glowing rim, and each tilted up toward the person about its bottom edge (hung from its top, it dipped into the paper), so it is seen nearly square instead of at
+	 *  the paper's grazing angle (about 2.4 times taller from the target eye at 45 degrees). */
+	const FLinearColor FloatLabelBacking(0.003f, 0.01f, 0.045f, 0.85f);
+	constexpr float WingLabelTiltDeg = 45.f;
 	constexpr double WingTagGapCm = 0.45;
 	/** With the rest walls up (FM, element 3), the wing labels float this far over the walls' tops, flat, so from the
 	 *  target eye they read beyond every line of their wing (the paper behind a far wall is crossed by the partitions'
@@ -148,17 +153,19 @@ namespace
 	/** A room name's baseline sits this far above the room's first bay (its descenders and a gap). */
 	constexpr double RoomNameFootCm = 0.2;
 	constexpr double RoomNameClearCm = 0.35;
-	/** The title block: this far below the shortest wing, its padding, its rows' gaps, the scale bar's height. */
-	constexpr double TitleBelowWingCm = 3.5;
+	/** The drawing's border (FO, element 2): a fine rule this far inside the paper's edge; the title block stands on its
+	 *  near side under the shortest wing, as a drawing's title block (the judge: the title "floated mid-table"). */
+	constexpr double BorderInsetCm = 1.2;
+	constexpr float BorderOpacity = 0.4f;
 	constexpr double TitlePadCm = 0.9;
 	constexpr double TitleRowGapCm = 1.0;
 	constexpr double ScaleBarHeightCm = 0.35;
 	/** The breadcrumb's line box: its bottom on the paper (it is right-aligned to TitleAnchorCm.X, near-right, where the
 	 *  target framing still sees the paper). */
 	constexpr double CrumbBottomCm = 74.6;
-	/** The compass (left margin). */
-	const FVector2D CompassCm(6.25, 36.0);
-	constexpr double CompassRadiusCm = 3.6;
+	/** The compass (FO): under the shortest wing, centred between it and the title block, where the target framing sees
+	 *  it (the left margin, FC1's place, lies outside the frame). */
+	constexpr double CompassRadiusCm = 4.0;
 	/** Annotation: the dimension lines' offset from a wing's box, their ticks, and their ink (lines only since FC3: their
 	 *  figures could not meet the floor beside the wings). */
 	constexpr double DimOffsetCm = 0.6;
@@ -204,8 +211,8 @@ namespace
 	/** The lifted room's glass (FE): a stronger face than its siblings', as the concept's raised room. */
 	constexpr float LiftedFaceOpacity = 0.15f;
 	/** The pointed room's raised copy (FK, element 6): a lit glass face and the brightest edges on the sheet. */
-	constexpr float HighlightFaceOpacity = 0.2f;  // FM: 0.2 (FK 0.6): its walls glass, not a lit block
-	constexpr float HighlightEdgeIntensity = 8.0f;
+	constexpr float HighlightFaceOpacity = 0.08f;  // FO: 0.08 (FM 0.2, FK 0.6): clear glass under the brightest edges
+	constexpr float HighlightEdgeIntensity = 10.0f;  // FO: 10 (FM 8)
 	/** The edges' emissive scale per batch (M_EdgeGlow's Intensity, its default 1.4; FE, elements 4 and 6, against the
 	 *  concept's bright cyan edges): the rest extrusions brightest, as the concept's rooms on the sheet; the lifted wing's
 	 *  shells and the lifted room's tiles under them; the lifted room's shell carries LiftedRoomShow on top. All of it
@@ -712,14 +719,12 @@ void ABpTable::BuildWingLabels()
 	WingLabels.Reset();
 	LabelPlaces.RemoveAll([](const FLabelPlace& Place) { return !Place.Label.IsValid(); });
 	// Each label as the sheet would set it (its tag line over its name, on a slight dark backing), flat, at
-	// RestRoomCm + WingLabelLiftCm over the paper; its top-left corner is the backing's.
+	// RestRoomCm + WingLabelLiftCm over the paper; its bottom-left corner is the backing's (FO: it tilts up from there).
 	for (const FWingLabel& Spec : WingLabelSpecs)
 	{
 		const double CmPerSlate = Spec.NameCap / (LabelFontSize * SlatePxPerPoint * TypeCapPerEm);
 		const float Pad = static_cast<float>(LabelBackPadCm / CmPerSlate);
 		const bool bTag = !Spec.Tag.IsEmpty();
-		const double TopCap = bTag ? Spec.TagCap : Spec.NameCap;
-		const double TopV = (bTag ? Spec.NameBase - Spec.NameCap - WingTagGapCm : Spec.NameBase) - TopCap - (TypeAscPerEm - TypeCapPerEm) * TopCap / TypeCapPerEm;
 		TSharedRef<SVerticalBox> Lines = SNew(SVerticalBox);
 		if (bTag)
 		{
@@ -730,8 +735,9 @@ void ABpTable::BuildWingLabels()
 		Lines->AddSlot().AutoHeight()[
 			SNew(STextBlock).Text(FText::FromString(Spec.Name)).Font(LabelFont(TEXT("Bold"), LabelFontSize)).ColorAndOpacity(FSlateColor(WarmPaper))
 		];
-		UWidgetComponent* Label = MakeLabel(SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(LabelBacking).Padding(Pad)[Lines],
-			FVector2D(Spec.U - LabelBackPadCm, TopV - LabelBackPadCm), FVector2D(0.0, 0.0), static_cast<float>(Spec.NameCap), static_cast<float>(RestRoomCm + WingLabelLiftCm));
+		UWidgetComponent* Label = MakeLabel(SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(FloatLabelBacking).Padding(Pad)[Lines],
+			FVector2D(Spec.U - LabelBackPadCm, Spec.NameBase + LabelBackPadCm + TypeInkDescPerEm * Spec.NameCap / TypeCapPerEm), FVector2D(0.0, 1.0), static_cast<float>(Spec.NameCap), static_cast<float>(RestRoomCm + WingLabelLiftCm));
+		Label->SetRelativeRotation(LabelRotation + FRotator(-WingLabelTiltDeg, 0.f, 0.f));
 		WingLabels.Add(Label);
 	}
 	PlaceLabels();
@@ -1127,17 +1133,19 @@ void ABpTable::BuildVolumes(const FBpPlan& Plan)
 	for (int32 Index = 0; Index < Plan.rooms.Num(); ++Index) RoomOf.Add(Plan.rooms[Index].id, Index);
 	RestRoom.Reset();
 	RestInk.Reset();
+	RestFace.Reset();
 	TArray<float> Rest;
-	const auto AddRest = [&](const FBpPlanBox& Box, float HeightCm, float Face, int32 Room)
+	const auto AddRest = [&](const FBpPlanBox& Box, float HeightCm, float Face, float Ink, int32 Room)
 	{
 		const FVector2D A = PlanToPaperCm(FVector2D(Box.x, Box.y)), B = PlanToPaperCm(FVector2D(Box.x + Box.w, Box.y + Box.h));
 		const FVector Size(B.Y - A.Y, B.X - A.X, HeightCm);
 		Transforms.Add(FTransform(FQuat::Identity, PaperCmToLocal((A + B) * 0.5, HeightCm * 0.5f), Size / 100.0));
 		Rest.Append({ static_cast<float>(Size.X), static_cast<float>(Size.Y), static_cast<float>(Size.Z), 0.f, Face });
 		RestRoom.Add(Room);
-		RestInk.Add(Face >= 1.f ? RestRoomShow : RestPartitionShow);
+		RestInk.Add(Ink);
+		RestFace.Add(Face);
 	};
-	for (int32 Index = 0; Index < Plan.rooms.Num(); ++Index) AddRest(Plan.rooms[Index].box, RestRoomCm, 1.f, Index);
+	for (int32 Index = 0; Index < Plan.rooms.Num(); ++Index) AddRest(Plan.rooms[Index].box, RestRoomCm, 1.f, RestRoomShow, Index);
 	// A partition: the bay box's far edge as a wall PartitionCm thick (in plan units), across the bay's width. The plan's
 	// boxes place it; the bay boxes are inset from their room, so their other edges would double the room's walls.
 	for (const FBpPlanBay& Bay : Plan.bays)
@@ -1146,7 +1154,21 @@ void ABpTable::BuildVolumes(const FBpPlan& Plan)
 		FBpPlanBox Wall = Bay.box;
 		Wall.y -= PartitionCm * 0.5 / BpPlanUnitCm;
 		Wall.h = PartitionCm / BpPlanUnitCm;
-		AddRest(Wall, RestRoomCm * BayPartitionRatio, PartitionFace, Room ? *Room : INDEX_NONE);
+		AddRest(Wall, RestRoomCm * BayPartitionRatio, PartitionFace, RestPartitionShow, Room ? *Room : INDEX_NONE);
+	}
+	// The tile cells (FO): each tile's box grown by TileCellGrowU, a low cell with no face, in its bay's room.
+	TMap<FString, FString> BayParent;
+	for (const FBpPlanBay& Bay : Plan.bays) BayParent.Add(Bay.id, Bay.parentId);
+	for (int32 Index = 0; Index < Plan.tiles.Num(); ++Index)
+	{
+		const FString* Parent = BayParent.Find(Plan.tiles[Index].parentId);
+		const int32* Room = Parent ? RoomOf.Find(*Parent) : nullptr;
+		FBpPlanBox Cell = Plan.tiles[Index].box;
+		Cell.x -= TileCellGrowU;
+		Cell.y -= TileCellGrowU;
+		Cell.w += 2.0 * TileCellGrowU;
+		Cell.h += 2.0 * TileCellGrowU;
+		AddRest(Cell, TileCellCm, 0.f, TileCellShow, Room ? *Room : INDEX_NONE);
 	}
 	RestVolumes->SetNumCustomDataFloats(VolumeCustomFloats + 1);
 	if (Transforms.Num() > 0)
@@ -1329,6 +1351,8 @@ void ABpTable::ApplyGlyphs(float WingEase)
 			const FString Wing = RoomWing.IsValidIndex(Room) ? RoomWing[Room] : FString();
 			float Show = 0.f;
 			if (bOn) Show = AnimWing.IsEmpty() ? 1.f : (Wing == AnimWing ? 1.f - WingEase : FMath::Lerp(1.f, LevelDim, WingEase));
+			// Around a pointed room the other rooms' furniture recedes with their walls (FO).
+			if (HighlightRestRoom != INDEX_NONE && Room != HighlightRestRoom) Show *= PointedDim;
 			if (ShownGlyph[Batch][Index] == Show) continue;
 			ShownGlyph[Batch][Index] = Show;
 			Glyphs[Batch]->SetCustomDataValue(Index, 0, Show, false);
@@ -1636,6 +1660,18 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 		}
 		if (bTags) LabelTop = FMath::Min(LabelTop, Seen(At.Y - At.Z));
 	}
+	// A floating label stands tilted up from its bottom edge (FO), so its top reads higher than it would lying flat: the
+	// pins' tags clear that top, where the eye sees it on the paper.
+	for (const FWingLabel& Each : Floating)
+	{
+		const double Bottom = Each.NameBase + LabelBackPadCm + BpType::DescPerEm * Each.NameCap / BpType::CapPerEm;
+		const double TopCap = Each.Tag.IsEmpty() ? Each.NameCap : Each.TagCap;
+		const double FlatTop = (Each.Tag.IsEmpty() ? Each.NameBase : Each.NameBase - Each.NameCap - WingTagGapCm) - TopCap
+			- (BpType::AscPerEm - BpType::CapPerEm) * TopCap / BpType::CapPerEm - LabelBackPadCm;
+		const double Tilt = FMath::DegreesToRadians(WingLabelTiltDeg), Height = Bottom - FlatTop;
+		const double V = Bottom - Height * FMath::Cos(Tilt), Z = FloatCm + Height * FMath::Sin(Tilt);
+		LabelTop = FMath::Min(LabelTop, V - CoverCm(V, Z));
+	}
 	// The floating labels are made outside the canvas draw (Tick), when what they say or where they stand changed.
 	FString FloatKey;
 	for (const FWingLabel& Each : Floating) FloatKey += FString::Printf(TEXT("%s|%s|%s|%.3f|%.3f|%.3f;"), *Each.Wing, *Each.Name, *Each.Tag, Each.U, Each.NameBase, Each.NameCap);
@@ -1681,7 +1717,9 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 		Put(Name, BpType::RoomName, A.X + RoomNameInsetCm, Base - Cap, Cap, Ink(WarmPaper, 0.92f * SheetInkFactor(Room.parentId)), 0.0);
 	}
 
-	// ---- The title block, on the paper below the shortest wing: the level's plan, the product and lens, the scale bar ----
+	// ---- The title block, on the border's near rule below the shortest wing: the level's plan, the product and lens, the
+	// scale bar ----
+	FVector2D CompassCentreCm(PaperWidthCm * 0.5, PaperDepthCm * 0.5);
 	{
 		const FBpPlanWing* Shortest = nullptr;
 		for (const FBpPlanWing* Wing : Wings)
@@ -1696,20 +1734,33 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 		const FString Product = Link.GetProductName().IsEmpty() ? Link.GetProductSlug() : Link.GetProductName();
 		const FString Sub = Cased(BpType::TitleSub, TitleLensLine.IsEmpty() ? Product : FString::Printf(TEXT("%s  ·  lens %s"), *Product, *TitleLensLine));
 		const FString Title = Names[static_cast<int32>(Level)];
-		const double Top = SB.Y + TitleBelowWingCm;
-		// Each row's cap meets the floor at its own baseline; the floor is taken across the block's likely width.
+		// Each row's cap meets the floor at its own baseline; the floor is taken across the block's likely width. The block
+		// stands on the border's near rule (FO): laid out once from a trial top, then moved down onto the rule and laid out
+		// again there (the floors change with v).
 		const double U0 = Cx - 12.0, U1 = Cx + 12.0;
-		const double TitleTop = Top + TitlePadCm * 1.4;
-		double TitleCap = BpType::Title.CapCm;
-		for (int32 Pass = 0; Pass < 3; ++Pass) TitleCap = FMath::Max(BpType::Title.CapCm, FloorAt(U0, U1, TitleTop + TitleCap));
-		const double SubTop = TitleTop + TitleCap + TitleRowGapCm;
-		double SubCap = BpType::TitleSub.CapCm;
-		for (int32 Pass = 0; Pass < 3; ++Pass) SubCap = FMath::Max(BpType::TitleSub.CapCm, FloorAt(U0, U1, SubTop + SubCap));
-		const double FigTop = SubTop + SubCap + TitleRowGapCm;
-		double FigCap = BpType::Figure.CapCm;
-		for (int32 Pass = 0; Pass < 3; ++Pass) FigCap = FMath::Max(BpType::Figure.CapCm, FloorAt(U0, U1, FigTop + FigCap));
-		const double BarV = FigTop + FigCap + 0.6;
-		const double Bottom = BarV + ScaleBarHeightCm + TitlePadCm;
+		// Above the breadcrumb's line where it runs under the block (L1 and L2's crumbs are long).
+		double NearRule = PaperDepthCm - BorderInsetCm;
+		for (const FCrumb& Crumb : Crumbs)
+		{
+			if (Crumb.PaperCm.Min.X < Cx + 14.0 && Crumb.PaperCm.Max.X > Cx - 14.0) NearRule = FMath::Min(NearRule, Crumb.PaperCm.Min.Y - 0.5);
+		}
+		double Top = SB.Y + 3.5, TitleTop = 0.0, TitleCap = 0.0, SubTop = 0.0, SubCap = 0.0, FigTop = 0.0, FigCap = 0.0, BarV = 0.0, Bottom = 0.0;
+		for (int32 Layout = 0; Layout < 3; ++Layout)
+		{
+			TitleTop = Top + TitlePadCm * 1.4;
+			TitleCap = BpType::Title.CapCm;
+			for (int32 Pass = 0; Pass < 3; ++Pass) TitleCap = FMath::Max(BpType::Title.CapCm, FloorAt(U0, U1, TitleTop + TitleCap));
+			SubTop = TitleTop + TitleCap + TitleRowGapCm;
+			SubCap = BpType::TitleSub.CapCm;
+			for (int32 Pass = 0; Pass < 3; ++Pass) SubCap = FMath::Max(BpType::TitleSub.CapCm, FloorAt(U0, U1, SubTop + SubCap));
+			FigTop = SubTop + SubCap + TitleRowGapCm;
+			FigCap = BpType::Figure.CapCm;
+			for (int32 Pass = 0; Pass < 3; ++Pass) FigCap = FMath::Max(BpType::Figure.CapCm, FloorAt(U0, U1, FigTop + FigCap));
+			BarV = FigTop + FigCap + 0.6;
+			Bottom = BarV + ScaleBarHeightCm + TitlePadCm;
+			Top += NearRule - Bottom;
+		}
+		Top -= NearRule - Bottom;
 		const double TitleW = WidthCm(Title, BpType::Title, TitleCap), SubW = WidthCm(Sub, BpType::TitleSub, SubCap);
 		const double UnitW = WidthCm(TEXT("CM"), BpType::Figure, FigCap);
 		const double BarW = ScaleBarCm + 1.0 + UnitW;
@@ -1742,12 +1793,20 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 		}
 		Put(TEXT("CM"), BpType::Figure, B0 + Cms + 1.0, BarV + ScaleBarHeightCm - FigCap, FigCap, Ink(CyanWhite, 0.7f), 0.0);
 		Report(TEXT("figure"), TEXT("0 5 10 20 CM"), B0, FigTop + FigCap, FigCap, FloorAt(U0, U1, FigTop + FigCap));
+		CompassCentreCm = FVector2D(Cx, (SB.Y + Top) * 0.5);
+		// The border: a fine rule round the drawing.
+		const FLinearColor Border = Ink(CyanWhite, BorderOpacity);
+		const double BL = BorderInsetCm, BR = PaperWidthCm - BorderInsetCm, BT = BorderInsetCm, BB = PaperDepthCm - BorderInsetCm;
+		LineCm(BL, BT, BR, BT, 3.f, Border);
+		LineCm(BR, BT, BR, BB, 3.f, Border);
+		LineCm(BR, BB, BL, BB, 3.f, Border);
+		LineCm(BL, BB, BL, BT, 3.f, Border);
 	}
 
-	// ---- The compass rose, in the left margin: two rings, the cross and its ticks, a north arrow toward the far edge ----
+	// ---- The compass rose, under the shortest wing (FO): two rings, the cross and its ticks, a north arrow toward the far edge
 	{
 		const FLinearColor Rose = Ink(CyanWhite, 0.8f);
-		const FVector2D C = CompassCm;
+		const FVector2D C = CompassCentreCm;
 		const double R = CompassRadiusCm;
 		constexpr int32 Sides = 96;
 		for (int32 Side = 0; Side < Sides; ++Side)
