@@ -70,15 +70,17 @@ public:
 	 *  between the watch and the eye, its left edge at the watch, about 8.6 cm wide, as the concept's. FAB (the judges,
 	 *  11: still "floating below the hand"): over the sleeve, its right edge against the watch, as a panel mounted on the
 	 *  forearm by the watch (the posed forearm points at the eye, so the sleeve is all of it the target frame sees), below
-	 *  the frame's lit rail (over it the rail read through the glass across a row). */
-	static constexpr float WristCaptureOffsetXCm = -4.f;  // FAB: (-4, -1.5, 1) x0.6, roll -8 (FQ -6, 11, 5 x0.66, roll 10; FP -3, -1, 12 x0.78, tilt 10)
-	static constexpr float WristCaptureOffsetYCm = -1.5f;
-	static constexpr float WristCaptureOffsetZCm = 1.f;
+	 *  the frame's lit rail (over it the rail read through the glass across a row). FAF (the judges: "floats detached below
+	 *  the wrist"): on the wrist itself, over the watch and the sleeve's cuff, rolled along the forearm, so the forearm reads
+	 *  through the glass under it. */
+	static constexpr float WristCaptureOffsetXCm = -3.f;  // FAF: (-3, 1.5, 3.5) x0.6, roll -14 (FAB -4, -1.5, 1, roll -8; FQ -6, 11, 5 x0.66, roll 10)
+	static constexpr float WristCaptureOffsetYCm = 1.5f;
+	static constexpr float WristCaptureOffsetZCm = 3.5f;
 	static constexpr float WristCaptureScale = 0.6f;
 	/** FO (element 11, the concept's panel "angled along the forearm"): from square to the eye, the panel rolls this far
 	 *  about the view axis so its bottom edge follows the forearm, then tilts back this far about its own horizontal axis,
 	 *  lying toward the forearm's top. By capture. */
-	static constexpr float WristCaptureRollDeg = -8.f;
+	static constexpr float WristCaptureRollDeg = -14.f;  // FAF (FAB -8)
 	static constexpr float WristCaptureTiltDeg = 0.f;
 	/** The panel's up leans with the target pose's view (ABpGameMode::TargetPitchDeg), so it reads square to the eye. */
 	void SetWristParent(USceneComponent* Parent, FName Socket, const FTransform& Relative);

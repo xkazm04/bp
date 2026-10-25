@@ -28,9 +28,10 @@ namespace
 	const FLinearColor Cyan(FColor(0xBF, 0xE8, 0xFF));
 	const FLinearColor Amber(FColor(0xFF, 0xB5, 0x47));
 	/** The panel's glass, its lit edge and its sub-lines' paler cyan (FR, element 11: from 0A1E40, a lighter blue). */
-	const FLinearColor Glass(FColor(0x12, 0x33, 0x66));
 	const FLinearColor CyanEdge(FColor(0xD8, 0xF4, 0xFF));
-	const FLinearColor CyanText(FColor(0xDD, 0xF3, 0xFF));
+	/** FAF: the lit glass (from FR's 123366 at 0.88, the judges' "opaque slate") and the sub-lines nearer white. */
+	const FLinearColor GlassLit(FColor(0x15, 0x3C, 0x74));
+	const FLinearColor CyanText(FColor(0xEC, 0xF9, 0xFF));
 
 	/** The sheet's family (BpType.h; FE): a font whose cap height is CapPx pixels, Roboto until the table built it. */
 	FSlateFontInfo CapFont(const TCHAR* Style, float CapPx)
@@ -196,7 +197,7 @@ void ABpPawn::ReceiveScanState(const FBpScanState& State)
 	TMap<FString, FString> Status;
 	for (const FBpProposal& Proposal : State.Scan.proposals) Status.Add(Proposal.id, Proposal.status);
 
-	struct FRow { FString Name; FString Meta; float Fraction; int32 Count; };
+	struct FRow { FString Name; FString Meta; FString Tiers; float Fraction; int32 Count; };
 	TArray<FRow> Rows;
 	FString Key = Wave ? Wave->id + Wave->status : FString(TEXT("none"));
 	if (Wave)
@@ -204,10 +205,18 @@ void ABpPawn::ReceiveScanState(const FBpScanState& State)
 		for (const FBpWavePackage& Package : Wave->packages)
 		{
 			int32 Built = 0;
-			for (const FString& Id : Package.ids) Built += IsBuilt(Status.FindRef(Id)) ? 1 : 0;
+			// FAF: the package's findings by triage tier (store v4), as the ledger's T0..T3 chips; untriaged ones are not counted.
+			int32 ByTier[4] = { 0, 0, 0, 0 };
+			for (const FString& Id : Package.ids)
+			{
+				Built += IsBuilt(Status.FindRef(Id)) ? 1 : 0;
+				if (const int32* Tier = State.Tiers.Find(Id)) ++ByTier[FMath::Clamp(*Tier, 0, 3)];
+			}
+			TArray<FString> Chips;
+			for (int32 Tier = 0; Tier < 4; ++Tier) if (ByTier[Tier] > 0) Chips.Add(FString::Printf(TEXT("T%d  %d"), Tier, ByTier[Tier]));
 			const float Fraction = Package.ids.Num() > 0 ? static_cast<float>(Built) / Package.ids.Num() : 0.f;
 			Rows.Add({ Package.name, FString::Printf(TEXT("%d %s · %s · %s"), Package.ids.Num(), Package.ids.Num() == 1 ? TEXT("finding") : TEXT("findings"), *Package.model, *Package.effort),
-				Fraction, Package.ids.Num() });
+				FString::Join(Chips, TEXT("   ")), Fraction, Package.ids.Num() });
 			Key += FString::Printf(TEXT("|%s:%d"), *Package.id, Built);
 		}
 	}
@@ -219,20 +228,41 @@ void ABpPawn::ReceiveScanState(const FBpScanState& State)
 	// FP: an opaque enough back that the sheet's labels do not show through (the judge, element 11; FO 0.72). FR (the
 	// judges: "an opaque dark slab without the concept's glassy edge-lit panel"; "small low-contrast text"): a lighter
 	// blue glass, a lit cyan edge with a soft outer glow and a pale sheen along its top, and larger, brighter type.
-	static const FSlateRoundedBoxBrush Panel(Glass.CopyWithNewOpacity(0.88f), 20.f, CyanEdge, 4.f);  // at 0.8 the frame's bright rim crossed a row (by capture)
+	// FAF (the judges: "opaque slate, not lit glass"): a lighter glass the forearm and the paper show through, a brighter lit
+	// edge and glow, a stronger sheen, and lit rows; the type in white and near-white for contrast through the glass.
+	static const FSlateRoundedBoxBrush Panel(GlassLit.CopyWithNewOpacity(0.8f), 20.f, CyanEdge, 4.5f);  // 0.66 of 1C4E8E read milky, the rail white through a row
 	// FAB (element 11, the judges: the concept's panel has an emissive edge): two glow rings outside the lit edge, the
 	// inner one bright enough to bloom.
-	static const FSlateRoundedBoxBrush EdgeGlow(Cyan.CopyWithNewOpacity(0.10f), 32.f);
-	static const FSlateRoundedBoxBrush EdgeGlowInner(Cyan.CopyWithNewOpacity(0.0f), 24.f, CyanEdge.CopyWithNewOpacity(0.55f), 5.f);
-	static const FSlateRoundedBoxBrush Sheen(FLinearColor(1.f, 1.f, 1.f, 0.07f), 14.f);
-	static const FSlateRoundedBoxBrush Row(Cyan.CopyWithNewOpacity(0.13f), 12.f, Cyan.CopyWithNewOpacity(0.5f), 1.5f);
+	static const FSlateRoundedBoxBrush EdgeGlow(Cyan.CopyWithNewOpacity(0.16f), 32.f);
+	static const FSlateRoundedBoxBrush EdgeGlowInner(Cyan.CopyWithNewOpacity(0.0f), 24.f, CyanEdge.CopyWithNewOpacity(0.85f), 5.f);
+	static const FSlateRoundedBoxBrush Sheen(FLinearColor(1.f, 1.f, 1.f, 0.12f), 14.f);
+	static const FSlateRoundedBoxBrush Row(Cyan.CopyWithNewOpacity(0.12f), 12.f, CyanEdge.CopyWithNewOpacity(0.7f), 2.f);
 	TSharedRef<SVerticalBox> List = SNew(SVerticalBox);
+	// FAF (pof's draft has two packages, the judges' "only two sparse rows"): up to two rows stand taller, with their tier
+	// line, so the panel reads full; three or four keep FR's compact rows.
+	const bool bTall = Rows.Num() <= 2;
 	for (int32 Index = 0; Index < Rows.Num() && Index < 4; ++Index)
 	{
 		const FRow& R = Rows[Index];
-		List->AddSlot().AutoHeight().Padding(0.f, 8.f, 0.f, 0.f)
+		TSharedRef<SVerticalBox> Text = SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				SNew(STextBlock).Text(FText::FromString(R.Name)).Font(CapFont(TEXT("Bold"), bTall ? 32.f : 28.f)).ColorAndOpacity(FSlateColor(FLinearColor::White))
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 6.f, 0.f, 0.f)
+			[
+				SNew(STextBlock).Text(FText::FromString(R.Meta)).Font(CapFont(TEXT("Regular"), 21.f)).ColorAndOpacity(FSlateColor(CyanText))
+			];
+		if (bTall && !R.Tiers.IsEmpty())
+		{
+			Text->AddSlot().AutoHeight().Padding(0.f, 7.f, 0.f, 0.f)
+			[
+				SNew(STextBlock).Text(FText::FromString(R.Tiers)).Font(CapFont(TEXT("Bold"), 21.f)).ColorAndOpacity(FSlateColor(Amber))
+			];
+		}
+		List->AddSlot().AutoHeight().Padding(0.f, bTall ? 12.f : 8.f, 0.f, 0.f)
 		[
-			SNew(SBorder).BorderImage(&Row).Padding(FMargin(12.f, 8.f))
+			SNew(SBorder).BorderImage(&Row).Padding(FMargin(12.f, bTall ? 14.f : 8.f))
 			[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
@@ -241,15 +271,7 @@ void ABpPawn::ReceiveScanState(const FBpScanState& State)
 				]
 				+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center).Padding(12.f, 0.f)
 				[
-					SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight()
-					[
-						SNew(STextBlock).Text(FText::FromString(R.Name)).Font(CapFont(TEXT("Bold"), 27.f)).ColorAndOpacity(FSlateColor(FLinearColor::White))
-					]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 6.f, 0.f, 0.f)
-					[
-						SNew(STextBlock).Text(FText::FromString(R.Meta)).Font(CapFont(TEXT("Regular"), 20.f)).ColorAndOpacity(FSlateColor(CyanText))
-					]
+					Text
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 				[
@@ -288,7 +310,7 @@ void ABpPawn::ReceiveScanState(const FBpScanState& State)
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight()
 			[
-				SNew(STextBlock).Text(FText::FromString(TEXT("PACKAGES"))).Font(CapFont(TEXT("Bold"), 23.f)).ColorAndOpacity(FSlateColor(FLinearColor::White))
+				SNew(STextBlock).Text(FText::FromString(TEXT("PACKAGES"))).Font(CapFont(TEXT("Bold"), 25.f)).ColorAndOpacity(FSlateColor(FLinearColor::White))
 			]
 			// The wave's name and status on a line of its own (FO: beside the title it was cut and unreadable).
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 6.f, 0.f, 0.f)

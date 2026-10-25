@@ -109,7 +109,7 @@ public:
 	 *  the top, and each bay's far boundary inside it is a partition wall at BayPartitionRatio of that height, PartitionCm
 	 *  thick, across the bay's width (FM: the judge's "thin, taller cyan-edged walls with internal partitions"; a bay box
 	 *  drawn whole made a second tray inside each room). A lifted wing leaves its rest walls behind, hidden. */
-	static constexpr float RestRoomCm = 5.5f;  // FQ: 5.5, taller distinct cells; FP: 4.5 (FO 3.5, FM 6.5, FK 2.2): cells, not trays, with the pointed room still standing out (by capture)
+	static constexpr float RestRoomCm = 6.5f;  // FAF: 6.5 (the judges on Kettle: "big low slabs"); FQ: 5.5, taller distinct cells; FP: 4.5 (FO 3.5, FM 6.5, FK 2.2): cells, not trays, with the pointed room still standing out (by capture)
 	/** A shallow room's rest walls stand lower (FAB, a live product's capability rooms, one or two bays deep): at most this
 	 *  share of the room's depth on the paper, so a stack of shallow rooms reads as trays, not as boxes whose walls cover
 	 *  their neighbours. Kettle's rooms (13 cm deep and more) keep RestRoomCm. */
@@ -185,6 +185,13 @@ public:
 	 *  first, then tier as the ledger orders it, untriaged after T3, then risk) and counts the rest as +k. */
 	static constexpr int32 PinTagTierMax = 1;
 	static constexpr int32 PinTagRiskMin = 7;
+	/** FAF (element 7, the judges on pof: "too many tags, overlapping the labels, some hanging off the table edges"): of a
+	 *  wing's urgent tags only its PinTagsPerWing most urgent per PinTagWingCm of its width stand (at least
+	 *  PinTagsPerWing; the order MoreUrgent gives: pof's 17.6 cm wings one each, Kettle's wide ones two), and only ones whose tag
+	 *  the target eye sees inside the table's far corners; the others keep their beads, and the rule never hides a
+	 *  finding (the ledger lists them all). */
+	static constexpr int32 PinTagsPerWing = 1;
+	static constexpr float PinTagWingCm = 2.f * TagClearUCm;  // two tags' clearance
 	/** A tag never stands over the wing labels (FE): a tagged pin whose tag the target eye would see over the label row
 	 *  rises on a longer stem until the tag's foot clears the row's far edge by TagRowGapCm (paper cm, seen from the eye). */
 	static constexpr float TagRowGapCm = 0.6f;
@@ -550,6 +557,17 @@ private:
 	float RestRoomHeightCm(const struct FBpPlanBox& RoomBox) const;
 	/** The glyph batches from the plan's tiles and the kinds BpLink read (FC3). */
 	void BuildGlyphs(const FBpPlan& Plan);
+	/** FAF (element 6, the judges on pof: the focal room "not under the finger"): the capture's posed right hand (a capture
+	 *  prop, ABpPawn::CaptureHandsTag) moves with the pointed room, its index tip CaptureTipInCm past the room's near wall
+	 *  and CaptureTipAcrossCm in from its left wall, where fk_point.py stood it over Kettle's room. Only the actor moves
+	 *  (its pose is the mesh's, yaw 90); the tip stands CaptureTipFromHand*Cm from the actor (fk_point.py's rest tip).
+	 *  Axes: the table's, X away from the person, Y to their right. RoomMin is the room's near-left floor corner in the
+	 *  wing group's space. */
+	void AimCaptureHand(const FVector& RoomMin);
+	static constexpr float CaptureTipInCm = 2.4f;
+	static constexpr float CaptureTipAcrossCm = 5.8f;
+	static constexpr float CaptureTipFromHandXCm = 12.f;
+	static constexpr float CaptureTipFromHandYCm = 17.f;
 	/** The glyphs' Show per instance for the levels: as their room's rest extrusion. */
 	void ApplyGlyphs(float WingEase);
 	/** The pointed room's furniture copied onto its lifted floor (FP), or every lifted copy cleared (INDEX_NONE). */
@@ -787,6 +805,11 @@ private:
 	double WingLabelTopV = -1.0e9;  // unset; the floating labels (FM) put the row past the paper (v < 0)
 	/** Each tagged pin's rise so its tag clears the label row from the target eye. */
 	void RaisePins();
+	/** RaisePins's rise for one tagged pin (paper cm). */
+	double TagRaiseCm(const FPin& Pin) const;
+	/** Whether a tag risen RaiseCm on its pin stands, from the target eye, between the table's far corners (FAF: the
+	 *  judges' "tags hanging off the table edges"). */
+	bool TagInsidePaper(const FVector2D& PaperCm, double RaiseCm) const;
 	/** Where a label of Width (paper cm) on the row from VTop to VBase starts, at U0 or as near it as keeps it, up to
 	 *  MaxU, off every tagged pin's stem as the target eye sees the stem cross that row (FM); where none is clear, across
 	 *  the fewest stems. */

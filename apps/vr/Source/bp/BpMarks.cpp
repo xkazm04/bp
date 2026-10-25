@@ -448,6 +448,32 @@ void ABpTable::BuildPins(const FBpScanState& State)
 			break;
 		}
 	}
+	// FAF: per wing, the PinTagsPerWing most urgent tags that stand inside the table from the target eye; a merged tag
+	// keeps the count it took over.
+	TMap<FString, TArray<int32>> TagsOfWing;
+	int32 Capped = 0, Outside = 0;
+	for (int32 Index = 0; Index < Next.Num(); ++Index)
+	{
+		if (!Next[Index].bTagged) continue;
+		const FString Wing = SheetPlan->rooms.IsValidIndex(Next[Index].Room) ? SheetPlan->rooms[Next[Index].Room].parentId : FString();
+		TagsOfWing.FindOrAdd(Wing).Add(Index);
+	}
+	for (TPair<FString, TArray<int32>>& Wing : TagsOfWing)
+	{
+		Wing.Value.StableSort([&Next](int32 A, int32 B) { return MoreUrgent(Next[A], Next[B]); });
+		// A wing holds PinTagsPerWing tags per PinTagWingCm of its width on the paper, at least that many.
+		const FBpPlanWing* Of = FindWing(Wing.Key);
+		const double WidthCm = Of ? Of->box.w * BpPlanUnitCm : 0.0;
+		const int32 Cap = PinTagsPerWing * FMath::Max(1, FMath::FloorToInt(WidthCm / PinTagWingCm));
+		int32 Kept = 0;
+		for (const int32 Index : Wing.Value)
+		{
+			FPin& Pin = Next[Index];
+			if (Kept >= Cap) { Pin.bTagged = false; ++Capped; continue; }
+			if (!TagInsidePaper(PaperOf(Pin), TagRaiseCm(Pin))) { Pin.bTagged = false; ++Outside; continue; }
+			++Kept;
+		}
+	}
 	int32 Cells = 0;
 	for (FPin& Pin : Next)
 	{
@@ -469,8 +495,8 @@ void ABpTable::BuildPins(const FBpScanState& State)
 		}
 	}
 	if (Key == PinsKey && PinList.Num() == Next.Num()) return;
-	UE_LOG(LogBpTable, Log, TEXT("BpTable: pin rule tier<=T%d (untriaged: risk>=%d): tags=%d of %d pins, merged=%d (tags that would overlap from the target eye); open=%d triaged=%d"),
-		PinTagTierMax, PinTagRiskMin, Cells, Next.Num(), Merged, Open, Triaged);
+	UE_LOG(LogBpTable, Log, TEXT("BpTable: pin rule tier<=T%d (untriaged: risk>=%d), %d per %.0f cm of wing inside the table: tags=%d of %d pins, merged=%d (tags that would overlap from the target eye), capped=%d, outside=%d; open=%d triaged=%d"),
+		PinTagTierMax, PinTagRiskMin, PinTagsPerWing, PinTagWingCm, Cells, Next.Num(), Merged, Capped, Outside, Open, Triaged);
 	PinsKey = Key;
 	PinList = MoveTemp(Next);
 	Pins->ClearInstances();
@@ -506,9 +532,9 @@ void ABpTable::BuildPins(const FBpScanState& State)
 	UE_LOG(LogBpTable, Log, TEXT("BpTable: pins=%d tagged=%d open_findings=%d (beads on the features that carry them)"), PinList.Num(), Pins->GetInstanceCount(), Open);
 }
 
-void ABpTable::RaisePins()
+double ABpTable::TagRaiseCm(const FPin& Pin) const
 {
-	if (!SheetPlan.IsValid()) return;
+	if (!SheetPlan.IsValid() || !SheetPlan->tiles.IsValidIndex(Pin.Tile)) return 0.0;
 	// From the target eye (on the table's centre line), the wing labels lie on the paper between the plan's far edge and
 	// WingLabelTopV. Above a pin's foot, the eye's rays to those two lines pass at two heights; a tag between them would
 	// stand over the labels, so its pin rises on a stem until the tag's foot clears the far line's ray (TagRowGapCm
@@ -525,20 +551,46 @@ void ABpTable::RaisePins()
 		return (Eye.Y - PaperZ) * (1.0 - (PinX - Eye.X) / FMath::Max(X - Eye.X, 1.0));
 	};
 	const double TagFoot = (PinModelCm - PinTagModelCm) * PinScale, TagTop = PinModelCm * PinScale;
+	const FBpPlanBox& Box = SheetPlan->tiles[Pin.Tile].box;
+	const double PinX = PaperDepthCm * 0.5 - PlanToPaperCm(FVector2D(Box.x + Box.w * 0.5, Box.y + Box.h * 0.5)).Y;
+	const double Low = RayHeight(PinX, NearV), High = RayHeight(PinX, FarV);
+	return TagTop > Low && TagFoot < High ? High - TagFoot : 0.0;
+}
+
+bool ABpTable::TagInsidePaper(const FVector2D& PaperCm, double RaiseCm) const
+{
+	// The target eye's horizontal image coordinate is Y over the depth along its view axis (one focal length for all), so
+	// the tag's outer top corner compares with the table's far corner on the same side (the frame's, the judges' "table
+	// edges"; the paper's is 20 px further in at the target pose).
+	const double Top = PlacedHeightCm > 0.f ? PlacedHeightCm : DefaultTableHeightCm;
+	const double PaperZ = Top - GlassRecessCm;
+	const FVector Eye(-(TableDepthCm * 0.5 + ABpGameMode::TargetBehindNearEdgeCm), 0.0, Top + ABpGameMode::TargetEyeAboveTopCm);
+	const double Pitch = FMath::DegreesToRadians(ABpGameMode::TargetPitchDeg);
+	const FVector Forward(FMath::Cos(Pitch), 0.0, FMath::Sin(Pitch));
+	const auto ImageX = [&](const FVector& P) { return P.Y / FMath::Max(FVector::DotProduct(P - Eye, Forward), 1.0); };
+	const double HalfTag = 0.5 * 2.2 * PinScale;  // the tag is 2.2 cm wide in the model (ArtSource/survey-pin)
+	// The share of the tag's outer half that must stand inside: half of it may pass the corner (by capture, the judges'
+	// "hanging off" tags were a whole tag out).
+	constexpr double TagEdgeShare = 0.5;
+	const FVector Head = PaperCmToLocal(PaperCm, PaperZ + RaiseCm + PinModelCm * PinScale);
+	const double Side = Head.Y >= 0.0 ? 1.0 : -1.0;
+	const FVector Corner(TableDepthCm * 0.5, Side * TableWidthCm * 0.5, Top);
+	const double Tag = Side * ImageX(Head + FVector(0.0, Side * HalfTag * TagEdgeShare, 0.0)), Edge = Side * ImageX(Corner);
+	if (Tag > Edge) UE_LOG(LogBpTable, Verbose, TEXT("BpTable: a tag at paper (%.1f, %.1f) risen %.1f stands off the table (%.3f > %.3f)"), PaperCm.X, PaperCm.Y, RaiseCm, Tag, Edge);
+	return Tag <= Edge;
+}
+
+void ABpTable::RaisePins()
+{
+	if (!SheetPlan.IsValid()) return;
 	TArray<FString> Risen;
 	for (FPin& Pin : PinList)
 	{
-		Pin.RaiseCm = 0.f;
-		if (!Pin.bTagged) continue;
-		const FBpPlanBox& Box = SheetPlan->tiles[Pin.Tile].box;
-		const double PinX = PaperDepthCm * 0.5 - PlanToPaperCm(FVector2D(Box.x + Box.w * 0.5, Box.y + Box.h * 0.5)).Y;
-		const double Low = RayHeight(PinX, NearV), High = RayHeight(PinX, FarV);
-		if (TagTop > Low && TagFoot < High)
-		{
-			Pin.RaiseCm = static_cast<float>(High - TagFoot);
-			Risen.Add(FString::Printf(TEXT("%s+%.1f"), *Pin.Line1, Pin.RaiseCm));
-		}
+		Pin.RaiseCm = Pin.bTagged ? static_cast<float>(TagRaiseCm(Pin)) : 0.f;
+		if (Pin.RaiseCm > 0.f) Risen.Add(FString::Printf(TEXT("%s+%.1f"), *Pin.Line1, Pin.RaiseCm));
 	}
+	const double NearV = PlanMarginCm().Y;
+	const double FarV = (WingLabelTopV > -1.0e8 ? WingLabelTopV : NearV - 5.0) - TagRowGapCm;
 	UE_LOG(LogBpTable, Log, TEXT("BpTable: tags clear the wing labels (paper v %.1f to %.1f): risen [%s]"), FarV, NearV, *FString::Join(Risen, TEXT(", ")));
 }
 
@@ -662,13 +714,16 @@ void ABpTable::DrawTags(UCanvas* Canvas, int32 Width, int32 Height)
 		Fill(Min, FVector2D(Max.X, Min.Y + 8.0), AmberInk);
 		const float Room = TagCellWidthPx - 8.f - 2.f * Pad;
 		const FSlateFontInfo Bold = CanvasFont(TEXT("Bold"), Cap);
-		const auto Fits = [&](const FString& Text) { return !Text.IsEmpty() && Measure(Text, Bold).X + Track * Text.Len() <= Room; };
+		const auto FitsAt = [&](const FString& Text, float Tracking) { return !Text.IsEmpty() && Measure(Text, Bold).X + Tracking * Text.Len() <= Room; };
+		const auto Fits = [&](const FString& Text) { return FitsAt(Text, Track); };
 		// The finding's id, else its part after the prefix (a live store's "P-4A6A4F" is two letters over the tag at the
 		// floor; the hex alone still names it in its product, as a short commit sha does).
 		FString Id = PinList[Index].Line1;
 		FString Short;
 		if (!Fits(Id) && Id.Split(TEXT("-"), nullptr, &Short)) Id = Short;
+		// FAF: an id a little wider than the tag (pof's "A0AB2A") sets without the tracking rather than going missing.
 		if (Fits(Id)) Texts.Add({ Id, FVector2D(Min.X + Pad, Top(Min.Y + 26.f)), Bold, TagInk, Track });
+		else if (FitsAt(Id, 0.f)) Texts.Add({ Id, FVector2D(Min.X + Pad, Top(Min.Y + 26.f)), Bold, TagInk, 0.f });
 		// The second line as it fits: the risk and the count, else the risk alone.
 		const FString* Line2 = PinList[Index].Line2.FindByPredicate(Fits);
 		if (Line2) Texts.Add({ *Line2, FVector2D(Min.X + Pad, Top(Min.Y + 26.f + Cap + 20.f)), Bold, CountInk, Track });

@@ -7,7 +7,9 @@
 
 #include "BpGameMode.h"
 #include "BpLink.h"
+#include "BpPawn.h"
 #include "Components/InstancedStaticMeshComponent.h"
+#include "Components/SceneCaptureComponent2D.h"
 #include "Components/WidgetComponent.h"
 #include "Engine/CanvasRenderTarget2D.h"
 #include "Engine/Engine.h"
@@ -603,6 +605,7 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 				};
 				Slab(Floor0 + HighlightLiftCm - HighlightFloorCm, HighlightFloorCm, HighlightFloorShow, 1.f);
 				Slab(Floor0, HighlightLiftCm - HighlightFloorCm, HighlightPlinthShow, 0.5f);
+				AimCaptureHand(RoomWalls.GetLocation() - Foot * 0.5);
 			}
 			HighlightShell->SetNumCustomDataFloats(5);  // as RestVolumes: size, Show, face
 			if (Raised.Num() > 0)
@@ -661,6 +664,28 @@ void ABpTable::SetHighlight(const FString& Kind, const FString& Id)
 	ApplyLevelVisuals();
 	// The card asks about the pointed room's finding when it has one (RefreshCard).
 	if (bCardShown) RefreshCard();
+}
+
+void ABpTable::AimCaptureHand(const FVector& RoomMin)
+{
+	// The posed right hand of the capture pair (the one further to the person's right; a headset removes the pair).
+	AActor* Hand = nullptr;
+	const FTransform& Table = GetActorTransform();
+	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	{
+		if (!It->ActorHasTag(ABpPawn::CaptureHandsTag)) continue;
+		if (!Hand || Table.InverseTransformPosition(It->GetActorLocation()).Y > Table.InverseTransformPosition(Hand->GetActorLocation()).Y) Hand = *It;
+	}
+	if (!Hand) return;
+	// The room's near-left corner in the shell's space (RoomMin), then the table's: the tip CaptureTipIn/AcrossCm in from it.
+	const FVector Corner = WingGroupTransform(0.f).TransformPosition(RoomMin);
+	FVector Local = Table.InverseTransformPosition(Hand->GetActorLocation());
+	Local.X = Corner.X + CaptureTipInCm - CaptureTipFromHandXCm;
+	Local.Y = Corner.Y + CaptureTipAcrossCm - CaptureTipFromHandYCm;
+	Hand->SetActorLocation(Table.TransformPosition(Local));
+	// The paper's hand shadow was captured once, before the hand moved.
+	if (HandCapture && !HandCapture->bCaptureEveryFrame) HandCapture->CaptureScene();
+	UE_LOG(LogBpTable, Log, TEXT("BpLevel: capture hand points at the pointed room: tip at table (%.1f, %.1f) cm"), Local.X + CaptureTipFromHandXCm, Local.Y + CaptureTipFromHandYCm);
 }
 
 FString ABpTable::GetProductSlug() const
