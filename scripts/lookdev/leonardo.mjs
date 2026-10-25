@@ -35,7 +35,8 @@ const EXPLORE = path.join(DIR, 'explore');
 const OVERSIZE = path.join(os.tmpdir(), 'bp-lookdev'); // exploration frames too big to commit: URL and id stay in the log
 const ENV_FILE = path.join(ROOT, '.env'); // THIS checkout's untracked .env, never another one's (check-leonardo guards it)
 const API = 'https://cloud.leonardo.ai/api/rest';
-const MODELS = ['openai/gpt-image-2.5-flare', 'nano-banana-2'];
+// Sunburst first: the owner judged it above flare and nano-banana on the same prompt (2026-10-25); flare stays callable.
+const MODELS = ['openai/gpt-image-2.5-sunburst', 'openai/gpt-image-2.5-flare', 'nano-banana-2'];
 const MODEL = MODELS[0];
 const STYLE_ID = '111dc692-d470-4eec-b791-3475abac4c46';
 const ART = path.join(ROOT, 'apps/vr/ArtSource');
