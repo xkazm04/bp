@@ -80,7 +80,9 @@ export async function POST(req: Request): Promise<Response> {
   if (outcome.kind === 'error') return Response.json({ error: outcome.missing ? 'Claude Code CLI not found (set BP_CLAUDE_BIN)' : outcome.message }, { status: outcome.missing ? 503 : 502 });
   const res = readResult(outcome.out);
   if (outcome.code !== 0 || !res || res.isError) {
-    const why = (res?.isError && res.result) || outcome.err.trim().split(/\r?\n/).pop() || (res ? '' : outcome.truncated ? `Claude's reply was longer than ${OUT_CAP >> 20} MiB and was cut off; ask for a shorter answer` : 'Claude answered no JSON') || `exit ${outcome.code}`;
+    // a cut-off reply is the cause whatever else the CLI printed to stderr (a Node warning must not hide it)
+    const cut = !res && outcome.truncated ? `Claude's reply was longer than ${OUT_CAP >> 20} MiB and was cut off; ask for a shorter answer` : '';
+    const why = (res?.isError && res.result) || cut || outcome.err.trim().split(/\r?\n/).pop() || (res ? '' : 'Claude answered no JSON') || `exit ${outcome.code}`;
     return Response.json({ error: `Claude Code failed: ${why}` }, { status: 502 });
   }
   const sess = res.session ?? session;
