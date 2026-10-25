@@ -8,8 +8,11 @@ Pivot is the floor centre. The top is 3 cm thick at the outer edge (lamp-agent's
 placeholder plane in its own slot for UE to replace; the glass and paper are procedural in UE (plan.md P4).
 Spark vr-fidelity-40 finish (scripts/art/lib/finish.bpy): the rim is an aluminium extrusion (a grooved profile swept round
 the outline, mitred), with corner caps and screw heads; square extrusion legs; every hard edge bevelled with hardened
-normals; unique UVs and one 2048 px atlas baked on the CPU from Poly Haven CC0 scans (dark anodised aluminium worn bright
-on its edges, so the edge light has something to catch). The glow strip and the glass keep their own flat slots.
+normals; unique UVs and one 2048 px atlas baked on the CPU from Poly Haven CC0 scans. The glow strip and the glass keep
+their own flat slots.
+Spark vr-fidelity-40 FJ (against target-light-table.jpg): a slim silver-grey rim (a 2.8 cm flat top) falls through a 45 degree
+chamfer into a satin inner lip that slopes 7 mm down to the paper, so the paper's light lands on it; the glow is a 5 mm line at
+the paper's edge with a dark base colour, so only its emission reads (a white base lit by the room read as a 2 cm white bar).
 <scans-dir> is the Poly Haven cache of scripts/art/lib/polyhaven.mjs (default <work-dir>/polyhaven).
 Writes <work-dir>/score.json from a re-import of final.glb."""
 import bpy, bmesh, math, os, sys, json, importlib.machinery
@@ -26,20 +29,22 @@ os.makedirs(WORK, exist_ok=True)
 lib = importlib.machinery.SourceFileLoader('finish', os.path.join(REPO, 'scripts', 'art', 'lib', 'finish.bpy')).load_module()
 
 # bake slots; the shipped mesh has three: frame_atlas, frame_edge_glow, frame_glass_placeholder_REPLACE_IN_UE
-SLOTS = ['rim', 'alu', 'steel', 'frame_edge_glow', 'frame_glass_placeholder_REPLACE_IN_UE']
-GLOW_SLOT, GLASS_SLOT = SLOTS[3], SLOTS[4]
+SLOTS = ['rim', 'alu', 'steel', 'silver', 'lip', 'frame_edge_glow', 'frame_glass_placeholder_REPLACE_IN_UE']
+GLOW_SLOT, GLASS_SLOT = SLOTS[5], SLOTS[6]
 L, W = (float(ARGV[2]), float(ARGV[3])) if len(ARGV) >= 4 else (1.20, 0.80)   # top outline, x by y
 TOP, T = 0.95, 0.03          # top surface height (wolf-plan W3.2 starts the table at 95 cm), edge thickness
 BOT = TOP - T
-R = 0.05                     # rim board width
-LIP_H, LIP_W = 0.014, 0.02   # ledge the glass rests on
-GLOW_H = 0.008             # strip top sits 6 mm under the rim top, so the 45 degree camera sees it past the rim
-GLOW_W = LIP_W            # the strip covers the whole ledge
+TOP_W = 0.028                # the rim's flat top (the concept's slim silver rim: about 2.5 cm beside a 166 cm paper)
+CH = 0.003                   # the 45 degree chamfer from the top into the lip: its edges catch a crisp highlight
+LIP_IN, LIP_DROP = 0.065, 0.0072   # the lip slopes from the chamfer to 6.5 cm in, 7.2 mm under the top: it faces the paper
+GLOW_W, GLOW_H = 0.005, 0.004      # the glow line: 5 mm wide, 4 mm tall, its top 7.5 mm under the rim top (0.5 mm over the glass)
+R = LIP_IN                   # the glass opening's inset (the strip sits inside it)
+LIP_H = T - 0.0075 - GLOW_H        # the ledge under the strip, up to the strip's underside
 # emission strength (glTF KHR_materials_emissive_strength). The first frame's 25 bloomed into a white band under UE's fixed
 # exposure (capture, 2026-10-24); the long frame passes a lower one, found by capture, as the fifth argument
 GLOW_STRENGTH = float(ARGV[4]) if len(ARGV) >= 5 else 25.0
 DARK_HEX = '#0A0F18'      # style-block.json palette role 'studio' (near-black blue); the block has no separate dark-metal value
-GLOW_HEX = '#F4FAFF'
+GLOW_HEX = '#F4FAFF'       # the strip's emission; its base colour is DARK_HEX, so the room's light adds nothing to it
 
 
 def srgb_to_lin(c):
@@ -57,16 +62,29 @@ def build():
                         wear=dict(color='#9EA5AE', rough=0.3, metal=1.0, amount=0.4), grunge=0.05),
             lib.surface('alu_bake', sc, tint='#C9CDD2', scan='blue_metal_plate', var=0.15, rough=(0.26, 0.4), metal=1.0, nstr=0.15, grunge=0.06),
             lib.surface('steel_bake', sc, tint='#5A5F66', scan='blue_metal_plate', var=0.2, rough=(0.3, 0.45), metal=1.0, nstr=0.2, grunge=0.05),
+            # the rim and lip are only partly metallic: UE's forward path here has no reflection capture, so a full metal
+            # reflects black and the silver rim would read as a dark bar; a light base with metal 0.35 reads silver-grey lit
+            lib.surface('silver_bake', sc, tint='#70777F', scan='blue_metal_plate', var=0.12, rough=(0.4, 0.52), metal=0.35, nstr=0.12,
+                        wear=dict(color='#D2D7DD', rough=0.22, metal=0.5, amount=0.5), grunge=0.05, stripes=(900, 'x', 0.08)),
+            lib.surface('lip_bake', sc, tint='#858C95', scan='blue_metal_plate', var=0.08, rough=(0.34, 0.44), metal=0.3, nstr=0.08, grunge=0.03),
             lib.placeholder(GLOW_SLOT + '_bake'), lib.placeholder(GLASS_SLOT + '_bake')]
     k = lib.Kit(SLOTS)
-    # the rim: an extrusion profile (d inward from the outer edge, z up from the underside), 5 cm wide, 3 cm tall, with a
-    # 6 mm groove on the outer face (the T-slot of an aluminium extrusion), swept round the outline with mitred corners
-    rim = [(0, 0), (0, 0.012), (0.0035, 0.0125), (0.0035, 0.0175), (0, 0.018), (0, T), (R, T), (R, 0)]
-    k.ring_frame(rim, L, W, BOT, 'rim', bevel=0.0015)
-    k.ring_frame([(R - 0.001, 0), (R - 0.001, LIP_H), (R + LIP_W, LIP_H), (R + LIP_W, 0)], L, W, BOT, 'alu', bevel=0.001)       # ledge
-    k.ring_frame([(R - 0.001, LIP_H), (R - 0.001, LIP_H + GLOW_H), (R + GLOW_W, LIP_H + GLOW_H), (R + GLOW_W, LIP_H)], L, W, BOT,
+    # the rim: an extrusion profile (d inward from the outer edge, z up from the underside), 3 cm tall, with a 6 mm groove
+    # on the outer face (the T-slot of an aluminium extrusion), a 2.8 cm flat top, a 45 degree chamfer and the inner lip
+    # sloping down to the strip, swept round the outline with mitred corners. The lip is the brighter satin aluminium:
+    # it is what the paper's light falls on
+    rim = [(0, 0), (0, 0.012), (0.0035, 0.0125), (0.0035, 0.0175), (0, 0.018), (0, T), (TOP_W, T), (TOP_W + CH, T - CH),
+           (TOP_W + CH + 0.012, T - CH - 0.0024), (LIP_IN, T - LIP_DROP), (LIP_IN, 0)]
+    # one sweep, so no face is buried in another (a buried face bakes black AO that bleeds into its island as dark dashes);
+    # the faces inward of the chamfer are retagged to the lip
+    for f in k.ring_frame(rim, L, W, BOT, 'silver', bevel=0.0012):
+        c = f.calc_center_median()
+        if min(L / 2 - abs(c.x), W / 2 - abs(c.y)) > TOP_W + CH - 1e-4 and c.z > BOT + T - LIP_DROP - 1e-4:
+            f.material_index = k.m('lip')
+    k.ring_frame([(R, 0), (R, LIP_H), (R + GLOW_W, LIP_H), (R + GLOW_W, 0)], L, W, BOT, 'rim', bevel=0.0)                   # ledge
+    k.ring_frame([(R, LIP_H), (R, LIP_H + GLOW_H), (R + GLOW_W, LIP_H + GLOW_H), (R + GLOW_W, LIP_H)], L, W, BOT,
                  GLOW_SLOT, bevel=0.0)                                                                                          # strip
-    # glass placeholder plane, inside the strip, at the top of the strip (one quad facing +Z, its own slot)
+    # glass placeholder plane, inside the strip, at the strip's top (one quad facing +Z, its own slot; UE's paper lies 0.5 mm under it)
     gx, gy, gz = L / 2 - R - GLOW_W, W / 2 - R - GLOW_W, BOT + LIP_H + GLOW_H
     vs = [k.bm.verts.new(p) for p in ((-gx, -gy, gz), (gx, -gy, gz), (gx, gy, gz), (-gx, gy, gz))]
     f = k.bm.faces.new(vs)
@@ -103,18 +121,25 @@ def build():
     for m in mats:
         src.data.materials.append(m)
     ob, fin = lib.finish(src, 'light-table-frame')
+    # the glass shares its edge with the strip's top, and the finish's normal recalculation can turn that open shell's
+    # plane downward: point every glass face up again
+    bm = bmesh.new()
+    bm.from_mesh(ob.data)
+    bmesh.ops.reverse_faces(bm, faces=[f for f in bm.faces if f.material_index == SLOTS.index(GLASS_SLOT) and f.normal.z < 0])
+    bm.to_mesh(ob.data)
+    bm.free()
     fin['hard_edges_bevelled'] = k.hard_edges
     fin['hard_edges_sharp_by_design'] = k.sharp_edges
-    td = lib.unwrap(ob, RES, [0, 1, 2], view=lib.VIEW_FREE)
+    td = lib.unwrap(ob, RES, [0, 1, 2, 3, 4], view=lib.VIEW_FREE)
     lib.fit_uv(ob, SLOTS.index(GLASS_SLOT), axes=(0, 1))
     folder = os.path.join(OUT, 'textures')
     for f_ in os.listdir(folder) if os.path.isdir(folder) else []:
         os.remove(os.path.join(folder, f_))                       # the 512 px tiles of the first build go; the atlas replaces them
     paths, bk = lib.bake(ob, RES, folder, 'frame_atlas', ao_distance=0.08)
     final = [lib.export_material('frame_atlas', tex=paths),
-             lib.export_material(GLOW_SLOT, color=GLOW_HEX, rough=0.5, emit=GLOW_HEX, emit_strength=GLOW_STRENGTH),
+             lib.export_material(GLOW_SLOT, color=DARK_HEX, rough=0.6, emit=GLOW_HEX, emit_strength=GLOW_STRENGTH),
              lib.export_material(GLASS_SLOT, color='#BFD8F0', rough=0.05, alpha=0.15)]
-    lib.collapse_slots(ob, {0: 0, 1: 0, 2: 0, 3: 1, 4: 2}, final)
+    lib.collapse_slots(ob, {0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 1, 6: 2}, final)
     os.makedirs(OUT, exist_ok=True)
     lib.export_glb(os.path.join(OUT, 'final.glb'), 'JPEG')
     json.dump({'finish': fin, 'texel': td, 'bake': bk, 'atlas_res': RES, 'scans': sc.provenance()}, open(os.path.join(WORK, 'finish.json'), 'w'), indent=1)

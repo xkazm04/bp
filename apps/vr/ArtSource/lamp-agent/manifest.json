@@ -28,22 +28,22 @@
     }
   },
   "sha256": {
-    "evidence/poses.jpg": "245a0bf5d8fd5bae44822c9d5cc758569305c5267a88bc9d52bbca4037b93064",
-    "evidence/target-compare.jpg": "2b6eed6a2191cd5cae93f99bb14a99f92690aa3688defc5d51877cb5ce857ad2",
-    "evidence/turnaround.jpg": "8d9b62b8c7749f6f64ab20e3d6b19467efbf3c613b80132af056431f6b23cd25",
-    "final.fbx": "ffd8c02a7be625f792da7f364acda68b976d1420fa9e1e3f0d0779a8f846c7b1",
-    "final_working.glb": "d438cd9757eba96cc26d1611ff0a15547af1cbd8bcc39df2760d1438a53b07ff",
+    "evidence/poses.jpg": "778e77fee59814c3bf422e69393bc8acd6e66ff05512483e2711c67a47d69ded",
+    "evidence/target-compare.jpg": "0eeb7f678d3817351774efbbaebd512647245ce95dc3399d86298ff8a6a521f8",
+    "evidence/turnaround.jpg": "fe34792f8feb4f19442ed9f2d071b2264e17214bb47a05935d46696657669c1a",
+    "final.fbx": "50c3a415b681552bfa3d646544bedc9de62358ce7de57cd937b306ce3a7c7b27",
+    "final_working.glb": "8e1cb90dfc402d2cbb46578e85c32fc453536f638464af4ab72a8c77bec024d3",
     "options/E-s41.png": "77010584acf521bc084300576582788dd2bb58d3aea10334880103c2069ecf2a",
     "options/F-s42.png": "e8a5d707766e4ad22759d00c854e11215aa933860913917abb307b1a50728f4e",
     "options/G-s41.png": "33ff447c7d1985273b8c2c5dac6d3b188e4ac956a9c8e0fa5d426e91159fce08",
     "options/G-s42.png": "04dedbefdb17a50e7827cfbb70b3a94b1feeb107cacd1380b06ace4d58c778d3",
     "options/H-s41.png": "1c74efdcfca139eb79fa24e5e4ccd62f85cf644e7db1bc553ea7e2a32892700c",
     "reference/target-crop.png": "ef9b9744b4b6c0171a2a44c402998e0264fcf6ede55b4932c43b492ee0fb2e2d",
-    "textures/agent_basecolor.png": "c7fb5f1f7d2c7737a6f7583f8609e9b56e35d4da5f2034a90e6d00c382d477ab",
+    "textures/agent_basecolor.png": "3097b148fc927e7c5834e6fb8e24fa8ae25b6eec6f20ea544d23296b421e28fd",
     "textures/agent_glow_card.png": "33006bff51655815d69e3f4797d957bd59a6b9e6f61697707bbf38d16823313d",
-    "textures/agent_orm.png": "ee4743fbd32d08a8631267bb48f939887832961291f8f4a9289e62de60e7a4d4"
+    "textures/agent_orm.png": "ce42b0a1147122b80c5867950c16c9b491cbfd27944f376cce67263895ca0291"
   },
-  "lynx_commit": "313c67fac56323a372dae8872060f2ca488de66e",
+  "lynx_commit": "ed96fa0659542fa9ca771cfee8e7e196ac9afb72",
   "lynx_commit_note": "stamped by the writer: the newest commit touching this folder when the manifest was written",
   "id": "lamp-agent",
   "class": "character-prop",
@@ -120,20 +120,20 @@
   "option_input_check": "H-s41 (front three-quarter, referenced on reference/target-crop.png) matches the target figure: hood head with a glowing orb, tapered cone body with the amber slit and pin, two jointed capsule arms ending in wire loops, one arm reaching sideways and one hanging. E-s41 is the clean front view. F-s42 and G-s41 came back as multi-view sheets on a blue ground (they break the grey-ground rule but give the side and back silhouettes); G-s42 is the profile. F-s41 (log) was paid for but its download failed, so it has no file. The figure is about 15 rounded primitives, so the views are modelling reference for a scripted build, not image-to-3D input.",
   "concept_licence": "Leonardo API output (rights assigned to the account holder, public:false); modelling reference only, no generated pixels or geometry are shipped; the target crop is cut from docs/concepts/vr-light-table/target-light-table.jpg",
   "file_bytes": {
-    "evidence/poses.jpg": 37650,
-    "evidence/target-compare.jpg": 45220,
-    "evidence/turnaround.jpg": 43261,
-    "final.fbx": 584812,
-    "final_working.glb": 494308,
+    "evidence/poses.jpg": 38056,
+    "evidence/target-compare.jpg": 45328,
+    "evidence/turnaround.jpg": 43658,
+    "final.fbx": 588076,
+    "final_working.glb": 502532,
     "options/E-s41.png": 62550,
     "options/F-s42.png": 96873,
     "options/G-s41.png": 111473,
     "options/G-s42.png": 52976,
     "options/H-s41.png": 61902,
     "reference/target-crop.png": 59039,
-    "textures/agent_basecolor.png": 680985,
+    "textures/agent_basecolor.png": 703649,
     "textures/agent_glow_card.png": 17630,
-    "textures/agent_orm.png": 2642957
+    "textures/agent_orm.png": 2705385
   },
   "picked": "H-s41",
   "generator": [
@@ -166,7 +166,7 @@
     "agent_hood_inner": 1560,
     "agent_glow_card": 2
   },
-  "textures": "textures/agent_basecolor.png, textures/agent_glow_card.png, textures/agent_orm.png: agent_basecolor.png (diffuse colour bake, sRGB) and agent_orm.png (R ambient occlusion, G roughness, B metal; linear), 2048 px, baked with Cycles on the CPU at 64 samples in 82.5 s (AO mean 0.341, self-occlusion only: hood over orb and collar, joints into capsules, the seam grooves). ORM.G carries the roughness breakup. No normal map: seams, lip, drums and screws are real geometry with smooth shading. agent_glow_card.png 256 px. UE: BaseColor x lerp(1, AO, 0.6), because the forward path's SSAO is weak and there is no reflection capture (r4); the Blender materials of final.fbx are wired that way.",
+  "textures": "textures/agent_basecolor.png, textures/agent_glow_card.png, textures/agent_orm.png: agent_basecolor.png (diffuse colour bake, sRGB) and agent_orm.png (R ambient occlusion, G roughness, B metal; linear), 2048 px, baked with Cycles on the CPU at 64 samples in 185.8 s (AO mean 0.346, self-occlusion only: hood over orb and collar, joints into capsules, the seam grooves). ORM.G carries the roughness breakup. No normal map: seams, lip, drums and screws are real geometry with smooth shading. agent_glow_card.png 256 px. UE: BaseColor x lerp(1, AO, 0.6), because the forward path's SSAO is weak and there is no reflection capture (r4); the Blender materials of final.fbx are wired that way.",
   "bounds_cm": {
     "x": 39.94,
     "y": 20.3,

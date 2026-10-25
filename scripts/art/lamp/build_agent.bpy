@@ -41,8 +41,9 @@ scene.unit_settings.scale_length = 1.0
 # Proportions (re-measured 2026-10-25 on reference/target-crop.png, in units of the hood's outer width H = 100 px there):
 # orb 0.50 H (0.56 of the mouth's inner edge), body below the hood lip 0.66 H, its width 0.62 H at the top and 0.41 H
 # three quarters down to a flattened round tip, pin 0.13 H; each elbow sits beside the hood's bottom at 0.46 H off the
-# axis, a short upper link from the shoulder, a long tapering forearm (0.97 H elbow to wrist, 0.115 H thick at the elbow,
-# 0.09 H at the wrist) and a narrow teardrop loop 0.43 H long hanging a little nearer vertical than the forearm.
+# axis, a short upper link from the shoulder, a long forearm (0.97 H elbow to wrist) and a narrow teardrop loop 0.43 H long
+# hanging a little nearer vertical than the forearm. The forearm is a full spindle, not a thin taper (FJ, measured across
+# both concept arms with scratchpad fid/fj/thick.py): 0.13 H thick near the elbow, 0.16 H in the middle, 0.13 H near the wrist.
 PIN = (0.0, 0.020, 0.0009)                  # z from, z to, radius (the concept's pin is a hair-thin rod)
 SEAM_D, SEAM_W = 0.0006, 0.0004             # panel seams: a groove this deep, its walls this far either side of it
 BODY_SEAMS_Z = (0.044, 0.100)               # the front panel's lower and upper seam rings
@@ -79,7 +80,9 @@ ORB_R, ORB_IN = 0.0330, -0.003               # orb radius; its centre sits this 
 SHOULDER = Vector((0.051, 0.0, 0.118))       # +X side; mirrored for the right arm
 UPPER_L, LOWER_L = 0.017, 0.121             # capsule lengths: a short link out of the shoulder, a long forearm
 BALL = (0.0098, 0.0072, 0.0055)              # shoulder, elbow, wrist ball radius
-LOWER_R = (0.0085, 0.0062)                   # forearm radius at the elbow end and at the wrist end
+LOWER_R = (0.0088, 0.0082, 0.0024)           # forearm radius at the elbow end, at the wrist end, and its swell between
+UPPER_R = (0.0100, 0.0068)                   # the upper link's radius in the middle and at its ends
+ELBOW_HUB_R = 0.0090                         # the elbow drum: as wide as the forearm's end, so the joint does not pinch
 LOOP = (0.0135, 0.0010)                      # wire loop major / minor radius
 LOOP_STRETCH = 2.1                           # the loop's length over its width before the teardrop pinch
 LOOP_WIDTH = (0.55, 0.30)                    # its width factor at the far end, and how much it pinches towards the wrist
@@ -226,14 +229,14 @@ def capsule(name, start, end, r_mid, r_end, segs=14, rings=7):
     prof[-1] = (0.0, L)
     return lathe(name, prof, segs, start, d)
 
-def tapered(name, start, end, r_a, r_b, segs=14, rings=6):
-    """A long tapering arm segment: a rounded cap of r_a at start, a gentle swell and a straight taper to a cap of r_b."""
+def tapered(name, start, end, r_a, r_b, swell=0.0006, segs=14, rings=6):
+    """A long arm segment: a rounded cap of r_a at start, a straight run to a cap of r_b, swelling by `swell` between."""
     d = end - start
     L = d.length
     prof = [(0.0, 0.0)] + [(r_a * math.sin(a), r_a * (1 - math.cos(a))) for a in (math.pi / 2 * i / rings for i in range(1, rings + 1))]
     for i in range(1, 8):
         t = i / 8
-        prof.append((r_a + (r_b - r_a) * t + 0.0006 * math.sin(math.pi * t), r_a + (L - r_a - r_b) * t))
+        prof.append((r_a + (r_b - r_a) * t + swell * math.sin(math.pi * t), r_a + (L - r_a - r_b) * t))
     prof += [(r_b * math.sin(a), L - r_b * (1 - math.cos(a))) for a in (math.pi / 2 * i / rings for i in range(rings, -1, -1))]
     prof[-1] = (0.0, L)
     return lathe(name, prof, segs, start, d)
@@ -356,14 +359,14 @@ def arm(side):
     add_mods(br, bevel=0.0008, weighted=True); finish(br, 'agent_joint', 'body')
     hub('shoulder', sh, BALL[0] * 0.95, 0.016, up)
     upper_a, upper_b = sh + d * (BALL[0] * 0.55), elbow - d * (BALL[1] * 0.45)
-    finish(capsule(f'upper_{side}', upper_a, upper_b, 0.0086, 0.0058), 'agent_shell', up)
+    finish(capsule(f'upper_{side}', upper_a, upper_b, *UPPER_R), 'agent_shell', up)
     # a dark collar ring at each end of each arm segment, where the shell meets the joint
     def collar_ring(tag, at, axis, r, bone):
         c = cyl_axis(f'{tag}_{side}', at, axis, r, 0.0028, 16); add_mods(c, bevel=0.0004, weighted=True); finish(c, 'agent_joint', bone)
     if (upper_b - upper_a).length > 0.03:     # the short link between two drums has no room for rings
         collar_ring('upper_ring_a', upper_a + d * 0.0085, d, 0.0067, up)
         collar_ring('upper_ring_b', upper_b - d * 0.0080, d, 0.0066, up)
-    hub('elbow', elbow, BALL[1] * 0.95, 0.012, lo)
+    hub('elbow', elbow, ELBOW_HUB_R, 0.012, lo)
     lower_a, lower_b = elbow + d * (BALL[1] * 0.45), wrist - d * (BALL[2] * 0.4)
     finish(tapered(f'lower_{side}', lower_a, lower_b, *LOWER_R), 'agent_shell', lo)
     collar_ring('lower_ring_a', lower_a + d * 0.0063, d, LOWER_R[0] * 1.04, lo)

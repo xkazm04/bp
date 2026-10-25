@@ -1,59 +1,59 @@
 {
-  "lynx_commit": "7fefb8a9cc51bd72cc9a95726886e175bc9ca21b",
+  "lynx_commit": "9259783bc653f314efdae61ac92c9c4fef992a87",
   "lynx_commit_note": "stamped by the writer: the newest commit touching this folder when the manifest was written",
   "file_bytes": {
-    "evidence/table-view.jpg": 57161,
-    "evidence/turnaround.jpg": 145175,
-    "evidence/vs-hero.jpg": 144755,
-    "final.glb": 1601996,
-    "textures/frame_atlas_basecolor.png": 746984,
-    "textures/frame_atlas_normal.png": 659134,
-    "textures/frame_atlas_orm.png": 1136008
+    "evidence/table-view.jpg": 56111,
+    "evidence/turnaround.jpg": 144700,
+    "evidence/vs-hero.jpg": 143691,
+    "final.glb": 1633376,
+    "textures/frame_atlas_basecolor.png": 891167,
+    "textures/frame_atlas_normal.png": 690952,
+    "textures/frame_atlas_orm.png": 1011089
   },
   "sha256": {
-    "evidence/table-view.jpg": "3b93207828b018b35a3c4f9dcd94a9206ac529b7d515eace282b16ed7fa41a5b",
-    "evidence/turnaround.jpg": "6c01ed2b289bb5156eef1339598e357c01ba2364a5401098eb88875070747f94",
-    "evidence/vs-hero.jpg": "3ba177024f3157352fe7c34c6fcaacc578e84f43780ee79df3f983888f0cad55",
-    "final.glb": "d62f435a99e4b1e6ba6400716ca6484f751c374f2c3609ccef92498eace30745",
-    "textures/frame_atlas_basecolor.png": "86f607e998a4aab00f0771bd6e09a6bd51a788efe39370017ccb597419b25451",
-    "textures/frame_atlas_normal.png": "50ce1d97e8c3875e4ef2a417ef4a93f4f9ae79725c91046cb34bd688a073f303",
-    "textures/frame_atlas_orm.png": "3b9c12e922df4cee4c4704411d42ddd23eab67705c07a532e1c9542626cc8c66"
+    "evidence/table-view.jpg": "f4a951dc7979ddfe5d20d90ef30bf5dc9885b84f25e278632b9f4eddc3367277",
+    "evidence/turnaround.jpg": "a8d4b1729dae7f6de4e94c833d53cf1245ea57b5145bee74c8348e5a5fa57bdb",
+    "evidence/vs-hero.jpg": "9789c202e6af5301c98235ae36f4b257e6b9a0b8e9785338c4bcf4c0a5ae01e0",
+    "final.glb": "c06407d097515c8f4e58a2137d2aeb4f1ee714ee0e2f4d323ebe506e2ae57909",
+    "textures/frame_atlas_basecolor.png": "4773588e1cb15c17d46095585999f302f5288d085c6bbfde711da276c8862418",
+    "textures/frame_atlas_normal.png": "de272191ff21f7eb3a36342085a7203f1795822b32dfec6d756ad435e1848b56",
+    "textures/frame_atlas_orm.png": "7aae5619252174ffc97b48485ed8008bb0f65f0bc1ec095632e8e754f4358f81"
   },
   "gates": {
     "input": {
       "pass": true,
       "note": "procedural, no generated input (plan.md P4: the glass and paper stay procedural; operator pick: props parametric). Reference: art-breakdown.md row 1 (backlit glass table, bright white edge light, emissive frame strip, the glass blue comes from the paper material, not a tint), the Director review of 04fc311 (rim, legs and rails near-black as in lookdev/00-hero.jpg; style-block.json studio #0A0F18 is the only dark value in the block, so it is the dark metal base) and brushed aluminium feet and ledge.",
-      "date": "2026-10-24"
+      "date": "2026-10-25"
     },
     "mesh_acceptance": {
       "pass": true,
-      "note": "re-imported from final.glb: 1 mesh object, 4032 vertices, 7946 tris, 36 connected components (rim, ledge, strip, glass, corner caps, screws, apron, legs, feet, rails), 0 floaters (a floater is a component whose bounding box touches no other), 0 open edges (the single-sided glass plane); glass plane faces up: true, 166 x 76 cm at z 0.942 m; glass in its own slot frame_glass_placeholder_REPLACE_IN_UE",
-      "date": "2026-10-24"
+      "note": "re-imported from final.glb: 1 mesh object, 3956 vertices, 7842 tris, 35 connected components (rim, lip, ledge, strip, glass, corner caps, screws, apron, legs, feet, rails), 0 floaters (a floater is a component whose bounding box touches no other), 0 open edges (the single-sided glass plane); glass plane faces up: true, 166 x 76 cm at z 0.9425 m; glass in its own slot frame_glass_placeholder_REPLACE_IN_UE",
+      "date": "2026-10-25"
     },
     "scale": {
       "pass": true,
       "note": "180.88 x 90.88 x 95 cm (x, y, z up) re-imported from final.glb; top surface z = 0.95 m; edge thickness 3 cm at the outer front edge (target 3.0, the lamp-agent C-clamp grip); pivot: floor centre, x,y centre 0, 0, feet at z = 0 m. Assumption: the 95 cm top is a Lynx choice and the 1.80 x 0.90 m outline the owner's (2026-10-24); the UE world scale of the table (W3.2) is still to be confirmed on Wolf.",
-      "date": "2026-10-24"
+      "date": "2026-10-25"
     },
     "finishing": {
       "pass": true,
-      "note": "finish: 768 bevelled hard edges, 85% smooth-shaded faces, baked atlas at 536.4 px/m from 1 CC0 scans; one UV set (1); 3 PBR PNGs (the atlas: base colour, normal, ORM, 2048 px, the largest 1136008 bytes), every file under 10 MB (largest 1601996 bytes); 3 material slots (frame_atlas, frame_edge_glow, frame_glass_placeholder_REPLACE_IN_UE); emissive slot frame_edge_glow on 96 faces; evidence framing check passes on 5 images (min silhouette margin 0.0625 of the image, rule 0.03); evidence rendered with Cycles on the CPU. Not claimed: any UE import.",
-      "date": "2026-10-24"
+      "note": "finish: 756 bevelled hard edges, 85% smooth-shaded faces, baked atlas at 547.2 px/m from 1 CC0 scans; one UV set (1); 3 PBR PNGs (the atlas: base colour, normal, ORM, 2048 px, the largest 1011089 bytes), every file under 10 MB (largest 1633376 bytes); 3 material slots (frame_atlas, frame_edge_glow, frame_glass_placeholder_REPLACE_IN_UE); emissive slot frame_edge_glow on 96 faces; evidence framing check passes on 5 images (min silhouette margin 0.0625 of the image, rule 0.03); evidence rendered with Cycles on the CPU. Not claimed: any UE import.",
+      "date": "2026-10-25"
     },
     "poly_budget": {
       "pass": true,
-      "note": "7946 tris against 10000 (79%)",
-      "date": "2026-10-24"
+      "note": "7842 tris against 10000 (78%)",
+      "date": "2026-10-25"
     }
   },
   "id": "light-table-frame",
   "class": "prop-hero",
   "budget_tris": 10000,
-  "tris": 7946,
-  "tris_total": 7946,
+  "tris": 7842,
+  "tris_total": 7842,
   "materials": [
-    "frame_atlas (one 2048 px baked atlas: the rim extrusion, legs and rails in dark anodised aluminium #262B33 worn bright (#B4BAC2) on its edges, the ledge, apron and feet in aluminium #C9CDD2, the corner caps and screws in steel #5A5F66)",
-    "frame_edge_glow (emissive edge strip #F4FAFF, emission strength 1.5 (glTF emissive_strength), 2 cm wide and 8 mm tall on the whole ledge; UE drives the intensity)",
+    "frame_atlas (one 2048 px baked atlas: the rim extrusion in silver-grey aluminium #70777F (metal 0.35) worn bright on its edges, its inner lip in satin aluminium #858C95 (metal 0.3), legs and rails in dark anodised aluminium #262B33, the apron and feet in aluminium #C9CDD2, the corner caps and screws in steel #5A5F66)",
+    "frame_edge_glow (emissive edge line: base colour #0A0F18 (dark, so the room's light adds nothing), emission #F4FAFF at strength 3 (glTF emissive_strength), 5 mm wide and 4 mm tall at the paper's edge; UE drives the intensity)",
     "frame_glass_placeholder_REPLACE_IN_UE (placeholder plane, base #BFD8F0, alpha 0.15: UE replaces it with the procedural glass and paper)"
   ],
   "bounds_cm": {
@@ -64,13 +64,13 @@
   },
   "meshes": {
     "light-table-frame": {
-      "tris": 7946,
-      "vertices": 4032,
-      "components": 36,
+      "tris": 7842,
+      "vertices": 3956,
+      "components": 35,
       "floaters": 0,
       "open_edges": 0,
       "faces_per_slot": {
-        "frame_atlas": 7840,
+        "frame_atlas": 7736,
         "frame_edge_glow": 96,
         "frame_glass_placeholder_REPLACE_IN_UE": 10
       }
@@ -78,30 +78,30 @@
   },
   "uv_sets": 1,
   "pivot": "floor centre (x and y at the middle of the 1.80 x 0.90 m outline, z = 0 at the feet); the table stands +Y in the GLB (glTF Y-up), +Z in Blender",
-  "scale_reasoning": "Table top surface at 95 cm (wolf-plan W3.2 starts there; R4 lets the owner change it). Outline 1.80 x 0.90 m, a long drafting light table (the owner chose about 180 x 90 cm on 2026-10-24, spark vr-hands-zoom; the first frame was 1.20 x 0.80). The top is 3 cm thick at the outer edge because lamp-agent's manifest says its C-clamp grips a 3 cm table edge; the apron under the top is inset 6 cm so the clamp finds a bare edge. The rim is 5 cm wide; the glass opening is 1.70 x 0.80 m with a 2 cm ledge, and the ledge carries the emissive strip (2 cm wide, 8 mm tall, its top 6 mm under the rim top, so the 45 degree camera sees it), so the glass panel is 1.66 x 0.76 m, recessed 0.8 cm below the rim top. The legs stand 8.5 cm in from the sides and, along the length, 8.5 cm in at 1.20 m and further in as the top grows (15 cm at 1.80 m).",
-  "textures": "frame_atlas_{basecolor,orm,normal}.png: one 2048 px atlas (ORM: R occlusion, G roughness, B metal; normal tangent-space OpenGL), baked with Cycles on the CPU from layered bake sources (scripts/art/lib/finish.bpy): Poly Haven CC0 scans tinted to the palette, curvature edge wear, grunge, AO (multiplied into basecolor at 0.55 too: the forward-shaded UE scene has no runtime AO). One unique UV set, long rails cut into 35 cm islands, hidden faces shrunk to 0.12; 536.4 px/m on the visible surface (2.378 m2). The GLB embeds the atlas as quality-92 JPEG (the 2048 px PNG set would put it over 10 MB). The glow and glass slots are flat colours with no texture.",
+  "scale_reasoning": "Table top surface at 95 cm (wolf-plan W3.2 starts there; R4 lets the owner change it). Outline 1.80 x 0.90 m, a long drafting light table (the owner chose about 180 x 90 cm on 2026-10-24, spark vr-hands-zoom; the first frame was 1.20 x 0.80). The top is 3 cm thick at the outer edge because lamp-agent's manifest says its C-clamp grips a 3 cm table edge; the apron under the top is inset 6 cm so the clamp finds a bare edge. The rim has a 2.8 cm flat top (the concept's slim silver rim, by eye about 2.5 cm beside its 166 cm paper), a 3 mm 45 degree chamfer, and an inner lip sloping 7.2 mm down over 3.4 cm to 6.5 cm in, facing the paper so its light lands there; a 5 mm emissive line (4 mm tall, its top 7.5 mm under the rim top) sits at the paper's edge, so the glass panel is 1.66 x 0.76 m, 0.75 cm below the rim top (UE's paper lies at 0.8 cm). The paper (BpTable.h, 166 x 76 cm) fixes the 7 cm from the outer edge to the glass. The legs stand 8.5 cm in from the sides and, along the length, 8.5 cm in at 1.20 m and further in as the top grows (15 cm at 1.80 m).",
+  "textures": "frame_atlas_{basecolor,orm,normal}.png: one 2048 px atlas (ORM: R occlusion, G roughness, B metal; normal tangent-space OpenGL), baked with Cycles on the CPU from layered bake sources (scripts/art/lib/finish.bpy): Poly Haven CC0 scans tinted to the palette, curvature edge wear, grunge, AO (multiplied into basecolor at 0.55 too: the forward-shaded UE scene has no runtime AO). One unique UV set, long rails cut into 35 cm islands, hidden faces shrunk to 0.12; 547.2 px/m on the visible surface (2.5051 m2). The GLB embeds the atlas as quality-92 JPEG (the 2048 px PNG set would put it over 10 MB). The glow and glass slots are flat colours with no texture.",
   "finish": {
-    "bevel": "angle-limited bevel on every part's hard edges (rim 1.5 mm, legs 1.2 mm, caps 0.8 mm), 2 segments, arc miter, hardened normals, then weighted normals and smooth shading; 768 hard edges bevelled, 680 kept sharp by design (the glow strip, screw heads), 0 convex edges of 60 degrees or more left unrounded",
-    "parts": "rim: a 5 x 3 cm extrusion profile with a 6 x 3.5 mm groove on its outer face, swept round the outline with mitred corners; 2.5 mm steel corner caps with two screw heads per arm; 4 cm square extrusion legs with a groove down each face, levelling feet",
-    "smooth_faces": 0.8528,
+    "bevel": "angle-limited bevel on every part's hard edges (rim 1.2 mm, lip 0.8 mm, legs 1.2 mm, caps 0.8 mm), 2 segments, arc miter, hardened normals, then weighted normals and smooth shading; 756 hard edges bevelled, 704 kept sharp by design (the glow strip, screw heads), 0 convex edges of 60 degrees or more left unrounded",
+    "parts": "rim: a 3 cm tall extrusion profile with a 6 x 3.5 mm groove on its outer face, a 2.8 cm flat top and a 45 degree chamfer, swept round the outline with mitred corners; inner lip: a second sweep sloping to the 5 mm glow line; 2.5 mm steel corner caps with two screw heads per arm; 4 cm square extrusion legs with a groove down each face, levelling feet",
+    "smooth_faces": 0.849,
     "texel": {
-      "px_per_m": 536.4,
-      "uv_coverage": 0.163,
-      "surface_m2": 2.378,
-      "hidden_share": 0.217
+      "px_per_m": 547.2,
+      "uv_coverage": 0.179,
+      "surface_m2": 2.5051,
+      "hidden_share": 0.142
     },
     "bake": {
       "seconds": {
-        "base": 2.09,
-        "rough": 1.46,
-        "metal": 0.81,
-        "normal": 2.16,
-        "ao": 14.26
+        "base": 1.53,
+        "rough": 1.43,
+        "metal": 0.56,
+        "normal": 1.95,
+        "ao": 16.91
       },
-      "ao_mean": 0.981,
+      "ao_mean": 0.983,
       "rough_range": [
         0,
-        0.55
+        0.543
       ]
     },
     "cc0_sources": {
@@ -126,7 +126,7 @@
   "generator": "procedural Blender",
   "blender": "Blender 5.2.2, scripts/art/light-table-frame/build_frame.bpy (build and score), render_frame.bpy (evidence and framing check), write_manifest.mjs",
   "licence": "own procedural work; no generated input, no Leonardo, ComfyUI or TRELLIS; bake inputs are Poly Haven CC0 scans (blue_metal_plate (https://polyhaven.com/a/blue_metal_plate, CC0 1.0 (Poly Haven, https://polyhaven.com/license), 2.5 m tile)), never shipped as files",
-  "regenerate": "node scripts/art/lib/polyhaven.mjs <work>/polyhaven; blender -b -P scripts/art/light-table-frame/build_frame.bpy -- <repo-root> <work> 1.80 0.90 1.5; blender -b -P scripts/art/light-table-frame/render_frame.bpy -- <repo-root> <work>; node scripts/art/light-table-frame/write_manifest.mjs <work>",
+  "regenerate": "node scripts/art/lib/polyhaven.mjs <work>/polyhaven; blender -b -P scripts/art/light-table-frame/build_frame.bpy -- <repo-root> <work> 1.80 0.90 3; blender -b -P scripts/art/light-table-frame/render_frame.bpy -- <repo-root> <work>; node scripts/art/light-table-frame/write_manifest.mjs <work>",
   "review_fixes": {
     "review": "Director review of 04fc311 (evidence/turnaround.jpg), 2026-10-21: \"the geometry is clean and cheap, but the look departs from the art bible. The table in docs/concepts/vr-light-table/lookdev/00-hero.jpg has a dark, near-black frame with a bright white emissive light strip along the glass edge. The build is warm wood and shows no visible emissive edge.\" Reworked the same day on the CPU only (Blender, Cycles on the CPU; no ComfyUI, TRELLIS, GPU job or external API).",
     "findings": [
@@ -141,6 +141,10 @@
       {
         "finding": "No comparison against the art bible.",
         "fix": "render_frame.bpy writes evidence/vs-hero.jpg, the new table view beside lookdev/00-hero.jpg; turnaround.jpg and table-view.jpg re-rendered"
+      },
+      {
+        "finding": "Spark vr-fidelity-40 (FJ, 2026-10-25), UE capture fid-g-scan.jpg against target-light-table.jpg: the near strip is about 2 cm wide and reads as a thick white bar; it is lit surface (white base colour), so a zero emissive changed nothing. The concept has a thin crisp glow line inside a slim silver-grey rim, its light spilling onto the rim inner lip.",
+        "fix": "profile rebuilt: a 5 mm glow line with base colour #0A0F18 and emission #F4FAFF at strength 3; the rim flat top 5 -> 2.8 cm in silver-grey aluminium (metal 0.35: a full metal reflects black on the UE forward path without reflection captures), a 3 mm 45 degree chamfer, and a satin lip sloping 7.2 mm over 3.4 cm to the line; slot names, atlas and the 7 cm to the 166 x 76 cm glass kept"
       }
     ]
   },
