@@ -5,6 +5,8 @@
 //   --lens slow     sleeps until killed (cancel)          --lens wait    sleeps 1.5 s, then succeeds (queue cap)
 //   --lens fail     prints `boom: failed on purpose` on stderr, exits 3
 //   --lens refuse   prints `lens-scan refused: unknown slug`, exits 0 without a run (a headless refusal)
+//   Make the <lens> lens measurable ...   a prepare job: appends `## Probes` to <cwd>/.claude/lens-scan/config.md (a cwd named
+//                   *prep-refuse* answers `lens-scan refused: ...`, one named *prep-noop* claims success and writes nothing)
 //   --lens mdrefuse the refusal as a markdown reply writes it (`**lens-scan refused: ...**`, more lines after), exits 0
 //   --lens absent   answers as a CLI without the skill did (`/lens-scan` isn't installed ... a closing question), exits 0
 //   /lens-scan release --id rel-<v> [--finish]   acts on the release as store.mjs would (lens-scan references/release.md):
@@ -71,6 +73,20 @@ if (input.includes('--lens fail')) { console.error('working...'); console.error(
 if (input.includes('--lens refuse')) { console.log('lens-scan refused: unknown slug'); process.exit(0); }
 if (input.includes('--lens mdrefuse')) {
   console.log('**lens-scan refused: the performance lens has nothing it can measure in this repo.** No run started.\n\n| a | b |\n\nI didn\'t write a run log line.');
+  process.exit(0);
+}
+// a prepare job (jobs.server.ts preparePrompt): writes a `## Probes` section into the repo's overlay; a repo whose directory
+// name holds `prep-refuse` refuses instead, and one holding `prep-noop` claims success but writes nothing
+const prep = /^Make the (\S+) lens measurable/.exec(input);
+if (prep) {
+  const base = path.basename(process.cwd());
+  if (base.includes('prep-refuse')) { console.log('lens-scan refused: no production build can start here'); process.exit(0); }
+  if (base.includes('prep-noop')) { console.log('lens-scan prepared: everything'); process.exit(0); }
+  const ov = path.join(process.cwd(), '.claude', 'lens-scan', 'config.md');
+  fs.mkdirSync(path.dirname(ov), { recursive: true });
+  const was = fs.existsSync(ov) ? fs.readFileSync(ov, 'utf8') : '---\nproject_slug: x\n---\n';
+  fs.writeFileSync(ov, was + '\n## Probes\na blockingMs: node scripts/probes/perf.mjs --feature a --metric blockingMs\n');
+  console.log('lens-scan prepared: one probe (a blockingMs)');
   process.exit(0);
 }
 if (input.includes('--lens absent')) {

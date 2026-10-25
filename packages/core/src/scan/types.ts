@@ -4,6 +4,7 @@
 // no measurement row means "unmeasured".
 import type { MetricMethod } from '@bp/core/standard/types';
 import type { Readiness } from './readiness';
+import type { LensSetupNeed } from './lens-setup';
 
 export type RunPhase = 'measure' | 'propose' | 'execute' | 'propagate';
 export type RunStatus = 'running' | 'done' | 'failed' | 'aborted';
@@ -246,6 +247,9 @@ export interface ProductInfo {
   live: boolean;
   /** What the repo has of the files a live product needs (src/lib/scan/readiness.ts). */
   readiness: Readiness;
+  /** Enabled lenses lens-scan could not measure in the repo as it stands (scan/lens-setup.ts): the scan menu offers a prepare
+   *  job for them instead of a scan lens-scan would refuse. [] = every scannable lens is measurable. */
+  setup: LensSetupNeed[];
 }
 
 export type Decision = 'approve' | 'decline';

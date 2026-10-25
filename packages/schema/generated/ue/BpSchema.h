@@ -1632,7 +1632,7 @@ struct BPLINK_API FBpScanScope
 	TArray<FString> features;
 };
 
-/** A lens scan, an execute run or a release run (cut or finish) the blueprint started. */
+/** A lens scan, an execute run, a release run (cut or finish) or a prepare run the blueprint started. */
 USTRUCT(BlueprintType)
 struct BPLINK_API FBpScanJob
 {
@@ -1642,11 +1642,11 @@ struct BPLINK_API FBpScanJob
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString id;
 
-	/** one of: measure, execute, release. required */
+	/** prepare: adjust the product repo so lens-scan can measure a lens it would refuse. one of: measure, execute, release, prepare. required */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString kind;
 
-	/** The lens a measure job scans */
+	/** The lens a measure job scans, or a prepare job makes measurable */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString lens;
 

@@ -614,11 +614,12 @@ export interface ErrorEvent {
   message: string;
 }
 
-/** A lens scan, an execute run or a release run (cut or finish) the blueprint started. */
+/** A lens scan, an execute run, a release run (cut or finish) or a prepare run the blueprint started. */
 export interface ScanJob {
   id: string;
-  kind: 'measure' | 'execute' | 'release';
-  /** The lens a measure job scans. */
+  /** prepare: adjust the product repo so lens-scan can measure a lens it would refuse. */
+  kind: 'measure' | 'execute' | 'release' | 'prepare';
+  /** The lens a measure job scans, or a prepare job makes measurable. */
   lens?: string;
   scope?: ScanScope;
   /** The proposals an execute job builds. */

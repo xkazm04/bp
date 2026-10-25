@@ -18,7 +18,8 @@ export interface ScanScope {
   features: string[];
 }
 
-export type JobKind = 'measure' | 'execute' | 'release';
+/** `prepare`: adjust the product repo so lens-scan can measure a lens it would refuse (scan/lens-setup.ts), e.g. write probes. */
+export type JobKind = 'measure' | 'execute' | 'release' | 'prepare';
 /** A release job's step: `build` cuts the release (`/lens-scan release --id <rel>`), `finish` tags it after the merge (`--finish`). */
 export type ReleaseStep = 'build' | 'finish';
 export type JobStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
@@ -26,7 +27,7 @@ export type JobStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 export interface ScanJob {
   id: string;
   kind: JobKind;
-  /** The lens a measure job scans. */
+  /** The lens a measure job scans, or a prepare job makes measurable. */
   lens?: string;
   scope?: ScanScope;
   /** The proposals an execute job builds. */
@@ -55,6 +56,7 @@ export interface ScanJob {
 /** What the UI calls a job when it names it in a line: a release job reads "Release 1.4.1 · build". */
 export function jobLabel(j: Pick<ScanJob, 'kind' | 'lens' | 'proposals' | 'version' | 'release' | 'step'>): string {
   if (j.kind === 'release') return 'Release ' + (j.version ?? j.release ?? '') + ' · ' + (j.step ?? 'build');
+  if (j.kind === 'prepare') return 'Prepare · ' + (j.lens ?? 'lens');
   if (j.kind === 'execute') return 'Execute · ' + (j.proposals?.length ?? 0) + ' finding' + (j.proposals?.length === 1 ? '' : 's');
   return j.lens ?? 'Scan';
 }

@@ -229,14 +229,14 @@
       }
     },
     "scanJob": {
-      "description": "A lens scan, an execute run or a release run (cut or finish) the blueprint started.",
+      "description": "A lens scan, an execute run, a release run (cut or finish) or a prepare run the blueprint started.",
       "type": "object",
       "required": ["id", "kind", "status", "queued_at"],
       "additionalProperties": false,
       "properties": {
         "id": { "type": "string" },
-        "kind": { "enum": ["measure", "execute", "release"] },
-        "lens": { "type": "string", "description": "The lens a measure job scans." },
+        "kind": { "enum": ["measure", "execute", "release", "prepare"], "description": "prepare: adjust the product repo so lens-scan can measure a lens it would refuse." },
+        "lens": { "type": "string", "description": "The lens a measure job scans, or a prepare job makes measurable." },
         "scope": { "$ref": "#/$defs/scanScope" },
         "proposals": { "type": "array", "items": { "type": "string" }, "description": "The proposals an execute job builds." },
         "release": { "type": "string", "description": "A release job's release id (rel-<version>)." },

@@ -39,6 +39,7 @@ process.env.BP_CLAUDE_BIN = FAKE;
 
 const J = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/server/jobs.server.ts')).href) as typeof import('../packages/core/src/server/jobs.server.ts');
 const { parseDraftReply } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/scan/lens-draft.ts')).href) as typeof import('../packages/core/src/scan/lens-draft.ts');
+const LS = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/scan/lens-setup.ts')).href) as typeof import('../packages/core/src/scan/lens-setup.ts');
 const { logBlocks, spans } = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/lib/scan/log-md.ts')).href) as typeof import('../apps/web/src/lib/scan/log-md.ts');
 const { scopeFeatures } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/scan/scope.ts')).href) as typeof import('../packages/core/src/scan/scope.ts');
 const { checkLensManifest } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/scan/manifest-check.ts')).href) as typeof import('../packages/core/src/scan/manifest-check.ts');
@@ -297,6 +298,60 @@ try {
   check('POST scans refusals: unknown, disabled, no method, foreign feature, all+features, bad kind, unknown product',
     codes.map((c) => c.status + ':' + (c.body.error ?? '')).join() === '400:unknown-lens,400:unknown-lens,400:no-scan-method,400:bad-scope,400:bad-scope,400:bad-scope,404:unknown product nope',
     codes.map((c) => c.status + ':' + c.body.error).join());
+  // ------------------------------------------------------------------ lens setup: what a repo lacks, the prepare job and its route
+  {
+    const ov = '---\nx: 1\n---\n# overlay\n## Probes\n- `a blockingMs`: node p.mjs --feature a\nb jankFrames: node p.mjs --feature b\nc bogusMetric: node p.mjs\n```\nd memoryMb: node p.mjs in a fence\n```\n### note\ne startupMs: under a sub-heading of Probes\n## Gates\nf memoryMb: after the section\n';
+    const pr0 = LS.parseProbes(ov);
+    check('setup: probes read `<feature> <metric>: <command>` in the section (bullets, backticks, fences, sub-headings), not unknown metrics or later sections',
+      pr0.map((x) => x.feature + ':' + x.metric).join() === 'a:blockingMs,b:jankFrames,d:memoryMb,e:startupMs' && pr0[0].command === 'node p.mjs --feature a', JSON.stringify(pr0));
+    const need = (id: string, scan?: object, text: string | null = null) => LS.lensSetupNeed(id, (scan ? { scan } : {}) as never, text);
+    check('setup: static lenses and scan-block lenses never need setup', need('development') === null && need('security') === null && need('com.x.j', { method: 'judgement' }) === null);
+    check('setup: performance without an overlay, or with one naming no probes, needs probes; with one probe it is measurable',
+      need('performance')?.need === 'probes' && need('performance', undefined, '# overlay\n## Gates\n')?.need === 'probes' && need('performance', undefined, ov) === null);
+    check('setup: the Grinex refusal reads as nothing to measure', LS.NOTHING_TO_MEASURE.test('lens-scan refused: the performance lens has nothing it can measure in this repo.') && !LS.NOTHING_TO_MEASURE.test('lens-scan refused: unknown slug'));
+    const t = J.preparePrompt('performance');
+    check('setup: the prepare prompt is one line, names the lens and the overlay, and asks for the closing line', !t.includes('\n') && t.startsWith('Make the performance lens measurable') && t.includes(LS.OVERLAY_PATH) && t.includes('lens-scan prepared:'), t);
+    // the registry: done only when the overlay now names probes; a refusal or an empty claim is failed with its reason
+    const okR = repo('prep-ok'), refR = repo('prep-refuse'), noopR = repo('prep-noop');
+    const bad = J.enqueuePrepare('prep', okR, 'development');
+    check('prepare: a lens no prepare job knows -> 400 not-preparable', !bad.ok && bad.status === 400 && bad.error === 'not-preparable');
+    const q1 = J.enqueuePrepare('prep', okR, 'performance'), q2 = J.enqueuePrepare('prep', okR, 'performance');
+    check('prepare: a second one for the lens while the first runs -> 409', q1.ok && !q2.ok && q2.status === 409, JSON.stringify(q2));
+    const q3 = J.enqueuePrepare('prep-r', refR, 'performance'), q4 = J.enqueuePrepare('prep-n', noopR, 'performance');
+    const ended = (sl: string, q: typeof q1) => { const st = q.ok ? job(sl, q.job.id)?.status : 'failed'; return st === 'done' || st === 'failed'; };
+    await until(() => ended('prep', q1) && ended('prep-r', q3) && ended('prep-n', q4));
+    const j1 = q1.ok ? job('prep', q1.job.id) : undefined, j3 = q3.ok ? job('prep-r', q3.job.id) : undefined, j4 = q4.ok ? job('prep-n', q4.job.id) : undefined;
+    check('prepare: the CLI wrote probes -> done, kind prepare, no run, and the overlay is measurable now', j1?.status === 'done' && j1.kind === 'prepare' && j1.run_id === undefined
+      && LS.lensSetupNeed('performance', {} as never, fs.readFileSync(path.join(okR, LS.OVERLAY_PATH), 'utf8')) === null, JSON.stringify(j1));
+    check('prepare: a refusal -> failed with its line', j3?.status === 'failed' && j3.error === 'lens-scan refused: no production build can start here', JSON.stringify(j3?.error));
+    check('prepare: exit 0 claiming success with no probes written -> failed, saying what is still missing', j4?.status === 'failed' && /^the run ended and no lens-scan overlay/.test(j4.error ?? ''), JSON.stringify(j4?.error));
+    // the route and the project list: a performance lens in a map whose repo names no probes is a setup need until a prepare job ran
+    const prepRoot = repo('prep-route'), ps = path.join(prepRoot, '.ai', 'lens-scan');
+    fs.mkdirSync(ps, { recursive: true });
+    fs.writeFileSync(path.join(ps, 'app-structure.json'), JSON.stringify({ $schema: 'app-structure/3', version: 3, project: { slug: 'prep', name: 'Prep' }, features: [{ slug: 'a', name: 'A' }],
+      lenses: [lensE('development', 'builtin'), lensE('performance', 'builtin'), lensE('com.x.off', 'project', undefined, { enabled: false })] }));
+    const regFile = path.join(dir, 'bp.products.local.json'), reg0 = fs.readFileSync(regFile, 'utf8');
+    fs.writeFileSync(regFile, JSON.stringify({ products: [...JSON.parse(reg0).products, { slug: 'prepr', name: 'Prep', root: prepRoot }] }));
+    const products = await route('products/route.ts'), prepare = await route('products/[slug]/lenses/[id]/prepare/route.ts');
+    type Listed = { slug: string; setup: { lens: string; need: string }[] };
+    const list0 = await call(products.GET, '/api/products', 'GET', {});
+    const setup0 = (list0.body as Listed[]).find((x) => x.slug === 'prepr')?.setup;
+    check('GET /api/products: setup names performance (no probes) and nothing else', JSON.stringify(setup0?.map((x) => x.lens + ':' + x.need)) === '["performance:probes"]', JSON.stringify(setup0));
+    const rs = await Promise.all([
+      call(prepare.POST, '/x', 'POST', { slug: 'prepr', id: 'nope' }, {}),
+      call(prepare.POST, '/x', 'POST', { slug: 'prepr', id: 'com.x.off' }, {}),
+      call(prepare.POST, '/x', 'POST', { slug: 'prepr', id: 'development' }, {}),
+      call(prepare.POST, '/x', 'POST', { slug: 'nope', id: 'performance' }, {}),
+    ]);
+    check('POST prepare refusals: unknown, disabled, not preparable, unknown product', rs.map((c) => c.status + ':' + (c.body.error ?? '')).join() === '400:unknown-lens,400:unknown-lens,400:not-preparable,404:unknown product nope', rs.map((c) => c.status + ':' + c.body.error).join());
+    const p202 = await call(prepare.POST, '/x', 'POST', { slug: 'prepr', id: 'performance' }, {});
+    check('POST prepare -> 202 prepare job', p202.status === 202 && p202.body.kind === 'prepare' && p202.body.lens === 'performance', JSON.stringify(p202));
+    await until(() => job('prepr', p202.body.id)?.status === 'done' || job('prepr', p202.body.id)?.status === 'failed');
+    const list1 = await call(products.GET, '/api/products', 'GET', {});
+    check('after the prepare job: done, and the project list names no setup need', job('prepr', p202.body.id)?.status === 'done'
+      && (list1.body as Listed[]).find((x) => x.slug === 'prepr')?.setup.length === 0, JSON.stringify(job('prepr', p202.body.id)));
+    fs.writeFileSync(regFile, reg0);
+  }
   const sel = (features: string[], extra: object = {}) => ({ kind: 'selection', label: 'Selection (' + features.length + ')', features, ...extra });
   const s202sel = await call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'development', scope: sel(['b', 'a']) });
   check('POST scans selection -> 202, no id, the features kept', s202sel.status === 202 && s202sel.body.scope.kind === 'selection' && s202sel.body.scope.id === undefined && s202sel.body.scope.features.join() === 'b,a', JSON.stringify(s202sel.body));

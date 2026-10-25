@@ -19,6 +19,7 @@ import { RELEASE_ID } from '../scan/release.ts';
 import { ABANDONED_FROM, ABANDONED_TO, reached } from '../scan/release-steps.ts';
 import { busyIds } from '../scan/admit.ts';
 import { WAVE_EFFORTS, WAVE_MODELS, type WaveEffort, type WaveModel } from '../scan/waves.ts';
+import { OVERLAY_PATH, PREPARABLE, lensSetupNeed } from '../scan/lens-setup.ts';
 import { findProduct, recovered, warnOnce, writeAtomic } from './products.server.ts';
 import { close, openRead, readRelease, type ReleaseRead } from './store.server.ts';
 import { storeCall } from './release.server.ts';
@@ -296,6 +297,7 @@ function watchOrphan(slug: string, r: Rec): void {
     clearInterval(timer);
     if (r.phase === 'cancelling') { finish(slug, r, 'cancelled'); return; } // reaped: no run to judge
     if (r.job.kind === 'release') { settleRelease(slug, r, 0); return; }
+    if (r.job.kind === 'prepare') { settlePrepare(slug, r, { exit_code: 0 }); return; }
     const run = r.job.run_id ?? runOf(r.root, r.job.id);
     if (run) { r.job.run_id = run; finish(slug, r, 'done', { exit_code: 0 }); }
     else finish(slug, r, 'failed', { error: 'the server restarted while this job ran, and its process ended without a run in the store' });
@@ -360,6 +362,39 @@ export function enqueueMeasure(slug: string, root: string, lens: string, scope: 
   if (scope.kind === 'selection' && (scope.id !== undefined || scope.features.length > MAX_SELECTION)) return { ok: false, status: 400, error: 'bad-scope' };
   const prompt = `/lens-scan measure --lens ${lens}` + (all ? '' : ` --scope ${scope.features.join(',')}`);
   return enqueue(slug, root, { id: jobId(), kind: 'measure', lens, scope, status: 'queued', queued_at: now() }, prompt);
+}
+
+/**
+ * The fixed prompt of a prepare job: make `lens` measurable in the product repo by the lens-scan overlay rules. lens-scan has no
+ * mode of its own for this, so the prompt is the contract, with the lens id (SAFE_ID and PREPARABLE) its only variable. One line:
+ * the job log quotes it as `# prompt (stdin): ...`.
+ */
+export function preparePrompt(lens: string): string {
+  return `Make the ${lens} lens measurable by /lens-scan in this repo, following the lens-scan skill's "Project overlay" section and references/metrics.md#probes. `
+    + `For performance: write probe scripts under scripts/probes/ that drive a local PRODUCTION build (never a dev server) of the main features with Playwright, each printing one JSON line per metric `
+    + `({"metric","feature","samples":[...]}, 20+ samples for a distribution, 3+ passes for a per-pass total), and add one \`<feature> <metric>: <command>\` line per probed feature and metric under a \`## Probes\` section of ${OVERLAY_PATH}. `
+    + `Run at least one probe and check it prints valid JSON lines; never invent or estimate a reading. Follow this repo's own CLAUDE.md and rules; do not commit to a protected branch and do not push. `
+    + `Do not start a measure run. End with exactly one line: \`lens-scan prepared: <what you added>\` or \`lens-scan refused: <why>\`.`;
+}
+
+/** Queue a prepare job for `lens` (the route checked it against the map). 400 for a lens no prepare job knows, 409 while one for the
+ *  same lens is queued or running. */
+export function enqueuePrepare(slug: string, root: string, lens: string): Enqueued | { ok: false; status: 409; error: string } {
+  if (!SAFE_ID.test(lens) || !PREPARABLE.includes(lens)) return { ok: false, status: 400, error: 'not-preparable' };
+  ensure(slug, root);
+  if (prod(slug).recs.some((r) => r.job.kind === 'prepare' && r.job.lens === lens && r.phase !== 'ended')) return { ok: false, status: 409, error: `a prepare job for ${lens} is already queued or running` };
+  return enqueue(slug, root, { id: jobId(), kind: 'prepare', lens, status: 'queued', queued_at: now() }, preparePrompt(lens));
+}
+
+/** A prepare job ends by the repo, not the exit alone: `done` when the overlay now lets lens-scan measure the lens (re-read), else
+ *  failed with lens-scan's refusal line, or saying the overlay still lacks what the lens needs. */
+function settlePrepare(slug: string, r: Rec, extra: Partial<ScanJob>): void {
+  let overlay: string | null = null;
+  try { overlay = fs.readFileSync(path.join(r.root, OVERLAY_PATH), 'utf8'); } catch { /* none yet */ }
+  const need = lensSetupNeed(r.job.lens ?? '', undefined, overlay);
+  if (!need) { finish(slug, r, 'done', extra); return; }
+  const said = plainLines(r.buf).reverse().find((l) => l.startsWith('lens-scan refused:'));
+  finish(slug, r, 'failed', { ...extra, error: said ?? `the run ended and ${need.why}` });
 }
 
 /** What a wave package runs its execute job with. Absent = the CLI's default, exactly as a plain dispatch. */
@@ -488,6 +523,7 @@ function start(slug: string, r: Rec): void {
   c.on('error', (e: NodeJS.ErrnoException) => finish(slug, r, 'failed', { error: e.code === 'ENOENT' ? CLI_MISSING : e.message }));
   c.on('close', (code, signal) => {
     if (code === 0 && r.job.kind === 'release') settleRelease(slug, r, 0);
+    else if (code === 0 && r.job.kind === 'prepare') settlePrepare(slug, r, { exit_code: 0 });
     else if (code === 0) {
       // lens-scan refuses a headless run before its run-start (an unknown slug, no map) and still exits 0: no run = failed
       const run = r.job.run_id ?? runOf(r.root, r.job.id);

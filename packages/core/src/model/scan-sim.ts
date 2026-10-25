@@ -15,6 +15,7 @@ import { WAVE_EFFORTS, WAVE_MODELS, createIn, packagesOf, patchIn, recordJobs, r
 import { TrainSim, type TrainToggles } from './train-sim.ts';
 import { NUMERIC } from '../standard/present.ts';
 import { SCAN_SCOPE_KINDS } from '../standard/schema-vocab.ts';
+import { PREPARABLE } from '../scan/lens-setup.ts';
 
 export type { TrainToggles };
 
@@ -141,6 +142,22 @@ export class ScanSim {
     const items = all ? P.order.slice() : [...new Set(scope.features)].sort((a, b) => rank.get(a)! - rank.get(b)!);
     const job: ScanJob = { id, kind: 'measure', lens, scope: { ...scope, features: scope.features.slice() }, status: 'queued', queued_at: at };
     this.recs.push({ job, items, i: 0, stepAt: 0, step: STEP_MS, runId: 'run-' + id });
+    this.pump();
+    this.changed();
+    return this.recOf(id)!.job;
+  }
+
+  /** Prepare a lens as POST /lenses/<id>/prepare does: Kettle's sample needs no repo setup, so the job walks one step and ends
+   *  done, saying so. 400 unknown-lens / not-preparable, 409 one for the lens is queued or running, 429 queue-full. */
+  prepareLens(lens: string): ScanJob {
+    const P = this.prod;
+    if (!P) throw refuse(503, 'The sample is still loading');
+    if (!P.manifest(lens)) throw refuse(400, 'unknown-lens');
+    if (!PREPARABLE.includes(lens)) throw refuse(400, 'not-preparable');
+    if (this.recs.some((r) => r.job.kind === 'prepare' && r.job.lens === lens && (r.job.status === 'queued' || r.job.status === 'running'))) throw refuse(409, `a prepare job for ${lens} is already queued or running`);
+    if (this.recs.filter((r) => r.job.status === 'queued').length >= MAX_QUEUED) throw refuse(429, 'queue-full');
+    const id = 'sim-' + ++this.nextId;
+    this.recs.push({ job: { id, kind: 'prepare', lens, status: 'queued', queued_at: this.iso() }, items: ['overlay'], i: 0, stepAt: 0, step: STEP_MS, runId: 'run-' + id });
     this.pump();
     this.changed();
     return this.recOf(id)!.job;
@@ -374,6 +391,7 @@ export class ScanSim {
 
   private begin(r: Rec) {
     const t = this.now(), at = this.iso(t), j = r.job;
+    if (j.kind === 'prepare') { this.setJob(r, { status: 'running', started_at: at }); r.i = 0; r.stepAt = t + r.step; return; } // no run: a prepare writes no store rows
     if (j.kind === 'release') {
       r.items = this.train.begin(j, r.runId, this.toggles);
       this.setJob(r, { status: 'running', started_at: at, ...(j.step !== 'finish' && r.items.length ? { run_id: r.runId } : {}) });
@@ -391,7 +409,7 @@ export class ScanSim {
   /** The current item starts: a feature is read, or a proposal goes to executing. */
   private open(r: Rec) {
     const j = r.job, x = r.items[r.i];
-    if (x === undefined || j.kind === 'release') return;
+    if (x === undefined || j.kind === 'release' || j.kind === 'prepare') return;
     if (j.kind === 'measure') { this.log(r.runId, 'reading', 'reading ' + x, x, j.lens); return; }
     const p = this.prop(x);
     if (p && p.status === 'approved') { this.setProp(x, { status: 'executing', updated_at: this.iso() }); this.log(r.runId, 'executing', 'building ' + p.title, p.feature, p.lens); }
@@ -401,6 +419,7 @@ export class ScanSim {
   private close(r: Rec) {
     const j = r.job, x = r.items[r.i], P = this.prod!, at = this.iso();
     if (x === undefined) return;
+    if (j.kind === 'prepare') { this.setJob(r, { log_tail: 'lens-scan prepared: nothing to add, the Kettle sample measures ' + j.lens + ' as it is' }); return; }
     if (j.kind === 'release') { const line = this.train.step(j, x, r.runId); this.setJob(r, { log_tail: [...(j.log_tail ? j.log_tail.split('\n') : []), line].slice(-LOG_LINES).join('\n') }); return; }
     if (j.kind === 'measure') {
       const lens = j.lens!, m = P.manifest(lens);
@@ -447,12 +466,12 @@ export class ScanSim {
       }
       if (r.i >= r.items.length) {
         const at = this.iso(t), err = r.job.kind === 'release' ? this.train.end(r.job).error : undefined;
-        this.setRun(r.runId, { status: err ? 'failed' : 'done', ended_at: at, updated_at: at });
+        if (r.job.kind !== 'prepare') this.setRun(r.runId, { status: err ? 'failed' : 'done', ended_at: at, updated_at: at });
         // a failed job exits non-zero, as a real run does (jobs.server.ts passes the CLI's code through): the
         // workbench paints the figure red only when it is non-zero, so exit 0 on a failure read as a clean run
         this.setJob(r, { status: err ? 'failed' : 'done', ended_at: at, exit_code: err ? 1 : 0, ...(err ? { error: err } : {}) });
         stepped = true;
-      } else if (stepped) this.setRun(r.runId, { updated_at: this.iso(t) });
+      } else if (stepped && r.job.kind !== 'prepare') this.setRun(r.runId, { updated_at: this.iso(t) });
       moved ||= stepped;
     }
     if (!moved) return;

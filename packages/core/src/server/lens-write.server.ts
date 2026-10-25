@@ -12,6 +12,7 @@ import { storeDir, writeAtomic } from './products.server';
 import { takenLooks, type LensLook } from '../scan/jobs';
 import type { ProductEntry } from '../scan/types';
 import { isObj } from '@bp/core/scan/guards';
+import { OVERLAY_PATH, lensSetupNeed, type LensSetupNeed } from '../scan/lens-setup';
 
 if (typeof window !== 'undefined') throw new Error('lens-write.server.ts is server-only');
 
@@ -106,4 +107,17 @@ export function readLensesAndFeatures(p: ProductEntry): { lenses: LensEntry[]; f
   const lenses = (Array.isArray(r.value.doc.lenses) ? r.value.doc.lenses : []).filter((e): e is LensEntry => isObj(e) && typeof e.id === 'string' && isObj(e.manifest));
   const feats = Array.isArray(r.value.doc.features) ? r.value.doc.features : [];
   return { lenses, features: new Set(feats.filter(isObj).map((f) => f.slug).filter((s): s is string => typeof s === 'string')) };
+}
+
+/** The product's lens-scan overlay text, or null when it has none (or it cannot be read: the same verdict, no overlay). */
+export function readOverlay(p: ProductEntry): string | null {
+  try { return fs.readFileSync(path.join(p.root, OVERLAY_PATH), 'utf8'); } catch { return null; }
+}
+
+/** What each enabled lens of the map lacks in the repo before lens-scan can measure it (lens-setup.ts); [] without a map. */
+export function lensSetupOf(p: ProductEntry): LensSetupNeed[] {
+  const m = readLensesAndFeatures(p);
+  if (!m) return [];
+  const overlay = readOverlay(p);
+  return m.lenses.filter((e) => e.enabled !== false).map((e) => lensSetupNeed(e.id, e.manifest, overlay)).filter((x): x is LensSetupNeed => !!x);
 }
