@@ -8,42 +8,42 @@
     },
     "mesh_acceptance": {
       "pass": true,
-      "note": "scripted, so acceptance is the build's own structure: 39 loose parts (38 rigid parts, each closed, plus the 1-quad glow card), 4 open edges (the card's border, nothing else), the same 14662 triangles in final_working.glb and final.fbx; silhouette against the target in evidence/target-compare.jpg (hood head with a glowing orb, tapered cone body with slit and pin, two jointed arms ending in loops, one reaching sideways, one hanging)",
+      "note": "scripted, so acceptance is the build's own structure: 38 loose parts (37 rigid parts, each closed, plus the 1-quad glow card), 4 open edges (the card's border, nothing else), the same 14730 triangles in final_working.glb and final.fbx; silhouette against the target in evidence/target-compare.jpg (hood head with a recessed glowing lens, smooth tapered cone body with slit and pin, two jointed arms ending in loops, one reaching sideways, one hanging)",
       "date": "2026-10-25"
     },
     "scale": {
       "pass": true,
-      "note": "rest height (pin tip to hood top, body and head) 23.45 cm, pin tip z 0 m (the pivot), hood 13.6 cm across, body cone 9.12 cm wide at the top (rule: 20 to 32 cm tall, hood 11 to 15 cm); working-pose box 39.94 x 20.3 x 26.48 cm. Sized from the target: the hood is about 105 px of the 1376 px frame where the far edge of a table about 1.2 m wide spans about 1200 px, so about 11 to 14 cm; the decision card beside it is about 28 cm. The UE builder may scale uniformly (the rig is rigid).",
+      "note": "rest height (pin tip to hood top, body and head) 23.45 cm, pin tip z 0 m (the pivot), hood 13.6 cm across, body cone 9.14 cm wide at the top (rule: 20 to 32 cm tall, hood 11 to 15 cm); working-pose box 39.94 x 20.3 x 26.48 cm. Sized from the target: the hood is about 105 px of the 1376 px frame where the far edge of a table about 1.2 m wide spans about 1200 px, so about 11 to 14 cm; the decision card beside it is about 28 cm. The UE builder may scale uniformly (the rig is rigid).",
       "date": "2026-10-25"
     },
     "finishing": {
       "pass": true,
-      "note": "one UV set (smart project over every part, the card on its own 0-1); 3 PNGs (AO, roughness and metal in ORM, a diffuse-colour base, the glow card); 5 slots (agent_shell, agent_glow, agent_joint, agent_hood_inner, agent_glow_card): the orb is its own sphere with a clean edge (no texture mask), the glow card has its own slot; panel seams (0.6 mm deep, 0.8 mm wide grooves) round a front panel on the body and round the hood, a rolled half-round hood lip, axle drums with caps and screw heads at every joint, bevels on the collar, rings, slit and drums, smooth shading with weighted normals on the joints; rig body, head, arm_l_upper, arm_l_lower, arm_r_upper, arm_r_lower rigid, 4 actions (asking, resting, speaking, working); evidence rendered with EEVEE under a dark studio rig (cool table light from below, warm point light inside the hood, warm practical, cool rim) with a bloom pass and no depth of field; every file under 10 MB",
+      "note": "one UV set (smart project over every part, the card on its own 0-1); 3 PNGs (AO, roughness and metal in ORM, a diffuse-colour base, the glow card); 5 slots (agent_shell, agent_joint, agent_glow, agent_hood_inner, agent_glow_card): the lens is its own convex disc with a clean edge (no texture mask), seated in a stepped reflector, the glow card has its own slot; a panel seam (0.6 mm deep, 0.8 mm wide grooves) round the hood (the body cone is seamless, as the concept's), a rolled half-round hood lip, axle drums with caps and screw heads at every joint, bevels on the collar, rings, slit and drums, smooth shading with weighted normals on the joints; rig body, head, arm_l_upper, arm_l_lower, arm_r_upper, arm_r_lower rigid, 4 actions (asking, resting, speaking, working); evidence rendered with EEVEE under a dark studio rig (cool table light from below, warm point light inside the hood, warm practical, cool rim) with a bloom pass and no depth of field; every file under 10 MB",
       "date": "2026-10-25"
     },
     "poly_budget": {
       "pass": true,
-      "note": "14662 tris against 15000 (98 %): hood 3360, orb 624, body 2464, each arm 3184 (hardware included), cable 332",
+      "note": "14730 tris against 15000 (98 %): hood 3360, lens and reflector 1632, body 2000, each arm 3184 (hardware included), cable 332",
       "date": "2026-10-25"
     }
   },
   "sha256": {
-    "evidence/poses.jpg": "778e77fee59814c3bf422e69393bc8acd6e66ff05512483e2711c67a47d69ded",
-    "evidence/target-compare.jpg": "0eeb7f678d3817351774efbbaebd512647245ce95dc3399d86298ff8a6a521f8",
-    "evidence/turnaround.jpg": "fe34792f8feb4f19442ed9f2d071b2264e17214bb47a05935d46696657669c1a",
-    "final.fbx": "50c3a415b681552bfa3d646544bedc9de62358ce7de57cd937b306ce3a7c7b27",
-    "final_working.glb": "8e1cb90dfc402d2cbb46578e85c32fc453536f638464af4ab72a8c77bec024d3",
+    "evidence/poses.jpg": "8699dd478936c0e8dfdd24edd8c37c06d19e2a3834f09565dafbe31680b026f2",
+    "evidence/target-compare.jpg": "ee4bb229f75a76655c880d02d86a34dd4b381061384990e9685fd9acbc047672",
+    "evidence/turnaround.jpg": "5b10052022e6d4a83f88d85fc29d0de71ad7f75e6ce7f79351bd4a8de0c6f10b",
+    "final.fbx": "51cf63ebd6a5eb258df0f5e9752307d0c204cce2e0c3605d8f310903187ffb97",
+    "final_working.glb": "b95c887c104dfbef7c8852e592bfd5b863835c7443b1e9918aef6e5cf5f6990e",
     "options/E-s41.png": "77010584acf521bc084300576582788dd2bb58d3aea10334880103c2069ecf2a",
     "options/F-s42.png": "e8a5d707766e4ad22759d00c854e11215aa933860913917abb307b1a50728f4e",
     "options/G-s41.png": "33ff447c7d1985273b8c2c5dac6d3b188e4ac956a9c8e0fa5d426e91159fce08",
     "options/G-s42.png": "04dedbefdb17a50e7827cfbb70b3a94b1feeb107cacd1380b06ace4d58c778d3",
     "options/H-s41.png": "1c74efdcfca139eb79fa24e5e4ccd62f85cf644e7db1bc553ea7e2a32892700c",
     "reference/target-crop.png": "ef9b9744b4b6c0171a2a44c402998e0264fcf6ede55b4932c43b492ee0fb2e2d",
-    "textures/agent_basecolor.png": "3097b148fc927e7c5834e6fb8e24fa8ae25b6eec6f20ea544d23296b421e28fd",
-    "textures/agent_glow_card.png": "33006bff51655815d69e3f4797d957bd59a6b9e6f61697707bbf38d16823313d",
-    "textures/agent_orm.png": "ce42b0a1147122b80c5867950c16c9b491cbfd27944f376cce67263895ca0291"
+    "textures/agent_basecolor.png": "16267f241126485092c2133e600f89af0a6ad48b2eb11f1079636bd7115f8b05",
+    "textures/agent_glow_card.png": "9886636436e2f18f0e1c67b7f4a4c883d216a04e06c86822230169a652e761bc",
+    "textures/agent_orm.png": "fcce2b542903bb4670e3dbbbd80f46369b2581690c819a6424a25afd6b244612"
   },
-  "lynx_commit": "ed96fa0659542fa9ca771cfee8e7e196ac9afb72",
+  "lynx_commit": "c86a0c46db3c88adf79055f6f4f302e1a3c39d26",
   "lynx_commit_note": "stamped by the writer: the newest commit touching this folder when the manifest was written",
   "id": "lamp-agent",
   "class": "character-prop",
@@ -120,20 +120,20 @@
   "option_input_check": "H-s41 (front three-quarter, referenced on reference/target-crop.png) matches the target figure: hood head with a glowing orb, tapered cone body with the amber slit and pin, two jointed capsule arms ending in wire loops, one arm reaching sideways and one hanging. E-s41 is the clean front view. F-s42 and G-s41 came back as multi-view sheets on a blue ground (they break the grey-ground rule but give the side and back silhouettes); G-s42 is the profile. F-s41 (log) was paid for but its download failed, so it has no file. The figure is about 15 rounded primitives, so the views are modelling reference for a scripted build, not image-to-3D input.",
   "concept_licence": "Leonardo API output (rights assigned to the account holder, public:false); modelling reference only, no generated pixels or geometry are shipped; the target crop is cut from docs/concepts/vr-light-table/target-light-table.jpg",
   "file_bytes": {
-    "evidence/poses.jpg": 38056,
-    "evidence/target-compare.jpg": 45328,
-    "evidence/turnaround.jpg": 43658,
-    "final.fbx": 588076,
-    "final_working.glb": 502532,
+    "evidence/poses.jpg": 36187,
+    "evidence/target-compare.jpg": 44650,
+    "evidence/turnaround.jpg": 41768,
+    "final.fbx": 599740,
+    "final_working.glb": 511432,
     "options/E-s41.png": 62550,
     "options/F-s42.png": 96873,
     "options/G-s41.png": 111473,
     "options/G-s42.png": 52976,
     "options/H-s41.png": 61902,
     "reference/target-crop.png": 59039,
-    "textures/agent_basecolor.png": 703649,
-    "textures/agent_glow_card.png": 17630,
-    "textures/agent_orm.png": 2705385
+    "textures/agent_basecolor.png": 671151,
+    "textures/agent_glow_card.png": 24978,
+    "textures/agent_orm.png": 2541101
   },
   "picked": "H-s41",
   "generator": [
@@ -143,30 +143,30 @@
       "why_not_trellis": "The figure is about 15 rounded primitives (a hood cup, an orb, a cone, capsules, balls, wire loops). The 2026-10-21 TRELLIS.2 run of the old lamp needed 3 seeds (two lost or split the arm), left 26 open edges and a ragged per-face glow edge, and its texture was thrown away; thin arms and a 1 mm wire loop are what image-to-3D fuses or drops. A script gives exact rigid parts per bone, a clean separate emissive orb and a unique UV for the AO bake. TRELLIS.2 was therefore not run for this build (research r1, r2 and r5 of 2026-10-24 expect the same)."
     }
   ],
-  "tris": 14662,
-  "tris_note": "14662 against 15000 (static working pose; the rigged final.fbx carries the same 14662)",
+  "tris": 14730,
+  "tris_note": "14730 against 15000 (static working pose; the rigged final.fbx carries the same 14730)",
   "materials": [
-    "agent_shell: white clear-coat plastic (hood outside and its rolled lip, body cone, arm capsules, the wire loops); base colour 0.80/0.79/0.77 linear, roughness 0.35 with a smudge-noise breakup of ±0.07 (albedo ±2 %) baked into ORM.G, clear coat 1.0 at roughness 0.08 (r4: albedo about 0.8, a second specular lobe)",
-    "agent_hood_inner: the inside of the hood, the concept's dark glossy bowl round the orb; base 0.035/0.03/0.026 linear, roughness 0.12 ±0.08 (baked), clear coat; no self-glow in the bake. UE: roughness from ORM.G (or the Roughness parameter at 0.12), GlowStrength x 0.15 adds the warm bounce",
+    "agent_shell: white clear-coat plastic (hood outside and its rolled lip, the smooth seamless body cone, arm capsules, the wire loops); base colour 0.80/0.79/0.77 linear, roughness 0.35 with a smudge-noise breakup of ±0.07 (albedo ±2 %) baked into ORM.G, clear coat 1.0 at roughness 0.08 (r4: albedo about 0.8, a second specular lobe)",
+    "agent_hood_inner: the inside of the hood and the lens's stepped reflector cone, the concept's warm-lit bowl round the lens; base 0.26/0.18/0.11 linear (a warm tan the warm light turns orange), roughness 0.32 ±0.08 (baked), half clear coat; no self-glow in the bake. UE: roughness from ORM.G, GlowStrength x 0.15 adds the warm bounce",
     "agent_joint: dark metal joint hardware (axle drums with caps and domed screw heads at shoulder, elbow and wrist; shoulder brackets; collar rings at the capsule ends; neck rings and collar; the cable); #3A3D42, roughness 0.38 ±0.1, metal 1",
-    "agent_glow: amber emissive orb in the hood, the front slit and the pin; #FFA94D x3 (UE drives GlowStrength per state)",
-    "agent_glow_card: the additive card in the hood opening, textures/agent_glow_card.png (radial falloff, white on black) tinted by the glow colour; UE: unlit additive, two-sided, no depth write"
+    "agent_glow: amber emissive lens face (a 7.3 cm disc domed 3.5 mm, set 2.92 cm back from the hood's mouth, its axis 14 degrees above the opening's) with its raised 2 mm rim bead, the front slit, dot and pin; base nearly black (light, not paint: the warm light in front must not wash it to cream), #FFA94D x3 (UE drives GlowStrength per state)",
+    "agent_glow_card: the additive card just in front of the lens, as wide as the reflector, textures/agent_glow_card.png (white on black: a soft hotspot in the middle, a bright ring on the lens edge, a short falloff onto the reflector) tinted by the glow colour; UE: unlit additive, two-sided, no depth write, at about 5/3 of the lens emission (the evidence renders use 5 against the lens 3)"
   ],
   "material_slots": [
     "agent_shell",
-    "agent_glow",
     "agent_joint",
+    "agent_glow",
     "agent_hood_inner",
     "agent_glow_card"
   ],
   "slot_tris": {
-    "agent_shell": 6912,
-    "agent_glow": 996,
-    "agent_joint": 5192,
-    "agent_hood_inner": 1560,
+    "agent_shell": 6168,
+    "agent_joint": 4996,
+    "agent_glow": 1092,
+    "agent_hood_inner": 2472,
     "agent_glow_card": 2
   },
-  "textures": "textures/agent_basecolor.png, textures/agent_glow_card.png, textures/agent_orm.png: agent_basecolor.png (diffuse colour bake, sRGB) and agent_orm.png (R ambient occlusion, G roughness, B metal; linear), 2048 px, baked with Cycles on the CPU at 64 samples in 185.8 s (AO mean 0.346, self-occlusion only: hood over orb and collar, joints into capsules, the seam grooves). ORM.G carries the roughness breakup. No normal map: seams, lip, drums and screws are real geometry with smooth shading. agent_glow_card.png 256 px. UE: BaseColor x lerp(1, AO, 0.6), because the forward path's SSAO is weak and there is no reflection capture (r4); the Blender materials of final.fbx are wired that way.",
+  "textures": "textures/agent_basecolor.png, textures/agent_glow_card.png, textures/agent_orm.png: agent_basecolor.png (diffuse colour bake, sRGB) and agent_orm.png (R ambient occlusion, G roughness, B metal; linear), 2048 px, baked with Cycles on the CPU at 64 samples in 57.1 s (AO mean 0.286, self-occlusion only: hood over orb and collar, joints into capsules, the seam grooves). ORM.G carries the roughness breakup. No normal map: seams, lip, drums and screws are real geometry with smooth shading. agent_glow_card.png 256 px. UE: BaseColor x lerp(1, AO, 0.6), because the forward path's SSAO is weak and there is no reflection capture (r4); the Blender materials of final.fbx are wired that way.",
   "bounds_cm": {
     "x": 39.94,
     "y": 20.3,
@@ -175,12 +175,12 @@
   },
   "meshes": {
     "lamp-agent": {
-      "tris": 14662,
-      "vertices": 7406,
-      "loose_parts": 39,
+      "tris": 14730,
+      "vertices": 7438,
+      "loose_parts": 38,
       "open_edges": 4,
       "uv_sets": 1,
-      "note": "38 rigid parts plus the glow card (a single quad, whose 4 boundary edges are the open edges)"
+      "note": "37 rigid parts plus the glow card (a single quad, whose 4 boundary edges are the open edges)"
     }
   },
   "uv_sets": 1,
@@ -337,11 +337,11 @@
   "placement": {
     "ue_choice": "place final_working.glb as a STATIC mesh (5 sections = 5 draws, no skinning) for the capture; keep final.fbx (skeletal, 6 bones, 4 actions) for L5.7 states. The old SK_LampAgent placement drew 6 sections.",
     "where": "hovering above the far edge of the table, centred a little left of the table centre, the hood facing the player (a yaw so the figure's -Y looks at the camera); in the 1600 x 900 target capture the head sits in the upper third, at about 46 % of the width, the hood about 7.6 % of the frame width across (the target crop: 1376 x 768 frame, hood centre at x = 645, y = 55, hood about 105 px wide). The target pose's frame top is only 1.6 degrees below its eye (43 cm over the table top, pitch -31, hfov 90), so the hood top must stay under the eye: with the figure about 103 cm in front of the eye, scale 1.05 and the pin tip 12.8 cm over the table put the hood top 3 % below the frame top, the orb centre 10 % down and the hood 7.6 % across (at scale 1.2 the pin tip goes to 9.3 cm). Working-pose hood top: 23.39 cm over the pin tip",
-    "light": "a warm point light inside the hood, just in front of the orb (build.json orb_centre_rest_m + 4.5 cm along open_axis, carried by the head bone), about #FFA85A, small source radius, short attenuation (about 40 cm) so it lights the hood inside, the body top and the arms, plus the card; and a faint cool rim from behind so the white silhouette separates from the dark room (r5: the old lamp dissolved into the background)",
+    "light": "a warm point light just in front of the hood's mouth (build.json orb_centre_rest_m, the lens face's centre, + 4.5 cm along open_axis, carried by the head bone), about #FFA85A, small source radius, short attenuation (about 40 cm) so it lights the hood inside, the body top and the arms, plus the card; and a faint cool rim from behind so the white silhouette separates from the dark room (r5: the old lamp dissolved into the background)",
     "orb_centre_rest_m": [
       0,
-      -0.0077,
-      0.1684
+      0.0104,
+      0.1686
     ],
     "open_axis": [
       0,
@@ -350,9 +350,9 @@
     ],
     "working_pose": {
       "orb_centre_m": [
-        0.0073,
-        -0.0068,
-        0.1679
+        0.0048,
+        0.0112,
+        0.1681
       ],
       "open_axis": [
         -0.0039,
@@ -360,11 +360,11 @@
         -0.633
       ],
       "light_m": [
-        0.0071,
-        -0.0416,
-        0.1394
+        0.0046,
+        -0.0236,
+        0.1396
       ],
-      "note": "the static working pose (final_working.glb), Blender axes: the orb centre, the opening axis and the warm light 4.5 cm in front of the orb"
+      "note": "the static working pose (final_working.glb), Blender axes: the lens face's centre (kept under the old key), the opening axis and the warm light 4.5 cm in front of the lens"
     }
   }
 }

@@ -3,16 +3,17 @@
 # apps/vr/ArtSource/lamp-agent/options/ (H-s41 is the target-referenced view the proportions follow).
 #   blender -b --factory-startup -P scripts/art/lamp/build_agent.bpy -- <repo> <work>
 # Parts, one rigid part per bone (the cable alone is blended between two):
-#   body         the tapered cone shell (a front panel framed by shallow seam grooves, a rolled top lip), its amber front
-#                slit and dot, the pin under the tip, the dark neck collar and rings, the shoulder brackets
-#   head         the hood (one closed lathe: white outside with a seam ring, a rolled half-round lip, a dark glossy inside),
-#                the emissive orb inside it, the glow card
+#   body         the tapered cone shell (smooth, a rolled top lip round a dark dished mouth), its amber front slit and dot,
+#                the pin under the tip, a short dark neck collar, the shoulder brackets
+#   head         the hood (one closed lathe: white outside with a seam ring, a rolled half-round lip, a warm satin inside),
+#                the lens (a slightly convex emissive disc set deep in the hood, seated in a stepped reflector cone), the
+#                neck stub into the hood's back, the glow card (the lens's hotspot, edge ring and soft falloff)
 #   arm_?_upper  shoulder axle drum (caps, screw head) + upper capsule with collar rings;   arm_?_lower  elbow drum +
 #                forearm capsule + wrist drum + teardrop wire loop;   cable  body -> arm_r_upper, skinned along its length
 # Slots (5, so the static mesh is 5 draws): agent_shell (white clear-coat plastic, roughness breakup), agent_hood_inner (the
-# inside of the hood: a dark smoked glossy bowl), agent_joint (dark metal: drums, caps, screws, rings, cable),
-# agent_glow (amber emissive: orb, slit, dot, pin; UE drives its strength), agent_glow_card (the additive card in the hood
-# opening; textures/agent_glow_card.png). Axes: Blender Z up, the figure faces -Y; pivot = the pin tip (z = 0), x/y centred
+# inside of the hood and the reflector: a warm white satin the lens lights), agent_joint (dark metal: drums, caps, screws,
+# rings, cable, the body's dished mouth), agent_glow (amber emissive: lens, slit, dot, pin; UE drives its strength),
+# agent_glow_card (the additive card over the lens; textures/agent_glow_card.png). Axes: Blender Z up, the figure faces -Y; pivot = the pin tip (z = 0), x/y centred
 # on the body axis. Writes into ArtSource/lamp-agent: final.fbx (rig + 4 actions), final_working.glb (static, working pose),
 # textures/*.png (AO, roughness and metal baked with Cycles on the CPU); and <work>/build.json, <work>/agent.blend.
 import bmesh
@@ -45,38 +46,43 @@ scene.unit_settings.scale_length = 1.0
 # hanging a little nearer vertical than the forearm. The forearm is a full spindle, not a thin taper (FJ, measured across
 # both concept arms with scratchpad fid/fj/thick.py): 0.13 H thick near the elbow, 0.16 H in the middle, 0.13 H near the wrist.
 PIN = (0.0, 0.020, 0.0009)                  # z from, z to, radius (the concept's pin is a hair-thin rod)
-SEAM_D, SEAM_W = 0.0006, 0.0004             # panel seams: a groove this deep, its walls this far either side of it
-BODY_SEAMS_Z = (0.044, 0.100)               # the front panel's lower and upper seam rings
-BODY_SEAMS_A = (225.0, 315.0)               # and its two vertical seams, degrees about Z (270 is the front, -Y)
-BODY_Z = (0.018, 0.032, 0.114)              # tip, top of the rounded tip cap, top of the cone
-BODY_RR = (0.0275, 0.0450)                  # cone radius at the cap and at the top (the tip cap is a flattened half-round)
+SEAM_D, SEAM_W = 0.0006, 0.0004             # panel seams: a groove this deep, its walls this far either side of it (the hood's ring)
+BODY_Z = (0.018, 0.031, 0.114)              # tip, top of the rounded tip cap, top of the cone
+BODY_RR = (0.0250, 0.0452)                  # cone radius at the cap and at the top (the tip cap is a flattened half-round)
+BODY_DISH = 0.0045                          # the body's open mouth: a dark dish this far below the cone's top
 
 def body_r(z):
-    """The cone's radius at z: straight between BODY_RR (the concept's sides do not swell), 0.5 mm of fullness."""
+    """The cone's radius at z: straight between BODY_RR (the concept's sides do not swell, and it is one smooth sleek shell,
+    so no seams), 0.3 mm of fullness."""
     u = (z - BODY_Z[1]) / (BODY_Z[2] - BODY_Z[1])
-    return BODY_RR[0] + u * (BODY_RR[1] - BODY_RR[0]) + 0.0005 * math.sin(math.pi * u)
+    return BODY_RR[0] + u * (BODY_RR[1] - BODY_RR[0]) + 0.0003 * math.sin(math.pi * u)
 
 def body_profile():
-    """(r, z, seamable): the flattened round tip, a cone that is near straight, two seam grooves, a rolled top lip."""
+    """(r, z): the flattened round tip, a straight smooth cone, a thin rolled lip, then down into the dark dished mouth."""
     zt, zc, z1 = BODY_Z
-    p = [(0.0, zt, 0)] + [(BODY_RR[0] * math.sin(a), zt + (zc - zt) * (1 - math.cos(a)), 0)
-                          for a in (math.pi / 2 * i / 5 for i in range(1, 6))]
-    zs = sorted(set([zc + (z1 - zc) * i / 14 for i in range(1, 15)]
-                    + [z + dz for z in BODY_SEAMS_Z for dz in (-SEAM_W, 0.0, SEAM_W)]))
-    zs = [z for z in zs if all(abs(z - s) >= SEAM_W * 0.99 or abs(z - s) < 1e-9 for s in BODY_SEAMS_Z)]
-    for z in zs:
-        r = body_r(z) - (SEAM_D if any(abs(z - s) < 1e-9 for s in BODY_SEAMS_Z) else 0.0)
-        p.append((r, z, 1 if BODY_SEAMS_Z[0] - 1e-6 <= z <= BODY_SEAMS_Z[1] + 1e-6 else 0))
-    r1 = BODY_RR[1]
-    p += [(r1 + 0.0006, z1 + 0.0028, 0), (r1, z1 + 0.0045, 0), (r1 - 0.0015, z1 + 0.0058, 0), (0.031, z1 + 0.008, 0), (0.0, z1 + 0.0095, 0)]
+    p = [(0.0, zt)] + [(BODY_RR[0] * math.sin(a), zt + (zc - zt) * (1 - math.cos(a)))
+                       for a in (math.pi / 2 * i / 6 for i in range(1, 7))]
+    p += [(body_r(z), z) for z in (zc + (z1 - zc) * i / 12 for i in range(1, 13))]
+    r1 = body_r(z1)
+    p += [(r1 + 0.0005, z1 + 0.0022), (r1 + 0.0002, z1 + 0.0038), (r1 - 0.0009, z1 + 0.0046), (r1 - 0.0021, z1 + 0.0040),
+          (r1 - 0.0030, z1 + 0.0010), (r1 - 0.0060, z1 - BODY_DISH + 0.0012), (0.020, z1 - BODY_DISH), (0.0, z1 - BODY_DISH)]
     return p
 
-BODY = body_profile()                       # lathe profile (r, z, seamable), tip to top cap
-COLLAR = (0.1175, 0.1365, 0.019)            # z from, z to, radius
+BODY = body_profile()                       # lathe profile (r, z), tip to the dish centre
+BODY_MOUTH_R = BODY_RR[1] - 0.0021          # inside this radius the body's top is its dark mouth (agent_joint)
+COLLAR = (0.1175, 0.1365, 0.019)            # the old collar's z from, z to, radius: it still places the head bone's head
+NECK = (BODY_Z[2] - BODY_DISH - 0.0005, 0.1120, 0.0095, 0.030)   # the low dark neck boss in the dish: z from, z to, radius, and y (behind the axis, under the hood's whole back)
 HEAD_C = Vector((0.0, -0.010, 0.1665))      # hood sphere centre
 HOOD_R, HOOD_T, HOOD_CUT = 0.068, 0.0030, 0.18   # outer radius, wall, cut plane at +0.18 R along the opening axis
 OPEN_TILT = -40.0                            # the opening looks forward (-Y) and this many degrees up (negative: down; the concept's mouth is 45 degrees off a view from 5 degrees above)
-ORB_R, ORB_IN = 0.0330, -0.003               # orb radius; its centre sits this far towards the opening from HEAD_C (negative: recessed)
+# The lens (2026-10-25): the concept's head is a deep hood holding a recessed glowing disc, not a bulb. A slightly convex
+# emissive disc set back in the hood, its axis turned LENS_TILT degrees up from the opening's (so the face reads round, as
+# the concept's does, from a view about 45 degrees off the mouth), seated in a stepped reflector cone that closes the
+# cavity behind it. ORB_R keeps its name for the glowing face's radius (UE and the manifest still call it the orb).
+ORB_R = 0.0365                               # the lens face's radius
+LENS_IN, LENS_DROP = -0.017, 0.0115          # its face centre: this far along the opening axis from HEAD_C (negative: recessed), and this far towards the mouth's bottom
+LENS_CROWN, LENS_TILT = 0.0035, 14.0         # how far the face domes out at its centre; its axis's tilt up from the opening axis
+LIGHT_AHEAD = 0.045                          # the warm light (UE): this far in front of the lens face along the opening axis, just out of the mouth
 SHOULDER = Vector((0.051, 0.0, 0.118))       # +X side; mirrored for the right arm
 UPPER_L, LOWER_L = 0.017, 0.121             # capsule lengths: a short link out of the shoulder, a long forearm
 BALL = (0.0098, 0.0072, 0.0055)              # shoulder, elbow, wrist ball radius
@@ -89,6 +95,8 @@ LOOP_WIDTH = (0.55, 0.30)                    # its width factor at the far end, 
 LOOP_DROOP = 14.0                            # degrees the loop hangs nearer vertical than the forearm
 REST_DEG = POSES['rest_arm_deg_from_vertical']
 OPEN_AXIS = Vector((0.0, -math.cos(math.radians(OPEN_TILT)), math.sin(math.radians(OPEN_TILT))))
+OPEN_DOWN = Vector((0.0, -math.sin(math.radians(OPEN_TILT)), -math.cos(math.radians(OPEN_TILT))))   # across the mouth, to its bottom
+LENS_AXIS = Vector((0.0, -math.cos(math.radians(OPEN_TILT + LENS_TILT)), math.sin(math.radians(OPEN_TILT + LENS_TILT))))
 
 # ---- materials -------------------------------------------------------------------------------------------------------
 def principled(name, color, rough, metal=0.0, coat=0.0, coat_rough=0.05, emit=None, emit_strength=0.0):
@@ -113,10 +121,12 @@ MATS = {
     # r4: white plastic at base albedo about 0.8, roughness 0.35, a second specular lobe (UE: clear coat)
     'agent_shell': dict(color=(0.80, 0.79, 0.77), rough=0.35, coat=1.0, coat_rough=0.08),
     'agent_joint': dict(color=srgb('#3A3D42'), rough=0.38, metal=1.0),
-    'agent_glow': dict(color=srgb('#FFD9A0'), rough=0.5, emit=srgb('#FFA94D'), emit_strength=3.0),
-    # the hood's inside: the concept's dark glossy bowl around the orb (a smoked warm grey, glossy, so the orb and its light
-    # read as reflections), plus a faint warm self-glow for the bounce (UE: GlowStrength x 0.15)
-    'agent_hood_inner': dict(color=(0.035, 0.03, 0.026), rough=0.12, coat=1.0, coat_rough=0.04, emit=srgb('#FFC48A'), emit_strength=0.0),
+    # the lens is light, not paint: a dark warm base, so the warm light in front of it does not wash it out to a lit cream
+    'agent_glow': dict(color=(0.03, 0.018, 0.008), rough=0.3, emit=srgb('#FFA94D'), emit_strength=3.0),
+    # the hood's inside and the lens's reflector: in the concept the inside is the same white plastic lit warm by the lens (a
+    # cream-to-orange bowl darkening towards the back), so a warm tan satin that the warm light turns orange, well under the
+    # shell's albedo so the lens stays the brightest thing; plus a faint warm self-glow for the bounce (UE: GlowStrength x 0.15)
+    'agent_hood_inner': dict(color=(0.26, 0.18, 0.11), rough=0.32, coat=0.5, coat_rough=0.12, emit=srgb('#FFC48A'), emit_strength=0.0),
     'agent_glow_card': dict(color=(0, 0, 0), rough=1.0, emit=srgb('#FFB547'), emit_strength=1.0),
 }
 # Roughness breakup (baked into ORM.G): a smudge noise moves each surface's roughness by this much either way, and the
@@ -241,11 +251,6 @@ def tapered(name, start, end, r_a, r_b, swell=0.0006, segs=14, rings=6):
     prof[-1] = (0.0, L)
     return lathe(name, prof, segs, start, d)
 
-def sphere(name, centre, r, segs=16, rings=10):
-    prof = [(r * math.sin(math.pi * i / rings), -r * math.cos(math.pi * i / rings)) for i in range(rings + 1)]
-    prof[0], prof[-1] = (0.0, -r), (0.0, r)
-    return lathe(name, prof, segs, centre)
-
 def cylinder(name, z0, z1, r, segs, centre=Vector((0, 0, 0))):
     bm = bmesh.new()
     bmesh.ops.create_cone(bm, cap_ends=True, segments=segs, radius1=r, radius2=r, depth=z1 - z0,
@@ -277,10 +282,15 @@ def add_mods(ob, bevel=None, weighted=False):
         w.weight = 50
 
 # ---- body ---------------------------------------------------------------------------------------------------------------
-finish(lathe('body', BODY, 40, seams_deg=BODY_SEAMS_A), 'agent_shell', 'body')
+body_ob = lathe('body', BODY, 40)
+finish(body_ob, 'agent_shell', 'body')
+body_ob.data.materials.append(mat['agent_joint'])
+for p in body_ob.data.polygons:              # the dished mouth inside the lip is dark, as the concept's open cone top
+    if p.center.z < BODY_Z[2] + 0.0035 and p.center.z > BODY_Z[2] - BODY_DISH - 0.001 and math.hypot(p.center.x, p.center.y) < BODY_MOUTH_R - 0.0004 and p.normal.z > 0.2:
+        p.material_index = 1
 pin = cylinder('pin', PIN[0], PIN[1], PIN[2], 8)
 finish(pin, 'agent_glow', 'body')
-collar = cylinder('collar', COLLAR[0], COLLAR[1], COLLAR[2], 32)
+collar = cylinder('collar', NECK[0], NECK[1], NECK[2], 32, centre=Vector((0, NECK[3], 0)))
 add_mods(collar, bevel=0.0012, weighted=True)
 finish(collar, 'agent_joint', 'body')
 # the slit: a thin proud strip on the body front, following the cone's lean
@@ -299,11 +309,6 @@ z_dot = 0.086
 dot_ = cyl_axis('slit_dot', Vector((0, -(body_r(z_dot) - 0.0002), z_dot)), Vector((0, -1, 0)), 0.0017, 0.0012, 12)
 add_mods(dot_, bevel=0.0003)
 finish(dot_, 'agent_glow', 'body')
-# the neck: two dark bevelled rings where the body's top lip meets the collar (joint hardware, as the concept's)
-for i, z in enumerate((BODY_Z[2] + 0.0098, BODY_Z[2] + 0.0165)):
-    nk = cyl_axis(f'neck_ring_{i}', Vector((0, 0, z)), Vector((0, 0, 1)), 0.0215 if i == 0 else 0.0205, 0.0026, 32)
-    add_mods(nk, bevel=0.0007, weighted=True)
-    finish(nk, 'agent_joint', 'body')
 
 # ---- head: hood shell, orb, glow card -------------------------------------------------------------------------------------
 # One closed lathe about the opening axis: the outer sphere from the back pole to the cut (a panel seam ring part way),
@@ -335,8 +340,59 @@ hood.data.materials.append(mat['agent_hood_inner'])
 for p in hood.data.polygons:
     if (p.center - HEAD_C).dot(p.normal) < 0:
         p.material_index = 1
-orb_c = HEAD_C + OPEN_AXIS * ORB_IN
-finish(sphere('orb', orb_c, ORB_R, segs=24, rings=14), 'agent_glow', 'head')
+# the lens: one closed lathe about LENS_AXIS from its face centre. Front to back: the convex face (agent_glow) to its rim,
+# the reflector (agent_hood_inner) flaring forward in two shallow steps to just inside the hood's inner wall, its back
+# face, and the lens's back to the axis. The reflector closes the cavity behind the lens, so nothing behind it (the neck
+# stub, the hood's back) shows through the mouth but the lit bowl.
+orb_c = HEAD_C + OPEN_AXIS * LENS_IN + OPEN_DOWN * LENS_DROP
+lp = [(ORB_R * math.sin(math.pi / 2 * k / 6), LENS_CROWN * math.cos(math.pi / 2 * k / 6)) for k in range(7)]
+lp[0] = (0.0, LENS_CROWN)
+# the reflector's outer edge: as wide as fits 1.2 mm inside the hood's inner wall all the way round (the lens sits below
+# the opening axis, so the bottom of the ring is what limits it)
+REFL_T = 0.0098                              # how far forward of the lens face the reflector meets the wall
+def refl_fits(r_out):
+    for k in range(72):
+        a = 2 * math.pi * k / 72
+        perp = Vector((math.cos(a), 0, 0)) + LENS_AXIS.cross(Vector((1, 0, 0))).normalized() * math.sin(a)
+        if (orb_c + LENS_AXIS * REFL_T + perp * r_out - HEAD_C).length > HOOD_R - HOOD_T - 0.0012:
+            return False
+    return True
+REFL_R = max(r for r in (ORB_R + 0.010 + 0.0005 * i for i in range(60)) if refl_fits(r))
+def refl(u, t):                              # u: 0 at the lens rim, 1 at the outer edge
+    return (ORB_R + 0.0024 + u * (REFL_R - ORB_R - 0.0024), t)
+lp += [(ORB_R + 0.0010, 0.0009), (ORB_R + 0.0020, -0.0003)]                    # the face's rim: a raised 2 mm emissive bead, the concept's bright edge ring
+lp += [refl(0.0, -0.0022), refl(0.32, 0.0010), refl(0.38, 0.0002), refl(0.72, 0.0058),
+       refl(0.78, 0.0050), refl(1.0, REFL_T)]                                 # (r, t): the reflector, two steps out to the wall
+lp += [refl(1.0, REFL_T - 0.0022), refl(0.2, -0.0040), (ORB_R - 0.002, -0.0070), (0.0, -0.0075)]
+lens = lathe('orb', lp, 48, orb_c, LENS_AXIS)
+# the reflector's outer edge (its last two rings) pushed out across the axis to 1.2 mm inside the hood's wall all the way
+# round: the lens sits below the opening axis, so a round edge would leave a dark crescent of open cavity at the top and sides
+wall = HOOD_R - HOOD_T - 0.0012
+for v in lens.data.vertices:
+    rel = v.co - orb_c
+    t = rel.dot(LENS_AXIS)
+    rad = rel - LENS_AXIS * t
+    if abs(rad.length - REFL_R) < 1e-5:
+        u = rad.normalized()
+        base = orb_c + LENS_AXIS * t - HEAD_C        # |base + u x| = wall, for x > 0
+        b = base.dot(u); c = base.length_squared - wall * wall
+        v.co = orb_c + LENS_AXIS * t + u * (-b + math.sqrt(b * b - c))
+finish(lens, 'agent_glow', 'head')
+lens.data.materials.append(mat['agent_hood_inner'])
+for p in lens.data.polygons:                 # the face is emissive; the reflector and the back are the hood's inside
+    rel = p.center - orb_c
+    t = rel.dot(LENS_AXIS)
+    if t < -0.0012 or (rel - LENS_AXIS * t).length > ORB_R + 0.0021:
+        p.material_index = 1
+R['lens'] = {'radius_m': ORB_R, 'reflector_r_m': round(REFL_R, 4), 'face_behind_cut_m': round(HOOD_R * HOOD_CUT - (orb_c - HEAD_C).dot(OPEN_AXIS), 4),
+             'crown_m': LENS_CROWN, 'tilt_deg': LENS_TILT}
+# the neck stub: from the boss up and back into the hood's underside (where the shell is whole), so the head is carried
+# from behind the mouth and nothing stands under the lens (the old collar, seen through the mouth, read as a bulb's socket)
+neck_a = Vector((0.0, NECK[3] + 0.002, NECK[1] - 0.003))
+neck_b = HEAD_C + Vector((0.0, math.sin(math.radians(40)), -math.cos(math.radians(40)))) * (HOOD_R - HOOD_T * 0.5)
+stub = cyl_axis('neck_stub', (neck_a + neck_b) / 2, neck_b - neck_a, 0.0075, (neck_b - neck_a).length, 24)
+add_mods(stub, bevel=0.0008, weighted=True)
+finish(stub, 'agent_joint', 'head')
 
 # ---- arms --------------------------------------------------------------------------------------------------------------
 def arm(side):
@@ -543,29 +599,36 @@ save(base, 'agent_basecolor.png')
 ao_vals = [pa[i] for i in range(0, len(pa), 4)]
 R['ao'] = {'min': round(min(ao_vals), 3), 'mean': round(sum(ao_vals) / len(ao_vals), 3), 'px': BAKE_PX, 'samples': scene.cycles.samples}
 
-# glow card texture: a soft radial falloff, white on black (UE: additive, tinted by the glow colour)
+# glow card texture, white on black (UE: additive, tinted by the glow colour), d in units of the card's half width: the
+# concept's lens is a soft hotspot in the middle, a thin bright ring at its edge, and a soft falloff past the edge onto
+# the reflector
 CARD_PX = 256
+CARD_HALF = 0.058                            # the card's half width (m): just inside the hood's inner wall at the lens
+RING = ORB_R / CARD_HALF
 card_img = bpy.data.images.new('agent_glow_card', CARD_PX, CARD_PX, alpha=False)
 cp = [0.0] * (CARD_PX * CARD_PX * 4)
 for y in range(CARD_PX):
     for x in range(CARD_PX):
         d = math.hypot((x + 0.5) / CARD_PX - 0.5, (y + 0.5) / CARD_PX - 0.5) * 2
-        v = max(0.0, 1 - d) ** 2.2
+        hot = 0.40 * math.exp(-(d / 0.22) ** 2)
+        ring = 1.00 * math.exp(-((d - RING) / 0.032) ** 2)
+        tail = 0.12 * (math.exp(-(d - RING) / 0.12) if d > RING else (d / RING) ** 4)
+        v = min(1.0, hot + ring + tail) * max(0.0, min(1.0, (1.0 - d) / 0.08))
         i = (y * CARD_PX + x) * 4
         cp[i:i + 4] = [v, v, v, 1.0]
 card_img.pixels.foreach_set(cp)
 save(card_img, 'agent_glow_card.png')
 
-# ---- the glow card: a quad in the hood opening, facing out, twice the orb's diameter --------------------------------------
+# ---- the glow card: a quad just in front of the lens face, facing out along the lens axis, as wide as the reflector -------
 bm = bmesh.new()
-half = ORB_R * 2.2
+half = CARD_HALF
 vs = [bm.verts.new((x, y, 0)) for x, y in ((-half, -half), (half, -half), (half, half), (-half, half))]
 f = bm.faces.new(vs)
 uv = bm.loops.layers.uv.new('UVMap')
 for loop, c in zip(f.loops, ((0, 0), (1, 0), (1, 1), (0, 1))):
     loop[uv].uv = c
-card_rot = Vector((0, 0, 1)).rotation_difference(OPEN_AXIS).to_matrix().to_4x4()
-bmesh.ops.transform(bm, matrix=Matrix.Translation(orb_c + OPEN_AXIS * (ORB_R + 0.002)) @ card_rot, verts=bm.verts)
+card_rot = Vector((0, 0, 1)).rotation_difference(LENS_AXIS).to_matrix().to_4x4()
+bmesh.ops.transform(bm, matrix=Matrix.Translation(orb_c + LENS_AXIS * (LENS_CROWN + 0.0025)) @ card_rot, verts=bm.verts)
 card = new_obj('card', bm)
 card.data.materials.append(mat['agent_glow_card'])
 card.vertex_groups.new(name='head').add(range(4), 1.0, 'REPLACE')
@@ -666,13 +729,15 @@ bpy.ops.export_scene.gltf(filepath=os.path.join(OUT, 'final_working.glb'), use_s
                           export_materials='EXPORT', export_image_format='NONE', export_animations=False, export_skins=False)
 st.hide_render = True; st.hide_set(True)
 R['static_object'] = st.name
-R['orb_centre_rest_m'] = [round(v, 4) for v in orb_c]
+R['orb_centre_rest_m'] = [round(v, 4) for v in orb_c]       # the lens face's centre (the key keeps its old name)
 R['open_axis'] = [round(v, 4) for v in OPEN_AXIS]
+R['lens_axis'] = [round(v, 4) for v in LENS_AXIS]
+R['light_ahead_m'] = LIGHT_AHEAD
 # the same in the static pose, carried by the head bone (where UE puts the warm light), and the posed hood top
 hm = rig.pose.bones['head'].matrix @ rig.data.bones['head'].matrix_local.inverted()
 w_orb, w_ax = hm @ orb_c, (hm.to_3x3() @ OPEN_AXIS).normalized()
 R['working'] = {'orb_centre_m': [round(v, 4) for v in w_orb], 'open_axis': [round(v, 4) for v in w_ax],
-                'light_m': [round(v, 4) for v in w_orb + w_ax * 0.045], 'top_z_m': round(max(v.co.z for v in st.data.vertices), 4)}
+                'light_m': [round(v, 4) for v in w_orb + w_ax * LIGHT_AHEAD], 'top_z_m': round(max(v.co.z for v in st.data.vertices), 4)}
 bpy.ops.wm.save_as_mainfile(filepath=os.path.join(WORK, 'agent.blend'))
 json.dump(R, open(os.path.join(WORK, 'build.json'), 'w'), indent=1)
 print('BUILD', json.dumps({k: R[k] for k in ('part_tris', 'bake_seconds', 'ao')}))

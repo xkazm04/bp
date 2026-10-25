@@ -53,16 +53,30 @@ inner = light('inner', 'POINT', (0, 0, 0), 3.0, (1.0, 0.66, 0.32), size=0.03)
 light('practical', 'AREA', (-1.2, -0.6, 1.0), 45.0, (1.0, 0.78, 0.55), size=0.5, rot=(math.radians(50), 0, math.radians(-60)))
 light('rim', 'AREA', (0.4, 1.0, 0.5), 12.0, (0.6, 0.75, 1.0), size=0.6, rot=(math.radians(-60), 0, math.radians(160)))
 
+# the glow card as UE draws it: additive (emission x the card texture over a transparent surface), so its hotspot, edge
+# ring and falloff brighten the lens and the reflector instead of veiling them
+def additive_card(strength=5.0):
+    m = bpy.data.materials['agent_glow_card']; nt = m.node_tree
+    b = nt.nodes['Principled BSDF']; tex = next(n for n in nt.nodes if n.type == 'TEX_IMAGE')
+    em = nt.nodes.new('ShaderNodeEmission'); em.inputs['Color'].default_value = b.inputs['Emission Color'].default_value
+    mul = nt.nodes.new('ShaderNodeMath'); mul.operation = 'MULTIPLY'; mul.inputs[1].default_value = strength
+    tr = nt.nodes.new('ShaderNodeBsdfTransparent'); add = nt.nodes.new('ShaderNodeAddShader')
+    out = next(n for n in nt.nodes if n.type == 'OUTPUT_MATERIAL')
+    nt.links.new(tex.outputs['Color'], mul.inputs[0]); nt.links.new(mul.outputs['Value'], em.inputs['Strength'])
+    nt.links.new(em.outputs['Emission'], add.inputs[0]); nt.links.new(tr.outputs['BSDF'], add.inputs[1])
+    nt.links.new(add.outputs['Shader'], out.inputs['Surface'])
+additive_card()
+
 cam_d = bpy.data.cameras.new('cam'); cam = bpy.data.objects.new('cam', cam_d); scene.collection.objects.link(cam); scene.camera = cam
 
 def set_pose(name):
     rig.animation_data.action = bpy.data.actions[name]
     scene.frame_set(1)
     bpy.context.view_layer.update()
-    # the warm light sits just in front of the orb, inside the hood (BUILD's orb centre and opening axis, carried by the head bone)
+    # the warm light sits just in front of the lens, inside the hood (BUILD's lens centre, opening axis and light offset, carried by the head bone)
     hb = rig.pose.bones['head']
     m = rig.matrix_world @ hb.matrix @ rig.data.bones['head'].matrix_local.inverted()
-    inner.location = m @ (Vector(BUILD['orb_centre_rest_m']) + Vector(BUILD['open_axis']) * 0.045)
+    inner.location = m @ (Vector(BUILD['orb_centre_rest_m']) + Vector(BUILD['open_axis']) * BUILD.get('light_ahead_m', 0.045))
 
 def bbox_world():
     dg = bpy.context.evaluated_depsgraph_get()
