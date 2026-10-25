@@ -565,8 +565,8 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 		HighlightRestRoom = Pointed;
 		if (Pointed != INDEX_NONE)
 		{
-			// Each of the room's rest instances copied, standing on the same footprint, its height grown by the rise (the
-			// partitions in proportion), at its own ink times HighlightRestShow.
+			// Each of the room's rest walls copied, standing on the same footprint, its height grown by the rise (the
+			// partitions in proportion: one room extruded upward, FM), at its own ink times HighlightRestShow.
 			const double Grow = (RestRoomCm + HighlightRiseCm) / RestRoomCm;
 			TArray<FTransform> Raised;
 			TArray<float> Data;
@@ -582,7 +582,7 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 				T.SetScale3D(Grown / 100.0);
 				Raised.Add(T);
 				const float Ink = RestInk.IsValidIndex(Index) ? RestInk[Index] : RestRoomShow;
-				Data.Append({ static_cast<float>(Grown.X), static_cast<float>(Grown.Y), static_cast<float>(Grown.Z), Ink * HighlightRestShow, Ink == RestRoomShow ? 1.f : 0.f });
+				Data.Append({ static_cast<float>(Grown.X), static_cast<float>(Grown.Y), static_cast<float>(Grown.Z), Ink * HighlightRestShow, Ink == RestRoomShow ? 1.f : PartitionFace });
 			}
 			HighlightShell->SetNumCustomDataFloats(5);  // as RestVolumes: size, Show, face
 			if (Raised.Num() > 0)
@@ -612,6 +612,13 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 	}
 	RestVolumes->SetRelativeTransform(WingGroupTransform(0.f));
 	if (bDirty) RestVolumes->MarkRenderStateDirty();
+	// The wing labels over the walls (FM) come and go with their wing's walls, and dim with the others'.
+	for (int32 Index = 0; Index < WingLabels.Num() && Index < WingLabelSpecs.Num(); ++Index)
+	{
+		const FString& Wing = WingLabelSpecs[Index].Wing;
+		const float Alpha = !bOn ? 0.f : AnimWing.IsEmpty() ? 1.f : (Wing == AnimWing ? 1.f - WingEase : FMath::Lerp(1.f, LevelDim, WingEase));
+		SetLabelAlpha(WingLabels[Index], Alpha);
+	}
 	ApplyGlyphs(WingEase);
 }
 

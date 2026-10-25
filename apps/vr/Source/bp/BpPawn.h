@@ -66,10 +66,10 @@ public:
 	 *  off it by this offset (cm, the table's axes: X away from the person, Y to their right, Z up) at WristCaptureScale
 	 *  of its size, so it lies over the forearm left of the watch, its rows over the paper (over the white rail its light
 	 *  text washed out), in front of the sleeve and wholly inside the target frame, as the concept's (placed by capture). */
-	static constexpr float WristCaptureOffsetXCm = -8.f;  // FK: re-placed for FL's hands (01ab214), by capture
-	static constexpr float WristCaptureOffsetYCm = 2.f;
-	static constexpr float WristCaptureOffsetZCm = 12.5f;
-	static constexpr float WristCaptureScale = 0.72f;
+	static constexpr float WristCaptureOffsetXCm = -2.f;  // FM: docked beside the watch, not floating off it (element 11), by capture
+	static constexpr float WristCaptureOffsetYCm = -5.f;
+	static constexpr float WristCaptureOffsetZCm = 7.f;
+	static constexpr float WristCaptureScale = 0.8f;
 	/** The panel's up leans with the target pose's view (ABpGameMode::TargetPitchDeg), so it reads square to the eye. */
 	void SetWristParent(USceneComponent* Parent, FName Socket, const FTransform& Relative);
 

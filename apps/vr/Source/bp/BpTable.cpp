@@ -26,6 +26,7 @@
 #include "Rendering/SlateRenderer.h"
 #include "Styling/CoreStyle.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
@@ -137,6 +138,10 @@ namespace
 	constexpr double LabelBackPadCm = 0.3;
 	const FLinearColor LabelBacking(0.003f, 0.01f, 0.045f, 0.55f);
 	constexpr double WingTagGapCm = 0.45;
+	/** With the rest walls up (FM, element 3), the wing labels float this far over the walls' tops, flat, so from the
+	 *  target eye they read beyond every line of their wing (the paper behind a far wall is crossed by the partitions'
+	 *  glowing tops). */
+	constexpr double WingLabelLiftCm = 0.3;
 	/** The paper above the highest tag line that stays clear of the frame's glow strip. */
 	constexpr double PaperTopClearCm = 0.3;
 	constexpr double RoomNameInsetCm = 0.6;
@@ -199,13 +204,23 @@ namespace
 	/** The lifted room's glass (FE): a stronger face than its siblings', as the concept's raised room. */
 	constexpr float LiftedFaceOpacity = 0.15f;
 	/** The pointed room's raised copy (FK, element 6): a lit glass face and the brightest edges on the sheet. */
-	constexpr float HighlightFaceOpacity = 0.6f;
+	constexpr float HighlightFaceOpacity = 0.2f;  // FM: 0.2 (FK 0.6): its walls glass, not a lit block
 	constexpr float HighlightEdgeIntensity = 8.0f;
 	/** The edges' emissive scale per batch (M_EdgeGlow's Intensity, its default 1.4; FE, elements 4 and 6, against the
 	 *  concept's bright cyan edges): the rest extrusions brightest, as the concept's rooms on the sheet; the lifted wing's
 	 *  shells and the lifted room's tiles under them; the lifted room's shell carries LiftedRoomShow on top. All of it
 	 *  is above the bloom threshold (0.7, fid_look.py), the sheet's text below it (PaperInkGlow). */
-	constexpr float RestEdgeIntensity = 3.2f;
+	constexpr float RestEdgeIntensity = 2.6f;  // FM: 2.6 (FK 3.2) with the top edges weighted (WallTopEdge)
+	/** The walls' line weights (FM): a wall's top edge at WallTopEdge of its batch's Intensity, its corners and foot at
+	 *  WallLowEdge. */
+	constexpr float WallTopEdge = 1.8f;
+	constexpr float WallLowEdge = 0.3f;
+	/** The walls' built-in halo (M_EdgeGlow's HaloK, its default 0.25): seen nearly edge-on, every wall's halo summed into
+	 *  a filled slab (fm/v1); the pointed room's a little stronger. By capture. */
+	constexpr float WallHaloK = 0.04f;
+	constexpr float HighlightHaloK = 0.06f;
+	constexpr float HighlightTopEdge = 1.3f;
+	constexpr float HighlightLowEdge = 0.5f;
 	constexpr float ShellEdgeIntensity = 2.4f;
 	constexpr float LiftedEdgeIntensity = 3.0f;
 	/** The paper (M_BlueprintPaper; FE, element 1): the light box brighter toward its centre (PaperGlow over the texture,
@@ -493,6 +508,7 @@ void ABpTable::Tick(float DeltaSeconds)
 		RedrawSheet();
 		UE_LOG(LogBpTable, Log, TEXT("BpTable: l0_volumes=%d rest_instances=%d"), AppliedL0Volumes, RestVolumes->GetInstanceCount());
 	}
+	if (bWingLabelsDirty) BuildWingLabels();
 	// A level change eases at the frame rate, then the tick drops back to the cvar's rate (KickLevels starts it).
 	if (IsLevelMoving())
 	{
@@ -560,6 +576,16 @@ void ABpTable::LoadArt()
 			if (Kind == LiftedShell) Mid->SetScalarParameterValue(TEXT("FaceOpacity"), LiftedFaceOpacity);
 			if (Kind == HighlightShell) Mid->SetScalarParameterValue(TEXT("FaceOpacity"), HighlightFaceOpacity);
 			if (Kind == RestVolumes) Mid->SetScalarParameterValue(TEXT("FaceOpacity"), RestFaceOpacity);
+			// The rest walls and the pointed room (FM): open at the top (no lid face), their top edges brighter than the
+			// rest of their lines, as the concept's cyan-topped walls (M_EdgeGlow's LidFace, TopEdge, LowEdge; default 1).
+			if (Kind == RestVolumes || Kind == HighlightShell)
+			{
+				const bool bRest = Kind == RestVolumes;
+				Mid->SetScalarParameterValue(TEXT("LidFace"), 0.f);
+				Mid->SetScalarParameterValue(TEXT("TopEdge"), bRest ? WallTopEdge : HighlightTopEdge);
+				Mid->SetScalarParameterValue(TEXT("LowEdge"), bRest ? WallLowEdge : HighlightLowEdge);
+				Mid->SetScalarParameterValue(TEXT("HaloK"), bRest ? WallHaloK : HighlightHaloK);
+			}
 			Mid->SetScalarParameterValue(TEXT("Intensity"), Kind == RestVolumes ? RestEdgeIntensity : Kind == HighlightShell ? HighlightEdgeIntensity : Kind == LiftedShell ? LiftedEdgeIntensity : ShellEdgeIntensity);
 			Kind->SetMaterial(0, Mid);
 			VolumeMids.Add(Mid);
@@ -674,6 +700,44 @@ void ABpTable::PlaceLabels()
 	{
 		if (UWidgetComponent* Label = Place.Label.Get()) Label->SetRelativeLocation(PaperCmToLocal(Place.PaperCm, PaperZ + Place.LiftCm));
 	}
+}
+
+void ABpTable::BuildWingLabels()
+{
+	bWingLabelsDirty = false;
+	for (UWidgetComponent* Old : WingLabels)
+	{
+		if (Old) Old->DestroyComponent();
+	}
+	WingLabels.Reset();
+	LabelPlaces.RemoveAll([](const FLabelPlace& Place) { return !Place.Label.IsValid(); });
+	// Each label as the sheet would set it (its tag line over its name, on a slight dark backing), flat, at
+	// RestRoomCm + WingLabelLiftCm over the paper; its top-left corner is the backing's.
+	for (const FWingLabel& Spec : WingLabelSpecs)
+	{
+		const double CmPerSlate = Spec.NameCap / (LabelFontSize * SlatePxPerPoint * TypeCapPerEm);
+		const float Pad = static_cast<float>(LabelBackPadCm / CmPerSlate);
+		const bool bTag = !Spec.Tag.IsEmpty();
+		const double TopCap = bTag ? Spec.TagCap : Spec.NameCap;
+		const double TopV = (bTag ? Spec.NameBase - Spec.NameCap - WingTagGapCm : Spec.NameBase) - TopCap - (TypeAscPerEm - TypeCapPerEm) * TopCap / TypeCapPerEm;
+		TSharedRef<SVerticalBox> Lines = SNew(SVerticalBox);
+		if (bTag)
+		{
+			Lines->AddSlot().AutoHeight()[
+				SNew(STextBlock).Text(FText::FromString(Spec.Tag)).Font(LabelFont(TEXT("Regular"), static_cast<float>(LabelFontSize * Spec.TagCap / Spec.NameCap))).ColorAndOpacity(FSlateColor(CyanWhite))
+			];
+		}
+		Lines->AddSlot().AutoHeight()[
+			SNew(STextBlock).Text(FText::FromString(Spec.Name)).Font(LabelFont(TEXT("Bold"), LabelFontSize)).ColorAndOpacity(FSlateColor(WarmPaper))
+		];
+		UWidgetComponent* Label = MakeLabel(SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(LabelBacking).Padding(Pad)[Lines],
+			FVector2D(Spec.U - LabelBackPadCm, TopV - LabelBackPadCm), FVector2D(0.0, 0.0), static_cast<float>(Spec.NameCap), static_cast<float>(RestRoomCm + WingLabelLiftCm));
+		WingLabels.Add(Label);
+	}
+	PlaceLabels();
+	for (float& Shown : ShownRest) Shown = -1.f;
+	ApplyLevelVisuals();
+	UE_LOG(LogBpTable, Log, TEXT("BpTable: wing labels float over the walls: %d"), WingLabels.Num());
 }
 
 UWidgetComponent* ABpTable::MakeLabel(const TSharedRef<SWidget>& Content, const FVector2D& PaperCm, const FVector2D& Pivot, float CapHeightCm, float LiftCm, USceneComponent* Parent)
@@ -1057,8 +1121,8 @@ void ABpTable::BuildVolumes(const FBpPlan& Plan)
 	}
 	Fill(Tiles);
 
-	// The rooms at rest (FC1, element 4): each room a low extrusion, each bay a lower partition inside it, all on the
-	// paper; custom data 4 is the face factor (1 a room's faint glass, 0 a partition's edges only).
+	// The rooms at rest (FC1, element 4; FM): each room's walls, and a partition wall at each bay's far boundary, all on
+	// the paper; custom data 4 is the face factor (1 a room's walls, PartitionFace a partition's).
 	TMap<FString, int32> RoomOf;
 	for (int32 Index = 0; Index < Plan.rooms.Num(); ++Index) RoomOf.Add(Plan.rooms[Index].id, Index);
 	RestRoom.Reset();
@@ -1071,13 +1135,18 @@ void ABpTable::BuildVolumes(const FBpPlan& Plan)
 		Transforms.Add(FTransform(FQuat::Identity, PaperCmToLocal((A + B) * 0.5, HeightCm * 0.5f), Size / 100.0));
 		Rest.Append({ static_cast<float>(Size.X), static_cast<float>(Size.Y), static_cast<float>(Size.Z), 0.f, Face });
 		RestRoom.Add(Room);
-		RestInk.Add(Face > 0.f ? RestRoomShow : RestPartitionShow);
+		RestInk.Add(Face >= 1.f ? RestRoomShow : RestPartitionShow);
 	};
 	for (int32 Index = 0; Index < Plan.rooms.Num(); ++Index) AddRest(Plan.rooms[Index].box, RestRoomCm, 1.f, Index);
+	// A partition: the bay box's far edge as a wall PartitionCm thick (in plan units), across the bay's width. The plan's
+	// boxes place it; the bay boxes are inset from their room, so their other edges would double the room's walls.
 	for (const FBpPlanBay& Bay : Plan.bays)
 	{
 		const int32* Room = RoomOf.Find(Bay.parentId);
-		AddRest(Bay.box, RestRoomCm * BayPartitionRatio, 0.f, Room ? *Room : INDEX_NONE);
+		FBpPlanBox Wall = Bay.box;
+		Wall.y -= PartitionCm * 0.5 / BpPlanUnitCm;
+		Wall.h = PartitionCm / BpPlanUnitCm;
+		AddRest(Wall, RestRoomCm * BayPartitionRatio, PartitionFace, Room ? *Room : INDEX_NONE);
 	}
 	RestVolumes->SetNumCustomDataFloats(VolumeCustomFloats + 1);
 	if (Transforms.Num() > 0)
@@ -1470,7 +1539,6 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 	const auto Ink = [](const FLinearColor& Color, float Opacity) { return Color.CopyWithNewOpacity(Opacity); };
 	const bool bDimmed = !SheetDimWing.IsEmpty();
 	const float TextInk = bDimmed ? LevelDim : 1.f;
-	const bool bWalls = CVarL0VolumesValue() != 0;
 
 	// ---- The wings' labels, above each wing (lookdev 00's "WING 03"): the tag, then the name ----------------------------
 	TArray<const FBpPlanWing*> Wings;
@@ -1478,6 +1546,12 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 	TArray<TPair<FString, FVector3d>> TagPlaces;
 	// The labels' far edge (paper v): the pins' tags rise clear of it (RaisePins).
 	double LabelTop = PlanMarginCm().Y;
+	// With the rest walls up the labels float over them (WingLabels, FM); a row of them is where the target eye sees it
+	// on the paper, beyond its place by the cover of its height.
+	const bool bFloat = CVarL0VolumesValue() != 0;
+	const double FloatCm = RestRoomCm + WingLabelLiftCm;
+	const auto Seen = [this, bFloat, FloatCm](double V) { return bFloat ? V - CoverCm(V, FloatCm) : V; };
+	TArray<FWingLabel> Floating;
 	for (const FBpPlanWing& Wing : SheetPlan->wings) Wings.Add(&Wing);
 	Wings.Sort([](const FBpPlanWing& A, const FBpPlanWing& B) { return A.order < B.order; });
 	for (int32 Index = 0; Index < Wings.Num(); ++Index)
@@ -1488,9 +1562,10 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 		// A label may run over the gap to the next wing (the last, to the paper's edge).
 		const double Right = Index + 1 < Wings.Num() ? PlanToPaperCm(FVector2D(Wings[Index + 1]->box.x, 0.0)).X : PaperWidthCm;
 		const double MaxCm = Right - A.X - WingLabelGapCm;
-		// Clear of the rest walls: from the target eye a room's far wall hides the paper just behind it, and its glowing
-		// top would run through a name set there.
-		const double NameBase = A.Y - (bWalls ? CoverCm(A.Y, RestRoomCm) : 0.0) - WingLabelClearCm;
+		// Just behind the wing's far wall (FM): the walls are clear glass, so from the target eye the name reads through the
+		// far wall, under the line of its glowing top, which lands beyond it (CoverCm); a name past that line would leave
+		// the paper at the walls' height.
+		const double NameBase = A.Y - WingLabelClearCm;
 		FString Key;
 		if (!Wing.id.Split(TEXT(":"), nullptr, &Key, ESearchCase::CaseSensitive, ESearchDir::FromEnd)) Key = Wing.id;
 		double NameCap = 0.0;
@@ -1498,15 +1573,25 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 		const FString Name = Fit(Wing.name, BpType::WingName, NameFloor, MaxCm, Key, NameCap);
 		Report(TEXT("wing-name"), Name, A.X, NameBase, NameCap, NameFloor);
 		if (Name.IsEmpty()) continue;
-		const double NameW = Put(Name, BpType::WingName, A.X, NameBase - NameCap, NameCap, Ink(WarmPaper, TextInk), 0.0);
-		Pen.Fill(PaperPx(A.X - LabelBackPadCm, NameBase - NameCap - LabelBackPadCm), PaperPx(A.X + NameW + LabelBackPadCm, NameBase + LabelBackPadCm), LabelBacking);
-		LabelTop = FMath::Min(LabelTop, NameBase - NameCap);
+		// Clear of the risen pins' stems (FM, element 3: the judge's "wing labels hidden by pins"): the label slides along
+		// its row, within its room to the next wing, off the line each stem draws across the row from the target eye.
+		const double NameU = SlideOffStems(A.X, WidthCm(Name, BpType::WingName, NameCap), A.X + MaxCm, Seen(NameBase - NameCap), Seen(NameBase));
+		if (bFloat)
+		{
+			Floating.Add({ Wing.id, Name, FString(), NameU, NameBase, NameCap, 0.0 });
+		}
+		else
+		{
+			const double NameW = Put(Name, BpType::WingName, NameU, NameBase - NameCap, NameCap, Ink(WarmPaper, TextInk), 0.0);
+			Pen.Fill(PaperPx(NameU - LabelBackPadCm, NameBase - NameCap - LabelBackPadCm), PaperPx(NameU + NameW + LabelBackPadCm, NameBase + LabelBackPadCm), LabelBacking);
+		}
+		LabelTop = FMath::Min(LabelTop, Seen(NameBase - NameCap));
 		// The tag line above it ("WING A") is drawn only when every wing's fits under the paper's top at the floor: a class
 		// is kept or dropped whole, never for some wings (Kettle's centre wings leave it no room: dropped, logged).
 		const double TagBase = NameBase - NameCap - WingTagGapCm;
 		const double TagFloor = FloorAt(A.X, A.X + MaxCm, TagBase);
 		TagFits.Add(TagBase - FMath::Max(BpType::WingTag.CapCm, TagFloor) >= PaperTopClearCm);
-		TagPlaces.Add({ FString::Printf(TEXT("WING %s"), *Wing.letter), FVector3d(A.X, TagBase, FMath::Max(BpType::WingTag.CapCm, TagFloor)) });
+		TagPlaces.Add({ FString::Printf(TEXT("WING %s"), *Wing.letter), FVector3d(NameU, TagBase, FMath::Max(BpType::WingTag.CapCm, TagFloor)) });
 
 		// Dimensions, from the plan's boxes only: the wing's width under it, and a chain down its left side ticked at
 		// every room's edge. Fine lines, no figures.
@@ -1535,16 +1620,30 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 	}
 
 	const bool bTags = TagFits.Num() > 0 && !TagFits.Contains(false);
-	for (const TPair<FString, FVector3d>& Tag : TagPlaces)
+	for (int32 Index = 0; Index < TagPlaces.Num(); ++Index)
 	{
+		const TPair<FString, FVector3d>& Tag = TagPlaces[Index];
 		const FVector3d& At = Tag.Value;
 		Report(TEXT("wing-tag"), bTags ? Tag.Key : FString(), At.X, At.Y, At.Z, At.Z);
-		if (bTags)
+		if (bFloat)
+		{
+			if (bTags && Floating.IsValidIndex(Index)) { Floating[Index].Tag = Tag.Key; Floating[Index].TagCap = At.Z; }
+		}
+		else if (bTags)
 		{
 			const double TagW = Put(Tag.Key, BpType::WingTag, At.X, At.Y - At.Z, At.Z, Ink(CyanWhite, TextInk), 0.0);
 			Pen.Fill(PaperPx(At.X - LabelBackPadCm, At.Y - At.Z - LabelBackPadCm), PaperPx(At.X + TagW + LabelBackPadCm, At.Y + LabelBackPadCm), LabelBacking);
 		}
-		if (bTags) LabelTop = FMath::Min(LabelTop, At.Y - At.Z);
+		if (bTags) LabelTop = FMath::Min(LabelTop, Seen(At.Y - At.Z));
+	}
+	// The floating labels are made outside the canvas draw (Tick), when what they say or where they stand changed.
+	FString FloatKey;
+	for (const FWingLabel& Each : Floating) FloatKey += FString::Printf(TEXT("%s|%s|%s|%.3f|%.3f|%.3f;"), *Each.Wing, *Each.Name, *Each.Tag, Each.U, Each.NameBase, Each.NameCap);
+	if (FloatKey != WingLabelsKey)
+	{
+		WingLabelsKey = FloatKey;
+		WingLabelSpecs = MoveTemp(Floating);
+		bWingLabelsDirty = true;
 	}
 	if (LabelTop != WingLabelTopV)
 	{
@@ -1568,7 +1667,8 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 		}
 		const double Base = PlanToPaperCm(FVector2D(Room.box.x, FirstBay)).Y - RoomNameFootCm;
 		// The wall's glowing top is wider than its line and blooms: a further RoomNameClearCm.
-		const double Clear = A.Y + (bWalls ? CoverCm(A.Y, RestRoomCm) : 0.0) + RoomNameClearCm;
+		// In front of the room's own far wall nothing hides it (FM: the walls are open glass; FK cleared the wall's cover).
+		const double Clear = A.Y + RoomNameClearCm;
 		const double MaxCm = B.X - A.X - 2.0 * RoomNameInsetCm;
 		const double Floor = FloorAt(A.X + RoomNameInsetCm, A.X + RoomNameInsetCm + MaxCm, Base);
 		// The strip's height caps the cap too: the recipe's size or less, never under the floor.

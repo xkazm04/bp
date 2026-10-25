@@ -19,11 +19,13 @@
 #   `FaceOpacity`, `Intensity`): additive and unlit, so overlapping glass needs no sort and never fights the additive
 #   glyphs or the tags (order-independent). An edge is a line EdgeWidthCm in from it, at least EDGE_MIN_PX wide, with a
 #   halo HaloPx pixels wide built into the shader; a face adds only FaceOpacity x fresnel^3 (nearly clear face-on,
-#   tinted at grazing angles, as glass). Show dims below 1 and brightens above 1 (the lifted room).
+#   tinted at grazing angles, as glass). Show dims below 1 and brightens above 1 (the lifted room). FM: two-sided, and
+#   `LidFace`, `TopEdge`, `LowEdge` (default 1) let a batch drop its horizontal faces and weight its top edges.
 # - M_PinHalo: additive, unlit, on a sphere around each bead (ABpTable's PinHalos): amber x (N.V)^HaloPow, a soft round
 #   glow that is brightest over the bead and gone at its rim, faded where it meets the paper (DepthFade).
-# - The scan band (fc1_marks.py's profile: core + 0.35 trail + 0.35 glow, inside its length, times its strength) is
-#   computed by one shared function in both hologram materials.
+# - The scan band (core, at least 1.5 px wide, + 0.25 trail + 0.45 glow, inside its length, times its strength; FM narrowed fc1_marks.py's 14-core
+#   glow to 5 and its trail to 4: a bright thin core with a soft halo) is computed by one shared function in both
+#   hologram materials.
 import unreal
 
 mel = unreal.MaterialEditingLibrary
@@ -71,7 +73,7 @@ EDGE_W = 0.12
 EDGE_GLOW = 2.5
 EDGE_SPREAD_CM = 1.2
 EDGE_HALO = 0.25
-PAPER_BAND_GLOW = 12.0
+PAPER_BAND_GLOW = 16.0  # FM: 16 (from 12) for the thinner core
 # M_EdgeGlow's defaults (ABpTable sets FaceOpacity and Intensity per batch, not the rest).
 EDGE_WIDTH_CM = 0.06
 EDGE_MIN_PX = 1.0
@@ -103,11 +105,12 @@ CITY_EMISSIVE = 12.0
 BAND_HLSL = """
 float d = dot(Rel, Axis.xyz);
 float s = dot(Rel, Side.xyz);
-float w = max(Centre.w, 0.001);
+float aa = abs(ddx(d)) + abs(ddy(d));
+float w = max(max(Centre.w, 0.001), 1.5 * aa);
 float core = saturate(1 - abs(d) / w); core *= core;
-float trail = saturate(1 + d / (6 * w)) * saturate(-d * 100);
-float glow = saturate(1 - abs(d) / (14 * w)); glow *= glow;
-return (core + 0.35 * trail + 0.35 * glow) * saturate(Side.w - abs(s)) * Axis.w;
+float trail = saturate(1 + d / (4 * w)) * saturate(-d * 100);
+float glow = saturate(1 - abs(d) / (5 * w)); glow *= glow;
+return (core + 0.25 * trail + 0.45 * glow) * saturate(Side.w - abs(s)) * Axis.w;
 """
 
 PAPER_HLSL = """
@@ -147,11 +150,15 @@ float aa = max(abs(ddx(mid)) + abs(ddy(mid)), 1e-4);
 float w = max(EdgeWidthCm, aa * %(MINPX)f);
 float core = (1 - smoothstep(w - aa * 0.5, w + aa * 0.5, mid)) * saturate(EdgeWidthCm / w);
 float halo = exp(-mid / (aa * HaloPx)) * HaloK;
-float nv = abs(dot(normalize(N), V));
+float top = 1 - saturate((1 - P.z) * Size.z / (2 * w + 2 * aa));
+float k = lerp(LowEdge, TopEdge, top);
+float3 n = normalize(N);
+float nv = abs(dot(n, V));
 float fres = pow(1 - nv, 3);
-float face = FaceOpacity * (%(FB)f + %(FF)f * fres) * FaceFactor;
+float lid = saturate(abs(n.z) * 4 - 3);
+float face = FaceOpacity * (%(FB)f + %(FF)f * fres) * FaceFactor * lerp(1, LidFace, lid);
 float lit = saturate(Show) * max(Show, 1);
-float3 col = Cyan * (Intensity * (core + halo) + face) * lit;
+float3 col = Cyan * (Intensity * (core + halo) * k + face) * lit;
 col += Scan * Band * %(BG)f * (0.4 + core) * saturate(Show);
 return col;
 """ % {"MINPX": EDGE_MIN_PX, "FB": FACE_BASE, "FF": FACE_FRES, "BG": EDGE_BAND_GLOW}
@@ -257,7 +264,8 @@ result["paper"] = {"saved": eal.save_asset(PAPER, only_if_is_dirty=False), "expr
 m = fresh(EDGE)
 m.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
 m.set_editor_property("blend_mode", unreal.BlendMode.BLEND_ADDITIVE)
-m.set_editor_property("two_sided", False)
+# Two-sided (FM): a room is four glass walls open at the top, so its far wall's inner face and its far foot show too.
+m.set_editor_property("two_sided", True)
 m.set_editor_property("used_with_instanced_static_meshes", True)
 g = Graph(m)
 pos = g.add(unreal.MaterialExpressionPreSkinnedPosition, -2000, -200)
@@ -284,7 +292,7 @@ face_factor_vi = g.add(unreal.MaterialExpressionVertexInterpolator, -1850, 500)
 g.wire(face_factor, face_factor_vi, "VS")
 edge = g.custom("holo edges", EDGE_HLSL, unreal.CustomMaterialOutputType.CMOT_FLOAT3,
                 ["P", "Size", "Show", "FaceFactor", "N", "V", "EdgeWidthCm", "FaceOpacity", "Intensity", "HaloPx", "HaloK",
-                 "Cyan", "Scan", "Band"], -400, 0)
+                 "Cyan", "Scan", "Band", "LidFace", "TopEdge", "LowEdge"], -400, 0)
 g.wire(p, edge, "P")
 g.wire(size_vi, edge, "Size")
 g.wire(show_vi, edge, "Show")
@@ -299,6 +307,11 @@ g.wire(g.scalar("HaloK", HALO_K, -1000, 1200), edge, "HaloK")
 g.wire(g.const3(CYAN_WHITE, -1000, 1300), edge, "Cyan")
 g.wire(g.const3(SCAN_CYAN, -1000, 1400), edge, "Scan")
 g.wire(g.band(-1600, 1500), edge, "Band")
+# FM, element 4 (the judge's "thin, taller cyan-edged walls"): the rest walls drop the lid's face (LidFace 0) and weight
+# their top edges over their corners and feet (TopEdge, LowEdge); the defaults keep every other batch as it was.
+g.wire(g.scalar("LidFace", 1.0, -1000, 1700), edge, "LidFace")
+g.wire(g.scalar("TopEdge", 1.0, -1000, 1800), edge, "TopEdge")
+g.wire(g.scalar("LowEdge", 1.0, -1000, 1900), edge, "LowEdge")
 mel.connect_material_property(edge, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
 # Show 0 hides an instance without hiding its batch (edge_glow.py): the vertex shader folds it onto its own pivot.
 fold = g.add(unreal.MaterialExpressionMultiply, -1600, 2000, const_b=-1.0)

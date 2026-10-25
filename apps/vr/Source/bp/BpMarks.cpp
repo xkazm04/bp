@@ -48,8 +48,16 @@ namespace
 	const FLinearColor CardEdge(FColor(0xFF, 0xE2, 0xB0));
 	/** The card's soft warm glow around its edge (FK, element 10: the concept's card glows like the lamp's light). */
 	const FLinearColor CardGlow(FColor(0xFF, 0xB8, 0x60));
-	/** The card's layout is in pixels at this density; SDPIScaler draws it at CardPxPerCm. */
+	/** The card's layout is in pixels at this density; SDPIScaler draws it at bp.CardPxPerCm. */
 	constexpr float CardLayoutPxPerCm = 40.f;
+	/** The card's render density (FM, element 10: the judge's "blurry" card). The widget's target has no mips, so a density
+	 *  far above what the eye resolves there is minified with aliasing, read as blur; FE and FK's 24 and 32 px/cm were four
+	 *  times the target capture's. */
+	TAutoConsoleVariable<float> CVarCardPxPerCm(
+		TEXT("bp.CardPxPerCm"),
+		ABpTable::CardPxPerCm,
+		TEXT("The decision card's render density, px per cm (the card redraws at the next BpCard.Show)."),
+		ECVF_Default);
 
 	/** A finding is open (it has a pin, and the card may ask about it) while it waits for a decision. */
 	bool IsOpen(const FBpProposal& Proposal)
@@ -450,6 +458,8 @@ void ABpTable::BuildPins(const FBpScanState& State)
 	if (TagAtlas) TagAtlas->UpdateResource();
 	RaisePins();
 	PlacePins();
+	// The wing labels slide off the new stems (SlideOffStems).
+	RedrawSheet();
 	UE_LOG(LogBpTable, Log, TEXT("BpTable: pins=%d tagged=%d open_findings=%d (beads on the features that carry them)"), PinList.Num(), Pins->GetInstanceCount(), Open);
 }
 
@@ -464,7 +474,7 @@ void ABpTable::RaisePins()
 	const double PaperZ = Top - GlassRecessCm;
 	const FVector2D Eye(-(TableDepthCm * 0.5 + ABpGameMode::TargetBehindNearEdgeCm), Top + ABpGameMode::TargetEyeAboveTopCm);
 	const double NearV = PlanMarginCm().Y;
-	const double FarV = (WingLabelTopV >= 0.0 ? WingLabelTopV : NearV - 5.0) - TagRowGapCm;
+	const double FarV = (WingLabelTopV > -1.0e8 ? WingLabelTopV : NearV - 5.0) - TagRowGapCm;
 	// A paper v's local X is PaperDepthCm / 2 - v (PaperCmToLocal).
 	const auto RayHeight = [&](double PinX, double V)
 	{
@@ -487,6 +497,45 @@ void ABpTable::RaisePins()
 		}
 	}
 	UE_LOG(LogBpTable, Log, TEXT("BpTable: tags clear the wing labels (paper v %.1f to %.1f): risen [%s]"), FarV, NearV, *FString::Join(Risen, TEXT(", ")));
+}
+
+double ABpTable::SlideOffStems(double U0, double Width, double MaxU, double VTop, double VBase) const
+{
+	if (!SheetPlan.IsValid()) return U0;
+	// From the target eye (on the centre line, local X Eye.X, EyeZ over the paper), a stem standing at local (X, Y) lies
+	// over the paper along the line from the eye's foot through its foot. Where that line crosses the row is what the
+	// label keeps clear of, by StemClearCm. Every tagged pin counts: RaisePins (run after the labels) lifts each tag
+	// that would stand over the row clear of it, so its stem crosses the row.
+	constexpr double StemClearCm = 0.5;
+	const double EyeX = -(TableDepthCm * 0.5 + ABpGameMode::TargetBehindNearEdgeCm);
+	const double EyeZ = ABpGameMode::TargetEyeAboveTopCm + GlassRecessCm;
+	TArray<FVector2D> Blocked;
+	for (const FPin& Pin : PinList)
+	{
+		if (!Pin.bTagged || !SheetPlan->tiles.IsValidIndex(Pin.Tile)) continue;
+		const FBpPlanBox& Box = SheetPlan->tiles[Pin.Tile].box;
+		const FVector2D P = PlanToPaperCm(FVector2D(Box.x + Box.w * 0.5, Box.y + Box.h * 0.5));
+		const double X = PaperDepthCm * 0.5 - P.Y, Y = P.X - PaperWidthCm * 0.5;
+		const double XNear = PaperDepthCm * 0.5 - VBase, XFar = PaperDepthCm * 0.5 - VTop;
+		if (XNear <= X) continue;
+		const auto CrossU = [&](double XRow) { return PaperWidthCm * 0.5 + Y * (XRow - EyeX) / FMath::Max(X - EyeX, 1.0); };
+		const double C0 = CrossU(XNear), C1 = CrossU(XFar);
+		Blocked.Add(FVector2D(FMath::Min(C0, C1) - StemClearCm - Width, FMath::Max(C0, C1) + StemClearCm));
+	}
+	// The fewest stems crossed, then the nearest to U0: a row with no clear slot still crosses as few as it can.
+	const double Hi = FMath::Max(U0, MaxU - Width);
+	const auto Crossed = [&](double U) { return Blocked.FilterByPredicate([U](const FVector2D& B) { return U > B.X + 1e-6 && U < B.Y - 1e-6; }).Num(); };
+	TArray<double> Candidates = { U0, Hi };
+	for (const FVector2D& B : Blocked) Candidates.Append({ B.X, B.Y });
+	double Best = U0;
+	int32 BestN = Crossed(U0);
+	for (const double U : Candidates)
+	{
+		if (U < U0 - 1e-6 || U > Hi + 1e-6) continue;
+		const int32 N = Crossed(U);
+		if (N < BestN || (N == BestN && FMath::Abs(U - U0) < FMath::Abs(Best - U0))) { Best = U; BestN = N; }
+	}
+	return Best;
 }
 
 void ABpTable::PlacePins()
@@ -543,7 +592,8 @@ void ABpTable::DrawTags(UCanvas* Canvas, int32 Width, int32 Height)
 	const float Track = static_cast<float>(BpType::PinTag.TrackEm / BpType::CapPerEm) * Cap;
 	// A line box's top is (ascender - cap) above the cap's top.
 	const auto Top = [Cap](float CapTop) { return CapTop - static_cast<float>((BpType::AscPerEm - BpType::CapPerEm) / BpType::CapPerEm) * Cap; };
-	const FLinearColor CountInk = AmberInk * 0.55f + Navy * 0.45f;
+	// FM (element 7, the judge's "the RISK line must read"): a dark brick red on the tag's paper, not FC3's amber-navy mix.
+	const FLinearColor CountInk(FColor(0x8E, 0x22, 0x08));
 	for (int32 Index = 0; Index < PinList.Num(); ++Index)
 	{
 		// Only the tagged pins have a cell; a merged pin's findings are counted on the tag it merged into.
@@ -720,7 +770,8 @@ void ABpTable::RefreshCard()
 		Card->SetVisibility(false);
 		return;
 	}
-	const FString Key = Ask->id + Ask->status + ActiveLens;
+	const float PxPerCm = FMath::Clamp(CVarCardPxPerCm.GetValueOnGameThread(), 4.f, 64.f);
+	const FString Key = Ask->id + Ask->status + ActiveLens + FString::SanitizeFloat(PxPerCm);
 	if (Key == CardProposal && Card->GetSlateWidget().IsValid()) return;
 	CardProposal = Key;
 
@@ -779,7 +830,7 @@ void ABpTable::RefreshCard()
 			];
 	};
 	Card->SetSlateWidget(
-		SNew(SDPIScaler).DPIScale(CardPxPerCm / CardLayoutPxPerCm)
+		SNew(SDPIScaler).DPIScale(PxPerCm / CardLayoutPxPerCm)
 		[
 		SNew(SBorder).BorderImage(&GlowOuter).Padding(14.f)
 		[
@@ -808,15 +859,15 @@ void ABpTable::RefreshCard()
 					SNew(SVerticalBox)
 					+ SVerticalBox::Slot().AutoHeight()
 					[
-						SNew(STextBlock).Text(FText::FromString(Target)).AutoWrapText(true).Font(CanvasFont(TEXT("Bold"), 52.f)).ColorAndOpacity(FSlateColor(CardInk))
+						SNew(STextBlock).Text(FText::FromString(Target)).AutoWrapText(true).Font(CanvasFont(TEXT("Bold"), 56.f)).ColorAndOpacity(FSlateColor(CardInk))
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 16.f, 0.f, 0.f)
 					[
-						SNew(STextBlock).Text(FText::FromString(Ask->title)).AutoWrapText(true).Font(CanvasFont(TEXT("Regular"), 41.f)).ColorAndOpacity(FSlateColor(CardInk))
+						SNew(STextBlock).Text(FText::FromString(Ask->title)).AutoWrapText(true).Font(CanvasFont(TEXT("Regular"), 48.f)).ColorAndOpacity(FSlateColor(CardInk))
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 10.f, 0.f, 0.f)
 					[
-						SNew(STextBlock).Text(FText::FromString(Impact)).AutoWrapText(true).Font(CanvasFont(TEXT("Regular"), 34.f)).ColorAndOpacity(FSlateColor(CardInk.CopyWithNewOpacity(0.8f)))
+						SNew(STextBlock).Text(FText::FromString(Impact)).AutoWrapText(true).Font(CanvasFont(TEXT("Regular"), 40.f)).ColorAndOpacity(FSlateColor(CardInk.CopyWithNewOpacity(0.85f)))
 					]
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top)
@@ -843,11 +894,14 @@ void ABpTable::RefreshCard()
 		]
 		]
 		]);
+	Card->SetDrawSize(FVector2D(CardWidthCm * PxPerCm, CardHeightCm * PxPerCm));
+	Card->SetRelativeScale3D(FVector(1.0 / PxPerCm));
 	Card->RequestRedraw();
 	Card->SetVisibility(bCardShown);
-	// Near the lamp agent at the far edge, right of it and above the rim, turned to face the target eye.
+	// Near the lamp agent at the far edge, right of it and above the rim. Upright and square to the person at the near
+	// edge (FM, element 10: the judge's "upright rather than tilted"): it faces back across the table (-X), no pitch, so
+	// it stands as the concept's card does instead of leaning toward the eye.
 	const FVector Place(CardPlaceXCm, CardPlaceYCm, PlacedHeightCm + CardAboveTopCm);
-	const FVector Eye(-(TableDepthCm * 0.5 + ABpGameMode::TargetBehindNearEdgeCm), 0.0, PlacedHeightCm + ABpGameMode::TargetEyeAboveTopCm);
-	Card->SetRelativeLocationAndRotation(Place, FRotationMatrix::MakeFromXZ(Eye - Place, FVector::UpVector).Rotator());
+	Card->SetRelativeLocationAndRotation(Place, FRotator(0.f, 180.f, 0.f));
 	UE_LOG(LogBpTable, Log, TEXT("BpTable: card proposal=%s target=\"%s\" status=%s"), *Ask->id, *Target, *Ask->status);
 }

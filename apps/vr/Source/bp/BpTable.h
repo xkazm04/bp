@@ -101,38 +101,42 @@ public:
 	 *  instance in Rooms stays in its place in plan space, a copy rides the lift). */
 	static constexpr float RoomLiftRimMarginCm = 2.f;
 
-	/** The rooms at rest (FC1, element 4, bp.L0Volumes 1): every room a low glass extrusion of this height, its bays the
-	 *  partitions inside it at BayPartitionRatio of it. A lifted wing leaves its rest extrusions behind, hidden. FE raised
-	 *  it from 0.8 cm: the concept's rooms stand as extrusions, ours read as flat slabs. */
-	static constexpr float RestRoomCm = 2.2f;  // FK: 2.2 (from 1.5), the concept's cells stand taller than trays
-	static constexpr float BayPartitionRatio = 0.6f;
+	/** The rooms at rest (FC1, element 4, bp.L0Volumes 1): every room's four walls stand this high in thin glass, open at
+	 *  the top, and each bay's far boundary inside it is a partition wall at BayPartitionRatio of that height, PartitionCm
+	 *  thick, across the bay's width (FM: the judge's "thin, taller cyan-edged walls with internal partitions"; a bay box
+	 *  drawn whole made a second tray inside each room). A lifted wing leaves its rest walls behind, hidden. */
+	static constexpr float RestRoomCm = 6.5f;  // FM: 6.5 (FK 2.2, FE 1.5): rooms, not trays, from the target pose (by capture)
+	static constexpr float BayPartitionRatio = 0.85f;
+	static constexpr float PartitionCm = 0.08f;
+	/** A partition's glass face (M_EdgeGlow's custom data 4; a room's walls are 1). */
+	static constexpr float PartitionFace = 0.6f;
 	/** The line-weight hierarchy at rest (FC3): the rooms' glass edges at RestRoomShow, the partitions' at
 	 *  RestPartitionShow (the edge glow's Show scales its opacity), under the wing outlines the sheet draws strongest. */
 	static constexpr float RestRoomShow = 0.8f;
-	static constexpr float RestPartitionShow = 0.45f;
+	static constexpr float RestPartitionShow = 0.7f;  // FM: 0.7 (from 0.45), a wall now, not a nested tray
 	/** The lifted room's shell glows this much over a lit shell (M_EdgeGlow's Show above 1 scales its emissive; FE). */
 	static constexpr float LiftedRoomShow = 1.8f;
 	/** The pointed room at L0 (FK, element 6: the concept's raised room under the fingertip). A room highlight
 	 *  (SetHighlight("room", id): the hands' point, or BpLevel.Highlight) is a display state over the plan: the room's rest
 	 *  extrusions are hidden and a copy of them stands HighlightRiseCm taller on the same footprint, at HighlightRestShow,
 	 *  with the lifted room's glass. No instance moves in plan space; clearing it restores every Show exactly. */
-	static constexpr float HighlightRiseCm = 2.5f;
+	static constexpr float HighlightRiseCm = 5.5f;  // FM: 5.5 (FK 2.5), one room extruded upward
 	static constexpr float HighlightRestShow = 1.8f;
 
 	/** The fixture glyphs (FC3, element 5; ArtSource/fixture-kit): each tile at rest holds the glyph of its feature's kind,
 	 *  centred on its box, its footprint at most GlyphFill of the box and its height at most GlyphMaxCm (the shorter side
 	 *  of the box scales it; the height is capped on its own, so a tall shelf reads as a low cabinet). */
 	static constexpr float GlyphFill = 0.8f;
-	static constexpr float GlyphMaxCm = 1.1f;
+	static constexpr float GlyphMaxCm = 2.5f;  // FM: 2.5 (from 1.1) for FN's kit, which the old cap squashed about fourfold
 
 	/** Pins (FC1, element 7): survey-pin stands on each feature that has an open (`proposed`) finding: an amber bead on the
 	 *  plan, a stem and a paper tag on top (ArtSource/survey-pin: 6.38 cm tall, a 2.2 x 1.4 cm tag centred on the stem,
 	 *  facing the mesh's +-Y, its faces UV'd 0..1). The tag shows its finding from the tag atlas. It stands PinScale times
 	 *  its modelled size so the tag's text reads from the table's edge. */
-	static constexpr float PinScale = 2.4f;
+	static constexpr float PinScale = 3.0f;  // FM: 3.0 (from 2.4), the judge's "enlarge pin tags" (element 7)
 	/** Tags that would overlap from the target eye merge into the first one's (FC3): within TagClearUCm across, and along
 	 *  the paper within the depth the tag's height covers seen from the target eye (BpType's floor sets the tag's size). */
-	static constexpr float TagClearUCm = 6.7f;
+	static constexpr float TagClearUCm = 8.3f;  // FM: with PinScale, the tag's width (6.6 cm) and a gap
 	/** The pins' display rule (FE, element 7): every feature with an open finding has its amber bead; a feature carries a
 	 *  standing pin with a tag only when one of its open findings is of high urgency, risk PinTagRiskMin or more
 	 *  (blueprint-ui.md, the swarm's decisions: "urgency from risk (7 or more high, 4 or more medium)"). The rule picks
@@ -158,9 +162,9 @@ public:
 
 	/** The scan line (FC1, element 8): a band across the scanned place at the row of the feature being read, eased toward
 	 *  it at ScanEaseCmPerS (paper cm); it fades over ScanFadeS when the job ends. Its bright core is ScanHalfWidthCm half
-	 *  wide, its soft glow fourteen times that (FC3, lookdev 03; the profile is fc1_marks.py's), and it runs ScanOverrunCm past
+	 *  wide, its soft halo five times that (FM; FC3 had fourteen; the profile is fg_holo.py's), and it runs ScanOverrunCm past
 	 *  the scanned place's ends. */
-	static constexpr float ScanHalfWidthCm = 0.3f;
+	static constexpr float ScanHalfWidthCm = 0.18f;  // FM: a bright thin core (the judge: "not a thick soft band")
 	static constexpr float ScanOverrunCm = 2.f;
 	static constexpr float ScanEaseCmPerS = 12.f;
 	static constexpr float ScanFadeS = 1.2f;
@@ -170,8 +174,9 @@ public:
 	 *  and its text went soft). */
 	static constexpr float CardWidthCm = 37.f;
 	static constexpr float CardHeightCm = 21.f;
-	/** FK: 32 (from 24) with larger type and a warm glow border, the judge's "small and blurry" card (element 10). */
-	static constexpr float CardPxPerCm = 32.f;
+	/** FK took it to 32 (from 24); FM to 16, about twice what the target capture resolves there, since the widget's
+	 *  target has no mips and fourfold minification aliased its text (element 10, "blurry"). bp.CardPxPerCm overrides it. */
+	static constexpr float CardPxPerCm = 16.f;
 	/** Where it floats, in the actor's space: x and y, and z above the table top (the target framing puts it right of the
 	 *  lamp agent's head, as the concept's card; FE placed it by capture, FG moved it 7 cm left so it covers the end of
 	 *  FI's reaching arm, as the concept's card hides the agent's hand). */
@@ -466,6 +471,24 @@ private:
 	 *  the batch's lift. */
 	UWidgetComponent* MakeLabel(const TSharedRef<SWidget>& Content, const FVector2D& PaperCm, const FVector2D& Pivot, float CapHeightCm, float LiftCm, USceneComponent* Parent = nullptr);
 	void PlaceLabels();
+	/** The wing labels over the rest walls (FM): what DrawSheetText set (name, tag line, paper place, caps), made as flat
+	 *  widgets at Tick when it changed. */
+	struct FWingLabel
+	{
+		FString Wing;
+		FString Name;
+		FString Tag;
+		double U = 0.0;
+		double NameBase = 0.0;
+		double NameCap = 0.0;
+		double TagCap = 0.0;
+	};
+	TArray<FWingLabel> WingLabelSpecs;
+	FString WingLabelsKey;
+	bool bWingLabelsDirty = false;
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UWidgetComponent>> WingLabels;
+	void BuildWingLabels();
 	/** A component's relative location set exactly (no round trip through world space), its world transform after it. */
 	static void PlaceExactly(USceneComponent* Component, const FVector& Relative);
 	void BuildVolumes(const FBpPlan& Plan);
@@ -607,9 +630,13 @@ private:
 	};
 	TArray<FPin> PinList;
 	/** The far edge (paper v, cm) of the wing labels the sheet last drew: the risen tags clear it (FE). */
-	double WingLabelTopV = -1.0;
+	double WingLabelTopV = -1.0e9;  // unset; the floating labels (FM) put the row past the paper (v < 0)
 	/** Each tagged pin's rise so its tag clears the label row from the target eye. */
 	void RaisePins();
+	/** Where a label of Width (paper cm) on the row from VTop to VBase starts, at U0 or as near it as keeps it, up to
+	 *  MaxU, off every tagged pin's stem as the target eye sees the stem cross that row (FM); where none is clear, across
+	 *  the fewest stems. */
+	double SlideOffStems(double U0, double Width, double MaxU, double VTop, double VBase) const;
 	FString PinsKey;
 	/** The running measure job the scan line follows, the plan box its scope covers, and the line's place (plan y) now
 	 *  and where it heads. */
