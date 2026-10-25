@@ -662,6 +662,11 @@ void ABpTable::SetHighlight(const FString& Kind, const FString& Id)
 	if (bCardShown) RefreshCard();
 }
 
+FString ABpTable::GetProductSlug() const
+{
+	return FBpLinkModule::Get().GetProductSlug();
+}
+
 bool ABpTable::HitTest(const FVector& WorldOrigin, const FVector& WorldDir, FString& OutKind, FString& OutId) const
 {
 	OutKind.Reset();

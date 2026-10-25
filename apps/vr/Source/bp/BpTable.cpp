@@ -442,9 +442,11 @@ FVector2D ABpTable::PlanToPaperCm(const FVector2D& Plan) const
 FVector2D ABpTable::PlanMarginCm() const
 {
 	const FVector2D Centred = (FVector2D(PaperWidthCm, PaperDepthCm) - PlanSize * BpPlanUnitCm) * 0.5;
-	// A plan too deep to leave PlanNearMinCm near of the far margin stays centred.
-	const bool bRoom = 2.0 * Centred.Y >= PlanFarMarginCm + PlanNearMinCm;
-	return FVector2D(Centred.X, bRoom ? static_cast<double>(PlanFarMarginCm) : Centred.Y);
+	// A plan too deep to leave PlanNearMinCm near of the far margin stays centred. One shallower than the band between
+	// the two (FX: a wide product fit to the paper's width, pof 28.9 cm of 62.5) is centred in that band, so it does not
+	// hang off the far margin over an empty sheet; Kettle fills it to 0.4 cm and moves 0.2 cm.
+	const double Spare = PaperDepthCm - PlanFarMarginCm - PlanNearMinCm - PlanSize.Y * BpPlanUnitCm;
+	return FVector2D(Centred.X, Spare >= 0.0 ? PlanFarMarginCm + Spare * 0.5 : Centred.Y);
 }
 
 FVector2D ABpTable::PaperCmToSheetPx(const FVector2D& PaperCm)
@@ -900,6 +902,12 @@ void ABpTable::ApplyPlan(const FBpPlan& Plan)
 		Max = FVector2D(FMath::Max(Max.X, Wing->box.x + Wing->box.w), FMath::Max(Max.Y, Wing->box.y + Wing->box.h));
 	}
 	PlanSize = Max - PlanMin;
+	// Fit to paper (FX): the largest scale at which the extent fits the paper's free area, capped.
+	BpPlanUnitCm = FMath::Min(BpPlanUnitMaxCm, static_cast<float>(FMath::Min(
+		(PaperWidthCm - 2.0 * PlanSideMarginCm) / FMath::Max(1.0, PlanSize.X),
+		(PaperDepthCm - PlanFarMarginCm - PlanNearMinCm) / FMath::Max(1.0, PlanSize.Y))));
+	UE_LOG(LogBpTable, Log, TEXT("BpTable: plan %.0f x %.0f u at %.4f cm/u (cap %.3f): %.1f x %.1f cm on the paper"),
+		PlanSize.X, PlanSize.Y, BpPlanUnitCm, BpPlanUnitMaxCm, PlanSize.X * BpPlanUnitCm, PlanSize.Y * BpPlanUnitCm);
 
 	// Draw the sheet: the render target's update calls DrawSheet once.
 	if (!Sheet)

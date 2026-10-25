@@ -11,8 +11,27 @@ import json
 import os
 import unreal
 
-WING = "0:OPS"  # B, Studio operations
-ROOM = "scheduling"  # its first room, three bays
+# Per product (the table's BpLink slug; FX): the wing and room the walk enters, and the plan points the rays aim at.
+PRODUCTS = {
+    # B, Studio operations, and its first room (three bays); the booking and scheduling rooms' centres
+    "kettle": ("0:OPS", "scheduling", {"hit_booking": (1213, 708), "hit_scheduling": (1213, 245)}),
+    # the Catalog Pipeline Lab wing and its one room; its centre and the Gameplay Systems Studio room's
+    "pof": ("0:catalog-lab", "catalog-lab", {"hit_catalog_lab": (5110, 379), "hit_gameplay_studio": (4418, 551)}),
+}
+STATE = os.path.join(unreal.Paths.project_saved_dir(), "level_check.json")
+# The paper (ABpTable's constants). Where a plan point lies on it is the table's own (PlanToPaper: the fitted scale and
+# margins, FX), never recomputed here.
+PAPER_W, PAPER_D = 166.0, 76.0
+
+world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_game_world()
+if world is None:
+    raise RuntimeError("no PIE world: StartPIE first")
+tables = unreal.GameplayStatics.get_all_actors_of_class(world, unreal.load_class(None, "/Script/bp.BpTable"))
+table = tables[0]
+PRODUCT = table.get_product_slug()
+if PRODUCT not in PRODUCTS:
+    raise RuntimeError("level_check.py has no walk for product " + PRODUCT)
+WING, ROOM, HITS = PRODUCTS[PRODUCT]
 STEPS = [
     "BpLevel.Enter " + WING,
     "BpLevel.Enter " + ROOM,
@@ -21,17 +40,6 @@ STEPS = [
     "BpLevel.Back",
     "BpTable.Lens business",
 ]
-STATE = os.path.join(unreal.Paths.project_saved_dir(), "level_check.json")
-# Paper and plan (ABpTable's constants, and Kettle's islands extent 3810 x 1678 u at its origin): centred across, at
-# PlanFarMarginCm from the far edge (FE).
-PAPER_W, PAPER_D, UNIT, FAR_MARGIN = 166.0, 76.0, 0.037, 10.5
-MARGIN = ((PAPER_W - 3810 * UNIT) / 2, FAR_MARGIN)
-
-world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_game_world()
-if world is None:
-    raise RuntimeError("no PIE world: StartPIE first")
-tables = unreal.GameplayStatics.get_all_actors_of_class(world, unreal.load_class(None, "/Script/bp.BpTable"))
-table = tables[0]
 batches = {c.get_name(): c for c in table.get_components_by_class(unreal.InstancedStaticMeshComponent)}
 labels = sorted(table.get_components_by_class(unreal.WidgetComponent), key=lambda c: c.get_name())
 
@@ -60,7 +68,8 @@ def differs(a, b, footprint_only=False):
 
 
 def hit(plan_x, plan_y, z=250.0):
-    u, v = MARGIN[0] + plan_x * UNIT, MARGIN[1] + plan_y * UNIT
+    p = table.plan_to_paper(unreal.Vector2D(plan_x, plan_y))
+    u, v = p.x, p.y
     local = unreal.Vector(PAPER_D / 2 - v, u - PAPER_W / 2, z)
     origin = table.get_actor_transform().transform_location(local)
     r = table.hit_test(origin, unreal.Vector(0.0, 0.0, -1.0))
@@ -81,9 +90,9 @@ def observe():
         "labels_shown": sum(1 for c in labels if c.is_visible()),
         "rooms_batch": tf(batches["Rooms"].get_relative_transform()),
         "tiles_batch": tf(batches["Tiles"].get_relative_transform()),
-        # rays straight down: the booking room's and the scheduling room's centres, and the breadcrumb's right end (FC1: it is
-        # drawn in the sheet, right-aligned 30 cm in from the paper's right edge, its line box's bottom 1.4 cm above the near edge)
-        "hit_booking": hit(1213, 708), "hit_scheduling": hit(1213, 245), "hit_title_end": hit_paper(PAPER_W - 31.0, PAPER_D - 3.0),
+        # rays straight down: the product's two room centres (HITS), and the breadcrumb's right end (FC1: it is drawn in
+        # the sheet, right-aligned 30 cm in from the paper's right edge, its line box's bottom 1.4 cm above the near edge)
+        **{k: hit(*xy) for k, xy in HITS.items()}, "hit_title_end": hit_paper(PAPER_W - 31.0, PAPER_D - 3.0),
     }
 
 
@@ -132,12 +141,12 @@ else:
         labels_moved = sum(1 for k in l0["labels"] if l0["labels"][k] != now["labels"].get(k))
         counts = {n: len(v) for n, v in l0["instances"].items()}
         result = {
-            "done": True,
+            "done": True, "product": PRODUCT,
             "back_at_l0_equal": all(v == 0 for v in moved.values()) and labels_moved == 0,
             "instances": counts, "labels": len(l0["labels"]),
             "instances_moved": moved, "labels_moved": labels_moved,
             "steps": [{k: s[k] for k in ("after", "level", "wing", "room", "crumb", "visible", "labels_shown", "plan_moved",
-                                          "world_differs", "hit_booking", "hit_scheduling", "hit_title_end") if k in s}
+                                          "world_differs", *HITS, "hit_title_end") if k in s}
                       for s in state["observed"]],
         }
         state["done"] = True

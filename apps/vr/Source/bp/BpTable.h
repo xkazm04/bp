@@ -40,12 +40,16 @@ class BP_API ABpTable : public AActor
 
 public:
 	// ---- The named constants, in one place ----------------------------------------------------------------------------
-	/** Plan units to centimetres on the paper: Kettle's islands extent, 3810 x 1678 u (spark vr-hands-zoom WP1), becomes
-	 *  141.0 x 62.1 cm, which leaves 12.5 cm left and right for the scale bar, the compass and the title block. */
-	static constexpr float BpPlanUnitCm = 0.037f;
+	/** Plan units to centimetres on the paper, at most (BpPlanUnitCm, the scale in use, fits the plan to the paper under
+	 *  it): Kettle's islands extent, 3810 x 1678 u (spark vr-hands-zoom WP1), becomes 141.0 x 62.1 cm, which leaves 12.5 cm
+	 *  left and right for the scale bar, the compass and the title block. */
+	static constexpr float BpPlanUnitMaxCm = 0.037f;
+	/** What the plan leaves the scale bar, the compass and the title block on each side (the fit's width rule). */
+	static constexpr float PlanSideMarginCm = 12.5f;
 	/** The plan sits this far from the paper's far edge (FE, element 3): the row of wing labels above the wings and the
-	 *  pins' tags above it need the room, the near margin under the hands does not (Kettle: 10.5 cm far, 3.4 cm near).
-	 *  A plan that would leave less than PlanNearMinCm near stays centred. level_check.py's MARGIN follows it. */
+	 *  pins' tags above it need the room, the near margin under the hands does not (Kettle: 10.7 cm far, 3.2 cm near).
+	 *  A plan shallower than the band between the two is centred in it (FX); one that would leave less than
+	 *  PlanNearMinCm near stays centred on the paper. level_check.py reads it through PlanToPaper. */
 	static constexpr float PlanFarMarginCm = 10.5f;
 	static constexpr float PlanNearMinCm = 3.f;
 	/** The table top's height above the floor, the default of the console variable bp.TableHeightCm (R4 option A). */
@@ -336,6 +340,12 @@ public:
 	 *  or "crumb" (OutId "home", "wing:<id>" or "room:<id>"). False when the ray meets none. */
 	UFUNCTION(BlueprintCallable, Category = "Bp|Levels")
 	bool HitTest(const FVector& WorldOrigin, const FVector& WorldDir, FString& OutKind, FString& OutId) const;
+	/** For checks (level_check.py): a plan point on the paper (cm from its far-left corner) at the fitted scale, and the
+	 *  product the table reads (BpLink's slug). */
+	UFUNCTION(BlueprintCallable, Category = "Bp|Levels")
+	FVector2D PlanToPaper(const FVector2D& Plan) const { return PlanToPaperCm(Plan); }
+	UFUNCTION(BlueprintCallable, Category = "Bp|Levels")
+	FString GetProductSlug() const;
 	/** HitTest's inverse, for the synthetic hand (BpHands.Pinch): the world point at the centre of a wing, a room or a
 	 *  crumb ("home", "wing:<id>", "room:<id>") as it is drawn now, on the plane HitTest would meet it on. False for an
 	 *  unknown id or no plan. */
@@ -596,6 +606,12 @@ private:
 	TSharedPtr<FBpPlan> SheetPlan;
 	FVector2D PlanMin = FVector2D::ZeroVector;
 	FVector2D PlanSize = FVector2D::ZeroVector;
+	/** The plan's scale, plan units to paper cm, fit to the paper when a plan is applied (spark vr-fidelity-40 FX): the
+	 *  largest that keeps the plan's extent inside PlanSideMarginCm left and right and PlanFarMarginCm far and
+	 *  PlanNearMinCm near, never above BpPlanUnitMaxCm. Kettle (3810 x 1678 u) takes the cap; a wider product draws
+	 *  smaller (pof, 5376 x 1102 u: 0.0262 cm/u, 141.0 x 28.9 cm). The type does not scale with it: every text keeps
+	 *  BpType's floor, and a class that cannot meet it at the smaller size is dropped as it always was. */
+	float BpPlanUnitCm = BpPlanUnitMaxCm;
 	/** Where each label sits on the paper and how far above it, kept so a height change only moves them. */
 	struct FLabelPlace
 	{

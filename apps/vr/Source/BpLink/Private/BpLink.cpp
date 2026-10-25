@@ -228,39 +228,62 @@ namespace
 	 * lenses, events and rev come from the structure payload. With no plan read (its Error is already logged), the line
 	 * says so and counts `structure.domains`, which are ROOMS (13 for Kettle), never wings.
 	 * The labels and their sources are pinned against the live plan route by scripts/check-bplink.mjs.
+	 * The line leads with the product's slug, capitalised, so Kettle's line reads as it always has ("BpLink: Kettle wings=").
 	 */
-	void LogKettle(const FBpLinkSnapshot& Snapshot)
+	void LogProduct(const FString& Slug, const FBpLinkSnapshot& Snapshot)
 	{
+		const FString Label = Slug.Left(1).ToUpper() + Slug.Mid(1);
 		if (!Snapshot.bHasPlan)
 		{
-			UE_LOG(LogBpLink, Warning, TEXT("BpLink: Kettle rooms=%d lenses=%d events=%d rev=%s (no plan read, so no wings)"),
-				Snapshot.Structure.domains.Num(), Snapshot.Structure.lenses.Num(), Snapshot.Events.Num(), *Snapshot.Rev);
+			UE_LOG(LogBpLink, Warning, TEXT("BpLink: %s rooms=%d lenses=%d events=%d rev=%s (no plan read, so no wings)"),
+				*Label, Snapshot.Structure.domains.Num(), Snapshot.Structure.lenses.Num(), Snapshot.Events.Num(), *Snapshot.Rev);
 			return;
 		}
 		TArray<FString> Names;
 		for (const FBpPlanWing& Wing : Snapshot.Plan.wings) Names.Add(Wing.name);
-		UE_LOG(LogBpLink, Log, TEXT("BpLink: Kettle wings=%d [%s] rooms=%d bays=%d tiles=%d lenses=%d events=%d rev=%s"),
-			Snapshot.Plan.wings.Num(), *FString::Join(Names, TEXT(", ")), Snapshot.Plan.rooms.Num(), Snapshot.Plan.bays.Num(),
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: %s wings=%d [%s] rooms=%d bays=%d tiles=%d lenses=%d events=%d rev=%s"),
+			*Label, Snapshot.Plan.wings.Num(), *FString::Join(Names, TEXT(", ")), Snapshot.Plan.rooms.Num(), Snapshot.Plan.bays.Num(),
 			Snapshot.Plan.tiles.Num(), Snapshot.Structure.lenses.Num(), Snapshot.Events.Num(), *Snapshot.Rev);
 	}
 
-	/** The one product WP3.1 and L3.2 read. */
+	/** The product WP3.1 and L3.2 read when nothing names another. */
 	const TCHAR* const KettleSlug = TEXT("kettle");
 
-	void FetchKettle()
+	/**
+	 * The product the table reads, settled once per process: -BpLinkProduct=<slug> on the command line, else the
+	 * environment variable BP_LINK_PRODUCT, else Kettle. The same precedence as -BpLinkUrl / BP_LINK_URL. A slug other
+	 * than kettle exists only on a server started where bp.products.local.json lists it (products.server.ts reads it
+	 * from the server's cwd); otherwise /structure answers 404 and the existing "GET ... failed" Error says so.
+	 */
+	const FString& ProductSlug()
+	{
+		static const FString Slug = []
+		{
+			FString Value;
+			if (!FParse::Value(FCommandLine::Get(), TEXT("BpLinkProduct="), Value) || Value.IsEmpty())
+			{
+				Value = FPlatformMisc::GetEnvironmentVariable(TEXT("BP_LINK_PRODUCT"));
+			}
+			Value.TrimStartAndEndInline();
+			return Value.IsEmpty() ? FString(KettleSlug) : Value.ToLower();
+		}();
+		return Slug;
+	}
+
+	void FetchProduct()
 	{
 		if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
-		UE_LOG(LogBpLink, Log, TEXT("BpLink: reading Kettle from %s"), *GClient->GetBaseUrl());
-		GClient->FetchProduct(KettleSlug, [](bool bOk, const FBpLinkSnapshot& Snapshot)
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: reading %s from %s"), *ProductSlug(), *GClient->GetBaseUrl());
+		GClient->FetchProduct(ProductSlug(), [](bool bOk, const FBpLinkSnapshot& Snapshot)
 		{
-			if (bOk) LogKettle(Snapshot);
+			if (bOk) LogProduct(ProductSlug(), Snapshot);
 			// The module keeps what was read, so the table (ABpTable) never asks a second time.
 			if (FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"))) Module->ReceiveSnapshot(bOk, Snapshot);
 		});
 	}
 
-	FAutoConsoleCommand GFetchCommand(TEXT("BpLink.Fetch"), TEXT("Read Kettle from apps/server and log its wings."),
-		FConsoleCommandDelegate::CreateStatic(&FetchKettle));
+	FAutoConsoleCommand GFetchCommand(TEXT("BpLink.Fetch"), TEXT("Read the product (-BpLinkProduct=, BP_LINK_PRODUCT, else Kettle) from apps/server and log its wings."),
+		FConsoleCommandDelegate::CreateStatic(&FetchProduct));
 }
 
 FBpLinkModule& FBpLinkModule::Get()
@@ -270,7 +293,7 @@ FBpLinkModule& FBpLinkModule::Get()
 
 FString FBpLinkModule::GetProductSlug() const
 {
-	return KettleSlug;
+	return ProductSlug();
 }
 
 void FBpLinkModule::ReceiveSnapshot(bool bOk, const FBpLinkSnapshot& Snapshot)
@@ -306,7 +329,7 @@ void FBpLinkModule::StartupModule()
 	// finding: libcurl error 7 in the cook log). BpLink.Fetch still asks on demand.
 	if (!IsRunningCommandlet())
 	{
-		FetchKettle();
+		FetchProduct();
 		ScanTicker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateRaw(this, &FBpLinkModule::TickScanPoll), 0.1f);
 	}
 }

@@ -5,6 +5,7 @@
 //
 //   node apps/vr/tools/run-bplink.mjs [--mode editor|game|staged] [--exe <staged bp.exe>] [--no-server] [--xr-sim] [--vr]
 //                                     [--game-mode <class path>] [--exec <cmd,cmd>] [--ue-args "<a> <b>"] [--hold <s>] [--timeout <s>] [--out <dir>]
+//                                     [--product <slug>]
 //
 // editor  UnrealEditor-Cmd.exe bp.uproject (headless: -nullrhi, unless --xr-sim, which renders off screen instead)
 // game    UnrealEditor-Cmd.exe bp.uproject -game (uncooked)
@@ -21,6 +22,8 @@
 //               apps/vr/Saved/Profiling/CSV)
 // --hold        keep running this many seconds after the outcome line instead of 5 (a stat dump over many frames);
 //               LogStats lines are printed too
+// --product     the product BpLink reads (-BpLinkProduct=<slug>; default kettle). The server's empty cwd gets a copy of the
+//               repo's bp.products.local.json, which is where products.server.ts looks for live products.
 //
 // apps/server starts with `--port 0` in an empty cwd (as check-bplink and the probe do). The process is not asked to quit
 // (BpLink's HTTP is async): it is watched until an outcome line, given 5 s to flush, then its tree is killed.
@@ -70,6 +73,8 @@ if (flag('--no-server')) {
   port = await new Promise((r) => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)); }); });
 } else {
   const cwd = path.join(out, 'server-cwd'); fs.mkdirSync(cwd, { recursive: true });
+  const products = path.join(REPO, 'bp.products.local.json');
+  if (opt('--product') && fs.existsSync(products)) fs.copyFileSync(products, path.join(cwd, 'bp.products.local.json'));
   server = spawn(process.execPath, ['--import', pathToFileURL(path.join(REPO, 'packages/core/register.mjs')).href,
     path.join(REPO, 'apps/server/src/main.ts'), '--port', '0'], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
   server.stdout.on('data', (d) => (serverOut += d)); server.stderr.on('data', (d) => (serverOut += d));
@@ -91,6 +96,7 @@ const exec = opt('--exec');
 const holdS = Number(opt('--hold', '5'));
 const vr = flag('--vr') ? ['-vr'] : [];
 const argv = [...pre, ...render, ...vr, '-unattended', '-nosplash', '-nosound', '-stdout', '-FullStdOutLogOutput', '-NoLogTimes', `-BpLinkUrl=${url}`,
+  ...(opt('--product') ? [`-BpLinkProduct=${opt('--product')}`] : []),
   ...(exec ? [`-ExecCmds=${exec}`] : []), ...(opt('--ue-args', '').split(' ').filter(Boolean))];
 const env = { ...process.env };
 if (flag('--xr-sim')) env.XR_RUNTIME_JSON = SIM_JSON;
@@ -98,7 +104,7 @@ const runLog = path.join(out, `run-${mode}${flag('--xr-sim') ? '-xrsim' : ''}.lo
 console.log(`server  ${flag('--no-server') ? `none (closed port ${port})` : url}`);
 console.log(`start   "${exe}" ${argv.map((a) => `"${a}"`).join(' ')}${flag('--xr-sim') ? `   XR_RUNTIME_JSON=${SIM_JSON}` : ''}`);
 
-const OUTCOME = /BpLink: Kettle |BpLink: GET .* failed|BpLink: the .* did not parse/;
+const OUTCOME = /BpLink: \w[\w-]* (wings|rooms)=|BpLink: GET .* failed|BpLink: the .* did not parse/;
 const fd = fs.openSync(runLog, 'w');
 const started = Date.now();
 const ran = await new Promise((resolve) => {
