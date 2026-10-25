@@ -66,6 +66,10 @@ struct BPLINK_API FBpScanState
 	bool bHasJobs = false;
 	bool bHasScan = false;
 	bool bHasWaves = false;
+	/** Each triaged proposal's severity tier by its id (store v4 `tier`: 0 stop-ship, 1 before production, 2 soon after, 3
+	 *  backlog), read from the raw /scan answer: the generated FBpProposal::tier reads an absent tier (untriaged) as 0, so
+	 *  a proposal missing here is untriaged, whatever its tier field says. */
+	TMap<FString, int32> Tiers;
 	/** Bumped on every read that changed something, so a consumer can skip a state it has seen. */
 	int32 Serial = 0;
 };
@@ -119,15 +123,20 @@ public:
 	static constexpr float ScanPollBusyS = 0.5f;
 	static constexpr float ScanPollIdleS = 4.f;
 
+	/** Whether the product read is Kettle, whose scans and waves apps/server simulates. Any other product is live: its
+	 *  scans and dispatches would run real agents on a real repo, so the table only shows what they left (FAD). */
+	bool IsKettle() const { return GetProductSlug() == TEXT("kettle"); }
+
 	/** POST .../scans { lens, scope }: the web's way to start a lens scan (blueprint-ui.md, "POST /api/products/<slug>/scans").
-	 *  OnDone gets the HTTP status (202 when queued) and the body. */
+	 *  OnDone gets the HTTP status (202 when queued) and the body. Refused for a live product (IsKettle): nothing is sent,
+	 *  the refusal is logged and OnDone gets status 0. */
 	void PostScan(const FString& Lens, const FString& Kind, const FString& Id, const FString& Label, const TArray<FString>& Features,
 		TFunction<void(int32 Status, const FString& Body)> OnDone);
 
 private:
 	void PollScan();
 	bool TickScanPoll(float DeltaSeconds);
-	void ReceiveScanPart(int32 Part, TSharedPtr<struct FBpScanWire> Wire);
+	void ReceiveScanPart(int32 Part, TSharedPtr<struct FBpScanWire> Wire, TMap<FString, int32> Tiers);
 
 	FBpScanState ScanState;
 	FOnBpScanState ScanStateDelegate;

@@ -136,6 +136,9 @@ namespace
 	 *  block, with the scale bar in it, on the paper the shortest wing leaves empty (off the hands' path in the target
 	 *  framing); the breadcrumb near-right (the hands' way back, WP3); the compass in the left margin. */
 	constexpr double WingLabelGapCm = 1.1;
+	/** Between two neighbouring wing labels in a row (FAD, the judges on fid-ac-hero: at WingLabelGapCm "MEMBERS & REACH"
+	 *  read as running into "FRONTIER" from the target eye, the lifted room's lit edge crossing the gap). */
+	constexpr double WingLabelApartCm = 3.0;
 	/** FK raised it from 0.4 (element 3): the glass walls' halo and fresnel face ran through the names (0.9 dropped the
 	 *  wing tag line for want of paper above it). */
 	constexpr double WingLabelClearCm = 0.6;
@@ -562,10 +565,10 @@ void ABpTable::Tick(float DeltaSeconds)
 	{
 		AdvanceLevels(FMath::Min(DeltaSeconds, 0.05f));
 		ApplyLevelVisuals();
-		if (!IsLevelMoving() && !bScanLive && ScanStrength <= 0.f) SetActorTickInterval(0.25f);
+		if (!IsLevelMoving() && !bScanLive && !bScanReplay && ScanStrength <= 0.f) SetActorTickInterval(0.25f);
 	}
 	// The scan line eases at the frame rate while a scan runs or fades (UpdateScan drops the tick back when it is done).
-	if (bScanLive || ScanStrength > 0.f) UpdateScan(FMath::Min(DeltaSeconds, 0.1f));
+	if (bScanLive || bScanReplay || ScanStrength > 0.f) UpdateScan(FMath::Min(DeltaSeconds, 0.1f));
 }
 
 void ABpTable::StartHandShadow()
@@ -2050,13 +2053,21 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 		// its row off the line each stem draws across the row from the target eye. FP (the judge: no stem may cross a
 		// label): it may start a quarter of its width before its wing and end half its width past it, after the previous
 		// label, so a wide name finds a slot between stems and pushes its neighbour on.
-		const double NameW = WidthCm(Name, BpType::WingName, NameCap);
-		const double Lo = FMath::Max(A.X - 0.25 * NameW, PrevRight + WingLabelGapCm);
+		// A floating label is a widget in its own face (LabelFont, Regular, untracked) on a backing LabelBackPadCm wider each
+		// side: the wider of its measure and the sheet's keeps neighbours apart in either face (FAD; on Kettle the two agree
+		// within 1 cm).
+		const double FloatW = bFloat ? MeasureText(Name, LabelFont(TEXT("Regular"), LabelFontSize)).X * NameCap / (LabelFontSize * SlatePxPerPoint * TypeCapPerEm) + 2.0 * LabelBackPadCm : 0.0;
+		const double NameW = FMath::Max(WidthCm(Name, BpType::WingName, NameCap), FloatW);
+		const double MaxU = FMath::Min(B.X + 0.5 * NameW, PaperWidthCm - PaperTopClearCm);
+		// WingLabelApartCm from the previous label where the row has the room, else WingLabelGapCm (pof's eight wings fill it).
+		const double Apart = PrevRight + WingLabelApartCm + NameW <= MaxU ? WingLabelApartCm : WingLabelGapCm;
+		const double Lo = FMath::Max(A.X - 0.25 * NameW, PrevRight + Apart);
 		// A vertical stem and a label point lie on one eye ray wherever the stem stands, so the rows are the label's own
 		// place (its v), not where the eye sees it on the paper: a floating label seen through Seen() slid a stem's width
 		// short (FP, by capture).
-		const double NameU = SlideOffStems(Lo, A.X, NameW, FMath::Min(B.X + 0.5 * NameW, PaperWidthCm - PaperTopClearCm), NameBase - NameCap, NameBase);
+		const double NameU = SlideOffStems(Lo, A.X, NameW, MaxU, NameBase - NameCap, NameBase);
 		PrevRight = NameU + NameW;
+		if (bReport) UE_LOG(LogBpTable, Log, TEXT("BpType: wing-label \"%s\" u=%.1f..%.1f (sheet %.1f, widget %.1f cm wide)"), *Name, NameU, PrevRight, WidthCm(Name, BpType::WingName, NameCap), FloatW);
 		if (bFloat)
 		{
 			Floating.Add({ Wing.id, Name, FString(), NameU, NameBase, NameCap, 0.0 });

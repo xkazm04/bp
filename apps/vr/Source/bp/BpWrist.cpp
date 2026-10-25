@@ -1,7 +1,8 @@
 // The wrist panel (spark vr-fidelity-40 FC1, element 11; BpPawn.h): the concept's "Packages" on the left wrist. It shows
 // the latest wave (GET .../waves: the last dispatched one, else the newest draft) and, per package, its name, its model
-// and effort, and a ring for how many of its findings are built (done, accepted or released in the store), all read from
-// BpLink's scan state. With no wave it says so. Nothing here composes, dispatches or computes a wave.
+// and effort, and a ring for how many of its findings are built (done, accepted or released in the store; a draft's
+// rings say "draft"), all read from BpLink's scan state. With no wave it says so. Nothing here composes, dispatches or
+// computes a wave.
 #include "BpPawn.h"
 
 #include "BpGameMode.h"
@@ -210,6 +211,8 @@ void ABpPawn::ReceiveScanState(const FBpScanState& State)
 			Key += FString::Printf(TEXT("|%s:%d"), *Package.id, Built);
 		}
 	}
+	// A draft (composed, not dispatched) has queued nothing, so its rings say "draft" rather than a built share (FAD).
+	const bool bDraft = Wave && Wave->status == TEXT("draft");
 	if (Key == WristKey) return;
 	WristKey = Key;
 
@@ -257,7 +260,7 @@ void ABpPawn::ReceiveScanState(const FBpScanState& State)
 					]
 					+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
 					[
-						SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(R.Fraction * 100.f))))
+						SNew(STextBlock).Text(FText::FromString(bDraft ? FString(TEXT("draft")) : FString::Printf(TEXT("%d%%"), FMath::RoundToInt(R.Fraction * 100.f))))
 							.Font(CapFont(TEXT("Bold"), 20.f)).ColorAndOpacity(FSlateColor(FLinearColor::White))
 					]
 				]

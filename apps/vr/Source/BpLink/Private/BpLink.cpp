@@ -407,7 +407,21 @@ void FBpLinkModule::PollScan()
 					const BpSchema::FFromJsonFailure& Failure = BpSchema::LastFailure();
 					Failed = FString::Printf(TEXT("%s at %s"), *Failure.Call, *Failure.Path);
 				}
-				AsyncTask(ENamedThreads::GameThread, [Part, Wire, bOk, Failed]()
+				// The proposals that carry a tier: an absent key is untriaged, which the generated int32 cannot tell from 0.
+				TMap<FString, int32> Tiers;
+				const TSharedPtr<FJsonObject>* Snapshot = nullptr;
+				const TArray<TSharedPtr<FJsonValue>>* Proposals = nullptr;
+				if (bOk && Part == 1 && Json->TryGetObjectField(TEXT("snapshot"), Snapshot) && (*Snapshot)->TryGetArrayField(TEXT("proposals"), Proposals))
+				{
+					for (const TSharedPtr<FJsonValue>& Value : *Proposals)
+					{
+						const TSharedPtr<FJsonObject>* Row = nullptr;
+						FString Id;
+						int32 Tier = 0;
+						if (Value.IsValid() && Value->TryGetObject(Row) && (*Row)->TryGetStringField(TEXT("id"), Id) && (*Row)->TryGetNumberField(TEXT("tier"), Tier)) Tiers.Add(Id, Tier);
+					}
+				}
+				AsyncTask(ENamedThreads::GameThread, [Part, Wire, bOk, Failed, Tiers = MoveTemp(Tiers)]() mutable
 				{
 					FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"));
 					if (!Module) return;
@@ -418,7 +432,7 @@ void FBpLinkModule::PollScan()
 						Module->ScanBodyHash[Part] = 0;
 						return;
 					}
-					Module->ReceiveScanPart(Part, Wire);
+					Module->ReceiveScanPart(Part, Wire, MoveTemp(Tiers));
 				});
 			});
 		});
@@ -426,17 +440,17 @@ void FBpLinkModule::PollScan()
 	}
 }
 
-void FBpLinkModule::ReceiveScanPart(int32 Part, TSharedPtr<FBpScanWire> Wire)
+void FBpLinkModule::ReceiveScanPart(int32 Part, TSharedPtr<FBpScanWire> Wire, TMap<FString, int32> Tiers)
 {
 	const bool bFirst = Part == 0 ? !ScanState.bHasJobs : Part == 1 ? !ScanState.bHasScan : !ScanState.bHasWaves;
 	if (Part == 0) { ScanState.Jobs = MoveTemp(Wire->jobs); ScanState.bHasJobs = true; }
-	else if (Part == 1) { ScanState.Scan = MoveTemp(Wire->snapshot); ScanState.bHasScan = true; }
+	else if (Part == 1) { ScanState.Scan = MoveTemp(Wire->snapshot); ScanState.Tiers = MoveTemp(Tiers); ScanState.bHasScan = true; }
 	else { ScanState.Waves = MoveTemp(Wire->waves); ScanState.bHasWaves = true; }
 	++ScanState.Serial;
 	if (bFirst)
 	{
-		UE_LOG(LogBpLink, Log, TEXT("BpLink: %s %s read: jobs=%d proposals=%d activity=%d waves=%d"), *GetProductSlug(), ScanParts[Part],
-			ScanState.Jobs.Num(), ScanState.Scan.proposals.Num(), ScanState.Scan.activity.Num(), ScanState.Waves.Num());
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: %s %s read: jobs=%d proposals=%d tiered=%d activity=%d waves=%d"), *GetProductSlug(), ScanParts[Part],
+			ScanState.Jobs.Num(), ScanState.Scan.proposals.Num(), ScanState.Tiers.Num(), ScanState.Scan.activity.Num(), ScanState.Waves.Num());
 	}
 	ScanStateDelegate.Broadcast(ScanState);
 }
@@ -444,6 +458,14 @@ void FBpLinkModule::ReceiveScanPart(int32 Part, TSharedPtr<FBpScanWire> Wire)
 void FBpLinkModule::PostScan(const FString& Lens, const FString& Kind, const FString& Id, const FString& Label, const TArray<FString>& Features,
 	TFunction<void(int32, const FString&)> OnDone)
 {
+	// Only Kettle's scans are simulated; a live product's would run a real lens scan on a real repo (FAD, the owner's
+	// rule: nothing new starts from the table).
+	if (!IsKettle())
+	{
+		UE_LOG(LogBpLink, Warning, TEXT("BpLink: refused POST %s/scans: %s is a live product, and the table starts no scan on it"), *GetProductSlug(), *GetProductSlug());
+		if (OnDone) OnDone(0, FString());
+		return;
+	}
 	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
 	TSharedRef<FJsonObject> Scope = MakeShared<FJsonObject>();
 	Scope->SetStringField(TEXT("kind"), Kind);

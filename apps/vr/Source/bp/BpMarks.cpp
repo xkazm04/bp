@@ -59,6 +59,30 @@ namespace
 		TEXT("The decision card's render density, px per cm (the card redraws at the next BpCard.Show)."),
 		ECVF_Default);
 
+	/** The tier's word on a tag (blueprint-ui.md, store v4: 0 stop-ship, 1 before production, 2 soon after, 3 backlog; the
+	 *  owner's "stop-ship and high"), set when it fits beside the chip. */
+	const TCHAR* TierWord(int32 Tier)
+	{
+		switch (Tier)
+		{
+		case 0: return TEXT("STOP-SHIP");
+		case 1: return TEXT("HIGH");
+		case 2: return TEXT("SOON");
+		default: return TEXT("LATER");
+		}
+	}
+
+	/** The tag's order of urgency: an urgent finding first, then the lower tier (untriaged after T3, the ledger's
+	 *  tierRank), then the higher risk; equal ranks keep the earlier one (store order). */
+	template <typename TPin>
+	bool MoreUrgent(const TPin& A, const TPin& B)
+	{
+		if (A.bUrgent != B.bUrgent) return A.bUrgent;
+		const int32 RankA = A.Tier >= 0 ? A.Tier : 4, RankB = B.Tier >= 0 ? B.Tier : 4;
+		if (RankA != RankB) return RankA < RankB;
+		return A.Risk > B.Risk;
+	}
+
 	/** A finding is open (it has a pin, and the card may ask about it) while it waits for a decision. */
 	bool IsOpen(const FBpProposal& Proposal)
 	{
@@ -292,6 +316,12 @@ void ABpTable::ReceiveScanState(const FBpScanState& State)
 {
 	if (!SheetPlan.IsValid()) return;
 	BuildPins(State);
+	if (!PendingReplayScope.IsEmpty() && State.bHasScan)
+	{
+		const FString Scope = PendingReplayScope;
+		const TArray<FString> Features = PendingReplayFeatures;
+		StartReplay(Scope, Features);
+	}
 
 	// The scan line: the first running measure job (a queued one has not started reading).
 	const FBpScanJob* Job = State.Jobs.FindByPredicate([](const FBpScanJob& J) { return J.kind == TEXT("measure") && J.status == TEXT("running"); });
@@ -300,21 +330,9 @@ void ABpTable::ReceiveScanState(const FBpScanState& State)
 		if (Job->id != ScanJob)
 		{
 			ScanJob = Job->id;
-			// The scope's features' tiles: their union is the place the line crosses.
-			ScanPlanBox = FBox2D(ForceInit);
-			ScanWing.Reset();
-			TSet<FString> Features(Job->scope.features);
-			for (int32 Index = 0; Index < SheetPlan->tiles.Num(); ++Index)
-			{
-				const FBpPlanTile& Tile = SheetPlan->tiles[Index];
-				if (Job->scope.kind != TEXT("all") && !Features.Contains(Tile.id)) continue;
-				ScanPlanBox += FVector2D(Tile.box.x, Tile.box.y);
-				ScanPlanBox += FVector2D(Tile.box.x + Tile.box.w, Tile.box.y + Tile.box.h);
-				const int32 Room = TileRoom.IsValidIndex(Index) ? TileRoom[Index] : INDEX_NONE;
-				const FString Wing = RoomWing.IsValidIndex(Room) ? RoomWing[Room] : FString();
-				ScanWing = ScanWing.IsEmpty() || ScanWing == Wing ? Wing : TEXT("*");
-			}
-			ScanY = ScanTargetY = ScanPlanBox.bIsValid ? ScanPlanBox.Min.Y : 0.0;
+			// A live job ends any replay; the scope's features' tiles are the place the line crosses.
+			bScanReplay = false;
+			SetScanPlace(Job->scope.features, Job->scope.kind == TEXT("all"));
 			UE_LOG(LogBpTable, Log, TEXT("BpTable: scan job=%s lens=%s scope=%s:%s features=%d"), *Job->id, *Job->lens, *Job->scope.kind, *Job->scope.id, Job->scope.features.Num());
 		}
 		ScanRun = Job->run_id;
@@ -338,7 +356,7 @@ void ABpTable::ReceiveScanState(const FBpScanState& State)
 		}
 		bScanLive = ScanPlanBox.bIsValid;
 	}
-	else
+	else if (!bScanReplay)
 	{
 		if (bScanLive) UE_LOG(LogBpTable, Log, TEXT("BpTable: scan job=%s ended"), *ScanJob);
 		bScanLive = false;
@@ -351,44 +369,49 @@ void ABpTable::ReceiveScanState(const FBpScanState& State)
 void ABpTable::BuildPins(const FBpScanState& State)
 {
 	if (!SheetPlan.IsValid() || !State.bHasScan) return;
-	// One bead per feature with an open finding; the display rule (PinTagRiskMin) stands a tagged pin on the features
-	// with a finding of high urgency. The tag names the riskiest finding (store order breaks a tie), its risk, and how
-	// many more the feature has.
+	// One bead per feature with an open finding; the display rule (PinTagTierMax, PinTagRiskMin) stands a tagged pin on
+	// the features with an urgent finding. The tag names the most urgent finding (store order breaks a tie), its tier or
+	// risk, and how many more the feature has.
 	TMap<FString, int32> TileOf;
 	for (int32 Index = 0; Index < SheetPlan->tiles.Num(); ++Index) TileOf.Add(SheetPlan->tiles[Index].id, Index);
 	TArray<FPin> Next;
 	TMap<int32, int32> PinOfTile;
 	FString Key;
-	int32 Open = 0;
+	int32 Open = 0, Triaged = 0;
 	for (const FBpProposal& Proposal : State.Scan.proposals)
 	{
 		if (!IsOpen(Proposal)) continue;
 		++Open;
-		Key += Proposal.id + TEXT(",");
+		const int32* HasTier = State.Tiers.Find(Proposal.id);
+		Triaged += HasTier ? 1 : 0;
+		Key += Proposal.id + (HasTier ? FString::Printf(TEXT(":%d,"), *HasTier) : FString(TEXT(",")));
 		const int32* Tile = TileOf.Find(Proposal.feature);
 		if (!Tile) continue;
-		const int32 Risk = FMath::RoundToInt(Proposal.risk);
-		if (const int32* Pin = PinOfTile.Find(*Tile))
+		FPin Pin;
+		Pin.Line1 = Proposal.id.ToUpper();
+		Pin.Tier = HasTier ? *HasTier : -1;
+		Pin.Risk = FMath::RoundToInt(Proposal.risk);
+		Pin.bUrgent = HasTier ? *HasTier <= PinTagTierMax : Pin.Risk >= PinTagRiskMin;
+		if (const int32* Have = PinOfTile.Find(*Tile))
 		{
-			FPin& Have = Next[*Pin];
-			++Have.Findings;
-			if (Risk > Have.Risk)
+			FPin& Into = Next[*Have];
+			++Into.Findings;
+			if (MoreUrgent(Pin, Into))
 			{
-				Have.Risk = Risk;
-				Have.Line1 = Proposal.id.ToUpper();
+				Into.Line1 = Pin.Line1;
+				Into.bUrgent = Pin.bUrgent;
+				Into.Tier = Pin.Tier;
+				Into.Risk = Pin.Risk;
 			}
 			continue;
 		}
-		FPin Pin;
 		Pin.Tile = *Tile;
 		Pin.Room = TileRoom.IsValidIndex(*Tile) ? TileRoom[*Tile] : INDEX_NONE;
-		Pin.Line1 = Proposal.id.ToUpper();
-		Pin.Risk = Risk;
 		Pin.Findings = 1;
 		PinOfTile.Add(*Tile, Next.Num());
 		Next.Add(Pin);
 	}
-	for (FPin& Pin : Next) Pin.bTagged = Pin.Risk >= PinTagRiskMin;
+	for (FPin& Pin : Next) Pin.bTagged = Pin.bUrgent;
 	// Tags that would overlap from the target eye merge (FC3): in store order, a tagged pin within TagClearUCm across of an
 	// earlier tagged pin, and nearer or farther than it by less than the paper its tag hides from the target eye, gives
 	// its tag up to that pin, whose count then carries its findings. Every pin keeps its bead on its own feature.
@@ -414,10 +437,12 @@ void ABpTable::BuildPins(const FBpScanState& State)
 			if (FMath::Abs(Here.X - There.X) >= TagClearUCm || FMath::Abs(Here.Y - There.Y) >= Hidden) continue;
 			Next[Index].bTagged = false;
 			Next[Earlier].Findings += Next[Index].Findings;
-			if (Next[Index].Risk > Next[Earlier].Risk)
+			if (MoreUrgent(Next[Index], Next[Earlier]))
 			{
-				Next[Earlier].Risk = Next[Index].Risk;
 				Next[Earlier].Line1 = Next[Index].Line1;
+				Next[Earlier].bUrgent = Next[Index].bUrgent;
+				Next[Earlier].Tier = Next[Index].Tier;
+				Next[Earlier].Risk = Next[Index].Risk;
 			}
 			++Merged;
 			break;
@@ -428,11 +453,24 @@ void ABpTable::BuildPins(const FBpScanState& State)
 	{
 		Pin.Cell = Pin.bTagged && Cells < TagAtlasCols * TagAtlasRows ? Cells++ : INDEX_NONE;
 		Pin.bTagged = Pin.Cell != INDEX_NONE;
-		// The second line: the risk, and how many more findings the tag stands for (DrawTags drops what does not fit).
-		Pin.Line2 = Pin.Findings > 1 ? FString::Printf(TEXT("RISK %d  +%d"), Pin.Risk, Pin.Findings - 1) : FString::Printf(TEXT("RISK %d"), Pin.Risk);
+		// The second line, longest first: the tier with its word (the ledger's T0..T3 chip) or the risk, then how many more
+		// findings the tag stands for (DrawTags sets the first that fits).
+		const FString More = Pin.Findings > 1 ? FString::Printf(TEXT("  +%d"), Pin.Findings - 1) : FString();
+		Pin.Line2.Reset();
+		if (Pin.Tier >= 0)
+		{
+			const FString Chip = FString::Printf(TEXT("T%d"), Pin.Tier);
+			Pin.Line2 = { Chip + TEXT(" ") + TierWord(Pin.Tier) + More, Chip + More, Chip };
+		}
+		else
+		{
+			const FString Risk = FString::Printf(TEXT("RISK %d"), Pin.Risk);
+			Pin.Line2 = { Risk + More, Risk };
+		}
 	}
 	if (Key == PinsKey && PinList.Num() == Next.Num()) return;
-	UE_LOG(LogBpTable, Log, TEXT("BpTable: pin rule risk>=%d: tags=%d of %d pins, merged=%d (tags that would overlap from the target eye)"), PinTagRiskMin, Cells, Next.Num(), Merged);
+	UE_LOG(LogBpTable, Log, TEXT("BpTable: pin rule tier<=T%d (untriaged: risk>=%d): tags=%d of %d pins, merged=%d (tags that would overlap from the target eye); open=%d triaged=%d"),
+		PinTagTierMax, PinTagRiskMin, Cells, Next.Num(), Merged, Open, Triaged);
 	PinsKey = Key;
 	PinList = MoveTemp(Next);
 	Pins->ClearInstances();
@@ -607,8 +645,11 @@ void ABpTable::DrawTags(UCanvas* Canvas, int32 Width, int32 Height)
 	const float Track = static_cast<float>(BpType::PinTag.TrackEm / BpType::CapPerEm) * Cap;
 	// A line box's top is (ascender - cap) above the cap's top.
 	const auto Top = [Cap](float CapTop) { return CapTop - static_cast<float>((BpType::AscPerEm - BpType::CapPerEm) / BpType::CapPerEm) * Cap; };
-	// FM (element 7, the judge's "the RISK line must read"): a dark brick red on the tag's paper, not FC3's amber-navy mix.
-	const FLinearColor CountInk(FColor(0x8E, 0x22, 0x08));
+	// FAD (element 7, the judges: "white with red text, not the concept's warm paper tags"): a tan paper, a dark warm ink
+	// and the urgency line in a deep muted amber (FM's brick red read as an alarm), both well over the paper's contrast.
+	const FLinearColor TagPaper(FColor(0xE6, 0xCF, 0xA6));
+	const FLinearColor TagInk(FColor(0x2A, 0x1F, 0x14));
+	const FLinearColor CountInk(FColor(0x7A, 0x4A, 0x0C));
 	for (int32 Index = 0; Index < PinList.Num(); ++Index)
 	{
 		// Only the tagged pins have a cell; a merged pin's findings are counted on the tag it merged into.
@@ -617,16 +658,20 @@ void ABpTable::DrawTags(UCanvas* Canvas, int32 Width, int32 Height)
 		const FVector2D Cell(At % TagAtlasCols * TagCellWidthPx, At / TagAtlasCols * TagCellHeightPx);
 		// A pixel of margin so the mips never bleed one card into the next.
 		const FVector2D Min = Cell + FVector2D(4.0, 4.0), Max = Cell + FVector2D(TagCellWidthPx - 4.0, TagCellHeightPx - 4.0);
-		Fill(Min, Max, CardPaper);
+		Fill(Min, Max, TagPaper);
 		Fill(Min, FVector2D(Max.X, Min.Y + 8.0), AmberInk);
 		const float Room = TagCellWidthPx - 8.f - 2.f * Pad;
 		const FSlateFontInfo Bold = CanvasFont(TEXT("Bold"), Cap);
 		const auto Fits = [&](const FString& Text) { return !Text.IsEmpty() && Measure(Text, Bold).X + Track * Text.Len() <= Room; };
-		if (Fits(PinList[Index].Line1)) Texts.Add({ PinList[Index].Line1, FVector2D(Min.X + Pad, Top(Min.Y + 26.f)), Bold, Navy, Track });
+		// The finding's id, else its part after the prefix (a live store's "P-4A6A4F" is two letters over the tag at the
+		// floor; the hex alone still names it in its product, as a short commit sha does).
+		FString Id = PinList[Index].Line1;
+		FString Short;
+		if (!Fits(Id) && Id.Split(TEXT("-"), nullptr, &Short)) Id = Short;
+		if (Fits(Id)) Texts.Add({ Id, FVector2D(Min.X + Pad, Top(Min.Y + 26.f)), Bold, TagInk, Track });
 		// The second line as it fits: the risk and the count, else the risk alone.
-		FString Line2 = PinList[Index].Line2;
-		if (!Fits(Line2)) Line2 = FString::Printf(TEXT("RISK %d"), PinList[Index].Risk);
-		if (Fits(Line2)) Texts.Add({ Line2, FVector2D(Min.X + Pad, Top(Min.Y + 26.f + Cap + 20.f)), Bold, CountInk, Track });
+		const FString* Line2 = PinList[Index].Line2.FindByPredicate(Fits);
+		if (Line2) Texts.Add({ *Line2, FVector2D(Min.X + Pad, Top(Min.Y + 26.f + Cap + 20.f)), Bold, CountInk, Track });
 	}
 	if (Tris.Num() > 0)
 	{
@@ -642,14 +687,120 @@ void ABpTable::DrawTags(UCanvas* Canvas, int32 Width, int32 Height)
 	}
 }
 
+void ABpTable::SetScanPlace(const TArray<FString>& Features, bool bAll)
+{
+	ScanPlanBox = FBox2D(ForceInit);
+	ScanWing.Reset();
+	const TSet<FString> Keep(Features);
+	for (int32 Index = 0; Index < SheetPlan->tiles.Num(); ++Index)
+	{
+		const FBpPlanTile& Tile = SheetPlan->tiles[Index];
+		if (!bAll && !Keep.Contains(Tile.id)) continue;
+		ScanPlanBox += FVector2D(Tile.box.x, Tile.box.y);
+		ScanPlanBox += FVector2D(Tile.box.x + Tile.box.w, Tile.box.y + Tile.box.h);
+		const int32 Room = TileRoom.IsValidIndex(Index) ? TileRoom[Index] : INDEX_NONE;
+		const FString Wing = RoomWing.IsValidIndex(Room) ? RoomWing[Room] : FString();
+		ScanWing = ScanWing.IsEmpty() || ScanWing == Wing ? Wing : TEXT("*");
+	}
+	ScanY = ScanTargetY = ScanPlanBox.bIsValid ? ScanPlanBox.Min.Y : 0.0;
+}
+
+bool ABpTable::StartReplay(const FString& Scope, const TArray<FString>& Features)
+{
+	const FBpScanState& State = FBpLinkModule::Get().GetScanState();
+	const FString Slug = FBpLinkModule::Get().GetProductSlug();
+	if (!State.bHasScan)
+	{
+		// The store has not been read yet: the replay starts on its first read (ReceiveScanState).
+		PendingReplayScope = Scope;
+		PendingReplayFeatures = Features;
+		UE_LOG(LogBpTable, Log, TEXT("BpScan: the replay over %s waits for %s's first /scan read"), *Scope, *Slug);
+		return false;
+	}
+	PendingReplayScope.Reset();
+	PendingReplayFeatures.Reset();
+	// The last completed measure run that read any of these features (the store's activity rows: reading, measured).
+	const TSet<FString> Keep(Features);
+	const FBpRun* Run = nullptr;
+	for (const FBpRun& Each : State.Scan.runs)
+	{
+		if (Each.phase != TEXT("measure") || Each.status != TEXT("done")) continue;
+		if (Run && Each.ended_at <= Run->ended_at) continue;
+		const bool bRead = State.Scan.activity.ContainsByPredicate([&Each, &Keep](const FBpActivity& Row)
+		{
+			return Row.run_id == Each.id && (Row.kind == TEXT("reading") || Row.kind == TEXT("measured")) && Keep.Contains(Row.feature);
+		});
+		if (bRead) Run = &Each;
+	}
+	if (!Run)
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpScan: %s has no completed scan that read %s; the beam stays off"), *Slug, *Scope);
+		return false;
+	}
+	TArray<const FBpActivity*> Rows;
+	for (const FBpActivity& Row : State.Scan.activity)
+	{
+		if (Row.run_id == Run->id && (Row.kind == TEXT("reading") || Row.kind == TEXT("measured")) && Keep.Contains(Row.feature)) Rows.Add(&Row);
+	}
+	Rows.Sort([](const FBpActivity& A, const FBpActivity& B) { return A.id < B.id; });
+	ReplayFeatures.Reset();
+	ReplayMeasured.Reset();
+	for (const FBpActivity* Row : Rows)
+	{
+		ReplayFeatures.Add(Row->feature);
+		ReplayMeasured.Add(Row->kind == TEXT("measured"));
+	}
+	ScanJob.Reset();
+	ScanRun = Run->id;
+	SetScanPlace(Features, false);
+	ReplayAt = 0;
+	ReplayClock = 0.0;
+	bScanReplay = ScanPlanBox.bIsValid;
+	bScanLive = bScanReplay;
+	SetActorTickInterval(0.f);
+	UE_LOG(LogBpTable, Log, TEXT("BpScan: replaying %s's run %s (%s, ended %s) over %s: rows=%d of %d activity rows, one per %.1f s"),
+		*Slug, *Run->id, *FString::Join(Run->lenses, TEXT(",")), *Run->ended_at, *Scope, Rows.Num(), State.Scan.activity.Num(), ScanReplayStepS);
+	return bScanReplay;
+}
+
 void ABpTable::UpdateScan(float DeltaSeconds)
 {
+	// A replay steps through the past run's rows; the line then eases to the row as it does for a live job.
+	if (bScanReplay && ReplayFeatures.Num() > 0)
+	{
+		ReplayClock += DeltaSeconds;
+		if (ReplayClock >= 0.0 && !bScanLive)
+		{
+			// The rest is over: the next pass starts at the place's far edge, as a live job does.
+			bScanLive = true;
+			ReplayAt = 0;
+			ScanY = ScanTargetY = ScanPlanBox.Min.Y;
+		}
+		while (bScanLive && ReplayClock >= ScanReplayStepS)
+		{
+			ReplayClock -= ScanReplayStepS;
+			if (++ReplayAt >= ReplayFeatures.Num())
+			{
+				bScanLive = false;
+				ReplayClock = -ScanReplayRestS;
+				break;
+			}
+		}
+		if (bScanLive)
+		{
+			const FString& Feature = ReplayFeatures[ReplayAt];
+			if (const FBpPlanTile* Tile = SheetPlan->tiles.FindByPredicate([&Feature](const FBpPlanTile& T) { return T.id == Feature; }))
+			{
+				ScanTargetY = Tile->box.y + Tile->box.h * (ReplayMeasured[ReplayAt] ? 1.0 : 0.5);
+			}
+		}
+	}
 	// The line eases toward the row being read, and fades in while the job runs, out when it ends.
 	const double Step = ScanEaseCmPerS / BpPlanUnitCm * DeltaSeconds;
 	ScanY += FMath::Clamp(ScanTargetY - ScanY, -Step, Step);
 	ScanStrength = bScanLive ? FMath::Min(1.f, ScanStrength + DeltaSeconds / 0.3f) : FMath::Max(0.f, ScanStrength - DeltaSeconds / ScanFadeS);
 	WriteScanParams(ScanStrength);
-	if (!bScanLive && ScanStrength <= 0.f && !IsLevelMoving()) SetActorTickInterval(0.25f);
+	if (!bScanLive && !bScanReplay && ScanStrength <= 0.f && !IsLevelMoving()) SetActorTickInterval(0.25f);
 }
 
 void ABpTable::WriteScanParams(float Strength)
@@ -755,6 +906,14 @@ void ABpTable::StartScan(const FString& Id, const FString& Lens)
 	else
 	{
 		UE_LOG(LogBpTable, Warning, TEXT("BpScan: refused, %s is no wing, room, bay or feature of the plan"), *Id);
+		return;
+	}
+	if (!FBpLinkModule::Get().IsKettle())
+	{
+		// A live product (the owner's ruling, FAD): nothing new starts from the table; the beam replays its last scan.
+		UE_LOG(LogBpTable, Warning, TEXT("BpScan: refused to POST a scan of %s:%s for %s, a live product; replaying its last completed scan instead"),
+			*Kind, *ScopeId, *FBpLinkModule::Get().GetProductSlug());
+		StartReplay(Kind + TEXT(":") + ScopeId, Features);
 		return;
 	}
 	const FString UseLens = Lens.IsEmpty() ? ActiveLens : Lens;

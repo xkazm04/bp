@@ -176,10 +176,14 @@ public:
 	/** Tags that would overlap from the target eye merge into the first one's (FC3): within TagClearUCm across, and along
 	 *  the paper within the depth the tag's height covers seen from the target eye (BpType's floor sets the tag's size). */
 	static constexpr float TagClearUCm = 8.3f;  // FM: with PinScale, the tag's width (6.6 cm) and a gap
-	/** The pins' display rule (FE, element 7): every feature with an open finding has its amber bead; a feature carries a
-	 *  standing pin with a tag only when one of its open findings is of high urgency, risk PinTagRiskMin or more
-	 *  (blueprint-ui.md, the swarm's decisions: "urgency from risk (7 or more high, 4 or more medium)"). The rule picks
-	 *  which tags show, never which findings exist: the tag names the feature's riskiest finding and counts the rest. */
+	/** The pins' display rule (FE, element 7; FAD, the owner's ruling of 2026-10-25: urgency is triage's, not change risk):
+	 *  every feature with an open finding has its amber bead; a feature carries a standing pin with a tag only when one of
+	 *  its open findings is urgent. A triaged finding (store v4 `tier`, blueprint-ui.md "Tier first") is urgent in the top
+	 *  tiers, PinTagTierMax or lower: T0 stop-ship and T1 before production. An untriaged one (Kettle's sim never ranks)
+	 *  keeps FE's stand-in, risk PinTagRiskMin or more (the swarm's decisions: "urgency from risk (7 or more high)"). The
+	 *  rule picks which tags show, never which findings exist: the tag names the feature's most urgent finding (urgent
+	 *  first, then tier as the ledger orders it, untriaged after T3, then risk) and counts the rest as +k. */
+	static constexpr int32 PinTagTierMax = 1;
 	static constexpr int32 PinTagRiskMin = 7;
 	/** A tag never stands over the wing labels (FE): a tagged pin whose tag the target eye would see over the label row
 	 *  rises on a longer stem until the tag's foot clears the row's far edge by TagRowGapCm (paper cm, seen from the eye). */
@@ -211,6 +215,12 @@ public:
 	static constexpr float ScanOverrunCm = 2.f;
 	static constexpr float ScanEaseCmPerS = 12.f;
 	static constexpr float ScanFadeS = 1.2f;
+	/** A live product's beam (FAD, the owner's ruling: live products show past runs only): BpScan.Start replays the last
+	 *  completed measure run's reading order, one activity row (reading or measured) per ScanReplayStepS, then rests
+	 *  ScanReplayRestS dark and starts over. The order is the run's own; the pace is the table's (a footprint run reads
+	 *  100 features in seconds). */
+	static constexpr float ScanReplayStepS = 0.6f;
+	static constexpr float ScanReplayRestS = 2.5f;
 	/** The scan's veil (FP, element 15, the judge's "the scan line throws visible glow into the air"): a sheet of haze
 	 *  ScanVeilHeightCm tall standing on the line across the paper, brightest at its foot, at ScanVeilGlow times the line's
 	 *  strength (M_HazeVeil's Glow, falloff ScanVeilPow). Nothing in it is data beyond the line's row. */
@@ -757,10 +767,14 @@ private:
 		int32 Tile = INDEX_NONE;
 		int32 Room = INDEX_NONE;
 		FString Line1;
-		FString Line2;
+		/** The tag's second line, longest first: DrawTags sets the first that fits. */
+		TArray<FString> Line2;
 		/** The open findings on this feature. */
 		int32 Findings = 0;
-		/** The riskiest open finding on it (its tag's first line) and its risk. */
+		/** The most urgent open finding on it (its tag's first line): whether it is urgent, its tier (untriaged: -1) and
+		 *  its risk. */
+		bool bUrgent = false;
+		int32 Tier = -1;
 		int32 Risk = 0;
 		/** Whether it stands with a tag (the display rule, then FC3's merge: a tag that would overlap a nearer one's from
 		 *  the target eye gives its count to that one), its atlas cell, and how far it rises on its stem (paper cm). */
@@ -788,6 +802,20 @@ private:
 	double ScanTargetY = 0.0;
 	float ScanStrength = 0.f;
 	bool bScanLive = false;
+	/** The replay of a past run (a live product): its rows' features and whether each row is a measured one, the row the
+	 *  line is on, and the time on it (negative while resting between passes). */
+	bool bScanReplay = false;
+	TArray<FString> ReplayFeatures;
+	TArray<bool> ReplayMeasured;
+	int32 ReplayAt = 0;
+	double ReplayClock = 0.0;
+	/** A replay asked for before the first /scan read (a -ExecCmds start): its scope and features, started on that read. */
+	FString PendingReplayScope;
+	TArray<FString> PendingReplayFeatures;
+	/** Starts the replay of the last completed measure run over these features; false (logged) when none read them. */
+	bool StartReplay(const FString& Scope, const TArray<FString>& Features);
+	/** The scanned place: the union of these features' tiles (ScanPlanBox) and its wing (ScanWing, "*" across wings). */
+	void SetScanPlace(const TArray<FString>& Features, bool bAll);
 	bool bCardShown = false;
 	FString CardProposal;
 
