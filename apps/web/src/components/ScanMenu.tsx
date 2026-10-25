@@ -9,14 +9,17 @@
 // full queue disables every item with the server's words as its description, a duplicate is only shown. The engine opens it (`contextmenu` -> `S.menu`, canvas
 // CSS px); it closes on a choice, Esc, Tab, a click elsewhere, a pan or a wheel. Keys are its own (data-keys="own"):
 // arrows / Home / End move through the items (ProjectSwitcher's roving focus), Enter or Space chooses.
+// A live lens its repo cannot measure yet (ProductInfo.setup: the lens-scan overlay names no probes, scan/lens-setup.ts) is not
+// a dead end: its button reads "prepare" and queues a prepare job that adjusts the repo, "Scan all lenses" leaves it out, and in
+// its own lens view the scope items stay as "Scan anyway" under a "Prepare repo" item (the menu re-reads the list on opening).
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { overlayRight } from '@/engine/chrome';
 import type { ScanMenuState } from '@/engine/state';
 import { glyph, type GlyphSpec } from '@/engine/render/lens-glyph';
-import { refusalText, startScan, startSelectionScan } from '@/lib/scan/actions';
+import { prepareLens, refusalText, startScan, startSelectionScan } from '@/lib/scan/actions';
 import { MAX_RUNNING, MAX_SELECTION, scannable, type ScanScope } from '@bp/core/scan/jobs';
 import { factsWords, queueRoom, scopeFacts } from '@bp/core/scan/views';
-import { useProjects } from '@/lib/scan/projects';
+import { refreshProjects, useProjects } from '@/lib/scan/projects';
 import { scopesAt } from '@/lib/scan/scan-views';
 import { shallowEqual, useBp, useEngine, useScanCtx } from './hooks';
 import { useScanJobs } from './rail/panels';
@@ -69,7 +72,11 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
   }, [E, m, sel]);
   const lenses = useMemo(() => P.lenses.map((d) => ({ id: d.id, name: d.name, short: d.short, glyph: d.glyph, ok: scannable({ id: d.id, manifest: d.manifest }, !!ctx.sim) })), [P, ctx.sim]);
   const lensView = view !== GENERAL ? lenses.find((l) => l.id === view) : undefined;
-  const scanOk = lenses.filter((l) => l.ok), off = lenses.filter((l) => !l.ok);
+  // what each live lens lacks in the repo; Kettle's sample needs nothing
+  const needs = useMemo(() => new Map((ctx.slug ? list?.find((p) => p.slug === ctx.slug)?.setup ?? [] : []).map((n) => [n.lens, n])), [ctx.slug, list]);
+  const scanOk = lenses.filter((l) => l.ok && !needs.has(l.id)), off = lenses.filter((l) => !l.ok);
+  const needy = lenses.filter((l) => l.ok && needs.has(l.id));
+  const viewNeed = lensView ? needs.get(lensView.id) : undefined;
   const T = m.tile ? E.M.L.TILE[m.tile] : undefined, last = m.chain[m.chain.length - 1];
   const at = last ? E.placeById(last.t, last.id) : null;
   const what = T ? T.f.name : opts.find((o) => o.kind !== 'feature' && o.kind !== 'all' && o.kind !== 'selection')?.scope.label ?? (at ? 'this place' : 'the whole plan');
@@ -99,6 +106,15 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
       else E.toast(n === 1 ? 'Scanning ' + name(ids[0]) : 'Scanning ' + n + ' lenses', scope.label + ' · ' + count(scope) + ' features');
     });
   };
+
+  const prepare = (id: string) => {
+    close();
+    const name = P.LENS[id]?.name ?? id;
+    prepareLens(ctx, id).then(() => E.toast('Preparing the repo for ' + name, 'Claude Code adds what lens-scan needs to measure it' + (root ? ' in ' + root : '') + '; scan it when the job is done'))
+      .catch((e) => E.toast('Repo preparation not started', name + ': ' + refusalText(e), undefined, undefined, 'bad'));
+  };
+  // the setup verdict comes with the project list: read it again, since a prepare job or a hand edit may have changed the overlay
+  useEffect(() => { if (ctx.slug) void refreshProjects(); }, [ctx.slug]);
 
   // placement: at the pointer, flipped and clamped into the safe area, clear of an open rail flyout
   useLayoutEffect(() => {
@@ -140,11 +156,18 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
     <div ref={ref} id="scanmenu" className="sm" role="menu" aria-label={'Scan ' + what} data-keys="own" onKeyDown={onKey} onContextMenu={(e) => e.preventDefault()} style={{ visibility: 'hidden' }}>
       <div className="sm-h"><span>Scan</span><b title={what}>{what}</b></div>
       {queue.running + queue.queued > 0 && <div id="sm-q" className={'sm-q' + (queue.full ? ' warn' : '')}>{queue.full ? queue.why : queue.running + ' of ' + MAX_RUNNING + ' running · ' + queue.queued + ' queued'}</div>}
+      {lensView && viewNeed && (
+        <button type="button" role="menuitem" tabIndex={-1} className={'sm-it need' + (queue.full ? ' off' : '')} aria-disabled={queue.full ? true : undefined} aria-describedby={qd} title={viewNeed.why} onClick={() => !queue.full && prepare(lensView.id)}>
+          <ScanGlyph g={lensView.glyph} />
+          <span className="t">Prepare repo for {lensView.name}</span>
+          <span className="n">needs setup</span>
+        </button>
+      )}
       {opts.map((o) => lensView ? (
         <button key={o.kind} type="button" role="menuitem" tabIndex={-1} className={'sm-it' + (lensView.ok && !queue.full ? '' : ' off')} aria-disabled={lensView.ok && !queue.full ? undefined : true} aria-describedby={qd}
           title={lensView.ok ? fact(lensView.id, o.kind).say : undefined} onClick={() => lensView.ok && !queue.full && run([lensView.id], o.scope)}>
           <ScanGlyph g={lensView.glyph} />
-          <span className="t">Scan {lensView.name} · <i>{o.title}</i> {o.kind === 'all' || o.kind === 'selection' ? '' : o.scope.label}</span>
+          <span className="t">{viewNeed ? 'Scan anyway' : 'Scan ' + lensView.name} · <i>{o.title}</i> {o.kind === 'all' || o.kind === 'selection' ? '' : o.scope.label}</span>
           <span className="n">{lensView.ok ? fact(lensView.id, o.kind).n : 'no scan method'}</span>
         </button>
       ) : (
@@ -157,6 +180,13 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
           </button>
           <div className="sm-ls">
             {lenses.map((l) => {
+              const need = l.ok ? needs.get(l.id) : undefined;
+              if (need) return (
+                <button key={l.id} type="button" role="menuitem" tabIndex={-1} className={'sm-l need' + (queue.full ? ' off' : '')} aria-disabled={queue.full ? true : undefined} aria-describedby={qd}
+                  aria-label={'Prepare the repo for ' + l.name + ': ' + need.why} title={l.name + ' needs repo setup: ' + need.why} onClick={() => !queue.full && prepare(l.id)}>
+                  <ScanGlyph g={l.glyph} px={12} />{l.short}<span className="bz"> · prepare</span>
+                </button>
+              );
               const f = l.ok ? fact(l.id, o.kind) : null, why = f ? ': ' + f.say : ': no scan method';
               return (
                 <button key={l.id} type="button" role="menuitem" tabIndex={-1} className={'sm-l' + (l.ok && !queue.full ? '' : ' off')} aria-disabled={l.ok && !queue.full ? undefined : true} aria-describedby={qd}
@@ -169,6 +199,7 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
           </div>
         </div>
       ))}
+      {(lensView ? !!viewNeed : needy.length > 0) && <div className="sm-f need">{lensView ? viewNeed!.why : needy.map((l) => l.name + ': ' + needs.get(l.id)!.why).join('; ')}. Prepare queues Claude Code to add it to the repo.</div>}
       {(lensView ? !lensView.ok : off.length > 0) && <div className="sm-f">No scan method: {(lensView ? [lensView] : off).map((l) => l.name).join(', ')}. Add a manifest <code>scan</code> block to scan it.</div>}
       {ctx.slug && <div className="sm-f warn">Runs Claude Code {root ? <>in <code>{root}</code></> : 'in this product’s checkout'} with permissions skipped</div>}
     </div>

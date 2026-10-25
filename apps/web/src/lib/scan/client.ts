@@ -277,6 +277,8 @@ export type { LensExecuteResult } from '@bp/core/scan/jobs';
 import type { LensExecuteResult } from '@bp/core/scan/jobs';
 /** Approve the lens's proposed findings and build them with its approved ones, in execute jobs of at most 50. 409 = nothing to build. */
 export const executeLens = (slug: string, lens: string): Promise<LensExecuteResult> => send(api(slug) + '/lenses/' + encodeURIComponent(lens) + '/execute', 'POST', {});
+/** Queue a prepare job: the CLI makes the lens measurable in the product repo (probes + the overlay's `## Probes`). 400 not-preparable, 409 one runs. */
+export const postPrepare = (slug: string, lens: string): Promise<ScanJob> => send(api(slug) + '/lenses/' + encodeURIComponent(lens) + '/prepare', 'POST', {});
 
 // The release train's routes, each answer through the one parser door (src/lib/train/wire.ts). A rejection carries
 // `status` and `body`: a non-2xx has the route's status and its body (the validated value when it is one, as triage's

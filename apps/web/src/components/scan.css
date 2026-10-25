@@ -23,6 +23,9 @@
 .sm-f { padding: 6px 12px 2px; font-size: 12px; color: var(--ink-2); }
 .sm-f code { font: 400 12px var(--mono); overflow-wrap: anywhere; }
 .sm-f.warn { color: var(--amber-2); }
+/* a lens the repo cannot measure yet: its action prepares the repo (lens-setup.ts), in the watch tone, never disabled */
+.sm-l.need { border-style: dashed; border-color: var(--amber); }
+.sm-l.need .bz, .sm-it.need .n, .sm-f.need { color: var(--amber-2); }
 
 /* ---------- Agents flyout: Scans */
 .scans { list-style: none; margin: 0 0 4px; padding: 0 12px; display: flex; flex-direction: column; gap: 6px; }

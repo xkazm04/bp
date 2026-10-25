@@ -4,7 +4,9 @@
 // tasks; or the overview, which keeps the steering of the current selection and the swarm's latest lines.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { TICK_CLASS, astat, type SimAgent } from '@bp/core/model';
-import { cancelJob, refusalText } from '@/lib/scan/actions';
+import { cancelJob, prepareLens, refusalText, startScan } from '@/lib/scan/actions';
+import { NOTHING_TO_MEASURE, PREPARABLE } from '@bp/core/scan/lens-setup';
+import { refreshProjects } from '@/lib/scan/projects';
 import { jobLabel, type ScanJob } from '@bp/core/scan/jobs';
 import { jobProgress } from '@/lib/scan/scan-views';
 import { logBlocks, type Span } from '@/lib/scan/log-md';
@@ -33,12 +35,12 @@ function tally(ag: readonly SimAgent[]) {
 /** A job's figures, shared by its row and its detail. A release job names no proposals: its progress is its release's
  *  status (`rel`, when the snapshot has the row), never a count. */
 function jobFacts(j: ScanJob, scan: ScanSnapshot | undefined, total: number, now: number) {
-  const measure = j.kind === 'measure', release = j.kind === 'release', pr = measure ? jobProgress(j, scan, total) : null;
+  const measure = j.kind === 'measure', release = j.kind === 'release', prepare = j.kind === 'prepare', pr = measure ? jobProgress(j, scan, total) : null;
   const built = j.kind === 'execute' && scan ? scan.proposals.filter((p) => j.proposals?.includes(p.id) && p.status === 'done').length : 0;
   const n = measure ? (pr && j.status === 'done' ? pr.m : pr?.n ?? 0) : built, m = measure ? pr?.m ?? 0 : j.proposals?.length ?? 0;
   const rel = release && j.release ? scan?.releases.find((r) => r.id === j.release) : undefined;
   const t0 = Date.parse(j.started_at ?? j.queued_at), t1 = j.ended_at ? Date.parse(j.ended_at) : now;
-  return { measure, release, rel, n, m, clock: j.status === 'queued' ? mmss(now - Date.parse(j.queued_at)) : mmss(t1 - t0), open: j.status === 'queued' || j.status === 'running' };
+  return { measure, release, prepare, rel, n, m, clock: j.status === 'queued' ? mmss(now - Date.parse(j.queued_at)) : mmss(t1 - t0), open: j.status === 'queued' || j.status === 'running' };
 }
 
 export function Agents() {
@@ -94,8 +96,9 @@ export function Agents() {
               <span className="rt one">{x.measure ? d?.name ?? j.lens : jobLabel(j)}</span>
               {x.release
                 ? <span className="rm"><span>{j.release}</span>{x.rel && <span>{x.rel.status}</span>}</span>
+                : x.prepare ? <span className="rm"><span>repo setup</span></span>
                 : <span className="rm"><span>{x.measure ? j.scope?.label ?? 'Everything' : (j.proposals ?? []).join(', ')}</span><span>{x.n}/{x.m}</span></span>}
-              {!x.release && <span className="bar" aria-hidden="true"><i style={{ width: (x.m ? (100 * x.n) / x.m : 0) + '%' }} /></span>}
+              {!x.release && !x.prepare && <span className="bar" aria-hidden="true"><i style={{ width: (x.m ? (100 * x.n) / x.m : 0) + '%' }} /></span>}
             </Row>
           );
         }) : note ? <li className="wb-none"><b>{note[0]}</b> {note[1]}</li>
@@ -148,16 +151,32 @@ function JobDetail({ j, scan, total, now, live, focusCancel }: { j: ScanJob; sca
   useEffect(() => { if (focusCancel.current) { focusCancel.current = false; cancelRef.current?.focus(); } });
   const d = j.lens ? M.P.LENS[j.lens] : undefined, x = jobFacts(j, scan, total, now);
   const cancel = () => { setBusy(true); cancelJob(ctx, j.id).catch((e) => E.toast('Not cancelled', refusalText(e))).finally(() => setBusy(false)); };
+  // a measure job lens-scan refused for want of probes offers the repo's preparation; a prepare job that is done, the scan
+  const lensName = d?.name ?? j.lens ?? 'lens';
+  const canPrepare = j.kind === 'measure' && j.status === 'failed' && !!j.lens && PREPARABLE.includes(j.lens) && NOTHING_TO_MEASURE.test(j.error ?? '');
+  const canScan = x.prepare && j.status === 'done' && !!j.lens;
+  const prep = () => { setBusy(true); prepareLens(ctx, j.lens!).then(() => E.toast('Preparing the repo for ' + lensName, 'Claude Code adds what lens-scan needs to measure it')).catch((e) => E.toast('Repo preparation not started', refusalText(e), undefined, undefined, 'bad')).finally(() => setBusy(false)); };
+  const scanNow = () => {
+    setBusy(true);
+    void refreshProjects(true); // the menu's setup verdict changed with the overlay
+    startScan(ctx, j.lens!, { kind: 'all', label: 'Everything', features: [] }).then(() => E.toast('Scanning ' + lensName, 'Everything · ' + total + ' features')).catch((e) => E.toast('Scan not started', refusalText(e), undefined, undefined, 'bad')).finally(() => setBusy(false));
+  };
   const pct = x.m ? Math.round((100 * x.n) / x.m) : 0;
   // the release's pull request, only when the store's URL is safe to hand to an href (Queue.tsx httpUrl)
   const pr = httpUrl(x.rel?.pr_url);
   return (
     <>
-      <div className="wb-kick"><span className={'st ' + j.status}>{j.status}</span><span>{x.measure ? 'Measure' : j.kind === 'release' ? 'Release' : 'Execute'}</span><span>{j.id}</span></div>
-      <h3 className="wb-title wb-glyph">{d?.glyph ? <ScanGlyph g={d.glyph} px={24} /> : null}{x.measure ? d?.name ?? j.lens ?? 'Scan' : j.kind === 'release' ? jobLabel(j) : 'Execute ' + (j.proposals?.length ?? 0) + ' approved finding' + (j.proposals?.length === 1 ? '' : 's')}</h3>
+      <div className="wb-kick"><span className={'st ' + j.status}>{j.status}</span><span>{x.measure ? 'Measure' : j.kind === 'release' ? 'Release' : x.prepare ? 'Prepare' : 'Execute'}</span><span>{j.id}</span></div>
+      <h3 className="wb-title wb-glyph">{d?.glyph ? <ScanGlyph g={d.glyph} px={24} /> : null}{x.measure ? d?.name ?? j.lens ?? 'Scan' : j.kind === 'release' || x.prepare ? jobLabel(j) : 'Execute ' + (j.proposals?.length ?? 0) + ' approved finding' + (j.proposals?.length === 1 ? '' : 's')}</h3>
       <p className="wb-lede">{x.release ? (j.step === 'finish' ? 'Finish: tag the merged release and publish it on GitHub.' : 'Build: cherry-pick the accepted items, run the gates, open the pull request.')
+        : x.prepare ? 'Make ' + lensName + ' measurable in this repo: probe scripts against a production build and the overlay’s ## Probes entries.'
         : x.measure ? 'Scope: ' + (j.scope?.label ?? 'everything') : (j.proposals ?? []).join(', ') || 'No proposals named.'}</p>
-      {x.release ? (
+      {x.prepare ? (
+        <div className="wb-figs">
+          <Fig n={x.clock} label={j.status === 'queued' ? 'waiting' : x.open ? 'elapsed' : 'took'} />
+          {j.exit_code !== undefined && <Fig n={j.exit_code} label="exit code" tone={j.exit_code ? 'red' : undefined} />}
+        </div>
+      ) : x.release ? (
         <div className="wb-figs">
           <Fig n={j.step ?? 'build'} label="step" />
           {j.version && <Fig n={j.version} label="version" />}
@@ -179,6 +198,8 @@ function JobDetail({ j, scan, total, now, live, focusCancel }: { j: ScanJob; sca
       <div className="wb-inline">
         {x.open && <button ref={cancelRef} type="button" className="bt" disabled={busy} onClick={cancel} aria-label={'Cancel ' + (d?.name ?? (x.release ? 'release' : 'execute')) + ' job ' + j.id}>Cancel job</button>}
         <span className="wb-meta">queued {j.queued_at.slice(11, 19)}{j.started_at ? ' · started ' + j.started_at.slice(11, 19) : ''}{j.ended_at ? ' · ended ' + j.ended_at.slice(11, 19) : ''}{j.run_id ? ' · run ' + j.run_id : ''}{j.release ? ' · ' + j.release : ''}</span>
+        {canPrepare && <button type="button" className="bt" disabled={busy} onClick={prep}>Prepare repo for {lensName}</button>}
+        {canScan && <button type="button" className="bt" disabled={busy} onClick={scanNow}>Scan {lensName} now</button>}
         {pr && <a className="wb-meta" href={pr} target="_blank" rel="noopener noreferrer">pull request</a>}
       </div>
       {j.error && <div className="wb-err">{j.error}</div>}

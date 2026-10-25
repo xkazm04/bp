@@ -4,7 +4,7 @@
 import type { ReleaseReady, ScanSim } from '@bp/core/model/scan-sim';
 import { takenLooks, type ScanJob, type ScanScope } from '@bp/core/scan/jobs';
 import type { LensEntry, LensManifest } from '@bp/core/standard/types';
-import { deleteJob, deleteWaveReq, executeLens, getCommitDiff, getReleaseSuggestion, getWaves, patchWaveReq, postDispatch, postProjectLens, postRelease, postReleaseBuild, postReleaseBuildDry, postReleaseFinish, postScan, postTriage, postWave, postWaveDispatch, type LensExecuteResult } from './client.ts';
+import { deleteJob, deleteWaveReq, executeLens, getCommitDiff, getReleaseSuggestion, getWaves, patchWaveReq, postDispatch, postPrepare, postProjectLens, postRelease, postReleaseBuild, postReleaseBuildDry, postReleaseFinish, postScan, postTriage, postWave, postWaveDispatch, type LensExecuteResult } from './client.ts';
 import type { CommitDiff, ReleaseCreated, TriageBody, TriageDecision, TriageResult, VersionSuggestion } from '@bp/core/scan/types';
 import type { Wave, WaveBody, WaveDispatchResult } from '@bp/core/scan/waves';
 import { checkLensManifest } from '@bp/core/scan/manifest-check';
@@ -48,6 +48,13 @@ export async function startSelectionScan(ctx: ScanCtx, lens: string, features: s
 export async function executeLensBacklog(ctx: ScanCtx, lens: string): Promise<LensExecuteResult> {
   if (ctx.slug) return executeLens(ctx.slug, lens);
   if (ctx.sim) return ctx.sim.executeLens(lens);
+  throw nowhere();
+}
+
+/** Adjust the product repo so lens-scan can measure `lens` (a prepare job, jobs.server.ts preparePrompt); Kettle's sim ends it done. */
+export async function prepareLens(ctx: ScanCtx, lens: string): Promise<ScanJob> {
+  if (ctx.slug) return postPrepare(ctx.slug, lens);
+  if (ctx.sim) return ctx.sim.prepareLens(lens);
   throw nowhere();
 }
 

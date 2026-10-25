@@ -369,10 +369,11 @@ expect(para.includes(`\`LENS_DRAFT_TIMEOUT_MS\` (${client.LENS_DRAFT_TIMEOUT_MS 
   const f5b = scopeFacts({ jobs: queued(15), scan: EMPTY, lens: 'security', features: ['a'], now });
   expect(f5?.queue.running === 1 && f5.queue.queued === 16 && f5.queue.full === true && f5.queue.why === '16 jobs are already queued' && f5b?.queue.full === false && f5b.queue.why === undefined,
     'scopeFacts: 16 queued jobs do not read a full queue with the server\'s words (or 15 does)', JSON.stringify([f5?.queue, f5b?.queue]));
-  // the menu renders the facts: one source, the queue cap on every scan item, no lens id branched on
+  // the menu renders the facts: one source, the queue cap on every item that queues a job (3 scan items and the 2 prepare items
+  // of a lens the repo cannot measure yet), no lens id branched on
   const sm = readStripped(path.join(SRC, 'components/ScanMenu.tsx')).replace(/\r\n/g, '\n');
   const items = sm.match(/role="menuitem" tabIndex=[^>]*/g) ?? []; // the JSX items, not the selectors that find them
-  expect(/\bscopeFacts\(/.test(sm) && /useScanJobs\(false, true\)/.test(sm) && items.length === 3 && items.every((t) => /aria-disabled=\{[^}]*queue\.full/.test(t) && /aria-describedby=/.test(t))
+  expect(/\bscopeFacts\(/.test(sm) && /useScanJobs\(false, true\)/.test(sm) && items.length === 5 && items.every((t) => /aria-disabled=\{[^}]*queue\.full/.test(t) && /aria-describedby=/.test(t))
     && !/(['"])(security|design|development|performance)\1/.test(sm), 'ScanMenu.tsx does not read scopeFacts over useScanJobs, put queue.full and its reason on every scan item, or branches on a lens id', String(items.length));
   // Kettle: the sim's own jobs and snapshot feed the same facts, and its refusal agrees with queue.full
   const { ScanSim } = await import('../packages/core/src/model/scan-sim.ts');
@@ -386,6 +387,21 @@ expect(para.includes(`\`LENS_DRAFT_TIMEOUT_MS\` (${client.LENS_DRAFT_TIMEOUT_MS 
     expect(k?.busy?.status === 'running' && k.busy.overlap === 1 && k.busy.of === 2 && k.queue.running === 3 && k.queue.full === true && refused === 429,
       'Kettle: the scan sim\'s jobs do not read the same facts (running 1 of 2, 3 running, queue full) or its 17th refusal disagrees', JSON.stringify([k?.busy, k?.queue, refused]));
   } finally { sim.dispose(); }
+  // Kettle answers a prepare as the route does: a prepare job (no run) that ends done, its refusals by status
+  let t = now;
+  const ps = new ScanSim({ now: () => t, findings: [] });
+  try {
+    const man = { id: 'x', fields: [], presentation: { glyph: 'bars', line: 'solid' } };
+    ps.bind({ order: ['a'], manifest: (l: string) => (l === 'nope' ? undefined : man) as never, value: () => undefined });
+    const runs0 = ps.snapshot().runs.length, pj = ps.prepareLens('performance');
+    const code = (f: () => unknown) => { try { f(); return 0; } catch (e) { return (e as { status?: number }).status ?? -1; } };
+    const again = code(() => ps.prepareLens('performance')), dev = code(() => ps.prepareLens('development')), nope = code(() => ps.prepareLens('nope'));
+    t += 60000;
+    await new Promise((r) => setTimeout(r, 400)); // a tick of the sim's own timer
+    const done = ps.jobs().find((j) => j.id === pj.id);
+    expect(pj.kind === 'prepare' && again === 409 && dev === 400 && nope === 400 && done?.status === 'done' && done.run_id === undefined && /^lens-scan prepared:/.test(done.log_tail ?? '')
+      && ps.snapshot().runs.length === runs0, 'Kettle: prepareLens does not queue a prepare job that ends done with no run, or its refusals (409 twice, 400 not-preparable / unknown) differ', JSON.stringify([again, dev, nope, done]));
+  } finally { ps.dispose(); }
 }
 
 if (failures.length) { console.log(failures.map((f) => 'FAIL ' + f).join('\n')); console.log(`check-scan-client: ${failures.length} failed, ${held} held`); process.exit(1); }
