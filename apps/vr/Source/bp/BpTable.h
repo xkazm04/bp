@@ -141,7 +141,7 @@ public:
 	static constexpr float HighlightGlyphShow = 5.0f;  // FQ: 5 (FP 2), its furniture over its own glass
 	/** While a room is pointed at rest, every other room's walls, cells and furniture dim to this (FO, element 6: the
 	 *  concept's neighbours recede around the raised room). Clearing the highlight restores them. */
-	static constexpr float PointedDim = 0.5f;
+	static constexpr float PointedDim = 0.4f;  // FR: 0.4 (FO 0.5), the rest of the wing recedes further
 	/** The other rooms' furniture dims only this far (FP: at PointedDim the additive glyphs went to grey smears, the judge's
 	 *  wings A and B); the walls carry the focal contrast. */
 	static constexpr float PointedGlyphDim = 0.9f;
@@ -177,11 +177,13 @@ public:
 	static constexpr float TagRowGapCm = 0.6f;
 	/** The beads on the plan (every pin) and the stems under a risen pin: the pin's own amber, the bead PinBeadCm across,
 	 *  the stem PinStemCm thick (the pin's stem at PinScale). */
-	static constexpr float PinBeadCm = 1.1f;
-	static constexpr float PinStemCm = 0.12f;  // FK halved it (element 7: the concept's stems are hairlines)
+	static constexpr float PinBeadCm = 0.9f;  // FR: 0.9 (from 1.1), the judges' "stray amber dots"
+	/** FR (the judges: "thick, oversaturated stems"): the modelled body (its stem and ball, about 4 px wide at PinScale)
+	 *  draws with HiddenMaterial, and this hairline runs from the bead up to the tag's foot instead. */
+	static constexpr float PinStemCm = 0.09f;  // FR: 0.09 to the tag (FK 0.12 to the pin's foot)
 	/** Each bead's halo (FG, element 7: the concept's beads glow): a sphere this many times the bead, additive, brightest
 	 *  over the bead and gone at its rim (M_PinHalo). */
-	static constexpr float PinHaloScale = 3.2f;
+	static constexpr float PinHaloScale = 2.7f;  // FR: 2.7 (from 3.2)
 	/** The mesh's tag faces its +-Y; this turns it to the viewer at the near edge. */
 	static constexpr float PinYawDeg = 90.f;
 	/** The tag atlas: TagAtlasCols x TagAtlasRows cells of TagCellWidthPx x TagCellHeightPx (the tag's 2.2 : 1.4). */
@@ -217,8 +219,10 @@ public:
 	 *  lamp agent's head, as the concept's card; FE placed it by capture, FG moved it 7 cm left so it covers the end of
 	 *  FI's reaching arm, as the concept's card hides the agent's hand). */
 	static constexpr float CardPlaceXCm = 36.f;
-	static constexpr float CardPlaceYCm = 56.f;  // FQ: 56 (FP 40, FK 32), clear of the agent's arm, the city's towers between them (element 14)
+	static constexpr float CardPlaceYCm = 44.f;  // FR: 44 (FQ 56, FP 40), in from the frame's corner, above the tags, the towers right of it (by capture)
 	static constexpr float CardAboveTopCm = 25.f;
+	/** The card drawn this many times its layout size (FR, element 10: the judges' "small text"); its text scales with it. */
+	static constexpr float CardScale = 1.08f;
 
 	ABpTable();
 

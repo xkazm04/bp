@@ -245,7 +245,10 @@ void ABpTable::LoadMarks()
 		const int32 BodySlot = Pins->GetMaterialIndex(TEXT("pin_body"));
 		if (BodySlot != INDEX_NONE)
 		{
-			if (UMaterialInterface* Body = LoadSoft(PinBodyMaterial)) Pins->SetMaterial(BodySlot, Body);
+			// FR: the body (its modelled stem and ball) is hidden; PlacePins draws a hairline stem in its place.
+			UMaterialInterface* Body = LoadSoft(HiddenMaterial);
+			if (!Body) Body = LoadSoft(PinBodyMaterial);
+			if (Body) Pins->SetMaterial(BodySlot, Body);
 		}
 		const int32 TagSlot = Pins->GetMaterialIndex(TEXT("pin_tag"));
 		if (TagSlot != INDEX_NONE && TagMid) Pins->SetMaterial(TagSlot, TagMid);
@@ -561,9 +564,11 @@ void ABpTable::PlacePins()
 		if (!Pin.bTagged) continue;
 		const FVector Head = Group.TransformPosition(PaperCmToLocal(Centre, StandCm + Pin.RaiseCm));
 		PinPlaces.Add(FTransform(FRotator(0.f, PinYawDeg, 0.f), Head, FVector(PinScale)));
-		// The stem from the bead up to the risen pin (the engine cube: 100 cm, pivot at its centre); flat when it stands.
-		const double Length = (Head - Foot).Size();
-		StemPlaces.Add(FTransform(FQuat::Identity, (Head + Foot) * 0.5, FVector(PinStemCm / 100.0, PinStemCm / 100.0, Length / 100.0)));
+		// The hairline from the bead up to the tag's foot (the engine cube: 100 cm, pivot at its centre); the pin's own body
+		// is hidden (HiddenMaterial), so the hairline is the whole stem.
+		const FVector TagFoot = Group.TransformPosition(PaperCmToLocal(Centre, StandCm + Pin.RaiseCm + (PinModelCm - PinTagModelCm) * PinScale));
+		const double Length = (TagFoot - Foot).Size();
+		StemPlaces.Add(FTransform(FQuat::Identity, (TagFoot + Foot) * 0.5, FVector(PinStemCm / 100.0, PinStemCm / 100.0, Length / 100.0)));
 	}
 	if (PinPlaces.Num() > 0 && Pins->GetInstanceCount() == PinPlaces.Num()) Pins->BatchUpdateInstancesTransforms(0, PinPlaces, false, true);
 	if (BeadPlaces.Num() > 0 && PinBeads->GetInstanceCount() == BeadPlaces.Num()) PinBeads->BatchUpdateInstancesTransforms(0, BeadPlaces, false, true);
@@ -914,13 +919,16 @@ void ABpTable::RefreshCard()
 		]
 		]);
 	Card->SetDrawSize(FVector2D(CardWidthCm * PxPerCm, CardHeightCm * PxPerCm));
-	Card->SetRelativeScale3D(FVector(1.0 / PxPerCm));
 	Card->RequestRedraw();
 	Card->SetVisibility(bCardShown);
-	// Near the lamp agent at the far edge, right of it and above the rim. Upright and square to the person at the near
-	// edge (FM, element 10: the judge's "upright rather than tilted"): it faces back across the table (-X), no pitch, so
-	// it stands as the concept's card does instead of leaning toward the eye.
+	// Near the lamp agent at the far edge, right of it and above the rim. Upright (FM, element 10: the judge's "upright
+	// rather than tilted"): no pitch, so it stands as the concept's card does instead of leaning toward the eye. FR (the
+	// judges: "tilted"): turned about its vertical axis to face the target eye, not straight back across the table (-X);
+	// right of the centre line, a card square to -X was seen at an angle and read as tilted.
 	const FVector Place(CardPlaceXCm, CardPlaceYCm, PlacedHeightCm + CardAboveTopCm);
-	Card->SetRelativeLocationAndRotation(Place, FRotator(0.f, 180.f, 0.f));
+	const FVector Eye(-(TableDepthCm * 0.5 + ABpGameMode::TargetBehindNearEdgeCm), 0.0, PlacedHeightCm + ABpGameMode::TargetEyeAboveTopCm);
+	const float FaceYaw = FMath::RadiansToDegrees(FMath::Atan2(Eye.Y - Place.Y, Eye.X - Place.X));
+	Card->SetRelativeLocationAndRotation(Place, FRotator(0.f, FaceYaw, 0.f));
+	Card->SetRelativeScale3D(FVector(CardScale / PxPerCm));
 	UE_LOG(LogBpTable, Log, TEXT("BpTable: card proposal=%s target=\"%s\" status=%s"), *Ask->id, *Target, *Ask->status);
 }

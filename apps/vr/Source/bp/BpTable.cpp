@@ -137,10 +137,12 @@ namespace
 	/** The wing labels sit on a slight dark backing (FK, element 3), so no glowing edge behind them reads through. */
 	constexpr double LabelBackPadCm = 0.3;
 	const FLinearColor LabelBacking(0.003f, 0.01f, 0.045f, 0.55f);
-	/** The floating wing labels (FO, element 3: "small, dim"): their backing nearly opaque, as they are seen over the frame's
-	 *  glowing rim, and each tilted up toward the person about its bottom edge (hung from its top, it dipped into the paper), so it is seen nearly square instead of at
-	 *  the paper's grazing angle (about 2.4 times taller from the target eye at 45 degrees). */
-	const FLinearColor FloatLabelBacking(0.003f, 0.01f, 0.045f, 0.85f);
+	/** The floating wing labels (FO, element 3: "small, dim"), each tilted up toward the person about its bottom edge (hung
+	 *  from its top, it dipped into the paper), so it is seen nearly square instead of at the paper's grazing angle (about
+	 *  2.4 times taller from the target eye at 45 degrees). FR (the judges: "heavy dark plates floating above the paper,
+	 *  not the concept's small, quiet labels"): a faint backing, enough to keep a glowing edge behind from crossing the
+	 *  letters, and the name in the family's lighter weight. */
+	const FLinearColor FloatLabelBacking(0.003f, 0.01f, 0.045f, 0.3f);  // FR: 0.3 (FO 0.85)
 	constexpr float WingLabelTiltDeg = 45.f;
 	constexpr double WingTagGapCm = 0.45;
 	/** With the rest walls up (FM, element 3), the wing labels float this far over the walls' tops, flat, so from the
@@ -211,8 +213,8 @@ namespace
 	/** The lifted room's glass (FE): a stronger face than its siblings', as the concept's raised room. */
 	constexpr float LiftedFaceOpacity = 0.15f;
 	/** The pointed room's raised copy (FK, element 6): a lit glass face and the brightest edges on the sheet. */
-	constexpr float HighlightFaceOpacity = 0.05f;  // FQ: 0.05 (FP 0.18): the judge's "blown-out glow", its contents read through it
-	constexpr float HighlightEdgeIntensity = 12.0f;  // FQ: 12 (FP 16, FO 10), the focal room by its height, not its bloom
+	constexpr float HighlightFaceOpacity = 0.12f;  // FR: 0.12 (FQ 0.05, FP 0.18): FP's lit glass back, its furniture still reading through
+	constexpr float HighlightEdgeIntensity = 16.0f;  // FR: 16 (FQ 12, FP 16), the focal room again (judge A: "fid-p did this better")
 	/** The edges' emissive scale per batch (M_EdgeGlow's Intensity, its default 1.4; FE, elements 4 and 6, against the
 	 *  concept's bright cyan edges): the rest extrusions brightest, as the concept's rooms on the sheet; the lifted wing's
 	 *  shells and the lifted room's tiles under them; the lifted room's shell carries LiftedRoomShow on top. All of it
@@ -225,7 +227,7 @@ namespace
 	/** The walls' built-in halo (M_EdgeGlow's HaloK, its default 0.25): seen nearly edge-on, every wall's halo summed into
 	 *  a filled slab (fm/v1); the pointed room's a little stronger. By capture. */
 	constexpr float WallHaloK = 0.02f;  // FQ: 0.02 (FM 0.04), crisper walls at 5.5 cm
-	constexpr float HighlightHaloK = 0.03f;  // FQ: 0.03 (FP 0.1)
+	constexpr float HighlightHaloK = 0.07f;  // FR: 0.07 (FQ 0.03, FP 0.1)
 	constexpr float HighlightTopEdge = 1.3f;
 	constexpr float HighlightLowEdge = 0.5f;
 	constexpr float ShellEdgeIntensity = 2.4f;
@@ -755,7 +757,7 @@ void ABpTable::BuildWingLabels()
 			];
 		}
 		Lines->AddSlot().AutoHeight()[
-			SNew(STextBlock).Text(FText::FromString(Spec.Name)).Font(LabelFont(TEXT("Bold"), LabelFontSize)).ColorAndOpacity(FSlateColor(WarmPaper))
+			SNew(STextBlock).Text(FText::FromString(Spec.Name)).Font(LabelFont(TEXT("Regular"), LabelFontSize)).ColorAndOpacity(FSlateColor(WarmPaper))
 		];
 		UWidgetComponent* Label = MakeLabel(SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(FloatLabelBacking).Padding(Pad)[Lines],
 			FVector2D(Spec.U - LabelBackPadCm, Spec.NameBase + LabelBackPadCm + TypeInkDescPerEm * Spec.NameCap / TypeCapPerEm), FVector2D(0.0, 1.0), static_cast<float>(Spec.NameCap), static_cast<float>(RestRoomCm + WingLabelLiftCm));

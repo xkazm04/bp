@@ -26,7 +26,10 @@ namespace
 {
 	const FLinearColor Cyan(FColor(0xBF, 0xE8, 0xFF));
 	const FLinearColor Amber(FColor(0xFF, 0xB5, 0x47));
-	const FLinearColor Glass(FColor(0x0A, 0x1E, 0x40));
+	/** The panel's glass, its lit edge and its sub-lines' paler cyan (FR, element 11: from 0A1E40, a lighter blue). */
+	const FLinearColor Glass(FColor(0x12, 0x33, 0x66));
+	const FLinearColor CyanEdge(FColor(0xD8, 0xF4, 0xFF));
+	const FLinearColor CyanText(FColor(0xDD, 0xF3, 0xFF));
 
 	/** The sheet's family (BpType.h; FE): a font whose cap height is CapPx pixels, Roboto until the table built it. */
 	FSlateFontInfo CapFont(const TCHAR* Style, float CapPx)
@@ -210,9 +213,13 @@ void ABpPawn::ReceiveScanState(const FBpScanState& State)
 	if (Key == WristKey) return;
 	WristKey = Key;
 
-	// FP: an opaque enough back that the sheet's labels do not show through (the judge, element 11; FO 0.72).
-	static const FSlateRoundedBoxBrush Panel(Glass.CopyWithNewOpacity(0.94f), 20.f, Cyan.CopyWithNewOpacity(0.75f), 2.5f);
-	static const FSlateRoundedBoxBrush Row(Cyan.CopyWithNewOpacity(0.1f), 12.f, Cyan.CopyWithNewOpacity(0.35f), 1.5f);
+	// FP: an opaque enough back that the sheet's labels do not show through (the judge, element 11; FO 0.72). FR (the
+	// judges: "an opaque dark slab without the concept's glassy edge-lit panel"; "small low-contrast text"): a lighter
+	// blue glass, a lit cyan edge with a soft outer glow and a pale sheen along its top, and larger, brighter type.
+	static const FSlateRoundedBoxBrush Panel(Glass.CopyWithNewOpacity(0.88f), 20.f, CyanEdge, 4.f);  // at 0.8 the frame's bright rim crossed a row (by capture)
+	static const FSlateRoundedBoxBrush EdgeGlow(Cyan.CopyWithNewOpacity(0.16f), 28.f);
+	static const FSlateRoundedBoxBrush Sheen(FLinearColor(1.f, 1.f, 1.f, 0.07f), 14.f);
+	static const FSlateRoundedBoxBrush Row(Cyan.CopyWithNewOpacity(0.13f), 12.f, Cyan.CopyWithNewOpacity(0.5f), 1.5f);
 	TSharedRef<SVerticalBox> List = SNew(SVerticalBox);
 	for (int32 Index = 0; Index < Rows.Num() && Index < 4; ++Index)
 	{
@@ -231,11 +238,11 @@ void ABpPawn::ReceiveScanState(const FBpScanState& State)
 					SNew(SVerticalBox)
 					+ SVerticalBox::Slot().AutoHeight()
 					[
-						SNew(STextBlock).Text(FText::FromString(R.Name)).Font(CapFont(TEXT("Bold"), 24.f)).ColorAndOpacity(FSlateColor(FLinearColor::White))
+						SNew(STextBlock).Text(FText::FromString(R.Name)).Font(CapFont(TEXT("Bold"), 27.f)).ColorAndOpacity(FSlateColor(FLinearColor::White))
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 6.f, 0.f, 0.f)
 					[
-						SNew(STextBlock).Text(FText::FromString(R.Meta)).Font(CapFont(TEXT("Regular"), 18.f)).ColorAndOpacity(FSlateColor(Cyan.CopyWithNewOpacity(0.95f)))
+						SNew(STextBlock).Text(FText::FromString(R.Meta)).Font(CapFont(TEXT("Regular"), 20.f)).ColorAndOpacity(FSlateColor(CyanText))
 					]
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
@@ -248,7 +255,7 @@ void ABpPawn::ReceiveScanState(const FBpScanState& State)
 					+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
 					[
 						SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(R.Fraction * 100.f))))
-							.Font(CapFont(TEXT("Bold"), 18.f)).ColorAndOpacity(FSlateColor(FLinearColor::White))
+							.Font(CapFont(TEXT("Bold"), 20.f)).ColorAndOpacity(FSlateColor(FLinearColor::White))
 					]
 				]
 			]
@@ -263,22 +270,36 @@ void ABpPawn::ReceiveScanState(const FBpScanState& State)
 	}
 	const FString Sub = Wave ? FString::Printf(TEXT("%s · %s"), *Wave->name, *Wave->status) : FString();
 	WristPanel->SetSlateWidget(
-		SNew(SBorder).BorderImage(&Panel).Padding(FMargin(22.f, 18.f))
+		SNew(SBorder).BorderImage(&EdgeGlow).Padding(6.f)
+		[
+		SNew(SOverlay)
+		+ SOverlay::Slot()
+		[
+		SNew(SBorder).BorderImage(&Panel).Padding(FMargin(20.f, 14.f))
 		[
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight()
 			[
-				SNew(STextBlock).Text(FText::FromString(TEXT("PACKAGES"))).Font(CapFont(TEXT("Bold"), 20.f)).ColorAndOpacity(FSlateColor(FLinearColor::White))
+				SNew(STextBlock).Text(FText::FromString(TEXT("PACKAGES"))).Font(CapFont(TEXT("Bold"), 23.f)).ColorAndOpacity(FSlateColor(FLinearColor::White))
 			]
 			// The wave's name and status on a line of its own (FO: beside the title it was cut and unreadable).
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 6.f, 0.f, 0.f)
 			[
-				SNew(STextBlock).Text(FText::FromString(Sub)).Font(CapFont(TEXT("Regular"), 16.f)).ColorAndOpacity(FSlateColor(Cyan.CopyWithNewOpacity(0.9f)))
+				SNew(STextBlock).Text(FText::FromString(Sub)).Font(CapFont(TEXT("Regular"), 18.f)).ColorAndOpacity(FSlateColor(CyanText))
 			]
 			+ SVerticalBox::Slot().AutoHeight()
 			[
 				List
 			]
+		]
+		]
+		+ SOverlay::Slot().VAlign(VAlign_Top).Padding(FMargin(14.f, 4.f, 14.f, 0.f))
+		[
+			SNew(SBox).HeightOverride(30.f)
+			[
+				SNew(SBorder).BorderImage(&Sheen)
+			]
+		]
 		]);
 	WristPanel->RequestRedraw();
 	UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist wave=%s packages=%d"), Wave ? *Wave->id : TEXT("none"), Rows.Num());
