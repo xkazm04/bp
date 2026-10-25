@@ -1,0 +1,90 @@
+{
+  "id": "studio-desk-clutter",
+  "class": "studio-kit",
+  "budget_tris": 30000,
+  "budget_note": "fidelity sprint FD brief (2026-10-25): each density kit one mesh and one atlas, at most 2 to 3 draw sections; 30000 tris for the kit",
+  "tris": {
+    "studio-desk-clutter": 12539
+  },
+  "tris_note": "12539 against 30000; 1 draw sections (studio-desk-clutter: desk_clutter_atlas)",
+  "what": "three lever-arch binders (navy, charcoal, oxblood; labels, finger rings), a leather binder, an A4 stack, a yellow legal pad, a note stack and sticky notes, a pencil cup with pencils and pens, a navy holder with five rolled drawings, a paper stack",
+  "generator": [
+    {
+      "method": "procedural Blender (scripts/art/studio-kit/build_kits.bpy) through the finish stack of scripts/art/lib/finish.bpy: per-part bevels (372 hard edges), hardened and weighted normals, unique UVs, one 2048 px atlas baked on the CPU from Poly Haven CC0 scans with curvature wear, grunge and AO; plus CC0 MODELS re-baked into the same atlas (their files are bake input only, none ships): binder_notebook (https://polyhaven.com/a/binder_notebook, CC0 1.0 (Poly Haven, https://polyhaven.com/license), by DaDrood, 18077 tris at source; objects binder_notebook_closed); office_notepads (https://polyhaven.com/a/office_notepads, CC0 1.0 (Poly Haven, https://polyhaven.com/license), by Ulan Cabanilla, 666 tris at source; objects office_notepads_a4_stack, office_notepads_yellow_pad, office_notepads_note_stack, office_notepads_sticky_stack); stationery_supplies (https://polyhaven.com/a/stationery_supplies, CC0 1.0 (Poly Haven, https://polyhaven.com/license), by Mateusz Sadek, 4412 tris at source; objects stationery_supplies_pencilcup, stationery_supplies_pencil_new_a, stationery_supplies_pencil_new_b, stationery_supplies_pen_blue, stationery_supplies_pen_red, stationery_supplies_pen_fancy, stationery_supplies_pencil_used)"
+    }
+  ],
+  "materials": [
+    "studio-desk-clutter/desk_clutter_atlas: 12539 faces, baked basecolor + ORM (R occlusion, G roughness, B metal) + tangent normal (OpenGL)"
+  ],
+  "material_slots": [
+    "desk_clutter_atlas"
+  ],
+  "printed_sheets": null,
+  "textures": "textures/desk_clutter_atlas_basecolor.png, textures/desk_clutter_atlas_normal.png, textures/desk_clutter_atlas_orm.png; atlas 1223.5 px/m on the visible surface (78 % of the surface hidden and shrunk), bake seconds {\"base\":2.69,\"rough\":2.37,\"metal\":1.15,\"normal\":4.73,\"ao\":20.4}; AO also multiplied into basecolor at 0.55 (the forward scene has no runtime AO). GLB embeds JPEG q92",
+  "meshes": {
+    "studio-desk-clutter": {
+      "tris": 12539,
+      "components": 113,
+      "floaters": 0,
+      "open_edges": 2751,
+      "size_cm": [
+        87.44,
+        56.3,
+        73.6
+      ],
+      "slots": [
+        "desk_clutter_atlas"
+      ]
+    }
+  },
+  "uv_sets": 1,
+  "placement": "on a side desk top (z = 0 is the desk surface): pivot = base centre, facing -Y; on the left desk (studio_level.py LEFT_DESK) beside the desk lamp, yaw so the binder spines face the table, or on the right desk where the drawing tubes are (then drop StudioDrawingTubes: the kit has its own rolls)",
+  "axes": "Blender Z up, facing -Y; glTF Y-up (Interchange lands Blender -Y on UE -Y)",
+  "licence": "own procedural work (Blender is a GPL tool; its output is ours); bake inputs CC0: fabric_leather_02 (https://polyhaven.com/a/fabric_leather_02, CC0 1.0 (Poly Haven, https://polyhaven.com/license)); binder_notebook (https://polyhaven.com/a/binder_notebook, CC0 1.0 (Poly Haven, https://polyhaven.com/license), by DaDrood, 18077 tris at source; objects binder_notebook_closed); office_notepads (https://polyhaven.com/a/office_notepads, CC0 1.0 (Poly Haven, https://polyhaven.com/license), by Ulan Cabanilla, 666 tris at source; objects office_notepads_a4_stack, office_notepads_yellow_pad, office_notepads_note_stack, office_notepads_sticky_stack); stationery_supplies (https://polyhaven.com/a/stationery_supplies, CC0 1.0 (Poly Haven, https://polyhaven.com/license), by Mateusz Sadek, 4412 tris at source; objects stationery_supplies_pencilcup, stationery_supplies_pencil_new_a, stationery_supplies_pencil_new_b, stationery_supplies_pen_blue, stationery_supplies_pen_red, stationery_supplies_pen_fancy, stationery_supplies_pencil_used)",
+  "regenerate": "node scripts/art/lib/polyhaven.mjs <work>/polyhaven 2k; node scripts/art/lib/polyhaven.mjs <work>/polyhaven 1k --models; blender -b -P scripts/art/studio-kit/build_kits.bpy -- <repo-root> <work> studio-desk-clutter; blender -b -P scripts/art/studio-kit/render_kits.bpy -- <repo-root> studio-desk-clutter; node scripts/art/studio-kit/write_kit_manifest.mjs <work> studio-desk-clutter",
+  "gates": {
+    "input": {
+      "pass": true,
+      "note": "procedural, no generated geometry; CC0 inputs only (Poly Haven scans and models, licence recorded)",
+      "date": "2026-10-25"
+    },
+    "mesh_acceptance": {
+      "pass": true,
+      "note": "re-imported from final.glb: studio-desk-clutter 12539 tris, 113 components, 0 floaters (a component touching neither another one nor the kit's anchor plane), 2751 open edges. The open edges are the Poly Haven models' own (pencil ends, the decimated binder's page block): their shells are not closed at source; every procedural part is closed",
+      "date": "2026-10-25"
+    },
+    "scale": {
+      "pass": true,
+      "note": "studio-desk-clutter 87.44 x 56.3 x 73.6 cm (x, y, z up) in the envelope 80-100, 35-60, 60-80 cm: a desk-top spread 90 x 45 cm: binders 32 cm tall, paper stacks, a pencil cup, rolled drawings up to 75 cm in a 30 cm holder",
+      "date": "2026-10-25"
+    },
+    "finishing": {
+      "pass": true,
+      "note": "bevelled hard edges 372, hardened custom normals and smooth shading on every mesh, one UV set, 3 PNGs (desk_clutter_atlas each basecolor, normal, ORM), CC0 scans 1, CC0 models 3; evidence/context.jpg (EEVEE, dark studio rig) and evidence/target-compare.jpg (beside the concept's crop); every file under 10 MB",
+      "date": "2026-10-25"
+    },
+    "poly_budget": {
+      "pass": true,
+      "note": "12539 tris against 30000 (42 %)",
+      "date": "2026-10-25"
+    }
+  },
+  "sha256": {
+    "evidence/context.jpg": "f787c7e9666e76faa16c557331899ec17f1268c633d13ecbb258188e9ff35c84",
+    "evidence/target-compare.jpg": "0e1e582460c95a0ffcfdfa44837027989a5413f5cc5508b8bb9c71bba3d3ad13",
+    "final.glb": "5c348ddae7d31fa1092d718b4138dd68a003ba7bc028a65890216a5817055ee4",
+    "textures/desk_clutter_atlas_basecolor.png": "94ae4d2b8749ae209650f434e64d2c6713425b4b997577fe15f72da73019419c",
+    "textures/desk_clutter_atlas_normal.png": "2ff56640dbfe22f33c37a2f37705e1f6c6e81f2e8f957eaaee2e2e2084cbddea",
+    "textures/desk_clutter_atlas_orm.png": "3ce68b55b5c5875a8944168bb37d1a4f35dfb376fc95fae753803d8d233384f5"
+  },
+  "file_bytes": {
+    "evidence/context.jpg": 86893,
+    "evidence/target-compare.jpg": 80276,
+    "final.glb": 2687324,
+    "textures/desk_clutter_atlas_basecolor.png": 3905787,
+    "textures/desk_clutter_atlas_normal.png": 3482898,
+    "textures/desk_clutter_atlas_orm.png": 4045491
+  },
+  "lynx_commit": "f15dd3398d83b95a62ca800e65c8cb2112691fe1",
+  "lynx_commit_note": "stamped by the writer: the newest commit touching this folder when the manifest was written"
+}

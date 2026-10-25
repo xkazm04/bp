@@ -1,0 +1,109 @@
+{
+  "id": "studio-architecture",
+  "class": "studio-kit",
+  "budget_tris": 12000,
+  "budget_note": "fidelity sprint FD brief (2026-10-25): each density kit one mesh and one atlas, at most 2 to 3 draw sections; 12000 tris for the kit",
+  "tris": {
+    "pendant_lamp": 4108,
+    "window_frame": 6468
+  },
+  "tris_note": "10576 against 12000; 3 draw sections (pendant_lamp: architecture_atlas + bulb_glow; window_frame: architecture_atlas)",
+  "what": "window_frame: a dark steel frame for the studio window (6 cm outer frame, two mullions and two transoms 3.5 cm wide, glazing beads round every pane) and an oak sill; pendant_lamp: a ceiling canopy, a 0.9 m cord, a brass socket, a 32 cm spun steel dome white inside and a warm bulb just below its rim",
+  "generator": [
+    {
+      "method": "procedural Blender (scripts/art/studio-kit/build_kits.bpy) through the finish stack of scripts/art/lib/finish.bpy: per-part bevels (1140 hard edges), hardened and weighted normals, unique UVs, one 2048 px atlas baked on the CPU from Poly Haven CC0 scans with curvature wear, grunge and AO"
+    }
+  ],
+  "materials": [
+    "pendant_lamp/architecture_atlas: 3868 faces, baked basecolor + ORM (R occlusion, G roughness, B metal) + tangent normal (OpenGL)",
+    "pendant_lamp/bulb_glow: 240 faces, flat emissive (UE drives it)",
+    "window_frame/architecture_atlas: 6468 faces, baked basecolor + ORM (R occlusion, G roughness, B metal) + tangent normal (OpenGL)"
+  ],
+  "material_slots": [
+    "architecture_atlas",
+    "bulb_glow"
+  ],
+  "printed_sheets": null,
+  "textures": "textures/architecture_atlas_basecolor.png, textures/architecture_atlas_normal.png, textures/architecture_atlas_orm.png; atlas 719.9 px/m on the visible surface (42 % of the surface hidden and shrunk), bake seconds {\"base\":3.04,\"rough\":2.86,\"metal\":1.02,\"normal\":2.61,\"ao\":26.48}; AO also multiplied into basecolor at 0.55 (the forward scene has no runtime AO). GLB embeds JPEG q92",
+  "meshes": {
+    "pendant_lamp": {
+      "tris": 4108,
+      "components": 4,
+      "floaters": 0,
+      "open_edges": 0,
+      "size_cm": [
+        31.98,
+        31.98,
+        108.5
+      ],
+      "slots": [
+        "architecture_atlas",
+        "bulb_glow"
+      ]
+    },
+    "window_frame": {
+      "tris": 6468,
+      "components": 18,
+      "floaters": 0,
+      "open_edges": 0,
+      "size_cm": [
+        162,
+        24,
+        260
+      ],
+      "slots": [
+        "architecture_atlas"
+      ]
+    }
+  },
+  "uv_sets": 1,
+  "placement": "window_frame: into the back wall opening of studio_level.py (Y 40..190 cm, Z 20..280 cm, wall at X = 250): pivot = bottom centre of the opening on the wall's inside face, its depth (+Y, 8 cm) into the wall, the sill proud into the room; yaw -90 on the back wall; REMOVE the shell's mullion and transom boxes (studio_level.py, \"A mullion and a transom\") it replaces. pendant_lamp: pivot = canopy top on the ceiling (z = 0, hangs down 1.09 m), one over each side desk (instanced: the second costs no draw); give each a warm point light at the bulb (about 0.18 m under the pivot: 0.9 m cord + socket) for the bokeh-like highlights, bulb_glow emissive #FFC27A",
+  "axes": "Blender Z up, facing -Y; glTF Y-up (Interchange lands Blender -Y on UE -Y)",
+  "licence": "own procedural work (Blender is a GPL tool; its output is ours); bake inputs CC0: fine_grained_wood (https://polyhaven.com/a/fine_grained_wood, CC0 1.0 (Poly Haven, https://polyhaven.com/license))",
+  "regenerate": "node scripts/art/lib/polyhaven.mjs <work>/polyhaven 2k; node scripts/art/lib/polyhaven.mjs <work>/polyhaven 1k --models; blender -b -P scripts/art/studio-kit/build_kits.bpy -- <repo-root> <work> studio-architecture; blender -b -P scripts/art/studio-kit/render_kits.bpy -- <repo-root> studio-architecture; node scripts/art/studio-kit/write_kit_manifest.mjs <work> studio-architecture",
+  "gates": {
+    "input": {
+      "pass": true,
+      "note": "procedural, no generated geometry; CC0 inputs only (Poly Haven scans, licence recorded)",
+      "date": "2026-10-25"
+    },
+    "mesh_acceptance": {
+      "pass": true,
+      "note": "re-imported from final.glb: pendant_lamp 4108 tris, 4 components, 0 floaters (a component touching neither another one nor the kit's anchor plane), 0 open edges; window_frame 6468 tris, 18 components, 0 floaters (a component touching neither another one nor the kit's anchor plane), 0 open edges",
+      "date": "2026-10-25"
+    },
+    "scale": {
+      "pass": true,
+      "note": "pendant_lamp 31.98 x 31.98 x 108.5 cm (x, y, z up) in the envelope 28-36, 28-36, 100-120 cm; window_frame 162 x 24 x 260 cm (x, y, z up) in the envelope 145-170, 8-30, 255-265 cm: the window frame fills the 1.50 x 2.60 m opening (studio_level.py WINDOW_Y, WINDOW_Z); the pendant hangs 1.1 m with a 32 cm dome shade",
+      "date": "2026-10-25"
+    },
+    "finishing": {
+      "pass": true,
+      "note": "bevelled hard edges 1140, hardened custom normals and smooth shading on every mesh, one UV set, 3 PNGs (architecture_atlas each basecolor, normal, ORM), CC0 scans 1; evidence/context.jpg (EEVEE, dark studio rig) and evidence/target-compare.jpg (beside the concept's crop); every file under 10 MB",
+      "date": "2026-10-25"
+    },
+    "poly_budget": {
+      "pass": true,
+      "note": "10576 tris against 12000 (88 %)",
+      "date": "2026-10-25"
+    }
+  },
+  "sha256": {
+    "evidence/context.jpg": "5479b5f638f81fb43a7446872cf0eac56d74b56dfa3f45758676c382612638d5",
+    "evidence/target-compare.jpg": "c735d1b68f0e837b798af5381b32f3c011a97a8a327763d6dd61944be3a1a03f",
+    "final.glb": "b6500757af8f166d46690d898c562cabcdb24c5e22bf56be0dabcf45904631db",
+    "textures/architecture_atlas_basecolor.png": "3f11e9086cfb2c75e05cf2edeb088103f575dfb836651518f5c093f8debd21e3",
+    "textures/architecture_atlas_normal.png": "16635495a850d28314002ad546fceaf733e2efc04b7e4ed9f9d0524702cad3d8",
+    "textures/architecture_atlas_orm.png": "0a4a092bc8779d18ae3212af9771e2c6c62b03ccf94ab15c2257f6531ac6c5af"
+  },
+  "file_bytes": {
+    "evidence/context.jpg": 40889,
+    "evidence/target-compare.jpg": 77718,
+    "final.glb": 2416352,
+    "textures/architecture_atlas_basecolor.png": 2861673,
+    "textures/architecture_atlas_normal.png": 2072983,
+    "textures/architecture_atlas_orm.png": 3674601
+  },
+  "lynx_commit": "f15dd3398d83b95a62ca800e65c8cb2112691fe1",
+  "lynx_commit_note": "stamped by the writer: the newest commit touching this folder when the manifest was written"
+}
