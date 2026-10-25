@@ -373,6 +373,8 @@ export function preparePrompt(lens: string): string {
   return `Make the ${lens} lens measurable by /lens-scan in this repo, following the lens-scan skill's "Project overlay" section and references/metrics.md#probes. `
     + `For performance: write probe scripts under scripts/probes/ that drive a local PRODUCTION build (never a dev server) of the main features with Playwright, each printing one JSON line per metric `
     + `({"metric","feature","samples":[...]}, 20+ samples for a distribution, 3+ passes for a per-pass total), and add one \`<feature> <metric>: <command>\` line per probed feature and metric under a \`## Probes\` section of ${OVERLAY_PATH}. `
+    + `A probe must time the feature's own screen: drop a pass that redirects away, shows an error boundary or throws, and leave out a feature no probe can render (found in Grinex, 2026-10-25: mocked or missing data put most screens in their error boundary). `
+    + `On Windows a /leading/path argument is rewritten by Git Bash before the probe sees it, so pass routes without the leading slash. `
     + `Run at least one probe and check it prints valid JSON lines; never invent or estimate a reading. Follow this repo's own CLAUDE.md and rules; do not commit to a protected branch and do not push. `
     + `Do not start a measure run. End with exactly one line: \`lens-scan prepared: <what you added>\` or \`lens-scan refused: <why>\`.`;
 }
