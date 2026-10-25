@@ -192,9 +192,26 @@ namespace
 	/** A lifted wing's room shells are glass (lookdev 02): their faces a third of M_EdgeGlow's default, so four stacked
 	 *  shells seen at a grazing angle read as glass over the paper, not a grey wash (WP2's leftover). */
 	constexpr float RoomFaceOpacity = 0.02f;
-	/** The rest extrusions' glass (FC1): fainter than a lifted shell's faces, so thirteen low rooms read as glass on the
-	 *  paper, not a wash; their edges carry them. */
-	constexpr float RestFaceOpacity = 0.03f;
+	/** The rest extrusions' glass (FC1; FE raised it with the edges, so a room reads as a faintly lit glass block). */
+	constexpr float RestFaceOpacity = 0.07f;
+	/** The lifted room's glass (FE): a stronger face than its siblings', as the concept's raised room. */
+	constexpr float LiftedFaceOpacity = 0.06f;
+	/** The edges' emissive scale per batch (M_EdgeGlow's Intensity, its default 1.4; FE, elements 4 and 6, against the
+	 *  concept's bright cyan edges): the rest extrusions brightest, as the concept's rooms on the sheet; the lifted wing's
+	 *  shells and the lifted room's tiles under them; the lifted room's shell carries LiftedRoomShow on top. All of it
+	 *  is above the bloom threshold (0.7, fid_look.py), the sheet's text below it (PaperInkGlow). */
+	constexpr float RestEdgeIntensity = 3.2f;
+	constexpr float ShellEdgeIntensity = 2.4f;
+	constexpr float LiftedEdgeIntensity = 3.0f;
+	/** The paper (M_BlueprintPaper; FE, element 1): the light box brighter toward its centre (PaperGlow over the texture,
+	 *  VignetteEdge left at the corners; the concept's paper glows in the middle and falls off to the rim), and the ink at
+	 *  PaperInkGlow: 1 keeps the sheet's text under the bloom threshold, so bloom never smears it (r6 section 2), where 1.5
+	 *  bloomed every label. */
+	constexpr float PaperGlow = 1.6f;
+	constexpr float PaperVignetteEdge = 0.4f;
+	constexpr float PaperInkGlow = 1.0f;
+	/** The fixture glyphs' glow (M_Glyph's GlyphGlow, its default 0.45; FE: the concept's furniture glows inside the rooms). */
+	constexpr float GlyphGlow = 0.8f;
 	/** The greybox's volumes: faces only, on UWidgetComponent's translucent engine material. */
 	constexpr float GreyboxVolumeOpacity = 0.12f;
 	/** Labels draw after the volumes (translucent sort), so a glowing edge never lies over a wing's name. */
@@ -270,6 +287,8 @@ ABpTable::ABpTable()
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeFinder(TEXT("/Engine/BasicShapes/Cube.Cube"));
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> PlaneFinder(TEXT("/Engine/BasicShapes/Plane.Plane"));
+	// The beads' sphere: the engine's 224-triangle unit sphere (radius 1 cm), not BasicShapes' 960 (FE: 31 beads).
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereFinder(TEXT("/Engine/ArtTools/RenderToTexture/Meshes/S_1_Unit_Sphere.S_1_Unit_Sphere"));
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> ShapeMaterialFinder(TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
 	// UWidgetComponent's own unlit material: it shows the Texture parameter `SlateUI` with its alpha, cooked or not.
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> SheetMaterialFinder(TEXT("/Engine/EngineMaterials/Widget3DPassThrough_Translucent.Widget3DPassThrough_Translucent"));
@@ -279,6 +298,7 @@ ABpTable::ABpTable()
 	if (EngineFont && !GTextFont.IsValid()) GTextFont = EngineFont;
 	EngineCube = CubeFinder.Object;
 	EnginePlane = PlaneFinder.Object;
+	EngineSphere = SphereFinder.Object;
 	EngineShapeMaterial = ShapeMaterialFinder.Object;
 	EngineSheetMaterial = SheetMaterialFinder.Object;
 	EngineWhiteTexture = WhiteFinder.Object;
@@ -351,6 +371,13 @@ ABpTable::ABpTable()
 	Pins = MakeVolumes(TEXT("Pins"));
 	Pins->NumCustomDataFloats = 4;
 	Pins->SetStaticMesh(nullptr);
+	// The beads and the stems (FE): engine shapes in the pin's amber, no custom data; the unit sphere (radius 1 cm) and
+	// the cube (100 cm, pivot at its centre), a square stem 2.4 mm across reading as the pin's round one.
+	PinBeads = MakeVolumes(TEXT("PinBeads"));
+	PinBeads->NumCustomDataFloats = 0;
+	PinBeads->SetStaticMesh(EngineSphere);
+	PinStems = MakeVolumes(TEXT("PinStems"));
+	PinStems->NumCustomDataFloats = 0;
 }
 
 float ABpTable::HeightCvarCm()
@@ -361,9 +388,16 @@ float ABpTable::HeightCvarCm()
 
 FVector2D ABpTable::PlanToPaperCm(const FVector2D& Plan) const
 {
-	// The plan's extent, scaled by BpPlanUnitCm, centred on the paper.
-	const FVector2D Margin = (FVector2D(PaperWidthCm, PaperDepthCm) - PlanSize * BpPlanUnitCm) * 0.5;
-	return Margin + (Plan - PlanMin) * BpPlanUnitCm;
+	// The plan's extent, scaled by BpPlanUnitCm, at PlanMarginCm.
+	return PlanMarginCm() + (Plan - PlanMin) * BpPlanUnitCm;
+}
+
+FVector2D ABpTable::PlanMarginCm() const
+{
+	const FVector2D Centred = (FVector2D(PaperWidthCm, PaperDepthCm) - PlanSize * BpPlanUnitCm) * 0.5;
+	// A plan too deep to leave PlanNearMinCm near of the far margin stays centred.
+	const bool bRoom = 2.0 * Centred.Y >= PlanFarMarginCm + PlanNearMinCm;
+	return FVector2D(Centred.X, bRoom ? static_cast<double>(PlanFarMarginCm) : Centred.Y);
 }
 
 FVector2D ABpTable::PaperCmToSheetPx(const FVector2D& PaperCm)
@@ -483,6 +517,9 @@ void ABpTable::LoadArt()
 		// The paper texture at its own scale: one tile is PaperTileCm on the table.
 		PaperMid->SetScalarParameterValue(TEXT("TilesU"), PaperWidthCm / PaperTileCm);
 		PaperMid->SetScalarParameterValue(TEXT("TilesV"), PaperDepthCm / PaperTileCm);
+		PaperMid->SetScalarParameterValue(TEXT("PaperGlow"), PaperGlow);
+		PaperMid->SetScalarParameterValue(TEXT("VignetteEdge"), PaperVignetteEdge);
+		PaperMid->SetScalarParameterValue(TEXT("InkGlow"), PaperInkGlow);
 	}
 	else
 	{
@@ -506,8 +543,10 @@ void ABpTable::LoadArt()
 		{
 			UMaterialInstanceDynamic* Mid = UMaterialInstanceDynamic::Create(Glow, this);
 			if (Kind == Bays) Mid->SetScalarParameterValue(TEXT("FaceOpacity"), BayFaceOpacity);
-			if (Kind == Rooms || Kind == LiftedShell) Mid->SetScalarParameterValue(TEXT("FaceOpacity"), RoomFaceOpacity);
+			if (Kind == Rooms) Mid->SetScalarParameterValue(TEXT("FaceOpacity"), RoomFaceOpacity);
+			if (Kind == LiftedShell) Mid->SetScalarParameterValue(TEXT("FaceOpacity"), LiftedFaceOpacity);
 			if (Kind == RestVolumes) Mid->SetScalarParameterValue(TEXT("FaceOpacity"), RestFaceOpacity);
+			Mid->SetScalarParameterValue(TEXT("Intensity"), Kind == RestVolumes ? RestEdgeIntensity : Kind == LiftedShell ? LiftedEdgeIntensity : ShellEdgeIntensity);
 			Kind->SetMaterial(0, Mid);
 			VolumeMids.Add(Mid);
 		}
@@ -524,7 +563,11 @@ void ABpTable::LoadArt()
 
 	// The glyphs' material; the batches come with the plan (BuildGlyphs).
 	GlyphMid = nullptr;
-	if (UMaterialInterface* Glyph = LoadOrGreybox(GlyphMaterial, true)) GlyphMid = UMaterialInstanceDynamic::Create(Glyph, this);
+	if (UMaterialInterface* Glyph = LoadOrGreybox(GlyphMaterial, true))
+	{
+		GlyphMid = UMaterialInstanceDynamic::Create(Glyph, this);
+		GlyphMid->SetScalarParameterValue(TEXT("GlyphGlow"), GlyphGlow);
+	}
 }
 
 void ABpTable::BuildTypeFont()
@@ -1438,6 +1481,8 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 	TArray<const FBpPlanWing*> Wings;
 	TArray<bool> TagFits;
 	TArray<TPair<FString, FVector3d>> TagPlaces;
+	// The labels' far edge (paper v): the pins' tags rise clear of it (RaisePins).
+	double LabelTop = PlanMarginCm().Y;
 	for (const FBpPlanWing& Wing : SheetPlan->wings) Wings.Add(&Wing);
 	Wings.Sort([](const FBpPlanWing& A, const FBpPlanWing& B) { return A.order < B.order; });
 	for (int32 Index = 0; Index < Wings.Num(); ++Index)
@@ -1459,6 +1504,7 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 		Report(TEXT("wing-name"), Name, A.X, NameBase, NameCap, NameFloor);
 		if (Name.IsEmpty()) continue;
 		Put(Name, BpType::WingName, A.X, NameBase - NameCap, NameCap, Ink(WarmPaper, TextInk), 0.0);
+		LabelTop = FMath::Min(LabelTop, NameBase - NameCap);
 		// The tag line above it ("WING A") is drawn only when every wing's fits under the paper's top at the floor: a class
 		// is kept or dropped whole, never for some wings (Kettle's centre wings leave it no room: dropped, logged).
 		const double TagBase = NameBase - NameCap - WingTagGapCm;
@@ -1498,6 +1544,13 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 		const FVector3d& At = Tag.Value;
 		Report(TEXT("wing-tag"), bTags ? Tag.Key : FString(), At.X, At.Y, At.Z, At.Z);
 		if (bTags) Put(Tag.Key, BpType::WingTag, At.X, At.Y - At.Z, At.Z, Ink(CyanWhite, 0.8f * TextInk), 0.0);
+		if (bTags) LabelTop = FMath::Min(LabelTop, At.Y - At.Z);
+	}
+	if (LabelTop != WingLabelTopV)
+	{
+		WingLabelTopV = LabelTop;
+		RaisePins();
+		PlacePins();
 	}
 
 	// ---- The room names, in each room's header strip (the plan leaves it above the first bay) where they meet the floor

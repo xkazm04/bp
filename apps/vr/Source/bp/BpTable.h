@@ -41,9 +41,13 @@ class BP_API ABpTable : public AActor
 public:
 	// ---- The named constants, in one place ----------------------------------------------------------------------------
 	/** Plan units to centimetres on the paper: Kettle's islands extent, 3810 x 1678 u (spark vr-hands-zoom WP1), becomes
-	 *  141.0 x 62.1 cm, which leaves 12.5 cm left and right for the scale bar, the compass and the title block, and 7 cm
-	 *  above and below. */
+	 *  141.0 x 62.1 cm, which leaves 12.5 cm left and right for the scale bar, the compass and the title block. */
 	static constexpr float BpPlanUnitCm = 0.037f;
+	/** The plan sits this far from the paper's far edge (FE, element 3): the row of wing labels above the wings and the
+	 *  pins' tags above it need the room, the near margin under the hands does not (Kettle: 10.5 cm far, 3.4 cm near).
+	 *  A plan that would leave less than PlanNearMinCm near stays centred. level_check.py's MARGIN follows it. */
+	static constexpr float PlanFarMarginCm = 10.5f;
+	static constexpr float PlanNearMinCm = 3.f;
 	/** The table top's height above the floor, the default of the console variable bp.TableHeightCm (R4 option A). */
 	static constexpr float DefaultTableHeightCm = 95.f;
 	/** The frame's outline (the owner's long table, 2026-10-24): width along +Y, depth along X. Its rim is 5 cm wide, so
@@ -98,13 +102,16 @@ public:
 	static constexpr float RoomLiftRimMarginCm = 2.f;
 
 	/** The rooms at rest (FC1, element 4, bp.L0Volumes 1): every room a low glass extrusion of this height, its bays the
-	 *  partitions inside it at BayPartitionRatio of it. A lifted wing leaves its rest extrusions behind, hidden. */
-	static constexpr float RestRoomCm = 0.8f;
+	 *  partitions inside it at BayPartitionRatio of it. A lifted wing leaves its rest extrusions behind, hidden. FE raised
+	 *  it from 0.8 cm: the concept's rooms stand as extrusions, ours read as flat slabs. */
+	static constexpr float RestRoomCm = 1.5f;
 	static constexpr float BayPartitionRatio = 0.6f;
 	/** The line-weight hierarchy at rest (FC3): the rooms' glass edges at RestRoomShow, the partitions' at
 	 *  RestPartitionShow (the edge glow's Show scales its opacity), under the wing outlines the sheet draws strongest. */
 	static constexpr float RestRoomShow = 0.8f;
 	static constexpr float RestPartitionShow = 0.45f;
+	/** The lifted room's shell glows this much over a lit shell (M_EdgeGlow's Show above 1 scales its emissive; FE). */
+	static constexpr float LiftedRoomShow = 1.8f;
 
 	/** The fixture glyphs (FC3, element 5; ArtSource/fixture-kit): each tile at rest holds the glyph of its feature's kind,
 	 *  centred on its box, its footprint at most GlyphFill of the box and its height at most GlyphMaxCm (the shorter side
@@ -120,8 +127,18 @@ public:
 	/** Tags that would overlap from the target eye merge into the first one's (FC3): within TagClearUCm across, and along
 	 *  the paper within the depth the tag's height covers seen from the target eye (BpType's floor sets the tag's size). */
 	static constexpr float TagClearUCm = 5.6f;
-	/** Pins whose tag merged into another's stand at this fraction of PinScale, their tags blank. */
-	static constexpr float MergedPinRatio = 0.45f;
+	/** The pins' display rule (FE, element 7): every feature with an open finding has its amber bead; a feature carries a
+	 *  standing pin with a tag only when one of its open findings is of high urgency, risk PinTagRiskMin or more
+	 *  (blueprint-ui.md, the swarm's decisions: "urgency from risk (7 or more high, 4 or more medium)"). The rule picks
+	 *  which tags show, never which findings exist: the tag names the feature's riskiest finding and counts the rest. */
+	static constexpr int32 PinTagRiskMin = 7;
+	/** A tag never stands over the wing labels (FE): a tagged pin whose tag the target eye would see over the label row
+	 *  rises on a longer stem until the tag's foot clears the row's far edge by TagRowGapCm (paper cm, seen from the eye). */
+	static constexpr float TagRowGapCm = 0.6f;
+	/** The beads on the plan (every pin) and the stems under a risen pin: the pin's own amber, the bead PinBeadCm across,
+	 *  the stem PinStemCm thick (the pin's stem at PinScale). */
+	static constexpr float PinBeadCm = 1.1f;
+	static constexpr float PinStemCm = 0.24f;
 	/** The mesh's tag faces its +-Y; this turns it to the viewer at the near edge. */
 	static constexpr float PinYawDeg = 90.f;
 	/** The tag atlas: TagAtlasCols x TagAtlasRows cells of TagCellWidthPx x TagCellHeightPx (the tag's 2.2 : 1.4). */
@@ -139,16 +156,17 @@ public:
 	static constexpr float ScanEaseCmPerS = 12.f;
 	static constexpr float ScanFadeS = 1.2f;
 
-	/** The decision card (FC1, element 10): a world-space panel near the lamp agent, drawn at CardPxPerCm (about twice what
-	 *  the eye resolves at its distance). */
+	/** The decision card (FC1, element 10): a world-space panel near the lamp agent, drawn at CardPxPerCm (FE: about twice
+	 *  what the target capture resolves at its distance, r4 section 5; at 40 the widget was minified fourfold, unmipped,
+	 *  and its text went soft). */
 	static constexpr float CardWidthCm = 33.f;
 	static constexpr float CardHeightCm = 18.f;
-	static constexpr float CardPxPerCm = 40.f;
-	/** Where it floats, in the actor's space: x and y, and z above the table top (the target framing puts it upper right,
-	 *  as the concept's card). */
-	static constexpr float CardPlaceXCm = 34.f;
-	static constexpr float CardPlaceYCm = 56.f;
-	static constexpr float CardAboveTopCm = 27.f;
+	static constexpr float CardPxPerCm = 24.f;
+	/** Where it floats, in the actor's space: x and y, and z above the table top (the target framing puts it right of the
+	 *  lamp agent's head, as the concept's card; FE placed it by capture). */
+	static constexpr float CardPlaceXCm = 36.f;
+	static constexpr float CardPlaceYCm = 42.f;
+	static constexpr float CardAboveTopCm = 26.f;
 
 	ABpTable();
 
@@ -310,15 +328,22 @@ private:
 	/** The rooms and their bays at rest, low (RestRoomCm), on the paper; they never lift. */
 	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
 	TObjectPtr<UInstancedStaticMeshComponent> RestVolumes;
-	/** The pins, their tags included: one batch. */
+	/** The tagged pins, their tags included: one batch. */
 	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
 	TObjectPtr<UInstancedStaticMeshComponent> Pins;
+	/** Every pin's bead on the plan, and the stems under the risen pins (FE). */
+	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
+	TObjectPtr<UInstancedStaticMeshComponent> PinBeads;
+	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
+	TObjectPtr<UInstancedStaticMeshComponent> PinStems;
 
 	/** Engine content for the greybox, held hard so a cook takes it along. */
 	UPROPERTY()
 	TObjectPtr<UStaticMesh> EngineCube;
 	UPROPERTY()
 	TObjectPtr<UStaticMesh> EnginePlane;
+	UPROPERTY()
+	TObjectPtr<UStaticMesh> EngineSphere;
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> EngineShapeMaterial;
 	UPROPERTY()
@@ -448,6 +473,8 @@ private:
 	/** The lifted wing at eased progress E (0 at rest): the Rooms batch's transform relative to the root. */
 	FTransform WingGroupTransform(float E) const;
 	FVector2D PaperCmToPlan(const FVector2D& PaperCm) const;
+	/** Where the plan's extent starts on the paper (cm): centred across, PlanFarMarginCm from the far edge. */
+	FVector2D PlanMarginCm() const;
 	const struct FBpPlanWing* FindWing(const FString& Id) const;
 	const struct FBpPlanRoom* FindRoom(const FString& Id) const;
 	/** The sheet ink's opacity factor for a wing: LevelDim for every wing but the lifted one. */
@@ -548,10 +575,19 @@ private:
 		FString Line2;
 		/** The open findings on this feature. */
 		int32 Findings = 0;
-		/** False when its tag merged into a nearer pin's (FC3): it stands lower, its tag blank. */
+		/** The riskiest open finding on it (its tag's first line) and its risk. */
+		int32 Risk = 0;
+		/** Whether it stands with a tag (the display rule, then FC3's merge: a tag that would overlap a nearer one's from
+		 *  the target eye gives its count to that one), its atlas cell, and how far it rises on its stem (paper cm). */
 		bool bTagged = true;
+		int32 Cell = INDEX_NONE;
+		float RaiseCm = 0.f;
 	};
 	TArray<FPin> PinList;
+	/** The far edge (paper v, cm) of the wing labels the sheet last drew: the risen tags clear it (FE). */
+	double WingLabelTopV = -1.0;
+	/** Each tagged pin's rise so its tag clears the label row from the target eye. */
+	void RaisePins();
 	FString PinsKey;
 	/** The running measure job the scan line follows, the plan box its scope covers, and the line's place (plan y) now
 	 *  and where it heads. */

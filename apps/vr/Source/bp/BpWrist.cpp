@@ -7,6 +7,7 @@
 #include "BpGameMode.h"
 #include "BpLink.h"
 #include "BpTable.h"
+#include "BpType.h"
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "Camera/CameraComponent.h"
 #include "Components/WidgetComponent.h"
@@ -27,8 +28,10 @@ namespace
 	const FLinearColor Amber(FColor(0xFF, 0xB5, 0x47));
 	const FLinearColor Glass(FColor(0x0A, 0x1E, 0x40));
 
+	/** The sheet's family (BpType.h; FE): a font whose cap height is CapPx pixels, Roboto until the table built it. */
 	FSlateFontInfo CapFont(const TCHAR* Style, float CapPx)
 	{
+		if (const UObject* Font = ABpTable::TextFontObject()) return FSlateFontInfo(Font, CapPx / (static_cast<float>(BpType::CapPerEm) * 96.f / 72.f), FName(Style));
 		return FCoreStyle::GetDefaultFontStyle(Style, CapPx / (0.711f * 96.f / 72.f));
 	}
 
@@ -144,9 +147,9 @@ void ABpPawn::MakeWristPanel()
 			const FTransform T = Table->GetActorTransform();
 			const FVector Eye = T.TransformPosition(FVector(-(ABpTable::TableDepthCm * 0.5 + ABpGameMode::TargetBehindNearEdgeCm), 0.0,
 				ABpTable::DefaultTableHeightCm + ABpGameMode::TargetEyeAboveTopCm));
-			const FVector At = Wrist->GetActorLocation();
+			const FVector At = Wrist->GetActorLocation() + T.TransformVectorNoScale(FVector(WristCaptureOffsetXCm, WristCaptureOffsetYCm, WristCaptureOffsetZCm));
 			SetWristParent(Wrist->GetRootComponent(), NAME_None, FTransform::Identity);
-			WristPanel->SetWorldTransform(FTransform(FRotationMatrix::MakeFromXZ(Eye - At, T.TransformVector(ViewUp)).Rotator(), At, FVector(1.0 / WristPanelPxPerCm)));
+			WristPanel->SetWorldTransform(FTransform(FRotationMatrix::MakeFromXZ(Eye - At, T.TransformVector(ViewUp)).Rotator(), At, FVector(WristCaptureScale / WristPanelPxPerCm)));
 		}
 		else
 		{

@@ -22,9 +22,10 @@ STEPS = [
     "BpTable.Lens business",
 ]
 STATE = os.path.join(unreal.Paths.project_saved_dir(), "level_check.json")
-# Paper and plan (ABpTable's constants, and Kettle's islands extent 3810 x 1678 u at its origin).
-PAPER_W, PAPER_D, UNIT = 166.0, 76.0, 0.037
-MARGIN = ((PAPER_W - 3810 * UNIT) / 2, (PAPER_D - 1678 * UNIT) / 2)
+# Paper and plan (ABpTable's constants, and Kettle's islands extent 3810 x 1678 u at its origin): centred across, at
+# PlanFarMarginCm from the far edge (FE).
+PAPER_W, PAPER_D, UNIT, FAR_MARGIN = 166.0, 76.0, 0.037, 10.5
+MARGIN = ((PAPER_W - 3810 * UNIT) / 2, FAR_MARGIN)
 
 world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_game_world()
 if world is None:

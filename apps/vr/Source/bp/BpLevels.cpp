@@ -128,8 +128,7 @@ const FBpPlanRoom* ABpTable::FindRoom(const FString& Id) const
 FVector2D ABpTable::PaperCmToPlan(const FVector2D& PaperCm) const
 {
 	// The inverse of PlanToPaperCm.
-	const FVector2D Margin = (FVector2D(PaperWidthCm, PaperDepthCm) - PlanSize * BpPlanUnitCm) * 0.5;
-	return PlanMin + (PaperCm - Margin) / BpPlanUnitCm;
+	return PlanMin + (PaperCm - PlanMarginCm()) / BpPlanUnitCm;
 }
 
 float ABpTable::SheetInkFactor(const FString& Wing) const
@@ -482,7 +481,8 @@ void ABpTable::ApplyLevelVisuals()
 		if (bRoomLit && SheetPlan->rooms[Index].id == HighlightId) Show *= HighlightShow;
 		if (Index == LiftedRoom && LiftedShell->GetInstanceCount() > 0)
 		{
-			LiftedShell->SetCustomDataValue(0, 3, Show, true);
+			// The lifted room is the brightest thing on the sheet (FE, element 6, the concept's raised room).
+			LiftedShell->SetCustomDataValue(0, 3, Show * LiftedRoomShow, true);
 			Show = 0.f;
 		}
 		Write(Rooms, ShownRooms, Index, Show, bRoomsDirty);

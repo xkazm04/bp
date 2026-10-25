@@ -30,6 +30,7 @@
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SDPIScaler.h"
 #include "Widgets/Layout/SSpacer.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/SLeafWidget.h"
@@ -42,6 +43,11 @@ namespace
 	const FLinearColor CardPaper(FColor(0xF3, 0xE9, 0xD2));
 	const FLinearColor AmberInk(FColor(0xFF, 0xB5, 0x47));
 	const FLinearColor Cyan(FColor(0xBF, 0xE8, 0xFF));
+	/** The card's glass and its edge (FE): near-white, a little cool, as the concept's card. */
+	const FLinearColor CardGlass(FColor(0xF4, 0xF7, 0xFB));
+	const FLinearColor CardEdge(FColor(0xDF, 0xF3, 0xFF));
+	/** The card's layout is in pixels at this density; SDPIScaler draws it at CardPxPerCm. */
+	constexpr float CardLayoutPxPerCm = 40.f;
 
 	/** A finding is open (it has a pin, and the card may ask about it) while it waits for a decision. */
 	bool IsOpen(const FBpProposal& Proposal)
@@ -68,12 +74,6 @@ namespace
 			if (FSlateRenderer* Renderer = FSlateApplication::Get().GetRenderer()) return FVector2D(Renderer->GetFontMeasureService()->Measure(Text, Font));
 		}
 		return FVector2D(Text.Len() * 0.55f * Font.Size * 1.333f, 1.17f * Font.Size * 1.333f);
-	}
-
-	/** A font whose cap height is CapPx pixels (Roboto: cap 0.711 em, Slate's points at 96 DPI). */
-	FSlateFontInfo CapFont(const TCHAR* Style, float CapPx)
-	{
-		return FCoreStyle::GetDefaultFontStyle(Style, CapPx / (0.711f * 96.f / 72.f));
 	}
 
 	/** Canvas text in the sheet's family, which needs a font object (ABpTable::TextFontObject; BpType's metrics). */
@@ -239,6 +239,12 @@ void ABpTable::LoadMarks()
 		}
 		const int32 TagSlot = Pins->GetMaterialIndex(TEXT("pin_tag"));
 		if (TagSlot != INDEX_NONE && TagMid) Pins->SetMaterial(TagSlot, TagMid);
+		// The beads and the stems in the pin's own amber.
+		if (UMaterialInterface* Body = LoadSoft(PinBodyMaterial))
+		{
+			PinBeads->SetMaterial(0, Body);
+			PinStems->SetMaterial(0, Body);
+		}
 	}
 	ScanParams = LoadSoft(ScanCollection);
 	WriteScanParams(0.f);
@@ -328,8 +334,9 @@ void ABpTable::ReceiveScanState(const FBpScanState& State)
 void ABpTable::BuildPins(const FBpScanState& State)
 {
 	if (!SheetPlan.IsValid() || !State.bHasScan) return;
-	// One pin per feature with an open finding; its tag names the first such finding (store order) and the lens, and
-	// how many more the feature has.
+	// One bead per feature with an open finding; the display rule (PinTagRiskMin) stands a tagged pin on the features
+	// with a finding of high urgency. The tag names the riskiest finding (store order breaks a tie), its risk, and how
+	// many more the feature has.
 	TMap<FString, int32> TileOf;
 	for (int32 Index = 0; Index < SheetPlan->tiles.Num(); ++Index) TileOf.Add(SheetPlan->tiles[Index].id, Index);
 	TArray<FPin> Next;
@@ -343,23 +350,31 @@ void ABpTable::BuildPins(const FBpScanState& State)
 		Key += Proposal.id + TEXT(",");
 		const int32* Tile = TileOf.Find(Proposal.feature);
 		if (!Tile) continue;
+		const int32 Risk = FMath::RoundToInt(Proposal.risk);
 		if (const int32* Pin = PinOfTile.Find(*Tile))
 		{
-			++Next[*Pin].Findings;
+			FPin& Have = Next[*Pin];
+			++Have.Findings;
+			if (Risk > Have.Risk)
+			{
+				Have.Risk = Risk;
+				Have.Line1 = Proposal.id.ToUpper();
+			}
 			continue;
 		}
-		if (Next.Num() >= TagAtlasCols * TagAtlasRows) continue;
 		FPin Pin;
 		Pin.Tile = *Tile;
 		Pin.Room = TileRoom.IsValidIndex(*Tile) ? TileRoom[*Tile] : INDEX_NONE;
 		Pin.Line1 = Proposal.id.ToUpper();
+		Pin.Risk = Risk;
 		Pin.Findings = 1;
 		PinOfTile.Add(*Tile, Next.Num());
 		Next.Add(Pin);
 	}
-	// Tags that would overlap from the target eye merge (FC3): in store order, a pin within TagClearUCm across of a tagged
-	// pin, and nearer or farther than it by less than the paper its tag hides from the target eye, gives its tag up to
-	// that pin, whose second line counts the findings it then carries. Every pin still stands on its own feature.
+	for (FPin& Pin : Next) Pin.bTagged = Pin.Risk >= PinTagRiskMin;
+	// Tags that would overlap from the target eye merge (FC3): in store order, a tagged pin within TagClearUCm across of an
+	// earlier tagged pin, and nearer or farther than it by less than the paper its tag hides from the target eye, gives
+	// its tag up to that pin, whose count then carries its findings. Every pin keeps its bead on its own feature.
 	const double TagTopCm = PinModelCm * PinScale, TagCm = PinTagModelCm * PinScale;
 	const double EyeAbove = ABpGameMode::TargetEyeAboveTopCm + GlassRecessCm;
 	const auto PaperOf = [this](const FPin& Pin)
@@ -370,6 +385,7 @@ void ABpTable::BuildPins(const FBpScanState& State)
 	int32 Merged = 0;
 	for (int32 Index = 0; Index < Next.Num(); ++Index)
 	{
+		if (!Next[Index].bTagged) continue;
 		const FVector2D Here = PaperOf(Next[Index]);
 		for (int32 Earlier = 0; Earlier < Index; ++Earlier)
 		{
@@ -381,45 +397,95 @@ void ABpTable::BuildPins(const FBpScanState& State)
 			if (FMath::Abs(Here.X - There.X) >= TagClearUCm || FMath::Abs(Here.Y - There.Y) >= Hidden) continue;
 			Next[Index].bTagged = false;
 			Next[Earlier].Findings += Next[Index].Findings;
+			if (Next[Index].Risk > Next[Earlier].Risk)
+			{
+				Next[Earlier].Risk = Next[Index].Risk;
+				Next[Earlier].Line1 = Next[Index].Line1;
+			}
 			++Merged;
 			break;
 		}
 	}
+	int32 Cells = 0;
 	for (FPin& Pin : Next)
 	{
-		// The second line only counts: a lens name at the tag's floor does not fit the tag (BpType.h).
-		Pin.Line2 = Pin.bTagged && Pin.Findings > 1 ? FString::Printf(TEXT("+%d"), Pin.Findings - 1) : FString();
+		Pin.Cell = Pin.bTagged && Cells < TagAtlasCols * TagAtlasRows ? Cells++ : INDEX_NONE;
+		Pin.bTagged = Pin.Cell != INDEX_NONE;
+		// The second line: the risk, and how many more findings the tag stands for (DrawTags drops what does not fit).
+		Pin.Line2 = Pin.Findings > 1 ? FString::Printf(TEXT("RISK %d  +%d"), Pin.Risk, Pin.Findings - 1) : FString::Printf(TEXT("RISK %d"), Pin.Risk);
 	}
 	if (Key == PinsKey && PinList.Num() == Next.Num()) return;
-	UE_LOG(LogBpTable, Log, TEXT("BpTable: pin tags merged=%d of %d (tags that would overlap from the target eye)"), Merged, Next.Num());
+	UE_LOG(LogBpTable, Log, TEXT("BpTable: pin rule risk>=%d: tags=%d of %d pins, merged=%d (tags that would overlap from the target eye)"), PinTagRiskMin, Cells, Next.Num(), Merged);
 	PinsKey = Key;
 	PinList = MoveTemp(Next);
 	Pins->ClearInstances();
+	PinBeads->ClearInstances();
+	PinStems->ClearInstances();
 	TArray<FTransform> Places;
-	Places.Init(FTransform::Identity, PinList.Num());
+	Places.Init(FTransform::Identity, Cells);
 	if (Pins->GetStaticMesh() && Places.Num() > 0)
 	{
 		Pins->SetNumCustomDataFloats(4);
 		Pins->AddInstances(Places, false, false, false);
-		// Each pin's tag reads its own cell of the atlas: custom data 0, 1 its UV offset, 2, 3 its UV size.
-		TArray<float> Cells;
-		for (int32 Index = 0; Index < PinList.Num(); ++Index)
+		// Each tagged pin's tag reads its own cell of the atlas: custom data 0, 1 its UV offset, 2, 3 its UV size.
+		TArray<float> CellUVs;
+		for (int32 Cell = 0; Cell < Cells; ++Cell)
 		{
-			const int32 Col = Index % TagAtlasCols, Row = Index / TagAtlasCols;
-			Cells.Append({ static_cast<float>(Col) / TagAtlasCols, static_cast<float>(Row) / TagAtlasRows, 1.f / TagAtlasCols, 1.f / TagAtlasRows });
+			const int32 Col = Cell % TagAtlasCols, Row = Cell / TagAtlasCols;
+			CellUVs.Append({ static_cast<float>(Col) / TagAtlasCols, static_cast<float>(Row) / TagAtlasRows, 1.f / TagAtlasCols, 1.f / TagAtlasRows });
 		}
-		Pins->SetCustomData(0, PinList.Num() - 1, Cells, true);
+		Pins->SetCustomData(0, Cells - 1, CellUVs, true);
 	}
+	TArray<FTransform> Beads;
+	Beads.Init(FTransform::Identity, PinList.Num());
+	if (Beads.Num() > 0) PinBeads->AddInstances(Beads, false, false, false);
+	if (Places.Num() > 0) PinStems->AddInstances(Places, false, false, false);
 	if (TagAtlas) TagAtlas->UpdateResource();
+	RaisePins();
 	PlacePins();
-	UE_LOG(LogBpTable, Log, TEXT("BpTable: pins=%d tagged=%d open_findings=%d (pins on the features that carry them)"),
-		Pins->GetInstanceCount(), TagMid ? Pins->GetInstanceCount() : 0, Open);
+	UE_LOG(LogBpTable, Log, TEXT("BpTable: pins=%d tagged=%d open_findings=%d (beads on the features that carry them)"), PinList.Num(), Pins->GetInstanceCount(), Open);
+}
+
+void ABpTable::RaisePins()
+{
+	if (!SheetPlan.IsValid()) return;
+	// From the target eye (on the table's centre line), the wing labels lie on the paper between the plan's far edge and
+	// WingLabelTopV. Above a pin's foot, the eye's rays to those two lines pass at two heights; a tag between them would
+	// stand over the labels, so its pin rises on a stem until the tag's foot clears the far line's ray (TagRowGapCm
+	// beyond the labels).
+	const double Top = PlacedHeightCm > 0.f ? PlacedHeightCm : DefaultTableHeightCm;
+	const double PaperZ = Top - GlassRecessCm;
+	const FVector2D Eye(-(TableDepthCm * 0.5 + ABpGameMode::TargetBehindNearEdgeCm), Top + ABpGameMode::TargetEyeAboveTopCm);
+	const double NearV = PlanMarginCm().Y;
+	const double FarV = (WingLabelTopV >= 0.0 ? WingLabelTopV : NearV - 5.0) - TagRowGapCm;
+	// A paper v's local X is PaperDepthCm / 2 - v (PaperCmToLocal).
+	const auto RayHeight = [&](double PinX, double V)
+	{
+		const double X = PaperDepthCm * 0.5 - V;
+		return (Eye.Y - PaperZ) * (1.0 - (PinX - Eye.X) / FMath::Max(X - Eye.X, 1.0));
+	};
+	const double TagFoot = (PinModelCm - PinTagModelCm) * PinScale, TagTop = PinModelCm * PinScale;
+	TArray<FString> Risen;
+	for (FPin& Pin : PinList)
+	{
+		Pin.RaiseCm = 0.f;
+		if (!Pin.bTagged) continue;
+		const FBpPlanBox& Box = SheetPlan->tiles[Pin.Tile].box;
+		const double PinX = PaperDepthCm * 0.5 - PlanToPaperCm(FVector2D(Box.x + Box.w * 0.5, Box.y + Box.h * 0.5)).Y;
+		const double Low = RayHeight(PinX, NearV), High = RayHeight(PinX, FarV);
+		if (TagTop > Low && TagFoot < High)
+		{
+			Pin.RaiseCm = static_cast<float>(High - TagFoot);
+			Risen.Add(FString::Printf(TEXT("%s+%.1f"), *Pin.Line1, Pin.RaiseCm));
+		}
+	}
+	UE_LOG(LogBpTable, Log, TEXT("BpTable: tags clear the wing labels (paper v %.1f to %.1f): risen [%s]"), FarV, NearV, *FString::Join(Risen, TEXT(", ")));
 }
 
 void ABpTable::PlacePins()
 {
 	if (!SheetPlan.IsValid() || PinList.Num() == 0) return;
-	TArray<FTransform> PinPlaces;
+	TArray<FTransform> PinPlaces, BeadPlaces, StemPlaces;
 	for (const FPin& Pin : PinList)
 	{
 		const FBpPlanTile& Tile = SheetPlan->tiles[Pin.Tile];
@@ -430,9 +496,17 @@ void ABpTable::PlacePins()
 		const float StandCm = Rise * TileHeightCm(Reading ? *Reading : FString());
 		const FVector2D Centre = PlanToPaperCm(FVector2D(Tile.box.x + Tile.box.w * 0.5, Tile.box.y + Tile.box.h * 0.5));
 		const FVector Foot = Group.TransformPosition(PaperCmToLocal(Centre, StandCm));
-		PinPlaces.Add(FTransform(FRotator(0.f, PinYawDeg, 0.f), Foot, FVector(Pin.bTagged ? PinScale : PinScale * MergedPinRatio)));
+		BeadPlaces.Add(FTransform(FQuat::Identity, Foot, FVector(PinBeadCm * 0.5)));
+		if (!Pin.bTagged) continue;
+		const FVector Head = Group.TransformPosition(PaperCmToLocal(Centre, StandCm + Pin.RaiseCm));
+		PinPlaces.Add(FTransform(FRotator(0.f, PinYawDeg, 0.f), Head, FVector(PinScale)));
+		// The stem from the bead up to the risen pin (the engine cube: 100 cm, pivot at its centre); flat when it stands.
+		const double Length = (Head - Foot).Size();
+		StemPlaces.Add(FTransform(FQuat::Identity, (Head + Foot) * 0.5, FVector(PinStemCm / 100.0, PinStemCm / 100.0, Length / 100.0)));
 	}
-	if (Pins->GetInstanceCount() == PinPlaces.Num()) Pins->BatchUpdateInstancesTransforms(0, PinPlaces, false, true);
+	if (PinPlaces.Num() > 0 && Pins->GetInstanceCount() == PinPlaces.Num()) Pins->BatchUpdateInstancesTransforms(0, PinPlaces, false, true);
+	if (BeadPlaces.Num() > 0 && PinBeads->GetInstanceCount() == BeadPlaces.Num()) PinBeads->BatchUpdateInstancesTransforms(0, BeadPlaces, false, true);
+	if (StemPlaces.Num() > 0 && PinStems->GetInstanceCount() == StemPlaces.Num()) PinStems->BatchUpdateInstancesTransforms(0, StemPlaces, false, true);
 }
 
 void ABpTable::DrawTags(UCanvas* Canvas, int32 Width, int32 Height)
@@ -463,9 +537,10 @@ void ABpTable::DrawTags(UCanvas* Canvas, int32 Width, int32 Height)
 	const FLinearColor CountInk = AmberInk * 0.55f + Navy * 0.45f;
 	for (int32 Index = 0; Index < PinList.Num(); ++Index)
 	{
-		// A merged pin's tag stays blank (transparent): its findings are counted on the tag it merged into.
-		if (!PinList[Index].bTagged) continue;
-		const FVector2D Cell(Index % TagAtlasCols * TagCellWidthPx, Index / TagAtlasCols * TagCellHeightPx);
+		// Only the tagged pins have a cell; a merged pin's findings are counted on the tag it merged into.
+		const int32 At = PinList[Index].Cell;
+		if (!PinList[Index].bTagged || At == INDEX_NONE) continue;
+		const FVector2D Cell(At % TagAtlasCols * TagCellWidthPx, At / TagAtlasCols * TagCellHeightPx);
 		// A pixel of margin so the mips never bleed one card into the next.
 		const FVector2D Min = Cell + FVector2D(4.0, 4.0), Max = Cell + FVector2D(TagCellWidthPx - 4.0, TagCellHeightPx - 4.0);
 		Fill(Min, Max, CardPaper);
@@ -474,7 +549,10 @@ void ABpTable::DrawTags(UCanvas* Canvas, int32 Width, int32 Height)
 		const FSlateFontInfo Bold = CanvasFont(TEXT("Bold"), Cap);
 		const auto Fits = [&](const FString& Text) { return !Text.IsEmpty() && Measure(Text, Bold).X + Track * Text.Len() <= Room; };
 		if (Fits(PinList[Index].Line1)) Texts.Add({ PinList[Index].Line1, FVector2D(Min.X + Pad, Top(Min.Y + 26.f)), Bold, Navy, Track });
-		if (Fits(PinList[Index].Line2)) Texts.Add({ PinList[Index].Line2, FVector2D(Min.X + Pad, Top(Min.Y + 26.f + Cap + 20.f)), Bold, CountInk, Track });
+		// The second line as it fits: the risk and the count, else the risk alone.
+		FString Line2 = PinList[Index].Line2;
+		if (!Fits(Line2)) Line2 = FString::Printf(TEXT("RISK %d"), PinList[Index].Risk);
+		if (Fits(Line2)) Texts.Add({ Line2, FVector2D(Min.X + Pad, Top(Min.Y + 26.f + Cap + 20.f)), Bold, CountInk, Track });
 	}
 	if (Tris.Num() > 0)
 	{
@@ -630,12 +708,9 @@ void ABpTable::RefreshCard()
 	const FBpPlanRoom* Room = SheetPlan->rooms.IsValidIndex(RoomIndex) ? &SheetPlan->rooms[RoomIndex] : nullptr;
 	const FBpPlanWing* Wing = Room ? FindWing(Room->parentId) : nullptr;
 	const FString Target = FString::Printf(TEXT("Wing %s — %s"), Wing ? *Wing->letter : TEXT("?"), Room ? *Room->name : TEXT("?"));
-	const FString Header = FString::Printf(TEXT("PROPOSED %s  ·  %s LENS"), *Ask->kind.Replace(TEXT("-"), TEXT(" ")).ToUpper(), *Ask->lens.ToUpper());
+	FString Header = FString::Printf(TEXT("PROPOSED %s  ·  %s LENS"), *Ask->kind.Replace(TEXT("-"), TEXT(" ")).ToUpper(), *Ask->lens.ToUpper());
+	if (Ask->risk > 0.0) Header += FString::Printf(TEXT("  ·  RISK %d"), FMath::RoundToInt(Ask->risk));
 	const FString Impact = Section(Ask->body, TEXT("Impact"));
-	TArray<FString> Meta;
-	if (!Ask->size.IsEmpty()) Meta.Add(TEXT("size ") + Ask->size);
-	if (Ask->risk > 0.0) Meta.Add(FString::Printf(TEXT("risk %d/10"), FMath::RoundToInt(Ask->risk)));
-	Meta.Add(SheetPlan->tiles[TileIndex].name);
 
 	// The thumbnail: the room, its bays and tiles (heights under the active lens), the finding's tile in amber.
 	TArray<SBpRoomSketch::FBlock> Blocks;
@@ -659,17 +734,30 @@ void ABpTable::RefreshCard()
 	TSharedRef<SBpRoomSketch> Sketch = SNew(SBpRoomSketch);
 	Sketch->SetBlocks(Blocks);
 
-	static const FSlateRoundedBoxBrush Panel(CardPaper.CopyWithNewOpacity(0.9f), 22.f, AmberInk.CopyWithNewOpacity(0.7f), 3.f);
+	// The concept's card (FE, element 10): a white glass panel with a soft cyan-white edge, set in the sheet's family
+	// (BpType.h), laid out at CardLayoutPxPerCm and drawn at CardPxPerCm (about twice what the target eye resolves there).
+	static const FSlateRoundedBoxBrush Panel(CardGlass.CopyWithNewOpacity(0.86f), 22.f, CardEdge.CopyWithNewOpacity(0.9f), 4.f);
 	static const FSlateRoundedBoxBrush Approve(AmberInk, 12.f);
 	static const FSlateRoundedBoxBrush Decline(FLinearColor::Transparent, 12.f, CardInk.CopyWithNewOpacity(0.7f), 2.5f);
-	const auto Button = [](const FSlateBrush* Brush, const FString& Text)
+	// A button: its mark in Slate's default face (Barlow has no check or cross), its word in the sheet's family.
+	const auto Button = [](const FSlateBrush* Brush, const FString& Mark, const FString& Text)
 	{
-		return SNew(SBorder).BorderImage(Brush).Padding(FMargin(28.f, 14.f)).HAlign(HAlign_Center)
+		return SNew(SBorder).BorderImage(Brush).Padding(FMargin(28.f, 16.f)).HAlign(HAlign_Center)
 			[
-				SNew(STextBlock).Text(FText::FromString(Text)).Font(CapFont(TEXT("Bold"), 28.f)).ColorAndOpacity(FSlateColor(CardInk))
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 16.f, 0.f)
+				[
+					SNew(STextBlock).Text(FText::FromString(Mark)).Font(FCoreStyle::GetDefaultFontStyle("Bold", 30)).ColorAndOpacity(FSlateColor(CardInk))
+				]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				[
+					SNew(STextBlock).Text(FText::FromString(Text)).Font(CanvasFont(TEXT("Bold"), 40.f)).ColorAndOpacity(FSlateColor(CardInk))
+				]
 			];
 	};
 	Card->SetSlateWidget(
+		SNew(SDPIScaler).DPIScale(CardPxPerCm / CardLayoutPxPerCm)
+		[
 		SNew(SBorder).BorderImage(&Panel).Padding(FMargin(38.f, 30.f))
 		[
 			SNew(SVerticalBox)
@@ -678,11 +766,11 @@ void ABpTable::RefreshCard()
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().FillWidth(1.f)
 				[
-					SNew(STextBlock).Text(FText::FromString(Header)).Font(CapFont(TEXT("Bold"), 22.f)).ColorAndOpacity(FSlateColor(CardInk.CopyWithNewOpacity(0.65f)))
+					SNew(STextBlock).Text(FText::FromString(Header)).Font(CanvasFont(TEXT("Bold"), 30.f)).ColorAndOpacity(FSlateColor(CardInk.CopyWithNewOpacity(0.65f)))
 				]
 				+ SHorizontalBox::Slot().AutoWidth()
 				[
-					SNew(STextBlock).Text(FText::FromString(Ask->id.ToUpper())).Font(CapFont(TEXT("Regular"), 22.f)).ColorAndOpacity(FSlateColor(CardInk.CopyWithNewOpacity(0.65f)))
+					SNew(STextBlock).Text(FText::FromString(Ask->id.ToUpper())).Font(CanvasFont(TEXT("Regular"), 30.f)).ColorAndOpacity(FSlateColor(CardInk.CopyWithNewOpacity(0.65f)))
 				]
 			]
 			+ SVerticalBox::Slot().FillHeight(1.f).Padding(0.f, 16.f, 0.f, 0.f)
@@ -693,19 +781,15 @@ void ABpTable::RefreshCard()
 					SNew(SVerticalBox)
 					+ SVerticalBox::Slot().AutoHeight()
 					[
-						SNew(STextBlock).Text(FText::FromString(Target)).AutoWrapText(true).Font(CapFont(TEXT("Bold"), 40.f)).ColorAndOpacity(FSlateColor(CardInk))
+						SNew(STextBlock).Text(FText::FromString(Target)).AutoWrapText(true).Font(CanvasFont(TEXT("Bold"), 44.f)).ColorAndOpacity(FSlateColor(CardInk))
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 16.f, 0.f, 0.f)
 					[
-						SNew(STextBlock).Text(FText::FromString(Ask->title)).AutoWrapText(true).Font(CapFont(TEXT("Regular"), 31.f)).ColorAndOpacity(FSlateColor(CardInk))
+						SNew(STextBlock).Text(FText::FromString(Ask->title)).AutoWrapText(true).Font(CanvasFont(TEXT("Regular"), 36.f)).ColorAndOpacity(FSlateColor(CardInk))
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 10.f, 0.f, 0.f)
 					[
-						SNew(STextBlock).Text(FText::FromString(Impact)).AutoWrapText(true).Font(CapFont(TEXT("Regular"), 24.f)).ColorAndOpacity(FSlateColor(CardInk.CopyWithNewOpacity(0.75f)))
-					]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 10.f, 0.f, 0.f)
-					[
-						SNew(STextBlock).Text(FText::FromString(FString::Join(Meta, TEXT("  ·  ")))).Font(CapFont(TEXT("Regular"), 20.f)).ColorAndOpacity(FSlateColor(CardInk.CopyWithNewOpacity(0.6f)))
+						SNew(STextBlock).Text(FText::FromString(Impact)).AutoWrapText(true).Font(CanvasFont(TEXT("Regular"), 32.f)).ColorAndOpacity(FSlateColor(CardInk.CopyWithNewOpacity(0.8f)))
 					]
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top)
@@ -721,13 +805,14 @@ void ABpTable::RefreshCard()
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().FillWidth(1.f).Padding(0.f, 0.f, 14.f, 0.f)
 				[
-					Button(&Approve, TEXT("✓  APPROVE"))
+					Button(&Approve, TEXT("✓"), TEXT("APPROVE"))
 				]
 				+ SHorizontalBox::Slot().FillWidth(1.f).Padding(14.f, 0.f, 0.f, 0.f)
 				[
-					Button(&Decline, TEXT("✕  DECLINE"))
+					Button(&Decline, TEXT("✕"), TEXT("DECLINE"))
 				]
 			]
+		]
 		]);
 	Card->RequestRedraw();
 	Card->SetVisibility(bCardShown);
