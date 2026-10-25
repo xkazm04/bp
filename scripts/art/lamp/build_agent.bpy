@@ -2,13 +2,16 @@
 # from primitives with bevels and smooth shading instead of image-to-3D, from the concept turnaround in
 # apps/vr/ArtSource/lamp-agent/options/ (H-s41 is the target-referenced view the proportions follow).
 #   blender -b --factory-startup -P scripts/art/lamp/build_agent.bpy -- <repo> <work>
-# Parts, one rigid part per bone (no blended weights):
-#   body         the tapered cone shell, its amber front slit, the pin under the tip, the dark neck collar
-#   head         the hood (a deep cup, white outside, open to the front), the emissive orb inside it, the glow card
-#   arm_?_upper  shoulder ball + upper capsule;   arm_?_lower  elbow ball + forearm capsule + wrist ball + wire loop
-# Slots (5, so the static mesh is 5 draws): agent_shell (white clear-coat plastic), agent_hood_inner (the inside of the
-# hood: white with a faint warm self-glow), agent_joint (dark metal),
-# agent_glow (amber emissive: orb, slit, pin; UE drives its strength), agent_glow_card (the additive card in the hood
+# Parts, one rigid part per bone (the cable alone is blended between two):
+#   body         the tapered cone shell (a front panel framed by shallow seam grooves, a rolled top lip), its amber front
+#                slit and dot, the pin under the tip, the dark neck collar and rings, the shoulder brackets
+#   head         the hood (one closed lathe: white outside with a seam ring, a rolled half-round lip, a dark glossy inside),
+#                the emissive orb inside it, the glow card
+#   arm_?_upper  shoulder axle drum (caps, screw head) + upper capsule with collar rings;   arm_?_lower  elbow drum +
+#                forearm capsule + wrist drum + teardrop wire loop;   cable  body -> arm_r_upper, skinned along its length
+# Slots (5, so the static mesh is 5 draws): agent_shell (white clear-coat plastic, roughness breakup), agent_hood_inner (the
+# inside of the hood: a dark smoked glossy bowl), agent_joint (dark metal: drums, caps, screws, rings, cable),
+# agent_glow (amber emissive: orb, slit, dot, pin; UE drives its strength), agent_glow_card (the additive card in the hood
 # opening; textures/agent_glow_card.png). Axes: Blender Z up, the figure faces -Y; pivot = the pin tip (z = 0), x/y centred
 # on the body axis. Writes into ArtSource/lamp-agent: final.fbx (rig + 4 actions), final_working.glb (static, working pose),
 # textures/*.png (AO, roughness and metal baked with Cycles on the CPU); and <work>/build.json, <work>/agent.blend.
@@ -27,7 +30,7 @@ TEX = os.path.join(OUT, 'textures')
 os.makedirs(TEX, exist_ok=True)
 os.makedirs(WORK, exist_ok=True)
 POSES = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'agent_poses.json')))
-BAKE_PX = 1024
+BAKE_PX = 2048
 R = {}
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -35,9 +38,25 @@ scene = bpy.context.scene
 scene.unit_settings.scale_length = 1.0
 
 # ---- dimensions (metres) -------------------------------------------------------------------------------------------
-PIN = (0.0, 0.014, 0.0016)                  # z from, z to, radius
-BODY = [(0.0, 0.012), (0.0075, 0.0138), (0.0130, 0.019), (0.0160, 0.028), (0.044, 0.135), (0.0445, 0.1375),
-        (0.043, 0.1405), (0.033, 0.1430), (0.0, 0.1445)]            # lathe profile (r, z), tip to top cap
+PIN = (0.0, 0.014, 0.0009)                  # z from, z to, radius (the concept's pin is a hair-thin rod)
+SEAM_D, SEAM_W = 0.0006, 0.0004             # panel seams: a groove this deep, its walls this far either side of it
+BODY_SEAMS_Z = (0.034, 0.124)               # the front panel's lower and upper seam rings
+BODY_SEAMS_A = (225.0, 315.0)               # and its two vertical seams, degrees about Z (270 is the front, -Y)
+
+def body_profile():
+    """(r, z, seamable): the rounded tip, a cone that swells 2.5 mm between its ends, two seam grooves, a rolled top lip."""
+    p = [(0.0, 0.012, 0), (0.0075, 0.0138, 0), (0.0130, 0.019, 0), (0.0160, 0.028, 0)]
+    r_at = lambda z: 0.016 + (z - 0.028) / (0.135 - 0.028) * (0.044 - 0.016) + 0.0025 * math.sin(math.pi * (z - 0.028) / (0.135 - 0.028))
+    zs = sorted(set([0.028 + (0.135 - 0.028) * i / 14 for i in range(1, 15)]
+                    + [z + dz for z in BODY_SEAMS_Z for dz in (-SEAM_W, 0.0, SEAM_W)]))
+    zs = [z for z in zs if all(abs(z - s) >= SEAM_W * 0.99 or abs(z - s) < 1e-9 for s in BODY_SEAMS_Z)]
+    for z in zs:
+        r = r_at(z) - (SEAM_D if any(abs(z - s) < 1e-9 for s in BODY_SEAMS_Z) else 0.0)
+        p.append((r, z, 1 if BODY_SEAMS_Z[0] - 1e-6 <= z <= BODY_SEAMS_Z[1] + 1e-6 else 0))
+    p += [(0.0446, 0.1378, 0), (0.0440, 0.1395, 0), (0.0425, 0.1408, 0), (0.033, 0.1430, 0), (0.0, 0.1445, 0)]
+    return p
+
+BODY = body_profile()                       # lathe profile (r, z, seamable), tip to top cap
 COLLAR = (0.137, 0.156, 0.019)              # z from, z to, radius
 HEAD_C = Vector((0.0, -0.010, 0.186))       # hood sphere centre
 HOOD_R, HOOD_T, HOOD_CUT = 0.068, 0.0030, 0.18   # outer radius, wall, cut plane at +0.18 R along the opening axis
@@ -46,7 +65,8 @@ ORB_R, ORB_IN = 0.037, 0.006                 # orb radius; its centre sits this 
 SHOULDER = Vector((0.0505, 0.0, 0.130))      # +X side; mirrored for the right arm
 UPPER_L, LOWER_L = 0.078, 0.060             # capsule lengths
 BALL = (0.0098, 0.0072, 0.0055)              # shoulder, elbow, wrist ball radius
-LOOP = (0.0135, 0.0010)                      # wire loop major / minor radius
+LOOP = (0.0135, 0.0009)                      # wire loop major / minor radius
+LOOP_STRETCH = 2.3                           # the loop's length over its width before the teardrop pinch
 REST_DEG = POSES['rest_arm_deg_from_vertical']
 OPEN_AXIS = Vector((0.0, -math.cos(math.radians(OPEN_TILT)), math.sin(math.radians(OPEN_TILT))))
 
@@ -74,12 +94,47 @@ MATS = {
     'agent_shell': dict(color=(0.80, 0.79, 0.77), rough=0.35, coat=1.0, coat_rough=0.08),
     'agent_joint': dict(color=srgb('#3A3D42'), rough=0.38, metal=1.0),
     'agent_glow': dict(color=srgb('#FFD9A0'), rough=0.5, emit=srgb('#FFA94D'), emit_strength=3.0),
-    # the hood's inside: the same white, plus a faint warm self-glow standing in for the orb's bounce (UE: GlowStrength x 0.15)
-    'agent_hood_inner': dict(color=(0.80, 0.79, 0.77), rough=0.45, emit=srgb('#FFC48A'), emit_strength=0.5),
+    # the hood's inside: the concept's dark glossy bowl around the orb (a smoked warm grey, glossy, so the orb and its light
+    # read as reflections), plus a faint warm self-glow for the bounce (UE: GlowStrength x 0.15)
+    'agent_hood_inner': dict(color=(0.035, 0.03, 0.026), rough=0.12, coat=1.0, coat_rough=0.04, emit=srgb('#FFC48A'), emit_strength=0.0),
     'agent_glow_card': dict(color=(0, 0, 0), rough=1.0, emit=srgb('#FFB547'), emit_strength=1.0),
 }
+# Roughness breakup (baked into ORM.G): a smudge noise moves each surface's roughness by this much either way, and the
+# shell's albedo by 2 %, so a highlight wanders across the plastic instead of sitting on it like a decal.
+BREAKUP = {'agent_shell': (0.07, 0.02), 'agent_hood_inner': (0.08, 0.0), 'agent_joint': (0.1, 0.03)}
 mat = {k: principled(k, **v) for k, v in MATS.items()}
+
+def breakup(m, d_rough, d_albedo):
+    nt = m.node_tree
+    b = nt.nodes['Principled BSDF']
+    tc = nt.nodes.new('ShaderNodeTexCoord')
+    nz = nt.nodes.new('ShaderNodeTexNoise')
+    nz.inputs['Scale'].default_value = 38.0          # object space, metres: blotches of about 1 to 3 cm on a 25 cm figure
+    nz.inputs['Detail'].default_value = 6.0
+    nz.inputs['Roughness'].default_value = 0.6
+    nt.links.new(tc.outputs['Object'], nz.inputs['Vector'])
+    r0 = b.inputs['Roughness'].default_value
+    mr = nt.nodes.new('ShaderNodeMapRange')
+    mr.inputs['From Min'].default_value, mr.inputs['From Max'].default_value = 0.3, 0.7
+    mr.inputs['To Min'].default_value, mr.inputs['To Max'].default_value = r0 - d_rough, r0 + d_rough
+    nt.links.new(nz.outputs['Fac'], mr.inputs['Value'])
+    nt.links.new(mr.outputs['Result'], b.inputs['Roughness'])
+    if d_albedo:
+        c = b.inputs['Base Color'].default_value
+        mc = nt.nodes.new('ShaderNodeMapRange')
+        mc.inputs['From Min'].default_value, mc.inputs['From Max'].default_value = 0.3, 0.7
+        mc.inputs['To Min'].default_value, mc.inputs['To Max'].default_value = 1 - d_albedo, 1 + d_albedo
+        nt.links.new(nz.outputs['Fac'], mc.inputs['Value'])
+        mul = nt.nodes.new('ShaderNodeVectorMath'); mul.operation = 'SCALE'
+        mul.inputs[0].default_value = (c[0], c[1], c[2])
+        nt.links.new(mc.outputs['Result'], mul.inputs['Scale'])
+        nt.links.new(mul.outputs['Vector'], b.inputs['Base Color'])
+
+for k, (dr, da) in BREAKUP.items():
+    breakup(mat[k], dr, da)
 R['materials'] = {k: {kk: (list(vv) if isinstance(vv, tuple) else vv) for kk, vv in v.items()} for k, v in MATS.items()}
+R['seams'] = f'{SEAM_D * 1000:.1f} mm deep, {2 * SEAM_W * 1000:.1f} mm wide grooves'
+R['breakup'] = {k: {'roughness_pm': v[0], 'albedo_pm': v[1]} for k, v in BREAKUP.items()}
 
 # ---- part builders ----------------------------------------------------------------------------------------------------
 parts = []   # (object, bone)
@@ -100,17 +155,30 @@ def new_obj(name, bm):
     scene.collection.objects.link(ob)
     return ob
 
-def lathe(name, profile, segs, axis_from=Vector((0, 0, 0)), axis_dir=Vector((0, 0, 1))):
-    """A surface of revolution: profile (r, t) along axis_dir from axis_from; r = 0 ends close to a pole."""
+def seam_angles(segs, seams_deg):
+    """segs even angles, with each seam angle and a wall either side of it (SEAM_W of arc at r = 4 cm) put in."""
+    d = math.degrees(SEAM_W / 0.04)
+    angs = [360.0 * i / segs for i in range(segs)]
+    angs = [a for a in angs if all(min(abs(a - s), 360 - abs(a - s)) > 1.5 * d for s in seams_deg)]
+    angs += [s + k * d for s in seams_deg for k in (-1, 0, 1)]
+    return sorted(a % 360 for a in angs)
+
+def lathe(name, profile, segs, axis_from=Vector((0, 0, 0)), axis_dir=Vector((0, 0, 1)), seams_deg=()):
+    """A surface of revolution: profile (r, t) or (r, t, seamable) along axis_dir from axis_from; r = 0 ends close to a
+    pole. With seams_deg, the seamable rings dip SEAM_D at those angles: a vertical panel seam."""
     bm = bmesh.new()
     q = Vector((0, 0, 1)).rotation_difference(axis_dir.normalized()).to_matrix()
+    angs = seam_angles(segs, seams_deg) if seams_deg else [360.0 * i / segs for i in range(segs)]
+    segs = len(angs)
     rings = []
-    for r, t in profile:
+    for r, t, *flag in profile:
         if r < 1e-6:
             rings.append([bm.verts.new(axis_from + q @ Vector((0, 0, t)))])
         else:
-            rings.append([bm.verts.new(axis_from + q @ Vector((r * math.cos(a), r * math.sin(a), t)))
-                          for a in (2 * math.pi * i / segs for i in range(segs))])
+            def rr(a):
+                return r - SEAM_D if flag and flag[0] and any(abs(a - s) < 1e-6 for s in seams_deg) else r
+            rings.append([bm.verts.new(axis_from + q @ Vector((rr(a) * math.cos(math.radians(a)), rr(a) * math.sin(math.radians(a)), t)))
+                          for a in angs])
     for a, b in zip(rings, rings[1:]):
         if len(a) == 1:
             for i in range(segs):
@@ -152,6 +220,19 @@ def cylinder(name, z0, z1, r, segs, centre=Vector((0, 0, 0))):
                           matrix=Matrix.Translation(centre + Vector((0, 0, (z0 + z1) / 2))))
     return new_obj(name, bm)
 
+def cyl_axis(name, centre, axis, r, length, segs):
+    """A capped cylinder of `length` along `axis`, centred on `centre`."""
+    bm = bmesh.new()
+    bmesh.ops.create_cone(bm, cap_ends=True, segments=segs, radius1=r, radius2=r, depth=length)
+    q = Vector((0, 0, 1)).rotation_difference(Vector(axis).normalized()).to_matrix().to_4x4()
+    bmesh.ops.transform(bm, matrix=Matrix.Translation(centre) @ q, verts=bm.verts)
+    return new_obj(name, bm)
+
+def dome(name, centre, axis, r, h, segs=12):
+    """A screw head: a low dome of radius r and height h on a flat base at `centre`, rising along `axis`."""
+    prof = [(0.0, -0.0003)] + [(r, -0.0003)] + [(r * math.cos(a), h * math.sin(a)) for a in (math.pi / 2 * i / 4 for i in range(4))] + [(0.0, h)]
+    return lathe(name, prof, segs, centre, Vector(axis))
+
 def add_mods(ob, bevel=None, weighted=False):
     if bevel:
         m = ob.modifiers.new('bevel', 'BEVEL')
@@ -164,7 +245,7 @@ def add_mods(ob, bevel=None, weighted=False):
         w.weight = 50
 
 # ---- body ---------------------------------------------------------------------------------------------------------------
-finish(lathe('body', BODY, 40), 'agent_shell', 'body')
+finish(lathe('body', BODY, 40, seams_deg=BODY_SEAMS_A), 'agent_shell', 'body')
 pin = cylinder('pin', PIN[0], PIN[1], PIN[2], 8)
 finish(pin, 'agent_glow', 'body')
 collar = cylinder('collar', COLLAR[0], COLLAR[1], COLLAR[2], 32)
@@ -182,28 +263,50 @@ bmesh.ops.translate(bm, vec=(0, -(r_at - 0.0004), z_mid), verts=bm.verts)
 slit = new_obj('slit', bm)
 add_mods(slit, bevel=0.0005)
 finish(slit, 'agent_glow', 'body')
+# the concept's small glowing dot under the slit
+z_dot = 0.047
+r_dot = 0.016 + (z_dot - 0.028) / (0.135 - 0.028) * (0.044 - 0.016) + 0.0025 * math.sin(math.pi * (z_dot - 0.028) / (0.135 - 0.028))
+dot_ = cyl_axis('slit_dot', Vector((0, -(r_dot - 0.0002), z_dot)), Vector((0, -1, 0)), 0.0013, 0.0012, 12)
+add_mods(dot_, bevel=0.0003)
+finish(dot_, 'agent_glow', 'body')
+# the neck: two dark bevelled rings where the body's top lip meets the collar (joint hardware, as the concept's)
+for i, z in enumerate((0.1448, 0.1515)):
+    nk = cyl_axis(f'neck_ring_{i}', Vector((0, 0, z)), Vector((0, 0, 1)), 0.0215 if i == 0 else 0.0205, 0.0026, 32)
+    add_mods(nk, bevel=0.0007, weighted=True)
+    finish(nk, 'agent_joint', 'body')
 
 # ---- head: hood shell, orb, glow card -------------------------------------------------------------------------------------
-hood_q = Vector((0, 0, 1)).rotation_difference(OPEN_AXIS).to_matrix().to_4x4()
-bm = bmesh.new()
-bmesh.ops.create_uvsphere(bm, u_segments=40, v_segments=22, radius=HOOD_R)
-cut = [v for v in bm.verts if v.co.z > HOOD_CUT * HOOD_R]
-bmesh.ops.delete(bm, geom=cut, context='VERTS')
-bmesh.ops.transform(bm, matrix=Matrix.Translation(HEAD_C) @ hood_q, verts=bm.verts)
-hood = new_obj('hood', bm)
-s = hood.modifiers.new('wall', 'SOLIDIFY')
-s.thickness, s.offset, s.use_rim, s.use_even_offset = HOOD_T, -1.0, True, True
-add_mods(hood, bevel=0.0011)
+# One closed lathe about the opening axis: the outer sphere from the back pole to the cut (a panel seam ring part way),
+# a rolled half-round lip (the crisp bright rim of the concept), and the inner wall back to the inner pole.
+HOOD_SEAM_PHI = -38.0                       # the outer seam ring, degrees of latitude (the cut is near +10)
+phi_cut = math.degrees(math.asin(HOOD_CUT))
+hp = []
+for k in range(17):                          # outer, back pole to the cut
+    ph = -90.0 + (phi_cut + 90.0) * k / 16
+    hp.append((HOOD_R, ph))
+dph = math.degrees(SEAM_W / HOOD_R)
+hp = [p for p in hp if abs(p[1] - HOOD_SEAM_PHI) > 1.5 * dph] + [(HOOD_R, HOOD_SEAM_PHI - dph), (HOOD_R - SEAM_D, HOOD_SEAM_PHI), (HOOD_R, HOOD_SEAM_PHI + dph)]
+hp.sort(key=lambda p: p[1])
+prof = [(rad * math.cos(math.radians(ph)), rad * math.sin(math.radians(ph))) for rad, ph in hp]
+prof[0] = (0.0, -HOOD_R)
+z_cut = HOOD_R * math.sin(math.radians(phi_cut))
+r_mid = (HOOD_R - HOOD_T / 2) * math.cos(math.radians(phi_cut))
+for k in range(1, 8):                        # the lip: a half-round over the wall's top, outside to inside
+    th = math.pi * k / 8
+    prof.append((r_mid + HOOD_T / 2 * math.cos(th), z_cut + HOOD_T / 2 * 1.1 * math.sin(th)))
+RI = HOOD_R - HOOD_T
+for k in range(16, -1, -1):                  # inner wall, the cut back to the inner pole
+    ph = -90.0 + (phi_cut + 90.0) * k / 16
+    prof.append((RI * math.cos(math.radians(ph)), RI * math.sin(math.radians(ph))))
+prof[-1] = (0.0, -RI)
+hood = lathe('hood', prof, 40, HEAD_C, OPEN_AXIS)
 finish(hood, 'agent_shell', 'head')
-for m in list(hood.modifiers):              # applied here so the inside faces can take their own slot
-    with bpy.context.temp_override(object=hood, active_object=hood):
-        bpy.ops.object.modifier_apply(modifier=m.name)
 hood.data.materials.append(mat['agent_hood_inner'])
 for p in hood.data.polygons:
     if (p.center - HEAD_C).dot(p.normal) < 0:
         p.material_index = 1
 orb_c = HEAD_C + OPEN_AXIS * ORB_IN
-finish(sphere('orb', orb_c, ORB_R, segs=28, rings=16), 'agent_glow', 'head')
+finish(sphere('orb', orb_c, ORB_R, segs=24, rings=14), 'agent_glow', 'head')
 
 # ---- arms --------------------------------------------------------------------------------------------------------------
 def arm(side):
@@ -213,11 +316,30 @@ def arm(side):
     elbow = sh + d * (BALL[0] + UPPER_L + BALL[1] * 0.6)
     wrist = elbow + d * (BALL[1] * 0.6 + LOWER_L + BALL[2] * 0.6)
     up, lo = f'arm_{side}_upper', f'arm_{side}_lower'
-    b = sphere(f'shoulder_{side}', sh, BALL[0], 18, 10); add_mods(b, weighted=True); finish(b, 'agent_joint', up)
-    finish(capsule(f'upper_{side}', sh + d * (BALL[0] * 0.55), elbow - d * (BALL[1] * 0.45), 0.0086, 0.0058), 'agent_shell', up)
-    finish(sphere(f'elbow_{side}', elbow, BALL[1], 16, 8), 'agent_joint', lo)
-    finish(capsule(f'lower_{side}', elbow + d * (BALL[1] * 0.45), wrist - d * (BALL[2] * 0.4), 0.0076, 0.0050), 'agent_shell', lo)
-    finish(sphere(f'wrist_{side}', wrist, BALL[2], 12, 6), 'agent_joint', lo)
+    hinge = Vector((0, -1, 0))                 # the arms swing in the XZ plane: every hinge axle points at the viewer
+    def hub(tag, c, r, length, bone, screw=True):
+        """Joint hardware: a bevelled axle drum, a proud cap on its front face and a domed screw head on the cap."""
+        h = cyl_axis(f'{tag}_hub_{side}', c, hinge, r, length, 16); add_mods(h, bevel=r * 0.12, weighted=True); finish(h, 'agent_joint', bone)
+        cp = cyl_axis(f'{tag}_cap_{side}', c + hinge * (length / 2 + 0.0004), hinge, r * 0.72, 0.0012, 14)   # front only: the back never faces the player
+        add_mods(cp, bevel=0.0003, weighted=True); finish(cp, 'agent_joint', bone)
+        if screw:
+            finish(dome(f'{tag}_screw_{side}', c + hinge * (length / 2 + 0.001), hinge, r * 0.32, r * 0.16), 'agent_joint', bone)
+    # the shoulder: a bracket plate on the body side carries the axle (the bracket is the body's, the drum the arm's)
+    br = cyl_axis(f'shoulder_bracket_{side}', sh - Vector((sx * 0.004, 0, 0.0)), Vector((1, 0, 0)), 0.0068, 0.008, 16)
+    add_mods(br, bevel=0.0008, weighted=True); finish(br, 'agent_joint', 'body')
+    hub('shoulder', sh, BALL[0] * 0.95, 0.016, up)
+    upper_a, upper_b = sh + d * (BALL[0] * 0.55), elbow - d * (BALL[1] * 0.45)
+    finish(capsule(f'upper_{side}', upper_a, upper_b, 0.0086, 0.0058), 'agent_shell', up)
+    # a dark collar ring at each end of each arm segment, where the shell meets the joint
+    def collar_ring(tag, at, axis, r, bone):
+        c = cyl_axis(f'{tag}_{side}', at, axis, r, 0.0028, 16); add_mods(c, bevel=0.0004, weighted=True); finish(c, 'agent_joint', bone)
+    collar_ring('upper_ring_a', upper_a + d * 0.0085, d, 0.0067, up)
+    collar_ring('upper_ring_b', upper_b - d * 0.0080, d, 0.0066, up)
+    hub('elbow', elbow, BALL[1] * 0.95, 0.012, lo)
+    lower_a, lower_b = elbow + d * (BALL[1] * 0.45), wrist - d * (BALL[2] * 0.4)
+    finish(capsule(f'lower_{side}', lower_a, lower_b, 0.0076, 0.0050), 'agent_shell', lo)
+    collar_ring('lower_ring_a', lower_a + d * 0.0075, d, 0.0058, lo)
+    hub('wrist', wrist, BALL[2], 0.009, lo, screw=False)
     bm = bmesh.new()
     # a torus in the arm's plane (XZ), its near edge at the wrist ball
     for i in range(24):
@@ -234,13 +356,47 @@ def arm(side):
             b0, b1 = ((i + 1) % 24) * 6 + j, ((i + 1) % 24) * 6 + (j + 1) % 6
             bm.faces.new((bm.verts[a0], bm.verts[b0], bm.verts[b1], bm.verts[a1]))
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    bmesh.ops.scale(bm, vec=(1.0, 1.0, 1.6), verts=bm.verts)
+    # the concept's wire loop is a long narrow teardrop: stretched along the arm, pinched towards the wrist
+    for v in bm.verts:
+        t = (v.co.z / LOOP[0] + 1) / 2            # 0 at the far end, 1 at the wrist end
+        v.co.x *= 0.85 - 0.35 * t
+    bmesh.ops.scale(bm, vec=(1.0, 1.0, LOOP_STRETCH), verts=bm.verts)
     rot = Vector((0, 0, -1)).rotation_difference(d).to_matrix().to_4x4()
-    bmesh.ops.transform(bm, matrix=Matrix.Translation(wrist + d * (BALL[2] + LOOP[0] * 1.6 - 0.0014)) @ rot @ Matrix.Translation((0, 0, 0)), verts=bm.verts)
-    finish(new_obj(f'loop_{side}', bm), 'agent_joint', lo)
+    bmesh.ops.transform(bm, matrix=Matrix.Translation(wrist + d * (BALL[2] + LOOP[0] * LOOP_STRETCH - 0.0014)) @ rot @ Matrix.Translation((0, 0, 0)), verts=bm.verts)
+    finish(new_obj(f'loop_{side}', bm), 'agent_shell', lo)       # a bright wire, as the concept's
     return sh, elbow, wrist
 
 joints = {s: arm(s) for s in ('l', 'r')}
+
+# ---- the soft cable: out of the body's back, sagging, into the back of the hanging (right) upper arm --------------------
+# Skinned, not rigid: its weights run from the body to arm_r_upper along its length (smoothstep), so a pose bends it
+# instead of tearing it; the only vertices of the figure with two influences.
+CABLE_R = 0.0011
+sh_r, el_r, _ = joints['r']
+d_r = (el_r - sh_r).normalized()
+p0 = Vector((-0.024, 0.026, 0.104))                                    # the body's back, left of the spine (viewer's view)
+p3 = sh_r + d_r * 0.050 + Vector((0, 0.0075, 0))                       # the upper arm's back, half way down
+c1, c2 = p0 + Vector((-0.004, 0.016, -0.026)), p3 + Vector((0.006, 0.014, -0.022))
+N_C, S_C = 20, 8
+bm = bmesh.new()
+rings, ts = [], []
+for i in range(N_C + 1):
+    t = i / N_C
+    p = (1 - t) ** 3 * p0 + 3 * (1 - t) ** 2 * t * c1 + 3 * (1 - t) * t ** 2 * c2 + t ** 3 * p3
+    tg = (3 * (1 - t) ** 2 * (c1 - p0) + 6 * (1 - t) * t * (c2 - c1) + 3 * t ** 2 * (p3 - c2)).normalized()
+    u = Vector((0, 0, 1)); u = (u - tg * u.dot(tg)).normalized(); w = tg.cross(u)
+    rings.append([bm.verts.new(p + (u * math.cos(2 * math.pi * k / S_C) + w * math.sin(2 * math.pi * k / S_C)) * CABLE_R) for k in range(S_C)])
+    ts += [t] * S_C
+for a, b in zip(rings, rings[1:]):
+    for k in range(S_C):
+        bm.faces.new((a[k], a[(k + 1) % S_C], b[(k + 1) % S_C], b[k]))
+for rg in (rings[0], rings[-1]):
+    bm.faces.new(rg)
+bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+cable = new_obj('cable', bm)
+CABLE_W = [3 * t * t - 2 * t ** 3 for t in ts]                        # weight to arm_r_upper; body gets 1 - w
+finish(cable, 'agent_joint', None)
+R['cable'] = {'verts': len(cable.data.vertices), 'radius_m': CABLE_R, 'from_bone': 'body', 'to_bone': 'arm_r_upper'}
 
 # ---- apply modifiers, join into one mesh with one vertex group per bone (weight 1.0) ------------------------------------
 bones = ['body', 'head', 'arm_l_upper', 'arm_l_lower', 'arm_r_upper', 'arm_r_lower']
@@ -251,6 +407,14 @@ for ob, bone in parts:
     bpy.context.view_layer.objects.active = ob
     for m in list(ob.modifiers):
         bpy.ops.object.modifier_apply(modifier=m.name)
+    if bone is None:                         # the cable: blended body -> arm_r_upper
+        vb, va = ob.vertex_groups.new(name='body'), ob.vertex_groups.new(name='arm_r_upper')
+        for i, w in enumerate(CABLE_W):
+            if w < 1.0:
+                vb.add([i], 1.0 - w, 'REPLACE')
+            if w > 0.0:
+                va.add([i], w, 'REPLACE')
+        continue
     vg = ob.vertex_groups.new(name=bone)
     vg.add(range(len(ob.data.vertices)), 1.0, 'REPLACE')
 part_tris = {}
@@ -270,7 +434,7 @@ agent.name = agent.data.name = 'lamp-agent'
 core = {agent.vertex_groups[n].index for n in ('body', 'head')}
 zs = [v.co.z for v in agent.data.vertices if any(g.group in core for g in v.groups)]
 R['rest'] = {'height_m': round(max(zs) - min(zs), 4), 'min_z_m': round(min(zs), 4), 'hood_width_m': round(2 * HOOD_R, 4),
-             'body_top_width_m': round(2 * BODY[4][0], 4)}
+             'body_top_width_m': round(2 * max(p[0] for p in BODY), 4)}
 
 # ---- one UV set, packed; the card is added after the bakes with its own 0-1 UVs ---------------------------------------
 bpy.ops.object.mode_set(mode='EDIT')

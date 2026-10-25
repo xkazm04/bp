@@ -57,6 +57,7 @@ names = {g.index: g.name for g in sk.vertex_groups}
 infl = [sum(1 for g in v.groups if g.weight > 1e-4 and names.get(g.group) in S['bones']) for v in sk.data.vertices]
 S['max_influences'] = max(infl)
 S['unweighted_verts'] = sum(1 for n in infl if n == 0)
+S['blended_verts'] = sum(1 for n in infl if n > 1)
 S['fbx_tris'] = sum(len(p.vertices) - 2 for p in sk.data.polygons)
 json.dump(S, open(os.path.join(WORK, 'score.json'), 'w'), indent=1)
 print('SCORE', json.dumps(S))

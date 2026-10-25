@@ -8,10 +8,18 @@
 #   1. MPFB creates the default human (metres) and its default rig;
 #   2. the fingers, thumb and wrist are posed with the rig (degrees in POSES), the armature applied;
 #   3. each side keeps the hand and the lower forearm (vertices weighted to lowerarm02, wrist, metacarpals, fingers);
-#   4. a dark knit sleeve (a tapered tube with a rolled cuff) covers the forearm from the cuff edge up;
-#   5. each side is moved rigidly into the capture frame (X right, Y forward across the table, Z up, the table plane z = 0,
-#      the near paper edge at y = 0) from its wrist, forearm direction and palm normal, as PLACE says;
-#   6. hands_capture.glb (two meshes, slots hands_skin and hands_sleeve); <work>/hands.json, <work>/hands.blend.
+#   4. a high-poly copy of each hand (subdivided 3 times) is displaced by script from the posed finger bones: wrinkle lines
+#      over every finger joint and knuckle, a raised nail plate with its groove on each fingertip, veins on the back of
+#      the hand; the same fields tint the albedo (pinker nails with a pale free edge, darker creases, warmer knuckles) and
+#      set roughness (glossy nails, drier creases). It is baked onto the low mesh's own atlas (both hands, one 2048 set):
+#      albedo, normal (tangent, OpenGL) and ORM, with Cycles on the CPU, selected to active;
+#   5. a dark knit sleeve per arm: a closed rolled cuff with ribbing, diagonal compression folds above it, running past the
+#      eye so no cut end shows, capped; on the left wrist a dark smartwatch (band, case, face) below the cuff, as the concept;
+#   6. each side is moved rigidly into the capture frame (X right, Y forward across the table, Z up, the table plane z = 0,
+#      the near paper edge at y = 0) from its wrist, forearm direction and palm normal (PLACE), then dropped until its
+#      lowest fingertip rests on the paper (REST_Z);
+#   7. hands_capture.glb (two meshes; slots hands_skin, hands_sleeve, and hands_watch on the left), textures/*.png,
+#      <work>/hands.json, <work>/hands.blend.
 import bmesh
 import bpy
 import importlib
@@ -19,26 +27,39 @@ import json
 import math
 import os
 import sys
+import time
+import numpy as np
 from mathutils import Matrix, Vector
 
 argv = sys.argv[sys.argv.index('--') + 1:]
 REPO, WORK, SKIN = argv[0], argv[1], argv[2]
 OUT = os.path.join(REPO, 'apps', 'vr', 'ArtSource', 'hands-capture')
+TEX = os.path.join(OUT, 'textures')
 os.makedirs(WORK, exist_ok=True)
+os.makedirs(TEX, exist_ok=True)
 R = {}
 
 # finger joints: degrees of curl for joints 1, 2, 3 (finger1 is the thumb, scaled by 0.6); wrist: [flex, deviation]
 POSES = {
-    'L': {'fingers': {1: [5, 10, 8], 2: [8, 16, 12], 3: [10, 18, 14], 4: [12, 20, 15], 5: [14, 22, 16]}, 'wrist': [-6, 0]},
-    'R': {'fingers': {1: [25, 35, 25], 2: [0, 4, 4], 3: [75, 95, 55], 4: [80, 100, 60], 5: [80, 100, 60]}, 'wrist': [-10, 0]},
+    'L': {'fingers': {1: [5, 8, 6], 2: [6, 12, 9], 3: [8, 14, 10], 4: [9, 15, 11], 5: [10, 16, 12]}, 'wrist': [0, 0]},
+    'R': {'fingers': {1: [30, 40, 30], 2: [-4, 4, 4], 3: [80, 100, 60], 4: [85, 105, 65], 5: [85, 105, 65]}, 'wrist': [0, 0]},
 }
-# capture frame placement: wrist position, forearm direction (elbow to wrist), the palm's facing, in metres
+# capture frame placement: wrist position, forearm direction (elbow to wrist), the palm's facing, in metres. Read off the
+# concept through the target pose's eye (hand frame: eye at y -0.41, z 0.438, pitch -31, hfov 90): the right index tip
+# lands about 13 cm in on the paper right of centre, its forearm comes in from the bottom right; the left hand rests by
+# the near edge with its forearm in from the left, the watch towards the frame's left edge.
 PLACE = {
-    'L': {'wrist': (-0.19, -0.06, 0.05), 'forearm': (0.40, 0.88, -0.18), 'palm': (0.0, 0.1, -1.0)},
-    'R': {'wrist': (0.13, -0.03, 0.095), 'forearm': (-0.35, 0.88, -0.30), 'palm': (0.2, 0.15, -1.0)},
+    'L': {'wrist': (-0.20, 0.005, 0.04), 'forearm': (0.68, 0.70, -0.12), 'palm': (0.05, 0.1, -1.0)},
+    'R': {'wrist': (0.17, 0.005, 0.07), 'forearm': (-0.25, 0.93, -0.22), 'palm': (0.0, 0.0, -1.0)},
 }
-CUFF = 0.035   # the cuff edge, this far up the forearm from the wrist joint
-KEEP = 0.17    # forearm kept above the wrist (the rest is under the sleeve and out of shot)
+REST_Z = 0.0015   # the lowest skin point of each hand after the drop: fingertips on the paper, not through it
+CUFF = {'L': 0.052, 'R': 0.036}   # the cuff edge, this far up the forearm from the wrist joint (the left clears the watch)
+KEEP = 0.17       # forearm kept above the wrist (the rest is under the sleeve)
+SLEEVE_LEN = 0.42 # the sleeve runs this far up the forearm from the wrist: past the eye, so no end is in frame
+WATCH_AT = 0.028  # the watch band's centre, this far up the left forearm from the wrist joint
+ATLAS = 2048
+HAND_SCALE = 1.1  # the MakeHuman default adult's hand is 17 cm; a large adult's 19: the concept's hands read big
+HI_LEVELS = 3
 
 bpy.ops.wm.read_homefile(use_empty=True)
 HS = importlib.import_module('bl_ext.user_default.mpfb.services.humanservice').HumanService
@@ -66,7 +87,7 @@ def bone_world(n, tail=False):
     pb = rig.pose.bones[n]
     return rig.matrix_world @ (pb.tail if tail else pb.head)
 
-frames = {}
+frames, fingers = {}, {}
 for side in 'LR':
     w = bone_world(f'wrist.{side}')
     fa = (w - bone_world(f'lowerarm02.{side}')).normalized()
@@ -77,6 +98,17 @@ for side in 'LR':
     if side == 'R':
         n = -n
     frames[side] = (w, fa, n)
+    # per finger: joint heads, the tip, and each bone's back-of-finger direction. A positive bend about the bone's X
+    # swings its tail towards local +Z (flexion, which the poses above use), so the back of the finger is local -Z.
+    rot = rig.matrix_world.to_3x3()
+    fingers[side] = {}
+    for f in range(1, 6):
+        bs = [rig.pose.bones[f'finger{f}-{j}.{side}'] for j in (1, 2, 3)]
+        fingers[side][f] = {
+            'heads': [np.array(bone_world(b.name)) for b in bs],
+            'tip': np.array(bone_world(bs[2].name, tail=True)),
+            'dorsal': [np.array((rot @ b.matrix.to_3x3()).col[2].normalized() * -1.0) for b in bs],
+        }
 
 # ---- apply the pose, keep the hands and the lower forearms -----------------------------------------------------------
 bpy.context.view_layer.objects.active = body
@@ -112,84 +144,446 @@ for side in 'LR':
 bpy.data.objects.remove(body)
 bpy.data.objects.remove(rig)
 
-# ---- sleeves: a tapered tube with a rolled cuff, along the forearm ---------------------------------------------------
+def select_only(*obs):
+    for o in bpy.context.scene.objects:
+        o.select_set(False)
+    for o in obs:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = obs[-1]
+
+def smooth(x):
+    return x * x * (3 - 2 * x)
+
+# ---- the high-poly detail: displacement and colour fields from the finger bones --------------------------------------
+def detail_fields(side, P, Nrm):
+    """Per vertex of the subdivided hand: height (m, along the normal) and the masks the albedo and roughness use."""
+    w, fa, n = frames[side]
+    w, fa, n = np.array(w), np.array(fa), np.array(n)
+    dors_hand = -n
+    H = np.zeros(len(P)); crease = np.zeros(len(P)); nail = np.zeros(len(P)); knuck = np.zeros(len(P)); vein = np.zeros(len(P))
+    nail_edge = np.zeros(len(P))
+
+    def seg(a, b):
+        L = np.linalg.norm(b - a); u = (b - a) / L
+        s = (P - a) @ u
+        rv = (P - a) - np.outer(s, u)
+        return s, u, rv, np.linalg.norm(rv, axis=1), L
+
+    def gauss(x, sig):
+        return np.exp(-0.5 * (x / sig) ** 2)
+
+    for f, F in fingers[side].items():
+        hs, tip = F['heads'], F['tip']
+        ends = [hs[1], hs[2], tip]
+        # wrinkles: fine lines across the finger over each joint (knuckle MCP: two loose lines on the back only;
+        # PIP: three; DIP: two), fading round the sides
+        for j, (lines, depth, back_only) in enumerate((((-0.0032, 0.0022), 0.00016, True), ((-0.0022, 0.0, 0.0022), 0.00020, False),
+                                                       ((-0.0015, 0.0015), 0.00016, False))):
+            if f == 1 and j == 0:
+                continue
+            J = hs[j]
+            u_prev = (hs[j] - hs[j - 1]) if j > 0 else (hs[0] - w)
+            u_next = ends[j] - hs[j]
+            u = u_prev / np.linalg.norm(u_prev) + u_next / np.linalg.norm(u_next); u /= np.linalg.norm(u)
+            along = (P - J) @ u
+            rv = (P - J) - np.outer(along, u); dist = np.linalg.norm(rv, axis=1)
+            dz = F['dorsal'][j]
+            side_w = np.clip(((rv @ dz) / np.maximum(dist, 1e-9) + (0.2 if back_only else 1.2)) / 1.2, 0, 1)
+            near = (dist < (0.016 if j == 0 else 0.012)) * gauss(along, 0.004)
+            for o in lines:
+                g = gauss(along - o, 0.00055) * near * side_w
+                H -= depth * g
+                crease = np.maximum(crease, g)
+            # a warmer, slightly raised pad of skin over the back of each joint
+            kb = gauss(along, 0.006) * (dist < 0.016) * np.clip((rv @ dz) / np.maximum(dist, 1e-9), 0, 1)
+            knuck = np.maximum(knuck, kb)
+        # the nail: a raised plate on the back of the distal segment, a groove round its sides and base, a pale free edge
+        s, u, rv, dist, L = seg(hs[2], tip)
+        sN = s / L
+        dz = F['dorsal'][2]
+        lat = np.cross(u, dz)
+        ring = (sN > 0.3) & (sN < 1.15) & (dist < 0.014)
+        rad = np.median(dist[ring & (sN > 0.45) & (sN < 0.8)]) if np.any(ring & (sN > 0.45) & (sN < 0.8)) else 0.007
+        back = (rv @ dz) / np.maximum(dist, 1e-9)
+        wN = (rv @ lat) / (rad * (0.75 if f > 1 else 0.85))
+        c0, a0 = (0.70, 0.36) if f > 1 else (0.66, 0.40)
+        e = np.sqrt(((sN - c0) / a0) ** 2 + wN ** 2)
+        inside = ring & (back > 0.15)
+        plate = np.where(inside, np.clip((1.0 - e) / 0.12, 0, 1), 0.0)
+        H += 0.00028 * smooth(plate)
+        H -= np.where(inside, 0.00022 * gauss(e - 1.0, 0.07), 0.0)
+        nail = np.maximum(nail, smooth(plate))
+        nail_edge = np.maximum(nail_edge, smooth(plate) * np.clip((sN - (c0 + a0 * 0.78)) / 0.06, 0, 1))
+    # veins on the back of the hand: from the valleys between the knuckles towards the wrist's thumb side, measured in the
+    # plane of the hand's back so a vein is a ridge on the skin, not a tube through the hand
+    K = {f: fingers[side][f]['heads'][0] for f in range(2, 6)}
+    thumb_side = fingers[side][1]['heads'][0] - w
+    thumb_side = thumb_side - np.dot(thumb_side, fa) * fa
+    thumb_side /= np.linalg.norm(thumb_side)
+    paths = []
+    for a, b, wig in ((2, 3, 1.0), (3, 4, -1.0), (4, 5, 0.6)):
+        v0 = (K[a] + K[b]) / 2 + (w - (K[a] + K[b]) / 2) * 0.18
+        v2 = w + fa * 0.012 + thumb_side * 0.012 * (1 + 0.5 * (a - 2))
+        v1 = (v0 + v2) / 2 + thumb_side * 0.004 * wig
+        paths.append([v0 + (v1 - v0) * t for t in np.linspace(0, 1, 6)] + [v1 + (v2 - v1) * t for t in np.linspace(0, 1, 7)[1:]])
+    Pp = P - np.outer(P @ dors_hand, dors_hand)
+    facing = np.clip((Nrm @ dors_hand - 0.35) / 0.3, 0, 1)
+    for path in paths:
+        dmin = np.full(len(P), 1.0)
+        for p0, p1 in zip(path, path[1:]):
+            a = p0 - np.dot(p0, dors_hand) * dors_hand; b = p1 - np.dot(p1, dors_hand) * dors_hand
+            ab = b - a; t = np.clip(((Pp - a) @ ab) / max(ab @ ab, 1e-12), 0, 1)
+            dmin = np.minimum(dmin, np.linalg.norm(Pp - (a + np.outer(t, ab)), axis=1))
+        g = np.exp(-0.5 * (dmin / 0.0011) ** 2) * facing
+        H += 0.00035 * g
+        vein = np.maximum(vein, g)
+    return H, {'crease': crease, 'nail': nail, 'nail_edge': nail_edge, 'knuck': knuck, 'vein': vein}
+
+highs = {}
+t0 = time.time()
+for side in 'LR':
+    low = pieces[side]
+    hi = low.copy(); hi.data = low.data.copy(); bpy.context.scene.collection.objects.link(hi)
+    hi.name = hi.data.name = f'hand_{side}_hi'
+    sub = hi.modifiers.new('sub', 'SUBSURF'); sub.levels = sub.render_levels = HI_LEVELS
+    select_only(hi)
+    bpy.ops.object.modifier_apply(modifier='sub')
+    me = hi.data
+    P = np.array([v.co[:] for v in me.vertices]); Nrm = np.array([v.normal[:] for v in me.vertices])
+    H, fields = detail_fields(side, P, Nrm)
+    P2 = P + Nrm * H[:, None]
+    me.vertices.foreach_set('co', P2.ravel().astype(np.float32))
+    for k, v in fields.items():
+        a = me.attributes.new(k, 'FLOAT', 'POINT')
+        a.data.foreach_set('value', v.astype(np.float32))
+    for p in me.polygons:
+        p.use_smooth = True
+    me.update()
+    highs[side] = hi
+    R.setdefault('detail', {})[side] = {'hi_faces': len(me.polygons), 'height_mm': [round(float(H.min()) * 1000, 3), round(float(H.max()) * 1000, 3)],
+                                        'nail_verts': int((fields['nail'] > 0.5).sum()), 'vein_verts': int((fields['vein'] > 0.5).sum()),
+                                        'crease_verts': int((fields['crease'] > 0.5).sum())}
+R['detail_seconds'] = round(time.time() - t0, 1)
+
+# ---- sleeves and the watch (source frame) --------------------------------------------------------------------------
+def ring_radius(ob, side, t, band=0.008):
+    """The forearm's radial extent per angle (24 sectors) at t up the forearm, about the forearm axis."""
+    w, fa, n = frames[side]
+    e1 = n - fa * n.dot(fa); e1.normalize(); e2 = fa.cross(e1)
+    rs = np.zeros(24)
+    for v in ob.data.vertices:
+        p = ob.matrix_world @ v.co - w
+        h = p.dot(-fa)
+        if abs(h - t) < band:
+            q = p - (-fa) * h
+            a = math.atan2(q.dot(e2), q.dot(e1))
+            k = int((a + math.pi) / (2 * math.pi) * 24) % 24
+            rs[k] = max(rs[k], q.length)
+    rs[rs == 0] = rs[rs > 0].mean() if np.any(rs > 0) else 0.03
+    return rs, e1, e2
+
 def sleeve(side, ob):
     w, fa, n = frames[side]
-    pts = [ob.matrix_world @ v.co for v in ob.data.vertices]
-    ring = [p for p in pts if abs((p - w).dot(-fa) - CUFF) < 0.01]
-    rad = max(((p - w) - fa * (p - w).dot(fa)).length for p in ring) if ring else 0.03
-    seg, L = 20, KEEP - CUFF + 0.02
+    cuff = CUFF[side]
+    rs, e1, e2 = ring_radius(ob, side, cuff + 0.01)
+    rad = float(rs.max())
+    seg = 36
+    angs = [2 * math.pi * i / seg for i in range(seg)]
     bm = bmesh.new()
-    q = Vector((0, 0, 1)).rotation_difference(-fa).to_matrix()
-    def ringv(r, t):
-        return [bm.verts.new(w + q @ Vector((r * math.cos(2 * math.pi * i / seg), r * math.sin(2 * math.pi * i / seg), CUFF + t))) for i in range(seg)]
-    prof = [(rad + 0.004, 0.006), (rad + 0.010, 0.0), (rad + 0.014, 0.004), (rad + 0.015, 0.012), (rad + 0.012, 0.018), (rad + 0.013, 0.03), (rad + 0.020, L)]
-    rings = [ringv(r, t) for r, t in prof]
-    for a, b in zip(rings, rings[1:]):
+    up = -fa
+    def at(r, t, a):
+        return w + up * t + (e1 * math.cos(a) + e2 * math.sin(a)) * r
+    def fold(t, a):
+        """Compression folds: diagonal ridges every 2.5 to 3.5 cm, strongest just above the cuff, fading up the arm."""
+        if t < cuff + 0.03:
+            return 0.0
+        x = (t - cuff - 0.03)
+        env = (0.3 + 0.7 * math.exp(-x / 0.09)) * (0.55 + 0.45 * math.sin(3.1 * a + 23.0 * x + (0.8 if side == 'L' else 2.1)))
+        ph = 2 * math.pi * x / 0.034 + 3.0 * math.sin(11.0 * x) + 1.6 * math.sin(a + 9.0 * x) + 0.9 * math.sin(2 * a - 4.0 * x + (1.7 if side == 'L' else 0.4))
+        return env * max(0.0, math.sin(ph)) ** 2.2
+    def body_r(t):
+        x = min(1.0, max(0.0, (t - cuff - 0.03) / (SLEEVE_LEN - cuff - 0.03)))
+        return rad + 0.011 + 0.026 * smooth(x)
+    rib_n = 44
+    prof = []                                              # (t, r(a)) rings, the inside lip first
+    prof.append((cuff + 0.012, lambda a: rad + 0.0015))    # inside the cuff, against the skin (its open edge stays hidden)
+    prof.append((cuff + 0.002, lambda a: rad + 0.002))
+    for k in range(1, 6):                                  # the rolled edge: a half round from inside to outside
+        th = math.pi * k / 6
+        prof.append((cuff + 0.002 - 0.0022 * math.sin(th), (lambda th: lambda a: rad + 0.002 + 0.0055 * (1 - math.cos(th)) / 2)(th)))
+    for t in np.arange(cuff + 0.003, cuff + 0.03, 0.003):  # the ribbed cuff band
+        prof.append((float(t), lambda a: rad + 0.0072 + 0.0005 * math.cos(rib_n * a)))
+    t = cuff + 0.03
+    while t < SLEEVE_LEN:
+        prof.append((t, (lambda t: lambda a: body_r(t) + 0.0034 * fold(t, a))(t)))
+        t += 0.003 if t < cuff + 0.22 else 0.008
+    prof.append((SLEEVE_LEN, lambda a: body_r(SLEEVE_LEN)))
+    rings = [[bm.verts.new(at(rf(a), tt, a)) for a in angs] for tt, rf in prof]
+    for ra, rb in zip(rings, rings[1:]):
         for i in range(seg):
-            bm.faces.new((a[i], a[(i + 1) % seg], b[(i + 1) % seg], b[i]))
+            bm.faces.new((ra[i], ra[(i + 1) % seg], rb[(i + 1) % seg], rb[i]))
+    cap = bm.verts.new(w + up * (SLEEVE_LEN + 0.01))
+    for i in range(seg):
+        bm.faces.new((rings[-1][i], rings[-1][(i + 1) % seg], cap))
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     me = bpy.data.meshes.new(f'sleeve_{side}'); bm.to_mesh(me); bm.free()
     s = bpy.data.objects.new(f'sleeve_{side}', me); bpy.context.scene.collection.objects.link(s)
     for p in me.polygons:
         p.use_smooth = True
-    R.setdefault('forearm_radius_m', {})[side] = round(rad, 4)
+    R.setdefault('forearm_radius_m', {})[side] = round(rad * HAND_SCALE, 4)   # as shipped (scaled in the move)
     return s
 
+def watch(ob):
+    """The left wrist's smartwatch: a band hugging the forearm at WATCH_AT, a rounded case on the back of the wrist and a
+    glass face proud of it. One slot (hands_watch: near-black, glossy)."""
+    side = 'L'
+    w, fa, n = frames[side]
+    rs, e1, e2 = ring_radius(ob, side, WATCH_AT, band=0.006)
+    up = -fa
+    bm = bmesh.new()
+    seg = 24
+    # the band: a flat strap (2 cm wide, 2.4 mm thick) following the forearm's section, 1 mm off the skin
+    rings = []
+    for dt, dr in ((-0.010, 0.0010), (-0.0105, 0.0022), (-0.010, 0.0034), (0.010, 0.0034), (0.0105, 0.0022), (0.010, 0.0010)):
+        rg = []
+        for i in range(seg):
+            a = -math.pi + 2 * math.pi * (i + 0.5) / seg
+            r = rs[i] + dr
+            rg.append(bm.verts.new(w + up * (WATCH_AT + dt) + (e1 * math.cos(a) + e2 * math.sin(a)) * r))
+        rings.append(rg)
+    rings.append(rings[0])
+    for ra, rb in zip(rings, rings[1:]):
+        for i in range(seg):
+            bm.faces.new((ra[i], ra[(i + 1) % seg], rb[(i + 1) % seg], rb[i]))
+    # the case, on the back of the wrist (-n, the palm faces n)
+    back = -n; back = back - fa * back.dot(fa); back.normalize()
+    a_b = math.atan2(back.dot(e2), back.dot(e1))
+    k = int((a_b + math.pi) / (2 * math.pi) * seg) % seg
+    r_b = float(rs[k]) + 0.0034
+    side_v = back.cross(up)
+    frame = Matrix((up, side_v, back)).transposed().to_4x4()
+    for size, lift in (((0.040, 0.036, 0.0085), 0.0030), ((0.033, 0.030, 0.0016), 0.0077)):   # case, then the glass face
+        b2 = bmesh.new()
+        bmesh.ops.create_cube(b2, size=1.0)
+        bmesh.ops.scale(b2, vec=Vector(size), verts=b2.verts)
+        bmesh.ops.bevel(b2, geom=list(b2.edges), offset=min(size) * (0.35 if lift < 0.006 else 0.45), segments=3,
+                        affect='EDGES', profile=0.5, clamp_overlap=True)
+        bmesh.ops.transform(b2, matrix=Matrix.Translation(w + up * WATCH_AT + back * (r_b + lift)) @ frame, verts=b2.verts)
+        m2 = bpy.data.meshes.new('tmp'); b2.to_mesh(m2); b2.free()
+        bm.from_mesh(m2); bpy.data.meshes.remove(m2)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    me = bpy.data.meshes.new('watch'); bm.to_mesh(me); bm.free()
+    o = bpy.data.objects.new('watch', me); bpy.context.scene.collection.objects.link(o)
+    for p in me.polygons:
+        p.use_smooth = True
+    R['watch'] = {'band_at_m': WATCH_AT, 'case_cm': [4.0, 3.6, 0.85], 'face_cm': [3.3, 3.0], 'centre_src': [round(x, 4) for x in (w + up * WATCH_AT + back * (r_b + 0.0030))]}
+    return o
+
+# ---- materials -------------------------------------------------------------------------------------------------------
 skin = bpy.data.materials.new('hands_skin'); skin.use_nodes = True
-b = skin.node_tree.nodes['Principled BSDF']
-tex = skin.node_tree.nodes.new('ShaderNodeTexImage'); tex.image = bpy.data.images.load(SKIN)
-skin.node_tree.links.new(tex.outputs['Color'], b.inputs['Base Color'])
-b.inputs['Roughness'].default_value = 0.5
-b.inputs['Subsurface Weight'].default_value = 0.25
-b.inputs['Subsurface Radius'].default_value = (1.0, 0.35, 0.2)
-b.inputs['Subsurface Scale'].default_value = 0.01
 cloth = bpy.data.materials.new('hands_sleeve'); cloth.use_nodes = True
 c = cloth.node_tree.nodes['Principled BSDF']
 c.inputs['Base Color'].default_value = (0.012, 0.013, 0.016, 1); c.inputs['Roughness'].default_value = 0.92
 c.inputs['Sheen Weight'].default_value = 0.4
+wmat = bpy.data.materials.new('hands_watch'); wmat.use_nodes = True
+wb = wmat.node_tree.nodes['Principled BSDF']
+wb.inputs['Base Color'].default_value = (0.010, 0.011, 0.013, 1); wb.inputs['Roughness'].default_value = 0.22
+wb.inputs['Metallic'].default_value = 0.3; wb.inputs['Coat Weight'].default_value = 0.6
 
 def basis(f, nn):
     f = Vector(f).normalized(); nn = Vector(nn); nn = (nn - f * nn.dot(f)).normalized()
     return Matrix((f, nn, f.cross(nn))).transposed()
 
-final = []
+# ---- build each side, move it into the capture frame ------------------------------------------------------------------
+lows, extras = {}, {}
 for side in 'LR':
     ob = pieces[side]
     ob.data.materials.clear(); ob.data.materials.append(skin)
     for p in ob.data.polygons:
         p.material_index = 0; p.use_smooth = True
-    s = sleeve(side, ob)
-    s.data.materials.append(cloth)
-    bpy.ops.object.select_all(action='DESELECT')
-    s.select_set(True); ob.select_set(True); bpy.context.view_layer.objects.active = ob
-    bpy.ops.object.join()
-    # rigid move into the capture frame: source (wrist, forearm, palm) onto PLACE
+    parts = [sleeve(side, ob)]
+    if side == 'L':
+        parts.append(watch(ob))
     w, fa, n = frames[side]
     P = PLACE[side]
     rot = basis(P['forearm'], P['palm']) @ basis(fa, n).inverted()
-    M = Matrix.Translation(Vector(P['wrist'])) @ rot.to_4x4() @ Matrix.Translation(-w)
-    ob.data.transform(M); ob.matrix_world = Matrix.Identity(4)
+    M = Matrix.Translation(Vector(P['wrist'])) @ rot.to_4x4() @ Matrix.Scale(HAND_SCALE, 4) @ Matrix.Translation(-w)
+    for o in [ob, highs[side]] + parts:
+        o.data.transform(M); o.matrix_world = Matrix.Identity(4)
+    dz = REST_Z - min(v.co.z for v in ob.data.vertices)          # drop (or lift) until the lowest fingertip rests on the paper
+    for o in [ob, highs[side]] + parts:
+        o.data.transform(Matrix.Translation((0, 0, dz)))
+    R.setdefault('rest_drop_m', {})[side] = round(dz, 4)
+    R.setdefault('wrist_m', {})[side] = [round(x, 4) for x in (Vector(P['wrist']) + Vector((0, 0, dz)))]
+    if side == 'L':
+        R['watch']['centre_m'] = [round(x, 4) for x in (M @ Vector(R['watch']['centre_src']) + Vector((0, 0, dz)))]
+    lows[side], extras[side] = ob, parts
+
+# ---- one atlas for both hands' skin, baked from the high copies --------------------------------------------------------
+for side in 'LR':
+    me = lows[side].data
+    me.uv_layers[0].name = 'MH'
+    me.uv_layers.new(name='UVMap')
+    me.uv_layers['UVMap'].active = True
+    highs[side].data.uv_layers[0].name = 'MH'
+select_only(lows['R'], lows['L'])
+bpy.ops.object.mode_set(mode='EDIT')
+bpy.ops.mesh.select_all(action='SELECT')
+bpy.ops.uv.smart_project(angle_limit=math.radians(60), island_margin=0.004, area_weight=0.0, correct_aspect=True, scale_to_bounds=False)
+bpy.ops.uv.pack_islands(margin=4 / ATLAS, rotate=True, shape_method='CONCAVE', margin_method='FRACTION')
+bpy.ops.object.mode_set(mode='OBJECT')
+a2 = a3 = 0.0
+for side in 'LR':
+    me = lows[side].data
+    uv = me.uv_layers['UVMap'].data
+    for p in me.polygons:
+        pts = [uv[li].uv for li in p.loop_indices]
+        a2 += abs(sum(pts[i][0] * pts[(i + 1) % len(pts)][1] - pts[(i + 1) % len(pts)][0] * pts[i][1] for i in range(len(pts)))) / 2
+        a3 += p.area
+R['atlas'] = {'px': ATLAS, 'px_per_m': round(math.sqrt(a2 * ATLAS * ATLAS / a3), 1), 'uv_coverage': round(a2, 3)}
+
+# the bake source on the high copies: albedo = the MakeHuman skin (its own UVs) tinted by the detail fields; roughness from
+# the fields; the normal is the displaced surface plus a fine pore bump
+src = bpy.data.images.load(SKIN)
+hm = bpy.data.materials.new('hands_hi_bake'); hm.use_nodes = True
+nt = hm.node_tree; nt.nodes.clear()
+N, L = nt.nodes.new, nt.links.new
+out = N('ShaderNodeOutputMaterial')
+uvn = N('ShaderNodeUVMap'); uvn.uv_map = 'MH'
+ti = N('ShaderNodeTexImage'); ti.image = src; L(uvn.outputs['UV'], ti.inputs['Vector'])
+def attr(name):
+    a = N('ShaderNodeAttribute'); a.attribute_name = name; a.attribute_type = 'GEOMETRY'; return a.outputs['Fac']
+def mix_rgb(fac, a, b, blend='MIX'):
+    m = N('ShaderNodeMix'); m.data_type = 'RGBA'; m.blend_type = blend
+    L(fac, m.inputs['Factor']) if not isinstance(fac, float) else None
+    if isinstance(fac, float): m.inputs['Factor'].default_value = fac
+    for i, x in ((6, a), (7, b)):
+        if isinstance(x, tuple): m.inputs[i].default_value = (*x, 1)
+        else: L(x, m.inputs[i])
+    return m.outputs[2]
+def mathn(op, a, b):
+    m = N('ShaderNodeMath'); m.operation = op; m.use_clamp = True
+    for i, x in enumerate((a, b)):
+        if isinstance(x, (int, float)): m.inputs[i].default_value = x
+        else: L(x, m.inputs[i])
+    return m.outputs[0]
+col = ti.outputs['Color']
+col = mix_rgb(mathn('MULTIPLY', attr('knuck'), 0.55), col, (0.62, 0.36, 0.30), 'MULTIPLY')        # warmer knuckles
+col = mix_rgb(mathn('MULTIPLY', attr('vein'), 0.35), col, (0.55, 0.62, 0.78), 'MULTIPLY')         # bluish veins
+col = mix_rgb(mathn('MULTIPLY', attr('crease'), 0.45), col, (0.45, 0.33, 0.30), 'MULTIPLY')       # darker creases
+col = mix_rgb(mathn('MULTIPLY', attr('nail'), 0.8), col, (0.80, 0.56, 0.52))                       # pink nail bed
+col = mix_rgb(mathn('MULTIPLY', attr('nail_edge'), 0.85), col, (0.86, 0.80, 0.74))                 # pale free edge
+pores = N('ShaderNodeTexNoise'); pores.inputs['Scale'].default_value = 2600.0; pores.inputs['Detail'].default_value = 3.0
+tco = N('ShaderNodeTexCoord'); L(tco.outputs['Object'], pores.inputs['Vector'])
+rough = mathn('ADD', 0.46, mathn('MULTIPLY', pores.outputs['Fac'], 0.08))
+rough = mathn('ADD', rough, mathn('MULTIPLY', attr('crease'), 0.10))
+rough = mathn('SUBTRACT', rough, mathn('MULTIPLY', attr('nail'), 0.30))
+rough = mathn('SUBTRACT', rough, mathn('MULTIPLY', attr('knuck'), -0.04))
+bump = N('ShaderNodeBump'); bump.inputs['Strength'].default_value = 0.35; bump.inputs['Distance'].default_value = 0.00012
+L(pores.outputs['Fac'], bump.inputs['Height'])
+emit = N('ShaderNodeEmission'); diff = N('ShaderNodeBsdfDiffuse'); L(bump.outputs['Normal'], diff.inputs['Normal'])
+CH = {'albedo': col, 'rough': rough}
+for side in 'LR':
+    highs[side].data.materials.clear(); highs[side].data.materials.append(hm)
+
+sc = bpy.context.scene
+sc.render.engine = 'CYCLES'; sc.cycles.device = 'CPU'
+sc.render.bake.margin = 8
+tgt_node = skin.node_tree.nodes.new('ShaderNodeTexImage')
+skin.node_tree.nodes.active = tgt_node
+bake_s = {}
+imgs = {}
+for ch, kind, spp in (('albedo', 'EMIT', 4), ('rough', 'EMIT', 4), ('normal', 'NORMAL', 8)):
+    img = bpy.data.images.new('bake_' + ch, ATLAS, ATLAS, alpha=False, float_buffer=True)
+    img.colorspace_settings.name = 'Non-Color'
+    tgt_node.image = img
+    if ch == 'normal':
+        L(diff.outputs[0], out.inputs['Surface'])
+    else:
+        sock = CH[ch]
+        if ch == 'rough':
+            cc = N('ShaderNodeCombineColor')
+            for i in range(3): L(sock, cc.inputs[i])
+            sock = cc.outputs[0]
+        L(sock, emit.inputs['Color']); L(emit.outputs[0], out.inputs['Surface'])
+    sc.cycles.samples = spp
+    t1 = time.time()
+    for i, side in enumerate('LR'):
+        select_only(highs[side], lows[side])
+        kw = dict(normal_space='TANGENT') if kind == 'NORMAL' else {}
+        bpy.ops.object.bake(type=kind, use_selected_to_active=True, cage_extrusion=0.0025, max_ray_distance=0.006,
+                            margin=8, use_clear=(i == 0), **kw)
+    bake_s[ch] = round(time.time() - t1, 1)
+    a = np.empty(ATLAS * ATLAS * 4, np.float32); img.pixels.foreach_get(a)
+    imgs[ch] = a.reshape(ATLAS, ATLAS, 4)[:, :, :3].copy()
+    bpy.data.images.remove(img)
+R['bake_seconds'] = bake_s
+
+def lin_to_srgb(a):
+    a = np.clip(a, 0, 1)
+    return np.where(a <= 0.0031308, a * 12.92, 1.055 * np.power(a, 1 / 2.4) - 0.055)
+
+def png(path, arr):
+    h, w_, _ = arr.shape
+    im = bpy.data.images.new(os.path.basename(path), w_, h, alpha=False)
+    rgba = np.ones((h, w_, 4), np.float32); rgba[:, :, :3] = np.clip(arr, 0, 1)
+    im.pixels.foreach_set(rgba.ravel()); im.filepath_raw = path; im.file_format = 'PNG'; im.save()
+    bpy.data.images.remove(im)
+
+paths = {'albedo': os.path.join(TEX, 'hands_skin_albedo.png'), 'normal': os.path.join(TEX, 'hands_skin_normal.png'),
+         'orm': os.path.join(TEX, 'hands_skin_orm.png')}
+png(paths['albedo'], lin_to_srgb(imgs['albedo']))
+png(paths['normal'], imgs['normal'])
+r = imgs['rough'][:, :, 0]
+png(paths['orm'], np.dstack([np.ones_like(r), r, np.zeros_like(r)]))
+cover = imgs['albedo'].sum(axis=2) > 0
+R['textures'] = {k: os.path.relpath(v, OUT).replace('\\', '/') for k, v in paths.items()}
+R['rough_range'] = [round(float(np.percentile(r[cover], q)), 3) for q in (5, 50, 95)] if cover.any() else None
+
+# the shipped skin material: albedo, normal, ORM (G roughness), subsurface for the EEVEE check render
+nt = skin.node_tree
+nt.nodes.remove(tgt_node)
+b = nt.nodes['Principled BSDF']
+def timg(path, cs):
+    t = nt.nodes.new('ShaderNodeTexImage'); t.image = bpy.data.images.load(path); t.image.colorspace_settings.name = cs; return t
+nt.links.new(timg(paths['albedo'], 'sRGB').outputs['Color'], b.inputs['Base Color'])
+nm = nt.nodes.new('ShaderNodeNormalMap'); nt.links.new(timg(paths['normal'], 'Non-Color').outputs['Color'], nm.inputs['Color'])
+nt.links.new(nm.outputs['Normal'], b.inputs['Normal'])
+sp = nt.nodes.new('ShaderNodeSeparateColor'); nt.links.new(timg(paths['orm'], 'Non-Color').outputs['Color'], sp.inputs['Color'])
+nt.links.new(sp.outputs['Green'], b.inputs['Roughness'])
+b.inputs['Subsurface Weight'].default_value = 0.25
+b.inputs['Subsurface Radius'].default_value = (1.0, 0.35, 0.2)
+b.inputs['Subsurface Scale'].default_value = 0.01
+
+# ---- join, export ----------------------------------------------------------------------------------------------------
+final = []
+for side in 'LR':
+    ob = lows[side]
+    ob.data.uv_layers.remove(ob.data.uv_layers['MH'])
+    for o, m in zip(extras[side], (cloth, wmat)):
+        o.data.materials.append(m)
+    select_only(*extras[side], ob)
+    bpy.ops.object.join()
     ob.name = ob.data.name = f'hand_{side.lower()}'
     skin_v = {i for p in ob.data.polygons if ob.data.materials[p.material_index].name == 'hands_skin' for i in p.vertices}
-    ahead = [ob.data.vertices[i].co - Vector(P['wrist']) for i in skin_v]
-    R.setdefault('hand_length_m', {})[side] = round(max(d.length for d in ahead if d.dot(Vector(P['forearm']).normalized()) > 0), 4)   # wrist to the farthest fingertip
+    wr = Vector(R['wrist_m'][side])
+    ahead = [ob.data.vertices[i].co - wr for i in skin_v]
+    R.setdefault('hand_length_m', {})[side] = round(max(d.length for d in ahead if d.dot(Vector(PLACE[side]['forearm']).normalized()) > 0), 4)
     final.append(ob)
+    highs[side].hide_render = True; highs[side].hide_set(True)
 
 R['tris'] = {o.name: sum(len(p.vertices) - 2 for p in o.data.polygons) for o in final}
+R['slot_tris'] = {o.name: {m.name: sum(len(p.vertices) - 2 for p in o.data.polygons if p.material_index == i) for i, m in enumerate(o.data.materials)} for o in final}
 R['slots'] = sorted({m.name for o in final for m in o.data.materials})
 R['uv_sets'] = {o.name: len(o.data.uv_layers) for o in final}
 lo = [min(v.co[i] for o in final for v in o.data.vertices) for i in range(3)]
 hi = [max(v.co[i] for o in final for v in o.data.vertices) for i in range(3)]
 R['bounds_m'] = {'min': [round(x, 4) for x in lo], 'max': [round(x, 4) for x in hi]}
-skin_z = [v.co.z for o in final for v in o.data.vertices]
-R['min_z_m'] = round(min(skin_z), 4)
-R['poses'] = POSES; R['place'] = PLACE
-bpy.ops.object.select_all(action='DESELECT')
-for o in final:
-    o.select_set(True)
+R['min_z_m'] = round(min(v.co.z for o in final for p in o.data.polygons if o.data.materials[p.material_index].name == 'hands_skin' for v in (o.data.vertices[i] for i in p.vertices)), 4)
+R['poses'] = POSES; R['place'] = PLACE; R['hand_scale'] = HAND_SCALE; R['cuff_m'] = CUFF; R['sleeve_len_m'] = SLEEVE_LEN
+select_only(*final)
 bpy.ops.export_scene.gltf(filepath=os.path.join(OUT, 'hands_capture.glb'), use_selection=True, export_format='GLB', export_yup=True,
-                          export_apply=True, export_materials='EXPORT', export_image_format='NONE')
+                          export_apply=True, export_materials='EXPORT', export_image_format='NONE', export_tangents=True)
 bpy.ops.wm.save_as_mainfile(filepath=os.path.join(WORK, 'hands.blend'))
 json.dump(R, open(os.path.join(WORK, 'hands.json'), 'w'), indent=1)
-print('HANDS', json.dumps({k: R[k] for k in ('tris', 'slots', 'bounds_m', 'min_z_m', 'hand_length_m', 'forearm_radius_m')}))
+print('HANDS', json.dumps({k: R[k] for k in ('tris', 'slots', 'bounds_m', 'min_z_m', 'hand_length_m', 'forearm_radius_m', 'atlas', 'bake_seconds', 'detail')}))

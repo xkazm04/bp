@@ -28,6 +28,7 @@ BUILD = json.load(open(os.path.join(WORK, 'build.json')))
 
 scene.render.engine = 'BLENDER_EEVEE'
 scene.eevee.taa_render_samples = 128
+scene.eevee.use_raytracing = True          # screen-traced reflections: the glossy hood inside mirrors the orb
 scene.view_settings.view_transform = 'AgX'
 scene.view_settings.look = 'AgX - Medium High Contrast'
 scene.render.film_transparent = False
