@@ -1,7 +1,7 @@
 # Blender script (extension .bpy so scripts/check-python-deps.mjs does not read bpy/bmesh/mathutils as pip packages); run with blender -b -P
 """Builds the survey pin (apps/vr/ArtSource/survey-pin) and the fixture glyph kit (apps/vr/ArtSource/fixture-kit).
 
-Run:  blender -b -P scripts/art/build_art.bpy -- <repo-root>
+Run:  blender -b -P scripts/art/build_art.bpy -- <repo-root> [pin|kit]   (both when neither is named)
 Procedural only: no generated input, no GPU job. Units are metres, Blender is Z-up, the glTF exporter writes Y-up.
 Pivot of the pin is its tip (where it meets the sheet); the pivot of every fixture is its base centre.
 Spark vr-fidelity-40: both go through scripts/art/lib/finish.bpy (hard edges bevelled, hardened and weighted normals,
@@ -117,79 +117,156 @@ def build_pin():
 
 
 # ---------------------------------------------------------------------------------------------- fixture kit
-def mark(k, c, r=0.32 * CM):
-    """The stage mark: a flat 8-sided amber badge lying on a top surface (slot 'mark'); UE drives its colour per stage."""
-    k.lathe([(0, 0), (r, 0), (r, 0.06 * CM), (0, 0.06 * CM)], 8, base=c, mat='mark', bevel=0.0)
+# Spark vr-fidelity-40 FN: designed low-poly for their real size. UE fits a glyph to 0.8 of a 5.92 x 2.81 cm tile, so each
+# is a 2:1 maquette vignette about 4.4 x 2.1 cm and 1.3 to 2.4 cm tall, near 1:40, with the heights and the thin members
+# (legs, uprights, chair backs) exaggerated. M_Glyph is additive with a fresnel term: faces seen edge-on glow and faces turned
+# to the eye go dark. So the furniture is built of separate slabs and posts with air between them, and it reads by those
+# glowing edges. Plain boxes (12 triangles, sharp edges) and no chamfers: 250 to 450 triangles each, so nothing is decimated.
+# The viewer stands on the glyph's -Y side.
+def b(k, c, s, rot=(0, 0, 0), mat='fixture_body'):
+    """A sharp-edged box, centre and size in cm."""
+    return k.box(tuple(v * CM for v in c), tuple(v * CM for v in s), mat, rot=rot, bevel=0.0)
 
 
-def chair(k, x, y, yaw, seat=0.62 * CM):
-    """A chair facing +Y before `yaw`: seat, tilted back, one pedestal."""
-    rot = lambda dx, dy: Vector((x + dx * math.cos(yaw) - dy * math.sin(yaw), y + dx * math.sin(yaw) + dy * math.cos(yaw), 0))
-    k.box(rot(0, 0) + Vector((0, 0, seat)), (0.95 * CM, 0.9 * CM, 0.14 * CM), 'fixture_body', rot=(0, 0, yaw), bevel=0.0003)
-    k.box(rot(0, -0.42 * CM) + Vector((0, 0, seat + 0.5 * CM)), (0.95 * CM, 0.12 * CM, 0.95 * CM), 'fixture_body', rot=(0.12, 0, yaw), bevel=0.0003)
-    k.box(rot(0, 0) + Vector((0, 0, seat / 2)), (0.12 * CM, 0.12 * CM, seat), 'fixture_body', rot=(0, 0, yaw), bevel=0.0)        # pedestal
+def mark(k, c, r=0.24):
+    """The stage mark: a flat 6-sided badge lying on a top surface (slot 'mark'); UE drives its colour per stage. cm."""
+    k.lathe([(0, 0), (r * CM, 0), (r * CM, 0.05 * CM), (0, 0.05 * CM)], 6, base=tuple(v * CM for v in c), mat='mark', bevel=0.0)
 
 
-def user_flow(k):        # a desk with a monitor and a chair pulled up to it (a workstation)
-    top = 1.25 * CM
-    k.box((0, 0.4 * CM, top - 0.07 * CM), (3.6 * CM, 1.7 * CM, 0.14 * CM), 'fixture_body', bevel=0.0004)
+def placer(x, y, yaw):
+    """Maps a part's local (dx, dy, z) to the kit: local +Y is the way the piece faces before `yaw`."""
+    cs, sn = math.cos(yaw), math.sin(yaw)
+    return lambda dx, dy, z: (x + dx * cs - dy * sn, y + dx * sn + dy * cs, z)
+
+
+def office_chair(k, x, y, yaw):
+    """A task chair facing +Y before `yaw`: an X base, a gas column, a seat, two arm slabs and a tall reclined back."""
+    p = placer(x, y, yaw)
+    for a in (0.35, 0.35 + math.pi / 2):
+        b(k, p(0, 0, 0.04), (0.95, 0.12, 0.08), rot=(0, 0, yaw + a))
+    b(k, p(0, 0, 0.32), (0.13, 0.13, 0.52), rot=(0, 0, yaw))
+    b(k, p(0, 0, 0.62), (0.95, 0.9, 0.14), rot=(0, 0, yaw))
     for sx in (-1, 1):
-        k.box((sx * 1.65 * CM, 0.4 * CM, (top - 0.14 * CM) / 2), (0.14 * CM, 1.5 * CM, top - 0.14 * CM), 'fixture_body', bevel=0.0003)
-    k.box((0, 0.95 * CM, top + 0.5 * CM), (1.5 * CM, 0.1 * CM, 0.9 * CM), 'fixture_body', rot=(-0.1, 0, 0), bevel=0.0003)      # monitor
-    k.box((0, 1.05 * CM, top + 0.06 * CM), (0.5 * CM, 0.35 * CM, 0.12 * CM), 'fixture_body', bevel=0.0002)
-    chair(k, 0.2 * CM, -0.75 * CM, 0.15)
-    mark(k, (1.2 * CM, 0.2 * CM, top))
+        b(k, p(sx * 0.46, 0.02, 0.84), (0.09, 0.6, 0.32), rot=(0, 0, yaw))
+    b(k, p(0, -0.47, 1.08), (0.9, 0.12, 0.82), rot=(0.16, 0, yaw))
 
 
-def capability(k):       # a round meeting table with four chairs
-    top, r = 1.15 * CM, 1.25 * CM
-    k.lathe([(0, top - 0.14 * CM), (r, top - 0.14 * CM), (r, top), (0, top)], 16, mat='fixture_body', bevel=0.0004)
-    k.lathe([(0, 0), (0.6 * CM, 0), (0.6 * CM, 0.1 * CM), (0.12 * CM, 0.2 * CM), (0.12 * CM, top - 0.14 * CM), (0, top - 0.14 * CM)], 8,
-            mat='fixture_body', bevel=0.0003)
-    for i in range(4):
-        a = math.pi / 4 + i * math.pi / 2
-        chair(k, math.cos(a) * 1.45 * CM, math.sin(a) * 1.45 * CM, a + math.pi / 2)
-    mark(k, (0.0, 0.0, top))
-
-
-def ops(k):              # a filled shelving unit (storage, plant room, the back of house)
-    W, D, H = 3.4 * CM, 1.1 * CM, 3.0 * CM
+def dining_chair(k, x, y, yaw):
+    """A meeting chair facing +Y before `yaw`: two sled sides, a seat and an upright back."""
+    p = placer(x, y, yaw)
     for sx in (-1, 1):
-        k.box((sx * (W / 2 - 0.07 * CM), 0, H / 2), (0.14 * CM, D, H), 'fixture_body', bevel=0.0003)
-    for i, z in enumerate((0.1, 0.9, 1.7, 2.5, 2.93)):
-        k.box((0, 0, z * CM), (W - 0.28 * CM, D, 0.12 * CM), 'fixture_body', bevel=0.0003)
-    k.box((0, D / 2 - 0.04 * CM, H / 2), (W - 0.28 * CM, 0.08 * CM, H), 'fixture_body', bevel=0.0)                              # back panel
-    rng = np.random.default_rng(5)
-    for z in (0.16, 0.96, 1.76):                                                                                              # boxes and files
-        x = -W / 2 + 0.25 * CM
-        while x < W / 2 - 0.8 * CM:
-            w = float(rng.uniform(0.5, 1.0)) * CM
-            h = float(rng.uniform(0.45, 0.7)) * CM
-            k.box((x + w / 2, -0.05 * CM, z * CM + h / 2), (w - 0.06 * CM, D - 0.25 * CM, h), 'fixture_body', bevel=0.0)
-            x += w + 0.08 * CM
-    mark(k, (0.0, 0.0, 2.99 * CM))
+        b(k, p(sx * 0.33, 0, 0.28), (0.09, 0.66, 0.56), rot=(0, 0, yaw))
+    b(k, p(0, 0, 0.6), (0.8, 0.76, 0.12), rot=(0, 0, yaw))
+    b(k, p(0, -0.36, 1.02), (0.8, 0.1, 0.76), rot=(0.1, 0, yaw))
 
 
-def integration(k):      # a sofa (a lounge: where two sides meet)
-    k.box((0, 0.1 * CM, 0.3 * CM), (3.6 * CM, 1.5 * CM, 0.6 * CM), 'fixture_body', bevel=0.0005)
-    k.box((0, 0.68 * CM, 0.95 * CM), (3.6 * CM, 0.34 * CM, 1.0 * CM), 'fixture_body', rot=(-0.12, 0, 0), bevel=0.0006)
+def user_flow(k):        # a bench of two workstations: one long desk on panel legs, two monitors, two task chairs
+    top, T, y0, D, W = 1.15, 0.14, 0.45, 1.1, 4.4
+    b(k, (0, y0, top - T / 2), (W, D, T))
+    for x in (-W / 2 + 0.07, 0, W / 2 - 0.07):
+        b(k, (x, y0, (top - T) / 2), (0.12, D - 0.12, top - T))
+    b(k, (0, y0 + D / 2 - 0.14, top - T - 0.25), (W - 0.2, 0.06, 0.42))                       # modesty panel
     for sx in (-1, 1):
-        k.box((sx * 1.6 * CM, 0.1 * CM, 0.5 * CM), (0.4 * CM, 1.5 * CM, 1.0 * CM), 'fixture_body', bevel=0.0006)
-    for i in (-1, 0, 1):
-        k.box((i * 0.93 * CM, -0.05 * CM, 0.7 * CM), (0.9 * CM, 1.05 * CM, 0.22 * CM), 'fixture_body', bevel=0.0007)
-    mark(k, (1.6 * CM, 0.1 * CM, 1.0 * CM), r=0.15 * CM)
+        cx = sx * 1.1
+        b(k, (cx, y0 + 0.25, top + 0.03), (0.5, 0.3, 0.06))                                    # monitor foot, neck, screen
+        b(k, (cx, y0 + 0.3, top + 0.2), (0.1, 0.08, 0.32))
+        b(k, (cx, y0 + 0.24, top + 0.66), (1.35, 0.08, 0.8), rot=(-0.12, 0, -sx * 0.14))
+        office_chair(k, cx + sx * 0.12, y0 - D / 2 - 0.42, sx * 0.22)
+    mark(k, (0, y0 - 0.1, top))
 
 
-def generic(k):          # a potted plant: a tapered pot and a fan of long leaves
-    k.lathe([(0, 0), (0.5 * CM, 0), (0.68 * CM, 1.1 * CM), (0.72 * CM, 1.2 * CM), (0.62 * CM, 1.2 * CM), (0.62 * CM, 1.05 * CM), (0, 1.05 * CM)],
-            16, mat='fixture_body', bevel=0.0003)
-    leaf = [(0, 0), (0.18, 0.5), (0.22, 1.2), (0.12, 1.9), (0, 2.3), (-0.12, 1.9), (-0.22, 1.2), (-0.18, 0.5)]
+def capability(k):       # an oval meeting table on two pedestals with six chairs drawn up to it
+    top, T, A, B = 1.1, 0.14, 1.75, 0.82
+    k.prism([(A * math.cos(2 * math.pi * i / 16) * CM, B * math.sin(2 * math.pi * i / 16) * CM) for i in range(16)],
+            (top - T) * CM, T * CM, 'fixture_body', bevel=0.0)
+    for sx in (-1, 1):
+        b(k, (sx * 0.9, 0, (top - T) / 2), (0.22, 0.22, top - T))
+        b(k, (sx * 0.9, 0, 0.04), (0.14, 1.1, 0.08))
+    for sx in (-1, 1):
+        dining_chair(k, sx * 0.85, -0.86, 0.0)
+        dining_chair(k, sx * 0.85, 0.86, math.pi)
+        dining_chair(k, sx * 2.12, 0.0, sx * math.pi / 2)
+    mark(k, (0, 0, top))
+
+
+def ops(k):              # storage: two open shelving units side by side, binders and archive boxes on their shelves
+    W, D, H, y0 = 2.05, 0.8, 2.15, 0.0
+    levels = (0.05, 0.75, 1.42, 2.1)
+    # per unit, per level below the top: (kind, offset from the unit's left side, count); binders are 0.13 wide, boxes 0.5
+    fill = ([('bind', 0.12, 4), ('box', 1.25, 1)], [('box', 0.1, 1), ('bind', 1.15, 3)], [('bind', 0.35, 5)]),            ([('box', 0.12, 2)], [('bind', 0.12, 3), ('box', 1.0, 1)], [('box', 0.15, 1), ('bind', 1.2, 2)])
+    for u, cx in enumerate((-1.18, 1.18)):
+        for sx in (-1, 1):
+            b(k, (cx + sx * (W / 2 - 0.05), y0, H / 2), (0.1, D, H))
+        for z in levels:
+            b(k, (cx, y0, z), (W - 0.2, D, 0.1))
+        for lv, row in enumerate(fill[u]):
+            z0 = levels[lv] + 0.05
+            for kind, off, n in row:
+                x0 = cx - W / 2 + 0.1 + off
+                for i in range(n):
+                    if kind == 'bind':
+                        h = (0.5, 0.45, 0.53, 0.42, 0.48)[i % 5]
+                        b(k, (x0 + i * 0.17 + 0.065, y0 - 0.03, z0 + h / 2), (0.13, D - 0.2, h))
+                    else:
+                        b(k, (x0 + i * 0.56 + 0.25, y0 - 0.03, z0 + 0.19), (0.5, D - 0.16, 0.38))
+    mark(k, (-1.18, y0, levels[-1] + 0.05))
+
+
+def integration(k):      # a lounge: a three-seat sofa on legs, an armchair turned to it and a low coffee table
+    W, D, y0, x0 = 3.0, 1.1, 0.45, 0.55
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            b(k, (x0 + sx * (W / 2 - 0.12), y0 + sy * (D / 2 - 0.12), 0.08), (0.12, 0.12, 0.16))
+    b(k, (x0, y0, 0.31), (W, D, 0.3))                                                           # frame
+    for sx in (-1, 1):
+        b(k, (x0 + sx * (W / 2 - 0.14), y0, 0.56), (0.28, D, 0.5))                              # arms
+    b(k, (x0, y0 + D / 2 - 0.14, 0.86), (W - 0.56, 0.28, 0.82))                                 # back
+    for sx in (-1, 1):
+        b(k, (x0 + sx * 0.6, y0 - 0.12, 0.54), (1.16, 0.82, 0.16))                              # seat cushions
+        b(k, (x0 + sx * 0.6, y0 + D / 2 - 0.4, 0.88), (1.12, 0.2, 0.52), rot=(0.18, 0, 0))     # back cushions
+    tx, ty = 0.4, -0.72                                                                         # coffee table
+    b(k, (tx, ty, 0.5), (1.5, 0.62, 0.08))
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            b(k, (tx + sx * 0.66, ty + sy * 0.24, 0.23), (0.08, 0.08, 0.46))
+    yaw = -math.pi / 2 + 0.35                                                                   # armchair turned to the table
+    p = placer(-1.62, -0.25, yaw)
+    b(k, p(0, 0, 0.27), (0.9, 0.88, 0.38), rot=(0, 0, yaw))
+    for sx in (-1, 1):
+        b(k, p(sx * 0.37, 0.02, 0.6), (0.16, 0.84, 0.3), rot=(0, 0, yaw))
+    b(k, p(0, -0.34, 0.86), (0.9, 0.2, 0.82), rot=(0.12, 0, yaw))
+    b(k, p(0, 0.06, 0.52), (0.58, 0.66, 0.12), rot=(0, 0, yaw))
+    mark(k, (tx, ty, 0.54), r=0.2)
+
+
+def leaf(k, base, a, tilt, L, w):
+    """A blade from `base` (cm) leaning `tilt` from vertical toward the angle `a`: a diamond, 12 triangles."""
+    pts = [(0, 0), (w / 2, L * 0.42), (0, L), (-w / 2, L * 0.42)]
+    k.prism([(x * CM, y * CM) for x, y in pts], -0.03 * CM, 0.06 * CM, 'fixture_body', bevel=0.0,
+            c=tuple(v * CM for v in base), rot=(math.pi / 2 - tilt, 0, a - math.pi / 2))
+
+
+def pot(k, x, y, r0, r1, h):
+    """A tapered eight-sided pot with a rim and the soil sunk in it, in cm; returns the soil's height."""
+    k.lathe([(0, 0), (r0 * CM, 0), (r1 * CM, h * CM), (r1 * 0.84 * CM, h * CM), (0, (h - 0.06) * CM)], 8,
+            base=(x * CM, y * CM, 0), mat='fixture_body', bevel=0.0, phase=0.5)
+    return h - 0.06
+
+
+def generic(k):          # three potted plants: a tall upright snake plant, a spreading palm and a low fern
+    s = pot(k, -1.5, 0.15, 0.32, 0.42, 0.8)
+    for i in range(6):
+        a = i * 2 * math.pi / 6 + 0.3
+        leaf(k, (-1.5 + 0.08 * math.cos(a), 0.15 + 0.08 * math.sin(a), s), a, 0.1 + 0.12 * (i % 3), 1.55 - 0.18 * (i % 2), 0.2)
+    s = pot(k, 0.15, 0.1, 0.42, 0.55, 0.9)
     for i in range(7):
         a = i * 2 * math.pi / 7
-        tilt = 0.45 + 0.25 * (i % 3) / 2
-        k.prism([(x * CM, y * CM) for x, y in leaf], -0.03 * CM, 0.06 * CM, 'fixture_body', bevel=0.0,
-                c=(0.15 * CM * math.cos(a), 0.15 * CM * math.sin(a), 1.0 * CM), rot=(math.pi / 2 - tilt, 0, a - math.pi / 2))
-    mark(k, (0.0, 0.0, 1.05 * CM), r=0.2 * CM)
+        leaf(k, (0.15 + 0.1 * math.cos(a), 0.1 + 0.1 * math.sin(a), s), a, 0.55 + 0.2 * (i % 3) / 2, 1.45, 0.34)
+    s = pot(k, 1.75, 0.0, 0.3, 0.38, 0.55)
+    for i in range(5):
+        a = i * 2 * math.pi / 5 + 0.6
+        leaf(k, (1.75 + 0.06 * math.cos(a), 0.06 * math.sin(a), s), a, 0.75, 0.9, 0.3)
+    mark(k, (0.15, 0.1, 0.84), r=0.2)
 
 
 KINDS = {'user_flow': user_flow, 'capability': capability, 'ops': ops, 'integration': integration, 'generic': generic}
@@ -208,6 +285,9 @@ def build_kit():
 
 
 if __name__ == '__main__':
-    build_pin()
-    build_kit()
+    only = sys.argv[sys.argv.index('--') + 2] if '--' in sys.argv and len(sys.argv) > sys.argv.index('--') + 2 else None
+    if only in (None, 'pin'):
+        build_pin()
+    if only in (None, 'kit'):
+        build_kit()
     print('BUILD OK')

@@ -1,156 +1,156 @@
 {
   "sha256": {
-    "evidence/table-view.jpg": "dadb517b472d2c9675037e9df32f11ec9f02ab1c5bb865f0eb351883d5e908da",
-    "evidence/turnaround.jpg": "305c2ef6c7a83c10c3d7fe5b93163ad0dd5aa2ee18e56d062f9daa6d66d2c5ed",
-    "final.glb": "557a852f2e7bab20417ec23e2202be8e7605ee595b50175c89bf61480777158f"
+    "evidence/table-view.jpg": "64cf61de2e08e4b8fc54e9efdbdf09481c6578e85eead6323d97a8f5034b4204",
+    "evidence/turnaround.jpg": "5ab13e161312dc8ca3a82b205090602a8d78e401df7f65e8a6dc6bbb1d8d453c",
+    "final.glb": "3d330790ec80ed8284ac62a03836e97dbe375fab69dc1b7b38237f1f1e0d4e36"
   },
   "gates": {
     "input": {
       "pass": true,
       "note": "procedural, no generated input",
-      "date": "2026-10-24"
+      "date": "2026-10-25"
     },
     "mesh_acceptance": {
       "pass": true,
-      "note": "capability: 13 components, 0 floaters; generic: 8 components, 0 floaters; integration: 8 components, 0 floaters; ops: 19 components, 0 floaters; user_flow: 9 components, 0 floaters; one UV set; pivot the base centre of the glyph",
-      "date": "2026-10-24"
+      "note": "capability: 30 components, 0 floaters; generic: 21 components, 0 floaters; integration: 23 components, 0 floaters; ops: 30 components, 0 floaters; user_flow: 26 components, 0 floaters; one UV set; pivot the base centre of the glyph",
+      "date": "2026-10-25"
     },
     "scale": {
       "pass": true,
-      "note": "bounds 3.6 x 3.08 x 3.43 cm (x, y up, z); Each glyph is a piece of room furniture about 3.4 to 3.6 cm across and 1.5 to 3.1 cm tall, inside a 5 cm tile (one tile on a 95 cm table; the plan-unit to cm constant is set in UE, wolf-plan W3.2)",
-      "date": "2026-10-24"
+      "note": "bounds 5.14 x 2.29 x 2.62 cm (x, y up, z); Each glyph is a 2:1 furniture vignette about 4.3 to 5.1 cm across, 0.8 to 2.6 cm deep and 1.3 to 2.3 cm tall: UE fits it to 0.8 of a Kettle tile (5.92 x 2.81 cm at 0.037 cm per plan unit) by its footprint, so it fills the tile at about 1:40, with heights and thin members (legs, uprights, chair backs) exaggerated as in an architectural maquette",
+      "date": "2026-10-25"
     },
     "finishing": {
       "pass": true,
       "note": "one UV set, 2 material slots (fixture_body, mark); no textures by design",
-      "date": "2026-10-24"
+      "date": "2026-10-25"
     },
     "poly_budget": {
       "pass": true,
-      "note": "max 768 per mesh against 800",
-      "date": "2026-10-24"
+      "note": "max 444 per mesh against 800",
+      "date": "2026-10-25"
     }
   },
-  "lynx_commit": "4fa0dd8837ec3cdb5da1734dcef4731aa67a6f0a",
+  "lynx_commit": "9259783bc653f314efdae61ac92c9c4fef992a87",
   "lynx_commit_note": "stamped by the writer: the newest commit touching this folder when the manifest was written",
+  "file_bytes": {
+    "evidence/table-view.jpg": 24464,
+    "evidence/turnaround.jpg": 75909,
+    "final.glb": 186412
+  },
   "id": "fixture-kit",
   "class": "prop-instanced-kit",
   "budget_tris": 800,
   "budget_note": "per mesh (800 each; spark vr-fidelity-40 raised it from 300 for furniture glyphs that read by silhouette)",
   "tris": {
-    "capability": 768,
-    "generic": 516,
-    "integration": 340,
-    "ops": 472,
-    "user_flow": 352
+    "capability": 420,
+    "generic": 384,
+    "integration": 288,
+    "ops": 444,
+    "user_flow": 324
   },
-  "tris_total": 2448,
+  "tris_total": 1860,
   "materials": [
     "fixture_body (cyan-white #BFE8FF)",
     "mark (amber default, UE overrides per stage)"
   ],
   "bounds_cm": {
     "note": "largest per-mesh extent; x,z ground plane, y up",
-    "x": 3.6,
-    "y": 3.08,
-    "z": 3.43,
+    "x": 5.14,
+    "y": 2.29,
+    "z": 2.62,
     "per_mesh": {
       "capability": {
-        "x": 3.43,
-        "y": 1.6,
-        "z": 3.43
+        "x": 5.14,
+        "y": 1.4,
+        "z": 2.62
       },
       "generic": {
-        "x": 2.46,
-        "y": 3.08,
-        "z": 3.23
+        "x": 4.28,
+        "y": 2.29,
+        "z": 2.16
       },
       "integration": {
-        "x": 3.6,
-        "y": 1.46,
-        "z": 1.55
+        "x": 4.28,
+        "y": 1.28,
+        "z": 2.03
       },
       "ops": {
-        "x": 3.4,
-        "y": 3.05,
-        "z": 1.1
+        "x": 4.41,
+        "y": 2.2,
+        "z": 0.8
       },
       "user_flow": {
-        "x": 3.6,
-        "y": 2.2,
-        "z": 2.59
+        "x": 4.4,
+        "y": 2.21,
+        "z": 2.2
       }
     }
   },
   "meshes": {
     "capability": {
-      "tris": 768,
-      "vertices": 412,
-      "components": 13,
+      "tris": 420,
+      "vertices": 270,
+      "components": 30,
       "floaters": 0,
       "bounds_cm": {
-        "x": 3.43,
-        "y": 1.6,
-        "z": 3.43
+        "x": 5.14,
+        "y": 1.4,
+        "z": 2.62
       }
     },
     "generic": {
-      "tris": 516,
-      "vertices": 275,
-      "components": 8,
+      "tris": 384,
+      "vertices": 235,
+      "components": 21,
       "floaters": 0,
       "bounds_cm": {
-        "x": 2.46,
-        "y": 3.08,
-        "z": 3.23
+        "x": 4.28,
+        "y": 2.29,
+        "z": 2.16
       }
     },
     "integration": {
-      "tris": 340,
-      "vertices": 186,
-      "components": 8,
+      "tris": 288,
+      "vertices": 190,
+      "components": 23,
       "floaters": 0,
       "bounds_cm": {
-        "x": 3.6,
-        "y": 1.46,
-        "z": 1.55
+        "x": 4.28,
+        "y": 1.28,
+        "z": 2.03
       }
     },
     "ops": {
-      "tris": 472,
-      "vertices": 274,
-      "components": 19,
+      "tris": 444,
+      "vertices": 278,
+      "components": 30,
       "floaters": 0,
       "bounds_cm": {
-        "x": 3.4,
-        "y": 3.05,
-        "z": 1.1
+        "x": 4.41,
+        "y": 2.2,
+        "z": 0.8
       }
     },
     "user_flow": {
-      "tris": 352,
-      "vertices": 194,
-      "components": 9,
+      "tris": 324,
+      "vertices": 214,
+      "components": 26,
       "floaters": 0,
       "bounds_cm": {
-        "x": 3.6,
-        "y": 2.2,
-        "z": 2.59
+        "x": 4.4,
+        "y": 2.21,
+        "z": 2.2
       }
     }
   },
   "uv_sets": 1,
   "pivot": "the base centre of the glyph; all five meshes sit at the origin in the file (identity node transforms), so a UE importer that splits them keeps the pivots",
-  "scale_reasoning": "Each glyph is a piece of room furniture about 3.4 to 3.6 cm across and 1.5 to 3.1 cm tall, inside a 5 cm tile (one tile on a 95 cm table; the plan-unit to cm constant is set in UE, wolf-plan W3.2). Shapes are judged by silhouette at about 5 cm on screen from the target pose (spark vr-fidelity-40); no plinth, the glyph stands on the room floor as in the concept.",
-  "kinds": "The web canvas does not branch its drawing on a feature kind (apps/web/src/engine/render/plan.ts and patterns.ts draw by lens and stage; checked 2026-10-21). The kinds in the data are free strings. The 133-tile plan (kettle.app-structure.json, v3) uses user_flow (68), capability (31), ops (24) and integration (10); each gets a furniture glyph (art-breakdown row 5, the concept's furnished rooms): user_flow a desk with a monitor and a chair (a workstation), capability a round meeting table with four chairs, ops a filled shelving unit, integration a sofa; `generic` (any other kind) a potted plant. The mapping is a look choice of spark vr-fidelity-40, not data: VR still reads only the kind.",
-  "mark": "Slot 1 is named `mark`: a flat 8-sided amber badge lying on the glyph's top surface (desk top, table top, shelf top, sofa arm, soil). UE drives it as a material parameter from the stage, so the stage is not in the geometry. The body slot is `fixture_body`.",
-  "textures": "none: flat material factors. Both slots are parameter-driven in UE (the concept draws the furniture as cyan-white linework glass). Geometry finished by scripts/art/lib/finish.bpy: one-segment chamfers on the hard edges, hardened and weighted normals, smooth shading, one unique UV set.",
+  "scale_reasoning": "Each glyph is a 2:1 furniture vignette about 4.3 to 5.1 cm across, 0.8 to 2.6 cm deep and 1.3 to 2.3 cm tall: UE fits it to 0.8 of a Kettle tile (5.92 x 2.81 cm at 0.037 cm per plan unit) by its footprint, so it fills the tile at about 1:40, with heights and thin members (legs, uprights, chair backs) exaggerated as in an architectural maquette. Judged in EEVEE at that size from the target pose under the additive cyan M_Glyph look (spark vr-fidelity-40 FN); no plinth, the glyph stands on the room floor as in the concept.",
+  "kinds": "The web canvas does not branch its drawing on a feature kind (apps/web/src/engine/render/plan.ts and patterns.ts draw by lens and stage; checked 2026-10-21). The kinds in the data are free strings. The 133-tile plan (kettle.app-structure.json, v3) uses user_flow (68), capability (31), ops (24) and integration (10); each gets a furniture glyph (art-breakdown row 5, the concept's furnished rooms): user_flow a bench of two workstations (a long desk on panel legs, two monitors, two task chairs), capability an oval meeting table on two pedestals with six chairs, ops two open shelving units with binders and archive boxes, integration a lounge (a three-seat sofa on legs, an armchair and a coffee table); `generic` (any other kind) three potted plants. The mapping is a look choice of spark vr-fidelity-40, not data: VR still reads only the kind.",
+  "mark": "Slot 1 is named `mark`: a flat 6-sided amber badge lying on a top surface of the glyph (desk top, table top, shelf top, coffee table, soil). UE drives it as a material parameter from the stage, so the stage is not in the geometry. The body slot is `fixture_body`.",
+  "textures": "none: flat material factors. Both slots are parameter-driven in UE (the concept draws the furniture as cyan-white linework glass). Designed low-poly for its size (250 to 450 triangles a glyph, so UE must not decimate it): plain sharp-edged boxes, prisms and eight-sided lathes with air between the parts, because the additive fresnel look lights the faces seen edge-on and the silhouette reads by them. Through scripts/art/lib/finish.bpy without chamfers (weighted normals, one unique UV set).",
   "generator": "procedural (Blender 5.2.2, scripts/art/build_art.bpy)",
   "licence": "own procedural work",
-  "regenerate": "blender -b -P scripts/art/build_art.bpy -- <repo-root>; blender -b -P scripts/art/render_art.bpy -- <repo-root>; node scripts/art/write-manifests.mjs; node scripts/art/score-assets.mjs",
-  "file_bytes": {
-    "evidence/table-view.jpg": 23897,
-    "evidence/turnaround.jpg": 74947,
-    "final.glb": 212480
-  }
+  "regenerate": "blender -b -P scripts/art/build_art.bpy -- <repo-root>; blender -b -P scripts/art/render_art.bpy -- <repo-root>; node scripts/art/write-manifests.mjs; node scripts/art/score-assets.mjs"
 }

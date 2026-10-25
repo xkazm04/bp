@@ -2,7 +2,7 @@
 """Renders the evidence for the survey pin and the fixture kit from their final.glb: a 4-view turnaround and one
 640x480 table-distance view each, as JPEG (1 MB or less) into <asset>/evidence/.
 
-Run:  blender -b -P scripts/art/render_art.bpy -- <repo-root>
+Run:  blender -b -P scripts/art/render_art.bpy -- <repo-root> [pin|kit]   (both when neither is named)
 Cycles on the CPU (no GPU, no EEVEE), 24 samples. The sheet under the props is the blueprint blue of the reference sheet.
 """
 import bpy, math, os, sys, tempfile
@@ -154,6 +154,9 @@ render_pin = lambda: render_asset('survey-pin', lambda o: None, place_pin, Vecto
 render_kit = lambda: render_asset('fixture-kit', place_kit, lambda o: None, Vector((0, 0, 0.01)), (28, 0.55, 50), (Vector((0, 0, 0.0)), 0, 42, 0.65, 50), (0, 45, 180, 225))
 
 if __name__ == '__main__':
-    render_pin()
-    render_kit()
+    only = sys.argv[sys.argv.index('--') + 2] if '--' in sys.argv and len(sys.argv) > sys.argv.index('--') + 2 else None
+    if only in (None, 'pin'):
+        render_pin()
+    if only in (None, 'kit'):
+        render_kit()
     print('RENDER OK')
