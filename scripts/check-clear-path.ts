@@ -143,7 +143,7 @@ const M = buildModel(1, () => 0, null), P = M.P;
   const IDS = /business|design|development|operations|performance|quality|security/;
   const cl = path.join(ROOT, 'packages/core/src/standard/clear.ts');
   const clSrc = fs.existsSync(cl) ? fs.readFileSync(cl, 'utf8') : '';
-  const lp = fs.readFileSync(path.join(SRC, 'components/sheet/LensPanel.tsx'), 'utf8');
+  const lp = fs.readFileSync(path.join(SRC, 'components/sheet/LensPanel.tsx'), 'utf8').replace(/\r\n/g, '\n');
   const block = (lp.match(/\/\/ -+ what clears it\n[\s\S]*?\n\/\/ -+ end what clears it/) || [])[0] ?? '';
   expect(!!clSrc && !IDS.test(clSrc), 'case 8: clear.ts exists and names no lens id');
   expect(!!block && !IDS.test(block) && /<ol className="pg-clr">/.test(block), 'case 8: the ClearSteps block in LensPanel.tsx exists and names no lens id');

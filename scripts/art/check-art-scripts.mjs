@@ -97,7 +97,7 @@ function runWriter(env, ids = ['survey-pin', 'fixture-kit'], commit = true) {
 // manifest records where its raw TRELLIS output lived, as a string it writes into the manifest, not a path it opens.
 // (The lamp writer that needed it recorded raw TRELLIS paths; the scripted build of 2026-10-24 records none, so it is empty.)
 const PROVENANCE_ONLY = new Set([]);
-const blankComments = (src) => src
+const blankComments = (src) => src.replace(/\r\n/g, '\n')
   .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\r\n]/g, ' '))
   .split('\n').map((l) => l.replace(/(^|[^:'"\w])(\/\/.*)$/, (_, a, c) => a + ' '.repeat(c.length))).join('\n');
 const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]));
