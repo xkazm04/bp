@@ -18,7 +18,8 @@ import { LiveFacets } from '@bp/core/model/live-health';
 import type { ScanSim } from '@bp/core/model/scan-sim';
 import { decideProposal, useLiveProduct, type LiveProduct } from '@/lib/scan/client';
 import type { JobStatus, ScanJob } from '@bp/core/scan/jobs';
-import type { ScanSnapshot } from '@bp/core/scan/types';
+import type { Proposal, ScanSnapshot } from '@bp/core/scan/types';
+import { holdsBuild } from '@bp/core/scan/admit';
 import type { ScanCtx } from '@/lib/scan/actions';
 import { scanViews } from '@/lib/scan/scan-views';
 import { readTempLenses, subscribeTempLenses } from '@/lib/scan/temp-lens';
@@ -154,10 +155,21 @@ function toastFailures(E: Engine, jobs: readonly ScanJob[], seen: { init: boolea
   seen.init = true;
 }
 /** The plan's scan views for these jobs and rows; returns when the next lingering one expires (ms from now), or null. */
-function pushViews(E: Engine, jobs: readonly ScanJob[], scan: ScanSnapshot | undefined): number | null {
+function pushViews(E: Engine, jobs: readonly ScanJob[], scan: ScanSnapshot | undefined, proposals: readonly Proposal[] = []): number | null {
   const now = Date.now(), { views, next } = scanViews(jobs, scan, E.M, (l) => E.lensAccent(l), now);
   E.setScans(views);
+  E.setBusy(busyTiles(E.M, jobs, proposals));
   return next === Infinity ? null : Math.max(0, next - now) + 20;
+}
+/** The plan's tiles (every product line) whose findings were dispatched and are not built yet: in a queued or running execute job, or executing. */
+function busyTiles(M: Model, jobs: readonly ScanJob[], proposals: readonly Proposal[]): string[] {
+  const held = new Set<string>();
+  for (const j of jobs) if (holdsBuild(j)) for (const id of j.proposals ?? []) held.add(id);
+  const feats = new Set<string>();
+  for (const p of proposals) if (p.status === 'executing' || held.has(p.id)) feats.add(p.feature);
+  const out: string[] = [];
+  for (const f of feats) for (const b of M.P.buildings.slice(0, M.P.scale)) if (M.L.TILE[f + (b?.sf ?? '')]) out.push(f + (b?.sf ?? ''));
+  return out;
 }
 /** What the Kettle scan sim needs of the model: base slugs in layout order, the enabled lenses, the facet values now. */
 function bindSim(sim: ScanSim, M: Model) {
@@ -280,7 +292,8 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
       if (facets.apply(snap).length + facets.setNa(pairs).length) M.sim.restamp(); // re-raster the fills, '?' and fades; the sheet re-reads
       toastFailures(engine, sim.jobs(), failSeen.current);
       clearTimeout(timer);
-      const next = pushViews(engine, sim.jobs(), snap);
+      const over = new Map(snap.proposals.map((p) => [p.id, p])), base = M.findings ?? [];
+      const next = pushViews(engine, sim.jobs(), snap, [...base.map((p) => over.get(p.id) ?? p), ...snap.proposals.filter((p) => !base.some((b) => b.id === p.id))]);
       if (next !== null) timer = setTimeout(sync, next);
     };
     sync();
@@ -292,7 +305,7 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
   useEffect(() => {
     if (!engine?.M.live) return;
     toastFailures(engine, live.jobs, failSeen.current);
-    const next = pushViews(engine, live.jobs, live.scan);
+    const next = pushViews(engine, live.jobs, live.scan, live.scan?.proposals);
     if (next === null) return;
     const t = setTimeout(() => setScanTick((n) => n + 1), next);
     return () => clearTimeout(t);

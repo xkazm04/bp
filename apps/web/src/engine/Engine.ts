@@ -223,6 +223,8 @@ export class Engine {
     return a ? a[this.th.mode] : this.accentOf(l);
   }
   /** The scans to draw (a discrete change: a job moved, a reading came in). The loop runs while one of them runs. */
+  /** Tiles with dispatched work pending: a pulsing dot each (render/scans.ts). */
+  setBusy(ids: readonly string[]) { if (this.destroyed) return; this.scans.setBusy(ids); this.dirty(); }
   setScans(views: readonly ScanView[]) { if (this.destroyed) return; this.scans.set(views, this); this.hitsAt.k = NaN; this.dirty(); }
   counts(id: string, fs: readonly Feature[]): Counts { return this.M.agg.countsOf(id, fs, this.S.t, this.S.delta); }
   lensAgg(id: string, l: string, fs: readonly Feature[]): ChannelAggregate {

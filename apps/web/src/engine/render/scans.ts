@@ -57,8 +57,18 @@ export class ScanLayer {
   private font = ''; private th: unknown = null;
   /** True while any view runs: the engine keeps its loop alive for the marching dashes and the sweep. */
   animating = false;
+  /** Tile ids with dispatched work pending on them (queued or running execute jobs): a pulsing dot each. */
+  private busy: string[] = [];
 
   get size(): number { return this.views.length; }
+  private drawBusy(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod: number, now: number): void {
+    drawBusyDots(this.busy, E, ctx, v, lod, now);
+  }
+  /** Take the tiles with pending work (a discrete change). */
+  setBusy(ids: readonly string[]): void {
+    this.busy = ids.slice();
+    this.animating = this.busy.length > 0 || this.views.some((V) => V.status === 'running');
+  }
   /** The first view of job `job` (the chip's hover card reads it), or null. */
   viewOf(job: string): ScanView | null { const i = this.jobs.indexOf(job); return i < 0 ? null : this.views[i]; }
 
@@ -85,7 +95,7 @@ export class ScanLayer {
       this.col.push(V.accent);
       this.jobs.push(viewJob(V));
     }
-    this.animating = views.some((V) => V.status === 'running');
+    this.animating = this.busy.length > 0 || views.some((V) => V.status === 'running');
     this.font = ''; this.th = E.th;
   }
 
@@ -105,7 +115,9 @@ export class ScanLayer {
    *  into the frame's hit list (render/hits.ts) as a `scan` target for its job. */
   draw(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod: number, now: number): void {
     const n = this.views.length;
-    if (!n || !E.isNow) return;
+    if (!E.isNow) return;
+    this.drawBusy(E, ctx, v, lod, now);
+    if (!n) return;
     const th = E.th, u = E.U, reduced = E.cam.reduced, font = E.tx.f(12, 600, true);
     if (font !== this.font) this.measure(E, font);
     if (th !== this.th) { this.th = th; for (let i = 0; i < n; i++) this.col[i] = E.lensAccent(this.views[i].lens); }
@@ -154,6 +166,25 @@ export class ScanLayer {
     }
     ctx.restore();
   }
+}
+
+/** A pulsing dot on the corner of each tile with dispatched work pending (reduced motion: a still dot, no ring). */
+function drawBusyDots(ids: readonly string[], E: Engine, ctx: CanvasRenderingContext2D, v: View, lod: number, now: number) {
+  if (!ids.length) return;
+  const th = E.th, u = E.U, reduced = E.cam.reduced, col = th.amber, p = (now % 1400) / 1400;
+  ctx.save();
+  for (let i = 0; i < ids.length; i++) {
+    const f = featRect(E, v, ids[i], lod, r2);
+    if (!f || !onView(v, f, 12 * u)) continue;
+    const r = Math.min(5 * u, Math.max(2.5 * u, Math.min(f.w, f.h) * 0.3)), cx = f.x + f.w - r - 1.5 * u, cy = f.y + r + 1.5 * u;
+    if (!reduced) {
+      ctx.strokeStyle = th.alpha(col, 0.7 * (1 - p)); ctx.lineWidth = 1.5 * u;
+      ctx.beginPath(); ctx.arc(cx, cy, r * (1 + 1.8 * p), 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.fillStyle = th.paper; ctx.beginPath(); ctx.arc(cx, cy, r + 1.2 * u, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
 }
 
 /** A check mark with a paper halo, so it reads on any stage fill. */
