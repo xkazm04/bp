@@ -160,6 +160,17 @@ check('window: 07:59Z counts in the previous window', nightTotal([e('2026-10-21T
 check('window: 08:00Z counts in the new window', nightTotal([e('2026-10-21T08:00:00Z', 6)], at('2026-10-21T08:00:01Z')) === 6 && nightTotal([e('2026-10-21T08:00:00Z', 6)], at('2026-10-21T07:59:59Z')) === 6);
 check('window: the cap refuses a call that would pass 400 inside one window', !withinCap(nightTotal([e('2026-10-21T09:00:00Z', 386)], at('2026-10-21T10:00:00Z')), 6) && withinCap(nightTotal([e('2026-10-21T09:00:00Z', 384)], at('2026-10-21T10:00:00Z')), 6));
 check('window: --stop-at still refuses inside the window', !withinCap(nightTotal([e('2026-10-21T09:00:00Z', 156)], at('2026-10-21T10:00:00Z')), 6, 160));
+// studio: a "provider": "leonardo-studio" entry (leonardo-studio.mjs) was paid from the web-studio credits, a separate
+// meter, so it never counts toward the API pool's night total, its cap, its cost figure or the report breakdown.
+const studio = (time, credits, quality = 'MEDIUM') => ({ time, credits, quality, creditsSource: 'studio-generate-receipt', provider: 'leonardo-studio' });
+const apiOnly = [e('2026-10-21T09:00:00Z', 384)];
+const withStudio = [...apiOnly, studio('2026-10-21T09:30:00Z', 23), studio('2026-10-21T09:31:00Z', 21)];
+check('studio: a studio entry never counts toward the API night total or cap',
+  nightTotal(withStudio, at('2026-10-21T10:00:00Z')) === 384 && withinCap(nightTotal(withStudio, at('2026-10-21T10:00:00Z')), 6),
+  `${nightTotal(withStudio, at('2026-10-21T10:00:00Z'))}`);
+check('studio: a studio entry is never the cost figure a call is gated at',
+  expectedCost('MEDIUM', [{ quality: 'MEDIUM', credits: 20, creditsSource: 'api' }, studio('2026-10-21T09:30:00Z', 99)]).cost === 20);
+check('studio: the report breakdown leaves studio entries out', JSON.stringify(windowReport(withStudio, at('2026-10-21T10:00:00Z')).byQuality) === JSON.stringify({ undefined: { calls: 1, credits: 384 } }));
 
 // Source guard. leonardo.mjs reads the LEONARDO_API_KEY out of an untracked .env, so WHICH .env it opens is a
 // security property, not a convenience: an absolute path means a second checkout of this repo reads the first

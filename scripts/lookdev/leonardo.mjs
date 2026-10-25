@@ -141,11 +141,15 @@ export function spendWindow(now = new Date()) {
   return { from: from.toISOString(), to: new Date(from.getTime() + 86400000).toISOString() };
 }
 
-/** The log entries timed inside the window holding `now`. The ONE definition of "inside": every report uses it. */
+/** The entries that spent the API pool. A `"provider": "leonardo-studio"` line (leonardo-studio.mjs) was paid from the
+ *  owner's web-studio credits, a separate meter, so it never counts toward the night's API total, cap or cost figure. */
+export const apiPool = (log) => log.filter((e) => e.provider !== 'leonardo-studio');
+
+/** The API-pool entries timed inside the window holding `now`. The ONE definition of "inside": every report uses it. */
 export function inWindow(log, now = new Date()) {
   const w = spendWindow(now);
   const from = Date.parse(w.from), to = Date.parse(w.to);
-  return log.filter((e) => { const t = new Date(e.time).getTime(); return t >= from && t < to; });
+  return apiPool(log).filter((e) => { const t = new Date(e.time).getTime(); return t >= from && t < to; });
 }
 
 /** The credits PRIOR_SPEND adds to the window holding `now` - its own window only. */
@@ -171,7 +175,7 @@ export function windowReport(log = readLog(), now = new Date()) {
   for (const e of inWindow(log, now)) { const q = (byQuality[e.quality] ??= { calls: 0, credits: 0 }); q.calls++; q.credits += Number(e.credits) || 0; }
   return {
     window: spendWindow(now), byQuality, unverified, priorSpend: priorSpend(now),
-    allTimeLogCredits: log.reduce((n, e) => n + (Number(e.credits) || 0), 0),
+    allTimeLogCredits: apiPool(log).reduce((n, e) => n + (Number(e.credits) || 0), 0),
     nightTotal: nightTotal(log, now), cap: HARD_CAP,
   };
 }
@@ -183,7 +187,7 @@ export function windowReport(log = readLog(), now = new Date()) {
  * LOW falls back to its worst measured figure; MEDIUM and HIGH to a deliberately high guess that gates the first probe.
  */
 export function expectedCost(quality, log) {
-  const measured = log.filter((e) => e.quality === quality && e.creditsSource !== 'fallback' && Number(e.credits) > 0);
+  const measured = apiPool(log).filter((e) => e.quality === quality && e.creditsSource !== 'fallback' && Number(e.credits) > 0);
   if (measured.length) return { cost: Math.max(...measured.map((e) => Number(e.credits))), measured: true };
   if (quality === 'LOW') return { cost: LOW_FALLBACK, measured: true };
   return { cost: PROBE_ESTIMATE[quality], measured: false };
@@ -214,6 +218,30 @@ function readKey() {
   const m = fs.readFileSync(ENV_FILE, 'utf8').match(/^\s*LEONARDO_API_KEY\s*=\s*(.+?)\s*$/m);
   if (!m) throw new Error(`LEONARDO_API_KEY not found in ${ENV_FILE}`);
   return m[1].replace(/^['"]|['"]$/g, '');
+}
+
+/**
+ * Delete one generation (or init image) by id with the key, for leonardo-studio.mjs: that script never reads the key
+ * itself (check-leonardo 'siblings'), so the delete lives here, where the key does. Returns 'deleted' or 'failed: why'
+ * (redacted), never throws, never returns the key. `verify` re-reads the id and reports whether it is gone.
+ */
+export async function deleteById(kind, id, { verify = false } = {}) {
+  const route = { generation: 'generations', 'init-image': 'init-image' }[kind];
+  if (!route || !/^[0-9a-f-]{8,64}$/i.test(String(id))) return `failed: bad ${kind} id`;
+  if (!fs.existsSync(ENV_FILE)) return 'failed: no credential file in this checkout';
+  const key = readKey();
+  let last = '';
+  for (let i = 0; i < 2; i++) {
+    try {
+      const j = await call(key, 'DELETE', `${API}/v1/${route}/${id}`);
+      if (!JSON.stringify(j).includes(id)) { last = `no id in reply ${redact(JSON.stringify(j), key).slice(0, 120)}`; continue; }
+      if (!verify) return 'deleted';
+      const g = await call(key, 'GET', `${API}/v1/${route}/${id}`);
+      const gone = Object.values(g).every((v) => v == null);
+      return gone ? 'deleted (verified gone)' : 'failed: still present after delete';
+    } catch (e) { last = redact(e.message ?? e, key).slice(0, 200); }
+  }
+  return `failed: ${last}`;
 }
 
 export async function call(key, method, url, body) {
@@ -348,8 +376,12 @@ async function gen() {
   if (entry.status !== 'COMPLETE') process.exit(1);
 }
 
-if (cmd === 'gen') await gen();
+// Dispatch only when run, not when imported (check-leonardo and leonardo-studio.mjs import it: an importer's own
+// `gen` argument must never start an API call here).
+const isMain = !!process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+if (cmd === 'gen') { if (isMain) await gen(); }
+else if (!isMain) { /* imported */ }
 else if (cmd === 'total') console.log(JSON.stringify(windowReport(), null, 2));
 else if (cmd === 'prompt') console.log(opt('prop') ? composePropPrompt(opt('prop'), opt('variant', 'A')) : composePrompt(opt('state'), opt('variant', 'a')));
 else if (cmd) { console.error(`unknown command ${cmd}`); process.exit(1); }
-else if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) { console.error('usage: gen | total | prompt (see the header)'); process.exit(1); }
+else { console.error('usage: gen | total | prompt (see the header)'); process.exit(1); }
