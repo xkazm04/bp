@@ -82,12 +82,14 @@ LAMP_MESH = "/Game/Bp/Art/LampAgentStatic/final_working/StaticMeshes/SM_LampAgen
 # From the target pose (eye 75 cm behind the table's centre, 43 cm over the top, pitch -31, hfov 90) the hood's centre
 # lands at about 46 % of the width and 7 % from the top, and the hood about 7 % of the width across, only with the figure
 # a little closer than the far rim, scaled 1.2 and its pin tip 12 cm above the table (FB asked 18 to 25 cm: at that
-# height the head leaves the frame's top; FC2 report).
+# height the head leaves the frame's top; FC2 report). FI's re-proportioned figure (smaller orb, head lower) at scale 1.05
+# and 12.8 cm puts the hood's top about 3 % below the frame's top and the orb's centre about 10 % down (FI's pinhole
+# estimate), and its warm light at FI's working-pose light point (manifest; UE mesh axes, Y negated, before scale).
 LAMP_AT = (28.0, -9.0)
-LAMP_HOVER_CM = 12.0
-LAMP_SCALE = 1.2
+LAMP_HOVER_CM = 12.8
+LAMP_SCALE = 1.05
 LAMP_YAW = 90.0
-LAMP_LIGHT_LOCAL = (0.0, 1.52 + 4.5 * 0.866, 18.3 - 4.5 * 0.5)
+LAMP_LIGHT_LOCAL = (0.71, 4.16, 13.94)
 LAMP_LIGHT_CD = 0.2
 LAMP_LIGHT_RADIUS = 40.0
 LAMP_LIGHT = unreal.Color(r=255, g=168, b=90, a=255)  # #FFA85A

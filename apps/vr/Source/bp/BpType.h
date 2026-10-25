@@ -46,8 +46,8 @@ namespace BpType
 	constexpr FRecipe TitleSub{ TEXT("Regular"), 0.8, 0.10, true };
 	constexpr FRecipe Figure{ TEXT("Regular"), 0.6, 0.04, true };
 	/** Above each wing, lookdev 00's small "WING 03": the wing's tag, then its name. */
-	constexpr FRecipe WingTag{ TEXT("Regular"), 1.0, 0.18, true };
-	constexpr FRecipe WingName{ TEXT("Bold"), 1.6, 0.03, true };
+	constexpr FRecipe WingTag{ TEXT("Regular"), 1.15, 0.18, true };
+	constexpr FRecipe WingName{ TEXT("Bold"), 1.9, 0.03, true };
 	/** A room's name in its header strip (capitals: no descenders to clear the first bay). */
 	constexpr FRecipe RoomName{ TEXT("Regular"), 0.9, 0.06, true };
 	/** The breadcrumb (WP3's way back; the hands pinch it, so it stays large). */

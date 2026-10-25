@@ -52,7 +52,7 @@ LAMP_CARD_MATERIAL = "/Game/Bp/Materials/M_LampAgentGlowCard"
 # (FB's hand-over, spark vr-fidelity-40). L5.7 drives GlowStrength per state on the instances that carry it.
 LAMP_GLOW = 5.0
 LAMP_GLOW_COLOUR = "#FFA94D"
-LAMP_HOOD_SCALE = 0.05  # 0.15 until FF: the bowl read flat amber; darker it reads glossy, lit by AgentGlow
+LAMP_HOOD_SCALE = 0.12  # 0.15 until FF: the bowl read flat amber; FF's 0.05 rendered it near black (FG), the concept's is a warm lit bowl
 LAMP_CARD_GLOW = 1.5
 # Shell: base colour texture x lerp(1, AO, AO_MIX) from the ORM's R (the forward path's SSAO is weak).
 LAMP_AO_MIX = 0.6

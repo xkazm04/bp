@@ -245,6 +245,7 @@ void ABpTable::LoadMarks()
 			PinBeads->SetMaterial(0, Body);
 			PinStems->SetMaterial(0, Body);
 		}
+		if (UMaterialInterface* Halo = LoadSoft(PinHaloMaterial)) PinHalos->SetMaterial(0, Halo);
 	}
 	ScanParams = LoadSoft(ScanCollection);
 	WriteScanParams(0.f);
@@ -421,6 +422,7 @@ void ABpTable::BuildPins(const FBpScanState& State)
 	Pins->ClearInstances();
 	PinBeads->ClearInstances();
 	PinStems->ClearInstances();
+	PinHalos->ClearInstances();
 	TArray<FTransform> Places;
 	Places.Init(FTransform::Identity, Cells);
 	if (Pins->GetStaticMesh() && Places.Num() > 0)
@@ -439,6 +441,7 @@ void ABpTable::BuildPins(const FBpScanState& State)
 	TArray<FTransform> Beads;
 	Beads.Init(FTransform::Identity, PinList.Num());
 	if (Beads.Num() > 0) PinBeads->AddInstances(Beads, false, false, false);
+	if (Beads.Num() > 0 && LoadSoft(PinHaloMaterial)) PinHalos->AddInstances(Beads, false, false, false);
 	if (Places.Num() > 0) PinStems->AddInstances(Places, false, false, false);
 	if (TagAtlas) TagAtlas->UpdateResource();
 	RaisePins();
@@ -485,7 +488,7 @@ void ABpTable::RaisePins()
 void ABpTable::PlacePins()
 {
 	if (!SheetPlan.IsValid() || PinList.Num() == 0) return;
-	TArray<FTransform> PinPlaces, BeadPlaces, StemPlaces;
+	TArray<FTransform> PinPlaces, BeadPlaces, StemPlaces, HaloPlaces;
 	for (const FPin& Pin : PinList)
 	{
 		const FBpPlanTile& Tile = SheetPlan->tiles[Pin.Tile];
@@ -497,6 +500,7 @@ void ABpTable::PlacePins()
 		const FVector2D Centre = PlanToPaperCm(FVector2D(Tile.box.x + Tile.box.w * 0.5, Tile.box.y + Tile.box.h * 0.5));
 		const FVector Foot = Group.TransformPosition(PaperCmToLocal(Centre, StandCm));
 		BeadPlaces.Add(FTransform(FQuat::Identity, Foot, FVector(PinBeadCm * 0.5)));
+		HaloPlaces.Add(FTransform(FQuat::Identity, Foot, FVector(PinBeadCm * 0.5 * PinHaloScale)));
 		if (!Pin.bTagged) continue;
 		const FVector Head = Group.TransformPosition(PaperCmToLocal(Centre, StandCm + Pin.RaiseCm));
 		PinPlaces.Add(FTransform(FRotator(0.f, PinYawDeg, 0.f), Head, FVector(PinScale)));
@@ -507,6 +511,7 @@ void ABpTable::PlacePins()
 	if (PinPlaces.Num() > 0 && Pins->GetInstanceCount() == PinPlaces.Num()) Pins->BatchUpdateInstancesTransforms(0, PinPlaces, false, true);
 	if (BeadPlaces.Num() > 0 && PinBeads->GetInstanceCount() == BeadPlaces.Num()) PinBeads->BatchUpdateInstancesTransforms(0, BeadPlaces, false, true);
 	if (StemPlaces.Num() > 0 && PinStems->GetInstanceCount() == StemPlaces.Num()) PinStems->BatchUpdateInstancesTransforms(0, StemPlaces, false, true);
+	if (HaloPlaces.Num() > 0 && PinHalos->GetInstanceCount() == HaloPlaces.Num()) PinHalos->BatchUpdateInstancesTransforms(0, HaloPlaces, false, true);
 }
 
 void ABpTable::DrawTags(UCanvas* Canvas, int32 Width, int32 Height)

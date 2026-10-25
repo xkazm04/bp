@@ -65,8 +65,8 @@ public:
 	static constexpr int32 SheetHeightPx = static_cast<int32>(SheetWidthPx * PaperDepthCm / PaperWidthCm + 0.5f);
 	/** The paper texture's tile (ArtSource/mat-blueprint-paper/manifest.json: 0.5 m, 16 cells, every 4th line stronger). */
 	static constexpr float PaperTileCm = 50.f;
-	/** The sheet's grid on the paper, from its far-left corner: a fine line every GridFineCm and a stronger one every
-	 *  GridMajorEvery fine lines. Half the texture's cell, so every second fine line and every second major one lie on the
+	/** The paper's grid, from its far-left corner: a fine line every GridFineCm and a stronger one every GridMajorEvery
+	 *  fine lines (M_BlueprintPaper draws it, fg_holo.py follows these). Half the texture's cell, so every second fine line and every second major one lie on the
 	 *  texture's own lines. */
 	static constexpr float GridFineCm = PaperTileCm / 32.f;
 	static constexpr int32 GridMajorEvery = 4;
@@ -123,10 +123,10 @@ public:
 	 *  plan, a stem and a paper tag on top (ArtSource/survey-pin: 6.38 cm tall, a 2.2 x 1.4 cm tag centred on the stem,
 	 *  facing the mesh's +-Y, its faces UV'd 0..1). The tag shows its finding from the tag atlas. It stands PinScale times
 	 *  its modelled size so the tag's text reads from the table's edge. */
-	static constexpr float PinScale = 2.0f;
+	static constexpr float PinScale = 2.4f;
 	/** Tags that would overlap from the target eye merge into the first one's (FC3): within TagClearUCm across, and along
 	 *  the paper within the depth the tag's height covers seen from the target eye (BpType's floor sets the tag's size). */
-	static constexpr float TagClearUCm = 5.6f;
+	static constexpr float TagClearUCm = 6.7f;
 	/** The pins' display rule (FE, element 7): every feature with an open finding has its amber bead; a feature carries a
 	 *  standing pin with a tag only when one of its open findings is of high urgency, risk PinTagRiskMin or more
 	 *  (blueprint-ui.md, the swarm's decisions: "urgency from risk (7 or more high, 4 or more medium)"). The rule picks
@@ -139,6 +139,9 @@ public:
 	 *  the stem PinStemCm thick (the pin's stem at PinScale). */
 	static constexpr float PinBeadCm = 1.1f;
 	static constexpr float PinStemCm = 0.24f;
+	/** Each bead's halo (FG, element 7: the concept's beads glow): a sphere this many times the bead, additive, brightest
+	 *  over the bead and gone at its rim (M_PinHalo). */
+	static constexpr float PinHaloScale = 3.2f;
 	/** The mesh's tag faces its +-Y; this turns it to the viewer at the near edge. */
 	static constexpr float PinYawDeg = 90.f;
 	/** The tag atlas: TagAtlasCols x TagAtlasRows cells of TagCellWidthPx x TagCellHeightPx (the tag's 2.2 : 1.4). */
@@ -163,9 +166,10 @@ public:
 	static constexpr float CardHeightCm = 18.f;
 	static constexpr float CardPxPerCm = 24.f;
 	/** Where it floats, in the actor's space: x and y, and z above the table top (the target framing puts it right of the
-	 *  lamp agent's head, as the concept's card; FE placed it by capture). */
+	 *  lamp agent's head, as the concept's card; FE placed it by capture, FG moved it 7 cm left so it covers the end of
+	 *  FI's reaching arm, as the concept's card hides the agent's hand). */
 	static constexpr float CardPlaceXCm = 36.f;
-	static constexpr float CardPlaceYCm = 42.f;
+	static constexpr float CardPlaceYCm = 35.f;
 	static constexpr float CardAboveTopCm = 26.f;
 
 	ABpTable();
@@ -197,6 +201,10 @@ public:
 	/** The pin body's material on the instanced batch (unlit amber, fc1_marks.py). */
 	UPROPERTY(EditAnywhere, Category = "Bp|Table")
 	TSoftObjectPtr<UMaterialInterface> PinBodyMaterial;
+
+	/** The beads' halo (unlit, additive; fg_holo.py). Missing: no halos. */
+	UPROPERTY(EditAnywhere, Category = "Bp|Table")
+	TSoftObjectPtr<UMaterialInterface> PinHaloMaterial;
 
 	/** The tags' material (Texture parameter `Atlas`, Scalar `TagGlow`; per-instance custom data 0, 1 = the cell's UV
 	 *  offset, 2, 3 = its UV size). Missing: no tags. */
@@ -336,6 +344,8 @@ private:
 	TObjectPtr<UInstancedStaticMeshComponent> PinBeads;
 	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
 	TObjectPtr<UInstancedStaticMeshComponent> PinStems;
+	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
+	TObjectPtr<UInstancedStaticMeshComponent> PinHalos;
 
 	/** Engine content for the greybox, held hard so a cook takes it along. */
 	UPROPERTY()

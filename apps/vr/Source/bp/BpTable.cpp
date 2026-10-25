@@ -129,7 +129,7 @@ namespace
 	 *  clear of the rest walls' glowing tops; the room names in their header strips where they meet the floor; the title
 	 *  block, with the scale bar in it, on the paper the shortest wing leaves empty (off the hands' path in the target
 	 *  framing); the breadcrumb near-right (the hands' way back, WP3); the compass in the left margin. */
-	constexpr double WingLabelGapCm = 0.8;
+	constexpr double WingLabelGapCm = 1.1;
 	constexpr double WingLabelClearCm = 0.4;
 	constexpr double WingTagGapCm = 0.45;
 	/** The paper above the highest tag line that stays clear of the frame's glow strip. */
@@ -159,11 +159,8 @@ namespace
 	const FLinearColor TagInk(FColor(0x0B, 0x2A, 0x6B));
 
 	/** The line-weight hierarchy (FC3): the wing outline strongest and alone in a glow, the rooms medium, the bays and the
-	 *  tiles' cells fine, the grid faint. Widths in sheet pixels (24.7 a centimetre). */
-	constexpr float GridFinePx = 2.f;
-	constexpr float GridMajorPx = 3.f;
-	constexpr float GridFineOpacity = 0.06f;
-	constexpr float GridMajorOpacity = 0.13f;
+	 *  tiles' cells fine. Widths in sheet pixels (24.7 a centimetre). The grid is M_BlueprintPaper's own since FG: drawn
+	 *  analytically at the screen's pixel (fg_holo.py), it stays crisp where the sheet's raster grid blurred or shimmered. */
 	constexpr float WingFillOpacity = 0.07f;
 	constexpr float WingEdgeOpacity = 1.f;
 	constexpr float WingEdgePx = 7.f;
@@ -193,9 +190,9 @@ namespace
 	 *  shells seen at a grazing angle read as glass over the paper, not a grey wash (WP2's leftover). */
 	constexpr float RoomFaceOpacity = 0.02f;
 	/** The rest extrusions' glass (FC1; FE raised it with the edges, so a room reads as a faintly lit glass block). */
-	constexpr float RestFaceOpacity = 0.07f;
+	constexpr float RestFaceOpacity = 0.04f;
 	/** The lifted room's glass (FE): a stronger face than its siblings', as the concept's raised room. */
-	constexpr float LiftedFaceOpacity = 0.06f;
+	constexpr float LiftedFaceOpacity = 0.15f;
 	/** The edges' emissive scale per batch (M_EdgeGlow's Intensity, its default 1.4; FE, elements 4 and 6, against the
 	 *  concept's bright cyan edges): the rest extrusions brightest, as the concept's rooms on the sheet; the lifted wing's
 	 *  shells and the lifted room's tiles under them; the lifted room's shell carries LiftedRoomShow on top. All of it
@@ -211,7 +208,7 @@ namespace
 	constexpr float PaperVignetteEdge = 0.4f;
 	constexpr float PaperInkGlow = 1.0f;
 	/** The fixture glyphs' glow (M_Glyph's GlyphGlow, its default 0.45; FE: the concept's furniture glows inside the rooms). */
-	constexpr float GlyphGlow = 0.8f;
+	constexpr float GlyphGlow = 1.0f;
 	/** The greybox's volumes: faces only, on UWidgetComponent's translucent engine material. */
 	constexpr float GreyboxVolumeOpacity = 0.12f;
 	/** Labels draw after the volumes (translucent sort), so a glowing edge never lies over a wing's name. */
@@ -309,6 +306,7 @@ ABpTable::ABpTable()
 	VolumeMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Bp/Materials/M_EdgeGlow.M_EdgeGlow")));
 	PinMesh = TSoftObjectPtr<UStaticMesh>(FSoftObjectPath(TEXT("/Game/Bp/Art/SurveyPin/final/StaticMeshes/SM_SurveyPin.SM_SurveyPin")));
 	PinBodyMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Bp/Materials/M_PinBody.M_PinBody")));
+	PinHaloMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Bp/Materials/M_PinHalo.M_PinHalo")));
 	TagMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Bp/Materials/M_PinTag.M_PinTag")));
 	ScanCollection = TSoftObjectPtr<UMaterialParameterCollection>(FSoftObjectPath(TEXT("/Game/Bp/Materials/MPC_BpScan.MPC_BpScan")));
 	TypeRegularFace = TSoftObjectPtr<UFontFace>(FSoftObjectPath(TEXT("/Game/Bp/Fonts/BarlowSemiCondensed-Medium.BarlowSemiCondensed-Medium")));
@@ -378,6 +376,10 @@ ABpTable::ABpTable()
 	PinBeads->SetStaticMesh(EngineSphere);
 	PinStems = MakeVolumes(TEXT("PinStems"));
 	PinStems->NumCustomDataFloats = 0;
+	// Each bead's halo (FG): the unit sphere again, PinHaloScale times the bead, additive (M_PinHalo).
+	PinHalos = MakeVolumes(TEXT("PinHalos"));
+	PinHalos->NumCustomDataFloats = 0;
+	PinHalos->SetStaticMesh(EngineSphere);
 }
 
 float ABpTable::HeightCvarCm()
@@ -1322,27 +1324,6 @@ void ABpTable::DrawSheet(UCanvas* Canvas, int32 Width, int32 Height)
 	if (!Canvas || !SheetPlan.IsValid()) return;
 	FSheetPen Pen;
 	const auto Px = [this](double X, double Y) { return PaperCmToSheetPx(PlanToPaperCm(FVector2D(X, Y))); };
-	const auto PaperPx = [](double U, double V) { return PaperCmToSheetPx(FVector2D(U, V)); };
-
-	// The paper's grid over the whole sheet: quiet fine lines, a stronger line every GridMajorEvery. Butt ends (the pen's
-	// square caps would overlap at every crossing and dot the grid).
-	const auto GridLine = [&Pen](const FVector2D& From, const FVector2D& To, float WidthPx, const FLinearColor& Color)
-	{
-		const FVector2D Across = FVector2D(From.Y - To.Y, To.X - From.X).GetSafeNormal() * (WidthPx * 0.5f);
-		Pen.Quad(From - Across, To - Across, To + Across, From + Across, Color);
-	};
-	const FLinearColor GridFine = CyanWhite.CopyWithNewOpacity(GridFineOpacity);
-	const FLinearColor GridMajor = CyanWhite.CopyWithNewOpacity(GridMajorOpacity);
-	for (int32 Line = 1; Line * GridFineCm < PaperWidthCm; ++Line)
-	{
-		const bool bMajor = Line % GridMajorEvery == 0;
-		GridLine(PaperPx(Line * GridFineCm, 0.0), PaperPx(Line * GridFineCm, PaperDepthCm), bMajor ? GridMajorPx : GridFinePx, bMajor ? GridMajor : GridFine);
-	}
-	for (int32 Line = 1; Line * GridFineCm < PaperDepthCm; ++Line)
-	{
-		const bool bMajor = Line % GridMajorEvery == 0;
-		GridLine(PaperPx(0.0, Line * GridFineCm), PaperPx(PaperWidthCm, Line * GridFineCm), bMajor ? GridMajorPx : GridFinePx, bMajor ? GridMajor : GridFine);
-	}
 
 	// The floor plan: each wing's soft fill, its tiles', bays' and rooms' flat outlines, then the wing's outline. While a wing is
 	// lifted every other wing's ink is dimmed (SheetInkFactor); the lifted one's stays, the footprint under it.
@@ -1543,7 +1524,7 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 	{
 		const FVector3d& At = Tag.Value;
 		Report(TEXT("wing-tag"), bTags ? Tag.Key : FString(), At.X, At.Y, At.Z, At.Z);
-		if (bTags) Put(Tag.Key, BpType::WingTag, At.X, At.Y - At.Z, At.Z, Ink(CyanWhite, 0.8f * TextInk), 0.0);
+		if (bTags) Put(Tag.Key, BpType::WingTag, At.X, At.Y - At.Z, At.Z, Ink(CyanWhite, TextInk), 0.0);
 		if (bTags) LabelTop = FMath::Min(LabelTop, At.Y - At.Z);
 	}
 	if (LabelTop != WingLabelTopV)
