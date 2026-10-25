@@ -52,8 +52,14 @@ LAMP_CARD_MATERIAL = "/Game/Bp/Materials/M_LampAgentGlowCard"
 # (FB's hand-over, spark vr-fidelity-40). L5.7 drives GlowStrength per state on the instances that carry it.
 LAMP_GLOW = 5.0
 LAMP_GLOW_COLOUR = "#FFA94D"
-LAMP_HOOD_SCALE = 0.12  # 0.15 until FF: the bowl read flat amber; FF's 0.05 rendered it near black (FG), the concept's is a warm lit bowl
-LAMP_CARD_GLOW = 1.5
+# FW's head (spark vr-fidelity-40 FY): the warm tan inside now carries the bowl under the warm light, so it adds no glow
+# of its own; at 0.12 the inside and the lens read as one flat cream disc (Lynx, 2026-10-25). 0.15 until FF, 0.12 since.
+LAMP_HOOD_SCALE = 0.0
+# The lens and the card (FW's EEVEE match drew the card at 5/3 of the lens). Under UE's filmic curve the lens at 5
+# saturates to flat cream and the card's edge ring and hotspot vanish in it; the lens at 2 under the card at 8.3 keeps the
+# concept's bright rim round a glowing disc (Lynx, 2026-10-25; the slit and the pin share the lens slot).
+LAMP_LENS_GLOW = 2.0
+LAMP_CARD_GLOW = LAMP_GLOW * 5.0 / 3.0
 # Shell: base colour texture x lerp(1, AO, AO_MIX) from the ORM's R (the forward path's SSAO is weak).
 LAMP_AO_MIX = 0.6
 
@@ -181,6 +187,17 @@ def instance(path, parent):
     return mi
 
 
+# A re-import keeps the textures the first import made from a GLB's embedded images, as it keeps the instances: after FZ's
+# new city the asset still held the 2026-10-24 strip (1792 x 768, not 1328 x 882; Lynx 2026-10-25). So each embedded
+# image is imported again from its PNG over that asset. FZ's strip runs twice across the arc (UV u 0 to 2): Wrap.
+EMBEDDED = [("city-backdrop", "textures/city_backdrop_basecolor.png", "/Game/Bp/Art/CityBackdrop/final/Textures", "city_backdrop_basecolor")]
+for art_id, png, dest, name in EMBEDDED:
+    t = import_texture(os.path.join(ART, art_id, png), dest, name, True)
+    t.set_editor_property("address_x", unreal.TextureAddress.TA_WRAP)
+    t.set_editor_property("address_y", unreal.TextureAddress.TA_WRAP)
+    unreal.EditorAssetLibrary.save_loaded_asset(t, only_if_is_dirty=False)
+    result.setdefault("embedded", {})[name] = [t.blueprint_get_size_x(), t.blueprint_get_size_y()]
+
 lamp_src = os.path.join(ART, "lamp-agent")
 imported = import_one(os.path.join(lamp_src, LAMP_SOURCE), LAMP, "SM_LampAgent")
 lamp_mesh = unreal.load_asset(LAMP + "/final_working/StaticMeshes/SM_LampAgent")
@@ -286,14 +303,16 @@ SLOTS = {  # slot: (parent, vectors, scalars), from the GLB's factors and FB's h
     "agent_shell": (lm, {"BaseColor": V(0.8, 0.79, 0.77, 1.0)},
                     {"UseTexture": 1.0, "AOMix": LAMP_AO_MIX, "Roughness": 0.35, "Metallic": 0.0, "Haze": 0.5,
                      "ClearCoatRoughness": 0.08, "GlowStrength": 0.0}),
-    # The bowl (FD): its base texture is dark now, and at 0.12 it mirrors the orb as the concept's glossy bowl does.
+    # The hood inside and the lens's stepped reflector (FW): a warm tan in the base texture, roughness 0.32 as baked (FW's
+    # manifest; the material reads no roughness from the ORM, so the bake's value is set here).
     "agent_hood_inner": (lm, {"BaseColor": V(0.8, 0.79, 0.77, 1.0), "GlowColor": glow_lin},
-                         {"UseTexture": 1.0, "AOMix": LAMP_AO_MIX, "Roughness": 0.12, "Metallic": 0.0, "Haze": 0.3,
+                         {"UseTexture": 1.0, "AOMix": LAMP_AO_MIX, "Roughness": 0.32, "Metallic": 0.0, "Haze": 0.3,
                           "ClearCoatRoughness": 0.05, "GlowStrength": LAMP_GLOW, "GlowScale": LAMP_HOOD_SCALE}),
     "agent_joint": (lm, {"BaseColor": V(0.0423, 0.0467, 0.0545, 1.0)},
                     {"UseTexture": 0.0, "Roughness": 0.38, "Metallic": 1.0, "Haze": 0.0, "GlowStrength": 0.0}),
-    "agent_glow": (lm, {"BaseColor": V(1.0, 0.694, 0.352, 1.0), "GlowColor": glow_lin},
-                   {"UseTexture": 0.0, "Roughness": 0.5, "Metallic": 0.0, "Haze": 0.0, "GlowStrength": LAMP_GLOW,
+    # The lens disc and its rim bead (FW): base near black, so it glows and is not lit cream by the warm light in front.
+    "agent_glow": (lm, {"BaseColor": V(0.01, 0.01, 0.01, 1.0), "GlowColor": glow_lin},
+                   {"UseTexture": 0.0, "Roughness": 0.5, "Metallic": 0.0, "Haze": 0.0, "GlowStrength": LAMP_LENS_GLOW,
                     "GlowScale": 1.0}),
     "agent_glow_card": (cm, {"GlowColor": glow_lin}, {"GlowStrength": LAMP_CARD_GLOW}),
 }

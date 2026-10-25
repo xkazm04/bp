@@ -92,7 +92,7 @@ LAMP_AT = (28.0, -9.0)
 LAMP_HOVER_CM = 12.8
 LAMP_SCALE = 1.05
 LAMP_YAW = 90.0
-LAMP_LIGHT_LOCAL = (0.71, 4.16, 13.94)
+LAMP_LIGHT_LOCAL = (0.46, 2.36, 13.96)  # FW's lens face + 4.5 cm (manifest working_pose.light_m); FI's orb was (0.71, 4.16, 13.94)
 LAMP_LIGHT_CD = 0.2
 LAMP_LIGHT_RADIUS = 40.0
 LAMP_LIGHT = unreal.Color(r=255, g=168, b=90, a=255)  # #FFA85A
