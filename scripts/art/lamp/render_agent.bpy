@@ -104,13 +104,14 @@ def render(path, w_px, h_px):
 
 shots = {}
 # 1) the target framing: the crop is 280 x 210 px of the 1376 x 768 target, the figure about 0.74 of its height. The
-# camera looks along the hood's opening (slightly from below), working pose.
+# camera looks at the figure from 5 degrees above, as the target pose's eye does (the hood's mouth about 45 degrees off
+# the view, as in the concept), working pose.
 set_pose('working')
 lo, hi = bbox_world()
 c = (lo + hi) / 2
 size = max(hi.x - lo.x, hi.z - lo.z)
 dist = 1.4
-aim(c + Vector((0.01, -dist, -0.05)), c + Vector((0.0, 0, -0.004)), 36 * dist / (size * 1.12))
+aim(c + Vector((0.01, -dist, dist * math.tan(math.radians(5.0)))), c + Vector((0.0, 0, -0.004)), 36 * dist / (size * 1.12))
 render(os.path.join(WORK, 'cmp.png'), 560, 420)
 shots['target'] = 'cmp.png'
 # 2) turnaround, working pose

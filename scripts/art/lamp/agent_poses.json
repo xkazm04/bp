@@ -1,11 +1,11 @@
 {
-  "$comment": "Pose table for build_agent.bpy: per pose, per bone, degrees about the ARMATURE axes (X right, -Y front, Z up), applied at the bone head. Rest: arms hang 30 degrees out from vertical, head level. arm_l is the figure's left (+X, the viewer's right), arm_r its right (-X). Each pose is one action keyed on frames 1 and 12.",
+  "$comment": "Pose table for build_agent.bpy: per pose, per bone, degrees about the ARMATURE axes (X right, -Y front, Z up), applied at the bone head. Rest: arms hang 30 degrees out from vertical, head level. arm_l is the figure's left (+X, the viewer's right), arm_r its right (-X). The upper link is short: the working pose lifts it out beside the hood's bottom (the concept's elbow) and lets the long forearm hang or reach. Each pose is one action keyed on frames 1 and 12.",
   "rest_arm_deg_from_vertical": 30,
   "poses": {
-    "resting": { "arm_l_upper": [0, 12, 0], "arm_l_lower": [0, 8, 0], "arm_r_upper": [0, -12, 0], "arm_r_lower": [0, -8, 0], "head": [-6, 0, 0] },
-    "working": { "arm_l_upper": [-8, -62, 0], "arm_l_lower": [0, -4, 0], "arm_r_upper": [-8, 2, 0], "arm_r_lower": [0, 3, 0], "head": [0, -8, 8] },
-    "asking": { "arm_l_upper": [-20, -95, 0], "arm_l_lower": [0, -25, 0], "arm_r_upper": [0, -4, 0], "arm_r_lower": [0, 0, 0], "head": [14, 0, 10] },
-    "speaking": { "arm_l_upper": [-12, -40, 0], "arm_l_lower": [-10, -30, 0], "arm_r_upper": [-12, 40, 0], "arm_r_lower": [-10, 30, 0], "head": [16, 0, 0] }
+    "resting": { "arm_l_upper": [0, -40, 0], "arm_l_lower": [0, 48, 0], "arm_r_upper": [0, 40, 0], "arm_r_lower": [0, -48, 0], "head": [-6, 0, 0] },
+    "working": { "arm_l_upper": [0, -72, -20], "arm_l_lower": [0, -3, -60], "arm_r_upper": [0, 82, 0], "arm_r_lower": [0, -75, 0], "head": [0, 10, 8] },
+    "asking": { "arm_l_upper": [-20, -95, 0], "arm_l_lower": [0, -25, 0], "arm_r_upper": [0, 70, 0], "arm_r_lower": [0, -68, 0], "head": [14, 0, 10] },
+    "speaking": { "arm_l_upper": [-12, -60, 0], "arm_l_lower": [-10, -10, 0], "arm_r_upper": [-12, 60, 0], "arm_r_lower": [-10, 10, 0], "head": [16, 0, 0] }
   },
   "static_pose": "working"
 }

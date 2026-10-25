@@ -38,35 +38,52 @@ scene = bpy.context.scene
 scene.unit_settings.scale_length = 1.0
 
 # ---- dimensions (metres) -------------------------------------------------------------------------------------------
-PIN = (0.0, 0.014, 0.0009)                  # z from, z to, radius (the concept's pin is a hair-thin rod)
+# Proportions (re-measured 2026-10-25 on reference/target-crop.png, in units of the hood's outer width H = 100 px there):
+# orb 0.50 H (0.56 of the mouth's inner edge), body below the hood lip 0.66 H, its width 0.62 H at the top and 0.41 H
+# three quarters down to a flattened round tip, pin 0.13 H; each elbow sits beside the hood's bottom at 0.46 H off the
+# axis, a short upper link from the shoulder, a long tapering forearm (0.97 H elbow to wrist, 0.115 H thick at the elbow,
+# 0.09 H at the wrist) and a narrow teardrop loop 0.43 H long hanging a little nearer vertical than the forearm.
+PIN = (0.0, 0.020, 0.0009)                  # z from, z to, radius (the concept's pin is a hair-thin rod)
 SEAM_D, SEAM_W = 0.0006, 0.0004             # panel seams: a groove this deep, its walls this far either side of it
-BODY_SEAMS_Z = (0.034, 0.124)               # the front panel's lower and upper seam rings
+BODY_SEAMS_Z = (0.044, 0.100)               # the front panel's lower and upper seam rings
 BODY_SEAMS_A = (225.0, 315.0)               # and its two vertical seams, degrees about Z (270 is the front, -Y)
+BODY_Z = (0.018, 0.032, 0.114)              # tip, top of the rounded tip cap, top of the cone
+BODY_RR = (0.0275, 0.0450)                  # cone radius at the cap and at the top (the tip cap is a flattened half-round)
+
+def body_r(z):
+    """The cone's radius at z: straight between BODY_RR (the concept's sides do not swell), 0.5 mm of fullness."""
+    u = (z - BODY_Z[1]) / (BODY_Z[2] - BODY_Z[1])
+    return BODY_RR[0] + u * (BODY_RR[1] - BODY_RR[0]) + 0.0005 * math.sin(math.pi * u)
 
 def body_profile():
-    """(r, z, seamable): the rounded tip, a cone that swells 2.5 mm between its ends, two seam grooves, a rolled top lip."""
-    p = [(0.0, 0.012, 0), (0.0075, 0.0138, 0), (0.0130, 0.019, 0), (0.0160, 0.028, 0)]
-    r_at = lambda z: 0.016 + (z - 0.028) / (0.135 - 0.028) * (0.044 - 0.016) + 0.0025 * math.sin(math.pi * (z - 0.028) / (0.135 - 0.028))
-    zs = sorted(set([0.028 + (0.135 - 0.028) * i / 14 for i in range(1, 15)]
+    """(r, z, seamable): the flattened round tip, a cone that is near straight, two seam grooves, a rolled top lip."""
+    zt, zc, z1 = BODY_Z
+    p = [(0.0, zt, 0)] + [(BODY_RR[0] * math.sin(a), zt + (zc - zt) * (1 - math.cos(a)), 0)
+                          for a in (math.pi / 2 * i / 5 for i in range(1, 6))]
+    zs = sorted(set([zc + (z1 - zc) * i / 14 for i in range(1, 15)]
                     + [z + dz for z in BODY_SEAMS_Z for dz in (-SEAM_W, 0.0, SEAM_W)]))
     zs = [z for z in zs if all(abs(z - s) >= SEAM_W * 0.99 or abs(z - s) < 1e-9 for s in BODY_SEAMS_Z)]
     for z in zs:
-        r = r_at(z) - (SEAM_D if any(abs(z - s) < 1e-9 for s in BODY_SEAMS_Z) else 0.0)
+        r = body_r(z) - (SEAM_D if any(abs(z - s) < 1e-9 for s in BODY_SEAMS_Z) else 0.0)
         p.append((r, z, 1 if BODY_SEAMS_Z[0] - 1e-6 <= z <= BODY_SEAMS_Z[1] + 1e-6 else 0))
-    p += [(0.0446, 0.1378, 0), (0.0440, 0.1395, 0), (0.0425, 0.1408, 0), (0.033, 0.1430, 0), (0.0, 0.1445, 0)]
+    r1 = BODY_RR[1]
+    p += [(r1 + 0.0006, z1 + 0.0028, 0), (r1, z1 + 0.0045, 0), (r1 - 0.0015, z1 + 0.0058, 0), (0.031, z1 + 0.008, 0), (0.0, z1 + 0.0095, 0)]
     return p
 
 BODY = body_profile()                       # lathe profile (r, z, seamable), tip to top cap
-COLLAR = (0.137, 0.156, 0.019)              # z from, z to, radius
-HEAD_C = Vector((0.0, -0.010, 0.186))       # hood sphere centre
+COLLAR = (0.1175, 0.1365, 0.019)            # z from, z to, radius
+HEAD_C = Vector((0.0, -0.010, 0.1665))      # hood sphere centre
 HOOD_R, HOOD_T, HOOD_CUT = 0.068, 0.0030, 0.18   # outer radius, wall, cut plane at +0.18 R along the opening axis
-OPEN_TILT = -30.0                            # the opening looks forward (-Y) and this many degrees up (negative: down, as in the target)
-ORB_R, ORB_IN = 0.037, 0.006                 # orb radius; its centre sits this far towards the opening from HEAD_C
-SHOULDER = Vector((0.0505, 0.0, 0.130))      # +X side; mirrored for the right arm
-UPPER_L, LOWER_L = 0.078, 0.060             # capsule lengths
+OPEN_TILT = -40.0                            # the opening looks forward (-Y) and this many degrees up (negative: down; the concept's mouth is 45 degrees off a view from 5 degrees above)
+ORB_R, ORB_IN = 0.0330, -0.003               # orb radius; its centre sits this far towards the opening from HEAD_C (negative: recessed)
+SHOULDER = Vector((0.051, 0.0, 0.118))       # +X side; mirrored for the right arm
+UPPER_L, LOWER_L = 0.017, 0.121             # capsule lengths: a short link out of the shoulder, a long forearm
 BALL = (0.0098, 0.0072, 0.0055)              # shoulder, elbow, wrist ball radius
-LOOP = (0.0135, 0.0009)                      # wire loop major / minor radius
-LOOP_STRETCH = 2.3                           # the loop's length over its width before the teardrop pinch
+LOWER_R = (0.0085, 0.0062)                   # forearm radius at the elbow end and at the wrist end
+LOOP = (0.0135, 0.0010)                      # wire loop major / minor radius
+LOOP_STRETCH = 2.1                           # the loop's length over its width before the teardrop pinch
+LOOP_WIDTH = (0.55, 0.30)                    # its width factor at the far end, and how much it pinches towards the wrist
+LOOP_DROOP = 14.0                            # degrees the loop hangs nearer vertical than the forearm
 REST_DEG = POSES['rest_arm_deg_from_vertical']
 OPEN_AXIS = Vector((0.0, -math.cos(math.radians(OPEN_TILT)), math.sin(math.radians(OPEN_TILT))))
 
@@ -209,6 +226,18 @@ def capsule(name, start, end, r_mid, r_end, segs=14, rings=7):
     prof[-1] = (0.0, L)
     return lathe(name, prof, segs, start, d)
 
+def tapered(name, start, end, r_a, r_b, segs=14, rings=6):
+    """A long tapering arm segment: a rounded cap of r_a at start, a gentle swell and a straight taper to a cap of r_b."""
+    d = end - start
+    L = d.length
+    prof = [(0.0, 0.0)] + [(r_a * math.sin(a), r_a * (1 - math.cos(a))) for a in (math.pi / 2 * i / rings for i in range(1, rings + 1))]
+    for i in range(1, 8):
+        t = i / 8
+        prof.append((r_a + (r_b - r_a) * t + 0.0006 * math.sin(math.pi * t), r_a + (L - r_a - r_b) * t))
+    prof += [(r_b * math.sin(a), L - r_b * (1 - math.cos(a))) for a in (math.pi / 2 * i / rings for i in range(rings, -1, -1))]
+    prof[-1] = (0.0, L)
+    return lathe(name, prof, segs, start, d)
+
 def sphere(name, centre, r, segs=16, rings=10):
     prof = [(r * math.sin(math.pi * i / rings), -r * math.cos(math.pi * i / rings)) for i in range(rings + 1)]
     prof[0], prof[-1] = (0.0, -r), (0.0, r)
@@ -252,25 +281,23 @@ collar = cylinder('collar', COLLAR[0], COLLAR[1], COLLAR[2], 32)
 add_mods(collar, bevel=0.0012, weighted=True)
 finish(collar, 'agent_joint', 'body')
 # the slit: a thin proud strip on the body front, following the cone's lean
-z_mid = 0.088
-r_at = 0.016 + (z_mid - 0.028) / (0.135 - 0.028) * (0.044 - 0.016)
-lean = math.atan2(0.044 - 0.016, 0.135 - 0.028)
+z_mid = 0.067
+lean = math.atan2(body_r(z_mid + 0.01) - body_r(z_mid - 0.01), 0.02)
 bm = bmesh.new()
 bmesh.ops.create_cube(bm, size=1.0)
-bmesh.ops.scale(bm, vec=(0.0024, 0.0016, 0.034), verts=bm.verts)
+bmesh.ops.scale(bm, vec=(0.0030, 0.0016, 0.026), verts=bm.verts)
 bmesh.ops.rotate(bm, verts=bm.verts, cent=(0, 0, 0), matrix=Matrix.Rotation(-lean, 3, 'X'))
-bmesh.ops.translate(bm, vec=(0, -(r_at - 0.0004), z_mid), verts=bm.verts)
+bmesh.ops.translate(bm, vec=(0, -(body_r(z_mid) - 0.0004), z_mid), verts=bm.verts)
 slit = new_obj('slit', bm)
 add_mods(slit, bevel=0.0005)
 finish(slit, 'agent_glow', 'body')
-# the concept's small glowing dot under the slit
-z_dot = 0.047
-r_dot = 0.016 + (z_dot - 0.028) / (0.135 - 0.028) * (0.044 - 0.016) + 0.0025 * math.sin(math.pi * (z_dot - 0.028) / (0.135 - 0.028))
-dot_ = cyl_axis('slit_dot', Vector((0, -(r_dot - 0.0002), z_dot)), Vector((0, -1, 0)), 0.0013, 0.0012, 12)
+# the concept's small glowing dot just above the slit
+z_dot = 0.086
+dot_ = cyl_axis('slit_dot', Vector((0, -(body_r(z_dot) - 0.0002), z_dot)), Vector((0, -1, 0)), 0.0017, 0.0012, 12)
 add_mods(dot_, bevel=0.0003)
 finish(dot_, 'agent_glow', 'body')
 # the neck: two dark bevelled rings where the body's top lip meets the collar (joint hardware, as the concept's)
-for i, z in enumerate((0.1448, 0.1515)):
+for i, z in enumerate((BODY_Z[2] + 0.0098, BODY_Z[2] + 0.0165)):
     nk = cyl_axis(f'neck_ring_{i}', Vector((0, 0, z)), Vector((0, 0, 1)), 0.0215 if i == 0 else 0.0205, 0.0026, 32)
     add_mods(nk, bevel=0.0007, weighted=True)
     finish(nk, 'agent_joint', 'body')
@@ -325,7 +352,7 @@ def arm(side):
         if screw:
             finish(dome(f'{tag}_screw_{side}', c + hinge * (length / 2 + 0.001), hinge, r * 0.32, r * 0.16), 'agent_joint', bone)
     # the shoulder: a bracket plate on the body side carries the axle (the bracket is the body's, the drum the arm's)
-    br = cyl_axis(f'shoulder_bracket_{side}', sh - Vector((sx * 0.004, 0, 0.0)), Vector((1, 0, 0)), 0.0068, 0.008, 16)
+    br = cyl_axis(f'shoulder_bracket_{side}', sh - Vector((sx * 0.006, 0, 0.0)), Vector((1, 0, 0)), 0.0068, 0.012, 16)
     add_mods(br, bevel=0.0008, weighted=True); finish(br, 'agent_joint', 'body')
     hub('shoulder', sh, BALL[0] * 0.95, 0.016, up)
     upper_a, upper_b = sh + d * (BALL[0] * 0.55), elbow - d * (BALL[1] * 0.45)
@@ -333,12 +360,14 @@ def arm(side):
     # a dark collar ring at each end of each arm segment, where the shell meets the joint
     def collar_ring(tag, at, axis, r, bone):
         c = cyl_axis(f'{tag}_{side}', at, axis, r, 0.0028, 16); add_mods(c, bevel=0.0004, weighted=True); finish(c, 'agent_joint', bone)
-    collar_ring('upper_ring_a', upper_a + d * 0.0085, d, 0.0067, up)
-    collar_ring('upper_ring_b', upper_b - d * 0.0080, d, 0.0066, up)
+    if (upper_b - upper_a).length > 0.03:     # the short link between two drums has no room for rings
+        collar_ring('upper_ring_a', upper_a + d * 0.0085, d, 0.0067, up)
+        collar_ring('upper_ring_b', upper_b - d * 0.0080, d, 0.0066, up)
     hub('elbow', elbow, BALL[1] * 0.95, 0.012, lo)
     lower_a, lower_b = elbow + d * (BALL[1] * 0.45), wrist - d * (BALL[2] * 0.4)
-    finish(capsule(f'lower_{side}', lower_a, lower_b, 0.0076, 0.0050), 'agent_shell', lo)
-    collar_ring('lower_ring_a', lower_a + d * 0.0075, d, 0.0058, lo)
+    finish(tapered(f'lower_{side}', lower_a, lower_b, *LOWER_R), 'agent_shell', lo)
+    collar_ring('lower_ring_a', lower_a + d * 0.0063, d, LOWER_R[0] * 1.04, lo)
+    collar_ring('lower_ring_b', lower_b - d * 0.0050, d, LOWER_R[1] * 1.05, lo)
     hub('wrist', wrist, BALL[2], 0.009, lo, screw=False)
     bm = bmesh.new()
     # a torus in the arm's plane (XZ), its near edge at the wrist ball
@@ -359,10 +388,11 @@ def arm(side):
     # the concept's wire loop is a long narrow teardrop: stretched along the arm, pinched towards the wrist
     for v in bm.verts:
         t = (v.co.z / LOOP[0] + 1) / 2            # 0 at the far end, 1 at the wrist end
-        v.co.x *= 0.85 - 0.35 * t
+        v.co.x *= LOOP_WIDTH[0] - LOOP_WIDTH[1] * t
     bmesh.ops.scale(bm, vec=(1.0, 1.0, LOOP_STRETCH), verts=bm.verts)
-    rot = Vector((0, 0, -1)).rotation_difference(d).to_matrix().to_4x4()
-    bmesh.ops.transform(bm, matrix=Matrix.Translation(wrist + d * (BALL[2] + LOOP[0] * LOOP_STRETCH - 0.0014)) @ rot @ Matrix.Translation((0, 0, 0)), verts=bm.verts)
+    dl = Matrix.Rotation(math.radians(LOOP_DROOP * sx), 3, 'Y') @ d      # it hangs a little nearer vertical than the forearm
+    rot = Vector((0, 0, -1)).rotation_difference(dl).to_matrix().to_4x4()
+    bmesh.ops.transform(bm, matrix=Matrix.Translation(wrist + dl * (BALL[2] + LOOP[0] * LOOP_STRETCH - 0.0014)) @ rot @ Matrix.Translation((0, 0, 0)), verts=bm.verts)
     finish(new_obj(f'loop_{side}', bm), 'agent_shell', lo)       # a bright wire, as the concept's
     return sh, elbow, wrist
 
@@ -374,8 +404,8 @@ joints = {s: arm(s) for s in ('l', 'r')}
 CABLE_R = 0.0011
 sh_r, el_r, _ = joints['r']
 d_r = (el_r - sh_r).normalized()
-p0 = Vector((-0.024, 0.026, 0.104))                                    # the body's back, left of the spine (viewer's view)
-p3 = sh_r + d_r * 0.050 + Vector((0, 0.0075, 0))                       # the upper arm's back, half way down
+p0 = Vector((-0.024, 0.026, 0.096))                                    # the body's back, left of the spine (viewer's view)
+p3 = sh_r + d_r * 0.014 + Vector((0, 0.0075, 0))                       # the back of the short upper link
 c1, c2 = p0 + Vector((-0.004, 0.016, -0.026)), p3 + Vector((0.006, 0.014, -0.022))
 N_C, S_C = 20, 8
 bm = bmesh.new()
@@ -635,6 +665,11 @@ st.hide_render = True; st.hide_set(True)
 R['static_object'] = st.name
 R['orb_centre_rest_m'] = [round(v, 4) for v in orb_c]
 R['open_axis'] = [round(v, 4) for v in OPEN_AXIS]
+# the same in the static pose, carried by the head bone (where UE puts the warm light), and the posed hood top
+hm = rig.pose.bones['head'].matrix @ rig.data.bones['head'].matrix_local.inverted()
+w_orb, w_ax = hm @ orb_c, (hm.to_3x3() @ OPEN_AXIS).normalized()
+R['working'] = {'orb_centre_m': [round(v, 4) for v in w_orb], 'open_axis': [round(v, 4) for v in w_ax],
+                'light_m': [round(v, 4) for v in w_orb + w_ax * 0.045], 'top_z_m': round(max(v.co.z for v in st.data.vertices), 4)}
 bpy.ops.wm.save_as_mainfile(filepath=os.path.join(WORK, 'agent.blend'))
 json.dump(R, open(os.path.join(WORK, 'build.json'), 'w'), indent=1)
 print('BUILD', json.dumps({k: R[k] for k in ('part_tris', 'bake_seconds', 'ao')}))
