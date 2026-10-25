@@ -169,7 +169,9 @@ try {
     process.env.BP_LENS_SCAN_DIR = shimDir;
     const croot = path.join(dir, 'cancel'), cdb = path.join(croot, '.ai/lens-scan/scan.db');
     { const db = newStore(cdb); insert(db, 'rel-3.0.0-to-building-hang', 'draft'); insert(db, 'rel-3.0.1-to-pr-open-hang', 'draft'); db.close(); }
-    const row = (id: string): Any => { const db = new DatabaseSync(cdb, { readOnly: true }); try { return db.prepare('SELECT status, error FROM releases WHERE id = ?').get(id); } finally { db.close(); } };
+    // timeout: the job runner writes this store while the check polls it; without a busy timeout a read that lands on its
+    // write lock throws "database is locked" (seen under a loaded machine), where it should wait as the shim's writer does
+    const row = (id: string): Any => { const db = new DatabaseSync(cdb, { readOnly: true, timeout: 5000 }); try { return db.prepare('SELECT status, error FROM releases WHERE id = ?').get(id); } finally { db.close(); } };
     const calls = () => (fs.existsSync(shimLog) ? fs.readFileSync(shimLog, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l) as string[]) : []);
     const updateOf = (id: string) => calls().find((a) => a.includes('release-update') && a[a.indexOf('--release') + 1] === id);
     const flag = (a: string[] | undefined, f: string) => (a ? a[a.indexOf(f) + 1] : undefined);
