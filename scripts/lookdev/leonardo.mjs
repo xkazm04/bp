@@ -92,6 +92,9 @@ export function composePropPrompt(propId, variant, p = props, s = style) {
   const v = prop.variants[variant];
   if (!v) throw new Error(`unknown variant ${variant} for ${propId}; known: ${Object.keys(prop.variants).join(', ')}`);
   const palette = s.palette.map((x) => `${x.role}: ${x.name} ${x.hex.join(' to ')}`).join('; ');
+  // A modelling reference (prop.reference) is a neutral clay multi-view sheet for Blender: the scene's palette and its
+  // bloom-and-haze finish would paint lighting into what must read as pure form, so only the Never list is restated.
+  if (prop.reference) return [`Modelling reference sheet of one object, ${prop.name}. ${v}`, `Sheet rules: ${prop.sheet}`, `Materials: ${prop.materials}.`, `Never: ${s.never.join(', ')}.`].join(' ');
   return [
     prop.rules ? `${prop.name}. ${v}` : `Concept sheet of one prop, ${prop.name}. ${v}`,
     prop.rules ? `Backdrop rules: ${prop.rules}` : `Sheet rules: ${prop.sheet ?? p.sheet}`,

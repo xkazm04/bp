@@ -93,6 +93,17 @@
       "variants": {
         "A": "Uniform deep blueprint blue paper with fine fibres and a very slight cloudy variation."
       }
+    },
+    "fixture-meeting-table": {
+      "name": "a small round meeting table with four chairs, as one architectural-maquette furniture piece",
+      "reference": true,
+      "brief_note": "Added 2026-10-25 (owner request): one object per sheet in several aligned reference views for Blender modelling, replacing a six-object sheet. Practice from the web: one subject, true orthographic front/side/top at one scale on a shared baseline, identical light in every panel, the top view asked for explicitly. Clay, not glass: translucency hides the edges the modeller needs; the glass look is applied in Unreal.",
+      "sheet": "the same single object drawn four times on one sheet, in a 2x2 grid of equal panels: top-left a front elevation, top-right a side elevation, bottom-left a top-down plan view, bottom-right a three-quarter view from slightly above. The front elevation, side elevation and plan view are true orthographic projections with no perspective, all at exactly the same scale and aligned to one shared ground baseline and centre line; the object is whole and uncropped in every panel. Plain flat light-grey background, even soft shadowless studio light identical in all four panels, no floor line, no grid, no text, no labels, no dimension lines, no other objects.",
+      "materials": "matte uniform light-grey clay, a modelling maquette with crisp edges and simple clean forms, no texture, no glass, no transparency, no colour",
+      "variants": {
+        "A": "A round pedestal meeting table, one central column on a round foot, with four simple chairs tucked in around it at even quarter spacing; each chair has four slim straight legs, a flat square seat and a low gently curved backrest facing the table.",
+        "B": "A round meeting table on four straight slim legs, with four simple chairs pulled slightly out from it at even quarter spacing; each chair has four slim straight legs, a flat seat and an upright rectangular backrest."
+      }
     }
   }
 }

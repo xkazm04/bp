@@ -69,13 +69,24 @@ const expected = { 'lamp-agent': ['E', 'F', 'G', 'H'], 'studio-shelves': ['A', '
 // The other rules-mode entries (2026-10-24 fidelity sprint images), each with its hand-typed variants: a scene strip or a
 // flat sheet whose own rules forbid any text, restating the palette, finish and never list like every prompt.
 const SCENE_STRIPS = { 'city-night': ['A', 'B'], 'wall-drawings': ['A', 'B', 'C', 'D'], 'paper-albedo': ['A'] };
-const SHEET_PROPS = Object.keys(expected), RULES_PROPS = ['city-backdrop', ...Object.keys(SCENE_STRIPS)];
+// Modelling-reference entries (2026-10-25): one object in aligned clay views for Blender, no palette or finish.
+const REFERENCE_PROPS = { 'fixture-meeting-table': ['A', 'B'] };
+const SHEET_PROPS = [...Object.keys(expected), ...Object.keys(REFERENCE_PROPS)], RULES_PROPS = ['city-backdrop', ...Object.keys(SCENE_STRIPS)];
 const uncovered = Object.keys(props.props).filter((id) => !SHEET_PROPS.includes(id) && !RULES_PROPS.includes(id));
 const vanished = [...SHEET_PROPS, ...RULES_PROPS].filter((id) => !(id in props.props));
 check(`prop: every one of the ${Object.keys(props.props).length} props.json entries has coverage here`, uncovered.length === 0, `no checks for: ${uncovered.join(', ')}`);
 check('prop: every prop this file claims to check is still in props.json', vanished.length === 0, `gone from props.json: ${vanished.join(', ')}`);
 check('prop: the rules-mode list is exactly the entries that carry a `rules` field', JSON.stringify(Object.keys(props.props).filter((id) => props.props[id].rules).sort()) === JSON.stringify([...RULES_PROPS].sort()),
   `rules in props.json: ${Object.keys(props.props).filter((id) => props.props[id].rules).join(', ')}`);
+for (const [id, variants] of Object.entries(REFERENCE_PROPS)) {
+  check(`reference: ${id} has variants ${variants.join('')}`, JSON.stringify(Object.keys(props.props[id]?.variants ?? {})) === JSON.stringify(variants));
+  check(`reference: ${id} is flagged reference`, props.props[id]?.reference === true);
+  for (const v of variants) {
+    const text = composePropPrompt(id, v);
+    check(`reference: ${id} ${v} keeps the never list and materials but drops the palette and finish`, style.never.every((n) => text.includes(n)) && text.includes(props.props[id].materials) && !text.includes(style.finish) && !style.palette.some((p) => text.includes(p.hex[0])));
+    check(`reference: ${id} ${v} asks for orthographic views at one scale, a top view, and no text`, /orthographic/.test(text) && /same scale/.test(text) && /top-down plan view/.test(text) && /no text/.test(text));
+  }
+}
 for (const [id, variants] of Object.entries(expected)) {
   check(`prop: ${id} has variants ${variants.join('')}`, JSON.stringify(Object.keys(props.props[id]?.variants ?? {})) === JSON.stringify(variants));
   for (const v of variants) {
