@@ -110,6 +110,10 @@ public:
 	 *  thick, across the bay's width (FM: the judge's "thin, taller cyan-edged walls with internal partitions"; a bay box
 	 *  drawn whole made a second tray inside each room). A lifted wing leaves its rest walls behind, hidden. */
 	static constexpr float RestRoomCm = 5.5f;  // FQ: 5.5, taller distinct cells; FP: 4.5 (FO 3.5, FM 6.5, FK 2.2): cells, not trays, with the pointed room still standing out (by capture)
+	/** A shallow room's rest walls stand lower (FAB, a live product's capability rooms, one or two bays deep): at most this
+	 *  share of the room's depth on the paper, so a stack of shallow rooms reads as trays, not as boxes whose walls cover
+	 *  their neighbours. Kettle's rooms (13 cm deep and more) keep RestRoomCm. */
+	static constexpr float RestRoomDepthRatio = 0.45f;
 	static constexpr float BayPartitionRatio = 0.85f;
 	static constexpr float PartitionCm = 0.08f;
 	/** A partition's glass face (M_EdgeGlow's custom data 4; a room's walls are 1). */
@@ -162,6 +166,7 @@ public:
 	 *  every kind and every box; nothing is laid out here. */
 	static constexpr float BayGlyphFill = 0.62f;
 	static constexpr float BayGlyphMaxCm = 4.2f;
+	static constexpr float BayGlyphWallShare = 0.8f;
 
 	/** Pins (FC1, element 7): survey-pin stands on each feature that has an open (`proposed`) finding: an amber bead on the
 	 *  plan, a stem and a paper tag on top (ArtSource/survey-pin: 6.38 cm tall, a 2.2 x 1.4 cm tag centred on the stem,
@@ -182,6 +187,8 @@ public:
 	/** The beads on the plan (every pin) and the stems under a risen pin: the pin's own amber, the bead PinBeadCm across,
 	 *  the stem PinStemCm thick (the pin's stem at PinScale). */
 	static constexpr float PinBeadCm = 0.9f;  // FR: 0.9 (from 1.1), the judges' "stray amber dots"
+	/** A tagged pin's second bead, at the top of its stem under the tag (FAB, element 7: the concept's glowing head). */
+	static constexpr float PinHeadBeadCm = 1.2f;
 	/** FR (the judges: "thick, oversaturated stems"): the modelled body (its stem and ball, about 4 px wide at PinScale)
 	 *  draws with HiddenMaterial, and this hairline runs from the bead up to the tag's foot instead. */
 	static constexpr float PinStemCm = 0.09f;  // FR: 0.09 to the tag (FK 0.12 to the pin's foot)
@@ -210,6 +217,17 @@ public:
 	static constexpr float ScanVeilHeightCm = 16.f;
 	static constexpr float ScanVeilGlow = 0.6f;
 	static constexpr float ScanVeilPow = 2.5f;
+
+	/** The room names at rest (FAB): with the rest walls up, each room's name stands in its header strip on a card tilted
+	 *  RoomNameTiltDeg up from the paper about its bottom edge, toward the person, so from the target eye it reads at about
+	 *  three times the cap a flat name would (the far rooms' flat names could not meet BpType's floor in the strip). The
+	 *  names are drawn once into an atlas (RoomNameCellWidthPx x RoomNameCellHeightPx cells) and shown as one instanced
+	 *  batch of planes. */
+	static constexpr float RoomNameTiltDeg = 60.f;
+	static constexpr int32 RoomNameCellWidthPx = 512;
+	static constexpr int32 RoomNameCellHeightPx = 128;
+	static constexpr int32 RoomNameAtlasCols = 4;
+	static constexpr int32 RoomNameAtlasRows = 16;
 
 	/** The decision card (FC1, element 10): a world-space panel near the lamp agent, drawn at CardPxPerCm (FE: about twice
 	 *  what the target capture resolves at its distance, r4 section 5; at 40 the widget was minified fourfold, unmipped,
@@ -413,10 +431,13 @@ private:
 	TObjectPtr<UStaticMeshComponent> ScanVeil;
 	UPROPERTY()
 	TObjectPtr<class UMaterialInstanceDynamic> ScanVeilMid;
+	/** The room names at rest (FAB): one plane per named room, its atlas cell in custom data 0 to 3 (M_PinTag). */
+	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
+	TObjectPtr<UInstancedStaticMeshComponent> RoomNames;
 	/** The tagged pins, their tags included: one batch. */
 	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
 	TObjectPtr<UInstancedStaticMeshComponent> Pins;
-	/** Every pin's bead on the plan, and the stems under the risen pins (FE). */
+	/** Every pin's bead on the plan and every tag's head bead (FAB), and the stems under the risen pins (FE). */
 	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
 	TObjectPtr<UInstancedStaticMeshComponent> PinBeads;
 	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
@@ -491,6 +512,14 @@ private:
 	void DrawSheet(UCanvas* Canvas, int32 Width, int32 Height);
 	/** The sheet's text (FC1): title block, wing titles, the scale bar's figures, the breadcrumb. Lines go in Tris. */
 	void DrawSheetText(UCanvas* Canvas, TArray<struct FCanvasUVTri>& Tris);
+	/** The room names' atlas and its material (M_PinTag's, at RoomNameGlow). */
+	UPROPERTY(Transient)
+	TObjectPtr<UCanvasRenderTarget2D> RoomNameAtlas;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> RoomNameMid;
+	/** Draws the room names into their atlas. */
+	UFUNCTION()
+	void DrawRoomNames(UCanvas* Canvas, int32 Width, int32 Height);
 	/** Draws the tags' text into the atlas. */
 	UFUNCTION()
 	void DrawTags(UCanvas* Canvas, int32 Width, int32 Height);
@@ -498,6 +527,12 @@ private:
 	void LoadArt();
 	/** TypeFont from the type faces, or Roboto (with one warning) when they are missing. */
 	void BuildTypeFont();
+	/** The room names at rest (FAB), fitted to their rooms at BpType's floor for a tilted card, and their atlas. */
+	void BuildRoomNames(const FBpPlan& Plan);
+	/** Each room name's place for the levels: hidden with its lifted wing, raised with its pointed room. */
+	void ApplyRoomNames(float WingEase);
+	/** A shallow room's rest wall height (RestRoomDepthRatio of its depth, at most RestRoomCm). */
+	float RestRoomHeightCm(const struct FBpPlanBox& RoomBox) const;
 	/** The glyph batches from the plan's tiles and the kinds BpLink read (FC3). */
 	void BuildGlyphs(const FBpPlan& Plan);
 	/** The glyphs' Show per instance for the levels: as their room's rest extrusion. */
@@ -507,6 +542,8 @@ private:
 	/** BpType's floor: the smallest cap height (paper cm) a text whose baseline stands at PaperCm may have, so its cap
 	 *  subtends BpType::FloorPx in the target capture and BpType::FloorArcmin from the play eye. */
 	double TextFloorCm(const FVector2D& PaperCm) const;
+	/** The same floor for a text on a card tilted TiltDeg up from the paper about its baseline (FAB's room names). */
+	double TiltedTextFloorCm(const FVector2D& PaperCm, double TiltDeg) const;
 	/** How deep a wall of HeightCm standing at paper v hides the paper behind it, seen from the target eye (cm, along v). */
 	double CoverCm(double V, double HeightCm) const;
 	void PlaceForHeight(float HeightCm);
@@ -686,6 +723,21 @@ private:
 	TArray<int32> RestRoom;
 	TArray<float> RestInk;
 	TArray<float> RestFace;
+	/** The room names at rest: each one's room, text, cap and place (its card's bottom-left corner on the paper, cm), and
+	 *  the state each instance was last put in (-1 unset, 0 hidden, 1 at rest, 2 raised with its pointed room). */
+	struct FRoomName
+	{
+		int32 Room = INDEX_NONE;
+		FString Text;
+		double CapCm = 0.0;
+		double CapPx = 0.0;
+		FVector2D Corner = FVector2D::ZeroVector;
+	};
+	TArray<FRoomName> RoomNameList;
+	/** A room name's width on the paper at a cap (BpType::RoomName), and its card's rectangle in its atlas cell. */
+	static double RoomNameWidthCm(const FString& Text, double CapCm);
+	static FVector2D RoomNameRectPx(const FRoomName& Each);
+	TArray<int32> RoomNameState;
 	/** The room (plan index) HighlightShell stands for, or none. */
 	int32 HighlightRestRoom = INDEX_NONE;
 

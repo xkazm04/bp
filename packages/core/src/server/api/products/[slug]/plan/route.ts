@@ -3,7 +3,7 @@
 // ids and parent ids are strings, and `rev` is the structure route's. 404 for an unknown slug or a missing structure file.
 // With no registered product named `kettle`, that slug answers the built-in sample, read-only, in the same shape.
 // `?layout=islands` (the VR client's) answers the islands view: the same shape, wings and rooms spaced apart
-// (plan-projection's WING_GAP, ROOM_GAP). No `layout`, or any other value, answers the layout's own boxes.
+// (plan-projection's WING_GAP, ROOM_GAP or a live product's LIVE_ROOM_GAP). No `layout`, or any other value, answers the layout's own boxes.
 import fs from 'node:fs';
 import path from 'node:path';
 import { findProduct, kettleRead, kettleSample, storeDir, unknownProduct } from '@bp/core/server/products.server';

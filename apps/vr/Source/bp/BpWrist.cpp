@@ -217,7 +217,10 @@ void ABpPawn::ReceiveScanState(const FBpScanState& State)
 	// judges: "an opaque dark slab without the concept's glassy edge-lit panel"; "small low-contrast text"): a lighter
 	// blue glass, a lit cyan edge with a soft outer glow and a pale sheen along its top, and larger, brighter type.
 	static const FSlateRoundedBoxBrush Panel(Glass.CopyWithNewOpacity(0.88f), 20.f, CyanEdge, 4.f);  // at 0.8 the frame's bright rim crossed a row (by capture)
-	static const FSlateRoundedBoxBrush EdgeGlow(Cyan.CopyWithNewOpacity(0.16f), 28.f);
+	// FAB (element 11, the judges: the concept's panel has an emissive edge): two glow rings outside the lit edge, the
+	// inner one bright enough to bloom.
+	static const FSlateRoundedBoxBrush EdgeGlow(Cyan.CopyWithNewOpacity(0.10f), 32.f);
+	static const FSlateRoundedBoxBrush EdgeGlowInner(Cyan.CopyWithNewOpacity(0.0f), 24.f, CyanEdge.CopyWithNewOpacity(0.55f), 5.f);
 	static const FSlateRoundedBoxBrush Sheen(FLinearColor(1.f, 1.f, 1.f, 0.07f), 14.f);
 	static const FSlateRoundedBoxBrush Row(Cyan.CopyWithNewOpacity(0.13f), 12.f, Cyan.CopyWithNewOpacity(0.5f), 1.5f);
 	TSharedRef<SVerticalBox> List = SNew(SVerticalBox);
@@ -270,7 +273,9 @@ void ABpPawn::ReceiveScanState(const FBpScanState& State)
 	}
 	const FString Sub = Wave ? FString::Printf(TEXT("%s · %s"), *Wave->name, *Wave->status) : FString();
 	WristPanel->SetSlateWidget(
-		SNew(SBorder).BorderImage(&EdgeGlow).Padding(6.f)
+		SNew(SBorder).BorderImage(&EdgeGlow).Padding(5.f)
+		[
+		SNew(SBorder).BorderImage(&EdgeGlowInner).Padding(4.f)
 		[
 		SNew(SOverlay)
 		+ SOverlay::Slot()
@@ -299,6 +304,7 @@ void ABpPawn::ReceiveScanState(const FBpScanState& State)
 			[
 				SNew(SBorder).BorderImage(&Sheen)
 			]
+		]
 		]
 		]);
 	WristPanel->RequestRedraw();

@@ -67,15 +67,18 @@ public:
 	 *  of its size, so it lies over the forearm left of the watch, its rows over the paper (over the white rail its light
 	 *  text washed out), in front of the sleeve and wholly inside the target frame, as the concept's (placed by capture).
 	 *  FQ (the judge, three rounds: "floats over the table instead of being docked to the wrist"): it rises off the forearm
-	 *  between the watch and the eye, its left edge at the watch, about 8.6 cm wide, as the concept's. */
-	static constexpr float WristCaptureOffsetXCm = -6.f;  // FQ: (-6, 11, 5) x0.66, tilt 0 (FP -3, -1, 12 x0.78, tilt 10)
-	static constexpr float WristCaptureOffsetYCm = 11.f;
-	static constexpr float WristCaptureOffsetZCm = 5.f;
-	static constexpr float WristCaptureScale = 0.66f;
+	 *  between the watch and the eye, its left edge at the watch, about 8.6 cm wide, as the concept's. FAB (the judges,
+	 *  11: still "floating below the hand"): over the sleeve, its right edge against the watch, as a panel mounted on the
+	 *  forearm by the watch (the posed forearm points at the eye, so the sleeve is all of it the target frame sees), below
+	 *  the frame's lit rail (over it the rail read through the glass across a row). */
+	static constexpr float WristCaptureOffsetXCm = -4.f;  // FAB: (-4, -1.5, 1) x0.6, roll -8 (FQ -6, 11, 5 x0.66, roll 10; FP -3, -1, 12 x0.78, tilt 10)
+	static constexpr float WristCaptureOffsetYCm = -1.5f;
+	static constexpr float WristCaptureOffsetZCm = 1.f;
+	static constexpr float WristCaptureScale = 0.6f;
 	/** FO (element 11, the concept's panel "angled along the forearm"): from square to the eye, the panel rolls this far
 	 *  about the view axis so its bottom edge follows the forearm, then tilts back this far about its own horizontal axis,
 	 *  lying toward the forearm's top. By capture. */
-	static constexpr float WristCaptureRollDeg = 10.f;
+	static constexpr float WristCaptureRollDeg = -8.f;
 	static constexpr float WristCaptureTiltDeg = 0.f;
 	/** The panel's up leans with the target pose's view (ABpGameMode::TargetPitchDeg), so it reads square to the eye. */
 	void SetWristParent(USceneComponent* Parent, FName Socket, const FTransform& Relative);

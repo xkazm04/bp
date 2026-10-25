@@ -642,6 +642,7 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 		SetLabelAlpha(WingLabels[Index], Alpha);
 	}
 	ApplyGlyphs(WingEase);
+	ApplyRoomNames(WingEase);
 }
 
 void ABpTable::RedrawSheet()

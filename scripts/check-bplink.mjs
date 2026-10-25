@@ -425,15 +425,16 @@ async function main() {
       check('source: the warning for a stream that did not connect does not say the server "answered"',
         ss.message !== null && !/answered/i.test(ss.message), ss.message === null ? 'no branch on the no-connection value' : ss.message);
 
-      // The level names are the web's and the plan route's: structure.domains are ROOMS (13 here), and wings are the
-      // WING_DEFS groups of domains (5 here). A log line that labels the domain count "wings" reports a number that is
-      // right for rooms and wrong for the level it names, and WP3.1.md's acceptance asks for the wing count. The format
-      // string is the subject of this assertion, so string literals are kept and only comments are stripped.
+      // The level names are the plan route's: structure.domains are DOMAINS, which are Kettle's rooms (13 here) but a live
+      // product's wings (a live product draws one room per capability). A log line that labels the domain count "rooms"
+      // or "wings" reports a number that is right for one product and wrong for another, so every line that logs it calls
+      // it "domains". The format string is the subject of this assertion, so string literals are kept and only comments
+      // are stripped.
       const lit = stripCxx(fs.readFileSync(path.join(ROOT, 'apps/vr/Source/BpLink/Private/BpLink.cpp'), 'utf8'), true);
-      const call = /UE_LOG\((?:(?!UE_LOG\()[\s\S])*?Structure\.domains\.Num\(\)[\s\S]*?\);/.exec(lit);
-      const label = /(\w+)=%d/.exec(/TEXT\("((?:[^"\\]|\\.)*)"\)/.exec(call?.[0] ?? '')?.[1] ?? '')?.[1];
-      check(`source: the count BpLink logs from structure.domains is labelled "rooms" (${wantPlan.rooms}), not "wings" (${wantPlan.wings})`,
-        label === 'rooms', `BpLink.cpp labels it "${label}"; domains=${wantDomains}, wings=${wantPlan.wings}, rooms=${wantPlan.rooms}`);
+      const calls = [...lit.matchAll(/UE_LOG\((?:(?!UE_LOG\()[\s\S])*?Structure\.domains\.Num\(\)[\s\S]*?\);/g)].map((m) => m[0]);
+      const labels = calls.map((c) => /(\w+)=%d/.exec(/TEXT\("((?:[^"\\]|\\.)*)"\)/.exec(c)?.[1] ?? '')?.[1]);
+      check(`source: every count BpLink logs from structure.domains (${calls.length} lines) is labelled "domains" (${wantDomains}), not "rooms" (${wantPlan.rooms}) or "wings" (${wantPlan.wings})`,
+        labels.length >= 2 && labels.every((l) => l === 'domains'), `BpLink.cpp labels them ${JSON.stringify(labels)}; domains=${wantDomains}, wings=${wantPlan.wings}, rooms=${wantPlan.rooms}`);
 
       // WP3.1's acceptance is the WING count, which only GET .../plan carries. BpLink.cpp must make that request, parse it
       // into FBpPlan, and feed each labelled level of its summary line from the plan's own array of that level, so the

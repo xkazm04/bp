@@ -7,7 +7,8 @@
 //             bays and tiles with their room, and a wing grows by its rooms' gaps. Then no two wings overlap or touch (the
 //             gap is at least WING_GAP), no two rooms of one wing touch, and every box contains its children
 //   live      the same map under another slug, as a live product lays out: wing = domain, room = capability, bay = the
-//             room's features of one kind (BAY_KINDS order), tile = feature, and the islands geometry still holds
+//             room's features of one kind (BAY_KINDS order), tile = feature, and the islands geometry still holds, its
+//             rooms LIVE_ROOM_GAP apart
 // Control (every run): the geometry rule refuses the default plan (its wings touch) and three broken copies of the islands
 // plan, so a rule that accepts everything cannot pass.
 // Run: node scripts/check-plan-islands.mjs   Exit 1 on any failure.
@@ -20,7 +21,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA = path.join(ROOT, 'packages/core/data');
 register(pathToFileURL(path.join(ROOT, 'packages/core/register-hooks.mjs')).href);
 const core = (rel) => import(pathToFileURL(path.join(ROOT, 'packages/core/src', rel)).href);
-const { projectPlan, WING_GAP, ROOM_GAP } = await core('server/plan-projection.ts');
+const { projectPlan, WING_GAP, ROOM_GAP, LIVE_ROOM_GAP } = await core('server/plan-projection.ts');
 const { layoutProduct, BAY_KINDS, BAY_KIND_NAME } = await core('model/layout.ts');
 const { buildProduct } = await core('model/product.ts');
 const { loadStructure } = await core('standard/load.ts');
@@ -114,6 +115,13 @@ check(`live: a room's bays are its features' kinds in BAY_KINDS order (${live.ba
   bayBad.length === 0 && tileBad.length === 0 && live.tiles.length === S.features.length, [...bayBad, ...tileBad].slice(0, 3).join(' | '));
 const liveBad = islandProblems(liveIsl);
 check('live: the islands geometry holds (wings apart, rooms of a wing apart, every box inside its parent)', liveBad.length === 0, liveBad.slice(0, 3).join(' | '));
+// Its rooms are shallow (one or two bays), so they stand LIVE_ROOM_GAP apart, not the sample's ROOM_GAP.
+const liveGaps = live.wings.flatMap((w) => {
+  const rs = liveIsl.rooms.filter((r) => r.parentId === w.id).sort((a, b) => a.order - b.order);
+  return rs.slice(1).map((r, i) => r.box.y - (rs[i].box.y + rs[i].box.h));
+});
+check(`live: rooms of a wing stand LIVE_ROOM_GAP (${LIVE_ROOM_GAP}) apart, not ROOM_GAP (${ROOM_GAP}) (${liveGaps.length} gaps)`,
+  liveGaps.length > 0 && liveGaps.every((g) => Math.abs(g - LIVE_ROOM_GAP) < EPS), [...new Set(liveGaps)].slice(0, 3).join(' | '));
 
 // ---- permanent controls: the geometry rule refuses the default plan and three broken copies of the islands plan
 const broken = (fn) => { const c = structuredClone(isl); fn(c); return islandProblems(c).length > 0; };

@@ -155,6 +155,14 @@ namespace
 	/** A room name's baseline sits this far above the room's first bay (its descenders and a gap). */
 	constexpr double RoomNameFootCm = 0.2;
 	constexpr double RoomNameClearCm = 0.35;
+	/** The room names' atlas cells (FAB): the cap, the baseline and the side padding in atlas pixels at full size; a name
+	 *  too wide for its cell is drawn smaller in it (the card's size on the table is set by its cap, not by the cell). Its
+	 *  emissive is under the bloom threshold, as the sheet's text (PaperInkGlow). */
+	constexpr double RoomNameCapPx = 60.0;
+	constexpr double RoomNameBaselinePx = 96.0;
+	constexpr double RoomNamePadPx = 14.0;
+	constexpr double RoomNameRightCm = 0.25;
+	constexpr float RoomNameGlow = 1.0f;
 	/** The drawing's border (FO, element 2): a fine rule this far inside the paper's edge; the title block stands on its
 	 *  near side under the shortest wing, as a drawing's title block (the judge: the title "floated mid-table"). */
 	constexpr double BorderInsetCm = 1.2;
@@ -425,6 +433,11 @@ ABpTable::ABpTable()
 	PinHalos = MakeVolumes(TEXT("PinHalos"));
 	PinHalos->NumCustomDataFloats = 0;
 	PinHalos->SetStaticMesh(EngineSphere);
+	// The room names at rest (FAB): the engine plane (100 cm, facing +Z, u along its X), one per named room; custom data 0
+	// to 3 is its atlas cell, as the tags'.
+	RoomNames = MakeVolumes(TEXT("RoomNames"));
+	RoomNames->NumCustomDataFloats = 4;
+	RoomNames->SetStaticMesh(EnginePlane);
 }
 
 float ABpTable::HeightCvarCm()
@@ -954,6 +967,7 @@ void ABpTable::ApplyPlan(const FBpPlan& Plan)
 
 	// The levels: room and bay names on their batches, everything at L0, the counts for the first lens, the title.
 	BuildLevelLabels(*SheetPlan);
+	BuildRoomNames(*SheetPlan);
 	BuildGlyphs(*SheetPlan);
 	ResetLevels();
 	RefreshWingCounts();
@@ -1083,6 +1097,209 @@ void ABpTable::FitBayLabels()
 	UE_LOG(LogBpTable, Log, TEXT("BpTable: bay names fit at the label floor %d/%d [%s]"), Fit.Num(), BayNameFits.Num(), *FString::Join(Fit, TEXT(", ")));
 }
 
+float ABpTable::RestRoomHeightCm(const FBpPlanBox& RoomBox) const
+{
+	return FMath::Min(RestRoomCm, RestRoomDepthRatio * static_cast<float>(RoomBox.h) * BpPlanUnitCm);
+}
+
+void ABpTable::BuildRoomNames(const FBpPlan& Plan)
+{
+	RoomNames->ClearInstances();
+	RoomNameList.Reset();
+	RoomNameState.Reset();
+	if (!RoomNameMid)
+	{
+		UMaterialInterface* Material = TagMaterial.LoadSynchronous();
+		if (!Material) return;
+		RoomNameAtlas = NewObject<UCanvasRenderTarget2D>(this);
+		RoomNameAtlas->ClearColor = FLinearColor::Transparent;
+		RoomNameAtlas->RenderTargetFormat = RTF_RGBA8;
+		RoomNameAtlas->bAutoGenerateMips = true;
+		RoomNameAtlas->MipsSamplerFilter = TF_Trilinear;
+		RoomNameAtlas->Filter = TF_Default;
+		RoomNameAtlas->OnCanvasRenderTargetUpdate.AddDynamic(this, &ABpTable::DrawRoomNames);
+		RoomNameAtlas->InitAutoFormat(RoomNameCellWidthPx * RoomNameAtlasCols, RoomNameCellHeightPx * RoomNameAtlasRows);
+		RoomNameMid = UMaterialInstanceDynamic::Create(Material, this);
+		RoomNameMid->SetTextureParameterValue(TEXT("Atlas"), RoomNameAtlas);
+		RoomNameMid->SetScalarParameterValue(TEXT("TagGlow"), RoomNameGlow);
+		RoomNames->SetMaterial(0, RoomNameMid);
+		// Over the glass and the furniture (a shallow room's glyph stands in front of its name from the eye), under the tags.
+		RoomNames->SetTranslucentSortPriority(4);
+	}
+
+	// Each room's name in its header strip (the plan leaves it above the first bay), fitted as the sheet fitted it (FC3:
+	// the recipe's cap raised to the floor, cut at a word with an ellipsis, else dropped, never smaller), but on a card
+	// tilted up toward the person, so the floor is the tilted text's. The card stands on the strip's near side and leans
+	// back over it; one that would lean into the glow of the room's far wall is dropped too.
+	const BpType::FRecipe& Recipe = BpType::RoomName;
+	const double Tilt = FMath::DegreesToRadians(RoomNameTiltDeg);
+	int32 Named = 0;
+	double MaxCap = 0.0;
+	for (int32 Index = 0; Index < Plan.rooms.Num(); ++Index)
+	{
+		const FBpPlanRoom& Room = Plan.rooms[Index];
+		const FVector2D A = PlanToPaperCm(FVector2D(Room.box.x, Room.box.y));
+		const FVector2D B = PlanToPaperCm(FVector2D(Room.box.x + Room.box.w, Room.box.y + Room.box.h));
+		double FirstBay = Room.box.y + Room.box.h;
+		for (int32 Bay = 0; Bay < Plan.bays.Num(); ++Bay)
+		{
+			if (BayRoom.IsValidIndex(Bay) && BayRoom[Bay] == Index) FirstBay = FMath::Min(FirstBay, Plan.bays[Bay].box.y);
+		}
+		const double Bottom = PlanToPaperCm(FVector2D(Room.box.x, FirstBay)).Y - RoomNameFootCm;
+		const double Left = A.X + RoomNameInsetCm;
+		// To the room's right wall less a hair, past the inset the sheet's names kept (a card's backing has its own pad).
+		const double MaxCm = B.X - A.X - RoomNameInsetCm - RoomNameRightCm;
+		const double Floor = TiltedTextFloorCm(FVector2D(FMath::Clamp(PaperWidthCm * 0.5, Left, Left + MaxCm), Bottom), RoomNameTiltDeg);
+		double Cap = FMath::Max(Recipe.CapCm, Floor);
+		const double CardCm = Cap * RoomNameCellHeightPx / RoomNameCapPx;
+		FString Name;
+		if (CardCm * FMath::Cos(Tilt) <= Bottom - (A.Y + RoomNameClearCm))
+		{
+			const FString Text = Recipe.bUpper ? Room.name.ToUpper() : Room.name;
+			TArray<FString> Cands = { Text };
+			TArray<FString> Words;
+			Text.ParseIntoArray(Words, TEXT(" "));
+			for (int32 Keep = Words.Num() - 1; Keep >= 2; --Keep)
+			{
+				FString Cut = FString::Join(TArrayView<const FString>(Words.GetData(), Keep), TEXT(" "));
+				while (!Cut.IsEmpty() && FString(TEXT(",;:&")).Contains(Cut.Right(1))) Cut = Cut.LeftChop(1).TrimEnd();
+				Cands.Add(Cut + BpType::Ellipsis());
+			}
+			// FC3's fit: each candidate at the cap, stepping down toward the floor (never under it) before the next cut.
+			for (const FString& Cand : Cands)
+			{
+				for (double Try = Cap; ; Try = FMath::Max(Try - 0.05, Floor))
+				{
+					if (RoomNameWidthCm(Cand, Try) <= MaxCm) { Name = Cand; Cap = Try; break; }
+					if (Try <= Floor) break;
+				}
+				if (!Name.IsEmpty()) break;
+			}
+		}
+		UE_LOG(LogBpTable, Log, TEXT("BpType: room-name-card \"%s\" cap_cm=%.2f floor_cm=%.2f at=(%.1f,%.1f)%s"), *Name, Name.IsEmpty() ? 0.0 : Cap, Floor, Left, Bottom,
+			Name.IsEmpty() ? TEXT(" dropped") : TEXT(""));
+		if (Name.IsEmpty() || RoomNameList.Num() >= RoomNameAtlasCols * RoomNameAtlasRows) continue;
+		// Drawn at the full cell size when it fits the cell, else smaller in it.
+		const double FullPx = RoomNameWidthCm(Name, Cap) * RoomNameCapPx / Cap;
+		FRoomName Each;
+		Each.Room = Index;
+		Each.Text = Name;
+		Each.CapCm = Cap;
+		Each.CapPx = RoomNameCapPx * FMath::Min(1.0, (RoomNameCellWidthPx - 2.0 * RoomNamePadPx) / FMath::Max(FullPx, 1.0));
+		Each.Corner = FVector2D(Left - RoomNamePadPx * Cap / RoomNameCapPx, Bottom);
+		RoomNameList.Add(Each);
+		++Named;
+		MaxCap = FMath::Max(MaxCap, Cap);
+	}
+	TArray<FTransform> Places;
+	Places.Init(FTransform(FQuat::Identity, FVector::ZeroVector, FVector::ZeroVector), RoomNameList.Num());
+	RoomNameState.Init(-1, RoomNameList.Num());
+	if (Places.Num() > 0)
+	{
+		RoomNames->AddInstances(Places, false, false, false);
+		// Each card samples its own rectangle of its cell: the name and its padding, at the size it was drawn.
+		TArray<float> Cells;
+		const double AtlasW = RoomNameCellWidthPx * RoomNameAtlasCols, AtlasH = RoomNameCellHeightPx * RoomNameAtlasRows;
+		for (int32 Index = 0; Index < RoomNameList.Num(); ++Index)
+		{
+			const FVector2D Rect = RoomNameRectPx(RoomNameList[Index]);
+			const int32 Col = Index % RoomNameAtlasCols, Row = Index / RoomNameAtlasCols;
+			Cells.Append({ static_cast<float>(Col * RoomNameCellWidthPx / AtlasW), static_cast<float>(Row * RoomNameCellHeightPx / AtlasH),
+				static_cast<float>(Rect.X / AtlasW), static_cast<float>(Rect.Y / AtlasH) });
+		}
+		RoomNames->SetCustomData(0, RoomNameList.Num() - 1, Cells, true);
+	}
+	if (RoomNameAtlas) RoomNameAtlas->UpdateResource();
+	UE_LOG(LogBpTable, Log, TEXT("BpTable: room names stand on tilted cards in %d/%d rooms (cap up to %.2f cm, tilt %.0f deg)"), Named, Plan.rooms.Num(), MaxCap, RoomNameTiltDeg);
+}
+
+double ABpTable::RoomNameWidthCm(const FString& Text, double CapCm)
+{
+	const BpType::FRecipe& Recipe = BpType::RoomName;
+	return MeasureText(Text, SheetFont(Recipe.Face, CapCm)).X / SheetPxPerCm + Recipe.TrackEm * CapCm / BpType::CapPerEm * Text.Len();
+}
+
+FVector2D ABpTable::RoomNameRectPx(const FRoomName& Each)
+{
+	// The name's width at its atlas cap (RoomNameWidthCm scales with the cap) and its padding; the cell's height, scaled.
+	const double Scale = Each.CapPx / RoomNameCapPx;
+	const double W = RoomNameWidthCm(Each.Text, Each.CapCm) * Each.CapPx / Each.CapCm + 2.0 * RoomNamePadPx * Scale;
+	return FVector2D(FMath::Min(W, static_cast<double>(RoomNameCellWidthPx)), RoomNameCellHeightPx * Scale);
+}
+
+void ABpTable::DrawRoomNames(UCanvas* Canvas, int32 Width, int32 Height)
+{
+	if (!Canvas) return;
+	// Text writes the target's alpha only when the canvas is told to.
+	if (Canvas->Canvas) Canvas->Canvas->SetWriteDestinationAlpha(true);
+	// Each name on a faint dark backing (the floating wing labels'), so no glowing edge behind it crosses its letters.
+	const BpType::FRecipe& Recipe = BpType::RoomName;
+	TArray<FCanvasUVTri> Tris;
+	struct FCellText { FString Text; FVector2D Px; FSlateFontInfo Font; float Tracking; };
+	TArray<FCellText> Texts;
+	for (int32 Index = 0; Index < RoomNameList.Num(); ++Index)
+	{
+		const FRoomName& Each = RoomNameList[Index];
+		const double Scale = Each.CapPx / RoomNameCapPx;
+		const FVector2D Cell(Index % RoomNameAtlasCols * RoomNameCellWidthPx, Index / RoomNameAtlasCols * RoomNameCellHeightPx);
+		const FVector2D Rect = RoomNameRectPx(Each);
+		const FVector2D Min = Cell + FVector2D(1.0, 1.0), Max = Cell + Rect - FVector2D(1.0, 1.0);
+		FCanvasUVTri T;
+		T.V0_Color = T.V1_Color = T.V2_Color = FloatLabelBacking;
+		T.V0_Pos = Min; T.V1_Pos = FVector2D(Max.X, Min.Y); T.V2_Pos = Max;
+		Tris.Add(T);
+		T.V0_Pos = Min; T.V1_Pos = Max; T.V2_Pos = FVector2D(Min.X, Max.Y);
+		Tris.Add(T);
+		// A font whose cap is CapPx atlas pixels: the sheet's font at the cap that many sheet pixels make.
+		const double Baseline = Cell.Y + RoomNameBaselinePx * Scale;
+		Texts.Add({ Each.Text, FVector2D(Cell.X + RoomNamePadPx * Scale, Baseline - BpType::AscPerEm / BpType::CapPerEm * Each.CapPx),
+			SheetFont(Recipe.Face, Each.CapPx / SheetPxPerCm), static_cast<float>(Recipe.TrackEm * Each.CapPx / BpType::CapPerEm) });
+	}
+	if (Tris.Num() > 0)
+	{
+		FCanvasTriangleItem Item(Tris, GWhiteTexture);
+		Item.BlendMode = SE_BLEND_AlphaBlend;
+		Canvas->DrawItem(Item);
+	}
+	for (const FCellText& Text : Texts)
+	{
+		FCanvasTextItem Item(Text.Px, FText::FromString(Text.Text), Text.Font, WarmPaper.CopyWithNewOpacity(0.95f));
+		Item.HorizSpacingAdjust = Text.Tracking;
+		Canvas->DrawItem(Item);
+	}
+}
+
+void ABpTable::ApplyRoomNames(float WingEase)
+{
+	if (!SheetPlan.IsValid() || RoomNameList.Num() == 0) return;
+	RoomNames->SetRelativeTransform(WingGroupTransform(0.f));
+	// At rest with the walls up (1), raised onto its pointed room's lifted floor (2), or folded away (0): with its wing
+	// lifted (the shells carry their own names), or with the walls down (the sheet draws the names flat).
+	const bool bOn = CVarL0VolumesValue() != 0;
+	const double Tilt = FMath::DegreesToRadians(RoomNameTiltDeg);
+	const FVector Up(FMath::Cos(Tilt), 0.0, FMath::Sin(Tilt));
+	// The plane's u (its X) along the paper's u (the actor's +Y), its v (Y) toward the person, then leaned back about
+	// its bottom edge so its face (+Z) turns up toward the person.
+	const FQuat Facing = FQuat(FRotator(RoomNameTiltDeg, 0.f, 0.f)) * FQuat(FRotator(0.f, 90.f, 0.f));
+	TArray<FTransform> Places;
+	bool bChanged = false;
+	for (int32 Index = 0; Index < RoomNameList.Num(); ++Index)
+	{
+		const FRoomName& Each = RoomNameList[Index];
+		const FString Wing = RoomWing.IsValidIndex(Each.Room) ? RoomWing[Each.Room] : FString();
+		int32 State = bOn ? 1 : 0;
+		if (!AnimWing.IsEmpty() && Wing == AnimWing && WingEase > 0.f) State = 0;
+		if (State == 1 && Each.Room == HighlightRestRoom) State = 2;
+		bChanged |= RoomNameState[Index] != State;
+		RoomNameState[Index] = State;
+		const FVector2D Size = RoomNameRectPx(Each) * (Each.CapCm / Each.CapPx);
+		const FVector Corner = PaperCmToLocal(Each.Corner, LabelLiftCm + (State == 2 ? HighlightLiftCm : 0.f));
+		const FVector Centre = Corner + FVector(0.0, Size.X * 0.5, 0.0) + Up * (Size.Y * 0.5);
+		Places.Add(FTransform(Facing, Centre, State == 0 ? FVector::ZeroVector : FVector(Size.X / 100.0, Size.Y / 100.0, 1.0)));
+	}
+	if (bChanged) RoomNames->BatchUpdateInstancesTransforms(0, Places, false, true);
+}
+
 void ABpTable::RefreshWingCounts()
 {
 	if (!SheetPlan.IsValid()) return;
@@ -1177,7 +1394,7 @@ void ABpTable::BuildVolumes(const FBpPlan& Plan)
 		RestInk.Add(Ink);
 		RestFace.Add(Face);
 	};
-	for (int32 Index = 0; Index < Plan.rooms.Num(); ++Index) AddRest(Plan.rooms[Index].box, RestRoomCm, 1.f, RestRoomShow, Index);
+	for (int32 Index = 0; Index < Plan.rooms.Num(); ++Index) AddRest(Plan.rooms[Index].box, RestRoomHeightCm(Plan.rooms[Index].box), 1.f, RestRoomShow, Index);
 	// A partition: the bay box's far edge as a wall PartitionCm thick (in plan units), across the bay's width. The plan's
 	// boxes place it; the bay boxes are inset from their room, so their other edges would double the room's walls.
 	for (const FBpPlanBay& Bay : Plan.bays)
@@ -1186,7 +1403,8 @@ void ABpTable::BuildVolumes(const FBpPlan& Plan)
 		FBpPlanBox Wall = Bay.box;
 		Wall.y -= PartitionCm * 0.5 / BpPlanUnitCm;
 		Wall.h = PartitionCm / BpPlanUnitCm;
-		AddRest(Wall, RestRoomCm * BayPartitionRatio, PartitionFace, RestPartitionShow, Room ? *Room : INDEX_NONE);
+		const float WallCm = Room ? RestRoomHeightCm(Plan.rooms[*Room].box) : RestRoomCm;
+		AddRest(Wall, WallCm * BayPartitionRatio, PartitionFace, RestPartitionShow, Room ? *Room : INDEX_NONE);
 	}
 	// The tile cells (FO): each tile's box grown by TileCellGrowU, a low cell with no face, in its bay's room.
 	TMap<FString, FString> BayParent;
@@ -1261,15 +1479,22 @@ namespace
 
 double ABpTable::TextFloorCm(const FVector2D& PaperCm) const
 {
+	return TiltedTextFloorCm(PaperCm, 0.0);
+}
+
+double ABpTable::TiltedTextFloorCm(const FVector2D& PaperCm, double TiltDeg) const
+{
 	const double Top = PlacedHeightCm > 0.f ? PlacedHeightCm : DefaultTableHeightCm;
 	const FTypeEye Target(ABpGameMode::TargetBehindNearEdgeCm, Top + ABpGameMode::TargetEyeAboveTopCm, ABpGameMode::TargetPitchDeg, ABpGameMode::TargetHFovDeg, CaptureWidthPx);
 	const FTypeEye Play(ABpGameMode::PlayBehindNearEdgeCm, ABpGameMode::PlayEyeHeightCm, ABpGameMode::PlayPitchDeg, ABpGameMode::PlayHFovDeg, CaptureWidthPx);
-	// Text stands upright for the person at the near edge: its cap rises from the baseline toward the far edge (-v).
+	// Text stands upright for the person at the near edge: its cap rises from the baseline toward the far edge (-v), and
+	// on a tilted card up off the paper too.
 	const double PaperZ = Top - GlassRecessCm;
 	const FVector Base = PaperCmToLocal(PaperCm, PaperZ);
+	const double Along = FMath::Cos(FMath::DegreesToRadians(TiltDeg)), Up = FMath::Sin(FMath::DegreesToRadians(TiltDeg));
 	const auto Meets = [&](double Cap)
 	{
-		const FVector CapTop = PaperCmToLocal(PaperCm - FVector2D(0.0, Cap), PaperZ);
+		const FVector CapTop = PaperCmToLocal(PaperCm - FVector2D(0.0, Cap * Along), PaperZ + Cap * Up);
 		return Target.Px(Base, CapTop) >= BpType::FloorPx && Play.Arcmin(Base, CapTop) >= BpType::FloorArcmin;
 	};
 	double Lo = 0.02, Hi = 12.0;
@@ -1381,28 +1606,43 @@ void ABpTable::BuildGlyphs(const FBpPlan& Plan)
 		Counts.FindOrAdd(Kind)++;
 	}
 
-	// The bays' glyphs (FQ): each bay's dominant kind (a tie goes to its first tile in plan order), one glyph on its box.
+	// The bays' glyphs (FQ): one glyph on each bay's box. A live product's bay holds the features of one kind and says so
+	// in its id (`<capability>.<kind>`, FAB): that kind, as the plan names it. A bay whose id names no kit kind (the
+	// sample's bays are capabilities) takes its tiles' dominant kind (a tie goes to its first tile in plan order).
 	TMap<FString, int32> RoomOf;
 	for (int32 Index = 0; Index < Plan.rooms.Num(); ++Index) RoomOf.Add(Plan.rooms[Index].id, Index);
 	TMap<FString, int32> BayBatchOf;
 	TArray<TArray<FTransform>> BayPlaces;
 	TMap<FString, int32> BayCounts;
+	int32 BaysByIdKind = 0;
 	for (const FBpPlanBay& Bay : Plan.bays)
 	{
 		const TArray<FString>* Kinds = BayKinds.Find(Bay.id);
 		if (!Kinds || Kinds->Num() == 0) continue;
 		FString Dominant;
+		FString Suffix;
+		const bool bIdKind = Bay.id.Split(TEXT("."), nullptr, &Suffix, ESearchCase::CaseSensitive, ESearchDir::FromEnd) && GlyphMeshes.Contains(Suffix);
+		if (bIdKind)
+		{
+			Dominant = Suffix;
+			++BaysByIdKind;
+		}
 		int32 Most = 0;
 		for (const FString& Kind : *Kinds)
 		{
+			if (bIdKind) break;
 			int32 N = 0;
 			for (const FString& Other : *Kinds) N += Other == Kind ? 1 : 0;
 			if (N > Most) { Most = N; Dominant = Kind; }
 		}
+		if (Dominant.IsEmpty()) continue;
 		const int32 Batch = BatchFor(Dominant, BayBatchOf, BayGlyphs, BayPlaces, BayGlyphRoom, TEXT("BayGlyphs"));
 		if (Batch == INDEX_NONE) continue;
-		BayPlaces[Batch].Add(Place(BayGlyphs[Batch]->GetStaticMesh(), Bay.box, BayGlyphFill, BayGlyphMaxCm));
+		// No taller than BayGlyphWallShare of its room's rest walls (FAB: a shallow room's walls stand lower, and a glyph
+		// over them stood in front of the room's name from the eye; Kettle's 5.5 cm walls leave BayGlyphMaxCm as it was).
 		const int32* Room = RoomOf.Find(Bay.parentId);
+		const double GlyphCm = Room ? FMath::Min(static_cast<double>(BayGlyphMaxCm), BayGlyphWallShare * RestRoomHeightCm(Plan.rooms[*Room].box)) : BayGlyphMaxCm;
+		BayPlaces[Batch].Add(Place(BayGlyphs[Batch]->GetStaticMesh(), Bay.box, BayGlyphFill, GlyphCm));
 		BayGlyphRoom[Batch].Add(Room ? *Room : INDEX_NONE);
 		BayCounts.FindOrAdd(Dominant)++;
 	}
@@ -1429,8 +1669,8 @@ void ABpTable::BuildGlyphs(const FBpPlan& Plan)
 	for (const TPair<FString, int32>& Pair : Counts) Line.Add(FString::Printf(TEXT("%s=%d"), *Pair.Key, Pair.Value));
 	TArray<FString> BayLine;
 	for (const TPair<FString, int32>& Pair : BayCounts) BayLine.Add(FString::Printf(TEXT("%s=%d"), *Pair.Key, Pair.Value));
-	UE_LOG(LogBpTable, Log, TEXT("BpTable: glyphs batches=%d [%s] bays batches=%d [%s]"), Glyphs.Num(), *FString::Join(Line, TEXT(" ")),
-		BayGlyphs.Num(), *FString::Join(BayLine, TEXT(" ")));
+	UE_LOG(LogBpTable, Log, TEXT("BpTable: glyphs batches=%d [%s] bays batches=%d [%s] kind from the bay id %d/%d"), Glyphs.Num(), *FString::Join(Line, TEXT(" ")),
+		BayGlyphs.Num(), *FString::Join(BayLine, TEXT(" ")), BaysByIdKind, Plan.bays.Num());
 }
 
 void ABpTable::ApplyGlyphs(float WingEase)
@@ -1741,7 +1981,11 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 		FString Key;
 		if (!Wing.id.Split(TEXT(":"), nullptr, &Key, ESearchCase::CaseSensitive, ESearchDir::FromEnd)) Key = Wing.id;
 		double NameCap = 0.0;
-		const double NameFloor = FloorAt(A.X, A.X + MaxCm, NameBase);
+		// A floating label stands tilted toward the person (WingLabelTiltDeg), so its floor is the tilted text's (FAB: the
+		// flat floor at the far row, 1.9 to 2.0 cm on a 141 cm plan of eight wings, dropped half the names and set the tag
+		// lines over them larger than the names).
+		const double NameFloor = bFloat ? TiltedTextFloorCm(FVector2D(FMath::Clamp(PaperWidthCm * 0.5, A.X, A.X + MaxCm), NameBase), WingLabelTiltDeg)
+			: FloorAt(A.X, A.X + MaxCm, NameBase);
 		const FString Name = Fit(Wing.name, BpType::WingName, NameFloor, MaxCm, Key, NameCap);
 		Report(TEXT("wing-name"), Name, A.X, NameBase, NameCap, NameFloor);
 		if (Name.IsEmpty()) continue;
@@ -1769,7 +2013,8 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 		// The tag line above it ("WING A") is drawn only when every wing's fits under the paper's top at the floor: a class
 		// is kept or dropped whole, never for some wings (Kettle's centre wings leave it no room: dropped, logged).
 		const double TagBase = NameBase - NameCap - WingTagGapCm;
-		const double TagFloor = FloorAt(A.X, A.X + MaxCm, TagBase);
+		const double TagFloor = bFloat ? TiltedTextFloorCm(FVector2D(FMath::Clamp(PaperWidthCm * 0.5, A.X, A.X + MaxCm), TagBase), WingLabelTiltDeg)
+			: FloorAt(A.X, A.X + MaxCm, TagBase);
 		TagFits.Add(TagBase - FMath::Max(BpType::WingTag.CapCm, TagFloor) >= PaperTopClearCm);
 		TagPlaces.Add({ FString::Printf(TEXT("WING %s"), *Wing.letter), FVector3d(NameU, TagBase, FMath::Max(BpType::WingTag.CapCm, TagFloor)) });
 
@@ -1846,7 +2091,8 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 
 	// ---- The room names, in each room's header strip (the plan leaves it above the first bay) where they meet the floor
 	// and keep clear of the room's far wall; a lifted wing's rooms carry their own names on their shells ----------------
-	for (int32 Index = 0; Index < SheetPlan->rooms.Num(); ++Index)
+	// With the rest walls up the names stand on tilted cards instead (RoomNames, FAB).
+	for (int32 Index = 0; Index < SheetPlan->rooms.Num() && !bFloat; ++Index)
 	{
 		const FBpPlanRoom& Room = SheetPlan->rooms[Index];
 		if (bDimmed && Room.parentId == SheetDimWing) continue;

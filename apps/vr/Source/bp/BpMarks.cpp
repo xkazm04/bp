@@ -454,8 +454,9 @@ void ABpTable::BuildPins(const FBpScanState& State)
 		}
 		Pins->SetCustomData(0, Cells - 1, CellUVs, true);
 	}
+	// A bead on every pin's feature and one under every tag (PlacePins).
 	TArray<FTransform> Beads;
-	Beads.Init(FTransform::Identity, PinList.Num());
+	Beads.Init(FTransform::Identity, PinList.Num() + Cells);
 	if (Beads.Num() > 0) PinBeads->AddInstances(Beads, false, false, false);
 	if (Beads.Num() > 0 && LoadSoft(PinHaloMaterial)) PinHalos->AddInstances(Beads, false, false, false);
 	if (Places.Num() > 0) PinStems->AddInstances(Places, false, false, false);
@@ -569,6 +570,11 @@ void ABpTable::PlacePins()
 		const FVector TagFoot = Group.TransformPosition(PaperCmToLocal(Centre, StandCm + Pin.RaiseCm + (PinModelCm - PinTagModelCm) * PinScale));
 		const double Length = (TagFoot - Foot).Size();
 		StemPlaces.Add(FTransform(FQuat::Identity, (TagFoot + Foot) * 0.5, FVector(PinStemCm / 100.0, PinStemCm / 100.0, Length / 100.0)));
+		// The head bead (FAB, element 7: the concept's glowing amber bead at the top of each stem, under the tag), its
+		// centre one radius under the tag's foot, so the stem runs into it.
+		const FVector HeadBead = Group.TransformPosition(PaperCmToLocal(Centre, StandCm + Pin.RaiseCm + (PinModelCm - PinTagModelCm) * PinScale - PinHeadBeadCm * 0.5));
+		BeadPlaces.Add(FTransform(FQuat::Identity, HeadBead, FVector(PinHeadBeadCm * 0.5)));
+		HaloPlaces.Add(FTransform(FQuat::Identity, HeadBead, FVector(PinHeadBeadCm * 0.5 * PinHaloScale)));
 	}
 	if (PinPlaces.Num() > 0 && Pins->GetInstanceCount() == PinPlaces.Num()) Pins->BatchUpdateInstancesTransforms(0, PinPlaces, false, true);
 	if (BeadPlaces.Num() > 0 && PinBeads->GetInstanceCount() == BeadPlaces.Num()) PinBeads->BatchUpdateInstancesTransforms(0, BeadPlaces, false, true);

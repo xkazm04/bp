@@ -136,7 +136,7 @@ void FBpLinkClient::FetchProduct(const FString& Slug, TFunction<void(bool, const
 		Payload->TryGetStringField(TEXT("events"), EventsJsonl);
 		ReadEvents(EventsJsonl, Snapshot.Events);
 		Payload->TryGetStringField(TEXT("rev"), Snapshot.Rev);
-		UE_LOG(LogBpLink, Log, TEXT("BpLink: the %s/structure answer parsed: rooms=%d lenses=%d events=%d rev=%s; asking /plan"),
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: the %s/structure answer parsed: domains=%d lenses=%d events=%d rev=%s; asking /plan"),
 			*Root, Snapshot.Structure.domains.Num(), Snapshot.Structure.lenses.Num(), Snapshot.Events.Num(), *Snapshot.Rev);
 
 		// /plan is the product at the web's levels (wing, room, bay, tile), parsed into FBpPlan the way /structure is parsed
@@ -235,7 +235,7 @@ namespace
 		const FString Label = Slug.Left(1).ToUpper() + Slug.Mid(1);
 		if (!Snapshot.bHasPlan)
 		{
-			UE_LOG(LogBpLink, Warning, TEXT("BpLink: %s rooms=%d lenses=%d events=%d rev=%s (no plan read, so no wings)"),
+			UE_LOG(LogBpLink, Warning, TEXT("BpLink: %s domains=%d lenses=%d events=%d rev=%s (no plan read, so no wings)"),
 				*Label, Snapshot.Structure.domains.Num(), Snapshot.Structure.lenses.Num(), Snapshot.Events.Num(), *Snapshot.Rev);
 			return;
 		}

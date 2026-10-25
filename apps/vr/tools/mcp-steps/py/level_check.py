@@ -15,8 +15,9 @@ import unreal
 PRODUCTS = {
     # B, Studio operations, and its first room (three bays); the booking and scheduling rooms' centres
     "kettle": ("0:OPS", "scheduling", {"hit_booking": (1213, 708), "hit_scheduling": (1213, 245)}),
-    # the Catalog Pipeline Lab wing and its one room; its centre and the Gameplay Systems Studio room's
-    "pof": ("0:catalog-lab", "catalog-lab", {"hit_catalog_lab": (5110, 379), "hit_gameplay_studio": (4418, 551)}),
+    # the Catalog Pipeline Lab wing and its Step authoring room (two bays; a live product's rooms are its capabilities,
+    # FAB); that room's centre and the Gameplay Systems Studio's Combat room's
+    "pof": ("0:catalog-lab", "step-authoring", {"hit_step_authoring": (5110, 1130), "hit_combat": (4418, 582)}),
 }
 STATE = os.path.join(unreal.Paths.project_saved_dir(), "level_check.json")
 # The paper (ABpTable's constants). Where a plan point lies on it is the table's own (PlanToPaper: the fitted scale and
