@@ -65,3 +65,6 @@ apps/vr/Source/BpLink/Public/Schema/
 *.VC.db
 *.VC.opendb
 .vs/
+
+# bp product blueprint: machine-local scan store (adopt-bp)
+.ai/lens-scan/
