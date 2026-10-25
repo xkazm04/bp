@@ -5,7 +5,9 @@
 #include "BpLink.h"
 #include "BpType.h"
 #include "CanvasItem.h"
+#include "BpPawn.h"
 #include "Components/InstancedStaticMeshComponent.h"
+#include "Components/SceneCaptureComponent2D.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/WidgetComponent.h"
 #include "Engine/Canvas.h"
@@ -15,16 +17,19 @@
 #include "Engine/CanvasRenderTarget2D.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/Texture2D.h"
+#include "Engine/TextureRenderTarget2D.h"
 #include "EngineUtils.h"
 #include "Fonts/FontMeasure.h"
 #include "Materials/MaterialParameterCollection.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GlobalRenderResources.h"
 #include "HAL/IConsoleManager.h"
+#include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Misc/PackageName.h"
 #include "Rendering/SlateRenderer.h"
 #include "Styling/CoreStyle.h"
+#include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
@@ -244,8 +249,16 @@ namespace
 	 *  VignetteEdge left at the corners; the concept's paper glows in the middle and falls off to the rim), and the ink at
 	 *  PaperInkGlow: 1 keeps the sheet's text under the bloom threshold, so bloom never smears it (r6 section 2), where 1.5
 	 *  bloomed every label. */
-	constexpr float PaperGlow = 1.6f;
+	constexpr float PaperGlow = 1.0f;  // FAC: 1.0 (1.6) with M_BlueprintPaper's darker navy (fg_holo.py, r9: the paper read 1.7x the concept's)
 	constexpr float PaperVignetteEdge = 0.4f;
+	/** The hands' shadow on the paper (FAC, r9 section 3; StartHandShadow): at most this much darker under a hand (the
+	 *  concept's: paper 38 beside the fingers, about 30 % darker under the palms), its capture plane this far under the
+	 *  paper, its depth texture this many pixels across the paper's width (0.32 cm a texel), captured this long after
+	 *  play begins (the capture hands and the pawn are in place by then). */
+	constexpr float HandShadowStrength = 0.5f;  // r9 said 0.3; at 0.3 to 0.45 the shadow moved the paper by 4 % (fac/a, c)
+	constexpr float HandPlaneCm = 1.f;
+	constexpr int32 HandDepthWidthPx = 512;
+	constexpr float HandCaptureDelayS = 0.5f;
 	constexpr float PaperInkGlow = 1.0f;
 	/** The fixture glyphs' glow (M_Glyph's GlyphGlow, its default 0.45; FE: the concept's furniture glows inside the rooms). */
 	constexpr float GlyphGlow = 0.6f;  // FK: at 1.0 under the wider bloom the glyphs read as milky blobs
@@ -490,6 +503,7 @@ void ABpTable::BeginPlay()
 	Super::BeginPlay();
 	LoadArt();
 	PlaceForHeight(HeightCvarCm());
+	GetWorldTimerManager().SetTimer(HandCaptureTimer, this, &ABpTable::StartHandShadow, HandCaptureDelayS, false);
 
 	// The title block, the wing titles and the breadcrumb are drawn into the sheet (FC1: mipped and anisotropically sampled,
 	// where the widgets they replace were un-mipped render targets seen at a grazing angle). Before a plan there is no
@@ -552,6 +566,48 @@ void ABpTable::Tick(float DeltaSeconds)
 	}
 	// The scan line eases at the frame rate while a scan runs or fades (UpdateScan drops the tick back when it is done).
 	if (bScanLive || ScanStrength > 0.f) UpdateScan(FMath::Min(DeltaSeconds, 0.1f));
+}
+
+void ABpTable::StartHandShadow()
+{
+	if (!bRealPaper || !PaperMid || HandCapture) return;
+	TArray<TObjectPtr<AActor>> Hands;
+	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	{
+		if (It->ActorHasTag(ABpPawn::CaptureHandsTag)) Hands.Add(*It);
+	}
+	// Without the posed pair (a headset removes it) the pawn's own hands: the tracked rigs, or the flat view's rest hands.
+	const bool bLive = Hands.Num() == 0;
+	if (bLive)
+	{
+		if (APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0)) Hands.Add(Pawn);
+	}
+	if (Hands.Num() == 0) return;
+	HandDepth = NewObject<UTextureRenderTarget2D>(this, TEXT("HandDepth"));
+	HandDepth->ClearColor = FLinearColor(1000.f, 1000.f, 1000.f, 1.f);
+	HandDepth->InitCustomFormat(HandDepthWidthPx, FMath::RoundToInt(HandDepthWidthPx * PaperDepthCm / PaperWidthCm), PF_R16F, true);
+	HandCapture = NewObject<USceneCaptureComponent2D>(this, TEXT("HandCapture"));
+	HandCapture->SetupAttachment(GetRootComponent());
+	HandCapture->ProjectionType = ECameraProjectionMode::Orthographic;
+	HandCapture->OrthoWidth = PaperWidthCm;
+	HandCapture->CaptureSource = ESceneCaptureSource::SCS_SceneDepth;
+	HandCapture->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
+	HandCapture->ShowOnlyActors = Hands;
+	HandCapture->TextureTarget = HandDepth;
+	HandCapture->bCaptureEveryFrame = bLive;
+	HandCapture->bCaptureOnMovement = false;
+	// Looking up (pitch 90): the image's right is the table's +Y (the paper's U) and its down is +X, the far edge, where
+	// the paper's V runs from far to near, so the paper reads the image at (U, 1 - V).
+	HandCapture->SetRelativeLocationAndRotation(FVector(0.0, 0.0, PlacedHeightCm - GlassRecessCm - HandPlaneCm), FRotator(90.f, 0.f, 0.f));
+	HandCapture->RegisterComponent();
+	HandCapture->CaptureScene();
+	PaperMid->SetTextureParameterValue(TEXT("HandTex"), HandDepth);
+	PaperMid->SetVectorParameterValue(TEXT("HandScale"), FLinearColor(1.f, -1.f, 0.f, 0.f));
+	PaperMid->SetVectorParameterValue(TEXT("HandOffset"), FLinearColor(0.f, 1.f, 0.f, 0.f));
+	PaperMid->SetScalarParameterValue(TEXT("HandPlaneCm"), HandPlaneCm);
+	PaperMid->SetScalarParameterValue(TEXT("HandOcc"), HandShadowStrength);
+	UE_LOG(LogBpTable, Log, TEXT("BpTable: hand shadow from %d actor(s), %s, %dx%d"), Hands.Num(), bLive ? TEXT("every frame") : TEXT("captured once"),
+		HandDepth->SizeX, HandDepth->SizeY);
 }
 
 void ABpTable::LoadArt()
@@ -723,6 +779,7 @@ void ABpTable::PlaceForHeight(float HeightCm)
 	Paper->SetRelativeScale3D(PaperScale);
 	SheetOverlay->SetRelativeLocationAndRotation(FVector(0.0, 0.0, PaperZ + OverlayLiftCm), PaperRotation);
 	SheetOverlay->SetRelativeScale3D(PaperScale);
+	if (HandCapture) HandCapture->SetRelativeLocation(FVector(0.0, 0.0, PaperZ - HandPlaneCm));
 	// The volumes stand on the paper: their instances are placed relative to it, so only the batches move (with the
 	// height, and with a level's lift).
 	ApplyLevelVisuals();

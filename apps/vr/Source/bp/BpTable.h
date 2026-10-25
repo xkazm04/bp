@@ -498,6 +498,11 @@ private:
 	TObjectPtr<UMaterialInstanceDynamic> TagMid;
 	UPROPERTY(Transient)
 	TObjectPtr<class UMaterialParameterCollection> ScanParams;
+	UPROPERTY(Transient)
+	TObjectPtr<class USceneCaptureComponent2D> HandCapture;
+	UPROPERTY(Transient)
+	TObjectPtr<class UTextureRenderTarget2D> HandDepth;
+	FTimerHandle HandCaptureTimer;
 	/** The decision card. */
 	UPROPERTY(Transient)
 	TObjectPtr<UWidgetComponent> Card;
@@ -552,6 +557,11 @@ private:
 	void SetTitle(const FString& Line1, const FString& Line2);
 	// The marks (BpMarks.cpp): pins, the scan line and the decision card, from the scan side BpLink polls.
 	void LoadMarks();
+	/** FAC (r9 rank 4): the hands' shadow on the paper, which is emissive and so takes no light's shadow. An orthographic
+	 *  depth capture of the hands alone from just under the paper (HandDepth: per paper texel, the height of the lowest hand
+	 *  surface over it) feeds M_BlueprintPaper's occlusion term. The posed capture hands are still, so they are captured
+	 *  once; with a headset (tracked hands on the pawn) every frame. */
+	void StartHandShadow();
 	void ReceiveScanState(const struct FBpScanState& State);
 	void BuildPins(const struct FBpScanState& State);
 	void PlacePins();

@@ -54,8 +54,12 @@ GRID_MAJOR_EVERY = 4.0
 # The concept's paper: #1E5BD8 glowing at the centre, #123A8C toward the rim (the brief's reading of the target). Those
 # hexes as emissive went cyan and pale through the filmic curve and the grade (capture median (45, 118, 168) against the
 # target's (13, 44, 82)), so the emissive is set lower and bluer, by capture: centre median (24, 66, 140), PaperGlow 1.6.
-PAPER_CENTRE = unreal.LinearColor(0.010, 0.055, 0.40, 1.0)
-PAPER_EDGE = unreal.LinearColor(0.004, 0.022, 0.17, 1.0)
+# FAC (r9, the owner's "focus on the blueprint paper"): the capture's open paper read (25, 98, 149) against the concept's
+# (12, 42, 80). Most of that was fab_look.py's air light fogging a veil over the sheet (fac_look.py moves it); the rest is
+# here: the emissive darker and less green and ABpTable's PaperGlow 1.0 (from 1.6), by capture: open paper mid-table
+# (16, 51, 94) luma 47, far 41 (fac/pc1; FAC's strip lights and wider strip bloom a little more over it than x1's).
+PAPER_CENTRE = unreal.LinearColor(0.014, 0.034, 0.20, 1.0)
+PAPER_EDGE = unreal.LinearColor(0.005, 0.012, 0.072, 1.0)
 CYAN_WHITE = lin("BFE8FF")
 SCAN_CYAN = lin("38C8FF")
 PIN_AMBER = lin("FFB547")
@@ -64,15 +68,41 @@ HALO_AMBER = unreal.LinearColor(1.0, 0.55, 0.08, 1.0)
 # The grid: line widths (cm on the paper) and their ink (fraction of cyan-white over the paper).
 GRID_FINE_W = 0.05
 GRID_MAJOR_W = 0.09
-GRID_FINE_INK = 0.10
-GRID_MAJOR_INK = 0.22
+GRID_FINE_INK = 0.025  # FAC: 0.025 and 0.07 (FG 0.10, 0.22): the concept's grid is faint, its crossings carry it
+GRID_MAJOR_INK = 0.07
 # The edge line: this far in from the paper's edge, this wide, at this glow (white, above the bloom threshold), and a glow
 # EDGE_SPREAD_CM deep inward at EDGE_HALO.
-EDGE_INSET_CM = 0.35
-EDGE_W = 0.12
+# FAC: 0.6 wide at 0.4, its glow 2.5 cm deep (FG 0.12 at 0.35, 1.2 cm): r9 measured the strip a third of the concept's
+# width (6 px of 900 against 18 of 768). With fac_look.py's strip lights on the frame's lip the white band is 3x (fac/x1);
+# 1.5 cm wide here doubled it again into a bar, and a 4 cm glow at 0.45 whitened the near tenth of the sheet.
+EDGE_INSET_CM = 0.4
+EDGE_W = 0.6
 EDGE_GLOW = 2.5
-EDGE_SPREAD_CM = 1.2
+EDGE_SPREAD_CM = 2.5
 EDGE_HALO = 0.25
+# FAC: the crossings' dot (cm) and arms (cm either side) and their ink; the mottling's period (cm) and depth; the far lift.
+CROSS_DOT_CM = 0.06
+CROSS_ARM_CM = 0.5
+CROSS_INK = 0.35
+MOTTLE_CM = 15.0
+MOTTLE_AMP = 0.05
+FAR_LIFT = 1.0
+# FAC: the hands' shadow (r9 section 3): at most HAND_OCC darker, fading out by HAND_REACH_CM over the paper, soft over
+# HAND_SOFT_CM, shifted HAND_SHIFT (paper cm: +x to the right, +y toward the person) away from the lamp and the room's
+# light behind the table; HandOcc stays 0 here and ABpTable turns it on with its hand capture.
+HAND_OCC = 0.0
+HAND_REACH_CM = 12.0
+HAND_SOFT_CM = 3.0
+HAND_CONTACT_CM = 1.0
+HAND_PLANE_CM = 1.0
+# Shifted toward the person (0, 1.5) the shadow lay under the hand, hidden from the eye (fac/a1-a3: 92 -> 88 at 0.6);
+# the concept's shadows lie beside the thumbs and fingers, to their right (the desk lamp and room light from the left).
+HAND_SHIFT = unreal.LinearColor(2.5, 1.0, 0.0, 0.0)
+PAPER_SCALARS = [("FineInk", GRID_FINE_INK), ("MajorInk", GRID_MAJOR_INK), ("CrossInk", CROSS_INK), ("CrossDotCm", CROSS_DOT_CM),
+                 ("CrossArmCm", CROSS_ARM_CM), ("MottleCm", MOTTLE_CM), ("MottleAmp", MOTTLE_AMP), ("FarLift", FAR_LIFT),
+                 ("EdgeInset", EDGE_INSET_CM), ("EdgeW", EDGE_W), ("EdgeGlow", EDGE_GLOW), ("EdgeSpread", EDGE_SPREAD_CM),
+                 ("EdgeHalo", EDGE_HALO), ("HandOcc", HAND_OCC), ("HandReachCm", HAND_REACH_CM), ("HandSoftCm", HAND_SOFT_CM),
+                 ("HandContactCm", HAND_CONTACT_CM), ("HandPlaneCm", HAND_PLANE_CM), ("HandDebug", 0.0)]
 PAPER_BAND_GLOW = 16.0  # FM: 16 (from 12) for the thinner core
 # M_EdgeGlow's defaults (ABpTable sets FaceOpacity and Intensity per batch, not the rest).
 EDGE_WIDTH_CM = 0.06
@@ -123,23 +153,69 @@ float2 dm = abs(frac(cm / major + 0.5) - 0.5) * major;
 float2 wf = max(%(FW)f, fw), wm = max(%(MW)f, fw);
 float2 lf = (1 - smoothstep(wf * 0.5 - fw * 0.5, wf * 0.5 + fw * 0.5, df)) * (%(FW)f / wf) * saturate(fine / fw / 4 - 1);
 float2 lm = (1 - smoothstep(wm * 0.5 - fw * 0.5, wm * 0.5 + fw * 0.5, dm)) * (%(MW)f / wm) * saturate(major / fw / 4 - 1);
-float grid = max(max(lf.x, lf.y) * %(FI)f, max(lm.x, lm.y) * %(MI)f);
+float grid = max(max(lf.x, lf.y) * FineInk, max(lm.x, lm.y) * MajorInk);
+// FAC: the concept's major crossings carry a "+" tick and a dot: the major lines brighten for CrossArmCm either side of
+// a crossing, and a dot CrossDotCm wide sits on it (at least a pixel, dimmed by desired / drawn area).
+float arm = max(lm.x * (1 - smoothstep(CrossArmCm * 0.6, CrossArmCm, dm.y)), lm.y * (1 - smoothstep(CrossArmCm * 0.6, CrossArmCm, dm.x)));
+float fd = max(0.5 * (fw.x + fw.y), 1e-4);
+float wd = max(CrossDotCm, fd);
+float dotc = (1 - smoothstep(wd * 0.5 - fd * 0.5, wd * 0.5 + fd * 0.5, length(dm))) * (CrossDotCm / wd) * (CrossDotCm / wd) * saturate(major / fd / 4 - 1);
+grid = max(grid, max(arm * CrossInk * 0.6, dotc * CrossInk));
 float2 q = (cm - size * 0.5) / (size * 0.5);
 float t = saturate(dot(q * float2(0.9, 1.0), q * float2(0.9, 1.0)) * 0.5);
 float3 col = lerp(Centre, Edge, t) * PaperGlow;
+// FAC: the diffuser's cloudy unevenness, two octaves of value noise in paper centimetres (MottleCm, and a fifth of it at
+// 0.4 of the depth), all at least a few millimetres across so it never shimmers.
+float mot = 0;
+for (int o = 0; o < 2; o++)
+{
+    float2 pn = cm / (o == 0 ? MottleCm : MottleCm * 0.15) + o * 17.31;
+    float2 i0 = floor(pn), f0 = frac(pn), u0 = f0 * f0 * (3 - 2 * f0);
+    float4 h4 = frac(sin(float4(dot(i0, float2(127.1, 311.7)), dot(i0 + float2(1, 0), float2(127.1, 311.7)),
+                                dot(i0 + float2(0, 1), float2(127.1, 311.7)), dot(i0 + float2(1, 1), float2(127.1, 311.7)))) * 43758.5453);
+    float n = lerp(lerp(h4.x, h4.y, u0.x), lerp(h4.z, h4.w, u0.x), u0.y) * 2 - 1;
+    mot += n * (o == 0 ? 1.0 : 0.4);
+}
+col *= 1 + MottleAmp * mot;
+// FAC: the glass's Fresnel over the far half (r9: the concept's far paper is 1.37x its near, ours was 1.18).
+float nv = saturate(abs(normalize(V).z));
+col *= 1 + FarLift * pow(1 - nv, 3);
 col += Ink * grid;
 col = lerp(col, Sheet.rgb * InkGlow, saturate(Sheet.a * SheetStrength));
 float de = min(min(cm.x, size.x - cm.x), min(cm.y, size.y - cm.y));
 float fe = max(0.5 * (fw.x + fw.y), 1e-4);
-float we = max(%(EW)f, fe);
-float el = (1 - smoothstep(we * 0.5 - fe * 0.5, we * 0.5 + fe * 0.5, abs(de - %(EI)f))) * (%(EW)f / we);
-float eh = exp(-max(de - %(EI)f, 0) / %(ES)f) * %(EH)f;
-col += float3(1, 1, 1) * el * %(EG)f + Ink * eh;
+float we = max(EdgeW, fe);
+float el = (1 - smoothstep(we * 0.5 - fe * 0.5, we * 0.5 + fe * 0.5, abs(de - EdgeInset))) * (EdgeW / we);
+float eh = exp(-max(de - EdgeInset, 0) / EdgeSpread) * EdgeHalo;
+// The strip's glow is the light box's light too, so the hands shade it (added before the shadow); its line is the strip.
+col += Ink * eh;
+// FAC: the hands' shadow on the paper (r9 rank 4). HandTex holds, per paper texel, the height (cm, R) of the lowest hand
+// surface over it, seen from under the paper (ABpTable's hand capture); empty texels are far. Twelve taps on a disc
+// HandSoftCm wide, shifted by HandShift (cm) away from the room's light, give a soft shadow whose weight falls to 0 at
+// HandReachCm; the centre tap under HandContactCm adds the contact darkening. HandOcc 0 (no capture) skips it.
+float occ = 0, contact = 0;
+if (HandOcc > 0)
+{
+    float2 huv = UV * HandScale.xy + HandOffset.xy;
+    float2 sh = HandShift.xy / size * HandScale.xy;
+    for (int k = 0; k < 12; k++)
+    {
+        float a = k * 2.39996, r = sqrt((k + 0.5) / 12.0) * HandSoftCm;
+        float2 o2 = float2(cos(a), sin(a)) * r / size * HandScale.xy;
+        float h = Texture2DSampleLevel(HandTex, HandTexSampler, huv - sh + o2, 0).r - HandPlaneCm;
+        occ += saturate(1 - h / HandReachCm);
+    }
+    occ /= 12.0;
+    float h0 = Texture2DSampleLevel(HandTex, HandTexSampler, huv, 0).r - HandPlaneCm;
+    contact = saturate(1 - h0 / HandContactCm);
+    col *= saturate(1 - HandOcc * occ - HandOcc * 0.5 * contact);
+}
+col += float3(1, 1, 1) * el * EdgeGlow;
 col += Band * Scan * %(BG)f;
+if (HandDebug > 0) col = float3(occ + contact, 0, 0);
 return col;
 """ % {"W": PAPER_CM[0], "D": PAPER_CM[1], "FINE": GRID_FINE_CM, "EVERY": GRID_MAJOR_EVERY, "FW": GRID_FINE_W,
-       "MW": GRID_MAJOR_W, "FI": GRID_FINE_INK, "MI": GRID_MAJOR_INK, "EW": EDGE_W, "EI": EDGE_INSET_CM,
-       "ES": EDGE_SPREAD_CM, "EH": EDGE_HALO, "EG": EDGE_GLOW, "BG": PAPER_BAND_GLOW}
+       "MW": GRID_MAJOR_W, "BG": PAPER_BAND_GLOW}
 
 EDGE_HLSL = """
 float3 d3 = min(P, 1 - P) * Size;
@@ -244,7 +320,8 @@ sheet = g.add(unreal.MaterialExpressionTextureSampleParameter2D, -1400, -250, pa
               texture=unreal.load_asset("/Engine/EngineResources/Black"))
 sheet.set_editor_property("sampler_type", unreal.MaterialSamplerType.SAMPLERTYPE_COLOR)
 paper = g.custom("holo paper", PAPER_HLSL, unreal.CustomMaterialOutputType.CMOT_FLOAT3,
-                 ["UV", "Sheet", "SheetStrength", "PaperGlow", "InkGlow", "Centre", "Edge", "Ink", "Scan", "Band"], -400, 0)
+                 ["UV", "Sheet", "SheetStrength", "PaperGlow", "InkGlow", "Centre", "Edge", "Ink", "Scan", "Band"]
+                 + [k for k, _ in PAPER_SCALARS] + ["V", "HandTex", "HandShift", "HandScale", "HandOffset"], -400, 0)
 g.wire(uv, paper, "UV")
 g.wire(sheet, paper, "Sheet", "RGBA")
 g.wire(g.scalar("SheetStrength", 0.0, -1000, 0), paper, "SheetStrength")
@@ -255,6 +332,15 @@ g.wire(g.vector("PaperEdge", PAPER_EDGE, -1000, 450), paper, "Edge")
 g.wire(g.const3(CYAN_WHITE, -1000, 600), paper, "Ink")
 g.wire(g.const3(SCAN_CYAN, -1000, 700), paper, "Scan")
 g.wire(g.band(-1600, 800), paper, "Band")
+# FAC: the paper's look as parameters (ABpTable's MID or a PIE tune can move them; the defaults are the look).
+for i, (k, v) in enumerate(PAPER_SCALARS):
+    g.wire(g.scalar(k, v, -1300, 900 + 100 * i), paper, k)
+g.wire(g.add(unreal.MaterialExpressionCameraVectorWS, -1000, 2900), paper, "V")
+g.wire(g.add(unreal.MaterialExpressionTextureObjectParameter, -1000, 3000, parameter_name="HandTex",
+             texture=unreal.load_asset("/Engine/EngineResources/Black")), paper, "HandTex")
+g.wire(g.vector("HandShift", HAND_SHIFT, -1000, 3150), paper, "HandShift")
+g.wire(g.vector("HandScale", unreal.LinearColor(1.0, 1.0, 0.0, 0.0), -1000, 3300), paper, "HandScale")
+g.wire(g.vector("HandOffset", unreal.LinearColor(0.0, 0.0, 0.0, 0.0), -1000, 3450), paper, "HandOffset")
 mel.connect_material_property(paper, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
 # ABpTable's other paper scalars (TilesU, TilesV, VignetteEdge) are set on a material without them: a no-op.
 mel.recompile_material(m)
