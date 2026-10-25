@@ -47,8 +47,8 @@ vol.set_actor_scale3d(unreal.Vector((x1 - x0 + 40) / 200.0, (y1 - y0 + 40) / 200
 SHELL_RES = 1024
 PROP_RES = 256
 # FM: the lamp agent's bounce 0.4 (from 1.0), FO 0.15: its warm wash on the back wall and the shelves outshone the table (the
-# judge, element 13: "the table is the main light source").
-EMISSIVE_BOOST = {"CityBackdrop": 0.08, "LampAgent": 0.15}
+# judge, element 13: "the table is the main light source"). FQ 0.05: the dark studio keeps only the practicals' pools.
+EMISSIVE_BOOST = {"CityBackdrop": 0.08, "LampAgent": 0.05}
 res = {}
 for a in eas.get_all_level_actors():
     if "BpStudio" not in [str(t) for t in a.tags] or not isinstance(a, unreal.StaticMeshActor):

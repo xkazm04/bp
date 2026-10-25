@@ -105,7 +105,7 @@ public:
 	 *  the top, and each bay's far boundary inside it is a partition wall at BayPartitionRatio of that height, PartitionCm
 	 *  thick, across the bay's width (FM: the judge's "thin, taller cyan-edged walls with internal partitions"; a bay box
 	 *  drawn whole made a second tray inside each room). A lifted wing leaves its rest walls behind, hidden. */
-	static constexpr float RestRoomCm = 4.5f;  // FP: 4.5 (FO 3.5, FM 6.5, FK 2.2): cells, not trays, with the pointed room still standing out (by capture)
+	static constexpr float RestRoomCm = 5.5f;  // FQ: 5.5, taller distinct cells; FP: 4.5 (FO 3.5, FM 6.5, FK 2.2): cells, not trays, with the pointed room still standing out (by capture)
 	static constexpr float BayPartitionRatio = 0.85f;
 	static constexpr float PartitionCm = 0.08f;
 	/** A partition's glass face (M_EdgeGlow's custom data 4; a room's walls are 1). */
@@ -138,7 +138,7 @@ public:
 	static constexpr float HighlightFloorShow = 1.2f;
 	static constexpr float HighlightPlinthShow = 0.35f;
 	/** The lifted copy's furniture glows this much over its rest Show (M_Glyph's custom data 0). */
-	static constexpr float HighlightGlyphShow = 2.0f;
+	static constexpr float HighlightGlyphShow = 5.0f;  // FQ: 5 (FP 2), its furniture over its own glass
 	/** While a room is pointed at rest, every other room's walls, cells and furniture dim to this (FO, element 6: the
 	 *  concept's neighbours recede around the raised room). Clearing the highlight restores them. */
 	static constexpr float PointedDim = 0.5f;
@@ -151,6 +151,13 @@ public:
 	 *  of the box scales it; the height is capped on its own, so a tall shelf reads as a low cabinet). */
 	static constexpr float GlyphFill = 0.8f;
 	static constexpr float GlyphMaxCm = 2.5f;  // FM: 2.5 (from 1.1) for FN's kit, which the old cap squashed about fourfold
+	/** The semantic zoom (FQ, elements 4 and 5; the judge: "fewer, larger furniture glyphs per room"): at rest each bay
+	 *  shows one glyph, its dominant kind (the kind most of its tiles' features have; a tie goes to the bay's first tile in
+	 *  plan order), centred on the bay's box at most BayGlyphFill of it and BayGlyphMaxCm high. The tiles' own glyphs show
+	 *  one per tile only where a room is looked into: the pointed room's lifted copy (LiftGlyphs). The data still decides
+	 *  every kind and every box; nothing is laid out here. */
+	static constexpr float BayGlyphFill = 0.62f;
+	static constexpr float BayGlyphMaxCm = 4.2f;
 
 	/** Pins (FC1, element 7): survey-pin stands on each feature that has an open (`proposed`) finding: an amber bead on the
 	 *  plan, a stem and a paper tag on top (ArtSource/survey-pin: 6.38 cm tall, a 2.2 x 1.4 cm tag centred on the stem,
@@ -210,7 +217,7 @@ public:
 	 *  lamp agent's head, as the concept's card; FE placed it by capture, FG moved it 7 cm left so it covers the end of
 	 *  FI's reaching arm, as the concept's card hides the agent's hand). */
 	static constexpr float CardPlaceXCm = 36.f;
-	static constexpr float CardPlaceYCm = 40.f;  // FP: 40 (FK 32), clear of the agent's reaching arm (element 10, by capture)
+	static constexpr float CardPlaceYCm = 56.f;  // FQ: 56 (FP 40, FK 32), clear of the agent's arm, the city's towers between them (element 14)
 	static constexpr float CardAboveTopCm = 25.f;
 
 	ABpTable();
@@ -433,6 +440,12 @@ private:
 	/** Per glyph batch: each instance's room (plan index) and the Show last written to it. */
 	TArray<TArray<int32>> GlyphRoom;
 	TArray<TArray<float>> ShownGlyph;
+	/** The bays' glyphs at rest (FQ, the semantic zoom): one batch per kind, one instance per bay; the tile batches above
+	 *  stay hidden and are the lifted room's source. */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UInstancedStaticMeshComponent>> BayGlyphs;
+	TArray<TArray<int32>> BayGlyphRoom;
+	TArray<TArray<float>> ShownBayGlyph;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UCanvasRenderTarget2D> Sheet;

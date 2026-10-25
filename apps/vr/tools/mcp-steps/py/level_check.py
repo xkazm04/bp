@@ -94,15 +94,24 @@ if os.path.exists(STATE):
     if state.get("done"):
         state = None
 
-if state is None:
-    # Step 0: L0 as it stands, then the first command.
-    unreal.SystemLibrary.execute_console_command(world, "bp.ReducedMotion 0")
-    state = {"step": 0, "l0": snapshot(), "observed": [{"after": "start", **observe()}]}
-    unreal.SystemLibrary.execute_console_command(world, STEPS[0])
-    state["step"] = 1
-    with open(STATE, "w") as f:
-        json.dump(state, f)
-    result = {"sent": STEPS[0], "next": "run again"}
+if state is None or "l0" not in state:
+    # Step 0: L0 once it has settled (FQ: FP's one failed set-then-cleared run took its baseline while the table was still
+    # placing itself, so every instance and label "moved"): two calls in a row must see the same snapshot, with no level
+    # easing, before it becomes the baseline.
+    now = json.loads(json.dumps(snapshot()))
+    if table.is_level_moving() or state is None or state.get("settle") != now:
+        with open(STATE, "w") as f:
+            json.dump({"settle": now}, f)
+        result = {"settling": "the baseline must hold still over two calls", "next": "run again"}
+    else:
+        # Then L0 as it stands, then the first command.
+        unreal.SystemLibrary.execute_console_command(world, "bp.ReducedMotion 0")
+        state = {"step": 0, "l0": now, "observed": [{"after": "start", **observe()}]}
+        unreal.SystemLibrary.execute_console_command(world, STEPS[0])
+        state["step"] = 1
+        with open(STATE, "w") as f:
+            json.dump(state, f)
+        result = {"sent": STEPS[0], "next": "run again"}
 elif table.is_level_moving():
     result = {"waiting": "the last step is still easing; run again", "step": state["step"]}
 else:

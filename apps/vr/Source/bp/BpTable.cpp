@@ -211,8 +211,8 @@ namespace
 	/** The lifted room's glass (FE): a stronger face than its siblings', as the concept's raised room. */
 	constexpr float LiftedFaceOpacity = 0.15f;
 	/** The pointed room's raised copy (FK, element 6): a lit glass face and the brightest edges on the sheet. */
-	constexpr float HighlightFaceOpacity = 0.18f;  // FP: 0.18 (FO 0.08, FM 0.2): the lifted box reads as glass (by capture)
-	constexpr float HighlightEdgeIntensity = 16.0f;  // FP: 16 (FO 10, FM 8), the focal room
+	constexpr float HighlightFaceOpacity = 0.05f;  // FQ: 0.05 (FP 0.18): the judge's "blown-out glow", its contents read through it
+	constexpr float HighlightEdgeIntensity = 12.0f;  // FQ: 12 (FP 16, FO 10), the focal room by its height, not its bloom
 	/** The edges' emissive scale per batch (M_EdgeGlow's Intensity, its default 1.4; FE, elements 4 and 6, against the
 	 *  concept's bright cyan edges): the rest extrusions brightest, as the concept's rooms on the sheet; the lifted wing's
 	 *  shells and the lifted room's tiles under them; the lifted room's shell carries LiftedRoomShow on top. All of it
@@ -224,8 +224,8 @@ namespace
 	constexpr float WallLowEdge = 0.3f;
 	/** The walls' built-in halo (M_EdgeGlow's HaloK, its default 0.25): seen nearly edge-on, every wall's halo summed into
 	 *  a filled slab (fm/v1); the pointed room's a little stronger. By capture. */
-	constexpr float WallHaloK = 0.04f;
-	constexpr float HighlightHaloK = 0.1f;  // FP: 0.1 (from 0.06)
+	constexpr float WallHaloK = 0.02f;  // FQ: 0.02 (FM 0.04), crisper walls at 5.5 cm
+	constexpr float HighlightHaloK = 0.03f;  // FQ: 0.03 (FP 0.1)
 	constexpr float HighlightTopEdge = 1.3f;
 	constexpr float HighlightLowEdge = 0.5f;
 	constexpr float ShellEdgeIntensity = 2.4f;
@@ -1289,6 +1289,13 @@ void ABpTable::BuildGlyphs(const FBpPlan& Plan)
 	Glyphs.Reset();
 	GlyphRoom.Reset();
 	ShownGlyph.Reset();
+	for (UInstancedStaticMeshComponent* Old : BayGlyphs)
+	{
+		if (Old) Old->DestroyComponent();
+	}
+	BayGlyphs.Reset();
+	BayGlyphRoom.Reset();
+	ShownBayGlyph.Reset();
 	for (UInstancedStaticMeshComponent* Old : GlyphLift)
 	{
 		if (Old) Old->DestroyComponent();
@@ -1299,95 +1306,151 @@ void ABpTable::BuildGlyphs(const FBpPlan& Plan)
 	// Tile i's kind is its feature's (structure.features[].kind, found by the tile's id): the data picks the glyph and the
 	// box places it; nothing here lays anything out. A kind the kit has no glyph for takes the generic one.
 	const FBpLinkModule& Link = FBpLinkModule::Get();
-	TMap<FString, int32> BatchOf;
-	TArray<TArray<FTransform>> Places;
-	TMap<FString, int32> Counts;
-	for (int32 Index = 0; Index < Plan.tiles.Num(); ++Index)
+	const auto KindOf = [&](const FBpPlanTile& Tile)
 	{
-		const FBpPlanTile& Tile = Plan.tiles[Index];
 		const FString* Found = Link.FindFeatureKind(Tile.id);
-		FString Kind = Found ? *Found : FString(TEXT("generic"));
-		if (!GlyphMeshes.Contains(Kind)) Kind = TEXT("generic");
-		const int32* Known = BatchOf.Find(Kind);
-		int32 Batch = Known ? *Known : INDEX_NONE;
-		if (Batch == INDEX_NONE)
-		{
-			UStaticMesh* Mesh = LoadOrGreybox(GlyphMeshes[Kind], true);
-			if (!Mesh) continue;
-			// A unique name: a plan read again rebuilds the batches while the old ones wait for collection.
-			const FName Name = MakeUniqueObjectName(this, UInstancedStaticMeshComponent::StaticClass(), FName(*FString::Printf(TEXT("Glyphs_%s"), *Kind)));
-			UInstancedStaticMeshComponent* Glyph = NewObject<UInstancedStaticMeshComponent>(this, Name);
-			Glyph->SetupAttachment(Root);
-			Glyph->SetMobility(EComponentMobility::Movable);
-			Glyph->SetStaticMesh(Mesh);
-			Glyph->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			Glyph->SetCastShadow(false);
-			Glyph->NumCustomDataFloats = 1;
-			for (int32 Slot = 0; Slot < Mesh->GetStaticMaterials().Num(); ++Slot) Glyph->SetMaterial(Slot, GlyphMid);
-			Glyph->RegisterComponent();
-			Batch = Glyphs.Add(Glyph);
-			BatchOf.Add(Kind, Batch);
-			Places.AddDefaulted();
-			GlyphRoom.AddDefaulted();
-		}
-		const UStaticMesh* Mesh = Glyphs[Batch]->GetStaticMesh();
-		// The mesh's footprint and height (the kit stands +Z; its long side lies along the mesh's X or Y): the long side
-		// turns along the box's long side (all of Kettle's tiles are wider than deep, the paper's u, the actor's +Y).
-		// Uniform across the paper, the height capped apart.
+		const FString Kind = Found ? *Found : FString(TEXT("generic"));
+		return GlyphMeshes.Contains(Kind) ? Kind : FString(TEXT("generic"));
+	};
+	// One batch per kind in Batches (the tiles' or the bays'), made on first use.
+	const auto BatchFor = [&](const FString& Kind, TMap<FString, int32>& BatchOf, TArray<TObjectPtr<UInstancedStaticMeshComponent>>& Batches,
+		TArray<TArray<FTransform>>& Places, TArray<TArray<int32>>& Rooms, const TCHAR* Prefix) -> int32
+	{
+		if (const int32* Known = BatchOf.Find(Kind)) return *Known;
+		UStaticMesh* Mesh = LoadOrGreybox(GlyphMeshes[Kind], true);
+		if (!Mesh) return INDEX_NONE;
+		// A unique name: a plan read again rebuilds the batches while the old ones wait for collection.
+		const FName Name = MakeUniqueObjectName(this, UInstancedStaticMeshComponent::StaticClass(), FName(*FString::Printf(TEXT("%s_%s"), Prefix, *Kind)));
+		UInstancedStaticMeshComponent* Glyph = NewObject<UInstancedStaticMeshComponent>(this, Name);
+		Glyph->SetupAttachment(Root);
+		Glyph->SetMobility(EComponentMobility::Movable);
+		Glyph->SetStaticMesh(Mesh);
+		Glyph->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Glyph->SetCastShadow(false);
+		Glyph->NumCustomDataFloats = 1;
+		for (int32 Slot = 0; Slot < Mesh->GetStaticMaterials().Num(); ++Slot) Glyph->SetMaterial(Slot, GlyphMid);
+		Glyph->RegisterComponent();
+		const int32 Batch = Batches.Add(Glyph);
+		BatchOf.Add(Kind, Batch);
+		Places.AddDefaulted();
+		Rooms.AddDefaulted();
+		return Batch;
+	};
+	// The mesh's footprint and height (the kit stands +Z; its long side lies along the mesh's X or Y): the long side turns
+	// along the box's long side, uniform across the paper at most Fill of the box, the height capped apart at MaxCm.
+	const auto Place = [&](const UStaticMesh* Mesh, const FBpPlanBox& Box, double Fill, double MaxCm)
+	{
 		const FBox Bounds = Mesh->GetBoundingBox();
 		const FVector Size = Bounds.GetSize();
-		const bool bTurn = Size.X > Size.Y;
 		const double Long = FMath::Max(FMath::Max(Size.X, Size.Y), 0.01), Short = FMath::Max(FMath::Min(Size.X, Size.Y), 0.01);
-		const double BoxLong = FMath::Max(Tile.box.w, Tile.box.h) * BpPlanUnitCm, BoxShort = FMath::Min(Tile.box.w, Tile.box.h) * BpPlanUnitCm;
-		const double Flat = FMath::Min(GlyphFill * BoxLong / Long, GlyphFill * BoxShort / Short);
-		const double Tall = FMath::Min(Flat, GlyphMaxCm / FMath::Max(Size.Z, 0.01));
-		const FVector2D Centre = PlanToPaperCm(FVector2D(Tile.box.x + Tile.box.w * 0.5, Tile.box.y + Tile.box.h * 0.5));
+		const double BoxLong = FMath::Max(Box.w, Box.h) * BpPlanUnitCm, BoxShort = FMath::Min(Box.w, Box.h) * BpPlanUnitCm;
+		// A box wider than deep has its long side along the paper's u (the actor's +Y).
+		const bool bTurn = (Size.X > Size.Y) == (Box.w >= Box.h);
+		const double Flat = FMath::Min(Fill * BoxLong / Long, Fill * BoxShort / Short);
+		const double Tall = FMath::Min(Flat, MaxCm / FMath::Max(Size.Z, 0.01));
+		const FVector2D Centre = PlanToPaperCm(FVector2D(Box.x + Box.w * 0.5, Box.y + Box.h * 0.5));
 		// The pivot is the base centre, so only the footprint's own offset is taken out.
 		const FRotator Yaw(0.f, bTurn ? 90.f : 0.f, 0.f);
 		const FVector Offset(Bounds.GetCenter().X * Flat, Bounds.GetCenter().Y * Flat, 0.0);
-		Places[Batch].Add(FTransform(Yaw, PaperCmToLocal(Centre, 0.f) - Yaw.RotateVector(Offset), FVector(Flat, Flat, Tall)));
+		return FTransform(Yaw, PaperCmToLocal(Centre, 0.f) - Yaw.RotateVector(Offset), FVector(Flat, Flat, Tall));
+	};
+
+	TMap<FString, int32> BatchOf;
+	TArray<TArray<FTransform>> Places;
+	TMap<FString, int32> Counts;
+	TMap<FString, TArray<FString>> BayKinds;
+	for (int32 Index = 0; Index < Plan.tiles.Num(); ++Index)
+	{
+		const FBpPlanTile& Tile = Plan.tiles[Index];
+		const FString Kind = KindOf(Tile);
+		BayKinds.FindOrAdd(Tile.parentId).Add(Kind);
+		const int32 Batch = BatchFor(Kind, BatchOf, Glyphs, Places, GlyphRoom, TEXT("Glyphs"));
+		if (Batch == INDEX_NONE) continue;
+		Places[Batch].Add(Place(Glyphs[Batch]->GetStaticMesh(), Tile.box, GlyphFill, GlyphMaxCm));
 		GlyphRoom[Batch].Add(TileRoom.IsValidIndex(Index) ? TileRoom[Index] : INDEX_NONE);
 		Counts.FindOrAdd(Kind)++;
 	}
-	for (int32 Batch = 0; Batch < Glyphs.Num(); ++Batch)
+
+	// The bays' glyphs (FQ): each bay's dominant kind (a tie goes to its first tile in plan order), one glyph on its box.
+	TMap<FString, int32> RoomOf;
+	for (int32 Index = 0; Index < Plan.rooms.Num(); ++Index) RoomOf.Add(Plan.rooms[Index].id, Index);
+	TMap<FString, int32> BayBatchOf;
+	TArray<TArray<FTransform>> BayPlaces;
+	TMap<FString, int32> BayCounts;
+	for (const FBpPlanBay& Bay : Plan.bays)
 	{
-		Glyphs[Batch]->AddInstances(Places[Batch], false, false, false);
-		TArray<float> Show;
-		Show.Init(0.f, Places[Batch].Num());
-		if (Show.Num() > 0) Glyphs[Batch]->SetCustomData(0, Show.Num() - 1, Show, true);
-		// -1 forces ApplyGlyphs to write every instance once.
-		TArray<float> Unwritten;
-		Unwritten.Init(-1.f, Show.Num());
-		ShownGlyph.Add(Unwritten);
+		const TArray<FString>* Kinds = BayKinds.Find(Bay.id);
+		if (!Kinds || Kinds->Num() == 0) continue;
+		FString Dominant;
+		int32 Most = 0;
+		for (const FString& Kind : *Kinds)
+		{
+			int32 N = 0;
+			for (const FString& Other : *Kinds) N += Other == Kind ? 1 : 0;
+			if (N > Most) { Most = N; Dominant = Kind; }
+		}
+		const int32 Batch = BatchFor(Dominant, BayBatchOf, BayGlyphs, BayPlaces, BayGlyphRoom, TEXT("BayGlyphs"));
+		if (Batch == INDEX_NONE) continue;
+		BayPlaces[Batch].Add(Place(BayGlyphs[Batch]->GetStaticMesh(), Bay.box, BayGlyphFill, BayGlyphMaxCm));
+		const int32* Room = RoomOf.Find(Bay.parentId);
+		BayGlyphRoom[Batch].Add(Room ? *Room : INDEX_NONE);
+		BayCounts.FindOrAdd(Dominant)++;
 	}
+
+	const auto Fill = [](TArray<TObjectPtr<UInstancedStaticMeshComponent>>& Batches, TArray<TArray<FTransform>>& At, TArray<TArray<float>>& Shown)
+	{
+		for (int32 Batch = 0; Batch < Batches.Num(); ++Batch)
+		{
+			Batches[Batch]->AddInstances(At[Batch], false, false, false);
+			TArray<float> Show;
+			Show.Init(0.f, At[Batch].Num());
+			if (Show.Num() > 0) Batches[Batch]->SetCustomData(0, Show.Num() - 1, Show, true);
+			// -1 forces ApplyGlyphs to write every instance once.
+			TArray<float> Unwritten;
+			Unwritten.Init(-1.f, Show.Num());
+			Shown.Add(Unwritten);
+		}
+	};
+	Fill(Glyphs, Places, ShownGlyph);
+	Fill(BayGlyphs, BayPlaces, ShownBayGlyph);
+	// The tiles' batches draw nothing at rest; LiftGlyphs copies them into the pointed room.
+	for (UInstancedStaticMeshComponent* Glyph : Glyphs) Glyph->SetVisibility(false);
 	TArray<FString> Line;
 	for (const TPair<FString, int32>& Pair : Counts) Line.Add(FString::Printf(TEXT("%s=%d"), *Pair.Key, Pair.Value));
-	UE_LOG(LogBpTable, Log, TEXT("BpTable: glyphs batches=%d [%s]"), Glyphs.Num(), *FString::Join(Line, TEXT(" ")));
+	TArray<FString> BayLine;
+	for (const TPair<FString, int32>& Pair : BayCounts) BayLine.Add(FString::Printf(TEXT("%s=%d"), *Pair.Key, Pair.Value));
+	UE_LOG(LogBpTable, Log, TEXT("BpTable: glyphs batches=%d [%s] bays batches=%d [%s]"), Glyphs.Num(), *FString::Join(Line, TEXT(" ")),
+		BayGlyphs.Num(), *FString::Join(BayLine, TEXT(" ")));
 }
 
 void ABpTable::ApplyGlyphs(float WingEase)
 {
-	// As the room's rest extrusion: lit at L0, folding away with a lifted wing, dimmed elsewhere while one is up.
+	// The bays' glyphs as the room's rest extrusion: lit at L0, folding away with a lifted wing, dimmed elsewhere while one
+	// is up. The tiles' batches stay hidden (the semantic zoom); their copy in the pointed room is GlyphLift.
 	const bool bOn = CVarL0VolumesValue() != 0;
-	for (int32 Batch = 0; Batch < Glyphs.Num() && Batch < GlyphRoom.Num(); ++Batch)
+	for (int32 Batch = 0; Batch < BayGlyphs.Num() && Batch < BayGlyphRoom.Num(); ++Batch)
 	{
 		bool bDirty = false;
-		for (int32 Index = 0; Index < GlyphRoom[Batch].Num(); ++Index)
+		for (int32 Index = 0; Index < BayGlyphRoom[Batch].Num(); ++Index)
 		{
-			const int32 Room = GlyphRoom[Batch][Index];
+			const int32 Room = BayGlyphRoom[Batch][Index];
 			const FString Wing = RoomWing.IsValidIndex(Room) ? RoomWing[Room] : FString();
 			float Show = 0.f;
 			if (bOn) Show = AnimWing.IsEmpty() ? 1.f : (Wing == AnimWing ? 1.f - WingEase : FMath::Lerp(1.f, LevelDim, WingEase));
 			// Around a pointed room the other rooms' furniture recedes a little (FO; FP: PointedGlyphDim, not the walls'
-			// PointedDim), and the pointed room's own shows on its lifted floor instead (LiftGlyphs).
+			// PointedDim), and the pointed room's own shows on its lifted floor instead, one per tile (LiftGlyphs).
 			if (HighlightRestRoom != INDEX_NONE) Show = Room == HighlightRestRoom ? 0.f : Show * PointedGlyphDim;
-			if (ShownGlyph[Batch][Index] == Show) continue;
-			ShownGlyph[Batch][Index] = Show;
-			Glyphs[Batch]->SetCustomDataValue(Index, 0, Show, false);
+			if (ShownBayGlyph[Batch][Index] == Show) continue;
+			ShownBayGlyph[Batch][Index] = Show;
+			BayGlyphs[Batch]->SetCustomDataValue(Index, 0, Show, false);
 			bDirty = true;
 		}
+		BayGlyphs[Batch]->SetRelativeTransform(WingGroupTransform(0.f));
+		if (bDirty) BayGlyphs[Batch]->MarkRenderStateDirty();
+	}
+	for (int32 Batch = 0; Batch < Glyphs.Num(); ++Batch)
+	{
 		Glyphs[Batch]->SetRelativeTransform(WingGroupTransform(0.f));
-		if (bDirty) Glyphs[Batch]->MarkRenderStateDirty();
 		if (GlyphLift.IsValidIndex(Batch) && GlyphLift[Batch]) GlyphLift[Batch]->SetRelativeTransform(WingGroupTransform(0.f));
 	}
 }
