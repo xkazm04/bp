@@ -196,6 +196,15 @@
 #flyout.wide .wb-prog { height: 6px; margin: 0 0 6px; background: var(--ink-4); }
 #flyout.wide .wb-prog i { display: block; height: 100%; background: var(--mint); transition: width 0.4s; }
 #flyout.wide .wb-log { margin: 0; max-height: 440px; overflow: auto; padding: 12px 14px; background: color-mix(in srgb, var(--ink) 6%, transparent); border: 1px solid var(--ink-4); font: 400 13px/1.55 var(--mono); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+#flyout.wide .wb-log.md { font: 400 14.5px/1.55 var(--font-sans), system-ui, sans-serif; white-space: normal; }
+#flyout.wide .wb-sec .wb-log.md p { margin: 0 0 7px; font-size: 14.5px; max-width: none; }
+#flyout.wide .wb-sec .wb-log.md p:last-child { margin-bottom: 0; }
+#flyout.wide .wb-sec .wb-log.md p.h { margin-top: 10px; font-weight: 600; }
+#flyout.wide .wb-sec .wb-log.md p.h1 { font-size: 16px; }
+#flyout.wide .wb-sec .wb-log.md p.li.ol { padding-left: 24px; }
+#flyout.wide .wb-sec .wb-log.md p.li.ol::before { content: attr(data-n); top: 0; width: auto; height: auto; background: none; font: 500 13px/1.7 var(--mono); color: var(--ink-2); }
+#flyout.wide .wb-log.md code { font: 400 0.9em var(--mono); padding: 0 3px; background: color-mix(in srgb, var(--ink) 8%, transparent); }
+#flyout.wide .wb-log.md pre { margin: 4px 0 8px; padding: 8px 10px; font: 400 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; background: color-mix(in srgb, var(--ink) 6%, transparent); }
 #flyout.wide .wb-agents-l { list-style: none; margin: 0; padding: 0; }
 #flyout.wide .wb-agents-l button, #flyout.wide .wb-agents-l .ro { width: 100%; display: grid; grid-template-columns: 30px minmax(0, 1fr) 120px; align-items: center; gap: 12px; padding: 10px 6px; background: none; border: 0; border-bottom: 1px solid var(--ink-4); text-align: left; color: var(--ink); }
 #flyout.wide .wb-agents-l button:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }

@@ -7,6 +7,7 @@ import { TICK_CLASS, astat, type SimAgent } from '@bp/core/model';
 import { cancelJob, refusalText } from '@/lib/scan/actions';
 import { jobLabel, type ScanJob } from '@bp/core/scan/jobs';
 import { jobProgress } from '@/lib/scan/scan-views';
+import { logBlocks, type Span } from '@/lib/scan/log-md';
 import type { ScanSnapshot } from '@bp/core/scan/types';
 import { jobLiveness } from '@bp/core/scan/liveness';
 import { LiveSteerButtons } from '../../LiveSteer';
@@ -182,10 +183,25 @@ function JobDetail({ j, scan, total, now, live, focusCancel }: { j: ScanJob; sca
       </div>
       {j.error && <div className="wb-err">{j.error}</div>}
       <Sec head="Log" aside={live ? 'last lines' : 'simulated'}>
-        {j.log_tail ? <pre className="wb-log" tabIndex={0} aria-label="Job log">{j.log_tail}</pre>
+        {j.log_tail ? <LogText text={j.log_tail} />
           : <p className="none">{live ? 'No log lines yet.' : 'The simulated scan keeps no log. A live product shows the Claude Code run’s last lines here.'}</p>}
       </Sec>
     </>
+  );
+}
+
+const Spans = ({ ss }: { ss: Span[] }) => <>{ss.map((x, i) => x.t === 'b' ? <b key={i}>{x.s}</b> : x.t === 'code' ? <code key={i}>{x.s}</code> : x.s)}</>;
+
+/** The run's last lines as the markdown its reply is written in (lib/scan/log-md.ts): text only, never HTML or a link. */
+function LogText({ text }: { text: string }) {
+  const bs = useMemo(() => logBlocks(text), [text]);
+  return (
+    <div className="wb-log md" tabIndex={0} role="log" aria-label="Job log">
+      {bs.map((b, i) => b.k === 'code' ? <pre key={i}>{b.text}</pre>
+        : b.k === 'h' ? <p key={i} className={'h h' + b.level}><Spans ss={b.spans} /></p>
+        : b.k === 'li' ? <p key={i} className={'li' + (b.ordered ? ' ol' : '')} style={b.depth ? { marginLeft: b.depth * 16 } : undefined} data-n={b.n || undefined}><Spans ss={b.spans} /></p>
+        : <p key={i}><Spans ss={b.spans} /></p>)}
+    </div>
   );
 }
 
