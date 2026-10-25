@@ -30,6 +30,7 @@ export const ASSETS = {
  */
 const W = (rel, ...rest) => ({ writer: `scripts/art/${rel}`, scripts: [`scripts/art/${rel}`, ...rest] });
 const STUDIO = W('studio-kit/write_manifest.mjs', 'scripts/art/lib/polyhaven.mjs');
+const KITS = W('studio-kit/write_kit_manifest.mjs', 'scripts/art/lib/polyhaven.mjs');
 const MATERIAL = W('materials/write_manifests.mjs');
 const KIT = W('write-manifests.mjs', 'scripts/art/score-assets.mjs');
 export const ENTRY_POINTS = {
@@ -43,6 +44,7 @@ export const ENTRY_POINTS = {
   'hands-capture': W('hands/write_manifest.mjs'),
   'light-table-frame': W('light-table-frame/write_manifest.mjs', 'scripts/art/lib/polyhaven.mjs'),
   'mat-blueprint-paper': MATERIAL, 'mat-brushed-aluminium': MATERIAL, 'mat-vellum': MATERIAL, 'mat-warm-wood': MATERIAL,
+  'studio-wall-kit': KITS, 'studio-desk-clutter': KITS, 'studio-architecture': KITS,
   'studio-desk-lamp': STUDIO, 'studio-drawing-tubes': STUDIO, 'studio-mug': STUDIO, 'studio-pinned-drawings': STUDIO, 'studio-shelves': STUDIO,
 };
 
