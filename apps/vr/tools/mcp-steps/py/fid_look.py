@@ -22,7 +22,9 @@ TAG = "BpLook"
 TABLE_TOP = 95.0
 PAPER = (166.0, 76.0)  # ABpTable::PaperWidthCm (along Y), PaperDepthCm (along X)
 PAPER_Z = TABLE_TOP - 0.8
-KEY_CD = 6.0
+# 1 cd and a saturated cyan since FF: at 6 cd the near cyan-white key clipped the fingers' undersides white (the
+# "fingertip glow"); at 0 they went black. The concept's under-light is a faint cyan from the sheet.
+KEY_CD = 1.0
 KEY_X = -22.0  # the near third of the paper, under the hands
 KEY_SIZE = (120.0, 30.0)
 KEY_REACH = 45.0
@@ -32,7 +34,7 @@ KEY_Z = PAPER_Z - 15.0  # the light box's lamps: fingertips on the paper stay un
 # it is a warm white now: the concept's hands are skin-toned on top and cyan only from the table below.
 FILL_CD = 22.0
 FILL_COLOUR = unreal.Color(r=255, g=238, b=222, a=255)
-KEY_COLOUR = unreal.Color(r=150, g=215, b=255, a=255)  # #96D7FF: the concept's cyan under the fingers
+KEY_COLOUR = unreal.Color(r=96, g=188, b=255, a=255)  # #60BCFF: the concept's cyan under the fingers
 # The captures see the glowing sheet from just above it; at brightness 1 the aluminium frame, the side desks and the
 # glass mirrored it white (after the light build recaptured them, Lynx 2026-10-24). A quarter keeps the frame silver.
 CAPTURE_BRIGHTNESS = 0.25

@@ -6,7 +6,7 @@
 # Run outside PIE: node apps/vr/tools/mcp-call.mjs python <this file> --log apps/vr/tools/mcp-steps/fid-assembly.jsonl
 #
 # Skin: a Substrate Slab with the 2048 albedo and a red mean free path, which the forward path renders as wrap
-# subsurface (no screen-space diffusion; r4), roughness 0.5, specular 0.35 (F0 0.028). Sleeve: near-black knit,
+# subsurface (no screen-space diffusion; r4), roughness from the ORM (about 0.5), a tangent normal, F0 0.028. Sleeve: near-black knit,
 # roughness 0.95 with a little fuzz.
 import os
 
@@ -22,11 +22,16 @@ V = unreal.LinearColor
 SKIN_SSS_MFP = V(1.0, 0.32, 0.18, 1.0)  # mean free path per channel (cm before the scale): red travels furthest
 SKIN_SSS_SCALE = 0.12
 SKIN_ROUGHNESS = 0.5
+# The CC0 albedo is a pale skin; under the table's light it read paler than the concept's warm, tanned hands, so the
+# albedo is multiplied by SKIN_TINT (FF, judged against the target in the capture).
+SKIN_TINT = V(0.72, 0.58, 0.48, 1.0)
 SKIN_F0 = 0.028
 SLEEVE_ALBEDO = V(0.013, 0.014, 0.017, 1.0)
 SLEEVE_ROUGHNESS = 0.95
 SLEEVE_FUZZ = 0.4
 SLEEVE_FUZZ_COLOUR = V(0.023, 0.026, 0.033, 1.0)  # #2A2D33
+WATCH_ALBEDO = V(0.010, 0.011, 0.013, 1.0)
+WATCH_ROUGHNESS = 0.22
 
 task = unreal.AssetImportTask()
 task.filename = os.path.join(SRC, "hands_capture.glb")
@@ -36,15 +41,34 @@ task.replace_existing = True
 task.save = True
 tools.import_asset_tasks([task])
 
-tex_task = unreal.AssetImportTask()
-tex_task.filename = os.path.join(SRC, "textures", "hands_skin_albedo.png")
-tex_task.destination_path = DEST + "/Textures"
-tex_task.destination_name = "T_HandsSkin_Albedo"
-tex_task.automated = True
-tex_task.replace_existing = True
-tex_task.save = True
-tools.import_asset_tasks([tex_task])
-albedo = unreal.load_asset(DEST + "/Textures/T_HandsSkin_Albedo")
+
+
+def import_texture(file, name, kind):
+    t = unreal.AssetImportTask()
+    t.filename = os.path.join(SRC, "textures", file)
+    t.destination_path = DEST + "/Textures"
+    t.destination_name = name
+    t.automated = True
+    t.replace_existing = True
+    t.save = True
+    tools.import_asset_tasks([t])
+    tex = unreal.load_asset(DEST + "/Textures/" + name)
+    if kind == "normal":  # tangent space, OpenGL (glTF): green flipped for UE
+        tex.set_editor_property("srgb", False)
+        tex.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_NORMALMAP)
+        tex.set_editor_property("flip_green_channel", True)
+    elif kind == "masks":
+        tex.set_editor_property("srgb", False)
+        tex.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_MASKS)
+    unreal.EditorAssetLibrary.save_loaded_asset(tex, only_if_is_dirty=False)
+    return tex
+
+
+# FD's re-bake (spark vr-fidelity-40 FF): the GLB has its own UV atlas now, so the albedo comes in again with a tangent
+# normal (pores, knuckle creases, nail edges) and an ORM whose G is the roughness (glossy nails, drier creases).
+albedo = import_texture("hands_skin_albedo.png", "T_HandsSkin_Albedo", "colour")
+normal = import_texture("hands_skin_normal.png", "T_HandsSkin_Normal", "normal")
+orm = import_texture("hands_skin_orm.png", "T_HandsSkin_ORM", "masks")
 
 
 def fresh_material(path):
@@ -84,9 +108,20 @@ def f0(m, value, x, y):
 skin = fresh_material("/Game/Bp/Materials/M_HandsSkin")
 tex = expr(skin, unreal.MaterialExpressionTextureSampleParameter2D, -800, -200, parameter_name="Albedo", texture=albedo)
 slab = expr(skin, unreal.MaterialExpressionSubstrateSlabBSDF, 0, 0)
-mel.connect_material_expressions(tex, "RGB", slab, "Diffuse Albedo")
+tinted = expr(skin, unreal.MaterialExpressionMultiply, -300, -200)
+mel.connect_material_expressions(tex, "RGB", tinted, "A")
+mel.connect_material_expressions(param(skin, "Tint", SKIN_TINT, -500, -300), "", tinted, "B")
+mel.connect_material_expressions(tinted, "", slab, "Diffuse Albedo")
 mel.connect_material_expressions(f0(skin, SKIN_F0, -800, 50), "", slab, "F0")
-mel.connect_material_expressions(param(skin, "Roughness", SKIN_ROUGHNESS, -500, 150), "", slab, "Roughness")
+orm_tex = expr(skin, unreal.MaterialExpressionTextureSampleParameter2D, -1100, 150, parameter_name="ORM", texture=orm,
+              sampler_type=unreal.MaterialSamplerType.SAMPLERTYPE_MASKS)
+rough = expr(skin, unreal.MaterialExpressionMultiply, -500, 150)
+mel.connect_material_expressions(orm_tex, "G", rough, "A")
+mel.connect_material_expressions(param(skin, "RoughnessScale", SKIN_ROUGHNESS / 0.5, -800, 220), "", rough, "B")
+mel.connect_material_expressions(rough, "", slab, "Roughness")
+nrm = expr(skin, unreal.MaterialExpressionTextureSampleParameter2D, -800, 450, parameter_name="Normal", texture=normal,
+           sampler_type=unreal.MaterialSamplerType.SAMPLERTYPE_NORMAL)
+mel.connect_material_expressions(nrm, "RGB", slab, "Normal")
 mel.connect_material_expressions(param(skin, "SSSMFP", SKIN_SSS_MFP, -500, 250), "", slab, "SSS MFP")
 mel.connect_material_expressions(param(skin, "SSSMFPScale", SKIN_SSS_SCALE, -500, 350), "", slab, "SSS MFP Scale")
 mel.connect_material_property(slab, "", unreal.MaterialProperty.MP_FRONT_MATERIAL)
@@ -105,6 +140,16 @@ mel.connect_material_property(slab, "", unreal.MaterialProperty.MP_FRONT_MATERIA
 mel.recompile_material(sleeve)
 unreal.EditorAssetLibrary.save_loaded_asset(sleeve, only_if_is_dirty=False)
 
+# The watch on the left wrist (FD): a dark glass-and-metal case, a near-black face with a glossy top.
+watch = fresh_material("/Game/Bp/Materials/M_HandsWatch")
+slab = expr(watch, unreal.MaterialExpressionSubstrateSlabBSDF, 0, 0)
+mel.connect_material_expressions(param(watch, "Albedo", WATCH_ALBEDO, -500, -200), "", slab, "Diffuse Albedo")
+mel.connect_material_expressions(f0(watch, 0.04, -800, 50), "", slab, "F0")
+mel.connect_material_expressions(param(watch, "Roughness", WATCH_ROUGHNESS, -500, 150), "", slab, "Roughness")
+mel.connect_material_property(slab, "", unreal.MaterialProperty.MP_FRONT_MATERIAL)
+mel.recompile_material(watch)
+unreal.EditorAssetLibrary.save_loaded_asset(watch, only_if_is_dirty=False)
+
 result = {}
 for side in ("hand_l", "hand_r"):
     mesh = unreal.load_asset(DEST + "/hands_capture/StaticMeshes/" + side)
@@ -114,7 +159,8 @@ for side in ("hand_l", "hand_r"):
     slots = []
     for sm in mesh.get_editor_property("static_materials"):
         name = str(sm.get_editor_property("material_slot_name"))
-        sm.set_editor_property("material_interface", skin if name.startswith("hands_skin") else sleeve)
+        sm.set_editor_property("material_interface", skin if name.startswith("hands_skin") else
+                               watch if name.startswith("hands_watch") else sleeve)
         slots.append(sm)
     mesh.set_editor_property("static_materials", slots)
     unreal.EditorAssetLibrary.save_loaded_asset(mesh, only_if_is_dirty=False)

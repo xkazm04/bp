@@ -62,13 +62,14 @@ public:
 	static constexpr float WristPanelForwardCm = 26.f;
 	static constexpr float WristPanelSideCm = -23.f;
 	static constexpr float WristPanelDownCm = -31.f;
-	/** On the posed capture hand (FE, element 11): the panel stands off the wrist point by this offset (cm, the table's
-	 *  axes: X away from the person, Y to their right, Z up) at WristCaptureScale of its size, so it lies over the
-	 *  forearm, in front of the sleeve and wholly inside the target frame, as the concept's (placed by capture). */
-	static constexpr float WristCaptureOffsetXCm = -6.f;
-	static constexpr float WristCaptureOffsetYCm = 7.f;
-	static constexpr float WristCaptureOffsetZCm = 7.5f;
-	static constexpr float WristCaptureScale = 0.85f;
+	/** On the posed capture hand (FE, element 11; FF re-anchored the wrist point to the watch's face): the panel stands
+	 *  off it by this offset (cm, the table's axes: X away from the person, Y to their right, Z up) at WristCaptureScale
+	 *  of its size, so it lies over the forearm left of the watch, its rows over the paper (over the white rail its light
+	 *  text washed out), in front of the sleeve and wholly inside the target frame, as the concept's (placed by capture). */
+	static constexpr float WristCaptureOffsetXCm = -11.f;
+	static constexpr float WristCaptureOffsetYCm = -3.f;
+	static constexpr float WristCaptureOffsetZCm = 5.5f;
+	static constexpr float WristCaptureScale = 1.06f;
 	/** The panel's up leans with the target pose's view (ABpGameMode::TargetPitchDeg), so it reads square to the eye. */
 	void SetWristParent(USceneComponent* Parent, FName Socket, const FTransform& Relative);
 

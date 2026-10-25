@@ -30,10 +30,20 @@ GLBS = [  # ArtSource id, /Game/Bp/Art folder, mesh name
     ("studio-pinned-drawings", "StudioPinnedDrawings", "SM_StudioPinnedDrawings"),
     ("studio-shelves", "StudioShelves", "SM_StudioShelves"),
     ("city-backdrop", "CityBackdrop", "SM_CityBackdrop"),
+    # FD's three density kits (spark vr-fidelity-40 FF): one atlas each; studio-architecture holds two meshes,
+    # window_frame and pendant_lamp, which Interchange names after their glTF nodes.
+    ("studio-wall-kit", "StudioWallKit", "SM_StudioWallKit"),
+    ("studio-desk-clutter", "StudioDeskClutter", "SM_StudioDeskClutter"),
+    ("studio-architecture", "StudioArchitecture", "SM_StudioArchitecture"),
 ]
+# GLBs whose meshes are named by their nodes, not by the import's destination name.
+MULTI_MESH = {"studio-architecture": ("window_frame", "pendant_lamp")}
+# GLBs whose one UV set overlaps (atlas islands shared or shrunk): Lightmass read the wall kit's at 21 % overlap and the
+# pinned drawings' at 12 % (Lynx, 2026-10-25), so the build makes a lightmap UV in channel 1, as for the lamp agent.
+OWN_LIGHTMAP_UV = ("studio-pinned-drawings", "studio-wall-kit", "studio-desk-clutter", "studio-architecture")
 # The rebuilt city (FB) is authored at emission 1.0; under the filmic curve and a 0.7 bloom threshold its window lights
 # stayed under the bloom, so its strength is raised here until they cross it (spark vr-fidelity-40 FC2).
-EMISSIVE_OVERRIDE = {"city_backdrop_emissive": 3.0}
+EMISSIVE_OVERRIDE = {"city_backdrop_emissive": 3.0, "bulb_glow": 6.0}  # the pendants' bulbs cross the bloom (FF)
 LAMP = "/Game/Bp/Art/LampAgentStatic"
 LAMP_SOURCE = "final_working.glb"
 LAMP_MATERIAL = "/Game/Bp/Materials/M_LampAgentFid"
@@ -42,7 +52,7 @@ LAMP_CARD_MATERIAL = "/Game/Bp/Materials/M_LampAgentGlowCard"
 # (FB's hand-over, spark vr-fidelity-40). L5.7 drives GlowStrength per state on the instances that carry it.
 LAMP_GLOW = 5.0
 LAMP_GLOW_COLOUR = "#FFA94D"
-LAMP_HOOD_SCALE = 0.15
+LAMP_HOOD_SCALE = 0.05  # 0.15 until FF: the bowl read flat amber; darker it reads glossy, lit by AgentGlow
 LAMP_CARD_GLOW = 1.5
 # Shell: base colour texture x lerp(1, AO, AO_MIX) from the ORM's R (the forward path's SSAO is weak).
 LAMP_AO_MIX = 0.6
@@ -83,11 +93,20 @@ for art_id, folder, name in GLBS:
     source = os.path.join(ART, art_id, "final.glb")
     dest = "/Game/Bp/Art/" + folder
     imported = import_one(source, dest, name)
-    mesh = unreal.load_asset(dest + "/final/StaticMeshes/" + name)
-    nanite = mesh.get_editor_property("nanite_settings")
-    nanite.set_editor_property("enabled", False)
-    mesh.set_editor_property("nanite_settings", nanite)
-    unreal.EditorAssetLibrary.save_loaded_asset(mesh, only_if_is_dirty=False)
+    meshes = [unreal.load_asset(dest + "/final/StaticMeshes/" + n) for n in MULTI_MESH.get(art_id, (name,))]
+    for mesh in meshes:
+        nanite = mesh.get_editor_property("nanite_settings")
+        nanite.set_editor_property("enabled", False)
+        mesh.set_editor_property("nanite_settings", nanite)
+        if art_id in OWN_LIGHTMAP_UV:
+            sme = unreal.get_editor_subsystem(unreal.StaticMeshEditorSubsystem)
+            build = sme.get_lod_build_settings(mesh, 0)
+            build.set_editor_property("generate_lightmap_u_vs", True)
+            build.set_editor_property("src_lightmap_index", 0)
+            build.set_editor_property("dst_lightmap_index", 1)
+            sme.set_lod_build_settings(mesh, 0, build)
+            mesh.set_editor_property("light_map_coordinate_index", 1)
+        unreal.EditorAssetLibrary.save_loaded_asset(mesh, only_if_is_dirty=False)
     copied = {}
     for m in glb_materials(source):
         mi = unreal.load_asset(dest + "/final/Materials/" + m["name"])
@@ -112,13 +131,15 @@ for art_id, folder, name in GLBS:
             mel.set_material_instance_scalar_parameter_value(mi, key, value)
         unreal.EditorAssetLibrary.save_loaded_asset(mi, only_if_is_dirty=False)
         copied[m["name"]] = sorted(list(values) + list(scalars))
-    box = mesh.get_bounding_box()
-    result["glb"][folder] = {
-        "mesh": mesh.get_path_name(), "imported": len(imported), "nanite": nanite.get_editor_property("enabled"),
-        "tris": mesh.get_num_triangles(0), "sections": mesh.get_num_sections(0),
-        "bounds_cm": [round(v, 2) for v in (box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z)],
-        "copied": copied,
-    }
+    for mesh in meshes:
+        box = mesh.get_bounding_box()
+        result["glb"][mesh.get_name()] = {
+            "mesh": mesh.get_path_name(), "imported": len(imported),
+            "nanite": mesh.get_editor_property("nanite_settings").get_editor_property("enabled"),
+            "tris": mesh.get_num_triangles(0), "sections": mesh.get_num_sections(0),
+            "bounds_cm": [round(v, 2) for v in (box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z)],
+            "copied": copied,
+        }
 
 # The lamp agent (spark vr-fidelity-40): FB's rebuilt figure, final_working.glb, placed as a STATIC mesh in its working
 # pose (5 sections, no skinning; final.fbx keeps the rig for L5.7). The GLB carries flat factors and no images, so its
@@ -265,8 +286,9 @@ SLOTS = {  # slot: (parent, vectors, scalars), from the GLB's factors and FB's h
     "agent_shell": (lm, {"BaseColor": V(0.8, 0.79, 0.77, 1.0)},
                     {"UseTexture": 1.0, "AOMix": LAMP_AO_MIX, "Roughness": 0.35, "Metallic": 0.0, "Haze": 0.5,
                      "ClearCoatRoughness": 0.08, "GlowStrength": 0.0}),
+    # The bowl (FD): its base texture is dark now, and at 0.12 it mirrors the orb as the concept's glossy bowl does.
     "agent_hood_inner": (lm, {"BaseColor": V(0.8, 0.79, 0.77, 1.0), "GlowColor": glow_lin},
-                         {"UseTexture": 1.0, "AOMix": LAMP_AO_MIX, "Roughness": 0.45, "Metallic": 0.0, "Haze": 0.3,
+                         {"UseTexture": 1.0, "AOMix": LAMP_AO_MIX, "Roughness": 0.12, "Metallic": 0.0, "Haze": 0.3,
                           "ClearCoatRoughness": 0.05, "GlowStrength": LAMP_GLOW, "GlowScale": LAMP_HOOD_SCALE}),
     "agent_joint": (lm, {"BaseColor": V(0.0423, 0.0467, 0.0545, 1.0)},
                     {"UseTexture": 0.0, "Roughness": 0.38, "Metallic": 1.0, "Haze": 0.0, "GlowStrength": 0.0}),

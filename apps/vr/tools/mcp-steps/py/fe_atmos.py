@@ -20,7 +20,7 @@ SHAFT = "/Game/Bp/Materials/M_HazeShaft"
 # (label, apex cm, direction, length cm, base radius cm, linear colour, glow)
 SHAFTS = [
     ("HazeWindowShaft", (255.0, 115.0, 215.0), (-0.82, 0.0, -0.57), 180.0, 60.0, (0.35, 0.55, 1.0), 0.09),
-    ("HazeDeskLampShaft", (110.0, -112.0, 106.0), (0.0, 0.0, -1.0), 30.0, 14.0, (1.0, 0.62, 0.30), 0.07),
+    ("HazeDeskLampShaft", (110.0, -102.0, 106.0), (0.0, 0.0, -1.0), 30.0, 14.0, (1.0, 0.62, 0.30), 0.07),
 ]
 
 eas = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)

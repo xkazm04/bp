@@ -47,7 +47,8 @@ STUDIO_ROUGHNESS = 0.7
 DESK = "#14110F"  # the side desks: a dark stained top a step above the walls
 DESK_ROUGHNESS = 0.8  # at 0.5 the tops mirrored the bright table capture white at grazing angles (FC2)
 # Side desks behind the table's far corners (centre x, centre y, size x, size y, top height).
-LEFT_DESK = (95.0, -150.0, 60.0, 110.0, 75.0)
+# The left desk is 140 cm long since FF, so FD's desk clutter (87 cm) and the desk lamp stand side by side.
+LEFT_DESK = (95.0, -160.0, 60.0, 140.0, 75.0)
 RIGHT_DESK = (100.0, 150.0, 60.0, 110.0, 75.0)
 
 # Lights. The doubled ones (candela), summed: 2 x 60, 2 x 70, 2 x 40.
@@ -106,9 +107,19 @@ PAPER_NEAR_X = -38.0
 PAPER_Z = TABLE_TOP - 0.8
 HANDS_IN = 4.0
 HANDS_YAW = 90.0
-# The wrist panel's point on the left hand, in the hand mesh's axes (cm): the manifest's left wrist is (-19, -6, 5) cm in
-# Blender; the point sits over the sleeve's cuff, lifted, as the concept's panel floats over the wrist.
-WRIST_LOCAL = (-29.0, 13.0, 9.0)
+# The wrist panel's point on the left hand, in the hand mesh's axes (cm): the watch's centre (FD's manifest: Blender
+# (-21.8, -1.5, 12.95) cm, so UE mesh (-21.8, 1.5, 12.95): Interchange negates Y) lifted to the face's top; the panel's
+# own offset from it is BpPawn::WristCapture*.
+WRIST_LOCAL = (-21.8, 1.5, 13.4)
+
+# FD's pendant lamps over the side desks (spark vr-fidelity-40 FF): pivot at the canopy, dome rim PENDANT_DROP below it.
+# Hung from the ceiling (pivot at 300) they sit above the target pose's frame (its top edge is about 1.3 m up on the back
+# wall), so the pivots hang lower, the bulbs about 55 cm over the desks, and a cord box in the shell runs to the ceiling.
+PENDANTS = [(LEFT_DESK[0], LEFT_DESK[1] - 15.0, 233.0), (RIGHT_DESK[0], RIGHT_DESK[1], 233.0)]  # left: over the binders
+PENDANT_BULB = 107.0  # the bulb sits about 102 cm below the pivot (FD); its light just under the glass, out of its shadow
+PENDANT_CD = 0.6
+PENDANT_RADIUS = 220.0
+PENDANT_LIGHT = unreal.Color(r=255, g=194, b=122, a=255)  # #FFC27A
 
 ART = "/Game/Bp/Art/"
 MESHES = {
@@ -118,6 +129,10 @@ MESHES = {
     "tubes": ART + "StudioDrawingTubes/final/StaticMeshes/SM_StudioDrawingTubes",
     "mug": ART + "StudioMug/final/StaticMeshes/SM_StudioMug",
     "backdrop": ART + "CityBackdrop/final/StaticMeshes/SM_CityBackdrop",
+    "wall_kit": ART + "StudioWallKit/final/StaticMeshes/SM_StudioWallKit",
+    "clutter": ART + "StudioDeskClutter/final/StaticMeshes/SM_StudioDeskClutter",
+    "window": ART + "StudioArchitecture/final/StaticMeshes/window_frame",
+    "pendant": ART + "StudioArchitecture/final/StaticMeshes/pendant_lamp",
 }
 # label, mesh, location, yaw. The second shelf unit costs no draw: the engine instances the two identical meshes into
 # the same draws (target pose, CSV profiler: 37 base-pass draws with one unit or two, Lynx 2026-10-24).
@@ -129,15 +144,25 @@ PROPS = [
     ("StudioShelves4", "shelves", (ROOM_X[1] - 16.0, -235.0, 128.0), -90.0),
     ("StudioPinnedDrawings", "drawings", (ROOM_X[1] - 3.0, -40.0, 80.0), 90.0),
     # The concept's top-left wall of drawings: more on the back wall and on the left wall, facing the room (+Y).
-    ("StudioPinnedDrawings2", "drawings", (60.0, ROOM_Y[0] + 3.0, 140.0), 180.0),
-    ("StudioPinnedDrawings3", "drawings", (-70.0, ROOM_Y[0] + 3.0, 140.0), 180.0),
-    ("StudioPinnedDrawings4", "drawings", (ROOM_X[1] - 3.0, -40.0, 150.0), 90.0),
-    ("StudioDeskLamp", "desk_lamp", (LEFT_DESK[0] + 10.0, LEFT_DESK[1] + 35.0, LEFT_DESK[4]), 150.0),
+    # FD's wall kit (spark vr-fidelity-40 FF): frames and a pinboard on the left wall, where PinnedDrawings2 and 3 were,
+    # and a copy on the back wall between the shelves and the window, where the target pose sees it (the left wall is
+    # outside its 90-degree view), scaled (PROP_SCALE) to the 136 cm between them. The two share one mesh. Yaw: the kit
+    # stands out of its wall towards its own +Y (bounds), which yaw 0 turns to +Y and yaw 90 to -X (seen, Lynx 2026-10-25).
+    ("StudioWallKit", "wall_kit", (-10.0, ROOM_Y[0], 110.0), 0.0),
+    ("StudioWallKitBack", "wall_kit", (ROOM_X[1], -28.0, 135.0), 90.0),
+    ("StudioDeskLamp", "desk_lamp", (LEFT_DESK[0] + 10.0, LEFT_DESK[1] + 55.0, LEFT_DESK[4]), 150.0),
+    # FD's desk clutter on the left desk, spines to the room, beside the lamp.
+    ("StudioDeskClutter", "clutter", (LEFT_DESK[0], LEFT_DESK[1] - 23.0, LEFT_DESK[4]), 90.0),
+    # FD's window frame in the back wall's opening: pivot at the opening's bottom centre on the wall's inside face.
+    ("StudioWindowFrame", "window", (ROOM_X[1], (WINDOW_Y[0] + WINDOW_Y[1]) / 2, WINDOW_Z[0]), 90.0),
     ("StudioDrawingTubes", "tubes", (RIGHT_DESK[0] + 15.0, RIGHT_DESK[1] + 30.0, RIGHT_DESK[4]), 0.0),
     # FA's hand-over: the concept's mug stands by the table's far right corner, so on the right desk's near corner.
     ("StudioMug", "mug", (RIGHT_DESK[0] - 22.0, RIGHT_DESK[1] - 48.0, RIGHT_DESK[4]), 200.0),
     ("CityBackdrop", "backdrop", (0.0, 0.0, 0.0), 90.0),
-]
+] + [("StudioPendant%d" % (i + 1), "pendant", p, 0.0) for i, p in enumerate(PENDANTS)]
+# The desk clutter is mirrored along its length (its X), so its binders stand by the desk lamp and its white rolls at
+# the desk's far end: beside the lamp the rolls clipped white in the target frame's corner (Lynx, 2026-10-25).
+PROP_SCALE = {"StudioWallKitBack": (0.68, 0.68, 0.68), "StudioDeskClutter": (-1.0, 1.0, 1.0)}
 
 les = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
 eas = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
@@ -260,10 +285,11 @@ box(x1, x1 + WALL, y0, WINDOW_Y[0], 0.0, ROOM_H, S)
 box(x1, x1 + WALL, WINDOW_Y[1], y1, 0.0, ROOM_H, S)
 box(x1, x1 + WALL, WINDOW_Y[0], WINDOW_Y[1], 0.0, WINDOW_Z[0], S)
 box(x1, x1 + WALL, WINDOW_Y[0], WINDOW_Y[1], WINDOW_Z[1], ROOM_H, S)
-# A mullion and a transom, so the opening reads as a window.
+# The window's mullions and transoms are FD's window frame now (a prop below), not shell boxes.
 mid = (WINDOW_Y[0] + WINDOW_Y[1]) / 2
-box(x1, x1 + MULLION, mid - MULLION / 2, mid + MULLION / 2, WINDOW_Z[0], WINDOW_Z[1], S)
-box(x1, x1 + MULLION, WINDOW_Y[0], WINDOW_Y[1], 200.0 - MULLION / 2, 200.0 + MULLION / 2, S)
+# The pendants' cords above their meshes (PENDANTS): a thin dark rod from the canopy height to the ceiling.
+for px, py, pz in PENDANTS:
+    box(px - 0.4, px + 0.4, py - 0.4, py + 0.4, pz, ROOM_H, S)
 # Side desks: a top and two end panels each.
 for cx, cy, sx, sy, top in (LEFT_DESK, RIGHT_DESK):
     box(cx - sx / 2, cx + sx / 2, cy - sy / 2, cy + sy / 2, top - 4.0, top, "MI_StudioDesk")
@@ -297,6 +323,8 @@ placed = {}
 for label, key, loc, yaw in PROPS:
     a = eas.spawn_actor_from_object(unreal.load_asset(MESHES[key]), unreal.Vector(*loc), unreal.Rotator(0.0, 0.0, yaw))
     tagged(a, label)
+    if label in PROP_SCALE:
+        a.set_actor_scale3d(unreal.Vector(*PROP_SCALE[label]))
     c = a.static_mesh_component
     c.set_editor_property("mobility", unreal.ComponentMobility.STATIC)
     c.set_editor_property("cast_shadow", True)
@@ -382,6 +410,10 @@ front.get_component_by_class(unreal.PointLightComponent).set_editor_property("sp
 # Under the ceiling over the table (FC2): at (130, 0, 210) its baked hotspot on the back wall mirrored in the table's glass
 # as a white disc mid-sheet.
 point("RoomFill", (40.0, 0.0, ROOM_H - 15.0), ROOM_FILL_CD, ROOM_FILL_RADIUS, ROOM_GREY, channels(ROOM))
+# The pendants' bulbs: small warm static lights, baked with their soft shadows (the domes cast).
+for i, (px, py, pz) in enumerate(PENDANTS):
+    bulb = point("PendantBulb%d" % (i + 1), (px, py, pz - PENDANT_BULB), PENDANT_CD, PENDANT_RADIUS, PENDANT_LIGHT, channels(ROOM))
+    bulb.get_component_by_class(unreal.PointLightComponent).set_editor_property("cast_shadows", True)
 win = tagged(eas.spawn_actor_from_class(unreal.SpotLight, unreal.Vector(ROOM_X[1] + 60.0, mid, 260.0),
                                         unreal.Rotator(0.0, -35.0, 180.0)), "WindowSpill")
 wl = win.get_component_by_class(unreal.SpotLightComponent)
