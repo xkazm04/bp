@@ -176,8 +176,8 @@ export type CompareTheme = 'light' | 'dark' | 'both';
 export type CompareMode = (typeof COMPARE_MODES)[number]['value'];
 export interface CompareView { theme: CompareTheme; mode: CompareMode }
 export const EMPTY_UI: LedgerUi = {
-  sel: new Set(), lens: new Set(), status: new Set(), feat: new Set(), q: '', focus: null,
-  scope: 'packs', open: null, cmp: { theme: 'light', mode: 'side' }, wide: false, pending: new Map(), intents: new Map(), note: null, last: null, wave: null, composer: null,
+  sel: new Set(), lens: new Set(), status: new Set(['proposed']), feat: new Set(), q: '', focus: null,
+  scope: 'backlog', open: null, cmp: { theme: 'light', mode: 'side' }, wide: false, pending: new Map(), intents: new Map(), note: null, last: null, wave: null, composer: null,
 };
 export type SetUi = (f: (u: LedgerUi) => LedgerUi) => void;
 /** The page state in another scope: its per-scope fields start over (the last decision too: Undo never reaches into a

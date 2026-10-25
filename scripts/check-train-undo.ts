@@ -174,8 +174,8 @@ render(h(Decide, { ids: [] })); // the module store now belongs to product 'synt
 // ------------------------------------------------------------------------------------------- 8. resets
 {
   reset(last1);
-  const s = fn(U, 'switchScope') ? U.switchScope(peek(), 'backlog') : null;
-  caseOk(8, !!s && s.scope === 'backlog' && s.last === null, 'switchScope clears last (' + JSON.stringify(s?.last) + ')');
+  const s = fn(U, 'switchScope') ? U.switchScope(peek(), 'packs') : null;
+  caseOk(8, !!s && s.scope === 'packs' && s.last === null, 'switchScope clears last (' + JSON.stringify(s?.last) + ')');
   caseOk(8, 'last' in EMPTY_UI && EMPTY_UI.last === null, 'EMPTY_UI.last is null');
   reset(last1);
   function Other() { useLedgerUi('another-product'); return null; }
