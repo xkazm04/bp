@@ -666,6 +666,42 @@ def surface(name, scans, tint, scan=None, var=0.6, keep_hue=0.0, rough=(0.5, 0.7
     return m
 
 
+def sock_save():
+    """Stores each bake-source material's SOCK entry on the material (custom property 'bake_sock'), so a .blend saved
+    after the build can be baked by another Blender process (a GPU build) that calls sock_load() first."""
+    for name, s in SOCK.items():
+        m = bpy.data.materials.get(name)
+        if m is None:
+            continue
+        rec = {}
+        for k, v in s.items():
+            if isinstance(v, bpy.types.NodeSocket):
+                rec[k] = ['s', v.node.name, v.identifier, v.is_output]
+            elif isinstance(v, bpy.types.Node):
+                rec[k] = ['n', v.name]
+            else:
+                rec[k] = ['v', v]
+        m['bake_sock'] = json.dumps(rec)
+
+
+def sock_load():
+    """Rebuilds SOCK from the 'bake_sock' properties sock_save() wrote (after bpy.ops.wm.open_mainfile)."""
+    SOCK.clear()
+    for m in bpy.data.materials:
+        if 'bake_sock' not in m:
+            continue
+        s = {}
+        for k, (t, *a) in json.loads(m['bake_sock']).items():
+            if t == 's':
+                node = m.node_tree.nodes[a[0]]
+                s[k] = next(x for x in (node.outputs if a[2] else node.inputs) if x.identifier == a[1])
+            elif t == 'n':
+                s[k] = m.node_tree.nodes[a[0]]
+            else:
+                s[k] = a[0]
+        SOCK[m.name] = s
+
+
 def placeholder(name):
     """A bake-time material for a slot that is not baked (glow, glass, printed sheets): black emission, an image node so
     Cycles has an active target (its faces sit on a zero-area UV and write no pixel)."""
@@ -729,8 +765,10 @@ def png(path, arr):
     bpy.data.images.remove(img)
 
 
-def bake(ob, res, folder, prefix, ao_distance=0.1, ao_in_base=0.55, samples_ao=48, margin=12):
+def bake(ob, res, folder, prefix, ao_distance=0.1, ao_in_base=0.55, samples_ao=48, margin=12, device='CPU'):
     """Bakes the object's bake-source materials into <folder>/<prefix>_{basecolor,orm,normal}.png at res x res.
+    device 'CPU' (any build), or 'CUDA' / 'OPTIX' on a build whose Cycles has GPU devices (5.3+ on Lynx; r7: OptiX bakes
+    a face lying on another face bright, so a prop whose shells touch bakes on CUDA).
     Emit bakes carry albedo, roughness and metal; Cycles bakes AO (world distance ao_distance) and the tangent-space
     normal (OpenGL, the glTF convention). Basecolor = albedo x lerp(1, AO, ao_in_base): our forward-shaded UE scene has
     no runtime AO and almost no sky light, so the occlusion that grounds the prop lives in its colour as well as in ORM.R.
@@ -738,7 +776,17 @@ def bake(ob, res, folder, prefix, ao_distance=0.1, ao_in_base=0.55, samples_ao=4
     import time
     sc = bpy.context.scene
     sc.render.engine = 'CYCLES'
-    sc.cycles.device = 'CPU'
+    if device == 'CPU':
+        sc.cycles.device = 'CPU'
+    else:
+        cp = bpy.context.preferences.addons['cycles'].preferences
+        cp.compute_device_type = device
+        cp.refresh_devices()
+        for d in cp.devices:
+            d.use = d.type == device
+        if not any(d.use for d in cp.devices):
+            raise RuntimeError('no %s device in this Blender build' % device)
+        sc.cycles.device = 'GPU'
     sc.render.bake.margin = margin
     if sc.world is None:
         sc.world = bpy.data.worlds.new('bake')
@@ -769,7 +817,7 @@ def bake(ob, res, folder, prefix, ao_distance=0.1, ao_in_base=0.55, samples_ao=4
     png(paths['base'], lin_to_srgb(base))
     png(paths['orm'], np.dstack([ao[:, :, 0], out['rough'][:, :, 0], out['metal'][:, :, 0]]))
     png(paths['normal'], out['normal'])
-    stats = {'seconds': secs, 'ao_mean': round(float(ao.mean()), 3), 'rough_range': [round(float(np.percentile(out['rough'][:, :, 0], q)), 3) for q in (5, 95)]}
+    stats = {'device': device, 'seconds': secs, 'ao_mean': round(float(ao.mean()), 3), 'rough_range': [round(float(np.percentile(out['rough'][:, :, 0], q)), 3) for q in (5, 95)]}
     return paths, stats
 
 
