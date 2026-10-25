@@ -12,6 +12,7 @@
 // the cut starts (note `bp-job:<id> · release <rel> at <sha>`), when it got that far.
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, RUN_NOTE_PREFIX, SAFE_ID, type ReleaseStep, type ScanJob, type ScanScope } from '../scan/jobs.ts';
 import { RELEASE_ID } from '../scan/release.ts';
@@ -98,6 +99,44 @@ function killPid(pid: number, fallback: () => void = () => { /* gone */ }): void
 }
 
 const pidAlive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch (e) { return (e as NodeJS.ErrnoException).code === 'EPERM'; } };
+
+// ------------------------------------------------------------------------------------ the skill
+// Every job prompt is a `/lens-scan ...` slash command, which the CLI runs only when it can see the skill from the product
+// repo. Without it the CLI answers in prose, exits 0 and writes no run: found 2026-10-25, a Grinex performance scan "failed"
+// after 13 s with the CLI's closing question as its error (an execute run on 2026-10-19 the same way). So a job checks first.
+export const NO_JOB_SKILL = 'the lens-scan skill is not visible from this product repo, so Claude Code cannot run /lens-scan there';
+
+const samePath = (a: string, b: string) => process.platform === 'win32' ? path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase() : path.resolve(a) === path.resolve(b);
+
+/** Where the CLI started in `root` finds a `lens-scan` skill: `.claude/skills/lens-scan` in the root or an ancestor, the user's
+ *  `<configDir>/skills/lens-scan`, or the `skills/lens-scan` of an installed plugin (user scope, or project scope for the root or
+ *  an ancestor). A candidate counts only with a SKILL.md through realpath, so a link to a deleted worktree is missing. null = none. */
+export function jobSkillIn(root: string, configDir: string): string | null {
+  const has = (dir: string): string | null => { try { const r = fs.realpathSync(dir); return fs.existsSync(path.join(r, 'SKILL.md')) ? r : null; } catch { return null; } };
+  const ups: string[] = [];
+  for (let d = path.resolve(root); ; d = path.dirname(d)) { ups.push(d); if (path.dirname(d) === d) break; }
+  for (const d of ups) { const f = has(path.join(d, '.claude', 'skills', 'lens-scan')); if (f) return f; }
+  const user = has(path.join(configDir, 'skills', 'lens-scan'));
+  if (user) return user;
+  let reg: { plugins?: Record<string, { scope?: string; projectPath?: string; installPath?: string }[]> };
+  try { reg = JSON.parse(fs.readFileSync(path.join(configDir, 'plugins', 'installed_plugins.json'), 'utf8')); } catch { return null; }
+  for (const xs of Object.values(reg?.plugins ?? {})) for (const x of Array.isArray(xs) ? xs : []) {
+    const mine = x?.scope === 'user' || (typeof x?.projectPath === 'string' && ups.some((d) => samePath(d, x.projectPath!)));
+    const f = mine && typeof x.installPath === 'string' ? has(path.join(x.installPath, 'skills', 'lens-scan')) : null;
+    if (f) return f;
+  }
+  return null;
+}
+
+/** Why a job in `root` cannot run its slash command, or null. A .js/.mjs BP_CLAUDE_BIN is a stand-in that loads no skills, and a
+ *  CLI that cannot be started is spawnCli's to report (CLI_MISSING says more than a missing skill). */
+function skillMissing(root: string): string | null {
+  if (/\.(mjs|cjs|js)$/i.test(process.env.BP_CLAUDE_BIN ?? '')) return null;
+  const cli = resolveCli([]);
+  if (cli === null || typeof cli === 'string') return null;
+  if (jobSkillIn(root, process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'))) return null;
+  return `${NO_JOB_SKILL}: link the ai-registry skill to ${path.join(root, '.claude', 'skills', 'lens-scan')} (or ~/.claude/skills/lens-scan)`;
+}
 
 // ------------------------------------------------------------------------------------ registry
 type Listener = (jobs: ScanJob[]) => void;
@@ -436,6 +475,8 @@ function start(slug: string, r: Rec): void {
     // child is gone. The job's own answer cannot carry it (it reports the run, not the logging), so the server says it.
     warnOnce('job log ' + path.join(r.root, '.ai', 'lens-scan', 'work', 'bp-jobs', r.job.id + '.log'), e);
   }
+  const noSkill = skillMissing(r.root);
+  if (noSkill) { r.log?.write(`# ${noSkill}\n`); finish(slug, r, 'failed', { error: noSkill }); return; }
   const args = [...JOB_ARGS, ...(r.job.model ? ['--model', r.job.model] : []), ...(r.job.effort ? ['--effort', r.job.effort] : [])]; // allow-listed at enqueue
   const s = spawnCli(args, r.root, { ...process.env, BP_JOB_ID: r.job.id });
   if (!s.ok) { finish(slug, r, 'failed', { error: s.error }); return; }
@@ -521,16 +562,28 @@ function settleRelease(slug: string, r: Rec, attempt: number): void {
   finish(slug, r, 'failed', { ...extra, error: failedLine(r) ?? why ?? refusal(r) });
 }
 
+/** The log's lines as plain text: a reply is markdown, so a `**lens-scan refused: ...**` line (Grinex, 2026-10-25) loses its
+ *  list, quote and heading marks and its emphasis before a line is matched or quoted as an error. */
+const plainLines = (buf: string): string[] => buf.replace(/\r/g, '').split('\n')
+  .map((l) => l.trim().replace(/^(?:[>#]+\s*|[-*+]\s+)+/, '').replace(/\*\*|__/g, '').trim()).filter(Boolean);
+
 /** lens-scan's `lens-scan release failed: <what>` or `lens-scan refused: <why>` line, the latest one. */
 function failedLine(r: Rec): string | undefined {
-  const lines = r.buf.replace(/\r/g, '').split('\n').map((l) => l.trim()).filter(Boolean);
+  const lines = plainLines(r.buf);
   return [...lines].reverse().find((l) => l.startsWith('lens-scan release failed:') || l.startsWith('lens-scan refused:'));
 }
 
-/** Why a job that exited 0 made no run: lens-scan's `lens-scan refused: <why>` line, else the last log line. */
+/** The CLI saying it has no lens-scan skill: `/lens-scan isn't installed`, `is not available`, `Unknown skill: lens-scan`. */
+export const SKILL_ABSENT = /lens-scan\W{0,4}\s+(?:isn['’]t|is not)\s+(?:installed|available)|unknown (?:skill|slash command|command)\W{0,3}\s*\/?lens-scan/i;
+
+/** Why a job that exited 0 made no run: lens-scan's `lens-scan refused: <why>` line; else, when the CLI said it has no lens-scan
+ *  skill, that (its last line is then a question to a person nobody is there to answer); else the last log line. */
 function refusal(r: Rec): string {
-  const lines = r.buf.replace(/\r/g, '').split('\n').map((l) => l.trim()).filter(Boolean);
-  return [...lines].reverse().find((l) => l.startsWith('lens-scan refused:')) ?? lines[lines.length - 1] ?? 'the run never started (no run in the store)';
+  const lines = plainLines(r.buf);
+  const refused = [...lines].reverse().find((l) => l.startsWith('lens-scan refused:'));
+  if (refused) return refused;
+  if (lines.some((l) => SKILL_ABSENT.test(l))) return NO_JOB_SKILL + ' (the CLI said so and wrote no run)';
+  return lines[lines.length - 1] ?? 'the run never started (no run in the store)';
 }
 
 /** A store run whose note is `bp-job:<id>` (or `bp-job:<id> <more>`) belongs to that job: remember its run id. true = something changed. */

@@ -39,6 +39,7 @@ process.env.BP_CLAUDE_BIN = FAKE;
 
 const J = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/server/jobs.server.ts')).href) as typeof import('../packages/core/src/server/jobs.server.ts');
 const { parseDraftReply } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/scan/lens-draft.ts')).href) as typeof import('../packages/core/src/scan/lens-draft.ts');
+const { logBlocks, spans } = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/lib/scan/log-md.ts')).href) as typeof import('../apps/web/src/lib/scan/log-md.ts');
 const { scopeFeatures } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/scan/scope.ts')).href) as typeof import('../packages/core/src/scan/scope.ts');
 const { checkLensManifest } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/scan/manifest-check.ts')).href) as typeof import('../packages/core/src/scan/manifest-check.ts');
 const { ScanSim } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/model/scan-sim.ts')).href) as typeof import('../packages/core/src/model/scan-sim.ts');
@@ -117,6 +118,52 @@ try {
   check('exit 3 -> failed, exit_code 3, error = last stderr line', jf?.status === 'failed' && jf.exit_code === 3 && jf.error === 'boom: failed on purpose', JSON.stringify(jf));
   check('failed: log_tail holds the last lines', (jf?.log_tail ?? '').includes('boom: failed on purpose') && (jf?.log_tail ?? '').split('\n').length <= 20);
   check('exit 0 without a run -> failed with the refusal line', jr?.status === 'failed' && jr.error === 'lens-scan refused: unknown slug' && jr.run_id === undefined, JSON.stringify(jr));
+  const f4 = J.enqueueMeasure('fail', fr, 'mdrefuse', ALL);
+  await until(() => !!f4.ok && job('fail', f4.job.id)?.status === 'failed');
+  const jm = f4.ok ? job('fail', f4.job.id)?.error : undefined;
+  check('a bold refusal line in a markdown reply is still the error, without its stars', jm === 'lens-scan refused: the performance lens has nothing it can measure in this repo. No run started.', JSON.stringify(jm));
+  // a CLI that has no lens-scan skill answers in prose and ends on a question: the error names the skill, not the question
+  const f3 = J.enqueueMeasure('fail', fr, 'absent', ALL);
+  await until(() => !!f3.ok && job('fail', f3.job.id)?.status === 'failed');
+  const ja = f3.ok ? job('fail', f3.job.id) : undefined;
+  check('exit 0, "isn\'t installed" -> failed naming the missing skill', !!ja?.error?.startsWith(J.NO_JOB_SKILL), JSON.stringify(ja?.error));
+  check('SKILL_ABSENT reads the CLI\'s wordings', ["`/lens-scan` isn't installed in this session", '**`/lens-scan` is not installed in this session**', 'Unknown skill: lens-scan'].every((t) => J.SKILL_ABSENT.test(t)) && !J.SKILL_ABSENT.test('lens-scan measured 12 features'));
+  // the Agents rail reads a job log as the markdown a reply is written in (log-md.ts): text spans only, a cut fence still closes
+  {
+    const bs = logBlocks(ja?.log_tail ?? '');
+    check('log md: the reply reads as paragraphs and a list item, its code as code', bs.some((b) => b.k === 'p' && b.spans.some((x) => x.t === 'code' && x.s === '/lens-scan'))
+      && bs.some((b) => b.k === 'li' && !b.ordered && b.spans.some((x) => x.t === 'code' && x.s === 'tasks/')), JSON.stringify(bs));
+    const sp = spans('**`/lens-scan` is not installed**, a ** stray and `x');
+    check('log md: code inside bold stays code, the rest bold; unclosed markers stay literal', JSON.stringify(sp) === JSON.stringify([{ t: 'code', s: '/lens-scan' }, { t: 'b', s: ' is not installed' }, { t: 'text', s: ', a ** stray and `x' }]), JSON.stringify(sp));
+    const md = logBlocks('## Plan\n1. **Map first.** go\n   - nested\n```\n<b>x</b>');
+    check('log md: heading, ordered item, nested item, an unclosed fence runs to the end', md.map((b) => b.k + (b.k === 'li' ? b.n + b.depth : '')).join() === 'h,li1.0,li1,code'
+      && md[3].k === 'code' && md[3].text === '<b>x</b>', JSON.stringify(md));
+  }
+  // where a job's CLI finds the skill: the repo or an ancestor, the config dir, an installed plugin; a dangling link is missing
+  {
+    const sk = path.join(dir, 'skill-look'), cfg = path.join(sk, 'cfg'), deep = path.join(sk, 'outer', 'repo');
+    const put = (d: string) => { fs.mkdirSync(d, { recursive: true }); fs.writeFileSync(path.join(d, 'SKILL.md'), '# lens-scan\n'); };
+    fs.mkdirSync(deep, { recursive: true }); fs.mkdirSync(cfg, { recursive: true });
+    check('skill: none anywhere -> null', J.jobSkillIn(deep, cfg) === null);
+    fs.mkdirSync(path.join(deep, '.claude', 'skills', 'lens-scan'), { recursive: true });
+    check('skill: a lens-scan dir without SKILL.md is missing', J.jobSkillIn(deep, cfg) === null);
+    put(path.join(sk, 'outer', '.claude', 'skills', 'lens-scan'));
+    check('skill: an ancestor\'s .claude/skills counts', J.jobSkillIn(deep, cfg) !== null);
+    fs.rmSync(path.join(sk, 'outer', '.claude'), { recursive: true });
+    put(path.join(sk, 'plug', 'skills', 'lens-scan'));
+    const plugins = (scope: string, projectPath?: string) => fs.writeFileSync(path.join(cfg, 'plugins', 'installed_plugins.json'),
+      JSON.stringify({ version: 2, plugins: { 'ls@x': [{ scope, installPath: path.join(sk, 'plug'), ...(projectPath ? { projectPath } : {}) }] } }));
+    fs.mkdirSync(path.join(cfg, 'plugins'), { recursive: true });
+    plugins('project', path.join(sk, 'elsewhere'));
+    check('skill: a plugin installed for another project does not count', J.jobSkillIn(deep, cfg) === null);
+    plugins('project', deep);
+    check('skill: a plugin installed for this project counts', J.jobSkillIn(deep, cfg) !== null);
+    plugins('user');
+    check('skill: a user-scope plugin counts', J.jobSkillIn(deep, cfg) !== null);
+    fs.rmSync(path.join(cfg, 'plugins'), { recursive: true });
+    put(path.join(cfg, 'skills', 'lens-scan'));
+    check('skill: <config>/skills/lens-scan counts', J.jobSkillIn(deep, cfg) !== null);
+  }
   process.env.BP_CLAUDE_BIN = path.join(dir, 'no-such-cli.mjs');
   const m1 = J.enqueueMeasure('fail', fr, 'x', ALL);
   await until(() => !!m1.ok && job('fail', m1.job.id)?.status === 'failed');
@@ -125,6 +172,14 @@ try {
   const m2 = J.enqueueMeasure('fail', fr, 'x', ALL);
   await until(() => !!m2.ok && job('fail', m2.job.id)?.status === 'failed');
   check('missing CLI (not on PATH) -> failed, CLI not found', m2.ok && job('fail', m2.job.id)?.error === J.CLI_MISSING, JSON.stringify(m2.ok && job('fail', m2.job.id)));
+  // a real CLI (any executable that is no .js stand-in: this Node) in a repo that cannot see the skill fails before it spawns
+  const cfg0 = process.env.CLAUDE_CONFIG_DIR;
+  process.env.BP_CLAUDE_BIN = process.execPath; process.env.CLAUDE_CONFIG_DIR = path.join(dir, 'empty-config');
+  const sk3 = J.enqueueMeasure('fail', fr, 'x', ALL);
+  await until(() => !!sk3.ok && job('fail', sk3.job.id)?.status === 'failed');
+  const j3 = sk3.ok ? job('fail', sk3.job.id) : undefined;
+  check('no lens-scan skill -> failed before spawning, naming it', !!j3?.error?.startsWith(J.NO_JOB_SKILL) && j3.exit_code === undefined && !j3.log_tail, JSON.stringify(j3));
+  if (cfg0 === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = cfg0;
   process.env.BP_CLAUDE_BIN = FAKE;
 
   // ------------------------------------------------------------------ unsafe ids never spawn
