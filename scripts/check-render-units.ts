@@ -543,7 +543,7 @@ function traced(fn: () => void): string[] {
   // a text metric that follows the font's size (0.6 em a character), so the second sizing pass is a different width from the first
   (globalThis as Record<string, unknown>).document = { createElement: () => ({ getContext: () => { const c = { font: '', measureText: (t: string) => ({ width: t.length * parseFloat(String(c.font).split(' ')[1]) * 0.6 }) }; return c; } }) };
   const mk = (w: number) => {
-    const room = { kind: 'room', id: 'r1', x: 0, y: 0, w, h: 200, d: { id: 'dom', base: 'dom', name: 'Booking and attendance' }, feats: [] as never[], bays: [] } as never as import('../packages/core/src/model/layout.ts').RoomNode;
+    const room = { kind: 'room', id: 'r1', x: 0, y: 0, w, h: 200, name: 'Booking and attendance', base: 'dom', d: { id: 'dom', base: 'dom', name: 'Booking and attendance' }, feats: [] as never[], bays: [] } as never as import('../packages/core/src/model/layout.ts').RoomNode;
     return room;
   };
   const eng = (room: ReturnType<typeof mk>) => ({
@@ -578,7 +578,7 @@ function traced(fn: () => void): string[] {
   const names = ['Booking and attendance', 'Reconciliation of regional settlement exceptions', 'Compliance', 'Customer identity verification'];
   let pinned = 0, differ: string[] = [];
   for (const nm of names) for (const k of [0.5, 0.6, 0.7, 0.8]) for (let w = 160; w <= 1100; w += 6) {
-    const room = mk(w); room.d = { ...room.d, name: nm }; room.h = 700;
+    const room = mk(w); room.name = nm; room.h = 700;
     const E = eng(room), v: View = { x: w / 2, y: 700 * 0.5 + 360 / k - 500 / k * 0 + 100, k, FW: 1280, FH: 800, c0x: -100, c0y: -100, c1x: 1380, c1y: 900 };
     v.y = room.y + room.h / 2 + 200 / k;                          // the room's top edge is scrolled well above the view's
     const c = fresh();

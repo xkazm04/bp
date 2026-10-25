@@ -182,9 +182,9 @@ function HoverBody() {
   }
   const o = E.placeById(h.type, h.id); if (!o) return null;
   let title = '', kick = '', sub = '', art: string | null = null;
-  if (h.type === 'wing') { const w = o as WingNode; title = w.def.name; kick = 'Wing ' + w.def.letter + (M.P.scale > 1 ? ' · ' + w.bld.name : ''); sub = w.def.plain + '. ' + w.rooms.length + ' rooms: ' + w.rooms.map((r) => r.d.name).join(', ') + '.'; art = w.def.art; }
-  else if (h.type === 'room') { const r = o as RoomNode; title = r.d.name; kick = 'Room · wing ' + r.wing.def.letter + ' ' + r.wing.def.name; sub = r.d.summary; art = r.d.base; }
-  else if (h.type === 'bay') { const b = o as BayNode; title = b.cap.name; kick = 'Bay · ' + b.room.d.name; sub = b.tiles.length + ' features: ' + b.tiles.map((T) => T.f.name).join(', ') + '.'; art = b.room.d.base; }
+  if (h.type === 'wing') { const w = o as WingNode; title = w.def.name; kick = 'Wing ' + w.def.letter + (M.P.scale > 1 ? ' · ' + w.bld.name : ''); sub = w.def.plain + '. ' + w.rooms.length + ' rooms: ' + w.rooms.map((r) => r.name).join(', ') + '.'; art = w.def.art; }
+  else if (h.type === 'room') { const r = o as RoomNode; title = r.name; kick = 'Room · wing ' + r.wing.def.letter + ' ' + r.wing.def.name; sub = r.summary; art = r.d.base; }
+  else if (h.type === 'bay') { const b = o as BayNode; title = b.name; kick = 'Bay · ' + b.room.name; sub = b.tiles.length + ' features: ' + b.tiles.map((T) => T.f.name).join(', ') + '.'; art = b.room.d.base; }
   else { const b = o as BldNode; title = b.name; kick = 'Building'; sub = b.wings.length + ' wings, ' + b.wings.reduce((n, w) => n + w.rooms.length, 0) + ' rooms'; }
   const c = M.agg.countsOf(o.id, o.feats, s.t, s.delta);
   const lp = lensOf(M.P, s.view) && now ? lensParts(E, o.id, s.view, o.feats) : null;

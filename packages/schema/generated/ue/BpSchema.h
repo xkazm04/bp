@@ -957,7 +957,7 @@ struct BPLINK_API FBpPlanWing
 	FString letter;
 };
 
-/** A room: a domain. */
+/** A room: a domain in Kettle; a capability in any other product (its parent wing is the capability's domain). */
 USTRUCT(BlueprintType)
 struct BPLINK_API FBpPlanRoom
 {
@@ -984,7 +984,7 @@ struct BPLINK_API FBpPlanRoom
 	FBpPlanBox box;
 };
 
-/** A bay: a capability. */
+/** A bay: a capability in Kettle; in any other product the room's features of one kind (user_flow, capability, ops, integration, or generic for any other kind), in that order, with id <capability id>.<kind>. */
 USTRUCT(BlueprintType)
 struct BPLINK_API FBpPlanBay
 {

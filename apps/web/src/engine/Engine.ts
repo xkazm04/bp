@@ -1079,7 +1079,7 @@ export class Engine {
     if (t.type === 'tile') { ids[t.id] = 1; return { ids, label: this.M.P.F[t.id].name }; }
     const o = this.placeById(t.type, t.id); if (!o) return null;
     for (const f of o.feats) ids[f.id] = 1;
-    const label = t.type === 'wing' ? (o as WingNode).def.name + ' wing' : t.type === 'room' ? (o as RoomNode).d.name : t.type === 'bay' ? (o as BayNode).cap.name : (o as BldNode).name;
+    const label = t.type === 'wing' ? (o as WingNode).def.name + ' wing' : t.type === 'room' ? (o as RoomNode).name : t.type === 'bay' ? (o as BayNode).name : (o as BldNode).name;
     return { ids, label };
   }
   /**

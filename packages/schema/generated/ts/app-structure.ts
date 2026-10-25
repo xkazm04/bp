@@ -364,7 +364,7 @@ export interface PlanBox {
   h: number;
 }
 
-/** A room: a domain. */
+/** A room: a domain in Kettle; a capability in any other product (its parent wing is the capability's domain). */
 export interface PlanRoom {
   id: string;
   /** The wing's id. */
@@ -375,7 +375,7 @@ export interface PlanRoom {
   box: PlanBox;
 }
 
-/** A bay: a capability. */
+/** A bay: a capability in Kettle; in any other product the room's features of one kind (user_flow, capability, ops, integration, or generic for any other kind), in that order, with id <capability id>.<kind>. */
 export interface PlanBay {
   id: string;
   /** The room's id. */

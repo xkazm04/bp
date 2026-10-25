@@ -27,11 +27,11 @@ export function Plan() {
 
   // the groups the list shows: the room's bays, else wing / room groups of the features in trouble (or all)
   const groups = useMemo(() => {
-    if (room) return room.bays.map((b) => ({ id: b.id, head: b.cap.name, fs: b.tiles.map((T) => T.f) }));
+    if (room) return room.bays.map((b) => ({ id: b.id, head: b.name, fs: b.tiles.map((T) => T.f) }));
     const out: { id: string; head: string; fs: Feat[] }[] = [];
     for (const w of M.L.wings) for (const r of w.rooms) {
       const fs = mode === 'all' ? r.feats : r.feats.filter((f) => (s.key ? f.trouble.some((t) => t.lens === s.key) : f.trouble.length));
-      if (fs.length) out.push({ id: r.id, head: (M.P.scale > 1 ? w.bld.b.short + ' · ' : '') + w.def.name + ' · ' + (r.d.name), fs: mode === 'all' ? fs : fs.slice().sort((a, b) => rank(a) - rank(b)) });
+      if (fs.length) out.push({ id: r.id, head: (M.P.scale > 1 ? w.bld.b.short + ' · ' : '') + w.def.name + ' · ' + (r.name), fs: mode === 'all' ? fs : fs.slice().sort((a, b) => rank(a) - rank(b)) });
     }
     return out;
   }, [room, M, mode, s.key]);
@@ -69,7 +69,7 @@ export function Plan() {
   );
   const strip = (
     <>
-      <div className="wb-count"><b>{room ? room.d.code || room.d.name : sheetOf(M.P, s.view).no}</b><span>{room ? 'room schedule' : sheetOf(M.P, s.view).nm}</span></div>
+      <div className="wb-count"><b>{room ? room.code || room.name : sheetOf(M.P, s.view).no}</b><span>{room ? 'room schedule' : sheetOf(M.P, s.view).nm}</span></div>
       <div className="wb-count"><b>{n}</b><span>{room ? 'features in the room' : mode === 'all' ? 'features' : 'in trouble' + (s.key ? ' · ' + (M.P.LENS[s.key]?.name ?? s.key) : '')}</span></div>
       {!room && (
         <div className="wb-filter" role="group" aria-label="List">
@@ -98,7 +98,7 @@ function FeatureDetail({ f }: { f: Feat }) {
   const why = new Map(f.trouble.map((t) => [t.lens, t.why]));
   return (
     <>
-      <div className="wb-kick">{f.code && <span>{f.code}</span>}<span>{T ? T.wing.def.name + ' · ' + T.room.d.name : M.P.D[f.domain]?.name}</span>{T && <span>{T.bay.cap.name}</span>}</div>
+      <div className="wb-kick">{f.code && <span>{f.code}</span>}<span>{T ? T.wing.def.name + ' · ' + T.room.name : M.P.D[f.domain]?.name}</span>{T && <span>{T.bay.name}</span>}</div>
       <h3 className="wb-title wb-glyph"><StageSym st={st} w={30} h={19} />{f.name}</h3>
       {f.summary && <p className="wb-lede">{f.summary}</p>}
       <div className="wb-figs">

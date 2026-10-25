@@ -12,8 +12,8 @@
 //   req-dropped  planWing.letter made optional is required-dropped, breaking for the TS readers only
 //   req-added    wave.dispatched_at made required is required-added + breaking; the report line names
 //                scan-wire-1.schema.json and says its version suffix is unchanged
-//   cli          `generate.mjs --since HEAD --dry-run` prints `no schema change since HEAD` on a clean schema tree (a
-//                change line otherwise), writes none of the generated files, exits 0
+//   cli          `generate.mjs --since HEAD --dry-run` prints `no schema change since HEAD` on a clean schema tree (one
+//                whose only edits are descriptions counts as clean; a change line otherwise), writes none of the generated files, exits 0
 //   GUARD        `generate.mjs --check` exits 0 and prints no change report (the card leaves --check alone)
 // Run: node scripts/check-schema-compat.mjs   (exit 1 on any failure)
 import fs from 'node:fs';
@@ -92,7 +92,11 @@ const wire = (s) => s['scan-wire-1.schema.json'].$defs, plan = (s) => s['plan-1.
   const bytes = () => outs.map((f) => (fs.existsSync(f) ? fs.readFileSync(f).toString('base64') : null)).join('|');
   const before = bytes();
   const r = spawnSync(process.execPath, [GEN, '--since', 'HEAD', '--dry-run'], { cwd: ROOT, encoding: 'utf8' });
-  const clean = spawnSync('git', ['diff', '--quiet', 'HEAD', '--', 'packages/schema/schema'], { cwd: ROOT }).status === 0;
+  // clean = no change the compat model sees: an untouched schema tree, or one whose edits are descriptions only (prose,
+  // which neither the readers nor the generated types' shapes depend on, so --since rightly reports no change)
+  const edits = spawnSync('git', ['diff', '-U0', 'HEAD', '--', 'packages/schema/schema'], { cwd: ROOT, encoding: 'utf8' }).stdout
+    .split(/\r?\n/).filter((l) => /^[-+](?![-+])/.test(l));
+  const clean = edits.every((l) => /^[-+]\s*"description": "(?:[^"\\]|\\.)*",?\s*$/.test(l));
   const said = /no schema change since HEAD/.test(r.stdout);
   check(`cli: --since HEAD --dry-run on a ${clean ? 'clean' : 'dirty'} schema tree ${clean ? 'prints "no schema change since HEAD"' : 'reports a change'}, writes none of the ${outs.length} generated files, exits 0`,
     r.status === 0 && said === clean && outs.length === 4 && bytes() === before && !/^wrote /m.test(r.stdout), `exit ${r.status}: ${(r.stdout + r.stderr).trim().split('\n').slice(0, 3).join(' | ')}`);

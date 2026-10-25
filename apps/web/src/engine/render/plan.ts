@@ -551,7 +551,7 @@ export function drawRoomLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View
     if (a <= 0) continue;
     for (const R of W.rooms) {
       const r = rs(v, R, scratch); if (!onView(v, r)) continue;
-      const hh = RH * k, nm = R.d.name.toUpperCase(), maxW = r.w - 28 * u - (hasSw ? 38 * u : 0);
+      const hh = RH * k, nm = R.name.toUpperCase(), maxW = r.w - 28 * u - (hasSw ? 38 * u : 0);
       const { fs, ls, lines, fa } = roomLabelFit(tx, nm, maxW, hh, u);
       if (!lines) { ctx.globalAlpha = 1; R.labelRight = R.x; continue; }
       const aa = a * fa; ctx.globalAlpha = aa;
@@ -593,7 +593,7 @@ function drawBayTags(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: BldNo
   ctx.globalAlpha = a;
   for (const W of B.wings) for (const R of W.rooms) for (const Bay of R.bays) {
     const r = rs(v, Bay, scratch); if (!onView(v, r)) continue;
-    const code = Bay.cap.code, nm = Bay.cap.name.toUpperCase();
+    const code = Bay.code, nm = Bay.name.toUpperCase();
     const cw = tx.w(code, cf) + 12 * u, nw = tx.w(nm, nf, 0.7) + 12 * u, cnt = String(Bay.tiles.length), kw = tx.w(cnt, cf) + 12 * u;
     let full = cw + nw + kw;
     const th2 = 22 * u, x = r.x, y = r.y + Math.max(1, (BH * k - th2) / 2 - 3);

@@ -7,7 +7,7 @@ import type { Feature } from '@bp/core/data';
 import type { ScanSnapshot } from '@bp/core/scan/types';
 import { AggCache, Closure } from './aggregates';
 import type { Model } from './index';
-import { layoutProduct } from './layout';
+import { bayKind, layoutProduct, roomsAreCapabilities } from './layout';
 import type { LiveRef } from './live';
 import { LiveFacets, lineCopies, restate } from './live-health';
 import { LiveTracks } from './live-tracks';
@@ -79,20 +79,21 @@ const sameSet = (a: readonly string[], b: readonly string[]) => a.length === b.l
  * A newer map for the model that is on screen, in place: every feature the model has takes the new map's
  * fields, lens records, health and trouble (the same Feature objects, so the layout, the engine's caches and
  * the sheet keep their references); the scan's readings are laid over again. Nothing moves. A map whose
- * features, places, links or lenses differ in shape (a feature added or removed, moved to another capability)
+ * features, places, links or lenses differ in shape (a feature added or removed, moved to another capability, or
+ * in a live product to another kind, which is its bay)
  * cannot be placed without a new layout: the features both maps have are still updated and `structural` is
  * true, so the caller can say that a reload places the rest. `why` says what differs: when it is only the lens
  * set, the layout is the same and the caller rebuilds the model in place instead.
  */
 export function refreshLiveModel(M: Model, structure: unknown, events: string, scan: ScanSnapshot, lenses?: string | null): { structural: boolean; features: number; why: ShapeChange[] } {
   const P = M.P, S = loadMap(structure, events, lenses), next = new Map(S.features.map((f) => [f.id, f]));
-  const old = P.base.features, why = new Set<ShapeChange>();
+  const old = P.base.features, why = new Set<ShapeChange>(), kindBays = roomsAreCapabilities(P.base);
   if (S.features.length !== old.length) why.add('features');
   if (!sameSet(S.lenses.map((l) => l.id), P.lenses.map((l) => l.id))) why.add('lenses');
   for (const f0 of old) {
     const f1 = next.get(f0.id);
     if (!f1) { why.add('features'); continue; }
-    if (f1.domain !== f0.domain || f1.capability !== f0.capability) why.add('places');
+    if (f1.domain !== f0.domain || f1.capability !== f0.capability || (kindBays && bayKind(f1.kind) !== bayKind(f0.kind))) why.add('places');
     if (!sameSet(f1.dependsOn, f0.dependsOn) || !sameSet(f1.blockedBy, f0.blockedBy)) why.add('links');
     const rest: Record<string, unknown> = {};
     for (const k of Object.keys(f1)) if (!(FIXED as readonly string[]).includes(k)) rest[k] = (f1 as unknown as Record<string, unknown>)[k];

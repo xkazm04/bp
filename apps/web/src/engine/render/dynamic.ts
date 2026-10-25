@@ -94,7 +94,7 @@ function conduits(E: Engine, ctx: CanvasRenderingContext2D, v: View, id: string)
 let blastRoomsOf = '', blastRoomsM: unknown = null, blastRooms: string[] = [];
 function roomsOfBlast(E: Engine, id: string): string[] {
   if (blastRoomsOf !== id || blastRoomsM !== E.M) {
-    const set = new Set<string>(); for (const f of E.M.closure.of(id)) set.add(E.M.P.F[f].domain);
+    const set = new Set<string>(); for (const f of E.M.closure.of(id)) { const T = E.M.L.TILE[f]; if (T) set.add(T.room.id); }
     blastRooms = Array.from(set); blastRoomsOf = id; blastRoomsM = E.M;
   }
   return blastRooms;
@@ -342,7 +342,7 @@ export function drawPins(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod:
       ctx.globalAlpha = ga;
       const pp = roomPinPos(E, v, ri);
       glyphPin(ctx, th, pp.x, pp.y, hi ? 'high' : em ? 'med' : 'low', em > 0, 0.9, ds.length, ring, u, pf);
-      if (ga >= PRESENT) E.hits.add('cluster', R.d.name, ri, null, pp.x - 15 * u, pp.y - 27 * u, 31 * u, 31 * u);
+      if (ga >= PRESENT) E.hits.add('cluster', R.name, ri, null, pp.x - 15 * u, pp.y - 27 * u, 31 * u, 31 * u);
     }
     ctx.restore();
   }

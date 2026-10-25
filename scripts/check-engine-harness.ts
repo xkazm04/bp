@@ -248,7 +248,7 @@ const measured: Record<string, string> = {};
   const ri = (() => { const rd = E.roomDecs(); for (let i = 0; i < rd.length; i++) if (rd[i].length) return i; return -1; })();
   if (ri >= 0 && E.lod() < 0.6) {
     const rr = E.view; void rr;
-    const cb = extent((x, y) => { const h = E.pinAt(x, y); return !!h && h.cluster && h.at === M.L.rooms[ri].d.name; }, 0, 0, E.FW, E.FH, 1);
+    const cb = extent((x, y) => { const h = E.pinAt(x, y); return !!h && h.cluster && h.at === M.L.rooms[ri].name; }, 0, 0, E.FW, E.FH, 1);
     if (cb) { measured.cluster = cb.w + ' x ' + cb.h; expect(cb.w >= FLOOR.cluster[0] - 2 && cb.h >= FLOOR.cluster[1] - 2, 'a room cluster pin\'s hit box is at least 31 x 31 (measured ' + measured.cluster + ')'); }
     else expect(false, 'a room with open questions has a clickable cluster pin at the home zoom');
   }
@@ -306,7 +306,7 @@ const measured: Record<string, string> = {};
     E.cam.set({ x: R.x + R.w / 2, y: R.y + R.h / 2, k: kAt(0.45) }); E.dirty(); flush();
     let pp: { x: number; y: number } | null = DYN.roomPinPos(E, E.view, ri);
     const c45 = pp ? E.pinAt(pp.x, pp.y - 10) : null, t45 = sweep(false);
-    expect(!!c45 && c45.cluster && c45.at === R.d.name, 'at lod 0.45 a room cluster pin anchor resolves to its cluster');
+    expect(!!c45 && c45.cluster && c45.at === R.name, 'at lod 0.45 a room cluster pin anchor resolves to its cluster');
     expect(t45 === 0, 'at lod 0.45 no tile pin resolves anywhere (' + t45 + ' grid hits)');
     E.cam.set({ x: R.x + R.w / 2, y: R.y + R.h / 2, k: kAt(0.55) }); E.dirty(); flush();
     const rt = E.featureRect(tf)!, t55 = E.pinAt(rt.x + rt.w - 12 * u, rt.y + rt.h - 15 * u), c55 = sweep(true);
@@ -389,8 +389,8 @@ const measured: Record<string, string> = {};
   }
   // case 3: at ?scale=4 a job draws one view per line ("j1@b"); every line's chip resolves to the one job j1
   {
-    const E4 = mount(1280, 800, 4), M4 = E4.M, base = room.d.base;
-    const now = Date.now(), job = { id: 'j1', kind: 'measure', lens, scope: { kind: 'room', id: base, label: room.d.name, features: room.feats.map((f: Any) => f.id) }, status: 'running', queued_at: new Date(now - 1000).toISOString(), started_at: new Date(now - 1000).toISOString() };
+    const E4 = mount(1280, 800, 4), M4 = E4.M, base = room.base;
+    const now = Date.now(), job = { id: 'j1', kind: 'measure', lens, scope: { kind: 'room', id: base, label: room.name, features: room.feats.map((f: Any) => f.id) }, status: 'running', queued_at: new Date(now - 1000).toISOString(), started_at: new Date(now - 1000).toISOString() };
     const { views } = scanViews([job], undefined, M4, () => '#6ff2c8', now);
     const v2 = views.find((v: Any) => v.id === 'j1@2');
     expect(!!v2, 'at ?scale=4 the job has a view j1@2 (' + views.map((v: Any) => v.id).join(' ') + ')');

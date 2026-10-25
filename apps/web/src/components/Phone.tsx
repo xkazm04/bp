@@ -172,13 +172,13 @@ export function Phone() {
                 const rc = M.agg.countsOf(R.id, R.feats, P.asOf, 7), bad = M.agg.healthOf(R.id, R.feats, GENERAL).bad;
                 return (
                   <details key={R.id + (v ? '-q' : '')} className="ph-dom" open={!!v}>
-                    <summary>{R.d.name}<span>{rc.n} · {rc.live + rc.flagged} live{bad ? ' · ' + bad + ' trouble' : ''}</span></summary>
+                    <summary>{R.name}<span>{rc.n} · {rc.live + rc.flagged} live{bad ? ' · ' + bad + ' trouble' : ''}</span></summary>
                     {R.bays.map((Bay) => {
                       const fs = Bay.tiles.filter((T) => hits.includes(T.f));
                       if (!fs.length) return null;
                       return (
                         <div key={Bay.id}>
-                          <h3>{Bay.cap.name}</h3>
+                          <h3>{Bay.name}</h3>
                           {fs.map((T) => {
                             const h = T.f.health, bad = h === 'bad';   // health reads by shape (◆ trouble, ● watch) and by name, not hue alone
                             return <button key={T.id} type="button" aria-label={bad || h === 'watch' ? T.f.name + (bad ? ', in trouble' : ', needs watching') : undefined} onClick={() => E.openFeature(T.id)}><StageSym st={T.f.stage} w={22} h={14} /><span>{T.f.name}</span><span aria-hidden="true" style={{ color: bad ? 'var(--red)' : 'var(--amber)' }}>{bad ? '◆' : h === 'watch' ? '●' : null}</span></button>;

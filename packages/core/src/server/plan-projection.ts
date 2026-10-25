@@ -48,8 +48,8 @@ export function projectPlan(raw: unknown, eventsText: string | null, rev: string
   const plan: Plan = {
     rev, lenses,
     wings: L.wings.map((w, order) => ({ id: w.id, name: w.def.name, order, box: box(w), letter: w.def.letter })),
-    rooms: L.rooms.map((r) => ({ id: r.id, parentId: r.wing.id, name: r.d.name, order: r.wing.rooms.indexOf(r), box: box(r) })),
-    bays: L.bays.map((b) => ({ id: b.id, parentId: b.room.id, name: b.cap.name, order: b.room.bays.indexOf(b), box: box(b) })),
+    rooms: L.rooms.map((r) => ({ id: r.id, parentId: r.wing.id, name: r.name, order: r.wing.rooms.indexOf(r), box: box(r) })),
+    bays: L.bays.map((b) => ({ id: b.id, parentId: b.room.id, name: b.name, order: b.room.bays.indexOf(b), box: box(b) })),
     tiles: L.tiles.map((t) => ({
       id: t.id, parentId: t.bay.id, name: t.f.name, order: t.bi, box: box(t),
       health: Object.fromEntries(lenses.map((id) => [id, t.f.lens[id]?.h ?? 'unmeasured'])), general: t.f.health,

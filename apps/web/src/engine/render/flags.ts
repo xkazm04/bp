@@ -73,7 +73,7 @@ export function pinnedBox(E: Engine, v: View, R: RoomNode, out: SRect): SRect | 
   const maxW = R.w * k - 28 * u - (E.M.sim.has ? 38 * u : 0);
   if (maxW <= 0) return null;
   // the same sizing passes plan.ts draws the label by (its 14 px fallback and its fade-out included)
-  const { fs, ls, lines } = roomLabelFit(E.tx, upper(R.d.name), maxW, hh, u);
+  const { fs, ls, lines } = roomLabelFit(E.tx, upper(R.name), maxW, hh, u);
   if (!lines) return null;
   const blockH = lines.length * fs * 1.08 * u;
   if (hh < blockH + 14 * u) return null;

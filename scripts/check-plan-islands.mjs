@@ -6,6 +6,8 @@
 //   islands   the same plan but for boxes: wing i moves right by i * WING_GAP, room j of its wing down by j * ROOM_GAP,
 //             bays and tiles with their room, and a wing grows by its rooms' gaps. Then no two wings overlap or touch (the
 //             gap is at least WING_GAP), no two rooms of one wing touch, and every box contains its children
+//   live      the same map under another slug, as a live product lays out: wing = domain, room = capability, bay = the
+//             room's features of one kind (BAY_KINDS order), tile = feature, and the islands geometry still holds
 // Control (every run): the geometry rule refuses the default plan (its wings touch) and three broken copies of the islands
 // plan, so a rule that accepts everything cannot pass.
 // Run: node scripts/check-plan-islands.mjs   Exit 1 on any failure.
@@ -19,7 +21,7 @@ const DATA = path.join(ROOT, 'packages/core/data');
 register(pathToFileURL(path.join(ROOT, 'packages/core/register-hooks.mjs')).href);
 const core = (rel) => import(pathToFileURL(path.join(ROOT, 'packages/core/src', rel)).href);
 const { projectPlan, WING_GAP, ROOM_GAP } = await core('server/plan-projection.ts');
-const { layoutProduct } = await core('model/layout.ts');
+const { layoutProduct, BAY_KINDS, BAY_KIND_NAME } = await core('model/layout.ts');
 const { buildProduct } = await core('model/product.ts');
 const { loadStructure } = await core('standard/load.ts');
 
@@ -92,6 +94,26 @@ check(`islands: wings >= ${WING_GAP} apart (closest ${minWing}), rooms of a wing
 const ext = { w: Math.max(...isl.wings.map((w) => w.box.x + w.box.w)) - Math.min(...isl.wings.map((w) => w.box.x)), h: Math.max(...isl.wings.map((w) => w.box.y + w.box.h)) - Math.min(...isl.wings.map((w) => w.box.y)) };
 const extOk = LEVELS.every((lv) => isl[lv].every((n) => within(n.box, { x: 0, y: 0, ...ext })));
 check(`islands: the extent is ${ext.w} x ${ext.h} plan units, and every box lies inside it`, extOk);
+
+// ---- a live product (owner, 2026-10-25): the same map under another slug nests one level deeper. A wing is a domain, a
+// room a capability (its parent the capability's domain's wing), a bay the room's features of one kind in BAY_KINDS order
+const liveRaw = { ...raw, project: { ...raw.project, slug: 'kettle-live' } };
+const S = loadStructure(liveRaw, events), live = projectPlan(liveRaw, events, 'rev'), liveIsl = projectPlan(liveRaw, events, 'rev', { islands: true });
+const capOf = new Map(S.capabilities.map((c) => [c.id, c])), featOf = new Map(S.features.map((f) => [f.id, f]));
+const kindOf = (k) => (BAY_KINDS.includes(k) ? k : 'generic');
+const roomBad = live.rooms.filter((r) => !capOf.has(r.id) || r.parentId !== '0:' + capOf.get(r.id).domain || r.name !== capOf.get(r.id).name).map((r) => r.id);
+check(`live: one wing per domain (${live.wings.length}), one room per capability (${live.rooms.length}), each room in its domain's wing`,
+  live.wings.length === S.domains.length && live.rooms.length === S.capabilities.length && roomBad.length === 0, roomBad.slice(0, 3).join(' | '));
+const roomBays = new Map(live.rooms.map((r) => [r.id, live.bays.filter((b) => b.parentId === r.id).sort((a, b) => a.order - b.order)]));
+const bayBad = [...roomBays].filter(([rid, bs]) => {
+  const want = BAY_KINDS.filter((k) => capOf.get(rid).features.some((f) => kindOf(featOf.get(f).kind) === k));
+  return json(bs.map((b) => b.id)) !== json(want.map((k) => rid + '.' + k)) || bs.some((b, i) => b.name !== BAY_KIND_NAME[want[i]]);
+}).map(([rid]) => rid);
+const tileBad = live.tiles.filter((t) => t.parentId !== featOf.get(t.id).capability + '.' + kindOf(featOf.get(t.id).kind)).map((t) => t.id);
+check(`live: a room's bays are its features' kinds in BAY_KINDS order (${live.bays.length} bays), each tile in its kind's bay (${live.tiles.length} tiles)`,
+  bayBad.length === 0 && tileBad.length === 0 && live.tiles.length === S.features.length, [...bayBad, ...tileBad].slice(0, 3).join(' | '));
+const liveBad = islandProblems(liveIsl);
+check('live: the islands geometry holds (wings apart, rooms of a wing apart, every box inside its parent)', liveBad.length === 0, liveBad.slice(0, 3).join(' | '));
 
 // ---- permanent controls: the geometry rule refuses the default plan and three broken copies of the islands plan
 const broken = (fn) => { const c = structuredClone(isl); fn(c); return islandProblems(c).length > 0; };

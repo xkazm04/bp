@@ -26,8 +26,8 @@ export function scopesAt(M: Geo, chain: readonly { t: string; id: string }[], ti
   if (T) out.push({ kind: 'feature', title: 'Feature', scope: { kind: 'feature', id: T.f.slug, label: T.f.name, features: [T.f.slug] } });
   const at = (t: string) => chain.find((c) => c.t === t)?.id;
   const bay = L.BAY[at('bay') ?? T?.bay.id ?? ''], room = L.ROOM[at('room') ?? T?.room.id ?? ''], wing = L.WING[at('wing') ?? T?.wing.id ?? ''];
-  if (bay) out.push({ kind: 'bay', title: 'Bay', scope: { kind: 'bay', id: bay.cap.base, label: bay.cap.name, features: slugs(bay.feats) } });
-  if (room) out.push({ kind: 'room', title: 'Room', scope: { kind: 'room', id: room.d.base, label: room.d.name + ' room', features: slugs(room.feats) } });
+  if (bay) out.push({ kind: 'bay', title: 'Bay', scope: { kind: 'bay', id: bay.base, label: bay.group ? bay.room.name + ' · ' + bay.name : bay.name, features: slugs(bay.feats) } });
+  if (room) out.push({ kind: 'room', title: 'Room', scope: { kind: 'room', id: room.base, label: room.name + ' room', features: slugs(room.feats) } });
   if (wing) out.push({ kind: 'wing', title: 'Wing', scope: { kind: 'wing', id: wing.def.k, label: wing.def.name + ' wing', features: slugs(wing.feats) } });
   const kept: ScopeOption[] = [];
   for (const o of out) {

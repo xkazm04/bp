@@ -66,8 +66,8 @@ function crumbLabel(E: ReturnType<typeof useEngine>, c: Crumb): string {
   if (!o) return c.id;
   if (c.t === 'bld') return (o as BldNode).name;
   if (c.t === 'wing') { const w = o as WingNode; return 'Wing ' + w.def.letter + ' · ' + w.def.name; }
-  if (c.t === 'room') return (o as RoomNode).d.name;
-  return (o as BayNode).cap.name;
+  if (c.t === 'room') return (o as RoomNode).name;
+  return (o as BayNode).name;
 }
 
 function Tabs({ f }: { f: Feature }) {

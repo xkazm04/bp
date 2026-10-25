@@ -21,8 +21,8 @@ function crumbLabel(E: ReturnType<typeof useEngine>, c: Crumb, short: boolean): 
   if (!o) return c.id;
   if (c.t === 'bld') return short ? (o as BldNode).b.short : (o as BldNode).name;
   if (c.t === 'wing') { const w = o as WingNode; return short ? w.def.letter : w.def.letter + ' · ' + w.def.name; }
-  if (c.t === 'room') { const r = o as RoomNode; return short ? r.d.code || r.d.name : r.d.name; }
-  return (o as BayNode).cap.name;
+  if (c.t === 'room') { const r = o as RoomNode; return short ? r.code || r.name : r.name; }
+  return (o as BayNode).name;
 }
 
 /** Clauses the summary drops, in order, when the measured room is short: proposed/retired, being built, the feature count, live. Trouble and waiting questions go last: first as short icons + counts (level 5), then the trouble mark alone (6), then the line is hidden and its text moves to the crumb row's title (level 7). Never cut mid-word. */

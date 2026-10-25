@@ -305,7 +305,7 @@ function bayRails(P: Ctx2, B: BldNode, fn: (r: Rail) => void) {
       for (const Bay of R.bays) {
         const x = sx(P, Bay.x), y = sy(P, Bay.y), w = Bay.w * k;
         if (!onScreen(P, x, y, w, BH * k, 10)) continue;
-        const code = Bay.cap.id.replace(/-[A-Z]$/, ''), nm = Bay.cap.name.toUpperCase(), cnt = String(Bay.tiles.length);
+        const code = Bay.group ? Bay.code : Bay.cap.id.replace(/-[A-Z]$/, ''), nm = Bay.name.toUpperCase(), cnt = String(Bay.tiles.length);
         const cw = tx.w(code, cf) + 12 * u, nw = tx.w(nm, nf, 0.7) + 12 * u, kw = tx.w(cnt, cf) + 12 * u;
         let full = cw + nw + kw;
         if (full > w) full = nw <= w ? nw : 0;

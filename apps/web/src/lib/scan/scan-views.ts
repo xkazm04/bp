@@ -76,8 +76,8 @@ function placeOf(M: Geo, sc: ScanScope, b: number, sf: string): ScanView['place'
   const { P, L } = M, inLine = (bi: number) => bi === b;
   switch (sc.kind) {
     case 'feature': { const T = sc.id ? L.TILE[sc.id + sf] : undefined; return T ? { t: 'tile', id: T.id } : null; }
-    case 'bay': { const x = L.bays.find((n) => n.cap.base === sc.id && inLine(n.room.wing.bld.i)); return x ? { t: 'bay', id: x.id } : null; }
-    case 'room': { const x = L.rooms.find((n) => n.d.base === sc.id && inLine(n.wing.bld.i)); return x ? { t: 'room', id: x.id } : null; }
+    case 'bay': { const x = L.bays.find((n) => n.base === sc.id && inLine(n.room.wing.bld.i)); return x ? { t: 'bay', id: x.id } : null; }
+    case 'room': { const x = L.rooms.find((n) => n.base === sc.id && inLine(n.wing.bld.i)); return x ? { t: 'room', id: x.id } : null; }
     case 'wing': { const x = L.wings.find((n) => n.def.k === sc.id && inLine(n.bld.i)); return x ? { t: 'wing', id: x.id } : null; }
     default: return P.scale > 1 && L.blds[b] ? { t: 'bld', id: L.blds[b].id } : null;
   }
