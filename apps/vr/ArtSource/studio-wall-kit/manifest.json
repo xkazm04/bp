@@ -1,50 +1,4 @@
 {
-  "id": "studio-wall-kit",
-  "class": "studio-kit",
-  "budget_tris": 20000,
-  "budget_note": "fidelity sprint FD brief (2026-10-25): each density kit one mesh and one atlas, at most 2 to 3 draw sections; 20000 tris for the kit",
-  "tris": {
-    "studio-wall-kit": 7760
-  },
-  "tris_note": "7760 against 20000; 2 draw sections (studio-wall-kit: wall_kit_atlas + wall_sheets)",
-  "what": "three thin black frames with white mats round printed drawings (a landscape over two portraits) and a cork pinboard in a dark wood frame with five pinned, curling sheets and amber push pins",
-  "generator": [
-    {
-      "method": "procedural Blender (scripts/art/studio-kit/build_kits.bpy) through the finish stack of scripts/art/lib/finish.bpy: per-part bevels (188 hard edges), hardened and weighted normals, unique UVs, one 2048 px atlas baked on the CPU from Poly Haven CC0 scans with curvature wear, grunge and AO"
-    }
-  ],
-  "materials": [
-    "studio-wall-kit/wall_kit_atlas: 6552 faces, baked basecolor + ORM (R occlusion, G roughness, B metal) + tangent normal (OpenGL)",
-    "studio-wall-kit/wall_sheets: 1208 faces, baked basecolor + ORM (R occlusion, G roughness, B metal) + tangent normal (OpenGL)"
-  ],
-  "material_slots": [
-    "wall_kit_atlas",
-    "wall_sheets"
-  ],
-  "printed_sheets": "wall_sheets: its own 2048 px basecolor composed from the Leonardo wall drawings (docs/concepts/vr-light-table/lookdev/wall-drawings: A, B, D and the three thirds of draw_sheets_atlas.jpg; calls logged in docs/concepts/vr-light-table/lookdev/log.jsonl, ruling R8b) and two procedural sheets (a ruled pencil note, a printed spec page); flat normal and ORM (roughness 0.86). UE: lit, not emissive",
-  "textures": "textures/wall_kit_atlas_basecolor.png, textures/wall_kit_atlas_normal.png, textures/wall_kit_atlas_orm.png, textures/wall_sheets_basecolor.png, textures/wall_sheets_normal.png, textures/wall_sheets_orm.png; atlas 952.5 px/m on the visible surface (84 % of the surface hidden and shrunk), bake seconds {\"base\":1.44,\"rough\":1.38,\"metal\":0.62,\"normal\":2.05,\"ao\":8.58}; AO also multiplied into basecolor at 0.55 (the forward scene has no runtime AO). GLB embeds JPEG q92",
-  "meshes": {
-    "studio-wall-kit": {
-      "tris": 7760,
-      "components": 27,
-      "floaters": 0,
-      "open_edges": 0,
-      "size_cm": [
-        199.4,
-        2.92,
-        114.8
-      ],
-      "slots": [
-        "wall_kit_atlas",
-        "wall_sheets"
-      ]
-    }
-  },
-  "uv_sets": 1,
-  "placement": "on the left wall facing the room, or the back wall left of the shelves (the concept's top-left wall of drawings): pivot = bottom centre of the arrangement on the wall's inside face (y = 0 is the wall plane, the kit stands out of it towards -Y); hang its bottom about 1.0 to 1.2 m above the floor. Blender -Y lands on UE -Y through Interchange, so on the back wall (+X) it takes yaw -90, on the left wall (-Y) yaw 180 (studio_level.py conventions); it replaces two of the four StudioPinnedDrawings instances there",
-  "axes": "Blender Z up, facing -Y; glTF Y-up (Interchange lands Blender -Y on UE -Y)",
-  "licence": "own procedural work (Blender is a GPL tool; its output is ours); bake inputs CC0: fabric_leather_02 (https://polyhaven.com/a/fabric_leather_02, CC0 1.0 (Poly Haven, https://polyhaven.com/license)); fine_grained_wood (https://polyhaven.com/a/fine_grained_wood, CC0 1.0 (Poly Haven, https://polyhaven.com/license)); printed sheets from our own logged Leonardo generations (ruling R8b) and procedural sheets",
-  "regenerate": "node scripts/art/lib/polyhaven.mjs <work>/polyhaven 2k; node scripts/art/lib/polyhaven.mjs <work>/polyhaven 1k --models; blender -b -P scripts/art/studio-kit/build_kits.bpy -- <repo-root> <work> studio-wall-kit; blender -b -P scripts/art/studio-kit/render_kits.bpy -- <repo-root> studio-wall-kit; node scripts/art/studio-kit/write_kit_manifest.mjs <work> studio-wall-kit",
   "gates": {
     "input": {
       "pass": true,
@@ -94,6 +48,52 @@
     "textures/wall_sheets_normal.png": 1500,
     "textures/wall_sheets_orm.png": 1499
   },
-  "lynx_commit": "f15dd3398d83b95a62ca800e65c8cb2112691fe1",
-  "lynx_commit_note": "stamped by the writer: the newest commit touching this folder when the manifest was written"
+  "lynx_commit": "abb900d44ec8df88e24b23125793f7a629a1c116",
+  "lynx_commit_note": "stamped by the writer: the newest commit touching this folder when the manifest was written",
+  "id": "studio-wall-kit",
+  "class": "studio-kit",
+  "budget_tris": 20000,
+  "budget_note": "fidelity sprint FD brief (2026-10-25): each density kit one mesh and one atlas, at most 2 to 3 draw sections; 20000 tris for the kit",
+  "tris": {
+    "studio-wall-kit": 7760
+  },
+  "tris_note": "7760 against 20000; 2 draw sections (studio-wall-kit: wall_kit_atlas + wall_sheets)",
+  "what": "three thin black frames with white mats round printed drawings (a landscape over two portraits) and a cork pinboard in a dark wood frame with five pinned, curling sheets and amber push pins",
+  "generator": [
+    {
+      "method": "procedural Blender (scripts/art/studio-kit/build_kits.bpy) through the finish stack of scripts/art/lib/finish.bpy: per-part bevels (188 hard edges), hardened and weighted normals, unique UVs, one 2048 px atlas baked on the CPU from Poly Haven CC0 scans with curvature wear, grunge and AO"
+    }
+  ],
+  "materials": [
+    "studio-wall-kit/wall_kit_atlas: 6552 faces, baked basecolor + ORM (R occlusion, G roughness, B metal) + tangent normal (OpenGL)",
+    "studio-wall-kit/wall_sheets: 1208 faces, baked basecolor + ORM (R occlusion, G roughness, B metal) + tangent normal (OpenGL)"
+  ],
+  "material_slots": [
+    "wall_kit_atlas",
+    "wall_sheets"
+  ],
+  "printed_sheets": "wall_sheets: its own 2048 px basecolor composed from the Leonardo wall drawings (docs/concepts/vr-light-table/lookdev/wall-drawings: A, B, D and the three thirds of draw_sheets_atlas.jpg; calls logged in docs/concepts/vr-light-table/lookdev/log.jsonl, ruling R8b) and two procedural sheets (a ruled pencil note, a printed spec page); flat normal and ORM (roughness 0.86). UE: lit, not emissive",
+  "textures": "textures/wall_kit_atlas_basecolor.png, textures/wall_kit_atlas_normal.png, textures/wall_kit_atlas_orm.png, textures/wall_sheets_basecolor.png, textures/wall_sheets_normal.png, textures/wall_sheets_orm.png; atlas 952.5 px/m on the visible surface (84 % of the surface hidden and shrunk), bake seconds {\"base\":1.44,\"rough\":1.38,\"metal\":0.62,\"normal\":2.05,\"ao\":8.58}; AO also multiplied into basecolor at 0.55 (the forward scene has no runtime AO). GLB embeds JPEG q92",
+  "meshes": {
+    "studio-wall-kit": {
+      "tris": 7760,
+      "components": 27,
+      "floaters": 0,
+      "open_edges": 0,
+      "size_cm": [
+        199.4,
+        2.92,
+        114.8
+      ],
+      "slots": [
+        "wall_kit_atlas",
+        "wall_sheets"
+      ]
+    }
+  },
+  "uv_sets": 1,
+  "placement": "on the left wall facing the room, or the back wall left of the shelves (the concept's top-left wall of drawings): pivot = bottom centre of the arrangement on the wall's inside face (y = 0 is the wall plane, the kit stands out of it towards -Y); hang its bottom about 1.0 to 1.2 m above the floor. Blender -Y lands on UE -Y through Interchange, so on the back wall (+X) it takes yaw -90, on the left wall (-Y) yaw 180 (studio_level.py conventions); it replaces two of the four StudioPinnedDrawings instances there",
+  "axes": "Blender Z up, facing -Y; glTF Y-up (Interchange lands Blender -Y on UE -Y)",
+  "licence": "own procedural work (Blender is a GPL tool; its output is ours); bake inputs CC0: fabric_leather_02 (https://polyhaven.com/a/fabric_leather_02, CC0 1.0 (Poly Haven, https://polyhaven.com/license)); fine_grained_wood (https://polyhaven.com/a/fine_grained_wood, CC0 1.0 (Poly Haven, https://polyhaven.com/license)); printed sheets from our own logged Leonardo generations (ruling R8b) and procedural sheets",
+  "regenerate": "node scripts/art/lib/polyhaven.mjs <work>/polyhaven 2k; node scripts/art/lib/polyhaven.mjs <work>/polyhaven 1k --models; blender -b -P scripts/art/studio-kit/build_kits.bpy -- <repo-root> <work> studio-wall-kit; blender -b -P scripts/art/studio-kit/render_kits.bpy -- <repo-root> studio-wall-kit; node scripts/art/studio-kit/kits_write_manifest.mjs <work> studio-wall-kit"
 }
