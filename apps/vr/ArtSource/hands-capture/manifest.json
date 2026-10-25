@@ -44,7 +44,7 @@
     "textures/hands_skin_normal.png": 5623625,
     "textures/hands_skin_orm.png": 2578072
   },
-  "lynx_commit": "313c67fac56323a372dae8872060f2ca488de66e",
+  "lynx_commit": "01ab2141e76d8bc0185a951c376cefd8f4f14d61",
   "lynx_commit_note": "stamped by the writer: the newest commit touching this folder when the manifest was written",
   "id": "hands-capture",
   "class": "capture-hands",
