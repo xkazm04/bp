@@ -36,7 +36,8 @@ const KIT = W('write-manifests.mjs', 'scripts/art/score-assets.mjs');
 export const ENTRY_POINTS = {
   'survey-pin': KIT,
   'fixture-kit': KIT,
-  'city-backdrop': { ...W('city-backdrop/write_manifest.mjs', 'scripts/lookdev/leonardo.mjs'), live: { 'scripts/lookdev/leonardo.mjs': 'paid Leonardo API: spends credits' } },
+  // its frame since 2026-10-25 is a Leonardo Studio call (the owner's signed-in web studio and its credit pool)
+  'city-backdrop': { ...W('city-backdrop/write_manifest.mjs', 'scripts/lookdev/leonardo-studio.mjs'), live: { 'scripts/lookdev/leonardo-studio.mjs': 'paid Leonardo Studio: spends studio credits' } },
   // scripted since 2026-10-24 (lamp/build_agent.bpy); its concept views come from the paid Leonardo call. trellis_run.mjs
   // stays as a tool (it queues a GPU job on the owner's ComfyUI), but no shipped folder is regenerated through it now.
   'lamp-agent': { ...W('lamp/write_manifest.mjs', 'scripts/lookdev/leonardo.mjs'), live: { 'scripts/lookdev/leonardo.mjs': 'paid Leonardo API: spends credits' } },

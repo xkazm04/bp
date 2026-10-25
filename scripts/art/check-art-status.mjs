@@ -122,7 +122,7 @@ const before = digestAll();
   const steps = nextOf?.(city, ENTRY_POINTS['city-backdrop'], REPO) ?? [];
   check('next: city-backdrop steps are regenerate split on ";" with <repo-root> filled', isDeepStrictEqual(steps.map((s) => s.cmd), want), JSON.stringify(steps.map((s) => s.cmd)));
   const leo = steps.filter((s) => s.live);
-  check('next: city-backdrop - only the leonardo.mjs step is live, "paid Leonardo API: spends credits"', leo.length === 1 && /scripts\/lookdev\/leonardo\.mjs/.test(leo[0].cmd) && leo[0].live === 'paid Leonardo API: spends credits', JSON.stringify(leo));
+  check('next: city-backdrop - only the leonardo-studio.mjs step is live, "paid Leonardo Studio: spends studio credits"', leo.length === 1 && /scripts\/lookdev\/leonardo-studio\.mjs/.test(leo[0].cmd) && leo[0].live === 'paid Leonardo Studio: spends studio credits', JSON.stringify(leo));
   const lamp = nextOf?.(readM('lamp-agent'), ENTRY_POINTS['lamp-agent'], REPO) ?? [];
   const tr = lamp.filter((s) => s.live);
   check('next: lamp-agent - only the leonardo.mjs concept step is live, with the paid note (the Blender build is not)', tr.length === 1 && /leonardo\.mjs/.test(tr[0].cmd) && /paid/i.test(tr[0].live), JSON.stringify(tr));

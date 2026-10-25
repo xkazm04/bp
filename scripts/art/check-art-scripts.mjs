@@ -289,7 +289,7 @@ const notRun = { pass: false, note: 'not run' };
   // trellis_run.mjs (a GPU job) is no folder's entry point since the lamp agent became a scripted build (2026-10-24);
   // wherever a folder declares it again, it must be flagged live like leonardo.mjs.
   const declaredAll = Object.values(ENTRY_POINTS ?? {}).flatMap((e) => e.scripts);
-  check('entry-points: the scripts that submit work or spend credits are flagged live wherever declared (leonardo.mjs, trellis_run.mjs)', live.includes('scripts/lookdev/leonardo.mjs') && ['scripts/lookdev/leonardo.mjs', 'scripts/art/lamp/trellis_run.mjs'].every((s) => !declaredAll.includes(s) || live.includes(s)), `live: ${live.join(', ')}`);
+  check('entry-points: the scripts that submit work or spend credits are flagged live wherever declared (leonardo.mjs, leonardo-studio.mjs, trellis_run.mjs)', live.includes('scripts/lookdev/leonardo.mjs') && ['scripts/lookdev/leonardo.mjs', 'scripts/lookdev/leonardo-studio.mjs', 'scripts/art/lamp/trellis_run.mjs'].every((s) => !declaredAll.includes(s) || live.includes(s)), `live: ${live.join(', ')}`);
 }
 
 // ---- trellis_run.mjs against a stub ComfyUI on loopback -------------------------------------------------------------

@@ -28,7 +28,8 @@ S.world = w
 S.render.image_settings.file_format = 'PNG'
 S.view_settings.view_transform = 'Standard'
 
-bpy.ops.mesh.primitive_plane_add(size=80, location=(0, 0, -1.001))   # a dark studio floor under the panel's foot
+Z0 = json.load(open(os.path.join(WORK, 'score.json')))['panel']['z_m'][0]   # build_backdrop.bpy's panel bottom
+bpy.ops.mesh.primitive_plane_add(size=80, location=(0, 0, Z0 - 0.001))   # a dark studio floor under the panel's foot
 fl = bpy.context.object
 fm = bpy.data.materials.new('floor')
 fm.use_nodes = True

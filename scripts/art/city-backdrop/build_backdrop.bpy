@@ -1,10 +1,15 @@
-# Blender script; run with blender -b -P scripts/art/city-backdrop/build_backdrop.bpy -- <repo-root> <work-dir> <source-frame.jpg> [dim v0 v1]
-# (dim, v0 and v1 override DIM, V0 and V1 below for a frame whose skyline sits elsewhere: the 2026-10-24 city-night frame)
+# Blender script; run with blender -b -P scripts/art/city-backdrop/build_backdrop.bpy -- <repo-root> <work-dir> <source-frame.jpg>
+#   [dim v0 v1 [gamma repeat roll z0 z1 [pad]]]
+# (dim, v0 and v1 override DIM, V0 and V1 below for a frame whose skyline sits elsewhere: the 2026-10-24 city-night frame;
+# gamma, repeat, roll, z0, z1 and pad override GAMMA, REPEAT, ROLL, Z0, Z1 and PAD: the 2026-10-25 studio night skyline)
 """Builds apps/vr/ArtSource/city-backdrop/ from the picked Leonardo frame (leonardo.mjs gen --prop city-backdrop, see lookdev/log.jsonl).
-  concept.png                          the picked frame, lossless re-encode of the downloaded JPEG (2048 x 768)
+  concept.png                          the picked frame, lossless re-encode of the downloaded JPEG
   textures/city_backdrop_basecolor.png the matte strip: the last SEAM columns are cross-faded into the first ones so the left and right
-                                       edges continue into each other (tileable), then dimmed (every channel x DIM, in encoded sRGB)
-  final.glb                            one 180-degree curved panel, normals inward, one emissive-only material slot, one UV set
+                                       edges continue into each other (tileable), its columns rolled by ROLL of its width (lossless on a
+                                       tileable strip: it moves the cross-faded columns away from what the window shows), its darks
+                                       pressed down (encoded sRGB ** GAMMA) and then dimmed (every channel x DIM, in encoded sRGB)
+  final.glb                            one 180-degree curved panel, normals inward, one emissive-only material slot, one UV set; the
+                                       strip repeats REPEAT times across the arc
 Writes <work-dir>/score.json (measurements the manifest gates are derived from). Pure Blender and numpy; no network, no GPU job."""
 import bpy, bmesh, math, os, sys, json
 import numpy as np
@@ -18,9 +23,24 @@ SEAM = 256          # columns cross-faded; the strip is 256 px narrower than the
 ARGS = sys.argv[sys.argv.index('--') + 1:]
 DIM = float(ARGS[3]) if len(ARGS) > 3 else 0.55   # encoded-sRGB multiplier, so the strip never outshines the table's edge strip (#F4FAFF, emission 25)
 RADIUS, ARC_DEG = 10.0, 180.0
-Z0, Z1 = -1.0, 5.0  # panel bottom and top (m); the horizon band lands near z = 1.4 m, a standing eye height
 V0, V1 = (float(ARGS[4]), float(ARGS[5])) if len(ARGS) > 5 else (0.05, 0.65)  # the rows the panel shows (sky above and ground below cut)
+# encoded ** GAMMA before the dim: 1 keeps the frame; above 1 it presses the sky and the haze down and keeps the lit windows
+GAMMA = float(ARGS[6]) if len(ARGS) > 6 else 1.0
+# how many times the strip runs across the arc: a 21:9 frame shot at about 90 degrees spread once over 180 reads twice as wide
+# as it was photographed; the window only shows about 36 degrees of the arc, so a repeat is never seen twice at once
+REPEAT = int(ARGS[7]) if len(ARGS) > 7 else 1
+ROLL = float(ARGS[8]) if len(ARGS) > 8 else 0.0   # fraction of the strip width its columns are rolled left (np.roll by -ROLL)
+# panel bottom and top (m); the frame's horizon row is meant to land near z = 1.4 m, a standing eye height
+Z0, Z1 = (float(ARGS[9]), float(ARGS[10])) if len(ARGS) > 10 else (-1.0, 5.0)
+# sky rows added above the frame, as a fraction of its height: a panel tall enough for the window's top panes, without
+# stretching the towers, needs more sky than a 21:9 frame holds. Each column's top rows, blurred along the row (wrapping, so
+# the strip stays tileable), darkening by a third towards the top as a night sky does overhead.
+PAD = float(ARGS[11]) if len(ARGS) > 11 else 0.0
 SEGMENTS = 36
+# The scene the strip is wired into (UE): EmissiveStrength on the city instance (fm_look.py CITY_EMISSIVE; fq_look.py and
+# fr_look.py leave it) and the bloom threshold (fo_look.py). Measured below, so the manifest can say whether the lit
+# windows bloom there and the sky stays dark; they do not change the files.
+SCENE_EMISSIVE, BLOOM_THRESHOLD = 16.0, 0.7
 
 
 def load(path):
@@ -51,15 +71,34 @@ tw = w - SEAM
 strip = src[:, :tw].copy()
 ramp = (np.arange(SEAM, dtype=np.float32) / SEAM)[None, :, None]
 strip[:, :SEAM, :3] = src[:, tw:tw + SEAM, :3] * (1 - ramp) + src[:, :SEAM, :3] * ramp
+strip = np.roll(strip, -int(round(ROLL * tw)), axis=1)
+if PAD > 0:
+    top = strip[-8:, :, :3].mean(axis=0)                                       # rows are bottom-up: the frame's top 8 rows
+    k = 96
+    wrap = np.concatenate([top[-k:], top, top[:k]])
+    cs = np.cumsum(np.vstack([np.zeros((1, 3), np.float32), wrap]), axis=0)
+    top = (cs[2 * k + 1:] - cs[:-2 * k - 1])[:tw] / (2 * k + 1)               # a 193-column box blur, wrapped
+    rows = int(round(PAD * h))
+    fade = np.linspace(1.0, 2.0 / 3.0, rows, dtype=np.float32)[:, None, None]
+    sky_rows = np.concatenate([top[None, :, :] * fade, np.ones((rows, tw, 1), np.float32)], axis=2)
+    strip = np.concatenate([strip, sky_rows], axis=0)
 seam_jump = float(np.abs(strip[:, -1, :3] - strip[:, 0, :3]).mean())          # last column against first column
 raw_jump = float(np.abs(src[:, -1, :3] - src[:, 0, :3]).mean())               # the same on the uncorrected frame
 neighbour = float(np.abs(strip[:, 1:, :3] - strip[:, :-1, :3]).mean())        # typical column-to-column step
-strip[:, :, :3] *= DIM
+strip[:, :, :3] = np.clip(strip[:, :, :3], 0.0, 1.0) ** GAMMA * DIM
 tex_path = os.path.join(ART, 'textures', 'city_backdrop_basecolor.png')
 save(strip, tex_path)
 
 lum = (0.2126 * strip[:, :, 0] + 0.7152 * strip[:, :, 1] + 0.0722 * strip[:, :, 2])
 bpy.data.images.remove(src_img)
+# In the scene: the strip as UE reads it (sRGB texture -> linear) x SCENE_EMISSIVE, on the rows the panel shows (rows are
+# bottom-up, as v). A pixel blooms when its brightest channel passes the threshold.
+c = strip[:, :, :3]
+scene = np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4) * SCENE_EMISSIVE
+sh = strip.shape[0]
+shown = scene[int(round(V0 * sh)):int(round(V1 * sh))]
+peak = shown.max(axis=2)
+sky = scene[int(round(0.85 * sh)):].max(axis=2)      # the strip's top 15 %: open sky in every night frame used so far
 
 # the panel
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -77,7 +116,7 @@ for i in range(SEGMENTS):
     (b0, t0), (b1, t1) = cols[i], cols[i + 1]
     f = bm.faces.new((b0, b1, t1, t0))                       # winding makes the normal face the arc's centre
     for loop, u, v in zip(f.loops, (i, i + 1, i + 1, i), (V0, V0, V1, V1)):
-        loop[uv].uv = (u / SEGMENTS, v)
+        loop[uv].uv = (REPEAT * u / SEGMENTS, v)
 bmesh.ops.triangulate(bm, faces=bm.faces[:])
 bm.to_mesh(mesh)
 bm.free()
@@ -122,11 +161,15 @@ S = {
     'emissive_only': all(
         (lambda b: tuple(b.inputs['Base Color'].default_value)[:3] == (0.0, 0.0, 0.0) and b.inputs['Emission Strength'].default_value > 0
          and bool(b.inputs['Emission Color'].is_linked))(m.node_tree.nodes['Principled BSDF']) for m in me.materials),
-    'texture': {'size': [tw, h], 'source_size': [w, h], 'seam_columns': SEAM, 'dim': DIM,
+    'texture': {'size': [tw, sh], 'source_size': [w, h], 'pad_rows': sh - h, 'seam_columns': SEAM, 'dim': DIM,
                 'seam_jump_after': round(seam_jump, 5), 'seam_jump_before': round(raw_jump, 5), 'neighbour_step': round(neighbour, 5),
                 'max_luminance_encoded': round(float(lum.max()), 4), 'p99_luminance_encoded': round(float(np.percentile(lum, 99)), 4),
-                'mean_luminance_encoded': round(float(lum.mean()), 4)},
-    'panel': {'radius_m': RADIUS, 'arc_deg': ARC_DEG, 'z_m': [Z0, Z1], 'v_range': [V0, V1]},
+                'mean_luminance_encoded': round(float(lum.mean()), 4), 'gamma': GAMMA, 'roll': ROLL, 'pad': PAD},
+    'panel': {'radius_m': RADIUS, 'arc_deg': ARC_DEG, 'z_m': [Z0, Z1], 'v_range': [V0, V1], 'repeat': REPEAT},
+    'scene': {'emissive': SCENE_EMISSIVE, 'bloom_threshold': BLOOM_THRESHOLD,
+              'shown_over_bloom': round(float((peak > BLOOM_THRESHOLD).mean()), 4),
+              'shown_median_peak': round(float(np.median(peak)), 4),
+              'sky_median_peak': round(float(np.median(sky)), 4), 'sky_p90_peak': round(float(np.percentile(sky, 90)), 4)},
 }
 json.dump(S, open(os.path.join(WORK, 'score.json'), 'w'), indent=2)
 print('SCORE', json.dumps(S))
