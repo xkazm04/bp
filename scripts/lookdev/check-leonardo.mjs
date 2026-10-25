@@ -294,7 +294,18 @@ for (const [id, seed] of Object.entries(SEEDS)) {
 const SIBLINGS = /LEONARDO_API_KEY|\.env\b|\$env:|readKey|authorization/i;
 const siblingHits = (text) => [...text.matchAll(new RegExp(SIBLINGS, 'gi'))].length;
 const HERE = path.dirname(LEO);
-const sibs = fs.readdirSync(HERE).filter((f) => !['leonardo.mjs', 'check-leonardo.mjs'].includes(f) && /\.(mjs|js|ps1)$/.test(f));
+const sibs = fs.readdirSync(HERE).filter((f) => !['leonardo.mjs', 'check-leonardo.mjs', 'tripo.mjs'].includes(f) && /\.(mjs|js|ps1)$/.test(f));
+// tripo.mjs owns a second key (TRIPO_API_KEY) in the same .env, so the siblings rule cannot hold for it; it gets the
+// source guards leonardo.mjs has instead, plus one rule of its own: it never names the Leonardo key.
+const TRIPO = path.join(HERE, 'tripo.mjs');
+if (fs.existsSync(TRIPO)) {
+  const t = fs.readFileSync(TRIPO, 'utf8').replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n').map((l) => l.replace(/(^|[^:'"\w])\/\/.*$/, '$1')).join('\n');
+  check('tripo: never names the Leonardo key', !/LEONARDO_API_KEY/.test(t));
+  check('tripo: names no absolute machine path', ![...t.matchAll(/['"`][A-Za-z]:[\\/][^'"`]*/g)].length);
+  check('tripo: its key comes from an .env resolved against the module\'s own root', /ENV_FILE\s*=\s*path\.(join|resolve)\(ROOT,/.test(t));
+  check('tripo: no child process, worker or process.env', !/child_process|worker_threads|process\.env/.test(t));
+}
 check(`siblings: none of ${sibs.join(', ')} reads the key, an .env or the environment`, sibs.length > 0 && sibs.every((f) => siblingHits(fs.readFileSync(path.join(HERE, f), 'utf8')) === 0),
   sibs.filter((f) => siblingHits(fs.readFileSync(path.join(HERE, f), 'utf8'))).join(', '));
 check('seed: the siblings guard goes red on a script that reads the key', siblingHits("const k = process.env.LEONARDO_API_KEY;") > 0);
