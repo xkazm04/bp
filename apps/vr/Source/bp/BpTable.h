@@ -104,7 +104,7 @@ public:
 	/** The rooms at rest (FC1, element 4, bp.L0Volumes 1): every room a low glass extrusion of this height, its bays the
 	 *  partitions inside it at BayPartitionRatio of it. A lifted wing leaves its rest extrusions behind, hidden. FE raised
 	 *  it from 0.8 cm: the concept's rooms stand as extrusions, ours read as flat slabs. */
-	static constexpr float RestRoomCm = 1.5f;
+	static constexpr float RestRoomCm = 2.2f;  // FK: 2.2 (from 1.5), the concept's cells stand taller than trays
 	static constexpr float BayPartitionRatio = 0.6f;
 	/** The line-weight hierarchy at rest (FC3): the rooms' glass edges at RestRoomShow, the partitions' at
 	 *  RestPartitionShow (the edge glow's Show scales its opacity), under the wing outlines the sheet draws strongest. */
@@ -112,6 +112,12 @@ public:
 	static constexpr float RestPartitionShow = 0.45f;
 	/** The lifted room's shell glows this much over a lit shell (M_EdgeGlow's Show above 1 scales its emissive; FE). */
 	static constexpr float LiftedRoomShow = 1.8f;
+	/** The pointed room at L0 (FK, element 6: the concept's raised room under the fingertip). A room highlight
+	 *  (SetHighlight("room", id): the hands' point, or BpLevel.Highlight) is a display state over the plan: the room's rest
+	 *  extrusions are hidden and a copy of them stands HighlightRiseCm taller on the same footprint, at HighlightRestShow,
+	 *  with the lifted room's glass. No instance moves in plan space; clearing it restores every Show exactly. */
+	static constexpr float HighlightRiseCm = 2.5f;
+	static constexpr float HighlightRestShow = 1.8f;
 
 	/** The fixture glyphs (FC3, element 5; ArtSource/fixture-kit): each tile at rest holds the glyph of its feature's kind,
 	 *  centred on its box, its footprint at most GlyphFill of the box and its height at most GlyphMaxCm (the shorter side
@@ -138,7 +144,7 @@ public:
 	/** The beads on the plan (every pin) and the stems under a risen pin: the pin's own amber, the bead PinBeadCm across,
 	 *  the stem PinStemCm thick (the pin's stem at PinScale). */
 	static constexpr float PinBeadCm = 1.1f;
-	static constexpr float PinStemCm = 0.24f;
+	static constexpr float PinStemCm = 0.12f;  // FK halved it (element 7: the concept's stems are hairlines)
 	/** Each bead's halo (FG, element 7: the concept's beads glow): a sphere this many times the bead, additive, brightest
 	 *  over the bead and gone at its rim (M_PinHalo). */
 	static constexpr float PinHaloScale = 3.2f;
@@ -162,15 +168,16 @@ public:
 	/** The decision card (FC1, element 10): a world-space panel near the lamp agent, drawn at CardPxPerCm (FE: about twice
 	 *  what the target capture resolves at its distance, r4 section 5; at 40 the widget was minified fourfold, unmipped,
 	 *  and its text went soft). */
-	static constexpr float CardWidthCm = 33.f;
-	static constexpr float CardHeightCm = 18.f;
-	static constexpr float CardPxPerCm = 24.f;
+	static constexpr float CardWidthCm = 37.f;
+	static constexpr float CardHeightCm = 21.f;
+	/** FK: 32 (from 24) with larger type and a warm glow border, the judge's "small and blurry" card (element 10). */
+	static constexpr float CardPxPerCm = 32.f;
 	/** Where it floats, in the actor's space: x and y, and z above the table top (the target framing puts it right of the
 	 *  lamp agent's head, as the concept's card; FE placed it by capture, FG moved it 7 cm left so it covers the end of
 	 *  FI's reaching arm, as the concept's card hides the agent's hand). */
 	static constexpr float CardPlaceXCm = 36.f;
-	static constexpr float CardPlaceYCm = 35.f;
-	static constexpr float CardAboveTopCm = 26.f;
+	static constexpr float CardPlaceYCm = 32.f;  // FK: 3 cm nearer the lamp's head for the larger card
+	static constexpr float CardAboveTopCm = 25.f;
 
 	ABpTable();
 
@@ -336,6 +343,9 @@ private:
 	/** The rooms and their bays at rest, low (RestRoomCm), on the paper; they never lift. */
 	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
 	TObjectPtr<UInstancedStaticMeshComponent> RestVolumes;
+	/** The pointed room's rest extrusions, raised (HighlightRiseCm) while a room highlight is set at rest (FK). */
+	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
+	TObjectPtr<UInstancedStaticMeshComponent> HighlightShell;
 	/** The tagged pins, their tags included: one batch. */
 	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
 	TObjectPtr<UInstancedStaticMeshComponent> Pins;
@@ -575,6 +585,8 @@ private:
 	/** Each rest instance's room (plan index), and its ink (RestRoomShow or RestPartitionShow). */
 	TArray<int32> RestRoom;
 	TArray<float> RestInk;
+	/** The room (plan index) HighlightShell stands for, or none. */
+	int32 HighlightRestRoom = INDEX_NONE;
 
 	// ---- Marks state (BpMarks.cpp) ------------------------------------------------------------------------------------
 	struct FPin

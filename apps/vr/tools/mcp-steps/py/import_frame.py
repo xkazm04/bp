@@ -44,6 +44,10 @@ glow = next(m for m in gltf["materials"] if m["name"] == "frame_edge_glow")
 strength = glow.get("extensions", {}).get("KHR_materials_emissive_strength", {}).get("emissiveStrength", 1.0)
 mi = unreal.load_asset(DEST + "/final/Materials/frame_edge_glow")
 unreal.MaterialEditingLibrary.set_material_instance_scalar_parameter_value(mi, "EmissiveStrength", strength)
+# FK (FJ's frame, c86a0c4): the re-import kept the old instance's white base colour, so the strip read as a lit white bar;
+# all three are set: a dark base (#0A0F18), a cool-white emissive (#F4FAFF), and the GLB's strength (fg_holo.py tunes it).
+unreal.MaterialEditingLibrary.set_material_instance_vector_parameter_value(mi, "BaseColorFactor", unreal.LinearColor(0.003, 0.0048, 0.0091, 1.0))
+unreal.MaterialEditingLibrary.set_material_instance_vector_parameter_value(mi, "EmissiveFactor", unreal.LinearColor(0.9047, 0.956, 1.0, 1.0))
 unreal.EditorAssetLibrary.save_loaded_asset(mi, only_if_is_dirty=False)
 result["glow_emissive_strength"] = unreal.MaterialEditingLibrary.get_material_instance_scalar_parameter_value(mi, "EmissiveStrength")
 

@@ -130,7 +130,12 @@ namespace
 	 *  block, with the scale bar in it, on the paper the shortest wing leaves empty (off the hands' path in the target
 	 *  framing); the breadcrumb near-right (the hands' way back, WP3); the compass in the left margin. */
 	constexpr double WingLabelGapCm = 1.1;
-	constexpr double WingLabelClearCm = 0.4;
+	/** FK raised it from 0.4 (element 3): the glass walls' halo and fresnel face ran through the names (0.9 dropped the
+	 *  wing tag line for want of paper above it). */
+	constexpr double WingLabelClearCm = 0.6;
+	/** The wing labels sit on a slight dark backing (FK, element 3), so no glowing edge behind them reads through. */
+	constexpr double LabelBackPadCm = 0.3;
+	const FLinearColor LabelBacking(0.003f, 0.01f, 0.045f, 0.55f);
 	constexpr double WingTagGapCm = 0.45;
 	/** The paper above the highest tag line that stays clear of the frame's glow strip. */
 	constexpr double PaperTopClearCm = 0.3;
@@ -190,9 +195,12 @@ namespace
 	 *  shells seen at a grazing angle read as glass over the paper, not a grey wash (WP2's leftover). */
 	constexpr float RoomFaceOpacity = 0.02f;
 	/** The rest extrusions' glass (FC1; FE raised it with the edges, so a room reads as a faintly lit glass block). */
-	constexpr float RestFaceOpacity = 0.04f;
+	constexpr float RestFaceOpacity = 0.015f;  // FK: crisp glass, the judge's "milky trays" (element 4)
 	/** The lifted room's glass (FE): a stronger face than its siblings', as the concept's raised room. */
 	constexpr float LiftedFaceOpacity = 0.15f;
+	/** The pointed room's raised copy (FK, element 6): a lit glass face and the brightest edges on the sheet. */
+	constexpr float HighlightFaceOpacity = 0.6f;
+	constexpr float HighlightEdgeIntensity = 8.0f;
 	/** The edges' emissive scale per batch (M_EdgeGlow's Intensity, its default 1.4; FE, elements 4 and 6, against the
 	 *  concept's bright cyan edges): the rest extrusions brightest, as the concept's rooms on the sheet; the lifted wing's
 	 *  shells and the lifted room's tiles under them; the lifted room's shell carries LiftedRoomShow on top. All of it
@@ -208,7 +216,7 @@ namespace
 	constexpr float PaperVignetteEdge = 0.4f;
 	constexpr float PaperInkGlow = 1.0f;
 	/** The fixture glyphs' glow (M_Glyph's GlyphGlow, its default 0.45; FE: the concept's furniture glows inside the rooms). */
-	constexpr float GlyphGlow = 1.0f;
+	constexpr float GlyphGlow = 0.6f;  // FK: at 1.0 under the wider bloom the glyphs read as milky blobs
 	/** The greybox's volumes: faces only, on UWidgetComponent's translucent engine material. */
 	constexpr float GreyboxVolumeOpacity = 0.12f;
 	/** Labels draw after the volumes (translucent sort), so a glowing edge never lies over a wing's name. */
@@ -364,6 +372,9 @@ ABpTable::ABpTable()
 	// The rest extrusions carry a fifth float: the face factor (1 a room's faint glass, 0 a bay's partition, edges only).
 	RestVolumes = MakeVolumes(TEXT("RestVolumes"));
 	RestVolumes->NumCustomDataFloats = VolumeCustomFloats + 1;
+	// The pointed room's raised copy (FK), with the rest extrusions' layout.
+	HighlightShell = MakeVolumes(TEXT("HighlightShell"));
+	HighlightShell->NumCustomDataFloats = VolumeCustomFloats + 1;
 	// The pins, tags included: placed in the actor's space (they follow a lifted wing or room by their transforms); custom
 	// data 0 to 3 is the tag's atlas cell.
 	Pins = MakeVolumes(TEXT("Pins"));
@@ -537,7 +548,7 @@ void ABpTable::LoadArt()
 	SheetOverlay->SetVisibility(false);
 
 	// The volumes: M_EdgeGlow, one instance per kind (bays without a face); the greybox is a faint translucent face.
-	UInstancedStaticMeshComponent* const Kinds[5] = { Rooms, Bays, Tiles, RestVolumes, LiftedShell };
+	UInstancedStaticMeshComponent* const Kinds[6] = { Rooms, Bays, Tiles, RestVolumes, LiftedShell, HighlightShell };
 	VolumeMids.Reset();
 	if (UMaterialInterface* Glow = LoadOrGreybox(VolumeMaterial, true))
 	{
@@ -547,8 +558,9 @@ void ABpTable::LoadArt()
 			if (Kind == Bays) Mid->SetScalarParameterValue(TEXT("FaceOpacity"), BayFaceOpacity);
 			if (Kind == Rooms) Mid->SetScalarParameterValue(TEXT("FaceOpacity"), RoomFaceOpacity);
 			if (Kind == LiftedShell) Mid->SetScalarParameterValue(TEXT("FaceOpacity"), LiftedFaceOpacity);
+			if (Kind == HighlightShell) Mid->SetScalarParameterValue(TEXT("FaceOpacity"), HighlightFaceOpacity);
 			if (Kind == RestVolumes) Mid->SetScalarParameterValue(TEXT("FaceOpacity"), RestFaceOpacity);
-			Mid->SetScalarParameterValue(TEXT("Intensity"), Kind == RestVolumes ? RestEdgeIntensity : Kind == LiftedShell ? LiftedEdgeIntensity : ShellEdgeIntensity);
+			Mid->SetScalarParameterValue(TEXT("Intensity"), Kind == RestVolumes ? RestEdgeIntensity : Kind == HighlightShell ? HighlightEdgeIntensity : Kind == LiftedShell ? LiftedEdgeIntensity : ShellEdgeIntensity);
 			Kind->SetMaterial(0, Mid);
 			VolumeMids.Add(Mid);
 		}
@@ -1267,6 +1279,8 @@ void ABpTable::ClearVolumes()
 {
 	RestVolumes->ClearInstances();
 	LiftedShell->ClearInstances();
+	HighlightShell->ClearInstances();
+	HighlightRestRoom = INDEX_NONE;
 	Rooms->ClearInstances();
 	Bays->ClearInstances();
 	Tiles->ClearInstances();
@@ -1484,7 +1498,8 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 		const FString Name = Fit(Wing.name, BpType::WingName, NameFloor, MaxCm, Key, NameCap);
 		Report(TEXT("wing-name"), Name, A.X, NameBase, NameCap, NameFloor);
 		if (Name.IsEmpty()) continue;
-		Put(Name, BpType::WingName, A.X, NameBase - NameCap, NameCap, Ink(WarmPaper, TextInk), 0.0);
+		const double NameW = Put(Name, BpType::WingName, A.X, NameBase - NameCap, NameCap, Ink(WarmPaper, TextInk), 0.0);
+		Pen.Fill(PaperPx(A.X - LabelBackPadCm, NameBase - NameCap - LabelBackPadCm), PaperPx(A.X + NameW + LabelBackPadCm, NameBase + LabelBackPadCm), LabelBacking);
 		LabelTop = FMath::Min(LabelTop, NameBase - NameCap);
 		// The tag line above it ("WING A") is drawn only when every wing's fits under the paper's top at the floor: a class
 		// is kept or dropped whole, never for some wings (Kettle's centre wings leave it no room: dropped, logged).
@@ -1524,7 +1539,11 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 	{
 		const FVector3d& At = Tag.Value;
 		Report(TEXT("wing-tag"), bTags ? Tag.Key : FString(), At.X, At.Y, At.Z, At.Z);
-		if (bTags) Put(Tag.Key, BpType::WingTag, At.X, At.Y - At.Z, At.Z, Ink(CyanWhite, TextInk), 0.0);
+		if (bTags)
+		{
+			const double TagW = Put(Tag.Key, BpType::WingTag, At.X, At.Y - At.Z, At.Z, Ink(CyanWhite, TextInk), 0.0);
+			Pen.Fill(PaperPx(At.X - LabelBackPadCm, At.Y - At.Z - LabelBackPadCm), PaperPx(At.X + TagW + LabelBackPadCm, At.Y + LabelBackPadCm), LabelBacking);
+		}
 		if (bTags) LabelTop = FMath::Min(LabelTop, At.Y - At.Z);
 	}
 	if (LabelTop != WingLabelTopV)

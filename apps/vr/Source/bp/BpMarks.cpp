@@ -45,7 +45,9 @@ namespace
 	const FLinearColor Cyan(FColor(0xBF, 0xE8, 0xFF));
 	/** The card's glass and its edge (FE): near-white, a little cool, as the concept's card. */
 	const FLinearColor CardGlass(FColor(0xF4, 0xF7, 0xFB));
-	const FLinearColor CardEdge(FColor(0xDF, 0xF3, 0xFF));
+	const FLinearColor CardEdge(FColor(0xFF, 0xE2, 0xB0));
+	/** The card's soft warm glow around its edge (FK, element 10: the concept's card glows like the lamp's light). */
+	const FLinearColor CardGlow(FColor(0xFF, 0xB8, 0x60));
 	/** The card's layout is in pixels at this density; SDPIScaler draws it at CardPxPerCm. */
 	constexpr float CardLayoutPxPerCm = 40.f;
 
@@ -239,6 +241,8 @@ void ABpTable::LoadMarks()
 		}
 		const int32 TagSlot = Pins->GetMaterialIndex(TEXT("pin_tag"));
 		if (TagSlot != INDEX_NONE && TagMid) Pins->SetMaterial(TagSlot, TagMid);
+		// The tags draw after the additive glass (FK, element 7): a room's wall in front of a tag no longer washes it out.
+		Pins->SetTranslucentSortPriority(5);
 		// The beads and the stems in the pin's own amber.
 		if (UMaterialInterface* Body = LoadSoft(PinBodyMaterial))
 		{
@@ -597,12 +601,22 @@ void ABpTable::WriteScanParams(float Strength)
 		FTransform Group = WingGroupTransform(0.f);
 		if (!ScanWing.IsEmpty() && ScanWing == AnimWing) Group = LiftedWingTransform();
 		const FTransform& Actor = GetActorTransform();
-		const FVector2D Mid = PlanToPaperCm(FVector2D(ScanPlanBox.GetCenter().X, ScanY));
+		FVector2D Mid = PlanToPaperCm(FVector2D(ScanPlanBox.GetCenter().X, ScanY));
+		HalfLength = ScanPlanBox.GetSize().X * 0.5 * BpPlanUnitCm + ScanOverrunCm;
+		// The display rule (FK, element 8, the concept's beam crossing the whole table): on the paper the band spans the
+		// paper's full width at the row being read, so a scan reads as sweeping the site; the data still decides the row
+		// (the current feature's), and the scanned place is what the rooms' brighten under the band shows. Over a lifted
+		// wing it stays the scanned place's width, scaled with it.
+		if (Group.Equals(WingGroupTransform(0.f)))
+		{
+			Mid.X = PaperWidthCm * 0.5;
+			HalfLength = PaperWidthCm * 0.5;
+		}
 		Centre = Actor.TransformPosition(Group.TransformPosition(PaperCmToLocal(Mid, 0.f)));
 		// Plan y runs toward the viewer (local -X), plan x to the right (local +Y).
 		Axis = Actor.TransformVectorNoScale(FVector(-1.0, 0.0, 0.0));
 		Side = Actor.TransformVectorNoScale(FVector(0.0, 1.0, 0.0));
-		HalfLength = (ScanPlanBox.GetSize().X * 0.5 * BpPlanUnitCm + ScanOverrunCm) * Group.GetScale3D().Y;
+		HalfLength *= Group.GetScale3D().Y;
 		HalfWidth = ScanHalfWidthCm * Group.GetScale3D().X;
 	}
 	UKismetMaterialLibrary::SetVectorParameterValue(World, ScanParams, TEXT("ScanCentre"), FLinearColor(Centre.X, Centre.Y, Centre.Z, HalfWidth));
@@ -688,9 +702,11 @@ void ABpTable::RefreshCard()
 	const FBpScanState& State = FBpLinkModule::Get().GetScanState();
 	TMap<FString, int32> TileOf;
 	for (int32 Index = 0; Index < SheetPlan->tiles.Num(); ++Index) TileOf.Add(SheetPlan->tiles[Index].id, Index);
-	// The finding the card asks about: the first open one in the lifted room, else the first open one in store order.
+	// The finding the card asks about: the first open one in the lifted room, else in the pointed room (a room highlight,
+	// FK), else the first open one in store order.
 	const FBpProposal* Ask = nullptr;
-	const int32 Lifted = AnimRoom.IsEmpty() ? INDEX_NONE : SheetPlan->rooms.IndexOfByPredicate([this](const FBpPlanRoom& R) { return R.id == AnimRoom; });
+	const FString& AskRoom = !AnimRoom.IsEmpty() ? AnimRoom : (HighlightKind == TEXT("room") ? HighlightId : FString());
+	const int32 Lifted = AskRoom.IsEmpty() ? INDEX_NONE : SheetPlan->rooms.IndexOfByPredicate([&AskRoom](const FBpPlanRoom& R) { return R.id == AskRoom; });
 	for (const FBpProposal& Proposal : State.Scan.proposals)
 	{
 		const int32* Tile = TileOf.Find(Proposal.feature);
@@ -741,7 +757,9 @@ void ABpTable::RefreshCard()
 
 	// The concept's card (FE, element 10): a white glass panel with a soft cyan-white edge, set in the sheet's family
 	// (BpType.h), laid out at CardLayoutPxPerCm and drawn at CardPxPerCm (about twice what the target eye resolves there).
-	static const FSlateRoundedBoxBrush Panel(CardGlass.CopyWithNewOpacity(0.86f), 22.f, CardEdge.CopyWithNewOpacity(0.9f), 4.f);
+	static const FSlateRoundedBoxBrush Panel(CardGlass.CopyWithNewOpacity(0.88f), 22.f, CardEdge.CopyWithNewOpacity(0.95f), 5.f);
+	static const FSlateRoundedBoxBrush GlowOuter(CardGlow.CopyWithNewOpacity(0.06f), 50.f);
+	static const FSlateRoundedBoxBrush GlowInner(CardGlow.CopyWithNewOpacity(0.16f), 36.f);
 	static const FSlateRoundedBoxBrush Approve(AmberInk, 12.f);
 	static const FSlateRoundedBoxBrush Decline(FLinearColor::Transparent, 12.f, CardInk.CopyWithNewOpacity(0.7f), 2.5f);
 	// A button: its mark in Slate's default face (Barlow has no check or cross), its word in the sheet's family.
@@ -763,6 +781,10 @@ void ABpTable::RefreshCard()
 	Card->SetSlateWidget(
 		SNew(SDPIScaler).DPIScale(CardPxPerCm / CardLayoutPxPerCm)
 		[
+		SNew(SBorder).BorderImage(&GlowOuter).Padding(14.f)
+		[
+		SNew(SBorder).BorderImage(&GlowInner).Padding(12.f)
+		[
 		SNew(SBorder).BorderImage(&Panel).Padding(FMargin(38.f, 30.f))
 		[
 			SNew(SVerticalBox)
@@ -771,11 +793,11 @@ void ABpTable::RefreshCard()
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().FillWidth(1.f)
 				[
-					SNew(STextBlock).Text(FText::FromString(Header)).Font(CanvasFont(TEXT("Bold"), 30.f)).ColorAndOpacity(FSlateColor(CardInk.CopyWithNewOpacity(0.65f)))
+					SNew(STextBlock).Text(FText::FromString(Header)).Font(CanvasFont(TEXT("Bold"), 33.f)).ColorAndOpacity(FSlateColor(CardInk.CopyWithNewOpacity(0.65f)))
 				]
 				+ SHorizontalBox::Slot().AutoWidth()
 				[
-					SNew(STextBlock).Text(FText::FromString(Ask->id.ToUpper())).Font(CanvasFont(TEXT("Regular"), 30.f)).ColorAndOpacity(FSlateColor(CardInk.CopyWithNewOpacity(0.65f)))
+					SNew(STextBlock).Text(FText::FromString(Ask->id.ToUpper())).Font(CanvasFont(TEXT("Regular"), 33.f)).ColorAndOpacity(FSlateColor(CardInk.CopyWithNewOpacity(0.65f)))
 				]
 			]
 			+ SVerticalBox::Slot().FillHeight(1.f).Padding(0.f, 16.f, 0.f, 0.f)
@@ -786,15 +808,15 @@ void ABpTable::RefreshCard()
 					SNew(SVerticalBox)
 					+ SVerticalBox::Slot().AutoHeight()
 					[
-						SNew(STextBlock).Text(FText::FromString(Target)).AutoWrapText(true).Font(CanvasFont(TEXT("Bold"), 44.f)).ColorAndOpacity(FSlateColor(CardInk))
+						SNew(STextBlock).Text(FText::FromString(Target)).AutoWrapText(true).Font(CanvasFont(TEXT("Bold"), 52.f)).ColorAndOpacity(FSlateColor(CardInk))
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 16.f, 0.f, 0.f)
 					[
-						SNew(STextBlock).Text(FText::FromString(Ask->title)).AutoWrapText(true).Font(CanvasFont(TEXT("Regular"), 36.f)).ColorAndOpacity(FSlateColor(CardInk))
+						SNew(STextBlock).Text(FText::FromString(Ask->title)).AutoWrapText(true).Font(CanvasFont(TEXT("Regular"), 41.f)).ColorAndOpacity(FSlateColor(CardInk))
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 10.f, 0.f, 0.f)
 					[
-						SNew(STextBlock).Text(FText::FromString(Impact)).AutoWrapText(true).Font(CanvasFont(TEXT("Regular"), 32.f)).ColorAndOpacity(FSlateColor(CardInk.CopyWithNewOpacity(0.8f)))
+						SNew(STextBlock).Text(FText::FromString(Impact)).AutoWrapText(true).Font(CanvasFont(TEXT("Regular"), 34.f)).ColorAndOpacity(FSlateColor(CardInk.CopyWithNewOpacity(0.8f)))
 					]
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top)
@@ -817,6 +839,8 @@ void ABpTable::RefreshCard()
 					Button(&Decline, TEXT("✕"), TEXT("DECLINE"))
 				]
 			]
+		]
+		]
 		]
 		]);
 	Card->RequestRedraw();

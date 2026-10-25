@@ -41,6 +41,9 @@ WALL = 10.0
 # One tall window in the back wall, right of the table's centre line as in the concept, where the city shows through.
 WINDOW_Y = (40.0, 190.0)
 WINDOW_Z = (20.0, 280.0)
+# FK (element 14): the opening runs on from the window to a corner post, so the city's towers stand at the right edge of
+# the target frame as in the concept; fk_city.py fills the new part with a second frame.
+WINDOW_OPEN_Y1 = ROOM_Y[1] - 6.0
 MULLION = 5.0
 STUDIO = "#0A0F18"  # style block 'studio'
 STUDIO_ROUGHNESS = 0.7
@@ -112,7 +115,7 @@ HANDS_YAW = 90.0
 # The wrist panel's point on the left hand, in the hand mesh's axes (cm): the watch's centre (FD's manifest: Blender
 # (-21.8, -1.5, 12.95) cm, so UE mesh (-21.8, 1.5, 12.95): Interchange negates Y) lifted to the face's top; the panel's
 # own offset from it is BpPawn::WristCapture*.
-WRIST_LOCAL = (-21.8, 1.5, 13.4)
+WRIST_LOCAL = (-17.4, 13.7, 11.8)  # FL's hands (01ab214): the watch face tilts with the rising forearm
 
 # FD's pendant lamps over the side desks (spark vr-fidelity-40 FF): pivot at the canopy, dome rim PENDANT_DROP below it.
 # Hung from the ceiling (pivot at 300) they sit above the target pose's frame (its top edge is about 1.3 m up on the back
@@ -284,9 +287,9 @@ box(x0 - WALL, x1 + WALL, y0 - WALL, y0, 0.0, ROOM_H, S)  # left wall
 box(x0 - WALL, x1 + WALL, y1, y1 + WALL, 0.0, ROOM_H, S)  # right wall
 # The back wall around the window opening.
 box(x1, x1 + WALL, y0, WINDOW_Y[0], 0.0, ROOM_H, S)
-box(x1, x1 + WALL, WINDOW_Y[1], y1, 0.0, ROOM_H, S)
-box(x1, x1 + WALL, WINDOW_Y[0], WINDOW_Y[1], 0.0, WINDOW_Z[0], S)
-box(x1, x1 + WALL, WINDOW_Y[0], WINDOW_Y[1], WINDOW_Z[1], ROOM_H, S)
+box(x1, x1 + WALL, WINDOW_OPEN_Y1, y1, 0.0, ROOM_H, S)
+box(x1, x1 + WALL, WINDOW_Y[0], WINDOW_OPEN_Y1, 0.0, WINDOW_Z[0], S)
+box(x1, x1 + WALL, WINDOW_Y[0], WINDOW_OPEN_Y1, WINDOW_Z[1], ROOM_H, S)
 # The window's mullions and transoms are FD's window frame now (a prop below), not shell boxes.
 mid = (WINDOW_Y[0] + WINDOW_Y[1]) / 2
 # The pendants' cords above their meshes (PENDANTS): a thin dark rod from the canopy height to the ceiling.

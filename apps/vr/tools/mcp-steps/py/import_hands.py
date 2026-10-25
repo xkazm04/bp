@@ -24,7 +24,7 @@ SKIN_SSS_SCALE = 0.12
 SKIN_ROUGHNESS = 0.5
 # The CC0 albedo is a pale skin; under the table's light it read paler than the concept's warm, tanned hands, so the
 # albedo is multiplied by SKIN_TINT (FF, judged against the target in the capture).
-SKIN_TINT = V(0.72, 0.58, 0.48, 1.0)
+SKIN_TINT = V(0.78, 0.64, 0.54, 1.0)  # FK: FL's albedo (01ab214) is tanner on the backs already
 SKIN_F0 = 0.028
 SLEEVE_ALBEDO = V(0.013, 0.014, 0.017, 1.0)
 SLEEVE_ROUGHNESS = 0.95

@@ -553,6 +553,47 @@ float ABpTable::RoomRiseEase(int32 Room) const
 void ABpTable::ApplyRestVolumes(float WingEase)
 {
 	const bool bOn = CVarL0VolumesValue() != 0;
+	// The pointed room (FK): a room highlight at rest (no wing lifted) raises that room's extrusions (HighlightShell).
+	int32 Pointed = INDEX_NONE;
+	if (bOn && AnimWing.IsEmpty() && HighlightKind == TEXT("room") && !HighlightId.IsEmpty() && SheetPlan.IsValid())
+	{
+		Pointed = SheetPlan->rooms.IndexOfByPredicate([this](const FBpPlanRoom& Room) { return Room.id == HighlightId; });
+	}
+	if (Pointed != HighlightRestRoom)
+	{
+		HighlightShell->ClearInstances();
+		HighlightRestRoom = Pointed;
+		if (Pointed != INDEX_NONE)
+		{
+			// Each of the room's rest instances copied, standing on the same footprint, its height grown by the rise (the
+			// partitions in proportion), at its own ink times HighlightRestShow.
+			const double Grow = (RestRoomCm + HighlightRiseCm) / RestRoomCm;
+			TArray<FTransform> Raised;
+			TArray<float> Data;
+			for (int32 Index = 0; Index < RestRoom.Num(); ++Index)
+			{
+				if (RestRoom[Index] != Pointed) continue;
+				FTransform T;
+				RestVolumes->GetInstanceTransform(Index, T, false);
+				const FVector Size = T.GetScale3D() * 100.0;
+				const double Base = T.GetLocation().Z - Size.Z * 0.5;
+				const FVector Grown(Size.X, Size.Y, Size.Z * Grow);
+				T.SetLocation(FVector(T.GetLocation().X, T.GetLocation().Y, Base + Grown.Z * 0.5));
+				T.SetScale3D(Grown / 100.0);
+				Raised.Add(T);
+				const float Ink = RestInk.IsValidIndex(Index) ? RestInk[Index] : RestRoomShow;
+				Data.Append({ static_cast<float>(Grown.X), static_cast<float>(Grown.Y), static_cast<float>(Grown.Z), Ink * HighlightRestShow, Ink == RestRoomShow ? 1.f : 0.f });
+			}
+			HighlightShell->SetNumCustomDataFloats(5);  // as RestVolumes: size, Show, face
+			if (Raised.Num() > 0)
+			{
+				HighlightShell->AddInstances(Raised, false, false, false);
+				HighlightShell->SetCustomData(0, Raised.Num() - 1, Data, true);
+			}
+		}
+		UE_LOG(LogBpTable, Log, TEXT("BpLevel: pointed room %s (%d raised)"), Pointed == INDEX_NONE ? TEXT("none") : *SheetPlan->rooms[Pointed].id, HighlightShell->GetInstanceCount());
+	}
+	HighlightShell->SetRelativeTransform(WingGroupTransform(0.f));
 	bool bDirty = false;
 	for (int32 Index = 0; Index < RestRoom.Num() && Index < ShownRest.Num(); ++Index)
 	{
@@ -562,6 +603,8 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 		if (bOn) Show = AnimWing.IsEmpty() ? 1.f : (Wing == AnimWing ? 1.f - WingEase : FMath::Lerp(1.f, LevelDim, WingEase));
 		// The line-weight hierarchy (FC3): rooms medium, partitions fine.
 		if (RestInk.IsValidIndex(Index)) Show *= RestInk[Index];
+		// The pointed room shows in HighlightShell instead.
+		if (Room != INDEX_NONE && Room == Pointed) Show = 0.f;
 		if (ShownRest[Index] == Show) continue;
 		ShownRest[Index] = Show;
 		RestVolumes->SetCustomDataValue(Index, 3, Show, false);
@@ -586,6 +629,8 @@ void ABpTable::SetHighlight(const FString& Kind, const FString& Id)
 	for (float& Shown : ShownRooms) Shown = -1.f;
 	UpdateBreadcrumb();
 	ApplyLevelVisuals();
+	// The card asks about the pointed room's finding when it has one (RefreshCard).
+	if (bCardShown) RefreshCard();
 }
 
 bool ABpTable::HitTest(const FVector& WorldOrigin, const FVector& WorldDir, FString& OutKind, FString& OutId) const

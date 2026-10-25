@@ -88,9 +88,14 @@ TAG_GLOW = 1.3
 # The frame: its strip a glowing line, not a lit white bar (its white base colour took the fill light and the
 # reflections: with its emissive at 0 it still read as a thick white bar, Lynx 2026-10-25), and its finish darker,
 # silver-grey, as the concept's frame around the strip.
-FRAME_STRIP_BASE = 0.02
-FRAME_STRIP_STRENGTH = 1.5
-FRAME_TINT = 0.22
+# FK, for FJ's frame (c86a0c4: a thin line in a slim silver rim whose atlas carries its own grey): the strip's base
+# #0A0F18 and emissive #F4FAFF (linear), its strength and the atlas tint by capture.
+FRAME_STRIP_BASE = (0.003, 0.0048, 0.0091)
+FRAME_STRIP_EMISSIVE = (0.9047, 0.956, 1.0)
+FRAME_STRIP_STRENGTH = 4.0
+# 1.0 (untinted) lit the slim rim a flat light grey under FrameFill, a wide pale band round the line (fk/hero1); the
+# concept's frame is dark round its glowing strip.
+FRAME_TINT = 0.35
 # The city through the window (element 14): fe_atmos.py's 6 doubled, so more of its lights cross the bloom threshold
 # and halate like the concept's bokeh city. Replay fe_atmos.py before this step.
 CITY_EMISSIVE = 12.0
@@ -345,7 +350,8 @@ mel.recompile_material(tag)
 eal.save_asset(TAG, only_if_is_dirty=False)
 strip = unreal.load_asset(FRAME_GLOW)
 mel.set_material_instance_scalar_parameter_value(strip, "EmissiveStrength", FRAME_STRIP_STRENGTH)
-mel.set_material_instance_vector_parameter_value(strip, "BaseColorFactor", unreal.LinearColor(FRAME_STRIP_BASE, FRAME_STRIP_BASE, FRAME_STRIP_BASE, 1.0))
+mel.set_material_instance_vector_parameter_value(strip, "BaseColorFactor", unreal.LinearColor(*FRAME_STRIP_BASE, 1.0))
+mel.set_material_instance_vector_parameter_value(strip, "EmissiveFactor", unreal.LinearColor(*FRAME_STRIP_EMISSIVE, 1.0))
 eal.save_loaded_asset(strip, only_if_is_dirty=False)
 atlas = unreal.load_asset(FRAME_ATLAS)
 mel.set_material_instance_vector_parameter_value(atlas, "BaseColorFactor", unreal.LinearColor(FRAME_TINT, FRAME_TINT, FRAME_TINT, 1.0))
