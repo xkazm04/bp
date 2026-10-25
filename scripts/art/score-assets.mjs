@@ -30,7 +30,7 @@ export const ASSETS = {
  */
 const W = (rel, ...rest) => ({ writer: `scripts/art/${rel}`, scripts: [`scripts/art/${rel}`, ...rest] });
 const STUDIO = W('studio-kit/write_manifest.mjs', 'scripts/art/lib/polyhaven.mjs');
-const KITS = W('studio-kit/write_kit_manifest.mjs', 'scripts/art/lib/polyhaven.mjs');
+const KITS = W('studio-kit/kits_write_manifest.mjs', 'scripts/art/lib/polyhaven.mjs');
 const MATERIAL = W('materials/write_manifests.mjs');
 const KIT = W('write-manifests.mjs', 'scripts/art/score-assets.mjs');
 export const ENTRY_POINTS = {

@@ -2,7 +2,7 @@
 // studio-desk-clutter, studio-architecture) from its measured score (<work>/<asset-id>/score.json, a re-import of
 // final.glb) and the files on disk. The kits have no concept stage, so the build owns their identity and input gate.
 // Gate results are derived from the measurements, never typed in.
-//   node scripts/art/studio-kit/write_kit_manifest.mjs <work-dir> <asset-id>
+//   node scripts/art/studio-kit/kits_write_manifest.mjs <work-dir> <asset-id>
 // Landing order (the kit stamps lynx_commit from git, so a folder no commit touches cannot be written): commit the
 // folder's files first, then run this writer, then commit the manifest; declare the folder in score-assets.mjs ENTRY_POINTS.
 import fs from 'node:fs';
@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { MB10, argsOrUsage, cm, folderDir, gate, inventory, writeStage } from '../lib/manifest-kit.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
-const [work, id] = argsOrUsage(2, 'node scripts/art/studio-kit/write_kit_manifest.mjs <work-dir> <asset-id>');
+const [work, id] = argsOrUsage(2, 'node scripts/art/studio-kit/kits_write_manifest.mjs <work-dir> <asset-id>');
 const S = JSON.parse(fs.readFileSync(path.join(work, id, 'score.json'), 'utf8'));
 const { files: all, file_bytes: sizes } = inventory(folderDir(ROOT, id));
 const tex = all.filter((f) => f.startsWith('textures/'));
@@ -64,7 +64,7 @@ const O = {
   placement: USE.place,
   axes: 'Blender Z up, facing -Y; glTF Y-up (Interchange lands Blender -Y on UE -Y)',
   licence: `own procedural work (Blender is a GPL tool; its output is ours); bake inputs CC0: ${[...scans, ...models].join('; ')}${USE.printed ? '; printed sheets from our own logged Leonardo generations (ruling R8b) and procedural sheets' : ''}`,
-  regenerate: `node scripts/art/lib/polyhaven.mjs <work>/polyhaven 2k; node scripts/art/lib/polyhaven.mjs <work>/polyhaven 1k --models; blender -b -P scripts/art/studio-kit/build_kits.bpy -- <repo-root> <work> ${id}; blender -b -P scripts/art/studio-kit/render_kits.bpy -- <repo-root> ${id}; node scripts/art/studio-kit/write_kit_manifest.mjs <work> ${id}`,
+  regenerate: `node scripts/art/lib/polyhaven.mjs <work>/polyhaven 2k; node scripts/art/lib/polyhaven.mjs <work>/polyhaven 1k --models; blender -b -P scripts/art/studio-kit/build_kits.bpy -- <repo-root> <work> ${id}; blender -b -P scripts/art/studio-kit/render_kits.bpy -- <repo-root> ${id}; node scripts/art/studio-kit/kits_write_manifest.mjs <work> ${id}`,
   gates: {
     input: gate(true, `procedural, no generated geometry; CC0 inputs only (Poly Haven scans${models.length ? ' and models' : ''}, licence recorded)${USE.printed ? '; printed sheets from logged Leonardo calls (R8b)' : ''}`),
     mesh_acceptance: gate(meshOk, `re-imported from final.glb: ${meshes.map(([n, m]) => `${n} ${m.tris} tris, ${m.components} components, ${m.floaters} floaters (a component touching neither another one nor the kit's anchor plane), ${m.open_edges} open edges`).join('; ')}${id === 'studio-desk-clutter' ? '. The open edges are the Poly Haven models\' own (pencil ends, the decimated binder\'s page block): their shells are not closed at source; every procedural part is closed' : ''}`),
