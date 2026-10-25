@@ -500,14 +500,15 @@ void ABpTable::RaisePins()
 	UE_LOG(LogBpTable, Log, TEXT("BpTable: tags clear the wing labels (paper v %.1f to %.1f): risen [%s]"), FarV, NearV, *FString::Join(Risen, TEXT(", ")));
 }
 
-double ABpTable::SlideOffStems(double U0, double Width, double MaxU, double VTop, double VBase) const
+double ABpTable::SlideOffStems(double Lo, double Pref, double Width, double MaxU, double VTop, double VBase) const
 {
+	const double U0 = FMath::Max(Lo, Pref);
 	if (!SheetPlan.IsValid()) return U0;
 	// From the target eye (on the centre line, local X Eye.X, EyeZ over the paper), a stem standing at local (X, Y) lies
 	// over the paper along the line from the eye's foot through its foot. Where that line crosses the row is what the
 	// label keeps clear of, by StemClearCm. Every tagged pin counts: RaisePins (run after the labels) lifts each tag
 	// that would stand over the row clear of it, so its stem crosses the row.
-	constexpr double StemClearCm = 0.5;
+	constexpr double StemClearCm = 1.0;  // FP: 1.0 (from 0.5), a clear gap, not a touch (by capture)
 	const double EyeX = -(TableDepthCm * 0.5 + ABpGameMode::TargetBehindNearEdgeCm);
 	const double EyeZ = ABpGameMode::TargetEyeAboveTopCm + GlassRecessCm;
 	TArray<FVector2D> Blocked;
@@ -523,18 +524,20 @@ double ABpTable::SlideOffStems(double U0, double Width, double MaxU, double VTop
 		const double C0 = CrossU(XNear), C1 = CrossU(XFar);
 		Blocked.Add(FVector2D(FMath::Min(C0, C1) - StemClearCm - Width, FMath::Max(C0, C1) + StemClearCm));
 	}
-	// The fewest stems crossed, then the nearest to U0: a row with no clear slot still crosses as few as it can.
-	const double Hi = FMath::Max(U0, MaxU - Width);
+	// The fewest stems crossed, then the nearest to the preferred place: a row with no clear slot still crosses as few as it
+	// can. Anywhere from Lo to MaxU - Width (FP: the caller's range runs past its wing's own edges).
+	const double Hi = FMath::Max(Lo, MaxU - Width);
 	const auto Crossed = [&](double U) { return Blocked.FilterByPredicate([U](const FVector2D& B) { return U > B.X + 1e-6 && U < B.Y - 1e-6; }).Num(); };
-	TArray<double> Candidates = { U0, Hi };
+	const double Start = FMath::Clamp(Pref, Lo, Hi);
+	TArray<double> Candidates = { Lo, Start, Hi };
 	for (const FVector2D& B : Blocked) Candidates.Append({ B.X, B.Y });
-	double Best = U0;
-	int32 BestN = Crossed(U0);
+	double Best = Start;
+	int32 BestN = Crossed(Start);
 	for (const double U : Candidates)
 	{
-		if (U < U0 - 1e-6 || U > Hi + 1e-6) continue;
+		if (U < Lo - 1e-6 || U > Hi + 1e-6) continue;
 		const int32 N = Crossed(U);
-		if (N < BestN || (N == BestN && FMath::Abs(U - U0) < FMath::Abs(Best - U0))) { Best = U; BestN = N; }
+		if (N < BestN || (N == BestN && FMath::Abs(U - Pref) < FMath::Abs(Best - Pref))) { Best = U; BestN = N; }
 	}
 	return Best;
 }
@@ -673,6 +676,19 @@ void ABpTable::WriteScanParams(float Strength)
 	UKismetMaterialLibrary::SetVectorParameterValue(World, ScanParams, TEXT("ScanCentre"), FLinearColor(Centre.X, Centre.Y, Centre.Z, HalfWidth));
 	UKismetMaterialLibrary::SetVectorParameterValue(World, ScanParams, TEXT("ScanAxis"), FLinearColor(Axis.X, Axis.Y, Axis.Z, Strength));
 	UKismetMaterialLibrary::SetVectorParameterValue(World, ScanParams, TEXT("ScanSide"), FLinearColor(Side.X, Side.Y, Side.Z, HalfLength));
+	// The veil (FP) stands on the line, as long as it, its face to the person at the near edge, fading with it.
+	if (ScanVeil && ScanVeilMid)
+	{
+		const bool bVeil = Strength > 0.01f && HalfLength > 0.0;
+		ScanVeil->SetVisibility(bVeil);
+		if (bVeil)
+		{
+			const FVector Up = GetActorTransform().TransformVectorNoScale(FVector::UpVector);
+			const FRotator Facing = FRotationMatrix::MakeFromXY(Up, Side).Rotator();
+			ScanVeil->SetWorldTransform(FTransform(Facing, Centre + Up * (ScanVeilHeightCm * 0.5), FVector(ScanVeilHeightCm / 100.0, HalfLength * 2.0 / 100.0, 1.0)));
+			ScanVeilMid->SetScalarParameterValue(TEXT("Glow"), ScanVeilGlow * Strength);
+		}
+	}
 }
 
 void ABpTable::StartScan(const FString& Id, const FString& Lens)
@@ -818,16 +834,17 @@ void ABpTable::RefreshCard()
 	// A button: its mark in Slate's default face (Barlow has no check or cross), its word in the sheet's family.
 	const auto Button = [](const FSlateBrush* Brush, const FString& Mark, const FString& Text)
 	{
-		return SNew(SBorder).BorderImage(Brush).Padding(FMargin(28.f, 16.f)).HAlign(HAlign_Center)
+		// FP: larger (the judge: "enlarge the header line and the buttons").
+		return SNew(SBorder).BorderImage(Brush).Padding(FMargin(32.f, 22.f)).HAlign(HAlign_Center)
 			[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 16.f, 0.f)
 				[
-					SNew(STextBlock).Text(FText::FromString(Mark)).Font(FCoreStyle::GetDefaultFontStyle("Bold", 30)).ColorAndOpacity(FSlateColor(CardInk))
+					SNew(STextBlock).Text(FText::FromString(Mark)).Font(FCoreStyle::GetDefaultFontStyle("Bold", 40)).ColorAndOpacity(FSlateColor(CardInk))
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 				[
-					SNew(STextBlock).Text(FText::FromString(Text)).Font(CanvasFont(TEXT("Bold"), 40.f)).ColorAndOpacity(FSlateColor(CardInk))
+					SNew(STextBlock).Text(FText::FromString(Text)).Font(CanvasFont(TEXT("Bold"), 54.f)).ColorAndOpacity(FSlateColor(CardInk))
 				]
 			];
 	};
@@ -846,11 +863,11 @@ void ABpTable::RefreshCard()
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().FillWidth(1.f)
 				[
-					SNew(STextBlock).Text(FText::FromString(Header)).Font(CanvasFont(TEXT("Bold"), 33.f)).ColorAndOpacity(FSlateColor(CardInk.CopyWithNewOpacity(0.65f)))
+					SNew(STextBlock).Text(FText::FromString(Header)).Font(CanvasFont(TEXT("Bold"), 42.f)).ColorAndOpacity(FSlateColor(CardInk.CopyWithNewOpacity(0.8f)))
 				]
 				+ SHorizontalBox::Slot().AutoWidth()
 				[
-					SNew(STextBlock).Text(FText::FromString(Ask->id.ToUpper())).Font(CanvasFont(TEXT("Regular"), 33.f)).ColorAndOpacity(FSlateColor(CardInk.CopyWithNewOpacity(0.65f)))
+					SNew(STextBlock).Text(FText::FromString(Ask->id.ToUpper())).Font(CanvasFont(TEXT("Regular"), 42.f)).ColorAndOpacity(FSlateColor(CardInk.CopyWithNewOpacity(0.8f)))
 				]
 			]
 			+ SVerticalBox::Slot().FillHeight(1.f).Padding(0.f, 16.f, 0.f, 0.f)

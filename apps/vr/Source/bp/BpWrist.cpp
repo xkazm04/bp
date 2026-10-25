@@ -210,8 +210,9 @@ void ABpPawn::ReceiveScanState(const FBpScanState& State)
 	if (Key == WristKey) return;
 	WristKey = Key;
 
-	static const FSlateRoundedBoxBrush Panel(Glass.CopyWithNewOpacity(0.72f), 20.f, Cyan.CopyWithNewOpacity(0.75f), 2.5f);
-	static const FSlateRoundedBoxBrush Row(Cyan.CopyWithNewOpacity(0.08f), 12.f, Cyan.CopyWithNewOpacity(0.35f), 1.5f);
+	// FP: an opaque enough back that the sheet's labels do not show through (the judge, element 11; FO 0.72).
+	static const FSlateRoundedBoxBrush Panel(Glass.CopyWithNewOpacity(0.94f), 20.f, Cyan.CopyWithNewOpacity(0.75f), 2.5f);
+	static const FSlateRoundedBoxBrush Row(Cyan.CopyWithNewOpacity(0.1f), 12.f, Cyan.CopyWithNewOpacity(0.35f), 1.5f);
 	TSharedRef<SVerticalBox> List = SNew(SVerticalBox);
 	for (int32 Index = 0; Index < Rows.Num() && Index < 4; ++Index)
 	{

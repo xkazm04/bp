@@ -211,8 +211,8 @@ namespace
 	/** The lifted room's glass (FE): a stronger face than its siblings', as the concept's raised room. */
 	constexpr float LiftedFaceOpacity = 0.15f;
 	/** The pointed room's raised copy (FK, element 6): a lit glass face and the brightest edges on the sheet. */
-	constexpr float HighlightFaceOpacity = 0.08f;  // FO: 0.08 (FM 0.2, FK 0.6): clear glass under the brightest edges
-	constexpr float HighlightEdgeIntensity = 10.0f;  // FO: 10 (FM 8)
+	constexpr float HighlightFaceOpacity = 0.18f;  // FP: 0.18 (FO 0.08, FM 0.2): the lifted box reads as glass (by capture)
+	constexpr float HighlightEdgeIntensity = 16.0f;  // FP: 16 (FO 10, FM 8), the focal room
 	/** The edges' emissive scale per batch (M_EdgeGlow's Intensity, its default 1.4; FE, elements 4 and 6, against the
 	 *  concept's bright cyan edges): the rest extrusions brightest, as the concept's rooms on the sheet; the lifted wing's
 	 *  shells and the lifted room's tiles under them; the lifted room's shell carries LiftedRoomShow on top. All of it
@@ -225,7 +225,7 @@ namespace
 	/** The walls' built-in halo (M_EdgeGlow's HaloK, its default 0.25): seen nearly edge-on, every wall's halo summed into
 	 *  a filled slab (fm/v1); the pointed room's a little stronger. By capture. */
 	constexpr float WallHaloK = 0.04f;
-	constexpr float HighlightHaloK = 0.06f;
+	constexpr float HighlightHaloK = 0.1f;  // FP: 0.1 (from 0.06)
 	constexpr float HighlightTopEdge = 1.3f;
 	constexpr float HighlightLowEdge = 0.5f;
 	constexpr float ShellEdgeIntensity = 2.4f;
@@ -348,6 +348,7 @@ ABpTable::ABpTable()
 		GlyphMeshes.Add(Kind, TSoftObjectPtr<UStaticMesh>(FSoftObjectPath(FString::Printf(TEXT("/Game/Bp/Art/FixtureKit/final/StaticMeshes/%s.%s"), Kind, Kind))));
 	}
 	GlyphMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Bp/Materials/M_Glyph.M_Glyph")));
+	ScanVeilMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Bp/Materials/M_HazeVeil.M_HazeVeil")));
 
 	Frame = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Frame"));
 	Frame->SetupAttachment(Root);
@@ -373,6 +374,15 @@ ABpTable::ABpTable()
 	SheetOverlay->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	SheetOverlay->SetCastShadow(false);
 	SheetOverlay->SetVisibility(false);
+
+	// The engine plane (100 cm, facing +Z) stood up by pitch 90 (fk_look.py's veils): its local X is up, its face toward
+	// the person at the near edge; WriteScanParams places it on the line.
+	ScanVeil = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ScanVeil"));
+	ScanVeil->SetupAttachment(Root);
+	ScanVeil->SetStaticMesh(EnginePlane);
+	ScanVeil->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ScanVeil->SetCastShadow(false);
+	ScanVeil->SetVisibility(false);
 
 	// The engine cube (100 cm, pivot at its centre) scaled per instance; the instances come with the plan.
 	const auto MakeVolumes = [this](const TCHAR* Name)
@@ -614,6 +624,18 @@ void ABpTable::LoadArt()
 	{
 		GlyphMid = UMaterialInstanceDynamic::Create(Glyph, this);
 		GlyphMid->SetScalarParameterValue(TEXT("GlyphGlow"), GlyphGlow);
+	}
+
+	// The scan's veil (FP): cyan, its glow written with the line's strength (WriteScanParams).
+	ScanVeilMid = nullptr;
+	if (UMaterialInterface* Veil = ScanVeilMaterial.LoadSynchronous())
+	{
+		ScanVeilMid = UMaterialInstanceDynamic::Create(Veil, this);
+		ScanVeilMid->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.10f, 0.62f, 1.0f, 1.f));
+		ScanVeilMid->SetScalarParameterValue(TEXT("Glow"), 0.f);
+		ScanVeilMid->SetScalarParameterValue(TEXT("Pow"), ScanVeilPow);
+		ScanVeilMid->SetScalarParameterValue(TEXT("FadeCm"), 4.f);
+		ScanVeil->SetMaterial(0, ScanVeilMid);
 	}
 }
 
@@ -1267,6 +1289,11 @@ void ABpTable::BuildGlyphs(const FBpPlan& Plan)
 	Glyphs.Reset();
 	GlyphRoom.Reset();
 	ShownGlyph.Reset();
+	for (UInstancedStaticMeshComponent* Old : GlyphLift)
+	{
+		if (Old) Old->DestroyComponent();
+	}
+	GlyphLift.Reset();
 	if (!GlyphMid) return;
 
 	// Tile i's kind is its feature's (structure.features[].kind, found by the tile's id): the data picks the glyph and the
@@ -1351,8 +1378,9 @@ void ABpTable::ApplyGlyphs(float WingEase)
 			const FString Wing = RoomWing.IsValidIndex(Room) ? RoomWing[Room] : FString();
 			float Show = 0.f;
 			if (bOn) Show = AnimWing.IsEmpty() ? 1.f : (Wing == AnimWing ? 1.f - WingEase : FMath::Lerp(1.f, LevelDim, WingEase));
-			// Around a pointed room the other rooms' furniture recedes with their walls (FO).
-			if (HighlightRestRoom != INDEX_NONE && Room != HighlightRestRoom) Show *= PointedDim;
+			// Around a pointed room the other rooms' furniture recedes a little (FO; FP: PointedGlyphDim, not the walls'
+			// PointedDim), and the pointed room's own shows on its lifted floor instead (LiftGlyphs).
+			if (HighlightRestRoom != INDEX_NONE) Show = Room == HighlightRestRoom ? 0.f : Show * PointedGlyphDim;
 			if (ShownGlyph[Batch][Index] == Show) continue;
 			ShownGlyph[Batch][Index] = Show;
 			Glyphs[Batch]->SetCustomDataValue(Index, 0, Show, false);
@@ -1360,6 +1388,50 @@ void ABpTable::ApplyGlyphs(float WingEase)
 		}
 		Glyphs[Batch]->SetRelativeTransform(WingGroupTransform(0.f));
 		if (bDirty) Glyphs[Batch]->MarkRenderStateDirty();
+		if (GlyphLift.IsValidIndex(Batch) && GlyphLift[Batch]) GlyphLift[Batch]->SetRelativeTransform(WingGroupTransform(0.f));
+	}
+}
+
+void ABpTable::LiftGlyphs(int32 Room)
+{
+	for (UInstancedStaticMeshComponent* Lift : GlyphLift)
+	{
+		if (Lift) Lift->ClearInstances();
+	}
+	if (Room == INDEX_NONE) return;
+	// A display copy, as HighlightShell's walls: the room's glyph instances as placed (plan space never moves), lifted by
+	// HighlightLiftCm onto the raised floor, at HighlightGlyphShow.
+	for (int32 Batch = 0; Batch < Glyphs.Num() && Batch < GlyphRoom.Num(); ++Batch)
+	{
+		TArray<FTransform> Lifted;
+		for (int32 Index = 0; Index < GlyphRoom[Batch].Num(); ++Index)
+		{
+			if (GlyphRoom[Batch][Index] != Room) continue;
+			FTransform T;
+			Glyphs[Batch]->GetInstanceTransform(Index, T, false);
+			T.AddToTranslation(FVector(0.0, 0.0, HighlightLiftCm));
+			Lifted.Add(T);
+		}
+		if (Lifted.Num() == 0) continue;
+		while (GlyphLift.Num() <= Batch) GlyphLift.Add(nullptr);
+		if (!GlyphLift[Batch])
+		{
+			UInstancedStaticMeshComponent* Lift = NewObject<UInstancedStaticMeshComponent>(this, MakeUniqueObjectName(this, UInstancedStaticMeshComponent::StaticClass(), TEXT("GlyphLift")));
+			Lift->SetupAttachment(Root);
+			Lift->SetMobility(EComponentMobility::Movable);
+			Lift->SetStaticMesh(Glyphs[Batch]->GetStaticMesh());
+			Lift->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Lift->SetCastShadow(false);
+			Lift->NumCustomDataFloats = 1;
+			for (int32 Slot = 0; Slot < Glyphs[Batch]->GetNumMaterials(); ++Slot) Lift->SetMaterial(Slot, Glyphs[Batch]->GetMaterial(Slot));
+			Lift->RegisterComponent();
+			GlyphLift[Batch] = Lift;
+		}
+		GlyphLift[Batch]->AddInstances(Lifted, false, false, false);
+		TArray<float> Show;
+		Show.Init(HighlightGlyphShow, Lifted.Num());
+		GlyphLift[Batch]->SetCustomData(0, Show.Num() - 1, Show, true);
+		GlyphLift[Batch]->SetRelativeTransform(WingGroupTransform(0.f));
 	}
 }
 
@@ -1374,6 +1446,7 @@ void ABpTable::ClearVolumes()
 	LiftedShell->ClearInstances();
 	HighlightShell->ClearInstances();
 	HighlightRestRoom = INDEX_NONE;
+	LiftGlyphs(INDEX_NONE);
 	Rooms->ClearInstances();
 	Bays->ClearInstances();
 	Tiles->ClearInstances();
@@ -1576,6 +1649,8 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 	const double FloatCm = RestRoomCm + WingLabelLiftCm;
 	const auto Seen = [this, bFloat, FloatCm](double V) { return bFloat ? V - CoverCm(V, FloatCm) : V; };
 	TArray<FWingLabel> Floating;
+	// The previous wing's label's right end (FP): a label slid off the stems pushes the next one along.
+	double PrevRight = -1.0e9;
 	for (const FBpPlanWing& Wing : SheetPlan->wings) Wings.Add(&Wing);
 	Wings.Sort([](const FBpPlanWing& A, const FBpPlanWing& B) { return A.order < B.order; });
 	for (int32 Index = 0; Index < Wings.Num(); ++Index)
@@ -1598,16 +1673,24 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 		Report(TEXT("wing-name"), Name, A.X, NameBase, NameCap, NameFloor);
 		if (Name.IsEmpty()) continue;
 		// Clear of the risen pins' stems (FM, element 3: the judge's "wing labels hidden by pins"): the label slides along
-		// its row, within its room to the next wing, off the line each stem draws across the row from the target eye.
-		const double NameU = SlideOffStems(A.X, WidthCm(Name, BpType::WingName, NameCap), A.X + MaxCm, Seen(NameBase - NameCap), Seen(NameBase));
+		// its row off the line each stem draws across the row from the target eye. FP (the judge: no stem may cross a
+		// label): it may start a quarter of its width before its wing and end half its width past it, after the previous
+		// label, so a wide name finds a slot between stems and pushes its neighbour on.
+		const double NameW = WidthCm(Name, BpType::WingName, NameCap);
+		const double Lo = FMath::Max(A.X - 0.25 * NameW, PrevRight + WingLabelGapCm);
+		// A vertical stem and a label point lie on one eye ray wherever the stem stands, so the rows are the label's own
+		// place (its v), not where the eye sees it on the paper: a floating label seen through Seen() slid a stem's width
+		// short (FP, by capture).
+		const double NameU = SlideOffStems(Lo, A.X, NameW, FMath::Min(B.X + 0.5 * NameW, PaperWidthCm - PaperTopClearCm), NameBase - NameCap, NameBase);
+		PrevRight = NameU + NameW;
 		if (bFloat)
 		{
 			Floating.Add({ Wing.id, Name, FString(), NameU, NameBase, NameCap, 0.0 });
 		}
 		else
 		{
-			const double NameW = Put(Name, BpType::WingName, NameU, NameBase - NameCap, NameCap, Ink(WarmPaper, TextInk), 0.0);
-			Pen.Fill(PaperPx(NameU - LabelBackPadCm, NameBase - NameCap - LabelBackPadCm), PaperPx(NameU + NameW + LabelBackPadCm, NameBase + LabelBackPadCm), LabelBacking);
+			const double PutW = Put(Name, BpType::WingName, NameU, NameBase - NameCap, NameCap, Ink(WarmPaper, TextInk), 0.0);
+			Pen.Fill(PaperPx(NameU - LabelBackPadCm, NameBase - NameCap - LabelBackPadCm), PaperPx(NameU + PutW + LabelBackPadCm, NameBase + LabelBackPadCm), LabelBacking);
 		}
 		LabelTop = FMath::Min(LabelTop, Seen(NameBase - NameCap));
 		// The tag line above it ("WING A") is drawn only when every wing's fits under the paper's top at the floor: a class

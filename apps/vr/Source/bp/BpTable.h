@@ -105,7 +105,7 @@ public:
 	 *  the top, and each bay's far boundary inside it is a partition wall at BayPartitionRatio of that height, PartitionCm
 	 *  thick, across the bay's width (FM: the judge's "thin, taller cyan-edged walls with internal partitions"; a bay box
 	 *  drawn whole made a second tray inside each room). A lifted wing leaves its rest walls behind, hidden. */
-	static constexpr float RestRoomCm = 3.5f;  // FO: 3.5 (FM 6.5, FK 2.2, FE 1.5): low enough that the pointed room stands out (by capture)
+	static constexpr float RestRoomCm = 4.5f;  // FP: 4.5 (FO 3.5, FM 6.5, FK 2.2): cells, not trays, with the pointed room still standing out (by capture)
 	static constexpr float BayPartitionRatio = 0.85f;
 	static constexpr float PartitionCm = 0.08f;
 	/** A partition's glass face (M_EdgeGlow's custom data 4; a room's walls are 1). */
@@ -118,9 +118,9 @@ public:
 	/** The finer grid (FO, element 4: the concept's "crisp grid of rooms"): each tile's box, grown by TileCellGrowU on every
 	 *  side (half the plan's 10 u gutter between tiles, so neighbouring cells share one wall), stands as a low open cell
 	 *  TileCellCm high, edges only. The plan's boxes place every cell; nothing is laid out here. */
-	static constexpr float TileCellCm = 1.2f;
+	static constexpr float TileCellCm = 1.8f;  // FP: 1.8 (FO 1.2), with TileCellShow, crisper cell edges
 	static constexpr float TileCellGrowU = 5.f;
-	static constexpr float TileCellShow = 0.45f;
+	static constexpr float TileCellShow = 0.6f;  // FP: 0.6 (FO 0.45)
 	/** The lifted room's shell glows this much over a lit shell (M_EdgeGlow's Show above 1 scales its emissive; FE). */
 	static constexpr float LiftedRoomShow = 1.8f;
 	/** The pointed room at L0 (FK, element 6: the concept's raised room under the fingertip). A room highlight
@@ -129,9 +129,22 @@ public:
 	 *  with the lifted room's glass. No instance moves in plan space; clearing it restores every Show exactly. */
 	static constexpr float HighlightRiseCm = 10.5f;  // FO: 10.5 (FM 5.5, FK 2.5): four times the rest walls, the scene's focal point
 	static constexpr float HighlightRestShow = 1.8f;
+	/** FP (element 6, the judge: the raised room "looks empty, and the finger points below it"): the pointed room's copy is
+	 *  lifted whole, its floor HighlightLiftCm off the paper with its cells and furniture on it (a display copy of the room's
+	 *  glyphs, as of its walls), on a glass floor plate; a faint plinth of HighlightPlinthShow joins it to its footprint. Its
+	 *  walls' tops stay at RestRoomCm + HighlightRiseCm. */
+	static constexpr float HighlightLiftCm = 4.f;
+	static constexpr float HighlightFloorCm = 0.25f;
+	static constexpr float HighlightFloorShow = 1.2f;
+	static constexpr float HighlightPlinthShow = 0.35f;
+	/** The lifted copy's furniture glows this much over its rest Show (M_Glyph's custom data 0). */
+	static constexpr float HighlightGlyphShow = 2.0f;
 	/** While a room is pointed at rest, every other room's walls, cells and furniture dim to this (FO, element 6: the
 	 *  concept's neighbours recede around the raised room). Clearing the highlight restores them. */
 	static constexpr float PointedDim = 0.5f;
+	/** The other rooms' furniture dims only this far (FP: at PointedDim the additive glyphs went to grey smears, the judge's
+	 *  wings A and B); the walls carry the focal contrast. */
+	static constexpr float PointedGlyphDim = 0.9f;
 
 	/** The fixture glyphs (FC3, element 5; ArtSource/fixture-kit): each tile at rest holds the glyph of its feature's kind,
 	 *  centred on its box, its footprint at most GlyphFill of the box and its height at most GlyphMaxCm (the shorter side
@@ -178,12 +191,18 @@ public:
 	static constexpr float ScanOverrunCm = 2.f;
 	static constexpr float ScanEaseCmPerS = 12.f;
 	static constexpr float ScanFadeS = 1.2f;
+	/** The scan's veil (FP, element 15, the judge's "the scan line throws visible glow into the air"): a sheet of haze
+	 *  ScanVeilHeightCm tall standing on the line across the paper, brightest at its foot, at ScanVeilGlow times the line's
+	 *  strength (M_HazeVeil's Glow, falloff ScanVeilPow). Nothing in it is data beyond the line's row. */
+	static constexpr float ScanVeilHeightCm = 16.f;
+	static constexpr float ScanVeilGlow = 0.6f;
+	static constexpr float ScanVeilPow = 2.5f;
 
 	/** The decision card (FC1, element 10): a world-space panel near the lamp agent, drawn at CardPxPerCm (FE: about twice
 	 *  what the target capture resolves at its distance, r4 section 5; at 40 the widget was minified fourfold, unmipped,
 	 *  and its text went soft). */
 	static constexpr float CardWidthCm = 37.f;
-	static constexpr float CardHeightCm = 21.f;
+	static constexpr float CardHeightCm = 23.f;  // FP: 23 (from 21) for the larger header and buttons
 	/** FK took it to 32 (from 24); FM to 16, about twice what the target capture resolves there, since the widget's
 	 *  target has no mips and fourfold minification aliased its text (element 10, "blurry"). bp.CardPxPerCm overrides it. */
 	static constexpr float CardPxPerCm = 16.f;
@@ -191,7 +210,7 @@ public:
 	 *  lamp agent's head, as the concept's card; FE placed it by capture, FG moved it 7 cm left so it covers the end of
 	 *  FI's reaching arm, as the concept's card hides the agent's hand). */
 	static constexpr float CardPlaceXCm = 36.f;
-	static constexpr float CardPlaceYCm = 32.f;  // FK: 3 cm nearer the lamp's head for the larger card
+	static constexpr float CardPlaceYCm = 40.f;  // FP: 40 (FK 32), clear of the agent's reaching arm (element 10, by capture)
 	static constexpr float CardAboveTopCm = 25.f;
 
 	ABpTable();
@@ -232,6 +251,10 @@ public:
 	 *  offset, 2, 3 = its UV size). Missing: no tags. */
 	UPROPERTY(EditAnywhere, Category = "Bp|Table")
 	TSoftObjectPtr<UMaterialInterface> TagMaterial;
+
+	/** The scan veil's material (M_HazeVeil: Vector Color, Scalars Glow, Pow, FadeCm). Missing: no veil. */
+	UPROPERTY(EditAnywhere, Category = "Bp|Table")
+	TSoftObjectPtr<UMaterialInterface> ScanVeilMaterial;
 
 	/** The scan line's parameters (vectors ScanCentre, ScanAxis, ScanSide), read by the paper and the edge glow. */
 	UPROPERTY(EditAnywhere, Category = "Bp|Table")
@@ -361,6 +384,14 @@ private:
 	/** The pointed room's rest extrusions, raised (HighlightRiseCm) while a room highlight is set at rest (FK). */
 	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
 	TObjectPtr<UInstancedStaticMeshComponent> HighlightShell;
+	/** The pointed room's furniture, lifted with its copy (FP): one batch per glyph batch, empty unless a room is pointed. */
+	UPROPERTY()
+	TArray<TObjectPtr<UInstancedStaticMeshComponent>> GlyphLift;
+	/** The scan's light in the air (FP, element 15): a vertical haze veil (M_HazeVeil) standing on the scan line. */
+	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
+	TObjectPtr<UStaticMeshComponent> ScanVeil;
+	UPROPERTY()
+	TObjectPtr<class UMaterialInstanceDynamic> ScanVeilMid;
 	/** The tagged pins, their tags included: one batch. */
 	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
 	TObjectPtr<UInstancedStaticMeshComponent> Pins;
@@ -444,6 +475,8 @@ private:
 	void BuildGlyphs(const FBpPlan& Plan);
 	/** The glyphs' Show per instance for the levels: as their room's rest extrusion. */
 	void ApplyGlyphs(float WingEase);
+	/** The pointed room's furniture copied onto its lifted floor (FP), or every lifted copy cleared (INDEX_NONE). */
+	void LiftGlyphs(int32 Room);
 	/** BpType's floor: the smallest cap height (paper cm) a text whose baseline stands at PaperCm may have, so its cap
 	 *  subtends BpType::FloorPx in the target capture and BpType::FloorArcmin from the play eye. */
 	double TextFloorCm(const FVector2D& PaperCm) const;
@@ -648,7 +681,7 @@ private:
 	/** Where a label of Width (paper cm) on the row from VTop to VBase starts, at U0 or as near it as keeps it, up to
 	 *  MaxU, off every tagged pin's stem as the target eye sees the stem cross that row (FM); where none is clear, across
 	 *  the fewest stems. */
-	double SlideOffStems(double U0, double Width, double MaxU, double VTop, double VBase) const;
+	double SlideOffStems(double Lo, double Pref, double Width, double MaxU, double VTop, double VBase) const;
 	FString PinsKey;
 	/** The running measure job the scan line follows, the plan box its scope covers, and the line's place (plan y) now
 	 *  and where it heads. */

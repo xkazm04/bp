@@ -9,6 +9,8 @@
 #   the pointed room's near edge, toward its left side, as the concept's fingertip under its raised room: the target
 #   capture points at "communications", whose raised copy spans table X -9.9..6.5, Y 25.2..44.9 (HighlightShell,
 #   measured in PIE at BpView.Pose target, Lynx 2026-10-25). Axis mapping: table X away from the player, Y to the right.
+#   FP lifts that room whole (its floor 4 cm up, its furniture on it) and points the tip into it: inside the near wall,
+#   raised TIP_LIFT with the hand (the judge: "the finger points below it, not into it").
 # - The rim: the judge read the hands' lighting as flat. A small warm spot from the far (lamp) side, high, on the hands'
 #   lighting channel only (channel 1, fid_look.py's TableKey channel, which only the capture hands carry), grazing the
 #   backs of the hands and the knuckles; with the cyan key from below it is the Blender renders' light (FL).
@@ -18,7 +20,8 @@ TAG = "BpHandRim"
 REST_LOC = (-34.0, 0.0, 94.2)  # studio_level.py: (PAPER_NEAR_X + HANDS_IN, 0, PAPER_Z)
 REST_YAW = 90.0                # studio_level.py: HANDS_YAW
 TIP_REST = (-22.0, 17.0)
-TIP_TARGET = (-11.5, 29.0)
+TIP_TARGET = (-7.5, 31.0)  # FP: (from -11.5, 29) into the lifted room, just past its near wall, over its raised floor
+TIP_LIFT = 7.0             # FP: the hand raised so the tip stands at the room's lifted floor (HighlightLiftCm 4), by capture
 RIM_AT = (45.0, 5.0, 150.0)
 RIM_AIM = (-15.0, 18.0, 98.0)
 RIM_CD = 6.0
@@ -33,7 +36,7 @@ for a in eas.get_all_level_actors():
         eas.destroy_actor(a)
 hand = next(a for a in eas.get_all_level_actors() if a.get_actor_label() == "CaptureHandR")
 move = (TIP_TARGET[0] - TIP_REST[0], TIP_TARGET[1] - TIP_REST[1], 0.0)
-loc = unreal.Vector(REST_LOC[0] + move[0], REST_LOC[1] + move[1], REST_LOC[2])
+loc = unreal.Vector(REST_LOC[0] + move[0], REST_LOC[1] + move[1], REST_LOC[2] + TIP_LIFT)
 hand.set_actor_location_and_rotation(loc, unreal.Rotator(0.0, 0.0, REST_YAW), False, False)
 
 aim = unreal.Vector(*RIM_AIM) - unreal.Vector(*RIM_AT)

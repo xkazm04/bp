@@ -565,19 +565,23 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 		HighlightRestRoom = Pointed;
 		if (Pointed != INDEX_NONE)
 		{
-			// Each of the room's rest walls copied, standing on the same footprint, its height grown by the rise (the
-			// partitions in proportion: one room extruded upward, FM), at its own ink times HighlightRestShow.
-			const double Grow = (RestRoomCm + HighlightRiseCm) / RestRoomCm;
+			// Each of the room's rest walls copied on the same footprint and lifted whole (FP): its floor HighlightLiftCm off
+			// the paper, the walls grown so their tops stand at RestRoomCm + HighlightRiseCm (the partitions in proportion),
+			// the cells kept at their height on the lifted floor, each at its own ink times HighlightRestShow. Then a glass
+			// floor plate under them and a faint plinth down to the footprint.
+			const double Top = RestRoomCm + HighlightRiseCm;
+			const double Grow = (Top - HighlightLiftCm) / RestRoomCm;
 			TArray<FTransform> Raised;
 			TArray<float> Data;
+			FTransform RoomWalls;
+			bool bRoomWalls = false;
 			for (int32 Index = 0; Index < RestRoom.Num(); ++Index)
 			{
 				if (RestRoom[Index] != Pointed) continue;
 				FTransform T;
 				RestVolumes->GetInstanceTransform(Index, T, false);
 				const FVector Size = T.GetScale3D() * 100.0;
-				const double Base = T.GetLocation().Z - Size.Z * 0.5;
-				// The tile cells keep their height (FO): the room's walls rise round its furniture, its cells stay on its floor.
+				const double Base = T.GetLocation().Z - Size.Z * 0.5 + HighlightLiftCm;
 				const bool bCell = RestFace.IsValidIndex(Index) && RestFace[Index] <= 0.f;
 				const FVector Grown(Size.X, Size.Y, bCell ? Size.Z : Size.Z * Grow);
 				T.SetLocation(FVector(T.GetLocation().X, T.GetLocation().Y, Base + Grown.Z * 0.5));
@@ -585,6 +589,20 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 				Raised.Add(T);
 				const float Ink = RestInk.IsValidIndex(Index) ? RestInk[Index] : RestRoomShow;
 				Data.Append({ static_cast<float>(Grown.X), static_cast<float>(Grown.Y), static_cast<float>(Grown.Z), Ink * HighlightRestShow, RestFace.IsValidIndex(Index) ? RestFace[Index] : 1.f });
+				if (!bRoomWalls && RestFace.IsValidIndex(Index) && RestFace[Index] >= 1.f) { RoomWalls = T; bRoomWalls = true; }
+			}
+			if (bRoomWalls)
+			{
+				// The room's own walls' footprint (the first full-face instance is the room's box, BuildVolumes adds it first).
+				const FVector Foot = RoomWalls.GetScale3D() * 100.0;
+				const double Floor0 = RoomWalls.GetLocation().Z - Foot.Z * 0.5 - HighlightLiftCm;
+				const auto Slab = [&](double Z0, double H, float Show, float Face)
+				{
+					Raised.Add(FTransform(FQuat::Identity, FVector(RoomWalls.GetLocation().X, RoomWalls.GetLocation().Y, Z0 + H * 0.5), FVector(Foot.X, Foot.Y, H) / 100.0));
+					Data.Append({ static_cast<float>(Foot.X), static_cast<float>(Foot.Y), static_cast<float>(H), Show, Face });
+				};
+				Slab(Floor0 + HighlightLiftCm - HighlightFloorCm, HighlightFloorCm, HighlightFloorShow, 1.f);
+				Slab(Floor0, HighlightLiftCm - HighlightFloorCm, HighlightPlinthShow, 0.5f);
 			}
 			HighlightShell->SetNumCustomDataFloats(5);  // as RestVolumes: size, Show, face
 			if (Raised.Num() > 0)
@@ -593,6 +611,7 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 				HighlightShell->SetCustomData(0, Raised.Num() - 1, Data, true);
 			}
 		}
+		LiftGlyphs(Pointed);
 		UE_LOG(LogBpTable, Log, TEXT("BpLevel: pointed room %s (%d raised)"), Pointed == INDEX_NONE ? TEXT("none") : *SheetPlan->rooms[Pointed].id, HighlightShell->GetInstanceCount());
 	}
 	HighlightShell->SetRelativeTransform(WingGroupTransform(0.f));
