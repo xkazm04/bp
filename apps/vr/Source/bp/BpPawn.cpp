@@ -39,7 +39,9 @@ namespace
 
 ABpPawn::ABpPawn()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	// Ticks only for the frame meter (BpHeadset.cpp).
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 
 	Origin = CreateDefaultSubobject<USceneComponent>(TEXT("Origin"));
 	RootComponent = Origin;
@@ -109,6 +111,10 @@ void ABpPawn::BeginPlay()
 	{
 		UE_LOG(LogBpHands, Log, TEXT("BpHands: no Isdk tracking data in this world (no XR runtime); only the synthetic hand"));
 	}
+	if (HandRigLeft && IsHeadsetOn())
+	{
+		UE_LOG(LogBpHands, Log, TEXT("BpHands: Isdk hand and controller rigs on %s"), *GEngine->XRSystem->GetVersionString());
+	}
 	Super::BeginPlay();
 	if (IsHeadsetOn())
 	{
@@ -131,6 +137,9 @@ void ABpPawn::BeginPlay()
 		if (bCaptureHands) SetRestHandsVisible(false);
 	}
 	MakeWristPanel();
+	MakeFrameMeter();
+	// Seated calibration (headset-plan code item 1): once the head is tracked, the table comes to the seated eye.
+	if (IsHeadsetOn()) GetWorldTimerManager().SetTimer(SeatTimer, this, &ABpPawn::SeatAtStart, SeatRetryS, true, SeatRetryS);
 }
 
 void ABpPawn::EndPlay(const EEndPlayReason::Type EndPlayReason)

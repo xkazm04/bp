@@ -4,6 +4,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "BpType.h"
 #include "GameFramework/Pawn.h"
 #include "BpPawn.generated.h"
 
@@ -96,6 +97,28 @@ public:
 	FVector GetWristWorld() const;
 	bool WristAim(const FString& Id, FVector& OutWorld) const;
 	void WristTap(const FString& Id);
+	/** The wrist panel's text classes where it stands (BpView.TextCard): the rooms tab's names and counts, a package's
+	 *  name and its sub-line. */
+	void WristTextClasses(TArray<BpType::FClassSample>& Out) const;
+
+	// ---- The headset session (BpHeadset.cpp; docs/concepts/vr-light-table/headset-plan.md) ------------------------------
+	/** Seated calibration (BpView.Seat, the wrist's SEAT, and once at start with a headset): reads the eye where it is and
+	 *  moves the table (ABpTable::MoveTable) so that eye stands at the target pose's, TargetEyeAboveTopCm over the top and
+	 *  TargetBehindNearEdgeCm behind the near edge, the table turned to the way the head faces. The view never moves. The
+	 *  top stays between SeatTopMinCm and the floor's own table height (a standing eye gets the table as built, the gap
+	 *  logged). Without a headset it seats the flat view's eye the same way, for checks. EyeAboveFloorCm over 0 seats as if
+	 *  the eye stood that high (BpView.Seat's argument). Logs `BpView: seat ...`. */
+	bool Seat(float EyeAboveFloorCm = -1.f);
+	static constexpr float SeatTopMinCm = 55.f;
+	/** The start's seat waits for the head to be tracked: it tries every SeatRetryS, at most SeatTries times. */
+	static constexpr float SeatRetryS = 0.5f;
+	static constexpr int32 SeatTries = 20;
+	/** The frame meter (headset-plan code item 4; bp.FrameMeter): the GPU's and the game thread's p50 over FrameWindowS,
+	 *  in a strip over the wrist panel, against the 90 Hz bar (R5: 11.1 ms). `stat unit` does not read in stereo. */
+	static constexpr float FrameWindowS = 2.f;
+	static constexpr float FrameBarMs = 11.1f;
+
+	virtual void Tick(float DeltaSeconds) override;
 
 protected:
 	virtual void BeginPlay() override;
@@ -167,4 +190,22 @@ private:
 	void OnWristRoomChanged(const FString& RoomId);
 	/** The panel again from the scan state BpLink holds (ReceiveScanState's work, both tabs). */
 	void RefreshWrist();
+
+	// ---- The headset session (BpHeadset.cpp) ------------------------------------------------------------------------------
+	FTimerHandle SeatTimer;
+	int32 SeatTried = 0;
+	void SeatAtStart();
+	UPROPERTY(Transient)
+	TObjectPtr<UWidgetComponent> FrameMeter;
+	struct FFrameSample
+	{
+		double At;
+		float GpuMs;
+		float GameMs;
+		float FrameMs;
+	};
+	TArray<FFrameSample> FrameSamples;
+	double FrameShownAt = 0.0;
+	void MakeFrameMeter();
+	void TickFrameMeter(float DeltaSeconds);
 };

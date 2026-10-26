@@ -384,6 +384,26 @@ FTransform ABpTable::SpinePose(int32 Place) const
 	return FTransform((Eye - At).Rotation(), At, FVector(1.0 / DeckPxPerCm));
 }
 
+void ABpTable::DeckTextClasses(TArray<BpType::FClassSample>& Out) const
+{
+	// Each class's cap at its screen's centre (a sheet's ink is the decision's type scale on paper), rising along the
+	// screen's up; the spines' at the first spine.
+	const FTransform& T = GetActorTransform();
+	const auto Add = [&](const TCHAR* Name, uint8 Style, const FTransform& Pose)
+	{
+		const FTransform World = Pose * T;
+		Out.Add({ Name, Recipes[Style].CapPx / DeckLayoutPxPerCm, World.GetLocation(), World.GetRotation().GetUpVector() });
+	};
+	const FTransform Front = DeckPose(0.f, 0.f), Spine = SpinePose(1);
+	Add(TEXT("deck title"), STitle, Front);
+	Add(TEXT("deck body"), SBody, Front);
+	Add(TEXT("deck chips"), SKicker, Front);
+	Add(TEXT("deck meta"), SMeta, Front);
+	Add(TEXT("sheet figures"), SBig, Front);
+	Add(TEXT("spine kind"), SKicker, Spine);
+	Add(TEXT("spine title"), SLede, Spine);
+}
+
 // ---- The queue ----------------------------------------------------------------------------------------------------------
 
 void ABpTable::OnDeckRoomChanged(const FString& InRoomId)

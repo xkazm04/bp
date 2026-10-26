@@ -131,6 +131,8 @@ namespace
 	constexpr float WristX1 = WristW - 29.f;
 	const FBox2f WristTabPackages(FVector2f(WristX1 - 320.f, 16.f), FVector2f(WristX1 - 166.f, 60.f));
 	const FBox2f WristTabRooms(FVector2f(WristX1 - 154.f, 16.f), FVector2f(WristX1, 60.f));
+	/** With a headset, SEAT left of the tabs (BpHeadset.cpp: the table comes to the seated eye again). */
+	const FBox2f WristSeat(FVector2f(WristX1 - 430.f, 16.f), FVector2f(WristX1 - 332.f, 60.f));
 	constexpr float WristRowTop = 112.f;
 	constexpr float WristRowH = 60.f;
 	constexpr float WristRowStep = 66.f;
@@ -165,7 +167,7 @@ namespace
 
 	FAutoConsoleCommandWithWorldAndArgs CmdWristTap(
 		TEXT("BpWrist.Tap"),
-		TEXT("BpWrist.Tap <wrist:tab:rooms|wrist:tab:packages|wrist:room:<id>|wrist:page:next|wrist:page:prev>: what a hand's tap on that control of the wrist panel does (room mode shows the tabs)."),
+		TEXT("BpWrist.Tap <wrist:tab:rooms|wrist:tab:packages|wrist:room:<id>|wrist:page:next|wrist:page:prev|wrist:seat>: what a hand's tap on that control of the wrist panel does (room mode shows the tabs, a headset SEAT)."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
 		{
 			ABpPawn* Pawn = WristPawn(World);
@@ -307,12 +309,30 @@ void ABpPawn::WristTap(const FString& Id)
 		Table->SwitchRoom(Id.Mid(11), TEXT("wrist"));
 		return;
 	}
+	else if (Id == TEXT("wrist:seat"))
+	{
+		Seat();
+		return;
+	}
 	else
 	{
 		UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist tap %s does nothing here"), *Id);
 		return;
 	}
 	RefreshWrist();
+}
+
+void ABpPawn::WristTextClasses(TArray<BpType::FClassSample>& Out) const
+{
+	if (!WristPanel) return;
+	// The panel's caps in its pixels (RefreshWrist's), at its centre, rising along its up; its world scale is cm a pixel.
+	const FTransform& T = WristPanel->GetComponentTransform();
+	const double CmPerPx = T.GetScale3D().X;
+	const auto Add = [&](const TCHAR* Name, double CapPx) { Out.Add({ Name, CapPx * CmPerPx, T.GetLocation(), T.GetUnitAxis(EAxis::Z) }); };
+	Add(TEXT("wrist room name"), 25.0);
+	Add(TEXT("wrist room counts"), 19.0);
+	Add(TEXT("wrist package"), 32.0);
+	Add(TEXT("wrist sub-line"), 21.0);
 }
 
 void ABpPawn::SetWristParent(USceneComponent* Parent, FName Socket, const FTransform& Relative)
@@ -391,6 +411,8 @@ void ABpPawn::RefreshWrist()
 	{
 		Key += TEXT("|tabs");
 	}
+	const bool bSeat = IsHeadsetOn();
+	if (bSeat) Key += TEXT("|seat");
 	if (Key == WristKey) return;
 	WristKey = Key;
 	WristBoxes.Reset();
@@ -522,6 +544,15 @@ void ABpPawn::RefreshWrist()
 		};
 		Tab(WristTabPackages, TEXT("PACKAGES"), !bRooms, TEXT("wrist:tab:packages"));
 		Tab(WristTabRooms, TEXT("ROOMS"), bRooms, TEXT("wrist:tab:rooms"));
+	}
+	if (bSeat)
+	{
+		static const FSlateRoundedBoxBrush SeatBrush(Amber.CopyWithNewOpacity(0.10f), 10.f, Amber.CopyWithNewOpacity(0.8f), 2.f);
+		Put(WristSeat, SNew(SBorder).BorderImage(&SeatBrush).HAlign(HAlign_Center).VAlign(VAlign_Center)
+			[
+				SNew(STextBlock).Text(FText::FromString(TEXT("SEAT"))).Font(CapFont(TEXT("Bold"), 20.f)).ColorAndOpacity(FSlateColor(Amber))
+			]);
+		WristBoxes.Add({ TEXT("wrist:seat"), WristSeat });
 	}
 	if (bRooms)
 	{

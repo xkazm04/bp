@@ -6,6 +6,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "BpType.h"
 #include "GameFramework/Actor.h"
 #include "BpTable.generated.h"
 
@@ -635,6 +636,25 @@ public:
 	FString GetLassoLine() const { return LassoLine; }
 	/** The caption's centre in the world (BpView.Pose lamp aims at it). */
 	FVector GetCaptionWorld() const;
+
+	// ---- The headset session (BpHeadset.cpp; docs/concepts/vr-light-table/headset-plan.md) ------------------------------
+	/** Moves the table and what stands on it (the lamp and its group) to a new transform in one step. Nothing is rebuilt,
+	 *  so the pins, the card, the deck and the map keep their places on it; lowered, its legs pass under the floor.
+	 *  BpView.Seat brings it to the seated eye: the content moves, never the view. */
+	void MoveTable(const FTransform& To);
+	/** Where the level put the table (BeginPlay): its feet on the floor there. */
+	const FTransform& GetHomeTransform() const { return HomeTransform; }
+	/** The text classes on and around the table where they stand now (the deck's, the caption's, the map's, the key
+	 *  plan's), for BpView.TextCard. */
+	void TextClasses(TArray<BpType::FClassSample>& Out) const;
+	/** The legibility test card (BpView.TextCard): one panel at the deck's place with every class drawn at the angle it
+	 *  subtends from EyeWorld where it stands, each labelled with that angle, and the floor and the vendor's comfortable
+	 *  band as reference lines. bShow false hides it. */
+	void ShowTextCard(bool bShow, const FVector& EyeWorld, const TArray<BpType::FClassSample>& Classes);
+	/** The card's size and density. */
+	static constexpr float TextCardWidthCm = 46.f;
+	static constexpr float TextCardHeightCm = 46.f;
+	static constexpr float TextCardPxPerCm = 21.f;
 
 protected:
 	virtual void OnConstruction(const FTransform& Transform) override;
@@ -1340,4 +1360,11 @@ private:
 	FDelegateHandle PlanHandle;
 	FDelegateHandle FailedHandle;
 	FDelegateHandle ScanHandle;
+
+	// ---- The headset session (BpHeadset.cpp) ------------------------------------------------------------------------------
+	UPROPERTY(Transient)
+	TObjectPtr<UWidgetComponent> TextCard;
+	FTransform HomeTransform;
+	/** BpDeck.cpp: the deck's and the spines' classes (their type scale lives there). */
+	void DeckTextClasses(TArray<BpType::FClassSample>& Out) const;
 };

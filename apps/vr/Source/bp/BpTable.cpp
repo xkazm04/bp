@@ -522,6 +522,7 @@ void ABpTable::OnConstruction(const FTransform& Transform)
 void ABpTable::BeginPlay()
 {
 	Super::BeginPlay();
+	HomeTransform = GetActorTransform();
 	LoadArt();
 	PlaceForHeight(HeightCvarCm());
 	GetWorldTimerManager().SetTimer(HandCaptureTimer, this, &ABpTable::StartHandShadow, HandCaptureDelayS, false);

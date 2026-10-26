@@ -62,4 +62,21 @@ namespace BpType
 
 	/** The fit rule's ellipsis (blueprint-ui.md, fitStamp: cut at a word, at least two words kept). */
 	inline const TCHAR* Ellipsis() { return TEXT("…"); }
+
+	/** One text class where it stands, for the headset session's text grades (headset-plan.md, "Text comfort";
+	 *  BpView.TextCard): its name, its cap height in the world (cm), its cap's foot in the world and the way it rises. */
+	struct FClassSample
+	{
+		FString Name;
+		double CapCm;
+		FVector Foot;
+		FVector Up;
+	};
+
+	/** The angle a sample's cap subtends from an eye, arcminutes. */
+	inline double Arcmin(const FClassSample& Sample, const FVector& Eye)
+	{
+		const FVector A = (Sample.Foot - Eye).GetSafeNormal(), B = (Sample.Foot + Sample.Up.GetSafeNormal() * Sample.CapCm - Eye).GetSafeNormal();
+		return FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct(A, B), -1.0, 1.0))) * 60.0;
+	}
 }
