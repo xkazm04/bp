@@ -114,6 +114,13 @@ public:
 	const FString* FindFeatureKind(const FString& Slug) const { return FeatureKinds.Find(Slug); }
 	/** A feature's one line (structure.features[].summary) by its slug; null when the structure names none. */
 	const FString* FindFeatureSummary(const FString& Slug) const { return FeatureSummaries.Find(Slug); }
+	/** A lens's name (structure.lenses[].manifest.name, what the web's P.LENS shows) by its id; null when the last structure
+	 *  that parsed names no such lens (spark vr-room-layers WP3: the manifest is the one source of the table's lens words). */
+	const FString* FindLensName(const FString& Lens) const { return LensNames.Find(Lens); }
+	/** A lens field's label and unit (manifest.fields[]: the web's metric name and unit, rail/wide/review.tsx) by the lens and
+	 *  the field's key; null when the manifest has no such field or it names none. */
+	const FString* FindFieldLabel(const FString& Lens, const FString& Key) const { return FieldLabels.Find(Lens + TEXT("/") + Key); }
+	const FString* FindFieldUnit(const FString& Lens, const FString& Key) const { return FieldUnits.Find(Lens + TEXT("/") + Key); }
 
 	FOnBpPlan& OnPlan() { return PlanDelegate; }
 	FOnBpPlanFailed& OnPlanFailed() { return PlanFailedDelegate; }
@@ -144,7 +151,13 @@ public:
 	 *  the id appended to its first package (WaveComposer's "Add selected"). A finding a draft already holds is not sent.
 	 *  Allowed on every product: a draft queues nothing. OnDone gets whether it is in a draft now, that wave's id and a
 	 *  note for the log. Nothing here dispatches (SendWave refuses any other route). */
-	void AddToDraft(const FString& ProposalId, TFunction<void(bool bOk, const FString& WaveId, const FString& Note)> OnDone);
+	void AddToDraft(const FString& ProposalId, TFunction<void(bool bOk, const FString& WaveId, const FString& Note)> OnDone)
+	{
+		AddToDraft(TArray<FString>{ ProposalId }, MoveTemp(OnDone));
+	}
+	/** The same for several findings in one write (WP3's lasso): the ones no draft holds yet go in together, so a second write
+	 *  never patches packages the waves have not read back. */
+	void AddToDraft(const TArray<FString>& ProposalIds, TFunction<void(bool bOk, const FString& WaveId, const FString& Note)> OnDone);
 	/** The draft the table last wrote to (AddToDraft); the wrist shows it first. Empty until one was written. */
 	const FString& GetFocusWaveId() const { return FocusWaveId; }
 
@@ -171,6 +184,10 @@ private:
 	FString ProductName;
 	TMap<FString, FString> FeatureKinds;
 	TMap<FString, FString> FeatureSummaries;
+	TMap<FString, FString> LensNames;
+	/** By "<lens>/<key>". */
+	TMap<FString, FString> FieldLabels;
+	TMap<FString, FString> FieldUnits;
 	FString FocusWaveId;
 	/** A draft write is out: a second waits for it, so two Approves never compose two waves. */
 	bool bWaveWriteOut = false;

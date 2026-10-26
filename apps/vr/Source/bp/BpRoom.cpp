@@ -242,6 +242,27 @@ namespace
 			WithRoomTables(World, TEXT("BpRoom.Exit"), [](ABpTable& Table) { Table.ExitRoomMode(); });
 		}));
 
+	FAutoConsoleCommandWithWorldAndArgs CmdRoomNext(
+		TEXT("BpRoom.Next"),
+		TEXT("BpRoom.Next: room mode switches to the next room by urgency (T0 and T1 findings, then open findings, then plan order), as the queue's end and the lamp offer it."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			WithRoomTables(World, TEXT("BpRoom.Next"), [](ABpTable& Table) { Table.SwitchToNextRoom(); });
+		}));
+
+	FAutoConsoleCommandWithWorldAndArgs CmdRoomLasso(
+		TEXT("BpRoom.Lasso"),
+		TEXT("BpRoom.Lasso <feature id>...: draws a loop round those features' glyphs on the room's map (over bp.LassoDrawS) and closes it as a hand's lasso: the open findings inside go into the draft wave (never dispatched)."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			if (Args.Num() == 0)
+			{
+				UE_LOG(LogBpTable, Warning, TEXT("BpRoom: usage BpRoom.Lasso <feature id>..."));
+				return;
+			}
+			WithRoomTables(World, TEXT("BpRoom.Lasso ") + FString::Join(Args, TEXT(" ")), [&Args](ABpTable& Table) { Table.LassoFeatures(Args); });
+		}));
+
 	FAutoConsoleCommandWithWorldAndArgs CmdRoomEntry(
 		TEXT("BpRoom.Entry"),
 		TEXT("BpRoom.Entry dive|lift: how the next BpRoom.Enter goes in (dive: the paper cross-fades; lift: the room lifts as a glass column, holds, then dives)."),
@@ -334,6 +355,7 @@ bool ABpTable::EnterRoomMode(const FString& InRoomId)
 	if (RoomModeId.IsEmpty()) Home();
 	const bool bSwitch = !RoomModeId.IsEmpty() || !ShownRoomMode.IsEmpty();
 	RoomModeId = InRoomId;
+	RoomsVisited.Add(InRoomId);
 	RoomEntryNow = GRoomEntry;
 	LiftAlpha = LiftHoldClock = 0.f;
 	LiftRoomId.Reset();
@@ -1122,7 +1144,9 @@ bool ABpTable::RoomModeHit(const FVector2D& PaperCm, FString& OutKind, FString& 
 	}
 	if (KeyPlanRoomAt(PaperCm, OutId))
 	{
+		// WP3: a key plan room is a switch target (a tap or a hold).
 		OutKind = TEXT("minimap");
+		OutId = TEXT("minimap:") + OutId;
 		return true;
 	}
 	// A feature's slot on the map: a tap brings its screen to the deck's front (BpDeck.cpp).
@@ -1132,6 +1156,16 @@ bool ABpTable::RoomModeHit(const FVector2D& PaperCm, FString& OutKind, FString& 
 		{
 			OutKind = TEXT("feature");
 			OutId = TEXT("feature:") + SheetPlan->tiles[Slot.Tile].id;
+			return true;
+		}
+	}
+	// The map's paper between them: where a lasso may start (WP3).
+	for (const FRoomCell& Cell : RoomCells)
+	{
+		if (Cell.Box.ExpandBy(RoomCellGutterCm).IsInside(PaperCm))
+		{
+			OutKind = TEXT("map");
+			OutId = TEXT("map");
 			return true;
 		}
 	}

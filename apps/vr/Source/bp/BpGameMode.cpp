@@ -39,7 +39,7 @@ namespace
 		}
 		// The screen deck's close-up (spark vr-room-layers WP2, readability judging): the target eye, turned to the deck's
 		// front screen (which faces that eye, so it is seen straight on), at a narrow field (ApplyPose aims it).
-		if (Name.Equals(TEXT("deck"), ESearchCase::IgnoreCase))
+		if (Name.Equals(TEXT("deck"), ESearchCase::IgnoreCase) || Name.Equals(TEXT("wrist"), ESearchCase::IgnoreCase) || Name.Equals(TEXT("lamp"), ESearchCase::IgnoreCase))
 		{
 			Out = { TableTopCm() + ABpGameMode::TargetEyeAboveTopCm, ABpGameMode::TargetBehindNearEdgeCm, ABpGameMode::TargetPitchDeg, 36.f };
 			return true;
@@ -69,7 +69,7 @@ namespace
 	/** BpView.Pose target|play: PIE and editor captures only; the headset sets its own view. */
 	FAutoConsoleCommandWithWorldAndArgs CmdViewPose(
 		TEXT("BpView.Pose"),
-		TEXT("BpView.Pose target|play|deck: put the view in the concept's framing (target), back at the play pose (play), or on the screen deck's front screen from the target eye (deck). For PIE captures."),
+		TEXT("BpView.Pose target|play|deck|wrist|lamp: put the view in the concept's framing (target), back at the play pose (play), or on the screen deck's front screen, the wrist panel or the lamp's caption from the target eye, narrow (deck, wrist, lamp). For PIE captures."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
 		{
 			if (Args.Num() == 0 || !ABpGameMode::ApplyPose(World, Args[0]))
@@ -110,6 +110,12 @@ bool ABpGameMode::ApplyPose(UWorld* World, const FString& Name)
 	FRotator View;
 	PoseView(**Table, Pose, Eye, View);
 	if (Name.Equals(TEXT("deck"), ESearchCase::IgnoreCase)) View = (Table->GetDeckFrontWorld() - Eye).Rotation();
+	// The wrist panel's and the lamp's caption's close-ups (spark vr-room-layers WP3, readability judging), as the deck's.
+	if (Name.Equals(TEXT("lamp"), ESearchCase::IgnoreCase)) View = (Table->GetCaptionWorld() - Eye).Rotation();
+	if (Name.Equals(TEXT("wrist"), ESearchCase::IgnoreCase))
+	{
+		if (const ABpPawn* Bp = Cast<ABpPawn>(PC->GetPawn())) View = (Bp->GetWristWorld() - Eye).Rotation();
+	}
 	if (APawn* Pawn = PC->GetPawn())
 	{
 		// The eye is the pawn's view point; the default pawn's sits at its origin, so the offset is usually zero.

@@ -329,28 +329,77 @@ public:
 	/** The screen deck (BpDeck.cpp; spark vr-room-layers WP2, the owner's "a queue of screens in front of me, swapped one by
 	 *  one"): in room mode, world-space screens DeckWidthCm x DeckHeightCm, the current one DeckDistanceCm from the target
 	 *  eye, DeckYawDeg to its right and DeckDropDeg below its horizon, upright about its roll and turned to face the eye.
-	 *  Placed by capture (FAH): in the band of the view above the room map's far edge and right of the lamp agent's head,
-	 *  where the card stood (the far half of the table is 75 cm and more from the eye, so a screen at 60 cm stands over the
-	 *  near half and is seen against the far one). The next two stand DeckStepBackCm farther and DeckStepUpCm higher each,
-	 *  dimmed to DeckBackAlpha1 and DeckBackAlpha2, so the queue reads as a deck. A swap slides over DeckSwapS. */
-	static constexpr float DeckWidthCm = 32.f;
-	static constexpr float DeckHeightCm = 18.f;
-	static constexpr float DeckDistanceCm = 60.f;
-	static constexpr float DeckYawDeg = 21.f;
-	static constexpr float DeckDropDeg = 12.f;
-	static constexpr float DeckStepBackCm = 5.f;
-	static constexpr float DeckStepUpCm = 1.4f;
-	static constexpr float DeckBackAlpha1 = 0.55f;
-	static constexpr float DeckBackAlpha2 = 0.3f;
+	 *  FAI (the owner: "in front of me", "the screens can be a little bit further"): straight ahead and centred, 75 cm out
+	 *  and 1.25 times FAH's 32 x 18 so its text keeps its size, its top edge about a degree under the target framing's top
+	 *  and its lower edge above the room map's far edge (by the target framing: -1.6 and -22.7 degrees). The next two
+	 *  stand as spines to its right (DeckSpine*), each DeckSpineWidthCm wide, DeckSpineGapCm apart and DeckStepBackCm
+	 *  further back per place, dimmed to DeckBackAlpha1 and DeckBackAlpha2, each with its screen's kind and title; nothing of
+	 *  them stands over or above the front one. A swap slides over DeckSwapS. */
+	static constexpr float DeckWidthCm = 40.f;
+	static constexpr float DeckHeightCm = 22.5f;
+	static constexpr float DeckDistanceCm = 75.f;
+	static constexpr float DeckYawDeg = 0.f;
+	static constexpr float DeckDropDeg = 11.2f;
+	static constexpr float DeckStepBackCm = 4.f;
+	static constexpr float DeckSpineWidthCm = 5.f;
+	static constexpr float DeckSpineGapCm = 1.2f;
+	static constexpr float DeckBackAlpha1 = 0.7f;
+	static constexpr float DeckBackAlpha2 = 0.45f;
 	static constexpr float DeckSwapS = 0.25f;
-	/** The screens' render density (px per cm): about twice what the target capture resolves at 60 cm (13.3 px/cm), as the
-	 *  card's (FM: the widget target has no mips, so more aliases). */
-	static constexpr float DeckPxPerCm = 26.f;
+	/** The screens' render density (px per cm): about twice what the target capture resolves at 75 cm (10.7 px/cm), as the
+	 *  card's (FM: the widget target has no mips, so more aliases); FAH's 26 at 32 cm wide, the same pixels at 40. */
+	static constexpr float DeckPxPerCm = 21.f;
 	/** The current screen's feature on the map: its glyph glows this many times its Show, and its slot stands as a lit cell
 	 *  DeckLightCm high at DeckLightShow. */
 	static constexpr float DeckLitGlyphShow = 3.f;
 	static constexpr float DeckLightCm = 0.6f;
 	static constexpr float DeckLightShow = 2.2f;
+
+	/** Switching rooms and the hands' room actions (BpSwitch.cpp; spark vr-room-layers WP3). The hands' rule, in one place:
+	 *  a TAP (a pinch closed and opened on one target, no pull) works the deck's controls, brings a feature's screen to the
+	 *  front, follows a crumb, switches to a key plan room and works the wrist's tabs and rows; a HOLD (pointing, no pinch,
+	 *  at one target for HoldS) asks the lamp about a feature, switches to a key plan room, and on the lamp's head asks it
+	 *  for the next room; a pinch dragged LassoStartCm or more across the room's map draws a LASSO, so in room mode a pinch
+	 *  on the map is never a pull or a push (the deck, the lamp and the crumbs keep theirs). */
+	static constexpr float HoldS = 0.8f;
+	static constexpr float LassoStartCm = 3.f;
+	/** The lasso's line: a point every LassoStepCm along the stroke, a glowing bar LassoLineCm wide and high between each
+	 *  two in the pins' amber; a closed loop and its picks stay lit LassoHoldS. BpRoom.Lasso's loop runs LassoPadCm round
+	 *  the asked features' slots taken LassoInsetCm in, drawn over LassoDrawS (bp.LassoDrawS). */
+	static constexpr float LassoStepCm = 0.6f;
+	static constexpr float LassoLineCm = 0.3f;
+	static constexpr float LassoShow = 3.5f;
+	static constexpr float LassoHoldS = 2.5f;
+	static constexpr float LassoPadCm = 0.8f;
+	static constexpr float LassoInsetCm = 1.4f;
+	static constexpr float LassoDrawS = 1.2f;
+	/** The lamp agent in room mode (the owner: a spot left of the deck, its head clear of it): its pin tip moves to
+	 *  LampRoomXCm, LampRoomYCm (the table's axes), LampRoomDropCm under its own height, over LampMoveS, and back for the site plan, where
+	 *  everything is as before; in the room it faces LampRoomFaceShare of the way from the deck's centre toward the eye,
+	 *  and turns to what it talks about over LampTurnS. Its head is LampHeadLocal in the mesh's own space (studio_level.py's
+	 *  light point, 4.5 cm back into the head), a sphere of LampHeadRadiusCm for a pointing ray, ringed LampRingCm across
+	 *  while it is held. */
+	static constexpr float LampRoomXCm = 25.f;
+	static constexpr float LampRoomYCm = -70.f;  // FAI by capture: at -45 its ring left the frame's top and its caption the frame's left
+	static constexpr float LampRoomDropCm = 5.f;
+	static constexpr float LampMoveS = 0.6f;
+	static constexpr float LampTurnS = 0.4f;
+	static constexpr float LampRoomFaceShare = 0.5f;
+	static constexpr float LampHeadRadiusCm = 11.f;
+	static constexpr float LampRingCm = 20.f;
+	/** The lamp's caption (the lamp has no speech surface): a glass plate CaptionWidthCm x CaptionHeightCm at CaptionXCm,
+	 *  CaptionYCm and CaptionAboveTopCm (the table's axes; left of the lamp in the target framing), facing the target eye,
+	 *  at most two lines of CaptionCapCm caps drawn at CaptionPxPerCm, shown LampCaptionS. After the lamp names the next
+	 *  room the switch follows LampSwitchDelayS later (bp.LampSwitchDelayS: a capture holds it). */
+	static constexpr float CaptionWidthCm = 26.f;
+	static constexpr float CaptionHeightCm = 7.5f;
+	static constexpr float CaptionXCm = 5.f;  // FAI by capture: between the lamp and the deck, above the map (at 20, -68, 31 it stood 117 cm out, 6.5 px)
+	static constexpr float CaptionYCm = -38.f;
+	static constexpr float CaptionAboveTopCm = 22.f;
+	static constexpr float CaptionCapCm = 1.05f;
+	static constexpr float CaptionPxPerCm = 20.f;
+	static constexpr float LampCaptionS = 6.f;
+	static constexpr float LampSwitchDelayS = 1.2f;
 
 	ABpTable();
 
@@ -528,6 +577,64 @@ public:
 	/** The key plan's room under a paper point (cm), for WP3's point-to-switch; false outside room mode or off its cells. */
 	UFUNCTION(BlueprintCallable, Category = "Bp|Room")
 	bool KeyPlanRoomAt(const FVector2D& PaperCm, FString& OutRoomId) const;
+	/** The deck's NEXT ROOM button at the queue's end: the switch to NextRoom. */
+	void DeckNextRoom();
+
+	// ---- Switching rooms and the hands' room actions (BpSwitch.cpp, WP3): the API the hands, the wrist and BpRoom.* call ----
+	/** One room's urgency: its open findings in tiers 0 and 1, all its open findings, and its place in the plan. */
+	struct FRoomRank
+	{
+		FString Id;
+		FString Name;
+		int32 T0 = 0;
+		int32 T1 = 0;
+		int32 Open = 0;
+		int32 Order = 0;
+	};
+	/** The product's rooms, most urgent first (the owner's order): T0 and T1 findings, then open findings, then plan order. */
+	TArray<FRoomRank> RoomsByUrgency() const;
+	/** Why a room ranks where it does, in words: "2 T1 findings", "5 open findings", "nothing open". */
+	static FString RankWhy(const FRoomRank& Rank);
+	/** The room "next" offers (the queue's end, the lamp): the most urgent this session has not been in, else the one after
+	 *  the room shown in that order; empty without a plan or another room. */
+	FString NextRoom(FString& OutWhy) const;
+	/** A switch by one of the four routes (wrist, keyplan, queue, lamp) or the console: room mode into that room (the
+	 *  paper and the deck fade, the view never moves). */
+	bool SwitchRoom(const FString& InRoomId, const TCHAR* Route);
+	UFUNCTION(BlueprintCallable, Category = "Bp|Room")
+	bool SwitchToNextRoom();
+	/** A hand held on the lamp's head: Fraction 0..1 fills its ring (0 clears it); 1 asks it for the next room. */
+	void SetLampHold(float Fraction);
+	/** The lamp about a feature (a held point on its glyph): it turns to the glyph and its caption says one line from the
+	 *  store (open findings, health, last scan). */
+	void AskLamp(const FString& FeatureId);
+	/** The lamp's head in the world (its hit sphere's centre); false when the level has no lamp. */
+	bool LampHead(FVector& OutWorld) const;
+	/** The lasso (a pinch dragged across the room's map): LassoBegin at the pinch, a paper point per frame, LassoEnd at the
+	 *  release, which closes the loop and puts the open findings of the glyphs inside into the draft wave (BpLink
+	 *  AddToDraft, never a dispatch); LassoEnd is false when the stroke never got LassoStartCm long (the pinch was a tap). */
+	void LassoBegin();
+	void LassoPoint(const FVector2D& PaperCm);
+	bool LassoEnd();
+	bool IsLassoDrawing() const { return bLassoDrawing; }
+	/** BpRoom.Lasso: the loop round these features' glyphs, drawn over bp.LassoDrawS and closed as a hand's would be. */
+	bool LassoFeatures(const TArray<FString>& FeatureIds);
+	/** That loop in paper cm (BpHands.Lasso's path); empty when no asked feature is on the map. */
+	TArray<FVector2D> LassoLoop(const TArray<FString>& FeatureIds) const;
+	/** A world ray's point on the paper (cm); false when it misses the paper's plane. */
+	bool PaperAt(const FVector& WorldOrigin, const FVector& WorldDir, FVector2D& OutPaperCm) const;
+	/** A paper point (cm) on the paper, in the world. */
+	FVector PaperToWorld(const FVector2D& PaperCm) const;
+	/** The flat view's pointing (the synthetic hand has no body): the posed right hand's index tip goes to the paper point
+	 *  a hold is on, and back to the key plan's room after (bShow false). Nothing without the posed hands. */
+	void ShowPointer(bool bShow, const FVector& WorldTo = FVector::ZeroVector);
+	/** For checks and captures: the caption's text as shown (empty when none), and the last lasso's outcome. */
+	UFUNCTION(BlueprintCallable, Category = "Bp|Room")
+	FString GetLampLine() const { return LampLine; }
+	UFUNCTION(BlueprintCallable, Category = "Bp|Room")
+	FString GetLassoLine() const { return LassoLine; }
+	/** The caption's centre in the world (BpView.Pose lamp aims at it). */
+	FVector GetCaptionWorld() const;
 
 protected:
 	virtual void OnConstruction(const FTransform& Transform) override;
@@ -1162,6 +1269,73 @@ private:
 	void AimCaptureTip(const FVector& LocalTip);
 	/** The decision card shows only on the site plan (the deck replaces it in room mode). */
 	void ApplyCardVisibility();
+	/** The next two screens as spines right of the front (FAI): their widgets and what each shows. */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UWidgetComponent>> DeckSpines;
+	FString DeckSpineKey[2];
+	FTransform SpinePose(int32 Place) const;
+	TSharedRef<SWidget> SpineWidget(int32 Screen) const;
+	void ApplySpines(float Room);
+
+	// ---- Switching and the hands' room actions state (BpSwitch.cpp) ------------------------------------------------------
+	void InitSwitch();
+	void OnSwitchRoomChanged(const FString& InRoomId);
+	/** Steps the lamp, its caption and ring, a pending switch and the lasso; true while any of them moves. */
+	bool TickSwitch(float DeltaSeconds);
+	/** The rooms entered this play session (NextRoom skips them). */
+	TSet<FString> RoomsVisited;
+	/** The lamp agent and what moves with it (its lights and halo): each one's place relative to it and its mobility. */
+	TWeakObjectPtr<AActor> Lamp;
+	TArray<TWeakObjectPtr<AActor>> LampGroup;
+	TArray<FTransform> LampGroupRel;
+	TArray<FTransform> LampGroupRest;
+	TArray<uint8> LampGroupMobility;
+	uint8 LampMobility = 0;
+	FTransform LampRest;
+	/** 0 at its site place, 1 at its room place (eased), and where it heads. */
+	float LampAway = 0.f;
+	float LampAwayTarget = 0.f;
+	/** What it turns to (a point in the table's space), and how far it has turned to it (0 its room facing, 1 facing it). */
+	FVector LampLookAt = FVector::ZeroVector;
+	float LampLook = 0.f;
+	float LampLookTarget = 0.f;
+	bool bLampMovable = false;
+	void FindLamp();
+	void PlaceLamp();
+	/** The yaw (degrees, the table's space) that turns the lamp's hood from a place to a point. */
+	static double LampYawToward(const FVector& From, const FVector& To);
+	/** The target eye in the table's space. */
+	FVector EyeLocal() const;
+	UPROPERTY(Transient)
+	TObjectPtr<UWidgetComponent> LampCaption;
+	UPROPERTY(Transient)
+	TObjectPtr<UWidgetComponent> LampRing;
+	FString LampLine;
+	float LampCaptionClock = 0.f;
+	float LampHoldFill = 0.f;
+	float ShownHoldFill = -1.f;
+	FString PendingSwitch;
+	float PendingSwitchClock = 0.f;
+	void SayLamp(const FString& Line);
+	void ApplyLampWidgets();
+	/** The lasso: its stroke (paper cm), its length, whether it draws, how long the closed loop stays lit, BpRoom.Lasso's
+	 *  loop and its progress, the last outcome and the features it picked. */
+	TArray<FVector2D> LassoPath;
+	double LassoLength = 0.0;
+	bool bLassoDrawing = false;
+	bool bLassoStroke = false;
+	float LassoLit = 0.f;
+	TArray<FVector2D> LassoAuto;
+	float LassoAutoT = -1.f;
+	int32 LassoAutoFed = 0;
+	FString LassoLine;
+	TArray<FString> LassoPicked;
+	UPROPERTY(Transient)
+	TObjectPtr<UInstancedStaticMeshComponent> LassoBars;
+	UPROPERTY(Transient)
+	TObjectPtr<UInstancedStaticMeshComponent> LassoPicks;
+	void DrawLasso(bool bClosed, float Show);
+	void CommitLasso();
 
 	FDelegateHandle PlanHandle;
 	FDelegateHandle FailedHandle;

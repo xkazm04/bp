@@ -85,6 +85,18 @@ public:
 	/** The panel's up leans with the target pose's view (ABpGameMode::TargetPitchDeg), so it reads square to the eye. */
 	void SetWristParent(USceneComponent* Parent, FName Socket, const FTransform& Relative);
 
+	/** The wrist's list of rooms (spark vr-room-layers WP3): in room mode the panel has two tabs, PACKAGES (the wave, as
+	 *  before) and ROOMS, the product's rooms by urgency (ABpTable::RoomsByUrgency) WristRoomsPerPage a page, the room shown
+	 *  marked; a tap on a row switches to that room. The hands find its tabs, rows and pager by ray (WristHit: an id
+	 *  "wrist:tab:rooms", "wrist:tab:packages", "wrist:room:<id>", "wrist:page:next" or "wrist:page:prev"), and the
+	 *  synthetic hand aims at them (WristAim). */
+	static constexpr int32 WristRoomsPerPage = 5;
+	bool WristHit(const FVector& WorldOrigin, const FVector& WorldDir, FString& OutId) const;
+	/** The panel's centre in the world (BpView.Pose wrist aims at it). */
+	FVector GetWristWorld() const;
+	bool WristAim(const FString& Id, FVector& OutWorld) const;
+	void WristTap(const FString& Id);
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -139,4 +151,20 @@ private:
 	void ReceiveScanState(const FBpScanState& State);
 	FString WristKey;
 	FDelegateHandle ScanHandle;
+	/** The rooms tab: shown, its page, the room the table shows (empty on the site plan: no tabs), and each control's box in
+	 *  the panel's pixels as last laid out. */
+	bool bWristRooms = false;
+	int32 WristPage = 0;
+	FString WristRoomMode;
+	struct FWristBox
+	{
+		FString Id;
+		FBox2f Box;
+	};
+	TArray<FWristBox> WristBoxes;
+	TWeakObjectPtr<class ABpTable> WristTable;
+	FDelegateHandle RoomHandle;
+	void OnWristRoomChanged(const FString& RoomId);
+	/** The panel again from the scan state BpLink holds (ReceiveScanState's work, both tabs). */
+	void RefreshWrist();
 };

@@ -1,5 +1,6 @@
 #include "BpHands.h"
 
+#include "BpGameMode.h"
 #include "BpPawn.h"
 #include "BpTable.h"
 #include "Camera/CameraComponent.h"
@@ -49,6 +50,32 @@ namespace
 			UBpHands::PendingCommands().Add(TEXT("Simulate ") + Args[0].ToLower());
 		}));
 
+	FAutoConsoleCommandWithWorldAndArgs CmdHandsPoint(
+		TEXT("BpHands.Point"),
+		TEXT("BpHands.Point <lamp|feature:<id>|minimap:<room>|...> [seconds]: the synthetic hand points at it without pinching for that long (default 2), so a hold acts (the lamp: the next room; a feature: the lamp's line about it; a key plan room: a switch)."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld*)
+		{
+			if (Args.Num() == 0)
+			{
+				UE_LOG(LogBpHands, Warning, TEXT("BpHands: usage BpHands.Point <id> [seconds]"));
+				return;
+			}
+			UBpHands::PendingCommands().Add(TEXT("Point ") + Args[0] + (Args.Num() > 1 ? TEXT(" ") + Args[1] : FString()));
+		}));
+
+	FAutoConsoleCommandWithWorldAndArgs CmdHandsLasso(
+		TEXT("BpHands.Lasso"),
+		TEXT("BpHands.Lasso <feature id>...: the synthetic hand pinches on the room's map and draws a loop round those features' glyphs (BpRoom.Lasso's loop), then releases: the hands' own lasso."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld*)
+		{
+			if (Args.Num() == 0)
+			{
+				UE_LOG(LogBpHands, Warning, TEXT("BpHands: usage BpHands.Lasso <feature id>..."));
+				return;
+			}
+			UBpHands::PendingCommands().Add(TEXT("Lasso ") + FString::Join(Args, TEXT(" ")));
+		}));
+
 	FAutoConsoleCommandWithWorldAndArgs CmdHandsPush(
 		TEXT("BpHands.Push"),
 		TEXT("BpHands.Push [id]: the synthetic hand pinches (on the id, or on what is lifted now) and pushes the pinch away from the eye."),
@@ -62,10 +89,17 @@ namespace
 		return Id == TEXT("home") || Id.StartsWith(TEXT("wing:")) || Id.StartsWith(TEXT("room:"));
 	}
 
-	/** A pinch released where it closed, with no pull: a crumb, the screen deck's controls, a feature on the room's map. */
+	/** A pinch released where it closed, with no pull: a crumb, the screen deck's controls, a feature on the room's map, a
+	 *  key plan room, the wrist's tabs and rows (ABpTable's hands' rule). */
 	bool IsTap(const FString& Id)
 	{
-		return IsCrumb(Id) || Id.StartsWith(TEXT("deck:")) || Id.StartsWith(TEXT("feature:"));
+		return IsCrumb(Id) || Id.StartsWith(TEXT("deck:")) || Id.StartsWith(TEXT("feature:")) || Id.StartsWith(TEXT("minimap:")) || Id.StartsWith(TEXT("wrist:"));
+	}
+
+	/** What a hold acts on (ABpTable's hands' rule): the lamp's head, a feature's glyph, a key plan room. */
+	bool IsHoldable(const FString& Kind)
+	{
+		return Kind == TEXT("lamp") || Kind == TEXT("feature") || Kind == TEXT("minimap");
 	}
 
 	bool IsLive(EBpTracking State)
@@ -249,7 +283,10 @@ void UBpHands::Step(int32 Slot, const FSample& Sample, float DeltaTime)
 	}
 	if (Sample.bAims && FindTable())
 	{
-		Table->HitTest(Sample.RayOrigin, Sample.RayDir, S.HoverKind, S.HoverId);
+		// The wrist panel first (it is nearest the eye; spark vr-room-layers WP3's room list), then the table.
+		const ABpPawn* Pawn = Cast<ABpPawn>(GetOwner());
+		if (Pawn && Pawn->WristHit(Sample.RayOrigin, Sample.RayDir, S.HoverId)) S.HoverKind = TEXT("wrist");
+		else Table->HitTest(Sample.RayOrigin, Sample.RayDir, S.HoverKind, S.HoverId);
 	}
 	else
 	{
@@ -317,6 +354,13 @@ void UBpHands::Judge(int32 Slot, const FSample& Sample)
 		if (!S.bNeedRelease) PinchStarted(S, Sample);
 		return;
 	}
+	// A pinch on the room's map draws (the hands' rule): the ray's paper point each frame, never a pull or a push.
+	if (S.bLasso)
+	{
+		FVector2D Paper;
+		if (Sample.bAims && FindTable() && Table->PaperAt(Sample.RayOrigin, Sample.RayDir, Paper)) Table->LassoPoint(Paper);
+		return;
+	}
 	if (S.bFired) return;
 	const float AlongCm = FVector::DotProduct(Sample.PinchPoint - S.Onset, S.PullDir);
 	if (AlongCm >= PullEnterCm) Pull(S);
@@ -331,12 +375,44 @@ void UBpHands::PinchStarted(FSlot& S, const FSample& Sample)
 	S.PullDir = TowardEye(S.Onset);
 	S.TargetKind = S.HoverKind;
 	S.TargetId = S.HoverId;
+	S.bLasso = false;
+	ABpTable* T = FindTable();
+	if (T && !T->GetRoomModeId().IsEmpty() && (S.TargetKind == TEXT("feature") || S.TargetKind == TEXT("map")))
+	{
+		S.bLasso = true;
+		T->LassoBegin();
+		FVector2D Paper;
+		if (Sample.bAims && T->PaperAt(Sample.RayOrigin, Sample.RayDir, Paper)) T->LassoPoint(Paper);
+	}
 }
 
 void UBpHands::PinchEnded(FSlot& S)
 {
 	S.bPinch = false;
 	ABpTable* T = FindTable();
+	// A pinch that drew a lasso closes it; one that never moved far enough is a tap (WP3).
+	if (S.bLasso)
+	{
+		S.bLasso = false;
+		if (T && T->LassoEnd())
+		{
+			UE_LOG(LogBpHands, Log, TEXT("BpHands: lasso released -> %s"), *T->GetLassoLine());
+			return;
+		}
+	}
+	// The wrist's tabs and rows, a key plan room (WP3): taps.
+	if (!S.bFired && S.HoverKind == TEXT("wrist"))
+	{
+		UE_LOG(LogBpHands, Log, TEXT("BpHands: tap on %s"), *S.HoverId);
+		if (ABpPawn* Pawn = Cast<ABpPawn>(GetOwner())) Pawn->WristTap(S.HoverId);
+		return;
+	}
+	if (!S.bFired && T && S.HoverKind == TEXT("minimap"))
+	{
+		UE_LOG(LogBpHands, Log, TEXT("BpHands: tap on %s"), *S.HoverId);
+		T->SwitchRoom(S.HoverId.Mid(8), TEXT("keyplan"));
+		return;
+	}
 	// Released on the screen deck or on a feature of the room's map (spark vr-room-layers WP2): a tap.
 	if (!S.bFired && T && (S.HoverKind == TEXT("deck") || S.HoverKind == TEXT("feature")))
 	{
@@ -414,16 +490,8 @@ void UBpHands::UpdateHighlight()
 {
 	// A pinching hand shows what it pinched; otherwise the right hand, then the left, then the synthetic one shows what it
 	// points at. Only a live hand speaks, so BpLevel.Highlight keeps working with no hands at all.
-	const int32 Order[SlotCount] = { Right, Left, Synthetic };
-	const FSlot* Speaker = nullptr;
-	for (const int32 Slot : Order)
-	{
-		const FSlot& S = Slots[Slot];
-		if ((Slot == Synthetic && !bSyntheticActive) || !S.bEverTracked || !IsLive(S.State)) continue;
-		if (S.bPinch) { Speaker = &S; break; }
-		if (!Speaker) Speaker = &S;
-	}
-	if (!Speaker)
+	const FSlot* Speaking = Speaker();
+	if (!Speaking)
 	{
 		if (bHighlightOwned && FindTable()) Table->SetHighlight(FString(), FString());
 		bHighlightOwned = false;
@@ -431,8 +499,8 @@ void UBpHands::UpdateHighlight()
 		ShownId.Reset();
 		return;
 	}
-	const FString& Kind = Speaker->bPinch ? Speaker->TargetKind : Speaker->HoverKind;
-	const FString& Id = Speaker->bPinch ? Speaker->TargetId : Speaker->HoverId;
+	const FString& Kind = Speaking->bPinch ? Speaking->TargetKind : Speaking->HoverKind;
+	const FString& Id = Speaking->bPinch ? Speaking->TargetId : Speaking->HoverId;
 	if (bHighlightOwned && Kind == ShownKind && Id == ShownId) return;
 	if (!bHighlightOwned && Id.IsEmpty()) return;
 	if (!FindTable() || !Table->HasPlan()) return;
@@ -440,6 +508,53 @@ void UBpHands::UpdateHighlight()
 	ShownKind = Kind;
 	ShownId = Id;
 	bHighlightOwned = !Id.IsEmpty();
+}
+
+const UBpHands::FSlot* UBpHands::Speaker() const
+{
+	const int32 Order[SlotCount] = { Right, Left, Synthetic };
+	const FSlot* Out = nullptr;
+	for (const int32 Slot : Order)
+	{
+		const FSlot& S = Slots[Slot];
+		if ((Slot == Synthetic && !bSyntheticActive) || !S.bEverTracked || !IsLive(S.State)) continue;
+		if (S.bPinch) return &S;
+		if (!Out) Out = &S;
+	}
+	return Out;
+}
+
+void UBpHands::UpdateHold(float DeltaTime)
+{
+	// The speaking hand, pointing without a pinch, at something a hold acts on.
+	ABpTable* T = FindTable();
+	const FSlot* Speaking = Speaker();
+	FString Kind, Id;
+	if (T && Speaking && !Speaking->bPinch && Speaking->State == EBpTracking::Tracked && IsHoldable(Speaking->HoverKind))
+	{
+		Kind = Speaking->HoverKind;
+		Id = Speaking->HoverId;
+	}
+	if (Id != HoldId)
+	{
+		if (T && HoldKind == TEXT("lamp")) T->SetLampHold(0.f);
+		if (T && !HoldId.IsEmpty() && HoldKind != TEXT("lamp") && !ABpPawn::IsHeadsetOn()) T->ShowPointer(false);
+		HoldKind = Kind;
+		HoldId = Id;
+		HeldS = 0.f;
+		bHoldFired = false;
+		// The flat view has no hand to point with: the posed right hand points at a paper target while it is held.
+		FVector At;
+		if (T && !Id.IsEmpty() && Kind != TEXT("lamp") && !ABpPawn::IsHeadsetOn() && T->AimAt(Id, At)) T->ShowPointer(true, At);
+	}
+	if (Id.IsEmpty() || bHoldFired) return;
+	HeldS += DeltaTime;
+	if (Kind == TEXT("lamp")) T->SetLampHold(FMath::Min(1.f, HeldS / ABpTable::HoldS));
+	if (HeldS < ABpTable::HoldS) return;
+	bHoldFired = true;
+	UE_LOG(LogBpHands, Log, TEXT("BpHands: hold on %s (%.2f s)"), *Id, HeldS);
+	if (Kind == TEXT("feature")) T->AskLamp(Id.Mid(8));
+	else if (Kind == TEXT("minimap")) T->SwitchRoom(Id.Mid(8), TEXT("keyplan"));
 }
 
 void UBpHands::UpdateFades(float DeltaTime)
@@ -497,9 +612,11 @@ UBpHands::FSample UBpHands::SyntheticSample()
 	case FGesture::EStep::Point:
 	case FGesture::EStep::Pinch:
 	case FGesture::EStep::Pull:
+	case FGesture::EStep::Hold:
+	case FGesture::EStep::Stroke:
 		Sample.bAims = true;
 		Sample.RayDir = (Gesture.Aim - Gesture.Hand).GetSafeNormal();
-		Sample.bPinching = Gesture.Step != FGesture::EStep::Point;
+		Sample.bPinching = Gesture.Step != FGesture::EStep::Point && Gesture.Step != FGesture::EStep::Hold;
 		break;
 	default:
 		break;
@@ -513,7 +630,21 @@ bool UBpHands::StartCommand(const FString& Command)
 	if (!Command.Split(TEXT(" "), &Verb, &Arg)) return false;
 	Gesture = FGesture{ FGesture::EStep::Idle, Arg, Gesture.Hand };
 	Gesture.bPush = Verb == TEXT("Push");
-	if (Verb == TEXT("Pinch") || Gesture.bPush) Gesture.Step = FGesture::EStep::Wait;
+	if (Verb == TEXT("Point"))
+	{
+		// "Point <id> [seconds]"
+		FString Id = Arg, Seconds;
+		if (Arg.Split(TEXT(" "), &Id, &Seconds)) Gesture.Id = Id;
+		Gesture.HoldForS = Seconds.IsEmpty() ? 2.f : FCString::Atof(*Seconds);
+		Gesture.Step = FGesture::EStep::Wait;
+	}
+	else if (Verb == TEXT("Lasso"))
+	{
+		Arg.ParseIntoArrayWS(Gesture.Features);
+		Gesture.Id = TEXT("map");
+		Gesture.Step = FGesture::EStep::Wait;
+	}
+	else if (Verb == TEXT("Pinch") || Gesture.bPush) Gesture.Step = FGesture::EStep::Wait;
 	else if (Arg == TEXT("lost")) Gesture.Step = FGesture::EStep::SimulateLost;
 	else Gesture.Step = FGesture::EStep::SimulateBack;
 	if (!ABpPawn::IsHeadsetOn()) ActivateSynthetic();
@@ -552,11 +683,30 @@ void UBpHands::RunCommands(float DeltaTime)
 			// A push needs no target: pinch on what is lifted now.
 			Gesture.Id = !T->GetRoomId().IsEmpty() ? T->GetRoomId() : !T->GetWingId().IsEmpty() ? T->GetWingId() : FString(TEXT("home"));
 		}
-		if (!T->AimAt(Gesture.Id, Gesture.Aim))
+		if (Gesture.Features.Num() > 0)
 		{
-			UE_LOG(LogBpHands, Log, TEXT("BpHands: refused pinch on unknown id %s"), *Gesture.Id);
-			Gesture.Step = EStep::Idle;
-			return;
+			// The lasso's path: the table's loop round the features, on the paper, in the world.
+			Gesture.Path.Reset();
+			for (const FVector2D& Paper : T->LassoLoop(Gesture.Features)) Gesture.Path.Add(T->PaperToWorld(Paper));
+			if (Gesture.Path.Num() < 3)
+			{
+				UE_LOG(LogBpHands, Log, TEXT("BpHands: refused lasso: none of [%s] is on the room's map"), *FString::Join(Gesture.Features, TEXT(",")));
+				Gesture.Step = EStep::Idle;
+				return;
+			}
+			Gesture.Aim = Gesture.Path[0];
+			Gesture.PathAt = 0;
+		}
+		else
+		{
+			const ABpPawn* Pawn = Cast<ABpPawn>(GetOwner());
+			const bool bAimed = Gesture.Id.StartsWith(TEXT("wrist:")) ? Pawn && Pawn->WristAim(Gesture.Id, Gesture.Aim) : T->AimAt(Gesture.Id, Gesture.Aim);
+			if (!bAimed)
+			{
+				UE_LOG(LogBpHands, Log, TEXT("BpHands: refused pinch on unknown id %s"), *Gesture.Id);
+				Gesture.Step = EStep::Idle;
+				return;
+			}
 		}
 		// The hand stands on the line from the eye to the target, so its ray meets the target as drawn now.
 		Gesture.Hand = FMath::Lerp(Eye(), Gesture.Aim, static_cast<double>(SyntheticReach));
@@ -565,7 +715,23 @@ void UBpHands::RunCommands(float DeltaTime)
 		Gesture.Frames = 0;
 		return;
 	case EStep::Point:
-		if (++Gesture.Frames >= SyntheticPointFrames) Gesture.Step = EStep::Pinch;
+		if (++Gesture.Frames < SyntheticPointFrames) return;
+		// A point only (BpHands.Point): it holds; a lasso pinches and strokes; else the pinch.
+		Gesture.Step = Gesture.HoldForS > 0.f ? EStep::Hold : Gesture.Features.Num() > 0 ? EStep::Stroke : EStep::Pinch;
+		Gesture.ElapsedS = 0.f;
+		return;
+	case EStep::Hold:
+		if (Gesture.ElapsedS >= Gesture.HoldForS) Gesture.Step = EStep::Idle;
+		return;
+	case EStep::Stroke:
+		// One point of the loop a frame, the pinch closed; then released where it ends.
+		if (++Gesture.PathAt >= Gesture.Path.Num())
+		{
+			Gesture.Aim = Gesture.Path[0];
+			Gesture.Step = EStep::Release;
+			return;
+		}
+		Gesture.Aim = Gesture.Path[Gesture.PathAt];
 		return;
 	case EStep::Pinch:
 		// On a crumb the pinch is a tap: released where it closed.
@@ -633,6 +799,7 @@ void UBpHands::TickComponent(float DeltaTime, ELevelTick TickType, FActorCompone
 		Step(Synthetic, Sample, DeltaTime);
 	}
 	UpdateHighlight();
+	UpdateHold(DeltaTime);
 	UpdateFades(DeltaTime);
 	RunCommands(DeltaTime);
 }

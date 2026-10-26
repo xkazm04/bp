@@ -111,6 +111,8 @@ private:
 		FVector PullDir = FVector::ZeroVector;
 		FString TargetKind;
 		FString TargetId;
+		/** In room mode a pinch that closed on the map draws a lasso (ABpTable's hands' rule), never a pull or a push. */
+		bool bLasso = false;
 		float Fade = 1.f;
 		bool bTriggerDown = false;
 	};
@@ -118,7 +120,7 @@ private:
 	/** The synthetic hand's gesture in progress. */
 	struct FGesture
 	{
-		enum class EStep : uint8 { Idle, Wait, Point, Pinch, Pull, Release, SimulateLost, SimulateBack };
+		enum class EStep : uint8 { Idle, Wait, Point, Pinch, Pull, Release, SimulateLost, SimulateBack, Hold, Stroke };
 		EStep Step = EStep::Idle;
 		FString Id;
 		FVector Hand = FVector::ZeroVector;
@@ -127,6 +129,12 @@ private:
 		float PulledCm = 0.f;
 		/** BpHands.Push: the same gesture away from the eye. */
 		bool bPush = false;
+		/** BpHands.Point: how long the hand points (no pinch) before it lowers. BpHands.Lasso: the features, and the path its
+		 *  ray follows across the map while pinched (world points), one a frame. */
+		float HoldForS = 0.f;
+		TArray<FString> Features;
+		TArray<FVector> Path;
+		int32 PathAt = 0;
 		int32 Frames = 0;
 		float ElapsedS = 0.f;
 	};
@@ -147,6 +155,9 @@ private:
 	void OnLost(int32 Slot);
 	void OnBack(int32 Slot);
 	void UpdateHighlight();
+	/** A hold (ABpTable::HoldS on one target, pointing, no pinch) on the lamp's head, a feature or a key plan room. */
+	void UpdateHold(float DeltaTime);
+	const FSlot* Speaker() const;
 	void UpdateFades(float DeltaTime);
 	void RunCommands(float DeltaTime);
 	bool StartCommand(const FString& Command);
@@ -163,6 +174,11 @@ private:
 	FString ShownKind;
 	FString ShownId;
 	bool bHighlightOwned = false;
+	/** The hold in progress: its target, how long, and whether it has acted. */
+	FString HoldKind;
+	FString HoldId;
+	float HeldS = 0.f;
+	bool bHoldFired = false;
 
 	TWeakObjectPtr<ABpTable> Table;
 

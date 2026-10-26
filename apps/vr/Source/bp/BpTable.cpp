@@ -4,6 +4,7 @@
 #include "BpGameMode.h"
 #include "BpLink.h"
 #include "BpType.h"
+#include "BpWords.h"
 #include "CanvasItem.h"
 #include "BpPawn.h"
 #include "Components/InstancedStaticMeshComponent.h"
@@ -601,6 +602,10 @@ void ABpTable::Tick(float DeltaSeconds)
 	}
 	// The scan line eases at the frame rate while a scan runs or fades (UpdateScan drops the tick back when it is done).
 	if (bScanLive || bScanReplay || ScanStrength > 0.f) UpdateScan(FMath::Min(DeltaSeconds, 0.1f));
+	// Switching and the hands' room actions (BpSwitch.cpp): the lamp, its caption and ring, a pending switch and the lasso
+	// run at the frame rate while they move; then the tick drops back as the others do.
+	if (TickSwitch(FMath::Min(DeltaSeconds, 0.05f))) SetActorTickInterval(0.f);
+	else if (GetActorTickInterval() == 0.f && !IsLevelMoving() && !IsRoomModeMoving() && !IsDeckMoving() && !bScanLive && !bScanReplay && ScanStrength <= 0.f) SetActorTickInterval(0.25f);
 }
 
 void ABpTable::StartHandShadow()
@@ -769,6 +774,8 @@ void ABpTable::LoadArt()
 	}
 	// The screen deck (BpDeck.cpp): its screens, its lit cell in the walls' glass, and its queue on room changes.
 	InitDeck();
+	// Switching rooms, the lamp in room mode and the lasso (BpSwitch.cpp).
+	InitSwitch();
 }
 
 void ABpTable::ApplyColumnLook()
@@ -2298,7 +2305,7 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 		const TCHAR* Names[] = { TEXT("SITE PLAN — LEVEL 0"), TEXT("WING PLAN — LEVEL 1"), TEXT("ROOM PLAN — LEVEL 2") };
 		const FBpLinkModule& Link = FBpLinkModule::Get();
 		const FString Product = Link.GetProductName().IsEmpty() ? Link.GetProductSlug() : Link.GetProductName();
-		const FString Sub = Cased(BpType::TitleSub, TitleLensLine.IsEmpty() ? Product : FString::Printf(TEXT("%s  ·  lens %s"), *Product, *TitleLensLine));
+		const FString Sub = Cased(BpType::TitleSub, TitleLensLine.IsEmpty() ? Product : FString::Printf(TEXT("%s  ·  lens %s"), *Product, *BpWords::Lens(TitleLensLine)));
 		const FString Title = Names[static_cast<int32>(Level)];
 		// Each row's cap meets the floor at its own baseline; the floor is taken across the block's likely width. The block
 		// stands on the border's near rule (FO): laid out once from a trial top, then moved down onto the rule and laid out

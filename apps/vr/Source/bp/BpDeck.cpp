@@ -11,6 +11,7 @@
 #include "BpGameMode.h"
 #include "BpLink.h"
 #include "BpType.h"
+#include "BpWords.h"
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/WidgetComponent.h"
@@ -33,10 +34,12 @@
 
 namespace
 {
-	// ---- The screen's layout grid: a screen is laid out at DeckLayoutPxPerCm and drawn at ABpTable::DeckPxPerCm --------
-	constexpr float DeckLayoutPxPerCm = 40.f;
-	constexpr float LW = ABpTable::DeckWidthCm * DeckLayoutPxPerCm;
-	constexpr float LH = ABpTable::DeckHeightCm * DeckLayoutPxPerCm;
+	// ---- The screen's layout grid: a screen is laid out on LW x LH px and drawn at ABpTable::DeckPxPerCm ---------------
+	// (FAI: FAH's grid, 40 px a cm on a 32 x 18 cm screen, kept whole on the 1.25 times larger screen, so every text grows
+	// with it: 32 px a cm.)
+	constexpr float LW = 1280.f;
+	constexpr float LH = 720.f;
+	constexpr float DeckLayoutPxPerCm = LW / ABpTable::DeckWidthCm;
 	constexpr float PadX = 40.f, PadTop = 30.f, PadBottom = 26.f;
 	/** The controls' bar along the lower edge, and the content above it. */
 	constexpr float BarH = 96.f, BarGap = 14.f;
@@ -49,11 +52,16 @@ namespace
 	const FBox2f PrevBox(FVector2f(LW - PadX - 500.f, BarY), FVector2f(LW - PadX - 345.f, BarY + BarH));
 	const FBox2f CountBox(FVector2f(LW - PadX - 345.f, BarY), FVector2f(LW - PadX - 155.f, BarY + BarH));
 	const FBox2f NextBox(FVector2f(LW - PadX - 155.f, BarY), FVector2f(LW - PadX, BarY + BarH));
+	/** The summary's NEXT ROOM button at the queue's end (WP3), where a decision's Approve and Decline stand. */
+	const FBox2f NextRoomBox(FVector2f(PadX, BarY), FVector2f(PadX + 680.f, BarY + BarH));
+	/** A spine (FAI): the next screens' edges right of the front, laid out on SW x SH px at the same density. */
+	constexpr float SW = ABpTable::DeckSpineWidthCm * DeckLayoutPxPerCm;
+	constexpr float SH = ABpTable::DeckHeightCm * 0.92f * DeckLayoutPxPerCm;
 
 	enum EDeckKind : uint8 { KDecision = 0, KSheet = 1, KSummary = 2 };
 	enum ERowKind : uint8 { RText = 0, RChips = 1, RMove = 2, RHealth = 3, RFigures = 4, RGap = 5 };
-	/** The type scale on a screen (caps in layout px; 40 px = 1 cm): the smallest, 24 px, is 0.6 cm, about 7.7 px in the
-	 *  1600 x 900 target capture at the front screen's farthest corner (BpType's floor is 6). */
+	/** The type scale on a screen (caps in layout px; 32 px = 1 cm since FAI): the smallest, 24 px, is 0.75 cm, about 7.7 px
+	 *  in the 1600 x 900 target capture at the front screen's farthest corner, 78 cm out (BpType's floor is 6). */
 	enum EStyle : uint8 { SKicker = 0, STitle, SLede, SHead, SBody, SMeta, SBig, SControl, SBullet };
 	struct FDeckRecipe { const TCHAR* Face; float CapPx; float TrackEm; };
 	const FDeckRecipe Recipes[] = {
@@ -134,31 +142,15 @@ namespace
 		return Line.Replace(TEXT("**"), TEXT("")).Replace(TEXT("`"), TEXT("")).TrimStartAndEnd();
 	}
 
-	/** A lens id as a word: its last dotted part, in capitals ("com.kettle.cost" -> "COST"). */
+	/** A lens as a chip's word, a tier as the queue's (BpWords.h: the manifest's name, core's TIER_SAYS). */
 	FString LensWord(const FString& Lens)
 	{
-		FString Last = Lens;
-		Lens.Split(TEXT("."), nullptr, &Last, ESearchCase::CaseSensitive, ESearchDir::FromEnd);
-		return (Last.IsEmpty() ? Lens : Last).ToUpper();
+		return BpWords::Lens(Lens).ToUpper();
 	}
 
-	/** A lens id as a name ("security" -> "Security"). */
-	FString LensName(const FString& Lens)
+	FString TierWord(int32 Tier)
 	{
-		const FString Word = LensWord(Lens).ToLower();
-		return Word.Left(1).ToUpper() + Word.Mid(1);
-	}
-
-	/** The tier's word (BpMarks' TierWord: store v4, 0 stop-ship .. 3 backlog). */
-	const TCHAR* TierWord(int32 Tier)
-	{
-		switch (Tier)
-		{
-		case 0: return TEXT("STOP-SHIP");
-		case 1: return TEXT("HIGH");
-		case 2: return TEXT("SOON");
-		default: return TEXT("LATER");
-		}
+		return BpWords::TierSays(Tier).ToUpper();
 	}
 
 	FString Number(double Value)
@@ -329,6 +321,27 @@ void ABpTable::InitDeck()
 		Screen->SetVisibility(false);
 		DeckCards.Add(Screen);
 	}
+	// The spines (FAI): the next two screens' edges, right of the front.
+	for (int32 Index = 0; Index < 2; ++Index)
+	{
+		UWidgetComponent* Spine = NewObject<UWidgetComponent>(this, *FString::Printf(TEXT("DeckSpine%d"), Index));
+		Spine->SetupAttachment(Root);
+		Spine->SetWidgetSpace(EWidgetSpace::World);
+		Spine->SetDrawSize(FVector2D(SW * DeckPxPerCm / DeckLayoutPxPerCm, SH * DeckPxPerCm / DeckLayoutPxPerCm));
+		Spine->SetDrawAtDesiredSize(false);
+		Spine->SetPivot(FVector2D(0.5, 0.5));
+		Spine->SetBlendMode(EWidgetBlendMode::Transparent);
+		Spine->SetTwoSided(false);
+		Spine->SetBackgroundColor(FLinearColor::Transparent);
+		Spine->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Spine->SetCastShadow(false);
+		Spine->SetWindowFocusable(false);
+		Spine->SetManuallyRedraw(true);
+		Spine->RegisterComponent();
+		Spine->SetRelativeTransform(SpinePose(Index + 1));
+		Spine->SetVisibility(false);
+		DeckSpines.Add(Spine);
+	}
 	// The lit cell under the current screen's feature: one edge-glow box in the map walls' glass (BpRoom.cpp).
 	DeckLight = NewObject<UInstancedStaticMeshComponent>(this, TEXT("DeckLight"));
 	DeckLight->SetupAttachment(Root);
@@ -345,17 +358,30 @@ void ABpTable::InitDeck()
 FTransform ABpTable::DeckPose(float Slot, float Side) const
 {
 	// From the target eye (ABpGameMode's target pose, the one the captures are judged from): DeckDistanceCm along the
-	// direction DeckYawDeg right of straight ahead and DeckDropDeg below the horizon; the screen's +X faces the eye.
-	const FVector Eye(-(TableDepthCm * 0.5 + ABpGameMode::TargetBehindNearEdgeCm), 0.0, PlacedHeightCm + ABpGameMode::TargetEyeAboveTopCm);
+	// direction DeckYawDeg right of straight ahead and DeckDropDeg below the horizon; the screen's +X faces the eye. A
+	// screen leaving the front (Slot toward 1) slides to the first spine's place and fades there (FAI: the screens behind
+	// show as spines, never whole); beyond 1 it stays there.
+	const FVector Eye = EyeLocal();
 	const double Yaw = FMath::DegreesToRadians(DeckYawDeg), Drop = FMath::DegreesToRadians(DeckDropDeg);
 	const FVector Dir(FMath::Cos(Drop) * FMath::Cos(Yaw), FMath::Cos(Drop) * FMath::Sin(Yaw), -FMath::Sin(Drop));
 	const FVector Front = Eye + Dir * DeckDistanceCm;
 	const FRotator Facing = (Eye - Front).Rotation();
-	const FVector Up = Facing.RotateVector(FVector::UpVector);
 	// The viewer's right is the widget's +x, the component's -Y.
 	const FVector Right = -Facing.RotateVector(FVector::RightVector);
-	const FVector At = Front - Dir * (DeckStepBackCm * Slot) + Up * (DeckStepUpCm * Slot) + Right * (Side * DeckWidthCm * 0.55);
+	const FVector At = FMath::Lerp(Front, SpinePose(1).GetLocation(), static_cast<double>(FMath::Clamp(Slot, 0.f, 1.f))) + Right * (Side * DeckWidthCm * 0.55);
 	return FTransform(Facing, At, FVector(1.0 / DeckPxPerCm));
+}
+
+FTransform ABpTable::SpinePose(int32 Place) const
+{
+	// Right of the front screen, DeckSpineGapCm apart and DeckStepBackCm further back per place, each turned to the eye.
+	const FVector Eye = EyeLocal();
+	const double Yaw = FMath::DegreesToRadians(DeckYawDeg), Drop = FMath::DegreesToRadians(DeckDropDeg);
+	const FVector Dir(FMath::Cos(Drop) * FMath::Cos(Yaw), FMath::Cos(Drop) * FMath::Sin(Yaw), -FMath::Sin(Drop));
+	const FVector Front = Eye + Dir * DeckDistanceCm;
+	const FVector Right = -(Eye - Front).Rotation().RotateVector(FVector::RightVector);
+	const FVector At = Front + Right * (DeckWidthCm * 0.5 + Place * DeckSpineGapCm + (Place - 0.5) * DeckSpineWidthCm) - Dir * (DeckStepBackCm * Place);
+	return FTransform((Eye - At).Rotation(), At, FVector(1.0 / DeckPxPerCm));
 }
 
 // ---- The queue ----------------------------------------------------------------------------------------------------------
@@ -381,7 +407,7 @@ void ABpTable::OnDeckRoomChanged(const FString& InRoomId)
 	ShowDeckAt(0, 0, 0);
 	// The type against the floor, at the front screen's farthest corner from the target eye (BpType: 6 px in the capture).
 	const FTransform Pose = DeckPose(0.f, 0.f);
-	const FVector Eye(-(TableDepthCm * 0.5 + ABpGameMode::TargetBehindNearEdgeCm), 0.0, PlacedHeightCm + ABpGameMode::TargetEyeAboveTopCm);
+	const FVector Eye = EyeLocal();
 	double Far = 0.0;
 	for (int32 Corner = 0; Corner < 4; ++Corner)
 	{
@@ -392,6 +418,17 @@ void ABpTable::OnDeckRoomChanged(const FString& InRoomId)
 	UE_LOG(LogBpTable, Log, TEXT("BpType: deck caps_cm title=%.2f body=%.2f smallest=%.2f; at its farthest corner (%.1f cm from the target eye) %.1f / %.1f / %.1f px (floor %.0f)"),
 		Recipes[STitle].CapPx / DeckLayoutPxPerCm, Recipes[SBody].CapPx / DeckLayoutPxPerCm, Recipes[SMeta].CapPx / DeckLayoutPxPerCm, Far,
 		Recipes[STitle].CapPx / DeckLayoutPxPerCm * PxPerCm, Recipes[SBody].CapPx / DeckLayoutPxPerCm * PxPerCm, Recipes[SMeta].CapPx / DeckLayoutPxPerCm * PxPerCm, BpType::FloorPx);
+	// The spines' type (their kind and title) at the second spine's farthest corner.
+	const FTransform Back = SpinePose(2);
+	double SpineFar = 0.0;
+	for (int32 Corner = 0; Corner < 4; ++Corner)
+	{
+		const FVector Local(0.0, (Corner & 1 ? 0.5 : -0.5) * DeckSpineWidthCm, (Corner & 2 ? 0.5 : -0.5) * DeckHeightCm * 0.92);
+		SpineFar = FMath::Max(SpineFar, FVector::Dist(Eye, Back.GetLocation() + Back.GetRotation().RotateVector(Local)));
+	}
+	UE_LOG(LogBpTable, Log, TEXT("BpType: deck spines kind=%.2f title=%.2f cm; at the back one's farthest corner (%.1f cm) %.1f / %.1f px"),
+		Recipes[SKicker].CapPx / DeckLayoutPxPerCm, Recipes[SLede].CapPx / DeckLayoutPxPerCm, SpineFar,
+		Recipes[SKicker].CapPx / DeckLayoutPxPerCm * 800.0 / SpineFar, Recipes[SLede].CapPx / DeckLayoutPxPerCm * 800.0 / SpineFar);
 }
 
 void ABpTable::BuildDeckQueue()
@@ -496,8 +533,24 @@ void ABpTable::LayoutDeckScreen(FDeckScreen& Screen) const
 		Row.HeightPx = Px;
 		return Row;
 	};
-	const auto Chips = [](const TArray<TPair<FString, uint8>>& Items, const FString& Right)
+	const auto Chips = [](TArray<TPair<FString, uint8>> Items, FString Right)
 	{
+		// FAI: a row wider than the screen sheds its right-hand words first, then each chip's words after its first (the
+		// tier's "BEFORE PRODUCTION"), so nothing runs past the edge (Slate's measure counts the font's tracking).
+		const auto Width = [&Items, &Right]()
+		{
+			const auto W = [](const FString& Text) { return TextWidth(Text, SKicker) * 1.02f; };
+			float Sum = Right.IsEmpty() ? 0.f : W(Right) + 12.f;
+			for (const TPair<FString, uint8>& Item : Items) Sum += W(Item.Key) + 28.f + 12.f;
+			return Sum;
+		};
+		if (Width() > ContentW) Right.Reset();
+		for (TPair<FString, uint8>& Item : Items)
+		{
+			if (Width() <= ContentW) break;
+			int32 Cut = Item.Key.Find(TEXT("  "));
+			if (Cut != INDEX_NONE) Item.Key = Item.Key.Left(Cut);
+		}
 		FDeckRow Row;
 		Row.Kind = RChips;
 		for (const TPair<FString, uint8>& Item : Items) { Row.Texts.Add(Item.Key); Row.Styles.Add(Item.Value); }
@@ -537,7 +590,7 @@ void ABpTable::LayoutDeckScreen(FDeckScreen& Screen) const
 		{
 			if (Features.Contains(Row.feature) && !Row.measured_at.IsEmpty() && (!Newest || Row.measured_at > Newest->measured_at)) Newest = &Row;
 		}
-		if (Newest) OutLine = FString::Printf(TEXT("%s  ·  %s lens"), *Newest->measured_at.Left(10), *LensName(Newest->lens));
+		if (Newest) OutLine = FString::Printf(TEXT("%s  ·  %s lens"), *Newest->measured_at.Left(10), *BpWords::Lens(Newest->lens));
 		return Newest != nullptr;
 	};
 	/** The open findings on one feature, most urgent first (the queue's order). */
@@ -569,7 +622,7 @@ void ABpTable::LayoutDeckScreen(FDeckScreen& Screen) const
 		TArray<TPair<FString, uint8>> Items;
 		Items.Emplace(LensWord(P->lens) + TEXT(" LENS"), COutline);
 		if (P->risk > 0.0) Items.Emplace(FString::Printf(TEXT("RISK %s / 10"), *Number(P->risk)), P->risk >= PinTagRiskMin ? CAmber : COutline);
-		if (Tier) Items.Emplace(FString::Printf(TEXT("T%d  %s"), *Tier, TierWord(*Tier)), *Tier <= PinTagTierMax ? CAmber : COutline);
+		if (Tier) Items.Emplace(FString::Printf(TEXT("T%d  %s"), *Tier, *TierWord(*Tier)), *Tier <= PinTagTierMax ? CAmber : COutline);
 		if (!P->kind.IsEmpty() && P->kind != TEXT("fix")) Items.Emplace(P->kind.Replace(TEXT("-"), TEXT(" ")).ToUpper(), COutline);
 		if (InDraft(P->id)) Items.Emplace(TEXT("IN DRAFT WAVE"), CCyan);
 		const FDeckRow Head = Chips(Items, P->id.ToUpper());
@@ -593,10 +646,10 @@ void ABpTable::LayoutDeckScreen(FDeckScreen& Screen) const
 			Move.Kind = RMove;
 			const FString Signed = Delta ? FString::Printf(TEXT("%s%s"), *Delta > 0.0 ? TEXT("+") : *Delta < 0.0 ? TEXT("−") : TEXT("±"), *Number(FMath::Abs(*Delta))) : FString();
 			Move.Texts = {
-				P->metric,
+				BpWords::Metric(P->lens, P->metric),
 				Last ? Number(Last->value) : FString(TEXT("—")),
 				Last && Delta ? Number(Last->value + *Delta) : Signed,
-				Last ? Last->unit : FString(),
+				Last ? BpWords::Unit(P->lens, P->metric, Last->unit) : FString(),
 				Last ? FString(TEXT("NOW")) : FString(TEXT("NOT MEASURED YET")),
 				Last && Delta ? FString(TEXT("EXPECTED")) : Delta ? FString(TEXT("EXPECTED CHANGE")) : FString(),
 				Last && Delta ? Signed : FString() };
@@ -654,7 +707,7 @@ void ABpTable::LayoutDeckScreen(FDeckScreen& Screen) const
 		const TArray<const FBpProposal*> Open = OpenOn(Tile->id);
 		TArray<TPair<FString, uint8>> Items;
 		Items.Emplace(TEXT("FEATURE SHEET"), COutline);
-		if (const FString* Kind = Link.FindFeatureKind(Tile->id)) Items.Emplace(Kind->Replace(TEXT("_"), TEXT(" ")).ToUpper(), COutline);
+		if (const FString* Kind = Link.FindFeatureKind(Tile->id)) Items.Emplace(BpWords::Kind(*Kind).ToUpper(), COutline);
 		if (Open.Num() > 0) Items.Emplace(FString::Printf(TEXT("%d OPEN"), Open.Num()), CAmber);
 		const FDeckRow Head = Chips(Items, Bay ? Bay->name.ToUpper() : FString());
 		Add(Head);
@@ -666,7 +719,7 @@ void ABpTable::LayoutDeckScreen(FDeckScreen& Screen) const
 		TArray<FString> Cells;
 		for (const FString& Lens : Plan.lenses)
 		{
-			if (const FString* Reading = Tile->health.Find(Lens)) Cells.Append({ LensName(Lens), *Reading });
+			if (const FString* Reading = Tile->health.Find(Lens)) Cells.Append({ BpWords::Lens(Lens), *Reading });
 		}
 		if (Cells.Num() > 0)
 		{
@@ -760,7 +813,7 @@ void ABpTable::LayoutDeckScreen(FDeckScreen& Screen) const
 		{
 			// The open findings by tier, as the ledger's chips (untriaged ones counted apart).
 			TArray<TPair<FString, uint8>> Tiers;
-			for (int32 Tier = 0; Tier < 4; ++Tier) if (ByTier[Tier] > 0) Tiers.Emplace(FString::Printf(TEXT("T%d  %s  ·  %d"), Tier, TierWord(Tier), ByTier[Tier]), Tier <= PinTagTierMax ? CAmber : COutline);
+			for (int32 Tier = 0; Tier < 4; ++Tier) if (ByTier[Tier] > 0) Tiers.Emplace(FString::Printf(TEXT("T%d  %s  ·  %d"), Tier, *TierWord(Tier), ByTier[Tier]), Tier <= PinTagTierMax ? CAmber : COutline);
 			if (ByTier[4] > 0) Tiers.Emplace(FString::Printf(TEXT("UNTRIAGED  ·  %d"), ByTier[4]), COutline);
 			Add(Chips(Tiers, FString()));
 		}
@@ -771,6 +824,7 @@ void ABpTable::LayoutDeckScreen(FDeckScreen& Screen) const
 		Add(Text(Draft ? CutToWidth(FString::Printf(TEXT("%s  ·  %d %s  ·  %d %s, %d from this room"), *Draft->name, Draft->packages.Num(), Draft->packages.Num() == 1 ? TEXT("package") : TEXT("packages"),
 			Findings, Findings == 1 ? TEXT("finding") : TEXT("findings"), FromRoom), SBody, ContentW)
 			: FString(TEXT("No draft yet  ·  approve a decision to start one")), SBody));
+		// The queue's end offers the next room (WP3) on its button (DeckWidget), so the summary keeps one page.
 		Continued = { Head, Gap(12.f) };
 	}
 
@@ -904,6 +958,17 @@ void ABpTable::ShowDeckAt(int32 Screen, int32 Page, int32 Direction)
 	const IConsoleVariable* Reduced = IConsoleManager::Get().FindConsoleVariable(TEXT("bp.ReducedMotion"));
 	DeckSwapT = Direction == 0 || (Reduced && Reduced->GetInt() != 0) ? 1.f : 0.f;
 	if (DeckSwapT < 1.f) SetActorTickInterval(0.f);
+	// The spines: the next two screens' kind and title.
+	for (int32 Place = 0; Place < 2 && Place < DeckSpines.Num(); ++Place)
+	{
+		const int32 S = DeckAt + 1 + Place;
+		const FString Key = DeckScreens.IsValidIndex(S) ? DeckScreens[S].Key + FString::Printf(TEXT("#%u"), DeckScreens[S].Stamp) : FString();
+		if (Key == DeckSpineKey[Place]) continue;
+		DeckSpineKey[Place] = Key;
+		if (Key.IsEmpty()) continue;
+		DeckSpines[Place]->SetSlateWidget(SpineWidget(S));
+		DeckSpines[Place]->RequestRedraw();
+	}
 	const FDeckScreen& Front = DeckScreens[DeckAt];
 	DeckLitTile = Front.Feature;
 	UE_LOG(LogBpTable, Log, TEXT("BpDeck: front %s%s"), *GetDeckLine(), Direction > 0 ? TEXT(" (forward)") : Direction < 0 ? TEXT(" (back)") : TEXT(""));
@@ -922,7 +987,8 @@ void ABpTable::ApplyDeckPoses()
 		const FDeckCard& Each = DeckCardState[Index];
 		const bool bOut = Index == 3 && DeckSwapT >= 1.f;
 		const float Slot = FMath::Lerp(Each.FromSlot, Each.ToSlot, T), Side = FMath::Lerp(Each.FromSide, Each.ToSide, T);
-		float Alpha = Slot <= 1.f ? FMath::Lerp(1.f, DeckBackAlpha1, Slot) : Slot <= 2.f ? FMath::Lerp(DeckBackAlpha1, DeckBackAlpha2, Slot - 1.f) : FMath::Lerp(DeckBackAlpha2, 0.f, FMath::Min(Slot - 2.f, 1.f));
+		// A whole screen shows only in front (FAI): one sliding to or from the spines' place fades there.
+		float Alpha = 1.f - FMath::Min(Slot, 1.f);
 		Alpha *= 1.f - FMath::Min(FMath::Abs(Side), 1.f);
 		Alpha *= Room;
 		const bool bShow = !Each.Key.IsEmpty() && !bOut && Alpha > 0.01f;
@@ -936,6 +1002,24 @@ void ABpTable::ApplyDeckPoses()
 		Screen->SetTintColorAndOpacity(FLinearColor(Tint, Tint, Tint, Alpha));
 		// The front draws over the ones behind it.
 		Screen->SetTranslucentSortPriority(12 - FMath::RoundToInt(Slot * 2.f));
+	}
+	ApplySpines(Room);
+}
+
+void ABpTable::ApplySpines(float Room)
+{
+	for (int32 Place = 0; Place < DeckSpines.Num(); ++Place)
+	{
+		UWidgetComponent* Spine = DeckSpines[Place];
+		const int32 S = DeckAt + 1 + Place;
+		const float Alpha = (Place == 0 ? DeckBackAlpha1 : DeckBackAlpha2) * Room;
+		const bool bShow = !DeckRoom.IsEmpty() && DeckScreens.IsValidIndex(S) && !DeckSpineKey[Place].IsEmpty() && Alpha > 0.01f;
+		if (Spine->IsVisible() != bShow) Spine->SetVisibility(bShow);
+		Spine->SetRelativeTransform(SpinePose(Place + 1));
+		if (!bShow) continue;
+		const float Tint = DeckScreens[S].Kind == KSheet ? 0.82f : 0.9f;
+		Spine->SetTintColorAndOpacity(FLinearColor(Tint, Tint, Tint, Alpha));
+		Spine->SetTranslucentSortPriority(9 - Place);
 	}
 }
 
@@ -1032,7 +1116,21 @@ void ABpTable::DeckTap(const FString& Id)
 	else if (Id == TEXT("deck:prev")) DeckPrev();
 	else if (Id == TEXT("deck:approve")) DeckApprove();
 	else if (Id == TEXT("deck:decline")) DeckDecline();
+	else if (Id == TEXT("deck:nextroom")) DeckNextRoom();
 	else if (Id.StartsWith(TEXT("feature:"))) DeckFocus(Id.Mid(8));
+}
+
+void ABpTable::DeckNextRoom()
+{
+	FString Why;
+	const FString Next = NextRoom(Why);
+	const bool bEnd = DeckScreens.IsValidIndex(DeckAt) && DeckScreens[DeckAt].Kind == KSummary;
+	if (DeckRoom.IsEmpty() || !bEnd || Next.IsEmpty())
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpDeck: refused next room (%s)"), DeckRoom.IsEmpty() ? TEXT("not in room mode") : !bEnd ? TEXT("not at the queue's end") : TEXT("no other room"));
+		return;
+	}
+	SwitchRoom(Next, TEXT("queue"));
 }
 
 FVector ABpTable::GetDeckFrontWorld() const
@@ -1119,7 +1217,10 @@ bool ABpTable::DeckHit(const FVector& WorldOrigin, const FVector& WorldDir, FStr
 	const FVector2f Px(static_cast<float>(-Local.Y * Scale + LW * 0.5f), static_cast<float>(-Local.Z * Scale + LH * 0.5f));
 	if (Px.X < 0.f || Px.Y < 0.f || Px.X > LW || Px.Y > LH) return false;
 	const bool bDecision = DeckScreens.IsValidIndex(DeckAt) && DeckScreens[DeckAt].Kind == KDecision;
-	if (bDecision && ApproveBox.IsInside(Px)) OutId = TEXT("deck:approve");
+	const bool bEnd = DeckScreens.IsValidIndex(DeckAt) && DeckScreens[DeckAt].Kind == KSummary;
+	FString Why;
+	if (bEnd && NextRoomBox.IsInside(Px) && !NextRoom(Why).IsEmpty()) OutId = TEXT("deck:nextroom");
+	else if (bDecision && ApproveBox.IsInside(Px)) OutId = TEXT("deck:approve");
 	else if (bDecision && DeclineBox.IsInside(Px)) OutId = TEXT("deck:decline");
 	else if (PrevBox.IsInside(Px)) OutId = TEXT("deck:prev");
 	else if (NextBox.IsInside(Px)) OutId = TEXT("deck:next");
@@ -1130,7 +1231,8 @@ bool ABpTable::DeckHit(const FVector& WorldOrigin, const FVector& WorldDir, FStr
 bool ABpTable::DeckAim(const FString& Id, FVector& OutWorld) const
 {
 	if (DeckRoom.IsEmpty() || DeckCards.Num() < 4) return false;
-	const FBox2f* Box = Id == TEXT("deck:approve") ? &ApproveBox : Id == TEXT("deck:decline") ? &DeclineBox : Id == TEXT("deck:prev") ? &PrevBox : Id == TEXT("deck:next") ? &NextBox : nullptr;
+	const FBox2f* Box = Id == TEXT("deck:approve") ? &ApproveBox : Id == TEXT("deck:decline") ? &DeclineBox : Id == TEXT("deck:prev") ? &PrevBox : Id == TEXT("deck:next") ? &NextBox
+		: Id == TEXT("deck:nextroom") ? &NextRoomBox : nullptr;
 	if (!Box) return false;
 	const FVector2f Centre = Box->GetCenter();
 	const float Scale = DeckPxPerCm / DeckLayoutPxPerCm;
@@ -1306,6 +1408,18 @@ TSharedRef<SWidget> ABpTable::DeckWidget(int32 ScreenIndex, int32 PageIndex) con
 		Place(ApproveBox, Button(&ApproveBrush, TEXT("✓"), TEXT("APPROVE"), Ink));
 		Place(DeclineBox, Button(&DeclineBrush, TEXT("✕"), TEXT("DECLINE"), FLinearColor::White));
 	}
+	FString Why;
+	const FBpPlanRoom* Next = Screen.Kind == KSummary ? FindRoom(NextRoom(Why)) : nullptr;
+	if (Next)
+	{
+		// The queue's end (WP3): the next room by urgency, its name and why on the button.
+		Place(NextRoomBox, SNew(SBorder).BorderImage(&ApproveBrush).Padding(FMargin(22.f, 0.f)).VAlign(VAlign_Center)
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight()[Label(TEXT("NEXT ROOM  ›"), SControl, Ink)]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 2.f, 0.f, 0.f)[Label(CutToWidth(FString::Printf(TEXT("%s  ·  %s"), *Next->name, *Why), SMeta, NextRoomBox.GetSize().X - 44.f), SMeta, Ink)]
+			]);
+	}
 
 	return SNew(SDPIScaler).DPIScale(DeckPxPerCm / DeckLayoutPxPerCm)
 		[
@@ -1318,6 +1432,55 @@ TSharedRef<SWidget> ABpTable::DeckWidget(int32 ScreenIndex, int32 PageIndex) con
 				+ SOverlay::Slot().VAlign(VAlign_Top).Padding(FMargin(26.f, 12.f, 26.f, 0.f))[SNew(SBox).HeightOverride(bPaper ? 0.f : 18.f)[SNew(SBorder).BorderImage(&GlassSheen)]]
 				+ SOverlay::Slot().Padding(FMargin(PadX, PadTop, PadX, LH - BarY + BarGap))[Column]
 				+ SOverlay::Slot()[Bar]
+			]
+		];
+}
+
+TSharedRef<SWidget> ABpTable::SpineWidget(int32 ScreenIndex) const
+{
+	// A screen's edge (FAI): its surface, and along it, reading up, its kind and its title, cut to the spine's length.
+	const FDeckScreen& Screen = DeckScreens[ScreenIndex];
+	const bool bPaper = Screen.Kind == KSheet;
+	static const FSlateRoundedBoxBrush GlassSpine(GlassDark, 14.f, CyanEdge.CopyWithNewOpacity(0.8f), 3.f);
+	static const FSlateRoundedBoxBrush PaperSpine(PaperTone, 12.f, PaperEdge.CopyWithNewOpacity(0.9f), 3.f);
+	const FString Kind = Screen.Kind == KDecision ? TEXT("DECISION") : bPaper ? TEXT("FEATURE SHEET") : TEXT("ROOM SUMMARY");
+	FString Title;
+	if (Screen.Kind == KDecision)
+	{
+		const FBpProposal* P = FBpLinkModule::Get().GetScanState().Scan.proposals.FindByPredicate([&Screen](const FBpProposal& X) { return X.id == Screen.Proposal; });
+		Title = P ? P->title : Screen.Proposal;
+	}
+	else if (bPaper)
+	{
+		const FBpPlanTile* Tile = SheetPlan.IsValid() ? SheetPlan->tiles.FindByPredicate([&Screen](const FBpPlanTile& T) { return T.id == Screen.Feature; }) : nullptr;
+		Title = Tile ? Tile->name : Screen.Feature;
+	}
+	else
+	{
+		const FBpPlanRoom* Room = FindRoom(DeckRoom);
+		Title = Room ? Room->name : DeckRoom;
+	}
+	const float Long = SH - 60.f, Thick = SW - 24.f;
+	const TSharedRef<SWidget> Along = SNew(SBox).WidthOverride(Long).HeightOverride(Thick).VAlign(VAlign_Center)
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(Kind)).Font(DeckFont(SKicker)).ColorAndOpacity(FSlateColor(TextColor(SKicker, bPaper)))]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 6.f, 0.f, 0.f)[SNew(STextBlock).Text(FText::FromString(CutToWidth(Title, SLede, Long))).Font(DeckFont(SLede)).ColorAndOpacity(FSlateColor(TextColor(SBody, bPaper)))]
+		];
+	// Turned a quarter anticlockwise, so it reads from the bottom up, as a book's spine.
+	Along->SetRenderTransform(FSlateRenderTransform(FQuat2D(-UE_HALF_PI)));
+	Along->SetRenderTransformPivot(FVector2D(0.5, 0.5));
+	return SNew(SDPIScaler).DPIScale(DeckPxPerCm / DeckLayoutPxPerCm)
+		[
+			SNew(SBox).WidthOverride(SW).HeightOverride(SH)
+			[
+				SNew(SOverlay)
+				+ SOverlay::Slot().Padding(4.f)[SNew(SBorder).BorderImage(bPaper ? &PaperSpine : &GlassSpine)]
+				+ SOverlay::Slot()
+				[
+					SNew(SCanvas)
+					+ SCanvas::Slot().Position(FVector2D(SW * 0.5f, SH * 0.5f)).Size(FVector2D(Long, Thick)).HAlign(HAlign_Center).VAlign(VAlign_Center)[Along]
+				]
 			]
 		];
 }

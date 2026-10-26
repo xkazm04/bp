@@ -310,6 +310,20 @@ void FBpLinkModule::ReceiveSnapshot(bool bOk, const FBpLinkSnapshot& Snapshot)
 			if (!Feature.slug.IsEmpty() && !Feature.kind.IsEmpty()) FeatureKinds.Add(Feature.slug, Feature.kind);
 			if (!Feature.slug.IsEmpty() && !Feature.summary.IsEmpty()) FeatureSummaries.Add(Feature.slug, Feature.summary);
 		}
+		// The lenses' words as their manifests say them (the web reads the same manifests from the same answer).
+		LensNames.Reset();
+		FieldLabels.Reset();
+		FieldUnits.Reset();
+		for (const FBpLensEntry& Lens : Snapshot.Structure.lenses)
+		{
+			const FString& Id = Lens.manifest.id.IsEmpty() ? Lens.id : Lens.manifest.id;
+			if (!Lens.manifest.name.IsEmpty()) LensNames.Add(Id, Lens.manifest.name);
+			for (const FBpField& Field : Lens.manifest.fields)
+			{
+				if (!Field.label.IsEmpty()) FieldLabels.Add(Id + TEXT("/") + Field.key, Field.label);
+				if (!Field.unit.IsEmpty()) FieldUnits.Add(Id + TEXT("/") + Field.key, Field.unit);
+			}
+		}
 	}
 	if (bOk && Snapshot.bHasPlan)
 	{
@@ -535,7 +549,7 @@ void FBpLinkModule::SendWave(const FString& Verb, const FString& Path, const FSt
 	Request->ProcessRequest();
 }
 
-void FBpLinkModule::AddToDraft(const FString& ProposalId, TFunction<void(bool, const FString&, const FString&)> OnDone)
+void FBpLinkModule::AddToDraft(const TArray<FString>& ProposalIds, TFunction<void(bool, const FString&, const FString&)> OnDone)
 {
 	const auto Done = [OnDone](bool bOk, const FString& WaveId, const FString& Note)
 	{
@@ -547,22 +561,37 @@ void FBpLinkModule::AddToDraft(const FString& ProposalId, TFunction<void(bool, c
 		Done(false, FString(), TEXT("another draft write is still out"));
 		return;
 	}
-	// The draft to add to: the one this process last wrote to while it is still a draft, else the newest draft.
+	if (ProposalIds.Num() == 0)
+	{
+		Done(false, FString(), TEXT("no finding to add"));
+		return;
+	}
+	// The draft to add to: the one this process last wrote to while it is still a draft, else the newest draft. A finding
+	// a draft already holds is not sent again.
 	const FBpWave* Draft = nullptr;
+	const FBpWave* Holder = nullptr;
+	TArray<FString> Fresh;
+	for (const FString& Id : ProposalIds) Fresh.AddUnique(Id);
 	for (const FBpWave& Wave : ScanState.Waves)
 	{
 		if (Wave.status != TEXT("draft")) continue;
 		for (const FBpWavePackage& Package : Wave.packages)
 		{
-			if (Package.ids.Contains(ProposalId))
+			for (const FString& Id : Package.ids)
 			{
-				Done(true, Wave.id, FString::Printf(TEXT("%s is already in draft %s (\"%s\"), nothing sent"), *ProposalId, *Wave.id, *Wave.name));
-				return;
+				if (Fresh.Remove(Id) > 0) Holder = &Wave;
 			}
 		}
 		if (Wave.id == FocusWaveId) { Draft = &Wave; continue; }
 		if (!Draft || (Draft->id != FocusWaveId && Wave.created_at > Draft->created_at)) Draft = &Wave;
 	}
+	const FString Joined = FString::Join(ProposalIds, TEXT(", "));
+	if (Fresh.Num() == 0)
+	{
+		Done(true, Holder ? Holder->id : FString(), FString::Printf(TEXT("%s already in draft %s (\"%s\"), nothing sent"), *Joined, Holder ? *Holder->id : TEXT("?"), Holder ? *Holder->name : TEXT("?")));
+		return;
+	}
+	const FString Adding = FString::Join(Fresh, TEXT(", "));
 	const auto Package = [](const FString& Name, const FString& Model, const FString& Effort, const TArray<FString>& Ids)
 	{
 		TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
@@ -579,12 +608,12 @@ void FBpLinkModule::AddToDraft(const FString& ProposalId, TFunction<void(bool, c
 	FString Verb, Path, Note;
 	if (!Draft)
 	{
-		// WaveComposer's new wave: "Wave <n>", one package (Opus, high) holding the finding.
+		// WaveComposer's new wave: "Wave <n>", one package (Opus, high) holding the findings.
 		Body->SetStringField(TEXT("name"), FString::Printf(TEXT("Wave %d"), ScanState.Waves.Num() + 1));
-		Packages.Add(Package(TEXT("Package 1"), TEXT("opus"), TEXT("high"), { ProposalId }));
+		Packages.Add(Package(TEXT("Package 1"), TEXT("opus"), TEXT("high"), Fresh));
 		Verb = TEXT("POST");
 		Path = TEXT("/waves");
-		Note = FString::Printf(TEXT("%s composes a new draft"), *ProposalId);
+		Note = FString::Printf(TEXT("%s compose%s a new draft"), *Adding, Fresh.Num() == 1 ? TEXT("s") : TEXT(""));
 	}
 	else
 	{
@@ -593,12 +622,12 @@ void FBpLinkModule::AddToDraft(const FString& ProposalId, TFunction<void(bool, c
 		{
 			const FBpWavePackage& Each = Draft->packages[Index];
 			TArray<FString> Ids = Each.ids;
-			if (Index == 0) Ids.Add(ProposalId);
+			if (Index == 0) Ids.Append(Fresh);
 			Packages.Add(Package(Each.name, Each.model, Each.effort, Ids));
 		}
 		Verb = TEXT("PATCH");
 		Path = TEXT("/waves/") + Draft->id;
-		Note = FString::Printf(TEXT("%s added to draft %s (\"%s\") package %s"), *ProposalId, *Draft->id, *Draft->name, Draft->packages.Num() > 0 ? *Draft->packages[0].name : TEXT("?"));
+		Note = FString::Printf(TEXT("%s added to draft %s (\"%s\") package %s"), *Adding, *Draft->id, *Draft->name, Draft->packages.Num() > 0 ? *Draft->packages[0].name : TEXT("?"));
 	}
 	Body->SetArrayField(TEXT("packages"), Packages);
 	FString Text;

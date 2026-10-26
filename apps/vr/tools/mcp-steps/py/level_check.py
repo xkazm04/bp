@@ -1,6 +1,7 @@
 # L3.4 check (spark vr-hands-zoom WP3, "Lift"): during PIE, take the table through L0 -> L1 -> L2 and back with the
-# console, re-height the tiles at L2, then into room mode, one swap of its screen deck and out (spark vr-room-layers WP1
-# and WP2: BpRoom.Enter the walk's room, BpDeck.Next, BpRoom.Exit), and compare everything with L0. The hard rule: a level change never moves anything
+# console, re-height the tiles at L2, then into room mode, one swap of its screen deck, a switch to the next room and out
+# (spark vr-room-layers WP1 to WP3: BpRoom.Enter the walk's room, BpDeck.Next, BpRoom.Next, BpRoom.Exit), and compare
+# everything with L0. The hard rule: a level change never moves anything
 # in plan space, and back at L0 every room, bay and tile instance (world space) and every label (world position) is
 # exactly where it was. Exact float equality, no tolerance.
 #
@@ -43,12 +44,14 @@ STEPS = [
     "BpTable.Lens business",
     "BpRoom.Enter " + ROOM,
     "BpDeck.Next",
+    "BpRoom.Next",
     "BpRoom.Exit",
 ]
 batches = {c.get_name(): c for c in table.get_components_by_class(unreal.InstancedStaticMeshComponent)}
-# The plan's labels; the screen deck's screens (DeckScreen*, WP2) stand in front of the eye, not on the plan, and slide
-# as they swap, so they are not plan labels.
-labels = sorted((c for c in table.get_components_by_class(unreal.WidgetComponent) if not c.get_name().startswith("DeckScreen")), key=lambda c: c.get_name())
+# The plan's labels; the screen deck's screens and spines (DeckScreen*, DeckSpine*, WP2) and the lamp's caption and ring
+# (Lamp*, WP3) stand in front of the eye, not on the plan, and move as they swap or follow the lamp, so they are not plan
+# labels.
+labels = sorted((c for c in table.get_components_by_class(unreal.WidgetComponent) if not c.get_name().startswith(("Deck", "Lamp"))), key=lambda c: c.get_name())
 
 
 def tf(t):
@@ -157,9 +160,12 @@ else:
             "done": True, "product": PRODUCT,
             "back_at_l0_equal": all(v == 0 for v in moved.values()) and labels_moved == 0,
             # room mode: in the walk's room after BpRoom.Enter and BpDeck.Next, back on the site plan after BpRoom.Exit
-            "room_mode_ok": [s.get("room_mode") for s in state["observed"][-3:]] == [ROOM, ROOM, ""],
-            # the deck: its first screen after BpRoom.Enter, its next page or screen after BpDeck.Next, gone after BpRoom.Exit
-            "deck_ok": (lambda d: d[0].startswith("1/") and d[1] not in ("", d[0]) and d[2] == "")([s.get("deck", "") for s in state["observed"][-3:]]),
+            "room_mode_ok": (lambda r: r[0] == r[1] == ROOM and r[3] == "")([s.get("room_mode") for s in state["observed"][-4:]]),
+            # the switch (WP3): BpRoom.Next went to another room, by urgency
+            "switch_ok": (lambda r: r[2] not in ("", ROOM))([s.get("room_mode") for s in state["observed"][-4:]]),
+            # the deck: its first screen after BpRoom.Enter, its next page or screen after BpDeck.Next, the next room's first
+            # screen after BpRoom.Next, gone after BpRoom.Exit
+            "deck_ok": (lambda d: d[0].startswith("1/") and d[1] not in ("", d[0]) and d[2].startswith("1/") and d[3] == "")([s.get("deck", "") for s in state["observed"][-4:]]),
             "instances": counts, "labels": len(l0["labels"]),
             "instances_moved": moved, "labels_moved": labels_moved,
             "steps": [{k: s[k] for k in ("after", "level", "wing", "room", "room_mode", "deck", "crumb", "visible", "labels_shown", "plan_moved",

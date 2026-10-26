@@ -752,6 +752,19 @@ bool ABpTable::HitTest(const FVector& WorldOrigin, const FVector& WorldDir, FStr
 			OutKind = TEXT("deck");
 			return true;
 		}
+		// The lamp's head (WP3: a hold asks it for the next room), a sphere about it.
+		FVector Head;
+		if (LampHead(Head))
+		{
+			const FVector ToHead = Head - WorldOrigin;
+			const double Along = FVector::DotProduct(ToHead, WorldDir.GetSafeNormal());
+			if (Along > 0.0 && (ToHead - WorldDir.GetSafeNormal() * Along).SizeSquared() <= FMath::Square(LampHeadRadiusCm))
+			{
+				OutKind = TEXT("lamp");
+				OutId = TEXT("lamp");
+				return true;
+			}
+		}
 		return OnPlane(PlacedHeightCm - GlassRecessCm, Point) && RoomModeHit(LocalToPaperCm(Point), OutKind, OutId);
 	}
 	const float Ew = Ease(WingAlpha), Er = Ease(RoomAlpha);
@@ -833,6 +846,20 @@ bool ABpTable::AimAt(const FString& Id, FVector& OutWorld) const
 	const FTransform WingT = WingGroupTransform(Ease(WingAlpha));
 	// The screen deck's controls, and a feature's glyph on the room's map (BpDeck.cpp's taps).
 	if (Id.StartsWith(TEXT("deck:"))) return DeckAim(Id, OutWorld);
+	// WP3: the lamp's head, a key plan room, the room map's middle.
+	if (Id == TEXT("lamp")) return !RoomModeId.IsEmpty() && LampHead(OutWorld);
+	if (Id.StartsWith(TEXT("minimap:")))
+	{
+		const FString Room = Id.Mid(8);
+		const FKeyCell* Cell = KeyCells.FindByPredicate([&Room](const FKeyCell& C) { return C.Room == Room; });
+		return Cell && OnGroup(AtRest, Cell->PaperCm.GetCenter());
+	}
+	if (Id == TEXT("map"))
+	{
+		FBox2D Outer(ForceInit);
+		for (const FRoomCell& Cell : RoomCells) Outer += Cell.Box;
+		return Outer.bIsValid && OnGroup(AtRest, Outer.GetCenter());
+	}
 	if (Id.StartsWith(TEXT("feature:")))
 	{
 		const FString Feature = Id.Mid(8);

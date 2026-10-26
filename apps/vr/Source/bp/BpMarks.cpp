@@ -7,6 +7,7 @@
 #include "BpGameMode.h"
 #include "BpLink.h"
 #include "BpType.h"
+#include "BpWords.h"
 #include "CanvasItem.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/WidgetComponent.h"
@@ -59,17 +60,11 @@ namespace
 		TEXT("The decision card's render density, px per cm (the card redraws at the next BpCard.Show)."),
 		ECVF_Default);
 
-	/** The tier's word on a tag (blueprint-ui.md, store v4: 0 stop-ship, 1 before production, 2 soon after, 3 backlog; the
-	 *  owner's "stop-ship and high"), set when it fits beside the chip. */
-	const TCHAR* TierWord(int32 Tier)
+	/** The tier's words on a tag (core's TIER_SAYS, BpWords.h: 0 stop-ship, 1 before production, 2 soon after production,
+	 *  3 backlog), set when they fit beside the chip. */
+	FString TierWord(int32 Tier)
 	{
-		switch (Tier)
-		{
-		case 0: return TEXT("STOP-SHIP");
-		case 1: return TEXT("HIGH");
-		case 2: return TEXT("SOON");
-		default: return TEXT("LATER");
-		}
+		return BpWords::TierSays(Tier).ToUpper();
 	}
 
 	/** The tag's order of urgency: an urgent finding first, then the lower tier (untriaged after T3, the ledger's
@@ -1034,7 +1029,7 @@ void ABpTable::RefreshCard()
 	const FBpPlanRoom* Room = SheetPlan->rooms.IsValidIndex(RoomIndex) ? &SheetPlan->rooms[RoomIndex] : nullptr;
 	const FBpPlanWing* Wing = Room ? FindWing(Room->parentId) : nullptr;
 	const FString Target = FString::Printf(TEXT("Wing %s — %s"), Wing ? *Wing->letter : TEXT("?"), Room ? *Room->name : TEXT("?"));
-	FString Header = FString::Printf(TEXT("PROPOSED %s  ·  %s LENS"), *Ask->kind.Replace(TEXT("-"), TEXT(" ")).ToUpper(), *Ask->lens.ToUpper());
+	FString Header = FString::Printf(TEXT("PROPOSED %s  ·  %s LENS"), *Ask->kind.Replace(TEXT("-"), TEXT(" ")).ToUpper(), *BpWords::Lens(Ask->lens).ToUpper());
 	if (Ask->risk > 0.0) Header += FString::Printf(TEXT("  ·  RISK %d"), FMath::RoundToInt(Ask->risk));
 	const FString Impact = Section(Ask->body, TEXT("Impact"));
 
