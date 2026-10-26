@@ -68,3 +68,6 @@ apps/vr/Source/BpLink/Public/Schema/
 
 # bp product blueprint: machine-local scan store (adopt-bp)
 .ai/lens-scan/
+
+# companion brain and state ($BP_HOME default, spark companion-upgrade)
+.bp/
