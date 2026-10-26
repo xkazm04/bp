@@ -146,7 +146,7 @@ for (const f of cssFiles(DIR)) {
   const css = fs.readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, ''), rel = path.relative(ROOT, f).replace(/\\/g, '/');
   const small = [...css.matchAll(/font(?:-size)?\s*:[^;}]*?(\d+(?:\.\d+)?)px/g)].filter((m) => +m[1] < 12).map((m) => m[0]);
   check(rel + ': no font under 12 px', small.length === 0, small);
-  const trans = [...css.matchAll(/transition\s*:([^;}]*)/g)].flatMap((m) => m[1].split(',').map((p) => p.trim().split(/\s+/)[0])).filter((p) => p !== 'transform' && p !== 'opacity' && p !== 'none');
+  const trans = [...css.matchAll(/transition\s*:([^;}]*)/g)].flatMap((m) => m[1].split(/,(?![^(]*\))/).map((p) => p.trim().split(/\s+/)[0])).filter((p) => p !== 'transform' && p !== 'opacity' && p !== 'none');
   const frames = [...css.matchAll(/@keyframes[^{]*\{((?:[^{}]*\{[^}]*\})*)[^}]*\}/g)].flatMap((m) => [...m[1].matchAll(/([a-z-]+)\s*:/g)].map((x) => x[1])).filter((p) => p !== 'transform' && p !== 'opacity');
   check(rel + ': motion on transform and opacity only', !trans.length && !frames.length, [...trans, ...frames]);
 }

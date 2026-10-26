@@ -3,6 +3,7 @@
 // `?lamp=<name>` picks one; `?lamp-fixture=1` drives a scripted timeline through every state with no server.
 import type { ComponentType } from 'react';
 import type { Card, LampState } from '@bp/core/companion/contract';
+import { GlimLamp } from './glim/Lamp';
 import { PlainLamp } from './plain/Plain';
 
 export interface LampProps {
@@ -30,6 +31,7 @@ export interface LampSkin {
 /** Registered skins; the first is the default. The contest's variants register here, ahead of `plain` (the deliberately
  *  plain fallback the live path was built on), so the winner is the default. */
 export const LAMPS: LampSkin[] = [
+  { key: 'glim', name: 'Glim', Component: GlimLamp, ownsCards: true },
   { key: 'plain', name: 'Lamp', Component: PlainLamp },
 ];
 
