@@ -37,6 +37,13 @@ namespace
 			Out = { ABpGameMode::PlayEyeHeightCm, ABpGameMode::PlayBehindNearEdgeCm, ABpGameMode::PlayPitchDeg, ABpGameMode::PlayHFovDeg };
 			return true;
 		}
+		// The screen deck's close-up (spark vr-room-layers WP2, readability judging): the target eye, turned to the deck's
+		// front screen (which faces that eye, so it is seen straight on), at a narrow field (ApplyPose aims it).
+		if (Name.Equals(TEXT("deck"), ESearchCase::IgnoreCase))
+		{
+			Out = { TableTopCm() + ABpGameMode::TargetEyeAboveTopCm, ABpGameMode::TargetBehindNearEdgeCm, ABpGameMode::TargetPitchDeg, 36.f };
+			return true;
+		}
 		if (Name.Equals(TEXT("target"), ESearchCase::IgnoreCase))
 		{
 			Out = { TableTopCm() + ABpGameMode::TargetEyeAboveTopCm, ABpGameMode::TargetBehindNearEdgeCm, ABpGameMode::TargetPitchDeg, ABpGameMode::TargetHFovDeg };
@@ -62,7 +69,7 @@ namespace
 	/** BpView.Pose target|play: PIE and editor captures only; the headset sets its own view. */
 	FAutoConsoleCommandWithWorldAndArgs CmdViewPose(
 		TEXT("BpView.Pose"),
-		TEXT("BpView.Pose target|play: put the view in the concept's framing (target) or back at the play pose (play). For PIE captures."),
+		TEXT("BpView.Pose target|play|deck: put the view in the concept's framing (target), back at the play pose (play), or on the screen deck's front screen from the target eye (deck). For PIE captures."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
 		{
 			if (Args.Num() == 0 || !ABpGameMode::ApplyPose(World, Args[0]))
@@ -102,6 +109,7 @@ bool ABpGameMode::ApplyPose(UWorld* World, const FString& Name)
 	FVector Eye;
 	FRotator View;
 	PoseView(**Table, Pose, Eye, View);
+	if (Name.Equals(TEXT("deck"), ESearchCase::IgnoreCase)) View = (Table->GetDeckFrontWorld() - Eye).Rotation();
 	if (APawn* Pawn = PC->GetPawn())
 	{
 		// The eye is the pawn's view point; the default pawn's sits at its origin, so the offset is usually zero.

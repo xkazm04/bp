@@ -690,6 +690,13 @@ void ABpTable::SetHighlight(const FString& Kind, const FString& Id)
 
 void ABpTable::AimCaptureHand(const FVector& RoomMin)
 {
+	// The room's near-left corner in the shell's space (RoomMin), then the table's: the tip CaptureTipIn/AcrossCm in from it.
+	const FVector Corner = WingGroupTransform(0.f).TransformPosition(RoomMin);
+	AimCaptureTip(FVector(Corner.X + CaptureTipInCm, Corner.Y + CaptureTipAcrossCm, Corner.Z));
+}
+
+void ABpTable::AimCaptureTip(const FVector& Tip)
+{
 	// The posed right hand of the capture pair (the one further to the person's right before either moved; a headset
 	// removes the pair).
 	AActor* Hand = CaptureRightHand.Get();
@@ -701,15 +708,13 @@ void ABpTable::AimCaptureHand(const FVector& RoomMin)
 	}
 	if (!Hand) return;
 	CaptureRightHand = Hand;
-	// The room's near-left corner in the shell's space (RoomMin), then the table's: the tip CaptureTipIn/AcrossCm in from it.
-	const FVector Corner = WingGroupTransform(0.f).TransformPosition(RoomMin);
 	FVector Local = Table.InverseTransformPosition(Hand->GetActorLocation());
-	Local.X = Corner.X + CaptureTipInCm - CaptureTipFromHandXCm;
-	Local.Y = Corner.Y + CaptureTipAcrossCm - CaptureTipFromHandYCm;
+	Local.X = Tip.X - CaptureTipFromHandXCm;
+	Local.Y = Tip.Y - CaptureTipFromHandYCm;
 	Hand->SetActorLocation(Table.TransformPosition(Local));
 	// The paper's hand shadow was captured once, before the hand moved.
 	if (HandCapture && !HandCapture->bCaptureEveryFrame) HandCapture->CaptureScene();
-	UE_LOG(LogBpTable, Log, TEXT("BpLevel: capture hand points at the pointed room: tip at table (%.1f, %.1f) cm"), Local.X + CaptureTipFromHandXCm, Local.Y + CaptureTipFromHandYCm);
+	UE_LOG(LogBpTable, Log, TEXT("BpLevel: capture hand points: tip at table (%.1f, %.1f) cm"), Local.X + CaptureTipFromHandXCm, Local.Y + CaptureTipFromHandYCm);
 }
 
 FString ABpTable::GetProductSlug() const
@@ -738,9 +743,15 @@ bool ABpTable::HitTest(const FVector& WorldOrigin, const FVector& WorldDir, FStr
 		return PaperCmToPlan(LocalToPaperCm(Group.InverseTransformPosition(Point)));
 	};
 	FVector Point;
-	// Room mode: only the paper's crumbs and the key plan's rooms answer (BpRoom.cpp).
+	// Room mode: the screen deck's front screen first (it stands between the eye and the table, BpDeck.cpp), then the
+	// paper's crumbs, the key plan's rooms and the map's features (BpRoom.cpp).
 	if (!RoomModeId.IsEmpty())
 	{
+		if (DeckHit(WorldOrigin, WorldDir, OutId))
+		{
+			OutKind = TEXT("deck");
+			return true;
+		}
 		return OnPlane(PlacedHeightCm - GlassRecessCm, Point) && RoomModeHit(LocalToPaperCm(Point), OutKind, OutId);
 	}
 	const float Ew = Ease(WingAlpha), Er = Ease(RoomAlpha);
@@ -820,6 +831,14 @@ bool ABpTable::AimAt(const FString& Id, FVector& OutWorld) const
 	const auto Centre = [](const FBpPlanBox& Box) { return FVector2D(Box.x + Box.w * 0.5, Box.y + Box.h * 0.5); };
 	const FTransform AtRest = WingGroupTransform(0.f);
 	const FTransform WingT = WingGroupTransform(Ease(WingAlpha));
+	// The screen deck's controls, and a feature's glyph on the room's map (BpDeck.cpp's taps).
+	if (Id.StartsWith(TEXT("deck:"))) return DeckAim(Id, OutWorld);
+	if (Id.StartsWith(TEXT("feature:")))
+	{
+		const FString Feature = Id.Mid(8);
+		const FRoomSlot* Slot = RoomSlots.FindByPredicate([this, &Feature](const FRoomSlot& S) { return SheetPlan->tiles.IsValidIndex(S.Tile) && SheetPlan->tiles[S.Tile].id == Feature; });
+		return Slot && OnGroup(AtRest, Slot->GlyphBox.GetCenter());
+	}
 	for (const FCrumb& Crumb : ActiveCrumbs())
 	{
 		if (Crumb.Id == Id) return OnGroup(AtRest, Crumb.PaperCm.GetCenter());

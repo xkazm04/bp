@@ -591,6 +591,14 @@ void ABpTable::Tick(float DeltaSeconds)
 		ApplyRoomVisuals();
 		if (!IsRoomModeMoving() && !IsLevelMoving() && !bScanLive && !bScanReplay && ScanStrength <= 0.f) SetActorTickInterval(0.25f);
 	}
+	// The screen deck's swap slides at the frame rate too (BpDeck.cpp).
+	if (IsDeckMoving())
+	{
+		const IConsoleVariable* Reduced = IConsoleManager::Get().FindConsoleVariable(TEXT("bp.ReducedMotion"));
+		DeckSwapT = Reduced && Reduced->GetInt() != 0 ? 1.f : FMath::Min(1.f, DeckSwapT + FMath::Min(DeltaSeconds, 0.05f) / DeckSwapS);
+		ApplyDeckPoses();
+		if (!IsDeckMoving() && !IsRoomModeMoving() && !IsLevelMoving() && !bScanLive && !bScanReplay && ScanStrength <= 0.f) SetActorTickInterval(0.25f);
+	}
 	// The scan line eases at the frame rate while a scan runs or fades (UpdateScan drops the tick back when it is done).
 	if (bScanLive || bScanReplay || ScanStrength > 0.f) UpdateScan(FMath::Min(DeltaSeconds, 0.1f));
 }
@@ -759,6 +767,8 @@ void ABpTable::LoadArt()
 	{
 		MapWalls->SetMaterial(0, VolumeMids[0]);
 	}
+	// The screen deck (BpDeck.cpp): its screens, its lit cell in the walls' glass, and its queue on room changes.
+	InitDeck();
 }
 
 void ABpTable::ApplyColumnLook()
@@ -799,6 +809,9 @@ void ABpTable::BuildTypeFont()
 void ABpTable::PlaceForHeight(float HeightCm)
 {
 	PlacedHeightCm = HeightCm;
+	// The screen deck stands where the target eye is, over the table top (BpDeck.cpp; its screens are made in LoadArt,
+	// before the first placing).
+	ApplyDeckPoses();
 	if (bRealFrame)
 	{
 		// The mesh's pivot is the floor centre and its top is its bounds' top (95 cm as modelled): the feet stay on the

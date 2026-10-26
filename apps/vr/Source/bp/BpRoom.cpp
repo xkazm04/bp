@@ -58,7 +58,7 @@ namespace
 	/** Inside a slot, the glyph and the text keep this far from its edges. */
 	constexpr double RoomSlotPadCm = 0.6;
 	/** A cell's header: the kind label's cap with this much paper above and below it. */
-	constexpr double RoomHeaderPadCm = 0.6;
+	constexpr double RoomHeaderPadCm = 0.9;  // FAH: 0.9 (from 0.6), the kind label clear of the far wall's glow
 
 	/** Ease-in-out, as the levels'. */
 	float RoomEase(float Alpha)
@@ -345,7 +345,9 @@ bool ABpTable::EnterRoomMode(const FString& InRoomId)
 	UE_LOG(LogBpTable, Log, TEXT("BpRoom: enter %s \"%s\" entry=%s from=%s%s"), *InRoomId, *Room->name, RoomEntryNow == EBpRoomEntry::Lift ? TEXT("lift") : TEXT("dive"),
 		From, bSwitch ? TEXT(" (switch)") : TEXT(""));
 	RoomModeChanged.Broadcast(RoomModeId);
+	// The deck replaces the decision card in room mode (BpDeck.cpp).
 	if (bCardShown) RefreshCard();
+	ApplyCardVisibility();
 	SetActorTickInterval(0.f);
 	AdvanceRoomMode(0.f);
 	ApplyRoomVisuals();
@@ -365,6 +367,7 @@ void ABpTable::ExitRoomMode()
 	ColumnScale = 1.f;
 	UE_LOG(LogBpTable, Log, TEXT("BpRoom: exit %s"), *Left);
 	RoomModeChanged.Broadcast(FString());
+	ApplyCardVisibility();
 	// The room left stands as the pointed room as the site plan comes back (FK's raised room, the focal room).
 	SetHighlight(TEXT("room"), Left);
 	SetActorTickInterval(0.f);
@@ -470,12 +473,8 @@ void ABpTable::ApplyRoomVisuals()
 		AppliedRoomFade = E;
 		for (int32 Index = 0; Index < MapWalls->GetInstanceCount(); ++Index) MapWalls->SetCustomDataValue(Index, 3, E * RoomWallShow, false);
 		MapWalls->MarkRenderStateDirty();
-		for (UInstancedStaticMeshComponent* Glyph : RoomGlyphs)
-		{
-			if (!Glyph) continue;
-			for (int32 Index = 0; Index < Glyph->GetInstanceCount(); ++Index) Glyph->SetCustomDataValue(Index, 0, E * RoomGlyphShow, false);
-			Glyph->MarkRenderStateDirty();
-		}
+		// The deck's current feature glows (BpDeck.cpp), its cell lit with it.
+		ApplyDeckLight();
 		if (RoomBeadPlaces.Num() > 0 && RoomBeads->GetInstanceCount() == RoomBeadPlaces.Num())
 		{
 			TArray<FTransform> Beads, Halos;
@@ -488,6 +487,8 @@ void ABpTable::ApplyRoomVisuals()
 			if (RoomHalos->GetInstanceCount() == Halos.Num()) RoomHalos->BatchUpdateInstancesTransforms(0, Halos, false, true);
 		}
 	}
+	// The screen deck comes in with the map.
+	ApplyDeckPoses();
 	// The site's 3D, labels, pins and the pointed column go through SiteShow; the beam too.
 	ApplyLevelVisuals();
 	WriteScanParams(ScanStrength);
@@ -826,7 +827,7 @@ void ABpTable::BuildRoomMap()
 	}
 	TMap<FString, TArray<FTransform>> GlyphPlaces;
 	TArray<FTransform> Beads;
-	for (const FRoomSlot& Slot : RoomSlots)
+	for (FRoomSlot& Slot : RoomSlots)
 	{
 		const TSoftObjectPtr<UStaticMesh>* Ref = GlyphMeshes.Find(Slot.Kind);
 		const FSoftObjectPath Path = Ref ? Ref->ToSoftObjectPath() : FSoftObjectPath();
@@ -848,7 +849,7 @@ void ABpTable::BuildRoomMap()
 			const double Tall = FMath::Min(Flat, RoomGlyphMaxCm / FMath::Max(Size.Z, 0.01));
 			const FRotator Yaw(0.f, bTurn ? 90.f : 0.f, 0.f);
 			const FVector Offset(Bounds.GetCenter().X * Flat, Bounds.GetCenter().Y * Flat, 0.0);
-			GlyphPlaces.FindOrAdd(Slot.Kind).Add(FTransform(Yaw, PaperCmToLocal(Centre, 0.f) - Yaw.RotateVector(Offset), FVector(Flat, Flat, Tall)));
+			Slot.GlyphInstance = GlyphPlaces.FindOrAdd(Slot.Kind).Add(FTransform(Yaw, PaperCmToLocal(Centre, 0.f) - Yaw.RotateVector(Offset), FVector(Flat, Flat, Tall)));
 			TopCm = Size.Z * Tall;
 		}
 		// Its open findings: up to RoomBeadsMax beads in a row over the glyph (the line under the name counts them all).
@@ -1123,6 +1124,16 @@ bool ABpTable::RoomModeHit(const FVector2D& PaperCm, FString& OutKind, FString& 
 	{
 		OutKind = TEXT("minimap");
 		return true;
+	}
+	// A feature's slot on the map: a tap brings its screen to the deck's front (BpDeck.cpp).
+	for (const FRoomSlot& Slot : RoomSlots)
+	{
+		if (SheetPlan.IsValid() && SheetPlan->tiles.IsValidIndex(Slot.Tile) && Slot.Box.IsInside(PaperCm))
+		{
+			OutKind = TEXT("feature");
+			OutId = TEXT("feature:") + SheetPlan->tiles[Slot.Tile].id;
+			return true;
+		}
 	}
 	return false;
 }

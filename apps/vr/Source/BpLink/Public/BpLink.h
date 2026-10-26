@@ -70,6 +70,9 @@ struct BPLINK_API FBpScanState
 	 *  backlog), read from the raw /scan answer: the generated FBpProposal::tier reads an absent tier (untriaged) as 0, so
 	 *  a proposal missing here is untriaged, whatever its tier field says. */
 	TMap<FString, int32> Tiers;
+	/** Each proposal's expected_delta by its id, where the raw /scan answer has one (spark vr-room-layers WP2: the screen
+	 *  deck's before -> after figure); the generated double reads an absent one as 0, a move nobody proposed. */
+	TMap<FString, double> Deltas;
 	/** Bumped on every read that changed something, so a consumer can skip a state it has seen. */
 	int32 Serial = 0;
 };
@@ -109,6 +112,8 @@ public:
 	/** A feature's kind (structure.features[].kind: user_flow, capability, integration, ops) by its slug, which is the
 	 *  plan tile's id; null when the last structure that parsed has no such feature or names no kind. */
 	const FString* FindFeatureKind(const FString& Slug) const { return FeatureKinds.Find(Slug); }
+	/** A feature's one line (structure.features[].summary) by its slug; null when the structure names none. */
+	const FString* FindFeatureSummary(const FString& Slug) const { return FeatureSummaries.Find(Slug); }
 
 	FOnBpPlan& OnPlan() { return PlanDelegate; }
 	FOnBpPlanFailed& OnPlanFailed() { return PlanFailedDelegate; }
@@ -133,10 +138,23 @@ public:
 	void PostScan(const FString& Lens, const FString& Kind, const FString& Id, const FString& Label, const TArray<FString>& Features,
 		TFunction<void(int32 Status, const FString& Body)> OnDone);
 
+	/** Adds an open finding to the product's draft wave the way the web's ledger does (spark vr-room-layers WP2, the screen
+	 *  deck's Approve): with no draft wave, POST .../waves a new one (the composer's defaults: "Wave <n>", one package
+	 *  "Package 1", opus, high); else PATCH .../waves/<id> the newest draft (or the one this process last wrote to) with
+	 *  the id appended to its first package (WaveComposer's "Add selected"). A finding a draft already holds is not sent.
+	 *  Allowed on every product: a draft queues nothing. OnDone gets whether it is in a draft now, that wave's id and a
+	 *  note for the log. Nothing here dispatches (SendWave refuses any other route). */
+	void AddToDraft(const FString& ProposalId, TFunction<void(bool bOk, const FString& WaveId, const FString& Note)> OnDone);
+	/** The draft the table last wrote to (AddToDraft); the wrist shows it first. Empty until one was written. */
+	const FString& GetFocusWaveId() const { return FocusWaveId; }
+
 private:
+	/** The one door for wave writes: POST .../waves or PATCH .../waves/<id>, nothing else. A dispatch, a DELETE or any other
+	 *  route is refused and logged, on every product (the owner's ruling: no dispatch from VR). */
+	void SendWave(const FString& Verb, const FString& Path, const FString& Body, TFunction<void(int32 Status, const FString& Body)> OnDone);
 	void PollScan();
 	bool TickScanPoll(float DeltaSeconds);
-	void ReceiveScanPart(int32 Part, TSharedPtr<struct FBpScanWire> Wire, TMap<FString, int32> Tiers);
+	void ReceiveScanPart(int32 Part, TSharedPtr<struct FBpScanWire> Wire, TMap<FString, int32> Tiers, TMap<FString, double> Deltas);
 
 	FBpScanState ScanState;
 	FOnBpScanState ScanStateDelegate;
@@ -152,6 +170,10 @@ private:
 	EBpPlanState PlanState = EBpPlanState::Pending;
 	FString ProductName;
 	TMap<FString, FString> FeatureKinds;
+	TMap<FString, FString> FeatureSummaries;
+	FString FocusWaveId;
+	/** A draft write is out: a second waits for it, so two Approves never compose two waves. */
+	bool bWaveWriteOut = false;
 	FOnBpPlan PlanDelegate;
 	FOnBpPlanFailed PlanFailedDelegate;
 };

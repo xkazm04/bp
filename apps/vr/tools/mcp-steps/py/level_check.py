@@ -1,6 +1,6 @@
 # L3.4 check (spark vr-hands-zoom WP3, "Lift"): during PIE, take the table through L0 -> L1 -> L2 and back with the
-# console, re-height the tiles at L2, then into room mode and out (spark vr-room-layers WP1: BpRoom.Enter the walk's room,
-# BpRoom.Exit), and compare everything with L0. The hard rule: a level change never moves anything
+# console, re-height the tiles at L2, then into room mode, one swap of its screen deck and out (spark vr-room-layers WP1
+# and WP2: BpRoom.Enter the walk's room, BpDeck.Next, BpRoom.Exit), and compare everything with L0. The hard rule: a level change never moves anything
 # in plan space, and back at L0 every room, bay and tile instance (world space) and every label (world position) is
 # exactly where it was. Exact float equality, no tolerance.
 #
@@ -42,10 +42,13 @@ STEPS = [
     "BpLevel.Back",
     "BpTable.Lens business",
     "BpRoom.Enter " + ROOM,
+    "BpDeck.Next",
     "BpRoom.Exit",
 ]
 batches = {c.get_name(): c for c in table.get_components_by_class(unreal.InstancedStaticMeshComponent)}
-labels = sorted(table.get_components_by_class(unreal.WidgetComponent), key=lambda c: c.get_name())
+# The plan's labels; the screen deck's screens (DeckScreen*, WP2) stand in front of the eye, not on the plan, and slide
+# as they swap, so they are not plan labels.
+labels = sorted((c for c in table.get_components_by_class(unreal.WidgetComponent) if not c.get_name().startswith("DeckScreen")), key=lambda c: c.get_name())
 
 
 def tf(t):
@@ -88,13 +91,13 @@ def hit_paper(u, v, z=250.0):
 
 def moving():
     # A level's ease, or room mode's fade (and the levels coming home before it).
-    return table.is_level_moving() or table.is_room_mode_moving()
+    return table.is_level_moving() or table.is_room_mode_moving() or table.is_deck_moving()
 
 
 def observe():
     return {
         "level": str(table.get_bp_level()), "wing": table.get_wing_id(), "room": table.get_room_id(),
-        "room_mode": table.get_room_mode_id(),
+        "room_mode": table.get_room_mode_id(), "deck": table.get_deck_line(),
         "crumb": table.get_breadcrumb(),
         "visible": {n: batches[n].is_visible() for n in ("Rooms", "Bays", "Tiles")},
         "labels_shown": sum(1 for c in labels if c.is_visible()),
@@ -153,11 +156,13 @@ else:
         result = {
             "done": True, "product": PRODUCT,
             "back_at_l0_equal": all(v == 0 for v in moved.values()) and labels_moved == 0,
-            # room mode: in the walk's room after BpRoom.Enter, back on the site plan after BpRoom.Exit
-            "room_mode_ok": [s.get("room_mode") for s in state["observed"][-2:]] == [ROOM, ""],
+            # room mode: in the walk's room after BpRoom.Enter and BpDeck.Next, back on the site plan after BpRoom.Exit
+            "room_mode_ok": [s.get("room_mode") for s in state["observed"][-3:]] == [ROOM, ROOM, ""],
+            # the deck: its first screen after BpRoom.Enter, its next page or screen after BpDeck.Next, gone after BpRoom.Exit
+            "deck_ok": (lambda d: d[0].startswith("1/") and d[1] not in ("", d[0]) and d[2] == "")([s.get("deck", "") for s in state["observed"][-3:]]),
             "instances": counts, "labels": len(l0["labels"]),
             "instances_moved": moved, "labels_moved": labels_moved,
-            "steps": [{k: s[k] for k in ("after", "level", "wing", "room", "room_mode", "crumb", "visible", "labels_shown", "plan_moved",
+            "steps": [{k: s[k] for k in ("after", "level", "wing", "room", "room_mode", "deck", "crumb", "visible", "labels_shown", "plan_moved",
                                           "world_differs", *HITS, "hit_title_end") if k in s}
                       for s in state["observed"]],
         }

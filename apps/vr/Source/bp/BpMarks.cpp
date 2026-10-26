@@ -366,6 +366,8 @@ void ABpTable::ReceiveScanState(const FBpScanState& State)
 	if (bCardShown) RefreshCard();
 	// Room mode's map shows the room's open findings: a read that changes them redraws it.
 	if (!ShownRoomMode.IsEmpty() && RoomFindingsKey() != RoomMapKey) BuildRoomMap();
+	// The screen deck's queue and its screens' content (the findings, the waves) follow the store (BpDeck.cpp).
+	RefreshDeck();
 }
 
 void ABpTable::BuildPins(const FBpScanState& State)
@@ -990,7 +992,7 @@ void ABpTable::ShowCard(bool bShow)
 	bCardShown = bShow;
 	if (!Card) return;
 	if (bShow) RefreshCard();
-	Card->SetVisibility(bShow && !CardProposal.IsEmpty());
+	ApplyCardVisibility();
 	if (bShow && CardProposal.IsEmpty()) UE_LOG(LogBpTable, Log, TEXT("BpTable: card none (no open finding to ask about)"));
 }
 
@@ -1020,7 +1022,11 @@ void ABpTable::RefreshCard()
 	}
 	const float PxPerCm = FMath::Clamp(CVarCardPxPerCm.GetValueOnGameThread(), 4.f, 64.f);
 	const FString Key = Ask->id + Ask->status + ActiveLens + FString::SanitizeFloat(PxPerCm);
-	if (Key == CardProposal && Card->GetSlateWidget().IsValid()) return;
+	if (Key == CardProposal && Card->GetSlateWidget().IsValid())
+	{
+		ApplyCardVisibility();
+		return;
+	}
 	CardProposal = Key;
 
 	const int32 TileIndex = TileOf[Ask->feature];
@@ -1146,7 +1152,7 @@ void ABpTable::RefreshCard()
 		]);
 	Card->SetDrawSize(FVector2D(CardWidthCm * PxPerCm, CardHeightCm * PxPerCm));
 	Card->RequestRedraw();
-	Card->SetVisibility(bCardShown);
+	ApplyCardVisibility();
 	// Near the lamp agent at the far edge, right of it and above the rim. Upright (FM, element 10: the judge's "upright
 	// rather than tilted"): no pitch, so it stands as the concept's card does instead of leaning toward the eye. FR (the
 	// judges: "tilted"): turned about its vertical axis to face the target eye, not straight back across the table (-X);
@@ -1157,4 +1163,10 @@ void ABpTable::RefreshCard()
 	Card->SetRelativeLocationAndRotation(Place, FRotator(0.f, FaceYaw, 0.f));
 	Card->SetRelativeScale3D(FVector(CardScale / PxPerCm));
 	UE_LOG(LogBpTable, Log, TEXT("BpTable: card proposal=%s target=\"%s\" status=%s"), *Ask->id, *Target, *Ask->status);
+}
+
+void ABpTable::ApplyCardVisibility()
+{
+	// Shown when asked for and it has a finding, on the site plan only: in room mode the screen deck asks (BpDeck.cpp).
+	if (Card) Card->SetVisibility(bCardShown && !CardProposal.IsEmpty() && RoomModeId.IsEmpty());
 }

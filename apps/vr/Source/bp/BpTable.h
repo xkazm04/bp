@@ -293,7 +293,7 @@ public:
 	 *  leaves goes mostly to the far side (RoomMapFarShare), so the map stands near the hands, where it reads largest. */
 	static constexpr float RoomMapLeftCm = 15.f;
 	static constexpr float RoomMapRightCm = 151.f;
-	static constexpr float RoomMapTopCm = 4.5f;
+	static constexpr float RoomMapTopCm = 8.5f;  // FAH: 8.5 (from 4.5), the far cells' labels clear of the paper's far edge and the frame
 	static constexpr float RoomMapBottomCm = 59.5f;
 	static constexpr float RoomSlotAspect = 1.25f;
 	static constexpr float RoomMapFarShare = 0.8f;
@@ -325,6 +325,32 @@ public:
 	static constexpr float RoomCrumbRightCm = 116.f;
 	static constexpr float RoomTitleLeftCm = 21.f;
 	static constexpr float RoomTitleRightCm = 54.f;
+
+	/** The screen deck (BpDeck.cpp; spark vr-room-layers WP2, the owner's "a queue of screens in front of me, swapped one by
+	 *  one"): in room mode, world-space screens DeckWidthCm x DeckHeightCm, the current one DeckDistanceCm from the target
+	 *  eye, DeckYawDeg to its right and DeckDropDeg below its horizon, upright about its roll and turned to face the eye.
+	 *  Placed by capture (FAH): in the band of the view above the room map's far edge and right of the lamp agent's head,
+	 *  where the card stood (the far half of the table is 75 cm and more from the eye, so a screen at 60 cm stands over the
+	 *  near half and is seen against the far one). The next two stand DeckStepBackCm farther and DeckStepUpCm higher each,
+	 *  dimmed to DeckBackAlpha1 and DeckBackAlpha2, so the queue reads as a deck. A swap slides over DeckSwapS. */
+	static constexpr float DeckWidthCm = 32.f;
+	static constexpr float DeckHeightCm = 18.f;
+	static constexpr float DeckDistanceCm = 60.f;
+	static constexpr float DeckYawDeg = 21.f;
+	static constexpr float DeckDropDeg = 12.f;
+	static constexpr float DeckStepBackCm = 5.f;
+	static constexpr float DeckStepUpCm = 1.4f;
+	static constexpr float DeckBackAlpha1 = 0.55f;
+	static constexpr float DeckBackAlpha2 = 0.3f;
+	static constexpr float DeckSwapS = 0.25f;
+	/** The screens' render density (px per cm): about twice what the target capture resolves at 60 cm (13.3 px/cm), as the
+	 *  card's (FM: the widget target has no mips, so more aliases). */
+	static constexpr float DeckPxPerCm = 26.f;
+	/** The current screen's feature on the map: its glyph glows this many times its Show, and its slot stands as a lit cell
+	 *  DeckLightCm high at DeckLightShow. */
+	static constexpr float DeckLitGlyphShow = 3.f;
+	static constexpr float DeckLightCm = 0.6f;
+	static constexpr float DeckLightShow = 2.2f;
 
 	ABpTable();
 
@@ -478,6 +504,27 @@ public:
 	static void SetRoomEntry(EBpRoomEntry Entry);
 	static EBpRoomEntry GetRoomEntry();
 	FBpRoomModeChanged& OnRoomModeChanged() { return RoomModeChanged; }
+	// ---- The screen deck (BpDeck.cpp): the API the hands and BpDeck.* call ---------------------------------------------------
+	/** The next page of the current screen, else the next screen (the queue's end holds; WP3 offers the next room there). */
+	void DeckNext();
+	void DeckPrev();
+	/** The screen at a 1-based place in the queue ("3 / 9"), its first page. */
+	bool DeckShow(int32 Place);
+	/** The current decision into the product's draft wave (BpLink AddToDraft: compose or PATCH, never dispatch); advances. */
+	void DeckApprove();
+	/** The current decision off this session's queue (memory only); the next one comes forward. */
+	void DeckDecline();
+	/** A feature's first screen to the front: its most urgent decision, else its sheet. */
+	bool DeckFocus(const FString& FeatureId);
+	/** A hand's tap (HitTest's "deck:<control>" or "feature:<id>"). */
+	void DeckTap(const FString& Id);
+	/** The front screen's resting centre in the world (BpView.Pose deck aims at it). */
+	FVector GetDeckFrontWorld() const;
+	/** For checks: "<place>/<count> <kind> <id> p<page>/<pages>", empty outside room mode. */
+	UFUNCTION(BlueprintCallable, Category = "Bp|Deck")
+	FString GetDeckLine() const;
+	UFUNCTION(BlueprintCallable, Category = "Bp|Deck")
+	bool IsDeckMoving() const { return DeckSwapT < 1.f; }
 	/** The key plan's room under a paper point (cm), for WP3's point-to-switch; false outside room mode or off its cells. */
 	UFUNCTION(BlueprintCallable, Category = "Bp|Room")
 	bool KeyPlanRoomAt(const FVector2D& PaperCm, FString& OutRoomId) const;
@@ -992,6 +1039,8 @@ private:
 		int32 Findings = 0;
 		/** A tall slot: its glyph over its text, centred; else its glyph beside its text. */
 		bool bCentre = false;
+		/** Its glyph's instance in its kind's RoomGlyphs batch (the deck lights it). */
+		int32 GlyphInstance = INDEX_NONE;
 	};
 	/** A room's cell on the key plan (paper cm), tagged with its id for WP3's point-to-switch. */
 	struct FKeyCell
@@ -1038,6 +1087,81 @@ private:
 	const TArray<FCrumb>& ActiveCrumbs() const { return RoomModeId.IsEmpty() ? Crumbs : RoomCrumbs; }
 	/** HitTest on the paper in room mode: a crumb, or a key plan room ("minimap"). */
 	bool RoomModeHit(const FVector2D& PaperCm, FString& OutKind, FString& OutId) const;
+
+	// ---- Screen deck state (BpDeck.cpp) ---------------------------------------------------------------------------------
+	/** One row of a screen's page, laid out at the deck's layout density (BpDeck.cpp): its kind, its texts, its style and
+	 *  its height. */
+	struct FDeckRow
+	{
+		uint8 Kind = 0;
+		uint8 Style = 0;
+		TArray<FString> Texts;
+		TArray<uint8> Styles;
+		float HeightPx = 0.f;
+	};
+	/** One screen of the queue: a decision (a proposal), a feature sheet (a tile) or the room summary; its pages. */
+	struct FDeckScreen
+	{
+		uint8 Kind = 0;
+		FString Key;
+		FString Proposal;
+		FString Feature;
+		TArray<TArray<FDeckRow>> Pages;
+		/** What it shows, so a refresh redraws only a screen whose content changed. */
+		uint32 Stamp = 0;
+	};
+	TArray<FDeckScreen> DeckScreens;
+	int32 DeckAt = 0;
+	int32 DeckPage = 0;
+	/** A swap happened since the room came in (until then a rebuilt queue shows its first screen). */
+	bool bDeckTouched = false;
+	FString DeckRoom;
+	/** Declined this session (memory only), and approved ones whose draft write the waves have not read back yet. */
+	TSet<FString> DeckDeclined;
+	TSet<FString> DeckInDraft;
+	/** The four screens: the front, the two behind it, and the one leaving in a swap. */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UWidgetComponent>> DeckCards;
+	struct FDeckCard
+	{
+		FString Key;
+		int32 Screen = INDEX_NONE;
+		int32 Page = 0;
+		uint32 Stamp = 0;
+		float FromSlot = 0.f;
+		float ToSlot = 0.f;
+		float FromSide = 0.f;
+		float ToSide = 0.f;
+	};
+	FDeckCard DeckCardState[4];
+	float DeckSwapT = 1.f;
+	/** The current screen's feature lit on the map: its slot's cell and its glyph's boost. */
+	UPROPERTY(Transient)
+	TObjectPtr<UInstancedStaticMeshComponent> DeckLight;
+	FString DeckLitTile;
+	FString DeckAimedTile;
+	void InitDeck();
+	void OnDeckRoomChanged(const FString& InRoomId);
+	/** The queue for DeckRoom from the plan and the store (decisions most urgent first, then sheets, then the summary); keeps
+	 *  the current screen when it is still there. */
+	void BuildDeckQueue();
+	void LayoutDeckScreen(FDeckScreen& Screen) const;
+	/** Puts a screen and page in front: Direction 1 a swap forward, -1 back, 0 at once. */
+	void ShowDeckAt(int32 Screen, int32 Page, int32 Direction);
+	/** The queue again after the store changed (the room's findings, the waves), keeping the current screen. */
+	void RefreshDeck();
+	TSharedRef<SWidget> DeckWidget(int32 Screen, int32 Page) const;
+	void ApplyDeckPoses();
+	/** A screen's place (actor space): Slot 0 the front, 1 and 2 behind it, 3 gone behind; Side -1 or 1 slid off. */
+	FTransform DeckPose(float Slot, float Side) const;
+	void ApplyDeckLight();
+	/** A ray on the front screen: true when it meets it, OutId "deck:<control>" or "deck:screen". */
+	bool DeckHit(const FVector& WorldOrigin, const FVector& WorldDir, FString& OutId) const;
+	bool DeckAim(const FString& Id, FVector& OutWorld) const;
+	/** The capture hand's index tip to a point (actor space; AimCaptureHand's rule). */
+	void AimCaptureTip(const FVector& LocalTip);
+	/** The decision card shows only on the site plan (the deck replaces it in room mode). */
+	void ApplyCardVisibility();
 
 	FDelegateHandle PlanHandle;
 	FDelegateHandle FailedHandle;

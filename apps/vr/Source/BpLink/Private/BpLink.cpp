@@ -16,6 +16,7 @@
 #include "Containers/Ticker.h"
 #include "Async/Async.h"
 #include "Serialization/JsonWriter.h"
+#include "Policies/CondensedJsonPrintPolicy.h"
 
 DEFINE_LOG_CATEGORY(LogBpLink);
 
@@ -303,9 +304,11 @@ void FBpLinkModule::ReceiveSnapshot(bool bOk, const FBpLinkSnapshot& Snapshot)
 	{
 		// Kept before the plan is announced, so a listener drawing the plan finds each tile's kind.
 		FeatureKinds.Reset();
+		FeatureSummaries.Reset();
 		for (const FBpFeature& Feature : Snapshot.Structure.features)
 		{
 			if (!Feature.slug.IsEmpty() && !Feature.kind.IsEmpty()) FeatureKinds.Add(Feature.slug, Feature.kind);
+			if (!Feature.slug.IsEmpty() && !Feature.summary.IsEmpty()) FeatureSummaries.Add(Feature.slug, Feature.summary);
 		}
 	}
 	if (bOk && Snapshot.bHasPlan)
@@ -409,6 +412,7 @@ void FBpLinkModule::PollScan()
 				}
 				// The proposals that carry a tier: an absent key is untriaged, which the generated int32 cannot tell from 0.
 				TMap<FString, int32> Tiers;
+				TMap<FString, double> Deltas;
 				const TSharedPtr<FJsonObject>* Snapshot = nullptr;
 				const TArray<TSharedPtr<FJsonValue>>* Proposals = nullptr;
 				if (bOk && Part == 1 && Json->TryGetObjectField(TEXT("snapshot"), Snapshot) && (*Snapshot)->TryGetArrayField(TEXT("proposals"), Proposals))
@@ -418,10 +422,13 @@ void FBpLinkModule::PollScan()
 						const TSharedPtr<FJsonObject>* Row = nullptr;
 						FString Id;
 						int32 Tier = 0;
-						if (Value.IsValid() && Value->TryGetObject(Row) && (*Row)->TryGetStringField(TEXT("id"), Id) && (*Row)->TryGetNumberField(TEXT("tier"), Tier)) Tiers.Add(Id, Tier);
+						if (!Value.IsValid() || !Value->TryGetObject(Row) || !(*Row)->TryGetStringField(TEXT("id"), Id)) continue;
+						if ((*Row)->TryGetNumberField(TEXT("tier"), Tier)) Tiers.Add(Id, Tier);
+						double Delta = 0.0;
+						if ((*Row)->TryGetNumberField(TEXT("expected_delta"), Delta)) Deltas.Add(Id, Delta);
 					}
 				}
-				AsyncTask(ENamedThreads::GameThread, [Part, Wire, bOk, Failed, Tiers = MoveTemp(Tiers)]() mutable
+				AsyncTask(ENamedThreads::GameThread, [Part, Wire, bOk, Failed, Tiers = MoveTemp(Tiers), Deltas = MoveTemp(Deltas)]() mutable
 				{
 					FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"));
 					if (!Module) return;
@@ -432,7 +439,7 @@ void FBpLinkModule::PollScan()
 						Module->ScanBodyHash[Part] = 0;
 						return;
 					}
-					Module->ReceiveScanPart(Part, Wire, MoveTemp(Tiers));
+					Module->ReceiveScanPart(Part, Wire, MoveTemp(Tiers), MoveTemp(Deltas));
 				});
 			});
 		});
@@ -440,11 +447,11 @@ void FBpLinkModule::PollScan()
 	}
 }
 
-void FBpLinkModule::ReceiveScanPart(int32 Part, TSharedPtr<FBpScanWire> Wire, TMap<FString, int32> Tiers)
+void FBpLinkModule::ReceiveScanPart(int32 Part, TSharedPtr<FBpScanWire> Wire, TMap<FString, int32> Tiers, TMap<FString, double> Deltas)
 {
 	const bool bFirst = Part == 0 ? !ScanState.bHasJobs : Part == 1 ? !ScanState.bHasScan : !ScanState.bHasWaves;
 	if (Part == 0) { ScanState.Jobs = MoveTemp(Wire->jobs); ScanState.bHasJobs = true; }
-	else if (Part == 1) { ScanState.Scan = MoveTemp(Wire->snapshot); ScanState.Tiers = MoveTemp(Tiers); ScanState.bHasScan = true; }
+	else if (Part == 1) { ScanState.Scan = MoveTemp(Wire->snapshot); ScanState.Tiers = MoveTemp(Tiers); ScanState.Deltas = MoveTemp(Deltas); ScanState.bHasScan = true; }
 	else { ScanState.Waves = MoveTemp(Wire->waves); ScanState.bHasWaves = true; }
 	++ScanState.Serial;
 	if (bFirst)
@@ -493,4 +500,125 @@ void FBpLinkModule::PostScan(const FString& Lens, const FString& Kind, const FSt
 		if (OnDone) OnDone(Status, Response.IsValid() ? Response->GetContentAsString() : FString());
 	});
 	Request->ProcessRequest();
+}
+
+// ---- The draft wave (spark vr-room-layers WP2): the screen deck's Approve -----------------------------------------------
+// The only write the table makes. A draft queues nothing (blueprint-ui.md, Ledger waves: "prepared as a draft and
+// dispatched as a whole later"), so it is allowed on a live product too; a dispatch never leaves VR (the owner's ruling,
+// 2026-10-25: "No dispatch from VR on any product"). SendWave is the door that holds that rule.
+
+void FBpLinkModule::SendWave(const FString& Verb, const FString& Path, const FString& Body, TFunction<void(int32, const FString&)> OnDone)
+{
+	const bool bCompose = Verb == TEXT("POST") && Path == TEXT("/waves");
+	const bool bPatch = Verb == TEXT("PATCH") && Path.StartsWith(TEXT("/waves/")) && !Path.Mid(7).Contains(TEXT("/"));
+	if ((!bCompose && !bPatch) || Path.Contains(TEXT("dispatch")))
+	{
+		UE_LOG(LogBpLink, Warning, TEXT("BpLink: refused %s %s/%s: the table only composes draft waves and never dispatches one, on any product"), *Verb, *GetProductSlug(), *Path);
+		if (OnDone) OnDone(0, FString());
+		return;
+	}
+	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+	Request->SetVerb(Verb);
+	Request->SetURL(GClient->GetBaseUrl() + TEXT("/api/products/") + GetProductSlug() + Path);
+	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+	Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
+	Request->SetContentAsString(Body);
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: %s %s%s (a draft, never dispatched) %.300s"), *Verb, *GetProductSlug(), *Path, *Body);
+	Request->OnProcessRequestComplete().BindLambda([OnDone](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		// The waves are read again at the next tick, so the wrist shows what was written.
+		if (FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"))) Module->NextScanPollS = 0.0;
+		if (OnDone) OnDone(Status, Response.IsValid() ? Response->GetContentAsString() : FString());
+	});
+	Request->ProcessRequest();
+}
+
+void FBpLinkModule::AddToDraft(const FString& ProposalId, TFunction<void(bool, const FString&, const FString&)> OnDone)
+{
+	const auto Done = [OnDone](bool bOk, const FString& WaveId, const FString& Note)
+	{
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: draft %s: %s"), bOk ? *WaveId : TEXT("not written"), *Note);
+		if (OnDone) OnDone(bOk, WaveId, Note);
+	};
+	if (bWaveWriteOut)
+	{
+		Done(false, FString(), TEXT("another draft write is still out"));
+		return;
+	}
+	// The draft to add to: the one this process last wrote to while it is still a draft, else the newest draft.
+	const FBpWave* Draft = nullptr;
+	for (const FBpWave& Wave : ScanState.Waves)
+	{
+		if (Wave.status != TEXT("draft")) continue;
+		for (const FBpWavePackage& Package : Wave.packages)
+		{
+			if (Package.ids.Contains(ProposalId))
+			{
+				Done(true, Wave.id, FString::Printf(TEXT("%s is already in draft %s (\"%s\"), nothing sent"), *ProposalId, *Wave.id, *Wave.name));
+				return;
+			}
+		}
+		if (Wave.id == FocusWaveId) { Draft = &Wave; continue; }
+		if (!Draft || (Draft->id != FocusWaveId && Wave.created_at > Draft->created_at)) Draft = &Wave;
+	}
+	const auto Package = [](const FString& Name, const FString& Model, const FString& Effort, const TArray<FString>& Ids)
+	{
+		TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
+		Out->SetStringField(TEXT("name"), Name);
+		Out->SetStringField(TEXT("model"), Model);
+		Out->SetStringField(TEXT("effort"), Effort);
+		TArray<TSharedPtr<FJsonValue>> List;
+		for (const FString& Id : Ids) List.Add(MakeShared<FJsonValueString>(Id));
+		Out->SetArrayField(TEXT("ids"), List);
+		return MakeShared<FJsonValueObject>(Out);
+	};
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	TArray<TSharedPtr<FJsonValue>> Packages;
+	FString Verb, Path, Note;
+	if (!Draft)
+	{
+		// WaveComposer's new wave: "Wave <n>", one package (Opus, high) holding the finding.
+		Body->SetStringField(TEXT("name"), FString::Printf(TEXT("Wave %d"), ScanState.Waves.Num() + 1));
+		Packages.Add(Package(TEXT("Package 1"), TEXT("opus"), TEXT("high"), { ProposalId }));
+		Verb = TEXT("POST");
+		Path = TEXT("/waves");
+		Note = FString::Printf(TEXT("%s composes a new draft"), *ProposalId);
+	}
+	else
+	{
+		// WaveComposer's "Add selected": into the first package; the packages are sent whole (PATCH replaces them).
+		for (int32 Index = 0; Index < Draft->packages.Num(); ++Index)
+		{
+			const FBpWavePackage& Each = Draft->packages[Index];
+			TArray<FString> Ids = Each.ids;
+			if (Index == 0) Ids.Add(ProposalId);
+			Packages.Add(Package(Each.name, Each.model, Each.effort, Ids));
+		}
+		Verb = TEXT("PATCH");
+		Path = TEXT("/waves/") + Draft->id;
+		Note = FString::Printf(TEXT("%s added to draft %s (\"%s\") package %s"), *ProposalId, *Draft->id, *Draft->name, Draft->packages.Num() > 0 ? *Draft->packages[0].name : TEXT("?"));
+	}
+	Body->SetArrayField(TEXT("packages"), Packages);
+	FString Text;
+	FJsonSerializer::Serialize(Body, TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Text));
+	bWaveWriteOut = true;
+	SendWave(Verb, Path, Text, [Done, Note](int32 Status, const FString& Answer)
+	{
+		FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"));
+		if (Module) Module->bWaveWriteOut = false;
+		// 201 { wave } for a new one, 200 { wave } for a patch.
+		TSharedPtr<FJsonObject> Json;
+		const TSharedPtr<FJsonObject>* Wave = nullptr;
+		FString WaveId;
+		if ((Status == 200 || Status == 201) && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Answer), Json) && Json.IsValid()
+			&& Json->TryGetObjectField(TEXT("wave"), Wave) && (*Wave)->TryGetStringField(TEXT("id"), WaveId))
+		{
+			if (Module) Module->FocusWaveId = WaveId;
+			Done(true, WaveId, FString::Printf(TEXT("%s (%d)"), *Note, Status));
+			return;
+		}
+		Done(false, FString(), FString::Printf(TEXT("%s refused %d %.200s"), *Note, Status, *Answer));
+	});
 }

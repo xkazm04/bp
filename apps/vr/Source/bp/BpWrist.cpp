@@ -182,10 +182,12 @@ void ABpPawn::SetWristParent(USceneComponent* Parent, FName Socket, const FTrans
 void ABpPawn::ReceiveScanState(const FBpScanState& State)
 {
 	if (!WristPanel) return;
-	// The wave shown: the last dispatched, else the newest draft.
-	const FBpWave* Wave = nullptr;
+	// The wave shown: the draft the screen deck last wrote to (spark vr-room-layers WP2: the wrist reflects each Approve),
+	// else the last dispatched, else the newest draft.
+	const FBpWave* Wave = State.Waves.FindByPredicate([](const FBpWave& Each) { return Each.status == TEXT("draft") && Each.id == FBpLinkModule::Get().GetFocusWaveId(); });
 	for (const FBpWave& Each : State.Waves)
 	{
+		if (Wave && Wave->id == FBpLinkModule::Get().GetFocusWaveId()) break;
 		const bool bDispatched = Each.status == TEXT("dispatched");
 		if (!Wave) { Wave = &Each; continue; }
 		const bool bWaveDispatched = Wave->status == TEXT("dispatched");
@@ -217,7 +219,7 @@ void ABpPawn::ReceiveScanState(const FBpScanState& State)
 			const float Fraction = Package.ids.Num() > 0 ? static_cast<float>(Built) / Package.ids.Num() : 0.f;
 			Rows.Add({ Package.name, FString::Printf(TEXT("%d %s · %s · %s"), Package.ids.Num(), Package.ids.Num() == 1 ? TEXT("finding") : TEXT("findings"), *Package.model, *Package.effort),
 				FString::Join(Chips, TEXT("   ")), Fraction, Package.ids.Num() });
-			Key += FString::Printf(TEXT("|%s:%d"), *Package.id, Built);
+			Key += FString::Printf(TEXT("|%s:%d/%d:%s"), *Package.id, Built, Package.ids.Num(), *Package.name);
 		}
 	}
 	// A draft (composed, not dispatched) has queued nothing, so its rings say "draft" rather than a built share (FAD).
@@ -291,12 +293,46 @@ void ABpPawn::ReceiveScanState(const FBpScanState& State)
 	}
 	if (Rows.Num() == 0)
 	{
-		List->AddSlot().AutoHeight().Padding(0.f, 14.f, 0.f, 0.f)
+		// FAH (WP1's review: Kettle's panel read blank): the empty state as a row of its own, an empty package outline, the
+		// way to fill it, and an empty ring.
+		static const FSlateRoundedBoxBrush EmptyRow(Cyan.CopyWithNewOpacity(0.05f), 12.f, CyanEdge.CopyWithNewOpacity(0.45f), 2.f);
+		List->AddSlot().AutoHeight().Padding(0.f, 12.f, 0.f, 0.f)
 		[
-			SNew(STextBlock).Text(FText::FromString(TEXT("No wave composed yet"))).Font(CapFont(TEXT("Regular"), 18.f)).ColorAndOpacity(FSlateColor(Cyan.CopyWithNewOpacity(0.75f)))
+			SNew(SBorder).BorderImage(&EmptyRow).Padding(FMargin(12.f, 14.f))
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				[
+					SNew(SBpBlocks).Count(1)
+				]
+				+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center).Padding(12.f, 0.f)
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight()
+					[
+						SNew(STextBlock).Text(FText::FromString(TEXT("No draft yet"))).Font(CapFont(TEXT("Bold"), 32.f)).ColorAndOpacity(FSlateColor(FLinearColor::White))
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 7.f, 0.f, 0.f)
+					[
+						SNew(STextBlock).Text(FText::FromString(TEXT("Approve a decision to start one"))).Font(CapFont(TEXT("Regular"), 21.f)).ColorAndOpacity(FSlateColor(CyanText))
+					]
+				]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				[
+					SNew(SOverlay)
+					+ SOverlay::Slot()
+					[
+						SNew(SBpRing).Fraction(0.f)
+					]
+					+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
+					[
+						SNew(STextBlock).Text(FText::FromString(TEXT("0"))).Font(CapFont(TEXT("Bold"), 20.f)).ColorAndOpacity(FSlateColor(FLinearColor::White))
+					]
+				]
+			]
 		];
 	}
-	const FString Sub = Wave ? FString::Printf(TEXT("%s · %s"), *Wave->name, *Wave->status) : FString();
+	const FString Sub = Wave ? FString::Printf(TEXT("%s · %s"), *Wave->name, *Wave->status) : FString(TEXT("Draft wave · none"));
 	WristPanel->SetSlateWidget(
 		SNew(SBorder).BorderImage(&EdgeGlow).Padding(5.f)
 		[

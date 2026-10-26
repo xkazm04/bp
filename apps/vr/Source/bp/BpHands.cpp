@@ -25,7 +25,7 @@ namespace
 {
 	FAutoConsoleCommandWithWorldAndArgs CmdHandsPinch(
 		TEXT("BpHands.Pinch"),
-		TEXT("BpHands.Pinch <wing id|room id|crumb id>: the synthetic hand points at it, pinches and pulls the pinch toward the eye, through the same judging as real hands."),
+		TEXT("BpHands.Pinch <wing id|room id|crumb id|deck:next|deck:prev|deck:approve|deck:decline|feature:<id>>: the synthetic hand points at it, pinches and pulls the pinch toward the eye (on a crumb, a deck control or a feature it taps: released where it closed), through the same judging as real hands."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld*)
 		{
 			if (Args.Num() == 0)
@@ -60,6 +60,12 @@ namespace
 	bool IsCrumb(const FString& Id)
 	{
 		return Id == TEXT("home") || Id.StartsWith(TEXT("wing:")) || Id.StartsWith(TEXT("room:"));
+	}
+
+	/** A pinch released where it closed, with no pull: a crumb, the screen deck's controls, a feature on the room's map. */
+	bool IsTap(const FString& Id)
+	{
+		return IsCrumb(Id) || Id.StartsWith(TEXT("deck:")) || Id.StartsWith(TEXT("feature:"));
 	}
 
 	bool IsLive(EBpTracking State)
@@ -331,6 +337,13 @@ void UBpHands::PinchEnded(FSlot& S)
 {
 	S.bPinch = false;
 	ABpTable* T = FindTable();
+	// Released on the screen deck or on a feature of the room's map (spark vr-room-layers WP2): a tap.
+	if (!S.bFired && T && (S.HoverKind == TEXT("deck") || S.HoverKind == TEXT("feature")))
+	{
+		UE_LOG(LogBpHands, Log, TEXT("BpHands: tap on %s"), *S.HoverId);
+		T->DeckTap(S.HoverId);
+		return;
+	}
 	if (S.bFired || !T || S.HoverKind != TEXT("crumb")) return;
 	// Released on a crumb: jump to that crumb's level. In room mode any crumb but the room's own is the way out.
 	if (!T->GetRoomModeId().IsEmpty())
@@ -556,7 +569,7 @@ void UBpHands::RunCommands(float DeltaTime)
 		return;
 	case EStep::Pinch:
 		// On a crumb the pinch is a tap: released where it closed.
-		Gesture.Step = IsCrumb(Gesture.Id) ? EStep::Release : EStep::Pull;
+		Gesture.Step = IsTap(Gesture.Id) ? EStep::Release : EStep::Pull;
 		return;
 	case EStep::Pull:
 		Gesture.PulledCm += SyntheticStepCm;
