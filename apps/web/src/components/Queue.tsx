@@ -4,6 +4,7 @@
 // the live empty state, the morning watch's entry, and the v4 tier and origin chips (the queue and the ledger show them alike). The Review flyout itself is rail/wide/review.tsx; the phone
 // list (Phone.tsx) and the plan's decision card (Overlays.tsx) read the same helpers.
 import { cursorFor, metricHistory, watchFor, type SimDecision } from '@bp/core/model';
+import { TIER_SAYS } from '@bp/core/scan/derive';
 import type { Proposal, RiskClass } from '@bp/core/scan/types';
 import { useBp, useEngine, useLive } from './hooks';
 
@@ -52,7 +53,6 @@ export function oncePerProposal(ds: SimDecision[]): SimDecision[] {
 }
 
 // ------------------------------------------------------------------------------------ tier and origin (store v4)
-const TIER_SAYS = ['stop-ship', 'before production', 'soon after production', 'backlog'] as const;
 const RISK_WORD: Record<RiskClass, string> = { secret: 'secret', authz: 'authz', money: 'money', data: 'data', llm: 'LLM', perf: 'perf', reliability: 'reliability', ux: 'UX', debt: 'debt' };
 /** `T0`..`T3` and the risk class word, when the item is ranked (no tier: nothing). T0 reads in the bad colour, T1 in watch. */
 export function TierChip({ p }: { p: Proposal }) {

@@ -9,6 +9,8 @@ import type { Measurement, Run, ScanSnapshot } from './types.ts';
  * every key is 4 and their order is exactly what it was.
  */
 export const tierRank = (tier: number | undefined): number => (tier === undefined ? 4 : tier);
+/** v4: what each severity tier says, by tier 0..3 (the queue's tier chip; VR mirrors it through scripts/gen-vr-words.ts). */
+export const TIER_SAYS = ['stop-ship', 'before production', 'soon after production', 'backlog'] as const;
 
 /** The latest run (by start), or null. */
 export function latestRun(scan: Pick<ScanSnapshot, 'runs'> | undefined): Run | null {
