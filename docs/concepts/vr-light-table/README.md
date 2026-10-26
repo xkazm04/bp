@@ -45,6 +45,8 @@ lenses, scans and waves, drawn for a headset.
   method that measures a capture against the target, risks, and the steps only the owner can do.
 - [`lynx-plan.md`](lynx-plan.md): the live execution plan on Lynx (from 2026-10-23): setup, run order from WP3.1
   to P7, the merge gates, the known gaps and the open asks.
+- [`headset-plan.md`](headset-plan.md): the route to the owner's Quest 3S on Lynx (ARM64), the code to change
+  first (seated calibration), and the session script and record (2026-10-26).
 - [`machine.md`](machine.md): the build host's measured facts and readings 1 to 14.
 - [`wolf-plan.md`](wolf-plan.md): the retired Wolf plan (2026-10-23), kept for its readings and history.
 
