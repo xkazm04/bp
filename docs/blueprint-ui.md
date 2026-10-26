@@ -1046,6 +1046,24 @@ and the skin only draws it. The host lives in `apps/web/src/components/companion
   the skin draws `cards` itself, and the host then leaves out its slip. `plain` (name "Lamp") is the deliberately plain
   fallback: a 40 px round button bottom-right, a caption bubble, a one-line composer and a dashed box at `target`. The
   contest's skins are listed ahead of it.
+- **Glim** (`lamps/glim/`, the default; contest lamp-web, 2026-10-26). The lamp hangs from a trolley on a rail at the top of
+  the sheet and parks in the gutter left of the Dock. It speaks on a tag from its hand and holds decision cards out with both
+  hands (`ownsCards`).
+  - **Pointing.** It rides to the target, lowers itself, and its loop becomes an amber ring round the target.
+  - **Clipping.** The target is clipped to the visible plan: below the rail, left of the Dock (`--rw`), above the bottom bars
+    (`--bb`). Those chrome sizes are read from `.bp-ui` and multiplied by its scale, because the host's layer is unscaled.
+  - **Framing.** A target filling more than 55% of the visible plan (a room or wing at its own zoom) is framed instead: a
+    dashed rounded frame inset 14 px, with the tag in its top-right corner. A target wholly off the plan is not pointed at.
+  - **Root rules.** Glim's root rule is `.glim`, never scoped to a chrome parent. Scoping it to `.bp-ui` lost its colour
+    tokens in the host layer, and the shell drew black.
+  - **Performance.** Idle is one composited sway. `python scripts/perf.py` at `?scale=4` with Glim idle measured p50
+    16.7 ms over 3 runs (budget 16.7, 2026-10-26).
+- **One companion process.** The companion's state (the bus, focus history, cards and turn locks) lives in the process
+  that serves `/api/companion/*`. VR's BpLink talks to `apps/server` (:3100). With `BP_COMPANION_URL=http://127.0.0.1:3100`
+  set when the web app is **built** (next.config.ts rewrites are fixed at build time), the web app hands every
+  `/api/companion` request to that process (`beforeFiles` rewrite; loopback http origins only), so the desk and the headset
+  share one companion. Unset, the web process is its own companion. Proven 2026-10-26: a focus and a card POSTed to the
+  companion process reached a page served by another process, and the page's Approve reached the companion.
 - **Composer convention.** A skin marks its text field `data-composer` and the button that opens the field
   `data-lamp-toggle`. The skin closes the composer on Esc, and on blur when it is empty. The host reads `listening` off
   the focus inside its layer.
@@ -1067,7 +1085,7 @@ and the skin only draws it. The host lives in `apps/web/src/components/companion
   | --- | --- |
   | `idle` | the stream is down |
   | `asking` | a card is pending |
-  | `pointing` | a focus command for this product, for 2.5 s after it arrives |
+  | `pointing` | a focus command for this product, for 6 s after it arrives (`POINT_MS`; long enough to read the caption) |
   | `thinking` | a turn is waiting for its first text (or for text after a tool answered, when none came before) |
   | `speaking` | text is streaming |
   | `working` | a tool call is open, or a live scan job is running |
@@ -1080,7 +1098,7 @@ and the skin only draws it. The host lives in `apps/web/src/components/companion
   | Kind | Calls | `target` rect |
   | --- | --- | --- |
   | `feature` | `setPage('plan')`, `flyToFeature(id)` | `featureRect` once the camera has arrived |
-  | `room`, `wing` | the hash route `restoreHash` reads (`#at=<id>`, lens and time kept) | none |
+  | `room`, `wing` | the hash route `restoreHash` reads (`#at=<id>`, lens and time kept) | the room's or wing's world box at the arrived camera |
   | `decision` | `setPage('plan')`, `openDecision(id)` | `#dcard` |
   | `wave` | `setPage('ledger','triage')`, the ledger store's `showWave` (backlog scope) | `[data-wave]` |
   | `release` | `setPage('ledger','release')`, ledger focus | `[data-fid]` |

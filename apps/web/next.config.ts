@@ -16,6 +16,25 @@ const nextConfig: NextConfig = {
   turbopack: { root: resolve(dirname(fileURLToPath(import.meta.url)), '..', '..') },
   // @bp/core ships TypeScript source (packages/core), compiled as part of the app
   transpilePackages: ['@bp/core'],
+  // One companion per machine: its bus, focus, cards and turn locks live in ONE process, and VR's BpLink talks to
+  // apps/server (:3100). With BP_COMPANION_URL set (a loopback origin, e.g. http://127.0.0.1:3100), this app hands every
+  // /api/companion request to that process instead of serving its own (beforeFiles: the app's own companion routes would
+  // otherwise answer first), so a focus from the desk reaches the headset and back. Unset: this process is the companion.
+  async rewrites() {
+    const url = companionUrl();
+    return url ? { beforeFiles: [{ source: '/api/companion/:path*', destination: `${url}/api/companion/:path*` }], afterFiles: [], fallback: [] } : [];
+  },
 };
+
+function companionUrl(): string | null {
+  const raw = process.env.BP_COMPANION_URL?.trim();
+  if (!raw) return null;
+  let u: URL;
+  try { u = new URL(raw); } catch { throw new Error(`BP_COMPANION_URL is not a URL: ${raw}`); }
+  if (u.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname)) {
+    throw new Error(`BP_COMPANION_URL must be a loopback http origin (the companion is loopback-only): ${raw}`);
+  }
+  return u.origin;
+}
 
 export default nextConfig;
