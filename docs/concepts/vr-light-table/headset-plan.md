@@ -14,8 +14,9 @@ In the headset session we judge, in this order:
 
 1. **Comfort, seated.** The owner's doctrine: seated, stationary, with no locomotion. Room switches fade the content and
    never the view. Is there any vection or discomfort when entering, leaving or switching rooms?
-2. **Text comfort.** The screen deck's body text sits at about 33–35 arcmin. That clears our 22 arcmin floor but is
-   below the vendor's comfortable band of 0.6–0.8° (36–48 arcmin).
+2. **Text comfort.** Measured by `BpView.TextCard` from the target eye (table below): the deck's body text sits at
+   40 arcmin, its chips, meta line and spine kinds at 34. Six classes clear our 22 arcmin floor but sit under the vendor's
+   comfortable band of 0.6–0.8° (36–48 arcmin).
    - Read every text class: deck title, body and chips; feature sheet; spines; lamp caption; wrist room list; room
      map names; key plan.
    - Grade each one: reads easily, reads with effort, or doesn't read.
@@ -65,7 +66,7 @@ Lynx runs Windows 11 on ARM64. That is the whole risk: Meta lists Intel and AMD 
 
 | Rung | Route | What it needs | Probe | Time box | Pass |
 |---|---|---|---|---|---|
-| 1 | **Meta Horizon Link** (cable, then Air Link) | Link PC app on Windows ARM64, emulated x64 if it installs; NVIDIA GPU driver path | Install the app. Does it start, see the headset, and offer "Set Meta Quest Link as active OpenXR runtime"? Then `run-bplink --mode game --vr` with no `--xr-sim` | 30 min | The table appears in the headset through Link, and `LogHMD` names the Oculus OpenXR runtime |
+| 1 | **Meta Horizon Link** (cable, then Air Link) | Link PC app on Windows ARM64, emulated x64 if it installs; NVIDIA GPU driver path | Install the app. Does it start, see the headset, and offer "Set Meta Quest Link as active OpenXR runtime"? Then `run-bplink --mode game --runtime link` | 30 min | The table appears in the headset through Link, and `LogHMD` names the Oculus OpenXR runtime |
 | 2 | **Steam Link** (Valve, free) with SteamVR | Steam and SteamVR on ARM64 under emulation; Steam Link app on the headset | SteamVR starts and the headset sees it; set SteamVR as the OpenXR runtime **per process** (`XR_RUNTIME_JSON` = SteamVR's json), never system-wide | 30 min | As rung 1, with `LogHMD` naming SteamVR |
 | 3 | **ALVR** (free, open source) | SteamVR (rung 2's half), plus NVENC on the N1X | ALVR streamer pairs over Wi-Fi | 30 min | As rung 1 |
 | 4 | **Virtual Desktop** (paid, about 25 USD, Quest Store) | The VD streamer on ARM64; it has its own OpenXR runtime (VDXR) | **Ask the owner before buying.** Check the streamer's ARM64 status first | 20 min, after approval | As rung 1 |
@@ -84,6 +85,56 @@ route selects its runtime per process, or through its own app's switch.
 ## Code to change before or during the session
 
 All of these can be built and checked in the Simulator before the headset arrives. Items 1–3 block a fair reading.
+
+**Status, 2026-10-26: all six are built** (`2d57f40`..`3c4860f`; `BpHeadset.cpp`) and checked in the flat view
+(machine.md, readings 37–40). They are not yet checked in a headset. The Simulator's XR session stays at READY when it is
+driven headless, so the start-up seat has not run on a real XR runtime. What changed from the items below:
+
+- **Item 1 moves the whole table, rigidly, not its height.** The pins, the decision card and the room map are built
+  once, at the table's height when the plan lands, so changing `bp.TableHeightCm` afterwards would leave them floating.
+  `ABpTable::MoveTable` instead moves the table actor, carrying the lamp and its lights and halo with it. A lowered table
+  passes its legs under the floor, and the floor hides them.
+  - The table also turns to the head's yaw, and slides so the eye stands 30 cm behind its near edge. The view never
+    moves.
+  - Its feet never rise above the floor the level put them on. A standing eye gets the table as built, and the log
+    names the gap.
+  - The top never goes below `SeatTopMinCm` (55 cm).
+  - `BpView.Seat <eye_cm>` seats as if the eye stood that high. Use it for checks without a headset, or as a hand
+    override in the session.
+- **Item 2 needs no new code.** The deck, the caption and the map are placed from the target eye in the table's space,
+  so they follow the table. With a headset, the wrist panel rides the tracked left grip.
+- **Item 3, the card,** stands at the deck's place. Each line is drawn at the angle its class subtends where it really
+  stands, labelled with that angle, beside the floor (22′) and the band (36′, 48′). Every class's angle is also logged.
+  A wrist further than 70 cm from the eye (a hand that is down) is read as if raised, 40 cm ahead.
+- **Item 4, the meter,** is a strip over the wrist panel. It shows the GPU, game-thread and frame p50 over 2 s, in amber
+  over 11.1 ms. It is on by default with a headset (`bp.FrameMeter 1|0|-1`), and logs `BpFrame:` every 10 s.
+- **Item 5:** `--runtime` sets `XR_RUNTIME_JSON` per process for every route, Link included, because Lynx's HKLM
+  `ActiveRuntime` already names the Meta XR Simulator's json (read 2026-10-26). Leaving it unset would start the
+  Simulator, not Link. Each route's json path is the installer's default; check it on Lynx when the route is installed.
+  `--runtime-json` overrides it.
+- **Item 6:** the Meta plugin requires `XR_EXT_hand_tracking` on the PC path whatever the setting says. The setting
+  (`ControllersAndHands`, frequency High) matters for rung 5's Android manifest. The pawn logs
+  `BpHands: Isdk hand and controller rigs on <runtime>` when the rigs attach.
+
+**The text classes as measured** (`BpView.TextCard`, flat, from the target eye; a seated table at 75 cm gives the same
+angles, because the eye keeps its place over the table):
+
+| Class | Cap (cm) | Distance (cm) | Arcmin | Against the band |
+|---|---|---|---|---|
+| deck title | 1.25 | 75 | 57 | over |
+| deck body, spine title | 0.88 | 75 | 40 | in |
+| deck chips, deck meta, spine kind | 0.75 | 75 | 34 | under the band |
+| sheet figures | 1.44 | 75 | 66 | over |
+| lamp caption | 1.05 | 91 | 40 | in |
+| map feature name (paper middle) | 1.80 | 87 | 35 | under the band |
+| map feature name (plan's far edge) | 2.12 | 112 | 25 | under the band |
+| map bay kind | 2.20 | 87 | 43 | in |
+| map open count, site room name | 1.31 | 87 | 26 | under the band |
+| key plan label | 0.80 | 76 | 27 | under the band |
+| wrist room name / counts / package / sub-line (flat posed wrist, 23 cm) | 0.30 / 0.23 / 0.38 / 0.25 | 23 | 42 / 32 / 53 / 35 | counts and sub-line under |
+
+The paper classes are foreshortened: the map text lies on the paper, seen at the target pitch. The wrist's angles in the
+headset depend on where the owner holds it. The card measures them live.
 
 1. **Seated calibration (blocks).** Today the headset path uses a LocalFloor origin and lowers the pawn by a standing
    eye of 165 cm (`BpPawn.cpp`, `IsHeadsetOn`). The owner sits, so a 95 cm table would sit at chest height.
@@ -108,15 +159,18 @@ All of these can be built and checked in the Simulator before the headset arrive
 ## The session script (about 90 minutes once a route works)
 
 1. **Connect (rung ladder).** Note the route, app versions, refresh rate and whether ASW is off.
-2. **Seat.** The owner sits and holds still for `BpView.Seat`. Log the eye height.
+2. **Seat.** The owner sits and looks straight ahead. The table seats itself once the head is tracked (`BpView: seat
+   headset ...` in the log). Re-seat with the wrist's SEAT or `BpView.Seat` after moving the chair. Log the eye height.
 3. **Comfort.** 5 minutes at the site plan. Enter a room with dive, exit, enter with lift, then switch rooms four
    times by each route. The owner rates comfort 1–5 after each and notes any discomfort.
-4. **Text.** Read the test card and grade every line, then read one decision screen, one sheet and the wrist room list
-   in place.
+4. **Text.** Enter a room, raise the left wrist, and run `BpView.TextCard 1`. The card measures from the eye where it
+   is, so run it after the seat. Grade every line, close the card (`BpView.TextCard 0`), then read one decision screen,
+   one sheet and the wrist room list in place.
 5. **Hands.** Run the gesture list from "What we judge" item 4, five tries each. Record hits and misses and what went
    wrong. Allow 3 tries before calling a gesture failed.
-6. **Frame time.** Run the CSV on pof, both in room mode with the deck and on the site plan, and record p50, p95 and
-   max for GPU and game thread.
+6. **Frame time.** Read the wrist meter, then run the CSV on pof, both in room mode with the deck and on the site plan,
+   and record p50, p95 and max for GPU and game thread:
+   `node apps/vr/tools/run-bplink.mjs --mode game --runtime <route> --product pof --ue-args "-csvCaptureFrames=1800 -csvGpuStats"`.
 7. **Look.** The owner scores the 15 elements in the headset, plus a free note.
 8. **Close.** Note what to change first.
 
