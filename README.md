@@ -48,6 +48,28 @@ scan, every reading projected from the Kettle map and its lens manifests, with K
 
 Keys: `/` search · `1`–`9` lenses (1 = General) · `+` `−` zoom · arrows walk rooms · Enter opens · Esc goes back.
 
+## The companion's API
+
+bp's companion acts only through one tool door: `apps/mcp/bp-mcp.mjs`, a stdio MCP server (`node apps/mcp/bp-mcp.mjs`,
+env `BP_URL`, default `http://127.0.0.1:3100`) whose tools are the catalog in `packages/core/src/companion/catalog.ts`.
+Each tool is one HTTP call to bp. An AUTO tool (reversible, not external) calls its route; a GATED one files a card that
+only a person answers (or a policy grant the person wrote covers). Routes (handlers in `packages/core/src/server/api/companion`,
+contracts in their headers and in `docs/blueprint-ui.md`):
+
+| Route | What |
+|---|---|
+| `GET /api/companion/inbox?limit=50` | Open decisions across every registered product, ranked; `{ items, skipped }` |
+| `POST /api/companion/recommendations` | A recommended verdict on one decision, for batch approval |
+| `GET /api/companion/gaps?product=&limit=20` | Where coverage is lacking (unmeasured, stale, unknown, deviation), scored and ranked |
+| `GET` `POST /api/companion/cards` | The cards, newest first; file a card for a GATED tool (the MCP door's path) |
+| `POST /api/companion/cards/<id>` | Approve or decline a card: the human path (`x-bp-human` token) |
+| `GET` `POST /api/companion/policies`, `DELETE /api/companion/policies/<id>` | Scoped, expiring grants; writes are the human path |
+| `GET` `POST /api/companion/focus` | Show the person a place; `?since=<id>` is VR's poll (`docs/concepts/vr-light-table/companion-link.md`) |
+| `GET /api/companion/human-token` | The human path's token, only to bp's own page (`Sec-Fetch-Site: same-origin`, `Sec-Fetch-Mode: cors`) |
+
+The companion's state lives under `$BP_HOME/companion` (default `<repo>/.bp/companion`, git-ignored). `node
+scripts/check-companion-door.ts` walks the door end to end.
+
 ## What is where
 
 ```

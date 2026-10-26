@@ -21,6 +21,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { TOOLS, classOf, wireName } from '../packages/core/src/companion/catalog.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const UV = process.env.BP_SMOKE_UV ?? 'C:/Users/kazda/ai/tools/uv/uv.exe';
@@ -161,10 +162,11 @@ try {
   const S = `http://127.0.0.1:${sp}`;
   const me = (await request(S, 'GET', '/athena')).json;
   const origin = me?.page_origin;
-  const want = { navigate: 'AUTO', lens_set: 'AUTO', scan_place: 'AUTO', wave_compose: 'AUTO', wave_dispatch: 'GATED', decision_answer: 'GATED', finding_decline: 'AUTO' };
+  // section 4's table is generated from the companion catalog (spark companion-upgrade), so the classes are read from it
+  const want = Object.fromEntries(TOOLS.map((t) => [wireName(t.name), classOf(t)]));
   const got = Object.fromEntries((me?.registered?.tools ?? []).map((t) => [t.name, t.class]));
   const classes = Object.entries(want).map(([n, c]) => `host.bp.${n}=${got[`host.bp.${n}`] ?? 'missing'}${got[`host.bp.${n}`] === c ? '' : ` (want ${c})`}`);
-  check('POST /manifest: accepted, the tools are host:bp with section 4\'s classes', me?.registered?.ok === true && Object.entries(want).every(([n, c]) => got[`host.bp.${n}`] === c) && Object.keys(got).length === 7, JSON.stringify(me?.registered).slice(0, 300));
+  check('POST /manifest: accepted, the tools are host:bp with section 4\'s classes', me?.registered?.ok === true && Object.entries(want).every(([n, c]) => got[`host.bp.${n}`] === c) && Object.keys(got).length === TOOLS.length, JSON.stringify(me?.registered).slice(0, 300));
   note(`manifest classes: ${classes.join(', ')}; page_origin ${origin}`);
   // the open seam: the origin the plan named (127.0.0.1) - refused whole, so nothing of the registration above moves
   const seam = await request(A, 'POST', '/manifest', { headers: H, body: { ...me.manifest, page_origin: `http://127.0.0.1:${sp}` } });

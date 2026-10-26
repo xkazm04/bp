@@ -7,6 +7,9 @@
 //     `http://127.0.0.1:<port>` is refused 400 manifest_invalid. The default origin is http://localhost:<port>.
 //   - tool names: the catalog refuses a dotted name ("not a slug"; it namespaces tools as host.<app>.<name>), so a tool
 //     travels as `wave_dispatch` and is mapped back to the table's `wave.dispatch` here.
+// The tools are the companion's catalog (packages/core/src/companion/catalog.ts, spark companion-upgrade): BP_TOOLS is its
+// projection, and an execute entry runs the one request tool-call.ts builds for it (the MCP door and the cards route build
+// the same), so a tool means one HTTP call whichever door runs it.
 // Execution is idempotent per call_id: a replayed or duplicated execute entry answers the first run's result and runs nothing.
 // A decline runs nothing, whatever the daemon's answer carries. The token is read from the daemon's own file
 // ($ATHENA_HOME/daemon.json, named by the ready line) and is never printed or logged.
@@ -14,46 +17,28 @@ import fs from 'node:fs';
 import { jsonOnly, localHost, localOnly } from '@bp/core/scan/local-only';
 import type { Route } from './mount.ts';
 import { isObj } from '@bp/core/scan/guards';
+import { TOOLS, classOf, wireName, type SideEffects, type ToolClass } from '@bp/core/companion/catalog';
+import { toolOf, toolRequest } from '@bp/core/server/api/companion/tool-call';
 
-export type ToolClass = 'AUTO' | 'GATED';
-export type SideEffects = 'none' | 'internal' | 'external';
+export type { ToolClass, SideEffects };
 
 export interface BpTool {
-  /** The name tech-stack.md section 4 gives it. */
+  /** The catalog's dotted name (packages/core/src/companion/catalog.ts); it travels as `wireName(name)`. */
   name: string;
   description: string;
   reversible: boolean;
   side_effects: SideEffects;
-  /** The class the section 4 table states; athena derives its own from the two flags, and the two must agree. */
+  /** The class derived from the two flags (catalog classOf); athena derives its own from the same flags, and the two agree. */
   cls: ToolClass;
   params_schema: Record<string, unknown>;
 }
 
-const slug = { type: 'string', description: "the product's slug; kettle is the built-in sample" };
-
-/** bp's tools, tech-stack.md section 4. */
-export const BP_TOOLS: readonly BpTool[] = [
-  { name: 'navigate', description: 'Fly the view to a wing, room or feature of the product.', reversible: true, side_effects: 'internal', cls: 'AUTO',
-    params_schema: { type: 'object', properties: { target: { type: 'string', description: 'a wing, room or feature slug' } }, required: ['target'] } },
-  { name: 'lens.set', description: 'Show the map through one lens.', reversible: true, side_effects: 'internal', cls: 'AUTO',
-    params_schema: { type: 'object', properties: { lens: { type: 'string', description: 'a lens id' } }, required: ['lens'] } },
-  { name: 'scan.place', description: 'Start a lens scan of a scope (feature, bay, room, wing or all).', reversible: true, side_effects: 'internal', cls: 'AUTO',
-    params_schema: { type: 'object', properties: { slug, lens: { type: 'string' }, scope: { type: 'object', description: '{ kind, id?, label, features }' } }, required: ['lens', 'scope'] } },
-  { name: 'wave.compose', description: 'Group findings into a draft wave of packages, each with a model and an effort.', reversible: true, side_effects: 'internal', cls: 'AUTO',
-    params_schema: { type: 'object', properties: { slug, name: { type: 'string' }, packages: { type: 'array', maxItems: 20, items: { type: 'object', description: '{ name, model, effort, ids }' } } }, required: ['name', 'packages'] } },
-  { name: 'wave.dispatch', description: "Dispatch a wave: queue its packages' build jobs, which spend money and edit code.", reversible: false, side_effects: 'external', cls: 'GATED',
-    params_schema: { type: 'object', properties: { slug, wave: { type: 'string', description: "the wave's id" }, packages: { type: 'array', maxItems: 20, items: { type: 'string' }, description: 'package ids; default every package' } }, required: ['wave'] } },
-  { name: 'decision.answer', description: "Answer one of the swarm's questions.", reversible: false, side_effects: 'internal', cls: 'GATED',
-    params_schema: { type: 'object', properties: { question: { type: 'string' }, answer: { type: 'string' } }, required: ['question', 'answer'] } },
-  { name: 'finding.decline', description: 'Decline one finding (a proposed change).', reversible: true, side_effects: 'internal', cls: 'AUTO',
-    params_schema: { type: 'object', properties: { slug, id: { type: 'string', description: "the finding's id" }, note: { type: 'string' } }, required: ['id'] } },
-];
+/** bp's tools: the companion catalog projected (spark companion-upgrade; tech-stack.md section 4 is generated from it). */
+export const BP_TOOLS: readonly BpTool[] = TOOLS.map((t) => ({ name: t.name, description: t.description, reversible: t.reversible, side_effects: t.side_effects, cls: classOf(t), params_schema: t.params_schema }));
 
 export const APP_ID = 'bp';
-/** The name a tool travels under: athena's catalog takes a slug, not a dotted name. */
-export const wireName = (name: string): string => name.replace(/\./g, '_');
-/** athena's rule (README section 3.3): AUTO only when reversible and not external. */
-export const classOf = (t: Pick<BpTool, 'reversible' | 'side_effects'>): ToolClass => (t.reversible && t.side_effects !== 'external' ? 'AUTO' : 'GATED');
+/** The name a tool travels under, and athena's class rule: the catalog's, re-exported. */
+export { classOf, wireName };
 
 /** The body of POST /manifest. */
 export function manifestBody(pageOrigin: string, tools: readonly BpTool[] = BP_TOOLS) {
@@ -194,37 +179,24 @@ export class AthenaHost {
     if ((e.origin !== undefined && e.origin !== `host:${APP_ID}`) || !e.name.startsWith(prefix)) return { ...base, ok: false, status: 403, output: `not a ${APP_ID} tool` };
     const tool = this.tools.find((t) => wireName(t.name) === e.name.slice(prefix.length));
     if (!tool) return { ...base, ok: false, status: 404, output: `no ${APP_ID} tool ${e.name}` };
-    const p = isObj(e.params) ? e.params : {};
-    const s = encodeURIComponent(str(p.slug) ?? 'kettle');
-    switch (tool.name) {
-      case 'wave.dispatch': {
-        const w = str(p.wave);
-        if (!w) return { ...base, ok: false, status: 400, output: 'wave.dispatch needs a wave id' };
-        return { ...base, ...(await this.self('POST', `/api/products/${s}/waves/${encodeURIComponent(w)}/dispatch`, Array.isArray(p.packages) ? { packages: p.packages } : {})) };
-      }
-      case 'wave.compose': return { ...base, ...(await this.self('POST', `/api/products/${s}/waves`, { name: p.name, packages: p.packages })) };
-      case 'scan.place': return { ...base, ...(await this.self('POST', `/api/products/${s}/scans`, { lens: p.lens, scope: p.scope })) };
-      case 'finding.decline': {
-        const id = str(p.id);
-        if (!id) return { ...base, ok: false, status: 400, output: 'finding.decline needs a finding id' };
-        return { ...base, ...(await this.self('POST', `/api/products/${s}/proposals/${encodeURIComponent(id)}`, { decision: 'decline', ...(str(p.note) ? { note: p.note } : {}) })) };
-      }
-      // navigate, lens.set and decision.answer have no handler on this server: the first two are the client's view, and the
-      // swarm's questions are answered in the sim the client runs. Said so, never reported as done.
-      default: return { ...base, ok: false, status: 501, output: `${tool.name} is not a server action` };
-    }
+    const spec = toolOf(tool.name);
+    if (!spec) return { ...base, ok: false, status: 501, output: `${tool.name} is not a server action` };
+    // the one request builder the MCP door and the cards route use (tool-call.ts); a dot-segment path param is refused there
+    const r = toolRequest(spec, isObj(e.params) ? e.params : {});
+    if ('error' in r) return { ...base, ok: false, status: 400, output: r.error };
+    return { ...base, ...(await this.self(r.method, r.path, r.body)) };
   }
 
   /** One request to this server's own handler, in process, as the mount would make it. */
-  private async self(method: 'POST', p: string, body: unknown): Promise<{ ok: boolean; status: number; output: unknown }> {
+  private async self(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', p: string, body: unknown): Promise<{ ok: boolean; status: number; output: unknown }> {
     const url = new URL(p, `http://${this.selfHost}`);
     // a param `.` or `..` (the model's) survives encodeURIComponent and the parser folds it into another route's path
-    if (url.pathname !== p) return { ok: false, status: 400, output: `not a plain path: ${JSON.stringify(p)}` };
+    if (url.pathname + url.search !== p) return { ok: false, status: 400, output: `not a plain path: ${JSON.stringify(p)}` };
     let params: Record<string, string | string[]> | null = null;
     const route = this.routes.find((r) => (params = r.match(url.pathname)));
     const handler = route?.handlers[method];
     if (!route || !params || !handler) return { ok: false, status: 404, output: `no route ${method} ${url.pathname}` };
-    const req = new Request(url, { method, headers: { host: this.selfHost, 'content-type': 'application/json' }, body: JSON.stringify(body ?? {}) });
+    const req = new Request(url, { method, headers: { host: this.selfHost, 'content-type': 'application/json' }, ...(method === 'GET' ? {} : { body: JSON.stringify(body ?? {}) }) });
     try {
       const r = await handler(req, { params: Promise.resolve(params) });
       const text = await r.text();
