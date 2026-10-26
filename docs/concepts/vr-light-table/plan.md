@@ -36,8 +36,8 @@ Owner and agent, about a day.
 - Confirm GPU (24 GB minimum, 32 GB preferred) and RAM (64 GB minimum) and record them in
   `docs/concepts/vr-light-table/machine.md`.
 - UE 5.8.x (5.8.2 when this was written; Wolf read 5.8.3 on 2026-10-07, and the installed patch is used and
-  recorded, wolf-plan R2) plus Meta XR v207 and the Interaction SDK, installed with mage-arena-vr's
-  `apps/vr/tools/install-xr.ps1`, adapted to bp's `apps/vr`.
+  recorded, wolf-plan R2) plus Meta XR v207 and the Interaction SDK, installed with
+  `apps/vr/tools/install-xr.ps1`.
 - Meta Quest Link (owner: account sign-in, developer mode on the headset).
 - ComfyUI with FLUX.2 [klein] 9B, FLUX.2 [dev] and Qwen-Image; TRELLIS.2 with its own environment;
   Blender for headless finishing.

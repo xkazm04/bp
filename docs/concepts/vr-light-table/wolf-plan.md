@@ -79,8 +79,7 @@ Wolf's tooling only sees a project that is registered. Before any other step:
 - [ ] Proof: `projects.json` lists the Wolf checkout for `bp`, and the registry commit is on `origin/main`.
 
 
-Owner and agent, about half a day if mage-arena-vr's toolchain is still on the box (`mage-arena-vr` on Wolf is at
-`kiro/mage-arena-vr`, per the ai-registry fleet file). Record each verify output in
+Owner and agent, about half a day. Record each verify output in
 `runs/<date>-wolf-p0.md` and the facts in `machine.md`.
 
 | # | Item | Version | Verify command (PowerShell) | Expected | Machine |
@@ -97,8 +96,7 @@ Owner and agent, about half a day if mage-arena-vr's toolchain is still on the b
 | S10 | Athena daemon (needed from P5) | athena-portable on Wolf, `kiro/athena-portable` | `uv run athena serve`, then `curl http://127.0.0.1:<port>/manifest` | 200. `/voice/install` installs Kokoro and Whisper. Proof: `/voice/preview` speaks one line (plan.md P0 tool check) | Wolf |
 | S11 | pof gap-fillers and the UE 5.8 editor MCP (needed from P4) | pof on Wolf, `kiro/pof` | per `pof/docs/ue58-mcp-phase2-tool-map.md` **[verify on Wolf]** | the session can list editor actors and call `capture_viewport` | Wolf |
 
-**`apps/vr/tools/install-xr.ps1` (new, Wolf).** Adapt mage-arena-vr's `apps/vr/tools/install-xr.ps1` by reading it in
-that repository, not by copying it blind. Keep:
+**`apps/vr/tools/install-xr.ps1` (Wolf).** The script is in this repo. It keeps:
 
 - the two official Meta download pages, and `curl.exe -fL --retry 3`;
 - the pinned SHA-256 table (`PinnedSha256`), which refuses an unknown file name before download and a hash mismatch
@@ -106,17 +104,16 @@ that repository, not by copying it blind. Keep:
 - the `OWNER_ACTION` refusals for a login or licence wall (the script never logs in or clicks through);
 - `Install-PluginZip` with its `1.207.0` / `5.8.0` presence check, and the BuildId against CompatibleChangelist report.
 
-Change:
+Where it differs from the script it was adapted from:
 
 - `VrRoot` is `apps/vr`, `PluginsDir` is `apps/vr/Plugins`, `CacheDir` is `apps/vr/.cache/xr`, and `Uproject` is
   `apps/vr/bp.uproject`;
 - add `OculusXR` and `OculusInteraction` to the `.uproject` with `"Optional": true`, so that a fresh clone without
-  the git-ignored plugin trees still opens (mage-arena-vr's hardening note);
+  the git-ignored plugin trees still opens;
 - remove the Android SDK, NDK and JDK half (`Set-MageAndroidToolchain` and the functions it calls). The quality bar is
   PC-tethered, so no APK is built.
 
-To skip the 1.1 GB download, first copy the two zips from `kiro/mage-arena-vr/apps/vr/.cache/xr/` into
-`apps/vr/.cache/xr/`. The pinned hash still checks them. Commit the script. Never commit the plugin trees or the cache.
+The 1.1 GB download lands in `apps/vr/.cache/xr/`; the pinned hash checks it. Never commit the plugin trees or the cache.
 
 ---
 
@@ -202,7 +199,7 @@ Depends on S1 to S5 and S9's toolchain. This expands `apps/vr/WP3.1.md`. Where t
      **Maximum**, **no Starter Content**, **no raytracing**.
      Project location `%TEMP%\bp-ue` (outside the repo). Project name **`bp`**. Create, then close the editor.
      (Blank, not the VR template: the VR template enables the stock OpenXR plugins and content. Meta XR v207 is added
-     by S6 the way mage-arena-vr verified it. Whether the template's OpenXR plugin would conflict is untested and
+     by S6. Whether the template's OpenXR plugin would conflict is untested and
      **[verify on Wolf]**.)
   2. Move what the editor made into `apps/vr`, leaving the build output behind:
      `robocopy "$env:TEMP\bp-ue\bp" apps\vr bp.uproject /COPY:DAT; robocopy "$env:TEMP\bp-ue\bp\Config" apps\vr\Config /E; robocopy "$env:TEMP\bp-ue\bp\Content" apps\vr\Content /E; robocopy "$env:TEMP\bp-ue\bp\Source" apps\vr\Source /E /XD BpLink`.

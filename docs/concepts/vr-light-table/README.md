@@ -22,7 +22,7 @@ lenses, scans and waves, drawn for a headset.
 
 | Decision | Chosen | Rejected |
 |---|---|---|
-| Runtime | **Unreal Engine 5.8 + Meta XR v207**, the route mage-arena-vr verified on the GPU box | WebXR inside bp; Unity 6 |
+| Runtime | **Unreal Engine 5.8 + Meta XR v207**, installed by `apps/vr/tools/install-xr.ps1` | WebXR inside bp; Unity 6 |
 | Sharing | bp becomes a **monorepo**. The logic lives once, in TypeScript (`packages/core`), and a headless server serves it; the UE app is a thin renderer and interaction client. Each channel keeps its own stack and dev loop | Porting the core to C++ (two copies of every rule); hybrid layout port |
 | Quality bar | **PC-tethered** Quest 3 (Link / Air Link) rendered by the GPU workstation | Standalone Quest; two tiers from day one |
 | Agent | **The Athena daemon itself**: its voice socket (local Kokoro TTS, Whisper), the AUTO/GATED gate, decision cards and ledger. bp registers its actions as tools | Re-implementing the gate in bp |

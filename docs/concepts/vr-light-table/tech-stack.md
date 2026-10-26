@@ -32,11 +32,9 @@ Runtime data flow, all on localhost:
 
 ## 2. Runtime: Unreal 5.8 + Meta XR v207
 
-Chosen by the owner. mage-arena-vr already proved the route on the same GPU box
-(`mage-arena/docs/XR-TOOLCHAIN.md`): UE 5.8.2, the Meta XR plugin v207 and Meta Interaction SDK v207
-installed project-local by a repeatable script (`apps/vr/tools/install-xr.ps1` in that repo), Win64
-boots against the Meta XR Simulator's Quest 3 profile. bp reuses that script and that decision record
-rather than re-investigating. The Android APK path is not needed: the quality bar is PC-tethered.
+Chosen by the owner: UE 5.8.2, the Meta XR plugin v207 and Meta Interaction SDK v207 installed
+project-local by a repeatable script (`apps/vr/tools/install-xr.ps1`), Win64 boots against the Meta XR
+Simulator's Quest 3 profile. The Android APK path is not needed: the quality bar is PC-tethered.
 
 What UE buys for this concept, element by element, is in `art-breakdown.md`. The short version: real
 emissive light from the table onto the hands, translucent extrusions with edge glow, fog with light
@@ -187,8 +185,7 @@ acceptance gate and a poly budget before UE imports it; the style block is resta
 | Storage | 1 TB NVMe | 2 TB NVMe | UE 5.8 (about 100 GB with DDC), model weights (FLUX.2 alone 60+ GB across variants) |
 | Headset link | Quest 3 + USB-C 3 Link cable | plus a Wi-Fi 6E access point for Air Link | the tethered quality bar |
 
-mage-arena-vr's machine facts (UE 5.8.2 installed, Meta XR v207 cached) suggest that box is the
-intended one; P0 confirms the GPU and RAM on it.
+P0 confirms the GPU and RAM on the intended box.
 
 *2026-10-23 (owner): the GPU workstation is **Lynx**, the only build host; Wolf, the box the paragraph above meant, is
 retired. Lynx is Windows 11 Pro on ARM64 with an NVIDIA RTX Spark N1X (`nvidia-smi`: `64000 MiB`; whether that is
@@ -223,4 +220,4 @@ props are candidates to send back as registry leads.
 - [The Best Open-Source Image Generation Models in 2026](https://www.bentoml.com/blog/a-guide-to-open-source-image-generation-models)
 - [Local image models in 2026: Qwen vs FLUX vs SDXL on VRAM](https://botmonster.com/ai/best-local-image-generation-models-2026/)
 - [WebGPU on WebXR, three.js issue #32858](https://github.com/mrdoob/three.js/issues/32858) (why WebXR on Quest could not reach this look)
-- Local: `mage-arena/docs/XR-TOOLCHAIN.md`, `mage-arena/docs/PROJECT-PLAN.md`, `pof/docs/ue58-mcp-phase2-tool-map.md`, `athena-portable/docs/daemon.md`
+- Local: `pof/docs/ue58-mcp-phase2-tool-map.md`, `athena-portable/docs/daemon.md`

@@ -27,7 +27,7 @@ with Meta XR v207 and the Meta Interaction SDK, drawing the product at a backlit
 
 There is no Unreal project here yet, on purpose. Unreal is not installed on the machine this was laid out on, and
 the project is created in phase P3 (WP3.1) on the GPU workstation, after P0 has installed UE 5.8.2
-and the Meta plugins (mage-arena-vr's `apps/vr/tools/install-xr.ps1`, adapted to this folder). Do not
+and the Meta plugins (`apps/vr/tools/install-xr.ps1`). Do not
 add a `.uproject` by hand.
 
 > **Correction 2026-10-22 (Lynx).** "Unreal is not installed on the machine this was laid out on" is out of date: since
