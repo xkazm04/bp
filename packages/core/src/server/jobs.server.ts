@@ -274,7 +274,14 @@ export function reconcileJobs(slug: string, root: string): void {
     if (ph === 'queued') gone('the server restarted while this job was queued; it never ran');
     else if (ph === 'running') {
       if (adoptable(r.pid)) r.orphan = true;
-      else gone(`the server restarted and this job's process${r.pid !== undefined ? ` (pid ${r.pid})` : ''} was gone`);
+      else {
+        // Its process is gone, but it may have finished its work first: judge it by the store, as the orphan watch does. Found
+        // 2026-10-26: a Grinex measure run ended `done` in the store while the server that started it was wedged, and the restart
+        // would have failed a job whose 326 readings were there.
+        const run = r.job.kind === 'measure' || r.job.kind === 'execute' ? r.job.run_id ?? runOf(root, r.job.id) : undefined;
+        if (run) { Object.assign(r.job, { status: 'done', run_id: run }); r.job.ended_at ??= now(); step(r, 'exit'); }
+        else gone(`the server restarted and this job's process${r.pid !== undefined ? ` (pid ${r.pid})` : ''} was gone`);
+      }
     } else if (ph === 'cancelling') {
       if (adoptable(r.pid)) { r.orphan = true; killPid(r.pid); } // the kill the restart may have cut short
       else { r.job.ended_at ??= now(); step(r, 'exit'); }

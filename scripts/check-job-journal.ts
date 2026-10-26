@@ -7,7 +7,8 @@
 //   cancelled one a terminal line; no line carries log_tail.
 //   RECONCILE half, each over a fresh evaluation of the module whose globalThis registry was wiped (a process restart):
 //   - a job last seen `queued` comes back `failed`, naming the restart;
-//   - a job last seen `running` whose pid is gone comes back `failed`, naming the restart and the pid;
+//   - a job last seen `running` whose pid is gone comes back `failed`, naming the restart and the pid - unless its run reached
+//     the store first (a CLI that finished while the server was down), then `done` with that run;
 //   - one whose pid is alive is adopted as running (holds a slot, is cancellable by pid, ends when the pid does);
 //   - an old line (12 h) whose pid is alive is NOT adopted: a pid that old may belong to a stranger;
 //   - a finished job comes back as it was; a torn last line is skipped;
@@ -122,10 +123,19 @@ try {
     { at, slug: 'p2', pid: 1, job: { ...base, id: 'j-done-0001', status: 'done', started_at: at, ended_at: at, exit_code: 0, run_id: 'run-9' } },
     { at, slug: 'p2', pid: gonePid, job: { ...base, id: 'j-dead-0002', status: 'running', started_at: at } },
     { at, slug: 'other', pid: gonePid, job: { ...base, id: 'j-other-0003', status: 'running', started_at: at } },
+    { at, slug: 'p2', pid: gonePid, job: { ...base, id: 'j-ran-0006', status: 'running', started_at: at } },
   ].map((l) => JSON.stringify(l)).join('\n') + '\n{"at":"torn","slug":"p2","job":{"id":"j-to');
+  // j-ran-0006's process is gone too, but its run reached the store first (what a CLI that finished while the server was down leaves)
+  {
+    const db = new DatabaseSync(path.join(D, '.ai', 'lens-scan', 'scan.db'));
+    db.exec(fs.readFileSync(path.join(ROOT, 'docs/standard/lens-scan-store.sql'), 'utf8'));
+    db.prepare("INSERT INTO runs (id, started_at, updated_at, ended_at, phase, status, lenses, note) VALUES ('run-ran', ?, ?, ?, 'measure', 'done', '[]', 'bp-job:j-ran-0006')").run(at, at, at);
+    db.close();
+  }
   const M3 = await restart();
   M3.reconcileJobs('p2', D);
-  const l3 = M3.list('p2');
+  const l3 = M3.list('p2').filter((j) => j.id !== 'j-ran-0006');
+  check('dead pid, but its run is in the store: done, with that run', get(M3, 'p2', 'j-ran-0006')?.status === 'done' && get(M3, 'p2', 'j-ran-0006')?.run_id === 'run-ran', JSON.stringify(get(M3, 'p2', 'j-ran-0006')));
   check('dead pid: the running job is failed, naming the restart and the pid', get(M3, 'p2', 'j-dead-0002')?.status === 'failed' && /restarted/.test(get(M3, 'p2', 'j-dead-0002')?.error ?? '') && (get(M3, 'p2', 'j-dead-0002')?.error ?? '').includes(String(gonePid)), get(M3, 'p2', 'j-dead-0002')?.error);
   check('a finished job comes back as it was', get(M3, 'p2', 'j-done-0001')?.status === 'done' && get(M3, 'p2', 'j-done-0001')?.run_id === 'run-9');
   check('another product on the same root is left alone; a torn last line is skipped', l3.length === 2 && M3.list('other').length === 0, String(l3.length));
