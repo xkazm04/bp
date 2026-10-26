@@ -106,8 +106,19 @@ FRONT_RADIUS = 150.0
 FRONT = unreal.Color(r=225, g=232, b=255, a=255)
 # hands-capture: the capture frame's origin at the centre of the near paper edge (ABpTable: paper 76 cm deep, 0.8 cm
 # under the top); HANDS_IN moves the pair onto the paper, so the left fingertips rest on it and not over the rim (FB).
-HANDS_MESHES = ("/Game/Bp/Art/HandsCapture/hands_capture/StaticMeshes/hand_l",
-                "/Game/Bp/Art/HandsCapture/hands_capture/StaticMeshes/hand_r")
+# FT2: HANDS picks the pair. "metahuman" is the MetaHuman Creator forearms and hands with the MetaHuman skin
+# (import_mh_hands.py), in the same frame and pose; "hands-capture" is FB's MakeHuman pair, kept as the fallback.
+# The MetaHuman assets are not in git (bp is public; the owner's licence ruling, 2026-10-26), so a checkout that has not
+# built them locally (apps/vr/README.md, "MetaHuman hands") falls back to the MakeHuman pair.
+MH_HAND_L = "/Game/Bp/Art/MetaHumanHands/hands_metahuman/StaticMeshes/hand_l"
+HANDS = "metahuman" if unreal.EditorAssetLibrary.does_asset_exist(MH_HAND_L) else "hands-capture"
+unreal.log(f"studio_level: hands={HANDS}")
+HANDS_MESHES = {
+    "metahuman": (MH_HAND_L,
+                  "/Game/Bp/Art/MetaHumanHands/hands_metahuman/StaticMeshes/hand_r"),
+    "hands-capture": ("/Game/Bp/Art/HandsCapture/hands_capture/StaticMeshes/hand_l",
+                      "/Game/Bp/Art/HandsCapture/hands_capture/StaticMeshes/hand_r"),
+}[HANDS]
 PAPER_NEAR_X = -38.0
 PAPER_Z = TABLE_TOP - 0.8
 HANDS_IN = 4.0
@@ -115,7 +126,10 @@ HANDS_YAW = 90.0
 # The wrist panel's point on the left hand, in the hand mesh's axes (cm): the watch's centre (FD's manifest: Blender
 # (-21.8, -1.5, 12.95) cm, so UE mesh (-21.8, 1.5, 12.95): Interchange negates Y) lifted to the face's top; the panel's
 # own offset from it is BpPawn::WristCapture*.
-WRIST_LOCAL = (-17.4, 13.7, 11.8)  # FL's hands (01ab214): the watch face tilts with the rising forearm
+WRIST_LOCAL = {
+    "hands-capture": (-17.4, 13.7, 11.8),  # FL's hands (01ab214): the watch face tilts with the rising forearm
+    "metahuman": (-12.6, 12.9, 13.6),  # build_mh_hands.bpy's watch face_ue_mesh_cm (its mh_hands.json)
+}[HANDS]
 
 # FD's pendant lamps over the side desks (spark vr-fidelity-40 FF): pivot at the canopy, dome rim PENDANT_DROP below it.
 # Hung from the ceiling (pivot at 300) they sit above the target pose's frame (its top edge is about 1.3 m up on the back

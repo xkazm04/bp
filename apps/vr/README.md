@@ -105,6 +105,26 @@ and prints the Kettle line (readings 10 and 14).* The other C++ front end in thi
 `FBpStructureEnvelope` and `FBpScanWire` have never been through it. No gate runs that command: `check:schema` asserts
 only that `check.cpp` names all six roots.
 
+## MetaHuman hands (built locally, never committed)
+
+The capture hands can be MetaHuman Creator's forearms and hands with its skin (spark vr-fidelity-40 FT/FT2). MetaHuman is
+licensed under the Unreal Engine EULA (UE 5.6 and later), and bp is a public repository, so the owner ruled on
+2026-10-26: **the code is public, and the MetaHuman content stays out of git.** `.gitignore` excludes
+`Content/Bp/Art/MetaHuman/` and `Content/Bp/Art/MetaHumanHands/`; the intermediate FBX and GLB live in `Saved/`. Each
+machine builds the content from its own Epic-licensed engine, with the MetaHuman Creator plugin and its Core Data
+installed:
+
+1. `node apps/vr/tools/mcp-call.mjs python apps/vr/tools/mcp-steps/py/ft_metahuman.py --log apps/vr/tools/mcp-steps/ft-metahuman.jsonl`
+   creates the character `MHC_CaptureHands`, sets the skin and exports the body (offline; start the editor with
+   `mcp-editor.mjs start --ue-args -NoMetaHumanAccountPortalLoginFallback` for headless work).
+2. `blender -b -P scripts/art/hands/build_mh_hands.bpy -- <body.fbx> <Saved/MetaHumanHands/hands.glb> <Saved/MetaHumanHands>`
+   poses and cuts the forearms and hands.
+3. `import_mh_hands.py`, then `studio_level.py`, through `mcp-call.mjs` as above.
+
+A checkout without these assets falls back to the MakeHuman pair (`studio_level.py` logs `hands=hands-capture`). Never
+commit anything under those two folders, and never push the local branch `local/metahuman-hands`: it holds the
+original commit with the assets.
+
 ## BpLink contract
 
 The requests the `BpLink` module will make for Kettle, against `apps/server` with no products file. `npm run check:bplink`

@@ -5,7 +5,9 @@
 // PoFViewportTools.capture_viewport can render. The environment is start-editor.ps1's: the bundled win-x64 dotnet first
 // on PATH, so the editor's own UBT and Python calls work on ARM64.
 //
-//   node apps/vr/tools/mcp-editor.mjs start [--timeout <s>]   # spawn, wait until the server answers, print MCP_READY
+//   node apps/vr/tools/mcp-editor.mjs start [--timeout <s>] [--ue-args "<extra editor args>"]
+//                                                             # spawn, wait until the server answers, print MCP_READY
+//   (MetaHuman Creator work headless: --ue-args -NoMetaHumanAccountPortalLoginFallback, so no Epic login fallback opens)
 //   node apps/vr/tools/mcp-editor.mjs stop                    # kill the editor tree recorded in the pid file
 //   node apps/vr/tools/mcp-editor.mjs status
 //
@@ -60,7 +62,8 @@ const env = {
 fs.mkdirSync(path.dirname(LOG), { recursive: true });
 const fd = fs.openSync(LOG, 'w');
 const args = [uproject, '-RenderOffScreen', '-unattended', '-nosplash', '-nosound', '-stdout', '-FullStdOutLogOutput',
-  '-ModelContextProtocolStartServer', `-ModelContextProtocolPort=${PORT}`];
+  '-ModelContextProtocolStartServer', `-ModelContextProtocolPort=${PORT}`,
+  ...(opt('--ue-args', '').split(' ').filter(Boolean))];
 const child = spawn(exe, args, { cwd: path.dirname(exe), env, stdio: ['ignore', fd, fd], detached: true, windowsHide: true });
 child.unref();
 fs.writeFileSync(STATE, JSON.stringify({ pid: child.pid, log: LOG, started: new Date().toISOString() }, null, 2));

@@ -60,6 +60,10 @@ apps/vr/**/Plugins/PoFToolset/
 apps/vr/.cache/
 # BpLink's junction to packages/schema/generated/ue (made by apps/vr/tools/link-schema.ps1); the headers live only there
 apps/vr/Source/BpLink/Public/Schema/
+# MetaHuman content (the character, its skin and the capture hands built from it) stays out of this public repository
+# (owner, 2026-10-26): each machine builds it locally, apps/vr/README.md "MetaHuman hands"
+apps/vr/Content/Bp/Art/MetaHuman/
+apps/vr/Content/Bp/Art/MetaHumanHands/
 *.sln
 *.suo
 *.VC.db
