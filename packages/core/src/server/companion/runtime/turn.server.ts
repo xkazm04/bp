@@ -17,7 +17,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { LEG_MODELS, MCP_SERVER_NAME, MCP_SERVER_PATH, type FailureClass, type TurnEvent, type TurnRequest, type LegKind } from '../contract.ts';
+import { LEG_MODELS, MCP_SERVER_NAME, MCP_SERVER_PATH, type FailureClass, type TurnEvent, type TurnRequest, type LegKind } from '../../../companion/contract.ts';
 import { publish } from '../bus.server.ts';
 import { companionHome, repoRoot } from '../home.server.ts';
 import { appendEpisode, recallBlock, sleepIfDue } from '../brain/brain.server.ts';

@@ -1,14 +1,14 @@
 // POST /api/companion/turn, body `TurnRequest` `{ conversationId?, product?, text }` (packages/core/src/companion/contract.ts):
 // one companion turn as Server-Sent Events, `event: <TurnEvent type>` and `data: <TurnEvent json>`: start, text / tool /
 // tool_result, then exactly one end (`done` | `interrupted` | `failed` with its failure class, and costUsd or null). The turn
-// engine is packages/core/src/companion/runtime/turn.server.ts; this adapter only validates, maps ThreadBusy to **409**
+// engine is packages/core/src/server/companion/runtime/turn.server.ts; this adapter only validates, maps ThreadBusy to **409**
 // `{ error: 'thread_busy' }` (before any SSE header: the generator's first step takes the conversation's lock) and frames
 // events. A client that goes away cancels the turn (its end still reaches /api/companion/stream and the ledger). **400** for
 // a bad body. The MCP server the turn starts calls bp back at this request's origin.
 // Runtime state (locks, running turns) is per process: apps/server (:3100) is the canonical host; `next dev` has its own.
 import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
-import { CONVERSATION_ID } from '@bp/core/companion/runtime/store.server';
-import { ThreadBusy, cancelTurn, runTurn } from '@bp/core/companion/runtime/turn.server';
+import { CONVERSATION_ID } from '@bp/core/server/companion/runtime/store.server';
+import { ThreadBusy, cancelTurn, runTurn } from '@bp/core/server/companion/runtime/turn.server';
 import type { TurnEvent, TurnRequest } from '@bp/core/companion/contract';
 
 const MAX_TEXT = 8000;

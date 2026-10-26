@@ -1,4 +1,4 @@
-// Checks the companion's brain (packages/core/src/companion/brain, spark companion-upgrade P2) against a temp BP_HOME per case:
+// Checks the companion's brain (packages/core/src/server/companion/brain, spark companion-upgrade P2) against a temp BP_HOME per case:
 //   fts5        this Node's sqlite has FTS5 (else the LIKE fallback is what runs, and the line says so)
 //   provenance  writeFact refuses no source, an unknown episode, a fact id as a source and a source from another space
 //   atomic      a killed write (a half-written temp beside the file) leaves the file whole, readers ignore the temp, a
@@ -21,16 +21,16 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HOOKS = './lib/src-hooks.mjs';
 ((await import(HOOKS)) as { registerSrcHooks: (root: string) => void }).registerSrcHooks(ROOT);
 const load = (rel: string): Promise<unknown> => import(pathToFileURL(path.join(ROOT, rel)).href);
-const B = 'packages/core/src/companion/brain/';
-const brain = await load(B + 'brain.server.ts') as typeof import('../packages/core/src/companion/brain/brain.server.ts');
-const paths = await load(B + 'paths.server.ts') as typeof import('../packages/core/src/companion/brain/paths.server.ts');
-const files = await load(B + 'files.server.ts') as typeof import('../packages/core/src/companion/brain/files.server.ts');
-const index = await load(B + 'index.server.ts') as typeof import('../packages/core/src/companion/brain/index.server.ts');
-const recall = await load(B + 'recall.server.ts') as typeof import('../packages/core/src/companion/brain/recall.server.ts');
-const sleep = await load(B + 'sleep.server.ts') as typeof import('../packages/core/src/companion/brain/sleep.server.ts');
+const B = 'packages/core/src/server/companion/brain/';
+const brain = await load(B + 'brain.server.ts') as typeof import('../packages/core/src/server/companion/brain/brain.server.ts');
+const paths = await load(B + 'paths.server.ts') as typeof import('../packages/core/src/server/companion/brain/paths.server.ts');
+const files = await load(B + 'files.server.ts') as typeof import('../packages/core/src/server/companion/brain/files.server.ts');
+const index = await load(B + 'index.server.ts') as typeof import('../packages/core/src/server/companion/brain/index.server.ts');
+const recall = await load(B + 'recall.server.ts') as typeof import('../packages/core/src/server/companion/brain/recall.server.ts');
+const sleep = await load(B + 'sleep.server.ts') as typeof import('../packages/core/src/server/companion/brain/sleep.server.ts');
 const route = await load('packages/core/src/server/api/companion/brain/route.ts') as typeof import('../packages/core/src/server/api/companion/brain/route.ts');
-type LegRequest = import('../packages/core/src/companion/runtime/turn.server.ts').LegRequest;
-type LegResult = import('../packages/core/src/companion/runtime/turn.server.ts').LegResult;
+type LegRequest = import('../packages/core/src/server/companion/runtime/turn.server.ts').LegRequest;
+type LegResult = import('../packages/core/src/server/companion/runtime/turn.server.ts').LegResult;
 
 let failed = 0;
 const check = (name: string, ok: boolean, detail = ''): void => { if (!ok) failed++; console.log(`${ok ? 'ok  ' : 'FAIL'}  ${name}${ok || !detail ? '' : `  (${detail})`}`); };
@@ -257,7 +257,7 @@ try {
   index.closeIndex();
   for (const d of homes) { try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* windows may hold a handle */ } }
 }
-type Leg = import('../packages/core/src/companion/brain/sleep.server.ts').Leg;
+type Leg = import('../packages/core/src/server/companion/brain/sleep.server.ts').Leg;
 
 console.log(failed ? `check-companion-brain: ${failed} failed` : 'check-companion-brain: all passed');
 process.exit(failed ? 1 : 0);

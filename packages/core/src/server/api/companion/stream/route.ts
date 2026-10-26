@@ -1,5 +1,5 @@
 // GET /api/companion/stream: Server-Sent Events of every CompanionEvent on this process's bus
-// (packages/core/src/companion/bus.server.ts), `event: <type>` and `data: <the CompanionEvent json>`:
+// (packages/core/src/server/companion/bus.server.ts), `event: <type>` and `data: <the CompanionEvent json>`:
 //   event: status  { type, busy, sleeping }: on connect, and when a turn starts or ends
 //   event: turn    { type, conversationId, event: TurnEvent }: every turn's events, whoever started it
 //   event: card    { type, card }: a GATED tool's card, as it is created and decided
@@ -9,8 +9,8 @@
 // Runtime state (the bus, locks, running turns) is per process: apps/server (:3100) is the canonical host; `next dev` has its
 // own bus, so a page on it does not hear apps/server's turns.
 import { localHost } from '@bp/core/scan/local-only';
-import { subscribe } from '@bp/core/companion/bus.server';
-import { heldKeys } from '@bp/core/companion/runtime/locks.server';
+import { subscribe } from '@bp/core/server/companion/bus.server';
+import { heldKeys } from '@bp/core/server/companion/runtime/locks.server';
 import type { CompanionEvent } from '@bp/core/companion/contract';
 
 const PING_MS = 15_000;

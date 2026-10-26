@@ -19,8 +19,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { companionHome } from '../../../companion/home.server.ts';
-import { publish } from '../../../companion/bus.server.ts';
+import { companionHome } from '../../companion/home.server.ts';
+import { publish } from '../../companion/bus.server.ts';
 import { HUMAN_HEADER, type Card, type PolicyGrant, type Verdict } from '../../../companion/contract.ts';
 import type { ToolSpec } from '../../../companion/catalog.ts';
 import { bounded, isGated, productOf, toolOf, toolRequest } from './tool-call.ts';

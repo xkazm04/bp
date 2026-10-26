@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { LegKind } from '../contract.ts';
+import type { LegKind } from '../../../companion/contract.ts';
 import { companionHome } from '../home.server.ts';
 import type { ConversationInfo } from './turn.server.ts';
 

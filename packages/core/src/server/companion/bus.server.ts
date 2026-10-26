@@ -2,7 +2,7 @@
 // events, the card and focus routes publish theirs, and the last FOCUS_KEEP focus commands stay readable for a client that
 // polls instead of streaming (VR's BpLink: GET /api/companion/focus?since=<id>). One bus per server process; the companion is
 // served by one process (apps/server is canonical), so nothing here is shared across processes.
-import type { CompanionEvent, FocusCommand } from './contract.ts';
+import type { CompanionEvent, FocusCommand } from '../../companion/contract.ts';
 
 if (typeof window !== 'undefined') throw new Error('bus.server.ts is server-only');
 

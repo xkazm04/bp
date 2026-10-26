@@ -6,7 +6,7 @@
 // `since` is unknown or absent): VR's BpLink polls this (docs/concepts/vr-light-table/companion-link.md). Localhost only.
 import { jsonOnly, localHost, localOnly } from '../../../../scan/local-only.ts';
 import { KETTLE_SLUG, findProduct } from '../../../products.server.ts';
-import { focusSince, publish } from '../../../../companion/bus.server.ts';
+import { focusSince, publish } from '../../../companion/bus.server.ts';
 import type { FocusCommand, FocusKind } from '../../../../companion/contract.ts';
 import { sortableId } from '../door.server.ts';
 

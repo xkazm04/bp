@@ -19,8 +19,8 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
-import { MCP_SERVER_NAME, type FailureClass, type TurnEvent } from '../contract.ts';
-import { toolByWire } from '../catalog.ts';
+import { MCP_SERVER_NAME, type FailureClass, type TurnEvent } from '../../../companion/contract.ts';
+import { toolByWire } from '../../../companion/catalog.ts';
 
 if (typeof window !== 'undefined') throw new Error('cli.server.ts is server-only');
 

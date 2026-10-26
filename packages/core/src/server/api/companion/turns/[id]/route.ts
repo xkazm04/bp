@@ -3,7 +3,7 @@
 // under that id (finished, never started, or run by another process).
 // Runtime state (locks, running turns) is per process: apps/server (:3100) is the canonical host; `next dev` has its own.
 import { localOnly } from '@bp/core/scan/local-only';
-import { cancelTurn } from '@bp/core/companion/runtime/turn.server';
+import { cancelTurn } from '@bp/core/server/companion/runtime/turn.server';
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }): Promise<Response> {
   const denied = localOnly(req);

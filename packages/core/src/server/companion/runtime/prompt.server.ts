@@ -8,8 +8,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
-import { MCP_SERVER_NAME } from '../contract.ts';
-import { TOOLS, classOf, wireName } from '../catalog.ts';
+import { MCP_SERVER_NAME } from '../../../companion/contract.ts';
+import { TOOLS, classOf, wireName } from '../../../companion/catalog.ts';
 import { companionHome } from '../home.server.ts';
 
 if (typeof window !== 'undefined') throw new Error('prompt.server.ts is server-only');
