@@ -454,6 +454,23 @@ ABpTable::ABpTable()
 	RoomNames = MakeVolumes(TEXT("RoomNames"));
 	RoomNames->NumCustomDataFloats = 4;
 	RoomNames->SetStaticMesh(EnginePlane);
+
+	// Room mode (BpRoom.cpp): the map's overlay during the fade (the engine plane, as SheetOverlay), the cells' low walls
+	// (the rest extrusions' layout: size, Show, face), and the findings' beads and halos (the pins' spheres).
+	RoomOverlay = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("RoomOverlay"));
+	RoomOverlay->SetupAttachment(Root);
+	RoomOverlay->SetStaticMesh(EnginePlane);
+	RoomOverlay->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	RoomOverlay->SetCastShadow(false);
+	RoomOverlay->SetVisibility(false);
+	MapWalls = MakeVolumes(TEXT("RoomWalls"));
+	MapWalls->NumCustomDataFloats = VolumeCustomFloats + 1;
+	RoomBeads = MakeVolumes(TEXT("RoomBeads"));
+	RoomBeads->NumCustomDataFloats = 0;
+	RoomBeads->SetStaticMesh(EngineSphere);
+	RoomHalos = MakeVolumes(TEXT("RoomHalos"));
+	RoomHalos->NumCustomDataFloats = 0;
+	RoomHalos->SetStaticMesh(EngineSphere);
 }
 
 float ABpTable::HeightCvarCm()
@@ -565,7 +582,14 @@ void ABpTable::Tick(float DeltaSeconds)
 	{
 		AdvanceLevels(FMath::Min(DeltaSeconds, 0.05f));
 		ApplyLevelVisuals();
-		if (!IsLevelMoving() && !bScanLive && !bScanReplay && ScanStrength <= 0.f) SetActorTickInterval(0.25f);
+		if (!IsLevelMoving() && !IsRoomModeMoving() && !bScanLive && !bScanReplay && ScanStrength <= 0.f) SetActorTickInterval(0.25f);
+	}
+	// Room mode's fade and lift (BpRoom.cpp) run at the frame rate too, once the levels are home.
+	if (IsRoomModeMoving())
+	{
+		AdvanceRoomMode(FMath::Min(DeltaSeconds, 0.05f));
+		ApplyRoomVisuals();
+		if (!IsRoomModeMoving() && !IsLevelMoving() && !bScanLive && !bScanReplay && ScanStrength <= 0.f) SetActorTickInterval(0.25f);
 	}
 	// The scan line eases at the frame rate while a scan runs or fades (UpdateScan drops the tick back when it is done).
 	if (bScanLive || bScanReplay || ScanStrength > 0.f) UpdateScan(FMath::Min(DeltaSeconds, 0.1f));
@@ -713,6 +737,43 @@ void ABpTable::LoadArt()
 		ScanVeilMid->SetScalarParameterValue(TEXT("FadeCm"), 4.f);
 		ScanVeil->SetMaterial(0, ScanVeilMid);
 	}
+
+	// Room mode's walls, beads and overlay (BpRoom.cpp).
+	InitRoomMode();
+	if (MapWalls && VolumeMids.Num() == 6)
+	{
+		// The cells' walls in the rest walls' glass: open at the top, their top edges weighted (FM).
+		if (UMaterialInterface* Glow = LoadOrGreybox(VolumeMaterial, false))
+		{
+			UMaterialInstanceDynamic* Mid = UMaterialInstanceDynamic::Create(Glow, this);
+			Mid->SetScalarParameterValue(TEXT("FaceOpacity"), RestFaceOpacity);
+			Mid->SetScalarParameterValue(TEXT("LidFace"), 0.f);
+			Mid->SetScalarParameterValue(TEXT("TopEdge"), WallTopEdge);
+			Mid->SetScalarParameterValue(TEXT("LowEdge"), WallLowEdge);
+			Mid->SetScalarParameterValue(TEXT("HaloK"), WallHaloK);
+			Mid->SetScalarParameterValue(TEXT("Intensity"), RestEdgeIntensity);
+			MapWalls->SetMaterial(0, Mid);
+		}
+	}
+	else if (MapWalls && VolumeMids.Num() > 0)
+	{
+		MapWalls->SetMaterial(0, VolumeMids[0]);
+	}
+}
+
+void ABpTable::ApplyColumnLook()
+{
+	// The pointed room's copy (HighlightShell, VolumeMids[5] with the real material): its glass and edges grow toward the
+	// lifted column's as the lift entry raises it, and fade with the site as the map comes in. The greybox shares one
+	// material between every batch and is left alone.
+	if (VolumeMids.Num() != 6 || !VolumeMids[5]) return;
+	const float Lift = LiftRoomId.IsEmpty() ? 0.f : FMath::Clamp(LiftAlpha, 0.f, 1.f);
+	const float Look = SiteShow() + 2.f * Lift;
+	if (Look == AppliedColumnLook) return;
+	AppliedColumnLook = Look;
+	const float E = Lift * Lift * (3.f - 2.f * Lift);
+	VolumeMids[5]->SetScalarParameterValue(TEXT("FaceOpacity"), FMath::Lerp(HighlightFaceOpacity, RoomLiftFaceOpacity, E) * SiteShow());
+	VolumeMids[5]->SetScalarParameterValue(TEXT("Intensity"), HighlightEdgeIntensity * FMath::Lerp(1.f, RoomLiftEdgeBoost, E) * SiteShow());
 }
 
 void ABpTable::BuildTypeFont()
@@ -782,6 +843,8 @@ void ABpTable::PlaceForHeight(float HeightCm)
 	Paper->SetRelativeScale3D(PaperScale);
 	SheetOverlay->SetRelativeLocationAndRotation(FVector(0.0, 0.0, PaperZ + OverlayLiftCm), PaperRotation);
 	SheetOverlay->SetRelativeScale3D(PaperScale);
+	RoomOverlay->SetRelativeLocationAndRotation(FVector(0.0, 0.0, PaperZ + 2.f * OverlayLiftCm), PaperRotation);
+	RoomOverlay->SetRelativeScale3D(PaperScale);
 	if (HandCapture) HandCapture->SetRelativeLocation(FVector(0.0, 0.0, PaperZ - HandPlaneCm));
 	// The volumes stand on the paper: their instances are placed relative to it, so only the batches move (with the
 	// height, and with a level's lift).
@@ -882,13 +945,17 @@ UWidgetComponent* ABpTable::MakeLabel(const TSharedRef<SWidget>& Content, const 
 void ABpTable::SetCrumbs(const TArray<TPair<FString, FString>>& Items)
 {
 	// The breadcrumb (WP3) lies in the sheet, right-aligned to TitleAnchorCm.X, its line box's bottom at CrumbBottomCm.
+	LayoutCrumbs(Items, TitleAnchorCm.X, CrumbBottomCm, Crumbs);
+	RedrawSheet();
+}
+
+void ABpTable::LayoutCrumbs(const TArray<TPair<FString, FString>>& Items, double RightU, double BottomV, TArray<FCrumb>& Out) const
+{
 	// The last crumb is where you are (bold); the ones before it are the way back. Each crumb's box on the paper is its
 	// hit region (HitTest, AimAt), measured with the font the sheet draws it in.
 	const FSlateFontInfo Here = SheetFont(TEXT("Bold"), LabelCapHeightCm);
 	const FSlateFontInfo Way = SheetFont(TEXT("Regular"), LabelCapHeightCm);
-	TMap<FString, bool> WasLit;
-	for (const FCrumb& Crumb : Crumbs) WasLit.Add(Crumb.Id, Crumb.bLit);
-	Crumbs.Reset();
+	Out.Reset();
 	const double SeparatorCm = MeasureText(CrumbSeparator, Way).X / SheetPxPerCm;
 	double Total = 0.0, LineCm = 0.0;
 	TArray<double> Widths;
@@ -903,16 +970,15 @@ void ABpTable::SetCrumbs(const TArray<TPair<FString, FString>>& Items)
 		Crumb.Id = Items[Index].Key;
 		Crumb.Text = Items[Index].Value;
 		Crumb.bHere = bHere;
-		Crumbs.Add(Crumb);
+		Out.Add(Crumb);
 	}
-	const double Bottom = CrumbBottomCm, Top = Bottom - LineCm;
-	double Left = TitleAnchorCm.X - Total;
-	for (int32 Index = 0; Index < Crumbs.Num(); ++Index)
+	const double Bottom = BottomV, Top = Bottom - LineCm;
+	double Left = RightU - Total;
+	for (int32 Index = 0; Index < Out.Num(); ++Index)
 	{
-		Crumbs[Index].PaperCm = FBox2D(FVector2D(Left, Top), FVector2D(Left + Widths[Index], Bottom));
+		Out[Index].PaperCm = FBox2D(FVector2D(Left, Top), FVector2D(Left + Widths[Index], Bottom));
 		Left += Widths[Index] + SeparatorCm;
 	}
-	RedrawSheet();
 }
 
 void ABpTable::SetTitle(const FString& Line1, const FString& Line2)
@@ -948,7 +1014,7 @@ void ABpTable::UpdateBreadcrumb()
 FString ABpTable::GetBreadcrumb() const
 {
 	TArray<FString> Texts;
-	for (const FCrumb& Crumb : Crumbs) Texts.Add(Crumb.Text);
+	for (const FCrumb& Crumb : ActiveCrumbs()) Texts.Add(Crumb.Text);
 	return FString::Join(Texts, TEXT(" › "));
 }
 
@@ -1029,6 +1095,7 @@ void ABpTable::ApplyPlan(const FBpPlan& Plan)
 	BuildLevelLabels(*SheetPlan);
 	BuildRoomNames(*SheetPlan);
 	BuildGlyphs(*SheetPlan);
+	ResetRoomMode();
 	ResetLevels();
 	RefreshWingCounts();
 	SetTitle(FString(), ActiveLens);
@@ -1349,15 +1416,19 @@ void ABpTable::ApplyRoomNames(float WingEase)
 		const FString Wing = RoomWing.IsValidIndex(Each.Room) ? RoomWing[Each.Room] : FString();
 		int32 State = bOn ? 1 : 0;
 		if (!AnimWing.IsEmpty() && Wing == AnimWing && WingEase > 0.f) State = 0;
+		// Room mode: the names fold away halfway through the fade (a card cannot fade; the walls round it do).
+		if (RoomFade >= 0.5f) State = 0;
 		if (State == 1 && Each.Room == HighlightRestRoom) State = 2;
-		bChanged |= RoomNameState[Index] != State;
+		bChanged |= RoomNameState[Index] != State || (State == 2 && AppliedNameColumnScale != ColumnScale);
 		RoomNameState[Index] = State;
 		const FVector2D Size = RoomNameRectPx(Each) * (Each.CapCm / Each.CapPx);
-		const FVector Corner = PaperCmToLocal(Each.Corner, LabelLiftCm + (State == 2 ? HighlightLiftCm : 0.f));
+		// On the pointed room's lifted floor, which the lift entry's column raises with it (ColumnScale).
+		const FVector Corner = PaperCmToLocal(Each.Corner, LabelLiftCm + (State == 2 ? HighlightLiftCm * ColumnScale : 0.f));
 		const FVector Centre = Corner + FVector(0.0, Size.X * 0.5, 0.0) + Up * (Size.Y * 0.5);
 		Places.Add(FTransform(Facing, Centre, State == 0 ? FVector::ZeroVector : FVector(Size.X / 100.0, Size.Y / 100.0, 1.0)));
 	}
 	if (bChanged) RoomNames->BatchUpdateInstancesTransforms(0, Places, false, true);
+	AppliedNameColumnScale = ColumnScale;
 }
 
 void ABpTable::RefreshWingCounts()
@@ -1750,6 +1821,8 @@ void ABpTable::ApplyGlyphs(float WingEase)
 			// Around a pointed room the other rooms' furniture recedes a little (FO; FP: PointedGlyphDim, not the walls'
 			// PointedDim), and the pointed room's own shows on its lifted floor instead, one per tile (LiftGlyphs).
 			if (HighlightRestRoom != INDEX_NONE) Show = Room == HighlightRestRoom ? 0.f : Show * PointedGlyphDim;
+			// Room mode: the site's furniture fades as the room's map comes in.
+			Show *= SiteShow();
 			if (ShownBayGlyph[Batch][Index] == Show) continue;
 			ShownBayGlyph[Batch][Index] = Show;
 			BayGlyphs[Batch]->SetCustomDataValue(Index, 0, Show, false);
@@ -1758,10 +1831,18 @@ void ABpTable::ApplyGlyphs(float WingEase)
 		BayGlyphs[Batch]->SetRelativeTransform(WingGroupTransform(0.f));
 		if (bDirty) BayGlyphs[Batch]->MarkRenderStateDirty();
 	}
+	// The pointed room's lifted furniture rides its column (the lift entry scales its heights) and fades with the site.
+	const float LiftShow = HighlightGlyphShow * SiteShow();
+	const bool bLiftShow = LiftShow != ShownLiftGlyph;
+	ShownLiftGlyph = LiftShow;
 	for (int32 Batch = 0; Batch < Glyphs.Num(); ++Batch)
 	{
 		Glyphs[Batch]->SetRelativeTransform(WingGroupTransform(0.f));
-		if (GlyphLift.IsValidIndex(Batch) && GlyphLift[Batch]) GlyphLift[Batch]->SetRelativeTransform(WingGroupTransform(0.f));
+		if (!GlyphLift.IsValidIndex(Batch) || !GlyphLift[Batch]) continue;
+		GlyphLift[Batch]->SetRelativeTransform(PointedGroupTransform());
+		if (!bLiftShow) continue;
+		for (int32 Index = 0; Index < GlyphLift[Batch]->GetInstanceCount(); ++Index) GlyphLift[Batch]->SetCustomDataValue(Index, 0, LiftShow, false);
+		GlyphLift[Batch]->MarkRenderStateDirty();
 	}
 }
 
@@ -1804,8 +1885,10 @@ void ABpTable::LiftGlyphs(int32 Room)
 		TArray<float> Show;
 		Show.Init(HighlightGlyphShow, Lifted.Num());
 		GlyphLift[Batch]->SetCustomData(0, Show.Num() - 1, Show, true);
-		GlyphLift[Batch]->SetRelativeTransform(WingGroupTransform(0.f));
+		GlyphLift[Batch]->SetRelativeTransform(PointedGroupTransform());
 	}
+	// Written at full Show: the next ApplyGlyphs fades them if the site is fading.
+	ShownLiftGlyph = HighlightGlyphShow;
 }
 
 int32 ABpTable::CVarL0VolumesValue()

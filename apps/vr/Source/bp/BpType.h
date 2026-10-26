@@ -52,6 +52,11 @@ namespace BpType
 	constexpr FRecipe RoomName{ TEXT("Regular"), 0.9, 0.06, true };
 	/** The breadcrumb (WP3's way back; the hands pinch it, so it stays large). */
 	constexpr FRecipe Crumb{ TEXT("Regular"), 1.6, 0.0, false };
+	/** Room mode's map (spark vr-room-layers WP1): a bay's kind label in its cell's header, a feature's name beside its
+	 *  glyph, and the feature's open findings in amber under it. */
+	constexpr FRecipe BayKind{ TEXT("Bold"), 2.2, 0.1, true };
+	constexpr FRecipe FeatureName{ TEXT("Regular"), 1.8, 0.0, false };
+	constexpr FRecipe OpenCount{ TEXT("Bold"), 1.2, 0.04, true };
 	/** A pin's tag: the finding's id (cap in tag-atlas pixels, the tag cell being 162 px tall). */
 	constexpr FRecipe PinTag{ TEXT("Bold"), 50.0, 0.02, true };
 

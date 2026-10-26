@@ -364,6 +364,8 @@ void ABpTable::ReceiveScanState(const FBpScanState& State)
 	}
 	if (bScanLive || ScanStrength > 0.f) SetActorTickInterval(0.f);
 	if (bCardShown) RefreshCard();
+	// Room mode's map shows the room's open findings: a read that changes them redraws it.
+	if (!ShownRoomMode.IsEmpty() && RoomFindingsKey() != RoomMapKey) BuildRoomMap();
 }
 
 void ABpTable::BuildPins(const FBpScanState& State)
@@ -640,6 +642,8 @@ void ABpTable::PlacePins()
 {
 	if (!SheetPlan.IsValid() || PinList.Num() == 0) return;
 	TArray<FTransform> PinPlaces, BeadPlaces, StemPlaces, HaloPlaces;
+	// Room mode: the site's pins and tags shrink away as the room's map comes in (a hidden batch would lose its custom data).
+	const double Site = SiteShow();
 	for (const FPin& Pin : PinList)
 	{
 		const FBpPlanTile& Tile = SheetPlan->tiles[Pin.Tile];
@@ -650,21 +654,21 @@ void ABpTable::PlacePins()
 		const float StandCm = Rise * TileHeightCm(Reading ? *Reading : FString());
 		const FVector2D Centre = PlanToPaperCm(FVector2D(Tile.box.x + Tile.box.w * 0.5, Tile.box.y + Tile.box.h * 0.5));
 		const FVector Foot = Group.TransformPosition(PaperCmToLocal(Centre, StandCm));
-		BeadPlaces.Add(FTransform(FQuat::Identity, Foot, FVector(PinBeadCm * 0.5)));
-		HaloPlaces.Add(FTransform(FQuat::Identity, Foot, FVector(PinBeadCm * 0.5 * PinHaloScale)));
+		BeadPlaces.Add(FTransform(FQuat::Identity, Foot, FVector(PinBeadCm * 0.5 * Site)));
+		HaloPlaces.Add(FTransform(FQuat::Identity, Foot, FVector(PinBeadCm * 0.5 * PinHaloScale * Site)));
 		if (!Pin.bTagged) continue;
 		const FVector Head = Group.TransformPosition(PaperCmToLocal(Centre, StandCm + Pin.RaiseCm));
-		PinPlaces.Add(FTransform(FRotator(0.f, PinYawDeg, 0.f), Head, FVector(PinScale)));
+		PinPlaces.Add(FTransform(FRotator(0.f, PinYawDeg, 0.f), Head, FVector(PinScale * Site)));
 		// The hairline from the bead up to the tag's foot (the engine cube: 100 cm, pivot at its centre); the pin's own body
 		// is hidden (HiddenMaterial), so the hairline is the whole stem.
 		const FVector TagFoot = Group.TransformPosition(PaperCmToLocal(Centre, StandCm + Pin.RaiseCm + (PinModelCm - PinTagModelCm) * PinScale));
 		const double Length = (TagFoot - Foot).Size();
-		StemPlaces.Add(FTransform(FQuat::Identity, (TagFoot + Foot) * 0.5, FVector(PinStemCm / 100.0, PinStemCm / 100.0, Length / 100.0)));
+		StemPlaces.Add(FTransform(FQuat::Identity, (TagFoot + Foot) * 0.5, FVector(PinStemCm / 100.0, PinStemCm / 100.0, Length / 100.0) * Site));
 		// The head bead (FAB, element 7: the concept's glowing amber bead at the top of each stem, under the tag), its
 		// centre one radius under the tag's foot, so the stem runs into it.
 		const FVector HeadBead = Group.TransformPosition(PaperCmToLocal(Centre, StandCm + Pin.RaiseCm + (PinModelCm - PinTagModelCm) * PinScale - PinHeadBeadCm * 0.5));
-		BeadPlaces.Add(FTransform(FQuat::Identity, HeadBead, FVector(PinHeadBeadCm * 0.5)));
-		HaloPlaces.Add(FTransform(FQuat::Identity, HeadBead, FVector(PinHeadBeadCm * 0.5 * PinHaloScale)));
+		BeadPlaces.Add(FTransform(FQuat::Identity, HeadBead, FVector(PinHeadBeadCm * 0.5 * Site)));
+		HaloPlaces.Add(FTransform(FQuat::Identity, HeadBead, FVector(PinHeadBeadCm * 0.5 * PinHaloScale * Site)));
 	}
 	if (PinPlaces.Num() > 0 && Pins->GetInstanceCount() == PinPlaces.Num()) Pins->BatchUpdateInstancesTransforms(0, PinPlaces, false, true);
 	if (BeadPlaces.Num() > 0 && PinBeads->GetInstanceCount() == BeadPlaces.Num()) PinBeads->BatchUpdateInstancesTransforms(0, BeadPlaces, false, true);
@@ -855,7 +859,7 @@ void ABpTable::UpdateScan(float DeltaSeconds)
 	ScanY += FMath::Clamp(ScanTargetY - ScanY, -Step, Step);
 	ScanStrength = bScanLive ? FMath::Min(1.f, ScanStrength + DeltaSeconds / 0.3f) : FMath::Max(0.f, ScanStrength - DeltaSeconds / ScanFadeS);
 	WriteScanParams(ScanStrength);
-	if (!bScanLive && !bScanReplay && ScanStrength <= 0.f && !IsLevelMoving()) SetActorTickInterval(0.25f);
+	if (!bScanLive && !bScanReplay && ScanStrength <= 0.f && !IsLevelMoving() && !IsRoomModeMoving()) SetActorTickInterval(0.25f);
 }
 
 void ABpTable::WriteScanParams(float Strength)
@@ -863,6 +867,8 @@ void ABpTable::WriteScanParams(float Strength)
 	if (!ScanParams) return;
 	UWorld* World = GetWorld();
 	if (!World) return;
+	// Room mode: the site's beam fades with the site plan (the replay keeps stepping underneath).
+	Strength *= SiteShow();
 	FVector Centre = FVector::ZeroVector, Axis = FVector::ForwardVector, Side = FVector::RightVector;
 	double HalfLength = 0.0, HalfWidth = ScanHalfWidthCm;
 	if (SheetPlan.IsValid() && ScanPlanBox.bIsValid)
@@ -994,10 +1000,10 @@ void ABpTable::RefreshCard()
 	const FBpScanState& State = FBpLinkModule::Get().GetScanState();
 	TMap<FString, int32> TileOf;
 	for (int32 Index = 0; Index < SheetPlan->tiles.Num(); ++Index) TileOf.Add(SheetPlan->tiles[Index].id, Index);
-	// The finding the card asks about: the first open one in the lifted room, else in the pointed room (a room highlight,
-	// FK), else the first open one in store order.
+	// The finding the card asks about: the first open one in room mode's room, else in the lifted room, else in the pointed
+	// room (a room highlight, FK), else the first open one in store order.
 	const FBpProposal* Ask = nullptr;
-	const FString& AskRoom = !AnimRoom.IsEmpty() ? AnimRoom : (HighlightKind == TEXT("room") ? HighlightId : FString());
+	const FString& AskRoom = !RoomModeId.IsEmpty() ? RoomModeId : !AnimRoom.IsEmpty() ? AnimRoom : (HighlightKind == TEXT("room") ? HighlightId : FString());
 	const int32 Lifted = AskRoom.IsEmpty() ? INDEX_NONE : SheetPlan->rooms.IndexOfByPredicate([&AskRoom](const FBpPlanRoom& R) { return R.id == AskRoom; });
 	for (const FBpProposal& Proposal : State.Scan.proposals)
 	{

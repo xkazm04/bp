@@ -148,6 +148,11 @@ void ABpTable::LogStep(EBpLevel From, EBpLevel To)
 
 bool ABpTable::EnterWing(const FString& InWingId)
 {
+	if (!RoomModeId.IsEmpty())
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpLevel: refused wing %s in room mode (BpRoom.Exit first)"), *InWingId);
+		return false;
+	}
 	if (!SheetPlan.IsValid())
 	{
 		UE_LOG(LogBpTable, Log, TEXT("BpLevel: refused no plan yet"));
@@ -182,6 +187,11 @@ bool ABpTable::Enter(const FString& Id)
 
 bool ABpTable::EnterRoom(const FString& InRoomId)
 {
+	if (!RoomModeId.IsEmpty())
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpLevel: refused room %s in room mode (BpRoom.Exit first)"), *InRoomId);
+		return false;
+	}
 	const FBpPlanRoom* Room = FindRoom(InRoomId);
 	if (!SheetPlan.IsValid() || !Room)
 	{
@@ -212,6 +222,12 @@ bool ABpTable::EnterRoom(const FString& InRoomId)
 
 void ABpTable::Back()
 {
+	// In room mode one level up is the site plan (the hands' push, a crumb).
+	if (!RoomModeId.IsEmpty())
+	{
+		ExitRoomMode();
+		return;
+	}
 	if (Level == EBpLevel::L2)
 	{
 		LogStep(EBpLevel::L2, EBpLevel::L1);
@@ -235,6 +251,7 @@ void ABpTable::Back()
 
 void ABpTable::Home()
 {
+	if (!RoomModeId.IsEmpty()) ExitRoomMode();
 	while (Level != EBpLevel::L0) Back();
 }
 
@@ -556,10 +573,12 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 {
 	const bool bOn = CVarL0VolumesValue() != 0;
 	// The pointed room (FK): a room highlight at rest (no wing lifted) raises that room's extrusions (HighlightShell).
+	// The lift entry's room (BpRoom.cpp) stands as the pointed room while it lifts; with the room's map fully in, none does.
 	int32 Pointed = INDEX_NONE;
-	if (bOn && AnimWing.IsEmpty() && HighlightKind == TEXT("room") && !HighlightId.IsEmpty() && SheetPlan.IsValid())
+	const FString PointRoom = !LiftRoomId.IsEmpty() ? LiftRoomId : (HighlightKind == TEXT("room") ? HighlightId : FString());
+	if (bOn && AnimWing.IsEmpty() && !PointRoom.IsEmpty() && RoomFade < 1.f && SheetPlan.IsValid())
 	{
-		Pointed = SheetPlan->rooms.IndexOfByPredicate([this](const FBpPlanRoom& Room) { return Room.id == HighlightId; });
+		Pointed = SheetPlan->rooms.IndexOfByPredicate([&PointRoom](const FBpPlanRoom& Room) { return Room.id == PointRoom; });
 	}
 	if (Pointed != HighlightRestRoom)
 	{
@@ -617,7 +636,8 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 		LiftGlyphs(Pointed);
 		UE_LOG(LogBpTable, Log, TEXT("BpLevel: pointed room %s (%d raised)"), Pointed == INDEX_NONE ? TEXT("none") : *SheetPlan->rooms[Pointed].id, HighlightShell->GetInstanceCount());
 	}
-	HighlightShell->SetRelativeTransform(WingGroupTransform(0.f));
+	HighlightShell->SetRelativeTransform(PointedGroupTransform());
+	ApplyColumnLook();
 	bool bDirty = false;
 	for (int32 Index = 0; Index < RestRoom.Num() && Index < ShownRest.Num(); ++Index)
 	{
@@ -630,6 +650,8 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 		// The pointed room shows in HighlightShell instead, and every other room recedes around it (FO).
 		if (Room != INDEX_NONE && Room == Pointed) Show = 0.f;
 		else if (Pointed != INDEX_NONE) Show *= PointedDim;
+		// Room mode: the site's walls fade as the room's map comes in.
+		Show *= SiteShow();
 		if (ShownRest[Index] == Show) continue;
 		ShownRest[Index] = Show;
 		RestVolumes->SetCustomDataValue(Index, 3, Show, false);
@@ -642,7 +664,7 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 	{
 		const FString& Wing = WingLabelSpecs[Index].Wing;
 		const float Alpha = !bOn ? 0.f : AnimWing.IsEmpty() ? 1.f : (Wing == AnimWing ? 1.f - WingEase : FMath::Lerp(1.f, LevelDim, WingEase));
-		SetLabelAlpha(WingLabels[Index], Alpha);
+		SetLabelAlpha(WingLabels[Index], Alpha * SiteShow());
 	}
 	ApplyGlyphs(WingEase);
 	ApplyRoomNames(WingEase);
@@ -668,15 +690,17 @@ void ABpTable::SetHighlight(const FString& Kind, const FString& Id)
 
 void ABpTable::AimCaptureHand(const FVector& RoomMin)
 {
-	// The posed right hand of the capture pair (the one further to the person's right; a headset removes the pair).
-	AActor* Hand = nullptr;
+	// The posed right hand of the capture pair (the one further to the person's right before either moved; a headset
+	// removes the pair).
+	AActor* Hand = CaptureRightHand.Get();
 	const FTransform& Table = GetActorTransform();
-	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	for (TActorIterator<AActor> It(GetWorld()); It && !CaptureRightHand.IsValid(); ++It)
 	{
 		if (!It->ActorHasTag(ABpPawn::CaptureHandsTag)) continue;
 		if (!Hand || Table.InverseTransformPosition(It->GetActorLocation()).Y > Table.InverseTransformPosition(Hand->GetActorLocation()).Y) Hand = *It;
 	}
 	if (!Hand) return;
+	CaptureRightHand = Hand;
 	// The room's near-left corner in the shell's space (RoomMin), then the table's: the tip CaptureTipIn/AcrossCm in from it.
 	const FVector Corner = WingGroupTransform(0.f).TransformPosition(RoomMin);
 	FVector Local = Table.InverseTransformPosition(Hand->GetActorLocation());
@@ -713,9 +737,14 @@ bool ABpTable::HitTest(const FVector& WorldOrigin, const FVector& WorldDir, FStr
 	{
 		return PaperCmToPlan(LocalToPaperCm(Group.InverseTransformPosition(Point)));
 	};
+	FVector Point;
+	// Room mode: only the paper's crumbs and the key plan's rooms answer (BpRoom.cpp).
+	if (!RoomModeId.IsEmpty())
+	{
+		return OnPlane(PlacedHeightCm - GlassRecessCm, Point) && RoomModeHit(LocalToPaperCm(Point), OutKind, OutId);
+	}
 	const float Ew = Ease(WingAlpha), Er = Ease(RoomAlpha);
 	const FTransform WingT = WingGroupTransform(Ew);
-	FVector Point;
 
 	// The lifted room's floor, at its current lift.
 	if (!AnimRoom.IsEmpty() && RoomAlpha > 0.f)
@@ -791,7 +820,7 @@ bool ABpTable::AimAt(const FString& Id, FVector& OutWorld) const
 	const auto Centre = [](const FBpPlanBox& Box) { return FVector2D(Box.x + Box.w * 0.5, Box.y + Box.h * 0.5); };
 	const FTransform AtRest = WingGroupTransform(0.f);
 	const FTransform WingT = WingGroupTransform(Ease(WingAlpha));
-	for (const FCrumb& Crumb : Crumbs)
+	for (const FCrumb& Crumb : ActiveCrumbs())
 	{
 		if (Crumb.Id == Id) return OnGroup(AtRest, Crumb.PaperCm.GetCenter());
 	}

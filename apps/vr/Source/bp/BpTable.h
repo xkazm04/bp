@@ -21,6 +21,19 @@ enum class EBpLevel : uint8
 	L2
 };
 
+/** How room mode is entered (spark vr-room-layers WP1, BpRoom.Entry): the paper dives straight into the room's map, or the
+ *  room first lifts as the pointed room's glass column, holds, then dives. */
+UENUM(BlueprintType)
+enum class EBpRoomEntry : uint8
+{
+	Dive,
+	Lift
+};
+
+/** Room mode changed: the room the table now shows, empty when it went back to the site plan. Fired when the change is
+ *  asked for, before the fade (WP2's screen deck and WP3's switching listen here). */
+DECLARE_MULTICAST_DELEGATE_OneParam(FBpRoomModeChanged, const FString& /* RoomId */);
+
 class UCanvas;
 class UCanvasRenderTarget2D;
 class UInstancedStaticMeshComponent;
@@ -263,6 +276,56 @@ public:
 	/** The card drawn this many times its layout size (FR, element 10: the judges' "small text"); its text scales with it. */
 	static constexpr float CardScale = 1.08f;
 
+	/** Room mode (BpRoom.cpp; spark vr-room-layers WP1, the owner's doctrine: the person sits still at the desk, the studio
+	 *  never moves, and going into a room changes only what the table shows). The dive cross-fades the paper from the
+	 *  site plan to the room's map over RoomFadeS, by opacity; the lift entry first raises the room's pointed column to
+	 *  RoomLiftColumnScale times its height over LevelEaseS and holds it RoomLiftHoldS. bp.RoomFadeS and bp.RoomLiftHoldS
+	 *  override the two (a mid-transition capture slows them). */
+	static constexpr float RoomFadeS = 0.3f;
+	static constexpr float RoomLiftHoldS = 0.6f;
+	static constexpr float RoomLiftColumnScale = 1.8f;
+	/** The lifted column's glass (lookdev 02-room-lifted: a lit glass prism over the room's plan), over the pointed room's. */
+	static constexpr float RoomLiftFaceOpacity = 0.22f;
+	static constexpr float RoomLiftEdgeBoost = 1.3f;
+	/** The room's map on the paper (cm), inside what the target framing sees of the paper (its near corners fall outside
+	 *  it): the band nearer than RoomMapBottomCm holds the title block (RoomTitleLeftCm to RoomTitleRightCm), the
+	 *  breadcrumb and the key plan. A slot is at most RoomSlotAspect times as deep as it is wide; the depth a sparse room
+	 *  leaves goes mostly to the far side (RoomMapFarShare), so the map stands near the hands, where it reads largest. */
+	static constexpr float RoomMapLeftCm = 15.f;
+	static constexpr float RoomMapRightCm = 151.f;
+	static constexpr float RoomMapTopCm = 4.5f;
+	static constexpr float RoomMapBottomCm = 59.5f;
+	static constexpr float RoomSlotAspect = 1.25f;
+	static constexpr float RoomMapFarShare = 0.8f;
+	/** The map's bays are walled cells: RoomCellGutterCm apart, their features RoomCellPadCm in from the walls, each feature
+	 *  a slot at least RoomSlotMinWidthCm wide (a name at the floor needs it). The cells' rows and columns are picked so
+	 *  the smallest slot is as large as it can be; a dense room takes more rows, never smaller text. */
+	static constexpr float RoomCellGutterCm = 2.5f;
+	static constexpr float RoomCellPadCm = 1.0f;
+	static constexpr float RoomSlotMinWidthCm = 20.f;
+	/** A cell's walls: RoomWallCm high in the rest walls' glass, RoomWallThickCm thick, with a RoomDoorCm doorway in the
+	 *  near wall (the architect's door swing drawn on the paper in it). */
+	static constexpr float RoomWallCm = 1.2f;
+	static constexpr float RoomWallThickCm = 0.25f;
+	static constexpr float RoomDoorCm = 5.f;
+	/** A feature's kit glyph lies flat on its slot: at most RoomGlyphMaxCm high and RoomGlyphSpanCm across, at
+	 *  RoomGlyphShow; its open findings stand on it as up to RoomBeadsMax amber beads RoomBeadCm across (the pins' look). */
+	static constexpr float RoomGlyphMaxCm = 1.5f;
+	static constexpr float RoomGlyphSpanCm = 18.f;
+	static constexpr float RoomGlyphShow = 0.55f;
+	static constexpr int32 RoomBeadsMax = 5;
+	static constexpr float RoomBeadCm = 1.4f;
+	static constexpr float RoomWallShow = 1.0f;
+	/** The key plan (the minimap): the whole site, small, near-right on the paper inside the target framing, where neither
+	 *  hand nor the wrist panel lies; the breadcrumb ends RoomCrumbRightCm across, left of it. */
+	static constexpr float KeyPlanLeftCm = 118.5f;
+	static constexpr float KeyPlanRightCm = 140.f;
+	static constexpr float KeyPlanTopCm = 61.5f;
+	static constexpr float KeyPlanBottomCm = 70.5f;
+	static constexpr float RoomCrumbRightCm = 116.f;
+	static constexpr float RoomTitleLeftCm = 21.f;
+	static constexpr float RoomTitleRightCm = 54.f;
+
 	ABpTable();
 
 	/** Frame mesh (pivot at the floor centre, bounds 180 x 90 x 95 cm, its length along its +X). Missing: the greybox (a
@@ -397,6 +460,27 @@ public:
 	/** BpLevel.* console commands sent before the plan arrived; ApplyPlan runs them in order. */
 	static TArray<FString>& PendingLevelCommands();
 	bool HasPlan() const { return SheetPlan.IsValid(); }
+
+	// ---- Room mode (BpRoom.cpp): the API WP2's screen deck and WP3's switching call, and BpRoom.* ---------------------------
+	/** The paper dives into this room's map (from L1 or L2 the levels come home first). Another room while one is shown:
+	 *  the old map fades out, the new one in. EnterRoom is the L2 lift's name, so this one says mode. */
+	UFUNCTION(BlueprintCallable, Category = "Bp|Room")
+	bool EnterRoomMode(const FString& InRoomId);
+	/** Back to the site plan, the room left standing as the pointed room. */
+	UFUNCTION(BlueprintCallable, Category = "Bp|Room")
+	void ExitRoomMode();
+	/** The room asked for (empty on the site plan); the map may still be fading. */
+	UFUNCTION(BlueprintCallable, Category = "Bp|Room")
+	FString GetRoomModeId() const { return RoomModeId; }
+	UFUNCTION(BlueprintCallable, Category = "Bp|Room")
+	bool IsRoomModeMoving() const;
+	/** BpRoom.Entry: the entry every table's next EnterRoomMode takes (Dive by default). */
+	static void SetRoomEntry(EBpRoomEntry Entry);
+	static EBpRoomEntry GetRoomEntry();
+	FBpRoomModeChanged& OnRoomModeChanged() { return RoomModeChanged; }
+	/** The key plan's room under a paper point (cm), for WP3's point-to-switch; false outside room mode or off its cells. */
+	UFUNCTION(BlueprintCallable, Category = "Bp|Room")
+	bool KeyPlanRoomAt(const FVector2D& PaperCm, FString& OutRoomId) const;
 
 protected:
 	virtual void OnConstruction(const FTransform& Transform) override;
@@ -564,6 +648,9 @@ private:
 	 *  Axes: the table's, X away from the person, Y to their right. RoomMin is the room's near-left floor corner in the
 	 *  wing group's space. */
 	void AimCaptureHand(const FVector& RoomMin);
+	/** The capture pair's right hand, picked once (FAG: once moved to a far-left room it stood left of the left hand, and
+	 *  the next pick took the left one). */
+	TWeakObjectPtr<AActor> CaptureRightHand;
 	static constexpr float CaptureTipInCm = 2.4f;
 	static constexpr float CaptureTipAcrossCm = 5.8f;
 	static constexpr float CaptureTipFromHandXCm = 12.f;
@@ -841,6 +928,116 @@ private:
 	void SetScanPlace(const TArray<FString>& Features, bool bAll);
 	bool bCardShown = false;
 	FString CardProposal;
+
+	// ---- Room mode state (BpRoom.cpp) ---------------------------------------------------------------------------------
+	/** The room asked for (empty: the site plan), the room whose map is drawn, and the fade between them (0 the site plan,
+	 *  1 the map). */
+	FString RoomModeId;
+	FString ShownRoomMode;
+	float RoomFade = 0.f;
+	/** The lift entry: the room whose column rises (empty when none), its rise (0 to 1) and hold, the column's Z scale now
+	 *  and where its rise starts. */
+	EBpRoomEntry RoomEntryNow = EBpRoomEntry::Dive;
+	FString LiftRoomId;
+	float LiftAlpha = 0.f;
+	float LiftHoldClock = 0.f;
+	bool bLiftDone = true;
+	float LiftFrom = 1.f;
+	float ColumnScale = 1.f;
+	FBpRoomModeChanged RoomModeChanged;
+	/** The room's map, the paper's ink while the map shows, and the overlay that carries it during the fade. */
+	UPROPERTY(Transient)
+	TObjectPtr<UCanvasRenderTarget2D> RoomSheet;
+	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
+	TObjectPtr<UStaticMeshComponent> RoomOverlay;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> RoomOverlayMid;
+	/** The map's 3D: the cells' low walls, the features' flat glyphs (one batch per kind) and their findings' beads. */
+	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
+	TObjectPtr<UInstancedStaticMeshComponent> MapWalls;
+	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
+	TObjectPtr<UInstancedStaticMeshComponent> RoomBeads;
+	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
+	TObjectPtr<UInstancedStaticMeshComponent> RoomHalos;
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UInstancedStaticMeshComponent>> RoomGlyphs;
+	TArray<FString> RoomGlyphKinds;
+	/** The beads' places at full size (ApplyRoomVisuals scales them with the fade). */
+	TArray<FTransform> RoomBeadPlaces;
+	/** One bay's cell on the map: its box (paper cm), its kind label and the doorway in its near wall (u from, to). */
+	struct FRoomCell
+	{
+		int32 Bay = INDEX_NONE;
+		FBox2D Box = FBox2D(ForceInit);
+		FString Label;
+		double LabelCap = 0.0;
+		FVector2D LabelAt = FVector2D::ZeroVector;
+		double Door0 = 0.0;
+		double Door1 = 0.0;
+	};
+	/** One feature's slot: its tile (plan index), its box and glyph box (paper cm), its name's lines and its findings'
+	 *  line, each with its cap and the top-left of its cap (paper cm). */
+	struct FRoomSlot
+	{
+		int32 Tile = INDEX_NONE;
+		FString Kind;
+		FBox2D Box = FBox2D(ForceInit);
+		FBox2D GlyphBox = FBox2D(ForceInit);
+		TArray<FString> Lines;
+		double Cap = 0.0;
+		FVector2D TextAt = FVector2D::ZeroVector;
+		FString Open;
+		double OpenCap = 0.0;
+		FVector2D OpenAt = FVector2D::ZeroVector;
+		int32 Findings = 0;
+		/** A tall slot: its glyph over its text, centred; else its glyph beside its text. */
+		bool bCentre = false;
+	};
+	/** A room's cell on the key plan (paper cm), tagged with its id for WP3's point-to-switch. */
+	struct FKeyCell
+	{
+		FString Room;
+		FBox2D PaperCm = FBox2D(ForceInit);
+	};
+	TArray<FRoomCell> RoomCells;
+	TArray<FRoomSlot> RoomSlots;
+	TArray<FKeyCell> KeyCells;
+	FBox2D KeyPlanBox = FBox2D(ForceInit);
+	TArray<FCrumb> RoomCrumbs;
+	FString RoomTitle;
+	FString RoomSubtitle;
+	/** What the map was built from (the room, its open findings and their tiers): a scan read that changes it redraws it. */
+	FString RoomMapKey;
+	/** The fade the room's 3D and the paper were last written at; whether the paper samples the map. */
+	float AppliedRoomFade = -1.f;
+	bool bPaperOnRoomSheet = false;
+	/** The pointed column's look and the lifted furniture's Show last written (ApplyColumnLook, ApplyGlyphs). */
+	float AppliedColumnLook = -1.f;
+	float ShownLiftGlyph = -1.f;
+	float AppliedNameColumnScale = 1.f;
+	/** The site's share of what shows (1 on the site plan, 0 with the map in): the site's 3D, labels, pins and beam. */
+	float SiteShow() const;
+	/** The pointed room's display copy's transform: the paper's, its heights scaled by ColumnScale (the lift entry). */
+	FTransform PointedGroupTransform() const;
+	/** The pointed column's glass and edges, with the lift and the fade. */
+	void ApplyColumnLook();
+	void InitRoomMode();
+	void ResetRoomMode();
+	/** Steps the fade and the lift toward RoomModeId; ApplyRoomVisuals shows it. */
+	void AdvanceRoomMode(float DeltaSeconds);
+	void ApplyRoomVisuals();
+	/** Lays out ShownRoomMode's map (cells, slots, title block, breadcrumb, key plan), places its 3D and draws its sheet. */
+	void BuildRoomMap();
+	void ClearRoomMap();
+	FString RoomFindingsKey() const;
+	UFUNCTION()
+	void DrawRoomSheet(UCanvas* Canvas, int32 Width, int32 Height);
+	/** The breadcrumb's crumbs right-aligned at RightU, their line box's bottom at BottomV (SetCrumbs' layout). */
+	void LayoutCrumbs(const TArray<TPair<FString, FString>>& Items, double RightU, double BottomV, TArray<FCrumb>& Out) const;
+	/** The crumbs on the paper now: the map's in room mode, else the site's. */
+	const TArray<FCrumb>& ActiveCrumbs() const { return RoomModeId.IsEmpty() ? Crumbs : RoomCrumbs; }
+	/** HitTest on the paper in room mode: a crumb, or a key plan room ("minimap"). */
+	bool RoomModeHit(const FVector2D& PaperCm, FString& OutKind, FString& OutId) const;
 
 	FDelegateHandle PlanHandle;
 	FDelegateHandle FailedHandle;

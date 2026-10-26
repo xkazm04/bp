@@ -332,8 +332,12 @@ void UBpHands::PinchEnded(FSlot& S)
 	S.bPinch = false;
 	ABpTable* T = FindTable();
 	if (S.bFired || !T || S.HoverKind != TEXT("crumb")) return;
-	// Released on a crumb: jump to that crumb's level.
-	if (S.HoverId == TEXT("home"))
+	// Released on a crumb: jump to that crumb's level. In room mode any crumb but the room's own is the way out.
+	if (!T->GetRoomModeId().IsEmpty())
+	{
+		if (S.HoverId != TEXT("room:") + T->GetRoomModeId()) T->ExitRoomMode();
+	}
+	else if (S.HoverId == TEXT("home"))
 	{
 		T->Home();
 	}
@@ -354,6 +358,12 @@ void UBpHands::Pull(FSlot& S)
 		UE_LOG(LogBpHands, Log, TEXT("BpHands: pinch-pull -> enter wing=%s"), *S.TargetId);
 		T->EnterWing(S.TargetId);
 	}
+	else if (S.TargetKind == TEXT("room") && T->GetBpLevel() == EBpLevel::L2 && T->GetRoomId() == S.TargetId)
+	{
+		// Pulled again on the lifted room: in (spark vr-room-layers WP1, room mode).
+		UE_LOG(LogBpHands, Log, TEXT("BpHands: pinch-pull on the lifted room -> room mode room=%s"), *S.TargetId);
+		T->EnterRoomMode(S.TargetId);
+	}
 	else if (S.TargetKind == TEXT("room"))
 	{
 		UE_LOG(LogBpHands, Log, TEXT("BpHands: pinch-pull -> enter room=%s"), *S.TargetId);
@@ -370,6 +380,12 @@ void UBpHands::Push(FSlot& S)
 	S.bFired = true;
 	ABpTable* T = FindTable();
 	if (!T) return;
+	if (!T->GetRoomModeId().IsEmpty())
+	{
+		UE_LOG(LogBpHands, Log, TEXT("BpHands: pinch-push -> exit room mode"));
+		T->ExitRoomMode();
+		return;
+	}
 	if (T->GetBpLevel() == EBpLevel::L0)
 	{
 		UE_LOG(LogBpHands, Log, TEXT("BpHands: pinch-push at L0, no transition"));
