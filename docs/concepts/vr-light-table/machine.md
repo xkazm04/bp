@@ -6,6 +6,31 @@ file. Every line below is a command's own output or a file read on the named hos
 > **2026-10-23 (owner).** Lynx is now the only build host; Wolf is retired, and the live plan is
 > [`lynx-plan.md`](lynx-plan.md). The readings below are unchanged. New Lynx facts go in a new dated section.
 
+## Lynx, 2026-10-26: the headset session's code, checked in the flat view
+
+Commits `2d57f40`..`3c4860f` build items 1–6 of [`headset-plan.md`](headset-plan.md) ("Code to change"). No headset is
+connected yet: `Get-PnpDevice` lists no Quest, Oculus or ADB device.
+
+- **The system OpenXR runtime is the Simulator's.** `HKLM\SOFTWARE\Khronos\OpenXR\1` `ActiveRuntime` =
+  `C:\Users\kazda\AppData\Local\MetaXRSimulatorExtract\PFiles\MetaXRSimulator\v207.0\meta_openxr_simulator.json`.
+  Nothing from Meta Horizon Link or Steam is installed (`C:\Program Files\Oculus` and `C:\Program Files (x86)\Steam` are
+  absent). So `run-bplink --runtime` sets the runtime per process for every route.
+- **The Simulator, driven headless, still stops at READY.** With `--vr --xr-sim`, the session goes from IDLE to READY and
+  the world barely ticks: one `BpFrame` sample at 400 ms. The start-up seat waits for a tracked head and never ran. The
+  flat-view checks below are what is established.
+
+| # | What ran | Verbatim result |
+|---|---|---|
+| 37 | `run-bplink.mjs --mode game --xr-sim --exec "BpView.Pose target,BpView.Seat,BpView.Seat 118,..."` | `BpView: seat flat eye_above_floor_cm=138.0 table_top_cm=95.0 eye_above_top_cm=43.0 (target 43) moved_cm=0.0 turned_deg=0.0`; then `seat flat (eye height given) eye_above_floor_cm=118.0 table_top_cm=75.0 eye_above_top_cm=43.0 (target 43) moved_cm=20.0` |
+| 38 | the same, then `BpView.TextCard 1` | 18 classes, e.g. `text class="deck body" cap_cm=0.88 dist_cm=75.0 arcmin=40.1`, `"deck chips" ... arcmin=34.4 under the band`, `"map feature name, far" cap_cm=2.12 dist_cm=111.5 arcmin=25.3 under the band`; the full table is in headset-plan.md |
+| 39 | the same with `bp.FrameMeter 1`, flat, off screen, Kettle site plan | `BpFrame: p50 over 2 s gpu_ms=3.94 game_ms=3.20 frame_ms=5.75 (bar 11.1) samples=317` (not a VR figure: one view, no compositor) |
+| 40 | editor PIE through PoF `capture_viewport`: `BpView.Seat 118`, `BpView.Pose target`, `BpRoom.Enter communications`, `BpView.TextCard 1` | the table at a 75 cm top, the lamp lowered with it, and the deck at the seated eye; the card shows all 21 lines. The posed capture hands are level actors and stay where they were; a headset removes them |
+
+Not established:
+- any reading through a real XR runtime (no route installed, no headset);
+- the wrist's SEAT pressed by a hand (it shows only with a headset);
+- what `RHIGetGPUFrameCycles` counts under Link or SteamVR (both eyes in one frame, with instanced stereo).
+
 ## Lynx, 2026-10-24 (later): L3.4 hands and zoom, the forward look, the studio
 
 Spark `vr-hands-zoom`, commits `2db0c68` (islands) to `85dec86` (studio). Run note:
