@@ -1030,6 +1030,86 @@ health rules, a glyph and a line, spec 8.1-8.2) with a `scan` block: judgement i
 - **Lenses stay data.** Nothing in the panel, the chip menus or the right-click branches on a lens id; lenses differ
   by glyph and line only, and the accent colour marks scan work (the job ring) and nothing else.
 
+## Companion (2026-10-26)
+
+The companion's lamp sits in the chrome (desktop only). Its look is a **skin**. The host decides what the lamp is doing,
+and the skin only draws it. The host lives in `apps/web/src/components/companion/` (spark companion-upgrade, P4).
+
+- **Host.** `CompanionHost.tsx` is the only part in the main chunk. After mount it loads `CompanionLive.tsx` as a chunk
+  of its own. That chunk holds the skins, `stream.ts`, `store.ts`, `focus.ts`, `Cards.tsx` and `companion.css`. The
+  host draws in one layer (`.cp-host`, `data-keys="own"`). The layer is portalled into the `.bp` root, which is fixed
+  and unscaled, so a skin's `target` (viewport px) is the skin's own px. The chrome's `scale(U)` layer does not apply
+  to it.
+- **Skins.** `lamps/index.ts` holds `LAMPS`, and the first entry is the default. `?lamp=<key>` picks one. A skin gets
+  `LampProps`: `state`, `caption?`, `target?`, `cards`, `onSubmit`, `onCard`. `ownsCards: true` on a `LampSkin` means
+  the skin draws `cards` itself, and the host then leaves out its slip. `plain` (name "Lamp") is the deliberately plain
+  fallback: a 40 px round button bottom-right, a caption bubble, a one-line composer and a dashed box at `target`. The
+  contest's skins are listed ahead of it.
+- **Composer convention.** A skin marks its text field `data-composer` and the button that opens the field
+  `data-lamp-toggle`. The skin closes the composer on Esc, and on blur when it is empty. The host reads `listening` off
+  the focus inside its layer.
+- **Live path.**
+  - One `EventSource('/api/companion/stream')` on the page's origin. On an error it closes and reopens after 0.5 s,
+    doubling to 10 s, and every 60 s after six failures with no open. While it is down the store reads
+    `online:false` and the lamp shows `idle` with the quiet caption "companion offline". It never toasts.
+  - On every open, `GET /api/companion/cards` reloads the pending cards.
+  - `onSubmit(text)` POSTs `/api/companion/turn` `{conversationId?, product, text}`, where `product` is the page's
+    `?product`, else `kettle`. The SSE body is read off `fetch`. The conversation id is kept in `sessionStorage`
+    (`bp.companion.conversation`, wrapped).
+  - A 409 `thread_busy` shows "still answering the last one" for 4 s.
+  - Stop is `DELETE /api/companion/turns/<turnId>`.
+  - While the page reads its own POST body, the stream's turn events for that conversation are ignored, so no delta
+    shows twice.
+- **States**, first match wins (`store.ts deriveLamp`):
+
+  | State | When |
+  | --- | --- |
+  | `idle` | the stream is down |
+  | `asking` | a card is pending |
+  | `pointing` | a focus command for this product, for 2.5 s after it arrives |
+  | `thinking` | a turn is waiting for its first text (or for text after a tool answered, when none came before) |
+  | `speaking` | text is streaming |
+  | `working` | a tool call is open, or a live scan job is running |
+  | `listening` | the composer is focused and empty |
+  | `idle` | otherwise |
+
+  The caption is a notice while one shows, else the focus `say` while pointing, else the current or last turn's text.
+- **Focus** (`focus.ts`). Each target kind maps to the same Engine calls a click makes:
+
+  | Kind | Calls | `target` rect |
+  | --- | --- | --- |
+  | `feature` | `setPage('plan')`, `flyToFeature(id)` | `featureRect` once the camera has arrived |
+  | `room`, `wing` | the hash route `restoreHash` reads (`#at=<id>`, lens and time kept) | none |
+  | `decision` | `setPage('plan')`, `openDecision(id)` | `#dcard` |
+  | `wave` | `setPage('ledger','triage')`, the ledger store's `showWave` (backlog scope) | `[data-wave]` |
+  | `release` | `setPage('ledger','release')`, ledger focus | `[data-fid]` |
+  | `ledger-row` | `setPage('ledger','triage')`, ledger focus with the filters cleared | `[data-fid]` |
+  | `lens` | `setView(id)` (the Header's setter) | none |
+
+  - A feature slug resolves to line one's tile at `?scale > 1`.
+  - A place the plan lacks shows a notice, and nothing moves.
+  - A command for another product shows "<say> - in <product>" with an **Open** link to `projectHref(product)`. It
+    never navigates on its own.
+  - A focus id runs once.
+  - A rect that cannot be measured is left out.
+- **Cards** (`Cards.tsx`).
+  - The slip sits bottom-right, left of where a skin's caption reaches. Pending cards come first, then the newest.
+  - A card shows its summary and up to three `name: value` facts from its args, with **Approve** and **Decline** as the
+    ledger's `Btn`.
+  - An answer is `POST /api/companion/cards/<id>` `{decision}` with the header `x-bp-human: <token>`. The token comes
+    from `GET /api/companion/human-token`. It is fetched once, kept in memory, and fetched again after a 403.
+  - A decided card shows its outcome and fades out after 2 s.
+- **Keys.**
+  - `'` opens the composer from anywhere outside a text field. It is not in the Engine's key map or the ledger's.
+  - Esc in an empty composer while this page's turn runs stops the turn. Otherwise Esc closes the composer.
+- **Fixture.** `?lamp-fixture=1` plays `fixture.ts` with no server: every state, a streamed caption, a card in the slip
+  and a pointing target.
+- **Performance.**
+  - Only `CompanionLive` subscribes to the store, so a stream event re-renders the lamp and none of the chrome.
+  - Motion uses transform and opacity only, and no text is under 12 px.
+  - `node scripts/check-companion-web.ts` pins the derivation, the store, the focus table, SSE parsing across split
+    chunks, the reconnect, and the CSS floor and motion properties.
+
 ## Done means
 
 - `npm run build` and `npm run typecheck` pass. There are no console errors on load or while

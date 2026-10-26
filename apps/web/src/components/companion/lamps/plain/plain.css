@@ -1,0 +1,24 @@
+/* The plain lamp (Plain.tsx): token colours only, nothing readable under 12 px, motion on transform and opacity only. */
+.lp-plain { position: absolute; inset: 0; pointer-events: none; }
+.lp-dock { position: absolute; right: 100px; bottom: calc(var(--bb, 116px) + 12px); display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.lp-dock > * { pointer-events: auto; }
+.lp-btn { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); display: grid; place-items: center; padding: 0; cursor: pointer; box-shadow: 0 2px 10px var(--shadow); }
+.lp-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.lp-btn i { width: 12px; height: 12px; border-radius: 50%; background: var(--ink-2); transition: transform 0.2s ease, opacity 0.2s ease; }
+.lp-plain[data-state='listening'] .lp-btn i { background: var(--accent); }
+.lp-plain[data-state='thinking'] .lp-btn i { background: var(--accent); animation: lp-breathe 1.2s ease-in-out infinite; }
+.lp-plain[data-state='speaking'] .lp-btn i { background: var(--ink-hi); transform: scale(1.25); }
+.lp-plain[data-state='working'] .lp-btn i { background: var(--mint); animation: lp-breathe 0.8s ease-in-out infinite; }
+.lp-plain[data-state='asking'] .lp-btn i { background: var(--amber); transform: scale(1.3); }
+.lp-plain[data-state='pointing'] .lp-btn i { background: var(--accent); transform: scale(1.3); }
+@keyframes lp-breathe { 50% { opacity: 0.35; transform: scale(0.8); } }
+.lp-cap { margin: 0; max-width: 300px; padding: 8px 10px; background: var(--card); border: 1px solid var(--line); color: var(--ink); font: 400 13px/1.4 var(--sans); white-space: pre-wrap; overflow-wrap: anywhere; }
+.lp-plain[data-state='idle'] .lp-cap { color: var(--ink-2); }
+.lp-form { margin: 0; }
+.lp-form input { width: 280px; height: 32px; padding: 0 10px; border: 1px solid var(--accent); background: var(--panel-solid); color: var(--ink); font: 400 14px var(--sans); }
+.lp-form input::placeholder { color: var(--ink-2); }
+.lp-target { position: absolute; left: 0; top: 0; border: 2px dashed var(--accent); pointer-events: none; animation: lp-in 0.25s ease-out; }
+@keyframes lp-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .lp-btn i, .lp-target { animation: none !important; transition: none; }
+}

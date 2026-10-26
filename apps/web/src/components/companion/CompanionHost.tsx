@@ -1,39 +1,14 @@
 'use client';
-// The companion's host in the chrome (desktop only): picks the lamp skin (`?lamp=<key>`), derives its state and hands it
-// LampProps. P0b: only the fixture path (`?lamp-fixture=1`, fixture.ts) is built; the live path (the companion stream,
-// focus commands, cards with the human token) is P4's. With no skin registered, or neither path active, it renders nothing.
-import { useEffect, useMemo, useState } from 'react';
-import { frameAt } from './fixture';
-import { lampFor, type LampProps } from './lamps';
+// The companion's host in the chrome (desktop only: Chrome renders nothing on a phone). This shell is all the main chunk
+// carries: after mount it loads CompanionLive (the skins, the stream, focus and cards) as a chunk of its own, so nothing of
+// the companion loads before the plan is up. CompanionLive picks the skin (`?lamp=<key>`, else the first registered),
+// plays the fixture timeline on `?lamp-fixture=1` with no server, and otherwise runs the live path.
+import { lazy, Suspense, useEffect, useState } from 'react';
 
-function useFixtureProps(on: boolean): LampProps | null {
-  const [t, setT] = useState(0);
-  useEffect(() => {
-    if (!on) return;
-    const t0 = performance.now();
-    const id = window.setInterval(() => setT(performance.now() - t0), 250);
-    return () => window.clearInterval(id);
-  }, [on]);
-  return useMemo(() => {
-    if (!on) return null;
-    const f = frameAt(t);
-    const vw = window.innerWidth, vh = window.innerHeight;
-    return {
-      state: f.state,
-      caption: f.caption,
-      target: f.target && { x: f.target.x * vw, y: f.target.y * vh, w: f.target.w * vw, h: f.target.h * vh },
-      cards: f.cards ?? [],
-      onSubmit: () => {},
-      onCard: () => {},
-    };
-  }, [on, t]);
-}
+const Live = lazy(() => import('./CompanionLive'));
 
 export function CompanionHost() {
-  const [q, setQ] = useState<URLSearchParams | null>(null);
-  useEffect(() => { setQ(new URLSearchParams(location.search)); }, []);
-  const skin = q ? lampFor(q.get('lamp')) : undefined;
-  const props = useFixtureProps(!!q && q.get('lamp-fixture') === '1');
-  if (!skin || !props) return null;
-  return <skin.Component {...props} />;
+  const [on, setOn] = useState(false);
+  useEffect(() => { setOn(true); }, []);
+  return on ? <Suspense fallback={null}><Live /></Suspense> : null;
 }
