@@ -3,7 +3,7 @@
 Spark companion-upgrade, 2026-10-26. bp's companion lives in bp's server (`apps/server`, `http://127.0.0.1:3100`, the
 canonical process; one process serves the companion). The web app and the VR client are two faces of the same companion:
 the same turns, the same tools, the same cards. This page is what the UE client (`BpLink`) needs to follow it. It is a
-contract only: no UE code changes with it, and the lamp wiring is a follow-up spark after the VR-room-layers work lands.
+contract only: no UE code changes with it. The UE work is planned in [companion-lamp-plan.md](companion-lamp-plan.md).
 
 The wire types are `packages/core/src/companion/contract.ts`. Every route is loopback-only (a GET needs a loopback `Host`;
 a POST also needs `content-type: application/json`), and every refusal is `{ error }`.
