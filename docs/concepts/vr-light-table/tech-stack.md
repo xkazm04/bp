@@ -131,18 +131,18 @@ server (`apps/mcp/bp-mcp.mjs`) and the companion all read; `scripts/check-compan
 |---|---|---|---|
 | `inbox.list` (Open decisions across every registered product, ranked by tier, age and value) | yes | none | AUTO |
 | `decision.recommend` (Attach a recommended verdict and its reason to one open decision, for the person to approve in a batch) | yes | internal | AUTO |
-| `decision.answer` (Approve or decline one proposal) | yes | internal | AUTO |
+| `decision.answer` (Approve or decline one proposal (final: no route reopens a decided proposal)) | no | internal | GATED |
 | `triage.set` (Triage shipped items: accept, rework, descope or reopen) | yes | internal | AUTO |
 | `policy.propose` (Propose a scoped, expiring policy that lets the companion answer some GATED tools; only the person can grant it) | no | internal | GATED |
 | `wave.compose` (Group findings into a draft wave of packages, each with a model and an effort) | yes | internal | AUTO |
 | `wave.dispatch` (Dispatch a draft wave: queue its packages' build jobs, which spend money and edit code) | no | external | GATED |
-| `release.draft` (Create a draft release from shipped items) | yes | internal | AUTO |
+| `release.draft` (Create a draft release from shipped items (its version stays taken: no route deletes a draft)) | no | internal | GATED |
 | `release.build` (Build a draft release: branch, PR and changelog on GitHub) | no | external | GATED |
 | `release.finish` (Finish a release whose PR is open or merged) | no | external | GATED |
 | `scan.gaps` (Where coverage is lacking: unmeasured, stale, unknown or deviating features, ranked) | yes | none | AUTO |
 | `scan.place` (Start a lens scan of a scope (feature, bay, room, wing or all)) | yes | internal | AUTO |
 | `focus.show` (Show the person a place: fly the view to a feature, room or wing, or open a decision, wave, release, ledger row or lens) | yes | none | AUTO |
-| `finding.decline` (Decline one finding (a proposed change)) | yes | internal | AUTO |
+| `finding.decline` (Decline one finding (a proposed change); final) | no | internal | GATED |
 | `memory.note` (Keep one fact about the person or a project, citing the conversation it came from) | yes | internal | AUTO |
 
 Open seam, settled in P5: athena's gate treats every new origin as GATED on first sight, and its

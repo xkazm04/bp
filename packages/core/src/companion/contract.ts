@@ -43,7 +43,8 @@ export interface Card {
 export interface CardAnswer { decision: 'approve' | 'decline' }
 
 /** A scoped, expiring grant a person writes; a GATED tool it covers runs without a card and is recorded as by policy. */
-export interface PolicyGrant { id: string; product: string | '*'; tools: string[]; maxTier?: 0 | 1 | 2 | 3; expiresAt: string; createdAt: string }
+export interface PolicyGrant { id: string; product: string | '*'; tools: string[]; /** Covers only findings of this tier or milder (tier 0 = stop-ship is the most severe). */
+  minTier?: 0 | 1 | 2 | 3; expiresAt: string; createdAt: string }
 
 export type Verdict = 'approve' | 'decline' | 'rework' | 'descope';
 export interface InboxItem {

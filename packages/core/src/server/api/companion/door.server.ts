@@ -10,7 +10,7 @@
 // CLI sees, and the CLI has no shell or file tools to fetch it with). A local program can still send the two headers by hand:
 // the server is loopback-only, so this is a guard against the agent, not against an attacker already on this machine.
 // A grant (policies.json, written only by the human path) covers a card when its product matches (or `*`), the tool is in
-// its tools, it has not expired and, with maxTier, every finding the args name that carries a tier has tier <= maxTier; a
+// its tools, it has not expired and, with minTier, every finding the args name that carries a tier has tier >= minTier (that severe or milder); a
 // covered card runs at once and records `decidedBy: 'policy'` and the grant's id. No grant may cover policy.propose.
 // Execution: one fetch to this server's own origin, the request tool-call.ts builds; the human token rides along only on a
 // human approval (so policy.propose can reach POST /policies when, and only when, a person approved it). Every card state
@@ -75,7 +75,7 @@ export const listPolicies = (): PolicyGrant[] => {
 };
 export function addPolicy(p: Omit<PolicyGrant, 'id' | 'createdAt' | 'expiresAt'> & { hours: number }): PolicyGrant {
   const now = Date.now();
-  const grant: PolicyGrant = { id: sortableId('pol_'), product: p.product, tools: p.tools, ...(p.maxTier !== undefined ? { maxTier: p.maxTier } : {}), expiresAt: new Date(now + p.hours * 3600000).toISOString(), createdAt: new Date(now).toISOString() };
+  const grant: PolicyGrant = { id: sortableId('pol_'), product: p.product, tools: p.tools, ...(p.minTier !== undefined ? { minTier: p.minTier } : {}), expiresAt: new Date(now + p.hours * 3600000).toISOString(), createdAt: new Date(now).toISOString() };
   writeJson('policies.json', { policies: [grant, ...listPolicies()] });
   return grant;
 }
@@ -114,9 +114,9 @@ export function policyFor(t: ToolSpec, args: Record<string, unknown>, now = Date
   for (const p of listPolicies()) {
     if (Date.parse(p.expiresAt) <= now || !p.tools.includes(t.name)) continue;
     if (p.product !== '*' && p.product !== slug) continue;
-    if (p.maxTier !== undefined) {
+    if (p.minTier !== undefined) {
       const tiers = namedTiers(t, args, slug);
-      if (!tiers || tiers.some((x) => x > p.maxTier!)) continue;
+      if (!tiers || tiers.some((x) => x < p.minTier!)) continue;
     }
     return p;
   }

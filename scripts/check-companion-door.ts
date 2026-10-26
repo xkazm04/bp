@@ -10,7 +10,7 @@
 //   human     approving without the human token is 403 and runs nothing; with it, the route runs and the card is done;
 //             a second answer is 409; human-token without (or with only one of) the Sec-Fetch headers is 403
 //   policy    POST /policies without the token is 403; a grant for wave.dispatch on kettle makes the next GATED call run at
-//             once with decidedBy 'policy' and the grant's id; policy.propose and AUTO tools cannot be granted; maxTier,
+//             once with decidedBy 'policy' and the grant's id; policy.propose and AUTO tools cannot be granted; minTier,
 //             product, expiry and policy.propose are honoured by policyFor (in process)
 //   gaps      the formula (base x tier weight) on every reason and tier, and GET gaps on `good` answers exactly the
 //             expected ranked list
@@ -224,12 +224,12 @@ try {
   const door = await import('../packages/core/src/server/api/companion/door.server.ts');
   const { toolOf } = await import('../packages/core/src/server/api/companion/tool-call.ts');
   const wd = toolOf('wave.dispatch')!;
-  const tiered = door.addPolicy({ product: 'good', tools: ['wave.dispatch'], maxTier: 1, hours: 1 });
-  check('policy: maxTier 1 covers a wave whose findings are tier 0', door.policyFor(wd, { slug: 'good', wave: 'w-t0' })?.id === tiered.id);
-  check('policy: maxTier 1 does not cover a wave holding a tier 2 finding', door.policyFor(wd, { slug: 'good', wave: 'w-t2' }) === null);
-  check('policy: maxTier with a wave it cannot read covers nothing', door.policyFor(wd, { slug: 'good', wave: 'w-none' }) === null);
-  check('policy: another product is not covered', door.policyFor(wd, { slug: 'bad', wave: 'w-t0' }) === null);
-  check('policy: an expired grant covers nothing', door.policyFor(wd, { slug: 'good', wave: 'w-t0' }, NOW + 2 * H) === null);
+  const tiered = door.addPolicy({ product: 'good', tools: ['wave.dispatch'], minTier: 1, hours: 1 });
+  check('policy: minTier 1 does not cover a wave holding a tier 0 (stop-ship) finding', door.policyFor(wd, { slug: 'good', wave: 'w-t0' }) === null);
+  check('policy: minTier 1 covers a wave whose findings are tier 2', door.policyFor(wd, { slug: 'good', wave: 'w-t2' })?.id === tiered.id);
+  check('policy: minTier with a wave it cannot read covers nothing', door.policyFor(wd, { slug: 'good', wave: 'w-none' }) === null);
+  check('policy: another product is not covered', door.policyFor(wd, { slug: 'bad', wave: 'w-t2' }) === null);
+  check('policy: an expired grant covers nothing', door.policyFor(wd, { slug: 'good', wave: 'w-t2' }, NOW + 2 * H) === null);
   const star = door.addPolicy({ product: '*', tools: ['policy.propose', 'release.build'], hours: 1 });
   check('policy: no grant ever covers policy.propose', door.policyFor(toolOf('policy.propose')!, { product: '*', tools: ['wave.dispatch'], hours: 1 }) === null);
   check('policy: a * grant covers any product', door.policyFor(toolOf('release.build')!, { slug: 'good', id: 'rel-1.0.0' })?.id === star.id);

@@ -508,7 +508,7 @@ The blueprint never writes a triage or release move itself: `packages/core/src/s
 | `POST /api/companion/cards` | Body `{ tool, args }`, the agent's path for a GATED tool: **201** the pending `Card`, or **200** the card run at once under a live policy grant (`decidedBy: 'policy'`, `done` or `failed`); **400** unknown or AUTO tool, missing args. |
 | `POST /api/companion/cards/<id>` | Body `{ decision: 'approve' \| 'decline' }`, the human path (`x-bp-human` token, else **403**). Approve runs the tool once (**200** the card `done` or `failed`); decline runs nothing; **409** `{ error, card }` once it is not pending; **404**. |
 | `GET /api/companion/policies` | Every `PolicyGrant`, newest first. |
-| `POST /api/companion/policies` | Body `{ product \| '*', tools, maxTier?, hours }`, the human path (**403** without the token). GATED tools only, never `policy.propose`. **201** the grant; **400**; **404**. |
+| `POST /api/companion/policies` | Body `{ product \| '*', tools, minTier?, hours }`, the human path (**403** without the token). GATED tools only, never `policy.propose`. **201** the grant; **400**; **404**. |
 | `DELETE /api/companion/policies/<id>` | Revoke a grant, the human path. **200** `{ id }`; **404**. |
 | `POST /api/companion/focus` | Body `{ product, kind, id, say? }`: a `FocusCommand` with a time-sortable id, published on the companion bus. **201** the command; **400**; **404** unknown product. |
 | `GET /api/companion/focus` | `?since=<id>`: the focus commands after it, newest first, at most 20 (VR's poll, `docs/concepts/vr-light-table/companion-link.md`). |

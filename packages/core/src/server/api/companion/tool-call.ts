@@ -9,7 +9,6 @@ import { TOOLS, classOf, wireName, type ToolSpec } from '../../../companion/cata
 /** Body fields a tool's route needs that are not the model's to choose. CONTRACT AMENDMENT pending (report P3): the catalog
  *  should carry these as `route.fixed`; until it does, this is the one place they live. finding.decline shares
  *  decision.answer's route, which refuses a body without `decision`. */
-export const FIXED_BODY: Readonly<Record<string, Record<string, unknown>>> = { 'finding.decline': { decision: 'decline' } };
 
 /** The largest result text a tool hands back to the model (untrusted-result-handling: a cap is door policy). */
 export const RESULT_CAP = 8000;
@@ -43,7 +42,7 @@ export function toolRequest(t: ToolSpec, args: unknown): ToolRequest | { error: 
     const qs = q.toString();
     return { method: 'GET', path: qs ? `${path}?${qs}` : path };
   }
-  return { method: t.route.method, path, body: { ...a, ...FIXED_BODY[t.name] } };
+  return { method: t.route.method, path, body: { ...a, ...t.route.fixed } };
 }
 
 /** The product a call is about: `slug`, else `product`, when a string. */
