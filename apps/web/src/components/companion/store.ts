@@ -9,7 +9,7 @@
 import type { Card, CompanionEvent, FocusCommand, LampState, TurnEvent } from '@bp/core/companion/contract';
 
 /** How long a focus command keeps the lamp pointing after it arrives. */
-export const POINT_MS = 2500;
+export const POINT_MS = 6000;
 /** How long a decided card stays on the slip (it fades out as it leaves). */
 export const CARD_FADE_MS = 2000;
 /** How long a notice ("still answering the last one") replaces the caption. */

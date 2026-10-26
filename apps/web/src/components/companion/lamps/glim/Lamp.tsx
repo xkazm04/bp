@@ -28,16 +28,18 @@ const HOOD_TOP = 15, LOOP_Y = 139 * K, LOOP_L = 44 * K, LOOP_R = 76 * K;
 const RAIL_Y = 78;
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
+/** The viewport and the chrome around the plan, in viewport px. The lamp draws in the host's unscaled layer, so the chrome's
+ *  own sizes (--rw the Dock, --bb the bottom bars, in the chrome's units) are multiplied by the chrome's scale. */
 function useUi(ref: React.RefObject<HTMLElement | null>) {
-  const [ui, setUi] = useState({ u: 1, w: 1600, h: 900, rw: 70, bb: 116 });
+  const [ui, setUi] = useState({ w: 1600, h: 900, rw: 70, bb: 116 });
   useLayoutEffect(() => {
     const read = () => {
-      const host = ref.current?.closest('.bp-ui') as HTMLElement | null;
+      const host = (ref.current?.ownerDocument ?? document).querySelector('.bp-ui') as HTMLElement | null;
       const u = host && host.offsetWidth ? host.getBoundingClientRect().width / host.offsetWidth : 1;
       const cs = host ? getComputedStyle(host) : null;
-      const rw = parseFloat(cs?.getPropertyValue('--rw') || '') || 70;
-      const bb = parseFloat(cs?.getPropertyValue('--bb') || '') || 116;
-      setUi({ u, w: window.innerWidth / u, h: window.innerHeight / u, rw, bb });
+      const rw = (parseFloat(cs?.getPropertyValue('--rw') || '') || 70) * u;
+      const bb = (parseFloat(cs?.getPropertyValue('--bb') || '') || 116) * u;
+      setUi({ w: window.innerWidth, h: window.innerHeight, rw, bb });
     };
     read();
     window.addEventListener('resize', read);
@@ -95,15 +97,27 @@ export function GlimLamp(p: LampProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => { if (open) inputRef.current?.focus(); }, [open]);
 
-  const tx = p.target ? Math.round(p.target.x / ui.u) : 0, ty = p.target ? Math.round(p.target.y / ui.u) : 0;
-  const tw = p.target ? Math.round(p.target.w / ui.u) : 0, th = p.target ? Math.round(p.target.h / ui.u) : 0;
-  const pointing = p.state === 'pointing' && !!p.target;
+  // the target, clipped to the plan the person can see (below the rail, left of the Dock, above the bottom bars): a room
+  // at room zoom is larger than the screen, and a ring round its whole box would sit off-screen. A target that fills most
+  // of the view is framed instead (the ring inset inside the view, the tag in its top-left corner); one wholly off the
+  // plan is not pointed at - the host already moved the view, and the caption says where.
+  const view = { l: 16, t: RAIL_Y + 34, r: ui.w - ui.rw - 16, b: ui.h - ui.bb - 8 };
+  const clip = p.target && (() => {
+    const l = Math.max(view.l, p.target.x), t = Math.max(view.t, p.target.y);
+    const r = Math.min(view.r, p.target.x + p.target.w), b = Math.min(view.b, p.target.y + p.target.h);
+    return r - l > 24 && b - t > 24 ? { l, t, r, b } : null;
+  })();
+  const frame = !!clip && (clip.r - clip.l) * (clip.b - clip.t) > 0.55 * (view.r - view.l) * (view.b - view.t);
+  const inset = frame ? 14 : -10;
+  const tx = clip ? Math.round(clip.l + inset) : 0, ty = clip ? Math.round(clip.t + inset) : 0;
+  const tw = clip ? Math.round(clip.r - clip.l - 2 * inset) : 0, th = clip ? Math.round(clip.b - clip.t - 2 * inset) : 0;
+  const pointing = p.state === 'pointing' && !!clip;
 
   // where the rig is: parked in the gutter left of the Dock, or over the target
   const homeX = ui.w - ui.rw - 86;
   const homeDrop = 62;
   const drop = pointing
-    ? clamp(ty - 18 - (LOOP_Y - HOOD_TOP) - RAIL_Y, 40, ui.h - 300)
+    ? clamp(ty - 18 - (LOOP_Y - HOOD_TOP) - RAIL_Y, 24, ui.h - 300)
     : p.state === 'asking' ? homeDrop + 30 : p.state === 'listening' || p.state === 'working' ? homeDrop + 16 : homeDrop;
   // over the target the reaching (right) hand sits above the ring's centre
   const x = pointing ? clamp(tx + tw / 2 - (LOOP_R - LW / 2), 220, homeX) : homeX;
@@ -143,7 +157,7 @@ export function GlimLamp(p: LampProps) {
 
       <AnimatePresence>
         {pointing && (
-          <motion.div key="ring" className="lp-ring" style={{ left: tx - 10, top: ty - 10, width: tw + 20, height: th + 20 }}
+          <motion.div key="ring" className={'lp-ring' + (frame ? ' lp-ring-frame' : '')} style={{ left: tx, top: ty, width: tw, height: th }}
             initial={{ opacity: 0, scale: 0.15 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
             transition={{ delay: 1.0, type: 'spring', stiffness: 170, damping: 15 }}>
             <i />
@@ -153,7 +167,8 @@ export function GlimLamp(p: LampProps) {
       <AnimatePresence>
         {pointing && p.caption && (
           <motion.div key="ptag" className="lp-tag lp-ptag" role="status"
-            style={{ left: tx + tw + 30 + 330 < ui.w - ui.rw ? tx + tw + 30 : Math.max(16, tx - 360), top: clamp(ty - 4, RAIL_Y + 20, ui.h - 200) }}
+            style={frame ? { left: Math.max(tx + 18, tx + tw - 330 - 18), top: ty + 18 }
+              : { left: tx + tw + 30 + 330 < view.r ? tx + tw + 30 : Math.max(16, tx - 360), top: clamp(ty - 4, view.t, ui.h - ui.bb - 120) }}
             initial={{ opacity: 0, rotate: -8, y: -10 }} animate={{ opacity: 1, rotate: -1.5, y: 0 }} exit={{ opacity: 0 }}
             transition={{ delay: 1.3, type: 'spring', stiffness: 140, damping: 11 }}>
             <span className="lp-eyelet" />
@@ -224,7 +239,7 @@ export function GlimLamp(p: LampProps) {
                     <span className="lp-hold" style={{ left: 296 + (LOOP_R - LOOP_L) - 1 }} />
                     {card ? (
                       <>
-                        {p.caption && <h3>{p.caption}</h3>}
+                        {p.caption && p.caption !== card.summary && <h3>{p.caption}</h3>}
                         <div className="lp-card-k">DECISION{card.product ? ` · ${card.product}` : ''} · <code>{card.tool}</code></div>
                         <p>{card.summary}</p>
                         <div className="lp-card-b">

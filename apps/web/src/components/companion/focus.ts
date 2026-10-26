@@ -23,7 +23,7 @@ export type FocusStep =
   | { op: 'wave'; id: string }
   | { op: 'ledgerFocus'; id: string; clear: boolean }
   | { op: 'lens'; id: string };
-export type RectSource = { from: 'feature'; id: string } | { from: 'dom'; selector: string };
+export type RectSource = { from: 'feature'; id: string } | { from: 'place'; kind: 'room' | 'wing'; id: string } | { from: 'dom'; selector: string };
 
 export type FocusPlan =
   | { kind: 'run'; steps: FocusStep[]; rect?: RectSource }
@@ -35,8 +35,8 @@ const attr = (name: string, v: string) => '[' + name + '="' + v.replace(/["\\]/g
 /** Every target kind's steps and where its rect is read. */
 export const FOCUS_TABLE: Record<FocusKind, (id: string) => { steps: FocusStep[]; rect?: RectSource }> = {
   feature: (id) => ({ steps: [{ op: 'page', page: 'plan' }, { op: 'flyToFeature', id }], rect: { from: 'feature', id } }),
-  room: (id) => ({ steps: [{ op: 'place', kind: 'room', id }] }),
-  wing: (id) => ({ steps: [{ op: 'place', kind: 'wing', id }] }),
+  room: (id) => ({ steps: [{ op: 'place', kind: 'room', id }], rect: { from: 'place', kind: 'room', id } }),
+  wing: (id) => ({ steps: [{ op: 'place', kind: 'wing', id }], rect: { from: 'place', kind: 'wing', id } }),
   decision: (id) => ({ steps: [{ op: 'page', page: 'plan' }, { op: 'openDecision', id }], rect: { from: 'dom', selector: '#dcard' } }),
   wave: (id) => ({ steps: [{ op: 'page', page: 'ledger', lv: 'triage' }, { op: 'wave', id }], rect: { from: 'dom', selector: attr('data-wave', id) } }),
   release: (id) => ({ steps: [{ op: 'page', page: 'ledger', lv: 'release' }, { op: 'ledgerFocus', id, clear: false }], rect: { from: 'dom', selector: attr('data-fid', id) } }),
@@ -94,6 +94,10 @@ export function targetRect(E: Engine, src: RectSource | undefined, waitMs = 2000
   if (!src) return Promise.resolve(null);
   const read = (): Rect | null => {
     if (src.from === 'feature') { const id = tileId(E, src.id); const r = id ? E.featureRect(id) : null; return r ? { x: r.x, y: r.y, w: r.w, h: r.h } : null; }
+    if (src.from === 'place') { // the room's or wing's world box at the arrived camera (the canvas fills the page)
+      const n = E.placeById(src.kind, src.id), c = E.cam;
+      return n ? { x: c.sx(n.x), y: c.sy(n.y), w: n.w * c.k, h: n.h * c.k } : null;
+    }
     const el = document.querySelector(src.selector), b = el?.getBoundingClientRect();
     return b && b.width && b.height ? { x: b.left, y: b.top, w: b.width, h: b.height } : null;
   };

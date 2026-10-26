@@ -35,8 +35,8 @@ check('derive: stream down -> idle, caption "companion offline"', eq(deriveLamp(
 check('derive: stream down wins over a pending card', deriveLamp(run([{ type: 'event', e: { type: 'card', card: card('c1') } }]), ui()).state === 'idle');
 check('derive: a pending card -> asking (caption: its summary)', eq(deriveLamp(run([{ type: 'event', e: { type: 'card', card: card('c1') } }], on), ui()), { state: 'asking', caption: 'Dispatch wave w1' }));
 const pointed = run([{ type: 'event', e: { type: 'focus', focus: focusCmd('f1') } }], on);
-check('derive: focus within 2.5 s -> pointing, caption = say', eq(deriveLamp(pointed, ui({ now: T0 + POINT_MS - 1 })), { state: 'pointing', caption: 'This one' }));
-check('derive: focus after 2.5 s -> no longer pointing', deriveLamp(pointed, ui({ now: T0 + POINT_MS })).state === 'idle');
+check('derive: focus within POINT_MS (6 s) -> pointing, caption = say', eq(deriveLamp(pointed, ui({ now: T0 + POINT_MS - 1 })), { state: 'pointing', caption: 'This one' }));
+check('derive: focus after POINT_MS -> no longer pointing', deriveLamp(pointed, ui({ now: T0 + POINT_MS })).state === 'idle');
 check('derive: focus for another product -> not pointing', deriveLamp(run([{ type: 'event', e: { type: 'focus', focus: focusCmd('f2', { product: 'pof' }) } }], on), ui()).state === 'idle');
 const started = run([{ type: 'event', e: tv('c', { type: 'start', turnId: 't1', conversationId: 'c' }) }], on);
 check('derive: a turn awaiting its first text -> thinking', deriveLamp(started, ui()).state === 'thinking');
@@ -80,8 +80,8 @@ check('derive: precedence asking > pointing > thinking', deriveLamp(run([{ type:
 // ------------------------------------------------------------------------- 3. focus mapping
 const steps = (kind: FocusCommand['target']['kind']) => FOCUS_TABLE[kind]('x1');
 check('focus: feature -> plan page, flyToFeature, rect from the camera', eq(steps('feature'), { steps: [{ op: 'page', page: 'plan' }, { op: 'flyToFeature', id: 'x1' }], rect: { from: 'feature', id: 'x1' } }));
-check('focus: room -> the hash route', eq(steps('room'), { steps: [{ op: 'place', kind: 'room', id: 'x1' }] }));
-check('focus: wing -> the hash route', eq(steps('wing'), { steps: [{ op: 'place', kind: 'wing', id: 'x1' }] }));
+check('focus: room -> the hash route, rect from the room box', eq(steps('room'), { steps: [{ op: 'place', kind: 'room', id: 'x1' }], rect: { from: 'place', kind: 'room', id: 'x1' } }));
+check('focus: wing -> the hash route, rect from the wing box', eq(steps('wing'), { steps: [{ op: 'place', kind: 'wing', id: 'x1' }], rect: { from: 'place', kind: 'wing', id: 'x1' } }));
 check('focus: decision -> plan page, openDecision, rect of #dcard', eq(steps('decision'), { steps: [{ op: 'page', page: 'plan' }, { op: 'openDecision', id: 'x1' }], rect: { from: 'dom', selector: '#dcard' } }));
 check('focus: wave -> ledger triage + showWave', eq(steps('wave'), { steps: [{ op: 'page', page: 'ledger', lv: 'triage' }, { op: 'wave', id: 'x1' }], rect: { from: 'dom', selector: '[data-wave="x1"]' } }));
 check('focus: release -> ledger release + focus', eq(steps('release'), { steps: [{ op: 'page', page: 'ledger', lv: 'release' }, { op: 'ledgerFocus', id: 'x1', clear: false }], rect: { from: 'dom', selector: '[data-fid="x1"]' } }));

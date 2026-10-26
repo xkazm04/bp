@@ -1,7 +1,7 @@
 /* Loop: scoped under .glim. A pendant on a gantry; the amber is its lens, the ring it throws and the Approve it holds out.
    Every motion is transform or opacity on HTML boxes; the SVG joints only transition between poses. */
-.bp-ui > .glim { position: absolute; inset: 0; pointer-events: none; z-index: 7; --lp-amber: #ffa85a; --lp-shell: #eef3f8; --lp-edge: #0a2342; --lp-cable: rgba(223, 240, 255, 0.6); }
-:root[data-theme='light'] .bp-ui > .glim { --lp-shell: #ffffff; --lp-edge: #0b2a4a; --lp-cable: rgba(11, 42, 74, 0.55); --lp-amber: #f0902e; }
+.glim { position: absolute; inset: 0; pointer-events: none; z-index: 7; --lp-amber: #ffa85a; --lp-shell: #eef3f8; --lp-edge: #0a2342; --lp-cable: rgba(223, 240, 255, 0.6); }
+:root[data-theme='light'] .glim { --lp-shell: #ffffff; --lp-edge: #0b2a4a; --lp-cable: rgba(11, 42, 74, 0.55); --lp-amber: #f0902e; }
 .glim * { box-sizing: border-box; }
 
 /* ---------- the rail and the rig */
@@ -87,6 +87,7 @@
 .glim .lp-wire { position: absolute; width: 1.5px; margin-left: -0.75px; background: var(--lp-amber); transform-origin: 50% 0; animation: lp-wire 0.4s ease-out 1s both; }
 .glim .lp-ring { position: absolute; pointer-events: none; }
 .glim .lp-ring i { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--lp-amber); box-shadow: 0 0 0 4px rgba(255, 168, 90, 0.14), 0 0 26px rgba(255, 168, 90, 0.35), inset 0 0 30px rgba(255, 168, 90, 0.16); }
+.glim .lp-ring-frame i { border-radius: 18px; border-style: dashed; box-shadow: 0 0 0 4px rgba(255, 168, 90, 0.1), inset 0 0 40px rgba(255, 168, 90, 0.1); }
 .glim .lp-ring i:after { content: ''; position: absolute; left: 50%; top: -9px; width: 8px; height: 8px; margin-left: -4px; border-radius: 50%; background: var(--lp-amber); }
 
 @keyframes lp-sway { 0%, 100% { transform: rotate(0.9deg); } 50% { transform: rotate(-0.9deg); } }
