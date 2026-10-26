@@ -61,6 +61,12 @@ None declared.
 - A contest port is held by `scripts/fidelity/` (style-contract roles + drive.py on the winner's own data): rerun it after any ledger CSS change; the arena's winner copy and its data must stay (do not `contest.mjs wrap --apply` release-manager while the contract is in use).
 - A custom lens manifest for real products (`docs/standard/lenses-custom/`) must also pass lens-scan's `structure.mjs lens-add`, whose glyph check is stricter than bp's (absolute path commands only): 3 of 4 takeover lenses passed bp's gates and were refused at the product (2026-10-18). Run lens-add on a scratch structure as a gate.
 
+- A builder worktree needs its own node_modules: a junction to the main one resolves `@bp/*` to the MAIN checkout's packages
+  (tsc fails on duplicate ScanSim types). Make a real `node_modules` dir of per-entry junctions with `@bp/core|schema|server|web`
+  pointing into the worktree (companion-upgrade's wt-setup.ps1). Turbopack still refuses it: build/serve a UI from a scratch
+  mirror (worktree source + a copied node_modules), and say so.
+- Server-only modules (`*.server.ts`, anything importing `node:*`) live under `packages/core/src/server/`; check:core-purity
+  reads the rest of core as the pure half. Run `npm run check` at the first P0 commit, not only `tsc`.
 - UE on Lynx (ARM64): start the editor only through `apps/vr/tools/start-editor.ps1`, and drive UBT/RunUAT with its environment (`UE_DOTNET_VERSION=10.0`, bundled win-x64 dotnet first on PATH): the engine picks an unshipped win-arm64 dotnet otherwise, and New Project rolls back. Meta plugins in `bp.uproject` are plain `Enabled`, never `Optional`: a monolithic Game build drops optional plugins and the staged bp.exe dies on InteractionSdk.dll (machine.md readings 20 to 21).
 - apps/vr builds in the MAIN checkout, never a worktree: the Meta plugins, schema and PoF junctions, Binaries and DDC are git-ignored and absent there. One UBT and one editor at a time, so UE packages run sequentially.
 - A visual UE package's builder acceptance includes a rendered capture from the target pose (PoF capture_viewport in PIE over the editor MCP), looked at and iterated on by the builder, and a mesh brief names its axis mapping (vr-table 2026-10-23, vr-volumes 2026-10-24: the builder's own capture found the clipped wing label and the over-bright edges).
@@ -88,6 +94,9 @@ None declared.
 
 - Content route for apps/vr: the operator chose the editor MCP (agent-driven) over the Recommended scripted Python commandlet - the route the VR plan names. Offer the plan's stated execution model first, with its setup cost written in.
 
+- The operator answers sequencing/ordering questions with a doctrine (companion-upgrade: "do both in parallel; the contest is
+  only about the visual"). Offer "in parallel, scoped down" as an option whenever two tracks are being ordered.
+
 ## Skill improvement log
 
 - 2026-10-09 measured-lens-scans: scouts traced the data path but missed the sample-specific tables in the model (WING_DEFS), and only the real-data smoke test found them. Promoted to Repo law above.
@@ -103,3 +112,4 @@ None declared.
 - 2026-10-23 vr-table: builders verified UE work headless (-nullrhi) and could not see it; the first rendered capture found three defects (frame axis, lit paper under auto exposure, label size). For visual UE packages, a rendered capture from the target pose is part of the builder acceptance (PoF capture_viewport in PIE via the editor MCP), and a mesh brief names its axis mapping, not only its pivot.
 - 2026-10-24 vr-volumes: memory said check 85/85, but check:python-deps was red on arrival (since 34a2156: the editor-MCP scripts import `unreal`); Phase 0's gate-on-arrival run caught it before a builder was blamed. The plan's proof named `stat scenerendering`, which cannot be logged: when a plan names an overlay-only stat as proof, scout how to read it headless before the brief (the CSV profiler, promoted to Gates). Builder-owned capture (promoted to Repo law) found and fixed two visual defects without a Director loop.
 - 2026-10-24 vr-hands-zoom: a scorecard every spark (capture at the target framing, 15 elements 0-3, zeros named) turned "concerning" into 5/45 -> 19/45. Three traps: the scout read the retired wolf-plan, so the Director told the owner a closed decision (R8b) was open; scouts read the plan the README names as live, and a dated decision row beats any doc's prose. A content step run twice doubled every light unseen until a later package; editor-MCP steps must be idempotent (find-or-create by label). A pose command's fov never applied until a camera existed, so approved captures rested on a default; a pose logs what the view renders. Live-input proofs (Simulator hands) need the owner's devices: plan them as owner steps.
+- 2026-10-26 companion-upgrade: stubs-first ran 4 builders + an in-app contest seat fully parallel with zero collisions (5th spark). The Director's own P0 broke check:core-purity (server modules outside src/server) because only tsc ran at the P0 commit - the method's "repo-wide gates at the first commit" rule, ignored by its own author (promoted to Repo law). A real end-to-end run (page -> Opus turn -> MCP -> focus) found what 216 unit checks could not: the tool catalog had actions but no lookup to feed them ids, so the agent refused to guess. For an agent toolset, the E2E question is "can it reach a real id for every id-taking tool from words alone".
