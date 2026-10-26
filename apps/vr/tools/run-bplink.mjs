@@ -5,7 +5,7 @@
 //
 //   node apps/vr/tools/run-bplink.mjs [--mode editor|game|staged] [--exe <staged bp.exe>] [--no-server] [--xr-sim] [--vr]
 //                                     [--game-mode <class path>] [--exec <cmd,cmd>] [--ue-args "<a> <b>"] [--hold <s>] [--timeout <s>] [--out <dir>]
-//                                     [--product <slug>]
+//                                     [--product <slug>] [--runtime link|steamvr|alvr|vd [--runtime-json <path>]]
 //
 // editor  UnrealEditor-Cmd.exe bp.uproject (headless: -nullrhi, unless --xr-sim, which renders off screen instead)
 // game    UnrealEditor-Cmd.exe bp.uproject -game (uncooked)
@@ -15,6 +15,11 @@
 //               table when the level has none) on the default map, for runs before config names a game mode
 // --xr-sim      XR_RUNTIME_JSON = the Meta XR Simulator v207 json for this process only (install-xr.ps1 -SimulatorOnly);
 //               never activate_simulator.ps1, never HKLM. Watches for the OpenXR init line too.
+// --runtime     the headset session (docs/concepts/vr-light-table/headset-plan.md, the route ladder): implies --vr, renders
+//               to a window (no -RenderOffScreen), and sets XR_RUNTIME_JSON for this process only to the route's runtime
+//               (link: Meta Horizon Link's; steamvr and alvr: SteamVR's; vd: Virtual Desktop's VDXR), so the system-wide
+//               HKLM runtime (the Simulator's on Lynx) is never read or written. --runtime-json overrides the known path.
+//               The run lasts until the app is closed (--hold defaults to 4 h); the LogHMD line names the runtime it got.
 // --vr          game and staged: -vr, so the app opens an XR session (with --xr-sim, the Simulator's; its window and the
 //               hands only come alive with one). Without it a -game run never calls xrCreateSession.
 // --exec        console commands at startup (-ExecCmds), comma-separated, e.g. "stat scenerendering,stat dumpave -num=600 -ms=0"
@@ -40,12 +45,21 @@ const VR = path.resolve(HERE, '..');
 const REPO = path.resolve(VR, '..', '..');
 const ENGINE = process.env.UE_ROOT ?? 'C:/Program Files/Epic Games/UE_5.8';
 const SIM_JSON = path.join(process.env.LOCALAPPDATA ?? '', 'MetaXRSimulatorExtract/PFiles/MetaXRSimulator/v207.0/meta_openxr_simulator.json');
+// Each route's OpenXR runtime manifest where its installer puts it [verify on Lynx when the route is installed].
+const STEAMVR_JSON = 'C:/Program Files (x86)/Steam/steamapps/common/SteamVR/steamxr_win64.json';
+const RUNTIME_JSON = {
+  link: 'C:/Program Files/Oculus/Support/oculus-runtime/oculus_openxr_64.json',
+  steamvr: STEAMVR_JSON,
+  alvr: STEAMVR_JSON,
+  vd: 'C:/Program Files/Virtual Desktop Streamer/OpenXR/virtualdesktop-openxr.json',
+};
 
 const args = process.argv.slice(2);
 const opt = (name, fallback) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : fallback; };
 const flag = (name) => args.includes(name);
 const mode = opt('--mode', 'editor');
-const timeoutMs = Number(opt('--timeout', '900')) * 1000;
+const runtime = opt('--runtime');
+const timeoutMs = Number(opt('--timeout', runtime ? '14700' : '900')) * 1000;
 const out = path.resolve(opt('--out', fs.mkdtempSync(path.join(os.tmpdir(), 'bp-run-'))));
 const refuse = (why) => { console.error(`REFUSED: ${why}`); process.exit(2); };
 
@@ -63,6 +77,11 @@ const gameMode = opt('--game-mode');
 if (gameMode && mode === 'editor') refuse('--game-mode needs --mode game or staged');
 if (gameMode) pre = [...pre, `?game=${gameMode}`];
 if (flag('--xr-sim') && !fs.existsSync(SIM_JSON)) refuse(`${SIM_JSON} is missing; run apps/vr/tools/install-xr.ps1 -SimulatorOnly`);
+if (runtime && flag('--xr-sim')) refuse('--runtime and --xr-sim each pick the runtime; give one');
+if (runtime && !(runtime in RUNTIME_JSON)) refuse(`unknown --runtime ${runtime} (link, steamvr, alvr or vd)`);
+if (runtime && mode === 'editor') refuse('--runtime needs --mode game or staged');
+const runtimeJson = runtime ? opt('--runtime-json', RUNTIME_JSON[runtime]) : null;
+if (runtimeJson && !fs.existsSync(runtimeJson)) refuse(`${runtimeJson} is missing: is the ${runtime} route installed? (--runtime-json <path> if it lives elsewhere)`);
 fs.mkdirSync(out, { recursive: true });
 
 const killTree = (pid) => spawnSync('taskkill.exe', ['/PID', String(pid), '/T', '/F'], { encoding: 'utf8' });
@@ -91,18 +110,19 @@ const stopServer = async () => {
 if (!port) { await stopServer(); refuse(`apps/server did not print its port within 20 s (${path.join(out, 'server.log')})`); }
 const url = `http://127.0.0.1:${port}`;
 
-const render = flag('--xr-sim') ? ['-RenderOffScreen'] : ['-nullrhi'];
+const render = runtime ? [] : flag('--xr-sim') ? ['-RenderOffScreen'] : ['-nullrhi'];
 const exec = opt('--exec');
-const holdS = Number(opt('--hold', '5'));
-const vr = flag('--vr') ? ['-vr'] : [];
+const holdS = Number(opt('--hold', runtime ? '14400' : '5'));
+const vr = flag('--vr') || runtime ? ['-vr'] : [];
 const argv = [...pre, ...render, ...vr, '-unattended', '-nosplash', '-nosound', '-stdout', '-FullStdOutLogOutput', '-NoLogTimes', `-BpLinkUrl=${url}`,
   ...(opt('--product') ? [`-BpLinkProduct=${opt('--product')}`] : []),
   ...(exec ? [`-ExecCmds=${exec}`] : []), ...(opt('--ue-args', '').split(' ').filter(Boolean))];
 const env = { ...process.env };
 if (flag('--xr-sim')) env.XR_RUNTIME_JSON = SIM_JSON;
-const runLog = path.join(out, `run-${mode}${flag('--xr-sim') ? '-xrsim' : ''}.log`);
+if (runtimeJson) env.XR_RUNTIME_JSON = runtimeJson;
+const runLog = path.join(out, `run-${mode}${flag('--xr-sim') ? '-xrsim' : runtime ? `-${runtime}` : ''}.log`);
 console.log(`server  ${flag('--no-server') ? `none (closed port ${port})` : url}`);
-console.log(`start   "${exe}" ${argv.map((a) => `"${a}"`).join(' ')}${flag('--xr-sim') ? `   XR_RUNTIME_JSON=${SIM_JSON}` : ''}`);
+console.log(`start   "${exe}" ${argv.map((a) => `"${a}"`).join(' ')}${env.XR_RUNTIME_JSON && env.XR_RUNTIME_JSON !== process.env.XR_RUNTIME_JSON ? `   XR_RUNTIME_JSON=${env.XR_RUNTIME_JSON}` : ''}`);
 
 const OUTCOME = /BpLink: \w[\w-]* (wings|rooms)=|BpLink: GET .* failed|BpLink: the .* did not parse/;
 const fd = fs.openSync(runLog, 'w');
@@ -123,6 +143,6 @@ await stopServer();
 const lines = ran.text.split(/\r?\n/);
 const pick = (re) => lines.filter((l) => re.test(l)).map((l) => l.trim());
 console.log(`ran     ${((Date.now() - started) / 1000).toFixed(1)} s, exit ${ran.code}, ${ran.stoppedBy}`);
-for (const l of pick(new RegExp(`LogBpLink|LogBpTable|LogBpHands|LogHMD: (Initialized OpenXR|.*no runtime)|${exec ? 'LogStats|' : ''}Assertion failed|Critical error|appError`)).slice(0, exec ? 400 : 40)) console.log(`line    ${l}`);
+for (const l of pick(new RegExp(`LogBpLink|LogBpTable|LogBpHands|LogHMD: (Initialized OpenXR|.*no runtime|.*[Rr]untime)|BpView: seat|BpFrame|${exec ? 'LogStats|' : ''}Assertion failed|Critical error|appError`)).slice(0, exec ? 400 : 40)) console.log(`line    ${l}`);
 console.log(`log     ${runLog}`);
 process.exit(OUTCOME.test(ran.text) ? 0 : 1);
