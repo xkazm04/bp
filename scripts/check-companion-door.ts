@@ -158,6 +158,13 @@ try {
   const f1 = await call('focus_show', { product: 'kettle', kind: 'feature', id: 'kettle-boil', say: 'here' });
   const fs1 = (await req('GET', '/api/companion/focus')).json ?? [];
   check('auto: focus_show hits POST /focus (GET focus lists it, newest first)', !f1.isError && fs1[0]?.id === f1.json?.id && fs1[0]?.target?.kind === 'feature', j({ f1: f1.json, fs1 }));
+  const pf = await call('plan_find', { product: 'kettle', q: 'booking attendance' });
+  const room = (pf.json?.matches ?? []).find((m: any) => m.kind === 'room');
+  check('auto: plan_find names a Kettle room by its words, with a real id', !pf.isError && !!room && /booking/i.test(room.name) && typeof room.id === 'string', pf.text);
+  const toc = await call('plan_find', { product: 'kettle' });
+  check('auto: plan_find with no words lists only wings and rooms', !toc.isError && toc.json?.total > 0 && toc.json.matches.every((m: any) => m.kind === 'wing' || m.kind === 'room'), toc.text);
+  const pf404 = await call('plan_find', { product: 'nonesuch', q: 'x' });
+  check('auto: plan_find on an unknown product is isError', pf404.isError, pf404.text);
   const fs2 = (await req('GET', `/api/companion/focus?since=${f1.json?.id}`)).json;
   check('auto: GET focus?since=<newest> is empty', Array.isArray(fs2) && fs2.length === 0, j(fs2));
   const e1 = await call('decision_recommend', { slug: 'nonesuch', id: 'p1', verdict: 'approve', why: 'x' });

@@ -170,7 +170,7 @@ export function GlimLamp(p: LampProps) {
           <div className="lp-sway">
             <div className="lp-cable" style={{ transform: `scaleY(${drop - HOOD_TOP + 4})` }} />
             <div className="lp-body" style={{ transform: `translateY(${drop - HOOD_TOP}px)` }}>
-              <button type="button" className="lp-lamp" onClick={() => setOpen((o) => !o)} aria-label={`Glim, the companion lamp: ${SAYS[p.state]}. Click to write it a note.`}>
+              <button type="button" className="lp-lamp" data-lamp-toggle onClick={() => setOpen((o) => !o)} aria-label={`Glim, the companion lamp: ${SAYS[p.state]}. Click to write it a note.`}>
                 <div className="lp-turn"><EnamelLamp pose={pose} work={p.state === 'working'} /></div>
                 <span className="lp-glow" />
               </button>
@@ -213,7 +213,7 @@ export function GlimLamp(p: LampProps) {
                     <span className="lp-string lp-string-tag" />
                     <span className="lp-who">{p.state === 'listening' && p.caption ? 'HEARD' : 'WRITE ON MY TAG'}</span>
                     {p.state === 'listening' && p.caption && <p className="lp-heard">{p.caption}</p>}
-                    <input ref={inputRef} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} placeholder="Ask Glim, or name a place…" aria-label="Write to Glim" />
+                    <input ref={inputRef} data-composer value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} placeholder="Ask Glim, or name a place…" aria-label="Write to Glim" />
                   </motion.div>
                 )}
                 {(card || done) && (

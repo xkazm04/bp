@@ -141,6 +141,7 @@ server (`apps/mcp/bp-mcp.mjs`) and the companion all read; `scripts/check-compan
 | `release.finish` (Finish a release whose PR is open or merged) | no | external | GATED |
 | `scan.gaps` (Where coverage is lacking: unmeasured, stale, unknown or deviating features, ranked) | yes | none | AUTO |
 | `scan.place` (Start a lens scan of a scope (feature, bay, room, wing or all)) | yes | internal | AUTO |
+| `plan.find` (Find places on a product's plan by name (wings, rooms, bays, features) and get their ids, before focus.show or a scoped scan) | yes | none | AUTO |
 | `focus.show` (Show the person a place: fly the view to a feature, room or wing, or open a decision, wave, release, ledger row or lens) | yes | none | AUTO |
 | `finding.decline` (Decline one finding (a proposed change); final) | no | internal | GATED |
 | `memory.note` (Keep one fact about the person or a project, citing the conversation it came from) | yes | internal | AUTO |
