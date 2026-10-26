@@ -54,6 +54,7 @@
     "check:companion-brain": "node scripts/check-companion-brain.ts",
     "check:companion-door": "node scripts/check-companion-door.ts",
     "check:companion-web": "node scripts/check-companion-web.ts",
+    "check:guard-kill": "node scripts/guard-kill.mjs --test",
     "check:bplink": "node scripts/check-bplink.mjs",
     "check:vr-words": "node --import @bp/core/register scripts/gen-vr-words.ts --check",
     "check:plan-islands": "node scripts/check-plan-islands.mjs",

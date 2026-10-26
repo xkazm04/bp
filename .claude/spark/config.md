@@ -67,6 +67,9 @@ None declared.
   mirror (worktree source + a copied node_modules), and say so.
 - Server-only modules (`*.server.ts`, anything importing `node:*`) live under `packages/core/src/server/`; check:core-purity
   reads the rest of core as the pure half. Run `npm run check` at the first P0 commit, not only `tsc`.
+- Kill only what you started: by its PID, or `node scripts/kill-port.mjs <port>` for a server you opened. A project hook
+  (`.claude/settings.json` -> `scripts/guard-kill.mjs`) refuses kills by image name or wholesale (taskkill by image or
+  without a PID, Stop-Process without -Id, pkill/killall, kill -1), because other sessions' servers share this machine.
 - UE on Lynx (ARM64): start the editor only through `apps/vr/tools/start-editor.ps1`, and drive UBT/RunUAT with its environment (`UE_DOTNET_VERSION=10.0`, bundled win-x64 dotnet first on PATH): the engine picks an unshipped win-arm64 dotnet otherwise, and New Project rolls back. Meta plugins in `bp.uproject` are plain `Enabled`, never `Optional`: a monolithic Game build drops optional plugins and the staged bp.exe dies on InteractionSdk.dll (machine.md readings 20 to 21).
 - apps/vr builds in the MAIN checkout, never a worktree: the Meta plugins, schema and PoF junctions, Binaries and DDC are git-ignored and absent there. One UBT and one editor at a time, so UE packages run sequentially.
 - A visual UE package's builder acceptance includes a rendered capture from the target pose (PoF capture_viewport in PIE over the editor MCP), looked at and iterated on by the builder, and a mesh brief names its axis mapping (vr-table 2026-10-23, vr-volumes 2026-10-24: the builder's own capture found the clipped wing label and the over-bright edges).
