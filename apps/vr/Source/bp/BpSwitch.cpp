@@ -294,7 +294,8 @@ void ABpTable::FindLamp()
 
 FVector ABpTable::GetCaptionWorld() const
 {
-	return LampCaption ? LampCaption->GetComponentLocation() : GetActorTransform().TransformPosition(FVector(CaptionXCm, CaptionYCm, PlacedHeightCm + CaptionAboveTopCm));
+	// Where ApplyLampWidgets puts it (the component stays at the table's origin until it first shows).
+	return GetActorTransform().TransformPosition(FVector(CaptionXCm, CaptionYCm, PlacedHeightCm + CaptionAboveTopCm));
 }
 
 bool ABpTable::LampHead(FVector& OutWorld) const
