@@ -1,0 +1,63 @@
+{
+  "id": "mat-vellum",
+  "class": "material",
+  "materials": [
+    "vellum: PBR set, textures/vellum_basecolor.png (sRGB), vellum_normal.png (OpenGL, +Y up, tangent space), vellum_orm.png (R occlusion, G roughness, B metal)"
+  ],
+  "look": "warm translucent drafting vellum, base #E8DFC8 to #F4ECD8 (warm paper family), soft cloudiness and fine fibre, roughness 0.55 to 0.70, no metal",
+  "texture_size": 2048,
+  "tile_size_m": 0.5,
+  "tile_size_note": "one tile covers 0.5 m on a side at the intended scale; the repeat is the UE material's choice",
+  "generator": "procedural Blender",
+  "blender": "Blender 5.2.2 (CPU, Cycles for the evidence), scripts/art/materials/build_materials.bpy (bake and seam check), render_materials.bpy (evidence), write_manifests.mjs",
+  "licence": "own procedural work; no generated input, no Leonardo, ComfyUI or TRELLIS",
+  "lynx_commit": "b31a649",
+  "lynx_commit_note": "null until the merge sets it",
+  "regenerate": "blender -b -P scripts/art/materials/build_materials.bpy -- <repo-root> <work>; blender -b -P scripts/art/materials/render_materials.bpy -- <repo-root> <work>; node scripts/art/materials/write_manifests.mjs <work>",
+  "files": {
+    "evidence/swatch.jpg": "49a4c5b3f214eb7d61e3f293a1ff3e07aad0528921188d1cffa2e76f715034a9",
+    "evidence/tiled-2x2.jpg": "060b5675c0bbf2e464dd12fe9ca465a346879929d29584c69a11910e89a1ba55",
+    "textures/vellum_basecolor.png": "915d538bdbe09d876ad5bd7c4f0b2df3397d31943b30aca6ece07cc7909a438f",
+    "textures/vellum_normal.png": "638a3f60ec185bf8d08da6dfefed07a13e847a9d179036dfbcd67f37e75835fb",
+    "textures/vellum_orm.png": "59896c43751b32aef4c26d0673b668e3cd3acf147bb476f0ebfa29566b2be337"
+  },
+  "sha256": {
+    "evidence/swatch.jpg": "49a4c5b3f214eb7d61e3f293a1ff3e07aad0528921188d1cffa2e76f715034a9",
+    "evidence/tiled-2x2.jpg": "060b5675c0bbf2e464dd12fe9ca465a346879929d29584c69a11910e89a1ba55",
+    "textures/vellum_basecolor.png": "915d538bdbe09d876ad5bd7c4f0b2df3397d31943b30aca6ece07cc7909a438f",
+    "textures/vellum_normal.png": "638a3f60ec185bf8d08da6dfefed07a13e847a9d179036dfbcd67f37e75835fb",
+    "textures/vellum_orm.png": "59896c43751b32aef4c26d0673b668e3cd3acf147bb476f0ebfa29566b2be337"
+  },
+  "gates": {
+    "input": {
+      "pass": true,
+      "note": "procedural, no generated input. Reference: art-breakdown.md (drafting objects; the warm paper palette role #F3E9D2) and plan.md P4 materials row.",
+      "date": "2026-10-21"
+    },
+    "tiling": {
+      "pass": true,
+      "note": "seam check on the stored PNGs, per file and per axis: wrap = mean abs difference between the first and last pixel row/column (the pair that touches when the tile repeats), inner = mean abs difference between neighbouring pixels over the tile; pass when wrap / inner <= 1.25. Worst ratio over 3 files and 2 axes: 1.0644. Per-file values: {\"vellum_basecolor.png\":{\"seam\":{\"horizontal\":{\"wrap_step\":0.4341,\"inner_step\":0.4245,\"ratio\":1.0226},\"vertical\":{\"wrap_step\":0.4124,\"inner_step\":0.4238,\"ratio\":0.9732}},\"pass\":true,\"bytes\":3275719},\"vellum_normal.png\":{\"seam\":{\"horizontal\":{\"wrap_step\":0.9546,\"inner_step\":0.8969,\"ratio\":1.0644},\"vertical\":{\"wrap_step\":0.8823,\"inner_step\":0.8771,\"ratio\":1.006}},\"pass\":true,\"bytes\":3963657},\"vellum_orm.png\":{\"seam\":{\"horizontal\":{\"wrap_step\":0.1956,\"inner_step\":0.1925,\"ratio\":1.0165},\"vertical\":{\"wrap_step\":0.1875,\"inner_step\":0.1888,\"ratio\":0.9932}},\"pass\":true,\"bytes\":2157503}}. Also evidence/tiled-2x2.jpg, a 2 x 2 repeat with the wrap seams through the middle of the image. Method: fields are periodic by construction (FFT-filtered noise, integer stripe counts, wrapped finite differences for the normal map).",
+      "date": "2026-10-21"
+    },
+    "mesh_acceptance": {
+      "pass": true,
+      "note": "n/a for a material",
+      "date": "2026-10-21"
+    },
+    "scale": {
+      "pass": true,
+      "note": "n/a for a material",
+      "date": "2026-10-21"
+    },
+    "finishing": {
+      "pass": true,
+      "note": "3 PNGs at 2048 x 2048 (base colour, normal, ORM), largest 3963657 bytes, every file under 10 MB (limit 10485760); evidence: evidence/swatch.jpg, evidence/tiled-2x2.jpg, rendered with Cycles on the CPU (no GPU, no EEVEE); the evidence folder has the 2 x 2 tiled render and the lit swatch on a plane. Not claimed: any UE import.",
+      "date": "2026-10-21"
+    },
+    "poly_budget": {
+      "pass": true,
+      "note": "n/a for a material",
+      "date": "2026-10-21"
+    }
+  }
+}

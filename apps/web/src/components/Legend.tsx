@@ -1,0 +1,119 @@
+'use client';
+// The legend. General lists the stage encoding and the shared marks, and says where lenses come from
+// (the map, plus the `?lenses=` toggle). A lens draws live specimens with the variant's channel for it
+// (so every variant's legend matches its plan without extra work): a few sample features whose
+// evidence differs, each drawn as a small tile with that lens alone.
+import { useEffect, useRef } from 'react';
+import type { Feature, ViewId } from '@bp/core/data';
+import { lensOf } from '@bp/core/model';
+import { readTheme } from '@/engine/theme';
+import type { TileGeom } from '@/engine/lens/contract';
+import { stageFill } from '@/engine/render/glyphs';
+import { drawFlags, type Flag } from '@/engine/render/flags';
+import type { Engine } from '@/engine/Engine';
+import { Mark, StageSym } from './Symbols';
+import { useEngine, useVariant } from './hooks';
+import { useTheme } from './ThemeToggle';
+
+function Specimen({ lens, f }: { lens: string; f: Feature }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const V = useVariant(), E = useEngine(), mode = useTheme();
+  useEffect(() => {
+    const cv = ref.current; if (!cv) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1), W = 46, H = 28;
+    cv.width = W * dpr; cv.height = H * dpr;
+    const ctx = cv.getContext('2d')!, th = readTheme(dpr).theme;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+    const x = 1, y = 1, w = W - 2, h = H - 2, u = 1;
+    const g: TileGeom = { x, y, w, h, form: 'ribbon', u, k: 0.3, strip: { x, y, w, h: 3 }, body: { x: x + 1, y: y + 1, w: w - 2, h: h - 2 }, text: false };
+    const live = E.live(f);
+    ctx.fillStyle = th.tileBase; ctx.fillRect(x, y, w, h);
+    stageFill(ctx, th, f.stage, x, y, w, h, live.rolloutPct, live.progressPct, true);
+    const ch = E.channel(lens); if (!ch) return;
+    const r = V.expression.expandedRect ? V.expression.expandedRect(g, lens) : g.body;
+    const shape = ch.shape ? new Path2D() : null;
+    if (shape) ch.shape!(shape, g, f, 1);
+    ctx.save();
+    const a = ch.accent ? ch.accent[th.mode] : th.ink;
+    ch.marks({ ctx, r, slot: null, lens: E.M.P.LENS[lens], tile: g, f, w: 1, x: 1, compact: false, th, stage: f.stage, now: true, live, accent: a });
+    ctx.restore();
+    ctx.strokeStyle = th.ink; ctx.lineWidth = 1;
+    if (shape) ctx.stroke(shape); else ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  }, [lens, f, V, E, mode]);
+  return <canvas ref={ref} style={{ width: 46, height: 28 }} aria-hidden="true" />;
+}
+
+/** A trouble flag drawn by the canvas's own drawFlags (one lens' glyph; `count` > 1 adds the cluster tag), on a 1:1 screen. */
+function FlagSpecimen({ bad, count }: { bad: boolean; count: number }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const E = useEngine(), mode = useTheme();
+  const lens = E.lensIds[0];
+  useEffect(() => {
+    const cv = ref.current; if (!cv) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1), W = 40, H = 40;
+    cv.width = W * dpr; cv.height = H * dpr;
+    const ctx = cv.getContext('2d')!, th = readTheme(dpr).theme;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+    // the live engine with this theme read fresh and the UI scale 1 (the legend sits inside the scaled UI layer)
+    const Ex = Object.create(E, { th: { value: th }, U: { value: 1 } }) as Engine;
+    const s = bad ? 24 : 19, w = s * 1.1, tipX = 18, tipY = H - 2, ids = Array.from({ length: count }, (_, i) => 'x' + i);
+    const F: Flag = { x: tipX - w / 2, y: tipY - s * 0.26 - s, w, h: s, tipX, tipY, bad, lens, fid: ids[0], fids: ids, lenses: ids.map(() => lens), a: 1 };
+    drawFlags(Ex, ctx, [F], null);
+  }, [E, bad, count, lens, mode]);
+  return <canvas ref={ref} style={{ width: 40, height: 40 }} aria-hidden="true" />;
+}
+
+/** The shared trouble vocabulary: the canvas's flags (single, cluster), the L0/L1 ribbon bar, and the deprecated stage. */
+export function TroubleKey() {
+  return (
+    <>
+      <div><StageSym st="deprecated" w={24} h={15} /><span>Being retired</span></div>
+      <div><FlagSpecimen bad count={1} /><span>Flag: a lens in trouble</span></div>
+      <div><FlagSpecimen bad={false} count={3} /><span>Flag with count: merged</span></div>
+      <div><Mark k="barBad" /><span>Ribbon bar: trouble (amber: watch)</span></div>
+    </>
+  );
+}
+
+function samples(fs: readonly Feature[], key: (f: Feature) => string, n = 6): { f: Feature; label: string }[] {
+  const seen = new Map<string, Feature>();
+  for (const f of fs) { const k = key(f); if (k && !seen.has(k)) seen.set(k, f); if (seen.size >= n) break; }
+  return [...seen.entries()].map(([label, f]) => ({ f, label }));
+}
+
+export function Legend({ view }: { view: ViewId }) {
+  const E = useEngine(), fs = E.M.P.base.features, d = lensOf(E.M.P, view);
+  if (!d) {
+    return (
+      <div className="lg">
+        <div><StageSym st="live" w={24} h={15} /><span>Built · live</span></div>
+        <div><StageSym st="flagged" w={24} h={15} /><span>Partly open</span></div>
+        <div><StageSym st="in-review" w={24} h={15} /><span>Inspection</span></div>
+        <div><StageSym st="in-dev" w={24} h={15} /><span>Construction</span></div>
+        <div><StageSym st="specified" w={24} h={15} /><span>Proposed</span></div>
+        <div><StageSym st="idea" w={24} h={15} /><span>Future idea</span></div>
+        <TroubleKey />
+        <div><Mark k="cloud" /><span>Trouble</span></div>
+        <div><Mark k="tick" /><span>Watch</span></div>
+        <div><Mark k="delta" /><span>Changed</span></div>
+        <div><Mark k="work" /><span>Agent working</span></div>
+        <div><Mark k="wait" /><span>Waiting for a person</span></div>
+        <div><Mark k="block" /><span>Blocked</span></div>
+        <div><Mark k="fail" /><span>Failed</span></div>
+        <div><Mark k="pin" /><span>A question (RFI)</span></div>
+        <div><Mark k="ord" /><span>Standing order</span></div>
+        <div className="lg-cap">Tile colour is always the stage. {E.M.P.lenses.length ? <>Each lens adds its own marks; in General all {E.M.P.lenses.length} enabled lenses show at once.</> : <>No lenses are enabled, so no lens marks are drawn.</>} Lenses come from the map; <code>?lenses=-security,+com.kettle.cost</code> switches them off or on for this session.</div>
+      </div>
+    );
+  }
+  const ch = E.channel(view);
+  const items = ch ? samples(fs, (f) => ch.content(f, E.live(f)).parts[0] ?? '') : [];
+  return (
+    <div className="lg">
+      {items.map(({ f, label }) => <div key={label}><Specimen lens={view} f={f} /><span>{label.toLowerCase()}</span></div>)}
+      <div><Mark k="cloud" /><span>{d.name} bad</span></div>
+      <div><Mark k="tick" /><span>Watch</span></div>
+    </div>
+  );
+}
+

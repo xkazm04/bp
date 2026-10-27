@@ -18,7 +18,11 @@ bp.products.local.json
 # Links are machine state; the declarations live in .ai/manifest.yaml (`skills:` and `knowledge.domains`).
 /.claude/skills/spark
 /.claude/skills/scan-sweep
+/.claude/skills/adopt-bp
 /.claude/skills/perfect
+/.claude/skills/tiger
+/.claude/rules/ai-registry-access.md
+/.claude/rules/ai-registry-software-engineering.md
 /.ai/skill-runs.local.jsonl
 # END ai-registry linked skills
 .ai/consults.jsonl
@@ -30,3 +34,47 @@ next-env.d.ts
 # /perfect loop vault (working memory, not version-controlled)
 .perfect/
 .personas/
+
+# secrets: API keys live in .env (LEONARDO_API_KEY); only an example file may be tracked
+.env
+.env.*
+!.env.example
+
+# Python tool caches (scripts/perf.py, shots.py)
+__pycache__/
+.venv/
+
+# VR client (apps/vr, UE 5.8 on Lynx): generated build and editor state
+apps/vr/**/Binaries/
+apps/vr/**/Intermediate/
+apps/vr/**/Saved/
+apps/vr/**/DerivedDataCache/
+apps/vr/**/Build/
+apps/vr/**/Plugins/*/Binaries/
+apps/vr/**/Plugins/*/Intermediate/
+# Meta XR v207 payloads are reinstalled by the install script, never committed
+apps/vr/**/Plugins/MetaXR/
+apps/vr/**/Plugins/MetaXRInteraction/
+# pof's MCP toolset, a junction made by apps/vr/tools/link-pof-toolset.ps1 (the plugin lives in the pof checkout)
+apps/vr/**/Plugins/PoFToolset/
+apps/vr/.cache/
+# BpLink's junction to packages/schema/generated/ue (made by apps/vr/tools/link-schema.ps1); the headers live only there
+apps/vr/Source/BpLink/Public/Schema/
+# MetaHuman content (the character, its skin and the capture hands built from it) stays out of this public repository
+# (owner, 2026-10-26): each machine builds it locally, apps/vr/README.md "MetaHuman hands"
+apps/vr/Content/Bp/Art/MetaHuman/
+apps/vr/Content/Bp/Art/MetaHumanHands/
+# BpLink's bundled snapshots (apps/vr/tools/bundle-data.mjs): only the Kettle sample is committed; a live product's stays local
+apps/vr/Content/BpData/*
+!apps/vr/Content/BpData/kettle/
+*.sln
+*.suo
+*.VC.db
+*.VC.opendb
+.vs/
+
+# bp product blueprint: machine-local scan store (adopt-bp)
+.ai/lens-scan/
+
+# companion brain and state ($BP_HOME default, spark companion-upgrade)
+.bp/

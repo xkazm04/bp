@@ -1,0 +1,300 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://app-structure.example/schema/scan-wire-1.schema.json",
+  "title": "Scan wire v1",
+  "description": "What the scan side of apps/server sends. GET /api/products/{slug}/stream is Server-Sent Events: each frame is `event: <name>` and `data: <JSON>`, and the payload of each of the six names is one property here. A frame carries exactly the property named as its event; this root is never itself on the wire. `waves` is GET /api/products/{slug}/waves answering { waves }. Absent values are omitted, never null.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "snapshot": { "$ref": "#/$defs/scanSnapshot", "description": "Event `snapshot`: every table, sent on connect and on reconnect." },
+    "delta": { "$ref": "#/$defs/scanSnapshot", "description": "Event `delta`: new or changed rows since the last frame, same keys as the snapshot (core's ScanDelta is the same type)." },
+    "map": { "$ref": "#/$defs/mapEvent", "description": "Event `map`: the map or the events changed; fetch the structure again." },
+    "ping": { "$ref": "#/$defs/pingEvent", "description": "Event `ping`: keep-alive, sent when nothing else was." },
+    "error": { "$ref": "#/$defs/errorEvent", "description": "Event `error`: the scan store exists and cannot be read." },
+    "jobs": { "type": "array", "items": { "$ref": "#/$defs/scanJob" }, "description": "Event `jobs`: the product's whole job list, sent whenever it changes." },
+    "waves": { "type": "array", "items": { "$ref": "#/$defs/wave" }, "description": "GET waves: the product's waves." }
+  },
+  "$defs": {
+    "mapEvent": {
+      "type": "object",
+      "required": ["rev"],
+      "additionalProperties": false,
+      "properties": { "rev": { "type": "string", "minLength": 1, "description": "The new fingerprint, as in the structure envelope." } }
+    },
+    "pingEvent": {
+      "type": "object",
+      "required": ["at"],
+      "additionalProperties": false,
+      "properties": { "at": { "type": "string", "description": "ISO time the server sent it." } }
+    },
+    "errorEvent": {
+      "type": "object",
+      "required": ["message"],
+      "additionalProperties": false,
+      "properties": { "message": { "type": "string" } }
+    },
+    "scanSnapshot": {
+      "description": "Everything the UI needs, on connect; the lens-scan store's tables. `activity` is the latest 200 rows.",
+      "type": "object",
+      "required": ["runs", "measurements", "proposals", "activity", "shots", "coverage", "packs", "releases"],
+      "additionalProperties": false,
+      "properties": {
+        "runs": { "type": "array", "items": { "$ref": "#/$defs/run" } },
+        "measurements": { "type": "array", "items": { "$ref": "#/$defs/measurement" } },
+        "proposals": { "type": "array", "items": { "$ref": "#/$defs/proposal" } },
+        "activity": { "type": "array", "items": { "$ref": "#/$defs/activity" } },
+        "shots": { "type": "array", "items": { "$ref": "#/$defs/shot" } },
+        "coverage": { "type": "array", "items": { "$ref": "#/$defs/coverage" } },
+        "packs": { "type": "array", "items": { "$ref": "#/$defs/pack" }, "description": "Empty on a v1 store." },
+        "releases": { "type": "array", "items": { "$ref": "#/$defs/release" }, "description": "Oldest first; empty on a v1 store." }
+      }
+    },
+    "run": {
+      "type": "object",
+      "required": ["id", "started_at", "updated_at", "phase", "status", "lenses"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "started_at": { "type": "string" },
+        "updated_at": { "type": "string" },
+        "ended_at": { "type": "string" },
+        "phase": { "enum": ["measure", "propose", "execute", "propagate"] },
+        "status": { "enum": ["running", "done", "failed", "aborted"] },
+        "lenses": { "type": "array", "items": { "type": "string" }, "description": "Lens ids the run covers." },
+        "scope": { "type": "object", "description": "What the run was pointed at, e.g. { group: \"Agent Platform\" }." },
+        "skill_version": { "type": "string" },
+        "model": { "type": "string" },
+        "note": { "type": "string" }
+      }
+    },
+    "measurement": {
+      "description": "Append-only: one row per reading. `metric` is the lens field key.",
+      "type": "object",
+      "required": ["id", "run_id", "feature", "lens", "metric", "value", "measured_at"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "integer" },
+        "run_id": { "type": "string" },
+        "feature": { "type": "string" },
+        "lens": { "type": "string" },
+        "metric": { "type": "string" },
+        "value": { "type": "number" },
+        "unit": { "type": "string" },
+        "method": { "enum": ["static", "probe", "harness", "judgement"] },
+        "evidence": { "type": "string" },
+        "measured_at": { "type": "string" },
+        "proposal_id": { "type": "string", "description": "v2: the proposal this reading is before/after evidence for (with `phase`)." },
+        "phase": { "enum": ["before", "after"] },
+        "commit_sha": { "type": "string", "description": "v2: the commit the reading was taken on." }
+      }
+    },
+    "proposal": {
+      "description": "A backlog item. `standard` is <subject>/<technique> (registry), house:<subject>/<technique>, or none. A propagation item has parent_id = the baseline upgrade that spawned it.",
+      "type": "object",
+      "required": ["id", "run_id", "feature", "lens", "title", "standard", "kind", "status", "created_at", "updated_at"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "run_id": { "type": "string" },
+        "feature": { "type": "string" },
+        "lens": { "type": "string" },
+        "metric": { "type": "string" },
+        "title": { "type": "string" },
+        "body": { "type": "string", "description": "Markdown: Summary / Description / Flow / Expected impact / Evaluation." },
+        "standard": { "type": "string" },
+        "expected_delta": { "type": "number" },
+        "size": { "enum": ["XS", "S", "M", "L", "XL"] },
+        "risk": { "type": "number", "description": "1-10." },
+        "kind": { "enum": ["fix", "baseline-upgrade", "propagation", "work-item"] },
+        "parent_id": { "type": "string" },
+        "status": { "$ref": "#/$defs/proposalStatus" },
+        "decided_by": { "type": "string" },
+        "decided_at": { "type": "string" },
+        "decision_note": { "type": "string" },
+        "after_value": { "type": "number" },
+        "result_sha": { "type": "string" },
+        "created_at": { "type": "string" },
+        "updated_at": { "type": "string" },
+        "pack_id": { "type": "string", "description": "v2: the pack that built it." },
+        "commit_sha": { "type": "string", "description": "v2: the item's own squashed commit on its pack branch." },
+        "attempt_of": { "type": "string", "description": "v2: the previous attempt, when this row is a rework rebuild." },
+        "release_id": { "type": "string", "description": "v2: the release it ships in." },
+        "triage_note": { "type": "string" },
+        "triaged_from": { "$ref": "#/$defs/proposalStatus", "description": "v3: the status the item had before its latest triage, so `reopen` can put it back." },
+        "triaged_by": { "type": "string", "description": "<kind>:<name>, e.g. user:octocat." },
+        "triaged_at": { "type": "string" },
+        "origin": { "enum": ["scan", "ado", "sweep"], "description": "v4: omitted = scan; only an imported item carries it." },
+        "external_ref": { "type": "string", "description": "v4: <origin>:<id> in the source system, e.g. ado:1234." },
+        "external_url": { "type": "string" },
+        "tier": { "type": "integer", "minimum": 0, "maximum": 3, "description": "v4: severity, 0 stop-ship, 1 before production, 2 soon after, 3 backlog; omitted = untriaged." },
+        "risk_class": { "enum": ["secret", "authz", "money", "data", "llm", "perf", "reliability", "ux", "debt"] },
+        "ranked_by": { "type": "string" },
+        "ranked_at": { "type": "string" }
+      }
+    },
+    "proposalStatus": { "enum": ["proposed", "approved", "declined", "executing", "done", "failed", "accepted", "rework", "descoped", "released"] },
+    "activity": {
+      "type": "object",
+      "required": ["id", "run_id", "at", "kind", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "integer" },
+        "run_id": { "type": "string" },
+        "at": { "type": "string" },
+        "feature": { "type": "string" },
+        "lens": { "type": "string" },
+        "kind": { "enum": ["reading", "measured", "proposed", "executing", "committed", "note", "error"] },
+        "text": { "type": "string" }
+      }
+    },
+    "shot": {
+      "type": "object",
+      "required": ["id", "run_id", "feature", "path", "captured_at"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "integer" },
+        "run_id": { "type": "string" },
+        "feature": { "type": "string" },
+        "path": { "type": "string", "description": "Relative to the store directory: shots/<run>/<feature>-<theme>-<size>.png." },
+        "size": { "type": "string" },
+        "theme": { "type": "string" },
+        "harness_module": { "type": "string" },
+        "captured_at": { "type": "string" },
+        "report": { "type": "object", "description": "The harness report for this shot (console errors, unknown IPC, text checks)." },
+        "proposal_id": { "type": "string" },
+        "phase": { "enum": ["before", "after"] }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "required": ["feature", "standard", "state", "judged_at"],
+      "additionalProperties": false,
+      "properties": {
+        "feature": { "type": "string" },
+        "standard": { "type": "string" },
+        "state": { "enum": ["conformant", "deviation", "not-applicable", "unknown"] },
+        "evidence": { "type": "string" },
+        "judged_at": { "type": "string" },
+        "run_id": { "type": "string" }
+      }
+    },
+    "pack": {
+      "description": "v2: one lens's built items on one branch, pack/<short>-<n>, cut from base_ref at base_sha.",
+      "type": "object",
+      "required": ["id", "lens", "n", "branch", "base_ref", "base_sha", "status", "created_at", "updated_at"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "description": "k-<short>-<n>, e.g. k-des-3." },
+        "lens": { "type": "string" },
+        "n": { "type": "integer", "description": "Per-lens counter, 1-based." },
+        "branch": { "type": "string" },
+        "base_ref": { "type": "string" },
+        "base_sha": { "type": "string" },
+        "run_id": { "type": "string", "description": "The execute run that built it." },
+        "status": { "enum": ["open", "triaged", "closed"] },
+        "created_at": { "type": "string" },
+        "updated_at": { "type": "string" }
+      }
+    },
+    "release": {
+      "description": "v2: accepted items cherry-picked onto release/<version>, a PR, then the tag v<version>.",
+      "type": "object",
+      "required": ["id", "version", "branch", "status", "created_at", "updated_at"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "description": "rel-<version>." },
+        "version": { "type": "string", "description": "Semver without the v." },
+        "branch": { "type": "string" },
+        "base_sha": { "type": "string" },
+        "status": { "enum": ["draft", "building", "pr-open", "merged", "tagged", "failed"] },
+        "pr_url": { "type": "string" },
+        "tag": { "type": "string" },
+        "notes": { "type": "string", "description": "Markdown release notes." },
+        "error": { "type": "string" },
+        "created_by": { "type": "string" },
+        "created_at": { "type": "string" },
+        "updated_at": { "type": "string" }
+      }
+    },
+    "scanScope": {
+      "description": "What a scan is pointed at.",
+      "type": "object",
+      "required": ["kind", "label", "features"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "enum": ["feature", "bay", "room", "wing", "all", "selection"], "description": "selection: exactly the features behind the ledger's selected findings (1..200 slugs)." },
+        "id": { "type": "string", "description": "The place id: a feature slug, capability, domain or wing id. Absent for all." },
+        "label": { "type": "string", "description": "What the UI calls it: \"Invoice OCR\", \"Payments room\", \"Everything\"." },
+        "features": { "type": "array", "items": { "type": "string" }, "description": "Feature slugs; all carries none (every feature)." }
+      }
+    },
+    "scanJob": {
+      "description": "A lens scan, an execute run, a release run (cut or finish) or a prepare run the blueprint started.",
+      "type": "object",
+      "required": ["id", "kind", "status", "queued_at"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "enum": ["measure", "execute", "release", "prepare"], "description": "prepare: adjust the product repo so lens-scan can measure a lens it would refuse." },
+        "lens": { "type": "string", "description": "The lens a measure job scans, or a prepare job makes measurable." },
+        "scope": { "$ref": "#/$defs/scanScope" },
+        "proposals": { "type": "array", "items": { "type": "string" }, "description": "The proposals an execute job builds." },
+        "release": { "type": "string", "description": "A release job's release id (rel-<version>)." },
+        "version": { "type": "string" },
+        "step": { "enum": ["build", "finish"], "description": "build cuts the release, finish tags it after the merge." },
+        "model": { "$ref": "#/$defs/waveModel" },
+        "effort": { "$ref": "#/$defs/waveEffort" },
+        "wave": { "type": "string" },
+        "package": { "type": "string" },
+        "status": { "enum": ["queued", "running", "done", "failed", "cancelled"] },
+        "queued_at": { "type": "string" },
+        "started_at": { "type": "string" },
+        "ended_at": { "type": "string" },
+        "run_id": { "type": "string", "description": "The store run this job produced, once lens-scan wrote its run-start (run note bp-job:<id>)." },
+        "exit_code": { "type": "integer" },
+        "error": { "type": "string" },
+        "log_tail": { "type": "string", "description": "The last lines of the job's log." }
+      }
+    },
+    "waveModel": { "enum": ["sonnet", "opus"], "description": "The Claude Code CLI's own aliases: each always means the latest model of its family." },
+    "waveEffort": { "enum": ["low", "medium", "high", "xhigh"] },
+    "waveName": { "type": "string", "minLength": 1, "maxLength": 60, "description": "Trimmed; MAX_NAME in packages/core/src/scan/waves.ts, which refuses anything else." },
+    "proposalId": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,80}$", "description": "SAFE_ID in packages/core/src/scan/jobs.ts." },
+    "wavePackage": {
+      "type": "object",
+      "required": ["id", "name", "model", "effort", "ids"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "description": "pk-1, pk-2..: unique inside the wave." },
+        "name": { "$ref": "#/$defs/waveName" },
+        "model": { "$ref": "#/$defs/waveModel" },
+        "effort": { "$ref": "#/$defs/waveEffort" },
+        "ids": { "type": "array", "items": { "$ref": "#/$defs/proposalId" }, "minItems": 1, "description": "Proposal ids, at least one. A wave holds at most 400 across its packages, which this cannot express." }
+      }
+    },
+    "wave": {
+      "description": "Findings grouped into named packages, each built by its own execute job with its own model and effort.",
+      "type": "object",
+      "required": ["id", "name", "status", "created_at", "packages"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "description": "w-<base36 ms>-<4 random>." },
+        "name": { "$ref": "#/$defs/waveName" },
+        "status": { "enum": ["draft", "dispatched"], "description": "draft: editable, nothing queued yet. dispatched: at least one job was queued." },
+        "created_at": { "type": "string" },
+        "dispatched_at": { "type": "string" },
+        "packages": { "type": "array", "items": { "$ref": "#/$defs/wavePackage" }, "minItems": 1, "maxItems": 12, "description": "MAX_PACKAGES in packages/core/src/scan/waves.ts." },
+        "jobs": {
+          "type": "array",
+          "description": "Every execute job this wave queued, in order.",
+          "items": {
+            "type": "object",
+            "required": ["package", "job"],
+            "additionalProperties": false,
+            "properties": { "package": { "type": "string" }, "job": { "type": "string" } }
+          }
+        }
+      }
+    }
+  }
+}

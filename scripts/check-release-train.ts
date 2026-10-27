@@ -10,16 +10,16 @@
 // Run: node scripts/check-release-train.ts  (Node's type stripping; no build step). Exit 1 on any failure.
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { FRAME_MS, runStats, betterOf, compareOf, packGroups, packItems, releaseItems, unreleased, awaitingTriage, type LensFields } from '../src/lib/scan/compare.ts';
-import { bump, bumpOf, isVersion, suggestVersion, RELEASE_ID } from '../src/lib/scan/release.ts';
-import { isCurrent, latestReading } from '../src/lib/scan/derive.ts';
-import { emptyScan, type Measurement, type Pack, type Proposal, type Release, type ScanSnapshot, type Shot } from '../src/lib/scan/types.ts';
+import { FRAME_MS, runStats, betterOf, compareOf, packGroups, packItems, releaseItems, unreleased, awaitingTriage, type LensFields } from '../packages/core/src/scan/compare.ts';
+import { bump, bumpOf, isVersion, suggestVersion, RELEASE_ID } from '../packages/core/src/scan/release.ts';
+import { isCurrent, latestReading } from '../packages/core/src/scan/derive.ts';
+import { emptyScan, type Measurement, type Pack, type Proposal, type Release, type ScanSnapshot, type Shot } from '../packages/core/src/scan/types.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // live.ts imports through '@/': the hooks resolve it
 const HOOKS = './lib/src-hooks.mjs';
 ((await import(HOOKS)) as { registerSrcHooks: (root: string) => void }).registerSrcHooks(ROOT);
-const { metricHistory } = await import(pathToFileURL(path.join(ROOT, 'src/lib/model/live.ts')).href) as typeof import('../src/lib/model/live.ts');
+const { metricHistory } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/model/live.ts')).href) as typeof import('../packages/core/src/model/live.ts');
 
 let failed = 0, passed = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) passed++; else { failed++; console.log('FAIL ' + name + (detail ? ': ' + detail : '')); } };
@@ -157,7 +157,74 @@ const LENSES: LensFields[] = [
   check('suggest: nothing -> 0.1.0 from none', JSON.stringify(suggestVersion([], undefined, [])).includes('"version":"0.1.0","from":"none"'));
   const s3 = suggestVersion(['v1.4.0'], undefined, [fix], new Set(['1.4.1', '1.4.2']));
   check('suggest: a version that already has a release is passed over', s3.version === '1.4.3' && /already has a release/.test(s3.reason), JSON.stringify(s3));
+  // The cap: with 1.4.1 .. 1.4.101 all taken the loop gives up after 100 bumps. The answer must then not be a taken version
+  // presented as free; it says no free version was found instead.
+  const run101 = new Set(Array.from({ length: 101 }, (_, i) => '1.4.' + (i + 1)));
+  const s4 = suggestVersion(['v1.4.0'], undefined, [fix], run101);
+  check('suggest: 101 consecutive taken patches -> not a taken version passed off as free, the reason says none was found', !run101.has(s4.version) || (/no free version/.test(s4.reason) && !/already has a release, so/.test(s4.reason)), JSON.stringify(s4));
+  check('suggest: the cap leaves a free version just inside it alone (1.4.1 .. 1.4.100 taken -> 1.4.101)', suggestVersion(['v1.4.0'], undefined, [fix], new Set(Array.from({ length: 100 }, (_, i) => '1.4.' + (i + 1)))).version === '1.4.101');
   check('isVersion and RELEASE_ID', isVersion('1.4.1') && isVersion('1.0.0-rc.1') && !isVersion('v1.4.1') && !isVersion('1.4') && RELEASE_ID.test('rel-1.4.1') && !RELEASE_ID.test('rel-1.4.1;x') && !RELEASE_ID.test('1.4.1'));
+}
+
+// ---------------------------------------------------------------------------------------- the releases route: how many ids reach store.mjs
+// POST /releases without `ids` ships every accepted item that has no release. One store.mjs call is handed its ids as ONE argv
+// entry (`--ids a,b,c`), so the count per call is what the operating system's command-line limit meets: the route must cap
+// it at MAX_TRIAGE however many items are free, and merge what the calls answer. The route runs here for real, over a store of
+// its own (the repo's schema, N accepted rows), with a stand-in for lens-scan's store.mjs that records every argv it is
+// handed and answers the way the real one does (added / skipped), and gh pointed at nothing. Nothing leaves the temp dir.
+{
+  const { DatabaseSync } = await import('node:sqlite');
+  const fs = await import('node:fs'), os = await import('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-releases-route-')), cwd0 = process.cwd(), env0 = { ...process.env };
+  const prod = path.join(dir, 'prod'), storeDir = path.join(prod, '.ai/lens-scan'), db = path.join(storeDir, 'scan.db');
+  const ls = path.join(dir, 'lens-scan'), log = path.join(dir, 'calls.jsonl');
+  try {
+    fs.mkdirSync(storeDir, { recursive: true }); fs.mkdirSync(path.join(ls, 'scripts'), { recursive: true });
+    // the stand-in: release-create answers a release row, release-add answers added/skipped (ids starting with "x" are skipped, as
+    // store.mjs skips an item that is not accepted and free), release answers the row; every call is appended to the log
+    fs.writeFileSync(path.join(ls, 'scripts/store.mjs'), [
+      "import fs from 'node:fs';",
+      "const a = process.argv.slice(2), cmd = a[2], at = (k) => a[a.indexOf(k) + 1];",
+      "fs.appendFileSync(process.env.BP_FAKE_STORE_LOG, JSON.stringify(a) + '\\n');",
+      "if (cmd === 'release-create') console.log(JSON.stringify({ id: 'rel-' + at('--version'), version: at('--version'), status: 'draft' }));",
+      "else if (cmd === 'release-add') { const ids = at('--ids').split(','); console.log(JSON.stringify({ release: at('--release'), added: ids.filter((i) => !i.startsWith('x')), skipped: ids.filter((i) => i.startsWith('x')).map((id) => ({ id, status: 'executing' })) })); }",
+      "else console.log(JSON.stringify({ id: at('--id'), status: 'draft', items: [] }));",
+    ].join('\n'));
+    const w = new DatabaseSync(db);
+    w.exec(fs.readFileSync(path.join(ROOT, 'docs/standard/lens-scan-store.sql'), 'utf8'));
+    w.prepare("INSERT INTO runs (id, started_at, updated_at, phase, status, lenses) VALUES ('r0', '2026-10-01T00:00:00Z', '2026-10-01T00:00:00Z', 'measure', 'done', '[\"development\"]')").run();
+    const ins = w.prepare("INSERT INTO proposals (id, run_id, feature, lens, title, kind, status, created_at, updated_at) VALUES (?, 'r0', 'f', 'development', 't', 'fix', 'accepted', ?, ?)");
+    const fill = (n: number, skipped: number) => {
+      w.exec('DELETE FROM proposals');
+      for (let i = 0; i < n; i++) { const id = (i < skipped ? 'x' : 'a') + String(i).padStart(5, '0'), at = new Date(Date.UTC(2026, 9, 2) + i * 1000).toISOString(); ins.run(id, at, at); }
+    };
+    fs.writeFileSync(path.join(dir, 'bp.products.local.json'), JSON.stringify({ products: [{ slug: 'prod', name: 'Prod', root: prod }] }));
+    process.chdir(dir);
+    process.env.BP_LENS_SCAN_DIR = ls; process.env.BP_FAKE_STORE_LOG = log; process.env.BP_GH_BIN = path.join(dir, 'no-gh');
+    const route = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/server/api/products/[slug]/releases/route.ts')).href) as { POST(req: Request, c: { params: Promise<{ slug: string }> }): Promise<Response> };
+    const post = (body: unknown) => route.POST(new Request('http://localhost:3000/api/products/prod/releases', { method: 'POST', headers: { host: 'localhost:3000', 'content-type': 'application/json' }, body: JSON.stringify(body) }), { params: Promise.resolve({ slug: 'prod' }) });
+    const calls = () => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as string[]) : []);
+    const adds = () => calls().filter((a) => a[2] === 'release-add').map((a) => a[a.indexOf('--ids') + 1].split(','));
+    const run = async (n: number, skipped: number, body: unknown) => { fs.rmSync(log, { force: true }); fill(n, skipped); const r = await post(body); return { status: r.status, json: await r.json() as { added?: string[]; skipped?: { id: string }[]; error?: string }, adds: adds(), n: calls().length }; };
+
+    const none = await run(0, 0, { version: '1.4.1' });
+    check('releases route: nothing free -> 409 and store.mjs is never called', none.status === 409 && none.n === 0, JSON.stringify([none.status, none.n]));
+    const few = await run(200, 0, { version: '1.4.1' });
+    check('releases route: 200 free items -> one release-add with all 200, 201', few.status === 201 && few.adds.length === 1 && few.adds[0].length === 200 && few.json.added?.length === 200, JSON.stringify([few.status, few.adds.map((x) => x.length)]));
+    const over = await run(5, 0, { version: '1.4.1', ids: Array.from({ length: 201 }, (_, i) => 'a' + String(i).padStart(5, '0')) });
+    check('releases route: an explicit id list over 200 is a 400 and store.mjs is not called', over.status === 400 && over.n === 0, JSON.stringify([over.status, over.n]));
+    const many = await run(2600, 3, { version: '1.4.1' });
+    check('releases route: 2,600 free items, no ids -> 201 and every one is answered (added + skipped = 2,600, the 3 skipped listed)',
+      many.status === 201 && (many.json.added?.length ?? 0) + (many.json.skipped?.length ?? 0) === 2600 && many.json.skipped?.length === 3 && new Set(many.adds.flat()).size === 2600, JSON.stringify([many.status, many.json.added?.length, many.json.skipped?.length, many.json.error]));
+    const widest = Math.max(0, ...many.adds.map((x) => x.length));
+    console.log('releases route: 2,600 free items reach store.mjs in ' + many.adds.length + ' release-add call(s), the widest ' + widest + ' ids (' + Math.max(0, ...many.adds.map((x) => x.join(',').length)) + ' characters of argv)');
+    // THE RULE: at most MAX_TRIAGE ids reach store.mjs in one call, on the default path as on the explicit one
+    check('releases route: no release-add call carries more than 200 ids (MAX_TRIAGE)', widest <= 200, widest + ' ids in one call');
+  } finally {
+    process.chdir(cwd0);
+    for (const k of ['BP_LENS_SCAN_DIR', 'BP_FAKE_STORE_LOG', 'BP_GH_BIN']) { if (env0[k] === undefined) delete process.env[k]; else process.env[k] = env0[k]; }
+    try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a dying child still holds a file */ }
+  }
 }
 
 console.log(`release train: ${passed} passed, ${failed} failed`);

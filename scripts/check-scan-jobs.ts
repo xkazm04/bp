@@ -24,6 +24,10 @@
 //     execute) is signed user:<gh login> through a fake gh; BP_WRITES=off answers 403 on the decision and triage routes,
 //     the structure route says writes: false, and the release routes still work.
 // Checks that need WP1's full checkLensManifest (project mode, taken looks) print SKIP while it is the S0 stub.
+// Triage and release-create need lens-scan's store.mjs: lensScanDirs() is pinned (set / unset order) and a missing install is a
+// FAILURE wherever the operator names one (BP_LENS_SCAN_DIR), BP_REQUIRE_LENS_SCAN=1 or CI says so, or the registry the manifest
+// declares is on this machine (beside this checkout or, for a linked worktree, beside its main checkout); only a checkout without
+// its registry skips, and says so. BP_REQUIRE_LENS_SCAN=0 waives.
 // Run: node scripts/check-scan-jobs.ts  (Node's type stripping; no build step). Exit 1 on any failure. ~15 s.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -39,19 +43,30 @@ const HOOKS = './lib/src-hooks.mjs';
 const FAKE = path.join(ROOT, 'scripts/fixtures/fake-claude.mjs');
 process.env.BP_CLAUDE_BIN = FAKE;
 
-const J = await import(pathToFileURL(path.join(ROOT, 'src/lib/scan/jobs.server.ts')).href) as typeof import('../src/lib/scan/jobs.server.ts');
-const { parseDraftReply } = await import(pathToFileURL(path.join(ROOT, 'src/lib/scan/lens-draft.ts')).href) as typeof import('../src/lib/scan/lens-draft.ts');
-const { scopeFeatures } = await import(pathToFileURL(path.join(ROOT, 'src/lib/scan/scope.ts')).href) as typeof import('../src/lib/scan/scope.ts');
-const { checkLensManifest } = await import(pathToFileURL(path.join(ROOT, 'src/lib/scan/manifest-check.ts')).href) as typeof import('../src/lib/scan/manifest-check.ts');
-const { ScanSim } = await import(pathToFileURL(path.join(ROOT, 'src/lib/model/scan-sim.ts')).href) as typeof import('../src/lib/model/scan-sim.ts');
-type ScanJob = import('../src/lib/scan/jobs.ts').ScanJob;
-type ScanScope = import('../src/lib/scan/jobs.ts').ScanScope;
-type Proposal = import('../src/lib/scan/types.ts').Proposal;
+const J = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/server/jobs.server.ts')).href) as typeof import('../packages/core/src/server/jobs.server.ts');
+const { parseDraftReply } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/scan/lens-draft.ts')).href) as typeof import('../packages/core/src/scan/lens-draft.ts');
+const LS = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/scan/lens-setup.ts')).href) as typeof import('../packages/core/src/scan/lens-setup.ts');
+const { logBlocks, spans } = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/lib/scan/log-md.ts')).href) as typeof import('../apps/web/src/lib/scan/log-md.ts');
+const { scopeFeatures } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/scan/scope.ts')).href) as typeof import('../packages/core/src/scan/scope.ts');
+const { checkLensManifest } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/scan/manifest-check.ts')).href) as typeof import('../packages/core/src/scan/manifest-check.ts');
+const { ScanSim } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/model/scan-sim.ts')).href) as typeof import('../packages/core/src/model/scan-sim.ts');
+type ScanJob = import('../packages/core/src/scan/jobs.ts').ScanJob;
+type ScanScope = import('../packages/core/src/scan/jobs.ts').ScanScope;
+type Proposal = import('../packages/core/src/scan/types.ts').Proposal;
 
 let failed = 0, passed = 0, skipped = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) passed++; else { failed++; console.log('FAIL ' + name + (detail ? ': ' + detail : '')); } };
-/** A check that needs the full checkLensManifest (project mode, taken looks): skipped, said so, while it is the S0 stub. */
-const checkIf = (ready: boolean, name: string, ok: () => boolean, detail = () => '') => { if (ready) check(name, ok(), detail()); else { skipped++; console.log('SKIP ' + name + ' (checkLensManifest is still the stub)'); } };
+/**
+ * A check that needs the full checkLensManifest (project mode, taken looks). WP1 landed it, so a checker that
+ * cannot do this is a FAILURE, not a skip: while this skipped, seven expectations could vanish from the run and
+ * `check-scan-jobs: N checks passed` read exactly as it does now. The call stays lazy so a regressed checker is
+ * reported rather than thrown out of.
+ */
+const checkIf = (ready: boolean, name: string, ok: () => boolean, detail = () => '') => {
+  if (ready) { check(name, ok(), detail()); return; }
+  failed++;
+  console.log('FAIL ' + name + ': checkLensManifest cannot judge this (the S0 stub is back, or the mode was dropped)');
+};
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function until(pred: () => boolean, ms = 30000): Promise<boolean> { const t = Date.now() + ms; while (Date.now() < t) { if (pred()) return true; await sleep(50); } return pred(); }
 const job = (slug: string, id: string): ScanJob | undefined => J.list(slug).find((j) => j.id === id);
@@ -71,9 +86,11 @@ const MANIFEST = {
 };
 /** A permanent project lens: reverse-DNS id, a look of its own. */
 const PROJECT = { ...MANIFEST, id: 'com.example.money', presentation: { glyph: 'padlock', line: 'chain', measures: 'oldMoneySites' } };
-// feature tests on the checker (WP1 lands the full one; the S0 stub checks a temporary manifest only)
+// feature tests on the checker: WP1 landed the full one, and the run now says so out loud rather than
+// letting the seven checkIf expectations below quietly skip (scripts/check-lens-manifest.ts holds the checker itself)
 const projectReady = checkLensManifest(PROJECT, { mode: 'project' }) === null;
 const lookReady = checkLensManifest(MANIFEST, { mode: 'temporary', taken: [{ glyph: 'brackets', line: 'comb' }] }) !== null;
+check('checkLensManifest judges project mode and a taken look (else the 7 checks that need it would not run)', projectReady && lookReady, `project ${projectReady}, look ${lookReady}`);
 
 try {
   // ------------------------------------------------------------------ queue cap, done, stdin prompt, attach at exit
@@ -108,6 +125,52 @@ try {
   check('exit 3 -> failed, exit_code 3, error = last stderr line', jf?.status === 'failed' && jf.exit_code === 3 && jf.error === 'boom: failed on purpose', JSON.stringify(jf));
   check('failed: log_tail holds the last lines', (jf?.log_tail ?? '').includes('boom: failed on purpose') && (jf?.log_tail ?? '').split('\n').length <= 20);
   check('exit 0 without a run -> failed with the refusal line', jr?.status === 'failed' && jr.error === 'lens-scan refused: unknown slug' && jr.run_id === undefined, JSON.stringify(jr));
+  const f4 = J.enqueueMeasure('fail', fr, 'mdrefuse', ALL);
+  await until(() => !!f4.ok && job('fail', f4.job.id)?.status === 'failed');
+  const jm = f4.ok ? job('fail', f4.job.id)?.error : undefined;
+  check('a bold refusal line in a markdown reply is still the error, without its stars', jm === 'lens-scan refused: the performance lens has nothing it can measure in this repo. No run started.', JSON.stringify(jm));
+  // a CLI that has no lens-scan skill answers in prose and ends on a question: the error names the skill, not the question
+  const f3 = J.enqueueMeasure('fail', fr, 'absent', ALL);
+  await until(() => !!f3.ok && job('fail', f3.job.id)?.status === 'failed');
+  const ja = f3.ok ? job('fail', f3.job.id) : undefined;
+  check('exit 0, "isn\'t installed" -> failed naming the missing skill', !!ja?.error?.startsWith(J.NO_JOB_SKILL), JSON.stringify(ja?.error));
+  check('SKILL_ABSENT reads the CLI\'s wordings', ["`/lens-scan` isn't installed in this session", '**`/lens-scan` is not installed in this session**', 'Unknown skill: lens-scan'].every((t) => J.SKILL_ABSENT.test(t)) && !J.SKILL_ABSENT.test('lens-scan measured 12 features'));
+  // the Agents rail reads a job log as the markdown a reply is written in (log-md.ts): text spans only, a cut fence still closes
+  {
+    const bs = logBlocks(ja?.log_tail ?? '');
+    check('log md: the reply reads as paragraphs and a list item, its code as code', bs.some((b) => b.k === 'p' && b.spans.some((x) => x.t === 'code' && x.s === '/lens-scan'))
+      && bs.some((b) => b.k === 'li' && !b.ordered && b.spans.some((x) => x.t === 'code' && x.s === 'tasks/')), JSON.stringify(bs));
+    const sp = spans('**`/lens-scan` is not installed**, a ** stray and `x');
+    check('log md: code inside bold stays code, the rest bold; unclosed markers stay literal', JSON.stringify(sp) === JSON.stringify([{ t: 'code', s: '/lens-scan' }, { t: 'b', s: ' is not installed' }, { t: 'text', s: ', a ** stray and `x' }]), JSON.stringify(sp));
+    const md = logBlocks('## Plan\n1. **Map first.** go\n   - nested\n```\n<b>x</b>');
+    check('log md: heading, ordered item, nested item, an unclosed fence runs to the end', md.map((b) => b.k + (b.k === 'li' ? b.n + b.depth : '')).join() === 'h,li1.0,li1,code'
+      && md[3].k === 'code' && md[3].text === '<b>x</b>', JSON.stringify(md));
+  }
+  // where a job's CLI finds the skill: the repo or an ancestor, the config dir, an installed plugin; a dangling link is missing
+  {
+    const sk = path.join(dir, 'skill-look'), cfg = path.join(sk, 'cfg'), deep = path.join(sk, 'outer', 'repo');
+    const put = (d: string) => { fs.mkdirSync(d, { recursive: true }); fs.writeFileSync(path.join(d, 'SKILL.md'), '# lens-scan\n'); };
+    fs.mkdirSync(deep, { recursive: true }); fs.mkdirSync(cfg, { recursive: true });
+    check('skill: none anywhere -> null', J.jobSkillIn(deep, cfg) === null);
+    fs.mkdirSync(path.join(deep, '.claude', 'skills', 'lens-scan'), { recursive: true });
+    check('skill: a lens-scan dir without SKILL.md is missing', J.jobSkillIn(deep, cfg) === null);
+    put(path.join(sk, 'outer', '.claude', 'skills', 'lens-scan'));
+    check('skill: an ancestor\'s .claude/skills counts', J.jobSkillIn(deep, cfg) !== null);
+    fs.rmSync(path.join(sk, 'outer', '.claude'), { recursive: true });
+    put(path.join(sk, 'plug', 'skills', 'lens-scan'));
+    const plugins = (scope: string, projectPath?: string) => fs.writeFileSync(path.join(cfg, 'plugins', 'installed_plugins.json'),
+      JSON.stringify({ version: 2, plugins: { 'ls@x': [{ scope, installPath: path.join(sk, 'plug'), ...(projectPath ? { projectPath } : {}) }] } }));
+    fs.mkdirSync(path.join(cfg, 'plugins'), { recursive: true });
+    plugins('project', path.join(sk, 'elsewhere'));
+    check('skill: a plugin installed for another project does not count', J.jobSkillIn(deep, cfg) === null);
+    plugins('project', deep);
+    check('skill: a plugin installed for this project counts', J.jobSkillIn(deep, cfg) !== null);
+    plugins('user');
+    check('skill: a user-scope plugin counts', J.jobSkillIn(deep, cfg) !== null);
+    fs.rmSync(path.join(cfg, 'plugins'), { recursive: true });
+    put(path.join(cfg, 'skills', 'lens-scan'));
+    check('skill: <config>/skills/lens-scan counts', J.jobSkillIn(deep, cfg) !== null);
+  }
   process.env.BP_CLAUDE_BIN = path.join(dir, 'no-such-cli.mjs');
   const m1 = J.enqueueMeasure('fail', fr, 'x', ALL);
   await until(() => !!m1.ok && job('fail', m1.job.id)?.status === 'failed');
@@ -116,6 +179,14 @@ try {
   const m2 = J.enqueueMeasure('fail', fr, 'x', ALL);
   await until(() => !!m2.ok && job('fail', m2.job.id)?.status === 'failed');
   check('missing CLI (not on PATH) -> failed, CLI not found', m2.ok && job('fail', m2.job.id)?.error === J.CLI_MISSING, JSON.stringify(m2.ok && job('fail', m2.job.id)));
+  // a real CLI (any executable that is no .js stand-in: this Node) in a repo that cannot see the skill fails before it spawns
+  const cfg0 = process.env.CLAUDE_CONFIG_DIR;
+  process.env.BP_CLAUDE_BIN = process.execPath; process.env.CLAUDE_CONFIG_DIR = path.join(dir, 'empty-config');
+  const sk3 = J.enqueueMeasure('fail', fr, 'x', ALL);
+  await until(() => !!sk3.ok && job('fail', sk3.job.id)?.status === 'failed');
+  const j3 = sk3.ok ? job('fail', sk3.job.id) : undefined;
+  check('no lens-scan skill -> failed before spawning, naming it', !!j3?.error?.startsWith(J.NO_JOB_SKILL) && j3.exit_code === undefined && !j3.log_tail, JSON.stringify(j3));
+  if (cfg0 === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = cfg0;
   process.env.BP_CLAUDE_BIN = FAKE;
 
   // ------------------------------------------------------------------ unsafe ids never spawn
@@ -211,7 +282,7 @@ try {
   w.close();
   fs.writeFileSync(path.join(dir, 'bp.products.local.json'), JSON.stringify({ products: [{ slug: 'prod', name: 'Prod', root: pr }] }));
   process.chdir(dir);
-  const route = async (rel: string) => import(pathToFileURL(path.join(ROOT, 'src/app/api', rel)).href);
+  const route = async (rel: string) => import(pathToFileURL(path.join(ROOT, 'apps/web/src/app/api', rel)).href);
   const H = { host: 'localhost:3000', 'content-type': 'application/json' };
   const call = async (fn: (req: Request, ctx: unknown) => Promise<Response>, url: string, method: string, params: object, body?: unknown) => {
     const res = await fn(new Request('http://localhost:3000' + url, { method, headers: H, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }), { params: Promise.resolve(params) });
@@ -239,6 +310,60 @@ try {
   check('POST scans refusals: unknown, disabled, no method, foreign feature, all+features, bad kind, unknown product',
     codes.map((c) => c.status + ':' + (c.body.error ?? '')).join() === '400:unknown-lens,400:unknown-lens,400:no-scan-method,400:bad-scope,400:bad-scope,400:bad-scope,404:unknown product nope',
     codes.map((c) => c.status + ':' + c.body.error).join());
+  // ------------------------------------------------------------------ lens setup: what a repo lacks, the prepare job and its route
+  {
+    const ov = '---\nx: 1\n---\n# overlay\n## Probes\n- `a blockingMs`: node p.mjs --feature a\nb jankFrames: node p.mjs --feature b\nc bogusMetric: node p.mjs\n```\nd memoryMb: node p.mjs in a fence\n```\n### note\ne startupMs: under a sub-heading of Probes\n## Gates\nf memoryMb: after the section\n';
+    const pr0 = LS.parseProbes(ov);
+    check('setup: probes read `<feature> <metric>: <command>` in the section (bullets, backticks, fences, sub-headings), not unknown metrics or later sections',
+      pr0.map((x) => x.feature + ':' + x.metric).join() === 'a:blockingMs,b:jankFrames,d:memoryMb,e:startupMs' && pr0[0].command === 'node p.mjs --feature a', JSON.stringify(pr0));
+    const need = (id: string, scan?: object, text: string | null = null) => LS.lensSetupNeed(id, (scan ? { scan } : {}) as never, text);
+    check('setup: static lenses and scan-block lenses never need setup', need('development') === null && need('security') === null && need('com.x.j', { method: 'judgement' }) === null);
+    check('setup: performance without an overlay, or with one naming no probes, needs probes; with one probe it is measurable',
+      need('performance')?.need === 'probes' && need('performance', undefined, '# overlay\n## Gates\n')?.need === 'probes' && need('performance', undefined, ov) === null);
+    check('setup: the Grinex refusal reads as nothing to measure', LS.NOTHING_TO_MEASURE.test('lens-scan refused: the performance lens has nothing it can measure in this repo.') && !LS.NOTHING_TO_MEASURE.test('lens-scan refused: unknown slug'));
+    const t = J.preparePrompt('performance');
+    check('setup: the prepare prompt is one line, names the lens and the overlay, and asks for the closing line', !t.includes('\n') && t.startsWith('Make the performance lens measurable') && t.includes(LS.OVERLAY_PATH) && t.includes('lens-scan prepared:'), t);
+    // the registry: done only when the overlay now names probes; a refusal or an empty claim is failed with its reason
+    const okR = repo('prep-ok'), refR = repo('prep-refuse'), noopR = repo('prep-noop');
+    const bad = J.enqueuePrepare('prep', okR, 'development');
+    check('prepare: a lens no prepare job knows -> 400 not-preparable', !bad.ok && bad.status === 400 && bad.error === 'not-preparable');
+    const q1 = J.enqueuePrepare('prep', okR, 'performance'), q2 = J.enqueuePrepare('prep', okR, 'performance');
+    check('prepare: a second one for the lens while the first runs -> 409', q1.ok && !q2.ok && q2.status === 409, JSON.stringify(q2));
+    const q3 = J.enqueuePrepare('prep-r', refR, 'performance'), q4 = J.enqueuePrepare('prep-n', noopR, 'performance');
+    const ended = (sl: string, q: typeof q1) => { const st = q.ok ? job(sl, q.job.id)?.status : 'failed'; return st === 'done' || st === 'failed'; };
+    await until(() => ended('prep', q1) && ended('prep-r', q3) && ended('prep-n', q4));
+    const j1 = q1.ok ? job('prep', q1.job.id) : undefined, j3 = q3.ok ? job('prep-r', q3.job.id) : undefined, j4 = q4.ok ? job('prep-n', q4.job.id) : undefined;
+    check('prepare: the CLI wrote probes -> done, kind prepare, no run, and the overlay is measurable now', j1?.status === 'done' && j1.kind === 'prepare' && j1.run_id === undefined
+      && LS.lensSetupNeed('performance', {} as never, fs.readFileSync(path.join(okR, LS.OVERLAY_PATH), 'utf8')) === null, JSON.stringify(j1));
+    check('prepare: a refusal -> failed with its line', j3?.status === 'failed' && j3.error === 'lens-scan refused: no production build can start here', JSON.stringify(j3?.error));
+    check('prepare: exit 0 claiming success with no probes written -> failed, saying what is still missing', j4?.status === 'failed' && /^the run ended and no lens-scan overlay/.test(j4.error ?? ''), JSON.stringify(j4?.error));
+    // the route and the project list: a performance lens in a map whose repo names no probes is a setup need until a prepare job ran
+    const prepRoot = repo('prep-route'), ps = path.join(prepRoot, '.ai', 'lens-scan');
+    fs.mkdirSync(ps, { recursive: true });
+    fs.writeFileSync(path.join(ps, 'app-structure.json'), JSON.stringify({ $schema: 'app-structure/3', version: 3, project: { slug: 'prep', name: 'Prep' }, features: [{ slug: 'a', name: 'A' }],
+      lenses: [lensE('development', 'builtin'), lensE('performance', 'builtin'), lensE('com.x.off', 'project', undefined, { enabled: false })] }));
+    const regFile = path.join(dir, 'bp.products.local.json'), reg0 = fs.readFileSync(regFile, 'utf8');
+    fs.writeFileSync(regFile, JSON.stringify({ products: [...JSON.parse(reg0).products, { slug: 'prepr', name: 'Prep', root: prepRoot }] }));
+    const products = await route('products/route.ts'), prepare = await route('products/[slug]/lenses/[id]/prepare/route.ts');
+    type Listed = { slug: string; setup: { lens: string; need: string }[] };
+    const list0 = await call(products.GET, '/api/products', 'GET', {});
+    const setup0 = (list0.body as Listed[]).find((x) => x.slug === 'prepr')?.setup;
+    check('GET /api/products: setup names performance (no probes) and nothing else', JSON.stringify(setup0?.map((x) => x.lens + ':' + x.need)) === '["performance:probes"]', JSON.stringify(setup0));
+    const rs = await Promise.all([
+      call(prepare.POST, '/x', 'POST', { slug: 'prepr', id: 'nope' }, {}),
+      call(prepare.POST, '/x', 'POST', { slug: 'prepr', id: 'com.x.off' }, {}),
+      call(prepare.POST, '/x', 'POST', { slug: 'prepr', id: 'development' }, {}),
+      call(prepare.POST, '/x', 'POST', { slug: 'nope', id: 'performance' }, {}),
+    ]);
+    check('POST prepare refusals: unknown, disabled, not preparable, unknown product', rs.map((c) => c.status + ':' + (c.body.error ?? '')).join() === '400:unknown-lens,400:unknown-lens,400:not-preparable,404:unknown product nope', rs.map((c) => c.status + ':' + c.body.error).join());
+    const p202 = await call(prepare.POST, '/x', 'POST', { slug: 'prepr', id: 'performance' }, {});
+    check('POST prepare -> 202 prepare job', p202.status === 202 && p202.body.kind === 'prepare' && p202.body.lens === 'performance', JSON.stringify(p202));
+    await until(() => job('prepr', p202.body.id)?.status === 'done' || job('prepr', p202.body.id)?.status === 'failed');
+    const list1 = await call(products.GET, '/api/products', 'GET', {});
+    check('after the prepare job: done, and the project list names no setup need', job('prepr', p202.body.id)?.status === 'done'
+      && (list1.body as Listed[]).find((x) => x.slug === 'prepr')?.setup.length === 0, JSON.stringify(job('prepr', p202.body.id)));
+    fs.writeFileSync(regFile, reg0);
+  }
   const sel = (features: string[], extra: object = {}) => ({ kind: 'selection', label: 'Selection (' + features.length + ')', features, ...extra });
   const s202sel = await call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'development', scope: sel(['b', 'a']) });
   check('POST scans selection -> 202, no id, the features kept', s202sel.status === 202 && s202sel.body.scope.kind === 'selection' && s202sel.body.scope.id === undefined && s202sel.body.scope.features.join() === 'b,a', JSON.stringify(s202sel.body));
@@ -254,6 +379,14 @@ try {
   ]);
   check('selection refusals: empty, 201 features, an unknown slug, an id, no label -> 400 bad-scope',
     selBad.map((c) => c.status + ':' + c.body.error).join() === Array(5).fill('400:bad-scope').join(), selBad.map((c) => c.status + ':' + c.body.error).join());
+  // the cap judges the stored (deduped) list, the same one "is it empty" reads: duplicates never count toward 200
+  const dupA = await call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'development', scope: sel(Array(201).fill('a')) });
+  const dupB = await call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'development', scope: sel([...many.slice(0, 200), many[0], many[199]]) });
+  const dupC = await call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'development', scope: sel([...many.slice(0, 201), many[0]]) });
+  check('selection: 201 copies of one feature -> 202, stored as one feature (the cap reads the deduped list)', dupA.status === 202 && dupA.body.scope.features.join() === 'a', dupA.status + ' ' + JSON.stringify(dupA.body).slice(0, 200));
+  check('selection: 200 distinct features plus 2 duplicates (202 raw) -> 202, stored as 200', dupB.status === 202 && dupB.body.scope.features.length === 200, dupB.status + ' ' + JSON.stringify(dupB.body.scope?.features?.length));
+  check('selection: 201 DISTINCT features stay refused even with duplicates on top (the guard still bites)', dupC.status === 400 && dupC.body.error === 'bad-scope', dupC.status + ' ' + dupC.body.error);
+  for (const r of [dupA, dupB]) if (r.status === 202) J.cancel('prod', r.body.id);
   const g = await call(scans.GET, '/x', 'GET', { slug: 'prod' });
   check('GET scans lists the job', g.status === 200 && g.body.some((j: ScanJob) => j.id === s202.body.id));
   const del = await route('products/[slug]/scans/[job]/route.ts');
@@ -306,7 +439,7 @@ try {
     && rowOf('p4').status === 'declined' && rowOf('p4').decided_by === 'user:octocat' && rowOf('p4').decision_note === 'not now', JSON.stringify([a4.body, rowOf('p4')]));
   check('POST proposals of a decided row -> 409 with the row', (await call(props.POST, '/x', 'POST', { slug: 'prod', id: 'p4' }, { decision: 'approve' })).status === 409);
   check('nothing in the bp sources signs a decision as the blueprint any more',
-    !/decided_by = 'blueprint'/.test(fs.readFileSync(path.join(ROOT, 'src/lib/scan/store.server.ts'), 'utf8')));
+    !/decided_by = 'blueprint'/.test(fs.readFileSync(path.join(ROOT, 'packages/core/src/server/store.server.ts'), 'utf8')));
 
   // ------------------------------------------------------------------ BP_WRITES=off: decisions read-only, the rest live
   {
@@ -433,6 +566,27 @@ try {
     call(draft.POST, '/x', 'POST', {}, { product: 'nope', message: 'hi' }),
   ]);
   check('lens-draft refusals: empty, too long, bad session, bad kind, unknown product', bads.map((b) => b.status).join() === '400,400,400,400,404', bads.map((b) => b.status).join());
+  // a reply past the route's stdout cap is reported as too long, not as "no JSON"
+  const big = await call(draft.POST, '/x', 'POST', {}, { product: 'kettle', message: 'DRAFT-BIG' });
+  check('lens-draft: a reply past the stdout cap -> 502 naming the cut, not "no JSON"', big.status === 502 && /too long|cut|truncat/i.test(big.body.error ?? '') && !/no JSON/.test(big.body.error ?? ''), JSON.stringify(big.body).slice(0, 300));
+  // every kill the route makes leaves one line naming the product, the session and the reason
+  {
+    const warns: string[] = [], realWarn = console.warn;
+    console.warn = (...a: unknown[]) => { warns.push(a.join(' ')); };
+    try {
+      const ac = new AbortController();
+      const pending = draft.POST(new Request('http://localhost:3000/x', { method: 'POST', headers: H, body: JSON.stringify({ product: 'prod', message: 'DRAFT-SLOW', session: 'abcdef12-3456-7890' }), signal: ac.signal }));
+      await new Promise((r) => setTimeout(r, 700));
+      ac.abort();
+      const ab = await pending;
+      check('lens-draft: an aborted request answers 502 cancelled', ab.status === 502, String(ab.status));
+      check('lens-draft: an abort logs one line naming product, session and reason', warns.length === 1 && /prod/.test(warns[0]) && /abcdef12-3456-7890/.test(warns[0]) && /cancel/.test(warns[0]), JSON.stringify(warns));
+      warns.length = 0;
+      process.env.BP_LENS_DRAFT_TIMEOUT_MS = '600';
+      const to = await call(draft.POST, '/x', 'POST', {}, { product: 'kettle', message: 'DRAFT-SLOW' });
+      check('lens-draft: a timeout answers 504 and logs one line naming product and reason', to.status === 504 && warns.length === 1 && /kettle/.test(warns[0]) && /timed out|timeout|longer/.test(warns[0]), JSON.stringify([to.status, warns]));
+    } finally { console.warn = realWarn; delete process.env.BP_LENS_DRAFT_TIMEOUT_MS; }
+  }
   process.env.BP_CLAUDE_BIN = 'bp-no-such-cli-' + process.pid;
   const t503 = await call(draft.POST, '/x', 'POST', {}, { product: 'kettle', message: 'hi' });
   check('lens-draft without the CLI -> 503', t503.status === 503 && t503.body.error === J.CLI_MISSING, JSON.stringify(t503));
@@ -443,15 +597,19 @@ try {
   // store.mjs (BP_LENS_SCAN_DIR or ~/.claude/skills/lens-scan; SKIP and seed by SQL when it is not installed); gh is a fake
   // (BP_GH_BIN), signed in or out by FAKE_GH_OUT.
   {
-    const RS = await import(pathToFileURL(path.join(ROOT, 'src/lib/scan/release.server.ts')).href) as typeof import('../src/lib/scan/release.server.ts');
-    const W = await import(pathToFileURL(path.join(ROOT, 'src/lib/train/wire.ts')).href) as typeof import('../src/lib/train/wire.ts');
+    const RS = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/server/release.server.ts')).href) as typeof import('../packages/core/src/server/release.server.ts');
+    const W = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/train/wire.ts')).href) as typeof import('../packages/core/src/train/wire.ts');
     const show = (what: string, x: unknown) => { if (process.env.BP_SHOW_EXAMPLES) console.log('EXAMPLE ' + what + '\n' + JSON.stringify(x, null, 1)); };
-    const { jobLabel } = await import(pathToFileURL(path.join(ROOT, 'src/lib/scan/jobs.ts')).href) as typeof import('../src/lib/scan/jobs.ts');
     process.env.BP_GH_BIN = ghFake; // the fake the decision routes above signed with
+    const { jobLabel } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/scan/jobs.ts')).href) as typeof import('../packages/core/src/scan/jobs.ts');
     delete (globalThis as { __bpGhBy?: unknown }).__bpGhBy;
     const rr = repo('rel'), rstore = path.join(rr, '.ai/lens-scan'), rdb = path.join(rstore, 'scan.db');
     fs.mkdirSync(rstore, { recursive: true });
     fs.writeFileSync(path.join(rr, 'package.json'), JSON.stringify({ name: 'rel', version: '2.3.0' }));
+    // a store written by a newer lens-scan than this one knows: store.mjs REFUSES it (exit 1), the triage route's other 409
+    const fr = repo('future'), fdb = path.join(fr, '.ai/lens-scan/scan.db');
+    fs.mkdirSync(path.dirname(fdb), { recursive: true });
+    { const fw = new DatabaseSync(fdb); fw.exec('PRAGMA user_version = 99'); fw.close(); }
     const sw = new DatabaseSync(rdb);
     sw.exec(fs.readFileSync(path.join(ROOT, 'docs/standard/lens-scan-store.sql'), 'utf8'));
     sw.prepare("INSERT INTO runs (id, started_at, updated_at, phase, status, lenses) VALUES ('r0', ?, ?, 'execute', 'done', '[\"development\"]')").run(T, T);
@@ -459,14 +617,64 @@ try {
     const ip = sw.prepare("INSERT INTO proposals (id, run_id, feature, lens, metric, title, kind, status, created_at, updated_at, pack_id, commit_sha) VALUES (?, 'r0', 'a', 'development', 'cov', ?, 'fix', ?, ?, ?, 'k-dev-1', ?)");
     for (const [id, st] of [['a1', 'done'], ['a2', 'done'], ['a3', 'failed']]) ip.run(id, 'item ' + id, st, at(Number(id[1])), at(Number(id[1])), id.repeat(20));
     sw.close();
-    fs.writeFileSync(path.join(dir, 'bp.products.local.json'), JSON.stringify({ products: [{ slug: 'prod', name: 'Prod', root: pr }, { slug: 'rel', name: 'Rel', root: rr }] }));
-    const status = (table: string, id: string) => { const d = new DatabaseSync(rdb, { readOnly: true }); try { return (d.prepare(`SELECT status FROM ${table} WHERE id = ?`).get(id) as { status?: string } | undefined)?.status; } finally { d.close(); } };
-    const relRow = (id: string) => { const d = new DatabaseSync(rdb, { readOnly: true }); try { return d.prepare('SELECT * FROM releases WHERE id = ?').get(id) as Record<string, string> | undefined; } finally { d.close(); } };
+    fs.writeFileSync(path.join(dir, 'bp.products.local.json'), JSON.stringify({ products: [{ slug: 'prod', name: 'Prod', root: pr }, { slug: 'rel', name: 'Rel', root: rr }, { slug: 'future', name: 'Future', root: fr }] }));
+    const status = (table: string, id: string) => { const d = new DatabaseSync(rdb, { readOnly: true, timeout: 5000 }); try { return (d.prepare(`SELECT status FROM ${table} WHERE id = ?`).get(id) as { status?: string } | undefined)?.status; } finally { d.close(); } };
+    const relRow = (id: string) => { const d = new DatabaseSync(rdb, { readOnly: true, timeout: 5000 }); try { return d.prepare('SELECT * FROM releases WHERE id = ?').get(id) as Record<string, string> | undefined; } finally { d.close(); } };
 
     const tri = await route('products/[slug]/triage/route.ts'), rels = await route('products/[slug]/releases/route.ts');
     const sug = await route('products/[slug]/releases/suggest/route.ts');
     const build = await route('products/[slug]/releases/[id]/build/route.ts'), fin = await route('products/[slug]/releases/[id]/finish/route.ts');
     const hasStoreMjs = RS.storeScript() !== null;
+    // where lens-scan is looked for, and when not finding it is a FAILURE. The resolution order is derived HERE from the
+    // manifest (not through release.server.ts's own reader), so deleting the registry fallback there changes what
+    // lensScanDirs() answers and no longer equals what the manifest declares. The SKIP this replaces let ten
+    // release-train checks stop running while the gate read green (133 passed + 1 skipped, exit 0).
+    const manifestText = (() => { try { return fs.readFileSync(path.join(ROOT, '.ai', 'manifest.yaml'), 'utf8'); } catch { return ''; } })();
+    const declared = /^registry:[ \t]*\r?\n(?:[ \t]+[^\r\n]*\r?\n)*?[ \t]+local:[ \t]*(\S+)/m.exec(manifestText)?.[1].replace(/^['"]|['"]$/g, '');
+    const declaredDir = declared ? path.resolve(ROOT, declared) : null;
+    const homeLens = path.join(os.homedir(), '.claude', 'skills', 'lens-scan'), regLens = declaredDir ? path.join(declaredDir, 'skills', 'lens-scan') : null;
+    // the main checkout, asked of git here (not through release.server.ts): in a linked worktree --git-common-dir is
+    // <main>/.git, so the declaration is also read beside the main checkout; in the main checkout that is the same place
+    const gitSays = spawnSync('git', ['rev-parse', '--show-toplevel', '--git-common-dir'], { cwd: ROOT, encoding: 'utf8' }).stdout?.split(/\r?\n/).map((l) => l.trim()) ?? [];
+    const commonDir = gitSays[1] ? path.resolve(ROOT, gitSays[1]) : null;
+    const mainRoot = gitSays[0] && commonDir && path.basename(commonDir) === '.git' ? path.join(path.dirname(commonDir), path.relative(path.resolve(gitSays[0]), ROOT)) : null;
+    const mainRegDir = mainRoot && declared ? path.resolve(mainRoot, declared) : null;
+    const mainLens = mainRegDir && regLens && path.join(mainRegDir, 'skills', 'lens-scan').toLowerCase() !== regLens.toLowerCase() ? path.join(mainRegDir, 'skills', 'lens-scan') : null;
+    const named = process.env.BP_LENS_SCAN_DIR;
+    const dirsFor = (v: string | undefined): string[] => {
+      if (v === undefined) delete process.env.BP_LENS_SCAN_DIR; else process.env.BP_LENS_SCAN_DIR = v;
+      try { return RS.lensScanDirs().map((d) => path.resolve(d)); } finally { if (named === undefined) delete process.env.BP_LENS_SCAN_DIR; else process.env.BP_LENS_SCAN_DIR = named; }
+    };
+    const sentinel = path.join(dir, 'named-lens-scan');
+    check('the manifest declares a registry (the fallback lensScanDirs() must follow)', !!declaredDir, manifestText ? 'no registry.local in .ai/manifest.yaml' : '.ai/manifest.yaml unreadable');
+    check('lensScanDirs: BP_LENS_SCAN_DIR set -> exactly that one place, no fallthrough', dirsFor(sentinel).join('|') === path.resolve(sentinel), dirsFor(sentinel).join('|'));
+    check('lensScanDirs: unset -> ~/.claude/skills/lens-scan, then <registry.local>/skills/lens-scan, then the main checkout\'s <registry.local>/skills/lens-scan (a linked worktree only), in that order',
+      dirsFor(undefined).join('|') === [homeLens, ...(regLens ? [regLens] : []), ...(mainLens ? [mainLens] : [])].map((d) => path.resolve(d)).join('|'), dirsFor(undefined).join('|') + ' vs ' + [homeLens, regLens, mainLens].join('|'));
+    // the same four paths on a fixture, so they are proven on every run whether this is a main checkout or a worktree:
+    // <fx>/main is the main checkout, <fx>/wts/wt a worktree of it, both declaring ../ai-registry; <fx>/home has no install
+    {
+      const fx = path.join(dir, 'lens-resolve'), fxHome = path.join(fx, 'home'), fxMain = path.join(fx, 'main'), fxWt = path.join(fx, 'wts', 'wt');
+      const fxIn = { home: fxHome, root: fxWt, declared: '../ai-registry', mainRoot: fxMain };
+      const fxHomeLens = path.join(fxHome, '.claude', 'skills', 'lens-scan'), fxWtLens = path.join(fx, 'wts', 'ai-registry', 'skills', 'lens-scan'), fxMainLens = path.join(fx, 'ai-registry', 'skills', 'lens-scan');
+      const fxDirs = RS.lensScanDirsFor({ ...fxIn, named: undefined });
+      const install = (d: string) => { fs.mkdirSync(path.join(d, 'scripts'), { recursive: true }); fs.writeFileSync(path.join(d, 'scripts', 'store.mjs'), '// fixture\n'); return fs.realpathSync(path.join(d, 'scripts', 'store.mjs')); };
+      check('lens resolver fixture: BP_LENS_SCAN_DIR set -> exactly that one place, even beside a main checkout', RS.lensScanDirsFor({ ...fxIn, named: sentinel }).join('|') === sentinel);
+      check('lens resolver fixture: unset in a worktree -> home, then the declared registry beside the worktree, then the one beside the main checkout, in that order',
+        fxDirs.join('|') === [fxHomeLens, fxWtLens, fxMainLens].join('|'), fxDirs.join('|'));
+      check('lens resolver fixture: in the main checkout (git names no other) the main-checkout candidate is not added twice',
+        RS.lensScanDirsFor({ ...fxIn, named: undefined, root: fxMain, mainRoot: null }).join('|') === [fxHomeLens, fxMainLens].join('|'));
+      check('lens resolver fixture: a worktree whose main checkout has no registry -> no candidate holds store.mjs (the SKIP still happens)', RS.storeScriptIn(fxDirs) === null);
+      const fxMainStore = install(fxMainLens);
+      check('lens resolver fixture: store.mjs only beside the main checkout -> found there, and only through the main-checkout candidate (without it, nothing is found)',
+        RS.storeScriptIn(fxDirs) === fxMainStore && RS.storeScriptIn(fxDirs.filter((d) => d !== fxMainLens)) === null, String(RS.storeScriptIn(fxDirs)));
+      const fxHomeStore = install(fxHomeLens);
+      check('lens resolver fixture: home and the main checkout both hold store.mjs -> home wins (the new candidate is last)', RS.storeScriptIn(fxDirs) === fxHomeStore && RS.storeScriptIn([...fxDirs].reverse()) === fxMainStore);
+    }
+    // required when the operator names a place, the environment says so, or the declared registry is on this machine
+    // (a checkout without its registry, such as a bare worktree, cannot be asked for what it cannot have); '0' waives
+    const required = process.env.BP_REQUIRE_LENS_SCAN !== '0' && (process.env.BP_REQUIRE_LENS_SCAN === '1' || !!process.env.CI || named !== undefined || (!!declaredDir && fs.existsSync(declaredDir)) || (!!mainRegDir && fs.existsSync(mainRegDir)));
+    check('lens-scan is found for the triage and release checks (a missing install is a failure, not a skip)', hasStoreMjs || !required,
+      'searched ' + (named !== undefined ? 'BP_LENS_SCAN_DIR=' + named : [homeLens, regLens ?? '(no registry declared in .ai/manifest.yaml)', ...(mainLens ? [mainLens] : [])].join(' and ')) + ' - none holds scripts/store.mjs; BP_REQUIRE_LENS_SCAN=0 waives');
     const triBad = await Promise.all([
       call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a b'], decision: 'accept' }),
       call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a1'], decision: 'ship' }),
@@ -481,6 +689,12 @@ try {
       check('triage accept -> 200 through store.mjs, by user:<gh login>', t1.status === 200 && t1.body.triaged.join() === 'a1,a2' && t1.body.by === 'user:octocat' && t1.body.decision === 'accepted', JSON.stringify(t1.body));
       const t2 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a3'], decision: 'accept' });
       check('triage accept of a failed item without a note -> 409, skipped note-required', t2.status === 409 && t2.body.skipped[0]?.reason === 'note-required', JSON.stringify(t2.body));
+      // the two 409s (nothing moved / store.mjs refused) share `error`, `triaged` and `skipped`: a caller branches on a field
+      const tRef = await call(tri.POST, '/x', 'POST', { slug: 'future' }, { ids: ['a1'], decision: 'accept' });
+      const pNone = W.parseTriageResult(t2.body);
+      check('triage 409 nothing moved -> `error` names it, the skipped list stays, the parser door still takes it', t2.body.error === 'nothing moved' && Array.isArray(t2.body.triaged) && pNone.ok && pNone.value.skipped[0]?.reason === 'note-required', JSON.stringify(t2.body) + (pNone.ok ? '' : ' ' + pNone.error));
+      check('triage 409 store refused -> `error` carries the refusal, triaged and skipped are empty lists, and the parser door does not mistake it for a result',
+        tRef.status === 409 && /schema v99/.test(tRef.body.error ?? '') && Array.isArray(tRef.body.triaged) && tRef.body.triaged.length === 0 && Array.isArray(tRef.body.skipped) && tRef.body.skipped.length === 0 && !W.parseTriageResult(tRef.body).ok, JSON.stringify(tRef.status) + JSON.stringify(tRef.body));
       const t3 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a3'], decision: 'descope', note: 'not worth it' });
       check('triage descope -> 200, the pack settles open -> triaged', t3.status === 200 && t3.body.packs_triaged.join() === 'k-dev-1' && status('packs', 'k-dev-1') === 'triaged', JSON.stringify(t3.body));
       // the undo: each item back to the status it left, the pack open again; a second undo has nothing to go back to
@@ -495,7 +709,7 @@ try {
       const t7 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a3'], decision: 'descope', note: 'not worth it' });
       check('triage after the undo: a1 accepted, a3 descoped, the pack triaged again', t6.status === 200 && t7.status === 200 && status('packs', 'k-dev-1') === 'triaged', JSON.stringify([t6.body, t7.body]));
     } else {
-      skipped++; console.log('SKIP triage and release-create through store.mjs (lens-scan not installed; set BP_LENS_SCAN_DIR)');
+      if (!required) { skipped++; console.log('SKIP triage and release-create through store.mjs (lens-scan not installed, and nothing here requires it; set BP_LENS_SCAN_DIR)'); } // required: the check above already failed; the SQL seed below keeps the rest of the block running
       const d = new DatabaseSync(rdb);
       d.exec("UPDATE proposals SET status = 'accepted' WHERE id IN ('a1', 'a2'); UPDATE proposals SET status = 'descoped' WHERE id = 'a3'; UPDATE packs SET status = 'triaged'");
       d.close();
@@ -507,6 +721,10 @@ try {
     const sg = await call(sug.GET, '/x', 'GET', { slug: 'rel' });
     show('GET /api/products/rel/releases/suggest -> ' + sg.status, sg.body);
     check('suggest with no v* tag -> the manifest version as it stands', sg.status === 200 && sg.body.version === '2.3.0' && sg.body.from === 'package.json', JSON.stringify(sg.body));
+    // the parser door on the REAL answer: check-train-wire.ts holds the same validators against samples hand-copied
+    // from these bodies, which cannot notice the route drifting away from the copy. Here the answer itself is parsed.
+    const pSug = W.parseVersionSuggestion(sg.body);
+    check('the parser door takes the suggest answer', pSug.ok && pSug.value.version === '2.3.0' && pSug.value.from === 'package.json', pSug.ok ? '' : pSug.error);
     check('POST releases bad version -> 400', (await call(rels.POST, '/x', 'POST', { slug: 'rel' }, { version: 'v2.3.0' })).status === 400);
     check('POST releases with no accepted item among the ids -> 409', (await call(rels.POST, '/x', 'POST', { slug: 'rel' }, { version: '2.3.0', ids: ['a3'] })).status === 409);
     if (hasStoreMjs) {
@@ -514,6 +732,8 @@ try {
       show('POST /api/products/rel/releases {"version":"2.3.0"} -> ' + c1.status, c1.body);
       check('POST releases -> 201, a draft with every accepted item', c1.status === 201 && c1.body.release.id === 'rel-2.3.0' && c1.body.release.status === 'draft' && c1.body.release.created_by === 'user:octocat'
         && c1.body.added.join() === 'a1,a2' && c1.body.release.items.map((p: Proposal) => p.id).join() === 'a1,a2', JSON.stringify(c1.body).slice(0, 400));
+      const pRel = W.parseReleaseCreated(c1.body);
+      check('the parser door takes the releases answer', pRel.ok && pRel.value.release.items.length === 2 && pRel.value.added.join() === 'a1,a2', pRel.ok ? '' : pRel.error);
       const c2 = await call(rels.POST, '/x', 'POST', { slug: 'rel' }, { version: '2.3.1', ids: ['a1'] });
       check('POST releases of items already in one -> 409', c2.status === 409, JSON.stringify(c2.body));
     } else {
@@ -525,6 +745,14 @@ try {
     const sg2 = await call(sug.GET, '/x', 'GET', { slug: 'rel' });
     check('suggest passes over a version that has a release', sg2.body.version === '2.3.1', JSON.stringify(sg2.body));
 
+    // the pre-flight dry run (body {"dry":true}): every local guard, no job, and gh is never spawned (signed out here, and
+    // the answer is still ready with gh unchecked: a dry run reads local state only, the real build checks the login)
+    const jobsBefore = J.list('rel').length;
+    const dry = await call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0' }, { dry: true });
+    check('build dry on a draft -> 200 { ready: true }, no new job', dry.status === 200 && dry.body.ready === true && J.list('rel').length === jobsBefore, JSON.stringify(dry));
+    process.env.FAKE_GH_OUT = '1';
+    const dryOut = await call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0' }, { dry: true });
+    check('build dry spawns no gh: signed out still -> 200 ready, gh unchecked, no job', dryOut.status === 200 && dryOut.body.ready === true && dryOut.body.gh === 'unchecked' && J.list('rel').length === jobsBefore, JSON.stringify(dryOut));
     process.env.FAKE_GH_OUT = '1';
     const b412 = await call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0' }, {});
     check('build with gh signed out -> 412 gh not authenticated', b412.status === 412 && b412.body.error === 'gh not authenticated', JSON.stringify(b412));
@@ -539,6 +767,8 @@ try {
     show('POST /api/products/rel/releases/rel-2.3.0/build -> ' + b1.status, b1.body);
     check('build -> 202 release job (kind release, step build)', b1.status === 202 && b1.body.kind === 'release' && b1.body.release === 'rel-2.3.0' && b1.body.version === '2.3.0' && b1.body.step === 'build', JSON.stringify(b1.body));
     check('a release job reads "Release 2.3.0 · build"', jobLabel(b1.body) === 'Release 2.3.0 · build', jobLabel(b1.body));
+    const pJob = W.parseScanJob(b1.body);
+    check('the parser door takes the release-job answer', pJob.ok && pJob.value.kind === 'release' && pJob.value.step === 'build' && pJob.value.release === 'rel-2.3.0', pJob.ok ? '' : pJob.error);
     const again = await call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0' }, {});
     check('a second build while one is queued or running -> 409', again.status === 409, JSON.stringify(again));
     check('build: the job ends done once the release is pr-open', await until(() => job('rel', b1.body.id)?.status === 'done' || job('rel', b1.body.id)?.status === 'failed'), JSON.stringify(job('rel', b1.body.id)));
@@ -548,6 +778,11 @@ try {
     check('build of a pr-open release -> 409', (await call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0' }, {})).status === 409);
     check('BP_WRITES=off left the Release tab live: suggest, create, build all answered as with writes on', sg.status === 200 && jb?.status === 'done');
     delete process.env.BP_WRITES;
+    {
+      const real = await call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0' }, {}), n0 = J.list('rel').length;
+      const d409 = await call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0' }, { dry: true });
+      check('build dry on a pr-open release -> 409 with the real build words, no job', d409.status === 409 && d409.body.error === real.body.error && J.list('rel').length === n0, JSON.stringify(d409));
+    }
     if (hasStoreMjs) {
       const t8 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a1'], decision: 'reopen' });
       show('POST /api/products/rel/triage {"ids":["a1"],"decision":"reopen"} (release pr-open) -> ' + t8.status, t8.body);
@@ -555,6 +790,8 @@ try {
     }
     const f1 = await call(fin.POST, '/x', 'POST', { slug: 'rel', id: 'rel-2.3.0' }, {});
     check('finish -> 202 (step finish)', f1.status === 202 && f1.body.step === 'finish' && jobLabel(f1.body) === 'Release 2.3.0 · finish', JSON.stringify(f1.body));
+    const pFin = W.parseScanJob(f1.body);
+    check('the parser door takes the finish-job answer', pFin.ok && pFin.value.step === 'finish', pFin.ok ? '' : pFin.error);
     await until(() => job('rel', f1.body.id)?.status === 'done' || job('rel', f1.body.id)?.status === 'failed');
     const jf2 = job('rel', f1.body.id);
     check('finish: done with no run, the release tagged v2.3.0', jf2?.status === 'done' && jf2.run_id === undefined && relRow('rel-2.3.0')?.status === 'tagged' && relRow('rel-2.3.0')?.tag === 'v2.3.0', JSON.stringify(jf2));
@@ -569,6 +806,97 @@ try {
     const je1 = e1.ok ? job('rel', e1.job.id) : undefined, je2 = e2.ok ? job('rel', e2.job.id) : undefined;
     check('a cut whose gate fails -> failed with lens-scan\'s line, its measure run still attached', je1?.status === 'failed' && je1.error === 'lens-scan release failed: gate npm test: 1 failing' && je1.run_id === 'run-' + je1.id && relRow('rel-3.0.0-fail')?.status === 'failed', JSON.stringify(je1));
     check('an unknown release -> failed with the refusal', je2?.status === 'failed' && /^lens-scan refused:/.test(je2.error ?? ''), JSON.stringify(je2));
+    // a release row left `building` by a job that ends without the CLI moving it on - cancelled from the Agents panel, or the
+    // CLI dying mid-cut. The Kettle sim fails such a row (train-sim.ts: "its building release fails, so a build may start
+    // again"); the live registry must too, or every release route refuses every next step for that row for good
+    // (release-job.ts: a build starts only from draft or failed). The stand-in CLI moves the row to building as lens-scan
+    // does, then hangs (-stall) or exits 3 (-die). The failed row is store.mjs's write (release-update --from building), so
+    // without lens-scan installed the row stays building and these expectations SKIP.
+    const stallFake = path.join(dir, 'fake-claude-stall.mjs');
+    fs.writeFileSync(stallFake, [
+      "import { DatabaseSync } from 'node:sqlite';",
+      "let input = ''; process.stdin.setEncoding('utf8'); for await (const c of process.stdin) input += c;",
+      "const rid = /--id (\\S+)/.exec(input)?.[1] ?? '';",
+      "const db = new DatabaseSync(process.cwd() + '/.ai/lens-scan/scan.db', { timeout: 5000 });",
+      "db.prepare(\"UPDATE releases SET status = 'building', updated_at = ? WHERE id = ?\").run(new Date().toISOString(), rid); db.close();",
+      "console.log('building ' + rid);",
+      "if (rid.includes('-die')) { console.error('stall fake: the cut died'); process.exit(3); }",
+      "await new Promise((r) => setTimeout(r, 120000));",
+    ].join('\n'));
+    const sd = new DatabaseSync(rdb);
+    for (const v of ['4.0.0-stall', '4.0.1-die']) sd.prepare("INSERT INTO releases (id, version, branch, status, created_at, updated_at) VALUES (?, ?, ?, 'draft', ?, ?)").run('rel-' + v, v, 'release/' + v, T, T);
+    sd.close();
+    process.env.BP_CLAUDE_BIN = stallFake;
+    const s1 = J.enqueueRelease('rel', rr, 'rel-4.0.0-stall', '4.0.0-stall', 'build'), s2 = J.enqueueRelease('rel', rr, 'rel-4.0.1-die', '4.0.1-die', 'build');
+    check('stall: the cut moved the release to building', await until(() => relRow('rel-4.0.0-stall')?.status === 'building'), relRow('rel-4.0.0-stall')?.status);
+    if (s1.ok) J.cancel('rel', s1.job.id);
+    if (!hasStoreMjs) { skipped++; console.log('SKIP the abandoned-cut rows (failBuilding writes through store.mjs; lens-scan is not installed here)'); } else {
+    check('a cancelled build job leaves its building release failed, with a reason', await until(() => relRow('rel-4.0.0-stall')?.status === 'failed', 8000) && !!relRow('rel-4.0.0-stall')?.error,
+      JSON.stringify(relRow('rel-4.0.0-stall')));
+    await until(() => s2.ok && job('rel', s2.job.id)?.status === 'failed');
+    check('a build whose CLI died leaves its building release failed, with the job\'s error', await until(() => relRow('rel-4.0.1-die')?.status === 'failed', 8000) && relRow('rel-4.0.1-die')?.error === 'stall fake: the cut died',
+      JSON.stringify(relRow('rel-4.0.1-die')));
+    process.env.BP_CLAUDE_BIN = FAKE;
+    const rebuilt = await call(build.POST, '/x', 'POST', { slug: 'rel', id: 'rel-4.0.0-stall' }, {});
+    check('the failed release can be built again (202), and that build reaches pr-open', rebuilt.status === 202 && await until(() => relRow('rel-4.0.0-stall')?.status === 'pr-open'), rebuilt.status + ' ' + relRow('rel-4.0.0-stall')?.status);
+    }
+    process.env.BP_CLAUDE_BIN = FAKE;
+    // a cut that SUCCEEDED (the release is pr-open in the store) whose job reads the store while another connection holds
+    // it locked past the busy timeout: the job ends by the release's status, so an unreadable store must not read as a
+    // release that failed - it is read again until it can be, and says what it could not read if it never can
+    const lockFake = path.join(dir, 'fake-claude-locked.mjs');
+    fs.writeFileSync(lockFake, [
+      "import fs from 'node:fs';",
+      "import { DatabaseSync } from 'node:sqlite';",
+      "let input = ''; process.stdin.setEncoding('utf8'); for await (const c of process.stdin) input += c;",
+      "const rid = /--id (\\S+)/.exec(input)?.[1] ?? '';",
+      "const db = new DatabaseSync(process.cwd() + '/.ai/lens-scan/scan.db', { timeout: 5000 });",
+      "db.prepare(\"UPDATE releases SET status = 'pr-open', pr_url = 'https://example.test/pull/5', updated_at = ? WHERE id = ?\").run(new Date().toISOString(), rid); db.close();",
+      "fs.writeFileSync(process.cwd() + '/cut-' + rid + '.done', rid);",
+      "await new Promise((r) => setTimeout(r, 1000));",
+    ].join('\n'));
+    const ld = new DatabaseSync(rdb);
+    ld.prepare("INSERT INTO releases (id, version, branch, status, created_at, updated_at) VALUES ('rel-5.0.0-lock', '5.0.0-lock', 'release/5.0.0-lock', 'draft', ?, ?)").run(T, T);
+    ld.close();
+    process.env.BP_CLAUDE_BIN = lockFake;
+    const l1 = J.enqueueRelease('rel', rr, 'rel-5.0.0-lock', '5.0.0-lock', 'build');
+    check('lock: the stand-in cut finished (release pr-open)', await until(() => fs.existsSync(path.join(rr, 'cut-rel-5.0.0-lock.done'))) && relRow('rel-5.0.0-lock')?.status === 'pr-open', relRow('rel-5.0.0-lock')?.status);
+    const hold = new DatabaseSync(rdb, { timeout: 5000 });
+    hold.exec('PRAGMA locking_mode = EXCLUSIVE'); hold.exec('BEGIN IMMEDIATE');
+    const unlock = setTimeout(() => { try { hold.exec('COMMIT'); hold.close(); } catch { /* closed */ } }, 3500);
+    const lj = l1.ok ? await until(() => ['done', 'failed'].includes(job('rel', l1.job.id)?.status ?? ''), 40000) : false;
+    clearTimeout(unlock); try { hold.exec('ROLLBACK'); } catch { /* committed */ } try { hold.close(); } catch { /* closed */ }
+    const ljob = l1.ok ? job('rel', l1.job.id) : undefined;
+    check('a locked store does not report a successful cut as failed (the job ends done once the store can be read)', lj && ljob?.status === 'done' && relRow('rel-5.0.0-lock')?.status === 'pr-open', JSON.stringify(ljob));
+    process.env.BP_CLAUDE_BIN = FAKE;
+    // the reader behind that decision tells its four "no row" conditions apart (a bare undefined used to blur them)
+    {
+      const SS = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/server/store.server.ts')).href) as typeof import('../packages/core/src/server/store.server.ts');
+      const v1 = path.join(dir, 'v1-store.db'), lk = path.join(dir, 'locked-store.db');
+      { const w = new DatabaseSync(v1); w.exec('CREATE TABLE runs (id TEXT)'); w.close(); }
+      { const w = new DatabaseSync(lk); w.exec('PRAGMA journal_mode = WAL; CREATE TABLE releases (id TEXT, status TEXT, error TEXT)'); w.close(); }
+      const rd = (f: string, id: string) => SS.readRelease(f, id).kind;
+      const lh = new DatabaseSync(lk, { timeout: 5000 });
+      lh.exec('PRAGMA locking_mode = EXCLUSIVE'); lh.exec('BEGIN IMMEDIATE');
+      const locked = SS.readRelease(lk, 'x');
+      try { lh.exec('COMMIT'); } catch { /* ignore */ } lh.close();
+      const kinds = [rd(path.join(dir, 'no-such.db'), 'x'), rd(v1, 'x'), rd(rdb, 'rel-no-such'), rd(rdb, 'rel-5.0.0-lock'), locked.kind, rd(lk, 'x')].join();
+      check('readRelease: no-store, no-table, absent, row, unreadable (a lock past the busy timeout), absent again once released',
+        kinds === 'no-store,no-table,absent,row,unreadable,absent' && locked.kind === 'unreadable' && /locked/i.test(locked.error), kinds + ' ' + JSON.stringify(locked));
+    }
+    // ...and a job whose CLI said nothing names the store condition that kept it from judging, not its last log line
+    const quietFake = path.join(dir, 'fake-claude-quiet.mjs');
+    fs.writeFileSync(quietFake, "process.stdin.resume(); process.stdin.on('end', () => process.exit(0));\n");
+    process.env.BP_CLAUDE_BIN = quietFake;
+    const nostore = repo('rel-nostore'), v1root = repo('rel-v1');
+    fs.mkdirSync(path.join(v1root, '.ai/lens-scan'), { recursive: true });
+    { const w = new DatabaseSync(path.join(v1root, '.ai/lens-scan/scan.db')); w.exec('CREATE TABLE runs (id TEXT)'); w.close(); }
+    const q1 = J.enqueueRelease('rel', nostore, 'rel-6.0.0', '6.0.0', 'build'), q2 = J.enqueueRelease('rel', v1root, 'rel-6.0.1', '6.0.1', 'build');
+    await until(() => [q1, q2].every((q) => q.ok && ['done', 'failed'].includes(job('rel', q.job.id)?.status ?? '')));
+    const jq1 = q1.ok ? job('rel', q1.job.id) : undefined, jq2 = q2.ok ? job('rel', q2.job.id) : undefined;
+    check('a release job over a missing store fails naming the store', jq1?.status === 'failed' && /^the release store is missing/.test(jq1.error ?? ''), JSON.stringify(jq1));
+    check('a release job over a v1 store (no releases table) fails naming the table', jq2?.status === 'failed' && /^the release store has no releases table/.test(jq2.error ?? ''), JSON.stringify(jq2));
+    process.env.BP_CLAUDE_BIN = FAKE;
     const e3 = J.enqueueRelease('rel', rr, 'rel-1.0.0', '1.0.1', 'build'), e4 = J.enqueueRelease('rel', rr, 'release-1', '1', 'finish');
     check('enqueueRelease refuses an id that is not rel-<version> -> 400', !e3.ok && e3.status === 400 && !e4.ok && e4.status === 400);
 
@@ -590,8 +918,13 @@ try {
     const g3 = git('rev-parse', 'HEAD');
     const gd = new DatabaseSync(rdb);
     const gi = gd.prepare("INSERT INTO proposals (id, run_id, feature, lens, title, kind, status, created_at, updated_at, commit_sha) VALUES (?, 'r0', 'a', 'development', 't', 'fix', 'declined', ?, ?, ?)");
-    gi.run('g1', T, T, g1); gi.run('g2', T, T, g2);
+    gi.run('g1', T, T, g1); gi.run('g2', T, T, g2); gi.run('g4', T, T, 'c'.repeat(40)); // g4: an item commit the repo does not have
     gd.close();
+    // the same store under a product whose root is no git repository (a root the repo-less fixture dir never had one for)
+    const ng = repo('nogit');
+    fs.mkdirSync(path.join(ng, '.ai/lens-scan'), { recursive: true });
+    fs.copyFileSync(rdb, path.join(ng, '.ai/lens-scan/scan.db'));
+    fs.writeFileSync(path.join(dir, 'bp.products.local.json'), JSON.stringify({ products: [{ slug: 'prod', name: 'Prod', root: pr }, { slug: 'rel', name: 'Rel', root: rr }, { slug: 'future', name: 'Future', root: fr }, { slug: 'nogit', name: 'No git', root: ng }] }));
     const commits = await route('products/[slug]/commits/[sha]/route.ts');
     const getCommit = (sha: string) => commits.GET(new Request('http://localhost:3000/x', { headers: { host: 'localhost:3000' } }), { params: Promise.resolve({ slug: 'rel', sha }) }) as Promise<Response>;
     const r1 = await getCommit(g1.slice(0, 7)), c1 = await r1.json(), d1 = W.parseCommitDiff(c1);
@@ -607,6 +940,13 @@ try {
       && d2.value.files.length === 1 && d2.value.files[0].add === 2100, d2.ok ? JSON.stringify({ lines: d2.value.lines, truncated: d2.value.truncated, files: d2.value.files }) : d2.error);
     const misses = await Promise.all([getCommit('deadbeef'), getCommit(g3), getCommit(g3.slice(0, 10))]);
     check('commits: a sha that is no item commit -> 404, even one the repo has', misses.map((r) => r.status).join() === '404,404,404', misses.map((r) => r.status).join());
+    // the pair that pins commitDiff's classification: git exits 128 for BOTH, so only its message tells them apart.
+    // 404 = the repo has no such object (stop looking); 503 = this root is not usable (fix the product's root and retry)
+    const gone = await getCommit('c'.repeat(40));
+    const noGit = await commits.GET(new Request('http://localhost:3000/x', { headers: { host: 'localhost:3000' } }), { params: Promise.resolve({ slug: 'nogit', sha: g1 }) }) as Response;
+    const noGitBody = await noGit.json() as { error?: string };
+    check('commits: an item commit the repo does not have -> 404 (git: bad object)', gone.status === 404 && /not a valid object|bad object|unknown revision/i.test(((await gone.json()) as { error?: string }).error ?? ''), String(gone.status));
+    check('commits: a product root that is not a git repository -> 503, not a missing commit', noGit.status === 503 && /not a git repository/i.test(noGitBody.error ?? ''), noGit.status + ' ' + JSON.stringify(noGitBody));
     const bads = await Promise.all([getCommit('abc123'), getCommit('xyz1234'), getCommit('a'.repeat(41)), getCommit(g1.slice(0, 7) + ';ls')]);
     check('commits: a bad sha -> 400 (short, not hex, too long, a shell char)', bads.map((r) => r.status).join() === '400,400,400,400', bads.map((r) => r.status).join());
     const unknown = await commits.GET(new Request('http://localhost:3000/x', { headers: { host: 'localhost:3000' } }), { params: Promise.resolve({ slug: 'nope', sha: g1 }) }) as Response;
@@ -616,11 +956,28 @@ try {
     delete (globalThis as { __bpGhBy?: unknown }).__bpGhBy;
   }
 
+  // ------------------------------------------------------------------ jobProgress: `current` stays inside the job's scope
+  {
+    const { jobProgress } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/scan/views.ts')).href) as typeof import('../packages/core/src/scan/views.ts');
+    const row = (id: number, feature: string, kind: 'reading' | 'measured') => ({ id, run_id: 'pr1', at: T, feature, lens: 'development', kind, text: '' });
+    const snap = (rows: ReturnType<typeof row>[]) => ({ runs: [{ id: 'pr1', note: 'bp-job:j1' }], measurements: [], activity: rows }) as unknown as import('../packages/core/src/scan/types.ts').ScanSnapshot;
+    const pj = (scope: ScanScope) => ({ id: 'j1', kind: 'measure', lens: 'development', scope, run_id: 'pr1' }) as unknown as ScanJob;
+    const inOnly: ScanScope = { kind: 'selection', label: 'Selection (1)', features: ['inside'] };
+    const wide = [row(1, 'inside', 'reading'), row(2, 'OUTSIDE', 'reading')], outOnly = [row(1, 'OUTSIDE', 'reading')];
+    const pAll = jobProgress(pj(ALL), snap(wide), 2), pWide = jobProgress(pj(inOnly), snap(wide), 2), pOut = jobProgress(pj(inOnly), snap(outOnly), 2);
+    const pIn = jobProgress(pj(inOnly), snap([row(1, 'OUTSIDE', 'reading'), row(2, 'inside', 'reading')]), 2);
+    // the control: the same rows under an unscoped job DO name OUTSIDE, so a scoped job staying off it is the guard, not an empty fixture
+    check('jobProgress: an unscoped job names the latest reading (the fixture reads OUTSIDE)', pAll.current === 'OUTSIDE', String(pAll.current));
+    check('jobProgress: a scoped job whose run also read outside its scope names a feature inside it', pWide.current === 'inside' && pWide.m === 1, String(pWide.current));
+    check('jobProgress: a run that has only read outside the scope leaves `current` blank', pOut.current === undefined && pOut.n === 0, String(pOut.current));
+    check('jobProgress: the latest in-scope reading wins over an earlier outside one', pIn.current === 'inside', String(pIn.current));
+  }
+
   // ------------------------------------------------------------------ Kettle parity: the scan sim and the browser's lens store
   const clock = Date.parse(T); // frozen: the sim's jobs start and never step, so what is queued or running stays put
   const fprop = (id: string, lens: string, status: Proposal['status'], i: number): Proposal => ({ id, run_id: 'r0', feature: 'a', lens, title: 't', standard: 'none', kind: 'fix', status, created_at: at(i), updated_at: at(i) });
   const findings = [...Array.from({ length: 55 }, (_, i) => fprop('k' + String(54 - i).padStart(2, '0'), 'com.k.exec', 'proposed', i)), fprop('ka', 'com.k.exec', 'approved', 60), fprop('kd', 'com.k.exec', 'declined', 61), fprop('ks', 'com.k.settled', 'done', 62)];
-  type Manifest = import('../src/lib/standard/types.ts').LensManifest;
+  type Manifest = import('../packages/core/src/standard/types.ts').LensManifest;
   // the model's lenses, each with a look none of the lenses added below draws (but tmp.copy, which repeats tmp.known's)
   const km = (id: string, glyph: string, line: string) => ({ ...MANIFEST, id, presentation: { glyph, line } }) as unknown as Manifest;
   const known: Record<string, Manifest> = { 'com.k.exec': km('com.k.exec', 'bars', 'solid'), 'com.k.settled': km('com.k.settled', 'bars', 'double'),
@@ -651,8 +1008,8 @@ try {
     // addProjectLens's Kettle branch writes the browser's store (a Map stands in for localStorage)
     const ls = new Map<string, string>();
     (globalThis as { localStorage?: unknown }).localStorage = { getItem: (k: string) => ls.get(k) ?? null, setItem: (k: string, v: string) => { ls.set(k, v); }, removeItem: (k: string) => { ls.delete(k); } };
-    const A = await import(pathToFileURL(path.join(ROOT, 'src/lib/scan/actions.ts')).href) as typeof import('../src/lib/scan/actions.ts');
-    const TL = await import(pathToFileURL(path.join(ROOT, 'src/lib/scan/temp-lens.ts')).href) as typeof import('../src/lib/scan/temp-lens.ts');
+    const A = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/lib/scan/actions.ts')).href) as typeof import('../apps/web/src/lib/scan/actions.ts');
+    const TL = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/lib/scan/temp-lens.ts')).href) as typeof import('../apps/web/src/lib/scan/temp-lens.ts');
     const kctx = { slug: null, sim };
     const aErr = async (fn: () => Promise<unknown>): Promise<string> => { try { await fn(); return 'ok'; } catch (e) { return (e as { status?: number }).status + ':' + (e as Error).message; } };
     const kt = await A.addProjectLens(kctx, MANIFEST as unknown as Manifest, true);
@@ -672,8 +1029,32 @@ try {
     check('startSelectionScan over the sim -> a selection job labelled "Selection (1)"', ks.scope?.kind === 'selection' && ks.scope.label === 'Selection (1)', JSON.stringify(ks.scope));
   } finally { sim.dispose(); delete (globalThis as { localStorage?: unknown }).localStorage; }
 
+  // ------------------------------------------------------------------ a registry file that cannot be read says so
+  // Both verbs of /api/products read the same bp.products.local.json: the writer refuses a broken one with the reason (409),
+  // so the reader must not answer the same file with a successful empty list (the product list would render the onboarding
+  // empty state over registered products that merely have a typo in their file).
+  {
+    const pf = path.join(dir, 'bp.products.local.json'), keep = fs.readFileSync(pf, 'utf8');
+    const prods = await route('products/route.ts');
+    const warn = console.warn; console.warn = () => { /* listProducts says it on the server log, once */ };
+    try {
+      for (const [what, text, want] of [['unparseable JSON', '{ "products": [ { "slug": "live", "root": "x" }, OOPS', /not valid JSON \(.+\); fix it by hand first$/],
+        ['a products value that is no array', '{"products": 7}', /"products" is not an array; fix it by hand first$/]] as const) {
+        fs.writeFileSync(pf, text);
+        const g = await call(prods.GET, '/api/products', 'GET', {}), po = await call(prods.POST, '/api/products', 'POST', {}, { slug: 'late', name: 'Late', root: pr });
+        check(`corrupt registry (${what}): GET answers 409 with the reason, as POST does - not 200 []`, g.status === 409 && want.test(g.body.error ?? '') && po.status === 409 && g.body.error === po.body.error, JSON.stringify({ get: g, post: po }).slice(0, 400));
+      }
+      fs.writeFileSync(pf, keep);
+      const ok = await call(prods.GET, '/api/products', 'GET', {});
+      check('a registry that parses again lists its products (200)', ok.status === 200 && Array.isArray(ok.body) && ok.body.some((p: { slug: string }) => p.slug === 'prod'), JSON.stringify(ok).slice(0, 200));
+      fs.writeFileSync(pf, '{}');
+      const none = await call(prods.GET, '/api/products', 'GET', {});
+      check('a registry with no products key is an empty list, not an error (200 [])', none.status === 200 && Array.isArray(none.body) && none.body.length === 0, JSON.stringify(none));
+    } finally { console.warn = warn; fs.writeFileSync(pf, keep); }
+  }
+
   // ------------------------------------------------------------------ the standard accepts the entry
-  const valid = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/standard/schema/fixtures/valid-map.json'), 'utf8'));
+  const valid =JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/schema/schema/fixtures/valid-map.json'), 'utf8'));
   const entry = { id: MANIFEST.id, version: '1.0.0', source: 'project', enabled: true, temporary: true, created_at: '2026-10-13T10:00:00.000Z', manifest: MANIFEST };
   const vf = path.join(dir, 'tmp-lens-map.json'), wf = path.join(dir, 'tmp-lens-wrong.json');
   fs.writeFileSync(vf, JSON.stringify({ ...valid, lenses: [...valid.lenses, entry] }));

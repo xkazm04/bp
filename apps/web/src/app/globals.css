@@ -1,0 +1,216 @@
+/* Theme tokens. Dark is the drawing-set blueprint (the contest winner's palette); light is the same
+   set roughly inverted: white paper, navy ink, the same blues. Canvas code reads these through
+   getComputedStyle so the map and the DOM never disagree. Status colours (mint, amber, red) keep
+   their meaning in both themes and are darkened in light for contrast on paper. After the two theme blocks, a plain
+   :root block holds the release train's theme-independent scales (type, spacing, sizes). */
+:root,
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --paper: #071a33;
+  --paper-hi: #12497a;
+  --paper-mid: #0e3a68;
+  --paper-lo: #061830;
+  --ink: #dff0ff;
+  --ink-2: rgba(223, 240, 255, 0.74);
+  --ink-3: rgba(223, 240, 255, 0.38);
+  --ink-4: rgba(223, 240, 255, 0.16);
+  --line: rgba(223, 240, 255, 0.55);
+  --grid: rgba(127, 224, 255, 0.07);
+  --panel: rgba(5, 20, 40, 0.78);
+  --panel-solid: #0a2342;
+  --halo: rgba(7, 26, 51, 0.92);
+  --accent: #7fe0ff;
+  --mint: #6ff2c8;
+  --amber: #ffc35a;
+  --red: #ff6a58;
+  --red-2: #ff9a8c;
+  /* the subtle strip glyph for trouble: 3:1 or more against --amber (watch) and the panel, so watch and bad differ by luminance as well as hue (scripts/check-subtle-health-ink.ts) */
+  --red-glyph: #d72820;
+  /* text-grade status colours (>= 4.5:1 on paper and cards); --mint / --amber stay the marker and fill tones */
+  --mint-2: #6ff2c8;
+  --amber-2: #ffc35a;
+  --vignette: rgba(2, 10, 24, 0.62);
+  /* added by the foundation: high-contrast ink, glyph edges, label plates, tile base */
+  --ink-hi: #ffffff;
+  --on-ink: #061b38;
+  --on-mint: #04261b;
+  --delta: #9fe8ff;
+  --glyph-edge: #04223a;
+  --label-bg: #0b2c52;
+  --tile-base: rgba(3, 18, 40, 0.3);
+  --poche: #0c2f57;
+  --chip-bg: rgba(5, 26, 50, 0.95);
+  --card: rgba(6, 24, 48, 0.96);
+  --card-hi: rgba(11, 40, 74, 0.98);
+  --scrim: rgba(5, 22, 46, 0.97);
+  --shadow: rgba(0, 0, 0, 0.45);
+  --sheet-a: #10396a;
+  --sheet-b: #082246;
+  --sheet-c: #061a34;
+  /* release train (src/components/ledger/train): code, the job terminal (dark in both themes), screens and their
+     change map, the modal veil, and the tint a filled button mixes toward on hover */
+  --code-bg: #08203f;
+  --term-bg: #041327;
+  --term-ink: #b9d3f0;
+  --term-dim: #6f8fb4;
+  --term-ok: #7ff0c4;
+  --term-warn: #ffd27a;
+  --term-err: #ff9aa9;
+  --shot-bg: #000000;
+  --shot-tag-bg: rgba(4, 18, 36, 0.82);
+  --shot-tag-ink: #ffffff;
+  --heat: #ff3d71;
+  --heat-box: #ffd23f;
+  --veil: rgba(2, 10, 22, 0.55);
+  --lift: #ffffff;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --paper: #f4f8fc;
+  --paper-hi: #ffffff;
+  --paper-mid: #eef4fa;
+  --paper-lo: #dde8f3;
+  --ink: #0b2a4a;
+  --ink-2: rgba(11, 42, 74, 0.76);
+  --ink-3: rgba(11, 42, 74, 0.42);
+  --ink-4: rgba(11, 42, 74, 0.14);
+  --line: rgba(14, 58, 104, 0.6);
+  --grid: rgba(18, 73, 122, 0.07);
+  --panel: rgba(255, 255, 255, 0.86);
+  --panel-solid: #ffffff;
+  --halo: rgba(244, 248, 252, 0.94);
+  --accent: #0a6aae;
+  --mint: #0e9f78;
+  --amber: #b97800;
+  --red: #d2402e;
+  --red-2: #b8321f;
+  --red-glyph: #6e1008;
+  --mint-2: #087553;
+  --amber-2: #8f5d00;
+  --vignette: rgba(14, 58, 104, 0.08);
+  --ink-hi: #061a33;
+  --on-ink: #ffffff;
+  --on-mint: #ffffff;
+  --delta: #0a7fc0;
+  --glyph-edge: #ffffff;
+  --label-bg: #ffffff;
+  --tile-base: rgba(255, 255, 255, 0.55);
+  --poche: #d3e1ef;
+  --chip-bg: rgba(255, 255, 255, 0.96);
+  --card: rgba(255, 255, 255, 0.97);
+  --card-hi: rgba(255, 255, 255, 0.99);
+  --scrim: rgba(244, 248, 252, 0.97);
+  --shadow: rgba(14, 58, 104, 0.18);
+  --sheet-a: #ffffff;
+  --sheet-b: #f4f8fc;
+  --sheet-c: #eaf1f8;
+  --code-bg: #f7fafd;
+  --term-bg: #0b1f3a;
+  --term-ink: #b9d3f0;
+  --term-dim: #6f8fb4;
+  --term-ok: #7ff0c4;
+  --term-warn: #ffd27a;
+  --term-err: #ff9aa9;
+  --shot-bg: #000000;
+  --shot-tag-bg: rgba(4, 18, 36, 0.82);
+  --shot-tag-ink: #ffffff;
+  --heat: #ff3d71;
+  --heat-box: #ffd23f;
+  --veil: rgba(2, 10, 22, 0.55);
+  --lift: #ffffff;
+}
+
+/* Release-train scales (theme-independent). Train CSS (src/components/ledger/train/**) uses only these and the theme
+   colours above: no raw colour, no raw px but 0, 1px and 2px hairlines; scripts/check-train-quality.mjs enforces it.
+   Values are the contest winner's (release-manager A/1), byte-equal; names say the step or the role.
+   --fs-*    type, 12 px floor (the gate proves it); body text is --fs-14, mono labels --fs-12/--fs-13, the diff --fs-13
+   --lh-*    the three recurring line-heights (titles, prose, code); others stay unitless literals
+   --ls-*    tracking of uppercase mono labels, tighter to wider
+   --sp-*    padding, margin and gap (1px and 2px stay raw); a once-used length is a calc over these
+   --r-*, --bw-*, --elev-*   radius, the two non-hairline stroke widths, the sheet shadow
+   --h-*     control heights: tag 24, button in a group 26, compact 28, panel nav 30, button 32, field 34, touch 40
+   --box, --mark   a checkbox / glyph box, a perf-range run marker
+   layout    the compare sheet clamp(var(--cmp-min), 52%, var(--cmp-max)), the job log, the diff and message caps, the
+             table head row (sticky offset of pack rows), the item table's columns, the perf range strip */
+:root {
+  --fs-12: 12px;
+  --fs-13: 13px;
+  --fs-14: 14px;
+  --fs-15: 15px;
+  --fs-16: 16px;
+  --fs-18: 18px;
+  --fs-20: 20px;
+  --fs-22: 22px;
+  --fs-24: 24px;
+  --fs-26: 26px;
+  --fs-28: 28px;
+  --lh-title: 1.3;
+  --lh-read: 1.45;
+  --lh-code: 1.5;
+  --ls-1: 0.04em;
+  --ls-2: 0.06em;
+  --ls-3: 0.08em;
+  --ls-4: 0.1em;
+  --ls-5: 0.12em;
+  --sp-3: 3px;
+  --sp-4: 4px;
+  --sp-5: 5px;
+  --sp-6: 6px;
+  --sp-7: 7px;
+  --sp-8: 8px;
+  --sp-9: 9px;
+  --sp-10: 10px;
+  --sp-12: 12px;
+  --sp-14: 14px;
+  --sp-16: 16px;
+  --sp-18: 18px;
+  --sp-20: 20px;
+  --r-sm: 2px;
+  --bw-mark: 1.5px;
+  --bw-bar: 3px;
+  --elev-sheet: 0 24px 70px var(--shadow);
+  --h-tag: 24px;
+  --h-ctl-xs: 26px;
+  --h-ctl-sm: 28px;
+  --h-ctl-md: 30px;
+  --h-ctl: 32px;
+  --h-field: 34px;
+  --h-touch: 40px;
+  --box: 16px;
+  --mark: 9px;
+  --cmp-min: 540px;
+  --cmp-max: 980px;
+  --log-h: 260px;
+  --diff-max: 460px;
+  --msg-max: 220px;
+  --row-hd: 34px;
+  --col-check: 26px;
+  --col-id: 72px;
+  --col-id-s: 62px;
+  --col-ln: 38px;
+  --cols-item: var(--col-check) var(--col-id) minmax(120px, 1fr) minmax(200px, 2.4fr) minmax(150px, 1.1fr) 108px 92px 118px;
+  --cols-item-m: var(--col-check) var(--col-id-s) minmax(180px, 2.4fr) minmax(130px, 1.1fr) 104px;
+  --cols-release: minmax(380px, 1fr) minmax(420px, 1.15fr);
+  --plot-h: 30px;
+  --plot-axis: 18px;
+}
+
+* { box-sizing: border-box; }
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 14px/1.4 var(--font-sans), 'Arial Narrow', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+button { font: inherit; color: inherit; }
+
+/* theme toggle (index page and blueprint header) */
+.theme-toggle { height: 30px; min-width: 30px; padding: 0 9px; background: var(--panel); border: 1px solid var(--ink-3); color: var(--ink); font: 500 12px var(--font-mono), monospace; letter-spacing: 0.08em; text-transform: uppercase; display: inline-flex; align-items: center; gap: 6px; }
+.theme-toggle:hover { border-color: var(--ink); }
+.theme-toggle svg { width: 14px; height: 14px; }

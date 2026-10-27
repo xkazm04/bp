@@ -3,7 +3,7 @@ shows (contest references/promotion.md step 6; the release-ledger spark's WP5a).
 
     python scripts/fidelity/drive.py [--port 3321] [--shots <dir>]
 
-Needs `npx next dev -p <port>` running from the bp root. Two products:
+Needs `npx next dev -p <port> -H 127.0.0.1` running from the bp root. Two products:
   Kettle  (http://localhost:<port>/#page=ledger)  the sample train in the scan sim: every interaction, decisions included
           (the sim's store is the page's own, so a decision changes nothing on disk).
   Athena  (?product=athena)  a live product: read-only navigation only (J/K, Enter, L, M, Esc), and the drive fails if the
@@ -23,6 +23,7 @@ from pathlib import Path
 sys.stdout.reconfigure(encoding='utf-8')
 SIZE = {'width': 1600, 'height': 800}
 FAILS = []
+BASE = 'http://localhost:3321'  # main() rebinds it from --port; the default lets kettle()/athena() be driven by import
 
 STATE_JS = """() => {
   const rows = [...document.querySelectorAll('[data-role=tr-row]')];
@@ -52,6 +53,14 @@ def check(name, ok, detail=''):
     print(('PASS ' if ok else 'FAIL ') + name + ('' if ok else '  -> ' + str(detail)))
     if not ok:
         FAILS.append(name)
+
+
+def row_after(name, s):
+    """The id of the row after the focused one, or None with a FAIL. A probe that comes back empty is a
+    reported failure, not a traceback: `[].index(None)` raises ValueError and takes the whole drive down."""
+    ok = s['focus'] in s['ids'] and s['ids'].index(s['focus']) + 1 < len(s['ids'])
+    check(name + ': a focused row with another row after it', ok, (s['focus'], len(s['ids'])))
+    return s['ids'][s['ids'].index(s['focus']) + 1] if ok else None
 
 
 def until(pg, pred, ms=10000):
@@ -87,10 +96,11 @@ def kettle(pg, shots):
     check('kettle: the first pack item opens in compare on a wide window', bool(s['open']) and s['open'] == s['focus'], s)
 
     # J / K: the focus moves along the rows and the open compare follows it
-    i = s['ids'].index(s['focus'])
+    want = row_after('kettle', s)
+    if not want:
+        return
     key(pg, 'j')
     s2 = pg.evaluate(STATE_JS)
-    want = s['ids'][i + 1]
     check('J moves the focus to the next row', s2['focus'] == want, (s2['focus'], want))
     check('J: the open compare follows the focus', s2['open'] == want and s2['cmp'] == pg.evaluate(TITLE_JS, want), (s2['open'], s2['cmp']))
     key(pg, 'k')
@@ -154,6 +164,9 @@ def kettle(pg, shots):
 
     # M cycles the compare view's mode (on a design item: a performance item has no screens)
     design = pg.evaluate("""() => [...document.querySelectorAll('[data-role=tr-row]')].find((r) => r.querySelector('.tr-ev') && !/runs/.test(r.querySelector('.tr-ev').textContent) && /▣ [0-9]/.test(r.querySelector('.tr-ev').textContent))?.dataset.fid""")
+    check('kettle has a design item with screens (M and the slider need one)', bool(design), design)
+    if not design:
+        return
     pg.click('[data-fid="%s"]' % design)
     pg.wait_for_timeout(600)
     v0 = pg.evaluate(STATE_JS)
@@ -249,10 +262,12 @@ def athena(pg, shots):
     load(pg, BASE + '/?product=athena#page=ledger')
     s = until(pg, lambda s: s['open'], 6000)
     check('athena: an item is open in compare', bool(s['open']), s)
-    i = s['ids'].index(s['focus'])
+    want = row_after('athena', s)
+    if not want:
+        return
     key(pg, 'j')
     s2 = pg.evaluate(STATE_JS)
-    check('athena: J moves the focus and the compare', s2['focus'] == s['ids'][i + 1] and s2['open'] == s2['focus'], (s2['focus'], s2['open']))
+    check('athena: J moves the focus and the compare', s2['focus'] == want and s2['open'] == s2['focus'], (s2['focus'], s2['open']))
     key(pg, 'k')
     key(pg, 'm')
     s3 = pg.evaluate(STATE_JS)

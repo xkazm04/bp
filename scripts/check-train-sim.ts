@@ -15,18 +15,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { ScanSim } from '../src/lib/model/scan-sim.ts';
-import { SAMPLE_ITEMS } from '../src/lib/model/train-sim.ts';
-import { compareOf, type LensFields } from '../src/lib/scan/compare.ts';
-import { isJobNote, type ScanJob } from '../src/lib/scan/jobs.ts';
-import { shotSrc } from '../src/lib/train/shots.ts';
-import type { Proposal, Shot } from '../src/lib/scan/types.ts';
-import type { LensManifest } from '../src/lib/standard/types.ts';
+import { ScanSim } from '../packages/core/src/model/scan-sim.ts';
+import { SAMPLE_ITEMS } from '../packages/core/src/model/train-sim.ts';
+import { compareOf, type LensFields } from '../packages/core/src/scan/compare.ts';
+import { isJobNote, type ScanJob } from '../packages/core/src/scan/jobs.ts';
+import { shotSrc } from '../packages/core/src/train/shots.ts';
+import type { Proposal, Shot } from '../packages/core/src/scan/types.ts';
+import type { LensManifest } from '../packages/core/src/standard/types.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HOOKS = './lib/src-hooks.mjs';
 ((await import(HOOKS)) as { registerSrcHooks: (root: string) => void }).registerSrcHooks(ROOT); // live.ts imports through '@/'
-const { shotUrl } = await import(pathToFileURL(path.join(ROOT, 'src/lib/model/live.ts')).href) as typeof import('../src/lib/model/live.ts');
+const { shotUrl } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/model/live.ts')).href) as typeof import('../packages/core/src/model/live.ts');
 
 let failed = 0, passed = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) passed++; else { failed++; console.log('FAIL ' + name + (detail ? ': ' + detail : '')); } };
@@ -34,7 +34,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 type Refusal = { status?: number; message?: string; body?: Record<string, unknown> };
 const err = (fn: () => unknown): Refusal => { try { fn(); return {}; } catch (e) { return e as Refusal; } };
 
-const structure = JSON.parse(fs.readFileSync(path.join(ROOT, 'src/data/kettle.app-structure.json'), 'utf8')) as { features: { slug: string }[]; lenses: { id: string; manifest: LensManifest }[]; facets: Record<string, Record<string, { values?: Record<string, unknown> }>> };
+const structure = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.app-structure.json'), 'utf8')) as { features: { slug: string }[]; lenses: { id: string; manifest: LensManifest }[]; facets: Record<string, Record<string, { values?: Record<string, unknown> }>> };
 /** The map's value of a feature's lens field, as BlueprintApp's bindSim answers it. */
 const mapValue = (f: string, l: string, k: string): number | undefined => { const v = structure.facets[f]?.[l]?.values?.[k]; return typeof v === 'number' ? v : undefined; };
 const order = structure.features.map((f) => f.slug);
@@ -107,10 +107,10 @@ try {
   check('seed: a light and a dark pair per design item with a screen, 1600x900, phase and proposal_id, report like the harness', shots.length === shotKeys * 4 && shots.every((s: Shot) => s.size === '1600x900' && !!s.phase && !!s.proposal_id
     && /^sample-shots\/.+\.svg$/.test(s.path) && s.report?.minTextPx === 14 && Array.isArray(s.report?.consoleErrors) && typeof s.report?.textElements === 'number'), String(shots.length));
   check('seed: the failed item has no shots (harness cannot render it)', !shots.some((s) => s.proposal_id === idOf('des1-waiver')) && v('des1-waiver').shots.length === 0);
-  check('seed: every shot file exists under public/', shots.every((s) => fs.existsSync(path.join(ROOT, 'public', s.path))), shots.find((s) => !fs.existsSync(path.join(ROOT, 'public', s.path)))?.path);
+  check('seed: every shot file exists under public/', shots.every((s) => fs.existsSync(path.join(ROOT, 'apps/web/public', s.path))), shots.find((s) => !fs.existsSync(path.join(ROOT, 'apps/web/public', s.path)))?.path);
   const flat = v('des1-waitlist').shots.find((p) => p.theme === 'light')!;
-  check('seed: the flat item\'s pair is byte-identical, the moved item\'s differs', fs.readFileSync(path.join(ROOT, 'public', flat.before!.path)).equals(fs.readFileSync(path.join(ROOT, 'public', flat.after!.path)))
-    && !fs.readFileSync(path.join(ROOT, 'public', v('des1-booking').shots[0].before!.path)).equals(fs.readFileSync(path.join(ROOT, 'public', v('des1-booking').shots[0].after!.path))));
+  check('seed: the flat item\'s pair is byte-identical, the moved item\'s differs', fs.readFileSync(path.join(ROOT, 'apps/web/public', flat.before!.path)).equals(fs.readFileSync(path.join(ROOT, 'apps/web/public', flat.after!.path)))
+    && !fs.readFileSync(path.join(ROOT, 'apps/web/public', v('des1-booking').shots[0].before!.path)).equals(fs.readFileSync(path.join(ROOT, 'apps/web/public', v('des1-booking').shots[0].after!.path))));
   const execRuns = s0.runs.filter((r) => r.phase === 'execute');
   check('seed: an execute run per pack (r-<14 digits>-<4 hex>), a committed row per item', execRuns.length === 3 && s0.packs.every((k) => execRuns.some((r) => r.id === k.run_id)) && execRuns.every((r) => /^r-\d{14}-[0-9a-f]{4}$/.test(r.id))
     && items.every((p) => s0.activity.some((a) => a.kind === 'committed' && a.text.includes(p.commit_sha!.slice(0, 7)))));
@@ -187,8 +187,8 @@ try {
   const back = snap().proposals.find((p) => p.id === most.id)!;
   check('build: the accepted item with the most files went back to rework by skill:lens-scan, out of the release', back.status === 'rework' && back.triaged_by === 'skill:lens-scan' && back.release_id === undefined
     && /^conflict on release\/0\.1\.0: src\//.test(back.triage_note ?? ''), JSON.stringify({ id: back.id, s: back.status, n: back.triage_note }));
-  check('build: notes name each item (title, lens, feature, before -> after with unit, commit) and a flagged item\'s note', !!r1.notes && /Kettle 0\.1\.0 \(sample\)/.test(r1.notes)
-    && snap().proposals.filter((p) => p.release_id === 'rel-0.1.0').every((p) => r1.notes!.includes(p.title) && r1.notes!.includes(p.commit_sha!.slice(0, 7)))
+  check('build: notes name each item (title, lens, feature, before -> after with unit, commit and pack) and a flagged item\'s note', !!r1.notes && /Kettle 0\.1\.0 \(sample\)/.test(r1.notes)
+    && snap().proposals.filter((p) => p.release_id === 'rel-0.1.0').every((p) => r1.notes!.includes(p.title) && r1.notes!.includes(`commit ${p.commit_sha!.slice(0, 7)} from pack ${p.pack_id}`))
     && r1.notes.includes('undesignedStates 2 -> 1 states') && r1.notes.includes('Shipped flagged: Ships with the gate fixed by hand'), r1.notes);
   // the first sample also holds buildRelease's own notify (its microtask lands inside the first wait)
   check('build: one notify per tick, never more', br.ticks.slice(1).every((n) => n === 1), br.ticks.join());

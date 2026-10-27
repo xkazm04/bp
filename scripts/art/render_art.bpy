@@ -1,0 +1,162 @@
+# Blender script (extension .bpy so scripts/check-python-deps.mjs does not read bpy/bmesh/mathutils as pip packages); run with blender -b -P
+"""Renders the evidence for the survey pin and the fixture kit from their final.glb: a 4-view turnaround and one
+640x480 table-distance view each, as JPEG (1 MB or less) into <asset>/evidence/.
+
+Run:  blender -b -P scripts/art/render_art.bpy -- <repo-root> [pin|kit]   (both when neither is named)
+Cycles on the CPU (no GPU, no EEVEE), 24 samples. The sheet under the props is the blueprint blue of the reference sheet.
+"""
+import bpy, math, os, sys, tempfile
+import numpy as np
+from mathutils import Vector
+
+REPO = sys.argv[sys.argv.index('--') + 1] if '--' in sys.argv else os.getcwd()
+ART = os.path.join(REPO, 'apps', 'vr', 'ArtSource')
+CM = 0.01
+KIT = ['user_flow', 'capability', 'ops', 'integration', 'generic']
+
+
+def lin(h):
+    c = [int(h[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    return tuple((x / 12.92 if x <= 0.04045 else ((x + 0.055) / 1.055) ** 2.4) for x in c) + (1,)
+
+
+def setup(width, height):
+    s = bpy.context.scene
+    s.render.engine = 'CYCLES'
+    s.cycles.device = 'CPU'
+    s.cycles.samples = 24
+    s.cycles.use_denoising = False
+    s.render.resolution_x, s.render.resolution_y, s.render.resolution_percentage = width, height, 100
+    s.render.image_settings.file_format = 'PNG'
+    w = bpy.data.worlds.new('w')
+    w.use_nodes = True
+    w.node_tree.nodes['Background'].inputs['Color'].default_value = lin('#0A0F18')
+    w.node_tree.nodes['Background'].inputs['Strength'].default_value = 0.25
+    s.world = w
+
+
+def add_sheet(size):
+    bpy.ops.mesh.primitive_plane_add(size=size, location=(0, 0, 0))
+    sh = bpy.context.object
+    m = bpy.data.materials.new('sheet')
+    m.use_nodes = True
+    b = m.node_tree.nodes['Principled BSDF']
+    b.inputs['Base Color'].default_value = lin('#123A8C')
+    b.inputs['Roughness'].default_value = 0.8
+    sh.data.materials.append(m)
+
+
+def add_lights():
+    for loc, energy, size in (((0.25, -0.3, 0.45), 14, 0.25), ((-0.35, 0.1, 0.3), 4, 0.3)):
+        bpy.ops.object.light_add(type='AREA', location=loc)
+        L = bpy.context.object
+        L.data.energy, L.data.size = energy, size
+        L.data.color = (1.0, 0.95, 0.88)
+        d = Vector((0, 0, 0.02)) - Vector(loc)
+        L.rotation_euler = d.to_track_quat('-Z', 'Y').to_euler()
+
+
+def camera(lens):
+    bpy.ops.object.camera_add()
+    c = bpy.context.object
+    c.data.lens = lens
+    bpy.context.scene.camera = c
+    return c
+
+
+def aim(cam, centre, az_deg, elev_deg, dist):
+    az, el = math.radians(az_deg), math.radians(elev_deg)
+    # azimuth 0 = looking from -Y (the front of the asset)
+    cam.location = centre + Vector((math.sin(az) * math.cos(el), -math.cos(az) * math.cos(el), math.sin(el))) * dist
+    cam.rotation_euler = (centre - cam.location).to_track_quat('-Z', 'Y').to_euler()
+
+
+def shoot(cam, path):
+    bpy.context.scene.render.filepath = path
+    bpy.ops.render.render(write_still=True)
+
+
+def save_jpeg(arr, path):
+    h, w, _ = arr.shape
+    img = bpy.data.images.new('out', w, h)
+    rgba = np.ones((h, w, 4), dtype=np.float32)
+    rgba[:, :, :3] = arr
+    img.pixels.foreach_set(rgba.ravel())
+    img.filepath_raw = path
+    img.file_format = 'JPEG'
+    s = bpy.context.scene
+    s.render.image_settings.file_format = 'JPEG'
+    s.render.image_settings.quality = 85
+    img.save()
+    bpy.data.images.remove(img)
+    s.render.image_settings.file_format = 'PNG'
+
+
+def load_png(path):
+    img = bpy.data.images.load(path)
+    w, h = img.size
+    a = np.empty(w * h * 4, dtype=np.float32)
+    img.pixels.foreach_get(a)
+    bpy.data.images.remove(img)
+    return a.reshape(h, w, 4)[:, :, :3]
+
+
+def scene_for(asset):
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    setup(480, 480)
+    bpy.ops.import_scene.gltf(filepath=os.path.join(ART, asset, 'final.glb'))
+    return [o for o in bpy.context.scene.objects if o.type == 'MESH']
+
+
+def render_asset(asset, arrange, scatter, centre, turn, table, azimuths=(0, 90, 180, 270)):
+    """arrange(objs) lays the imported meshes out for the turnaround, scatter(objs) adds copies for the table view; turn = (elev, dist, lens); table = (centre, az, elev, dist, lens)."""
+    objs = scene_for(asset)
+    arrange(objs)
+    add_sheet(4.0)
+    add_lights()
+    cam = camera(turn[2])
+    tmp = tempfile.mkdtemp()
+    tiles = []
+    for i, az in enumerate(azimuths):
+        aim(cam, centre, az, turn[0], turn[1])
+        p = os.path.join(tmp, 'v%d.png' % i)
+        shoot(cam, p)
+        tiles.append(load_png(p))
+    ev = os.path.join(ART, asset, 'evidence')
+    os.makedirs(ev, exist_ok=True)
+    save_jpeg(np.vstack([np.hstack(tiles[:2]), np.hstack(tiles[2:])]), os.path.join(ev, 'turnaround.jpg'))
+    scatter(objs)
+    s = bpy.context.scene
+    s.render.resolution_x, s.render.resolution_y = 640, 480
+    cam.data.lens = table[4]
+    aim(cam, table[0], table[1], table[2], table[3])
+    p = os.path.join(tmp, 'table.png')
+    shoot(cam, p)
+    save_jpeg(load_png(p), os.path.join(ev, 'table-view.jpg'))
+
+
+def place_pin(objs):
+    pin = objs[0]
+    # two more pins on the sheet, tags turned, so the table-distance view reads as a scatter
+    for loc, rot in (((0.07, 0.05, 0), 70), ((-0.06, 0.09, 0), -40)):
+        d = pin.copy()
+        bpy.context.scene.collection.objects.link(d)
+        d.location, d.rotation_euler = loc, (0, 0, math.radians(rot))
+
+
+def place_kit(objs):
+    by = {o.name: o for o in objs}
+    for i, n in enumerate(KIT):
+        by[n].location = ((i - 2) * 0.075, 0, 0)
+
+
+render_pin = lambda: render_asset('survey-pin', lambda o: None, place_pin, Vector((0.01, 0, 0.027)), (22, 0.2, 60), (Vector((0.0, 0.05, 0.0)), 0, 40, 0.5, 40))
+render_kit = lambda: render_asset('fixture-kit', place_kit, lambda o: None, Vector((0, 0, 0.01)), (28, 0.55, 50), (Vector((0, 0, 0.0)), 0, 42, 0.65, 50), (0, 45, 180, 225))
+
+if __name__ == '__main__':
+    only = sys.argv[sys.argv.index('--') + 2] if '--' in sys.argv and len(sys.argv) > sys.argv.index('--') + 2 else None
+    if only in (None, 'pin'):
+        render_pin()
+    if only in (None, 'kit'):
+        render_kit()
+    print('RENDER OK')

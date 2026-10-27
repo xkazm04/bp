@@ -1,0 +1,109 @@
+{
+  "$comment": "P4 prop prompts for scripts/lookdev/leonardo.mjs (gen --prop <id> --variant <x>). Each is a TRELLIS.2 input sheet: one object, whole, plain grey ground. The style block's palette and finish are restated by the script; the scene framing (first person, depth of field, site plan) is not used. An entry with a `rules` field is a scene strip, not a sheet: its rules replace the sheet rules and the prompt does not open with 'Concept sheet' (city-backdrop).",
+  "sheet": "a single object only, shown whole and uncropped and centred in frame, orthographic front three-quarter view, on a plain flat neutral mid-grey background, even soft diffuse light, no cast shadow clutter, no floor line, no props or hands or people, no text, no labels, no logos, no markings, clean readable silhouette.",
+  "props": {
+    "lamp-agent": {
+      "name": "the lamp agent, a small friendly white robotic lamp character that hovers above a drafting table",
+      "brief_note": "Rewritten 2026-10-24 (fidelity sprint, builder FB) from the target crop (target-light-table.jpg, the figure above the far edge). The 2026-10-21 brief was negative (\"a calm architect's drafting lamp (not a robot, not a creature, no face, no claws, no legs)\"), so all four options A-D came back as desk lamps, while the target shows a white rounded robot lamp character. The old name, materials and variants A-D stay verbatim in log.jsonl lines 49-52 (each line carries the whole prompt); the shipped lamp-agent options A-D were the desk lamps.",
+      "sheet": "a single figure only, shown whole and uncropped and centred in frame, the view named above, on a plain flat neutral mid-grey background, soft studio 3D product render look, even soft diffuse light, no cast shadow clutter, no floor line, no props or hands or people, no text, no labels, no logos, no markings, clean readable silhouette.",
+      "materials": "glossy white clear-coat plastic shell (head hood, body cone, arm capsules), small dark gunmetal hinge joints, a warm amber emissive sphere inside the head glowing softly, a thin amber light slit",
+      "variants": {
+        "E": "Front view, the head facing the viewer straight on, both arms held out a little from the body. The figure: a hood-shaped dome head like a deep rounded lamp shade, open at the front, with a warm amber glowing sphere inside it facing the viewer; under the head a smooth tapered cone body, wide at the top and narrowing to a rounded point at the bottom, with one thin short vertical amber light slit on its front and a tiny thin pin under the tip; two thin jointed arms from the shoulders at the top of the body, each an upper and a lower capsule segment joined by small dark metal hinge joints, ending in a small open wire loop. It hovers in the air, no legs, no stand, no base.",
+        "F": "Front three-quarter view from the left, the head turned towards the viewer, one arm reaching sideways and the other hanging down. The figure: a hood-shaped dome head like a deep rounded lamp shade, open at the front, with a warm amber glowing sphere inside it facing the viewer; under the head a smooth tapered cone body, wide at the top and narrowing to a rounded point at the bottom, with one thin short vertical amber light slit on its front and a tiny thin pin under the tip; two thin jointed arms from the shoulders at the top of the body, each an upper and a lower capsule segment joined by small dark metal hinge joints, ending in a small open wire loop. It hovers in the air, no legs, no stand, no base.",
+        "G": "Side view in exact profile, the head hood tilted slightly up and forward, arms at rest. The figure: a hood-shaped dome head like a deep rounded lamp shade, open at the front, with a warm amber glowing sphere inside it facing the viewer; under the head a smooth tapered cone body, wide at the top and narrowing to a rounded point at the bottom, with one thin short vertical amber light slit on its front and a tiny thin pin under the tip; two thin jointed arms from the shoulders at the top of the body, each an upper and a lower capsule segment joined by small dark metal hinge joints, ending in a small open wire loop. It hovers in the air, no legs, no stand, no base.",
+        "H": "The same figure as in the reference image, redrawn whole and clean in a front three-quarter view, the head facing the viewer, one arm reaching sideways and the other hanging down. The figure: a hood-shaped dome head like a deep rounded lamp shade, open at the front, with a warm amber glowing sphere inside it facing the viewer; under the head a smooth tapered cone body, wide at the top and narrowing to a rounded point at the bottom, with one thin short vertical amber light slit on its front and a tiny thin pin under the tip; two thin jointed arms from the shoulders at the top of the body, each an upper and a lower capsule segment joined by small dark metal hinge joints, ending in a small open wire loop. It hovers in the air, no legs, no stand, no base."
+      }
+    },
+    "studio-shelves": {
+      "name": "a dark studio wall shelf unit with three shelves, holding a few plain books and rolled drawings",
+      "materials": "near-black blue painted wood, thin brushed metal brackets, warm paper-coloured book spines and rolls without any lettering",
+      "variants": {
+        "A": "A tall narrow open shelf unit with three shelves on two slim side frames, a few unlabelled books and two rolled drawings resting on the shelves.",
+        "B": "A wide open shelf unit with three shelves on two slim side frames, a few unlabelled books leaning on the shelves and one rolled drawing."
+      }
+    },
+    "studio-desk-lamp": {
+      "name": "a small studio desk lamp with a warm glowing shade, an ordinary quiet lamp for the room set dressing",
+      "materials": "matte near-black blue metal, brushed pale metal hinge, warm amber glowing shade interior, warm paper-coloured glow",
+      "variants": {
+        "A": "A simple desk lamp with a round weighted base, one slim stem, and a conical shade with a warm amber glowing opening.",
+        "B": "A simple desk lamp with a rectangular weighted base, a short two-joint arm, and a rounded shade with a warm amber glowing opening."
+      }
+    },
+    "studio-mug": {
+      "name": "a plain ceramic coffee mug",
+      "materials": "matte ceramic in warm paper colour with a cyan-white inner glaze, near-black blue handle edge, no print",
+      "variants": {
+        "A": "A plain straight-sided mug with a simple loop handle, empty, with no pattern and no print.",
+        "B": "A plain slightly tapered mug with a thick loop handle, empty, with no pattern and no print."
+      }
+    },
+    "studio-drawing-tubes": {
+      "name": "a small bundle of drawing tubes and rolled drawings standing in a holder",
+      "materials": "matte near-black blue cardboard tubes with pale metal end caps, warm paper-coloured rolled drawings, thin cyan-white edge highlights",
+      "variants": {
+        "A": "Four cylindrical drawing tubes of different heights standing upright together, two with end caps on and one rolled drawing sticking out of the top.",
+        "B": "Five cylindrical drawing tubes of different heights leaning together in a round holder, caps on, with two rolled drawings poking out of the top."
+      }
+    },
+    "studio-pinned-drawings": {
+      "name": "a flat set of three framed drawing sheets hung together on a wall panel, shown flat and front-on",
+      "materials": "warm paper sheets with fine cyan-white linework on blueprint blue, thin near-black blue frames, small amber pins",
+      "variants": {
+        "A": "Three flat rectangular drawing sheets of different sizes in thin frames, arranged together, each with abstract architectural linework and no readable text, held by small amber pins.",
+        "B": "Three flat rectangular drawing sheets of the same size in a row, in thin frames, each with abstract architectural linework and no readable text, held by small amber pins."
+      }
+    },
+    "city-backdrop": {
+      "name": "a wide night city backdrop matte painting for the windows of a dark studio",
+      "rules": "one wide panoramic strip of a night city skyline seen from a high studio window, far away across the whole width, a low horizon band that continues seamlessly at the left and right edges, low contrast, dim, soft hazy depth, small distant warm and cool window lights, no foreground, no window frame, no mullions, no glass reflections, no room interior, no people, no sky objects, no text, no signs, no logos, no lettering.",
+      "materials": "distant towers as soft near-black blue silhouettes, sparse tiny amber and warm paper window lights, a faint cyan-white haze along the horizon, blueprint blue night haze in the sky, matte painted finish",
+      "variants": {
+        "A": "Dense low skyline of mixed mid-rise towers of even height along one level horizon, hazy and far, the sky a calm dark blueprint blue fading lighter at the horizon.",
+        "B": "Sparse skyline with a few taller towers among low blocks along one level horizon, a faint river of warm lights far below the towers, the sky a calm dark blueprint blue."
+      }
+    },
+    "city-night": {
+      "name": "a wide night city panorama seen from a high studio through tall windows, for the matte behind the studio windows",
+      "brief_note": "Added 2026-10-24 (fidelity sprint, builder FB): the city-backdrop entry asked for low contrast and sparse lights, and its matte reads too dim and too sharp (r5, element 14). This one asks for a brighter, denser city whose small lights bloom, still with no frame or mullions (the room provides them).",
+      "rules": "one wide panoramic strip of a night city seen from a high-rise studio, towers at middle and far distance across the whole width, a skyline band that continues seamlessly at the left and right edges, a dim deep blue night sky with soft haze glowing over the city, many small bright window lights, no foreground, no window frame, no mullions, no glass reflections, no room interior, no people, no moon, no stars, no text, no signs, no logos, no lettering, no billboards.",
+      "materials": "towers as near-black blue silhouettes filled with many small lit windows in warm amber and cool white, a few red rooftop lights, streets far below as fine strands of warm light, haze in cyan-white and blueprint blue, photographic night look with soft light glow",
+      "variants": {
+        "A": "Dense cluster of tall towers of varied heights in the middle distance, rows of lit office windows, lower blocks and street lights receding into haze behind them.",
+        "B": "A broad city of mid-rise and tall towers along a wide river of light, the nearest towers taller and brighter, the far city a soft glittering haze."
+      }
+    },
+    "wall-drawings": {
+      "name": "one architectural drawing sheet for the framed drawings on a dark studio wall",
+      "brief_note": "Added 2026-10-24 (fidelity sprint, builder FB) for element 13: sheet art for the pinned and framed drawings. Linework only; the style block forbids readable fake text, so the rules ask for none at all.",
+      "rules": "one flat drawing sheet seen straight on and filling the frame edge to edge, orthographic, even flat light, no frame, no wall, no perspective of the sheet, no shadow, no hands, no tools, abstract architectural linework only, no text, no letters, no numbers, no labels, no title block lettering, no logos.",
+      "materials": "fine ink linework, light paper or blueprint ground, faint construction lines and hatching",
+      "variants": {
+        "A": "A blueprint floor plan of a small office wing: rooms, doors as arcs, furniture outlines, dimension lines without numbers, white lines on blueprint blue.",
+        "B": "A building section and elevation drawing in dark grey ink on warm cream paper, with hatching on cut walls and thin construction lines.",
+        "C": "An axonometric drawing of a cluster of rooms with furniture, cyan-white lines on deep blueprint blue, light hatching on the floors.",
+        "D": "A site plan of several connected building wings with a north arrow symbol and a scale bar without numbers, graphite lines on pale paper."
+      }
+    },
+    "paper-albedo": {
+      "name": "a seamless blueprint paper albedo texture",
+      "brief_note": "Added 2026-10-24 (fidelity sprint, builder FB) for element 2: a base colour to compare with mat-blueprint-paper. Tiling is done afterwards (offset and cross-fade), not by the prompt.",
+      "rules": "a flat top-down orthographic scan of one sheet of blueprint paper filling the whole frame, even flat light, no shading, no vignette, no bloom, no objects, no drawing, no grid lines, only the paper's subtle fibres, slight mottling and faint ink tone variation, no text.",
+      "materials": "blueprint-dyed paper in deep blueprint blue with subtle lighter fibres",
+      "variants": {
+        "A": "Uniform deep blueprint blue paper with fine fibres and a very slight cloudy variation."
+      }
+    },
+    "fixture-meeting-table": {
+      "name": "a small round meeting table with four chairs, as one architectural-maquette furniture piece",
+      "reference": true,
+      "brief_note": "Added 2026-10-25 (owner request): one object per sheet in several aligned reference views for Blender modelling, replacing a six-object sheet. Practice from the web: one subject, true orthographic front/side/top at one scale on a shared baseline, identical light in every panel, the top view asked for explicitly. Clay, not glass: translucency hides the edges the modeller needs; the glass look is applied in Unreal.",
+      "sheet": "the same single object drawn four times on one sheet, in a 2x2 grid of equal panels: top-left a front elevation, top-right a side elevation, bottom-left a top-down plan view, bottom-right a three-quarter view from slightly above. The front elevation, side elevation and plan view are true orthographic projections with no perspective, all at exactly the same scale and aligned to one shared ground baseline and centre line; the object is whole and uncropped in every panel. Plain flat light-grey background, even soft shadowless studio light identical in all four panels, no floor line, no grid, no text, no labels, no dimension lines, no other objects.",
+      "materials": "matte uniform light-grey clay, a modelling maquette with crisp edges and simple clean forms, no texture, no glass, no transparency, no colour",
+      "variants": {
+        "A": "A round pedestal meeting table, one central column on a round foot, with four simple chairs tucked in around it at even quarter spacing; each chair has four slim straight legs, a flat square seat and a low gently curved backrest facing the table.",
+        "B": "A round meeting table on four straight slim legs, with four simple chairs pulled slightly out from it at even quarter spacing; each chair has four slim straight legs, a flat seat and an upright rectangular backrest."
+      }
+    }
+  }
+}

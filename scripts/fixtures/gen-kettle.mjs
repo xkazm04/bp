@@ -1,13 +1,17 @@
 // Deterministic sample data: one fullstack product (Kettle), 132 features, seeded, no randomness across runs.
-// Usage: node scripts/fixtures/gen-kettle.mjs <out-dir> [--js]
-//   writes <out-dir>/kettle.json (src/data/kettle.json is this output); --js also writes kettle.js (window.KETTLE)
-//   for the static HTML prototypes. Schema: docs/fixtures/kettle-sample.md. The app reads the v3 map made
-//   from this file by scripts/kettle-to-v3.ts.
+// Usage: node scripts/fixtures/gen-kettle.mjs <out-dir> [--js] [--check]
+//   writes <out-dir>/kettle.json (packages/core/data/kettle.json is this output); --js also writes kettle.js
+//   (window.KETTLE) for the static HTML prototypes. Schema: docs/fixtures/kettle-sample.md. The app reads the
+//   v3 map made from this file by scripts/kettle-to-v3.ts.
+//   --check regenerates in memory and diffs against the committed kettle.json, writing nothing
+//   (npm run check:kettle-data): the gate that notices when the committed fixture stops being this file's output.
 import fs from 'node:fs';
 import path from 'node:path';
 import { mulberry32 } from '../lib/prng.ts';
+import { outDirFrom, writeOrCheck } from '../lib/fixture-bytes.ts';
 
-const OUT = process.argv[2];
+const CHECK = process.argv.includes('--check');
+const OUT = outDirFrom(process.argv.slice(2));
 const TODAY = new Date('2026-10-08T09:00:00Z');
 const rnd = mulberry32(20261008);
 const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
@@ -463,7 +467,12 @@ for (const f of features) {
   // ----- business lens
   const value = { P0: ri(4, 5), P1: ri(3, 5), P2: ri(2, 4), P3: ri(1, 3) }[f.priority];
   const requests = f.kind === 'customer' || f.kind === 'business' ? ri(0, live ? 6 : 11) : ri(0, 3);
-  const adoption = live ? Math.round((f.kind === 'platform' ? 100 : ri(18, 96))) : s === 'flagged' ? null : null;
+  // Only a live feature has an adoption figure. Everything else gets null - "not measured" - and the standard's
+  // producer rule omits a null rather than writing it (scripts/sample-facets.ts scalars()), so the facet simply
+  // has no adoptionPct. This USED to read `: s === 'flagged' ? null : null`, a conditional evaluated 74 times
+  // (12 flagged, 62 other) with one outcome; a flagged feature behind a partial rollout genuinely has no
+  // measured adoption, and the two that can say something about usage say it in `usageNote` from a story below.
+  const adoption = live ? (f.kind === 'platform' ? 100 : ri(18, 96)) : null;
   f.business = {
     value, // 1..5
     confidence: live ? 'measured' : pastStage(f, 'specified') ? pick(['validated', 'validated', 'hypothesis']) : 'hypothesis',
@@ -657,7 +666,8 @@ for (const f of features) {
   }
   if (s === 'in-review') ev(ri(0, 4), 'review', f, 'warden', pick(['Review agent: 2 comments, changes requested', 'Review agent: approved, awaiting human', 'Review agent: test gaps flagged']));
   if (s === 'flagged' || s === 'live') {
-    if (chance(s === 'flagged' ? 0.9 : 0.35)) ev(ri(0, 13), 'deploy', f, 'tender', 'Deployed to production');
+    // the release in the text is the row's own date, so it is written once, here, where `at` is chosen
+    if (chance(s === 'flagged' ? 0.9 : 0.35)) { const n = ri(0, 13); ev(n, 'deploy', f, 'tender', `Deployed to production (release ${day(n).replaceAll('-', '.')})`); }
     if (s === 'flagged') ev(ri(0, 13), 'flag', f, pick(['tender', 'dev', 'priya']), `Rollout set to ${f.operations.flag.rolloutPct}%`);
   }
   if (f.operations.incidents30d) ev(ri(3, 12), 'incident', f, 'priya', `Incident opened: ${pick(['elevated errors', 'latency spike', 'job backlog'])}`, { severity: f.operations.incidents30d > 1 ? 'SEV2' : 'SEV3' });
@@ -667,8 +677,14 @@ for (const f of features) {
   if (age <= 14 && f.history.length > 1) activity.push({ at: last.date + 'T' + String(ri(6, 22)).padStart(2, '0') + ':' + String(ri(0, 59)).padStart(2, '0') + ':00Z', type: 'stage', feature: f.id, actor: last.stage === 'flagged' ? 'tender' : last.stage === 'specified' ? f.owner : pick(f.builtBy.length ? f.builtBy : [f.owner]), text: `Stage: ${f.history[f.history.length - 2].stage} -> ${last.stage}`, from: f.history[f.history.length - 2].stage, to: last.stage });
   if (s === 'idea' && chance(0.3)) ev(ri(0, 13), 'comment', f, pick(['sam', 'mara', 'dev']), pick(['Another studio asked for this today.', 'Worth a spike next month?', 'Competitor launched this; watching uptake.']));
 }
-for (const a of activity) if (a.at > product_asOf) a.at = a.at.slice(0, 11) + '0' + ri(6, 8) + a.at.slice(13);
-for (const a of activity) if (a.type === 'deploy') a.text = `Deployed to production (release ${a.at.slice(0, 10).replaceAll('-', '.')})`;
+// Nothing may be dated after the product's as-of moment. This used to SILENTLY move such a row's hour to
+// 06-08 of the same day - a corrective write on generated data, leaving no trace that a timestamp had been
+// invented. Measured 2026-10-21 with a counter in this loop: it fired on 0 of 249 activity rows, and it cannot
+// fire as the rows are built (every one comes from ts(n)/day(n) with n >= 0, and ts(0) caps its hour at 8 while
+// as-of is 09:00). So it is an assertion now: if a generator change ever does date a row past as-of, the run
+// fails here naming the row rather than quietly rewriting it.
+const late = activity.filter((a) => a.at > product_asOf);
+if (late.length) throw new Error(`${late.length} activity rows are dated after the as-of moment ${product_asOf}, first ${late[0].type} on ${late[0].feature} at ${late[0].at}`);
 activity.sort((a, b) => (a.at < b.at ? 1 : -1));
 
 // ---------- weekly snapshots from history ----------
@@ -702,8 +718,11 @@ const product = {
 };
 
 const data = { product, lenses: ['business', 'design', 'development', 'operations', 'security', 'quality'], stages: STAGES, people, milestones, domains, capabilities, features, activity, snapshots };
-fs.mkdirSync(OUT, { recursive: true });
-fs.writeFileSync(path.join(OUT, 'kettle.json'), JSON.stringify(data, null, 1));
+const JSON_OUT = path.join(OUT, 'kettle.json');
+if (!CHECK) fs.mkdirSync(OUT, { recursive: true });
+// --check exits inside writeOrCheck: it diffs and writes nothing, so the --js file and the summary below
+// (which stats the written file) are skipped with it.
+writeOrCheck([[JSON_OUT, JSON.stringify(data, null, 1)]], CHECK, 'scripts/fixtures/gen-kettle.mjs');
 if (process.argv.includes('--js')) fs.writeFileSync(path.join(OUT, 'kettle.js'), '// Kettle product blueprint data. Loads as a global: window.KETTLE\nwindow.KETTLE = ' + JSON.stringify(data) + ';\n');
 
 // summary

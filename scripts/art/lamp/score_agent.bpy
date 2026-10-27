@@ -1,0 +1,63 @@
+# Measures what build_agent.bpy shipped, from the files themselves (never from the build's own numbers):
+#   final_working.glb  the static mesh: triangles, vertices, loose parts, open edges, bounds, slots, UV sets, pivot
+#   final.fbx          the rig: bones and hierarchy, actions, influences per vertex, unweighted vertices
+#   blender -b --factory-startup -P scripts/art/lamp/score_agent.bpy -- <repo> <work>     writes <work>/score.json
+import bmesh
+import bpy
+import json
+import os
+import sys
+
+argv = sys.argv[sys.argv.index('--') + 1:]
+REPO, WORK = argv[0], argv[1]
+OUT = os.path.join(REPO, 'apps', 'vr', 'ArtSource', 'lamp-agent')
+S = {}
+
+bpy.ops.wm.read_factory_settings(use_empty=True)
+bpy.ops.import_scene.gltf(filepath=os.path.join(OUT, 'final_working.glb'))
+meshes = [o for o in bpy.context.scene.objects if o.type == 'MESH']
+S['glb_mesh_objects'] = [o.name for o in meshes]
+ob = meshes[0]
+me = ob.data
+bm = bmesh.new(); bm.from_mesh(me)
+bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-6)
+S['tris'] = sum(len(p.vertices) - 2 for p in me.polygons)
+S['vertices_welded'] = len(bm.verts)
+S['open_edges'] = sum(1 for e in bm.edges if e.is_boundary)
+# loose parts by shared (welded) vertex
+seen, parts = set(), 0
+for v in bm.verts:
+    if v.index in seen:
+        continue
+    parts += 1
+    stack = [v]
+    while stack:
+        x = stack.pop()
+        if x.index in seen:
+            continue
+        seen.add(x.index)
+        stack.extend(e.other_vert(x) for e in x.link_edges)
+S['loose_parts'] = parts
+bm.free()
+ws = [ob.matrix_world @ v.co for v in me.vertices]          # glTF import is back in Blender Z-up
+lo = [min(p[i] for p in ws) for i in range(3)]; hi = [max(p[i] for p in ws) for i in range(3)]
+S['bounds_m'] = {'min': [round(x, 4) for x in lo], 'max': [round(x, 4) for x in hi], 'size_xyz': [round(hi[i] - lo[i], 4) for i in range(3)]}
+S['slots'] = [m.name for m in me.materials]
+S['slot_tris'] = {m.name: sum(len(p.vertices) - 2 for p in me.polygons if p.material_index == i) for i, m in enumerate(me.materials)}
+S['uv_sets'] = len(me.uv_layers)
+
+bpy.ops.wm.read_factory_settings(use_empty=True)
+bpy.ops.import_scene.fbx(filepath=os.path.join(OUT, 'final.fbx'))
+arm = next(o for o in bpy.context.scene.objects if o.type == 'ARMATURE')
+sk = next(o for o in bpy.context.scene.objects if o.type == 'MESH')
+S['bones'] = [b.name for b in arm.data.bones]
+S['hierarchy'] = {b.name: (b.parent.name if b.parent else None) for b in arm.data.bones}
+S['actions'] = sorted(a.name for a in bpy.data.actions)
+names = {g.index: g.name for g in sk.vertex_groups}
+infl = [sum(1 for g in v.groups if g.weight > 1e-4 and names.get(g.group) in S['bones']) for v in sk.data.vertices]
+S['max_influences'] = max(infl)
+S['unweighted_verts'] = sum(1 for n in infl if n == 0)
+S['blended_verts'] = sum(1 for n in infl if n > 1)
+S['fbx_tris'] = sum(len(p.vertices) - 2 for p in sk.data.polygons)
+json.dump(S, open(os.path.join(WORK, 'score.json'), 'w'), indent=1)
+print('SCORE', json.dumps(S))

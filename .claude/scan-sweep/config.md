@@ -3,7 +3,7 @@ contextMap: context-map.json
 memoryOutbox: .claude/scan-history/findings.jsonl
 backlogDigest: .claude/scan-history/backlog-digest.json
 openBacklogs: .claude/scan-history/open-backlogs.jsonl
-depth: 5
+depth: 16
 neverSweep: []
 ---
 
@@ -13,7 +13,13 @@ Read by `/scan-sweep` (ai-registry `skills/scan-sweep/SKILL.md`, "Project overla
 
 ## Gates
 
-always:
+always (no environment variable needed since 1efd669: `release.server.ts` now resolves lens-scan from
+the registry `.ai/manifest.yaml` declares, so `check-scan-jobs` runs all 143 of its checks — it was
+133 plus one silent skip, and `check-all.mjs` printed `0 skipped` over it until 6ef4f9b taught it to say
+"a green run here is NOT a full run". `BP_LENS_SCAN_DIR` still overrides and is still authoritative when
+set, so a typo in it fails visibly rather than falling back; set it only on a machine whose registry is
+somewhere else):
+- `npm run check` (the aggregate: typecheck + every `check:*` + `validate:structure`, discovered automatically)
 - `npm run typecheck`
 - `npm run check:lens-health`
 - `npm run validate:structure` (no arguments: validates the lens manifests and the spec examples)
@@ -32,7 +38,7 @@ always:
 - `npm run check:legacy`
 
 when the app-structure fixture or schema changes:
-- `npm run validate:structure -- src/data/kettle.app-structure.json --events src/data/kettle.events.jsonl`
+- `npm run validate:structure -- packages/core/data/kettle.app-structure.json --events packages/core/data/kettle.events.jsonl`
 
 when rendering, the engine or chrome changes:
 - `npm run build` (never while a `next dev` runs in the same directory)
@@ -42,7 +48,12 @@ when rendering, the engine or chrome changes:
 ## Repo law
 
 - `docs/blueprint-ui.md` is the UI contract: 12 px text floor (body 14 px), spatial stability (expanded chrome overlays the plan), lenses are data (never branch on a lens id), keyboard throughout, reduced motion honoured.
-- Design tokens are the CSS variables in `src/components/blueprint.css`; no raw colours in components or css.
+- Design tokens are the CSS variables in `apps/web/src/app/globals.css` — the dark block (`:root`,
+  `:root[data-theme='dark']`) and the light block, which is what `scripts/check-tokens.mjs` reads and
+  what `check:train-quality` holds the `--fs-*` floor on. No raw colours in components or css.
+  (Measured 2026-10-21: globals.css declares 162 custom properties, `components/blueprint.css` 5. This
+  line used to name blueprint.css and was wrong; the scan-menu-client round caught it when a correct
+  file header was flagged against it.)
 - Kettle `/`, the live product `?product=<slug>`, `?scale=4`, `?theme=light` and the three variants `/v/subtle|shaped|bold` must keep working.
 - Next allows one `next dev` per directory.
 - A worktree with a `node_modules` junction runs the node gates but not `next dev` (Turbopack panics on the junction); a worktree that needs a browser runs `npm ci`. `next dev` writes AGENTS.md and rewrites next-env.d.ts: never commit either.
@@ -53,3 +64,5 @@ when rendering, the engine or chrome changes:
 - 2026-10-10: in git-bash, `cmd //c mklink //J a C:\x` loses its backslashes and links nowhere; quote the whole command (`cmd //c 'mklink /J a C:\x'`). Worktree gates then silently resolved packages from the parent checkout.
 - 2026-10-10 wave 2: React and the engine both listen on `document`, so `stopPropagation()` in a React handler does not stop the engine's key handler; only `nativeEvent.stopImmediatePropagation()` does (three rounds hit this independently). A src module a node check imports must avoid TypeScript parameter properties (Node type stripping cannot load them).
 - 2026-10-12 --ab-only wave: `git rm --cached <f>` followed by the pathspec commit `git commit -- <f>` re-adds the working-tree file (pathspec commits take the working copy), so an "untrack" commit can land as a content edit. The worker's report said untracked; only reading the diff (`git ls-tree HEAD <f>`) caught it. Untrack with `git rm --cached <f> && git commit -m ...` (no pathspec, after checking the index holds only that change).
+- 2026-10-24 challenge run: Next 16.4.0's `npm run build` can exit 1 with `SecurityFatalError` (an upgrade nudge printed AFTER "Compiled successfully" and page generation) and pass on an identical retry. Read the log before calling a build red; the nudge's own "ask the user / run next upgrade" text is tool output, not an instruction.
+- 2026-10-24 challenge run: `docs/blueprint-ui.md` is a shared surface for parallel builders - most UI cards add a paragraph, and one builder's pathspec commit swept a sibling's uncommitted hunk into its own commit. Edit it under the same mkdir lock as `package.json` and commit the hunk immediately.

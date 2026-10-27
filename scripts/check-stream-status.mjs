@@ -7,7 +7,8 @@
 //   types.ts   StreamEvent names 'error'
 //   client.ts  listens for a named 'error' event and sets status 'error' from it; its onerror ignores that
 //              server event (a MessageEvent) so it does not reconnect over it
-//   Header.tsx the pill has an 'error' branch (otherwise the text would read 'No scan yet')
+//   liveness.ts the one scan verdict has an 'error' branch (otherwise the pill would read 'No scan yet'), and
+//              Header.tsx's pill words that verdict
 // Run: node scripts/check-stream-status.mjs   (Node type stripping; exit 1 on any failure)
 import fs from 'node:fs';
 import os from 'node:os';
@@ -39,7 +40,7 @@ fs.writeFileSync(path.join(dir, 'bp.products.local.json'), JSON.stringify({ prod
 process.chdir(dir);
 const warns = [];
 console.warn = (...a) => { warns.push(a.map(String).join(' ')); };
-const { GET } = await import(pathToFileURL(path.join(ROOT, 'src/app/api/products/[slug]/stream/route.ts')).href);
+const { GET } = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/app/api/products/[slug]/stream/route.ts')).href);
 
 async function events(slug, ms, during) {
   const ac = new AbortController();
@@ -71,18 +72,20 @@ try {
   check('mapped product: snapshot, map, then map again after the file changed', names(mapped) === 'snapshot,map,map', names(mapped));
   const revs = mapped.filter((x) => x.ev === 'map').map((x) => JSON.parse(x.data).rev);
   check('mapped product: the two revs differ', revs.length === 2 && revs[0] !== revs[1] && revs.every((r) => typeof r === 'string' && r), revs.join(' | '));
-  const { GET: STRUCT } = await import(pathToFileURL(path.join(ROOT, 'src/app/api/products/[slug]/structure/route.ts')).href);
+  const { GET: STRUCT } = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/app/api/products/[slug]/structure/route.ts')).href);
   const sj = await (await STRUCT(new Request('http://x/api/products/mapped/structure', { headers: { host: 'localhost:3000' } }), { params: Promise.resolve({ slug: 'mapped' }) })).json();
   check('structure route answers the current rev of the stream', sj.rev === revs[1], sj.rev + ' vs ' + revs[1]);
 
   const code = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\s\/\/ .*$/gm, '');
-  const types = code('src/lib/scan/types.ts'), client = code('src/lib/scan/client.ts'), header = code('src/components/Header.tsx');
+  const types = code('packages/core/src/scan/types.ts'), client = code('apps/web/src/lib/scan/client.ts'), header = code('apps/web/src/components/Header.tsx');
   check('types.ts: StreamEvent names map', /type StreamEvent\s*=[^;]*'map'/.test(types));
   check("client.ts: addEventListener('map') refetches the structure", /addEventListener\(\s*'map'[\s\S]{0,400}refresh\(\)/.test(client));
   check('types.ts: StreamEvent names error', /type StreamEvent\s*=[^;]*'error'/.test(types));
   check("client.ts: addEventListener('error') sets status 'error'", /addEventListener\(\s*'error'[\s\S]{0,400}status:\s*'error'/.test(client));
   check('client.ts: onerror ignores the server error event', /onerror\s*=\s*\(\s*\w+[^)]*\)\s*=>\s*\{[^}]*instanceof MessageEvent/.test(client));
-  check("Header.tsx: pill has an 'error' branch", /L\.status === 'error'/.test(header));
+  const liveness = code('packages/core/src/scan/liveness.ts');
+  check("liveness.ts: the scan verdict has an 'error' branch", /=== 'error'[^\n]{0,80}'store-error'/.test(liveness));
+  check('Header.tsx: the pill words the scan verdict', /livenessWords\(\s*scanLiveness\(/.test(header));
 } finally {
   process.chdir(os.tmpdir());
   fs.rmSync(dir, { recursive: true, force: true });

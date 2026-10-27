@@ -1,0 +1,649 @@
+// The static plan: grid, wings, ribbons (L0/L1) and fixtures (L2+), walls and labels. Everything here
+// is drawn into the cached raster (static-cache.ts), never per frame during a gesture. The lens mix is
+// applied here: stage fills stay put, lens channels draw their marks into slots (General) or into the
+// tile body (a lone lens), and text crossfades between the general and the dominant lens's content.
+import type { Feature } from '@bp/core/data';
+import { EVIDENCE_BY_DENSITY } from '@bp/core/standard/present';
+import { BH, RH, deltaWin, healthUnder, stageAt, stageParts, STAGE_WORD, type BldNode, type TileNode } from '@bp/core/model';
+import type { Engine } from '../Engine';
+import type { ChannelAggregate, MarkArgs, Rect, TileGeom } from '../lens/contract';
+import { clamp } from '../camera';
+import { drawText } from '../text';
+import { chipsFit, cloud, drawHealthBar, drawStageBar, glyphAgent, glyphPin, stageFill, stageStroke } from './glyphs';
+import { unknownFill } from './patterns';
+import { unscannedGeneral } from '../lens/unknown';
+import { patchMiss } from './simwatch';
+import { onView, rs, smooth, sxv, syv, type SRect, type View } from './view';
+import { GENERAL } from '@bp/core/data/types';
+
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+/** setLineDash copies its argument; paintTile and ribSeg run once per tile per raster, so this is not a literal. */
+const NO_DASH: number[] = [];
+const scratch: SRect = { x: 0, y: 0, w: 0, h: 0 };
+
+export function drawGrid(E: Engine, ctx: CanvasRenderingContext2D, v: View) {
+  const k = v.k, th = E.th;
+  for (const [step, a] of [[40, 0.045], [200, 0.09]] as const) {
+    const sp = step * k; if (sp < 9) continue;
+    ctx.strokeStyle = th.alpha(th.accent, a * clamp((sp - 9) / 12, 0, 1) * (th.mode === 'dark' ? 1 : 0.9)); ctx.lineWidth = 1; ctx.beginPath();
+    const wx0 = v.x + (v.c0x - v.FW / 2) / k, wy0 = v.y + (v.c0y - v.FH / 2) / k;
+    const x0 = Math.floor(wx0 / step) * step, y0 = Math.floor(wy0 / step) * step;
+    for (let x = x0; sxv(v, x) < v.c1x; x += step) { const X = Math.round(sxv(v, x)) + 0.5; ctx.moveTo(X, v.c0y); ctx.lineTo(X, v.c1y); }
+    for (let y = y0; syv(v, y) < v.c1y; y += step) { const Y = Math.round(syv(v, y)) + 0.5; ctx.moveTo(v.c0x, Y); ctx.lineTo(v.c1x, Y); }
+    ctx.stroke();
+  }
+}
+
+/**
+ * Lenses whose channel threw: skipped for that engine's life so one bad manifest costs that lens, not the
+ * plan. Kept per engine, because each engine resolves its own channels (the variant's, or a fallback built
+ * from the product's manifest): a lens that failed under one variant or product is drawn and, if it fails
+ * again, logged again under the next.
+ */
+const failedByEngine = new WeakMap<Engine, Set<string>>();
+const failed = (E: Engine, l: string) => failedByEngine.get(E)?.has(l) ?? false;
+/** Log a lens failure once per engine and lens and record it. The hover card (components/Overlays.tsx) calls this too, so
+ *  an aggregate that throws under the plan and under the card is one line in the console, not two. */
+export function lensFailed(E: Engine, l: string, part: string, err: unknown) {
+  let s = failedByEngine.get(E);
+  if (!s) failedByEngine.set(E, (s = new Set()));
+  if (!s.has(l)) { s.add(l); console.error(`[lens ${l}] ${part} failed`, err); }
+}
+
+/** Variant decoration under the plan, weighted by each lens's dominance. */
+export function drawDecor(E: Engine, ctx: CanvasRenderingContext2D, v: View) {
+  const m = E.mixS;
+  for (const l of E.lensIds) {
+    const ch = E.channel(l);
+    if (!ch || !ch.decor || m.d[l] <= 0.001 || failed(E, l)) continue;
+    ctx.save();
+    try { ch.decor(ctx, { x: v.c0x, y: v.c0y, w: v.c1x - v.c0x, h: v.c1y - v.c0y, k: v.k, u: E.U }, m.d[l], E.th); }
+    catch (err) { lensFailed(E, l, 'decor', err); }
+    finally { ctx.restore(); }
+  }
+}
+
+// ------------------------------------------------------------------------------------------- tiles
+// one geometry record, refilled per tile: a tile is painted to its end before the next begins, and channels read it during the call
+const GEO: TileGeom = { x: 0, y: 0, w: 0, h: 0, form: 'tile', u: 1, k: 1, strip: { x: 0, y: 0, w: 0, h: 0 }, body: { x: 0, y: 0, w: 0, h: 0 }, text: false };
+function makeGeom(E: Engine, x: number, y: number, w: number, h: number, form: 'ribbon' | 'tile', k: number): TileGeom {
+  const u = E.U, g = GEO, s = g.strip, b = g.body;
+  g.x = x; g.y = y; g.w = w; g.h = h; g.form = form; g.u = u; g.k = k;
+  g.text = form === 'tile' && w >= 100 * u && h >= 44 * u;
+  if (form === 'tile') {
+    s.x = x + 6 * u; s.y = y + 3 * u; s.w = w - 12 * u; s.h = clamp(h * 0.07, 3 * u, 6 * u);
+    b.x = x + 3 * u; b.y = y + 3 * u; b.w = w - 6 * u; b.h = h - 6 * u;
+  } else {
+    s.x = x; s.y = y; s.w = w; s.h = Math.min(3 * u, h * 0.2);
+    b.x = x + 1; b.y = y + 1; b.w = Math.max(0, w - 2); b.h = Math.max(0, h - 2);
+  }
+  return g;
+}
+
+function generalEvidence(E: Engine, f: Feature, st: ReturnType<typeof stageAt>): string[] {
+  if (!E.isNow || !st) return [st ? STAGE_WORD[st].toUpperCase() : 'NOT YET DRAWN'];
+  const w = STAGE_WORD[st].toUpperCase(), L = E.live(f);
+  if (st === 'flagged' && L.rolloutPct < 100) return [w, L.rolloutPct + '%'];
+  if (st === 'in-dev') return [w, Math.round(L.progressPct) + '%'];
+  return [w];
+}
+/**
+ * General's stamp when a feature is in trouble (bad): the worst lens's reason with "+N" for the other
+ * lenses in trouble; when that does not fit, the reason alone, then the rule's short form (with and
+ * without "+N"), then the last candidate cut at a word, then the lens name with "+N".
+ */
+function generalStamp(E: Engine, f: Feature): { cands: string[]; last: string } | null {
+  const t = f.trouble;
+  if (!t.length || t[0].h !== 'bad') return null;
+  const more = t.length > 1 ? ' +' + (t.length - 1) : '';
+  const sh = t[0].short ? [t[0].short + more, t[0].short] : [];
+  return { cands: [t[0].why + more, t[0].why, ...sh], last: (E.M.P.LENS[t[0].lens]?.name ?? t[0].lens) + more };
+}
+/** The first candidate that fits, else the last candidate cut at a word with an ellipsis (2+ words), else `last`. */
+function fitStamp(E: Engine, cands: readonly string[], last: string | null, maxW: number, font: string): string | null {
+  for (const c of cands) { const s = E.tx.fit([c], maxW, font); if (s) return s; }
+  const words = (cands[cands.length - 1] ?? '').split(' ');
+  for (let n = words.length - 1; n >= 2; n--) { const s = E.tx.fit([words.slice(0, n).join(' ').replace(/[,;:]$/, '') + '…'], maxW, font); if (s) return s; }
+  return last ? E.tx.fit([last], maxW, font) : null;
+}
+
+function healthMarks(E: Engine, ctx: CanvasRenderingContext2D, h: string, x: number, y: number, w: number, hh: number, compact: boolean, a: number) {
+  const u = E.U, th = E.th, ga = ctx.globalAlpha;
+  ctx.globalAlpha = ga * a;
+  if (compact) {
+    if (h === 'bad') { ctx.fillStyle = th.red; ctx.fillRect(x, y - 3 * u, w, 3 * u); }
+    else if (h === 'watch') { ctx.fillStyle = th.amber; ctx.fillRect(x, y - 3 * u, w, 2 * u); }
+  } else if (h === 'bad') {
+    ctx.strokeStyle = th.red; ctx.lineWidth = w < 40 * u ? 1.3 : 1.8; ctx.lineJoin = 'round';
+    const r = clamp(w / 14, 2.4 * u, 6 * u); cloud(ctx, x - r * 0.8, y - r * 0.8, w + r * 1.6, hh + r * 1.6, r); ctx.stroke();
+  } else if (h === 'watch' && w >= 22 * u) {
+    ctx.strokeStyle = th.amber; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    const tx = x + w - 12 * u; ctx.beginPath(); ctx.moveTo(tx, y - 2); ctx.lineTo(tx + 4 * u, y - 7 * u); ctx.moveTo(tx + 5 * u, y - 2); ctx.lineTo(tx + 9 * u, y - 7 * u); ctx.stroke(); ctx.lineCap = 'butt';
+  }
+  ctx.globalAlpha = ga;
+}
+
+// the blended rect and the channel's arguments: refilled per tile per lens, never allocated (channels use them during the call)
+const BLEND: Rect = { x: 0, y: 0, w: 0, h: 0 };
+const MA = { ctx: null, r: BLEND, slot: null, lens: null, tile: GEO, f: null, w: 0, x: 0, compact: false, th: null, stage: null, now: false, live: null, accent: '' } as unknown as MarkArgs;
+
+/** Lens channels on one tile or ribbon segment. */
+function lensMarks(E: Engine, ctx: CanvasRenderingContext2D, g: TileGeom, f: Feature, st: ReturnType<typeof stageAt>) {
+  const m = E.mixS, slots = E.expr.composeGeneral(g, E.lensIds), L = E.live(f), ga = ctx.globalAlpha, P = E.M.P;
+  for (const l of E.lensIds) {
+    const p = m.p[l];
+    if (p <= 0.004) continue;
+    const ch = E.channel(l); if (!ch || failed(E, l)) continue;
+    const x = m.x[l], slot = slots[l] ?? null;
+    const exp = E.expr.expandedRect ? E.expr.expandedRect(g, l) : g.body;
+    let r: Rect, w: number;
+    if (slot) { r = BLEND; r.x = lerp(slot.x, exp.x, x); r.y = lerp(slot.y, exp.y, x); r.w = lerp(slot.w, exp.w, x); r.h = lerp(slot.h, exp.h, x); w = p; }
+    else { if (x <= 0.004) continue; r = exp; w = p * x; }
+    if (r.w < 1 || r.h < 1) continue;
+    const a = MA; a.ctx = ctx; a.r = r; a.slot = slot; a.lens = P.LENS[l]; a.tile = g; a.f = f; a.w = w; a.x = x; a.compact = x < 0.5; a.th = E.th; a.stage = st; a.now = E.isNow; a.live = L; a.accent = E.accentOf(l);
+    ctx.save();
+    try { ch.marks(a); }
+    catch (err) { lensFailed(E, l, 'marks', err); }
+    finally { ctx.restore(); }
+    ctx.globalAlpha = ga;
+  }
+}
+
+/**
+ * What the lenses in view say about a feature as a whole, on the same weights the trouble marks crossfade
+ * on (General's health into the dominant lens's by its dominance): a lens with nothing to say here (`na`)
+ * fades the tile to 0.35, and one no scan has measured (`unmeasured`) lays the "?" texture over it. In
+ * General only a feature with no measured lens at all gets the "?" (the rule is engine/lens/unknown.ts, which the
+ * legend's "?" row counts by too). Returns the alpha factor and leaves the "?" weight in `unknownW` (scalars, no
+ * record: this runs per tile per raster). Draws nothing itself.
+ */
+let unknownW = 0;
+function lensVerdict(E: Engine, f: Feature): number {
+  const D = E.mixS.topD, top = E.mixS.top;
+  const hl = top && D > 0.001 ? f.lens[top]?.h ?? 'unmeasured' : null;
+  unknownW = (unscannedGeneral(f, E.lensIds) ? 1 - D : 0) + (hl === 'unmeasured' ? D : 0);
+  return hl === 'na' ? 1 - 0.65 * D : 1;
+}
+/** The "?" weight lensVerdict leaves for `f` (checks read it; the raster reads `unknownW` directly). */
+export function lensUnknown(E: Pick<Engine, 'mixS' | 'lensIds'>, f: Feature): number { lensVerdict(E as Engine, f); return unknownW; }
+
+/** A built outline and what it was built from: a tile repainted with the same geometry, lens and dominance (a patch, a neighbour's repaint) reuses it. */
+interface Outline { top: string; d: number; x: number; y: number; w: number; h: number; u: number; k: number; p: Path2D }
+const outlines = new WeakMap<Engine, Map<string, Outline>>();
+/** A full raster starts: shapes are rebuilt (feature data may have moved); only the patches that follow it reuse them. */
+export function resetOutlines(E: Engine) { outlines.get(E)?.clear(); }
+
+/** Outline path: the base rectangle, or the dominant lens's shape blended in by its dominance. */
+export function outline(E: Engine, g: TileGeom, f: Feature): Path2D | null {
+  const top = E.mixS.top, d = E.mixS.topD;
+  if (!top || d <= 0.001) return null;
+  const ch = E.channel(top);
+  if (!ch || !ch.shape || failed(E, top)) return null;
+  let m = outlines.get(E);
+  if (!m) outlines.set(E, (m = new Map()));
+  // the cap is enforced before the lookup: clearing after it would orphan the record this call then updates
+  if (m.size > 1500) m.clear();
+  const o = m.get(f.id);
+  if (o && o.top === top && o.d === d && o.x === g.x && o.y === g.y && o.w === g.w && o.h === g.h && o.u === g.u && o.k === g.k) return o.p;
+  const p = new Path2D();
+  try { ch.shape(p, g, f, d); } catch (err) { lensFailed(E, top, 'shape', err); return null; }
+  if (o) { o.top = top; o.d = d; o.x = g.x; o.y = g.y; o.w = g.w; o.h = g.h; o.u = g.u; o.k = g.k; o.p = p; }
+  else m.set(f.id, { top, d, x: g.x, y: g.y, w: g.w, h: g.h, u: g.u, k: g.k, p });
+  return p;
+}
+
+function paintTile(E: Engine, ctx: CanvasRenderingContext2D, v: View, T: TileNode, alphaMul: number) {
+  const f = T.f, u = E.U, th = E.th, k = v.k;
+  const x = sxv(v, T.x), y = syv(v, T.y), w = T.w * k, h = T.h * k;
+  if (x > v.c1x + 10 || y > v.c1y + 10 || x + w < v.c0x - 10 || y + h < v.c0y - 10) return;
+  if (patchMiss(x, y, w, h, 12)) return;
+  const S = E.S, now = E.isNow, st = stageAt(f, S.t, E.M.P.asOf);
+  // lens verdicts speak of the feature now, like the trouble marks: not on a past date, not before it is drawn
+  const fade = st && now ? lensVerdict(E, f) : (unknownW = 0, 1);
+  const a = (E.dimFn && !E.dimFn(f) ? 0.13 : 1) * alphaMul * fade;
+  if (a <= 0.01) return;
+  const unk = unknownW;
+  if (now && E.M.sim.has) E.watch.tile(E, false, f, x, y, w, h);
+  ctx.globalAlpha = a;
+  const g = makeGeom(E, x, y, w, h, 'tile', k);
+  const shape = outline(E, g, f);
+  if (shape) { ctx.save(); ctx.clip(shape); }
+  ctx.fillStyle = th.tileBase; ctx.fillRect(x, y, w, h);
+  if (S.blast) {
+    if (E.M.P.F[S.blast].usedBy.includes(f.id)) { ctx.fillStyle = th.alpha(th.red, 0.5); ctx.fillRect(x, y, w, h); }
+    else if (E.blastSet?.has(f.id)) { ctx.fillStyle = th.alpha(th.red, 0.22); ctx.fillRect(x, y, w, h); }
+  }
+  const Lv = E.live(f);
+  stageFill(ctx, th, st, x, y, w, h, Lv.rolloutPct, Lv.progressPct, now);
+  if (shape) ctx.restore();
+  stageStroke(ctx, th, st, a, w < 30 * u ? 1 : 1.5);
+  if (shape) ctx.stroke(shape); else ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  ctx.setLineDash(NO_DASH); ctx.globalAlpha = a;
+  if (S.blast === f.id) { ctx.strokeStyle = th.red; ctx.lineWidth = 3; ctx.strokeRect(x, y, w, h); }
+  // trouble marks: general health crossfades into the dominant lens's health
+  if (st && now) {
+    const D = E.mixS.topD, top = E.mixS.top, hg = f.health, hl = top ? healthUnder(f, top) : hg;
+    if (hg === hl || D <= 0.001) healthMarks(E, ctx, D > 0.999 ? hl : hg, x, y, w, h, false, 1);
+    else { healthMarks(E, ctx, hg, x, y, w, h, false, 1 - D); healthMarks(E, ctx, hl, x, y, w, h, false, D); }
+  }
+  if (st && deltaWin(f, S.t, S.delta)) {
+    const ds = clamp(w / 9, 4 * u, 8 * u); ctx.fillStyle = th.delta; ctx.beginPath();
+    ctx.moveTo(x + w + 1, y - ds * 1.2); ctx.lineTo(x + w + 1 + ds * 0.7, y + ds * 0.3); ctx.lineTo(x + w + 1 - ds * 0.7, y + ds * 0.3); ctx.closePath(); ctx.fill();
+  }
+  lensMarks(E, ctx, g, f, st);
+  ctx.globalAlpha = a;
+  if (unk > 0.004) unknownFill(ctx, th, g.body.x, g.body.y, g.body.w, g.body.h, u, a * Math.min(1, unk));
+  ctx.textBaseline = 'alphabetic';
+  if (!g.text) { ctx.globalAlpha = 1; return; }
+  // text ramps in over a few px instead of popping; the two layouts hand over in sequence (below)
+  const ta = a * clamp((w - 100 * u) / (14 * u), 0, 1) * clamp((h - 44 * u) / (8 * u), 0, 1);
+  // the two layouts switch at the band's midpoint: one copy of the name is always fully drawn (a fade between them either
+  // ghosts two offset copies or, at rest mid-band, shows neither - both measured on screen at 1280 px)
+  const bigR = clamp((w - 150 * u) / (16 * u), 0, 1) * clamp((h - 64 * u) / (8 * u), 0, 1);
+  const bigA = bigR >= 0.5 ? 1 : 0, smallA = 1 - bigA;
+  if (ta <= 0.004) { ctx.globalAlpha = 1; return; }
+  const agentsHere = now && E.M.sim.has && E.M.sim.AGF[f.id] && E.M.sim.AGF[f.id].length;
+  const chips = !!agentsHere && chipsFit(w, h, u);
+  const tx = E.tx, D = E.mixS.topD, top = E.mixS.top;
+  const hy = g.strip.y + g.strip.h + 12 * u;
+  if (bigA > 0.002) {
+    const a = ta * bigA;
+    ctx.globalAlpha = a;
+    const mono = tx.f(12, 500, true);
+    const code = f.code, idw = code ? tx.w(code, mono) : -10 * u;
+    // evidence: general (stage word) crossfading into the dominant lens's content
+    const ev = generalEvidence(E, f, st);
+    let lensC: { parts: string[]; stamp?: string } | null = null;
+    const ch = top && D > 0.001 && now && st && !failed(E, top) ? E.channel(top) : null;
+    if (ch) {
+      try { const c = ch.content(f, Lv); lensC = { parts: c.parts.slice(0, EVIDENCE_BY_DENSITY[ch.density]), stamp: c.stamp }; }
+      catch (err) { lensFailed(E, top!, 'content', err); }
+    }
+    const evFont = (l: string | null) => (l && E.expr.evidenceFont?.(l) === 'sans' ? tx.f(13, 600) : mono);
+    let showId = !!code;
+    const room = w - 16 * u - idw - 10 * u;
+    const gFit = tx.fit(ev, room, mono), lFit = lensC ? tx.fit(lensC.parts, room, evFont(top)) : null;
+    if ((gFit == null && D < 0.5) || (lensC && lFit == null && D >= 0.5)) showId = false;
+    if (showId) drawText(ctx, code, x + 7 * u, hy, mono, th.inkA(0.9));
+    const roomW = showId ? room : w - 14 * u;
+    ctx.textAlign = 'right';
+    if (D < 0.999) { const s = showId ? gFit : tx.fit(ev, roomW, mono); if (s) { ctx.globalAlpha = a * (1 - D); drawText(ctx, s, x + w - 7 * u, hy, mono, th.ink); } }
+    if (lensC && D > 0.001) { const s = showId ? lFit : tx.fit(lensC.parts, roomW, evFont(top)); if (s) { ctx.globalAlpha = a * D; drawText(ctx, s, x + w - 7 * u, hy, evFont(top), E.accentOf(top!)); } }
+    ctx.textAlign = 'left'; ctx.globalAlpha = a;
+    const gStamp = now && st ? generalStamp(E, f) : null, lStamp = lensC?.stamp ?? null;
+    const stamp = D < 0.5 ? gStamp : lStamp;
+    // at L3 (the camera at the bay's fit) the title is twice its plan size; it grows over the last stretch of the zoom
+    // in, and steps back down (2 px at a time) when the doubled name does not fit the tile
+    const l3 = smooth(0.78, 0.94, k / E.bayFitK(T.bay));
+    const roomH = h - (hy - y) - 8 * u - (stamp ? 20 * u : 6 * u) - (chips ? 24 * u : 0);
+    let ns = Math.round(2 * clamp(13.5 + (w / u - 150) / 60, 14, 17) * (1 + l3)) / 2, lh = 0, nf = '', lines: string[] | null = null;
+    for (; ns >= 14; ns -= 2) { lh = ns * 1.16 * u; nf = tx.f(ns, 500); lines = tx.wrap(f.name, w - 14 * u, nf, Math.max(1, Math.floor(roomH / lh))); if (lines) break; }
+    if (!lines) { ns = 14; nf = tx.f(14, 500); lh = 16.2 * u; lines = tx.wrap(f.name, w - 14 * u, nf, Math.max(1, Math.floor(roomH / lh))); }
+    // the halo every other label on the plan carries: the name sits over the stage hatch, which is ink at 0.6
+    if (lines) lines.forEach((l, i) => drawText(ctx, l, x + 7 * u, hy + 6 * u + lh * (i + 0.82), nf, th.inkHi, th.halo));
+    const sf = tx.f(12.5, 600), sy = y + h - 7 * u - (chips ? 22 * u : 0);
+    if (gStamp && D < 0.999) { const s = fitStamp(E, gStamp.cands, gStamp.last, w - 14 * u, sf); if (s) { ctx.globalAlpha = a * (1 - D); drawText(ctx, s, x + 7 * u, sy, sf, th.red2, th.halo); } }
+    if (lStamp && D > 0.001) { const s = fitStamp(E, [lStamp], null, w - 14 * u, sf); if (s) { ctx.globalAlpha = a * D; drawText(ctx, s, x + 7 * u, sy, sf, th.red2, th.halo); } }
+  }
+  if (smallA > 0.002) {
+    const a = ta * smallA;
+    ctx.globalAlpha = a;
+    const nf2 = tx.f(13, 500), l2 = 15 * u;
+    const lines2 = tx.wrap(f.name, w - 12 * u, nf2, Math.max(1, Math.floor((h - 8 * u - (chips ? 22 * u : 0) - (hy - y - 12 * u)) / l2)));
+    if (lines2) { const top2 = hy - 12 * u + (h - (hy - y - 12 * u) - lines2.length * l2 - (chips ? 20 * u : 0)) / 2; lines2.forEach((l, i) => drawText(ctx, l, x + 6 * u, top2 + l2 * (i + 0.78), nf2, th.inkHi, th.halo)); }
+  }
+  ctx.globalAlpha = 1;
+}
+
+function ribSeg(E: Engine, ctx: CanvasRenderingContext2D, f: Feature, x: number, y: number, w: number, h: number, a0: number, k: number) {
+  const S = E.S, th = E.th, st = stageAt(f, S.t, E.M.P.asOf);
+  const fade = st && E.isNow ? lensVerdict(E, f) : (unknownW = 0, 1), unk = unknownW;
+  const aa = (E.dimFn && !E.dimFn(f) ? 0.13 : 1) * a0 * fade; if (aa <= 0.01) return;
+  if (patchMiss(x, y, w, h, 12)) return;
+  if (E.isNow && E.M.sim.has) E.watch.tile(E, true, f, x, y, w, h);
+  ctx.globalAlpha = aa;
+  ctx.fillStyle = th.tileBase; ctx.fillRect(x, y, w, h);
+  if (S.blast && (S.blast === f.id || E.blastSet?.has(f.id))) { ctx.fillStyle = th.alpha(th.red, 0.5); ctx.fillRect(x, y, w, h); }
+  const Lv = E.live(f);
+  stageFill(ctx, th, st, x, y, w, h, Lv.rolloutPct, Lv.progressPct, E.isNow);
+  if (!st || st === 'specified' || st === 'idea') { stageStroke(ctx, th, st, aa, 1); ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1); ctx.setLineDash(NO_DASH); ctx.globalAlpha = aa; }
+  if (st && E.isNow) {
+    const D = E.mixS.topD, top = E.mixS.top, hg = f.health, hl = top ? healthUnder(f, top) : hg;
+    if (hg === hl || D <= 0.001) healthMarks(E, ctx, D > 0.999 ? hl : hg, x, y, w, h, true, 1);
+    else { healthMarks(E, ctx, hg, x, y, w, h, true, 1 - D); healthMarks(E, ctx, hl, x, y, w, h, true, D); }
+  }
+  if (st && deltaWin(f, S.t, S.delta)) {
+    const ds = clamp((w * 0.9) / 9, 4 * E.U, 8 * E.U), xw = x + w * 0.9; ctx.fillStyle = th.delta; ctx.beginPath();
+    ctx.moveTo(xw + 1, y - ds * 1.2); ctx.lineTo(xw + 1 + ds * 0.7, y + ds * 0.3); ctx.lineTo(xw + 1 - ds * 0.7, y + ds * 0.3); ctx.closePath(); ctx.fill();
+  }
+  const g = makeGeom(E, x, y, w, h, 'ribbon', k);
+  lensMarks(E, ctx, g, f, st);
+  ctx.globalAlpha = aa;
+  if (unk > 0.004) unknownFill(ctx, th, g.body.x, g.body.y, g.body.w, g.body.h, E.U, aa * Math.min(1, unk));
+  ctx.globalAlpha = 1;
+}
+
+function drawRibbons(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: BldNode, alpha: number) {
+  const k = v.k;
+  for (const W of B.wings) {
+    if (!onView(v, rs(v, W, scratch), 20)) continue;
+    for (const R of W.rooms) {
+      if (!onView(v, rs(v, R, scratch), 20)) continue;
+      for (const Bay of R.bays) {
+        const rb = Bay.rib, x = sxv(v, rb.x), y = syv(v, rb.y), w = rb.w * k, h = rb.h * k, n = Bay.tiles.length, sw = w / n;
+        if (y > v.c1y + 10 || y + h < v.c0y - 10 || x > v.c1x + 10 || x + w < v.c0x - 10 || patchMiss(x, y, w, h, 12)) continue;
+        for (let i = 0; i < n; i++) ribSeg(E, ctx, Bay.tiles[i].f, x + i * sw + 1, y, sw - 2, h, alpha, k);
+        ctx.globalAlpha = alpha * 0.55; ctx.strokeStyle = E.th.inkA(0.7); ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1); ctx.globalAlpha = 1;
+      }
+    }
+  }
+}
+
+function screenPath(world: Path2D, v: View): Path2D {
+  const p = new Path2D();
+  p.addPath(world, new DOMMatrix([v.k, 0, 0, v.k, v.FW / 2 - v.x * v.k, v.FH / 2 - v.y * v.k]));
+  return p;
+}
+
+export function drawBuildings(E: Engine, ctx: CanvasRenderingContext2D, v: View) {
+  const k = v.k, th = E.th, lod = E.lod(k);
+  for (const B of E.M.L.blds) {
+    const br = rs(v, B, scratch);
+    if (!onView(v, br, 140) || patchMiss(br.x, br.y, br.w, br.h, 24)) continue;
+    for (const W of B.wings) {
+      const r = rs(v, W, scratch);
+      if (patchMiss(r.x, r.y, r.w, r.h, 0)) continue;
+      const c0 = E.counts(W.id, W.feats), sh = (c0.live + c0.flagged) / Math.max(1, c0.n);
+      ctx.fillStyle = th.inkA(0.02 + 0.075 * sh); ctx.fillRect(r.x, r.y, r.w, r.h);
+    }
+    if (lod < 0.995) drawRibbons(E, ctx, v, B, 1 - lod);
+    if (lod > 0.005) {
+      for (const W of B.wings) {
+        if (!onView(v, rs(v, W, scratch), 20)) continue;
+        for (const R of W.rooms) {
+          if (!onView(v, rs(v, R, scratch), 20)) continue;
+          for (const Bay of R.bays) for (const T of Bay.tiles) paintTile(E, ctx, v, T, lod);
+        }
+      }
+    }
+    const paths = E.wallPaths[B.i];
+    if (k > 0.12) { ctx.strokeStyle = th.inkA(0.5); ctx.lineWidth = 1; ctx.stroke(screenPath(paths.bays, v)); }
+    const wi = clamp(6 * k, 1.2, 6), ww = clamp(10 * k, 2, 10), wo = clamp(18 * k, 3.5, 18);
+    ctx.strokeStyle = th.ink; ctx.lineJoin = 'miter';
+    ctx.lineWidth = wi; ctx.stroke(screenPath(paths.rooms, v));
+    ctx.lineWidth = ww; ctx.stroke(screenPath(paths.wings, v));
+    const out = screenPath(paths.outline, v);
+    ctx.lineWidth = wo; ctx.stroke(out);
+    if (wo > 6) { const p = th.pattern({ kind: 'diag', size: 5, color: th.inkA(0.75), lw: 1.1, bg: th.poche }); if (p) { ctx.lineWidth = wo - 4; ctx.strokeStyle = p; ctx.stroke(out); } }
+  }
+}
+
+/** World-space wall geometry, built once per layout. */
+export function buildWallPaths(E: Engine) {
+  return E.M.L.blds.map((B) => {
+    const rooms = new Path2D(), wings = new Path2D(), outline = new Path2D(), bays = new Path2D();
+    for (const W of B.wings) { wings.rect(W.x, W.y, W.w, W.h); for (const R of W.rooms) rooms.rect(R.x, R.y, R.w, R.h); }
+    outline.moveTo(B.x, B.y); outline.lineTo(B.x + B.w, B.y);
+    for (let i = B.wings.length - 1; i >= 0; i--) { const W = B.wings[i]; outline.lineTo(W.x + W.w, W.y + W.h); outline.lineTo(W.x, W.y + W.h); }
+    outline.closePath();
+    for (const W of B.wings) for (const R of W.rooms) for (const Bay of R.bays) {
+      if (Bay.y <= R.y + RH + 1) continue;
+      bays.moveTo(R.x + 6, Bay.y - 2); bays.lineTo(R.x + R.w - 6, Bay.y - 2);
+    }
+    return { rooms, wings, outline, bays };
+  });
+}
+
+// ------------------------------------------------------------------------------------------ labels
+function aggParts(E: Engine, id: string, fs: readonly Feature[], short: boolean) {
+  const c = E.counts(id, fs);
+  const general = stageParts(c, short), generalShort = stageParts(c, true);
+  const now = E.isNow;
+  const gTrouble = now ? E.M.agg.healthOf(id, fs, GENERAL).bad : 0;
+  const top = E.mixS.top, D = now ? E.mixS.topD : 0;
+  let lens: string[] | null = null, lensShort: string[] | null = null, lTrouble = 0;
+  if (top && D > 0.001 && !failed(E, top)) {
+    let a: ChannelAggregate | null = null;
+    try { a = E.lensAgg(id, top, fs); } catch (err) { lensFailed(E, top, 'aggregate', err); }
+    if (a) {
+      lens = [c.n + (short ? '' : ' features'), ...a.parts];
+      lensShort = [String(c.n), ...a.parts];
+      lTrouble = a.trouble ?? E.M.agg.healthOf(id, fs, top).bad;
+    }
+  }
+  return { c, general, generalShort, lens, lensShort, gTrouble, lTrouble, D, top };
+}
+
+/** Text that crossfades between the general and the lens version at the same spot. */
+function fadePair(ctx: CanvasRenderingContext2D, a: number, D: number, g: () => void, l: (() => void) | null) {
+  const ga = ctx.globalAlpha;
+  if (!l || D <= 0.001) { g(); return; }
+  if (D < 0.999) { ctx.globalAlpha = a * (1 - D); g(); }
+  ctx.globalAlpha = a * D; l();
+  ctx.globalAlpha = ga;
+}
+
+function drawSwarmLine(E: Engine, ctx: CanvasRenderingContext2D, x: number, y: number, st: ReturnType<Engine['M']['sim']['stats']>, maxW: number): number {
+  if (!E.M.sim.has || !st.n) return 0;
+  const th = E.th, u = E.U, f = E.tx.f(13, 500, true);
+  const items: [string, number, string][] = [['working', st.working, th.mintText], ['waiting', st.waiting, th.amberText], ['blocked', st.blocked + st.failed, th.red2]];
+  if (st.paused) items.push(['paused', st.paused, th.ink]);
+  let gx = x, used = 0;
+  for (const it of items) {
+    if (!it[1]) continue;
+    const w = 18 * u + E.tx.w(String(it[1]), f) + 8 * u;
+    if (used + w > maxW) continue;
+    glyphAgent(ctx, th, gx + 6 * u, y - 4 * u, (it[0] === 'blocked' && !st.blocked ? 'failed' : it[0]) as 'working', 4 * u, 1, 0, u);
+    drawText(ctx, String(it[1]), gx + 15 * u, y, f, it[2], th.halo); gx += w; used += w;
+  }
+  return used;
+}
+
+function drawWingLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: BldNode): number {
+  const k = v.k, u = E.U, th = E.th, tx = E.tx, sim = E.M.sim;
+  const a0 = E.M.P.scale > 1 ? smooth(E.KB1 * 0.62, E.KB1 * 0.8, k) : 1;
+  const vis = B.wings.filter((W) => W.w * k >= 80 * u);
+  if (!vis.length || a0 <= 0) return 0;
+  let FS = 14, ML = 2;
+  for (let f1 = 22; f1 >= 14 && ML === 2; f1--) if (vis.every((W) => tx.wrap(W.def.name.toUpperCase(), W.w * k - 34 * u, tx.f(f1, 600), 1, f1 * 0.05))) { FS = f1; ML = 1; }
+  if (ML === 2) for (let f2 = 20; f2 >= 14; f2--) if (vis.every((W) => tx.wrap(W.def.name.toUpperCase(), W.w * k - 34 * u, tx.f(f2, 600), 2, f2 * 0.05))) { FS = f2; break; }
+  let aMax = 0;
+  for (const W of B.wings) {
+    const a = clamp((W.w * k - 80 * u) / 10, 0, 1) * a0; if (a <= 0) continue;
+    aMax = Math.max(aMax, a); ctx.globalAlpha = a;
+    const r = rs(v, W, scratch); if (r.x > v.c1x || r.x + r.w < v.c0x) continue;
+    const base = r.y - 10 * u, x = r.x + 6 * u, wdt = r.w - 14 * u;
+    if (base < v.c0y - 10 || base > v.c1y + 120 || patchMiss(r.x, base - 112 * u, r.w, 120 * u, 4)) continue;
+    const ag = aggParts(E, W.id, W.feats, false);
+    fadePair(ctx, a, ag.D, () => drawStageBar(ctx, th, x, base - 6 * u, wdt, 7 * u, ag.c), ag.lens ? () => drawHealthBar(ctx, th, x, base - 6 * u, wdt, 7 * u, E.M.agg.healthOf(W.id, W.feats, ag.top!)) : null);
+    const af = tx.f(13, 500), tf = tx.f(13, 600);
+    const line = (parts: string[], shortParts: string[], trouble: number, col: string) => () => {
+      const tr = trouble ? tx.w(trouble + ' in trouble', tf) + 10 * u : 0;
+      let s = tx.fit(parts, wdt - tr, af);
+      if (s && !s.includes('·')) s = tx.fit(shortParts, wdt - tr, af) ?? s;
+      if (s) drawText(ctx, s, x, base - 14 * u, af, col, th.halo);
+      if (trouble) { ctx.textAlign = 'right'; drawText(ctx, trouble + ' in trouble', x + wdt, base - 14 * u, tf, th.red2, th.halo); ctx.textAlign = 'left'; }
+    };
+    fadePair(ctx, a, ag.D, line(ag.general, ag.generalShort, ag.gTrouble, th.ink), ag.lens ? line(ag.lens, ag.lensShort!, ag.lTrouble, E.accentOf(ag.top!)) : null);
+    ctx.globalAlpha = a;
+    const sy = base - 32 * u, ss = sim.has && E.isNow ? E.statsOf(W.id, W.feats) : null;
+    if (ss) E.watch.swarm(W.id, W.feats, ss, x - 4 * u, sy - 20 * u, wdt + 8 * u, 30 * u, r.x, base - 112 * u, r.w, 120 * u);
+    if (ss && ss.n) {
+      const focus = E.S.who || E.S.view !== GENERAL, em = focus ? ss.mine : ss.asks, shown = em > 0 ? em : ss.asks;
+      const askW = ss.asks ? tx.w(String(shown), tx.f(13, 600, true)) + 26 * u : 0;
+      drawSwarmLine(E, ctx, x, sy, ss, wdt - askW);
+      if (ss.asks) {
+        glyphPin(ctx, th, x + wdt - askW + 8 * u, sy + 4 * u, ss.high && em > 0 ? 'high' : 'med', em > 0, 0.62, 0, 0, u, tx.f(12, 600, true));
+        drawText(ctx, String(shown), x + wdt - askW + 22 * u, sy, tx.f(13, 600, true), em > 0 ? (ss.high ? th.red2 : th.amberText) : th.inkA(0.75), th.halo);
+      }
+    }
+    const nm = W.def.name.toUpperCase();
+    let fs = FS, lines = tx.wrap(nm, W.w * k - 34 * u, tx.f(fs, 600), ML, fs * 0.05), bub = true;
+    const ly = base - (ss && ss.n ? 56 : 38) * u;
+    if (!lines) { fs = 12.5; lines = tx.wrap(nm, wdt, tx.f(fs, 600), 2, 0.5); bub = false; }
+    if (bub) {
+      ctx.beginPath(); ctx.arc(x + 11 * u, ly - 7 * u, 11 * u, 0, 7); ctx.fillStyle = th.labelBg; ctx.fill(); ctx.strokeStyle = th.ink; ctx.lineWidth = 1.3; ctx.stroke();
+      ctx.textAlign = 'center'; drawText(ctx, W.def.letter, x + 11 * u, ly - 2.5 * u, tx.f(13, 500, true), th.ink); ctx.textAlign = 'left';
+    }
+    if (lines) lines.slice().reverse().forEach((l, i) => drawText(ctx, l, x + (bub ? 28 : 0) * u, ly - i * fs * 1.1 * u, tx.f(fs, 600), th.inkHi, th.halo, bub ? fs * 0.05 : 0.5));
+  }
+  ctx.globalAlpha = 1;
+  return aMax;
+}
+
+function drawBuildingLabel(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: BldNode, wingA: number) {
+  if (E.M.P.scale === 1) return;
+  const r = rs(v, B, scratch), u = E.U, th = E.th, tx = E.tx;
+  if (r.w < 150 * u || !onView(v, r, 200)) return;
+  const base = r.y - 12 * u - (wingA > 0 ? 112 * u * wingA : 0), a = 1;
+  if (patchMiss(r.x, base - 100 * u, r.w + 280 * u, 108 * u, 10)) return;
+  ctx.globalAlpha = a;
+  const wdt = Math.min(r.w, 560 * u), ag = aggParts(E, B.id, B.feats, false), x = r.x;
+  fadePair(ctx, a, ag.D, () => drawStageBar(ctx, th, x, base - 6 * u, wdt, 8 * u, ag.c), ag.lens ? () => drawHealthBar(ctx, th, x, base - 6 * u, wdt, 8 * u, E.M.agg.healthOf(B.id, B.feats, ag.top!)) : null);
+  const f14 = tx.f(14, 500), f14b = tx.f(14, 600);
+  const line = (parts: string[], trouble: number, col: string) => () => {
+    const s = tx.fit(parts, wdt - 90 * u, f14); if (s) drawText(ctx, s, x, base - 15 * u, f14, col, th.halo);
+    if (trouble) { ctx.textAlign = 'right'; drawText(ctx, trouble + ' in trouble', x + wdt, base - 15 * u, f14b, th.red2, th.halo); ctx.textAlign = 'left'; }
+  };
+  fadePair(ctx, a, ag.D, line(ag.general, ag.gTrouble, th.ink), ag.lens ? line(ag.lens, ag.lTrouble, E.accentOf(ag.top!)) : null);
+  ctx.globalAlpha = a;
+  const ss = E.M.sim.has && E.isNow ? E.statsOf(B.id, B.feats) : null, sy = base - 36 * u;
+  if (ss) E.watch.swarm(B.id, B.feats, ss, x - 4 * u, sy - 20 * u, wdt + 280 * u, 30 * u, x, base - 100 * u, Math.max(r.w, wdt + 280 * u), 108 * u);
+  if (ss && ss.n) {
+    const used = drawSwarmLine(E, ctx, x, sy, ss, wdt);
+    if (ss.asks) { glyphPin(ctx, th, x + used + 14 * u, sy + 4 * u, ss.high ? 'high' : 'med', true, 0.65, 0, 0, u, tx.f(12, 600, true)); drawText(ctx, ss.asks + ' questions waiting', x + used + 30 * u, sy, tx.f(13, 500, true), th.amberText, th.halo); }
+  }
+  const nm = B.name.toUpperCase(), fs = clamp(r.w / 14 / u, 18, 30);
+  drawText(ctx, nm, x, base - (ss && ss.n ? 58 : 38) * u, tx.f(fs, 600), th.inkHi, th.halo, fs * 0.06);
+  ctx.globalAlpha = 1;
+}
+
+/** What roomLabelFit hands back; one object, so the flag layer can ask it every frame without allocating. */
+const labelFit = { fs: 14, ls: 0.8, lines: null as string[] | null, fa: 1 };
+/**
+ * The room label's sizing, in the one place both layers take it from (the raster draws by it, the flags'
+ * pinnedBox steps clear by it): a size from the room header's height, then a second pass at 14 px with a
+ * wider tracking when the name will not fit, then (at 14 px) a fade over the last 24 px of width it needs,
+ * its fit limit found by bisection. `lines` is null when no label is drawn - it does not fit, or has faded out.
+ * The returned object is reused by the next call.
+ */
+export function roomLabelFit(tx: Engine['tx'], nm: string, maxW: number, hh: number, u: number) {
+  let fs = clamp((hh * 0.36) / u, 14, 26), ls = fs * 0.06, lines = tx.wrap(nm, maxW, tx.f(fs, 600), 2, ls), fa = 1;
+  if (!lines && fs > 14) { fs = 14; ls = 0.8; lines = tx.wrap(nm, maxW, tx.f(14, 600), 2, ls); }
+  if (lines && fs <= 14 && !tx.wrap(nm, maxW - 24 * u, tx.f(fs, 600), 2, ls)) {
+    let lo = maxW - 24 * u, hi = maxW;
+    for (let i = 0; i < 4; i++) { const mid = (lo + hi) / 2; if (tx.wrap(nm, mid, tx.f(fs, 600), 2, ls)) hi = mid; else lo = mid; }
+    fa = clamp((maxW - hi) / (24 * u), 0, 1);
+    if (fa <= 0.01) lines = null;
+  }
+  labelFit.fs = fs; labelFit.ls = ls; labelFit.lines = lines; labelFit.fa = fa;
+  return labelFit;
+}
+
+export function drawRoomLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: BldNode) {
+  const k = v.k, u = E.U, th = E.th, tx = E.tx, hasSw = E.M.sim.has;
+  for (const W of B.wings) {
+    const a = clamp((W.w * k - 100 * u) / 8, 0, 1) * (E.M.P.scale > 1 ? smooth(E.KB1 * 0.62, E.KB1 * 0.8, k) : 1);
+    // both of the renderer's notes to the live-camera layers are cleared together: a room whose label this
+    // raster does not draw (too narrow a wing, off view) must not leave the last raster's edge behind for
+    // the order badges to dodge (render/dynamic.ts drawOrderZones reads labelRight every frame)
+    for (const R of W.rooms) { R.labelBox = null; R.labelRight = undefined; }
+    if (a <= 0) continue;
+    for (const R of W.rooms) {
+      const r = rs(v, R, scratch); if (!onView(v, r)) continue;
+      const hh = RH * k, nm = R.name.toUpperCase(), maxW = r.w - 28 * u - (hasSw ? 38 * u : 0);
+      const { fs, ls, lines, fa } = roomLabelFit(tx, nm, maxW, hh, u);
+      if (!lines) { ctx.globalAlpha = 1; R.labelRight = R.x; continue; }
+      const aa = a * fa; ctx.globalAlpha = aa;
+      const lh = fs * 1.08 * u, blockH = lines.length * lh, inHeader = hh >= blockH + 14 * u;
+      const topLimit = Math.max(v.c0y, E.SAFE.t) + 8 * u;
+      const x = r.x + 14 * u;
+      let y = Math.max(r.y + 8 * u, Math.min(topLimit, r.y + r.h - blockH - 30 * u));
+      if (y > r.y + 8 * u && !inHeader) y = r.y + 8 * u;
+      const pw = Math.max(...lines.map((l) => tx.w(l, tx.f(fs, 600), ls)));
+      if (!inHeader || y > r.y + 8 * u) { ctx.fillStyle = th.alpha(th.labelBg, 0.92); ctx.fillRect(x - 6 * u, y - 3 * u, pw + 12 * u, blockH + 8 * u); }
+      // world units, so the layers drawn at the live camera (the flags, the order badges) can find them between
+      // rasters; labelBox only for a label in its room's header (a label floating over the room's content lets flags pass over it)
+      const ox = v.FW / 2 - v.x * k, oy = v.FH / 2 - v.y * k;
+      R.labelRight = (x + pw + 6 * u - ox) / k;
+      if (y === r.y + 8 * u) R.labelBox = { x: (x - 6 * u - ox) / k, y: (y - 3 * u - oy) / k, w: (pw + 12 * u) / k, h: (blockH + 8 * u) / k };
+      lines.forEach((l, i) => drawText(ctx, l, x, y + lh * (i + 0.8), tx.f(fs, 600), th.inkHi, null, ls));
+      if (inHeader && hh >= blockH + 34 * u && y === r.y + 8 * u) {
+        const ag = aggParts(E, R.id, R.feats, false), af = tx.f(13, 500);
+        const avail = (trouble: number) => r.w - 28 * u - (trouble ? 92 * u : 0) - (r.w > 420 * u && hh > 70 * u ? 110 * u : 0) - (hasSw ? 38 * u : 0);
+        const line = (parts: string[], trouble: number, col: string) => () => {
+          const s = tx.fit(parts, avail(trouble), af);
+          if (s) drawText(ctx, s, x, y + blockH + 17 * u, af, col);
+          if (trouble && s) drawText(ctx, trouble + ' in trouble', x + tx.w(s, af) + 12 * u, y + blockH + 17 * u, tx.f(13, 600), th.red2);
+        };
+        fadePair(ctx, aa, ag.D, line(ag.general, ag.gTrouble, th.inkA(0.8)), ag.lens ? line(ag.lens, ag.lTrouble, E.accentOf(ag.top!)) : null);
+      }
+      const art = E.art[R.d.base];
+      if (art && art.complete && art.naturalWidth && r.w > 420 * u && hh > 70 * u) { const ah = hh - 14 * u, aw = ah * 1.5; ctx.globalAlpha = aa * 0.5; ctx.drawImage(art, r.x + r.w - aw - 52 * u, r.y + 7 * u, aw, ah); }
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+function drawBayTags(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: BldNode) {
+  const k = v.k, u = E.U, th = E.th, tx = E.tx;
+  if (BH * k < 23 * u) return;
+  const a = clamp((BH * k - 23 * u) / (12 * u), 0, 1);
+  const cf = tx.f(12, 500, true), nf = tx.f(13.5, 600);
+  ctx.globalAlpha = a;
+  for (const W of B.wings) for (const R of W.rooms) for (const Bay of R.bays) {
+    const r = rs(v, Bay, scratch); if (!onView(v, r)) continue;
+    const code = Bay.code, nm = Bay.name.toUpperCase();
+    const cw = tx.w(code, cf) + 12 * u, nw = tx.w(nm, nf, 0.7) + 12 * u, cnt = String(Bay.tiles.length), kw = tx.w(cnt, cf) + 12 * u;
+    let full = cw + nw + kw;
+    const th2 = 22 * u, x = r.x, y = r.y + Math.max(1, (BH * k - th2) / 2 - 3);
+    const showCode = !!code && full <= r.w;
+    if (!showCode && nw <= r.w) full = nw; else if (!showCode) continue;
+    ctx.fillStyle = th.labelBg; ctx.fillRect(x, y, full, th2);
+    ctx.strokeStyle = th.ink; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, full - 1, th2 - 1);
+    let xx = x;
+    if (showCode) { drawText(ctx, code, xx + 6 * u, y + 15.5 * u, cf, th.inkA(0.72)); xx += cw; ctx.beginPath(); ctx.moveTo(xx + 0.5, y); ctx.lineTo(xx + 0.5, y + th2); ctx.stroke(); }
+    drawText(ctx, nm, xx + 6 * u, y + 16 * u, nf, th.inkHi, null, 0.7); xx += nw;
+    if (showCode) { ctx.beginPath(); ctx.moveTo(xx + 0.5, y); ctx.lineTo(xx + 0.5, y + th2); ctx.stroke(); drawText(ctx, cnt, xx + 6 * u, y + 15.5 * u, cf, th.inkA(0.72)); }
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawChronology(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: BldNode) {
+  if (E.M.P.scale > 1) return;
+  const r = rs(v, B, scratch), u = E.U, th = E.th, tx = E.tx;
+  if (r.w < 560 * u) return;
+  const y = r.y + r.h + 22 * u; if (y > E.SAFE.b - 26 * u) return;
+  ctx.globalAlpha = 0.95;
+  ctx.strokeStyle = th.inkA(0.55); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(r.x, y); ctx.lineTo(r.x + r.w, y); ctx.stroke();
+  ctx.fillStyle = th.inkA(0.75); ctx.beginPath(); ctx.moveTo(r.x + r.w + 6, y); ctx.lineTo(r.x + r.w - 4, y - 4); ctx.lineTo(r.x + r.w - 4, y + 4); ctx.fill();
+  const f = tx.f(12, 500, true);
+  const t1 = 'OLDEST WORK', t2 = 'NEWEST WORK', t3 = 'LEFT TO RIGHT: WINGS IN THE ORDER WORK BEGAN, FEATURES OLDEST FIRST';
+  for (const [t, px, al] of [[t1, r.x, 'left'], [t2, r.x + r.w - 10, 'right'], [t3, r.x + r.w / 2, 'center']] as const) {
+    const w0 = tx.w(t, f), x0 = al === 'left' ? px : al === 'right' ? px - w0 : px - w0 / 2;
+    if (al === 'center' && tx.w(t1, f) + tx.w(t2, f) + w0 + 60 * u > r.w) continue;
+    ctx.fillStyle = th.paper; ctx.fillRect(x0 - 6, y - 8 * u, w0 + 12, 16 * u);
+    ctx.textAlign = al; drawText(ctx, t, px, y + 4.5 * u, f, th.inkA(0.8));
+  }
+  ctx.textAlign = 'left'; ctx.globalAlpha = 1;
+}
+
+export function drawLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View) {
+  const u = E.U;
+  for (const B of E.M.L.blds) {
+    const br = rs(v, B, scratch);
+    if (patchMiss(br.x - 120 * u, br.y - 320 * u, br.w + 240 * u, br.h + 400 * u, 0)) continue;
+    drawBayTags(E, ctx, v, B); drawRoomLabels(E, ctx, v, B);
+    const wa = drawWingLabels(E, ctx, v, B); drawBuildingLabel(E, ctx, v, B, wa); drawChronology(E, ctx, v, B);
+  }
+}
+
+/** Used by hit testing and agent placement: the screen rect of a feature at the current LOD. */
+export function featRect(E: Engine, v: View, fid: string, lod: number, out?: SRect): SRect | null {
+  const T = E.M.L.TILE[fid]; if (!T) return null;
+  const r = out ?? { x: 0, y: 0, w: 0, h: 0 };
+  if (lod > 0.5) return rs(v, T, r);
+  const rb = T.bay.rib, n = T.bay.tiles.length, sw = (rb.w * v.k) / n;
+  r.x = sxv(v, rb.x) + T.bi * sw; r.y = syv(v, rb.y); r.w = sw; r.h = rb.h * v.k;
+  return r;
+}

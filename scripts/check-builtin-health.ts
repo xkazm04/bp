@@ -15,18 +15,38 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { explain, lensHealth } from '../src/lib/standard/health.ts';
-import { BUILTIN_LENSES } from '../src/lib/standard/catalog.ts';
-import type { Feature, LensManifest } from '../src/lib/standard/types.ts';
+import { decidingRule, explain, lensHealth } from '../packages/core/src/standard/health.ts';
+import { BUILTIN_LENSES } from '../packages/core/src/standard/catalog.ts';
+import type { Feature, LensManifest } from '../packages/core/src/standard/types.ts';
 import { FLATTEN, type LensObject } from './sample-facets.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p: string): unknown => JSON.parse(fs.readFileSync(path.join(ROOT, p), 'utf8'));
 
 interface SampleFeature { id: string; name: string; stage: string; priority: string; kind: string; milestone: string | null; [lens: string]: unknown }
-const kettle = read('src/data/kettle.json') as { product: { asOf: string }; lenses: string[]; features: SampleFeature[] };
+const kettle = read('packages/core/data/kettle.json') as { product: { asOf: string }; lenses: string[]; features: SampleFeature[] };
 const manifests: readonly LensManifest[] = BUILTIN_LENSES;
 const sampled = manifests.filter((m) => kettle.lenses.includes(m.id));
+/**
+ * The agreement loop below only ever runs over `sampled`, and `worst` starts at 1 - so a sample whose `lenses`
+ * lost an entry (or a catalog whose ids were renamed) would report 100 % agreement over fewer lenses, or over
+ * none at all, in a voice indistinguishable from success. The ground truth is BUILTIN_LENSES (catalog.ts) and the
+ * sample's own `lenses`: every id the sample names must be a built-in, and every built-in must be sampled or named
+ * here. A built-in added to the catalog fails this until it is sampled or listed.
+ */
+const UNSAMPLED = ['performance']; // no lens object in the sample: held to the scanned-product readings below only
+{
+  const ids = manifests.map((m) => m.id);
+  const wrong = [
+    ...kettle.lenses.filter((id) => !ids.includes(id)).map((id) => `the sample names "${id}", which is no built-in lens`),
+    ...ids.filter((id) => !kettle.lenses.includes(id) && !UNSAMPLED.includes(id)).map((id) => `built-in "${id}" is neither in the sample's lenses[] nor in UNSAMPLED`),
+    ...UNSAMPLED.filter((id) => !ids.includes(id) || kettle.lenses.includes(id)).map((id) => `UNSAMPLED names "${id}", which is sampled or is no built-in`),
+    ...(sampled.length === kettle.lenses.length ? [] : [`${sampled.length} manifests for ${kettle.lenses.length} sampled lenses`]),
+    ...(kettle.features.length > 0 ? [] : ['the sample has no feature: every agreement would be 0/0']),
+  ];
+  if (wrong.length) { for (const w of wrong) console.error('FAIL: ' + w); process.exit(1); }
+  console.log(`${sampled.length} of ${ids.length} built-in lenses are sampled over ${kettle.features.length} features (${UNSAMPLED.join(', ')} held to the readings only)`);
+}
 
 /** The lowest per-lens agreement the run accepts; below it the run exits 1. */
 const TARGET = 1;
@@ -77,11 +97,43 @@ const SCANNED: [string, Record<string, number | string>, Partial<Feature>, strin
   ['performance', { bundleKb: 48 }, {}, 'good'],
 ];
 let scanMisses = 0;
+// Which of a manifest's health.rules decided at least one reading: the tie-back from the hand list to the rule set.
+const decided = new Map<string, Set<number>>();
 for (const [id, values, feature, want] of SCANNED) {
   const got = lensHealth(lens(id), { values }, today, { feature });
   if (got !== want) { scanMisses++; console.log(`    scanned ${id} ${JSON.stringify(values)}: ${got}, expected ${want}`); }
+  const d = decidingRule(lens(id), { values }, { feature });
+  if (d) (decided.get(id) ?? decided.set(id, new Set()).get(id)!).add(lens(id).health.rules.indexOf(d.rule));
 }
 console.log(`scanned-product readings: ${SCANNED.length - scanMisses} of ${SCANNED.length} healths as expected`);
+/**
+ * Rules a scan cannot reach (it fills only metric fields: no status, incident, adoption or environment), by the
+ * rule's `short` text. Every OTHER rule of a scanned lens must decide at least one SCANNED reading, so a rule
+ * added to (or reworded in) a manifest fails here until a reading covers it or it is listed with its reason.
+ */
+const UNREACHED: Record<string, string[]> = {
+  business: ['P0 not started', '{customerRequests30d} asks', 'Deprecated', '{adoptionPct}% adoption', 'Low value'],
+  operations: ['{incidents30d} incidents', 'Incident', 'No alerting'],
+  quality: ['E2E failing', '{openBugsP1} P1 bugs', 'Tests partly pass', '{e2ePassing}/{e2eTests} E2E', 'Few E2E tests'],
+  performance: ['{jankFrames} jank frames', 'Blocks {blockingMs} ms', '{idleWakeups} wakes/s idle', 'Over budget'],
+};
+let coverageMisses = 0;
+for (const id of [...new Set(SCANNED.map((r) => r[0]))]) {
+  const rules = lens(id).health.rules;
+  const hit = decided.get(id) ?? new Set<number>();
+  const listed = UNREACHED[id] ?? [];
+  console.log(`${id}: ${hit.size} of ${rules.length} rules exercised by the scanned readings`);
+  rules.forEach((r, i) => {
+    const name = r.short ?? r.reason;
+    if (!hit.has(i) && !listed.includes(name)) { coverageMisses++; console.log(`    rule ${i} "${name}" decides no scanned reading and is not in UNREACHED`); }
+    if (hit.has(i) && listed.includes(name)) { coverageMisses++; console.log(`    rule ${i} "${name}" is in UNREACHED but a reading decides it`); }
+  });
+  for (const name of listed) if (!rules.some((r) => (r.short ?? r.reason) === name)) { coverageMisses++; console.log(`    UNREACHED names "${name}", which is no ${id} rule`); }
+}
+if (coverageMisses) {
+  console.error('FAIL: the scanned readings and the manifests health.rules disagree on which rules the readings exercise');
+  process.exit(1);
+}
 if (scanMisses) {
   console.error('FAIL: a scanned product\'s readings do not evaluate as the built-in manifests intend');
   process.exit(1);

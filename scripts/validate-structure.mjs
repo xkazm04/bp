@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Validates app-structure v3 maps and lens manifests: the JSON Schemas in docs/standard/schema
+// Validates app-structure v3 maps and lens manifests: the JSON Schemas in packages/schema/schema
 // (draft 2020-12, via ajv), then the checks a schema cannot express (references resolve, keys are
 // unique, facet values fit their fields). Spec: docs/standard/app-structure-v3.md.
 //
@@ -13,12 +13,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Ajv2020Module from 'ajv/dist/2020.js';
 // The evaluator's own definitions, not copies: Node strips the types (the fixture gate imports it the same way).
-import { OPS, conditionLeaves } from '../src/lib/standard/health.ts';
-import { NUMERIC } from '../src/lib/standard/present.ts';
+import { OPS, conditionLeaves } from '../packages/core/src/standard/health.ts';
+import { NUMERIC } from '../packages/core/src/standard/present.ts';
 
 const Ajv2020 = Ajv2020Module.default ?? Ajv2020Module;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const SCHEMA_DIR = path.join(ROOT, 'docs/standard/schema');
+const SCHEMA_DIR = path.join(ROOT, 'packages/schema/schema');
 const LENS_DIR = path.join(ROOT, 'docs/standard/lenses');
 const CUSTOM_DIR = path.join(ROOT, 'docs/standard/lenses-custom');
 /** What a condition operand must be for a field type (spec 8.3: no coercion, so another type never matches). */
@@ -144,7 +144,8 @@ function humanize(errors, data) {
 // ------------------------------------------------------------------------------ semantic checks
 class Report {
   errors = []; warnings = []; notes = [];
-  error(m) { this.errors.push(m); }
+  // BP_VALIDATE_SITES=1 prints the source line of each error site reached, so scripts/check-fixtures.ts can count the rules its fixtures trip
+  error(m) { if (process.env.BP_VALIDATE_SITES) console.log(`@SITE ${/validate-structure\.mjs:(\d+):\d+/.exec((new Error().stack ?? '').split('\n')[2] ?? '')?.[1]}`); this.errors.push(m); }
   warn(m) { this.warnings.push(m); }
   note(m) { this.notes.push(m); }
 }

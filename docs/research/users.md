@@ -1,6 +1,6 @@
 > User analysis written before the design contests (2026-10-08), extended for the swarm round. It
 > describes people, moments and questions, not screens. References to `data/…` mean the contest
-> staging folder; in this repo the data is `src/data/` and the swarm schema is `docs/fixtures/kettle-sample.md`.
+> staging folder; in this repo the data is `packages/core/data/` and the swarm schema is `docs/fixtures/kettle-sample.md`.
 
 # Who opens the blueprint, when, and what they need from it
 

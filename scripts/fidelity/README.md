@@ -17,14 +17,14 @@ and its named interactions in a browser (the contest skill's promotion step, `re
 ## Re-run
 
 ```
-npx next dev -p 3321                                  # from the bp root, in its own shell
+npx next dev -p 3321 -H 127.0.0.1                     # from the bp root, in its own shell (loopback only)
 python scripts/fidelity/contract.py check --port 3321  # every scene: 0 deviations, accepted departures listed
 python scripts/fidelity/drive.py --port 3321          # every interaction PASS; exit 1 on a FAIL
 ```
 
 Both need Python Playwright (`pip install playwright && playwright install chromium`), the winner under
 `.contest/` (git-ignored: a local checkout of the contest) and the contest skill at `../ai-registry/skills/contest/scripts`
-(`CONTEST_SCRIPTS` overrides). Stop the server by its PID and delete the `AGENTS.md` that `next dev` writes.
+(`CONTEST_SCRIPTS` overrides). Stop the server by its PID and delete the `AGENTS.md` that the dev server writes.
 
 Every scene measures at 1600x800, where bp's UI scale is 1 (Engine.fit scales the UI by
 `1 + 0.5 * (clamp(min(w / 1280, h / 800), 1, 2) - 1)`: 1.0625 at 1600x900, which would read every width 6% wide).

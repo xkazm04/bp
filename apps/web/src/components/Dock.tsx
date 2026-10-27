@@ -1,0 +1,218 @@
+'use client';
+// The right-hand rail: a slim column of counters (find, decisions waiting, agents, orders, steering,
+// plan, view). It never changes width; each item opens ITS OWN flyout over the plan to its left, one at
+// a time. The same item, Esc, or a click on the plan closes it. Counts tween when they move and the item
+// pulses once; nothing opens by itself. `\` hides the whole rail (the plan takes the width back).
+import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { AnimatePresence, animate, motion, useReducedMotion } from 'motion/react';
+import { SPEND_CAP, pname, sheetOf } from '@bp/core/model';
+import type { DockTab } from '@/engine/state';
+import { MorningButton, oncePerProposal } from './Queue';
+import { FindPanel, useRunningScans } from './rail/panels';
+import { shallowEqual, useBp, useEngine } from './hooks';
+import { WideBody, isWide } from './rail/wide';
+import { setFlyoutWidth } from '@/engine/chrome';
+import './rail.css';
+
+/** A number that counts to its new value (instant under reduced motion). */
+function Count({ n }: { n: number }) {
+  const reduce = useReducedMotion();
+  const [d, setD] = useState(n);
+  const cur = useRef(n);
+  useEffect(() => {
+    if (cur.current === n) return;
+    if (reduce) { cur.current = n; setD(n); return; }
+    const from = cur.current;
+    const c = animate(from, n, { duration: Math.min(0.7, 0.2 + Math.abs(n - from) * 0.06), ease: 'easeOut', onUpdate: (v) => { cur.current = Math.round(v); setD(cur.current); } });
+    return () => c.stop();
+  }, [n, reduce]);
+  return <>{d}</>;
+}
+
+type Tone = 'amber' | 'red' | 'mint' | 'ink';
+interface Item {
+  k: DockTab;
+  label: string;
+  /** Full title for the tooltip and the flyout header. */
+  title: string;
+  glyph: ReactNode;
+  /** The main figure (a number tweens; text is shown as is). */
+  n: number | string | null;
+  /** A second, small figure (e.g. blocked agents, breached orders), shown in red when > 0. */
+  n2?: number;
+  n2title?: string;
+  tone: Tone;
+  sub?: string;
+}
+
+const G = {
+  asks: <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" strokeWidth="2" /><path d="M9.6 9.6a2.5 2.5 0 1 1 3.4 2.3c-.7.3-1 .8-1 1.5v.6" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /><circle cx="12" cy="16.6" r="1.1" fill="currentColor" /></svg>,
+  swarm: <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="currentColor" /><path d="M12 3v3M12 18v3M3 12h3M18 12h3" stroke="currentColor" strokeWidth="1.8" /></svg>,
+  orders: <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.7" strokeDasharray="3.2 2.2" /><path d="M8.5 12.5l2.4 2.4 4.6-5.2" fill="none" stroke="currentColor" strokeWidth="1.8" /></svg>,
+  steer: <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" strokeWidth="1.7" /><circle cx="12" cy="12" r="2" fill="currentColor" /><path d="M12 4.5v5.5M5.5 15.8l4.8-2.8M18.5 15.8l-4.8-2.8" stroke="currentColor" strokeWidth="1.7" /></svg>,
+  plan: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" fill="none" stroke="currentColor" strokeWidth="1.7" /><path d="M3.5 14.5h17M13 14.5v5M8 4.5v10" stroke="currentColor" strokeWidth="1.4" /></svg>,
+  find: <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6" fill="none" stroke="currentColor" strokeWidth="1.8" /><path d="M15 15l5 5" stroke="currentColor" strokeWidth="2" /></svg>,
+  view: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="1.5" /><circle cx="9" cy="7" r="2.1" fill="var(--card)" stroke="currentColor" strokeWidth="1.6" /><circle cx="15.5" cy="12" r="2.1" fill="var(--card)" stroke="currentColor" strokeWidth="1.6" /><circle cx="7" cy="17" r="2.1" fill="var(--card)" stroke="currentColor" strokeWidth="1.6" /></svg>,
+};
+
+/** The figures the rail shows, as primitives: the rail re-renders only when one of them moves, not on every sim sync. */
+interface Counts { who: string | null; view: string; delta: number; asks: number; hi: number; working: number; blocked: number; failed: number; br: number; orders: number; pct: number; agents: number }
+
+function useItems(): Item[] {
+  const E = useEngine(), M = E.M, sim = M.sim;
+  // the sim is read once per (sim version, reader, sheet), however often the store notifies
+  const memo = useRef<{ sim: typeof sim; key: string; c: Counts } | null>(null);
+  const s = useBp((s): Counts => {
+    const key = s.simV + '|' + s.who + '|' + s.view + '|' + s.delta;
+    if (memo.current?.key === key && memo.current.sim === sim) return memo.current.c;
+    let c: Counts = { who: s.who, view: s.view, delta: s.delta, asks: 0, hi: 0, working: 0, blocked: 0, failed: 0, br: 0, orders: 0, pct: 0, agents: 0 };
+    if (sim.has) {
+      const q = sim.queueFor(s.who, s.view), mine = sim.live ? oncePerProposal(q.all) : s.who ? q.mine : q.all, t = sim.tallyStatus();
+      c = { ...c, asks: mine.length, hi: mine.filter((d) => d.urg === 'high').length, working: t.working, blocked: t.blocked, failed: t.failed, br: sim.orders.filter((o) => o.vf.length).length, orders: sim.orders.length, pct: sim.live ? 0 : Math.round((100 * sim.spend()) / SPEND_CAP), agents: sim.agents.length };
+    }
+    memo.current = { sim, key, c };
+    return c;
+  }, shallowEqual);
+  // the Agents figure: working agents plus running scans that are not already agents on the plan (useRunningScans)
+  const scans = useRunningScans();
+  const out: Item[] = [];
+  out.push({ k: 'find', label: 'Find', title: 'Find a feature', glyph: G.find, n: null, tone: 'ink' });
+  if (sim.has) {
+    const first = s.who ? pname(M.P, s.who).split(' ')[0] : '';
+    out.push({
+      k: 'asks', label: sim.live ? 'Review' : 'Asks', title: sim.live ? 'Proposals to review' : s.who ? 'Waiting for ' + first : 'Decisions waiting',
+      glyph: G.asks, n: s.asks, n2: s.hi, n2title: s.hi + ' urgent', tone: s.asks ? 'amber' : 'ink', sub: s.who ? 'for ' + first : undefined,
+    });
+    out.push({ k: 'swarm', label: 'Agents', title: 'Agents · ' + s.working + ' working of ' + s.agents + (scans ? ' · ' + scans + ' scan' + (scans === 1 ? '' : 's') + ' running' : ''), glyph: G.swarm, n: s.working + scans, n2: s.blocked + s.failed, n2title: s.blocked + ' blocked, ' + s.failed + ' failed', tone: 'mint' });
+    if (s.orders || !sim.live) out.push({ k: 'orders', label: 'Orders', title: 'Standing orders · ' + s.br + ' of ' + s.orders + ' breached', glyph: G.orders, n: s.br, tone: s.br ? 'red' : 'ink', sub: 'of ' + s.orders });
+    if (!sim.live) out.push({ k: 'steer', label: 'Steer', title: 'Steer the swarm · spend ' + s.pct + '% of the cap', glyph: G.steer, n: s.pct + '%', tone: s.pct >= 100 ? 'red' : s.pct >= 80 ? 'amber' : 'ink' });
+  }
+  const sh = sheetOf(M.P, s.view);
+  out.push({ k: 'plan', label: 'Plan', title: 'Plan · sheet ' + sh.no, glyph: G.plan, n: sh.no, tone: 'ink' });
+  out.push({ k: 'view', label: 'View', title: 'View · window, modes, reader, health', glyph: G.view, n: s.delta === 1 ? '24h' : s.delta + 'd', tone: 'ink', sub: s.who ? pname(M.P, s.who).split(' ')[0] : undefined });
+  return out;
+}
+
+const RailItem = memo(function RailItem({ it, on, idx }: { it: Item; on: boolean; idx: number }) {
+  const E = useEngine(), reduce = useReducedMotion();
+  // one subtle pulse when the main figure moves (at most every 3 s: a simulated swarm moves all the time)
+  const [pulse, setPulse] = useState(0);
+  const last = useRef(it.n), lastAt = useRef(0);
+  useEffect(() => {
+    if (last.current === it.n) return;
+    last.current = it.n;
+    const now = performance.now();
+    if (reduce || now - lastAt.current < 3000) return;
+    lastAt.current = now; setPulse((p) => p + 1);
+  }, [it.n, reduce]);
+  // the name states each figure by meaning (label first, for voice control), from the target values so it never churns during a count tween
+  const name = it.label + (it.n !== null ? ': ' + it.n : '') + (it.sub ? ' ' + it.sub : '') + (it.n2 ? ', ' + (it.n2title ?? it.n2) : '');
+  return (
+    <button type="button" className={'ri t-' + it.tone + (on ? ' on' : '')} data-k={it.k} data-idx={idx} aria-expanded={on} aria-controls={on ? 'flyout' : undefined} aria-label={name} title={it.title + (it.k === 'find' ? ' ( / )' : it.k === 'view' ? ' ( P )' : '')}
+      onClick={() => E.setDockTab(it.k)}>
+      {pulse > 0 && <motion.span key={pulse} className="pl" aria-hidden="true" initial={{ opacity: 0.55, scale: 0.92 }} animate={{ opacity: 0, scale: 1.08 }} transition={{ duration: 0.8, ease: 'easeOut' }} />}
+      <span className="g">{it.glyph}{it.n2 ? <b className="n2" title={it.n2title}>{it.n2}</b> : null}</span>
+      {it.n !== null ? <span className="n">{typeof it.n === 'number' ? <Count n={it.n} /> : it.n}</span> : <span className="n kb">/</span>}
+      <span className="lb">{it.label}</span>
+      {it.sub && <span className="sb">{it.sub}</span>}
+    </button>
+  );
+}, (a, b) => a.on === b.on && a.idx === b.idx && shallowEqual(a.it, b.it));
+
+/** Find, the one classic flyout, created once: the flyout bails out of re-rendering it. The others are wide (rail/wide). */
+const FIND = <FindPanel />;
+
+export function Dock() {
+  const E = useEngine(), sim = E.M.sim, reduce = useReducedMotion();
+  const s = useBp((s) => ({ dtab: s.dtab, hidden: s.dockHidden }), shallowEqual);
+  const items = useItems();
+  const nav = useRef<HTMLElement>(null), fly = useRef<HTMLElement>(null);
+  const open = s.dtab && items.some((i) => i.k === s.dtab) ? s.dtab : null, it = items.find((i) => i.k === open);
+  const wide = isWide(open);
+
+  // `/` opens Find (and shows the rail if it was hidden); a second `/` refocuses the box
+  useEffect(() => {
+    E.focusSearch = () => {
+      if (E.S.dockHidden) E.toggleDock(true);
+      if (E.S.dtab !== 'find') E.setDockTab('find');
+      else { const q = document.getElementById('q') as HTMLInputElement | null; q?.focus(); q?.select(); }
+    };
+    return () => { E.focusSearch = () => {}; };
+  }, [E]);
+  // a click on the plan closes the flyout
+  useEffect(() => {
+    if (!open) return;
+    const down = (e: PointerEvent) => { if ((e.target as Element | null)?.closest?.('.bp-map')) E.setDockTab(null); };
+    document.addEventListener('pointerdown', down, true);
+    return () => document.removeEventListener('pointerdown', down, true);
+  }, [E, open]);
+  // closing hands focus back to the item that opened it (when focus was inside the flyout)
+  const prevOpen = useRef(open);
+  useLayoutEffect(() => {
+    const was = prevOpen.current; prevOpen.current = open;
+    if (was && !open) {
+      const a = document.activeElement;
+      if (!a || a === document.body || fly.current?.contains(a)) nav.current?.querySelector<HTMLButtonElement>(`[data-k="${was}"]`)?.focus({ preventScroll: true });
+    }
+  }, [open]);
+
+  // opening (or switching) a panel from the rail hands focus to the panel body, the mirror of the close above: without it a
+  // keyboard reader Tabs past every remaining rail button to reach what they just opened. A panel that takes its own focus
+  // (Find's autoFocus input) is left alone - focus is only moved when it is still on the rail.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const a = document.activeElement;
+    if (a && nav.current?.contains(a)) fly.current?.querySelector<HTMLElement>('.fb')?.focus({ preventScroll: true });
+  }, [open]);
+
+  // plan overlays keep clear of the flyout by its real width (a wide one is up to three times the classic)
+  useLayoutEffect(() => {
+    const el = fly.current;
+    if (!el || typeof ResizeObserver === 'undefined') { setFlyoutWidth(0); return; }
+    const ro = new ResizeObserver(() => setFlyoutWidth(el.offsetWidth));
+    ro.observe(el); setFlyoutWidth(el.offsetWidth);
+    return () => { ro.disconnect(); setFlyoutWidth(0); };
+  }, [open, wide]);
+
+  const onNavKey = (e: React.KeyboardEvent) => {
+    const bs = Array.from(nav.current?.querySelectorAll<HTMLButtonElement>('button.ri') ?? []);
+    const i = bs.indexOf(document.activeElement as HTMLButtonElement);
+    let j = -1;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') j = (i + 1) % bs.length;
+    else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') j = (i - 1 + bs.length) % bs.length;
+    else if (e.key === 'Home') j = 0;
+    else if (e.key === 'End') j = bs.length - 1;
+    if (j < 0) return;
+    e.preventDefault(); e.stopPropagation();
+    bs[j]?.focus();
+  };
+
+  const asks = open === 'asks';
+  return (
+    <>
+      <motion.nav id="rail" ref={nav} aria-label={'Rail: ' + items.map((x) => x.label.toLowerCase()).join(', ')} aria-orientation="vertical" onKeyDown={onNavKey}
+        initial={false} animate={s.hidden ? { x: 96, opacity: 0 } : { x: 0, opacity: 1 }} transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 320, damping: 34 }}
+        style={{ pointerEvents: s.hidden ? 'none' : 'auto' }} inert={s.hidden || undefined}>
+        {items.map((x, i) => <RailItem key={x.k} it={x} idx={i} on={open === x.k} />)}
+        <span className="sp" />
+        <button id="dhide" type="button" aria-label="Hide rail" title="Hide / show rail ( \ )" onClick={() => E.toggleDock(false)}>⟩</button>
+      </motion.nav>
+      {s.hidden && <button id="dshow" type="button" aria-label="Show rail" title="Show rail ( \ )" onClick={() => E.toggleDock(true)}>⟨</button>}
+      <AnimatePresence>
+        {open && it && !s.hidden && (
+          <motion.section id="flyout" key="flyout" ref={fly} role="region" aria-labelledby="flyout-h" data-k={open} className={wide ? 'wide' : undefined}
+            initial={reduce ? false : { opacity: 0, x: 22 }} animate={{ opacity: 1, x: 0 }} exit={reduce ? { opacity: 0, transition: { duration: 0 } } : { opacity: 0, x: 16, transition: { duration: 0.14 } }}
+            transition={{ type: 'spring', stiffness: 420, damping: 36 }}>
+            <header className={'fh t-' + it.tone}>
+              <span className="g">{it.glyph}</span>
+              <h2 id="flyout-h">{it.title}</h2>
+              <button type="button" className="x" aria-label="Close panel · Esc" title="Close ( Esc )" onClick={() => E.setDockTab(null)}>Esc</button>
+              {asks && sim.has && <MorningButton />}
+            </header>
+            <div className={'fb' + (reduce ? ' still' : '')} key={open} tabIndex={-1}>{wide ? <WideBody k={open} /> : FIND}</div>
+          </motion.section>
+        )}
+      </AnimatePresence>
+    </>
+  );
+}

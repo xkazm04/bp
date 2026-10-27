@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Draws Kettle's sample screenshots: public/sample-shots/<item>-<phase>-<theme>.svg, 1600x900, for every sample release
-// item that has a screen (src/lib/model/train-sim.ts SAMPLE_ITEMS). Each is a plain app screen of the Kettle feature (a
+// item that has a screen (packages/core/src/model/train-sim.ts SAMPLE_ITEMS). Each is a plain app screen of the Kettle feature (a
 // header, a nav, a few panels, text at 14-16 px) with a clear SAMPLE SCREEN stamp; an item's after differs from its
 // before only by the state the item designed (an error banner with its action, a disabled button with its reason), so
 // the compare panel's slider, blink and change map have a small, real, localised difference to show. An item whose change
@@ -10,10 +10,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { NAV, SAMPLE_ITEMS, screenTexts, shotFile } from '../src/lib/model/train-sim.ts';
+import { NAV, SAMPLE_ITEMS, screenTexts, shotFile } from '../packages/core/src/model/train-sim.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const OUT = path.join(ROOT, 'public');
+const OUT = path.join(ROOT, 'apps/web/public');
 const W = 1600, H = 900, MAX_BYTES = 20 * 1024;
 
 const THEMES = {

@@ -1,0 +1,57 @@
+// GET /api/products/[slug]/shots/[...path]: a screenshot from the product's store, by
+// its path under `<store>/shots`. A Shot row's `path` is relative to the store dir
+// (`shots/<run>/<feature>-<theme>-<size>.png`); its leading `shots/` may be kept or dropped in the URL.
+// Anything that would resolve outside `<store>/shots` is refused with 403: `..`, `.`, empty, absolute or
+// drive segments, separators smuggled in an encoded segment (`..%2F..`), NUL, and symlinks pointing out.
+import { unknownProduct } from '@bp/core/server/products.server';
+import fs from 'node:fs';
+import path from 'node:path';
+import { findProduct, storeDir } from '@bp/core/server/products.server';
+import { localHost } from '@bp/core/scan/local-only';
+
+const TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' };
+const BAD_SEGMENT = /[\\/:\u0000]/;
+
+// The run id in the path makes a shot as content-addressed as a commit sha (commits/[sha]/route.ts: "a commit never
+// changes", max-age=3600), so it takes the same ceiling: a compare panel reopened after a minute would otherwise refetch
+// every pair. A store that rewrote a file in place under the same run id would serve it stale for up to an hour.
+const IMMUTABLE = 'private, max-age=3600';
+
+const forbidden = () => Response.json({ error: 'path outside the shots directory' }, { status: 403 });
+
+/** The file under `root` that `segs` names, or null when it would leave `root` (checked again after symlinks). */
+function within(root: string, segs: string[]): string | null {
+  const full = path.resolve(root, ...segs), rel = path.relative(root, full);
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return null;
+  return full;
+}
+
+export async function GET(req: Request, { params }: { params: Promise<{ slug: string; path: string[] }> }): Promise<Response> {
+  const denied = localHost(req);
+  if (denied) return Response.json({ error: denied }, { status: 403 });
+  const { slug, path: segs } = await params;
+  const p = findProduct(slug);
+  if (!p) return unknownProduct(slug);
+  if (!segs?.length || segs.some((s) => !s || s === '.' || s === '..' || BAD_SEGMENT.test(s) || path.isAbsolute(s))) return forbidden();
+  const root = path.join(storeDir(p), 'shots');
+  // A full Shot.path (`shots/...`) is accepted too: try it as given, then without the leading `shots`.
+  const tries = [segs]; if (segs[0] === 'shots' && segs.length > 1) tries.push(segs.slice(1));
+  let file: string | null = null;
+  for (const t of tries) {
+    const f = within(root, t);
+    if (!f) return forbidden();
+    if (fs.existsSync(f)) { file = f; break; }
+  }
+  if (!file) return Response.json({ error: 'no such shot' }, { status: 404 });
+  // Symlinks: the real file must still sit under the real shots directory.
+  let real: string;
+  try { real = fs.realpathSync(file); const rel = path.relative(fs.realpathSync(root), real); if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return forbidden(); }
+  catch { return Response.json({ error: 'no such shot' }, { status: 404 }); }
+  const type = TYPES[path.extname(real).toLowerCase()];
+  if (!type) return Response.json({ error: 'not an image' }, { status: 415 });
+  let st: fs.Stats;
+  try { st = fs.statSync(real); } catch { return Response.json({ error: 'no such shot' }, { status: 404 }); }
+  if (!st.isFile()) return Response.json({ error: 'no such shot' }, { status: 404 });
+  const bytes = fs.readFileSync(real);
+  return new Response(new Uint8Array(bytes), { headers: { 'content-type': type, 'content-length': String(bytes.length), 'cache-control': IMMUTABLE } });
+}

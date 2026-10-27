@@ -1,5 +1,5 @@
 // The one fixture gate (check:standard-fixtures delegates here). Holds the validator and the evaluator to what docs/standard/app-structure-v3.md §12 says the fixtures in
-// docs/standard/schema/fixtures/ do: the valid ones pass, each invalid one fails FOR ITS STATED REASON, and
+// packages/schema/schema/fixtures/ do: the valid ones pass, each invalid one fails FOR ITS STATED REASON, and
 // valid-applies-when.json evaluates to the healths the spec lists. Without this, a validator change that
 // drops an error (or the evaluator changing precedence) passes every other gate.
 // Run: node scripts/check-fixtures.ts  (Node's type stripping; no build step). Exit 1 when any expectation fails.
@@ -7,21 +7,28 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { explain, lensHealth, rollupHealth } from '../src/lib/standard/health.ts';
-import { loadStructure } from '../src/lib/standard/load.ts';
-import type { AppStructure, Health } from '../src/lib/standard/types.ts';
+import { explain, lensHealth, rollupHealth } from '../packages/core/src/standard/health.ts';
+import { loadStructure } from '../packages/core/src/standard/load.ts';
+import { blankComments } from './lib/source.ts';
+import type { AppStructure, Health } from '../packages/core/src/standard/types.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const FIX = 'docs/standard/schema/fixtures';
+const FIX = 'packages/schema/schema/fixtures';
+// the default run validates every built-in and every custom lens manifest; count them rather than pin a number
+const LENS_FILES = ['docs/standard/lenses', 'docs/standard/lenses-custom']
+  .reduce((n, d) => n + fs.readdirSync(path.join(ROOT, d)).filter((f) => f.endsWith('.json')).length, 0);
 const VALIDATOR = path.join(ROOT, 'scripts/validate-structure.mjs');
 
 let held = 0;
 const failures: string[] = [];
+const reached = new Set<number>(); // validator `.error(` source lines the RUNS below trip
 const expect = (ok: boolean, what: string) => { if (ok) held++; else failures.push(what); };
 
 // ------------------------------------------------------------------ the validator (spec §12 "Fixtures")
 // [args, expected exit code, texts the output must contain (the stated reasons, not just any failure);
-// a text starting with "!" must be ABSENT]. Each new validator rule has a fixture here that trips it.
+// a text starting with "!" must be ABSENT].
+// The sites are counted below (BP_VALIDATE_SITES makes the validator print the source line of each `.error(` it reaches):
+// a rule dropped from the validator, or added without a fixture, turns the "validator error sites" expectation red.
 const VALID = `${FIX}/valid-map.json`, GAPS = `${FIX}/warn-validator-gaps.json`;
 const RUNS: [string[], 0 | 1, ...string[]][] = [
   [[VALID, '--events', `${FIX}/valid-map.events.jsonl`], 0, '2 of 2 valid'],
@@ -44,10 +51,29 @@ const RUNS: [string[], 0 | 1, ...string[]][] = [
   [[`${FIX}/valid-steps-lens.json`], 0, '1 of 1 valid'],
   [[`${FIX}/invalid-steps-yields.json`], 1, 'scan step 1 yields "leadsLanded", which is not a numeric metric field'],
   [[VALID, GAPS, '--events', `${FIX}/valid-map.events.jsonl`], 1, '--events is checked against one map, but 2 maps were given'],
-  [[], 0, 'com.kettle.cost.json (lens-manifest/1)', '8 of 8 valid'],
+  // the semantic half, which no schema can express: references resolve, keys are unique, facet values fit their fields, a
+  // lens entry agrees with its manifest. One map trips every such rule; each text below is the message of one error site.
+  [[`${FIX}/invalid-references.json`], 1,
+    'group name "G" appears more than once', 'context name "ctx" appears more than once', 'domain slug "dom" appears more than once', 'capability slug "dom.cap" appears more than once',
+    'feature slug "dup-feature" appears more than once', 'milestone slug "ms" appears more than once', 'KPI slug "k1" appears more than once', 'lens id "com.example.facts" appears more than once',
+    'capability "orphan.cap": domain "no-such-domain" is not in domains[]', 'capability "no.such.cap" is not in capabilities[]', 'context "no-such-context" is not in contexts[]',
+    'primary_context "no-such-primary" is not in contexts[]', 'milestone "no-such-milestone" is not in milestones[]', 'depends_on names itself', 'depends_on "no-such-dep" is not in features[]',
+    'blocked_by "no-such-blocker" is not in features[]', 'variation slug "v1" appears more than once', 'scope feature "no-such-feature" is not in features[]',
+    'scope context "no-such-ctx" is not in contexts[]', 'scope group "no-such-group" is not in groups[]', 'field key "dup" is declared twice', 'field "span" has min > max',
+    'is bound to KPI "no-such-kpi", which is not in kpis[]', 'binds to feature stage, so it must be an enum or a string', 'applies_when names unknown field "ghost"',
+    'presentation.evidence names unknown field "ghost"', 'presentation.measures names unknown field "ghost"', 'rollup weighs by "owner", which is not numeric',
+    'presentation.measures "owner" must be a number or an ordered enum', 'scan step 1 is a judgement, but the lens has no numeric metric field to fill',
+    'rollup weighs by unknown field "nowhere"', 'a judgement scan needs a numeric metric field to fill', 'manifest id is "com.example.notmine"',
+    'entry version 9.9.9 but manifest version 0.1.0', 'facets: "ghost-feature" is not in features[]', 'values.count: "three" is not a number (integer)',
+    'values.ratio: 120 is not a percent (0..100)', 'values.flag: "yes" is not a boolean', 'values.mode: "c" is not one of: a, b', 'values.due: "tomorrow" is not a YYYY-MM-DD date',
+    'values.note: 7 is not a string', 'values.cap: 9 is above max 3', 'value "nope" is not a field of lens "com.example.facts"'],
+  [['--events', `${FIX}/invalid-event-not-json.events.jsonl`], 1, 'line 2: not JSON ('],
+  [[`${FIX}/malformed-not-json.json`], 1, 'not readable JSON:'],
+  [[], 0, 'com.kettle.cost.json (lens-manifest/1)', `${LENS_FILES} of ${LENS_FILES} valid`],
 ];
 for (const [args, code, ...texts] of RUNS) {
-  const r = spawnSync(process.execPath, [VALIDATOR, ...args], { cwd: ROOT, encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [VALIDATOR, ...args], { cwd: ROOT, encoding: 'utf8', env: { ...process.env, BP_VALIDATE_SITES: '1' } });
+  for (const m of r.stdout.matchAll(/^@SITE (\d+)$/gm)) reached.add(Number(m[1]));
   const name = path.basename(args.find((a) => a.startsWith(FIX)) ?? '(default run)');
   expect(r.status === code, `${name}: validator exit ${r.status}, expected ${code}`);
   for (const t of texts) {
@@ -58,6 +84,18 @@ for (const [args, code, ...texts] of RUNS) {
 // Every fixture on disk is covered above: a new fixture without an expectation is a failure, not a pass.
 const covered = new Set(RUNS.flatMap(([a]) => a.filter((x) => x.startsWith(FIX)).map((x) => path.basename(x))));
 for (const f of fs.readdirSync(path.join(ROOT, FIX))) expect(covered.has(f), `${f}: a fixture with no expectation in scripts/check-fixtures.ts`);
+
+// Every `.error(` site of the validator, enumerated from its source (comments blanked, lines kept), is reached by a run above.
+// Only two are not: the built-in run's file-name checks, which fire only when a shipped lens manifest disagrees with its file name.
+{
+  const lines = blankComments(fs.readFileSync(VALIDATOR, 'utf8')).split(String.fromCharCode(10));
+  const sites = lines.flatMap((l, i) => (/\.error\(/.test(l) ? [i + 1] : []));
+  const exempt = (l: string) => /must match its file name|needs a reverse-DNS id such as/.test(l);
+  expect(sites.length >= 30, `validator error sites: found only ${sites.length} in validate-structure.mjs (the \`.error(\` matcher stopped biting?)`);
+  expect(reached.size >= 30, `validator error sites: only ${reached.size} reported by the runs (BP_VALIDATE_SITES stopped printing?)`);
+  for (const n of sites) expect(reached.has(n) || exempt(lines[n - 1]), `validate-structure.mjs:${n}: an error site no fixture trips: ${lines[n - 1].trim().slice(0, 120)}`);
+  console.log(`validator error sites reached by the fixtures: ${sites.filter((n) => reached.has(n)).length} of ${sites.length}`);
+}
 
 // ------------------------------------------------------------------ the evaluator (valid-applies-when.json)
 // "Read on any date": the override on loyalty-points runs to 2099, so a far date and today agree.

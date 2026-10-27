@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://app-structure.example/schema/structure-envelope-1.schema.json",
+  "title": "Structure envelope v1",
+  "description": "GET /api/products/{slug}/structure: the product's app-structure map, its events and their fingerprint. The same shape answers a live product and the built-in Kettle sample.",
+  "type": "object",
+  "required": ["structure", "events", "rev"],
+  "additionalProperties": false,
+  "properties": {
+    "structure": { "$ref": "app-structure-3.schema.json", "description": "The map, as app-structure v3." },
+    "events": { "type": "string", "description": "events.jsonl as text, one app-structure-event per line; '' when the product has none." },
+    "rev": { "type": "string", "minLength": 1, "description": "The fingerprint of the map and the events; the SSE `map` event carries the same value when either changes, and the plan route answers the same rev." }
+  }
+}

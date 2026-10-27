@@ -19,7 +19,7 @@ tree: context groups, contexts, and features linked across contexts) and adds:
 
 An append-only events log beside the file holds history. Lenses are not built into the format: each
 one is a manifest that declares its fields, a health rule written as JSON data (no code), and how it
-should be drawn. Six built-in lenses ship in a catalog, and a project can add its own or switch any
+should be drawn. Seven built-in lenses ship in a catalog, and a project can add its own or switch any
 of them off.
 
 ## 2. What exists today
@@ -28,7 +28,7 @@ The evidence for this section comes from three read-only scouts over the Persona
 
 | | Personas today | Blueprint today (Kettle sample) |
 |---|---|---|
-| File | `context-map.json` v2. The scan writes it from the database and rewrites the whole file each time. A git-tracked file marked `"declared": true` is read back in and never overwritten. | `src/data/kettle.json` (sample data) |
+| File | `context-map.json` v2. The scan writes it from the database and rewrites the whole file each time. A git-tracked file marked `"declared": true` is read back in and never overwritten. | `packages/core/data/kettle.json` (sample data) |
 | Code tree | `groups[]` and `contexts[]` (219 contexts in 16 groups for Personas itself) | none |
 | Product tree | none | 13 domains, 29 capabilities |
 | Feature | a `dev_use_cases` row: slug, kind, tier, status `active` or `archived`, linked to many contexts. **No stage, no health, no dimensions, no history.** | stage (7 values), priority, milestone, dependencies, a 6-lens object, health |
@@ -71,8 +71,8 @@ These conventions were decided directly, without a question, because the evidenc
 - **Absent values:** an unknown value is **omitted**, never written as `null` or `0` ("null is
   never zero", as in Personas KPIs). A feature with no facet for a lens reads as `unmeasured`. A
   facet with `"applicable": false` reads as `na`.
-- **Lens ids:** the six built-ins use short ids (`business`, `design`, `development`, `operations`,
-  `security`, `quality`). Custom lenses must use reverse-DNS ids (`com.kettle.cost`), so they can
+- **Lens ids:** the seven built-ins use short ids (`business`, `design`, `development`, `operations`,
+  `security`, `quality`, `performance`). Custom lenses must use reverse-DNS ids (`com.kettle.cost`), so they can
   never take a built-in's name. This is the connector rule, applied to ids.
 - **Switching a lens off is not deleting it.** `lenses[].enabled: false` hides the lens, and its
   facets are kept. Removing the entry orphans its facets, and any reader that rewrites the file
@@ -261,7 +261,7 @@ Weekly snapshots and "what changed" are worked out from this log. Readers ignore
 - A v3 file is still a valid v2 declaration for code-tree readers, because `groups[]` and
   `contexts[]` are unchanged and unknown keys are ignored.
 - A v3 reader that receives v2 (no `$schema`, `version: 2`) maps `use_cases[]` to `features[]` with
-  no stage (shown as stage unknown, never guessed). It also treats the six built-in lenses as
+  no stage (shown as stage unknown, never guessed). It also treats the seven built-in lenses as
   available but unmeasured.
 - Writers keep these intact: `extensions`, facets for lenses they don't know, and manifests with
   `source: "project"`. A Personas rescan may regenerate `groups[]`, `contexts[]` and `stats` only. It
@@ -272,9 +272,9 @@ Weekly snapshots and "what changed" are worked out from this log. Readers ignore
 
 | WP | Builder session | Files | Done when |
 |---|---|---|---|
-| **1. Standard** (Director, first, committed before the others) | `docs/standard/app-structure-v3.md` (the spec), `docs/standard/schema/app-structure-3.schema.json`, `docs/standard/schema/lens-manifest-1.schema.json`, `docs/standard/lenses/*.json` (the six built-ins), `scripts/validate-structure.mjs` | The schemas validate the six manifests. The validator fails on an unknown stage, a bad lens id, or a condition with two operators. The spec owns the doc surface. |
-| **2. Kettle as v3** | `scripts/kettle-to-v3.ts`, `src/data/kettle.app-structure.json`, `src/data/kettle.events.jsonl` | All 133 features, 13 domains, 29 capabilities, 4 milestones, and **KPIs derived from the sample**. The six built-in lenses plus one custom lens, `com.kettle.cost` (monthly cost, SMS spend), to prove a lens is a plugin. The events log rebuilds the 27 weekly snapshots exactly. The file validates. |
-| **3. Blueprint adoption** | `src/lib/standard/` (types, loader for v3 and v2, rule evaluator, rollup), `src/lib/model/*`, `src/engine/lens/*`, `src/components/*` that read lens lists, and `src/variants/subtle/` | The `LensId` union and the `LENSES` constant are gone. Tabs, legend, sheet, queue emphasis and the General strip come from `lenses[]` where `enabled` is true. The subtle variant draws any lens from its manifest's `glyph`, `line` and `measures`. Health comes only from the rules. `?lenses=-security` and an enabled custom lens both work. Type checks, the build and frame time are unchanged. |
+| **1. Standard** (Director, first, committed before the others) | `docs/standard/app-structure-v3.md` (the spec), `packages/schema/schema/app-structure-3.schema.json`, `packages/schema/schema/lens-manifest-1.schema.json`, `docs/standard/lenses/*.json` (the six built-ins), `scripts/validate-structure.mjs` | The schemas validate the six manifests. The validator fails on an unknown stage, a bad lens id, or a condition with two operators. The spec owns the doc surface. |
+| **2. Kettle as v3** | `scripts/kettle-to-v3.ts`, `packages/core/data/kettle.app-structure.json`, `packages/core/data/kettle.events.jsonl` | All 133 features, 13 domains, 29 capabilities, 4 milestones, and **KPIs derived from the sample**. The six built-in lenses plus one custom lens, `com.kettle.cost` (monthly cost, SMS spend), to prove a lens is a plugin. The events log rebuilds the 27 weekly snapshots exactly. The file validates. |
+| **3. Blueprint adoption** | `packages/core/src/standard/` (types, loader for v3 and v2, rule evaluator, rollup), `packages/core/src/model/*`, `apps/web/src/engine/lens/*`, `apps/web/src/components/*` that read lens lists, and `apps/web/src/variants/subtle/` | The `LensId` union and the `LENSES` constant are gone. Tabs, legend, sheet, queue emphasis and the General strip come from `lenses[]` where `enabled` is true. The subtle variant draws any lens from its manifest's `glyph`, `line` and `measures`. Health comes only from the rules. `?lenses=-security` and an enabled custom lens both work. Type checks, the build and frame time are unchanged. |
 | **4. Personas adoption brief** (document only) | `docs/standard/personas-adoption.md` | Covers the changes in the Personas repo: v3 export and merge, a v3 declaration reader, a `stage` column on `dev_use_cases` plus events, a lens catalog modelled on connectors (`scripts/lenses/builtin/*.json`, a `lens_definitions` table with `is_builtin`), facet rows shaped like council verdicts, a `lens` tag on `dev_kpis`, and a v3-aware ai-registry `build-registry-map`. It is ready to hand to a spark in that repo. |
 
 - **Order:** WP1 first, then WP2 and WP3 in parallel (WP3 codes against the WP1 types and a stub

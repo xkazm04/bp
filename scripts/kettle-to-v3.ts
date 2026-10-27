@@ -1,7 +1,7 @@
-// Converts the Kettle sample (src/data/kettle.json) into the app-structure v3 standard (3.1 additions:
+// Converts the Kettle sample (packages/core/data/kettle.json) into the app-structure v3 standard (3.1 additions:
 // metric values on about 30 features, and the invoice-ocr feature with experience, core and variations):
-//   src/data/kettle.app-structure.json   the map (context-map.json v3)
-//   src/data/kettle.events.jsonl         its append-only events log
+//   packages/core/data/kettle.app-structure.json   the map (context-map.json v3)
+//   packages/core/data/kettle.events.jsonl         its append-only events log
 // Run: node scripts/kettle-to-v3.ts  (Node's type stripping; no build step). Deterministic: the only
 // "random" values come from a PRNG seeded by record slugs, so every run writes the same bytes.
 //
@@ -14,18 +14,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { seeded } from './lib/prng.ts';
-import { lensHealth } from '../src/lib/standard/health.ts';
+import { writeOrCheck } from './lib/fixture-bytes.ts';
+import { lensHealth } from '../packages/core/src/standard/health.ts';
 import type {
   AppStructure, Capability, Context, Domain, Facet, FacetValues, Feature, FeatureBoundField, Group, Health, Kpi, LensEntry,
   LensManifest, Milestone, Stage, StructureEvent,
-} from '../src/lib/standard/types.ts';
-import { BUILTIN_LENSES } from '../src/lib/standard/catalog.ts';
+} from '../packages/core/src/standard/types.ts';
+import { BUILTIN_LENSES } from '../packages/core/src/standard/catalog.ts';
 import { FLATTEN, type LensObject } from './sample-facets.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p: string): unknown => JSON.parse(fs.readFileSync(path.join(ROOT, p), 'utf8'));
-const OUT_MAP = 'src/data/kettle.app-structure.json';
-const OUT_EVENTS = 'src/data/kettle.events.jsonl';
+const OUT_MAP = 'packages/core/data/kettle.app-structure.json';
+const OUT_EVENTS = 'packages/core/data/kettle.events.jsonl';
 /** The built-in ids come from the catalog (the one list): every one gets a lens entry in the map. */
 const BUILTIN: readonly string[] = BUILTIN_LENSES.map((m) => m.id);
 const COST_LENS = 'com.kettle.cost';
@@ -59,7 +60,7 @@ interface Sample {
   lenses: string[];
 }
 
-const kettle = read('src/data/kettle.json') as Sample;
+const kettle = read('packages/core/data/kettle.json') as Sample;
 /** The built-ins the sample carries a lens object for. A later built-in (performance) has none: its values come
  *  from the synthetic scan below or nowhere, and its health is not compared with a stored one. */
 const SAMPLED = BUILTIN.filter((id) => kettle.lenses.includes(id)) as SampleLens[];
@@ -247,7 +248,6 @@ const ocrFeature: Feature = {
   ],
 };
 features.splice(features.findIndex((f) => f.id === 'PAY-16') + 1, 0, ocrFeature);
-const featureBySlug = new Map(features.map((f) => [f.slug, f]));
 
 // ----------------------------------------------------------------------------------------- facets
 // The flattening (scalars, FLATTEN) is scripts/sample-facets.ts, shared with scripts/check-builtin-health.ts.
@@ -515,7 +515,7 @@ const map: AppStructure = {
   generator: 'kettle-sample',
   generated_at: AS_OF,
   declared: true,
-  provenance: { source: 'src/data/kettle.json', converter: 'scripts/kettle-to-v3.ts' },
+  provenance: { source: 'packages/core/data/kettle.json', converter: 'scripts/kettle-to-v3.ts' },
   project: { slug: 'kettle', name: kettle.product.name, description: kettle.product.tagline, kind: 'code' },
   taxonomy: {
     context_categories: ['ui', 'api', 'lib', 'data', 'test', 'config'],
@@ -622,23 +622,10 @@ const worstOf = (hs: Health[]): Health => {
 };
 
 // ----------------------------------------------------------------------------------------- write
-const OUTPUTS: [string, string][] = [[OUT_MAP, `${JSON.stringify(map, null, 2)}\n`], [OUT_EVENTS, `${eventLines.join('\n')}\n`]];
-if (process.argv.includes('--check')) {
-  // --check: regenerate in memory, diff against the committed files, write nothing.
-  const drift: string[] = [];
-  for (const [file, text] of OUTPUTS) {
-    const have = fs.readFileSync(path.join(ROOT, file), 'utf8').replace(/\r\n/g, '\n').split('\n'), want = text.split('\n');
-    const bad: string[] = [];
-    for (let i = 0; i < Math.max(have.length, want.length) && bad.length < 3; i++) {
-      if (have[i] !== want[i]) bad.push(`    line ${i + 1}\n      committed: ${(have[i] ?? '(end)').slice(0, 110)}\n      generated: ${(want[i] ?? '(end)').slice(0, 110)}`);
-    }
-    if (bad.length) drift.push(`  ${file}: ${have.length} committed lines vs ${want.length} generated\n${bad.join('\n')}`);
-  }
-  if (drift.length) { console.error(`DRIFT: the committed data is not what kettle-to-v3.ts generates:\n${drift.join('\n')}`); process.exit(1); }
-  console.log(`ok: ${OUTPUTS.map(([f]) => f).join(' and ')} reproduce exactly (as of ${AS_OF})`);
-  process.exit(0);
-}
-for (const [file, text] of OUTPUTS) fs.writeFileSync(path.join(ROOT, file), text);
+const OUTPUTS: [string, string][] = [[path.join(ROOT, OUT_MAP), `${JSON.stringify(map, null, 2)}\n`], [path.join(ROOT, OUT_EVENTS), `${eventLines.join('\n')}\n`]];
+// --check exits inside writeOrCheck (scripts/lib/fixture-bytes.ts, the one differ the four generators share):
+// it diffs and writes nothing, so the report below is skipped with it.
+writeOrCheck(OUTPUTS, process.argv.includes('--check'), `scripts/kettle-to-v3.ts (as of ${AS_OF})`);
 
 // ---------------------------------------------------------------------------------------- report
 const fmt = (t: Record<Health, number>) => HEALTHS.map((h) => `${h} ${String(t[h]).padStart(3)}`).join('  ');

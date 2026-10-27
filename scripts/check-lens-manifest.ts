@@ -9,7 +9,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkLensManifest, checkTempManifest, type TakenLook } from '../src/lib/scan/manifest-check.ts';
+import { checkLensManifest, checkTempManifest, type TakenLook } from '../packages/core/src/scan/manifest-check.ts';
+import { takenLooks } from '../packages/core/src/scan/jobs.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p: string) => JSON.parse(fs.readFileSync(path.join(ROOT, p), 'utf8')) as Record<string, any>;
@@ -22,7 +23,7 @@ const expect = (what: string, got: string | null, want: string | null) => {
   if (ok) held++; else failures.push(`${what}: got ${JSON.stringify(got)}, expected ${want === null ? 'accepted' : JSON.stringify(want)}`);
 };
 
-const steps = read('docs/standard/schema/fixtures/valid-steps-lens.json');
+const steps = read('packages/schema/schema/fixtures/valid-steps-lens.json');
 const base = () => structuredClone(steps);
 const withId = (id: string) => ({ ...base(), id });
 const proj = (m: unknown, taken?: TakenLook[]) => checkLensManifest(m, { mode: 'project', taken });
@@ -86,6 +87,21 @@ const named = base(); named.presentation.glyph = 'pulse'; named.presentation.lin
 expect('a taken name and line', proj(named, [{ glyph: 'pulse', line: 'chain' }]), 'lens look pulse + chain is already drawn');
 expect('a taken name, temporary mode too', checkLensManifest({ ...named, id: 'tmp.pulse-check' }, { mode: 'temporary', taken: [{ glyph: 'pulse', line: 'chain' }] }), 'is already drawn');
 expect('a name against a path of the same text', proj(named, [{ glyph: { path: 'pulse' }, line: 'chain' }]), null);
+// A hand-edited app-structure.json can store a presentation whose glyph is neither a name nor a { path }.
+// checkLensManifest answers null or one sentence - it never throws, or the route 500s instead of refusing - and
+// takenLooks (jobs.ts), which builds this list from the product's stored lenses, drops a glyph it cannot compare.
+const junk: TakenLook[] = [{ glyph: 7, line: 'solid' }, { glyph: { paht: 'M0 0' }, line: 'solid' }] as never;
+let threw = '';
+try { proj(base(), junk); } catch (e) { threw = (e as Error).constructor.name + ': ' + (e as Error).message; }
+expect('a malformed stored glyph is not a crash', threw || null, null);
+expect('and it does not collide with a valid manifest', threw ? 'it threw' : proj(base(), junk), null);
+const stored = [
+  { id: 'com.a.one', enabled: true, manifest: { presentation: { glyph: 7, line: 'solid' } } },
+  { id: 'com.a.two', enabled: true, manifest: { presentation: { glyph: { paht: 'M0 0' }, line: 'solid' } } },
+  { id: 'com.a.ok', enabled: true, manifest: { presentation: { glyph: 'pulse', line: 'chain' } } },
+] as never[];
+const looks = takenLooks(stored, 'com.other.new');
+expect('takenLooks keeps only comparable glyphs', looks.length === 1 && looks[0].glyph === 'pulse' ? null : `kept ${JSON.stringify(looks)}`, null);
 
 // ------------------------------------------------------------------ the built-ins' scan blocks
 // Their ids are built-in, so they pass as a project lens under a stand-in id: the check is of the scan block and fields.

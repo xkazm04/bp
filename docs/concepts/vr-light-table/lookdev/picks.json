@@ -1,0 +1,19 @@
+{
+  "$comment": "The final pick per state. log.jsonl stays append-only, so its 'file' field keeps the name each call saved under; three files were renamed afterwards (the 'savedAs' entries below). Grades are 0 to 3 against style-block.json and the art-breakdown element list.",
+  "picks": [
+    { "state": "00-hero", "file": "00-hero.jpg", "quality": "MEDIUM", "variant": "a", "seed": 1001, "generationId": "1f1ccca2-bd9f-6340-9e62-8e7b064c2b8e", "grade": 3 },
+    { "state": "01-l0-rest", "file": "01-l0-rest.jpg", "quality": "MEDIUM", "variant": "a", "seed": 2002, "generationId": "1f1ccca4-5619-6840-9547-8f9c230ee491", "grade": 2 },
+    { "state": "02-room-lifted", "file": "02-room-lifted.jpg", "savedAs": "02-room-lifted-retry.jpg", "quality": "MEDIUM", "variant": "a", "seed": 3003, "generationId": "1f1cccab-a7c8-69a0-8007-7cbe544ce463", "grade": 3 },
+    { "state": "03-scan-sweeping", "file": "03-scan-sweeping.jpg", "quality": "MEDIUM", "variant": "a", "seed": 2002, "generationId": "1f1ccca5-e8dd-66d0-9bed-3f842bdcf436", "grade": 3 },
+    { "state": "04-pins-risen", "file": "04-pins-risen.jpg", "savedAs": "04-pins-risen-retry.jpg", "quality": "MEDIUM", "variant": "b", "seed": 3003, "generationId": "1f1cccac-6924-61d0-bcf5-ed3b9f893874", "grade": 3 },
+    { "state": "05-wrist-composer", "file": "05-wrist-composer.jpg", "quality": "MEDIUM", "variant": "a", "seed": 1001, "generationId": "1f1ccca7-63d1-6250-a485-b1338347ad6d", "grade": 3 },
+    { "state": "06-wave-running", "file": "06-wave-running.jpg", "quality": "MEDIUM", "variant": "a", "seed": 2002, "generationId": "1f1ccca8-1f0f-6b70-b008-7e76fb5abe2a", "grade": 3 },
+    { "state": "07-decision-asking", "file": "07-decision-asking.jpg", "quality": "MEDIUM", "variant": "b", "seed": 2002, "generationId": "1f1ccca8-d994-6bd0-93f6-eeac091412d2", "grade": 3 },
+    { "state": "08-lamp-speaking", "file": "08-lamp-speaking.jpg", "quality": "MEDIUM", "variant": "b", "seed": 2002, "generationId": "1f1ccca9-915a-6a30-bd97-1cc46a44fdc0", "grade": 3 }
+  ],
+  "alternates": [
+    { "file": "01-l0-rest-alt.jpg", "savedAs": "01-l0-rest-retry.jpg", "quality": "MEDIUM", "variant": "a", "seed": 3003, "generationId": "1f1cccad-21be-66a0-9bda-eb95e2d3c512", "grade": 2 },
+    { "file": "02-room-lifted-alt.jpg", "savedAs": "02-room-lifted.jpg", "quality": "MEDIUM", "variant": "a", "seed": 1001, "generationId": "1f1ccca5-2f6c-6480-9309-526cfad2f74b", "grade": 2 },
+    { "file": "04-pins-risen-alt.jpg", "savedAs": "04-pins-risen.jpg", "quality": "MEDIUM", "variant": "b", "seed": 1001, "generationId": "1f1ccca6-a150-6aa0-9edf-420ba22779d2", "grade": 2 }
+  ]
+}

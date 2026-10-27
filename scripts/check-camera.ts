@@ -4,7 +4,7 @@
 // reduced motion lands a fly-to at once. Without this, a change to any of them passes every other gate
 // and shows up only as a drop landing beside the cursor.
 // Run: node scripts/check-camera.ts  (Node's type stripping; no build step). Exit 1 when any expectation fails.
-import { Camera, WheelIntent } from '../src/engine/camera.ts';
+import { Camera, WheelIntent } from '../apps/web/src/engine/camera.ts';
 
 let held = 0;
 const failures: string[] = [];

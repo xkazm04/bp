@@ -1,0 +1,307 @@
+'use client';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { motion } from 'motion/react';
+import { sheetOf, views, type BayNode, type BldNode, type RoomNode, type WingNode } from '@bp/core/model';
+import { shallowEqual, useBp, useEngine, useLive } from './hooks';
+import { ThemeToggle } from './ThemeToggle';
+import { ProjectSwitcher } from './ProjectSwitcher';
+import type { Crumb } from '@/engine/state';
+import type { LiveProduct } from '@/lib/scan/client';
+import { useProductName } from '@/lib/scan/projects';
+import { livenessWords, scanLiveness } from '@bp/core/scan/liveness';
+import { Mark } from './Symbols';
+import { useOpenCount } from './ledger/useLedger';
+import type { Engine } from '@/engine/Engine';
+import type { AppPage } from '@/engine/state';
+import './page-switch.css';
+import { GENERAL } from '@bp/core/data/types';
+
+function crumbLabel(E: ReturnType<typeof useEngine>, c: Crumb, short: boolean): string {
+  const o = E.placeById(c.t, c.id);
+  if (!o) return c.id;
+  if (c.t === 'bld') return short ? (o as BldNode).b.short : (o as BldNode).name;
+  if (c.t === 'wing') { const w = o as WingNode; return short ? w.def.letter : w.def.letter + ' · ' + w.def.name; }
+  if (c.t === 'room') { const r = o as RoomNode; return short ? r.code || r.name : r.name; }
+  return (o as BayNode).name;
+}
+
+/** Clauses the summary drops, in order, when the measured room is short: proposed/retired, being built, the feature count, live. Trouble and waiting questions go last: first as short icons + counts (level 5), then the trouble mark alone (6), then the line is hidden and its text moves to the crumb row's title (level 7). Never cut mid-word. */
+const SUM_LAST = 7;
+
+/** The place's summary line (counts, trouble, waiting questions): the only crumb part that follows the sim and the time. */
+const CrumbSum = memo(function CrumbSum({ navRef, pk }: { navRef: React.RefObject<HTMLElement | null>; pk: string }) {
+  const E = useEngine(), M = E.M;
+  const s = useBp((s) => ({ place: s.place, open: s.open, t: s.t, delta: s.delta, simV: s.simV, who: s.who, view: s.view }), shallowEqual);
+  const el = useRef<HTMLSpanElement>(null);
+  const d = useMemo(() => {
+    if (s.open) return null;
+    const last = s.place[s.place.length - 1], cur = last ? E.placeById(last.t, last.id) : null, fs = cur ? cur.feats : M.P.features;
+    const id = cur ? cur.id : 'ALL';
+    const c = M.agg.countsOf(id, fs, s.t, s.delta), now = s.t === M.P.asOf;
+    const bad = now ? M.agg.healthOf(id, fs, GENERAL).bad : 0;
+    const asks = M.sim.has && now ? M.sim.stats(fs, s.who, s.view).asks : 0;
+    return { n: fs.length, live: c.live + c.flagged, build: c.build, paper: c.paper, dep: c.dep, bad, asks };
+    // simV is the sim's version: the asks change with it
+  }, [E, M, s.place, s.open, s.t, s.delta, s.simV, s.who, s.view]);
+  // measured, not estimated: render everything, and while the line is wider than the room the flex layout leaves it, drop one tier and look again
+  const sig = pk + '|' + (d ? [d.n, d.live, d.build, d.paper, d.dep, d.bad, d.asks].join() : '');
+  const [st, setSt] = useState({ sig: '', lv: 0 });
+  const lv = st.sig === sig ? st.lv : 0;
+  useLayoutEffect(() => {
+    const n = el.current; if (!n) return;
+    if (n.scrollWidth > n.clientWidth + 1 && lv < SUM_LAST) setSt({ sig, lv: lv + 1 >= 5 && !d?.bad && !d?.asks ? SUM_LAST : lv + 1 === 6 && !(d?.bad && d?.asks) ? SUM_LAST : lv + 1 });
+    else if (st.sig !== sig) setSt({ sig, lv });
+  });
+  useEffect(() => {
+    const n = navRef.current; if (!n || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => setSt({ sig: '', lv: 0 }));
+    ro.observe(n);
+    return () => ro.disconnect();
+  }, [navRef]);
+  // hidden, the summary stays reachable: its text is the title of the crumb row
+  const text = d ? [d.n + ' features', d.live + ' live', d.build + ' being built', d.paper + ' proposed', d.dep ? d.dep + ' being retired' : '', d.bad ? d.bad + ' in trouble' : '', d.asks ? d.asks + (d.asks === 1 ? ' question' : ' questions') + ' waiting' : ''].filter(Boolean).join(' · ') : '';
+  useEffect(() => {
+    const n = navRef.current; if (!n || lv < SUM_LAST || !text) return;
+    n.title = text;
+    return () => { n.removeAttribute('title'); };
+  }, [navRef, lv, text]);
+  if (!d) return null;
+  if (lv >= SUM_LAST) return <span className="sum off" ref={el}>{text}</span>;
+  if (lv === 5 || lv === 6) {
+    // 5: both marks; 6: the trouble mark alone (questions stay in the rail's Asks counter)
+    const asks = lv === 5 || !d.bad;
+    return (
+      <span className="sum" ref={el} title={text}>
+        {d.bad > 0 && <span className="cl" role="img" aria-label={d.bad + ' in trouble'}><Mark k="cloud" w={22} h={15} /><em>{d.bad}</em></span>}
+        {asks && d.asks > 0 && <span className="cl" role="img" aria-label={d.asks + (d.asks === 1 ? ' question' : ' questions') + ' waiting'}><Mark k="wait" w={22} h={15} /><i>{d.asks}</i></span>}
+      </span>
+    );
+  }
+  const parts: React.ReactNode[] = [];
+  if (lv < 3) parts.push(<span key="n">{d.n} features</span>);
+  if (lv < 4) parts.push(<b key="l">{d.live} live</b>);
+  if (lv < 2) parts.push(<span key="b">{d.build} being built</span>);
+  if (lv < 1) { parts.push(<span key="p">{d.paper} proposed</span>); if (d.dep) parts.push(<span key="d">{d.dep} being retired</span>); }
+  const att: React.ReactNode[] = [];
+  if (d.bad) att.push(<em key="t">{d.bad} in trouble</em>);
+  if (d.asks) att.push(<i key="q">{d.asks} {d.asks === 1 ? 'question' : 'questions'} waiting</i>);
+  const all = parts.concat(att);
+  return (
+    <span className="sum" ref={el}>
+      {all.map((x, i) => <span key={i} className="cl">{i > 0 ? ' · ' : ''}{x}</span>)}
+    </span>
+  );
+});
+
+/** Room kept for the summary line beside the crumbs (it ellipsises below this). */
+const SUM_MIN = 220;
+
+const Crumbs = memo(function Crumbs() {
+  const E = useEngine(), M = E.M;
+  const place = useBp((s) => s.place);
+  const name = useProductName(M.live?.slug ?? null, M.P.name);
+  const key = place.map((c) => c.t + c.id).join('/');
+  const nav = useRef<HTMLElement>(null), full = useRef(0);
+  // parents shorten only when the full chain does not fit the header's real width: measure it once per
+  // place with full labels, then compare on every resize (`full` is always the unshortened width)
+  const [sh, setSh] = useState({ key: '', short: false });
+  const short = sh.key === key && sh.short;
+  const fit = () => { const n = nav.current; return !!n && full.current > n.clientWidth - SUM_MIN; };
+  useLayoutEffect(() => {
+    const n = nav.current; if (!n || sh.key === key) return;
+    const bs = n.querySelectorAll<HTMLElement>('button'), a = bs[0], z = bs[bs.length - 1];
+    full.current = a && z ? z.offsetLeft + z.offsetWidth - a.offsetLeft : 0;
+    setSh({ key, short: fit() });
+  });
+  useEffect(() => {
+    const n = nav.current; if (!n || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => { const v = fit(); setSh((o) => (o.key === key && o.short !== v && full.current ? { key, short: v } : o)); });
+    ro.observe(n);
+    return () => ro.disconnect();
+  }, [key]);
+  const items = [{ key: 'home', label: M.P.scale > 1 ? name + ' campus' : name, depth: 0 }].concat(
+    place.map((c, i) => ({ key: c.id, label: crumbLabel(E, c, short && i < place.length - 1), depth: i + 1 })),
+  );
+  return (
+    <nav id="crumbs" aria-label="Where you are" ref={nav}>
+      {items.map((it, i) => (
+        <span key={it.key} style={{ display: 'contents' }}>
+          {i > 0 && <span className="sep">›</span>}
+          <button type="button" className={i === items.length - 1 ? 'cur' : ''} aria-current={i === items.length - 1 ? 'location' : undefined} onClick={() => E.crumb(it.depth)} title={it.label}>
+            {it.label}
+          </button>
+        </span>
+      ))}
+      <CrumbSum navRef={nav} pk={key} />
+    </nav>
+  );
+});
+
+/**
+ * One tab per view, as its short code (BIZ, DEV, …), its question count and its digit key; the full name is the
+ * tooltip. Two rows: General and the built-in lenses on top, the project's own (custom) lenses below, both in file
+ * order. A product with no custom lens has one row of full-height tabs.
+ */
+function LensTabs() {
+  const E = useEngine(), P = E.M.P;
+  const s = useBp((s) => ({ view: s.view, simV: s.simV }), shallowEqual);
+  const open = E.M.sim.has ? E.M.sim.openDecs() : [];
+  const strip = useRef<HTMLDivElement>(null);
+  const vs = views(P);
+  const custom = new Set(P.lenses.filter((l) => l.source === 'project').map((l) => l.id));
+  const rows = [vs.filter((k) => !custom.has(k)), vs.filter((k) => custom.has(k))];
+  // roving focus (the rail's pattern): arrows/Home/End move between tabs in key order and select, and never reach the engine's walk
+  const onTabKey = (e: React.KeyboardEvent) => {
+    const i = Math.max(0, vs.indexOf(s.view)), n = vs.length;
+    const j = e.key === 'ArrowRight' ? (i + 1) % n : e.key === 'ArrowLeft' ? (i + n - 1) % n : e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : -1;
+    if (j < 0) return;
+    e.preventDefault(); e.stopPropagation();
+    e.nativeEvent.stopImmediatePropagation(); // React listens on `document` (App Router), where the engine's handler also sits
+    E.setView(vs[j]);
+    strip.current?.querySelector<HTMLElement>(`[role="tab"][data-lens="${CSS.escape(vs[j])}"]`)?.focus();
+  };
+  // a narrow window scrolls the strip (blueprint.css #tabs, the offset parent): keep the selected tab in it whatever selected it (a digit key, the page)
+  useEffect(() => {
+    const el = strip.current, b = el?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (!el || !b || el.scrollWidth <= el.clientWidth) return;
+    if (b.offsetLeft < el.scrollLeft) el.scrollLeft = b.offsetLeft;
+    else if (b.offsetLeft + b.offsetWidth > el.scrollLeft + el.clientWidth) el.scrollLeft = b.offsetLeft + b.offsetWidth - el.clientWidth;
+  }, [s.view]);
+  const tab = (k: string) => {
+    const i = vs.indexOf(k), sh = sheetOf(P, k);
+    const n = k === GENERAL ? 0 : open.filter((d) => d.lens === k).length;
+    const on = s.view === k;
+    return (
+      <button key={k} type="button" role="tab" data-lens={k} aria-selected={on} aria-label={sh.nm + (n ? ', ' + n + ' questions waiting' : '')} tabIndex={on ? 0 : -1}
+        title={sh.title + (sh.sub ? ': ' + sh.sub : '') + (i < 9 ? ' (' + (i + 1) + ')' : '') + (n ? ' · ' + n + ' questions waiting on this sheet' : '')} onClick={() => E.setView(k)}>
+        <span className="no">{sh.no}{n ? <b className="ct">{n}</b> : null}</span>
+        {i < 9 ? <span className="kb">{i + 1}</span> : null}
+        {on && <motion.span layoutId="lens-uline" className="uline" transition={{ type: 'spring', stiffness: 420, damping: 36 }} />}
+      </button>
+    );
+  };
+  return (
+    <div id="tabs" role="tablist" aria-label="Sheets (lenses)" ref={strip} onKeyDown={onTabKey} data-rows={rows[1].length ? 2 : 1}>
+      <div className="tab-row">{rows[0].map(tab)}</div>
+      {rows[1].length > 0 && <div className="tab-row custom"><span className="tab-cap" aria-hidden="true">Custom</span>{rows[1].map(tab)}</div>}
+    </div>
+  );
+}
+
+/**
+ * A live product's scan status, as the one liveness verdict words it (@bp/core/scan/liveness): `Live · <phase>` while
+ * its latest run is running, `Stalled · last update <age>` when it is `running` but silent past SILENT_MS, `Last scan
+ * failed/aborted <age>` for a bad end, `Last scan <age>` otherwise, `Offline` while the stream reconnects, `Scan store
+ * error` when the store cannot be read, `No scan store` before the skill wrote one. Kettle (no live product) shows nothing.
+ */
+const LivePill = memo(function LivePill() {
+  const live = useLive();
+  return live ? <LivePillOn L={live.product} /> : null;
+});
+/** Visually hidden, but in the live region: the announced phrase, without the relative age. */
+const PILL_SR: React.CSSProperties = { position: 'absolute', width: 1, height: 1, margin: -1, padding: 0, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0 };
+function LivePillOn({ L }: { L: LiveProduct }) {
+  const [, tick] = useState(0);
+  useEffect(() => { const t = window.setInterval(() => tick((n) => n + 1), 30000); return () => clearInterval(t); }, []);
+  // `text` is what the pill shows and may carry a relative age that moves on every tick; `say` is what the live
+  // region announces and changes only when the STATE does, so a screen reader is not told the clock every minute.
+  const { cls, text, say, title } = livenessWords(scanLiveness(L, Date.now()));
+  return (
+    <span className={'livepill ' + cls} role="status" title={title}>
+      <i />
+      <span aria-hidden="true">{text}</span>
+      <span style={PILL_SR}>{say}</span>
+    </span>
+  );
+}
+
+/** Show the drawing set or the findings ledger; the ledger covers the rail and the timeline, so their open panels close. */
+function goPage(E: Engine, p: AppPage) {
+  if (E.S.page === p) return;
+  if (p === 'ledger' && (E.S.dtab || E.S.tl)) E.patch({ dtab: null, tl: false });
+  E.setPage(p);
+}
+/**
+ * "drawing set | findings ledger": which page fills the plan area, with the open (proposed) findings as a badge. L
+ * toggles it from anywhere but a text field, a dialog that owns its keys, the open feature page and the morning watch
+ * (the engine's keys do not use L). The phone's title line carries the same switch.
+ */
+export const PageSwitch = memo(function PageSwitch() {
+  const E = useEngine();
+  const page = useBp((s) => s.page);
+  const n = useOpenCount();
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // a key the ledger (or any own-key surface) already handled is not the page switch's (L cycles the compare theme there)
+      if (e.defaultPrevented || (e.key !== 'l' && e.key !== 'L') || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      const own = t?.closest?.('[data-keys="own"]');
+      if ((own && !own.classList.contains('lg-page')) || E.S.open || E.S.morning) return;
+      e.preventDefault();
+      goPage(E, E.S.page === 'ledger' ? 'plan' : 'ledger');
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [E]);
+  return (
+    <span className="pgsw" role="group" aria-label="Page (L)">
+      <button type="button" aria-pressed={page === 'plan'} onClick={() => goPage(E, 'plan')} title="The drawing set: the plan (L)">drawing set</button>
+      <button type="button" aria-pressed={page === 'ledger'} onClick={() => goPage(E, 'ledger')} title={'Findings ledger: every lens’s findings, to select and dispatch' + (n ? ' · ' + n + ' proposed' : '') + ' (L)'}>
+        ledger{n ? <b className="ct" aria-label={n + ' proposed'}>{n}</b> : null}
+      </button>
+    </span>
+  );
+});
+
+const Switcher = memo(ProjectSwitcher);
+const Theme = memo(function Theme() { return <ThemeToggle compact />; });
+/** The title line: the only header part that follows the sheet. */
+function ProjLine() {
+  const E = useEngine(), P = E.M.P;
+  const view = useBp((s) => s.view);
+  const name = useProductName(E.M.live?.slug ?? null, P.name);
+  const sh = sheetOf(P, view);
+  const mode = E.M.live ? 'live lens scan' : 'simulated swarm';
+  const ref = useRef<HTMLDivElement>(null);
+  // Too narrow for the whole line: the mode goes first, then the project name (the h1 below repeats it), then the sheet
+  // ellipsizes, and goes once not even its number shows (the active lens tab names it too); the page switch never goes.
+  // Measured on resize and when the line's text or the switch's count changes.
+  useLayoutEffect(() => {
+    const el = ref.current, sheet = el?.querySelector<HTMLElement>('.pj-sheet'), no = el?.querySelector<HTMLElement>('.pj-no');
+    if (!el || !sheet || !no) return;
+    const fit = () => {
+      for (const f of ['0', '1', '2']) { el.dataset.fit = f; if (sheet.scrollWidth <= sheet.clientWidth) return; }
+      if (no.offsetLeft + no.offsetWidth - sheet.offsetLeft > sheet.clientWidth) el.dataset.fit = '3';
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    const sw = el.querySelector('.pgsw');
+    if (sw) ro.observe(sw);
+    return () => ro.disconnect();
+  }, [name, sh.no, sh.title, mode]);
+  return (
+    <div className="proj" ref={ref} title={`Project ${name} · sheet ${sh.no} · ${sh.title} · ${mode}`}>
+      <span className="pj-name">Project {name} · </span><PageSwitch /><span className="pj-sheet"> · <b><span className="pj-no">sheet {sh.no}</span> · {sh.title}</b></span><span className="pj-mode"> · {mode}</span>
+    </div>
+  );
+}
+
+export const Header = memo(function Header() {
+  const E = useEngine();
+  return (
+    <header id="hdr">
+      <div id="brand">
+        <ProjLine />
+        <Crumbs />
+      </div>
+      <div className="hdr-right">
+        <Switcher current={E.M.live?.slug ?? null} fallbackName={E.M.P.name} />
+        <LivePill />
+        <LensTabs />
+        <Theme />
+      </div>
+    </header>
+  );
+});

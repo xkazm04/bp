@@ -1,0 +1,89 @@
+{
+  "sha256": {
+    "evidence/table-view.jpg": "a8e255d39cf67fb60272dabaa5476a0ca65fec70cc5cf1cf7081b59f05b7b768",
+    "evidence/turnaround.jpg": "d385a6ff25f97734e5785778fb655307e96d8f9fdd6afc6477d7e45d05c4aa9d",
+    "final.glb": "b08d712b9498e563f6d9e4a746fa82195475353e2f6754dd1dfaa6302ad55ca2",
+    "textures/pin_body_basecolor.png": "3613d61dae9e037c2dd446992dd7e51dfe74fdd23e6395e011cb26fa0980b78f",
+    "textures/pin_body_normal.png": "c252aec6f818dfa77525e334ae1fbbe440cd29e87796d8c51fcc7982dd89a781",
+    "textures/pin_body_orm.png": "c8189f5b796bfefcd36d6e33240fbb8cd695c60029cf632e50848b5ad8619b15",
+    "textures/pin_tag_basecolor.png": "6389406a35bc83e0ff6415ace103bfd9e5382ff5622cb9e75d4e4c4c1cc9fcc5",
+    "textures/pin_tag_normal.png": "60bf2b27ae07c7a00ca18d0f3111d737ee3901b672847cf245333b9f26a6b968",
+    "textures/pin_tag_orm.png": "857b9f4cb97aaa18afd87fcaaebc57957d852319990f01643d5ca969d8060099"
+  },
+  "gates": {
+    "input": {
+      "pass": true,
+      "note": "procedural, no generated input",
+      "date": "2026-10-24"
+    },
+    "mesh_acceptance": {
+      "pass": true,
+      "note": "survey-pin: 2 components, 0 floaters; one UV set; pivot the bottom of the bead, where the pin meets the sheet",
+      "date": "2026-10-24"
+    },
+    "scale": {
+      "pass": true,
+      "note": "bounds 2.2 x 6.38 x 0.76 cm (x, y up, z); Table top at 95 cm (wolf-plan W3.2)",
+      "date": "2026-10-24"
+    },
+    "finishing": {
+      "pass": true,
+      "note": "one UV set, 2 material slots (pin_body, pin_tag); 6 PNG textures",
+      "date": "2026-10-24"
+    },
+    "poly_budget": {
+      "pass": true,
+      "note": "468 tris against 500",
+      "date": "2026-10-24"
+    }
+  },
+  "lynx_commit": "4fa0dd8837ec3cdb5da1734dcef4731aa67a6f0a",
+  "lynx_commit_note": "stamped by the writer: the newest commit touching this folder when the manifest was written",
+  "id": "survey-pin",
+  "class": "prop-instanced",
+  "budget_tris": 500,
+  "budget_note": "instanced",
+  "tris": 468,
+  "tris_total": 468,
+  "materials": [
+    "pin_body (amber #FFB547)",
+    "pin_tag (blank paper #F3E9D2, UE text layer goes here)"
+  ],
+  "bounds_cm": {
+    "x": 2.2,
+    "y": 6.38,
+    "z": 0.76,
+    "note": "x,z ground plane, y up (glTF)"
+  },
+  "meshes": {
+    "survey-pin": {
+      "tris": 468,
+      "vertices": 238,
+      "components": 2,
+      "floaters": 0,
+      "bounds_cm": {
+        "x": 2.2,
+        "y": 6.38,
+        "z": 0.76
+      }
+    }
+  },
+  "uv_sets": 1,
+  "pivot": "the bottom of the bead, where the pin meets the sheet; the pin stands +Y in the GLB (glTF Y-up), +Z in Blender",
+  "scale_reasoning": "Table top at 95 cm (wolf-plan W3.2). The concept (target-light-table.jpg, R-11 and R-12) draws a finding as an amber bead on the plan, a thin amber stem and a paper tag on top, so the pin is a 7.6 mm bead, a 1.2 mm stem with a collar and a 2.2 x 1.4 cm tag centred on the stem, 6.4 cm tall in all: the tag stands clear of a 3 cm furniture glyph. At a standing reach of 0.7 m the tag is about 1.8 degrees wide; UE scales the pin under the finger up (reference-sheet frame 04), so the resting size is the smallest case. Whether the resting tag text is legible is the P3 walk-through reading, not a Lynx claim.",
+  "textures": "pin_body_* and pin_tag_*: 256 x 256 PNG base colour, normal and ORM (R occlusion, G roughness, B metal), authored with numpy in scripts/art/build_art.bpy. No text is baked: the tag card is blank for the UE text layer. Geometry finished by scripts/art/lib/finish.bpy (bevelled hard edges, hardened and weighted normals, smooth shading); one unique UV set, the tag faces fitted to 0..1. The bead glows in the concept: UE adds the emission (the GLB carries none).",
+  "generator": "procedural (Blender 5.2.2, scripts/art/build_art.bpy)",
+  "licence": "own procedural work",
+  "regenerate": "blender -b -P scripts/art/build_art.bpy -- <repo-root>; blender -b -P scripts/art/render_art.bpy -- <repo-root>; node scripts/art/write-manifests.mjs; node scripts/art/score-assets.mjs",
+  "file_bytes": {
+    "evidence/table-view.jpg": 22454,
+    "evidence/turnaround.jpg": 72464,
+    "final.glb": 155544,
+    "textures/pin_body_basecolor.png": 13993,
+    "textures/pin_body_normal.png": 21519,
+    "textures/pin_body_orm.png": 6908,
+    "textures/pin_tag_basecolor.png": 20681,
+    "textures/pin_tag_normal.png": 48233,
+    "textures/pin_tag_orm.png": 13883
+  }
+}

@@ -74,7 +74,14 @@ def run(sc, argv):
         sc.main()
         return 0
     except SystemExit as e:
-        return int(e.code or 0)
+        # SystemExit.code is None, an int, or a message (sys.exit('text') means print it and exit 1)
+        if e.code is None or isinstance(e.code, int):
+            return int(e.code or 0)
+        print(e.code, file=sys.stderr)
+        return 1
+    except Exception as e:  # a browser timeout, a page error, an unreadable roles file: this scene fails, the rest still run
+        print(f'scene failed: {type(e).__name__}: {e}', file=sys.stderr)
+        return 1
 
 
 def main():
@@ -83,7 +90,16 @@ def main():
     ap.add_argument('--port', type=int, default=3321)
     ap.add_argument('--scene', action='append', choices=list(SCENES), help='one scene (repeatable); default all')
     a = ap.parse_args()
-    sc, bad = instrument(), 0
+    # capture REPLACES contract*.json, and the instrument writes the file whatever it measured: against a
+    # winner that is not here it would write 61 null roles over the winner's measurements and exit 0. The
+    # winner is git-ignored (a local checkout of .contest/, see README.md), so refuse before measuring.
+    if a.mode == 'capture' and not WINNER.is_file():
+        print(f'no winner at {WINNER}\n'
+              'capture replaces the contract files, so it refuses to run without it. Check out the contest\n'
+              'entry under .contest/ (git-ignored; scripts/fidelity/README.md), or run `check` instead.',
+              file=sys.stderr)
+        sys.exit(2)
+    sc, bad, failed = instrument(), 0, []
     for name in a.scene or list(SCENES):
         roles, contract, hash_, wdrive, path, pdrive = SCENES[name]
         print(f'== {name} ({contract})', flush=True)
@@ -94,7 +110,12 @@ def main():
         argv = [a.mode, target, str(HERE / roles), str(HERE / contract), '--width', SIZE]
         for d in drive:
             argv += ['--drive', d]
-        bad |= run(sc, argv)
+        code = run(sc, argv)
+        if code:
+            failed.append(name)
+        bad |= code
+    if failed:
+        print('scenes that did not pass: ' + ', '.join(failed), file=sys.stderr)
     sys.exit(1 if bad else 0)
 
 

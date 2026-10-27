@@ -1,0 +1,232 @@
+'use client';
+// One feature as a single scrolling document: the phone's detail view (the desktop shows the feature
+// page, src/components/page). The lens panels (one per enabled lens, from the manifests) follow the
+// lens mix: in General they all sit side by side; in a lens, its panel moves to the top and grows to
+// its reader's density while the others collapse to their headline. Each panel ends with its metric
+// rows (MetricRows, from the manifest); the Business section and a live product's Screens strip follow.
+// On a travelled-back date the record reads timeview's presenter (recordAsOf, lensAsOf) as the desktop page does:
+// the dated stage and lede, flags not recorded, no now-trouble line, and every lens panel (a variant's too) dated.
+import { useMemo } from 'react';
+import { GENERAL } from '@bp/core/data/types';
+import { LayoutGroup, motion, useReducedMotion } from 'motion/react';
+import type { Feature } from '@bp/core/data';
+import type { ScanSnapshot } from '@bp/core/scan/types';
+import { LIVE_DECIDER, REV_DESC, STAGE_WORD, astat, fmtWait, isAgentId, lensOf, pname, type Model, type SwarmSim } from '@bp/core/model';
+import { lensAsOf, recordAsOf } from '@bp/core/model/timeview';
+import { AsOfBar, useAsOf, useSimSig } from '../page/bits';
+import { illoSVG } from '@/engine/render/illo';
+import { DatedLensPanel, DefaultLensPanel, MetricRows } from './LensPanel';
+import { BusinessSection } from './Business';
+import { ScreensStrip } from './Screens';
+import { plainLine, revLabel } from './words';
+import { Mark, PatternDefs, StageSym, agentMark } from '../Symbols';
+import { useBp, useDensity, useEngine, useLive, useVariant, useWritesOn } from '../hooks';
+
+/** The latest moment the scan changed: the newest run update, measurement or activity row. */
+function scanUpdated(s: ScanSnapshot | undefined): string | null {
+  if (!s) return null;
+  let m = '';
+  for (const r of s.runs) if (r.updated_at > m) m = r.updated_at;
+  for (const x of s.measurements) if (x.measured_at > m) m = x.measured_at;
+  for (const a of s.activity) if (a.at > m) m = a.at;
+  return m ? m.slice(0, 16).replace('T', ' ') : null;
+}
+/** The sheet's footer: what the data is, and for a live product the stream's actual state and the age of what is shown. */
+export function LiveFoot() {
+  const live = useLive(), scan = live?.product.scan, at = useMemo(() => scanUpdated(scan), [scan]);
+  if (!live) return <div className="foot">Illustrative sample data · drawings are stylised, not screenshots</div>;
+  const { status, error } = live.product, upd = at ? 'last update ' + at : 'no update yet';
+  const t = status === 'live' ? 'Read from the live scan · ' + upd
+    : status === 'offline' ? 'Live scan offline, reconnecting · showing the data as of ' + (at ?? 'the start')
+    : status === 'error' ? 'Live scan error' + (error ? ': ' + error : '') + ' · showing the data as of ' + (at ?? 'the start')
+    : status === 'loading' ? 'Loading the live scan…'
+    : 'No scan store for this product · structure only';
+  return <div className="foot" role="status">{t}</div>;
+}
+
+/** The swarm (or a live product's scan) on one feature: agents, open decisions, orders, recent events, steering. */
+/**
+ * Everything SwarmSection reads about one feature, as a string: its agents (status, task, progress, cost), its open
+ * decisions (blocked agents, minutes waiting), the orders on it, its latest events. Equal strings = identical render,
+ * so it cannot miss an update; a lens page keeps only the decisions and orders that name the lens.
+ */
+function swarmSig(sim: SwarmSim, f: Feature, lens?: string): string {
+  if (!sim.has) return '';
+  let s = sim.live ? 'L' : 'S';
+  for (const d of sim.DOF[f.id] || []) if (!lens || d.lens === lens) s += '|d' + d.id + ':' + sim.blocksNow(d) + ':' + sim.waitMin(d);
+  for (const o of sim.ordersOn(f.id)) if (!lens || o.lens === lens) s += '|o' + o.id + ':' + o.text + ':' + o.vf.includes(f.id);
+  if (lens) return s;
+  for (const a of sim.AGF[f.id] || []) s += '|a' + a.id + ':' + astat(a) + ':' + a.task + ':' + Math.round(a.pct) + ':' + Math.round(a.cost);
+  let n = 0;
+  for (const e of sim.log) if (e.f === f.id) { s += '|e' + e.t + e.text; if (++n === 4) break; }
+  return s;
+}
+
+export function SwarmSection({ f, lens }: { f: Feature; lens?: string }) {
+  const E = useEngine(), M = E.M, sim = M.sim, writes = useWritesOn();
+  useSimSig((sm) => swarmSig(sm, f, lens));
+  const phone = useBp((s) => s.phone);   // the phone mounts no SelBar, so a preview or an order menu started here would be invisible
+  if (!sim.has) return null;
+  // `lens`: only the decisions and orders that name this lens (a lens page); null when there are none
+  let ag = sim.AGF[f.id] || [], ds = sim.DOF[f.id] || [], ords = sim.ordersOn(f.id), ev = sim.log.filter((e) => e.f === f.id).slice(0, 4);
+  if (lens) { ag = []; ev = []; ds = ds.filter((d) => d.lens === lens); ords = ords.filter((o) => o.lens === lens); if (!ds.length && !ords.length) return null; }
+  const ln = lens ? lensOf(M.P, lens)?.name ?? lens : '';
+  return (
+    <div className="swm">
+      <h4>{lens ? (sim.live ? 'Proposals' : 'Questions') + ' and orders under ' + ln : sim.live ? 'The scan on this feature · live' : 'The swarm on this feature · simulated'}</h4>
+      {!lens && !ag.length && !ds.length && !ev.length && <div style={{ color: 'var(--ink-2)', fontSize: 14, padding: '4px 0' }}>No agent is working here right now.{f.stage === 'live' ? ' It is live and quiet.' : ''}</div>}
+      {ag.map((a) => (
+        <div key={a.id} className="arow">
+          <span><Mark k={agentMark(astat(a))} w={18} h={13} /></span>
+          <span><b style={{ color: 'var(--ink-hi)', fontWeight: 500 }}>{a.base}</b> <span style={{ color: 'var(--ink-2)' }}>· {sim.crewName(a.sq)} · {astat(a)}</span><br /><span style={{ color: 'var(--ink-2)', fontSize: 13 }}>{a.task}</span></span>
+          <span className="pb"><i style={{ width: Math.round(a.pct) + '%' }} /></span>
+          <span style={{ font: '500 12px var(--mono)', color: 'var(--ink-2)' }}>{Math.round(a.pct)}%{sim.live ? '' : ' · $' + a.cost.toFixed(0)}</span>
+        </div>
+      ))}
+      {ds.map((d) => (
+        <div key={d.id} className="dq">
+          <b>{d.base} · {d.q}</b>
+          <div style={{ fontSize: 13, color: 'var(--ink-2)', margin: '2px 0 4px' }}>{sim.live && d.decider === LIVE_DECIDER ? 'For whoever reviews' : pname(M.P, d.decider) + ' decides'} · waiting {fmtWait(sim.waitMin(d))} · holds {sim.blocksNow(d)} agent{sim.blocksNow(d) === 1 ? '' : 's'}</div>
+          {(writes || !sim.live) && d.opts.map((o, i) => <button key={i} type="button" className={'op' + (i === d.rec ? ' rec' : '')} onClick={() => E.decide(d.id, i)}><i className="no">{i + 1}</i><b>{o.label}{i === d.rec && <em>agent suggests</em>}</b><span>{o.consequence}</span></button>)}
+        </div>
+      ))}
+      {ords.length ? <div style={{ marginTop: 8, fontSize: 14 }}>{ords.map((x) => <div key={x.id}><span className="ag" style={{ margin: '0 6px 0 0', color: x.vf.includes(f.id) ? 'var(--red-2)' : 'var(--amber)', borderColor: 'currentColor' }}>{x.id}{x.vf.includes(f.id) ? ' BREACHED' : ''}</span>{x.text}</div>)}</div> : null}
+      {ev.length ? <div style={{ marginTop: 8, fontSize: 13, color: 'var(--ink-2)' }}>{ev.map((e, i) => <div key={i}>{new Date(sim.at0 + e.t * 1000).toISOString().slice(11, 16)} · {e.text}</div>)}</div> : null}
+      {!sim.live && !lens && !phone && <div className="btns">
+        <button type="button" className="btn" onClick={() => E.preview(ag.some((a) => a.paused) ? 'resume' : 'pause', undefined, f.id)}>{ag.some((a) => a.paused) ? 'Resume agents here' : 'Pause agents here'}</button>
+        <button type="button" className="btn" onClick={() => E.preview('push', undefined, f.id)}>Put the swarm on this…</button>
+        <button type="button" className="btn" onClick={() => { E.setTarget({ [f.id]: 1 }, f.name); E.patch({ ordMenu: true }); }}>Write an order here…</button>
+      </div>}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ the record (shared with page/General.tsx)
+// The pieces of a feature's record that the phone's document and the desktop page's General tab both show.
+// Each returns its content only; the caller keeps its own wrapper (a staggered section, a plain div).
+
+/** Who built it, people and agents (agents tagged). */
+export function BuiltBy({ f }: { f: Feature }) {
+  const P = useEngine().M.P;
+  return <>{f.builtBy.length ? f.builtBy.map((id, i) => <span key={id}>{i ? ', ' : ''}{pname(P, id)}{isAgentId(P, id) && <span className="ag">AGENT</span>}</span>) : '—'}</>;
+}
+/** The lenses that flag it: the bad ones by name, else how many to watch. */
+export function FlaggedBy({ f }: { f: Feature }) {
+  const P = useEngine().M.P;
+  const bad = f.trouble.filter((t) => t.h === 'bad').map((t) => P.LENS[t.lens]?.name ?? t.lens), watch = f.trouble.length - bad.length;
+  return <>{bad.length ? <span className="nc">{bad.join(', ')}</span> : watch ? watch + ' lens' + (watch > 1 ? 'es' : '') + ' to watch' : f.health === 'good' ? 'No lens ✓' : 'Not measured yet'}</>;
+}
+/** A list of features, each a button that opens it; `empty` when there are none. */
+export function FeatureLinks({ ids, empty }: { ids: readonly string[]; empty: string }) {
+  const E = useEngine(), P = E.M.P;
+  return <>{ids.length ? ids.map((id) => { const g = P.F[id]; return <button key={id} type="button" onClick={() => E.openFeature(id)}><StageSym st={g.stage} w={20} h={13} /><span>{g.name}</span><span className="w">{g.stage ? STAGE_WORD[g.stage] : 'Unknown'}</span></button>; }) : <div className="none">{empty}</div>}</>;
+}
+/** The latest activity on it (at most 8 events, newest first); the title states the window that is really shown. */
+export function Activity({ f }: { f: Feature }) {
+  const P = useEngine().M.P;
+  const all = useMemo(() => P.activity.filter((a) => a.feature === f.id).sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0)), [P, f.id]);
+  const acts = all.slice(0, 8);
+  return <><h4>Recent activity · {all.length > acts.length ? 'latest ' + acts.length + ' of ' + all.length : all.length}{acts.length ? ', back to ' + acts[acts.length - 1].at.slice(0, 10) : ''}</h4>
+    {acts.length ? <ul className="acts">{acts.map((a, i) => <li key={i} className={a.type === 'incident' ? 'inc' : ''}><span className="m">{a.at.slice(5, 10)} {a.at.slice(11, 16)}</span><span className="a">{pname(P, a.actor)}{isAgentId(P, a.actor) ? ' ◇' : ''}</span><span>{a.text}{a.severity ? ' · ' + a.severity : ''}</span></li>)}</ul> : <div className="dl"><div className="none">Quiet, no events recorded</div></div>}</>;
+}
+/** The stylised drawing of its domain, with the detail caption. */
+export function Drawing({ f }: { f: Feature }) {
+  const M = useEngine().M, P = M.P, T = M.L.TILE[f.id];
+  return <><div dangerouslySetInnerHTML={{ __html: illoSVG(P.D[f.domain].base, 'currentColor') }} style={{ color: 'var(--ink)' }} /><span className="cap">{T ? 'DETAIL ' + T.idx + ' · ' : ''}{(P.D[f.domain].code || P.D[f.domain].name).toUpperCase()} · STYLISED</span></>;
+}
+/** Its parts, done or not (callers show this only when the feature has parts). */
+export function Parts({ parts }: { parts: NonNullable<Feature['parts']> }) {
+  return <><h4>Parts · {parts.filter((p) => p.done).length} of {parts.length} done</h4><div className="parts">{parts.map((p) => <span key={p.name} className={p.done ? 'd' : ''}>{p.done ? '✓ ' : '○ '}{p.name}</span>)}</div></>;
+}
+/** The red-pencil notes (callers show this only when there are notes). */
+export function Notes({ f }: { f: Feature }) {
+  const P = useEngine().M.P;
+  return <><h4>Red-pencil notes</h4><div className="notes">{f.notes.map((n, i) => <div key={i} className="pn">“{n.text}”<small>— {pname(P, n.by)}, {n.date}</small></div>)}</div></>;
+}
+
+function LensPanels({ f, M }: { f: Feature; M: Model }) {
+  const V = useVariant(), dens = useDensity();
+  const view = useBp((s) => s.view);
+  const Panel = V.ui?.SheetPanel ?? DefaultLensPanel, scan = useLive()?.product.scan, { t, now, past } = useAsOf();
+  // under reduced motion the panels re-order in place instead of travelling
+  const reduce = useReducedMotion();
+  const ids = M.P.lenses.map((l) => l.id);
+  const order = lensOf(M.P, view) ? [view, ...ids.filter((l) => l !== view)] : ids;
+  return (
+    <LayoutGroup>
+      <div className="ev6">
+        {order.map((l) => {
+          const cur = view === l, mini = view !== GENERAL && !cur, la = lensAsOf(f, M.P.LENS[l], scan, t, now);
+          // a past date: the dated panel stands in for every variant's (they read now-values and get no date)
+          return (
+            <motion.div key={l} layout={!reduce} transition={{ type: 'spring', stiffness: 260, damping: 30 }} className={'evp ' + la.health + (cur ? ' cur' : '') + (mini ? ' mini' : '')}>
+              {past ? <DatedLensPanel def={M.P.LENS[l]} la={la} /> : <Panel lens={l} def={M.P.LENS[l]} f={f} model={M} density={dens(l)} expanded={cur} view={view} />}
+              {!mini && <MetricRows def={M.P.LENS[l]} f={f} model={M} scan={scan} all={cur} fl={past ? undefined : f.lens[l]} on={{ t, now }} />}
+            </motion.div>
+          );
+        })}
+      </div>
+    </LayoutGroup>
+  );
+}
+
+export function SheetBody({ f }: { f: Feature }) {
+  const E = useEngine(), M = E.M, P = M.P, T = M.L.TILE[f.id], { t, now } = useAsOf();
+  const rec = recordAsOf(f, t, now), pl = rec.at === 'now' ? plainLine(P, f, M.sim) : null, ms = f.milestone ? P.MS[f.milestone] : null;
+  const trouble = rec.at === 'now' && f.trouble.length > 0;
+  return (
+    <>
+      <PatternDefs />
+      <AsOfBar />
+      <div className="dh">
+        {/* the tile can be gone while the sheet is open (a live map refresh rebuilds the layout under it):
+            the place line drops to what the feature itself records, as the engine's own 12 guarded
+            L.TILE reads do, rather than taking the document down with it */}
+        <div className="bubble" title="Detail callout: detail number over feature code"><span className="a">{T ? T.idx : '—'}</span><span className="b">{f.code || '—'}</span></div>
+        <div>
+          <div className="k">{T ? (P.scale > 1 ? T.wing.bld.name + ' › ' : '') + 'Wing ' + T.wing.def.letter + ' ' + T.wing.def.name + ' › ' : ''}{P.D[f.domain].name} › {P.C[f.capability].name}<br />{[f.priority, f.kind, ms ? (ms.code ? ms.code + ' ' : '') + ms.name : null].filter(Boolean).join(' · ')}</div>
+          <h2>{f.name}</h2>
+          <div className="sum">{f.summary}</div>
+          {rec.lede
+            ? <div className="plain"><b>{rec.lede.strong}</b> {rec.lede.rest}</div>
+            : pl && <div className="plain"><b>{pl.strong}</b> {pl.rest.join(' ')} {pl.bad && <span className="bad">{pl.bad}</span>}</div>}
+          {(trouble || f.blockedBy.length) ? (
+            <div className="tens">
+              {rec.at === 'now' && f.trouble.filter((x) => x.h === 'bad').map((x) => <span key={x.lens}><i />{P.LENS[x.lens].name}: {x.why}</span>)}
+              {f.blockedBy.length ? <span><i />Blocked by {f.blockedBy.map((x) => <button key={x} type="button" className="btn" style={{ height: 24, marginLeft: 4, textTransform: 'none', fontSize: 14 }} onClick={() => E.openFeature(x)}>{P.F[x].name}</button>)}</span> : null}
+            </div>
+          ) : null}
+        </div>
+      </div>
+      <SwarmSection f={f} />
+      <div className="dgrid">
+        <div>
+          <div className="illo"><Drawing f={f} /></div>
+          <div className="mtb">
+            <div><span className="l">Built by</span><BuiltBy f={f} /></div>
+            <div><span className="l">Flagged by</span>{rec.at === 'now' ? <FlaggedBy f={f} /> : rec.flagged}</div>
+            <div><span className="l">Owner</span>{pname(P, f.owner)}</div>
+            <div><span className="l">Stage</span>{rec.stage}</div>
+            <div className="full"><span className="l">Lives in</span>{f.surfaces.length ? f.surfaces.map((s) => <span key={s} className="ag" style={{ margin: '0 4px 0 0' }}>{s}</span>) : '—'}</div>
+          </div>
+          <table className="revt"><thead><tr><th>REV</th><th>DATE</th><th>DESCRIPTION</th></tr></thead><tbody>
+            {f.revs.map((h, i) => <tr key={i} className={i === f.revs.length - 1 ? 'now' : ''}><td className="m">{revLabel(i)}</td><td className="m">{h.date}</td><td>{REV_DESC[h.stage]}</td></tr>)}
+          </tbody></table>
+          {f.parts && <div className="dsec"><Parts parts={f.parts} /></div>}
+        </div>
+        <div>
+          <LensPanels f={f} M={M} />
+          <BusinessSection f={f} />
+          <ScreensStrip f={f} />
+          <div className="dsec deps">
+            <div className="dl"><h4>Depends on · {f.dependsOn.length}</h4><FeatureLinks ids={f.dependsOn} empty="Nothing, it stands on its own" /></div>
+            <div className="dl"><h4>Used by · {f.usedBy.length} · blast radius {M.closure.of(f.id).length}</h4><FeatureLinks ids={f.usedBy} empty="Nothing depends on it" /></div>
+          </div>
+          {f.notes.length ? <div className="dsec"><Notes f={f} /></div> : null}
+          <div className="dsec"><Activity f={f} /></div>
+          <LiveFoot />
+        </div>
+      </div>
+    </>
+  );
+}

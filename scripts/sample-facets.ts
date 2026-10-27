@@ -1,11 +1,11 @@
-// The producer reference for the Kettle sample: how one sample lens object (src/data/kettle.json) becomes a
+// The producer reference for the Kettle sample: how one sample lens object (packages/core/data/kettle.json) becomes a
 // v3 facet. Shared by scripts/check-builtin-health.ts (rules vs the stored health) and
 // scripts/kettle-to-v3.ts (the converter), so the two can never flatten differently.
 //
 // It writes only what the lens object says and omits unknown values instead of writing null. It never writes
 // the feature's stage or priority into a facet: the manifests bind those fields to the feature
 // (`source: { feature }`). The one producer-side applicability: design "n/a" means the feature has no screen.
-import type { Facet, FacetValues, Health, Scalar } from '../src/lib/standard/types.ts';
+import type { Facet, FacetValues, Health, Scalar } from '../packages/core/src/standard/types.ts';
 
 export type LensObject = Record<string, unknown> & { health: Health };
 

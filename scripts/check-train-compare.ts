@@ -4,12 +4,22 @@
 //     (within the one-frame floor, within the spread), the Kettle sample's 96/104/98 -> 72 moved; median, spread, noise,
 //     change, %, the outlier rule (more than noise/2 above the median), the frame flag, the range scale, signed figures;
 //   - pixels: on tiny synthetic RGBA images, identical -> nothing moved; noise under the threshold -> nothing moved;
-//     a faint change -> moved but "visually identical"; a block -> its exact grid cells, bbox, shares and words.
+//     a faint change -> moved but "visually identical"; a block -> its exact grid cells, bbox, shares and words;
+//   - the panel's own modules: the exported functions of apps/web/src/components/ledger/train/compare/** (the patch's
+//     rows, the item body's blocks, the shown pairs and their cache keys, the pack order, the latest reading, one
+//     performance row and the sentence under it) and the anchors their comments name. Nothing else reads them;
+//     scripts/overlays-loader.mjs transpiles the .tsx, as scripts/check-train-budget.ts does.
 // Run: node scripts/check-train-compare.ts  (Node's type stripping; no build step). Exit 1 on any failure.
-import { verdictOf, type LensFields } from '../src/lib/scan/compare.ts';
-import { atTarget, beyondNoise, isOutlier, perfFigures, rangeScale, signed } from '../src/lib/train/perf.ts';
-import { GRID_H, GRID_W, NOISE, bboxCells, diffPixels, pixWords } from '../src/lib/train/pixels.ts';
-import type { Measurement, Proposal } from '../src/lib/scan/types.ts';
+import fs from 'node:fs';
+import { register } from 'node:module';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { compareOf, verdictOf, type Comparison, type LensFields } from '../packages/core/src/scan/compare.ts';
+import { atTarget, beyondNoise, isOutlier, perfFigures, rangeScale, signed } from '../packages/core/src/train/perf.ts';
+import { GRID_H, GRID_W, NOISE, bboxCells, diffPixels, pixWords } from '../packages/core/src/train/pixels.ts';
+import type { Measurement, Proposal, Shot } from '../packages/core/src/scan/types.ts';
+import { stripComments } from './lib/source.ts';
+import { canDecide } from '../packages/core/src/train/rules.ts';
 
 let n = 0, bad = 0;
 function ok(cond: boolean, what: string, got?: unknown) {
@@ -47,6 +57,13 @@ function judge(runs: number[], after: number) {
   ok(f.change === 8 && near(f.pct, 10), 'athena 80/184/80 -> 88: change +8, +10 %', [f.change, f.pct]);
   ok(isOutlier(184, f) && !isOutlier(80, f), 'athena 80/184/80: 184 is the outlier run');
   ok(f.outlier.join() === 'false,false,true', 'outlier flags follow the sorted runs', f.outlier);
+}
+{ // a run far too FAST distorts the baseline exactly as much: the rule is symmetric (perf.ts isOutlier) and the table's
+  // own words must be too, or the only marked run is the slow one
+  const { f } = judge([10, 80, 80, 140], 80);
+  ok(f.median === 80 && f.noise === 130, '10/80/80/140: median 80, noise = spread 130', f);
+  ok(isOutlier(10, f) && !isOutlier(140, f), '10/80/80/140: the FAST run is the outlier, the slow one is inside', [isOutlier(10, f), isOutlier(140, f)]);
+  ok(f.outlier.join() === 'true,false,false,false', 'outlier flags mark the fast tail too', f.outlier);
 }
 { // Kettle sample: 96/104/98 -> 72 moved
   const { v, f } = judge([96, 104, 98], 72);
@@ -109,6 +126,358 @@ const base = img((x, y) => [(x * 3) % 256, (y * 5) % 256, 120]);
   const g = diffPixels(new Uint8ClampedArray(7 * 5 * 4), new Uint8ClampedArray(7 * 5 * 4).fill(200), 7, 5);
   ok(g.moved === 100 && g.cells.filter(Boolean).length <= GRID_W * GRID_H && g.bbox?.join() === '0,0,6,4', 'odd size: every pixel moved, bbox the whole image', g.bbox);
   ok(GRID_H === 18 && GRID_W === 32, 'the grid is 32 x 18');
+}
+
+// ------------------------------------------------------------------------------------------- the panel's own modules
+const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
+const CMP = 'components/ledger/train/compare/';
+register('./overlays-loader.mjs', { parentURL: import.meta.url, data: { src: SRC, root: ROOT, mutate: [] } });
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Any = any;
+const imp = (f: string): Promise<Any> => import(pathToFileURL(path.join(SRC, CMP + f)).href);
+const { patchRows } = await imp('CommitDiff.tsx');
+const { blocksOf, inline } = await imp('ItemText.tsx');
+const { minText, pairKey, pairLabel, pairReadings, shownPairs } = await imp('Screens.tsx');
+const { hasRuns, perfItem, perfReason, runsOf } = await imp('PerfTable.tsx');
+const { latestOf } = await imp('MetricStrip.tsx');
+const { packHeading, packOrder } = await imp('ComparePanel.tsx');
+
+{ // the patch's rows: one header per file, the hunk, and each line's old and new number
+  const PATCH = [
+    'diff --git a/apps/web/src/a.ts b/apps/web/src/a.ts',
+    'index 1111111..2222222 100644',
+    '--- a/apps/web/src/a.ts',
+    '+++ b/apps/web/src/a.ts',
+    '@@ -10,3 +10,4 @@ function f() {',
+    ' keep',
+    '-gone',
+    '+added',
+    '+also',
+    '',
+  ].join('\n');
+  const rows = patchRows(PATCH);
+  ok(rows.filter((r: Any) => r.k === 'file').map((r: Any) => r.text).join() === 'apps/web/src/a.ts', 'patch rows: one header per file, the path as git prints it', rows[0]);
+  ok(rows.map((r: Any) => r.k).join() === 'file,hunk,ctx,del,add,add', 'patch rows: the index and ---/+++ lines are dropped, the trailing blank trimmed', rows.map((r: Any) => r.k));
+  ok(rows.filter((r: Any) => r.k !== 'file').map((r: Any) => `${r.a}/${r.b}`).join(' ') === '/ 10/10 11/ /11 /12', 'patch rows: old and new line numbers follow the hunk header', rows.map((r: Any) => r.k + ' ' + r.a + '/' + r.b));
+  // the file list beside the patch (git --numstat) keeps a space, so the patch's own header must keep it too
+  const spaced = patchRows('diff --git a/apps/web/stage and depths.tsx b/apps/web/stage and depths.tsx\n@@ -1 +1 @@\n+x');
+  ok(spaced[0].text === 'apps/web/stage and depths.tsx', 'patch rows: a path with spaces survives the file header', spaced[0]);
+  const moved = patchRows('diff --git a/old name.ts b/sub/new name.ts\n@@ -1 +1 @@\n+x');
+  ok(moved[0].text === 'sub/new name.ts', 'patch rows: a rename names where the file landed', moved[0]);
+}
+
+{ // the item body's blocks
+  const BODY = '## Summary\nOne line\nwrapped.\n\n- a item\n  continued\n- b item\n\n1. first\n\n> a note\n\n```ts\nconst x = 1;\n```\n';
+  const bs = blocksOf(BODY);
+  ok(bs.map((b: Any) => b.k).join() === 'h,p,ul,ol,q,code', 'item text: heading, paragraph, both lists, quote, fence', bs.map((b: Any) => b.k));
+  ok(bs[1].text === 'One line wrapped.' && bs[2].items.join('|') === 'a item continued|b item', 'item text: a paragraph and a list item join their wrapped lines', [bs[1].text, bs[2].items]);
+  ok(bs[5].lang === 'ts' && bs[5].text === 'const x = 1;', 'item text: the fence keeps its language and its exact lines', bs[5]);
+  const parts = inline('a `code` and **bold** end');
+  ok(parts.length === 5 && parts[1].type === 'code' && parts[3].type === 'b', 'item text: inline code and bold become elements, the text between stays text', parts.map((p: Any) => (typeof p === 'string' ? 'text' : p.type)));
+}
+
+{ // the shown pairs and their cache keys
+  const pair = (theme?: string, size?: string, both = true): Any => ({ ...(theme ? { theme } : {}), ...(size ? { size } : {}), before: { id: 1, path: 'shots/r/1.png' }, ...(both ? { after: { id: 2, path: 'shots/r/2.png' } } : {}) });
+  const pairs = [pair('light'), pair('dark')];
+  ok(shownPairs(pairs, 'light').length === 1 && shownPairs(pairs, 'both').length === 2, 'shown pairs: a theme shows its own, "both" shows both');
+  ok(shownPairs([pair(undefined, '1280x800')], 'light').length === 1, 'shown pairs: no pair carries the theme, so every pair is shown');
+  ok(pairKey('athena', pairs[0]) === 'athena:1:2' && pairKey(null, pairs[0]) === 'kettle:1:2', 'pair key: the product then the two shot ids', pairKey(null, pairs[0]));
+  ok(pairKey('athena', pair('light', undefined, false)) === null, 'pair key: null when a side has no capture');
+  ok(pairLabel({ theme: 'light', size: '1280x800' }) === 'light · 1280x800' && pairLabel({ theme: 'light', size: '1920x1080' }) !== pairLabel({ theme: 'light', size: '1280x800' }), 'pair label: two sizes of one theme are two different names', pairLabel({ theme: 'light', size: '1280x800' }));
+  ok(minText(undefined) === undefined, 'min text: a side with no capture reports no reading at all', minText(undefined));
+  ok(minText({ report: { minTextPx: 13 } }) === 'min text 13 px' && minText({}) === 'min text – px', 'min text: a capture reports its reading, or says the reading is missing', [minText({ report: { minTextPx: 13 } }), minText({})]);
+  ok(pairLabel({ theme: 'dark' }) === 'dark' && pairLabel({}) === 'screen','pair label: no size adds nothing, no theme reads "screen"', [pairLabel({ theme: 'dark' }), pairLabel({})]);
+  const scr = stripComments(fs.readFileSync(path.join(SRC, CMP, 'Screens.tsx'), 'utf8'));
+  ok(!/[·,] ' \+ theme\b/.test(scr) && (scr.match(/\+ label\b/g) ?? []).length >= 12, 'pair label: all 12 caption and alt sites name the pair through it, none builds its own name', (scr.match(/\+ label\b/g) ?? []).length);
+}
+
+{ // one performance row and the sentence under it
+  const read = (value: number, phase: 'before' | 'after', i: number, metric = 'interactionP95Ms'): Measurement =>
+    ({ id: ++mid, run_id: 'r', feature: 'booking', lens: 'performance', metric, value, unit: 'ms', method: 'probe', measured_at: `2026-10-15T00:${String(i).padStart(2, '0')}:00Z`, proposal_id: 'p-x', phase });
+  const ms = [read(96, 'before', 1), read(104, 'before', 2), read(98, 'before', 3), read(72, 'after', 4), read(40, 'before', 5, 'memMb')];
+  const scan = { proposals: [P], measurements: ms, shots: [] as Shot[] };
+  const c = compareOf(scan, 'p-x', LENSES) as Comparison;
+  const lens: Any = { F: { interactionP95Ms: { label: 'Interaction p95', unit: 'ms', metric: { better: 'down', target: 100 } }, memMb: { label: 'Memory', unit: 'MB', metric: { better: 'down', target: 50 } } } };
+  ok(runsOf(c).join() === '96,104,98' && hasRuns(c), 'runs: the item\'s own-metric before readings, in recorded order', runsOf(c));
+  ok(latestOf(c.before, 'performance', 'interactionP95Ms')?.value === 98, 'latest reading: the last matching row of the phase wins', latestOf(c.before, 'performance', 'interactionP95Ms'));
+  const it = perfItem(c, 'Booking', lens);
+  ok(it.label === 'Interaction p95' && it.unit === 'ms' && it.f.after === 72, 'perf item: the lens field names the row, the after is the latest reading', [it.label, it.unit, it.f.after]);
+  ok(it.context.length === 1 && it.context[0].key === 'memMb' && it.context[0].value === 40 && it.context[0].target === 50, 'perf item: the feature\'s other metrics of this lens are context rows', it.context);
+  ok(perfReason(it).includes('median of 3 baseline runs') && perfReason(it).includes('larger than the noise'), 'perf reason: the change, the number of runs behind the median, and the noise it beat', perfReason(it));
+  ok(perfReason({ ...it, f: { ...it.f, change: undefined } }).startsWith('No after reading yet'), 'perf reason: no after reading says so, and judges nothing');
+}
+
+{ // one figure, one unit: the strip and the table resolve it the same way (before, then after, then the lens field)
+  const bare = (value: number, phase: 'before' | 'after', i: number): Measurement => {
+    const m = { ...reading(value, phase, i) } as Any; delete m.unit; return m as Measurement;
+  };
+  const afterMs = { ...reading(72, 'after', 4), unit: 'ms' };
+  const scan = { proposals: [P], measurements: [bare(96, 'before', 1), bare(104, 'before', 2), afterMs], shots: [] as Shot[] };
+  const c = compareOf(scan, 'p-x', LENSES) as Comparison;
+  const noUnitLens: Any = { F: { interactionP95Ms: { label: 'Interaction p95', metric: { better: 'down' } } } };
+  const React = (await import('react')).default, { renderToStaticMarkup } = await import('react-dom/server');
+  const { MetricStrip } = await imp('MetricStrip.tsx');
+  const strip = renderToStaticMarkup(React.createElement(MetricStrip, { c, field: noUnitLens.F.interactionP95Ms }));
+  const it = perfItem(c, 'Booking', noUnitLens);
+  ok(strip.includes('<u>ms</u>') && it.unit === 'ms', 'unit: unitless before readings and an after in ms print ms in the strip and the table alike', [strip.includes('<u>ms</u>'), it.unit]);
+  ok(perfReason(it).includes(' ms'), 'unit: the perf reason carries the same unit', perfReason(it));
+}
+
+{ // the pack order the panel's prev / next walks
+  const pk = (id: string, created_at: string): Any => ({ id, lens: 'performance', n: 1, branch: 'pack/' + id, base_ref: 'main', base_sha: 'abc1234', status: 'open', created_at, updated_at: created_at });
+  const pr = (id: string, pack_id: string | undefined, created_at: string): Any => ({ ...P, id, ...(pack_id ? { pack_id } : {}), created_at, updated_at: created_at });
+  const T: Any = {
+    packs: [pk('k-b', '2026-10-15T00:00:00Z'), pk('k-a', '2026-10-14T00:00:00Z')],
+    proposals: [pr('p-3', 'k-b', '2026-10-16T00:00:00Z'), pr('p-2', 'k-a', '2026-10-16T00:00:00Z'), pr('p-1', 'k-a', '2026-10-15T00:00:00Z'), pr('p-loose', undefined, '2026-10-16T00:00:00Z')],
+  };
+  ok(packOrder(T).join() === 'p-1,p-2,p-3', 'pack order: packs oldest first, each pack\'s items by created_at then id, no loose item', packOrder(T));
+}
+
+{ // the second table's heading: it holds only the pack's items measured in runs, so it may never say "the pack" alone
+  ok(typeof packHeading === 'function', 'pack heading: ComparePanel exports the heading, so it can be read here', typeof packHeading);
+  ok(packHeading(3, 12) === 'The whole pack · 3 of 12 items measured in runs', 'pack heading: 3 measured of 12 items says both numbers', packHeading(3, 12));
+  ok(packHeading(1, 1).includes('1 of 1 item ') && packHeading(2, 2).includes('2 of 2 items '), 'pack heading: one item is not "items"', [packHeading(1, 1), packHeading(2, 2)]);
+}
+
+{ // reduced motion stops the blink: the rate may be claimed only by the element that media query hides
+  const scr = stripComments(fs.readFileSync(path.join(SRC, CMP, 'Screens.tsx'), 'utf8'));
+  const claims = scr.split('\n').filter((l) => l.includes('0.7 s'));
+  ok(claims.length > 0 && claims.every((l) => l.includes('tr-blink-a')), 'blink: every claim of the 0.7 s swap sits in the span reduced motion hides', claims);
+  const css = fs.readFileSync(path.join(SRC, CMP, 'Screens.css'), 'utf8');
+  const rm = css.slice(css.indexOf('prefers-reduced-motion'));
+  ok(/\.tr-blink-a\s*\{[^}]*display:\s*none/.test(rm), 'blink: that span is what the reduced-motion block hides', rm.slice(0, 120));
+}
+
+{ // one module, one import statement: a second one hides what the file already has and drifts out of sight at the
+  // bottom of the list (ComparePanel.tsx imported @bp/core/train/rules twice, the second line below the .css import)
+  const twice: string[] = [];
+  for (const f of fs.readdirSync(path.join(SRC, CMP)).filter((f) => /\.tsx?$/.test(f))) {
+    const seen = new Map<string, number>();
+    for (const m of stripComments(fs.readFileSync(path.join(SRC, CMP, f), 'utf8')).matchAll(/^import\s[^;]*?from\s+['"]([^'"]+)['"]/gm)) seen.set(m[1], (seen.get(m[1]) ?? 0) + 1);
+    for (const [spec, k] of seen) if (k > 1) twice.push(`${f}: ${spec} x${k}`);
+  }
+  ok(!twice.length, 'imports: no module is imported twice in one file of the compare panel', twice);
+}
+
+{ // the comments' anchors: a path named under src/lib/ must be one this tree has
+  const files = fs.readdirSync(path.join(SRC, CMP));
+  const dead: string[] = [];
+  for (const f of files) {
+    for (const m of fs.readFileSync(path.join(SRC, CMP, f), 'utf8').matchAll(/\bsrc\/lib\/[\w./-]+\.(?:ts|tsx)\b/g)) {
+      if (!fs.existsSync(path.join(SRC, m[0].slice('src/'.length)))) dead.push(f + ': ' + m[0]);
+    }
+  }
+  ok(!dead.length, `anchors: every src/lib/ path the compare panel's comments name exists (${files.length} files read)`, dead);
+}
+
+{ // the words beside the outline: the rule marks both tails (perf.ts isOutlier), so the panel's own words must too
+  const src = stripComments(fs.readFileSync(path.join(SRC, CMP, 'PerfTable.tsx'), 'utf8'));
+  const title = /title="outlier run: ([^"]*)"/.exec(src);
+  ok(!!title && /away from the median/.test(title[1]) && !/above the median/.test(title[1]), 'outlier outline: the tooltip names both tails, not only the slow one', title?.[1]);
+  const key = src.slice(src.indexOf('tr-pt-key'));
+  ok(key.includes('k-out') && /outlier/.test(key), 'outlier outline: the legend explains it, so the only explanation is not a hover title', key.includes('k-out'));
+}
+
+{ // the empty Screens callout may say the shots are missing, never why: "cannot render" needs the scan's unscreenable: note
+  const scr = stripComments(fs.readFileSync(path.join(SRC, CMP, 'Screens.tsx'), 'utf8'));
+  ok(/No screens:/.test(scr) && !/cannot render|can't render|unscreenable/i.test(scr), 'no screens: the callout asserts no cause (TrainData carries no unscreenable: note)', /cannot render/i.exec(scr)?.[0]);
+}
+
+{ // the pixel line reads every shown pair on its own: one failed, still-computing or lone pair never speaks for the rest
+  const sh = (id: number): Any => ({ id, report: {} });
+  const prs = (theme: string, size?: string, lone = false): Any => ({ theme, size, before: sh(1), after: lone ? undefined : sh(2) });
+  const same: Any = { status: 'done', grid: { w: 64, h: 36, moved: 0, pct: 0, maxd: 0, bbox: null, cells: [] } };
+  const diff: Any = { status: 'done', grid: { w: 64, h: 36, moved: 40, pct: 5, maxd: 200, bbox: [1, 1, 3, 3], cells: [] } };
+  const A = pairReadings([prs('light'), prs('dark')], [same, { status: 'error', error: '404 on the dark shot' }]);
+  ok(A.map((r: Any) => r.state).join() === 'done,error' && A[0].same === true && A[1].text === '404 on the dark shot', 'pix line: one failed map of two leaves the other pair\'s verdict standing', A);
+  const B = pairReadings([prs('light'), prs('dark')], [diff, { status: 'computing' }]);
+  ok(B.map((r: Any) => r.state).join() === 'done,computing' && B[0].same === false, 'pix line: one pair still computing does not hold back the pair that is done', B);
+  const C = pairReadings([prs('light'), prs('dark', undefined, true)], [same, undefined]);
+  ok(C.map((r: Any) => r.state).join() === 'done,lone', 'pix line: one lone side does not suppress the complete pair\'s verdict', C);
+  const D = pairReadings([prs('light', '1280x800'), prs('light', '1920x1080')], [same, diff]);
+  ok(D.length === 2 && D[0].label !== D[1].label && D[0].same === true && D[1].same === false, 'pix line: two sizes of one theme are two readings, each with its own name and verdict', D);
+  ok(pairReadings([prs('light')], [undefined])[0].state === 'computing', 'pix line: no map state yet is computing, never a guess');
+}
+
+{ // a request that never returns ends in a stated state: the change map's wait and the commit diff's wait are bounded
+  const { boundedWait, MAP_WAIT_MS } = await imp('useChangeMap.ts');
+  const t0 = Date.now();
+  const never = new Promise(() => {});
+  const err = await boundedWait(never, 30, 'The comparison').then(() => null, (e: Error) => e.message);
+  ok(err === 'The comparison did not answer within 0.03 s' && Date.now() - t0 < 1000, 'bounded wait: a promise that never settles rejects with what did not answer and for how long', err);
+  ok(await boundedWait(Promise.resolve(7), 1000, 'x') === 7, 'bounded wait: an answer inside the bound passes through unchanged');
+  const e2 = await boundedWait(Promise.reject(new Error('HTTP 404')), 1000, 'x').then(() => null, (e: Error) => e.message);
+  ok(e2 === 'HTTP 404', 'bounded wait: a failure inside the bound keeps its own message', e2);
+  ok(typeof MAP_WAIT_MS === 'number' && MAP_WAIT_MS > 0 && MAP_WAIT_MS < 120_000, 'change map: the wait has a finite bound', MAP_WAIT_MS);
+  const um = stripComments(fs.readFileSync(path.join(SRC, CMP, 'useChangeMap.ts'), 'utf8'));
+  ok(/boundedWait\(compute\(/.test(um), 'change map: start() waits on compute() through the bound, not bare', um.includes('boundedWait'));
+  const { DIFF_WAIT_MS } = await imp('CommitDiff.tsx');
+  const cdf = stripComments(fs.readFileSync(path.join(SRC, CMP, 'CommitDiff.tsx'), 'utf8'));
+  ok(DIFF_WAIT_MS > 0 && DIFF_WAIT_MS < 120_000 && /boundedWait\(commitDiff\(/.test(cdf), 'commit diff: the commits request is bounded', DIFF_WAIT_MS);
+  ok(/Try again/.test(cdf) && /setTries/.test(cdf), 'commit diff: a failed or unanswered load offers the retry the cache already supports');
+}
+
+{ // two responses whose URL names an immutable artefact (a commit sha, a run id's shot) give the same cache ceiling
+  const api = path.join(ROOT, 'packages/core/src/server/api/products/[slug]');
+  const age = (f: string): string | undefined => {
+    const t = stripComments(fs.readFileSync(path.join(api, f), 'utf8'));
+    const m = /(?:cache-control'?:\s*|IMMUTABLE\s*=\s*)'private, max-age=(\d+)'/.exec(t);
+    return m?.[1];
+  };
+  const shotAge = age('shots/[...path]/route.ts'), commitAge = age('commits/[sha]/route.ts');
+  ok(shotAge !== undefined && shotAge === commitAge, 'cache: a shot (run id in the path) and a commit (sha) are cached for the same time', [shotAge, commitAge]);
+  ok(/'cache-control': IMMUTABLE/.test(stripComments(fs.readFileSync(path.join(api, 'shots/[...path]/route.ts'), 'utf8'))), 'cache: the shot response sends that ceiling');
+}
+
+{ // the change map's overlay sits over the pixels it describes at any capture size: the svg is fitted into the frame
+  // the way the frame fits the image (contain / meet), over a viewBox with the capture's own aspect ratio
+  const { ChangeMap, mapView } = await imp('ChangeMap.tsx');
+  const React = (await import('react')).default, { renderToStaticMarkup } = await import('react-dom/server');
+  const css = stripComments(fs.readFileSync(path.join(SRC, CMP, 'ShotFigure.css'), 'utf8'));
+  const imgRule = /\.tr-scr img\s*\{[^}]*\}/.exec(css)?.[0] ?? '';
+  ok(/object-fit:\s*contain/.test(imgRule) && !/object-fit:\s*cover/.test(css), 'frame: every mode shows the whole capture (contain), none crops it (cover)', imgRule);
+  for (const [w, h] of [[1280, 800], [1600, 900], [2048, 768], [390, 844]]) {
+    const cells = new Array<number>(GRID_W * GRID_H).fill(0);
+    cells[2 * GRID_W + 5] = 100; // cell column 5, row 2
+    const grid = { w, h, cells, pct: 1, moved: 1, maxd: 100, bbox: [Math.floor(w * 0.25), Math.floor(h * 0.1), Math.floor(w * 0.5), Math.floor(h * 0.4)] };
+    const svg = renderToStaticMarkup(React.createElement(ChangeMap, { grid }));
+    const vb = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(svg), [vw, vh] = [Number(vb?.[1]), Number(vb?.[2])];
+    ok(Math.abs(vw / vh - w / h) < 1e-9 && /preserveAspectRatio="xMidYMid meet"/.test(svg), `change map ${w}x${h}: the viewBox has the capture's aspect ratio and is fitted with meet`, [vb?.[0], w / h]);
+    const rects = [...svg.matchAll(/<rect ([^>]*?)\/?>/g)].map((m) => Object.fromEntries([...m[1].matchAll(/(\w+)="([^"]*)"/g)].map((a) => [a[1], a[2]])));
+    const cell = rects.find((r) => !r.class), box = rects.find((r) => r.class === 'bb');
+    ok(!!cell && Math.abs(Number(cell.x) / vw - 5 / GRID_W) < 1e-9 && Math.abs(Number(cell.y) / vh - 2 / GRID_H) < 1e-9 && Math.abs(Number(cell.width) / vw - 1 / GRID_W) < 1e-9, `change map ${w}x${h}: a cell covers the same fraction of the frame as of the capture`, cell);
+    ok(!!box && Math.abs(Number(box.x) / vw - grid.bbox[0] / w) < 1e-9 && Math.abs(Number(box.y) / vh - grid.bbox[1] / h) < 0.03 / vh, `change map ${w}x${h}: the dashed box starts where the moved pixels start`, box);
+    ok(Math.abs(mapView(grid).vw - vw) < 1e-9, `change map ${w}x${h}: mapView agrees with what is drawn`);
+  }
+}
+
+// ------------------------------------------------------------------------------------------- one judgement, every cell
+// The verdict chip, the change cell's colour, the sentence under the table and the row's before figure publish one
+// judgement (compare.ts verdictOf): none of them re-derives the direction, the baseline or the noise test.
+{
+  const React = (await import('react')).default, { renderToStaticMarkup } = await import('react-dom/server');
+  const { PerfTable } = await imp('PerfTable.tsx');
+  const KEY = 'interactionP95Ms';
+  const read = (value: number, phase: 'before' | 'after', i: number): Measurement =>
+    ({ id: ++mid, run_id: 'r', feature: 'booking', lens: 'performance', metric: KEY, value, unit: 'ms', method: 'probe', measured_at: `2026-10-15T01:${String(i).padStart(2, '0')}:00Z`, proposal_id: 'p-x', phase });
+  /** One item through compareOf, perfItem and the rendered table: its verdict, its change cell's class and its reason. */
+  const cellOf = (runs: number[], after: number, better?: 'up' | 'down', ed?: number) => {
+    const p: Proposal = { ...P, ...(ed !== undefined ? { expected_delta: ed } : {}) };
+    const lenses: LensFields[] = [{ id: 'performance', manifest: { fields: [better ? { key: KEY, metric: { better } } : { key: KEY }] } }];
+    const lensDef: Any = { F: { [KEY]: { label: 'Interaction p95', unit: 'ms', ...(better ? { metric: { better } } : {}) } } };
+    const ms = [...runs.map((v, i) => read(v, 'before', i + 1)), read(after, 'after', 9)];
+    const c = compareOf({ proposals: [p], measurements: ms, shots: [] as Shot[] }, 'p-x', lenses) as Comparison;
+    const it = perfItem(c, 'Booking', lensDef);
+    const html = renderToStaticMarkup(React.createElement(PerfTable, { items: [it] }));
+    return { c, v: c.verdict, cls: /<td class="(chg[^"]*)"/.exec(html)?.[1], why: perfReason(it) as string };
+  };
+  const a = cellOf([80, 88, 80], 64, 'down');
+  ok(a.v === 'flat' && a.cls === 'chg', 'one judgement: athena 80/88/80 -> 64 (flat) paints no green beside "flat · within noise"', [a.v, a.cls]);
+  const e = cellOf([50, 52, 51], 90, undefined, 5);
+  ok(e.v === 'moved' && e.cls === 'chg good', 'one judgement: no manifest direction, expected +5, 50/52/51 -> 90 (moved) is a good change, not the "down" default', [e.v, e.cls]);
+  const u = cellOf([50, 52, 51], 90);
+  ok(u.v === 'unmeasured' && u.cls === 'chg' && /nothing states which way is better/.test(u.why) && !u.why.includes('so this moved'), 'one judgement: no direction at all reads unmeasured in the cell and the sentence alike', [u.v, u.cls, u.why]);
+  // GUARD: the Kettle sample passes today and must keep passing
+  const k = cellOf([96, 104, 98], 72, 'down');
+  ok(k.v === 'moved' && k.cls === 'chg good' && k.why.includes('larger than the noise') && k.why.includes('moved'), 'one judgement (guard): the sample 96/104/98 -> 72 moved, a good change beyond the noise', [k.v, k.cls, k.why]);
+  // the sweep: every combination reconciles the cell's tone and the sentence's verb with the verdict
+  const VERB: Record<string, RegExp> = { moved: /so this moved\./, worse: /so this got worse\./, flat: /so this is flat/, unmeasured: /unmeasured/ };
+  const off: string[] = [];
+  let total = 0;
+  for (const runs of [[80, 88, 80], [50, 52, 51], [96, 104, 98]]) for (const after of [64, 90, 72, 51])
+    for (const better of ['up', 'down', undefined] as const) for (const ed of [5, -5, undefined]) {
+      total++;
+      const r = cellOf(runs, after, better, ed);
+      const tone = r.v === 'moved' ? 'chg good' : r.v === 'worse' ? 'chg bad' : 'chg';
+      const verbs = Object.entries(VERB).filter(([, re]) => re.test(r.why)).map(([w]) => w);
+      if (r.cls !== tone || verbs.join() !== r.v) off.push(`${runs.join('/')}->${after} ${better ?? '-'} ${ed ?? '-'}: ${r.v} ${r.cls} [${verbs.join()}]`);
+    }
+  ok(total === 108 && !off.length, `one judgement: the 108-case sweep reconciles tone and reason with the verdict (${off.length} contradict)`, off.slice(0, 4));
+  // verdictOf returns its judgement additively; the existing fields keep their meaning
+  const runs = [96, 104, 98].map((v, i) => read(v, 'before', i + 1)), j = verdictOf(P, runs, [read(72, 'after', 9)], LENSES) as Any;
+  ok(j.verdict === 'moved' && j.from?.value === 98 && j.to?.value === 72 && j.dir === 'down' && j.base === 98 && j.delta === -26, 'verdictOf: the judgement carries its direction, baseline median and delta', { dir: j.dir, base: j.base, delta: j.delta });
+  const one = verdictOf(P, [read(40, 'before', 1)], [read(30, 'after', 9)], LENSES) as Any;
+  ok(one.base === 40 && one.delta === -10, 'verdictOf: one before reading is its own baseline', { base: one.base, delta: one.delta });
+  // the source guard: no cell under the train ledger re-derives the rule by hand
+  const TRAIN = path.join(SRC, 'components/ledger/train'), hits: string[] = [];
+  const walk = (d: string): string[] => fs.readdirSync(d, { withFileTypes: true }).flatMap((x) => (x.isDirectory() ? walk(path.join(d, x.name)) : /\.tsx?$/.test(x.name) ? [path.join(d, x.name)] : []));
+  for (const f of walk(TRAIN)) {
+    const lines = stripComments(fs.readFileSync(f, 'utf8')).split('\n');
+    lines.forEach((l, i) => { if (/\?\? 'down'|\brunStats\(|Math\.abs\(f\.change\) <= f\.noise|expected_delta > 0/.test(l)) hits.push(`${path.relative(TRAIN, f)}:${i + 1}`); });
+  }
+  ok(!hits.length, 'one judgement: no train ledger file defaults the direction, re-takes the median or re-tests the noise', hits);
+}
+
+// ------------------------------------------------------------------------------------------- changed area (focus)
+// The fifth compare mode: before and after cropped to the change map's box (padded, the frame's 16:9, zoom capped at
+// 8x), side by side. The one exception to the 16:9 rule is a box no 16:9 crop inside the image can hold: that reads
+// the whole capture (zoom 1, letterboxed as every other mode draws it). The mode list is written once (COMPARE_MODES).
+{
+  const px: Any = await import('../packages/core/src/train/pixels.ts'), focusCrop = px.focusCrop as Any;
+  const has = typeof focusCrop === 'function';
+  const crop = (w: number, h: number, bbox: number[]) => (has ? focusCrop({ w, h, cells: [], pct: 1, moved: 1, maxd: 100, bbox }) : null);
+  const EPS = 1e-9, inside = (c: Any) => !!c && c.x >= -EPS && c.y >= -EPS && c.x + c.w <= 1 + EPS && c.y + c.h <= 1 + EPS;
+  const holds = (c: Any, w: number, h: number, b: number[], pad = 0) => !!c && c.x * w <= b[0] - pad + EPS && c.y * h <= b[1] - pad + EPS && (c.x + c.w) * w >= b[2] + 1 + pad - EPS && (c.y + c.h) * h >= b[3] + 1 + pad - EPS;
+  // 1. a central box: contained with padding on every side, 16:9 in pixels, inside the image
+  const c1 = crop(1600, 900, [800, 450, 879, 494]);
+  ok(inside(c1) && holds(c1, 1600, 900, [800, 450, 879, 494], 1) && !!c1 && Math.abs((c1.w * 1600) / (c1.h * 900) - 16 / 9) < 1e-6, 'focus crop: a central box is padded on every side, 16:9 in pixels, inside the image', c1);
+  // 2. a corner box: clamped to the image, still containing the box
+  const c2 = crop(1600, 900, [1590, 890, 1599, 899]);
+  ok(inside(c2) && holds(c2, 1600, 900, [1590, 890, 1599, 899]), 'focus crop: a corner box is clamped to the image and still contained', c2);
+  // 3. a one-pixel box: zoom capped at 8x, centred on the pixel
+  const c3 = crop(1600, 900, [700, 300, 700, 300]);
+  ok(!!c3 && c3.w >= 1 / 8 - EPS && c3.zoom <= 8 + EPS && Math.abs((c3.x + c3.w / 2) * 1600 - 700.5) < 1e-6 && Math.abs((c3.y + c3.h / 2) * 900 - 300.5) < 1e-6 && inside(c3), 'focus crop: a 1-pixel box is zoomed at most 8x, centred on the pixel', c3);
+  // 4. the stated exception to case 1: a box spanning the whole 1280x800 (16:10) capture -> the full image, zoom 1
+  const c4 = crop(1280, 800, [0, 0, 1279, 799]);
+  ok(!!c4 && c4.x === 0 && c4.y === 0 && c4.w === 1 && c4.h === 1 && c4.zoom === 1, 'focus crop: a whole-capture box on 1280x800 is the full image at zoom 1 (the exception to 16:9)', c4);
+  ok(has && focusCrop({ w: 10, h: 10, cells: [], pct: 0, moved: 0, maxd: 0 }) === null, 'focus crop: no box, no crop');
+
+  const scr: Any = await imp('Screens.tsx'), FocusPair = scr.FocusPair;
+  const React = (await import('react')).default, { renderToStaticMarkup } = await import('react-dom/server');
+  const fp = (map: Any) => (FocusPair ? renderToStaticMarkup(React.createElement(FocusPair, { label: 'light · 1600x900', before: '/b.png', after: '/a.png', map })) : '');
+  const grid = (w: number, h: number, bbox?: number[]) => ({ w, h, cells: new Array<number>(GRID_W * GRID_H).fill(0), pct: bbox ? 1 : 0, moved: bbox ? 1 : 0, maxd: bbox ? 100 : 0, ...(bbox ? { bbox } : {}) });
+  const vars = (html: string) => [...html.matchAll(/<img [^>]*style="([^"]*)"/g)].map((m) => m[1]);
+  const frames = (html: string) => (html.match(/class="tr-fig"/g) ?? []).length;
+  const emptyFrame = (html: string) => [...html.matchAll(/<div class="tr-scr[^"]*">(.*?)<\/div>/g)].some((m) => !/<img /.test(m[1]));
+  // 5. a done map with a box: two frames, the same crop on both images, the caption names the box and the zoom
+  const h5 = fp({ status: 'done', grid: grid(1600, 900, [800, 450, 879, 494]) }), v5 = vars(h5);
+  ok(frames(h5) === 2 && v5.length === 2 && v5[0] === v5[1] && /--fx:/.test(v5[0]) && /--fy:/.test(v5[0]) && /--fw:/.test(v5[0]) && /--fh:/.test(v5[0]), 'focus pair: two frames, before and after, both images carrying the same --fx/--fy/--fw/--fh crop', v5);
+  ok(/Before/.test(h5) && /After/.test(h5) && h5.includes('x 800–879, y 450–494') && /\d(\.\d)?× zoom/.test(h5), 'focus pair: the caption names the box and the zoom', h5.slice(0, 400));
+  ok(/class="tr-heat"/.test(h5), 'focus pair: the change map is registered over the after crop');
+  const h4 = fp({ status: 'done', grid: grid(1280, 800, [0, 0, 1279, 799]) });
+  ok(/spans the whole screen/.test(h4), 'focus pair: a whole-capture box says the change spans the whole screen', h4.slice(0, 400));
+  // 6. nothing moved, computing, error: the two full frames and a note, never an empty frame
+  const h6 = fp({ status: 'done', grid: grid(1600, 900) }), hc = fp({ status: 'computing' }), he = fp({ status: 'error', error: 'decode failed: 404' });
+  ok(frames(h6) === 2 && /Nothing moved/.test(h6) && !emptyFrame(h6) && !/--fx/.test(h6), 'focus pair: no box -> the two full frames side by side and "Nothing moved"', h6.slice(0, 400));
+  ok(!!FocusPair && /computing…/.test(hc) && /decode failed: 404/.test(he) && !emptyFrame(hc) && !emptyFrame(he) && frames(hc) === 2 && frames(he) === 2, 'focus pair: computing says so, an error says its text, never an empty frame', [hc.slice(0, 200), he.slice(0, 200)]);
+
+  // 7. M cycles one exported list; no other copy of it under components/ledger
+  const km: Any = await import(pathToFileURL(path.join(SRC, 'components/ledger/train/keymap.ts')).href), CM = km.COMPARE_MODES as Any;
+  ok(Array.isArray(CM) && CM.map((m: Any) => m.value).join() === 'side,slider,blink,map,focus', 'compare modes: side -> slider -> blink -> map -> focus, one exported list', CM);
+  const mKey = km.KEYMAP?.compare?.find((b: Any) => b.action === 'mode');
+  ok(Array.isArray(CM) && mKey?.label === CM.map((m: Any) => m.label.toLowerCase()).join(' · '), "compare modes: M's key label is the list's labels", mKey?.label);
+  const LEDGER = path.join(SRC, 'components/ledger'), copies: string[] = [], readers: string[] = [];
+  const walkL = (d: string): string[] => fs.readdirSync(d, { withFileTypes: true }).flatMap((x) => (x.isDirectory() ? walkL(path.join(d, x.name)) : /\.tsx?$/.test(x.name) ? [path.join(d, x.name)] : []));
+  for (const f of walkL(LEDGER)) {
+    const s = stripComments(fs.readFileSync(f, 'utf8')), r = path.relative(LEDGER, f).replace(/\\/g, '/');
+    if (/'side'[^\n]{0,40}'slider'/.test(s) && r !== 'train/keymap.ts') copies.push(r);
+    if (/\bCOMPARE_MODES\b/.test(s)) readers.push(r);
+  }
+  ok(!copies.length && ['LedgerPage.tsx', 'train/compare/Screens.tsx', 'train/keymap.ts'].every((r) => readers.includes(r)), 'compare modes: LedgerPage, Screens and keymap read COMPARE_MODES; no other side/slider list', { copies, readers });
+
+  // 8. the new CSS: tokens only, the 12 px floor, no animation or transition (reduced motion has nothing to stop)
+  const sf = stripComments(fs.readFileSync(path.join(SRC, CMP, 'ShotFigure.css'), 'utf8')) + stripComments(fs.readFileSync(path.join(SRC, CMP, 'Screens.css'), 'utf8'));
+  const focusRules = [...sf.matchAll(/([^{}]*\.focus[^{}]*)\{([^}]*)\}/g)].map((m) => m[2]);
+  ok(focusRules.length > 0 && focusRules.every((b) => !/animation|transition|#[0-9a-f]{3,8}\b|rgb|hsl/i.test(b) && [...b.matchAll(/--fs-(\d+)/g)].every((m) => Number(m[1]) >= 12)), 'focus css: tokens only, --fs-* >= 12, no animation or transition', focusRules);
+}
+
+// ------------------------------------------------------------------------------------------- canDecide, the release window
+{ // leaving a release: a draft allows it, a non-draft refuses it, an UNKNOWN release fails open (rules.ts says so; the server's 409 is the owner)
+  const inRel = { status: 'done' as const, release_id: 'rel-1' };
+  ok(canDecide('rework', inRel, { status: 'draft' }), 'canDecide: rework of an item in a draft release is offered');
+  ok(!canDecide('rework', inRel, { status: 'merged' as never }), 'canDecide: rework of an item in a non-draft release is not offered');
+  ok(canDecide('rework', inRel, undefined), 'canDecide: a release not loaded yet fails open, as the jsdoc states');
+  ok(canDecide('accept', inRel, { status: 'merged' as never }), 'canDecide: accept never leaves the release, so it is offered');
 }
 
 console.log(bad ? `check-train-compare: ${bad} of ${n} failed` : `check-train-compare: ${n} checks passed`);

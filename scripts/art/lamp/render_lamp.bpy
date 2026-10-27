@@ -1,0 +1,203 @@
+# Blender script; run with blender -b -P scripts/art/lamp/render_lamp.bpy -- <repo-root> <work-dir>
+"""Renders the lamp-agent evidence from the committed final.fbx (so the actions and weights are the shipped ones):
+evidence/turnaround.jpg (4 views, rest pose), evidence/table-view.jpg (640x480 from the far-edge viewing distance, reading pose),
+evidence/pose-<name>.jpg (640x480 each). The materials are rebuilt per slot from scripts/art/lamp/materials.json and the shipped textures.
+
+Framing (Director review 2026-10-21): every camera is fitted to the world bounding box of the evaluated (posed) mesh, shade, cap, base and
+clamp included, with at least MARGIN of the image on every side. The turnaround uses one distance for all four views (the largest needed).
+The table view keeps the far-edge line of sight (camera 1.63 m from the aim point, 23 degrees down, 35 degrees off the lamp axis) and only
+widens the horizontal field of view from 40 degrees until the box fits. Then a framing check renders a transparent-film alpha pass of the lamp
+alone with the same camera and asserts no lamp pixel touches the border and the silhouette keeps MARGIN on every side. The result goes to
+<work-dir>/framing.json (write_manifest.mjs copies it into the manifest). The script exits non-zero if any image fails.
+
+Far-edge view (assumption, wolf-plan gives no depth): eyes 1.6 m high, table top 0.95 m, lamp base at the far edge 1.5 m away
+horizontally, so 1.63 m line of sight, 23 degrees down. The slab under the lamp is 3 cm thick, edge at y = 0.058 where the clamp grips it;
+its top is the blueprint blue of the reference sheet. Cycles on the CPU, 48 samples; the alpha pass 4 samples."""
+import bpy, math, os, sys, json, tempfile
+import numpy as np
+from mathutils import Vector
+from bpy_extras.object_utils import world_to_camera_view
+
+REPO, WORK = sys.argv[sys.argv.index('--') + 1:][:2]
+ART = os.path.join(REPO, 'apps', 'vr', 'ArtSource', 'lamp-agent')
+EV = os.path.join(ART, 'evidence')
+os.makedirs(EV, exist_ok=True)
+MAT = json.load(open(os.path.join(REPO, 'scripts', 'art', 'lamp', 'materials.json')))['regions']
+MARGIN = 0.06          # fraction of the image on every side when fitting; the check demands at least CHECK_MARGIN
+CHECK_MARGIN = 0.05
+FRAMING = {'margin_fit': MARGIN, 'margin_required': CHECK_MARGIN, 'images': {}}
+
+
+def hex2rgb(h): return [int(h[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+def lin(h): return tuple((x / 12.92 if x <= 0.04045 else ((x + 0.055) / 1.055) ** 2.4) for x in hex2rgb(h)) + (1,)
+
+
+bpy.ops.wm.read_factory_settings(use_empty=True)
+bpy.ops.import_scene.fbx(filepath=os.path.join(ART, 'final.fbx'))
+arm = [o for o in bpy.context.scene.objects if o.type == 'ARMATURE'][0]
+lamp = [o for o in bpy.context.scene.objects if o.type == 'MESH'][0]
+for o in bpy.context.scene.objects:
+    if o.type == 'EMPTY': o.hide_render = True
+
+
+def textured(name, r):
+    m = bpy.data.materials.new(name); m.use_nodes = True
+    nt = m.node_tree; nt.nodes.clear()
+    out = nt.nodes.new('ShaderNodeOutputMaterial'); b = nt.nodes.new('ShaderNodeBsdfPrincipled'); nt.links.new(b.outputs['BSDF'], out.inputs['Surface'])
+
+    def ti(f, cs):
+        n = nt.nodes.new('ShaderNodeTexImage'); n.image = bpy.data.images.load(os.path.join(ART, 'textures', f)); n.image.colorspace_settings.name = cs; return n
+    nt.links.new(ti('lamp_basecolor.png', 'sRGB').outputs['Color'], b.inputs['Base Color'])
+    nm = nt.nodes.new('ShaderNodeNormalMap'); nt.links.new(ti('lamp_normal.png', 'Non-Color').outputs['Color'], nm.inputs['Color']); nt.links.new(nm.outputs['Normal'], b.inputs['Normal'])
+    sp = nt.nodes.new('ShaderNodeSeparateColor'); nt.links.new(ti('lamp_orm.png', 'Non-Color').outputs['Color'], sp.inputs['Color'])
+    nt.links.new(sp.outputs['Green'], b.inputs['Roughness']); nt.links.new(sp.outputs['Blue'], b.inputs['Metallic'])
+    if 'emission' in r:
+        b.inputs['Emission Color'].default_value = lin(r['emission']); b.inputs['Emission Strength'].default_value = r['emission_strength']
+    return m
+
+
+slots = {r['slot']: r for r in MAT.values()}
+for i, sl in enumerate(lamp.data.materials):
+    key = sl.name.split('.')[0]
+    assert key in slots, 'unexpected material slot ' + sl.name
+    lamp.data.materials[i] = textured(key, slots[key])
+
+s = bpy.context.scene
+s.render.engine = 'CYCLES'; s.cycles.device = 'CPU'; s.cycles.samples = 48; s.cycles.use_denoising = False
+w = bpy.data.worlds.new('w'); w.use_nodes = True; s.world = w
+w.node_tree.nodes['Background'].inputs['Color'].default_value = lin('#0A0F18'); w.node_tree.nodes['Background'].inputs['Strength'].default_value = 0.5
+bpy.ops.mesh.primitive_cube_add(size=1.0, location=(0, 0, 0))
+slab = bpy.context.object; slab.name = 'slab'
+slab.scale = (1.4, 1.2, 0.029); slab.location = (0, 0.058 - 0.6, -0.0005 - 0.0145)       # top at z = -0.0005, edge at y = 0.058, 3 cm thick
+m = bpy.data.materials.new('sheet'); m.use_nodes = True
+b = m.node_tree.nodes['Principled BSDF']; b.inputs['Base Color'].default_value = lin('#123A8C'); b.inputs['Roughness'].default_value = 0.8
+slab.data.materials.append(m)
+for loc, e, size in (((0.6, -0.9, 1.2), 60, 0.8), ((-1.0, 0.7, 0.8), 30, 0.9), ((0.3, 0.9, 0.9), 20, 0.8)):
+    bpy.ops.object.light_add(type='AREA', location=loc)
+    L = bpy.context.object; L.data.energy, L.data.size = e, size; L.data.color = (1.0, 0.95, 0.88)
+    L.rotation_euler = (Vector((0, 0, 0.25)) - Vector(loc)).to_track_quat('-Z', 'Y').to_euler()
+bpy.ops.object.camera_add(); cam = bpy.context.object; s.camera = cam; cam.data.sensor_width = 36
+acts = {a.name.split('|')[-1]: a for a in bpy.data.actions}
+arm.animation_data_create()
+
+
+def pose(name):
+    if name is None:
+        arm.animation_data.action = None          # no action: the rest pose
+    else:
+        a = acts[name]; arm.animation_data.action = a
+        try: arm.animation_data.action_slot = a.slots[0]
+        except Exception: pass
+    s.frame_set(1); bpy.context.view_layer.update()
+
+
+def corners():
+    e = lamp.evaluated_get(bpy.context.evaluated_depsgraph_get()); m_ = e.to_mesh()
+    p = np.array([(lamp.matrix_world @ v.co)[:] for v in m_.vertices]); e.to_mesh_clear()
+    lo, hi = p.min(0), p.max(0)
+    return [Vector((x, y, z)) for x in (lo[0], hi[0]) for y in (lo[1], hi[1]) for z in (lo[2], hi[2])], lo, hi
+
+
+def setres(w_, h_):
+    s.render.resolution_x, s.render.resolution_y, s.render.resolution_percentage = w_, h_, 100
+
+
+def place(centre, az, el, dist, hfov):
+    a, e = math.radians(az), math.radians(el)
+    cam.location = centre + Vector((math.sin(a) * math.cos(e), -math.cos(a) * math.cos(e), math.sin(e))) * dist
+    cam.rotation_euler = (centre - cam.location).to_track_quat('-Z', 'Y').to_euler()
+    cam.data.lens = 18 / math.tan(math.radians(hfov) / 2)
+    bpy.context.view_layer.update()
+
+
+def inside(cs, margin):
+    for c in cs:
+        x, y, z = world_to_camera_view(s, cam, c)
+        if z <= 0 or x < margin or x > 1 - margin or y < margin or y > 1 - margin: return False
+    return True
+
+
+def fit_dist(cs, centre, az, el, hfov):
+    lo, hi = 0.05, 30.0
+    for _ in range(40):
+        mid = (lo + hi) / 2; place(centre, az, el, mid, hfov)
+        if inside(cs, MARGIN): hi = mid
+        else: lo = mid
+    return hi
+
+
+def shoot(path, alpha=False):
+    s.render.film_transparent = alpha
+    s.cycles.samples = 4 if alpha else 48
+    s.render.image_settings.file_format = 'PNG'; s.render.image_settings.color_mode = 'RGBA' if alpha else 'RGB'
+    slab.hide_render = alpha
+    s.render.filepath = path; bpy.ops.render.render(write_still=True)
+
+
+def load(path, channels=3):
+    img = bpy.data.images.load(path); w_, h_ = img.size
+    a = np.empty(w_ * h_ * 4, dtype=np.float32); img.pixels.foreach_get(a); bpy.data.images.remove(img)
+    return a.reshape(h_, w_, 4)[:, :, :channels]
+
+
+def jpeg(arr, path):
+    h_, w_, _ = arr.shape
+    img = bpy.data.images.new('o', w_, h_); rgba = np.ones((h_, w_, 4), dtype=np.float32); rgba[:, :, :3] = arr
+    img.pixels.foreach_set(rgba.ravel()); img.filepath_raw = path; img.file_format = 'JPEG'
+    s.render.image_settings.file_format = 'JPEG'; s.render.image_settings.quality = 85; img.save(); bpy.data.images.remove(img)
+
+
+tmp = tempfile.mkdtemp()
+FAILS = []
+
+
+def check(name, w_, h_):
+    """Alpha pass of the lamp alone with the camera as it is; asserts the silhouette is clear of the border and keeps CHECK_MARGIN."""
+    setres(w_, h_); shoot(os.path.join(tmp, 'alpha_%s.png' % name), alpha=True)
+    al = load(os.path.join(tmp, 'alpha_%s.png' % name), 4)[:, :, 3] > 0.02
+    ys, xs = np.nonzero(al)
+    touches = bool(al[0].any() or al[-1].any() or al[:, 0].any() or al[:, -1].any())
+    mg = {'left': round(float(xs.min() / w_), 4), 'right': round(float(1 - (xs.max() + 1) / w_), 4),
+          'bottom': round(float(ys.min() / h_), 4), 'top': round(float(1 - (ys.max() + 1) / h_), 4)} if len(xs) else {}
+    ok = bool(len(xs)) and not touches and min(mg.values()) >= CHECK_MARGIN
+    FRAMING['images'][name] = {'pass': ok, 'lamp_pixels': int(al.sum()), 'touches_border': touches, 'silhouette_margin_fraction': mg,
+                               'min_margin_fraction': min(mg.values()) if mg else None}
+    if not ok: FAILS.append(name)
+
+
+# ---- turnaround: rest pose, one distance for all four views
+pose(None)
+cs, lo, hi = corners(); centre = (Vector(lo) + Vector(hi)) / 2
+setres(480, 480)
+d_all = max(fit_dist(cs, centre, az, 18, 40) for az in (0, 90, 180, 270))
+tiles = []
+for az in (0, 90, 180, 270):
+    place(centre, az, 18, d_all, 40)
+    p = os.path.join(tmp, 't%d.png' % az); setres(480, 480); shoot(p); tiles.append(load(p)); check('turnaround-az%d' % az, 480, 480)
+jpeg(np.vstack([np.hstack(tiles[:2]), np.hstack(tiles[2:])]), os.path.join(EV, 'turnaround.jpg'))
+FRAMING['turnaround'] = {'bbox_world_m': {'min': [round(float(x), 4) for x in lo], 'max': [round(float(x), 4) for x in hi]}, 'distance_m': round(d_all, 3), 'hfov_deg': 40, 'elevation_deg': 18}
+
+# ---- far-edge table view (reading pose): the line of sight is fixed (1.63 m from (0, 0, 0.2), 23 degrees down, 35 degrees off axis); only the field of view widens
+pose('reading')
+cs, lo, hi = corners(); setres(640, 480)
+aim = Vector((0, 0, 0.2)); hfov = 40.0
+place(aim, 35, 23, 1.63, hfov)
+while not inside(cs, MARGIN) and hfov < 120:
+    hfov += 0.25; place(aim, 35, 23, 1.63, hfov)
+p = os.path.join(tmp, 'table.png'); shoot(p); jpeg(load(p), os.path.join(EV, 'table-view.jpg')); check('table-view', 640, 480)
+FRAMING['table_view'] = {'line_of_sight_m': 1.63, 'elevation_deg': 23, 'hfov_deg': hfov, 'hfov_start_deg': 40.0, 'px_per_degree': round(640 / hfov, 2),
+                         'note': 'camera position and aim unchanged; only the horizontal field of view was widened from 40 degrees to fit the whole lamp with the margin'}
+
+# ---- the five poses: side view, the camera fitted to each pose's own box
+for name in ('resting', 'reading', 'working', 'asking', 'speaking'):
+    pose(name); cs, lo, hi = corners(); c = (Vector(lo) + Vector(hi)) / 2; setres(640, 480)
+    d = fit_dist(cs, c, 90, 8, 40); place(c, 90, 8, d, 40)
+    p = os.path.join(tmp, name + '.png'); shoot(p); jpeg(load(p), os.path.join(EV, 'pose-%s.jpg' % name)); check('pose-' + name, 640, 480)
+    FRAMING['images']['pose-' + name]['distance_m'] = round(d, 3)
+
+FRAMING['pass'] = not FAILS and len(FRAMING['images']) == 10
+json.dump(FRAMING, open(os.path.join(WORK, 'framing.json'), 'w'), indent=1)
+print('FRAMING', json.dumps({k: (v['pass'], v['min_margin_fraction']) for k, v in FRAMING['images'].items()}), 'hfov', hfov)
+if not FRAMING['pass']:
+    print('FRAMING FAILED', FAILS); sys.exit(1)
+print('RENDER OK')

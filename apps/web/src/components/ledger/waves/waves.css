@@ -1,0 +1,69 @@
+/* The ledger's waves (src/components/ledger/waves/*, the chip in variants/Triage.tsx): the strip above the Backlog table,
+   its wave panel, the inline composer and a row's wave chip. Tokens only, both themes; nothing under 12 px. Button and field
+   rules sit under .lg-page so they beat the app-wide button rules (docs/blueprint-ui.md). The strip folds below 760 px of
+   table width (the table's container): the tabs become one select and the composer's rows stack. */
+
+.lg-waves { padding: var(--sp-8) 18px var(--sp-10); border-bottom: 1px solid var(--ink-4); background: color-mix(in srgb, var(--ink) 3%, transparent); }
+.wv-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-8) var(--sp-12); }
+.wv-none { font-size: var(--fs-14); color: var(--ink-2); margin-right: auto; }
+.wv-tabs { display: flex; flex-wrap: wrap; border: 1px solid var(--ink-3); background: var(--panel); margin-right: auto; }
+.lg-page .wv-tabs button { display: inline-flex; align-items: center; gap: var(--sp-6); height: var(--h-ctl-sm); padding: 0 var(--sp-10); background: none; border: 0; border-right: 1px solid var(--ink-4); font-size: var(--fs-13); color: var(--ink-2); white-space: nowrap; }
+.lg-page .wv-tabs button:last-child { border-right: 0; }
+.lg-page .wv-tabs button:hover { color: var(--ink-hi); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.lg-page .wv-tabs button.on { color: var(--ink-hi); background: color-mix(in srgb, var(--ink) 14%, transparent); box-shadow: inset 0 -3px 0 var(--ink); }
+.wv-tabs b { font: 600 var(--fs-12) var(--mono); color: var(--ink-hi); }
+.lg-page .wv-sel, .lg-page .wv-mv { height: var(--h-ctl-sm); max-width: 100%; padding: 0 var(--sp-8); background: var(--panel); border: 1px solid var(--ink-3); color: var(--ink); font: var(--fs-14) var(--sans); }
+.lg-page .wv-sel { display: none; }
+.lg-page .wv-mv { max-width: 150px; font-size: var(--fs-13); }
+
+/* a wave's state: mark and word, the colour never alone */
+.wv-st { display: inline-flex; align-items: center; gap: var(--sp-5); font: 500 var(--fs-12) var(--mono); letter-spacing: var(--ls-1); text-transform: uppercase; color: var(--ink-2); white-space: nowrap; }
+.wv-st b { font-weight: 400; }
+.wv-st.s-running { color: var(--accent); }
+.wv-st.s-done { color: var(--mint-2); }
+.wv-st.s-partial { color: var(--amber-2); }
+.wv-st.s-failed { color: var(--red-2); }
+
+/* the selected wave: head, then one line per package */
+.wv-panel, .wv-comp { margin-top: var(--sp-8); border: 1px solid var(--ink-3); background: var(--card-hi); }
+.wv-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-8) var(--sp-12); padding: var(--sp-8) var(--sp-12); }
+.wv-name { font-size: var(--fs-14); color: var(--ink-hi); }
+.wv-meta { font: 500 var(--fs-12) var(--mono); letter-spacing: var(--ls-1); color: var(--ink-2); white-space: nowrap; }
+.wv-tag { padding: 0 var(--sp-6); border: 1px solid var(--ink-4); font: 500 var(--fs-12) var(--mono); letter-spacing: var(--ls-1); text-transform: uppercase; color: var(--ink); }
+.wv-pks, .wv-cp, .wv-fl { list-style: none; margin: 0; padding: 0; }
+.wv-pks > li { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-6) var(--sp-12); padding: var(--sp-6) var(--sp-12); border-top: 1px solid var(--ink-4); font-size: var(--fs-14); }
+.wv-pn { color: var(--ink-hi); font-weight: 500; }
+.wv-ask { display: inline-flex; align-items: center; gap: var(--sp-6); font-size: var(--fs-14); color: var(--ink-hi); }
+.lg-page .wv-panel .bt, .lg-page .wv-comp .bt { height: var(--h-ctl-sm); }
+.lg-page .bt.warn { border-color: var(--red-2); color: var(--red-2); }
+.lg-page .bt.warn:hover:not(:disabled) { background: color-mix(in srgb, var(--red-2) 12%, transparent); }
+
+/* the composer */
+.wv-lab { display: inline-flex; align-items: center; gap: var(--sp-8); font: 500 var(--fs-12) var(--mono); letter-spacing: var(--ls-2); text-transform: uppercase; color: var(--ink-2); }
+.lg-page .wv-in { height: var(--h-ctl-sm); min-width: 160px; padding: 0 var(--sp-8); background: var(--panel); border: 1px solid var(--ink-3); color: var(--ink); font: var(--fs-14) var(--sans); }
+.lg-page .wv-in:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.wv-cp > li { border-top: 1px solid var(--ink-4); }
+.wv-ph { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-8) var(--sp-12); padding: var(--sp-8) var(--sp-12); background: color-mix(in srgb, var(--ink) 5%, transparent); }
+.wv-fl { max-height: 220px; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--ink-3) transparent; }
+.wv-fl > li { display: flex; align-items: center; gap: var(--sp-8) var(--sp-12); padding: var(--sp-3) var(--sp-12); border-top: 1px solid var(--ink-4); font-size: var(--fs-14); }
+.wv-ft { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-hi); }
+.lg-page .wv-x { flex: none; width: var(--h-ctl-xs); height: var(--h-ctl-xs); background: none; border: 0; font-size: var(--fs-16); color: var(--ink-2); }
+.lg-page .wv-x:hover { color: var(--red-2); }
+.wv-warn { margin: 0; padding: var(--sp-8) var(--sp-12); border-top: 1px solid var(--ink-4); border-left: 3px solid var(--amber-2); font-size: var(--fs-13); line-height: 1.4; color: var(--ink); }
+.wv-act { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-8) var(--sp-12); padding: var(--sp-8) var(--sp-12); border-top: 1px solid var(--ink-4); }
+.wv-why { font-size: var(--fs-13); color: var(--amber-2); }
+
+/* a row's wave chip, after the finding's title */
+.lg-wv { display: inline-block; margin-left: var(--sp-6); padding: 0 var(--sp-5); border: 1px solid var(--accent); font: 500 var(--fs-12) var(--mono); letter-spacing: var(--ls-1); color: var(--accent); white-space: nowrap; vertical-align: 1px; }
+
+@container (max-width: 760px) {
+  .wv-tabs { display: none; }
+  .lg-page .wv-sel { display: inline-block; flex: 1 1 160px; margin-right: auto; }
+  .lg-waves { padding-left: 14px; padding-right: 14px; }
+  .wv-ph, .wv-head { align-items: stretch; flex-direction: column; }
+  .wv-fl > li { flex-wrap: wrap; }
+  .wv-ft { flex-basis: 100%; white-space: normal; }
+  .lg-page .wv-in { width: 100%; }
+}
+.lg-page.phone .wv-panel .bt, .lg-page.phone .wv-comp .bt, .lg-page.phone .wv-row .bt { height: var(--h-touch); }
+@media (prefers-reduced-motion: reduce) { .lg-waves * { transition: none; animation: none; } }

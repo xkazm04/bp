@@ -1,4 +1,4 @@
-// The findings ledger's performance budgets, counted, never timed (port-quality Q4):
+// The findings ledger's performance budgets, counted, never timed (ai-registry/skills/contest/references/port-quality.md, Q4):
 //   1. the chunk: nothing `/` imports statically reaches the ledger page or the release train (src/components/ledger/
 //      LedgerPage.tsx, src/components/ledger/train/**); Phone.tsx's LedgerPageLazy is the one door, a dynamic import;
 //   2. the DOM at 10x: a synthetic snapshot of 1,000 backlog findings and 120 pack items in 10 packs (every item with
@@ -8,8 +8,10 @@
 //   3. --bundle <distDir> [--before <distDir>]: a production build's first-load assets of `/` (the scripts and styles
 //      server/app/index.html names) must not carry the ledger's code (the marker `tr-cmp`, the compare panel's class,
 //      which only the ledger has); prints their bytes (raw and gzip), the ledger's own chunks, and the change against
-//      a build of the commit before. Build with `NEXT_DIST_DIR=.next-wp5b npx next build` (then restore tsconfig.json,
-//      which the build edits).
+//      a build of the commit before. `npm run verify:train-bundle` runs it against apps/web/.next after `npm run build`
+//      (it is NOT a check:* script: it needs a production build, which check-all cannot assume, and a skipped check
+//      fails that suite). Or build into another dir with `NEXT_DIST_DIR=.next-wp5b npx next build` (then restore
+//      tsconfig.json, which the build edits). Its decision logic is held offline on every run by a synthetic dist below.
 // The J/K render count (a step re-renders the two rows involved, nothing else) needs a browser: docs/blueprint-ui.md
 // "Findings ledger" names how it was counted.
 // Run: node scripts/check-train-budget.ts [--bundle <distDir> [--before <distDir>]]  (Node's type stripping;
@@ -19,54 +21,42 @@ import { pathToFileURL } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import os from 'node:os';
+import { dynIn, rel, staticDeps, walk } from './lib/import-graph.ts';
 
-const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'src');
+const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
 const arg = (k: string) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : undefined; };
 let held = 0;
 const failures: string[] = [];
 const expect = (ok: boolean, what: string) => { if (ok) held++; else failures.push(what); };
 
 // ------------------------------------------------------------------------------------------- 1. the static import graph
-const EXT = ['', '.ts', '.tsx', '/index.ts', '/index.tsx'];
-function resolveSpec(from: string, spec: string): string | null {
-  const base = spec.startsWith('@/') ? path.join(SRC, spec.slice(2)) : spec.startsWith('.') ? path.resolve(path.dirname(from), spec) : null;
-  if (!base) return null;   // a package
-  for (const e of EXT) { const p = base + e; if (fs.existsSync(p) && fs.statSync(p).isFile()) return p; }
-  return null;
-}
-/** Static value imports and re-exports of a module (`import type` and `export type` erase; `import()` is a split point). */
-function staticDeps(file: string): { stat: string[]; dyn: string[] } {
-  const src = fs.readFileSync(file, 'utf8'), stat: string[] = [], dyn: string[] = [];
-  for (const m of src.matchAll(/^\s*(import|export)\s+(type\s+)?([^'";]*?\sfrom\s+)?['"]([^'"]+)['"]/gm)) {
-    if (m[2]) continue;
-    if (m[1] === 'export' && !m[3]) continue;
-    const r = resolveSpec(file, m[4]); if (r) stat.push(r);
-  }
-  for (const m of src.matchAll(/\bimport\(\s*['"]([^'"]+)['"]\s*\)/g)) { const r = resolveSpec(file, m[1]); if (r) dyn.push(r); }
-  return { stat, dyn };
-}
-const entries = ['app/page.tsx', 'app/layout.tsx'].map((p) => path.join(SRC, p)).filter((p) => fs.existsSync(p));
-const reached = new Set<string>(), doors = new Map<string, string>();
-for (const todo = [...entries]; todo.length; ) {
-  const f = todo.pop()!;
-  if (reached.has(f)) continue;
-  reached.add(f);
-  const d = staticDeps(f);
-  todo.push(...d.stat);
-  for (const x of d.dyn) if (!doors.has(x)) doors.set(x, f);
-}
-const rel = (p: string) => path.relative(ROOT, p).split(path.sep).join('/');
+// the walker is scripts/lib/import-graph.ts (shared with check-variant-chunk.ts); its header says why the static side
+// reads the raw text and the dynamic side the comment-stripped one
+const entries = ['app/page.tsx', 'app/layout.tsx'].map((p) => path.join(SRC, p));
+const { reached, doors } = walk(entries);
 const LEDGER = path.join(SRC, 'components', 'ledger', 'LedgerPage.tsx'), TRAIN = path.join(SRC, 'components', 'ledger', 'train') + path.sep;
 const leaked = [...reached].filter((p) => p === LEDGER || p.startsWith(TRAIN)).map(rel);
 expect(!leaked.length, `\`/\` imports the ledger statically: ${leaked.slice(0, 6).join(', ')}${leaked.length > 6 ? ' …' : ''}`);
 expect(doors.has(LEDGER), 'nothing imports ledger/LedgerPage.tsx dynamically: the ledger page cannot load');
 console.log(`chunk   / reaches ${reached.size} modules statically, ${leaked.length ? leaked.length + ' of them the ledger page or train/**' : 'none of the ledger page or train/**'}; the ledger loads through ${doors.has(LEDGER) ? rel(doors.get(LEDGER)!) : '(nothing)'}`);
+// The matcher stopped biting? The door is an expectation that must MATCH, so comment out the real `import()` in the
+// file that holds it and leave the spelling in a comment: stripped, the door must be gone; raw, it survives (the blindness).
+{
+  const door = doors.get(LEDGER), raw = door ? fs.readFileSync(door, 'utf8') : '';
+  const seeded = raw.replace(/import\((\s*['"][^'"]*LedgerPage['"]\s*)\)/, '/* import($1) */ noDoor()');
+  // through staticDeps itself, so the control fails if the read ever stops stripping
+  expect(!!door && seeded !== raw && dynIn(door, seeded).includes(LEDGER) && !staticDeps(door, seeded).dyn.includes(LEDGER),
+    'control: a commented-out dynamic import of the ledger must not count as its door (the comments are stripped first)');
+}
 
 // ------------------------------------------------------------------------------------------- 3. the bundle (optional)
 interface FirstLoad { files: { name: string; raw: number; gz: number; marker: boolean }[]; js: number; jsGz: number; css: number; cssGz: number; ledger: { name: string; raw: number; gz: number }[] }
 const MARKER = 'tr-cmp';
 function firstLoad(dist: string): FirstLoad {
-  const html = fs.readFileSync(path.join(dist, 'server', 'app', 'index.html'), 'utf8');
+  const index = path.join(dist, 'server', 'app', 'index.html');
+  if (!fs.existsSync(index)) { console.log(`FAIL --bundle ${dist}: no server/app/index.html - run npm run build first (the arm never passes over a missing build)`); process.exit(1); }
+  const html = fs.readFileSync(index, 'utf8');
   const names = [...new Set([...html.matchAll(/\/_next\/(static\/[^"'\s)]+?\.(?:js|css))/g)].map((m) => m[1]))];
   const size = (p: string) => { const b = fs.readFileSync(p); return { raw: b.length, gz: zlib.gzipSync(b, { level: 9 }).length, marker: b.includes(MARKER) }; };
   const files = names.map((n) => ({ name: n, ...size(path.join(dist, n)) }));
@@ -75,13 +65,43 @@ function firstLoad(dist: string): FirstLoad {
   const ledger = fs.readdirSync(chunks).filter((n) => /\.(js|css)$/.test(n)).map((n) => ({ name: 'static/chunks/' + n, ...size(path.join(chunks, n)) })).filter((f) => f.marker).map(({ name, raw, gz }) => ({ name, raw, gz }));
   return { files, js: sum('.js', 'raw'), jsGz: sum('.js', 'gz'), css: sum('.css', 'raw'), cssGz: sum('.css', 'gz'), ledger };
 }
+/** The arm's two assertions over a first-load reading: a pure function so the offline control below can drive it. */
+const bundleFailures = (after: FirstLoad, label: string): string[] => {
+  const carry = after.files.filter((f) => f.marker).map((f) => f.name), out: string[] = [];
+  if (carry.length) out.push(`/'s first-load assets carry the ledger (${MARKER}): ${carry.join(', ')}`);
+  if (!after.ledger.length) out.push(`no chunk of ${label} carries ${MARKER}: is it a build of this repo?`);
+  return out;
+};
+// The offline control (runs every time, needs no build): a synthetic dist shaped like a production one. Clean, the arm
+// must hold; with the marker in a chunk that `/` names it must fail NAMING that chunk; with no chunk carrying the
+// marker at all it must fail as "not a build of this repo".
+{
+  const mk = (firstLoadBody: string, ledgerBody: string) => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-dist-'));
+    fs.mkdirSync(path.join(d, 'server', 'app'), { recursive: true }); fs.mkdirSync(path.join(d, 'static', 'chunks'), { recursive: true });
+    fs.writeFileSync(path.join(d, 'server', 'app', 'index.html'), '<script src="/_next/static/chunks/main-1.js"></script><link href="/_next/static/chunks/app.css">');
+    fs.writeFileSync(path.join(d, 'static', 'chunks', 'main-1.js'), firstLoadBody);
+    fs.writeFileSync(path.join(d, 'static', 'chunks', 'app.css'), '.a{}');
+    fs.writeFileSync(path.join(d, 'static', 'chunks', 'ledger-2.js'), ledgerBody);
+    return d;
+  };
+  const dirs = [mk('var a=1', 'x.className="' + MARKER + '"'), mk('var a="' + MARKER + '"', 'x.className="' + MARKER + '"'), mk('var a=1', 'var b=2')];
+  try {
+    const [clean, leaked, noLedger] = dirs.map((d) => bundleFailures(firstLoad(d), 'fixture'));
+    expect(clean.length === 0, 'control: a clean synthetic dist must satisfy the bundle arm: ' + clean.join('; '));
+    expect(leaked.length === 1 && leaked[0].includes('main-1.js'), 'control: a marker in a first-load chunk must fail the bundle arm naming the chunk: ' + JSON.stringify(leaked));
+    expect(noLedger.length === 1 && /is it a build of this repo/.test(noLedger[0]), 'control: a dist with no ledger chunk must fail the bundle arm: ' + JSON.stringify(noLedger));
+    const l = firstLoad(dirs[0]);
+    expect(l.js === 7 && l.css === 4 && l.ledger.length === 1, `control: first-load sizes are read from the files index.html names (JS ${l.js}, CSS ${l.css}, ledger chunks ${l.ledger.length})`);
+  } finally { for (const d of dirs) fs.rmSync(d, { recursive: true, force: true }); }
+}
 const kb = (n: number) => (n / 1024).toFixed(1) + ' KB';
 const bundle = arg('--bundle');
 if (bundle) {
   const after = firstLoad(path.resolve(bundle)), before = arg('--before') ? firstLoad(path.resolve(arg('--before')!)) : null;
-  const carry = after.files.filter((f) => f.marker).map((f) => f.name);
-  expect(!carry.length, `\`/\`'s first-load assets carry the ledger (${MARKER}): ${carry.join(', ')}`);
-  expect(after.ledger.length > 0, `no chunk of ${bundle} carries ${MARKER}: is it a build of this repo?`);
+  const bad = bundleFailures(after, bundle);
+  for (const m of bad) expect(false, m);
+  if (!bad.length) held += 2;
   const line = (k: string, x: FirstLoad) => console.log(`bundle  ${k.padEnd(6)} / first load: JS ${kb(x.js)} (gzip ${kb(x.jsGz)}) in ${x.files.filter((f) => f.name.endsWith('.js')).length} files, CSS ${kb(x.css)} (gzip ${kb(x.cssGz)}); ${x.files.filter((f) => f.marker).length} carry ${MARKER}`);
   if (before) line('before', before);
   line('after', after);
@@ -101,10 +121,11 @@ g.document ??= { documentElement: {}, createElement: () => ({ getContext: () => 
 g.getComputedStyle ??= () => ({ getPropertyValue: () => '' });
 
 const imp = (p: string): Promise<Any> => import(pathToFileURL(path.join(SRC, p)).href);
+const impCore = (p: string): Promise<Any> => import(pathToFileURL(path.join(ROOT, 'packages/core', p)).href);
 const req = createRequire(path.join(ROOT, 'package.json'));
 const React: Any = req('react'), { renderToString }: Any = req('react-dom/server');
 const h = React.createElement;
-const { buildModel } = await imp('lib/model/sample.ts');
+const { buildModel } = await impCore('src/model/sample.ts');
 const { initialState } = await imp('engine/state.ts');
 const { EngineCtx, VariantCtx, LiveCtx } = await imp('components/hooks.ts');
 const { getVariant } = await imp('variants/registry.ts');
@@ -112,6 +133,7 @@ const { useLedger, setLedgerUi, EMPTY_UI } = await imp('components/ledger/useLed
 const { PackTable } = await imp('components/ledger/train/PackTable.tsx');
 const { Triage } = await imp('components/ledger/variants/Triage.tsx');
 const { ComparePanel } = await imp('components/ledger/train/compare/ComparePanel.tsx');
+const { DecisionBar } = await imp('components/ledger/train/DecisionBar.tsx');
 
 const M = buildModel(1, () => 0, null), P = M.P;
 const feats: string[] = P.base.features.map((f: Any) => f.slug), lenses: string[] = P.lenses.map((l: Any) => l.id);
@@ -144,8 +166,9 @@ const live = { slug: 'synthetic', product: { status: 'live', events: '', jobs: [
 const S = { ...initialState(1, P.asOf), ready: true, page: 'ledger', lv: 'triage' };
 const E = { M, S, U: 1, store: { get: () => S, subscribe: () => () => {} }, dirty() {}, onFrame: () => () => {}, setPage() {}, flyToFeature() {}, openFeature() {}, lensAgg: () => ({ parts: [] }), channel: () => null };
 
-function Host({ ui, what }: { ui: Any; what: 'packs' | 'backlog' }) {
+function Host({ ui, what, targets = [] }: { ui: Any; what: 'packs' | 'backlog' | 'bar'; targets?: string[] }) {
   const L = useLedger(ui, setLedgerUi);
+  if (what === 'bar') return h(DecisionBar, { L, targets, onRelease() {}, hint: null });
   return what === 'packs' ? h(PackTable, { L, sample: false, onLenses() {} }) : h(Triage, { L });
 }
 function render(el: Any): string {
@@ -164,6 +187,14 @@ const BUDGETS: [string, number, () => string, number][] = [
   ['Backlog table, 1,120 findings', 1120, () => render(h(Host, { ui: { ...EMPTY_UI, scope: 'backlog' }, what: 'backlog' })), 24600],
   ['compare panel, an item with screens, diff closed', 1, () => render(h(ComparePanel, { id: first, view: EMPTY_UI.cmp, wide: false, phone: false, onView: noop, onWide: noop, onClose: noop })), 110],
   ['compare panel, a perf item (runs table), diff closed', 1, () => render(h(ComparePanel, { id: perf, view: EMPTY_UI.cmp, wide: false, phone: false, onView: noop, onWide: noop, onClose: noop })), 270],
+  // the decision surface: the bar with a target (the Decide buttons and the package pill), and with its note editor open
+  ['decision bar, one target', 1, () => render(h(Host, { ui: { ...EMPTY_UI, scope: 'packs' }, what: 'bar', targets: [first] })), 24],
+  // Decide reads the note from the ledger's module store, not from L: a render first pins the store to this product, then the ask is set
+  ['decision bar, note editor open', 1, () => {
+    render(h(Host, { ui: { ...EMPTY_UI, scope: 'packs' }, what: 'bar', targets: [first] }));
+    setLedgerUi((u: Any) => ({ ...u, note: { at: 'bar', ids: [first], decision: 'rework' } }));
+    try { return render(h(Host, { ui: { ...EMPTY_UI, scope: 'packs', note: { at: 'bar', ids: [first], decision: 'rework' } }, what: 'bar', targets: [first] })); } finally { setLedgerUi((u: Any) => ({ ...u, note: null })); }
+  }, 14],
 ];
 for (const [what, rows, run, budget] of BUDGETS) {
   let n = -1, err = '';
@@ -172,6 +203,26 @@ for (const [what, rows, run, budget] of BUDGETS) {
   if (err) continue;
   expect(n <= budget, `${what}: ${n} elements, budget ${budget}`);
   console.log(`dom     ${what}: ${n} elements${rows > 1 ? ' (' + (n / rows).toFixed(1) + ' per row)' : ''}, budget ${budget}`);
+}
+
+// ------------------------------------------------------------------------------------------- 3. the verdict source
+// A decision surface asks for an item's verdict (train/Decide.tsx verdictIn: the bar's render, the decision, the note
+// editor). Counted in measurement visits through a counting array: a 12-item selection asked three times (bar render,
+// press A, the note editor) must read the snapshot once, not 12 x 2 scans per ask, and every answer must equal the
+// two-filter reference the table's facts agree with.
+{
+  const { verdictIn } = await imp('components/ledger/train/Decide.tsx');
+  const { verdictOf } = await impCore('src/scan/compare.ts');
+  let visits = 0;
+  const counted: Any = new Proxy(measurements, { get: (t, k, r) => { if (typeof k === 'string' && /^\d+$/.test(k)) visits++; return Reflect.get(t, k, r); } });
+  const T: Any = { measurements: counted, lenses: P.lenses };
+  const sel = proposals.filter((p) => p.pack_id).slice(0, 12);
+  const ref = (p: Any) => verdictOf(p, measurements.filter((m) => m.proposal_id === p.id && m.phase === 'before'), measurements.filter((m) => m.proposal_id === p.id && m.phase === 'after'), P.lenses).verdict;
+  let same = 0;
+  for (let ask = 0; ask < 3; ask++) for (const p of sel) if (verdictIn(T, p) === ref(p)) same++;
+  expect(same === 36, `verdictIn agrees with the per-item filters: ${same} of 36 answers`);
+  expect(visits <= measurements.length, `a 12-item selection asked three times visits ${visits} measurements, budget ${measurements.length} (one pass; 7,200 per ask before)`);
+  console.log(`verdict  12 items x 3 asks over ${measurements.length} measurements: ${visits} visits, ${same} of 36 answers equal the reference`);
 }
 
 if (failures.length) { for (const f of failures) console.log('FAIL ' + f); console.log(`check-train-budget: ${failures.length} failed, ${held} held`); process.exit(1); }

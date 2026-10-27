@@ -1,0 +1,98 @@
+# The gate, in CI: the same `npm run check` the owner runs before a push, plus the production build and
+# the first-load budget. Nothing here is a CI-only variant of a check - a gate that differs from the one
+# run locally reports on a tree nobody has.
+#
+# WHY windows-latest. The 85-check gate is verified green on Windows and has never been run on Linux; a
+# first CI run on ubuntu would report on the checks' path assumptions, not on the code. Windows minutes
+# bill at 2x, so this runs on master, on pull requests, and on request - not on every branch push.
+# Moving to ubuntu is a real task (run the gate there once, fix what it finds), not a one-line edit here.
+#
+# WHY the registry is checked out beside this repo. `.ai/manifest.yaml` declares `registry: local:
+# ../ai-registry`, and check:scan-jobs drives triage and release-create through that registry's lens-scan
+# `store.mjs`. With CI set, a missing install FAILS that check rather than skipping it (scripts/check-all.mjs
+# makes any SKIP fatal), so the checkout below is load-bearing: it puts the registry where the resolver
+# looks, which also exercises the resolver itself. ai-registry is public, so no token is needed.
+name: gate
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+# A later push to the same branch supersedes this run; nothing is learned by finishing the older one.
+concurrency:
+  group: gate-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: bp
+    steps:
+      # fetch-depth: 0, not the default shallow clone: check:art asserts that every asset manifest's
+      # `lynx_commit` is a commit in this repo's history, and under depth 1 there is no history to find it
+      # in. The first CI run that got this far reported 12 folders whose commit "is not in git history"
+      # when all 12 were present - the check was reading a clone, not the repo.
+      - name: check out bp
+        uses: actions/checkout@v5
+        with:
+          path: bp
+          fetch-depth: 0
+
+      # The registry's default branch, deliberately not pinned: the resolver's job is to find the registry
+      # this checkout declares, and that is whatever the owner has. A red here is a real break between the two.
+      - name: check out the declared registry beside it
+        uses: actions/checkout@v5
+        with:
+          repository: xkazm04/ai-registry
+          path: ai-registry
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24.x
+          cache: npm
+          cache-dependency-path: bp/package-lock.json
+
+      # ci, never install: the lockfile is the declared tree, and an install would let CI pass against
+      # dependencies the committed lockfile does not name.
+      - name: npm ci
+        run: npm ci
+
+      # The push precondition from CLAUDE.md, enforced rather than remembered: `.env` holds API keys, is
+      # git-ignored, and must never be committed. File NAMES are printed on a hit, never the matching line -
+      # a scan that echoes the secret into a build log has published it.
+      - name: secret scan
+        shell: bash
+        run: |
+          set -uo pipefail
+          pat='(sk-ant-api[0-9]{2}-|\b(ghp|gho|ghu|ghs)_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|\bAKIA[0-9A-Z]{16}\b|-----BEGIN [A-Z ]*PRIVATE KEY-----)'
+          # SEEDED CONTROL: a scan that cannot find a planted token is not a scan, and its clean verdict
+          # would be worth nothing. This runs every time, before the real scan. The token is ASSEMBLED AT
+          # RUNTIME and never written out literally here, because this file is itself scanned below - the
+          # first CI run failed on exactly that: the scan caught its own control string in a tracked file.
+          seed="$RUNNER_TEMP/secret-scan-control.txt"
+          printf '%s\n' "ghp_$(printf 'A%.0s' {1..30})" > "$seed"
+          grep -qE "$pat" "$seed" || { echo "FAIL  control: the secret scan did not match a planted token"; exit 1; }
+          rm -f "$seed"
+          if git ls-files --error-unmatch .env >/dev/null 2>&1; then echo "FAIL  .env is tracked"; exit 1; fi
+          if git grep -lIE "$pat" -- .; then echo "FAIL  the files above carry key-shaped strings (lines withheld on purpose)"; exit 1; fi
+          echo "PASS  secret scan: $(git ls-files | wc -l | tr -d ' ') tracked files, no key shapes; .env untracked; control matched the planted token"
+
+      # typecheck + every check:* + validate:structure. A SKIP inside any child fails this.
+      - name: npm run check
+        run: npm run check
+
+      - name: npm run build
+        run: npm run build
+
+      # The first-load budget, measured against the build above - it needs .next to exist, so it follows it.
+      - name: verify:train-bundle
+        run: npm run verify:train-bundle

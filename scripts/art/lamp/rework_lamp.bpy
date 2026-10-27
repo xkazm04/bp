@@ -1,0 +1,250 @@
+# Blender script (extension .bpy so scripts/check-python-deps.mjs does not read bpy as a pip package); run with blender -b -P
+"""Reworks the finished lamp-agent after the Director review of 2026-10-21 (the TRELLIS bake was smudged and the C-clamp was a lumpy stalk).
+Opens <work>/lamp_finish.blend (made by finish_lamp.bpy) and
+  1. cuts the TRELLIS stalk under the disc and closes the hole,
+  2. adds the C-clamp (weight 1.0 to the base bone) and brushed-silver spring cylinders (8 sides, weight 1.0 to the arm bone they run along),
+  3. assigns every face to a region (arm, metal, shade, glow, cap, base) by bone weights and distance to the joint pivots,
+  4. rasterises flat region colours onto the existing UV set into textures/lamp_basecolor.png and lamp_orm.png, plus a flat lamp_normal.png
+     (the values are flat, so the UV islands are filled directly instead of a Cycles bake; no render engine and no GPU are used),
+  5. builds one material slot per region with the flat values (and the three textures linked), exports final.fbx.
+Values live in scripts/art/lamp/materials.json. Run:  blender -b -P scripts/art/lamp/rework_lamp.bpy -- <repo-root> <work-dir>
+Writes <work>/rework.json and <work>/lamp_rework.blend."""
+import bpy, bmesh, sys, os, json, math
+import numpy as np
+from mathutils import Vector, Matrix
+
+REPO, WORK = sys.argv[sys.argv.index('--') + 1:][:2]
+HERE = os.path.join(REPO, 'scripts', 'art', 'lamp')
+OUT = os.path.join(REPO, 'apps', 'vr', 'ArtSource', 'lamp-agent')
+TEXD = os.path.join(OUT, 'textures')
+os.makedirs(TEXD, exist_ok=True)
+MAT = json.load(open(os.path.join(HERE, 'materials.json')))
+REG = MAT['regions']
+ORDER = ['arm', 'metal', 'shade', 'glow', 'cap', 'base']          # slot order in final.fbx
+RI = {n: i for i, n in enumerate(ORDER)}
+FIN = json.load(open(os.path.join(WORK, 'finish.json')))
+P = {k: Vector((0, v[0], v[1])) for k, v in FIN['pivots_m'].items()}
+R = {}
+
+bpy.ops.wm.open_mainfile(filepath=os.path.join(WORK, 'lamp_finish.blend'))
+ob = bpy.data.objects['lamp-agent']; arm = bpy.data.objects['lamp-agent_rig']; tgt = bpy.data.objects['look_at_target']
+me = ob.data
+glow_old = np.array([p.material_index == 1 for p in me.polygons])       # finish_lamp.bpy's shade-interior faces
+R['tris_before'] = sum(len(p.vertices) - 2 for p in me.polygons)
+
+# ---- 1 and 2: geometry. Layers on the faces: 'reg' = region index of a new face (-1 on TRELLIS faces), 'glow' = old shade-interior flag.
+bm = bmesh.new(); bm.from_mesh(me)
+reg = bm.faces.layers.int.new('reg'); gl = bm.faces.layers.int.new('glow')
+for f, g in zip(bm.faces, glow_old):
+    f[reg] = -1; f[gl] = int(g)
+dl = bm.verts.layers.deform.verify()
+VG = {g.name: g.index for g in ob.vertex_groups}
+STALK_Z = -0.004
+bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.co.z < STALK_Z], context='VERTS')
+bnd = [e for e in bm.edges if e.is_boundary and all(v.co.z < 0.004 for v in e.verts)]
+filled = [g for g in bmesh.ops.triangle_fill(bm, edges=bnd, use_beauty=True)['geom'] if isinstance(g, bmesh.types.BMFace)]
+for f in filled:
+    if f.is_valid: f[reg] = RI['base']
+R['stalk_hole_edges'] = len(bnd)
+
+
+def weight(verts, bone):
+    for v in verts:
+        v[dl].clear(); v[dl][VG[bone]] = 1.0
+
+
+def mark(faces, region, flat=True):
+    for f in faces:
+        f[reg] = RI[region]; f.smooth = not flat
+
+
+PART_TRIS = {}
+
+
+def box(name, c, size, bone, region):
+    r = bmesh.ops.create_cube(bm, size=1.0, matrix=Matrix.Translation(c) @ Matrix.Diagonal((size[0], size[1], size[2], 1.0)))
+    vs = r['verts']; fs = list({f for v in vs for f in v.link_faces}); weight(vs, bone); mark(fs, region)
+    PART_TRIS[name] = sum(len(f.verts) - 2 for f in fs)
+
+
+def cyl(name, a, b, radius, sides, bone, region, flat=True):
+    a, b = Vector(a), Vector(b); d = b - a
+    rot = d.to_track_quat('Z', 'Y').to_matrix().to_4x4()
+    r = bmesh.ops.create_cone(bm, cap_ends=True, cap_tris=False, segments=sides, radius1=radius, radius2=radius, depth=d.length,
+                              matrix=Matrix.Translation((a + b) / 2) @ rot)
+    vs = r['verts']; fs = list({f for v in vs for f in v.link_faces})
+    bmesh.ops.triangulate(bm, faces=[f for f in fs if len(f.verts) > 4])
+    fs = list({f for v in vs for f in v.link_faces}); weight(vs, bone); mark(fs, region, flat)
+    PART_TRIS[name] = sum(len(f.verts) - 2 for f in fs)
+
+
+# C-clamp under the disc (concept A: back bar, lower jaw, screw with a pad, round knob). The table edge is at y = 0.058, slab 3 cm thick.
+box('back bar', (0, 0.067, -0.037), (0.040, 0.016, 0.082), 'base', 'base')       # back bar, top 4 mm inside the disc
+box('lower jaw', (0, 0.0275, -0.071), (0.040, 0.095, 0.014), 'base', 'base')     # lower jaw
+cyl('screw', (0, 0, -0.106), (0, 0, -0.036), 0.0055, 8, 'base', 'metal', False)      # screw
+cyl('pad', (0, 0, -0.040), (0, 0, -0.034), 0.011, 8, 'base', 'metal')              # pad against the table underside
+cyl('knob', (0, 0, -0.112), (0, 0, -0.100), 0.017, 10, 'base', 'base')              # knob
+# springs: thin silver cylinders on both sides of each arm segment
+SPR = []
+for bone, a, b in (('lower_arm', P['shoulder'], P['elbow']), ('upper_arm', P['elbow'], P['head_joint'])):
+    for sx in (-1, 1):
+        off = Vector((sx * 0.019, 0, 0))
+        cyl('spring ' + bone + (' +x' if sx > 0 else ' -x'), a + (b - a) * 0.22 + off, a + (b - a) * 0.80 + off, 0.0035, 8, bone, 'metal', False); SPR.append(bone + (' +x' if sx > 0 else ' -x'))
+R['spring_cylinders'] = SPR; R['part_tris'] = PART_TRIS
+R['accessory_parts'] = {'clamp': ['back bar', 'lower jaw', 'screw', 'pad', 'knob'], 'springs': len(SPR)}   # separate mesh islands next to the one TRELLIS body
+bm.to_mesh(me); bm.free()
+me.update()
+npoly = len(me.polygons)
+reg_a = np.array([a.value for a in me.attributes['reg'].data]); glow_a = np.array([a.value for a in me.attributes['glow'].data])
+me.attributes.remove(me.attributes['reg']); me.attributes.remove(me.attributes['glow'])
+R['tris_after'] = sum(len(p.vertices) - 2 for p in me.polygons)
+new_a = reg_a >= 0
+
+# ---- 3: regions for the TRELLIS faces: bone weights plus distance to the joint pivots
+names = [g.name for g in ob.vertex_groups]
+W = np.zeros((len(me.vertices), len(names)), dtype=np.float32)
+for v in me.vertices:
+    for g in v.groups: W[v.index, g.group] = g.weight
+nk, op = P['shade_neck'], P['shade_opening']
+ax = (op - nk).normalized()
+RJ = {'shoulder': 0.024, 'elbow': 0.024, 'head_joint': 0.024}
+CAP_T, CAP_RAD = 0.012, 0.05
+region = np.empty(npoly, dtype=object)
+for p in me.polygons:
+    i = p.index
+    if new_a[i]: region[i] = ORDER[reg_a[i]]; continue
+    c = p.center
+    if min((c - P[k]).length - RJ[k] for k in RJ) < 0: region[i] = 'metal'; continue
+    w = W[list(p.vertices)].mean(0); bone = names[int(w.argmax())]
+    if glow_a[i] and bone == 'head': region[i] = 'glow'; continue      # finish_lamp.bpy's cone test also caught arm faces next to the head
+    t = (c - nk).dot(ax); rad = ((c - nk) - ax * t).length
+    if bone == 'head': region[i] = 'cap' if (t < CAP_T and rad < CAP_RAD) else 'shade'
+    elif bone == 'base': region[i] = 'base'
+    else: region[i] = 'arm'
+R['faces_per_region'] = {n: int(sum(1 for r in region if r == n)) for n in ORDER}
+R['trellis_faces_per_region'] = {n: int(sum(1 for i, r in enumerate(region) if r == n and not new_a[i])) for n in ORDER}
+
+# ---- 4: textures. Flat colours rasterised into the UV islands; new faces (clamp, springs, hole fill) point at free swatch cells.
+SIZE = 2048
+uvl = me.uv_layers[0]
+uvd = uvl.uv if hasattr(uvl, 'uv') else uvl.data
+key = 'vector' if hasattr(uvl, 'uv') else 'uv'
+uvs = np.empty(len(me.loops) * 2, dtype=np.float32); uvd.foreach_get(key, uvs); uvs = uvs.reshape(-1, 2)
+
+
+def hex2rgb(h): return np.array([int(h[i:i + 2], 16) for i in (1, 3, 5)], dtype=np.float32) / 255.0
+
+
+COL = {n: hex2rgb(REG[n]['color']) for n in ORDER}
+ORM = {n: np.array([1.0, REG[n]['roughness'], REG[n]['metal']], dtype=np.float32) for n in ORDER}
+base = np.zeros((SIZE, SIZE, 3), np.float32); orm = np.zeros((SIZE, SIZE, 3), np.float32); mask = np.zeros((SIZE, SIZE), bool)
+
+
+def tri_fill(t, n):
+    t = t * SIZE
+    x0, y0 = int(max(0, math.floor(t[:, 0].min()))), int(max(0, math.floor(t[:, 1].min())))
+    x1, y1 = int(min(SIZE - 1, math.ceil(t[:, 0].max()))), int(min(SIZE - 1, math.ceil(t[:, 1].max())))
+    if x1 < x0 or y1 < y0: return
+    a, b, c = t
+    den = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1])
+    if abs(den) < 1e-12: return
+    gx, gy = np.meshgrid(np.arange(x0, x1 + 1) + 0.5, np.arange(y0, y1 + 1) + 0.5)
+    l1 = ((b[1] - c[1]) * (gx - c[0]) + (c[0] - b[0]) * (gy - c[1])) / den
+    l2 = ((c[1] - a[1]) * (gx - c[0]) + (a[0] - c[0]) * (gy - c[1])) / den
+    ins = (l1 >= -0.02) & (l2 >= -0.02) & (1 - l1 - l2 >= -0.02)
+    sl = (slice(y0, y1 + 1), slice(x0, x1 + 1))
+    base[sl][ins] = COL[n]; orm[sl][ins] = ORM[n]; mask[sl] |= ins
+
+
+for p in me.polygons:
+    if new_a[p.index]: continue
+    lo = list(p.loop_indices)
+    for k in range(1, len(lo) - 1): tri_fill(uvs[[lo[0], lo[k], lo[k + 1]]], region[p.index])
+for p in me.polygons:      # faces under one pixel, or sharing it with a neighbour chart: the pixel under a face's own UV centroid always takes that face's region
+    if new_a[p.index]: continue
+    c = uvs[list(p.loop_indices)].mean(0); x, y = min(SIZE - 1, int(c[0] * SIZE)), min(SIZE - 1, int(c[1] * SIZE))
+    base[y, x] = COL[region[p.index]]; orm[y, x] = ORM[region[p.index]]; mask[y, x] = True
+R['uv_coverage'] = round(float(mask.mean()), 4)
+
+
+def dilate(m, steps):
+    m = m.copy()
+    for _ in range(steps): m = m | np.roll(m, 1, 0) | np.roll(m, -1, 0) | np.roll(m, 1, 1) | np.roll(m, -1, 1)
+    return m
+
+
+free = ~dilate(mask, 12); used = []; sw = {}; cell = 16
+for n in sorted({region[i] for i in range(npoly) if new_a[i]}):
+    found = None
+    for y in range(cell, SIZE - 2 * cell, cell):
+        for x in range(cell, SIZE - 2 * cell, cell):
+            if free[y:y + cell, x:x + cell].all() and all(abs(x - ux) >= 2 * cell or abs(y - uy) >= 2 * cell for ux, uy in used):
+                found = (x, y); break
+        if found: break
+    assert found, 'no free swatch cell in the UV atlas for ' + n
+    used.append(found); sw[n] = found
+    x, y = found; base[y:y + cell, x:x + cell] = COL[n]; orm[y:y + cell, x:x + cell] = ORM[n]; mask[y:y + cell, x:x + cell] = True
+for i in range(npoly):
+    if not new_a[i]: continue
+    x, y = sw[region[i]]; u = ((x + cell / 2) / SIZE, (y + cell / 2) / SIZE)
+    for l in me.polygons[i].loop_indices:
+        if key == 'vector': uvd[l].vector = u
+        else: uvd[l].uv = u
+R['swatch_cells_px'] = {k: list(v) for k, v in sw.items()}
+fillm = mask.copy()      # pad the empty pixels around the islands so mips and bilinear taps never read black
+for _ in range(10):
+    for sh_ in ((1, 0), (-1, 0), (1, 1), (-1, 1)):
+        take = (~fillm) & np.roll(fillm, sh_[0], sh_[1])
+        base[take] = np.roll(base, sh_[0], sh_[1])[take]; orm[take] = np.roll(orm, sh_[0], sh_[1])[take]; fillm |= take
+base[~fillm] = COL['arm']; orm[~fillm] = ORM['arm']
+
+
+def write_png(arr, name):
+    img = bpy.data.images.new(name, SIZE, SIZE, alpha=False)
+    img.colorspace_settings.name = 'Non-Color'          # bytes are written exactly as given (the base colour values are already sRGB-encoded)
+    rgba = np.ones((SIZE, SIZE, 4), np.float32); rgba[:, :, :3] = arr
+    img.pixels.foreach_set(rgba.ravel()); p = os.path.join(TEXD, name)
+    img.filepath_raw = p; img.file_format = 'PNG'; img.save(); bpy.data.images.remove(img); return p
+
+
+write_png(base, 'lamp_basecolor.png'); write_png(orm, 'lamp_orm.png')
+write_png(np.broadcast_to(np.array([0.5, 0.5, 1.0], np.float32), (SIZE, SIZE, 3)), 'lamp_normal.png')
+tex = {k: os.path.join(TEXD, v) for k, v in (('base', 'lamp_basecolor.png'), ('orm', 'lamp_orm.png'), ('normal', 'lamp_normal.png'))}
+
+
+# ---- 5: one material per region: flat values on the Principled node, the three textures linked (the same values, so UE gets either)
+def lin(h):
+    return tuple((x / 12.92 if x <= 0.04045 else ((x + 0.055) / 1.055) ** 2.4) for x in hex2rgb(h)) + (1.0,)
+
+
+def mat(name, r):
+    m = bpy.data.materials.new(name); m.use_nodes = True
+    nt = m.node_tree; nt.nodes.clear()
+    out = nt.nodes.new('ShaderNodeOutputMaterial'); b = nt.nodes.new('ShaderNodeBsdfPrincipled'); nt.links.new(b.outputs['BSDF'], out.inputs['Surface'])
+    b.inputs['Base Color'].default_value = lin(r['color']); b.inputs['Roughness'].default_value = r['roughness']; b.inputs['Metallic'].default_value = r['metal']
+
+    def ti(path, cs):
+        n = nt.nodes.new('ShaderNodeTexImage'); n.image = bpy.data.images.load(path); n.image.colorspace_settings.name = cs; return n
+    nt.links.new(ti(tex['base'], 'sRGB').outputs['Color'], b.inputs['Base Color'])
+    nm = nt.nodes.new('ShaderNodeNormalMap'); nt.links.new(ti(tex['normal'], 'Non-Color').outputs['Color'], nm.inputs['Color']); nt.links.new(nm.outputs['Normal'], b.inputs['Normal'])
+    sp = nt.nodes.new('ShaderNodeSeparateColor'); nt.links.new(ti(tex['orm'], 'Non-Color').outputs['Color'], sp.inputs['Color'])
+    nt.links.new(sp.outputs['Green'], b.inputs['Roughness']); nt.links.new(sp.outputs['Blue'], b.inputs['Metallic'])
+    if 'emission' in r:
+        b.inputs['Emission Color'].default_value = lin(r['emission']); b.inputs['Emission Strength'].default_value = r['emission_strength']
+    return m
+
+
+me.materials.clear()
+for n in ORDER: me.materials.append(mat(REG[n]['slot'], REG[n]))
+for p in me.polygons: p.material_index = RI[region[p.index]]
+for im in list(bpy.data.images):
+    if im.users == 0: bpy.data.images.remove(im)
+
+# ---- save and export
+bpy.ops.object.select_all(action='DESELECT'); ob.select_set(True); arm.select_set(True); tgt.select_set(True)
+bpy.ops.wm.save_as_mainfile(filepath=os.path.join(WORK, 'lamp_rework.blend'))
+bpy.ops.export_scene.fbx(filepath=os.path.join(OUT, 'final.fbx'), use_selection=True, object_types={'ARMATURE', 'MESH', 'EMPTY'},
+                         add_leaf_bones=False, bake_anim=True, bake_anim_use_all_actions=True, bake_anim_use_nla_strips=False,
+                         bake_anim_simplify_factor=0.0, path_mode='RELATIVE', embed_textures=False, use_armature_deform_only=True)
+json.dump(R, open(os.path.join(WORK, 'rework.json'), 'w'), indent=1)
+print('REWORK', json.dumps(R))

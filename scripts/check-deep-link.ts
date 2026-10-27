@@ -1,4 +1,4 @@
-// Checks the deep link other tools open bp with (src/engine/deep-link.ts): `?product=<slug>&page=ledger&tab=release`
+// Checks the deep link other tools open bp with (apps/web/src/engine/deep-link.ts): `?product=<slug>&page=ledger&tab=release`
 // opens the ledger's Release tab at that product (Personas' Release card), `tab=triage|matrix` the other tabs, a missing
 // or unknown tab the ledger's default, any other page nothing; the query keeps every other parameter once the deep link
 // is dropped from it; and the engine's URL-state code (Engine.readHash) reads the deep link and drops it.
@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEEP_LINK_KEYS, deepLinkHash, ledgerLink, withoutDeepLink } from '../src/engine/deep-link.ts';
+import { DEEP_LINK_KEYS, deepLinkHash, ledgerLink, withoutDeepLink } from '../apps/web/src/engine/deep-link.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let failed = 0, passed = 0;
@@ -24,7 +24,7 @@ check('ledgerLink builds the Release card link', ledgerLink('pof') === '/?produc
 check('a link round-trips', eq(deepLinkHash(ledgerLink('pof').slice(1)), { page: 'ledger', lv: 'release' }));
 
 // the engine's URL state reads it (readHash) and drops it from the query
-const engine = fs.readFileSync(path.join(ROOT, 'src/engine/Engine.ts'), 'utf8');
+const engine = fs.readFileSync(path.join(ROOT, 'apps/web/src/engine/Engine.ts'), 'utf8');
 const readHash = engine.slice(engine.indexOf('private readHash()'), engine.indexOf('private restoreHash()'));
 check('Engine.readHash reads the deep link before the hash applies', /deepLinkHash\(location\.search\)/.test(readHash) && readHash.indexOf('deepLinkHash') < readHash.indexOf("h.page === 'ledger'"));
 check('Engine.readHash drops the deep link from the query', /withoutDeepLink\(location\.search\)/.test(readHash) && /history\.replaceState/.test(readHash));

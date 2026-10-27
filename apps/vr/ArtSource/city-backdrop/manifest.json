@@ -1,0 +1,185 @@
+{
+  "lynx_commit": "9259783bc653f314efdae61ac92c9c4fef992a87",
+  "lynx_commit_note": "stamped by the writer: the newest commit touching this folder when the manifest was written",
+  "file_bytes": {
+    "concept.png": 1397764,
+    "evidence/panel-wide.jpg": 115021,
+    "evidence/table-view.jpg": 152787,
+    "evidence/vs-hero.jpg": 314656,
+    "final.glb": 885844,
+    "textures/city_backdrop_basecolor.png": 881660
+  },
+  "sha256": {
+    "concept.png": "0faf96f2c7b7c7abde9d3b0d9a6c70fff57a2454f0c1caa888bb9851dcfcea3a",
+    "evidence/panel-wide.jpg": "3b689816bfd785996c3231fc347d960ad613858b7463f3ca241613600ef07c2e",
+    "evidence/table-view.jpg": "ba61b1a7e2194d4c3b543f6aafe2956d815dcde673943b0430e15b20d0dcbe9a",
+    "evidence/vs-hero.jpg": "5f8d1dbe2c65a638ee6eb40c215d07f87e4037dc5b3a2555d291efdc2d88cafb",
+    "final.glb": "78a01a5a3bc203196ef02c8eb6bd2bb8654b0a17dfe0f4827d842e5a6db5f159",
+    "textures/city_backdrop_basecolor.png": "40ada0e65df948c3a5d3453b3cc85417e07cc96cd8fb5ae827d8c93d9bfc099f"
+  },
+  "gates": {
+    "input": {
+      "pass": true,
+      "note": "Leonardo Studio openai/gpt-image-2.5-sunburst (the owner's signed-in web studio, scripts/lookdev/leonardo-studio.mjs), 1584x672 (21:9; log line 89), picked from 8 frames (3 LOW trials at 8 credits, 4 MEDIUM trials at 20/21 credits, 1 MEDIUM at 21). The prompt (in the log line) asks for a deep near-black night sky, towers at clearly varied depth with haze between the layers, many warm and some cool lit windows, and no foreground, window frame, interior, text, signage or logos, and restates the never list. Variant A of the two studio frames was picked behind the back wall's mullioned window at the target pose (EEVEE comparison, 2026-10-25): its near towers carry big warm window grids with a cool-white core of far towers behind them, so the panes read near, middle and far; the other frame's towers are one even mid-rise texture. It replaces the 2026-10-24 API frame, whose blue sky and haze bloomed as one flat blue dusk under the scene's EmissiveStrength (the judges on element 14).",
+      "date": "2026-10-25"
+    },
+    "mesh_acceptance": {
+      "pass": true,
+      "note": "trivial for a matte panel (no generated mesh): re-imported from final.glb, 1 mesh object, 74 vertices, 72 tris, 72 of 72 faces point at the arc centre, 1 UV set, one emissive-only slot (city_backdrop_emissive); no floaters or holes by construction (one strip of quads).",
+      "date": "2026-10-25"
+    },
+    "scale": {
+      "pass": true,
+      "note": "fallback scale (no window size in wolf-plan.md or plan.md): a 180 degree arc (measured -90 to 90), radius 10 m, 12.6 m tall, pivot at the arc centre on the floor. Wolf confirms against the real window layout.",
+      "date": "2026-10-25"
+    },
+    "finishing": {
+      "pass": true,
+      "note": "strip 1328 x 882 PNG, edge-matched (edge step 0.02955 against 0.02198 typical, 0.13577 before the fade); dimmed x0.58 (strip max luminance 0.58); in the evidence render the backdrop's brightest pixel is 0.5631 display luminance and the table's edge strip clips at 1, so the backdrop does not outshine the strip; in the UE scene (x EmissiveStrength 16) 2.4 % of the shown pixels cross the bloom threshold 0.7 (at least 1 % asked, so the lit windows bloom) and the sky's median peak is 0.0168 (at most 0.05 asked, so the sky stays near black); every file under 10 MB (largest 1397764 bytes); evidence rendered with Cycles on the CPU. Not claimed: any UE import.",
+      "date": "2026-10-25"
+    },
+    "poly_budget": {
+      "pass": true,
+      "note": "trivial: 72 tris for a curved panel against 200 (plan.md P4 gives no backdrop row; the figure is a sanity cap)",
+      "date": "2026-10-25"
+    }
+  },
+  "id": "city-backdrop",
+  "class": "backdrop-matte",
+  "budget_tris": 200,
+  "tris": 72,
+  "tris_total": 72,
+  "materials": [
+    "city_backdrop_emissive (emissive-only: base colour black, the matte strip as the emission texture at strength 1.0; unlit in effect, no light response)"
+  ],
+  "bounds_cm": {
+    "x": 2000,
+    "y": 1260,
+    "z": 1000,
+    "note": "x, y up, z depth (glTF); a 180 degree arc of radius 10 m: 2000 wide, 1260 high, 1000 deep (the half circle); height runs from -5.1 m to +7.5 m about the pivot"
+  },
+  "meshes": {
+    "city_backdrop": {
+      "tris": 72,
+      "vertices": 74,
+      "faces": 72,
+      "inward_faces": 72
+    }
+  },
+  "uv_sets": 1,
+  "pivot": "the arc centre on the floor plane (the centre of the half circle, height 0). The arc lies on +Y in Blender (+Z in the GLB), behind a viewer at the near edge of the table (in UE, CityBackdrop at the origin with yaw 90 puts it on +X behind the back wall's window, u running from UE -Y to +Y). Put the pivot at the light table pivot; the panel bottom is 5.1 m below it.",
+  "scale_reasoning": "No plan gives a window size (wolf-plan.md and plan.md only say \"a matte panorama behind the windows\"), so the panel is the fallback: a 180 degree arc. Radius 10 m (far enough that head motion has little parallax against a table of 1.2 x 0.8 m), 12.6 m tall. The panel shows rows 0 to 1 of the strip (UV v, bottom up), and the strip runs 2 times across the arc (90 degrees each, about the frame's own spread; the back wall's window shows about 36 degrees of the arc, so a repeat is never seen twice at once), so each copy is 1328 x 882 px on 15.7 x 12.6 m (85 px/m across, 70 px/m up). From the target pose (eye 1.38 m, pitch -31, the frame's top edge about 1.6 degrees below level) the window shows the arc from about 6 to 42 degrees right of centre, and from about 20 degrees down to 24 up; the far skyline sits just under the frame's top edge, as the concept's towers do, and the panel runs past what the lowest and highest panes show. Wolf may rescale to the real windows.",
+  "textures": "textures/city_backdrop_basecolor.png: 1328 x 882 PNG, the wide matte strip. The picked frame's last 256 columns are cross-faded into its first 256, so the right edge continues into the left (tileable horizontally; edge step 0.02955 against 0.02198 for a typical neighbouring column pair, 0.13577 before the fade). Its columns are rolled left by 0.38 of the width (lossless on a tileable strip), so the cross-faded columns fall on the wall, not in the window. 210 rows of sky are added above the frame (its top rows blurred along the row, darkening by a third upwards), so the window's top panes show sky, not the panel's edge. Darks pressed down (encoded sRGB ** 1.8) so the sky stays near black under the scene's EmissiveStrength while the lit windows keep their value. Dimmed by a factor 0.58 in encoded sRGB (max luminance 0.58, 99th percentile 0.3312, mean 0.027). Wire it as the emissive colour; no normal or ORM map (a matte painting has no surface). In the scene (x EmissiveStrength 16, bloom threshold 0.7): 2.4 % of the shown pixels bloom (the lit windows); the shown median peaks at 0.0263 and the sky's at 0.0168 (90th percentile 0.0203), a near-black blue.",
+  "generator": {
+    "tool": "Leonardo Studio (web)",
+    "model": "openai/gpt-image-2.5-sunburst",
+    "quality": "MEDIUM",
+    "size": "1584x672",
+    "aspect": "21:9",
+    "seed": null,
+    "variant": "A",
+    "state": "city-night-skyline (the prompt was written for the call and is in the log line; no props.json entry)",
+    "prompt": "A wide night city skyline seen from a high-floor studio, looking out level across the city. Deep near-black blue night sky (#0A0F18 to a deep blueprint blue at the horizon), no moon, no stars. Many tall towers at clearly varied depth: near towers large and dark with dense grids of lit windows, middle towers smaller, far towers faint and small toward the horizon. Many bright lit windows, mostly warm amber and warm white with some cool cyan-white, scattered irregularly, some floors fully lit, some dark. Faint atmospheric haze between the depth layers so each layer is paler and bluer than the one in front, soft bloom on the brightest windows, slight film grain, photographic concept render. No foreground, no window frame, no interior, no reflections of a room, no text, no signage, no logos, no billboards, no neon, no cars, no people. Never: galaxy or star imagery, neon cyberpunk clutter, fisheye, readable fake text, purple gradients.",
+    "log_line": "docs/concepts/vr-light-table/lookdev/log.jsonl line 89",
+    "generation_id": "1f1d07d2-4cbe-6e30-8d0d-7b52647f9f6d",
+    "credits": 21,
+    "source_sha256": "7b1a404352b1eb0aa7ab1e6e1efe05c1dcd9b3f01be117b291f5a9c77249448d",
+    "source_note": "the downloaded JPEG stays out of the repo (temp folder); concept.png is its lossless re-encode",
+    "trial_calls": [
+      {
+        "log_line": 63,
+        "variant": "A",
+        "seed": 1,
+        "quality": "LOW",
+        "size": "2048x768",
+        "credits": 8,
+        "status": "COMPLETE",
+        "picked": false
+      },
+      {
+        "log_line": 64,
+        "variant": "B",
+        "seed": 2,
+        "quality": "LOW",
+        "size": "2048x768",
+        "credits": 8,
+        "status": "COMPLETE",
+        "picked": false
+      },
+      {
+        "log_line": 65,
+        "variant": "A",
+        "seed": 3,
+        "quality": "LOW",
+        "size": "2048x768",
+        "credits": 8,
+        "status": "COMPLETE",
+        "picked": false
+      },
+      {
+        "log_line": 66,
+        "variant": "A",
+        "seed": 3,
+        "quality": "MEDIUM",
+        "size": "2048x768",
+        "credits": 20,
+        "status": "COMPLETE",
+        "picked": false
+      },
+      {
+        "log_line": 78,
+        "variant": "A",
+        "seed": 51,
+        "quality": "MEDIUM",
+        "size": "2048x768",
+        "credits": 20,
+        "status": "COMPLETE",
+        "picked": false
+      },
+      {
+        "log_line": 79,
+        "variant": "B",
+        "seed": 51,
+        "quality": "MEDIUM",
+        "size": "2048x768",
+        "credits": 20,
+        "status": "COMPLETE",
+        "picked": false
+      },
+      {
+        "log_line": 89,
+        "provider": "leonardo-studio",
+        "variant": "A",
+        "seed": null,
+        "quality": "MEDIUM",
+        "size": "1584x672",
+        "credits": 21,
+        "status": "COMPLETE",
+        "picked": true
+      },
+      {
+        "log_line": 90,
+        "provider": "leonardo-studio",
+        "variant": "B",
+        "seed": null,
+        "quality": "MEDIUM",
+        "size": "1584x672",
+        "credits": 21,
+        "status": "COMPLETE",
+        "picked": false
+      }
+    ]
+  },
+  "blender": "Blender 5.2.2, scripts/art/city-backdrop/build_backdrop.bpy (concept, strip, panel and score), render_backdrop.bpy (evidence), write_manifest.mjs",
+  "licence": "Leonardo Studio output (the owner's signed-in web studio and its credit pool; the generation was deleted from the account once downloaded), generated 2026-10-25 on the owner's Leonardo account. Shipping it rests on the Director's ruling for the operator of 2026-10-21 (Leonardo for the backdrop, because FLUX.2 [klein] is not installed and will not be; wolf-plan.md R8, tech-stack.md section 5). The post-processing (seam fade, dim, mesh) is our own work. Check the Leonardo terms of service for commercial use before a public release.",
+  "regenerate": "node scripts/lookdev/leonardo-studio.mjs gen --prompt-file <prompt.txt, the prompt of log line 89> --aspect 21:9 --state city-night-skyline --variant A --quality medium --out <frame.jpg> (spends studio credits in the owner's signed-in browser; the model takes no seed, so it makes a new frame); blender -b -P scripts/art/city-backdrop/build_backdrop.bpy -- <repo-root> <work> <frame.jpg> 0.58 0 1 1.8 2 0.38 -5.1 7.5 0.3125; blender -b -P scripts/art/city-backdrop/render_backdrop.bpy -- <repo-root> <work>; node scripts/art/city-backdrop/write_manifest.mjs <work> <frame.jpg>",
+  "evidence_stats": {
+    "backdrop_p999_linear_display": 0.4561,
+    "backdrop_max_display": 0.5631,
+    "table_view_max_display": 1,
+    "panel_wide_max_display": 0.5743,
+    "panel_wide_mean_display": 0.0369,
+    "table_view_mean_display": 0.1692,
+    "hero_mean_display": 0.2012
+  }
+}

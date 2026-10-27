@@ -35,7 +35,7 @@ written as JSON data, and how it should be drawn. Seven built-in lenses ship in 
 
 The key words MUST, MUST NOT, SHOULD, SHOULD NOT and MAY are used as in RFC 2119.
 
-The JSON Schemas (draft 2020-12) in `docs/standard/schema/` are normative for structure:
+The JSON Schemas (draft 2020-12) in `packages/schema/schema/` are normative for structure:
 
 | Schema | Validates |
 |---|---|
@@ -46,8 +46,8 @@ The JSON Schemas (draft 2020-12) in `docs/standard/schema/` are normative for st
 The lens-scan store's DDL, `docs/standard/lens-scan-store.sql`, is normative for the store (section 15).
 
 This document is normative for meaning: references, absent values, health evaluation, rollup,
-the events log and merging. The TypeScript types in `src/lib/standard/types.ts` mirror the schemas;
-`src/lib/standard/health.ts` is the reference evaluator.
+the events log and merging. The TypeScript types in `packages/core/src/standard/types.ts` mirror the schemas;
+`packages/core/src/standard/health.ts` is the reference evaluator.
 
 - A **reader** is anything that loads the file. A reader MUST ignore keys it does not know.
 - A **writer** is anything that saves it. A writer MUST keep what it does not own (section 11).
@@ -741,7 +741,7 @@ advisory, section 6.7) a feature with `variations` none of whose contexts' `file
 `customizations/` segment.
 Notes: orphaned facets, overrides expired on the map's as-of date (`generated_at`, else today).
 
-Fixtures in `docs/standard/schema/fixtures/`:
+Fixtures in `packages/schema/schema/fixtures/`:
 - `valid-map.json` with `valid-map.events.jsonl`: the example in section 14.
 - `valid-applies-when.json`: a custom lens with feature-bound `stage` and `tier` and an
   `applies_when`. Read on any date: `book-a-class` (live, major, 25 tickets) is `bad`;
@@ -789,7 +789,7 @@ and a judgement scan block (8.2, 8.7). Each is additive: a 1.0.0 facet evaluates
 under 1.1.0. Performance, added later, is 1.0.0: its probed metrics (8.7), `budgetMet` and `probeEnv`. A map written before performance existed does not list it, and a reader does not add it:
 `lenses[]` is what the map uses (8.1). A writer adds it as any lens is added (lens-scan's onboarding).
 
-The manifests are in `docs/standard/lenses/`; `src/lib/standard/catalog.ts` loads them.
+The manifests are in `docs/standard/lenses/`; `packages/core/src/standard/catalog.ts` loads them.
 `node scripts/check-builtin-health.ts` checks the rules against the Kettle sample, handing each
 feature to the evaluator for the bound fields. The sample's lens objects carry no metrics; the
 converter (`npm run data:kettle-v3`) adds metric values on about 30 features and fails unless the
@@ -800,7 +800,7 @@ every other feature reads unmeasured on it; the health check holds performance t
 
 ## 14. Example
 
-A complete, valid map (`docs/standard/schema/fixtures/valid-map.json`; its `com.kettle.cost` is a reduced draft at
+A complete, valid map (`packages/schema/schema/fixtures/valid-map.json`; its `com.kettle.cost` is a reduced draft at
 version 0.0.1, distinct from the Kettle sample's 0.1.0 in `docs/standard/lenses-custom/`): one group, two contexts,
 two features in one capability, a milestone, a KPI, one built-in lens (security, which binds the
 feature's `stage` and has an `applies_when`) and one custom lens bound to the KPI, facets with an
@@ -973,3 +973,12 @@ placeholder for a metric, and JSON read from it omits the key.
 sets `decided_by = 'blueprint'`, `decided_at` and an optional `decision_note`, and touches nothing
 else; a proposal in any other status is not decided again. The skill executes only `approved`
 proposals, then records `after_value` and `result_sha`.
+
+**v4: origin and severity** (`PRAGMA user_version = 4`; the DDL is the contract). `proposals` gains
+`origin` (`scan` | `ado` | `sweep`, NOT NULL DEFAULT `scan`), `external_ref` (`<origin>:<id>`, unique when
+set: the import key), `external_url`, `tier` (0 stop-ship, 1 before production, 2 soon after, 3 backlog;
+NULL = untriaged), `risk_class` (`secret` | `authz` | `money` | `data` | `llm` | `perf` | `reliability` \|
+`ux` | `debt`), `ranked_by`, `ranked_at`; `kind` gains `work-item` (an imported item, no metric). `tier` is the
+severity of the problem; `risk` stays the risk of making the change. On the wire `origin` is omitted when it is
+`scan`, and every NULL v4 column is omitted; a v3 store reads with all of them absent. Readers order a backlog by
+`tier` ascending first, untriaged after tier 3.

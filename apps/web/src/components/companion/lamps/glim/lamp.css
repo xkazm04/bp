@@ -1,0 +1,107 @@
+/* Loop: scoped under .glim. A pendant on a gantry; the amber is its lens, the ring it throws and the Approve it holds out.
+   Every motion is transform or opacity on HTML boxes; the SVG joints only transition between poses. */
+.glim { position: absolute; inset: 0; pointer-events: none; z-index: 7; --lp-amber: #ffa85a; --lp-shell: #eef3f8; --lp-edge: #0a2342; --lp-cable: rgba(223, 240, 255, 0.6); }
+:root[data-theme='light'] .glim { --lp-shell: #ffffff; --lp-edge: #0b2a4a; --lp-cable: rgba(11, 42, 74, 0.55); --lp-amber: #f0902e; }
+.glim * { box-sizing: border-box; }
+.glim .lp-voice { position: absolute; pointer-events: auto; }
+
+/* ---------- the rail and the rig */
+.glim .lp-rail { position: absolute; height: 2px; margin-top: -1px; transform-origin: 100% 50%; transition: transform 1.1s cubic-bezier(0.65, 0, 0.35, 1);
+  background: repeating-linear-gradient(90deg, var(--ink-3) 0 1px, transparent 1px 24px), linear-gradient(var(--ink-3), var(--ink-3)) 0 50% / 100% 1px no-repeat; height: 6px; margin-top: -3px; }
+.glim .lp-rig { position: absolute; left: 0; width: 0; height: 0; transition: transform 1.1s cubic-bezier(0.65, 0, 0.35, 1); will-change: transform; }
+.glim .lp-trolley { position: absolute; left: -12px; top: -5px; width: 24px; height: 10px; border-radius: 2px; background: var(--panel-solid); border: 1px solid var(--ink-2); }
+.glim .lp-trolley:after { content: ''; position: absolute; left: 50%; top: 2px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--ink-2); }
+.glim .lp-hang { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.glim .lp-arrive-a { animation: lp-swing-a 2s ease-out 0.95s both; }
+.glim .lp-arrive-b { animation: lp-swing-b 2s ease-out 0.95s both; }
+.glim .lp-sway { position: absolute; left: 0; top: 0; transform-origin: 0 0; animation: lp-sway 8s ease-in-out infinite; will-change: transform; }
+.glim .lp-cable { position: absolute; left: -0.75px; top: 0; width: 1.5px; height: 1px; transform-origin: 50% 0; background: var(--lp-cable); transition: transform 1.1s cubic-bezier(0.65, 0, 0.35, 1); }
+.glim .lp-body { position: absolute; left: -55px; top: 0; width: 110px; height: 138px; transition: transform 1.1s cubic-bezier(0.65, 0, 0.35, 1); }
+
+/* ---------- the lamp */
+.glim .lp-lamp { position: absolute; inset: 0; padding: 0; border: 0; background: none; cursor: pointer; pointer-events: auto; border-radius: 50px 50px 30px 30px; }
+.glim .lp-lamp:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.glim .lp-turn { position: absolute; inset: 0; }
+.glim .lp-svg { width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.35)); }
+.glim .lp-shell { fill: var(--lp-shell); stroke: var(--lp-edge); stroke-width: 1.6; }
+.glim .lp-shade { fill: rgba(10, 35, 66, 0.14); }
+.glim .lp-gloss { fill: none; stroke: #ffffff; stroke-width: 3; stroke-linecap: round; }
+.glim .lp-cav { fill: #5a3011; stroke: var(--lp-edge); stroke-width: 1.4; }
+.glim .lp-lens { fill: var(--lp-amber); stroke: #ffd2a0; stroke-width: 2.5; }
+.glim .lp-amber { fill: var(--lp-amber); }
+.glim .lp-pin { stroke: var(--lp-amber); stroke-width: 2; stroke-linecap: round; }
+.glim .lp-collar { fill: var(--lp-edge); }
+.glim .lp-limb { fill: var(--lp-shell); stroke: var(--lp-edge); stroke-width: 1.2; }
+.glim .lp-joint { fill: var(--lp-edge); stroke: var(--lp-shell); stroke-width: 1; }
+.glim .lp-loop { fill: none; stroke: var(--lp-shell); stroke-width: 1.5; }
+.glim .lp-j { transition: transform 0.7s cubic-bezier(0.3, 1.35, 0.5, 1); }
+.glim .lp-knit { animation: lp-knit 0.7s ease-in-out infinite alternate; }
+.glim .lp-knit-b { animation-delay: -0.35s; }
+.glim .lp-glow { position: absolute; left: calc(65 / 120 * 100% - 30px); top: calc(52 / 150 * 100% - 30px); width: 60px; height: 60px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, rgba(255, 210, 160, 0.7) 0, rgba(255, 168, 90, 0.3) 40%, transparent 70%); opacity: 0.7; transition: opacity 0.4s; }
+.glim[data-state='listening'] .lp-glow, .glim[data-state='asking'] .lp-glow, .glim[data-state='pointing'] .lp-glow { opacity: 1; }
+/* thinking: it turns on its cable to look around (the turnaround), the lens going dark as it faces away */
+.glim[data-state='thinking'] .lp-turn { animation: lp-turn 2.6s ease-in-out infinite; }
+.glim[data-state='thinking'] .lp-glow { animation: lp-away 2.6s ease-in-out infinite; }
+
+/* ---------- what it holds: the name tag, the caption tag, the input tag, the card */
+.glim .lp-name { position: absolute; display: flex; align-items: center; padding: 3px 8px; font: 700 12px var(--mono); letter-spacing: 0.16em; color: var(--on-ink);
+  background: var(--ink); border-radius: 2px 8px 8px 2px; transform: rotate(-6deg); transform-origin: 100% 0; pointer-events: none; }
+.glim .lp-name .lp-string { position: absolute; right: 12px; top: -14px; width: 1px; height: 14px; background: var(--lp-cable); }
+.glim .lp-tag { position: absolute; width: 310px; padding: 10px 14px 12px 26px; font: 400 15px/1.45 var(--sans); color: var(--ink-hi); pointer-events: auto;
+  background: var(--card-hi); border: 1px solid var(--ink-2); border-radius: 3px 3px 3px 14px; box-shadow: 0 14px 34px var(--shadow); transform-origin: calc(100% - 18px) -20px; }
+.glim .lp-tag-s { width: 200px; }
+.glim .lp-string { position: absolute; display: block; }
+.glim .lp-string-tag { right: 17px; top: -22px; width: 1px; height: 22px; background: var(--lp-cable); }
+.glim .lp-eyelet { position: absolute; left: 9px; top: 13px; width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--ink-3); }
+.glim .lp-who { display: block; margin-bottom: 3px; font: 600 12px var(--mono); letter-spacing: 0.08em; color: var(--ink-2); text-transform: uppercase; }
+.glim[data-state='asking'] .lp-who, .glim .lp-ptag .lp-who { color: var(--lp-amber); }
+.glim .lp-dots { display: flex; gap: 6px; padding: 4px 0 2px; }
+.glim .lp-dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--lp-amber); animation: lp-dot 1.2s ease-in-out infinite; }
+.glim .lp-dots i:nth-child(2) { animation-delay: 0.2s; } .glim .lp-dots i:nth-child(3) { animation-delay: 0.4s; }
+.glim .lp-work { display: flex; gap: 4px; margin-top: 10px; }
+.glim .lp-work i { flex: 1; height: 4px; background: var(--lp-amber); transform-origin: 0 50%; animation: lp-fill 2.5s ease-in-out infinite; }
+.glim .lp-work i:nth-child(2) { animation-delay: 0.3s; } .glim .lp-work i:nth-child(3) { animation-delay: 0.6s; } .glim .lp-work i:nth-child(4) { animation-delay: 0.9s; } .glim .lp-work i:nth-child(5) { animation-delay: 1.2s; }
+.glim .lp-tag-in { width: 330px; padding-left: 14px; }
+.glim .lp-heard { margin: 0 0 8px; font-style: italic; color: var(--ink-2); }
+.glim .lp-tag-in input { width: 100%; height: 36px; padding: 0 10px; font: 400 15px var(--sans); color: var(--ink-hi); background: var(--paper-lo); border: 1px solid var(--ink-3); border-radius: 2px; outline: none; }
+.glim .lp-tag-in input:focus { border-color: var(--lp-amber); }
+.glim .lp-tag-in input::placeholder { color: var(--ink-3); }
+.glim .lp-ptag { width: 330px; border-color: var(--lp-amber); transform-origin: 0 0; }
+
+.glim .lp-card { position: absolute; width: 350px; padding: 14px 16px 16px; pointer-events: auto; background: var(--card-hi); border: 1px solid var(--ink); border-top: 4px solid var(--lp-amber);
+  box-shadow: 0 24px 60px var(--shadow); transform-origin: 300px -24px; }
+.glim .lp-hold { position: absolute; top: -28px; width: 1.5px; height: 24px; background: var(--lp-cable); }
+.glim .lp-card h3 { margin: 0 0 8px; font: 600 17px/1.35 var(--sans); color: var(--ink-hi); }
+.glim .lp-card-k { font: 600 12px var(--mono); letter-spacing: 0.06em; color: var(--ink-2); text-transform: uppercase; }
+.glim .lp-card-k code { font: inherit; text-transform: none; letter-spacing: 0; color: var(--accent); }
+.glim .lp-card p { margin: 6px 0 14px; font: 400 15px/1.45 var(--sans); color: var(--ink-hi); }
+.glim .lp-card-b { display: flex; gap: 8px; }
+.glim .lp-card-b button { height: 36px; padding: 0 18px; font: 600 14px var(--sans); border-radius: 2px; cursor: pointer; }
+.glim .lp-yes { background: var(--lp-amber); border: 1px solid var(--lp-amber); color: #2a1503; }
+.glim .lp-yes:hover { filter: brightness(1.08); }
+.glim .lp-no { background: transparent; border: 1px solid var(--ink-3); color: var(--ink); }
+.glim .lp-no:hover { border-color: var(--ink); }
+.glim .lp-done { font: 600 15px var(--sans); color: var(--mint-2); }
+
+/* ---------- pointing: the wire and the ring thrown around the place */
+.glim .lp-wire { position: absolute; width: 1.5px; margin-left: -0.75px; background: var(--lp-amber); transform-origin: 50% 0; animation: lp-wire 0.4s ease-out 1s both; }
+.glim .lp-ring { position: absolute; pointer-events: none; }
+.glim .lp-ring i { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--lp-amber); box-shadow: 0 0 0 4px rgba(255, 168, 90, 0.14), 0 0 26px rgba(255, 168, 90, 0.35), inset 0 0 30px rgba(255, 168, 90, 0.16); }
+.glim .lp-ring-frame i { border-radius: 18px; border-style: dashed; box-shadow: 0 0 0 4px rgba(255, 168, 90, 0.1), inset 0 0 40px rgba(255, 168, 90, 0.1); }
+.glim .lp-ring i:after { content: ''; position: absolute; left: 50%; top: -9px; width: 8px; height: 8px; margin-left: -4px; border-radius: 50%; background: var(--lp-amber); }
+
+@keyframes lp-sway { 0%, 100% { transform: rotate(0.9deg); } 50% { transform: rotate(-0.9deg); } }
+@keyframes lp-swing-a { 0% { transform: rotate(0deg); } 15% { transform: rotate(5deg); } 38% { transform: rotate(-3deg); } 60% { transform: rotate(1.4deg); } 80% { transform: rotate(-0.5deg); } 100% { transform: rotate(0deg); } }
+@keyframes lp-swing-b { 0% { transform: rotate(0deg); } 15% { transform: rotate(-5deg); } 38% { transform: rotate(3deg); } 60% { transform: rotate(-1.4deg); } 80% { transform: rotate(0.5deg); } 100% { transform: rotate(0deg); } }
+@keyframes lp-knit { from { transform: rotate(-22deg); } to { transform: rotate(22deg); } }
+@keyframes lp-turn { 0%, 100% { transform: scaleX(1); } 50% { transform: scaleX(-1); } }
+@keyframes lp-away { 0%, 100% { opacity: 0.8; } 40%, 60% { opacity: 0; } }
+@keyframes lp-dot { 0%, 100% { opacity: 0.25; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-3px); } }
+@keyframes lp-fill { 0%, 100% { opacity: 0.3; transform: scaleX(0.3); } 50% { opacity: 1; transform: scaleX(1); } }
+@keyframes lp-wire { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .glim .lp-sway, .glim .lp-arrive-a, .glim .lp-arrive-b, .glim .lp-knit, .glim .lp-turn, .glim .lp-glow, .glim .lp-dots i, .glim .lp-work i, .glim .lp-wire { animation: none !important; }
+  .glim .lp-rig, .glim .lp-cable, .glim .lp-body, .glim .lp-rail, .glim .lp-j { transition: none; }
+}

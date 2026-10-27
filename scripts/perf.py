@@ -1,21 +1,54 @@
 # Frame times at ?scale=4 (docs/perf.md). Three modes:
-#   python scripts/perf.py [url]            zoom + drag gesture from home (default)
+#   python scripts/perf.py [url]            zoom + drag gesture from home (default). Exit 1 when the median
+#                                           p50 over the runs misses docs/perf.md's budget (p50 <= 16.7 ms).
 #   python scripts/perf.py --lod [url]      static raster at each of 6 fixed LODs: the engine's perf.lastRasterMs
 #                                           counter vs the full cost of an invalidated E.draw (the cost the frame
 #                                           pays; Chrome defers the 2D raster to the first drawImage). Exit 1 when
 #                                           the counter reads under 80% of the full figure at any LOD.
 #   python scripts/perf.py --tween [url]    rAF deltas and raster counts during a lens switch (General -> lens ->
-#                                           General) at home and three zooms
+#                                           General) at home and three zooms. Exit 1 when the median p50 over the
+#                                           runs misses that level's ceiling (TWEEN_BUDGET_P50_MS, docs/perf.md).
 # Env: BP_BASE (default http://localhost:3010, `npm start`/`npm run dev`), RUNS (gesture runs, default 3),
 #      N (rasters per LOD, default 30), TWEEN_RUNS (default 1), VW / VH / DPR (viewport, default 1920x1080 @1).
 # Measure a production build: `npm run build && npm start`.
-import os, time, json, statistics, sys
+import os, time, json, sys
 from playwright.sync_api import sync_playwright
 BASE = (os.environ.get('BP_BASE') or 'http://localhost:3010').rstrip('/')
 args = [a for a in sys.argv[1:] if not a.startswith('--')]
 mode = 'lod' if '--lod' in sys.argv else 'tween' if '--tween' in sys.argv else 'gesture'
 url = args[0] if args else BASE + '/v/subtle?intro=0&scale=4'
 W, H = int(os.environ.get('VW', 1920)), int(os.environ.get('VH', 1080))
+
+# docs/perf.md "Budget", 2026-10-21 operator ruling: p50 <= 16.7 ms at ?scale=4, measured with this script;
+# p95 is reported without a budget. 16.7 ms is also the rAF cadence of a 60 Hz display, so a run at exactly
+# the budget is a run with no dropped frame; TOL covers the rounding of a 16.666.. cadence, nothing more. One
+# dropped frame in a hundred shows as p50 33.3, which is 16 ms over - far outside TOL.
+BUDGET_P50_MS, TOL = 16.7, 0.4
+
+
+def over_budget(p50):
+    """True when a gesture run misses the ruling's budget. The whole predicate, so it can be read and
+    probed without a server (`python -c "import perf"` needs playwright, but this is what the gate is)."""
+    return p50 > BUDGET_P50_MS + TOL
+
+# The lens switch is a ~30 fps spring BY DESIGN (docs/perf.md: 2 frames at 60 Hz = 33.3 ms, 3 frames at L-room, whose
+# raster covers the viewport plus the margin), so it is not held to the gesture's 16.7. Its ceilings are the recorded
+# p50 per zoom level, docs/perf.md "Lens switch at x4" (home 33.3, L-bld 33.3, L-tiles 33.3, L-room 50), with the
+# same TOL: the accepted spring passes, and a switch that slips a whole frame further (33.3 -> 50, 50 -> 66.7, i.e.
+# toward 15 fps) fails. Derived from the recorded table, not from a new measurement; the operator retunes them here.
+TWEEN_BUDGET_P50_MS = {'home': 33.3, 'L-bld': 33.3, 'L-tiles': 33.3, 'L-room': 50.0}
+
+
+def tween_over_budget(level, p50):
+    """True when a lens-switch run at this zoom level misses its ceiling. A level with no ceiling is over by
+    definition: a new level must be given a number, never pass for lack of one."""
+    ceiling = TWEEN_BUDGET_P50_MS.get(level)
+    return ceiling is None or p50 > ceiling + TOL
+
+
+def median(xs):
+    xs = sorted(xs)
+    return xs[len(xs) // 2] if len(xs) % 2 else (xs[len(xs) // 2 - 1] + xs[len(xs) // 2]) / 2
 
 LOD_JS = r"""
 async (N) => {
@@ -80,8 +113,23 @@ with sync_playwright() as p:
             if r['n'] == 0 or r['ratio'] < 0.8: bad = True
         print('LOD counter vs full raster: ' + ('FAIL (counter under 80% of the full figure)' if bad else 'ok'))
     elif mode == 'tween':
+        by_level = {}
         for run in range(int(os.environ.get('TWEEN_RUNS', 1))):
-            for r in pg.evaluate(TWEEN_JS): print(json.dumps({'run': run, **r})); sys.stdout.flush()
+            for r in pg.evaluate(TWEEN_JS):
+                print(json.dumps({'run': run, **r})); sys.stdout.flush()
+                by_level.setdefault(r['level'], []).append(r['p50'])
+        # the ruling is on the median of the runs per level, as the gesture's is; a level the ceilings name that
+        # produced no sample means the budget was not checked, which is a failure and never a pass
+        for level in TWEEN_BUDGET_P50_MS:
+            if level not in by_level:
+                bad = True
+                print('tween %s: no run produced a sample, so the budget was not checked: FAIL' % level)
+        for level, p50s in by_level.items():
+            med = median(p50s)
+            over = tween_over_budget(level, med)
+            bad = bad or over
+            print('tween %s p50 %.1f ms over %d run(s), ceiling %s ms (docs/perf.md): %s'
+                  % (level, med, len(p50s), TWEEN_BUDGET_P50_MS.get(level), 'FAIL' if over else 'ok'))
     else:
         for run in range(int(os.environ.get('RUNS', 3))):
             pg.evaluate("__bp.goHome(0)"); time.sleep(0.8)
@@ -101,5 +149,16 @@ with sync_playwright() as p:
             q = lambda f: ds[min(len(ds) - 1, int(len(ds) * f))]
             res[run] = {'n': len(ds), 'p50': round(q(0.5), 2), 'p95': round(q(0.95), 2), 'p99': round(q(0.99), 2), 'max': round(ds[-1], 2), 'rasters': d['rasters'], 'engineFrames': d['frames'], 'lastRasterMs': round(d['lastRasterMs'], 1)}
             print(json.dumps(res[run])); sys.stdout.flush()
+        # the ruling is on the median of the runs, not on the worst one: a single noisy run on a machine
+        # that was building something is not a regression, and three runs is the documented default.
+        p50s = sorted(r['p50'] for r in res.values())
+        if not p50s:
+            bad = True
+            print('gesture: no run produced a frame-time sample, so the budget was not checked: FAIL')
+        else:
+            med = p50s[len(p50s) // 2] if len(p50s) % 2 else (p50s[len(p50s) // 2 - 1] + p50s[len(p50s) // 2]) / 2
+            bad = over_budget(med)
+            print('gesture p50 %.2f ms over %d run(s) of %s, budget %.1f ms (docs/perf.md): %s'
+                  % (med, len(p50s), url, BUDGET_P50_MS, 'FAIL' if bad else 'ok'))
     b.close()
 sys.exit(1 if bad else 0)

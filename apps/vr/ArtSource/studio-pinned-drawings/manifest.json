@@ -1,0 +1,268 @@
+{
+  "id": "studio-pinned-drawings",
+  "class": "set-dressing",
+  "budget_tris": 12000,
+  "budget_note": "plan.md P4 studio kit total 80k, split across 5 as 24000 shelves, 16000 desk lamp, 8000 mug, 20000 drawing tubes, 12000 pinned drawings",
+  "kept_option": "B",
+  "lynx_commit": "85dec86092ef0be17a55c7c2cb8d717f3695cdef",
+  "lynx_commit_note": "stamped by the writer: the newest commit touching this folder when the manifest was written",
+  "file_bytes": {
+    "concept.png": 112168,
+    "evidence/table-view.jpg": 46766,
+    "evidence/turnaround.jpg": 114956,
+    "final.glb": 1544136,
+    "rejected/A.png": 139598,
+    "textures/draw_sheets_basecolor.png": 1160950,
+    "textures/draw_sheets_normal.png": 1267151,
+    "textures/draw_sheets_orm.png": 1158573,
+    "textures/pinned_drawings_atlas_basecolor.png": 1341622,
+    "textures/pinned_drawings_atlas_normal.png": 1338795,
+    "textures/pinned_drawings_atlas_orm.png": 1362277
+  },
+  "sha256": {
+    "concept.png": "8c31c9d13be7cff2ce16027cf52979c185d32201d0f77e6bd6c6423f689dfb80",
+    "evidence/table-view.jpg": "be2e5099f3e0eb9c332a1e04a53a6f44f523b9a87989904fa2f87e66d2b62b76",
+    "evidence/turnaround.jpg": "f64cc4d6875e6b20a1adfcf696ca550bad193abfbe390fa9188afb0d8b19ce17",
+    "final.glb": "df560d00a5cc9e0aeb3bc91e98b376f8ccffff1d77d1498681389caee8147572",
+    "rejected/A.png": "1ac378c15124ac370da8525786184ea4ebb406dc4b12f4947c72fd0ef7af43c1",
+    "textures/draw_sheets_basecolor.png": "61ec096b89a7610825c636c1a9a63acb57377093e7339435896d31e7668c8788",
+    "textures/draw_sheets_normal.png": "c9c56dfb15fb4c471b0fd605d5d6ee4e7245f14d0b6f0f93634d50cf380b4826",
+    "textures/draw_sheets_orm.png": "5f51c670778b7851bd625f2477cc356f363076bb3fd0ad351236fb05497c7d7f",
+    "textures/pinned_drawings_atlas_basecolor.png": "0420e8423595aa176ceaea8ef6d94ebb31c44e51dde14d47e7d853e9f1650279",
+    "textures/pinned_drawings_atlas_normal.png": "05ddd35acf0cc3a8f06580220b52b8976e1e749ca81c00d311979daa5a82a277",
+    "textures/pinned_drawings_atlas_orm.png": "d6bf27c36c3e977a3bcb54f5604fc291b3bdf9742a8a3188f26eaa05e0011bae"
+  },
+  "gates": {
+    "input": {
+      "pass": true,
+      "note": "procedural, no generated input: the mesh is built in Blender (scripts/art/studio-kit/build_studio.bpy) and concept.png is a shape reference only, not a TRELLIS input. Earlier note, kept: \"Fails the grey-ground rule: both options are a blue wall panel, not a plain grey ground. B kept as the cleaner layout (three equal sheets in a row). The input gate is moot if this is built as a textured plane.\" The grey-ground rule applies to image-to-3D input, which this asset does not use.",
+      "date": "2026-10-21"
+    },
+    "mesh_acceptance": {
+      "pass": true,
+      "note": "re-imported from final.glb: 1 mesh object, 1818 vertices, 3596 tris, 12 connected components, 0 floaters (a floater is a component whose bounding box touches no other), 0 open edges, signed volume 0.009398 m3 (positive: normals face out)",
+      "date": "2026-10-24"
+    },
+    "scale": {
+      "pass": true,
+      "note": "114 x 3.31 x 52 cm (x, y, z up) re-imported from final.glb, inside the planned envelope (two framed A3-ish sheets and one pinned, curling sheet, 32 x 48 cm each, 6 cm apart, on a 1.12 x 0.52 m mounting board); pivot: base centre 0, 0 m, floor at z = 0 m. Assumption: the sizes are Lynx choices from the concept; the UE world scale is still to be confirmed on Wolf.",
+      "date": "2026-10-24"
+    },
+    "finishing": {
+      "pass": true,
+      "note": "finish: 148 bevelled hard edges, custom (hardened) normals true, 82% of faces smooth-shaded, baked atlas at 1200.5 px/m from 2 CC0 scans; one UV set (1); 6 PBR PNGs (base colour, normal, ORM for 2 slots); every file under 10 MB (largest 1544136 bytes); 2 material slots (pinned_drawings_atlas, draw_sheets); evidence turnaround.jpg and table-view.jpg rendered with Cycles on the CPU (in-context EEVEE renders: scripts/art/studio-kit/render_context.bpy), framing check passes on 5 images (min silhouette margin 0.0641 of the image, rule 0.03). Not claimed: any UE import.",
+      "date": "2026-10-24"
+    },
+    "poly_budget": {
+      "pass": true,
+      "note": "3596 tris against 12000 (30%)",
+      "date": "2026-10-24"
+    }
+  },
+  "tris": 3596,
+  "tris_total": 3596,
+  "materials": [
+    "pinned_drawings_atlas (3256 tris, PBR textures)",
+    "draw_sheets (340 tris, PBR textures)"
+  ],
+  "bounds_cm": {
+    "x": 114,
+    "y": 52,
+    "z": 3.31,
+    "note": "x,z ground plane, y up (glTF)"
+  },
+  "meshes": {
+    "studio-pinned-drawings": {
+      "tris": 3596,
+      "vertices": 1818,
+      "components": 12,
+      "floaters": 0,
+      "open_edges": 0,
+      "faces_per_slot": {
+        "pinned_drawings_atlas": 3256,
+        "draw_sheets": 340
+      }
+    }
+  },
+  "uv_sets": 1,
+  "pivot": "base centre (x and y at the middle of the footprint, z = 0 at the floor); measured 0, 0 m; the prop stands +Y in the GLB (glTF Y-up), +Z in Blender",
+  "scale_reasoning": "two framed A3-ish sheets and one pinned, curling sheet, 32 x 48 cm each, 6 cm apart, on a 1.12 x 0.52 m mounting board. Measured 114 x 52 x 3.31 cm (x, up, y); the planned envelope per axis is 100-120 cm, 2-5 cm, 45-55.00000000000001 cm (x, y, z up).",
+  "textures": "6 PNGs: one 2048 px atlas (pinned_drawings_atlas_basecolor, _orm with R occlusion, G roughness, B metal, and a tangent-space OpenGL _normal), baked with Cycles on the CPU in scripts/art/studio-kit/build_studio.bpy from layered bake-source materials (scripts/art/lib/finish.bpy): Poly Haven CC0 scans tinted to the palette, curvature edge wear, room-scale grunge, AO (also multiplied into basecolor at 0.55, as the forward-shaded UE scene has no runtime AO). One unique UV set: smart projection, islands at one texel density, hidden faces (book sides inside a row, undersides) shrunk to 0.12, 1200.5 px/m on the visible surface (0.3351 m2 visible, 85% of the surface hidden). Bake seconds: {\"base\":1.63,\"rough\":1.48,\"metal\":0.66,\"normal\":1.54,\"ao\":9.33}. draw_sheets_*: a 1536 x 768 procedural 3-up blueprint atlas (each printed face maps one third), a placeholder slot for the drawings the image builder makes. GLB embeds the atlas as quality-92 JPEG (the PNG set would put the GLB over 10 MB).",
+  "finish": {
+    "bevel": "angle-limited (30 degrees) bevel on every primitive's hard edges, width per part (0.5 to 3 mm), 2 segments, arc miter, clamped, hardened normals, then a weighted normal (face area, keep sharp) and smooth shading; 148 hard edges bevelled, 644 kept sharp by design (paper edges, spiral roll ends, small screws), 0 convex edges of 60 degrees or more left unrounded (inside other parts or at acute corners)",
+    "smooth_faces": 0.8209,
+    "custom_normals": true,
+    "texel": {
+      "px_per_m": 1200.5,
+      "uv_coverage": 0.115,
+      "surface_m2": 0.3351,
+      "hidden_share": 0.853
+    },
+    "bake": {
+      "seconds": {
+        "base": 1.63,
+        "rough": 1.48,
+        "metal": 0.66,
+        "normal": 1.54,
+        "ao": 9.33
+      },
+      "ao_mean": 0.21,
+      "rough_range": [
+        0,
+        0.86
+      ]
+    },
+    "cc0_sources": {
+      "fabric_leather_02": {
+        "page": "https://polyhaven.com/a/fabric_leather_02",
+        "licence": "CC0 1.0 (Poly Haven, https://polyhaven.com/license)",
+        "size_mm": [
+          500,
+          499.9999403953552
+        ],
+        "authors": {
+          "Rob Tuytel": "All"
+        },
+        "files": {
+          "diff": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/fabric_leather_02/fabric_leather_02_diff_2k.jpg",
+          "rough": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/fabric_leather_02/fabric_leather_02_rough_2k.jpg",
+          "nor_gl": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/fabric_leather_02/fabric_leather_02_nor_gl_2k.jpg"
+        }
+      },
+      "fine_grained_wood": {
+        "page": "https://polyhaven.com/a/fine_grained_wood",
+        "licence": "CC0 1.0 (Poly Haven, https://polyhaven.com/license)",
+        "size_mm": [
+          600.0000238418579,
+          600.0000238418579
+        ],
+        "authors": {
+          "Rob Tuytel": "All"
+        },
+        "files": {
+          "diff": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/fine_grained_wood/fine_grained_wood_col_2k.jpg",
+          "rough": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/fine_grained_wood/fine_grained_wood_rough_2k.jpg",
+          "nor_gl": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/fine_grained_wood/fine_grained_wood_nor_gl_2k.jpg"
+        }
+      }
+    }
+  },
+  "generator": "procedural Blender",
+  "blender": "Blender 5.2.2, scripts/art/studio-kit/build_studio.bpy (build and score), render_studio.bpy (evidence and framing check), write_manifest.mjs",
+  "concept_reference": [
+    {
+      "option": "A",
+      "file": "rejected/A.png",
+      "model": "openai/gpt-image-2.5-flare",
+      "seed": 21,
+      "quality": "LOW",
+      "size": "1024x1024",
+      "credits": 6,
+      "log": "docs/concepts/vr-light-table/lookdev/log.jsonl line 61",
+      "generationId": "1f1cd397-966d-6b90-bec5-46cc7847fc72",
+      "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop studio-pinned-drawings --variant A"
+    },
+    {
+      "option": "B",
+      "file": "concept.png",
+      "model": "openai/gpt-image-2.5-flare",
+      "seed": 21,
+      "quality": "LOW",
+      "size": "1024x1024",
+      "credits": 6,
+      "log": "docs/concepts/vr-light-table/lookdev/log.jsonl line 62",
+      "generationId": "1f1cd398-4a2d-6590-9692-6a4b4b5b15bf",
+      "prompt": "node scripts/lookdev/leonardo.mjs prompt --prop studio-pinned-drawings --variant B"
+    }
+  ],
+  "concept_note": "log.jsonl file fields name candidates/<A|B>.png, the place each image was written before grading; they were then moved to concept.png or rejected/.",
+  "licence": "own procedural work; concept.png is a Leonardo concept used as a shape reference only (R8 open); bake inputs are Poly Haven CC0 scans (fabric_leather_02 (https://polyhaven.com/a/fabric_leather_02, CC0 1.0 (Poly Haven, https://polyhaven.com/license), 0.5 m tile); fine_grained_wood (https://polyhaven.com/a/fine_grained_wood, CC0 1.0 (Poly Haven, https://polyhaven.com/license), 0.6000000238418579 m tile)), never shipped as files; no ComfyUI or TRELLIS run, no GPU job, no Leonardo call",
+  "regenerate": "node scripts/art/lib/polyhaven.mjs <work>/polyhaven; blender -b -P scripts/art/studio-kit/build_studio.bpy -- <repo-root> <work> studio-pinned-drawings; blender -b -P scripts/art/studio-kit/render_studio.bpy -- <repo-root> <work> studio-pinned-drawings; node scripts/art/studio-kit/write_manifest.mjs <work> studio-pinned-drawings",
+  "framing": {
+    "turn0": {
+      "resolution": [
+        480,
+        480
+      ],
+      "fov_deg": 24,
+      "azimuth_deg": 25,
+      "elevation_deg": 22,
+      "margins": {
+        "left": 0.1292,
+        "right": 0.0646,
+        "bottom": 0.2417,
+        "top": 0.2583
+      },
+      "min_margin": 0.0646,
+      "pass": true
+    },
+    "turn1": {
+      "resolution": [
+        480,
+        480
+      ],
+      "fov_deg": 20.8,
+      "azimuth_deg": 115,
+      "elevation_deg": 22,
+      "margins": {
+        "left": 0.2458,
+        "right": 0.3,
+        "bottom": 0.0667,
+        "top": 0.1625
+      },
+      "min_margin": 0.0667,
+      "pass": true
+    },
+    "turn2": {
+      "resolution": [
+        480,
+        480
+      ],
+      "fov_deg": 24,
+      "azimuth_deg": 205,
+      "elevation_deg": 22,
+      "margins": {
+        "left": 0.1208,
+        "right": 0.0687,
+        "bottom": 0.2354,
+        "top": 0.2625
+      },
+      "min_margin": 0.0687,
+      "pass": true
+    },
+    "turn3": {
+      "resolution": [
+        480,
+        480
+      ],
+      "fov_deg": 20.8,
+      "azimuth_deg": 295,
+      "elevation_deg": 22,
+      "margins": {
+        "left": 0.2271,
+        "right": 0.3104,
+        "bottom": 0.0708,
+        "top": 0.1604
+      },
+      "min_margin": 0.0708,
+      "pass": true
+    },
+    "table-view": {
+      "resolution": [
+        640,
+        480
+      ],
+      "fov_deg": 25,
+      "azimuth_deg": 0,
+      "elevation_deg": 45,
+      "margins": {
+        "left": 0.0641,
+        "right": 0.0656,
+        "bottom": 0.3354,
+        "top": 0.3
+      },
+      "min_margin": 0.0641,
+      "pass": true
+    }
+  }
+}

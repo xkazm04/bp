@@ -1,4 +1,4 @@
--- lens-scan store v3. One file per product repo: <root>/.ai/lens-scan/scan.db (gitignored).
+-- lens-scan store v4. One file per product repo: <root>/.ai/lens-scan/scan.db (gitignored).
 -- Written by the /lens-scan skill (ai-registry skills/lens-scan/scripts/store.mjs, the owner of this DDL);
 -- read by the blueprint, which writes only proposal decisions. This file is copied name for name between
 -- ai-registry skills/lens-scan/references/store.sql and bp docs/standard/lens-scan-store.sql.
@@ -17,6 +17,16 @@
 -- reopen` can put a person's call back while its release is still a draft. One nullable column, last in
 -- proposals; store.mjs migrates a v2 file in place by ALTER (one transaction), a v1 file straight to v3.
 --
+-- v4 (the takeover): where an item came from and how bad its problem is. proposals gains, last and in this order,
+-- origin ('scan' | 'ado' | 'sweep', default 'scan'), external_ref ('<origin>:<id>' in the source system, UNIQUE when
+-- set: the import idempotency key), external_url, tier (0 stop-ship, 1 before production, 2 soon after, 3 backlog;
+-- NULL = untriaged), risk_class (secret | authz | money | data | llm | perf | reliability | ux | debt; NULL =
+-- unclassified), ranked_by (<kind>:<name>) and ranked_at; kind takes 'work-item' (an imported item: no metric or
+-- delta). The existing `risk` (1-10) is unchanged: the risk of making the change, never the problem's severity
+-- (references/triage.md is the rubric for tier and risk_class). store.mjs migrates a v3 file by rebuilding proposals
+-- (the kind CHECK changed; one transaction, every row copied, origin 'scan'), a v2 file through v3, a v1 file
+-- straight to v4.
+--
 -- proposals.status, what each one means:
 --   proposed   the skill proposed it; nobody has decided
 --   approved   a person (review UI or `decide --by`) approved it; waiting to be built
@@ -30,7 +40,7 @@
 --   released   (v2) shipped: its release was merged and tagged
 --   a reopen (v3) is no status of its own: the item goes back to its triaged_from
 PRAGMA journal_mode = WAL;
-PRAGMA user_version = 3;
+PRAGMA user_version = 4;
 
 CREATE TABLE IF NOT EXISTS runs (
   id            TEXT PRIMARY KEY,
@@ -115,7 +125,7 @@ CREATE TABLE IF NOT EXISTS proposals (
   expected_delta REAL,
   size           TEXT CHECK (size IN ('XS', 'S', 'M', 'L', 'XL')),
   risk           INTEGER CHECK (risk BETWEEN 1 AND 10),
-  kind           TEXT NOT NULL CHECK (kind IN ('fix', 'baseline-upgrade', 'propagation')),
+  kind           TEXT NOT NULL CHECK (kind IN ('fix', 'baseline-upgrade', 'propagation', 'work-item')),
   parent_id      TEXT REFERENCES proposals(id),
   status         TEXT NOT NULL CHECK (status IN ('proposed', 'approved', 'declined', 'executing', 'done', 'failed',
                                                  'accepted', 'rework', 'descoped', 'released')),
@@ -135,8 +145,18 @@ CREATE TABLE IF NOT EXISTS proposals (
   triaged_by     TEXT,                           -- <kind>:<name>
   triaged_at     TEXT,
   -- v3
-  triaged_from   TEXT                            -- the status it left at its latest triage; reopen's target
+  triaged_from   TEXT,                           -- the status it left at its latest triage; reopen's target
+  -- v4: where the item came from, and how bad the problem is (risk above is the risk of the CHANGE)
+  origin         TEXT NOT NULL DEFAULT 'scan' CHECK (origin IN ('scan', 'ado', 'sweep')),
+  external_ref   TEXT,                           -- '<origin>:<id>' in the source system; the import idempotency key
+  external_url   TEXT,
+  tier           INTEGER CHECK (tier BETWEEN 0 AND 3),  -- 0 stop-ship .. 3 backlog; NULL = untriaged
+  risk_class     TEXT CHECK (risk_class IN ('secret', 'authz', 'money', 'data', 'llm', 'perf', 'reliability', 'ux', 'debt')),
+  ranked_by      TEXT,                           -- <kind>:<name>
+  ranked_at      TEXT
 );
+CREATE UNIQUE INDEX IF NOT EXISTS proposals_external_ref ON proposals (external_ref) WHERE external_ref IS NOT NULL;
+CREATE INDEX IF NOT EXISTS proposals_tier ON proposals (tier);
 CREATE INDEX IF NOT EXISTS proposals_updated ON proposals (updated_at);
 CREATE INDEX IF NOT EXISTS proposals_pack ON proposals (pack_id);
 CREATE INDEX IF NOT EXISTS proposals_release ON proposals (release_id);
