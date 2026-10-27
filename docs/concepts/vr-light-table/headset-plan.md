@@ -4,6 +4,9 @@ Written 2026-10-26 for the next session, in which the owner wires the Meta Quest
 real headset for the first time. Until now every reading was made in flat captures or the Meta XR Simulator
 (`lynx-plan.md` H1, decision 5). This plan says what to try, in what order, how long each probe gets, and what we record.
 
+> **2026-10-27 (owner).** Rung 5, the standalone Android build, is now the main path: the competition build must run on a
+> Quest with no PC ([`standalone-plan.md`](standalone-plan.md)). Rungs 1 to 4 still serve our own reading sessions.
+
 ## Why the headset, and what we judge there
 
 The flat captures stop being the right instrument at this point. The blind panel scored Kettle 34/45 and pof 31/45

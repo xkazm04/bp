@@ -32,6 +32,7 @@ lenses, scans and waves, drawn for a headset.
 | Headset, for now (owner, 2026-10-23) | **The Meta XR Simulator v207**; the headset route on ARM64 is a later decision | Quest Link in this phase (Meta lists Intel and AMD CPUs only) |
 | Schema headers in UE (owner, 2026-10-23, R1) | **The git-ignored junction** `apps/vr/Source/BpLink/Public/Schema` to `packages/schema/generated/ue`, one include path | A generated copy; moving the source into `apps/vr` |
 | The 90 Hz bar (owner, 2026-10-23, R5) | **p50 at or under 11.1 ms**, GPU and game thread; p95 and max reported | p95 as the bar |
+| Competition build (owner, 2026-10-27) | **Standalone Quest APK** for the Meta VR Start Developer Competition (closes 2026-11-18): the table runs with no PC and no server, from a bundled snapshot ([`standalone-plan.md`](standalone-plan.md)). The PC-tethered route stays as our fallback and look-dev bar ([`run-locally.md`](run-locally.md)) | PC-tethered only (the 2026-10-20 quality bar, above), which judges cannot install |
 
 ## The documents
 
@@ -47,6 +48,12 @@ lenses, scans and waves, drawn for a headset.
   to P7, the merge gates, the known gaps and the open asks.
 - [`headset-plan.md`](headset-plan.md): the route to the owner's Quest 3S on Lynx (ARM64), the code to change
   first (seated calibration), and the session script and record (2026-10-26).
+- [`standalone-plan.md`](standalone-plan.md): the competition build, a Quest with no PC: the bundled snapshot (done), the
+  Android target and toolchain, a mobile fidelity tier, packaging and submission (2026-10-27).
+- [`run-locally.md`](run-locally.md): the PC-first route, step by step: setup, build, and running against the server, the
+  Simulator or a Quest through Link.
+- [`voice-sdk-plan.md`](voice-sdk-plan.md): speech-to-text in the headset with Meta's Voice SDK for Unreal (Wit.ai), for a
+  later session.
 - [`machine.md`](machine.md): the build host's measured facts and readings 1 to 14.
 - [`wolf-plan.md`](wolf-plan.md): the retired Wolf plan (2026-10-23), kept for its readings and history.
 
