@@ -73,7 +73,14 @@ const job = (slug: string, id: string): ScanJob | undefined => J.list(slug).find
 const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 const pidOf = (j?: ScanJob) => Number(/^pid (\d+)$/m.exec(j?.log_tail ?? '')?.[1] ?? 0);
 
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-scan-jobs-'));
+// The skill look-up walks a job root's ancestors for .claude/skills/lens-scan, so the scratch tree must not sit under a home that
+// carries one (Windows keeps %TEMP% under the profile): there it goes to the drive root, where nothing above it can answer.
+const scratchBase = (() => {
+  const t = os.tmpdir(), home = os.homedir();
+  if (!path.resolve(t).toLowerCase().startsWith(path.resolve(home).toLowerCase() + path.sep)) return t;
+  try { const r = path.join(path.parse(t).root, 'bp-scratch'); fs.mkdirSync(r, { recursive: true }); return r; } catch { return t; }
+})();
+const dir = fs.mkdtempSync(path.join(scratchBase, 'bp-scan-jobs-'));
 const repo = (name: string) => { const r = path.join(dir, name); fs.mkdirSync(r, { recursive: true }); return r; };
 const feat = (f: string[]): ScanScope => ({ kind: 'room', id: 'room-1', label: 'Room 1', features: f });
 const ALL: ScanScope = { kind: 'all', label: 'Everything', features: [] };

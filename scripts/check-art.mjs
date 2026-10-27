@@ -153,7 +153,7 @@ function main() {
   }
 
   console.log(`${folders.length} asset folders, ${(total / MB).toFixed(1)} MB committed under ArtSource, ${fail} violation(s)`);
-  process.exit(fail ? 1 : 0);
+  process.exitCode = fail ? 1 : 0;
 }
 
 if (isMain) main();
