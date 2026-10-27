@@ -6,6 +6,7 @@
 //   4. SSE parsing across split chunks (every split point, CRLF split between \r and \n, comments, multi-line data) and
 //      the stream reconnect (a fake EventSource: down -> offline, reopened after the backoff)
 //   5. the companion's CSS: no font under 12 px, motion on transform and opacity only
+//   6. the voice: what a reply is reduced to before it is spoken, the mute's precedence, the tremolo's range
 // Run: node scripts/check-companion-web.ts   (Node's type stripping; the modules import siblings with extensions)
 import fs from 'node:fs';
 import path from 'node:path';
@@ -13,6 +14,8 @@ import type { Card, CompanionEvent, FocusCommand, TurnEvent } from '../packages/
 import { BUSY, CARD_FADE_MS, INITIAL, NOTICE_MS, OFFLINE, POINT_MS, createStore, deriveLamp, reduce, type CompanionState, type LampInputs } from '../apps/web/src/components/companion/store.ts';
 import { connect, readEvent, readTurnEvent, sseParser, type SseMessage } from '../apps/web/src/components/companion/stream.ts';
 import { FOCUS_TABLE, placeHash, planFocus } from '../apps/web/src/components/companion/focus.ts';
+import { fxGain, voiceStatus } from '../apps/web/src/components/companion/voice.ts';
+import { readVoicePref, speakable, VOICE_DEFAULT_ON, VOICE_FX, VOICE_MAX_CHARS } from '../packages/core/src/companion/voice.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 let failed = 0;
@@ -138,6 +141,21 @@ await (async () => {
   close();
   check('stream: closing stops it', opened[1].closed && !st.get().online);
 })();
+
+// ------------------------------------------------------------------------- 6. the voice: what is spoken, the mute, the effect
+check('voice: markdown, code and links reduce to their words', speakable('**Wave three** is `ready`. See [the ledger](http://x/y) and https://a.b/c now.') === 'Wave three is ready. See the ledger and now.');
+check('voice: a code block and list markers are not read', speakable('Two checks:\n- lint\n- types\n```sh\nnpm run check\n```') === 'Two checks: lint types');
+const sent = 'The nightly scan finished across all four projects and coverage moved up a little. ';
+check('voice: a long reply is cut at the last sentence end that fits', speakable(sent.repeat(6)) === sent.repeat(3).trim(), speakable(sent.repeat(6)));
+check('voice: a sentence end in the first third is too early to cut at (the last word instead)', speakable('Yes. ' + 'word '.repeat(80)).endsWith('word…'));
+const words = 'word '.repeat(100);
+check('voice: no sentence end in reach -> the last whole word, an ellipsis', speakable(words).endsWith('word…') && speakable(words).length <= VOICE_MAX_CHARS + 1);
+check('voice: a short reply is kept whole', speakable('Done. Nice work.') === 'Done. Nice work.');
+check('voice: the preference defaults on, reads on/off, ignores junk', readVoicePref(null) === true && readVoicePref('off') === false && readVoicePref('on') === true && readVoicePref('x') === VOICE_DEFAULT_ON);
+const vs = (o: Partial<Parameters<typeof voiceStatus>[0]>) => voiceStatus({ on: true, playing: false, blocked: false, reason: null, ...o });
+check('voice: off wins over every other status (the mute is absolute)', vs({ on: false, playing: true, blocked: true, reason: 'x' }) === 'off');
+check('voice: unavailable, speaking, blocked, on in that order', vs({ reason: 'x', playing: true }) === 'unavailable' && vs({ playing: true, blocked: true }) === 'speaking' && vs({ blocked: true }) === 'blocked' && vs({}) === 'on');
+check('voice: the tremolo swings between 1 - depth and 1', Math.abs(fxGain(0) - (1 - VOICE_FX.tremolo.depth / 2)) < 1e-9 && Math.abs(fxGain(1 / (4 * VOICE_FX.tremolo.hz)) - 1) < 1e-9 && Math.abs(fxGain(3 / (4 * VOICE_FX.tremolo.hz)) - (1 - VOICE_FX.tremolo.depth)) < 1e-9);
 
 // ------------------------------------------------------------------------- 5. CSS: 12 px floor, transform/opacity motion
 const DIR = path.join(ROOT, 'apps/web/src/components/companion');

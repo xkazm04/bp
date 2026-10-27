@@ -3,6 +3,7 @@
 .glim { position: absolute; inset: 0; pointer-events: none; z-index: 7; --lp-amber: #ffa85a; --lp-shell: #eef3f8; --lp-edge: #0a2342; --lp-cable: rgba(223, 240, 255, 0.6); }
 :root[data-theme='light'] .glim { --lp-shell: #ffffff; --lp-edge: #0b2a4a; --lp-cable: rgba(11, 42, 74, 0.55); --lp-amber: #f0902e; }
 .glim * { box-sizing: border-box; }
+.glim .lp-voice { position: absolute; pointer-events: auto; }
 
 /* ---------- the rail and the rig */
 .glim .lp-rail { position: absolute; height: 2px; margin-top: -1px; transform-origin: 100% 50%; transition: transform 1.1s cubic-bezier(0.65, 0, 0.35, 1);

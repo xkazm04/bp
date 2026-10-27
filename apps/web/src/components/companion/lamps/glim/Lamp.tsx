@@ -153,6 +153,8 @@ export function GlimLamp(p: LampProps) {
 
   return (
     <div className="glim" ref={root} data-state={p.state}>
+      {/* the voice toggle stays at home, right of the name tag, clear of the hands, the tag and the card */}
+      {p.voice && <div className="lp-voice" style={{ left: homeX + 34, top: RAIL_Y + homeDrop + 120 }}>{p.voice}</div>}
       <div className="lp-rail" style={{ top: RAIL_Y, left: homeX + 40 - railLen, width: railLen, transform: `scaleX(${railScale})` }} />
 
       <AnimatePresence>

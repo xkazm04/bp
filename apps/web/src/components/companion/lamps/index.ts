@@ -1,7 +1,7 @@
 // The lamp skins: how the companion LOOKS (shape, rest position, motion, name). The host (CompanionHost) owns behaviour and
 // derives the state; a skin only draws what it is given, so a skin can be swapped without touching the turn stream.
 // `?lamp=<name>` picks one; `?lamp-fixture=1` drives a scripted timeline through every state with no server.
-import type { ComponentType } from 'react';
+import type { ComponentType, ReactNode } from 'react';
 import type { Card, LampState } from '@bp/core/companion/contract';
 import { GlimLamp } from './glim/Lamp';
 import { PlainLamp } from './plain/Plain';
@@ -16,6 +16,8 @@ export interface LampProps {
   cards: Card[];
   onSubmit(text: string): void;
   onCard(id: string, decision: 'approve' | 'decline'): void;
+  /** The voice toggle (VoiceToggle), for a skin that places it itself (LampSkin.ownsVoice). */
+  voice?: ReactNode;
 }
 
 export interface LampSkin {
@@ -26,12 +28,14 @@ export interface LampSkin {
   Component: ComponentType<LampProps>;
   /** The skin draws `cards` itself; the host then leaves out its own slip (Cards.tsx). */
   ownsCards?: boolean;
+  /** The skin places `voice` itself (beside the lamp); the host then leaves it out of its slip. */
+  ownsVoice?: boolean;
 }
 
 /** Registered skins; the first is the default. The contest's variants register here, ahead of `plain` (the deliberately
  *  plain fallback the live path was built on), so the winner is the default. */
 export const LAMPS: LampSkin[] = [
-  { key: 'glim', name: 'Glim', Component: GlimLamp, ownsCards: true },
+  { key: 'glim', name: 'Glim', Component: GlimLamp, ownsCards: true, ownsVoice: true },
   { key: 'plain', name: 'Lamp', Component: PlainLamp },
 ];
 
