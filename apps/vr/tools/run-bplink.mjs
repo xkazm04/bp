@@ -3,14 +3,17 @@
 // The probe (scripts/uht-probe.mjs --run) did this for a project synthesized outside the repo; this runs the real
 // apps/vr/bp.uproject, or a staged bp.exe. It grades nothing: it prints the BpLink lines and where the full log is.
 //
-//   node apps/vr/tools/run-bplink.mjs [--mode editor|game|staged] [--exe <staged bp.exe>] [--no-server] [--xr-sim] [--vr]
+//   node apps/vr/tools/run-bplink.mjs [--mode editor|game|staged] [--exe <staged bp.exe>] [--no-server | --bundle] [--xr-sim] [--vr]
 //                                     [--game-mode <class path>] [--exec <cmd,cmd>] [--ue-args "<a> <b>"] [--hold <s>] [--timeout <s>] [--out <dir>]
 //                                     [--product <slug>] [--runtime link|steamvr|alvr|vd [--runtime-json <path>]]
 //
 // editor  UnrealEditor-Cmd.exe bp.uproject (headless: -nullrhi, unless --xr-sim, which renders off screen instead)
 // game    UnrealEditor-Cmd.exe bp.uproject -game (uncooked)
 // staged  a cooked, staged bp.exe (--exe)
-// --no-server   start nothing; BpLink is pointed at a closed port, so its "is npm run server running?" error is the outcome
+// --no-server   start nothing; BpLink is pointed at a closed port, so its "is npm run server running?" error is the outcome,
+//               then its fallback to the build's bundled snapshot (Content/BpData/<slug>/, apps/vr/tools/bundle-data.mjs)
+// --bundle      start nothing; -BpLinkUrl=bundle, so BpLink reads the bundled snapshot without asking any server (the
+//               headset with no PC: docs/concepts/vr-light-table/standalone-plan.md)
 // --game-mode   game and staged: the URL option ?game=<class path> (e.g. /Script/bp.BpGameMode, which places the light
 //               table when the level has none) on the default map, for runs before config names a game mode
 // --xr-sim      XR_RUNTIME_JSON = the Meta XR Simulator v207 json for this process only (install-xr.ps1 -SimulatorOnly);
@@ -88,7 +91,7 @@ const killTree = (pid) => spawnSync('taskkill.exe', ['/PID', String(pid), '/T', 
 
 // apps/server, or a port nothing listens on
 let server = null, serverOut = '', port = 0;
-if (flag('--no-server')) {
+if (flag('--no-server') || flag('--bundle')) {
   port = await new Promise((r) => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)); }); });
 } else {
   const cwd = path.join(out, 'server-cwd'); fs.mkdirSync(cwd, { recursive: true });
@@ -114,14 +117,14 @@ const render = runtime ? [] : flag('--xr-sim') ? ['-RenderOffScreen'] : ['-nullr
 const exec = opt('--exec');
 const holdS = Number(opt('--hold', runtime ? '14400' : '5'));
 const vr = flag('--vr') || runtime ? ['-vr'] : [];
-const argv = [...pre, ...render, ...vr, '-unattended', '-nosplash', '-nosound', '-stdout', '-FullStdOutLogOutput', '-NoLogTimes', `-BpLinkUrl=${url}`,
+const argv = [...pre, ...render, ...vr, '-unattended', '-nosplash', '-nosound', '-stdout', '-FullStdOutLogOutput', '-NoLogTimes', `-BpLinkUrl=${flag('--bundle') ? 'bundle' : url}`,
   ...(opt('--product') ? [`-BpLinkProduct=${opt('--product')}`] : []),
   ...(exec ? [`-ExecCmds=${exec}`] : []), ...(opt('--ue-args', '').split(' ').filter(Boolean))];
 const env = { ...process.env };
 if (flag('--xr-sim')) env.XR_RUNTIME_JSON = SIM_JSON;
 if (runtimeJson) env.XR_RUNTIME_JSON = runtimeJson;
 const runLog = path.join(out, `run-${mode}${flag('--xr-sim') ? '-xrsim' : runtime ? `-${runtime}` : ''}.log`);
-console.log(`server  ${flag('--no-server') ? `none (closed port ${port})` : url}`);
+console.log(`server  ${flag('--bundle') ? 'none (the bundled snapshot)' : flag('--no-server') ? `none (closed port ${port})` : url}`);
 console.log(`start   "${exe}" ${argv.map((a) => `"${a}"`).join(' ')}${env.XR_RUNTIME_JSON && env.XR_RUNTIME_JSON !== process.env.XR_RUNTIME_JSON ? `   XR_RUNTIME_JSON=${env.XR_RUNTIME_JSON}` : ''}`);
 
 const OUTCOME = /BpLink: \w[\w-]* (wings|rooms)=|BpLink: GET .* failed|BpLink: the .* did not parse/;

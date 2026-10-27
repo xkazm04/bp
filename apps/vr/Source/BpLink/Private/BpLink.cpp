@@ -17,6 +17,8 @@
 #include "Async/Async.h"
 #include "Serialization/JsonWriter.h"
 #include "Policies/CondensedJsonPrintPolicy.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 
 DEFINE_LOG_CATEGORY(LogBpLink);
 
@@ -65,6 +67,58 @@ namespace
 			UE_LOG(LogBpLink, Warning, TEXT("BpLink: skipped %d of %d events lines that did not parse (the first %d are logged above)"), Skipped, Total, FMath::Min(Skipped, MaxSampled));
 		}
 	}
+
+	/**
+	 * The bundled snapshot (docs/concepts/vr-light-table/standalone-plan.md): the server's own answers for one product,
+	 * saved by apps/vr/tools/bundle-data.mjs under Content/BpData/<slug>/ and staged into the build as UFS files, so a
+	 * headset with no PC still has a plan to draw. BpLink reads it when -BpLinkUrl=bundle says so, or when the server does
+	 * not answer the structure read. Once read, the session stays on it: the scan side reads its saved answers once instead
+	 * of polling, and every write (a scan, a draft wave) is refused, because there is no server to keep it.
+	 */
+	bool GFromBundle = false;
+	const TCHAR* const BundleUrl = TEXT("bundle");
+	FString BundlePath(const FString& Slug, const TCHAR* File) { return FPaths::ProjectContentDir() / TEXT("BpData") / Slug / File; }
+	bool ReadBundleFile(const FString& Slug, const TCHAR* File, FString& Out) { return FFileHelper::LoadFileToString(Out, *BundlePath(Slug, File)); }
+
+	/** The /structure answer { structure, events, rev } into Snapshot. False with the refusing step in Refused. */
+	bool ParseStructurePayload(const FString& Body, FBpLinkSnapshot& Snapshot, FString& Refused)
+	{
+		TSharedPtr<FJsonObject> Payload;
+		const TSharedPtr<FJsonObject>* StructureJson = nullptr;
+		if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), Payload) || !Payload.IsValid())
+		{
+			Refused = TEXT("FJsonSerializer::Deserialize found no JSON object in it");
+		}
+		else if (!Payload->TryGetObjectField(TEXT("structure"), StructureJson))
+		{
+			Refused = TEXT("it has no `structure` object field");
+		}
+		else if (!BpSchema::FromJson(StructureJson->ToSharedRef(), Snapshot.Structure))
+		{
+			const BpSchema::FFromJsonFailure& Failure = BpSchema::LastFailure();
+			Refused = FString::Printf(TEXT("BpSchema::FromJson failed in %s at structure.%s (%d failed steps)"),
+				*Failure.Call, Failure.Path.IsEmpty() ? TEXT("(the converter's LogJson line names the property)") : *Failure.Path, Failure.Count);
+		}
+		if (!Refused.IsEmpty()) return false;
+		FString EventsJsonl;
+		Payload->TryGetStringField(TEXT("events"), EventsJsonl);
+		ReadEvents(EventsJsonl, Snapshot.Events);
+		Payload->TryGetStringField(TEXT("rev"), Snapshot.Rev);
+		return true;
+	}
+
+	/** The /plan answer into Snapshot.Plan. False (the plan reset) with the refusing step in Refused. */
+	bool ParsePlanBody(const FString& Body, FBpLinkSnapshot& Snapshot, FString& Refused)
+	{
+		TSharedPtr<FJsonObject> PlanJson;
+		const bool bPlanJson = FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), PlanJson) && PlanJson.IsValid();
+		if (bPlanJson && BpSchema::FromJson(PlanJson.ToSharedRef(), Snapshot.Plan)) return true;
+		Snapshot.Plan = FBpPlan();
+		const BpSchema::FFromJsonFailure& Failure = BpSchema::LastFailure();
+		Refused = bPlanJson ? FString::Printf(TEXT("BpSchema::FromJson failed in %s at plan.%s"), *Failure.Call, *Failure.Path)
+			: FString(TEXT("FJsonSerializer::Deserialize found no JSON object in it"));
+		return false;
+	}
 }
 
 FString FBpLinkClient::DefaultBaseUrl()
@@ -88,8 +142,53 @@ void FBpLinkClient::SetBaseUrl(const FString& InBaseUrl)
 	while (BaseUrl.EndsWith(TEXT("/"))) BaseUrl.LeftChopInline(1);
 }
 
+bool FBpLinkClient::ReadBundle(const FString& Slug, FBpLinkSnapshot& Snapshot)
+{
+	FString Structure, Plan, Manifest;
+	if (!ReadBundleFile(Slug, TEXT("structure.json"), Structure))
+	{
+		UE_LOG(LogBpLink, Error, TEXT("BpLink: no bundled snapshot of %s in this build (%s); run apps/vr/tools/bundle-data.mjs --product %s and rebuild"),
+			*Slug, *BundlePath(Slug, TEXT("structure.json")), *Slug);
+		return false;
+	}
+	Snapshot = FBpLinkSnapshot();
+	FString Refused;
+	if (!ParseStructurePayload(Structure, Snapshot, Refused))
+	{
+		UE_LOG(LogBpLink, Error, TEXT("BpLink: the bundled %s/structure.json did not parse into FBpAppStructure: %s"), *Slug, *Refused);
+		return false;
+	}
+	if (ReadBundleFile(Slug, TEXT("plan.json"), Plan))
+	{
+		Snapshot.bHasPlan = ParsePlanBody(Plan, Snapshot, Refused);
+		if (!Snapshot.bHasPlan) UE_LOG(LogBpLink, Error, TEXT("BpLink: the bundled %s/plan.json did not parse into FBpPlan: %s"), *Slug, *Refused);
+	}
+	TSharedPtr<FJsonObject> Saved;
+	if (ReadBundleFile(Slug, TEXT("bundle.json"), Manifest) && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Manifest), Saved) && Saved.IsValid())
+	{
+		Saved->TryGetStringField(TEXT("savedAt"), Snapshot.BundleSavedAt);
+	}
+	Snapshot.bFromBundle = true;
+	GFromBundle = true;
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: reading %s from the build's bundled snapshot (saved %s, rev %s); the table is read-only until a server answers"),
+		*Slug, Snapshot.BundleSavedAt.IsEmpty() ? TEXT("at an unknown time") : *Snapshot.BundleSavedAt, *Snapshot.Rev);
+	return true;
+}
+
 void FBpLinkClient::FetchProduct(const FString& Slug, TFunction<void(bool, const FBpLinkSnapshot&)> OnDone)
 {
+	if (BaseUrl == BundleUrl)
+	{
+		// Asked for the bundle by name: no request at all. OnDone still runs on a later tick, as it does for a request.
+		FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([Slug, OnDone](float)
+		{
+			FBpLinkSnapshot Snapshot;
+			const bool bBundled = ReadBundle(Slug, Snapshot);
+			OnDone(bBundled, Snapshot);
+			return false;
+		}));
+		return;
+	}
 	const FString Root = BaseUrl + TEXT("/api/products/") + Slug;
 	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Structure = MakeGet(Root + TEXT("/structure"), TEXT("application/json"));
 
@@ -100,7 +199,9 @@ void FBpLinkClient::FetchProduct(const FString& Slug, TFunction<void(bool, const
 		{
 			UE_LOG(LogBpLink, Error, TEXT("BpLink: GET %s/structure failed (connected=%d, status=%d). Is `npm run server` running?"),
 				*Root, bConnected, Response.IsValid() ? Response->GetResponseCode() : 0);
-			OnDone(false, Snapshot);
+			// No server (a headset with no PC): the build's bundled snapshot, when it has one for this product.
+			const bool bBundled = FBpLinkClient::ReadBundle(Slug, Snapshot);
+			OnDone(bBundled, Snapshot);
 			return;
 		}
 
@@ -108,24 +209,8 @@ void FBpLinkClient::FetchProduct(const FString& Slug, TFunction<void(bool, const
 		// Each of the three steps that can refuse the answer says which one it was, and the answer's size and head follow,
 		// so one run tells them apart (docs/concepts/vr-light-table/machine.md, reading 12).
 		const FString Body = Response->GetContentAsString();
-		TSharedPtr<FJsonObject> Payload;
-		const TSharedPtr<FJsonObject>* StructureJson = nullptr;
 		FString Refused;
-		if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), Payload) || !Payload.IsValid())
-		{
-			Refused = TEXT("FJsonSerializer::Deserialize found no JSON object in it");
-		}
-		else if (!Payload->TryGetObjectField(TEXT("structure"), StructureJson))
-		{
-			Refused = TEXT("it has no `structure` object field");
-		}
-		else if (!BpSchema::FromJson(StructureJson->ToSharedRef(), Snapshot.Structure))
-		{
-			const BpSchema::FFromJsonFailure& Failure = BpSchema::LastFailure();
-			Refused = FString::Printf(TEXT("BpSchema::FromJson failed in %s at structure.%s (%d failed steps)"),
-				*Failure.Call, Failure.Path.IsEmpty() ? TEXT("(the converter's LogJson line names the property)") : *Failure.Path, Failure.Count);
-		}
-		if (!Refused.IsEmpty())
+		if (!ParseStructurePayload(Body, Snapshot, Refused))
 		{
 			UE_LOG(LogBpLink, Error, TEXT("BpLink: the %s/structure answer did not parse into FBpAppStructure: %s"), *Root, *Refused);
 			UE_LOG(LogBpLink, Error, TEXT("BpLink: that answer is %d bytes, %d characters, and begins: %s"),
@@ -133,10 +218,6 @@ void FBpLinkClient::FetchProduct(const FString& Slug, TFunction<void(bool, const
 			OnDone(false, Snapshot);
 			return;
 		}
-		FString EventsJsonl;
-		Payload->TryGetStringField(TEXT("events"), EventsJsonl);
-		ReadEvents(EventsJsonl, Snapshot.Events);
-		Payload->TryGetStringField(TEXT("rev"), Snapshot.Rev);
 		UE_LOG(LogBpLink, Log, TEXT("BpLink: the %s/structure answer parsed: domains=%d lenses=%d events=%d rev=%s; asking /plan"),
 			*Root, Snapshot.Structure.domains.Num(), Snapshot.Structure.lenses.Num(), Snapshot.Events.Num(), *Snapshot.Rev);
 
@@ -155,15 +236,10 @@ void FBpLinkClient::FetchProduct(const FString& Slug, TFunction<void(bool, const
 			}
 			else
 			{
-				TSharedPtr<FJsonObject> PlanJson;
-				const bool bPlanJson = FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(PlanResponse->GetContentAsString()), PlanJson) && PlanJson.IsValid();
-				Snapshot.bHasPlan = bPlanJson && BpSchema::FromJson(PlanJson.ToSharedRef(), Snapshot.Plan);
+				FString Refused;
+				Snapshot.bHasPlan = ParsePlanBody(PlanResponse->GetContentAsString(), Snapshot, Refused);
 				if (!Snapshot.bHasPlan)
 				{
-					Snapshot.Plan = FBpPlan();
-					const BpSchema::FFromJsonFailure& Failure = BpSchema::LastFailure();
-					const FString Refused = bPlanJson ? FString::Printf(TEXT("BpSchema::FromJson failed in %s at plan.%s"), *Failure.Call, *Failure.Path)
-						: FString(TEXT("FJsonSerializer::Deserialize found no JSON object in it"));
 					UE_LOG(LogBpLink, Error, TEXT("BpLink: the %s/plan answer did not parse into FBpPlan: %s; structure, events and rev still stand"), *Root, *Refused);
 				}
 				else
@@ -386,6 +462,21 @@ bool FBpLinkModule::TickScanPoll(float)
 
 void FBpLinkModule::PollScan()
 {
+	if (GFromBundle)
+	{
+		// The saved answers, once: nothing on the headset changes them.
+		if (bScanBundled) return;
+		bScanBundled = true;
+		const TCHAR* const Files[3] = { TEXT("scans.json"), TEXT("scan.json"), TEXT("waves.json") };
+		for (int32 Part = 0; Part < 3; ++Part)
+		{
+			FString Body;
+			if (!ReadBundleFile(GetProductSlug(), Files[Part], Body)) continue;
+			++ScanPartsOut;
+			TakeScanBody(Part, MoveTemp(Body));
+		}
+		return;
+	}
 	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
 	const FString Root = GClient->GetBaseUrl() + TEXT("/api/products/") + GetProductSlug();
 	for (int32 Part = 0; Part < 3; ++Part)
@@ -401,64 +492,70 @@ void FBpLinkModule::PollScan()
 				--Module->ScanPartsOut;
 				return;
 			}
-			FString Body = Response->GetContentAsString();
-			const uint32 Hash = GetTypeHash(Body);
-			if (Hash == Module->ScanBodyHash[Part])
-			{
-				--Module->ScanPartsOut;
-				return;
-			}
-			Module->ScanBodyHash[Part] = Hash;
-			// /scans is a bare array and /scan a bare snapshot: both are wrapped as FBpScanWire's own keys (jobs,
-			// snapshot) so one generated reader takes all three; /waves already answers { waves }.
-			if (Part == 0) Body = TEXT("{\"jobs\":") + Body + TEXT("}");
-			else if (Part == 1) Body = TEXT("{\"snapshot\":") + Body + TEXT("}");
-			Async(EAsyncExecution::ThreadPool, [Part, Body = MoveTemp(Body)]()
-			{
-				TSharedPtr<FBpScanWire> Wire = MakeShared<FBpScanWire>();
-				TSharedPtr<FJsonObject> Json;
-				const bool bOk = FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), Json) && Json.IsValid() && BpSchema::FromJson(Json.ToSharedRef(), *Wire);
-				FString Failed;
-				if (!bOk)
-				{
-					const BpSchema::FFromJsonFailure& Failure = BpSchema::LastFailure();
-					Failed = FString::Printf(TEXT("%s at %s"), *Failure.Call, *Failure.Path);
-				}
-				// The proposals that carry a tier: an absent key is untriaged, which the generated int32 cannot tell from 0.
-				TMap<FString, int32> Tiers;
-				TMap<FString, double> Deltas;
-				const TSharedPtr<FJsonObject>* Snapshot = nullptr;
-				const TArray<TSharedPtr<FJsonValue>>* Proposals = nullptr;
-				if (bOk && Part == 1 && Json->TryGetObjectField(TEXT("snapshot"), Snapshot) && (*Snapshot)->TryGetArrayField(TEXT("proposals"), Proposals))
-				{
-					for (const TSharedPtr<FJsonValue>& Value : *Proposals)
-					{
-						const TSharedPtr<FJsonObject>* Row = nullptr;
-						FString Id;
-						int32 Tier = 0;
-						if (!Value.IsValid() || !Value->TryGetObject(Row) || !(*Row)->TryGetStringField(TEXT("id"), Id)) continue;
-						if ((*Row)->TryGetNumberField(TEXT("tier"), Tier)) Tiers.Add(Id, Tier);
-						double Delta = 0.0;
-						if ((*Row)->TryGetNumberField(TEXT("expected_delta"), Delta)) Deltas.Add(Id, Delta);
-					}
-				}
-				AsyncTask(ENamedThreads::GameThread, [Part, Wire, bOk, Failed, Tiers = MoveTemp(Tiers), Deltas = MoveTemp(Deltas)]() mutable
-				{
-					FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"));
-					if (!Module) return;
-					--Module->ScanPartsOut;
-					if (!bOk)
-					{
-						UE_LOG(LogBpLink, Warning, TEXT("BpLink: GET %s did not parse into FBpScanWire (%s)"), ScanParts[Part], *Failed);
-						Module->ScanBodyHash[Part] = 0;
-						return;
-					}
-					Module->ReceiveScanPart(Part, Wire, MoveTemp(Tiers), MoveTemp(Deltas));
-				});
-			});
+			Module->TakeScanBody(Part, Response->GetContentAsString());
 		});
 		Request->ProcessRequest();
 	}
+}
+
+/** One part's answer body (from the server, or from the bundle): an unchanged body is dropped, a changed one is parsed off
+ *  the game thread and handed to ReceiveScanPart. The caller counted it in ScanPartsOut; every path here takes it out. */
+void FBpLinkModule::TakeScanBody(int32 Part, FString Body)
+{
+	const uint32 Hash = GetTypeHash(Body);
+	if (Hash == ScanBodyHash[Part])
+	{
+		--ScanPartsOut;
+		return;
+	}
+	ScanBodyHash[Part] = Hash;
+	// /scans is a bare array and /scan a bare snapshot: both are wrapped as FBpScanWire's own keys (jobs,
+	// snapshot) so one generated reader takes all three; /waves already answers { waves }.
+	if (Part == 0) Body = TEXT("{\"jobs\":") + Body + TEXT("}");
+	else if (Part == 1) Body = TEXT("{\"snapshot\":") + Body + TEXT("}");
+	Async(EAsyncExecution::ThreadPool, [Part, Body = MoveTemp(Body)]()
+	{
+		TSharedPtr<FBpScanWire> Wire = MakeShared<FBpScanWire>();
+		TSharedPtr<FJsonObject> Json;
+		const bool bOk = FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), Json) && Json.IsValid() && BpSchema::FromJson(Json.ToSharedRef(), *Wire);
+		FString Failed;
+		if (!bOk)
+		{
+			const BpSchema::FFromJsonFailure& Failure = BpSchema::LastFailure();
+			Failed = FString::Printf(TEXT("%s at %s"), *Failure.Call, *Failure.Path);
+		}
+		// The proposals that carry a tier: an absent key is untriaged, which the generated int32 cannot tell from 0.
+		TMap<FString, int32> Tiers;
+		TMap<FString, double> Deltas;
+		const TSharedPtr<FJsonObject>* Snapshot = nullptr;
+		const TArray<TSharedPtr<FJsonValue>>* Proposals = nullptr;
+		if (bOk && Part == 1 && Json->TryGetObjectField(TEXT("snapshot"), Snapshot) && (*Snapshot)->TryGetArrayField(TEXT("proposals"), Proposals))
+		{
+			for (const TSharedPtr<FJsonValue>& Value : *Proposals)
+			{
+				const TSharedPtr<FJsonObject>* Row = nullptr;
+				FString Id;
+				int32 Tier = 0;
+				if (!Value.IsValid() || !Value->TryGetObject(Row) || !(*Row)->TryGetStringField(TEXT("id"), Id)) continue;
+				if ((*Row)->TryGetNumberField(TEXT("tier"), Tier)) Tiers.Add(Id, Tier);
+				double Delta = 0.0;
+				if ((*Row)->TryGetNumberField(TEXT("expected_delta"), Delta)) Deltas.Add(Id, Delta);
+			}
+		}
+		AsyncTask(ENamedThreads::GameThread, [Part, Wire, bOk, Failed, Tiers = MoveTemp(Tiers), Deltas = MoveTemp(Deltas)]() mutable
+		{
+			FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"));
+			if (!Module) return;
+			--Module->ScanPartsOut;
+			if (!bOk)
+			{
+				UE_LOG(LogBpLink, Warning, TEXT("BpLink: GET %s did not parse into FBpScanWire (%s)"), ScanParts[Part], *Failed);
+				Module->ScanBodyHash[Part] = 0;
+				return;
+			}
+			Module->ReceiveScanPart(Part, Wire, MoveTemp(Tiers), MoveTemp(Deltas));
+		});
+	});
 }
 
 void FBpLinkModule::ReceiveScanPart(int32 Part, TSharedPtr<FBpScanWire> Wire, TMap<FString, int32> Tiers, TMap<FString, double> Deltas)
@@ -481,6 +578,12 @@ void FBpLinkModule::PostScan(const FString& Lens, const FString& Kind, const FSt
 {
 	// Only Kettle's scans are simulated; a live product's would run a real lens scan on a real repo (FAD, the owner's
 	// rule: nothing new starts from the table).
+	if (GFromBundle)
+	{
+		UE_LOG(LogBpLink, Warning, TEXT("BpLink: refused POST %s/scans: the table reads the build's bundled snapshot, and no server keeps a scan"), *GetProductSlug());
+		if (OnDone) OnDone(0, FString());
+		return;
+	}
 	if (!IsKettle())
 	{
 		UE_LOG(LogBpLink, Warning, TEXT("BpLink: refused POST %s/scans: %s is a live product, and the table starts no scan on it"), *GetProductSlug(), *GetProductSlug());
@@ -528,6 +631,12 @@ void FBpLinkModule::SendWave(const FString& Verb, const FString& Path, const FSt
 	if ((!bCompose && !bPatch) || Path.Contains(TEXT("dispatch")))
 	{
 		UE_LOG(LogBpLink, Warning, TEXT("BpLink: refused %s %s/%s: the table only composes draft waves and never dispatches one, on any product"), *Verb, *GetProductSlug(), *Path);
+		if (OnDone) OnDone(0, FString());
+		return;
+	}
+	if (GFromBundle)
+	{
+		UE_LOG(LogBpLink, Warning, TEXT("BpLink: refused %s %s%s: the table reads the build's bundled snapshot, and no server keeps a wave"), *Verb, *GetProductSlug(), *Path);
 		if (OnDone) OnDone(0, FString());
 		return;
 	}

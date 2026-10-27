@@ -24,6 +24,10 @@ struct BPLINK_API FBpLinkSnapshot
 	 *  -1 = never asked (the default, and what a failed structure read hands back); 0 = asked, no connection or no
 	 *  response; anything else is the HTTP status the server answered. */
 	int32 StreamStatus = -1;
+	/** Read from the build's bundled snapshot (FBpLinkClient::ReadBundle), not from a server; BundleSavedAt says when the
+	 *  server's answers were saved (bundle.json's savedAt, empty when the bundle names none). */
+	bool bFromBundle = false;
+	FString BundleSavedAt;
 };
 
 /** The requests the BpLink contract pins (apps/vr/README.md, scripts/check-bplink.mjs), against apps/server. */
@@ -45,6 +49,9 @@ public:
 	void FetchProduct(const FString& Slug, TFunction<void(bool bOk, const FBpLinkSnapshot& Snapshot)> OnDone);
 
 	static FString DefaultBaseUrl();
+	/** The product's bundled snapshot (Content/BpData/<Slug>/, apps/vr/tools/bundle-data.mjs): what the headset draws when
+	 *  no server answers, or when -BpLinkUrl=bundle asks for it. False, with an Error logged, when the build has none. */
+	static bool ReadBundle(const FString& Slug, FBpLinkSnapshot& Snapshot);
 
 private:
 	FString BaseUrl;
@@ -167,6 +174,7 @@ private:
 	void SendWave(const FString& Verb, const FString& Path, const FString& Body, TFunction<void(int32 Status, const FString& Body)> OnDone);
 	void PollScan();
 	bool TickScanPoll(float DeltaSeconds);
+	void TakeScanBody(int32 Part, FString Body);
 	void ReceiveScanPart(int32 Part, TSharedPtr<struct FBpScanWire> Wire, TMap<FString, int32> Tiers, TMap<FString, double> Deltas);
 
 	FBpScanState ScanState;
@@ -177,6 +185,8 @@ private:
 	int32 ScanPartsOut = 0;
 	/** The bodies last read, so an unchanged answer is not parsed again. */
 	uint32 ScanBodyHash[3] = { 0, 0, 0 };
+	/** The bundle's scan answers were read (they are read once: no server changes them). */
+	bool bScanBundled = false;
 
 	FBpPlan Plan;
 	bool bHasPlan = false;

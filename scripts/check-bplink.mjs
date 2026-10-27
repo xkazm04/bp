@@ -249,18 +249,24 @@ export function planProblems(cppText, plan) {
  * line for four possible failures; the source must keep them apart: a reason set in its own branch for each of
  * FJsonSerializer::Deserialize, the `structure` field and BpSchema::FromJson (which reads BpSchema::LastFailure() for the
  * call and key), and Error lines that log that reason and the answer's length and first 200 characters. Read between
- * the /structure and /plan requests, on code with comments stripped (string literals kept where the subject is one).
+ * the /structure and /plan requests, plus the body of ParseStructurePayload when the branches live there (the parser the
+ * fetch and the bundled snapshot share), on code with comments stripped (string literals kept where the subject is one).
  */
 export function structureDiagProblems(cppText) {
   const code = stripCxx(cppText), lit = stripCxx(cppText, true);
   const from = lit.indexOf('TEXT("/structure")'), to = lit.indexOf('TEXT("/plan');
   if (from < 0 || to < from) return ['no /structure request before the /plan one'];
-  const c = code.slice(from, to), l = lit.slice(from, to), out = [];
+  // The three branches may sit in the parser the fetch calls (ParseStructurePayload, shared with the bundled snapshot):
+  // its body is read with the window. The Error lines stay in the window, where the answer is.
+  const parser = /\bbool\s+ParseStructurePayload\s*\(/.exec(code);
+  const span = parser && braceSpan(code, parser.index + parser[0].length);
+  const c = code.slice(from, to) + (span ? code.slice(span[0], span[1]) : ''), l = lit.slice(from, to) + (span ? lit.slice(span[0], span[1]) : ''), out = [];
+  const w = code.slice(from, to), wl = lit.slice(from, to);
   if (!/\bif\s*\(\s*!FJsonSerializer::Deserialize\([^;{]*\)\s*\{\s*Refused\s*=/.test(c)) out.push('no branch of its own for FJsonSerializer::Deserialize');
   if (!/\belse\s+if\s*\(\s*!Payload->TryGetObjectField\(TEXT\("structure"\)[^;{]*\)\s*\{\s*Refused\s*=/.test(l)) out.push('no branch of its own for the `structure` field');
   if (!/\belse\s+if\s*\(\s*!BpSchema::FromJson\([^;{]*\)\s*\{[^}]*BpSchema::LastFailure\(\)[^}]*Refused\s*=/.test(c)) out.push('no branch of its own for BpSchema::FromJson that reads BpSchema::LastFailure()');
-  if (!/UE_LOG\s*\(\s*LogBpLink\s*,\s*Error\s*,\s*TEXT\("[^"]*did not parse into FBpAppStructure: %s"\)\s*,\s*\*Root\s*,\s*\*Refused\s*\)/.test(l)) out.push('no Error line that logs the reason');
-  if (!/UE_LOG\s*\(\s*LogBpLink\s*,\s*Error\s*,[^;]*GetContent\(\)\.Num\(\)[^;]*\.Left\(200\)/.test(c)) out.push("no Error line with the answer's byte length and first 200 characters");
+  if (!/UE_LOG\s*\(\s*LogBpLink\s*,\s*Error\s*,\s*TEXT\("[^"]*did not parse into FBpAppStructure: %s"\)\s*,\s*\*Root\s*,\s*\*Refused\s*\)/.test(wl)) out.push('no Error line that logs the reason');
+  if (!/UE_LOG\s*\(\s*LogBpLink\s*,\s*Error\s*,[^;]*GetContent\(\)\.Num\(\)[^;]*\.Left\(200\)/.test(w)) out.push("no Error line with the answer's byte length and first 200 characters");
   return out;
 }
 

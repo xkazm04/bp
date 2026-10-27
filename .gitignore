@@ -64,6 +64,9 @@ apps/vr/Source/BpLink/Public/Schema/
 # (owner, 2026-10-26): each machine builds it locally, apps/vr/README.md "MetaHuman hands"
 apps/vr/Content/Bp/Art/MetaHuman/
 apps/vr/Content/Bp/Art/MetaHumanHands/
+# BpLink's bundled snapshots (apps/vr/tools/bundle-data.mjs): only the Kettle sample is committed; a live product's stays local
+apps/vr/Content/BpData/*
+!apps/vr/Content/BpData/kettle/
 *.sln
 *.suo
 *.VC.db
