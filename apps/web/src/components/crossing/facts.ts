@@ -129,7 +129,7 @@ export function factsFor(id: StateId, p: CrossPlace, n: NextPlace | null, paired
       { k: 'see', text: n ? 'You dive on the table to ' + n.name + '. A wrist peek cuts a passthrough window over the monitor: the page is already there.' : 'You move on the table; the page follows.', marks: ['new'] },
       { k: 'draw', text: 'The table: the APK. The page in the peek: Chrome on Lynx, seen through the cameras.', marks: ['new', 'unverified'] },
       { k: 'net', text: 'Every level change POSTs the place; the page reads it on the stream and flies (the same machinery as focus: #at=).', marks: ['new'] },
-      { k: 'machine', text: 'Lynx (page, server) + Quest 3S (table).', marks: ['real'] },
+      { k: 'machine', text: 'Lynx (page, server) + Quest 3S (table). The lamp holds a decision waiting here; the headset cannot answer it (x-bp-human is bp’s page’s only), so the answer is a peek and a click on the desk.', marks: ['real'] },
     ] },
     return: { title: 'Headset off: a non-event', facts: [
       { k: 'see', text: 'Your page, already at ' + (n ? n.name : 'the table’s last place') + ', with a 10 s crumb: “the table left you at …”.', marks: ['new'] },

@@ -29,6 +29,8 @@ interface Prep {
   real: Exchange[] | null;
   /** Unpaired, the APK opens its bundled Kettle at home: the site plan, whatever the page's place. */
   tableHome: string; risesHome: Rise[]; lightsHome: Light[];
+  /** A decision waiting in this room (else the queue's first): the lamp holds it in VR; it is answered on the desk. */
+  card: { q: string; feature: string; lens: string; urg: string } | null;
 }
 
 const MARK_LABEL: Record<Mark, string> = { real: 'real', measured: 'measured', documented: 'documented', unverified: '[unverified]', new: 'NEW', mock: 'mock' };
@@ -74,9 +76,12 @@ export default function Crossing({ onClose }: { onClose: () => void }) {
         route(a.hash); await arrived(E);
       }
       const real = await runBaton(a, next);
+      const sim = E.M.sim, open = sim.has ? sim.queueFor(null, GENERAL).all : [];
+      const d = open.find((x) => a.room?.feats.some((f) => f.id === x.f)) ?? open[0];
+      const card = d ? { q: d.q, feature: E.M.P.F[d.f]?.name ?? d.f, lens: E.M.P.LENS[d.lens]?.name ?? d.lens, urg: d.urg } : null;
       const TH = drawTable(E, { ...a, level: 0, wing: null, room: null, bay: null, tile: null, crumbs: [a.crumbs[0]], name: a.crumbs[0] + ' · home' }, null);
       return { a, next, pageA, pageB, tableA: jpeg(TA.canvas), tableB, rises: TA.rises, risesB, lights: TA.lights, titleA: TA.title, real,
-        tableHome: jpeg(TH.canvas), risesHome: TH.rises, lightsHome: TH.lights };
+        tableHome: jpeg(TH.canvas), risesHome: TH.rises, lightsHome: TH.lights, card };
     })();
     // under reduced motion the crossing waits on its first state: the person steps it
     job.current.then((p) => { if (!dead) { setPrep(p); setPlaying(!matchMedia('(prefers-reduced-motion: reduce)').matches); } });
@@ -257,6 +262,14 @@ function Stage({ prep, t, k, paired }: { prep: Prep; t: number; k: number; paire
           </div>
         )}
         {inVR && sc.peek > 0.3 && <div className="cx-peeksay" style={{ opacity: sc.peek }}>wrist peek · the monitor, through the cameras</div>}
+        {paired && inVR && prep.card && t >= STATES[8].at && t < off && (
+          <div className="cx-card" style={{ opacity: smooth(STATES[8].at, STATES[8].at + 0.4, t) }}>
+            <span className="cx-card-k">Decision · {prep.card.lens} · {prep.card.urg}</span>
+            <b>{prep.card.q}</b>
+            <span className="cx-card-f">on {prep.card.feature}</span>
+            <span className="cx-card-desk">Answer it on your desk: only bp’s page holds the x-bp-human token. Peek, and click it there.</span>
+          </div>
+        )}
         {sc.crumb > 0.01 && prep.next && (
           <div className="cx-crumb" style={{ opacity: sc.crumb }}>The table left you at <b>{prep.next.name}</b></div>
         )}
