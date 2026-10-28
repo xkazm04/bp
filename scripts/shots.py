@@ -26,6 +26,10 @@ def run(pg, name, url, w, h, steps):
             time.sleep(1.1)
         elif kind == 'key':
             pg.keyboard.press(st[1]); time.sleep(1.0)
+        elif kind == 'click':
+            pg.click(st[1]); time.sleep(1.2)
+        elif kind == 'wait':
+            time.sleep(float(st[1]))
         if len(st) > 2:
             pg.screenshot(path=f'{OUT}/{st[2]}.png')
     if not steps or len(steps[-1]) < 3:
@@ -58,6 +62,13 @@ with sync_playwright() as p:
     for theme in ('dark', 'light'):
         pg = b.new_page(); run(pg, f'subtle-390x844-{theme}-phone', f'{BASE}/v/subtle?theme={theme}', 390, 844, []); pg.close()
     pg = b.new_page(); run(pg, 'subtle-1920x1080-dark-sheet', f'{BASE}/v/subtle?intro=0#open=failed-payment-dunning', 1920, 1080, [('key', '6', 'subtle-1920x1080-dark-sheet-security')]); pg.close()
+    # the light table's look up close and the crossing (docs/concepts/desk-to-table/plan.md, W2): a room and a bay in both
+    # themes, the rail's "Take it to the table" card, and the crossing prototype at a state past the lift
+    for theme in ('dark', 'light'):
+        for at in ('scheduling', 'scheduling.appointments'):
+            pg = b.new_page(); run(pg, f'table-{at}-{theme}', f'{BASE}/v/subtle?intro=0&theme={theme}#at={at}', 1920, 1080, []); pg.close()
+    pg = b.new_page(); run(pg, 'table-card-dark', f'{BASE}/v/subtle?intro=0#at=scheduling', 1920, 1080, [('click', '.ri-table', 'table-card-dark')]); pg.close()
+    pg = b.new_page(); run(pg, 'crossing-dark', f'{BASE}/crossing#at=scheduling', 1600, 900, [('wait', '2'), ('click', 'button:has-text("Room fades")'), ('wait', '1.5', 'crossing-dark')]); pg.close()
     pg = b.new_page(); run(pg, 'subtle-1920x1080-dark-decide', f'{BASE}/v/subtle?intro=0', 1920, 1080, [('key', 'j', 'subtle-1920x1080-dark-decision-card')]); pg.close()
     b.close()
 if problems:
