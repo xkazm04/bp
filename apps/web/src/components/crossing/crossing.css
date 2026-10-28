@@ -96,7 +96,9 @@
 
 /* ---------- the unscaled overlay: HUD, captions, tags (12 px floor) */
 .cx-ovl { position: absolute; inset: 0; pointer-events: none; }
-.cx-hud { position: absolute; left: 12px; top: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.cx-hud { position: absolute; left: 12px; top: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; max-width: 60%; }
+/* over the flat page its own crumbs sit top left: the HUD steps to the bottom right */
+.cx-hud.flat { left: auto; top: auto; right: 12px; bottom: 12px; justify-content: flex-end; }
 .cx-hud > span { font-size: 13px; padding: 3px 9px; border-radius: 3px; background: rgba(2, 8, 18, 0.72); border: 1px solid rgba(232, 244, 255, 0.25); }
 .cx-who.w-web { border-color: #7fe6ff; color: #bff1ff; } .cx-who.w-none { color: #9aa7b6; } .cx-who.w-pass { border-color: #e2c79a; color: #f3dfbd; } .cx-who.w-apk { border-color: #ffc35a; color: #ffd890; }
 .cx-clock { font-family: var(--font-mono), Consolas, monospace; font-size: 13px !important; }

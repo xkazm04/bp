@@ -233,7 +233,7 @@ function Stage({ prep, t, k, paired }: { prep: Prep; t: number; k: number; paire
       </div>
       {/* the overlay is unscaled: what the person must read stays at 12 px or more at any stage size */}
       <div className="cx-ovl">
-        <div className="cx-hud">
+        <div className={'cx-hud' + (inVR ? '' : ' flat')}>
           <span className={'cx-who ' + (t < 3.4 || t >= off + 0.3 ? 'w-web' : t < FOCUSED ? 'w-none' : sc.studio > 0.5 ? 'w-apk' : 'w-pass')}>
             {t < 3.4 || t >= off + 0.3 ? 'Your eyes · the monitor on Lynx' : t < FOCUSED ? 'Headset · blackout' : sc.studio > 0.5 ? 'Headset · the APK draws' : 'Headset · passthrough'}
           </span>

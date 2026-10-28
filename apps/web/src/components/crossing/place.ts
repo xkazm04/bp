@@ -83,13 +83,14 @@ export function capturePage(crumbs: readonly string[], sub: string): HTMLCanvasE
   }
   // the chrome, sketched: the header scrim and crumbs, the rail, the bottom bars, the frame
   const ink = v('--ink', '#dff0ff');
+  const scrim = v('--scrim', 'rgba(5,22,46,0.97)'), card = v('--card', 'rgba(6,24,48,0.96)');
   const sg = g.createLinearGradient(0, 0, 0, 96);
-  sg.addColorStop(0, 'rgba(5,22,46,0.97)'); sg.addColorStop(0.65, 'rgba(5,22,46,0.92)'); sg.addColorStop(1, 'rgba(5,22,46,0)');
+  sg.addColorStop(0, scrim); sg.addColorStop(0.65, scrim); sg.addColorStop(1, 'transparent');
   g.fillStyle = sg; g.fillRect(0, 0, W, 96);
   g.fillStyle = ink; g.font = '600 26px "IBM Plex Sans Condensed", "Arial Narrow", sans-serif';
   g.fillText(crumbs.map((x) => x.toUpperCase()).join('  ›  '), 22, 52);
   g.globalAlpha = 0.75; g.font = '500 17px "IBM Plex Sans Condensed", "Arial Narrow", sans-serif'; g.fillText(sub, 22, 80); g.globalAlpha = 1;
-  g.fillStyle = 'rgba(5,22,46,0.9)'; g.fillRect(W - 82, 86, 70, H - 160); g.fillRect(14, H - 64, W - 28, 50);
+  g.fillStyle = card; g.fillRect(W - 82, 86, 70, H - 160); g.fillRect(14, H - 64, W - 28, 50);
   g.strokeStyle = v('--rim', '#e6fbff'); g.globalAlpha = 0.6; g.lineWidth = 2; g.strokeRect(5, 5, W - 10, H - 10); g.globalAlpha = 1;
   return c;
 }
