@@ -303,6 +303,7 @@ function Stage({ prep, t, k, paired }: { prep: Prep; t: number; k: number; paire
         {inVR && sc.pass > 0.3 && t < FOCUSED + 2.2 && (
           <div className="cx-tags">
             <span className="cx-tag pass">YOUR ROOM · the headset’s cameras (sketched here)</span>
+            {t < FOCUSED + 1.2 && <span className="cx-tag anc">ANCHORS · the desk and monitor you pinned once (two touches), found again</span>}
             {t >= FOCUSED + 0.85 && <span className="cx-tag apk">VIRTUAL · the APK draws this sheet of {prep.a.room ? prep.a.room.name : 'the site'}</span>}
           </div>
         )}

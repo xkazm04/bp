@@ -112,7 +112,7 @@
 .cx-blacksay { position: absolute; left: 0; right: 0; top: 47%; text-align: center; font-size: 14px; color: rgba(200, 210, 222, 0.7); }
 .cx-tags { position: absolute; left: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .cx-tag { font-size: 13px; padding: 3px 9px; background: rgba(2, 8, 18, 0.78); border-left: 3px solid; }
-.cx-tag.pass { border-color: #e2c79a; } .cx-tag.apk { border-color: #ffc35a; }
+.cx-tag.pass { border-color: #e2c79a; } .cx-tag.apk { border-color: #ffc35a; } .cx-tag.anc { border-color: #7fe6ff; }
 .cx-caption { position: absolute; left: calc(50% + 70px); top: 4.5%; display: flex; flex-direction: column; gap: 2px; padding: 8px 14px 9px; background: rgba(250, 246, 236, 0.95); color: #1b2230; border-radius: 4px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); max-width: 40%; }
 .cx-caption b { font-size: 18px; } .cx-caption span { font-size: 13px; color: #4a5568; }
 .cx-card { position: absolute; right: 2%; top: 46%; width: min(290px, 27%); display: flex; flex-direction: column; gap: 4px; padding: 10px 12px 11px; background: rgba(250, 246, 236, 0.96); color: #1b2230; border-top: 4px solid #ffc35a; border-radius: 4px; box-shadow: 0 12px 34px rgba(0, 0, 0, 0.55); }
