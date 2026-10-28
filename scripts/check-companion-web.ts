@@ -15,7 +15,7 @@ import { BUSY, CARD_FADE_MS, INITIAL, NOTICE_MS, OFFLINE, POINT_MS, createStore,
 import { connect, readEvent, readTurnEvent, sseParser, type SseMessage } from '../apps/web/src/components/companion/stream.ts';
 import { FOCUS_TABLE, placeHash, planFocus } from '../apps/web/src/components/companion/focus.ts';
 import { fxGain, voiceStatus } from '../apps/web/src/components/companion/voice.ts';
-import { readVoicePref, speakable, VOICE_DEFAULT_ON, VOICE_FX, VOICE_MAX_CHARS } from '../packages/core/src/companion/voice.ts';
+import { readVoicePref, speakable, VOICE, VOICE_DEFAULT_ON, VOICE_DESIGN, VOICE_FX, VOICE_MAX_CHARS } from '../packages/core/src/companion/voice.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 let failed = 0;
@@ -156,6 +156,9 @@ const vs = (o: Partial<Parameters<typeof voiceStatus>[0]>) => voiceStatus({ on: 
 check('voice: off wins over every other status (the mute is absolute)', vs({ on: false, playing: true, blocked: true, reason: 'x' }) === 'off');
 check('voice: unavailable, speaking, blocked, on in that order', vs({ reason: 'x', playing: true }) === 'unavailable' && vs({ playing: true, blocked: true }) === 'speaking' && vs({ blocked: true }) === 'blocked' && vs({}) === 'on');
 check('voice: the tremolo swings between 1 - depth and 1', Math.abs(fxGain(0) - (1 - VOICE_FX.tremolo.depth / 2)) < 1e-9 && Math.abs(fxGain(1 / (4 * VOICE_FX.tremolo.hz)) - 1) < 1e-9 && Math.abs(fxGain(3 / (4 * VOICE_FX.tremolo.hz)) - (1 - VOICE_FX.tremolo.depth)) < 1e-9);
+check('voice: the design record\'s reference clips are all in the repo', VOICE_DESIGN.reference.every((r) => fs.existsSync(path.join(ROOT, r.file))), VOICE_DESIGN.reference.filter((r) => !fs.existsSync(path.join(ROOT, r.file))).map((r) => r.file));
+check('voice: every reference line fits one spoken line, and only the design read has no text', VOICE_DESIGN.reference.filter((r) => r.text === null).length === 1 && VOICE_DESIGN.reference.every((r) => r.text === null || (r.text.length > 0 && speakable(r.text) === r.text)));
+check('voice: the design record stays out of the cache key (VOICE carries no design field)', !('design' in VOICE) && !JSON.stringify(VOICE).includes(VOICE_DESIGN.description));
 
 // ------------------------------------------------------------------------- 5. CSS: 12 px floor, transform/opacity motion
 const DIR = path.join(ROOT, 'apps/web/src/components/companion');

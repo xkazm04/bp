@@ -1067,6 +1067,9 @@ and the skin only draws it. The host lives in `apps/web/src/components/companion
 - **Voice** (2026-10-27). Glim reads its replies aloud. The voice is "Vintage Tin", cast from ten ElevenLabs Voice
   Design candidates. It is read by `eleven_v3` at stability 1.0 with seed 4242, then run through a light robot effect on
   the page. The owner picked that setup over steadier ones in a consistency test, because it is playful.
+  - **Design record.** `VOICE_DESIGN` keeps the description, design text, guidance and seed, and `docs/voice/glim/`
+    keeps reference clips read with exactly `VOICE`. `scripts/voice-rebuild.ts` checks, clones, redesigns and auditions
+    the voice on another account (`docs/voice/glim.md`).
   - **What is spoken.** The reply to a turn this page sent, once, when it ends `done`. Turns from VR or the MCP door stay
     silent. `speakable` (`packages/core/src/companion/voice.ts`) strips markdown, code and links, and cuts the reply at a
     sentence end within 320 characters.
