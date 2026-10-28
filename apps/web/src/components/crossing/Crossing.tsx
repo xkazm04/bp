@@ -17,7 +17,9 @@ import { END, FOCUSED, STATES, designClock, sceneAt, smooth, stateAt, stateIndex
 import { arrived, capturePage, nextOf, placeOf, type CrossPlace, type NextPlace } from './place';
 import { ART_H, ART_W, drawTable, type Light, type Rise } from './table-art';
 import { KEY_LABEL, factsFor, packets, placeWire, type Mark } from './facts';
-import { STANDIN, runBaton, type Exchange } from './baton';
+import { STANDIN, batonRun, type BatonRun, type BatonStep, type Exchange } from './baton';
+import { PLACE_EVENT } from './follow';
+import type { PlaceBaton } from '@bp/core/session/place';
 import './crossing.css';
 
 interface Prep {
@@ -26,8 +28,6 @@ interface Prep {
   tableA: string; tableB: string | null;
   rises: Rise[]; risesB: Rise[]; lights: Light[];
   titleA: string;
-  /** The baton's requests as they ran against this server (null: no route, the wire is simulated). */
-  real: Exchange[] | null;
   /** Unpaired, the APK opens its bundled Kettle at home: the site plan, whatever the page's place. */
   tableHome: string; risesHome: Rise[]; lightsHome: Light[];
   /** A decision waiting in this room (else the queue's first): the lamp holds it in VR; it is answered on the desk. */
@@ -36,6 +36,10 @@ interface Prep {
 
 const MARK_LABEL: Record<Mark, string> = { real: 'real', measured: 'measured', documented: 'documented', unverified: '[unverified]', new: 'NEW', mock: 'mock' };
 const SPEEDS = [0.25, 0.5, 1] as const;
+/** When each baton request goes out on the crossing's clock. */
+const BATON_AT: Record<BatonStep, number> = { arm: STATES[1].at, claim: FOCUSED + 0.8, live: FOCUSED + 2.0, lead: STATES[8].at + 0.5, return: STATES[9].at + 0.2 };
+interface Heard { state: string; hash: string; size: number }
+interface Wire { real: Exchange[]; heard: Heard[]; off: boolean }
 
 /** Route the page to a hash without a history entry: the engine's restoreHash flies there, as a pasted hash would. */
 function route(h: string) {
@@ -52,6 +56,11 @@ export default function Crossing({ onClose }: { onClose: (left?: string) => void
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(0.5);
   const [paired, setPaired] = useState(true);
+  // the baton's requests as they ran against this server, on the crossing's clock; the place events the page heard back
+  const [real, setReal] = useState<Exchange[]>([]);
+  const [batonOff, setBatonOff] = useState(false);
+  const [heard, setHeard] = useState<Heard[]>([]);
+  const run = useRef<BatonRun | null>(null);
   // the closing card: what to expect from the design; opens by itself when the crossing has played to its end
   const [sum, setSum] = useState(false);
   const ended = t >= END - 1e-6;
@@ -81,12 +90,11 @@ export default function Crossing({ onClose }: { onClose: (left?: string) => void
         tableB = jpeg(TB.canvas); risesB = TB.rises;
         route(a.hash); await arrived(E);
       }
-      const real = await runBaton(a, next);
       const sim = E.M.sim, open = sim.has ? sim.queueFor(null, GENERAL).all : [];
       const d = open.find((x) => a.room?.feats.some((f) => f.id === x.f)) ?? open[0];
       const card = d ? { q: d.q, feature: E.M.P.F[d.f]?.name ?? d.f, lens: E.M.P.LENS[d.lens]?.name ?? d.lens, urg: d.urg } : null;
       const TH = drawTable(E, { ...a, level: 0, wing: null, room: null, bay: null, tile: null, crumbs: [a.crumbs[0]], name: a.crumbs[0] + ' · home' }, null);
-      const out: Prep = { a, next, pageA, pageB, tableA: jpeg(TA.canvas), tableB, rises: TA.rises, risesB, lights: TA.lights, titleA: TA.title, real,
+      const out: Prep = { a, next, pageA, pageB, tableA: jpeg(TA.canvas), tableB, rises: TA.rises, risesB, lights: TA.lights, titleA: TA.title,
         tableHome: jpeg(TH.canvas), risesHome: TH.rises, lightsHome: TH.lights, card };
       // decoded once here, not on the frame a layer first shows them (a 1600 x 900 decode mid-crossing is a visible hitch)
       await Promise.all([out.pageA, out.pageB, out.tableA, out.tableB, out.tableHome].map((src) => { if (!src) return null; const im = new Image(); im.src = src; return im.decode().catch(() => null); }));
@@ -96,6 +104,33 @@ export default function Crossing({ onClose }: { onClose: (left?: string) => void
     job.current.then((p) => { if (!dead) { setPrep(p); setPlaying(!matchMedia('(prefers-reduced-motion: reduce)').matches); } });
     return () => { dead = true; };
   }, [E]);
+
+  // the baton on the clock: each step fires once when the clock first passes it (all earlier ones first); a replay starts a
+  // new run; unpaired, only the page's arm goes out (nobody claims it)
+  useEffect(() => {
+    if (!prep) return;
+    run.current ??= batonRun(prep.a, prep.next, (x) => setReal((r) => [...r.filter((y) => y.step !== x.step), x]), () => setBatonOff(true));
+    const R = run.current;
+    if (t < BATON_AT.arm) { if (real.length || heard.length) { R.reset(); setReal([]); setHeard([]); } return; }
+    let due: BatonStep = 'arm';
+    if (paired) for (const s of ['claim', 'live', 'lead', 'return'] as const) if (t >= BATON_AT[s]) due = s;
+    R.upTo(due);
+  }, [prep, t, paired, real.length, heard.length]);
+  // switching the door hands back what the stand-in holds and starts over
+  const pairedSeen = useRef(paired);
+  useEffect(() => {
+    if (pairedSeen.current === paired) return;
+    pairedSeen.current = paired;
+    const R = run.current; if (!R) return;
+    if (R.holds()) R.upTo('return');
+    R.reset(); setReal([]); setHeard([]);
+  }, [paired]);
+  // the place events the page hears back on the companion stream (the page follows them; the panel shows them)
+  useEffect(() => {
+    const on = (ev: Event) => { const b = (ev as CustomEvent<PlaceBaton>).detail; if (b?.place) setHeard((h) => [...h, { state: b.state, hash: b.place.hash, size: new TextEncoder().encode(JSON.stringify({ type: 'place', baton: b })).length }]); };
+    window.addEventListener(PLACE_EVENT, on);
+    return () => window.removeEventListener(PLACE_EVENT, on);
+  }, []);
 
   // the clock
   useEffect(() => {
@@ -113,6 +148,8 @@ export default function Crossing({ onClose }: { onClose: (left?: string) => void
 
   const close = useCallback(() => {
     // the page followed the table: after the headset came off, it stays where the table left it
+    // headset off is a non-event: whatever the stand-in still holds is handed back, and the page hears it on the stream
+    if (run.current?.holds()) run.current.upTo('return');
     const left = paired && prep?.next && tRef.current >= STATES[9].at ? prep.next : null;
     if (left) route(left.hash);
     onClose(left?.name);
@@ -146,8 +183,8 @@ export default function Crossing({ onClose }: { onClose: (left?: string) => void
         <button type="button" className="cx-x" aria-pressed={sum || ended} onClick={() => { setPlaying(false); setSum((v) => !(v || ended)); }} title="What to expect from this design ( E )">What to expect</button>
         <button type="button" className="cx-x" onClick={close} title="Close ( Esc )">Close · Esc</button>
       </header>
-      {!prep ? <div className="cx-prep"><span className="cx-spin" aria-hidden="true" />Reading your place and drawing the table…</div> : <Body prep={prep} t={t} paired={paired} />}
-      {prep && (sum || (ended && !playing)) && <Summary prep={prep} onReplay={() => { setSum(false); replay(); }} onClose={() => { setSum(false); if (ended) setT(STATES[9].show); }} />}
+      {!prep ? <div className="cx-prep"><span className="cx-spin" aria-hidden="true" />Reading your place and drawing the table…</div> : <Body prep={prep} t={t} paired={paired} wire={{ real, heard, off: batonOff }} />}
+      {prep && (sum || (ended && !playing)) && <Summary prep={prep} wire={{ real, heard, off: batonOff }} onReplay={() => { setSum(false); replay(); }} onClose={() => { setSum(false); if (ended) setT(STATES[9].show); }} />}
       {prep && <Transport t={t} playing={playing} speed={speed} setSpeed={setSpeed} seek={seek} stepTo={stepTo} replay={replay}
         toggle={() => (t >= END ? replay() : setPlaying((p) => !p))} setPlaying={setPlaying} prep={prep} paired={paired} setPaired={setPaired} />}
     </div>
@@ -155,7 +192,7 @@ export default function Crossing({ onClose }: { onClose: (left?: string) => void
 }
 
 // ----------------------------------------------------------------------------------------------- the stage and the panel
-function Body({ prep, t, paired }: { prep: Prep; t: number; paired: boolean }) {
+function Body({ prep, t, paired, wire }: { prep: Prep; t: number; paired: boolean; wire: Wire }) {
   const wrap = useRef<HTMLDivElement>(null);
   const [k, setK] = useState(0.6);
   useEffect(() => {
@@ -172,7 +209,7 @@ function Body({ prep, t, paired }: { prep: Prep; t: number; paired: boolean }) {
           <Stage prep={prep} t={t} k={k} paired={paired} />
         </div>
       </div>
-      <Panel prep={prep} t={t} paired={paired} />
+      <Panel prep={prep} t={t} paired={paired} wire={wire} />
     </div>
   );
 }
@@ -366,17 +403,18 @@ function Lights({ lights, r }: { lights: Light[]; r: number }) {
   );
 }
 
-function Panel({ prep, t, paired }: { prep: Prep; t: number; paired: boolean }) {
+function Panel({ prep, t, paired, wire }: { prep: Prep; t: number; paired: boolean; wire: Wire }) {
   const st = stateAt(t), sc = sceneAt(t, paired), F = factsFor(st.id, prep.a, prep.next, paired);
-  const pk = useMemo(() => packets(prep.a, prep.next, FOCUSED, STATES[8].at, STATES[9].at, prep.real, paired), [prep, paired]);
-  const sent = pk.filter((p) => p.at <= t), total = sent.reduce((n, p) => n + (p.status ? (p.up ?? 0) + (p.down ?? 0) : p.size), 0);
-  const ranHere = !!prep.real?.length && prep.real.every((x) => x.status < 300);
+  const streamed = prep.next ? wire.heard.find((h) => h.state === 'live' && h.hash === prep.next!.hash)?.size ?? null : null;
+  const pk = useMemo(() => packets(prep.a, prep.next, FOCUSED, STATES[8].at, STATES[9].at, wire.real, paired, streamed), [prep, paired, wire.real, streamed]);
+  const sent = pk.filter((p) => p.at <= t), total = sent.reduce((n, p) => n + (p.mark === 'real' ? (p.up ?? 0) + (p.down ?? 0) : p.size), 0);
+  const ranHere = !wire.off && !!wire.real.length && wire.real.every((x) => x.status < 300);
   // the newest place, whoever wrote it: the page's until the lift is done, the table's after (and the table's last on return)
   const tableMoved = prep.next && ((sc.baton === 'live' && sc.moved > 0.5) || sc.baton === 'returned');
-  const wire = tableMoved ? placeWire(prep.a, 'vr', prep.next!.hash, prep.next!.level) : placeWire(prep.a, sc.baton === 'live' ? 'vr' : 'web');
+  const shown = tableMoved ? placeWire(prep.a, 'vr', prep.next!.hash, prep.next!.level) : placeWire(prep.a, sc.baton === 'live' ? 'vr' : 'web');
   // what the server holds at this state, as it answered when the requests ran (else the Place the design would send)
   const step = sc.baton === 'armed' ? 'arm' : sc.baton === 'claimed' ? 'claim' : sc.baton === 'live' ? (sc.moved > 0.5 ? 'lead' : 'live') : sc.baton === 'returned' ? 'return' : null;
-  const held = ranHere && step ? prep.real!.find((x) => x.step === step)?.body : null;
+  const held = ranHere && step ? wire.real.find((x) => x.step === step)?.body : null;
   return (
     <aside className="cx-panel" aria-live="polite">
       <div className="cx-st"><span className="cx-n">{stateIndex(t) + 1}/{STATES.length}</span><span className="cx-clk">{st.clock}</span></div>
@@ -406,16 +444,16 @@ function Panel({ prep, t, paired }: { prep: Prep; t: number; paired: boolean }) 
         {(['none', 'armed', 'claimed', 'live', 'returned'] as const).map((b) => <li key={b} className={sc.baton === b ? 'on' : ''}>{b}</li>)}
       </ol>
       <p className="cx-ran">{sc.baton === 'none' ? 'No baton yet: the place lives only in the page’s hash.' : held ? 'What the server holds now (its answer to the request):' : 'The Place the baton carries:'}</p>
-      {sc.baton !== 'none' && <pre className="cx-wire">{JSON.stringify(held ?? wire, null, 1)}</pre>}
+      {sc.baton !== 'none' && <pre className="cx-wire">{JSON.stringify(held ?? shown, null, 1)}</pre>}
       <h3>On the network <span className="cx-bytes">{total} B so far · 0 video frames · 0 audio</span></h3>
       <p className="cx-ran">{ranHere
-        ? <>The baton requests ran for real against this server when the crossing opened (<em className="mk mk-real">real</em>): the page armed it with its human token, and this page stood in for the APK on loopback as <code>{STANDIN}</code>. From a Quest they would come through the S8 LAN door (:3101), which is not built.</>
+        ? <>The baton requests run for real against this server, on this clock (<em className="mk mk-real">real</em>): the page arms it with its human token, and this page stands in for the APK on loopback as <code>{STANDIN}</code>. Each table write goes out on the companion stream and the page behind this overlay follows it. From a Quest the calls would come through the S8 LAN door (:3101), which is not built.</>
         : <>The baton route did not answer here, so the wire below is the design&apos;s, simulated (<em className="mk mk-mock">mock</em>).</>}</p>
       <ul className="cx-net">
         {pk.map((p, i) => (
           <li key={i} className={p.at <= t ? 'sent' : ''}>
             <span className="d">{p.dir}</span><code>{p.verb}</code>
-            <span className="nt">{p.note} · {p.status ? <><b className={p.status < 300 ? 'ok' : 'bad'}>{p.status}</b> · ↑ {p.up} B ↓ {p.down} B</> : <>≈ {p.size} B</>}<em className={'mk mk-' + p.mark}>{MARK_LABEL[p.mark]}</em></span>
+            <span className="nt">{p.note} · {p.status ? <><b className={p.status < 300 ? 'ok' : 'bad'}>{p.status}</b> · ↑ {p.up} B ↓ {p.down} B</> : p.mark === 'real' ? <>heard by the page · ↓ {p.down} B</> : <>≈ {p.size} B</>}<em className={'mk mk-' + p.mark}>{MARK_LABEL[p.mark]}</em></span>
           </li>
         ))}
       </ul>
@@ -427,8 +465,8 @@ function Panel({ prep, t, paired }: { prep: Prep; t: number; paired: boolean }) 
 // ----------------------------------------------------------------------------------------------- what to expect
 /** The owner's question, answered on one card: what this prototype proved running here, what only a headset can prove,
  *  and the work a real build needs (the design's own sizing). */
-function Summary({ prep, onReplay, onClose }: { prep: Prep; onReplay: () => void; onClose: () => void }) {
-  const total = prep.real?.reduce((n, x) => n + x.up + x.down, 0) ?? 0, ok = !!prep.real?.length && prep.real.every((x) => x.status < 300);
+function Summary({ prep, wire, onReplay, onClose }: { prep: Prep; wire: Wire; onReplay: () => void; onClose: () => void }) {
+  const total = wire.real.reduce((n, x) => n + x.up + x.down, 0) + wire.heard.reduce((n, h) => n + h.size, 0), ok = !wire.off && !!wire.real.length && wire.real.every((x) => x.status < 300), all = wire.real.length >= (prep.next ? 5 : 4);
   return (
     <section className="cx-sum" role="region" aria-label="What to expect from The Desk Becomes the Table">
       <h2>What to expect from The Desk Becomes the Table</h2>
@@ -438,8 +476,8 @@ function Summary({ prep, onReplay, onClose }: { prep: Prep; onReplay: () => void
           <h3><em className="mk mk-real">real</em> Proven here, running</h3>
           <ul>
             <li>The place is the page’s own hash plus a target: <code>{prep.a.hash === '#' ? '(the site)' : prep.a.hash}</code> → {prep.a.target.kind} <code>{prep.a.target.id}</code>.</li>
-            <li>The place baton is served and guarded: arm, claim, live, return {ok ? <>ran just now, <b>{total.toLocaleString('en')} bytes</b> for the whole crossing</> : 'is simulated here (the route did not answer)'}; 0 video frames, 0 audio.</li>
-            <li>The page follows the table with the machinery it has: the plan flew to {prep.next ? prep.next.name : 'the next place'} behind this overlay.</li>
+            <li>The place baton is served and guarded: arm, claim, live, return {ok ? <>ran on this clock, <b>{total.toLocaleString('en')} bytes</b> {all ? 'for the whole crossing' : 'so far'}, stream events included</> : 'is simulated here (the route did not answer)'}; 0 video frames, 0 audio.</li>
+            <li>The page follows the table on the companion stream (<code>event: place</code>): when the table led, the plan behind this overlay flew to {prep.next ? prep.next.name : 'the next place'}; on the return it leads again and keeps the 10 s crumb.</li>
             <li>The desk already looks like the table’s first frame: the blueprint is now lit glass on a light table.</li>
           </ul>
         </div>
@@ -456,7 +494,6 @@ function Summary({ prep, onReplay, onClose }: { prep: Prep; onReplay: () => void
           <h3><em className="mk mk-new">NEW</em> Work for a real build</h3>
           <ul>
             <li>S8 LAN door, server and BpLink halves (the baton’s routes exist now).</li>
-            <li>The stream’s <code>place</code> event so the page follows; the 10 s crumb.</li>
             <li><code>ABpCrossing</code> in UE: passthrough, the lift off the monitor anchor, the fade, the lamp.</li>
             <li>The pin ceremony (desk tap, monitor anchor) and its fallback.</li>
             <li>The design sizes it at 5–6 agent sessions and two owner sittings in the headset.</li>

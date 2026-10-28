@@ -27,7 +27,7 @@ export interface Packet {
 }
 
 /** The crossing's wire on its clock; the requests that ran for real (`real`, from baton.ts) carry their status and bytes. */
-export function packets(p: CrossPlace, n: NextPlace | null, F: number, live: number, off: number, real: readonly Exchange[] | null, paired = true): Packet[] {
+export function packets(p: CrossPlace, n: NextPlace | null, F: number, live: number, off: number, real: readonly Exchange[] | null, paired = true, streamed: number | null = null): Packet[] {
   const ran = (step: Exchange['step']) => real?.find((x) => x.step === step);
   const pk = (at: number, dir: Packet['dir'], step: Exchange['step'] | null, verb: string, note: string, size: number): Packet => {
     const x = step ? ran(step) : undefined;
@@ -43,7 +43,10 @@ export function packets(p: CrossPlace, n: NextPlace | null, F: number, live: num
   ];
   if (n) {
     out.push(pk(live + 0.5, 'APK→door→server', 'lead', 'POST /api/session/place', 'table leads · ' + n.hash, bytes({ place: placeWire(p, 'vr', n.hash, n.level, nextTarget) })));
-    out.push({ at: live + 0.6, dir: 'server→web', verb: 'companion stream · event place', note: 'the page flies there · not built yet', size: bytes({ event: 'place', baton: { state: 'live', place: placeWire(p, 'vr', n.hash, n.level, nextTarget) } }), mark: 'new' });
+    const sz = bytes({ type: 'place', baton: { state: 'live', place: placeWire(p, 'vr', n.hash, n.level, nextTarget) } });
+    out.push(streamed !== null
+      ? { at: live + 0.6, dir: 'server→web', verb: 'companion stream · event place', note: 'the page flies there', size: sz, mark: 'real', down: streamed }
+      : { at: live + 0.6, dir: 'server→web', verb: 'companion stream · event place', note: 'the page flies there', size: sz, mark: 'new' });
   }
   out.push(pk(off + 0.2, 'APK→door→server', 'return', 'POST /api/session/place/return', 'STOPPING → returned', 2));
   return out;
@@ -128,7 +131,7 @@ export function factsFor(id: StateId, p: CrossPlace, n: NextPlace | null, paired
     live: { title: 'The table leads; the page follows', facts: [
       { k: 'see', text: n ? 'You dive on the table to ' + n.name + '. A wrist peek cuts a passthrough window over the monitor: the page is already there.' : 'You move on the table; the page follows.', marks: ['new'] },
       { k: 'draw', text: 'The table: the APK. The page in the peek: Chrome on Lynx, seen through the cameras.', marks: ['new', 'unverified'] },
-      { k: 'net', text: 'Every level change POSTs the place; the page reads it on the stream and flies (the same machinery as focus: #at=).', marks: ['new'] },
+      { k: 'net', text: 'Every level change POSTs the place; the page hears it on the companion stream (event: place) and flies, with the same hash route a focus command uses. Running here: the page behind this overlay just did.', marks: ['new', 'real'] },
       { k: 'machine', text: 'Lynx (page, server) + Quest 3S (table). The lamp holds a decision waiting here; the headset cannot answer it (x-bp-human is bp’s page’s only), so the answer is a peek and a click on the desk.', marks: ['real'] },
     ] },
     return: { title: 'Headset off: a non-event', facts: [

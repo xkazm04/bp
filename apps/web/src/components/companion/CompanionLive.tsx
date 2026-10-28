@@ -18,6 +18,7 @@ import { frameAt } from './fixture';
 import { lampFor, type LampProps, type LampSkin } from './lamps';
 import { activeTurn, createStore, deriveLamp, nextDeadline, PENDING, pendingCards, runningLocal } from './store';
 import { answerCard, connect, loadCards, sendTurn, stopTurn } from './stream';
+import { PLACE_EVENT } from '../crossing/follow';
 import { planFocus, runFocus, targetRect, type Rect } from './focus';
 import { Cards, Notice } from './Cards';
 import { hush, speak } from './voice';
@@ -80,7 +81,8 @@ function LiveLamp({ skin, product }: { skin: LampSkin; product: string }) {
   const [away, setAway] = useState<{ text: string; href: string; n: number } | null>(null);
   const [ticks, tick] = useState(0);
 
-  useEffect(() => connect(store, { onOpen: () => void loadCards(store) }), []);
+  // the place baton rides the same stream; the crossing's host (main chunk) follows it, so it is handed on as a window event
+  useEffect(() => connect(store, { onOpen: () => void loadCards(store), onPlace: (baton) => window.dispatchEvent(new CustomEvent(PLACE_EVENT, { detail: baton })) }), []);
   // the derived state moves on its own when a pointing window ends or a card or notice expires
   useEffect(() => {
     const d = nextDeadline(s, Date.now()); if (d === null) return;

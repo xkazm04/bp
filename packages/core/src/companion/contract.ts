@@ -3,6 +3,8 @@
 // and coverage gaps. Pure TypeScript, no Node or DOM, so the web client, the server runtime and the MCP door all read it.
 // Absent values: an optional field is omitted; `null` only for a known unknown (a cost the CLI did not report).
 
+import type { PlaceBaton } from '../session/place.ts';
+
 /** Why a turn failed, read off the CLI's stderr and result record (athena's six classes). */
 export type FailureClass = 'gone' | 'poisoned' | 'auth' | 'limit' | 'transient' | 'unknown';
 
@@ -66,7 +68,10 @@ export type CompanionEvent =
   | { type: 'turn'; conversationId: string; event: TurnEvent }
   | { type: 'card'; card: Card }
   | { type: 'focus'; focus: FocusCommand }
-  | { type: 'status'; busy: string[]; sleeping: boolean };
+  | { type: 'status'; busy: string[]; sleeping: boolean }
+  /** The place baton moved because the table wrote it (live) or handed it back (returned): the page follows it
+   *  (session/place.ts; published by POST /api/session/place and /return). */
+  | { type: 'place'; baton: PlaceBaton };
 
 /** The header a human path carries; the token is minted per server boot and never given to the MCP process. */
 export const HUMAN_HEADER = 'x-bp-human';

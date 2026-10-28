@@ -1,14 +1,18 @@
-// The place baton, run for real against this server when the crossing opens: the page arms it (with the human token, as
-// bp's own page), then this page stands in for the APK on loopback - it claims it, publishes the table's places and
-// returns it - so every exchange the demo replays on its clock has a real status and real byte counts. On the design's
-// path the device's calls come from the Quest through the S8 LAN door (:3101, Bearer, scope place); that door is not
-// built, so here the device names itself with x-bp-device. Any failure falls back to the simulated wire, and says so.
+// The place baton, run for real against this server on the crossing's own clock: the page arms it (with the human token, as
+// bp's own page) when the crossing reaches "armed", and this page stands in for the APK on loopback - it claims at t 0.8,
+// writes the place when the lift is done, writes the next place when the table leads, and hands it back when the headset
+// comes off. Each write goes out on the companion stream (`event: place`), so the page behind the overlay really follows
+// the table. On the design's path the device's calls come from the Quest through the S8 LAN door (:3101, Bearer, scope
+// place); that door is not built, so here the device names itself with x-bp-device. A step fires once per run, in order;
+// a replay starts a new run (an arm over a baton the stand-in still holds hands it back first).
 import type { CrossPlace, NextPlace } from './place';
 import { placeWire } from './facts';
 
+export type BatonStep = 'arm' | 'claim' | 'live' | 'lead' | 'return';
+export const BATON_STEPS: readonly BatonStep[] = ['arm', 'claim', 'live', 'lead', 'return'];
+
 export interface Exchange {
-  /** Which step of the crossing it is. */
-  step: 'arm' | 'claim' | 'live' | 'lead' | 'return';
+  step: BatonStep;
   verb: string;
   status: number;
   /** Bytes sent (the JSON body) and received (the response body). */
@@ -20,7 +24,7 @@ export interface Exchange {
 export const STANDIN = 'quest-3s-standin';
 const enc = new TextEncoder();
 
-async function call(step: Exchange['step'], method: 'GET' | 'POST', url: string, body: unknown, headers: Record<string, string>): Promise<Exchange> {
+async function call(step: BatonStep, method: 'GET' | 'POST', url: string, body: unknown, headers: Record<string, string>): Promise<Exchange> {
   const text = body === undefined ? undefined : JSON.stringify(body);
   const res = await fetch(url, { method, cache: 'no-store', headers: { ...(text ? { 'content-type': 'application/json' } : {}), ...headers }, body: text });
   const out = await res.text();
@@ -29,25 +33,46 @@ async function call(step: Exchange['step'], method: 'GET' | 'POST', url: string,
   return { step, verb: method + ' ' + url, status: res.status, up: text ? enc.encode(text).length : 0, down: enc.encode(out).length, body: parsed };
 }
 
-/** Arm, claim, publish (where you were, then where the table leads), return. Null when the server has no baton route. */
-export async function runBaton(a: CrossPlace, next: NextPlace | null): Promise<Exchange[] | null> {
-  try {
-    const tok = await fetch('/api/companion/human-token', { cache: 'no-store' });
-    if (!tok.ok) return null;
-    const { token } = (await tok.json()) as { token: string };
-    const human = { 'x-bp-human': token }, dev = { 'x-bp-device': STANDIN };
-    const out: Exchange[] = [];
-    let arm = await call('arm', 'POST', '/api/session/place', { place: placeWire(a, 'web') }, human);
-    // a baton an earlier crossing left live: hand it back first (only its own device may), then arm
-    if (arm.status === 409) { await call('return', 'POST', '/api/session/place/return', {}, dev); arm = await call('arm', 'POST', '/api/session/place', { place: placeWire(a, 'web') }, human); }
-    out.push(arm);
-    if (arm.status !== 201) return out;
-    out.push(await call('claim', 'GET', '/api/session/place?claim=1', undefined, dev));
-    out.push(await call('live', 'POST', '/api/session/place', { place: placeWire(a, 'vr') }, dev));
-    if (next) out.push(await call('lead', 'POST', '/api/session/place', { place: placeWire(a, 'vr', next.hash, next.level) }, dev));
-    out.push(await call('return', 'POST', '/api/session/place/return', {}, dev));
-    return out;
-  } catch {
-    return null;
-  }
+export interface BatonRun {
+  /** Fire `step` (and every earlier step not fired yet), once each, in order. */
+  upTo(step: BatonStep): void;
+  /** Start a new run: the next arm re-arms. */
+  reset(): void;
+  /** Whether the stand-in holds the baton now (claimed, not returned). */
+  holds(): boolean;
+}
+
+/** A run for place `a` (the table leads to `next`); `onResult` gets each exchange as it completes, `onFail` once if the route is not there. */
+export function batonRun(a: CrossPlace, next: NextPlace | null, onResult: (x: Exchange) => void, onFail: () => void): BatonRun {
+  let token: string | null = null, chain: Promise<unknown> = Promise.resolve(), fired = new Set<BatonStep>(), failed = false;
+  const dev = { 'x-bp-device': STANDIN };
+  const run = async (s: BatonStep) => {
+    if (failed) return;
+    if (s === 'arm') {
+      if (!token) {
+        const r = await fetch('/api/companion/human-token', { cache: 'no-store' });
+        if (!r.ok) throw new Error('no token');
+        token = ((await r.json()) as { token: string }).token;
+      }
+      const body = { place: placeWire(a, 'web') }, human = { 'x-bp-human': token };
+      let x = await call('arm', 'POST', '/api/session/place', body, human);
+      // a baton an earlier run left with the stand-in: hand it back first (only its own device may), then arm
+      if (x.status === 409) { await call('return', 'POST', '/api/session/place/return', {}, dev); x = await call('arm', 'POST', '/api/session/place', body, human); }
+      if (x.status === 404) throw new Error('no route');
+      onResult(x);
+    } else if (s === 'claim') onResult(await call('claim', 'GET', '/api/session/place?claim=1', undefined, dev));
+    else if (s === 'live') onResult(await call('live', 'POST', '/api/session/place', { place: placeWire(a, 'vr') }, dev));
+    else if (s === 'lead') { if (next) onResult(await call('lead', 'POST', '/api/session/place', { place: placeWire(a, 'vr', next.hash, next.level, next.room ? { kind: 'room', id: next.room.id } : a.target) }, dev)); }
+    else onResult(await call('return', 'POST', '/api/session/place/return', {}, dev));
+  };
+  return {
+    upTo(step) {
+      for (const s of BATON_STEPS) {
+        if (!fired.has(s)) { fired.add(s); chain = chain.then(() => run(s)).catch(() => { if (!failed) { failed = true; onFail(); } }); }
+        if (s === step) break;
+      }
+    },
+    reset() { fired = new Set(); },
+    holds() { return fired.has('claim') && !fired.has('return'); },
+  };
 }

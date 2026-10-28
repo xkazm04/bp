@@ -2,12 +2,14 @@
 // `x-bp-device` header, the device claims an armed baton (armed -> claimed) and gets its place: 404 none, 410 expired,
 // 409 another device holds it. POST /api/session/place, body `{ place }`: from the page (place.from 'web', with the
 // x-bp-human token) it arms a baton for 120 s (409 while a device holds one); from the claiming device (place.from 'vr',
-// x-bp-device) it publishes the table's place (claimed|live -> live). Localhost only (see baton.server.ts for the door).
+// x-bp-device) it publishes the table's place (claimed|live -> live) and the companion stream carries it to every page
+// (`event: place`). Localhost only (see baton.server.ts for the door).
 // The state machine and the Place's shape: packages/core/src/session/place.ts.
 import { jsonOnly, localHost, localOnly } from '../../../../scan/local-only.ts';
 import { isHuman, notHuman, sortableId } from '../../companion/door.server.ts';
 import { current, readPlace, step } from '../../../../session/place.ts';
 import { deviceOf, noDevice, readBaton, writeBaton } from '../baton.server.ts';
+import { publish } from '../../../companion/bus.server.ts';
 
 const NO_STORE = { 'cache-control': 'no-store' };
 
@@ -45,5 +47,7 @@ export async function POST(req: Request): Promise<Response> {
   }
   if (r.error) return Response.json({ error: r.error, state: r.baton?.state ?? 'none' }, { status: r.status, headers: NO_STORE });
   writeBaton(r.baton);
+  // the table wrote the place: every open page hears it on the companion stream and follows
+  if (r.baton && r.baton.state === 'live') publish({ type: 'place', baton: r.baton });
   return Response.json(r.baton, { status: r.status, headers: NO_STORE });
 }

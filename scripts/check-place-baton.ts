@@ -9,6 +9,8 @@ import { GET, POST } from '../packages/core/src/server/api/session/place/route.t
 import { POST as RETURN } from '../packages/core/src/server/api/session/place/return/route.ts';
 import { humanToken } from '../packages/core/src/server/api/companion/door.server.ts';
 import { writeBaton } from '../packages/core/src/server/api/session/baton.server.ts';
+import { subscribe } from '../packages/core/src/server/companion/bus.server.ts';
+import type { CompanionEvent } from '../packages/core/src/companion/contract.ts';
 
 let failed = 0, passed = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) passed++; else { failed++; console.log('FAIL ' + name + (detail ? ': ' + detail : '')); } };
@@ -56,6 +58,9 @@ const req = (method: string, url: string, body?: unknown, h: Record<string, stri
 const human = { 'x-bp-human': humanToken() };
 const run = async () => {
   writeBaton(null);
+  // the companion stream carries the place baton when the table writes it or hands it back (the page follows it)
+  const heard: CompanionEvent[] = [];
+  const off = subscribe((e) => { if (e.type === 'place') heard.push(e); });
   let res = await GET(req('GET', URL0));
   check('GET with nothing armed: 200 { state: none }', res.status === 200 && (await res.json()).state === 'none');
   res = await POST(req('POST', URL0, { place: web }));
@@ -84,6 +89,9 @@ const run = async () => {
   res = await RETURN(req('POST', URL0 + '/return', {}, { 'x-bp-device': 'quest' }));
   const back = await res.json();
   check('the device returns it: 200 returned, the table place kept', res.status === 200 && back.state === 'returned' && back.place.hash === '#at=scheduling.timetable');
+  const states = heard.map((e) => (e.type === 'place' ? e.baton.state + ' ' + e.baton.place.hash : ''));
+  check('the stream heard the table write and the return, and nothing the page did itself', JSON.stringify(states) === JSON.stringify(['live #at=scheduling.timetable', 'returned #at=scheduling.timetable']), JSON.stringify(states));
+  off();
   writeBaton(null);
 };
 await run();
