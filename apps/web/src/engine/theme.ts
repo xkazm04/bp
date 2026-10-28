@@ -11,7 +11,7 @@ export interface Theme {
   halo: string; accent: string; mint: string; amber: string; amberText: string; mintText: string; red: string; red2: string; delta: string;
   glyphEdge: string; labelBg: string; tileBase: string; poche: string; chipBg: string; panel: string;
   /** The light table: the light under the glass (bloom, slab edge) and the lit wall line. */
-  glow: string; glassEdge: string;
+  glow: string; glassEdge: string; rim: string;
   inkRGB: RGB;
   /** Ink at alpha `a` (cached string). */
   inkA(a: number): string;
@@ -171,7 +171,7 @@ export function readTheme(res: number): ThemeHandle {
     delta: v('--delta', '#9fe8ff'), glyphEdge: v('--glyph-edge', '#04223a'), labelBg: v('--label-bg', '#0b2c52'),
     tileBase: v('--tile-base', 'rgba(3,18,40,.30)'), poche: v('--poche', '#0c2f57'), chipBg: v('--chip-bg', 'rgba(5,26,50,.95)'),
     panel: v('--panel-solid', '#0a2342'),
-    glow: v('--glow', '#4fd2ff'), glassEdge: v('--glass-edge', ink),
+    glow: v('--glow', '#4fd2ff'), glassEdge: v('--glass-edge', ink), rim: v('--rim', '#e6fbff'),
     inkRGB: [ir, ig, ib],
     inkA(a) {
       const k = Math.round(a * 1000);

@@ -22,7 +22,7 @@ import { saveFailWords } from './copy';
 import { lineSiblings } from './lines';
 import { Text } from './text';
 import { StaticCache, deviceRes } from './render/static-cache';
-import { buildWallPaths, drawBuildings, drawDecor, drawGrid, drawLabels, featRect, resetOutlines } from './render/plan';
+import { buildWallPaths, drawBuildings, drawDecor, drawGrid, drawLabels, drawTableTop, featRect, resetOutlines } from './render/plan';
 import {
   drawAgents, drawAnswer, drawBlockers, drawBreaches, drawFocus, drawHeat, drawLasso, drawOrderZones, drawOverlays, drawPins, drawPreview,
   drawPulses, drawReleases, drawTargets, type APos,
@@ -493,7 +493,7 @@ export class Engine {
   /** The whole static plan at raster view `v` (a full raster, or a clipped patch of it). */
   private paintPlan(g: CanvasRenderingContext2D, v: View) {
     this.anchor(this.FW / 2 - v.x * v.k, this.FH / 2 - v.y * v.k);
-    drawGrid(this, g, v); drawDecor(this, g, v); drawBuildings(this, g, v); drawLabels(this, g, v);
+    drawGrid(this, g, v); drawTableTop(this, g, v); drawDecor(this, g, v); drawBuildings(this, g, v); drawLabels(this, g, v);
   }
   /** Sim-dependent paint: tiles, ribbon segments and swarm lines whose live values moved since they were painted. */
   private patchSim() {

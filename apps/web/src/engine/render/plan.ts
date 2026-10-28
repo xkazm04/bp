@@ -47,6 +47,33 @@ export function drawGrid(E: Engine, ctx: CanvasRenderingContext2D, v: View) {
 }
 
 /**
+ * The light table itself: the site lies on a rounded pane of lit glass with a backlit rim, as the VR table does, and the
+ * paper beyond it falls into the studio's dark. World-anchored and sized from the home view (so the wing labels above the
+ * site and the chronology line below it lie on the pane), it moves with the plan and never moves a place. Zoomed in past
+ * its edges it covers the view and draws nothing.
+ */
+export function drawTableTop(E: Engine, ctx: CanvasRenderingContext2D, v: View) {
+  const th = E.th, k = v.k, u = E.U, hk = E.HOME.k, w = E.M.L.world, dark = th.mode === 'dark';
+  const px = (46 * u) / hk, pt = (128 * u) / hk, pb = (40 * u) / hk;
+  const x = sxv(v, w.x - px), y = syv(v, w.y - pt), x1 = sxv(v, w.x + w.w + px), y1 = syv(v, w.y + w.h + pb);
+  const m = 40;
+  if (x < v.c0x - m && x1 > v.c1x + m && y < v.c0y - m && y1 > v.c1y + m) return;
+  const s = k / hk, r = clamp(18 * u * s, 6, 40), pane = new Path2D();
+  pane.roundRect(x, y, x1 - x, y1 - y, r);
+  // beyond the pane: the studio's dark (one even-odd fill of the view minus the pane)
+  const out = new Path2D();
+  out.rect(v.c0x - m, v.c0y - m, v.c1x - v.c0x + 2 * m, v.c1y - v.c0y + 2 * m); out.addPath(pane);
+  ctx.fillStyle = dark ? 'rgba(2, 7, 18, 0.62)' : th.inkA(0.07); ctx.fill(out, 'evenodd');
+  // the backlit rim: its glow on the dark, the white body, a lit hairline on the glass side
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = th.alpha(th.glow, dark ? 0.2 : 0.14); ctx.lineWidth = clamp(30 * s, 10, 34); ctx.stroke(pane);
+  ctx.strokeStyle = th.alpha(th.rim, dark ? 0.92 : 0.85); ctx.lineWidth = clamp(8 * s, 3, 10); ctx.stroke(pane);
+  ctx.strokeStyle = th.alpha(th.glow, dark ? 0.55 : 0.4); ctx.lineWidth = 1;
+  const ins = clamp(8 * s, 3, 10) / 2 + 3;
+  ctx.beginPath(); ctx.roundRect(x + ins, y + ins, x1 - x - 2 * ins, y1 - y - 2 * ins, Math.max(2, r - ins)); ctx.stroke();
+}
+
+/**
  * Lenses whose channel threw: skipped for that engine's life so one bad manifest costs that lens, not the
  * plan. Kept per engine, because each engine resolves its own channels (the variant's, or a fallback built
  * from the product's manifest): a lens that failed under one variant or product is drawn and, if it fails
