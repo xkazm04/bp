@@ -108,5 +108,17 @@ const rw = (await cfg.rewrites?.()) as { beforeFiles?: { source: string; destina
 const pairs = (rw?.beforeFiles ?? []).map((r) => r.source + ' -> ' + r.destination);
 check('with one companion process, /api/session goes to it with /api/companion', pairs.includes('/api/session/:path* -> http://127.0.0.1:3100/api/session/:path*') && pairs.includes('/api/companion/:path* -> http://127.0.0.1:3100/api/companion/:path*'), JSON.stringify(pairs));
 delete process.env.BP_COMPANION_URL;
+
+// ------------------------------------------------------------------------------------------------ one device seam
+// The S8 door must set the device from the paired fingerprint (baton.server.ts). That holds only while deviceOf is the
+// one reader of the header: a route that read it itself would take whatever a LAN caller wrote.
+const { readdirSync, readFileSync } = await import('node:fs');
+const { join } = await import('node:path');
+const SERVER = 'packages/core/src/server';
+const files = (readdirSync(SERVER, { recursive: true }) as string[]).filter((f) => /\.ts$/.test(f)).map((f) => join(SERVER, f).replace(/\\/g, '/'));
+const readers = (src: string) => /x-bp-device|DEVICE_HEADER/.test(src.replace(/\/\/.*$/gm, ''));
+const strays = files.filter((f) => !f.endsWith('session/baton.server.ts') && readers(readFileSync(f, 'utf8')));
+check('only baton.server.ts reads the device header', files.length > 10 && strays.length === 0, strays.join(', '));
+check('a route reading the header itself would be caught (seeded control)', readers("const d = req.headers.get('x-bp-device');"));
 console.log(`place baton: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
