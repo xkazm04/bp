@@ -42,7 +42,7 @@ jobs:
       # in. The first CI run that got this far reported 12 folders whose commit "is not in git history"
       # when all 12 were present - the check was reading a clone, not the repo.
       - name: check out bp
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           path: bp
           fetch-depth: 0
@@ -50,7 +50,7 @@ jobs:
       # The registry's default branch, deliberately not pinned: the resolver's job is to find the registry
       # this checkout declares, and that is whatever the owner has. A red here is a real break between the two.
       - name: check out the declared registry beside it
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           repository: xkazm04/ai-registry
           path: ai-registry
