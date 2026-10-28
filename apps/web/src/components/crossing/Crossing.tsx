@@ -334,6 +334,12 @@ function Panel({ prep, t }: { prep: Prep; t: number }) {
           <div key={i}><dt>{KEY_LABEL[f.k]}</dt><dd>{f.text}{f.marks.map((m) => <em key={m} className={'mk mk-' + m}>{MARK_LABEL[m]}</em>)}</dd></div>
         ))}
       </dl>
+      {prep.a.product === 'kettle' && (st.id === 'fade' || st.id === 'arrived' || st.id === 'live') && (
+        <figure className="cx-real">
+          <img src={prep.a.room ? '/crossing/real-room-kettle.jpg' : '/crossing/real-site-kettle.jpg'} alt={'The VR table in Unreal today: ' + (prep.a.room ? 'room mode, Booking & Attendance' : 'the site plan, level 0') + ', Kettle'} />
+          <figcaption><em className="mk mk-real">REAL</em> The table today in Unreal: {prep.a.room ? 'room mode (Booking & Attendance)' : 'the site plan, level 0'}, a flat capture from the target eye with the PC renderer ({prep.a.room ? 'fag-room-kettle' : 'fid-final-target'}.jpg, docs/concepts/vr-light-table/captures). The APK draws a mobile tier of this: expect less. The stage beside it is a web mock.</figcaption>
+        </figure>
+      )}
       <h3>Place baton <em className="mk mk-new">NEW</em></h3>
       <ol className="cx-baton">
         {(['none', 'armed', 'claimed', 'live', 'returned'] as const).map((b) => <li key={b} className={sc.baton === b ? 'on' : ''}>{b}</li>)}
