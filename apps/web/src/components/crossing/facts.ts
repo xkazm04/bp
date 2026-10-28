@@ -27,15 +27,17 @@ export interface Packet {
 }
 
 /** The crossing's wire on its clock; the requests that ran for real (`real`, from baton.ts) carry their status and bytes. */
-export function packets(p: CrossPlace, n: NextPlace | null, F: number, live: number, off: number, real: readonly Exchange[] | null): Packet[] {
+export function packets(p: CrossPlace, n: NextPlace | null, F: number, live: number, off: number, real: readonly Exchange[] | null, paired = true): Packet[] {
   const ran = (step: Exchange['step']) => real?.find((x) => x.step === step);
   const pk = (at: number, dir: Packet['dir'], step: Exchange['step'] | null, verb: string, note: string, size: number): Packet => {
     const x = step ? ran(step) : undefined;
     return x ? { at, dir, verb, note, size, mark: 'real', status: x.status, up: x.up, down: x.down } : { at, dir, verb, note, size, mark: 'new' };
   };
   const nextTarget = n?.room ? { kind: 'room' as const, id: n.room.id } : p.target;
+  const arm = pk(1.4, 'web→server', 'arm', 'POST /api/session/place', 'loopback · x-bp-human · arm', bytes({ place: placeWire(p, 'web') }));
+  if (!paired) return [arm, { at: F, dir: 'APK→door→server', verb: 'no request', note: 'unpaired: the APK has no door to reach; the baton expires unclaimed after 120 s', size: 0, mark: 'documented' }];
   const out: Packet[] = [
-    pk(1.4, 'web→server', 'arm', 'POST /api/session/place', 'loopback · x-bp-human · arm', bytes({ place: placeWire(p, 'web') })),
+    arm,
     pk(F + 0.8, 'APK→door→server', 'claim', 'GET /api/session/place?claim=1', 'via door :3101 · Bearer · scope place', 0),
     pk(F + 2.0, 'APK→door→server', 'live', 'POST /api/session/place', 'lift done · live · from vr', bytes({ place: placeWire(p, 'vr') })),
   ];
@@ -47,7 +49,30 @@ export function packets(p: CrossPlace, n: NextPlace | null, F: number, live: num
   return out;
 }
 
-export function factsFor(id: StateId, p: CrossPlace, n: NextPlace | null): StateFacts {
+/** The unpaired ending (the judged build's behaviour), from FOCUSED on. */
+function unpairedFacts(id: StateId): StateFacts | null {
+  const open: StateFacts = { title: 'Unpaired: the APK opens its bundle at home', facts: [
+    { k: 'see', text: 'No crossing. After the blackout: the studio and the bundled Kettle’s site plan, not the place you were in.', marks: ['documented'] },
+    { k: 'draw', text: 'The APK, from the snapshot bundled in its pak (BpLink reads it with no server).', marks: ['measured'] },
+    { k: 'net', text: 'Nothing. Without a paired door the APK cannot reach Lynx; the page’s armed baton is never claimed and expires after 120 s, with no error.', marks: ['new'] },
+    { k: 'build', text: 'The same APK, unpaired: exactly what the judges get. Bundle mode gets no crossing.', marks: ['measured'] },
+    { k: 'machine', text: 'Quest 3S alone. The APK has not run on a headset yet.', marks: ['unverified'] },
+  ] };
+  if (id === 'passthrough' || id === 'claimed' || id === 'lift' || id === 'fade') return open;
+  if (id === 'arrived' || id === 'live') return { title: 'Unpaired: no live lamp, no place', facts: [
+    { k: 'see', text: 'The lamp is there but not live: no server, so no conversation and no naming of your place.', marks: ['documented'] },
+    { k: 'draw', text: 'The APK, bundle mode.', marks: ['measured'] },
+    { k: 'net', text: 'Nothing; the page does not follow, there is nothing to follow.', marks: [] },
+  ] };
+  if (id === 'return') return { title: 'Headset off: the page is where you left it', facts: [
+    { k: 'see', text: 'Your page, unchanged. The baton expired unclaimed.', marks: ['new'] },
+    { k: 'draw', text: 'Chrome on Lynx.', marks: ['real'] },
+  ] };
+  return null;
+}
+
+export function factsFor(id: StateId, p: CrossPlace, n: NextPlace | null, paired = true): StateFacts {
+  if (!paired) { const u = unpairedFacts(id); if (u) return u; }
   const at = p.hash || '#', where = p.crumbs.slice(1).join(' › ') || 'the site';
   const S: Record<StateId, StateFacts> = {
     desk: { title: 'At the desk: your page, where you are', facts: [

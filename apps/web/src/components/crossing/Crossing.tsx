@@ -27,6 +27,8 @@ interface Prep {
   titleA: string;
   /** The baton's requests as they ran against this server (null: no route, the wire is simulated). */
   real: Exchange[] | null;
+  /** Unpaired, the APK opens its bundled Kettle at home: the site plan, whatever the page's place. */
+  tableHome: string; risesHome: Rise[]; lightsHome: Light[];
 }
 
 const MARK_LABEL: Record<Mark, string> = { real: 'real', measured: 'measured', documented: 'documented', unverified: '[unverified]', new: 'NEW', mock: 'mock' };
@@ -46,6 +48,7 @@ export default function Crossing({ onClose }: { onClose: () => void }) {
   const [t, setT] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(0.5);
+  const [paired, setPaired] = useState(true);
   const root = useRef<HTMLDivElement>(null);
   const tRef = useRef(0);
   tRef.current = t;
@@ -71,7 +74,9 @@ export default function Crossing({ onClose }: { onClose: () => void }) {
         route(a.hash); await arrived(E);
       }
       const real = await runBaton(a, next);
-      return { a, next, pageA, pageB, tableA: jpeg(TA.canvas), tableB, rises: TA.rises, risesB, lights: TA.lights, titleA: TA.title, real };
+      const TH = drawTable(E, { ...a, level: 0, wing: null, room: null, bay: null, tile: null, crumbs: [a.crumbs[0]], name: a.crumbs[0] + ' · home' }, null);
+      return { a, next, pageA, pageB, tableA: jpeg(TA.canvas), tableB, rises: TA.rises, risesB, lights: TA.lights, titleA: TA.title, real,
+        tableHome: jpeg(TH.canvas), risesHome: TH.rises, lightsHome: TH.lights };
     })();
     job.current.then((p) => { if (!dead) { setPrep(p); setPlaying(true); } });
     return () => { dead = true; };
@@ -123,15 +128,15 @@ export default function Crossing({ onClose }: { onClose: () => void }) {
         {prep && <div className="cx-from" title="The place the baton carries: the page's own hash">from <code>{prep.a.hash === '#' ? '#(site)' : prep.a.hash}</code> · {prep.a.crumbs.slice(1).join(' › ') || 'the site'}</div>}
         <button type="button" className="cx-x" onClick={close} title="Close ( Esc )">Close · Esc</button>
       </header>
-      {!prep ? <div className="cx-prep"><span className="cx-spin" aria-hidden="true" />Reading your place and drawing the table…</div> : <Body prep={prep} t={t} />}
+      {!prep ? <div className="cx-prep"><span className="cx-spin" aria-hidden="true" />Reading your place and drawing the table…</div> : <Body prep={prep} t={t} paired={paired} />}
       {prep && <Transport t={t} playing={playing} speed={speed} setSpeed={setSpeed} seek={seek} stepTo={stepTo} replay={replay}
-        toggle={() => (t >= END ? replay() : setPlaying((p) => !p))} setPlaying={setPlaying} prep={prep} />}
+        toggle={() => (t >= END ? replay() : setPlaying((p) => !p))} setPlaying={setPlaying} prep={prep} paired={paired} setPaired={setPaired} />}
     </div>
   );
 }
 
 // ----------------------------------------------------------------------------------------------- the stage and the panel
-function Body({ prep, t }: { prep: Prep; t: number }) {
+function Body({ prep, t, paired }: { prep: Prep; t: number; paired: boolean }) {
   const wrap = useRef<HTMLDivElement>(null);
   const [k, setK] = useState(0.6);
   useEffect(() => {
@@ -145,10 +150,10 @@ function Body({ prep, t }: { prep: Prep; t: number }) {
     <div className="cx-body">
       <div className="cx-stagewrap" ref={wrap}>
         <div className="cx-box" style={{ width: 1600 * k, height: 900 * k }}>
-          <Stage prep={prep} t={t} k={k} />
+          <Stage prep={prep} t={t} k={k} paired={paired} />
         </div>
       </div>
-      <Panel prep={prep} t={t} />
+      <Panel prep={prep} t={t} paired={paired} />
     </div>
   );
 }
@@ -161,10 +166,10 @@ function paperPose(p: number): string {
   return `translate3d(0px, ${dy.toFixed(1)}px, ${dz.toFixed(1)}px) rotateX(${rx.toFixed(2)}deg) scale(${s.toFixed(4)})`;
 }
 
-function Stage({ prep, t, k }: { prep: Prep; t: number; k: number }) {
-  const sc = sceneAt(t), st = stateAt(t), off = STATES[9].at;
+function Stage({ prep, t, k, paired }: { prep: Prep; t: number; k: number; paired: boolean }) {
+  const sc = sceneAt(t, paired), st = stateAt(t), off = STATES[9].at;
   const inVR = t >= FOCUSED - 0.3 && t < off + 0.3;
-  const rises = sc.moved > 0.5 ? prep.risesB : prep.rises;
+  const rises = !paired ? prep.risesHome : sc.moved > 0.5 ? prep.risesB : prep.rises, lights = paired ? prep.lights : prep.lightsHome;
   const caption = sc.moved > 0.02 && prep.next ? prep.next.name : prep.a.name;
   const lampSay = sc.moved > 0.02 ? 'the page follows' : 'where you were on the desk';
   return (
@@ -189,12 +194,12 @@ function Stage({ prep, t, k }: { prep: Prep; t: number; k: number }) {
           <div className="cx-persp">
             <div className="cx-desk">
               <div className="cx-glass" style={{ opacity: sc.studio }} />
-              <div className="cx-paper" style={{ transform: paperPose(sc.lift), opacity: smooth(FOCUSED + 0.85, FOCUSED + 1.05, t) }}>
-                <img className="cx-sheet" src={prep.tableA} alt="" style={{ opacity: 1 - sc.moved }} />
+              <div className="cx-paper" style={{ transform: paperPose(sc.lift), opacity: paired ? smooth(FOCUSED + 0.85, FOCUSED + 1.05, t) : sc.table }}>
+                <img className="cx-sheet" src={paired ? prep.tableA : prep.tableHome} alt="" style={{ opacity: 1 - sc.moved }} />
                 {prep.tableB && <img className="cx-sheet" src={prep.tableB} alt="" style={{ opacity: sc.moved }} />}
                 <div className="cx-edge" style={{ opacity: sc.table }} />
                 {sc.rise > 0.001 && <Rises rises={rises} r={sc.rise} />}
-                {sc.rise > 0.001 && sc.moved < 0.5 && <Lights lights={prep.lights} r={sc.rise} />}
+                {sc.rise > 0.001 && sc.moved < 0.5 && <Lights lights={lights} r={sc.rise} />}
               </div>
             </div>
           </div>
@@ -226,9 +231,12 @@ function Stage({ prep, t, k }: { prep: Prep; t: number; k: number }) {
         {t >= 3.75 && t < FOCUSED - 0.2 && <div className="cx-blacksay">3–5 s of black while the headset wakes: no app can draw here</div>}
         {inVR && sc.pass > 0.3 && t < FOCUSED + 2.2 && (
           <div className="cx-tags">
-            <span className="cx-tag pass">REAL ROOM · headset cameras</span>
-            {t >= FOCUSED + 0.85 && <span className="cx-tag apk">VIRTUAL · the APK’s sheet of {prep.a.room ? prep.a.room.name : 'the site'}</span>}
+            <span className="cx-tag pass">YOUR ROOM · the headset’s cameras (sketched here)</span>
+            {t >= FOCUSED + 0.85 && <span className="cx-tag apk">VIRTUAL · the APK draws this sheet of {prep.a.room ? prep.a.room.name : 'the site'}</span>}
           </div>
+        )}
+        {inVR && !paired && t >= FOCUSED && t < off && (
+          <div className="cx-tags"><span className="cx-tag apk">BUNDLE · the APK’s own Kettle at home, not your place · no live lamp</span></div>
         )}
         {inVR && t < off && sc.caption > 0.01 && (
           <div className="cx-caption" style={{ opacity: sc.caption }}>
@@ -314,9 +322,9 @@ function Lights({ lights, r }: { lights: Light[]; r: number }) {
   );
 }
 
-function Panel({ prep, t }: { prep: Prep; t: number }) {
-  const st = stateAt(t), sc = sceneAt(t), F = factsFor(st.id, prep.a, prep.next);
-  const pk = useMemo(() => packets(prep.a, prep.next, FOCUSED, STATES[8].at, STATES[9].at, prep.real), [prep]);
+function Panel({ prep, t, paired }: { prep: Prep; t: number; paired: boolean }) {
+  const st = stateAt(t), sc = sceneAt(t, paired), F = factsFor(st.id, prep.a, prep.next, paired);
+  const pk = useMemo(() => packets(prep.a, prep.next, FOCUSED, STATES[8].at, STATES[9].at, prep.real, paired), [prep, paired]);
   const sent = pk.filter((p) => p.at <= t), total = sent.reduce((n, p) => n + (p.status ? (p.up ?? 0) + (p.down ?? 0) : p.size), 0);
   const ranHere = !!prep.real?.length && prep.real.every((x) => x.status < 300);
   // the newest place, whoever wrote it: the page's until the lift is done, the table's after (and the table's last on return)
@@ -334,7 +342,7 @@ function Panel({ prep, t }: { prep: Prep; t: number }) {
           <div key={i}><dt>{KEY_LABEL[f.k]}</dt><dd>{f.text}{f.marks.map((m) => <em key={m} className={'mk mk-' + m}>{MARK_LABEL[m]}</em>)}</dd></div>
         ))}
       </dl>
-      {prep.a.product === 'kettle' && (st.id === 'fade' || st.id === 'arrived' || st.id === 'live') && (
+      {paired && prep.a.product === 'kettle' && (st.id === 'fade' || st.id === 'arrived' || st.id === 'live') && (
         <figure className="cx-real">
           <img src={prep.a.room ? '/crossing/real-room-kettle.jpg' : '/crossing/real-site-kettle.jpg'} alt={'The VR table in Unreal today: ' + (prep.a.room ? 'room mode, Booking & Attendance' : 'the site plan, level 0') + ', Kettle'} />
           <figcaption><em className="mk mk-real">REAL</em> The table today in Unreal: {prep.a.room ? 'room mode (Booking & Attendance)' : 'the site plan, level 0'}, a flat capture from the target eye with the PC renderer ({prep.a.room ? 'fag-room-kettle' : 'fid-final-target'}.jpg, docs/concepts/vr-light-table/captures). The APK draws a mobile tier of this: expect less. The stage beside it is a web mock.</figcaption>
@@ -374,10 +382,15 @@ const EVENTS: { at: number; lane: number; label: string }[] = [
   { at: 14.6, lane: 0, label: 'headset off' }, { at: 14.8, lane: 2, label: 'returned' }, { at: 14.9, lane: 1, label: 'web leads' },
 ];
 
-function Transport({ t, playing, speed, setSpeed, seek, stepTo, replay, toggle, setPlaying, prep }: {
+/** Unpaired: the page arms a baton nobody claims, and the APK opens its bundle. */
+const UNPAIRED_EVENTS = [...EVENTS.filter((e) => e.at < FOCUSED || (e.lane === 0 && e.at > 14)), { at: FOCUSED, lane: 3, label: 'FOCUSED · the bundle at home' }, { at: FOCUSED + 0.8, lane: 2, label: 'still armed · nobody claims it' }];
+
+function Transport({ t, playing, speed, setSpeed, seek, stepTo, replay, toggle, setPlaying, prep, paired, setPaired }: {
   t: number; playing: boolean; speed: number; setSpeed: (s: (typeof SPEEDS)[number]) => void; seek: (t: number) => void;
   stepTo: (d: 1 | -1) => void; replay: () => void; toggle: () => void; setPlaying: (p: boolean) => void; prep: Prep;
+  paired: boolean; setPaired: (p: boolean) => void;
 }) {
+  const events = paired ? EVENTS : UNPAIRED_EVENTS;
   const cur = stateAt(t);
   const pct = (x: number) => 100 * xOf(x) + '%';
   void prep;
@@ -391,6 +404,10 @@ function Transport({ t, playing, speed, setSpeed, seek, stepTo, replay, toggle, 
         <span className="cx-speed" role="group" aria-label="Speed">
           {SPEEDS.map((s) => <button key={s} type="button" aria-pressed={speed === s} onClick={() => setSpeed(s)} title={s === 1 ? 'Real time from FOCUSED on' : 'Slower than real time'}>{s === 1 ? '1×' : s === 0.5 ? '½×' : '¼×'}</button>)}
         </span>
+        <span className="cx-speed cx-pair" role="group" aria-label="The headset's door">
+          <button type="button" aria-pressed={paired} onClick={() => setPaired(true)} title="The Quest is paired with Lynx's LAN door: the crossing">Paired</button>
+          <button type="button" aria-pressed={!paired} onClick={() => setPaired(false)} title="No paired door: the APK opens its bundled Kettle at home, as the judged build does">Unpaired</button>
+        </span>
         <span className="cx-now">{cur.label} <i>{cur.clock}</i></span>
       </div>
       <div className="cx-track">
@@ -403,11 +420,11 @@ function Transport({ t, playing, speed, setSpeed, seek, stepTo, replay, toggle, 
         <svg className="cx-lanes" viewBox="0 0 1000 80" preserveAspectRatio="none" aria-hidden="true">
           {LANES.map((_, i) => <line key={i} x1="0" x2="1000" y1={10 + i * 20} y2={10 + i * 20} />)}
           <rect className="blk" x={1000 * xOf(3.4)} width={1000 * (xOf(FOCUSED) - xOf(3.4))} y="0" height="80" />
-          {EVENTS.map((e, i) => <circle key={i} cx={1000 * xOf(e.at)} cy={10 + e.lane * 20} r="4" className={t >= e.at ? 'on' : ''} />)}
+          {events.map((e, i) => <circle key={i} cx={1000 * xOf(e.at)} cy={10 + e.lane * 20} r="4" className={t >= e.at ? 'on' : ''} />)}
         </svg>
         <div className="cx-lanenames">{LANES.map((l) => <span key={l}>{l}</span>)}</div>
         <div className="cx-evs">
-          {EVENTS.filter((e) => e.at <= t + 0.02 && t - e.at < 3 && !EVENTS.some((o) => o.lane === e.lane && o.at > e.at && o.at <= t + 0.02)).map((e, i) => (
+          {events.filter((e) => e.at <= t + 0.02 && t - e.at < 3 && !events.some((o) => o.lane === e.lane && o.at > e.at && o.at <= t + 0.02)).map((e, i) => (
             <span key={i} style={{ left: pct(e.at), top: e.lane * 20 }} className={t >= e.at ? 'on' : ''}>{e.label}</span>
           ))}
         </div>

@@ -80,9 +80,22 @@ export interface Scene {
   baton: 'none' | 'armed' | 'claimed' | 'live' | 'returned';
 }
 
-export function sceneAt(t: number): Scene {
+/**
+ * The scene at t. `paired` false is the design's other ending: with no paired door the APK cannot claim anything, so it
+ * opens as the judged build does, straight on the bundled Kettle at home - no passthrough, no lift, no live lamp - and
+ * the page's armed baton is never claimed (it expires after 120 s, with no error).
+ */
+export function sceneAt(t: number, paired = true): Scene {
   const F = FOCUSED, off = STATES[9].at;
   const black = Math.max(smooth(3.4, 3.75, t) * (1 - smooth(F - 0.25, F, t)), smooth(off, off + 0.25, t) * (1 - smooth(off + 0.35, off + 0.7, t)));
+  if (!paired) {
+    const vr = t >= F - 0.3 && t < off + 0.3;
+    return {
+      page: t < 4 ? 1 : t >= off + 0.3 ? 1 : 0, black, pass: 0, studio: vr ? 1 : 0, lift: 1, table: vr ? 1 : 0,
+      rise: smooth(F + 0.2, F + 1.1, t), lamp: smooth(F + 0.4, F + 1.0, t) * 0.7, caption: 0, peek: 0, moved: 0, crumb: 0,
+      baton: t < 1.4 ? 'none' : 'armed',
+    };
+  }
   return {
     page: t < 4 ? 1 : t >= off + 0.3 ? 1 : 0,
     black,
