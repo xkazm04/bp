@@ -1182,8 +1182,10 @@ FOCUSED on), a panel per state saying who draws it, what crosses the network, wh
 marked real / measured / documented / [unverified] / NEW / mock, a Paired / Unpaired switch, and a closing "what to
 expect" card. It runs the place baton for real on its clock (below): the page arms it, the page stands in for the APK on
 loopback for the claim, the table's writes and the return, and the page behind the overlay follows the table on the
-stream. Keys while it is open are its own (`data-keys="own"`): Space,
-arrows, Home, E, Esc.
+stream. Keys while it is open are its own (`data-keys="own"`, and a window capture listener for focus that fell outside
+it, so no plan key acts under the overlay): Space, arrows, Home, E, Esc. At passthrough the panel offers the first
+crossing's pin ceremony (two touches, once). `npm run check:crossing` holds its clock, scene, follow rule, lazy chunk,
+12 px floor and the comfort doctrine (no clock-driven style moves the view).
 
 **The place baton** (`packages/core/src/session/place.ts`, routes in the table above): the one record that crosses. The
 page arms it with the human token (120 s), one device claims it, only that device writes while it is claimed or live,
