@@ -527,8 +527,9 @@ function Summary({ prep, wire, onReplay, onClose }: { prep: Prep; wire: Wire; on
           <ul>
             <li>The design’s web UI: the rail’s VR · Table card arms the baton from your place and shows its life (armed, claimed, the table leads, handed back, expired). Nothing launches from the page.</li>
             <li>The place is the page’s own hash plus a target: <code>{prep.a.hash === '#' ? '(the site)' : prep.a.hash}</code> → {prep.a.target.kind} <code>{prep.a.target.id}</code>.</li>
-            <li>The place baton is served and guarded: arm, claim, live, return {ok ? <>ran on this clock, <b>{total.toLocaleString('en')} bytes</b> {all ? 'for the whole crossing' : 'so far'}, stream events included</> : 'is simulated here (the route did not answer)'}; 0 video frames, 0 audio.</li>
-            <li>The page follows the table on the companion stream (<code>event: place</code>): when the table led, the plan behind this overlay flew to {prep.next ? prep.next.name : 'the next place'}; on the return it leads again and keeps the 10 s crumb.</li>
+            <li>The place baton is served and guarded: arm, claim, live, return {wire.off ? 'are simulated here (the route did not answer)' : ok ? <>ran on this clock, <b>{total.toLocaleString('en')} bytes</b> {all ? 'for the whole crossing' : 'so far'}, stream events included</> : wire.real.length ? 'ran, with a refusal: the network list shows which' : 'run on this clock against this server: play the crossing to see each request and its bytes'}; 0 video frames, 0 audio.</li>
+            <li>The page follows the table on the companion stream (<code>event: place</code>): {wire.heard.some((h) => h.state === 'live') ? <>when the table led, the plan behind this overlay flew to {prep.next ? prep.next.name : 'the next place'}</> : <>when the table leads, the plan behind this overlay flies to {prep.next ? prep.next.name : 'the next place'}</>}; on the return it leads again and keeps the 10 s crumb.</li>
+            <li>The real topology: with apps/server as the one companion process (the one VR’s BpLink talks to), the baton and its events live there too; a script proved a device writing the place on apps/server moves this page.</li>
             <li>The desk already looks like the table’s first frame: the blueprint is now lit glass on a light table.</li>
           </ul>
         </div>
