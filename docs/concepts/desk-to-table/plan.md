@@ -103,6 +103,13 @@ Lynx.
 - Keep `apps/web/public/crossing/` (two real UE captures, 160 KB): the demo shows them as REAL.
 - **Pass:** `npm run typecheck`, `npm run check` (121 or more) and `npm run build` are green on the rebased tip.
 
+**Done 2026-10-28.** All 50 commits rebased onto `0051ba9` with no conflicts: `docs/blueprint-ui.md` merged on its own,
+with the new section "The light table and the crossing" beside master's. The tip is `164532f`.
+- `npm run typecheck` passed, `npm run check` was 121/121 and `npm run build` was green. Its warnings come from the
+  existing `api/products/[slug]/shots` route, as in the hackathon.
+- A dev smoke test answered 200 on `/`, `/crossing` and `GET /api/session/place` (`{"state":"none"}`).
+- Master fast-forwarded to it.
+
 ### W1. A review pass before the port is called done
 
 The hackathon's two code reviews fixed 17 issues. Read the rebased diff once more against `../../blueprint-ui.md` and
