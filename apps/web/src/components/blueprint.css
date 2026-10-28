@@ -12,10 +12,16 @@
 .bp button { font-family: inherit; color: inherit; font-size: inherit; cursor: pointer; }
 .bp [role='button'] { cursor: pointer; }
 .bp :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.bp-paper { position: fixed; inset: 0; background: radial-gradient(ellipse 85% 80% at 38% 46%, var(--paper-hi) 0%, var(--paper-mid) 34%, var(--paper) 70%, var(--paper-lo) 100%); }
+/* The paper is the light table's glass: lit from under (the bright core), deeper toward the edges, with the warm pool
+   the lamp throws from its rail (top right, where Glim hangs). The frame is the table's backlit bezel. */
+.bp-paper { position: fixed; inset: 0; background:
+  radial-gradient(circle at 88% 9%, var(--lamp) 0%, transparent 26%),
+  radial-gradient(ellipse 62% 58% at 42% 50%, var(--paper-core) 0%, transparent 70%),
+  radial-gradient(ellipse 85% 80% at 38% 46%, var(--paper-hi) 0%, var(--paper-mid) 34%, var(--paper) 70%, var(--paper-lo) 100%); }
 .bp-vig { position: fixed; inset: 0; pointer-events: none; box-shadow: inset 0 0 220px 40px var(--vignette); }
-.bp-frame { position: fixed; inset: 5px; border: 1px solid var(--ink-3); pointer-events: none; }
-.bp-frame:after { content: ''; position: absolute; inset: 3px; border: 1px solid var(--ink-4); }
+.bp-frame { position: fixed; inset: 4px; border: 1.5px solid color-mix(in srgb, var(--rim) 70%, transparent); border-radius: 3px; pointer-events: none;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--glow) 30%, transparent), inset 0 0 14px color-mix(in srgb, var(--glow) 34%, transparent), inset 0 0 46px color-mix(in srgb, var(--glow) 12%, transparent); }
+.bp-frame:after { content: ''; position: absolute; inset: 4px; border: 1px solid color-mix(in srgb, var(--glow) 22%, transparent); }
 .bp-map { position: fixed; left: 0; top: 0; display: block; cursor: grab; touch-action: none; outline: none; }
 .bp-map[data-cursor='pan'] { cursor: grabbing; } .bp-map[data-cursor='pt'] { cursor: pointer; } .bp-map[data-cursor='zin'] { cursor: zoom-in; } .bp-map[data-cursor='sel'] { cursor: crosshair; }
 .bp-map:focus-visible { box-shadow: 0 0 0 2px var(--accent) inset; }

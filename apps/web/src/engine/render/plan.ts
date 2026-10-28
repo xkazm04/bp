@@ -22,14 +22,25 @@ const NO_DASH: number[] = [];
 const scratch: SRect = { x: 0, y: 0, w: 0, h: 0 };
 
 export function drawGrid(E: Engine, ctx: CanvasRenderingContext2D, v: View) {
-  const k = v.k, th = E.th;
-  for (const [step, a] of [[40, 0.045], [200, 0.09]] as const) {
+  const k = v.k, th = E.th, dark = th.mode === 'dark';
+  // the table's ruled glass: a fine rule, a bolder one every fifth, and registration crosses where the bold ones meet
+  for (const [step, a] of [[40, 0.075], [200, 0.13]] as const) {
     const sp = step * k; if (sp < 9) continue;
-    ctx.strokeStyle = th.alpha(th.accent, a * clamp((sp - 9) / 12, 0, 1) * (th.mode === 'dark' ? 1 : 0.9)); ctx.lineWidth = 1; ctx.beginPath();
+    ctx.strokeStyle = th.alpha(step === 40 ? th.glow : th.glassEdge, a * clamp((sp - 9) / 12, 0, 1) * (dark ? 1 : 0.8)); ctx.lineWidth = 1; ctx.beginPath();
     const wx0 = v.x + (v.c0x - v.FW / 2) / k, wy0 = v.y + (v.c0y - v.FH / 2) / k;
     const x0 = Math.floor(wx0 / step) * step, y0 = Math.floor(wy0 / step) * step;
     for (let x = x0; sxv(v, x) < v.c1x; x += step) { const X = Math.round(sxv(v, x)) + 0.5; ctx.moveTo(X, v.c0y); ctx.lineTo(X, v.c1y); }
     for (let y = y0; syv(v, y) < v.c1y; y += step) { const Y = Math.round(syv(v, y)) + 0.5; ctx.moveTo(v.c0x, Y); ctx.lineTo(v.c1x, Y); }
+    ctx.stroke();
+  }
+  const sp = 200 * k;
+  if (sp >= 48) {
+    const wx0 = v.x + (v.c0x - v.FW / 2) / k, wy0 = v.y + (v.c0y - v.FH / 2) / k, c = Math.min(6, sp * 0.05);
+    ctx.strokeStyle = th.alpha(th.glow, (dark ? 0.42 : 0.3) * clamp((sp - 48) / 30, 0, 1)); ctx.lineWidth = 1; ctx.beginPath();
+    for (let x = Math.floor(wx0 / 200) * 200; sxv(v, x) < v.c1x + c; x += 200) {
+      const X = Math.round(sxv(v, x)) + 0.5;
+      for (let y = Math.floor(wy0 / 200) * 200; syv(v, y) < v.c1y + c; y += 200) { const Y = Math.round(syv(v, y)) + 0.5; ctx.moveTo(X - c, Y); ctx.lineTo(X + c, Y); ctx.moveTo(X, Y - c); ctx.lineTo(X, Y + c); }
+    }
     ctx.stroke();
   }
 }
@@ -345,17 +356,53 @@ function screenPath(world: Path2D, v: View): Path2D {
   return p;
 }
 
+/**
+ * The building is a slab of lit glass on the table: its front edge shows below the plan as a thickness band, lit from
+ * under, like the table's extrusions seen from a seat. Drawn outside the building's own outline only, so no place moves
+ * and nothing on the plan is covered.
+ */
+function drawSlab(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: BldNode) {
+  const th = E.th, k = v.k, t = clamp(22 * k, 6, 16), dark = th.mode === 'dark';
+  const r = rs(v, B, scratch);
+  if (patchMiss(r.x - 30, r.y - 30, r.w + 60, r.h + t + 60, 0)) return;
+  const o = screenPath(E.wallPaths[B.i].outline, v), clip = new Path2D();
+  // the glow the table's light throws round the building, under everything
+  ctx.lineJoin = 'round'; ctx.strokeStyle = th.alpha(th.glow, dark ? 0.08 : 0.05); ctx.lineWidth = clamp(18 * k, 3.5, 18) + clamp(30 * k, 10, 30); ctx.stroke(o);
+  clip.rect(v.c0x - 40, v.c0y - 40, v.c1x - v.c0x + 80, v.c1y - v.c0y + 80); clip.addPath(o);
+  ctx.save(); ctx.clip(clip, 'evenodd');
+  const g = ctx.createLinearGradient(0, r.y, 0, r.y + r.h + t);
+  g.addColorStop(0, th.alpha(th.glow, dark ? 0.2 : 0.14)); g.addColorStop(1, th.alpha(th.glow, dark ? 0.34 : 0.2));
+  ctx.translate(0, t); ctx.fillStyle = g; ctx.fill(o);
+  ctx.strokeStyle = th.alpha(th.glow, dark ? 0.75 : 0.5); ctx.lineWidth = 1.2; ctx.stroke(o);
+  ctx.restore();
+}
+
+/** Each room is a pane of glass lit from the table: brighter at its far (top) edge, a lit lip along that edge. */
+function drawGlass(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: BldNode) {
+  const th = E.th, k = v.k, dark = th.mode === 'dark', lip = clamp(3 * k, 1, 3);
+  for (const W of B.wings) for (const R of W.rooms) {
+    const r = rs(v, R, scratch);
+    if (!onView(v, r, 10) || patchMiss(r.x, r.y, r.w, r.h, 0)) continue;
+    const g = ctx.createLinearGradient(0, r.y, 0, r.y + r.h);
+    g.addColorStop(0, th.alpha(th.glow, dark ? 0.13 : 0.08)); g.addColorStop(0.4, th.alpha(th.glow, dark ? 0.035 : 0.02)); g.addColorStop(1, th.alpha(th.glow, dark ? 0.07 : 0.04));
+    ctx.fillStyle = g; ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.fillStyle = th.alpha(th.glassEdge, dark ? 0.22 : 0.12); ctx.fillRect(r.x, r.y, r.w, lip);
+  }
+}
+
 export function drawBuildings(E: Engine, ctx: CanvasRenderingContext2D, v: View) {
   const k = v.k, th = E.th, lod = E.lod(k);
   for (const B of E.M.L.blds) {
     const br = rs(v, B, scratch);
     if (!onView(v, br, 140) || patchMiss(br.x, br.y, br.w, br.h, 24)) continue;
+    drawSlab(E, ctx, v, B);
     for (const W of B.wings) {
       const r = rs(v, W, scratch);
       if (patchMiss(r.x, r.y, r.w, r.h, 0)) continue;
       const c0 = E.counts(W.id, W.feats), sh = (c0.live + c0.flagged) / Math.max(1, c0.n);
       ctx.fillStyle = th.inkA(0.02 + 0.075 * sh); ctx.fillRect(r.x, r.y, r.w, r.h);
     }
+    drawGlass(E, ctx, v, B);
     if (lod < 0.995) drawRibbons(E, ctx, v, B, 1 - lod);
     if (lod > 0.005) {
       for (const W of B.wings) {
@@ -369,10 +416,19 @@ export function drawBuildings(E: Engine, ctx: CanvasRenderingContext2D, v: View)
     const paths = E.wallPaths[B.i];
     if (k > 0.12) { ctx.strokeStyle = th.inkA(0.5); ctx.lineWidth = 1; ctx.stroke(screenPath(paths.bays, v)); }
     const wi = clamp(6 * k, 1.2, 6), ww = clamp(10 * k, 2, 10), wo = clamp(18 * k, 3.5, 18);
-    ctx.strokeStyle = th.ink; ctx.lineJoin = 'miter';
-    ctx.lineWidth = wi; ctx.stroke(screenPath(paths.rooms, v));
-    ctx.lineWidth = ww; ctx.stroke(screenPath(paths.wings, v));
-    const out = screenPath(paths.outline, v);
+    const rooms = screenPath(paths.rooms, v), wings = screenPath(paths.wings, v), out = screenPath(paths.outline, v);
+    // the walls are lit glass: light from under the table blooms round them before the line itself is drawn
+    const dark = th.mode === 'dark', bloom = dark ? 1 : 0.55;
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = th.alpha(th.glow, 0.09 * bloom); ctx.lineWidth = wi + clamp(18 * k, 6, 18); ctx.stroke(rooms);
+    ctx.strokeStyle = th.alpha(th.glow, 0.22 * bloom); ctx.lineWidth = wi + clamp(7 * k, 3, 7); ctx.stroke(rooms);
+    // each room is an extruded pane: its walls' lower edge shows through the glass just below the top edge
+    const d = clamp(7 * k, 2, 7);
+    ctx.save(); ctx.translate(0, d); ctx.strokeStyle = th.alpha(th.glassEdge, dark ? 0.42 : 0.28); ctx.lineWidth = 1; ctx.stroke(rooms); ctx.restore();
+    ctx.strokeStyle = th.glassEdge; ctx.lineJoin = 'miter';
+    ctx.lineWidth = wi; ctx.stroke(rooms);
+    ctx.strokeStyle = th.ink;
+    ctx.lineWidth = ww; ctx.stroke(wings);
     ctx.lineWidth = wo; ctx.stroke(out);
     if (wo > 6) { const p = th.pattern({ kind: 'diag', size: 5, color: th.inkA(0.75), lw: 1.1, bg: th.poche }); if (p) { ctx.lineWidth = wo - 4; ctx.strokeStyle = p; ctx.stroke(out); } }
   }
