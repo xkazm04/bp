@@ -37,6 +37,12 @@ function deskConversation(): string | undefined {
 /** Where the table leads next in the demo (the person dives one place deeper on the table; the page follows). */
 export interface NextPlace { hash: string; name: string; bay: BayNode | null; room: RoomNode | null; level: 2 | 3 }
 
+/** What the lamp and the hand-back crumb call a place: the feature, the bay and its room, the room, the wing, or the site
+ *  (the one naming rule: placeOf names the place the page is at, follow.ts placeName the place a hash names). */
+export function nameOf(E: Engine, tile: TileNode | null, bay: BayNode | null, room: RoomNode | null, wing: WingNode | null): string {
+  return tile ? tile.f.name : bay ? bay.name + ' · ' + bay.room.name : room ? room.name : wing ? wing.def.name : E.M.P.name + ' · the whole site';
+}
+
 export function placeOf(E: Engine): CrossPlace {
   const S = E.S, L = E.M.L;
   let wing: WingNode | null = null, room: RoomNode | null = null, bay: BayNode | null = null, tile: TileNode | null = null;
@@ -52,7 +58,7 @@ export function placeOf(E: Engine): CrossPlace {
   if (room) crumbs.push(room.name);
   if (bay) crumbs.push(bay.name);
   if (tile) crumbs.push(tile.f.name);
-  const name = tile ? tile.f.name : bay ? bay.name + ' · ' + room!.name : room ? room.name : wing ? wing.def.name : E.M.P.name + ' · the whole site';
+  const name = nameOf(E, tile, bay, room, wing);
   const target: CrossPlace['target'] = tile ? { kind: 'feature', id: tile.f.id } : room ? { kind: 'room', id: room.id } : wing ? { kind: 'wing', id: wing.id } : { kind: 'site', id: E.M.P.name.toLowerCase() };
   return { level, hash: location.hash || '#', target, wing, room, bay, tile, crumbs, name, lens: S.view, product: E.M.live?.slug ?? 'kettle', at: new Date().toISOString().replace(/\.\d+Z$/, 'Z'), conversationId: deskConversation() };
 }

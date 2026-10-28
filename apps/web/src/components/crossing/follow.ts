@@ -6,6 +6,7 @@
 // listens while the plan is up, whether or not the crossing's own overlay ever opened.
 import type { PlaceBaton } from '@bp/core/session/place';
 import type { Engine } from '@/engine/Engine';
+import { nameOf } from './place';
 
 export const PLACE_EVENT = 'bp:place';
 
@@ -37,14 +38,8 @@ export function followHash(b: PlaceBaton, product: string): string | null {
 
 /** What the crumb names: the place's room, bay, wing or feature, from its hash. */
 export function placeName(E: Engine, hash: string): string {
-  const h = new URLSearchParams(hash.replace(/^#/, ''));
-  const open = h.get('open'), at = h.get('at');
-  if (open && E.M.P.F[open]) return E.M.P.F[open].name;
-  if (at) {
-    const L = E.M.L, bay = L.BAY[at], room = L.ROOM[at], wing = L.WING[at];
-    if (bay) return bay.name + ' · ' + bay.room.name;
-    if (room) return room.name;
-    if (wing) return wing.def.name;
-  }
-  return E.M.P.name + ' · the whole site';
+  const h = new URLSearchParams(hash.replace(/^#/, '')), L = E.M.L;
+  const open = h.get('open'), at = h.get('at') ?? '';
+  if (open && E.M.P.F[open]) return E.M.P.F[open].name; // the feature (not only its tile at ?scale > 1)
+  return nameOf(E, null, L.BAY[at] ?? null, L.ROOM[at] ?? null, L.WING[at] ?? null);
 }
