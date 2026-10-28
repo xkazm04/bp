@@ -141,11 +141,7 @@ ABpTable* UBpHands::FindTable()
 {
 	if (!Table.IsValid() && GetWorld())
 	{
-		for (TActorIterator<ABpTable> It(GetWorld()); It; ++It)
-		{
-			Table = *It;
-			break;
-		}
+		if (TActorIterator<ABpTable> It(GetWorld()); It) Table = *It;
 	}
 	return Table.Get();
 }

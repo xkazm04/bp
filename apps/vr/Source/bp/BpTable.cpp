@@ -1303,7 +1303,8 @@ void ABpTable::BuildRoomNames(const FBpPlan& Plan)
 		FString Name;
 		if (CardCm * FMath::Cos(Tilt) <= Bottom - (A.Y + RoomNameClearCm))
 		{
-			const FString Text = Recipe.bUpper ? Room.name.ToUpper() : Room.name;
+			const auto Cased = [](const BpType::FRecipe& R, const FString& T) { return R.bUpper ? T.ToUpper() : T; };
+			const FString Text = Cased(Recipe, Room.name);
 			TArray<FString> Cands = { Text };
 			TArray<FString> Words;
 			Text.ParseIntoArray(Words, TEXT(" "));

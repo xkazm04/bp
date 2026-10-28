@@ -230,12 +230,11 @@ void ABpPawn::MakeWristPanel()
 	}
 	WristPanel->RegisterComponent();
 	// Room mode brings the rooms tab (WP3).
-	for (TActorIterator<ABpTable> It(GetWorld()); It; ++It)
+	if (TActorIterator<ABpTable> It(GetWorld()); It)
 	{
 		WristTable = *It;
 		RoomHandle = It->OnRoomModeChanged().AddUObject(this, &ABpPawn::OnWristRoomChanged);
 		WristRoomMode = It->GetRoomModeId();
-		break;
 	}
 	FBpLinkModule& Link = FBpLinkModule::Get();
 	ScanHandle = Link.OnScanState().AddUObject(this, &ABpPawn::ReceiveScanState);

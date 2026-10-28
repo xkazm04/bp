@@ -132,10 +132,7 @@ ABpTable* ABpGameMode::EnsureTable()
 {
 	UWorld* World = GetWorld();
 	if (!World) return nullptr;
-	for (TActorIterator<ABpTable> It(World); It; ++It)
-	{
-		return *It;
-	}
+	if (TActorIterator<ABpTable> It(World); It) return *It;
 	FActorSpawnParameters Params;
 	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	ABpTable* Table = World->SpawnActor<ABpTable>(ABpTable::StaticClass(), FTransform::Identity, Params);
