@@ -386,6 +386,14 @@ function Panel({ prep, t, paired }: { prep: Prep; t: number; paired: boolean }) 
           <div key={i}><dt>{KEY_LABEL[f.k]}</dt><dd>{f.text}{f.marks.map((m) => <em key={m} className={'mk mk-' + m}>{MARK_LABEL[m]}</em>)}</dd></div>
         ))}
       </dl>
+      {paired && (st.id === 'passthrough' || st.id === 'claimed' || st.id === 'lift') && (
+        // the design's bet in one look: the page the person left and the sheet the headset draws should read as one thing
+        <figure className="cx-pair2">
+          <div><img src={prep.pageA} alt="The page on the monitor, as Chrome drew it" /><span>The page on your monitor · Chrome on Lynx <em className="mk mk-real">real</em></span></div>
+          <div><img src={prep.tableA} alt="The sheet the headset draws, mocked here" /><span>The sheet the APK draws · web mock <em className="mk mk-mock">mock</em></span></div>
+          <figcaption>Continuity, not copying: the same plan data at the same place, drawn twice, by two renderers on two machines. The upgraded page already wears the table’s glass, so the lift reads as one sheet moving.</figcaption>
+        </figure>
+      )}
       {paired && prep.a.product === 'kettle' && (st.id === 'fade' || st.id === 'arrived' || st.id === 'live') && (
         <figure className="cx-real">
           {/* the table's room once it has dived into one (from the site or a wing it dives into a room) */}

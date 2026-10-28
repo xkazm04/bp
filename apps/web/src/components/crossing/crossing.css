@@ -147,6 +147,11 @@
 .cx-ran code { font-size: 12.5px; color: #ffd38a; }
 .cx-net .nt b.ok { color: #9ff3d4; } .cx-net .nt b.bad { color: #ffb4a6; }
 .cx-real { margin: 14px 0 0; }
+.cx-pair2 { margin: 14px 0 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.cx-pair2 img { display: block; width: 100%; height: auto; border: 1px solid rgba(232, 244, 255, 0.3); }
+.cx-pair2 span { display: block; font-size: 12px; color: rgba(232, 244, 255, 0.8); margin-top: 4px; }
+.cx-pair2 .mk { margin-left: 4px; }
+.cx-pair2 figcaption { grid-column: 1 / -1; font-size: 13px; color: rgba(232, 244, 255, 0.78); }
 .cx-real img { display: block; width: 100%; height: auto; border: 1px solid rgba(232, 244, 255, 0.3); }
 .cx-real figcaption { font-size: 13px; color: rgba(232, 244, 255, 0.78); margin-top: 6px; }
 .cx-honest { font-size: 13px; color: rgba(232, 244, 255, 0.7); margin: 16px 0 0; }
