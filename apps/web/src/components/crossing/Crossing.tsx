@@ -55,6 +55,8 @@ export default function Crossing({ onClose }: { onClose: (left?: string) => void
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(0.5);
   const [paired, setPaired] = useState(true);
+  // the first crossing's pin ceremony (two touches, once), shown at passthrough on request; the clock holds meanwhile
+  const [cere, setCere] = useState(false);
   // the baton's requests as they ran against this server, on the crossing's clock; the place events the page heard back
   const [real, setReal] = useState<Exchange[]>([]);
   const [batonOff, setBatonOff] = useState(false);
@@ -181,7 +183,8 @@ export default function Crossing({ onClose }: { onClose: (left?: string) => void
         <button type="button" className="cx-x" aria-pressed={sum || ended} onClick={() => { setPlaying(false); setSum((v) => !(v || ended)); }} title="What to expect from this design ( E )">What to expect</button>
         <button type="button" className="cx-x" onClick={close} title="Close ( Esc )">Close · Esc</button>
       </header>
-      {!prep ? <div className="cx-prep"><span className="cx-spin" aria-hidden="true" />Reading your place and drawing the table…</div> : <Body prep={prep} t={t} paired={paired} wire={{ real, heard, off: batonOff }} />}
+      {!prep ? <div className="cx-prep"><span className="cx-spin" aria-hidden="true" />Reading your place and drawing the table…</div> : <Body prep={prep} t={t} paired={paired} wire={{ real, heard, off: batonOff }} cere={cere}
+        onCere={(on) => { setCere(on); if (on) { setPlaying(false); setT(STATES[3].show); } }} />}
       {prep && (sum || (ended && !playing)) && <Summary prep={prep} wire={{ real, heard, off: batonOff }} onReplay={() => { setSum(false); replay(); }} onClose={() => { setSum(false); if (ended) setT(STATES[9].show); }} />}
       {prep && <Transport t={t} playing={playing} speed={speed} setSpeed={setSpeed} seek={seek} stepTo={stepTo} replay={replay}
         toggle={() => (t >= END ? replay() : setPlaying((p) => !p))} setPlaying={setPlaying} paired={paired} setPaired={setPaired} />}
@@ -190,7 +193,7 @@ export default function Crossing({ onClose }: { onClose: (left?: string) => void
 }
 
 // ----------------------------------------------------------------------------------------------- the stage and the panel
-function Body({ prep, t, paired, wire }: { prep: Prep; t: number; paired: boolean; wire: Wire }) {
+function Body({ prep, t, paired, wire, cere, onCere }: { prep: Prep; t: number; paired: boolean; wire: Wire; cere: boolean; onCere: (on: boolean) => void }) {
   const wrap = useRef<HTMLDivElement>(null);
   const [k, setK] = useState(0.6);
   useEffect(() => {
@@ -204,10 +207,10 @@ function Body({ prep, t, paired, wire }: { prep: Prep; t: number; paired: boolea
     <div className="cx-body">
       <div className="cx-stagewrap" ref={wrap}>
         <div className="cx-box" style={{ width: 1600 * k, height: 900 * k }}>
-          <Stage prep={prep} t={t} k={k} paired={paired} />
+          <Stage prep={prep} t={t} k={k} paired={paired} cere={cere && t >= FOCUSED && t < FOCUSED + 0.8} onCere={onCere} />
         </div>
       </div>
-      <Panel prep={prep} t={t} paired={paired} wire={wire} />
+      <Panel prep={prep} t={t} paired={paired} wire={wire} onCere={onCere} />
     </div>
   );
 }
@@ -220,7 +223,7 @@ function paperPose(p: number): string {
   return `translate3d(0px, ${dy.toFixed(1)}px, ${dz.toFixed(1)}px) rotateX(${rx.toFixed(2)}deg) scale(${s.toFixed(4)})`;
 }
 
-function Stage({ prep, t, k, paired }: { prep: Prep; t: number; k: number; paired: boolean }) {
+function Stage({ prep, t, k, paired, cere, onCere }: { prep: Prep; t: number; k: number; paired: boolean; cere: boolean; onCere: (on: boolean) => void }) {
   const sc = sceneAt(t, paired), st = stateAt(t), off = STATES[9].at;
   const inVR = t >= FOCUSED - 0.3 && t < off + 0.3;
   // the headset's layers are built while the blackout hides them, so no layer is created on a frame anyone sees
@@ -262,7 +265,15 @@ function Stage({ prep, t, k, paired }: { prep: Prep; t: number; k: number; paire
                   <span className="cx-claim" style={{ opacity: smooth(FOCUSED + 0.8, FOCUSED + 0.95, t) }}>● {prep.a.hash === '#' ? 'the site' : prep.a.hash}</span>
                 </div>
               )}
-              {paired && t >= FOCUSED - 0.3 && t < FOCUSED + 1.4 && <div className="cx-tap" style={{ opacity: smooth(FOCUSED, FOCUSED + 0.3, t) * (1 - smooth(FOCUSED + 0.9, FOCUSED + 1.3, t)) }} />}
+              {cere && (
+                // the first crossing only: the person taps the desk (the table takes its height), then touches the monitor's
+                // top corners (the sheet will lift from there); Meta's spatial anchors keep both for later sessions
+                <>
+                  <div className="cx-cere-desk" />
+                  <div className="cx-cere-mon"><i className="tl" /><i className="tr" /></div>
+                </>
+              )}
+              {!cere && paired && t >= FOCUSED - 0.3 && t < FOCUSED + 1.4 && <div className="cx-tap" style={{ opacity: smooth(FOCUSED, FOCUSED + 0.3, t) * (1 - smooth(FOCUSED + 0.9, FOCUSED + 1.3, t)) }} />}
               <div className="cx-paper" style={{ transform: paperPose(sc.lift), opacity: Math.max(0.01, paired ? smooth(FOCUSED + 0.85, FOCUSED + 1.05, t) : sc.table) }}>
                 <img className="cx-sheet" src={paired ? prep.tableA : prep.tableHome} alt="" style={{ opacity: 1 - sc.moved }} />
                 {prep.tableB && <img className="cx-sheet" src={prep.tableB} alt="" style={{ opacity: sc.moved }} />}
@@ -284,6 +295,15 @@ function Stage({ prep, t, k, paired }: { prep: Prep; t: number; k: number; paire
       </div>
       {/* the overlay is unscaled: what the person must read stays at 12 px or more at any stage size */}
       <div className="cx-ovl">
+        {cere && (
+          <div className="cx-cere" role="status">
+            <b>First crossing only: two touches pin the desk and the monitor</b>
+            <span className="s1"><i>1</i> Tap your desk: the table takes its height (a 75 cm desk under a 118 cm seated eye is the 43 cm pose).</span>
+            <span className="s2"><i>2</i> Touch the monitor’s top corners: the sheet will lift from there.</span>
+            <span className="cx-cere-note">Meta’s spatial anchors keep both, so later crossings find them again <em className="mk mk-documented">documented</em><em className="mk mk-unverified">[unverified] drift on a 3S</em>. If an anchor is lost, the sheet fades in on the desk instead.</span>
+            <button type="button" onClick={() => onCere(false)}>Done · continue the crossing</button>
+          </div>
+        )}
         <div className={'cx-hud' + (inVR ? '' : ' flat')}>
           <span className={'cx-who ' + (t < 3.4 || t >= off + 0.3 ? 'w-web' : t < FOCUSED ? 'w-none' : sc.studio > 0.5 ? 'w-apk' : 'w-pass')}>
             {t < 3.4 || t >= off + 0.3 ? 'Your eyes · the monitor on Lynx' : t < FOCUSED ? 'Headset · blackout' : sc.studio > 0.5 ? 'Headset · the APK draws' : 'Headset · passthrough'}
@@ -303,7 +323,7 @@ function Stage({ prep, t, k, paired }: { prep: Prep; t: number; k: number; paire
         {inVR && sc.pass > 0.3 && t < FOCUSED + 2.2 && (
           <div className="cx-tags">
             <span className="cx-tag pass">YOUR ROOM · the headset’s cameras (sketched here)</span>
-            {t < FOCUSED + 1.2 && <span className="cx-tag anc">ANCHORS · the desk and monitor you pinned once (two touches), found again</span>}
+            {t < FOCUSED + 1.2 && !cere && <span className="cx-tag anc">ANCHORS · the desk and monitor you pinned once (two touches), found again</span>}
             {t >= FOCUSED + 0.85 && <span className="cx-tag apk">VIRTUAL · the APK draws this sheet of {prep.a.room ? prep.a.room.name : 'the site'}</span>}
           </div>
         )}
@@ -404,7 +424,7 @@ function Lights({ lights, r }: { lights: Light[]; r: number }) {
   );
 }
 
-function Panel({ prep, t, paired, wire }: { prep: Prep; t: number; paired: boolean; wire: Wire }) {
+function Panel({ prep, t, paired, wire, onCere }: { prep: Prep; t: number; paired: boolean; wire: Wire; onCere: (on: boolean) => void }) {
   const st = stateAt(t), sc = sceneAt(t, paired), F = factsFor(st.id, prep.a, prep.next, paired);
   const streamed = prep.next ? wire.heard.find((h) => h.state === 'live' && h.hash === prep.next!.hash)?.size ?? null : null;
   const pk = useMemo(() => packets(prep.a, prep.next, FOCUSED, STATES[8].at, STATES[9].at, wire.real, paired, streamed), [prep, paired, wire.real, streamed]);
@@ -440,6 +460,7 @@ function Panel({ prep, t, paired, wire }: { prep: Prep; t: number; paired: boole
           <figcaption><em className="mk mk-real">REAL</em> The table today in Unreal: {(prep.a.room || (st.id === 'live' && prep.next?.room)) ? 'room mode (Booking & Attendance)' : 'the site plan, level 0'}, a flat capture from the target eye with the PC renderer ({(prep.a.room || (st.id === 'live' && prep.next?.room)) ? 'fag-room-kettle' : 'fid-final-target'}.jpg, docs/concepts/vr-light-table/captures). The APK draws a mobile tier of this: expect less. The stage beside it is a web mock.</figcaption>
         </figure>
       )}
+      {paired && (st.id === 'passthrough' || st.id === 'claimed') && <button type="button" className="cx-cere-btn" onClick={() => onCere(true)}>First crossing? Show the pin ceremony (two touches, once)</button>}
       <h3>Place baton <em className="mk mk-new">NEW</em></h3>
       <ol className="cx-baton">
         {(['none', 'armed', 'claimed', 'live', 'returned'] as const).map((b) => <li key={b} className={sc.baton === b ? 'on' : ''}>{b}</li>)}

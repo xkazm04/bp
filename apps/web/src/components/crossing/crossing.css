@@ -73,6 +73,21 @@
 .cx-anchor .br { right: -10px; bottom: -10px; border-right-width: 5px; border-bottom-width: 5px; }
 .cx-claim { position: absolute; left: 0; bottom: calc(100% + 22px); font: 600 30px/1 var(--font-mono), Consolas, monospace; color: #ffd38a; background: rgba(2, 8, 18, 0.82); padding: 8px 14px; border: 2px solid #ffc35a; white-space: nowrap; }
 .cx-tap { left: 1080px; top: 1180px; width: 240px; height: 120px; border-radius: 50%; border: 4px solid #7fe6ff; box-shadow: 0 0 24px rgba(127, 230, 255, 0.8), inset 0 0 24px rgba(127, 230, 255, 0.5); transform: translateZ(2px); }
+.cx-cere-desk { left: 1080px; top: 1180px; width: 240px; height: 120px; border-radius: 50%; border: 5px solid #7fe6ff; transform: translateZ(2px); animation: cx-cere-a 4s ease-in-out infinite; }
+.cx-cere-mon { left: 940px; top: 184px; width: 520px; height: 292px; transform: translateZ(215px) rotateX(-90deg); transform-style: preserve-3d; pointer-events: none; }
+.cx-cere-mon i { position: absolute; top: -12px; width: 60px; height: 60px; border: 0 solid #ffc35a; animation: cx-cere-b 4s ease-in-out infinite; }
+.cx-cere-mon .tl { left: -12px; border-left-width: 6px; border-top-width: 6px; }
+.cx-cere-mon .tr { right: -12px; border-right-width: 6px; border-top-width: 6px; }
+@keyframes cx-cere-a { 0%, 45% { opacity: 1; transform: translateZ(2px) scale(1); } 20% { transform: translateZ(2px) scale(1.12); } 55%, 100% { opacity: 0.35; transform: translateZ(2px) scale(1); } }
+@keyframes cx-cere-b { 0%, 45% { opacity: 0.15; } 55%, 100% { opacity: 1; } }
+.cx-cere { position: absolute; left: 12px; top: 48px; width: min(420px, 38%); display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; background: rgba(5, 13, 26, 0.94); border: 1px solid rgba(127, 230, 255, 0.5); border-top: 3px solid #7fe6ff; pointer-events: auto; }
+.cx-cere b { font-size: 15px; color: #fff; }
+.cx-cere span { font-size: 14px; } .cx-cere i { font-style: normal; display: inline-block; width: 20px; height: 20px; line-height: 20px; text-align: center; border-radius: 50%; background: #7fe6ff; color: #03142a; font-weight: 700; font-size: 12px; margin-right: 6px; }
+.cx-cere .s2 i { background: #ffc35a; }
+.cx-cere-note { font-size: 13px !important; color: rgba(232, 244, 255, 0.75); }
+.cx-cere button, .cx-cere-btn { align-self: flex-start; height: 30px; padding: 0 12px; background: #0a1a30; border: 1px solid rgba(127, 230, 255, 0.5); font-size: 13px; }
+.cx-cere-btn { margin-top: 12px; width: 100%; color: #dff8ff; }
+@media (prefers-reduced-motion: reduce) { .cx-cere-desk, .cx-cere-mon i { animation: none; } .cx-cere-mon i { opacity: 1; } }
 .cx-paper { left: 400px; top: 370px; width: 1600px; height: 900px; transform-style: preserve-3d; transform-origin: 50% 50%; }
 .cx-sheet { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .cx-edge { position: absolute; inset: -3px; border: 3px solid #e9fbff; border-radius: 4px; box-shadow: 0 0 22px 4px rgba(127, 230, 255, 0.8), inset 0 0 26px rgba(127, 230, 255, 0.45); pointer-events: none; }
