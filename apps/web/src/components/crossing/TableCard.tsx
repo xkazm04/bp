@@ -52,6 +52,8 @@ export function TableCard({ E, onPlay, onClose }: { E: Engine; onPlay: () => voi
         : <button type="button" className="tc-arm" onClick={() => void arm()} autoFocus>{b?.state === 'armed' ? 'Arm again from here' : 'Arm the place baton'}</button>}
       <p className={'tc-state s-' + (b?.state ?? 'none')} role="status">{line}</p>
       {err && <p className="tc-err">{err}</p>}
+      {/* the follow rides the live lamp's stream (follow.ts); the fixture lamp has none, so say it rather than seem broken */}
+      {new URLSearchParams(location.search).get('lamp-fixture') === '1' && <p className="tc-err">The lamp is playing its fixture (lamp-fixture=1): there is no companion stream, so this page will not follow the table.</p>}
       <p className="tc-how">The headset (the standalone APK, paired through the LAN door) claims it when you put it on, lifts this place off your monitor onto the desk, and this page follows the table while you are in it. The door and the APK’s side are not built; the baton and the page’s side are.</p>
       <button type="button" className="tc-play" onClick={onPlay}>▶ Play the crossing from here (prototype)</button>
     </section>
