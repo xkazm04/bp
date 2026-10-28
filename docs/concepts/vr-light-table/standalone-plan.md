@@ -271,6 +271,12 @@ and every handler's guard checks for a loopback Host (`scan/local-only.ts`). Tha
 **Order.** After the first APK (S5) and the tour (S6). The door is about a session of server work and a session of
 BpLink work.
 
+**The `place` scope (2026-10-28).** The crossing from the web app into the table adds a third scope, `place`, for the place
+baton's three verbs (`GET /api/session/place?claim=1`, `POST /api/session/place`, `POST /api/session/place/return`). The door
+sets `x-bp-device` from the paired fingerprint and drops any value the client sent. The routes and the page's half are on
+master, and the door is built on Lynx as an optional phase before the deadline: [`../desk-to-table/plan.md`](../desk-to-table/plan.md),
+D1 and L2-L3.
+
 ## Order and time
 
 | When | Step | Who |

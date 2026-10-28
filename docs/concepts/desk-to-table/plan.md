@@ -127,6 +127,18 @@ the repo's laws, and fix in place:
   - **Pass:** gesture p50 ≤ 16.7 ms.
 - **Text floor.** Run `python scripts/shots.py`, which fails on any text under 12 px, over the new look and the card.
 
+**Done 2026-10-28.**
+- **Device identity:** `deviceOf` is the one reader of `x-bp-device`, and `check:place-baton` now fails if any other server
+  file reads it (seeded red once, then green, 43 cases) (`5f9d8e1`).
+- **Fixture mode:** the card says the page will not follow (`7c20eb2`).
+- **Perf, alone on the machine, production builds side by side** (`0fd9fd0`, `docs/perf.md`):
+  - gesture p50 16.7 ms on every run, so the bar is met;
+  - the settle raster costs 1.5-2x the pre-glass build (home 14 → 29 ms), not the hackathon's +30-40 %;
+  - the cost is spread over seven parts (no single hotspot) and recorded as the bar for later work, unchanged here,
+    since Part W adds nothing new;
+  - the first cuts to try are named there: the bay frames as one path, the lamp sprites at home.
+- **Text floor:** `scripts/shots.py` holds 12 px over the whole matrix, the new table states included, with no page errors.
+
 ### W2. Pin the look
 
 The winner is the code, so the port cannot drift from it. What can drift is the next change.
@@ -138,6 +150,13 @@ The winner is the code, so the port cannot drift from it. What can drift is the 
   - `final-s0..9.png`.
 - **Pass:** those shots and the refs agree when you look at them side by side.
 
+**Done 2026-10-28.**
+- **The matrix** (`04875cd`) now takes a room and a bay in both themes, the table card, and `/crossing` at "Room fades".
+- **The refs** (`2e2f7d6`) are in [`ref/`](ref/README.md): the winner's comparisons, the ten crossing states and the GIF,
+  plus four shots of the port. The PNGs became JPEGs, about 7.4 MB in all.
+- **Side by side:** the ported site plan has the same pane, rim, glass rooms, bloom, slab and lamp light as the winner's.
+  The data has moved on since (master's Kettle has a Communications room), so the plan differs, not the look.
+
 ### W3. Docs and landing, the end of the migration
 
 - `docs/blueprint-ui.md`: the light table look, the card, the follow, `/crossing` and the session routes (the branch
@@ -148,6 +167,12 @@ The winner is the code, so the port cannot drift from it. What can drift is the 
 - **This push ends development on the desk machine.** From here on the project lives on Lynx (owner, 2026-10-28): the
   rest of this plan, and everything after it, runs there. The hackathon worktrees and the arena stay on the desk
   machine as the record; nothing in them is needed on Lynx.
+
+**Done 2026-10-28.**
+- `docs/blueprint-ui.md` now covers the device seam, fixture mode and a pointer to this plan.
+- `standalone-plan.md` S8 has the `place` scope.
+- The VR Light Table README links here.
+- The migration ends with this push; the rest of the plan runs on Lynx.
 
 ## Part L: everything after the migration, on Lynx
 

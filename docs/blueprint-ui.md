@@ -1192,11 +1192,15 @@ crossing's pin ceremony (two touches, once). `npm run check:crossing` holds its 
 **The place baton** (`packages/core/src/session/place.ts`, routes in the table above): the one record that crosses. The
 page arms it with the human token (120 s), one device claims it, only that device writes while it is claimed or live,
 and it returns; an unclaimed baton expires (410). In memory, one per process. The S8 LAN door that would carry the
-device's calls from a Quest is not built: on loopback a caller names itself with `x-bp-device`. A table write (live) and a
+device's calls from a Quest is not built: on loopback a caller names itself with `x-bp-device`, read only by `deviceOf` (`baton.server.ts`), the seam the door will
+set from the paired fingerprint (check:place-baton fails if another server file reads the header). A table write (live) and a
 return go out on the companion stream as `event: place`; the page follows it (`components/crossing/follow.ts`, mounted
 by the crossing's host, so any page follows whether or not the overlay ever opened): a live place flies the plan there with
 the hash route a focus command uses, and a return shows "the table left you at ..." for 10 s. Only the table's writes for
-the page's own product are followed. `npm run check:place-baton` holds the machine, the handlers and the stream events.
+the page's own product are followed. The follow rides the live lamp's stream, so with `?lamp-fixture=1` (no stream) the page
+does not follow, and the card says so. `npm run check:place-baton` holds the machine, the handlers and the stream events.
+The plan that carries this into the VR app (the S8 door, BpLink's half, `ABpCrossing`) is
+`docs/concepts/desk-to-table/plan.md`; the reference shots are in its `ref/`.
 
 ## Done means
 

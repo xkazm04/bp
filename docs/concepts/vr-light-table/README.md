@@ -50,6 +50,9 @@ lenses, scans and waves, drawn for a headset.
   first (seated calibration), and the session script and record (2026-10-26).
 - [`standalone-plan.md`](standalone-plan.md): the competition build, a Quest with no PC: the bundled snapshot (done), the
   Android target and toolchain, a mobile fidelity tier, packaging and submission (2026-10-27).
+- [`../desk-to-table/plan.md`](../desk-to-table/plan.md): the crossing from the web app into the table (2026-10-28): the
+  winner of the `web-vr-crossing` contest and hackathon, its web half on master, and the VR half (the S8 door's `place`
+  scope, BpLink's baton, `ABpCrossing`, the pin ceremony) as an optional phase on Lynx.
 - [`run-locally.md`](run-locally.md): the PC-first route, step by step: setup, build, and running against the server, the
   Simulator or a Quest through Link.
 - [`voice-sdk-plan.md`](voice-sdk-plan.md): speech-to-text in the headset with Meta's Voice SDK for Unreal (Wit.ai), for a
