@@ -273,6 +273,8 @@ function Stage({ prep, t, k, paired, cere, onCere }: { prep: Prep; t: number; k:
           </div>
         )}
         {inVR && sc.pass > 0.001 && <div className="cx-grain" style={{ opacity: sc.pass * 0.35 }} />}
+        {/* the cameras' own look: a lens vignette and a cooler cast, on the passthrough only (the virtual layers draw over it) */}
+        {inVR && sc.pass > 0.001 && <div className="cx-cam" style={{ opacity: sc.pass }} />}
         {warm && (paired ? t < FOCUSED + 2.0 || sc.studio > 0.001 : true) && <Studio o={inVR ? Math.max(0.01, sc.studio) : 0.01} />}
         {warm && (
           <div className="cx-persp">
