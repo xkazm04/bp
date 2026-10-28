@@ -68,7 +68,7 @@ export function nextOf(E: Engine, p: CrossPlace): NextPlace | null {
  * The page as the person sees it, from the live canvas: the paper the CSS draws under it, the plan the engine drew, and the
  * header's crumbs (the chrome is DOM, so it is drawn here as a sketch of itself). 1600 x 900, cover-fitted.
  */
-export function capturePage(crumbs: readonly string[], sub: string): HTMLCanvasElement {
+export function capturePage(crumbs: readonly string[], sub: string, sheet?: { code: string; name: string; stage: string; lines: readonly string[] }): HTMLCanvasElement {
   const W = 1600, H = 900, c = document.createElement('canvas');
   c.width = W; c.height = H;
   const g = c.getContext('2d')!;
@@ -91,6 +91,18 @@ export function capturePage(crumbs: readonly string[], sub: string): HTMLCanvasE
   g.fillText(crumbs.map((x) => x.toUpperCase()).join('  ›  '), 22, 52);
   g.globalAlpha = 0.75; g.font = '500 17px "IBM Plex Sans Condensed", "Arial Narrow", sans-serif'; g.fillText(sub, 22, 80); g.globalAlpha = 1;
   g.fillStyle = card; g.fillRect(W - 82, 86, 70, H - 160); g.fillRect(14, H - 64, W - 28, 50);
+  // at L4 the person reads the feature sheet, a DOM page over the plan: sketched here as the document it is
+  if (sheet) {
+    const x = 120, y = 110, w = W - 300, h = H - 200;
+    g.fillStyle = v('--sheet-b', '#082246'); g.fillRect(x, y, w, h);
+    g.strokeStyle = v('--ink-3', 'rgba(223,240,255,0.38)'); g.lineWidth = 1.5; g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    g.fillStyle = v('--ink-2', 'rgba(223,240,255,0.74)'); g.font = '500 20px "IBM Plex Mono", Consolas, monospace'; g.fillText(sheet.code + '  ·  ' + sheet.stage.toUpperCase(), x + 36, y + 56);
+    g.fillStyle = v('--ink-hi', '#ffffff'); g.font = '600 46px "IBM Plex Sans Condensed", "Arial Narrow", sans-serif'; g.fillText(sheet.name, x + 36, y + 116);
+    g.fillStyle = v('--ink-2', 'rgba(223,240,255,0.74)'); g.font = '400 22px "IBM Plex Sans Condensed", "Arial Narrow", sans-serif';
+    sheet.lines.forEach((l, i) => g.fillText(l, x + 36, y + 176 + i * 36));
+    g.fillStyle = v('--ink-4', 'rgba(223,240,255,0.16)');
+    for (let i = 0; i < 6; i++) g.fillRect(x + 36, y + 176 + sheet.lines.length * 36 + 30 + i * 34, (w - 72) * (0.55 + ((i * 37) % 40) / 100), 12);
+  }
   g.strokeStyle = v('--rim', '#e6fbff'); g.globalAlpha = 0.6; g.lineWidth = 2; g.strokeRect(5, 5, W - 10, H - 10); g.globalAlpha = 1;
   return c;
 }

@@ -12,6 +12,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useEngine } from '../hooks';
 import { GENERAL } from '@bp/core/data/types';
+import { STAGE_WORD } from '@bp/core/model';
 import { END, FOCUSED, STATES, designClock, sceneAt, smooth, stateAt, stateIndex, tOf, xOf } from './timeline';
 import { arrived, capturePage, nextOf, placeOf, type CrossPlace, type NextPlace } from './place';
 import { ART_H, ART_W, drawTable, type Light, type Rise } from './table-art';
@@ -64,7 +65,8 @@ export default function Crossing({ onClose }: { onClose: () => void }) {
     job.current ??= (async () => {
       await new Promise((r) => setTimeout(r, 60));
       const a = placeOf(E), next = nextOf(E, a);
-      const pageA = jpeg(capturePage(a.crumbs, sub(a)));
+      const f = a.tile?.f, sheet = f ? { code: f.code || f.id, name: f.name, stage: f.stage ? STAGE_WORD[f.stage] : 'not yet drawn', lines: f.trouble.slice(0, 3).map((x) => '⚑ ' + (E.M.P.LENS[x.lens]?.name ?? x.lens) + ': ' + x.why) } : undefined;
+      const pageA = jpeg(capturePage(a.crumbs, sub(a), sheet));
       const TA = drawTable(E, a, next);
       let pageB: string | null = null, tableB: string | null = null, risesB: Rise[] = TA.rises;
       if (next) {
