@@ -362,6 +362,8 @@ function ribSeg(E: Engine, ctx: CanvasRenderingContext2D, f: Feature, x: number,
   const Lv = E.live(f);
   stageFill(ctx, th, st, x, y, w, h, Lv.rolloutPct, Lv.progressPct, E.isNow);
   if (!st || st === 'specified' || st === 'idea') { stageStroke(ctx, th, st, aa, 1); ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1); ctx.setLineDash(NO_DASH); ctx.globalAlpha = aa; }
+  // a feature that exists is a slab of glass on the table: its lit top edge (the table's white bevel)
+  else { ctx.fillStyle = th.alpha(th.glassEdge, th.mode === 'dark' ? 0.6 : 0.35); ctx.fillRect(x, y, w, h >= 8 ? 1.5 : 1); }
   if (st && E.isNow) {
     const D = E.mixS.topD, top = E.mixS.top, hg = f.health, hl = top ? healthUnder(f, top) : hg;
     if (hg === hl || D <= 0.001) healthMarks(E, ctx, D > 0.999 ? hl : hg, x, y, w, h, true, 1);
@@ -389,7 +391,10 @@ function drawRibbons(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: BldNo
         const rb = Bay.rib, x = sxv(v, rb.x), y = syv(v, rb.y), w = rb.w * k, h = rb.h * k, n = Bay.tiles.length, sw = w / n;
         if (y > v.c1y + 10 || y + h < v.c0y - 10 || x > v.c1x + 10 || x + w < v.c0x - 10 || patchMiss(x, y, w, h, 12)) continue;
         for (let i = 0; i < n; i++) ribSeg(E, ctx, Bay.tiles[i].f, x + i * sw + 1, y, sw - 2, h, alpha, k);
-        ctx.globalAlpha = alpha * 0.55; ctx.strokeStyle = E.th.inkA(0.7); ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1); ctx.globalAlpha = 1;
+        // the bay's ribbon is a lit glass tray: a soft glow round it and a bright edge, as the table outlines its slabs
+        const th = E.th, dk = th.mode === 'dark';
+        ctx.globalAlpha = alpha; ctx.strokeStyle = th.alpha(th.glow, dk ? 0.22 : 0.12); ctx.lineWidth = 3; ctx.strokeRect(x - 0.5, y - 0.5, w + 1, h + 1);
+        ctx.strokeStyle = th.alpha(th.glassEdge, dk ? 0.75 : 0.5); ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1); ctx.globalAlpha = 1;
       }
     }
   }
