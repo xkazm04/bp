@@ -323,6 +323,7 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
       <canvas ref={cv} className="bp-map" tabIndex={0} role="application"
         aria-label={'Zoomable floor plan of the product with the ' + (product ? 'live lens scan' : 'simulated agent swarm') + ' working over it. Scroll or pinch to zoom, drag to pan, click to go one level deeper. Plus and minus zoom, arrows walk rooms, Enter opens, Escape goes back. Shift-drag draws a selection.'} />
       <div className="bp-vig" />
+      <div className="bp-sheen" />
       <div className="bp-frame" />
       {!engine && buildErr && <LiveEmpty slug={product || 'kettle'} kettle={!product} live={{ ...live, status: 'error', error: buildErr }} />}
       {product && !engine && !buildErr && <LiveEmpty slug={product} live={live} />}

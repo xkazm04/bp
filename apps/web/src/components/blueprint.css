@@ -22,6 +22,8 @@
 .bp-frame { position: fixed; inset: 4px; border: 1.5px solid color-mix(in srgb, var(--rim) 70%, transparent); border-radius: 3px; pointer-events: none;
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--glow) 30%, transparent), inset 0 0 14px color-mix(in srgb, var(--glow) 34%, transparent), inset 0 0 46px color-mix(in srgb, var(--glow) 12%, transparent); }
 .bp-frame:after { content: ''; position: absolute; inset: 4px; border: 1px solid color-mix(in srgb, var(--glow) 22%, transparent); }
+/* the glass's sheen: two soft diagonal bands of the rim light across the table, static (compositor only) */
+.bp-sheen { position: fixed; inset: 0; pointer-events: none; background: linear-gradient(112deg, transparent 20%, color-mix(in srgb, var(--rim) 4.5%, transparent) 36%, transparent 50%, transparent 68%, color-mix(in srgb, var(--rim) 3%, transparent) 78%, transparent 88%); }
 .bp-map { position: fixed; left: 0; top: 0; display: block; cursor: grab; touch-action: none; outline: none; }
 .bp-map[data-cursor='pan'] { cursor: grabbing; } .bp-map[data-cursor='pt'] { cursor: pointer; } .bp-map[data-cursor='zin'] { cursor: zoom-in; } .bp-map[data-cursor='sel'] { cursor: crosshair; }
 .bp-map:focus-visible { box-shadow: 0 0 0 2px var(--accent) inset; }
@@ -436,3 +438,17 @@ a.extchip:hover, a.extchip:focus-visible { text-decoration: underline; }
 .shotv .swipe .cut { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--amber); pointer-events: none; }
 .shotv .swipe input { width: 100%; margin: 6px 0 2px; }
 .shotv .ends { display: flex; justify-content: space-between; gap: 8px; font: 500 12px var(--mono); color: var(--ink-2); }
+
+/* ---------- lit glass: the chrome's panels are the table's glass cards (the VR wrist panel, the decision card): light from
+   the top edge, a lit hairline, a faint glow round the edge. No backdrop blur: the plan under them redraws on every pan
+   frame, and a blur would be recomputed with it (docs/blueprint-ui.md, performance rules). */
+#tabs, #rail, #ladder, #keyplan, #timebox, #flyout, #hov, #dcard, #selbar, #callout {
+  background-image: linear-gradient(180deg, color-mix(in srgb, var(--glow) 11%, transparent) 0, transparent 48px);
+  border-color: color-mix(in srgb, var(--glow) 40%, var(--ink-3));
+}
+#tabs, #rail, #ladder, #keyplan, #timebox {
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--rim) 24%, transparent), 0 0 0 1px color-mix(in srgb, var(--glow) 10%, transparent), 0 0 18px color-mix(in srgb, var(--glow) 13%, transparent), 0 14px 36px var(--shadow);
+}
+#rail .ri-table { margin-top: 6px; border-top: 1px solid color-mix(in srgb, var(--glow) 30%, transparent); padding-top: 10px; color: var(--ink-hi); }
+#rail .ri-table .n { color: color-mix(in srgb, var(--glow) 70%, var(--ink-hi)); }
+#rail .ri-table:hover .g { filter: drop-shadow(0 0 6px var(--glow)); }

@@ -423,8 +423,8 @@ export function drawBuildings(E: Engine, ctx: CanvasRenderingContext2D, v: View)
     ctx.strokeStyle = th.alpha(th.glow, 0.09 * bloom); ctx.lineWidth = wi + clamp(18 * k, 6, 18); ctx.stroke(rooms);
     ctx.strokeStyle = th.alpha(th.glow, 0.22 * bloom); ctx.lineWidth = wi + clamp(7 * k, 3, 7); ctx.stroke(rooms);
     // each room is an extruded pane: its walls' lower edge shows through the glass just below the top edge
-    const d = clamp(7 * k, 2, 7);
-    ctx.save(); ctx.translate(0, d); ctx.strokeStyle = th.alpha(th.glassEdge, dark ? 0.42 : 0.28); ctx.lineWidth = 1; ctx.stroke(rooms); ctx.restore();
+    const d = clamp(10 * k, 3.5, 8);
+    ctx.save(); ctx.translate(0, d); ctx.strokeStyle = th.alpha(th.glassEdge, dark ? 0.5 : 0.3); ctx.lineWidth = 1; ctx.stroke(rooms); ctx.restore();
     ctx.strokeStyle = th.glassEdge; ctx.lineJoin = 'miter';
     ctx.lineWidth = wi; ctx.stroke(rooms);
     ctx.strokeStyle = th.ink;
