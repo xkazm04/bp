@@ -35,6 +35,37 @@ took the gesture p50 to 33.4 ms (now in the static raster). Gesture after the ch
 ribbons as lit glass trays (a glow stroke and a bright edge per ribbon, a bevel per feature segment; 2026-10-28 13:37) kept it
 there: p50 16.7 ms at `?scale=4`.
 
+**The glass on a quiet machine (2026-10-28, after the port; `docs/concepts/desk-to-table/plan.md` W1).** The figures above were
+taken while two other hackathon builds loaded the machine. Re-taken alone (CPU ~13 %), production builds side by side:
+master `17f57a3` (the glass) against `0051ba9` (before it), runs alternated, `?scale=4`, 1920x1080, headless software
+raster.
+- **Gesture** (`python scripts/perf.py`, 2 x 3 runs each): **p50 16.7 ms on every run, on both builds: the budget holds.** The
+  tail is longer with the glass (p99 67-83 ms against 50; 133-153 frames per run against 151-161), because a settle's raster
+  costs more.
+- **Static raster** (`--lod`, N=20, full ms, two runs each):
+
+  | level | before | glass | ratio |
+  |---|---|---|---|
+  | home | 14.1-14.5 | 28.4-29.7 | 2.0x |
+  | L-bld | 15.9-16.2 | 28.7-30.0 | 1.8x |
+  | L-blend | 20.4-21.0 | 37.5-38.2 | 1.8x |
+  | L-tiles | 31.8-33.3 | 49.9-51.5 | 1.6x |
+  | L-room | 34.8-41.2 | 52.3-62.9 | 1.5x |
+  | L-feat | 16.8-18.6 | 28.9-29.0 | 1.6x |
+
+  So the cost is closer to 1.5-2x than the hackathon's +30-40 %, which was taken under load (both sides slowed) and before
+  the ribbons' glass.
+- **Where it goes** (each part switched off in turn, in a scratch build; `E.draw` full ms, home / L-tiles): about 10 ms at
+  home, with no single hotspot.
+  - lamp light ~4 / ~2;
+  - room glass and bay frames ~3.5 / ~7;
+  - the table top ~3 / ~2;
+  - the slab, the ribbon trays and the wall bloom ~2 each;
+  - the grid's registration crosses ~1.5 / ~1.
+- **Not changed in the port**, which adds nothing new. The bar for later visual work is these figures. The first candidates
+  to cut are the bay frames (one path per style instead of three strokes per bay; same pixels, since bays do not overlap)
+  and the lamp sprites at home (many small scaled `drawImage`s with an alpha change each).
+
 **The crossing (2026-10-28, `components/crossing`).** A CSS 3D overlay, its own chunk, loaded when played. Frame times
 over a whole 1x playback (requestAnimationFrame deltas, 1600x900): with GPU compositing (ANGLE D3D11) p50 16.7 ms, p95
 33 ms; headless software compositing manages ~12 fps in the 3D states. What made it so: the five textures are decoded
