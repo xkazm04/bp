@@ -33,6 +33,12 @@ at the far edge, faded out past twice the building's zoom, as is the slab), two 
 whole plan's room path (now one miter stroke of the rooms on view), and a lamp sprite per flag drawn every frame, which
 took the gesture p50 to 33.4 ms (now in the static raster). Gesture after the changes: p50 16.7 ms, budget held.
 
+**The crossing (2026-10-28, `components/crossing`).** A CSS 3D overlay, its own chunk, loaded when played. Frame times
+over a whole 1x playback (requestAnimationFrame deltas, 1600x900): with GPU compositing (ANGLE D3D11) p50 16.7 ms, p95
+33 ms; headless software compositing manages ~12 fps in the 3D states. What made it so: the five textures are decoded
+during prep, the headset's layers are created while the blackout hides them (at 1% opacity, so they raster there), a
+faded layer is unmounted, and the rooms rise by one `scale3d` on their parent instead of a style per face.
+
 ## What the cache and culling do
 
 The plan (walls, wing fills, ribbons or fixtures with their stage fills, lens marks and text, and every
