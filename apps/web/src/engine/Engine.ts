@@ -102,7 +102,8 @@ export class Engine {
   SAFE: Region = { l: 14, t: 72, r: 930, b: 686 };
   HOME: Cam = { x: 0, y: 0, k: 0.2 }; KB1 = 0.2;
   art: Record<string, HTMLImageElement> = {};
-  sprites: { glow: HTMLCanvasElement | null; heat: HTMLCanvasElement | null } = { glow: null, heat: null };
+  /** glow and heat: the swarm's; lampA and lampR: the warm light the plan hangs over a feature in trouble (watch, bad). */
+  sprites: { glow: HTMLCanvasElement | null; heat: HTMLCanvasElement | null; lampA: HTMLCanvasElement | null; lampR: HTMLCanvasElement | null } = { glow: null, heat: null, lampA: null, lampR: null };
   wallPaths: ReturnType<typeof buildWallPaths> = [];
   agentPos: APos[] = [];
   dashT = 0;
@@ -299,7 +300,15 @@ export class Engine {
     const hc = h.getContext('2d')!, lg = hc.createLinearGradient(0, 64, 0, 0);
     lg.addColorStop(0, th.alpha(th.mint, 0.3)); lg.addColorStop(1, th.alpha(th.mint, 0));
     hc.fillStyle = lg; hc.fillRect(0, 0, 8, 64);
-    this.sprites = { glow: g, heat: h };
+    // the lamp light over a feature in trouble, as the VR table lights a feature with open findings (render/plan.ts lampLight)
+    const lamp = (c: string) => {
+      const cv = document.createElement('canvas'); cv.width = cv.height = 64;
+      const x = cv.getContext('2d')!, rl = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+      rl.addColorStop(0, th.alpha(c, 0.5)); rl.addColorStop(0.35, th.alpha(c, 0.2)); rl.addColorStop(1, th.alpha(c, 0));
+      x.fillStyle = rl; x.fillRect(0, 0, 64, 64);
+      return cv;
+    };
+    this.sprites = { glow: g, heat: h, lampA: lamp(th.amber), lampR: lamp(th.red) };
   }
   private syncRootView() {
     if (!this.root || !this.th) return;

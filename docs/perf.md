@@ -24,6 +24,15 @@ L-feat 21.6. `python scripts/perf.py --tween` (rAF deltas, lens switch and back)
 L-bld 33.3 / 50, L-tiles 33.3 / 66.7, L-room 50 / 83.2. So the lens switch is a ~30 fps spring, not 60,
 and worse the more zoomed in (the raster covers the viewport plus the margin); see "Known costs" below.
 
+**The light table's glass (2026-10-28, the crossing hackathon, branch hack/a2-desk-table).** The paper's glass (room panes,
+lit wall bloom, the slab edge, bay zones, the lamp light over features in trouble) costs pixels, and headless Chromium
+rasters the cache in software. Paired medians on the dev server, `?scale=4`, 1920x1080, glass on vs off, 3 runs each:
+full raster home 39 vs 29 ms, L-tiles 84 vs 60, L-room 87 vs 67 (+30-40%, paid once per settle, never per frame). What
+the first cut cost and why it changed: a gradient over every room's whole area doubled the room-level raster (now a band
+at the far edge, faded out past twice the building's zoom, as is the slab), two wide round-join bloom strokes over the
+whole plan's room path (now one miter stroke of the rooms on view), and a lamp sprite per flag drawn every frame, which
+took the gesture p50 to 33.4 ms (now in the static raster). Gesture after the changes: p50 16.7 ms, budget held.
+
 ## What the cache and culling do
 
 The plan (walls, wing fills, ribbons or fixtures with their stage fills, lens marks and text, and every

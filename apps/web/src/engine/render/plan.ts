@@ -20,6 +20,7 @@ const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 /** setLineDash copies its argument; paintTile and ribSeg run once per tile per raster, so this is not a literal. */
 const NO_DASH: number[] = [];
 const scratch: SRect = { x: 0, y: 0, w: 0, h: 0 };
+const scratch2: SRect = { x: 0, y: 0, w: 0, h: 0 };
 
 export function drawGrid(E: Engine, ctx: CanvasRenderingContext2D, v: View) {
   const k = v.k, th = E.th, dark = th.mode === 'dark';
@@ -116,6 +117,21 @@ function fitStamp(E: Engine, cands: readonly string[], last: string | null, maxW
   const words = (cands[cands.length - 1] ?? '').split(' ');
   for (let n = words.length - 1; n >= 2; n--) { const s = E.tx.fit([words.slice(0, n).join(' ').replace(/[,;:]$/, '') + '…'], maxW, font); if (s) return s; }
   return last ? E.tx.fit([last], maxW, font) : null;
+}
+
+/**
+ * The warm light the table hangs over a feature in trouble (the VR table lights a feature with open findings): a sprite
+ * pool at the tile's top centre, red for bad, amber for watch, in the static raster (world-anchored, so a gesture pays
+ * nothing for it), kept within the 12 px a patch repaints round a tile.
+ */
+function lampLight(E: Engine, ctx: CanvasRenderingContext2D, h: string, x: number, y: number, w: number, hh: number, a: number) {
+  if (h !== 'bad' && h !== 'watch') return;
+  const sp = h === 'bad' ? E.sprites.lampR : E.sprites.lampA;
+  if (!sp) return;
+  const R = clamp(Math.min(w, hh) * 0.55, 7, 24), ga = ctx.globalAlpha;
+  ctx.globalAlpha = ga * a * (E.th.mode === 'dark' ? 0.95 : 0.55);
+  ctx.drawImage(sp, x + w / 2 - R, y - R * 0.45, 2 * R, 1.3 * R);
+  ctx.globalAlpha = ga;
 }
 
 function healthMarks(E: Engine, ctx: CanvasRenderingContext2D, h: string, x: number, y: number, w: number, hh: number, compact: boolean, a: number) {
@@ -236,6 +252,7 @@ function paintTile(E: Engine, ctx: CanvasRenderingContext2D, v: View, T: TileNod
     const D = E.mixS.topD, top = E.mixS.top, hg = f.health, hl = top ? healthUnder(f, top) : hg;
     if (hg === hl || D <= 0.001) healthMarks(E, ctx, D > 0.999 ? hl : hg, x, y, w, h, false, 1);
     else { healthMarks(E, ctx, hg, x, y, w, h, false, 1 - D); healthMarks(E, ctx, hl, x, y, w, h, false, D); }
+    lampLight(E, ctx, D < 0.5 ? hg : hl, x, y, w, h, 1);
   }
   if (st && deltaWin(f, S.t, S.delta)) {
     const ds = clamp(w / 9, 4 * u, 8 * u); ctx.fillStyle = th.delta; ctx.beginPath();
@@ -322,6 +339,7 @@ function ribSeg(E: Engine, ctx: CanvasRenderingContext2D, f: Feature, x: number,
     const D = E.mixS.topD, top = E.mixS.top, hg = f.health, hl = top ? healthUnder(f, top) : hg;
     if (hg === hl || D <= 0.001) healthMarks(E, ctx, D > 0.999 ? hl : hg, x, y, w, h, true, 1);
     else { healthMarks(E, ctx, hg, x, y, w, h, true, 1 - D); healthMarks(E, ctx, hl, x, y, w, h, true, D); }
+    lampLight(E, ctx, D < 0.5 ? hg : hl, x, y, w, h * 3, 0.8);
   }
   if (st && deltaWin(f, S.t, S.delta)) {
     const ds = clamp((w * 0.9) / 9, 4 * E.U, 8 * E.U), xw = x + w * 0.9; ctx.fillStyle = th.delta; ctx.beginPath();
@@ -362,31 +380,58 @@ function screenPath(world: Path2D, v: View): Path2D {
  * and nothing on the plan is covered.
  */
 function drawSlab(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: BldNode) {
-  const th = E.th, k = v.k, t = clamp(22 * k, 6, 16), dark = th.mode === 'dark';
+  // the slab reads on the site and wing plans; past twice the building's own zoom its edge is off screen, and its wide
+  // strokes would still be paid for, so it fades out there
+  const th = E.th, k = v.k, t = clamp(22 * k, 6, 16), dark = th.mode === 'dark', a = 1 - smooth(E.KB1 * 1.6, E.KB1 * 2.4, k);
   const r = rs(v, B, scratch);
-  if (patchMiss(r.x - 30, r.y - 30, r.w + 60, r.h + t + 60, 0)) return;
-  const o = screenPath(E.wallPaths[B.i].outline, v), clip = new Path2D();
-  // the glow the table's light throws round the building, under everything
-  ctx.lineJoin = 'round'; ctx.strokeStyle = th.alpha(th.glow, dark ? 0.08 : 0.05); ctx.lineWidth = clamp(18 * k, 3.5, 18) + clamp(30 * k, 10, 30); ctx.stroke(o);
-  clip.rect(v.c0x - 40, v.c0y - 40, v.c1x - v.c0x + 80, v.c1y - v.c0y + 80); clip.addPath(o);
-  ctx.save(); ctx.clip(clip, 'evenodd');
+  if (a <= 0.01 || !onView(v, r, 60) || patchMiss(r.x - 30, r.y - 30, r.w + 60, r.h + t + 60, 0)) return;
+  ctx.globalAlpha = a;
+  // the glow the table's light throws round the building, under everything (one miter stroke of a few segments)
+  ctx.lineJoin = 'miter'; ctx.strokeStyle = th.alpha(th.glow, dark ? 0.08 : 0.05); ctx.lineWidth = clamp(18 * k, 3.5, 18) + clamp(24 * k, 8, 20);
+  ctx.stroke(screenPath(E.wallPaths[B.i].outline, v));
+  // the slab's front edge: under each wing's bottom edge a band, which no other wing covers (wings stand side by side)
   const g = ctx.createLinearGradient(0, r.y, 0, r.y + r.h + t);
   g.addColorStop(0, th.alpha(th.glow, dark ? 0.2 : 0.14)); g.addColorStop(1, th.alpha(th.glow, dark ? 0.34 : 0.2));
-  ctx.translate(0, t); ctx.fillStyle = g; ctx.fill(o);
-  ctx.strokeStyle = th.alpha(th.glow, dark ? 0.75 : 0.5); ctx.lineWidth = 1.2; ctx.stroke(o);
-  ctx.restore();
+  ctx.fillStyle = g; ctx.strokeStyle = th.alpha(th.glow, dark ? 0.75 : 0.5); ctx.lineWidth = 1.2;
+  for (const W of B.wings) {
+    const w = rs(v, W, scratch2), y = w.y + w.h;
+    if (y > v.c1y + 10 || y + t < v.c0y - 10 || w.x > v.c1x || w.x + w.w < v.c0x) continue;
+    ctx.fillRect(w.x, y, w.w, t);
+    ctx.beginPath(); ctx.moveTo(w.x, y + t); ctx.lineTo(w.x + w.w, y + t); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
 }
 
 /** Each room is a pane of glass lit from the table: brighter at its far (top) edge, a lit lip along that edge. */
 function drawGlass(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: BldNode) {
-  const th = E.th, k = v.k, dark = th.mode === 'dark', lip = clamp(3 * k, 1, 3);
+  const th = E.th, k = v.k, dark = th.mode === 'dark', lip = clamp(3 * k, 1, 3), zone = clamp((BH * k - 23 * E.U) / (12 * E.U), 0, 1);
+  // the lit band is the site's and the wing's look; at a room's zoom it would fill most of the raster, so it fades out
+  const band = 1 - smooth(E.KB1 * 1.4, E.KB1 * 2, k);
   for (const W of B.wings) for (const R of W.rooms) {
     const r = rs(v, R, scratch);
     if (!onView(v, r, 10) || patchMiss(r.x, r.y, r.w, r.h, 0)) continue;
-    const g = ctx.createLinearGradient(0, r.y, 0, r.y + r.h);
-    g.addColorStop(0, th.alpha(th.glow, dark ? 0.13 : 0.08)); g.addColorStop(0.4, th.alpha(th.glow, dark ? 0.035 : 0.02)); g.addColorStop(1, th.alpha(th.glow, dark ? 0.07 : 0.04));
-    ctx.fillStyle = g; ctx.fillRect(r.x, r.y, r.w, r.h);
-    ctx.fillStyle = th.alpha(th.glassEdge, dark ? 0.22 : 0.12); ctx.fillRect(r.x, r.y, r.w, lip);
+    // the light falls off within a band at the far edge, so only that band is filled (a gradient over a whole room at a
+    // room's zoom is a fill of most of the raster, and it doubled the raster), and only its part on view
+    const hb = Math.min(r.h * 0.4, 120 * E.U), x0 = Math.max(r.x, v.c0x), x1 = Math.min(r.x + r.w, v.c1x), y1 = Math.min(r.y + hb, v.c1y);
+    if (x1 > x0 && y1 > Math.max(r.y, v.c0y)) {
+      if (band > 0.01) {
+        const g = ctx.createLinearGradient(0, r.y, 0, r.y + hb);
+        g.addColorStop(0, th.alpha(th.glow, (dark ? 0.15 : 0.09) * band)); g.addColorStop(1, th.alpha(th.glow, 0));
+        ctx.fillStyle = g; ctx.fillRect(x0, Math.max(r.y, v.c0y), x1 - x0, y1 - Math.max(r.y, v.c0y));
+      }
+      ctx.fillStyle = th.alpha(th.glassEdge, dark ? 0.22 : 0.12); ctx.fillRect(x0, r.y, x1 - x0, lip);
+    }
+    // once the bays are big enough to name, each is a lit zone of the room, as the table frames its bays
+    if (zone <= 0) continue;
+    for (const Bay of R.bays) {
+      const b = rs(v, Bay, scratch2);
+      if (!onView(v, b, 10)) continue;
+      const ins = 4 * E.U;
+      ctx.globalAlpha = zone;
+      ctx.strokeStyle = th.alpha(th.glow, dark ? 0.2 : 0.12); ctx.lineWidth = 3; ctx.strokeRect(b.x + ins, b.y + ins, b.w - 2 * ins, b.h - 2 * ins);
+      ctx.strokeStyle = th.alpha(th.glassEdge, dark ? 0.45 : 0.3); ctx.lineWidth = 1; ctx.strokeRect(b.x + ins + 0.5, b.y + ins + 0.5, b.w - 2 * ins - 1, b.h - 2 * ins - 1);
+      ctx.globalAlpha = 1;
+    }
   }
 }
 
@@ -417,15 +462,19 @@ export function drawBuildings(E: Engine, ctx: CanvasRenderingContext2D, v: View)
     if (k > 0.12) { ctx.strokeStyle = th.inkA(0.5); ctx.lineWidth = 1; ctx.stroke(screenPath(paths.bays, v)); }
     const wi = clamp(6 * k, 1.2, 6), ww = clamp(10 * k, 2, 10), wo = clamp(18 * k, 3.5, 18);
     const rooms = screenPath(paths.rooms, v), wings = screenPath(paths.wings, v), out = screenPath(paths.outline, v);
-    // the walls are lit glass: light from under the table blooms round them before the line itself is drawn
-    const dark = th.mode === 'dark', bloom = dark ? 1 : 0.55;
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = th.alpha(th.glow, 0.09 * bloom); ctx.lineWidth = wi + clamp(18 * k, 6, 18); ctx.stroke(rooms);
-    ctx.strokeStyle = th.alpha(th.glow, 0.22 * bloom); ctx.lineWidth = wi + clamp(7 * k, 3, 7); ctx.stroke(rooms);
-    // each room is an extruded pane: its walls' lower edge shows through the glass just below the top edge
-    const d = clamp(10 * k, 3.5, 8);
-    ctx.save(); ctx.translate(0, d); ctx.strokeStyle = th.alpha(th.glassEdge, dark ? 0.5 : 0.3); ctx.lineWidth = 1; ctx.stroke(rooms); ctx.restore();
-    ctx.strokeStyle = th.glassEdge; ctx.lineJoin = 'miter';
+    // the walls are lit glass: light from under the table blooms round them before the line itself is drawn. Only the
+    // rooms on view, as one screen-space path of rects (the whole plan's path at a room's zoom is mostly off screen, and
+    // a wide stroke pays for all of it), each also drawn a few px lower: an extruded pane's lower edge through the glass
+    const dark = th.mode === 'dark', bloom = dark ? 1 : 0.55, d = clamp(10 * k, 3.5, 8), lit = new Path2D(), low = new Path2D();
+    for (const W of B.wings) for (const R of W.rooms) {
+      const q = rs(v, R, scratch2);
+      if (!onView(v, q, 24)) continue;
+      lit.rect(q.x, q.y, q.w, q.h); low.rect(q.x, q.y + d, q.w, q.h);
+    }
+    ctx.lineJoin = 'miter';
+    ctx.strokeStyle = th.alpha(th.glow, 0.26 * bloom); ctx.lineWidth = wi + clamp(8 * k, 3, 8); ctx.stroke(lit);
+    ctx.strokeStyle = th.alpha(th.glassEdge, dark ? 0.5 : 0.3); ctx.lineWidth = 1; ctx.stroke(low);
+    ctx.strokeStyle = th.glassEdge;
     ctx.lineWidth = wi; ctx.stroke(rooms);
     ctx.strokeStyle = th.ink;
     ctx.lineWidth = ww; ctx.stroke(wings);
