@@ -9,7 +9,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { END, FOCUSED, STATES, sceneAt, stateAt, tOf, xOf } from '../apps/web/src/components/crossing/timeline.ts';
-import { followHash } from '../apps/web/src/components/crossing/follow.ts';
+import { followHash, placeName } from '../apps/web/src/components/crossing/follow.ts';
+import { nameOf } from '../apps/web/src/components/crossing/place.ts';
+import type { Engine } from '../apps/web/src/engine/Engine.ts';
 import type { PlaceBaton } from '../packages/core/src/session/place.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -59,6 +61,17 @@ const baton = (state: PlaceBaton['state'], from: 'web' | 'vr', product = 'kettle
 check('the page follows the table\'s live writes and its return', followHash(baton('live', 'vr'), 'kettle') === '#at=scheduling' && followHash(baton('returned', 'vr'), 'kettle') === '#at=scheduling');
 check('the page does not follow its own arm, a claim, another product, or an expired baton',
   followHash(baton('armed', 'web'), 'kettle') === null && followHash(baton('claimed', 'web'), 'kettle') === null && followHash(baton('live', 'vr', 'pof'), 'kettle') === null && followHash(baton('expired', 'vr'), 'kettle') === null && followHash(baton('claimed', 'vr'), 'kettle') === null);
+
+// ------------------------------------------------------------------------------------------------ one naming rule
+// the lamp (placeOf -> nameOf) and the hand-back crumb (placeName, from a hash) name a place the same way
+const room = { id: 'scheduling', name: 'Scheduling & Classes' }, bay = { id: 'scheduling.timetable', name: 'Timetable', room }, wing = { id: '0:OPS', def: { name: 'Studio operations' } };
+const E = { M: { P: { name: 'Kettle', F: { 'sch-03': { name: 'Drag-and-drop timetable editor' } } }, L: { BAY: { [bay.id]: bay }, ROOM: { [room.id]: room }, WING: { [wing.id]: wing } } } } as unknown as Engine;
+const n = (b: unknown, r: unknown, w: unknown) => nameOf(E, null, b as never, r as never, w as never);
+check('a bay is named with its room, a room alone, a wing by name, nothing as the whole site',
+  n(bay, room, wing) === 'Timetable · Scheduling & Classes' && n(null, room, wing) === 'Scheduling & Classes' && n(null, null, wing) === 'Studio operations' && n(null, null, null) === 'Kettle · the whole site');
+check('the crumb names a hash the way the lamp names the place',
+  placeName(E, '#at=scheduling.timetable') === n(bay, room, wing) && placeName(E, '#at=scheduling&lens=perf') === n(null, room, wing) && placeName(E, '#at=0:OPS') === n(null, null, wing)
+  && placeName(E, '#open=sch-03') === 'Drag-and-drop timetable editor' && placeName(E, '#') === n(null, null, null));
 
 // ------------------------------------------------------------------------------------------------ the source
 const host = fs.readFileSync(path.join(DIR, 'CrossingHost.tsx'), 'utf8'), crossing = fs.readFileSync(path.join(DIR, 'Crossing.tsx'), 'utf8');
