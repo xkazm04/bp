@@ -104,30 +104,9 @@ baton are on master; the VR half of the crossing is next.
 
 ### Architecture
 
-```mermaid
-flowchart LR
-  subgraph core["packages/ (the logic, once)"]
-    C["@bp/core<br/>model, lenses, health rules,<br/>layout, scans, waves, place baton"]
-    S["@bp/schema<br/>JSON Schemas → TS types<br/>+ Unreal USTRUCT headers"]
-  end
-  subgraph pc["PC (Lynx)"]
-    SRV["apps/server<br/>JSON + SSE on :3100"]
-    WEB["apps/web<br/>Next.js canvas"]
-    COMP["companion (Glim)<br/>apps/mcp tool door"]
-  end
-  subgraph quest["Quest (apps/vr, UE 5.8)"]
-    LINK["BpLink module<br/>HTTP/SSE → FBpPlan, scan state"]
-    BUN["BpData bundle<br/>Kettle snapshot in the pak"]
-    GAME["bp module<br/>table, levels, room, deck,<br/>marks, wrist, hands, headset"]
-  end
-  C --> SRV & WEB
-  S -- generated headers --> LINK
-  SRV -- "structure · plan · scans · waves · stream" --> LINK
-  BUN -. "-BpLinkUrl=bundle / no server" .-> LINK
-  LINK --> GAME
-  WEB <-- "place baton" --> SRV
-  COMP --> SRV
-```
+![The VR Light Table's architecture: packages/core and packages/schema, the PC's apps/web, apps/server and the companion, and the headset's BpLink, bundle and bp game module](docs/img/vr-architecture.png)
+
+*Drawn in HTML and CSS (`docs/img/src/vr-architecture.html`); `python docs/img/src/render.py` re-renders the PNG.*
 
 - **One logic, three channels.** Every rule (health, layout, the derived plan) lives in TypeScript in `packages/core`.
   The Unreal app is a thin renderer and interaction client: it reads the plan (5 wings, 13 rooms, 29 bays, 133 tiles for

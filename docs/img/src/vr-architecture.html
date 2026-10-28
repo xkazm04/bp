@@ -1,0 +1,210 @@
+<!doctype html>
+<!-- The VR Light Table's architecture, drawn for the README. Render it with
+     `python docs/img/src/render.py` (Playwright), which writes docs/img/vr-architecture.png. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>bp VR architecture</title>
+<style>
+  @font-face { font-family: "Barlow SC"; font-weight: 500; src: url("../../../apps/vr/Fonts/BarlowSemiCondensed-Medium.ttf"); }
+  @font-face { font-family: "Barlow SC"; font-weight: 600; src: url("../../../apps/vr/Fonts/BarlowSemiCondensed-SemiBold.ttf"); }
+  :root {
+    --paper: #0a2149; --paper-hi: #1a4c8f; --paper-lo: #06142e; --paper-core: #2162ad;
+    --ink: #dff0ff; --ink-hi: #ffffff; --dim: #8fb3dc;
+    --accent: #7fe0ff; --glow: #4fd2ff; --glass-edge: #c4f2ff;
+    --mint: #6ff2c8; --amber: #ffc35a; --panel: rgba(10, 35, 66, .78);
+    --mono: "JetBrains Mono", Consolas, "SFMono-Regular", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { background: var(--paper-lo); }
+  #sheet {
+    position: relative; width: 1400px; height: 960px; overflow: hidden;
+    font-family: "Barlow SC", "Barlow Semi Condensed", "Segoe UI", sans-serif; color: var(--ink);
+    background:
+      radial-gradient(ellipse 70% 60% at 50% 45%, rgba(33, 98, 173, .55), transparent 75%),
+      repeating-linear-gradient(0deg, rgba(127, 224, 255, .10) 0 1px, transparent 1px 100px),
+      repeating-linear-gradient(90deg, rgba(127, 224, 255, .10) 0 1px, transparent 1px 100px),
+      repeating-linear-gradient(0deg, rgba(127, 224, 255, .045) 0 1px, transparent 1px 20px),
+      repeating-linear-gradient(90deg, rgba(127, 224, 255, .045) 0 1px, transparent 1px 20px),
+      linear-gradient(180deg, var(--paper) 0%, var(--paper-lo) 100%);
+    border: 2px solid var(--glass-edge);
+    box-shadow: inset 0 0 0 6px var(--paper-lo), inset 0 0 0 7px rgba(196, 242, 255, .35), inset 0 0 80px rgba(79, 210, 255, .25);
+  }
+  .abs { position: absolute; }
+
+  /* title block */
+  .title { left: 40px; top: 32px; }
+  .title h1 { font-size: 40px; font-weight: 600; letter-spacing: .5px; color: var(--ink-hi);
+              text-shadow: 0 0 18px rgba(79, 210, 255, .55); }
+  .title h1 b { color: var(--accent); font-weight: 600; }
+  .title p { font-size: 18px; color: var(--dim); margin-top: 2px; letter-spacing: .3px; }
+  .stamp { right: 40px; top: 34px; text-align: right; font-family: var(--mono); font-size: 13px; color: var(--dim);
+           border: 1px solid rgba(196, 242, 255, .45); padding: 10px 14px; line-height: 1.6; background: rgba(6, 20, 46, .6); }
+  .stamp b { color: var(--accent); font-weight: 600; }
+
+  /* lanes */
+  .lane { top: 128px; font-family: var(--mono); font-size: 13px; letter-spacing: 2px; color: var(--accent);
+          text-transform: uppercase; padding-bottom: 6px; border-bottom: 1px solid rgba(127, 224, 255, .5); }
+  .lane span { color: var(--dim); letter-spacing: 1px; }
+
+  /* glass boxes */
+  .box { background: var(--panel); border: 1px solid rgba(196, 242, 255, .75); border-radius: 6px; padding: 14px 16px;
+         box-shadow: 0 0 0 1px rgba(79, 210, 255, .15), 0 0 22px rgba(79, 210, 255, .28), inset 0 1px 0 rgba(255, 255, 255, .18); }
+  .box h2 { font-size: 24px; font-weight: 600; color: var(--ink-hi); line-height: 1.1; }
+  .box h2 small { font-family: var(--mono); font-size: 12.5px; font-weight: 400; color: var(--accent); margin-left: 8px; letter-spacing: .5px; }
+  .box p.sub { font-size: 16px; color: var(--dim); margin-top: 3px; }
+  .box ul { list-style: none; padding: 0; margin-top: 10px; font-size: 16.5px; line-height: 1.5; }
+  .box li::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 9px 2px 1px;
+                    border: 1px solid var(--accent); transform: rotate(45deg); }
+  .box.hub { border-color: var(--glass-edge); box-shadow: 0 0 0 1px rgba(196, 242, 255, .5), 0 0 34px rgba(79, 210, 255, .5), inset 0 1px 0 rgba(255,255,255,.25); }
+  .box.dash { border-style: dashed; background: rgba(6, 20, 46, .72); }
+  .box.amber { border-color: rgba(255, 195, 90, .85); box-shadow: 0 0 24px rgba(255, 195, 90, .25), inset 0 1px 0 rgba(255,255,255,.12); }
+  .box.amber h2 small { color: var(--amber); }
+
+  .chips { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+  .chip { border: 1px solid rgba(127, 224, 255, .45); border-radius: 4px; padding: 6px 9px; background: rgba(18, 58, 114, .55); }
+  .chip b { display: block; font-family: var(--mono); font-size: 13.5px; color: var(--accent); font-weight: 600; }
+  .chip span { font-size: 14.5px; color: var(--ink); }
+
+  .strip { border: 1px solid rgba(111, 242, 200, .6); border-radius: 4px; padding: 8px 12px; font-size: 15px;
+           color: var(--mint); background: rgba(4, 38, 27, .45); font-family: var(--mono); letter-spacing: .3px; }
+
+  /* wire labels */
+  .tag { font-family: var(--mono); font-size: 12.5px; color: var(--ink-hi); background: var(--paper-lo);
+         border: 1px solid rgba(127, 224, 255, .55); border-radius: 3px; padding: 3px 7px; white-space: nowrap; }
+  .tag.mint { color: var(--mint); border-color: rgba(111, 242, 200, .6); }
+  .tag.amber { color: var(--amber); border-color: rgba(255, 195, 90, .7); }
+
+  /* footer facts */
+  .facts { left: 40px; right: 40px; top: 868px; display: flex; gap: 14px; }
+  .fact { flex: 1; border-top: 2px solid var(--accent); padding-top: 8px; font-size: 15.5px; color: var(--dim); line-height: 1.35; }
+  .fact b { display: block; font-size: 19px; color: var(--ink-hi); font-weight: 600; }
+  svg.wires { position: absolute; inset: 0; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="sheet">
+
+  <div class="abs title">
+    <h1>bp <b>·</b> VR Light Table</h1>
+    <p>One logic in TypeScript, three channels. The headset is a thin renderer and interaction client.</p>
+  </div>
+  <div class="abs stamp">SHEET <b>VR-01</b> · ARCHITECTURE<br>UE 5.8.4 · META XR v207 · QUEST 3 / 3S</div>
+
+  <!-- lane headers -->
+  <div class="abs lane" style="left:40px; width:330px">01 · packages <span>· the logic, once</span></div>
+  <div class="abs lane" style="left:480px; width:360px">02 · PC <span>· Lynx, Windows on ARM64</span></div>
+  <div class="abs lane" style="left:950px; width:410px">03 · Headset <span>· apps/vr</span></div>
+
+  <!-- 01 packages -->
+  <div class="abs box" style="left:40px; top:160px; width:330px; height:300px">
+    <h2>@bp/core<small>packages/core</small></h2>
+    <p class="sub">No React, no DOM: check:core-purity</p>
+    <ul>
+      <li>app-structure v3 and its loader</li>
+      <li>lenses as data, health rules as JSON</li>
+      <li>the plan: wings, rooms, bays, tiles</li>
+      <li>scans, waves, the release train</li>
+      <li>the place baton (desk to table)</li>
+      <li>the table's words, generated</li>
+    </ul>
+  </div>
+  <div class="abs box" style="left:40px; top:500px; width:330px; height:170px">
+    <h2>@bp/schema<small>packages/schema</small></h2>
+    <p class="sub">One set of JSON Schemas, two outputs</p>
+    <ul>
+      <li>TypeScript types</li>
+      <li>Unreal USTRUCT headers (FBpPlan …)</li>
+    </ul>
+  </div>
+
+  <!-- 02 PC -->
+  <div class="abs box" style="left:480px; top:160px; width:360px; height:110px">
+    <h2>apps/web<small>Next.js 16 · :3010</small></h2>
+    <p class="sub">The canvas. Its rail's "VR · Table" card arms the baton and follows the table.</p>
+  </div>
+  <div class="abs box hub" style="left:480px; top:320px; width:360px; height:180px">
+    <h2>apps/server<small>node:http · :3100</small></h2>
+    <p class="sub">The same API handlers as the web, headless</p>
+    <ul>
+      <li>JSON + SSE: structure, plan, scans, waves</li>
+      <li>Kettle's scan sim, in memory</li>
+      <li>holds the place baton (120 s TTL)</li>
+    </ul>
+  </div>
+  <div class="abs box amber" style="left:480px; top:550px; width:360px; height:120px">
+    <h2>Glim, the companion<small>apps/mcp</small></h2>
+    <p class="sub">Acts only through one MCP tool door. AUTO tools call a route; GATED ones file a card a person answers.</p>
+  </div>
+
+  <!-- 03 headset -->
+  <div class="abs box dash" style="left:1150px; top:160px; width:210px; height:110px">
+    <h2 style="font-size:21px">BpData bundle</h2>
+    <p class="sub" style="font-size:15px">Kettle snapshot staged in the pak. No PC, no server.</p>
+  </div>
+  <div class="abs box hub" style="left:950px; top:320px; width:410px; height:120px">
+    <h2>BpLink<small>C++ module</small></h2>
+    <p class="sub">Reads the server or the bundle into FBpPlan and the scan state. Never computes a health or layout rule.</p>
+  </div>
+  <div class="abs box" style="left:950px; top:480px; width:410px; height:262px">
+    <h2>bp<small>game module · Source/bp</small></h2>
+    <div class="chips">
+      <div class="chip"><b>BpTable</b><span>frame, paper, glass volumes</span></div>
+      <div class="chip"><b>BpLevels</b><span>site, wing, room lifts</span></div>
+      <div class="chip"><b>BpRoom · BpDeck</b><span>seated room, its screens</span></div>
+      <div class="chip"><b>BpMarks</b><span>pins, scan line, card</span></div>
+      <div class="chip"><b>BpHands</b><span>pinch, pull, push</span></div>
+      <div class="chip"><b>BpWrist</b><span>the wave's packages</span></div>
+    </div>
+  </div>
+  <div class="abs strip" style="left:950px; top:762px; width:410px">Meta XR v207 + Interaction SDK · hands-first</div>
+
+  <!-- wires -->
+  <svg class="wires" viewBox="0 0 1400 960">
+    <defs>
+      <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+        <path d="M0 0L10 5L0 10z" fill="#7fe0ff"/></marker>
+      <marker id="m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+        <path d="M0 0L10 5L0 10z" fill="#6ff2c8"/></marker>
+      <marker id="y" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+        <path d="M0 0L10 5L0 10z" fill="#ffc35a"/></marker>
+      <filter id="g" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="2.4" result="b"/>
+        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    </defs>
+    <g fill="none" stroke-width="2" filter="url(#g)">
+      <!-- core -> web, core -> server -->
+      <path d="M370 215H478" stroke="#7fe0ff" marker-end="url(#a)"/>
+      <path d="M370 410H420V410H478" stroke="#7fe0ff" marker-end="url(#a)"/>
+      <!-- web <-> server: the place baton -->
+      <path d="M660 272V318" stroke="#7fe0ff" marker-start="url(#a)" marker-end="url(#a)"/>
+      <!-- companion -> server -->
+      <path d="M660 548V502" stroke="#ffc35a" marker-end="url(#y)"/>
+      <!-- server -> BpLink -->
+      <path d="M840 380H948" stroke="#7fe0ff" stroke-width="3" marker-end="url(#a)"/>
+      <!-- bundle -> BpLink (fallback) -->
+      <path d="M1255 272V318" stroke="#7fe0ff" stroke-dasharray="6 6" marker-end="url(#a)"/>
+      <!-- schema -> BpLink: the generated headers -->
+      <path d="M370 600H410V720H900V420H948" stroke="#6ff2c8" marker-end="url(#m)"/>
+      <!-- BpLink -> game module -->
+      <path d="M1155 442V478" stroke="#7fe0ff" marker-end="url(#a)"/>
+    </g>
+  </svg>
+
+  <div class="abs tag" style="left:384px; top:186px">model</div>
+  <div class="abs tag" style="left:384px; top:381px">handlers</div>
+  <div class="abs tag" style="left:676px; top:283px">place baton</div>
+  <div class="abs tag amber" style="left:676px; top:513px">one tool door</div>
+  <div class="abs tag" style="left:852px; top:338px">HTTP · SSE</div>
+  <div class="abs tag" style="left:1268px; top:283px">no server</div>
+  <div class="abs tag mint" style="left:520px; top:707px">generated USTRUCT headers · no hand parsing</div>
+
+  <!-- footer facts -->
+  <div class="abs facts">
+    <div class="fact"><b>5 · 13 · 29 · 133</b>Kettle's wings, rooms, bays, tiles</div>
+    <div class="fact"><b>Online or alone</b>live, or the bundle, writes refused</div>
+    <div class="fact"><b>Gates</b>check:schema · check:bplink · check:vr-words</div>
+    <div class="fact"><b>Quest APK</b>for Meta VR Start 2026</div>
+  </div>
+</div>
+</body>
+</html>
