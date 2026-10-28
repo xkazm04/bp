@@ -151,6 +151,24 @@
 .cx-real figcaption { font-size: 13px; color: rgba(232, 244, 255, 0.78); margin-top: 6px; }
 .cx-honest { font-size: 13px; color: rgba(232, 244, 255, 0.7); margin: 16px 0 0; }
 
+/* ---------- what to expect: the closing card over the stage */
+.cx-sum { position: absolute; left: 16px; right: 16px; top: 64px; bottom: 196px; z-index: 5; overflow: auto; padding: 18px 22px; background: rgba(5, 13, 26, 0.97); border: 1px solid rgba(127, 230, 255, 0.35); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6); }
+.cx-sum h2 { font-size: 20px; margin: 0 0 6px; color: #fff; }
+.cx-sum-lede { font-size: 15px; margin: 0 0 14px; max-width: 980px; color: rgba(232, 244, 255, 0.88); }
+.cx-sum-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.cx-sum h3 { font-size: 15px; margin: 0 0 6px; color: #dff8ff; display: flex; gap: 8px; align-items: baseline; flex-direction: row-reverse; justify-content: flex-end; }
+.cx-sum h3 .mk { margin-left: 0; }
+.cx-sum ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+.cx-sum li { font-size: 14px; color: rgba(232, 244, 255, 0.86); }
+.cx-sum code { font-size: 13px; color: #ffd38a; }
+.cx-sum-foot { font-size: 13px; color: rgba(232, 244, 255, 0.7); margin: 14px 0 0; }
+.cx-sum-act { display: flex; gap: 8px; margin-top: 14px; }
+.cx-sum-act button { height: 32px; padding: 0 14px; background: #0a1a30; border: 1px solid rgba(232, 244, 255, 0.3); font-size: 14px; }
+.cx-sum-act .cx-play { background: #7fe6ff; color: #03142a; border-color: #7fe6ff; font-weight: 600; }
+.cx-x[aria-pressed='true'] { background: #dff8ff; color: #03142a; }
+.cx-top .cx-x + .cx-x { margin-left: -10px; }
+@media (max-width: 1100px) { .cx-sum-cols { grid-template-columns: 1fr; } }
+
 /* ---------- transport and the four lanes */
 .cx-bot { border-top: 1px solid rgba(127, 230, 255, 0.18); background: #050d1a; padding: 8px 16px 10px; }
 .cx-ctl { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }

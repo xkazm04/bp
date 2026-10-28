@@ -52,6 +52,9 @@ export default function Crossing({ onClose }: { onClose: () => void }) {
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(0.5);
   const [paired, setPaired] = useState(true);
+  // the closing card: what to expect from the design; opens by itself when the crossing has played to its end
+  const [sum, setSum] = useState(false);
+  const ended = t >= END - 1e-6;
   const root = useRef<HTMLDivElement>(null);
   const tRef = useRef(0);
   tRef.current = t;
@@ -129,7 +132,8 @@ export default function Crossing({ onClose }: { onClose: () => void }) {
     else if (k === ' ' || k === 'k') { e.preventDefault(); if (t >= END) replay(); else setPlaying((p) => !p); }
     else if (k === 'ArrowRight') { e.preventDefault(); stepTo(1); }
     else if (k === 'ArrowLeft') { e.preventDefault(); stepTo(-1); }
-    else if (k === 'Home' || k === 'r') { e.preventDefault(); replay(); }
+    else if (k === 'Home' || k === 'r') { e.preventDefault(); setSum(false); replay(); }
+    else if (k === 'e') { e.preventDefault(); setPlaying(false); setSum((v) => !v); }
   };
 
   return (
@@ -137,9 +141,11 @@ export default function Crossing({ onClose }: { onClose: () => void }) {
       <header className="cx-top">
         <div className="cx-name"><b>The Desk Becomes the Table</b><span>the crossing, as a web prototype</span></div>
         {prep && <div className="cx-from" title="The place the baton carries: the page's own hash">from <code>{prep.a.hash === '#' ? '#(site)' : prep.a.hash}</code> · {prep.a.crumbs.slice(1).join(' › ') || 'the site'}</div>}
+        <button type="button" className="cx-x" aria-pressed={sum || ended} onClick={() => { setPlaying(false); setSum((v) => !(v || ended)); }} title="What to expect from this design ( E )">What to expect</button>
         <button type="button" className="cx-x" onClick={close} title="Close ( Esc )">Close · Esc</button>
       </header>
       {!prep ? <div className="cx-prep"><span className="cx-spin" aria-hidden="true" />Reading your place and drawing the table…</div> : <Body prep={prep} t={t} paired={paired} />}
+      {prep && (sum || (ended && !playing)) && <Summary prep={prep} onReplay={() => { setSum(false); replay(); }} onClose={() => { setSum(false); if (ended) setT(STATES[9].show); }} />}
       {prep && <Transport t={t} playing={playing} speed={speed} setSpeed={setSpeed} seek={seek} stepTo={stepTo} replay={replay}
         toggle={() => (t >= END ? replay() : setPlaying((p) => !p))} setPlaying={setPlaying} prep={prep} paired={paired} setPaired={setPaired} />}
     </div>
@@ -404,6 +410,54 @@ function Panel({ prep, t, paired }: { prep: Prep; t: number; paired: boolean }) 
       </ul>
       <p className="cx-honest"><em className="mk mk-mock">mock</em> This page draws the room, the studio and the lamp as sketches; the table is a web mock of what the APK draws. Real: your page and place, the plan data the table is drawn from, the baton's requests, and the page following the table (it flew there behind this overlay).</p>
     </aside>
+  );
+}
+
+// ----------------------------------------------------------------------------------------------- what to expect
+/** The owner's question, answered on one card: what this prototype proved running here, what only a headset can prove,
+ *  and the work a real build needs (the design's own sizing). */
+function Summary({ prep, onReplay, onClose }: { prep: Prep; onReplay: () => void; onClose: () => void }) {
+  const total = prep.real?.reduce((n, x) => n + x.up + x.down, 0) ?? 0, ok = !!prep.real?.length && prep.real.every((x) => x.status < 300);
+  return (
+    <section className="cx-sum" role="region" aria-label="What to expect from The Desk Becomes the Table">
+      <h2>What to expect from The Desk Becomes the Table</h2>
+      <p className="cx-sum-lede">Nothing is streamed: the headset’s cameras show your desk, the headset’s GPU draws the table, and only the address of where you are crosses the network. The price is the look: the table you land on is the APK’s mobile tier, not the PC look-dev bar.</p>
+      <div className="cx-sum-cols">
+        <div>
+          <h3><em className="mk mk-real">real</em> Proven here, running</h3>
+          <ul>
+            <li>The place is the page’s own hash plus a target: <code>{prep.a.hash === '#' ? '(the site)' : prep.a.hash}</code> → {prep.a.target.kind} <code>{prep.a.target.id}</code>.</li>
+            <li>The place baton is served and guarded: arm, claim, live, return {ok ? <>ran just now, <b>{total.toLocaleString('en')} bytes</b> for the whole crossing</> : 'is simulated here (the route did not answer)'}; 0 video frames, 0 audio.</li>
+            <li>The page follows the table with the machinery it has: the plan flew to {prep.next ? prep.next.name : 'the next place'} behind this overlay.</li>
+            <li>The desk already looks like the table’s first frame: the blueprint is now lit glass on a light table.</li>
+          </ul>
+        </div>
+        <div>
+          <h3><em className="mk mk-unverified">[unverified]</em> Only a Quest 3S can prove</h3>
+          <ul>
+            <li>The APK running on the headset at all (built on Lynx, 284 MB; never run on a 3S).</li>
+            <li>Passthrough and spatial anchors in this app; whether the monitor reads through the cameras.</li>
+            <li>The session reaching STOPPING when the headset comes off (a missed one costs only the last move).</li>
+            <li>Comfort of the lift and the fade; 72 Hz with passthrough and the table on the XR2 Gen 2.</li>
+          </ul>
+        </div>
+        <div>
+          <h3><em className="mk mk-new">NEW</em> Work for a real build</h3>
+          <ul>
+            <li>S8 LAN door, server and BpLink halves (the baton’s routes exist now).</li>
+            <li>The stream’s <code>place</code> event so the page follows; the 10 s crumb.</li>
+            <li><code>ABpCrossing</code> in UE: passthrough, the lift off the monitor anchor, the fade, the lamp.</li>
+            <li>The pin ceremony (desk tap, monitor anchor) and its fallback.</li>
+            <li>The design sizes it at 5–6 agent sessions and two owner sittings in the headset.</li>
+          </ul>
+        </div>
+      </div>
+      <p className="cx-sum-foot">Which build: the standalone Quest APK only (paired: the crossing; unpaired: the bundle at home, no crossing). Which machine: Lynx (Windows 11 on ARM64) serves the page, the baton and the door with Node; no PC-to-headset video route is needed.</p>
+      <div className="cx-sum-act">
+        <button type="button" className="cx-play" onClick={onReplay}>⟲ Replay the crossing</button>
+        <button type="button" onClick={onClose}>Back to the states</button>
+      </div>
+    </section>
   );
 }
 
