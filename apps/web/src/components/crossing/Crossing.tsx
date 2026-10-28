@@ -110,19 +110,18 @@ export default function Crossing({ onClose }: { onClose: (left?: string) => void
     if (!prep) return;
     run.current ??= batonRun(prep.a, prep.next, (x) => setReal((r) => [...r.filter((y) => y.step !== x.step), x]), () => setBatonOff(true));
     const R = run.current;
-    if (t < BATON_AT.arm) { if (real.length || heard.length) { R.reset(); setReal([]); setHeard([]); } return; }
+    if (t < BATON_AT.arm) { if (R.started()) { R.reset(); setReal([]); setHeard([]); } return; }
     let due: BatonStep = 'arm';
     if (paired) for (const s of ['claim', 'live', 'lead', 'return'] as const) if (t >= BATON_AT[s]) due = s;
     R.upTo(due);
-  }, [prep, t, paired, real.length, heard.length]);
+  }, [prep, t, paired]);
   // switching the door hands back what the stand-in holds and starts over
   const pairedSeen = useRef(paired);
   useEffect(() => {
     if (pairedSeen.current === paired) return;
     pairedSeen.current = paired;
     const R = run.current; if (!R) return;
-    if (R.holds()) R.upTo('return');
-    R.reset(); setReal([]); setHeard([]);
+    R.handBack(); R.reset(); setReal([]); setHeard([]);
   }, [paired]);
   // the place events the page hears back on the companion stream (the page follows them; the panel shows them)
   useEffect(() => {
@@ -148,7 +147,7 @@ export default function Crossing({ onClose }: { onClose: (left?: string) => void
   const close = useCallback(() => {
     // the page followed the table: after the headset came off, it stays where the table left it
     // headset off is a non-event: whatever the stand-in still holds is handed back, and the page hears it on the stream
-    if (run.current?.holds()) run.current.upTo('return');
+    run.current?.handBack();
     const left = paired && prep?.next && tRef.current >= STATES[9].at ? prep.next : null;
     if (left) route(left.hash);
     onClose(left?.name);

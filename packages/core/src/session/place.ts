@@ -2,7 +2,8 @@
 // page's place lives only in its URL hash and the server knows nothing of it; the baton closes exactly that gap and no
 // more. One record, two writers, never both at once: the page arms it (armed), one device claims it (claimed), the
 // table leads while it is live (every place it posts is the newest), and the device hands it back (returned). An armed
-// baton nobody claims is forgotten after its TTL (expired), with no error. Ids and hashes only, never "the selection".
+// baton nobody claims is forgotten after its TTL (expired), with no error. A device that never hands back (a crash, a
+// missed STOPPING) cannot lock the page out: the person may take the lead back from the page, explicitly (`takeBack`). Ids and hashes only, never "the selection".
 // Pure: the server keeps the record (server/api/session/place), this module decides every move.
 
 export type PlaceLevel = 'L0' | 'L1' | 'L2' | 'L3' | 'L4';
@@ -57,7 +58,7 @@ export function readPlace(v: unknown): Place | string {
 }
 
 export type BatonMove =
-  | { kind: 'arm'; place: Place; id: string }
+  | { kind: 'arm'; place: Place; id: string; takeBack?: boolean }
   | { kind: 'claim'; device: string }
   | { kind: 'publish'; place: Place; device: string }
   | { kind: 'return'; device: string };
@@ -77,7 +78,7 @@ export function step(b0: PlaceBaton | null, m: BatonMove, now: number): BatonSte
   switch (m.kind) {
     case 'arm':
       // the page leads unless a device holds the baton: arming over a claimed or live one would make two writers
-      if (b && (b.state === 'claimed' || b.state === 'live')) return no(409, `the baton is ${b.state} by a device; the table leads until it is returned`);
+      if (b && (b.state === 'claimed' || b.state === 'live') && !m.takeBack) return no(409, `the baton is ${b.state} by a device; the table leads until it is returned (or the page takes the lead back)`);
       if (m.place.from !== 'web') return no(400, "the page arms the baton: place.from must be 'web'");
       return { status: 201, baton: { id: m.id, state: 'armed', place: m.place, armedAt: new Date(now).toISOString(), ttlMs: BATON_TTL_MS } };
     case 'claim':

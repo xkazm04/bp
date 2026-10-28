@@ -1,11 +1,12 @@
-// GET /api/session/place: the place baton as it stands (`{ state: 'none' }` when there is none). With `?claim=1` and the
+// GET /api/session/place (behind the write guard, since a claim moves it): the place baton as it stands (`{ state: 'none' }` when there is none). With `?claim=1` and the
 // `x-bp-device` header, the device claims an armed baton (armed -> claimed) and gets its place: 404 none, 410 expired,
 // 409 another device holds it. POST /api/session/place, body `{ place }`: from the page (place.from 'web', with the
-// x-bp-human token) it arms a baton for 120 s (409 while a device holds one); from the claiming device (place.from 'vr',
+// x-bp-human token) it arms a baton for 120 s (409 while a device holds one, unless `takeBack: true`: the person takes the lead
+// back from a device that never handed it back); from the claiming device (place.from 'vr',
 // x-bp-device) it publishes the table's place (claimed|live -> live) and the companion stream carries it to every page
 // (`event: place`). Localhost only (see baton.server.ts for the door).
 // The state machine and the Place's shape: packages/core/src/session/place.ts.
-import { jsonOnly, localHost, localOnly } from '../../../../scan/local-only.ts';
+import { jsonOnly, localOnly } from '../../../../scan/local-only.ts';
 import { isHuman, notHuman, sortableId } from '../../companion/door.server.ts';
 import { current, readPlace, step } from '../../../../session/place.ts';
 import { deviceOf, noDevice, readBaton, writeBaton } from '../baton.server.ts';
@@ -14,7 +15,8 @@ import { publish } from '../../../companion/bus.server.ts';
 const NO_STORE = { 'cache-control': 'no-store' };
 
 export function GET(req: Request): Response {
-  const denied = localHost(req);
+  // the write guard, not the read one: `?claim=1` moves the baton (armed -> claimed)
+  const denied = localOnly(req);
   if (denied) return Response.json({ error: denied }, { status: 403 });
   const now = Date.now();
   if (new URL(req.url).searchParams.get('claim') !== '1') return Response.json(current(readBaton(), now) ?? { state: 'none' }, { headers: NO_STORE });
@@ -39,7 +41,7 @@ export async function POST(req: Request): Promise<Response> {
   let r;
   if (place.from === 'web') {
     if (!isHuman(req)) return notHuman();
-    r = step(readBaton(), { kind: 'arm', place, id: sortableId('pb_') }, now);
+    r = step(readBaton(), { kind: 'arm', place, id: sortableId('pb_'), takeBack: b.takeBack === true }, now);
   } else {
     const device = deviceOf(req);
     if (!device) return noDevice();

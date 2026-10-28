@@ -42,6 +42,9 @@ check('after the return the page may arm again', step(r.baton, { kind: 'arm', pl
 check('an armed baton nobody claims in 120 s reads expired', current(armed, T0 + BATON_TTL_MS + 1)?.state === 'expired' && current(armed, T0 + BATON_TTL_MS - 1)?.state === 'armed');
 check('claiming an expired baton: 410, no error thrown', step(armed, { kind: 'claim', device: 'quest' }, T0 + BATON_TTL_MS + 1).status === 410);
 check('a refused move leaves the baton as it was', step(live, { kind: 'arm', place: web, id: 'x' }, T0).baton === live);
+const back = step(live, { kind: 'arm', place: web, id: 'pb_9', takeBack: true }, T0 + 9000);
+check('the page takes the lead back from a device that never returned it: armed anew', back.status === 201 && back.baton?.state === 'armed' && !back.baton.device);
+check('then the old device can no longer write: 409', step(back.baton, { kind: 'publish', place: vr('#x'), device: 'quest' }, T0 + 9100).status === 409);
 
 // ------------------------------------------------------------------------------------------------ readPlace
 check('readPlace keeps a good place', typeof readPlace(web) === 'object');

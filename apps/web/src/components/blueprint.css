@@ -467,7 +467,7 @@ a.extchip:hover, a.extchip:focus-visible { text-decoration: underline; }
 .tcard .tc-where code { font: 500 12px var(--mono); color: var(--amber-2); }
 .tcard .tc-arm, .tcard .tc-play { display: block; width: 100%; height: 36px; font-size: 14px; letter-spacing: 0.03em; }
 .tcard .tc-arm { background: var(--glow); color: var(--on-ink); border: 0; font-weight: 600; }
-.tcard .tc-arm:disabled { opacity: 0.5; cursor: default; }
+.tcard .tc-arm.back { background: none; color: var(--ink-hi); border: 1px solid var(--amber); font-weight: 500; }
 .tcard .tc-play { margin-top: 10px; background: none; border: 1px solid var(--ink-3); color: var(--ink); }
 .tcard .tc-play:hover, .tcard .tc-arm:not(:disabled):hover { filter: brightness(1.08); border-color: var(--accent); }
 .tcard .tc-state { margin: 10px 0 0; padding: 7px 10px; border-left: 3px solid var(--ink-3); background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink-hi); }

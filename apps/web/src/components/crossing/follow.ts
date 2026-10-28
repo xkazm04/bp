@@ -1,6 +1,7 @@
 // The page follows the table: the companion stream's `place` event (the place baton, published when the table writes it or
 // hands it back) arrives here as a window event from the companion's chunk, and the page flies there with the machinery a
-// focus command uses (the hash route restoreHash reads). Only the table's writes are followed - a place the page armed
+// focus command uses (the hash route restoreHash reads). It rides the lamp's own EventSource, so it follows wherever the
+// live lamp runs (desktop, not the fixture). Only the table's writes are followed - a place the page armed
 // itself is where it already is - and only for the product on the page. Small and in the main chunk: the crossing's host
 // listens while the plan is up, whether or not the crossing's own overlay ever opened.
 import type { PlaceBaton } from '@bp/core/session/place';

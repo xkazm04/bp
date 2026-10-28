@@ -37,7 +37,11 @@ export function CrossingHost() {
     const on = (ev: Event) => {
       const b = (ev as CustomEvent<PlaceBaton>).detail, h = b && followHash(b, E.M.live?.slug ?? 'kettle');
       if (!h) return;
-      if (h !== (location.hash || '#')) location.hash = h === '#' ? '' : h; // hashchange -> restoreHash flies there
+      // the table's moves replace the entry (a session in VR must not fill the back button); hashchange -> restoreHash flies
+      if (h !== (location.hash || '#')) {
+        try { history.replaceState(history.state, '', location.pathname + location.search + (h === '#' ? '' : h)); } catch { /* ignore */ }
+        window.dispatchEvent(new HashChangeEvent('hashchange'));
+      }
       if (b.state === 'returned' && !openRef.current) setLeft(placeName(E, h));
     };
     window.addEventListener(PLACE_EVENT, on);

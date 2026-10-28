@@ -6,7 +6,7 @@
 // place); that door is not built, so here the device names itself with x-bp-device. A step fires once per run, in order;
 // a replay starts a new run (an arm over a baton the stand-in still holds hands it back first).
 import type { CrossPlace, NextPlace } from './place';
-import { placeWire } from './facts';
+import { placeWire } from './place';
 
 export type BatonStep = 'arm' | 'claim' | 'live' | 'lead' | 'return';
 export const BATON_STEPS: readonly BatonStep[] = ['arm', 'claim', 'live', 'lead', 'return'];
@@ -36,6 +36,10 @@ async function call(step: BatonStep, method: 'GET' | 'POST', url: string, body: 
 export interface BatonRun {
   /** Fire `step` (and every earlier step not fired yet), once each, in order. */
   upTo(step: BatonStep): void;
+  /** Hand back what the stand-in holds, and nothing else (closing early, switching the door): no unplayed write goes out. */
+  handBack(): void;
+  /** Whether this run has fired anything. */
+  started(): boolean;
   /** Start a new run: the next arm re-arms. */
   reset(): void;
   /** Whether the stand-in holds the baton now (claimed, not returned). */
@@ -43,11 +47,13 @@ export interface BatonRun {
 }
 
 /** A run for place `a` (the table leads to `next`); `onResult` gets each exchange as it completes, `onFail` once if the route is not there. */
-export function batonRun(a: CrossPlace, next: NextPlace | null, onResult: (x: Exchange) => void, onFail: () => void): BatonRun {
-  let token: string | null = null, chain: Promise<unknown> = Promise.resolve(), fired = new Set<BatonStep>(), failed = false;
+export function batonRun(a: CrossPlace, next: NextPlace | null, report: (x: Exchange) => void, onFail: () => void): BatonRun {
+  // a reset starts a new generation: a request of an earlier one still in flight reports to nobody
+  let token: string | null = null, chain: Promise<unknown> = Promise.resolve(), fired = new Set<BatonStep>(), failed = false, gen = 0;
   const dev = { 'x-bp-device': STANDIN };
-  const run = async (s: BatonStep) => {
-    if (failed) return;
+  const run = async (s: BatonStep, g: number) => {
+    if (failed || g !== gen) return;
+    const onResult = (x: Exchange) => { if (g === gen) report(x); };
     if (s === 'arm') {
       if (!token) {
         const r = await fetch('/api/companion/human-token', { cache: 'no-store' });
@@ -68,11 +74,17 @@ export function batonRun(a: CrossPlace, next: NextPlace | null, onResult: (x: Ex
   return {
     upTo(step) {
       for (const s of BATON_STEPS) {
-        if (!fired.has(s)) { fired.add(s); chain = chain.then(() => run(s)).catch(() => { if (!failed) { failed = true; onFail(); } }); }
+        if (!fired.has(s)) { fired.add(s); const g = gen; chain = chain.then(() => run(s, g)).catch(() => { if (!failed && g === gen) { failed = true; onFail(); } }); }
         if (s === step) break;
       }
     },
-    reset() { fired = new Set(); },
+    handBack() {
+      if (!(fired.has('claim') && !fired.has('return'))) return;
+      fired.add('return');
+      chain = chain.then(() => call('return', 'POST', '/api/session/place/return', {}, dev)).catch(() => null);
+    },
+    started() { return fired.size > 0; },
+    reset() { fired = new Set(); gen++; failed = false; },
     holds() { return fired.has('claim') && !fired.has('return'); },
   };
 }

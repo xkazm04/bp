@@ -22,6 +22,11 @@ export interface CrossPlace {
   at: string;
 }
 
+/** The baton's wire: one Place, as packages/core/src/session/place.ts shapes it (the page's card and the crossing both send it). */
+export function placeWire(p: CrossPlace, from: 'web' | 'vr', hash = p.hash, level: number = p.level, target: CrossPlace['target'] = p.target) {
+  return { product: p.product, hash: hash === '#' ? '' : hash, level: 'L' + level, target, from, at: p.at };
+}
+
 /** Where the table leads next in the demo (the person dives one place deeper on the table; the page follows). */
 export interface NextPlace { hash: string; name: string; bay: BayNode | null; room: RoomNode | null; level: 2 | 3 }
 

@@ -12,10 +12,8 @@ export interface StateFacts { title: string; facts: Fact[] }
 
 export const KEY_LABEL: Record<Fact['k'], string> = { see: 'You see', draw: 'Drawn by', net: 'Network', build: 'Build', machine: 'Machine' };
 
-/** The baton's wire: one Place, as the design's packages/core/src/session/place.ts shapes it. */
-export function placeWire(p: CrossPlace, from: 'web' | 'vr', hash = p.hash, level: number = p.level, target: CrossPlace['target'] = p.target) {
-  return { product: p.product, hash: hash === '#' ? '' : hash, level: 'L' + level, target, from, at: p.at };
-}
+export { placeWire } from './place';
+import { placeWire } from './place';
 export const bytes = (o: unknown) => new TextEncoder().encode(JSON.stringify(o)).length;
 
 export interface Packet {
