@@ -1,8 +1,10 @@
 # Desk to table: the crossing from the web app into the VR table
 
-Written 2026-10-28. This plan takes **"The Desk Becomes the Table"** from a hackathon branch to the product. The web half
-is ported here, on the desk machine that ran the hackathon. The VR half then moves to **Lynx**, which is assumed to have
-every tool ready: UE 5.8.4, the Android toolchain (S2), Meta XR v207 and adb.
+Written 2026-10-28. This plan takes **"The Desk Becomes the Table"** from a hackathon branch to the product. The
+**migration** - landing the winner's web code on master - runs here, on the desk machine that ran the hackathon (Part W).
+After that push the project moves to **Lynx** for good (owner, 2026-10-28): the LAN door, the contract for Unreal and the
+whole VR half are built there (Part L). Lynx is assumed to have every tool ready: UE 5.8.4, the Android toolchain (S2),
+Meta XR v207 and adb.
 
 ## The decision
 
@@ -87,10 +89,11 @@ must match. t 0.0 is the XR session reaching FOCUSED:
 **Unpaired** (no pairing, or no baton): the APK opens on the bundled Kettle at home, exactly as the judged build does
 today. No passthrough, no lift, no live lamp.
 
-## Part W: the web half, here (desk machine, x64)
+## Part W: the migration, here (desk machine, x64)
 
 Each step is atomic commits on master, with `npm run check` green and the secret scan clean, then pushed. This is how
-Lynx receives the work (CLAUDE.md, Git).
+Lynx receives the work (CLAUDE.md, Git). Part W ports what the winner built and adds nothing new; new work starts on
+Lynx.
 
 ### W0. Land the branch on current master
 
@@ -106,7 +109,7 @@ The hackathon's two code reviews fixed 17 issues. Read the rebased diff once mor
 the repo's laws, and fix in place:
 
 - **Device identity.** `x-bp-device` is accepted from any loopback caller. That is acceptable while only loopback
-  exists, but W3 must make the door set it from the paired fingerprint and drop any client-sent value. Write that rule
+  exists, but the door (D1) must set it from the paired fingerprint and drop any client-sent value. Write that rule
   into `baton.server.ts`'s header now, and add a gate case for it.
 - **Fixture mode.** The follow rides the live lamp's stream, so `?lamp-fixture=1` does not follow. Either make it say
   so in the card, or follow from a fixture stream.
@@ -128,11 +131,53 @@ The winner is the code, so the port cannot drift from it. What can drift is the 
   - `final-s0..9.png`.
 - **Pass:** those shots and the refs agree when you look at them side by side.
 
-### W3. The S8 door, server half
+### W3. Docs and landing, the end of the migration
 
-S8 is the door between the headset and `apps/server`. It is TypeScript in `apps/server`, so it is built and tested
-here. Only its headset acceptance waits for Lynx (L2). It follows `../vr-light-table/standalone-plan.md` S8 as written,
-plus one scope:
+- `docs/blueprint-ui.md`: the light table look, the card, the follow, `/crossing` and the session routes (the branch
+  already wrote most of it).
+- `../vr-light-table/standalone-plan.md` S8: a pointer to the `place` scope.
+- This plan: mark W0-W3 done, with the commits.
+- `git fetch`, rebase onto `origin/master`, `npm run check`, the secret scan, then push.
+- **This push ends development on the desk machine.** From here on the project lives on Lynx (owner, 2026-10-28): the
+  rest of this plan, and everything after it, runs there. The hackathon worktrees and the arena stay on the desk
+  machine as the record; nothing in them is needed on Lynx.
+
+## Part L: everything after the migration, on Lynx
+
+Lynx pulls master after W3. The assumption is that the tooling is ready: `start-editor.ps1`'s environment,
+`package-quest.ps1`, adb, Meta XR v207, the schema and PoF junctions, and a Quest 3S in developer mode with hand
+tracking on. UE work runs in the main checkout only, one UBT or editor at a time (`.claude/spark/config.md`).
+
+Part L has two phases (owner, 2026-10-28):
+
+- **The base: L0 and L1.** The competition build's own path. It is not optional.
+- **The optional crossing phase: D1, D2 and L2 to L7, before 2026-11-18.** It is entered only when every earlier aspect
+  works well: L0 and L1 pass, and the competition plan's S4 (the mobile tier, measured on the device) and S6 (the judged
+  experience: the cold start, the tour, the hands-first audit) are green. If any of those is still open, the crossing
+  waits for them, and the competition build ships without it. Inside the phase, every step re-runs L0's unpaired line;
+  a step that breaks it is reverted, not patched over, before the submission (S7).
+
+### L0. Sync and regress the judged build
+
+- Pull master, re-run `apps/vr/tools/link-schema.ps1` so `FBpPlace` is visible, and build the editor.
+- Run `node apps/vr/tools/run-bplink.mjs --mode game --bundle` and the Simulator (`--xr-sim --vr`). Both must log the
+  bundle line and `Kettle wings=5` as before.
+- **Pass:** the unpaired path is unchanged. This is the competition build's regression line, and every later step
+  re-runs it.
+
+### L1. The first run on the Quest 3S (standalone-plan S5)
+
+- This is on the competition path already. If it is done by the time this plan runs, record its reading and skip it.
+- **Pass:** `adb logcat -s UE` shows the bundle line, then `Kettle wings=5`, and the table draws and takes hands.
+
+> **The optional crossing phase starts here.** Enter it only when the gate holds: L0, L1, S4 and S6 green. Its steps
+> run in the order below.
+
+### D1. The S8 door, server half (on Lynx, the door's host)
+
+S8 is the door between the headset and `apps/server`. Lynx serves it (owner, 2026-10-28), so it is built and tested
+there. It is TypeScript in `apps/server`, and its headset acceptance is L2. It follows
+`../vr-light-table/standalone-plan.md` S8 as written, plus one scope:
 
 1. **Opt-in.** `--lan` starts a second listener on the LAN address at `:3101`; without the flag nothing changes.
 2. **Admission.** Only private-range peers are admitted (10/8, 172.16/12, 192.168/16, 100.64/10). Every refusal is the
@@ -154,7 +199,7 @@ plus one scope:
     `x-bp-device`), with identical refusal bodies;
   - a second machine on the LAN, or `curl` from a VM, completes a claim against `:3101`.
 
-### W4. Hand the contract to Unreal
+### D2. Hand the contract to Unreal (on Lynx)
 
 - **Schemas.** Add JSON Schemas for `Place`, `PlaceBaton` and the `place` event to `packages/schema`. Generate the UE
   structs `FBpPlace` and `FBpPlaceBaton`. Extend `check:schema` parity, so a changed field fails the build in both
@@ -167,33 +212,6 @@ plus one scope:
 - **The clock.** Export `timeline.ts`'s design times as named constants and quote them in the contract, so the UE step
   durations have one source.
 - **Pass:** `check:schema` is green, and the generated header compiles in the UE stand-in (`packages/schema/ue-standin`).
-
-### W5. Docs and landing
-
-- `docs/blueprint-ui.md`: the light table look, the card, the follow, `/crossing` and the session routes (the branch
-  already wrote most of it).
-- `../vr-light-table/standalone-plan.md` S8: a pointer to the `place` scope.
-- This plan: mark W0-W5 done, with the commits.
-- `git fetch`, rebase onto `origin/master`, `npm run check`, the secret scan, then push. **Lynx starts from this push.**
-
-## Part L: the VR half, on Lynx
-
-Lynx pulls master after W5. The assumption is that the tooling is ready: `start-editor.ps1`'s environment,
-`package-quest.ps1`, adb, Meta XR v207, the schema and PoF junctions, and a Quest 3S in developer mode with hand
-tracking on. UE work runs in the main checkout only, one UBT or editor at a time (`.claude/spark/config.md`).
-
-### L0. Sync and regress the judged build
-
-- Pull master, re-run `apps/vr/tools/link-schema.ps1` so `FBpPlace` is visible, and build the editor.
-- Run `node apps/vr/tools/run-bplink.mjs --mode game --bundle` and the Simulator (`--xr-sim --vr`). Both must log the
-  bundle line and `Kettle wings=5` as before.
-- **Pass:** the unpaired path is unchanged. This is the competition build's regression line, and every later step
-  re-runs it.
-
-### L1. The first run on the Quest 3S (standalone-plan S5)
-
-- This is on the competition path already. If it is done by the time this plan runs, record its reading and skip it.
-- **Pass:** `adb logcat -s UE` shows the bundle line, then `Kettle wings=5`, and the table draws and takes hands.
 
 ### L2. BpLink through the door
 
@@ -232,7 +250,7 @@ tracking on. UE work runs in the main checkout only, one UBT or editor at a time
    content only.
 5. **Fade, t 2.0-2.8.** Passthrough fades to the studio, and the rooms rise.
 6. **At t 2.7**, the lamp caption names the place, using the lamp caption's text class (40 arcmin).
-- The times come from W4's constants. The view is never moved; log any pawn or camera transform during the crossing as
+- The times come from D2's constants. The view is never moved; log any pawn or camera transform during the crossing as
   an error.
 - If the monitor anchor is unknown (no ceremony yet, or lost), the paper fades in on the desk instead.
 - **Pass:**
@@ -279,40 +297,41 @@ tracking on. UE work runs in the main checkout only, one UBT or editor at a time
 | W0 land the branch | desk | ½ session | - |
 | W1 review, perf, text floor | desk | ½ session | W0 |
 | W2 pin the look | desk | ½ session | W0 |
-| W3 S8 door, server half | desk | 1 session | W0 |
-| W4 contract to UE | desk | ½ session | W0, W3 |
-| W5 docs, push | desk | ¼ session | W1-W4 |
-| L0 sync, regression | Lynx | ¼ session | W5 |
+| W3 docs, push (the migration ends) | desk | ¼ session | W1, W2 |
+| L0 sync, regression | Lynx | ¼ session | W3 |
 | L1 first Quest run (S5) | Lynx + owner | on the competition path | L0 |
-| L2 BpLink through the door | Lynx | 1 session | L1, W3 |
-| L3 the baton in BpLink | Lynx | 1 session | L2, W4 |
+| *gate: L0, L1, S4 and S6 green* | | | |
+| D1 S8 door, server half | Lynx | 1 session | the gate |
+| D2 contract to UE | Lynx | ½ session | D1 |
+| L2 BpLink through the door | Lynx | 1 session | D1 |
+| L3 the baton in BpLink | Lynx | 1 session | L2, D2 |
 | L4 `ABpCrossing` | Lynx + owner | 1-2 sessions | L3 |
 | L5 pin ceremony | Lynx + owner | 1 session | L4 |
 | L6 mobile tier with passthrough | Lynx + owner | ongoing (S4) | L4 |
 | L7 sittings and record | owner | 2 sittings | L4, L5 |
 
-Web: about 3 sessions. VR: about 5-6 sessions plus two owner sittings. The VR figure matches the winning report's own
-sizing.
+The migration: about 1¾ sessions here. The optional phase on Lynx: about 6-7 sessions plus two owner sittings, which
+matches the winning report's own sizing once the door is counted.
 
 ## Risks
 
 | Risk | What we do |
 |---|---|
-| The crossing destabilises the judged APK before 2026-11-18 | Everything crossing-specific runs only when paired; L0's unpaired line is re-run at every step. See decision 1 |
+| The crossing destabilises the judged APK before 2026-11-18 | The phase is optional and gated; everything crossing-specific runs only when paired; L0's unpaired line is re-run at every step, and a step that breaks it is reverted (decision 1) |
 | Passthrough or anchors behave differently on the Quest 3S than documented | Each is a probe with a fallback: the paper on the desk without anchors, and the bundle without a pairing |
 | STOPPING is not delivered when the headset comes off | The page follows the whole time, so a missed return only leaves the crumb out. The person can take the lead back from the card (`takeBack`) |
 | Cleartext Bearer on the LAN | Home LAN or a tailnet only, as S8 records; TLS on the door is the follow-up |
 | The glass's raster cost grows with later visual work | W1's quiet-machine measurement becomes the bar in `docs/perf.md`; W2's shots catch drift |
-| A device forges `x-bp-device` | The door sets it from the fingerprint and strips the client value (W1 rule, W3 gate case) |
+| A device forges `x-bp-device` | The door sets it from the fingerprint and strips the client value (W1 rule, D1 gate case) |
 
-## Decisions for the owner
+## Decisions (owner, 2026-10-28)
 
-1. **Before or after the competition?** Recommended: the web half now, and L0-L1 now (competition-critical). L2-L5
-   land before 2026-11-18 only while the unpaired line holds; otherwise right after.
-2. **Keep the `/crossing` demo route in the product?** Recommended: yes, as the spec the UE work is measured against,
-   behind the rail card's "Play the crossing from here".
-3. **The desk host for the door.** S8 assumes Lynx serves `:3101`. The desk machine (x64) can serve it as well; the
-   headset needs only one of them on the same network.
+1. **Before the deadline, as an optional phase.** The crossing (D1, D2, L2-L7) is built before 2026-11-18 only if every
+   earlier aspect works well: L0, L1, S4 and S6. Otherwise the competition build ships without it.
+2. **Keep the `/crossing` demo route** in the product, behind the rail card's "Play the crossing from here", as the spec
+   the UE work is measured against.
+3. **Lynx serves the LAN door**, and the project's further development moves to Lynx completely after the migration
+   (Part W). The desk machine keeps only the hackathon record.
 
 ## Sources
 
