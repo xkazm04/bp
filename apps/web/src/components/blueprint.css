@@ -452,6 +452,11 @@ a.extchip:hover, a.extchip:focus-visible { text-decoration: underline; }
 #rail .ri-table { margin-top: 6px; border-top: 1px solid color-mix(in srgb, var(--glow) 30%, transparent); padding-top: 10px; color: var(--ink-hi); }
 #rail .ri-table .n { color: color-mix(in srgb, var(--glow) 70%, var(--ink-hi)); }
 #rail .ri-table:hover .g { filter: drop-shadow(0 0 6px var(--glow)); }
+/* the table leads (a headset holds the baton and writes the place): the page says so on the button that started it */
+#rail .ri-table[data-live='1'] { background: color-mix(in srgb, var(--mint) 14%, transparent); border-left-color: var(--mint); }
+#rail .ri-table[data-live='1'] .lb, #rail .ri-table[data-live='1'] .n { color: var(--mint-2); }
+#rail .ri-table[data-live='1'] .g { position: relative; }
+#rail .ri-table[data-live='1'] .g::after { content: ''; position: absolute; right: -4px; top: -2px; width: 9px; height: 9px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 8px var(--mint); }
 /* the crossing's hand-back on the page: 10 s, then gone (components/crossing/CrossingHost) */
 .bp-left { position: absolute; left: var(--cx, 50%); top: 104px; transform: translateX(-50%); z-index: 39; padding: 9px 16px; font-size: 15px; color: var(--ink-hi); background: var(--card-hi); border: 1px solid var(--mint); box-shadow: 0 10px 30px var(--shadow), 0 0 18px color-mix(in srgb, var(--glow) 25%, transparent); white-space: nowrap; animation: bp-left 10s ease forwards; pointer-events: none; }
 @keyframes bp-left { 0% { opacity: 0; } 4% { opacity: 1; } 90% { opacity: 1; } 100% { opacity: 0; } }

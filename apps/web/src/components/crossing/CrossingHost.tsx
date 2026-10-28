@@ -43,6 +43,9 @@ export function CrossingHost() {
         window.dispatchEvent(new HashChangeEvent('hashchange'));
       }
       if (b.state === 'returned' && !openRef.current) setLeft(placeName(E, h));
+      // while the table leads, the rail's VR · Table button says so (a DOM mark: the rail is the Dock's, not this host's)
+      const btn = document.querySelector<HTMLElement>('.ri-table');
+      if (btn) { if (b.state === 'live') btn.dataset.live = '1'; else delete btn.dataset.live; }
     };
     window.addEventListener(PLACE_EVENT, on);
     return () => window.removeEventListener(PLACE_EVENT, on);
