@@ -134,24 +134,24 @@
 .cx-speed button[aria-pressed='true'] { background: #dff8ff; color: #03142a; }
 .cx-now { margin-left: 12px; font-size: 15px; font-weight: 600; }
 .cx-now i { font-style: normal; font-weight: 400; font-size: 13px; color: rgba(232, 244, 255, 0.65); margin-left: 6px; font-family: var(--font-mono), Consolas, monospace; }
-.cx-track { position: relative; margin: 8px 0 0 190px; height: 156px; }
-.cx-chips { position: relative; height: 30px; }
+.cx-track { position: relative; margin: 6px 0 0 190px; height: 162px; }
+.cx-chips { position: relative; height: 56px; }
 .cx-chip { position: absolute; top: 0; transform: translateX(-2px); height: 26px; padding: 0 7px; font-size: 12px !important; white-space: nowrap; background: #0a1a30; border: 1px solid rgba(232, 244, 255, 0.22); color: rgba(232, 244, 255, 0.7); border-radius: 2px; }
-.cx-chip:nth-child(even) { top: 0; }
+.cx-chip.r2 { top: 28px; }
 .cx-chip.past { color: #e8f4ff; border-color: rgba(127, 230, 255, 0.45); }
 .cx-chip.on { background: #ffc35a; color: #241600; border-color: #ffc35a; font-weight: 600; z-index: 2; }
-.cx-lanes { position: absolute; left: 0; right: 0; top: 34px; width: 100%; height: 96px; overflow: visible; }
+.cx-lanes { position: absolute; left: 0; right: 0; top: 60px; width: 100%; height: 80px; overflow: visible; }
 .cx-lanes line { stroke: rgba(232, 244, 255, 0.16); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .cx-lanes .blk { fill: rgba(255, 255, 255, 0.05); }
 .cx-lanes circle { fill: #0a1a30; stroke: rgba(232, 244, 255, 0.5); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .cx-lanes circle.on { fill: #ffc35a; stroke: #ffc35a; }
-.cx-lanenames { position: absolute; left: -190px; top: 34px; width: 180px; display: grid; grid-template-rows: repeat(4, 24px); }
-.cx-lanenames span { font-size: 12px; color: rgba(232, 244, 255, 0.7); text-align: right; line-height: 24px; white-space: nowrap; }
-.cx-evs { position: absolute; left: 0; right: 0; top: 34px; height: 96px; pointer-events: none; }
-.cx-evs span { position: absolute; transform: translate(8px, -1px); font-size: 12px; white-space: nowrap; color: rgba(232, 244, 255, 0.6); background: rgba(5, 13, 26, 0.85); padding: 0 4px; }
+.cx-lanenames { position: absolute; left: -190px; top: 60px; width: 180px; display: grid; grid-template-rows: repeat(4, 20px); }
+.cx-lanenames span { font-size: 12px; color: rgba(232, 244, 255, 0.7); text-align: right; line-height: 20px; white-space: nowrap; }
+.cx-evs { position: absolute; left: 0; right: 0; top: 60px; height: 80px; pointer-events: none; }
+.cx-evs span { position: absolute; transform: translate(8px, 1px); line-height: 16px; font-size: 12px; white-space: nowrap; color: rgba(232, 244, 255, 0.6); background: rgba(5, 13, 26, 0.85); padding: 0 4px; }
 .cx-evs span.on { color: #ffd38a; }
 .cx-range { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; margin: 0; accent-color: #ffc35a; }
-.cx-head { position: absolute; top: 30px; bottom: 18px; width: 2px; margin-left: -1px; background: #ffc35a; box-shadow: 0 0 8px rgba(255, 195, 90, 0.8); pointer-events: none; }
+.cx-head { position: absolute; top: 56px; bottom: 18px; width: 2px; margin-left: -1px; background: #ffc35a; box-shadow: 0 0 8px rgba(255, 195, 90, 0.8); pointer-events: none; }
 
 @media (max-width: 1100px) {
   .cx-body { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) 34vh; }

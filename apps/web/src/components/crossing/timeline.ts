@@ -99,3 +99,23 @@ export function sceneAt(t: number): Scene {
     baton: t < 1.4 ? 'none' : t < F + 0.8 ? 'armed' : t < F + 2.0 ? 'claimed' : t < off ? 'live' : 'returned',
   };
 }
+
+/**
+ * The track's x for a demo time, piecewise linear: the design's dense seconds (FOCUSED to the lamp) get 40% of the width,
+ * so its four events stay apart; the person's minutes and the return get the rest. tOf is the inverse.
+ */
+const BK: readonly (readonly [number, number])[] = [[0, 0], [3.4, 0.13], [FOCUSED, 0.25], [FOCUSED + 3.4, 0.66], [STATES[9].at, 0.84], [END, 1]];
+export function xOf(t: number): number {
+  for (let i = 0; i < BK.length - 1; i++) {
+    const [t0, x0] = BK[i], [t1, x1] = BK[i + 1];
+    if (t <= t1 || i === BK.length - 2) return x0 + ((Math.max(t0, Math.min(t1, t)) - t0) / (t1 - t0)) * (x1 - x0);
+  }
+  return 1;
+}
+export function tOf(x: number): number {
+  for (let i = 0; i < BK.length - 1; i++) {
+    const [t0, x0] = BK[i], [t1, x1] = BK[i + 1];
+    if (x <= x1 || i === BK.length - 2) return t0 + ((Math.max(x0, Math.min(x1, x)) - x0) / (x1 - x0)) * (t1 - t0);
+  }
+  return END;
+}

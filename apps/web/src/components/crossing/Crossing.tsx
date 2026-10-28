@@ -11,7 +11,7 @@
 // The mock parts: the room, the studio and the lamp are sketches; the baton is simulated in this page.
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useEngine } from '../hooks';
-import { END, FOCUSED, STATES, designClock, sceneAt, smooth, stateAt, stateIndex } from './timeline';
+import { END, FOCUSED, STATES, designClock, sceneAt, smooth, stateAt, stateIndex, tOf, xOf } from './timeline';
 import { arrived, capturePage, nextOf, placeOf, type CrossPlace, type NextPlace } from './place';
 import { ART_H, ART_W, drawTable, type Light, type Rise } from './table-art';
 import { KEY_LABEL, factsFor, packets, placeWire, type Mark } from './facts';
@@ -358,7 +358,7 @@ function Transport({ t, playing, speed, setSpeed, seek, stepTo, replay, toggle, 
   stepTo: (d: 1 | -1) => void; replay: () => void; toggle: () => void; setPlaying: (p: boolean) => void; prep: Prep;
 }) {
   const cur = stateAt(t);
-  const pct = (x: number) => (100 * x) / END + '%';
+  const pct = (x: number) => 100 * xOf(x) + '%';
   void prep;
   return (
     <footer className="cx-bot">
@@ -375,23 +375,23 @@ function Transport({ t, playing, speed, setSpeed, seek, stepTo, replay, toggle, 
       <div className="cx-track">
         <div className="cx-chips">
           {STATES.map((s) => (
-            <button key={s.id} type="button" className={'cx-chip' + (s === cur ? ' on' : '') + (t >= s.at ? ' past' : '')} style={{ left: pct(s.at) }}
+            <button key={s.id} type="button" className={'cx-chip' + (s === cur ? ' on' : '') + (t >= s.at ? ' past' : '') + (s.id === 'claimed' || s.id === 'armed' ? ' r2' : '')} style={{ left: pct(s.at) }}
               onClick={() => { setPlaying(false); seek(s.show); }} title={s.clock}>{s.label}</button>
           ))}
         </div>
-        <svg className="cx-lanes" viewBox="0 0 1000 96" preserveAspectRatio="none" aria-hidden="true">
-          {LANES.map((_, i) => <line key={i} x1="0" x2="1000" y1={12 + i * 24} y2={12 + i * 24} />)}
-          <rect className="blk" x={(1000 * 3.4) / END} width={(1000 * (FOCUSED - 3.4)) / END} y="0" height="96" />
-          {EVENTS.map((e, i) => <circle key={i} cx={(1000 * e.at) / END} cy={12 + e.lane * 24} r="4" className={t >= e.at ? 'on' : ''} />)}
+        <svg className="cx-lanes" viewBox="0 0 1000 80" preserveAspectRatio="none" aria-hidden="true">
+          {LANES.map((_, i) => <line key={i} x1="0" x2="1000" y1={10 + i * 20} y2={10 + i * 20} />)}
+          <rect className="blk" x={1000 * xOf(3.4)} width={1000 * (xOf(FOCUSED) - xOf(3.4))} y="0" height="80" />
+          {EVENTS.map((e, i) => <circle key={i} cx={1000 * xOf(e.at)} cy={10 + e.lane * 20} r="4" className={t >= e.at ? 'on' : ''} />)}
         </svg>
         <div className="cx-lanenames">{LANES.map((l) => <span key={l}>{l}</span>)}</div>
         <div className="cx-evs">
           {EVENTS.filter((e) => e.at <= t + 0.02 && t - e.at < 3 && !EVENTS.some((o) => o.lane === e.lane && o.at > e.at && o.at <= t + 0.02)).map((e, i) => (
-            <span key={i} style={{ left: pct(e.at), top: 2 + e.lane * 24 }} className={t >= e.at ? 'on' : ''}>{e.label}</span>
+            <span key={i} style={{ left: pct(e.at), top: e.lane * 20 }} className={t >= e.at ? 'on' : ''}>{e.label}</span>
           ))}
         </div>
-        <input className="cx-range" type="range" min={0} max={END} step={0.01} value={t} aria-label="Crossing time"
-          onChange={(e) => { setPlaying(false); seek(+e.target.value); }} />
+        <input className="cx-range" type="range" min={0} max={1000} step={1} value={Math.round(1000 * xOf(t))} aria-label="Crossing time" aria-valuetext={cur.label + ', ' + designClock(t)}
+          onChange={(e) => { setPlaying(false); seek(tOf(+e.target.value / 1000)); }} />
         <div className="cx-head" style={{ left: pct(t) }} />
       </div>
     </footer>
