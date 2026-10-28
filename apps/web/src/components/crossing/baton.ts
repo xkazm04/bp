@@ -62,8 +62,10 @@ export function batonRun(a: CrossPlace, next: NextPlace | null, report: (x: Exch
         // a server restart mints a new token: ask again once
         return x.status === 403 ? call('arm', 'POST', '/api/session/place', body, { 'x-bp-human': await humanToken(true) }) : x;
       };
-      let x = await arm();
       // a baton an earlier run left with the stand-in: hand it back first (only its own device may), then arm
+      const held = (await fetch('/api/session/place', { cache: 'no-store' }).then((r) => r.json()).catch(() => null)) as { state?: string; device?: string } | null;
+      if (held?.device === STANDIN && (held.state === 'claimed' || held.state === 'live')) await call('return', 'POST', '/api/session/place/return', {}, dev);
+      let x = await arm();
       if (x.status === 409) { await call('return', 'POST', '/api/session/place/return', {}, dev); x = await arm(); }
       if (x.status === 404) throw new Error('no route');
       onResult(x);

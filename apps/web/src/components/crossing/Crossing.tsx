@@ -167,15 +167,34 @@ export default function Crossing({ onClose }: { onClose: (left?: string) => void
   const replay = useCallback(() => { setT(0); setPlaying(true); }, []);
 
   useEffect(() => { root.current?.focus({ preventScroll: true }); }, []);
-  const onKey = (e: React.KeyboardEvent) => {
-    const k = e.key;
-    if (k === 'Escape') { e.preventDefault(); close(); }
-    else if (k === ' ' || k === 'k') { e.preventDefault(); if (t >= END) replay(); else setPlaying((p) => !p); }
-    else if (k === 'ArrowRight') { e.preventDefault(); stepTo(1); }
-    else if (k === 'ArrowLeft') { e.preventDefault(); stepTo(-1); }
-    else if (k === 'Home' || k === 'r') { e.preventDefault(); setSum(false); replay(); }
-    else if (k === 'e') { e.preventDefault(); setPlaying(false); setSum((v) => !v); }
+  /** The crossing's keys; true when the key was one of them. */
+  const keyAct = (k: string): boolean => {
+    if (k === 'Escape') close();
+    else if (k === ' ' || k === 'k') { if (tRef.current >= END) replay(); else setPlaying((p) => !p); }
+    else if (k === 'ArrowRight') stepTo(1);
+    else if (k === 'ArrowLeft') stepTo(-1);
+    else if (k === 'Home' || k === 'r') { setSum(false); replay(); }
+    else if (k === 'e') { setPlaying(false); setSum((v) => !v); }
+    else return false;
+    return true;
   };
+  const onKey = (e: React.KeyboardEvent) => { if (keyAct(e.key)) e.preventDefault(); };
+  // the dialog owns the keyboard while it is open: a button that unmounts under the focus (the closing card's, the
+  // ceremony's) drops the focus to the page, and the plan's own keys (Esc goes up a level) must not act under the overlay
+  const keyRef = useRef(keyAct);
+  keyRef.current = keyAct;
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => {
+      const r = root.current;
+      if (!r || r.contains(e.target as Node) || (e.target as HTMLElement | null)?.closest?.('input, textarea, [contenteditable]')) return;
+      e.stopPropagation();
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      r.focus({ preventScroll: true });
+      if (keyRef.current(e.key)) e.preventDefault();
+    };
+    window.addEventListener('keydown', on, true);
+    return () => window.removeEventListener('keydown', on, true);
+  }, []);
 
   return (
     <div className="cx" ref={root} role="dialog" aria-modal="true" aria-label="The crossing: from the desk to the table" tabIndex={-1} data-keys="own" onKeyDown={onKey}>
