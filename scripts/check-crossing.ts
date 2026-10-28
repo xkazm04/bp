@@ -58,12 +58,15 @@ const baton = (state: PlaceBaton['state'], from: 'web' | 'vr', product = 'kettle
   ({ id: 'pb_x', state, place: { product, hash: '#at=scheduling', level: 'L2', from, at: '2026-10-28T09:00:00Z' }, armedAt: '2026-10-28T09:00:00Z', ttlMs: 120000 });
 check('the page follows the table\'s live writes and its return', followHash(baton('live', 'vr'), 'kettle') === '#at=scheduling' && followHash(baton('returned', 'vr'), 'kettle') === '#at=scheduling');
 check('the page does not follow its own arm, a claim, another product, or an expired baton',
-  followHash(baton('armed', 'web'), 'kettle') === null && followHash(baton('claimed', 'web'), 'kettle') === null && followHash(baton('live', 'vr', 'pof'), 'kettle') === null && followHash(baton('expired', 'web'), 'kettle') === null);
+  followHash(baton('armed', 'web'), 'kettle') === null && followHash(baton('claimed', 'web'), 'kettle') === null && followHash(baton('live', 'vr', 'pof'), 'kettle') === null && followHash(baton('expired', 'vr'), 'kettle') === null && followHash(baton('claimed', 'vr'), 'kettle') === null);
 
 // ------------------------------------------------------------------------------------------------ the source
 const host = fs.readFileSync(path.join(DIR, 'CrossingHost.tsx'), 'utf8'), crossing = fs.readFileSync(path.join(DIR, 'Crossing.tsx'), 'utf8');
 check('the overlay is a lazy chunk: the host imports it only with import()', /lazy\(\(\) => import\('\.\/Crossing'\)\)/.test(host) && !/from '\.\/Crossing'/.test(host));
 check('the comfort doctrine: no clock-driven style on the view (the perspective container or the desk)', !/className="cx-desk"[^>]*style=/.test(crossing) && !/className="cx-persp"[^>]*style=\{\{[^}]*transform/.test(crossing));
+const stream = fs.readFileSync(path.join(ROOT, 'apps/web/src/components/companion/stream.ts'), 'utf8'), place = fs.readFileSync(path.join(DIR, 'place.ts'), 'utf8');
+const key = /const CONV_KEY = '([^']+)'/.exec(stream)?.[1];
+check('the baton reads the desk\'s conversation under the key the lamp writes it', !!key && place.includes(`sessionStorage.getItem('${key}')`), String(key));
 const css = fs.readFileSync(path.join(DIR, 'crossing.css'), 'utf8');
 const sizes = [...css.matchAll(/font(?:-size)?:\s*(?:[\d.]+\s+)?(?:italic\s+)?(?:\d{3}\s+)?([\d.]+)px/g)].map((m) => +m[1]);
 check('nothing readable in the overlay\'s CSS is under 12 px', sizes.length > 10 && sizes.every((n) => n >= 12), JSON.stringify(sizes.filter((n) => n < 12)));

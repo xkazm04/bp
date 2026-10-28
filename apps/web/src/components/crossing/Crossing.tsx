@@ -57,6 +57,8 @@ export default function Crossing({ onClose }: { onClose: (left?: string) => void
   const [paired, setPaired] = useState(true);
   // the first crossing's pin ceremony (two touches, once), shown at passthrough on request; the clock holds meanwhile
   const [cere, setCere] = useState(false);
+  // it ends when the clock moves on (play, replay, a seek past it) or the door is switched
+  useEffect(() => { if (cere && (playing || !paired || t < FOCUSED || t >= FOCUSED + 0.8)) setCere(false); }, [cere, playing, paired, t]);
   // the baton's requests as they ran against this server, on the crossing's clock; the place events the page heard back
   const [real, setReal] = useState<Exchange[]>([]);
   const [batonOff, setBatonOff] = useState(false);
@@ -184,7 +186,7 @@ export default function Crossing({ onClose }: { onClose: (left?: string) => void
         <button type="button" className="cx-x" onClick={close} title="Close ( Esc )">Close · Esc</button>
       </header>
       {!prep ? <div className="cx-prep"><span className="cx-spin" aria-hidden="true" />Reading your place and drawing the table…</div> : <Body prep={prep} t={t} paired={paired} wire={{ real, heard, off: batonOff }} cere={cere}
-        onCere={(on) => { setCere(on); if (on) { setPlaying(false); setT(STATES[3].show); } }} />}
+        onCere={(on) => { setCere(on); setPlaying(!on); if (on) setT(STATES[3].show); }} />}
       {prep && (sum || (ended && !playing)) && <Summary prep={prep} wire={{ real, heard, off: batonOff }} onReplay={() => { setSum(false); replay(); }} onClose={() => { setSum(false); if (ended) setT(STATES[9].show); }} />}
       {prep && <Transport t={t} playing={playing} speed={speed} setSpeed={setSpeed} seek={seek} stepTo={stepTo} replay={replay}
         toggle={() => (t >= END ? replay() : setPlaying((p) => !p))} setPlaying={setPlaying} paired={paired} setPaired={setPaired} />}
@@ -207,7 +209,7 @@ function Body({ prep, t, paired, wire, cere, onCere }: { prep: Prep; t: number; 
     <div className="cx-body">
       <div className="cx-stagewrap" ref={wrap}>
         <div className="cx-box" style={{ width: 1600 * k, height: 900 * k }}>
-          <Stage prep={prep} t={t} k={k} paired={paired} cere={cere && t >= FOCUSED && t < FOCUSED + 0.8} onCere={onCere} />
+          <Stage prep={prep} t={t} k={k} paired={paired} cere={cere && paired && t >= FOCUSED && t < FOCUSED + 0.8} onCere={onCere} />
         </div>
       </div>
       <Panel prep={prep} t={t} paired={paired} wire={wire} onCere={onCere} />

@@ -56,10 +56,15 @@ export function batonRun(a: CrossPlace, next: NextPlace | null, report: (x: Exch
     if (failed || g !== gen) return;
     const onResult = (x: Exchange) => { if (g === gen) report(x); };
     if (s === 'arm') {
-      const body = { place: placeWire(a, 'web') }, human = { 'x-bp-human': await humanToken() };
-      let x = await call('arm', 'POST', '/api/session/place', body, human);
+      const body = { place: placeWire(a, 'web') };
+      const arm = async () => {
+        const x = await call('arm', 'POST', '/api/session/place', body, { 'x-bp-human': await humanToken() });
+        // a server restart mints a new token: ask again once
+        return x.status === 403 ? call('arm', 'POST', '/api/session/place', body, { 'x-bp-human': await humanToken(true) }) : x;
+      };
+      let x = await arm();
       // a baton an earlier run left with the stand-in: hand it back first (only its own device may), then arm
-      if (x.status === 409) { await call('return', 'POST', '/api/session/place/return', {}, dev); x = await call('arm', 'POST', '/api/session/place', body, human); }
+      if (x.status === 409) { await call('return', 'POST', '/api/session/place/return', {}, dev); x = await arm(); }
       if (x.status === 404) throw new Error('no route');
       onResult(x);
     } else if (s === 'claim') onResult(await call('claim', 'GET', '/api/session/place?claim=1', undefined, dev));

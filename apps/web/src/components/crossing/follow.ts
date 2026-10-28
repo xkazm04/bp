@@ -10,13 +10,22 @@ import type { Engine } from '@/engine/Engine';
 export const PLACE_EVENT = 'bp:place';
 
 /** bp's own page's human token (GET /api/companion/human-token), fetched once per page and shared by the card and the
- *  crossing; a refusal clears it so the next arm asks again. */
+ *  crossing. `fresh` asks again: a server restart mints a new token, so a write refused with 403 retries once with a
+ *  fresh one (as companion/stream.ts does for cards; that one lives in the companion's lazy chunk, this one in the main
+ *  chunk, so they are two caches of the same token). */
 let tokenP: Promise<string> | null = null;
-export function humanToken(): Promise<string> {
+export function humanToken(fresh = false): Promise<string> {
+  if (fresh) tokenP = null;
   tokenP ??= fetch('/api/companion/human-token', { cache: 'no-store' })
     .then(async (r) => { if (!r.ok) throw new Error('this page has no human token here'); return ((await r.json()) as { token: string }).token; })
     .catch((e) => { tokenP = null; throw e; });
   return tokenP;
+}
+/** POST a JSON body as bp's own page (x-bp-human), retrying once with a fresh token when the server refuses the old one. */
+export async function postHuman(url: string, body: unknown): Promise<Response> {
+  const send = async (fresh: boolean) => fetch(url, { method: 'POST', cache: 'no-store', headers: { 'content-type': 'application/json', 'x-bp-human': await humanToken(fresh) }, body: JSON.stringify(body) });
+  const r = await send(false);
+  return r.status === 403 ? send(true) : r;
 }
 
 /** The hash the page should fly to for a baton, or null when it is not the page's to follow. */

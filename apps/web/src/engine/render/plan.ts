@@ -459,7 +459,7 @@ function drawGlass(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: BldNode
       ctx.strokeStyle = th.alpha(th.glow, dark ? 0.3 : 0.16); ctx.lineWidth = 5; ctx.strokeRect(b.x + ins, b.y + ins, b.w - 2 * ins, b.h - 2 * ins);
       ctx.strokeStyle = th.alpha(th.glassEdge, dark ? 0.8 : 0.45); ctx.lineWidth = 1.5; ctx.strokeRect(b.x + ins, b.y + ins, b.w - 2 * ins, b.h - 2 * ins);
       const i2 = ins + 4 * E.U;
-      ctx.strokeStyle = th.alpha(th.glassEdge, dark ? 0.3 : 0.2); ctx.lineWidth = 1; ctx.strokeRect(b.x + i2 + 0.5, b.y + i2 + 0.5, b.w - 2 * i2 - 1, b.h - 2 * i2 - 1);
+      if (b.w - 2 * i2 > 8 && b.h - 2 * i2 > 8) { ctx.strokeStyle = th.alpha(th.glassEdge, dark ? 0.3 : 0.2); ctx.lineWidth = 1; ctx.strokeRect(b.x + i2 + 0.5, b.y + i2 + 0.5, b.w - 2 * i2 - 1, b.h - 2 * i2 - 1); }
       ctx.globalAlpha = 1;
     }
   }

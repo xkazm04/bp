@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { PlaceBaton } from '@bp/core/session/place';
 import type { Engine } from '@/engine/Engine';
-import { humanToken, placeName } from './follow';
+import { placeName, postHuman } from './follow';
 import { placeOf, placeWire } from './place';
 
 type Held = PlaceBaton | { state: 'none' };
@@ -29,8 +29,7 @@ export function TableCard({ E, onPlay, onClose }: { E: Engine; onPlay: () => voi
   const arm = async (takeBack = false) => {
     setErr(null);
     try {
-      const token = await humanToken();
-      const r = await fetch('/api/session/place', { method: 'POST', cache: 'no-store', headers: { 'content-type': 'application/json', 'x-bp-human': token }, body: JSON.stringify({ place: placeWire(placeOf(E), 'web'), ...(takeBack ? { takeBack: true } : {}) }) });
+      const r = await postHuman('/api/session/place', { place: placeWire(placeOf(E), 'web'), ...(takeBack ? { takeBack: true } : {}) });
       const j = (await r.json().catch(() => null)) as (Held & { error?: string }) | null;
       if (!r.ok || !j) setErr(j?.error ?? 'the server answered ' + r.status); else setHeld(j);
     } catch (e) { setErr(e instanceof Error ? e.message : 'could not reach the server'); }
