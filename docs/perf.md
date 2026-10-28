@@ -31,7 +31,9 @@ full raster home 39 vs 29 ms, L-tiles 84 vs 60, L-room 87 vs 67 (+30-40%, paid o
 the first cut cost and why it changed: a gradient over every room's whole area doubled the room-level raster (now a band
 at the far edge, faded out past twice the building's zoom, as is the slab), two wide round-join bloom strokes over the
 whole plan's room path (now one miter stroke of the rooms on view), and a lamp sprite per flag drawn every frame, which
-took the gesture p50 to 33.4 ms (now in the static raster). Gesture after the changes: p50 16.7 ms, budget held.
+took the gesture p50 to 33.4 ms (now in the static raster). Gesture after the changes: p50 16.7 ms, budget held. The bays'
+ribbons as lit glass trays (a glow stroke and a bright edge per ribbon, a bevel per feature segment; 2026-10-28 13:37) kept it
+there: p50 16.7 ms at `?scale=4`.
 
 **The crossing (2026-10-28, `components/crossing`).** A CSS 3D overlay, its own chunk, loaded when played. Frame times
 over a whole 1x playback (requestAnimationFrame deltas, 1600x900): with GPU compositing (ANGLE D3D11) p50 16.7 ms, p95
