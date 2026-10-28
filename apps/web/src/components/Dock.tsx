@@ -12,7 +12,7 @@ import { FindPanel, useRunningScans } from './rail/panels';
 import { shallowEqual, useBp, useEngine } from './hooks';
 import { WideBody, isWide } from './rail/wide';
 import { setFlyoutWidth } from '@/engine/chrome';
-import { openCrossing } from './crossing/CrossingHost';
+import { toggleTableCard } from './crossing/CrossingHost';
 import './rail.css';
 
 /** A number that counts to its new value (instant under reduced motion). */
@@ -196,7 +196,7 @@ export function Dock() {
         initial={false} animate={s.hidden ? { x: 96, opacity: 0 } : { x: 0, opacity: 1 }} transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 320, damping: 34 }}
         style={{ pointerEvents: s.hidden ? 'none' : 'auto' }} inert={s.hidden || undefined}>
         {items.map((x, i) => <RailItem key={x.k} it={x} idx={i} on={open === x.k} />)}
-        <button type="button" className="ri t-ink ri-table" aria-label="Take it to the table: the crossing into the VR light table" title="Take it to the table: arm the place for the headset, and see the crossing" onClick={openCrossing}>
+        <button type="button" className="ri t-ink ri-table" aria-label="Take it to the table: arm this place for the headset, or play the crossing" title="Take it to the table: arm this place for the headset, or play the crossing" onClick={toggleTableCard}>
           <span className="g">{G.table}</span><span className="n">VR</span><span className="lb">Table</span>
         </button>
         <span className="sp" />

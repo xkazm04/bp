@@ -1170,7 +1170,12 @@ lamp light the table hangs over it (`lampLight`, sprites from `Engine.makeSprite
 `glassEdge`, `rim`. All of it is light and edges in the static raster: no place moves, no text is added, and a gesture
 pays nothing for it (gesture p50 16.7 ms at `?scale=4`; the raster cost is in `docs/perf.md`).
 
-**The crossing** (`components/crossing`, its own lazy chunk). The rail's **VR · Table** button, `?cross=1` on any
+**Take it to the table.** The rail's **VR · Table** button opens the design's whole web UI as a card
+(`components/crossing/TableCard.tsx`): **Arm the place baton** arms it for real from the page's place (its hash and the
+focus kind of target) and says what that does - armed for 120 s, put the headset on, nothing launches from here - and,
+while the card is open, reads the baton back each second (claimed by a device, the table leads, handed back, expired).
+
+**The crossing** (`components/crossing`, its own lazy chunk). The card's **Play the crossing**, `?cross=1` on any
 blueprint URL and the `/crossing` route open a web prototype of the crossing into the VR table from the page's real
 place: a 2.5D (CSS 3D) stage with one fixed camera on one clock (`timeline.ts`, ten states, the design's times from
 FOCUSED on), a panel per state saying who draws it, what crosses the network, which build and which machine, each claim
