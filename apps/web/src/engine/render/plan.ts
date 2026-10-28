@@ -455,8 +455,11 @@ function drawGlass(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: BldNode
       if (!onView(v, b, 10)) continue;
       const ins = 4 * E.U;
       ctx.globalAlpha = zone;
-      ctx.strokeStyle = th.alpha(th.glow, dark ? 0.2 : 0.12); ctx.lineWidth = 3; ctx.strokeRect(b.x + ins, b.y + ins, b.w - 2 * ins, b.h - 2 * ins);
-      ctx.strokeStyle = th.alpha(th.glassEdge, dark ? 0.45 : 0.3); ctx.lineWidth = 1; ctx.strokeRect(b.x + ins + 0.5, b.y + ins + 0.5, b.w - 2 * ins - 1, b.h - 2 * ins - 1);
+      // the table's bay frame: a lit double line (a glow, the bright line, a fainter inner one), as the room mode draws it
+      ctx.strokeStyle = th.alpha(th.glow, dark ? 0.3 : 0.16); ctx.lineWidth = 5; ctx.strokeRect(b.x + ins, b.y + ins, b.w - 2 * ins, b.h - 2 * ins);
+      ctx.strokeStyle = th.alpha(th.glassEdge, dark ? 0.8 : 0.45); ctx.lineWidth = 1.5; ctx.strokeRect(b.x + ins, b.y + ins, b.w - 2 * ins, b.h - 2 * ins);
+      const i2 = ins + 4 * E.U;
+      ctx.strokeStyle = th.alpha(th.glassEdge, dark ? 0.3 : 0.2); ctx.lineWidth = 1; ctx.strokeRect(b.x + i2 + 0.5, b.y + i2 + 0.5, b.w - 2 * i2 - 1, b.h - 2 * i2 - 1);
       ctx.globalAlpha = 1;
     }
   }
