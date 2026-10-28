@@ -98,5 +98,15 @@ const run = async () => {
   writeBaton(null);
 };
 await run();
+
+// ------------------------------------------------------------------------------------------------ one companion process
+// With BP_COMPANION_URL set, the web app hands the companion to apps/server; the baton must go with it, or the page arms a
+// baton the headset never sees and publishes on a bus no page hears (apps/web/next.config.ts).
+process.env.BP_COMPANION_URL = 'http://127.0.0.1:3100';
+const cfg = (await import('../apps/web/next.config.ts')).default as { rewrites?: () => Promise<unknown> };
+const rw = (await cfg.rewrites?.()) as { beforeFiles?: { source: string; destination: string }[] } | undefined;
+const pairs = (rw?.beforeFiles ?? []).map((r) => r.source + ' -> ' + r.destination);
+check('with one companion process, /api/session goes to it with /api/companion', pairs.includes('/api/session/:path* -> http://127.0.0.1:3100/api/session/:path*') && pairs.includes('/api/companion/:path* -> http://127.0.0.1:3100/api/companion/:path*'), JSON.stringify(pairs));
+delete process.env.BP_COMPANION_URL;
 console.log(`place baton: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
