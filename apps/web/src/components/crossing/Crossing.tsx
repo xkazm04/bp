@@ -15,7 +15,7 @@ import { GENERAL } from '@bp/core/data/types';
 import { STAGE_WORD } from '@bp/core/model';
 import { END, FOCUSED, STATES, designClock, sceneAt, smooth, stateAt, stateIndex, tOf, xOf } from './timeline';
 import { arrived, capturePage, nextOf, placeOf, type CrossPlace, type NextPlace } from './place';
-import { ART_H, ART_W, drawTable, type Light, type Rise } from './table-art';
+import { drawTable, type Light, type Rise } from './table-art';
 import { KEY_LABEL, factsFor, packets, placeWire, type Mark } from './facts';
 import { STANDIN, batonRun, type BatonRun, type BatonStep, type Exchange } from './baton';
 import { PLACE_EVENT } from './follow';
@@ -27,7 +27,6 @@ interface Prep {
   pageA: string; pageB: string | null;
   tableA: string; tableB: string | null;
   rises: Rise[]; risesB: Rise[]; lights: Light[];
-  titleA: string;
   /** Unpaired, the APK opens its bundled Kettle at home: the site plan, whatever the page's place. */
   tableHome: string; risesHome: Rise[]; lightsHome: Light[];
   /** A decision waiting in this room (else the queue's first): the lamp holds it in VR; it is answered on the desk. */
@@ -94,7 +93,7 @@ export default function Crossing({ onClose }: { onClose: (left?: string) => void
       const d = open.find((x) => a.room?.feats.some((f) => f.id === x.f)) ?? open[0];
       const card = d ? { q: d.q, feature: E.M.P.F[d.f]?.name ?? d.f, lens: E.M.P.LENS[d.lens]?.name ?? d.lens, urg: d.urg } : null;
       const TH = drawTable(E, { ...a, level: 0, wing: null, room: null, bay: null, tile: null, crumbs: [a.crumbs[0]], name: a.crumbs[0] + ' · home' }, null);
-      const out: Prep = { a, next, pageA, pageB, tableA: jpeg(TA.canvas), tableB, rises: TA.rises, risesB, lights: TA.lights, titleA: TA.title,
+      const out: Prep = { a, next, pageA, pageB, tableA: jpeg(TA.canvas), tableB, rises: TA.rises, risesB, lights: TA.lights,
         tableHome: jpeg(TH.canvas), risesHome: TH.rises, lightsHome: TH.lights, card };
       // decoded once here, not on the frame a layer first shows them (a 1600 x 900 decode mid-crossing is a visible hitch)
       await Promise.all([out.pageA, out.pageB, out.tableA, out.tableB, out.tableHome].map((src) => { if (!src) return null; const im = new Image(); im.src = src; return im.decode().catch(() => null); }));
@@ -186,7 +185,7 @@ export default function Crossing({ onClose }: { onClose: (left?: string) => void
       {!prep ? <div className="cx-prep"><span className="cx-spin" aria-hidden="true" />Reading your place and drawing the table…</div> : <Body prep={prep} t={t} paired={paired} wire={{ real, heard, off: batonOff }} />}
       {prep && (sum || (ended && !playing)) && <Summary prep={prep} wire={{ real, heard, off: batonOff }} onReplay={() => { setSum(false); replay(); }} onClose={() => { setSum(false); if (ended) setT(STATES[9].show); }} />}
       {prep && <Transport t={t} playing={playing} speed={speed} setSpeed={setSpeed} seek={seek} stepTo={stepTo} replay={replay}
-        toggle={() => (t >= END ? replay() : setPlaying((p) => !p))} setPlaying={setPlaying} prep={prep} paired={paired} setPaired={setPaired} />}
+        toggle={() => (t >= END ? replay() : setPlaying((p) => !p))} setPlaying={setPlaying} paired={paired} setPaired={setPaired} />}
     </div>
   );
 }
@@ -526,15 +525,14 @@ const EVENTS: { at: number; lane: number; label: string }[] = [
 /** Unpaired: the page arms a baton nobody claims, and the APK opens its bundle. */
 const UNPAIRED_EVENTS = [...EVENTS.filter((e) => e.at < FOCUSED || (e.lane === 0 && e.at > 14)), { at: FOCUSED, lane: 3, label: 'FOCUSED · the bundle at home' }, { at: FOCUSED + 0.8, lane: 2, label: 'still armed · nobody claims it' }];
 
-function Transport({ t, playing, speed, setSpeed, seek, stepTo, replay, toggle, setPlaying, prep, paired, setPaired }: {
+function Transport({ t, playing, speed, setSpeed, seek, stepTo, replay, toggle, setPlaying, paired, setPaired }: {
   t: number; playing: boolean; speed: number; setSpeed: (s: (typeof SPEEDS)[number]) => void; seek: (t: number) => void;
-  stepTo: (d: 1 | -1) => void; replay: () => void; toggle: () => void; setPlaying: (p: boolean) => void; prep: Prep;
+  stepTo: (d: 1 | -1) => void; replay: () => void; toggle: () => void; setPlaying: (p: boolean) => void;
   paired: boolean; setPaired: (p: boolean) => void;
 }) {
   const events = paired ? EVENTS : UNPAIRED_EVENTS;
   const cur = stateAt(t);
   const pct = (x: number) => 100 * xOf(x) + '%';
-  void prep;
   return (
     <footer className="cx-bot">
       <div className="cx-ctl">
