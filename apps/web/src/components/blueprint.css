@@ -456,3 +456,6 @@ a.extchip:hover, a.extchip:focus-visible { text-decoration: underline; }
 .bp-left { position: absolute; left: var(--cx, 50%); top: 104px; transform: translateX(-50%); z-index: 39; padding: 9px 16px; font-size: 15px; color: var(--ink-hi); background: var(--card-hi); border: 1px solid var(--mint); box-shadow: 0 10px 30px var(--shadow), 0 0 18px color-mix(in srgb, var(--glow) 25%, transparent); white-space: nowrap; animation: bp-left 10s ease forwards; pointer-events: none; }
 @keyframes bp-left { 0% { opacity: 0; } 4% { opacity: 1; } 90% { opacity: 1; } 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .bp-left { animation: none; } }
+/* the feature page is a sheet lifted off the table's glass: the rim's light round its edge, lit from the top (page.css owns
+   the rest; only the frame changes, nothing inside moves) */
+.pg { border-color: color-mix(in srgb, var(--rim) 75%, var(--ink)); box-shadow: 0 30px 90px var(--shadow), 0 0 0 1px color-mix(in srgb, var(--glow) 35%, transparent), 0 0 26px color-mix(in srgb, var(--glow) 22%, transparent), inset 0 1px 0 color-mix(in srgb, var(--rim) 35%, transparent); }
