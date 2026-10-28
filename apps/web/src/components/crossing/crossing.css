@@ -103,10 +103,12 @@
 .cx-who.w-web { border-color: #7fe6ff; color: #bff1ff; } .cx-who.w-none { color: #9aa7b6; } .cx-who.w-pass { border-color: #e2c79a; color: #f3dfbd; } .cx-who.w-apk { border-color: #ffc35a; color: #ffd890; }
 .cx-clock { font-family: var(--font-mono), Consolas, monospace; font-size: 13px !important; }
 .cx-still { color: #b8f5d8; border-color: rgba(111, 242, 200, 0.5) !important; }
-.cx-arm { position: absolute; right: 14%; top: 13%; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; max-width: 46%; }
-.cx-btn { font-size: 15px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; padding: 9px 16px; background: #071a33; border: 2px solid #7fe6ff; color: #dff8ff; box-shadow: 0 0 24px rgba(127, 230, 255, 0.45); }
+.cx-arm { position: absolute; right: 7%; bottom: 13%; width: min(330px, 40%); display: flex; flex-direction: column; gap: 8px; padding: 11px 13px 13px; background: rgba(9, 31, 68, 0.97); border: 1px solid rgba(79, 210, 255, 0.5); border-top: 3px solid #4fd2ff; box-shadow: 0 16px 44px rgba(0, 0, 0, 0.55), 0 0 22px rgba(79, 210, 255, 0.25); }
+.cx-arm b { font-size: 15px; color: #fff; }
+.cx-btn { font-size: 14px; font-weight: 600; text-align: center; padding: 8px 12px; background: #4fd2ff; color: #061b38; }
 .cx-arm.on .cx-btn { background: #6ff2c8; color: #04261b; border-color: #6ff2c8; }
-.cx-armsay { font-size: 14px; background: rgba(2, 8, 18, 0.82); padding: 6px 10px; border-left: 3px solid #7fe6ff; text-align: right; }
+.cx-armsay { font-size: 13px; padding: 6px 9px; border-left: 3px solid rgba(232, 244, 255, 0.4); background: rgba(232, 244, 255, 0.06); }
+.cx-arm.on .cx-armsay { border-color: #ffc35a; }
 .cx-blacksay { position: absolute; left: 0; right: 0; top: 47%; text-align: center; font-size: 14px; color: rgba(200, 210, 222, 0.7); }
 .cx-tags { position: absolute; left: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .cx-tag { font-size: 13px; padding: 3px 9px; background: rgba(2, 8, 18, 0.78); border-left: 3px solid; }

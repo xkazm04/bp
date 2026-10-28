@@ -294,9 +294,11 @@ function Stage({ prep, t, k, paired }: { prep: Prep; t: number; k: number; paire
           {inVR && <span className="cx-still" title="The comfort doctrine: seated, stationary; a transition moves the content, never the view">view fixed · content moves</span>}
         </div>
         {t >= 0.6 && t < 3.6 && (
+          // the page's own "Take it to the table" card (TableCard), as it stands by the rail
           <div className={'cx-arm' + (st.id === 'armed' ? ' on' : '')}>
-            <span className="cx-btn">{st.id === 'armed' ? '✓ Baton armed' : 'Take it to the table'}</span>
-            <span className="cx-armsay">{st.id === 'armed' ? 'Put the headset on within 120 s. Nothing launches from here.' : 'The page offers the table; it does not launch anything.'}</span>
+            <b>Take it to the table</b>
+            <span className="cx-btn">{st.id === 'armed' ? '✓ Armed' : 'Arm the place baton'}</span>
+            <span className="cx-armsay">{st.id === 'armed' ? `Armed for ${Math.max(0, Math.ceil(120 - (t - STATES[1].at)))} s: put the headset on. Nothing launches from here.` : 'Nothing armed. The place lives only in this page’s address.'}</span>
           </div>
         )}
         {t >= 3.75 && t < FOCUSED - 0.2 && <div className="cx-blacksay">3–5 s of black while the headset wakes: no app can draw here</div>}
