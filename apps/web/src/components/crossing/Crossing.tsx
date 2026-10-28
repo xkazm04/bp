@@ -76,7 +76,8 @@ export default function Crossing({ onClose }: { onClose: () => void }) {
         route(next.hash); await arrived(E);
         const b = placeOf(E);
         pageB = jpeg(capturePage(b.crumbs, sub(b)));
-        const TB = drawTable(E, { ...a, bay: next.bay, tile: null, name: next.name }, null);
+        // the table's next sheet is drawn from where the page now is (from the site or a wing, the table dives into a room)
+        const TB = drawTable(E, { ...b, name: next.name }, null);
         tableB = jpeg(TB.canvas); risesB = TB.rises;
         route(a.hash); await arrived(E);
       }
@@ -386,8 +387,9 @@ function Panel({ prep, t, paired }: { prep: Prep; t: number; paired: boolean }) 
       </dl>
       {paired && prep.a.product === 'kettle' && (st.id === 'fade' || st.id === 'arrived' || st.id === 'live') && (
         <figure className="cx-real">
-          <img src={prep.a.room ? '/crossing/real-room-kettle.jpg' : '/crossing/real-site-kettle.jpg'} alt={'The VR table in Unreal today: ' + (prep.a.room ? 'room mode, Booking & Attendance' : 'the site plan, level 0') + ', Kettle'} />
-          <figcaption><em className="mk mk-real">REAL</em> The table today in Unreal: {prep.a.room ? 'room mode (Booking & Attendance)' : 'the site plan, level 0'}, a flat capture from the target eye with the PC renderer ({prep.a.room ? 'fag-room-kettle' : 'fid-final-target'}.jpg, docs/concepts/vr-light-table/captures). The APK draws a mobile tier of this: expect less. The stage beside it is a web mock.</figcaption>
+          {/* the table's room once it has dived into one (from the site or a wing it dives into a room) */}
+          <img src={(prep.a.room || (st.id === 'live' && prep.next?.room)) ? '/crossing/real-room-kettle.jpg' : '/crossing/real-site-kettle.jpg'} alt={'The VR table in Unreal today: ' + ((prep.a.room || (st.id === 'live' && prep.next?.room)) ? 'room mode, Booking & Attendance' : 'the site plan, level 0') + ', Kettle'} />
+          <figcaption><em className="mk mk-real">REAL</em> The table today in Unreal: {(prep.a.room || (st.id === 'live' && prep.next?.room)) ? 'room mode (Booking & Attendance)' : 'the site plan, level 0'}, a flat capture from the target eye with the PC renderer ({(prep.a.room || (st.id === 'live' && prep.next?.room)) ? 'fag-room-kettle' : 'fid-final-target'}.jpg, docs/concepts/vr-light-table/captures). The APK draws a mobile tier of this: expect less. The stage beside it is a web mock.</figcaption>
         </figure>
       )}
       <h3>Place baton <em className="mk mk-new">NEW</em></h3>
