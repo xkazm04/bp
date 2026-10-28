@@ -29,6 +29,7 @@ import type { Variant, VariantId } from '@/variants/types';
 import { EngineCtx, LiveCtx, ScanCtxCtx, VariantCtx, shallowEqual, useBp, type LiveInfo } from './hooks';
 import { Header } from './Header';
 import { CompanionHost } from './companion/CompanionHost';
+import { CrossingHost } from './crossing/CrossingHost';
 import { Dock } from './Dock';
 import { BaseBar } from './BaseBar';
 import { Callout, DecisionCard, HoverCard, Ladder, Morning, ScaleBar, SelBar, Ticker, Toast } from './Overlays';
@@ -71,6 +72,7 @@ const Chrome = memo(function Chrome() {
       <ScanMenu />
       <Morning />
       <CompanionHost />
+      <CrossingHost />
     </>
   );
 });

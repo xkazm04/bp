@@ -1,0 +1,104 @@
+// What each state of the crossing is, who draws it, what crosses the network, which build and which machine, with the
+// standing of each claim. The marks follow the design report: `real` = runs today, `measured` = read on Lynx, `documented`
+// = a vendor or spec says so, `unverified` = not yet seen on a Quest 3S or on ARM64, `new` = work this design proposes,
+// `mock` = drawn by this web prototype only.
+import type { StateId } from './timeline';
+import type { CrossPlace, NextPlace } from './place';
+
+export type Mark = 'real' | 'measured' | 'documented' | 'unverified' | 'new' | 'mock';
+export interface Fact { k: 'see' | 'draw' | 'net' | 'build' | 'machine'; text: string; marks: Mark[] }
+export interface StateFacts { title: string; facts: Fact[] }
+
+export const KEY_LABEL: Record<Fact['k'], string> = { see: 'You see', draw: 'Drawn by', net: 'Network', build: 'Build', machine: 'Machine' };
+
+/** The baton's wire: one Place, as the design's packages/core/src/session/place.ts shapes it. */
+export function placeWire(p: CrossPlace, from: 'web' | 'vr', hash = p.hash, level: number = p.level) {
+  return { product: p.product, hash, level: 'L' + level, target: p.target, from, at: '2026-10-28T09:00:00Z' };
+}
+export const bytes = (o: unknown) => new TextEncoder().encode(JSON.stringify(o)).length;
+
+export interface Packet { at: number; dir: 'web→server' | 'APK→door' | 'server→web' | 'APK→door→server'; verb: string; note: string; size: number; mark: Mark }
+
+export function packets(p: CrossPlace, n: NextPlace | null, F: number, live: number, off: number): Packet[] {
+  const armed = { state: 'armed', ttlMs: 120000, place: placeWire(p, 'web') };
+  const out: Packet[] = [
+    { at: 1.4, dir: 'web→server', verb: 'POST /api/session/place', note: 'loopback · x-bp-human · arm', size: bytes(armed), mark: 'new' },
+    { at: F + 0.8, dir: 'APK→door→server', verb: 'GET :3101 /api/session/place?claim=1', note: 'home Wi-Fi · Bearer · scope place → 200', size: bytes({ state: 'claimed', place: placeWire(p, 'web') }), mark: 'new' },
+    { at: F + 2.0, dir: 'APK→door→server', verb: 'POST :3101 /api/session/place', note: 'lift done · live · from vr', size: bytes({ state: 'live', place: placeWire(p, 'vr') }), mark: 'new' },
+  ];
+  if (n) {
+    out.push({ at: live + 0.5, dir: 'APK→door→server', verb: 'POST :3101 /api/session/place', note: 'table leads · ' + n.hash, size: bytes({ state: 'live', place: placeWire(p, 'vr', n.hash, n.level) }), mark: 'new' });
+    out.push({ at: live + 0.6, dir: 'server→web', verb: 'stream event: place', note: 'the page flies there', size: bytes({ event: 'place', baton: { state: 'live', place: placeWire(p, 'vr', n.hash, n.level) } }), mark: 'new' });
+  }
+  out.push({ at: off + 0.2, dir: 'APK→door→server', verb: 'POST :3101 /api/session/place/return', note: 'STOPPING → returned', size: bytes({ state: 'returned' }), mark: 'unverified' });
+  return out;
+}
+
+export function factsFor(id: StateId, p: CrossPlace, n: NextPlace | null): StateFacts {
+  const at = p.hash || '#', where = p.crumbs.slice(1).join(' › ') || 'the site';
+  const S: Record<StateId, StateFacts> = {
+    desk: { title: 'At the desk: your page, where you are', facts: [
+      { k: 'see', text: 'The bp page on your monitor at ' + where + ' (' + at + ').', marks: ['real'] },
+      { k: 'draw', text: 'Chrome on Lynx: the canvas engine draws the plan; its place lives only in the URL hash.', marks: ['real'] },
+      { k: 'net', text: 'Nothing. Today the server does not know where the page is looking.', marks: ['real'] },
+      { k: 'machine', text: 'Lynx: Windows 11 on ARM64.', marks: ['real'] },
+    ] },
+    armed: { title: '“Take it to the table” arms a place baton', facts: [
+      { k: 'see', text: 'The page says the baton is armed for 120 s. Nothing launches: putting the headset on is the launch.', marks: ['new'] },
+      { k: 'draw', text: 'Chrome on Lynx.', marks: ['real'] },
+      { k: 'net', text: 'POST /api/session/place on loopback with x-bp-human: one Place (below). The web starts publishing its place only here.', marks: ['new'] },
+      { k: 'machine', text: 'Lynx: apps/server :3100 holds the baton (Node, native ARM64).', marks: ['new'] },
+    ] },
+    blackout: { title: 'The headset goes on: 3-5 s nothing can draw', facts: [
+      { k: 'see', text: 'Black. The Quest system owns these seconds; no app pixels, so the design hides nothing here.', marks: ['documented'] },
+      { k: 'draw', text: 'Nothing (Quest system).', marks: ['documented'] },
+      { k: 'net', text: 'Nothing yet.', marks: [] },
+      { k: 'build', text: 'The standalone APK com.developersblueprint.vr resumes when the person puts the headset on.', marks: ['unverified'] },
+      { k: 'machine', text: 'Quest 3S. The APK builds on Lynx (284 MB, 33 min BuildCookRun); it has not run on a headset yet.', marks: ['measured', 'unverified'] },
+    ] },
+    passthrough: { title: 't 0.0 · the first frame is your own desk', facts: [
+      { k: 'see', text: 'Your real desk and monitor through the headset’s cameras, with the bp page still on the monitor.', marks: ['documented', 'unverified'] },
+      { k: 'draw', text: 'Quest 3S passthrough (the cameras, Meta’s compositor; UOculusXRPassthroughSubsystem). Not in this app yet.', marks: ['documented', 'unverified'] },
+      { k: 'net', text: 'The APK asks the door for the baton.', marks: ['new'] },
+      { k: 'build', text: 'Standalone APK, mobile tier (S4), no PC in the frame path.', marks: ['measured'] },
+      { k: 'machine', text: 'Quest 3S (XR2 Gen 2). Whether the monitor reads through passthrough is open.', marks: ['unverified'] },
+    ] },
+    claimed: { title: 't 0.8 · the APK claims the place', facts: [
+      { k: 'see', text: 'Still your desk. The place arrives as an address: ' + at + '.', marks: ['new'] },
+      { k: 'draw', text: 'Passthrough.', marks: ['documented'] },
+      { k: 'net', text: 'GET :3101 /api/session/place?claim=1 over home Wi-Fi: Bearer, scope “place”, constant-time refusal. armed → claimed by one device.', marks: ['new'] },
+      { k: 'machine', text: 'Lynx: the S8 LAN door :3101 (owner D4 = yes) forwards in-process to :3100. Cleartext on the home LAN is S8’s recorded deviation.', marks: ['new'] },
+    ] },
+    lift: { title: 't 1.0 · the paper lifts off the monitor onto the desk', facts: [
+      { k: 'see', text: 'A sheet of the plan peels off the pinned monitor and lands under your hands. Content moves; your view never does.', marks: ['new'] },
+      { k: 'draw', text: 'The APK on the headset GPU, from the plan at the claimed place. It is NOT the page’s pixels: nothing is streamed, so the real page stays on the monitor behind it.', marks: ['new'] },
+      { k: 'net', text: 'Nothing new. 0 video frames, 0 audio, ever.', marks: [] },
+      { k: 'machine', text: 'Quest 3S. The monitor’s pose comes from a spatial anchor pinned once (two touches); anchors persist across sessions.', marks: ['documented', 'unverified'] },
+    ] },
+    fade: { title: 't 2.0 · the room fades to the studio; the paper is the table', facts: [
+      { k: 'see', text: 'Your room dissolves into the night studio. The table sits where your desk is, at the tapped height (75 cm desk, eye 43 cm above).', marks: ['measured', 'new'] },
+      { k: 'draw', text: 'The APK: studio and table at the mobile tier on XR2 Gen 2, far below the PC look-dev bar. Fade = BpSwitch’s smoothstep, 0.8 s.', marks: ['measured', 'unverified'] },
+      { k: 'net', text: 'POST :3101 place · live (from vr) once the lift is done: the table leads now.', marks: ['new'] },
+      { k: 'build', text: 'Same APK the judges get; unpaired it opens the bundled Kettle instead, with no crossing.', marks: ['measured'] },
+    ] },
+    arrived: { title: 't 2.7 · the lamp names the room you were in', facts: [
+      { k: 'see', text: 'The lamp says “' + p.name + '”. Its caption is 40 arcmin, inside the comfortable band.', marks: ['new'] },
+      { k: 'draw', text: 'The APK. The lamp keeps the desk’s conversation (the baton carries its id) over the door’s standup scope.', marks: ['new'] },
+      { k: 'net', text: 'The companion stream, as today: one companion process serves both.', marks: ['real'] },
+      { k: 'machine', text: 'Cards stay answerable only on bp’s web page (x-bp-human): the headset never answers one.', marks: ['real'] },
+    ] },
+    live: { title: 'The table leads; the page follows', facts: [
+      { k: 'see', text: n ? 'You dive on the table to ' + n.name + '. A wrist peek cuts a passthrough window over the monitor: the page is already there.' : 'You move on the table; the page follows.', marks: ['new'] },
+      { k: 'draw', text: 'The table: the APK. The page in the peek: Chrome on Lynx, seen through the cameras.', marks: ['new', 'unverified'] },
+      { k: 'net', text: 'Every level change POSTs the place; the page reads it on the stream and flies (the same machinery as focus: #at=).', marks: ['new'] },
+      { k: 'machine', text: 'Lynx (page, server) + Quest 3S (table).', marks: ['real'] },
+    ] },
+    return: { title: 'Headset off: a non-event', facts: [
+      { k: 'see', text: 'Your page, already at ' + (n ? n.name : 'the table’s last place') + ', with a 10 s crumb: “the table left you at …”.', marks: ['new'] },
+      { k: 'draw', text: 'Chrome on Lynx.', marks: ['real'] },
+      { k: 'net', text: 'POST /return if the session reaches STOPPING (an OpenXR “should”); a missed one costs only the last move, because the page followed all along.', marks: ['documented', 'unverified'] },
+      { k: 'machine', text: 'Lynx. The baton is returned; the web leads again.', marks: ['new'] },
+    ] },
+  };
+  return S[id];
+}

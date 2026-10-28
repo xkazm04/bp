@@ -12,6 +12,7 @@ import { FindPanel, useRunningScans } from './rail/panels';
 import { shallowEqual, useBp, useEngine } from './hooks';
 import { WideBody, isWide } from './rail/wide';
 import { setFlyoutWidth } from '@/engine/chrome';
+import { openCrossing } from './crossing/CrossingHost';
 import './rail.css';
 
 /** A number that counts to its new value (instant under reduced motion). */
@@ -52,6 +53,7 @@ const G = {
   steer: <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" strokeWidth="1.7" /><circle cx="12" cy="12" r="2" fill="currentColor" /><path d="M12 4.5v5.5M5.5 15.8l4.8-2.8M18.5 15.8l-4.8-2.8" stroke="currentColor" strokeWidth="1.7" /></svg>,
   plan: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" fill="none" stroke="currentColor" strokeWidth="1.7" /><path d="M3.5 14.5h17M13 14.5v5M8 4.5v10" stroke="currentColor" strokeWidth="1.4" /></svg>,
   find: <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6" fill="none" stroke="currentColor" strokeWidth="1.8" /><path d="M15 15l5 5" stroke="currentColor" strokeWidth="2" /></svg>,
+  table: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 15.5L7 9h10l4 6.5z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" /><path d="M5 15.5v3M19 15.5v3M9 12.2h6" stroke="currentColor" strokeWidth="1.5" /><circle cx="12" cy="5" r="1.6" fill="currentColor" /></svg>,
   view: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="1.5" /><circle cx="9" cy="7" r="2.1" fill="var(--card)" stroke="currentColor" strokeWidth="1.6" /><circle cx="15.5" cy="12" r="2.1" fill="var(--card)" stroke="currentColor" strokeWidth="1.6" /><circle cx="7" cy="17" r="2.1" fill="var(--card)" stroke="currentColor" strokeWidth="1.6" /></svg>,
 };
 
@@ -194,6 +196,9 @@ export function Dock() {
         initial={false} animate={s.hidden ? { x: 96, opacity: 0 } : { x: 0, opacity: 1 }} transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 320, damping: 34 }}
         style={{ pointerEvents: s.hidden ? 'none' : 'auto' }} inert={s.hidden || undefined}>
         {items.map((x, i) => <RailItem key={x.k} it={x} idx={i} on={open === x.k} />)}
+        <button type="button" className="ri t-ink ri-table" aria-label="Take it to the table: the crossing into the VR light table" title="Take it to the table: arm the place for the headset, and see the crossing" onClick={openCrossing}>
+          <span className="g">{G.table}</span><span className="n">VR</span><span className="lb">Table</span>
+        </button>
         <span className="sp" />
         <button id="dhide" type="button" aria-label="Hide rail" title="Hide / show rail ( \ )" onClick={() => E.toggleDock(false)}>⟩</button>
       </motion.nav>
