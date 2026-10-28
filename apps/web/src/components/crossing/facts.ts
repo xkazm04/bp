@@ -122,7 +122,7 @@ export function factsFor(id: StateId, p: CrossPlace, n: NextPlace | null, paired
     ] },
     arrived: { title: 't 2.7 · the lamp names the room you were in', facts: [
       { k: 'see', text: 'The lamp says “' + p.name + '”. Its caption is 40 arcmin, inside the comfortable band.', marks: ['new'] },
-      { k: 'draw', text: 'The APK. The lamp keeps the desk’s conversation (the baton carries its id) over the door’s standup scope.', marks: ['new'] },
+      { k: 'draw', text: 'The APK. The lamp keeps the desk’s conversation over the door’s standup scope: the baton carries its id (it does here, when this tab has talked to the lamp).', marks: ['new', 'real'] },
       { k: 'net', text: 'The companion stream, as today: one companion process serves both.', marks: ['real'] },
       { k: 'machine', text: 'Cards stay answerable only on bp’s web page (x-bp-human): the headset never answers one.', marks: ['real'] },
     ] },
