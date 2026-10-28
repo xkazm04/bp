@@ -1091,7 +1091,9 @@ and the skin only draws it. The host lives in `apps/web/src/components/companion
   that serves `/api/companion/*`. VR's BpLink talks to `apps/server` (:3100). With `BP_COMPANION_URL=http://127.0.0.1:3100`
   set when the web app is **built** (next.config.ts rewrites are fixed at build time), the web app hands every
   `/api/companion` request to that process (`beforeFiles` rewrite; loopback http origins only), so the desk and the headset
-  share one companion. Unset, the web process is its own companion. Proven 2026-10-26: a focus and a card POSTed to the
+  share one companion. Unset, the web process is its own companion. The place baton (`/api/session/*`) is handed over
+  with it, so the page arms the baton the headset claims and hears its `place` events on the same bus (proven 2026-10-28:
+  the page on :3012 armed through the rewrite, a device claimed and wrote on apps/server directly, the page followed). Proven 2026-10-26: a focus and a card POSTed to the
   companion process reached a page served by another process, and the page's Approve reached the companion.
 - **Composer convention.** A skin marks its text field `data-composer` and the button that opens the field
   `data-lamp-toggle`. The skin closes the composer on Esc, and on blur when it is empty. The host reads `listening` off

@@ -20,9 +20,18 @@ const nextConfig: NextConfig = {
   // apps/server (:3100). With BP_COMPANION_URL set (a loopback origin, e.g. http://127.0.0.1:3100), this app hands every
   // /api/companion request to that process instead of serving its own (beforeFiles: the app's own companion routes would
   // otherwise answer first), so a focus from the desk reaches the headset and back. Unset: this process is the companion.
+  // The place baton (/api/session) goes with it: the headset claims it on that process, and its `place` events go out on
+  // that process's bus, the one the page's companion stream reads - served here, the page would arm a baton the headset
+  // never sees and publish on a bus no page hears.
   async rewrites() {
     const url = companionUrl();
-    return url ? { beforeFiles: [{ source: '/api/companion/:path*', destination: `${url}/api/companion/:path*` }], afterFiles: [], fallback: [] } : [];
+    return url ? {
+      beforeFiles: [
+        { source: '/api/companion/:path*', destination: `${url}/api/companion/:path*` },
+        { source: '/api/session/:path*', destination: `${url}/api/session/:path*` },
+      ],
+      afterFiles: [], fallback: [],
+    } : [];
   },
 };
 
