@@ -250,6 +250,11 @@ function Stage({ prep, t, k, paired, cere, onCere }: { prep: Prep; t: number; k:
   // the headset's layers are built while the blackout hides them, so no layer is created on a frame anyone sees
   const warm = t >= 3.8 && t < off + 0.3;
   const rises = !paired ? prep.risesHome : sc.moved > 0.5 ? prep.risesB : prep.rises, lights = paired ? prep.lights : prep.lightsHome;
+  // the dive: the sheet grows toward the place the table leads to (content moves, the view does not), as the next sheet
+  // comes in; the origin is that place on the current sheet (its rise is marked `next`)
+  const nx = prep.rises.find((r) => r.next), dive = paired && sc.moved > 0.001 && sc.moved < 0.999 && nx;
+  const diveA: CSSProperties = dive ? { transformOrigin: `${nx.x + nx.w / 2}px ${nx.y + nx.h / 2}px`, transform: `scale(${(1 + 0.6 * sc.moved).toFixed(3)})` } : {};
+  const diveB: CSSProperties = dive ? { transformOrigin: `${nx.x + nx.w / 2}px ${nx.y + nx.h / 2}px`, transform: `scale(${(0.8 + 0.2 * sc.moved).toFixed(3)})` } : {};
   const caption = sc.moved > 0.02 && prep.next ? prep.next.name : prep.a.name;
   const lampSay = sc.moved > 0.02 ? 'the page follows' : 'where you were on the desk';
   return (
@@ -298,10 +303,10 @@ function Stage({ prep, t, k, paired, cere, onCere }: { prep: Prep; t: number; k:
               )}
               {!cere && paired && t >= FOCUSED - 0.3 && t < FOCUSED + 1.4 && <div className="cx-tap" style={{ opacity: smooth(FOCUSED, FOCUSED + 0.3, t) * (1 - smooth(FOCUSED + 0.9, FOCUSED + 1.3, t)) }} />}
               <div className="cx-paper" style={{ transform: paperPose(sc.lift), opacity: Math.max(0.01, paired ? smooth(FOCUSED + 0.85, FOCUSED + 1.05, t) : sc.table) }}>
-                <img className="cx-sheet" src={paired ? prep.tableA : prep.tableHome} alt="" style={{ opacity: 1 - sc.moved }} />
-                {prep.tableB && <img className="cx-sheet" src={prep.tableB} alt="" style={{ opacity: sc.moved }} />}
+                <img className="cx-sheet" src={paired ? prep.tableA : prep.tableHome} alt="" style={{ opacity: 1 - sc.moved, ...diveA }} />
+                {prep.tableB && <img className="cx-sheet" src={prep.tableB} alt="" style={{ opacity: sc.moved, ...diveB }} />}
                 <div className="cx-edge" style={{ opacity: sc.table }} />
-                <div className="cx-rises" style={{ transform: `scale3d(1, 1, ${Math.max(0.02, sc.rise).toFixed(3)})`, opacity: sc.rise > 0.001 ? 1 : 0 }}><Rises rises={rises} /></div>
+                <div className="cx-rises" style={{ transform: `scale3d(1, 1, ${Math.max(0.02, dive ? Math.abs(1 - 2 * sc.moved) * sc.rise : sc.rise).toFixed(3)})`, opacity: sc.rise > 0.001 ? 1 : 0 }}><Rises rises={rises} /></div>
                 {sc.moved < 0.5 && <Lights lights={lights} r={sc.rise} />}
               </div>
             </div>
