@@ -238,9 +238,9 @@ function Body({ prep, t, paired, wire, cere, onCere }: { prep: Prep; t: number; 
 
 /** Desk-local pose of the paper: p = 0 standing on the monitor (its screen), 1 lying on the desk as the table. */
 function paperPose(p: number): string {
-  // the monitor's screen centre in desk coordinates, relative to the paper's resting centre: 490 px farther, 215 px up;
-  // its screen is 0.3 of the paper (480 x 270)
-  const dy = -490 * (1 - p), dz = 215 * (1 - p) + Math.sin(Math.PI * p) * 140 + 2, rx = -90 * (1 - p), s = 0.3 + 0.7 * p;
+  // the monitor's screen centre in desk coordinates, relative to the paper's resting centre (1200, 820): 334.5 px farther,
+  // 254 px up; its screen is 0.3875 of the paper (620 x 349: crossing.css .cx-monitor less its bezel)
+  const dy = -334.5 * (1 - p), dz = 254 * (1 - p) + Math.sin(Math.PI * p) * 140 + 2, rx = -90 * (1 - p), s = 0.3875 + 0.6125 * p;
   return `translate3d(0px, ${dy.toFixed(1)}px, ${dz.toFixed(1)}px) rotateX(${rx.toFixed(2)}deg) scale(${s.toFixed(4)})`;
 }
 

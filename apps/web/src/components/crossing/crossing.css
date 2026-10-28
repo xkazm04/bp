@@ -57,25 +57,27 @@
   box-shadow: 0 0 0 10px #d8e4ee, 0 0 0 14px #9fb3c4, 0 0 60px 20px rgba(160, 230, 255, 0.55), inset 0 0 40px rgba(127, 230, 255, 0.5); }
 .cx-kbd { left: 960px; top: 1110px; width: 480px; height: 96px; border-radius: 8px; background: repeating-linear-gradient(90deg, #2c2c2e 0 34px, #3a3a3d 34px 38px), #2c2c2e; box-shadow: 0 6px 0 #1a1a1b; }
 .cx-mouse { left: 1500px; top: 1118px; width: 46px; height: 74px; border-radius: 24px; background: #3a3a3d; }
-.cx-foot { left: 1120px; top: 296px; width: 160px; height: 68px; border-radius: 50%; background: radial-gradient(ellipse, #2a2c31 55%, rgba(0, 0, 0, 0.35) 72%, transparent 75%); }
+.cx-foot { left: 1120px; top: 452px; width: 160px; height: 68px; border-radius: 50%; background: radial-gradient(ellipse, #2a2c31 55%, rgba(0, 0, 0, 0.35) 72%, transparent 75%); }
 .cx-note { left: 560px; top: 930px; width: 250px; height: 320px; background: linear-gradient(90deg, #d9d3c5 0 8%, #ece7da 8%); box-shadow: 0 4px 0 #b9b2a3; transform: rotate(-9deg); }
 .cx-pen { left: 850px; top: 980px; width: 12px; height: 210px; border-radius: 6px; background: linear-gradient(#2b4f7a 0 85%, #c9c9c9 85%); transform: rotate(14deg); }
 .cx-mug { left: 1680px; top: 930px; width: 90px; height: 110px; border-radius: 6px 6px 14px 14px; background: linear-gradient(90deg, #9aa7b3, #d7dee5 40%, #aab6c1); transform-origin: 50% 100%; transform: rotateX(-90deg); }
 .cx-mug::after { content: ''; position: absolute; right: -30px; top: 22px; width: 34px; height: 50px; border: 9px solid #b6c0ca; border-left: 0; border-radius: 0 24px 24px 0; }
-.cx-stand { left: 1180px; top: 250px; width: 40px; height: 80px; background: linear-gradient(90deg, #1d1f23, #34373d, #1d1f23); transform-origin: 50% 100%; transform: rotateX(-90deg); }
-.cx-monitor { left: 940px; top: 184px; width: 520px; height: 292px; border-radius: 6px; background: #121417; box-shadow: 0 0 0 2px #2b2e33; transform: translateZ(215px) rotateX(-90deg); }
+.cx-stand { left: 1180px; top: 406px; width: 40px; height: 80px; background: linear-gradient(90deg, #1d1f23, #34373d, #1d1f23); transform-origin: 50% 100%; transform: rotateX(-90deg); }
+/* a 27-inch screen at arm's length, the subject of the passthrough frame: centre (1200, 485.5) at z 254, so its bottom
+   edge stands 68 px above the desk on the stand (Crossing.tsx paperPose starts from exactly this pose) */
+.cx-monitor { left: 870px; top: 300px; width: 660px; height: 371px; border-radius: 6px; background: #121417; box-shadow: 0 0 0 2px #2b2e33, 0 0 40px rgba(120, 170, 230, 0.25); transform: translateZ(254px) rotateX(-90deg); }
 .cx-screen { position: absolute; left: 20px; top: 11px; right: 20px; bottom: 11px; overflow: hidden; background: #000; }
 .cx-screen img { width: 100%; height: 100%; display: block; opacity: 0.88; }
-.cx-anchor { left: 940px; top: 184px; width: 520px; height: 292px; transform: translateZ(215px) rotateX(-90deg); transform-style: preserve-3d; pointer-events: none; }
+.cx-anchor { left: 870px; top: 300px; width: 660px; height: 371px; transform: translateZ(254px) rotateX(-90deg); transform-style: preserve-3d; pointer-events: none; }
 .cx-anchor .c { position: absolute; width: 46px; height: 46px; border: 0 solid #7fe6ff; }
 .cx-anchor .tl { left: -10px; top: -10px; border-left-width: 5px; border-top-width: 5px; }
 .cx-anchor .tr { right: -10px; top: -10px; border-right-width: 5px; border-top-width: 5px; }
 .cx-anchor .bl { left: -10px; bottom: -10px; border-left-width: 5px; border-bottom-width: 5px; }
 .cx-anchor .br { right: -10px; bottom: -10px; border-right-width: 5px; border-bottom-width: 5px; }
-.cx-claim { position: absolute; left: 0; bottom: calc(100% + 22px); font: 600 30px/1 var(--font-mono), Consolas, monospace; color: #ffd38a; background: rgba(2, 8, 18, 0.82); padding: 8px 14px; border: 2px solid #ffc35a; white-space: nowrap; }
+.cx-claim { position: absolute; left: 50%; top: calc(100% - 64px); transform: translateX(-50%); font: 600 30px/1 var(--font-mono), Consolas, monospace; color: #ffd38a; background: rgba(2, 8, 18, 0.82); padding: 8px 14px; border: 2px solid #ffc35a; white-space: nowrap; }
 .cx-tap { left: 1080px; top: 1180px; width: 240px; height: 120px; border-radius: 50%; border: 4px solid #7fe6ff; box-shadow: 0 0 24px rgba(127, 230, 255, 0.8), inset 0 0 24px rgba(127, 230, 255, 0.5); transform: translateZ(2px); }
 .cx-cere-desk { left: 1080px; top: 1180px; width: 240px; height: 120px; border-radius: 50%; border: 5px solid #7fe6ff; transform: translateZ(2px); animation: cx-cere-a 4s ease-in-out infinite; }
-.cx-cere-mon { left: 940px; top: 184px; width: 520px; height: 292px; transform: translateZ(215px) rotateX(-90deg); transform-style: preserve-3d; pointer-events: none; }
+.cx-cere-mon { left: 870px; top: 300px; width: 660px; height: 371px; transform: translateZ(254px) rotateX(-90deg); transform-style: preserve-3d; pointer-events: none; }
 .cx-cere-mon i { position: absolute; top: -12px; width: 60px; height: 60px; border: 0 solid #ffc35a; animation: cx-cere-b 4s ease-in-out infinite; }
 .cx-cere-mon .tl { left: -12px; border-left-width: 6px; border-top-width: 6px; }
 .cx-cere-mon .tr { right: -12px; border-right-width: 6px; border-top-width: 6px; }
