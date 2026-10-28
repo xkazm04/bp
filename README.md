@@ -84,6 +84,72 @@ contracts in their headers and in `docs/blueprint-ui.md`):
 The companion's state lives under `$BP_HOME/companion` (default `<repo>/.bp/companion`, git-ignored). `node
 scripts/check-companion-door.ts` walks the door end to end.
 
+## VR: the Light Table
+
+bp's third channel, after the web canvas and the phone view: the same product, lenses, scans and waves, drawn at a
+backlit drafting table in a dark studio for a Meta Quest. Wings lie on the glass left to right, rooms rise off the paper
+as glass extrusions, a scan line sweeps and amber pins rise over findings, the left wrist carries the wave's packages,
+and the agent, a drafting lamp, floats the one decision it needs beside it: approve or decline.
+
+| The target: concept art | Where it stands: the table in Unreal 5.8 |
+|---|---|
+| ![Light Table concept art](docs/concepts/vr-light-table/target-light-table.jpg) | ![The light table rendered in UE 5.8, Kettle's real data](docs/concepts/vr-light-table/captures/fid-t-hero.jpg) |
+| *A generated concept image. Its labels are image-model text and mean nothing.* | *An in-engine capture: Kettle's five wings, its findings as pins, a real decision card and the wave's packages on the wrist.* |
+
+**Status:** a UE 5.8.4 project with Meta XR v207 and the Interaction SDK, built on Lynx (Windows on ARM64). Hands-first
+levels (pinch and pull to dive, push to go back), room mode with a deck of decision screens, the wrist panel and the lamp
+run against `apps/server` or a bundled snapshot. The Quest APK builds (package `com.developersblueprint.vr`), aimed at the
+Meta VR Start Developer Competition (entries close 2026-11-18). The web app's *Take it to the table* crossing and its place
+baton are on master; the VR half of the crossing is next.
+
+### Architecture
+
+```mermaid
+flowchart LR
+  subgraph core["packages/ (the logic, once)"]
+    C["@bp/core<br/>model, lenses, health rules,<br/>layout, scans, waves, place baton"]
+    S["@bp/schema<br/>JSON Schemas → TS types<br/>+ Unreal USTRUCT headers"]
+  end
+  subgraph pc["PC (Lynx)"]
+    SRV["apps/server<br/>JSON + SSE on :3100"]
+    WEB["apps/web<br/>Next.js canvas"]
+    COMP["companion (Glim)<br/>apps/mcp tool door"]
+  end
+  subgraph quest["Quest (apps/vr, UE 5.8)"]
+    LINK["BpLink module<br/>HTTP/SSE → FBpPlan, scan state"]
+    BUN["BpData bundle<br/>Kettle snapshot in the pak"]
+    GAME["bp module<br/>table, levels, room, deck,<br/>marks, wrist, hands, headset"]
+  end
+  C --> SRV & WEB
+  S -- generated headers --> LINK
+  SRV -- "structure · plan · scans · waves · stream" --> LINK
+  BUN -. "-BpLinkUrl=bundle / no server" .-> LINK
+  LINK --> GAME
+  WEB <-- "place baton" --> SRV
+  COMP --> SRV
+```
+
+- **One logic, three channels.** Every rule (health, layout, the derived plan) lives in TypeScript in `packages/core`.
+  The Unreal app is a thin renderer and interaction client: it reads the plan (5 wings, 13 rooms, 29 bays, 133 tiles for
+  Kettle) and never computes a health or layout rule.
+- **The contract is generated.** `packages/schema` emits the Unreal `USTRUCT` headers from the same JSON Schemas as the
+  TypeScript types, so `FJsonObjectConverter` fills them with no hand-written parsing; `check:schema` keeps them fresh,
+  `check:bplink` guards the routes BpLink calls and `check:vr-words` keeps the table's words equal to the web's.
+- **Online or alone.** BpLink reads `apps/server` (`/structure`, `/plan`, the scan side, `/stream`), or, on a headset
+  with no PC, the Kettle snapshot `apps/vr/tools/bundle-data.mjs` stages into the build. On the bundle, writes are
+  refused with a log line. A paired LAN door for the live table is designed (standalone plan, S8).
+- **The `bp` game module** (`apps/vr/Source/bp`): `BpTable` (frame, paper, edge-glow volumes from `FBpPlan`),
+  `BpLevels` (site → wing → room lifts), `BpRoom` / `BpDeck` / `BpSwitch` (seated room mode and its screens),
+  `BpMarks` (pins, scan line, decision card), `BpWrist` (packages), `BpHands` (pinch-pull-push, tracking loss as a
+  state), `BpHeadset` (seated calibration, text card in arcmin, the 90 Hz frame meter).
+- **Content is made by agents.** The level and assets are built through UE 5.8's editor MCP (`apps/vr/tools/mcp-*.mjs`,
+  every call logged in `tools/mcp-steps/`), with art sources and evidence shots in `apps/vr/ArtSource/`.
+
+Start with [`docs/concepts/vr-light-table/README.md`](docs/concepts/vr-light-table/README.md) (decisions and the
+document index), [`apps/vr/README.md`](apps/vr/README.md) (how to run it on Lynx),
+[`standalone-plan.md`](docs/concepts/vr-light-table/standalone-plan.md) (the Quest APK) and
+[`docs/concepts/desk-to-table/plan.md`](docs/concepts/desk-to-table/plan.md) (the crossing from the desk to the table).
+
 ## What is where
 
 ```
@@ -105,7 +171,11 @@ packages/core/src/server/      the Node-only half: store, products registry, job
 packages/core/data/            fixtures: kettle.app-structure.json + kettle.events.jsonl (the product, v3),
                                swarm.json (the simulated swarm), kettle.json (the original sample)
 packages/schema/               app-structure v3 JSON Schemas + generators: TypeScript types and Unreal USTRUCTs
-apps/vr/                       the Unreal 5.8 VR client (a placeholder until P3; see its README)
+apps/mcp/                      the companion's one tool door (stdio MCP server over bp's HTTP API)
+apps/vr/                       the Unreal 5.8 VR Light Table: bp.uproject, Source/BpLink (the server link),
+                               Source/bp (the table), Content/, ArtSource/, tools/ (setup, run, MCP, packaging)
+docs/concepts/vr-light-table/  the VR concept, plans, machine readings and captures
+docs/concepts/desk-to-table/   the crossing from the web app into the table
 docs/blueprint-ui.md           the UI contract: levels, 12 px text floor, performance rules, lenses as data
 docs/standard/                 app-structure v3: spec, analysis, lens manifests, Personas brief
 docs/research/users.md         the user analysis: eight people, eleven moments of use
