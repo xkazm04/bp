@@ -45,7 +45,7 @@ function route(h: string) {
 const sub = (p: CrossPlace) => ['L' + p.level, p.level === 4 ? 'feature sheet' : p.level === 3 ? 'bay' : p.level === 2 ? 'room' : p.level === 1 ? 'wing' : 'site plan', p.lens === GENERAL ? 'General' : p.lens + ' lens'].join(' · ');
 const jpeg = (c: HTMLCanvasElement) => c.toDataURL('image/jpeg', 0.9);
 
-export default function Crossing({ onClose }: { onClose: () => void }) {
+export default function Crossing({ onClose }: { onClose: (left?: string) => void }) {
   const E = useEngine();
   const [prep, setPrep] = useState<Prep | null>(null);
   const [t, setT] = useState(0);
@@ -113,9 +113,10 @@ export default function Crossing({ onClose }: { onClose: () => void }) {
 
   const close = useCallback(() => {
     // the page followed the table: after the headset came off, it stays where the table left it
-    if (prep?.next && tRef.current >= STATES[9].at) route(prep.next.hash);
-    onClose();
-  }, [prep, onClose]);
+    const left = paired && prep?.next && tRef.current >= STATES[9].at ? prep.next : null;
+    if (left) route(left.hash);
+    onClose(left?.name);
+  }, [prep, onClose, paired]);
   const seek = useCallback((x: number) => { setT(Math.max(0, Math.min(END, x))); }, []);
   const stepTo = useCallback((d: 1 | -1) => {
     setPlaying(false);
