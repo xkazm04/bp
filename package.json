@@ -48,6 +48,7 @@
     "check:live-health": "node scripts/check-live-health.ts",
     "check:local-only": "node scripts/check-local-only.ts",
     "check:deep-link": "node scripts/check-deep-link.ts",
+    "check:place-baton": "node --import @bp/core/register scripts/check-place-baton.ts",
     "check:route-guards": "node scripts/check-route-guards.mjs",
     "check:core-purity": "node scripts/check-core-purity.mjs",
     "check:server": "node scripts/check-server.mjs",

@@ -15,6 +15,7 @@ import { END, FOCUSED, STATES, designClock, sceneAt, smooth, stateAt, stateIndex
 import { arrived, capturePage, nextOf, placeOf, type CrossPlace, type NextPlace } from './place';
 import { ART_H, ART_W, drawTable, type Light, type Rise } from './table-art';
 import { KEY_LABEL, factsFor, packets, placeWire, type Mark } from './facts';
+import { STANDIN, runBaton, type Exchange } from './baton';
 import './crossing.css';
 
 interface Prep {
@@ -23,6 +24,8 @@ interface Prep {
   tableA: string; tableB: string | null;
   rises: Rise[]; risesB: Rise[]; lights: Light[];
   titleA: string;
+  /** The baton's requests as they ran against this server (null: no route, the wire is simulated). */
+  real: Exchange[] | null;
 }
 
 const MARK_LABEL: Record<Mark, string> = { real: 'real', measured: 'measured', documented: 'documented', unverified: '[unverified]', new: 'NEW', mock: 'mock' };
@@ -66,7 +69,8 @@ export default function Crossing({ onClose }: { onClose: () => void }) {
         tableB = jpeg(TB.canvas); risesB = TB.rises;
         route(a.hash); await arrived(E);
       }
-      return { a, next, pageA, pageB, tableA: jpeg(TA.canvas), tableB, rises: TA.rises, risesB, lights: TA.lights, titleA: TA.title };
+      const real = await runBaton(a, next);
+      return { a, next, pageA, pageB, tableA: jpeg(TA.canvas), tableB, rises: TA.rises, risesB, lights: TA.lights, titleA: TA.title, real };
     })();
     job.current.then((p) => { if (!dead) { setPrep(p); setPlaying(true); } });
     return () => { dead = true; };
@@ -310,11 +314,15 @@ function Lights({ lights, r }: { lights: Light[]; r: number }) {
 
 function Panel({ prep, t }: { prep: Prep; t: number }) {
   const st = stateAt(t), sc = sceneAt(t), F = factsFor(st.id, prep.a, prep.next);
-  const pk = useMemo(() => packets(prep.a, prep.next, FOCUSED, STATES[8].at, STATES[9].at), [prep]);
-  const sent = pk.filter((p) => p.at <= t), total = sent.reduce((n, p) => n + p.size, 0);
+  const pk = useMemo(() => packets(prep.a, prep.next, FOCUSED, STATES[8].at, STATES[9].at, prep.real), [prep]);
+  const sent = pk.filter((p) => p.at <= t), total = sent.reduce((n, p) => n + (p.status ? (p.up ?? 0) + (p.down ?? 0) : p.size), 0);
+  const ranHere = !!prep.real?.length && prep.real.every((x) => x.status < 300);
   // the newest place, whoever wrote it: the page's until the lift is done, the table's after (and the table's last on return)
   const tableMoved = prep.next && ((sc.baton === 'live' && sc.moved > 0.5) || sc.baton === 'returned');
   const wire = tableMoved ? placeWire(prep.a, 'vr', prep.next!.hash, prep.next!.level) : placeWire(prep.a, sc.baton === 'live' ? 'vr' : 'web');
+  // what the server holds at this state, as it answered when the requests ran (else the Place the design would send)
+  const step = sc.baton === 'armed' ? 'arm' : sc.baton === 'claimed' ? 'claim' : sc.baton === 'live' ? (sc.moved > 0.5 ? 'lead' : 'live') : sc.baton === 'returned' ? 'return' : null;
+  const held = ranHere && step ? prep.real!.find((x) => x.step === step)?.body : null;
   return (
     <aside className="cx-panel" aria-live="polite">
       <div className="cx-st"><span className="cx-n">{stateIndex(t) + 1}/{STATES.length}</span><span className="cx-clk">{st.clock}</span></div>
@@ -328,16 +336,21 @@ function Panel({ prep, t }: { prep: Prep; t: number }) {
       <ol className="cx-baton">
         {(['none', 'armed', 'claimed', 'live', 'returned'] as const).map((b) => <li key={b} className={sc.baton === b ? 'on' : ''}>{b}</li>)}
       </ol>
-      <pre className="cx-wire">{JSON.stringify(wire, null, 1)}</pre>
+      <p className="cx-ran">{sc.baton === 'none' ? 'No baton yet: the place lives only in the page’s hash.' : held ? 'What the server holds now (its answer to the request):' : 'The Place the baton carries:'}</p>
+      {sc.baton !== 'none' && <pre className="cx-wire">{JSON.stringify(held ?? wire, null, 1)}</pre>}
       <h3>On the network <span className="cx-bytes">{total} B so far · 0 video frames · 0 audio</span></h3>
+      <p className="cx-ran">{ranHere
+        ? <>The baton requests ran for real against this server when the crossing opened (<em className="mk mk-real">real</em>): the page armed it with its human token, and this page stood in for the APK on loopback as <code>{STANDIN}</code>. From a Quest they would come through the S8 LAN door (:3101), which is not built.</>
+        : <>The baton route did not answer here, so the wire below is the design&apos;s, simulated (<em className="mk mk-mock">mock</em>).</>}</p>
       <ul className="cx-net">
         {pk.map((p, i) => (
           <li key={i} className={p.at <= t ? 'sent' : ''}>
-            <span className="d">{p.dir}</span><code>{p.verb}</code><span className="nt">{p.note} · {p.size} B</span>
+            <span className="d">{p.dir}</span><code>{p.verb}</code>
+            <span className="nt">{p.note} · {p.status ? <><b className={p.status < 300 ? 'ok' : 'bad'}>{p.status}</b> · ↑ {p.up} B ↓ {p.down} B</> : <>≈ {p.size} B</>}<em className={'mk mk-' + p.mark}>{MARK_LABEL[p.mark]}</em></span>
           </li>
         ))}
       </ul>
-      <p className="cx-honest"><em className="mk mk-mock">mock</em> This page draws the room, the studio and the lamp as sketches, and simulates the baton in-page. Real: your page and place, the plan data the table is drawn from, and the page following the table (it flew there behind this overlay).</p>
+      <p className="cx-honest"><em className="mk mk-mock">mock</em> This page draws the room, the studio and the lamp as sketches; the table is a web mock of what the APK draws. Real: your page and place, the plan data the table is drawn from, the baton's requests, and the page following the table (it flew there behind this overlay).</p>
     </aside>
   );
 }

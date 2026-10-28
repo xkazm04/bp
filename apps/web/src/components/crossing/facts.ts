@@ -4,6 +4,7 @@
 // `mock` = drawn by this web prototype only.
 import type { StateId } from './timeline';
 import type { CrossPlace, NextPlace } from './place';
+import type { Exchange } from './baton';
 
 export type Mark = 'real' | 'measured' | 'documented' | 'unverified' | 'new' | 'mock';
 export interface Fact { k: 'see' | 'draw' | 'net' | 'build' | 'machine'; text: string; marks: Mark[] }
@@ -12,25 +13,37 @@ export interface StateFacts { title: string; facts: Fact[] }
 export const KEY_LABEL: Record<Fact['k'], string> = { see: 'You see', draw: 'Drawn by', net: 'Network', build: 'Build', machine: 'Machine' };
 
 /** The baton's wire: one Place, as the design's packages/core/src/session/place.ts shapes it. */
-export function placeWire(p: CrossPlace, from: 'web' | 'vr', hash = p.hash, level: number = p.level) {
-  return { product: p.product, hash, level: 'L' + level, target: p.target, from, at: '2026-10-28T09:00:00Z' };
+export function placeWire(p: CrossPlace, from: 'web' | 'vr', hash = p.hash, level: number = p.level, target: CrossPlace['target'] = p.target) {
+  return { product: p.product, hash: hash === '#' ? '' : hash, level: 'L' + level, target, from, at: p.at };
 }
 export const bytes = (o: unknown) => new TextEncoder().encode(JSON.stringify(o)).length;
 
-export interface Packet { at: number; dir: 'web→server' | 'APK→door' | 'server→web' | 'APK→door→server'; verb: string; note: string; size: number; mark: Mark }
+export interface Packet {
+  at: number; dir: 'web→server' | 'APK→door→server' | 'server→web'; verb: string; note: string; mark: Mark;
+  /** Estimated JSON size when the request did not run here. */
+  size: number;
+  /** When it ran against this server: the status and the bytes each way. */
+  status?: number; up?: number; down?: number;
+}
 
-export function packets(p: CrossPlace, n: NextPlace | null, F: number, live: number, off: number): Packet[] {
-  const armed = { state: 'armed', ttlMs: 120000, place: placeWire(p, 'web') };
+/** The crossing's wire on its clock; the requests that ran for real (`real`, from baton.ts) carry their status and bytes. */
+export function packets(p: CrossPlace, n: NextPlace | null, F: number, live: number, off: number, real: readonly Exchange[] | null): Packet[] {
+  const ran = (step: Exchange['step']) => real?.find((x) => x.step === step);
+  const pk = (at: number, dir: Packet['dir'], step: Exchange['step'] | null, verb: string, note: string, size: number): Packet => {
+    const x = step ? ran(step) : undefined;
+    return x ? { at, dir, verb, note, size, mark: 'real', status: x.status, up: x.up, down: x.down } : { at, dir, verb, note, size, mark: 'new' };
+  };
+  const nextTarget = n?.room ? { kind: 'room' as const, id: n.room.id } : p.target;
   const out: Packet[] = [
-    { at: 1.4, dir: 'web→server', verb: 'POST /api/session/place', note: 'loopback · x-bp-human · arm', size: bytes(armed), mark: 'new' },
-    { at: F + 0.8, dir: 'APK→door→server', verb: 'GET :3101 /api/session/place?claim=1', note: 'home Wi-Fi · Bearer · scope place → 200', size: bytes({ state: 'claimed', place: placeWire(p, 'web') }), mark: 'new' },
-    { at: F + 2.0, dir: 'APK→door→server', verb: 'POST :3101 /api/session/place', note: 'lift done · live · from vr', size: bytes({ state: 'live', place: placeWire(p, 'vr') }), mark: 'new' },
+    pk(1.4, 'web→server', 'arm', 'POST /api/session/place', 'loopback · x-bp-human · arm', bytes({ place: placeWire(p, 'web') })),
+    pk(F + 0.8, 'APK→door→server', 'claim', 'GET /api/session/place?claim=1', 'via door :3101 · Bearer · scope place', 0),
+    pk(F + 2.0, 'APK→door→server', 'live', 'POST /api/session/place', 'lift done · live · from vr', bytes({ place: placeWire(p, 'vr') })),
   ];
   if (n) {
-    out.push({ at: live + 0.5, dir: 'APK→door→server', verb: 'POST :3101 /api/session/place', note: 'table leads · ' + n.hash, size: bytes({ state: 'live', place: placeWire(p, 'vr', n.hash, n.level) }), mark: 'new' });
-    out.push({ at: live + 0.6, dir: 'server→web', verb: 'stream event: place', note: 'the page flies there', size: bytes({ event: 'place', baton: { state: 'live', place: placeWire(p, 'vr', n.hash, n.level) } }), mark: 'new' });
+    out.push(pk(live + 0.5, 'APK→door→server', 'lead', 'POST /api/session/place', 'table leads · ' + n.hash, bytes({ place: placeWire(p, 'vr', n.hash, n.level, nextTarget) })));
+    out.push({ at: live + 0.6, dir: 'server→web', verb: 'companion stream · event place', note: 'the page flies there · not built yet', size: bytes({ event: 'place', baton: { state: 'live', place: placeWire(p, 'vr', n.hash, n.level, nextTarget) } }), mark: 'new' });
   }
-  out.push({ at: off + 0.2, dir: 'APK→door→server', verb: 'POST :3101 /api/session/place/return', note: 'STOPPING → returned', size: bytes({ state: 'returned' }), mark: 'unverified' });
+  out.push(pk(off + 0.2, 'APK→door→server', 'return', 'POST /api/session/place/return', 'STOPPING → returned', 2));
   return out;
 }
 

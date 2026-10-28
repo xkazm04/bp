@@ -122,6 +122,9 @@
 .cx-net .d { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.8; }
 .cx-net code { font-size: 12.5px; color: inherit; word-break: break-all; }
 .cx-net .nt { font-size: 12px; opacity: 0.85; }
+.cx-ran { font-size: 13px; color: rgba(232, 244, 255, 0.78); margin: 0 0 8px; }
+.cx-ran code { font-size: 12.5px; color: #ffd38a; }
+.cx-net .nt b.ok { color: #9ff3d4; } .cx-net .nt b.bad { color: #ffb4a6; }
 .cx-honest { font-size: 13px; color: rgba(232, 244, 255, 0.7); margin: 16px 0 0; }
 
 /* ---------- transport and the four lanes */
