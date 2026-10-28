@@ -477,6 +477,7 @@ function Summary({ prep, wire, onReplay, onClose }: { prep: Prep; wire: Wire; on
         <div>
           <h3><em className="mk mk-real">real</em> Proven here, running</h3>
           <ul>
+            <li>The design’s web UI: the rail’s VR · Table card arms the baton from your place and shows its life (armed, claimed, the table leads, handed back, expired). Nothing launches from the page.</li>
             <li>The place is the page’s own hash plus a target: <code>{prep.a.hash === '#' ? '(the site)' : prep.a.hash}</code> → {prep.a.target.kind} <code>{prep.a.target.id}</code>.</li>
             <li>The place baton is served and guarded: arm, claim, live, return {ok ? <>ran on this clock, <b>{total.toLocaleString('en')} bytes</b> {all ? 'for the whole crossing' : 'so far'}, stream events included</> : 'is simulated here (the route did not answer)'}; 0 video frames, 0 audio.</li>
             <li>The page follows the table on the companion stream (<code>event: place</code>): when the table led, the plan behind this overlay flew to {prep.next ? prep.next.name : 'the next place'}; on the return it leads again and keeps the 10 s crumb.</li>
