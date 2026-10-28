@@ -1158,6 +1158,33 @@ and the skin only draws it. The host lives in `apps/web/src/components/companion
   - `node scripts/check-companion-web.ts` pins the derivation, the store, the focus table, SSE parsing across split
     chunks, the reconnect, and the CSS floor and motion properties.
 
+## The light table and the crossing (2026-10-28, hackathon "The Desk Becomes the Table")
+
+**The look.** The desk should already look like the first frame of the VR table. The paper is the table's backlit
+ultramarine glass (`--paper*`, `--paper-core`, the lamp's warm pool `--lamp`), and the site lies on a rounded pane with the
+table's backlit rim, the paper beyond it dimmed (`render/plan.ts drawTableTop`, sized from the home view). Room walls
+bloom with the light under the glass and show their lower edge a few px down (an extruded pane); the building's front
+edge is a lit slab band; rooms are lit at their far edge; named bays are lit zones; a feature in trouble has the warm
+lamp light the table hangs over it (`lampLight`, sprites from `Engine.makeSprites`). The chrome's panels are glass cards
+(top light, lit hairline, edge glow, no backdrop blur). Tokens `--glow --glass-edge --rim` are read into `Theme.glow`,
+`glassEdge`, `rim`. All of it is light and edges in the static raster: no place moves, no text is added, and a gesture
+pays nothing for it (gesture p50 16.7 ms at `?scale=4`; the raster cost is in `docs/perf.md`).
+
+**The crossing** (`components/crossing`, its own lazy chunk). The rail's **VR · Table** button, `?cross=1` on any
+blueprint URL and the `/crossing` route open a web prototype of the crossing into the VR table from the page's real
+place: a 2.5D (CSS 3D) stage with one fixed camera on one clock (`timeline.ts`, ten states, the design's times from
+FOCUSED on), a panel per state saying who draws it, what crosses the network, which build and which machine, each claim
+marked real / measured / documented / [unverified] / NEW / mock, a Paired / Unpaired switch, and a closing "what to
+expect" card. It runs the place baton for real once per opening (below) and routes the engine to the table's next place
+behind the overlay (`replaceState`, no history entry). Keys while it is open are its own (`data-keys="own"`): Space,
+arrows, Home, E, Esc.
+
+**The place baton** (`packages/core/src/session/place.ts`, routes in the table above): the one record that crosses. The
+page arms it with the human token (120 s), one device claims it, only that device writes while it is claimed or live,
+and it returns; an unclaimed baton expires (410). In memory, one per process. The S8 LAN door that would carry the
+device's calls from a Quest is not built: on loopback a caller names itself with `x-bp-device`. The stream event that
+would make the page follow (`place`) is not built either. `npm run check:place-baton` holds the machine and the handlers.
+
 ## Done means
 
 - `npm run build` and `npm run typecheck` pass. There are no console errors on load or while
