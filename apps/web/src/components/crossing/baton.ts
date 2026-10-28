@@ -7,6 +7,7 @@
 // a replay starts a new run (an arm over a baton the stand-in still holds hands it back first).
 import type { CrossPlace, NextPlace } from './place';
 import { placeWire } from './place';
+import { humanToken } from './follow';
 
 export type BatonStep = 'arm' | 'claim' | 'live' | 'lead' | 'return';
 export const BATON_STEPS: readonly BatonStep[] = ['arm', 'claim', 'live', 'lead', 'return'];
@@ -49,18 +50,13 @@ export interface BatonRun {
 /** A run for place `a` (the table leads to `next`); `onResult` gets each exchange as it completes, `onFail` once if the route is not there. */
 export function batonRun(a: CrossPlace, next: NextPlace | null, report: (x: Exchange) => void, onFail: () => void): BatonRun {
   // a reset starts a new generation: a request of an earlier one still in flight reports to nobody
-  let token: string | null = null, chain: Promise<unknown> = Promise.resolve(), fired = new Set<BatonStep>(), failed = false, gen = 0;
+  let chain: Promise<unknown> = Promise.resolve(), fired = new Set<BatonStep>(), failed = false, gen = 0;
   const dev = { 'x-bp-device': STANDIN };
   const run = async (s: BatonStep, g: number) => {
     if (failed || g !== gen) return;
     const onResult = (x: Exchange) => { if (g === gen) report(x); };
     if (s === 'arm') {
-      if (!token) {
-        const r = await fetch('/api/companion/human-token', { cache: 'no-store' });
-        if (!r.ok) throw new Error('no token');
-        token = ((await r.json()) as { token: string }).token;
-      }
-      const body = { place: placeWire(a, 'web') }, human = { 'x-bp-human': token };
+      const body = { place: placeWire(a, 'web') }, human = { 'x-bp-human': await humanToken() };
       let x = await call('arm', 'POST', '/api/session/place', body, human);
       // a baton an earlier run left with the stand-in: hand it back first (only its own device may), then arm
       if (x.status === 409) { await call('return', 'POST', '/api/session/place/return', {}, dev); x = await call('arm', 'POST', '/api/session/place', body, human); }

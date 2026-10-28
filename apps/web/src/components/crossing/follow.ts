@@ -9,6 +9,16 @@ import type { Engine } from '@/engine/Engine';
 
 export const PLACE_EVENT = 'bp:place';
 
+/** bp's own page's human token (GET /api/companion/human-token), fetched once per page and shared by the card and the
+ *  crossing; a refusal clears it so the next arm asks again. */
+let tokenP: Promise<string> | null = null;
+export function humanToken(): Promise<string> {
+  tokenP ??= fetch('/api/companion/human-token', { cache: 'no-store' })
+    .then(async (r) => { if (!r.ok) throw new Error('this page has no human token here'); return ((await r.json()) as { token: string }).token; })
+    .catch((e) => { tokenP = null; throw e; });
+  return tokenP;
+}
+
 /** The hash the page should fly to for a baton, or null when it is not the page's to follow. */
 export function followHash(b: PlaceBaton, product: string): string | null {
   if (b.place.product !== product || b.place.from !== 'vr') return null;

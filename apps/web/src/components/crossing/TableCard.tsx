@@ -4,10 +4,10 @@
 // reads the baton back each second, so a headset (or anything holding a device id) claiming it, the table leading and the
 // hand-back all show here as they happen; the page itself follows the table on the companion stream (follow.ts). Next to it,
 // the prototype: play the crossing from this place.
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { PlaceBaton } from '@bp/core/session/place';
 import type { Engine } from '@/engine/Engine';
-import { placeName } from './follow';
+import { humanToken, placeName } from './follow';
 import { placeOf, placeWire } from './place';
 
 type Held = PlaceBaton | { state: 'none' };
@@ -18,7 +18,6 @@ export function TableCard({ E, onPlay, onClose }: { E: Engine; onPlay: () => voi
   const [held, setHeld] = useState<Held | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [, tick] = useState(0);
-  const token = useRef<string | null>(null);
   const read = useCallback(async () => {
     try { const r = await fetch('/api/session/place', { cache: 'no-store' }); if (r.ok) setHeld((await r.json()) as Held); } catch { /* offline: keep the last */ }
   }, []);
@@ -30,8 +29,8 @@ export function TableCard({ E, onPlay, onClose }: { E: Engine; onPlay: () => voi
   const arm = async (takeBack = false) => {
     setErr(null);
     try {
-      if (!token.current) { const r = await fetch('/api/companion/human-token', { cache: 'no-store' }); if (!r.ok) throw new Error('this page has no human token here'); token.current = ((await r.json()) as { token: string }).token; }
-      const r = await fetch('/api/session/place', { method: 'POST', cache: 'no-store', headers: { 'content-type': 'application/json', 'x-bp-human': token.current }, body: JSON.stringify({ place: placeWire(placeOf(E), 'web'), ...(takeBack ? { takeBack: true } : {}) }) });
+      const token = await humanToken();
+      const r = await fetch('/api/session/place', { method: 'POST', cache: 'no-store', headers: { 'content-type': 'application/json', 'x-bp-human': token }, body: JSON.stringify({ place: placeWire(placeOf(E), 'web'), ...(takeBack ? { takeBack: true } : {}) }) });
       const j = (await r.json().catch(() => null)) as (Held & { error?: string }) | null;
       if (!r.ok || !j) setErr(j?.error ?? 'the server answered ' + r.status); else setHeld(j);
     } catch (e) { setErr(e instanceof Error ? e.message : 'could not reach the server'); }
