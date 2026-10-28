@@ -9,7 +9,7 @@
 // the companion's target kinds), the table's plan drawn from the same layout data, and the page following the table (the
 // engine really flies to the next place behind this overlay, and stays there if you close after the headset came off).
 // The mock parts: the room, the studio and the lamp are sketches; the baton is simulated in this page.
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useEngine } from '../hooks';
 import { GENERAL } from '@bp/core/data/types';
 import { END, FOCUSED, STATES, designClock, sceneAt, smooth, stateAt, stateIndex, tOf, xOf } from './timeline';
@@ -80,8 +80,11 @@ export default function Crossing({ onClose }: { onClose: () => void }) {
       const d = open.find((x) => a.room?.feats.some((f) => f.id === x.f)) ?? open[0];
       const card = d ? { q: d.q, feature: E.M.P.F[d.f]?.name ?? d.f, lens: E.M.P.LENS[d.lens]?.name ?? d.lens, urg: d.urg } : null;
       const TH = drawTable(E, { ...a, level: 0, wing: null, room: null, bay: null, tile: null, crumbs: [a.crumbs[0]], name: a.crumbs[0] + ' · home' }, null);
-      return { a, next, pageA, pageB, tableA: jpeg(TA.canvas), tableB, rises: TA.rises, risesB, lights: TA.lights, titleA: TA.title, real,
+      const out: Prep = { a, next, pageA, pageB, tableA: jpeg(TA.canvas), tableB, rises: TA.rises, risesB, lights: TA.lights, titleA: TA.title, real,
         tableHome: jpeg(TH.canvas), risesHome: TH.rises, lightsHome: TH.lights, card };
+      // decoded once here, not on the frame a layer first shows them (a 1600 x 900 decode mid-crossing is a visible hitch)
+      await Promise.all([out.pageA, out.pageB, out.tableA, out.tableB, out.tableHome].map((src) => { if (!src) return null; const im = new Image(); im.src = src; return im.decode().catch(() => null); }));
+      return out;
     })();
     // under reduced motion the crossing waits on its first state: the person steps it
     job.current.then((p) => { if (!dead) { setPrep(p); setPlaying(!matchMedia('(prefers-reduced-motion: reduce)').matches); } });
@@ -175,15 +178,18 @@ function paperPose(p: number): string {
 function Stage({ prep, t, k, paired }: { prep: Prep; t: number; k: number; paired: boolean }) {
   const sc = sceneAt(t, paired), st = stateAt(t), off = STATES[9].at;
   const inVR = t >= FOCUSED - 0.3 && t < off + 0.3;
+  // the headset's layers are built while the blackout hides them, so no layer is created on a frame anyone sees
+  const warm = t >= 3.8 && t < off + 0.3;
   const rises = !paired ? prep.risesHome : sc.moved > 0.5 ? prep.risesB : prep.rises, lights = paired ? prep.lights : prep.lightsHome;
   const caption = sc.moved > 0.02 && prep.next ? prep.next.name : prep.a.name;
   const lampSay = sc.moved > 0.02 ? 'the page follows' : 'where you were on the desk';
   return (
     <>
       <div className="cx-view" style={{ transform: `scale(${k})` }}>
-        {inVR && <Room o={sc.pass} />}
-        {inVR && (
-          <div className="cx-persp" style={{ opacity: sc.pass }}>
+        {/* a layer faded out is unmounted: a compositor pays for every layer every frame, even at opacity 0 */}
+        {warm && (t < FOCUSED || sc.pass > 0.001) && <Room o={inVR ? sc.pass : 0.01} />}
+        {warm && (
+          (t < FOCUSED || sc.pass > 0.001) && <div className="cx-persp" style={{ opacity: inVR ? Math.max(sc.pass, 0.01) : 0.01 }}>
             <div className="cx-desk">
               <div className="cx-wood" />
               <div className="cx-note" />
@@ -197,9 +203,9 @@ function Stage({ prep, t, k, paired }: { prep: Prep; t: number; k: number; paire
             </div>
           </div>
         )}
-        {inVR && <div className="cx-grain" style={{ opacity: sc.pass * 0.55 }} />}
-        {inVR && <Studio o={sc.studio} />}
-        {inVR && (
+        {inVR && sc.pass > 0.001 && <div className="cx-grain" style={{ opacity: sc.pass * 0.35 }} />}
+        {warm && (paired ? t < FOCUSED + 2.0 || sc.studio > 0.001 : true) && <Studio o={inVR ? Math.max(0.01, sc.studio) : 0.01} />}
+        {warm && (
           <div className="cx-persp">
             <div className="cx-desk">
               <div className="cx-glass" style={{ opacity: sc.studio }} />
@@ -212,12 +218,12 @@ function Stage({ prep, t, k, paired }: { prep: Prep; t: number; k: number; paire
                 </div>
               )}
               {paired && t >= FOCUSED - 0.3 && t < FOCUSED + 1.4 && <div className="cx-tap" style={{ opacity: smooth(FOCUSED, FOCUSED + 0.3, t) * (1 - smooth(FOCUSED + 0.9, FOCUSED + 1.3, t)) }} />}
-              <div className="cx-paper" style={{ transform: paperPose(sc.lift), opacity: paired ? smooth(FOCUSED + 0.85, FOCUSED + 1.05, t) : sc.table }}>
+              <div className="cx-paper" style={{ transform: paperPose(sc.lift), opacity: Math.max(0.01, paired ? smooth(FOCUSED + 0.85, FOCUSED + 1.05, t) : sc.table) }}>
                 <img className="cx-sheet" src={paired ? prep.tableA : prep.tableHome} alt="" style={{ opacity: 1 - sc.moved }} />
                 {prep.tableB && <img className="cx-sheet" src={prep.tableB} alt="" style={{ opacity: sc.moved }} />}
                 <div className="cx-edge" style={{ opacity: sc.table }} />
-                {sc.rise > 0.001 && <Rises rises={rises} r={sc.rise} />}
-                {sc.rise > 0.001 && sc.moved < 0.5 && <Lights lights={lights} r={sc.rise} />}
+                <div className="cx-rises" style={{ transform: `scale3d(1, 1, ${Math.max(0.02, sc.rise).toFixed(3)})`, opacity: sc.rise > 0.001 ? 1 : 0 }}><Rises rises={rises} /></div>
+                {sc.moved < 0.5 && <Lights lights={lights} r={sc.rise} />}
               </div>
             </div>
           </div>
@@ -320,11 +326,13 @@ function Lamp({ o }: { o: number }) {
   );
 }
 
-function Rises({ rises, r }: { rises: Rise[]; r: number }) {
+/** The rooms out of the glass, built once at full height: the parent's scale3d raises them, so a frame of the rise
+ *  changes one transform, not a style per face. */
+const Rises = memo(function Rises({ rises }: { rises: Rise[] }) {
   return (
-    <div className="cx-rises">
+    <>
       {rises.map((b, i) => {
-        const z = Math.max(0.5, b.z * r), cls = 'cx-rise' + (b.hot ? ' hot' : '') + (b.next ? ' nx' : '') + (b.walls ? ' walls' : ' slab');
+        const z = b.z, cls = 'cx-rise' + (b.hot ? ' hot' : '') + (b.next ? ' nx' : '') + (b.walls ? ' walls' : ' slab');
         const st = (x: number, y: number, w: number, h: number, tr: string, origin: string): CSSProperties => ({ left: x, top: y, width: w, height: h, transform: tr, transformOrigin: origin });
         return (
           <div key={i} className={cls}>
@@ -336,9 +344,9 @@ function Rises({ rises, r }: { rises: Rise[]; r: number }) {
           </div>
         );
       })}
-    </div>
+    </>
   );
-}
+});
 
 function Lights({ lights, r }: { lights: Light[]; r: number }) {
   return (
