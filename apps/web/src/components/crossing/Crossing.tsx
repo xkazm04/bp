@@ -78,7 +78,8 @@ export default function Crossing({ onClose }: { onClose: () => void }) {
       return { a, next, pageA, pageB, tableA: jpeg(TA.canvas), tableB, rises: TA.rises, risesB, lights: TA.lights, titleA: TA.title, real,
         tableHome: jpeg(TH.canvas), risesHome: TH.rises, lightsHome: TH.lights };
     })();
-    job.current.then((p) => { if (!dead) { setPrep(p); setPlaying(true); } });
+    // under reduced motion the crossing waits on its first state: the person steps it
+    job.current.then((p) => { if (!dead) { setPrep(p); setPlaying(!matchMedia('(prefers-reduced-motion: reduce)').matches); } });
     return () => { dead = true; };
   }, [E]);
 
@@ -180,8 +181,11 @@ function Stage({ prep, t, k, paired }: { prep: Prep; t: number; k: number; paire
           <div className="cx-persp" style={{ opacity: sc.pass }}>
             <div className="cx-desk">
               <div className="cx-wood" />
+              <div className="cx-note" />
+              <div className="cx-pen" />
               <div className="cx-kbd" />
               <div className="cx-mouse" />
+              <div className="cx-mug" />
               <div className="cx-foot" />
               <div className="cx-stand" />
               <div className="cx-monitor"><div className="cx-screen"><img src={prep.pageA} alt="" /></div></div>
@@ -194,6 +198,15 @@ function Stage({ prep, t, k, paired }: { prep: Prep; t: number; k: number; paire
           <div className="cx-persp">
             <div className="cx-desk">
               <div className="cx-glass" style={{ opacity: sc.studio }} />
+              {paired && t >= FOCUSED - 0.3 && t < FOCUSED + 2.2 && (
+                // the anchors the person pinned once (two touches; Meta's spatial anchors persist), found again at FOCUSED,
+                // and the claimed place arriving as a label on the pinned monitor: drawn by the APK, over passthrough
+                <div className="cx-anchor" style={{ opacity: smooth(FOCUSED, FOCUSED + 0.3, t) * (1 - smooth(FOCUSED + 1.2, FOCUSED + 1.6, t)) }}>
+                  <i className="c tl" /><i className="c tr" /><i className="c bl" /><i className="c br" />
+                  <span className="cx-claim" style={{ opacity: smooth(FOCUSED + 0.8, FOCUSED + 0.95, t) }}>● {prep.a.hash === '#' ? 'the site' : prep.a.hash}</span>
+                </div>
+              )}
+              {paired && t >= FOCUSED - 0.3 && t < FOCUSED + 1.4 && <div className="cx-tap" style={{ opacity: smooth(FOCUSED, FOCUSED + 0.3, t) * (1 - smooth(FOCUSED + 0.9, FOCUSED + 1.3, t)) }} />}
               <div className="cx-paper" style={{ transform: paperPose(sc.lift), opacity: paired ? smooth(FOCUSED + 0.85, FOCUSED + 1.05, t) : sc.table }}>
                 <img className="cx-sheet" src={paired ? prep.tableA : prep.tableHome} alt="" style={{ opacity: 1 - sc.moved }} />
                 {prep.tableB && <img className="cx-sheet" src={prep.tableB} alt="" style={{ opacity: sc.moved }} />}
