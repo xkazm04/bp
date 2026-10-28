@@ -46,17 +46,19 @@
 .cx-pool { position: absolute; left: 10%; top: 20%; width: 30%; height: 40%; background: radial-gradient(circle, rgba(255, 190, 110, 0.28), transparent 65%); }
 
 /* ---------- the desk and what stands on it. Desk-local px: x right, y toward you, z up out of the desk. */
-.cx-persp { position: absolute; inset: 0; perspective: 1150px; perspective-origin: 50% 6%; }
-.cx-desk { position: absolute; left: 50%; top: 50%; width: 2400px; height: 1400px; margin: -700px 0 0 -1200px; transform: translateY(210px) rotateX(52deg); transform-style: preserve-3d; }
+/* the scene's one camera, fixed for the whole crossing: a seated eye looking down at the desk */
+.cx { --cam-y: 80px; --cam-z: -420px; --pitch: 50deg; --cam-o: 20%; }
+.cx-persp { position: absolute; inset: 0; perspective: 1150px; perspective-origin: 50% var(--cam-o); }
+.cx-desk { position: absolute; left: 50%; top: 50%; width: 2400px; height: 1400px; margin: -700px 0 0 -1200px; transform: translateY(var(--cam-y)) translateZ(var(--cam-z)) rotateX(var(--pitch)); transform-style: preserve-3d; }
 .cx-desk > * { position: absolute; }
 .cx-wood { left: 0; right: 0; top: 200px; height: 1200px; background: linear-gradient(180deg, #8a7458 0%, #9a8162 40%, #a88d6b 100%); box-shadow: inset 0 40px 80px rgba(0, 0, 0, 0.25); filter: saturate(0.75); }
 .cx-glass { left: 330px; top: 300px; width: 1740px; height: 1040px; border-radius: 14px; background: #050a14;
   box-shadow: 0 0 0 10px #d8e4ee, 0 0 0 14px #9fb3c4, 0 0 60px 20px rgba(160, 230, 255, 0.55), inset 0 0 40px rgba(127, 230, 255, 0.5); }
 .cx-kbd { left: 960px; top: 1290px; width: 480px; height: 96px; border-radius: 8px; background: repeating-linear-gradient(90deg, #2c2c2e 0 34px, #3a3a3d 34px 38px), #2c2c2e; box-shadow: 0 6px 0 #1a1a1b; }
 .cx-mouse { left: 1500px; top: 1300px; width: 46px; height: 74px; border-radius: 24px; background: #3a3a3d; }
-.cx-foot { left: 1110px; top: 262px; width: 180px; height: 76px; border-radius: 50%; background: radial-gradient(ellipse, #2a2c31 55%, rgba(0, 0, 0, 0.35) 72%, transparent 75%); }
-.cx-stand { left: 1175px; top: 172px; width: 50px; height: 128px; background: linear-gradient(90deg, #1d1f23, #34373d, #1d1f23); transform-origin: 50% 100%; transform: rotateX(-90deg); }
-.cx-monitor { left: 892px; top: 127px; width: 616px; height: 346px; border-radius: 6px; background: #121417; box-shadow: 0 0 0 2px #2b2e33; transform: translateZ(290px) rotateX(-90deg); }
+.cx-foot { left: 1120px; top: 296px; width: 160px; height: 68px; border-radius: 50%; background: radial-gradient(ellipse, #2a2c31 55%, rgba(0, 0, 0, 0.35) 72%, transparent 75%); }
+.cx-stand { left: 1180px; top: 250px; width: 40px; height: 80px; background: linear-gradient(90deg, #1d1f23, #34373d, #1d1f23); transform-origin: 50% 100%; transform: rotateX(-90deg); }
+.cx-monitor { left: 940px; top: 184px; width: 520px; height: 292px; border-radius: 6px; background: #121417; box-shadow: 0 0 0 2px #2b2e33; transform: translateZ(215px) rotateX(-90deg); }
 .cx-screen { position: absolute; left: 20px; top: 11px; right: 20px; bottom: 11px; overflow: hidden; background: #000; }
 .cx-screen img { width: 100%; height: 100%; display: block; filter: saturate(0.85) brightness(0.92) blur(0.6px); }
 .cx-paper { left: 400px; top: 370px; width: 1600px; height: 900px; transform-style: preserve-3d; transform-origin: 50% 50%; }

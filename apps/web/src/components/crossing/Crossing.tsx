@@ -11,6 +11,7 @@
 // The mock parts: the room, the studio and the lamp are sketches; the baton is simulated in this page.
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useEngine } from '../hooks';
+import { GENERAL } from '@bp/core/data/types';
 import { END, FOCUSED, STATES, designClock, sceneAt, smooth, stateAt, stateIndex, tOf, xOf } from './timeline';
 import { arrived, capturePage, nextOf, placeOf, type CrossPlace, type NextPlace } from './place';
 import { ART_H, ART_W, drawTable, type Light, type Rise } from './table-art';
@@ -36,7 +37,7 @@ function route(h: string) {
   try { history.replaceState(history.state, '', location.pathname + location.search + (h === '#' ? '' : h)); } catch { /* ignore */ }
   window.dispatchEvent(new HashChangeEvent('hashchange'));
 }
-const sub = (p: CrossPlace) => ['L' + p.level, p.level === 4 ? 'feature sheet' : p.level === 3 ? 'bay' : p.level === 2 ? 'room' : p.level === 1 ? 'wing' : 'site plan', p.lens === 'general' ? 'General' : p.lens + ' lens'].join(' · ');
+const sub = (p: CrossPlace) => ['L' + p.level, p.level === 4 ? 'feature sheet' : p.level === 3 ? 'bay' : p.level === 2 ? 'room' : p.level === 1 ? 'wing' : 'site plan', p.lens === GENERAL ? 'General' : p.lens + ' lens'].join(' · ');
 const jpeg = (c: HTMLCanvasElement) => c.toDataURL('image/jpeg', 0.9);
 
 export default function Crossing({ onClose }: { onClose: () => void }) {
@@ -154,8 +155,9 @@ function Body({ prep, t }: { prep: Prep; t: number }) {
 
 /** Desk-local pose of the paper: p = 0 standing on the monitor (its screen), 1 lying on the desk as the table. */
 function paperPose(p: number): string {
-  // the monitor's screen centre in desk coordinates, relative to the paper's resting centre: 520 px farther, 290 px up
-  const dy = -520 * (1 - p), dz = 290 * (1 - p) + Math.sin(Math.PI * p) * 140 + 2, rx = -90 * (1 - p), s = 0.36 + 0.64 * p;
+  // the monitor's screen centre in desk coordinates, relative to the paper's resting centre: 490 px farther, 215 px up;
+  // its screen is 0.3 of the paper (480 x 270)
+  const dy = -490 * (1 - p), dz = 215 * (1 - p) + Math.sin(Math.PI * p) * 140 + 2, rx = -90 * (1 - p), s = 0.3 + 0.7 * p;
   return `translate3d(0px, ${dy.toFixed(1)}px, ${dz.toFixed(1)}px) rotateX(${rx.toFixed(2)}deg) scale(${s.toFixed(4)})`;
 }
 
@@ -307,7 +309,7 @@ function Rises({ rises, r }: { rises: Rise[]; r: number }) {
 function Lights({ lights, r }: { lights: Light[]; r: number }) {
   return (
     <div className="cx-lights" style={{ opacity: r }}>
-      {lights.map((l, i) => <i key={i} className={l.bad ? 'bad' : ''} style={{ left: l.x - 22, top: l.y - 22, transform: `translateZ(${26 * r}px) rotateX(-52deg)` }} />)}
+      {lights.map((l, i) => <i key={i} className={l.bad ? 'bad' : ''} style={{ left: l.x - 22, top: l.y - 22, transform: `translateZ(${26 * r}px) rotateX(calc(-1 * var(--pitch)))` }} />)}
     </div>
   );
 }

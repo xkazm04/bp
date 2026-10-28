@@ -3,7 +3,6 @@
 // maps L3 (a bay) and L4 (a feature) to their room, as the design says; L0 and L1 open the site.
 import type { Engine } from '@/engine/Engine';
 import type { BayNode, RoomNode, TileNode, WingNode } from '@bp/core/model';
-import { GENERAL } from '@bp/core/data/types';
 
 export interface CrossPlace {
   /** 0 site, 1 wing, 2 room, 3 bay, 4 feature. */
@@ -43,7 +42,7 @@ export function placeOf(E: Engine): CrossPlace {
   if (tile) crumbs.push(tile.f.name);
   const name = tile ? tile.f.name : bay ? bay.name + ' · ' + room!.name : room ? room.name : wing ? wing.def.name : E.M.P.name + ' · the whole site';
   const target: CrossPlace['target'] = tile ? { kind: 'feature', id: tile.f.id } : room ? { kind: 'room', id: room.id } : wing ? { kind: 'wing', id: wing.id } : { kind: 'site', id: E.M.P.name.toLowerCase() };
-  return { level, hash: location.hash || '#', target, wing, room, bay, tile, crumbs, name, lens: S.view === GENERAL ? 'general' : S.view, product: E.M.live?.slug ?? 'kettle', at: new Date().toISOString().replace(/\.\d+Z$/, 'Z') };
+  return { level, hash: location.hash || '#', target, wing, room, bay, tile, crumbs, name, lens: S.view, product: E.M.live?.slug ?? 'kettle', at: new Date().toISOString().replace(/\.\d+Z$/, 'Z') };
 }
 
 /** The next place the table goes to: another bay of the same room (most flags first), or at the site the room in most trouble. */
