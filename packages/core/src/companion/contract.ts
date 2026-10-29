@@ -4,6 +4,7 @@
 // Absent values: an optional field is omitted; `null` only for a known unknown (a cost the CLI did not report).
 
 import type { PlaceBaton } from '../session/place.ts';
+import type { SharedView } from '../session/focus.ts';
 
 /** Why a turn failed, read off the CLI's stderr and result record (athena's six classes). */
 export type FailureClass = 'gone' | 'poisoned' | 'auth' | 'limit' | 'transient' | 'unknown';
@@ -71,7 +72,10 @@ export type CompanionEvent =
   | { type: 'status'; busy: string[]; sleeping: boolean }
   /** The place baton moved because the table wrote it (live) or handed it back (returned): the page follows it
    *  (session/place.ts; published by POST /api/session/place and /return). */
-  | { type: 'place'; baton: PlaceBaton };
+  | { type: 'place'; baton: PlaceBaton }
+  /** The shared focus moved, or a reader came, went or changed whom it follows: the whole view (session/focus.ts; published
+   *  by POST /api/session/focus and by the writers that go through it, the companion's focus.show and the baton's table). */
+  | { type: 'shared'; shared: SharedView };
 
 /** The header a human path carries; the token is minted per server boot and never given to the MCP process. */
 export const HUMAN_HEADER = 'x-bp-human';

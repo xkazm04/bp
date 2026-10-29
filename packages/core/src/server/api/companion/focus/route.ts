@@ -9,6 +9,7 @@ import { KETTLE_SLUG, findProduct } from '../../../products.server.ts';
 import { focusSince, publish } from '../../../companion/bus.server.ts';
 import type { FocusCommand, FocusKind } from '../../../../companion/contract.ts';
 import { sortableId } from '../door.server.ts';
+import { moveFocus } from '../../session/focus.server.ts';
 
 const KINDS: FocusKind[] = ['feature', 'room', 'wing', 'decision', 'wave', 'release', 'ledger-row', 'lens'];
 
@@ -32,5 +33,9 @@ export async function POST(req: Request): Promise<Response> {
   if (b.product !== KETTLE_SLUG && !findProduct(b.product)) return Response.json({ error: `unknown product ${b.product}` }, { status: 404 });
   const focus: FocusCommand = { id: sortableId('f_'), product: b.product, target: { kind: b.kind as FocusKind, id: b.id }, ...(typeof b.say === 'string' && b.say ? { say: b.say } : {}) };
   publish({ type: 'focus', focus });
+  // the lamp and the owner share one place: a place-kind command also moves the shared focus, as the companion's reader
+  if (focus.target.kind === 'feature' || focus.target.kind === 'room' || focus.target.kind === 'wing') {
+    moveFocus({ kind: 'publish', reader: 'companion', surface: 'companion', label: 'Glim', place: { product: focus.product, target: { kind: focus.target.kind, id: focus.target.id }, ...(focus.say ? { say: focus.say } : {}) } });
+  }
   return Response.json(focus, { status: 201 });
 }

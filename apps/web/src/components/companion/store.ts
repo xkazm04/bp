@@ -122,7 +122,7 @@ export function reduce(s: CompanionState, a: Action, now: number): CompanionStat
       if (e.type === 'card') return upsertCard(s, e.card, now);
       if (e.type === 'focus') return focus(s, e.focus, now);
       if (e.type === 'status') return { ...s, busy: e.busy, sleeping: e.sleeping };
-      if (e.type === 'place') return s; // the crossing's host follows the place; the lamp does not
+      if (e.type === 'place' || e.type === 'shared') return s; // the crossing's host follows the place, the follow chip the shared focus; the lamp neither
       if (s.local !== null && (e.conversationId === s.local || s.local === PENDING)) return s; // the POST body carries it
       return turn(s, e.conversationId, e.event, now);
     }

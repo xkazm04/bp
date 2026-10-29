@@ -11,6 +11,7 @@ import { isHuman, notHuman, sortableId } from '../../companion/door.server.ts';
 import { current, readPlace, step } from '../../../../session/place.ts';
 import { deviceOf, noDevice, readBaton, writeBaton } from '../baton.server.ts';
 import { publish } from '../../../companion/bus.server.ts';
+import { moveFocus } from '../focus.server.ts';
 
 const NO_STORE = { 'cache-control': 'no-store' };
 
@@ -50,6 +51,11 @@ export async function POST(req: Request): Promise<Response> {
   if (r.error) return Response.json({ error: r.error, state: r.baton?.state ?? 'none' }, { status: r.status, headers: NO_STORE });
   writeBaton(r.baton);
   // the table wrote the place: every open page hears it on the companion stream and follows
-  if (r.baton && r.baton.state === 'live') publish({ type: 'place', baton: r.baton });
+  if (r.baton && r.baton.state === 'live') {
+    publish({ type: 'place', baton: r.baton });
+    // and through the shared focus, as the device's own reader: every follower hears the table too (session/focus.ts)
+    const p = r.baton.place, device = r.baton.device ?? 'vr';
+    moveFocus({ kind: 'publish', reader: 'vr:' + device, surface: 'vr', label: 'VR table', place: { product: p.product, level: p.level, ...(p.target ? { target: p.target } : {}), ...(p.hash ? { hash: p.hash } : {}) } }, now);
+  }
   return Response.json(r.baton, { status: r.status, headers: NO_STORE });
 }
