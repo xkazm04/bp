@@ -186,6 +186,9 @@ try {
   const d = await req('POST', '/api/products/kl/dispatch', {}, { ids: ['q-pay'] });
   check('POST /dispatch of a held finding: 403 with the order', d.status === 403 && d.json?.order?.id === 'O-1', j(d.json));
   const rl = await call('rules_list', { slug: 'kl' });
+  const ib = await call('inbox_list', { limit: 500 });
+  const it0 = (id: string) => ib.json?.items?.find((x: { id: string }) => x.id === id);
+  check('MCP inbox.list marks what an order holds (q-pay heldBy O-1) and leaves the rest unmarked', it0('q-pay')?.heldBy === 'O-1' && !it0('q-book')?.heldBy, j([it0('q-pay'), it0('q-book')]));
   check('MCP rules.list names the order, its author and place', !rl.isError && rl.json?.rules?.[0]?.id === 'O-1' && rl.json.rules[0].scope?.label === 'Billing', rl.text);
 
   {
@@ -199,6 +202,9 @@ try {
   }
   const gr = await req('POST', API, H, { kind: 'grant', minTier: 3, hours: 24, scope: BOOKING });
   check('a person grants G-1: backlog findings in Booking, 24 h', gr.status === 201 && gr.json?.rule?.id === 'G-1', j(gr.json));
+  const ib2 = await call('inbox_list', { limit: 500 });
+  const it2 = (id: string) => ib2.json?.items?.find((x: { id: string }) => x.id === id);
+  check('MCP inbox.list marks what a grant lets an agent approve alone (q-book G-1), never a stop-ship (q-book0)', it2('q-book')?.grant === 'G-1' && !it2('q-book0')?.grant, j([it2('q-book'), it2('q-book0')]));
   const before = (await req('GET', API)).json?.record?.decided;
   const da = await call('decision_answer', { slug: 'kl', id: 'q-book', decision: 'approve' });
   check('MCP decision.answer on a covered backlog finding runs at once under G-1 (no card waits)', !da.isError && da.json?.state === 'done' && da.json?.decidedBy === 'policy' && da.json?.policy === 'G-1', da.text);

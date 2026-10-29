@@ -24,7 +24,7 @@ const slug = { type: 'string', description: "the product's slug (bp.products.loc
 const str = (description: string) => ({ type: 'string', description });
 
 export const TOOLS: readonly ToolSpec[] = [
-  { name: 'inbox.list', description: 'Open decisions across every registered product, ranked by tier, age and value.', reversible: true, side_effects: 'none',
+  { name: 'inbox.list', description: "Open decisions across every registered product, ranked by tier, age and value; `heldBy` names the owner's standing order that holds one (no door will build it), `grant` the grant that lets an agent approve it alone.", reversible: true, side_effects: 'none',
     params_schema: { type: 'object', properties: { limit: { type: 'number' } } }, route: { method: 'GET', path: '/api/companion/inbox' } },
   { name: 'decision.recommend', description: 'Attach a recommended verdict and its reason to one open decision, for the person to approve in a batch.', reversible: true, side_effects: 'internal',
     params_schema: { type: 'object', properties: { slug, id: str('the proposal id'), verdict: { type: 'string', enum: ['approve', 'decline', 'rework', 'descope'] }, why: str('one or two sentences') }, required: ['slug', 'id', 'verdict', 'why'] },
