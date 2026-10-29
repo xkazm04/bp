@@ -46,6 +46,7 @@ export interface ProductSummary { slug: string; name: string; built: number; fai
 export interface MorningDeck { since: string; until: string; products: ProductSummary[]; cards: MorningCard[] }
 
 export const TOP_DECISIONS = 3;
+export const HELD_SHOWN = 2;
 const TIER_WORDS = ['stop-ship', 'high', 'medium', 'backlog'];
 const n = (k: number, one: string, many = one + 's') => `${k} ${k === 1 ? one : many}`;
 const list = (xs: string[]) => (xs.length <= 1 ? xs.join('') : xs.slice(0, -1).join(', ') + ' and ' + xs[xs.length - 1]);
@@ -129,7 +130,8 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
   // the blockers: unsteered first, by tier (stop-ship first; untiered last), then the riskiest, then the oldest
   const rank = (d: { x: Proposal; s?: SteerRow }) => [d.s ? 1 : 0, d.x.tier ?? 4, -(d.x.risk ?? 0), d.x.created_at] as const;
   decisions.sort((a, b) => { const x = rank(a), y = rank(b); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return (x[i] as number) - (y[i] as number); return x[3] < y[3] ? -1 : x[3] > y[3] ? 1 : 0; });
-  const top = decisions.slice(0, TOP_DECISIONS);
+  // held ones stay in front of the owner, marked, after the top unsteered ones (at most HELD_SHOWN of them)
+  const top = [...decisions.filter((d) => !d.s).slice(0, TOP_DECISIONS), ...decisions.filter((d) => d.s).slice(0, HELD_SHOWN)];
   const S = sums.reduce((a, s) => ({ built: a.built + s.built, failed: a.failed + s.failed, confirmed: a.confirmed + s.confirmed, short: a.short + s.short, waiting: a.waiting + s.waiting }), { built: 0, failed: 0, confirmed: 0, short: 0, waiting: 0 });
   const moved = sums.filter((s) => s.built || s.failed || s.releases).length;
   const openLine = products.length
@@ -138,7 +140,7 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
   cards.push({
     id: 'open', kind: 'open', headline: 'Good morning.', tone: 'calm',
     lines: [{ text: openLine }, ...(S.confirmed || S.short ? [{ text: `Releases: ${S.confirmed} item${S.confirmed === 1 ? '' : 's'} confirmed${S.short ? `, ${S.short} fell short` : ''}.`, tone: (S.short ? 'warn' : 'good') as Tone }] : []),
-      { text: S.waiting ? `${n(S.waiting, 'decision')} ${S.waiting === 1 ? 'waits' : 'wait'}; the top ${Math.min(TOP_DECISIONS, S.waiting)} are at the end.` : 'Nothing waits for a decision.', ...(S.waiting ? { tone: 'warn' as Tone } : {}) }],
+      { text: S.waiting ? `${n(S.waiting, 'decision')} ${S.waiting === 1 ? 'waits' : 'wait'}; the top ${Math.min(TOP_DECISIONS, S.waiting)} ${Math.min(TOP_DECISIONS, S.waiting) === 1 ? 'is' : 'are'} at the end.` : 'Nothing waits for a decision.', ...(S.waiting ? { tone: 'warn' as Tone } : {}) }],
   });
   for (const m of perProduct) cards.push(...m);
   top.forEach(({ p, x, s }, i) => {
