@@ -57,7 +57,8 @@ export const sortableId = (prefix: string): string =>
   `${prefix}${Date.now().toString(36).padStart(9, '0')}${((g.__bpCardSeq = ((g.__bpCardSeq ?? 0) + 1) % 1296)).toString(36).padStart(2, '0')}${randomBytes(2).toString('hex')}`;
 
 // ------------------------------------------------------------------------------------------------ recommendations
-export interface Recommendation { verdict: Verdict; why: string; at: string }
+/** `brief`: the decision brief of the proposal when it was recommended (scan/brief.ts), so a recommendation carries its own context. */
+export interface Recommendation { verdict: Verdict; why: string; at: string; brief?: { say: 'withdraw' | 'ask' | 'proceed'; lines: string[] } }
 export const readRecommendations = (): Record<string, Recommendation> => readJson('recommendations.json', {});
 /** Last writer wins per `slug:id`. */
 export function recommend(slug: string, id: string, r: Omit<Recommendation, 'at'>): Recommendation {

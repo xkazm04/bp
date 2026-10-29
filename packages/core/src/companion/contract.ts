@@ -57,7 +57,8 @@ export interface InboxItem {
   tier?: 0 | 1 | 2 | 3;
   ageMs: number;
   rank: number;
-  recommendation?: { verdict: Verdict; why: string };
+  /** `brief`: the decision brief's lines when the recommendation was made (scan/brief.ts). */
+  recommendation?: { verdict: Verdict; why: string; brief?: string[] };
 }
 
 export type GapReason = 'unmeasured' | 'stale' | 'unknown' | 'deviation';
