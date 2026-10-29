@@ -196,6 +196,13 @@ Part L has two phases (owner, 2026-10-28):
   bundle line and `Kettle wings=5` as before.
 - **Pass:** the unpaired path is unchanged. This is the competition build's regression line, and every later step
   re-runs it.
+- **Done 2026-10-29, Lynx, master `bf236b9`: pass.**
+  - `--bundle` logged `reading kettle from the build's bundled snapshot (saved 2026-10-27T20:53:13.759Z, rev
+    80557561ddf0f4cd)`, then `Kettle wings=5 ... tiles=133`.
+  - `--bundle --xr-sim --vr` logged `Initialized OpenXR on Meta XR Simulator runtime version 207.0.0`, the Isdk rigs on
+    the Simulator, the same bundle line and `Kettle wings=5`.
+  - `FBpPlace` is not in the generated header yet: L3 adds it, so this step's first bullet waits for L3.
+  - Pass `MSYS_NO_PATHCONV=1` before a `--game-mode /Script/...` from Git Bash, or the path is rewritten.
 
 ### L1. The first run on the Quest 3S (standalone-plan S5)
 
