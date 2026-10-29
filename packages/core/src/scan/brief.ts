@@ -106,6 +106,13 @@ export function words(t: string): Set<string> {
 const overlap = (a: Set<string>, b: Set<string>) => { let n = 0; for (const w of a) if (b.has(w)) n++; return n; };
 
 // ------------------------------------------------------------------------------------------- facts
+/** A title's idea words: a feature's own name in a title says where, not what, so those words never make two ideas alike. */
+const ideaWords = (t: string, f: string) => { const w = words(t); for (const x of words(f.replace(/-/g, ' '))) w.delete(x); return w; };
+/** Per row object (a snapshot's rows survive its deltas), so the live feed's advice per open card does not re-read every
+ *  title on every tick: 300 open x 3000 rows took 1.4 s uncached. */
+const ROW_WORDS = new WeakMap<Proposal, Set<string>>();
+const rowWords = (x: Proposal) => { let w = ROW_WORDS.get(x); if (!w) ROW_WORDS.set(x, (w = ideaWords(x.title, x.feature))); return w; };
+
 const decidedAt = (p: Proposal) => (p.decided_at ?? p.updated_at).slice(0, 10);
 export const subjectOf = (p: Proposal): BriefSubject => ({
   id: p.id, feature: p.feature, title: p.title, lens: p.lens, standard: p.standard,
@@ -124,41 +131,47 @@ function blastOf(sub: BriefSubject, map: BriefMap, scan: Scan): Brief['blast'] {
   };
 }
 
-function precedentOf(sub: BriefSubject, scan: Scan): { precedent: Brief['precedent']; declines: BriefDecided[] } {
-  const byId = new Map(scan.proposals.map((x) => [x.id, x]));
+/** The rows by id, once per snapshot's proposals array (every open card of one feed reads the same one). */
+const BY_ID = new WeakMap<readonly Proposal[], Map<string, Proposal>>();
+const byIdOf = (ps: readonly Proposal[]) => { let m = BY_ID.get(ps); if (!m) BY_ID.set(ps, (m = new Map(ps.map((x) => [x.id, x])))); return m; };
+const newestFirst = (a: BriefDecided, b: BriefDecided) => (a.at < b.at ? 1 : a.at > b.at ? -1 : a.id < b.id ? 1 : -1);
+
+/** `lean` (the live feed's advice on every open card, every tick): 'same lens' rows are counted, never built or sorted. */
+function precedentOf(sub: BriefSubject, scan: Pick<Scan, 'proposals'>, lean = false): { precedent: Brief['precedent']; declines: BriefDecided[] } {
+  const byId = byIdOf(scan.proposals);
   const chain = new Set<string>(), self = sub.id ? byId.get(sub.id) : undefined, todo = [self?.attempt_of, self?.parent_id];
   while (todo.length) {
     const x = byId.get(todo.pop() ?? '');
     if (!x || x.id === sub.id || chain.has(x.id)) continue;
     chain.add(x.id); todo.push(x.attempt_of, x.parent_id);
   }
-  // a feature's own name in a title says where, not what: those words never make two ideas alike
-  const minus = (t: string, f: string) => { const w = words(t); for (const x of words(f.replace(/-/g, ' '))) w.delete(x); return w; };
-  const mine = minus(sub.title, sub.feature), rows: BriefDecided[] = [];
+  const mine = ideaWords(sub.title, sub.feature), rows: BriefDecided[] = [];
+  let approved = 0, declined = 0;
   for (const x of scan.proposals) {
     if (x.id === sub.id || x.status === 'proposed') continue;
-    const shared = overlap(mine, minus(x.title, x.feature));
+    const shared = overlap(mine, rowWords(x));
     const match: Match | null = chain.has(x.id) || (x.feature === sub.feature && (!sub.lens || x.lens === sub.lens) && (!!sub.lens || shared >= 1)) ? 'same idea'
       : sub.standard && sub.standard !== 'none' && x.standard === sub.standard ? 'same standard'
       : shared >= 2 ? 'similar words'
       : sub.lens && x.lens === sub.lens && (sub.tier === undefined || x.tier === sub.tier) ? 'same lens' : null;
     if (!match) continue;
+    if (x.status === 'declined') declined++; else approved++;
+    if (lean && match === 'same lens') continue;
     const note = (x.status === 'declined' ? x.decision_note : x.decision_note ?? x.triage_note)?.trim();
     rows.push({
       id: x.id, title: x.title, feature: x.feature, lens: x.lens, verdict: x.status === 'declined' ? 'declined' : 'approved', at: decidedAt(x),
       ...(x.decided_by ? { by: x.decided_by } : {}), ...(note ? { note } : {}), ...(x.standard && x.standard !== 'none' ? { standard: x.standard } : {}), match,
     });
   }
-  rows.sort((a, b) => BRIEF_MATCHES.indexOf(a.match) - BRIEF_MATCHES.indexOf(b.match) || (a.at < b.at ? 1 : a.at > b.at ? -1 : a.id < b.id ? 1 : -1));
+  if (!lean) rows.sort((a, b) => BRIEF_MATCHES.indexOf(a.match) - BRIEF_MATCHES.indexOf(b.match) || newestFirst(a, b));
   const seen = new Set<string>(), declines: BriefDecided[] = [];
-  for (const r of [...rows].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : a.id < b.id ? 1 : -1))) {
-    if (r.verdict !== 'declined' || r.match === 'same lens') continue;
+  for (const r of rows.filter((x) => x.verdict === 'declined' && x.match !== 'same lens').sort(newestFirst)) {
     const k = r.standard ?? r.id;
     if (seen.has(k)) continue;
     seen.add(k); declines.push(r);
   }
   const basis = sub.lens ? 'the same lens' + (sub.tier !== undefined ? ' and tier' : '') + ', the same idea or the same words' : 'the same idea or the same words';
-  return { precedent: { rows, approved: rows.filter((r) => r.verdict === 'approved').length, declined: rows.filter((r) => r.verdict === 'declined').length, basis }, declines };
+  return { precedent: { rows, approved, declined, basis }, declines };
 }
 
 /** A revert PR restores code; it does not take back a leaked secret, a widened grant, money moved or data written. */
@@ -187,7 +200,8 @@ function adviceOf(declines: BriefDecided[], p: Brief['precedent']): Brief['advic
   const who = { 'same idea': 'This idea', 'same standard': 'An idea under the same standard', 'similar words': 'A similarly worded idea', 'same lens': 'An idea under this lens' }[d?.match ?? 'same lens'];
   if (d) return { say: 'withdraw', why: `${who} was declined ${d.at}${d.by ? ' by ' + d.by : ''}${d.note ? ': "' + d.note + '"' : ' (no note)'}` };
   if (p.declined >= 3 && p.declined > p.approved) return { say: 'ask', why: `${p.declined} of ${p.declined + p.approved} similar decisions were declines` };
-  return { say: 'proceed', why: p.rows.length ? `${p.approved} of ${p.rows.length} similar decisions were approvals` : 'no precedent yet' };
+  const n = p.approved + p.declined;
+  return { say: 'proceed', why: n ? `${p.approved} of ${n} similar decisions were approvals` : 'no precedent yet' };
 }
 
 // ------------------------------------------------------------------------------------------- words for the card
@@ -204,8 +218,8 @@ export function briefFacts(b: Omit<Brief, 'facts' | 'lines'>, map: Pick<BriefMap
   B.dependents.map((x) => x.slug));
   const d = b.declines[0];
   if (d) fact('declined', `Declined ${d.at}${d.by ? ' by ' + d.by.replace(/^user:/, '') : ''}: ` + (d.note ? `"${d.note}"` : 'no note given') + (d.match !== 'same idea' ? ` (${d.match}, ${d.id})` : ` (${d.id})`), b.declines.map((x) => x.id));
-  fact('precedent', !P.rows.length ? `No precedent yet${lens ? ' under ' + lens : ''}`
-    : `You approved ${P.approved} of ${plural(P.rows.length, 'similar decision')}${lens ? ' under ' + lens : ''}` + (P.declined ? ` · declined ${P.declined}` : ''), P.rows.map((x) => x.id));
+  fact('precedent', !(P.approved + P.declined) ? `No precedent yet${lens ? ' under ' + lens : ''}`
+    : `You approved ${P.approved} of ${plural(P.approved + P.declined, 'similar decision')}${lens ? ' under ' + lens : ''}` + (P.declined ? ` · declined ${P.declined}` : ''), P.rows.map((x) => x.id));
   const after = R.afterRelease === 'care' ? `${R.riskClass} risk, a revert PR may not undo it` : R.afterRelease === 'revert' ? 'after release, a revert PR' : 'after release unknown (no risk class)';
   fact('undo', `Undo: ships only after you accept it; ${after}. A decline is final`);
   fact('cost', C.builds ? `Cost: about ${C.minutes} min per item, from ${plural(C.builds, 'build')}${C.basis === 'lens' && lensOnly ? ' under ' + lensOnly : ' (any lens)'}${C.model ? ' on ' + C.model : ''}` : 'Cost: no build history yet', C.runs);
@@ -214,7 +228,7 @@ export function briefFacts(b: Omit<Brief, 'facts' | 'lines'>, map: Pick<BriefMap
 
 /** The advice alone (no map needed): what the live feed recommends on a card. `decline` is the stand it rests on. */
 export function briefAdvice(sub: BriefSubject, scan: Pick<ScanSnapshot, 'proposals'>): Brief['advice'] & { decline?: BriefDecided } {
-  const { precedent, declines } = precedentOf(sub, { proposals: scan.proposals, runs: [], packs: [] });
+  const { precedent, declines } = precedentOf(sub, scan, true);
   return { ...adviceOf(declines, precedent), ...(declines[0] ? { decline: declines[0] } : {}) };
 }
 /** The note a Decline taken on that advice carries, so the new row points at the decision it repeats (<= 500 chars). */
