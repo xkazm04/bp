@@ -9,7 +9,7 @@
 // conversation in x-bp-conversation, as the MCP door does) is kept on the agent trail for the cards slip.
 import { localHost } from '../../../../scan/local-only.ts';
 import { briefFor, subjectOf, type Brief, type BriefSubject } from '../../../../scan/brief.ts';
-import { briefSource, trail } from '../../../brief.server.ts';
+import { briefRow, briefSource, trail } from '../../../brief.server.ts';
 
 /** The precedent rows an agent gets on the wire (the counts stay whole). */
 export const BRIEF_ROWS = 8;
@@ -32,6 +32,6 @@ export function GET(req: Request): Response {
     sub = subjectOf(p);
   } else sub = { feature, title: title || feature, ...(lens ? { lens } : {}) };
   const b: Brief = briefFor(sub, src.scan, src.map);
-  trail(req, { kind: 'brief', product, feature: sub.feature, title: sub.title, advice: b.advice.say, ...(b.declines[0] ? { declineId: b.declines[0].id, ...(b.declines[0].note ? { quoted: b.declines[0].note } : {}) } : {}) });
+  trail(req, briefRow(product, b));
   return Response.json({ ...b, precedent: { ...b.precedent, rows: b.precedent.rows.slice(0, BRIEF_ROWS) } });
 }

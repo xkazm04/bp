@@ -5,7 +5,7 @@
 // An agent's read (x-bp-conversation) is kept on the agent trail (brief.server.ts) for the cards slip.
 import { localHost } from '@bp/core/scan/local-only';
 import { briefFor, subjectOf } from '@bp/core/scan/brief';
-import { briefSource, trail } from '@bp/core/server/brief.server';
+import { briefRow, briefSource, trail } from '@bp/core/server/brief.server';
 
 export async function GET(req: Request, { params }: { params: Promise<{ slug: string; id: string }> }): Promise<Response> {
   const denied = localHost(req);
@@ -16,6 +16,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   const p = src.scan.proposals.find((x) => x.id === id);
   if (!p) return Response.json({ error: `no proposal ${id}` }, { status: 404 });
   const b = briefFor(subjectOf(p), src.scan, src.map);
-  trail(req, { kind: 'brief', product: slug, feature: p.feature, title: p.title, advice: b.advice.say, ...(b.declines[0] ? { declineId: b.declines[0].id, ...(b.declines[0].note ? { quoted: b.declines[0].note } : {}) } : {}) });
+  trail(req, briefRow(slug, b));
   return Response.json(b);
 }

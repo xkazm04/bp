@@ -15,12 +15,15 @@
 //  11. the doors: plan.brief is in the catalog, AUTO, on GET /api/companion/brief; both route modules and their web
 //      mounts exist; the web decision card and Review detail render the brief through useBrief + BriefFacts;
 //  12. the card's recommendation: briefAdvice (no map) agrees with the full brief; a repeat recommends Decline with a
-//      note naming the decision it repeats (repeatNote, <= 500); the live feed uses it and Engine.decide carries it.
+//      note naming the decision it repeats (repeatNote, <= 500); the live feed uses it and Engine.decide carries it;
+//  13. the agent trail: a draft that met a decline reads as heard + withdrew; a later approval on the same feature drops
+//      the "withdrew"; a recommendation quoting a decline already shown names it by id; old sessions go; the slip polls it.
 // Run: node scripts/check-decision-brief.ts
 import fs from 'node:fs';
 import path from 'node:path';
 import { BRIEF_LINES, BRIEF_WIDTH, briefAdvice, briefFor, briefMapOf, repeatNote, subjectOf, type Brief, type BriefMap, type BriefSubject } from '../packages/core/src/scan/brief.ts';
 import { TOOLS, classOf } from '../packages/core/src/companion/catalog.ts';
+import { TRAIL_WINDOW_MS, trailSessions, type TrailRow } from '../packages/core/src/companion/trail.ts';
 import { emptyScan, type Pack, type Proposal, type Run, type ScanSnapshot } from '../packages/core/src/scan/types.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -152,6 +155,26 @@ const sec = [
   const src = (f: string) => fs.readFileSync(path.join(ROOT, f), 'utf8');
   ok(12, /briefAdvice\(/.test(src('packages/core/src/model/live-feed.ts')) && /recommended: 1, recommendedNote: repeatNote\(/.test(src('packages/core/src/model/live-feed.ts')), 'liveSwarm recommends Decline on a repeat');
   ok(12, /note \?\?= oi === d\.rec && oi === 1 \? d\.recNote/.test(src('apps/web/src/engine/Engine.ts')), 'Engine.decide carries the repeat note on the recommended Decline');
+}
+
+// 13. the agent trail
+{
+  const T0 = Date.parse('2026-10-20T12:00:00Z'), at = (s: number) => new Date(T0 + s * 1000).toISOString();
+  const read = (c: string, s: number, x: Partial<TrailRow & { kind: 'brief' }> = {}): TrailRow => ({ at: at(s), conversation: c, kind: 'brief', product: 'p', feature: 'card-payments', featureName: 'Card payments', title: 'Add retry to checkout', advice: 'withdraw', declineId: 'H7', quoted: 'No retries until idempotency keys land.', ...x });
+  const rows: TrailRow[] = [
+    read('a', 1), read('a', 2, { id: 'O2', title: 'Retry the payment webhook on timeout' }),
+    { at: at(3), conversation: 'a', kind: 'recommend', product: 'p', id: 'O2', verdict: 'decline', why: 'Repeats H7: "No retries until idempotency keys land."' },
+    read('b', 4), read('b', 5, { id: 'O9', advice: 'proceed', feature: 'card-payments' }),
+    { at: at(6), conversation: 'b', kind: 'recommend', product: 'p', id: 'O9', verdict: 'approve', why: 'fine' },
+    read('c', 7, { advice: 'proceed' }),
+  ];
+  const ss = trailSessions(rows, T0 + 60000), by = (c: string) => ss.find((x) => x.conversation === c);
+  const a = by('a')?.lines.map((l) => l.text) ?? [];
+  ok(13, a.length === 3 && /^Was about to propose "Add retry to checkout" on Card payments; read your decline H7: "No retries until idempotency keys land\."$/.test(a[0]) && /^Withdrew it/.test(a[1]) && a[2] === 'Then recommended you decline O2 "Retry the payment webhook on timeout": it repeats your decline H7', 'heard, withdrew, the act by id', a);
+  ok(13, !(by('b')?.lines ?? []).some((l) => /^Withdrew/.test(l.text)), 'a later approval on the same feature: no "withdrew"', by('b')?.lines);
+  ok(13, by('c')?.lines[0]?.text === 'Read 1 brief; none met a standing decline', 'a quiet session says so', by('c')?.lines);
+  ok(13, ss[0]?.conversation === 'c' && trailSessions(rows, T0 + TRAIL_WINDOW_MS + 60000).length === 0, 'newest first; old sessions go');
+  ok(13, /AgentTrail/.test(fs.readFileSync(path.join(ROOT, 'apps/web/src/components/companion/CompanionLive.tsx'), 'utf8')) && fs.existsSync(path.join(ROOT, 'apps/web/src/app/api/companion/trail/route.ts')), 'the slip shows the trail; its route is mounted');
 }
 
 console.log(`check-decision-brief: ${passed} passed, ${failures.length} failed`);

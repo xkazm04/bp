@@ -10,6 +10,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { briefMapOf, type Brief, type BriefMap } from '../scan/brief.ts';
+import type { TrailRow } from '../companion/trail.ts';
 import type { ScanSnapshot } from '../scan/types.ts';
 import { companionHome } from './companion/home.server.ts';
 import { findProduct, hasStore, kettleRead, kettleSample, storeDir, storeFile, unknownProduct } from './products.server.ts';
@@ -41,12 +42,8 @@ export function briefSource(slug: string): BriefSource | Response {
 }
 
 // ------------------------------------------------------------------------------------------------ the trail
-export const TRAIL_KEEP = 40;
+export const TRAIL_KEEP = 200;
 const CONVERSATION = /^[A-Za-z0-9_.:-]{1,80}$/;
-export type TrailRow =
-  | { at: string; conversation: string; kind: 'brief'; product: string; feature: string; title: string; advice: Brief['advice']['say']; quoted?: string; declineId?: string }
-  | { at: string; conversation: string; kind: 'recommend'; product: string; id: string; verdict: string; why: string }
-  | { at: string; conversation: string; kind: 'card'; product?: string; tool: string; card: string };
 type TrailInput = TrailRow extends infer R ? (R extends TrailRow ? Omit<R, 'at' | 'conversation'> : never) : never;
 
 const trailFile = () => path.join(companionHome(), 'agent-trail.jsonl');
@@ -62,6 +59,13 @@ export function trail(req: Request, row: TrailInput): void {
     fs.appendFileSync(trailFile(), JSON.stringify({ at: new Date().toISOString(), conversation, ...row }) + '\n');
   } catch { /* the trail is a courtesy: a brief is never refused for it */ }
 }
+
+/** The trail row of a brief an agent read: what it asked about and what it heard. `draft` = no proposal id (a draft idea). */
+export const briefRow = (product: string, b: Brief): TrailInput => ({
+  kind: 'brief', product, feature: b.subject.feature, ...(b.blast.feature ? { featureName: b.blast.feature.name } : {}), title: b.subject.title,
+  ...(b.subject.id ? { id: b.subject.id } : {}), advice: b.advice.say,
+  ...(b.declines[0] ? { declineId: b.declines[0].id, declinedAt: b.declines[0].at, ...(b.declines[0].note ? { quoted: b.declines[0].note } : {}) } : {}),
+});
 
 /** The newest TRAIL_KEEP rows, oldest first. */
 export function readTrail(): TrailRow[] {
