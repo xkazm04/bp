@@ -77,10 +77,15 @@ public:
 	static constexpr float PaperDepthCm = 76.f;
 	/** The paper sits this far below the frame's top. */
 	static constexpr float GlassRecessCm = 0.8f;
-	/** The sheet render target; it covers the whole paper, so the paper samples it at its own UVs. Its aspect is the
-	 *  paper's, so a pixel is square (0.41 mm). */
-	static constexpr int32 SheetWidthPx = 4096;
-	static constexpr int32 SheetHeightPx = static_cast<int32>(SheetWidthPx * PaperDepthCm / PaperWidthCm + 0.5f);
+	/** The sheet render targets (the site plan's and room mode's); each covers the whole paper, so the paper samples it at
+	 *  its own UVs. Its aspect is the paper's, so a pixel is square. The width is bp.SheetPx, read when the table begins play:
+	 *  SheetBaseWidthPx (0.41 mm a pixel) by default, 8192 for a sharper PC sheet. Every stroke width
+	 *  in the sheets' pens is in base pixels, scaled by SheetPxScale, so the drawing is the same in cm at any width. */
+	static constexpr int32 SheetBaseWidthPx = 4096;
+	static int32 SheetWidthPx();
+	static int32 SheetHeightPx();
+	static double SheetPxPerCm() { return SheetWidthPx() / static_cast<double>(PaperWidthCm); }
+	static float SheetPxScale() { return SheetWidthPx() / static_cast<float>(SheetBaseWidthPx); }
 	/** The paper texture's tile (ArtSource/mat-blueprint-paper/manifest.json: 0.5 m, 16 cells, every 4th line stronger). */
 	static constexpr float PaperTileCm = 50.f;
 	/** The paper's grid, from its far-left corner: a fine line every GridFineCm and a stronger one every GridMajorEvery

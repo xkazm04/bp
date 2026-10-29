@@ -53,6 +53,15 @@ namespace
 		TEXT("1: at L0 every room stands as a low glass extrusion with its bays as partitions (FC1, the concept's rest state); 0: the flat linework of lookdev 01 only."),
 		ECVF_Default);
 
+	TAutoConsoleVariable<int32> CVarSheetPx(
+		TEXT("bp.SheetPx"),
+		ABpTable::SheetBaseWidthPx,
+		TEXT("Width of the sheet render targets in pixels (2048 to 16384), read when a table begins play; set it before play, e.g. -DPCVars=bp.SheetPx=8192. Strokes and text keep their size in cm."),
+		ECVF_Default);
+
+	/** bp.SheetPx as the first sheet read it; 0 until then. */
+	int32 GSheetWidthPx = 0;
+
 	// The palette (art-breakdown.md, style block).
 	const FLinearColor BlueprintBlue(FColor(0x0B, 0x2A, 0x6B));
 	const FLinearColor CyanWhite(FColor(0xBF, 0xE8, 0xFF));
@@ -113,13 +122,13 @@ namespace
 	}
 
 	/** Sheet pixels per paper centimetre (the render target covers the paper; its pixels are square). */
-	constexpr double SheetPxPerCm = ABpTable::SheetWidthPx / ABpTable::PaperWidthCm;
+	double SheetPxPerCm() { return ABpTable::SheetPxPerCm(); }
 
 	/** A font for the sheet whose cap height is CapCm on the paper (its size is in sheet pixels, so Slate's measure of a
 	 *  text is its width in sheet pixels). */
 	FSlateFontInfo SheetFont(const TCHAR* Style, double CapCm)
 	{
-		return FSlateFontInfo(ABpTable::TextFontObject(), static_cast<float>(CapCm * SheetPxPerCm / (TypeCapPerEm * SlatePxPerPoint)), FName(Style));
+		return FSlateFontInfo(ABpTable::TextFontObject(), static_cast<float>(CapCm * SheetPxPerCm() / (TypeCapPerEm * SlatePxPerPoint)), FName(Style));
 	}
 
 	/** Roboto from the table's constructor (the class default object's runs at startup), the sheet's font from BeginPlay. */
@@ -312,12 +321,13 @@ namespace
 			Tris.Add(T);
 		}
 
-		/** A stroke with square caps (half the width past each end), so outlines close at the corners. */
+		/** A stroke with square caps (half the width past each end), so outlines close at the corners. WidthPx is in base
+		 *  sheet pixels (ABpTable::SheetBaseWidthPx). */
 		void Line(const FVector2D& From, const FVector2D& To, float WidthPx, const FLinearColor& Color)
 		{
 			const FVector2D Dir = (To - From).GetSafeNormal();
 			if (Dir.IsZero()) return;
-			const FVector2D Along = Dir * (WidthPx * 0.5f);
+			const FVector2D Along = Dir * (WidthPx * ABpTable::SheetPxScale() * 0.5f);
 			const FVector2D Across(-Along.Y, Along.X);
 			const FVector2D A = From - Along, B = To + Along;
 			Quad(A - Across, B - Across, B + Across, A + Across, Color);
@@ -496,9 +506,24 @@ FVector2D ABpTable::PlanMarginCm() const
 	return FVector2D(Centred.X, Spare >= 0.0 ? PlanFarMarginCm + Spare * 0.5 : Centred.Y);
 }
 
+int32 ABpTable::SheetWidthPx()
+{
+	if (GSheetWidthPx == 0)
+	{
+		GSheetWidthPx = FMath::Clamp(CVarSheetPx.GetValueOnGameThread(), 2048, 16384) & ~3;
+		UE_LOG(LogBpTable, Log, TEXT("BpTable: sheets %d x %d px (%.1f px/cm, strokes x%.2f)"), GSheetWidthPx, SheetHeightPx(), SheetPxPerCm(), SheetPxScale());
+	}
+	return GSheetWidthPx;
+}
+
+int32 ABpTable::SheetHeightPx()
+{
+	return static_cast<int32>(SheetWidthPx() * PaperDepthCm / PaperWidthCm + 0.5f);
+}
+
 FVector2D ABpTable::PaperCmToSheetPx(const FVector2D& PaperCm)
 {
-	return FVector2D(PaperCm.X / PaperWidthCm * SheetWidthPx, PaperCm.Y / PaperDepthCm * SheetHeightPx);
+	return FVector2D(PaperCm.X / PaperWidthCm * SheetWidthPx(), PaperCm.Y / PaperDepthCm * SheetHeightPx());
 }
 
 FVector ABpTable::PaperCmToLocal(const FVector2D& PaperCm, float ZCm)
@@ -522,6 +547,8 @@ void ABpTable::OnConstruction(const FTransform& Transform)
 void ABpTable::BeginPlay()
 {
 	Super::BeginPlay();
+	// bp.SheetPx is read afresh for each play (an editor's PIE sessions share the process).
+	GSheetWidthPx = 0;
 	HomeTransform = GetActorTransform();
 	LoadArt();
 	PlaceForHeight(HeightCvarCm());
@@ -977,13 +1004,13 @@ void ABpTable::LayoutCrumbs(const TArray<TPair<FString, FString>>& Items, double
 	const FSlateFontInfo Here = SheetFont(TEXT("Bold"), LabelCapHeightCm);
 	const FSlateFontInfo Way = SheetFont(TEXT("Regular"), LabelCapHeightCm);
 	Out.Reset();
-	const double SeparatorCm = MeasureText(CrumbSeparator, Way).X / SheetPxPerCm;
+	const double SeparatorCm = MeasureText(CrumbSeparator, Way).X / SheetPxPerCm();
 	double Total = 0.0, LineCm = 0.0;
 	TArray<double> Widths;
 	for (int32 Index = 0; Index < Items.Num(); ++Index)
 	{
 		const bool bHere = Index == Items.Num() - 1;
-		const FVector2D Size = MeasureText(Items[Index].Value, bHere ? Here : Way) / SheetPxPerCm;
+		const FVector2D Size = MeasureText(Items[Index].Value, bHere ? Here : Way) / SheetPxPerCm();
 		Widths.Add(Size.X);
 		LineCm = FMath::Max(LineCm, Size.Y);
 		Total += Size.X + (Index > 0 ? SeparatorCm : 0.0);
@@ -1082,7 +1109,7 @@ void ABpTable::ApplyPlan(const FBpPlan& Plan)
 		Sheet->MipsSamplerFilter = TF_Trilinear;
 		Sheet->Filter = TF_Default;
 		Sheet->OnCanvasRenderTargetUpdate.AddDynamic(this, &ABpTable::DrawSheet);
-		Sheet->InitAutoFormat(SheetWidthPx, SheetHeightPx);
+		Sheet->InitAutoFormat(SheetWidthPx(), SheetHeightPx());
 	}
 	else
 	{
@@ -1365,7 +1392,7 @@ void ABpTable::BuildRoomNames(const FBpPlan& Plan)
 double ABpTable::RoomNameWidthCm(const FString& Text, double CapCm)
 {
 	const BpType::FRecipe& Recipe = BpType::RoomName;
-	return MeasureText(Text, SheetFont(Recipe.Face, CapCm)).X / SheetPxPerCm + Recipe.TrackEm * CapCm / BpType::CapPerEm * Text.Len();
+	return MeasureText(Text, SheetFont(Recipe.Face, CapCm)).X / SheetPxPerCm() + Recipe.TrackEm * CapCm / BpType::CapPerEm * Text.Len();
 }
 
 FVector2D ABpTable::RoomNameRectPx(const FRoomName& Each)
@@ -1402,7 +1429,7 @@ void ABpTable::DrawRoomNames(UCanvas* Canvas, int32 Width, int32 Height)
 		// A font whose cap is CapPx atlas pixels: the sheet's font at the cap that many sheet pixels make.
 		const double Baseline = Cell.Y + RoomNameBaselinePx * Scale;
 		Texts.Add({ Each.Text, FVector2D(Cell.X + RoomNamePadPx * Scale, Baseline - BpType::AscPerEm / BpType::CapPerEm * Each.CapPx),
-			SheetFont(Recipe.Face, Each.CapPx / SheetPxPerCm), static_cast<float>(Recipe.TrackEm * Each.CapPx / BpType::CapPerEm) });
+			SheetFont(Recipe.Face, Each.CapPx / SheetPxPerCm()), static_cast<float>(Recipe.TrackEm * Each.CapPx / BpType::CapPerEm) });
 	}
 	if (Tris.Num() > 0)
 	{
@@ -2052,10 +2079,10 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 		float Tracking;
 	};
 	TArray<FSheetText> Texts;
-	const auto TrackPx = [](const BpType::FRecipe& Recipe, double CapCm) { return static_cast<float>(Recipe.TrackEm * CapCm / BpType::CapPerEm * SheetPxPerCm); };
+	const auto TrackPx = [](const BpType::FRecipe& Recipe, double CapCm) { return static_cast<float>(Recipe.TrackEm * CapCm / BpType::CapPerEm * SheetPxPerCm()); };
 	const auto WidthCm = [&TrackPx](const FString& Text, const BpType::FRecipe& Recipe, double CapCm)
 	{
-		return (MeasureText(Text, SheetFont(Recipe.Face, CapCm)).X + TrackPx(Recipe, CapCm) * Text.Len()) / SheetPxPerCm;
+		return (MeasureText(Text, SheetFont(Recipe.Face, CapCm)).X + TrackPx(Recipe, CapCm) * Text.Len()) / SheetPxPerCm();
 	};
 	const auto Cased = [](const BpType::FRecipe& Recipe, const FString& Text) { return Recipe.bUpper ? Text.ToUpper() : Text; };
 	/** Text (already cased) with its cap's top at CapTopV and its left (Align 0), centre (0.5) or right (1) at U. */

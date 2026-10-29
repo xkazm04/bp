@@ -46,7 +46,7 @@ namespace
 	const FLinearColor RoomPaperInk(FColor(0xF3, 0xE9, 0xD2));
 	const FLinearColor RoomAmber(FColor(0xFF, 0xB5, 0x47));
 
-	constexpr double RoomSheetPxPerCm = ABpTable::SheetWidthPx / ABpTable::PaperWidthCm;
+	double RoomSheetPxPerCm() { return ABpTable::SheetPxPerCm(); }
 	constexpr double RoomSlatePxPerPoint = 96.0 / 72.0;
 	/** The breadcrumb's separator and its bottom on the paper (BpTable.cpp's). */
 	const TCHAR* const RoomCrumbSeparator = TEXT("  ›  ");
@@ -79,18 +79,18 @@ namespace
 	/** The sheet's font at a cap height on the paper (its size in sheet pixels, as BpTable.cpp's SheetFont). */
 	FSlateFontInfo RoomSheetFont(const TCHAR* Style, double CapCm)
 	{
-		return FSlateFontInfo(ABpTable::TextFontObject(), static_cast<float>(CapCm * RoomSheetPxPerCm / (BpType::CapPerEm * RoomSlatePxPerPoint)), FName(Style));
+		return FSlateFontInfo(ABpTable::TextFontObject(), static_cast<float>(CapCm * RoomSheetPxPerCm() / (BpType::CapPerEm * RoomSlatePxPerPoint)), FName(Style));
 	}
 
 	double RoomTrackPx(const BpType::FRecipe& Recipe, double CapCm)
 	{
-		return Recipe.TrackEm * CapCm / BpType::CapPerEm * RoomSheetPxPerCm;
+		return Recipe.TrackEm * CapCm / BpType::CapPerEm * RoomSheetPxPerCm();
 	}
 
 	/** A text's width on the paper at a cap (cm), tracking included. */
 	double RoomTextWidthCm(const FString& Text, const BpType::FRecipe& Recipe, double CapCm)
 	{
-		return (RoomMeasure(Text, RoomSheetFont(Recipe.Face, CapCm)).X + RoomTrackPx(Recipe, CapCm) * Text.Len()) / RoomSheetPxPerCm;
+		return (RoomMeasure(Text, RoomSheetFont(Recipe.Face, CapCm)).X + RoomTrackPx(Recipe, CapCm) * Text.Len()) / RoomSheetPxPerCm();
 	}
 
 	/** The cut a text takes when it does not fit: as many characters as fit, then an ellipsis. */
@@ -163,13 +163,13 @@ namespace
 			Tris.Add(T);
 		}
 
-		/** A stroke between two paper points (cm), square-capped, WidthPx sheet pixels wide. */
+		/** A stroke between two paper points (cm), square-capped, WidthPx base sheet pixels wide (scaled by SheetPxScale). */
 		void Line(const FVector2D& FromCm, const FVector2D& ToCm, float WidthPx, const FLinearColor& Color)
 		{
 			const FVector2D From = ABpTable::PaperCmToSheetPx(FromCm), To = ABpTable::PaperCmToSheetPx(ToCm);
 			const FVector2D Dir = (To - From).GetSafeNormal();
 			if (Dir.IsZero()) return;
-			const FVector2D Along = Dir * (WidthPx * 0.5f);
+			const FVector2D Along = Dir * (WidthPx * ABpTable::SheetPxScale() * 0.5f);
 			const FVector2D Across(-Along.Y, Along.X);
 			Quad(From - Along - Across, To + Along - Across, To + Along + Across, From - Along + Across, Color);
 		}
@@ -954,7 +954,7 @@ void ABpTable::BuildRoomMap()
 		RoomSheet->MipsSamplerFilter = TF_Trilinear;
 		RoomSheet->Filter = TF_Default;
 		RoomSheet->OnCanvasRenderTargetUpdate.AddDynamic(this, &ABpTable::DrawRoomSheet);
-		RoomSheet->InitAutoFormat(SheetWidthPx, SheetHeightPx);
+		RoomSheet->InitAutoFormat(SheetWidthPx(), SheetHeightPx());
 		if (RoomOverlayMid) RoomOverlayMid->SetTextureParameterValue(TEXT("SlateUI"), RoomSheet);
 	}
 	else
@@ -994,7 +994,7 @@ void ABpTable::DrawRoomSheet(UCanvas* Canvas, int32 Width, int32 Height)
 	}
 	// Each cell: a faint floor, its walls as solid poché with the doorway in the near wall, the door's leaf and swing, the
 	// kind label in its header and a fine rule under it.
-	const float WallPx = static_cast<float>(RoomWallThickCm * 1.6 * RoomSheetPxPerCm);
+	const float WallPx = static_cast<float>(RoomWallThickCm * 1.6 * ABpTable::SheetBaseWidthPx / ABpTable::PaperWidthCm);  // base pixels: the pen scales them
 	const FLinearColor WallInk = RoomCyan.CopyWithNewOpacity(0.7f);
 	for (const FRoomCell& Cell : RoomCells)
 	{
