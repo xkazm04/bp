@@ -30,6 +30,8 @@ import { EngineCtx, LiveCtx, ScanCtxCtx, VariantCtx, shallowEqual, useBp, type L
 import { Header } from './Header';
 import { CompanionHost } from './companion/CompanionHost';
 import { CrossingHost } from './crossing/CrossingHost';
+import { FollowHost } from './focus/FollowHost';
+import { MorningWatch } from './focus/MorningWatch';
 import { Dock } from './Dock';
 import { BaseBar } from './BaseBar';
 import { Callout, DecisionCard, HoverCard, Ladder, Morning, ScaleBar, SelBar, Ticker, Toast } from './Overlays';
@@ -73,6 +75,8 @@ const Chrome = memo(function Chrome() {
       <Morning />
       <CompanionHost />
       <CrossingHost />
+      <FollowHost />
+      <MorningWatch />
     </>
   );
 });

@@ -346,12 +346,15 @@ export class Engine {
     this.placeKey = ''; this.cache.invalidate(); this.dirty();
   }
   private lastFit = false;
+  /** A panel docked over the plan's left edge (the Morning Watch deck), in UI px: every fit frames to its right. 0 = none. */
+  private insetL = 0;
+  setInsetLeft(px: number) { if (px === this.insetL) return; this.insetL = px; this.layoutChrome(); }
   private layoutChrome() {
     const w = this.FW, h = this.FH, U = this.U, bb = baseHeight(this.S);
     this.listenForce = true;
     this.ui.style.setProperty('--bb', bb + 'px');
     this.ui.style.setProperty('--rw', railWidth(this.S) + 'px');
-    this.SAFE = { l: 12 * U, t: 74 * U, b: h - (bb - 2) * U, r: w - railWidth(this.S) * U };
+    this.SAFE = { l: Math.max(12, this.insetL) * U, t: 74 * U, b: h - (bb - 2) * U, r: w - railWidth(this.S) * U };
     this.ui.style.setProperty('--cx', (this.SAFE.l + this.SAFE.r) / 2 / U + 'px');
     this.ui.style.setProperty('--sw', Math.max(300, (this.SAFE.r - this.SAFE.l) / U - 20) + 'px');
   }

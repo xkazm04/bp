@@ -7,6 +7,7 @@
 // only when called.
 import type { Card, CompanionEvent, TurnEvent } from '@bp/core/companion/contract';
 import type { PlaceBaton } from '@bp/core/session/place';
+import type { SharedView } from '@bp/core/session/focus';
 import { BUSY, PENDING, runningLocal, type CompanionStore } from './store.ts';
 
 export const STREAM_URL = '/api/companion/stream';
@@ -45,7 +46,7 @@ export function sseParser(on: (m: SseMessage) => void): { push(chunk: string): v
 }
 
 const TURN_TYPES = new Set(['start', 'text', 'tool', 'tool_result', 'card', 'focus', 'end']);
-const STREAM_TYPES = new Set(['turn', 'card', 'focus', 'status', 'place']);
+const STREAM_TYPES = new Set(['turn', 'card', 'focus', 'status', 'place', 'shared']);
 /** The record an SSE message carries: its data as JSON, typed by its own `type` or else by the event name. null: unreadable. */
 function record(m: SseMessage, types: Set<string>): { type: string } | null {
   let v: unknown;
@@ -62,6 +63,7 @@ export function readEvent(m: SseMessage): CompanionEvent | null {
   if (r.type === 'card') return r.card && typeof r.card.id === 'string' ? r : null;
   if (r.type === 'focus') return r.focus && typeof r.focus.id === 'string' && r.focus.target ? r : null;
   if (r.type === 'place') return r.baton && typeof r.baton.state === 'string' && r.baton.place && typeof r.baton.place.hash === 'string' ? r : null;
+  if (r.type === 'shared') return r.shared && typeof r.shared.rev === 'number' && Array.isArray(r.shared.readers) ? r : null;
   return Array.isArray(r.busy) ? r : { type: 'status', busy: [], sleeping: !!r.sleeping };
 }
 /** A turn POST body message as a TurnEvent. */
@@ -71,7 +73,7 @@ export function readTurnEvent(m: SseMessage): TurnEvent | null {
 
 // ------------------------------------------------------------------------------------------- the stream
 type ES = Pick<EventSource, 'addEventListener' | 'close'> & { onopen: ((e: Event) => void) | null; onerror: ((e: Event) => void) | null };
-export interface ConnectOptions { url?: string; open?: (url: string) => ES; onOpen?(): void; /** The place baton moved (the crossing's host follows it; the lamp's store never sees it). */ onPlace?(b: PlaceBaton): void }
+export interface ConnectOptions { url?: string; open?: (url: string) => ES; onOpen?(): void; /** The place baton moved (the crossing's host follows it; the lamp's store never sees it). */ onPlace?(b: PlaceBaton): void; /** The shared focus changed (the page's follow chip reads it; the lamp's store never sees it). */ onShared?(v: SharedView): void }
 
 /** Open the stream and keep it open: on an error it is closed and reopened after 0.5 s doubling to 10 s (60 s after six
  *  failures in a row with no open, so a server without the companion is asked rarely). Returns the closer. */
@@ -81,12 +83,13 @@ export function connect(store: CompanionStore, o: ConnectOptions = {}): () => vo
   const onMsg = (ev: Event) => {
     const m = ev as MessageEvent<string>, e = readEvent({ event: m.type, data: String(m.data) });
     if (e?.type === 'place') { o.onPlace?.(e.baton); return; }
+    if (e?.type === 'shared') { o.onShared?.(e.shared); return; }
     if (e) store.dispatch({ type: 'event', e });
   };
   const start = () => {
     if (dead) return;
     const s = (es = open(url));
-    for (const t of ['turn', 'card', 'focus', 'status', 'place', 'message']) s.addEventListener(t, onMsg);
+    for (const t of ['turn', 'card', 'focus', 'status', 'place', 'shared', 'message']) s.addEventListener(t, onMsg);
     s.onopen = () => { delay = BACKOFF_MS; fails = 0; store.dispatch({ type: 'online', on: true }); o.onOpen?.(); };
     s.onerror = () => {
       s.close(); if (es === s) es = null;

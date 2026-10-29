@@ -1,0 +1,50 @@
+/* The shared focus's chip and the Morning Watch deck. Tokens only; nothing readable under 12 px. */
+
+/* ---------- the follow chip: quiet, centred under the header */
+#fx-chip { position: absolute; left: 50%; top: 74px; transform: translateX(-50%); display: flex; align-items: center; gap: var(--sp-8); height: var(--h-ctl-sm);
+  padding: 0 var(--sp-6) 0 var(--sp-10); border: 1px solid var(--ink-3); border-radius: 999px; background: color-mix(in srgb, var(--panel-solid) 88%, transparent);
+  font: 500 var(--fs-13)/1 var(--mono); color: var(--ink-2); letter-spacing: 0.02em; z-index: 30; white-space: nowrap; }
+#fx-chip.on { border-color: color-mix(in srgb, var(--mint) 60%, var(--ink-3)); color: var(--ink-hi); }
+#fx-chip .w.muted { color: var(--ink-2); }
+#fx-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 0 0 color-mix(in srgb, var(--mint) 60%, transparent); animation: fx-arrive 1.2s ease-out 1; }
+#fx-chip .fx-bt { height: calc(var(--h-ctl-sm) - 8px); padding: 0 var(--sp-10); border: 1px solid var(--ink-3); border-radius: 999px; background: transparent; font: 500 var(--fs-12)/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); }
+#fx-chip .fx-bt:hover { border-color: var(--accent); color: var(--ink-hi); }
+@keyframes fx-arrive { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--mint) 70%, transparent); } 100% { box-shadow: 0 0 0 10px transparent; } }
+@media (prefers-reduced-motion: reduce) { #fx-chip .dot { animation: none; } }
+
+/* ---------- the Morning Watch deck: a card on the left, the plan flies behind it */
+#mw { position: absolute; left: 18px; top: 92px; bottom: 132px; width: min(460px, calc(100% - 140px)); display: flex; flex-direction: column; z-index: 35;
+  background: var(--panel-solid); border: 1px solid var(--ink-3); box-shadow: 0 24px 80px var(--shadow); }
+#mw:focus { outline: none; }
+#mw .mw-top { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-8); padding: var(--sp-14) var(--sp-18) var(--sp-8); border-bottom: 1px solid var(--ink-4); }
+#mw .kk { font: 500 var(--fs-12)/1.2 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-2); }
+#mw .who { font: 500 var(--fs-12)/1.2 var(--mono); color: var(--ink-2); text-align: right; }
+#mw .who b { color: var(--mint); font-weight: 500; }
+#mw .bar { display: flex; gap: 3px; padding: var(--sp-8) var(--sp-18) 0; }
+#mw .bar button { flex: 1; height: 6px; min-width: 6px; padding: 0; border: 0; background: var(--ink-4); }
+#mw .bar button.done { background: var(--ink-3); }
+#mw .bar button.cur { background: var(--accent); }
+#mw .bar button.d { background: color-mix(in srgb, var(--amber) 55%, var(--ink-4)); }
+#mw .bar button.d.cur { background: var(--amber-2); }
+#mw .bar button.ok { background: var(--mint); }
+#mw .prod { display: flex; gap: var(--sp-10); padding: var(--sp-6) var(--sp-18) 0; font: 500 var(--fs-12)/1.3 var(--mono); color: var(--ink-2); flex-wrap: wrap; }
+#mw .prod span.here { color: var(--ink-hi); }
+#mw .card { flex: 1; overflow: auto; padding: var(--sp-16) var(--sp-18) var(--sp-10); }
+#mw .card .tag { display: inline-block; font: 500 var(--fs-12)/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; padding: 4px 8px; border: 1px solid var(--ink-3); color: var(--ink-2); }
+#mw .card .tag.good { color: var(--mint); border-color: var(--mint); } #mw .card .tag.warn { color: var(--amber-2); border-color: var(--amber-2); } #mw .card .tag.bad { color: var(--red-2); border-color: var(--red-2); }
+#mw .card h2 { margin: var(--sp-10) 0 var(--sp-12); font: 600 var(--fs-26)/1.15 var(--sans); color: var(--ink-hi); }
+#mw .card ul { list-style: none; margin: 0; padding: 0; }
+#mw .card li { padding: var(--sp-6) 0 var(--sp-6) var(--sp-14); border-top: 1px solid var(--ink-4); font-size: var(--fs-14); line-height: var(--lh-read); color: var(--ink); position: relative; }
+#mw .card li:before { content: ''; position: absolute; left: 0; top: 13px; width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); }
+#mw .card li.good:before { background: var(--mint); } #mw .card li.warn:before { background: var(--amber); } #mw .card li.bad:before { background: var(--red); }
+#mw .card .where { margin-top: var(--sp-12); font: 500 var(--fs-12)/1.3 var(--mono); color: var(--ink-2); }
+#mw .card .steered { margin-top: var(--sp-12); padding: var(--sp-8) var(--sp-10); border-left: 3px solid var(--mint); font-size: var(--fs-14); color: var(--ink-hi); background: color-mix(in srgb, var(--mint) 10%, transparent); }
+#mw .card .steered.err { border-left-color: var(--red); background: color-mix(in srgb, var(--red) 10%, transparent); }
+#mw .act { display: flex; gap: var(--sp-8); padding: var(--sp-10) var(--sp-18); border-top: 1px solid var(--ink-4); }
+#mw .act .bt { flex: 1; height: var(--h-ctl); display: flex; align-items: center; justify-content: center; gap: var(--sp-8); font-size: var(--fs-14); }
+#mw .act .bt kbd { font: 600 var(--fs-12)/1 var(--mono); padding: 3px 6px; border: 1px solid var(--ink-3); border-radius: 3px; color: var(--ink-2); }
+#mw .act .bt.go { border-color: var(--mint); }
+#mw .act .bt[disabled] { opacity: 0.45; cursor: default; }
+#mw .keys { padding: 0 var(--sp-18) var(--sp-12); font: 500 var(--fs-12)/1.4 var(--mono); color: var(--ink-2); }
+#mw .keys b { color: var(--ink); font-weight: 600; }
+#mw-launch { position: absolute; left: 18px; bottom: 140px; z-index: 30; }
