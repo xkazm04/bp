@@ -89,6 +89,8 @@ export function FollowHost({ phone = false }: { phone?: boolean }) {
   }, [s.open, s.place, E, fx]);
 
   const words = fx.words(), followers = fx.followers();
+  // what the leader said with the place (a Morning card's headline): every following screen shows the line being read
+  const say = st.view?.shared && st.view.shared.reader !== fx.me ? st.view.shared.place.say : undefined;
   if (!st.view && !st.follows) return null;
   return (
     <div id="fx-chip" className={st.follows ? 'on' : ''} role="status" aria-live="polite" data-keys="own">
@@ -105,6 +107,7 @@ export function FollowHost({ phone = false }: { phone?: boolean }) {
         </>
       )}
       {!st.online && <span className="w muted" title="The shared focus is not reachable right now">offline</span>}
+      {st.follows && say && <span key={st.view?.rev} className="say">{say}</span>}
     </div>
   );
 }

@@ -29,7 +29,7 @@ function setParam(id: string | null): void {
   try { history.replaceState(history.state, '', u.pathname + u.search + location.hash); } catch { /* ignore */ }
 }
 
-export function MorningWatch() {
+export function MorningWatch({ phone = false }: { phone?: boolean }) {
   const E = useEngine(), live = useLive(), fx = sharedFocus(), here = live?.slug ?? null;
   const st = useSyncExternalStore(fx.subscribe, fx.get, fx.get);
   const [open, setOpen] = useState(false);
@@ -54,14 +54,16 @@ export function MorningWatch() {
   const start = useCallback((at: string | null) => { want.current = at; setOpen(true); void load(); }, [load]);
   const close = useCallback(() => { setOpen(false); setDeck(null); setI(0); shown.current = null; keepSince(null); setParam(null); fx.pause(false); }, [fx]);
 
+  // on a phone the deck is the clicker: it leads the shared focus and the desk follows (a phone has no plan of its own to fly)
+  useEffect(() => { if (phone) fx.start({ surface: 'phone', label: 'Phone' }); }, [phone, fx]);
   // ?morning=<card id>: this page was opened by the deck (a card in this product); pick up there
   useEffect(() => { const at = new URLSearchParams(location.search).get('morning'); if (at && here) start(at); }, [here, start]);
   useEffect(() => { if (!deck || !want.current) return; const k = deck.cards.findIndex((c) => c.id === want.current); want.current = null; if (k >= 0) setI(k); }, [deck]);
   useEffect(() => {
     fx.pause(open);
-    E.setInsetLeft(open ? DECK_INSET : 0);
+    if (!phone) E.setInsetLeft(open ? DECK_INSET : 0);
     if (open) ref.current?.focus({ preventScroll: true });
-  }, [open, fx, E]);
+  }, [open, fx, E, phone]);
 
   const card: MorningCard | undefined = open && deck ? deck.cards[Math.min(i, deck.cards.length - 1)] : undefined;
 
@@ -74,11 +76,12 @@ export function MorningWatch() {
     const p = card.place;
     if (!p) return;
     void fx.publishNow(p).then(() => {
+      if (phone) return;
       fx.hush(4000);
       const why = goToPlace(E, p, { morning: card.id });
       if (why) setSteered((s) => ({ ...s, [card.id + ':where']: { verdict: 'hold', ok: false, text: why } }));
     });
-  }, [card, E, fx, load]);
+  }, [card, E, fx, load, phone]);
 
   const go = useCallback((d: number) => { if (!deck) return; setI((k) => Math.max(0, Math.min(deck.cards.length - 1, k + d))); }, [deck]);
 
@@ -104,7 +107,7 @@ export function MorningWatch() {
       if (tag === 'input' || tag === 'textarea' || t?.isContentEditable || e.ctrlKey || e.metaKey || e.altKey) return;
       const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
       if (!open) {
-        if (k === 'm' && here && !E.S.open && E.S.page === 'plan') { e.preventDefault(); e.stopImmediatePropagation(); start(null); }
+        if (k === 'm' && (here || phone) && !E.S.open && E.S.page === 'plan') { e.preventDefault(); e.stopImmediatePropagation(); start(null); }
         return;
       }
       let hit = true;
@@ -117,10 +120,10 @@ export function MorningWatch() {
     };
     addEventListener('keydown', on, true);
     return () => removeEventListener('keydown', on, true);
-  }, [open, here, E, go, close, steer, start]);
+  }, [open, here, E, go, close, steer, start, phone]);
 
   if (!open) {
-    return here ? <button type="button" id="mw-launch" className="bt" onClick={() => start(null)} title="The Morning Watch across every live product (M)">Morning Watch <kbd>M</kbd></button> : null;
+    return here || phone ? <button type="button" id="mw-launch" className="bt" onClick={() => start(null)} title="The Morning Watch across every live product (M)">Morning Watch <kbd>M</kbd></button> : null;
   }
   const n = deck?.cards.length ?? 0, k = Math.min(i, Math.max(0, n - 1));
   const others = (st.view?.readers ?? []).filter((x) => x.id !== fx.me && x.live && x.follows);
@@ -145,7 +148,7 @@ export function MorningWatch() {
           <span className={'tag ' + card.tone}>{TAG[card.kind]}{card.productName ? ' · ' + card.productName : ''}</span>
           <h2>{card.headline}</h2>
           {card.lines.length > 0 && <ul>{card.lines.map((l, j) => <li key={j} className={l.tone ?? ''}>{l.text}</li>)}</ul>}
-          {card.place && <div className="where">{card.place.product === here ? 'On the plan behind this card' : 'Opening ' + (card.productName ?? card.place.product) + '…'}</div>}
+          {card.place && <div className="where">{phone ? (others.length ? 'On ' + others.map((x) => x.label).join(', ') + ' now' : 'No screen follows yet: open bp with ?follow=1') : card.place.product === here ? 'On the plan behind this card' : 'Opening ' + (card.productName ?? card.place.product) + '…'}</div>}
           {where && <div className="steered err">{where.text}</div>}
           {s && <div className={'steered' + (s.ok ? '' : ' err')}>{s.text}</div>}
           {deck?.skipped?.length ? card.kind === 'open' && <div className="where">Not read: {deck.skipped.map((x) => x.product + ' (' + x.why + ')').join('; ')}</div> : null}

@@ -88,7 +88,7 @@ function RootFlags({ root }: { root: HTMLDivElement }) {
     root.classList.toggle('bp-intro', s.intro);
     root.classList.toggle('bp-phone', s.phone);
   }, [root, s]);
-  return s.phone ? <Phone /> : null;
+  return s.phone ? <><Phone /><MorningWatch phone /></> : null;
 }
 
 /**
