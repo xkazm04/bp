@@ -100,3 +100,12 @@ export async function revokeRule(slug: string, id: string): Promise<Rule> {
   await refreshRules(slug);
   return rule;
 }
+
+// ------------------------------------------------------------------------------------------------ a rule asked for
+// A header chip (components/RuleChips.tsx) opens the Orders panel on one rule: it leaves the id here and the panel picks it.
+let picked: { id: string; n: number } | null = null;
+const pickSubs = new Set<() => void>();
+export function pickRule(id: string): void { picked = { id, n: (picked?.n ?? 0) + 1 }; for (const fn of pickSubs) fn(); }
+export function usePickedRule(): { id: string; n: number } | null {
+  return useSyncExternalStore((fn) => { pickSubs.add(fn); return () => { pickSubs.delete(fn); }; }, () => picked, () => null);
+}

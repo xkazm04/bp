@@ -181,7 +181,7 @@ export function drawOrderZones(E: Engine, ctx: CanvasRenderingContext2D, v: View
 /**
  * A live product's standing rules (Engine.liveRules): each live rule's place on the plan, the governed-place drawing of
  * the sim's orders. A room it covers whole wears a dashed inset (amber for an order, mint for a grant), a hold's room the
- * hatch too, and a badge with the rule's id; a part of a room, each covered feature's dashed outline. A rule over
+ * hatch too, and a badge with the rule's id at its foot; a part of a room, each covered feature's dashed outline. A rule over
  * everything outlines nothing until it is selected (the Orders panel sets ordHi), then every room.
  */
 export function drawRuleZones(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod: number) {
@@ -208,7 +208,7 @@ export function drawRuleZones(E: Engine, ctx: CanvasRenderingContext2D, v: View,
         ctx.save(); ctx.strokeStyle = hi ? th.inkHi : th.alpha(col, 0.85); ctx.lineWidth = hi ? 2.5 : 1.6; ctx.setLineDash(ord ? DASH_ZONE : DASH_C); ctx.lineDashOffset = dashOff(E, -0.5);
         ctx.strokeRect(q.x + 5 * u, q.y + 5 * u, q.w - 10 * u, q.h - 10 * u); ctx.restore();
         if (q.w >= 120 * u && q.h >= 40 * u) {
-          const bw = 40 * u, bx = q.x + q.w - bw - 10 * u, by = q.y + 10 * u;
+          const bw = 40 * u, bx = q.x + 10 * u, by = q.y + q.h - 28 * u; // bottom-left: the room's label and its pins hold the top
           ctx.fillStyle = th.alpha(th.panel, 0.94); ctx.fillRect(bx, by, bw, 18 * u);
           ctx.strokeStyle = col; ctx.lineWidth = 1.3; ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, 18 * u - 1);
           ctx.textAlign = 'center'; drawText(ctx, r.id, bx + bw / 2, by + 13.5 * u, E.tx.f(12, 600, true), txt); ctx.textAlign = 'left';

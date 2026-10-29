@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { GRANT_TOOLS, TIER_WORD, isLive, isOrder, nextRuleId, ruleText, trustworthy, type DecidedRow, type HeldTally, type Rule, type RuleKind } from '@bp/core/scan/rules';
 import type { ScanScope } from '@bp/core/scan/jobs';
-import { revokeRule, setRule, useRules, type DraftBody } from '@/lib/rules/client';
+import { revokeRule, setRule, usePickedRule, useRules, type DraftBody } from '@/lib/rules/client';
 import { shallowEqual, useBp, useEngine } from '../../hooks';
 import { Evidence, Now, Verdict, useReplay } from './rules-evidence';
 import { Fig, Group, Row, Sec, Workbench, useListRef, useWalk } from './shell';
@@ -47,6 +47,8 @@ const kindWord = (r: Pick<Rule, 'kind'>) => (isOrder(r.kind) ? 'order · ' + r.k
 export function LiveRules({ slug }: { slug: string }) {
   const E = useEngine(), v = useRules(slug), now = useNow();
   const [sel, setSel] = useState<string | null>(null);
+  const picked = usePickedRule();
+  useEffect(() => { if (picked) setSel(picked.id); }, [picked]);
   const listRef = useListRef();
   const live = useMemo(() => v.rules.filter((r) => isLive(r, now)), [v.rules, now]);
   const orders = live.filter((r) => isOrder(r.kind)), grants = live.filter((r) => !isOrder(r.kind));
