@@ -10,6 +10,7 @@ import { STAGE_WORDS } from '../../TrackRecord';
 import { LiveEmpty, OriginChip, TierChip, URG, bodySections, declineDrafts, fmtN, metricMove, oncePerProposal, proposalSummary } from '../../Queue';
 import { optHover, shallowEqual, useAnswerNote, useBp, useEngine, useLive, useVariant, useWritesOn } from '../../hooks';
 import { Group, Row, Sec, Workbench, useListRef, useWalk } from './shell';
+import { BriefFacts, useBrief } from '../../Brief';
 
 
 /** The metric move as parts for the big figure; null when the proposal names no metric. */
@@ -169,6 +170,7 @@ function PlaceActions({ d }: { d: SimDecision }) {
 function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi: number, note?: string) => void }) {
   const E = useEngine(), M = E.M, sim = M.sim, live = useLive(), scan = live?.product.scan, writes = useWritesOn();
   const p = scan?.proposals.find((x) => x.id === d.base);
+  const brief = useBrief(d.base);
   const f = M.P.F[d.f];
   const [declining, setDeclining] = useState(() => declineDrafts.has(d.base)), [note, setNote] = useState(() => declineDrafts.get(d.base) ?? '');
   useAnswerNote(d.id);   // Approve previews its expected move on the plan; this clears it when the detail goes
@@ -192,6 +194,7 @@ function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi
         <h3 className="wb-title">{d.q}</h3>
         {sum && <p className="wb-lede">{sum}</p>}
         <div className="wb-where">{f?.name ?? d.f} · {M.P.D[f?.domain ?? '']?.name ?? f?.domain} · waiting <b>{fmtWait(sim.waitMin(d))}</b>{M.P.scale > 1 ? ' · ' + M.P.buildings[d.b].short : ''}</div>
+        {brief && <BriefFacts b={brief} />}
         {mv && (
           <div className="wb-move" aria-label={`${mv.name}: ${mv.before ?? 'not measured'}${mv.after ? ' to ' + mv.after : ''} ${mv.unit}`}>
             <span className="nm">{mv.name}{mv.name !== mv.key && <small>{mv.key}</small>}</span>

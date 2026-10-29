@@ -1,0 +1,22 @@
+/* The decision brief (Brief.tsx): one plain line per fact, the declined line in amber, evidence opening under its line. */
+.brief { margin: 10px 0 4px; padding: 8px 10px; border-left: 3px solid var(--ink-3); background: color-mix(in srgb, var(--ink) 3%, transparent); }
+.brief .bf-adv { display: inline-block; margin: 0 0 6px; padding: 1px 6px; font: 500 12px/1.5 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--amber-2); border: 1px solid var(--amber); }
+.brief .bf-facts { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; }
+.brief .bf-facts > li { font-size: 14px; line-height: 1.4; color: var(--ink); overflow-wrap: anywhere; }
+.brief .bf-facts > li > button { display: flex; width: 100%; gap: 8px; align-items: baseline; justify-content: space-between; padding: 0; background: none; border: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.brief .bf-facts > li > button:hover span { color: var(--ink-hi); text-decoration: underline; text-decoration-color: var(--ink-3); text-underline-offset: 3px; }
+.brief .bf-facts > li > button i { flex: none; font: 500 12px var(--mono); font-style: normal; color: var(--ink-2); }
+.brief .bf-declined { color: var(--amber-2); }
+.brief .bf-declined > button, .brief .bf-declined > span { color: var(--amber-2); font-weight: 500; }
+.brief .bf-ev { margin: 4px 0 6px; padding: 0 0 0 10px; list-style: none; display: grid; gap: 4px; border-left: 1px solid var(--ink-4); }
+.brief .bf-ev li { display: grid; grid-template-columns: auto 1fr; gap: 0 8px; font-size: 13px; line-height: 1.4; color: var(--ink); }
+.brief .bf-ev li small { grid-column: 2; font: 500 12px var(--mono); color: var(--ink-2); }
+.brief .bf-ev li.more { display: block; font-size: 12px; color: var(--ink-2); }
+.brief .bf-ev .vd { font: 500 12px/1.6 var(--mono); text-transform: uppercase; color: var(--mint-2); }
+.brief .bf-ev .v-declined .vd { color: var(--amber-2); }
+.brief .bf-ev q { display: block; margin-top: 1px; font-style: italic; color: var(--ink-2); }
+.brief .bf-deps li { grid-template-columns: 1fr auto; }
+.brief .bf-deps li small { grid-column: auto; }
+.brief .bf-deps button { padding: 0; background: none; border: 0; font: inherit; color: inherit; text-align: left; text-decoration: underline; text-decoration-color: var(--ink-3); text-underline-offset: 3px; cursor: pointer; }
+.brief.compact { margin: 8px 0 2px; padding: 6px 8px; }
+.brief.compact .bf-facts > li { font-size: 13px; }

@@ -49,8 +49,13 @@ export interface Brief {
   reversible: { approve: 'until-triage'; decline: 'final'; afterRelease: 'revert' | 'care' | 'unknown'; riskClass?: RiskClass };
   cost: { builds: number; minutes?: number; model?: string; basis: 'lens' | 'any lens' | 'none'; runs: string[] };
   advice: { say: 'withdraw' | 'ask' | 'proceed'; why: string };
+  /** The brief in plain words, one fact per line, each with the ids that back it (what a number on the card opens). */
+  facts: BriefFact[];
+  /** `facts` as text: the one rendering a small card (VR), a prompt and Personas share. */
   lines: string[];
 }
+export type FactKey = 'blast' | 'declined' | 'precedent' | 'undo' | 'cost';
+export interface BriefFact { key: FactKey; text: string; ids: string[] }
 type Scan = Pick<ScanSnapshot, 'proposals' | 'runs' | 'packs'>;
 
 // ------------------------------------------------------------------------------------------- the map
@@ -174,28 +179,31 @@ function adviceOf(declines: BriefDecided[], p: Brief['precedent']): Brief['advic
 // ------------------------------------------------------------------------------------------- words for the card
 const plural = (n: number, w: string) => n + ' ' + w + (n === 1 ? '' : 's');
 const fit = (t: string) => (t.length <= BRIEF_WIDTH ? t : t.slice(0, BRIEF_WIDTH - 1).trimEnd() + '…');
-export function briefLines(b: Omit<Brief, 'lines'>, map: Pick<BriefMap, 'lenses'>): string[] {
+export function briefFacts(b: Omit<Brief, 'facts' | 'lines'>, map: Pick<BriefMap, 'lenses'>): BriefFact[] {
   const l = b.subject.lens, lensOnly = l ? map.lenses.find((x) => x.id === l)?.name ?? l : '';
   const lens = lensOnly && b.subject.tier !== undefined ? lensOnly + ', tier ' + b.subject.tier : lensOnly;
-  const B = b.blast, P = b.precedent, R = b.reversible, C = b.cost, out: string[] = [];
+  const B = b.blast, P = b.precedent, R = b.reversible, C = b.cost, out: BriefFact[] = [];
   const at = (r: BriefRef) => r.name + (r.id ? ' (' + r.id + ')' : '');
-  out.push(!B.feature ? `Touches ${b.subject.feature}, which is not on the plan: blast radius unknown`
-    : `Touches ${at(B.feature)}${B.room ? ' in ' + B.room.name : ''}` + (B.dependents.length ? ` · ${plural(B.dependents.length, 'feature')} depend${B.dependents.length === 1 ? 's' : ''} on it, in ${plural(B.rooms, 'room')}` : ' · nothing depends on it'));
+  const fact = (key: FactKey, text: string, ids: string[] = []) => out.push({ key, text: fit(text), ids });
+  fact('blast', !B.feature ? `Touches ${b.subject.feature}, which is not on the plan: blast radius unknown`
+    : `Touches ${at(B.feature)}${B.room ? ' in ' + B.room.name : ''}` + (B.dependents.length ? ` · ${plural(B.dependents.length, 'feature')} depend${B.dependents.length === 1 ? 's' : ''} on it, in ${plural(B.rooms, 'room')}` : ' · nothing depends on it'),
+  B.dependents.map((x) => x.slug));
   const d = b.declines[0];
-  if (d) out.push(`Declined ${d.at}${d.by ? ' by ' + d.by.replace(/^user:/, '') : ''}: ` + (d.note ? `"${d.note}"` : 'no note given') + (d.match !== 'same idea' ? ` (${d.match}, ${d.id})` : ` (${d.id})`));
-  out.push(!P.rows.length ? `No precedent yet${lens ? ' under ' + lens : ''}`
-    : `You approved ${P.approved} of ${plural(P.rows.length, 'similar decision')}${lens ? ' under ' + lens : ''}` + (P.declined ? ` · declined ${P.declined}` : ''));
+  if (d) fact('declined', `Declined ${d.at}${d.by ? ' by ' + d.by.replace(/^user:/, '') : ''}: ` + (d.note ? `"${d.note}"` : 'no note given') + (d.match !== 'same idea' ? ` (${d.match}, ${d.id})` : ` (${d.id})`), b.declines.map((x) => x.id));
+  fact('precedent', !P.rows.length ? `No precedent yet${lens ? ' under ' + lens : ''}`
+    : `You approved ${P.approved} of ${plural(P.rows.length, 'similar decision')}${lens ? ' under ' + lens : ''}` + (P.declined ? ` · declined ${P.declined}` : ''), P.rows.map((x) => x.id));
   const after = R.afterRelease === 'care' ? `${R.riskClass} risk, a revert PR may not undo it` : R.afterRelease === 'revert' ? 'after release, a revert PR' : 'after release unknown (no risk class)';
-  out.push(`Undo: ships only after you accept it; ${after}. A decline is final`);
-  out.push(C.builds ? `Cost: about ${C.minutes} min per item, from ${plural(C.builds, 'build')}${C.basis === 'lens' && lensOnly ? ' under ' + lensOnly : ' (any lens)'}${C.model ? ' on ' + C.model : ''}` : 'Cost: no build history yet');
-  return out.slice(0, BRIEF_LINES).map(fit);
+  fact('undo', `Undo: ships only after you accept it; ${after}. A decline is final`);
+  fact('cost', C.builds ? `Cost: about ${C.minutes} min per item, from ${plural(C.builds, 'build')}${C.basis === 'lens' && lensOnly ? ' under ' + lensOnly : ' (any lens)'}${C.model ? ' on ' + C.model : ''}` : 'Cost: no build history yet', C.runs);
+  return out.slice(0, BRIEF_LINES);
 }
 
 /** The brief of `sub` over a product's store and map. */
 export function briefFor(sub: BriefSubject, scan: Scan, map: BriefMap): Brief {
   const { precedent, declines } = precedentOf(sub, scan);
   const base = { v: BRIEF_VERSION, subject: sub, blast: blastOf(sub, map, scan), precedent, declines, reversible: reversibleOf(sub), cost: costOf(sub, scan), advice: adviceOf(declines, precedent) } as const;
-  return { ...base, lines: briefLines(base, map) };
+  const facts = briefFacts(base, map);
+  return { ...base, facts, lines: facts.map((f) => f.text) };
 }
 
 /** The tier in words, for a subject line ('tier 1, before production'). */
