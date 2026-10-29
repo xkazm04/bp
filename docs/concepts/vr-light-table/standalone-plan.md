@@ -277,6 +277,13 @@ sets `x-bp-device` from the paired fingerprint and drops any value the client se
 master, and the door is built on Lynx as an optional phase before the deadline: [`../desk-to-table/plan.md`](../desk-to-table/plan.md),
 D1 and L2-L3.
 
+**The server half is built (2026-10-29, desk-to-table D1).** It lives in `apps/server/src/lan-door.ts` and `lan-pair.ts`
+and is gated by `check:lan-door`.
+- Start: `npm run server -- --lan`. Owner commands: `npm run server -- pair list|open|approve <code>|deny <code>|revoke <id>`.
+- The design above holds as written.
+- The deviations from `device-pairing` are recorded in D1: possession-only binding, cleartext, CLI-only approval, and
+  IPv4-only admission.
+
 ## Order and time
 
 | When | Step | Who |

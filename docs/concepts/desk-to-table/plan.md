@@ -231,6 +231,58 @@ there. It is TypeScript in `apps/server`, and its headset acceptance is L2. It f
     `x-bp-device`), with identical refusal bodies;
   - a second machine on the LAN, or `curl` from a VM, completes a claim against `:3101`.
 
+**Done 2026-10-29, ahead of its gate.** The owner approved starting D1 now (2026-10-29), lifting the rule that it waits
+for L0, L1, S4 and S6. The rest of the crossing phase (D2, L2-L7) still waits for that gate.
+- **The door** is `apps/server/src/lan-door.ts`, with the owner's command line in `lan-pair.ts`. `mount.ts` now splits its
+  peer check from `dispatch`, so the door forwards in-process. Without `--lan` none of it loads: `check:server`'s route
+  table is unchanged.
+  - `--lan` binds the first home-network IPv4 address (10/8, 172.16/12 or 192.168/16) before a tailnet one, or
+    `--lan-host`. The port is `--lan-port`, 3101 by default.
+  - **The listener lifecycle (S8, admission-scoping).** Started with nothing paired, `--lan` opens a 2-minute pairing
+    window. The port then stays open only while a window is open, an approval waits for its claim, or a live pairing is
+    on file. `pair open` opens another window.
+- **The ceremony.**
+  - The device sends `POST /pair { nonce, device, scopes? }` and gets back its code.
+  - The owner answers with `npm run server -- pair approve <code> [--scope ..] [--days ..]`, or with `deny`, `list` or
+    `revoke`. These call loopback-only `/lan/pair/*` routes.
+  - The device then sends `POST /pair/claim { nonce }` from the same address.
+  - The token is minted at the claim, so its plaintext never rests on the server. `x-bp-device` becomes
+    `<device>:<pairing id>`.
+- **Admission and refusals.** Every refusal is one byte-identical bare 403: no body, `no-store`, `connection: close`.
+  - Admission refuses at once, before any read.
+  - Past admission, every refusal waits 250 ms.
+  - The cause goes to `$BP_HOME/lan/ledger.jsonl`, at most 30 rows a minute.
+  - Two answers are deliberately not that 403, and only the nonce's holder can get them: 202 `pending` and 410
+    `claimed`, the theft alarm (pairing-ceremony, timing-defenses).
+- **The gate.** `check:lan-door` has 145 cases, in `npm run check`.
+  - It drives the whole sequence: pair, approve, claim, a second claim, and the baton claimed, published and returned
+    through the door.
+  - A second device's forged `x-bp-device` and `x-bp-human` are dropped.
+  - It covers the scope refusals, revoke, a corrupt registry (fails closed), expiry, the port closing and `pair open`.
+  - It proves every refusal is identical.
+  - It runs the real server without `--lan` (no door line, no `/lan` route, no `$BP_HOME/lan`) and with it.
+  - Seeded red once: admitting loopback, and honouring the client's `x-bp-device`.
+- **On Lynx's own Wi-Fi address**, `curl` to `10.0.0.143:3101` completed pair, approve, claim, a read, the baton claim
+  (404, nothing armed) and a revoke. **Still open:** the same from a second machine (L2, with the private-profile
+  firewall rule).
+
+**Deviations from `device-pairing`, recorded rather than lowered:**
+- **Binding.** The token is bound only by possession, plus the claim's peer address and the private-range class. There is
+  no device key, so a copied token works from any private-range peer until it is revoked or expires. The follow-up is a
+  key the APK generates, whose public half is registered at the claim and which signs each request.
+- **Transport.** The Bearer travels as cleartext HTTP (S8's recorded deviation); TLS on the door is the follow-up.
+- **Approval surface.** Only the CLI is built; the web lamp's approval is not. Typing the code is the forced
+  comparison, and the CLI prints the cleartext warning. The owner may choose any scope at approval, not only narrow the
+  request, because S8 makes `standup` opt-in there.
+- **Revocation reaching work.** A revoke cuts that pairing's responses in flight, but no verb streams today. The gate does
+  not exercise it.
+- **Admission is narrower than the standard allows.** Loopback, link-local and IPv6 peers are refused, Tailscale's IPv6
+  (`fd7a:...`) included. Only the plan's four IPv4 ranges are admitted.
+
+**For L2.** BpLink also reads `GET .../stream`, which is not in `read` (S8's list), so through the door it answers the bare
+403. Either BpLink treats that 403 like today's 405, or `read` gains the stream, and then a revoke must cut the stream
+(the in-flight cut above).
+
 ### D2. Hand the contract to Unreal (on Lynx)
 
 - **Schemas.** Add JSON Schemas for `Place`, `PlaceBaton` and the `place` event to `packages/schema`. Generate the UE
@@ -333,7 +385,7 @@ there. It is TypeScript in `apps/server`, and its headset acceptance is L2. It f
 | L0 sync, regression | Lynx | ¼ session | W3 |
 | L1 first Quest run (S5) | Lynx + owner | on the competition path | L0 |
 | *gate: L0, L1, S4 and S6 green* | | | |
-| D1 S8 door, server half | Lynx | 1 session | the gate |
+| D1 S8 door, server half | Lynx | 1 session | the gate (lifted by the owner 2026-10-29; done) |
 | D2 contract to UE | Lynx | ½ session | D1 |
 | L2 BpLink through the door | Lynx | 1 session | D1 |
 | L3 the baton in BpLink | Lynx | 1 session | L2, D2 |
