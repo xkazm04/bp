@@ -10,6 +10,9 @@ import type { ProductEntry } from '../scan/types';
 if (typeof window !== 'undefined') throw new Error('products.server.ts is server-only');
 
 export const PRODUCTS_FILE = 'bp.products.local.json';
+/** The registry's path: PRODUCTS_FILE at the repo root, or BP_PRODUCTS_FILE when set (a demo or a test points the server at a
+ *  throwaway registry, so the operator's own products are never read or written). */
+export const productsPath = (): string => (process.env.BP_PRODUCTS_FILE ? path.resolve(process.env.BP_PRODUCTS_FILE) : path.join(/* turbopackIgnore: true */ process.cwd(), PRODUCTS_FILE));
 
 /** Each lens-scan product keeps its store and its structure here, under its repo root. */
 export const storeDir = (p: ProductEntry): string => path.join(p.root, '.ai', 'lens-scan');
@@ -57,7 +60,7 @@ export interface RegistryRead { products: ProductEntry[]; problem?: { status: 40
 /** Read on every call (the file is tiny and edited by hand or by scripts/scan-demo.mjs while the server runs). */
 export function readRegistry(): RegistryRead {
   let raw: unknown;
-  try { raw = JSON.parse(fs.readFileSync(path.join(process.cwd(), PRODUCTS_FILE), 'utf8')); } catch (e) {
+  try { raw = JSON.parse(fs.readFileSync(productsPath(), 'utf8')); } catch (e) {
     // No file = no live products (quiet); a file that cannot be read or parsed is said, on the log and in the answer.
     if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { products: [] };
     warnOnce(PRODUCTS_FILE, e);

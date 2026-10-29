@@ -25,7 +25,7 @@ if (typeof window !== 'undefined') throw new Error('views.server.ts is server-on
 export interface Skipped { product: string; why: string }
 
 /** Every registered product's snapshot, or why it was skipped. `only` narrows to one slug. */
-function snapshots(only?: string): { read: { p: ProductEntry; scan: ScanSnapshot }[]; skipped: Skipped[] } {
+export function snapshots(only?: string): { read: { p: ProductEntry; scan: ScanSnapshot }[]; skipped: Skipped[] } {
   const { products, problem } = readRegistry(), read: { p: ProductEntry; scan: ScanSnapshot }[] = [], skipped: Skipped[] = [];
   if (problem) skipped.push({ product: PRODUCTS_FILE, why: problem.error });
   for (const p of products) {
