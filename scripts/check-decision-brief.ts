@@ -20,7 +20,9 @@
 //      the "withdrew"; a recommendation quoting a decline already shown names it by id; old sessions go; a product
 //      filter keeps that product's rows; the slip polls it;
 //  14. one map, two reads: briefMapOf (the raw document, the server) and briefMapOfStructure (the loaded map, the browser)
-//      agree on Kettle's 133 features, rooms, wings and lenses, so the card and the routes count the same blast radius.
+//      agree on Kettle's 133 features, rooms, wings and lenses, so the card and the routes count the same blast radius;
+//  15. the wire: every brief built above validates against packages/schema decision-brief-1 (the schema BpLink's
+//      FBpDecisionBrief and Personas' adoption read), and a brief with a sixth line or a null feature does not.
 // Run: node --import @bp/core/register scripts/check-decision-brief.ts
 import fs from 'node:fs';
 import path from 'node:path';
@@ -34,7 +36,8 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 const failures: string[] = [];
 let passed = 0;
 const ok = (n: number, cond: boolean, what: string, got?: unknown) => { if (cond) passed++; else failures.push(`${n}. ${what}${got !== undefined ? '  (got ' + JSON.stringify(got) + ')' : ''}`); };
-const fact = (b: Brief, key: string) => b.facts.find((f) => f.key === key);
+const built: Brief[] = [];
+const fact = (b: Brief, key: string) => { if (!built.includes(b)) built.push(b); return b.facts.find((f) => f.key === key); };
 
 // ------------------------------------------------------------------------------------------- fixtures
 const map: BriefMap = briefMapOf({
@@ -66,7 +69,7 @@ const scanOf = (proposals: Proposal[], runs: Run[] = [], packs: Pack[] = []): Sc
 // 2. not on the plan
 {
   const b = briefFor({ feature: 'ghost', title: 'x' }, scanOf([]), map);
-  ok(2, fact(b, 'blast')?.text === 'Touches ghost, which is not on the plan: blast radius unknown' && b.blast.feature === null && fact(b, 'blast')!.ids.length === 0, 'not on the plan', fact(b, 'blast'));
+  ok(2, fact(b, 'blast')?.text === 'Touches ghost, which is not on the plan: blast radius unknown' && b.blast.feature === undefined && !('feature' in b.blast) && fact(b, 'blast')!.ids.length === 0, 'not on the plan', fact(b, 'blast'));
 }
 // 3. blast
 {
@@ -194,6 +197,19 @@ const sec = [
   const norm = (m: M) => JSON.stringify({ f: m.features.map((f) => [f.slug, f.id, f.name, f.capability, f.stage, (f.depends_on ?? []).join()]).sort(), c: m.capabilities.map((c) => [c.slug, c.name, c.domain]).sort(), d: m.domains.map((d) => [d.slug, d.name]).sort(), l: m.lenses.map((l) => [l.id, l.name]).sort() });
   const a = briefMapOf(raw), b = briefMapOfStructure(loadMap(raw, ''));
   ok(14, a.features.length === 133 && norm(a) === norm(b), 'briefMapOf and briefMapOfStructure agree on Kettle', [a.features.length, b.features.length]);
+}
+
+// 15. the wire
+{
+  const Ajv2020Module = await import('ajv/dist/2020.js');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const M = Ajv2020Module as any, Ajv2020 = M.default?.default ?? M.default ?? M;
+  const ajv = new Ajv2020({ allErrors: true, strict: true, strictRequired: false });
+  const validate = ajv.compile(JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/schema/schema/decision-brief-1.schema.json'), 'utf8')));
+  const bad = built.filter((b) => !validate(JSON.parse(JSON.stringify(b))));
+  ok(15, built.length >= 8 && bad.length === 0, `the ${built.length} briefs above validate against decision-brief-1`, bad[0] && validate(bad[0]) === false ? validate.errors?.slice(0, 2) : undefined);
+  const b0 = JSON.parse(JSON.stringify(built[0]));
+  ok(15, !validate({ ...b0, lines: [...b0.lines, 'a', 'b', 'c', 'd', 'e', 'f'] }) && !validate({ ...b0, blast: { ...b0.blast, feature: null } }), 'control: a sixth line, or a null feature, is refused');
 }
 
 console.log(`check-decision-brief: ${passed} passed, ${failures.length} failed`);

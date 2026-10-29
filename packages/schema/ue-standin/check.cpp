@@ -6,8 +6,9 @@
 #include "BpSchemaFixups.h"
 
 bool ReadAll(const TSharedRef<FJsonObject>& Json, FBpAppStructure& Map, FBpAppStructureEvent& Event, FBpLensManifest& Lens,
-	FBpPlan& Plan, FBpStructureEnvelope& Envelope, FBpScanWire& Wire)
+	FBpPlan& Plan, FBpStructureEnvelope& Envelope, FBpScanWire& Wire, FBpDecisionBrief& Brief)
 {
 	return BpSchema::FromJson(Json, Map) && BpSchema::FromJson(Json, Event) && BpSchema::FromJson(Json, Lens)
-		&& BpSchema::FromJson(Json, Plan) && BpSchema::FromJson(Json, Envelope) && BpSchema::FromJson(Json, Wire);
+		&& BpSchema::FromJson(Json, Plan) && BpSchema::FromJson(Json, Envelope) && BpSchema::FromJson(Json, Wire)
+		&& BpSchema::FromJson(Json, Brief);
 }

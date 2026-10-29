@@ -16,6 +16,7 @@
 // one rendering a small card (VR) and a prompt share. Pure: no I/O, no clock unless `now` is passed.
 import type { Pack, Proposal, ProposalSize, RiskClass, Run, ScanSnapshot, Tier } from './types.ts';
 import { TIER_SAYS } from './derive.ts';
+import { BRIEF_MATCHES } from '../standard/schema-vocab.ts';
 import type { Structure } from '../standard/load.ts';
 
 export const BRIEF_VERSION = 1;
@@ -35,7 +36,8 @@ export interface BriefMap {
 export interface BriefSubject {
   id?: string; feature: string; title: string; lens?: string; standard?: string; tier?: Tier; risk_class?: RiskClass; size?: ProposalSize;
 }
-export type Match = 'same idea' | 'same standard' | 'similar words' | 'same lens';
+/** How a decided row matches the subject, strongest first (the schema's order: decision-brief-1 briefDecided.match). */
+export type Match = (typeof BRIEF_MATCHES)[number];
 export interface BriefDecided {
   id: string; title: string; feature: string; lens: string; verdict: 'approved' | 'declined'; at: string;
   by?: string; note?: string; standard?: string; match: Match;
@@ -43,7 +45,8 @@ export interface BriefDecided {
 export interface Brief {
   v: typeof BRIEF_VERSION;
   subject: BriefSubject;
-  blast: { feature: BriefRef | null; room: BriefRef | null; wing: BriefRef | null; stage?: string; dependents: BriefRef[]; rooms: number; openHere: string[] };
+  /** `feature`, `room`, `wing` omitted = not on the plan (never null: the wire omits what is absent). */
+  blast: { feature?: BriefRef; room?: BriefRef; wing?: BriefRef; stage?: string; dependents: BriefRef[]; rooms: number; openHere: string[] };
   precedent: { rows: BriefDecided[]; approved: number; declined: number; basis: string };
   /** Declines that match the idea (not merely the lens), latest first, one per standard. */
   declines: BriefDecided[];
@@ -111,13 +114,13 @@ export const subjectOf = (p: Proposal): BriefSubject => ({
 
 function blastOf(sub: BriefSubject, map: BriefMap, scan: Scan): Brief['blast'] {
   const F = new Map(map.features.map((f) => [f.slug, f])), C = new Map(map.capabilities.map((c) => [c.slug, c])), D = new Map(map.domains.map((d) => [d.slug, d]));
-  const ref = (x: { slug: string; id?: string; name: string } | undefined): BriefRef | null => (x ? { slug: x.slug, name: x.name, ...(x.id ? { id: x.id } : {}) } : null);
+  const ref = (x: { slug: string; id?: string; name: string }): BriefRef => ({ slug: x.slug, name: x.name, ...(x.id ? { id: x.id } : {}) });
   const f = F.get(sub.feature), room = f?.capability ? C.get(f.capability) : undefined, wing = room?.domain ? D.get(room.domain) : undefined;
   const deps = map.features.filter((x) => x.slug !== sub.feature && x.depends_on?.includes(sub.feature));
   const openHere = scan.proposals.filter((p) => p.status === 'proposed' && p.feature === sub.feature && p.id !== sub.id).map((p) => p.id);
   return {
-    feature: ref(f), room: ref(room), wing: ref(wing), ...(f?.stage ? { stage: f.stage } : {}),
-    dependents: deps.map((x) => ref(x)!), rooms: new Set(deps.map((x) => x.capability ?? '')).size, openHere,
+    ...(f ? { feature: ref(f) } : {}), ...(room ? { room: ref(room) } : {}), ...(wing ? { wing: ref(wing) } : {}), ...(f?.stage ? { stage: f.stage } : {}),
+    dependents: deps.map(ref), rooms: new Set(deps.map((x) => x.capability ?? '')).size, openHere,
   };
 }
 
@@ -146,8 +149,7 @@ function precedentOf(sub: BriefSubject, scan: Scan): { precedent: Brief['precede
       ...(x.decided_by ? { by: x.decided_by } : {}), ...(note ? { note } : {}), ...(x.standard && x.standard !== 'none' ? { standard: x.standard } : {}), match,
     });
   }
-  const order: Match[] = ['same idea', 'same standard', 'similar words', 'same lens'];
-  rows.sort((a, b) => order.indexOf(a.match) - order.indexOf(b.match) || (a.at < b.at ? 1 : a.at > b.at ? -1 : a.id < b.id ? 1 : -1));
+  rows.sort((a, b) => BRIEF_MATCHES.indexOf(a.match) - BRIEF_MATCHES.indexOf(b.match) || (a.at < b.at ? 1 : a.at > b.at ? -1 : a.id < b.id ? 1 : -1));
   const seen = new Set<string>(), declines: BriefDecided[] = [];
   for (const r of [...rows].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : a.id < b.id ? 1 : -1))) {
     if (r.verdict !== 'declined' || r.match === 'same lens') continue;

@@ -690,3 +690,103 @@ export interface WaveJobsItem {
   package: string;
   job: string;
 }
+
+/** GET /api/products/{slug}/proposals/{id}/brief and GET /api/companion/brief (the plan.brief tool): the context of one decision, computed once in core (packages/core/src/scan/brief.ts) for every reader - the web decision card, the VR decision card (BpLink), Personas' card and agents. Four facts, each with the ids that back it: blast radius from the plan, precedent from decided rows (the owner's declines quoted), reversibility, cost from finished builds. Thin evidence is said in the words, never filled in. `lines` is the brief in plain words under a fixed budget (at most 5 lines of at most 120 characters): a small card shows exactly these. Absent values are omitted, never null. */
+export interface DecisionBrief {
+  v: 1;
+  subject: BriefSubject;
+  blast: BriefBlast;
+  precedent: BriefPrecedent;
+  /** The declines that match the idea (not merely its lens), latest first, one per standard, with the owner's note. */
+  declines: BriefDecided[];
+  reversible: BriefReversible;
+  cost: BriefCost;
+  advice: BriefAdvice;
+  facts: BriefFact[];
+  /** facts[].text: the one rendering every small surface shares. */
+  lines: string[];
+}
+
+/** What is decided: an open proposal (id set) or an agent's draft (a feature and its words). */
+export interface BriefSubject {
+  id?: string;
+  feature: string;
+  title: string;
+  lens?: string;
+  standard?: string;
+  tier?: number;
+  risk_class?: 'secret' | 'authz' | 'money' | 'data' | 'llm' | 'perf' | 'reliability' | 'ux' | 'debt';
+  size?: 'XS' | 'S' | 'M' | 'L' | 'XL';
+}
+
+/** The feature on the plan and the features whose depends_on name it. feature, room and wing are omitted when the feature is not on the plan. */
+export interface BriefBlast {
+  feature?: BriefRef;
+  room?: BriefRef;
+  wing?: BriefRef;
+  stage?: string;
+  dependents: BriefRef[];
+  /** The rooms the dependents sit in. */
+  rooms: number;
+  /** Other open proposals on the same feature. */
+  openHere: string[];
+}
+
+export interface BriefRef {
+  slug: string;
+  /** The map's short code (BKG-01), when it has one. */
+  id?: string;
+  name: string;
+}
+
+export interface BriefPrecedent {
+  rows: BriefDecided[];
+  approved: number;
+  declined: number;
+  basis: string;
+}
+
+export interface BriefDecided {
+  id: string;
+  title: string;
+  feature: string;
+  lens: string;
+  verdict: 'approved' | 'declined';
+  /** The day it was decided, YYYY-MM-DD. */
+  at: string;
+  by?: string;
+  /** The decline note (or the triage note): the owner's own words. */
+  note?: string;
+  standard?: string;
+  match: 'same idea' | 'same standard' | 'similar words' | 'same lens';
+}
+
+export interface BriefReversible {
+  /** An approval builds on a pack branch and ships only through triage and a release. */
+  approve: 'until-triage';
+  /** No route reopens a decided proposal. */
+  decline: 'final';
+  afterRelease: 'revert' | 'care' | 'unknown';
+  riskClass?: 'secret' | 'authz' | 'money' | 'data' | 'llm' | 'perf' | 'reliability' | 'ux' | 'debt';
+}
+
+export interface BriefCost {
+  builds: number;
+  /** Median minutes per item of the finished execute runs. */
+  minutes?: number;
+  model?: string;
+  basis: 'lens' | 'any lens' | 'none';
+  runs: string[];
+}
+
+export interface BriefAdvice {
+  say: 'withdraw' | 'ask' | 'proceed';
+  why: string;
+}
+
+export interface BriefFact {
+  key: 'blast' | 'declined' | 'precedent' | 'undo' | 'cost';
+  text: string;
+  /** What the fact's number opens: dependents, decided rows, or execute runs. */
+  ids: string[];
+}
