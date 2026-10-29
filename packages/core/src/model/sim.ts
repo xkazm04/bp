@@ -65,6 +65,8 @@ export interface SimDecision {
   recBy?: string; rec0?: number;
   /** v4: a live proposal's severity tier (0 stop-ship .. 3 backlog); absent = untriaged (Kettle's questions never have one). */
   tier?: number;
+  /** Live: the note answering at `rec` carries (Decision.recommendedNote: the standing decline it repeats). */
+  recNote?: string;
 }
 export interface OrderScope { domain?: string; milestone?: string; surface?: string; all?: boolean; feats?: Record<string, 1>; label?: string }
 /**
@@ -278,7 +280,7 @@ export class SwarmSim {
       id: d.id + sf, base: d.id, b, f: d.feature + sf, dom: d.domain + sf, lens: d.lens, decider: d.decider, by: d.askedBy + sf,
       q: d.question, opts: sf ? d.options.map((o) => (o.effects ? { ...o, effects: o.effects.map((e) => sfx(e, sf)) } : o)) : d.options, rec: d.recommended, urg: d.urgency, since: Date.parse(d.waitingSince), blocks: d.blocksAgents,
       freed: 0, affects: d.affects.map((x) => x + sf), arr: d.arrivesAt || 0, open: !d.arrivesAt, ans: null, isNew: false, freedIds: [],
-      ...(d.tier !== undefined ? { tier: d.tier } : {}),
+      ...(d.tier !== undefined ? { tier: d.tier } : {}), ...(d.recommendedNote ? { recNote: d.recommendedNote } : {}),
     };
   }
   /** The chip code: the sample's crew codes (F1.3); a live agent reads as its lens's short name (DEV.1). */
@@ -931,7 +933,7 @@ export class SwarmSim {
       for (const d of S.decisions) {
         const id = d.id + sf, g = this.DEC[id];
         listed.add(id);
-        if (g) { g.q = d.question; g.opts = d.options; g.urg = d.urgency; g.tier = d.tier; g.blocks = d.blocksAgents; g.affects = d.affects.map((x) => x + sf); continue; }
+        if (g) { g.q = d.question; g.opts = d.options; g.urg = d.urgency; g.tier = d.tier; g.blocks = d.blocksAgents; g.affects = d.affects.map((x) => x + sf); g.rec = d.recommended; g.recNote = d.recommendedNote; continue; }
         const n = this.fromDecision(d, b, sf);
         this.decisions.push(n); this.DEC[id] = n;
         if (had && P.F[n.f]) {

@@ -198,6 +198,14 @@ export function briefFacts(b: Omit<Brief, 'facts' | 'lines'>, map: Pick<BriefMap
   return out.slice(0, BRIEF_LINES);
 }
 
+/** The advice alone (no map needed): what the live feed recommends on a card. `decline` is the stand it rests on. */
+export function briefAdvice(sub: BriefSubject, scan: Pick<ScanSnapshot, 'proposals'>): Brief['advice'] & { decline?: BriefDecided } {
+  const { precedent, declines } = precedentOf(sub, { proposals: scan.proposals, runs: [], packs: [] });
+  return { ...adviceOf(declines, precedent), ...(declines[0] ? { decline: declines[0] } : {}) };
+}
+/** The note a Decline taken on that advice carries, so the new row points at the decision it repeats (<= 500 chars). */
+export const repeatNote = (d: BriefDecided): string => (`Repeats ${d.id}, declined ${d.at}` + (d.note ? `: "${d.note}"` : '')).slice(0, 500);
+
 /** The brief of `sub` over a product's store and map. */
 export function briefFor(sub: BriefSubject, scan: Scan, map: BriefMap): Brief {
   const { precedent, declines } = precedentOf(sub, scan);

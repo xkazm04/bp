@@ -270,7 +270,7 @@ export function DecisionCard() {
               {brief && <BriefFacts b={brief} compact />}
               {(writes || !sim.live) && d.opts.map((o, i) => (
                 <button key={i} type="button" className={'op' + (i === d.rec ? ' rec' : '')} onClick={() => (keep ? E.keepAnswer(d.id, i) : E.decide(d.id, i))} {...optHover(E, d.id, i)}>
-                  <i className="no">{i + 1}</i><b>{o.label}{i === d.rec && <em>{d.recBy ? d.recBy + ' recommends' : 'agent suggests'}</em>}</b><span>{o.consequence}</span>
+                  <i className="no">{i + 1}</i><b>{o.label}{i === d.rec && <em>{d.recNote ? 'you declined this before' : d.recBy ? d.recBy + ' recommends' : 'agent suggests'}</em>}</b><span>{o.consequence}</span>
                 </button>
               ))}
               {!sim.live && <label className="keep"><input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} />Answer and keep as an order<small>{s.tl || M.P.D[f.domain]?.name || f.domain}</small></label>}

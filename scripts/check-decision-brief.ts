@@ -13,11 +13,13 @@
 //   9. budget: at most BRIEF_LINES facts of at most BRIEF_WIDTH characters, a long note cut with an ellipsis;
 //  10. same input, same brief (byte for byte), and facts == lines;
 //  11. the doors: plan.brief is in the catalog, AUTO, on GET /api/companion/brief; both route modules and their web
-//      mounts exist; the web decision card and Review detail render the brief through useBrief + BriefFacts.
+//      mounts exist; the web decision card and Review detail render the brief through useBrief + BriefFacts;
+//  12. the card's recommendation: briefAdvice (no map) agrees with the full brief; a repeat recommends Decline with a
+//      note naming the decision it repeats (repeatNote, <= 500); the live feed uses it and Engine.decide carries it.
 // Run: node scripts/check-decision-brief.ts
 import fs from 'node:fs';
 import path from 'node:path';
-import { BRIEF_LINES, BRIEF_WIDTH, briefFor, briefMapOf, subjectOf, type Brief, type BriefMap, type BriefSubject } from '../packages/core/src/scan/brief.ts';
+import { BRIEF_LINES, BRIEF_WIDTH, briefAdvice, briefFor, briefMapOf, repeatNote, subjectOf, type Brief, type BriefMap, type BriefSubject } from '../packages/core/src/scan/brief.ts';
 import { TOOLS, classOf } from '../packages/core/src/companion/catalog.ts';
 import { emptyScan, type Pack, type Proposal, type Run, type ScanSnapshot } from '../packages/core/src/scan/types.ts';
 
@@ -135,6 +137,21 @@ const sec = [
   const card = src('apps/web/src/components/Overlays.tsx'), review = src('apps/web/src/components/rail/wide/review.tsx');
   ok(11, /useBrief\(/.test(card) && /<BriefFacts /.test(card), 'the plan decision card renders the brief');
   ok(11, /useBrief\(/.test(review) && /<BriefFacts /.test(review), 'the Review detail renders the brief');
+}
+
+// 12. the recommendation
+{
+  const h7 = P({ id: 'H7', feature: 'card-payments', lens: 'development', title: 'Add retries to checkout payment calls', standard: 'reliability/retry-backoff', status: 'declined', decided_at: day(5), decision_note: 'No retries until idempotency keys land.' });
+  const o = P({ id: 'O2', feature: 'card-payments', lens: 'development', title: 'Retry the payment webhook on timeout', standard: 'reliability/retry-backoff', status: 'proposed' });
+  const s = scanOf([h7, o]), a = briefAdvice(subjectOf(o), s), full = briefFor(subjectOf(o), s, map);
+  ok(12, a.say === full.advice.say && a.why === full.advice.why && a.decline?.id === 'H7', 'briefAdvice is the brief advice', a);
+  ok(12, a.decline ? repeatNote(a.decline) === `Repeats H7, declined ${day(5).slice(0, 10)}: "No retries until idempotency keys land."` : false, 'the repeat note', a.decline && repeatNote(a.decline));
+  ok(12, repeatNote({ ...a.decline!, note: 'x'.repeat(900) }).length === 500, 'the note is bounded to 500');
+  const none = briefAdvice({ feature: 'lonely', title: 'y', lens: 'security' }, s);
+  ok(12, none.say === 'proceed' && !none.decline, 'no stand, no flip', none);
+  const src = (f: string) => fs.readFileSync(path.join(ROOT, f), 'utf8');
+  ok(12, /briefAdvice\(/.test(src('packages/core/src/model/live-feed.ts')) && /recommended: 1, recommendedNote: repeatNote\(/.test(src('packages/core/src/model/live-feed.ts')), 'liveSwarm recommends Decline on a repeat');
+  ok(12, /note \?\?= oi === d\.rec && oi === 1 \? d\.recNote/.test(src('apps/web/src/engine/Engine.ts')), 'Engine.decide carries the repeat note on the recommended Decline');
 }
 
 console.log(`check-decision-brief: ${passed} passed, ${failures.length} failed`);

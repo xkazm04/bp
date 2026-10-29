@@ -6,8 +6,7 @@
 .brief .bf-facts > li > button { display: flex; width: 100%; gap: 8px; align-items: baseline; justify-content: space-between; padding: 0; background: none; border: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
 .brief .bf-facts > li > button:hover span { color: var(--ink-hi); text-decoration: underline; text-decoration-color: var(--ink-3); text-underline-offset: 3px; }
 .brief .bf-facts > li > button i { flex: none; font: 500 12px var(--mono); font-style: normal; color: var(--ink-2); }
-.brief .bf-declined { color: var(--amber-2); }
-.brief .bf-declined > button, .brief .bf-declined > span { color: var(--amber-2); font-weight: 500; }
+.brief .bf-facts > li.bf-declined, .brief .bf-facts > li.bf-declined > button { color: var(--amber-2); font-weight: 500; }
 .brief .bf-ev { margin: 4px 0 6px; padding: 0 0 0 10px; list-style: none; display: grid; gap: 4px; border-left: 1px solid var(--ink-4); }
 .brief .bf-ev li { display: grid; grid-template-columns: auto 1fr; gap: 0 8px; font-size: 13px; line-height: 1.4; color: var(--ink); }
 .brief .bf-ev li small { grid-column: 2; font: 500 12px var(--mono); color: var(--ink-2); }
