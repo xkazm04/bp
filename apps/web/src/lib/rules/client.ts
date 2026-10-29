@@ -4,7 +4,7 @@
 // and again after every write. Setting and revoking a rule is a person's act: those carry the human token
 // (components/companion/stream.ts humanToken), which only bp's own page can fetch.
 import { useEffect, useSyncExternalStore } from 'react';
-import type { Backtest, Rule, RuleKind } from '@bp/core/scan/rules';
+import type { Backtest, Impact, Rule, RuleKind } from '@bp/core/scan/rules';
 import type { ScanScope } from '@bp/core/scan/jobs';
 import { humanToken } from '@/components/companion/stream';
 
@@ -61,11 +61,12 @@ const failed = async (r: Response): Promise<Error> => {
   return Object.assign(new Error(j?.error ?? 'refused (' + r.status + ')'), { status: r.status });
 };
 
-/** Replay a draft over the owner's decided findings; nothing is written. */
-export async function previewRule(slug: string, d: DraftBody, signal?: AbortSignal): Promise<Backtest> {
+export interface Replay { backtest: Backtest; now: Impact }
+/** Replay a draft over the owner's decided findings, and what it would do to the open ones now; nothing is written. */
+export async function previewRule(slug: string, d: DraftBody, signal?: AbortSignal): Promise<Replay> {
   const r = await fetch(api(slug), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...d, preview: true }), signal });
   if (!r.ok) throw await failed(r);
-  return ((await r.json()) as { backtest: Backtest }).backtest;
+  return (await r.json()) as Replay;
 }
 
 /** A human write: retried once with a fresh token (a restarted server mints a new one). */

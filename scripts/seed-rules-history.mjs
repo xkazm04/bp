@@ -68,7 +68,7 @@ for (let i = 0; i < N; i++) {
   const v = verdict(f, lens, tier), at = NOW - Math.floor((i + 1) * (42 * 86400000) / (N + 1)) - Math.floor(rnd() * 3600000);
   rows.push({
     id: `syn-${(i + 1).toString().padStart(3, '0')}`, feature: f.slug, lens, title: pick(TITLES[lens] ?? TITLES.development).replace('{f}', f.name),
-    tier, risk_class: pick(RISK[lens] ?? ['debt']), status: v === 'approve' ? pick(['approved', 'done', 'done', 'accepted']) : 'declined',
+    tier, risk_class: pick(RISK[lens] ?? ['debt']), status: v === 'approve' ? 'accepted' : 'declined', // decided and closed: none of it is open backlog or waits for triage
     decided_at: iso(at), created_at: iso(at - 86400000), note: v === 'approve' ? '[synthetic] approved' : '[synthetic] ' + pick(DECLINE_WHY),
   });
 }

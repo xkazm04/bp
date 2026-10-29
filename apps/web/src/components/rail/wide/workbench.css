@@ -330,7 +330,8 @@
 #flyout.wide .wb-spend b { font: 600 16px var(--mono); color: var(--ink-hi); text-align: right; }
 #flyout.wide .wb-agents-l .pc b.t-red { color: var(--red-2); font: 600 13px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; }
 /* ---------- rules (a live product's Orders, rules.tsx): the writer's kinds, its options, the replay's rows */
-#flyout.wide .rl-kinds button { display: flex; flex-direction: column; gap: 4px; }
+#flyout.wide .rl-kinds { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+#flyout.wide .rl-kinds button { display: flex; flex-direction: column; gap: 4px; min-height: 72px; }
 #flyout.wide .rl-kinds button b { font-size: 16px; font-weight: 600; color: var(--ink-hi); }
 #flyout.wide .rl-kinds button span { font-size: 14px; line-height: 1.4; color: var(--ink-2); }
 #flyout.wide .rl-kinds button[aria-pressed='true'] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); box-shadow: inset 3px 0 0 var(--accent); }
@@ -358,3 +359,26 @@
 #flyout.wide .rl-armed { border-color: var(--red); color: var(--red-2); box-shadow: inset 3px 0 0 var(--red); }
 #flyout.wide .rl-revoke:hover { border-color: var(--red); color: var(--red-2); }
 #flyout.wide .wb-meta.t-red { color: var(--red-2); }
+#flyout.wide .rl-figs { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+#flyout.wide .rl-figs .wb-fig b { font-size: 26px; }
+#flyout.wide .wb-title .rl-where { font-size: 17px; font-weight: 500; color: var(--ink-2); }
+#flyout.wide .rl-out { border-color: var(--amber); color: var(--amber-2); text-transform: none; }
+#flyout.wide .rl-now-l { font-size: 15.5px; }
+#flyout.wide .rl-now-l b { font: 600 17px var(--mono); color: var(--ink-hi); }
+#flyout.wide .rl-now.busy { opacity: 0.6; }
+#flyout.wide .rl-rooms { display: grid; gap: 6px; margin: 0 0 12px; }
+#flyout.wide .rl-room { display: grid; grid-template-columns: minmax(120px, 200px) minmax(60px, 1fr) 36px 220px; align-items: center; gap: 12px; font-size: 14px; color: var(--ink-hi); }
+#flyout.wide .rl-room .bar { display: flex; height: 8px; background: var(--ink-4); }
+#flyout.wide .rl-room .bar i { background: var(--amber); }
+#flyout.wide .rl-room b { font: 600 15px var(--mono); text-align: right; }
+#flyout.wide .rl-room .bt { height: 30px; padding: 0 10px; font-size: 13px; text-transform: none; letter-spacing: 0.01em; }
+#flyout.wide .rl-act { gap: 14px; flex-wrap: nowrap; }
+#flyout.wide .rl-act .bt.go { flex: 0 0 auto; white-space: nowrap; }
+#flyout.wide .rl-act .wb-meta { white-space: nowrap; }
+#flyout.wide .rl-vd { display: inline-flex; align-items: baseline; gap: 10px; font-size: 14px; color: var(--ink-2); }
+#flyout.wide .rl-vd b { font: 600 24px var(--mono); color: var(--ink-hi); }
+#flyout.wide .rl-vd b.t-mint { color: var(--mint-2); } #flyout.wide .rl-vd b.t-amber { color: var(--amber-2); } #flyout.wide .rl-vd b.t-red { color: var(--red-2); }
+#flyout.wide .rl-vd em { padding: 1px 7px; border: 1px solid currentColor; font: normal 500 12px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; }
+#flyout.wide .rl-vd em.t-red { color: var(--red-2); } #flyout.wide .rl-vd em.t-amber { color: var(--amber-2); }
+#flyout.wide .rl-act .bt.go:disabled { opacity: 0.5; }
+#flyout.wide .rl-room .bt { justify-self: end; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
