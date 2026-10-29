@@ -25,7 +25,8 @@
 //    refusal past admission waits REFUSAL_DELAY_MS before it answers.
 // 4. Scope (verb-allowlists). VERBS below is the whole remote vocabulary, a closed grammar: a method plus an anchored path
 //    pattern, no percent-escapes, no query except the baton's `claim=1`. `read`: the plan reads; `standup`: read plus the
-//    companion turn, focus and cards GETs; `place`: the three baton verbs. Never cards/<id>, human-token, dispatch, build
+//    companion turn, focus and cards GETs; `place`: the three baton verbs; `focus`: the shared focus's GET and POST (a
+//    headset follows and publishes without `read`; the route pins its reader to the paired device). Never cards/<id>, human-token, dispatch, build
 //    or finish, and none of this server's own /lan or /athena routes.
 // 5. The rewrite. Only Content-Type and Accept are copied from the device; Host becomes this server's loopback address,
 //    X-Forwarded-For the door itself, and `x-bp-device` the paired device's id (`<device>:<pairing id>`), so whatever
@@ -65,7 +66,7 @@ const DEVICE = /^[A-Za-z0-9_.-]{1,40}$/;
 const TOKEN = /^Bearer ([A-Za-z0-9_-]{43})$/;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O, 1/I: read off a headset, typed on a keyboard
 
-export const SCOPES = ['read', 'standup', 'place'] as const;
+export const SCOPES = ['read', 'standup', 'place', 'focus'] as const;
 export type Scope = (typeof SCOPES)[number];
 const isScopes = (v: unknown): v is Scope[] =>
   Array.isArray(v) && v.length > 0 && v.length <= SCOPES.length && v.every((s) => (SCOPES as readonly string[]).includes(s)) && new Set(v).size === v.length;
@@ -108,6 +109,8 @@ export const VERBS: readonly Verb[] = [
   { scope: 'place', method: 'GET', path: /^\/api\/session\/place$/, query: 'claim=1' },
   { scope: 'place', method: 'POST', path: /^\/api\/session\/place$/ },
   { scope: 'place', method: 'POST', path: /^\/api\/session\/place\/return$/ },
+  { scope: 'focus', method: 'GET', path: /^\/api\/session\/focus$/ },
+  { scope: 'focus', method: 'POST', path: /^\/api\/session\/focus$/ },
 ];
 /** The verb a request names, or null. `standup` includes `read`. The raw request target is parsed here, strictly: printable
  *  ASCII, no percent-escape, no dot segment, no empty segment, and a query only where the verb names it exactly. */

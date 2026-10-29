@@ -7,10 +7,12 @@
 //   unfollow {}                  stop following (one tap; it never needs anyone else's leave)
 //   forget   {}                  I am closing
 // Every visible change goes out on the companion stream as `event: shared` (focus.server.ts). Ids only, never a selection,
-// so no human token: any loopback surface may publish where it is looking. Localhost only.
+// so no human token: any loopback surface may publish where it is looking. Localhost only; a paired headset reaches it
+// through the LAN door's `focus` scope, and a call carrying `x-bp-device` speaks as reader `vr:<device>` whatever its body says.
 import { jsonOnly, localHost, localOnly } from '../../../../scan/local-only.ts';
 import { SURFACES, isReaderId, readFocusPlace, viewOf, type FocusMove, type Surface } from '../../../../session/focus.ts';
 import { moveFocus, readFocus } from '../focus.server.ts';
+import { deviceOf } from '../baton.server.ts';
 
 const NO_STORE = { 'cache-control': 'no-store' };
 const OPS = ['hello', 'publish', 'follow', 'unfollow', 'forget'] as const;
@@ -43,6 +45,9 @@ export async function POST(req: Request): Promise<Response> {
   if (notJson) return Response.json({ error: notJson }, { status: 415 });
   let b: Record<string, unknown>;
   try { b = (await req.json()) as Record<string, unknown>; if (!b || typeof b !== 'object' || Array.isArray(b)) throw new Error(); } catch { return Response.json({ error: 'body must be a JSON object' }, { status: 400 }); }
+  // a device (a paired headset through the LAN door, which sets the header from its pairing) speaks only as its own reader
+  const device = deviceOf(req);
+  if (device) b = { ...b, reader: 'vr:' + device };
   const m = readMove(b);
   if (typeof m === 'string') return Response.json({ error: m }, { status: 400, headers: NO_STORE });
   const now = Date.now(), r = moveFocus(m, now);
