@@ -109,3 +109,12 @@ export function pickRule(id: string): void { picked = { id, n: (picked?.n ?? 0) 
 export function usePickedRule(): { id: string; n: number } | null {
   return useSyncExternalStore((fn) => { pickSubs.add(fn); return () => { pickSubs.delete(fn); }; }, () => picked, () => null);
 }
+
+// A rule.propose card's "Open in Rules" (components/companion/RuleCardReplay.tsx): the writer takes the draft.
+let drafted: { d: DraftBody; n: number } | null = null;
+export function pickDraft(d: DraftBody): void { drafted = { d, n: (drafted?.n ?? 0) + 1 }; pickRule(WRITE_ROW); }
+export function usePickedDraft(): { d: DraftBody; n: number } | null {
+  return useSyncExternalStore((fn) => { pickSubs.add(fn); return () => { pickSubs.delete(fn); }; }, () => drafted, () => null);
+}
+/** The Orders panel's writer row id (rules.tsx). */
+export const WRITE_ROW = 'rules:write';

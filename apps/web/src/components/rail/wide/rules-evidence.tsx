@@ -145,7 +145,7 @@ export function Verdict({ bt }: { bt: Backtest | null | undefined }) {
   return (
     <span className="rl-vd">
       <b className={pct === null ? '' : pct >= 90 ? 't-mint' : pct >= 75 ? 't-amber' : 't-red'}>{pct === null ? '–' : pct + '%'}</b>
-      <span>agreed {bt.matched} · differed {bt.differed} of {bt.decided}</span>
+      <span>{bt.matched} agreed · {bt.differed} differed</span>
       {flag && <em className={flag.key === 'silent' ? 't-amber' : 't-red'}>{flag.key === 'stop-ship' ? 'approves stop-ships' : flag.key === 'any-tier' ? 'every tier' : 'no evidence'}</em>}
     </span>
   );

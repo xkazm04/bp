@@ -187,6 +187,10 @@ export const listCards = (): Card[] => [...current().values()].sort((a, b) => (a
 export const getCard = (id: string): Card | undefined => current().get(id);
 
 const summaryOf = (t: ToolSpec, args: Record<string, unknown>): string => {
+  if (t.name === 'rule.propose') { // the rule in its own words, its place and how long: the catalog's description is for the agent
+    const sc = args.scope as { label?: unknown } | undefined, text = typeof args.text === 'string' && args.text.trim() ? args.text.trim() : `a ${String(args.kind)} rule`;
+    return bounded(`Proposes a standing rule for ${productOf(args) ?? 'a product'}: "${text}" over ${typeof sc?.label === 'string' ? sc.label : 'a place'}${typeof args.hours === 'number' ? `, for ${args.hours} h` : ', until you lift it'}`).slice(0, 300);
+  }
   const shown = Object.entries(args).filter(([k]) => k !== 'slug' && k !== 'product').map(([k, v]) => `${k} ${typeof v === 'string' ? v : JSON.stringify(v)}`).join(', ');
   const product = productOf(args);
   return bounded(`${t.description.replace(/\.$/, '')}${product ? ` (${product})` : ''}${shown ? `: ${shown}` : ''}`).slice(0, 300);

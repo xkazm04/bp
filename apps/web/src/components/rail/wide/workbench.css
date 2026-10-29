@@ -382,3 +382,4 @@
 #flyout.wide .rl-vd em.t-red { color: var(--red-2); } #flyout.wide .rl-vd em.t-amber { color: var(--amber-2); }
 #flyout.wide .rl-act .bt.go:disabled { opacity: 0.5; }
 #flyout.wide .rl-room .bt { justify-self: end; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#flyout.wide .rl-vd, #flyout.wide .rl-vd em { white-space: nowrap; }

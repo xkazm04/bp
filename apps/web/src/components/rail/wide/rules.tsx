@@ -12,12 +12,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { GRANT_TOOLS, TIER_WORD, isLive, isOrder, nextRuleId, ruleText, trustworthy, type DecidedRow, type HeldTally, type Rule, type RuleKind } from '@bp/core/scan/rules';
 import type { ScanScope } from '@bp/core/scan/jobs';
-import { revokeRule, setRule, usePickedRule, useRules, type DraftBody } from '@/lib/rules/client';
+import { WRITE_ROW, revokeRule, setRule, usePickedDraft, usePickedRule, useRules, type DraftBody } from '@/lib/rules/client';
 import { shallowEqual, useBp, useEngine } from '../../hooks';
 import { Evidence, Now, Verdict, useReplay } from './rules-evidence';
 import { Fig, Group, Row, Sec, Workbench, useListRef, useWalk } from './shell';
 
-const WRITE = 'rules:write';
+const WRITE = WRITE_ROW;
+/** The last agent draft the writer took (a rule.propose card's "Open in Rules"), so a remount does not take it again. */
+let tookDraft = 0;
 const KINDS: { k: RuleKind; head: string; sub: string }[] = [
   { k: 'hold', head: 'Hold', sub: 'No builds or scans start here' },
   { k: 'only', head: 'Only', sub: 'Only some lenses’ work here' },
@@ -188,6 +190,21 @@ function Writer({ slug, all, onSet }: { slug: string; all: Rule[]; onSet: (id: s
   const [hours, setHours] = useState(0);
   const [armed, setArmed] = useState(false);
   const [err, setErr] = useState<string>();
+  // an agent's proposed rule (a rule.propose card): the writer takes it whole, for the person to replay, change or set
+  const pd = usePickedDraft();
+  useEffect(() => {
+    if (!pd || pd.n === tookDraft) return;
+    tookDraft = pd.n;
+    const d = pd.d;
+    setKind(d.kind);
+    if (d.scope.kind === 'all') setEverything(true);
+    else { setEverything(false); E.setTarget(Object.fromEntries(d.scope.features.filter((f) => P.F[f]).map((f) => [f, 1])) as Record<string, 1>, d.scope.label); }
+    if (d.lenses) setLenses(d.lenses);
+    if (d.maxEffort) setEffort(d.maxEffort);
+    setModel(d.model ?? '');
+    setTier(d.minTier ?? -1);
+    setHours(d.hours ?? 0);
+  }, [pd, E, P]);
   const base = useMemo<ScanScope | null>(() => (everything ? { kind: 'all', label: 'Everything', features: [] } : s.tgt.n ? scopeOf(P, s.tgt.ids, s.tgt.label) : null), [P, everything, s.tgt]);
   useEffect(() => setOut([]), [base]);
   const scope = useMemo(() => (base ? without(P, base, out) : null), [P, base, out]);
