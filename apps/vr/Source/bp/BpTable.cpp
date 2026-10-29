@@ -245,10 +245,12 @@ namespace
 	 *  concept's bright cyan edges): the rest extrusions brightest, as the concept's rooms on the sheet; the lifted wing's
 	 *  shells and the lifted room's tiles under them; the lifted room's shell carries LiftedRoomShow on top. All of it
 	 *  is above the bloom threshold (0.7, fid_look.py), the sheet's text below it (PaperInkGlow). */
-	constexpr float RestEdgeIntensity = 2.6f;  // FM: 2.6 (FK 3.2) with the top edges weighted (WallTopEdge)
+	constexpr float RestEdgeIntensity = 1.2f;  // glass-calibration 2026-10-29: 1.2 (FM 2.6); the plan's brightest tenth read 207 against the concept's 140 to 160, now 189
+	/** The rest edges' colour (M_EdgeGlow's EdgeColor, its default 0.10/0.62/1.0): paler and whiter, as the concept's glass. */
+	const FLinearColor RestEdgeColor(0.35f, 0.72f, 1.f);
 	/** The walls' line weights (FM): a wall's top edge at WallTopEdge of its batch's Intensity, its corners and foot at
 	 *  WallLowEdge. */
-	constexpr float WallTopEdge = 1.8f;
+	constexpr float WallTopEdge = 1.5f;  // glass-calibration: 1.5 (FM 1.8)
 	constexpr float WallLowEdge = 0.3f;
 	/** The walls' built-in halo (M_EdgeGlow's HaloK, its default 0.25): seen nearly edge-on, every wall's halo summed into
 	 *  a filled slab (fm/v1); the pointed room's a little stronger. By capture. */
@@ -273,8 +275,18 @@ namespace
 	constexpr int32 HandDepthWidthPx = 512;
 	constexpr float HandCaptureDelayS = 0.5f;
 	constexpr float PaperInkGlow = 1.0f;
+	/** The paper's own rim light (M_BlueprintPaper's EdgeGlow, EdgeSpread and EdgeHalo; defaults 2.5, 2.5, 0.25): a
+	 *  narrower strip, as the concept's (glass-calibration, 2026-10-29). */
+	constexpr float PaperEdgeGlow = 1.8f;
+	constexpr float PaperEdgeSpread = 1.2f;
+	constexpr float PaperEdgeHalo = 0.15f;
+	/** The frame (SM_LightTableFrame's glTF materials, by slot): the concept's frame is dark metal catching the lamp, not
+	 *  bright aluminium. The near frame read median luma 69 against the concept's 23; with these, 46. */
+	const FLinearColor FrameAtlasColor(0.12f, 0.12f, 0.13f);
+	const FLinearColor FrameTrimColor(0.32f, 0.30f, 0.28f);
+	constexpr float FrameStripEmissive = 2.2f;  // frame_edge_glow's EmissiveStrength, its import 4
 	/** The fixture glyphs' glow (M_Glyph's GlyphGlow, its default 0.45; FE: the concept's furniture glows inside the rooms). */
-	constexpr float GlyphGlow = 0.6f;  // FK: at 1.0 under the wider bloom the glyphs read as milky blobs
+	constexpr float GlyphGlow = 0.35f;  // glass-calibration: 0.35 (FK 0.6; at 1.0 under the wider bloom the glyphs read as milky blobs)
 	/** The greybox's volumes: faces only, on UWidgetComponent's translucent engine material. */
 	constexpr float GreyboxVolumeOpacity = 0.12f;
 	/** Labels draw after the volumes (translucent sort), so a glowing edge never lies over a wing's name. */
@@ -693,6 +705,14 @@ void ABpTable::LoadArt()
 		{
 			if (UMaterialInterface* Hidden = LoadOrGreybox(HiddenMaterial, true)) Frame->SetMaterial(Slot, Hidden);
 		}
+		const auto FrameSlot = [this](const TCHAR* Name) -> UMaterialInstanceDynamic*
+		{
+			const int32 Index = Frame->GetMaterialIndex(Name);
+			return Index == INDEX_NONE ? nullptr : Frame->CreateDynamicMaterialInstance(Index);
+		};
+		if (UMaterialInstanceDynamic* Mid = FrameSlot(TEXT("frame_atlas"))) Mid->SetVectorParameterValue(TEXT("BaseColorFactor"), FrameAtlasColor);
+		if (UMaterialInstanceDynamic* Mid = FrameSlot(TEXT("frame_aluminium"))) Mid->SetVectorParameterValue(TEXT("BaseColorFactor"), FrameTrimColor);
+		if (UMaterialInstanceDynamic* Mid = FrameSlot(TEXT("frame_edge_glow"))) Mid->SetScalarParameterValue(TEXT("EmissiveStrength"), FrameStripEmissive);
 	}
 
 	UMaterialInterface* PaperMat = LoadOrGreybox(PaperMaterial, true);
@@ -707,6 +727,9 @@ void ABpTable::LoadArt()
 		PaperMid->SetScalarParameterValue(TEXT("PaperGlow"), PaperGlow);
 		PaperMid->SetScalarParameterValue(TEXT("VignetteEdge"), PaperVignetteEdge);
 		PaperMid->SetScalarParameterValue(TEXT("InkGlow"), PaperInkGlow);
+		PaperMid->SetScalarParameterValue(TEXT("EdgeGlow"), PaperEdgeGlow);
+		PaperMid->SetScalarParameterValue(TEXT("EdgeSpread"), PaperEdgeSpread);
+		PaperMid->SetScalarParameterValue(TEXT("EdgeHalo"), PaperEdgeHalo);
 	}
 	else
 	{
@@ -743,6 +766,7 @@ void ABpTable::LoadArt()
 				Mid->SetScalarParameterValue(TEXT("TopEdge"), bRest ? WallTopEdge : HighlightTopEdge);
 				Mid->SetScalarParameterValue(TEXT("LowEdge"), bRest ? WallLowEdge : HighlightLowEdge);
 				Mid->SetScalarParameterValue(TEXT("HaloK"), bRest ? WallHaloK : HighlightHaloK);
+				if (bRest) Mid->SetVectorParameterValue(TEXT("EdgeColor"), RestEdgeColor);
 			}
 			Mid->SetScalarParameterValue(TEXT("Intensity"), Kind == RestVolumes ? RestEdgeIntensity : Kind == HighlightShell ? HighlightEdgeIntensity : Kind == LiftedShell ? LiftedEdgeIntensity : ShellEdgeIntensity);
 			Kind->SetMaterial(0, Mid);
